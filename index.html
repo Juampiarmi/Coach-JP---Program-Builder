@@ -4401,8 +4401,8 @@ function init(){
 document.addEventListener('DOMContentLoaded', init);
 </script>
 <!-- ============================================================
-     MÓDULO 5 — CONFIGURACIÓN + GENERACIÓN AUTOMÁTICA CON IA
-     Capa aditiva: estilos, modales y lógica propios.
+     MÓDULO 5 — IA MULTI-PROVEEDOR (claves por proveedor,
+     cooldown de rate-limit, fallback automático y prompts compactos)
      ============================================================ -->
 <style>
 .cfg-fab{position:fixed;top:14px;right:22px;z-index:130;display:flex;gap:8px;align-items:center}
@@ -4412,7 +4412,6 @@ document.addEventListener('DOMContentLoaded', init);
   box-shadow:0 10px 24px rgba(0,0,0,.45);transition:.16s;
 }
 .cfg-fab button:hover{color:#fff;border-color:rgba(255,214,0,.45);transform:translateY(-1px)}
-.cfg-fab button.on{border-color:rgba(0,191,165,.5);color:var(--teal)}
 .cfg-fab .dot{width:7px;height:7px;border-radius:50%;background:var(--red)}
 .cfg-fab .dot.ok{background:var(--teal);box-shadow:0 0 8px rgba(0,191,165,.7)}
 .main .topbar{padding-right:186px}
@@ -4442,10 +4441,35 @@ document.addEventListener('DOMContentLoaded', init);
 .ai-log .warn{color:var(--orange)}
 .key-row{display:flex;gap:8px;align-items:center}
 .key-row input{flex:1}
+
+/* switch de proveedores */
+.prov-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.prov{
+  display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:11px;text-align:left;
+  background:var(--panel-3);border:1.5px solid var(--line);color:var(--txt-2);transition:.15s;position:relative;
+}
+.prov:hover{border-color:var(--line-2);transform:translateY(-1px)}
+.prov.on{border-color:var(--gold);background:linear-gradient(180deg,rgba(255,214,0,.1),var(--panel-3));color:#fff}
+.prov .pn{font-weight:800;font-size:12.5px;display:flex;align-items:center;gap:6px}
+.prov .ps{font-size:10.5px;color:var(--muted);font-weight:700}
+.prov .pd{width:7px;height:7px;border-radius:50%;background:#4A5058;flex:0 0 7px}
+.prov.has .pd{background:var(--teal);box-shadow:0 0 7px rgba(0,191,165,.6)}
+.prov.cool{border-color:rgba(255,138,0,.5);opacity:.85}
+.prov.cool .pd{background:var(--orange);animation:blink 1s ease-in-out infinite}
+.prov.cool .ps{color:var(--orange)}
+@media(max-width:640px){.prov-row{grid-template-columns:1fr}}
+.mini-prov{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.mini-prov button{
+  padding:4px 10px;border-radius:20px;font-size:11px;font-weight:800;
+  background:var(--panel-3);border:1px solid var(--line-2);color:var(--muted);transition:.15s;
+}
+.mini-prov button.on{border-color:var(--gold);color:var(--gold);background:rgba(255,214,0,.12)}
+.mini-prov button.cool{border-color:rgba(255,138,0,.45);color:var(--orange)}
+.mini-prov button:hover{transform:translateY(-1px)}
 </style>
 
 <div class="modal-bg" id="mCfg">
-  <div class="modal sm">
+  <div class="modal">
     <div class="modal-h">
       <h3>⚙️ Configuración de IA</h3>
       <div class="spacer"></div>
@@ -4453,35 +4477,38 @@ document.addEventListener('DOMContentLoaded', init);
     </div>
     <div class="modal-b">
       <div>
-        <label class="lb">Proveedor</label>
-        <select id="cfgProvider">
-          <option value="anthropic">Anthropic — Claude</option>
-          <option value="openai">OpenAI</option>
-          <option value="google">Google — Gemini</option>
-        </select>
+        <label class="lb">Proveedor activo — cada uno guarda su propia clave</label>
+        <div class="prov-row" id="provRow"></div>
       </div>
+      <select id="cfgProvider" style="display:none">
+        <option value="anthropic">Anthropic — Claude</option>
+        <option value="openai">OpenAI</option>
+        <option value="google">Google — Gemini</option>
+      </select>
       <div>
-        <label class="lb">API Key</label>
+        <label class="lb">API Key de <span id="cfgProvName">Anthropic</span></label>
         <div class="key-row">
           <input id="cfgKey" type="password" placeholder="sk-ant-… / sk-… / AIza…" autocomplete="off" spellcheck="false">
           <button class="btn sm" id="cfgShow" type="button">👁</button>
         </div>
-        <div class="hint">Se guarda únicamente en el <b>localStorage de este navegador</b>. No se incluye en los backups .json ni viaja a ningún servidor que no sea el del proveedor elegido.</div>
+        <div class="hint">Se guarda solo en el <b>localStorage de este navegador</b>. No entra en los backups .json ni viaja a otro servidor que no sea el del proveedor elegido.</div>
       </div>
       <div class="grid g2">
         <div>
           <label class="lb">Modelo</label>
           <input id="cfgModel" list="dlModels" placeholder="claude-sonnet-5" spellcheck="false">
-          <datalist id="dlModels">
-            <option value="claude-sonnet-5">
-            <option value="claude-opus-5">
-            <option value="claude-haiku-4-5-20251001">
-          </datalist>
+          <datalist id="dlModels"></datalist>
         </div>
         <div>
           <label class="lb">Máx. tokens por respuesta</label>
           <input id="cfgMaxTokens" type="number" min="1000" step="500" value="8000">
         </div>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="cfgEcon" checked> Modo económico: envía solo los ejercicios del foco del día (≈70% menos tokens)</label>
+      </div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="cfgFallback" checked> Si un proveedor entra en cooldown por rate-limit, seguir con otro automáticamente</label>
       </div>
       <div id="cfgStatus"></div>
     </div>
@@ -4502,6 +4529,12 @@ document.addEventListener('DOMContentLoaded', init);
     </div>
     <div class="modal-b">
       <div id="aiAthBox"></div>
+      <div class="row" style="gap:9px">
+        <span class="lb" style="margin:0">Proveedor</span>
+        <div class="mini-prov" id="aiProv"></div>
+        <div class="spacer"></div>
+        <button class="btn xs ghost" id="aiCfgLink">⚙️ Claves</button>
+      </div>
       <div class="grid g2">
         <div>
           <label class="lb">Alcance</label>
@@ -4546,32 +4579,73 @@ document.addEventListener('DOMContentLoaded', init);
 
 <script>
 /* ============================================================
-   11. MÓDULO 5 — CONFIGURACIÓN DE API KEY + GENERADOR IA
-   Aditivo: no modifica ninguna función previa del dashboard.
+   11. MÓDULO 5 — IA MULTI-PROVEEDOR
+   Claves independientes por proveedor · detección de rate-limit
+   con cooldown persistente · fallback automático · prompts compactos.
    ============================================================ */
 (function(){
-  const AI_KEY = 'coachjp_ai_cfg_v1';
-  const DEFAULTS = {
-    anthropic: { model:'claude-sonnet-5',  url:'https://api.anthropic.com/v1/messages' },
-    openai:    { model:'gpt-4o',           url:'https://api.openai.com/v1/chat/completions' },
-    google:    { model:'gemini-3.6-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/' }
+  const AI_KEY = 'coachjp_ai_cfg_v2';
+  const PROV = {
+    anthropic: { lb:'Anthropic', sub:'Claude', model:'claude-sonnet-5',  url:'https://api.anthropic.com/v1/messages',
+      hints:['claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-3-5-sonnet-20241022','claude-3-haiku-20240307'] },
+    openai:    { lb:'OpenAI',    sub:'GPT',    model:'gpt-4o',           url:'https://api.openai.com/v1/chat/completions',
+      hints:['gpt-4o','gpt-4o-mini'] },
+    google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.6-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
+      hints:['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-pro'] }
   };
-  const MODEL_HINTS = {
-    anthropic: ['claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001'],
-    openai:    ['gpt-4o','gpt-4o-mini'],
-    google:    ['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-pro']
+  const ORDEN = ['anthropic','openai','google'];
+  let AI = {
+    provider:'anthropic',
+    keys:  { anthropic:'', openai:'', google:'' },
+    models:{ anthropic:PROV.anthropic.model, openai:PROV.openai.model, google:PROV.google.model },
+    cooldown:{}, maxTokens:8000, econ:true, fallback:true
   };
-  let AI = { provider:'anthropic', key:'', model:'claude-sonnet-5', maxTokens:8000 };
 
   function loadAI(){
-    try{ const r = localStorage.getItem(AI_KEY); if(r) AI = Object.assign(AI, JSON.parse(r)); }catch(e){}
+    try{
+      const r = localStorage.getItem(AI_KEY);
+      if(r){ AI = Object.assign(AI, JSON.parse(r)); }
+      else {
+        /* migración desde la versión de clave única */
+        const old = localStorage.getItem('coachjp_ai_cfg_v1');
+        if(old){
+          const o = JSON.parse(old);
+          if(o.provider) AI.provider = o.provider;
+          if(o.key) AI.keys[o.provider || 'anthropic'] = o.key;
+          if(o.model) AI.models[o.provider || 'anthropic'] = o.model;
+          if(o.maxTokens) AI.maxTokens = o.maxTokens;
+          saveAI();
+        }
+      }
+    }catch(e){}
+    AI.keys = AI.keys || {}; AI.models = AI.models || {}; AI.cooldown = AI.cooldown || {};
+    ORDEN.forEach(p => { if(!AI.models[p]) AI.models[p] = PROV[p].model; });
   }
   function saveAI(){
     try{ localStorage.setItem(AI_KEY, JSON.stringify(AI)); }catch(e){ toast('No se pudo guardar la configuración','err'); }
   }
-  const hasKey = () => !!(AI.key && AI.key.trim().length > 12);
+  const keyOf   = p => (AI.keys[p] || '').trim();
+  const hasKey  = p => keyOf(p || AI.provider).length > 12;
+  const coolLeft = p => Math.max(0, Math.ceil(((AI.cooldown[p] || 0) - Date.now()) / 1000));
+  const isCool  = p => coolLeft(p) > 0;
+  function coolTxt(s){
+    if(s <= 0) return '';
+    if(s < 60) return s + 's';
+    const m = Math.ceil(s / 60);
+    return m < 60 ? m + ' min' : Math.ceil(m / 60) + ' h';
+  }
+  function setCooldown(p, secs){
+    AI.cooldown[p] = Date.now() + (secs * 1000);
+    saveAI(); paintProviders(); paintDot();
+  }
+  /* proveedor disponible: con clave y sin cooldown */
+  function nextProvider(excluir){
+    const cand = ORDEN.filter(p => p !== excluir && hasKey(p) && !isCool(p));
+    if(cand.indexOf(AI.provider) >= 0) return AI.provider;
+    return cand[0] || null;
+  }
 
-  /* ---------- UI: engranaje flotante + botón del builder ---------- */
+  /* ---------- UI: engranaje + botón del builder ---------- */
   function mountUI(){
     const fab = document.createElement('div');
     fab.className = 'cfg-fab';
@@ -4587,89 +4661,184 @@ document.addEventListener('DOMContentLoaded', init);
       const ref = document.getElementById('btnCheckAll');
       if(ref && ref.parentNode === topbar) topbar.insertBefore(btn, ref); else topbar.appendChild(btn);
       btn.addEventListener('click', openAI);
+
+      const sw = document.createElement('div');
+      sw.className = 'mini-prov'; sw.id = 'builderProv';
+      topbar.insertBefore(sw, btn);
     }
-    paintDot();
+    paintDot(); paintMini();
   }
   function paintDot(){
     const d = document.getElementById('cfgDot');
-    if(d) d.className = 'dot' + (hasKey() ? ' ok' : '');
+    if(d) d.className = 'dot' + (ORDEN.some(p => hasKey(p)) ? ' ok' : '');
+  }
+  function miniHtml(){
+    return ORDEN.map(p => {
+      const c = coolLeft(p);
+      return '<button data-prov="' + p + '" title="' + (hasKey(p) ? (c ? 'En cooldown ' + coolTxt(c) : 'Clave cargada') : 'Sin clave') + '" ' +
+        'class="' + (p === AI.provider ? 'on ' : '') + (c ? 'cool' : '') + '">' +
+        (hasKey(p) ? '' : '🔒 ') + PROV[p].sub + (c ? ' ⏳' + coolTxt(c) : '') + '</button>';
+    }).join('');
+  }
+  function paintMini(){
+    ['#builderProv','#aiProv'].forEach(sel => {
+      const el = document.querySelector(sel);
+      if(el) el.innerHTML = miniHtml();
+    });
+  }
+  function paintProviders(){
+    const row = document.getElementById('provRow');
+    if(row){
+      row.innerHTML = ORDEN.map(p => {
+        const c = coolLeft(p);
+        return '<button type="button" class="prov ' + (p === AI.provider ? 'on ' : '') + (hasKey(p) ? 'has ' : '') + (c ? 'cool' : '') + '" data-prov="' + p + '">' +
+          '<span class="pn"><span class="pd"></span>' + PROV[p].lb + '</span>' +
+          '<span class="ps">' + (c ? '⏳ cooldown ' + coolTxt(c) : (hasKey(p) ? '✔ clave cargada' : 'sin clave')) + '</span>' +
+        '</button>';
+      }).join('');
+    }
+    paintMini();
+  }
+  function switchProvider(p, silencioso){
+    AI.provider = p; saveAI();
+    paintProviders(); paintDot();
+    const c = coolLeft(p);
+    if($('#mCfg').classList.contains('on')) fillCfgForm();
+    if(!silencioso) toast('Proveedor: ' + PROV[p].lb + (c ? ' · en cooldown ' + coolTxt(c) : (hasKey(p) ? '' : ' · falta la clave')), c || !hasKey(p) ? 'warn' : '');
   }
 
   /* ---------- Modal de configuración ---------- */
-  function paintModelHints(prov){
-    $('#dlModels').innerHTML = (MODEL_HINTS[prov]||[]).map(m => '<option value="' + m + '">').join('');
-  }
-  function openCfg(){
-    $('#cfgProvider').value = AI.provider;
-    paintModelHints(AI.provider);
-    $('#cfgKey').value = AI.key || '';
-    $('#cfgModel').value = AI.model || DEFAULTS[AI.provider].model;
+  function fillCfgForm(){
+    const p = AI.provider;
+    $('#cfgProvider').value = p;
+    $('#cfgProvName').textContent = PROV[p].lb;
+    $('#cfgKey').value = AI.keys[p] || '';
+    $('#cfgKey').type = 'password';
+    $('#cfgModel').value = AI.models[p] || PROV[p].model;
+    $('#dlModels').innerHTML = PROV[p].hints.map(m => '<option value="' + m + '">').join('');
     $('#cfgMaxTokens').value = AI.maxTokens || 8000;
-    $('#cfgStatus').innerHTML = hasKey()
-      ? '<div class="alert good" style="padding:9px 12px"><span class="ic">🔑</span><div><b>Clave guardada</b>El botón ✨ del builder ya está operativo.</div></div>'
-      : '<div class="alert info" style="padding:9px 12px"><span class="ic">ℹ️</span><div><b>Sin clave cargada</b>Pegá tu API Key para habilitar la generación automática.</div></div>';
-    openModal('mCfg');
-    setTimeout(() => $('#cfgKey').focus(), 60);
+    $('#cfgEcon').checked = AI.econ !== false;
+    $('#cfgFallback').checked = AI.fallback !== false;
+    const c = coolLeft(p);
+    $('#cfgStatus').innerHTML = c
+      ? '<div class="alert warn" style="padding:9px 12px"><span class="ic">⏳</span><div><b>' + PROV[p].lb + ' en cooldown por rate-limit</b>Vuelve a estar disponible en ' + coolTxt(c) + '. Podés cambiar de proveedor y seguir trabajando. <button class="btn xs" id="cfgReset" style="margin-top:6px">Reintentar ahora</button></div></div>'
+      : (hasKey(p)
+        ? '<div class="alert good" style="padding:9px 12px"><span class="ic">🔑</span><div><b>Clave guardada</b>El botón ✨ del builder está operativo con ' + PROV[p].lb + '.</div></div>'
+        : '<div class="alert info" style="padding:9px 12px"><span class="ic">ℹ️</span><div><b>Sin clave para ' + PROV[p].lb + '</b>Pegá la API Key para habilitar la generación automática.</div></div>');
+    const rst = document.getElementById('cfgReset');
+    if(rst) rst.addEventListener('click', () => { delete AI.cooldown[AI.provider]; saveAI(); fillCfgForm(); paintProviders(); toast('Cooldown reiniciado'); });
   }
+  function openCfg(){ paintProviders(); fillCfgForm(); openModal('mCfg'); setTimeout(() => $('#cfgKey').focus(), 60); }
   function readCfgForm(){
-    AI.provider  = $('#cfgProvider').value;
-    AI.key       = $('#cfgKey').value.trim();
-    AI.model     = ($('#cfgModel').value.trim() || DEFAULTS[AI.provider].model);
-    AI.maxTokens = parseInt($('#cfgMaxTokens').value,10) || 8000;
+    const p = AI.provider;
+    AI.keys[p]   = $('#cfgKey').value.trim();
+    AI.models[p] = ($('#cfgModel').value.trim() || PROV[p].model);
+    AI.maxTokens = parseInt($('#cfgMaxTokens').value, 10) || 8000;
+    AI.econ      = $('#cfgEcon').checked;
+    AI.fallback  = $('#cfgFallback').checked;
   }
 
   /* ---------- Llamada a la API ---------- */
-  async function callAI(system, user){
-    if(!hasKey()) throw new Error('No hay API Key configurada.');
-    const cfg = DEFAULTS[AI.provider];
-    let res, body, headers;
+  function RateErr(prov, secs, msg){
+    const e = new Error(msg || 'Límite de cuota alcanzado');
+    e.rate = true; e.prov = prov; e.secs = secs;
+    return e;
+  }
+  async function callProvider(prov, system, user){
+    if(!hasKey(prov)) throw new Error('No hay API Key de ' + PROV[prov].lb + '.');
+    const cfg = PROV[prov], model = AI.models[prov] || cfg.model;
+    let url = cfg.url, headers, body;
 
-    let url = cfg.url;
-
-    if(AI.provider === 'anthropic'){
+    if(prov === 'anthropic'){
       headers = {
         'content-type': 'application/json',
-        'x-api-key': AI.key,
+        'x-api-key': keyOf(prov),
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       };
-      body = { model: AI.model, max_tokens: AI.maxTokens, system: system, messages: [{ role:'user', content: user }] };
-    } else if(AI.provider === 'google'){
-      url = cfg.url + encodeURIComponent(AI.model) + ':generateContent';
-      headers = { 'content-type': 'application/json', 'x-goog-api-key': AI.key };
+      body = { model: model, max_tokens: AI.maxTokens, system: system, messages: [{ role:'user', content: user }] };
+    } else if(prov === 'google'){
+      url = cfg.url + encodeURIComponent(model) + ':generateContent';
+      headers = { 'content-type': 'application/json', 'x-goog-api-key': keyOf(prov) };
       body = {
         system_instruction: { parts: [{ text: system }] },
         contents: [{ role:'user', parts: [{ text: user }] }],
         generationConfig: { maxOutputTokens: AI.maxTokens, temperature: 0.7, responseMimeType: 'application/json' }
       };
     } else {
-      headers = { 'content-type': 'application/json', 'authorization': 'Bearer ' + AI.key };
+      headers = { 'content-type': 'application/json', 'authorization': 'Bearer ' + keyOf(prov) };
       body = {
-        model: AI.model, max_tokens: AI.maxTokens,
+        model: model, max_tokens: AI.maxTokens,
         response_format: { type:'json_object' },
         messages: [{ role:'system', content: system }, { role:'user', content: user }]
       };
     }
 
-    res = await fetch(url, { method:'POST', headers: headers, body: JSON.stringify(body) });
+    const res = await fetch(url, { method:'POST', headers: headers, body: JSON.stringify(body) });
     const raw = await res.text();
+
+    if(res.status === 429 || res.status === 529 || res.status === 503){
+      let secs = 0;
+      try{ secs = parseInt(res.headers.get('retry-after') || res.headers.get('Retry-After') || '0', 10) || 0; }catch(e){}
+      if(!secs){
+        const m = raw.match(/retry(?:Delay|-after)"?[:\s"]+(\d+)/i);
+        secs = m ? parseInt(m[1], 10) : 0;
+      }
+      if(!secs) secs = res.status === 429 ? 3600 : 60;
+      throw RateErr(prov, secs, 'HTTP ' + res.status + ' · cuota agotada en ' + PROV[prov].lb);
+    }
     if(!res.ok){
       let msg = raw;
       try{ const j = JSON.parse(raw); msg = (j.error && (j.error.message || j.error.type)) || raw; }catch(e){}
-      throw new Error('HTTP ' + res.status + ' — ' + String(msg).slice(0,220));
+      throw new Error('HTTP ' + res.status + ' — ' + String(msg).slice(0, 220));
     }
+
     const j = JSON.parse(raw);
-    if(AI.provider === 'anthropic'){
+    if(prov === 'anthropic'){
       const part = (j.content || []).find(c => c.type === 'text');
       return part ? part.text : '';
     }
-    if(AI.provider === 'google'){
+    if(prov === 'google'){
       const cand = (j.candidates || [])[0];
       if(!cand) throw new Error('Gemini no devolvió candidatos (¿filtro de seguridad?).');
-      if(cand.finishReason === 'MAX_TOKENS') throw new Error('Respuesta cortada por límite de tokens: subí "Máx. tokens" en la configuración.');
+      if(cand.finishReason === 'MAX_TOKENS') throw new Error('Respuesta cortada por límite de tokens: subí "Máx. tokens".');
       return ((cand.content && cand.content.parts) || []).map(pt => pt.text || '').join('');
     }
     return j.choices && j.choices[0] ? j.choices[0].message.content : '';
+  }
+
+  /* llamada con cooldown + fallback entre proveedores */
+  async function callAI(system, user, onLog){
+    const log = onLog || function(){};
+    const intentados = [];
+    let prov = nextProvider(null) || AI.provider;
+
+    for(let vuelta = 0; vuelta < 4; vuelta++){
+      if(!prov) break;
+      intentados.push(prov);
+      try{
+        return await callProvider(prov, system, user);
+      }catch(err){
+        if(!err.rate) throw err;
+        /* espera corta: reintenta el mismo proveedor */
+        if(err.secs <= 20){
+          log('⏳ ' + PROV[prov].lb + ' pidió esperar ' + err.secs + 's — reintentando…', 'warn');
+          await new Promise(r => setTimeout(r, (err.secs + 1) * 1000));
+          continue;
+        }
+        setCooldown(prov, err.secs);
+        log('⏳ ' + PROV[prov].lb + ' en cooldown por ' + coolTxt(err.secs) + '.', 'warn');
+        if(AI.fallback === false) throw err;
+        const alt = nextProvider(prov);
+        if(!alt || intentados.indexOf(alt) >= 0){
+          throw new Error('Todos los proveedores con clave están en cooldown. Cargá otra API Key o esperá ' + coolTxt(Math.min.apply(null, ORDEN.filter(hasKey).map(coolLeft).concat([err.secs]))) + '.');
+        }
+        log('🔀 Continuando con ' + PROV[alt].lb + '…', 'ok');
+        switchProvider(alt, true);
+        prov = alt;
+      }
+    }
+    throw new Error('No se pudo completar la llamada: sin proveedores disponibles.');
   }
 
   function extractJson(txt){
@@ -4679,99 +4848,96 @@ document.addEventListener('DOMContentLoaded', init);
     if(fence) s = fence[1].trim();
     const a = s.indexOf('{'), b = s.lastIndexOf('}');
     if(a < 0 || b < a) throw new Error('El modelo no devolvió JSON válido.');
-    return JSON.parse(s.slice(a, b+1));
+    return JSON.parse(s.slice(a, b + 1));
   }
 
-  /* ---------- Construcción del prompt ---------- */
-  function libraryBlock(){
-    return S.exercises.map(e =>
-      e.id + ' | ' + e.es + (e.en ? ' (' + e.en + ')' : '') + ' | ' + e.grupo + ' | ' + e.patron + ' | ' + e.equipo +
-      ((e.riesgo||[]).length ? ' | riesgo: ' + e.riesgo.join(',') : '')
-    ).join('\n');
+  /* ---------- Prompts compactos ---------- */
+  /* Formato mínimo por ejercicio: id|nombre|equipo|patrón  (sin inglés ni riesgos) */
+  function libLines(grupos, ath, cap){
+    let pool = S.exercises.filter(e => !grupos || !grupos.length || grupos.indexOf(e.grupo) >= 0);
+    if(ath) pool = pool.filter(e => !checkExercise(ath, e).some(a => a.level === 'danger'));
+    const score = e => {
+      let s = 0;
+      if(ath && checkExercise(ath, e).some(a => a.level === 'good')) s += 50;
+      if(e.videoId) s += 6;
+      if(e.oficial) s += 3;
+      if((e.riesgo || []).length) s -= 2;
+      return s;
+    };
+    const porGrupo = {};
+    pool.sort((a, b) => score(b) - score(a)).forEach(e => {
+      (porGrupo[e.grupo] = porGrupo[e.grupo] || []).push(e);
+    });
+    const porCap = Math.max(8, Math.floor((cap || 120) / Math.max(1, Object.keys(porGrupo).length)));
+    const out = [];
+    Object.keys(porGrupo).forEach(g => {
+      porGrupo[g].slice(0, porCap).forEach(e => out.push(e.id + '|' + e.es + '|' + e.equipo + '|' + e.patron));
+    });
+    return out.join('\n');
   }
-  function athleteBlock(ath){
+  function athLine(ath){
     const L = [];
-    L.push('Nombre: ' + fullName(ath));
-    L.push('Frecuencia semanal: ' + ath.freq + ' días');
-    L.push('Nivel: ' + (ath.nivel || 'Intermedio'));
-    if(ath.foco) L.push('Foco principal / objetivos: ' + ath.foco);
-    if(ath.deportes) L.push('Deportes o actividad complementaria: ' + ath.deportes);
-    if(ath.compat) L.push('Reglas de compatibilidad: ' + ath.compat);
-    if((ath.tags||[]).length) L.push('REGLAS BIOMECÁNICAS Y LESIONES (obligatorio respetarlas): ' + ath.tags.join(' · '));
-    if((ath.prohibidos||[]).length) L.push('EJERCICIOS PROHIBIDOS (nunca incluir, ni variantes equivalentes): ' + ath.prohibidos.join(' · '));
-    if((ath.preferidos||[]).length) L.push('EJERCICIOS PREFERIDOS (priorizar en el plan): ' + ath.preferidos.join(' · '));
-    if(ath.notas) L.push('Notas del coach: ' + ath.notas);
+    L.push(fullName(ath) + ' · ' + ath.freq + 'd/sem · ' + (ath.nivel || 'Intermedio'));
+    if(ath.foco) L.push('Objetivo: ' + ath.foco);
+    if(ath.deportes) L.push('Extra: ' + ath.deportes);
+    if(ath.compat) L.push('Compatibilidad: ' + ath.compat);
+    if((ath.tags || []).length) L.push('LESIONES: ' + ath.tags.join('; '));
+    if((ath.prohibidos || []).length) L.push('PROHIBIDOS: ' + ath.prohibidos.join('; '));
+    if((ath.preferidos || []).length) L.push('PRIORIZAR: ' + ath.preferidos.join('; '));
     return L.join('\n');
   }
-  const SYSTEM_PROMPT =
-    'Sos el asistente de programación de Coach JP, entrenador especialista en biomecánica, alto rendimiento y readaptación física. ' +
-    'Diseñás sesiones de gimnasio seguras, progresivas y específicas para cada alumno.\n' +
-    'REGLAS INNEGOCIABLES:\n' +
-    '1) Nunca incluyas un ejercicio prohibido para el alumno, ni una variante equivalente del mismo patrón prohibido.\n' +
-    '2) Respetá las reglas biomecánicas y lesiones: evitá ejercicios cuyo riesgo articular coincida con la zona comprometida, o regresionalos explicándolo en la coaching note.\n' +
-    '3) Usá SOLO ejercicios de la biblioteca provista, referenciándolos por su id exacto.\n' +
-    '4) Respondés ÚNICAMENTE con un objeto JSON válido, sin texto antes ni después, sin markdown, sin comentarios.\n' +
-    '5) Todos los textos (títulos, notas, resúmenes) en español rioplatense, en segunda persona, tono técnico y directo, sin emojis salvo en los campos icon y metaChips.';
+  const SYS =
+    'Sos el asistente de programación de Coach JP (biomecánica, alto rendimiento, readaptación).\n' +
+    'REGLAS: 1) Nunca uses un ejercicio prohibido ni una variante equivalente. 2) Evitá ejercicios cuyo riesgo articular coincida con la lesión del alumno, o regresionalos y explicalo en tips. 3) Usá SOLO ids de la lista dada. 4) Devolvé JSON válido y nada más: sin markdown, sin texto extra, sin comentarios. 5) Textos breves en español rioplatense, segunda persona, técnicos.';
 
-  function dayPrompt(ath, dayIdx, totalDays, prevSummary, opts){
+  const ESTILOS = {
+    fuerza:'2 anclas pesadas (6-8 reps, RPE 8, descanso 150s) + bisets densos de accesorios.',
+    hipertrofia:'1 ancla + mucho volumen en bisets de 10-15 reps, descansos 60-90s.',
+    recomp:'1-2 anclas + bisets densos + cierre metabólico con peso.',
+    readaptacion:'Cargas conservadoras, rango controlado, máquinas y unilateral, descansos amplios.'
+  };
+
+  function splitPrompt(ath, n, opts){
+    return 'ALUMNO:\n' + athLine(ath) + '\n\n' +
+      'Repartí ' + n + ' días de entrenamiento sin solapar el foco muscular principal.\n' +
+      (opts.notes ? 'Extra: ' + opts.notes + '\n' : '') +
+      'Grupos válidos: Pectoral, Espalda, Hombros, Brazos, Piernas/Glúteos, Core, Full Body / Cardio.\n' +
+      'JSON: {"dias":[{"label":"Espalda/Bíceps","title":"Espalda, Bíceps y Tracción Pesada","grupos":["Espalda","Brazos"]}]}\n' +
+      'Exactamente ' + n + ' objetos.';
+  }
+  function dayPrompt(ath, i, n, foco, opts){
     const inc = [];
-    if(opts.warm)  inc.push('un bloque "list" de warm-up específico al inicio');
-    if(opts.core)  inc.push('un bloque "list" de core (category "accessory", optional true)');
-    if(opts.fin)   inc.push('un bloque "finisher" de congestión (optional true)');
-    if(opts.hyrox) inc.push('un bloque "hyrox" de cierre metabólico (optional true)');
-    const estilos = {
-      fuerza:'Fuerza pesada e hipertrofia: 2 anclas pesadas tipo "block" con series de aproximación (6-8 reps, RPE alto, descansos de 120-165s) y después bisets/trisets densos de accesorios.',
-      hipertrofia:'Hipertrofia y recomposición: 1 ancla pesada y mucho volumen en bisets/trisets de 10-15 reps con descansos de 60-90s.',
-      recomp:'Recomposición con acondicionamiento: 1-2 anclas, bisets densos y bastante peso al cierre metabólico.',
-      readaptacion:'Readaptación progresiva: cargas conservadoras, rangos controlados, prioridad a patrones estables en máquina y trabajo unilateral; descansos amplios.'
-    };
-    return [
-      'ALUMNO/A:', athleteBlock(ath), '',
-      'BIBLIOTECA DE EJERCICIOS DISPONIBLES (id | nombre | grupo | patrón | equipo | riesgo):',
-      libraryBlock(), '',
-      'TAREA: diseñá el DÍA ' + (dayIdx+1) + ' de ' + totalDays + ' de una rutina semanal.',
-      'Estilo pedido: ' + (estilos[opts.style] || estilos.fuerza),
-      (prevSummary ? 'Días ya programados de esta misma semana (no repitas su foco muscular principal): ' + prevSummary : 'Es el primer día de la semana.'),
-      (inc.length ? 'Incluí además: ' + inc.join('; ') + '.' : ''),
-      (opts.notes ? 'INDICACIONES EXTRA DEL COACH (prioridad máxima): ' + opts.notes : ''),
-      '',
-      'FORMATO DE SALIDA (JSON exacto, sin campos extra):',
-      '{',
-      '  "short": "DÍA ' + (dayIdx+1) + '",',
-      '  "label": "etiqueta corta de pestaña, ej: Espalda/Bíceps",',
-      '  "title": "título del día",',
-      '  "metaChips": ["🎯 chip corto", "💪 chip corto"],',
-      '  "focusTitle": "Foco Técnico del Día",',
-      '  "focusText": "2-3 frases sobre el foco técnico y la dosificación del día",',
-      '  "summary": "resumen del volumen real de la sesión",',
-      '  "cooldown": ["Nombre del estiramiento — 2x30s", "…"],',
-      '  "bloques": [',
-      '    {"tipo":"list","titulo":"Warm-Up Específico","subtitulo":"Activación (6-8 min)","icon":"🔥","category":"warmup","optional":false,"items":["Nombre — 3 min","Nombre — 2x15"],"tips":"coaching note","objective":""},',
-      '    {"tipo":"block","titulo":"Block A: nombre","subtitulo":"Ancla pesada · aproximaciones + efectivas","icon":"💪","category":"strength","optional":false,"exId":"ID_DE_LA_BIBLIOTECA","hasApprox":true,"approxSets":2,"efSets":4,"reps":"6-8","tempo":"2110","restSeconds":150,"failCapable":true,"tips":"coaching note técnica","objective":"para qué sirve el bloque","altNote":""},',
-      '    {"tipo":"superset","titulo":"Block B: Biset — X + Y","subtitulo":"sin descanso entre ejercicios","icon":"🎯","category":"strength","optional":false,"ejercicios":[{"exId":"ID","reps":"10-12","tempo":"2011"},{"exId":"ID","reps":"12-15","tempo":"2011"}],"efSets":3,"restSeconds":90,"failCapable":true,"tips":"coaching note","objective":"objetivo"},',
-      '    {"tipo":"finisher","titulo":"🔥 Finisher de Congestión","subtitulo":"Bombeo · Solo Modo Completo","icon":"🔥","category":"metcon","optional":true,"fin":[{"exId":"ID","repsRange":"15-20"}],"roundsByWeek":["2 rondas, sin descanso entre rondas (RIR 1-2)","2 rondas, sin descanso entre rondas (RIR 1)","3 rondas al fallo técnico","" ],"tips":"coaching note"},',
-      '    {"tipo":"hyrox","titulo":"Cierre Metabólico","subtitulo":"Ergómetros + funcional · Solo Modo Completo","icon":"🏃","category":"cardio","optional":true,"movements":["12 Kettlebell Swings","200m en Remo Ergómetro"],"tips":"coaching note"}',
-      '  ]',
-      '}',
-      'Entre 4 y 6 bloques en total. Los campos tempo usan 4 dígitos. restSeconds es un entero en segundos.'
-    ].filter(Boolean).join('\n');
+    if(opts.warm)  inc.push('list warm-up al inicio');
+    if(opts.core)  inc.push('list de core (category accessory, optional true)');
+    if(opts.fin)   inc.push('finisher (optional true)');
+    if(opts.hyrox) inc.push('hyrox de cierre (optional true)');
+    const grupos = opts.econ && foco && foco.grupos ? foco.grupos.concat(opts.core ? ['Core'] : [], opts.hyrox ? ['Full Body / Cardio'] : []) : null;
+    return 'ALUMNO:\n' + athLine(ath) + '\n\n' +
+      'EJERCICIOS (id|nombre|equipo|patrón):\n' + libLines(grupos, ath, opts.econ ? 90 : 200) + '\n\n' +
+      'DÍA ' + (i + 1) + '/' + n + (foco && foco.label ? ' · foco: ' + foco.label : '') + '. Estilo: ' + (ESTILOS[opts.style] || ESTILOS.fuerza) + '\n' +
+      (opts.notes ? 'Extra: ' + opts.notes + '\n' : '') +
+      (inc.length ? 'Incluí: ' + inc.join(', ') + '.\n' : '') +
+      '4 a 6 bloques. tempo = 4 dígitos. restSeconds entero.\n' +
+      'JSON exacto:\n' +
+      '{"short":"DÍA ' + (i + 1) + '","label":"corto","title":"título","metaChips":["🎯 chip","💪 chip"],' +
+      '"focusTitle":"Foco Técnico del Día","focusText":"2 frases","summary":"volumen real de la sesión","cooldown":["Estiramiento — 2x30s"],"bloques":[' +
+      '{"tipo":"list","titulo":"Warm-Up Específico","subtitulo":"Activación (6-8 min)","icon":"🔥","category":"warmup","optional":false,"items":["Nombre — 3 min"],"tips":"cue"},' +
+      '{"tipo":"block","titulo":"Block A: nombre","subtitulo":"Ancla pesada","icon":"💪","category":"strength","optional":false,"exId":"ID","hasApprox":true,"approxSets":2,"efSets":4,"reps":"6-8","tempo":"2110","restSeconds":150,"failCapable":true,"tips":"cue","objective":"para qué sirve"},' +
+      '{"tipo":"superset","titulo":"Block B: Biset — X + Y","subtitulo":"sin descanso entre ejercicios","icon":"🔗","category":"strength","optional":false,"ejercicios":[{"exId":"ID","reps":"10-12","tempo":"2011"},{"exId":"ID","reps":"12-15","tempo":"2011"}],"efSets":3,"restSeconds":90,"failCapable":true,"tips":"cue","objective":"objetivo"},' +
+      '{"tipo":"finisher","titulo":"🔥 Finisher","subtitulo":"Bombeo","icon":"🔥","category":"metcon","optional":true,"fin":[{"exId":"ID","repsRange":"15-20"}],"roundsByWeek":["2 rondas (RIR 1-2)","2 rondas (RIR 1)","3 rondas al fallo",""],"tips":"cue"},' +
+      '{"tipo":"hyrox","titulo":"Cierre Metabólico","subtitulo":"Funcional","icon":"🏃","category":"cardio","optional":true,"movements":["12 Kettlebell Swings"],"tips":"cue"}]}';
   }
   function mesoPrompt(ath, opts){
-    return [
-      'ALUMNO/A:', athleteBlock(ath), '',
-      'TAREA: definí la progresión de un mesociclo de 4 semanas para este alumno/a.',
-      (opts.notes ? 'Indicaciones extra: ' + opts.notes : ''),
-      'La semana 4 debe ser de descarga. Una semana intermedia puede llevar fallo técnico.',
-      '',
-      'FORMATO DE SALIDA (JSON exacto):',
-      '{"meso":[{"short":"S1","name":"Semana 1","phase":"Aclimatación","rpe":"RPE 7-8 (RIR 2-3)","icon":"🎯","deload":false,"fail":false,"amrapMinutes":12,"hyroxNote":"nota del bloque metabólico","note":"qué buscás esta semana"}]}',
-      'Devolvé exactamente 4 objetos en "meso".'
-    ].filter(Boolean).join('\n');
+    return 'ALUMNO:\n' + athLine(ath) + '\n\n' +
+      'Progresión de mesociclo de 4 semanas. La 4 es descarga; una intermedia puede llevar fallo técnico.\n' +
+      (opts.notes ? 'Extra: ' + opts.notes + '\n' : '') +
+      'JSON: {"meso":[{"short":"S1","name":"Semana 1","phase":"Aclimatación","rpe":"RPE 7-8 (RIR 2-3)","icon":"🎯","deload":false,"fail":false,"amrapMinutes":12,"hyroxNote":"nota","note":"qué buscás"}]}\n' +
+      'Exactamente 4 objetos.';
   }
 
-  /* ---------- Saneamiento de la respuesta ---------- */
+  /* ---------- Saneamiento ---------- */
   const str = (v, d) => (typeof v === 'string' && v.trim()) ? v.trim() : (d || '');
-  const int = (v, d) => { const n = parseInt(v,10); return isNaN(n) ? d : n; };
+  const int = (v, d) => { const n = parseInt(v, 10); return isNaN(n) ? d : n; };
   const arr = v => Array.isArray(v) ? v.filter(x => typeof x === 'string' && x.trim()).map(x => x.trim()) : [];
 
   function safeEx(exId, ath, notes, ctx){
@@ -4789,7 +4955,6 @@ document.addEventListener('DOMContentLoaded', init);
     }
     return ex.id;
   }
-
   function sanitizeDay(raw, ath, idx, notes){
     const base = newDay(idx);
     const d = {
@@ -4797,11 +4962,11 @@ document.addEventListener('DOMContentLoaded', init);
       short: str(raw.short, base.short),
       label: str(raw.label, base.label),
       title: str(raw.title, base.title),
-      metaChips: arr(raw.metaChips).slice(0,4),
+      metaChips: arr(raw.metaChips).slice(0, 4),
       focusTitle: str(raw.focusTitle, 'Foco Técnico del Día'),
       focusText: str(raw.focusText),
       summary: str(raw.summary),
-      cooldown: arr(raw.cooldown).slice(0,6),
+      cooldown: arr(raw.cooldown).slice(0, 6),
       optional: false,
       bloques: []
     };
@@ -4834,7 +4999,7 @@ document.addEventListener('DOMContentLoaded', init);
         b.ejercicios = (Array.isArray(rb.ejercicios) ? rb.ejercicios : []).map(e => {
           const id = safeEx(e && e.exId, ath, notes, ctx);
           return id ? { exId:id, reps:str(e.reps,'10-12'), tempo:str(e.tempo,'2011') } : null;
-        }).filter(Boolean).slice(0,4);
+        }).filter(Boolean).slice(0, 4);
         if(b.ejercicios.length < 2) return;
         b.efSets      = Math.max(1, Math.min(8, int(rb.efSets, 3)));
         b.restSeconds = Math.max(15, Math.min(400, int(rb.restSeconds, 90)));
@@ -4844,22 +5009,21 @@ document.addEventListener('DOMContentLoaded', init);
         b.fin = (Array.isArray(rb.fin) ? rb.fin : []).map(e => {
           const id = safeEx(e && e.exId, ath, notes, ctx);
           return id ? { exId:id, repsRange:str(e.repsRange,'15-20') } : null;
-        }).filter(Boolean).slice(0,3);
+        }).filter(Boolean).slice(0, 3);
         if(!b.fin.length) return;
         const rw = Array.isArray(rb.roundsByWeek) ? rb.roundsByWeek : [];
         b.roundsByWeek = [0,1,2,3].map(i => str(rw[i], b.roundsByWeek[i] || ''));
       }
       else if(tipo === 'hyrox'){
-        b.movements = arr(rb.movements).slice(0,8);
+        b.movements = arr(rb.movements).slice(0, 8);
         if(!b.movements.length) return;
       }
       else {
-        b.items = arr(rb.items).slice(0,8);
+        b.items = arr(rb.items).slice(0, 8);
         if(!b.items.length) return;
         if(rb.cardioMinutes) b.cardioMinutes = int(rb.cardioMinutes, '');
       }
 
-      /* último filtro: texto libre con nombres vetados */
       const danger = blockAlerts(ath, b).filter(a => a.level === 'danger' && a.txt);
       if(danger.length){
         b.items     = (b.items||[]).filter(t => !danger.some(x => x.txt === t));
@@ -4870,14 +5034,13 @@ document.addEventListener('DOMContentLoaded', init);
     });
     return d;
   }
-
   function sanitizeMeso(raw, notes){
     if(!raw || !Array.isArray(raw.meso) || raw.meso.length < 4) return null;
     const def = defaultWeeks();
-    return def.map((w,i) => {
+    return def.map((w, i) => {
       const r = raw.meso[i] || {};
       return {
-        n: i+1,
+        n: i + 1,
         short: str(r.short, w.short), name: str(r.name, w.name), phase: str(r.phase, w.phase),
         rpe: str(r.rpe, w.rpe), icon: str(r.icon, w.icon),
         deload: r.deload === true, fail: r.fail === true,
@@ -4892,8 +5055,8 @@ document.addEventListener('DOMContentLoaded', init);
   function openAI(){
     const ath = active();
     if(!ath){ toast('Seleccioná un alumno/a primero','err'); go('alumnos'); return; }
-    if(!hasKey()){
-      toast('Configurá tu API Key para usar la generación automática','warn');
+    if(!ORDEN.some(p => hasKey(p))){
+      toast('Configurá al menos una API Key para usar la generación automática','warn');
       openCfg(); return;
     }
     const p = plan(ath.id);
@@ -4910,6 +5073,7 @@ document.addEventListener('DOMContentLoaded', init);
       '<option value="day">Solo ' + esc(p.dias[S.ui.day] ? p.dias[S.ui.day].short : 'el día abierto') + '</option>';
     $('#aiLog').className = 'ai-log';
     $('#aiLog').innerHTML = '';
+    paintMini();
     openModal('mAI');
   }
   function log(msg, cls){
@@ -4929,32 +5093,46 @@ document.addEventListener('DOMContentLoaded', init);
       core:  $('#aiCore').checked,
       fin:   $('#aiFin').checked,
       hyrox: $('#aiHyrox').checked,
+      econ:  AI.econ !== false,
       notes: $('#aiNotes').value.trim()
     };
     const scope = $('#aiScope').value;
-    const targets = scope === 'day' ? [S.ui.day] : p.dias.map((_,i) => i);
+    const targets = scope === 'day' ? [S.ui.day] : p.dias.map((_, i) => i);
     const btn = $('#aiRun');
     running = true; btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span> Generando…';
     $('#aiLog').className = 'ai-log on'; $('#aiLog').innerHTML = '';
-    log('<b>Modelo:</b> ' + esc(AI.model) + ' · <b>Proveedor:</b> ' + esc(AI.provider));
-    log('<b>Alumno/a:</b> ' + esc(fullName(ath)) + ' · ' + targets.length + ' día(s) a generar');
+    log('<b>Proveedor:</b> ' + esc(PROV[AI.provider].lb) + ' · <b>Modelo:</b> ' + esc(AI.models[AI.provider]) +
+        (opts.econ ? ' · <b>modo económico</b>' : ''));
+    log('<b>Alumno/a:</b> ' + esc(fullName(ath)) + ' · ' + targets.length + ' día(s)');
 
     const notes = [];
     let okCount = 0;
     try{
       if($('#aiMeso').checked){
         log('Generando progresión del mesociclo…');
-        const meso = sanitizeMeso(extractJson(await callAI(SYSTEM_PROMPT, mesoPrompt(ath, opts))), notes);
+        const meso = sanitizeMeso(extractJson(await callAI(SYS, mesoPrompt(ath, opts), log)), notes);
         if(meso){ p.meso = meso; log('✔ Mesociclo actualizado (' + meso.map(w => w.short).join(', ') + ')', 'ok'); }
         else log('⚠ El modelo no devolvió un mesociclo válido: se mantiene el actual.', 'warn');
+      }
+
+      /* reparto de focos: una sola llamada chica que ahorra tokens en todo el resto */
+      let focos = [];
+      if(targets.length > 1 && opts.econ){
+        try{
+          log('Definiendo el reparto semanal (llamada corta)…');
+          const sp = extractJson(await callAI(SYS, splitPrompt(ath, targets.length, opts), log));
+          focos = Array.isArray(sp.dias) ? sp.dias : [];
+          if(focos.length) log('✔ Reparto: ' + focos.map(f => f.label).join(' · '), 'ok');
+        }catch(e){ log('⚠ Sin reparto previo: se usará la biblioteca completa. ' + esc(e.message), 'warn'); }
       }
 
       const resumen = [];
       for(let k = 0; k < targets.length; k++){
         const di = targets[k];
-        log('Generando ' + esc(p.dias[di].short) + ' (' + (k+1) + '/' + targets.length + ')…');
-        const txt = await callAI(SYSTEM_PROMPT, dayPrompt(ath, di, p.dias.length, resumen.join(' | '), opts));
+        const foco = focos[k] || null;
+        log('Generando ' + esc(p.dias[di].short) + ' (' + (k + 1) + '/' + targets.length + ')…');
+        const txt = await callAI(SYS, dayPrompt(ath, di, p.dias.length, foco, opts), log);
         const day = sanitizeDay(extractJson(txt), ath, di, notes);
         day.id = p.dias[di].id || day.id;
         p.dias[di] = day;
@@ -4965,22 +5143,24 @@ document.addEventListener('DOMContentLoaded', init);
         if(S.ui.view === 'builder') renderBuilder();
       }
 
-      save();
-      renderBuilder();
+      save(); renderBuilder();
       const dang = notes.filter(n => n.t === 'err').length;
       notes.forEach(n => log((n.t === 'err' ? '✖ ' : '⚠ ') + esc(n.m), n.t === 'err' ? 'err' : 'warn'));
-      log('<b>Listo.</b> ' + okCount + ' día(s) cargado(s) en el builder.' + (notes.length ? ' ' + notes.length + ' ajuste(s) de seguridad aplicados.' : ' Sin conflictos biomecánicos.'), 'ok');
+      log('<b>Listo.</b> ' + okCount + ' día(s) cargado(s).' + (notes.length ? ' ' + notes.length + ' ajuste(s) de seguridad.' : ' Sin conflictos biomecánicos.'), 'ok');
       toast(okCount + ' día(s) generados ✔' + (dang ? ' · revisá las alertas' : ''));
     }catch(err){
       log('✖ ' + esc(err.message || String(err)), 'err');
-      if(/Failed to fetch|NetworkError/i.test(err.message||'')){
-        log('Sugerencia: verificá la conexión y que la API Key sea válida. Si el navegador bloquea la llamada por CORS, probá con el proveedor Anthropic (habilita acceso directo desde el navegador).', 'warn');
+      if(err.rate || /cooldown/i.test(err.message || '')){
+        log('Cambiá de proveedor con los botones de arriba y volvé a intentar: cada uno tiene su propia cuota.', 'warn');
+      } else if(/Failed to fetch|NetworkError/i.test(err.message || '')){
+        log('Verificá la conexión y la validez de la API Key.', 'warn');
       }
-      toast('Error al generar: ' + String(err.message||err).slice(0,60), 'err');
+      toast('Error al generar: ' + String(err.message || err).slice(0, 60), 'err');
     }finally{
       running = false;
       btn.disabled = false;
       btn.innerHTML = '✨ Generar planificación';
+      paintMini();
     }
   }
 
@@ -4988,43 +5168,46 @@ document.addEventListener('DOMContentLoaded', init);
   function boot(){
     loadAI();
     mountUI();
+    paintProviders();
 
-    $('#cfgProvider').addEventListener('change', () => {
-      const prov = $('#cfgProvider').value;
-      $('#cfgModel').value = DEFAULTS[prov].model;
-      paintModelHints(prov);
+    document.addEventListener('click', e => {
+      const b = e.target.closest('[data-prov]');
+      if(b) switchProvider(b.dataset.prov);
     });
-    paintModelHints(AI.provider);
     $('#cfgShow').addEventListener('click', () => {
       const i = $('#cfgKey');
       i.type = i.type === 'password' ? 'text' : 'password';
     });
     $('#cfgSave').addEventListener('click', () => {
-      readCfgForm(); saveAI(); paintDot();
-      toast(hasKey() ? 'Configuración guardada ✔' : 'Guardado (sin clave)', hasKey() ? '' : 'warn');
+      readCfgForm(); saveAI(); paintProviders(); paintDot();
+      toast(hasKey() ? 'Configuración guardada ✔' : 'Guardado (sin clave para ' + PROV[AI.provider].lb + ')', hasKey() ? '' : 'warn');
       closeModal('mCfg');
     });
     $('#cfgClear').addEventListener('click', () => {
-      if(!confirm('¿Borrar la API Key guardada en este navegador?')) return;
-      AI.key = ''; saveAI(); $('#cfgKey').value = ''; paintDot();
-      toast('Clave borrada', 'warn'); openCfg();
+      if(!confirm('¿Borrar la API Key de ' + PROV[AI.provider].lb + ' guardada en este navegador?')) return;
+      AI.keys[AI.provider] = ''; saveAI(); $('#cfgKey').value = '';
+      paintProviders(); paintDot(); fillCfgForm();
+      toast('Clave borrada', 'warn');
     });
     $('#cfgTest').addEventListener('click', async () => {
-      readCfgForm();
+      readCfgForm(); saveAI();
       if(!hasKey()){ toast('Pegá una API Key primero','err'); return; }
       const b = $('#cfgTest'); b.disabled = true; b.innerHTML = '<span class="spin"></span> Probando…';
       try{
-        const r = await callAI('Respondé solo JSON.', 'Devolvé exactamente {"ok":true}');
+        const r = await callProvider(AI.provider, 'Respondé solo JSON.', 'Devolvé exactamente {"ok":true}');
         extractJson(r);
-        saveAI(); paintDot();
-        $('#cfgStatus').innerHTML = '<div class="alert good" style="padding:9px 12px"><span class="ic">✅</span><div><b>Conexión correcta</b>' + esc(AI.model) + ' respondió sin errores.</div></div>';
+        delete AI.cooldown[AI.provider]; saveAI(); paintProviders(); paintDot();
+        $('#cfgStatus').innerHTML = '<div class="alert good" style="padding:9px 12px"><span class="ic">✅</span><div><b>Conexión correcta</b>' + esc(AI.models[AI.provider]) + ' respondió sin errores.</div></div>';
         toast('Conexión OK ✔');
       }catch(err){
-        $('#cfgStatus').innerHTML = '<div class="alert danger" style="padding:9px 12px"><span class="ic">⛔</span><div><b>No se pudo conectar</b>' + esc(String(err.message||err).slice(0,200)) + '</div></div>';
+        if(err.rate){ setCooldown(err.prov, err.secs); }
+        $('#cfgStatus').innerHTML = '<div class="alert ' + (err.rate ? 'warn' : 'danger') + '" style="padding:9px 12px"><span class="ic">' + (err.rate ? '⏳' : '⛔') + '</span><div><b>' +
+          (err.rate ? 'Cuota agotada · cooldown ' + coolTxt(err.secs) : 'No se pudo conectar') + '</b>' + esc(String(err.message || err).slice(0, 200)) + '</div></div>';
       }finally{
         b.disabled = false; b.innerHTML = '🔌 Probar conexión';
       }
     });
+    $('#aiCfgLink').addEventListener('click', () => { closeModal('mAI'); openCfg(); });
 
     $$('#mCfg [data-close], #mAI [data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
     ['mCfg','mAI'].forEach(id => {
@@ -5036,8 +5219,12 @@ document.addEventListener('DOMContentLoaded', init);
     });
     $('#aiRun').addEventListener('click', runAI);
 
-    /* expuesto para depuración desde consola */
-    window.CoachAI = { cfg: () => AI, run: runAI, open: openAI, config: openCfg };
+    setInterval(() => { if(ORDEN.some(isCool)) paintProviders(); }, 20000);
+
+    window.CoachAI = {
+      cfg: () => AI, run: runAI, open: openAI, config: openCfg,
+      switch: switchProvider, cooldown: setCooldown, providers: PROV
+    };
   }
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
@@ -5113,7 +5300,11 @@ document.addEventListener('DOMContentLoaded', init);
 .fx-badge.pref{background:rgba(0,191,165,.85);border-color:var(--teal);color:#04211D}
 .fx-b{padding:8px 9px;display:flex;flex-direction:column;gap:5px;flex:1}
 .fx-n{font-size:12.5px;font-weight:800;line-height:1.3}
-.fx-m{font-size:10.5px;color:var(--muted)}
+.fx-m{font-size:10.5px;color:var(--muted);line-height:1.4}
+.fx-vid{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  font-size:11px;background:rgba(0,0,0,.62);border:1px solid rgba(255,214,0,.5);backdrop-filter:blur(3px)}
+.fx-vid.off{border-color:var(--line-2);opacity:.8;cursor:pointer}
+.fx-vid.off:hover{border-color:var(--gold);opacity:1;transform:scale(1.1)}
 .find-count{font-size:11.5px;color:var(--muted);font-weight:700}
 @media(max-width:700px){.find-bar{grid-template-columns:1fr}}
 </style>
@@ -5253,10 +5444,13 @@ document.addEventListener('DOMContentLoaded', init);
         '<div class="fx-th">' +
           (e.videoId ? '<img loading="lazy" src="' + ytThumb(e.videoId) + '" alt="">' : '<span class="nv">SIN VIDEO</span>') +
           badge +
+          (e.videoId ? '<span class="fx-vid">🎬</span>'
+                     : '<span class="fx-vid off" data-ytsearch="' + esc(e.es) + '" title="Buscar en YouTube">🔎</span>') +
         '</div>' +
         '<div class="fx-b">' +
           '<div class="fx-n">' + esc(e.es) + '</div>' +
-          '<div class="fx-m">' + esc(e.patron) + ' · ' + esc(e.equipo) + '</div>' +
+          '<div class="fx-m">' + esc(e.grupo) + ' · ' + esc(e.equipo) + '</div>' +
+          '<div class="fx-m" style="opacity:.75">' + esc(e.patron) + ((e.riesgo||[]).length ? ' · ⚠️ ' + e.riesgo.map(z => ZONA_LB[z] || z).join(', ') : '') + '</div>' +
         '</div>' +
       '</button>';
     }).join('') + (list.length > 300 ? '<div class="hint" style="grid-column:1/-1">Mostrando los primeros 300 · afiná la búsqueda.</div>' : '')
@@ -5593,6 +5787,8 @@ document.addEventListener('DOMContentLoaded', init);
     ['#findQ','#findGrupo','#findEquipo','#findSafe','#findVid'].forEach(s =>
       $(s).addEventListener('input', renderFind));
     $('#findGrid').addEventListener('click', e => {
+      const yt = e.target.closest('[data-ytsearch]');
+      if(yt){ e.stopPropagation(); window.open(ytSearch(yt.dataset.ytsearch), '_blank', 'noopener'); return; }
       const c = e.target.closest('[data-pick-ex]'); if(!c) return;
       if(c.dataset.ban === '1'){
         const ex = getEx(c.dataset.pickEx);
@@ -6383,6 +6579,250 @@ document.addEventListener('DOMContentLoaded', init);
     renderVolumen();
     setSync('ok', 'Guardado');
     window.CoachPro = { volumen: calcVolumen, marcas: () => tmpMarcas, importar: analizar, duplicar: openDup };
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 8 — INTEGRIDAD DE VIDEOS Y SELECTOR VISUAL
+     · Auditoría 1:1 ejercicio ↔ videoId (faltantes, repetidos, inválidos)
+     · Reemplazo de los desplegables por tarjetas visuales en el Builder
+     Capa aditiva: encadena el render sin reescribirlo.
+     ============================================================ -->
+<style>
+.ex-slot{
+  display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:8px;
+  background:var(--panel-3);border:1px solid var(--line-2);border-radius:var(--r-sm);transition:.15s;cursor:pointer;
+}
+.ex-slot:hover{border-color:var(--gold);background:rgba(255,214,0,.07);transform:translateY(-1px)}
+.ex-slot.bad{border-color:rgba(193,18,31,.6);background:rgba(193,18,31,.08)}
+.ex-slot.warnv{border-color:rgba(255,138,0,.45)}
+.ex-slot.pref{border-color:rgba(0,191,165,.45)}
+.ex-slot.empty{border-style:dashed;justify-content:center;color:var(--muted);font-weight:800;font-size:12.5px;padding:14px 8px}
+.es-th{width:76px;flex:0 0 76px;aspect-ratio:16/9;border-radius:7px;overflow:hidden;background:#0B0D0F;position:relative;display:grid;place-items:center}
+.es-th img{width:100%;height:100%;object-fit:cover;opacity:.9}
+.es-th .nv{font-size:8.5px;color:#4A5058;font-weight:800;text-align:center;letter-spacing:.04em;line-height:1.25}
+.es-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.es-n{font-size:13px;font-weight:800;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.es-m{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.es-tags{display:flex;gap:4px;flex-wrap:wrap}
+.es-tag{font-size:9px;font-weight:900;padding:1px 6px;border-radius:20px;border:1px solid;letter-spacing:.02em}
+.es-tag.vid{border-color:rgba(255,214,0,.45);color:var(--gold);background:rgba(255,214,0,.1)}
+.es-tag.novid{border-color:var(--line-2);color:var(--muted)}
+.es-tag.ban{border-color:#FF5A66;color:#fff;background:rgba(193,18,31,.8)}
+.es-tag.warn{border-color:var(--orange);color:#231400;background:rgba(255,138,0,.85)}
+.es-tag.pref{border-color:var(--teal);color:#04211D;background:rgba(0,191,165,.85)}
+.es-cta{flex:0 0 auto;font-size:11px;font-weight:800;color:var(--teal);padding:5px 9px;border-radius:8px;
+  border:1px solid rgba(0,191,165,.3);background:rgba(0,191,165,.08);white-space:nowrap}
+.ex-slot:hover .es-cta{border-color:var(--teal);background:rgba(0,191,165,.16)}
+.es-classic{margin-top:6px}
+.es-classic summary{font-size:10.5px;color:var(--muted);cursor:pointer;list-style:none;font-weight:700;padding:2px 0}
+.es-classic summary::-webkit-details-marker{display:none}
+.es-classic summary:hover{color:var(--txt-2)}
+@media(max-width:600px){.es-cta{display:none}}
+
+.aud-sec{border:1px solid var(--line);border-radius:var(--r);margin-bottom:12px;overflow:hidden}
+.aud-h{display:flex;align-items:center;gap:9px;padding:11px 13px;background:rgba(255,255,255,.02);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.aud-h h4{font-size:13px;font-weight:800}
+.aud-list{max-height:230px;overflow:auto}
+.aud-item{display:flex;gap:9px;align-items:center;padding:8px 13px;border-bottom:1px solid var(--line);font-size:12.5px}
+.aud-item:last-child{border-bottom:none}
+.aud-item .an{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aud-item .ag{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.aud-item code{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--gold);background:var(--panel-3);padding:1px 6px;border-radius:5px}
+.aud-dup{border-left:2px solid var(--orange);background:rgba(255,138,0,.05)}
+</style>
+
+<div class="modal-bg" id="mAud">
+  <div class="modal" style="max-width:900px">
+    <div class="modal-h">
+      <h3>🎬 Auditoría de videos</h3>
+      <div class="spacer"></div>
+      <span class="find-count" id="audCount"></span>
+      <button class="icon-btn" data-close="mAud">✕</button>
+    </div>
+    <div class="modal-b">
+      <div id="audStats" class="sum-grid"></div>
+      <div class="alert info" style="padding:9px 12px">
+        <span class="ic">🔗</span>
+        <div><b>Vinculación 1:1</b>Cada ejercicio debe apuntar a un ID de YouTube único. Acá aparecen los que comparten video con otro, los que tienen un ID mal formado y los que todavía no tienen link.</div>
+      </div>
+      <div id="audBody"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mAud">Cerrar</button>
+      <button class="btn" id="audImp">📥 Importar planilla</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   14. MÓDULO 8 — INTEGRIDAD DE VIDEOS + SELECTOR VISUAL
+   ============================================================ */
+(function(){
+
+  /* ============ A. AUDITORÍA DE VIDEOS ============ */
+  function auditar(){
+    const sinVideo = [], invalidos = [], porId = {};
+    S.exercises.forEach(e => {
+      if(!e.videoId){ sinVideo.push(e); return; }
+      if(!/^[A-Za-z0-9_-]{11}$/.test(e.videoId)){ invalidos.push(e); return; }
+      (porId[e.videoId] = porId[e.videoId] || []).push(e);
+    });
+    const dups = Object.keys(porId).filter(k => porId[k].length > 1).map(k => ({ id:k, exs:porId[k] }));
+    return { sinVideo: sinVideo, invalidos: invalidos, dups: dups, unicos: Object.keys(porId).length };
+  }
+  function itemHtml(e, extra){
+    return '<div class="aud-item">' +
+      '<span class="an">' + esc(e.es) + '</span>' +
+      '<span class="ag">' + esc(e.grupo) + ' · ' + esc(e.equipo) + '</span>' +
+      (extra || '') +
+      '<button class="btn xs" data-audedit="' + e.id + '">✏️ Ficha</button>' +
+      '<button class="btn xs ghost" data-audyt="' + esc(e.es) + '">🔎 YouTube</button>' +
+    '</div>';
+  }
+  function renderAud(){
+    const a = auditar();
+    $('#audCount').textContent = S.exercises.length + ' ejercicios · ' + a.unicos + ' videos únicos';
+    $('#audStats').innerHTML =
+      '<div class="stat teal"><div class="v">' + a.unicos + '</div><div class="k">Videos únicos</div></div>' +
+      '<div class="stat ' + (a.dups.length ? 'red' : 'teal') + '"><div class="v">' + a.dups.length + '</div><div class="k">Repetidos</div></div>' +
+      '<div class="stat ' + (a.invalidos.length ? 'red' : 'teal') + '"><div class="v">' + a.invalidos.length + '</div><div class="k">ID inválido</div></div>' +
+      '<div class="stat"><div class="v">' + a.sinVideo.length + '</div><div class="k">Sin video</div></div>';
+
+    let h = '';
+    if(a.dups.length){
+      h += '<div class="aud-sec"><div class="aud-h"><h4>⚠️ Mismo video en más de un ejercicio</h4>' +
+        '<span class="pill orange">' + a.dups.length + ' grupo(s)</span><div class="spacer"></div>' +
+        '<span class="hint" style="margin:0">Revisá cuál corresponde y corregí el otro</span></div><div class="aud-list">' +
+        a.dups.map(d => '<div class="aud-dup">' + d.exs.map(e => itemHtml(e, '<code>' + esc(d.id) + '</code>')).join('') + '</div>').join('') +
+        '</div></div>';
+    }
+    if(a.invalidos.length){
+      h += '<div class="aud-sec"><div class="aud-h"><h4>⛔ ID de YouTube mal formado</h4>' +
+        '<span class="pill red">' + a.invalidos.length + '</span><div class="spacer"></div>' +
+        '<span class="hint" style="margin:0">Los IDs tienen exactamente 11 caracteres</span></div><div class="aud-list">' +
+        a.invalidos.map(e => itemHtml(e, '<code>' + esc(e.videoId) + '</code>')).join('') + '</div></div>';
+    }
+    if(a.sinVideo.length){
+      h += '<div class="aud-sec"><div class="aud-h"><h4>🎬 Todavía sin video</h4>' +
+        '<span class="pill">' + a.sinVideo.length + '</span><div class="spacer"></div>' +
+        '<span class="hint" style="margin:0">Se muestran en la app con acceso a buscar en YouTube</span></div><div class="aud-list">' +
+        a.sinVideo.slice(0, 60).map(e => itemHtml(e)).join('') +
+        (a.sinVideo.length > 60 ? '<div class="hint" style="padding:8px 13px">…y ' + (a.sinVideo.length - 60) + ' más.</div>' : '') +
+        '</div></div>';
+    }
+    if(!h) h = '<div class="alert good" style="padding:11px 13px"><span class="ic">✅</span><div><b>Integridad perfecta</b>Todos los ejercicios tienen un video propio y bien formado.</div></div>';
+    $('#audBody').innerHTML = h;
+  }
+
+  /* ============ B. SELECTOR VISUAL EN EL BUILDER ============ */
+  function slotHtml(ex, ath, bid, i){
+    if(!ex){
+      return '<button type="button" class="ex-slot empty" data-find="' + bid + '" data-fi="' + i + '">🔍 Elegir ejercicio de la biblioteca</button>';
+    }
+    const al = ath ? checkExercise(ath, ex) : [];
+    const w = worst(al);
+    const cls = w === 'danger' ? 'bad' : (w === 'warn' ? 'warnv' : (w === 'good' ? 'pref' : ''));
+    const tags =
+      (ex.videoId ? '<span class="es-tag vid">🎬 VIDEO</span>' : '<span class="es-tag novid">SIN VIDEO</span>') +
+      (w === 'danger' ? '<span class="es-tag ban">⛔ RESTRINGIDO</span>' : '') +
+      (w === 'warn' ? '<span class="es-tag warn">⚠️ ' + (ex.riesgo || []).map(z => (ZONA_LB[z] || z).toUpperCase()).join(' ') + '</span>' : '') +
+      (w === 'good' ? '<span class="es-tag pref">⭐ PREFERIDO</span>' : '');
+    return '<button type="button" class="ex-slot ' + cls + '" data-find="' + bid + '" data-fi="' + i + '">' +
+      '<span class="es-th">' + (ex.videoId
+        ? '<img loading="lazy" src="' + ytThumb(ex.videoId) + '" alt="">'
+        : '<span class="nv">SIN<br>VIDEO</span>') + '</span>' +
+      '<span class="es-b">' +
+        '<span class="es-n">' + esc(ex.es) + '</span>' +
+        '<span class="es-m">' + esc(ex.grupo) + ' · ' + esc(ex.equipo) + ' · ' + esc(ex.patron) + '</span>' +
+        '<span class="es-tags">' + tags + '</span>' +
+      '</span>' +
+      '<span class="es-cta">🔍 Cambiar</span>' +
+    '</button>';
+  }
+  function visualSlots(){
+    const ath = active();
+    $$('#dayPanel .block').forEach(el => {
+      const ref = el.querySelector('[data-b]');
+      if(!ref) return;
+      const bid = ref.dataset.b, b = findBlock(bid);
+      if(!b) return;
+
+      el.querySelectorAll('select[data-bf="exId"], select[data-sf="exId"], select[data-ff="exId"]').forEach(sel => {
+        const cont = sel.parentElement;
+        if(!cont || cont.querySelector('.ex-slot')) return;
+        const i = sel.dataset.i !== undefined ? parseInt(sel.dataset.i, 10) : -1;
+        const ex = getEx(sel.value);
+        /* el botón de búsqueda que había quedado suelto pasa a ser la tarjeta */
+        const viejo = cont.querySelector('.find-btn');
+        if(viejo) viejo.remove();
+        const det = document.createElement('details');
+        det.className = 'es-classic';
+        det.innerHTML = '<summary>▸ Selector clásico</summary>';
+        cont.insertBefore(det, sel);
+        det.appendChild(sel);
+        det.insertAdjacentHTML('beforebegin', slotHtml(ex, ath, bid, i));
+      });
+
+      /* el picker de "agregar" queda como una sola acción visual */
+      const pick = el.querySelector('.picker');
+      if(pick && !pick.dataset.done){
+        pick.dataset.done = '1';
+        const col = pick.querySelector('.col'), add = pick.querySelector('[data-addex]');
+        const fb = pick.querySelector('.find-btn');
+        if(col && add){
+          const det = document.createElement('details');
+          det.className = 'es-classic';
+          det.style.width = '100%';
+          det.innerHTML = '<summary>▸ Selector clásico</summary>';
+          pick.appendChild(det);
+          det.appendChild(col); det.appendChild(add);
+          if(fb){ fb.classList.add('block'); fb.style.width = '100%'; pick.insertBefore(fb, det); fb.textContent = '🔍 Buscar y agregar ejercicio'; }
+        }
+      }
+    });
+  }
+
+  /* encadenamos por encima del render del Módulo 6 */
+  const _renderDay = window.renderDay;
+  window.renderDay = function(){
+    const r = _renderDay.apply(this, arguments);
+    try{ visualSlots(); }catch(e){ console.warn('visualSlots', e); }
+    return r;
+  };
+
+  /* ============ C. MONTAJE ============ */
+  function mount(){
+    const libTop = document.querySelector('#v-biblioteca .topbar');
+    if(libTop && !document.getElementById('btnAud')){
+      const b = document.createElement('button');
+      b.className = 'btn'; b.id = 'btnAud'; b.innerHTML = '🎬 Auditar videos';
+      const ref = document.getElementById('btnImp') || document.getElementById('btnNewEx');
+      if(ref) libTop.insertBefore(b, ref); else libTop.appendChild(b);
+      b.addEventListener('click', () => { renderAud(); openModal('mAud'); });
+    }
+
+    $('#audBody').addEventListener('click', e => {
+      const ed = e.target.closest('[data-audedit]');
+      if(ed){ closeModal('mAud'); openEx(ed.dataset.audedit); return; }
+      const yt = e.target.closest('[data-audyt]');
+      if(yt){ window.open(ytSearch(yt.dataset.audyt), '_blank', 'noopener'); return; }
+    });
+    $('#audImp').addEventListener('click', () => {
+      closeModal('mAud');
+      const b = document.getElementById('btnImp');
+      if(b) b.click();
+    });
+    $$('#mAud [data-close]').forEach(b => b.addEventListener('click', () => closeModal('mAud')));
+    document.getElementById('mAud').addEventListener('click', e => { if(e.target.id === 'mAud') closeModal('mAud'); });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal('mAud'); });
+
+    if($('#dayPanel') && $('#dayPanel').children.length) visualSlots();
+    window.CoachVid = { auditar: auditar, abrir: () => { renderAud(); openModal('mAud'); } };
   }
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
