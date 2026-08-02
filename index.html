@@ -657,9 +657,9 @@ pre.code{background:#0B0D0F;border:1px solid var(--line);border-radius:var(--r-s
 
 /* ---------- 0. CONSTANTES ---------- */
 const KEY = 'coachjp_console_v2';
-const GRUPOS  = ['Pectoral','Espalda','Hombros','Brazos','Piernas/Glúteos','Core','Full Body / Cardio'];
+const GRUPOS  = ['Pectoral','Espalda','Hombros','Brazos','Piernas/Glúteos','Core','Full Body / Cardio','General'];
 const EQUIPOS = ['Barra','Mancuernas','Polea','Máquina','Multipower','Peso corporal','Banda','Kettlebell','Cardio'];
-const PATRONES= ['Empuje horizontal','Empuje vertical','Tracción horizontal','Tracción vertical','Rodilla dominante','Cadera dominante','Abducción / Aducción','Core / Anti-rotación','Aislamiento','Aislamiento hombro','Bíceps','Tríceps','Antebrazo','Extensión lumbar','Salud articular','Cardio / Metcon'];
+const PATRONES= ['Empuje horizontal','Empuje vertical','Tracción horizontal','Tracción vertical','Rodilla dominante','Cadera dominante','Abducción / Aducción','Core / Anti-rotación','Aislamiento','Aislamiento hombro','Bíceps','Tríceps','Antebrazo','Extensión lumbar','Salud articular','Cardio / Metcon','General / Accesorio'];
 const ZONAS   = ['hombro','rodilla','lumbar','cadera','muñeca','codo','cuello','tobillo'];
 const ZONA_LB = {hombro:'Hombro',rodilla:'Rodilla',lumbar:'Zona lumbar',cadera:'Cadera',['muñeca']:'Muñeca',codo:'Codo',cuello:'Cuello',tobillo:'Tobillo'};
 const TIPOS = {
@@ -5068,9 +5068,11 @@ document.addEventListener('DOMContentLoaded', init);
         ((ath.prohibidos||[]).length ? '⛔ Vetados: ' + esc(ath.prohibidos.join(' · ')) + '<br>' : '') +
         ((ath.preferidos||[]).length ? '⭐ Preferidos: ' + esc(ath.preferidos.join(' · ')) : '') +
       '</div></div>';
+    /* por defecto: un solo día — mucho menos consumo de cuota */
     $('#aiScope').innerHTML =
-      '<option value="all">Todos los días del plan (' + p.dias.length + ')</option>' +
-      '<option value="day">Solo ' + esc(p.dias[S.ui.day] ? p.dias[S.ui.day].short : 'el día abierto') + '</option>';
+      '<option value="day" selected>Solo ' + esc(p.dias[S.ui.day] ? p.dias[S.ui.day].short : 'el día abierto') + ' (recomendado)</option>' +
+      '<option value="all">Todos los días del plan (' + p.dias.length + ')</option>';
+    $('#aiScope').value = 'day';
     $('#aiLog').className = 'ai-log';
     $('#aiLog').innerHTML = '';
     paintMini();
@@ -5150,8 +5152,9 @@ document.addEventListener('DOMContentLoaded', init);
       toast(okCount + ' día(s) generados ✔' + (dang ? ' · revisá las alertas' : ''));
     }catch(err){
       log('✖ ' + esc(err.message || String(err)), 'err');
-      if(err.rate || /cooldown/i.test(err.message || '')){
-        log('Cambiá de proveedor con los botones de arriba y volvé a intentar: cada uno tiene su propia cuota.', 'warn');
+      if(err.rate || /cooldown|429|503|quota/i.test(err.message || '')){
+        log('Cuota agotada. Tres salidas: 1) cambiá de proveedor con los botones de arriba — cada uno tiene su cuota propia; ' +
+            '2) generá de a un día en vez de la semana completa; 3) armá el bloque a mano y usá 🪄 Autocompletar Parámetros, que trabaja local y sin API.', 'warn');
       } else if(/Failed to fetch|NetworkError/i.test(err.message || '')){
         log('Verificá la conexión y la validez de la API Key.', 'warn');
       }
@@ -5391,7 +5394,7 @@ document.addEventListener('DOMContentLoaded', init);
   }
 
   /* ---------- 2. BUSCADOR VISUAL ---------- */
-  let findCtx = null;
+  let findCtx = null, findPage = 0, findSig = '';
   function openFind(ctx){
     findCtx = ctx;
     const b = findBlock(ctx.bid); if(!b) return;
@@ -5416,6 +5419,7 @@ document.addEventListener('DOMContentLoaded', init);
     $('#findQ').value = '';
     $('#findSafe').checked = false;
     $('#findVid').checked = false;
+    findPage = 0; findSig = '';
     renderFind();
     openModal('mFind');
     setTimeout(() => $('#findQ').focus(), 80);
@@ -5433,8 +5437,14 @@ document.addEventListener('DOMContentLoaded', init);
       return true;
     }).sort((a,b) => a.es.localeCompare(b.es,'es'));
 
-    $('#findCount').textContent = list.length + ' ejercicio(s)';
-    $('#findGrid').innerHTML = list.length ? list.slice(0, 300).map(e => {
+    /* paginado: 24 tarjetas por vista para que no se cuelgue la grilla */
+    const sig = q + '|' + g + '|' + eq + '|' + (safe?1:0) + '|' + (onlyVid?1:0);
+    if(sig !== findSig){ findSig = sig; findPage = 0; }
+    const PP = 24, paginas = Math.max(1, Math.ceil(list.length / PP));
+    if(findPage >= paginas) findPage = paginas - 1;
+    const visto = list.slice(findPage * PP, findPage * PP + PP);
+    $('#findCount').textContent = list.length + ' ejercicio(s)' + (paginas > 1 ? ' · página ' + (findPage+1) + '/' + paginas : '');
+    $('#findGrid').innerHTML = (list.length ? visto.map(e => {
       const al = ath ? checkExercise(ath, e) : [];
       const w = worst(al);
       const badge = w === 'danger' ? '<span class="fx-badge ban">⛔ Restringido</span>'
@@ -5453,8 +5463,15 @@ document.addEventListener('DOMContentLoaded', init);
           '<div class="fx-m" style="opacity:.75">' + esc(e.patron) + ((e.riesgo||[]).length ? ' · ⚠️ ' + e.riesgo.map(z => ZONA_LB[z] || z).join(', ') : '') + '</div>' +
         '</div>' +
       '</button>';
-    }).join('') + (list.length > 300 ? '<div class="hint" style="grid-column:1/-1">Mostrando los primeros 300 · afiná la búsqueda.</div>' : '')
-      : '<div class="empty" style="grid-column:1/-1"><div class="big">🔍</div><h4>Sin resultados</h4><p>Probá con otro término o quitá filtros.</p></div>';
+    }).join('')
+      : '<div class="empty" style="grid-column:1/-1"><div class="big">🔍</div><h4>Sin resultados</h4><p>Probá con otro término o quitá filtros.</p></div>') +
+      (paginas > 1
+        ? '<div class="pg" style="grid-column:1/-1">' +
+            '<button data-fpage="' + (findPage - 1) + '"' + (findPage === 0 ? ' disabled' : '') + '>← Anterior</button>' +
+            '<span class="pgn">' + (findPage * PP + 1) + '–' + Math.min(list.length, findPage * PP + PP) + ' de ' + list.length + '</span>' +
+            '<button data-fpage="' + (findPage + 1) + '"' + (findPage >= paginas - 1 ? ' disabled' : '') + '>Siguiente →</button>' +
+          '</div>'
+        : '');
   }
   function assignFromFind(exId){
     const b = findBlock(findCtx.bid), ex = getEx(exId);
@@ -5787,6 +5804,8 @@ document.addEventListener('DOMContentLoaded', init);
     ['#findQ','#findGrupo','#findEquipo','#findSafe','#findVid'].forEach(s =>
       $(s).addEventListener('input', renderFind));
     $('#findGrid').addEventListener('click', e => {
+      const pg = e.target.closest('[data-fpage]');
+      if(pg && !pg.disabled){ findPage = parseInt(pg.dataset.fpage, 10); renderFind(); $('#findGrid').scrollTop = 0; return; }
       const yt = e.target.closest('[data-ytsearch]');
       if(yt){ e.stopPropagation(); window.open(ytSearch(yt.dataset.ytsearch), '_blank', 'noopener'); return; }
       const c = e.target.closest('[data-pick-ex]'); if(!c) return;
@@ -6395,7 +6414,11 @@ document.addEventListener('DOMContentLoaded', init);
 
     let cols = null, start = 0;
     const head = splitLine(raw[0]).map(c => norm(c));
-    if(head.some(c => /nombre|ejercicio|name|exercise/.test(c))){
+    const pareceEncabezado =
+      !head.some(c => /https?:\/\//.test(c)) &&
+      head.some(c => /nombre|ejercicio|name|exercise/.test(c)) &&
+      head.some(c => /url|link|video|youtube|musculo|muscle|grupo|equip|categor|patron|pattern/.test(c));
+    if(pareceEncabezado){
       cols = {};
       head.forEach((c, i) => {
         if(/nombre|ejercicio|name|exercise/.test(c) && cols.nombre === undefined) cols.nombre = i;
@@ -6465,8 +6488,8 @@ document.addEventListener('DOMContentLoaded', init);
       }
       S.exercises.push({
         id: uid('ex'), es: r.es, en: r.en,
-        grupo: r.grupo || 'Full Body / Cardio',
-        patron: r.patron || 'Aislamiento',
+        grupo: r.grupo || 'General',
+        patron: r.patron || 'General / Accesorio',
         equipo: r.equipo || 'Máquina',
         riesgo: [], aviso: '', video: r.url, videoId: r.vid, custom: true
       });
@@ -6825,6 +6848,302 @@ document.addEventListener('DOMContentLoaded', init);
     window.CoachVid = { auditar: auditar, abrir: () => { renderAud(); openModal('mAud'); } };
   }
 
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 9 — GRILLA PAGINADA Y AUTOCOMPLETADO LOCAL
+     · Miniaturas 16:9 estables + paginación de 24 en la biblioteca
+     · 🪄 Autocompletar Parámetros: series, reps, tempo, descanso
+       y coaching note calculados localmente, sin API
+     ============================================================ -->
+<style>
+/* la tarjeta es flex-column: sin esto la miniatura se estira y deforma */
+.ex-grid{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+.ex-card .ex-thumb{flex:0 0 auto;width:100%;aspect-ratio:16/9;min-height:0}
+.ex-card .ex-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.fx-th{flex:0 0 auto;width:100%}
+.fx-th img{display:block}
+
+.pg{display:flex;align-items:center;justify-content:center;gap:12px;padding:12px 6px 4px}
+.pg button{
+  padding:7px 15px;border-radius:10px;font-size:12.5px;font-weight:800;
+  background:var(--panel-3);border:1px solid var(--line-2);color:var(--txt-2);transition:.15s;
+}
+.pg button:hover:not([disabled]){color:#fff;border-color:var(--gold);background:rgba(255,214,0,.1);transform:translateY(-1px)}
+.pg button[disabled]{opacity:.35;cursor:not-allowed}
+.pg .pgn{font-size:11.5px;color:var(--muted);font-weight:700;min-width:130px;text-align:center}
+
+.qbar button.magic{
+  background:linear-gradient(135deg,#8E7BFF,#5C3FE0);border-color:transparent;color:#fff;
+  box-shadow:0 6px 16px rgba(124,77,255,.28);
+}
+.qbar button.magic:hover{background:linear-gradient(135deg,#9C8BFF,#6B4FEA);border-color:transparent;color:#fff;filter:brightness(1.05)}
+
+/* la barra fija de arriba reserva su ancho real para no pisar los botones de cada vista */
+.main .topbar{padding-right:var(--fabw,190px)}
+@media(max-width:700px){.main .topbar{padding-right:var(--fabw,58px)}}
+</style>
+
+<script>
+/* ============================================================
+   15. MÓDULO 9 — PAGINACIÓN DE BIBLIOTECA + AUTOCOMPLETADO LOCAL
+   ============================================================ */
+(function(){
+
+  /* ============ A. BIBLIOTECA PAGINADA ============ */
+  const PP = 24;
+  let libPage = 0, libSig = '';
+
+  window.renderLibrary = function(){
+    const q = norm($('#exSearch').value), g = $('#fGrupo').value, eq = $('#fEquipo').value, vf = $('#fVideo').value;
+    const sig = q + '|' + g + '|' + eq + '|' + vf + '|' + S.exercises.length;
+    if(sig !== libSig){ libSig = sig; libPage = 0; }
+
+    const list = S.exercises.filter(e => {
+      if(g && e.grupo !== g) return false;
+      if(eq && e.equipo !== eq) return false;
+      if(vf === 'si' && !e.videoId) return false;
+      if(vf === 'no' && e.videoId) return false;
+      if(q && norm(e.es + ' ' + e.en + ' ' + e.grupo + ' ' + e.patron + ' ' + e.equipo).indexOf(q) < 0) return false;
+      return true;
+    }).sort((a, b) => a.es.localeCompare(b.es, 'es'));
+
+    const paginas = Math.max(1, Math.ceil(list.length / PP));
+    if(libPage >= paginas) libPage = paginas - 1;
+    const visto = list.slice(libPage * PP, libPage * PP + PP);
+    const ath = active();
+
+    const nav = paginas > 1
+      ? '<div class="pg" style="grid-column:1/-1">' +
+          '<button data-lpage="' + (libPage - 1) + '"' + (libPage === 0 ? ' disabled' : '') + '>← Anterior</button>' +
+          '<span class="pgn">' + (libPage * PP + 1) + '–' + Math.min(list.length, libPage * PP + PP) + ' de ' + list.length + ' · pág. ' + (libPage + 1) + '/' + paginas + '</span>' +
+          '<button data-lpage="' + (libPage + 1) + '"' + (libPage >= paginas - 1 ? ' disabled' : '') + '>Siguiente →</button>' +
+        '</div>'
+      : '';
+
+    $('#exGrid').innerHTML = (list.length ? visto.map(e => {
+      const al = ath ? checkExercise(ath, e) : [];
+      const w = worst(al);
+      return '<div class="ex-card">' +
+        '<div class="ex-thumb" data-vid="' + e.id + '">' +
+          (e.videoId
+            ? '<img loading="lazy" src="' + ytThumb(e.videoId) + '" alt="">' +
+              '<div class="play">▶</div>'
+            : '<div class="novid">🎬<br>SIN VIDEO<br><span style="font-size:10px;opacity:.7">Click para buscar</span></div>') +
+        '</div>' +
+        '<div class="ex-body">' +
+          '<div>' +
+            '<div class="ex-name">' + esc(e.es) + '</div>' +
+            (e.en ? '<div class="ex-en">' + esc(e.en) + '</div>' : '') +
+          '</div>' +
+          '<div class="tagwrap">' +
+            '<span class="pill">' + esc(e.grupo) + '</span>' +
+            '<span class="pill">' + esc(e.equipo) + '</span>' +
+            ((e.riesgo || []).length ? '<span class="pill orange">⚠️ ' + e.riesgo.map(z => ZONA_LB[z] || z).join(', ') + '</span>' : '') +
+          '</div>' +
+          (w === 'danger' ? '<div class="alert danger" style="padding:7px 9px;font-size:11.5px"><span class="ic">⛔</span><div>Prohibido / con antecedente para ' + esc(fullName(ath)) + '</div></div>' : '') +
+          (w === 'warn'   ? '<div class="alert warn" style="padding:7px 9px;font-size:11.5px"><span class="ic">⚠️</span><div>Riesgo para ' + esc(fullName(ath)) + '</div></div>' : '') +
+          (w === 'good'   ? '<div class="alert good" style="padding:7px 9px;font-size:11.5px"><span class="ic">⭐</span><div>Prioritario para ' + esc(fullName(ath)) + '</div></div>' : '') +
+          '<div class="ex-foot">' +
+            '<button class="btn xs" data-exedit="' + e.id + '">✏️ Editar</button>' +
+            (e.videoId ? '<button class="btn xs" data-vid="' + e.id + '">▶ Ver</button>'
+                       : '<a class="btn xs" href="' + ytSearch(e.es) + '" target="_blank" rel="noopener">🔎 YouTube</a>') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('')
+      : '<div class="card" style="grid-column:1/-1"><div class="empty"><div class="big">🔍</div><h4>Sin resultados</h4><p>Probá con otro término o agregá el ejercicio a la biblioteca.</p><button class="btn gold" style="margin-top:14px" onclick="openEx()">➕ Añadir Ejercicio</button></div></div>') + nav;
+
+    $('#exCount').textContent = list.length + ' ejercicios';
+    $('#exVidCount').textContent = S.exercises.filter(e => e.videoId).length + ' con video';
+    $('#badgeEx').textContent = S.exercises.length;
+  };
+
+  /* ============ B. AUTOCOMPLETADO LOCAL DE PARÁMETROS ============ */
+  const PESADO  = ['Empuje horizontal','Empuje vertical','Tracción horizontal','Tracción vertical','Rodilla dominante','Cadera dominante'];
+  const AISLADO = ['Aislamiento','Aislamiento hombro','Bíceps','Tríceps'];
+  const EQ_LIBRE = ['Barra','Multipower','Kettlebell'];
+  const EQ_GUIADO = ['Máquina','Polea'];
+
+  const CUES = {
+    hombro:'Escápulas retraídas y deprimidas; no fuerces el rango final del hombro.',
+    rodilla:'Rodilla alineada con la punta del pie, sin colapso hacia adentro.',
+    lumbar:'Columna neutra y core activo: el movimiento sale de la cadera, no de la espalda.',
+    cadera:'Costillas abajo y mentón al pecho; nada de hiperextensión lumbar en el bloqueo.',
+    ['muñeca']:'Muñeca neutra y agarre firme; si aparece molestia, cambiá el agarre.',
+    codo:'Codos fijos, sin lockout brusco al final del recorrido.',
+    cuello:'Mentón al pecho, sin proyectar la cabeza hacia adelante.',
+    tobillo:'Rango completo y controlado, sin rebote al llegar abajo.'
+  };
+  const CUE_PATRON = {
+    'Cadera dominante':'Bisagra pura: rodillas semiflexionadas y fijas, la carga roza el muslo todo el recorrido.',
+    'Rodilla dominante':'Pecho arriba y peso repartido en todo el pie; profundidad hasta donde mantengas la técnica.',
+    'Empuje horizontal':'Escápulas apoyadas y estables; los codos no se abren a 90°.',
+    'Empuje vertical':'Core apretado para no arquear la lumbar; la carga viaja cerca de la cara.',
+    'Tracción horizontal':'Traccioná con el codo, no con la mano; apretá el omóplato al final.',
+    'Tracción vertical':'Codo hacia abajo y atrás, sin balanceo del tronco.',
+    'Abducción / Aducción':'Sin impulso: el trabajo lo hace el glúteo medio, no el tronco.',
+    'Core / Anti-rotación':'Respiración continua; la pelvis no se mueve.',
+    'Salud articular':'Carga liviana y tempo lento: es trabajo de calidad, no de esfuerzo.',
+    'Extensión lumbar':'Subí hasta la línea del cuerpo, sin hiperextender.',
+    'Cardio / Metcon':'La técnica manda por encima de la velocidad, sobre todo bajo fatiga.'
+  };
+  function explicarTempo(t){
+    if(!/^\d{4}$/.test(t)) return '';
+    const d = t.split('');
+    return 'Tempo ' + t + ': ' + d[0] + 's de bajada, ' + d[1] + 's abajo, ' + (d[2] === 'X' ? 'subida explosiva' : d[2] + 's de subida') + ', ' + d[3] + 's arriba.';
+  }
+  function nota(ex, tempo){
+    const partes = [];
+    if(ex.aviso) partes.push(ex.aviso);
+    else {
+      if(CUE_PATRON[ex.patron]) partes.push(CUE_PATRON[ex.patron]);
+      (ex.riesgo || []).forEach(z => { if(CUES[z]) partes.push(CUES[z]); });
+    }
+    const t = explicarTempo(tempo);
+    if(t) partes.push(t);
+    return partes.join(' ');
+  }
+
+  /* devuelve los parámetros sugeridos para un ejercicio y un tipo de bloque */
+  function autoParams(ex, tipo){
+    const n = norm(ex.es), p = ex.patron, eq = ex.equipo;
+    let r = { efSets:3, reps:'10-12', tempo:'2011', rest:90, hasApprox:false, approx:0 };
+
+    if(PESADO.indexOf(p) >= 0){
+      if(EQ_LIBRE.indexOf(eq) >= 0)        r = { efSets:4, reps:'6-8',   tempo: p === 'Cadera dominante' ? '3010' : '2110', rest:150, hasApprox:true, approx:2 };
+      else if(eq === 'Mancuernas')         r = { efSets:4, reps:'8-10',  tempo:'2110', rest:120, hasApprox:true, approx:1 };
+      else if(EQ_GUIADO.indexOf(eq) >= 0)  r = { efSets:4, reps:'10-12', tempo:'2011', rest:105, hasApprox:true, approx:1 };
+      else                                 r = { efSets:4, reps:'8-12',  tempo:'2110', rest:120, hasApprox:true, approx:1 };
+    }
+    else if(AISLADO.indexOf(p) >= 0)            r = { efSets:3, reps:'12-15', tempo:'2011', rest:75, hasApprox:false, approx:0 };
+    else if(p === 'Antebrazo')                  r = { efSets:3, reps:'15-20', tempo:'2012', rest:60, hasApprox:false, approx:0 };
+    else if(p === 'Abducción / Aducción')       r = { efSets:3, reps:'15-20', tempo:'2011', rest:60, hasApprox:false, approx:0 };
+    else if(p === 'Core / Anti-rotación')       r = { efSets:3, reps:'10-12', tempo:'2012', rest:60, hasApprox:false, approx:0 };
+    else if(p === 'Salud articular')            r = { efSets:3, reps:'15',    tempo:'2012', rest:45, hasApprox:false, approx:0 };
+    else if(p === 'Extensión lumbar')           r = { efSets:3, reps:'12-15', tempo:'3011', rest:75, hasApprox:false, approx:0 };
+    else if(p === 'Cardio / Metcon')            r = { efSets:1, reps:'—',     tempo:'1010', rest:60, hasApprox:false, approx:0 };
+
+    /* ajustes finos por ejercicio */
+    if(/gemelo|talones|soleo/.test(n))          r = { efSets:4, reps:'15-20', tempo:'2012', rest:60, hasApprox:false, approx:0 };
+    if(/plancha|hollow|isometric|sosten|l-sit/.test(n)) r = { efSets:3, reps:'20-30s', tempo:'sostén', rest:60, hasApprox:false, approx:0 };
+    if(/dominadas|pull-up/.test(n) && r.reps === '6-8') r.reps = '5-8';
+
+    /* ajustes por tipo de bloque */
+    if(tipo === 'superset'){
+      r.hasApprox = false; r.approx = 0;
+      r.efSets = Math.min(r.efSets, 3);
+      if(r.reps === '6-8')       r.reps = '8-10';
+      else if(r.reps === '8-10') r.reps = '10-12';
+      r.rest = PESADO.indexOf(p) >= 0 ? 90 : 75;
+    }
+    if(tipo === 'finisher'){
+      r.hasApprox = false; r.approx = 0;
+      r.efSets = 2; r.reps = '15-20'; r.tempo = '1010'; r.rest = 45;
+    }
+    return r;
+  }
+
+  function autocompletar(bid){
+    const b = findBlock(bid);
+    if(!b) return;
+    const resumen = [];
+
+    if(b.tipo === 'block'){
+      const ex = getEx(b.exId);
+      if(!ex){ toast('Elegí primero un ejercicio para el bloque', 'err'); return; }
+      const r = autoParams(ex, 'block');
+      b.efSets = r.efSets; b.reps = r.reps; b.tempo = r.tempo; b.restSeconds = r.rest;
+      b.hasApprox = r.hasApprox; b.approxSets = r.approx;
+      if(!b.tips) b.tips = nota(ex, r.tempo); else resumen.push('coaching note respetada');
+      if(!b.subtitulo) b.subtitulo = r.hasApprox ? 'Aproximaciones + series efectivas' : 'Series efectivas';
+      resumen.unshift(r.efSets + ' × ' + r.reps + ' · tempo ' + r.tempo + ' · ' + r.rest + 's');
+    }
+    else if(b.tipo === 'superset'){
+      if(!(b.ejercicios || []).length){ toast('Agregá ejercicios al biset primero', 'err'); return; }
+      let rest = 0, sets = 3;
+      b.ejercicios.forEach(e => {
+        const ex = getEx(e.exId); if(!ex) return;
+        const r = autoParams(ex, 'superset');
+        e.reps = r.reps; e.tempo = r.tempo;
+        rest = Math.max(rest, r.rest); sets = Math.min(sets, r.efSets);
+      });
+      b.restSeconds = rest || 90; b.efSets = sets || 3;
+      const primero = getEx((b.ejercicios[0] || {}).exId);
+      if(!b.tips && primero) b.tips = nota(primero, primero ? autoParams(primero, 'superset').tempo : '2011');
+      resumen.push(b.efSets + ' rondas · descanso ' + b.restSeconds + 's · reps y tempo por ejercicio');
+    }
+    else if(b.tipo === 'finisher'){
+      if(!(b.fin || []).length){ toast('Agregá un ejercicio al finisher primero', 'err'); return; }
+      b.fin.forEach(e => {
+        const ex = getEx(e.exId); if(!ex) return;
+        e.repsRange = autoParams(ex, 'finisher').reps;
+      });
+      const primero = getEx((b.fin[0] || {}).exId);
+      if(!b.tips && primero) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + (primero.aviso || '');
+      resumen.push('rango 15-20 reps · bombeo');
+    }
+    else { toast('El autocompletado aplica a bloques con ejercicios', 'warn'); return; }
+
+    save(); renderBuilder();
+    toast('🪄 Parámetros autocompletados · ' + resumen.join(' · '));
+  }
+
+  /* botón dentro de la barra de presets de cada bloque */
+  function addMagic(){
+    $$('#dayPanel .qbar').forEach(bar => {
+      if(bar.querySelector('.magic')) return;
+      const ref = bar.querySelector('[data-qp]');
+      if(!ref) return;
+      const bid = ref.dataset.b;
+      const b = findBlock(bid);
+      if(!b || ['block','superset','finisher'].indexOf(b.tipo) < 0) return;
+      const btn = document.createElement('button');
+      btn.className = 'magic';
+      btn.dataset.magic = bid;
+      btn.title = 'Calcula series, reps, tempo, descanso y coaching note según el patrón, el equipamiento y el riesgo articular del ejercicio — sin usar la API';
+      btn.innerHTML = '🪄 Autocompletar Parámetros';
+      bar.insertBefore(btn, bar.querySelector('.qhint') || null);
+    });
+  }
+  const _renderDay = window.renderDay;
+  window.renderDay = function(){
+    const r = _renderDay.apply(this, arguments);
+    try{ addMagic(); }catch(e){ console.warn('addMagic', e); }
+    return r;
+  };
+
+  /* ============ C. MONTAJE ============ */
+  function mount(){
+    $('#exGrid').addEventListener('click', e => {
+      const pg = e.target.closest('[data-lpage]');
+      if(pg && !pg.disabled){
+        libPage = parseInt(pg.dataset.lpage, 10);
+        renderLibrary();
+        const top = document.querySelector('#v-biblioteca .card');
+        if(top) top.scrollIntoView({ behavior:'smooth', block:'nearest' });
+      }
+    });
+    $('#dayPanel').addEventListener('click', e => {
+      const m = e.target.closest('[data-magic]');
+      if(m) autocompletar(m.dataset.magic);
+    });
+    const ajustarTopbar = () => {
+      const fab = document.querySelector('.cfg-fab');
+      if(!fab) return;
+      const w = Math.ceil(fab.getBoundingClientRect().width) + 26;
+      document.documentElement.style.setProperty('--fabw', w + 'px');
+    };
+    ajustarTopbar();
+    setTimeout(ajustarTopbar, 300);
+    window.addEventListener('resize', ajustarTopbar, { passive:true });
+
+    if(S.ui.view === 'biblioteca') renderLibrary();
+    addMagic();
+    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota };
+  }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
 })();
