@@ -2150,7 +2150,7 @@ function bindBuilder(){
         b.exId = t.value;
         const ex = getEx(t.value);
         if(ex && (!b.titulo || b.titulo === TIPOS.block.lb)) b.titulo = ex.es;
-        if(ex && !b.tips && ex.aviso) b.tips = ex.aviso;
+        if(ex && !b.tips) b.tips = (window.CoachAuto && window.CoachAuto.notaCompleta) ? window.CoachAuto.notaCompleta(ex, b.tempo, active()) : (ex.aviso || '');
       }
       if(t.dataset.sf === 'exId') b.ejercicios[parseInt(t.dataset.i,10)].exId = t.value;
       if(t.dataset.ff === 'exId') b.fin[parseInt(t.dataset.i,10)].exId = t.value;
@@ -5476,16 +5476,21 @@ document.addEventListener('DOMContentLoaded', init);
   function assignFromFind(exId){
     const b = findBlock(findCtx.bid), ex = getEx(exId);
     if(!b || !ex) return;
+    const pauta = (e2, tempo) => (window.CoachAuto && window.CoachAuto.notaCompleta)
+      ? window.CoachAuto.notaCompleta(e2, tempo, active())
+      : (e2.aviso || '');
     if(b.tipo === 'block'){
       b.exId = exId;
       if(!b.titulo || b.titulo === TIPOS.block.lb) b.titulo = ex.es;
-      if(!b.tips && ex.aviso) b.tips = ex.aviso;
+      if(!b.tips) b.tips = pauta(ex, b.tempo);
     } else if(b.tipo === 'superset'){
       if(findCtx.i >= 0 && b.ejercicios[findCtx.i]) b.ejercicios[findCtx.i].exId = exId;
       else b.ejercicios.push({ exId: exId, reps:'10-12', tempo:'2011' });
+      if(!b.tips) b.tips = pauta(ex, '2011');
     } else if(b.tipo === 'finisher'){
       if(findCtx.i >= 0 && b.fin[findCtx.i]) b.fin[findCtx.i].exId = exId;
       else b.fin.push({ exId: exId, repsRange:'15-20' });
+      if(!b.tips) b.tips = pauta(ex, '1010');
     }
     save(); closeModal('mFind'); renderBuilder();
     const w = worst(checkExercise(active(), ex));
@@ -5891,9 +5896,10 @@ document.addEventListener('DOMContentLoaded', init);
 .vchip{display:inline-flex;align-items:baseline;gap:6px;padding:5px 11px;border-radius:20px;font-size:11.5px;font-weight:800;
   border:1px solid var(--line-2);background:var(--panel-3);color:var(--txt-2)}
 .vchip b{font-size:14px;letter-spacing:-.3px}
-.vchip.lo{border-color:rgba(255,255,255,.14);color:var(--muted)}
+.vchip .vr{font-size:9.5px;opacity:.6;font-weight:700;margin-left:1px}
 .vchip.ok{border-color:rgba(0,191,165,.4);background:rgba(0,191,165,.1);color:var(--teal)}
-.vchip.hi{border-color:rgba(255,138,0,.45);background:rgba(255,138,0,.1);color:var(--orange)}
+.vchip.under{border-color:rgba(255,214,0,.5);background:rgba(255,214,0,.1);color:var(--gold)}
+.vchip.over{border-color:rgba(193,18,31,.55);background:rgba(193,18,31,.12);color:#FF7A84}
 .vol-sub{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
 
 .guide-step{border:1px solid var(--line);border-radius:var(--r);background:var(--panel-2);margin-bottom:11px;overflow:hidden}
@@ -6258,9 +6264,20 @@ document.addEventListener('DOMContentLoaded', init);
     });
     return { total: total, porDia: porDia };
   }
+  /* rangos semanales de series efectivas por capacidad de recuperación */
+  const RANGOS = {
+    'Pectoral':[12,22], 'Espalda':[12,22], 'Glúteo / Isquios':[12,22], 'Cuádriceps':[12,22], 'Piernas':[12,22],
+    'Hombros':[8,16], 'Bíceps':[8,16], 'Tríceps':[8,16], 'Brazos':[8,16], 'Gemelos':[8,16],
+    'Isquios':[8,16], 'Glúteo medio':[8,16], 'Antebrazo':[8,16], 'Core':[8,16],
+    'Salud de hombro':[6,12], 'Full Body / Cardio':[6,12], 'General':[6,12]
+  };
+  const rangoDe = g => RANGOS[g] || [8,16];
   function volChip(g, n){
-    const cls = n < 8 ? 'lo' : (n > 22 ? 'hi' : 'ok');
-    return '<span class="vchip ' + cls + '">' + esc(g) + ' <b>' + n + '</b></span>';
+    const r = rangoDe(g);
+    const cls = n < r[0] ? 'under' : (n > r[1] ? 'over' : 'ok');
+    const nota = cls === 'under' ? 'por debajo del rango sugerido' : (cls === 'over' ? 'por encima del rango sugerido' : 'dentro del rango óptimo');
+    return '<span class="vchip ' + cls + '" title="' + esc(g) + ': óptimo ' + r[0] + '-' + r[1] + ' series/semana — ' + nota + '">' +
+      esc(g) + ' <b>' + n + '</b><span class="vr">/' + r[0] + '-' + r[1] + '</span></span>';
   }
   function renderVolumen(){
     const wrap = document.getElementById('volCard');
@@ -6277,7 +6294,7 @@ document.addEventListener('DOMContentLoaded', init);
         '<div class="vol-head"><h3>📈 Volumen semanal de series efectivas</h3>' +
           '<span class="pill gold">' + suma + ' series / semana</span>' +
           '<div class="spacer"></div>' +
-          '<span class="hint" style="margin:0">Verde 8-22 · ámbar por encima de 22</span>' +
+          '<span class="hint" style="margin:0">Grandes 12-22 · pequeños 8-16 · mantenimiento 6-12</span>' +
         '</div>' +
         '<div class="vol-chips">' + keys.map(k => volChip(k, v.total[k])).join('') + '</div>' +
         (dkeys.length ? '<div class="vol-sub"><b style="color:var(--txt-2)">' + esc((p.dias[S.ui.day] || {}).short || 'Día') + ':</b> ' +
@@ -6401,6 +6418,40 @@ document.addEventListener('DOMContentLoaded', init);
     'core':'Core / Anti-rotación','cardio':'Cardio / Metcon','metcon':'Cardio / Metcon',
     'abduccion':'Abducción / Aducción','aduccion':'Abducción / Aducción','aislamiento':'Aislamiento'
   };
+  /* clasificación automática por nombre cuando la planilla no trae grupo o patrón */
+  const CLASIF = [
+    { re:/ergometro|\berg\b|assault|skierg|eliptica|escaladora|cinta|jump rope|cuerda de saltar|box jump|wall ball|thruster|slam|sled|trineo|farmer|battle|mountain climber|devil press|burpee|kettlebell swing|\bswing\b/, g:'Full Body / Cardio', p:'Cardio / Metcon' },
+    { re:/press frances|skullcrusher|skull crusher|pushdown|jm press|katana|patada de triceps|triceps kickback|fondos de triceps|\btriceps\b/, g:'Brazos', p:'Tríceps' },
+    { re:/curl de muneca|wrist curl|antebrazo|forearm/, g:'Brazos', p:'Antebrazo' },
+    { re:/\bcurl\b|biceps|zottman|predicador|preacher|spider curl|martillo|hammer/, g:'Brazos', p:'Bíceps' },
+    { re:/dominada|pull[- ]?up|chin[- ]?up|jalon|pulldown|pull[- ]?over/, g:'Espalda', p:'Tracción vertical' },
+    { re:/encogimiento|shrug/, g:'Espalda', p:'Tracción vertical' },
+    { re:/hiperextension|extension lumbar|superman|back extension|good morning|buenos dias/, g:'Espalda', p:'Extensión lumbar' },
+    { re:/face pull/, g:'Espalda', p:'Tracción horizontal' },
+    { re:/\bremo\b|\brow\b|meadow|pendlay|yates|kroc|kelso/, g:'Espalda', p:'Tracción horizontal' },
+    { re:/remo al menton|upright row/, g:'Hombros', p:'Tracción vertical' },
+    { re:/rotacion externa|rotacion interna|external rotation|internal rotation|manguito|escapular|scapular/, g:'Hombros', p:'Salud articular' },
+    { re:/elevacion(es)? lateral|lateral raise|elevacion(es)? frontal|front raise|pajaro|rear delt|deltoide|posterior|\braise\b|\blu\b/, g:'Hombros', p:'Aislamiento hombro' },
+    { re:/press militar|overhead press|push press|press de hombro|arnold|z-?press|shoulder press|pike push|bradford|tras nuca/, g:'Hombros', p:'Empuje vertical' },
+    { re:/sentadilla|squat|prensa|leg press|\bhack\b|zancada|lunge|bulgar|step[- ]?up|step down|pistol/, g:'Piernas/Glúteos', p:'Rodilla dominante' },
+    { re:/peso muerto|deadlift|rumano|\brdl\b|rack pull|hip thrust|puente|bridge|pull[- ]?through|patada de gluteo|glute kickback|extension de cadera/, g:'Piernas/Glúteos', p:'Cadera dominante' },
+    { re:/abduccion|aduccion|abduction|adduction|monster walk/, g:'Piernas/Glúteos', p:'Abducción / Aducción' },
+    { re:/curl femoral|leg curl|isquio|nordico|nordic/, g:'Piernas/Glúteos', p:'Aislamiento' },
+    { re:/gemelo|talones|\bcalf\b|soleo/, g:'Piernas/Glúteos', p:'Aislamiento' },
+    { re:/extension de cuadriceps|leg extension|sissy/, g:'Piernas/Glúteos', p:'Aislamiento' },
+    { re:/plancha|plank|crunch|abdominal|hollow|dead bug|pallof|rueda abdominal|ab wheel|elevacion de (piernas|rodillas)|leg raise|russian twist|woodchopper|sit[- ]?up|v-?ups|toes to bar|l-?sit|bird dog|copenhagen/, g:'Core', p:'Core / Anti-rotación' },
+    { re:/apertura|\bflye?s?\b|cruce de|pec deck|contractor|pullover/, g:'Pectoral', p:'Empuje horizontal' },
+    { re:/flexion(es)?|push[- ]?up|fondos|\bdips?\b/, g:'Pectoral', p:'Empuje horizontal' },
+    { re:/press de banca|bench press|press banca|press plano|press inclinado|press declinado|floor press|guillotina|spoto|pin press|landmine|\bpress\b/, g:'Pectoral', p:'Empuje horizontal' }
+  ];
+  function clasificar(nombre){
+    const t = norm(nombre);
+    for(let i = 0; i < CLASIF.length; i++){
+      if(CLASIF[i].re.test(t)) return { grupo: CLASIF[i].g, patron: CLASIF[i].p };
+    }
+    return null;
+  }
+
   function splitLine(l){
     if(l.indexOf('\t') >= 0) return l.split('\t');
     if(l.indexOf('|') >= 0) return l.split('|');
@@ -6450,15 +6501,21 @@ document.addEventListener('DOMContentLoaded', init);
       const es = m ? m[1].trim() : nombre.trim();
       const en = m ? m[2].trim() : '';
       const vid = ytId(url || '');
-      const gr = G_MAP[norm(grupo || '')] || '';
+      let gr = G_MAP[norm(grupo || '')] || '';
       const eq = E_MAP[norm(equipo || '')] || '';
-      const pa = P_MAP[norm(patron || '')] || '';
+      let pa = P_MAP[norm(patron || '')] || '';
+      /* si la planilla no trae grupo o patrón, se deduce del nombre */
+      let auto = false;
+      if(!gr || !pa){
+        const c = clasificar(es);
+        if(c){ if(!gr){ gr = c.grupo; auto = true; } if(!pa){ pa = c.patron; auto = true; } }
+      }
       const prev = S.exercises.find(e => norm(e.es) === norm(es) && (!gr || e.grupo === gr))
                 || S.exercises.find(e => norm(e.es) === norm(es));
       let estado = 'nuevo';
       if(prev) estado = (!prev.videoId && vid) ? 'video' : 'existe';
       if(!vid && !prev) estado = 'sinvideo';
-      impRows.push({ es: es, en: en, grupo: gr, equipo: eq, patron: pa, vid: vid, url: url || '', prev: prev, estado: estado });
+      impRows.push({ es: es, en: en, grupo: gr, equipo: eq, patron: pa, auto: auto, vid: vid, url: url || '', prev: prev, estado: estado });
     }
 
     const n = {}; impRows.forEach(r => n[r.estado] = (n[r.estado] || 0) + 1);
@@ -6466,7 +6523,8 @@ document.addEventListener('DOMContentLoaded', init);
       '<div class="stat"><div class="v">' + impRows.length + '</div><div class="k">Filas leídas</div></div>' +
       '<div class="stat"><div class="v">' + ((n.nuevo || 0) + (n.sinvideo || 0)) + '</div><div class="k">Nuevos</div></div>' +
       '<div class="stat teal"><div class="v">' + (n.video || 0) + '</div><div class="k">Suman video</div></div>' +
-      '<div class="stat"><div class="v">' + (n.existe || 0) + '</div><div class="k">Ya estaban</div></div>';
+      '<div class="stat"><div class="v">' + (n.existe || 0) + '</div><div class="k">Ya estaban</div></div>' +
+      '<div class="stat teal"><div class="v">' + impRows.filter(r => r.auto).length + '</div><div class="k">Clasificados 🪄</div></div>';
 
     $('#impPrev').style.display = '';
     $('#impPrev').innerHTML = '<table><tr><th>Ejercicio</th><th>Grupo</th><th>Equipo</th><th>Video</th><th>Estado</th></tr>' +
@@ -6884,6 +6942,64 @@ document.addEventListener('DOMContentLoaded', init);
 /* la barra fija de arriba reserva su ancho real para no pisar los botones de cada vista */
 .main .topbar{padding-right:var(--fabw,190px)}
 @media(max-width:700px){.main .topbar{padding-right:var(--fabw,58px)}}
+
+/* ---------- RESPONSIVIDAD DEL BUILDER ---------- */
+body{overflow-x:hidden}
+.app,.main{max-width:100%;min-width:0}
+.fields,.grid,.row,.week-grid,.block,.block-body,.item,.picker{min-width:0}
+.fields > .f,.grid > *{min-width:0}
+.f input,.f select,.item input,.item select{width:100%;min-width:0}
+.block-h input.bt{min-width:0}
+.ex-slot{flex-wrap:wrap}
+
+@media(max-width:820px){
+  .fields{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .week-grid{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+}
+@media(max-width:980px){
+  /* el sidebar pasa a barra horizontal: reserva el ancho de los botones fijos */
+  .sidebar{padding-right:var(--fabw,155px)}
+  .toast{top:56px}
+}
+@media(max-width:600px){
+  .main{padding:14px 11px 90px}
+  .fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .f.wide{grid-column:1/-1}
+  .f label{font-size:9px}
+  .f input,.f select{font-size:16px;padding:8px 9px}          /* 16px evita el zoom automático en iOS */
+  .grid.g2,.grid.g3,.grid.g4{grid-template-columns:1fr}
+  .week-grid{grid-template-columns:1fr}
+  .block-h{gap:6px}
+  .block-h .pill{font-size:10px;padding:3px 8px}
+  .block-h input.bt{flex:1 1 100%;order:9;font-size:15px}
+  .block-body{padding:10px}
+  .item{padding:9px}
+  .item-h .nm{flex:1 1 100%;order:5}
+  .picker{flex-direction:column;align-items:stretch}
+  .picker .col{min-width:0;width:100%}
+  .qbar{gap:5px;padding:7px 8px}
+  .qbar button{flex:1 1 auto;font-size:11px;padding:6px 8px;white-space:normal}
+  .qbar .qhint{display:none}
+  .ex-slot{padding:7px;gap:8px}
+  .es-th{width:64px;flex:0 0 64px}
+  .es-n{font-size:12.5px;white-space:normal}
+  .es-m{white-space:normal}
+  .tools-in{padding:9px;gap:7px}
+  .tools-in .btn{flex:1 1 46%;font-size:12px;padding:9px 8px}
+  .vol-card{padding:11px 12px}
+  .vchip{font-size:11px;padding:4px 9px}
+  .timer-fab{right:10px;bottom:10px;min-width:150px;padding:11px 12px}
+  .modal-b{padding:14px}
+  .find-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));max-height:46vh}
+  .pg button{padding:8px 12px;font-size:12px}
+  .pg .pgn{min-width:0;font-size:10.5px}
+  .tabs{gap:4px}
+  .tab{padding:8px 11px;font-size:12px}
+}
+@media(max-width:420px){
+  .fields{grid-template-columns:1fr}
+  .tools-in .btn{flex:1 1 100%}
+}
 </style>
 
 <script>
@@ -6995,17 +7111,55 @@ document.addEventListener('DOMContentLoaded', init);
     const d = t.split('');
     return 'Tempo ' + t + ': ' + d[0] + 's de bajada, ' + d[1] + 's abajo, ' + (d[2] === 'X' ? 'subida explosiva' : d[2] + 's de subida') + ', ' + d[3] + 's arriba.';
   }
-  function nota(ex, tempo){
+  /* respiración según el patrón: parte de la pauta técnica */
+  const RESP = {
+    'Cadera dominante':'Inhalá arriba, trabá el aire en la bajada y exhalá al terminar de extender la cadera.',
+    'Rodilla dominante':'Inhalá antes de bajar, mantené la presión intraabdominal y exhalá al pasar el punto difícil.',
+    'Empuje horizontal':'Inhalá al bajar la carga, exhalá al empujar.',
+    'Empuje vertical':'Inhalá antes de empujar, exhalá en la subida sin soltar el core.',
+    'Tracción horizontal':'Exhalá al traccionar, inhalá al soltar controlado.',
+    'Tracción vertical':'Exhalá al subir, inhalá en la bajada completa.',
+    'Bíceps':'Exhalá al flexionar, inhalá en la excéntrica.',
+    'Tríceps':'Exhalá al extender el codo, inhalá al volver.',
+    'Core / Anti-rotación':'Respiración continua: nunca aguantes el aire para sostener la posición.',
+    'Cardio / Metcon':'Respiración rítmica y sostenida; si te quedás sin aire, bajá el ritmo antes que la técnica.'
+  };
+
+  /* pauta técnica completa: cues + respiración + tempo + riesgo + reglas del alumno */
+  function notaCompleta(ex, tempo, ath){
+    if(!ex) return '';
     const partes = [];
+
+    /* a) ejecución, postura y respiración */
     if(ex.aviso) partes.push(ex.aviso);
-    else {
-      if(CUE_PATRON[ex.patron]) partes.push(CUE_PATRON[ex.patron]);
-      (ex.riesgo || []).forEach(z => { if(CUES[z]) partes.push(CUES[z]); });
-    }
+    else if(CUE_PATRON[ex.patron]) partes.push(CUE_PATRON[ex.patron]);
+    const resp = RESP[ex.patron];
+    if(resp) partes.push(resp);
+
+    /* b) lectura del tempo configurado */
     const t = explicarTempo(tempo);
     if(t) partes.push(t);
+
+    /* c) advertencia articular por zona comprometida */
+    const zonas = (ex.riesgo || []).filter(z => CUES[z]);
+    if(zonas.length){
+      partes.push('⚠️ Riesgo articular (' + zonas.map(z => (ZONA_LB[z] || z).toLowerCase()).join(', ') + '): ' +
+        zonas.map(z => CUES[z]).join(' '));
+    }
+
+    /* d) cruce con las reglas del alumno/a activo */
+    const A = ath || active();
+    if(A){
+      const al = checkExercise(A, ex);
+      al.forEach(a => {
+        if(a.level === 'danger') partes.push('⛔ RESTRINGIDO para ' + fullName(A) + ' — ' + a.msg);
+        else if(a.level === 'warn') partes.push('⚠️ ' + a.msg);
+        else if(a.level === 'good') partes.push('⭐ Ejercicio prioritario para ' + fullName(A) + '.');
+      });
+    }
     return partes.join(' ');
   }
+  function nota(ex, tempo){ return notaCompleta(ex, tempo, active()); }
 
   /* devuelve los parámetros sugeridos para un ejercicio y un tipo de bloque */
   function autoParams(ex, tipo){
@@ -7072,7 +7226,7 @@ document.addEventListener('DOMContentLoaded', init);
       });
       b.restSeconds = rest || 90; b.efSets = sets || 3;
       const primero = getEx((b.ejercicios[0] || {}).exId);
-      if(!b.tips && primero) b.tips = nota(primero, primero ? autoParams(primero, 'superset').tempo : '2011');
+      if(!b.tips && primero) b.tips = notaCompleta(primero, autoParams(primero, 'superset').tempo, active());
       resumen.push(b.efSets + ' rondas · descanso ' + b.restSeconds + 's · reps y tempo por ejercicio');
     }
     else if(b.tipo === 'finisher'){
@@ -7082,7 +7236,7 @@ document.addEventListener('DOMContentLoaded', init);
         e.repsRange = autoParams(ex, 'finisher').reps;
       });
       const primero = getEx((b.fin[0] || {}).exId);
-      if(!b.tips && primero) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + (primero.aviso || '');
+      if(!b.tips && primero) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + notaCompleta(primero, '1010', active());
       resumen.push('rango 15-20 reps · bombeo');
     }
     else { toast('El autocompletado aplica a bloques con ejercicios', 'warn'); return; }
@@ -7142,7 +7296,7 @@ document.addEventListener('DOMContentLoaded', init);
 
     if(S.ui.view === 'biblioteca') renderLibrary();
     addMagic();
-    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota };
+    window.CoachAuto = { params: autoParams, aplicar: autocompletar, nota: nota, notaCompleta: notaCompleta, tempo: explicarTempo };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
