@@ -5266,7 +5266,21 @@ document.addEventListener('DOMContentLoaded', init);
 .btn.tpl{background:linear-gradient(135deg,#FFB400,#FF8A00);color:#241800;border:none;box-shadow:0 8px 22px rgba(255,138,0,.25)}
 .btn.tpl:hover{filter:brightness(1.07)}
 
-.tpl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.tpl-filters{display:flex;flex-wrap:wrap;gap:6px;padding-bottom:2px}
+.tplf{
+  padding:6px 12px;border-radius:20px;font-size:11.5px;font-weight:800;white-space:nowrap;
+  background:var(--panel-3);border:1px solid var(--line-2);color:var(--muted);transition:.15s;
+}
+.tplf:hover{color:var(--txt);border-color:rgba(255,214,0,.4);transform:translateY(-1px)}
+.tplf.on{background:linear-gradient(135deg,var(--gold),#FFB400);border-color:transparent;color:#0A0A0B}
+.tplf .n{opacity:.65;font-size:10px;margin-left:2px}
+.tplf.on .n{opacity:.7}
+.tpl-cats{display:flex;flex-wrap:wrap;gap:4px}
+.tplc{font-size:9px;font-weight:900;letter-spacing:.02em;padding:2px 7px;border-radius:20px;
+  border:1px solid var(--line-2);color:var(--muted);background:var(--panel-3)}
+.tpl-card.on .tplc{border-color:rgba(255,214,0,.35);color:var(--gold)}
+.tpl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;max-height:46vh;overflow-y:auto;padding:2px}
+@media(max-width:600px){.tpl-grid{max-height:none}}
 .tpl-card{
   background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:14px;
   cursor:pointer;transition:.16s;display:flex;flex-direction:column;gap:8px;text-align:left;
@@ -5321,6 +5335,7 @@ document.addEventListener('DOMContentLoaded', init);
     </div>
     <div class="modal-b">
       <div id="tplAthBox"></div>
+      <div class="tpl-filters" id="tplFilters"></div>
       <div class="tpl-grid" id="tplGrid"></div>
       <div class="row">
         <label class="chk"><input type="radio" name="tplMode" value="replace" checked> Reemplazar el contenido del día</label>
@@ -5581,9 +5596,22 @@ document.addEventListener('DOMContentLoaded', init);
   }
 
   const P_BARRA = ['Barra','Máquina','Mancuernas'];
+  const CATS = [
+    { id:'todos',      lb:'Todos',                     ic:'📋' },
+    { id:'gluteos',    lb:'Glúteos & Piernas',         ic:'🍑' },
+    { id:'torso',      lb:'Torso & Brazos',            ic:'📐' },
+    { id:'splits',     lb:'Splits Tradicionales + Core', ic:'🧱' },
+    { id:'readapt',    lb:'Readaptación / Cero Carga Axial', ic:'🩹' },
+    { id:'metabolico', lb:'Recomposición / Metabólico', ic:'🏃' }
+  ];
+
+  /* atajos de picks reutilizados */
+  const CORE_ANTIROT = { grupo:['Core'], prefer:['Pallof press','Dead bug','Plancha frontal'] };
+  const CORE_ANTIEXT = { grupo:['Core'], prefer:['Dead bug','Hollow body','Plancha frontal','Rueda abdominal'] };
+
   const TEMPLATES = [
     {
-      id:'A', name:'Estructura A · 2 Anclas Pesadas + 2 Bisets + Finisher',
+      id:'A', cats:['torso'], name:'2 Anclas Pesadas + 2 Bisets + Finisher',
       desc:'Esquema clásico de fuerza + densidad: dos anclas pesadas con aproximaciones y después accesorios encadenados.',
       pasos:['Warm-up específico','Ancla pesada de empuje','Ancla pesada de tracción','Biset dorsal + bíceps','Biset hombro + tríceps','Finisher de bombeo'],
       label:'Torso completo', title:'Fuerza Pesada y Densidad',
@@ -5612,7 +5640,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'B', name:'Estructura B · Pierna / Cadera',
+      id:'B', cats:['gluteos'], name:'Pierna / Cadera',
       desc:'Bisagra de cadera pesada, puente/KAS bridge como segundo ancla y aislamiento de isquios y glúteo medio.',
       pasos:['Warm-up de activación de glúteo','Bisagra de cadera pesada','Puente / KAS Bridge','Biset isquios + abducción','Biset unilateral','Finisher de glúteo'],
       label:'Pierna/Cadera', title:'Cadena Posterior y Cadera',
@@ -5623,8 +5651,7 @@ document.addEventListener('DOMContentLoaded', init);
           tips:'Activás glúteo medio y mayor antes de cargar la bisagra.' },
         { tipo:'block', titulo:'Block A: Bisagra de Cadera', subtitulo:'Ancla pesada · aproximaciones + efectivas', category:'strength', icon:'💪', preset:'fuerza',
           picks:[{ grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','Buenos días'] }],
-          objective:'Máxima tensión en isquiotibiales y glúteo con bisagra pura.',
-          tips:'Rodillas semiflexionadas y fijas, columna neutra, barra rozando el muslo.' },
+          objective:'Máxima tensión en isquiotibiales y glúteo con bisagra pura.' },
         { tipo:'block', titulo:'Block B: Puente / KAS Bridge', subtitulo:'Extensión de cadera con rango corto y pausa', category:'strength', icon:'🍑', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], prefer:['Hip thrust','Puente de glúteo'] }],
           objective:'Glúteo mayor en su rango más corto, con máxima tensión en el bloqueo.',
@@ -5641,7 +5668,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'C', name:'Estructura C · Torso (Empuje + Tracción)',
+      id:'C', cats:['torso'], name:'Torso (Empuje + Tracción)',
       desc:'Día de torso equilibrado: un ancla de empuje, un ancla de tracción y accesorios en los dos planos.',
       pasos:['Warm-up de manguito','Ancla de empuje horizontal','Ancla de tracción horizontal','Biset vertical (empuje + tracción)','Triset de hombro','Finisher de tríceps'],
       label:'Torso', title:'Torso — Empuje y Tracción',
@@ -5671,9 +5698,9 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'D', name:'Estructura D · Glúteos Prioritario',
-      desc:'Todo el día orientado a glúteo: puente pesado, bisagra, patadas y abducción en volumen.',
-      pasos:['Warm-up con banda','Puente / Hip thrust pesado','Bisagra de cadera','Biset patadas + abducción','Biset unilateral','Finisher de abducción'],
+      id:'D', cats:['gluteos'], name:'Glúteos Prioritario (aislamiento puro)',
+      desc:'Todo el día orientado a glúteo: puente pesado, bisagra, patadas y abducción en volumen, con cierre de banda y core.',
+      pasos:['Warm-up con banda','Puente / Hip thrust pesado','Bisagra de cadera','Biset patadas + abducción','Biset unilateral','Finisher con banda','Core'],
       label:'Glúteos', title:'Glúteo Prioritario',
       chips:['🍑 Glúteo Prioritario','🎯 Volumen Dedicado'],
       blocks:[
@@ -5682,8 +5709,7 @@ document.addEventListener('DOMContentLoaded', init);
           tips:'Si el glúteo no llega activado, el trabajo se lo lleva el isquiotibial.' },
         { tipo:'block', titulo:'Block A: Puente / Hip Thrust Pesado', subtitulo:'Ancla de extensión de cadera', category:'strength', icon:'🍑', preset:'fuerza',
           picks:[{ grupo:['Piernas/Glúteos'], prefer:['Hip thrust','Puente de glúteo'] }],
-          objective:'Máxima carga en glúteo mayor en su pico de tensión.',
-          tips:'Mentón al pecho, costillas abajo, sin hiperextender la zona lumbar en el bloqueo.' },
+          objective:'Máxima carga en glúteo mayor en su pico de tensión.' },
         { tipo:'block', titulo:'Block B: Bisagra de Cadera', subtitulo:'Aproximaciones + series efectivas', category:'strength', icon:'💪', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano'] }],
           objective:'Glúteo e isquios en rango largo, complementando el puente.' },
@@ -5693,14 +5719,188 @@ document.addEventListener('DOMContentLoaded', init);
         { tipo:'superset', titulo:'Block D: Biset Unilateral', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
           picks:[{ grupo:['Piernas/Glúteos'], any:['bulgarian','step up'] }, { grupo:['Piernas/Glúteos'], any:['zancada','step up'] }],
           objective:'Estabilidad de cadera y control del valgo bajo carga.' },
-        { tipo:'finisher', titulo:'🔥 Finisher de Abducción', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
-          picks:[{ grupo:['Piernas/Glúteos'], any:['abducción','monster'] }],
-          tips:'Sin pausa entre repeticiones: buscás el glúteo medio ardiendo.' }
+        { tipo:'finisher', titulo:'🔥 Finisher con Banda', subtitulo:'Bombeo · Solo Modo Completo', category:'metcon', icon:'🔥', preset:'bombeo', optional:true,
+          picks:[{ grupo:['Piernas/Glúteos'], any:['abducción','monster','banda'] }],
+          tips:'Sin pausa entre repeticiones: buscás el glúteo medio ardiendo.' },
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+          items:['Pallof press — 3x10-12 por lado, sostén 2s','Dead bug — 3x10 por lado'],
+          tips:'Resistí la rotación sin que el torso se vaya al costado; lumbar pegada al piso.' }
+      ]
+    },
+    {
+      id:'E', cats:['splits','torso'], name:'Espalda + Bíceps + Core',
+      desc:'Split tradicional de tracción: remo pesado y jalón como anclas, dos bisets de accesorios y cierre de core.',
+      pasos:['Warm-up escapular','Ancla: remo pesado','Jalón al pecho','Biset remo unilateral + pull-over','Biset bíceps (Curl Z + martillo)','Core anti-rotación'],
+      label:'Espalda/Bíceps', title:'Espalda, Bíceps y Core',
+      chips:['🎯 Tracción Horizontal + Vertical','💪 Bíceps en 2 ángulos'],
+      blocks:[
+        { tipo:'list', titulo:'Warm-Up Escapular', subtitulo:'Activación de manguito y escápula (6-8 min)', category:'warmup', icon:'🔥',
+          items:['Remo en ergómetro, ritmo suave — 3 min','Face Pull con cuerda — 2x15','Rotación externa manguito rotador — 2x12, muy liviano'],
+          tips:'Escápula y manguito primero: el dorsal trabaja mejor desde la primera serie.' },
+        { tipo:'block', titulo:'Block A: Remo Pesado', subtitulo:'Ancla de tracción horizontal · aproximaciones + efectivas', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo con barra inclinado','Remo Pendlay','Remo a una mano con barra Landmine','Remo en barra T','Remo Pecho Apoyado en banco inclinado'] }],
+          objective:'Máxima sobrecarga en dorsal medio, romboides y trapecio.' },
+        { tipo:'block', titulo:'Block B: Jalón al Pecho', subtitulo:'Tracción vertical · series efectivas', category:'strength', icon:'🎯', preset:'hiper',
+          picks:[{ grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Jalón al pecho con agarre ancho','Dominadas','Jalón al pecho con agarre estrecho'] }],
+          objective:'Dorsal ancho en el plano vertical, complementando el remo.' },
+        { tipo:'superset', titulo:'Block C: Biset — Remo Unilateral + Pull-Over', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Espalda'], any:['remo unilateral','remo a una mano','remo articulado','remo sentado'] },
+                 { grupo:['Espalda','Pectoral'], any:['pull-over','pullover'] }],
+          objective:'Tercer ángulo de espalda más estiramiento del dorsal bajo tensión.' },
+        { tipo:'superset', titulo:'Block D: Biset de Bíceps', subtitulo:'Curl Z + Martillo · sin descanso', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl de bíceps con barra Z','Curl de bíceps con barra recta'] },
+                 { grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl martillo','Curl martillo cruzado al pecho'] }],
+          objective:'Bíceps en supinación y braquial en neutro, los dos ángulos que faltan.' },
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-rotación y anti-extensión · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+          items:['Pallof press — 3x10-12 por lado, sostén 2s','Dead bug — 3x10 por lado','Plancha frontal — 3x30-40s'],
+          tips:'Respiración continua: nunca aguantes el aire para sostener la posición.' }
+      ]
+    },
+    {
+      id:'F', cats:['splits','torso'], name:'Pecho + Hombros + Tríceps + Core',
+      desc:'Split tradicional de empuje: press plano o inclinado, press militar y accesorios de deltoide y tríceps.',
+      pasos:['Warm-up de manguito','Ancla: press plano/inclinado','Press militar o Arnold','Biset aperturas + elevaciones laterales','Extensión de tríceps en polea','Core anti-extensión'],
+      label:'Pecho/Hombro/Tríceps', title:'Empuje — Pecho, Hombros y Tríceps',
+      chips:['🎯 Empuje Horizontal + Vertical','🔥 Volumen de Tríceps'],
+      blocks:[
+        { tipo:'list', titulo:'Warm-Up Específico', subtitulo:'Activación de manguito rotador (6-8 min)', category:'warmup', icon:'🔥',
+          items:['Bicicleta o cinta suave — 3 min','Rotación externa manguito rotador — 2x12','Face Pull con cuerda — 2x15','Flexiones de brazos livianas — 1x10'],
+          tips:'Manguito y escápula antes de cargar: es tu seguro para el día de mayor empuje.' },
+        { tipo:'block', titulo:'Block A: Press Plano o Inclinado', subtitulo:'Ancla de empuje horizontal · aproximaciones + efectivas', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Pectoral'], patron:['Empuje horizontal'], prefer:['Press de banca plano con barra','Press de banca inclinado con barra','Press inclinado con mancuernas','Press de pecho en máquina'] }],
+          objective:'Máxima tensión en pectoral con el patrón más rendidor.' },
+        { tipo:'block', titulo:'Block B: Press Militar / Arnold', subtitulo:'Ancla de empuje vertical', category:'strength', icon:'🎯', preset:'fuerza',
+          picks:[{ grupo:['Hombros'], patron:['Empuje vertical'], prefer:['Press militar de pie','Press Arnold','Press de hombros sentado','Press de hombros en máquina'] }],
+          objective:'Deltoide anterior y medio con carga real.' },
+        { tipo:'superset', titulo:'Block C: Biset — Aperturas + Elevaciones Laterales', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Pectoral'], any:['apertura','cruce de'] },
+                 { grupo:['Hombros'], patron:['Aislamiento hombro'], any:['lateral'] }],
+          objective:'Segundo ángulo de pectoral más el aislamiento de deltoide lateral.' },
+        { tipo:'block', titulo:'Block D: Extensión de Tríceps en Polea', subtitulo:'Aislamiento · series efectivas', category:'strength', icon:'🎯', preset:'hiper',
+          picks:[{ grupo:['Brazos'], patron:['Tríceps'], equipo:['Polea'], prefer:['Extensión tríceps polea alta con cuerda','Extensión tríceps polea alta barra recta'] }],
+          objective:'Cierre de tríceps con tensión constante y sin estrés de codo.' },
+        { tipo:'list', titulo:'Core', subtitulo:'Anti-extensión · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+          items:['Plancha frontal — 3x30-40s','Rueda abdominal — 3x8-10 (regresión: desde rodillas o rango corto)'],
+          tips:'Pelvis en retroversión y core apretado: si la lumbar se arquea, acortá el rango.' }
+      ]
+    },
+    {
+      id:'G', cats:['splits','gluteos'], name:'Glúteos + Femorales + Gemelos + Core',
+      desc:'Split de cadena posterior completo: RDL y puente como anclas, aislamiento de isquios, patada, gemelos y core.',
+      pasos:['Warm-up de glúteo','Ancla: Peso Muerto Rumano','Hip Thrust / KAS Bridge','Biset curl femoral + patada en polea','Elevación de gemelos','Core anti-extensión'],
+      label:'Glúteo/Femoral', title:'Cadena Posterior — Glúteos, Femorales y Gemelos',
+      chips:['🍑 Cadena Posterior','🦵 Gemelos Dedicados'],
+      blocks:[
+        { tipo:'list', titulo:'Warm-Up de Glúteo', subtitulo:'Activación (6-8 min)', category:'warmup', icon:'🔥',
+          items:['Bicicleta o elíptica suave — 3 min','Puente de glúteo con banda en rodillas — 2x15','Abducción con banda (monster walk) — 2x15 por lado'],
+          tips:'Activás glúteo antes de la bisagra para que no se lo lleve todo el isquiotibial.' },
+        { tipo:'block', titulo:'Block A: Peso Muerto Rumano', subtitulo:'Ancla de bisagra · aproximaciones + efectivas', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','Peso muerto rumano con kettlebell','Buenos días'] }],
+          objective:'Máxima tensión en isquiotibial y glúteo con bisagra pura.' },
+        { tipo:'block', titulo:'Block B: Hip Thrust / KAS Bridge', subtitulo:'Extensión de cadera con pausa', category:'strength', icon:'🍑', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], prefer:['Hip thrust','Puente de glúteo'] }],
+          objective:'Glúteo mayor en su pico de tensión, complementando el rango largo del RDL.',
+          tips:'KAS Bridge: rango parcial superior, pausa de 1s arriba, mentón al pecho y cero hiperextensión lumbar.' },
+        { tipo:'superset', titulo:'Block C: Biset — Curl Femoral + Patada en Polea', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], any:['curl femoral','isquio','nórdico'] },
+                 { grupo:['Piernas/Glúteos'], any:['patada de glúteo','extensión de cadera'] }],
+          objective:'Aislamiento de isquiotibial más glúteo mayor sin carga axial.' },
+        { tipo:'block', titulo:'Block D: Elevación de Gemelos', subtitulo:'Aislamiento con pausa arriba', category:'strength', icon:'🦵', preset:'bombeo',
+          picks:[{ grupo:['Piernas/Glúteos'], any:['gemelo','talones'] }],
+          objective:'Volumen dedicado de gemelo, el eslabón que casi siempre queda corto.' },
+        { tipo:'list', titulo:'Core Anti-Extensión', subtitulo:'Dead bug / Hollow body · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+          items:['Dead bug — 3x10 por lado','Hollow body — 3x20-25s'],
+          tips:'Lumbar pegada al piso todo el recorrido y respiración continua.' }
+      ]
+    },
+    {
+      id:'H', cats:['splits','gluteos'], name:'Glúteos + Cuádriceps + Gemelos + Core',
+      desc:'Split de tren inferior dominante de rodilla: sentadilla o prensa, unilateral, aislamiento de cuádriceps, abducción y gemelos.',
+      pasos:['Warm-up del patrón de sentadilla','Ancla: sentadilla o prensa 45°','Búlgara / Step Up','Extensiones de cuádriceps','Abducción de cadera','Gemelos de pie','Core anti-rotación'],
+      label:'Glúteo/Cuádriceps', title:'Tren Inferior — Cuádriceps y Glúteos',
+      chips:['🎯 Dominante de Rodilla','🦵 Gemelos + Core'],
+      blocks:[
+        { tipo:'list', titulo:'Warm-Up del Patrón', subtitulo:'Activación de sentadilla (6-8 min)', category:'warmup', icon:'🔥',
+          items:['Bicicleta o elíptica suave — 3 min','Sentadilla con peso corporal — 2x15, foco en profundidad','Abducción con banda (monster walk) — 2x15 por lado'],
+          tips:'Abrí la cadera y el tobillo antes de cargar: la profundidad se gana acá.' },
+        { tipo:'block', titulo:'Block A: Sentadilla / Prensa 45°', subtitulo:'Ancla pesada · aproximaciones + efectivas', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con barra','Prensa 45°','Hack squat','Prensa horizontal'] }],
+          objective:'Máxima sobrecarga en cuádriceps y glúteo con el patrón bilateral.',
+          tips:'En prensa, pies altos y anchos para llevar el énfasis al glúteo; no despegues la pelvis del respaldo.' },
+        { tipo:'block', titulo:'Block B: Búlgara / Step Up', subtitulo:'Unilateral · series efectivas', category:'strength', icon:'🎯', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], any:['bulgarian','step up','zancada'] }],
+          objective:'Demanda unilateral: estabilidad de cadera y control del valgo.' },
+        { tipo:'superset', titulo:'Block C: Biset — Cuádriceps + Abducción', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], any:['extensión de cuádriceps','leg extension'] },
+                 { grupo:['Piernas/Glúteos'], any:['abducción'] }],
+          objective:'Aislamiento de cuádriceps más glúteo medio anti-valgo.' },
+        { tipo:'block', titulo:'Block D: Gemelos de Pie', subtitulo:'Aislamiento con pausa arriba', category:'strength', icon:'🦵', preset:'bombeo',
+          picks:[{ grupo:['Piernas/Glúteos'], any:['gemelo','talones'] }],
+          objective:'Gastrocnemio con rango completo y pausa en el pico.' },
+        { tipo:'list', titulo:'Core Anti-Rotación', subtitulo:'Pallof press · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+          items:['Pallof press — 3x10-12 por lado, sostén 2s','Plancha lateral — 3x25-30s por lado'],
+          tips:'Resistí la rotación sin que la cadera se desplace: el core estabiliza, no gira.' }
+      ]
+    },
+    {
+      id:'I', cats:['readapt'], name:'Readaptación / Lumbar Safe (cero carga axial)',
+      desc:'Sin compresión sobre la columna: máquinas apoyadas, poleas y cadena posterior sin carga axial. Ideal para vuelta progresiva o lumbalgia.',
+      pasos:['Movilidad y activación suave','Prensa horizontal apoyada','Remo con pecho apoyado','Biset patada de glúteo + curl femoral','Biset press en máquina + jalón','Core anti-rotación sin flexión'],
+      label:'Readaptación', title:'Sesión Cero Carga Axial',
+      chips:['🩹 Cero Carga Axial','🛡️ Readaptación'],
+      blocks:[
+        { tipo:'list', titulo:'Movilidad y Activación', subtitulo:'Sin impacto (8-10 min)', category:'warmup', icon:'🔥',
+          items:['Bicicleta reclinada o elíptica — 5 min','Puente de glúteo con banda en rodillas — 2x15','Bird dog — 2x8 por lado','Dead bug — 2x8 por lado'],
+          tips:'Todo por debajo del umbral de molestia: si algo pincha, se corta el rango.' },
+        { tipo:'block', titulo:'Block A: Prensa Horizontal', subtitulo:'Tren inferior sin compresión de columna', category:'strength', icon:'🛡️', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], equipo:['Máquina'], prefer:['Prensa horizontal','Prensa 45°','Prensa a una pierna'] }],
+          objective:'Cargar cuádriceps y glúteo con la columna apoyada y descargada.',
+          tips:'Espalda y pelvis pegadas al respaldo todo el recorrido: no busques profundidad a costa de despegar la cadera.' },
+        { tipo:'block', titulo:'Block B: Remo con Pecho Apoyado', subtitulo:'Tracción sin demanda lumbar', category:'strength', icon:'🛡️', preset:'hiper',
+          picks:[{ grupo:['Espalda'], equipo:['Máquina','Polea'], prefer:['Remo Pecho Apoyado en banco inclinado','Remo horizontal en máquina','Remo articulado en máquina','Remo sentado con agarre estrecho'] }],
+          objective:'Trabajo de espalda con cero estabilización lumbar.' },
+        { tipo:'superset', titulo:'Block C: Biset — Patada de Glúteo + Curl Femoral', subtitulo:'Cadena posterior sin carga axial', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], any:['patada de glúteo','extensión de cadera'] },
+                 { grupo:['Piernas/Glúteos'], any:['curl femoral','isquio'] }],
+          objective:'Glúteo e isquios sin comprimir la columna.' },
+        { tipo:'superset', titulo:'Block D: Biset — Empuje + Tracción en Máquina', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Pectoral'], equipo:['Máquina','Polea'], prefer:['Press de pecho en máquina','Press de pecho sentado con poleas'] },
+                 { grupo:['Espalda'], patron:['Tracción vertical'], equipo:['Polea','Máquina'], prefer:['Jalón al pecho con agarre ancho','Jalón al pecho con agarre estrecho'] }],
+          objective:'Volumen de torso en posiciones estables y guiadas.' },
+        { tipo:'list', titulo:'Core Sin Flexión Lumbar', subtitulo:'Anti-rotación y estabilidad', category:'accessory', icon:'🌀',
+          items:['Pallof press — 3x10-12 por lado, sostén 2s','Bird dog — 3x8 por lado','Plancha lateral — 3x20-25s por lado'],
+          tips:'Nada de crunch ni flexión repetida: el core estabiliza contra la rotación y la extensión.' }
+      ]
+    },
+    {
+      id:'J', cats:['metabolico'], name:'Recomposición & Hyrox (fuerza + capacidad)',
+      desc:'Ancla pesada para sostener la fuerza, biset denso para el estímulo de hipertrofia y cierre metabólico tipo AMRAP.',
+      pasos:['Warm-up general','Ancla pesada','Biset denso de accesorios','Bloque AMRAP / Hyrox','Core'],
+      label:'Recomposición', title:'Fuerza + Capacidad Metabólica',
+      chips:['🏃 Cierre Metabólico','⚡ Fuerza + Densidad'],
+      blocks:[
+        { tipo:'list', titulo:'Warm-Up General', subtitulo:'Preparación metabólica (6-8 min)', category:'warmup', icon:'🔥',
+          items:['Remo en ergómetro o bici — 4 min progresivos','Abducción con banda (monster walk) — 2x15 por lado','Face Pull con cuerda — 2x15'],
+          tips:'Subí pulsaciones de a poco: el cierre metabólico ya te va a exigir bastante.' },
+        { tipo:'block', titulo:'Block A: Ancla Pesada', subtitulo:'Aproximaciones + series efectivas', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ patron:['Cadera dominante','Rodilla dominante','Empuje horizontal','Tracción horizontal'], equipo:P_BARRA,
+                   prefer:['Peso muerto rumano','Sentadilla con barra','Press de banca plano con barra','Remo con barra inclinado'] }],
+          objective:'Sostener la fuerza mientras el resto de la sesión va al gasto metabólico.' },
+        { tipo:'superset', titulo:'Block B: Biset Denso', subtitulo:'sin descanso entre ejercicios', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Espalda','Pectoral'], patron:['Tracción vertical','Empuje horizontal'] },
+                 { grupo:['Piernas/Glúteos'], any:['zancada','step up','bulgarian','patada'] }],
+          objective:'Densidad de trabajo con poco descanso: hipertrofia y gasto al mismo tiempo.' },
+        { tipo:'hyrox', titulo:'Cierre Metabólico Hyrox', subtitulo:'AMRAP · Solo Modo Completo', category:'cardio', icon:'🏃', optional:true,
+          movements:['12 Kettlebell Swings','200m en Remo Ergómetro','20m Caminata del Granjero (Farmer Carry)','10 Burpees'],
+          tips:'La técnica manda sobre la velocidad, sobre todo en las últimas rondas.' },
+        { tipo:'list', titulo:'Core', subtitulo:'Estabilidad bajo fatiga · Solo Modo Completo', category:'accessory', icon:'🌀', optional:true,
+          items:['Pallof press — 3x10-12 por lado','Plancha frontal — 3x30-40s'],
+          tips:'Con el pulso alto la técnica se degrada: sostené la respiración continua.' }
       ]
     }
   ];
 
-  let tplSel = 'A';
+  let tplSel = 'A', tplCat = 'todos';
   function openTpl(){
     const ath = active();
     if(!ath){ toast('Seleccioná un alumno/a primero', 'err'); go('alumnos'); return; }
@@ -5710,17 +5910,42 @@ document.addEventListener('DOMContentLoaded', init);
       esc(fullName(ath)) + ' · ' + esc(d ? d.short : '') + (d && d.bloques.length ? ' (' + d.bloques.length + ' bloques cargados)' : ' (vacío)') +
       '</b>Elegí la estructura y se arma sola con ejercicios de tu biblioteca.</div></div>';
     $('#tplLog').innerHTML = '';
+    renderTplFilters();
     renderTplGrid();
     openModal('mTpl');
   }
+  const catCount = c => c === 'todos' ? TEMPLATES.length : TEMPLATES.filter(t => t.cats.indexOf(c) >= 0).length;
+  function renderTplFilters(){
+    const box = document.getElementById('tplFilters');
+    if(!box) return;
+    box.innerHTML = CATS.map(c =>
+      '<button class="tplf ' + (c.id === tplCat ? 'on' : '') + '" data-tcat="' + c.id + '">' +
+        c.ic + ' ' + esc(c.lb) + ' <span class="n">' + catCount(c.id) + '</span></button>'
+    ).join('');
+  }
   function renderTplGrid(){
-    $('#tplGrid').innerHTML = TEMPLATES.map(t =>
+    const lista = tplCat === 'todos' ? TEMPLATES : TEMPLATES.filter(t => t.cats.indexOf(tplCat) >= 0);
+    if(!lista.some(t => t.id === tplSel) && lista.length) tplSel = lista[0].id;
+    $('#tplGrid').innerHTML = lista.map(t =>
       '<button class="tpl-card ' + (t.id === tplSel ? 'on' : '') + '" data-tpl="' + t.id + '">' +
+        '<div class="tpl-cats">' + t.cats.map(c => {
+          const C = CATS.find(x => x.id === c) || {};
+          return '<span class="tplc">' + (C.ic || '') + ' ' + esc(C.lb || c) + '</span>';
+        }).join('') + '</div>' +
         '<h4>' + esc(t.name) + '</h4>' +
         '<div class="d">' + esc(t.desc) + '</div>' +
         '<ol>' + t.pasos.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol>' +
       '</button>'
-    ).join('');
+    ).join('') || '<div class="empty" style="grid-column:1/-1"><div class="big">📋</div><h4>Sin estructuras en esta categoría</h4></div>';
+  }
+  /* nota de coach generada localmente (sin API) a partir del motor de p12 */
+  function autoNota(ex, tempo, ath){
+    if(!ex) return '';
+    try{
+      if(window.CoachAuto && window.CoachAuto.notaCompleta)
+        return window.CoachAuto.notaCompleta(ex, tempo, ath);
+    }catch(err){ console.warn('autoNota', err); }
+    return ex.aviso || '';
   }
   function applyTpl(){
     const t = TEMPLATES.find(x => x.id === tplSel), ath = active(), d = curDay();
@@ -5749,6 +5974,7 @@ document.addEventListener('DOMContentLoaded', init);
         if(P){ b.reps = P.reps; b.tempo = P.tempo; b.restSeconds = P.rest; }
         if(spec.preset === 'fuerza'){ b.hasApprox = true; b.approxSets = 2; b.efSets = 4; }
         else { b.hasApprox = false; b.approxSets = 0; b.efSets = 3; }
+        if(!b.tips) b.tips = autoNota(ex, b.tempo, ath);
       }
       if(spec.tipo === 'superset'){
         spec.picks.forEach(pk => {
@@ -5759,20 +5985,30 @@ document.addEventListener('DOMContentLoaded', init);
         });
         if(b.ejercicios.length < 2) notas.push('«' + spec.titulo + '» quedó con ' + b.ejercicios.length + ' ejercicio(s): completalo a mano.');
         if(P) b.restSeconds = P.rest;
+        if(!b.tips && b.ejercicios.length){
+          const pr = S.exercises.find(e => e.id === b.ejercicios[0].exId);
+          b.tips = 'Encadenado sin pausa entre A y B; el descanso va recién al cerrar la ronda. ' + autoNota(pr, b.ejercicios[0].tempo, ath);
+        }
       }
       if(spec.tipo === 'finisher'){
         const ex = pickEx(spec.picks[0], ath, used);
         if(ex){ used.push(ex.id); b.fin.push({ exId: ex.id, repsRange: P ? P.reps : '15-20' }); }
         else notas.push('Sin candidato seguro para el finisher.');
+        if(!b.tips && ex) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + autoNota(ex, '1010', ath);
       }
       nuevos.push(b);
     });
 
     if(mode === 'replace'){
       d.bloques = nuevos;
-      d.label = d.label && d.label.indexOf('Sesión') !== 0 ? d.label : t.label;
-      if(!d.title || /^Día \d+$/.test(d.title)) d.title = t.title;
-      if(!(d.metaChips || []).length) d.metaChips = t.chips.slice();
+      /* si el día venía con otra estructura cargada (o con los valores por
+         defecto), la cabecera se actualiza; un título escrito a mano se respeta */
+      const autoLb = !d.label || /^Sesión/.test(d.label) || TEMPLATES.some(x => x.label === d.label);
+      const autoTt = !d.title || /^Día \d+$/.test(d.title) || TEMPLATES.some(x => x.title === d.title);
+      const autoCh = !(d.metaChips || []).length || TEMPLATES.some(x => (x.chips || []).join('|') === (d.metaChips || []).join('|'));
+      if(autoLb) d.label = t.label;
+      if(autoTt) d.title = t.title;
+      if(autoCh) d.metaChips = t.chips.slice();
     } else {
       d.bloques = d.bloques.concat(nuevos);
     }
@@ -5803,6 +6039,10 @@ document.addEventListener('DOMContentLoaded', init);
     $('#tplGrid').addEventListener('click', e => {
       const c = e.target.closest('[data-tpl]'); if(!c) return;
       tplSel = c.dataset.tpl; renderTplGrid();
+    });
+    document.getElementById('tplFilters').addEventListener('click', e => {
+      const f = e.target.closest('[data-tcat]'); if(!f) return;
+      tplCat = f.dataset.tcat; renderTplFilters(); renderTplGrid();
     });
     $('#tplApply').addEventListener('click', applyTpl);
 
