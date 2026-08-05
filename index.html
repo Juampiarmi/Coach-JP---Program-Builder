@@ -169,7 +169,16 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .modal-h{display:flex;align-items:center;gap:12px;padding:17px 20px;border-bottom:1px solid var(--line)}
 .modal-h h3{font-size:16px;font-weight:800;letter-spacing:-.2px}
 .modal-b{padding:20px;display:grid;gap:15px}
-.modal-f{display:flex;gap:10px;justify-content:flex-end;padding:15px 20px;border-top:1px solid var(--line);background:rgba(0,0,0,.25);border-radius:0 0 18px 18px;flex-wrap:wrap}
+/* el pie queda siempre alcanzable aunque el modal sea más alto que la pantalla */
+.modal-f{display:flex;gap:10px;justify-content:flex-end;padding:15px 20px;border-top:1px solid var(--line);
+  background:rgba(9,11,13,.94);backdrop-filter:blur(8px);border-radius:0 0 18px 18px;flex-wrap:wrap;
+  position:sticky;bottom:0;z-index:4}
+.modal-h{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,#15181B,#13161A)}
+@media(max-width:600px){
+  .modal-f{padding:11px 12px;gap:7px}
+  .modal-f .btn{flex:1 1 46%;justify-content:center;font-size:12.5px;padding:10px 8px}
+  .modal-f .btn[style*="margin-right:auto"]{flex:1 1 100%}
+}
 
 /* ============ ALUMNOS ============ */
 .ath-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:14px}
@@ -7592,6 +7601,7 @@ body{overflow-x:hidden}
       const w = Math.ceil(fab.getBoundingClientRect().width) + 26;
       document.documentElement.style.setProperty('--fabw', w + 'px');
     };
+    window.ajustarTopbar = ajustarTopbar;
     ajustarTopbar();
     [120, 300, 800, 1600].forEach(t => setTimeout(ajustarTopbar, t));
     window.addEventListener('resize', ajustarTopbar, { passive:true });
@@ -9765,6 +9775,7 @@ body{overflow-x:hidden}
     $('#homeQA').innerHTML = [
       { ic:'➕', t:'Registrar alumno',  d:'Ficha, lesiones y objetivos', a:'newAth' },
       { ic:'🏗️', t:'Builder activo',    d: active() ? fullName(active()) : 'Elegí un alumno/a', a:'builder' },
+      { ic:'✍️', t:'Armado manual',      d:'Arrastrar y soltar ejercicios', a:'manual' },
       { ic:'🎬', t:'Auditar biblioteca', d: (S.exercises.length - vids) + ' sin video', a:'audit' },
       { ic:'📥', t:'Importar planilla',  d:'Pegá filas del Google Sheets', a:'import' },
       { ic:'🧠', t:'Programación local', d:'Generar sin usar IA', a:'gen' },
@@ -9824,6 +9835,7 @@ body{overflow-x:hidden}
     }
     else if(a === 'audit'){ go('biblioteca'); setTimeout(() => { const b = document.getElementById('btnAudit'); if(b) b.click(); }, 160); }
     else if(a === 'import'){ go('biblioteca'); setTimeout(() => { const b = document.getElementById('btnImp'); if(b) b.click(); }, 160); }
+    else if(a === 'manual'){ go('builder'); setTimeout(() => { if(window.CoachManual) window.CoachManual.toggle(true); }, 200); }
     else if(a === 'gen'){ go('builder'); setTimeout(() => { const b = document.getElementById('btnGen'); if(b) b.click(); }, 200); }
     else if(a === 'search') openSearch();
     else if(a === 'backup'){ go('datos'); setTimeout(() => { const b = document.getElementById('btnBackup'); if(b) b.click(); }, 160); }
@@ -9844,6 +9856,7 @@ body{overflow-x:hidden}
   ];
   const ACCIONES = [
     { a:'newAth', ic:'➕', lb:'Registrar nuevo alumno/a' },
+    { a:'manual', ic:'✍️', lb:'Armar rutina manualmente' },
     { a:'gen',    ic:'🧠', lb:'Programación local autogenerada' },
     { a:'import', ic:'📥', lb:'Importar planilla de ejercicios' },
     { a:'audit',  ic:'🎬', lb:'Auditar videos de la biblioteca' },
@@ -10008,6 +10021,886 @@ body{overflow-x:hidden}
     return inner ? 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(inner) : '';
   })();
 
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 15 — SINCRONIZACIÓN EN LA NUBE (MULTI-DISPOSITIVO)
+     PC · tablet · celular con la misma Clave de Entrenador.
+     Proveedores: Supabase, Firebase Firestore (REST) o endpoint propio.
+     localStorage sigue siendo la capa offline: la nube nunca la reemplaza
+     sin confirmación y las credenciales viven fuera del backup.
+     ============================================================ -->
+<style>
+.cloud-pill{
+  display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:11px;
+  background:linear-gradient(180deg,#15181B,#0D0F11);border:1px solid var(--line-2);
+  font-size:11.5px;font-weight:800;color:var(--muted);box-shadow:0 10px 24px rgba(0,0,0,.45);
+  transition:.2s;white-space:nowrap;cursor:pointer;
+}
+.cloud-pill:hover{border-color:rgba(0,191,165,.45);color:var(--txt)}
+.cloud-pill .cd{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.2s}
+.cloud-pill.ok{color:var(--teal);border-color:rgba(0,191,165,.4)}
+.cloud-pill.ok .cd{background:var(--teal)}
+.cloud-pill.busy{color:var(--gold);border-color:rgba(255,214,0,.45)}
+.cloud-pill.busy .cd{background:var(--gold);animation:blink .7s ease-in-out infinite}
+.cloud-pill.err{color:#FF7A84;border-color:rgba(193,18,31,.5)}
+.cloud-pill.err .cd{background:var(--red)}
+@media(max-width:820px){.cloud-pill .ct{display:none}.cloud-pill{padding:7px 9px}}
+
+.cprov-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.cprov{padding:11px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--panel-2);text-align:left;transition:.15s}
+.cprov:hover{border-color:rgba(0,191,165,.45)}
+.cprov.on{border-color:var(--teal);background:rgba(0,191,165,.1)}
+.cprov .cpn{font-weight:800;font-size:13px}
+.cprov .cpd{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.4}
+.key-box{display:flex;align-items:center;gap:9px;padding:11px 13px;border-radius:var(--r-sm);
+  border:1px dashed rgba(0,191,165,.4);background:rgba(0,191,165,.06);margin-top:4px}
+.key-box code{font-family:ui-monospace,Menlo,monospace;font-size:15px;font-weight:800;color:var(--teal);letter-spacing:.08em}
+.sync-log{font-size:11.5px;color:var(--muted);line-height:1.7;max-height:132px;overflow:auto;
+  border:1px solid var(--line);border-radius:var(--r-sm);background:#0B0D0F;padding:10px 12px;margin-top:10px}
+.sync-log b{color:var(--txt-2)}
+.dev-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-sm);background:var(--panel-2);border:1px solid var(--line);margin-bottom:6px;font-size:12px}
+.dev-row .di{font-size:16px}
+</style>
+
+<div class="modal-bg" id="mCloud">
+  <div class="modal">
+    <div class="modal-h"><h3>☁️ Sincronización multi-dispositivo</h3><div class="spacer"></div><button class="icon-btn" data-close="mCloud">✕</button></div>
+    <div class="modal-b">
+      <div class="alert info" style="padding:10px 12px"><span class="ic">📱</span>
+        <div><b>Los mismos datos en la PC, la tablet y el celular</b>Elegí un proveedor, poné la misma <b>Clave de Entrenador</b> en cada dispositivo y todo (alumnos, marcas, sedes y planificaciones) queda espejado. Sin internet seguís trabajando: los cambios se guardan local y suben cuando vuelve la conexión.</div></div>
+
+      <div><label class="lb">Proveedor de nube</label>
+        <div class="cprov-row" id="cloudProv"></div>
+      </div>
+
+      <div class="grid g2" id="cloudFields"></div>
+
+      <div>
+        <label class="lb">🔑 Clave única de entrenador</label>
+        <div class="row" style="flex-wrap:nowrap">
+          <input id="cloudClave" placeholder="coachjp-2026" style="font-family:ui-monospace,Menlo,monospace">
+          <button class="btn sm" id="cloudGen">🎲 Generar</button>
+        </div>
+        <div class="key-box"><span>🔑</span><div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;font-weight:800">Usá esta misma clave en todos tus equipos</div><code id="cloudClaveEcho">—</code></div></div>
+      </div>
+
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="cloudAuto" checked> Sincronizar automáticamente al guardar</label>
+        <label class="chk"><input type="checkbox" id="cloudPull" checked> Bajar cambios al abrir la app</label>
+      </div>
+
+      <div id="cloudState"></div>
+      <div class="sync-log" id="cloudLog">Sin actividad todavía.</div>
+    </div>
+    <div class="modal-f">
+      <button class="btn red ghost" id="cloudOff" style="margin-right:auto">🔌 Desconectar</button>
+      <button class="btn" id="cloudTest">🔌 Probar conexión</button>
+      <button class="btn" id="cloudDown">⬇️ Bajar de la nube</button>
+      <button class="btn teal" id="cloudUp">⬆️ Subir ahora</button>
+      <button class="btn gold" id="cloudSave">💾 Guardar configuración</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="mMerge">
+  <div class="modal sm">
+    <div class="modal-h"><h3>⬇️ Cambios encontrados en la nube</h3><div class="spacer"></div><button class="icon-btn" data-close="mMerge">✕</button></div>
+    <div class="modal-b"><div id="mergeBody"></div></div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mMerge">Ahora no</button>
+      <button class="btn" id="mergeReplace">♻️ Reemplazar lo local</button>
+      <button class="btn gold" id="mergeFusion">🔀 Fusionar (recomendado)</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   21. MÓDULO 15 — NUBE MULTI-DISPOSITIVO
+   ============================================================ */
+(function(){
+  const CKEY = 'coachjp_cloud_v1';           /* credenciales fuera del backup */
+  const DEV  = (function(){
+    let d = '';
+    try{ d = localStorage.getItem('coachjp_device') || ''; }catch(e){}
+    if(!d){
+      const ua = navigator.userAgent || '';
+      const tipo = /iPad|Tablet/i.test(ua) ? 'Tablet' : /Mobi|Android|iPhone/i.test(ua) ? 'Celular' : 'PC';
+      d = tipo + '-' + Math.random().toString(36).slice(2,6).toUpperCase();
+      try{ localStorage.setItem('coachjp_device', d); }catch(e){}
+    }
+    return d;
+  })();
+
+  const PROV = {
+    supabase: {
+      lb:'Supabase', d:'Tabla propia vía REST. Gratis y sin backend.',
+      campos:[
+        { k:'url',   lb:'URL del proyecto', ph:'https://xxxx.supabase.co' },
+        { k:'key',   lb:'anon key (public)', ph:'eyJhbGciOi…' },
+        { k:'table', lb:'Tabla', ph:'coachjp_sync', def:'coachjp_sync' }
+      ],
+      async get(c){
+        const r = await fetch(c.url.replace(/\/+$/,'') + '/rest/v1/' + (c.table || 'coachjp_sync') +
+          '?clave=eq.' + encodeURIComponent(c.clave) + '&select=*',
+          { headers: { apikey: c.key, Authorization: 'Bearer ' + c.key } });
+        if(!r.ok) throw new Error('HTTP ' + r.status + ' — ' + (await r.text()).slice(0,120));
+        const j = await r.json();
+        return j && j.length ? { data: j[0].data, updatedAt: +j[0].updated_at || 0, device: j[0].device || '' } : null;
+      },
+      async put(c, payload){
+        const r = await fetch(c.url.replace(/\/+$/,'') + '/rest/v1/' + (c.table || 'coachjp_sync') + '?on_conflict=clave',
+          { method:'POST',
+            headers: { apikey:c.key, Authorization:'Bearer ' + c.key, 'Content-Type':'application/json',
+                       Prefer:'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify([{ clave:c.clave, data:payload.data, updated_at:payload.updatedAt, device:payload.device }]) });
+        if(!r.ok) throw new Error('HTTP ' + r.status + ' — ' + (await r.text()).slice(0,120));
+        return true;
+      }
+    },
+    firebase: {
+      lb:'Firebase', d:'Firestore por REST, con tu projectId y API key.',
+      campos:[
+        { k:'url', lb:'Project ID', ph:'coachjp-console' },
+        { k:'key', lb:'Web API key', ph:'AIzaSy…' },
+        { k:'table', lb:'Colección', ph:'coachjp', def:'coachjp' }
+      ],
+      doc(c){
+        return 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(c.url) +
+               '/databases/(default)/documents/' + (c.table || 'coachjp') + '/' + encodeURIComponent(c.clave) +
+               '?key=' + encodeURIComponent(c.key);
+      },
+      async get(c){
+        const r = await fetch(this.doc(c));
+        if(r.status === 404) return null;
+        if(!r.ok) throw new Error('HTTP ' + r.status + ' — ' + (await r.text()).slice(0,120));
+        const j = await r.json(), f = (j && j.fields) || {};
+        if(!f.data) return null;
+        return { data: f.data.stringValue || '', updatedAt: +((f.updatedAt||{}).integerValue || 0), device: (f.device||{}).stringValue || '' };
+      },
+      async put(c, payload){
+        const body = { fields: {
+          data:      { stringValue: payload.data },
+          updatedAt: { integerValue: String(payload.updatedAt) },
+          device:    { stringValue: payload.device }
+        }};
+        const r = await fetch(this.doc(c), { method:'PATCH', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+        if(!r.ok) throw new Error('HTTP ' + r.status + ' — ' + (await r.text()).slice(0,120));
+        return true;
+      }
+    },
+    custom: {
+      lb:'Endpoint propio', d:'Cualquier API o JSON bin que acepte GET y PUT.',
+      campos:[
+        { k:'url', lb:'URL del endpoint', ph:'https://api.tuservidor.com/coachjp' },
+        { k:'key', lb:'Token (opcional)', ph:'Bearer …' }
+      ],
+      hdrs(c){ const h = { 'Content-Type':'application/json' }; if(c.key) h.Authorization = /^Bearer /i.test(c.key) ? c.key : 'Bearer ' + c.key; return h; },
+      async get(c){
+        const u = c.url + (c.url.indexOf('?') >= 0 ? '&' : '?') + 'clave=' + encodeURIComponent(c.clave);
+        const r = await fetch(u, { headers: this.hdrs(c) });
+        if(r.status === 404) return null;
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        const j = await r.json();
+        if(!j || !j.data) return null;
+        return { data: j.data, updatedAt: +j.updatedAt || 0, device: j.device || '' };
+      },
+      async put(c, payload){
+        const r = await fetch(c.url, { method:'PUT', headers: this.hdrs(c),
+          body: JSON.stringify({ clave:c.clave, data:payload.data, updatedAt:payload.updatedAt, device:payload.device }) });
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        return true;
+      }
+    }
+  };
+
+  let C = { prov:'supabase', url:'', key:'', table:'', clave:'', auto:true, pull:true, lastSync:0 };
+  let pill = null, log = [], pushT = null, pendiente = false, remotoTmp = null;
+
+  function loadCfg(){
+    try{
+      const raw = localStorage.getItem(CKEY);
+      if(raw) C = Object.assign(C, JSON.parse(raw));
+    }catch(e){}
+    return C;
+  }
+  function saveCfg(){ try{ localStorage.setItem(CKEY, JSON.stringify(C)); }catch(e){} }
+  const activo = () => !!(C.clave && C.url && (C.prov === 'custom' || C.key));
+  const hhmm = t => { const d = new Date(t || Date.now()); return ('0'+d.getHours()).slice(-2) + ':' + ('0'+d.getMinutes()).slice(-2); };
+
+  function anotar(msg, tipo){
+    log.unshift({ t: Date.now(), msg: msg, tipo: tipo || '' });
+    log = log.slice(0, 30);
+    const el = document.getElementById('cloudLog');
+    if(el) el.innerHTML = log.map(l => '<div><b>' + hhmm(l.t) + '</b> · ' + (l.tipo === 'err' ? '<span style="color:#FF7A84">' : '<span>') + esc(l.msg) + '</span></div>').join('');
+  }
+  function setPill(estado, txt){
+    if(!pill) return;
+    pill.className = 'cloud-pill ' + estado;
+    pill.querySelector('.ct').textContent = txt;
+    pill.title = txt + ' · dispositivo ' + DEV;
+  }
+  function pintarEstado(){
+    if(!activo()) setPill('', 'Nube sin configurar');
+    else if(!navigator.onLine) setPill('err', 'Sin conexión — guardado local');
+    else if(pendiente) setPill('busy', 'Cambios pendientes');
+    else if(C.lastSync) setPill('ok', 'Sincronizado en la nube ' + hhmm(C.lastSync));
+    else setPill('ok', 'Nube conectada');
+    const box = document.getElementById('cloudState');
+    if(box){
+      box.innerHTML = activo()
+        ? '<div class="alert good" style="padding:10px 12px"><span class="ic">☁️</span><div><b>Conectado como «' + esc(C.clave) + '»</b>' +
+          'Dispositivo: ' + esc(DEV) + (C.lastSync ? ' · Última sincronización ' + hhmm(C.lastSync) + ' del ' + new Date(C.lastSync).toLocaleDateString('es-AR') : ' · Todavía sin subir datos') + '</div></div>'
+        : '<div class="alert warn" style="padding:10px 12px"><span class="ic">⚠️</span><div><b>Nube desconectada</b>Los datos siguen guardándose en este navegador. Completá el proveedor y la clave para espejar todo entre equipos.</div></div>';
+    }
+  }
+
+  /* ---------- payload ---------- */
+  function snapshot(){
+    return { athletes:S.athletes, exercises:S.exercises, plans:S.plans, activeId:S.activeId,
+             sedes:S.sedes || [], exportLog:S.exportLog || {}, libV:S.libV, rev: Date.now() };
+  }
+  function contar(o){
+    return (o.athletes||[]).length + ' alumnos · ' + (o.exercises||[]).length + ' ejercicios · ' +
+           Object.keys(o.plans||{}).length + ' planes · ' + (o.sedes||[]).length + ' sedes';
+  }
+
+  /* ---------- subir ---------- */
+  async function subir(silencioso){
+    if(!activo()){ if(!silencioso) toast('Configurá la nube primero', 'warn'); return false; }
+    if(!navigator.onLine){ pendiente = true; pintarEstado(); anotar('Sin conexión: el cambio queda pendiente', 'err'); return false; }
+    setPill('busy', 'Subiendo…');
+    try{
+      const payload = { data: JSON.stringify(snapshot()), updatedAt: Date.now(), device: DEV };
+      await PROV[C.prov].put(C, payload);
+      C.lastSync = payload.updatedAt; pendiente = false; saveCfg(); pintarEstado();
+      anotar('⬆️ Subido desde ' + DEV + ' · ' + contar(S));
+      if(!silencioso) toast('☁️ Datos subidos a la nube');
+      return true;
+    }catch(e){
+      pendiente = true; pintarEstado();
+      setPill('err', 'Error al sincronizar');
+      anotar('Error al subir: ' + e.message, 'err');
+      if(!silencioso) toast('No se pudo subir: ' + e.message, 'err');
+      return false;
+    }
+  }
+  /* ---------- bajar ---------- */
+  async function bajar(auto){
+    if(!activo()){ if(!auto) toast('Configurá la nube primero', 'warn'); return null; }
+    if(!navigator.onLine){ if(!auto) toast('Sin conexión', 'err'); return null; }
+    setPill('busy', 'Buscando cambios…');
+    try{
+      const r = await PROV[C.prov].get(C);
+      if(!r || !r.data){ pintarEstado(); anotar('La nube todavía no tiene datos con esa clave'); if(!auto) toast('No hay datos en la nube para «' + C.clave + '»', 'warn'); return null; }
+      const remoto = JSON.parse(r.data);
+      remotoTmp = { obj: remoto, updatedAt: r.updatedAt, device: r.device };
+      pintarEstado();
+      anotar('⬇️ Encontrado en la nube (' + (r.device || 'otro equipo') + '): ' + contar(remoto));
+      if(auto && r.updatedAt <= (C.lastSync || 0)){ anotar('Sin novedades: lo local ya está al día'); return null; }
+      mostrarMerge();
+      return remotoTmp;
+    }catch(e){
+      setPill('err', 'Error al sincronizar');
+      anotar('Error al bajar: ' + e.message, 'err');
+      if(!auto) toast('No se pudo bajar: ' + e.message, 'err');
+      return null;
+    }
+  }
+  function mostrarMerge(){
+    if(!remotoTmp) return;
+    const r = remotoTmp.obj;
+    const nuevosAth = (r.athletes||[]).filter(a => !S.athletes.some(x => x.id === a.id)).length;
+    const nuevosEx  = (r.exercises||[]).filter(e => !S.exercises.some(x => x.id === e.id)).length;
+    $('#mergeBody').innerHTML =
+      '<div class="alert info" style="padding:10px 12px"><span class="ic">☁️</span><div><b>Versión de ' + esc(remotoTmp.device || 'otro dispositivo') + '</b>' +
+        'Guardada el ' + new Date(remotoTmp.updatedAt).toLocaleString('es-AR') + '</div></div>' +
+      '<div class="dev-row"><span class="di">☁️</span><div><b>En la nube</b><div class="hint" style="margin:0">' + esc(contar(r)) + '</div></div></div>' +
+      '<div class="dev-row"><span class="di">💻</span><div><b>En este equipo (' + esc(DEV) + ')</b><div class="hint" style="margin:0">' + esc(contar(S)) + '</div></div></div>' +
+      '<div class="hint" style="margin-top:10px"><b>Fusionar</b> suma lo que falta y actualiza lo que existe en ambos, sin borrar nada de este equipo (' +
+        nuevosAth + ' alumno/s y ' + nuevosEx + ' ejercicio/s nuevos). <b>Reemplazar</b> deja este equipo exactamente igual a la nube.</div>';
+    openModal('mMerge');
+  }
+  function aplicar(modo){
+    if(!remotoTmp) return;
+    const r = remotoTmp.obj;
+    if(modo === 'replace'){
+      S.athletes  = r.athletes || [];
+      S.exercises = r.exercises || [];
+      S.plans     = r.plans || {};
+      S.sedes     = r.sedes || S.sedes;
+      S.activeId  = r.activeId || S.activeId;
+      S.exportLog = r.exportLog || {};
+    } else {
+      /* fusión no destructiva: se suma lo que falta y se actualiza lo compartido */
+      (r.athletes||[]).forEach(a => {
+        const cur = S.athletes.find(x => x.id === a.id);
+        if(cur) Object.assign(cur, a); else S.athletes.push(a);
+      });
+      (r.exercises||[]).forEach(e => {
+        const cur = S.exercises.find(x => x.id === e.id) || S.exercises.find(x => norm(x.es) === norm(e.es));
+        if(cur){ if(!cur.videoId && e.videoId){ cur.videoId = e.videoId; cur.video = e.video; } if(!cur.aviso && e.aviso) cur.aviso = e.aviso; }
+        else S.exercises.push(e);
+      });
+      Object.keys(r.plans || {}).forEach(k => { S.plans[k] = r.plans[k]; });
+      (r.sedes||[]).forEach(sd => {
+        const cur = (S.sedes||[]).find(x => x.id === sd.id);
+        if(cur) Object.assign(cur, sd); else (S.sedes = S.sedes || []).push(sd);
+      });
+      Object.assign(S.exportLog = S.exportLog || {}, r.exportLog || {});
+    }
+    C.lastSync = remotoTmp.updatedAt; saveCfg();
+    save();
+    closeModal('mMerge'); closeModal('mCloud');
+    pintarEstado();
+    anotar((modo === 'replace' ? '♻️ Reemplazado' : '🔀 Fusionado') + ' con la versión de la nube · ' + contar(S));
+    ['renderAthletes','renderLibrary','renderBuilder','renderSedes','renderHome','renderAgenda','renderMetricas'].forEach(f => {
+      if(typeof window[f] === 'function'){ try{ window[f](); }catch(e){} }
+    });
+    toast('☁️ Datos de la nube aplicados · ' + contar(S));
+  }
+
+  /* ---------- enganche con save() ---------- */
+  const _save = window.save;
+  window.save = function(){
+    const r = _save.apply(this, arguments);
+    if(activo() && C.auto){
+      pendiente = true; pintarEstado();
+      clearTimeout(pushT);
+      pushT = setTimeout(() => subir(true), 4000);   /* debounce: no satura la API */
+    }
+    return r;
+  };
+  window.addEventListener('online',  () => { pintarEstado(); if(activo() && C.auto && pendiente) subir(true); });
+  window.addEventListener('offline', pintarEstado);
+
+  /* ---------- UI de configuración ---------- */
+  function pintarProv(){
+    $('#cloudProv').innerHTML = Object.keys(PROV).map(k =>
+      '<button class="cprov ' + (C.prov === k ? 'on' : '') + '" data-cprov="' + k + '">' +
+        '<div class="cpn">' + esc(PROV[k].lb) + '</div><div class="cpd">' + esc(PROV[k].d) + '</div></button>').join('');
+    $('#cloudFields').innerHTML = PROV[C.prov].campos.map(f =>
+      '<div><label class="lb">' + esc(f.lb) + '</label>' +
+        '<input data-cf="' + f.k + '" value="' + esc(C[f.k] || f.def || '') + '" placeholder="' + esc(f.ph) + '"' +
+        (f.k === 'key' ? ' type="password"' : '') + '></div>').join('');
+  }
+  function abrirCloud(){
+    loadCfg();
+    pintarProv();
+    $('#cloudClave').value = C.clave || '';
+    $('#cloudClaveEcho').textContent = C.clave || '—';
+    $('#cloudAuto').checked = C.auto !== false;
+    $('#cloudPull').checked = C.pull !== false;
+    pintarEstado();
+    anotar('Panel abierto en ' + DEV);
+    openModal('mCloud');
+  }
+  function leerCampos(){
+    $$('#cloudFields [data-cf]').forEach(i => { C[i.dataset.cf] = i.value.trim(); });
+    C.clave = $('#cloudClave').value.trim();
+    C.auto  = $('#cloudAuto').checked;
+    C.pull  = $('#cloudPull').checked;
+  }
+
+  function mount(){
+    loadCfg();
+    const fab = document.querySelector('.cfg-fab');
+    if(fab && !document.getElementById('cloudPill')){
+      pill = document.createElement('span');
+      pill.className = 'cloud-pill'; pill.id = 'cloudPill';
+      pill.innerHTML = '<span class="cd"></span><span class="ct">Nube</span>';
+      fab.insertBefore(pill, fab.firstChild);
+      pill.addEventListener('click', abrirCloud);
+    }
+    /* tarjeta en la vista Datos */
+    const dv = document.querySelector('#v-datos .grid');
+    if(dv && !document.getElementById('cloudCard')){
+      const c = document.createElement('div');
+      c.className = 'card'; c.id = 'cloudCard'; c.style.gridColumn = '1/-1';
+      c.innerHTML = '<h3>☁️ Nube multi-dispositivo</h3>' +
+        '<div class="hint" style="margin-bottom:12px">Espejá alumnos, marcas, sedes y planificaciones entre la PC, la tablet y el celular con una sola Clave de Entrenador. El backup .json sigue funcionando igual y nunca incluye tus credenciales.</div>' +
+        '<div class="row"><button class="btn teal" id="cloudOpen">⚙️ Configurar sincronización</button>' +
+        '<button class="btn" id="cloudUp2">⬆️ Subir ahora</button>' +
+        '<button class="btn" id="cloudDown2">⬇️ Bajar de la nube</button></div>';
+      dv.appendChild(c);
+      c.querySelector('#cloudOpen').addEventListener('click', abrirCloud);
+      c.querySelector('#cloudUp2').addEventListener('click', () => subir(false));
+      c.querySelector('#cloudDown2').addEventListener('click', () => bajar(false));
+    }
+
+    $('#cloudProv').addEventListener('click', e => {
+      const b = e.target.closest('[data-cprov]'); if(!b) return;
+      leerCampos(); C.prov = b.dataset.cprov; pintarProv();
+    });
+    $('#cloudClave').addEventListener('input', () => { $('#cloudClaveEcho').textContent = $('#cloudClave').value.trim() || '—'; });
+    $('#cloudGen').addEventListener('click', () => {
+      const k = 'coachjp-' + Math.random().toString(36).slice(2,8);
+      $('#cloudClave').value = k; $('#cloudClaveEcho').textContent = k;
+    });
+    $('#cloudSave').addEventListener('click', () => {
+      leerCampos(); saveCfg(); pintarEstado();
+      anotar('Configuración guardada (' + PROV[C.prov].lb + ')');
+      toast(activo() ? '☁️ Nube configurada' : 'Faltan datos para conectar', activo() ? '' : 'warn');
+    });
+    $('#cloudTest').addEventListener('click', async () => {
+      leerCampos(); saveCfg();
+      if(!activo()){ toast('Completá proveedor y clave', 'warn'); return; }
+      setPill('busy', 'Probando…');
+      try{
+        await PROV[C.prov].get(C);
+        anotar('✅ Conexión correcta con ' + PROV[C.prov].lb);
+        toast('✅ Conexión correcta');
+        pintarEstado();
+      }catch(e){ anotar('❌ ' + e.message, 'err'); toast('Falló la conexión: ' + e.message, 'err'); setPill('err','Error de conexión'); }
+    });
+    $('#cloudUp').addEventListener('click',   () => { leerCampos(); saveCfg(); subir(false); });
+    $('#cloudDown').addEventListener('click', () => { leerCampos(); saveCfg(); bajar(false); });
+    $('#cloudOff').addEventListener('click', () => {
+      if(!confirm('¿Desconectar la nube? Tus datos locales quedan intactos.')) return;
+      C = { prov:C.prov, url:'', key:'', table:'', clave:'', auto:true, pull:true, lastSync:0 };
+      saveCfg(); pintarProv(); $('#cloudClave').value = ''; $('#cloudClaveEcho').textContent = '—';
+      pintarEstado(); anotar('Nube desconectada');
+      toast('Nube desconectada');
+    });
+    $('#mergeFusion').addEventListener('click',  () => aplicar('merge'));
+    $('#mergeReplace').addEventListener('click', () => { if(confirm('Se reemplazan los datos de este equipo por los de la nube. ¿Seguir?')) aplicar('replace'); });
+    $$('#mCloud [data-close], #mMerge [data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+    ['mCloud','mMerge'].forEach(id => {
+      const m = document.getElementById(id);
+      m.addEventListener('click', e => { if(e.target === m) closeModal(id); });
+    });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeModal('mCloud'); closeModal('mMerge'); } });
+
+    pintarEstado();
+    /* bajada automática al abrir la app */
+    if(activo() && C.pull !== false) setTimeout(() => bajar(true), 900);
+
+    window.CoachCloud = { cfg: () => C, subir: subir, bajar: bajar, aplicar: aplicar, abrir: abrirCloud,
+                          snapshot: snapshot, activo: activo, device: DEV, proveedores: PROV };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 16 — CREADOR MANUAL INTERACTIVO DE RUTINAS
+     · Panel flotante de biblioteca con arrastrar y soltar (y tap en celular)
+     · Controles + / − para series, reps, tempo y descanso
+     · Reorganización de bloques en 1 toque
+     ============================================================ -->
+<style>
+.man-dock{
+  position:fixed;top:0;right:0;bottom:0;width:302px;z-index:150;display:none;flex-direction:column;
+  background:linear-gradient(180deg,#141719,#0B0D0F);border-left:1px solid var(--line-2);
+  box-shadow:-22px 0 48px rgba(0,0,0,.55);
+}
+.man-dock.on{display:flex}
+body.man-mode .main{padding-right:322px}
+/* con el panel abierto la barra fija se compacta para no comerse el ancho útil */
+body.man-mode .cfg-fab .lbl,
+body.man-mode .cloud-pill .ct,
+body.man-mode .sync-pill .st{display:none}
+body.man-mode .cfg-fab{gap:6px}
+body.man-mode .cfg-fab{right:318px}
+body.man-mode .gs-fab{right:318px}
+.man-h{padding:14px 15px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+.man-h h4{font-family:var(--ffh);font-size:18px;text-transform:uppercase;letter-spacing:.02em;font-weight:900;color:var(--gold)}
+.man-tools{padding:11px 13px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.man-tools input,.man-tools select{padding:8px 10px;font-size:12.5px;border-radius:9px}
+.man-modes{display:flex;gap:5px}
+.man-mode-b{flex:1;padding:7px 4px;border-radius:9px;border:1px solid var(--line-2);background:var(--panel-3);
+  color:var(--muted);font-size:11px;font-weight:800;transition:.15s}
+.man-mode-b.on{border-color:var(--gold);background:rgba(255,214,0,.13);color:var(--gold)}
+.man-list{flex:1;overflow-y:auto;padding:10px;display:grid;gap:7px;align-content:start}
+.man-ex{display:flex;align-items:center;gap:9px;padding:7px;border-radius:var(--r-sm);border:1px solid var(--line);
+  background:var(--panel-2);cursor:grab;transition:.13s;text-align:left;width:100%}
+.man-ex:hover{border-color:var(--gold);background:rgba(255,214,0,.07);transform:translateX(-2px)}
+.man-ex:active{cursor:grabbing}
+.man-ex.drag{opacity:.4}
+.man-ex .mt{width:52px;height:30px;flex:0 0 52px;border-radius:6px;background:#0B0D0F;overflow:hidden;display:grid;place-items:center;font-size:9px;color:var(--muted)}
+.man-ex .mt img{width:100%;height:100%;object-fit:cover}
+.man-ex .mn{font-size:12px;font-weight:700;line-height:1.25}
+.man-ex .mm{font-size:10px;color:var(--muted);margin-top:1px}
+.man-ex.ban{border-color:rgba(193,18,31,.45);background:rgba(193,18,31,.07)}
+.man-ex.ban .mn{color:#FF7A84}
+.man-ex.nosede{opacity:.45}
+.man-foot{padding:9px 12px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted);line-height:1.5}
+.man-count{font-size:10.5px;color:var(--muted);padding:0 13px 9px}
+
+/* zonas de drop */
+.block.dropzone{outline:2px dashed rgba(255,214,0,.65);outline-offset:3px;background:rgba(255,214,0,.05)}
+.block.mansel{box-shadow:0 0 0 2px rgba(255,214,0,.5)}
+.man-daydrop{
+  border:2px dashed rgba(255,214,0,.35);border-radius:var(--r);padding:18px;text-align:center;color:var(--muted);
+  font-size:12.5px;margin-top:12px;background:rgba(255,214,0,.03);transition:.15s;
+}
+.man-daydrop.dropzone{border-color:var(--gold);color:var(--gold);background:rgba(255,214,0,.09)}
+
+/* controles + / − */
+.man-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:9px 10px;margin:0 0 10px;
+  border:1px solid rgba(255,214,0,.28);border-radius:var(--r-sm);background:linear-gradient(90deg,rgba(255,214,0,.06),transparent)}
+.stp{display:flex;align-items:center;gap:4px;background:var(--panel-3);border:1px solid var(--line-2);border-radius:10px;padding:3px 4px}
+.stp .sl{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:800;padding:0 4px}
+.stp button{width:26px;height:26px;border-radius:7px;background:var(--panel-2);border:1px solid var(--line);
+  color:var(--txt-2);font-weight:900;font-size:14px;line-height:1;display:grid;place-items:center;transition:.12s}
+.stp button:hover{background:var(--gold);color:#0A0A0B;border-color:transparent}
+.stp .sv{min-width:44px;text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:800;color:var(--gold)}
+.stp.tempo .sv{min-width:56px;letter-spacing:.12em}
+.man-bar .mv{margin-left:auto;display:flex;gap:5px}
+.man-bar .mv button{width:32px;height:30px;border-radius:9px;background:var(--panel-3);border:1px solid var(--line-2);font-size:13px;transition:.12s}
+.man-bar .mv button:hover{background:var(--gold);color:#0A0A0B;border-color:transparent}
+@media(max-width:900px){
+  .man-dock{width:100%;top:auto;height:62vh;border-left:none;border-top:1px solid var(--line-2);border-radius:18px 18px 0 0}
+  body.man-mode .main{padding-right:11px;padding-bottom:64vh}
+  .man-dock{width:100%}
+  body.man-mode .cfg-fab,body.man-mode .gs-fab{right:14px}
+  .man-list{grid-template-columns:1fr}
+}
+</style>
+
+<div class="man-dock" id="manDock">
+  <div class="man-h">
+    <h4>✍️ Armado manual</h4>
+    <div class="spacer" style="flex:1"></div>
+    <button class="icon-btn" id="manClose" title="Cerrar panel">✕</button>
+  </div>
+  <div class="man-tools">
+    <input id="manQ" placeholder="Buscar ejercicio…">
+    <div class="row" style="gap:7px;flex-wrap:nowrap">
+      <select id="manGrupo" style="flex:1"></select>
+      <select id="manEquipo" style="flex:1"></select>
+    </div>
+    <div class="man-modes" id="manModes">
+      <button class="man-mode-b on" data-mmode="block">💪 Bloque</button>
+      <button class="man-mode-b" data-mmode="superset">🔗 Biset</button>
+      <button class="man-mode-b" data-mmode="finisher">🔥 Finisher</button>
+    </div>
+    <label class="chk" style="font-size:11.5px"><input type="checkbox" id="manSede" checked> Solo lo compatible con la sede</label>
+  </div>
+  <div class="man-count" id="manCount"></div>
+  <div class="man-list" id="manList"></div>
+  <div class="man-foot" id="manFoot">Arrastrá un ejercicio sobre un bloque, o tocalo para agregarlo al bloque seleccionado.</div>
+</div>
+
+<script>
+/* ============================================================
+   22. MÓDULO 16 — CREADOR MANUAL INTERACTIVO
+   ============================================================ */
+(function(){
+  const G = () => window.CoachGestion || {};
+  let manOn = false, manTipo = 'block', selBlock = null, manPage = 0;
+  const PP = 40;
+
+  /* ---------- utilidades ---------- */
+  function blocksDom(){
+    return $$('#dayPanel .block').map(el => {
+      const ref = el.querySelector('[data-b]');
+      const id = ref ? ref.dataset.b : '';
+      if(id) el.dataset.mb = id;
+      return { el: el, id: id };
+    }).filter(x => x.id);
+  }
+  const bloque = id => findBlock(id);
+
+  /* ---------- panel de biblioteca ---------- */
+  function listaFiltrada(){
+    const q = norm($('#manQ').value), g = $('#manGrupo').value, eq = $('#manEquipo').value;
+    const soloSede = $('#manSede').checked;
+    const a = active();
+    return S.exercises.filter(e => {
+      if(g && e.grupo !== g) return false;
+      if(eq && e.equipo !== eq) return false;
+      if(q && norm(e.es + ' ' + (e.en||'') + ' ' + e.patron).indexOf(q) < 0) return false;
+      if(soloSede && a && G().sedeOk && !G().sedeOk(a, e)) return false;
+      return true;
+    }).sort((x,y) => x.es.localeCompare(y.es, 'es'));
+  }
+  function renderMan(){
+    if(!manOn) return;
+    const a = active();
+    const list = listaFiltrada();
+    const visto = list.slice(0, (manPage + 1) * PP);
+    $('#manCount').textContent = list.length + ' ejercicio(s)' + (list.length > visto.length ? ' · mostrando ' + visto.length : '');
+    $('#manList').innerHTML = visto.map(e => {
+      const al = a ? checkExercise(a, e) : [];
+      const w = worst(al);
+      const fuera = a && G().sedeOk && !G().sedeOk(a, e);
+      return '<button class="man-ex ' + (w === 'danger' ? 'ban' : '') + ' ' + (fuera ? 'nosede' : '') + '" draggable="true" data-mex="' + e.id + '">' +
+        '<span class="mt">' + (e.videoId ? '<img loading="lazy" src="' + ytThumb(e.videoId) + '" alt="">' : 'SIN VIDEO') + '</span>' +
+        '<span style="min-width:0"><span class="mn">' + esc(e.es) + '</span>' +
+          '<div class="mm">' + esc(e.grupo) + ' · ' + esc(e.equipo) + (w === 'danger' ? ' · ⛔ restringido' : (w === 'good' ? ' · ⭐ preferido' : '')) + '</div></span>' +
+      '</button>';
+    }).join('') +
+      (list.length > visto.length ? '<button class="btn sm" id="manMore">Ver ' + Math.min(PP, list.length - visto.length) + ' más</button>' : '') ||
+      '<div class="empty" style="padding:20px"><div class="big">🔍</div><h4>Sin resultados</h4></div>';
+  }
+
+  /* ---------- alta de ejercicios ---------- */
+  function agregarA(bid, exId){
+    const b = bloque(bid), ex = getEx(exId);
+    if(!b || !ex) return false;
+    const a = active();
+    if(a && checkExercise(a, ex).some(x => x.level === 'danger')){
+      if(!confirm('«' + ex.es + '» está restringido para ' + fullName(a) + '. ¿Lo agregás igual?')) return false;
+    }
+    if(b.tipo === 'block'){ b.exId = ex.id; if(!b.titulo || /^Bloque/i.test(b.titulo)) b.titulo = ex.es; }
+    else if(b.tipo === 'superset'){ b.ejercicios.push({ exId: ex.id, reps: b.ejercicios.length ? b.ejercicios[0].reps : '10-12', tempo: b.ejercicios.length ? b.ejercicios[0].tempo : '2011' }); }
+    else if(b.tipo === 'finisher'){ b.fin.push({ exId: ex.id, repsRange: '15-20' }); }
+    else if(b.tipo === 'list'){ b.items.push(ex.es + ' — 2x12'); }
+    else return false;
+    if(!b.tips && window.CoachAuto && window.CoachAuto.notaCompleta)
+      b.tips = window.CoachAuto.notaCompleta(ex, b.tempo || '2011', a);
+    save(); renderBuilder();
+    toast('✍️ ' + ex.es + ' → ' + (b.titulo || 'bloque'));
+    return true;
+  }
+  function nuevoBloqueCon(exId, tipo){
+    const d = curDay(); if(!d){ toast('Elegí un alumno/a activo/a', 'err'); return; }
+    const ex = getEx(exId); if(!ex) return;
+    const b = newBlock(tipo || manTipo);
+    b.titulo = ex.es;
+    if(b.tipo === 'block'){
+      const p = window.CoachAuto ? window.CoachAuto.params(ex, 'block') : null;
+      b.exId = ex.id;
+      if(p){ b.efSets = p.efSets; b.reps = p.reps; b.tempo = p.tempo; b.restSeconds = p.rest; b.hasApprox = p.hasApprox; b.approxSets = p.approx; }
+    }
+    if(b.tipo === 'superset'){ b.titulo = 'Biset'; b.ejercicios.push({ exId: ex.id, reps:'10-12', tempo:'2011' }); }
+    if(b.tipo === 'finisher'){ b.titulo = 'Finisher'; b.fin.push({ exId: ex.id, repsRange:'15-20' }); }
+    if(window.CoachAuto && window.CoachAuto.notaCompleta) b.tips = window.CoachAuto.notaCompleta(ex, b.tempo || '2011', active());
+    d.bloques.push(b);
+    selBlock = b.id;
+    save(); renderBuilder();
+    toast('✍️ Bloque creado con ' + ex.es);
+  }
+
+  /* ---------- controles + / − ---------- */
+  function pasoReps(txt, delta){
+    const t = String(txt || '').trim();
+    const m = t.match(/^(\d+)\s*[-–]\s*(\d+)(.*)$/);
+    if(m){
+      const a = Math.max(1, Math.min(60, parseInt(m[1],10) + delta));
+      const b = Math.max(a, Math.min(60, parseInt(m[2],10) + delta));
+      return a + '-' + b + (m[3] || '');
+    }
+    const s = t.match(/^(\d+)(.*)$/);
+    if(s) return Math.max(1, Math.min(90, parseInt(s[1],10) + delta)) + (s[2] || '');
+    return t;
+  }
+  function pasoTempo(tempo, i, delta){
+    let t = String(tempo || '2011');
+    if(t.length !== 4) t = '2011';
+    const d = t.split('');
+    const v = d[i] === 'X' || d[i] === 'x' ? 0 : parseInt(d[i], 10) || 0;
+    let n = v + delta;
+    if(n > 9) n = 0; if(n < 0) n = 9;
+    d[i] = String(n);
+    return d.join('');
+  }
+  function stepper(bid, campo, label, valor, extra){
+    return '<div class="stp ' + (extra || '') + '"><span class="sl">' + label + '</span>' +
+      '<button data-mstep="-1" data-mb="' + bid + '" data-mc="' + campo + '">−</button>' +
+      '<span class="sv">' + esc(valor) + '</span>' +
+      '<button data-mstep="1" data-mb="' + bid + '" data-mc="' + campo + '">+</button></div>';
+  }
+  function tempoStepper(bid, tempo){
+    const t = (String(tempo || '2011').length === 4) ? String(tempo) : '2011';
+    return '<div class="stp tempo"><span class="sl">Tempo</span>' +
+      t.split('').map((d, i) =>
+        '<div style="display:grid;gap:2px;justify-items:center">' +
+          '<button style="width:22px;height:18px;font-size:10px" data-mtempo="1" data-mb="' + bid + '" data-mi="' + i + '">▲</button>' +
+          '<span class="sv" style="min-width:14px;font-size:12px">' + esc(d) + '</span>' +
+          '<button style="width:22px;height:18px;font-size:10px" data-mtempo="-1" data-mb="' + bid + '" data-mi="' + i + '">▼</button>' +
+        '</div>').join('') +
+    '</div>';
+  }
+  function barra(b){
+    const esBlock = b.tipo === 'block';
+    const reps = esBlock ? b.reps : ((b.ejercicios || [])[0] || {}).reps || '10-12';
+    const tempo = esBlock ? b.tempo : ((b.ejercicios || [])[0] || {}).tempo || '2011';
+    let h = '<div class="man-bar" data-manbar="' + b.id + '">';
+    if(b.tipo === 'block' || b.tipo === 'superset'){
+      h += stepper(b.id, 'efSets', b.tipo === 'superset' ? 'Rondas' : 'Series', b.efSets);
+      h += stepper(b.id, 'reps', 'Reps', reps);
+      h += tempoStepper(b.id, tempo);
+      h += stepper(b.id, 'restSeconds', 'Descanso', (b.restSeconds || 0) + 's');
+    } else if(b.tipo === 'finisher'){
+      h += stepper(b.id, 'finReps', 'Reps', ((b.fin || [])[0] || {}).repsRange || '15-20');
+    } else {
+      h += '<span class="sl" style="color:var(--muted);font-size:11px">Bloque de lista: arrastrá ejercicios para sumarlos como ítems</span>';
+    }
+    h += '<div class="mv">' +
+      '<button data-mmove="up" data-mb="' + b.id + '" title="Subir bloque">▲</button>' +
+      '<button data-mmove="down" data-mb="' + b.id + '" title="Bajar bloque">▼</button>' +
+      '<button data-mdup="' + b.id + '" title="Duplicar bloque">⧉</button>' +
+      '<button data-mpick="' + b.id + '" title="Seleccionar para agregar por toque">🎯</button>' +
+      '</div></div>';
+    return h;
+  }
+  function aplicarPaso(bid, campo, delta){
+    const b = bloque(bid); if(!b) return;
+    if(campo === 'efSets') b.efSets = Math.max(1, Math.min(12, (parseInt(b.efSets,10) || 3) + delta));
+    else if(campo === 'restSeconds') b.restSeconds = Math.max(0, Math.min(600, (parseInt(b.restSeconds,10) || 60) + delta * 15));
+    else if(campo === 'reps'){
+      if(b.tipo === 'block') b.reps = pasoReps(b.reps, delta);
+      else (b.ejercicios || []).forEach(e => e.reps = pasoReps(e.reps, delta));
+    }
+    else if(campo === 'finReps') (b.fin || []).forEach(f => f.repsRange = pasoReps(f.repsRange, delta));
+    save(); renderBuilder();
+  }
+
+  /* ---------- inyección en el builder ---------- */
+  function enhanceManual(){
+    if(!manOn) return;
+    const panel = document.getElementById('dayPanel'); if(!panel) return;
+    blocksDom().forEach(x => {
+      const b = bloque(x.id); if(!b) return;
+      if(!x.el.querySelector('[data-manbar]')){
+        const body = x.el.querySelector('.block-body');
+        if(body) body.insertAdjacentHTML('afterbegin', barra(b));
+      }
+      x.el.classList.toggle('mansel', selBlock === x.id);
+      /* drop */
+      x.el.addEventListener('dragover', e => { e.preventDefault(); x.el.classList.add('dropzone'); });
+      x.el.addEventListener('dragleave', () => x.el.classList.remove('dropzone'));
+      x.el.addEventListener('drop', e => {
+        e.preventDefault(); e.stopPropagation();
+        x.el.classList.remove('dropzone');
+        const id = e.dataTransfer.getData('text/exid');
+        if(id) agregarA(x.id, id);
+      });
+      x.el.addEventListener('click', () => { selBlock = x.id; blocksDom().forEach(y => y.el.classList.toggle('mansel', y.id === selBlock)); });
+    });
+    if(!document.getElementById('manDayDrop')){
+      const z = document.createElement('div');
+      z.className = 'man-daydrop'; z.id = 'manDayDrop';
+      z.innerHTML = '⬇️ Soltá acá un ejercicio para crear un <b>' +
+        (manTipo === 'block' ? 'bloque nuevo' : manTipo === 'superset' ? 'biset nuevo' : 'finisher nuevo') + '</b>';
+      panel.appendChild(z);
+      z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('dropzone'); });
+      z.addEventListener('dragleave', () => z.classList.remove('dropzone'));
+      z.addEventListener('drop', e => {
+        e.preventDefault(); z.classList.remove('dropzone');
+        const id = e.dataTransfer.getData('text/exid');
+        if(id) nuevoBloqueCon(id);
+      });
+    }
+  }
+  const _renderDay = window.renderDay;
+  window.renderDay = function(){
+    const r = _renderDay.apply(this, arguments);
+    try{ enhanceManual(); }catch(e){ console.warn('manual', e); }
+    return r;
+  };
+
+  /* ---------- encendido ---------- */
+  function toggleMan(v){
+    manOn = v === undefined ? !manOn : v;
+    document.body.classList.toggle('man-mode', manOn);
+    $('#manDock').classList.toggle('on', manOn);
+    /* la barra fija cambia de ancho: se recalcula la reserva del topbar */
+    if(window.ajustarTopbar) [40, 220, 500].forEach(t => setTimeout(window.ajustarTopbar, t));
+    const btn = document.getElementById('btnManual');
+    if(btn){ btn.classList.toggle('gold', manOn); btn.innerHTML = manOn ? '✍️ Salir del armado manual' : '✍️ Armar rutina manualmente'; }
+    if(manOn){
+      if(S.ui.view !== 'builder') go('builder');
+      renderMan(); renderBuilder();
+      toast('✍️ Modo manual activo: arrastrá o tocá ejercicios para armar la sesión');
+    } else {
+      $$('#dayPanel .man-bar').forEach(e => e.remove());
+      const z = document.getElementById('manDayDrop'); if(z) z.remove();
+      $$('#dayPanel .block').forEach(e => e.classList.remove('mansel'));
+    }
+  }
+
+  function mount(){
+    const tb = document.querySelector('#v-builder .topbar');
+    if(tb && !document.getElementById('btnManual')){
+      const b = document.createElement('button');
+      b.className = 'btn'; b.id = 'btnManual'; b.innerHTML = '✍️ Armar rutina manualmente';
+      const ref = document.getElementById('btnGen') || document.getElementById('btnTpl');
+      if(ref && ref.parentNode === tb) tb.insertBefore(b, ref); else tb.appendChild(b);
+      b.addEventListener('click', () => toggleMan());
+    }
+    fillSelect($('#manGrupo'), GRUPOS, 'Todos los grupos');
+    fillSelect($('#manEquipo'), EQUIPOS, 'Todo el equipamiento');
+
+    ['#manQ','#manGrupo','#manEquipo','#manSede'].forEach(s =>
+      $(s).addEventListener('input', () => { manPage = 0; renderMan(); }));
+    $('#manClose').addEventListener('click', () => toggleMan(false));
+    $('#manModes').addEventListener('click', e => {
+      const b = e.target.closest('[data-mmode]'); if(!b) return;
+      manTipo = b.dataset.mmode;
+      $$('#manModes .man-mode-b').forEach(x => x.classList.toggle('on', x === b));
+      const z = document.getElementById('manDayDrop'); if(z) z.remove();
+      enhanceManual();
+    });
+    $('#manList').addEventListener('click', e => {
+      if(e.target.id === 'manMore'){ manPage++; renderMan(); return; }
+      const c = e.target.closest('[data-mex]'); if(!c) return;
+      const id = c.dataset.mex;
+      if(selBlock && bloque(selBlock)) agregarA(selBlock, id);
+      else nuevoBloqueCon(id);
+    });
+    $('#manList').addEventListener('dragstart', e => {
+      const c = e.target.closest('[data-mex]'); if(!c) return;
+      e.dataTransfer.setData('text/exid', c.dataset.mex);
+      e.dataTransfer.effectAllowed = 'copy';
+      c.classList.add('drag');
+    });
+    $('#manList').addEventListener('dragend', e => {
+      const c = e.target.closest('[data-mex]'); if(c) c.classList.remove('drag');
+    });
+
+    /* controles dentro del builder */
+    document.addEventListener('click', e => {
+      const st = e.target.closest('[data-mstep]');
+      if(st){ e.stopPropagation(); aplicarPaso(st.dataset.mb, st.dataset.mc, parseInt(st.dataset.mstep,10)); return; }
+      const tp = e.target.closest('[data-mtempo]');
+      if(tp){
+        e.stopPropagation();
+        const b = bloque(tp.dataset.mb); if(!b) return;
+        const i = parseInt(tp.dataset.mi,10), d = parseInt(tp.dataset.mtempo,10);
+        if(b.tipo === 'block') b.tempo = pasoTempo(b.tempo, i, d);
+        else (b.ejercicios || []).forEach(x => x.tempo = pasoTempo(x.tempo, i, d));
+        save(); renderBuilder(); return;
+      }
+      const mv = e.target.closest('[data-mmove]');
+      if(mv){
+        e.stopPropagation();
+        const d = curDay(); if(!d) return;
+        const i = d.bloques.findIndex(x => x.id === mv.dataset.mb);
+        const j = mv.dataset.mmove === 'up' ? i - 1 : i + 1;
+        if(i < 0 || j < 0 || j >= d.bloques.length) return;
+        const tmp = d.bloques[i]; d.bloques[i] = d.bloques[j]; d.bloques[j] = tmp;
+        save(); renderBuilder(); return;
+      }
+      const du = e.target.closest('[data-mdup]');
+      if(du){
+        e.stopPropagation();
+        const d = curDay(); if(!d) return;
+        const i = d.bloques.findIndex(x => x.id === du.dataset.mdup);
+        if(i < 0) return;
+        const copia = clone(d.bloques[i]); copia.id = uid('b'); copia.titulo = (copia.titulo || '') + ' (copia)';
+        d.bloques.splice(i + 1, 0, copia);
+        save(); renderBuilder(); toast('⧉ Bloque duplicado'); return;
+      }
+      const pk = e.target.closest('[data-mpick]');
+      if(pk){
+        e.stopPropagation();
+        selBlock = pk.dataset.mpick;
+        blocksDom().forEach(y => y.el.classList.toggle('mansel', y.id === selBlock));
+        const b = bloque(selBlock);
+        toast('🎯 Bloque seleccionado: ' + ((b && b.titulo) || '') + ' · tocá un ejercicio del panel');
+      }
+    });
+
+    window.CoachManual = { toggle: toggleMan, agregar: agregarA, nuevo: nuevoBloqueCon,
+                           paso: aplicarPaso, pasoReps: pasoReps, pasoTempo: pasoTempo,
+                           activo: () => manOn, seleccionar: id => { selBlock = id; } };
+  }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
 })();
