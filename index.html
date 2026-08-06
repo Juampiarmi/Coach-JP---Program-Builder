@@ -2792,6 +2792,8 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   }
   .video-link { color: var(--gold); font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-size: 11px; letter-spacing: 0.02em; border-bottom: 1px solid rgba(255,214,0,0.35); padding-bottom: 1px; cursor: pointer; white-space: nowrap; transition: color 0.2s ease, border-color 0.2s ease; }
   .video-link:hover { color: var(--red-light); border-color: var(--red-light); }
+  .video-link.vsearch { color: var(--text-secondary); border-color: rgba(255,255,255,0.22); }
+  .video-link.vsearch:hover { color: var(--gold); border-color: rgba(255,214,0,0.5); }
   .video-popup-wrap { display: none; position: fixed; bottom: 20px; right: 20px; z-index: 300; width: 320px; max-width: calc(100vw - 32px); }
   .video-popup-wrap.open { display: block; }
   .video-popup { position: relative; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 16px 44px rgba(0,0,0,0.6); animation: videoPopIn 0.22s cubic-bezier(0.16,1,0.3,1); }
@@ -3207,11 +3209,24 @@ const CATEGORY_META = {
   cardio:{ cls:'bi-cardio', labelCls:'bl-cardio', insightsCls:'insights-cardio' },
   accessory:{ cls:'bi-accessory', labelCls:'bl-accessory', insightsCls:'insights-accessory' }
 };
+function limpiarNombre(n){
+  let t = String(n||'').trim();
+  /* saca prefijos tipo "RAISE · " o "Block A: " para buscar mejor el video */
+  const p1 = t.split(' · ');
+  if(p1.length > 1 && p1[0].length <= 26) t = p1.slice(1).join(' · ');
+  const p2 = t.split(': ');
+  if(p2.length > 1 && p2[0].length <= 22) t = p2.slice(1).join(': ');
+  return t.replace(/\\s*\\(.*?\\)\\s*$/, '').trim();
+}
 function videoLinkHtml(name){
   const key = (name||'').trim();
-  const ytid = VIDEO_MAP[key];
-  if(!ytid) return '';
-  return ' <a class="video-link" href="javascript:void(0)" data-yt="' + ytid + '">▶ Ver técnica</a>';
+  if(!key) return '';
+  const limpio = limpiarNombre(key);
+  const ytid = VIDEO_MAP[key] || VIDEO_MAP[limpio];
+  if(ytid) return ' <a class="video-link" href="javascript:void(0)" data-yt="' + ytid + '">▶ Ver técnica</a>';
+  /* ningún ejercicio queda sin video: se cae a la búsqueda en YouTube */
+  const q = encodeURIComponent((limpio || key) + ' técnica ejercicio');
+  return ' <a class="video-link vsearch" href="https://www.youtube.com/results?search_query=' + q + '" target="_blank" rel="noopener" title="Buscar la técnica en YouTube">🔎 Buscar técnica</a>';
 }
 /* =========================================================
    STATE
@@ -4108,12 +4123,24 @@ if(document.readyState === 'loading'){
 `;
 
 /* ---------- Índice de videos + resolución de texto libre ---------- */
+/* limpia prefijos tipo «🅡 RAISE · » o «Block A: » para poder encontrar el ejercicio */
+function limpiarNombreEx(n){
+  let t = String(n || '').trim();
+  const p1 = t.split(' · ');
+  if(p1.length > 1 && p1[0].length <= 26) t = p1.slice(1).join(' · ');
+  const p2 = t.split(': ');
+  if(p2.length > 1 && p2[0].length <= 22) t = p2.slice(1).join(': ');
+  return t.replace(/\s*\(.*?\)\s*$/, '').trim();
+}
 function resolveByText(txt){
-  const name = String(txt).split(' — ')[0].trim();
-  let hit = S.exercises.find(e => norm(exDisplayName(e)) === norm(name)) ||
-            S.exercises.find(e => norm(e.es) === norm(name));
-  if(!hit) hit = S.exercises.find(e => e.videoId && (matchNombre(e.es, name) || (e.en && matchNombre(e.en, name))));
-  return { name: name, ex: hit || null };
+  const name  = String(txt).split(' — ')[0].trim();
+  const corto = limpiarNombreEx(name);
+  const busca = n => S.exercises.find(e => norm(exDisplayName(e)) === norm(n)) ||
+                     S.exercises.find(e => norm(e.es) === norm(n)) ||
+                     S.exercises.find(e => e.videoId && (matchNombre(e.es, n) || (e.en && matchNombre(e.en, n)))) ||
+                     S.exercises.find(e => e.videoId && norm(e.es).indexOf(norm(n)) >= 0 && norm(n).length > 5);
+  const hit = busca(name) || (corto !== name ? busca(corto) : null);
+  return { name: name, corto: corto, ex: hit || null };
 }
 
 function buildProgramConfig(ath){
@@ -4174,11 +4201,11 @@ function buildProgramConfig(ath){
         Object.assign(out, { isFinisher: true, exercises: list, roundsByWeek: (b.roundsByWeek||['','','','']).map(r => r || null) });
       }
       else if(b.tipo === 'hyrox'){
-        (b.movements||[]).forEach(m => { const r = resolveByText(m); addVideo(r.name, r.ex); });
+        (b.movements||[]).forEach(m => { const r = resolveByText(m); addVideo(r.name, r.ex); addVideo(r.corto, r.ex); });
         Object.assign(out, { isHyrox: true, movements: (b.movements||[]).slice() });
       }
       else {
-        (b.items||[]).forEach(it => { const r = resolveByText(it); addVideo(r.name, r.ex); });
+        (b.items||[]).forEach(it => { const r = resolveByText(it); addVideo(r.name, r.ex); addVideo(r.corto, r.ex); });
         out.items = (b.items||[]).slice();
         if(b.cardioMinutes) out.cardioMinutes = parseInt(b.cardioMinutes,10) || 0;
       }
@@ -5296,7 +5323,10 @@ document.addEventListener('DOMContentLoaded', init);
 
     window.CoachAI = {
       cfg: () => AI, run: runAI, open: openAI, config: openCfg,
-      switch: switchProvider, cooldown: setCooldown, providers: PROV
+      switch: switchProvider, cooldown: setCooldown, providers: PROV,
+      /* llamada genérica de texto (la usa la biblioteca para tips y objetivos) */
+      generarTexto: (user, system) => callAI(system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user),
+      hayClave: () => ['anthropic','openai','google'].some(p => hasKey(p))
     };
   }
 
@@ -5350,6 +5380,9 @@ document.addEventListener('DOMContentLoaded', init);
   border:1px solid var(--line-2);color:var(--muted);background:var(--panel-3)}
 .tpl-card.on .tplc{border-color:rgba(255,214,0,.35);color:var(--gold)}
 .tpl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;max-height:46vh;overflow-y:auto;padding:2px}
+.tpl-meta{display:flex;flex-wrap:wrap;gap:4px;margin:7px 0 2px}
+.tpl-meta .tplc.niv{border-color:rgba(0,191,165,.4);color:var(--teal)}
+.tpl-meta .tplc.met{border-color:rgba(255,138,0,.45);color:#FFB05C}
 @media(max-width:600px){.tpl-grid{max-height:none}}
 .tpl-card{
   background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:14px;
@@ -5405,11 +5438,22 @@ document.addEventListener('DOMContentLoaded', init);
     </div>
     <div class="modal-b">
       <div id="tplAthBox"></div>
+      <div class="grid g2" style="gap:10px">
+        <div><label class="lb">🎯 Disciplina / Objetivo</label><select id="tplDisc"></select></div>
+        <div><label class="lb">📶 Nivel del atleta</label><select id="tplNiv"></select></div>
+      </div>
       <div class="tpl-filters" id="tplFilters"></div>
       <div class="tpl-grid" id="tplGrid"></div>
       <div class="row">
         <label class="chk"><input type="radio" name="tplMode" value="replace" checked> Reemplazar el contenido del día</label>
         <label class="chk"><input type="radio" name="tplMode" value="append"> Agregar al final del día</label>
+      </div>
+      <div class="alert warn" style="padding:9px 12px" id="tplMetBox">
+        <span class="ic">🔥</span>
+        <div><b>Acondicionamiento / AMRAP / Finisher metabólico</b>
+          <label class="chk" style="margin-top:5px"><input type="checkbox" id="tplMet"> Incluir el bloque metabólico en esta estructura</label>
+          <div class="hint" id="tplMetHint" style="margin-top:3px">Por defecto no se agrega. Si la disciplina elegida lo requiere (CrossFit, Hyrox, MTB de potencia), se incluye solo.</div>
+        </div>
       </div>
       <div class="alert info" style="padding:9px 12px">
         <span class="ic">🛡️</span>
@@ -5675,13 +5719,33 @@ document.addEventListener('DOMContentLoaded', init);
     { id:'metabolico', lb:'Recomposición / Metabólico', ic:'🏃' }
   ];
 
+  /* disciplinas y niveles (filtros rápidos del selector de estructuras) */
+  const DISCIPLINAS = [
+    { id:'todas',   lb:'Todas las disciplinas',                 ic:'🎯' },
+    { id:'mtb',     lb:'Mountain Bike (MTB)',                   ic:'🚵' },
+    { id:'deport',  lb:'Rendimiento Deportivo / Athletic',      ic:'🏅' },
+    { id:'crossfit',lb:'CrossFit',                              ic:'🤸' },
+    { id:'wl',      lb:'Levantamiento Olímpico',                ic:'🏋️‍♂️' },
+    { id:'hiper',   lb:'Hipertrofia & Musculación',             ic:'💪' },
+    { id:'fuerza',  lb:'Desarrollo de Fuerza Pura',             ic:'🦾' },
+    { id:'recomp',  lb:'Pérdida de Peso / Recomposición',       ic:'🔥' }
+  ];
+  const NIVELES = [
+    { id:'todos',      lb:'Todos los niveles',   ic:'📶' },
+    { id:'inicial',    lb:'Inicial / Principiante', ic:'🟢' },
+    { id:'intermedio', lb:'Intermedio',          ic:'🟡' },
+    { id:'avanzado',   lb:'Avanzado',            ic:'🟠' },
+    { id:'alto',       lb:'Alto Rendimiento',    ic:'🔴' }
+  ];
+  const NIV_TODOS = ['inicial','intermedio','avanzado','alto'];
+
   /* atajos de picks reutilizados */
   const CORE_ANTIROT = { grupo:['Core'], prefer:['Pallof press','Dead bug','Plancha frontal'] };
   const CORE_ANTIEXT = { grupo:['Core'], prefer:['Dead bug','Hollow body','Plancha frontal','Rueda abdominal'] };
 
   const TEMPLATES = [
     {
-      id:'A', cats:['torso'], name:'2 Anclas Pesadas + 2 Bisets + Finisher',
+      id:'A', disc:['hiper','fuerza'], niv:['intermedio','avanzado','alto'], cats:['torso'], name:'2 Anclas Pesadas + 2 Bisets + Finisher',
       desc:'Esquema clásico de fuerza + densidad: dos anclas pesadas con aproximaciones y después accesorios encadenados.',
       pasos:['Warm-up específico','Ancla pesada de empuje','Ancla pesada de tracción','Biset dorsal + bíceps','Biset hombro + tríceps','Finisher de bombeo'],
       label:'Torso completo', title:'Fuerza Pesada y Densidad',
@@ -5710,7 +5774,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'B', cats:['gluteos'], name:'Pierna / Cadera',
+      id:'B', disc:['hiper','fuerza','recomp'], niv:['intermedio','avanzado','alto'], cats:['gluteos'], name:'Pierna / Cadera',
       desc:'Bisagra de cadera pesada, puente/KAS bridge como segundo ancla y aislamiento de isquios y glúteo medio.',
       pasos:['Warm-up de activación de glúteo','Bisagra de cadera pesada','Puente / KAS Bridge','Biset isquios + abducción','Biset unilateral','Finisher de glúteo'],
       label:'Pierna/Cadera', title:'Cadena Posterior y Cadera',
@@ -5738,7 +5802,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'C', cats:['torso'], name:'Torso (Empuje + Tracción)',
+      id:'C', disc:['hiper','fuerza'], niv:['inicial','intermedio','avanzado'], cats:['torso'], name:'Torso (Empuje + Tracción)',
       desc:'Día de torso equilibrado: un ancla de empuje, un ancla de tracción y accesorios en los dos planos.',
       pasos:['Warm-up de manguito','Ancla de empuje horizontal','Ancla de tracción horizontal','Biset vertical (empuje + tracción)','Triset de hombro','Finisher de tríceps'],
       label:'Torso', title:'Torso — Empuje y Tracción',
@@ -5768,7 +5832,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'D', cats:['gluteos'], name:'Glúteos Prioritario (aislamiento puro)',
+      id:'D', disc:['hiper','recomp'], niv:['inicial','intermedio','avanzado','alto'], cats:['gluteos'], name:'Glúteos Prioritario (aislamiento puro)',
       desc:'Todo el día orientado a glúteo: puente pesado, bisagra, patadas y abducción en volumen, con cierre de banda y core.',
       pasos:['Warm-up con banda','Puente / Hip thrust pesado','Bisagra de cadera','Biset patadas + abducción','Biset unilateral','Finisher con banda','Core'],
       label:'Glúteos', title:'Glúteo Prioritario',
@@ -5798,7 +5862,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'E', cats:['splits','torso'], name:'Espalda + Bíceps + Core',
+      id:'E', disc:['hiper','fuerza'], niv:['inicial','intermedio','avanzado','alto'], cats:['splits','torso'], name:'Espalda + Bíceps + Core',
       desc:'Split tradicional de tracción: remo pesado y jalón como anclas, dos bisets de accesorios y cierre de core.',
       pasos:['Warm-up escapular','Ancla: remo pesado','Jalón al pecho','Biset remo unilateral + pull-over','Biset bíceps (Curl Z + martillo)','Core anti-rotación'],
       label:'Espalda/Bíceps', title:'Espalda, Bíceps y Core',
@@ -5827,7 +5891,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'F', cats:['splits','torso'], name:'Pecho + Hombros + Tríceps + Core',
+      id:'F', disc:['hiper','fuerza'], niv:['inicial','intermedio','avanzado','alto'], cats:['splits','torso'], name:'Pecho + Hombros + Tríceps + Core',
       desc:'Split tradicional de empuje: press plano o inclinado, press militar y accesorios de deltoide y tríceps.',
       pasos:['Warm-up de manguito','Ancla: press plano/inclinado','Press militar o Arnold','Biset aperturas + elevaciones laterales','Extensión de tríceps en polea','Core anti-extensión'],
       label:'Pecho/Hombro/Tríceps', title:'Empuje — Pecho, Hombros y Tríceps',
@@ -5855,7 +5919,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'G', cats:['splits','gluteos'], name:'Glúteos + Femorales + Gemelos + Core',
+      id:'G', disc:['hiper','recomp','deport'], niv:['inicial','intermedio','avanzado','alto'], cats:['splits','gluteos'], name:'Glúteos + Femorales + Gemelos + Core',
       desc:'Split de cadena posterior completo: RDL y puente como anclas, aislamiento de isquios, patada, gemelos y core.',
       pasos:['Warm-up de glúteo','Ancla: Peso Muerto Rumano','Hip Thrust / KAS Bridge','Biset curl femoral + patada en polea','Elevación de gemelos','Core anti-extensión'],
       label:'Glúteo/Femoral', title:'Cadena Posterior — Glúteos, Femorales y Gemelos',
@@ -5884,7 +5948,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'H', cats:['splits','gluteos'], name:'Glúteos + Cuádriceps + Gemelos + Core',
+      id:'H', disc:['hiper','fuerza','deport'], niv:['inicial','intermedio','avanzado','alto'], cats:['splits','gluteos'], name:'Glúteos + Cuádriceps + Gemelos + Core',
       desc:'Split de tren inferior dominante de rodilla: sentadilla o prensa, unilateral, aislamiento de cuádriceps, abducción y gemelos.',
       pasos:['Warm-up del patrón de sentadilla','Ancla: sentadilla o prensa 45°','Búlgara / Step Up','Extensiones de cuádriceps','Abducción de cadera','Gemelos de pie','Core anti-rotación'],
       label:'Glúteo/Cuádriceps', title:'Tren Inferior — Cuádriceps y Glúteos',
@@ -5913,7 +5977,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'I', cats:['readapt'], name:'Readaptación / Lumbar Safe (cero carga axial)',
+      id:'I', disc:['recomp','hiper'], niv:['inicial','intermedio'], cats:['readapt'], name:'Readaptación / Lumbar Safe (cero carga axial)',
       desc:'Sin compresión sobre la columna: máquinas apoyadas, poleas y cadena posterior sin carga axial. Ideal para vuelta progresiva o lumbalgia.',
       pasos:['Movilidad y activación suave','Prensa horizontal apoyada','Remo con pecho apoyado','Biset patada de glúteo + curl femoral','Biset press en máquina + jalón','Core anti-rotación sin flexión'],
       label:'Readaptación', title:'Sesión Cero Carga Axial',
@@ -5943,7 +6007,7 @@ document.addEventListener('DOMContentLoaded', init);
       ]
     },
     {
-      id:'J', cats:['metabolico'], name:'Recomposición & Hyrox (fuerza + capacidad)',
+      id:'J', disc:['recomp','crossfit','deport'], niv:['intermedio','avanzado','alto'], metconReq:true, cats:['metabolico'], name:'Recomposición & Hyrox (fuerza + capacidad)',
       desc:'Ancla pesada para sostener la fuerza, biset denso para el estímulo de hipertrofia y cierre metabólico tipo AMRAP.',
       pasos:['Warm-up general','Ancla pesada','Biset denso de accesorios','Bloque AMRAP / Hyrox','Core'],
       label:'Recomposición', title:'Fuerza + Capacidad Metabólica',
@@ -5967,10 +6031,206 @@ document.addEventListener('DOMContentLoaded', init);
           items:['Pallof press — 3x10-12 por lado','Plancha frontal — 3x30-40s'],
           tips:'Con el pulso alto la técnica se degrada: sostené la respiración continua.' }
       ]
+    },
+    {
+      id:'K', disc:['mtb'], niv:['inicial','intermedio'], cats:['gluteos','metabolico'], name:'MTB · Base de Fuerza para Ciclista',
+      desc:'Fuerza de piernas específica para pedaleo, con cadera y cuádriceps en rangos controlados y core anti-extensión para la posición sobre la bici.',
+      pasos:['Movilidad de cadera y tobillo','Sentadilla o prensa controlada','Bisagra de cadera moderada','Biset unilateral + gemelos','Core anti-extensión'],
+      label:'MTB · Fuerza base', title:'MTB — Fuerza de Pedaleo',
+      chips:['🚵 Específico MTB','🦵 Fuerza de piernas'],
+      blocks:[
+        { tipo:'list', titulo:'Movilidad y Activación para MTB', subtitulo:'Cadera, tobillo y zona media (7 min)', category:'warmup', icon:'🔥',
+          items:['Bicicleta suave — 4 min','Movilidad de tobillo rodilla a pared — 2x10 por lado','Puente de glúteo en suelo — 2x15','Dead bug — 2x8 por lado'],
+          tips:'La cadera y el tobillo mandan en el pedaleo: abrilos antes de cargar.' },
+        { tipo:'block', titulo:'Block A: Fuerza de Cuádriceps', subtitulo:'Rango controlado, sin fallo', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Prensa 45°','Sentadilla goblet','Sentadilla con barra','Hack squat'] }],
+          objective:'Fuerza máxima de cuádriceps sin comprometer la recuperación para la salida en bici.' },
+        { tipo:'block', titulo:'Block B: Bisagra de Cadera', subtitulo:'Cadena posterior del pedaleo', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','Hip thrust','Puente de glúteo','Buenos días'] }],
+          objective:'Glúteo e isquios fuertes para sostener la potencia en subida.' },
+        { tipo:'superset', titulo:'Block C: Biset — Unilateral + Gemelos', subtitulo:'equilibrio pierna a pierna', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla búlgara','Zancada','Step up'] },
+                 { grupo:['Piernas/Glúteos'], any:['gemelo','soleo','sóleo'] }],
+          objective:'Corrige asimetrías y refuerza el tobillo, que es tu apoyo en el pedal.' },
+        { tipo:'block', titulo:'Core Anti-Extensión', subtitulo:'posición sobre la bici', category:'accessory', icon:'🎯', preset:'core',
+          picks:[CORE_ANTIEXT], objective:'Zona media estable para no perder potencia en la transferencia al pedal.' }
+      ]
+    },
+    {
+      id:'L', disc:['mtb'], niv:['avanzado','alto'], cats:['metabolico'], name:'MTB · Potencia y Capacidad', metconReq:true,
+      desc:'Fuerza explosiva de piernas más bloque interválico para tolerar los repechos. El trabajo metabólico va incluido porque la disciplina lo pide.',
+      pasos:['Movilidad específica','Fuerza explosiva de pierna','Bisagra pesada','Biset de sostén','Intervalos de potencia'],
+      label:'MTB · Potencia', title:'MTB — Potencia y Repechos',
+      chips:['🚵 Potencia','⚡ Intervalos'],
+      blocks:[
+        { tipo:'list', titulo:'Entrada en Calor Progresiva', subtitulo:'10 minutos', category:'warmup', icon:'🔥',
+          items:['Bicicleta progresiva — 5 min','Sentadilla al aire — 2x15','Salto al cajón — 2x5','Movilidad torácica — 2x8 por lado'],
+          tips:'Subís pulsaciones y despertás el sistema nervioso antes de la parte explosiva.' },
+        { tipo:'block', titulo:'Block A: Fuerza Explosiva de Pierna', subtitulo:'series cortas, máxima intención', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con barra','Sentadilla frontal','Prensa 45°','Hack squat'] }],
+          objective:'Fuerza aplicada rápido: la que te saca del repecho parado sobre los pedales.' },
+        { tipo:'block', titulo:'Block B: Bisagra Pesada', subtitulo:'cadena posterior', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','Peso muerto convencional','Hip thrust'] }],
+          objective:'Resistencia de fuerza en glúteo e isquios para las horas sobre la bici.' },
+        { tipo:'superset', titulo:'Block C: Biset — Tracción + Core', subtitulo:'sostén del tren superior', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo con mancuerna','Remo sentado en polea','Remo con barra'] }, CORE_ANTIROT],
+          objective:'Espalda y core para aguantar la posición y el manubrio en terreno técnico.' },
+        { tipo:'list', titulo:'Intervalos de Potencia', subtitulo:'6 x 40s fuerte / 80s suave', category:'cardio', icon:'🏃', metcon:true,
+          items:['Bicicleta o rodillo — 6 series de 40s fuerte','Recuperación pedaleando suave — 80s entre series','Vuelta a la calma — 5 min'],
+          tips:'Sostené la misma potencia en las 6 series: si la última cae mucho, arrancaste demasiado fuerte.' }
+      ]
+    },
+    {
+      id:'M', disc:['deport'], niv:['intermedio','avanzado','alto'], cats:['metabolico','gluteos'], name:'Rendimiento Deportivo · Fuerza + Potencia',
+      desc:'Estructura de preparación física: potencia primero, fuerza después y accesorios de prevención. Sin bloque metabólico salvo que lo pidas.',
+      pasos:['Activación neural','Bloque de potencia','Ancla de fuerza de pierna','Ancla de empuje','Biset de prevención','Core anti-rotación'],
+      label:'Athletic Performance', title:'Rendimiento — Fuerza y Potencia',
+      chips:['🏅 Deportivo','⚡ Potencia primero'],
+      blocks:[
+        { tipo:'list', titulo:'Activación Neural', subtitulo:'CNS listo (8 min)', category:'warmup', icon:'🔥',
+          items:['Skipping y movilidad dinámica — 4 min','Salto al cajón — 3x3','Sentadilla al aire con pausa — 2x8','Plancha lateral — 2x20s por lado'],
+          tips:'Poca fatiga y mucha calidad: la activación es para despertar, no para cansarte.' },
+        { tipo:'block', titulo:'Block A: Potencia / Salto', subtitulo:'series cortas y explosivas', category:'strength', icon:'⚡', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos','Full Body / Cardio'], prefer:['Salto al cajón','Sentadilla con salto','Cargada','Empuje de potencia','Kettlebell swing'] }],
+          objective:'Tasa de desarrollo de fuerza: potencia aplicable al gesto deportivo.' },
+        { tipo:'block', titulo:'Block B: Ancla de Pierna', subtitulo:'fuerza máxima', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con barra','Sentadilla frontal','Prensa 45°'] }],
+          objective:'Base de fuerza que sostiene toda la potencia posterior.' },
+        { tipo:'block', titulo:'Block C: Ancla de Empuje', subtitulo:'tren superior', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Pectoral','Hombros'], patron:['Empuje horizontal','Empuje vertical'], prefer:['Press de banca plano','Press militar','Press de hombros'] }],
+          objective:'Fuerza de empuje para contacto, empuje y sostén.' },
+        { tipo:'superset', titulo:'Block D: Biset — Prevención', subtitulo:'isquios + manguito', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], any:['femoral','isquio','curl','nordico','nórdico'] },
+                 { grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Face pull','Rotación externa','Elevación posterior'] }],
+          objective:'Los dos seguros clásicos del deportista: isquios fuertes y hombro estable.' },
+        { tipo:'block', titulo:'Core Anti-Rotación', subtitulo:'transferencia de fuerza', category:'accessory', icon:'🎯', preset:'core',
+          picks:[CORE_ANTIROT], objective:'El core transfiere la fuerza del tren inferior al superior: sin él se pierde potencia.' }
+      ]
+    },
+    {
+      id:'N', disc:['crossfit'], niv:['intermedio','avanzado','alto'], cats:['metabolico'], name:'CrossFit · Fuerza + WOD', metconReq:true,
+      desc:'Sesión clásica de box: técnica de barra, fuerza base y WOD metabólico. Acá el bloque metcon es parte obligatoria de la estructura.',
+      pasos:['Warm-up general y específico','Técnica de barra','Fuerza base','Accesorio + core','WOD AMRAP'],
+      label:'CrossFit', title:'CrossFit — Fuerza y WOD',
+      chips:['🤸 CrossFit','🔥 WOD'],
+      blocks:[
+        { tipo:'list', titulo:'Warm-Up General + Específico', subtitulo:'10 minutos', category:'warmup', icon:'🔥',
+          items:['Remo en ergómetro — 3 min','Movilidad torácica y de cadera — 3 min','Barra vacía: técnica del movimiento del día — 2x8','Plancha frontal — 2x30s'],
+          tips:'Repasá el movimiento del día con barra vacía antes de sumar disco.' },
+        { tipo:'block', titulo:'Block A: Técnica de Barra', subtitulo:'series cortas, foco técnico', category:'strength', icon:'🏋️', preset:'fuerza',
+          picks:[{ equipo:['Barra'], grupo:['Piernas/Glúteos','Espalda','Hombros','Full Body / Cardio'], prefer:['Cargada','Arranque','Empuje de potencia','Push press','Sentadilla frontal','Peso muerto'] }],
+          objective:'Técnica en fresco: la barra se aprende sin fatiga.' },
+        { tipo:'block', titulo:'Block B: Fuerza Base', subtitulo:'sobrecarga progresiva', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos','Pectoral','Hombros'], patron:['Rodilla dominante','Empuje vertical','Empuje horizontal'], prefer:['Sentadilla con barra','Press militar','Press de banca plano'] }],
+          objective:'La fuerza que sostiene los WODs de la semana.' },
+        { tipo:'superset', titulo:'Block C: Accesorio + Core', subtitulo:'gimnásticos y zona media', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Dominadas','Jalón al pecho'] }, CORE_ANTIROT],
+          objective:'Tracción vertical y core: la base de los movimientos gimnásticos.' },
+        { tipo:'hyrox', titulo:'WOD — AMRAP', subtitulo:'la mayor cantidad de rondas posibles', category:'metcon', icon:'🔥', metcon:true,
+          picks:[{ grupo:['Full Body / Cardio'], prefer:['Burpees','Wall ball','Remo','Assault bike','Kettlebell swing','Trineo'] }],
+          tips:'Elegí un ritmo que puedas sostener: la primera ronda tiene que verse igual que la última.' }
+      ]
+    },
+    {
+      id:'O', disc:['wl'], niv:['avanzado','alto'], cats:['torso','gluteos'], name:'Weightlifting · Técnica + Fuerza',
+      desc:'Sesión de halterofilia: movimiento olímpico en fresco, derivados, sentadilla y espalda alta. Sin metcon salvo que lo agregues.',
+      pasos:['Movilidad de muñeca, hombro y tobillo','Movimiento olímpico completo','Derivado de potencia','Sentadilla','Espalda alta + core'],
+      label:'Weightlifting', title:'Levantamiento Olímpico',
+      chips:['🏋️‍♂️ Barra olímpica','🎯 Técnica primero'],
+      blocks:[
+        { tipo:'list', titulo:'Movilidad Específica de Halterofilia', subtitulo:'muñeca, hombro, tobillo (10 min)', category:'warmup', icon:'🔥',
+          items:['Bicicleta o remo — 3 min','Dislocaciones con banda — 2x10','Sentadilla profunda sostenida — 3x30s','Barra vacía: arranque colgante — 3x5'],
+          tips:'Sin movilidad de tobillo y hombro no hay posición de recepción: esto no se saltea.' },
+        { tipo:'block', titulo:'Block A: Movimiento Olímpico', subtitulo:'series de 2-3 reps, calidad total', category:'strength', icon:'🏋️', preset:'fuerza',
+          picks:[{ equipo:['Barra'], prefer:['Arranque','Cargada','Envión','Cargada de potencia','Arranque colgante'] }],
+          objective:'Coordinación y velocidad bajo la barra con la técnica intacta.' },
+        { tipo:'block', titulo:'Block B: Derivado de Potencia', subtitulo:'tirón o empuje', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ equipo:['Barra'], prefer:['Empuje de potencia','Push press','Tirón alto','Cargada colgante','Peso muerto'] }],
+          objective:'Refuerza la fase de tirón o el bloqueo sobre la cabeza.' },
+        { tipo:'block', titulo:'Block C: Sentadilla', subtitulo:'frontal o trasera', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Barra','Multipower','Máquina'], prefer:['Sentadilla frontal','Sentadilla con barra','Hack squat'] }],
+          objective:'La pierna que sostiene la recepción de cualquier levantamiento.' },
+        { tipo:'superset', titulo:'Block D: Biset — Espalda Alta + Core', subtitulo:'postura bajo la barra', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Espalda'], patron:['Tracción horizontal','Tracción vertical'], prefer:['Remo con barra','Remo Pendlay','Dominadas'] }, CORE_ANTIEXT],
+          objective:'Espalda alta y core rígidos: sin eso la barra se te va adelante.' }
+      ]
+    },
+    {
+      id:'P', disc:['fuerza'], niv:['intermedio','avanzado','alto'], cats:['torso','gluteos','splits'], name:'Fuerza Pura · 5x3 sobre Básicos',
+      desc:'Trabajo de fuerza máxima sobre los básicos: descansos largos, pocas repeticiones y accesorios mínimos de sostén.',
+      pasos:['Aproximaciones','Básico principal 5x3','Segundo básico','Accesorios de refuerzo','Core con carga'],
+      label:'Fuerza pura', title:'Fuerza Máxima — Básicos',
+      chips:['🦾 5x3','⏱️ Descanso largo'],
+      blocks:[
+        { tipo:'list', titulo:'Aproximaciones y Movilidad', subtitulo:'sin fatiga (8 min)', category:'warmup', icon:'🔥',
+          items:['Bicicleta o remo — 3 min','Movilidad de cadera y hombro — 3 min','Barra vacía del básico del día — 2x8','Dead bug — 2x8 por lado'],
+          tips:'La entrada en calor de fuerza es técnica: subís de a poco hasta la primera serie efectiva.' },
+        { tipo:'block', titulo:'Block A: Básico Principal', subtitulo:'aproximaciones + series efectivas', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ equipo:['Barra','Multipower'], prefer:['Sentadilla con barra','Peso muerto convencional','Press de banca plano','Press militar'] }],
+          objective:'Fuerza máxima sobre el patrón principal del día.' },
+        { tipo:'block', titulo:'Block B: Segundo Básico', subtitulo:'volumen submáximo', category:'strength', icon:'💪', preset:'fuerza',
+          picks:[{ equipo:['Barra','Mancuernas','Máquina'], prefer:['Press de banca inclinado con barra','Peso muerto rumano','Sentadilla frontal','Remo con barra'] }],
+          objective:'Refuerza el mismo patrón desde otro ángulo, sin llegar al límite.' },
+        { tipo:'superset', titulo:'Block C: Biset — Accesorios de Refuerzo', subtitulo:'puntos débiles', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Espalda'], patron:['Tracción horizontal','Tracción vertical'], prefer:['Remo con mancuerna','Jalón al pecho','Dominadas'] },
+                 { grupo:['Brazos','Hombros'], prefer:['Extensión de tríceps','Elevaciones laterales','Face pull'] }],
+          objective:'Sostén articular para seguir subiendo kilos sin lesionarte.' },
+        { tipo:'block', titulo:'Core con Carga', subtitulo:'rigidez bajo tensión', category:'accessory', icon:'🎯', preset:'core',
+          picks:[CORE_ANTIEXT], objective:'Un core rígido son kilos extra en sentadilla y peso muerto.' }
+      ]
+    },
+    {
+      id:'Q', disc:['recomp'], niv:['inicial','intermedio'], cats:['metabolico','gluteos'], name:'Recomposición · Full Body en Circuito',
+      desc:'Cuerpo entero con densidad alta y descansos cortos: gasto calórico sin perder masa muscular. El cierre metabólico es opcional.',
+      pasos:['Entrada en calor general','Ancla de pierna','Biset empuje + tracción','Biset glúteo + core','Cierre metabólico opcional'],
+      label:'Recomposición', title:'Full Body — Recomposición',
+      chips:['🔥 Gasto alto','🔁 Circuito'],
+      blocks:[
+        { tipo:'list', titulo:'Entrada en Calor General', subtitulo:'6-8 minutos', category:'warmup', icon:'🔥',
+          items:['Caminata inclinada o bicicleta — 4 min','Sentadilla al aire — 2x15','Abducción con banda (monster walk) — 2x15','Plancha frontal — 2x20s'],
+          tips:'Entrás en temperatura de a poco: el circuito después te va a exigir pulsaciones altas.' },
+        { tipo:'block', titulo:'Block A: Ancla de Pierna', subtitulo:'la base del gasto', category:'strength', icon:'💪', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Rodilla dominante','Cadera dominante'], prefer:['Prensa 45°','Sentadilla goblet','Hip thrust','Peso muerto rumano'] }],
+          objective:'El músculo grande manda: es donde más calorías gastás por serie.' },
+        { tipo:'superset', titulo:'Block B: Biset — Empuje + Tracción', subtitulo:'sin pausa entre A y B', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Pectoral','Hombros'], patron:['Empuje horizontal','Empuje vertical'], prefer:['Press plano con mancuernas','Press de hombros','Press de pecho en máquina'] },
+                 { grupo:['Espalda'], patron:['Tracción horizontal','Tracción vertical'], prefer:['Remo sentado en polea','Jalón al pecho','Remo con mancuerna'] }],
+          objective:'Todo el tren superior en un bloque: máxima densidad en poco tiempo.' },
+        { tipo:'superset', titulo:'Block C: Biset — Glúteo + Core', subtitulo:'cierre de tren inferior', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción','Cadera dominante'], prefer:['Patada de glúteo','Abducción','Puente de glúteo'] }, CORE_ANTIROT],
+          objective:'Glúteo y zona media para cerrar sin castigar articulaciones.' },
+        { tipo:'list', titulo:'Cierre Metabólico', subtitulo:'opcional · solo si lo pedís', category:'metcon', icon:'🏃', metcon:true, optional:true,
+          items:['Bicicleta o remo — 8 series de 30s fuerte','Pausa activa entre series — 60s suave','Vuelta a la calma — 3 min'],
+          tips:'Si venís con poco sueño o mucha fatiga acumulada, salteá este bloque sin culpa.' }
+      ]
+    },
+    {
+      id:'R', disc:['deport','fuerza','hiper','mtb','crossfit','wl','recomp'], niv:['inicial'], cats:['torso','gluteos','splits'], name:'Inicial · Full Body de Aprendizaje',
+      desc:'Primera etapa: patrones básicos con máquinas y mancuernas, series moderadas y mucha técnica. Puerta de entrada a cualquier disciplina.',
+      pasos:['Movilidad general','Patrón de rodilla','Patrón de empuje','Patrón de tracción','Bisagra de cadera + core'],
+      label:'Inicial · Full Body', title:'Full Body — Aprendizaje de Patrones',
+      chips:['🟢 Inicial','🎓 Técnica'],
+      blocks:[
+        { tipo:'list', titulo:'Movilidad General', subtitulo:'8 minutos tranquilos', category:'warmup', icon:'🔥',
+          items:['Caminata o bicicleta suave — 4 min','Movilidad de cadera y hombro — 3 min','Puente de glúteo en suelo — 2x12','Plancha frontal — 2x20s'],
+          tips:'Sin apuro: en esta etapa la prioridad es que aprendas a sentir cada movimiento.' },
+        { tipo:'block', titulo:'Block A: Patrón de Rodilla', subtitulo:'guiado y seguro', category:'strength', icon:'💪', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Máquina','Multipower','Mancuernas','Peso corporal'], prefer:['Prensa 45°','Sentadilla goblet','Extensión de cuádriceps'] }],
+          objective:'Aprender a sentarte y empujar con las piernas, sin miedo a la carga.' },
+        { tipo:'block', titulo:'Block B: Patrón de Empuje', subtitulo:'pecho y hombro', category:'strength', icon:'💪', preset:'hiper',
+          picks:[{ grupo:['Pectoral','Hombros'], patron:['Empuje horizontal','Empuje vertical'], equipo:['Máquina','Mancuernas','Multipower'], prefer:['Press de pecho en máquina','Press plano con mancuernas','Press de hombros'] }],
+          objective:'Coordinación de empuje con el hombro protegido.' },
+        { tipo:'block', titulo:'Block C: Patrón de Tracción', subtitulo:'espalda', category:'strength', icon:'💪', preset:'hiper',
+          picks:[{ grupo:['Espalda'], equipo:['Máquina','Polea','Mancuernas'], prefer:['Jalón al pecho','Remo sentado en polea','Remo en máquina'] }],
+          objective:'Espalda fuerte desde el día uno: es tu postura para todo lo que viene.' },
+        { tipo:'superset', titulo:'Block D: Biset — Bisagra + Core', subtitulo:'cadera y zona media', category:'strength', icon:'🔗', preset:'hiper',
+          picks:[{ grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Puente de glúteo','Hip thrust','Peso muerto rumano'] }, CORE_ANTIEXT],
+          objective:'La bisagra de cadera bien aprendida te evita el 80% de las molestias lumbares.' }
+      ]
     }
   ];
 
-  let tplSel = 'A', tplCat = 'todos';
+  let tplSel = 'A', tplCat = 'todos', tplDisc = 'todas', tplNiv = 'todos', tplMet = false;
   function openTpl(){
     const ath = active();
     if(!ath){ toast('Seleccioná un alumno/a primero', 'err'); go('alumnos'); return; }
@@ -5980,11 +6240,37 @@ document.addEventListener('DOMContentLoaded', init);
       esc(fullName(ath)) + ' · ' + esc(d ? d.short : '') + (d && d.bloques.length ? ' (' + d.bloques.length + ' bloques cargados)' : ' (vacío)') +
       '</b>Elegí la estructura y se arma sola con ejercicios de tu biblioteca.</div></div>';
     $('#tplLog').innerHTML = '';
+    pintarSelectores();
     renderTplFilters();
     renderTplGrid();
     openModal('mTpl');
   }
-  const catCount = c => c === 'todos' ? TEMPLATES.length : TEMPLATES.filter(t => t.cats.indexOf(c) >= 0).length;
+  /* una plantilla entra si coincide con disciplina y nivel elegidos */
+  const matchDisc = t => tplDisc === 'todas' || (t.disc || []).indexOf(tplDisc) >= 0;
+  const matchNiv  = t => tplNiv  === 'todos' || (t.niv  || NIV_TODOS).indexOf(tplNiv) >= 0;
+  const baseList  = () => TEMPLATES.filter(t => matchDisc(t) && matchNiv(t));
+  const catCount = c => c === 'todos' ? baseList().length : baseList().filter(t => t.cats.indexOf(c) >= 0).length;
+  /* ¿esta plantilla exige acondicionamiento? */
+  const exigeMet = t => !!(t && t.metconReq);
+  const esMetcon = spec => !!(spec.metcon || spec.tipo === 'finisher' || spec.tipo === 'hyrox' || spec.category === 'metcon');
+  function pintarSelectores(){
+    const sd = document.getElementById('tplDisc'), sn = document.getElementById('tplNiv');
+    if(sd) sd.innerHTML = DISCIPLINAS.map(d => '<option value="' + d.id + '"' + (d.id === tplDisc ? ' selected' : '') + '>' + d.ic + ' ' + esc(d.lb) + '</option>').join('');
+    if(sn) sn.innerHTML = NIVELES.map(n => '<option value="' + n.id + '"' + (n.id === tplNiv ? ' selected' : '') + '>' + n.ic + ' ' + esc(n.lb) + '</option>').join('');
+    sincroMet();
+  }
+  function sincroMet(){
+    const t = TEMPLATES.find(x => x.id === tplSel);
+    const chk = document.getElementById('tplMet'), hint = document.getElementById('tplMetHint');
+    if(!chk) return;
+    if(exigeMet(t)){
+      chk.checked = true; chk.disabled = true;
+      if(hint) hint.innerHTML = '<b style="color:var(--gold)">' + esc(t.name) + '</b> incluye el bloque metabólico por definición de la disciplina.';
+    } else {
+      chk.disabled = false; chk.checked = tplMet;
+      if(hint) hint.textContent = 'Por defecto no se agrega. Marcalo si querés cerrar la sesión con acondicionamiento.';
+    }
+  }
   function renderTplFilters(){
     const box = document.getElementById('tplFilters');
     if(!box) return;
@@ -5994,8 +6280,10 @@ document.addEventListener('DOMContentLoaded', init);
     ).join('');
   }
   function renderTplGrid(){
-    const lista = tplCat === 'todos' ? TEMPLATES : TEMPLATES.filter(t => t.cats.indexOf(tplCat) >= 0);
+    const base = baseList();
+    const lista = tplCat === 'todos' ? base : base.filter(t => t.cats.indexOf(tplCat) >= 0);
     if(!lista.some(t => t.id === tplSel) && lista.length) tplSel = lista[0].id;
+    sincroMet();
     $('#tplGrid').innerHTML = lista.map(t =>
       '<button class="tpl-card ' + (t.id === tplSel ? 'on' : '') + '" data-tpl="' + t.id + '">' +
         '<div class="tpl-cats">' + t.cats.map(c => {
@@ -6004,6 +6292,11 @@ document.addEventListener('DOMContentLoaded', init);
         }).join('') + '</div>' +
         '<h4>' + esc(t.name) + '</h4>' +
         '<div class="d">' + esc(t.desc) + '</div>' +
+        '<div class="tpl-meta">' +
+          (t.disc || []).map(d => { const D = DISCIPLINAS.find(x => x.id === d); return D ? '<span class="tplc">' + D.ic + ' ' + esc(D.lb.split(' /')[0]) + '</span>' : ''; }).join('') +
+          (t.niv && t.niv.length < 4 ? '<span class="tplc niv">' + t.niv.map(n => (NIVELES.find(x => x.id === n) || {}).ic || '').join('') + ' ' + esc(t.niv.join(' · ')) + '</span>' : '') +
+          (t.metconReq ? '<span class="tplc met">🔥 incluye metcon</span>' : '') +
+        '</div>' +
         '<ol>' + t.pasos.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol>' +
       '</button>'
     ).join('') || '<div class="empty" style="grid-column:1/-1"><div class="big">📋</div><h4>Sin estructuras en esta categoría</h4></div>';
@@ -6021,10 +6314,15 @@ document.addEventListener('DOMContentLoaded', init);
     const t = TEMPLATES.find(x => x.id === tplSel), ath = active(), d = curDay();
     if(!t || !ath || !d) return;
     const mode = ($$('input[name="tplMode"]').find(r => r.checked) || {}).value || 'replace';
+    const chk = document.getElementById('tplMet');
+    const conMet = exigeMet(t) || (chk ? chk.checked : false);
     const used = [], notas = [];
     const nuevos = [];
+    let saltados = 0;
 
     t.blocks.forEach(spec => {
+      /* el acondicionamiento / AMRAP no entra salvo pedido explícito o disciplina que lo exige */
+      if(!conMet && esMetcon(spec)){ saltados++; return; }
       const b = newBlock(spec.tipo);
       b.titulo    = spec.titulo || b.titulo;
       b.subtitulo = spec.subtitulo || '';
@@ -6069,6 +6367,19 @@ document.addEventListener('DOMContentLoaded', init);
       nuevos.push(b);
     });
 
+    /* si el coach pidió acondicionamiento y la estructura no traía ninguno, se agrega uno genérico */
+    if(conMet && !t.blocks.some(esMetcon)){
+      const fin = newBlock('list');
+      fin.titulo = 'Acondicionamiento Final'; fin.subtitulo = 'Intervalos · agregado a pedido';
+      fin.category = 'metcon'; fin.icon = '🏃'; fin.optional = true;
+      fin.items = ['Bicicleta, remo o assault bike — 6 series de 40s fuerte',
+                   'Recuperación activa entre series — 60s suave',
+                   'Vuelta a la calma — 3 min de respiración nasal'];
+      fin.cardioMinutes = '12';
+      fin.tips = 'Cierre metabólico agregado a pedido: ritmo sostenible, misma potencia en las 6 series. Si aparece dolor articular, cortás.';
+      nuevos.push(fin);
+    }
+
     if(mode === 'replace'){
       d.bloques = nuevos;
       /* si el día venía con otra estructura cargada (o con los valores por
@@ -6088,6 +6399,7 @@ document.addEventListener('DOMContentLoaded', init);
     $('#tplLog').innerHTML =
       '<div class="alert ' + (notas.length || conflictos ? 'warn' : 'good') + '" style="padding:10px 12px"><span class="ic">' + (notas.length || conflictos ? '⚠️' : '✅') + '</span><div>' +
         '<b>' + nuevos.length + ' bloques cargados en ' + esc(d.short) + '</b>' +
+        (saltados ? '<div style="margin-top:3px">🔥 ' + saltados + ' bloque(s) metabólico/AMRAP omitidos: activá la casilla para incluirlos.</div>' : '') +
         (conflictos ? conflictos + ' advertencia(s) biomecánica(s) para revisar. ' : 'Sin conflictos biomecánicos. ') +
         notas.map(n => '<div style="margin-top:3px">• ' + esc(n) + '</div>').join('') +
       '</div></div>';
@@ -6110,6 +6422,16 @@ document.addEventListener('DOMContentLoaded', init);
       const c = e.target.closest('[data-tpl]'); if(!c) return;
       tplSel = c.dataset.tpl; renderTplGrid();
     });
+    ['tplDisc','tplNiv'].forEach(id => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.addEventListener('change', () => {
+        if(id === 'tplDisc') tplDisc = el.value; else tplNiv = el.value;
+        renderTplFilters(); renderTplGrid();
+      });
+    });
+    const met = document.getElementById('tplMet');
+    if(met) met.addEventListener('change', () => { if(!met.disabled) tplMet = met.checked; });
     document.getElementById('tplFilters').addEventListener('click', e => {
       const f = e.target.closest('[data-tcat]'); if(!f) return;
       tplCat = f.dataset.tcat; renderTplFilters(); renderTplGrid();
@@ -8903,6 +9225,14 @@ body{overflow-x:hidden}
             <option value="1" selected>Agregar en cada día</option>
             <option value="0">No agregar</option>
           </select></div>
+        <div style="grid-column:1/-1"><label class="lb">🔥 Acondicionamiento / AMRAP / Finisher metabólico</label>
+          <select id="genMet">
+            <option value="auto" selected>Solo si el estilo lo requiere (recomendado)</option>
+            <option value="si">Incluir siempre al cierre</option>
+            <option value="no">No incluir nunca</option>
+          </select>
+          <div class="hint">Por defecto el bloque metabólico no se agrega: solo aparece en los estilos que lo tienen como parte de la disciplina (Hyrox, CrossFit/WOD e híbrido).</div>
+        </div>
       </div>
       <div class="gen-log" id="genLog"></div>
     </div>
@@ -9076,7 +9406,7 @@ body{overflow-x:hidden}
       P:{ ancla:{efSets:3,reps:'10-12',tempo:'3011',rest:90,aprox:1}, acc:{efSets:3,reps:'12-15',tempo:'2011',rest:60},
           core:{efSets:3,reps:'20-30s',tempo:'sostén',rest:60}, fin:{reps:'15-20'} } },
 
-    { id:'hyrox', ic:'🏃', lb:'Functional Hyrox / Cardio-Strength',
+    { id:'hyrox', metconReq:true, ic:'🏃', lb:'Functional Hyrox / Cardio-Strength',
       desc:'Ancla de fuerza y después bloque metabólico interválico: fuerza que se sostiene con pulsaciones altas.',
       chips:['Fuerza + metcon','Intervalos','Zona 2'],
       bullets:['1-2 anclas de fuerza al inicio','Bloque interválico con trabajo/descanso definido','Cierre de core y cardio'],
@@ -9084,7 +9414,7 @@ body{overflow-x:hidden}
       P:{ ancla:{efSets:4,reps:'5-6',tempo:'2010',rest:120,aprox:2}, acc:{efSets:3,reps:'10-12',tempo:'2011',rest:60},
           core:{efSets:3,reps:'30s',tempo:'sostén',rest:45}, fin:{reps:'12-15'} } },
 
-    { id:'olim', ic:'🏋️‍♂️', lb:'Weightlifting & CrossFit Session',
+    { id:'olim', metconReq:true, ic:'🏋️‍♂️', lb:'Weightlifting & CrossFit Session',
       desc:'Técnica de barra en fresco, fuerza base y WOD final. Estructura de sesión de halterofilia con acondicionamiento.',
       chips:['Técnica','Fuerza','WOD'],
       bullets:['Bloque técnico de barra con series cortas','Sentadilla y empuje vertical como fuerza base','WOD AMRAP/EMOM para cerrar'],
@@ -9092,7 +9422,7 @@ body{overflow-x:hidden}
       P:{ ancla:{efSets:5,reps:'3-5',tempo:'2010',rest:180,aprox:2}, acc:{efSets:3,reps:'8-10',tempo:'2011',rest:90},
           core:{efSets:3,reps:'30s',tempo:'sostén',rest:45}, fin:{reps:'12-15'} } },
 
-    { id:'hibrido', ic:'🏆', lb:'Bodybuilding + Weightlifting + CrossFit',
+    { id:'hibrido', metconReq:true, ic:'🏆', lb:'Bodybuilding + Weightlifting + CrossFit',
       desc:'Híbrido completo: una barra pesada, volumen en aparatos guiados y metcon corto de cierre.',
       chips:['Aparatos','Barra','Metcon'],
       bullets:['Fuerza con barra al inicio','Volumen en máquinas y poleas','Metcon final de 8-12 minutos'],
@@ -9121,12 +9451,17 @@ body{overflow-x:hidden}
     }
     return { foco: foco, slots: slots };
   }
-  function generarDia(est, focoId, ath, dia, dens){
+  function generarDia(est, focoId, ath, dia, dens, metMode){
     const cfg = slotsDe(est, focoId, dens);
     const P = est.P, used = [], avisos = [];
     const bloques = [];
+    /* el acondicionamiento no entra por defecto: solo si el estilo lo exige o si lo pedís */
+    const modo = metMode || 'auto';
+    const conMet = modo === 'si' ? true : (modo === 'no' ? false : !!est.metconReq);
+    let saltados = 0;
 
     cfg.slots.forEach(sl => {
+      if(!conMet && (sl.rol === 'fin' || sl.rol === 'met')){ saltados++; return; }
       const par = P[sl.rol === 'tec' ? 'ancla' : (sl.rol === 'met' ? 'acc' : sl.rol)] || P.acc;
       const b = newBlock(sl.t === 'hyrox' ? 'list' : sl.t);
       b.titulo = sl.ti;
@@ -9190,7 +9525,7 @@ body{overflow-x:hidden}
     dia.summary = est.lb + ' · ' + bloques.length + ' bloques · ' + (est.chips || []).join(' · ');
     dia.focusText = est.desc;
     if(!(dia.cooldown || []).length) dia.cooldown = ['Respiración diafragmática — 2 min', 'Estiramiento suave de los grupos trabajados — 3 min'];
-    return { avisos: avisos, n: bloques.length };
+    return { avisos: avisos, n: bloques.length, saltados: saltados };
   }
 
   /* ---------- ejecución ---------- */
@@ -9202,14 +9537,15 @@ body{overflow-x:hidden}
     const dens = $('#genDens').value;
     const scope = $('#genScope').value;
     const conRamp = $('#genRamp').value === '1';
+    const metMode = ($('#genMet') || {}).value || 'auto';
     const rot = ROT[Math.max(3, Math.min(6, p.dias.length))] || ROT[4];
     const objetivo = scope === 'day' ? [S.ui.day] : p.dias.map((d,i) => i);
     const log = [];
 
     objetivo.forEach(i => {
       const d = p.dias[i]; if(!d) return;
-      const r = generarDia(est, rot[i % rot.length], ath, d, dens);
-      log.push({ dia: d.short, titulo: d.title, n: r.n, avisos: r.avisos,
+      const r = generarDia(est, rot[i % rot.length], ath, d, dens, metMode);
+      log.push({ dia: d.short, titulo: d.title, n: r.n, avisos: r.avisos, saltados: r.saltados,
                  detalle: d.bloques.map(b => (b.icon || '') + ' ' + b.titulo).join(' · ') });
     });
 
@@ -9231,6 +9567,7 @@ body{overflow-x:hidden}
       '<div class="alert ' + (conflictos ? 'warn' : 'good') + '" style="padding:10px 12px"><span class="ic">' + (conflictos ? '⚠️' : '✅') + '</span>' +
       '<div><b>' + est.ic + ' ' + esc(est.lb) + ' · ' + log.length + ' día(s) generados</b>' +
       (conflictos ? conflictos + ' advertencia(s) biomecánica(s) para revisar antes de exportar.' : 'Sin conflictos biomecánicos con el perfil de ' + esc(fullName(ath)) + '.') + '</div></div>' +
+      (log.some(l => l.saltados) ? '<div class="hint" style="margin-bottom:7px">🔥 Bloques metabólicos omitidos (no van por defecto). Cambiá el selector si querés incluirlos.</div>' : '') +
       log.map(l => '<div class="gen-day"><b>' + esc(l.dia) + ' — ' + esc(l.titulo) + '</b>' +
         '<div class="gl">' + esc(l.detalle) + '</div>' +
         (l.avisos.length ? '<div class="gl" style="color:#FF7A84">⚠️ ' + esc(l.avisos.join(' · ')) + '</div>' : '') +
@@ -10900,6 +11237,308 @@ body.man-mode .gs-fab{right:318px}
     window.CoachManual = { toggle: toggleMan, agregar: agregarA, nuevo: nuevoBloqueCon,
                            paso: aplicarPaso, pasoReps: pasoReps, pasoTempo: pasoTempo,
                            activo: () => manOn, seleccionar: id => { selBlock = id; } };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 17 — TIPS Y OBJETIVOS DE BIBLIOTECA + COBERTURA DE VIDEO
+     · ✨ Generar Coach Note y Objetivo Biomecánico (IA o motor local)
+     · Los campos enriquecidos viajan solos a la rutina de cualquier alumno
+     · Auditoría de cobertura de video en TODOS los bloques
+     ============================================================ -->
+<style>
+.ai-ex-box{border:1px dashed rgba(124,77,255,.45);background:rgba(124,77,255,.07);border-radius:var(--r-sm);padding:10px 12px;margin-top:4px}
+.ai-ex-box .hint{margin-top:6px}
+.btn.ai2{background:linear-gradient(135deg,#8E7BFF,#5C3FE0);border-color:transparent;color:#fff;box-shadow:0 6px 16px rgba(124,77,255,.28)}
+.btn.ai2:hover{filter:brightness(1.08)}
+.cov-row{display:grid;grid-template-columns:1.7fr 1fr auto;gap:9px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12.5px}
+.cov-row:last-child{border-bottom:none}
+.cov-row .cn{font-weight:700}
+.cov-row .cm{font-size:10.5px;color:var(--muted)}
+.cov-box{border:1px solid var(--line);border-radius:var(--r-sm);background:#0B0D0F;max-height:300px;overflow:auto;margin-top:10px}
+.cov-tag{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:20px;border:1px solid var(--line-2);color:var(--muted)}
+.cov-tag.ok{border-color:rgba(0,191,165,.4);color:var(--teal);background:rgba(0,191,165,.09)}
+.cov-tag.no{border-color:rgba(255,138,0,.45);color:#FFB05C;background:rgba(255,138,0,.09)}
+.cov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px;margin-bottom:4px}
+.cov-kpi{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px}
+.cov-kpi .v{font-family:var(--ffh);font-size:24px;font-weight:900;line-height:1}
+.cov-kpi .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
+</style>
+
+<div class="modal-bg" id="mCov">
+  <div class="modal">
+    <div class="modal-h"><h3>🎬 Cobertura de video de la planificación</h3><div class="spacer"></div><button class="icon-btn" data-close="mCov">✕</button></div>
+    <div class="modal-b">
+      <div class="alert info" style="padding:10px 12px"><span class="ic">🎥</span>
+        <div><b>Ningún ejercicio queda sin video</b>Se revisan warm-up, anclas, bisets, core, finishers, metcons y accesorios. Lo que no tenga ID de YouTube en la biblioteca usa el buscador automático dentro de la app del alumno/a.</div></div>
+      <div class="cov-kpis" id="covKpis"></div>
+      <div class="cov-box" id="covBox"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mCov">Cerrar</button>
+      <button class="btn" id="covLib">🎬 Ir a la biblioteca</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   23. MÓDULO 17 — TIPS/OBJETIVOS CON IA + COBERTURA DE VIDEO
+   ============================================================ */
+(function(){
+
+  /* ============ A. CAMPO OBJETIVO + GENERACIÓN ============ */
+  function inyectarCampos(){
+    const av = document.getElementById('eAviso');
+    if(!av || document.getElementById('eObjetivo')) return;
+    av.parentNode.insertAdjacentHTML('afterend',
+      '<div><label class="lb">🎯 Objetivo biomecánico / Enfoque</label>' +
+        '<textarea id="eObjetivo" placeholder="Ej: Máxima tensión en glúteo mayor con la pelvis en retroversión; transferencia directa al sprint."></textarea>' +
+        '<div class="ai-ex-box">' +
+          '<div class="row" style="gap:8px">' +
+            '<button type="button" class="btn sm ai2" id="exGenAI">✨ Generar Tips u Objetivos con IA</button>' +
+            '<button type="button" class="btn sm" id="exGenLocal">🪄 Generar sin IA (motor local)</button>' +
+          '</div>' +
+          '<div class="hint" id="exGenHint">Completa la Coach Note (postura, alineación y respiración en 2.ª persona) y el objetivo biomecánico. Quedan guardados en el ejercicio y se autocargan cada vez que lo insertás en la rutina de cualquier alumno/a.</div>' +
+        '</div>' +
+      '</div>');
+    document.getElementById('exGenAI').addEventListener('click', () => generar(true));
+    document.getElementById('exGenLocal').addEventListener('click', () => generar(false));
+  }
+
+  const _openEx = window.openEx;
+  window.openEx = function(id){
+    _openEx.apply(this, arguments);
+    inyectarCampos();
+    const e = id ? getEx(id) : null;
+    const o = document.getElementById('eObjetivo');
+    if(o) o.value = (e && e.objetivo) || '';
+    const h = document.getElementById('exGenHint');
+    if(h && e && (e.aviso || e.objetivo)) h.innerHTML = '<b style="color:var(--teal)">Este ejercicio ya tiene contenido cargado.</b> Si generás de nuevo, se reemplaza.';
+  };
+  const _saveEx = window.saveEx;
+  window.saveEx = function(){
+    const obj = document.getElementById('eObjetivo') ? document.getElementById('eObjetivo').value.trim() : '';
+    const editando = editExId;
+    const antes = S.exercises.length;
+    _saveEx.apply(this, arguments);
+    if(document.getElementById('mEx').classList.contains('on')) return;
+    const ex = editando ? getEx(editando) : (S.exercises.length > antes ? S.exercises[S.exercises.length - 1] : null);
+    if(ex){ ex.objetivo = obj; save(); }
+  };
+
+  /* ---------- motor local (sin API) ---------- */
+  function localTips(ex){
+    const CA = window.CoachAuto;
+    const base = CA && CA.notaCompleta ? CA.notaCompleta(ex, '2011', null) : '';
+    const cue = base.split('.').slice(0, 3).join('.').trim();
+    return (cue || 'Buscá una posición estable, columna neutra y control en todo el recorrido.') +
+           (/\.$/.test(cue) ? '' : '.');
+  }
+  const OBJ_PATRON = {
+    'Cadera dominante':'Tensión máxima en glúteo mayor e isquiotibiales en el rango de estiramiento; es el patrón que más transfiere a sprint, salto y subida.',
+    'Rodilla dominante':'Sobrecarga del cuádriceps con la rodilla como articulación protagonista; base de la fuerza para sentadilla, pedaleo y aceleración.',
+    'Empuje horizontal':'Desarrollo del pectoral, deltoide anterior y tríceps con el hombro estable; empuje aplicable a contacto y bloqueo.',
+    'Empuje vertical':'Fuerza por encima de la cabeza con el core rígido; mejora la estabilidad escapular y la potencia de empuje.',
+    'Tracción horizontal':'Espesor de dorsal medio, romboides y trapecio; compensa el volumen de empuje y sostiene la postura.',
+    'Tracción vertical':'Ancho de dorsal y fuerza de tracción desde arriba; base de dominadas y movimientos gimnásticos.',
+    'Abducción / Aducción':'Trabajo directo de glúteo medio y menor: estabilidad de cadera y control del valgo de rodilla.',
+    'Core / Anti-rotación':'Rigidez del tronco resistiendo la rotación; transfiere fuerza entre tren inferior y superior sin fugas.',
+    'Aislamiento':'Estímulo local con mínima participación de otros grupos: ideal para completar volumen sin fatiga sistémica.',
+    'Aislamiento hombro':'Deltoide en su función pura, con carga baja y control alto para cuidar el manguito rotador.',
+    'Bíceps':'Flexión de codo con tensión constante: hipertrofia local y salud del tendón distal.',
+    'Tríceps':'Extensión de codo con foco en la cabeza larga; empuje más fuerte y codo más estable.',
+    'Cardio / Metcon':'Capacidad aeróbica y tolerancia al lactato: sostener el esfuerzo sin que se caiga la técnica.',
+    'Extensión lumbar':'Resistencia de los erectores espinales para sostener la columna bajo carga.',
+    'Salud articular':'Preparación y cuidado articular: rango, control y circulación antes de la carga pesada.'
+  };
+  function localObjetivo(ex){
+    const p = OBJ_PATRON[ex.patron] || 'Estímulo del grupo muscular objetivo con técnica controlada y rango completo.';
+    const g = ex.grupo ? 'Grupo principal: ' + ex.grupo + '. ' : '';
+    const eq = ex.equipo ? 'Con ' + ex.equipo.toLowerCase() + ' el estímulo se vuelve ' +
+      (['Máquina','Multipower','Polea'].indexOf(ex.equipo) >= 0 ? 'más guiado y seguro para acumular volumen.' :
+       ex.equipo === 'Barra' ? 'más pesado y sistémico: es el que más carga total permite.' :
+       ex.equipo === 'Mancuernas' ? 'más libre y simétrico, con más demanda de estabilizadores.' :
+       'más accesible y fácil de progresar en cualquier sede.') : '';
+    return g + p + ' ' + eq;
+  }
+
+  /* ---------- generación con IA ---------- */
+  function prompt(ex){
+    return 'Ejercicio: "' + ex.es + '"' + (ex.en ? ' (' + ex.en + ')' : '') +
+      '. Grupo: ' + ex.grupo + '. Patrón: ' + ex.patron + '. Equipamiento: ' + ex.equipo +
+      (ex.riesgo && ex.riesgo.length ? '. Zonas de riesgo: ' + ex.riesgo.join(', ') : '') +
+      '.\nDevolvé SOLO un JSON: {"tips":"...","objetivo":"..."}\n' +
+      '- "tips": 2 o 3 frases directas en español rioplatense, tuteo con "vos" (decí "apretá", "llevá", "exhalá"), sobre postura, alineación y respiración. Sin listas ni markdown.\n' +
+      '- "objetivo": 1 o 2 frases explicando el beneficio o estímulo muscular/deportivo del ejercicio.';
+  }
+  async function generar(conIA){
+    const ex = {
+      es: $('#eEs').value.trim(), en: $('#eEn').value.trim(),
+      grupo: $('#eGrupo').value, patron: $('#ePatron').value, equipo: $('#eEquipo').value,
+      riesgo: (function(){ try{ return tmpRiesgo || []; }catch(e){ return []; } })()
+    };
+    if(!ex.es){ toast('Escribí primero el nombre del ejercicio', 'err'); $('#eEs').focus(); return; }
+    const hint = document.getElementById('exGenHint');
+    const setVals = (t, o, fuente) => {
+      $('#eAviso').value = t;
+      $('#eObjetivo').value = o;
+      if(hint) hint.innerHTML = '<b style="color:var(--teal)">Generado ' + fuente + '.</b> Revisá y ajustá lo que quieras antes de guardar.';
+    };
+    if(!conIA){
+      setVals(localTips(ex), localObjetivo(ex), 'con el motor local (sin consumir API)');
+      toast('🪄 Coach Note y objetivo generados localmente');
+      return;
+    }
+    const AI = window.CoachAI;
+    if(!AI || !AI.generarTexto){
+      setVals(localTips(ex), localObjetivo(ex), 'con el motor local: no hay IA configurada');
+      toast('Sin IA configurada: se usó el motor local', 'warn');
+      return;
+    }
+    if(hint) hint.textContent = '✨ Generando con IA…';
+    try{
+      const txt = await AI.generarTexto(prompt(ex),
+        'Sos Coach JP, entrenador de fuerza argentino. Escribís claro, directo y en segunda persona ("vos"). Respondés solo con JSON válido.');
+      let j = null;
+      try{ j = JSON.parse(txt); }catch(e){
+        const m = String(txt).match(/\{[^]*\}/);
+        if(m) { try{ j = JSON.parse(m[0]); }catch(e2){} }
+      }
+      if(j && (j.tips || j.objetivo)){
+        setVals(j.tips || localTips(ex), j.objetivo || localObjetivo(ex), 'con IA');
+        toast('✨ Coach Note y objetivo generados con IA');
+      } else {
+        setVals(localTips(ex), localObjetivo(ex), 'con el motor local: la IA no devolvió JSON válido');
+        toast('La IA no devolvió un formato válido: se usó el motor local', 'warn');
+      }
+    }catch(e){
+      setVals(localTips(ex), localObjetivo(ex), 'con el motor local: ' + (e.message || 'falló la IA'));
+      toast('Falló la IA (' + (e.message || '') + '): se usó el motor local', 'warn');
+    }
+  }
+
+  /* ============ B. VINCULACIÓN AUTOMÁTICA A LOS BLOQUES ============ */
+  /* cuando el ejercicio tiene objetivo/coach note propios, el bloque los hereda */
+  function heredarContenido(){
+    const p = plan(S.activeId); if(!p) return 0;
+    let n = 0;
+    p.dias.forEach(d => (d.bloques || []).forEach(b => {
+      const refs = blockExIds(b);
+      if(!refs.length) return;
+      const ex = getEx(refs[0].exId); if(!ex) return;
+      if(!b.objective && ex.objetivo){ b.objective = ex.objetivo; n++; }
+      if(!b.tips && ex.aviso){ b.tips = ex.aviso; n++; }
+    }));
+    if(n) save();
+    return n;
+  }
+  let heredando = false;
+  const _renderBuilder = window.renderBuilder;
+  window.renderBuilder = function(){
+    if(!heredando){
+      heredando = true;
+      try{ heredarContenido(); }catch(e){ console.warn('herencia', e); }
+      heredando = false;
+    }
+    return _renderBuilder.apply(this, arguments);
+  };
+
+  /* ============ C. COBERTURA DE VIDEO EN TODOS LOS BLOQUES ============ */
+  function limpiar(n){
+    let t = String(n || '').trim();
+    const p1 = t.split(' · ');
+    if(p1.length > 1 && p1[0].length <= 26) t = p1.slice(1).join(' · ');
+    const p2 = t.split(': ');
+    if(p2.length > 1 && p2[0].length <= 22) t = p2.slice(1).join(': ');
+    return t.replace(/\s*\(.*?\)\s*$/, '').trim();
+  }
+  function buscarEx(nombre){
+    const n = limpiar(String(nombre).split(' — ')[0]);
+    return S.exercises.find(e => norm(e.es) === norm(n)) ||
+           S.exercises.find(e => e.videoId && (matchNombre(e.es, n) || (e.en && matchNombre(e.en, n)))) ||
+           S.exercises.find(e => e.videoId && norm(e.es).indexOf(norm(n)) >= 0 && norm(n).length > 5) || null;
+  }
+  const TIPO_LB = { list:'Warm-up / lista', block:'Ancla', superset:'Biset / triset', finisher:'Finisher', hyrox:'Metcon / cardio' };
+  function auditarVideos(){
+    const ath = active(); if(!ath) return [];
+    const p = plan(ath.id), out = [];
+    p.dias.forEach(d => (d.bloques || []).forEach(b => {
+      const zona = TIPO_LB[b.tipo] || b.tipo;
+      blockExIds(b).forEach(r => {
+        const ex = getEx(r.exId); if(!ex) return;
+        out.push({ dia: d.short, bloque: b.titulo, zona: zona, nombre: ex.es, ex: ex, video: !!ex.videoId, tipoFuente:'biblioteca' });
+      });
+      (b.items || []).forEach(it => {
+        const ex = buscarEx(it);
+        out.push({ dia: d.short, bloque: b.titulo, zona: zona, nombre: String(it).split(' — ')[0], ex: ex, video: !!(ex && ex.videoId), tipoFuente:'ítem de lista' });
+      });
+      (b.movements || []).forEach(m => {
+        const ex = buscarEx(m);
+        out.push({ dia: d.short, bloque: b.titulo, zona: zona, nombre: String(m).split(' — ')[0], ex: ex, video: !!(ex && ex.videoId), tipoFuente:'movimiento' });
+      });
+    }));
+    return out;
+  }
+  function renderCov(){
+    const ath = active();
+    if(!ath){ toast('Elegí un alumno/a activo/a', 'err'); return; }
+    const filas = auditarVideos();
+    const con = filas.filter(f => f.video).length;
+    const sin = filas.length - con;
+    const pct = filas.length ? Math.round(con / filas.length * 100) : 100;
+    $('#covKpis').innerHTML =
+      '<div class="cov-kpi"><div class="k">Ejercicios en el plan</div><div class="v">' + filas.length + '</div></div>' +
+      '<div class="cov-kpi"><div class="k">Con video propio</div><div class="v" style="color:var(--teal)">' + con + '</div></div>' +
+      '<div class="cov-kpi"><div class="k">Con búsqueda automática</div><div class="v" style="color:#FFB05C">' + sin + '</div></div>' +
+      '<div class="cov-kpi"><div class="k">Cobertura directa</div><div class="v">' + pct + '<small style="font-size:14px">%</small></div></div>';
+    $('#covBox').innerHTML = filas.length
+      ? filas.map(f =>
+          '<div class="cov-row"><div><div class="cn">' + esc(f.nombre) + '</div>' +
+            '<div class="cm">' + esc(f.dia) + ' · ' + esc(f.zona) + ' · ' + esc(f.bloque) + '</div></div>' +
+          '<div>' + (f.video ? '<span class="cov-tag ok">🎬 Video vinculado</span>' : '<span class="cov-tag no">🔎 Búsqueda en YouTube</span>') + '</div>' +
+          '<div class="row" style="gap:5px;flex-wrap:nowrap">' +
+            (f.video ? '<button class="btn xs" data-covplay="' + f.ex.id + '">▶</button>' : '') +
+            (f.ex ? '<button class="btn xs" data-covedit="' + f.ex.id + '">✏️</button>' : '') +
+            '<a class="btn xs" href="' + ytSearch(f.nombre) + '" target="_blank" rel="noopener">🔎</a>' +
+          '</div></div>').join('')
+      : '<div class="empty" style="padding:20px"><div class="big">🎬</div><h4>El plan está vacío</h4></div>';
+    openModal('mCov');
+  }
+
+  function mount(){
+    /* botón en el builder */
+    const pop = document.getElementById('toolsPop');
+    if(pop && !document.getElementById('btnCov')){
+      const b = document.createElement('button');
+      b.className = 'btn'; b.id = 'btnCov'; b.innerHTML = '🎬 Cobertura de video';
+      b.addEventListener('click', () => { pop.classList.remove('on'); renderCov(); });
+      pop.appendChild(b);
+    }
+    /* botón en la biblioteca */
+    const libTop = document.querySelector('#v-biblioteca .topbar');
+    if(libTop && !document.getElementById('btnCov2')){
+      const b = document.createElement('button');
+      b.className = 'btn'; b.id = 'btnCov2'; b.innerHTML = '🎬 Cobertura del plan';
+      libTop.insertBefore(b, document.getElementById('btnNewEx'));
+      b.addEventListener('click', renderCov);
+    }
+
+    $('#covBox').addEventListener('click', e => {
+      const pl = e.target.closest('[data-covplay]');
+      if(pl){ closeModal('mCov'); openVideo(pl.dataset.covplay); return; }
+      const ed = e.target.closest('[data-covedit]');
+      if(ed){ closeModal('mCov'); go('biblioteca'); setTimeout(() => openEx(ed.dataset.covedit), 160); }
+    });
+    $('#covLib').addEventListener('click', () => { closeModal('mCov'); go('biblioteca'); });
+    $$('#mCov [data-close]').forEach(b => b.addEventListener('click', () => closeModal('mCov')));
+    document.getElementById('mCov').addEventListener('click', e => { if(e.target.id === 'mCov') closeModal('mCov'); });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal('mCov'); });
+
+    window.CoachEx = { generar: generar, localTips: localTips, localObjetivo: localObjetivo,
+                       auditar: auditarVideos, cobertura: renderCov, heredar: heredarContenido };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
