@@ -2792,6 +2792,20 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   }
   .video-link { color: var(--gold); font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; font-size: 11px; letter-spacing: 0.02em; border-bottom: 1px solid rgba(255,214,0,0.35); padding-bottom: 1px; cursor: pointer; white-space: nowrap; transition: color 0.2s ease, border-color 0.2s ease; }
   .video-link:hover { color: var(--red-light); border-color: var(--red-light); }
+  .load-suggest { display:flex; gap:9px; align-items:flex-start; margin:0 0 12px; padding:9px 12px; border-radius:10px;
+    background: rgba(255,214,0,0.07); border:1px solid rgba(255,214,0,0.28); }
+  .load-suggest .ls-ic { font-size:15px; line-height:1.2; }
+  .load-suggest b { display:block; color: var(--gold); font-size:0.9rem; letter-spacing:0.01em; }
+  .load-suggest span { display:block; color: var(--text-secondary); font-size:0.78rem; margin-top:2px; }
+  .block-notes { margin-top:14px; padding-top:12px; border-top:1px dashed rgba(255,255,255,0.12); }
+  .block-notes label { display:block; font-size:0.72rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--text-muted); font-weight:800; margin-bottom:6px; }
+  .block-note-input { width:100%; background: var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:9px 11px;
+    color: var(--text-primary); font-family:'Inter',sans-serif; font-size:0.85rem; line-height:1.5; resize:vertical; min-height:52px; }
+  .block-note-input:focus { border-color: var(--gold); outline:none; }
+  .block-note-input::placeholder { color: var(--text-muted); }
+  .wu-phase { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 0.95rem; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--gold); margin: 12px 0 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,214,0,0.22); }
+  .wu-phase:first-child { margin-top: 0; }
   .video-link.vsearch { color: var(--text-secondary); border-color: rgba(255,255,255,0.22); }
   .video-link.vsearch:hover { color: var(--gold); border-color: rgba(255,214,0,0.5); }
   .video-popup-wrap { display: none; position: fixed; bottom: 20px; right: 20px; z-index: 300; width: 320px; max-width: calc(100vw - 32px); }
@@ -3139,7 +3153,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       <button id="calcClose" class="modal-close" type="button">&times;</button>
     </div>
     {{PR_BLOCK}}
-    <div class="field"><label>Peso levantado (kg)</label><input id="calcWeight" type="number" inputmode="decimal" placeholder="Ej: 80" /></div>
+    <div class="field"><label>Peso levantado (kg)</label><input id="calcWeight" type="number" step="0.5" min="0" inputmode="decimal" placeholder="Ej: 80" /></div>
     <div class="field"><label>Repeticiones realizadas</label><input id="calcReps" type="number" inputmode="numeric" placeholder="Ej: 6" /></div>
     <div class="field">
       <label>Redondeo</label>
@@ -3216,7 +3230,7 @@ const CATEGORY_META = {
 };
 function limpiarNombre(n){
   let t = String(n||'').trim();
-  /* saca prefijos tipo "RAISE · " o "Block A: " para buscar mejor el video */
+  /* saca prefijos tipo "Fase 1 · " o "Block A: " para encontrar mejor el video */
   const p1 = t.split(' · ');
   if(p1.length > 1 && p1[0].length <= 26) t = p1.slice(1).join(' · ');
   const p2 = t.split(': ');
@@ -3237,7 +3251,7 @@ function videoLinkHtml(name){
    STATE
 ========================================================= */
 const STORAGE_KEY = '{{STORAGE_KEY}}';
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{} };
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{} };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -3250,14 +3264,15 @@ function loadProgress(){
         state.completed = parsed.completed || {};
         state.fatigue = parsed.fatigue || {};
         state.loads = parsed.loads || {};
+        state.notes = parsed.notes || {};
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
     }
-  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; }
+  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; }
 }
 function saveProgress(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, mode: state.mode, currentWeek: state.currentWeek })); }catch(e){}
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, mode: state.mode, currentWeek: state.currentWeek })); }catch(e){}
 }
 function isBlockDone(weekIdx, dayId, blockId){
   return !!(state.completed[weekIdx] && state.completed[weekIdx][dayId] && state.completed[weekIdx][dayId][blockId]);
@@ -3297,7 +3312,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint){
     const ld = getLoad(key);
     html += '<div class="set-row' + (ld.done?' set-row-done':'') + '" data-set-key="' + key + '">' +
       '<span class="set-row-label">Serie ' + i + '</span>' +
-      '<input class="set-input set-kg" type="number" inputmode="decimal" placeholder="Kg" value="' + (ld.kg!=null?ld.kg:'') + '" />' +
+      '<input class="set-input set-kg" type="number" step="0.5" min="0" inputmode="decimal" placeholder="Kg" value="' + (ld.kg!=null?ld.kg:'') + '" />' +
       '<input class="set-input set-reps" type="number" inputmode="numeric" placeholder="' + (repsHint||'Reps') + '" value="' + (ld.reps!=null?ld.reps:'') + '" />' +
       '<input class="set-check" type="checkbox" ' + (ld.done?'checked':'') + ' />' +
     '</div>';
@@ -3373,6 +3388,10 @@ const WakeLockManager = (function(){
    ITEM LINE PARSER
 ========================================================= */
 function renderLine(text){
+  /* las fases del calentamiento se muestran como subtítulo, no como ejercicio */
+  if(/^\\s*\\d+\\.\\s/.test(text) && text.indexOf(' — ') < 0){
+    return '<div class="wu-phase">' + text.trim() + '</div>';
+  }
   const dashSplit = text.split(' — ');
   if(dashSplit.length >= 2){
     const name = dashSplit[0];
@@ -3723,6 +3742,33 @@ function renderBlockInner(block, day, weekIdx){
   }
   return html;
 }
+/* porcentaje de la carga base según la semana del mesociclo */
+const PCT_SEMANA = [
+  { pct:[70,75], lb:'Aclimatación' },
+  { pct:[80,85], lb:'Sobrecarga I' },
+  { pct:[90,100], lb:'Pico / fallo técnico' },
+  { pct:[60,60], lb:'Deload' }
+];
+function redondear05(v){ return Math.round(v / 0.5) * 0.5; }
+function cargaSugeridaHtml(block, weekIdx){
+  const base = parseFloat(block.baseLoad);
+  if(!base || base <= 0) return '';
+  const w = PCT_SEMANA[weekIdx] || PCT_SEMANA[0];
+  const a = redondear05(base * w.pct[0] / 100);
+  const b = redondear05(base * w.pct[1] / 100);
+  const rango = (a === b) ? (a + ' kg') : (a + ' – ' + b + ' kg');
+  const pct = (w.pct[0] === w.pct[1]) ? (w.pct[0] + '%') : (w.pct[0] + '-' + w.pct[1] + '%');
+  return '<div class="load-suggest"><span class="ls-ic">🎯</span><div><b>Carga sugerida ' + WEEKS_META[weekIdx].short + ': ' + rango + '</b>' +
+    '<span>' + pct + ' de tu carga base de ' + base + ' kg · ' + w.lb + '</span></div></div>';
+}
+function notesKey(weekIdx, dayId, blockId){ return weekIdx + '|' + dayId + '|' + blockId; }
+function bloqueNotasHtml(block, day, weekIdx){
+  const k = notesKey(weekIdx, day.id, block.id);
+  const val = (state.notes && state.notes[k]) ? state.notes[k] : '';
+  return '<div class="block-notes"><label>📝 Notas / Observaciones del Bloque</label>' +
+    '<textarea class="block-note-input" data-note-key="' + k + '" rows="2" placeholder="Escribí acá tus sensaciones, molestias o ajustes de esta sesión...">' +
+    val.replace(/</g,'&lt;') + '</textarea></div>';
+}
 function renderBlock(block, day, weekIdx, idx){
   const meta = CATEGORY_META[block.category] || CATEGORY_META.strength;
   const catCls = block.category === 'strength' ? 'cat-strength' : (block.category === 'warmup' ? 'cat-warmup' : (block.category === 'metcon' ? 'cat-metcon' : (block.category === 'cardio' ? 'cat-cardio' : 'cat-accessory')));
@@ -3738,7 +3784,8 @@ function renderBlock(block, day, weekIdx, idx){
       '<label class="block-check" onclick="event.stopPropagation()"><input type="checkbox" class="block-done-cb" ' + (done?'checked':'') + ' /></label>' +
       '<div class="block-chevron">▾</div>' +
     '</div>' +
-    '<div class="block-body">' + renderBlockInner(block, day, weekIdx) + '</div>' +
+    '<div class="block-body">' + cargaSugeridaHtml(block, weekIdx) + renderBlockInner(block, day, weekIdx) +
+      (block.category === 'warmup' ? '' : bloqueNotasHtml(block, day, weekIdx)) + '</div>' +
   '</div>';
 }
 function renderMain(){
@@ -3839,6 +3886,15 @@ function wireBlockInteractions(day, weekIdx, blocks){
         row.classList.toggle('set-row-done', chk.checked);
       });
     });
+    const noteEl = blockEl.querySelector('.block-note-input');
+    if(noteEl){
+      noteEl.addEventListener('input', function(){
+        state.notes = state.notes || {};
+        state.notes[noteEl.dataset.noteKey] = noteEl.value;
+        saveProgress();
+      });
+      noteEl.addEventListener('click', function(e){ e.stopPropagation(); });
+    }
     const timerSlot = blockEl.querySelector('.timer-slot');
     if(timerSlot){
       const rounds = parseInt(timerSlot.dataset.rounds, 10) || 1;
@@ -4143,7 +4199,7 @@ if(document.readyState === 'loading'){
 `;
 
 /* ---------- Índice de videos + resolución de texto libre ---------- */
-/* limpia prefijos tipo «🅡 RAISE · » o «Block A: » para poder encontrar el ejercicio */
+/* limpia prefijos tipo «Fase 1 · » o «Block A: » para poder encontrar el ejercicio */
 function limpiarNombreEx(n){
   let t = String(n || '').trim();
   const p1 = t.split(' · ');
@@ -8731,27 +8787,32 @@ body{overflow-x:hidden}
     const ancla = (d.bloques||[]).filter(b => b.tipo === 'block').map(b => getEx(b.exId)).filter(Boolean)[0];
 
     const items = [];
-    items.push('🅡 RAISE · ' + cardio + ' — 4 min (pulsaciones y temperatura arriba)');
-    gTop.forEach(g => (RAMP_ACT[g] || RAMP_ACT['Full Body / Cardio']).forEach(x => items.push('🅐 ACTIVATE · ' + x)));
-    if(!gTop.length) RAMP_ACT['Core'].forEach(x => items.push('🅐 ACTIVATE · ' + x));
-    (zTop.length ? zTop : ['cadera']).forEach(z => { if(RAMP_MOV[z]) items.push('🅜 MOBILIZE · ' + RAMP_MOV[z]); });
+    /* encabezados de fase en español; las filas de ejercicio van limpias, sin prefijos */
+    items.push('1. Elevar Temperatura y Pulso');
+    items.push(cardio + ' — 4 min, ritmo cómodo');
+    items.push('2. Activación Muscular Específica');
+    if(gTop.length) gTop.forEach(g => (RAMP_ACT[g] || RAMP_ACT['Full Body / Cardio']).forEach(x => items.push(x)));
+    else RAMP_ACT['Core'].forEach(x => items.push(x));
+    items.push('3. Movilidad Articular');
+    (zTop.length ? zTop : ['cadera']).forEach(z => { if(RAMP_MOV[z]) items.push(RAMP_MOV[z]); });
+    items.push('4. Series de Aproximación Práctica');
     if(ancla){
-      items.push('🅟 POTENTIATE · Aproximación al primer ejercicio del día — 1x8 muy liviano (40%)');
-      items.push('🅟 POTENTIATE · Segunda aproximación — 1x5 al 60% · 1x3 al 75% (sin llegar al esfuerzo)');
+      items.push(ancla.es + ' — 1x8 muy liviano (40% de la carga de trabajo)');
+      items.push(ancla.es + ' — 1x5 al 60% · 1x3 al 75%, sin llegar al esfuerzo');
     } else {
-      items.push('🅟 POTENTIATE · 2 series de aproximación del primer ejercicio, al 50-60%');
+      items.push('Primer ejercicio del día — 2 series de aproximación al 50-60%');
     }
 
     const b = newBlock('list');
-    b.titulo = 'WARM-UP RAMP';
-    b.subtitulo = 'Raise · Activate · Mobilize · Potentiate';
+    b.titulo = 'ENTRADA EN CALOR';
+    b.subtitulo = 'Temperatura · Activación · Movilidad · Aproximación';
     b.icon = '🔥'; b.category = 'warmup';
     b.items = items;
-    b.tips = 'Secuencia RAMP generada para este día: subís pulsaciones, activás ' + (gTop.join(' y ') || 'el core') +
+    b.tips = 'Entrada en calor armada para este día: subís pulsaciones, activás ' + (gTop.join(' y ') || 'el core') +
              ', movilizás ' + (zTop.map(z => ZONA_LB[z] || z).join(' y ') || 'cadera') +
              ' y potenciás el patrón del primer ancla. No debería llevarte más de 10 minutos.';
     /* reemplaza un RAMP previo si ya existía */
-    const prev = (d.bloques||[]).findIndex(x => x.titulo === 'WARM-UP RAMP');
+    const prev = (d.bloques||[]).findIndex(x => x.titulo === 'ENTRADA EN CALOR' || x.titulo === 'WARM-UP RAMP');
     if(prev >= 0) d.bloques.splice(prev, 1, b); else d.bloques.unshift(b);
     save(); renderBuilder();
     toast('🔁 Warm-up RAMP generado · ' + items.length + ' ítems');
@@ -9114,7 +9175,7 @@ body{overflow-x:hidden}
       trig.addEventListener('click', e => { e.stopPropagation(); pop.classList.toggle('on'); });
       document.addEventListener('click', e => { if(!wrap.contains(e.target)) pop.classList.remove('on'); });
       const bs = [
-        mk('btnRamp','', '🔁 Warm-Up RAMP', generarRAMP),
+        mk('btnRamp','', '🔥 Generar Entrada en Calor', generarRAMP),
         mk('btnGym','',  '🔄 Adaptar equipamiento', () => {
           const g = G().sedesAll ? G().sedesAll() : (G().sedes || []);
           const ath = active();
@@ -9256,7 +9317,7 @@ body{overflow-x:hidden}
             <option value="corta">Sesión corta (4 bloques)</option>
             <option value="larga">Sesión larga (7 bloques)</option>
           </select></div>
-        <div><label class="lb">Warm-up RAMP</label>
+        <div><label class="lb">Entrada en calor</label>
           <select id="genRamp">
             <option value="1" selected>Agregar en cada día</option>
             <option value="0">No agregar</option>
@@ -11627,7 +11688,7 @@ body.man-mode .gs-fab{right:318px}
       <div id="wkMesoPrev"></div>
       <div><label class="lb">Días de la semana (podés cambiar la estructura de cada uno)</label><div class="wk-plan" id="wkPlan"></div></div>
       <div class="row">
-        <label class="chk"><input type="checkbox" id="wkRamp" checked> Agregar warm-up RAMP a cada día</label>
+        <label class="chk"><input type="checkbox" id="wkRamp" checked> Agregar entrada en calor a cada día</label>
         <label class="chk"><input type="checkbox" id="wkMeso" checked> Reescribir la lógica de las 4 semanas del mesociclo</label>
       </div>
       <div id="wkLog"></div>
@@ -12426,6 +12487,445 @@ body.man-mode .gs-fab{right:318px}
     window.CoachProt = { protocolos: PROTOCOLOS, generos: GENERO, open: openProt, aplicar: aplicar,
                          viola: violaProtocolo, swaps: calcularSwaps, sesion: construirSesion,
                          set: (id, g) => { protSel = id || protSel; protGen = g || protGen; } };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 20 — BANCO DE RUTINAS + CARGA BASE Y SUGERENCIA POR SEMANA
+     · Plantillas generales del coach: guardar, duplicar y asignar
+     · Carga base de referencia por bloque con target dinámico S1→S4
+     ============================================================ -->
+<style>
+.bank-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.bank-card{background:linear-gradient(180deg,var(--panel),#0F1113);border:1px solid var(--line);border-radius:var(--r);padding:16px;position:relative}
+.bank-card:hover{border-color:rgba(255,214,0,.35)}
+.bank-h{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px}
+.bank-h .ic{width:38px;height:38px;flex:0 0 38px;border-radius:11px;display:grid;place-items:center;font-size:18px;background:var(--panel-3);border:1px solid var(--line-2)}
+.bank-h h4{font-family:var(--ffh);font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;line-height:1.15}
+.bank-h .bm{font-size:11px;color:var(--muted);margin-top:2px}
+.bank-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.bank-tag{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:20px;border:1px solid var(--line-2);color:var(--muted)}
+.bank-tag.d{border-color:rgba(255,214,0,.4);color:var(--gold)}
+.bank-tag.n{border-color:rgba(0,191,165,.4);color:var(--teal)}
+.bank-days{font-size:11.5px;color:var(--txt-2);line-height:1.6;border-top:1px solid var(--line);padding-top:9px;margin-top:4px}
+.bank-days b{color:var(--gold)}
+
+/* carga base y target semanal */
+.cb-bar{display:flex;flex-wrap:wrap;gap:9px;align-items:center;padding:9px 11px;margin:0 0 10px;
+  border:1px solid rgba(0,191,165,.28);border-radius:var(--r-sm);background:linear-gradient(90deg,rgba(0,191,165,.07),transparent)}
+.cb-bar .cbl{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:800}
+.cb-bar input.cbv{width:88px;padding:5px 8px;font-size:13px;border-radius:8px;text-align:center;font-family:ui-monospace,Menlo,monospace;font-weight:800;color:var(--teal)}
+.cb-weeks{display:flex;gap:5px;flex-wrap:wrap;margin-left:auto}
+.cb-wk{padding:5px 10px;border-radius:9px;border:1px solid var(--line-2);background:var(--panel-3);color:var(--muted);
+  font-size:11px;font-weight:800;transition:.13s;display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.15}
+.cb-wk:hover{color:#fff;border-color:var(--gold)}
+.cb-wk b{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--txt-2)}
+.cb-wk.on{background:linear-gradient(135deg,var(--gold),#FF9F00);border-color:transparent;color:#0A0A0B}
+.cb-wk.on b{color:#0A0A0B}
+.cb-wk.dl.on{background:linear-gradient(135deg,#7FDBFF,#00BFA5);color:#04211D}
+.cb-hint{font-size:10.5px;color:var(--muted);flex:1 1 100%}
+</style>
+
+<section id="v-banco" class="view" style="display:none">
+  <div class="topbar">
+    <div>
+      <h2>Banco de Rutinas</h2>
+      <div class="sub">Plantillas generales del coach · guardá, duplicá y asigná sin depender de un alumno</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="bankNew">➕ Plantilla vacía</button>
+    <button class="btn gold" id="bankSave">💾 Guardar rutina activa como plantilla</button>
+  </div>
+  <div class="alert info" style="margin-bottom:16px">
+    <span class="ic">🗂️</span>
+    <div><b>Modo entrenador</b>Armás una planificación completa en el Builder y la guardás acá como plantilla general. Después la duplicás para variantes o se la asignás a cualquier alumno/a: se clona respetando su frecuencia semanal y sus restricciones.</div>
+  </div>
+  <div class="bank-grid" id="bankGrid"></div>
+</section>
+
+<div class="modal-bg" id="mBank">
+  <div class="modal sm">
+    <div class="modal-h"><h3 id="mBankTitle">Guardar como plantilla general</h3><div class="spacer"></div><button class="icon-btn" data-close="mBank">✕</button></div>
+    <div class="modal-b">
+      <div><label class="lb">Nombre de la plantilla *</label><input id="bkName" placeholder="Ej: Hipertrofia 4 días · Intermedio"></div>
+      <div class="grid g2">
+        <div><label class="lb">Disciplina / objetivo</label><select id="bkDisc"></select></div>
+        <div><label class="lb">Nivel</label><select id="bkNiv"></select></div>
+      </div>
+      <div><label class="lb">Notas internas</label><textarea id="bkNotas" placeholder="Para quién sirve, qué la diferencia, qué ajustar antes de asignarla…"></textarea></div>
+      <div id="bkPrev"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mBank">Cancelar</button>
+      <button class="btn gold" id="bkSave">💾 Guardar plantilla</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="mBankAsig">
+  <div class="modal sm">
+    <div class="modal-h"><h3>🎯 Asignar plantilla a un alumno/a</h3><div class="spacer"></div><button class="icon-btn" data-close="mBankAsig">✕</button></div>
+    <div class="modal-b">
+      <div id="asigInfo"></div>
+      <div><label class="lb">Alumno/a destino</label><select id="asigAth"></select></div>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="asigMeso" checked> Copiar también la lógica del mesociclo</label>
+        <label class="chk"><input type="checkbox" id="asigSafe" checked> Reemplazar ejercicios vetados por variantes seguras</label>
+      </div>
+      <div id="asigLog"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mBankAsig">Cancelar</button>
+      <button class="btn gold" id="asigRun">🎯 Asignar y clonar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   26. MÓDULO 20 — BANCO DE RUTINAS + CARGA BASE POR SEMANA
+   ============================================================ */
+(function(){
+  const UX = () => window.CoachUX || {};
+  const G  = () => window.CoachGestion || {};
+
+  /* ============ A. CARGA BASE Y TARGET POR SEMANA ============ */
+  const PCT = [
+    { s:'S1', pct:[70,75],  lb:'Aclimatación',        dl:false },
+    { s:'S2', pct:[80,85],  lb:'Sobrecarga I',        dl:false },
+    { s:'S3', pct:[90,100], lb:'Pico / fallo técnico', dl:false },
+    { s:'S4', pct:[60,60],  lb:'Deload',              dl:true  }
+  ];
+  const r05 = v => Math.round(v / 0.5) * 0.5;
+  function targetSemana(base, i){
+    const b = parseFloat(base);
+    if(!b || b <= 0) return null;
+    const w = PCT[i] || PCT[0];
+    const a = r05(b * w.pct[0] / 100), c = r05(b * w.pct[1] / 100);
+    return { min:a, max:c, txt: a === c ? a + ' kg' : a + '–' + c + ' kg',
+             pct: w.pct[0] === w.pct[1] ? w.pct[0] + '%' : w.pct[0] + '-' + w.pct[1] + '%', lb: w.lb };
+  }
+  function semanaActiva(){
+    const ag = G().agendaDe ? G().agendaDe(S.activeId) : null;
+    return Math.max(1, Math.min(4, (ag && ag.semana) || 1));
+  }
+  /* carga base sugerida a partir de las marcas de 1RM del alumno/a */
+  function baseSugerida(b, ath){
+    if(!ath || !window.CoachTools || !window.CoachTools.sugerirCarga) return 0;
+    const ref = blockExIds(b)[0];
+    const ex = ref ? getEx(ref.exId) : null;
+    if(!ex) return 0;
+    const s = window.CoachTools.sugerirCarga(ath, ex, b.reps || '8-10', 2);
+    return s ? s.base : 0;
+  }
+  function barraCarga(b, ath){
+    const sem = semanaActiva();
+    const base = b.cargaBase || '';
+    const sug = base ? 0 : baseSugerida(b, ath);
+    return '<div class="cb-bar" data-cbbar="' + b.id + '">' +
+      '<span class="cbl">⚖️ Carga base (kg)</span>' +
+      '<input class="cbv" type="number" step="0.5" min="0" inputmode="decimal" data-cb="' + b.id + '" value="' + esc(base) + '" placeholder="' + (sug ? sug : '—') + '">' +
+      (sug ? '<button class="btn xs" data-cbuse="' + b.id + '" data-kg="' + sug + '">Usar 1RM: ' + sug + ' kg</button>' : '') +
+      '<div class="cb-weeks">' + PCT.map((w, i) => {
+        const t = targetSemana(base, i);
+        return '<button class="cb-wk ' + (sem === i+1 ? 'on' : '') + (w.dl ? ' dl' : '') + '" data-cbwk="' + (i+1) + '" title="' + esc(w.lb + ' · ' + (t ? t.pct : '')) + '">' +
+          w.s + '<b>' + (t ? t.txt : '—') + '</b></button>';
+      }).join('') + '</div>' +
+      '<div class="cb-hint">' + (base
+        ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (targetSemana(base, sem-1) || {}).txt + '</b> (' + (targetSemana(base, sem-1) || {}).pct + ' de ' + base + ' kg · ' + PCT[sem-1].lb + '). Tocá S1-S4 para cambiar la semana activa del alumno/a.'
+        : 'Cargá el peso de referencia (1RM o peso de trabajo habitual) y la app calcula el target de cada semana: S1 70-75% · S2 80-85% · S3 90-100% · S4 60%.') + '</div>' +
+    '</div>';
+  }
+  function pintarCargas(){
+    const ath = active(); if(!ath) return;
+    const panel = document.getElementById('dayPanel'); if(!panel) return;
+    $$('#dayPanel .block').forEach(el => {
+      const ref = el.querySelector('[data-b]'); if(!ref) return;
+      const b = findBlock(ref.dataset.b); if(!b) return;
+      if(['block','superset','finisher','hyrox'].indexOf(b.tipo) < 0) return;
+      const body = el.querySelector('.block-body'); if(!body) return;
+      const old = body.querySelector('[data-cbbar]');
+      const html = barraCarga(b, ath);
+      if(old) old.outerHTML = html;
+      else body.insertAdjacentHTML('afterbegin', html);
+    });
+  }
+  const _renderDay = window.renderDay;
+  window.renderDay = function(){
+    const r = _renderDay.apply(this, arguments);
+    try{ pintarCargas(); }catch(e){ console.warn('cargas base', e); }
+    return r;
+  };
+
+  /* la carga base viaja a la app del alumno/a */
+  const _bpc = window.buildProgramConfig;
+  if(typeof _bpc === 'function'){
+    window.buildProgramConfig = function(ath){
+      const cfg = _bpc.apply(this, arguments);
+      try{
+        const p = plan(ath.id);
+        const mapa = {};
+        p.dias.forEach(d => (d.bloques || []).forEach(b => { if(b.cargaBase) mapa[b.id] = parseFloat(b.cargaBase); }));
+        (cfg.days || []).forEach(d => (d.blocks || []).forEach(b => { if(mapa[b.id]) b.baseLoad = mapa[b.id]; }));
+      }catch(e){ console.warn('carga base export', e); }
+      return cfg;
+    };
+  }
+
+  /* ============ B. BANCO DE RUTINAS ============ */
+  function banco(){ if(!Array.isArray(S.banco)) S.banco = []; return S.banco; }
+  const discLb = id => ((UX().disciplinas || []).find(d => d.id === id) || {}).lb || '—';
+  const nivLb  = id => ((UX().niveles || []).find(n => n.id === id) || {}).lb || '—';
+
+  function renderBanco(){
+    const g = $('#bankGrid'); if(!g) return;
+    const list = banco();
+    g.innerHTML = list.length ? list.map(r => {
+      const nEj = (r.dias || []).reduce((n, d) => n + (d.bloques || []).reduce((m, b) => m + blockExIds(b).length, 0), 0);
+      return '<div class="bank-card" data-bank="' + r.id + '">' +
+        '<div class="bank-h"><div class="ic">' + (r.ic || '🗂️') + '</div>' +
+          '<div style="min-width:0"><h4>' + esc(r.nombre) + '</h4>' +
+          '<div class="bm">' + (r.dias || []).length + ' días · ' + nEj + ' ejercicios · guardada el ' + esc(r.creado || '') + '</div></div></div>' +
+        '<div class="bank-tags">' +
+          '<span class="bank-tag d">' + esc(discLb(r.disc)) + '</span>' +
+          '<span class="bank-tag n">' + esc(nivLb(r.niv)) + '</span>' +
+          (r.meso && r.meso.length ? '<span class="bank-tag">📌 mesociclo incluido</span>' : '') +
+          (r.usos ? '<span class="bank-tag">🎯 asignada ' + r.usos + ' vez/veces</span>' : '') +
+        '</div>' +
+        (r.notas ? '<div class="mini" style="font-size:11.5px;color:var(--txt-2);line-height:1.5">' + esc(r.notas) + '</div>' : '') +
+        '<div class="bank-days">' + (r.dias || []).map(d => '<div><b>' + esc(d.short) + '</b> ' + esc(d.title || d.label || '') + ' · ' + (d.bloques || []).length + ' bloques</div>').join('') + '</div>' +
+        '<div class="row" style="margin-top:12px">' +
+          '<button class="btn sm gold" data-bkasig="' + r.id + '">🎯 Asignar a alumno</button>' +
+          '<button class="btn sm" data-bkdup="' + r.id + '">📋 Duplicar</button>' +
+          '<button class="btn sm ghost" data-bkedit="' + r.id + '">✏️</button>' +
+          '<button class="btn sm ghost" data-bkdel="' + r.id + '">🗑️</button>' +
+        '</div></div>';
+    }).join('') :
+      '<div class="card" style="grid-column:1/-1"><div class="empty"><div class="big">🗂️</div><h4>Todavía no hay plantillas guardadas</h4>' +
+      '<p>Armá una planificación en el Builder y guardala acá para reutilizarla con cualquier alumno/a.</p>' +
+      '<button class="btn gold" style="margin-top:14px" id="bankSave2">💾 Guardar la rutina activa</button></div></div>';
+    const b2 = document.getElementById('bankSave2');
+    if(b2) b2.addEventListener('click', openGuardar);
+  }
+  window.renderBanco = renderBanco;
+
+  let editBank = null;
+  function openGuardar(id){
+    editBank = id || null;
+    const D = (UX().disciplinas || []).filter(d => d.id !== 'todas');
+    const N = (UX().niveles || []).filter(n => n.id !== 'todos');
+    $('#bkDisc').innerHTML = D.map(d => '<option value="' + d.id + '">' + d.ic + ' ' + esc(d.lb) + '</option>').join('');
+    $('#bkNiv').innerHTML  = N.map(n => '<option value="' + n.id + '">' + n.ic + ' ' + esc(n.lb) + '</option>').join('');
+    if(id){
+      const r = banco().find(x => x.id === id); if(!r) return;
+      $('#mBankTitle').textContent = 'Editar plantilla';
+      $('#bkName').value = r.nombre; $('#bkNotas').value = r.notas || '';
+      $('#bkDisc').value = r.disc || D[0].id; $('#bkNiv').value = r.niv || N[0].id;
+      $('#bkPrev').innerHTML = '<div class="hint">Se guardan los datos de la ficha. Para actualizar los días, asignala a un alumno/a, editala en el Builder y volvé a guardarla.</div>';
+    } else {
+      const ath = active();
+      const p = ath ? plan(ath.id) : null;
+      const nb = p ? p.dias.reduce((n, d) => n + d.bloques.length, 0) : 0;
+      if(!p || !nb){ toast('Primero armá una rutina en el Builder', 'warn'); return; }
+      $('#mBankTitle').textContent = 'Guardar como plantilla general';
+      $('#bkName').value = (p.meta && p.meta.mesoObjetivo ? p.meta.mesoObjetivo + ' · ' : '') + p.dias.length + ' días';
+      $('#bkNotas').value = '';
+      if(p.meta && p.meta.mesoDisc) $('#bkDisc').value = p.meta.mesoDisc;
+      if(p.meta && p.meta.mesoNivel) $('#bkNiv').value = p.meta.mesoNivel;
+      $('#bkPrev').innerHTML = '<div class="alert info" style="padding:9px 12px"><span class="ic">📋</span><div><b>Se copia la rutina de ' + esc(fullName(ath)) + '</b>' +
+        p.dias.length + ' días · ' + nb + ' bloques · las cargas base y coaching notes viajan con la plantilla.</div></div>';
+    }
+    openModal('mBank');
+  }
+  function guardar(){
+    const nombre = $('#bkName').value.trim();
+    if(!nombre){ toast('Poné un nombre a la plantilla', 'err'); $('#bkName').focus(); return; }
+    const datos = { nombre: nombre, disc: $('#bkDisc').value, niv: $('#bkNiv').value, notas: $('#bkNotas').value.trim() };
+    if(editBank){
+      const r = banco().find(x => x.id === editBank);
+      if(r) Object.assign(r, datos);
+      toast('🗂️ Plantilla actualizada');
+    } else {
+      const ath = active(), p = plan(ath.id);
+      banco().push(Object.assign({
+        id: uid('bk'), ic:'🗂️', creado: new Date().toLocaleDateString('es-AR'), usos: 0,
+        dias: clone(p.dias), meso: clone(p.meso || []),
+        meta: clone(p.meta || {})
+      }, datos));
+      toast('🗂️ Plantilla guardada en el banco');
+    }
+    save(); closeModal('mBank'); renderBanco();
+  }
+  function plantillaVacia(){
+    const n = prompt('Nombre de la plantilla vacía:', 'Nueva plantilla');
+    if(!n) return;
+    banco().push({ id: uid('bk'), ic:'📄', nombre: n, disc:'hiper', niv:'intermedio', notas:'Plantilla vacía: asignala a un alumno/a y armala en el Builder.',
+                   creado: new Date().toLocaleDateString('es-AR'), usos: 0, dias: [], meso: [], meta: {} });
+    save(); renderBanco(); toast('📄 Plantilla vacía creada');
+  }
+
+  /* ---------- asignar ---------- */
+  let asigId = null;
+  function openAsig(id){
+    const r = banco().find(x => x.id === id); if(!r) return;
+    if(!S.athletes.length){ toast('Registrá al menos un alumno/a', 'warn'); return; }
+    asigId = id;
+    $('#asigInfo').innerHTML = '<div class="alert info" style="padding:10px 12px"><span class="ic">🗂️</span><div><b>' + esc(r.nombre) + '</b>' +
+      (r.dias || []).length + ' días · ' + esc(discLb(r.disc)) + ' · ' + esc(nivLb(r.niv)) + '</div></div>';
+    $('#asigAth').innerHTML = S.athletes.map(a => '<option value="' + a.id + '"' + (a.id === S.activeId ? ' selected' : '') + '>' +
+      esc(fullName(a)) + ' · ' + a.freq + ' días/sem</option>').join('');
+    $('#asigLog').innerHTML = '';
+    openModal('mBankAsig');
+  }
+  function asignar(){
+    const r = banco().find(x => x.id === asigId); if(!r) return;
+    const ath = getAth($('#asigAth').value); if(!ath) return;
+    if(!(r.dias || []).length){ toast('Esa plantilla está vacía', 'warn'); return; }
+    const p = plan(ath.id);
+    const need = Math.max(3, Math.min(6, parseInt(ath.freq, 10) || 4));
+    const dias = clone(r.dias).slice(0, need);
+    while(dias.length < need){
+      const base = clone(r.dias[dias.length % r.dias.length]);
+      dias.push(base);
+    }
+    /* ids nuevos para no pisar nada y chequeo de seguridad */
+    const cambios = [];
+    dias.forEach((d, i) => {
+      d.id = 'dia' + (i+1); d.short = 'DÍA ' + (i+1);
+      (d.bloques || []).forEach(b => {
+        b.id = uid('b');
+        if($('#asigSafe').checked){
+          blockExIds(b).forEach(ref => {
+            const ex = getEx(ref.exId); if(!ex) return;
+            if(!checkExercise(ath, ex).some(a => a.level === 'danger')) return;
+            const alt = (suggestAlts(ath, ex, 1) || [])[0];
+            if(!alt) return;
+            if(b.tipo === 'block') b.exId = alt.id;
+            if(b.tipo === 'superset' && b.ejercicios[ref.i]) b.ejercicios[ref.i].exId = alt.id;
+            if(b.tipo === 'finisher' && b.fin[ref.i]) b.fin[ref.i].exId = alt.id;
+            cambios.push(ex.es + ' → ' + alt.es + ' (' + d.short + ')');
+          });
+        }
+      });
+    });
+    p.dias = dias;
+    if($('#asigMeso').checked && (r.meso || []).length){
+      p.meso = clone(r.meso);
+      p.meta = Object.assign(p.meta || {}, clone(r.meta || {}));
+    }
+    r.usos = (r.usos || 0) + 1;
+    S.activeId = ath.id;
+    save();
+    if(window.CoachTools && window.CoachTools.inyectarCargas){ try{ window.CoachTools.inyectarCargas(true); }catch(e){} }
+    renderAthletes(); renderBanco();
+    $('#asigLog').innerHTML = '<div class="alert ' + (cambios.length ? 'warn' : 'good') + '" style="padding:10px 12px"><span class="ic">' + (cambios.length ? '⚠️' : '✅') + '</span>' +
+      '<div><b>Rutina asignada a ' + esc(fullName(ath)) + ' · ' + dias.length + ' días</b>' +
+      (cambios.length ? cambios.length + ' ejercicio(s) reemplazados por variantes seguras: ' + esc(cambios.slice(0,3).join(' · ')) : 'Sin conflictos con sus restricciones.') + '</div></div>';
+    toast('🎯 Plantilla asignada a ' + fullName(ath));
+  }
+
+  /* ============ C. NAVEGACIÓN Y MONTAJE ============ */
+  const _go = window.go;
+  window.go = function(view){
+    _go.apply(this, arguments);
+    if(view === 'banco') renderBanco();
+  };
+
+  function mount(){
+    const main = document.querySelector('.main');
+    const v = document.getElementById('v-banco');
+    if(main && v && v.parentNode !== main) main.appendChild(v);
+
+    const side = document.querySelector('.sidebar');
+    if(side && !side.querySelector('[data-view="banco"]')){
+      const b = document.createElement('button');
+      b.className = 'navbtn'; b.dataset.view = 'banco'; b.innerHTML = '<i>🗂️</i> Banco de Rutinas';
+      b.addEventListener('click', () => go('banco'));
+      const ref = side.querySelector('[data-view="sedes"]') || side.querySelector('[data-view="exportar"]');
+      if(ref) side.insertBefore(b, ref); else side.appendChild(b);
+    }
+    /* acceso desde el builder */
+    const tb = document.querySelector('#v-builder .topbar');
+    if(tb && !document.getElementById('btnBank')){
+      const b = document.createElement('button');
+      b.className = 'btn'; b.id = 'btnBank'; b.innerHTML = '🗂️ Guardar como plantilla';
+      const ref = document.getElementById('btnWeek') || document.getElementById('btnTpl');
+      if(ref && ref.parentNode === tb) tb.insertBefore(b, ref); else tb.appendChild(b);
+      b.addEventListener('click', () => openGuardar(null));
+    }
+
+    $('#bankSave').addEventListener('click', () => openGuardar(null));
+    $('#bankNew').addEventListener('click', plantillaVacia);
+    $('#bkSave').addEventListener('click', guardar);
+    $('#asigRun').addEventListener('click', asignar);
+    $('#bankGrid').addEventListener('click', e => {
+      const as = e.target.closest('[data-bkasig]'); if(as){ openAsig(as.dataset.bkasig); return; }
+      const du = e.target.closest('[data-bkdup]');
+      if(du){
+        const r = banco().find(x => x.id === du.dataset.bkdup); if(!r) return;
+        const c = clone(r); c.id = uid('bk'); c.nombre = r.nombre + ' (copia)'; c.usos = 0;
+        c.creado = new Date().toLocaleDateString('es-AR');
+        banco().push(c); save(); renderBanco(); toast('📋 Rutina duplicada');
+        return;
+      }
+      const ed = e.target.closest('[data-bkedit]'); if(ed){ openGuardar(ed.dataset.bkedit); return; }
+      const de = e.target.closest('[data-bkdel]');
+      if(de){
+        const r = banco().find(x => x.id === de.dataset.bkdel); if(!r) return;
+        if(!confirm('¿Eliminar la plantilla «' + r.nombre + '» del banco? Las rutinas ya asignadas no se tocan.')) return;
+        S.banco = banco().filter(x => x.id !== r.id); save(); renderBanco(); toast('Plantilla eliminada');
+      }
+    });
+
+    /* carga base: input y botones de semana */
+    document.addEventListener('input', e => {
+      const i = e.target.closest('[data-cb]'); if(!i) return;
+      const b = findBlock(i.dataset.cb); if(!b) return;
+      b.cargaBase = i.value === '' ? '' : parseFloat(i.value);
+      save();
+      const bar = i.closest('[data-cbbar]');
+      if(bar){
+        const sem = semanaActiva();
+        $$('.cb-wk', bar).forEach((w, idx) => {
+          const t = targetSemana(b.cargaBase, idx);
+          const strong = w.querySelector('b'); if(strong) strong.textContent = t ? t.txt : '—';
+        });
+        const hint = bar.querySelector('.cb-hint');
+        const t = targetSemana(b.cargaBase, sem - 1);
+        if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b> (' + t.pct + ' de ' + b.cargaBase + ' kg · ' + t.lb + ').';
+      }
+    });
+    document.addEventListener('click', e => {
+      const u = e.target.closest('[data-cbuse]');
+      if(u){
+        const b = findBlock(u.dataset.cbuse); if(!b) return;
+        b.cargaBase = parseFloat(u.dataset.kg); save(); renderBuilder();
+        toast('⚖️ Carga base tomada del 1RM estimado: ' + b.cargaBase + ' kg');
+        return;
+      }
+      const w = e.target.closest('[data-cbwk]');
+      if(w){
+        const ag = G().agendaDe ? G().agendaDe(S.activeId) : null;
+        if(ag){ ag.semana = parseInt(w.dataset.cbwk, 10); save(); }
+        renderBuilder();
+        if(window.CoachTools && window.CoachTools.inyectarCargas){ try{ window.CoachTools.inyectarCargas(false); }catch(e2){} }
+        toast('📅 Semana activa: ' + PCT[(ag ? ag.semana : 1) - 1].s + ' · ' + PCT[(ag ? ag.semana : 1) - 1].lb);
+      }
+    });
+
+    $$('#mBank [data-close], #mBankAsig [data-close]').forEach(b =>
+      b.addEventListener('click', () => closeModal(b.dataset.close)));
+    ['mBank','mBankAsig'].forEach(id => {
+      const m = document.getElementById(id);
+      m.addEventListener('click', e => { if(e.target === m) closeModal(id); });
+    });
+    document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeModal('mBank'); closeModal('mBankAsig'); } });
+
+    if(S.ui.view === 'banco') renderBanco();
+    window.CoachBanco = { lista: banco, guardar: openGuardar, asignar: openAsig, render: renderBanco,
+                          target: targetSemana, semana: semanaActiva, pct: PCT };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
