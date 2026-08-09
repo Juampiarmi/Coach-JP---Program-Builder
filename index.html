@@ -3067,18 +3067,13 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       <div class="rl">{{COACH_ROLE}}</div>
     </div>
     <div class="hd-athlete">
-      <span class="lb">Atleta</span>
-      <span class="nm">{{ATHLETE_NAME}}</span>
+      <span class="top"><span class="lb">Atleta</span><span class="nm">{{ATHLETE_NAME}}</span></span>
+      <span class="hd-phase" id="hdPhase"></span>
     </div>
   </section>
 
   <!-- 3 · BANNER PRINCIPAL -->
   <section class="hero hd-banner">
-    <div class="hd-bolts" aria-hidden="true">
-      <svg class="b1" viewBox="0 0 120 260"><path d="M78 0 L28 128 H62 L44 260 L104 108 H68 Z" fill="#FFD600"/></svg>
-      <svg class="b2" viewBox="0 0 120 260"><path d="M78 0 L28 128 H62 L44 260 L104 108 H68 Z" fill="#D2FF00"/></svg>
-      <svg class="b3" viewBox="0 0 120 260"><path d="M78 0 L28 128 H62 L44 260 L104 108 H68 Z" fill="#FFD600"/></svg>
-    </div>
     <div class="in">
       <p class="hero-eyebrow hd-eyebrow" id="heroEyebrow">{{HERO_EYEBROW}}</p>
       <h1>{{HERO_H1}}</h1>
@@ -3777,7 +3772,8 @@ function renderBlockInner(block, day, weekIdx){
     }
     html += alertsHtml(block);
     html += objectiveHtml(block);
-    html += '<div class="timer-slot" data-rounds="' + wd.efSets + '" data-rest="' + block.restSeconds + '"></div>';
+    /* el reloj estático se retiró: el descanso lo maneja el temporizador flotante */
+    html += '<div class="timer-slot" hidden data-rounds="' + wd.efSets + '" data-rest="' + block.restSeconds + '"></div>';
   } else if(block.isSuperset){
     const sd = supersetDetail(block, weekIdx);
     html += '<div class="superset-header"><span class="sh-icon">🔗</span><span class="sh-text">' + sd.header + '</span></div>';
@@ -3790,7 +3786,7 @@ function renderBlockInner(block, day, weekIdx){
     if(block.altNote){ html += '<div class="coach-note note-safe"><strong>Alternativa</strong>' + block.altNote + '</div>'; }
     html += alertsHtml(block);
     html += objectiveHtml(block);
-    html += '<div class="timer-slot" data-rounds="' + sd.rounds + '" data-rest="' + block.restSeconds + '"></div>';
+    html += '<div class="timer-slot" hidden data-rounds="' + sd.rounds + '" data-rest="' + block.restSeconds + '"></div>';
   } else if(block.isFinisher){
     const fd = finisherDetail(block, weekIdx);
     if(fd){
@@ -3999,14 +3995,9 @@ function wireBlockInteractions(day, weekIdx, blocks){
       });
       noteEl.addEventListener('click', function(e){ e.stopPropagation(); });
     }
-    const timerSlot = blockEl.querySelector('.timer-slot');
-    if(timerSlot){
-      const rounds = parseInt(timerSlot.dataset.rounds, 10) || 1;
-      const rest = parseInt(timerSlot.dataset.rest, 10) || 60;
-      buildRoundTimer(timerSlot, rounds, rest);
-    }
+    /* el reloj de rondas ya no se construye: sigue existiendo solo como fuente del descanso */
     const qtSlot = blockEl.querySelector('.quick-timer-slot');
-    if(qtSlot){
+    if(qtSlot && !blockEl.querySelector('.wod-board')){
       const secs = parseInt(qtSlot.dataset.seconds, 10) || 60;
       const lbl = qtSlot.dataset.label || 'TIEMPO';
       qtSlot.classList.add('quick-timer');
@@ -4633,6 +4624,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '</div>';
     const body = blockEl.querySelector('.block-body');
     if(body && !body.querySelector('[data-wodb]')) body.insertAdjacentHTML('afterbegin', html);
+    /* un solo cronómetro por bloque: el de la pizarra manda */
+    if(body) body.querySelectorAll('.quick-timer').forEach(function(q){
+      if(!q.closest('[data-wodb]')) q.remove();
+    });
     /* el timer del WOD reutiliza el cronómetro rápido ya existente */
     const slot = body ? body.querySelector('.wod-timer-slot') : null;
     if(slot && !slot.dataset.on){
@@ -5092,6 +5087,33 @@ textarea,input,.wb-line,.tab-label,.week-pill-phase{
 /* --- el HUD de descanso no tapa la navegación del focus --- */
 body.focus-mode .rest-hud{bottom:calc(88px + env(safe-area-inset-bottom,0px))}
 .tv-nav .tv-pos{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw;font-size:.85rem}
+/* --- M4 · sensación de pulsación en toda acción --- */
+button,.nav-pill,.week-pill,.day-tab,.set-check,.block-done-cb,.sc-actions button,
+.tv-nav button,.story-actions button,.rest-hud button,.wod-score input{
+  transition:transform .2s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease;
+}
+button:active,.nav-pill:active,.day-tab:active,.sc-actions button:active,
+.tv-nav button:active,.story-actions button:active,.rest-hud button:active{
+  transform:scale(.96);box-shadow:0 2px 8px rgba(0,0,0,.5) inset;
+}
+.set-check:active{transform:scale(.92)}
+.block-done-cb:active{transform:scale(.9)}
+/* --- badge de estado del mesociclo --- */
+.hd-phase{
+  display:inline-flex;align-items:center;gap:6px;margin-top:7px;
+  padding:4px 11px;border-radius:20px;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.62rem;letter-spacing:.16em;
+  text-transform:uppercase;color:#0A0C05;
+  background:linear-gradient(135deg,#FFD600,#D2FF00);
+  box-shadow:0 4px 14px rgba(255,214,0,.28);
+}
+.hd-phase.deload{background:linear-gradient(135deg,#00F0FF,#00A9B8);color:#021214;
+  box-shadow:0 4px 14px rgba(0,240,255,.26)}
+.hd-phase.peak{background:linear-gradient(135deg,#FF2A55,#B01033);color:#fff;
+  box-shadow:0 4px 14px rgba(255,42,85,.3)}
+.hd-athlete{flex-direction:column;align-items:flex-end;gap:2px}
+.hd-athlete .top{display:flex;align-items:center;gap:8px}
+@media(max-width:720px){ .hd-athlete{align-items:flex-start} }
 /* --- badge de marca --- */
 .jp-badge{
   display:inline-flex;align-items:center;gap:8px;margin:0 auto 10px;
@@ -5148,7 +5170,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 .hd-shield{
   width:44px !important;height:50px !important;flex:0 0 auto;background:none !important;border:none !important;
   box-shadow:none !important;border-radius:0 !important;animation:none !important;
-  filter:drop-shadow(0 0 10px rgba(255,214,0,0.3));
+  filter:drop-shadow(0 0 12px rgba(255,214,0,0.35));
 }
 .hd-shield svg{display:block;width:100%;height:100%}
 .hd-word{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -5167,18 +5189,19 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 .masthead-utility.hd-actions{
   width:auto !important;max-width:none !important;margin:0 0 0 auto !important;justify-content:flex-end !important;
   margin-left:auto;display:flex;align-items:center;gap:4px;flex-wrap:wrap;
-  background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,.09);
+  background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
   border-radius:30px;padding:4px;
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
 }
 .hd-actions .nav-pill{
   border-radius:26px !important;border:1px solid transparent !important;background:transparent !important;
   padding:.45rem .85rem !important;font-family:'Barlow Condensed',sans-serif;font-weight:700;
   font-size:.82rem;letter-spacing:.07em;text-transform:uppercase;color:#A0AEC0 !important;
-  transition:color .2s var(--ease),background .2s var(--ease),box-shadow .2s var(--ease);
+  transition:transform .2s ease,box-shadow .2s ease,color .2s ease,background .2s ease;
   white-space:nowrap;
 }
+.hd-actions .nav-pill:active{transform:scale(.95)}
 .hd-actions .nav-pill:hover{
   color:#fff !important;background:rgba(210,255,0,.1) !important;
   box-shadow:0 0 14px rgba(210,255,0,.18);
@@ -5224,23 +5247,18 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 }
 
 /* ---------- 3. BANNER PRINCIPAL CON RAYOS ---------- */
+/* nada de rayos ni destellos detrás del banner: tarjeta limpia */
+.hero.hd-banner::before,.hero.hd-banner::after{content:none !important;display:none !important}
 .hd-banner{
-  position:relative;overflow:hidden;border-radius:16px;
-  background:#0A0B10;border:1px solid rgba(255,255,255,.08);
+  position:relative;overflow:hidden;
+  background:rgba(13,16,23,0.90);
+  backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,0.08);
+  border-radius:16px;
+  border-left:5px solid #FFD600;
+  box-shadow:0 10px 30px rgba(0,0,0,0.4);
   padding:clamp(20px,3.4vw,34px) clamp(18px,3vw,32px);
-  box-shadow:0 20px 50px rgba(0,0,0,.55);
 }
-.hd-banner::before{
-  content:'';position:absolute;inset:0;pointer-events:none;
-  background:
-    radial-gradient(620px 300px at 88% -30%, rgba(255,214,0,.14), transparent 66%),
-    radial-gradient(520px 280px at -8% 120%, rgba(210,255,0,.08), transparent 66%);
-}
-.hd-bolts{position:absolute;inset:0;pointer-events:none;opacity:.14}
-.hd-bolts svg{position:absolute;height:118%;width:auto;top:-9%}
-.hd-bolts .b1{right:2%}
-.hd-bolts .b2{right:16%;opacity:.55;transform:scaleX(-1)}
-.hd-bolts .b3{right:29%;opacity:.3}
 .hd-banner .in{position:relative;z-index:1;text-align:left}
 .hd-eyebrow{
   display:inline-flex;align-items:center;gap:8px;margin-bottom:11px;
@@ -5250,10 +5268,16 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 .hd-eyebrow::before{content:'';width:26px;height:2px;background:#FFD600;box-shadow:0 0 10px rgba(255,214,0,.6)}
 .hd-banner h1{
   margin:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;
-  font-size:clamp(2.1rem,6.4vw,3.5rem);line-height:.96;letter-spacing:.02em;
-  text-transform:uppercase;color:#fff;text-wrap:balance;
+  font-size:clamp(2.1rem,6.4vw,3.5rem);line-height:1;letter-spacing:.06em;
+  text-transform:uppercase;color:#FFFFFF;text-wrap:balance;
 }
-.hd-banner h1 em{font-style:normal;color:#FFD600;text-shadow:0 0 26px rgba(255,214,0,.34)}
+.hd-banner h1 em{font-style:normal;color:#FFFFFF}
+.hd-banner h1 .hd-dot{
+  color:#FFD600;margin:0 .18em;font-weight:700;
+  text-shadow:0 0 22px rgba(255,214,0,.55);
+}
+/* mismas reglas para las cabeceras de semanas y días */
+.week-pill-name,.day-tab .tab-name{letter-spacing:.06em !important;font-weight:700 !important;text-transform:uppercase}
 .hd-banner .sub{
   margin:12px 0 0;font-family:'Inter',sans-serif;font-weight:400;font-size:.88rem;line-height:1.5;
   color:#A0AEC0;max-width:62ch;
@@ -5264,16 +5288,20 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 /* ---------- pills de semana metálicas ---------- */
 .week-selector-wrap{padding-top:10px}
 .week-pill{
-  border-radius:14px !important;border:1px solid rgba(255,255,255,.1) !important;
-  border-bottom:3px solid rgba(255,255,255,.08) !important;
-  background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02)) !important;
-  padding:9px 16px !important;transition:all .2s var(--ease);
+  border-radius:16px !important;border:1px solid rgba(255,255,255,.09) !important;
+  border-bottom:3px solid rgba(255,255,255,.07) !important;
+  background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.015)) !important;
+  padding:10px 17px !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.10),inset 0 -1px 0 rgba(0,0,0,.45),0 4px 12px rgba(0,0,0,.35);
+  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease,background .2s ease;
 }
+.week-pill:active{transform:scale(.97)}
 .week-pill:hover{border-color:rgba(255,214,0,.35) !important}
 .week-pill.active{
   border-bottom:3px solid #FFD600 !important;
   background:linear-gradient(180deg,rgba(255,214,0,.14),rgba(255,214,0,.03)) !important;
-  box-shadow:0 6px 20px rgba(255,214,0,.16) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1px 0 rgba(0,0,0,.5),
+             0 6px 20px rgba(255,214,0,.16) !important;
 }
 .week-pill.active .week-pill-name{color:#FFD600 !important;text-shadow:0 0 12px rgba(255,214,0,.4)}
 .week-pill-name{font-size:1rem !important}
@@ -5311,8 +5339,6 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   .hd-word .n{font-size:1.15rem}
   .masthead-brand.hd-brand{justify-content:flex-start !important;width:100%}
   .hd-wrap{padding:0 14px}
-  .hd-bolts{opacity:.1}
-  .hd-bolts .b3{display:none}
 }
 </style>
 
@@ -5534,11 +5560,33 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   const _rm = renderMain;
   renderMain = function(){
     const r = _rm.apply(this, arguments);
-    try{ anillo(); setTimeout(inyectarBoton, 60); }catch(e){ console.warn('skin', e); }
+    try{ anillo(); fase(); titulo(); setTimeout(inyectarBoton, 60); }catch(e){ console.warn('skin', e); }
     return r;
   };
   /* el resumen aparece cuando se completa el día: se observa el main */
   const obs = new MutationObserver(function(){ try{ inyectarBoton(); }catch(e){} });
+
+  /* ---------- badge dinámico de fase del mesociclo ---------- */
+  function fase(){
+    const el = document.getElementById('hdPhase'); if(!el) return;
+    const w = WEEKS_META[state.currentWeek] || {};
+    const nombre = (w.phase || w.name || '').toString();
+    el.textContent = 'Fase ' + (state.currentWeek + 1) + ': ' + nombre;
+    el.classList.toggle('deload', !!w.deload || /deload|descarga/i.test(nombre));
+    el.classList.toggle('peak', /pico|fallo|peak/i.test(nombre));
+    el.style.display = nombre ? '' : 'none';
+  }
+  /* ---------- título con separador dorado ---------- */
+  function titulo(){
+    const h = document.querySelector('.hd-banner h1'); if(!h || h.dataset.jp) return;
+    h.dataset.jp = '1';
+    /* "Fuerza Pesada, <em>Densidad Metabólica.</em>" → "FUERZA PESADA • DENSIDAD METABÓLICA" */
+    h.innerHTML = h.innerHTML
+      .replace(/,\\s*(?=<em)/i, '&nbsp;<span class="hd-dot">&bull;</span> ')
+      .replace(/,\\s*$/, '')
+      .replace(/\\.\\s*(<\\/em>)/i, '$1')
+      .replace(/\\.\\s*$/, '');
+  }
 
   /* la barra de días se pega justo debajo de la de semanas */
   function medir(){
@@ -5547,7 +5595,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     document.documentElement.style.setProperty('--wsel-h', Math.round(w.getBoundingClientRect().height) + 'px');
   }
   function mount(){
-    badge(); anillo(); inyectarBoton();
+    badge(); anillo(); inyectarBoton(); fase(); titulo();
     medir();
     [120, 400, 1000].forEach(function(ms){ setTimeout(medir, ms); });
     window.addEventListener('resize', medir, { passive:true });
