@@ -3410,12 +3410,8 @@ function videoLinkHtml(name){
   if(ytid) return ' <a class="video-link jp-play" href="javascript:void(0)" data-yt="' + ytid + '" ' +
     'title="Ver la técnica" aria-label="Ver la técnica de ' + key.replace(/"/g,'') + '">' +
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
-  /* ningún ejercicio queda sin video: se cae a la búsqueda en YouTube */
-  const q = encodeURIComponent((limpio || key) + ' técnica ejercicio');
-  return ' <a class="video-link jp-play vsearch" href="https://www.youtube.com/results?search_query=' + q + '" ' +
-    'target="_blank" rel="noopener" title="Buscar la técnica en YouTube" aria-label="Buscar la técnica en YouTube">' +
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg>' +
-    '<span class="mag">🔎</span></a>';
+  /* vinculación estricta: sin coincidencia exacta en la biblioteca, la línea queda como texto plano */
+  return '';
 }
 /* =========================================================
    STATE
@@ -10060,23 +10056,30 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
     });
   }
   /* busca el movimiento en el mapa de videos del programa */
+  /* nombres candidatos dentro de una línea de pizarra, sin números ni unidades */
+  function movimientos(txt){
+    var t = String(txt || '').replace(/^[\\s\\-•*]+/, '')
+      .replace(/^(?:\\d+\\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\\b[:.]?\\s*)+/i, '');
+    return t.split(/\\s*\\+\\s*|\\s*\\/\\s*/).map(function(p){
+      return p.replace(/\\([^)]*\\)/g, ' ')
+              .replace(/[—–]\\s*.*$/, '')
+              .replace(/^\\s*\\d+\\s*(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)?\\s*/i, '')
+              .replace(/\\b\\d+\\s*(?:kg|lbs?|cal|m|s|seg|min|%)\\b.*$/i, '')
+              .replace(/\\bx\\s*\\d+.*$/i, '')
+              .replace(/\\s{2,}/g, ' ').trim();
+    }).filter(function(s){ return s.length > 2; });
+  }
+  /* coincidencia 100% exacta con la biblioteca: cero asignación por aproximación */
   function videoDe(txt){
     if(typeof VIDEO_MAP === 'undefined' || !VIDEO_MAP) return null;
-    var tl = tokens(txt);
-    if(!tl.length) return null;
-    var linea = ' ' + tl.join(' ') + ' ';
-    var mejor = null, puntaje = 0;
-    Object.keys(VIDEO_MAP).forEach(function(k){
-      if(!VIDEO_MAP[k]) return;
-      var tk = tokens(k);
-      if(!tk.length) return;
-      var hits = 0;
-      tk.forEach(function(t){ if(linea.indexOf(' ' + t + ' ') >= 0) hits++; });
-      /* el nombre de la biblioteca tiene que estar casi entero dentro de la línea */
-      var ratio = hits / tk.length;
-      if(ratio >= 0.7 && hits > puntaje){ puntaje = hits; mejor = k; }
-    });
-    return mejor ? { id: VIDEO_MAP[mejor], nombre: mejor } : null;
+    var mapa = {};
+    Object.keys(VIDEO_MAP).forEach(function(k){ if(VIDEO_MAP[k]) mapa[nrm(k)] = k; });
+    var cand = movimientos(txt);
+    for(var i = 0; i < cand.length; i++){
+      var k = nrm(cand[i]);
+      if(k && mapa[k]) return { id: VIDEO_MAP[mapa[k]], nombre: mapa[k] };
+    }
+    return null;
   }
   var PLAY = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg>';
 
@@ -10097,12 +10100,9 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
       if(board.dataset.modo !== (tech ? 'tech' : 'board')){
         board.dataset.modo = tech ? 'tech' : 'board';
         board.classList.toggle('tech-on', tech);
-        var h = board.querySelector('.cf-h') || board.querySelector('.wb-h');
-        if(h){
-          var tag = h.querySelector('.cf-modo-tag');
-          if(!tag){ tag = document.createElement('span'); tag.className = 'cf-modo-tag'; h.appendChild(tag); }
-          tag.textContent = tech ? 'Técnico con video' : 'Pizarra pura';
-        }
+        /* el modo es configuración del Builder: el alumno no ve metadatos internos */
+        var viejo = board.querySelector('.cf-modo-tag');
+        if(viejo) viejo.remove();
       }
       if(!tech){
         bl.querySelectorAll('.cf-vd').forEach(function(v){ v.remove(); });
@@ -10112,29 +10112,19 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
       board.querySelectorAll('.cf-line:not(.head), .wb-line:not(.head)').forEach(function(l){
         if(l.querySelector('.cf-vd')) return;
         var destino = l.querySelector('span:not(.n):not(.det)') || l;
+        /* vinculación estricta: sólo si el movimiento existe tal cual en la biblioteca */
         var v = videoDe(destino.textContent);
+        if(!v || !v.id) return;
         var a = document.createElement('a');
         a.className = 'cf-vd';
         a.innerHTML = PLAY + 'Video';
-        if(v && v.id){
-          a.href = 'javascript:void(0)';
-          a.dataset.yt = v.id;
-          a.title = 'Ver la técnica de ' + v.nombre;
-          a.addEventListener('click', function(ev){
-            ev.stopPropagation();
-            try{ if(typeof openVideoPopup === 'function') openVideoPopup(v.id); }catch(e){}
-          });
-        } else {
-          /* sin ID real en la biblioteca: nunca se inventa, se cae a la búsqueda */
-          var mov = tokens(destino.textContent).join(' ');
-          if(mov.length < 4 || /^(rest|descanso|pausa)/i.test(mov)) return;
-          a.classList.add('vsearch');
-          a.href = 'https://www.youtube.com/results?search_query=' +
-                   encodeURIComponent(mov + ' crossfit técnica');
-          a.target = '_blank'; a.rel = 'noopener';
-          a.title = 'Buscar la técnica de ' + mov + ' en YouTube';
-          a.addEventListener('click', function(ev){ ev.stopPropagation(); });
-        }
+        a.href = 'javascript:void(0)';
+        a.dataset.yt = v.id;
+        a.title = 'Ver la técnica de ' + v.nombre;
+        a.addEventListener('click', function(ev){
+          ev.stopPropagation();
+          try{ if(typeof openVideoPopup === 'function') openVideoPopup(v.id); }catch(e){}
+        });
         destino.appendChild(a);
       });
     });
@@ -10405,6 +10395,127 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
 })();
 <\/script>
 
+
+<style>
+/* =========================================================
+   COACH JP · VISTA LIMPIA DEL ALUMNO
+   Sin metadatos internos · Score sólo donde se mide
+   Tarjeta compacta de Core
+========================================================= */
+/* etiquetas de configuración del Builder: nunca en la app del alumno */
+.cf-modo-tag,.cf-modo-sel,.pz-box,.vid-chips{display:none !important}
+/* la casilla de resultado no existe en entrada en calor ni movilidad */
+.block.sin-score .cf-score,
+.block.sin-score .wod-score,
+.block.cat-warmup .cf-score,
+.block.cat-warmup .wod-score{display:none !important}
+/* ---------- tarjeta de core compacta ---------- */
+.block.core-card .cf-board,
+.block.core-card .core-list{
+  background:rgba(13,16,23,0.9);border:1px solid rgba(255,255,255,0.08);
+  border-left:3px solid #00F0FF;border-radius:14px;
+}
+.block.core-card .cf-board .cf-fmt{
+  background:rgba(0,240,255,0.12);border-color:rgba(0,240,255,0.38);color:#00F0FF;
+}
+.block.core-card .ex-detail,
+.block.core-card .load-suggest,
+.block.core-card .set-tracker,
+.block.core-card .rir-bar,
+.block.core-card .jp-tools,
+.block.core-card .pre-bar{display:none !important}
+.block.core-card .ex-row{padding:5px 0}
+.block.core-card .ex-name{font-size:0.9rem}
+</style>
+
+<script>
+/* =========================================================
+   COACH JP · depuración visual de la vista del alumno
+========================================================= */
+(function(){
+  function bloqueDe(id){
+    var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+    if(!d || !id) return null;
+    var todos = (d.blocks || []).concat(d.finisher ? [d.finisher] : [], d.hyrox ? [d.hyrox] : []);
+    return todos.filter(function(b){ return b.id === id; })[0] || null;
+  }
+  var RX_WARM = /entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|vuelta a la calma|estiramiento/i;
+  var RX_CORE = /\\bcore\\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
+
+  /* ---------------------------------------------------------
+     1 · SIN BADGES NI SWITCHES INTERNOS
+  --------------------------------------------------------- */
+  function sinMetadatos(){
+    document.querySelectorAll('.cf-modo-tag, .cf-modo-sel, .vid-chips, .pz-box')
+      .forEach(function(x){ x.remove(); });
+  }
+
+  /* ---------------------------------------------------------
+     2 · SCORE SÓLO EN BLOQUES MEDIBLES
+  --------------------------------------------------------- */
+  function scores(){
+    document.querySelectorAll('.block').forEach(function(bl){
+      var b = bloqueDe(bl.dataset.blockId);
+      var titulo = ((bl.querySelector('.block-label') || {}).textContent || '') + ' ' +
+                   ((bl.querySelector('.block-subtitle') || {}).textContent || '') + ' ' +
+                   ((b && b.title) || '') + ' ' + ((b && b.subtitle) || '');
+      var cat = (b && b.category) || '';
+      var medible = !RX_WARM.test(titulo) && cat !== 'warmup' &&
+                    (cat === 'metcon' || cat === 'cardio' ||
+                     /\\bemom\\b|\\bamrap\\b|for\\s*time|\\brft\\b|tabata|chipper|met.?con|\\bwod\\b|test|\\brm\\b|1rm/i
+                       .test(titulo + ' ' + ((bl.querySelector('.cf-body, .wb-body') || {}).textContent || '')));
+      bl.classList.toggle('sin-score', !medible);
+      if(!medible){
+        bl.querySelectorAll('.cf-score, .wod-score').forEach(function(s){ s.remove(); });
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------
+     3 · TARJETA DE CORE LIMPIA
+  --------------------------------------------------------- */
+  function core(){
+    document.querySelectorAll('.block').forEach(function(bl){
+      var b = bloqueDe(bl.dataset.blockId);
+      var titulo = ((bl.querySelector('.block-label') || {}).textContent || '') + ' ' + ((b && b.title) || '');
+      var esCore = !!(b && b.coreBlock) || RX_CORE.test(titulo);
+      bl.classList.toggle('core-card', esCore);
+      if(esCore){
+        bl.querySelectorAll('.load-suggest, .pre-bar, .set-tracker').forEach(function(x){ x.remove(); });
+      }
+    });
+  }
+
+  function repintar(){ try{ sinMetadatos(); scores(); core(); }catch(e){} }
+  function mount(){
+    repintar();
+    var main = document.getElementById('mainContent') || document.body;
+    var pend = false, propio = false;
+    new MutationObserver(function(){
+      if(pend || propio) return;
+      pend = true;
+      setTimeout(function(){
+        pend = false; propio = true;
+        try{ repintar(); }catch(e){}
+        setTimeout(function(){ propio = false; }, 170);
+      }, 150);
+    }).observe(main, { childList:true, subtree:true });
+    if(typeof window.renderMain === 'function'){
+      var _rm = window.renderMain;
+      window.renderMain = function(){
+        var r = _rm.apply(this, arguments);
+        setTimeout(repintar, 140);
+        setTimeout(repintar, 480);
+        return r;
+      };
+    }
+    window.CoachVistaLimpia = { repintar: repintar, scores: scores, core: core };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 320); });
+  else setTimeout(mount, 320);
+})();
+<\/script>
+
 </body>
 </html>
 `;
@@ -10428,6 +10539,32 @@ function resolveByText(txt){
                      S.exercises.find(e => e.videoId && norm(e.es).indexOf(norm(n)) >= 0 && norm(n).length > 5);
   const hit = busca(name) || (corto !== name ? busca(corto) : null);
   return { name: name, corto: corto, ex: hit || null };
+}
+
+/* ---------- coincidencia EXACTA para líneas de pizarra ----------
+   Nunca se asigna un video por aproximación: si el movimiento escrito
+   no existe tal cual en la biblioteca, la línea viaja como texto plano. */
+const CAND_RUIDO = /^(?:\d+\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\b[:.]?\s*)+/i;
+function candidatosTexto(txt){
+  let t = String(txt || '').replace(/^[\s\-•*]+/, '').replace(CAND_RUIDO, '');
+  return t.split(/\s*\+\s*|\s*\/\s*/).map(s => s
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/[—–]\s*.*$/, '')
+      .replace(/^\s*\d+\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\b)?\s*/i, '')
+      .replace(/\b\d+\s*(?:kg|lbs?|cal|m|s|seg|min|%)\b.*$/i, '')
+      .replace(/\bx\s*\d+.*$/i, '')
+      .replace(/\s{2,}/g, ' ').trim())
+    .filter(s => s.length > 2);
+}
+function resolveExacto(txt){
+  const cands = candidatosTexto(txt);
+  for(let i = 0; i < cands.length; i++){
+    const c = norm(cands[i]);
+    const ex = S.exercises.find(e => norm(exDisplayName(e)) === c || norm(e.es) === c ||
+                                     (e.en && norm(e.en) === c));
+    if(ex) return { name: cands[i], ex: ex };
+  }
+  return { name: '', ex: null };
 }
 
 function buildProgramConfig(ath){
@@ -10488,17 +10625,26 @@ function buildProgramConfig(ath){
         Object.assign(out, { isFinisher: true, exercises: list, roundsByWeek: (b.roundsByWeek||['','','','']).map(r => r || null) });
       }
       else if(b.tipo === 'hyrox'){
-        (b.movements||[]).forEach(m => { const r = resolveByText(m); addVideo(r.name, r.ex); addVideo(r.corto, r.ex); });
+        (b.movements||[]).forEach(m => {
+          const r = resolveExacto(m);
+          if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
+        });
         Object.assign(out, { isHyrox: true, movements: (b.movements||[]).slice() });
       }
       else {
-        (b.items||[]).forEach(it => { const r = resolveByText(it); addVideo(r.name, r.ex); addVideo(r.corto, r.ex); });
+        /* vinculación estricta: el video se registra sólo con coincidencia exacta */
+        (b.items||[]).forEach(it => {
+          const r = resolveExacto(it);
+          if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
+        });
         out.items = (b.items||[]).slice();
         if(b.cardioMinutes) out.cardioMinutes = parseInt(b.cardioMinutes,10) || 0;
       }
 
       /* pizarra modular de CrossFit: formato del bloque, modo de video y cierre técnico */
       if(b.cfModo === 'tech' || b.cfModo === 'board') out.boardMode = b.cfModo;
+      if(b.coreBlock) out.coreBlock = true;
+      if(b.cfPizarra) out.pizarra = true;
       if(b.cfFmt) out.boardFmt = b.cfFmt;
       if(b.cfCierre && (b.cfCierre.objetivo || b.cfCierre.tips || b.cfCierre.pacing))
         out.cierre = { objetivo: b.cfCierre.objetivo || '', tips: b.cfCierre.tips || '',
@@ -26496,6 +26642,418 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         return r;
       };
     });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+<style>
+/* =========================================================
+   COACH JP · MÓDULO 43
+   Maxi-header de bloques · Pizarra táctica · Chips de video
+========================================================= */
+/* ---------- barra táctica del bloque ---------- */
+#dayPanel .block > .block-h{
+  min-height:48px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  padding:8px 11px;border-radius:12px 12px 0 0;
+  background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.015));
+  border-bottom:1px solid var(--line-2);
+}
+#dayPanel .block > .block-h .bnum{
+  display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 13px;border-radius:10px;
+  font-family:var(--ffh);font-size:14px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
+  white-space:nowrap;color:#0A0A0B;
+}
+#dayPanel .block > .block-h .bnum.c-warm{background:linear-gradient(135deg,#FF8A3D,#FFB067);box-shadow:0 0 16px rgba(255,138,61,.4)}
+#dayPanel .block > .block-h .bnum.c-str {background:linear-gradient(135deg,#D2FF00,#FFD600);box-shadow:0 0 16px rgba(210,255,0,.4)}
+#dayPanel .block > .block-h .bnum.c-met {background:linear-gradient(135deg,#FF2A85,#FF6FB1);box-shadow:0 0 16px rgba(255,42,133,.4);color:#12000A}
+#dayPanel .block > .block-h .bnum.c-acc {background:linear-gradient(135deg,#00F0FF,#67F8FF);box-shadow:0 0 16px rgba(0,240,255,.35)}
+#dayPanel .block > .block-h input.bt{
+  flex:1 1 260px;min-width:200px;font-family:var(--ffh);font-size:18px;font-weight:700;
+  letter-spacing:.02em;color:var(--txt);background:rgba(9,10,15,.6);
+  border:1px solid var(--line-2);border-radius:10px;padding:9px 12px;
+}
+#dayPanel .block > .block-h input.bt:focus{border-color:#FFD600;box-shadow:0 0 0 3px rgba(255,214,0,.14)}
+#dayPanel .block > .block-h .icon-btn{
+  min-width:40px;min-height:40px;font-size:15px;border-radius:10px;
+  display:inline-flex;align-items:center;justify-content:center;
+}
+#dayPanel .block > .block-h .icon-btn:hover{border-color:#FFD600;color:#FFD600}
+#dayPanel .block > .block-h .icon-btn.danger:hover{border-color:#FF2A55;color:#FF2A55}
+#dayPanel .block > .block-h .pill{align-self:center}
+@media(max-width:720px){
+  #dayPanel .block > .block-h input.bt{font-size:16px;flex:1 1 100%}
+}
+/* ---------- pizarra táctica multilínea ---------- */
+.pz-box{margin-top:4px}
+.pz-box .pz-h{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;
+  font-family:var(--ffh);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-cyan,#00F0FF);
+}
+.pz-box .pz-h .pz-tag{
+  padding:2px 9px;border-radius:20px;background:rgba(0,240,255,.1);border:1px solid rgba(0,240,255,.34);
+}
+#dayPanel .block.pizarra textarea[data-bf="items"]{
+  min-height:190px !important;font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:12.5px;line-height:1.72;white-space:pre;overflow-x:auto;
+  background:rgba(9,10,15,.78);border:1px solid rgba(0,240,255,.24);
+}
+#dayPanel .block.pizarra textarea[data-bf="items"]:focus{border-color:rgba(0,240,255,.6)}
+.pz-hint{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.55}
+/* ---------- chips de reconocimiento de video ---------- */
+.vid-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.vid-chips .vc-h{
+  flex:1 1 100%;font-family:var(--ffh);font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:1px;
+}
+.vid-chips .vc{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:20px;
+  font-size:11.5px;font-weight:600;cursor:pointer;border:1px solid;background:transparent;
+  min-height:30px;font-family:var(--ff);
+}
+.vid-chips .vc.ok{background:rgba(0,230,118,.1);border-color:rgba(0,230,118,.45);color:#7CFFB2}
+.vid-chips .vc.ok:hover{background:rgba(0,230,118,.18)}
+.vid-chips .vc.no{background:rgba(255,171,0,.09);border-color:rgba(255,171,0,.42);color:#FFC44D}
+.vid-chips .vc.no:hover{background:rgba(255,171,0,.17)}
+.vid-chips .vc img{width:34px;height:20px;object-fit:cover;border-radius:4px;border:1px solid var(--line-2)}
+.vid-chips .vc b{font-weight:800}
+.vid-chips .vc-none{font-size:11px;color:var(--muted)}
+</style>
+
+<script>
+/* =========================================================
+   COACH JP · MÓDULO 43 — Builder táctico
+========================================================= */
+(function(){
+  /* =========================================================
+     0 · UTILIDADES DE COINCIDENCIA EXACTA CON LA BIBLIOTECA
+  ========================================================= */
+  function nrm(s){
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[.,;:!¡?¿"'`]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  /* índice de la biblioteca: nombre exacto (es o en) -> ejercicio */
+  function indice(){
+    const m = {};
+    (S.exercises || []).forEach(e => {
+      if(e.es) m[nrm(e.es)] = e;
+      if(e.en) m[nrm(e.en)] = e;
+    });
+    return m;
+  }
+  /* candidatos de movimiento dentro de una línea de pizarra */
+  const RUIDO = /^(?:\d+\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\b[:.]?\s*)+/i;
+  function candidatos(linea){
+    let t = String(linea || '').replace(/^[\s\-•*]+/, '');
+    if(/^(?:-\s*or\s*-|amrap|emom|every|for time|time cap|target|rest|descanso|cargas?|min \d)/i.test(t)) {
+      /* las líneas de estructura no son ejercicios */
+      if(!/\+/.test(t)) return [];
+    }
+    t = t.replace(RUIDO, '');
+    return t.split(/\s*\+\s*|\s*\/\s*|\s+y\s+/i).map(p => {
+      let s = p.replace(/\([^)]*\)/g, ' ')
+               .replace(/[—–]\s*.*$/, '')
+               .replace(/^\s*\d+\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\b)?\s*/i, '')
+               .replace(/\b\d+\s*(?:kg|lbs?|cal|m|s|seg|min|%)\b.*$/i, '')
+               .replace(/\bx\s*\d+.*$/i, '')
+               .replace(/\s{2,}/g, ' ').trim();
+      return s;
+    }).filter(s => s.length > 2 && /[a-záéíóúñ]/i.test(s));
+  }
+  /* coincidencia 100% exacta: nunca se asigna un video por aproximación */
+  function exacto(nombre, idx){
+    const k = nrm(nombre);
+    if(!k) return null;
+    const e = idx[k];
+    return (e && e.videoId) ? e : (e || null);
+  }
+  window.jpVideoExacto = function(nombre){ return exacto(nombre, indice()); };
+  window.jpCandidatos = candidatos;
+
+  /* =========================================================
+     1 · CHIPS DE RECONOCIMIENTO DE VIDEO
+  ========================================================= */
+  function chips(bl, b){
+    const ta = bl.querySelector('textarea[data-bf="items"], textarea[data-bf="movements"]');
+    if(!ta) return;
+    const lineas = String(ta.value || '').split('\n');
+    const idx = indice();
+    const vistos = {}, lista = [];
+    lineas.forEach(l => {
+      candidatos(l).forEach(n => {
+        const k = nrm(n);
+        if(!k || vistos[k]) return;
+        vistos[k] = 1;
+        const ex = exacto(n, idx);
+        lista.push({ nombre: n, ex: ex && ex.videoId ? ex : null, ficha: ex || null });
+      });
+    });
+    let caja = bl.querySelector('.vid-chips');
+    if(!lista.length){ if(caja) caja.remove(); return; }
+    const html = '<span class="vc-h">🎬 Videos reconocidos en la biblioteca</span>' +
+      lista.map(x => x.ex
+        ? '<button type="button" class="vc ok" data-vcok="' + esc(x.ex.id) + '" title="Ver el video vinculado">' +
+            '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.nombre) + '</b> (Video vinculado)</button>'
+        : '<button type="button" class="vc no" data-vcno="' + esc(x.nombre) + '"' +
+            (x.ficha ? ' data-vcex="' + esc(x.ficha.id) + '"' : '') +
+            ' title="Vincular un video sin salir del Builder">⚠️ ' + esc(x.nombre) + ' — + Vincular</button>').join('');
+    if(caja){ if(caja.innerHTML !== html) caja.innerHTML = html; return; }
+    caja = document.createElement('div');
+    caja.className = 'vid-chips';
+    caja.innerHTML = html;
+    (ta.parentNode === bl ? bl : ta.parentNode).insertBefore(caja, ta.nextSibling);
+  }
+
+  document.addEventListener('click', e => {
+    const ok = e.target.closest('[data-vcok]');
+    if(ok){ if(typeof openVideo === 'function') openVideo(ok.dataset.vcok); return; }
+    const no = e.target.closest('[data-vcno]');
+    if(no){
+      const exId = no.dataset.vcex || '';
+      if(typeof openEx !== 'function') return;
+      openEx(exId || null);
+      setTimeout(() => {
+        const nom = document.getElementById('eEs');
+        if(nom && !exId) nom.value = no.dataset.vcno;
+        const vid = document.getElementById('eVideo');
+        if(vid) vid.focus();
+        try{ toast('Pegá el link de YouTube y guardá: el bloque queda vinculado'); }catch(x){}
+      }, 90);
+    }
+  });
+
+  /* =========================================================
+     2 · MAXI-HEADER DE BLOQUES
+  ========================================================= */
+  const COLOR = { warmup:'c-warm', strength:'c-str', metcon:'c-met', accessory:'c-acc', cardio:'c-acc' };
+  function maxi(){
+    const panel = document.getElementById('dayPanel');
+    if(!panel) return;
+    const bloques = [...panel.querySelectorAll('.block')];
+    const total = bloques.length;
+    bloques.forEach((bl, i) => {
+      const ref = bl.querySelector('[data-b]');
+      const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+      const h = bl.querySelector('.block-h');
+      if(!h) return;
+      const cls = COLOR[(b && b.category) || 'strength'] || 'c-str';
+      let n = h.querySelector('.bnum');
+      if(!n){
+        n = document.createElement('span');
+        n.className = 'bnum ' + cls;
+        h.insertBefore(n, h.firstChild);
+      }
+      const txt = 'BLOQUE ' + (i + 1) + ' DE ' + total;
+      if(n.textContent !== txt) n.textContent = txt;
+      if(n.className !== 'bnum ' + cls) n.className = 'bnum ' + cls;
+      /* área de toque y tooltips claros */
+      const T = { up:'▲ Subir el bloque', down:'▼ Bajar el bloque' };
+      h.querySelectorAll('[data-bmove]').forEach(x => { x.title = T[x.dataset.bmove] || x.title; });
+      const dup = h.querySelector('[data-bdup]');
+      if(dup){ dup.title = '📋 Duplicar el bloque'; if(dup.textContent !== '📋') dup.textContent = '📋'; }
+      const del = h.querySelector('[data-bdel]');
+      if(del){ del.title = '🗑️ Eliminar el bloque'; if(del.textContent !== '🗑️') del.textContent = '🗑️'; }
+    });
+  }
+
+  /* =========================================================
+     3 · PIZARRA TÁCTICA MULTILÍNEA
+  ========================================================= */
+  const RX_PIZARRA = /\bemom\b|\bamrap\b|for\s*time|\brft\b|tabata|chipper|met.?con|\bwod\b|every\s*\d|interval|gymnastic|\-\s*or\s*\-/i;
+  function esCF(){
+    try{ const p = plan(S.activeId); return !!(p && p.meta && p.meta.mesoDisc === 'crossfit'); }catch(e){ return false; }
+  }
+  /* pasa un bloque rígido de series/reps a pizarra de texto sin perder contenido */
+  function aLineas(b){
+    const out = [];
+    if(b.tipo === 'block'){
+      const ex = (typeof getEx === 'function') ? getEx(b.exId) : null;
+      const nm = ex ? (typeof exDisplayName === 'function' ? exDisplayName(ex) : ex.es) : (b.titulo || '');
+      const series = (b.efSets || 0) + (b.hasApprox && b.approxSets ? 0 : 0);
+      if(series || b.reps) out.push(((series || '') + (series ? ' x ' : '') + (b.reps || '')).trim() + (nm ? ' ' + nm : ''));
+      else if(nm) out.push(nm);
+      if(b.tempo) out.push('Tempo ' + b.tempo);
+      if(b.restSeconds) out.push('- Rest ' + b.restSeconds + 's -');
+      if(b.altNote) out.push(b.altNote);
+    } else if(b.tipo === 'superset'){
+      if(b.efSets) out.push(b.efSets + ' Rondas:');
+      (b.ejercicios || []).forEach(e => {
+        const ex = (typeof getEx === 'function') ? getEx(e.exId) : null;
+        const nm = ex ? (typeof exDisplayName === 'function' ? exDisplayName(ex) : ex.es) : 'Ejercicio';
+        out.push((e.reps ? e.reps + ' ' : '') + nm);
+      });
+      if(b.restSeconds) out.push('- Rest ' + b.restSeconds + 's entre rondas -');
+    } else if(b.tipo === 'finisher'){
+      (b.fin || []).forEach(e => {
+        const ex = (typeof getEx === 'function') ? getEx(e.exId) : null;
+        const nm = ex ? (typeof exDisplayName === 'function' ? exDisplayName(ex) : ex.es) : 'Ejercicio';
+        out.push((e.repsRange ? e.repsRange + ' ' : '') + nm);
+      });
+    } else if(b.tipo === 'hyrox'){
+      (b.movements || []).forEach(m => out.push(m));
+    }
+    return out.filter(Boolean);
+  }
+  function pizarrizar(silencioso){
+    if(!esCF()) return 0;
+    let p = null;
+    try{ p = plan(S.activeId); }catch(e){ return 0; }
+    if(!p || !p.dias) return 0;
+    let n = 0;
+    p.dias.forEach(d => {
+      (d.bloques || []).forEach(b => {
+        if(b.tipo === 'list') return;
+        const txt = (b.titulo || '') + ' ' + (b.subtitulo || '') + ' ' + aLineas(b).join(' ');
+        if(!RX_PIZARRA.test(txt)) return;          /* la fuerza clásica sigue con su ficha */
+        const lineas = aLineas(b);
+        if(!lineas.length) return;
+        b.items = lineas;
+        b.tipo = 'list';
+        b.cfPizarra = true;
+        if(!b.cfModo) b.cfModo = 'board';
+        /* se sueltan los campos rígidos que no aplican a una pizarra */
+        delete b.efSets; delete b.approxSets; delete b.reps; delete b.tempo;
+        delete b.hasApprox; delete b.cargaBase; delete b.cargaBaseAuto;
+        delete b.ejercicios; delete b.fin; delete b.movements;
+        n++;
+      });
+    });
+    if(n){ try{ save(); }catch(e){} }
+    if(!silencioso){
+      try{ toast(n ? ('🧩 ' + n + ' bloques pasados a pizarra táctica')
+                   : 'Todos los bloques de CrossFit ya están en pizarra'); }catch(e){}
+      if(typeof renderBuilder === 'function') renderBuilder();
+    }
+    return n;
+  }
+  window.jpPizarrizar = pizarrizar;
+
+  /* marca visual + ayuda de sintaxis en los bloques de pizarra */
+  function pizarraUI(){
+    const panel = document.getElementById('dayPanel');
+    if(!panel) return;
+    panel.querySelectorAll('.block').forEach(bl => {
+      const ref = bl.querySelector('[data-b]');
+      const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+      if(!b || b.tipo !== 'list') return;
+      const ta = bl.querySelector('textarea[data-bf="items"]');
+      if(!ta) return;
+      const pizarra = !!b.cfPizarra || esCF() || !!b.coreBlock;
+      bl.classList.toggle('pizarra', pizarra);
+      if(pizarra && !bl.querySelector('.pz-box')){
+        const box = document.createElement('div');
+        box.className = 'pz-box';
+        box.innerHTML = '<div class="pz-h"><span class="pz-tag">Pizarra táctica multilínea</span>' +
+          '<span>Se respeta cada salto de línea</span></div>';
+        ta.parentNode.insertBefore(box, ta.previousElementSibling || ta);
+        const hint = document.createElement('div');
+        hint.className = 'pz-hint';
+        hint.textContent = 'Escribí libre: intervalos (Every 2:30 x 6 sets), opciones alternas (-OR-), ' +
+          'notas técnicas y escalados. No se fuerzan series, reps ni tempo en este bloque.';
+        ta.parentNode.insertBefore(hint, ta.nextSibling);
+      }
+      /* en pizarra el timer de zona 2 no aplica */
+      if(pizarra){
+        const z = bl.querySelector('[data-bf="cardioMinutes"]');
+        const cont = z ? z.closest('div') : null;
+        if(cont && !b.cardioMinutes) cont.style.display = 'none';
+      }
+      chips(bl, b);
+    });
+    /* los bloques de lista de musculación también muestran sus chips */
+    panel.querySelectorAll('.block').forEach(bl => {
+      const ref = bl.querySelector('[data-b]');
+      const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+      if(b && (b.tipo === 'list' || b.tipo === 'hyrox')) chips(bl, b);
+    });
+  }
+
+  /* recálculo en vivo de los chips mientras el coach escribe */
+  let pend = null;
+  document.addEventListener('input', e => {
+    const ta = e.target.closest('textarea[data-bf="items"], textarea[data-bf="movements"]');
+    if(!ta) return;
+    const bl = ta.closest('.block');
+    if(!bl) return;
+    clearTimeout(pend);
+    pend = setTimeout(() => {
+      const ref = bl.querySelector('[data-b]');
+      const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+      try{ chips(bl, b); }catch(x){}
+    }, 260);
+  });
+
+  /* =========================================================
+     4 · BLOQUE DE CORE PARA MUSCULACIÓN
+  ========================================================= */
+  function agregarCore(){
+    const d = (typeof curDay === 'function') ? curDay() : null;
+    if(!d){ try{ toast('Elegí un alumno y un día primero', 'warn'); }catch(e){} return; }
+    d.bloques.push({
+      id: 'core' + Math.random().toString(36).slice(2, 8),
+      tipo: 'list', category: 'accessory', icon: '🧩',
+      titulo: 'CORE & ESTABILIDAD ABDOMINAL',
+      subtitulo: 'Circuito de core',
+      coreBlock: true,
+      items: ['3 Sets:', '15 Russian Twists', '20 Hollow Rocks', '45s Plancha Prona', '- Rest 60s entre sets -'],
+      tips: ''
+    });
+    try{ save(); }catch(e){}
+    if(typeof renderBuilder === 'function') renderBuilder();
+    try{ toast('🧩 Bloque de Core & Estabilidad agregado'); }catch(e){}
+  }
+  window.jpAgregarCore = agregarCore;
+
+  function botones(){
+    const host = document.querySelector('#v-builder .topbar .jp-rail') || document.querySelector('#v-builder .topbar');
+    if(!host) return;
+    if(!document.getElementById('btnCore')){
+      const b = document.createElement('button');
+      b.className = 'btn'; b.id = 'btnCore'; b.type = 'button';
+      b.textContent = '🧩 Bloque de Core';
+      b.title = 'Core & Estabilidad Abdominal: circuito multilínea con chips de video';
+      b.addEventListener('click', agregarCore);
+      host.appendChild(b);
+    }
+    const core = document.getElementById('btnCore');
+    if(core) core.style.display = esCF() ? 'none' : '';
+    if(!document.getElementById('btnPizarra')){
+      const b = document.createElement('button');
+      b.className = 'btn'; b.id = 'btnPizarra'; b.type = 'button';
+      b.textContent = '🧩 Pasar a pizarra táctica';
+      b.title = 'Convierte los bloques rígidos de CrossFit en pizarra de texto multilínea';
+      b.addEventListener('click', () => pizarrizar(false));
+      host.appendChild(b);
+    }
+    const pz = document.getElementById('btnPizarra');
+    if(pz) pz.style.display = esCF() ? '' : 'none';
+  }
+
+  /* =========================================================
+     5 · MONTAJE
+  ========================================================= */
+  function repintar(){
+    try{
+      botones();
+      /* si hubo conversión a pizarra, el panel se redibuja una sola vez */
+      if(pizarrizar(true) > 0 && typeof renderDay === 'function'){ renderDay(); return; }
+      maxi(); pizarraUI();
+    }catch(e){}
+  }
+  function mount(){
+    repintar();
+    [600, 1600, 2800].forEach(ms => setTimeout(repintar, ms));
+    ['renderDay','renderBuilder','go'].forEach(fn => {
+      const _f = window[fn];
+      if(typeof _f !== 'function') return;
+      window[fn] = function(){
+        const r = _f.apply(this, arguments);
+        setTimeout(repintar, 90);
+        return r;
+      };
+    });
+    window.CoachBuilderUI = { maxi: maxi, chips: chips, pizarra: pizarrizar, core: agregarCore,
+                              candidatos: candidatos, exacto: function(n){ return exacto(n, indice()); } };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
