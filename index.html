@@ -11094,6 +11094,229 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
 })();
 <\/script>
 
+
+<style>
+/* =========================================================
+   COACH JP · ENTRADA EN CALOR DE LECTURA RÁPIDA
+   Sin registros ni bordes pesados · Metcon sin duplicados
+========================================================= */
+.block.wu-card .rx-badge,
+.block.wu-card .mini-log,
+.block.wu-card .set-tracker,
+.block.wu-card .jp-tools,
+.block.wu-card .cap-tool,
+.block.wu-card .rir-bar,
+.block.wu-card .load-suggest,
+.block.wu-card .pre-bar,
+.block.wu-card .blk-tag,
+.block.wu-card .cf-score,
+.block.wu-card .wod-score,
+.block.wu-card .ex-detail,
+.block.wu-card .cf-proto,
+.block.wu-card .cf-levels,
+.block.wu-card .ex-bullet{display:none !important}
+.block.wu-card .block-body{padding-top:2px}
+.wu-list{
+  display:flex;flex-direction:column;gap:2px;margin:2px 0 4px;padding:10px 12px;
+  border-radius:13px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);
+}
+.wu-list .wu-item{
+  display:flex;align-items:flex-start;gap:9px;padding:7px 2px;
+  border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.wu-list .wu-item:last-child{border-bottom:none}
+.wu-list .wu-dose{
+  flex:0 0 auto;min-width:62px;text-align:center;padding:3px 8px;border-radius:7px;
+  background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);
+  font-family:'JetBrains Mono',ui-monospace,monospace;font-size:0.68rem;font-weight:700;
+  color:rgba(255,255,255,0.72);letter-spacing:0.01em;line-height:1.5;
+}
+.wu-list .wu-name{
+  font-family:'Inter',sans-serif;font-size:0.84rem;line-height:1.5;
+  color:var(--text-secondary,rgba(255,255,255,0.8));padding-top:1px;
+}
+.wu-list .wu-fase{
+  margin:8px 0 2px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.7rem;
+  letter-spacing:0.16em;text-transform:uppercase;color:rgba(255,255,255,0.45);
+}
+.wu-list .wu-fase:first-child{margin-top:0}
+/* el protocolo no se repite como línea de la pizarra */
+.cf-line.dup,.wb-line.dup{display:none !important}
+</style>
+
+<script>
+/* =========================================================
+   COACH JP · entrada en calor compacta y metcon sin duplicados
+========================================================= */
+(function(){
+  function bloqueDe(id){
+    var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+    if(!d || !id) return null;
+    var todos = (d.blocks || []).concat(d.finisher ? [d.finisher] : [], d.hyrox ? [d.hyrox] : []);
+    return todos.filter(function(b){ return b.id === id; })[0] || null;
+  }
+  var RX_WARM = /entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|vuelta a la calma/i;
+  function esWarm(b, bl){
+    if(b && b.blockType && /warm/i.test(b.blockType)) return true;
+    if(b && b.boardFmt && /WARM/i.test(b.boardFmt)) return true;
+    if(b && b.category === 'warmup') return true;
+    if(bl.classList.contains('cat-warmup')) return true;
+    var t = ((b && b.title) || '') + ' ' + ((b && b.subtitle) || '') + ' ' +
+            ((bl.querySelector('.block-label') || {}).textContent || '');
+    return RX_WARM.test(t);
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  /* separa la dosis (tiempo, reps, distancia) del nombre del ejercicio */
+  function partir(txt){
+    var t = String(txt || '').replace(/\\s+/g, ' ').trim();
+    if(!t) return null;
+    var dosis = '', nombre = t;
+    var m;
+    /* «Row 4 min», «Bicicleta o cinta — 6 min progresivos» */
+    if((m = t.match(/^(.*?)\\s*[—–-]\\s*(.+)$/)) && /\\d/.test(m[2])){
+      nombre = m[1].trim(); dosis = m[2].trim();
+    }
+    /* «3x12 Curl», «2x15 Face pull» */
+    else if((m = t.match(/^(\\d+\\s*[x×]\\s*\\d+[^\\s]*)\\s+(.+)$/i))){ dosis = m[1]; nombre = m[2]; }
+    /* «15 Banded pass-through», «10/10 Puente de glúteo» */
+    else if((m = t.match(/^(\\d+\\s*\\/\\s*\\d+|\\d+)\\s*(reps?|s|seg|segundos?|min|minutos?|m|km|cal)?\\s+(.+)$/i))){
+      dosis = (m[1] + (m[2] ? ' ' + m[2] : '')).trim(); nombre = m[3];
+    }
+    /* «Row 5:00 @ suave» */
+    else if((m = t.match(/^(.+?)\\s+(\\d+:\\d{2}|\\d+\\s*(?:min|minutos?|s|seg))\\b(.*)$/i))){
+      nombre = (m[1] + (m[3] || '')).trim(); dosis = m[2];
+    }
+    if(dosis){
+      dosis = dosis.replace(/\\breps?\\b/i, 'reps').replace(/\\bminutos?\\b/i, 'min')
+                   .replace(/\\bsegundos?\\b/i, 's').replace(/\\s{2,}/g, ' ').trim();
+      if(dosis.length > 16) { nombre = t; dosis = ''; }
+    }
+    return { dosis: dosis, nombre: nombre.replace(/^[·•\\-\\s]+/, '').trim() };
+  }
+
+  /* ---------------------------------------------------------
+     1 · ENTRADA EN CALOR: CHECKLIST DE LECTURA RÁPIDA
+  --------------------------------------------------------- */
+  function warmup(){
+    document.querySelectorAll('.block').forEach(function(bl){
+      var b = bloqueDe(bl.dataset.blockId);
+      if(!esWarm(b, bl)){ bl.classList.remove('wu-card'); return; }
+      bl.classList.add('wu-card');
+      /* fuera todo lo que pertenece a un bloque de trabajo medible */
+      bl.querySelectorAll('.rx-badge, .mini-log, .set-tracker, .jp-tools, .rir-bar, .load-suggest, .pre-bar, .blk-tag, .cf-score, .wod-score, .cf-proto, .cf-levels')
+        .forEach(function(x){ x.remove(); });
+
+      var origen = bl.querySelector('.cf-board .cf-body') || bl.querySelector('.wb-body');
+      var filas = [];
+      if(origen){
+        origen.querySelectorAll('.cf-line, .wb-line').forEach(function(l){
+          var head = l.classList.contains('head');
+          var txt = (l.querySelector('span:not(.n)') || l).textContent;
+          filas.push({ head: head, txt: txt });
+        });
+      } else {
+        bl.querySelectorAll('.block-body .ex-row, .block-body .wu-phase').forEach(function(r){
+          if(r.classList.contains('wu-phase')){ filas.push({ head:true, txt:r.textContent }); return; }
+          var n = r.querySelector('.ex-name');
+          var d = r.querySelector('.ex-detail');
+          var nombre = n ? (n.childNodes[0] ? n.childNodes[0].textContent : n.textContent) : r.textContent;
+          filas.push({ head:false, txt: String(nombre || '').trim() + (d ? ' — ' + d.textContent.trim() : '') });
+        });
+      }
+      filas = filas.filter(function(f){ return String(f.txt || '').replace(/\\s+/g, ' ').trim(); });
+      if(!filas.length){ return; }
+
+      var html = filas.map(function(f){
+        var t = String(f.txt).replace(/\\s+/g, ' ').trim();
+        if(f.head || /^\\d+\\s*[\\.\\)]\\s/.test(t) || /:$/.test(t))
+          return '<div class="wu-fase">' + esc(t.replace(/^\\d+\\s*[\\.\\)]\\s*/, '').replace(/:$/, '')) + '</div>';
+        var p = partir(t);
+        if(!p) return '';
+        return '<div class="wu-item">' +
+          (p.dosis ? '<span class="wu-dose">' + esc(p.dosis) + '</span>' : '<span class="wu-dose">·</span>') +
+          '<span class="wu-name">' + esc(p.nombre) + '</span></div>';
+      }).join('');
+
+      var lista = bl.querySelector('.wu-list');
+      if(!lista){
+        lista = document.createElement('div');
+        lista.className = 'wu-list';
+        var cuerpo = bl.querySelector('.block-body') || bl;
+        cuerpo.insertBefore(lista, cuerpo.firstElementChild);
+      }
+      if(lista.innerHTML !== html) lista.innerHTML = html;
+      /* el contenido original queda oculto: la lista limpia lo reemplaza */
+      bl.querySelectorAll('.ex-row, .wu-phase').forEach(function(x){ x.style.display = 'none'; });
+      if(origen) origen.style.display = 'none';
+      var brd = bl.querySelector('.cf-board, .wod-board');
+      if(brd){
+        brd.style.background = 'transparent';
+        brd.style.border = 'none';
+        var h = brd.querySelector('.cf-h, .wb-h');
+        if(h) h.style.display = 'none';
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------
+     2 · METCON: UNA SOLA ESTRUCTURA, SIN TEXTO REPETIDO
+  --------------------------------------------------------- */
+  function nrm(s){ return String(s || '').toLowerCase().replace(/\\s+/g, ' ').trim().replace(/[:.]$/, ''); }
+  function sinDuplicados(){
+    document.querySelectorAll('.block').forEach(function(bl){
+      if(bl.classList.contains('wu-card')) return;
+      var proto = nrm((bl.querySelector('.cf-proto') || {}).textContent);
+      var vistas = {};
+      bl.querySelectorAll('.cf-line, .wb-line').forEach(function(l){
+        var t = nrm((l.querySelector('span:not(.n)') || l).textContent);
+        if(!t) return;
+        /* la línea que repite el protocolo o una línea ya mostrada se oculta */
+        if((proto && t === proto) || vistas[t]) l.classList.add('dup');
+        else { vistas[t] = 1; l.classList.remove('dup'); }
+      });
+      /* la numeración se recalcula sobre lo que realmente se ve */
+      var n = 0;
+      bl.querySelectorAll('.cf-line, .wb-line').forEach(function(l){
+        if(l.classList.contains('dup') || l.classList.contains('head')) return;
+        n++;
+        var num = l.querySelector('span.n');
+        if(num && num.textContent !== String(n)) num.textContent = String(n);
+      });
+    });
+  }
+
+  function repintar(){ try{ warmup(); sinDuplicados(); }catch(e){} }
+  function mount(){
+    repintar();
+    var main = document.getElementById('mainContent') || document.body;
+    var pend = false, propio = false;
+    new MutationObserver(function(){
+      if(pend || propio) return;
+      pend = true;
+      setTimeout(function(){
+        pend = false; propio = true;
+        try{ repintar(); }catch(e){}
+        setTimeout(function(){ propio = false; }, 190);
+      }, 180);
+    }).observe(main, { childList:true, subtree:true });
+    if(typeof window.renderMain === 'function'){
+      var _rm = window.renderMain;
+      window.renderMain = function(){
+        var r = _rm.apply(this, arguments);
+        setTimeout(repintar, 200);
+        setTimeout(repintar, 600);
+        return r;
+      };
+    }
+    window.CoachWarmUp = { repintar: repintar, esWarm: esWarm, partir: partir };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 380); });
+  else setTimeout(mount, 380);
+})();
+<\/script>
+
 </body>
 </html>
 `;
@@ -26665,7 +26888,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       tips:'Progresás de general a específico. Si algo te tira, ampliás el rango de a poco antes de cargar.',
       pace:'Ritmo suave y continuo: terminás activado, nunca cansado.' }
   ];
-  function formatoDe(txt){
+  function formatoDe(txt, titulo){
+    /* si el bloque se llama entrada en calor, no importa qué movimientos tenga */
+    if(/warm.?up|entrada en calor|movilidad|activaci[óo]n/i.test(String(titulo || '') || String(txt || '').slice(0, 60)))
+      return FORMATOS.filter(f => f.k === 'warm')[0] || FORMATOS[0];
     for(let i = 0; i < FORMATOS.length; i++) if(FORMATOS[i].re.test(txt)) return FORMATOS[i];
     return { k:'', lb:'BLOQUE',
       obj:'Bloque de trabajo general dentro de la sesión: sumás volumen de calidad sin comprometer los bloques principales.',
@@ -26686,10 +26912,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       var t = sinEmojis(titulo).trim();
       var resto = '';
       /* «Accesorios: 3x12 curl de bíceps» → título limpio + primera línea de trabajo */
-      var i = t.indexOf(':');
+      /* se ignoran los dos puntos de un tiempo: 2:00, 3:30 */
+      var i = -1;
+      for(var k = 0; k < t.length; k++){
+        if(t.charAt(k) !== ':') continue;
+        var antes = t.charAt(k - 1), luego = t.charAt(k + 1);
+        if(/\d/.test(antes) && /\d/.test(luego)) continue;
+        i = k; break;
+      }
       if(i > 0 && i < t.length - 1){
         var cola = t.slice(i + 1).trim();
-        if(/\d+\s*[x×]\s*\d+|\d+\s*(reps?|rondas?|cal|m\b|seg|s\b)/i.test(cola)){
+        if(/^\d+\s*[x×]?\s*\d*\s*[A-Za-zÁ-ú]/.test(cola) ||
+           /\d+\s*(reps?|rondas?|cal|kg|m\b|seg|s\b|min)/i.test(cola)){
           resto = cola; t = t.slice(0, i).trim();
         }
       }
@@ -26697,21 +26931,52 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       if(resto) actual.items.push(resto);
       bloques.push(actual);
     }
+    /* un protocolo declarado espera sus movimientos: la línea en blanco no lo corta */
+    const RX_PROTO = /\b(amrap|emom|for\s*time|rft|tabata|chipper|every\s*\d|interval|\d+\s*sets?|\d+\s*rounds?|\d+\s*rondas?|work\s*\/\s*rest)\b/i;
+    let corte = false;
     lineas.forEach(l => {
       const t = l.trim();
-      if(!t){ actual = null; return; }                        /* línea en blanco: corta el bloque */
+      if(!t){ corte = true; return; }                         /* línea en blanco: corte tentativo */
       const mt = t.match(RX_TITULO);
-      if(mt){ abrir(t.replace(RX_TITULO, '')); return; }
-      if(RX_SECCION.test(t) && t.length < 60){ abrir(t); return; }
+      if(mt){ corte = false; abrir(t.replace(RX_TITULO, '')); return; }
+      if(RX_SECCION.test(t) && t.length < 60){ corte = false; abrir(t); return; }
+      if(corte){
+        corte = false;
+        /* si el bloque anterior declaró un protocolo y todavía no tiene movimientos,
+           lo que sigue le pertenece: no se abre un bloque nuevo */
+        const sigue = actual && RX_PROTO.test(actual.titulo + ' ' + actual.items.join(' ')) &&
+                      actual.items.filter(x => /[a-záéíóúñ]{3,}/i.test(x)).length < 2;
+        if(!sigue) actual = null;
+      }
       if(!actual) abrir(t.length < 46 ? t : 'Bloque');
       else actual.items.push(sinEmojis(t).replace(/^[-•*]\s*/, ''));
     });
     /* un bloque cuyo título quedó como primera línea de trabajo no pierde esa línea */
     return bloques.filter(b => b.titulo || b.items.length).map(b => {
       const texto = b.titulo + ' ' + b.items.join(' ');
-      const f = formatoDe(texto);
+      const f = formatoDe(texto, b.titulo);
       if(!b.items.length){ b.items = [b.titulo]; }
-      const proto = (texto.match(/(EMOM\s*x?\s*\d+[^,.;\n]*|AMRAP\s*\d+[^,.;\n]*|Every\s*\d+[:\d]*\s*x\s*\d+\s*sets?|\d+\s*[Ss]ets?[^,.;\n]*|For\s*Time[^,.;\n]*)/) || [])[1] || '';
+      /* el protocolo sale de UNA línea: nunca se lleva puestos los movimientos */
+      const RX_P = /^\s*(\d+\s*min\s*amrap[^,.;]*|amrap\s*\d+[^,.;]*|emom\s*x?\s*\d+[^,.;]*|every\s*[\d:]+\s*x\s*\d+\s*sets?[^,.;]*|\d+\s*sets?\s*[-–][^,.;]*|\d+\s*sets?\s*(?:quality|for time)[^,.;]*|\d+\s*rounds?\s*for\s*time[^,.;]*|for\s*time[^,.;]*|\d+\s*rondas?[^,.;]*|.*\bwork\s*\/\s*rest\b[^,.;]*)\s*$/i;
+      /* una línea de estructura es corta y no enumera movimientos */
+      const esProto = s => {
+        const x = String(s || '').trim();
+        if(!x || x.length > 52) return false;
+        /* «2 Sets: 10 Air squats» es trabajo; «3:00 Work» es tiempo y sigue siendo protocolo */
+        if(/[a-záéíóúñ]\s*:\s*\d+\s+[a-záéíóúñ]{3,}/i.test(x)) return false;
+        return RX_P.test(x);
+      };
+      let proto = '';
+      if(f.lb === 'WARM-UP') proto = '';
+      else {
+        const candidatas = [b.titulo].concat(b.items);
+        for(let ci = 0; ci < candidatas.length; ci++){
+          if(esProto(candidatas[ci])){ proto = String(candidatas[ci]).trim(); break; }
+        }
+      }
+      /* el protocolo no se repite abajo como si fuera un movimiento */
+      const nrmL = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[:.]$/, '');
+      if(proto) b.items = b.items.filter(x => nrmL(x) !== nrmL(proto));
       const TIPO_STD = { 'WARM-UP':'Warm-Up', 'WEIGHTLIFTING':'Weightlifting / Fuerza Principal',
                          'GIMNÁSTICOS':'Gymnastics / Skill', 'ACCESORIOS':'Accessories / Midline',
                          'ENGINE':'Metcon / Intervals / Engine' };
@@ -26793,8 +27058,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     }
     (j.blocks || []).forEach(b => {
       if(!b) return;
-      const items = Array.isArray(b.details) ? b.details.map(sinEmojis).filter(Boolean)
-                  : String(b.details || '').split(/\n/).map(sinEmojis).filter(Boolean);
+      let items = Array.isArray(b.details) ? b.details.map(sinEmojis).filter(Boolean)
+                : String(b.details || '').split(/\n/).map(sinEmojis).filter(Boolean);
+      /* el protocolo vive arriba: se saca de la lista si vino repetido */
+      const nrmL = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[:.]$/, '');
+      const pr = nrmL(b.protocol);
+      if(pr) items = items.filter(x => nrmL(x) !== pr);
+      /* y ninguna línea repetida sobrevive dentro del mismo bloque */
+      const vistas = {};
+      items = items.filter(x => { const k = nrmL(x); if(!k || vistas[k]) return false; vistas[k] = 1; return true; });
       const fmt = fmtDeTipo(b.type, b.protocol, items);
       const tech = fmt === 'ACCESORIOS' || fmt === 'GIMNÁSTICOS' || fmt === 'WARM-UP';
       const lv = b.levels || {};
