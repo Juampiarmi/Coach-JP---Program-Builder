@@ -11187,6 +11187,13 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     if(dosis){
       dosis = dosis.replace(/\\breps?\\b/i, 'reps').replace(/\\bminutos?\\b/i, 'min')
                    .replace(/\\bsegundos?\\b/i, 's').replace(/\\s{2,}/g, ' ').trim();
+      /* se queda sólo la parte numérica; lo demás vuelve al nombre */
+      var md = dosis.match(/^(\\d+\\s*[x×]\\s*\\d+\\s*(?:s|seg|min|reps)?|\\d+\\s*\\/\\s*\\d+|\\d+\\s*(?:min|s|seg|reps|m|km|cal)?)\\b/i);
+      if(md && md[1] && md[1].length < dosis.length){
+        var cola = dosis.slice(md[1].length).trim();
+        if(cola) nombre = (nombre + ' ' + cola).replace(/\\s{2,}/g, ' ').trim();
+        dosis = md[1].trim();
+      }
       if(dosis.length > 16) { nombre = t; dosis = ''; }
     }
     return { dosis: dosis, nombre: nombre.replace(/^[·•\\-\\s]+/, '').trim() };
@@ -11310,6 +11317,219 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 380); });
   else setTimeout(mount, 380);
+})();
+<\/script>
+
+
+<style>
+/* =========================================================
+   COACH JP · WARM-UP LIMPIO + RELOJ DE DESCANSO ACTIVO
+========================================================= */
+/* ---------- protocolo de entrada en calor ---------- */
+.wu-list{gap:8px !important;line-height:1.6 !important;padding:12px 13px !important}
+.wu-list .wu-item{
+  display:flex;align-items:baseline;gap:10px;padding:4px 2px;border-bottom:none !important;
+  line-height:1.6;
+}
+.wu-list .wu-dose{
+  flex:0 0 auto;min-width:0;text-align:center;padding:2px 9px;border-radius:6px;
+  background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);
+  font-family:'JetBrains Mono',ui-monospace,monospace;font-size:0.68rem;font-weight:700;
+  color:rgba(255,255,255,0.78);white-space:nowrap;
+}
+/* la línea sin dosis no lleva caja: sólo un bullet discreto */
+.wu-list .wu-item.plain{gap:9px}
+.wu-list .wu-item.plain .wu-bullet{
+  flex:0 0 auto;width:4px;height:4px;border-radius:50%;margin-top:8px;
+  background:rgba(255,255,255,0.28);
+}
+.wu-list .wu-name{line-height:1.6}
+/* subtítulos internos: acento sin caja */
+.wu-list .wu-fase{
+  margin:10px 0 1px;padding:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;
+  font-size:0.76rem;letter-spacing:0.15em;text-transform:uppercase;color:#FFB067;
+}
+.wu-list .wu-fase:first-child{margin-top:0}
+/* instrucción larga: texto sutil, sin bullet ni caja */
+.wu-list .wu-nota{
+  font-family:'Inter',sans-serif;font-size:0.79rem;line-height:1.6;
+  color:rgba(255,255,255,0.55);padding:2px 0;
+}
+/* ---------- reloj de descanso ---------- */
+#restHud{z-index:260 !important}
+#restHud .rh-ctl button{min-height:44px;min-width:64px}
+#restHud .rh-set button{min-height:38px}
+</style>
+
+<script>
+/* =========================================================
+   COACH JP · warm-up limpio y reloj de descanso reactivado
+========================================================= */
+(function(){
+  function bloqueDe(id){
+    var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+    if(!d || !id) return null;
+    var todos = (d.blocks || []).concat(d.finisher ? [d.finisher] : [], d.hyrox ? [d.hyrox] : []);
+    return todos.filter(function(b){ return b.id === id; })[0] || null;
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ---------------------------------------------------------
+     1 · PROTOCOLO DE ENTRADA EN CALOR
+        subtítulo, dosis o instrucción — nunca una píldora vacía
+  --------------------------------------------------------- */
+  var RX_FASE = /^(?:\\d+\\s*[\\.\\)]\\s*)?(?:fase\\s*\\d|elevaci[óo]n de (?:temperatura|pulso)|elevar temperatura|activaci[óo]n|movilidad(?: articular)?|series de aproximaci[óo]n|aproximaci[óo]n|cool.?down|vuelta a la calma|preparaci[óo]n)/i;
+  function claseDe(txt, dosis){
+    var t = String(txt || '').replace(/\\s+/g, ' ').trim();
+    if(!t) return null;
+    if(/:\\s*$/.test(t) || RX_FASE.test(t)) return 'fase';
+    if(dosis) return 'item';
+    /* si declara una dosis en el texto, es trabajo y no un subtítulo */
+    if(/\\d/.test(t) && /(\\bmin\\b|\\bseg\\b|\\d\\s*s\\b|\\breps?\\b|[x×]\\s*\\d|\\d\\s*\\/\\s*\\d|\\bm\\b|\\bcal\\b)/i.test(t)) return 'item';
+    /* sin dosis: subtítulo si es corto, instrucción si es una frase */
+    return (t.length <= 46 && !/[.,;]/.test(t)) ? 'fase' : 'nota';
+  }
+  function limpiar(){
+    document.querySelectorAll('.block.wu-card .wu-list').forEach(function(lista){
+      lista.querySelectorAll('.wu-item').forEach(function(it){
+        var dose = it.querySelector('.wu-dose');
+        var name = it.querySelector('.wu-name');
+        if(!name) return;
+        var txt = name.textContent.replace(/\\s+/g, ' ').trim();
+        var dosis = dose ? dose.textContent.replace(/\\s+/g, ' ').trim() : '';
+        if(dosis === '·' || dosis === '.') dosis = '';
+        var cls = claseDe(txt, dosis);
+        if(cls === 'fase'){
+          var f = document.createElement('div');
+          f.className = 'wu-fase';
+          f.textContent = txt.replace(/^\\d+\\s*[\\.\\)]\\s*/, '').replace(/:\\s*$/, '');
+          it.parentNode.replaceChild(f, it);
+          return;
+        }
+        if(cls === 'nota'){
+          var n = document.createElement('div');
+          n.className = 'wu-nota';
+          n.textContent = txt;
+          it.parentNode.replaceChild(n, it);
+          return;
+        }
+        /* línea con dosis: cápsula compacta alineada */
+        if(dose && !dosis){ dose.remove(); dose = null; }
+        if(!dose && !it.querySelector('.wu-bullet')){
+          it.classList.add('plain');
+          var b = document.createElement('span');
+          b.className = 'wu-bullet';
+          it.insertBefore(b, it.firstChild);
+        }
+      });
+      /* ninguna píldora puede quedar con un punto solo */
+      lista.querySelectorAll('.wu-dose').forEach(function(d){
+        var t = d.textContent.replace(/\\s+/g, '').trim();
+        if(!t || t === '·' || t === '.'){
+          var it = d.closest('.wu-item');
+          d.remove();
+          if(it && !it.querySelector('.wu-bullet')){
+            it.classList.add('plain');
+            var b = document.createElement('span');
+            b.className = 'wu-bullet';
+            it.insertBefore(b, it.firstChild);
+          }
+        }
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------
+     2 · RELOJ DE DESCANSO EMERGENTE (MUSCULACIÓN Y FUERZA)
+  --------------------------------------------------------- */
+  function esCF(){ return document.body.classList.contains('cf-modo'); }
+  function descansoDe(bl){
+    var b = bloqueDe(bl ? bl.dataset.blockId : '');
+    var seg = b && parseInt(b.restSeconds, 10);
+    if(seg > 0) return seg;
+    var slot = bl ? bl.querySelector('.timer-slot[data-rest]') : null;
+    if(slot){ var s = parseInt(slot.dataset.rest, 10); if(s > 0) return s; }
+    try{ return parseInt(state.restSec, 10) || 90; }catch(e){ return 90; }
+  }
+  function nombreDe(bl, row){
+    var n = row ? row.closest('.block') : bl;
+    var ex = n ? n.querySelector('.ex-name') : null;
+    var t = ex ? (ex.childNodes[0] ? ex.childNodes[0].textContent : ex.textContent) : '';
+    return String(t || 'Descanso').replace(/\\s+/g, ' ').trim().slice(0, 34);
+  }
+  function arrancar(seg, etiqueta){
+    /* el descanso automático no interrumpe el Custom WOD Timer si está corriendo */
+    var cwt = document.getElementById('cwtWrap');
+    if(cwt && cwt.classList.contains('on')) return;
+    if(window.CoachTV && typeof window.CoachTV.rest === 'function'){
+      window.CoachTV.rest(seg, etiqueta);
+    }
+  }
+  /* al tildar una serie */
+  document.addEventListener('change', function(e){
+    var chk = e.target.closest('.set-check');
+    if(!chk || !chk.checked || esCF()) return;
+    var row = chk.closest('.set-row');
+    var bl = chk.closest('.block');
+    var b = bloqueDe(bl ? bl.dataset.blockId : '');
+    /* la entrada en calor y los circuitos livianos no abren el reloj */
+    if(bl && bl.classList.contains('wu-card')) return;
+    if(b && !(b.isBlock || b.isSuperset || b.isFinisher)) return;
+    var lb = 'Descanso · ' + nombreDe(bl, row);
+    setTimeout(function(){ arrancar(descansoDe(bl), lb); }, 90);
+  });
+  /* al cerrar un bloque de fuerza */
+  document.addEventListener('change', function(e){
+    var cb = e.target.closest('.block-done-cb');
+    if(!cb || !cb.checked || esCF()) return;
+    var bl = cb.closest('.block');
+    var b = bloqueDe(bl ? bl.dataset.blockId : '');
+    if(!b || !(b.isBlock || b.isSuperset || b.isFinisher)) return;
+    if(bl.classList.contains('wu-card')) return;
+    setTimeout(function(){ arrancar(descansoDe(bl), 'Descanso de bloque'); }, 120);
+  });
+
+  /* el HUD nunca tapa la navegación de la rutina */
+  function convivencia(){
+    var hud = document.getElementById('restHud');
+    if(!hud) return;
+    if(!hud.dataset.conv){
+      hud.dataset.conv = '1';
+      hud.addEventListener('click', function(ev){ ev.stopPropagation(); });
+    }
+    var cwt = document.getElementById('cwtWrap');
+    if(cwt && cwt.classList.contains('on')) hud.classList.remove('on');
+  }
+
+  function repintar(){ try{ limpiar(); convivencia(); }catch(e){} }
+  function mount(){
+    repintar();
+    var main = document.getElementById('mainContent') || document.body;
+    var pend = false, propio = false;
+    new MutationObserver(function(){
+      if(pend || propio) return;
+      pend = true;
+      setTimeout(function(){
+        pend = false; propio = true;
+        try{ repintar(); }catch(e){}
+        setTimeout(function(){ propio = false; }, 200);
+      }, 190);
+    }).observe(main, { childList:true, subtree:true });
+    if(typeof window.renderMain === 'function'){
+      var _rm = window.renderMain;
+      window.renderMain = function(){
+        var r = _rm.apply(this, arguments);
+        setTimeout(repintar, 240);
+        setTimeout(repintar, 680);
+        return r;
+      };
+    }
+    window.CoachDescanso = { arrancar: arrancar, segundos: descansoDe, limpiarWarmUp: limpiar };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 420); });
+  else setTimeout(mount, 420);
 })();
 <\/script>
 
