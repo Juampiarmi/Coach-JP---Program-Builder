@@ -4009,7 +4009,15 @@ function renderMain(){
   blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
   html += '</div>';
   if(day.summary){ html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + day.summary + '</p></div>'; }
-  if((day.cooldown||[]).length){ html += '<div class="info-card"><div class="info-card-title">Cool-Down y Recuperación</div><ul>' + day.cooldown.map(function(c){ return '<li><span>✦</span>' + c + '</li>'; }).join('') + '</ul></div>'; }
+  if((day.cooldown||[]).length){
+    /* las fases numeradas del generador se leen como subtítulo, no como una viñeta más */
+    html += '<div class="info-card cooldown-card"><div class="info-card-title">Cool-Down y Recuperación</div><ul>' +
+      day.cooldown.map(function(c){
+        var f = String(c).match(/^(\\d+)\\.\\s*(.+)$/);
+        return f ? '<li class="cd-fase"><span>' + f[1] + '</span><b>' + f[2] + '</b></li>'
+                 : '<li><span>&#10022;</span>' + c + '</li>';
+      }).join('') + '</ul>' +
+      (day.cooldownNota ? '<p class="cd-nota">' + day.cooldownNota + '</p>' : '') + '</div>'; }
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);
@@ -9875,6 +9883,19 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.16rem;
   letter-spacing:0.07em;text-transform:uppercase;color:#FFD600;margin-bottom:12px;line-height:1.22;
 }
+.cooldown-card .cd-fase{align-items:center;margin-top:7px}
+.cooldown-card .cd-fase span{
+  display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;
+  border-radius:6px;background:rgba(0,230,178,0.14);border:1px solid rgba(0,230,178,0.42);
+  color:#00E6B2;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;font-weight:700;
+}
+.cooldown-card .cd-fase b{
+  font-family:var(--font-head,inherit);font-size:11.5px;letter-spacing:0.08em;
+  text-transform:uppercase;color:#00E6B2;font-weight:800;
+}
+.cooldown-card .cd-nota{
+  margin:9px 0 0;font-size:12.5px;line-height:1.6;color:rgba(255,255,255,0.72);
+}
 .fin-block .fb-work{
   margin:0 0 13px;padding:12px 13px;border-radius:12px;
   background:rgba(255,214,0,0.04);border:1px solid rgba(255,214,0,0.2);
@@ -12537,6 +12558,7 @@ function buildProgramConfig(ath){
       metaChips: (d.metaChips||[]).slice(),
       focusTitle: d.focusTitle || 'Foco Técnico del Día', focusText: d.focusText || '',
       blocks: blocks, summary: d.summary || '', cooldown: (d.cooldown||[]).slice(),
+      cooldownNota: d.cooldownNota || '',
       finisherIA: finisherDelDia(ath, d)
     };
   });
@@ -22963,15 +22985,75 @@ body.man-mode .gs-fab{right:318px}
   text-transform:uppercase;border:1px solid var(--line-2);color:var(--muted)}
 .bio-lista .bl-t.ok{border-color:rgba(0,230,118,.45);color:#7CFFB2;background:rgba(0,230,118,.1)}
 /* selector de ejercicio */
-.pk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;max-height:46vh;overflow:auto;padding-right:4px}
-.pk-card{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:var(--panel-2);cursor:pointer;transition:.14s}
-.pk-card:hover{border-color:var(--gold);transform:translateY(-1px)}
-.pk-card h6{margin:0 0 3px;font-family:var(--ffh);font-size:14px;letter-spacing:.03em;color:var(--txt)}
-.pk-card .pm{font-size:10.5px;color:var(--muted);line-height:1.5}
-.pk-card .pt{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
-.pk-card .pt span{font-size:9.5px;padding:2px 6px;border-radius:20px;border:1px solid var(--line-2);color:var(--txt-2)}
+/* ---------- grilla de biblioteca: tarjeta thumbnail + metadata ---------- */
+.pk-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;
+  max-height:52vh;overflow:auto;padding:2px 4px 2px 2px;align-items:stretch;
+}
+.pk-card{
+  position:relative;display:flex;flex-direction:column;overflow:hidden;
+  border:1px solid var(--line);border-radius:12px;background:var(--panel-2);
+  cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s;
+}
+.pk-card:hover,.pk-card:focus-within{
+  border-color:#FFD600;transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.45),0 0 0 1px rgba(255,214,0,.35) inset;
+}
+.pk-card.sel{border-color:#FFD600;box-shadow:0 0 0 2px rgba(255,214,0,.4) inset}
+/* miniatura 16:9 limpia */
+.pk-card .pk-th{
+  position:relative;width:100%;height:110px;flex:0 0 auto;border-radius:8px 8px 0 0;overflow:hidden;
+  background:linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,.015));
+}
+.pk-card .pk-th img{width:100%;height:110px;object-fit:cover;border-radius:8px 8px 0 0;display:block}
+.pk-card .pk-th .pk-none{
+  width:100%;height:110px;display:flex;align-items:center;justify-content:center;
+  font-size:22px;opacity:.3;
+}
+.pk-card .pk-th .pk-play{
+  position:absolute;right:7px;bottom:7px;width:26px;height:26px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;font-size:11px;
+  background:rgba(9,10,15,.82);border:1px solid rgba(255,214,0,.5);color:#FFD600;
+}
+/* nombre siempre visible, 2 líneas máximo */
+.pk-card .pk-body{display:flex;flex-direction:column;gap:7px;padding:10px 11px 11px;flex:1 1 auto}
+.pk-card .pk-nm{
+  margin:0;color:#FFFFFF;font-family:'Inter',var(--ff),system-ui,sans-serif;
+  font-size:14px;font-weight:600;line-height:1.3;letter-spacing:0;text-transform:none;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.pk-card .pk-sub{font-size:10.5px;color:var(--muted);line-height:1.45;margin:-3px 0 0}
+.pk-card .pt{display:flex;gap:5px;flex-wrap:wrap;margin-top:auto;padding-top:2px}
+.pk-card .pt span{
+  font-size:9.5px;padding:3px 8px;border-radius:20px;line-height:1.35;white-space:nowrap;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.78);
+}
+.pk-card .pt span.vid{background:rgba(0,230,118,.12);border-color:rgba(0,230,118,.45);color:#7CFFB2}
+.pk-card .pt span.novid{background:rgba(255,171,0,.1);border-color:rgba(255,171,0,.4);color:#FFC44D}
 .pk-card .pt span.dg{background:rgba(193,18,31,.18);border-color:rgba(193,18,31,.45);color:#FF8B93}
 .pk-card .pt span.ok{background:rgba(0,191,165,.16);border-color:rgba(0,191,165,.42);color:#7FE9DA}
+.pk-card .pt span.prep{background:rgba(255,138,61,.12);border-color:rgba(255,138,61,.45);color:#FFB067}
+/* botón Seleccionar superpuesto */
+.pk-card .pk-sel{
+  position:absolute;left:9px;right:9px;top:74px;opacity:0;pointer-events:none;transition:opacity .15s;
+  min-height:30px;border-radius:8px;font-size:11.5px;font-weight:800;letter-spacing:.04em;cursor:pointer;
+  background:#FFD600;border:none;color:#0A0A0B;text-transform:uppercase;font-family:var(--ffh);
+}
+.pk-card:hover .pk-sel,.pk-card:focus-within .pk-sel{opacity:1;pointer-events:auto}
+/* paginación */
+.pk-pag{display:flex;align-items:center;gap:9px;margin-top:11px;flex-wrap:wrap}
+.pk-pag .pk-info{font-size:11.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+.pk-pag .spacer{flex:1}
+@media(max-width:620px){
+  .pk-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .pk-card .pk-th,.pk-card .pk-th img,.pk-card .pk-th .pk-none{height:88px}
+  .pk-card .pk-sel{top:54px}
+}
+@media(max-width:430px){
+  .pk-grid{grid-template-columns:1fr}
+  .pk-card{flex-direction:row;align-items:stretch}
+  .pk-card .pk-th,.pk-card .pk-th img,.pk-card .pk-th .pk-none{width:118px;height:82px;flex:0 0 118px;border-radius:8px 0 0 8px}
+  .pk-card .pk-sel{position:static;opacity:1;pointer-events:auto;margin-top:6px}
+}
 .pk-f{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
 .pk-f .pchip{font-size:11px;padding:5px 10px;border-radius:20px;border:1px solid var(--line-2);background:transparent;color:var(--txt-2);cursor:pointer}
 .pk-f .pchip.on{background:var(--gold);border-color:var(--gold);color:#0A0A0B;font-weight:800}
@@ -22984,9 +23066,17 @@ body.man-mode .gs-fab{right:318px}
     <div class="modal-b">
       <div id="pkCtx"></div>
       <div class="row" style="margin:8px 0"><input id="pkQ" class="in" placeholder="Buscar por nombre, grupo, patrón o equipamiento…"></div>
+      <div class="pk-f" id="pkPrep"></div>
       <div class="pk-f" id="pkDisc"></div>
       <div class="pk-f" id="pkGrupo"></div>
+      <div class="pk-f" id="pkEquipo"></div>
       <div class="pk-grid" id="pkGrid"></div>
+      <div class="pk-pag">
+        <button class="btn xs" id="pkPrev" type="button">◀ Anterior</button>
+        <button class="btn xs" id="pkNext" type="button">Siguiente ▶</button>
+        <span class="spacer"></span>
+        <span class="pk-info" id="pkInfo"></span>
+      </div>
     </div>
     <div class="modal-f">
       <button class="btn ghost" data-close="mPick">Cancelar</button>
@@ -23381,10 +23471,11 @@ body.man-mode .gs-fab{right:318px}
   }
 
   /* ============ D. SELECTOR DE EJERCICIO ============ */
-  let pkCtx = null, pkQ = '', pkD = '', pkG = '';
+  let pkCtx = null, pkQ = '', pkD = '', pkG = '', pkQip = '', pkPrep = false, pkVid = false, pkPag = 0;
+  const PK_POR_PAG = 24;
   function abrirPicker(modo, b, fila){
     pkCtx = { modo: modo, bid: b.id, fila: fila };
-    pkQ = ''; pkD = ''; pkG = '';
+    pkQ = ''; pkD = ''; pkG = ''; pkQip = ''; pkPrep = false; pkVid = false; pkPag = 0;
     const lbl = { add:'➕ Agregar ejercicio', rep:'🔄 Reemplazar ejercicio' }[modo] || 'Elegir ejercicio';
     $('#pkTitle').textContent = lbl;
     $('#pkQ').value = '';
@@ -23399,8 +23490,11 @@ body.man-mode .gs-fab{right:318px}
     const ath = active();
     const q = norm(pkQ);
     return S.exercises.filter(e => {
+      if(pkPrep && !(e.warmOk || e.jointOk)) return false;   /* 🔥 Preparación / Salud Articular */
+      if(pkVid && !e.videoId) return false;
       if(pkD && (e.disciplinas || []).indexOf(pkD) < 0) return false;
       if(pkG && e.grupo !== pkG) return false;
+      if(pkQip && e.equipo !== pkQip) return false;
       if(q && norm(e.es + ' ' + (e.en||'') + ' ' + e.grupo + ' ' + e.patron + ' ' + e.equipo).indexOf(q) < 0) return false;
       return true;
     }).sort((a, b2) => {
@@ -23408,32 +23502,69 @@ body.man-mode .gs-fab{right:318px}
       const pa = (ath.preferidos||[]).some(p => matchNombre(p, a.es)) ? -1 : 0;
       const pb = (ath.preferidos||[]).some(p => matchNombre(p, b2.es)) ? -1 : 0;
       return (pa - pb) || a.es.localeCompare(b2.es, 'es');
-    }).slice(0, 240);
+    });
   }
   function pintarPicker(){
     const ath = active();
     const grupos = [...new Set(S.exercises.map(e => e.grupo))].filter(Boolean).sort();
+    const equipos = [...new Set(S.exercises.map(e => e.equipo))].filter(Boolean).sort();
+    const nPrep = S.exercises.filter(e => e.warmOk || e.jointOk).length;
+    $('#pkPrep').innerHTML =
+      '<button class="pchip ' + (pkPrep ? 'on' : '') + '" data-pprep="1" ' +
+        'title="Movilidad dinámica, activación neuromuscular y patrones de calentamiento">' +
+        '🔥 Preparación / Salud Articular' + (nPrep ? ' (' + nPrep + ')' : '') + '</button>' +
+      '<button class="pchip ' + (pkVid ? 'on' : '') + '" data-pvid="1">🎬 Solo con video</button>';
     $('#pkDisc').innerHTML = '<span class="el" style="font-size:11px;color:var(--muted);margin-right:2px">🏷️ Disciplina</span>' +
       '<button class="pchip ' + (!pkD ? 'on' : '') + '" data-pd="">Todas</button>' +
       DSC().map(d => '<button class="pchip ' + (pkD === d ? 'on' : '') + '" data-pd="' + esc(d) + '">' + esc(d) + '</button>').join('');
-    $('#pkGrupo').innerHTML = '<span class="el" style="font-size:11px;color:var(--muted);margin-right:2px">💪 Grupo</span>' +
+    $('#pkGrupo').innerHTML = '<span class="el" style="font-size:11px;color:var(--muted);margin-right:2px">💪 Grupo muscular</span>' +
       '<button class="pchip ' + (!pkG ? 'on' : '') + '" data-pg="">Todos</button>' +
       grupos.map(g => '<button class="pchip ' + (pkG === g ? 'on' : '') + '" data-pg="' + esc(g) + '">' + esc(g) + '</button>').join('');
+    $('#pkEquipo').innerHTML = '<span class="el" style="font-size:11px;color:var(--muted);margin-right:2px">🏋️ Equipamiento</span>' +
+      '<button class="pchip ' + (!pkQip ? 'on' : '') + '" data-pq="">Todos</button>' +
+      equipos.map(q => '<button class="pchip ' + (pkQip === q ? 'on' : '') + '" data-pq="' + esc(q) + '">' + esc(q) + '</button>').join('');
+
     const list = candidatos();
-    $('#pkGrid').innerHTML = list.length ? list.map(e => {
+    const paginas = Math.max(1, Math.ceil(list.length / PK_POR_PAG));
+    if(pkPag > paginas - 1) pkPag = paginas - 1;
+    if(pkPag < 0) pkPag = 0;
+    const desde = pkPag * PK_POR_PAG;
+    const pagina = list.slice(desde, desde + PK_POR_PAG);
+
+    $('#pkGrid').innerHTML = pagina.length ? pagina.map(e => {
       const al = ath ? checkExercise(ath, e) : [];
       const w = worst(al);
-      return '<div class="pk-card" data-pkex="' + e.id + '">' +
-        '<h6>' + esc(e.mostrarEn && e.en ? e.en : e.es) + '</h6>' +
-        '<div class="pm">' + esc(e.grupo) + ' · ' + esc(e.patron || '—') + ' · ' + esc(e.equipo) + '</div>' +
-        '<div class="pt">' +
-          (w === 'danger' ? '<span class="dg">⛔ Vetado</span>' : '') +
-          (w === 'good' ? '<span class="ok">⭐ Preferido</span>' : '') +
-          (e.videoId ? '<span>🎬 Video</span>' : '') +
-          (e.objetivo || e.aviso ? '<span class="ok">🧬 Técnica</span>' : '<span>🧬 Sin técnica</span>') +
+      const nombre = e.mostrarEn && e.en ? e.en : e.es;
+      return '<div class="pk-card" data-pkex="' + e.id + '" tabindex="0">' +
+        '<div class="pk-th">' +
+          (e.videoId
+            ? '<img src="' + ytThumb(e.videoId) + '" alt="" loading="lazy"><span class="pk-play">▶</span>'
+            : '<div class="pk-none">🏋️</div>') +
         '</div>' +
+        '<div class="pk-body">' +
+          '<h6 class="pk-nm" title="' + esc(nombre) + '">' + esc(nombre) + '</h6>' +
+          '<p class="pk-sub">' + esc(e.patron || '—') + '</p>' +
+          '<div class="pt">' +
+            '<span class="grp">' + esc(e.grupo || 'General') + '</span>' +
+            '<span class="eq">' + esc(e.equipo || 'Libre') + '</span>' +
+            (e.videoId ? '<span class="vid">▶ Video</span>' : '<span class="novid">⚠️ Sin Video</span>') +
+            (e.warmOk || e.jointOk ? '<span class="prep">🔥 Preparación</span>' : '') +
+            (w === 'danger' ? '<span class="dg">⛔ Vetado</span>' : '') +
+            (w === 'good' ? '<span class="ok">⭐ Preferido</span>' : '') +
+          '</div>' +
+        '</div>' +
+        '<button class="pk-sel" type="button" data-pksel="' + e.id + '">Seleccionar</button>' +
       '</div>';
     }).join('') : '<div class="hint" style="grid-column:1/-1">No hay ejercicios con esos filtros.</div>';
+
+    const info = $('#pkInfo');
+    if(info) info.textContent = list.length
+      ? (desde + 1) + '-' + Math.min(desde + PK_POR_PAG, list.length) + ' de ' + list.length +
+        ' · página ' + (pkPag + 1) + '/' + paginas
+      : '0 resultados';
+    const prev = $('#pkPrev'), next = $('#pkNext');
+    if(prev) prev.disabled = pkPag <= 0;
+    if(next) next.disabled = pkPag >= paginas - 1;
   }
   function elegir(exId){
     const ex = getEx(exId); if(!ex || !pkCtx) return;
@@ -23500,11 +23631,17 @@ body.man-mode .gs-fab{right:318px}
         if(b && ex){ b.heredado = true; const n = heredar(b, ex); save(); renderBuilder();
           toast(n ? '⬇️ Objetivo y Coach Note copiados al bloque' : 'Ese ejercicio todavía no tiene técnica cargada'); }
         return; }
+      const ps = e.target.closest('[data-pksel]'); if(ps){ elegir(ps.dataset.pksel); return; }
       const pk = e.target.closest('[data-pkex]'); if(pk){ elegir(pk.dataset.pkex); return; }
-      const pd = e.target.closest('[data-pd]'); if(pd){ pkD = pd.dataset.pd === pkD ? '' : pd.dataset.pd; pintarPicker(); return; }
-      const pg = e.target.closest('[data-pg]'); if(pg){ pkG = pg.dataset.pg === pkG ? '' : pg.dataset.pg; pintarPicker(); return; }
+      const pp = e.target.closest('[data-pprep]'); if(pp){ pkPrep = !pkPrep; pkPag = 0; pintarPicker(); return; }
+      const pv = e.target.closest('[data-pvid]'); if(pv){ pkVid = !pkVid; pkPag = 0; pintarPicker(); return; }
+      const pd = e.target.closest('[data-pd]'); if(pd){ pkD = pd.dataset.pd === pkD ? '' : pd.dataset.pd; pkPag = 0; pintarPicker(); return; }
+      const pg = e.target.closest('[data-pg]'); if(pg){ pkG = pg.dataset.pg === pkG ? '' : pg.dataset.pg; pkPag = 0; pintarPicker(); return; }
+      const pq = e.target.closest('[data-pq]'); if(pq){ pkQip = pq.dataset.pq === pkQip ? '' : pq.dataset.pq; pkPag = 0; pintarPicker(); return; }
     });
-    $('#pkQ').addEventListener('input', e => { pkQ = e.target.value; pintarPicker(); });
+    $('#pkQ').addEventListener('input', e => { pkQ = e.target.value; pkPag = 0; pintarPicker(); });
+    $('#pkPrev').addEventListener('click', () => { pkPag--; pintarPicker(); });
+    $('#pkNext').addEventListener('click', () => { pkPag++; pintarPicker(); });
     $$('#mPick [data-close]').forEach(b => b.addEventListener('click', () => closeModal('mPick')));
     const m = document.getElementById('mPick');
     m.addEventListener('click', e => { if(e.target === m) closeModal('mPick'); });
@@ -28053,8 +28190,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         const c = finDe(at.id, dy.id);
         setFin(at.id, dy.id, { borrador: document.getElementById('finTxt').value, fin: c.fin });
       });
-    } else if(card.parentNode !== panel || card.nextSibling){
-      panel.appendChild(card);           /* siempre al final de la sesión */
+    } else {
+      /* el finisher cierra el trabajo; sólo el cool-down puede ir después */
+      const cd = document.getElementById('cdCard');
+      const bien = card.parentNode === panel &&
+                   (!card.nextSibling || (cd && card.nextSibling === cd));
+      if(!bien){
+        if(cd && cd.parentNode === panel) panel.insertBefore(card, cd);
+        else panel.appendChild(card);
+      }
     }
 
     const clave = a.id + '|' + d.id;
@@ -30411,6 +30555,614 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     });
     window.CoachCore = { estructurar: estructurar, normalizar: normalizar,
                          agregar: agregar, modo: modoDe, esCore: esCore, panel: panel };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+<style>
+/* =========================================================
+   COACH JP · MÓDULO 47
+   Warm-Up contextual · Cool-Down & Movilidad · Tagging de preparación
+========================================================= */
+.prep-card{
+  margin:16px 0 0;padding:15px 16px;border-radius:16px;
+  background:rgba(13,16,23,.9);border:1px solid var(--line);
+  box-shadow:0 10px 30px rgba(0,0,0,.4);
+}
+.prep-card.wu{border-left:5px solid #FF8A3D}
+.prep-card.cd{border-left:5px solid #00E6B2}
+.prep-card h3{
+  display:flex;align-items:center;gap:9px;margin:0 0 4px;font-size:15px;
+  font-family:var(--ffh);text-transform:uppercase;letter-spacing:.05em;color:var(--txt);
+}
+.prep-card .pc-badge{
+  margin-left:auto;padding:3px 10px;border-radius:20px;font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;font-family:var(--ffh);
+  background:rgba(210,255,0,.14);border:1px solid rgba(210,255,0,.4);color:var(--accent-volt);
+}
+.prep-card .pc-sub{margin:0 0 11px;color:var(--muted);font-size:12px;line-height:1.5}
+.prep-acts{display:flex;flex-wrap:wrap;gap:8px}
+.prep-acts .btn{flex:1 1 200px}
+.prep-load{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin-top:8px}
+.prep-load i{width:14px;height:14px;border-radius:50%;border:2px solid rgba(255,214,0,.3);
+  border-top-color:#FFD600;animation:cxSpin .8s linear infinite;font-style:normal}
+.prep-out{margin-top:12px;padding:13px 14px;border-radius:14px;display:none}
+.prep-out.on{display:block}
+.prep-card.wu .prep-out{background:rgba(255,138,61,.05);border:1px solid rgba(255,138,61,.26)}
+.prep-card.cd .prep-out{background:rgba(0,230,178,.05);border:1px solid rgba(0,230,178,.26)}
+.prep-out .pf{margin:0 0 11px}
+.prep-out .pf:last-child{margin-bottom:0}
+.prep-out .pf h4{
+  margin:0 0 5px;font-family:var(--ffh);font-size:11.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--txt-2);display:flex;align-items:center;gap:7px;
+}
+.prep-out .pf h4 .pm{
+  padding:1px 8px;border-radius:20px;font-size:9.5px;letter-spacing:.05em;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);color:var(--muted);
+}
+.prep-out .pl{display:flex;align-items:flex-start;gap:8px;font-size:12.6px;line-height:1.6;
+  color:var(--txt-2);padding:2px 0;font-family:var(--ff)}
+.prep-out .pl .pn{flex:0 0 auto;width:6px;height:6px;border-radius:50%;margin-top:8px;background:var(--gold);opacity:.7}
+.prep-out .pl .px{flex:1 1 auto}
+.prep-out .pl .pd{color:var(--accent-cyan,#00F0FF);font-family:ui-monospace,Menlo,monospace;font-size:11px;white-space:nowrap}
+.prep-out .pl .pv{
+  flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:20px;font-size:9.5px;
+  background:rgba(0,230,118,.12);border:1px solid rgba(0,230,118,.42);color:#7CFFB2;
+}
+.prep-out .pnota{margin:9px 0 0;font-size:11.5px;color:var(--muted);line-height:1.6}
+</style>
+
+<script>
+/* =========================================================
+   COACH JP · MÓDULO 47
+   1 · Tagging de preparación en la biblioteca
+   2 · Warm-Up contextual con IA (5-7 min)
+   3 · Cool-Down y movilidad post-entreno con IA
+========================================================= */
+(function(){
+  const KEY = 'coachjp_prep_v1';
+
+  /* ---------------------------------------------------------
+     0 · UTILIDADES
+  --------------------------------------------------------- */
+  function nrm(s){
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function sinEmojis(txt){
+    return String(txt || '')
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, '')
+      .replace(/\s{2,}/g, ' ').trim();
+  }
+  function directo(txt){
+    const t = sinEmojis(txt);
+    return (typeof window.jpSegundaPersona === 'function') ? window.jpSegundaPersona(t, '') : t;
+  }
+  function leer(){ try{ return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; }catch(e){ return {}; } }
+  function guardar(o){ try{ localStorage.setItem(KEY, JSON.stringify(o)); }catch(e){} }
+  function prepDe(athId, dayId){
+    const o = leer();
+    return (o[athId] && o[athId][dayId]) ? o[athId][dayId] : { wu:null, cd:null };
+  }
+  function setPrep(athId, dayId, v){
+    const o = leer();
+    if(!o[athId]) o[athId] = {};
+    o[athId][dayId] = Object.assign({}, o[athId][dayId] || {}, v);
+    guardar(o);
+  }
+  window.jpPrep = prepDe;
+
+  /* ---------------------------------------------------------
+     1 · ETIQUETAS [ Apto Warm-Up ] Y [ Salud Articular / Activación ]
+  --------------------------------------------------------- */
+  const RX_WARM = new RegExp([
+    'movilidad','mobility','dinamic','din[aá]mic','swing','balanceo','rotaci[oó]n','rotation',
+    'circulo','c[ií]rculo','elevaci[oó]n de rodillas','skip','jumping jack','saltos de tijera',
+    'cat.?cow','gato.?camello','world.?greatest','inchworm','oruga','oso','bear crawl',
+    'sentadilla sin peso','air squat','good morning sin','caminata','walk','marcha',
+    'cuerda','rope','remo en erg','bicicleta','bike','cinta','elipt','estiramiento din'
+  ].join('|'), 'i');
+  const RX_JOINT = new RegExp([
+    'banda','band','face pull','pull.?apart','rotaci[oó]n externa','external rotation',
+    'rotaci[oó]n interna','ypt','y.?t.?w','escapular','scapular','serrato','serratus',
+    'manguito','cuff','pallof','dead bug','bird dog','perro de caza','puente de gl[uú]teo',
+    'glute bridge','clamshell','almeja','monster walk','abducci[oó]n de cadera','90.?90',
+    'cossack','tobillo','ankle','dorsiflex','activaci[oó]n','activation','isom[eé]tric'
+  ].join('|'), 'i');
+  const PATRON_PREP = /salud articular|core \/ anti.?rotaci|cardio \/ metcon/i;
+
+  function etiquetar(silencioso){
+    let n = 0;
+    (S.exercises || []).forEach(e => {
+      const txt = (e.es || '') + ' ' + (e.en || '') + ' ' + (e.patron || '') + ' ' + (e.equipo || '');
+      const warm = RX_WARM.test(txt) || /cardio \/ metcon/i.test(e.patron || '');
+      const joint = RX_JOINT.test(txt) || /salud articular/i.test(e.patron || '') ||
+                    (/banda|goma/i.test(e.equipo || '') && /hombro|core/i.test(e.grupo || ''));
+      const antes = !!e.warmOk + !!e.jointOk;
+      if(warm && !e.warmOk) e.warmOk = true;
+      if(joint && !e.jointOk) e.jointOk = true;
+      if(PATRON_PREP.test(e.patron || '') && !e.warmOk && !e.jointOk) e.jointOk = true;
+      if((!!e.warmOk + !!e.jointOk) !== antes) n++;
+    });
+    if(n){
+      try{ save(); }catch(e){}
+      if(!silencioso){ try{ toast('🔥 ' + n + ' ejercicios etiquetados para preparación'); }catch(e){} }
+    }
+    return n;
+  }
+  window.jpEtiquetarPrep = etiquetar;
+  function aptos(){ return (S.exercises || []).filter(e => e.warmOk || e.jointOk); }
+
+  /* coincidencia exacta con la biblioteca: nunca se inventa un video */
+  function exacto(nombre){
+    const k = nrm(nombre);
+    if(!k) return null;
+    return (S.exercises || []).filter(e => nrm(e.es) === k || (e.en && nrm(e.en) === k))[0] || null;
+  }
+  function vincular(nombre){
+    const ex = exacto(nombre);
+    return ex && ex.videoId ? ex : null;
+  }
+
+  /* ---------------------------------------------------------
+     2 · RADIOGRAFÍA DE LA SESIÓN
+     Todo lo programado del día alimenta el contexto de la IA.
+  --------------------------------------------------------- */
+  const ZONA_DE_PATRON = {
+    'Empuje horizontal':['hombro','codo'], 'Empuje vertical':['hombro','columna torácica'],
+    'Tracción vertical':['hombro','columna torácica'], 'Tracción horizontal':['hombro','escápula'],
+    'Rodilla dominante':['tobillo','rodilla','cadera'], 'Cadera dominante':['cadera','lumbar'],
+    'Abducción / Aducción':['cadera'], 'Core / Anti-rotación':['lumbar','cadera'],
+    'Extensión lumbar':['lumbar'], 'Aislamiento hombro':['hombro'],
+    'Bíceps':['codo'], 'Tríceps':['codo'], 'Cardio / Metcon':['tobillo','cadera']
+  };
+  const ZONA_MOV = {
+    'tobillo':'Movilidad de tobillo contra la pared — 8 repeticiones por lado',
+    'rodilla':'Sentadilla profunda asistida con apoyo — 6 repeticiones con pausa de 3 segundos',
+    'cadera':'Estocada con rotación torácica (world greatest) — 5 repeticiones por lado',
+    'lumbar':'Gato y camello — 8 ciclos con respiración larga',
+    'hombro':'Círculos de hombro con banda o palo — 8 repeticiones en cada sentido',
+    'escápula':'Deslizamiento escapular en pared — 8 repeticiones',
+    'columna torácica':'Apertura torácica en cuadrupedia — 6 repeticiones por lado',
+    'codo':'Círculos de codo y muñeca — 10 repeticiones por articulación'
+  };
+  const ZONA_ACT = {
+    'tobillo':'Elevación de talones a un pie — 10 repeticiones por lado',
+    'rodilla':'Extensión isométrica de cuádriceps — 2 series de 15 segundos',
+    'cadera':'Puente de glúteo con banda — 12 repeticiones con pausa arriba',
+    'lumbar':'Dead bug — 8 repeticiones por lado, lumbar pegada al piso',
+    'hombro':'Face pull con banda — 15 repeticiones lentas',
+    'escápula':'Band pull-apart — 15 repeticiones',
+    'columna torácica':'Rotación torácica en banco — 8 repeticiones por lado',
+    'codo':'Curl y extensión con banda liviana — 12 repeticiones'
+  };
+  const ZONA_EST = {
+    'tobillo':'Estiramiento de gemelo y sóleo en escalón — 2 x 30 segundos por pierna',
+    'rodilla':'Estiramiento de cuádriceps de pie con apoyo — 2 x 30 segundos por pierna',
+    'cadera':'Postura del pigeon o 90/90 — 2 x 40 segundos por lado',
+    'lumbar':'Postura del niño con respiración nasal — 2 x 45 segundos',
+    'hombro':'Estiramiento de pectoral en el marco de la puerta — 2 x 30 segundos por lado',
+    'escápula':'Estiramiento de dorsal colgado en barra — 2 x 30 segundos',
+    'columna torácica':'Apertura torácica en rodillo — 2 x 40 segundos',
+    'codo':'Estiramiento de antebrazo flexor y extensor — 2 x 25 segundos por brazo'
+  };
+  const GRUPO_CARDIO = {
+    'Piernas/Glúteos':'Bicicleta fija a ritmo cómodo',
+    'Pectoral':'Remo en ergómetro a ritmo cómodo',
+    'Espalda':'Remo en ergómetro a ritmo cómodo',
+    'Hombros':'Cinta o elíptico a ritmo cómodo',
+    'Brazos':'Cinta o elíptico a ritmo cómodo',
+    'Core':'Caminata rápida o bicicleta a ritmo cómodo',
+    'Full Body / Cardio':'Cuerda o bicicleta a ritmo progresivo'
+  };
+
+  function radiografia(){
+    const ath = (typeof active === 'function') ? active() : null;
+    const d = (typeof curDay === 'function') ? curDay() : null;
+    if(!ath || !d) return null;
+    const exs = [], nombres = [], patrones = {}, grupos = {}, zonas = {};
+    let pesado = false, salto = false, ancla = null;
+
+    (d.bloques || []).forEach(b => {
+      const t = (b.titulo || '') + ' ' + (b.subtitulo || '');
+      if(/warm|calor|movilidad|cool|calma/i.test(t)) return;      /* la propia entrada en calor no cuenta */
+      const ids = (typeof blockExIds === 'function') ? blockExIds(b) : [];
+      ids.forEach(x => {
+        const e = (typeof getEx === 'function') ? getEx(x.exId) : null;
+        if(!e) return;
+        exs.push(e); nombres.push(e.es);
+        grupos[e.grupo] = (grupos[e.grupo] || 0) + 1;
+        if(e.patron) patrones[e.patron] = (patrones[e.patron] || 0) + 1;
+        (ZONA_DE_PATRON[e.patron] || []).forEach(z => zonas[z] = (zonas[z] || 0) + 1);
+        (e.riesgo || []).forEach(r => zonas[r] = (zonas[r] || 0) + 2);
+      });
+      /* patrones que se leen del texto libre de la pizarra */
+      const libre = ((b.items || []).join(' ') + ' ' + (b.movements || []).join(' '));
+      if(/salto|jump|box jump|pliom/i.test(libre + ' ' + t)) salto = true;
+      if(/sentadilla|squat|peso muerto|deadlift|clean|snatch|press banca/i.test(libre + ' ' + t)) pesado = true;
+      if(b.tipo === 'block' && !ancla){
+        const e = (typeof getEx === 'function') ? getEx(b.exId) : null;
+        if(e) ancla = { ex:e, reps:b.reps || '', sets:b.efSets || 0 };
+      }
+      const rpe = parseInt(b.efSets, 10) || 0;
+      if(b.tipo === 'block' && rpe && (parseInt(b.restSeconds, 10) || 0) >= 120) pesado = true;
+    });
+    if(salto) { zonas['tobillo'] = (zonas['tobillo'] || 0) + 3; zonas['cadera'] = (zonas['cadera'] || 0) + 2; }
+
+    const orden = o => Object.keys(o).sort((a, b2) => o[b2] - o[a]);
+    (ath.tags || []).forEach(t => {
+      if(typeof zonasDeTag === 'function') (zonasDeTag(t) || []).forEach(z => zonas[z] = (zonas[z] || 0) + 3);
+    });
+    return {
+      ath: ath, dia: d, exs: exs, nombres: nombres,
+      grupos: orden(grupos), patrones: orden(patrones), zonas: orden(zonas),
+      pesado: pesado, salto: salto, ancla: ancla
+    };
+  }
+  window.jpRadiografia = radiografia;
+
+  /* ---------------------------------------------------------
+     3 · MOTOR LOCAL DEL WARM-UP CONTEXTUAL
+  --------------------------------------------------------- */
+  /* si la biblioteca tiene el movimiento con video, se usa SU nombre exacto:
+     así el alumno recibe el video sin que se invente ninguna coincidencia */
+  const CLAVES = {
+    'tobillo':['tobillo','ankle','dorsiflex','gemelo','soleo','sóleo'],
+    'rodilla':['sentadilla','squat','cuadriceps','cuádriceps'],
+    'cadera':['gluteo','glúteo','puente','hip','cadera','90/90','pigeon','clamshell','almeja'],
+    'lumbar':['dead bug','bird dog','gato','plancha','pallof','lumbar'],
+    'hombro':['face pull','rotacion externa','rotación externa','manguito','hombro','pectoral'],
+    'escápula':['pull apart','pull-apart','escapular','serrato','dorsal'],
+    'columna torácica':['rotacion toracica','rotación torácica','apertura toracica','apertura torácica','movilidad toracica'],
+    'codo':['muñeca','antebrazo','rotacion de muñeca','rotación de muñeca']
+  };
+  /* el nombre de la biblioteca se usa sólo si el movimiento es realmente de preparación;
+     nunca se sustituye un ejercicio de movilidad por uno de fuerza que comparta palabra */
+  function deBiblioteca(zona, fallback, prefiere, usados){
+    const claves = CLAVES[zona] || [];
+    const pool = aptos();
+    const orden = prefiere === 'joint'
+      ? [pool.filter(e => e.jointOk), pool.filter(e => e.warmOk)]
+      : [pool.filter(e => e.warmOk), pool.filter(e => e.jointOk)];
+    for(let g = 0; g < orden.length; g++){
+      for(let i = 0; i < claves.length; i++){
+        const k = nrm(claves[i]);
+        const hit = orden[g].filter(e => e.videoId && nrm(e.es).indexOf(k) >= 0 &&
+                                         !(usados && usados[nrm(e.es)]))[0];
+        if(hit){ if(usados) usados[nrm(hit.es)] = 1; return hit.es; }
+      }
+    }
+    return fallback;
+  }
+  /* ninguna línea se repite dentro de la misma preparación */
+  function dedupe(fases){
+    const visto = {};
+    fases.forEach(f => {
+      f.items = f.items.filter(i => {
+        const k = nrm(i.t);
+        if(!k || visto[k]) return false;
+        visto[k] = 1; return true;
+      });
+    });
+    return fases.filter(f => f.items.length);
+  }
+
+  function warmLocal(r){
+    const zonas = r.zonas.length ? r.zonas.slice(0, 3) : ['cadera', 'hombro'];
+    const cardio = GRUPO_CARDIO[r.grupos[0]] || 'Bicicleta o remo a ritmo cómodo';
+    const f1 = [{ t: cardio, d: '2 min' }];
+    const usados = {};
+    const f2 = zonas.slice(0, 3).map(z => {
+      const base = ZONA_MOV[z] || ZONA_MOV['cadera'];
+      return { t: deBiblioteca(z, base.split(' — ')[0], 'warm', usados), d: base.split(' — ')[1] || '' };
+    });
+    const f3 = zonas.slice(0, 2).map(z => {
+      const base = ZONA_ACT[z] || ZONA_ACT['cadera'];
+      return { t: deBiblioteca(z, base.split(' — ')[0], 'joint', usados), d: base.split(' — ')[1] || '' };
+    });
+    if(r.salto) f3.push({ t:'Saltos al cajón bajos, aterrizaje silencioso', d:'5 repeticiones' });
+    if(r.ancla) f3.push({ t: r.ancla.ex.es, d:'aproximación técnica · 1x8 al 40% y 1x5 al 60%' });
+    const nota = 'La preparación está armada para lo que te toca hoy: ' +
+      (r.grupos.length ? 'el volumen se concentra en ' + r.grupos.slice(0, 2).join(' y ') + ', ' : '') +
+      'así que priorizás movilidad de ' + zonas.slice(0, 2).join(' y ') +
+      ' y activación antes de la primera serie pesada. No te lleva más de 7 minutos.';
+    return { fases: dedupe([
+      { t:'Elevación de temperatura y pulso', min:'1-2 min', items:f1 },
+      { t:'Movilidad articular específica',   min:'2-3 min', items:f2 },
+      { t:'Activación y potenciación neuromuscular', min:'2 min', items:f3 }
+    ]), nota: nota, motor:'local' };
+  }
+
+  function coolLocal(r){
+    const zonas = r.zonas.length ? r.zonas.slice(0, 3) : ['cadera', 'lumbar'];
+    const f1 = [{ t:'Respiración diafragmática tumbado, inhalás 4 segundos y exhalás 6', d:'2 min' },
+                { t:'Caminata o pedaleo muy suave, sin resistencia', d:'2 min' }];
+    const usados = {};
+    const f2 = zonas.slice(0, 3).map(z => {
+      const base = ZONA_EST[z] || ZONA_EST['cadera'];
+      return { t: deBiblioteca(z, base.split(' — ')[0], 'warm', usados), d: base.split(' — ')[1] || '' };
+    });
+    if(r.grupos[0]) f2.push({ t:'Liberación con rodillo sobre ' + String(r.grupos[0]).toLowerCase() + ', sin buscar dolor', d:'60 s' });
+    const nota = 'Hoy acumulaste el mayor estrés mecánico en ' +
+      (r.grupos.slice(0, 2).join(' y ') || 'el tren inferior') +
+      ', así que la vuelta a la calma apunta ahí. Sostené cada posición sin rebotes y no cortes la respiración.';
+    return { fases: dedupe([
+      { t:'Bajada de pulsaciones y regulación parasimpática', min:'1-2 min', items:f1 },
+      { t:'Descompresión y movilidad guiada',                 min:'3-5 min', items:f2 }
+    ]), nota: nota, motor:'local' };
+  }
+
+  /* ---------------------------------------------------------
+     4 · PROMPTS DE IA
+  --------------------------------------------------------- */
+  const REGLAS =
+    'REGLA INNEGOCIABLE DE PERSPECTIVA: escribís SIEMPRE en segunda persona del singular (vos / tu / tuyo), ' +
+    'hablándole directamente al alumno. PROHIBIDO la tercera persona: nunca «el atleta», «la alumna», «se recomienda». ' +
+    'REGLA INNEGOCIABLE DE ESTILO: PROHIBIDO EL USO DE EMOJIS, íconos o símbolos decorativos. ' +
+    'Tono técnico, claro, profesional y ejecutivo. ';
+  const SIS_WU =
+    'Sos Coach JP, preparador físico argentino especializado en preparación del movimiento. ' + REGLAS +
+    'Prescribís una entrada en calor ESPECÍFICA de 5 a 7 minutos para la sesión que te describen, ' +
+    'no una rutina genérica. Analizás todos los ejercicios y patrones de carga programados: ' +
+    'si hay sentadilla pesada priorizás movilidad de tobillo y activación de glúteo medio; ' +
+    'si hay saltos sumás potenciación post-activación; si hay empujes priorizás hombro y torácica. ' +
+    'Devolvés SIEMPRE un JSON válido con esta forma exacta: ' +
+    '{"fases":[{"t":"...","min":"...","items":[{"t":"...","d":"..."}]}],"nota":"..."}. ' +
+    'Tienen que ser EXACTAMENTE 3 fases, en este orden y con estos títulos: ' +
+    '1) "Elevación de temperatura y pulso" con min "1-2 min"; ' +
+    '2) "Movilidad articular específica" con min "2-3 min"; ' +
+    '3) "Activación y potenciación neuromuscular" con min "2 min". ' +
+    'Cada item tiene "t" (el ejercicio, sin dosis adentro) y "d" (la dosis: repeticiones, segundos o minutos). ' +
+    'La fase 3 cierra con una serie de aproximación técnica hacia el primer bloque del día. ' +
+    '"nota" son 1 o 2 oraciones que le explican al alumno por qué esta preparación y no otra.';
+  const SIS_CD =
+    'Sos Coach JP, preparador físico argentino especializado en recuperación post-entrenamiento. ' + REGLAS +
+    'Prescribís una vuelta a la calma para la sesión que te describen, analizando qué grupos musculares ' +
+    'acumularon más fatiga y estrés mecánico hoy. ' +
+    'Devolvés SIEMPRE un JSON válido con esta forma exacta: ' +
+    '{"fases":[{"t":"...","min":"...","items":[{"t":"...","d":"..."}]}],"nota":"..."}. ' +
+    'Tienen que ser EXACTAMENTE 2 fases, en este orden y con estos títulos: ' +
+    '1) "Bajada de pulsaciones y regulación parasimpática" con min "1-2 min", con respiración diafragmática ' +
+    'o caminata y pedaleo suave; ' +
+    '2) "Descompresión y movilidad guiada" con min "3-5 min", con estiramientos pasivos o activos ' +
+    'sobre la musculatura acortada o congestionada en la sesión. ' +
+    'Cada item tiene "t" (el ejercicio, sin dosis adentro) y "d" (la dosis en segundos, repeticiones o minutos). ' +
+    '"nota" son 1 o 2 oraciones que le explican al alumno qué zona quedó más cargada hoy y por qué la trabaja.';
+
+  function contexto(r){
+    const a = r.ath;
+    return 'Sesión: "' + (r.dia.title || r.dia.label || r.dia.short || 'Día') + '".' +
+      (a.tags && a.tags.length ? ' Antecedentes del alumno: ' + a.tags.join(', ') + '.' : '') +
+      (a.prohibidos && a.prohibidos.length ? ' Ejercicios vetados: ' + a.prohibidos.join(', ') + '.' : '') +
+      '\nEjercicios programados hoy: ' + (r.nombres.join(', ') || 'sin cargar') + '.' +
+      '\nPatrones de carga dominantes: ' + (r.patrones.slice(0, 4).join(', ') || 'general') + '.' +
+      '\nGrupos musculares con más volumen: ' + (r.grupos.slice(0, 3).join(', ') || 'general') + '.' +
+      '\nArticulaciones diana: ' + (r.zonas.slice(0, 4).join(', ') || 'cadera, hombro') + '.' +
+      (r.pesado ? '\nHay trabajo pesado de fuerza en la sesión.' : '') +
+      (r.salto ? '\nHay trabajo de salto o pliometría en la sesión.' : '') +
+      (r.ancla ? '\nPrimer bloque del día: ' + r.ancla.ex.es + (r.ancla.reps ? ' a ' + r.ancla.reps + ' repeticiones.' : '.') : '') +
+      '\nEjercicios de preparación disponibles en la biblioteca (usá estos nombres tal cual cuando apliquen): ' +
+      aptos().slice(0, 40).map(e => e.es).join(', ') + '.';
+  }
+
+  function normalizar(j, minFases){
+    if(!j || !Array.isArray(j.fases) || j.fases.length < minFases) return null;
+    return {
+      fases: j.fases.slice(0, 3).map(f => ({
+        t: sinEmojis(f.t || ''), min: sinEmojis(f.min || ''),
+        items: (Array.isArray(f.items) ? f.items : []).map(i => ({
+          t: sinEmojis(typeof i === 'string' ? i : (i.t || '')),
+          d: sinEmojis(typeof i === 'string' ? '' : (i.d || ''))
+        })).filter(i => i.t)
+      })).filter(f => f.t && f.items.length),
+      nota: directo(j.nota || ''), motor:'ia'
+    };
+  }
+
+  async function generar(tipo){
+    const r = radiografia();
+    if(!r){ try{ toast('Elegí un alumno y un día primero', 'warn'); }catch(e){} return null; }
+    if(!r.exs.length && !((r.dia.bloques || []).length)){
+      try{ toast('Cargá los bloques de la sesión antes de generar la preparación', 'warn'); }catch(e){} return null;
+    }
+    const load = document.getElementById(tipo === 'wu' ? 'wuLoad' : 'cdLoad');
+    if(load) load.style.display = 'inline-flex';
+
+    let out = null;
+    const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
+    if(conIA){
+      try{
+        const txt = await window.CoachAI.generarTexto(contexto(r), tipo === 'wu' ? SIS_WU : SIS_CD);
+        const m = String(txt).match(/\{[\s\S]*\}/);
+        if(m) out = normalizar(JSON.parse(m[0]), tipo === 'wu' ? 3 : 2);
+      }catch(e){
+        try{ toast('La IA no respondió: se prescribió con el motor local', 'warn'); }catch(x){}
+      }
+    }
+    if(!out) out = (tipo === 'wu') ? warmLocal(r) : coolLocal(r);
+    out.fases = dedupe(out.fases || []);
+    out.nota = directo(out.nota || '');
+    /* vinculación automática de videos por coincidencia exacta */
+    out.fases.forEach(f => f.items.forEach(i => {
+      const ex = vincular(i.t);
+      if(ex){ i.exId = ex.id; i.video = true; }
+    }));
+    out.ts = Date.now();
+
+    if(load) load.style.display = 'none';
+    const a = active(), d = curDay();
+    setPrep(a.id, d.id, tipo === 'wu' ? { wu: out } : { cd: out });
+    aplicar(tipo, out);
+    pintar(tipo, out);
+    try{ toast(out.motor === 'ia'
+      ? (tipo === 'wu' ? '🔥 Warm-up contextual generado con IA' : '🧘 Cool-down generado con IA')
+      : (tipo === 'wu' ? '🔥 Warm-up contextual generado con el motor local' : '🧘 Cool-down generado con el motor local')); }catch(e){}
+    return out;
+  }
+  window.jpGenerarPrep = generar;
+
+  /* ---------------------------------------------------------
+     5 · VOLCADO A LA SESIÓN
+  --------------------------------------------------------- */
+  function lineas(out){
+    const items = [];
+    out.fases.forEach((f, i) => {
+      items.push((i + 1) + '. ' + f.t + (f.min ? ' (' + f.min + ')' : ''));
+      f.items.forEach(x => items.push(x.t + (x.d ? ' — ' + x.d : '')));
+    });
+    return items;
+  }
+  function aplicar(tipo, out){
+    const d = (typeof curDay === 'function') ? curDay() : null;
+    if(!d) return;
+    if(tipo === 'wu'){
+      const b = { id:'wu' + Math.random().toString(36).slice(2, 8),
+                  tipo:'list', category:'warmup', icon:'🔥',
+                  titulo:'ENTRADA EN CALOR ESPECÍFICA',
+                  subtitulo:'Temperatura · Movilidad · Activación · 5-7 min',
+                  items: lineas(out), tips: out.nota || '' };
+      const prev = (d.bloques || []).findIndex(x =>
+        x.category === 'warmup' || /entrada en calor|warm.?up/i.test(x.titulo || ''));
+      if(prev >= 0){ b.id = d.bloques[prev].id; d.bloques.splice(prev, 1, b); }
+      else d.bloques.unshift(b);
+    } else {
+      d.cooldown = lineas(out);
+      d.cooldownNota = out.nota || '';
+    }
+    try{ save(); }catch(e){}
+    if(typeof renderBuilder === 'function') renderBuilder();
+  }
+
+  /* ---------------------------------------------------------
+     6 · TARJETAS EN EL BUILDER
+  --------------------------------------------------------- */
+  function esc2(s){
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function pintar(tipo, out){
+    const box = document.getElementById(tipo === 'wu' ? 'wuOut' : 'cdOut');
+    if(!box) return;
+    if(!out || !out.fases || !out.fases.length){ box.classList.remove('on'); box.innerHTML = ''; return; }
+    box.classList.add('on');
+    box.innerHTML = out.fases.map((f, i) =>
+      '<div class="pf"><h4>' + (i + 1) + ' · ' + esc2(f.t) +
+        (f.min ? '<span class="pm">' + esc2(f.min) + '</span>' : '') + '</h4>' +
+      f.items.map(x =>
+        '<div class="pl"><span class="pn"></span><span class="px">' + esc2(x.t) + '</span>' +
+        (x.d ? '<span class="pd">' + esc2(x.d) + '</span>' : '') +
+        (x.video ? '<span class="pv">▶ Video</span>' : '') + '</div>').join('') +
+      '</div>').join('') +
+      (out.nota ? '<p class="pnota">' + esc2(out.nota) + '</p>' : '');
+  }
+
+  function esCF(){
+    try{
+      const p = plan(S.activeId);
+      return !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
+    }catch(e){ return false; }
+  }
+
+  function montar(){
+    const panel = document.getElementById('dayPanel');
+    if(!panel) return;
+    const a = (typeof active === 'function') ? active() : null;
+    const d = (typeof curDay === 'function') ? curDay() : null;
+    let wu = document.getElementById('wuCard');
+    let cd = document.getElementById('cdCard');
+    if(!a || !d){ if(wu) wu.remove(); if(cd) cd.remove(); return; }
+
+    if(!wu){
+      wu = document.createElement('div');
+      wu.className = 'card prep-card wu'; wu.id = 'wuCard';
+      wu.innerHTML =
+        '<h3>🔥 Warm-Up Específico del Día<span class="pc-badge" id="wuMotor">IA</span></h3>' +
+        '<p class="pc-sub">El sistema escanea todos los ejercicios y patrones de carga de esta sesión y ' +
+        'prescribe la preparación en tres fases: pulso, movilidad de las articulaciones diana y activación ' +
+        'con aproximación al primer bloque.</p>' +
+        '<div class="prep-acts">' +
+          '<button class="btn gold" id="wuRun" type="button">✨ Generar Warm-Up Contextual (5-7 min)</button>' +
+          '<button class="btn" id="wuClear" type="button">🗑️ Quitar warm-up</button>' +
+        '</div>' +
+        '<div class="prep-load" id="wuLoad" style="display:none"><i></i> Analizando los patrones de la sesión…</div>' +
+        '<div class="prep-out" id="wuOut"></div>';
+      const primero = panel.querySelector('.card');
+      if(primero) panel.insertBefore(wu, primero); else panel.appendChild(wu);
+      document.getElementById('wuRun').addEventListener('click', () => generar('wu'));
+      document.getElementById('wuClear').addEventListener('click', () => {
+        const at = active(), dy = curDay();
+        if(!at || !dy) return;
+        const i = (dy.bloques || []).findIndex(x => x.category === 'warmup' || /entrada en calor|warm.?up/i.test(x.titulo || ''));
+        if(i >= 0) dy.bloques.splice(i, 1);
+        setPrep(at.id, dy.id, { wu:null });
+        pintar('wu', null);
+        try{ save(); }catch(e){}
+        if(typeof renderBuilder === 'function') renderBuilder();
+        try{ toast('Warm-up quitado de este día'); }catch(e){}
+      });
+    }
+    if(!cd){
+      cd = document.createElement('div');
+      cd.className = 'card prep-card cd'; cd.id = 'cdCard';
+      cd.innerHTML =
+        '<h3>🧘 Cool-Down y Movilidad Post-Entreno<span class="pc-badge" id="cdMotor">IA</span></h3>' +
+        '<p class="pc-sub">Opcional. Analiza qué grupos acumularon más fatiga y estrés mecánico hoy y ' +
+        'prescribe la bajada de pulsaciones y la descompresión de esa musculatura.</p>' +
+        '<div class="prep-acts">' +
+          '<button class="btn gold" id="cdRun" type="button">✨ Generar Cool-Down con IA</button>' +
+          '<button class="btn" id="cdClear" type="button">🗑️ Quitar cool-down</button>' +
+        '</div>' +
+        '<div class="prep-load" id="cdLoad" style="display:none"><i></i> Midiendo la fatiga acumulada de la sesión…</div>' +
+        '<div class="prep-out" id="cdOut"></div>';
+      panel.appendChild(cd);
+      document.getElementById('cdRun').addEventListener('click', () => generar('cd'));
+      document.getElementById('cdClear').addEventListener('click', () => {
+        const at = active(), dy = curDay();
+        if(!at || !dy) return;
+        dy.cooldown = []; dy.cooldownNota = '';
+        setPrep(at.id, dy.id, { cd:null });
+        pintar('cd', null);
+        try{ save(); }catch(e){}
+        if(typeof renderBuilder === 'function') renderBuilder();
+        try{ toast('Cool-down quitado de este día'); }catch(e){}
+      });
+    } else if(cd.parentNode !== panel || cd.nextSibling){
+      panel.appendChild(cd);                        /* el cool-down cierra siempre la sesión */
+    }
+
+    const hay = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
+    ['wuMotor', 'cdMotor'].forEach(id => {
+      const m = document.getElementById(id);
+      if(!m) return;
+      m.textContent = hay ? 'IA conectada' : 'Motor local';
+      m.style.opacity = hay ? '1' : '.7';
+    });
+    /* el warm-up de CrossFit lo maneja la pizarra: la tarjeta se oculta */
+    wu.style.display = esCF() ? 'none' : '';
+
+    const clave = a.id + '|' + d.id;
+    if(wu.dataset.k !== clave){
+      wu.dataset.k = clave; cd.dataset.k = clave;
+      const c = prepDe(a.id, d.id);
+      pintar('wu', c.wu); pintar('cd', c.cd);
+    }
+  }
+
+  function repintar(){ try{ etiquetar(true); montar(); }catch(e){} }
+  function mount(){
+    repintar();
+    [600, 1700, 2900].forEach(ms => setTimeout(repintar, ms));
+    ['renderDay','renderBuilder','go'].forEach(fn => {
+      const _f = window[fn];
+      if(typeof _f !== 'function') return;
+      window[fn] = function(){
+        const r = _f.apply(this, arguments);
+        setTimeout(repintar, 100);
+        return r;
+      };
+    });
+    window.CoachPrep = { generar: generar, radiografia: radiografia, etiquetar: etiquetar,
+                         aptos: aptos, leer: prepDe, local: { wu: warmLocal, cd: coolLocal } };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
