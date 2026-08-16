@@ -11153,13 +11153,16 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   }
   var RX_WARM = /entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|vuelta a la calma/i;
   function esWarm(b, bl){
+    /* un bloque con series, biset o finisher es trabajo medible: nunca warm-up */
+    if(b && (b.isBlock || b.isSuperset || b.isFinisher)) return false;
+    if(bl.querySelector('.set-row, .set-tracker')) return false;
     if(b && b.blockType && /warm/i.test(b.blockType)) return true;
     if(b && b.boardFmt && /WARM/i.test(b.boardFmt)) return true;
     if(b && b.category === 'warmup') return true;
     if(bl.classList.contains('cat-warmup')) return true;
-    var t = ((b && b.title) || '') + ' ' + ((b && b.subtitle) || '') + ' ' +
-            ((bl.querySelector('.block-label') || {}).textContent || '');
-    return RX_WARM.test(t);
+    /* sólo el título del bloque decide, nunca una palabra suelta del subtítulo */
+    var t = ((b && b.title) || (bl.querySelector('.block-label') || {}).textContent || '').trim();
+    return /^(?:\\W*)?(entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|vuelta a la calma)/i.test(t);
   }
   function esc(s){
     return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -11285,7 +11288,10 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         if(l.classList.contains('dup') || l.classList.contains('head')) return;
         n++;
         var num = l.querySelector('span.n');
-        if(num && num.textContent !== String(n)) num.textContent = String(n);
+        var board = l.closest('.cf-board, .wod-board');
+        var volt = board && board.classList.contains('board-volt');
+        var txt = volt ? (n < 10 ? '0' + n : String(n)) : String(n);
+        if(num && num.textContent !== txt) num.textContent = txt;
       });
     });
   }
@@ -11530,6 +11536,200 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 420); });
   else setTimeout(mount, 420);
+})();
+<\/script>
+
+
+<style>
+/* =========================================================
+   COACH JP · TARJETA PREMIUM DE AMRAP · HYROX · CARDIO
+   Y REFUERZO DE LA INTERFAZ INTERACTIVA DE MUSCULACIÓN
+========================================================= */
+/* ---------- nombre del ejercicio y play circular ---------- */
+.block:not(.wu-card) .ex-name{
+  font-family:'Inter',sans-serif;font-size:16px;font-weight:600;
+  letter-spacing:0.005em;color:var(--text-primary,#fff);line-height:1.35;
+}
+.block:not(.wu-card) .ex-name .video-link{
+  width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,0.08);border:1px solid rgba(255,214,0,0.42);vertical-align:middle;margin-left:7px;
+}
+.block:not(.wu-card) .ex-name .video-link svg{width:11px;height:11px;fill:#FFD600}
+.block:not(.wu-card) .ex-name .video-link:hover{
+  background:rgba(255,214,0,0.16);box-shadow:0 0 12px rgba(255,214,0,0.32);
+}
+/* las cápsulas de herramientas siempre visibles sobre las series */
+.block:not(.wu-card):not(.wod-puro) .jp-tools,
+.block:not(.wu-card):not(.wod-puro) .cap-bar{display:flex !important;flex-wrap:wrap}
+.block:not(.wu-card) .cap-tool{display:inline-flex !important}
+/* ---------- tarjeta premium AMRAP / HYROX / CARDIO ---------- */
+.board-volt{
+  background:rgba(255,214,0,0.04) !important;
+  border:1px solid rgba(255,214,0,0.2) !important;
+  border-radius:16px !important;
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 14px 40px -18px rgba(0,0,0,0.7);
+}
+.board-volt .cf-h,.board-volt .wb-h{
+  background:linear-gradient(90deg,rgba(255,214,0,0.13),rgba(255,214,0,0.02)) !important;
+  border-bottom:1px solid rgba(255,214,0,0.22) !important;padding:11px 15px !important;
+}
+.board-volt .cf-fmt,.board-volt .wb-fmt{
+  color:#FFD600 !important;font-size:1.12rem !important;letter-spacing:0.14em !important;
+  text-shadow:0 0 18px rgba(255,214,0,0.4) !important;
+  background:transparent !important;border:none !important;
+}
+.board-volt .cf-t{color:#fff !important;font-size:1.02rem}
+.board-volt .cf-body,.board-volt .wb-body{padding:12px 15px !important}
+.board-volt .cf-line,.board-volt .wb-line{
+  font-family:'Inter',sans-serif !important;font-size:15.5px !important;line-height:1.6 !important;
+  color:#FFFFFF !important;padding:6px 0 !important;align-items:baseline;
+}
+.board-volt .cf-line span,.board-volt .wb-line span{
+  font-family:'Inter',sans-serif !important;color:#FFFFFF !important;
+}
+.board-volt .cf-line span.n,.board-volt .wb-line span.n{
+  font-family:'JetBrains Mono',ui-monospace,monospace !important;
+  color:#FFD600 !important;opacity:1 !important;font-weight:800;font-size:13px;
+  min-width:26px !important;text-align:left;letter-spacing:0.04em;
+}
+.board-volt .cf-line.head,.board-volt .wb-line.head{
+  font-family:'Barlow Condensed',sans-serif !important;color:rgba(255,255,255,0.72) !important;
+  letter-spacing:0.12em;text-transform:uppercase;font-size:0.82rem !important;
+}
+.board-volt .cf-line .det{color:rgba(255,255,255,0.62) !important}
+/* niveles y score de alto contraste */
+.board-volt .cf-levels{padding:0 15px 4px}
+.board-volt .cf-levels .lv{
+  background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.18);
+  color:#fff;min-height:32px;padding:5px 12px;
+}
+.board-volt .cf-levels .lv.rx{border-color:rgba(0,230,118,0.5)}
+.board-volt .cf-levels .lv.adv{border-color:rgba(255,214,0,0.5)}
+.board-volt .cf-levels .lv.sc{border-color:rgba(0,240,255,0.5)}
+.board-volt .cf-score,.board-volt .wod-score{
+  margin:2px 15px 14px !important;padding:11px 13px !important;border-radius:12px !important;
+  background:rgba(255,255,255,0.04) !important;border:1px solid rgba(255,214,0,0.28) !important;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+}
+.board-volt .cf-score label,.board-volt .wod-score label{
+  font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.76rem;
+  letter-spacing:0.14em;text-transform:uppercase;color:#FFD600;
+}
+.board-volt .cf-score input,.board-volt .wod-score input{
+  flex:1 1 150px;min-height:44px;padding:9px 12px;border-radius:10px;
+  background:rgba(18,22,31,0.92) !important;border:1px solid rgba(255,255,255,0.18) !important;
+  color:#fff !important;font-family:'JetBrains Mono',ui-monospace,monospace !important;
+  font-size:0.9rem !important;font-weight:700;
+}
+.board-volt .cf-score input:focus,.board-volt .wod-score input:focus{
+  border-color:#FFD600 !important;box-shadow:0 0 0 3px rgba(255,214,0,0.14);outline:none;
+}
+.block.disc-met .board-volt,.block.disc-acc .board-volt{border-color:rgba(255,214,0,0.2) !important}
+</style>
+
+<script>
+/* =========================================================
+   COACH JP · AMRAP premium y musculación interactiva
+========================================================= */
+(function(){
+  function bloqueDe(id){
+    var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+    if(!d || !id) return null;
+    var todos = (d.blocks || []).concat(d.finisher ? [d.finisher] : [], d.hyrox ? [d.hyrox] : []);
+    return todos.filter(function(b){ return b.id === id; })[0] || null;
+  }
+
+  /* ---------------------------------------------------------
+     1 · AMRAP · HYROX · CARDIO CON TRATAMIENTO VOLT
+  --------------------------------------------------------- */
+  function esVolt(b, bl){
+    var t = ((b && b.title) || '') + ' ' + ((b && b.subtitle) || '') + ' ' +
+            ((b && b.boardFmt) || '') + ' ' + ((b && b.protocol) || '');
+    var cuerpo = (bl.querySelector('.cf-body, .wb-body') || {}).textContent || '';
+    if(b && b.isHyrox) return true;
+    if(b && b.category === 'cardio') return true;
+    return /\\bamrap\\b/i.test(t + ' ' + cuerpo) || /\\bengine\\b|zona 2/i.test(t);
+  }
+  function volt(){
+    document.querySelectorAll('.block').forEach(function(bl){
+      var board = bl.querySelector('.cf-board') || bl.querySelector('.wod-board');
+      if(!board) return;
+      var b = bloqueDe(bl.dataset.blockId);
+      var on = esVolt(b, bl);
+      if(board.classList.contains('board-volt') !== on) board.classList.toggle('board-volt', on);
+      if(!on) return;
+      /* numeración de dos dígitos en amarillo neón */
+      var n = 0;
+      board.querySelectorAll('.cf-line, .wb-line').forEach(function(l){
+        if(l.classList.contains('dup') || l.classList.contains('head')) return;
+        n++;
+        var num = l.querySelector('span.n');
+        var txt = n < 10 ? '0' + n : String(n);
+        if(!num){
+          num = document.createElement('span');
+          num.className = 'n';
+          l.insertBefore(num, l.firstChild);
+        }
+        if(num.textContent !== txt) num.textContent = txt;
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------
+     2 · MUSCULACIÓN: SERIES, HERRAMIENTAS Y VIDEO SIEMPRE VIVOS
+  --------------------------------------------------------- */
+  function interactivo(){
+    if(document.body.classList.contains('cf-modo')) return;
+    document.querySelectorAll('.block').forEach(function(bl){
+      var b = bloqueDe(bl.dataset.blockId);
+      if(!b || !(b.isBlock || b.isSuperset || b.isFinisher)) return;
+      /* un bloque de trabajo nunca queda como tarjeta de lectura */
+      if(bl.classList.contains('wu-card')){
+        bl.classList.remove('wu-card');
+        var lista = bl.querySelector('.wu-list');
+        if(lista) lista.remove();
+        bl.querySelectorAll('.ex-row, .wu-phase').forEach(function(x){ x.style.display = ''; });
+        var brd = bl.querySelector('.cf-board, .wod-board');
+        if(brd){ brd.style.background = ''; brd.style.border = ''; brd.style.display = ''; }
+        if(typeof renderMain === 'function' && !bl.querySelector('.set-row')) setTimeout(renderMain, 30);
+      }
+      /* las cápsulas de herramientas quedan encima de las series */
+      var box = bl.querySelector('.jp-tools, .cap-bar');
+      var tracker = bl.querySelector('.set-tracker');
+      if(box && tracker && tracker.parentNode && box.nextElementSibling !== tracker){
+        tracker.parentNode.insertBefore(box, tracker);
+      }
+    });
+  }
+
+  function repintar(){ try{ volt(); interactivo(); }catch(e){} }
+  function mount(){
+    repintar();
+    var main = document.getElementById('mainContent') || document.body;
+    var pend = false, propio = false;
+    new MutationObserver(function(){
+      if(pend || propio) return;
+      pend = true;
+      setTimeout(function(){
+        pend = false; propio = true;
+        try{ repintar(); }catch(e){}
+        setTimeout(function(){ propio = false; }, 210);
+      }, 200);
+    }).observe(main, { childList:true, subtree:true });
+    if(typeof window.renderMain === 'function'){
+      var _rm = window.renderMain;
+      window.renderMain = function(){
+        var r = _rm.apply(this, arguments);
+        setTimeout(repintar, 260);
+        setTimeout(repintar, 720);
+        return r;
+      };
+    }
+    window.CoachPremium = { volt: volt, interactivo: interactivo, repintar: repintar };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 460); });
+  else setTimeout(mount, 460);
 })();
 <\/script>
 
