@@ -9875,6 +9875,23 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.16rem;
   letter-spacing:0.07em;text-transform:uppercase;color:#FFD600;margin-bottom:12px;line-height:1.22;
 }
+.fin-block .fb-work{
+  margin:0 0 13px;padding:12px 13px;border-radius:12px;
+  background:rgba(255,214,0,0.04);border:1px solid rgba(255,214,0,0.2);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+}
+.fin-block .fb-work .fw-l{
+  display:flex;gap:10px;align-items:baseline;
+  font-size:15px;line-height:1.6;color:#FFFFFF;padding:2px 0;
+}
+.fin-block .fb-work .fw-l .fw-n{
+  flex:0 0 auto;min-width:22px;color:#FFD600;font-weight:700;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;
+}
+.fin-block .fb-work .fw-h{
+  font-family:var(--font-head,inherit);font-size:13px;letter-spacing:0.09em;
+  text-transform:uppercase;color:#FFD600;font-weight:800;margin-bottom:4px;
+}
 .fin-block .fb-sec{margin-bottom:12px}
 .fin-block .fb-sec:last-child{margin-bottom:0}
 .fin-block .fb-sec h5{
@@ -9935,6 +9952,7 @@ body.cf-modo .fin-block{display:none !important}
     var html =
       '<div class="fb-eyebrow">Finisher &middot; Bloque de congesti&oacute;n final</div>' +
       '<div class="fb-proto">' + txt(f.protocolo) + '</div>' +
+      (f.trabajo ? '<div class="fb-work">' + lineas(f.trabajo) + '</div>' : '') +
       (f.objetivos ? '<div class="fb-sec"><h5>Objetivos fisiol&oacute;gicos</h5><p>' + txt(f.objetivos) + '</p></div>' : '') +
       (f.tips ? '<div class="fb-sec"><h5>Coaching tips y estrategia</h5><p>' + txt(f.tips) + '</p></div>' : '');
     if(viejo){ if(viejo.innerHTML !== html) viejo.innerHTML = html; return; }
@@ -9944,6 +9962,16 @@ body.cf-modo .fin-block{display:none !important}
     var stack = vista.querySelector('.blocks-stack');
     if(stack && stack.parentNode) stack.parentNode.insertBefore(caja, stack.nextSibling);
     else vista.appendChild(caja);
+  }
+  /* el protocolo formateado se pinta línea por línea, con su numeración en volt */
+  function lineas(s){
+    return String(s || '').split(/\\r?\\n/).map(function(l){
+      var t = txt(l);
+      if(!t) return '';
+      var m = t.match(/^(\\d{1,2})[.)]\\s*(.+)$/);
+      if(m) return '<div class="fw-l"><span class="fw-n">' + m[1] + '</span>' + m[2] + '</div>';
+      return '<div class="fw-l fw-h">' + t + '</div>';
+    }).join('');
   }
   /* regla estricta del módulo: nada de emojis en el texto generado */
   function txt(s){
@@ -10481,7 +10509,11 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
       var esCore = !!(b && b.coreBlock) || RX_CORE.test(titulo);
       bl.classList.toggle('core-card', esCore);
       if(esCore){
-        bl.querySelectorAll('.load-suggest, .pre-bar, .set-tracker').forEach(function(x){ x.remove(); });
+        /* el core estructurado (individual / biset / triset / circuito) conserva
+           sus filas interactivas: sólo se limpia la sugerencia de intensidad */
+        var estructurado = !!(b && (b.isBlock || b.isSuperset)) || !!bl.querySelector('.set-tracker');
+        var fuera = estructurado ? '.load-suggest, .pre-bar' : '.load-suggest, .pre-bar, .set-tracker';
+        bl.querySelectorAll(fuera).forEach(function(x){ x.remove(); });
       }
     });
   }
@@ -10642,6 +10674,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
   var RX_WARM = /entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|estiramiento/i;
+  var RX_CORE = /\\bcore\\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
 
   /* ---------------------------------------------------------
      1 · PRESCRIPCIÓN COMO BADGE PRIORITARIO
@@ -10694,8 +10727,18 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   /* ---------------------------------------------------------
      2 · TAG DE ESTRUCTURA ESTANDARIZADO + VOLUMEN CONSOLIDADO
   --------------------------------------------------------- */
+  var CORE_LB = { single:'EJERCICIO INDIVIDUAL', biset:'BISET', triset:'TRISET', circuito:'CIRCUITO' };
   function estructura(b, bl){
     var wi = (typeof state !== 'undefined' && state) ? (state.currentWeek || 0) : 0;
+    /* el core declara su estructura una sola vez: modo, rondas y estaciones */
+    if(b && b.coreBlock && (b.isSuperset || b.isBlock)){
+      var cn = b.isSuperset ? ((b.exercises || []).length) : 1;
+      var cm = b.coreMode || (cn >= 4 ? 'circuito' : cn === 3 ? 'triset' : cn === 2 ? 'biset' : 'single');
+      var cr = parseInt(b.efSets, 10) || 3;
+      return { kind:'Core', main:'<b>' + (CORE_LB[cm] || 'CIRCUITO') + '</b> · ' + cr + ' RONDA' +
+                 (cr === 1 ? '' : 'S') + ' · ' + cn + ' EJERCICIO' + (cn === 1 ? '' : 'S'),
+               vol: cr + ' rondas · ' + cn + ' ejercicios' };
+    }
     if(b && b.isSuperset){
       var r = (b.efSets || 3);
       return { kind:'Linked Block', main:(b.isTriset ? 'TRI-SET' : 'BISET') + ' <b>(' + r + ' RONDAS TOTALES)</b>',
@@ -10838,6 +10881,9 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
       if(!b || b.isBlock || b.isSuperset || b.isFinisher) return;
       var titulo = (b.title || '') + ' ' + (b.subtitle || '');
       if(RX_WARM.test(titulo)) return;                 /* la entrada en calor no se registra */
+      /* el core se registra con sus filas de serie: nada de checkboxes genéricos en bucle */
+      if(b.coreBlock || RX_CORE.test(titulo)) return;
+      if(bl.querySelector('.set-tracker')) return;
       state.logs = state.logs || {};
       bl.querySelectorAll('.ex-row').forEach(function(row, i){
         if(row.querySelector('.mini-log')) return;
@@ -11473,6 +11519,33 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
       window.CoachTV.rest(seg, etiqueta);
     }
   }
+  /* trabajo agrupado (biset / triset / circuito): la ronda manda sobre el reloj.
+     El descanso arranca sólo cuando la fila equivalente de TODOS los ejercicios
+     del bloque quedó tildada, nunca al cerrar el primer ejercicio de la ronda. */
+  function agrupado(bl){
+    return bl ? bl.querySelectorAll('.set-tracker').length > 1 : false;
+  }
+  function rondaCompleta(bl, row){
+    var tr = row ? row.closest('.set-tracker') : null;
+    if(!tr) return true;
+    var i = [].indexOf.call(tr.querySelectorAll('.set-row'), row);
+    if(i < 0) return true;
+    var todos = [].slice.call(bl.querySelectorAll('.set-tracker'));
+    return todos.every(function(t){
+      var f = t.querySelectorAll('.set-row')[i];
+      if(!f) return true;                       /* ejercicio con menos rondas: no bloquea */
+      var c = f.querySelector('.set-check');
+      return !c || c.checked;
+    });
+  }
+  function etiquetaRonda(bl, row){
+    var tr = row ? row.closest('.set-tracker') : null;
+    if(!tr) return null;
+    var i = [].indexOf.call(tr.querySelectorAll('.set-row'), row);
+    return i >= 0 ? ('Descanso · Ronda ' + (i + 1) + ' completa') : null;
+  }
+  window.jpRondaCompleta = rondaCompleta;
+
   /* al tildar una serie */
   document.addEventListener('change', function(e){
     var chk = e.target.closest('.set-check');
@@ -11482,8 +11555,14 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     var b = bloqueDe(bl ? bl.dataset.blockId : '');
     /* la entrada en calor y los circuitos livianos no abren el reloj */
     if(bl && bl.classList.contains('wu-card')) return;
-    if(b && !(b.isBlock || b.isSuperset || b.isFinisher)) return;
+    var trabajo = (b && (b.isBlock || b.isSuperset || b.isFinisher)) ||
+                  (bl && bl.classList.contains('core-live'));
+    if(!trabajo) return;
     var lb = 'Descanso · ' + nombreDe(bl, row);
+    if(agrupado(bl)){
+      if(!rondaCompleta(bl, row)) return;       /* todavía falta cerrar la ronda */
+      lb = etiquetaRonda(bl, row) || lb;
+    }
     setTimeout(function(){ arrancar(descansoDe(bl), lb); }, 90);
   });
   /* al cerrar un bloque de fuerza */
@@ -11733,6 +11812,285 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
 })();
 <\/script>
 
+<style>
+/* =========================================================
+   COACH JP · CORE ESTRUCTURADO EN LA APP DEL ALUMNO
+   Individual / Biset / Triset / Circuito con rondas reales
+========================================================= */
+.block.core-card.core-live .set-tracker,
+.block.core-card.core-live .ex-detail,
+.block.core-card.core-live .jp-tools{display:flex !important}
+.block.core-card.core-live .set-tracker{flex-direction:column}
+.block.core-card.core-live .ex-row{padding:9px 0 3px}
+.block.core-card.core-live .ex-name{
+  font-family:'Inter',var(--font-body),system-ui,sans-serif !important;
+  font-size:16px !important;font-weight:600 !important;color:#FFFFFF;
+}
+.block.core-card .core-head{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 10px;
+  padding:9px 12px;border-radius:12px;
+  background:rgba(0,240,255,0.06);border:1px solid rgba(0,240,255,0.24);
+  border-left:4px solid #00F0FF;backdrop-filter:blur(12px);
+}
+.block.core-card .core-head .ch-k{
+  font-family:var(--font-head,inherit);font-size:11px;letter-spacing:0.12em;
+  text-transform:uppercase;color:#00F0FF;font-weight:800;
+}
+.block.core-card .core-head .ch-d{color:rgba(255,255,255,0.28)}
+.block.core-card .core-head .ch-m{
+  font-size:12.5px;color:#FFFFFF;font-weight:600;letter-spacing:0.02em;
+}
+.block.core-card .core-head .ch-r{
+  margin-left:auto;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;
+  background:rgba(0,240,255,0.12);border:1px solid rgba(0,240,255,0.4);color:#67F8FF;
+  font-family:ui-monospace,Menlo,Consolas,monospace;
+}
+.block.core-card .core-est{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:26px;height:26px;padding:0 8px;margin-right:8px;border-radius:8px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;font-weight:700;
+  background:rgba(0,240,255,0.12);border:1px solid rgba(0,240,255,0.34);color:#00F0FF;
+}
+.block.core-card.core-live .core-list,
+.block.core-card.core-live .mini-log{display:none !important}
+</style>
+
+<script>
+/* =========================================================
+   COACH JP · CORE ESTRUCTURADO (app del alumno)
+   1 · Mata el bucle de filas rotas del bloque de Core.
+   2 · Lo reconstruye como Individual / Biset / Triset / Circuito
+       con nombre, video circular y series S1 · S2 · S3.
+   3 · El reloj de descanso lo dispara la ronda, no el ejercicio.
+========================================================= */
+(function(){
+  var RX_CORE = /\\bcore\\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
+  var RX_ESTR = /^\\s*(?:\\d+\\s*(?:sets?|series?|rondas?|rounds?)\\s*:?\\s*$|[-–—]?\\s*(?:rest|descanso)\\b|[-–—]+\\s*$)/i;
+
+  function bloqueDe(id){
+    var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+    if(!d || !id) return null;
+    var todos = (d.blocks || []).concat(d.finisher ? [d.finisher] : [], d.hyrox ? [d.hyrox] : []);
+    return todos.filter(function(b){ return b.id === id; })[0] || null;
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function esCore(b, bl){
+    var t = ((b && (b.title || '')) || '') + ' ' + ((b && (b.subtitle || '')) || '') + ' ' +
+            (((bl && bl.querySelector('.block-label')) || {}).textContent || '');
+    return !!(b && b.coreBlock) || RX_CORE.test(t);
+  }
+
+  /* ---------------------------------------------------------
+     1 · LECTURA DE LA PIZARRA VIEJA
+  --------------------------------------------------------- */
+  function rondasDe(items){
+    for(var i = 0; i < items.length; i++){
+      var m = String(items[i]).match(/(\\d+)\\s*(?:sets?|series?|rondas?|rounds?)/i);
+      if(m) return Math.max(1, Math.min(10, parseInt(m[1], 10)));
+    }
+    return 3;
+  }
+  function movimientosDe(items){
+    var out = [];
+    (items || []).forEach(function(raw){
+      var t = String(raw || '').replace(/^[\\s\\-•*]+/, '').replace(/[\\s\\-–—]+$/, '').trim();
+      if(!t || RX_ESTR.test(t)) return;
+      var dosis = '';
+      var corte = t.split(/\\s+[—–]\\s+/);
+      if(corte.length > 1){ t = corte[0].trim(); dosis = corte.slice(1).join(' — ').trim(); }
+      var pre = t.match(/^(\\d+\\s*(?:s|seg|segundos?|min|reps?|x)?\\.?)\\s+(.+)$/i);
+      if(pre && !dosis){ dosis = pre[1].trim(); t = pre[2].trim(); }
+      var post = t.match(/^(.+?)\\s+(\\d+\\s*(?:s|seg|min)\\b.*)$/i);
+      if(post && !dosis){ t = post[1].trim(); dosis = post[2].trim(); }
+      t = t.replace(/\\s{2,}/g, ' ').trim();
+      if(t.length < 3) return;
+      out.push({ name: t, reps: dosis || '' });
+    });
+    return out;
+  }
+  var ETIQUETA = { single:'Ejercicio individual', biset:'Biset', triset:'Triset', circuito:'Circuito' };
+  function modoDe(b, n){
+    if(b && b.coreMode) return b.coreMode;
+    if(n >= 4) return 'circuito';
+    if(n === 3) return 'triset';
+    if(n === 2) return 'biset';
+    return 'single';
+  }
+
+  /* ---------------------------------------------------------
+     2 · RECONSTRUCCIÓN DE LA TARJETA
+  --------------------------------------------------------- */
+  function video(nombre){
+    return (typeof videoLinkHtml === 'function') ? videoLinkHtml(nombre) : '';
+  }
+  function filas(dayId, blockId, exIdx, rondas, hint){
+    if(typeof renderSetRows === 'function')
+      return renderSetRows(state.currentWeek || 0, dayId, blockId, exIdx, rondas, hint || 'Reps');
+    return '';
+  }
+  function reconstruir(){
+    var dia = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+    if(!dia || document.body.classList.contains('cf-modo')) return;
+    document.querySelectorAll('.block').forEach(function(bl){
+      var b = bloqueDe(bl.dataset.blockId);
+      if(!esCore(b, bl)) return;
+      /* el core ya estructurado desde el Builder sólo necesita su cabecera */
+      var yaTiene = !!bl.querySelector('.set-tracker');
+      var lista = [];
+      var rondas = 3;
+
+      if(b && b.isSuperset && (b.exercises || []).length){
+        lista = b.exercises.map(function(x){ return { name:x.name, reps:x.reps }; });
+        rondas = parseInt(b.efSets, 10) || 3;
+      } else if(b && b.isBlock){
+        lista = [{ name: b.exerciseName, reps: b.reps }];
+        rondas = parseInt(b.efSets, 10) || 3;
+      } else if(b){
+        var items = (b.weekItems && b.weekItems[state.currentWeek] && b.weekItems[state.currentWeek].length)
+                    ? b.weekItems[state.currentWeek] : (b.items || []);
+        lista = movimientosDe(items);
+        rondas = rondasDe(items);
+      }
+      if(!lista.length){ bl.classList.remove('core-live'); return; }
+      rondas = Math.max(1, Math.min(10, rondas));
+
+      var modo = modoDe(b, lista.length);
+      var cabecera =
+        '<span class="ch-k">Core</span><span class="ch-d">&#9679;</span>' +
+        '<span class="ch-m">' + esc(ETIQUETA[modo] || 'Circuito') + ' &middot; ' + lista.length +
+          ' ejercicio' + (lista.length === 1 ? '' : 's') + '</span>' +
+        '<span class="ch-r">' + rondas + ' RONDA' + (rondas === 1 ? '' : 'S') + '</span>';
+
+      var cuerpo = bl.querySelector('.block-body') || bl;
+      /* el banner estándar .blk-tag ya declara modo, rondas y estaciones:
+         la cabecera propia sólo aparece si ese banner todavía no se pintó */
+      var estandar = bl.querySelector('.blk-tag');
+      var head = bl.querySelector('.core-head');
+      if(estandar){ if(head) head.remove(); head = null; }
+      else{
+        if(!head){
+          head = document.createElement('div');
+          head.className = 'core-head';
+          cuerpo.insertBefore(head, cuerpo.firstElementChild);
+        }
+        if(head.innerHTML !== cabecera) head.innerHTML = cabecera;
+      }
+
+      bl.classList.add('core-live');
+      if(yaTiene){
+        /* numeración de estación sobre los nombres ya renderizados */
+        var rows = bl.querySelectorAll('.ex-row');
+        if(rows.length > 1) rows.forEach(function(r, i){
+          var n = r.querySelector('.core-est');
+          var txt = String(i + 1).padStart(2, '0');
+          if(!n){
+            n = document.createElement('span');
+            n.className = 'core-est';
+            r.insertBefore(n, r.firstChild);
+          }
+          if(n.textContent !== txt) n.textContent = txt;
+        });
+        return;
+      }
+
+      /* pizarra vieja: se reemplaza por estaciones interactivas */
+      var clave = modo + '|' + rondas + '|' + lista.map(function(x){ return x.name; }).join('|');
+      if(bl.dataset.coreK === clave) return;
+      bl.dataset.coreK = clave;
+
+      var html = lista.map(function(x, i){
+        return '<div class="ex-row">' +
+            (lista.length > 1 ? '<span class="core-est">' + String(i + 1).padStart(2, '0') + '</span>' : '') +
+            '<div class="ex-bullet"></div>' +
+            '<span class="ex-name">' + esc(x.name) + video(x.name) + '</span>' +
+            (x.reps ? '<span class="ex-detail">' + esc(x.reps) + '</span>' : '') +
+          '</div>' +
+          filas(dia.id, bl.dataset.blockId, i, rondas, x.reps);
+      }).join('');
+
+      var caja = bl.querySelector('.core-build');
+      if(!caja){
+        caja = document.createElement('div');
+        caja.className = 'core-build';
+        var ancla = bl.querySelector('.core-head');
+        if(ancla && ancla.nextSibling) cuerpo.insertBefore(caja, ancla.nextSibling);
+        else cuerpo.appendChild(caja);
+      }
+      if(caja.innerHTML !== html) caja.innerHTML = html;
+      /* lo viejo se va: ni líneas sueltas ni checkboxes genéricos en bucle */
+      bl.querySelectorAll('.core-list, .mini-log').forEach(function(x){ x.remove(); });
+      bl.querySelectorAll('.ex-row').forEach(function(r){
+        if(!caja.contains(r) && !r.querySelector('.set-check')) r.remove();
+      });
+      bl.querySelectorAll('.wod-line, .cf-line').forEach(function(l){
+        if(!caja.contains(l)) l.remove();
+      });
+      bl.querySelectorAll('.video-link').forEach(function(v){
+        if(v.dataset.wired) return;
+        v.dataset.wired = '1';
+        v.addEventListener('click', function(){
+          var id = v.dataset.yt;
+          if(id && typeof openVideoPopup === 'function') openVideoPopup(id);
+        });
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------
+     3 · PERSISTENCIA DE LAS FILAS RECONSTRUIDAS
+  --------------------------------------------------------- */
+  function guardar(row, campo, valor){
+    var k = row && row.dataset ? row.dataset.setKey : '';
+    if(!k || typeof setLoadField !== 'function') return;
+    setLoadField(k, campo, valor);
+  }
+  document.addEventListener('change', function(e){
+    var c = e.target.closest('.core-build .set-check');
+    if(!c) return;
+    var row = c.closest('.set-row');
+    if(!row) return;
+    guardar(row, 'done', c.checked);
+    row.classList.toggle('set-row-done', c.checked);
+  });
+  document.addEventListener('input', function(e){
+    var kg = e.target.closest('.core-build .set-kg');
+    if(kg){ guardar(kg.closest('.set-row'), 'kg', kg.value); return; }
+    var rp = e.target.closest('.core-build .set-reps');
+    if(rp){ guardar(rp.closest('.set-row'), 'reps', rp.value); }
+  });
+
+  function repintar(){ try{ reconstruir(); }catch(e){} }
+  function mount(){
+    repintar();
+    var main = document.getElementById('mainContent') || document.body;
+    var pend = false, propio = false;
+    new MutationObserver(function(){
+      if(pend || propio) return;
+      pend = true;
+      setTimeout(function(){
+        pend = false; propio = true;
+        try{ repintar(); }catch(e){}
+        setTimeout(function(){ propio = false; }, 190);
+      }, 170);
+    }).observe(main, { childList:true, subtree:true });
+    if(typeof window.renderMain === 'function'){
+      var _rm = window.renderMain;
+      window.renderMain = function(){
+        var r = _rm.apply(this, arguments);
+        setTimeout(repintar, 300);
+        setTimeout(repintar, 780);
+        return r;
+      };
+    }
+    window.CoachCoreApp = { repintar: repintar, reconstruir: reconstruir, movimientos: movimientosDe };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 520); });
+  else setTimeout(mount, 520);
+})();
+<\/script>
+
 </body>
 </html>
 `;
@@ -11810,7 +12168,7 @@ function buildProgramConfig(ath){
 
       if(b.tipo === 'block'){
         const ex = getEx(b.exId);
-        const nm = exDisplayName(ex) || (b.titulo || 'Ejercicio');
+        const nm = exDisplayName(ex) || b.coreNombre || (b.titulo || 'Ejercicio');
         addVideo(nm, ex);
         Object.assign(out, {
           isBlock: true, exerciseName: nm,
@@ -11822,7 +12180,7 @@ function buildProgramConfig(ath){
       }
       else if(b.tipo === 'superset'){
         const list = (b.ejercicios||[]).map(e => {
-          const ex = getEx(e.exId), nm = exDisplayName(ex) || 'Ejercicio';
+          const ex = getEx(e.exId), nm = exDisplayName(ex) || e.nombre || 'Ejercicio';
           addVideo(nm, ex);
           return { name: nm, reps: e.reps || '', tempo: e.tempo || '' };
         });
@@ -11831,6 +12189,8 @@ function buildProgramConfig(ath){
           efSets: parseInt(b.efSets,10) || 3, restSeconds: parseInt(b.restSeconds,10) || 90,
           failCapable: !!b.failCapable
         });
+        /* trabajo agrupado: el reloj de descanso espera a la ronda completa */
+        out.grouped = true;
         if(b.altNote) out.altNote = b.altNote;
       }
       else if(b.tipo === 'finisher'){
@@ -11861,6 +12221,7 @@ function buildProgramConfig(ath){
       /* pizarra modular de CrossFit: formato del bloque, modo de video y cierre técnico */
       if(b.cfModo === 'tech' || b.cfModo === 'board') out.boardMode = b.cfModo;
       if(b.coreBlock) out.coreBlock = true;
+      if(b.coreModo) out.coreMode = b.coreModo;
       if(b.cfPizarra) out.pizarra = true;
       if(b.cfFmt) out.boardFmt = b.cfFmt;
       if(b.cfId) out.blockId = b.cfId;
@@ -11912,7 +12273,11 @@ function finisherDelDia(ath, d){
     if(p && p.meta && p.meta.mesoDisc === 'crossfit') return null;
     const o = JSON.parse(localStorage.getItem('coachjp_fin_v1') || '{}');
     const c = o[ath.id] && o[ath.id][d.id];
-    if(c && c.fin && c.fin.protocolo) return { protocolo: c.fin.protocolo, objetivos: c.fin.objetivos || '', tips: c.fin.tips || '' };
+    if(c && c.fin && c.fin.protocolo)
+      return { protocolo: c.fin.protocolo,
+               /* el alumno recibe el texto pulido, nunca el borrador del entrenador */
+               trabajo: c.fin.trabajo || '',
+               objetivos: c.fin.objetivos || '', tips: c.fin.tips || '' };
   }catch(e){}
   return null;
 }
@@ -26898,6 +27263,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .fin-out .fn-b{margin:0 0 11px}
 .fin-out .fn-b:last-child{margin-bottom:0}
 .fin-out p{margin:0;color:var(--txt-2);font-size:12.8px;line-height:1.62;font-family:var(--ff)}
+.fin-out .fn-work{
+  margin:0;padding:10px 12px;border-radius:10px;white-space:pre-wrap;
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.7;
+  color:#FFFFFF;background:rgba(9,10,15,.72);border:1px solid rgba(255,214,0,.24);
+}
 </style>
 
 <script>
@@ -26966,13 +27336,22 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       tip:'Mantené la técnica por encima de la carga. Descansás entre 20 y 30 segundos y cortás cada serie con 1 repetición en reserva.' };
   }
   function duracion(txt){
+    const r = String(txt || '').match(/(\d{1,2}\s*[-–a]\s*\d{1,2})\s*(?:min|minutos|')/i);
+    if(r) return r[1].replace(/\s*[-–a]\s*/, '-') + ' MIN';
     const m = String(txt || '').match(/(\d{1,2})\s*(min|minutos|')/i);
     return m ? (m[1] + ' MIN') : '';
   }
+  /* la cabecera de estructura no es un ejercicio: se recorta antes de listar */
+  const RX_CABECERA = /^\s*[^:\n]{0,44}?\b(?:amrap|emom|for\s*time|por\s*tiempo|rondas?|tabata|e\d?mom)\b[^:\n]{0,24}:\s*/i;
+  const RX_RELLENO  = /^(?:etc|etcetera|etcétera|y|más|mas|otros?|varios?)\.?$/i;
   function ejercicios(txt){
-    return String(txt || '').split(/\s*(?:\+|,|y luego|luego|después|despues)\s*/i)
-      .map(s => sinEmojis(s).replace(/^[\s.-]+|[\s.-]+$/g, ''))
-      .filter(s => s.length > 2).slice(0, 4);
+    let t = sinEmojis(txt).replace(RX_CABECERA, ' ');
+    return t
+      /* el borrador del coach separa con puntos suspensivos, comas, «+» o saltos de línea */
+      .split(/\r?\n|\.{2,}|;|\s*\+\s*|\s*,\s*|\s+y luego\s+|\s+luego\s+|\s+despu[ée]s\s+/i)
+      .map(s => String(s).replace(/^[\s.\-–—•*]+|[\s.\-–—]+$/g, '').replace(/\s{2,}/g, ' ').trim())
+      .filter(s => s.length > 2 && /[a-záéíóúñ]/i.test(s) && !RX_RELLENO.test(s))
+      .slice(0, 6);
   }
   function redaccionLocal(borrador){
     const t = String(borrador || '');
@@ -26981,10 +27360,56 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const lista = ejercicios(t);
     return {
       protocolo: m.lb + (dur ? ' · ' + dur : ''),
+      trabajo: trabajoLocal(t, m, dur, lista),
       objetivos: m.obj,
       tips: m.tip + (lista.length ? ' Orden de trabajo: ' + lista.join(' / ') + '.' : ''),
       motor: 'local'
     };
+  }
+
+  /* ---------------------------------------------------------
+     REESCRITURA DEL PROTOCOLO DE TRABAJO
+     El borrador crudo del entrenador nunca llega a la app del alumno:
+     se reemplaza por el texto formateado que devuelve este motor.
+  --------------------------------------------------------- */
+  function tituloTrabajo(txt, m, dur){
+    const t = String(txt || '');
+    const amrap = t.match(/amrap\s*(?:de\s*)?(\d{1,2}(?:\s*[-–a]\s*\d{1,2})?)\s*(?:min|minutos|')?/i);
+    if(amrap) return 'AMRAP ' + amrap[1].replace(/\s*[-–a]\s*/, '-') + ' MIN';
+    const emom = t.match(/emom\s*(?:x\s*)?(\d{1,2})/i);
+    if(emom) return 'EMOM ' + emom[1] + ' MIN';
+    const ft = t.match(/for\s*time|por\s*tiempo/i);
+    if(ft) return 'FOR TIME';
+    if(dur) return (m.lb.split(' ')[0] || 'FINISHER') + ' ' + dur;
+    return m.lb;
+  }
+  /* nomenclatura estándar: el alumno lee términos completos, no la taquigrafía del coach */
+  const TERMINOS = [
+    [/\browerg\b|\brow erg\b|\bremoergo?\b/gi, 'RowErg'],
+    [/\bbike ?erg\b|\bassault ?bike\b|\becho ?bike\b/gi, 'BikeErg'],
+    [/\bski ?erg\b/gi, 'SkiErg'],
+    [/\bsit ?ups?\b/gi, 'Sit-ups'],
+    [/\bpush ?ups?\b/gi, 'Push-ups'],
+    [/\bpull ?ups?\b/gi, 'Pull-ups'],
+    [/\bwall ?balls?\b/gi, 'Wall Balls'],
+    [/\bkb ?swings?\b/gi, 'Kettlebell Swings'],
+    [/\bdb\b/gi, 'Mancuerna']
+  ];
+  function trabajoLocal(txt, m, dur, lista){
+    const linea = lista.map(x => {
+      let s = sinEmojis(x).replace(/\s{2,}/g, ' ').trim();
+      /* se cae el relleno del borrador: «etc», «etcétera», puntas sueltas */
+      s = s.replace(/[\s,]*\b(?:etc|etcetera|etcétera)\.?\s*$/i, '').trim();
+      TERMINOS.forEach(t => { s = s.replace(t[0], t[1]); });
+      s = s.replace(/^[a-záéíóúñ]/, c => c.toUpperCase());
+      /* escalera de repeticiones: se normaliza con guiones */
+      s = s.replace(/(\d+)\s*[-–,]\s*(\d+)\s*[-–,]\s*(\d+)(?:\s*[-–,]\s*(\d+))?/g,
+                    (mm, a, b2, c, d) => a + '-' + b2 + '-' + c + (d ? '-' + d : ''));
+      return s;
+    }).filter(Boolean);
+    const cab = tituloTrabajo(txt, m, dur);
+    if(!linea.length) return cab;
+    return cab + ':\n' + linea.map((s, i) => String(i + 1).padStart(2, '0') + '. ' + s).join('\n');
   }
 
   /* ---------------------------------------------------------
@@ -26999,9 +27424,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     'REGLA INNEGOCIABLE DE ESTILO: PROHIBIDO EL USO DE EMOJIS, íconos, símbolos decorativos o signos de ' +
     'exclamación motivacionales. Tono estrictamente profesional, científico, directo y ejecutivo. ' +
     'Devolvés SIEMPRE un JSON válido con esta forma exacta: ' +
-    '{"protocolo":"...","objetivos":"...","tips":"..."}. ' +
+    '{"protocolo":"...","trabajo":"...","objetivos":"...","tips":"..."}. ' +
     '"protocolo" es el nombre técnico del método en mayúsculas con su formato o duración, ' +
     'por ejemplo "DROP-SET DENSITY FINISHER · 5 MIN". ' +
+    '"trabajo" es la REESCRITURA LIMPIA del borrador del entrenador: el protocolo de trabajo ' +
+    'ya formateado y ordenado, listo para que tu alumno lo lea tal cual en la app. ' +
+    'Arranca con la estructura en mayúsculas y dos puntos, y sigue con una línea numerada ' +
+    'por ejercicio usando saltos de línea reales, por ejemplo: ' +
+    '"AMRAP 8 MIN:\\n01. 30s RowErg (ritmo moderado-alto)\\n02. Escalera ascendente 3-6-9-12-15 Sit-ups". ' +
+    'Nunca copies el borrador crudo ni dejes abreviaturas sueltas del entrenador. ' +
     '"objetivos" explica en 2 o 3 oraciones el estímulo fisiológico buscado ' +
     '(estrés metabólico, congestión máxima, reclutamiento de fibras de umbral alto, tiempo bajo tensión). ' +
     '"tips" da en 2 o 4 oraciones las pautas de ejecución, el ritmo de trabajo y el criterio de corte de cada serie.';
@@ -27031,9 +27462,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           const j = JSON.parse(m[0]);
           if(j && j.protocolo && j.objetivos){
             fin = { protocolo: sinEmojis(j.protocolo).toUpperCase(),
+                    trabajo: sinEmojis(j.trabajo || '').replace(/\\n/g, '\n').trim(),
                     objetivos: directo(j.objetivos),
                     tips: directo(j.tips || ''),
                     motor: 'ia' };
+            if(!fin.trabajo){
+              const l = redaccionLocal(borrador);
+              fin.trabajo = l.trabajo;
+            }
           }
         }
       }catch(e){
@@ -27046,11 +27482,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       fin.tips = directo(fin.tips);
     }
     fin.ts = Date.now();
+    if(!fin.trabajo) fin.trabajo = redaccionLocal(borrador).trabajo;
 
     if(load) load.style.display = 'none';
-    setFin(a.id, d.id, { borrador: borrador, fin: fin });
+    /* DOBLE PROCESAMIENTO: el input superior queda con el protocolo formateado
+       y el recuadro inferior con la teoría. El borrador crudo se archiva aparte. */
+    if(ta) ta.value = fin.trabajo;
+    setFin(a.id, d.id, { borrador: fin.trabajo, crudo: borrador, fin: fin });
     pintarFin(fin);
-    try{ toast(fin.motor === 'ia' ? '✨ Finisher estructurado con IA' : '✨ Finisher estructurado con el motor local'); }catch(e){}
+    try{ toast(fin.motor === 'ia' ? '✨ Finisher reescrito y estructurado con IA' : '✨ Finisher reescrito con el motor local'); }catch(e){}
     return fin;
   }
   window.jpOptimizarFinisher = optimizar;
@@ -27062,6 +27502,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     out.classList.add('on');
     out.innerHTML =
       '<div class="fn-proto">' + esc(fin.protocolo) + '</div>' +
+      (fin.trabajo ? '<div class="fn-b"><h4>Protocolo de trabajo (así lo ve tu alumno)</h4>' +
+        '<pre class="fn-work">' + esc(fin.trabajo) + '</pre></div>' : '') +
       '<div class="fn-b"><h4>Objetivos fisiológicos</h4><p>' + esc(fin.objetivos) + '</p></div>' +
       '<div class="fn-b"><h4>Coaching tips y estrategia</h4><p>' + esc(fin.tips) + '</p></div>';
   }
@@ -29146,5 +29588,338 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   else mount();
 })();
 </script>
-</body>
-</html>
+<style>
+/* =========================================================
+   COACH JP · MÓDULO 46
+   Core estructurado (Individual / Biset / Triset / Circuito)
+========================================================= */
+.core-cfg{
+  margin:0 0 10px;padding:11px 12px;border-radius:12px;
+  background:rgba(0,240,255,.05);border:1px solid rgba(0,240,255,.26);
+  border-left:4px solid #00F0FF;
+}
+.core-cfg .cc-h{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;
+  font-family:var(--ffh);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--accent-cyan,#00F0FF);
+}
+.core-cfg .cc-h b{font-weight:800}
+.core-cfg .cc-h .cc-now{
+  margin-left:auto;padding:2px 10px;border-radius:20px;font-size:10px;
+  background:rgba(0,240,255,.12);border:1px solid rgba(0,240,255,.4);color:#67F8FF;
+}
+.core-cfg .cc-modos{display:flex;flex-wrap:wrap;gap:6px}
+.core-cfg .cc-m{
+  display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:6px 13px;border-radius:20px;
+  font-family:var(--ff);font-size:11.5px;font-weight:700;cursor:pointer;
+  background:transparent;border:1px solid var(--line-2);color:var(--txt-2);
+}
+.core-cfg .cc-m:hover{border-color:rgba(0,240,255,.55);color:#67F8FF}
+.core-cfg .cc-m.on{background:rgba(0,240,255,.16);border-color:#00F0FF;color:#00F0FF}
+.core-cfg .cc-rr{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px}
+.core-cfg .cc-rr label{font-size:11px;color:var(--muted);font-family:var(--ffh);letter-spacing:.08em;text-transform:uppercase}
+.core-cfg .cc-rr input{
+  width:74px;padding:7px 9px;border-radius:9px;font-family:ui-monospace,Menlo,monospace;font-size:13px;
+  background:rgba(9,10,15,.75);border:1px solid var(--line-2);color:var(--txt);
+}
+.core-cfg .cc-hint{margin-top:8px;font-size:11px;color:var(--muted);line-height:1.55}
+</style>
+
+<script>
+/* =========================================================
+   COACH JP · MÓDULO 46 — Core estructurado en el Builder
+   Elimina el bucle de filas rotas: el bloque de Core pasa a ser
+   Individual / Biset / Triset / Circuito con rondas definidas.
+========================================================= */
+(function(){
+  const RX_CORE = /\bcore\b|abdomen|abdominal|estabilidad\s+(?:abdominal|del\s+tronco)/i;
+  const RX_ESTRUCTURA = /^\s*(?:\d+\s*(?:sets?|series?|rondas?|rounds?)\s*:?|[-–—]\s*rest|rest\b|descanso\b|[-–—]\s*$)/i;
+
+  function nrm(s){
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[.,;:!¡?¿"'`]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function biblioteca(nombre){
+    const k = nrm(nombre);
+    if(!k) return null;
+    const lista = (typeof S === 'object' && S.exercises) ? S.exercises : [];
+    let ex = lista.filter(e => nrm(e.es) === k || (e.en && nrm(e.en) === k))[0];
+    if(ex) return ex;
+    if(k.length >= 5)
+      ex = lista.filter(e => nrm(e.es).indexOf(k) >= 0 || k.indexOf(nrm(e.es)) >= 0)[0];
+    return ex || null;
+  }
+
+  /* plantel de referencia por si el bloque llega vacío */
+  const POOL = [
+    { n:'Pallof press',                     reps:'10-12 por lado', tempo:'2012' },
+    { n:'Dead bug',                         reps:'10 por lado',    tempo:'3011' },
+    { n:'Plancha frontal',                  reps:'30-40s',         tempo:'ISO'  },
+    { n:'Elevación de piernas colgado',     reps:'10-12',          tempo:'2011' },
+    { n:'Rueda abdominal',                  reps:'8-10',           tempo:'3011' },
+    { n:'Plancha lateral',                  reps:'25-30s por lado',tempo:'ISO'  }
+  ];
+  const MODOS = [
+    { id:'single',   lb:'Ejercicio individual', n:1, ic:'▣' },
+    { id:'biset',    lb:'Biset (2 ejercicios)', n:2, ic:'⚯' },
+    { id:'triset',   lb:'Triset (3 ejercicios)',n:3, ic:'⚟' },
+    { id:'circuito', lb:'Circuito (4+)',        n:4, ic:'⬡' }
+  ];
+  function modoDe(b){
+    if(b.coreModo) return b.coreModo;
+    const n = b.tipo === 'superset' ? (b.ejercicios || []).length : 1;
+    if(b.tipo !== 'superset') return 'single';
+    if(n >= 4) return 'circuito';
+    if(n === 3) return 'triset';
+    return 'biset';
+  }
+  function esCore(b){
+    return !!(b && (b.coreBlock || RX_CORE.test(String(b.titulo || '') + ' ' + String(b.subtitulo || ''))));
+  }
+  window.jpEsCore = esCore;
+
+  /* ---------------------------------------------------------
+     1 · LECTURA DEL BLOQUE VIEJO (pizarra de texto)
+     De ahí salen las rondas y los movimientos reales del coach.
+  --------------------------------------------------------- */
+  function rondasDe(items){
+    for(let i = 0; i < items.length; i++){
+      const m = String(items[i]).match(/(\d+)\s*(?:sets?|series?|rondas?|rounds?)/i);
+      if(m) return Math.max(1, Math.min(10, parseInt(m[1], 10)));
+    }
+    return 3;
+  }
+  function movimientosDe(items){
+    const out = [];
+    (items || []).forEach(raw => {
+      let t = String(raw || '').replace(/^[\s\-•*]+/, '').replace(/[\s\-–—]+$/, '').trim();
+      if(!t || RX_ESTRUCTURA.test(t)) return;
+      let dosis = '';
+      const corte = t.split(/\s+[—–]\s+/);
+      if(corte.length > 1){ t = corte[0].trim(); dosis = corte.slice(1).join(' — ').trim(); }
+      /* dosis al frente: «15 Russian twists» o «45s Plancha» */
+      const pre = t.match(/^(\d+\s*(?:s|seg|segundos?|min|reps?|x)?\.?)\s+(.+)$/i);
+      if(pre && !dosis){ dosis = pre[1].trim(); t = pre[2].trim(); }
+      /* dosis al final: «Plancha frontal 45s» */
+      const post = t.match(/^(.+?)\s+(\d+\s*(?:s|seg|min)\b.*)$/i);
+      if(post && !dosis){ t = post[1].trim(); dosis = post[2].trim(); }
+      t = t.replace(/\s{2,}/g, ' ').trim();
+      if(t.length < 3) return;
+      out.push({ nombre: t, reps: dosis || '10-12' });
+    });
+    return out;
+  }
+
+  /* ---------------------------------------------------------
+     2 · ESTRUCTURACIÓN: de pizarra rota a bloque modular
+  --------------------------------------------------------- */
+  /* el modo manda sobre la cantidad: sólo el circuito admite más de su mínimo */
+  function completar(lista, n, abierto){
+    const salida = lista.slice(0, abierto ? Math.max(n, lista.length) : n);
+    let i = 0;
+    while(salida.length < n && i < POOL.length){
+      const p = POOL[i++];
+      if(!salida.some(x => nrm(x.nombre) === nrm(p.n))) salida.push({ nombre: p.n, reps: p.reps, tempo: p.tempo });
+    }
+    while(salida.length < n) salida.push({ nombre: POOL[0].n, reps: POOL[0].reps, tempo: POOL[0].tempo });
+    return salida;
+  }
+  function aEjercicio(m){
+    const ex = biblioteca(m.nombre);
+    return { exId: ex ? ex.id : '', nombre: ex ? (ex.es || m.nombre) : m.nombre,
+             reps: m.reps || '10-12', tempo: m.tempo || '2011' };
+  }
+
+  /* deja el bloque con la forma definitiva según el modo pedido */
+  function estructurar(b, modo, rondas){
+    const mode = MODOS.filter(x => x.id === modo)[0] || MODOS[1];
+    let base = [];
+    if(b.tipo === 'superset' && (b.ejercicios || []).length){
+      base = b.ejercicios.map(e => {
+        const ex = (typeof getEx === 'function') ? getEx(e.exId) : null;
+        return { nombre: e.nombre || (ex ? ex.es : ''), reps: e.reps, tempo: e.tempo };
+      }).filter(x => x.nombre);
+    } else if(b.tipo === 'block' && b.exId){
+      const ex = (typeof getEx === 'function') ? getEx(b.exId) : null;
+      if(ex) base = [{ nombre: ex.es, reps: b.reps, tempo: b.tempo }];
+    }
+    if(!base.length) base = movimientosDe(b.items || []);
+    const r = Math.max(1, Math.min(10, parseInt(rondas, 10) || parseInt(b.efSets, 10) || rondasDe(b.items || [])));
+    const lista = completar(base, mode.n, mode.id === 'circuito').map(aEjercicio);
+
+    b.coreBlock = true;
+    b.coreModo  = mode.id;
+    b.category  = b.category || 'accessory';
+    b.icon      = b.icon || '🧩';
+    b.efSets    = r;
+    b.restSeconds = parseInt(b.restSeconds, 10) || (mode.id === 'single' ? 60 : 75);
+    delete b.items;                          /* el bucle de filas rotas desaparece de raíz */
+    delete b.cfPizarra;
+    delete b.cardioMinutes;
+
+    if(mode.id === 'single'){
+      b.tipo = 'block';
+      const e = lista[0];
+      b.exId = e.exId; b.coreNombre = e.nombre;
+      b.reps = e.reps; b.tempo = e.tempo;
+      b.hasApprox = false; b.approxSets = 0; b.failCapable = false;
+      delete b.ejercicios;
+      b.subtitulo = b.subtitulo && !/circuito|biset|triset/i.test(b.subtitulo)
+        ? b.subtitulo : 'Trabajo de core focalizado';
+    } else {
+      b.tipo = 'superset';
+      b.ejercicios = lista;
+      b.failCapable = false;
+      delete b.exId; delete b.reps; delete b.tempo;
+      b.subtitulo = mode.id === 'circuito' ? 'Circuito de core · ' + r + ' rondas'
+                  : mode.id === 'triset'   ? 'Triset de core · ' + r + ' rondas'
+                                           : 'Biset de core · ' + r + ' rondas';
+    }
+    if(!b.titulo || /^\s*$/.test(b.titulo)) b.titulo = 'CORE & ESTABILIDAD ABDOMINAL';
+    return b;
+  }
+  window.jpEstructurarCore = estructurar;
+
+  /* migración silenciosa de todo lo que quedó viejo en el plan */
+  function normalizar(silencioso){
+    let p = null;
+    try{ p = plan(S.activeId); }catch(e){ return 0; }
+    if(!p || !p.dias) return 0;
+    let n = 0;
+    p.dias.forEach(d => {
+      (d.bloques || []).forEach(b => {
+        if(!esCore(b)) return;
+        const roto = (b.tipo === 'list') || (b.tipo === 'superset' && !(b.ejercicios || []).length) ||
+                     (b.tipo === 'block' && !b.exId && !b.coreNombre);
+        if(!roto) { if(!b.coreModo){ b.coreModo = modoDe(b); b.coreBlock = true; } return; }
+        /* la cantidad real de movimientos del borrador decide el modo de arranque */
+        let modo = modoDe(b);
+        if(b.tipo === 'list'){
+          const c = movimientosDe(b.items || []).length;
+          modo = c >= 4 ? 'circuito' : c === 3 ? 'triset' : c === 1 ? 'single' : 'biset';
+        }
+        estructurar(b, modo, null);
+        n++;
+      });
+    });
+    if(n){
+      try{ save(); }catch(e){}
+      if(!silencioso){ try{ toast('🧩 ' + n + ' bloque(s) de core reestructurado(s)'); }catch(e){} }
+    }
+    return n;
+  }
+  window.jpNormalizarCore = normalizar;
+
+  /* ---------------------------------------------------------
+     3 · PANEL DE CONFIGURACIÓN DENTRO DEL BLOQUE
+  --------------------------------------------------------- */
+  function panel(){
+    const host = document.getElementById('dayPanel');
+    if(!host) return;
+    host.querySelectorAll('.block').forEach(bl => {
+      const ref = bl.querySelector('[data-b]');
+      const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+      let caja = bl.querySelector('.core-cfg');
+      if(!b || !esCore(b)){ if(caja) caja.remove(); return; }
+      const modo = modoDe(b);
+      const rondas = parseInt(b.efSets, 10) || 3;
+      const cuantos = b.tipo === 'superset' ? (b.ejercicios || []).length : 1;
+      const html =
+        '<div class="cc-h">🧩 <b>Estructura del bloque de core</b>' +
+          '<span class="cc-now">' + cuantos + ' ejercicio' + (cuantos === 1 ? '' : 's') + ' · ' + rondas + ' ronda' + (rondas === 1 ? '' : 's') + '</span>' +
+        '</div>' +
+        '<div class="cc-modos">' +
+          MODOS.map(m => '<button type="button" class="cc-m' + (m.id === modo ? ' on' : '') +
+            '" data-coremodo="' + m.id + '" data-b="' + esc(b.id) + '">' + m.ic + ' ' + m.lb + '</button>').join('') +
+        '</div>' +
+        '<div class="cc-rr">' +
+          '<label>Rondas</label>' +
+          '<input type="number" min="1" max="10" data-corerondas data-b="' + esc(b.id) + '" value="' + rondas + '">' +
+          '<span class="cc-hint" style="margin:0">Cada ejercicio muestra su nombre, su video y sus series S1 · S2 · S3 en la app.</span>' +
+        '</div>' +
+        '<div class="cc-hint">El reloj de descanso arranca recién cuando tu alumno cierra la ronda completa, ' +
+          'no al tildar el primer ejercicio.</div>';
+      if(caja){ if(caja.innerHTML !== html) caja.innerHTML = html; }
+      else{
+        caja = document.createElement('div');
+        caja.className = 'core-cfg';
+        caja.innerHTML = html;
+        const cuerpo = bl.querySelector('.block-b') || bl.querySelector('.block-body') || bl;
+        cuerpo.insertBefore(caja, cuerpo.firstChild);
+      }
+    });
+  }
+
+  document.addEventListener('click', e => {
+    const m = e.target.closest('[data-coremodo]');
+    if(!m) return;
+    const b = (typeof findBlock === 'function') ? findBlock(m.dataset.b) : null;
+    if(!b) return;
+    estructurar(b, m.dataset.coremodo, b.efSets);
+    try{ save(); }catch(x){}
+    if(typeof renderDay === 'function') renderDay();
+    const lb = (MODOS.filter(x => x.id === m.dataset.coremodo)[0] || {}).lb || 'Core';
+    try{ toast('🧩 Core reestructurado: ' + lb); }catch(x){}
+  });
+  document.addEventListener('change', e => {
+    const r = e.target.closest('[data-corerondas]');
+    if(!r) return;
+    const b = (typeof findBlock === 'function') ? findBlock(r.dataset.b) : null;
+    if(!b) return;
+    b.efSets = Math.max(1, Math.min(10, parseInt(r.value, 10) || 3));
+    if(b.tipo === 'superset')
+      b.subtitulo = String(b.subtitulo || '').replace(/\d+\s*rondas/i, b.efSets + ' rondas');
+    try{ save(); }catch(x){}
+    if(typeof renderDay === 'function') renderDay();
+  });
+
+  /* ---------------------------------------------------------
+     4 · ALTA DE BLOQUE DE CORE YA ESTRUCTURADO
+  --------------------------------------------------------- */
+  function agregar(modo){
+    const d = (typeof curDay === 'function') ? curDay() : null;
+    if(!d){ try{ toast('Elegí un alumno y un día primero', 'warn'); }catch(e){} return; }
+    const b = { id: 'core' + Math.random().toString(36).slice(2, 8),
+                tipo:'superset', category:'accessory', icon:'🧩',
+                titulo:'CORE & ESTABILIDAD ABDOMINAL', subtitulo:'', coreBlock:true,
+                tips:'Sostené la pelvis en retroversión y respirá sin soltar la tensión del abdomen.' };
+    estructurar(b, modo || 'biset', 3);
+    d.bloques.push(b);
+    try{ save(); }catch(e){}
+    if(typeof renderBuilder === 'function') renderBuilder();
+    try{ toast('🧩 Bloque de Core agregado — elegí Individual, Biset, Triset o Circuito'); }catch(e){}
+  }
+  window.jpAgregarCore = agregar;
+  /* el botón del drawer queda apuntando a la versión estructurada */
+  function reengancharBoton(){
+    const viejo = document.getElementById('btnCore');
+    if(!viejo || viejo.dataset.core46) return;
+    const nuevo = viejo.cloneNode(true);
+    nuevo.dataset.core46 = '1';
+    nuevo.addEventListener('click', () => agregar('biset'));
+    viejo.parentNode.replaceChild(nuevo, viejo);
+  }
+
+  function repintar(){
+    try{ reengancharBoton(); normalizar(true); panel(); }catch(e){}
+  }
+  function mount(){
+    repintar();
+    [700, 1800, 3000].forEach(ms => setTimeout(repintar, ms));
+    ['renderDay','renderBuilder','go'].forEach(fn => {
+      const _f = window[fn];
+      if(typeof _f !== 'function') return;
+      window[fn] = function(){
+        const r = _f.apply(this, arguments);
+        setTimeout(repintar, 110);
+        return r;
+      };
+    });
+    window.CoachCore = { estructurar: estructurar, normalizar: normalizar,
+                         agregar: agregar, modo: modoDe, esCore: esCore, panel: panel };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+</body></html>
