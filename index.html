@@ -7217,11 +7217,41 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     if(t && modo !== 'fortime') t.textContent = '00:00';
     restante = 0;
   }
-  function abrirTimer(){
+  function abrirTimerConfigurado(modoDeseado, segsTotales, titulo){
     var w = document.getElementById('cwtWrap');
     if(!w) return;
     w.classList.add('on');
+
+    if(modoDeseado){
+      modo = modoDeseado;
+      document.querySelectorAll('.cwt-mode').forEach(function(x){
+        x.classList.toggle('on', x.dataset.cwt === modoDeseado);
+      });
+    }
+
+    if(segsTotales && segsTotales > 0){
+      var mm = Math.floor(segsTotales / 60);
+      var ss = segsTotales % 60;
+      var inCap = document.getElementById('cwtCap');
+      var inMin = document.getElementById('cwtMin');
+      var inSec = document.getElementById('cwtSec');
+
+      if(inCap) inCap.value = mm || 15;
+      if(inMin) inMin.value = mm || 15;
+      if(inSec) inSec.value = ss || 0;
+    }
+
+    if(titulo){
+      var titEl = document.getElementById('cwtTitle');
+      if(titEl) titEl.textContent = titulo;
+    }
+
     pintarCampos();
+    reset();
+    vibrar([20]);
+  }
+  function abrirTimer(){
+    abrirTimerConfigurado(null, null, null);
   }
   function cerrarTimer(){
     var w = document.getElementById('cwtWrap');
@@ -7246,7 +7276,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     document.getElementById('cwtCfg').addEventListener('input', function(){ if(!corriendo) reset(); });
     pintarCampos();
   }
-  window.CoachWodTimer = { abrir: abrirTimer, cerrar: cerrarTimer, modo: function(m){ modo = m; pintarCampos(); },
+  window.CoachWodTimer = { abrir: abrirTimer, abrirConfigurado: abrirTimerConfigurado, cerrar: cerrarTimer, modo: function(m){ modo = m; pintarCampos(); },
                            prep: function(){ return fase === 'prep'; },
                            estado: function(){ return { modo: modo, corriendo: corriendo, restante: restante,
                                                         transcurrido: transcurrido, ronda: ronda, rondas: rondas, fase: fase }; },
@@ -8535,29 +8565,69 @@ body.cf-modo .block .directive-chip{display:none !important}
     var skey = state.currentWeek + '|' + state.currentDay + '|' + (bl.dataset.blockId || titulo);
     state.scores = state.scores || {};
     var guardado = state.scores[skey] || '';
+
+    var durSeg = duracionDe(titulo + ' ' + sub + ' ' + lineas.map(function(l){ return l.nombre; }).join(' '));
+    var timerHtml = '';
+    var modoTimer = f ? (f.k === 'fortime' ? 'fortime' : (f.k === 'amrap' ? 'amrap' : (f.k === 'emom' ? 'emom' : (f.k === 'tabata' ? 'tabata' : 'reloj')))) : 'reloj';
+    if(durSeg > 0){
+      var mm = Math.floor(durSeg / 60);
+      var ss = durSeg % 60;
+      var mmss = String(mm).padStart(2,'0') + ':' + String(ss).padStart(2,'0');
+      timerHtml = '<button type="button" class="btn xs gold cf-timer-btn" data-cftimer="' + durSeg + '" data-cfmodo="' + modoTimer + '" data-cftitle="' + escTxt(titulo) + '" style="margin-left:auto;font-weight:800;font-size:11px;padding:4px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;">⏱️ Timer ' + mmss + '</button>';
+    }
+
+    state.wodLevels = state.wodLevels || {};
+    var lvlActual = state.wodLevels[skey] || 'RX';
+
+    var phScore = 'Score o tiempo final';
+    if(f){
+      if(f.k === 'fortime') phScore = 'Tiempo final (ej: 12:45)';
+      else if(f.k === 'amrap') phScore = 'Rondas + Reps (ej: 7 + 12)';
+      else if(f.k === 'emom' || f.k === 'intervals') phScore = 'Rondas completadas o score final';
+      else if(f.k === 'weightlifting') phScore = 'Kilos alcanzados (ej: 95 kg)';
+    }
+
     board.innerHTML =
-      '<div class="cf-h"><span class="cf-t">' + escTxt(titulo) + '</span>' +
-        (f ? '<span class="cf-fmt">' + f.lb + '</span>' : '') + '</div>' +
+      '<div class="cf-h">' +
+        '<span class="cf-t">' + escTxt(titulo) + '</span>' +
+        (f ? '<span class="cf-fmt">' + f.lb + '</span>' : '') +
+        timerHtml +
+      '</div>' +
       '<div class="cf-body">' +
         (sub ? '<div class="cf-line head">' + escTxt(sub) + '</div>' : '') +
         (function(){
           var n = 0;
           return lineas.map(function(l){
-            if(l.head) return '<div class="cf-line head">' + escTxt(l.nombre) + '</div>';
+            var nom = l.nombre;
+            var isAlt = /^\s*-(?:or|opci[oó]n|despu[eé]s)/i.test(nom) || /^\s*━━━━━━━━/i.test(nom);
+            var isLevel = /^\s*(?:elite|rx|intermediate|int)\b/i.test(nom);
+            if(l.head || isAlt || isLevel){
+              var cls = isLevel ? 'cf-line head cf-level' : (isAlt ? 'cf-line head cf-alt' : 'cf-line head');
+              return '<div class="' + cls + '" style="' + (isAlt ? 'color:#00F0FF;border-top:1px dashed rgba(0,240,255,.3);padding-top:6px;margin-top:6px;' : (isLevel ? 'color:#FFD600;font-size:1.12rem;margin-top:8px;' : '')) + '">' + escTxt(nom) + '</div>';
+            }
             n++;
-            return '<div class="cf-line"><span class="n">' + n + '</span><span>' + escTxt(l.nombre) +
+            return '<div class="cf-line"><span class="n">' + n + '</span><span>' + escTxt(nom) +
                    (l.det ? ' <span class="det">' + escTxt(l.det) + '</span>' : '') + '</span></div>';
           }).join('');
         })() +
       '</div>' +
-      '<div class="cf-score"><label>🏆 Resultado</label>' +
-        '<input class="cf-score-in" data-cfk="' + skey + '" step="0.5" ' +
-        'placeholder="Tiempo, rondas o kilos alcanzados" value="' + String(guardado).replace(/"/g, '&quot;') + '">' +
-        '<span class="ok" data-cfok="' + skey + '">' + (guardado ? '✓ guardado' : '') + '</span>' +
+      '<div class="cf-score" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-top:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);">' +
+        '<div style="display:flex;align-items:center;gap:4px;">' +
+          '<label style="font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">Nivel:</label>' +
+          '<div class="cf-lvl-group" data-cfk="' + skey + '" style="display:inline-flex;gap:3px;background:rgba(0,0,0,0.5);padding:2px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);">' +
+            '<button type="button" class="btn xs ' + (lvlActual==='RX'?'gold':'ghost') + ' cf-lvl-btn" data-lvl="RX" style="font-size:10.5px;font-weight:800;padding:2px 7px;">RX</button>' +
+            '<button type="button" class="btn xs ' + (lvlActual==='ADVANCED'?'gold':'ghost') + ' cf-lvl-btn" data-lvl="ADVANCED" style="font-size:10.5px;font-weight:800;padding:2px 7px;">ADV</button>' +
+            '<button type="button" class="btn xs ' + (lvlActual==='SCALED'?'gold':'ghost') + ' cf-lvl-btn" data-lvl="SCALED" style="font-size:10.5px;font-weight:800;padding:2px 7px;">SCALED</button>' +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;flex:1;min-width:180px;">' +
+          '<input class="cf-score-in" data-cfk="' + skey + '" step="any" inputmode="decimal" ' +
+          'placeholder="' + phScore + '" value="' + String(guardado).replace(/"/g, '&quot;') + '" style="min-height:42px;font-size:14px;border-radius:8px;background:rgba(9,10,15,0.85);border:1px solid rgba(255,255,255,0.15);color:#fff;padding:4px 10px;width:100%;">' +
+          '<span class="ok" data-cfok="' + skey + '" style="color:#00E676;font-size:11px;font-weight:700;white-space:nowrap;">' + (guardado ? '✓ guardado' : '') + '</span>' +
+        '</div>' +
       '</div>';
     var body = bl.querySelector('.block-body') || bl;
     body.insertBefore(board, body.firstChild);
-    /* las notas del coach quedan siempre debajo de la pizarra */
     bl.querySelectorAll('.coach-note').forEach(function(n){ body.appendChild(n); });
   }
   function escTxt(s){ var d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
@@ -8580,6 +8650,35 @@ body.cf-modo .block .directive-chip{display:none !important}
       window.CoachCWT.abrir(segs, tit);
     } else if(typeof abrirTimerFab === 'function'){
       abrirTimerFab(segs, tit);
+    }
+  });
+
+  document.addEventListener('click', function(e){
+    var b = e.target.closest('.cf-lvl-btn');
+    if(!b) return;
+    var grp = b.closest('.cf-lvl-group');
+    if(!grp) return;
+    var key = grp.dataset.cfk;
+    var lvl = b.dataset.lvl;
+    state.wodLevels = state.wodLevels || {};
+    state.wodLevels[key] = lvl;
+    grp.querySelectorAll('.cf-lvl-btn').forEach(function(x){
+      x.className = 'btn xs ' + (x.dataset.lvl === lvl ? 'gold' : 'ghost') + ' cf-lvl-btn';
+    });
+    saveProgress();
+    vibrar([15]);
+  });
+
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('.cf-timer-btn');
+    if(!btn) return;
+    var segs = parseInt(btn.dataset.cftimer, 10) || 0;
+    var modo = btn.dataset.cfmodo || 'reloj';
+    var tit = btn.dataset.cftitle || 'WOD';
+    if(window.CoachWodTimer && window.CoachWodTimer.abrirConfigurado){
+      window.CoachWodTimer.abrirConfigurado(modo, segs, tit);
+    } else if(window.CoachWodTimer && window.CoachWodTimer.abrir){
+      window.CoachWodTimer.abrir();
     }
   });
 
@@ -13291,6 +13390,39 @@ body.cf-modo .block .ex-tip{display:none}
   else setTimeout(mount, 640);
 })();
 <\/script>
+
+
+<!-- MODAL DE ASISTENTE DE DISCOS (STRONG PLATE CALCULATOR) -->
+<div id="plateModalWrap" class="modal-wrap" style="position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);display:none;align-items:center;justify-content:center;z-index:500;padding:16px;">
+  <div class="card" style="max-width:440px;width:100%;background:#0D1017;border:1px solid rgba(255,214,0,0.4);border-radius:20px;padding:20px;box-shadow:0 24px 64px rgba(0,0,0,0.8);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <h3 style="margin:0;font-family:var(--ffh);font-size:18px;font-weight:900;color:#FFD600;display:flex;align-items:center;gap:8px;">
+        ⚖️ CALCULADORA DE DISCOS EN BARRA
+      </h3>
+      <button type="button" class="btn xs ghost" id="btnCerrarPlateModal" style="font-size:16px;padding:2px 8px;">✕</button>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
+      <div style="flex:1;">
+        <label style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">Peso Objetivo (Kg):</label>
+        <input type="number" id="pmTargetKg" step="any" min="15" value="100" style="width:100%;font-size:18px;font-weight:800;font-family:var(--ff-mono, monospace);text-align:center;background:rgba(0,0,0,0.6);border:1.5px solid rgba(255,214,0,0.4);color:#FFD600;border-radius:10px;padding:8px;">
+      </div>
+      <div style="width:110px;">
+        <label style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;">Barra:</label>
+        <select id="pmBarraKg" style="width:100%;font-size:14px;font-weight:700;background:rgba(0,0,0,0.6);border:1.5px solid rgba(255,255,255,0.15);color:#fff;border-radius:10px;padding:10px 6px;">
+          <option value="20" selected>20 kg (M)</option>
+          <option value="15">15 kg (F)</option>
+        </select>
+      </div>
+    </div>
+    <div id="pmVisualBar" style="min-height:110px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;">
+      <!-- Grafico interactivo de discos -->
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button type="button" class="btn gold" id="btnPmSetLoad" style="flex:1;font-weight:800;font-size:13px;">✓ Aplicar Peso</button>
+      <button type="button" class="btn ghost" id="btnPmCerrar" style="font-weight:700;font-size:13px;">Cerrar</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
@@ -27704,7 +27836,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     document.getElementById('cwtCfg').addEventListener('input', function(){ if(!corriendo) reset(); });
     pintarCampos();
   }
-  window.CoachWodTimer = { abrir: abrirTimer, cerrar: cerrarTimer, modo: function(m){ modo = m; pintarCampos(); },
+  window.CoachWodTimer = { abrir: abrirTimer, abrirConfigurado: abrirTimerConfigurado, cerrar: cerrarTimer, modo: function(m){ modo = m; pintarCampos(); },
                            prep: function(){ return fase === 'prep'; },
                            estado: function(){ return { modo: modo, corriendo: corriendo, restante: restante,
                                                         transcurrido: transcurrido, ronda: ronda, rondas: rondas, fase: fase }; },
@@ -30318,7 +30450,120 @@ D: ACCESSORY: D1 Prone DB rows + Triceps; D2 Banded woodchops, Powell raises, Ri
     try { montarAiSmartParserSemanal(); } catch(e){}
   };
 
-    window.CoachPizarra = { estructurar: estructurar, auditar: auditar, parsear: parsear,
+    
+  /* =========================================================
+     ASISTENTE DE DISCOS EN BARRA (STRONG PLATE CALCULATOR)
+  ========================================================= */
+  let pmCurrentInput = null;
+
+  function abrirPlateModal(inputEl, defaultKg){
+    pmCurrentInput = inputEl;
+    const modal = document.getElementById('plateModalWrap');
+    if(!modal) return;
+    modal.style.display = 'flex';
+
+    let kg = defaultKg || (inputEl ? parseFloat(String(inputEl.value).replace(',', '.')) : 100) || 100;
+    const inKg = document.getElementById('pmTargetKg');
+    if(inKg) inKg.value = kg;
+
+    renderPlateVisual();
+  }
+
+  function cerrarPlateModal(){
+    const modal = document.getElementById('plateModalWrap');
+    if(modal) modal.style.display = 'none';
+    pmCurrentInput = null;
+  }
+
+  function renderPlateVisual(){
+    const inKg = document.getElementById('pmTargetKg');
+    const inBarra = document.getElementById('pmBarraKg');
+    const out = document.getElementById('pmVisualBar');
+    if(!inKg || !inBarra || !out) return;
+
+    const totalKg = parseFloat(inKg.value) || 0;
+    const barraKg = parseFloat(inBarra.value) || 20;
+
+    const d = (window.CoachDiscos || function(t, b){
+      const porLado = Math.max(0, (t - b) / 2);
+      const DISCOS = [25, 20, 15, 10, 5, 2.5, 1.25];
+      let resto = porLado;
+      const res = [];
+      DISCOS.forEach(disc => {
+        const n = Math.floor((resto + 1e-6) / disc);
+        if(n > 0){ res.push({ d: disc, n: n }); resto = Math.round((resto - n * disc) * 100) / 100; }
+      });
+      return { ok: totalKg >= barraKg, barra: barraKg, porLado: porLado, lista: res, sobra: resto };
+    })(totalKg, barraKg);
+
+    if(!d.ok){
+      out.innerHTML = '<div style="color:#FF5A66;font-weight:700;font-size:13px;">⚠️ El peso es menor que la barra (' + barraKg + ' kg)</div>';
+      return;
+    }
+
+    const COLORS = {
+      25: '#C1121F', // Rojo
+      20: '#1E6091', // Azul
+      15: '#E0A96D', // Amarillo/Oro
+      10: '#2D6A4F', // Verde
+      5: '#FFFFFF',  // Blanco
+      2.5: '#0B0D0F',// Negro
+      1.25: '#A0AEC0'// Gris
+    };
+
+    let platesHtml = '';
+    d.lista.forEach(item => {
+      for(let i=0; i<item.n; i++){
+        const bg = COLORS[item.d] || '#FFD600';
+        const txtColor = (item.d === 5 || item.d === 1.25) ? '#000' : '#fff';
+        const heightPx = Math.max(34, Math.min(68, item.d * 2.4 + 22));
+        platesHtml += '<div style="width:24px;height:' + heightPx + 'px;background:' + bg + ';border:1px solid rgba(0,0,0,0.5);border-radius:4px;display:flex;align-items:center;justify-content:center;color:' + txtColor + ';font-size:10px;font-weight:900;font-family:var(--ff-mono, monospace);box-shadow:2px 0 6px rgba(0,0,0,0.4);" title="' + item.d + ' kg">' +
+          item.d +
+        '</div>';
+      }
+    });
+
+    out.innerHTML =
+      '<div style="font-size:13px;font-weight:800;color:#00F0FF;letter-spacing:.04em;text-transform:uppercase;">' +
+        'Cargar en CADA LADO: ' + d.porLado + ' kg' + (d.sobra > 0 ? ' <span style="color:#FF5A66">(' + d.sobra + 'kg sin disco)</span>' : '') +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:3px;margin:8px 0;background:rgba(255,255,255,0.04);padding:8px 12px;border-radius:10px;width:100%;justify-content:center;overflow-x:auto;">' +
+        '<div style="width:36px;height:12px;background:#4A5568;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;color:#fff;">BAR</div>' +
+        '<div style="width:8px;height:38px;background:#718096;border-radius:2px;"></div>' +
+        platesHtml +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--muted);">' +
+        'Desglose por lado: ' + (d.lista.map(x => x.n + 'x ' + x.d + 'kg').join(' + ') || 'Solo barra') +
+      '</div>';
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    const bClose = document.getElementById('btnCerrarPlateModal');
+    const bClose2 = document.getElementById('btnPmCerrar');
+    const bApply = document.getElementById('btnPmSetLoad');
+    const inKg = document.getElementById('pmTargetKg');
+    const inBarra = document.getElementById('pmBarraKg');
+
+    if(bClose) bClose.onclick = cerrarPlateModal;
+    if(bClose2) bClose2.onclick = cerrarPlateModal;
+    if(inKg) inKg.oninput = renderPlateVisual;
+    if(inBarra) inBarra.onchange = renderPlateVisual;
+
+    if(bApply) bApply.onclick = function(){
+      const val = (document.getElementById('pmTargetKg') || {}).value;
+      if(pmCurrentInput && val){
+        pmCurrentInput.value = val;
+        pmCurrentInput.dispatchEvent(new Event('input', { bubbles: true }));
+        pmCurrentInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      cerrarPlateModal();
+    };
+  });
+  window.abrirPlateModal = abrirPlateModal;
+  window.cerrarPlateModal = cerrarPlateModal;
+
+
+window.CoachPizarra = { estructurar: estructurar, auditar: auditar, parsear: parsear,
                             aplicar: aplicar, selectores: selectores };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
