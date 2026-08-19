@@ -1691,6 +1691,24 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
   </div>
 </div>
 
+<div class="modal-bg" id="mPrev">
+  <div class="modal lg" style="max-width:980px;width:96vw;height:92vh;display:flex;flex-direction:column;padding:0;overflow:hidden;border:1px solid rgba(229,195,120,0.3);box-shadow:0 24px 64px rgba(0,0,0,0.85)">
+    <div class="modal-h" style="padding:10px 16px;background:#0E1015;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;gap:10px">
+      <h3 id="mPrevTitle" style="font-family:'Chakra Petch',sans-serif;font-size:1.05rem;color:#E5C378;margin:0">👁️ Previsualización del Plan</h3>
+      <div class="spacer" style="flex:1"></div>
+      <div class="row" style="gap:6px;margin-right:12px;display:flex;align-items:center">
+        <button type="button" class="btn xs" id="btnPrevMobile" style="font-size:11px;padding:4px 10px">📱 Celular</button>
+        <button type="button" class="btn xs" id="btnPrevDesktop" style="font-size:11px;padding:4px 10px">💻 Escritorio</button>
+        <button type="button" class="btn xs gold" id="btnPrevNewTab" style="font-size:11px;padding:4px 12px;font-weight:700">↗️ Abrir en Pestaña</button>
+      </div>
+      <button class="icon-btn" data-close="mPrev" style="font-size:1.2rem;line-height:1;background:none;border:none;color:#A0AEC0;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-b" style="flex:1;padding:0;margin:0;display:flex;justify-content:center;background:#050608;overflow:hidden">
+      <iframe id="prevFrame" style="width:100%;height:100%;border:none;background:#0B0D0F;transition:width .2s ease" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="mCopy">
   <div class="modal sm">
     <div class="modal-h"><h3>Copiar día</h3><div class="spacer"></div><button class="icon-btn" data-close="mCopy">✕</button></div>
@@ -14744,6 +14762,35 @@ function painRestrictionsHtml(ath){
   return h;
 }
 
+function abrirPreviewModal(code, athName){
+  var modal = document.getElementById('mPrev');
+  if(!modal) return;
+  var frame = document.getElementById('prevFrame');
+  var title = document.getElementById('mPrevTitle');
+  if(title) title.textContent = '👁️ Previsualización · ' + (athName || 'Plan');
+  
+  if(frame){
+    frame.srcdoc = code;
+  }
+  
+  var bTab = document.getElementById('btnPrevNewTab');
+  if(bTab){
+    bTab.onclick = function(){
+      var blob = new Blob([code], { type: 'text/html' });
+      var url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    };
+  }
+  
+  var bMob = document.getElementById('btnPrevMobile');
+  var bDesk = document.getElementById('btnPrevDesktop');
+  if(bMob) bMob.onclick = function(){ if(frame) frame.style.width = '390px'; };
+  if(bDesk) bDesk.onclick = function(){ if(frame) frame.style.width = '100%'; };
+  
+  if(typeof openModal === 'function') openModal('mPrev');
+  else modal.classList.add('on');
+}
+
 function compile(ath){
   const p = plan(ath.id);
   const cfg = buildProgramConfig(ath);
@@ -14932,6 +14979,31 @@ function init(){
       if(typeof renderExport === 'function') renderExport();
     });
     ['#expVideos','#expWarn','#expSync'].forEach(s => { const el = $(s); if(el) el.addEventListener('change', renderExport); });
+
+    const bExport = $('#btnExport');
+    if(bExport) bExport.addEventListener('click', () => {
+      const a = getAth($('#expAth').value);
+      if(!a){ toast('Elegí un alumno/a', 'err'); return; }
+      const code = compile(a);
+      const fname = 'index-' + ((a.nombre||'plan') + '-' + (a.apellido||'')).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '') + '.html';
+      download(fname, code, 'text/html');
+      toast('Archivo ' + fname + ' descargado ✔');
+    });
+
+    const bPreview = $('#btnPreview');
+    if(bPreview) bPreview.addEventListener('click', () => {
+      const a = getAth($('#expAth').value);
+      if(!a){ toast('Elegí un alumno/a', 'err'); return; }
+      const code = compile(a);
+      
+      if($('#expPreviewBox')){
+        $('#expPreviewBox').innerHTML = '<label class="lb">Vista del código generado (' + (code.length/1024).toFixed(1) + ' KB)</label><pre class="code" style="max-height:200px;overflow:auto">' + esc(code.slice(0, 1400)) + '\n…</pre>';
+      }
+      
+      abrirPreviewModal(code, fullName(a));
+      toast('Abriendo previsualización interactiva 👁️');
+    });
+
     const bCopy = $('#btnCopyCode');
     if(bCopy) bCopy.addEventListener('click', () => {
       const a = getAth($('#expAth').value);
