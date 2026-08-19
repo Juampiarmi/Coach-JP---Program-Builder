@@ -1208,6 +1208,28 @@ body {
   color: #E5C378 !important;
 }
 </style>
+
+<script>
+/* EMERGENCY SCREEN UNLOCK (1.2s TIMEOUT) */
+(function(){
+  function forzarDesbloqueo(){
+    try {
+      document.documentElement.classList.remove('jp-cargando');
+      var s1 = document.getElementById('jpSplashB');
+      if(s1){ s1.classList.add('off'); s1.style.display = 'none'; }
+      var s2 = document.getElementById('jpSplash');
+      if(s2){ s2.classList.add('off'); s2.style.display = 'none'; }
+    } catch(e){}
+  }
+  setTimeout(forzarDesbloqueo, 1200);
+  if(document.readyState !== 'loading') forzarDesbloqueo();
+  else {
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(forzarDesbloqueo, 400); });
+    window.addEventListener('load', function(){ setTimeout(forzarDesbloqueo, 400); });
+  }
+})();
+</script>
+
 </head>
 <body>
 <style>
@@ -10083,7 +10105,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{
     var t0 = Date.now();
     var chequear = function(){
       var hay = document.querySelector('#mainContent .block, #mainContent .card, .week-selector-wrap');
-      if(hay || Date.now() - t0 > 4000){ setTimeout(ocultarSplash, 120); return; }
+      if(hay || Date.now() - t0 > 1000){ setTimeout(ocultarSplash, 80); return; }
       setTimeout(chequear, 90);
     };
     chequear();
@@ -10091,7 +10113,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{
   if(document.readyState === 'complete' || document.readyState === 'interactive') listo();
   else document.addEventListener('DOMContentLoaded', listo);
   window.addEventListener('load', function(){ setTimeout(ocultarSplash, 900); });
-  setTimeout(ocultarSplash, 6000);
+  setTimeout(ocultarSplash, 1200);
   window.CoachSplash = { ocultar: ocultarSplash };
 
   /* =========================================================
@@ -14821,155 +14843,158 @@ function renderData(){
    12. BOOT + BINDINGS GLOBALES
    ============================================================ */
 function init(){
-  load();
+  try {
+    load();
 
-  fillSelect($('#eGrupo'),  GRUPOS);
-  fillSelect($('#ePatron'), PATRONES);
-  fillSelect($('#eEquipo'), EQUIPOS);
-  fillSelect($('#fGrupo'),  GRUPOS,  'Todos los grupos');
-  fillSelect($('#fEquipo'), EQUIPOS, 'Todo el equipamiento');
-
-  if(!S.activeId && S.athletes.length) S.activeId = S.athletes[0].id;
-
-  /* nav */
-  $$('.navbtn').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
-
-  /* cierre de modales */
-  $$('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
-  $$('.modal-bg').forEach(m => m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); }));
-  document.addEventListener('keydown', e => {
-    if(e.key === 'Escape') $$('.modal-bg.on').forEach(m => closeModal(m.id));
-  });
-
-  /* ---- alumnos ---- */
-  $('#btnNewAth').addEventListener('click', () => openAth());
-  $('#btnSaveAth').addEventListener('click', saveAth);
-  $('#btnDelAth').addEventListener('click', delAth);
-  $('#athSearch').addEventListener('input', renderAthletes);
-  bindTagInput('#aTagInput',  '#aTags',  () => tmpTags,  'orange', '🦴');
-  bindTagInput('#aBanInput',  '#aBans',  () => tmpBans,  'red',    '⛔');
-  bindTagInput('#aPrefInput', '#aPrefs', () => tmpPrefs, 'teal',   '⭐');
-  $('#selActive').addEventListener('change', e => {
-    S.activeId = e.target.value || null; save();
-    renderAthletes(); toast(active() ? 'Alumno/a activo/a: ' + fullName(active()) : 'Sin alumno/a activo/a');
-  });
-  $('#athGrid').addEventListener('click', e => {
-    const btn = e.target.closest('[data-act]');
-    if(btn){
-      const id = btn.dataset.id;
-      if(btn.dataset.act === 'edit'){ openAth(id); return; }
-      S.activeId = id; save();
-      if(btn.dataset.act === 'build'){ renderAthletes(); go('builder'); return; }
-      renderAthletes(); toast('Alumno/a activo/a: ' + fullName(getAth(id)));
-      return;
+    if(typeof fillSelect === 'function'){
+      if($('#eGrupo')) fillSelect($('#eGrupo'),  GRUPOS);
+      if($('#ePatron')) fillSelect($('#ePatron'), PATRONES);
+      if($('#eEquipo')) fillSelect($('#eEquipo'), EQUIPOS);
+      if($('#fGrupo')) fillSelect($('#fGrupo'),  GRUPOS,  'Todos los grupos');
+      if($('#fEquipo')) fillSelect($('#fEquipo'), EQUIPOS, 'Todo el equipamiento');
     }
-    const card = e.target.closest('[data-ath]');
-    if(card){ S.activeId = card.dataset.ath; save(); renderAthletes(); }
-  });
 
-  /* ---- biblioteca ---- */
-  $('#btnNewEx').addEventListener('click', () => openEx());
-  $('#btnSaveEx').addEventListener('click', saveEx);
-  $('#btnDelEx').addEventListener('click', delEx);
-  ['#exSearch','#fGrupo','#fEquipo','#fVideo'].forEach(s => $(s).addEventListener('input', renderLibrary));
-  $('#btnClearFilters').addEventListener('click', () => {
-    $('#exSearch').value=''; $('#fGrupo').value=''; $('#fEquipo').value=''; $('#fVideo').value='';
-    renderLibrary();
-  });
-  $('#eVideo').addEventListener('input', previewVideo);
-  $('#eRiesgo').addEventListener('click', e => {
-    const b = e.target.closest('[data-z]'); if(!b) return;
-    const z = b.dataset.z, i = tmpRiesgo.indexOf(z);
-    if(i >= 0) tmpRiesgo.splice(i,1); else tmpRiesgo.push(z);
-    renderRiesgo();
-  });
-  $('#exGrid').addEventListener('click', e => {
-    const ed = e.target.closest('[data-exedit]'); if(ed){ openEx(ed.dataset.exedit); return; }
-    const v = e.target.closest('[data-vid]');    if(v){ openVideo(v.dataset.vid); return; }
-  });
+    if(!S.activeId && S.athletes && S.athletes.length) S.activeId = S.athletes[0].id;
 
-  /* ---- builder ---- */
-  bindBuilder();
-  $('#timerStop').addEventListener('click', () => { clearInterval(tInt); $('#timerFab').className = 'timer-fab'; });
-  $('#timerAdd').addEventListener('click', () => { tLeft += 15; paintTimer(); });
+    /* nav */
+    $$('.navbtn').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
 
-  /* ---- exportar ---- */
-  $('#expAth').addEventListener('change', () => {
-    $('#expPreviewBox').innerHTML = '';
-    renderExport();
-  });
-  ['#expVideos','#expWarn','#expSync'].forEach(s => { const el = $(s); if(el) el.addEventListener('change', renderExport); });
-  $('#expIdentity').addEventListener('input', e => {
-    const f = e.target.dataset.mf; if(!f) return;
-    const a = getAth($('#expAth').value); if(!a) return;
-    plan(a.id).meta[f] = e.target.value; save();
-  });
-  $('#btnExport').addEventListener('click', () => {
-    const a = getAth($('#expAth').value);
-    if(!a){ toast('Elegí un alumno/a para compilar', 'err'); return; }
-    if(!totalEjercicios(plan(a.id))){ toast('El plan está vacío: cargá ejercicios en el builder', 'err'); return; }
-    download('index.html', compile(a), 'text/html;charset=utf-8');
-    toast('index.html generado ✔ listo para GitHub Pages');
-  });
-  $('#btnPreview').addEventListener('click', () => {
-    const a = getAth($('#expAth').value);
-    if(!a){ toast('Elegí un alumno/a', 'err'); return; }
-    const code = compile(a);
-    const w = window.open('', '_blank');
-    if(w){ w.document.open(); w.document.write(code); w.document.close(); }
-    else toast('El navegador bloqueó la ventana emergente', 'err');
-    $('#expPreviewBox').innerHTML = '<label class="lb">Vista del código generado (' + (code.length/1024).toFixed(1) + ' KB)</label><pre class="code">' + esc(code.slice(0, 1400)) + '\n…</pre>';
-  });
-  $('#btnCopyCode').addEventListener('click', () => {
-    const a = getAth($('#expAth').value);
-    if(!a){ toast('Elegí un alumno/a', 'err'); return; }
-    const code = compile(a);
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(code).then(()=> toast('Código copiado al portapapeles ✔'), ()=> toast('No se pudo copiar', 'err'));
-    } else toast('Portapapeles no disponible', 'err');
-  });
-
-  /* ---- datos ---- */
-  $('#btnBackup').addEventListener('click', () => {
-    download('coachjp-backup-' + new Date().toISOString().slice(0,10) + '.json', JSON.stringify(S, null, 2), 'application/json');
-    toast('Backup descargado ✔');
-  });
-  $('#btnRestore').addEventListener('click', () => $('#fileRestore').click());
-  $('#fileRestore').addEventListener('change', e => {
-    const f = e.target.files[0]; if(!f) return;
-    const r = new FileReader();
-    r.onload = () => {
-      try{
-        const d = JSON.parse(r.result);
-        if(!d.athletes || !d.exercises) throw new Error('formato');
-        if(!confirm('Esto reemplazará todos los datos actuales. ¿Continuar?')) return;
-        S = Object.assign({athletes:[],exercises:[],plans:{},activeId:null,ui:{day:0,view:'alumnos'}}, d);
-        save(); go('alumnos'); renderAthletes(); toast('Backup restaurado ✔');
-      }catch(err){ toast('Archivo inválido', 'err'); }
-    };
-    r.readAsText(f);
-    e.target.value = '';
-  });
-  $('#btnSeed').addEventListener('click', () => {
-    if(!confirm('Se agregarán los ejercicios base que falten. ¿Continuar?')) return;
-    let n = 0;
-    seedExercises().forEach(se => {
-      if(!S.exercises.some(e => norm(e.es) === norm(se.es))){ S.exercises.push(se); n++; }
+    /* cierre de modales */
+    $$('[data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
+    $$('.modal-bg').forEach(m => m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); }));
+    document.addEventListener('keydown', e => {
+      if(e.key === 'Escape') $$('.modal-bg.on').forEach(m => closeModal(m.id));
     });
-    save(); renderLibrary(); renderData(); toast(n + ' ejercicios base restaurados ✔');
-  });
-  $('#btnWipe').addEventListener('click', () => {
-    if(!confirm('¿Borrar TODOS los datos (alumnos, ejercicios y planes)?')) return;
-    if(!confirm('Última confirmación: esta acción es irreversible.')) return;
-    localStorage.removeItem(KEY);
-    S = { athletes:[], exercises: seedExercises(), plans:{}, activeId:null, ui:{day:0, view:'alumnos'} };
-    save(); go('alumnos'); toast('Datos borrados', 'warn');
-  });
 
-  /* ---- arranque ---- */
-  go(S.ui.view || 'alumnos');
-  renderAthletes(); renderLibrary();
-  save();
+    /* ---- alumnos ---- */
+    const bNewAth = $('#btnNewAth'); if(bNewAth) bNewAth.addEventListener('click', () => openAth());
+    const bSaveAth = $('#btnSaveAth'); if(bSaveAth) bSaveAth.addEventListener('click', saveAth);
+    const bDelAth = $('#btnDelAth'); if(bDelAth) bDelAth.addEventListener('click', delAth);
+    const aSearch = $('#athSearch'); if(aSearch) aSearch.addEventListener('input', renderAthletes);
+    if(typeof bindTagInput === 'function'){
+      bindTagInput('#aTagInput',  '#aTags',  () => tmpTags,  'orange', '🦴');
+      bindTagInput('#aBanInput',  '#aBans',  () => tmpBans,  'red',    '⛔');
+      bindTagInput('#aPrefInput', '#aPrefs', () => tmpPrefs, 'teal',   '⭐');
+    }
+    const selAct = $('#selActive');
+    if(selAct) selAct.addEventListener('change', e => {
+      S.activeId = e.target.value || null; save();
+      renderAthletes(); toast(active() ? 'Alumno/a activo/a: ' + fullName(active()) : 'Sin alumno/a activo/a');
+    });
+    const aGrid = $('#athGrid');
+    if(aGrid) aGrid.addEventListener('click', e => {
+      const btn = e.target.closest('[data-act]');
+      if(btn){
+        const id = btn.dataset.id;
+        if(btn.dataset.act === 'edit'){ openAth(id); return; }
+        S.activeId = id; save();
+        if(btn.dataset.act === 'build'){ renderAthletes(); go('builder'); return; }
+        renderAthletes(); toast('Alumno/a activo/a: ' + fullName(getAth(id)));
+        return;
+      }
+      const card = e.target.closest('[data-ath]');
+      if(card){ S.activeId = card.dataset.ath; save(); renderAthletes(); }
+    });
+
+    /* ---- biblioteca ---- */
+    const bNewEx = $('#btnNewEx'); if(bNewEx) bNewEx.addEventListener('click', () => openEx());
+    const bSaveEx = $('#btnSaveEx'); if(bSaveEx) bSaveEx.addEventListener('click', saveEx);
+    const bDelEx = $('#btnDelEx'); if(bDelEx) bDelEx.addEventListener('click', delEx);
+    ['#exSearch','#fGrupo','#fEquipo','#fVideo'].forEach(s => { const el = $(s); if(el) el.addEventListener('input', renderLibrary); });
+    const bClr = $('#btnClearFilters');
+    if(bClr) bClr.addEventListener('click', () => {
+      if($('#exSearch')) $('#exSearch').value=''; if($('#fGrupo')) $('#fGrupo').value=''; if($('#fEquipo')) $('#fEquipo').value=''; if($('#fVideo')) $('#fVideo').value='';
+      renderLibrary();
+    });
+    const eVid = $('#eVideo'); if(eVid) eVid.addEventListener('input', previewVideo);
+    const eRiesgo = $('#eRiesgo');
+    if(eRiesgo) eRiesgo.addEventListener('click', e => {
+      const b = e.target.closest('[data-z]'); if(!b) return;
+      const z = b.dataset.z, i = tmpRiesgo.indexOf(z);
+      if(i >= 0) tmpRiesgo.splice(i,1); else tmpRiesgo.push(z);
+      renderRiesgo();
+    });
+    const exGrid = $('#exGrid');
+    if(exGrid) exGrid.addEventListener('click', e => {
+      const ed = e.target.closest('[data-exedit]'); if(ed){ openEx(ed.dataset.exedit); return; }
+      const v = e.target.closest('[data-vid]');    if(v){ openVideo(v.dataset.vid); return; }
+    });
+
+    /* ---- builder ---- */
+    if(typeof bindBuilder === 'function') bindBuilder();
+    const tStop = $('#timerStop'); if(tStop) tStop.addEventListener('click', () => { clearInterval(tInt); $('#timerFab').className = 'timer-fab'; });
+    const tAdd = $('#timerAdd'); if(tAdd) tAdd.addEventListener('click', () => { tLeft += 15; paintTimer(); });
+
+    /* ---- exportar ---- */
+    const expAth = $('#expAth');
+    if(expAth) expAth.addEventListener('change', () => {
+      if($('#expPreviewBox')) $('#expPreviewBox').innerHTML = '';
+      if(typeof renderExport === 'function') renderExport();
+    });
+    ['#expVideos','#expWarn','#expSync'].forEach(s => { const el = $(s); if(el) el.addEventListener('change', renderExport); });
+    const bCopy = $('#btnCopyCode');
+    if(bCopy) bCopy.addEventListener('click', () => {
+      const a = getAth($('#expAth').value);
+      if(!a){ toast('Elegí un alumno/a', 'err'); return; }
+      const code = compile(a);
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(code).then(()=> toast('Código copiado al portapapeles ✔'), ()=> toast('No se pudo copiar', 'err'));
+      } else toast('Portapapeles no disponible', 'err');
+    });
+
+    /* ---- datos ---- */
+    const bBack = $('#btnBackup');
+    if(bBack) bBack.addEventListener('click', () => {
+      download('coachjp-backup-' + new Date().toISOString().slice(0,10) + '.json', JSON.stringify(S, null, 2), 'application/json');
+      toast('Backup descargado ✔');
+    });
+    const bRest = $('#btnRestore');
+    if(bRest) bRest.addEventListener('click', () => $('#fileRestore').click());
+    const fRest = $('#fileRestore');
+    if(fRest) fRest.addEventListener('change', e => {
+      const f = e.target.files[0]; if(!f) return;
+      const r = new FileReader();
+      r.onload = () => {
+        try{
+          const d = JSON.parse(r.result);
+          if(!d.athletes || !d.exercises) throw new Error('formato');
+          if(!confirm('Esto reemplazará todos los datos actuales. ¿Continuar?')) return;
+          S = Object.assign({athletes:[],exercises:[],plans:{},activeId:null,ui:{day:0,view:'alumnos'}}, d);
+          save(); go('alumnos'); renderAthletes(); toast('Backup restaurado ✔');
+        }catch(err){ toast('Archivo inválido', 'err'); }
+      };
+      r.readAsText(f);
+      e.target.value = '';
+    });
+    const bSeed = $('#btnSeed');
+    if(bSeed) bSeed.addEventListener('click', () => {
+      if(!confirm('Se agregarán los ejercicios base que falten. ¿Continuar?')) return;
+      let n = 0;
+      seedExercises().forEach(se => {
+        if(!S.exercises.some(e => norm(e.es) === norm(se.es))){ S.exercises.push(se); n++; }
+      });
+      save(); renderLibrary(); renderData(); toast(n + ' ejercicios base restaurados ✔');
+    });
+    const bWipe = $('#btnWipe');
+    if(bWipe) bWipe.addEventListener('click', () => {
+      if(!confirm('¿Borrar TODOS los datos (alumnos, ejercicios y planes)?')) return;
+      if(!confirm('Última confirmación: esta acción es irreversible.')) return;
+      localStorage.removeItem(KEY);
+      S = { athletes:[], exercises: seedExercises(), plans:{}, activeId:null, ui:{day:0, view:'alumnos'} };
+      save(); go('alumnos'); toast('Datos borrados', 'warn');
+    });
+
+    /* ---- arranque ---- */
+    go(S.ui.view || 'alumnos');
+    renderAthletes(); renderLibrary();
+    save();
+  } catch(err) {
+    console.error('Error during init():', err);
+  } finally {
+    document.documentElement.classList.remove('jp-cargando');
+    const s = document.getElementById('jpSplashB');
+    if(s) { s.classList.add('off'); setTimeout(() => { if(s && s.parentNode) s.parentNode.removeChild(s); }, 300); }
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -29318,7 +29343,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const t0 = Date.now();
     const chequear = () => {
       const hay = document.querySelector('.sidebar .navbtn') && document.querySelector('.main .view');
-      if(hay || Date.now() - t0 > 4500){ setTimeout(ocultar, 140); return; }
+      if(hay || Date.now() - t0 > 1000){ setTimeout(ocultar, 80); return; }
       setTimeout(chequear, 90);
     };
     chequear();
@@ -29326,7 +29351,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', listo);
   else listo();
   window.addEventListener('load', () => setTimeout(ocultar, 900));
-  setTimeout(ocultar, 6500);
+  setTimeout(ocultar, 1200);
   window.CoachSplashBuilder = { ocultar: ocultar };
 
   /* ---------- header: subtítulo oficial, sin repetir la marca ---------- */
