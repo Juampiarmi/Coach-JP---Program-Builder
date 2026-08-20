@@ -8448,13 +8448,25 @@ body.cf-modo .block .directive-chip{display:none !important}
   var KVISTA = (typeof STORAGE_KEY !== 'undefined' ? STORAGE_KEY : 'coachjp') + '_vista';
   var forzada = null;
   try{ forzada = localStorage.getItem(KVISTA) || null; }catch(e){}
+  /* trabajo medible = bloques con series, carga y tilde (ancla, biset, triset) */
+  function bloquesMedibles(d){
+    if(!d) return 0;
+    return (d.blocks || []).filter(function(b){
+      return b && (b.isBlock || b.isSuperset);
+    }).length;
+  }
   function esCrossFit(){
     if(forzada === 'crossfit') return true;
     if(forzada === 'musculacion') return false;
     var d = (typeof DAYS !== 'undefined' ? DAYS : []).find(function(x){ return x.id === state.currentDay; });
-    if(d && (d.blocks || []).some(function(b){ return b.category === 'metcon'; })) return true;
+    if(!d) return false;
+    /* un finisher metabólico no convierte una sesión de sala en pizarra:
+       si hay trabajo medible con series, el día se registra, no se lee */
+    if(bloquesMedibles(d) > 0) return false;
+    if((d.blocks || []).some(function(b){ return b.category === 'metcon'; })) return true;
     return RX_CF.test(textoDelDia());
   }
+  window.CoachMedibles = bloquesMedibles;
   window.CoachDisciplina = function(){ return esCrossFit() ? 'crossfit' : 'musculacion'; };
   window.CoachVista = {
     actual: function(){ return esCrossFit() ? 'crossfit' : 'musculacion'; },
@@ -10415,14 +10427,11 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
 .block .timer-slot,
 .block .qt-display,
 .block .qt-btn{display:none !important}
-/* los WOD nunca muestran video embebido ni enlaces sueltos */
-.wod-board .video-link,
+/* los WOD no muestran reproductores embebidos, pero sí el botón de técnica */
 .wod-board .cf-vd,
 .wod-board iframe,
 .wod-board video,
-.cf-board.modo-board .video-link,
 .cf-board.modo-board .cf-vd,
-.block.wod-puro .video-link,
 .block.wod-puro .cf-vd,
 .block.wod-puro iframe,
 .block.wod-puro video{display:none !important}
@@ -10503,7 +10512,8 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
       if(!esWod(bl, txt)){ bl.classList.remove('wod-puro'); return; }
       bl.classList.add('wod-puro');
       /* nada de reproductores, placeholders ni enlaces azules dentro del WOD */
-      bl.querySelectorAll('.video-link, .cf-vd, iframe, video, .vid-box, .video-frame')
+      /* se van los reproductores rotos; el botón ▶ de técnica se queda */
+      bl.querySelectorAll('.cf-vd, iframe, video, .vid-box, .video-frame')
         .forEach(function(v){ v.remove(); });
       var board = bl.querySelector('.cf-board');
       if(board){ board.classList.add('modo-board'); board.classList.remove('tech-on'); }
@@ -14216,6 +14226,12 @@ body{font-size:var(--fz-body) !important}
 .block-done-cb{accent-color:var(--jp-brand)}
 .mini-log input[type=checkbox]{accent-color:var(--jp-brand) !important}
 .set-check{accent-color:var(--jp-brand)}
+/* los campos reparten el ancho: el placeholder "8-10" ya no se corta */
+.block .set-row{display:flex;align-items:center;gap:8px}
+.block .set-row > .set-input{flex:1 1 0 !important;width:auto !important;min-width:0 !important}
+.block .set-row > .set-row-label{flex:0 0 auto}
+.block .set-row > .set-check{flex:0 0 auto;margin-left:auto}
+.block .set-row > .set-x{flex:0 0 auto}
 </style>
 
 </body>
