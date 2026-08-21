@@ -16717,6 +16717,18 @@ document.addEventListener('DOMContentLoaded', init);
   };
 
   /* ---------- 4. ESTRUCTURAS DE SESIÓN ---------- */
+  /* busca un ejercicio por nombre exacto de la biblioteca (para las
+     plantillas auditadas, donde el ejercicio no se elige: viene definido) */
+  function exPorNombre(nombre){
+    if(!nombre) return null;
+    const q = norm(nombre);
+    return S.exercises.find(e => norm(e.es) === q)
+        || S.exercises.find(e => norm(e.en || '') === q)
+        || S.exercises.find(e => norm(e.es).indexOf(q) >= 0)
+        || null;
+  }
+  window.exPorNombre = exPorNombre;
+
   function pickEx(spec, ath, used){
     const ok = S.exercises.filter(e => {
       if(spec.grupo && spec.grupo.indexOf(e.grupo) < 0) return false;
@@ -17359,6 +17371,11 @@ document.addEventListener('DOMContentLoaded', init);
     let saltados = 0;
     const pick = (spec2, a, us) => {
       const sp = (typeof filtro === 'function') ? (filtro(spec2) || spec2) : spec2;
+      /* plantillas auditadas: el ejercicio viene fijado por nombre exacto */
+      if(sp && sp.exacto){
+        const fijo = exPorNombre(sp.exacto);
+        if(fijo && us.indexOf(fijo.id) < 0) return fijo;
+      }
       return pickEx(sp, a, us);
     };
 
@@ -17405,6 +17422,22 @@ document.addEventListener('DOMContentLoaded', init);
         if(ex){ used.push(ex.id); b.fin.push({ exId: ex.id, repsRange: P ? P.reps : '15-20' }); }
         else notas.push('Sin candidato seguro para el finisher.');
         if(!b.tips && ex) b.tips = 'Ritmo constante y sin pausas: buscás sensación muscular, no carga. ' + autoNota(ex, '1010', ath);
+      }
+      /* dosificación auditada: si la estructura la trae, manda sobre el preset */
+      if(spec.dosis){
+        const D = spec.dosis;
+        if(D.reps != null)  b.reps = D.reps;
+        if(D.tempo)         b.tempo = D.tempo;
+        if(D.rest != null)  b.restSeconds = D.rest;
+        if(D.ef != null)    b.efSets = D.ef;
+        if(D.apx != null){  b.approxSets = D.apx; b.hasApprox = D.apx > 0; }
+        if(b.tipo === 'superset' && D.ejs)
+          b.ejercicios.forEach((e, i) => {
+            const x = D.ejs[i]; if(!x) return;
+            if(x.reps)  e.reps  = x.reps;
+            if(x.tempo) e.tempo = x.tempo;
+          });
+        if(b.tipo === 'finisher' && D.reps && b.fin[0]) b.fin[0].repsRange = D.reps;
       }
       nuevos.push(b);
     });
@@ -35322,5 +35355,783 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     window[fn] = w;
   });
   [800, 2000, 3600].forEach(function(ms){ setTimeout(montar, ms); });
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 27 — BANCO DE PLANTILLAS BASE AUDITADAS
+     · Reemplaza el banco de estructuras viejas por las plantillas
+       auditadas (Bodybuilding · Intermedio y Avanzado · F y M)
+     · Asignación de la SEMANA COMPLETA a un alumno, respetando
+       días, bloques, dosificación y ejercicios exactos de la
+       biblioteca (con lo cual los videos quedan vinculados solos)
+     · Cada asignación registra punto de restauración para Ctrl+Z
+     · NO toca Supabase, ni el historial de marcas, ni VIDEO_MAP
+     ============================================================ -->
+<style>
+#mBanco .bk-f{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px;align-items:center}
+#mBanco .bk-f .el{font-size:11px;color:var(--muted);margin-right:2px}
+#mBanco .bk-f .bchip{
+  min-height:32px;padding:0 13px;border-radius:999px;cursor:pointer;
+  background:transparent;border:1px solid var(--line-2);color:var(--txt-2);font-size:12px;font-weight:700;
+}
+#mBanco .bk-f .bchip.on{background:var(--gold);border-color:var(--gold);color:#08090B;font-weight:800}
+.bk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;
+  grid-auto-rows:minmax(292px,auto);max-height:54vh;overflow:auto;padding:3px}
+.bk-card{
+  position:relative;display:flex;flex-direction:column;gap:8px;height:100%;min-height:0;
+  padding:13px 14px;border-radius:14px;background:var(--panel-2);border:1px solid var(--line);
+  cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s;text-align:left;
+}
+.bk-card:hover{border-color:#D2793F;transform:translateY(-2px)}
+.bk-card.on{border-color:#D2793F;box-shadow:0 0 0 2px rgba(210,121,63,.35) inset}
+.bk-card h4{font-family:var(--ffh);font-size:13.5px;letter-spacing:.06em;text-transform:uppercase;color:#EDEFF2}
+.bk-card .bk-tags{display:flex;gap:5px;flex-wrap:wrap}
+.bk-card .bk-tags span{
+  font-size:9.5px;font-weight:900;letter-spacing:.03em;padding:3px 8px;border-radius:999px;
+  border:1px solid var(--line-2);color:var(--muted);background:var(--panel-3);white-space:nowrap;
+}
+.bk-card .bk-tags span.niv{border-color:rgba(210,121,63,.45);color:#E8965E}
+.bk-card .bk-tags span.gen{border-color:rgba(124,197,232,.45);color:#7CC5E8}
+.bk-card .bk-d{font-size:11.5px;color:var(--muted);line-height:1.5}
+.bk-card ol{margin:0;padding-left:17px;display:grid;gap:2px;margin-top:auto}
+.bk-card li{font-size:11px;color:var(--txt-2);line-height:1.45}
+.bk-card .bk-n{font-size:10.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+#mBanco .bk-log{margin-top:11px}
+#mBanco .bk-aviso{
+  margin-top:10px;padding:9px 12px;border-radius:11px;font-size:11.8px;line-height:1.55;
+  border:1px dashed #33404D;background:rgba(124,197,232,.05);color:var(--muted);
+}
+@media(max-width:620px){ .bk-grid{grid-template-columns:1fr;grid-auto-rows:minmax(276px,auto)} }
+</style>
+
+<div class="modal-bg" id="mBanco">
+  <div class="modal" style="max-width:1000px">
+    <div class="modal-h">
+      <h3>📚 Banco de Plantillas Base</h3>
+      <div class="spacer"></div>
+      <span class="find-count" id="bkCount"></span>
+      <button class="icon-btn" data-close="mBanco">✕</button>
+    </div>
+    <div class="modal-b">
+      <div id="bkCtx"></div>
+      <div class="bk-f" id="bkGen"></div>
+      <div class="bk-f" id="bkNiv"></div>
+      <div class="bk-f" id="bkDias"></div>
+      <div class="bk-grid" id="bkGrid"></div>
+      <div class="bk-aviso">
+        Asignar reemplaza los bloques de los días de la plantilla en el alumno/a seleccionado.
+        No toca sus marcas, su historial ni la sincronización en la nube, y queda registrado
+        en Deshacer (Ctrl+Z).
+      </div>
+      <div class="bk-log" id="bkLog"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mBanco">Cancelar</button>
+      <div class="spacer"></div>
+      <button class="btn primary" id="bkApply">⚡ Asignar / Aplicar al alumno</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   BANCO DE PLANTILLAS BASE AUDITADAS
+   ========================================================= */
+(function(){
+
+  /* ---------- constructores compactos de bloque ---------- */
+  function L(t, s, items, tips){
+    return { tipo:'list', titulo:t, subtitulo:s || '', category:'warmup', icon:'🔥',
+             items:items.slice(), tips:tips || '' };
+  }
+  function LX(t, s, items, cat, ic, tips){
+    return { tipo:'list', titulo:t, subtitulo:s || '', category:cat || 'accessory', icon:ic || '⚡',
+             items:items.slice(), tips:tips || '' };
+  }
+  function B(o){
+    return { tipo:'block', titulo:o.t, subtitulo:o.s || '', category:o.cat || 'strength', icon:o.ic || '💪',
+             picks:[{ exacto:o.ex, prefer:[o.ex] }], objective:o.obj || '', tips:o.tips || '',
+             dosis:{ ef:o.ef, reps:o.reps, tempo:o.tempo, rest:o.rest, apx:o.apx || 0 } };
+  }
+  function SS(o){
+    return { tipo:'superset', titulo:o.t, subtitulo:o.s || '', category:o.cat || 'accessory', icon:o.ic || '🔗',
+             picks:o.ejs.map(function(e){ return { exacto:e.ex, prefer:[e.ex] }; }),
+             objective:o.obj || '', tips:o.tips || '',
+             dosis:{ ef:o.ef, rest:o.rest, ejs:o.ejs.map(function(e){ return { reps:e.reps, tempo:e.tempo }; }) } };
+  }
+
+  /* ---------- warm-ups reutilizados ---------- */
+  var WU_CADERA = L('Warm-Up Específico', '5 minutos · cierra en las series de aproximación', [
+    'Movilidad de cadera 90/90 — 5 rotaciones por lado',
+    'Movilidad de tobillo en zancada — 8 por lado',
+    'Puente de glúteo con banda — 1x20',
+    'Abducción con banda (monster walk) — 10 adelante + 10 atrás'
+  ], 'Sin cardio general previo: estos 5 minutos lo reemplazan.');
+
+  var WU_RODILLA = L('Warm-Up Específico', '5 minutos · cierra en las series de aproximación', [
+    'Movilidad de tobillo en zancada — 8 por lado',
+    'Sentadilla profunda sostenida con apoyo — 30 s',
+    'Abducción con banda (monster walk) — 10 adelante + 10 atrás',
+    'Sentadilla goblet — 1x10 liviano'
+  ], 'Nada de estiramiento estático sostenido antes de la serie pesada.');
+
+  var WU_TRACCION = L('Warm-Up Específico', '5 minutos · cierra en las series de aproximación', [
+    'Rotación torácica en cuadrupedia — 6 por lado',
+    'Pasadas de hombro con banda — 1x10',
+    'Face Pull con cuerda — 1x20 muy liviano',
+    'Pull-over en polea — 1x15 muy liviano'
+  ], 'Sin extensión torácica no hay retracción escapular real.');
+
+  var WU_EMPUJE = L('Warm-Up Específico', '5 minutos · cierra en las series de aproximación', [
+    'Deslizamientos de brazos en pared — 1x8',
+    'Pasadas de hombro con banda — 1x10',
+    'Rotación externa manguito rotador — 15 por lado, muy liviano',
+    'Elevaciones laterales — 1x20 con carga mínima'
+  ], 'Los deslizamientos en pared son el chequeo diario del hombro.');
+
+  var WU_MIXTO = L('Warm-Up Específico', '5 minutos · cierra en las series de aproximación', [
+    'Movilidad de cadera 90/90 — 5 rotaciones por lado',
+    'Rotación torácica en cuadrupedia — 6 por lado',
+    'Puente de glúteo a una pierna — 10 por lado',
+    'Abducción con banda (monster walk) — 10 adelante + 10 atrás'
+  ], '');
+
+  var CORE_ANTIMOV = SS({ t:'Core · Antimovimiento', s:'2 rondas · se elimina en la semana de descarga',
+    ic:'🧱', ef:2, rest:40,
+    ejs:[{ ex:'Pallof press', reps:'10 por lado', tempo:'2012' },
+         { ex:'Dead bug',     reps:'8 por lado',  tempo:'3010' }],
+    tips:'La serie termina cuando el torso rota o la lumbar se despega del piso.' });
+
+  var CORE_ADUCTOR = SS({ t:'Core y Aductores', s:'2 rondas · Copenhagen Nivel 1 el primer mesociclo',
+    ic:'🧱', ef:2, rest:40,
+    ejs:[{ ex:'Copenhagen plank', reps:'20-30 s por lado', tempo:'2010' },
+         { ex:'Dead bug',         reps:'8 por lado',       tempo:'3010' }],
+    tips:'La serie de Copenhagen termina cuando cae la pelvis, no cuando arde.' });
+
+  function CORE_FLEX(){
+    return B({ t:'Core · Flexión cargada', s:'Se elimina en la semana de descarga',
+      ex:'Crunch en polea alta', ef:3, reps:'10-15', tempo:'3011', rest:45, cat:'accessory', ic:'🧱',
+      tips:'Flexión de columna, no de cadera: la cadera queda fija y el esternón se acerca a la pelvis.' });
+  }
+  var CIERRE_ABS = LX('Cierre de abdomen', 'Una sola serie', [
+    'Elevación de piernas colgado — 1 serie a fallo técnico'
+  ], 'accessory', '🧱', 'La repetición cuenta cuando la pelvis bascula hacia atrás.');
+
+  /* =========================================================
+     PLANTILLAS AUDITADAS
+     ========================================================= */
+  var PLANTILLAS = [
+
+  /* ---------- AVANZADO · FEMENINO · 5 días ---------- */
+  { id:'jpavf', nombre:'Avanzado · Femenino', gen:'F', niv:'avanzado', dias:5,
+    disc:'Bodybuilding · Hipertrofia',
+    resumen:'Plantilla madre. Prioridad glúteo y espalda, 5 días, glúteo 3 veces por semana.',
+    meso:'Mesociclo Avanzado · S1 70% · S2 78% · S3 85% · S4 60%',
+    sesiones:[
+      { short:'DÍA 1', label:'Pierna A', title:'Cadera y Glúteo',
+        chips:['🍑 Dominante de cadera','🎯 Hip thrust pesado'],
+        foco:'La pausa de 1 segundo arriba en el hip thrust es innegociable: sin ella el ejercicio se vuelve un rebote lumbar.',
+        bloques:[ WU_CADERA,
+          B({ t:'Block A: Cadera pesada', s:'S1 4x10 70% RIR3 · S2 4x8 78% RIR2 · S3 4x6 85% RIR1 · S4 3x8 60% RIR4',
+              ex:'Hip thrust con barra', ef:4, reps:'6-10', tempo:'2011', rest:180, apx:3,
+              obj:'Máxima carga en extensión de cadera con pausa arriba.' }),
+          B({ t:'Block B: Cadena posterior', s:'S1 3x12 RIR3 · S2 3x10 RIR2 · S3 3x8 RIR1-2 · S4 2x10 RIR4 · 60-70% del convencional',
+              ex:'Peso muerto rumano', ef:3, reps:'8-12', tempo:'3110', rest:120, apx:1,
+              obj:'Isquio en posición larga. El rango termina donde termina el estiramiento.' }),
+          B({ t:'Block C: Unilateral', s:'Torso inclinado 15-30° · por pierna · S1 3x12 · S2 3x10 · S3 3x8 · S4 2x10',
+              ex:'Bulgarian split squat', ef:3, reps:'8-12', tempo:'2110', rest:90, cat:'accessory', ic:'⚡',
+              obj:'Rango profundo y glúteo medio. El peso sube cuando las dos piernas cumplen.' }),
+          SS({ t:'Block D: Abducción + Isquios', s:'Superserie no competitiva · abducción con torso inclinado',
+              ef:3, rest:60,
+              ejs:[{ ex:'Abducción sentado en máquina', reps:'15-20', tempo:'2011' },
+                   { ex:'Curl femoral tumbado',         reps:'10-12', tempo:'3110' }] }),
+          B({ t:'Block E: Cierre de glúteo', s:'Por pierna · 1 s de sostén en extensión completa',
+              ex:'Patada de glúteo en polea', ef:3, reps:'12-15', tempo:'2011', rest:45, cat:'accessory', ic:'⚡' }),
+          CORE_ANTIMOV ] },
+
+      { short:'DÍA 2', label:'Torso A', title:'Tracción y Espalda Alta',
+        chips:['🎯 Remo con pecho apoyado','📐 Espalda alta'],
+        foco:'El remo va con pecho apoyado para que los erectores lleguen recuperados al día de sentadilla.',
+        bloques:[ WU_TRACCION,
+          B({ t:'Block A: Tracción horizontal', s:'Agarre por semana: S1 prono ancho · S2 neutro · S3 supino · S4 prono',
+              ex:'Remo apoyado en banco inclinado', ef:4, reps:'6-10', tempo:'2011', rest:150, apx:3,
+              obj:'Dorsal y espalda alta sin demanda de erectores.' }),
+          B({ t:'Block B: Tracción vertical', s:'Protocolo dominada al cierre según nivel (0 / 1-4 / 5+)',
+              ex:'Jalón al pecho', ef:3, reps:'8-12', tempo:'2011', rest:120,
+              obj:'Rango completo arriba: la escápula sube antes de tirar.' }),
+          B({ t:'Block C: Deltoides posterior', s:'S1 4x20 · S2 4x15 · S3 4x12 · S4 3x15 · RIR 0-1',
+              ex:'Cruce de cables deltoides posterior', ef:4, reps:'12-20', tempo:'2011', rest:60,
+              cat:'accessory', ic:'⚡', obj:'Codo casi extendido y fijo. En polea, no con mancuernas.' }),
+          SS({ t:'Block D: Bíceps + Dorsal', s:'Superserie no competitiva · el pull-over no usa bíceps',
+              ef:3, rest:60,
+              ejs:[{ ex:'Curl inclinado',    reps:'10-15', tempo:'3011' },
+                   { ex:'Pull-over en polea', reps:'10-15', tempo:'2011' }] }),
+          B({ t:'Block E: Braquial', s:'Muñeca neutra y firme',
+              ex:'Curl martillo', ef:3, reps:'10-15', tempo:'2011', rest:50, cat:'accessory', ic:'⚡' }),
+          CORE_FLEX(), CIERRE_ABS ] },
+
+      { short:'DÍA 3', label:'Pierna B', title:'Rodilla e Isquios',
+        chips:['🎯 Sentadilla','🦵 Dominante de rodilla'],
+        foco:'Profundidad asignada (Nivel A / B / C): la serie que no la alcanza no cuenta como efectiva.',
+        bloques:[ WU_RODILLA,
+          B({ t:'Block A: Sentadilla', s:'S1 4x10 70% RIR3 · S2 4x8 78% RIR2 · S3 4x6 85% RIR1 · S4 3x8 60% RIR4',
+              ex:'Sentadilla con barra', ef:4, reps:'6-10', tempo:'3010', rest:180, apx:3,
+              obj:'Barra alta, sin rebote. Filmar una serie por semana de costado.' }),
+          B({ t:'Block B: Cuádriceps protegido', s:'Pies bajos y ancho de cadera · el rango lo limita la pelvis',
+              ex:'Hack squat', ef:3, reps:'8-12', tempo:'3110', rest:120, cat:'accessory', ic:'⚡',
+              obj:'Único bloque del día donde llegar a RIR 0 es seguro. Sin hack: prensa 45°.' }),
+          B({ t:'Block C: Isquiosurales', s:'Pelvis apoyada, almohadilla bajo la cadera, pie en punta',
+              ex:'Curl femoral tumbado', ef:3, reps:'8-12', tempo:'3110', rest:90, cat:'accessory', ic:'⚡' }),
+          LX('Protocolo nórdico', 'Dosis mínima eficaz', [
+            'Curl nórdico — 1 serie x 4-5 negativas de 5 s (solo S1 y S2)'
+          ], 'accessory', '⚡', 'No se ejecuta en semana pico ni en descarga.'),
+          SS({ t:'Block D: Cuádriceps + Gemelo', s:'Respaldo reclinado · 2 s de pausa abajo en el gemelo',
+              ef:4, rest:60,
+              ejs:[{ ex:'Extensión de cuádriceps',     reps:'12-20', tempo:'2011' },
+                   { ex:'Elevación de gemelos de pie', reps:'10-15', tempo:'2211' }] }),
+          CORE_ADUCTOR ] },
+
+      { short:'DÍA 4', label:'Torso B', title:'Empuje, Deltoides y Brazos',
+        chips:['🎯 Press inclinado','💠 Deltoides lateral'],
+        foco:'El tríceps va siempre por encima de la cabeza: la porción larga solo se alarga con el brazo arriba.',
+        bloques:[ WU_EMPUJE,
+          B({ t:'Block A: Pectoral superior', s:'Banco a 30° · la rep termina cuando el hombro rueda hacia adelante',
+              ex:'Press inclinado con mancuernas', ef:4, reps:'8-12', tempo:'3110', rest:150, apx:3 }),
+          B({ t:'Block B: Pectoral en posición larga', s:'Codo fijo · cruzar apenas la línea media arriba',
+              ex:'Aperturas en banco inclinado con poleas', ef:4, reps:'10-15', tempo:'3111', rest:75,
+              cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block C: Triset deltoides y brazos', s:'Lateral primero · el curl se omite en la cuarta ronda',
+              ef:4, rest:60,
+              ejs:[{ ex:'Elevaciones laterales en polea',        reps:'12-20', tempo:'2011' },
+                   { ex:'Extensión de tríceps sobre la cabeza',  reps:'10-15', tempo:'3110' },
+                   { ex:'Curl de bíceps polea baja barra corta', reps:'10-15', tempo:'3011' }] }),
+          SS({ t:'Block D: Cierre de deltoides', s:'Cargas mínimas · se elimina en la semana de descarga',
+              ef:2, rest:45,
+              ejs:[{ ex:'Elevación lateral inclinada polea baja', reps:'15-20', tempo:'2111' },
+                   { ex:'Contractor de pecho / Pec Deck inverso', reps:'15-20', tempo:'2011' }] }),
+          CORE_FLEX(), CIERRE_ABS ] },
+
+      { short:'DÍA 5', label:'Puntos Débiles', title:'Núcleo y Ranuras Configurables',
+        chips:['🍑 Cierre de glúteo','🎛️ 2 ranuras configurables'],
+        foco:'Núcleo fijo de 15 series. Las dos últimas ranuras se cambian por alumna: por defecto, deltoides lateral y sóleo.',
+        bloques:[ WU_MIXTO,
+          B({ t:'Núcleo A: Glúteo con carga', s:'Foco glúteo: espalda alta redondeada, puntas hacia afuera, sin pasar la línea de cadera',
+              ex:'Hiperextensiones en banco a 45°', ef:4, reps:'10-15', tempo:'3111', rest:90, apx:3,
+              obj:'Si lo siente en la lumbar, se corrige la posición, no el peso.' }),
+          SS({ t:'Núcleo B: Glúteo medio', s:'TORSO VERTICAL (el Día 1 va inclinado) · prefatiga declarada',
+              ef:4, rest:60,
+              ejs:[{ ex:'Abducción sentado en máquina',        reps:'15-25', tempo:'2011' },
+                   { ex:'Extensión de cadera en polea de pie', reps:'10-15', tempo:'2011' }] }),
+          B({ t:'Núcleo C: Espalda alta', s:'Polea a la altura de los ojos · manos junto a las orejas · nunca pesado',
+              ex:'Face Pull con cuerda', ef:4, reps:'15-20', tempo:'2011', rest:60, cat:'accessory', ic:'⚡' }),
+          B({ t:'Ranura 1: Deltoides lateral', s:'Configurable · última serie en descanso-pausa',
+              ex:'Elevaciones laterales', ef:4, reps:'15-20', tempo:'2011', rest:45, cat:'accessory', ic:'⚡' }),
+          B({ t:'Ranura 2: Sóleo', s:'Configurable · rodilla flexionada · 2 s de pausa abajo',
+              ex:'Elevación de talones sentado', ef:4, reps:'12-20', tempo:'2211', rest:45, cat:'accessory', ic:'⚡' }) ] }
+    ] },
+
+  /* ---------- AVANZADO · MASCULINO · 5 días ---------- */
+  { id:'jpavm', nombre:'Avanzado · Masculino', gen:'M', niv:'avanzado', dias:5,
+    disc:'Bodybuilding · Hipertrofia',
+    resumen:'Plantilla madre masculina. 3 días de torso y 2 de pierna: pectoral y espalda no entran en dos sesiones.',
+    meso:'Mesociclo Avanzado · S1 70% · S2 78% · S3 85% · S4 60%',
+    sesiones:[
+      { short:'DÍA 1', label:'Torso A', title:'Empuje',
+        chips:['🎯 Press banca','💠 Pectoral principal'],
+        foco:'Sin barras de seguridad a altura del pecho y sin asistente, no se hace press banca con barra.',
+        bloques:[ WU_EMPUJE,
+          B({ t:'Block A: Press banca', s:'S1 4x10 70% RIR3 · S2 4x8 78% RIR2 · S3 4x6 85% RIR1 · S4 3x8 60% RIR4 · pausa 1 s en el pecho',
+              ex:'Press de banca plano con barra', ef:4, reps:'6-10', tempo:'3110', rest:180, apx:3,
+              obj:'La rep vale mientras las escápulas siguen retraídas contra el banco.' }),
+          B({ t:'Block B: Pectoral superior', s:'Banco a 20-25° porque el plano ya prefatigó el deltoides anterior',
+              ex:'Press inclinado con mancuernas', ef:3, reps:'8-12', tempo:'3110', rest:120 }),
+          B({ t:'Block C: Pectoral en posición larga', s:'Línea de polea a altura media · codo fijo',
+              ex:'Aperturas en banco plano con poleas', ef:3, reps:'10-15', tempo:'3111', rest:75,
+              cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Deltoides lateral + Tríceps', s:'Tríceps por encima de la cabeza, con cuerda',
+              ef:4, rest:60,
+              ejs:[{ ex:'Elevaciones laterales en polea',       reps:'12-20', tempo:'2011' },
+                   { ex:'Extensión de tríceps sobre la cabeza', reps:'10-15', tempo:'3110' }] }),
+          CORE_FLEX(), CIERRE_ABS ] },
+
+      { short:'DÍA 2', label:'Pierna A', title:'Rodilla',
+        chips:['🎯 Sentadilla','🦵 Dominante de rodilla'],
+        foco:'Profundidad asignada (Nivel A / B / C). Acá la búlgara va con torso vertical: es día de cuádriceps.',
+        bloques:[ WU_RODILLA,
+          B({ t:'Block A: Sentadilla', s:'S1 4x10 70% · S2 4x8 78% · S3 4x6 85% · S4 3x8 60%',
+              ex:'Sentadilla con barra', ef:4, reps:'6-10', tempo:'3010', rest:180, apx:3 }),
+          B({ t:'Block B: Cuádriceps protegido', s:'Pies bajos y ancho de cadera · sin hack, prensa 45°',
+              ex:'Hack squat', ef:3, reps:'8-12', tempo:'3110', rest:120, cat:'accessory', ic:'⚡' }),
+          B({ t:'Block C: Unilateral', s:'TORSO VERTICAL · por pierna · el peso sube cuando las dos piernas cumplen',
+              ex:'Bulgarian split squat', ef:3, reps:'8-12', tempo:'2110', rest:90, cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Cuádriceps + Gemelo', s:'Respaldo reclinado · 2 s de pausa abajo en el gemelo',
+              ef:4, rest:60,
+              ejs:[{ ex:'Extensión de cuádriceps',     reps:'12-20', tempo:'2011' },
+                   { ex:'Elevación de gemelos de pie', reps:'10-15', tempo:'2211' }] }),
+          CORE_ANTIMOV ] },
+
+      { short:'DÍA 3', label:'Torso B', title:'Tracción',
+        chips:['🎯 Remo con pecho apoyado','📐 Espalda principal'],
+        foco:'Pecho apoyado a propósito: los días 2 y 4 cargan erectores y este va justo en el medio.',
+        bloques:[ WU_TRACCION,
+          B({ t:'Block A: Tracción horizontal', s:'Agarre por semana: S1 prono ancho · S2 neutro · S3 supino · S4 prono',
+              ex:'Remo apoyado en banco inclinado', ef:4, reps:'6-10', tempo:'2011', rest:150, apx:3 }),
+          B({ t:'Block B: Tracción vertical', s:'Protocolo dominada al cierre según nivel',
+              ex:'Jalón al pecho', ef:4, reps:'8-12', tempo:'2011', rest:120 }),
+          B({ t:'Block C: Espalda alta', s:'Codo abierto a 60-90° · 1 s de escápulas juntas',
+              ex:'Remo en polea alta agarre neutro', ef:4, reps:'10-15', tempo:'2011', rest:75,
+              cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Deltoides posterior + Bíceps', s:'Curl inclinado: codo detrás del torso',
+              ef:4, rest:60,
+              ejs:[{ ex:'Cruce de cables deltoides posterior', reps:'12-20', tempo:'2011' },
+                   { ex:'Curl inclinado',                      reps:'10-15', tempo:'3011' }] }),
+          B({ t:'Block E: Trapecio', s:'Recorrido vertical y corto · 2 s de sostén arriba · sin balanceo',
+              ex:'Encogimientos de hombros con mancuernas', ef:3, reps:'10-15', tempo:'1012', rest:60,
+              cat:'accessory', ic:'⚡' }) ] },
+
+      { short:'DÍA 4', label:'Pierna B', title:'Cadera e Isquios',
+        chips:['🎯 Rumano + Hip thrust','🍑 Cadena posterior'],
+        foco:'Es la sesión más exigente de la semana: rumano y hip thrust conviven en el mismo día.',
+        bloques:[ WU_CADERA,
+          B({ t:'Block A: Bisagra de cadera', s:'S1 4x12 RIR3 · S2 4x10 RIR2 · S3 4x8 RIR1-2 · S4 3x10 RIR4 · 60-70% del convencional',
+              ex:'Peso muerto rumano', ef:4, reps:'8-12', tempo:'3110', rest:150, apx:3 }),
+          B({ t:'Block B: Glúteo con carga', s:'Pausa de 1 s arriba, obligatoria · tibia vertical',
+              ex:'Hip thrust con barra', ef:4, reps:'6-10', tempo:'2011', rest:150 }),
+          B({ t:'Block C: Isquiosurales', s:'Pelvis apoyada · pie en punta relajada',
+              ex:'Curl femoral tumbado', ef:3, reps:'8-12', tempo:'3110', rest:90, cat:'accessory', ic:'⚡' }),
+          LX('Protocolo nórdico', 'Dosis mínima eficaz', [
+            'Curl nórdico — 1 serie x 4-5 negativas de 5 s (solo S1 y S2)'
+          ], 'accessory', '⚡', ''),
+          SS({ t:'Block D: Cuádriceps + Sóleo', s:'La prensa unilateral está por frecuencia, no por carga: RIR 1',
+              ef:4, rest:60,
+              ejs:[{ ex:'Prensa a una pierna',          reps:'10-15', tempo:'2110' },
+                   { ex:'Elevación de talones sentado', reps:'12-20', tempo:'2211' }] }),
+          CORE_ADUCTOR ] },
+
+      { short:'DÍA 5', label:'Torso C', title:'Hombro, Brazos y Complementario',
+        chips:['💠 Empuje vertical','🎛️ Volumen complementario'],
+        foco:'Único patrón de empuje vertical de la semana, y las series que cierran pectoral, espalda y brazos.',
+        bloques:[ WU_EMPUJE,
+          B({ t:'Block A: Empuje vertical', s:'Respaldo a 80-85° · trayectoria libre, sin extensión lumbar compensatoria',
+              ex:'Press de hombro sentado con mancuernas', ef:4, reps:'8-12', tempo:'3010', rest:150, apx:3 }),
+          SS({ t:'Block B: Deltoides lateral + Espalda alta', s:'5 rondas de laterales, 4 de remo · última lateral en descanso-pausa',
+              ef:4, rest:60,
+              ejs:[{ ex:'Elevaciones laterales',            reps:'15-20', tempo:'2011' },
+                   { ex:'Remo en polea alta agarre neutro', reps:'10-15', tempo:'2011' }] }),
+          SS({ t:'Block C: Pectoral + Deltoides posterior', s:'Las 4 series que cierran el pectoral de la semana',
+              ef:3, rest:60,
+              ejs:[{ ex:'Cruce de cables a altura media',        reps:'12-15', tempo:'3111' },
+                   { ex:'Contractor de pecho / Pec Deck inverso', reps:'15-20', tempo:'2011' }] }),
+          SS({ t:'Block D: Brazos', s:'Martillo y no supinado: el Día 3 ya cubrió el bíceps alargado',
+              ef:3, rest:60,
+              ejs:[{ ex:'Extensión de tríceps sobre la cabeza', reps:'10-15', tempo:'3110' },
+                   { ex:'Curl martillo',                        reps:'10-15', tempo:'2011' }] }),
+          CORE_FLEX(), CIERRE_ABS ] }
+    ] },
+
+  /* ---------- INTERMEDIO · FEMENINO · 4 días ---------- */
+  { id:'jpinf', nombre:'Intermedio · Femenino', gen:'F', niv:'intermedio', dias:4,
+    disc:'Bodybuilding · Hipertrofia',
+    resumen:'Desescalado de la madre femenina: RIR +1, sin fallo, búlgara reemplazada por zancada inversa.',
+    meso:'Mesociclo Intermedio · S1 65% · S2 72% · S3 80% · S4 55%',
+    sesiones:[
+      { short:'DÍA 1', label:'Pierna A', title:'Cadera y Glúteo',
+        chips:['🍑 Dominante de cadera'],
+        foco:'RIR un punto más alto que en Avanzado: S1 RIR4 · S2 RIR3 · S3 RIR2 · S4 RIR5. Sin fallo en ningún bloque.',
+        bloques:[ WU_CADERA,
+          B({ t:'Block A: Cadera pesada', s:'S1 4x10 65% RIR4 · S2 4x8 72% RIR3 · S3 4x6 80% RIR2 · S4 3x8 55% RIR5',
+              ex:'Hip thrust con barra', ef:4, reps:'6-10', tempo:'2011', rest:180, apx:3 }),
+          B({ t:'Block B: Cadena posterior', s:'S1 3x12 · S2 3x10 · S3 3x8 · S4 2x10',
+              ex:'Peso muerto rumano', ef:3, reps:'8-12', tempo:'3110', rest:120, apx:1 }),
+          B({ t:'Block C: Unilateral', s:'Zancada inversa: menos demanda de equilibrio que la búlgara · por pierna',
+              ex:'Zancada inversa', ef:3, reps:'10-12', tempo:'2110', rest:90, cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Abducción + Isquios', s:'Superserie no competitiva · torso inclinado en la abducción',
+              ef:3, rest:60,
+              ejs:[{ ex:'Abducción sentado en máquina', reps:'15-20', tempo:'2011' },
+                   { ex:'Curl femoral tumbado',         reps:'10-12', tempo:'3110' }] }),
+          B({ t:'Block E: Cierre de glúteo', s:'Por pierna',
+              ex:'Patada de glúteo en polea', ef:3, reps:'12-15', tempo:'2011', rest:45, cat:'accessory', ic:'⚡' }),
+          CORE_ANTIMOV ] },
+
+      { short:'DÍA 2', label:'Torso A', title:'Tracción y Espalda Alta',
+        chips:['🎯 Remo con pecho apoyado'],
+        foco:'Protocolo de dominada fijo en Nivel 0: solo negativas hasta que la dominada aparezca sola.',
+        bloques:[ WU_TRACCION,
+          B({ t:'Block A: Tracción horizontal', s:'Agarre por semana: S1 prono ancho · S2 neutro · S3 supino · S4 prono',
+              ex:'Remo apoyado en banco inclinado', ef:4, reps:'6-10', tempo:'2011', rest:150, apx:3 }),
+          B({ t:'Block B: Tracción vertical', s:'Cierre: 1 serie x 4 negativas de 5 s',
+              ex:'Jalón al pecho', ef:3, reps:'8-12', tempo:'2011', rest:120 }),
+          B({ t:'Block C: Deltoides posterior', s:'Codo casi extendido y fijo',
+              ex:'Cruce de cables deltoides posterior', ef:3, reps:'12-20', tempo:'2011', rest:60,
+              cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Bíceps + Dorsal', s:'Superserie no competitiva',
+              ef:3, rest:60,
+              ejs:[{ ex:'Curl inclinado',    reps:'10-15', tempo:'3011' },
+                   { ex:'Pull-over en polea', reps:'10-15', tempo:'2011' }] }),
+          CORE_FLEX() ] },
+
+      { short:'DÍA 3', label:'Pierna B', title:'Rodilla e Isquios',
+        chips:['🎯 Sentadilla'],
+        foco:'Sin protocolo nórdico en este nivel: la carga excéntrica se introduce recién en Avanzado.',
+        bloques:[ WU_RODILLA,
+          B({ t:'Block A: Sentadilla', s:'S1 4x10 65% RIR4 · S2 4x8 72% RIR3 · S3 4x6 80% RIR2 · S4 3x8 55% RIR5',
+              ex:'Sentadilla con barra', ef:4, reps:'6-10', tempo:'3010', rest:180, apx:3 }),
+          B({ t:'Block B: Cuádriceps protegido', s:'Sin hack, prensa 45°',
+              ex:'Hack squat', ef:3, reps:'8-12', tempo:'3110', rest:120, cat:'accessory', ic:'⚡' }),
+          B({ t:'Block C: Isquiosurales', s:'Pelvis apoyada · pie en punta relajada',
+              ex:'Curl femoral tumbado', ef:3, reps:'8-12', tempo:'3110', rest:90, cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Cuádriceps + Gemelo', s:'Respaldo reclinado · 2 s de pausa abajo en el gemelo',
+              ef:3, rest:60,
+              ejs:[{ ex:'Extensión de cuádriceps',     reps:'12-20', tempo:'2011' },
+                   { ex:'Elevación de gemelos de pie', reps:'10-15', tempo:'2211' }] }),
+          CORE_ADUCTOR ] },
+
+      { short:'DÍA 4', label:'Torso B', title:'Empuje, Deltoides y Brazos',
+        chips:['🎯 Press inclinado','💠 Deltoides lateral'],
+        foco:'El tríceps va por encima de la cabeza, con cuerda. Sin descanso-pausa en este nivel.',
+        bloques:[ WU_EMPUJE,
+          B({ t:'Block A: Pectoral superior', s:'Banco a 30° · la rep termina cuando el hombro rueda hacia adelante',
+              ex:'Press inclinado con mancuernas', ef:4, reps:'8-12', tempo:'3110', rest:150, apx:3 }),
+          B({ t:'Block B: Pectoral en posición larga', s:'Codo fijo · cruzar apenas la línea media',
+              ex:'Aperturas en banco inclinado con poleas', ef:3, reps:'10-15', tempo:'3111', rest:75,
+              cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block C: Deltoides lateral + Tríceps', s:'Tríceps por encima de la cabeza',
+              ef:4, rest:60,
+              ejs:[{ ex:'Elevaciones laterales en polea',       reps:'12-20', tempo:'2011' },
+                   { ex:'Extensión de tríceps sobre la cabeza', reps:'10-15', tempo:'3110' }] }),
+          SS({ t:'Block D: Cierre de deltoides', s:'Cargas mínimas · se elimina en la semana de descarga',
+              ef:2, rest:45,
+              ejs:[{ ex:'Elevación lateral inclinada polea baja', reps:'15-20', tempo:'2111' },
+                   { ex:'Contractor de pecho / Pec Deck inverso', reps:'15-20', tempo:'2011' }] }),
+          CORE_FLEX() ] }
+    ] },
+
+  /* ---------- INTERMEDIO · MASCULINO · 4 días ---------- */
+  { id:'jpinm', nombre:'Intermedio · Masculino', gen:'M', niv:'intermedio', dias:4,
+    disc:'Bodybuilding · Hipertrofia',
+    resumen:'Desescalado de la madre masculina: torso/pierna duplicado, RIR +1 y sin fallo.',
+    meso:'Mesociclo Intermedio · S1 65% · S2 72% · S3 80% · S4 55%',
+    sesiones:[
+      { short:'DÍA 1', label:'Torso A', title:'Empuje',
+        chips:['🎯 Press banca'],
+        foco:'Sin topes de seguridad ni asistente, no se hace press banca con barra: se pasa a mancuernas.',
+        bloques:[ WU_EMPUJE,
+          B({ t:'Block A: Press banca', s:'S1 4x10 65% RIR4 · S2 4x8 72% RIR3 · S3 4x6 80% RIR2 · S4 3x8 55% RIR5 · pausa 1 s en el pecho',
+              ex:'Press de banca plano con barra', ef:4, reps:'6-10', tempo:'3110', rest:180, apx:3 }),
+          B({ t:'Block B: Pectoral superior', s:'Banco a 20-25°',
+              ex:'Press inclinado con mancuernas', ef:3, reps:'8-12', tempo:'3110', rest:120 }),
+          B({ t:'Block C: Pectoral en posición larga', s:'Línea de polea a altura media · codo fijo',
+              ex:'Aperturas en banco plano con poleas', ef:3, reps:'10-15', tempo:'3111', rest:75,
+              cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Deltoides lateral + Tríceps', s:'Tríceps por encima de la cabeza',
+              ef:4, rest:60,
+              ejs:[{ ex:'Elevaciones laterales en polea',       reps:'12-20', tempo:'2011' },
+                   { ex:'Extensión de tríceps sobre la cabeza', reps:'10-15', tempo:'3110' }] }),
+          CORE_FLEX() ] },
+
+      { short:'DÍA 2', label:'Pierna A', title:'Rodilla',
+        chips:['🎯 Sentadilla'],
+        foco:'Zancada inversa en lugar de búlgara: técnica más limpia de enseñar y menos costo de equilibrio.',
+        bloques:[ WU_RODILLA,
+          B({ t:'Block A: Sentadilla', s:'S1 4x10 65% · S2 4x8 72% · S3 4x6 80% · S4 3x8 55%',
+              ex:'Sentadilla con barra', ef:4, reps:'6-10', tempo:'3010', rest:180, apx:3 }),
+          B({ t:'Block B: Cuádriceps protegido', s:'Sin hack, prensa 45°',
+              ex:'Hack squat', ef:3, reps:'8-12', tempo:'3110', rest:120, cat:'accessory', ic:'⚡' }),
+          B({ t:'Block C: Unilateral', s:'Por pierna · el peso sube cuando las dos piernas cumplen',
+              ex:'Zancada inversa', ef:3, reps:'10-12', tempo:'2110', rest:90, cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Cuádriceps + Gemelo', s:'Respaldo reclinado · 2 s de pausa abajo en el gemelo',
+              ef:3, rest:60,
+              ejs:[{ ex:'Extensión de cuádriceps',     reps:'12-20', tempo:'2011' },
+                   { ex:'Elevación de gemelos de pie', reps:'10-15', tempo:'2211' }] }),
+          CORE_ANTIMOV ] },
+
+      { short:'DÍA 3', label:'Torso B', title:'Tracción',
+        chips:['🎯 Remo con pecho apoyado'],
+        foco:'Protocolo de dominada fijo en Nivel 0.',
+        bloques:[ WU_TRACCION,
+          B({ t:'Block A: Tracción horizontal', s:'Agarre por semana: S1 prono ancho · S2 neutro · S3 supino · S4 prono',
+              ex:'Remo apoyado en banco inclinado', ef:4, reps:'6-10', tempo:'2011', rest:150, apx:3 }),
+          B({ t:'Block B: Tracción vertical', s:'Cierre: 1 serie x 4 negativas de 5 s',
+              ex:'Jalón al pecho', ef:4, reps:'8-12', tempo:'2011', rest:120 }),
+          B({ t:'Block C: Espalda alta', s:'Codo abierto a 60-90°',
+              ex:'Remo en polea alta agarre neutro', ef:3, reps:'10-15', tempo:'2011', rest:75,
+              cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Deltoides posterior + Bíceps', s:'Curl inclinado: codo detrás del torso',
+              ef:3, rest:60,
+              ejs:[{ ex:'Cruce de cables deltoides posterior', reps:'15-20', tempo:'2011' },
+                   { ex:'Curl inclinado',                      reps:'10-15', tempo:'3011' }] }),
+          B({ t:'Block E: Trapecio', s:'2 s de sostén arriba · sin balanceo',
+              ex:'Encogimientos de hombros con mancuernas', ef:3, reps:'10-15', tempo:'1012', rest:60,
+              cat:'accessory', ic:'⚡' }) ] },
+
+      { short:'DÍA 4', label:'Pierna B', title:'Cadera e Isquios',
+        chips:['🎯 Rumano + Hip thrust'],
+        foco:'Sin protocolo nórdico en este nivel.',
+        bloques:[ WU_CADERA,
+          B({ t:'Block A: Bisagra de cadera', s:'S1 4x12 · S2 4x10 · S3 4x8 · S4 3x10 · 60-70% del convencional',
+              ex:'Peso muerto rumano', ef:4, reps:'8-12', tempo:'3110', rest:150, apx:3 }),
+          B({ t:'Block B: Glúteo con carga', s:'Pausa de 1 s arriba, obligatoria',
+              ex:'Hip thrust con barra', ef:3, reps:'6-10', tempo:'2011', rest:150 }),
+          B({ t:'Block C: Isquiosurales', s:'Pelvis apoyada · pie en punta relajada',
+              ex:'Curl femoral tumbado', ef:3, reps:'8-12', tempo:'3110', rest:90, cat:'accessory', ic:'⚡' }),
+          SS({ t:'Block D: Sóleo + Abdomen', s:'Superserie no competitiva',
+              ef:3, rest:60,
+              ejs:[{ ex:'Elevación de talones sentado', reps:'15-20', tempo:'2211' },
+                   { ex:'Crunch en polea alta',         reps:'12-15', tempo:'3011' }] }),
+          CORE_ADUCTOR ] }
+    ] }
+  ];
+
+  /* nombre propio: window.CoachBanco ya lo usa el banco de sesiones guardadas
+     del coach (módulo de p23) y no se pisa */
+  window.CoachPlantillasJP = { plantillas: PLANTILLAS, abrir: null };
+
+  /* =========================================================
+     1. LIMPIEZA: el banco viejo sale, entran las auditadas
+     ========================================================= */
+  var CAT_DE = function(ses){
+    var t = (ses.label + ' ' + ses.title).toLowerCase();
+    if(/pierna|cadera|gl[úu]teo|rodilla/.test(t)) return ['gluteos'];
+    return ['torso'];
+  };
+
+  function comoEstructuras(){
+    var out = [];
+    PLANTILLAS.forEach(function(pl){
+      pl.sesiones.forEach(function(s, i){
+        out.push({
+          id: pl.id + '_d' + (i+1),
+          disc: ['hiper','recomp','fuerza'],
+          niv:  pl.niv === 'avanzado' ? ['avanzado','alto'] : ['intermedio','avanzado'],
+          cats: CAT_DE(s),
+          name: pl.nombre.replace(' · ', ' ') + ' · D' + (i+1) + ': ' + s.title,
+          desc: 'Día ' + (i+1) + ' de ' + pl.sesiones.length + ' de la plantilla auditada ' +
+                pl.nombre + '. Dosificación, tempos y descansos ya definidos.',
+          pasos: s.bloques.map(function(b){ return b.titulo; }),
+          label: s.label, title: s.title, chips: (s.chips || []).slice(),
+          blocks: s.bloques,
+          jpAuditada: true, jpPlantilla: pl.id
+        });
+      });
+    });
+    return out;
+  }
+
+  function limpiarBanco(){
+    var UX = window.CoachUX;
+    if(!UX || !Array.isArray(UX.templates)) return false;
+    var nuevas = comoEstructuras();
+    if(UX.templates.length && UX.templates[0].jpAuditada) return true;   /* ya migrado */
+    UX.templates.length = 0;
+    nuevas.forEach(function(t){ UX.templates.push(t); });
+    return true;
+  }
+
+  /* =========================================================
+     2. INTERFAZ DE ASIGNACIÓN
+     ========================================================= */
+  var bkSel = null, bkGen = 'todos', bkNiv = 'todos', bkDias = 'todos';
+
+  function lista(){
+    return PLANTILLAS.filter(function(p){
+      if(bkGen !== 'todos' && p.gen !== bkGen) return false;
+      if(bkNiv !== 'todos' && p.niv !== bkNiv) return false;
+      if(bkDias !== 'todos' && String(p.dias) !== bkDias) return false;
+      return true;
+    });
+  }
+
+  function chips(id, items, activo, attr){
+    var el = document.getElementById(id); if(!el) return;
+    el.innerHTML = items.map(function(x){
+      return '<button type="button" class="bchip ' + (x.v === activo ? 'on' : '') + '" ' +
+             attr + '="' + x.v + '">' + x.lb + '</button>';
+    }).join('');
+  }
+
+  function pintar(){
+    var el = document.getElementById('bkGrid'); if(!el) return;
+    chips('bkGen', [{v:'todos',lb:'Todos'},{v:'F',lb:'♀ Femenino'},{v:'M',lb:'♂ Masculino'}], bkGen, 'data-bgen');
+    chips('bkNiv', [{v:'todos',lb:'Todos los niveles'},{v:'intermedio',lb:'🟡 Intermedio'},{v:'avanzado',lb:'🟠 Avanzado'}], bkNiv, 'data-bniv');
+    chips('bkDias',[{v:'todos',lb:'Cualquier frecuencia'},{v:'4',lb:'4 días'},{v:'5',lb:'5 días'}], bkDias, 'data-bdias');
+
+    var L2 = lista();
+    if(!L2.some(function(p){ return p.id === bkSel; })) bkSel = L2.length ? L2[0].id : null;
+
+    el.innerHTML = L2.length ? L2.map(function(p){
+      var series = p.sesiones.reduce(function(n, s){
+        return n + s.bloques.filter(function(b){ return b.tipo !== 'list'; })
+                            .reduce(function(m, b){ return m + ((b.dosis && b.dosis.ef) || 0); }, 0);
+      }, 0);
+      return '<div class="bk-card ' + (p.id === bkSel ? 'on' : '') + '" role="button" tabindex="0" data-bk="' + p.id + '">' +
+        '<div class="bk-tags">' +
+          '<span class="niv">' + (p.niv === 'avanzado' ? '🟠 Avanzado' : '🟡 Intermedio') + '</span>' +
+          '<span class="gen">' + (p.gen === 'F' ? '♀ Femenino' : '♂ Masculino') + '</span>' +
+          '<span>' + p.dias + ' días</span>' +
+          '<span>' + esc(p.disc) + '</span>' +
+        '</div>' +
+        '<h4>' + esc(p.nombre) + '</h4>' +
+        '<div class="bk-d">' + esc(p.resumen) + '</div>' +
+        '<ol>' + p.sesiones.map(function(s){
+          return '<li>' + esc(s.label) + ' · ' + esc(s.title) + '</li>';
+        }).join('') + '</ol>' +
+        '<div class="bk-n">' + series + ' series efectivas por semana · auditada</div>' +
+      '</div>';
+    }).join('') : '<div class="hint" style="grid-column:1/-1">No hay plantillas con esos filtros.</div>';
+
+    var c = document.getElementById('bkCount');
+    if(c) c.textContent = L2.length + ' plantilla(s) auditada(s)';
+  }
+
+  function ctx(){
+    var box = document.getElementById('bkCtx'); if(!box) return;
+    var a = (typeof active === 'function') ? active() : null;
+    box.innerHTML = a
+      ? '<div class="alert info" style="padding:9px 12px"><span class="ic">🎯</span><div>' +
+          '<b>Alumno/a activo: ' + esc(fullName(a)) + '</b>' +
+          'Elegí una plantilla y aplicá: se cargan todos los días con su dosificación auditada.' +
+        '</div></div>'
+      : '<div class="alert warn" style="padding:9px 12px"><span class="ic">⚠️</span><div>' +
+          '<b>No hay alumno/a seleccionado</b>Elegí uno en la vista Alumnos antes de asignar.' +
+        '</div></div>';
+  }
+
+  function abrir(){
+    limpiarBanco();
+    ctx(); pintar();
+    var lg = document.getElementById('bkLog'); if(lg) lg.innerHTML = '';
+    if(typeof openModal === 'function') openModal('mBanco');
+  }
+  window.abrirBancoJP = abrir;
+  if(window.CoachPlantillasJP) window.CoachPlantillasJP.abrir = abrir;
+
+  /* =========================================================
+     3. ASIGNACIÓN DE LA SEMANA COMPLETA
+     ========================================================= */
+  function asignar(){
+    var pl = PLANTILLAS.filter(function(p){ return p.id === bkSel; })[0];
+    var ath = (typeof active === 'function') ? active() : null;
+    var lg = document.getElementById('bkLog');
+    if(!pl) return;
+    if(!ath){ if(typeof toast === 'function') toast('Elegí un alumno/a primero'); return; }
+
+    var p = plan(ath.id); if(!p) return;
+    var conBloques = p.dias.filter(function(d){ return (d.bloques || []).length; }).length;
+    if(conBloques && !confirm('Se van a reemplazar los bloques de los primeros ' + pl.sesiones.length +
+        ' días de ' + fullName(ath) + '.\n\nSus marcas, su historial y la sincronización no se tocan, ' +
+        'y podés deshacerlo con Ctrl+Z.\n\n¿Aplicamos ' + pl.nombre + '?')) return;
+
+    /* punto de restauración ANTES de tocar nada */
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function')
+      CoachUndo.vigilar('Plantilla base: ' + pl.nombre);
+
+    /* si el alumno tiene menos días que la plantilla, se amplía la frecuencia */
+    var ampliado = 0;
+    if((parseInt(ath.freq, 10) || 4) < pl.sesiones.length){
+      ath.freq = String(pl.sesiones.length);
+      ampliado = pl.sesiones.length;
+    }
+    while(p.dias.length < pl.sesiones.length) p.dias.push(newDay(p.dias.length));
+
+    var total = 0, notas = [], vinculados = 0, sinVideo = [];
+    pl.sesiones.forEach(function(s, i){
+      var d = p.dias[i];
+      /* conMet=false: las plantillas auditadas no llevan acondicionamiento
+         genérico agregado, y ningún bloque suyo es de categoría metcon */
+      var r = window.CoachUX.construir({ blocks: s.bloques }, ath, false);
+      d.bloques = r.bloques;
+      total += r.bloques.length;
+      d.label = s.label; d.title = s.title;
+      d.metaChips = (s.chips || []).slice();
+      if(s.foco){ d.focusTitle = 'Foco Técnico del Día'; d.focusText = s.foco; }
+      if(r.notas && r.notas.length) notas = notas.concat(r.notas);
+      /* control de vinculación de video, sin tocar la biblioteca */
+      r.bloques.forEach(function(b){
+        (blockExIds(b) || []).forEach(function(x){
+          var ex = getEx(x.exId); if(!ex) return;
+          if(ex.videoId) vinculados++; else if(sinVideo.indexOf(ex.es) < 0) sinVideo.push(ex.es);
+        });
+      });
+    });
+
+    if(p.meta && pl.meso) p.meta.mesoName = pl.meso;
+    save();
+    if(typeof renderBuilder === 'function') renderBuilder();
+
+    if(lg) lg.innerHTML =
+      '<div class="alert ' + (notas.length || sinVideo.length ? 'warn' : 'good') + '" style="padding:10px 12px">' +
+        '<span class="ic">' + (notas.length || sinVideo.length ? '⚠️' : '✅') + '</span><div>' +
+        '<b>' + esc(pl.nombre) + ' asignada · ' + total + ' bloques en ' + pl.sesiones.length + ' días</b>' +
+        '<div style="margin-top:3px">🎬 ' + vinculados + ' ejercicios con video vinculado automáticamente.</div>' +
+        (ampliado ? '<div style="margin-top:3px">📅 La frecuencia del alumno/a se amplió a ' + ampliado + ' días.</div>' : '') +
+        (sinVideo.length ? '<div style="margin-top:3px">Sin video en la biblioteca: ' + esc(sinVideo.slice(0,4).join(' · ')) +
+          (sinVideo.length > 4 ? ' y ' + (sinVideo.length - 4) + ' más' : '') +
+          '. Se cargan igual; podés sumarles video desde Biblioteca con el filtro «Sin video».</div>' : '') +
+        notas.map(function(n){ return '<div style="margin-top:3px">• ' + esc(n) + '</div>'; }).join('') +
+        '<div style="margin-top:5px">↩️ Ctrl+Z deshace la asignación completa.</div>' +
+      '</div></div>';
+
+    if(typeof toast === 'function') toast('⚡ ' + pl.nombre + ' asignada · ' + total + ' bloques');
+  }
+
+  /* =========================================================
+     4. MONTAJE
+     ========================================================= */
+  function montar(){
+    limpiarBanco();
+
+    var m = document.getElementById('mBanco');
+    if(m && !m.__jp){
+      m.__jp = 1;
+      [].slice.call(m.querySelectorAll('[data-close]')).forEach(function(x){
+        x.addEventListener('click', function(){ if(typeof closeModal === 'function') closeModal('mBanco'); });
+      });
+      ['bkGen','bkNiv','bkDias'].forEach(function(id){
+        var el = document.getElementById(id); if(!el) return;
+        el.addEventListener('click', function(e){
+          var c = e.target.closest('[data-bgen],[data-bniv],[data-bdias]'); if(!c) return;
+          if(c.dataset.bgen  !== undefined) bkGen  = c.dataset.bgen;
+          if(c.dataset.bniv  !== undefined) bkNiv  = c.dataset.bniv;
+          if(c.dataset.bdias !== undefined) bkDias = c.dataset.bdias;
+          pintar();
+        });
+      });
+      var g = document.getElementById('bkGrid');
+      g.addEventListener('click', function(e){
+        var c = e.target.closest('[data-bk]'); if(!c) return;
+        bkSel = c.dataset.bk; pintar();
+      });
+      g.addEventListener('keydown', function(e){
+        if(e.key !== 'Enter' && e.key !== ' ') return;
+        var c = e.target.closest('[data-bk]'); if(!c) return;
+        e.preventDefault(); c.click();
+      });
+      document.getElementById('bkApply').addEventListener('click', asignar);
+    }
+
+    /* botón en la barra del builder */
+    var rail = document.querySelector('#v-builder .topbar .jp-rail') ||
+               document.querySelector('#v-builder .topbar');
+    if(rail && !document.getElementById('btnBanco')){
+      var b = document.createElement('button');
+      b.className = 'btn tpl'; b.id = 'btnBanco'; b.type = 'button';
+      b.innerHTML = '📚 Banco de Plantillas Base';
+      b.addEventListener('click', abrir);
+      var ref = document.getElementById('btnTpl');
+      if(ref && ref.parentNode === rail) rail.insertBefore(b, ref); else rail.appendChild(b);
+    }
+    /* el botón viejo de estructuras queda, pero ya sirve solo contenido auditado */
+    var viejo = document.getElementById('btnTpl');
+    if(viejo && !viejo.__jpr){ viejo.__jpr = 1; viejo.innerHTML = '⚡ Cargar un día suelto'; }
+  }
+
+  ['renderBuilder','renderDay','go'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jpbk) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(montar, 90); return r; };
+    w.__jpbk = 1;
+    window[fn] = w;
+  });
+  [700, 1800, 3400].forEach(function(ms){ setTimeout(montar, ms); });
 })();
 </script>
