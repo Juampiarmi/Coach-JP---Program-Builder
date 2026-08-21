@@ -4124,6 +4124,27 @@ function renderBlock(block, day, weekIdx, idx){
       (block.category === 'warmup' ? '' : bloqueNotasHtml(block, day, weekIdx)) + '</div>' +
   '</div>';
 }
+/* Tarjeta de nutrición de la sesión: la arma el coach en el builder */
+function nutriCard(day){
+  var n = day && day.nutri;
+  if(!n) return '';
+  var fila = function(cls, lb, txt){
+    if(!txt) return '';
+    return '<div class="nut-row ' + cls + '"><span class="nut-lb">' + lb + '</span>' +
+           '<p class="nut-tx">' + txt + '</p></div>';
+  };
+  var cuerpo = fila('pre', 'Antes', n.pre) + fila('intra', 'Durante', n.intra) + fila('post', 'Después', n.post) +
+               (n.nota ? '<div class="nut-row nota"><span class="nut-lb">Nota del coach</span><p class="nut-tx">' + n.nota + '</p></div>' : '');
+  if(!cuerpo) return '';
+  return '<details class="nutri-card"><summary class="nutri-sum">' +
+      '<span class="nut-ic">\\uD83C\\uDF7D\\uFE0F</span>' +
+      '<span class="nut-ti">Nutrición de hoy</span>' +
+      '<span class="nut-hint">antes · durante · después</span>' +
+      '<span class="nut-cv">\\u25BE</span>' +
+    '</summary><div class="nutri-body">' + cuerpo +
+      '<p class="nut-legal">Orientativo y educativo. No reemplaza el plan de un nutricionista.</p>' +
+    '</div></details>';
+}
 function renderMain(){
   const day = getCurrentDay();
   const weekIdx = state.currentWeek;
@@ -4149,6 +4170,7 @@ function renderMain(){
   if(day.focusText){
     html += '<div class="safety-banner"><div class="sb-icon">🎯</div><div><div class="safety-banner-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div><div class="safety-banner-text">' + day.focusText + '</div></div></div>';
   }
+  html += nutriCard(day);
   html += '<div class="blocks-stack">';
   blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
   html += '</div>';
@@ -14842,6 +14864,53 @@ body{
 })();
 <\/script>
 
+
+<style>
+/* ===== v3.7 · Tarjeta de nutrición de la sesión ===== */
+.nutri-card{
+  margin:0 0 14px;border-radius:14px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(124,197,232,.05),rgba(255,255,255,.015));
+  border:1px solid rgba(124,197,232,.22);
+}
+.nutri-card .nutri-sum{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+  padding:0 14px;min-height:52px;user-select:none;
+}
+.nutri-card .nutri-sum::-webkit-details-marker{display:none}
+.nutri-card .nut-ic{font-size:17px;line-height:1}
+.nutri-card .nut-ti{
+  font-family:var(--font-head,inherit);font-size:calc(13px * var(--fzs,1));
+  letter-spacing:.12em;text-transform:uppercase;color:#EDEFF2;font-weight:700;
+}
+.nutri-card .nut-hint{
+  margin-left:auto;font-size:calc(11.5px * var(--fzs,1));color:#7CC5E8;opacity:.85;
+  white-space:nowrap;
+}
+.nutri-card .nut-cv{color:#7CC5E8;font-size:13px;transition:transform .2s ease}
+.nutri-card[open] .nut-cv{transform:rotate(180deg)}
+.nutri-card .nutri-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.nutri-card .nut-row{
+  padding:10px 12px;border-radius:11px;background:rgba(255,255,255,.03);
+  border-left:3px solid rgba(124,197,232,.5);
+}
+.nutri-card .nut-row.post{border-left-color:#D2793F}
+.nutri-card .nut-row.nota{border-left-color:rgba(255,255,255,.25)}
+.nutri-card .nut-lb{
+  display:block;font-family:var(--font-head,inherit);font-size:calc(11px * var(--fzs,1));
+  letter-spacing:.16em;text-transform:uppercase;color:#8FB9CE;font-weight:700;margin-bottom:4px;
+}
+.nutri-card .nut-row.post .nut-lb{color:#E8965E}
+.nutri-card .nut-tx{
+  margin:0;font-size:calc(13.5px * var(--fzs,1));line-height:1.6;color:#C9CFD8;
+}
+.nutri-card .nut-legal{
+  margin:2px 0 0;font-size:calc(11.5px * var(--fzs,1));line-height:1.5;color:#6E7783;
+}
+@media(max-width:520px){
+  .nutri-card .nut-hint{display:none}
+}
+</style>
+
 </body>
 </html>
 `;
@@ -15016,7 +15085,8 @@ function buildProgramConfig(ath){
       focusTitle: d.focusTitle || 'Foco Técnico del Día', focusText: d.focusText || '',
       blocks: blocks, summary: d.summary || '', cooldown: (d.cooldown||[]).slice(),
       cooldownNota: d.cooldownNota || '',
-      finisherIA: finisherDelDia(ath, d)
+      finisherIA: finisherDelDia(ath, d),
+      nutri: nutriDelDia(ath, d)
     };
   });
 
@@ -15028,6 +15098,23 @@ function buildProgramConfig(ath){
     mesoName: (p.meta.mesoName || 'Mesociclo'),
     weeks: weeks, videoMap: videoMap, videoLib: bibliotecaVideos(withVideos), days: days
   };
+}
+
+/* Nutrición de la sesión · ficha propia del alumno/a (coachjp_nutri_v1) */
+function nutriDelDia(ath, d){
+  try{
+    const o = JSON.parse(localStorage.getItem('coachjp_nutri_v1') || '{}');
+    const f = o[ath.id];
+    if(!f || !f.on) return null;
+    const dia = (f.dias || {})[d.id];
+    if(!dia) return null;
+    const out = {};
+    /* el texto del coach viaja como texto plano: nada de etiquetas sueltas */
+    const limpio = t => String(t || '').trim().replace(/[<>]/g, '');
+    ['pre','intra','post','nota'].forEach(k => { const v = limpio(dia[k]); if(v) out[k] = v; });
+    return Object.keys(out).length ? out : null;
+  }catch(e){}
+  return null;
 }
 
 /* Finisher estructurado con IA · sólo en sesiones que no son de CrossFit */
@@ -15489,7 +15576,8 @@ document.addEventListener('DOMContentLoaded', init);
 @media(max-width:640px){.prov-row{grid-template-columns:1fr}}
 .mini-prov{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 .mini-prov button{
-  padding:4px 10px;border-radius:20px;font-size:11px;font-weight:800;
+  padding:4px 12px;border-radius:20px;font-size:11px;font-weight:800;
+  min-height:32px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
   background:var(--panel-3);border:1px solid var(--line-2);color:var(--muted);transition:.15s;
 }
 .mini-prov button.on{border-color:var(--gold);color:var(--gold);background:rgba(210,121,63,.12)}
@@ -16319,7 +16407,9 @@ document.addEventListener('DOMContentLoaded', init);
 .tpl-card{
   background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);padding:14px;
   cursor:pointer;transition:.16s;display:flex;flex-direction:column;gap:8px;text-align:left;
+  height:auto;min-height:0;font:inherit;color:inherit;
 }
+.tpl-card:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .tpl-card:hover{border-color:var(--gold);transform:translateY(-2px);background:linear-gradient(180deg,rgba(210,121,63,.06),var(--panel-2))}
 .tpl-card.on{border-color:var(--gold);box-shadow:0 0 0 1px rgba(210,121,63,.3) inset}
 .tpl-card h4{font-size:14px;font-weight:800;letter-spacing:-.2px;line-height:1.25}
@@ -16329,18 +16419,25 @@ document.addEventListener('DOMContentLoaded', init);
 
 .find-bar{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
 .find-grid{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;
   max-height:52vh;overflow-y:auto;padding:3px;margin-top:4px;
+  /* alto de fila explícito: con filas automáticas el motor de layout medía la
+     tarjeta en 66px (la miniatura con aspect-ratio no aporta alto intrínseco
+     dentro del modal) y el nombre del ejercicio quedaba recortado. */
+  grid-auto-rows:minmax(246px,auto);
 }
 .fx{
   background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;
   cursor:pointer;transition:.15s;display:flex;flex-direction:column;text-align:left;
+  height:100%;min-height:0;padding:0;font:inherit;color:inherit;
 }
+.fx:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .fx:hover{border-color:var(--gold);transform:translateY(-2px)}
 .fx.ban{border-color:rgba(168,68,44,.5);opacity:.72}
 .fx.ban:hover{border-color:var(--red)}
 .fx.pref{border-color:rgba(74,147,184,.45)}
-.fx-th{aspect-ratio:16/9;background:#07080A;position:relative;display:grid;place-items:center}
+/* alto fijo (no aspect-ratio): así la tarjeta mide igual en todas las columnas */
+.fx-th{height:126px;flex:0 0 126px;width:100%;background:#07080A;position:relative;display:grid;place-items:center;overflow:hidden}
 .fx-th img{width:100%;height:100%;object-fit:cover;opacity:.85}
 .fx-th .nv{font-size:10.5px;color:#454B53;font-weight:800;letter-spacing:.05em}
 .fx-badge{
@@ -16350,8 +16447,15 @@ document.addEventListener('DOMContentLoaded', init);
 .fx-badge.ban{background:rgba(168,68,44,.85);border-color:#FF5A66;color:#fff}
 .fx-badge.warn{background:rgba(239,180,74,.85);border-color:var(--orange);color:#231400}
 .fx-badge.pref{background:rgba(74,147,184,.85);border-color:var(--teal);color:#0B1A22}
-.fx-b{padding:8px 9px;display:flex;flex-direction:column;gap:5px;flex:1}
-.fx-n{font-size:12.5px;font-weight:800;line-height:1.3}
+.fx-b{padding:9px 10px 10px;display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-height:0;overflow:hidden}
+/* el nombre manda: siempre visible, blanco puro, hasta 2 líneas */
+.fx-n{
+  font-size:13.5px;font-weight:800;line-height:1.3;color:#FFFFFF;letter-spacing:-.1px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  word-break:break-word;min-height:2.6em;
+}
+.fx-en{font-size:10.5px;color:var(--txt-2);line-height:1.35;opacity:.72;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fx-m{font-size:10.5px;color:var(--muted);line-height:1.4}
 .fx-vid{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
   font-size:11px;background:rgba(0,0,0,.62);border:1px solid rgba(210,121,63,.5);backdrop-filter:blur(3px)}
@@ -16511,7 +16615,11 @@ document.addEventListener('DOMContentLoaded', init);
       const badge = w === 'danger' ? '<span class="fx-badge ban">⛔ Restringido</span>'
                   : w === 'warn'   ? '<span class="fx-badge warn">⚠️ Riesgo</span>'
                   : w === 'good'   ? '<span class="fx-badge pref">⭐ Preferido</span>' : '';
-      return '<button class="fx ' + (w === 'danger' ? 'ban' : (w === 'good' ? 'pref' : '')) + '" data-pick-ex="' + e.id + '" data-ban="' + (w === 'danger' ? 1 : 0) + '">' +
+      /* OJO: la tarjeta es un <div role="button">, NO un <button>.
+         Chrome colapsa la altura intrínseca de un <button> con hijos flex y el
+         nombre del ejercicio quedaba recortado fuera de la tarjeta. */
+      return '<div class="fx ' + (w === 'danger' ? 'ban' : (w === 'good' ? 'pref' : '')) + '" role="button" tabindex="0"' +
+        ' data-pick-ex="' + e.id + '" data-ban="' + (w === 'danger' ? 1 : 0) + '" title="' + esc(e.es) + '">' +
         '<div class="fx-th">' +
           (e.videoId ? '<img loading="lazy" src="' + ytThumb(e.videoId) + '" alt="">' : '<span class="nv">SIN VIDEO</span>') +
           badge +
@@ -16520,10 +16628,11 @@ document.addEventListener('DOMContentLoaded', init);
         '</div>' +
         '<div class="fx-b">' +
           '<div class="fx-n">' + esc(e.es) + '</div>' +
+          (e.en && e.en !== e.es ? '<div class="fx-en">' + esc(e.en) + '</div>' : '') +
           '<div class="fx-m">' + esc(e.grupo) + ' · ' + esc(e.equipo) + '</div>' +
           '<div class="fx-m" style="opacity:.75">' + esc(e.patron) + ((e.riesgo||[]).length ? ' · ⚠️ ' + e.riesgo.map(z => ZONA_LB[z] || z).join(', ') : '') + '</div>' +
         '</div>' +
-      '</button>';
+      '</div>';
     }).join('')
       : '<div class="empty" style="grid-column:1/-1"><div class="big">🔍</div><h4>Sin resultados</h4><p>Probá con otro término o quitá filtros.</p></div>') +
       (paginas > 1
@@ -17217,7 +17326,7 @@ document.addEventListener('DOMContentLoaded', init);
     if(!lista.some(t => t.id === tplSel) && lista.length) tplSel = lista[0].id;
     sincroMet();
     $('#tplGrid').innerHTML = lista.map(t =>
-      '<button class="tpl-card ' + (t.id === tplSel ? 'on' : '') + '" data-tpl="' + t.id + '">' +
+      '<div class="tpl-card ' + (t.id === tplSel ? 'on' : '') + '" role="button" tabindex="0" data-tpl="' + t.id + '">' +
         '<div class="tpl-cats">' + t.cats.map(c => {
           const C = CATS.find(x => x.id === c) || {};
           return '<span class="tplc">' + (C.ic || '') + ' ' + esc(C.lb || c) + '</span>';
@@ -17230,7 +17339,7 @@ document.addEventListener('DOMContentLoaded', init);
           (t.metconReq ? '<span class="tplc met">🔥 incluye metcon</span>' : '') +
         '</div>' +
         '<ol>' + t.pasos.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol>' +
-      '</button>'
+      '</div>'
     ).join('') || '<div class="empty" style="grid-column:1/-1"><div class="big">📋</div><h4>Sin estructuras en esta categoría</h4></div>';
   }
   /* nota de coach generada localmente (sin API) a partir del motor de p12 */
@@ -17362,6 +17471,11 @@ document.addEventListener('DOMContentLoaded', init);
       btn.addEventListener('click', openTpl);
     }
 
+    $('#tplGrid').addEventListener('keydown', e => {
+      if(e.key !== 'Enter' && e.key !== ' ') return;
+      const c = e.target.closest('[data-tpl]'); if(!c) return;
+      e.preventDefault(); c.click();
+    });
     $('#tplGrid').addEventListener('click', e => {
       const c = e.target.closest('[data-tpl]'); if(!c) return;
       tplSel = c.dataset.tpl; renderTplGrid();
@@ -17395,6 +17509,12 @@ document.addEventListener('DOMContentLoaded', init);
         if(!confirm('⛔ "' + ex.es + '" está restringido para ' + fullName(active()) + '.\n\n¿Asignarlo igual? Va a quedar marcado con alerta roja en el builder y en la app del alumno/a.')) return;
       }
       assignFromFind(c.dataset.pickEx);
+    });
+    /* la tarjeta ya no es <button>: le devolvemos Enter y Espacio */
+    $('#findGrid').addEventListener('keydown', e => {
+      if(e.key !== 'Enter' && e.key !== ' ') return;
+      const c = e.target.closest('.fx[data-pick-ex]'); if(!c) return;
+      e.preventDefault(); c.click();
     });
 
     /* clics sobre lo inyectado en los bloques */
@@ -18502,12 +18622,13 @@ document.addEventListener('DOMContentLoaded', init);
 .ex-grid{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
 .ex-card .ex-thumb{flex:0 0 auto;width:100%;aspect-ratio:16/9;min-height:0}
 .ex-card .ex-thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.fx-th{flex:0 0 auto;width:100%}
+.fx-th{flex:0 0 126px;width:100%}
 .fx-th img{display:block}
 
 .pg{display:flex;align-items:center;justify-content:center;gap:12px;padding:12px 6px 4px}
 .pg button{
   padding:7px 15px;border-radius:10px;font-size:12.5px;font-weight:800;
+  min-height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
   background:var(--panel-3);border:1px solid var(--line-2);color:var(--txt-2);transition:.15s;
 }
 .pg button:hover:not([disabled]){color:#fff;border-color:var(--gold);background:rgba(210,121,63,.1);transform:translateY(-1px)}
@@ -25499,9 +25620,12 @@ body.man-mode .gs-fab{right:318px}
 .pk-grid{
   display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;
   max-height:52vh;overflow:auto;padding:2px 4px 2px 2px;align-items:stretch;
+  /* alto de fila explícito: con filas automáticas el motor de layout medía la
+     tarjeta en 51px y el nombre del ejercicio quedaba fuera de la tarjeta. */
+  grid-auto-rows:minmax(228px,auto);
 }
 .pk-card{
-  position:relative;display:flex;flex-direction:column;overflow:hidden;
+  position:relative;display:flex;flex-direction:column;overflow:hidden;height:100%;min-height:0;
   border:1px solid var(--line);border-radius:12px;background:var(--panel-2);
   cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s;
 }
@@ -25525,7 +25649,7 @@ body.man-mode .gs-fab{right:318px}
   background:rgba(9,10,15,.82);border:1px solid rgba(210,121,63,.5);color:#D2793F;
 }
 /* nombre siempre visible, 2 líneas máximo */
-.pk-card .pk-body{display:flex;flex-direction:column;gap:7px;padding:10px 11px 11px;flex:1 1 auto}
+.pk-card .pk-body{display:flex;flex-direction:column;gap:7px;padding:10px 11px 11px;flex:1 1 auto;min-height:0;overflow:hidden}
 .pk-card .pk-nm{
   margin:0;color:#FFFFFF;font-family:'Inter',var(--ff),system-ui,sans-serif;
   font-size:14px;font-weight:600;line-height:1.3;letter-spacing:0;text-transform:none;
@@ -25554,12 +25678,12 @@ body.man-mode .gs-fab{right:318px}
 .pk-pag .pk-info{font-size:11.5px;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
 .pk-pag .spacer{flex:1}
 @media(max-width:620px){
-  .pk-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .pk-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;grid-auto-rows:minmax(208px,auto)}
   .pk-card .pk-th,.pk-card .pk-th img,.pk-card .pk-th .pk-none{height:88px}
   .pk-card .pk-sel{top:54px}
 }
 @media(max-width:430px){
-  .pk-grid{grid-template-columns:1fr}
+  .pk-grid{grid-template-columns:1fr;grid-auto-rows:minmax(104px,auto)}
   .pk-card{flex-direction:row;align-items:stretch}
   .pk-card .pk-th,.pk-card .pk-th img,.pk-card .pk-th .pk-none{width:118px;height:82px;flex:0 0 118px;border-radius:8px 0 0 8px}
   .pk-card .pk-sel{position:static;opacity:1;pointer-events:auto;margin-top:6px}
@@ -32372,7 +32496,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   text-transform:uppercase;color:var(--muted);
 }
 .tool-drawer .td-g .td-list{display:flex;flex-direction:column;gap:7px}
-.tool-drawer .td-list .btn{width:100%;justify-content:flex-start;text-align:left;min-height:44px}
+.tool-drawer .td-list .btn,
+.tool-drawer .td-list > button{
+  width:100%;justify-content:flex-start;text-align:left;min-height:44px;
+  display:inline-flex;align-items:center;
+}
 .tool-back{
   position:fixed;inset:0;z-index:399;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;
   transition:opacity .25s ease;
@@ -34798,5 +34926,401 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 700); });
   else setTimeout(mount, 700);
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 26 — NUTRICIÓN POR SESIÓN
+     · Ficha nutricional por alumno/a (objetivo, peso, restricciones)
+     · Sugerencia antes / durante / después, calculada localmente a
+       partir de los bloques del día (sin API, sin red)
+     · Se guarda en su propia clave (coachjp_nutri_v1): no toca el
+       LocalStorage del builder ni la sincronización con Supabase
+     ============================================================ -->
+<style>
+#mNutri .nt-h{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;
+  padding:10px 13px;border-radius:12px;background:#191E25;border:1px solid #28303A;
+}
+#mNutri .nt-h .who{font-family:var(--ffh);font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:#E8965E}
+#mNutri .nt-h .sp{flex:1}
+.nt-sw{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:#A0A8B4;cursor:pointer;min-height:36px;white-space:nowrap}
+.nt-sw input{width:17px;height:17px;flex:0 0 auto;accent-color:#D2793F}
+.nt-chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px}
+.nt-chips .nc{
+  min-height:34px;padding:0 13px;border-radius:999px;cursor:pointer;
+  background:transparent;border:1px solid #28303A;color:#A0A8B4;font-size:12px;font-weight:700;
+}
+.nt-chips .nc.on{background:rgba(210,121,63,.14);border-color:#D2793F;color:#E8965E}
+.nt-mom{
+  border:1px solid #28303A;border-radius:12px;background:#141920;padding:11px 12px;margin-top:10px;
+}
+.nt-mom .mh{
+  display:flex;align-items:center;gap:8px;margin-bottom:7px;
+  font-family:var(--ffh);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#828A97;
+}
+.nt-mom .mh b{color:#7CC5E8;letter-spacing:.14em}
+.nt-mom.post .mh b{color:#E8965E}
+.nt-mom textarea{min-height:64px;width:100%}
+#mNutri .nt-calc{
+  margin-top:10px;padding:10px 12px;border-radius:12px;
+  border:1px dashed #33404D;background:rgba(124,197,232,.05);color:#A0A8B4;font-size:12.3px;line-height:1.6;
+}
+#mNutri .nt-calc b{color:#EDEFF2}
+#mNutri .nt-legal{margin-top:11px;font-size:11.5px;color:#6E7783;line-height:1.55}
+#btnNutri.on{border-color:#D2793F;color:#E8965E}
+</style>
+
+<div class="modal-bg" id="mNutri">
+  <div class="modal" style="max-width:820px">
+    <div class="modal-h">
+      <h3>🍽️ Nutrición de la sesión</h3>
+      <div class="spacer"></div>
+      <button class="icon-btn" data-close="mNutri">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="nt-h">
+        <span class="who" id="ntWho">—</span>
+        <span class="sp"></span>
+        <label class="nt-sw"><input type="checkbox" id="ntOn"> Mostrar la tarjeta en la app del alumno/a</label>
+      </div>
+
+      <div class="grid g3">
+        <div>
+          <label class="lb">Objetivo</label>
+          <select id="ntObj">
+            <option value="def">🔻 Déficit / recomposición</option>
+            <option value="mant" selected>⚖️ Mantenimiento</option>
+            <option value="sup">🔺 Superávit / volumen</option>
+          </select>
+        </div>
+        <div>
+          <label class="lb">Peso corporal (kg)</label>
+          <input id="ntPeso" type="number" min="30" max="200" step="0.5" placeholder="Ej: 68">
+        </div>
+        <div>
+          <label class="lb">Horario habitual de entrenamiento</label>
+          <select id="ntHora">
+            <option value="am">🌅 Temprano (en ayunas o casi)</option>
+            <option value="mid" selected>🕛 Media mañana / mediodía</option>
+            <option value="pm">🌇 Tarde</option>
+            <option value="night">🌙 Noche</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-top:10px">
+        <label class="lb">Restricciones alimentarias</label>
+        <div class="nt-chips" id="ntRest"></div>
+      </div>
+
+      <div class="nt-calc" id="ntCalc"></div>
+
+      <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="ntSug">⚡ Sugerir según la sesión de hoy</button>
+        <button class="btn ghost sm" id="ntAll">📋 Copiar a todos los días</button>
+        <button class="btn ghost sm" id="ntClr">🧹 Vaciar este día</button>
+      </div>
+
+      <div class="nt-mom">
+        <div class="mh"><b>Antes</b> · 60 a 90 minutos previos</div>
+        <textarea id="ntPre" placeholder="Ej: ~45 g de carbohidrato y poca grasa. Banana con miel · Arroz blanco · Tostadas de arroz."></textarea>
+      </div>
+      <div class="nt-mom">
+        <div class="mh"><b>Durante</b> · sólo si la sesión es larga</div>
+        <textarea id="ntIntra" placeholder="Ej: 500 ml de agua con una pizca de sal. Si pasás los 60 min, 25-30 g de carbohidrato."></textarea>
+      </div>
+      <div class="nt-mom post">
+        <div class="mh"><b>Después</b> · dentro de los 90 minutos</div>
+        <textarea id="ntPost" placeholder="Ej: ~30 g de proteína + ~60 g de carbohidrato. Pollo con arroz · Huevos con pan · Yogur griego con fruta."></textarea>
+      </div>
+      <div class="nt-mom">
+        <div class="mh">Nota del coach (opcional)</div>
+        <textarea id="ntNota" placeholder="Ej: hoy entrenás temprano: si no llegás a desayunar, media banana y agua alcanzan."></textarea>
+      </div>
+
+      <div class="nt-legal">
+        Estas sugerencias son orientativas y educativas: no reemplazan el plan de un nutricionista.
+        Se muestran al alumno/a con esa misma aclaración.
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mNutri">Cancelar</button>
+      <div class="spacer"></div>
+      <button class="btn primary" id="ntSave">💾 Guardar nutrición</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   NUTRICIÓN POR SESIÓN · motor local
+   ========================================================= */
+(function(){
+  var KNUT = 'coachjp_nutri_v1';
+
+  var RESTRICCIONES = [
+    { id:'veg',    lb:'🥦 Vegetariano/a' },
+    { id:'sinlac', lb:'🥛 Sin lactosa' },
+    { id:'singlu', lb:'🌾 Sin gluten' },
+    { id:'sinfru', lb:'🥜 Sin frutos secos' }
+  ];
+
+  /* catálogo local: cada opción declara qué restricciones la excluyen */
+  var PRE = [
+    { t:'Banana con una cucharada de miel', ex:[] },
+    { t:'Arroz blanco con una pizca de sal', ex:[] },
+    { t:'Tostadas de arroz con dulce de batata', ex:[] },
+    { t:'Puñado de dátiles o pasas de uva', ex:[] },
+    { t:'Dos rodajas de pan con mermelada', ex:['singlu'] },
+    { t:'Avena fina con agua y fruta', ex:['singlu'] },
+    { t:'Yogur bebible con fruta', ex:['sinlac'] }
+  ];
+  var POST = [
+    { t:'Pollo con arroz y verduras', ex:['veg'] },
+    { t:'Carne magra con papa', ex:['veg'] },
+    { t:'Atún con puré de papa', ex:['veg'] },
+    { t:'Tortilla de huevos con papa', ex:[] },
+    { t:'Lentejas con arroz', ex:[] },
+    { t:'Tofu salteado con arroz', ex:[] },
+    { t:'Huevos revueltos con pan', ex:['singlu'] },
+    { t:'Yogur griego con granola y fruta', ex:['sinlac','singlu'] },
+    { t:'Ricota con miel y fruta', ex:['sinlac'] },
+    { t:'Batido de proteína con banana y avena', ex:['sinlac','singlu'] }
+  ];
+  var SNACK = [
+    { t:'Fruta fresca', ex:[] },
+    { t:'Un puñado de almendras o nueces', ex:['sinfru'] },
+    { t:'Queso magro con tostadas de arroz', ex:['sinlac'] }
+  ];
+
+  function filtrar(lista, rest, n){
+    var ok = lista.filter(function(o){
+      return !o.ex.some(function(r){ return rest.indexOf(r) >= 0; });
+    }).map(function(o){ return o.t; });
+    return ok.slice(0, n || 3);
+  }
+
+  /* ---------- almacenamiento propio ---------- */
+  function leer(){
+    try{ return JSON.parse(localStorage.getItem(KNUT) || '{}') || {}; }catch(e){ return {}; }
+  }
+  function guardar(o){
+    try{ localStorage.setItem(KNUT, JSON.stringify(o)); }catch(e){}
+  }
+  function ficha(athId){
+    var o = leer();
+    if(!o[athId]) o[athId] = { on:false, obj:'mant', peso:0, hora:'mid', rest:[], dias:{} };
+    if(!o[athId].dias) o[athId].dias = {};
+    return o[athId];
+  }
+  function guardarFicha(athId, f){
+    var o = leer(); o[athId] = f; guardar(o);
+  }
+  window.CoachNutri = { ficha:ficha, leer:leer };
+
+  /* ---------- lectura de la sesión ---------- */
+  function perfilDia(d){
+    var bl = (d && d.bloques) || [];
+    var carga = 0, tiempo = 0, minutos = 0, items = 0;
+    bl.forEach(function(b){
+      var c = b.category || 'strength';
+      if(c === 'metcon' || c === 'cardio') tiempo++;
+      else if(c === 'warmup') { /* no cuenta para la demanda */ }
+      else carga++;
+      if(b.cardioMinutes) minutos += parseInt(b.cardioMinutes, 10) || 0;
+      items += (b.items || []).length + (b.ejercicios || []).length + (b.fin || []).length + (b.exId ? 1 : 0);
+    });
+    /* minutos declarados en el texto: AMRAP 15, EMOM 20, "12 min", "For Time 9'" */
+    bl.forEach(function(b){
+      var txt = [b.titulo || '', b.subtitulo || '', b.cfProtocolo || ''].concat(b.items || []).join(' ');
+      var re = /(\d{1,3})\s*(?:'|min|minutos)\b/gi, m;
+      while((m = re.exec(txt))) minutos += parseInt(m[1], 10) || 0;
+      var amrap = /(?:amrap|emom|for time|ftime)[^\d]{0,12}(\d{1,3})/i.exec(txt);
+      if(amrap) minutos += parseInt(amrap[1], 10) || 0;
+    });
+    var tipo = (carga && tiempo) ? 'mixto' : (tiempo ? 'metcon' : (carga ? 'fuerza' : 'suave'));
+    /* duración estimada: lo declarado + 11 min por bloque de carga + calentamiento */
+    var dur = Math.round(minutos + carga * 11 + (bl.length > (carga + tiempo) ? 8 : 0) + items * 0.6);
+    return { tipo:tipo, carga:carga, tiempo:tiempo, dur:dur };
+  }
+
+  function sugerir(f, d){
+    var p = perfilDia(d);
+    var peso = parseFloat(f.peso) || 0;
+    var obj  = f.obj || 'mant';
+    var rest = f.rest || [];
+    var kPre  = obj === 'def' ? 0.5 : (obj === 'sup' ? 1.0 : 0.7);
+    var kPost = obj === 'def' ? 0.7 : (obj === 'sup' ? 1.3 : 1.0);
+    if(p.tipo === 'metcon' || p.tipo === 'mixto'){ kPre += 0.15; kPost += 0.2; }
+    if(p.tipo === 'suave'){ kPre -= 0.2; kPost -= 0.2; }
+    var g = function(k){ return peso ? Math.round(peso * Math.max(0.2, k) / 5) * 5 : 0; };
+    var prot = peso ? Math.round(peso * 0.4) : 0;
+
+    var pre = (f.hora === 'am'
+        ? 'Si entrenás apenas te levantás, alcanza con algo chico 20-30 min antes'
+        : '60 a 90 minutos antes') +
+      (peso ? ' · unos ' + g(kPre) + ' g de carbohidrato y poca grasa' : ' · carbohidrato de fácil digestión y poca grasa') +
+      '. Opciones: ' + filtrar(PRE, rest, 3).join(' · ') + '.';
+
+    var intra = p.dur >= 42
+      ? 'Sesión larga (' + p.dur + ' min aprox.): 500 a 750 ml de agua con una pizca de sal. Pasados los 60 minutos, sumá 25-30 g de carbohidrato (fruta desecada o bebida deportiva).'
+      : 'Sesión corta: alcanza con agua. Tomá algunos sorbos entre series.';
+
+    var post = 'Dentro de los 90 minutos' +
+      (peso ? ' · unos ' + prot + ' g de proteína y ' + g(kPost) + ' g de carbohidrato' : ' · una porción de proteína y una de carbohidrato') +
+      '. Opciones: ' + filtrar(POST, rest, 3).join(' · ') + '.' +
+      (obj === 'def' ? ' Sumá un plato de verduras para llenar el volumen sin sumar calorías.' : '') +
+      (obj === 'sup' ? ' Si te cuesta llegar, agregá un snack: ' + filtrar(SNACK, rest, 2).join(' · ') + '.' : '');
+
+    var nota = f.hora === 'night'
+      ? 'Entrenás de noche: la comida posterior no engorda más por el horario, pero conviene que sea de digestión simple para no pelear con el sueño.'
+      : '';
+
+    return { pre:pre, intra:intra, post:post, nota:nota, perfil:p };
+  }
+
+  /* ---------- interfaz ---------- */
+  var athAct = null, diaAct = null;
+
+  function pintarRest(f){
+    var box = document.getElementById('ntRest'); if(!box) return;
+    box.innerHTML = RESTRICCIONES.map(function(r){
+      return '<button type="button" class="nc ' + ((f.rest || []).indexOf(r.id) >= 0 ? 'on' : '') +
+             '" data-nrest="' + r.id + '">' + r.lb + '</button>';
+    }).join('');
+  }
+  function pintarCalc(f){
+    var c = document.getElementById('ntCalc'); if(!c) return;
+    var d = diaAct;
+    if(!d){ c.textContent = 'Abrí un día del builder para calcular la sugerencia.'; return; }
+    var p = perfilDia(d);
+    var lb = { fuerza:'de fuerza', metcon:'metabólica', mixto:'mixta (fuerza + metcon)', suave:'liviana' }[p.tipo];
+    c.innerHTML = 'Sesión <b>' + lb + '</b> · ' + p.carga + ' bloque(s) de carga y ' + p.tiempo +
+      ' de tiempo · duración estimada <b>' + p.dur + ' min</b>' +
+      (f.peso ? ' · peso registrado <b>' + f.peso + ' kg</b>' : ' · sin peso cargado: las sugerencias van sin gramos') + '.';
+  }
+  function volcar(f){
+    var dia = (f.dias[diaAct && diaAct.id] || {});
+    document.getElementById('ntOn').checked = !!f.on;
+    document.getElementById('ntObj').value = f.obj || 'mant';
+    document.getElementById('ntPeso').value = f.peso || '';
+    document.getElementById('ntHora').value = f.hora || 'mid';
+    document.getElementById('ntPre').value = dia.pre || '';
+    document.getElementById('ntIntra').value = dia.intra || '';
+    document.getElementById('ntPost').value = dia.post || '';
+    document.getElementById('ntNota').value = dia.nota || '';
+    pintarRest(f); pintarCalc(f);
+  }
+  function tomar(){
+    var f = ficha(athAct.id);
+    f.on   = document.getElementById('ntOn').checked;
+    f.obj  = document.getElementById('ntObj').value;
+    f.peso = parseFloat(document.getElementById('ntPeso').value) || 0;
+    f.hora = document.getElementById('ntHora').value;
+    if(diaAct){
+      f.dias[diaAct.id] = {
+        pre:   document.getElementById('ntPre').value.trim(),
+        intra: document.getElementById('ntIntra').value.trim(),
+        post:  document.getElementById('ntPost').value.trim(),
+        nota:  document.getElementById('ntNota').value.trim()
+      };
+    }
+    return f;
+  }
+
+  function abrir(){
+    var a = (typeof active === 'function') ? active() : null;
+    if(!a){ if(typeof toast === 'function') toast('Elegí un alumno/a primero'); return; }
+    athAct = a;
+    diaAct = (typeof curDay === 'function') ? curDay() : null;
+    var f = ficha(a.id);
+    var wh = document.getElementById('ntWho');
+    if(wh) wh.textContent = (typeof fullName === 'function' ? fullName(a) : (a.nombre || '')) +
+      (diaAct ? ' · ' + (diaAct.short || diaAct.label || 'Día') : '');
+    volcar(f);
+    if(typeof openModal === 'function') openModal('mNutri');
+  }
+
+  function boton(){
+    var barra = document.querySelector('#v-builder .tools-in');
+    if(!barra || document.getElementById('btnNutri')) return;
+    var b = document.createElement('button');
+    b.className = 'btn ghost sm';
+    b.id = 'btnNutri';
+    b.type = 'button';
+    b.textContent = '🍽️ Nutrición';
+    b.addEventListener('click', abrir);
+    var ref = document.getElementById('btnCopyDay');
+    if(ref) barra.insertBefore(b, ref); else barra.appendChild(b);
+    marcar();
+  }
+  function marcar(){
+    var b = document.getElementById('btnNutri'); if(!b) return;
+    var a = (typeof active === 'function') ? active() : null;
+    var f = a ? ficha(a.id) : null;
+    b.classList.toggle('on', !!(f && f.on));
+  }
+
+  function montar(){
+    boton();
+    var q = function(id){ return document.getElementById(id); };
+    if(q('mNutri') && !q('mNutri').__jp){
+      q('mNutri').__jp = 1;
+      [].slice.call(document.querySelectorAll('#mNutri [data-close]')).forEach(function(x){
+        x.addEventListener('click', function(){ if(typeof closeModal === 'function') closeModal('mNutri'); });
+      });
+      q('ntRest').addEventListener('click', function(e){
+        var c = e.target.closest('[data-nrest]'); if(!c) return;
+        var f = ficha(athAct.id), id = c.dataset.nrest;
+        f.rest = f.rest || [];
+        var i = f.rest.indexOf(id);
+        if(i >= 0) f.rest.splice(i, 1); else f.rest.push(id);
+        guardarFicha(athAct.id, f);
+        pintarRest(f);
+      });
+      ['ntPeso','ntObj','ntHora'].forEach(function(id){
+        q(id).addEventListener('change', function(){
+          var f = tomar(); guardarFicha(athAct.id, f); pintarCalc(f);
+        });
+      });
+      q('ntSug').addEventListener('click', function(){
+        if(!diaAct){ if(typeof toast === 'function') toast('Abrí un día del builder'); return; }
+        var f = tomar(); guardarFicha(athAct.id, f); pintarCalc(f);
+        var s = sugerir(f, diaAct);
+        q('ntPre').value = s.pre;
+        q('ntIntra').value = s.intra;
+        q('ntPost').value = s.post;
+        if(!q('ntNota').value.trim() && s.nota) q('ntNota').value = s.nota;
+        q('ntOn').checked = true;
+        if(typeof toast === 'function') toast('🍽️ Sugerencia armada según la sesión de hoy');
+      });
+      q('ntAll').addEventListener('click', function(){
+        var f = tomar();
+        var p = (typeof plan === 'function') ? plan(athAct.id) : null;
+        if(!p){ return; }
+        var base = f.dias[diaAct && diaAct.id] || {};
+        p.dias.forEach(function(d){ f.dias[d.id] = { pre:base.pre, intra:base.intra, post:base.post, nota:base.nota }; });
+        guardarFicha(athAct.id, f);
+        if(typeof toast === 'function') toast('📋 Nutrición copiada a los ' + p.dias.length + ' días');
+      });
+      q('ntClr').addEventListener('click', function(){
+        ['ntPre','ntIntra','ntPost','ntNota'].forEach(function(id){ q(id).value = ''; });
+      });
+      q('ntSave').addEventListener('click', function(){
+        var f = tomar(); guardarFicha(athAct.id, f); marcar();
+        if(typeof closeModal === 'function') closeModal('mNutri');
+        if(typeof toast === 'function') toast('💾 Nutrición guardada');
+      });
+    }
+  }
+
+  ['renderBuilder','renderDay','go'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jpnut) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(montar, 90); return r; };
+    w.__jpnut = 1;
+    window[fn] = w;
+  });
+  [800, 2000, 3600].forEach(function(ms){ setTimeout(montar, ms); });
 })();
 </script>
