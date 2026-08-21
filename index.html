@@ -296,6 +296,16 @@ pre.code{background:#07080A;border:1px solid var(--line);border-radius:var(--r-s
   .g2,.g3,.g4{grid-template-columns:1fr}
 }
 @media print{.sidebar,.tools,.timer-fab{display:none!important}}
+
+/* ---- ergonomía del panel: ningún control por debajo de 32 px ---- */
+.btn,.btn.sm,.btn.xs,.icon-btn,select,input[type=text],input[type=number],input[type=date],
+.pill button,.chk input,.tab,.nav-pill{min-height:32px}
+.btn.xs{min-height:32px;padding:0 10px;display:inline-flex;align-items:center;gap:5px}
+.icon-btn{min-width:32px;display:inline-flex;align-items:center;justify-content:center}
+.chk input[type=checkbox]{width:18px;height:18px;min-height:18px}
+.clean-chip,.nv-chip,.cp-f,.wk,.payf,.bank-tag button,.filtro-chip,.dchip,.cp-chip{
+  min-height:32px;display:inline-flex;align-items:center;gap:5px;padding:0 11px
+}
 </style>
 </head>
 <body>
@@ -2439,7 +2449,17 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     }catch(e){}
   }
   window.__jpLiberarUI = liberar;
-  setTimeout(liberar, 1200);                       /* techo duro de 1.2s */
+  /* techo duro de 1.2s. Se reintenta: en un documento grande el temporizador
+     puede dispararse antes de que el splash exista, y un disparo único fallaría. */
+  (function reintentar(){
+    var t0 = Date.now();
+    (function tick(){
+      var pasado = Date.now() - t0;
+      var s = document.getElementById('jpSplash');
+      if(pasado >= 1200 && (s || document.body)){ liberar(); if(!s || s.classList.contains('off')) return; }
+      if(pasado < 15000) setTimeout(tick, 150);
+    })();
+  })();
   window.addEventListener('error', function(){ setTimeout(liberar, 40); });
   window.addEventListener('unhandledrejection', function(){ setTimeout(liberar, 40); });
 })();
@@ -4509,7 +4529,10 @@ function init(){
     try{
       document.documentElement.classList.remove('jp-cargando');
       document.documentElement.style.visibility = 'visible';
-      if(window.CoachSplash && CoachSplash.ocultar) CoachSplash.ocultar();
+      /* CoachSplash se define mucho más abajo en el documento: en este punto
+         todavía no existe. El liberador del <head> sí está desde el primer byte. */
+      if(typeof window.__jpLiberarUI === 'function') window.__jpLiberarUI();
+      else if(window.CoachSplash && CoachSplash.ocultar) CoachSplash.ocultar();
       window.__JP_INIT_OK = true;
     }catch(e){}
   }
@@ -8998,7 +9021,17 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   if(document.readyState === 'complete' || document.readyState === 'interactive') listo();
   else document.addEventListener('DOMContentLoaded', listo);
   window.addEventListener('load', function(){ setTimeout(ocultarSplash, 120); });
-  setTimeout(ocultarSplash, 1200);
+  /* reintento continuo: no depende de un único disparo ni del momento de parseo */
+  (function insistir(){
+    var t0 = Date.now();
+    (function tick(){
+      var s = document.getElementById('jpSplash');
+      if(!s) return;                                  /* ya se fue */
+      if(s.classList.contains('off')) return;
+      if(Date.now() - t0 > 900) ocultarSplash();
+      if(Date.now() - t0 < 15000) setTimeout(tick, 150);
+    })();
+  })();
   window.CoachSplash = { ocultar: ocultarSplash };
 
   /* =========================================================
@@ -14478,6 +14511,33 @@ body{
 }
 .block-done-cb,.block .block-done-cb{accent-color:var(--jp-brand) !important}
 .block.jp-hecho .jp-cierre .ok{color:var(--jp-brand-hi) !important}
+
+/* =========================================================
+   v3.6 · ERGONOMÍA: DEDOS CON MAGNESIO
+   Nada que se toque baja de 44 px, y ningún texto de 11 px.
+========================================================= */
+.jp-qt .qt-btn,#jpQTBtn,
+#dayCompleteBtn,.day-complete-btn,
+.fatigue-btn,.fatigue-options button,
+.rx-chip,.rir-chip,.chip,
+.jp-tool,.cap-tool,.jp-tools button,
+.block-methodology-accordion > .methodology-summary,
+.wod-score-in,.cf-score-in,.set-check{
+  min-height:44px !important;
+}
+.fatigue-btn,.fatigue-options button{padding:0 14px !important;display:inline-flex;align-items:center;justify-content:center}
+#dayCompleteBtn,.day-complete-btn{padding:0 16px !important;display:inline-flex;align-items:center;justify-content:center}
+.video-link.jp-play{
+  width:40px !important;height:40px !important;min-width:40px !important;min-height:40px !important;
+}
+.block .bs-r .bs-fila .video-link.jp-play{width:40px !important;height:40px !important;min-height:40px !important}
+.hud-btn,.hud-reset,.hud-close,.cwt-x,.cf-x,.jp-hud button{
+  min-height:44px !important;min-width:44px !important;
+  display:inline-flex !important;align-items:center;justify-content:center;
+}
+/* el texto más chico de la app queda en 11 px */
+.cf-levels .lv b,.cf-levels .lv,.rx-nota,.wu-dose,
+.block .jp-res .s,.bs-rn{font-size:calc(11.5px * var(--fzs)) !important}
 </style>
 
 <script>
@@ -15182,8 +15242,12 @@ function abrirPreviewModal(code, athName){
     ' KB · se ejecuta acá adentro, tal cual lo va a ver el alumno.';
   prevModo('celular');
   openModal('mPrev');
-  /* srcdoc: la app corre completa dentro del iframe, sin servidor ni descarga */
-  if(f){ f.removeAttribute('src'); f.srcdoc = prevCode; }
+  /* srcdoc mantiene el iframe en el mismo origen: la app corre completa acá
+     adentro y se puede inspeccionar. Un blob: desde file:// quedaría sin origen. */
+  if(f){
+    f.removeAttribute('src');
+    f.srcdoc = prevCode;
+  }
 }
 function bindPreview(){
   const m = $('#prevMobile'), d = $('#prevDesk'), t = $('#prevTab');
@@ -15199,7 +15263,10 @@ function bindPreview(){
     }catch(e){ toast('No se pudo abrir la pestaña', 'err'); }
   });
   const x = document.querySelector('#mPrev [data-close="mPrev"]');
-  if(x) x.addEventListener('click', () => { const f = $('#prevFrame'); if(f) f.srcdoc = ''; });
+  if(x) x.addEventListener('click', () => {
+    const f = $('#prevFrame');
+    if(f){ f.srcdoc = ''; f.removeAttribute('src'); }
+  });
 }
 
 /* ============================================================
