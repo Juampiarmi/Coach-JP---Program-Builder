@@ -3676,7 +3676,28 @@ function beepCountdown(){ playBeep(1046, 0.1, 0.55, 0, 'triangle'); }
 function beepGo(){ playBeep(1568, 0.11, 0.7, 0, 'triangle'); playBeep(2093, 0.28, 0.65, 0.1, 'triangle'); }
 function beepStop(){ playBeep(392, 0.16, 0.55, 0, 'sine'); playBeep(330, 0.4, 0.55, 0.16, 'sine'); }
 function beepFinish(){ playBeep(1046, 0.13, 0.6, 0, 'triangle'); playBeep(1318, 0.13, 0.6, 0.16, 'triangle'); playBeep(1568, 0.13, 0.6, 0.32, 'triangle'); playBeep(2093, 0.4, 0.7, 0.48, 'triangle'); }
-function vibrate(pattern){ try{ if(navigator.vibrate) navigator.vibrate(pattern); }catch(e){} }
+/* =========================================================
+   HÁPTICA CENTRAL · Web Vibration API con degradado silencioso
+   iOS/Safari no expone navigator.vibrate: se detecta una sola vez,
+   no se vuelve a intentar y no se ensucia la consola.
+========================================================= */
+var CoachVibra = (function(){
+  var soporta = false;
+  try{ soporta = ('vibrate' in navigator) && typeof navigator.vibrate === 'function'; }catch(e){ soporta = false; }
+  function disparar(p){
+    if(!soporta) return false;
+    try{ return navigator.vibrate(p) !== false; }catch(e){ soporta = false; return false; }
+  }
+  return {
+    soporta: function(){ return soporta; },
+    cuenta:  function(){ return disparar(200); },   /* segundos 3, 2 y 1 */
+    fin:     function(){ return disparar(500); },   /* final del conteo   */
+    toque:   function(){ return disparar(20); },    /* feedback de botón  */
+    patron:  function(p){ return disparar(p); }
+  };
+})();
+window.CoachVibra = CoachVibra;
+function vibrate(pattern){ CoachVibra.patron(pattern); }
 function fmt(sec){ sec = Math.max(0, Math.round(sec)); const m = Math.floor(sec/60), s = sec % 60; return (m<10?'0':'')+m+':'+(s<10?'0':'')+s; }
 /* =========================================================
    WAKE LOCK MANAGER
@@ -3808,12 +3829,12 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     remaining -= dt;
     if(remaining <= 3.2 && remaining > 0){
       const sec = Math.ceil(remaining);
-      if(sec !== lastBeepSec && sec <= 3){ beepCountdown(); lastBeepSec = sec; }
+      if(sec !== lastBeepSec && sec <= 3){ beepCountdown(); CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual(); lastBeepSec = sec; }
     }
     if(remaining <= 0){
       remaining = 0; updateDisplay();
       running = false; round++;
-      beepFinish(); vibrate([80,50,80,50,200]);
+      beepFinish(); CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
       WakeLockManager.release();
       if(round >= rounds){
         setPhaseBox('tb-done', 'SERIES COMPLETAS');
@@ -4761,11 +4782,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function tick(){
     if(!restRun) return;
     restLeft--;
-    if(restLeft <= 3 && restLeft > 0){ try{ beepCountdown(); }catch(e){} vibrar(35); }
+    if(restLeft <= 3 && restLeft > 0){
+      try{ beepCountdown(); }catch(e){}
+      CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
+    }
     if(restLeft <= 0){
       restLeft = 0; pararRest();
       try{ beepGo(); }catch(e){}
-      vibrar([90,60,90]);
+      CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
       hudLb.textContent = '¡A la próxima serie!';
       setTimeout(cerrarRest, 3200);
     }
@@ -5821,8 +5845,20 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     /* sesión y disciplina */
     g.fillStyle = '#D2793F'; g.font = '700 44px "Barlow Condensed", sans-serif';
     g.fillText(d.sesion.toUpperCase(), 90, 470);
-    g.fillStyle = '#A0A8B4'; g.font = '400 30px Inter, sans-serif';
-    g.fillText(d.disciplina, 90, 522);
+    /* el subtítulo puede ser largo (mesociclo + porcentajes + semana):
+       se envuelve en un máximo de 2 líneas y nunca pasa el margen derecho */
+    (function(){
+      var maxW = W - 180, tam = 30, lineas;
+      var env = window.CoachEnvolverTexto || function(gg, t){ return [t]; };
+      do {
+        g.font = '400 ' + tam + 'px Inter, sans-serif';
+        lineas = env(g, String(d.disciplina || ''), maxW, 2);
+        if(lineas.length <= 2 && !lineas.recortado) break;
+        tam -= 2;
+      } while(tam > 22);
+      g.fillStyle = '#A0A8B4';
+      lineas.forEach(function(ln, i){ g.fillText(ln, 90, 522 + i * (tam + 8)); });
+    })();
 
     /* línea volt */
     g.fillStyle = '#D2793F'; g.fillRect(90, 566, 150, 6);
@@ -6782,6 +6818,28 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
      7 · STORY CARDS: DOS ESTILOS (M5)
   ========================================================= */
   var W = 1080, HH = 1920, estilo = 'cyber';
+  /* corta un texto en líneas que entren en maxW; marca .recortado si sobra */
+  function envolverTexto(g, txt, maxW, maxLineas){
+    var palabras = String(txt || '').split(/\\s+/).filter(Boolean);
+    var lineas = [], actual = '';
+    for(var i = 0; i < palabras.length; i++){
+      var prueba = actual ? actual + ' ' + palabras[i] : palabras[i];
+      if(g.measureText(prueba).width <= maxW || !actual){ actual = prueba; continue; }
+      lineas.push(actual); actual = palabras[i];
+      if(lineas.length === maxLineas) break;
+    }
+    if(lineas.length < maxLineas && actual) lineas.push(actual);
+    var usadas = lineas.join(' ').split(/\\s+/).filter(Boolean).length;
+    if(usadas < palabras.length){
+      lineas.recortado = true;
+      var ult = lineas[lineas.length - 1] || '';
+      while(ult && g.measureText(ult + '…').width > maxW) ult = ult.slice(0, -1);
+      lineas[lineas.length - 1] = ult.replace(/\\s+$/, '') + '…';
+    }
+    return lineas;
+  }
+  window.CoachEnvolverTexto = envolverTexto;
+
   function rr(g, x, y, w, h, r){
     g.beginPath(); g.moveTo(x + r, y);
     g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
@@ -7197,8 +7255,11 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   function avisar(seg){
     if(seg === ultimoBeep) return;
     ultimoBeep = seg;
-    if(seg === 3 || seg === 2 || seg === 1){ beep(760, 110); vibrar([70]); }
-    else if(seg === 0){ beep(1180, 260, .2); vibrar([100, 50, 100]); }
+    if(seg === 3 || seg === 2 || seg === 1){
+      beep(760, 110); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
+    } else if(seg === 0){
+      beep(1180, 260, .2); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+    }
   }
   function paso(){
     var c = cfg();
@@ -7209,7 +7270,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       fase = pendiente ? pendiente.fase : 'work';
       restante = pendiente ? pendiente.restante : 0;
       pendiente = null; ultimoBeep = -1;
-      beep(1080, 240, .2); vibrar([100, 50, 100]);
+      beep(1080, 240, .2); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
       pintar(); return;
     }
     if(modo === 'fortime'){
@@ -8875,7 +8936,10 @@ body.cf-modo .block .directive-chip{display:none !important}
     var w = document.getElementById('manWrap'); if(!w) return;
     w.classList.add('on');
     try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
-    try{ localStorage.setItem('coachjp_manual_visto', '1'); }catch(e){}
+    try{
+      localStorage.setItem('coachjp_manual_visto', '1');
+      localStorage.setItem('has_seen_onboarding', 'true');
+    }catch(e){}
   }
   function cerrarManual(){ var w = document.getElementById('manWrap'); if(w) w.classList.remove('on'); }
   window.CoachManual = { abrir: abrirManual, cerrar: cerrarManual };
@@ -8909,7 +8973,18 @@ body.cf-modo .block .directive-chip{display:none !important}
       if(e.target.id === 'manWrap') cerrarManual();
     });
     var t = document.getElementById('jpToast');
-    if(t) t.addEventListener('click', function(e){ if(e.target.closest('[data-cerrar]')) cerrarAviso(); });
+    if(t) t.addEventListener('click', function(e){
+      if(!e.target.closest('[data-cerrar]')) return;
+      /* Entendido: el aviso de bienvenida no se muestra nunca más */
+      if(t.dataset.jpOnb === '1'){
+        try{
+          localStorage.setItem('has_seen_onboarding', 'true');
+          localStorage.setItem('coachjp_manual_visto', '1');
+        }catch(err){}
+        t.dataset.jpOnb = '';
+      }
+      cerrarAviso();
+    });
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
@@ -8931,12 +9006,21 @@ body.cf-modo .block .directive-chip{display:none !important}
         return r;
       };
     }
-    /* la primera vez, el manual se ofrece solo */
+    /* la primera vez, y SOLO la primera vez, el manual se ofrece solo.
+       Se marca al tocar Entendido, al abrir el manual o al cerrar el aviso. */
     var visto = null;
-    try{ visto = localStorage.getItem('coachjp_manual_visto'); }catch(e){}
+    try{
+      visto = localStorage.getItem('has_seen_onboarding') || localStorage.getItem('coachjp_manual_visto');
+    }catch(e){ visto = '1'; }
     if(!visto) setTimeout(function(){
+      var tt = document.getElementById('jpToast');
+      if(tt) tt.dataset.jpOnb = '1';
       aviso('ok', '📖', 'Primera vez por acá',
-        'Tenés el <b>Manual de Uso</b> en el menú 🧰 Herramientas: te explica en 5 pasos cómo cargar tus marcas, usar el timer, reportar molestias y compartir tu Story Card.', 12000);
+        'Tenés el <b>Manual de Uso</b> en el menú 🧰 Herramientas: te explica en 5 pasos cómo cargar tus marcas, usar el timer, reportar molestias y compartir tu Story Card.', 0);
+      /* si se cierra solo por inactividad, tampoco vuelve a aparecer */
+      setTimeout(function(){
+        try{ localStorage.setItem('has_seen_onboarding', 'true'); }catch(err){}
+      }, 15000);
     }, 2200);
     window.CoachUX = { modo: modoDisciplina, aviso: aviso, manual: abrirManual,
                        dolor: reportarDolor, avanzar: revisarBloque, repintar: repintar };
@@ -14910,6 +14994,91 @@ body{
   .nutri-card .nut-hint{display:none}
 }
 </style>
+
+
+<style>
+/* =========================================================
+   COACH JP · v3.8 · CORRECCIONES DE UI
+   2 · Alineación del botón de video con nombres largos
+========================================================= */
+.ex-name{
+  display:flex !important;align-items:center;justify-content:space-between;gap:8px;
+  min-width:0;
+}
+/* el texto del ejercicio ocupa el espacio disponible y envuelve solo */
+.ex-name > *{min-width:0}
+.ex-name .video-link,
+.block:not(.wu-card) .ex-name .video-link{
+  flex:0 0 auto !important;margin-left:0 !important;margin-top:0 !important;
+  align-self:center;
+}
+.ex-row{align-items:center}
+.ex-row .ex-name{flex:1 1 auto}
+/* mismo criterio en las líneas de pizarra y en el glosario */
+.wb-line .video-link,.gl-card .video-link{flex:0 0 auto;margin-left:auto !important}
+.wb-line{display:flex;align-items:center;gap:8px}
+
+/* 3 · el subtítulo de la Story Card se dibuja en canvas: ver envolverTexto() */
+</style>
+
+
+<style>
+/* =========================================================
+   COACH JP · v3.8 · 4 · HÁPTICA Y PULSO VISUAL DEL TIMER
+   En iOS no existe la Vibration API: el pulso de pantalla
+   cumple la misma función sin depender del hardware.
+========================================================= */
+#jpPulso{
+  position:fixed;inset:0;z-index:99998;pointer-events:none;opacity:0;
+  box-shadow:inset 0 0 0 6px rgba(210,121,63,.85), inset 0 0 90px rgba(210,121,63,.35);
+  transition:opacity .12s ease;
+}
+#jpPulso.on{opacity:1}
+#jpPulso.fin{
+  box-shadow:inset 0 0 0 8px rgba(124,197,232,.9), inset 0 0 120px rgba(124,197,232,.4);
+}
+</style>
+<script>
+/* pulso visual: reemplaza a la vibración donde el navegador no la permite */
+(function(){
+  var el = null, t1 = null;
+  function nodo(){
+    if(el) return el;
+    el = document.createElement('div'); el.id = 'jpPulso';
+    document.body.appendChild(el);
+    return el;
+  }
+  window.pulsoVisual = function(esFinal){
+    try{
+      var n = nodo();
+      n.classList.toggle('fin', !!esFinal);
+      n.classList.add('on');
+      clearTimeout(t1);
+      t1 = setTimeout(function(){ n.classList.remove('on'); }, esFinal ? 380 : 170);
+    }catch(e){}
+  };
+
+  /* el encabezado del timer no promete lo que el equipo no puede hacer */
+  function textoHonesto(){
+    var hay = window.CoachVibra && CoachVibra.soporta();
+    if(hay) return;
+    document.querySelectorAll('.cwt-sub').forEach(function(p){
+      p.textContent = p.textContent.replace(
+        'Suena y vibra en los últimos 3 segundos de cada conteo.',
+        'Suena y destella en los últimos 3 segundos de cada conteo. Tu navegador no permite vibración.');
+    });
+    document.querySelectorAll('.man-step p').forEach(function(p){
+      if(p.innerHTML.indexOf('Suena y vibra en los últimos 3 segundos') >= 0)
+        p.innerHTML = p.innerHTML.replace('Suena y vibra en los últimos 3 segundos',
+                                          'Suena y destella en los últimos 3 segundos');
+    });
+  }
+  if(document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(textoHonesto, 900); });
+  else setTimeout(textoHonesto, 900);
+  [1800, 3600].forEach(function(ms){ setTimeout(textoHonesto, ms); });
+})();
+<\/script>
 
 </body>
 </html>
@@ -36133,5 +36302,378 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     window[fn] = w;
   });
   [700, 1800, 3400].forEach(function(ms){ setTimeout(montar, ms); });
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 28 — COOL-DOWN ESPECÍFICO Y RESUMEN METODOLÓGICO
+     · Analiza los bloques del día (grupos y patrones reales de la
+       biblioteca) y genera el enfriamiento y la síntesis técnica
+     · Usa la IA configurada si hay clave; si no, motor local
+       determinista, sin red y sin API
+     · Escribe en d.cooldown / d.cooldownNota / d.summary, que son
+       los campos que la app del alumno ya renderiza al final del día
+     · Registra punto de restauración para Ctrl+Z
+     ============================================================ -->
+<style>
+#mCool .cl-h{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;
+  padding:10px 13px;border-radius:12px;background:#191E25;border:1px solid #28303A;
+}
+#mCool .cl-h .who{font-family:var(--ffh);font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:#E8965E}
+#mCool .cl-h .sp{flex:1}
+#mCool .cl-h .fuente{
+  font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  padding:4px 10px;border-radius:999px;border:1px solid #28303A;color:#828A97;
+}
+#mCool .cl-h .fuente.ia{border-color:rgba(124,197,232,.45);color:#7CC5E8}
+.cl-map{
+  margin-bottom:11px;padding:10px 12px;border-radius:12px;
+  border:1px dashed #33404D;background:rgba(124,197,232,.05);color:#A0A8B4;font-size:12.3px;line-height:1.6;
+}
+.cl-map b{color:#EDEFF2}
+.cl-box{border:1px solid #28303A;border-radius:12px;background:#141920;padding:12px 13px;margin-top:10px}
+.cl-box .bh{
+  display:flex;align-items:center;gap:8px;margin-bottom:8px;
+  font-family:var(--ffh);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#828A97;
+}
+.cl-box .bh b{color:#7CC5E8;letter-spacing:.14em}
+.cl-box.res .bh b{color:#E8965E}
+.cl-box textarea{width:100%;min-height:112px}
+.cl-box.res textarea{min-height:150px}
+#mCool .cl-legal{margin-top:11px;font-size:11.5px;color:#6E7783;line-height:1.55}
+#btnCool.cargando{opacity:.6;pointer-events:none}
+</style>
+
+<div class="modal-bg" id="mCool">
+  <div class="modal" style="max-width:860px">
+    <div class="modal-h">
+      <h3>⚡ Cool-Down y Resumen</h3>
+      <div class="spacer"></div>
+      <button class="icon-btn" data-close="mCool">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="cl-h">
+        <span class="who" id="clWho">—</span>
+        <span class="sp"></span>
+        <span class="fuente" id="clFuente">motor local</span>
+      </div>
+      <div class="cl-map" id="clMap"></div>
+
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn" id="clGen">⚡ Generar</button>
+        <button class="btn ghost sm" id="clGenIA">🤖 Regenerar con IA</button>
+      </div>
+
+      <div class="cl-box">
+        <div class="bh"><b>Cool-Down específico</b> · un ítem por línea</div>
+        <textarea id="clItems" placeholder="Se completa al generar…"></textarea>
+      </div>
+      <div class="cl-box">
+        <div class="bh"><b>Nota de cierre</b> · opcional</div>
+        <textarea id="clNota" style="min-height:70px" placeholder="Una línea de contexto para el alumno/a."></textarea>
+      </div>
+      <div class="cl-box res">
+        <div class="bh"><b>Resumen metodológico</b> · dos párrafos</div>
+        <textarea id="clRes" placeholder="Se completa al generar…"></textarea>
+      </div>
+
+      <div class="cl-legal">
+        Al aplicar, esto se escribe en el cierre del día: el cool-down aparece en la tarjeta
+        «Cool-Down y Recuperación» y el resumen en «Resumen de la Sesión» de la app del alumno/a.
+        Queda registrado en Deshacer (Ctrl+Z).
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mCool">Cancelar</button>
+      <div class="spacer"></div>
+      <button class="btn primary" id="clApply">✅ Insertar en el día</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   COOL-DOWN ESPECÍFICO Y RESUMEN METODOLÓGICO
+   ========================================================= */
+(function(){
+
+  /* ---------- 1 · MAPA DE LO QUE SE TRABAJÓ ---------- */
+  var ZONAS = {
+    cadera:   { lb:'Cadena posterior y cadera', rec:'48 a 72 h' },
+    rodilla:  { lb:'Cuádriceps y rodilla',      rec:'48 a 72 h' },
+    traccion: { lb:'Espalda y dorsal',          rec:'48 h' },
+    empuje:   { lb:'Pectoral y hombro',         rec:'48 h' },
+    hombro:   { lb:'Deltoides',                 rec:'24 a 48 h' },
+    brazo:    { lb:'Brazos',                    rec:'24 h' },
+    core:     { lb:'Core y aductores',          rec:'24 h' },
+    metcon:   { lb:'Trabajo metabólico',        rec:'24 h' }
+  };
+
+  /* cada zona con su enfriamiento propio: movilidad y descompresión,
+     no estiramientos largos de fuerza máxima */
+  var COOL = {
+    cadera: [
+      'Estiramiento de flexores de cadera en zancada — 45 s por lado',
+      'Isquiosurales sentado en banco, espalda neutra — 45 s por lado',
+      'Descompresión lumbar: rodillas al pecho, balanceo suave — 60 s',
+      'Glúteo en figura 4 acostado — 40 s por lado'
+    ],
+    rodilla: [
+      'Cuádriceps de pie con apoyo, cadera extendida — 40 s por lado',
+      'Estiramiento de flexores de cadera en zancada — 45 s por lado',
+      'Movilidad de tobillo en zancada contra pared — 10 por lado',
+      'Sóleo con rodilla flexionada contra pared — 40 s por lado'
+    ],
+    traccion: [
+      'Dorsal colgado de la barra, agarre suelto — 30 s x 2',
+      'Extensión torácica sobre rodillo o banco — 45 s',
+      'Estiramiento de pectoral menor en marco de puerta — 40 s por lado',
+      'Rotación torácica en cuadrupedia, lenta — 8 por lado'
+    ],
+    empuje: [
+      'Pectoral en marco de puerta, codo a 90° — 40 s por lado',
+      'Cápsula posterior del hombro: brazo cruzado al pecho — 35 s por lado',
+      'Extensión torácica sobre rodillo — 45 s',
+      'Deslizamientos de brazos en pared, control — 10 repeticiones'
+    ],
+    hombro: [
+      'Cápsula posterior: brazo cruzado al pecho — 35 s por lado',
+      'Estiramiento de trapecio superior, oreja al hombro — 30 s por lado',
+      'Círculos de hombro con banda, muy livianos — 10 por dirección'
+    ],
+    brazo: [
+      'Bíceps contra pared, brazo extendido atrás — 30 s por lado',
+      'Tríceps por encima de la cabeza — 30 s por lado',
+      'Muñecas: extensión y flexión en el piso — 20 s cada una'
+    ],
+    core: [
+      'Aductores en mariposa sentado — 45 s',
+      'Psoas en zancada con brazo arriba — 40 s por lado',
+      'Respiración diafragmática boca arriba, 4 segundos por fase — 8 ciclos'
+    ],
+    metcon: [
+      'Caminata suave para bajar pulsaciones — 3 min',
+      'Respiración diafragmática boca arriba, 4 segundos por fase — 10 ciclos',
+      'Movilidad general de cadera y tobillo, sin forzar — 2 min'
+    ]
+  };
+
+  function zonasDelDia(d){
+    var set = {}, series = 0, ejercicios = [], cat = {};
+    (d.bloques || []).forEach(function(b){
+      var c = b.category || 'strength';
+      cat[c] = (cat[c] || 0) + 1;
+      series += parseInt(b.efSets, 10) || 0;
+      var ids = (typeof blockExIds === 'function') ? blockExIds(b) : [];
+      ids.forEach(function(x){
+        var ex = (typeof getEx === 'function') ? getEx(x.exId) : null;
+        if(!ex) return;
+        ejercicios.push(ex.es);
+        var g = ex.grupo || '', pt = ex.patron || '';
+        if(/Cadera dominante|Extensión lumbar/i.test(pt)) set.cadera = 1;
+        else if(/Rodilla dominante/i.test(pt)) set.rodilla = 1;
+        else if(/Abducción|Aducción/i.test(pt)) set.core = 1;
+        else if(/Tracción/i.test(pt)) set.traccion = 1;
+        else if(/Empuje/i.test(pt)) set.empuje = 1;
+        if(/Piernas/i.test(g) && /Aislamiento/i.test(pt)) set.rodilla = 1;
+        if(/Hombros/i.test(g)) set.hombro = 1;
+        if(/Brazos/i.test(g)) set.brazo = 1;
+        if(/Core/i.test(g)) set.core = 1;
+        if(/Espalda/i.test(g)) set.traccion = 1;
+        if(/Pectoral/i.test(g)) set.empuje = 1;
+      });
+      /* los bloques de lista (WOD, warm-up, cardio) se leen por texto */
+      var txt = [b.titulo || '', b.subtitulo || ''].concat(b.items || []).join(' ');
+      if(c === 'metcon' || c === 'cardio' || /amrap|emom|for time|wod/i.test(txt)) set.metcon = 1;
+    });
+    return { zonas: Object.keys(set), series: series, ejercicios: ejercicios, cat: cat };
+  }
+
+  /* ---------- 2 · MOTOR LOCAL ---------- */
+  function generarLocal(d, m){
+    var z = m.zonas.slice();
+    if(!z.length) z = ['core'];
+    /* prioridad: lo más demandante primero, y no más de 4 ítems */
+    var orden = ['cadera','rodilla','traccion','empuje','hombro','core','brazo','metcon'];
+    z.sort(function(a, b){ return orden.indexOf(a) - orden.indexOf(b); });
+
+    var items = [], usados = {};
+    z.forEach(function(k){
+      (COOL[k] || []).slice(0, z.length >= 3 ? 1 : 2).forEach(function(it){
+        if(items.length < 4 && !usados[it]){ usados[it] = 1; items.push(it); }
+      });
+    });
+    if(items.length < 3) (COOL.core || []).forEach(function(it){
+      if(items.length < 3 && !usados[it]){ usados[it] = 1; items.push(it); }
+    });
+
+    var lb = z.map(function(k){ return (ZONAS[k] || {}).lb || k; });
+    var rec = z.indexOf('cadera') >= 0 || z.indexOf('rodilla') >= 0 ? '48 a 72 horas' : '48 horas';
+    var esMet = z.indexOf('metcon') >= 0;
+    var esFuerza = m.cat.strength > 0;
+
+    var p1 = 'La sesión concentró ' + m.series + ' series efectivas sobre ' +
+      lb.join(' · ').toLowerCase() +
+      '. ' + (esFuerza
+        ? 'El estímulo principal fue neuromuscular: cargas altas con descansos completos, buscando tensión mecánica en las series efectivas y no fatiga acumulada. '
+        : 'El estímulo principal fue metabólico: densidad de trabajo con descansos cortos y acumulación de fatiga local. ') +
+      (esMet ? 'El trabajo metabólico del cierre agrega demanda cardiovascular, que se recupera antes que la muscular. ' : '') +
+      'El objetivo del enfriamiento no es ganar flexibilidad, es bajar el tono de los grupos que quedaron acortados y devolver la respiración a un ritmo normal.';
+
+    var p2 = 'Los grupos entrenados hoy necesitan entre ' + rec + ' antes de volver a recibir un estímulo de la misma intensidad. ' +
+      'En ese período el trabajo de otros patrones no interfiere: lo que hay que respetar es la ventana de recuperación del tejido cargado, no el descanso general. ' +
+      'Señales de que la recuperación no alcanzó: dolor que aumenta en lugar de bajar al segundo día, caída de fuerza mayor al 10% en el primer ejercicio, o sueño interrumpido. ' +
+      'Si aparecen dos de las tres, la sesión siguiente se ejecuta con un punto más de RIR.';
+
+    return { items: items, nota: 'Cinco minutos alcanzan. El enfriamiento no compensa una sesión mal dosificada, pero acelera la vuelta a la calma.', resumen: p1 + '\n\n' + p2, fuente: 'local' };
+  }
+
+  /* ---------- 3 · MOTOR IA (usa la clave ya configurada) ---------- */
+  function promptDe(d, m, ath){
+    return 'Sos un entrenador de fuerza especialista en periodización. Respondés en español rioplatense, ' +
+      'sin emojis, sin listas numeradas y SOLO con un JSON válido.\n\n' +
+      'SESIÓN A ANALIZAR\n' +
+      'Alumno/a: ' + ((typeof fullName === 'function' && ath) ? fullName(ath) : 'alumno') + '\n' +
+      'Día: ' + (d.label || '') + ' · ' + (d.title || '') + '\n' +
+      'Series efectivas: ' + m.series + '\n' +
+      'Zonas trabajadas: ' + m.zonas.join(', ') + '\n' +
+      'Ejercicios: ' + m.ejercicios.slice(0, 14).join(' · ') + '\n\n' +
+      'DEVOLVÉ EXACTAMENTE ESTE JSON:\n' +
+      '{"cooldown":["ítem 1","ítem 2","ítem 3","ítem 4"],"nota":"una línea","resumen":"párrafo 1\\n\\npárrafo 2"}\n\n' +
+      'REGLAS\n' +
+      '- cooldown: 3 o 4 ejercicios de movilidad o descompresión, específicos de las articulaciones y ' +
+      'grupos que se cargaron hoy. Cada ítem con su duración o repeticiones. Nada de cardio largo. ' +
+      'El bloque completo no puede pasar de 5 minutos.\n' +
+      '- resumen: exactamente dos párrafos. El primero explica el estímulo neuromuscular logrado. ' +
+      'El segundo, el tiempo de recuperación sugerido y las señales de recuperación insuficiente.\n' +
+      '- Nada de promesas de resultados ni lenguaje motivacional.';
+  }
+
+  function parsearIA(txt){
+    if(!txt) return null;
+    var m = String(txt).match(/\{[\s\S]*\}/);
+    if(!m) return null;
+    try{
+      var o = JSON.parse(m[0]);
+      var items = (o.cooldown || []).filter(function(x){ return typeof x === 'string' && x.trim(); });
+      if(items.length < 2 || typeof o.resumen !== 'string' || o.resumen.length < 80) return null;
+      return { items: items.slice(0, 4), nota: String(o.nota || '').trim(),
+               resumen: String(o.resumen).trim(), fuente: 'ia' };
+    }catch(e){ return null; }
+  }
+
+  /* ---------- 4 · INTERFAZ ---------- */
+  var athAct = null, diaAct = null, datos = null;
+
+  function pintarMapa(m){
+    var el = document.getElementById('clMap'); if(!el) return;
+    var lb = m.zonas.map(function(k){ return (ZONAS[k] || {}).lb || k; });
+    el.innerHTML = m.zonas.length
+      ? 'Detectado en la sesión: <b>' + esc(lb.join(' · ')) + '</b> · ' + m.series +
+        ' series efectivas · ' + m.ejercicios.length + ' ejercicios con ficha en la biblioteca.'
+      : 'El día no tiene bloques con ejercicios cargados: el generador va a proponer un cierre genérico.';
+  }
+  function volcar(r){
+    datos = r;
+    document.getElementById('clItems').value = (r.items || []).join('\n');
+    document.getElementById('clNota').value  = r.nota || '';
+    document.getElementById('clRes').value   = r.resumen || '';
+    var f = document.getElementById('clFuente');
+    f.textContent = r.fuente === 'ia' ? 'generado con IA' : 'motor local';
+    f.classList.toggle('ia', r.fuente === 'ia');
+  }
+
+  function generar(forzarIA){
+    if(!diaAct) return;
+    var m = zonasDelDia(diaAct);
+    pintarMapa(m);
+    var local = generarLocal(diaAct, m);
+    var hayIA = window.CoachAI && CoachAI.hayClave && CoachAI.hayClave();
+    if(!forzarIA || !hayIA){
+      volcar(local);
+      if(forzarIA && !hayIA && typeof toast === 'function')
+        toast('Sin clave de IA cargada: se usó el motor local');
+      return;
+    }
+    var f = document.getElementById('clFuente');
+    f.textContent = 'consultando IA…';
+    CoachAI.generarTexto(promptDe(diaAct, m, athAct), 'Devolvés únicamente JSON válido, sin texto alrededor.')
+      .then(function(txt){
+        var r = parsearIA(txt);
+        if(r){ volcar(r); }
+        else { volcar(local); if(typeof toast === 'function') toast('La IA no devolvió un formato válido: se usó el motor local'); }
+      })
+      .catch(function(){
+        volcar(local);
+        if(typeof toast === 'function') toast('No se pudo consultar la IA: se usó el motor local');
+      });
+  }
+
+  function abrir(){
+    var a = (typeof active === 'function') ? active() : null;
+    if(!a){ if(typeof toast === 'function') toast('Elegí un alumno/a primero'); return; }
+    athAct = a;
+    diaAct = (typeof curDay === 'function') ? curDay() : null;
+    if(!diaAct){ if(typeof toast === 'function') toast('Abrí un día del builder'); return; }
+    var w = document.getElementById('clWho');
+    if(w) w.textContent = (typeof fullName === 'function' ? fullName(a) : '') + ' · ' +
+      (diaAct.short || diaAct.label || 'Día');
+    /* si el día ya tenía cierre cargado, se muestra en lugar de pisarlo */
+    if((diaAct.cooldown || []).length || diaAct.summary){
+      volcar({ items:(diaAct.cooldown || []).slice(), nota: diaAct.cooldownNota || '',
+               resumen: diaAct.summary || '', fuente:'local' });
+      pintarMapa(zonasDelDia(diaAct));
+    } else {
+      generar(false);
+    }
+    if(typeof openModal === 'function') openModal('mCool');
+  }
+  window.abrirCoolDownJP = abrir;
+
+  function aplicar(){
+    if(!diaAct || !athAct) return;
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function')
+      CoachUndo.vigilar('Cool-down y resumen del día');
+    var items = document.getElementById('clItems').value.split('\n')
+      .map(function(x){ return x.trim(); }).filter(Boolean);
+    diaAct.cooldown = items;
+    diaAct.cooldownNota = document.getElementById('clNota').value.trim();
+    diaAct.summary = document.getElementById('clRes').value.trim();
+    if(typeof save === 'function') save();
+    if(typeof renderBuilder === 'function') renderBuilder();
+    if(typeof closeModal === 'function') closeModal('mCool');
+    if(typeof toast === 'function') toast('✅ Cool-down (' + items.length + ' ítems) y resumen insertados');
+  }
+
+  function montar(){
+    var barra = document.querySelector('#v-builder .tools-in');
+    if(barra && !document.getElementById('btnCool')){
+      var b = document.createElement('button');
+      b.className = 'btn ghost sm'; b.id = 'btnCool'; b.type = 'button';
+      b.textContent = '⚡ Cool-Down y Resumen IA';
+      b.addEventListener('click', abrir);
+      var ref = document.getElementById('btnNutri') || document.getElementById('btnCopyDay');
+      if(ref) barra.insertBefore(b, ref); else barra.appendChild(b);
+    }
+    var m = document.getElementById('mCool');
+    if(m && !m.__jp){
+      m.__jp = 1;
+      [].slice.call(m.querySelectorAll('[data-close]')).forEach(function(x){
+        x.addEventListener('click', function(){ if(typeof closeModal === 'function') closeModal('mCool'); });
+      });
+      document.getElementById('clGen').addEventListener('click', function(){ generar(false); });
+      document.getElementById('clGenIA').addEventListener('click', function(){ generar(true); });
+      document.getElementById('clApply').addEventListener('click', aplicar);
+    }
+  }
+
+  ['renderBuilder','renderDay','go'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jpcl) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(montar, 90); return r; };
+    w.__jpcl = 1;
+    window[fn] = w;
+  });
+  [800, 2000, 3600].forEach(function(ms){ setTimeout(montar, ms); });
 })();
 </script>
