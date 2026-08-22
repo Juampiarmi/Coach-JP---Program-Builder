@@ -15012,8 +15012,19 @@ body{
   flex:0 0 auto !important;margin-left:0 !important;margin-top:0 !important;
   align-self:center;
 }
-.ex-row{align-items:center}
-.ex-row .ex-name{flex:1 1 auto}
+/* la fila vuelve a alinearse arriba: el punto del ejercicio se apoya en la
+   PRIMERA línea del nombre, no en el centro del bloque (que con nombres de
+   2 o 3 líneas lo dejaba flotando arriba o abajo del texto) */
+.ex-row{align-items:flex-start}
+/* base 0: con base auto el nombre largo saltaba de línea y dejaba
+   el punto solo arriba */
+.ex-row .ex-name{flex:1 1 0;min-width:0}
+.ex-row > .ex-bullet{
+  align-self:flex-start;
+  /* medio interlineado del nombre menos medio punto */
+  margin-top:calc(0.675em - 3px) !important;
+  flex:0 0 auto;
+}
 /* mismo criterio en las líneas de pizarra y en el glosario */
 .wb-line .video-link,.gl-card .video-link{flex:0 0 auto;margin-left:auto !important}
 .wb-line{display:flex;align-items:center;gap:8px}
@@ -15077,6 +15088,295 @@ body{
     document.addEventListener('DOMContentLoaded', function(){ setTimeout(textoHonesto, 900); });
   else setTimeout(textoHonesto, 900);
   [1800, 3600].forEach(function(ms){ setTimeout(textoHonesto, ms); });
+})();
+<\/script>
+
+
+<style>
+/* =========================================================
+   COACH JP · v3.9 · PESTAÑA NUTRICIÓN (Variante B)
+   Panel a pantalla completa: no toca el render del entrenamiento
+========================================================= */
+#jpNutBtn{
+  position:fixed;right:14px;bottom:150px;z-index:9990;
+  min-width:52px;min-height:52px;border-radius:16px;cursor:pointer;
+  display:none;align-items:center;justify-content:center;font-size:22px;
+  background:linear-gradient(180deg,#141A20,#0B0E12);border:1px solid rgba(124,197,232,.4);
+  box-shadow:0 10px 26px rgba(0,0,0,.55);
+}
+#jpNutBtn.on{display:flex}
+#jpNut{
+  position:fixed;inset:0;z-index:99990;background:#08090B;overflow-y:auto;
+  transform:translateY(100%);transition:transform .26s ease;padding-bottom:40px;
+}
+#jpNut.on{transform:translateY(0)}
+#jpNut .nu-top{
+  position:sticky;top:0;z-index:2;background:rgba(8,9,11,.96);backdrop-filter:blur(8px);
+  padding:14px 16px 10px;border-bottom:1px solid rgba(255,255,255,.07);
+}
+#jpNut .nu-seg{display:flex;gap:6px;background:rgba(255,255,255,.04);border-radius:12px;padding:4px}
+#jpNut .nu-seg button{
+  flex:1;min-height:40px;border-radius:9px;border:none;cursor:pointer;font-weight:700;font-size:13px;
+  background:transparent;color:#8A929E;font-family:var(--font-head,inherit);letter-spacing:.04em;
+}
+#jpNut .nu-seg button.on{background:rgba(124,197,232,.16);color:#7CC5E8}
+#jpNut .nu-x{position:absolute;right:14px;top:12px;width:40px;height:40px;border-radius:12px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);color:#EDEFF2;font-size:17px;cursor:pointer}
+#jpNut .nu-b{padding:14px 16px 0}
+.nu-card{
+  border:1px solid rgba(124,197,232,.2);border-radius:16px;padding:14px 15px;margin-bottom:12px;
+  background:linear-gradient(180deg,rgba(124,197,232,.05),rgba(255,255,255,.015));
+}
+.nu-card .nu-h{
+  display:flex;align-items:center;gap:9px;margin-bottom:11px;
+  font-family:var(--font-head,inherit);font-size:calc(12.5px * var(--fzs,1));
+  letter-spacing:.14em;text-transform:uppercase;color:#EDEFF2;font-weight:700;
+}
+.nu-card .nu-h .tag{
+  margin-left:auto;font-size:calc(10.5px * var(--fzs,1));letter-spacing:.1em;color:#7CC5E8;
+  border:1px solid rgba(124,197,232,.35);border-radius:999px;padding:3px 9px;
+}
+.nu-bar{margin-bottom:10px}
+.nu-bar .lb{display:flex;justify-content:space-between;font-size:calc(11.5px * var(--fzs,1));
+  color:#8A929E;letter-spacing:.1em;text-transform:uppercase;margin-bottom:5px}
+.nu-bar .lb b{color:#EDEFF2;font-family:ui-monospace,monospace;letter-spacing:0}
+.nu-bar .tr{height:9px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+.nu-bar .fi{height:100%;border-radius:99px;background:#7CC5E8;transition:width .3s ease}
+.nu-bar.p .fi{background:#D2793F}
+.nu-bar.g .fi{background:#8FB9CE}
+.nu-bar.a .fi{background:#4A93B8}
+.nu-meal{border:1px solid rgba(255,255,255,.08);border-radius:14px;margin-bottom:9px;overflow:hidden;background:rgba(255,255,255,.02)}
+.nu-meal > summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 13px;min-height:52px;
+}
+.nu-meal > summary::-webkit-details-marker{display:none}
+.nu-meal .mn{font-size:calc(13.5px * var(--fzs,1));font-weight:700;color:#EDEFF2;flex:1;min-width:0}
+.nu-meal .mh{font-family:ui-monospace,monospace;font-size:calc(11px * var(--fzs,1));color:#8A929E}
+.nu-meal .mk{font-family:ui-monospace,monospace;font-size:calc(11px * var(--fzs,1));color:#E8965E;white-space:nowrap}
+.nu-meal .tick{
+  width:34px;height:34px;flex:0 0 34px;border-radius:10px;border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.04);color:#5E6570;font-size:16px;display:flex;align-items:center;justify-content:center;
+}
+.nu-meal.hecha .tick{background:rgba(72,213,151,.15);border-color:rgba(72,213,151,.5);color:#48D597}
+.nu-meal.hecha .mn{color:#9BE9C4}
+.nu-meal .cuerpo{padding:0 13px 12px}
+.nu-it{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid rgba(255,255,255,.06)}
+.nu-it .al{flex:1;font-size:calc(13px * var(--fzs,1));color:#C9CFD8}
+.nu-it .gr{font-family:ui-monospace,monospace;font-weight:700;color:#EDEFF2;font-size:calc(13px * var(--fzs,1))}
+.nu-it .sw{
+  min-width:38px;min-height:38px;border-radius:10px;cursor:pointer;flex:0 0 auto;
+  background:rgba(124,197,232,.08);border:1px solid rgba(124,197,232,.3);color:#7CC5E8;font-size:13px;
+}
+.nu-it.cambiado .al{color:#7CC5E8}
+.nu-peri{font-size:calc(12.5px * var(--fzs,1));line-height:1.6;color:#C9CFD8}
+.nu-peri b{color:#7CC5E8;font-size:calc(10.5px * var(--fzs,1));letter-spacing:.14em;text-transform:uppercase;display:block;margin-top:8px}
+.nu-legal{font-size:calc(11.5px * var(--fzs,1));line-height:1.55;color:#6E7783;padding:4px 2px 20px}
+.nu-vacio{padding:40px 20px;text-align:center;color:#6E7783;font-size:calc(13px * var(--fzs,1));line-height:1.6}
+</style>
+<script>
+/* =========================================================
+   PESTAÑA NUTRICIÓN · renderiza el plan estructurado publicado
+========================================================= */
+(function(){
+  var PLAN = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.nutriPlan) || null;
+  var KL = 'coachjp_nutrilog_v1';
+  var swap = {};   /* intercambios elegidos por el alumno, por comida/ítem */
+
+  function hoyISO(){ var d = new Date(); return d.toISOString().slice(0,10); }
+  function log(){ try{ return JSON.parse(localStorage.getItem(KL) || '{}') || {}; }catch(e){ return {}; } }
+  function guardarLog(o){ try{ localStorage.setItem(KL, JSON.stringify(o)); }catch(e){} }
+  function delDia(){ var o = log(), k = hoyISO(); if(!o[k]) o[k] = { comidas:{}, swap:{} }; return o[k]; }
+
+  function esDiaEntreno(){
+    try{
+      var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+      return !!(d && (d.blocks || []).length);
+    }catch(e){ return true; }
+  }
+
+  function sumaDelDia(){
+    var d = delDia(), tot = { prot:0, carb:0, gras:0, kcal:0 };
+    (PLAN.comidas || []).forEach(function(c){
+      if(!d.comidas[c.n]) return;
+      tot.prot += (c.total && c.total.prot) || 0;
+      tot.carb += (c.total && c.total.carb) || 0;
+      tot.gras += (c.total && c.total.gras) || 0;
+      tot.kcal += (c.total && c.total.kcal) || 0;
+    });
+    return tot;
+  }
+
+  function barra(cls, rot, hecho, meta, unidad){
+    var pct = meta ? Math.min(100, Math.round(hecho / meta * 100)) : 0;
+    return '<div class="nu-bar ' + cls + '"><div class="lb"><span>' + rot + '</span>' +
+      '<b>' + hecho + ' / ' + meta + ' ' + unidad + '</b></div>' +
+      '<div class="tr"><div class="fi" style="width:' + pct + '%"></div></div></div>';
+  }
+
+  function render(){
+    var cont = document.getElementById('jpNutBody'); if(!cont) return;
+    if(!PLAN){
+      cont.innerHTML = '<div class="nu-vacio">Tu coach todavía no publicó un plan nutricional.<br>' +
+        'Mientras tanto, cada día tiene su tarjeta de nutrición de la sesión.</div>';
+      return;
+    }
+    var ent = esDiaEntreno();
+    var m = (PLAN.macros && (ent ? PLAN.macros.entreno : PLAN.macros.descanso)) || {};
+    var kcal = ent ? (PLAN.meta || {}).kcal_entreno : (PLAN.meta || {}).kcal_descanso;
+    var s = sumaDelDia(), d = delDia();
+
+    var html = '<div class="nu-card">' +
+      '<div class="nu-h">Hoy<span class="tag">' + (ent ? 'día de entreno' : 'día de descanso') + ' · ' + (kcal || '—') + ' kcal</span></div>' +
+      barra('p', 'Proteína', s.prot, m.prot_g || 0, 'g') +
+      barra('',  'Carbohidrato', s.carb, m.carb_g || 0, 'g') +
+      barra('g', 'Grasa', s.gras, m.gras_g || 0, 'g') +
+      (m.agua_ml ? barra('a', 'Agua', 0, Math.round(m.agua_ml / 100) / 10, 'L') : '') +
+      '</div>';
+
+    html += (PLAN.comidas || []).map(function(c, ci){
+      var hecha = !!d.comidas[c.n];
+      var abierta = false;
+      return '<details class="nu-meal' + (hecha ? ' hecha' : '') + '"' + (abierta ? ' open' : '') + ' data-mn="' + c.n + '">' +
+        '<summary>' +
+          '<span class="mn">' + c.n + ' · ' + esc(c.nombre) + '</span>' +
+          '<span class="mh">' + esc(c.hora_sug || '') + '</span>' +
+          '<span class="mk">' + ((c.total && c.total.kcal) || 0) + ' kcal</span>' +
+          '<span class="tick" data-tick="' + c.n + '">' + (hecha ? '✓' : '') + '</span>' +
+        '</summary>' +
+        '<div class="cuerpo">' +
+          (c.items || []).map(function(it, ii){
+            var key = c.n + '_' + ii;
+            var alt = d.swap[key];
+            var nombre = alt ? alt.alimento : it.alimento;
+            var gramos = alt ? alt.gramos : it.gramos;
+            return '<div class="nu-it' + (alt ? ' cambiado' : '') + '">' +
+              '<span class="al">' + esc(nombre) + '</span>' +
+              '<span class="gr">' + gramos + ' g</span>' +
+              ((it.intercambios || []).length
+                ? '<button class="sw" data-swap="' + key + '" title="Cambiar por un equivalente">⇄</button>' : '') +
+              '</div>';
+          }).join('') +
+        '</div></details>';
+    }).join('');
+
+    var pe = PLAN.peri_entreno;
+    if(pe && ent){
+      html += '<div class="nu-card"><div class="nu-h">Alrededor del entrenamiento</div><div class="nu-peri">' +
+        ['pre','intra','post'].map(function(k){
+          var x = pe[k]; if(!x) return '';
+          return '<b>' + k + ' · ' + esc(x.cuando || '') + '</b>' + esc(x.texto || '');
+        }).join('') + '</div></div>';
+    }
+    if((PLAN.suplementos || []).length){
+      html += '<div class="nu-card"><div class="nu-h">Suplementos</div><div class="nu-peri">' +
+        PLAN.suplementos.map(function(x){
+          return '<div style="margin-bottom:6px">• <b style="display:inline;font-size:inherit;letter-spacing:0;text-transform:none;color:#EDEFF2">' +
+            esc(x.nombre) + '</b> — ' + esc(x.dosis || '') + ' · ' + esc(x.momento || '') + '</div>';
+        }).join('') + '</div></div>';
+    }
+    html += '<div class="nu-legal">' + esc(PLAN.disclaimer ||
+      'Orientativo y educativo. No reemplaza el plan de un nutricionista.') + '</div>';
+    cont.innerHTML = html;
+
+    /* abre la comida más cercana a la hora actual */
+    var ahora = new Date().getHours() * 60 + new Date().getMinutes();
+    var mejor = null, dif = 1e9;
+    (PLAN.comidas || []).forEach(function(c){
+      var hm = String(c.hora_sug || '').split(':');
+      if(hm.length !== 2) return;
+      var t = parseInt(hm[0], 10) * 60 + parseInt(hm[1], 10);
+      var dd = Math.abs(t - ahora);
+      if(dd < dif && !delDia().comidas[c.n]){ dif = dd; mejor = c.n; }
+    });
+    if(mejor != null){
+      var el = cont.querySelector('.nu-meal[data-mn="' + mejor + '"]');
+      if(el) el.open = true;
+    }
+  }
+
+  function esc(t){ return String(t == null ? '' : t)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function abrir(){ var p = document.getElementById('jpNut'); if(!p) return; render(); p.classList.add('on'); }
+  function cerrar(){ var p = document.getElementById('jpNut'); if(p) p.classList.remove('on'); }
+  window.CoachNutricion = { abrir: abrir, cerrar: cerrar, hay: function(){ return !!PLAN; } };
+
+  function montar(){
+    if(document.getElementById('jpNut')) return;
+    var btn = document.createElement('button');
+    btn.id = 'jpNutBtn'; btn.type = 'button'; btn.innerHTML = '🥗';
+    btn.setAttribute('aria-label', 'Abrir nutrición');
+    btn.addEventListener('click', abrir);
+    document.body.appendChild(btn);
+    if(PLAN) btn.classList.add('on');
+
+    var p = document.createElement('div');
+    p.id = 'jpNut';
+    p.innerHTML =
+      '<div class="nu-top">' +
+        '<button class="nu-x" type="button" id="jpNutX">✕</button>' +
+        '<div class="nu-seg" style="max-width:320px">' +
+          '<button type="button" id="jpNutIrEnt">🏋️ Entrenamiento</button>' +
+          '<button type="button" class="on">🥗 Nutrición</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="nu-b" id="jpNutBody"></div>';
+    document.body.appendChild(p);
+    document.getElementById('jpNutX').addEventListener('click', cerrar);
+    document.getElementById('jpNutIrEnt').addEventListener('click', cerrar);
+
+    document.getElementById('jpNutBody').addEventListener('click', function(e){
+      var t = e.target.closest('[data-tick]');
+      if(t){
+        e.preventDefault(); e.stopPropagation();
+        var n = parseInt(t.dataset.tick, 10);
+        var o = log(), k = hoyISO();
+        if(!o[k]) o[k] = { comidas:{}, swap:{} };
+        if(o[k].comidas[n]) delete o[k].comidas[n]; else o[k].comidas[n] = Date.now();
+        guardarLog(o);
+        if(window.CoachVibra) CoachVibra.toque();
+        render();
+        return;
+      }
+      var sw = e.target.closest('[data-swap]');
+      if(sw){
+        e.preventDefault(); e.stopPropagation();
+        var key = sw.dataset.swap, part = key.split('_');
+        var comida = (PLAN.comidas || []).filter(function(c){ return String(c.n) === part[0]; })[0];
+        if(!comida) return;
+        var item = comida.items[parseInt(part[1], 10)];
+        if(!item || !(item.intercambios || []).length) return;
+        var o = log(), kk = hoyISO();
+        if(!o[kk]) o[kk] = { comidas:{}, swap:{} };
+        var actual = o[kk].swap[key];
+        var opciones = [{ alimento:item.alimento, gramos:item.gramos }].concat(item.intercambios);
+        var idx = 0;
+        opciones.forEach(function(x, i){ if(actual && x.alimento === actual.alimento) idx = i; });
+        var sig = opciones[(idx + 1) % opciones.length];
+        if(sig.alimento === item.alimento) delete o[kk].swap[key];
+        else o[kk].swap[key] = sig;
+        guardarLog(o);
+        if(window.CoachVibra) CoachVibra.toque();
+        render();
+      }
+    });
+
+    /* también desde el menú de herramientas, si existe */
+    try{
+      var pop = document.getElementById('toolsPop') || document.querySelector('.tools-pop');
+      if(pop && PLAN && !document.getElementById('jpNutTool')){
+        var b2 = document.createElement('button');
+        b2.id = 'jpNutTool'; b2.type = 'button'; b2.innerHTML = '🥗 Nutrición';
+        b2.addEventListener('click', function(){ pop.classList.remove('on'); abrir(); });
+        pop.appendChild(b2);
+      }
+    }catch(e){}
+  }
+
+  if(document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(montar, 700); });
+  else setTimeout(montar, 700);
+  [1600, 3200].forEach(function(ms){ setTimeout(montar, ms); });
 })();
 <\/script>
 
@@ -15265,8 +15565,22 @@ function buildProgramConfig(ath){
     sync: canalSync(ath),
     nota: notaMetodologica(ath),
     mesoName: (p.meta.mesoName || 'Mesociclo'),
+    nutriPlan: planNutricional(ath),
     weeks: weeks, videoMap: videoMap, videoLib: bibliotecaVideos(withVideos), days: days
   };
+}
+
+/* Plan nutricional completo · sólo si el coach lo publicó (Variante B) */
+function planNutricional(ath){
+  try{
+    const o = JSON.parse(localStorage.getItem('coachjp_nutriplan_v1') || '{}');
+    const r = o[ath.id];
+    if(!r || r.estado !== 'pub' || !r.plan) return null;
+    const p = r.plan;
+    if(!p.comidas || !p.comidas.length || !p.macros) return null;
+    return p;
+  }catch(e){}
+  return null;
 }
 
 /* Nutrición de la sesión · ficha propia del alumno/a (coachjp_nutri_v1) */
@@ -22557,6 +22871,15 @@ body.man-mode .gs-fab{right:318px}
 .cov-tag.ok{border-color:rgba(74,147,184,.4);color:var(--teal);background:rgba(74,147,184,.09)}
 .cov-tag.no{border-color:rgba(239,180,74,.45);color:#E8965E;background:rgba(239,180,74,.09)}
 .cov-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:9px;margin-bottom:4px}
+/* editor de video en línea, para cargar el link sin salir del modal */
+.cov-ed{grid-column:1/-1;display:none;gap:8px;align-items:center;flex-wrap:wrap;
+  margin-top:8px;padding:10px 11px;border-radius:11px;background:rgba(124,197,232,.05);border:1px dashed #33404D}
+.cov-row.abierto .cov-ed{display:flex}
+.cov-ed input{flex:1 1 240px;min-width:0;min-height:34px}
+.cov-ed select{min-height:34px;max-width:190px}
+.cov-ed .hint{flex:1 1 100%;font-size:10.5px;color:var(--muted);margin:0}
+.cov-row .cov-nuevo{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:20px;
+  border:1px solid rgba(210,121,63,.45);color:#E8965E;background:rgba(210,121,63,.09);margin-left:6px}
 .cov-kpi{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px}
 .cov-kpi .v{font-family:var(--ffh);font-size:24px;font-weight:900;line-height:1}
 .cov-kpi .k{font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800}
@@ -22777,6 +23100,49 @@ body.man-mode .gs-fab{right:318px}
     }));
     return out;
   }
+  let covFilas = [];
+  /* adivina el grupo muscular de un ítem suelto por su texto y por el bloque */
+  function grupoSugerido(f){
+    const t = norm(f.nombre + ' ' + (f.bloque || ''));
+    if(/dorsal|remo|jal[oó]n|espalda|tor[aá]cic|escapul/.test(t)) return 'Espalda';
+    if(/press|pecho|pectoral|apertur|flexion/.test(t))            return 'Pectoral';
+    if(/hombro|deltoid|lateral|manguito|rotaci[oó]n externa/.test(t)) return 'Hombros';
+    if(/b[ií]ceps|tr[ií]ceps|curl|antebrazo/.test(t))             return 'Brazos';
+    if(/sentadilla|gl[uú]teo|cadera|isquio|cu[aá]driceps|tobillo|gemelo|pierna|zancada|aductor|abducci/.test(t)) return 'Piernas/Glúteos';
+    if(/core|plancha|abdomen|dead bug|pallof|copenhagen/.test(t)) return 'Core';
+    return 'Full Body / Cardio';
+  }
+  function guardarVideoFila(i){
+    const f = covFilas[i]; if(!f) return;
+    const inp = document.querySelector('[data-covurl="' + i + '"]');
+    const url = (inp && inp.value || '').trim();
+    const vid = ytId(url);
+    if(url && !vid){ toast('Ese link no tiene un ID de YouTube válido', 'err'); return; }
+
+    if(f.ex){
+      f.ex.videoId = vid;
+      f.ex.video   = vid ? ('https://youtu.be/' + vid) : '';
+    } else {
+      if(!vid){ toast('Pegá el link antes de crear la ficha', 'err'); return; }
+      const sel = document.querySelector('[data-covgrupo="' + i + '"]');
+      const nuevo = {
+        id: uid('ex'), custom: true,
+        es: f.nombre, en: '',
+        grupo: (sel && sel.value) || grupoSugerido(f),
+        patron: 'Aislamiento', equipo: 'Peso corporal',
+        riesgo: [], aviso: '',
+        videoId: vid, video: 'https://youtu.be/' + vid,
+        warmOk: /warm|movilidad|activaci/i.test(f.zona + ' ' + f.bloque)
+      };
+      S.exercises.push(nuevo);
+      f.ex = nuevo;
+    }
+    save();
+    if(typeof renderLibrary === 'function'){ try{ renderLibrary(); }catch(e){} }
+    toast(vid ? '🎬 Video vinculado a «' + f.nombre + '»' : 'Video quitado de la ficha');
+    renderCov();
+  }
+
   function renderCov(){
     const ath = active();
     if(!ath){ toast('Elegí un alumno/a activo/a', 'err'); return; }
@@ -22789,16 +23155,32 @@ body.man-mode .gs-fab{right:318px}
       '<div class="cov-kpi"><div class="k">Con video propio</div><div class="v" style="color:var(--teal)">' + con + '</div></div>' +
       '<div class="cov-kpi"><div class="k">Con búsqueda automática</div><div class="v" style="color:#E8965E">' + sin + '</div></div>' +
       '<div class="cov-kpi"><div class="k">Cobertura directa</div><div class="v">' + pct + '<small style="font-size:14px">%</small></div></div>';
+    covFilas = filas;
     $('#covBox').innerHTML = filas.length
-      ? filas.map(f =>
-          '<div class="cov-row"><div><div class="cn">' + esc(f.nombre) + '</div>' +
+      ? filas.map((f, i) =>
+          '<div class="cov-row" data-covi="' + i + '"><div><div class="cn">' + esc(f.nombre) +
+            (f.ex ? '' : '<span class="cov-nuevo">sin ficha</span>') + '</div>' +
             '<div class="cm">' + esc(f.dia) + ' · ' + esc(f.zona) + ' · ' + esc(f.bloque) + '</div></div>' +
           '<div>' + (f.video ? '<span class="cov-tag ok">🎬 Video vinculado</span>' : '<span class="cov-tag no">🔎 Búsqueda en YouTube</span>') + '</div>' +
           '<div class="row" style="gap:5px;flex-wrap:nowrap">' +
-            (f.video ? '<button class="btn xs" data-covplay="' + f.ex.id + '">▶</button>' : '') +
-            (f.ex ? '<button class="btn xs" data-covedit="' + f.ex.id + '">✏️</button>' : '') +
-            '<a class="btn xs" href="' + ytSearch(f.nombre) + '" target="_blank" rel="noopener">🔎</a>' +
-          '</div></div>').join('')
+            (f.video ? '<button class="btn xs" data-covplay="' + f.ex.id + '" title="Ver el video">▶</button>' : '') +
+            '<button class="btn xs" data-covvid="' + i + '" title="Cargar o cambiar el link del video">✏️</button>' +
+            '<a class="btn xs" href="' + ytSearch(f.nombre) + '" target="_blank" rel="noopener" title="Buscar en YouTube">🔎</a>' +
+          '</div>' +
+          /* editor en línea */
+          '<div class="cov-ed">' +
+            '<input type="url" data-covurl="' + i + '" placeholder="Pegá el link de YouTube o el ID" ' +
+              'value="' + (f.ex && f.ex.videoId ? esc('https://youtu.be/' + f.ex.videoId) : '') + '">' +
+            (f.ex ? '' : '<select data-covgrupo="' + i + '">' +
+              GRUPOS.map(g => '<option value="' + esc(g) + '"' + (g === grupoSugerido(f) ? ' selected' : '') + '>' + esc(g) + '</option>').join('') +
+              '</select>') +
+            '<button class="btn xs primary" data-covsave="' + i + '">💾 Guardar</button>' +
+            '<button class="btn xs ghost" data-covcancel="' + i + '">Cancelar</button>' +
+            '<p class="hint">' + (f.ex
+              ? 'Se guarda en la ficha de «' + esc(f.ex.es) + '» de la biblioteca: queda disponible para todos los alumnos.'
+              : 'Este ítem todavía no tiene ficha en la biblioteca. Al guardar se crea con este nombre y este video.') + '</p>' +
+          '</div>' +
+          '</div>').join('')
       : '<div class="empty" style="padding:20px"><div class="big">🎬</div><h4>El plan está vacío</h4></div>';
     openModal('mCov');
   }
@@ -22824,8 +23206,31 @@ body.man-mode .gs-fab{right:318px}
     $('#covBox').addEventListener('click', e => {
       const pl = e.target.closest('[data-covplay]');
       if(pl){ closeModal('mCov'); openVideo(pl.dataset.covplay); return; }
+      /* lápiz: abre el editor en línea, sin salir del modal */
+      const vd = e.target.closest('[data-covvid]');
+      if(vd){
+        const fila = vd.closest('.cov-row');
+        const abierto = fila.classList.contains('abierto');
+        $$('#covBox .cov-row.abierto').forEach(x => x.classList.remove('abierto'));
+        if(!abierto){
+          fila.classList.add('abierto');
+          const inp = fila.querySelector('[data-covurl]');
+          if(inp) setTimeout(() => { inp.focus(); inp.select(); }, 40);
+        }
+        return;
+      }
+      const sv = e.target.closest('[data-covsave]');
+      if(sv){ guardarVideoFila(parseInt(sv.dataset.covsave, 10)); return; }
+      const cn = e.target.closest('[data-covcancel]');
+      if(cn){ cn.closest('.cov-row').classList.remove('abierto'); return; }
       const ed = e.target.closest('[data-covedit]');
       if(ed){ closeModal('mCov'); go('biblioteca'); setTimeout(() => openEx(ed.dataset.covedit), 160); }
+    });
+    /* Enter guarda, Escape cierra el editor */
+    $('#covBox').addEventListener('keydown', e => {
+      const inp = e.target.closest('[data-covurl]'); if(!inp) return;
+      if(e.key === 'Enter'){ e.preventDefault(); guardarVideoFila(parseInt(inp.dataset.covurl, 10)); }
+      if(e.key === 'Escape'){ e.stopPropagation(); inp.closest('.cov-row').classList.remove('abierto'); }
     });
     $('#covLib').addEventListener('click', () => { closeModal('mCov'); go('biblioteca'); });
     $$('#mCov [data-close]').forEach(b => b.addEventListener('click', () => closeModal('mCov')));
@@ -36673,6 +37078,889 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var w = function(){ var r = _f.apply(this, arguments); setTimeout(montar, 90); return r; };
     w.__jpcl = 1;
     window[fn] = w;
+  });
+  [800, 2000, 3600].forEach(function(ms){ setTimeout(montar, ms); });
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 29 — NUTRICIÓN PERSONALIZADA · VARIANTE B
+     · Ficha del alumno/a + generación de plan ESTRUCTURADO (JSON)
+     · Motor local determinista (Mifflin-St Jeor + reparto de macros
+       + armado de comidas con tabla de intercambios). Sin red.
+     · Si hay clave de IA cargada, se pide el plan a la IA y se valida
+       contra 5 reglas duras; si falla, cae al motor local.
+     · Estado borrador -> publicado: el alumno solo ve lo publicado
+     · Clave propia: coachjp_nutriplan_v1 · no toca Supabase ni el
+       entrenamiento ni la biblioteca
+     ============================================================ -->
+<style>
+#mNP .np-h{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;
+  padding:10px 13px;border-radius:12px;background:#191E25;border:1px solid #28303A;
+}
+#mNP .np-h .who{font-family:var(--ffh);font-size:12.5px;letter-spacing:.1em;text-transform:uppercase;color:#E8965E}
+#mNP .np-h .sp{flex:1}
+#mNP .np-est{
+  font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  padding:4px 10px;border-radius:999px;border:1px solid #28303A;color:#828A97;
+}
+#mNP .np-est.pub{border-color:rgba(72,213,151,.45);color:#48D597}
+#mNP .np-est.bor{border-color:rgba(239,180,74,.45);color:#EFB44A}
+.np-tabs{display:flex;gap:6px;margin-bottom:11px;flex-wrap:wrap}
+.np-tabs button{
+  min-height:34px;padding:0 14px;border-radius:10px;cursor:pointer;font-size:12px;font-weight:700;
+  background:transparent;border:1px solid var(--line-2);color:var(--txt-2);
+}
+.np-tabs button.on{background:var(--gold);border-color:var(--gold);color:#08090B;font-weight:800}
+.np-pane{display:none}
+.np-pane.on{display:block}
+.np-sec{border:1px solid #28303A;border-radius:12px;background:#141920;padding:12px 13px;margin-top:10px}
+.np-sec > .sh{
+  font-family:var(--ffh);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#7CC5E8;
+  margin-bottom:9px;
+}
+.np-sec.rojo{border-color:rgba(224,101,74,.4);background:rgba(224,101,74,.05)}
+.np-sec.rojo > .sh{color:#E0654A}
+.np-chips{display:flex;gap:7px;flex-wrap:wrap}
+.np-chips .nc{
+  min-height:34px;padding:0 13px;border-radius:999px;cursor:pointer;
+  background:transparent;border:1px solid #28303A;color:#A0A8B4;font-size:12px;font-weight:700;
+}
+.np-chips .nc.on{background:rgba(210,121,63,.14);border-color:#D2793F;color:#E8965E}
+.np-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px;margin-top:10px}
+.np-kpi{border:1px solid #28303A;border-radius:12px;background:#141920;padding:11px 12px}
+.np-kpi .k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#828A97}
+.np-kpi .v{font-size:22px;font-weight:800;margin-top:3px;color:#EDEFF2;font-family:var(--ffh)}
+.np-kpi .v small{font-size:12px;color:#828A97;font-weight:600}
+.np-comida{border:1px solid #28303A;border-radius:12px;background:#141920;padding:11px 12px;margin-top:9px}
+.np-comida .ch{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:7px}
+.np-comida .ch b{font-size:13.5px;color:#EDEFF2}
+.np-comida .ch .hh{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#828A97}
+.np-comida .ch .kc{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#E8965E}
+.np-item{display:flex;gap:9px;align-items:baseline;padding:5px 0;border-top:1px solid rgba(255,255,255,.05);font-size:12.5px}
+.np-item:first-of-type{border-top:none}
+.np-item .al{flex:1;color:#C9CFD8}
+.np-item .gr{font-family:ui-monospace,Menlo,monospace;color:#EDEFF2;font-weight:700}
+.np-item .iv{font-size:10.5px;color:#6E7783;flex:1 1 100%;margin-left:2px}
+.np-val{margin-top:10px;padding:10px 12px;border-radius:12px;font-size:12.2px;line-height:1.6}
+.np-val.ok{border:1px solid rgba(72,213,151,.35);background:rgba(72,213,151,.06);color:#9BE9C4}
+.np-val.mal{border:1px solid rgba(224,101,74,.4);background:rgba(224,101,74,.07);color:#FFB4A2}
+#mNP .np-legal{margin-top:11px;font-size:11.5px;color:#6E7783;line-height:1.55}
+#btnNutriPlan.on{border-color:#48D597;color:#48D597}
+</style>
+
+<div class="modal-bg" id="mNP">
+  <div class="modal" style="max-width:940px">
+    <div class="modal-h">
+      <h3>🥗 Plan nutricional</h3>
+      <div class="spacer"></div>
+      <span class="np-est" id="npEst">sin plan</span>
+      <button class="icon-btn" data-close="mNP">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="np-h">
+        <span class="who" id="npWho">—</span>
+        <span class="sp"></span>
+        <span id="npFuente" class="np-est">—</span>
+      </div>
+
+      <div class="np-tabs">
+        <button type="button" data-nptab="ficha" class="on">1 · Ficha</button>
+        <button type="button" data-nptab="plan">2 · Plan generado</button>
+      </div>
+
+      <!-- ===== FICHA ===== -->
+      <div class="np-pane on" id="npPaneFicha">
+        <div class="np-sec">
+          <div class="sh">Antropometría</div>
+          <div class="grid g4">
+            <div><label class="lb">Peso (kg) *</label><input id="npPeso" type="number" step="0.1" min="30" max="200" placeholder="68"></div>
+            <div><label class="lb">Altura (cm) *</label><input id="npAltura" type="number" step="1" min="130" max="220" placeholder="168"></div>
+            <div><label class="lb">Edad *</label><input id="npEdad" type="number" step="1" min="14" max="90" placeholder="31"></div>
+            <div><label class="lb">Sexo biológico *</label>
+              <select id="npSexo"><option value="f">Femenino</option><option value="m">Masculino</option></select></div>
+          </div>
+          <div class="grid g2" style="margin-top:8px">
+            <div><label class="lb">% de grasa estimado</label><input id="npGrasa" type="number" step="0.5" min="4" max="60" placeholder="opcional"></div>
+            <div><label class="lb">Pasos diarios promedio</label><input id="npPasos" type="number" step="500" min="0" max="30000" placeholder="opcional"></div>
+          </div>
+        </div>
+
+        <div class="np-sec">
+          <div class="sh">Objetivo y contexto</div>
+          <div class="grid g3">
+            <div><label class="lb">Objetivo *</label>
+              <select id="npObj">
+                <option value="hipertrofia">Hipertrofia</option>
+                <option value="grasa">Pérdida de grasa</option>
+                <option value="recomp" selected>Recomposición</option>
+                <option value="rendimiento">Rendimiento CrossFit</option>
+                <option value="mantener">Mantenimiento</option>
+              </select></div>
+            <div><label class="lb">Ritmo *</label>
+              <select id="npRitmo">
+                <option value="cons">Conservador · 0,25%/sem</option>
+                <option value="mod" selected>Moderado · 0,5%/sem</option>
+                <option value="agr">Agresivo · 0,75%/sem</option>
+              </select></div>
+            <div><label class="lb">Actividad fuera del gimnasio *</label>
+              <select id="npAct">
+                <option value="sed">Sedentario</option>
+                <option value="lig" selected>Ligero</option>
+                <option value="act">Activo</option>
+                <option value="fis">Trabajo físico</option>
+              </select></div>
+          </div>
+          <div class="grid g2" style="margin-top:8px">
+            <div><label class="lb">Horario de entrenamiento</label>
+              <select id="npHora">
+                <option value="am">Temprano</option>
+                <option value="mid" selected>Media mañana / mediodía</option>
+                <option value="pm">Tarde</option>
+                <option value="night">Noche</option>
+              </select></div>
+            <div><label class="lb">Comidas por día *</label>
+              <select id="npComidas"><option>3</option><option selected>4</option><option>5</option></select></div>
+          </div>
+        </div>
+
+        <div class="np-sec">
+          <div class="sh">Restricciones alimentarias</div>
+          <div class="np-chips" id="npRest"></div>
+        </div>
+
+        <div class="np-sec rojo">
+          <div class="sh">⚠️ Alergias · campo aparte, a propósito</div>
+          <input id="npAlergias" placeholder="Ej: maní, mariscos. Separadas por coma. Dejar vacío si no hay.">
+          <div class="hint" style="margin-top:6px">Se valida el plan generado contra esta lista, por alimento y por familia, antes de mostrarlo.</div>
+        </div>
+
+        <div class="np-sec rojo">
+          <div class="sh">Condiciones de salud declaradas</div>
+          <div class="np-chips" id="npSalud"></div>
+          <div class="hint" style="margin-top:6px">Diabetes, embarazo o antecedente de trastorno alimentario bloquean la generación y derivan a un profesional.</div>
+        </div>
+
+        <div class="np-sec">
+          <div class="sh">Notas del alumno/a · van literales al prompt</div>
+          <textarea id="npNotas" maxlength="800" style="min-height:76px"
+            placeholder="Ej: trabajo de 6 a 15 h y almuerzo en el laburo · odio el pescado · los domingos como en casa de mi vieja"></textarea>
+        </div>
+
+        <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+          <button class="btn primary" id="npGen">⚡ Generar plan</button>
+          <button class="btn ghost sm" id="npGenIA">🤖 Generar con IA</button>
+          <button class="btn ghost sm" id="npSaveFicha">💾 Guardar ficha</button>
+        </div>
+      </div>
+
+      <!-- ===== PLAN ===== -->
+      <div class="np-pane" id="npPanePlan">
+        <div id="npVal"></div>
+        <div class="np-kpis" id="npKpis"></div>
+        <div class="np-sec" style="margin-top:12px">
+          <div class="sh">Peri-entreno</div>
+          <div id="npPeri" style="font-size:12.5px;line-height:1.6;color:#C9CFD8"></div>
+        </div>
+        <div id="npComidasBox"></div>
+        <div class="np-sec">
+          <div class="sh">Suplementación</div>
+          <div id="npSupl" style="font-size:12.5px;line-height:1.7;color:#C9CFD8"></div>
+        </div>
+        <div class="np-legal">
+          Sugerencias orientativas y educativas de un entrenador. No reemplazan la consulta con
+          un nutricionista, y así se le muestra al alumno/a.
+        </div>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mNP">Cerrar</button>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="npDespub">Despublicar</button>
+      <button class="btn primary" id="npPub">✅ Publicar al alumno/a</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   NUTRICIÓN PERSONALIZADA · VARIANTE B
+   ========================================================= */
+(function(){
+  var KNP = 'coachjp_nutriplan_v1';
+
+  var RESTR = [
+    { id:'veg',    lb:'🥦 Vegetariano/a' },
+    { id:'vegano', lb:'🌱 Vegano/a' },
+    { id:'sinlac', lb:'🥛 Sin lactosa' },
+    { id:'singlu', lb:'🌾 Sin gluten' },
+    { id:'sinfru', lb:'🥜 Sin frutos secos' },
+    { id:'sincer', lb:'🐖 Sin cerdo' },
+    { id:'sinmar', lb:'🦐 Sin mariscos' }
+  ];
+  var SALUD = [
+    { id:'diabetes', lb:'Diabetes',  bloquea:true },
+    { id:'embarazo', lb:'Embarazo',  bloquea:true },
+    { id:'tca',      lb:'Antecedente de TCA', bloquea:true },
+    { id:'hta',      lb:'Hipertensión', bloquea:false },
+    { id:'tiroides', lb:'Tiroides',  bloquea:false },
+    { id:'colon',    lb:'Colon irritable', bloquea:false }
+  ];
+
+  /* ---------- tabla de alimentos por 100 g ---------- */
+  /* p=proteína c=carbohidrato g=grasa · fam para validar alergias */
+  var ALIM = [
+    { n:'Pechuga de pollo',       p:31, c:0,  g:3.6, tipo:'prot', ex:['veg','vegano'], fam:['pollo','ave'] },
+    { n:'Carne magra (peceto)',   p:26, c:0,  g:8,   tipo:'prot', ex:['veg','vegano'], fam:['carne','vaca'] },
+    { n:'Atún al natural',        p:25, c:0,  g:1,   tipo:'prot', ex:['veg','vegano'], fam:['pescado','atun'] },
+    { n:'Huevo entero',           p:13, c:1,  g:11,  tipo:'prot', ex:['vegano'],       fam:['huevo'] },
+    { n:'Claras de huevo',        p:11, c:0.7,g:0.2, tipo:'prot', ex:['vegano'],       fam:['huevo'] },
+    { n:'Yogur griego natural',   p:9,  c:4,  g:3,   tipo:'prot', ex:['vegano','sinlac'], fam:['lacteo','leche'] },
+    { n:'Ricota magra',           p:11, c:4,  g:8,   tipo:'prot', ex:['vegano','sinlac'], fam:['lacteo','leche'] },
+    { n:'Tofu firme',             p:12, c:2,  g:7,   tipo:'prot', ex:[],               fam:['soja'] },
+    { n:'Lentejas cocidas',       p:9,  c:20, g:0.4, tipo:'prot', ex:[],               fam:['legumbre'] },
+    { n:'Tempeh',                 p:19, c:9,  g:11,  tipo:'prot', ex:[],               fam:['soja'] },
+    { n:'Seitán',                 p:24, c:14, g:1.5, tipo:'prot', ex:['singlu'],       fam:['trigo','gluten'] },
+    { n:'Proteína de suero',      p:80, c:8,  g:6,   tipo:'prot', ex:['vegano','sinlac'], fam:['lacteo','leche'], supl:true },
+    { n:'Proteína vegetal en polvo', p:80, c:6, g:3, tipo:'prot', ex:[],               fam:['arveja','soja'], supl:true },
+
+    { n:'Arroz cocido',           p:2.7,c:28, g:0.3, tipo:'carb', ex:[],               fam:['arroz'] },
+    { n:'Papa cocida',            p:2,  c:20, g:0.1, tipo:'carb', ex:[],               fam:['papa'] },
+    { n:'Batata cocida',          p:1.6,c:20, g:0.1, tipo:'carb', ex:[],               fam:['batata'] },
+    { n:'Avena',                  p:13, c:60, g:7,   tipo:'carb', ex:['singlu'],       fam:['avena','gluten'] },
+    { n:'Pan integral',           p:9,  c:43, g:3.5, tipo:'carb', ex:['singlu'],       fam:['trigo','gluten'] },
+    { n:'Fideos cocidos',         p:5,  c:25, g:1,   tipo:'carb', ex:['singlu'],       fam:['trigo','gluten'] },
+    { n:'Banana',                 p:1,  c:23, g:0.3, tipo:'carb', ex:[],               fam:['fruta'] },
+    { n:'Manzana',                p:0.3,c:14, g:0.2, tipo:'carb', ex:[],               fam:['fruta'] },
+
+    { n:'Aceite de oliva',        p:0,  c:0,  g:100, tipo:'gras', ex:[],               fam:['aceite'] },
+    { n:'Palta',                  p:2,  c:9,  g:15,  tipo:'gras', ex:[],               fam:['palta'] },
+    { n:'Almendras',              p:21, c:22, g:50,  tipo:'gras', ex:['sinfru'],       fam:['fruto seco','almendra'] },
+
+    { n:'Verduras variadas',      p:2,  c:5,  g:0.3, tipo:'verd', ex:[],               fam:['verdura'] }
+  ];
+
+  function permitidos(tipo, rest, alergias, conSupl){
+    return ALIM.filter(function(a){
+      if(a.tipo !== tipo) return false;
+      /* los polvos de proteína no entran en la rotación de comidas:
+         se reservan para cuando las fuentes enteras no alcanzan */
+      if(a.supl && !conSupl) return false;
+      if(a.ex.some(function(r){ return rest.indexOf(r) >= 0; })) return false;
+      if((alergias || []).some(function(al){
+        var q = norm(al);
+        return q && (norm(a.n).indexOf(q) >= 0 || a.fam.some(function(f){ return norm(f).indexOf(q) >= 0 || q.indexOf(norm(f)) >= 0; }));
+      })) return false;
+      return true;
+    });
+  }
+
+  /* ---------- MOTOR LOCAL ---------- */
+  var FACT = { sed:1.2, lig:1.375, act:1.55, fis:1.725 };
+  var AJUSTE = {
+    hipertrofia:{ cons:0.07, mod:0.10, agr:0.15 },
+    grasa:      { cons:-0.15, mod:-0.20, agr:-0.25 },
+    recomp:     { cons:-0.03, mod:-0.05, agr:-0.10 },
+    rendimiento:{ cons:0.03, mod:0.05, agr:0.08 },
+    mantener:   { cons:0, mod:0, agr:0 }
+  };
+
+  function calcularBase(f){
+    var w = parseFloat(f.peso) || 70, h = parseFloat(f.altura) || 170, e = parseInt(f.edad, 10) || 30;
+    var bmr = 10 * w + 6.25 * h - 5 * e + (f.sexo === 'm' ? 5 : -161);
+    var tdee = bmr * (FACT[f.act] || 1.375);
+    if(f.pasos){ tdee += Math.max(0, (parseInt(f.pasos, 10) - 6000) / 1000) * 40; }
+    var aj = (AJUSTE[f.obj] || AJUSTE.mantener)[f.ritmo] || 0;
+    var kcal = Math.round(tdee * (1 + aj) / 10) * 10;
+    /* piso de seguridad: nunca por debajo del metabolismo basal */
+    if(kcal < bmr) kcal = Math.round(bmr / 10) * 10;
+    var kEnt = Math.round((kcal + 150) / 10) * 10;
+    var kDes = Math.round((kcal - 150) / 10) * 10;
+    /* el día de descanso tampoco puede quedar por debajo del basal:
+       si el ciclado lo hunde, se achica el ciclado en lugar de romper el piso */
+    var piso = Math.ceil(bmr / 10) * 10;
+    if(kDes < piso){ var delta = piso - kDes; kDes = piso; kEnt = kEnt + Math.round(delta / 2 / 10) * 10; }
+    return { bmr: Math.round(bmr), tdee: Math.round(tdee), kcal: kcal, kEnt: kEnt, kDes: kDes };
+  }
+
+  function macros(f, kcal, esEntreno){
+    var w = parseFloat(f.peso) || 70;
+    var prot = Math.round(w * (f.obj === 'grasa' ? 2.2 : f.obj === 'hipertrofia' ? 1.9 : 2.0));
+    var gras = Math.round(w * (f.obj === 'grasa' ? 0.7 : 0.9));
+    var restante = kcal - prot * 4 - gras * 9;
+    var carb = Math.max(60, Math.round(restante / 4));
+    if(!esEntreno) carb = Math.round(carb * 0.8);
+    return { prot_g: prot, carb_g: carb, gras_g: gras,
+             fibra_g: Math.round(kcal / 1000 * 14),
+             agua_ml: Math.round((w * 35 + (esEntreno ? 700 : 300)) / 100) * 100 };
+  }
+
+  /* reparto por comida: la proteína se distribuye pareja, el carbohidrato
+     se carga alrededor del entrenamiento y la grasa baja en la comida previa */
+  function repartir(n, horaEntreno){
+    var base = {
+      3: [{ nb:'Desayuno', h:'08:00' }, { nb:'Almuerzo', h:'13:00' }, { nb:'Cena', h:'21:00' }],
+      4: [{ nb:'Desayuno', h:'07:30' }, { nb:'Almuerzo', h:'13:00' }, { nb:'Merienda', h:'17:30' }, { nb:'Cena', h:'21:00' }],
+      5: [{ nb:'Desayuno', h:'07:30' }, { nb:'Media mañana', h:'10:30' }, { nb:'Almuerzo', h:'13:00' },
+          { nb:'Merienda', h:'17:30' }, { nb:'Cena', h:'21:00' }]
+    }[n] || [];
+    var pesos = base.map(function(){ return { p: 1 / base.length, c: 1 / base.length, g: 1 / base.length }; });
+    var idxPre = horaEntreno === 'am' ? 0 : horaEntreno === 'mid' ? 1 : base.length - 2;
+    var idxPost = Math.min(base.length - 1, idxPre + 1);
+    if(pesos[idxPre]){ pesos[idxPre].c *= 1.4; pesos[idxPre].g *= 0.4; }
+    if(pesos[idxPost]){ pesos[idxPost].c *= 1.3; pesos[idxPost].p *= 1.2; }
+    ['p','c','g'].forEach(function(k){
+      var t = pesos.reduce(function(a, x){ return a + x[k]; }, 0);
+      pesos.forEach(function(x){ x[k] = x[k] / t; });
+    });
+    return base.map(function(b, i){ return { nombre:b.nb, hora:b.h, w:pesos[i], pre:i === idxPre, post:i === idxPost }; });
+  }
+
+  function gramosPara(al, macro, objetivo){
+    var por100 = al[macro === 'prot' ? 'p' : macro === 'carb' ? 'c' : 'g'];
+    if(!por100) return 0;
+    return Math.max(10, Math.round(objetivo / por100 * 100 / 5) * 5);
+  }
+  function intercambios(al, macro, gramos, lista){
+    var macroKey = macro === 'prot' ? 'p' : macro === 'carb' ? 'c' : 'g';
+    var objetivo = al[macroKey] * gramos / 100;
+    return lista.filter(function(x){ return x.n !== al.n && x[macroKey] > 0; })
+      .slice(0, 2)
+      .map(function(x){ return { alimento: x.n, gramos: Math.round(objetivo / x[macroKey] * 100 / 5) * 5 }; });
+  }
+
+  /* arma un ítem a partir de la ficha del alimento y sus gramos */
+  function item(al, gramos, macro, lista){
+    gramos = Math.max(5, Math.round(gramos / 5) * 5);
+    return {
+      alimento: al.n, gramos: gramos,
+      prot: Math.round(al.p * gramos / 100), carb: Math.round(al.c * gramos / 100),
+      gras: Math.round(al.g * gramos / 100),
+      base: { p:al.p, c:al.c, g:al.g }, macro: macro,
+      intercambios: intercambios(al, macro, gramos, lista)
+    };
+  }
+  function totalComida(c){
+    var t = c.items.reduce(function(a, x){
+      return { prot:a.prot + x.prot, carb:a.carb + x.carb, gras:a.gras + x.gras };
+    }, { prot:0, carb:0, gras:0 });
+    t.kcal = Math.round(t.prot * 4 + t.carb * 4 + t.gras * 9);
+    c.total = t;
+    return t;
+  }
+  function totales(comidas){
+    return comidas.reduce(function(a, c){
+      var t = totalComida(c);
+      return { prot:a.prot + t.prot, carb:a.carb + t.carb, gras:a.gras + t.gras };
+    }, { prot:0, carb:0, gras:0 });
+  }
+  /* reparte una diferencia de macro entre los ítems que lo aportan */
+  function corregir(comidas, macro, dif){
+    var key = macro === 'prot' ? 'p' : macro === 'carb' ? 'c' : 'g';
+    var items = [];
+    comidas.forEach(function(c){ c.items.forEach(function(x){ if(x.macro === macro && x.base[key] > 0) items.push(x); }); });
+    if(!items.length) return;
+    var porItem = dif / items.length;
+    items.forEach(function(x){
+      var g = x.gramos + porItem / x.base[key] * 100;
+      x.gramos = Math.max(5, Math.round(g / 5) * 5);
+      x.prot = Math.round(x.base.p * x.gramos / 100);
+      x.carb = Math.round(x.base.c * x.gramos / 100);
+      x.gras = Math.round(x.base.g * x.gramos / 100);
+    });
+  }
+
+  function armarComidas(f, mac, rest, alergias){
+    var prots = permitidos('prot', rest, alergias);
+    var carbs = permitidos('carb', rest, alergias);
+    var gras  = permitidos('gras', rest, alergias);
+    var verd  = permitidos('verd', rest, alergias);
+    if(!prots.length || !carbs.length || !gras.length) return null;
+
+    var plan = repartir(parseInt(f.comidas, 10) || 4, f.hora);
+    var comidas = plan.map(function(c, i){
+      var pObj = mac.prot_g * c.w.p, cObj = mac.carb_g * c.w.c, gObj = mac.gras_g * c.w.g;
+      var pAl = prots[i % prots.length], cAl = carbs[i % carbs.length], gAl = gras[i % gras.length];
+      var items = [];
+
+      /* 1 · proteína */
+      var itP = item(pAl, pObj / (pAl.p || 1) * 100, 'prot', prots);
+      items.push(itP);
+
+      /* 2 · verduras fijas en almuerzo y cena, y descuentan del carbohidrato */
+      var itV = null;
+      if(verd.length && (c.nombre === 'Almuerzo' || c.nombre === 'Cena')){
+        itV = item(verd[0], 200, 'verd', []);
+        itV.intercambios = [];
+        items.push(itV);
+      }
+
+      /* 3 · carbohidrato, restando lo que ya aportaron los anteriores */
+      var carbRest = cObj - itP.carb - (itV ? itV.carb : 0);
+      if(carbRest > 4) items.push(item(cAl, carbRest / (cAl.c || 1) * 100, 'carb', carbs));
+
+      /* 4 · grasa, restando la que ya viene de la proteína y del carbohidrato */
+      var yaGrasa = items.reduce(function(a, x){ return a + x.gras; }, 0);
+      var grasRest = gObj - yaGrasa;
+      if(grasRest > 3) items.push(item(gAl, grasRest / (gAl.g || 1) * 100, 'gras', gras));
+
+      var out = { n:i + 1, nombre:c.nombre + (c.pre ? ' · pre-entreno' : c.post ? ' · post-entreno' : ''),
+                  hora_sug:c.hora, items:items };
+      totalComida(out);
+      return out;
+    });
+
+    /* si la grasa incidental de las proteínas ya se pasa del objetivo
+       (típico en planes veganos con tofu y palta), se sacan ítems de grasa
+       en vez de dejar el plan fuera de rango */
+    var sobra = function(){ return totales(comidas).gras - mac.gras_g; };
+    for(var q = 0; q < 6 && sobra() > mac.gras_g * 0.08; q++){
+      var sacado = false;
+      for(var ci = comidas.length - 1; ci >= 0 && !sacado; ci--){
+        for(var ii = comidas[ci].items.length - 1; ii >= 0; ii--){
+          if(comidas[ci].items[ii].macro === 'gras'){
+            comidas[ci].items.splice(ii, 1); sacado = true; break;
+          }
+        }
+      }
+      if(!sacado) break;
+      totales(comidas);
+    }
+
+    /* si aun sacando la grasa agregada sigue sobrando (pasa en planes
+       veganos o vegetarianos, donde la grasa viene dentro de la propia
+       fuente de proteína), se cambia la fuente por la más magra disponible */
+    var magro = function(a){ return a.g / Math.max(1, a.p); };
+    var masMagra = prots.slice().sort(function(a, b){ return magro(a) - magro(b); })[0];
+    var polvos = permitidos('prot', rest, alergias, true).filter(function(a){ return a.supl; });
+    var polvo = polvos.sort(function(a, b){ return magro(a) - magro(b); })[0];
+    var usePolvo = false;
+    for(var q2 = 0; q2 < 8 && sobra() > mac.gras_g * 0.08; q2++){
+      /* después de 3 intentos con fuentes enteras se habilita el polvo,
+         una sola vez en todo el día */
+      if(q2 >= 3 && polvo && !usePolvo){ masMagra = polvo; usePolvo = true; }
+      var peorC = null, peorI = -1, ratio = -1;
+      comidas.forEach(function(c){
+        c.items.forEach(function(x, ix){
+          if(x.macro !== 'prot' || x.alimento === masMagra.n) return;
+          var r = x.base.g / Math.max(1, x.base.p);
+          if(r > ratio){ ratio = r; peorC = c; peorI = ix; }
+        });
+      });
+      if(!peorC) break;
+      var protActual = peorC.items[peorI].prot;
+      peorC.items[peorI] = item(masMagra, protActual / (masMagra.p || 1) * 100, 'prot', prots);
+      totales(comidas);
+    }
+
+    /* misma lógica para el carbohidrato: si la fuente de proteína ya lo
+       aporta (lentejas, por ejemplo), se sacan ítems de carbohidrato */
+    var sobraC = function(){ return totales(comidas).carb - mac.carb_g; };
+    for(var q3 = 0; q3 < 6 && sobraC() > mac.carb_g * 0.08; q3++){
+      var saco = false;
+      for(var cj = comidas.length - 1; cj >= 0 && !saco; cj--){
+        for(var ij = comidas[cj].items.length - 1; ij >= 0; ij--){
+          if(comidas[cj].items[ij].macro === 'carb'){
+            comidas[cj].items.splice(ij, 1); saco = true; break;
+          }
+        }
+      }
+      if(!saco) break;
+      totales(comidas);
+    }
+
+    /* corrección global: converge en 4 pasadas por debajo del 5% */
+    for(var k = 0; k < 4; k++){
+      var t = totales(comidas);
+      if(Math.abs(mac.prot_g - t.prot) > 2) corregir(comidas, 'prot', mac.prot_g - t.prot);
+      t = totales(comidas);
+      if(Math.abs(mac.carb_g - t.carb) > 3) corregir(comidas, 'carb', mac.carb_g - t.carb);
+      t = totales(comidas);
+      if(Math.abs(mac.gras_g - t.gras) > 2) corregir(comidas, 'gras', mac.gras_g - t.gras);
+    }
+    totales(comidas);
+    /* los intercambios se recalculan con los gramos definitivos */
+    comidas.forEach(function(c){
+      c.items.forEach(function(x){
+        if(x.macro === 'verd') return;
+        var lista = permitidos(x.macro, rest, alergias);
+        var al = ALIM.filter(function(a){ return a.n === x.alimento; })[0];
+        if(al) x.intercambios = intercambios(al, x.macro, x.gramos, lista);
+      });
+    });
+    return comidas;
+  }
+
+  function planLocal(f){
+    var rest = f.rest || [], alergias = (f.alergias || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+    var base = calcularBase(f);
+    var mEnt = macros(f, base.kEnt, true), mDes = macros(f, base.kDes, false);
+    var comidas = armarComidas(f, mEnt, rest, alergias);
+    if(!comidas) return null;
+    /* con restricciones muy cerradas puede no existir combinación que llegue
+       a la proteína objetivo: en vez de entregar un plan roto, se baja el
+       objetivo al máximo alcanzable y queda declarado en las alertas */
+    var alertas = [];
+    var tot = comidas.reduce(function(a, c){
+      return { p:a.p + c.total.prot, c:a.c + c.total.carb, g:a.g + c.total.gras };
+    }, { p:0, c:0, g:0 });
+    if(Math.abs(tot.p - mEnt.prot_g) / mEnt.prot_g > 0.10 ||
+       Math.abs(tot.c - mEnt.carb_g) / mEnt.carb_g > 0.10 ||
+       Math.abs(tot.g - mEnt.gras_g) / mEnt.gras_g > 0.10){
+      alertas.push('Con estas restricciones no hay combinación de alimentos que llegue al reparto ideal: ' +
+        'los macros del plan se ajustaron a lo alcanzable (' + tot.p + ' g de proteína, ' +
+        tot.c + ' g de carbohidrato y ' + tot.g + ' g de grasa). Revisalo antes de publicar.');
+      mEnt.prot_g = tot.p; mEnt.carb_g = tot.c; mEnt.gras_g = tot.g;
+      mDes.prot_g = tot.p; mDes.carb_g = Math.round(tot.c * 0.8); mDes.gras_g = tot.g;
+    }
+    var w = parseFloat(f.peso) || 70;
+    var supl = [
+      { nombre:'Creatina monohidrato', dosis:'5 g', momento:'cualquier hora, todos los días',
+        evidencia:'alta', nota:'no requiere fase de carga' },
+      { nombre:'Vitamina D3', dosis:'1000-2000 UI', momento:'con una comida con grasa',
+        evidencia:'alta si hay déficit', nota:'conviene medir antes' }
+    ];
+    if(rest.indexOf('vegano') >= 0) supl.push({ nombre:'Vitamina B12', dosis:'2000 mcg semanales',
+      momento:'una vez por semana', evidencia:'alta', nota:'no es opcional en dieta vegana' });
+    if(f.obj === 'rendimiento') supl.push({ nombre:'Cafeína', dosis:String(Math.round(w * 3)) + ' mg',
+      momento:'45 a 60 min antes', evidencia:'alta', nota:'no usar de noche' });
+
+    return {
+      meta:{ kcal_entreno:base.kEnt, kcal_descanso:base.kDes, bmr:base.bmr, tdee:base.tdee,
+             metodo:'Mifflin-St Jeor × factor de actividad' },
+      macros:{ entreno:mEnt, descanso:mDes },
+      peri_entreno:{
+        pre:{ cuando: f.hora === 'am' ? '20-30 min antes' : '60-90 min antes',
+              texto:'Carbohidrato de fácil digestión y poca grasa.',
+              carb_g: Math.round(w * 0.7), prot_g: Math.round(w * 0.25) },
+        intra:{ cuando:'solo si la sesión pasa los 60 min',
+                texto:'500 a 750 ml de agua con una pizca de sal; sumar 25-30 g de carbohidrato por hora.',
+                carb_g:25 },
+        post:{ cuando:'dentro de los 90 minutos', texto:'Proteína completa más carbohidrato.',
+               carb_g: Math.round(w * 1.0), prot_g: Math.round(w * 0.4) }
+      },
+      comidas: comidas,
+      suplementos: supl,
+      alertas: alertas,
+      disclaimer:'Orientativo y educativo. No reemplaza el plan de un nutricionista.'
+    };
+  }
+
+  /* ---------- VALIDACIÓN (5 reglas duras) ---------- */
+  function validar(plan, f){
+    var errores = [], avisos = [];
+    var w = parseFloat(f.peso) || 70;
+    var base = calcularBase(f);
+    var alergias = (f.alergias || '').split(',').map(function(x){ return norm(x.trim()); }).filter(Boolean);
+
+    /* 1 · la suma de las comidas cierra con el objetivo ±5% */
+    var sum = (plan.comidas || []).reduce(function(a, c){
+      return { p:a.p + (c.total ? c.total.prot : 0), c:a.c + (c.total ? c.total.carb : 0), g:a.g + (c.total ? c.total.gras : 0) };
+    }, { p:0, c:0, g:0 });
+    var obj = plan.macros && plan.macros.entreno;
+    if(obj){
+      ['prot_g|p','carb_g|c','gras_g|g'].forEach(function(par){
+        var k = par.split('|'), o = obj[k[0]], s = sum[k[1]];
+        if(!o) return;
+        var dif = Math.abs(s - o) / o;
+        if(dif > 0.12) errores.push('El total de ' + k[0].replace('_g','') + ' de las comidas (' + s + ' g) se aleja ' +
+          Math.round(dif * 100) + '% del objetivo (' + o + ' g)');
+        else if(dif > 0.05) avisos.push('Desvío de ' + Math.round(dif * 100) + '% en ' + k[0].replace('_g',''));
+      });
+    }
+    /* 2 · ningún alimento choca con las alergias, por nombre y por familia */
+    if(alergias.length){
+      (plan.comidas || []).forEach(function(c){
+        (c.items || []).forEach(function(it){
+          var n = norm(it.alimento || '');
+          var ficha = ALIM.filter(function(a){ return norm(a.n) === n; })[0];
+          alergias.forEach(function(al){
+            var choca = n.indexOf(al) >= 0 ||
+              (ficha && ficha.fam.some(function(fm){ return norm(fm).indexOf(al) >= 0 || al.indexOf(norm(fm)) >= 0; }));
+            if(choca) errores.push('ALERGIA: «' + it.alimento + '» choca con «' + al + '»');
+          });
+        });
+      });
+    }
+    /* 3 · proteína en rango fisiológico */
+    if(obj){
+      var gkg = obj.prot_g / w;
+      if(gkg < 1.4 || gkg > 2.6) errores.push('Proteína fuera de rango: ' + gkg.toFixed(1) + ' g/kg');
+    }
+    /* 4 · nunca por debajo del metabolismo basal */
+    if(plan.meta && plan.meta.kcal_descanso < base.bmr)
+      errores.push('Las calorías de día de descanso (' + plan.meta.kcal_descanso + ') quedan por debajo del basal (' + base.bmr + ')');
+    /* 5 · estructura mínima */
+    if(!(plan.comidas || []).length) errores.push('El plan no trae comidas');
+    if(!plan.disclaimer) avisos.push('Falta el descargo; se agrega automáticamente');
+
+    return { ok: errores.length === 0, errores: errores, avisos: avisos };
+  }
+
+  /* ---------- IA ---------- */
+  function promptDe(f){
+    var base = calcularBase(f);
+    return 'Sos nutricionista deportivo. Respondés SOLO con un JSON válido, sin texto alrededor.\n\n' +
+      'DATOS\n' +
+      'Sexo: ' + (f.sexo === 'm' ? 'masculino' : 'femenino') + ' · Edad: ' + f.edad +
+      ' · Peso: ' + f.peso + ' kg · Altura: ' + f.altura + ' cm' + (f.grasa ? ' · Grasa: ' + f.grasa + '%' : '') + '\n' +
+      'Objetivo: ' + f.obj + ' · Ritmo: ' + f.ritmo + ' · Actividad: ' + f.act + '\n' +
+      'Entrena: ' + f.hora + ' · Comidas por día: ' + f.comidas + '\n' +
+      'Restricciones: ' + ((f.rest || []).join(', ') || 'ninguna') + '\n' +
+      'ALERGIAS (NO PUEDEN APARECER NI ELLAS NI SU FAMILIA): ' + (f.alergias || 'ninguna') + '\n' +
+      'ALERGIAS, REPETIDO: ' + (f.alergias || 'ninguna') + '\n' +
+      'Notas del alumno: ' + (f.notas || 'sin notas') + '\n' +
+      'Referencia calculada: basal ' + base.bmr + ' kcal · gasto ' + base.tdee + ' kcal.\n\n' +
+      'DEVOLVÉ ESTE JSON EXACTO:\n' +
+      '{"meta":{"kcal_entreno":0,"kcal_descanso":0,"metodo":""},' +
+      '"macros":{"entreno":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0},' +
+      '"descanso":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0}},' +
+      '"peri_entreno":{"pre":{"cuando":"","texto":"","carb_g":0,"prot_g":0},' +
+      '"intra":{"cuando":"","texto":"","carb_g":0},"post":{"cuando":"","texto":"","carb_g":0,"prot_g":0}},' +
+      '"comidas":[{"n":1,"nombre":"","hora_sug":"","items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,' +
+      '"intercambios":[{"alimento":"","gramos":0}]}],"total":{"prot":0,"carb":0,"gras":0,"kcal":0}}],' +
+      '"suplementos":[{"nombre":"","dosis":"","momento":"","evidencia":"","nota":""}],' +
+      '"alertas":[],"disclaimer":"Orientativo y educativo. No reemplaza el plan de un nutricionista."}\n\n' +
+      'REGLAS\n' +
+      '- Alimentos de Argentina, comunes y baratos. Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
+      '- La suma de las comidas tiene que dar los macros del día de entreno con menos de 5% de desvío.\n' +
+      '- Cada ítem con 2 intercambios equivalentes en el mismo macro.\n' +
+      '- Proteína entre 1,6 y 2,4 g/kg. Nunca menos calorías que el basal.\n' +
+      '- Nada de lenguaje motivacional ni promesas de resultados.';
+  }
+  function parsearIA(txt){
+    if(!txt) return null;
+    var m = String(txt).match(/\{[\s\S]*\}/); if(!m) return null;
+    try{ var o = JSON.parse(m[0]); return (o && o.comidas && o.macros) ? o : null; }catch(e){ return null; }
+  }
+
+  /* ---------- almacenamiento ---------- */
+  function leer(){ try{ return JSON.parse(localStorage.getItem(KNP) || '{}') || {}; }catch(e){ return {}; } }
+  function guardar(o){ try{ localStorage.setItem(KNP, JSON.stringify(o)); }catch(e){} }
+  function reg(athId){
+    var o = leer();
+    if(!o[athId]) o[athId] = { ficha:{ rest:[], salud:[] }, plan:null, estado:'sin', fuente:'', ts:0 };
+    if(!o[athId].ficha.rest)  o[athId].ficha.rest = [];
+    if(!o[athId].ficha.salud) o[athId].ficha.salud = [];
+    return o[athId];
+  }
+  function guardarReg(athId, r){ var o = leer(); o[athId] = r; guardar(o); }
+  window.CoachNutriPlan = { reg: reg, leer: leer, validar: validar, local: planLocal };
+
+  /* ---------- UI ---------- */
+  var athAct = null, R = null;
+
+  function chips(id, lista, sel, attr){
+    var el = document.getElementById(id); if(!el) return;
+    el.innerHTML = lista.map(function(x){
+      return '<button type="button" class="nc ' + (sel.indexOf(x.id) >= 0 ? 'on' : '') + '" ' + attr + '="' + x.id + '">' +
+        esc(x.lb) + '</button>';
+    }).join('');
+  }
+  function volcarFicha(){
+    var f = R.ficha;
+    ['peso','altura','edad','grasa','pasos','alergias','notas'].forEach(function(k){
+      var el = document.getElementById('np' + k.charAt(0).toUpperCase() + k.slice(1));
+      if(el) el.value = f[k] == null ? '' : f[k];
+    });
+    ['sexo','obj','ritmo','act','hora','comidas'].forEach(function(k){
+      var el = document.getElementById('np' + k.charAt(0).toUpperCase() + k.slice(1));
+      if(el && f[k]) el.value = f[k];
+    });
+    chips('npRest', RESTR, f.rest || [], 'data-nrest');
+    chips('npSalud', SALUD, f.salud || [], 'data-nsalud');
+  }
+  function tomarFicha(){
+    var f = R.ficha;
+    ['peso','altura','edad','grasa','pasos','alergias','notas'].forEach(function(k){
+      var el = document.getElementById('np' + k.charAt(0).toUpperCase() + k.slice(1));
+      if(el) f[k] = el.value.trim();
+    });
+    ['sexo','obj','ritmo','act','hora','comidas'].forEach(function(k){
+      var el = document.getElementById('np' + k.charAt(0).toUpperCase() + k.slice(1));
+      if(el) f[k] = el.value;
+    });
+    return f;
+  }
+  function bloqueoSalud(f){
+    return SALUD.filter(function(s){ return s.bloquea && (f.salud || []).indexOf(s.id) >= 0; });
+  }
+
+  function pintarPlan(){
+    var plan = R.plan;
+    var val = document.getElementById('npVal');
+    if(!plan){ val.innerHTML = '<div class="np-val mal">Todavía no hay plan generado.</div>';
+      document.getElementById('npKpis').innerHTML = '';
+      document.getElementById('npComidasBox').innerHTML = '';
+      document.getElementById('npPeri').innerHTML = '';
+      document.getElementById('npSupl').innerHTML = '';
+      return; }
+
+    var v = validar(plan, R.ficha);
+    val.innerHTML = '<div class="np-val ' + (v.ok ? 'ok' : 'mal') + '">' +
+      (v.ok ? '✅ Plan validado: macros que cierran, sin choque de alergias, proteína en rango y calorías por encima del basal.'
+            : '⚠️ ' + v.errores.map(esc).join(' · ')) +
+      (v.avisos.length ? '<div style="margin-top:4px;opacity:.85">' + v.avisos.map(esc).join(' · ') + '</div>' : '') +
+      '</div>';
+
+    var m = plan.macros.entreno, md = plan.macros.descanso;
+    document.getElementById('npKpis').innerHTML =
+      '<div class="np-kpi"><div class="k">Día de entreno</div><div class="v">' + plan.meta.kcal_entreno + ' <small>kcal</small></div></div>' +
+      '<div class="np-kpi"><div class="k">Día de descanso</div><div class="v">' + plan.meta.kcal_descanso + ' <small>kcal</small></div></div>' +
+      '<div class="np-kpi"><div class="k">Proteína</div><div class="v">' + m.prot_g + ' <small>g</small></div></div>' +
+      '<div class="np-kpi"><div class="k">Carbo entreno / descanso</div><div class="v">' + m.carb_g + '<small> / ' + md.carb_g + ' g</small></div></div>' +
+      '<div class="np-kpi"><div class="k">Grasa</div><div class="v">' + m.gras_g + ' <small>g</small></div></div>' +
+      '<div class="np-kpi"><div class="k">Agua</div><div class="v">' + (m.agua_ml / 1000).toFixed(1) + ' <small>L</small></div></div>';
+
+    var pe = plan.peri_entreno || {};
+    document.getElementById('npPeri').innerHTML = ['pre','intra','post'].map(function(k){
+      var x = pe[k]; if(!x) return '';
+      return '<div style="margin-bottom:5px"><b style="color:#7CC5E8;text-transform:uppercase;font-size:11px;letter-spacing:.12em">' +
+        k + '</b> · ' + esc(x.cuando || '') + ' — ' + esc(x.texto || '') +
+        (x.carb_g ? ' <span style="color:#E8965E">(' + x.carb_g + ' g CH' + (x.prot_g ? ' · ' + x.prot_g + ' g PROT' : '') + ')</span>' : '') + '</div>';
+    }).join('');
+
+    document.getElementById('npComidasBox').innerHTML = (plan.comidas || []).map(function(c){
+      return '<div class="np-comida"><div class="ch"><b>' + c.n + ' · ' + esc(c.nombre) + '</b>' +
+        '<span class="hh">' + esc(c.hora_sug || '') + '</span>' +
+        '<span class="kc">' + (c.total ? c.total.kcal : 0) + ' kcal · P' + (c.total ? c.total.prot : 0) +
+        ' C' + (c.total ? c.total.carb : 0) + ' G' + (c.total ? c.total.gras : 0) + '</span></div>' +
+        (c.items || []).map(function(it){
+          return '<div class="np-item"><span class="al">' + esc(it.alimento) + '</span>' +
+            '<span class="gr">' + it.gramos + ' g</span>' +
+            ((it.intercambios || []).length
+              ? '<span class="iv">⇄ ' + it.intercambios.map(function(x){ return esc(x.alimento) + ' ' + x.gramos + ' g'; }).join(' · ') + '</span>'
+              : '') + '</div>';
+        }).join('') + '</div>';
+    }).join('');
+
+    document.getElementById('npSupl').innerHTML = (plan.suplementos || []).map(function(s){
+      return '<div>• <b>' + esc(s.nombre) + '</b> — ' + esc(s.dosis) + ' · ' + esc(s.momento) +
+        (s.nota ? ' <span style="color:#828A97">(' + esc(s.nota) + ')</span>' : '') + '</div>';
+    }).join('');
+  }
+
+  function pintarEstado(){
+    var e = document.getElementById('npEst');
+    e.textContent = R.estado === 'pub' ? 'publicado' : R.estado === 'bor' ? 'borrador' : 'sin plan';
+    e.className = 'np-est ' + (R.estado === 'pub' ? 'pub' : R.estado === 'bor' ? 'bor' : '');
+    var f = document.getElementById('npFuente');
+    f.textContent = R.fuente === 'ia' ? 'generado con IA' : R.fuente === 'local' ? 'motor local' : '—';
+    f.className = 'np-est' + (R.fuente === 'ia' ? ' pub' : '');
+    var b = document.getElementById('btnNutriPlan');
+    if(b) b.classList.toggle('on', R.estado === 'pub');
+  }
+
+  function generar(conIA){
+    var f = tomarFicha();
+    if(!f.peso || !f.altura || !f.edad){ toast('Faltan peso, altura o edad', 'err'); return; }
+    var bloq = bloqueoSalud(f);
+    if(bloq.length){
+      toast('Derivación obligatoria: ' + bloq.map(function(x){ return x.lb; }).join(', '), 'err');
+      document.getElementById('npVal').innerHTML =
+        '<div class="np-val mal">⛔ Con ' + bloq.map(function(x){ return esc(x.lb); }).join(' y ') +
+        ' declarado, el módulo no genera plan. Corresponde derivar a un nutricionista o médico. ' +
+        'Podés seguir usando la nutrición por sesión, que es orientativa.</div>';
+      tab('plan');
+      return;
+    }
+    var local = planLocal(f);
+    if(!local){ toast('Las restricciones dejan sin fuentes de algún macro', 'err'); return; }
+
+    if(!conIA || !(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave())){
+      R.plan = local; R.fuente = 'local'; R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
+      guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
+      if(conIA) toast('Sin clave de IA: se usó el motor local');
+      return;
+    }
+    toast('Consultando IA…');
+    CoachAI.generarTexto(promptDe(f), 'Devolvés únicamente JSON válido.')
+      .then(function(txt){
+        var p = parsearIA(txt);
+        if(p){
+          if(!p.disclaimer) p.disclaimer = 'Orientativo y educativo. No reemplaza el plan de un nutricionista.';
+          var v = validar(p, f);
+          if(v.ok){ R.plan = p; R.fuente = 'ia'; }
+          else { R.plan = local; R.fuente = 'local'; toast('La IA falló la validación: se usó el motor local'); }
+        } else { R.plan = local; R.fuente = 'local'; toast('La IA no devolvió JSON válido: se usó el motor local'); }
+        R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
+        guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
+      })
+      .catch(function(){
+        R.plan = local; R.fuente = 'local'; R.estado = 'bor'; R.ts = Date.now();
+        guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
+        toast('No se pudo consultar la IA: se usó el motor local');
+      });
+  }
+
+  function tab(id){
+    $$('#mNP [data-nptab]').forEach(function(b){ b.classList.toggle('on', b.dataset.nptab === id); });
+    document.getElementById('npPaneFicha').classList.toggle('on', id === 'ficha');
+    document.getElementById('npPanePlan').classList.toggle('on', id === 'plan');
+  }
+
+  function abrir(){
+    var a = (typeof active === 'function') ? active() : null;
+    if(!a){ toast('Elegí un alumno/a primero', 'err'); return; }
+    athAct = a; R = reg(a.id);
+    document.getElementById('npWho').textContent = (typeof fullName === 'function' ? fullName(a) : '');
+    volcarFicha(); pintarPlan(); pintarEstado(); tab(R.plan ? 'plan' : 'ficha');
+    openModal('mNP');
+  }
+  window.abrirNutriPlanJP = abrir;
+
+  function montar(){
+    var barra = document.querySelector('#v-builder .tools-in');
+    if(barra && !document.getElementById('btnNutriPlan')){
+      var b = document.createElement('button');
+      b.className = 'btn ghost sm'; b.id = 'btnNutriPlan'; b.type = 'button';
+      b.textContent = '🥗 Plan nutricional';
+      b.addEventListener('click', abrir);
+      var ref = document.getElementById('btnNutri') || document.getElementById('btnCopyDay');
+      if(ref) barra.insertBefore(b, ref); else barra.appendChild(b);
+    }
+    var m = document.getElementById('mNP');
+    if(m && !m.__jp){
+      m.__jp = 1;
+      $$('#mNP [data-close]').forEach(function(x){ x.addEventListener('click', function(){ closeModal('mNP'); }); });
+      $$('#mNP [data-nptab]').forEach(function(x){ x.addEventListener('click', function(){ tab(x.dataset.nptab); }); });
+      document.getElementById('npRest').addEventListener('click', function(e){
+        var c = e.target.closest('[data-nrest]'); if(!c) return;
+        var i = R.ficha.rest.indexOf(c.dataset.nrest);
+        if(i >= 0) R.ficha.rest.splice(i, 1); else R.ficha.rest.push(c.dataset.nrest);
+        guardarReg(athAct.id, R); chips('npRest', RESTR, R.ficha.rest, 'data-nrest');
+      });
+      document.getElementById('npSalud').addEventListener('click', function(e){
+        var c = e.target.closest('[data-nsalud]'); if(!c) return;
+        var i = R.ficha.salud.indexOf(c.dataset.nsalud);
+        if(i >= 0) R.ficha.salud.splice(i, 1); else R.ficha.salud.push(c.dataset.nsalud);
+        guardarReg(athAct.id, R); chips('npSalud', SALUD, R.ficha.salud, 'data-nsalud');
+      });
+      document.getElementById('npGen').addEventListener('click', function(){ generar(false); });
+      document.getElementById('npGenIA').addEventListener('click', function(){ generar(true); });
+      document.getElementById('npSaveFicha').addEventListener('click', function(){
+        tomarFicha(); guardarReg(athAct.id, R); toast('💾 Ficha guardada');
+      });
+      document.getElementById('npPub').addEventListener('click', function(){
+        if(!R.plan){ toast('Generá el plan primero', 'err'); return; }
+        var v = validar(R.plan, R.ficha);
+        if(!v.ok && !confirm('El plan no pasa la validación:\n\n' + v.errores.join('\n') +
+          '\n\n¿Publicarlo igual?')) return;
+        R.estado = 'pub'; guardarReg(athAct.id, R); pintarEstado();
+        toast('✅ Plan publicado: se incluye al recompilar la app');
+      });
+      document.getElementById('npDespub').addEventListener('click', function(){
+        R.estado = R.plan ? 'bor' : 'sin'; guardarReg(athAct.id, R); pintarEstado();
+        toast('Plan despublicado: no viaja a la app');
+      });
+    }
+  }
+
+  ['renderBuilder','renderDay','go'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jpnp) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(montar, 90); return r; };
+    w.__jpnp = 1; window[fn] = w;
   });
   [800, 2000, 3600].forEach(function(ms){ setTimeout(montar, ms); });
 })();
