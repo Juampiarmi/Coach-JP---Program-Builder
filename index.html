@@ -3547,6 +3547,9 @@ function videoLinkHtml(name){
   const key = (name||'').trim();
   if(!key) return '';
   if(esEstructura(key)) return '';
+  /* CrossFit: el bloque no vincula videos por defecto (regla del builder).
+     El único video que aparece es el que el coach pegó a mano en la línea. */
+  if(window.__jpSinVideo) return '';
   const ytid = buscarVideo(key);
   if(ytid) return ' <a class="video-link jp-play" href="javascript:void(0)" data-yt="' + ytid + '" ' +
     'title="Ver la t\\u00e9cnica" aria-label="Ver la t\\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
@@ -7115,8 +7118,8 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
           <option value="15">15 s</option>
         </select>
       </label>
-      <label data-f="work"><span>Trabajo (seg)</span><input type="number" id="cwtWork" min="1" value="20" inputmode="numeric"></label>
-      <label data-f="rest"><span>Descanso (seg)</span><input type="number" id="cwtRest" min="0" value="10" inputmode="numeric"></label>
+      <label data-f="work"><span>Trabajo (min:seg)</span><input type="text" id="cwtWork" value="20" inputmode="numeric" autocomplete="off"></label>
+      <label data-f="rest"><span>Descanso (min:seg)</span><input type="text" id="cwtRest" value="10" inputmode="numeric" autocomplete="off"></label>
       <label data-f="rounds"><span>Rondas</span><input type="number" id="cwtRounds" min="1" value="8" inputmode="numeric"></label>
       <label data-f="interval"><span>Intervalo (min:seg)</span><input type="text" id="cwtInt" value="1:00"></label>
       <label data-f="total"><span>Total (min)</span><input type="number" id="cwtTotal" min="1" value="12" inputmode="numeric"></label>
@@ -7178,8 +7181,8 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   function cfg(){
     var g = function(id){ var e = document.getElementById(id); return e ? e.value : ''; };
     return {
-      work: Math.max(1, parseInt(g('cwtWork'), 10) || 20),
-      rest: Math.max(0, parseInt(g('cwtRest'), 10) || 0),
+      work: Math.max(1, parseInt2(g('cwtWork')) || 20),
+      rest: Math.max(0, parseInt2(g('cwtRest')) || 0),
       rounds: Math.max(1, parseInt(g('cwtRounds'), 10) || 1),
       intervalo: Math.max(5, parseInt2(g('cwtInt')) || 60),
       total: Math.max(1, parseInt(g('cwtTotal'), 10) || 1),
@@ -13152,9 +13155,15 @@ body.cf-modo .block .ex-tip{display:none}
     }
     return null;
   }
+  /* campos que aceptan y muestran min:seg cuando pasan del minuto */
+  var MMSS = { cwtInt:1, cwtWork:1, cwtRest:1 };
+  function aMmss(seg){
+    var m = Math.floor(seg / 60), s = seg % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
   function leerSeg(el){
     if(!el) return 0;
-    if(el.id === 'cwtInt'){
+    if(MMSS[el.id]){
       var p = String(el.value || '').split(':');
       return p.length > 1 ? (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0) : (parseInt(p[0], 10) || 0);
     }
@@ -13165,14 +13174,30 @@ body.cf-modo .block .ex-tip{display:none}
     if(!el) return;
     seg = Math.max(el.id === 'cwtRest' || el.id === 'cwtCap' ? 0 : 5, Math.min(3600, seg));
     if(el.id === 'cwtInt'){
-      var m = Math.floor(seg / 60), s = seg % 60;
-      el.value = m + ':' + (s < 10 ? '0' : '') + s;
+      el.value = aMmss(seg);
+    } else if(el.id === 'cwtWork' || el.id === 'cwtRest'){
+      /* menos de un minuto: segundos pelados. Del minuto en adelante: 1:01 */
+      el.value = seg >= 60 ? aMmss(seg) : String(seg);
     } else if(el.id === 'cwtTotal' || el.id === 'cwtCap'){
       el.value = Math.max(el.id === 'cwtCap' ? 0 : 1, Math.round(seg / 60));
     } else {
       el.value = seg;
     }
     el.dispatchEvent(new Event('input', { bubbles:true }));
+  }
+  /* si el coach escribe 90 a mano, al salir del campo se normaliza a 1:30 */
+  function normalizarMmss(){
+    ['cwtWork', 'cwtRest'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(!el || el.__jpMmss) return;
+      el.__jpMmss = 1;
+      el.addEventListener('change', function(){
+        var seg = leerSeg(el);
+        var min = (id === 'cwtRest') ? 0 : 1;
+        seg = Math.max(min, Math.min(3600, seg));
+        el.value = seg >= 60 ? aMmss(seg) : String(seg);
+      });
+    });
   }
   function steppers(){
     var cfg = document.getElementById('cwtCfg');
@@ -13357,7 +13382,7 @@ body.cf-modo .block .ex-tip{display:none}
     if(go && fg && fg.textContent !== go.textContent) fg.textContent = go.textContent;
   }
 
-  function repintar(){ try{ steppers(); boton(); etiqueta(); espejo(); }catch(e){} }
+  function repintar(){ try{ steppers(); normalizarMmss(); boton(); etiqueta(); espejo(); }catch(e){} }
   function mount(){
     repintar();
     [500, 1400, 2600].forEach(function(ms){ setTimeout(repintar, ms); });
@@ -15380,6 +15405,368 @@ body{
 })();
 <\/script>
 
+
+<style>
+/* =========================================================
+   COACH JP · v4.0
+   1 · Criterio del Coach (colapsable, primera persona)
+   2 · Display LED de 7 segmentos
+   3 · Arte de fondo con el rayo institucional
+========================================================= */
+
+/* ---------- 1 · CRITERIO DEL COACH ---------- */
+.jp-criterio{
+  margin:12px 0 2px;border-radius:14px;overflow:hidden;
+  border:1px solid rgba(210,121,63,.22);
+  background:linear-gradient(180deg,rgba(210,121,63,.045),rgba(255,255,255,.012));
+}
+.jp-criterio > summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+  padding:0 14px;min-height:50px;user-select:none;
+}
+.jp-criterio > summary::-webkit-details-marker{display:none}
+.jp-criterio .cr-ic{font-size:16px;line-height:1}
+.jp-criterio .cr-t{
+  font-family:var(--font-head,inherit);font-size:calc(12.5px * var(--fzs,1));
+  letter-spacing:.12em;text-transform:uppercase;color:#E6EDF3;font-weight:700;
+}
+.jp-criterio .cr-s{
+  margin-left:auto;font-size:calc(11px * var(--fzs,1));color:#8E8E93;white-space:nowrap;
+}
+.jp-criterio .cr-cv{color:#D2793F;font-size:13px;transition:transform .2s ease}
+.jp-criterio[open] .cr-cv{transform:rotate(180deg)}
+.jp-criterio .cr-b{padding:2px 15px 14px}
+.jp-criterio ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+.jp-criterio li{
+  position:relative;padding-left:16px;font-size:calc(13.5px * var(--fzs,1));
+  line-height:1.6;color:#E6EDF3;
+}
+.jp-criterio li::before{
+  content:'';position:absolute;left:0;top:calc(0.8em - 2px);width:5px;height:5px;border-radius:50%;
+  background:#D2793F;
+}
+.jp-criterio li.suave{color:#8E8E93}
+.jp-criterio li b{color:#fff;font-weight:600}
+@media(max-width:520px){ .jp-criterio .cr-s{display:none} }
+
+/* las cajas viejas de fundamentación quedan dentro del criterio, no sueltas */
+.block .jp-criterio + .coach-note{margin-top:8px}
+
+/* ---------- 2 · DISPLAY LED DE 7 SEGMENTOS ---------- */
+.jp-led{
+  position:relative;
+  font-family:'Chakra Petch','Orbitron','JetBrains Mono',ui-monospace,monospace !important;
+  font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
+  letter-spacing:2px !important;text-align:center;
+  color:#E5C378 !important;
+  text-shadow:0 0 10px rgba(229,195,120,.28) !important;
+}
+/* dígitos fantasma: apenas insinuados, del mismo tono que el dígito encendido.
+   Sin halo y sin blanco, para que no se lea como un borrón detrás del número. */
+.jp-led::before{
+  content:attr(data-ghost);
+  position:absolute;left:0;right:0;top:0;bottom:0;
+  color:rgba(229,195,120,.055);text-shadow:none;pointer-events:none;
+  letter-spacing:2px;text-align:center;
+}
+.jp-led.alerta{
+  color:#FFFFFF !important;
+  text-shadow:0 0 12px rgba(255,255,255,.4) !important;
+}
+/* el HUD chico no lleva halo grande */
+.rh-time.jp-led{text-shadow:0 0 6px rgba(229,195,120,.26) !important}
+.rh-time.jp-led::before{color:rgba(229,195,120,.045)}
+
+/* 3 · ARTE DE FONDO: retirado a pedido. El fondo vuelve a ser el original. */
+</style>
+<script>
+/* =========================================================
+   v4.0 · módulo único: criterio, LED y arte de fondo
+========================================================= */
+(function(){
+
+  /* 3 · ARTE DE FONDO: retirado. Se limpia si quedó montado de una versión previa. */
+  function arte(){
+    var v = document.getElementById('jpArte');
+    if(v && v.parentNode) v.parentNode.removeChild(v);
+  }
+
+  /* ---------------------------------------------------------
+     2 · DISPLAY LED
+  --------------------------------------------------------- */
+  var SEL_LED = '.cwt-time, .cf-time, .rh-time, .timer-display, #cwtTime, #rhTime';
+  function ghost(el){
+    var t = (el.textContent || '').trim();
+    /* cada dígito se reemplaza por un 8 apagado; el resto se conserva */
+    var g = t.replace(/[0-9]/g, '8');
+    if(el.dataset.ghost !== g) el.dataset.ghost = g;
+  }
+  function led(){
+    var nodos = document.querySelectorAll(SEL_LED);
+    for(var i = 0; i < nodos.length; i++){
+      var el = nodos[i];
+      if(!el.classList.contains('jp-led')) el.classList.add('jp-led');
+      ghost(el);
+    }
+  }
+  function vigilarLed(){
+    try{
+      new MutationObserver(function(muts){
+        for(var i = 0; i < muts.length; i++){
+          var t = muts[i].target;
+          var el = t.nodeType === 1 ? t : t.parentElement;
+          if(!el) continue;
+          if(el.classList && el.classList.contains('jp-led')) ghost(el);
+        }
+        led();
+      }).observe(document.body, { childList:true, subtree:true, characterData:true });
+    }catch(e){}
+  }
+
+  /* ---------------------------------------------------------
+     1 · CRITERIO DEL COACH · redacción en primera persona
+  --------------------------------------------------------- */
+  function bloqueDeId(id){
+    try{
+      var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+      if(!d) return null;
+      var b = (d.blocks || []).filter(function(x){ return x.id === id; })[0];
+      return b || null;
+    }catch(e){ return null; }
+  }
+
+  function criterios(b){
+    var out = [];
+    if(!b) return out;
+
+    /* por qué esta estructura */
+    if(b.isSuperset){
+      out.push(b.isTriset
+        ? 'Armé este triset con tres ejercicios que no compiten entre sí: mientras uno trabaja, los otros descansan. Es la forma de meterte volumen sin estirar la sesión.'
+        : 'Armé este biset para encadenar dos ejercicios sin pausa en el medio. El descanso va recién al cerrar la ronda.');
+    } else if(b.isFinisher){
+      out.push('Puse este finisher al cierre a propósito: busco sensación muscular con carga baja, no un récord.');
+    } else if(b.isBlock){
+      out.push('Este es un bloque ancla: lo puse temprano en la sesión para que le llegues con la energía intacta.');
+    }
+
+    /* tempo */
+    var tempo = b.tempo || ((b.exercises || [])[0] || {}).tempo || '';
+    if(/^\\d{4}$/.test(tempo)){
+      var ecc = tempo.charAt(0), pausaAbajo = tempo.charAt(1), pausaArriba = tempo.charAt(3);
+      var t = 'Elegí el tempo ' + tempo + ': ' + ecc + ' segundos de bajada controlada';
+      if(pausaAbajo !== '0') t += ' y ' + pausaAbajo + ' segundo de pausa abajo, en el estiramiento, que es donde más rinde el estímulo';
+      else if(pausaArriba !== '0') t += ' y ' + pausaArriba + ' segundo de sostén arriba, para que la contracción sea real y no un rebote';
+      else t += ', sin rebote: la bajada es la mitad del ejercicio';
+      out.push(t + '.');
+    }
+
+    /* descanso */
+    var r = parseInt(b.restSeconds, 10) || 0;
+    if(r >= 150) out.push('Te dejo <b>' + r + ' segundos</b> de descanso a propósito. Con menos, la serie siguiente cae y el estímulo se convierte en fatiga acumulada.');
+    else if(r > 0 && r <= 75) out.push('El descanso corto de <b>' + r + ' segundos</b> es parte del ejercicio: acá busco densidad, no carga máxima.');
+
+    /* aproximaciones */
+    if(b.hasApprox && b.approxSets > 0)
+      out.push('Las ' + b.approxSets + ' series de aproximación no cuentan como trabajo: preparan el patrón y suben la temperatura sin gastarte.');
+
+    /* RIR del subtítulo, si lo declaré al programar */
+    var sub = (b.subtitle || '') + ' ' + (b.title || '');
+    var rir = sub.match(/RIR\\s*(\\d)(?:\\s*-\\s*(\\d))?/i);
+    if(rir) out.push('Te pido RIR ' + rir[1] + (rir[2] ? ' a ' + rir[2] : '') +
+      ': terminás cada serie con esas repeticiones en el bolsillo. No busco el fallo acá.');
+
+    /* naturaleza del bloque */
+    if(b.category === 'metcon' || b.category === 'cardio')
+      out.push('Este bloque se mide en tiempo, no en kilos. El objetivo es sostener el ritmo de principio a fin, no salir disparado y morir a la mitad.');
+    if(b.category === 'warmup')
+      out.push('Estos cinco minutos reemplazan al cardio general: preparan el patrón exacto que vas a hacer hoy.');
+
+    /* lo que escribí yo al programar */
+    if(b.objective) out.push('<b>Objetivo:</b> ' + b.objective);
+    if(b.tips)      out.push(b.tips);
+    if(b.altNote)   out.push('<b>Alternativa:</b> ' + b.altNote);
+    if(b.cierre && b.cierre.objetivo) out.push('<b>Objetivo del bloque:</b> ' + b.cierre.objetivo);
+    if(b.cierre && b.cierre.pacing)   out.push('<b>Ritmo:</b> ' + b.cierre.pacing);
+
+    return out;
+  }
+
+  function armar(lista, titulo, sufijo){
+    if(!lista.length) return null;
+    var d = document.createElement('details');
+    d.className = 'jp-criterio';
+    d.innerHTML =
+      '<summary><span class="cr-ic">🧠</span>' +
+      '<span class="cr-t">' + titulo + '</span>' +
+      '<span class="cr-s">' + (sufijo || 'Por qué hacemos esto') + '</span>' +
+      '<span class="cr-cv">▾</span></summary>' +
+      '<div class="cr-b"><ul>' + lista.map(function(x){
+        return '<li>' + x + '</li>';
+      }).join('') + '</ul></div>';
+    return d;
+  }
+
+  function pintarCriterios(){
+    var bloques = document.querySelectorAll('.block[data-block-id]');
+    for(var i = 0; i < bloques.length; i++){
+      var bl = bloques[i];
+      /* el criterio se inyecta dentro de .block-body, así que hay que buscarlo
+         en todo el bloque, no solo entre los hijos directos. Si quedaron
+         copias de un repintado anterior, dejo solo la primera. */
+      var previos = bl.querySelectorAll('.jp-criterio');
+      if(previos.length){
+        for(var k = 1; k < previos.length; k++){
+          if(previos[k].parentNode) previos[k].parentNode.removeChild(previos[k]);
+        }
+        continue;
+      }
+      var b = bloqueDeId(bl.dataset.blockId);
+      var lista = criterios(b);
+      if(!lista.length) continue;
+      var det = armar(lista, 'Criterio del Coach');
+      if(!det) continue;
+      var cuerpo = bl.querySelector('.block-body') || bl;
+      cuerpo.appendChild(det);
+      /* la fundamentación ya vive acá: las cajas sueltas se ocultan */
+      var viejas = cuerpo.querySelectorAll('.coach-note, .objective-box');
+      for(var j = 0; j < viejas.length; j++){
+        if(!det.contains(viejas[j])) viejas[j].style.display = 'none';
+      }
+    }
+
+    /* criterio del día, al final de todo */
+    try{
+      var main = document.getElementById('mainContent') || document.querySelector('.day-view');
+      var vista = document.querySelector('.day-view');
+      if(vista && !vista.querySelector(':scope > .jp-criterio-dia')){
+        var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+        if(d){
+          var lst = [];
+          if(d.focusText) lst.push('<b>Foco de hoy:</b> ' + d.focusText);
+          if(d.summary)   lst.push(d.summary);
+          var nB = (d.blocks || []).length;
+          if(nB) lst.push('Ordené los ' + nB + ' bloques de mayor a menor demanda: lo que más te exige va primero, cuando todavía estás entero.');
+          if(lst.length){
+            var det2 = armar(lst, 'Criterio del día', 'Cómo pensé esta sesión');
+            if(det2){ det2.classList.add('jp-criterio-dia'); vista.appendChild(det2); }
+          }
+        }
+      }
+    }catch(e){}
+  }
+
+  /* ---------------------------------------------------------
+     montaje
+  --------------------------------------------------------- */
+  function repintar(){
+    try{ led(); }catch(e){}
+    try{ pintarCriterios(); }catch(e){}
+  }
+  function mount(){
+    arte();
+    repintar();
+    vigilarLed();
+    if(typeof window.renderMain === 'function' && !window.renderMain.__jpv40){
+      var _rm = window.renderMain;
+      var w = function(){ var r = _rm.apply(this, arguments); setTimeout(repintar, 90); setTimeout(repintar, 420); return r; };
+      w.__jpv40 = 1;
+      window.renderMain = w;
+    }
+    [700, 1800, 3400].forEach(function(ms){ setTimeout(repintar, ms); });
+    window.CoachCriterio = { repintar: repintar, textos: criterios };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 400); });
+  else setTimeout(mount, 400);
+})();
+<\/script>
+
+
+<script>
+/* =========================================================
+   COACH JP · v4.1 · REGLAS DE CROSSFIT EN LA APP
+   · El bloque marcado sinVideo no renderiza botones de video
+   · Excepción manual: la línea con link cargado por el coach
+   · Sin porcentajes de mesociclo cuando la disciplina es CrossFit
+========================================================= */
+(function(){
+  var CF = !!(typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.modoSemanal);
+
+  /* 1 · bandera por bloque alrededor del render */
+  if(typeof window.renderBlock === 'function' && !window.renderBlock.__jpcf){
+    var _rb = window.renderBlock;
+    var w = function(b){
+      window.__jpSinVideo = !!(b && b.sinVideo);
+      var r;
+      try{ r = _rb.apply(this, arguments); }
+      finally{ window.__jpSinVideo = false; }
+      return r;
+    };
+    w.__jpcf = 1;
+    window.renderBlock = w;
+  }
+
+  /* 2 · excepción manual: play sólo en las líneas con link propio */
+  function playHtml(id){
+    return ' <a class="video-link jp-play" href="javascript:void(0)" data-yt="' + id + '" ' +
+      'title="Video cargado por el coach" aria-label="Ver el video de esta línea">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
+  }
+  function manuales(){
+    var d = null;
+    try{ d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null; }catch(e){}
+    if(!d) return;
+    (d.blocks || []).forEach(function(b){
+      if(!b.itemVideos) return;
+      var bl = document.querySelector('.block[data-block-id="' + b.id + '"]');
+      if(!bl || bl.dataset.jpMan === '1') return;
+      /* se busca por TEXTO, no por índice: la pizarra agrega líneas de
+         encabezado y el índice del ítem no coincide con el del DOM */
+      var filas = bl.querySelectorAll('.ex-row .ex-name, .wb-line, .cf-line, .ex-name, li');
+      var norm = function(t){ return String(t || '').toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\\s+/g, ' ').trim(); };
+      var puesto = 0;
+      Object.keys(b.itemVideos).forEach(function(ix){
+        var txt = norm((b.items || [])[parseInt(ix, 10)] || '');
+        if(!txt) return;
+        for(var i = 0; i < filas.length; i++){
+          var f = filas[i];
+          if(f.querySelector && f.querySelector('.video-link')) continue;
+          if(norm(f.textContent).indexOf(txt) >= 0){
+            f.insertAdjacentHTML('beforeend', playHtml(b.itemVideos[ix]));
+            puesto++;
+            break;
+          }
+        }
+      });
+      if(puesto) bl.dataset.jpMan = '1';
+    });
+  }
+
+  /* 3 · en CrossFit la semana no se lee como % de un mesociclo */
+  function limpiarPorcentajes(){
+    if(!CF) return;
+    var nodos = document.querySelectorAll('.week-pill-pct, .hero-pct, .week-pct');
+    for(var i = 0; i < nodos.length; i++) nodos[i].style.display = 'none';
+  }
+
+  function repintar(){ try{ manuales(); limpiarPorcentajes(); }catch(e){} }
+  function mount(){
+    repintar();
+    if(typeof window.renderMain === 'function' && !window.renderMain.__jpcf41){
+      var _rm = window.renderMain;
+      var w2 = function(){ var r = _rm.apply(this, arguments); setTimeout(repintar, 110); return r; };
+      w2.__jpcf41 = 1;
+      window.renderMain = w2;
+    }
+    [900, 2200, 3800].forEach(function(ms){ setTimeout(repintar, ms); });
+    window.CoachCF = { esCrossFit: function(){ return CF; }, repintar: repintar };
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 500); });
+  else setTimeout(mount, 500);
+})();
+<\/script>
+
 </body>
 </html>
 `;
@@ -15447,7 +15834,25 @@ function buildProgramConfig(ath){
   const withVideos = $('#expVideos').checked;
   const withAlerts = $('#expWarn').checked;
   const videoMap = {};
-  const addVideo = (key, ex) => { if(withVideos && ex && ex.videoId && key) videoMap[key] = ex.videoId; };
+  let bloqueCF = false;   /* lo setea cada bloque antes de resolver sus videos */
+  const addVideo = (key, ex) => {
+    if(bloqueCF) return;                       /* CrossFit: no se vincula solo */
+    if(withVideos && ex && ex.videoId && key) videoMap[key] = ex.videoId;
+  };
+
+  /* ---- CrossFit: sin videos automáticos ----
+     La regla aplica cuando la disciplina del mesociclo es CrossFit o cuando
+     el bloque es una pizarra de CrossFit. Un finisher metabólico dentro de
+     una planificación de musculación NO entra: ahí el video sigue como está. */
+  const discCF = (p.meta && p.meta.mesoDisc === 'crossfit');
+  const esBloqueCF = b => !!(discCF || b.cfPizarra || b.cfTipo || b.cfFmt || b.cfModo === 'board');
+  /* link de video cargado a mano en la línea: "10 Thrusters | https://youtu.be/xxx" */
+  const RX_YT = /(?:\s*[|·—-]\s*)?(https?:\/\/\S*(?:youtu\.be|youtube\.com)\/\S+)/i;
+  const partirVideoManual = txt => {
+    const m = String(txt || '').match(RX_YT);
+    if(!m) return { texto: txt, vid: '' };
+    return { texto: String(txt).replace(m[0], '').trim(), vid: ytId(m[1]) || '' };
+  };
 
   const weeks = p.meso.map((w,i) => ({
     id: i, short: w.short || ('S'+(i+1)), name: w.name || ('Semana '+(i+1)),
@@ -15459,6 +15864,7 @@ function buildProgramConfig(ath){
 
   const days = p.dias.map((d, di) => {
     const blocks = d.bloques.map(b => {
+      bloqueCF = esBloqueCF(b);
       const out = {
         id: b.id, category: b.category || 'strength', icon: b.icon || '💪',
         title: b.titulo || '', subtitle: b.subtitulo || '', optional: !!b.optional,
@@ -15516,8 +15922,20 @@ function buildProgramConfig(ath){
           if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
         });
         out.items = (b.items||[]).slice();
+        /* en CrossFit el video sólo aparece si el coach pegó el link en la línea */
+        if(bloqueCF){
+          const manual = {};
+          out.items = out.items.map((it, ix) => {
+            const r = partirVideoManual(it);
+            if(r.vid) manual[ix] = r.vid;
+            return r.texto;
+          });
+          if(Object.keys(manual).length) out.itemVideos = manual;
+        }
         if(b.cardioMinutes) out.cardioMinutes = parseInt(b.cardioMinutes,10) || 0;
       }
+
+      if(bloqueCF) out.sinVideo = true;
 
       /* pizarra modular de CrossFit: formato del bloque, modo de video y cierre técnico */
       if(b.cfModo === 'tech' || b.cfModo === 'board') out.boardMode = b.cfModo;
@@ -15536,8 +15954,9 @@ function buildProgramConfig(ath){
       if(b.scaling && Object.keys(b.scaling).some(k => (b.scaling[k] || '').trim()))
         out.scaling = Object.assign({}, b.scaling);
 
-      /* precomputación de cargas: 1RM del alumno × % de cada semana del mesociclo */
-      const carga = cargaPrecomputada(ath, b, out);
+      /* precomputación de cargas: 1RM del alumno × % de cada semana del mesociclo.
+         En CrossFit no corresponde: la programación es semana a semana. */
+      const carga = discCF ? null : cargaPrecomputada(ath, b, out);
       if(carga){ out.baseLoad = carga.base; out.weekKg = carga.semanas; out.weekPctCalc = carga.pcts; }
 
       if(withAlerts){
@@ -15565,6 +15984,8 @@ function buildProgramConfig(ath){
     sync: canalSync(ath),
     nota: notaMetodologica(ath),
     mesoName: (p.meta.mesoName || 'Mesociclo'),
+    disciplina: (p.meta && p.meta.mesoDisc) || '',
+    modoSemanal: !!discCF,
     nutriPlan: planNutricional(ath),
     weeks: weeks, videoMap: videoMap, videoLib: bibliotecaVideos(withVideos), days: days
   };
@@ -37963,5 +38384,425 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     w.__jpnp = 1; window[fn] = w;
   });
   [800, 2000, 3600].forEach(function(ms){ setTimeout(montar, ms); });
+})();
+</script>
+<!-- ============================================================
+     MÓDULO 30 — CROSSFIT MODULAR: SEMANA A SEMANA + IA
+     · Sólo se activa cuando la disciplina del mesociclo es CrossFit
+     · Desacopla el mesociclo rígido: se crean y prescriben semanas
+       de a una, sin autogenerar 4 semanas ni porcentajes
+     · Estructura y reordena LA SEMANA CARGADA balanceando vías
+       metabólicas y patrones (Gymnastics / Weightlifting / Mono)
+     · No toca Bodybuilding ni ningún otro módulo
+     ============================================================ -->
+<style>
+#jpCfBar{
+  display:none;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px;
+  padding:10px 13px;border-radius:12px;background:#141920;border:1px solid rgba(124,197,232,.28);
+}
+#jpCfBar.on{display:flex}
+#jpCfBar .lb{
+  font-family:var(--ffh);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:#7CC5E8;font-weight:700;
+}
+#jpCfBar .sem{display:flex;gap:6px;flex-wrap:wrap}
+#jpCfBar .sem .s{
+  min-height:32px;padding:0 12px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:700;
+  background:transparent;border:1px solid var(--line-2);color:var(--txt-2);
+}
+#jpCfBar .sem .s.on{background:rgba(124,197,232,.16);border-color:#7CC5E8;color:#7CC5E8}
+#jpCfBar .sp{flex:1}
+#jpCfBar button.acc{
+  min-height:34px;padding:0 13px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.04);border:1px solid var(--line-2);color:var(--txt-2);
+  font-family:var(--ffh);font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+}
+#jpCfBar button.acc:hover{border-color:#7CC5E8;color:#7CC5E8}
+#jpCfBar button.acc.ia{border-color:rgba(210,121,63,.5);color:#E8965E}
+
+#mCfSem .cs-dia{
+  display:flex;align-items:center;gap:10px;padding:10px 12px;margin-top:8px;
+  border:1px solid #28303A;border-radius:12px;background:#141920;
+}
+#mCfSem .cs-dia .pos{
+  width:30px;height:30px;flex:0 0 30px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:800;
+  background:rgba(255,255,255,.05);border:1px solid #28303A;color:#828A97;
+}
+#mCfSem .cs-dia.mueve .pos{background:rgba(124,197,232,.15);border-color:#7CC5E8;color:#7CC5E8}
+#mCfSem .cs-dia .nb{flex:1;min-width:0}
+#mCfSem .cs-dia .nb b{display:block;font-size:13px;color:#EDEFF2}
+#mCfSem .cs-dia .nb span{font-size:11px;color:#828A97}
+#mCfSem .tags{display:flex;gap:5px;flex-wrap:wrap}
+#mCfSem .tags i{
+  font-style:normal;font-size:9.5px;font-weight:800;letter-spacing:.04em;padding:3px 8px;border-radius:999px;
+  border:1px solid var(--line-2);color:var(--muted);background:var(--panel-3);white-space:nowrap;
+}
+#mCfSem .tags i.g{border-color:rgba(124,197,232,.45);color:#7CC5E8}
+#mCfSem .tags i.w{border-color:rgba(210,121,63,.45);color:#E8965E}
+#mCfSem .tags i.m{border-color:rgba(143,185,206,.45);color:#8FB9CE}
+#mCfSem .tags i.via{border-color:rgba(255,255,255,.16);color:#C9CFD8}
+#mCfSem .cs-diag{
+  margin-top:10px;padding:10px 12px;border-radius:12px;
+  border:1px dashed #33404D;background:rgba(124,197,232,.05);color:#A0A8B4;font-size:12.3px;line-height:1.6;
+}
+#mCfSem .cs-diag b{color:#EDEFF2}
+#mCfSem .cs-flecha{text-align:center;color:#5E6570;font-size:16px;margin:10px 0 2px}
+</style>
+
+<div class="modal-bg" id="mCfSem">
+  <div class="modal" style="max-width:900px">
+    <div class="modal-h">
+      <h3>⚡ Semana de CrossFit</h3>
+      <div class="spacer"></div>
+      <span class="find-count" id="csSem">—</span>
+      <button class="icon-btn" data-close="mCfSem">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="cs-diag" id="csDiag"></div>
+      <div style="margin-top:12px">
+        <div class="lb" style="margin-bottom:4px">Orden actual</div>
+        <div id="csActual"></div>
+      </div>
+      <div class="cs-flecha">▼</div>
+      <div>
+        <div class="lb" style="margin-bottom:4px">Orden propuesto</div>
+        <div id="csPropuesto"></div>
+      </div>
+      <div class="cs-diag" id="csPorque" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mCfSem">Cancelar</button>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="csIA">🤖 Explicar con IA</button>
+      <button class="btn primary" id="csAplicar">✅ Aplicar este orden</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   CROSSFIT MODULAR · semana a semana + reordenamiento
+   ========================================================= */
+(function(){
+
+  function esCF(){
+    try{
+      var a = active(); if(!a) return false;
+      var p = plan(a.id);
+      return !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
+    }catch(e){ return false; }
+  }
+
+  /* ---------------------------------------------------------
+     1 · CLASIFICACIÓN DE CADA DÍA
+     Modalidad: G (gimnásticos) · W (levantamiento) · M (monoestructural)
+     Vía:       aláctico (potencia) · láctico (glucolítico) · oxidativo
+  --------------------------------------------------------- */
+  var RX_G = /dominad|muscle.?up|hspu|handstand|vertical|toes.?to.?bar|t2b|pull.?up|dip|fondo|escalada|rope|pino|kipping|ring/i;
+  var RX_W = /snatch|clean|jerk|thruster|deadlift|peso muerto|sentadilla|squat|press|overhead|arranque|envi[oó]n|cargada|barra|kettlebell|wall ball/i;
+  var RX_M = /row|remo erg|bike|bicicleta|assault|run|correr|ski|cuerda|comba|double under|caminata|zona 2|erg/i;
+
+  function textoDia(d){
+    return (d.bloques || []).map(function(b){
+      return [b.titulo || '', b.subtitulo || '', b.cfProtocolo || '', b.cfTipo || '']
+        .concat(b.items || [])
+        .concat((b.movements || []))
+        .concat((b.ejercicios || []).map(function(e){
+          var ex = getEx(e.exId); return ex ? ex.es : (e.nombre || '');
+        }))
+        .concat(b.exId ? [ (getEx(b.exId) || {}).es || '' ] : [])
+        .join(' ');
+    }).join(' ');
+  }
+
+  function minutosDia(d){
+    var t = textoDia(d), min = 0, m;
+    var re = /(\d{1,3})\s*(?:'|min|minutos)\b/gi;
+    while((m = re.exec(t))) min += parseInt(m[1], 10) || 0;
+    var amr = /(?:amrap|emom|for time|ftime|chipper)[^\d]{0,12}(\d{1,3})/i.exec(t);
+    if(amr) min += parseInt(amr[1], 10) || 0;
+    if(!min) min = (d.bloques || []).length * 8;
+    return min;
+  }
+
+  function clasificar(d){
+    var t = textoDia(d);
+    var mod = { G:0, W:0, M:0 };
+    if(RX_G.test(t)) mod.G++;
+    if(RX_W.test(t)) mod.W++;
+    if(RX_M.test(t)) mod.M++;
+    /* peso por cantidad de coincidencias, no sólo presencia */
+    ['G','W','M'].forEach(function(k){
+      var rx = k === 'G' ? RX_G : k === 'W' ? RX_W : RX_M;
+      var c = (t.match(new RegExp(rx.source, 'gi')) || []).length;
+      mod[k] = c;
+    });
+    var dom = ['G','W','M'].sort(function(a, b){ return mod[b] - mod[a]; })[0];
+    if(!mod[dom]) dom = 'M';
+
+    var min = minutosDia(d);
+    var pesado = /1rm|singles|heavy|pesad|e2mom|every 2|máxim|maxim/i.test(t);
+    var via = pesado || min <= 8 ? 'alactico' : (min <= 15 ? 'lactico' : 'oxidativo');
+
+    var carga = via === 'lactico' ? 3 : via === 'alactico' ? 2 : 1;
+    return { dom: dom, mod: mod, min: min, via: via, carga: carga };
+  }
+
+  var VIA_LB = { alactico:'Aláctico · potencia', lactico:'Láctico · glucolítico', oxidativo:'Oxidativo · aeróbico' };
+  var MOD_LB = { G:'Gymnastics', W:'Weightlifting', M:'Monostructural' };
+
+  /* ---------------------------------------------------------
+     2 · MOTOR DE REORDENAMIENTO
+     Penaliza: dos días lácticos seguidos, dos del mismo patrón
+     dominante seguidos, y arrancar la semana con el día más blando.
+  --------------------------------------------------------- */
+  function penalizar(orden, info){
+    var p = 0;
+    for(var i = 1; i < orden.length; i++){
+      var a = info[orden[i - 1]], b = info[orden[i]];
+      if(a.via === 'lactico' && b.via === 'lactico') p += 10;
+      if(a.dom === b.dom) p += 4;
+      if(a.carga === 3 && b.carga === 3) p += 3;
+      if(a.via === b.via) p += 2;
+    }
+    /* el día más exigente no va último, y el más liviano no va primero */
+    var cargas = orden.map(function(i){ return info[i].carga; });
+    if(cargas[0] === Math.min.apply(null, cargas)) p += 3;
+    if(cargas[cargas.length - 1] === Math.max.apply(null, cargas)) p += 2;
+    return p;
+  }
+
+  function mejorOrden(info){
+    var n = info.length;
+    var base = [];
+    for(var i = 0; i < n; i++) base.push(i);
+    if(n > 7) return base;                     /* no hace falta permutar tanto */
+    var mejor = base.slice(), mejorP = penalizar(base, info);
+    var perm = function(arr, k){
+      if(k === arr.length){
+        var p = penalizar(arr, info);
+        if(p < mejorP){ mejorP = p; mejor = arr.slice(); }
+        return;
+      }
+      for(var j = k; j < arr.length; j++){
+        var c = arr.slice();
+        var tmp = c[k]; c[k] = c[j]; c[j] = tmp;
+        perm(c, k + 1);
+      }
+    };
+    perm(base, 0);
+    return mejor;
+  }
+
+  /* ---------------------------------------------------------
+     3 · INTERFAZ
+  --------------------------------------------------------- */
+  var propuesta = null, infoDias = null, diasRef = null;
+
+  function filaDia(d, inf, pos, mueve){
+    return '<div class="cs-dia' + (mueve ? ' mueve' : '') + '">' +
+      '<span class="pos">' + pos + '</span>' +
+      '<span class="nb"><b>' + esc(d.short || ('Día ' + pos)) + ' · ' + esc(d.label || d.title || '') + '</b>' +
+      '<span>' + (d.bloques || []).length + ' bloques · ' + inf.min + ' min estimados</span></span>' +
+      '<span class="tags">' +
+        '<i class="' + inf.dom.toLowerCase() + '">' + MOD_LB[inf.dom] + '</i>' +
+        '<i class="via">' + VIA_LB[inf.via] + '</i>' +
+      '</span></div>';
+  }
+
+  function abrir(){
+    var a = active(); if(!a){ toast('Elegí un alumno/a', 'err'); return; }
+    if(!esCF()){ toast('Esta herramienta es sólo para planificaciones de CrossFit', 'err'); return; }
+    var p = plan(a.id);
+    diasRef = p.dias.slice();
+    infoDias = diasRef.map(clasificar);
+    propuesta = mejorOrden(infoDias);
+
+    var cuenta = { alactico:0, lactico:0, oxidativo:0 }, mods = { G:0, W:0, M:0 };
+    infoDias.forEach(function(i){ cuenta[i.via]++; mods[i.dom]++; });
+
+    document.getElementById('csSem').textContent = diasRef.length + ' días en la semana';
+    document.getElementById('csDiag').innerHTML =
+      'Vías metabólicas: <b>' + cuenta.alactico + '</b> aláctico · <b>' + cuenta.lactico + '</b> láctico · ' +
+      '<b>' + cuenta.oxidativo + '</b> oxidativo.<br>' +
+      'Patrones dominantes: <b>' + mods.W + '</b> weightlifting · <b>' + mods.G + '</b> gymnastics · ' +
+      '<b>' + mods.M + '</b> monoestructural.';
+
+    document.getElementById('csActual').innerHTML =
+      diasRef.map(function(d, i){ return filaDia(d, infoDias[i], i + 1, false); }).join('');
+    document.getElementById('csPropuesto').innerHTML =
+      propuesta.map(function(ix, i){ return filaDia(diasRef[ix], infoDias[ix], i + 1, ix !== i); }).join('');
+
+    var pAntes = penalizar(diasRef.map(function(_, i){ return i; }), infoDias);
+    var pDesp = penalizar(propuesta, infoDias);
+    var cambios = propuesta.filter(function(ix, i){ return ix !== i; }).length;
+    document.getElementById('csPorque').innerHTML = cambios
+      ? 'Muevo <b>' + cambios + ' día(s)</b> para que no queden dos sesiones lácticas pegadas ni dos del mismo patrón ' +
+        'una atrás de la otra. Índice de choque: <b>' + pAntes + ' → ' + pDesp + '</b> (más bajo es mejor).'
+      : 'El orden actual ya está balanceado: no hay dos días lácticos seguidos ni patrones repetidos consecutivos. ' +
+        'No hace falta mover nada.';
+    openModal('mCfSem');
+  }
+  window.abrirSemanaCF = abrir;
+
+  function aplicar(){
+    if(!propuesta || !diasRef) return;
+    var a = active(); if(!a) return;
+    var p = plan(a.id);
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function')
+      CoachUndo.vigilar('Reordenar semana de CrossFit');
+    var nuevos = propuesta.map(function(ix){ return diasRef[ix]; });
+    /* se conserva el id y el rótulo de posición: lo que se mueve es el contenido */
+    nuevos.forEach(function(d, i){
+      d.id = 'dia' + (i + 1);
+      d.short = 'DÍA ' + (i + 1);
+    });
+    p.dias = nuevos;
+    save();
+    if(typeof renderBuilder === 'function') renderBuilder();
+    closeModal('mCfSem');
+    toast('⚡ Semana reordenada · ' + nuevos.length + ' días');
+  }
+
+  function explicarIA(){
+    if(!window.CoachAI || !CoachAI.hayClave || !CoachAI.hayClave()){
+      toast('Sin clave de IA cargada: el análisis local ya está en pantalla'); return;
+    }
+    var txt = diasRef.map(function(d, i){
+      var inf = infoDias[i];
+      return (i + 1) + '. ' + (d.label || d.title) + ' — ' + MOD_LB[inf.dom] + ' — ' + VIA_LB[inf.via] +
+        ' — ' + inf.min + ' min';
+    }).join('\n');
+    var orden = propuesta.map(function(ix){ return diasRef[ix].label || diasRef[ix].title; }).join(' → ');
+    document.getElementById('csPorque').innerHTML = 'Consultando IA…';
+    CoachAI.generarTexto(
+      'Sos programador de CrossFit. Semana cargada:\n' + txt + '\n\nOrden propuesto: ' + orden +
+      '\n\nExplicá en dos o tres oraciones, en español rioplatense y sin emojis, por qué ese orden ' +
+      'balancea mejor las vías metabólicas y los patrones. Si ves un problema que el reordenamiento ' +
+      'no resuelve (por ejemplo, falta de trabajo aeróbico o exceso de barra), decilo en una oración más.',
+      'Respondés en texto plano, sin listas ni títulos.')
+      .then(function(r){
+        document.getElementById('csPorque').textContent = (r || '').trim() ||
+          'La IA no devolvió texto; queda el análisis local.';
+      })
+      .catch(function(){ document.getElementById('csPorque').textContent = 'No se pudo consultar la IA.'; });
+  }
+
+  /* ---------------------------------------------------------
+     4 · BARRA DE SEMANAS · microciclo, no mesociclo
+  --------------------------------------------------------- */
+  function semanaActiva(){
+    try{ return (typeof S !== 'undefined' && S.ui && S.ui.wk) || 0; }catch(e){ return 0; }
+  }
+  function nuevaSemana(n){
+    return { n:n, short:'S' + n, name:'Semana ' + n, phase:'Microciclo ' + n,
+             rpe:'', icon:'🔁', deload:false, fail:false, amrapMinutes:null, hyroxNote:'',
+             note:'Semana prescrita de forma independiente: en CrossFit el ajuste es semanal.' };
+  }
+  function barra(){
+    var host = document.querySelector('#v-builder .topbar');
+    if(!host) return null;
+    var b = document.getElementById('jpCfBar');
+    if(!b){
+      b = document.createElement('div');
+      b.id = 'jpCfBar';
+      host.parentNode.insertBefore(b, host.nextSibling);
+      b.addEventListener('click', function(e){
+        var s = e.target.closest('[data-cfw]');
+        if(s){
+          try{ S.ui.wk = parseInt(s.dataset.cfw, 10); save(); renderBuilder(); }catch(err){}
+          return;
+        }
+        if(e.target.closest('#cfAddWk')){
+          var a = active(); if(!a) return;
+          var p = plan(a.id);
+          if(window.CoachUndo) CoachUndo.vigilar('Agregar semana de CrossFit');
+          p.meso.push(nuevaSemana(p.meso.length + 1));
+          save(); renderBuilder();
+          toast('Semana ' + p.meso.length + ' creada · vacía y editable');
+          return;
+        }
+        if(e.target.closest('#cfDelWk')){
+          var a2 = active(); if(!a2) return;
+          var p2 = plan(a2.id);
+          if(p2.meso.length <= 1){ toast('Tiene que quedar al menos una semana', 'err'); return; }
+          if(!confirm('¿Quitar la Semana ' + p2.meso.length + '? Las marcas cargadas en esa semana quedan en el historial del alumno/a.')) return;
+          if(window.CoachUndo) CoachUndo.vigilar('Quitar semana de CrossFit');
+          p2.meso.pop();
+          try{ if(S.ui.wk >= p2.meso.length) S.ui.wk = p2.meso.length - 1; }catch(err){}
+          save(); renderBuilder();
+          return;
+        }
+        if(e.target.closest('#cfOrden')){ abrir(); return; }
+      });
+    }
+    return b;
+  }
+
+  function pintarBarra(){
+    var b = barra(); if(!b) return;
+    if(!esCF()){ b.classList.remove('on'); return; }
+    var a = active(); if(!a){ b.classList.remove('on'); return; }
+    var p = plan(a.id), wk = semanaActiva();
+    b.classList.add('on');
+    b.innerHTML =
+      '<span class="lb">Microciclo · semana a semana</span>' +
+      '<span class="sem">' + p.meso.map(function(w, i){
+        return '<button type="button" class="s ' + (i === wk ? 'on' : '') + '" data-cfw="' + i + '">' +
+          esc(w.short || ('S' + (i + 1))) + '</button>';
+      }).join('') + '</span>' +
+      '<span class="sp"></span>' +
+      '<button type="button" class="acc" id="cfAddWk">+ Semana ' + (p.meso.length + 1) + '</button>' +
+      '<button type="button" class="acc" id="cfDelWk">🗑 Quitar última</button>' +
+      '<button type="button" class="acc ia" id="cfOrden">⚡ Estructurar / Reordenar con IA</button>';
+  }
+
+  /* al pasar una planificación a CrossFit, el mesociclo de 4 semanas por
+     defecto se reduce a una sola: las siguientes las crea el coach */
+  function desacoplar(){
+    if(!esCF()) return;
+    var a = active(); if(!a) return;
+    var p = plan(a.id);
+    if(p.meta.cfModular) return;                 /* ya se hizo una vez */
+    var intactas = p.meso.length === 4 && p.meso.every(function(w, i){
+      return (w.name === 'Semana ' + (i + 1)) && !w.tocada;
+    });
+    var sinMarcas = true;
+    try{
+      var marcas = JSON.parse(localStorage.getItem('coachjp_marks_' + a.id) || 'null');
+      sinMarcas = !marcas;
+    }catch(e){}
+    p.meta.cfModular = true;
+    if(intactas && sinMarcas){
+      p.meso = [nuevaSemana(1)];
+      try{ S.ui.wk = 0; }catch(e){}
+      save();
+      toast('CrossFit: mesociclo desacoplado · vas a prescribir semana a semana');
+    } else {
+      save();
+    }
+  }
+
+  function montar(){
+    pintarBarra();
+    var m = document.getElementById('mCfSem');
+    if(m && !m.__jp){
+      m.__jp = 1;
+      $$('#mCfSem [data-close]').forEach(function(x){ x.addEventListener('click', function(){ closeModal('mCfSem'); }); });
+      document.getElementById('csAplicar').addEventListener('click', aplicar);
+      document.getElementById('csIA').addEventListener('click', explicarIA);
+    }
+    desacoplar();
+  }
+
+  ['renderBuilder','renderDay','go'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jpcf) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(montar, 100); return r; };
+    w.__jpcf = 1; window[fn] = w;
+  });
+  [900, 2200, 3800].forEach(function(ms){ setTimeout(montar, ms); });
+  window.CoachCFSemana = { abrir: abrir, clasificar: clasificar, esCF: esCF };
 })();
 </script>
