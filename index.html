@@ -483,6 +483,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <span class="pill" id="exCount">0 ejercicios</span>
           <span class="pill teal" id="exVidCount">0 con video</span>
           <div class="spacer"></div>
+          <button class="btn sm ghost" id="btnFiltroComplejo" title="Filtrar por Multiarticular / Complejo Atlético en un clic">🎯 Complejo Atlético</button>
           <button class="btn sm ghost" id="btnClearFilters">Limpiar filtros</button>
         </div>
       </div>
@@ -828,7 +829,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
 
 /* ---------- 0. CONSTANTES ---------- */
 const KEY = 'coachjp_console_v2';
-const GRUPOS  = ['Pectoral','Espalda','Hombros','Brazos','Piernas/Glúteos','Core','Full Body / Cardio','General'];
+const GRUPOS  = ['Pectoral','Espalda','Hombros','Brazos','Piernas/Glúteos','Core','Multiarticular / Complejo Atlético','Full Body / Cardio','General'];
 const EQUIPOS = ['Barra','Mancuernas','Polea','Máquina','Multipower','Peso corporal','Banda','Kettlebell','Cardio'];
 const PATRONES= ['Empuje horizontal','Empuje vertical','Tracción horizontal','Tracción vertical','Rodilla dominante','Cadera dominante','Abducción / Aducción','Core / Anti-rotación','Aislamiento','Aislamiento hombro','Bíceps','Tríceps','Antebrazo','Extensión lumbar','Salud articular','Cardio / Metcon','General / Accesorio'];
 const ZONAS   = ['hombro','rodilla','lumbar','cadera','muñeca','codo','cuello','tobillo'];
@@ -1259,12 +1260,34 @@ const EXTRA_EX = [
   ["Box jump", "Box Jump", "Full Body / Cardio", "Cardio / Metcon", "Máquina", "rodilla,tobillo", "Bajar caminando del cajón, no saltando."],
   ["Devil press", "Devil Press", "Full Body / Cardio", "Cardio / Metcon", "Mancuernas", "hombro,lumbar", "Finisher metabólico de cuerpo completo."],
   ["Arrastre de trineo", "Sled Pull", "Full Body / Cardio", "Cardio / Metcon", "Máquina", "", "Pasos cortos y firmes traccionando de las correas."],
-  ["Swing con kettlebell a una mano", "Single-Arm Kettlebell Swing", "Full Body / Cardio", "Cardio / Metcon", "Kettlebell", "lumbar,hombro", "Anti-rotación extra: el torso no gira."]
+  ["Swing con kettlebell a una mano", "Single-Arm Kettlebell Swing", "Full Body / Cardio", "Cardio / Metcon", "Kettlebell", "lumbar,hombro", "Anti-rotación extra: el torso no gira."],
+
+  /* ---- Multiarticular / Complejo Atlético: movimientos combinados,
+     patrones rotacionales de potencia y transferencia deportiva ---- */
+  ["Zancada cruzada con rotación (banda + mancuerna)", "Banded Rotational Crossover Lunge to Press", "Multiarticular / Complejo Atlético", "Core / Anti-rotación", "Banda", "rodilla,lumbar", "Patrón de transferencia deportiva: rotación de tronco controlada mientras la pierna de atrás cruza y estabiliza; la rodilla no colapsa hacia adentro."],
+  ["Golpe rotacional con banda en semi-arrodillado", "Half-Kneeling Band Rotational Chop", "Multiarticular / Complejo Atlético", "Core / Anti-rotación", "Banda", "hombro,lumbar", "El movimiento sale de la rotación de cadera y torso, no de los brazos; pelvis estable en la posición semi-arrodillada."],
+  ["Lanzamiento rotacional de potencia con mancuerna", "Rotational Power Throw with Dumbbell", "Multiarticular / Complejo Atlético", "Core / Anti-rotación", "Mancuernas", "hombro,lumbar,muñeca", "Transferencia a deportes de rotación (golf, remo, lanzamientos): explosividad desde la cadera con soltura de tronco controlada."],
+  ["Swing lateral con kettlebell y paso cruzado", "Lateral Crossover Kettlebell Swing", "Multiarticular / Complejo Atlético", "Cadera dominante", "Kettlebell", "cadera,lumbar", "Combina la bisagra de cadera del swing con un desplazamiento lateral: exige control frontal además de sagital."],
+  ["Arrastre lateral en trineo con banda de resistencia", "Banded Lateral Sled Drag", "Multiarticular / Complejo Atlético", "Cardio / Metcon", "Banda", "rodilla,cadera", "Transferencia atlética para deportes de cambio de dirección: pasos cortos, cadera baja, tensión constante de la banda."],
+  ["Pivote rotacional 180° en landmine", "Landmine 180° Rotational Pivot", "Multiarticular / Complejo Atlético", "Core / Anti-rotación", "Barra", "hombro,lumbar", "Rotación de 180° con la barra en landmine: accesorio de potencia rotacional y transferencia deportiva."],
+  ["Zancada lateral con banda y prensado aéreo", "Banded Lateral Lunge to Overhead Press", "Multiarticular / Complejo Atlético", "General / Accesorio", "Banda", "rodilla,hombro", "Combina la estabilidad frontal de la zancada lateral con un press aéreo: coordinación entre tren inferior y superior."],
+  ["Battle rope con sentadilla alterna", "Battle Rope Alternating Squat Wave", "Multiarticular / Complejo Atlético", "Cardio / Metcon", "Cardio", "hombro,rodilla", "Combinado funcional de tren superior e inferior: sentadilla estática sostenida mientras se genera la ola con los brazos."]
 ];
 
 /* ---------- 2. UTILIDADES ---------- */
 const $  = (s,c) => (c||document).querySelector(s);
 const $$ = (s,c) => Array.prototype.slice.call((c||document).querySelectorAll(s));
+/* debounce genérico: agrupa tipeos rápidos en un solo render.
+   Usado en los buscadores de la Biblioteca y del selector de videos
+   del Builder para evitar re-renderizar la grilla en cada tecla. */
+function debounce(fn, wait){
+  let t;
+  return function(){
+    const args = arguments, ctx = this;
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(ctx, args), wait || 300);
+  };
+}
 const uid = p => (p||'id') + '_' + Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-4);
 const norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
 const esc = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -1337,7 +1360,7 @@ function seedExercises(){
   return out;
 }
 /* Incorpora la biblioteca oficial a un storage ya existente sin pisar lo propio */
-const LIB_VERSION = 4;
+const LIB_VERSION = 5; /* v5: suma la categoría "Multiarticular / Complejo Atlético" (sync aditivo, no pisa datos existentes) */
 function syncLibrary(){
   if(S.libV === LIB_VERSION) return 0;
   let added = 0;
@@ -16314,10 +16337,19 @@ function init(){
   $('#btnNewEx').addEventListener('click', () => openEx());
   $('#btnSaveEx').addEventListener('click', saveEx);
   $('#btnDelEx').addEventListener('click', delEx);
-  ['#exSearch','#fGrupo','#fEquipo','#fVideo'].forEach(s => $(s).addEventListener('input', renderLibrary));
+  /* el texto tipeado se debounce (300ms) para no re-renderizar la grilla en
+     cada tecla; los selects/checkboxes de filtro reaccionan al instante */
+  $('#exSearch').addEventListener('input', debounce(renderLibrary, 300));
+  ['#fGrupo','#fEquipo','#fVideo'].forEach(s => $(s).addEventListener('input', renderLibrary));
   $('#btnClearFilters').addEventListener('click', () => {
     $('#exSearch').value=''; $('#fGrupo').value=''; $('#fEquipo').value=''; $('#fVideo').value='';
     renderLibrary();
+  });
+  const btnFiltroComplejo = $('#btnFiltroComplejo');
+  if(btnFiltroComplejo) btnFiltroComplejo.addEventListener('click', () => {
+    $('#fGrupo').value = 'Multiarticular / Complejo Atlético';
+    renderLibrary();
+    toast('Filtrando: Multiarticular / Complejo Atlético 🎯');
   });
   $('#eVideo').addEventListener('input', previewVideo);
   $('#eRiesgo').addEventListener('click', e => {
@@ -17426,6 +17458,8 @@ document.addEventListener('DOMContentLoaded', init);
       <div class="row">
         <label class="chk"><input type="checkbox" id="findSafe"> Ocultar los restringidos</label>
         <label class="chk"><input type="checkbox" id="findVid"> Solo con video</label>
+        <div class="spacer"></div>
+        <button type="button" class="btn sm ghost" id="findComplejo" title="Filtrar por Multiarticular / Complejo Atlético en un clic">🎯 Complejo Atlético</button>
       </div>
       <div class="find-grid" id="findGrid"></div>
     </div>
@@ -18433,8 +18467,19 @@ document.addEventListener('DOMContentLoaded', init);
     });
     $('#tplApply').addEventListener('click', applyTpl);
 
-    ['#findQ','#findGrupo','#findEquipo','#findSafe','#findVid'].forEach(s =>
+    /* el campo de texto se debounce (300ms): evita re-renderizar la grilla
+       de videos del Builder en cada tecla tipeada, que era la causa
+       principal del lag al buscar en el selector. Los filtros de select y
+       los checkboxes siguen respondiendo al instante. */
+    $('#findQ').addEventListener('input', debounce(renderFind, 300));
+    ['#findGrupo','#findEquipo','#findSafe','#findVid'].forEach(s =>
       $(s).addEventListener('input', renderFind));
+    const findComplejo = $('#findComplejo');
+    if(findComplejo) findComplejo.addEventListener('click', () => {
+      $('#findGrupo').value = 'Multiarticular / Complejo Atlético';
+      renderFind();
+      toast('Filtrando: Multiarticular / Complejo Atlético 🎯');
+    });
     $('#findGrid').addEventListener('click', e => {
       const pg = e.target.closest('[data-fpage]');
       if(pg && !pg.disabled){ findPage = parseInt(pg.dataset.fpage, 10); renderFind(); $('#findGrid').scrollTop = 0; return; }
