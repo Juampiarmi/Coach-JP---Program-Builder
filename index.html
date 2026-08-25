@@ -500,6 +500,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
         </div>
         <div class="spacer"></div>
         <button class="btn" id="btnCheckAll">🛡️ Chequeo de seguridad</button>
+        <button class="btn" id="btnExportPdf" title="Vista de impresión limpia en A4 de la sesión del día">🖨️ Exportar PDF</button>
         <button class="btn teal" id="btnGoExport">🚀 Ir a Exportar</button>
       </div>
 
@@ -1288,6 +1289,85 @@ function debounce(fn, wait){
     t = setTimeout(() => fn.apply(ctx, args), wait || 300);
   };
 }
+/* ---------- Bus compartido de MutationObserver sobre #mainContent ----------
+   Docenas de módulos "aditivos" (cada uno en su propio <script>) observaban
+   el MISMO nodo #mainContent con su propio `new MutationObserver(...)`
+   independiente. Resultado: cada mutación del DOM (cualquier re-render:
+   buscador, Builder, Biblioteca...) disparaba ~20 observers nativos en
+   paralelo, cada uno re-escaneando el subárbol — la causa principal del
+   lag/freezes al tipear o navegar.
+   Este bus crea UN solo MutationObserver real sobre #mainContent y reenvía
+   cada tanda de mutaciones a todos los callbacks registrados. Cada módulo
+   conserva intacta su propia lógica interna de debounce (pend/propio, etc.):
+   solo se elimina la duplicación del observer nativo, no el comportamiento. */
+window.CoachRepaintBus = (function(){
+  /* Consolida por IDENTIDAD del nodo observado, no por si es literalmente
+     #mainContent: cada nodo distinto (document.body incluido) recibe UN
+     único MutationObserver real, compartido por todos los register() que
+     apunten a ese mismo nodo. #mainContent no siempre existe (algunas
+     plantillas no lo montan), y en ese caso los ~20 módulos que antes
+     creaban cada uno su propio observer terminan apuntando todos a
+     document.body — el registro por-nodo los agrupa igual en ese caso. */
+  const registry = new Map();
+  return {
+    register(fn, target){
+      const node = target || document.getElementById('mainContent') || document.body;
+      let entry = registry.get(node);
+      if(!entry){
+        entry = { handlers: [] };
+        entry.observer = new MutationObserver(muts => {
+          for(let i = 0; i < entry.handlers.length; i++){
+            try{ entry.handlers[i](muts); }catch(e){ console.warn('CoachRepaintBus handler', e); }
+          }
+        });
+        entry.observer.observe(node, { childList:true, subtree:true, characterData:true });
+        registry.set(node, entry);
+      }
+      entry.handlers.push(fn);
+    }
+  };
+})();
+/* ---------- Grilla con scroll infinito reutilizable ----------
+   En vez de volcar cientos de nodos <div class="ex-card"> / <div class="fx">
+   al DOM en una sola pasada (el motivo de fondo del freeze al buscar en
+   catálogos grandes), esto renderiza un primer lote acotado y suma más
+   lotes solo cuando el usuario se acerca al final de la grilla — vía
+   IntersectionObserver sobre un centinela invisible al pie. */
+function mountInfiniteGrid(container, items, renderItem, opts){
+  opts = opts || {};
+  const PAGE = opts.pageSize || 30;
+  let shown = 0, io = null;
+  container.innerHTML = '';
+  if(!items.length){
+    container.innerHTML = opts.emptyHTML || '';
+    return { disconnect(){} };
+  }
+  const sentinel = document.createElement('div');
+  sentinel.className = 'ig-sentinel';
+  sentinel.style.cssText = 'grid-column:1/-1;height:1px';
+  function renderBatch(){
+    const next = items.slice(shown, shown + PAGE);
+    if(!next.length) return;
+    sentinel.insertAdjacentHTML('beforebegin', next.map(renderItem).join(''));
+    shown += next.length;
+    if(typeof opts.onBatch === 'function') opts.onBatch(shown, items.length);
+    if(shown >= items.length){
+      sentinel.remove();
+      if(io) io.disconnect();
+    }
+  }
+  container.appendChild(sentinel);
+  renderBatch();
+  if(items.length > PAGE && 'IntersectionObserver' in window){
+    io = new IntersectionObserver(function(entries){
+      if(entries.some(function(en){ return en.isIntersecting; })) renderBatch();
+    }, { root: opts.root || null, rootMargin: '500px' });
+    io.observe(sentinel);
+  } else {
+    while(shown < items.length) renderBatch();
+  }
+  return { disconnect(){ if(io) io.disconnect(); } };
+}
 const uid = p => (p||'id') + '_' + Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-4);
 const norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
 const esc = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
@@ -1688,7 +1768,19 @@ function fillSelect(el, arr, all){
     arr.map(o => '<option value="' + esc(o) + '">' + esc(o) + '</option>').join('');
 }
 function openModal(id){ $('#'+id).classList.add('on'); document.body.style.overflow = 'hidden'; }
-function closeModal(id){ $('#'+id).classList.remove('on'); document.body.style.overflow = ''; }
+function closeModal(id){
+  const m = $('#'+id);
+  if(m){
+    m.classList.remove('on');
+    /* libera memoria al cerrar: un <iframe> (video de YouTube en #mVid,
+       por ejemplo) sigue cargado y potencialmente reproduciéndose en
+       segundo plano si el modal solo se oculta con CSS. Vaciar su src
+       corta la reproducción/descarga y libera esa memoria. */
+    const iframes = m.querySelectorAll('iframe');
+    if(iframes.length) iframes.forEach(f => { try{ f.src = 'about:blank'; }catch(e){} });
+  }
+  document.body.style.overflow = '';
+}
 
 /* ============================================================
    7. MÓDULO 1 — ALUMNOS
@@ -1856,6 +1948,11 @@ function renderLibrary(){
   }).sort((a,b) => a.es.localeCompare(b.es,'es'));
 
   const ath = active();
+  /* NOTA: esta función queda pisada en tiempo de carga por
+     window.renderLibrary del "MÓDULO 9 — PAGINACIÓN DE BIBLIOTECA"
+     (y sus wraps posteriores), que es la implementación realmente activa.
+     La paginación/scroll infinito de Biblioteca se implementa ahí — ver
+     ese módulo — para no divergir de la versión que el usuario ve. */
   $('#exGrid').innerHTML = list.length ? list.map(e => {
     const al = ath ? checkExercise(ath, e) : [];
     const w = worst(al);
@@ -3584,7 +3681,7 @@ window.buscarVideo = buscarVideo;
    STATE
 ========================================================= */
 const STORAGE_KEY = '{{STORAGE_KEY}}';
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, restSec:90 };
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90 };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -3598,14 +3695,15 @@ function loadProgress(){
         state.fatigue = parsed.fatigue || {};
         state.loads = parsed.loads || {};
         state.notes = parsed.notes || {};
+        state.checkout = parsed.checkout || {};
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
     }
-  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; }
+  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; }
 }
 function saveProgress(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, mode: state.mode, currentWeek: state.currentWeek })); }catch(e){}
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, mode: state.mode, currentWeek: state.currentWeek })); }catch(e){}
 }
 function isBlockDone(weekIdx, dayId, blockId){
   return !!(state.completed[weekIdx] && state.completed[weekIdx][dayId] && state.completed[weekIdx][dayId][blockId]);
@@ -7014,7 +7112,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     obsPR.observe(main, { childList:true, subtree:true });
-    new MutationObserver(function(){ repintar(); }).observe(main, { childList:true, subtree:true });
+    window.CoachRepaintBus.register(function(){ repintar(); }, main);
 
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
@@ -8278,7 +8376,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
         setTimeout(function(){ propio = false; }, 120);
       }, 90);
     };
-    new MutationObserver(repintarSuave).observe(main, { childList:true, subtree:true });
+    window.CoachRepaintBus.register(repintarSuave, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -9014,7 +9112,7 @@ body.cf-modo .block .directive-chip{display:none !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -9022,7 +9120,7 @@ body.cf-modo .block .directive-chip{display:none !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 140);
       }, 110);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -9289,7 +9387,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -9297,7 +9395,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 150);
       }, 130);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -9910,7 +10008,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     revisarMeso();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -9918,7 +10016,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 160);
       }, 140);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -10171,7 +10269,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -10179,7 +10277,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 150);
       }, 130);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -10373,7 +10471,7 @@ body.cf-modo .fin-block{display:none !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -10381,7 +10479,7 @@ body.cf-modo .fin-block{display:none !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 150);
       }, 120);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -10592,7 +10690,7 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -10600,7 +10698,7 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 160);
       }, 140);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -10779,7 +10877,7 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -10787,7 +10885,7 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 170);
       }, 150);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -10904,7 +11002,7 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -10912,7 +11010,7 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 170);
       }, 150);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -11330,7 +11428,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -11338,7 +11436,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 180);
       }, 160);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -11499,7 +11597,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -11507,7 +11605,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 180);
       }, 170);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -11735,7 +11833,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -11743,7 +11841,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 190);
       }, 180);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -11989,7 +12087,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -11997,7 +12095,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 200);
       }, 190);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -12183,7 +12281,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -12191,7 +12289,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 210);
       }, 200);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -12464,7 +12562,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -12472,7 +12570,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 190);
       }, 170);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -12753,7 +12851,7 @@ body.cf-modo .block .ex-tip{display:none}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -12761,7 +12859,7 @@ body.cf-modo .block .ex-tip{display:none}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 190);
       }, 180);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -13123,7 +13221,7 @@ body.cf-modo .block .ex-tip{display:none}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -13131,7 +13229,7 @@ body.cf-modo .block .ex-tip{display:none}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 200);
       }, 190);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -13825,7 +13923,7 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -13833,7 +13931,7 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 240);
       }, 220);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -14194,7 +14292,7 @@ body{font-size:var(--fz-body) !important}
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -14202,7 +14300,7 @@ body{font-size:var(--fz-body) !important}
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 260);
       }, 240);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     [400, 900, 1800, 3000, 5000].forEach(function(ms){ setTimeout(repintar, ms); });
     /* este módulo corre después de los que construyen las píldoras del bloque */
     if(typeof window.renderMain === 'function'){
@@ -14971,7 +15069,7 @@ body{
     repintar();
     var main = document.getElementById('mainContent') || document.body;
     var pend = false, propio = false;
-    new MutationObserver(function(){
+    window.CoachRepaintBus.register(function(){
       if(pend || propio) return;
       pend = true;
       setTimeout(function(){
@@ -14979,7 +15077,7 @@ body{
         try{ repintar(); }catch(e){}
         setTimeout(function(){ propio = false; }, 260);
       }, 250);
-    }).observe(main, { childList:true, subtree:true });
+    }, main);
     if(typeof window.renderMain === 'function'){
       var _rm = window.renderMain;
       window.renderMain = function(){
@@ -39136,5 +39234,353 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   });
   [900, 2200, 3800].forEach(function(ms){ setTimeout(montar, ms); });
   window.CoachCFSemana = { abrir: abrir, clasificar: clasificar, esCF: esCF };
+})();
+</script>
+
+<script>
+/* ============================================================
+   MÓDULO — SCROLL INFINITO SOBRE LA PAGINACIÓN EXISTENTE
+   Biblioteca (#exGrid) y el buscador del Builder (#mFind → #findGrid)
+   ya paginan en lotes de 24 en vez de volcar el catálogo entero al DOM.
+   Este módulo agrega el gesto de "scroll infinito" ENCIMA de esa
+   paginación sin tocar su lógica interna: en vez de reimplementar el
+   render (arriesgando romper los módulos que decoran cada tarjeta —
+   disciplinas, "sin video", biomecánica — que corren sobre el resultado
+   de cada renderLibrary()/renderFind()), simplemente simula un click en
+   el botón "Siguiente →" ya existente cuando el usuario se acerca al
+   final de la grilla. Cada avance sigue disparando la cadena completa
+   de renderLibrary()/renderFind() con todos sus wraps, así que la
+   decoración de las tarjetas nunca queda desactualizada. */
+(function(){
+  function armarSentinela(gridId){
+    var grid = document.getElementById(gridId);
+    if(!grid || !grid.parentNode) return null;
+    var sId = gridId + 'ScrollSentinel';
+    var s = document.getElementById(sId);
+    if(!s){
+      s = document.createElement('div');
+      s.id = sId;
+      s.style.cssText = 'height:1px;grid-column:1/-1';
+      grid.parentNode.insertBefore(s, grid.nextSibling);
+    }
+    return s;
+  }
+  function siguienteBtn(gridId){
+    var grid = document.getElementById(gridId);
+    if(!grid) return null;
+    var btns = grid.querySelectorAll('[data-lpage],[data-fpage]');
+    if(!btns.length) return null;
+    var btn = btns[btns.length - 1]; /* el nav siempre termina con "Siguiente →" */
+    return (btn && !btn.disabled) ? btn : null;
+  }
+  function observarScrollInfinito(gridId){
+    if(!('IntersectionObserver' in window)) return;
+    var sentinela = armarSentinela(gridId);
+    if(!sentinela || sentinela.__jpio) return;
+    sentinela.__jpio = 1;
+    new IntersectionObserver(function(entries){
+      if(!entries.some(function(en){ return en.isIntersecting; })) return;
+      var btn = siguienteBtn(gridId);
+      if(btn) btn.click();
+    }, { root:null, rootMargin:'600px' }).observe(sentinela);
+  }
+  function boot(){
+    observarScrollInfinito('exGrid');
+    observarScrollInfinito('findGrid');
+    /* el modal del Builder crea/recrea su contenido al abrirse: reintenta
+       montar el centinela cada vez por si el nodo cambió */
+    var _openFind = window.openFind;
+    if(typeof _openFind === 'function'){
+      window.openFind = function(){
+        var r = _openFind.apply(this, arguments);
+        setTimeout(function(){ observarScrollInfinito('findGrid'); }, 80);
+        return r;
+      };
+    }
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+  [500, 1500, 3000].forEach(function(ms){ setTimeout(boot, ms); });
+})();
+</script>
+
+<script>
+/* ============================================================
+   MÓDULO — CHECKOUT RÁPIDO DE FIN DE SESIÓN (RPE + fatiga articular)
+   Botón en la barra del Builder (misma barra donde vive "🍽️ Nutrición",
+   #v-builder .tools-in) que abre un panel de un toque para registrar
+   el RPE (1-10) y las zonas con fatiga/molestia articular del
+   alumno/a activo/a en el día que se está viendo. Se guarda dentro de
+   S.checkouts y persiste con la misma save() de siempre — como el
+   resto de S (alumnos, ejercicios, planes), viaja a Supabase con el
+   módulo de "Nube Multi-Dispositivo" ya existente la próxima vez que
+   se sincroniza, sin crear ni tocar ninguna tabla nueva.
+   ============================================================ */
+(function(){
+  function keyOf(ath, d){ return ath.id + '|' + d.id; }
+  function cerrar(){
+    const p = document.getElementById('jpCheckoutPanel');
+    if(p) p.remove();
+  }
+  function abrir(){
+    const ath = (typeof active === 'function') ? active() : null;
+    if(!ath){ if(typeof toast === 'function') toast('Elegí un alumno/a primero'); return; }
+    const d = (typeof curDay === 'function') ? curDay() : null;
+    if(!d){ if(typeof toast === 'function') toast('Abrí un día del plan primero'); return; }
+    cerrar();
+
+    S.checkouts = S.checkouts || {};
+    const k = keyOf(ath, d);
+    const prev = S.checkouts[k] || {};
+    const cur = { rpe: prev.rpe || null, zonas: (prev.zonas || []).slice() };
+
+    const panel = document.createElement('div');
+    panel.id = 'jpCheckoutPanel';
+    panel.className = 'card';
+    panel.style.cssText = 'margin:0 0 16px;border:1px solid rgba(210,121,63,.35);background:rgba(210,121,63,.04)';
+    panel.innerHTML =
+      '<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">' +
+        '<h3 style="margin:0">✅ Checkout de sesión — ' + esc((typeof fullName === 'function') ? fullName(ath) : '') + ' · ' + esc(d.short || '') + '</h3>' +
+        '<button type="button" class="icon-btn" id="jpCheckoutX">✕</button>' +
+      '</div>' +
+      '<label class="lb">Esfuerzo percibido (RPE 1–10)</label>' +
+      '<div class="jp-rpe-row" style="display:flex;flex-wrap:wrap;gap:5px;margin:6px 0 14px">' +
+        Array.from({ length: 10 }, function(_, i){
+          const n = i + 1, on = cur.rpe === n;
+          return '<button type="button" class="jp-rpe-chip" data-rpe="' + n + '" style="min-width:34px;padding:8px 0;border-radius:8px;border:1px solid ' +
+            (on ? '#D2793F' : 'var(--line)') + ';background:' + (on ? '#D2793F' : 'transparent') +
+            ';color:' + (on ? '#0A0A0C' : 'inherit') + ';font-weight:700;font-size:13px;cursor:pointer">' + n + '</button>';
+        }).join('') +
+      '</div>' +
+      '<label class="lb">¿Alguna zona con fatiga o molestia articular hoy?</label>' +
+      '<div class="jp-zona-row" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 14px">' +
+        ZONAS.map(function(z){
+          const on = cur.zonas.indexOf(z) >= 0;
+          return '<button type="button" class="jp-zona-chip" data-z="' + z + '" style="padding:7px 12px;border-radius:20px;border:1px solid ' +
+            (on ? '#D2793F' : 'var(--line)') + ';background:' + (on ? 'rgba(210,121,63,.16)' : 'transparent') +
+            ';color:' + (on ? '#D2793F' : 'inherit') + ';font-size:12px;cursor:pointer">' + (on ? '⚠️ ' : '') + esc(ZONA_LB[z]) + '</button>';
+        }).join('') +
+      '</div>' +
+      '<button type="button" class="btn gold" id="jpCheckoutSave">💾 Guardar checkout</button>' +
+      '<span id="jpCheckoutOk" style="margin-left:10px;font-size:12px;color:var(--teal,#4AA)"></span>';
+
+    const wrap = document.getElementById('builderWrap');
+    const head = document.getElementById('bHead');
+    if(wrap && head && head.parentNode) head.parentNode.insertBefore(panel, head.nextSibling);
+    else if(wrap) wrap.insertBefore(panel, wrap.firstChild);
+    else return;
+
+    panel.querySelector('#jpCheckoutX').addEventListener('click', cerrar);
+    panel.addEventListener('click', function(e){
+      const rpeBtn = e.target.closest('[data-rpe]');
+      if(rpeBtn){
+        cur.rpe = parseInt(rpeBtn.dataset.rpe, 10);
+        panel.querySelectorAll('.jp-rpe-chip').forEach(function(b){
+          const on = parseInt(b.dataset.rpe, 10) === cur.rpe;
+          b.style.background = on ? '#D2793F' : 'transparent';
+          b.style.borderColor = on ? '#D2793F' : 'var(--line)';
+          b.style.color = on ? '#0A0A0C' : 'inherit';
+        });
+        return;
+      }
+      const zBtn = e.target.closest('[data-z]');
+      if(zBtn){
+        const z = zBtn.dataset.z, idx = cur.zonas.indexOf(z);
+        if(idx >= 0) cur.zonas.splice(idx, 1); else cur.zonas.push(z);
+        const on = cur.zonas.indexOf(z) >= 0;
+        zBtn.style.borderColor = on ? '#D2793F' : 'var(--line)';
+        zBtn.style.background = on ? 'rgba(210,121,63,.16)' : 'transparent';
+        zBtn.style.color = on ? '#D2793F' : 'inherit';
+        zBtn.textContent = (on ? '⚠️ ' : '') + (ZONA_LB[z] || z);
+        return;
+      }
+      if(e.target.closest('#jpCheckoutSave')){
+        S.checkouts[k] = { rpe: cur.rpe, zonas: cur.zonas.slice(), ts: Date.now() };
+        save();
+        const ok = panel.querySelector('#jpCheckoutOk');
+        if(ok) ok.textContent = '✅ Guardado — sincroniza con el resto de tus datos';
+        if(typeof toast === 'function') toast('✅ Checkout guardado');
+      }
+    });
+  }
+  function boton(){
+    const barra = document.querySelector('#v-builder .tools-in');
+    if(!barra || document.getElementById('btnCheckout')) return;
+    const b = document.createElement('button');
+    b.className = 'btn ghost sm';
+    b.id = 'btnCheckout';
+    b.type = 'button';
+    b.textContent = '✅ Checkout de sesión';
+    b.addEventListener('click', abrir);
+    const ref = document.getElementById('btnNutri');
+    if(ref && ref.parentNode) ref.parentNode.insertBefore(b, ref.nextSibling);
+    else barra.appendChild(b);
+  }
+  if(window.CoachRepaintBus && window.CoachRepaintBus.register){
+    window.CoachRepaintBus.register(function(){ try{ boton(); }catch(e){} });
+  }
+  [400, 1200, 2500].forEach(function(ms){ setTimeout(function(){ try{ boton(); }catch(e){} }, ms); });
+})();
+</script>
+
+<style>
+/* ============================================================
+   MÓDULO — EXPORTADOR PDF MINIMALISTA (vista de impresión A4)
+   No reconstruye la prescripción a mano: imprime el propio #dayPanel
+   ya renderizado (misma fuente de verdad que ve el coach en pantalla,
+   sin duplicar la lógica de bloques/superseries/finishers) y solo
+   despoja de la hoja los controles de edición y la navegación.
+   ============================================================ */
+@media print{
+  @page{ size:A4; margin:14mm; }
+  body *{ visibility:hidden !important; }
+  #jpPrintHead, #jpPrintHead *,
+  #dayPanel, #dayPanel *{ visibility:visible !important; }
+  #jpPrintHead{ position:relative; margin-bottom:14px; }
+  #dayPanel{ position:absolute; left:0; top:0; width:100%; }
+  #jpPrintHead ~ #dayPanel{ margin-top:120px; }
+  .icon-btn, .btn, .find-btn, .qbar, .block-h button, [data-bmove], [data-bdup], [data-bdel],
+  .fx-vid, .pg, .alert.flash button{ display:none !important; }
+  input, select, textarea{
+    border:none !important; background:transparent !important; padding:2px 0 !important;
+    color:#111 !important; -webkit-appearance:none; appearance:none; box-shadow:none !important;
+  }
+  select{ -webkit-print-color-adjust:exact; }
+  .block{ break-inside:avoid; border:1px solid #ccc !important; background:#fff !important; margin-bottom:10px !important; }
+  .block-h{ background:#f2f2f2 !important; }
+  body, .block, .block-h, .fields, .f label, .lb{ color:#111 !important; }
+}
+</style>
+<script>
+(function(){
+  function imprimir(){
+    const ath = (typeof active === 'function') ? active() : null;
+    if(!ath){ if(typeof toast === 'function') toast('Elegí un alumno/a antes de exportar', 'err'); return; }
+    const d = (typeof curDay === 'function') ? curDay() : null;
+    if(!d || !d.bloques || !d.bloques.length){
+      if(typeof toast === 'function') toast('Este día todavía no tiene bloques para exportar', 'err');
+      return;
+    }
+    let head = document.getElementById('jpPrintHead');
+    if(!head){
+      head = document.createElement('div');
+      head.id = 'jpPrintHead';
+      head.style.display = 'none'; /* solo visible dentro de @media print */
+      const panel = document.getElementById('dayPanel');
+      if(panel && panel.parentNode) panel.parentNode.insertBefore(head, panel);
+      else document.body.insertBefore(head, document.body.firstChild);
+    }
+    const fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' });
+    head.innerHTML =
+      '<div style="font-family:inherit;border-bottom:2px solid #111;padding-bottom:10px;margin-bottom:12px">' +
+        '<div style="font-size:20px;font-weight:800">' + esc((typeof fullName === 'function') ? fullName(ath) : '') + '</div>' +
+        '<div style="font-size:13px;color:#333;margin-top:3px">' + esc(d.short || '') + (d.label ? ' · ' + esc(d.label) : '') + '</div>' +
+        '<div style="font-size:11px;color:#666;margin-top:2px">Coach JP Performance System · ' + esc(fecha) + '</div>' +
+      '</div>';
+    window.print();
+  }
+  const btn = document.getElementById('btnExportPdf');
+  if(btn) btn.addEventListener('click', imprimir);
+})();
+</script>
+
+<script>
+/* ============================================================
+   MÓDULO — GENERADOR DE LISTA DE COMPRAS (pestaña Nutrición)
+   No inventa gramajes: consolida los textos de "antes/durante/después"
+   que el coach ya escribió en la ficha de nutrición de CADA día del
+   plan (window.CoachNutri, del módulo de Nutrición de la Sesión),
+   deduplicando los ítems que se repiten entre días para armar una
+   lista de compras única, con opción de copiarla en texto limpio
+   para WhatsApp. 100% local (localStorage vía CoachNutri), no toca
+   Supabase ni el modelo de datos existente.
+   ============================================================ */
+(function(){
+  function norm(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim(); }
+  function extraerItems(texto){
+    if(!texto) return [];
+    return String(texto).split(/[·\n]/)
+      .map(function(s){ return s.replace(/^[\s\-•]+/, '').replace(/\.+\s*$/, '').trim(); })
+      .filter(function(s){ return s.length > 1; });
+  }
+  function generarLista(athId){
+    const cn = window.CoachNutri;
+    if(!cn || typeof cn.ficha !== 'function' || typeof plan !== 'function') return null;
+    const f = cn.ficha(athId);
+    const p = plan(athId);
+    const dias = (p && p.dias) || [];
+    const vistos = {};
+    const orden = [];
+    let diasConDatos = 0;
+    dias.forEach(function(d){
+      const dia = (f.dias || {})[d.id];
+      if(!dia) return;
+      let tuvoAlgo = false;
+      ['pre', 'intra', 'post', 'nota'].forEach(function(k){
+        extraerItems(dia[k]).forEach(function(item){
+          tuvoAlgo = true;
+          const n = norm(item);
+          if(!n || vistos[n]) return;
+          vistos[n] = 1;
+          orden.push(item);
+        });
+      });
+      if(tuvoAlgo) diasConDatos++;
+    });
+    return { items: orden, diasConDatos: diasConDatos, totalDias: dias.length };
+  }
+  function ensureBox(){
+    const modal = document.getElementById('mNutri');
+    if(!modal || modal.querySelector('.nt-shop')) return;
+    const legal = modal.querySelector('.nt-legal');
+    if(!legal || !legal.parentNode) return;
+    const box = document.createElement('div');
+    box.className = 'nt-shop';
+    box.style.cssText = 'margin-top:14px;padding:12px 13px;border-radius:12px;background:rgba(210,121,63,.06);border:1px dashed rgba(210,121,63,.35)';
+    box.innerHTML =
+      '<div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">' +
+        '<button type="button" class="btn ghost sm" id="ntShopBtn">🛒 Generar lista de compras de la semana</button>' +
+        '<span style="font-size:11px;color:#8B93A0">Junta lo escrito en "antes/durante/después" de todos los días del plan.</span>' +
+      '</div>' +
+      '<div id="ntShopResult" style="display:none;margin-top:10px"></div>';
+    legal.parentNode.insertBefore(box, legal);
+
+    box.querySelector('#ntShopBtn').addEventListener('click', function(){
+      const a = (typeof active === 'function') ? active() : null;
+      if(!a){ if(typeof toast === 'function') toast('Elegí un alumno/a primero'); return; }
+      const res = generarLista(a.id);
+      const out = box.querySelector('#ntShopResult');
+      if(!res || !res.items.length){
+        out.style.display = '';
+        out.innerHTML = '<div class="hint">Todavía no hay notas de nutrición cargadas en ningún día de este plan — escribí al menos un día (arriba) y volvé a generar.</div>';
+        return;
+      }
+      const nombreAth = (typeof fullName === 'function') ? fullName(a) : (a.nombre || '');
+      const texto = '🛒 Lista de compras — ' + nombreAth + '\n' +
+        '(a partir de ' + res.diasConDatos + ' de ' + res.totalDias + ' días con nutrición cargada)\n\n' +
+        res.items.map(function(it){ return '• ' + it; }).join('\n');
+      out.style.display = '';
+      out.innerHTML =
+        '<div style="font-size:11px;color:#8B93A0;margin-bottom:6px">' + res.diasConDatos + ' de ' + res.totalDias + ' días con nutrición cargada · ' + res.items.length + ' ítem(s)</div>' +
+        '<ul style="margin:0 0 10px 18px;padding:0;font-size:13px;line-height:1.7;color:#DADFE4">' +
+          res.items.map(function(it){ return '<li>' + esc(it) + '</li>'; }).join('') +
+        '</ul>' +
+        '<button type="button" class="btn xs gold" id="ntShopCopy">📋 Copiar para WhatsApp</button>' +
+        '<span id="ntShopOk" style="margin-left:8px;font-size:12px;color:#8FD19E"></span>';
+      out.querySelector('#ntShopCopy').addEventListener('click', function(){
+        const ok = out.querySelector('#ntShopOk');
+        function marcarOk(){ if(ok) ok.textContent = '✅ Copiado'; try{ if(navigator.vibrate) navigator.vibrate(15); }catch(x){} }
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(texto).then(marcarOk).catch(function(){
+            if(ok) ok.textContent = '⚠️ No se pudo copiar — seleccioná el texto manualmente';
+          });
+        } else if(ok){ ok.textContent = '⚠️ Copiado no disponible en este navegador'; }
+      });
+    });
+  }
+  if(window.CoachRepaintBus && window.CoachRepaintBus.register){
+    window.CoachRepaintBus.register(function(){ try{ ensureBox(); }catch(e){} });
+  }
+  [400, 1200, 2500].forEach(function(ms){ setTimeout(function(){ try{ ensureBox(); }catch(e){} }, ms); });
 })();
 </script>
