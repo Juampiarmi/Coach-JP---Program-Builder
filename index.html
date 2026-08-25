@@ -518,6 +518,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
 
         <div class="card" style="margin-bottom:16px">
           <h3>📅 Configuración de Mesociclo (4 semanas)</h3>
+          <div id="mesoDiscNote" class="hint" style="margin:-6px 0 12px"></div>
           <div class="week-grid" id="weekGrid"></div>
         </div>
 
@@ -860,10 +861,10 @@ window.CoachCat = { color:function(c){ return CAT_COLOR[c] || '#828A97'; },
 /* Semanas por defecto del mesociclo (contrato WEEKS_META del script base) */
 function defaultWeeks(){
   return [
-    {n:1, short:'S1', name:'Semana 1', phase:'Aclimatación', rpe:'RPE 7-8 (RIR 2-3)', icon:'🎯', deload:false, fail:false, amrapMinutes:12, hyroxNote:'RPE 8-9 — técnica pulcra por encima de la velocidad.', note:'Ajustás cargas y técnica en las anclas pesadas de cada día — todavía no buscás el límite.'},
-    {n:2, short:'S2', name:'Semana 2', phase:'Sobrecarga I', rpe:'RPE 8-9 (RIR 1-2)', icon:'📈', deload:false, fail:false, amrapMinutes:10, hyroxNote:'RPE 8-9 — mismo esfuerzo, 2 minutos menos.', note:'Progresión real en kg o repeticiones sobre las anclas pesadas de la semana pasada.'},
-    {n:3, short:'S3', name:'Semana 3', phase:'Pico + Fallo Técnico', rpe:'RPE 9-10 (RIR 1-0)', icon:'🔥', deload:false, fail:true, amrapMinutes:8, hyroxNote:'RPE 9 — el bloque más intenso del mesociclo, en el tiempo más corto.', note:'Última serie efectiva de cada ancla a fallo técnico controlado. Finishers intensificados.'},
-    {n:4, short:'S4', name:'Semana 4', phase:'Descarga (Deload)', rpe:'RPE 7', icon:'🧊', deload:true, fail:false, amrapMinutes:null, hyroxNote:'Zona 2 — intensidad conversacional, sin buscar esfuerzo.', note:'Alrededor de 40% menos series efectivas para disipar la fatiga acumulada.'}
+    {n:1, short:'S1', name:'Semana 1', phase:'Aclimatación / Carga Base', rpe:'RPE 7-8 (RIR 3-2)', icon:'🎯', deload:false, fail:false, amrapMinutes:12, hyroxNote:'RPE 8-9 — técnica pulcra por encima de la velocidad.', note:'Ajustás cargas y técnica en las anclas pesadas de cada día — todavía no buscás el límite.'},
+    {n:2, short:'S2', name:'Semana 2', phase:'Sobrecarga Progresiva I', rpe:'RPE 8-9 (RIR 2-1)', icon:'📈', deload:false, fail:false, amrapMinutes:10, hyroxNote:'RPE 8-9 — mismo esfuerzo, 2 minutos menos.', note:'Progresión real en kg o repeticiones sobre las anclas pesadas de la semana pasada.'},
+    {n:3, short:'S3', name:'Semana 3', phase:'Pico de Exigencia / Sobrecarga Máxima', rpe:'RPE 9-10 (RIR 1-0)', icon:'🔥', deload:false, fail:true, amrapMinutes:8, hyroxNote:'RPE 9 — el bloque más intenso del mesociclo, en el tiempo más corto.', note:'Última serie efectiva de cada ancla a fallo técnico controlado. Finishers intensificados.'},
+    {n:4, short:'S4', name:'Semana 4', phase:'Descarga Fisiológica (Deload)', rpe:'RPE 6-7 (RIR 4)', icon:'🧊', deload:true, fail:false, amrapMinutes:null, hyroxNote:'Zona 2 — intensidad conversacional, sin buscar esfuerzo.', note:'Alrededor de 40-50% menos series efectivas para disipar la fatiga central y articular acumulada.'}
   ];
 }
 function defaultMeta(ath){
@@ -2109,8 +2110,34 @@ function renderBuilder(){
     '</div>';
 
   /* ---------- Mesociclo (WEEKS_META) ---------- */
+  /* Disciplina activa del mesociclo — la única fuente de verdad para decidir
+     qué texto de progresión mostrar. Nunca se confía en un texto guardado
+     (w.note) para esto: se deriva de p.meta.mesoDisc en cada render, así que
+     si el mesociclo cambia de disciplina el rótulo se actualiza solo. */
+  const esCrossfitActivo = !!(p.meta && p.meta.mesoDisc === 'crossfit');
+  /* Auto-reparación: un mesociclo NO-CrossFit nunca debería quedar con menos
+     de 4 semanas ni con la nota modular de CrossFit pisada encima (puede pasar
+     si el mesociclo pasó por CrossFit — que desacopla a 1 semana — y después
+     volvió a Bodybuilding/Fuerza/Hipertrofia sin que nadie reconstruyera las
+     4 semanas tradicionales). Sólo toca semanas que están vacías/sin prescribir
+     de verdad — nunca pisa una Semana 1 con contenido real ya cargado. */
+  if(!esCrossfitActivo){
+    const pareceModularCF = p.meso.some(w => /ajuste es semanal/i.test(w.note||''));
+    if(p.meso.length < 4 || pareceModularCF){
+      const base = defaultWeeks();
+      const s1Real = p.meso[0] && !pareceModularCF ? p.meso[0] : null;
+      p.meso = base.map((w,i) => (i === 0 && s1Real) ? Object.assign({}, w, s1Real, {phase:w.phase}) : w);
+      save();
+    }
+  }
+  $('#mesoDiscNote').innerHTML = esCrossfitActivo
+    ? '<span class="pill" style="background:rgba(124,197,232,.14);border-color:rgba(124,197,232,.4);color:#7CC5E8">🧩 CrossFit — modular semana a semana</span> ' +
+      '<span style="color:var(--muted)">cada semana se prescribe y se ajusta por separado, no hay una plantilla de 4 semanas fija.</span>'
+    : '<span class="pill gold">📈 Progresión tradicional</span> ' +
+      '<span style="color:var(--muted)">' + p.meso.map(w => '<b style="color:var(--txt-2)">' + esc(w.short) + '</b>: ' + esc(w.phase)).join(' → ') + '</span>';
+
   $('#weekGrid').innerHTML = p.meso.map((w,i) =>
-    '<div class="week-box ' + (w.deload ? 'deload' : '') + '">' +
+    '<div class="week-box ' + (w.deload ? 'deload' : '') + '" data-wk="' + i + '" id="weekBox-' + i + '">' +
       '<div class="wt">' + esc(w.icon||'🎯') + ' ' + esc(w.name) + '</div>' +
       '<div class="row" style="gap:6px">' +
         '<div style="width:58px"><label class="lb">Chip</label><input data-w="' + i + '" data-wf="short" value="' + esc(w.short) + '"></div>' +
@@ -39582,5 +39609,194 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     window.CoachRepaintBus.register(function(){ try{ ensureBox(); }catch(e){} });
   }
   [400, 1200, 2500].forEach(function(ms){ setTimeout(function(){ try{ ensureBox(); }catch(e){} }, ms); });
+})();
+</script>
+
+<style>
+/* ============================================================
+   MÓDULO — MESOCICLO TRADICIONAL: BARRA DE SEMANAS + GENERADOR
+   ONDULADO. Mismo lenguaje visual que #jpCfBar (MÓDULO 30) pero en
+   acento cobre en vez de celeste, para no confundir "modular CF"
+   con "mesociclo tradicional de 4 semanas".
+   ============================================================ */
+#jpWkBar{
+  display:none;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px;
+  padding:10px 13px;border-radius:12px;background:#141920;border:1px solid rgba(210,121,63,.28);
+}
+#jpWkBar.on{display:flex}
+#jpWkBar .lb{
+  font-family:var(--ffh);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--gold);font-weight:700;
+}
+#jpWkBar .sem{display:flex;gap:6px;flex-wrap:wrap}
+#jpWkBar .sem .s{
+  min-height:32px;padding:0 14px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:700;
+  background:transparent;border:1px solid var(--line-2);color:var(--txt-2);
+}
+#jpWkBar .sem .s:hover{border-color:var(--gold);color:var(--gold)}
+#jpWkBar .sp{flex:1}
+#jpWkBar button.acc{
+  min-height:34px;padding:0 13px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.04);border:1px solid var(--line-2);color:var(--txt-2);
+  font-family:var(--ffh);font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+}
+#jpWkBar button.acc.ia{border-color:rgba(210,121,63,.5);color:#E8965E}
+#jpWkBar button.acc.ia:hover{background:rgba(210,121,63,.12)}
+
+.week-box.wk-flash{animation:jpWkFlash 1.4s ease-out}
+@keyframes jpWkFlash{
+  0%{box-shadow:0 0 0 2px rgba(210,121,63,.65);border-color:rgba(210,121,63,.65)}
+  100%{box-shadow:0 0 0 0 rgba(210,121,63,0)}
+}
+</style>
+
+<script>
+/* ============================================================
+   MÓDULO — MESOCICLO TRADICIONAL: BARRA DE SEMANAS + GENERADOR
+   ONDULADO (con IA opcional)
+   Para disciplinas NO-CrossFit (Bodybuilding / Fuerza / Hipertrofia):
+   · Barra superior con píldoras S1..S4 para saltar/resaltar la
+     tarjeta de esa semana en #weekGrid — alternancia fluida entre
+     semanas sin salir del Builder.
+   · Botón "Analizar S1 y Proyectar Mesociclo Ondulado (S1-S4)":
+     toma la Semana 1 ya cargada por el coach como base y completa
+     S2-S4 con la ondulación de carga estándar (RIR, notas, deload).
+     Los ejercicios/bloques del día son compartidos por las 4
+     semanas — lo que cambia semana a semana es la prescripción de
+     esfuerzo (RIR objetivo, si es semana de fallo técnico, si es
+     descarga), exactamente el mismo campo que ya edita el coach a
+     mano en cada tarjeta de #weekGrid.
+   No corre para CrossFit: ese caso ya tiene su propio flujo modular
+   semana a semana (#jpCfBar, MÓDULO 30 — CROSSFIT MODULAR) y no se
+   toca acá.
+   ============================================================ */
+(function(){
+  function esCrossfit(){
+    try{
+      var a = active(); if(!a) return false;
+      var p = plan(a.id);
+      return !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
+    }catch(e){ return false; }
+  }
+
+  function barra(){
+    var host = document.querySelector('#v-builder .topbar');
+    if(!host) return null;
+    var b = document.getElementById('jpWkBar');
+    if(!b){
+      b = document.createElement('div');
+      b.id = 'jpWkBar';
+      host.parentNode.insertBefore(b, host.nextSibling);
+      b.addEventListener('click', function(e){
+        var s = e.target.closest('[data-wkjump]');
+        if(s){
+          var box = document.getElementById('weekBox-' + s.dataset.wkjump);
+          if(box){
+            box.scrollIntoView({ behavior:'smooth', block:'center' });
+            box.classList.add('wk-flash');
+            setTimeout(function(){ box.classList.remove('wk-flash'); }, 1400);
+          }
+          return;
+        }
+        if(e.target.closest('#jpWkGen')){ generarOndulado(); return; }
+      });
+    }
+    return b;
+  }
+
+  function pintarBarra(){
+    var b = barra(); if(!b) return;
+    if(esCrossfit()){ b.classList.remove('on'); return; }
+    var a = active(); if(!a){ b.classList.remove('on'); return; }
+    var p = plan(a.id);
+    if(!p.meso || !p.meso.length){ b.classList.remove('on'); return; }
+    b.classList.add('on');
+    b.innerHTML =
+      '<span class="lb">Mesociclo · 4 semanas</span>' +
+      '<span class="sem">' + p.meso.map(function(w, i){
+        return '<button type="button" class="s" data-wkjump="' + i + '" title="' + esc(w.phase || '') + '">' +
+          esc(w.short || ('S' + (i + 1))) + '</button>';
+      }).join('') + '</span>' +
+      '<span class="sp"></span>' +
+      '<button type="button" class="acc ia" id="jpWkGen">⚡ Analizar S1 y Proyectar Mesociclo Ondulado (S1–S4) con IA</button>';
+  }
+
+  /* ---------------------------------------------------------
+     Ondulación de carga — S1 ya cargada por el coach como base.
+     S2 Intensificación · S3 Pico/Overreaching técnico · S4 Deload.
+  --------------------------------------------------------- */
+  function escalarMinutos(base, factor){
+    if(base == null) return null;
+    var n = Math.round(base * factor);
+    return n > 0 ? n : null;
+  }
+
+  function generarOndulado(){
+    var a = active();
+    if(!a){ toast('Elegí un alumno/a primero', 'err'); return; }
+    if(esCrossfit()){ toast('En CrossFit cada semana se prescribe por separado — esta herramienta es para mesociclos tradicionales', 'err'); return; }
+    var p = plan(a.id);
+    if(!p.dias.some(function(d){ return d.bloques && d.bloques.length; })){
+      toast('Cargá al menos un bloque en la Semana 1 antes de proyectar el mesociclo', 'err');
+      return;
+    }
+    if(!confirm('Esto reescribe la prescripción (RIR, notas, deload) de S2, S3 y S4 a partir de lo que hay en S1. ¿Continuar?')) return;
+
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Proyectar mesociclo ondulado');
+
+    var base = defaultWeeks();
+    var s1 = p.meso[0] || base[0];
+    p.meso = [
+      Object.assign({}, base[0], s1, { phase: s1.phase || base[0].phase }),
+      Object.assign({}, base[1], {
+        rpe:'RPE 8-9 (RIR 2-1)', deload:false, fail:false,
+        amrapMinutes: escalarMinutos(s1.amrapMinutes, 0.83),
+        hyroxNote: s1.hyroxNote ? 'RPE 8-9 — mismo esfuerzo, algo menos de tiempo.' : '',
+        note:'Intensificación — subís carga (~75-80% de tu referencia) y sumás series accesorias sobre la base de S1.'
+      }),
+      Object.assign({}, base[2], {
+        rpe:'RPE 9-10 (RIR 1-0)', deload:false, fail:true,
+        amrapMinutes: escalarMinutos(s1.amrapMinutes, 0.67),
+        hyroxNote: s1.hyroxNote ? 'RPE 9-10 — el bloque más exigente del mesociclo.' : '',
+        note:'Pico de exigencia — carga máxima (~82-87%) sin perder técnica ni degradar el patrón de movimiento.'
+      }),
+      Object.assign({}, base[3], {
+        rpe:'RPE 6-7 (RIR 4)', deload:true, fail:false,
+        amrapMinutes: null,
+        hyroxNote: s1.hyroxNote ? 'Zona 2 — intensidad conversacional, sin buscar esfuerzo.' : '',
+        note:'Descarga fisiológica — 40-50% menos series efectivas e intensidad ~60% para disipar la fatiga central y articular.'
+      })
+    ];
+    save();
+    if(typeof renderBuilder === 'function') renderBuilder();
+    toast('⚡ Mesociclo ondulado proyectado — S2, S3 y S4 actualizadas');
+
+    /* enriquecimiento opcional con IA real: nunca bloquea ni reemplaza la
+       lógica determinística de arriba, que ya corrió y ya se guardó. */
+    if(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave() && typeof CoachAI.generarTexto === 'function'){
+      CoachAI.generarTexto(
+        'Sos coach de fuerza/hipertrofia. Semana 1 del mesociclo: ' + (s1.note || s1.phase || '') +
+        '. Proyecté S2 con RIR 2-1 (~75-80%), S3 con RIR 1-0 (~82-87%, pico) y S4 deload con RIR 4 (~40-50% menos series, ~60% intensidad). ' +
+        'Escribí una oración breve, en español rioplatense, confirmando la lógica de la ondulación para este alumno.',
+        'Respondés en una sola oración de texto plano, sin listas ni títulos.'
+      ).then(function(r){
+        var txt = (r || '').trim();
+        if(!txt) return;
+        var pp = plan(a.id);
+        if(pp && pp.meso && pp.meso[0]) pp.meso[0].note = (pp.meso[0].note ? pp.meso[0].note + ' ' : '') + txt;
+        save();
+        if(typeof renderBuilder === 'function') renderBuilder();
+      }).catch(function(){});
+    }
+  }
+  window.CoachMesoOndulado = { generar: generarOndulado, esCrossfit: esCrossfit };
+
+  ['renderBuilder','renderDay','go'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jpwk) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(pintarBarra, 100); return r; };
+    w.__jpwk = 1; window[fn] = w;
+  });
+  [900, 2200, 3800].forEach(function(ms){ setTimeout(pintarBarra, ms); });
 })();
 </script>
