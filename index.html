@@ -15,7 +15,7 @@
 <title>Coach JP — Ultimate Multi-Athlete Routine Builder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <script>
 /* ---- blindaje de consola: algunos visores embebidos recortan console.* ---- */
 (function(){
@@ -36,6 +36,7 @@
   --r:14px; --r-sm:10px;
   --ff:'Inter','Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
   --ffh:'Barlow Condensed','Oswald','Inter','Segoe UI',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono','SF Mono','Consolas',monospace;
   --shadow:0 18px 44px rgba(0,0,0,.55);
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -2996,6 +2997,24 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .fatigue-btn[data-level="red"].active { background: rgba(124,197,232,0.14); border-color: rgba(124,197,232,0.5); color: var(--red-light); box-shadow: 0 0 14px rgba(124,197,232,0.15); }
   .fatigue-suggestion { margin-top: 12px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.6; padding-top: 12px; border-top: 1px solid var(--border-subtle); display: none; }
   .fatigue-suggestion.show { display: block; }
+  /* ---- Readiness Score: checklist de entrada de 3 toques ---- */
+  .readiness-card{ border-radius:var(--radius-lg);padding:16px 18px 14px;margin-bottom:1.25rem;background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:14px; }
+  .readiness-card .fatigue-card-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:0}
+  .rdy-eyebrow{font-family:'Inter',sans-serif;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-secondary);font-weight:600}
+  .rdy-q{display:flex;flex-direction:column;gap:8px}
+  .rdy-lb{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-secondary);font-weight:700}
+  .rdy-seg{display:flex;background:var(--bg-elevated);border:1px solid var(--border);border-radius:11px;padding:3px;gap:3px}
+  .rdy-seg button{flex:1;padding:9px 4px;border-radius:8px;border:none;background:transparent;color:var(--text-primary);font-weight:700;font-size:.78rem;font-family:'Inter',sans-serif;cursor:pointer;transition:.15s}
+  .rdy-seg button.on{background:linear-gradient(135deg,var(--gold),#E8965E);color:#08090B;box-shadow:0 6px 14px rgba(210,121,63,.28)}
+  .rdy-pills{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:8px}
+  .rdy-pill{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 8px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text-primary);font-weight:700;font-size:.78rem;font-family:'Inter',sans-serif;cursor:pointer;transition:.15s}
+  .rdy-pill.on{border-color:rgba(210,121,63,.6);background:rgba(210,121,63,.14);color:var(--gold)}
+  .rdy-pill .flag{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px rgba(210,121,63,.7)}
+  .rdy-advisory{display:flex;gap:11px;padding:12px 13px;border-radius:var(--radius-sm);font-size:.76rem;line-height:1.55;border:1px solid rgba(210,121,63,.45);background:linear-gradient(90deg,rgba(210,121,63,.16),rgba(210,121,63,.04));color:#FFDDB4}
+  .rdy-advisory svg{flex:0 0 auto;margin-top:1px;color:var(--gold)}
+  .rdy-advisory b{color:var(--gold)}
+  #rdyAdvisory:empty{display:none}
+  @media(max-width:480px){ .rdy-pills{grid-template-columns:repeat(2,1fr)} }
   .safety-banner { border-radius: var(--radius-lg); padding: 14px 18px; margin-bottom: 1.25rem; background: rgba(74,147,184,0.055); border: 1px solid rgba(74,147,184,0.22); box-shadow: var(--shadow-sm); display: flex; gap: 12px; }
   .safety-banner .sb-icon { font-size: 1.2rem; line-height: 1.3; flex-shrink: 0; }
   .safety-banner-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.85rem; color: var(--teal); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
@@ -3704,11 +3723,40 @@ function videoLinkHtml(name){
   return '';
 }
 window.buscarVideo = buscarVideo;
+/* CoachRepaintBus — shim local para esta app exportada (standalone).
+   Los módulos de este documento llaman window.CoachRepaintBus.register(fn, target)
+   asumiendo el mismo bus que existe en el dashboard del coach, pero esta página
+   compilada corre en un documento aparte (ver brief del proyecto: TEMPLATE_HTML
+   no comparte scope con index.html) — sin este shim, cada .register() lanzaba
+   "Cannot read properties of undefined" al cargar. Misma implementación/API,
+   solo que vive acá también. */
+if(!window.CoachRepaintBus){
+  window.CoachRepaintBus = (function(){
+    const registry = new Map();
+    return {
+      register(fn, target){
+        const node = target || document.getElementById('mainContent') || document.body;
+        let entry = registry.get(node);
+        if(!entry){
+          entry = { handlers: [] };
+          entry.observer = new MutationObserver(muts => {
+            for(let i = 0; i < entry.handlers.length; i++){
+              try{ entry.handlers[i](muts); }catch(e){ console.warn('CoachRepaintBus handler', e); }
+            }
+          });
+          entry.observer.observe(node, { childList:true, subtree:true, characterData:true });
+          registry.set(node, entry);
+        }
+        entry.handlers.push(fn);
+      }
+    };
+  })();
+}
 /* =========================================================
    STATE
 ========================================================= */
 const STORAGE_KEY = '{{STORAGE_KEY}}';
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90 };
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{} };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -3723,14 +3771,17 @@ function loadProgress(){
         state.loads = parsed.loads || {};
         state.notes = parsed.notes || {};
         state.checkout = parsed.checkout || {};
+        state.sleep = parsed.sleep || {};
+        state.readinessPain = parsed.readinessPain || {};
+        state.videoLinks = parsed.videoLinks || {};
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
     }
-  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; }
+  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; }
 }
 function saveProgress(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, mode: state.mode, currentWeek: state.currentWeek })); }catch(e){}
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek })); }catch(e){}
 }
 function isBlockDone(weekIdx, dayId, blockId){
   return !!(state.completed[weekIdx] && state.completed[weekIdx][dayId] && state.completed[weekIdx][dayId][blockId]);
@@ -3793,6 +3844,90 @@ const FATIGUE_SUGGESTIONS = {
   red:'Priorizá técnica sobre carga: hacé solo los bloques principales a RPE 6-7, saltate finisher y Hyrox, y cerrá con 10 minutos de cardio suave si el cuerpo lo pide. Mañana es otro día.'
 };
 /* =========================================================
+   READINESS SCORE — checklist de entrada de 3 toques
+   (sueño · estrés/energía · molestias). El estrés/energía reusa
+   el mismo state.fatigue/getFatigue/setFatigue de siempre (verde
+   = alta energía) para no duplicar almacenamiento; sueño y
+   molestias son estado nuevo, propio de este checklist.
+========================================================= */
+const READINESS_PAIN_ZONES = ['Rodilla', 'Espalda baja', 'Hombro', 'Cadera', 'Tobillo'];
+function getSleep(weekIdx, dayId){ return state.sleep[fatigueKey(weekIdx, dayId)] || null; }
+function setSleep(weekIdx, dayId, val){
+  state.sleep[fatigueKey(weekIdx, dayId)] = val;
+  saveProgress();
+  if(window.CoachOutbox && window.CoachOutbox.encolar){
+    window.CoachOutbox.encolar({ tipo:'readiness_sueno', valor:val, semana:weekIdx, dia:dayId });
+  }
+}
+function getPainZones(weekIdx, dayId){ return state.readinessPain[fatigueKey(weekIdx, dayId)] || []; }
+function togglePainZone(weekIdx, dayId, zona){
+  const k = fatigueKey(weekIdx, dayId);
+  let arr = (state.readinessPain[k] || []).slice();
+  if(zona === null){ arr = []; }
+  else if(arr.indexOf(zona) >= 0){ arr = arr.filter(function(z){ return z !== zona; }); }
+  else { arr.push(zona); }
+  state.readinessPain[k] = arr;
+  saveProgress();
+  if(arr.length && window.CoachOutbox && window.CoachOutbox.encolar){
+    window.CoachOutbox.encolar({ tipo:'readiness_molestia', zonas:arr, semana:weekIdx, dia:dayId });
+  }
+  return arr;
+}
+function readinessAdvisory(zonas){
+  if(!zonas || !zonas.length) return '';
+  const lista = zonas.join(' · ');
+  return '<div class="rdy-advisory"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>' +
+    '<div><b>Molestia en ' + lista.toLowerCase() + '</b> — hoy autoregulamos: sumá +1 RIR y evitá el rango de dolor en los ejercicios que la comprometan. Marcá el bloque afectado con 🩹 si necesitás avisar al coach en tiempo real.</div></div>';
+}
+function renderReadinessCard(weekIdx, day){
+  const sleepVal = getSleep(weekIdx, day.id);
+  const stressVal = getFatigue(weekIdx, day.id);
+  const zonas = getPainZones(weekIdx, day.id);
+  const seg = function(name, opts, cur){
+    return '<div class="rdy-seg" data-rdy-seg="' + name + '">' + opts.map(function(o){
+      return '<button type="button" class="' + (cur===o.v?'on':'') + '" data-v="' + o.v + '">' + o.l + '</button>';
+    }).join('') + '</div>';
+  };
+  return '<div class="readiness-card" id="readinessCard">' +
+    '<div class="fatigue-card-title">¿Cómo llegás hoy? <span class="rdy-eyebrow">Check de entrada · 3 toques</span></div>' +
+    '<div class="rdy-q"><div class="rdy-lb">Calidad de sueño</div>' + seg('sleep', [{v:'optima',l:'Óptima'},{v:'regular',l:'Regular'},{v:'mala',l:'Mala'}], sleepVal) + '</div>' +
+    '<div class="rdy-q"><div class="rdy-lb">Nivel de estrés / energía</div>' + seg('stress', [{v:'green',l:'Alto'},{v:'yellow',l:'Medio'},{v:'red',l:'Bajo'}], stressVal) + '</div>' +
+    '<div class="rdy-q"><div class="rdy-lb">Molestias específicas</div><div class="rdy-pills" id="rdyPills">' +
+      '<button type="button" class="rdy-pill' + (!zonas.length?' on':'') + '" data-zona="">Ninguna</button>' +
+      READINESS_PAIN_ZONES.map(function(z){
+        return '<button type="button" class="rdy-pill' + (zonas.indexOf(z)>=0?' on':'') + '" data-zona="' + z + '"><span class="flag"></span>' + z + '</button>';
+      }).join('') +
+    '</div></div>' +
+    '<div id="rdyAdvisory">' + readinessAdvisory(zonas) + '</div>' +
+  '</div>';
+}
+function wireReadinessCheckin(day, weekIdx){
+  const card = document.getElementById('readinessCard');
+  if(!card) return;
+  card.addEventListener('click', function(e){
+    const zBtn = e.target.closest('.rdy-pill');
+    if(zBtn){
+      const zona = zBtn.getAttribute('data-zona');
+      const zonas = togglePainZone(weekIdx, day.id, zona || null);
+      card.querySelectorAll('.rdy-pill').forEach(function(b){
+        const bz = b.getAttribute('data-zona');
+        b.classList.toggle('on', bz ? zonas.indexOf(bz) >= 0 : zonas.length === 0);
+      });
+      const host = document.getElementById('rdyAdvisory');
+      if(host) host.innerHTML = readinessAdvisory(zonas);
+      return;
+    }
+    const seg = e.target.closest('.rdy-seg');
+    if(seg && e.target.tagName === 'BUTTON'){
+      const v = e.target.getAttribute('data-v');
+      seg.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === e.target); });
+      if(seg.getAttribute('data-rdy-seg') === 'sleep') setSleep(weekIdx, day.id, v);
+      else if(seg.getAttribute('data-rdy-seg') === 'stress') setFatigue(weekIdx, day.id, v);
+      return;
+    }
+  });
+}
+/* =========================================================
    AUDIO
 ========================================================= */
 let _audioCtx = null;
@@ -3809,7 +3944,11 @@ function unlockAudio(){
 }
 ['touchstart','pointerdown','click'].forEach(function(evt){ document.addEventListener(evt, resumeAudioCtx, { passive: true }); });
 document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') resumeAudioCtx(); });
+function isAudioMuted(){
+  try{ return localStorage.getItem('jp_audio_muted') === '1'; }catch(e){ return false; }
+}
 function playBeep(freq, dur, peakGain, delay, type){
+  if(isAudioMuted()) return;
   try{
     const ctx = ensureAudioCtx(); resumeAudioCtx();
     const start = ctx.currentTime + (delay || 0);
@@ -3827,6 +3966,8 @@ function beepCountdown(){ playBeep(1046, 0.1, 0.55, 0, 'triangle'); }
 function beepGo(){ playBeep(1568, 0.11, 0.7, 0, 'triangle'); playBeep(2093, 0.28, 0.65, 0.1, 'triangle'); }
 function beepStop(){ playBeep(392, 0.16, 0.55, 0, 'sine'); playBeep(330, 0.4, 0.55, 0.16, 'sine'); }
 function beepFinish(){ playBeep(1046, 0.13, 0.6, 0, 'triangle'); playBeep(1318, 0.13, 0.6, 0.16, 'triangle'); playBeep(1568, 0.13, 0.6, 0.32, 'triangle'); playBeep(2093, 0.4, 0.7, 0.48, 'triangle'); }
+/* click discreto al tildar una serie — mismo gate de mute que el resto (isAudioMuted) */
+function beepSetCheck(on){ playBeep(on ? 1318 : 660, 0.055, 0.32, 0, 'triangle'); }
 /* =========================================================
    HÁPTICA CENTRAL · Web Vibration API con degradado silencioso
    iOS/Safari no expone navigator.vibrate: se detecta una sola vez,
@@ -4277,6 +4418,31 @@ function bloqueNotasHtml(block, day, weekIdx){
     '<textarea class="block-note-input" data-note-key="' + k + '" rows="2" placeholder="Sensaciones, molestias o ajustes de hoy...">' +
     val.replace(/</g,'&lt;') + '</textarea></div>';
 }
+/* Buzón de feedback en video — colapsable, solo en ejercicios principales
+   (category === 'strength'). El alumno pega el link de su video de técnica;
+   se guarda localmente y se encola a CoachOutbox para que el coach lo vea. */
+function escHtmlSafe(s){
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function videoFeedbackHtml(block, day, weekIdx){
+  if(block.category !== 'strength') return '';
+  const k = notesKey(weekIdx, day.id, block.id);
+  const links = (state.videoLinks && state.videoLinks[k]) || [];
+  return '<details class="video-fb"><summary class="video-fb-sum">' +
+      '<span class="vfb-ic">🎥</span><span class="vfb-ti">Buzón de feedback en video</span>' +
+      (links.length ? '<span class="vfb-count">' + links.length + '</span>' : '') +
+      '<span class="vfb-cv">▾</span>' +
+    '</summary><div class="video-fb-body">' +
+      (links.length ? '<div class="vfb-list">' + links.map(function(l, i){
+        return '<div class="vfb-item"><a href="' + escHtmlSafe(l.url) + '" target="_blank" rel="noopener noreferrer">' + escHtmlSafe(l.url) + '</a>' +
+          '<button type="button" class="vfb-del" data-vfb-del="' + i + '" data-vfb-key="' + escHtmlSafe(k) + '" title="Quitar">✕</button></div>';
+      }).join('') + '</div>' : '') +
+      '<div class="vfb-add">' +
+        '<input type="url" class="vfb-input" placeholder="Pegá el link de tu video (YouTube, Drive, WhatsApp...)" data-vfb-key="' + escHtmlSafe(k) + '">' +
+        '<button type="button" class="vfb-send" data-vfb-key="' + escHtmlSafe(k) + '">Enviar al coach</button>' +
+      '</div>' +
+    '</div></details>';
+}
 function renderBlock(block, day, weekIdx, idx){
   const meta = CATEGORY_META[block.category] || CATEGORY_META.strength;
   const catCls = block.category === 'strength' ? 'cat-strength' : (block.category === 'warmup' ? 'cat-warmup' : (block.category === 'metcon' ? 'cat-metcon' : (block.category === 'cardio' ? 'cat-cardio' : 'cat-accessory')));
@@ -4293,7 +4459,8 @@ function renderBlock(block, day, weekIdx, idx){
       '<div class="block-chevron">▾</div>' +
     '</div>' +
     '<div class="block-body">' + cargaSugeridaHtml(block, weekIdx) + renderBlockInner(block, day, weekIdx) +
-      (block.category === 'warmup' ? '' : bloqueNotasHtml(block, day, weekIdx)) + '</div>' +
+      (block.category === 'warmup' ? '' : bloqueNotasHtml(block, day, weekIdx)) +
+      videoFeedbackHtml(block, day, weekIdx) + '</div>' +
   '</div>';
 }
 /* Tarjeta de nutrición de la sesión: la arma el coach en el builder */
@@ -4322,7 +4489,6 @@ function renderMain(){
   const weekIdx = state.currentWeek;
   const blocks = visibleBlocks(day);
   const dayDone = isDayDone(weekIdx, day.id);
-  const fatigueLevel = getFatigue(weekIdx, day.id);
   let html = '<div class="day-view active">';
   html += '<div class="day-header">';
   html += '<div><div class="day-eyebrow">' + day.short + ' — ' + WEEKS_META[weekIdx].name + '</div>';
@@ -4330,15 +4496,7 @@ function renderMain(){
   html += '<div class="day-meta-row">' + (day.metaChips||[]).map(function(c){ return '<span class="meta-chip">' + c + '</span>'; }).join('') + '</div></div>';
   html += '<button class="day-complete-btn' + (dayDone?' done':'') + '" id="dayCompleteBtn">' + (dayDone?'✓ Día Completo':'Marcar Día Completo') + '</button>';
   html += '</div>';
-  html += '<div class="fatigue-card" id="fatigueCard">' +
-    '<div class="fatigue-card-title">¿Cómo llegás hoy?</div>' +
-    '<div class="fatigue-options">' +
-      '<button class="fatigue-btn' + (fatigueLevel==='green'?' active':'') + '" data-level="green" type="button">🟢 Alta</button>' +
-      '<button class="fatigue-btn' + (fatigueLevel==='yellow'?' active':'') + '" data-level="yellow" type="button">🟡 Media</button>' +
-      '<button class="fatigue-btn' + (fatigueLevel==='red'?' active':'') + '" data-level="red" type="button">🔴 Fatiga Alta</button>' +
-    '</div>' +
-    '<div class="fatigue-suggestion' + (fatigueLevel?' show':'') + '" id="fatigueSuggestion">' + (fatigueLevel ? FATIGUE_SUGGESTIONS[fatigueLevel] : '') + '</div>' +
-  '</div>';
+  html += renderReadinessCard(weekIdx, day);
   if(day.focusText){
     html += '<div class="safety-banner"><div class="sb-icon">🎯</div><div><div class="safety-banner-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div><div class="safety-banner-text">' + day.focusText + '</div></div></div>';
   }
@@ -4359,26 +4517,8 @@ function renderMain(){
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);
-  wireFatigueCheckin(day, weekIdx);
+  wireReadinessCheckin(day, weekIdx);
   updateProgress(day, weekIdx, blocks);
-}
-/* =========================================================
-   WIRE: fatigue check-in
-========================================================= */
-function wireFatigueCheckin(day, weekIdx){
-  const card = document.getElementById('fatigueCard');
-  if(!card) return;
-  const suggestionEl = document.getElementById('fatigueSuggestion');
-  card.querySelectorAll('.fatigue-btn').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      const level = btn.dataset.level;
-      setFatigue(weekIdx, day.id, level);
-      card.querySelectorAll('.fatigue-btn').forEach(function(b){ b.classList.remove('active'); });
-      btn.classList.add('active');
-      suggestionEl.textContent = FATIGUE_SUGGESTIONS[level];
-      suggestionEl.classList.add('show');
-    });
-  });
 }
 /* =========================================================
    WIRE: interacciones de bloques (checkbox, colapso, timers, video)
@@ -4432,6 +4572,63 @@ function wireBlockInteractions(day, weekIdx, blocks){
         saveProgress();
       });
       noteEl.addEventListener('click', function(e){ e.stopPropagation(); });
+    }
+    const vfb = blockEl.querySelector('.video-fb');
+    if(vfb){
+      /* Parche local del DOM (sin renderMain()) para que el <details> no se
+         cierre solo al enviar/borrar un link — mismo criterio de fluidez
+         que el resto de los micro-ajustes de esta sesión. */
+      const patchVfb = function(k){
+        const links = (state.videoLinks && state.videoLinks[k]) || [];
+        const body = vfb.querySelector('.video-fb-body');
+        const addRow = vfb.querySelector('.vfb-add');
+        let listHost = vfb.querySelector('.vfb-list');
+        if(links.length){
+          if(!listHost){ listHost = document.createElement('div'); listHost.className = 'vfb-list'; body.insertBefore(listHost, addRow); }
+          listHost.innerHTML = links.map(function(l, i){
+            return '<div class="vfb-item"><a href="' + escHtmlSafe(l.url) + '" target="_blank" rel="noopener noreferrer">' + escHtmlSafe(l.url) + '</a>' +
+              '<button type="button" class="vfb-del" data-vfb-del="' + i + '" data-vfb-key="' + escHtmlSafe(k) + '" title="Quitar">✕</button></div>';
+          }).join('');
+        } else if(listHost){ listHost.remove(); }
+        let countEl = vfb.querySelector('.vfb-count');
+        const cv = vfb.querySelector('.vfb-cv');
+        if(links.length){
+          if(!countEl){ countEl = document.createElement('span'); countEl.className = 'vfb-count'; cv.parentNode.insertBefore(countEl, cv); }
+          countEl.textContent = links.length;
+        } else if(countEl){ countEl.remove(); }
+      };
+      const sendVideoLink = function(input){
+        const k = input.dataset.vfbKey;
+        const url = (input.value || '').trim();
+        if(!url) return;
+        state.videoLinks = state.videoLinks || {};
+        state.videoLinks[k] = state.videoLinks[k] || [];
+        state.videoLinks[k].push({ url: url, ts: Date.now() });
+        saveProgress();
+        input.value = '';
+        if(window.CoachOutbox && window.CoachOutbox.encolar){
+          window.CoachOutbox.encolar({ tipo:'video_feedback', url: url, semana: weekIdx, dia: day.id, block: blockId });
+        }
+        try{ if(navigator.vibrate) navigator.vibrate(40); }catch(err){}
+        patchVfb(k);
+      };
+      vfb.addEventListener('click', function(e){
+        e.stopPropagation();
+        const del = e.target.closest('[data-vfb-del]');
+        if(del){
+          const k = del.dataset.vfbKey, i = parseInt(del.dataset.vfbDel, 10);
+          if(state.videoLinks && state.videoLinks[k]) state.videoLinks[k].splice(i, 1);
+          saveProgress();
+          patchVfb(k);
+          return;
+        }
+        const sendBtn = e.target.closest('.vfb-send');
+        if(sendBtn) sendVideoLink(vfb.querySelector('.vfb-input'));
+      });
+      const input = vfb.querySelector('.vfb-input');
+      if(input){
+        input.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); sendVideoLink(input); } });
+      }
     }
     /* sin relojes dentro de las tarjetas: el único temporizador es el Custom WOD Timer
        de la barra superior, que abrís vos cuando lo necesitás */
@@ -5306,6 +5503,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const chk = e.target.closest('.set-check');
     if(chk){
       const row = chk.closest('.set-row');
+      beepSetCheck(chk.checked);
       if(chk.checked){
         vibrar(40);
         /* el reloj de descanso automático se retiró: el único temporizador es
@@ -7197,6 +7395,14 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 .cwt h3{margin:0 0 3px;font-family:'Barlow Condensed','Barlow Condensed',sans-serif;text-transform:uppercase;
   letter-spacing:.06em;font-size:1.5rem;color:#fff}
 .cwt .cwt-sub{margin:0 0 14px;color:#A0A8B4;font-size:.82rem;line-height:1.5}
+.cwt-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 3px}
+.cwt-head h3{margin:0}
+.cwt-mute{
+  flex:0 0 auto;width:34px;height:34px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);
+  color:#EDEFF2;font-size:15px;display:grid;place-items:center;
+}
+.cwt-mute.off{background:rgba(168,68,44,.15);border-color:rgba(168,68,44,.4);color:#E0654A}
 .cwt-modes{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:13px}
 .cwt-mode{
   min-height:52px;border-radius:13px;cursor:pointer;padding:6px 4px;
@@ -7249,7 +7455,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 
 <div class="cwt-wrap" id="cwtWrap">
   <div class="cwt">
-    <h3>⏱️ Custom WOD Timer</h3>
+    <div class="cwt-head"><h3>⏱️ Custom WOD Timer</h3><button type="button" class="cwt-mute" id="cwtMute" title="Silenciar sonidos">🔊</button></div>
     <p class="cwt-sub">Elegí la modalidad, ajustá los tiempos y arrancá. Suena y vibra en los últimos 3 segundos de cada conteo.</p>
     <div class="cwt-modes">
       <button type="button" class="cwt-mode on" data-cwt="tabata">Tabata</button>
@@ -7301,7 +7507,11 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   var ultimoBeep = -1;
 
   var ACtx = null;
+  var CWT_MUTE_KEY = 'jp_audio_muted';
+  var muted = false;
+  try{ muted = localStorage.getItem(CWT_MUTE_KEY) === '1'; }catch(e){}
   function beep(freq, ms, vol){
+    if(muted) return;
     try{
       if(!ACtx) ACtx = new (window.AudioContext || window.webkitAudioContext)();
       var o = ACtx.createOscillator(), g = ACtx.createGain();
@@ -7311,6 +7521,18 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       o.start();
       setTimeout(function(){ try{ o.stop(); }catch(e){} }, ms || 140);
     }catch(e){}
+  }
+  function pintarMute(){
+    var b = document.getElementById('cwtMute'); if(!b) return;
+    b.textContent = muted ? '🔇' : '🔊';
+    b.classList.toggle('off', muted);
+    b.title = muted ? 'Sonido silenciado — tocá para activar' : 'Silenciar sonidos';
+  }
+  function toggleMute(){
+    muted = !muted;
+    try{ localStorage.setItem(CWT_MUTE_KEY, muted ? '1' : '0'); }catch(e){}
+    pintarMute();
+    vibrar([15]);
   }
   function vibrar(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
   function mmss(s){
@@ -7520,6 +7742,9 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       pintarCampos();
     });
     document.getElementById('cwtCfg').addEventListener('input', function(){ if(!corriendo) reset(); });
+    var muteBtn = document.getElementById('cwtMute');
+    if(muteBtn) muteBtn.addEventListener('click', toggleMute);
+    pintarMute();
     pintarCampos();
   }
   window.CoachWodTimer = { abrir: abrirTimer, cerrar: cerrarTimer, modo: function(m){ modo = m; pintarCampos(); },
@@ -9563,6 +9788,16 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
 .meso h3{margin:0 0 4px;font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.7rem;
   letter-spacing:.05em;text-transform:uppercase;color:#fff}
 .meso .ms-sub{margin:0 0 15px;color:#A0A8B4;font-size:.85rem;line-height:1.5}
+.ms-hero{margin:6px 0 14px}
+.ms-hero-num{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:3.1rem;line-height:.95;color:#fff;letter-spacing:-.01em}
+.ms-hero-lb{font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:#A0A8B4;font-weight:700;margin-top:4px}
+.ms-spark{display:flex;align-items:flex-end;gap:12px;margin-bottom:16px;padding:10px 4px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:13px}
+.ms-spark-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:74px;justify-content:flex-end}
+.ms-spark-bar{width:100%;border-radius:5px 5px 2px 2px;background:#232A33;min-height:6%}
+.ms-spark-bar{background:linear-gradient(180deg,rgba(210,121,63,.5),rgba(210,121,63,.25))}
+.ms-spark-col.hi .ms-spark-bar{background:linear-gradient(180deg,#E8965E,#D2793F)}
+.ms-spark-wk{font-family:'Barlow Condensed',sans-serif;font-size:.68rem;font-weight:700;color:#A0A8B4}
+.ms-spark-col.hi .ms-spark-wk{color:#D2793F}
 .ms-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:14px}
 .ms-stat{padding:12px;border-radius:13px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1)}
 .ms-stat .v{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.5rem;color:#D2793F;line-height:1}
@@ -9600,6 +9835,8 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     </div>
     <h3>🏆 Mesociclo Completado</h3>
     <p class="ms-sub" id="mesoSub"></p>
+    <div class="ms-hero" id="mesoHero"></div>
+    <div class="ms-spark" id="mesoSpark"></div>
     <div class="ms-grid" id="mesoGrid"></div>
     <div class="ms-acts">
       <button type="button" class="ms-gen" id="mesoGen">📸 Generar Reporte Mensual de Rendimiento</button>
@@ -9804,13 +10041,21 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
       var sem = (state.completed || {})[w] || {};
       DAYS.forEach(function(d){ if(sem[d.id] && sem[d.id].__dayDone) hechas++; });
     }
-    /* tonelaje acumulado de todo el mesociclo */
+    /* tonelaje acumulado de todo el mesociclo, y desglosado por semana
+       (S1-S4) para la curva de tonelaje de la tarjeta Wrapped — la
+       semana viaja como primer segmento de la clave de carga
+       ("weekIdx|dia|bloque|ej|serie", ver getLoadKey). */
     var vol = 0, series = 0, topKg = 0, topEx = '';
+    var volPorSemana = new Array(semanas).fill(0);
     Object.keys(state.loads || {}).forEach(function(k){
       var l = state.loads[k];
       var kg = parseFloat(l && l.kg), reps = parseInt(l && l.reps, 10) || 0;
       if(!(kg > 0)) return;
-      if(l.done){ vol += kg * (reps || 1); series++; }
+      if(l.done){
+        vol += kg * (reps || 1); series++;
+        var wIdx = parseInt(String(k).split('|')[0], 10);
+        if(!isNaN(wIdx) && volPorSemana[wIdx] !== undefined) volPorSemana[wIdx] += kg * (reps || 1);
+      }
       if(kg > topKg){ topKg = kg; topEx = l.__ex || ''; }
     });
     /* RPE promedio a partir del RIR declarado */
@@ -9833,9 +10078,10 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     try{ fase = (WEEKS_META[Math.min(semanas - 1, state.currentWeek)] || {}).phase || ''; }catch(e){}
     return {
       atleta: CFG.athleteName || 'Atleta', meso: CFG.mesoName || 'Mesociclo',
-      total: total, hechas: hechas,
+      total: total, hechas: hechas, semanas: semanas,
       adherencia: total ? Math.round(hechas / total * 100) : 0,
-      vol: Math.round(vol), series: series, topKg: topKg, topEx: topEx, mejora: mejora,
+      vol: Math.round(vol), volPorSemana: volPorSemana.map(function(v){ return Math.round(v); }),
+      series: series, topKg: topKg, topEx: topEx, mejora: mejora,
       rpe: rpe, fase: fase || 'Periodización ondulada'
     };
   }
@@ -9845,23 +10091,48 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     var d = datosMeso();
     return d.total > 0 && d.hechas >= d.total;
   }
+  /* "Al finalizar la Semana 4": dispara la tarjeta Wrapped apenas se
+     completan TODOS los días de la última semana del mesociclo, sin
+     exigir 100% de adherencia en las semanas previas (más realista que
+     completoMeso(), que pide el mesociclo entero perfecto). */
+  function semana4Completa(){
+    var semanas = (typeof WEEKS_META !== 'undefined' ? WEEKS_META.length : 4) || 4;
+    var wIdx = semanas - 1;
+    var sem = (state.completed || {})[wIdx] || {};
+    var diasHechos = 0;
+    (DAYS || []).forEach(function(d){ if(sem[d.id] && sem[d.id].__dayDone) diasHechos++; });
+    return (DAYS || []).length > 0 && diasHechos >= DAYS.length;
+  }
   function abrirMeso(){
     var d = datosMeso();
     var w = document.getElementById('mesoWrap'); if(!w) return;
     document.getElementById('mesoSub').innerHTML =
-      'Cerraste <b>' + d.meso + '</b> completo. Este es el resumen científico de tu mes de trabajo.';
+      'Cerraste <b>' + d.meso + '</b> — ' + d.semanas + ' semanas. Este es el resumen científico de tu mesociclo.';
     var fmt = window.CoachUnidad ? window.CoachUnidad.fmt : function(k){ return k + ' kg'; };
+    var heroEl = document.getElementById('mesoHero');
+    if(heroEl){
+      heroEl.innerHTML = '<div class="ms-hero-num">' + d.vol.toLocaleString('es-AR') + '</div><div class="ms-hero-lb">Kilos totales levantados</div>';
+    }
+    var maxSem = Math.max.apply(null, d.volPorSemana.concat([1]));
+    var sparkEl = document.getElementById('mesoSpark');
+    if(sparkEl){
+      sparkEl.innerHTML = d.volPorSemana.map(function(v, i){
+        var h = Math.max(6, Math.round((v / maxSem) * 100));
+        var lb = (typeof WEEKS_META !== 'undefined' && WEEKS_META[i] && WEEKS_META[i].short) || ('S' + (i + 1));
+        return '<div class="ms-spark-col' + (v === maxSem && v > 0 ? ' hi' : '') + '"><div class="ms-spark-bar" style="height:' + h + '%"></div><div class="ms-spark-wk">' + lb + '</div></div>';
+      }).join('');
+    }
     document.getElementById('mesoGrid').innerHTML =
-      '<div class="ms-stat"><div class="v">' + d.vol.toLocaleString('es-AR') + '</div><div class="k">kg movidos</div></div>' +
       '<div class="ms-stat"><div class="v">' + d.adherencia + '%</div><div class="k">' + d.hechas + '/' + d.total + ' sesiones</div></div>' +
-      '<div class="ms-stat"><div class="v">' + (d.topKg ? fmt(d.topKg) : '—') + '</div><div class="k">top lift del mes</div></div>' +
-      '<div class="ms-stat"><div class="v">' + (d.rpe ? 'RPE ' + d.rpe : '—') + '</div><div class="k">intensidad media</div></div>';
+      '<div class="ms-stat"><div class="v">' + (d.topKg ? fmt(d.topKg) : '—') + '</div><div class="k">top lift del mesociclo</div></div>' +
+      '<div class="ms-stat"><div class="v">' + (d.rpe ? 'RPE ' + d.rpe : '—') + '</div><div class="k">intensidad media</div></div>' +
+      '<div class="ms-stat"><div class="v">' + String(d.fase).slice(0, 18) + '</div><div class="k">estructura</div></div>';
     w.classList.add('on');
     try{ if(navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 120]); }catch(e){}
     try{ localStorage.setItem((typeof STORAGE_KEY !== 'undefined' ? STORAGE_KEY : 'cj') + '_meso_visto', '1'); }catch(e){}
   }
   function cerrarMeso(){ document.getElementById('mesoWrap').classList.remove('on'); }
-  window.CoachMeso = { abrir: abrirMeso, cerrar: cerrarMeso, completo: completoMeso };
+  window.CoachMeso = { abrir: abrirMeso, cerrar: cerrarMeso, completo: completoMeso, semana4: semana4Completa };
 
   /* ---------- lienzo 1080x1920 del reporte ---------- */
   var W = 1080, H = 1920;
@@ -9921,18 +10192,59 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     g.fillStyle = '#A0A8B4'; g.font = '400 28px Inter, sans-serif';
     g.fillText(d.meso, W / 2, 508);
 
-    /* carga de trabajo acumulada */
-    g.fillStyle = 'rgba(210,121,63,.10)'; rr(g, 90, 560, W - 180, 210, 28); g.fill();
-    g.strokeStyle = 'rgba(210,121,63,.45)'; g.lineWidth = 3; rr(g, 90, 560, W - 180, 210, 28); g.stroke();
-    g.fillStyle = '#A0A8B4'; g.font = '700 28px "Barlow Condensed", sans-serif';
-    g.fillText('CARGA DE TRABAJO ACUMULADA', W / 2, 606);
-    var vol = d.vol.toLocaleString('es-AR') + ' ' + fmt.toUpperCase() + ' MOVIDOS';
-    fit(g, vol, W - 240, 108, 48);
-    g.fillStyle = '#D2793F';
-    g.fillText(vol, W / 2, 690);
+    /* ---- hero: kilos totales levantados (lenguaje visual Wrapped aprobado) ---- */
+    var heroTxt = d.vol.toLocaleString('es-AR');
+    var heroSize = fit(g, heroTxt, W - 200, 190, 90);
+    g.font = '900 ' + heroSize + 'px "Barlow Condensed", sans-serif';
+    g.fillStyle = '#FFFFFF';
+    g.fillText(heroTxt, W / 2, 700);
+    g.fillStyle = '#A0A8B4'; g.font = '700 26px "Barlow Condensed", sans-serif';
+    g.fillText('KILOS TOTALES LEVANTADOS (' + fmt.toUpperCase() + ')', W / 2, 758);
 
-    /* estructura del mesociclo */
-    var y = 812;
+    /* ---- tiles: asistencia + PR más alto, lado a lado ---- */
+    var tY = 850, tH = 190, tGap = 20;
+    var tileW = (W - 180 - tGap) / 2;
+    var tile = function(x, label, val, sub, color){
+      g.fillStyle = 'rgba(255,255,255,.045)'; rr(g, x, tY, tileW, tH, 22); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; rr(g, x, tY, tileW, tH, 22); g.stroke();
+      g.fillStyle = '#A0A8B4'; g.font = '700 22px "Barlow Condensed", sans-serif';
+      g.fillText(label, x + tileW / 2, tY + 40);
+      fit(g, val, tileW - 30, 46, 22);
+      g.fillStyle = color;
+      g.fillText(val, x + tileW / 2, tY + 100);
+      g.fillStyle = 'rgba(160,174,192,.85)'; g.font = '400 20px Inter, sans-serif';
+      fit(g, sub, tileW - 30, 20, 14);
+      g.fillText(sub, x + tileW / 2, tY + 146);
+    };
+    tile(90, 'ASISTENCIA', d.adherencia + '%', d.hechas + '/' + d.total + ' sesiones', '#D2793F');
+    tile(90 + tileW + tGap, 'PR MÁS ALTO', d.topKg ? (d.topKg + ' ' + fmt.toUpperCase()) : '—',
+         d.topKg ? String(d.topEx || 'Top lift').toUpperCase() + (d.mejora > 0 ? ' · +' + d.mejora + '%' : '') : 'Sin marcas registradas',
+         '#7CC5E8');
+
+    /* ---- curva de tonelaje semanal (spark bars S1-S4) ---- */
+    var sTitleY = 1110, sY = 1132, sH = 170, sBottom = sY + sH;
+    g.fillStyle = '#A0A8B4'; g.font = '700 24px "Barlow Condensed", sans-serif';
+    g.fillText('CURVA DE TONELAJE SEMANAL', W / 2, sTitleY);
+    var semVol = d.volPorSemana && d.volPorSemana.length ? d.volPorSemana : [0, 0, 0, 0];
+    var n = semVol.length;
+    var barsX0 = 130, barsX1 = W - 130, bGap = 24;
+    var colW = (barsX1 - barsX0 - bGap * (n - 1)) / n;
+    var maxV = Math.max.apply(null, semVol.concat([1]));
+    for(var i = 0; i < n; i++){
+      var v = semVol[i] || 0;
+      var h = Math.max(8, Math.round((v / maxV) * sH));
+      var x = barsX0 + i * (colW + bGap);
+      var isMax = v === maxV && v > 0;
+      g.fillStyle = isMax ? '#D2793F' : 'rgba(210,121,63,.32)';
+      rr(g, x, sBottom - h, colW, h, 8); g.fill();
+      g.fillStyle = isMax ? '#D2793F' : '#A0A8B4';
+      g.font = '700 24px "Barlow Condensed", sans-serif';
+      var wkLb = (typeof WEEKS_META !== 'undefined' && WEEKS_META[i] && WEEKS_META[i].short) || ('S' + (i + 1));
+      g.fillText(wkLb, x + colW / 2, sBottom + 32);
+    }
+
+    /* ---- gestión de fatiga (caja compacta) ---- */
+    var y = sBottom + 92;
     var caja = function(rot, val, color){
       g.fillStyle = 'rgba(255,255,255,.045)'; rr(g, 90, y, W - 180, 150, 24); g.fill();
       g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; rr(g, 90, y, W - 180, 150, 24); g.stroke();
@@ -9943,36 +10255,38 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
       g.fillText(val, W / 2, y + 102);
       y += 168;
     };
-    caja('ESTRUCTURA DEL MESOCICLO', String(d.fase).toUpperCase(), '#FFFFFF');
-    caja('ADHERENCIA & CONSISTENCIA',
-         d.adherencia + '% ADHERENCIA • ' + d.hechas + '/' + d.total + ' SESIONES',
-         d.adherencia >= 90 ? '#D2793F' : '#FFFFFF');
-    caja('PICO DE INTENSIDAD · TOP LIFT DEL MES',
-         d.topKg ? (String(d.topEx || 'Top lift').toUpperCase() + ': ' + d.topKg + ' ' + fmt.toUpperCase() +
-                    (d.mejora > 0 ? '  [+' + d.mejora + '%]' : '')) : 'SIN MARCAS REGISTRADAS',
-         '#D2793F');
-    caja('GESTIÓN DE FATIGA',
-         d.rpe ? ('RPE ' + d.rpe + ' • ' + (d.rpe <= 8.5 ? 'GESTIÓN ÓPTIMA' : 'ALTA EXIGENCIA')) : 'SIN DATOS DE RIR',
+    caja('ESTRUCTURA · GESTIÓN DE FATIGA',
+         String(d.fase).toUpperCase() + (d.rpe ? ' · RPE ' + d.rpe : ''),
          '#7CC5E8');
+
+    /* ---- pie: escudo + wordmark Coach JP (mismo lockup del pack de historias) ---- */
+    var shTop = y + 30;
+    escudoCanvas(g, W / 2, shTop, 84);
+    var wmY = shTop + 84 + 48;
+    g.font = '800 42px "Barlow Condensed", sans-serif';
+    var wCoach = g.measureText('COACH ').width, wJp = g.measureText('JP').width;
+    var startX = W / 2 - (wCoach + wJp) / 2;
+    g.textAlign = 'left';
+    g.fillStyle = '#FFFFFF'; g.fillText('COACH ', startX, wmY);
+    g.fillStyle = '#7CC5E8'; g.fillText('JP', startX + wCoach, wmY);
+    g.textAlign = 'center';
+    g.fillStyle = 'rgba(160,174,192,.85)'; g.font = '700 22px "Barlow Condensed", sans-serif';
+    g.fillText('PERFORMANCE SYSTEM', W / 2, wmY + 42);
 
     /* sello de autoridad */
     g.save();
     g.globalAlpha = .5;
-    g.fillStyle = '#FFFFFF'; g.font = '700 28px "Barlow Condensed", sans-serif';
-    g.fillText('✦ DATA-DRIVEN PROGRAMMING • VERIFIED BY COACH JP', W / 2, H - 96);
+    g.fillStyle = '#FFFFFF'; g.font = '700 26px "Barlow Condensed", sans-serif';
+    g.fillText('✦ DATA-DRIVEN PROGRAMMING • VERIFIED BY COACH JP', W / 2, H - 70);
     g.restore();
-    /* franja de cierre con el sello de la marca */
+    /* franja de fondo con el sello de la marca (flourish, baja opacidad) */
     g.save();
     g.globalAlpha = .035; g.fillStyle = '#FFFFFF';
     g.font = '700 240px "Barlow Condensed", sans-serif';
     g.textAlign = 'right';
-    g.fillText('JP', W - 96, H - 210);
+    g.fillText('JP', W - 96, H - 260);
     g.restore();
     g.textAlign = 'center';
-    g.fillStyle = 'rgba(210,121,63,.85)'; g.font = '700 30px "Barlow Condensed", sans-serif';
-    g.fillText('COACH JP • HIGH PERFORMANCE PROGRAMMING', W / 2, y + 40);
-    g.fillStyle = 'rgba(160,174,192,.9)'; g.font = '400 26px Inter, sans-serif';
-    g.fillText('Reporte generado con los datos reales de tus sesiones', W / 2, y + 84);
     return c;
   }
   window.CoachMesoReporte = dibujarReporte;
@@ -10015,7 +10329,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     });
   }
   function revisarMeso(){
-    if(!completoMeso()) return;
+    if(!completoMeso() && !semana4Completa()) return;
     var visto = null;
     try{ visto = localStorage.getItem((typeof STORAGE_KEY !== 'undefined' ? STORAGE_KEY : 'cj') + '_meso_visto'); }catch(e){}
     if(visto) return;
@@ -15165,6 +15479,66 @@ body{
 }
 @media(max-width:520px){
   .nutri-card .nut-hint{display:none}
+}
+/* ===== Buzón de feedback en video (por ejercicio principal) ===== */
+.video-fb{
+  margin:14px 0 0;border-radius:14px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(210,121,63,.06),rgba(255,255,255,.015));
+  border:1px solid rgba(210,121,63,.25);
+}
+.video-fb .video-fb-sum{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+  padding:0 14px;min-height:48px;user-select:none;
+}
+.video-fb .video-fb-sum::-webkit-details-marker{display:none}
+.video-fb .vfb-ic{font-size:16px;line-height:1}
+.video-fb .vfb-ti{
+  font-family:var(--font-head,inherit);font-size:calc(12px * var(--fzs,1));
+  letter-spacing:.1em;text-transform:uppercase;color:#EDEFF2;font-weight:700;
+}
+.video-fb .vfb-count{
+  background:rgba(210,121,63,.22);color:#E8965E;border-radius:20px;
+  font-size:11px;font-weight:800;padding:1px 8px;
+}
+.video-fb .vfb-cv{margin-left:auto;color:#E8965E;font-size:13px;transition:transform .2s ease}
+.video-fb[open] .vfb-cv{transform:rotate(180deg)}
+.video-fb .video-fb-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:8px}
+.video-fb .vfb-list{display:flex;flex-direction:column;gap:6px}
+.video-fb .vfb-item{
+  display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);
+}
+.video-fb .vfb-item a{
+  flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:12.5px;color:#E8965E;text-decoration:none;
+}
+.video-fb .vfb-item a:hover{text-decoration:underline}
+.video-fb .vfb-del{
+  flex:0 0 auto;background:transparent;border:none;color:#6E7783;cursor:pointer;
+  font-size:12px;padding:2px 4px;
+}
+.video-fb .vfb-del:hover{color:#E0654A}
+.video-fb .vfb-add{display:flex;gap:8px;flex-wrap:wrap}
+.video-fb .vfb-input{
+  flex:1;min-width:180px;background:#0C1014;border:1px solid rgba(255,255,255,.1);
+  border-radius:9px;padding:9px 11px;color:#E2E8F0;font-size:12.5px;font-family:'Inter',sans-serif;
+}
+.video-fb .vfb-input:focus{border-color:rgba(210,121,63,.5);outline:none}
+.video-fb .vfb-send{
+  background:linear-gradient(135deg,#D2793F,#E8965E);color:#08090B;border:none;
+  border-radius:9px;padding:9px 14px;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;
+}
+/* ---- Física de botones consolidada (app del alumno) ----
+   Mismo criterio que el dashboard del coach: esta app ya traía
+   varias reglas :active dispersas (M4, .set-check, .pain-btn, etc.
+   con valores de scale() entre .90 y .99) — se consolidan acá con
+   !important en vez de tocar cada una, para no arriesgar romper
+   nada de lo que ya funciona. */
+button:active,
+input[type="checkbox"]:active{
+  transform:scale(.97) !important;
+  transition:transform .16s cubic-bezier(0.2,0.8,0.2,1),
+             box-shadow .16s cubic-bezier(0.2,0.8,0.2,1) !important;
 }
 </style>
 
@@ -30315,6 +30689,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .cwt h3{margin:0 0 3px;font-family:'Barlow Condensed',var(--ffh),sans-serif;text-transform:uppercase;
   letter-spacing:.06em;font-size:1.5rem;color:#fff}
 .cwt .cwt-sub{margin:0 0 14px;color:#A0A8B4;font-size:.82rem;line-height:1.5}
+.cwt-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 3px}
+.cwt-head h3{margin:0}
+.cwt-mute{
+  flex:0 0 auto;width:34px;height:34px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);
+  color:#EDEFF2;font-size:15px;display:grid;place-items:center;
+}
+.cwt-mute.off{background:rgba(168,68,44,.15);border-color:rgba(168,68,44,.4);color:#E0654A}
 .cwt-modes{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:13px}
 .cwt-mode{
   min-height:52px;border-radius:13px;cursor:pointer;padding:6px 4px;
@@ -30382,7 +30764,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
 <div class="cwt-wrap" id="cwtWrap">
   <div class="cwt">
-    <h3>⏱️ Custom WOD Timer</h3>
+    <div class="cwt-head"><h3>⏱️ Custom WOD Timer</h3><button type="button" class="cwt-mute" id="cwtMute" title="Silenciar sonidos">🔊</button></div>
     <p class="cwt-sub">Elegí la modalidad, ajustá los tiempos y arrancá. Suena y vibra en los últimos 3 segundos de cada conteo.</p>
     <div class="cwt-modes">
       <button type="button" class="cwt-mode on" data-cwt="tabata">Tabata</button>
@@ -30436,7 +30818,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   var ultimoBeep = -1;
 
   var ACtx = null;
+  var CWT_MUTE_KEY = 'jp_audio_muted';
+  var muted = false;
+  try{ muted = localStorage.getItem(CWT_MUTE_KEY) === '1'; }catch(e){}
   function beep(freq, ms, vol){
+    if(muted) return;
     try{
       if(!ACtx) ACtx = new (window.AudioContext || window.webkitAudioContext)();
       var o = ACtx.createOscillator(), g = ACtx.createGain();
@@ -30446,6 +30832,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       o.start();
       setTimeout(function(){ try{ o.stop(); }catch(e){} }, ms || 140);
     }catch(e){}
+  }
+  function pintarMute(){
+    var b = document.getElementById('cwtMute'); if(!b) return;
+    b.textContent = muted ? '🔇' : '🔊';
+    b.classList.toggle('off', muted);
+    b.title = muted ? 'Sonido silenciado — tocá para activar' : 'Silenciar sonidos';
+  }
+  function toggleMute(){
+    muted = !muted;
+    try{ localStorage.setItem(CWT_MUTE_KEY, muted ? '1' : '0'); }catch(e){}
+    pintarMute();
+    vibrar([15]);
   }
   function vibrar(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
   function mmss(s){
@@ -30641,6 +31039,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       pintarCampos();
     });
     document.getElementById('cwtCfg').addEventListener('input', function(){ if(!corriendo) reset(); });
+    var muteBtn = document.getElementById('cwtMute');
+    if(muteBtn) muteBtn.addEventListener('click', toggleMute);
+    pintarMute();
     pintarCampos();
   }
   window.CoachWodTimer = { abrir: abrirTimer, cerrar: cerrarTimer, modo: function(m){ modo = m; pintarCampos(); },
@@ -39642,6 +40043,17 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 }
 #jpWkBar button.acc.ia{border-color:rgba(210,121,63,.5);color:#E8965E}
 #jpWkBar button.acc.ia:hover{background:rgba(210,121,63,.12)}
+#jpWkBar .sem .s.on{background:linear-gradient(135deg,var(--gold),#E8965E);border-color:transparent;color:#08090B}
+#jpWkBar .wk-rir{
+  display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:20px;
+  font-size:11px;font-weight:700;color:var(--txt-2);
+  background:rgba(255,255,255,.04);border:1px solid var(--line-2);
+}
+#jpWkBar .wk-rir b{font-family:var(--font-mono,monospace);color:var(--gold);font-weight:700}
+#jpWkBar .wk-rir.deload{border-color:rgba(74,147,184,.5);background:rgba(74,147,184,.12)}
+#jpWkBar .wk-rir.deload b{color:var(--teal)}
+#jpWkBar .wk-rir.fail{border-color:rgba(168,68,44,.5);background:rgba(168,68,44,.12)}
+#jpWkBar .wk-rir.fail b{color:#E0654A}
 
 .week-box.wk-flash{animation:jpWkFlash 1.4s ease-out}
 @keyframes jpWkFlash{
@@ -39690,6 +40102,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       b.addEventListener('click', function(e){
         var s = e.target.closest('[data-wkjump]');
         if(s){
+          S.ui = S.ui || {};
+          S.ui.week = parseInt(s.dataset.wkjump, 10) || 0;
+          save();
+          pintarBarra();
           var box = document.getElementById('weekBox-' + s.dataset.wkjump);
           if(box){
             box.scrollIntoView({ behavior:'smooth', block:'center' });
@@ -39704,6 +40120,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return b;
   }
 
+  /* Chip de prescripción por rango dinámico de RIR — refleja la semana
+     activa de edición (S.ui.week), la misma que resaltan los pills S1-S4. */
+  function rirChip(w){
+    if(!w) return '';
+    var cls = w.deload ? 'deload' : (w.fail ? 'fail' : '');
+    return '<span class="wk-rir ' + cls + '" title="Semana activa de edición — cambia con los pills S1-S4">' +
+      '<b>' + esc(w.short || '') + '</b>' + esc(w.rpe || w.phase || '') +
+    '</span>';
+  }
+
   function pintarBarra(){
     var b = barra(); if(!b) return;
     if(esCrossfit()){ b.classList.remove('on'); return; }
@@ -39711,12 +40137,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var p = plan(a.id);
     if(!p.meso || !p.meso.length){ b.classList.remove('on'); return; }
     b.classList.add('on');
+    S.ui = S.ui || {};
+    var wi = (typeof S.ui.week === 'number' && S.ui.week >= 0 && S.ui.week < p.meso.length) ? S.ui.week : 0;
     b.innerHTML =
       '<span class="lb">Mesociclo · 4 semanas</span>' +
       '<span class="sem">' + p.meso.map(function(w, i){
-        return '<button type="button" class="s" data-wkjump="' + i + '" title="' + esc(w.phase || '') + '">' +
+        return '<button type="button" class="s' + (i === wi ? ' on' : '') + '" data-wkjump="' + i + '" title="' + esc(w.phase || '') + '">' +
           esc(w.short || ('S' + (i + 1))) + '</button>';
       }).join('') + '</span>' +
+      rirChip(p.meso[wi]) +
       '<span class="sp"></span>' +
       '<button type="button" class="acc ia" id="jpWkGen">⚡ Analizar S1 y Proyectar Mesociclo Ondulado (S1–S4) con IA</button>';
   }
@@ -39800,3 +40229,352 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   [900, 2200, 3800].forEach(function(ms){ setTimeout(pintarBarra, ms); });
 })();
 </script>
+
+<style>
+/* ============================================================
+   MÓDULO — SUSTITUCIÓN BIOMECÁNICA 1-TOQUE (POPOVER)
+   Reusa el motor de riesgo ya existente (checkExercise/suggestAlts,
+   MÓDULO cerca de línea 1662-1710) — no duplica lógica de scoring,
+   solo agrega un punto de entrada manual (icono 🔁 en cada bloque/
+   ítem) que abre un popover compacto con las variantes seguras.
+   ============================================================ */
+.icon-btn.swap-touch{background:rgba(210,121,63,.12);border-color:rgba(210,121,63,.4);color:var(--gold)}
+.icon-btn.swap-touch:hover{background:rgba(210,121,63,.22)}
+.jp-swap-pop{
+  position:fixed;width:288px;max-width:calc(100vw - 16px);z-index:9999;
+  background:linear-gradient(180deg,var(--panel-2),var(--panel));
+  border:1px solid rgba(210,121,63,.35);border-radius:var(--r-sm);
+  box-shadow:var(--shadow);padding:12px;
+  animation:jswIn .16s ease-out;
+}
+@keyframes jswIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.jp-swap-pop .jsw-h{display:flex;align-items:flex-start;gap:9px;margin-bottom:10px}
+.jp-swap-pop .jsw-ic{font-size:15px;line-height:1.3}
+.jp-swap-pop .jsw-h b{display:block;font-size:12.5px;color:var(--txt)}
+.jp-swap-pop .jsw-h small{display:block;font-size:10.5px;color:var(--muted);line-height:1.4;margin-top:2px}
+.jp-swap-pop .jsw-x{margin-left:auto;background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 4px}
+.jp-swap-pop .jsw-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto}
+.jp-swap-pop .jsw-alt{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  width:100%;text-align:left;padding:8px 10px;border-radius:8px;cursor:pointer;
+  background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--txt-2);
+  font-size:12px;transition:.12s;
+}
+.jp-swap-pop .jsw-alt:hover{border-color:var(--gold);background:rgba(210,121,63,.1);color:var(--gold)}
+.jp-swap-pop .jsw-vid{opacity:.7;font-size:10px}
+.jp-swap-pop .jsw-empty{font-size:11.5px;color:var(--muted);padding:6px 2px;line-height:1.5}
+</style>
+<script>
+(function(){
+  function exOf(id){ return (typeof getEx === 'function') ? getEx(id) : null; }
+
+  function reasonFor(ath, exObj){
+    if(!exObj || typeof checkExercise !== 'function') return null;
+    var alerts = checkExercise(ath, exObj) || [];
+    var w = (typeof worst === 'function') ? worst(alerts) : '';
+    var top = alerts.filter(function(a){ return a.level === w; })[0] || alerts[0];
+    return { level: w, msg: top ? ((top.title ? top.title + ' — ' : '') + (top.msg || '')) : '' };
+  }
+
+  function closePop(){
+    var p = document.getElementById('jpSwapPop');
+    if(p) p.remove();
+    document.removeEventListener('click', onDocClick, true);
+    document.removeEventListener('keydown', onEsc, true);
+  }
+  function onDocClick(e){
+    var p = document.getElementById('jpSwapPop');
+    if(p && !p.contains(e.target) && !e.target.closest('[data-swaptouch]')) closePop();
+  }
+  function onEsc(e){ if(e.key === 'Escape') closePop(); }
+
+  function openPop(btn){
+    closePop();
+    var bid = btn.getAttribute('data-swaptouch');
+    var idxAttr = btn.getAttribute('data-swaptouch-i');
+    var b = (typeof findBlock === 'function') ? findBlock(bid) : null;
+    if(!b) return;
+    var i = (idxAttr !== null && idxAttr !== '') ? parseInt(idxAttr, 10) : null;
+    var exId;
+    if(b.tipo === 'block') exId = b.exId;
+    else if(b.tipo === 'superset' && i != null && b.ejercicios[i]) exId = b.ejercicios[i].exId;
+    else if(b.tipo === 'finisher' && i != null && b.fin[i]) exId = b.fin[i].exId;
+    var current = exOf(exId);
+    var ath = (typeof active === 'function') ? active() : null;
+    if(!current || !ath) return;
+    var reason = reasonFor(ath, current);
+    var alts = (typeof suggestAlts === 'function') ? suggestAlts(ath, current, 4) : [];
+
+    var pop = document.createElement('div');
+    pop.id = 'jpSwapPop';
+    pop.className = 'jp-swap-pop';
+    var lvl = reason && reason.level;
+    var levelIc = lvl === 'danger' ? '🚨' : (lvl === 'warn' ? '⚠️' : '⭐');
+    var levelTxt = lvl === 'danger' ? 'Restringido para este alumno/a' : (lvl === 'warn' ? 'Riesgo biomecánico detectado' : 'Sin restricciones detectadas');
+    pop.innerHTML =
+      '<div class="jsw-h"><span class="jsw-ic">' + levelIc + '</span><div><b>' + esc(current.es) + '</b><small>' + esc((reason && reason.msg) || levelTxt) + '</small></div><button type="button" class="jsw-x" data-swapclose>✕</button></div>' +
+      '<div class="jsw-list">' + (alts.length ? alts.map(function(x){
+        return '<button type="button" class="jsw-alt" data-swap="' + x.id + '" data-b="' + b.id + '"' + (i != null ? ' data-i="' + i + '"' : '') + '>' +
+          '<span class="jsw-nm">' + esc(x.es) + '</span>' + (x.video || x.videoId ? '<span class="jsw-vid">▶</span>' : '') +
+        '</button>';
+      }).join('') : '<div class="jsw-empty">No hay variantes seguras sugeridas para este alumno/a — revisá manualmente en la Biblioteca.</div>') + '</div>';
+    document.body.appendChild(pop);
+    var r = btn.getBoundingClientRect();
+    var top = Math.min(r.bottom + 8, window.innerHeight - 280);
+    var left = Math.min(r.left, window.innerWidth - 304);
+    pop.style.top = Math.max(8, top) + 'px';
+    pop.style.left = Math.max(8, left) + 'px';
+    setTimeout(function(){
+      document.addEventListener('click', onDocClick, true);
+      document.addEventListener('keydown', onEsc, true);
+    }, 0);
+  }
+
+  document.addEventListener('click', function(e){
+    var t = e.target.closest('[data-swaptouch]');
+    if(t){ e.stopPropagation(); openPop(t); return; }
+    if(e.target.closest('[data-swapclose]')){ closePop(); return; }
+    var alt = e.target.closest('.jsw-alt');
+    if(alt){
+      var bid = alt.getAttribute('data-b'), exIdNew = alt.getAttribute('data-swap'), iAttr = alt.getAttribute('data-i');
+      var b = (typeof findBlock === 'function') ? findBlock(bid) : null;
+      if(!b) return;
+      if(b.tipo === 'block') b.exId = exIdNew;
+      else if(b.tipo === 'superset' && iAttr !== null){ var ii = parseInt(iAttr, 10); if(b.ejercicios[ii]) b.ejercicios[ii].exId = exIdNew; }
+      else if(b.tipo === 'finisher' && iAttr !== null){ var jj = parseInt(iAttr, 10); if(b.fin[jj]) b.fin[jj].exId = exIdNew; }
+      save();
+      closePop();
+      if(typeof renderBuilder === 'function') renderBuilder();
+      if(typeof toast === 'function') toast('Reemplazado por la variante segura ✔');
+    }
+  }, true);
+
+  function inject(){
+    var panel = document.getElementById('dayPanel'); if(!panel) return;
+    panel.querySelectorAll('.block-h').forEach(function(h){
+      if(h.querySelector('[data-swaptouch]')) return;
+      var anyCtl = h.querySelector('[data-bmove],[data-bdel],[data-bdup]');
+      var bid = anyCtl ? (anyCtl.getAttribute('data-b') || anyCtl.getAttribute('data-bdup') || anyCtl.getAttribute('data-bdel')) : null;
+      if(!bid) return;
+      var moveBtn = h.querySelector('[data-bmove="up"]');
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'icon-btn swap-touch'; btn.title = 'Sustitución biomecánica 1 toque';
+      btn.setAttribute('data-swaptouch', bid);
+      btn.textContent = '🔁';
+      if(moveBtn) h.insertBefore(btn, moveBtn); else h.appendChild(btn);
+    });
+    panel.querySelectorAll('.item-h').forEach(function(h){
+      if(h.querySelector('[data-swaptouch]')) return;
+      var delBtn = h.querySelector('[data-idel]');
+      if(!delBtn) return;
+      var bid = delBtn.getAttribute('data-b');
+      var moveBtn = h.querySelector('[data-imove="up"]');
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'icon-btn swap-touch'; btn.title = 'Sustitución biomecánica 1 toque';
+      btn.setAttribute('data-swaptouch', bid);
+      btn.setAttribute('data-swaptouch-i', delBtn.getAttribute('data-idel'));
+      btn.textContent = '🔁';
+      if(moveBtn) h.insertBefore(btn, moveBtn); else h.insertBefore(btn, delBtn);
+    });
+  }
+
+  ['renderDay', 'renderBuilder'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jpswap) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(inject, 30); return r; };
+    w.__jpswap = 1; window[fn] = w;
+  });
+  setTimeout(inject, 900);
+})();
+</script>
+
+<style>
+/* ============================================================
+   MÓDULO — TONELAJE PROYECTADO S1-S4 (Series × Reps × Carga)
+   Usa los mismos multiplicadores de intensidad que el generador de
+   Mesociclo Ondulado (MÓDULO anterior) para que ambas piezas de UI
+   nunca se contradigan entre sí. Solo cuenta bloques tipo 'block'
+   con Carga Base registrada — supersets/finishers no tienen campo
+   de peso en el modelo de datos actual (ver brief del proyecto).
+   ============================================================ */
+.ton-card h3{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.ton-card .ton-sub{font-size:11px;font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0}
+.ton-bars{display:flex;gap:14px;margin-top:14px;align-items:flex-end}
+.ton-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px}
+.ton-val{font-family:var(--font-mono,monospace);font-size:14px;font-weight:700;color:var(--txt)}
+.ton-val span{font-size:10px;color:var(--muted);margin-left:2px;font-weight:600}
+.ton-bar-track{width:100%;height:86px;display:flex;align-items:flex-end;background:var(--panel-2);border-radius:6px 6px 3px 3px;border:1px solid var(--line);overflow:hidden}
+.ton-bar{width:100%;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#E8965E,var(--gold));min-height:6%}
+.ton-wk{font-family:var(--font-mono,monospace);font-size:11px;color:var(--muted);font-weight:600}
+.ton-note{margin-top:12px;font-size:11px;color:var(--muted);line-height:1.5}
+</style>
+<script>
+(function(){
+  var INTENSITY = [1, 1.069, 1.166, 0.828]; /* relativo a S1 (base 72.5%): S2 ~77.5%, S3 ~84.5%, S4 ~60% */
+  var SETFACTOR = [1, 1, 1, 0.55];          /* S4 reduce series efectivas 40-50% (punto medio 45%) */
+
+  function parseReps(str){
+    if(!str) return null;
+    var nums = String(str).match(/\d+(\.\d+)?/g);
+    if(!nums || !nums.length) return null;
+    if(nums.length === 1) return parseFloat(nums[0]);
+    return (parseFloat(nums[0]) + parseFloat(nums[1])) / 2;
+  }
+
+  function esCFTon(){
+    try{ var a = active(); if(!a) return false; var p = plan(a.id); return !!(p && p.meta && p.meta.mesoDisc === 'crossfit'); }
+    catch(e){ return false; }
+  }
+
+  function calcular(p){
+    var totales = [0, 0, 0, 0], conCarga = 0, sinCarga = 0;
+    (p.dias || []).forEach(function(d){
+      (d.bloques || []).forEach(function(b){
+        if(b.tipo !== 'block') return;
+        var carga = parseFloat(b.cargaBase);
+        var sets = parseFloat(b.efSets) || parseFloat(b.approxSets) || 0;
+        var reps = parseReps(b.reps);
+        if(!carga || carga <= 0 || !sets || !reps){ sinCarga++; return; }
+        conCarga++;
+        for(var i = 0; i < 4; i++) totales[i] += sets * SETFACTOR[i] * reps * carga * INTENSITY[i];
+      });
+    });
+    return { totales: totales, conCarga: conCarga, sinCarga: sinCarga };
+  }
+
+  function fmt(n){
+    return Math.round(n).toLocaleString('es-AR');
+  }
+
+  function render(){
+    var a = (typeof active === 'function') ? active() : null;
+    if(!a || esCFTon()){ var old = document.getElementById('tonCard'); if(old) old.remove(); return; }
+    var tabs = document.getElementById('dayTabs');
+    if(!tabs || !tabs.parentNode) return;
+    var p = plan(a.id);
+    var data = calcular(p);
+    var max = Math.max.apply(null, data.totales.concat([1]));
+    var card = document.getElementById('tonCard');
+    if(!card){
+      card = document.createElement('div');
+      card.id = 'tonCard';
+      card.className = 'card ton-card';
+      tabs.parentNode.insertBefore(card, tabs);
+    }
+    var labels = (p.meso || []).map(function(w, i){ return (w && w.short) || ('S' + (i + 1)); });
+    card.innerHTML =
+      '<h3>📦 Tonelaje Proyectado <span class="ton-sub">Series × Reps × Carga, ondulado S1→S4</span></h3>' +
+      '<div class="ton-bars">' + data.totales.map(function(v, i){
+        var h = Math.max(6, Math.round((v / max) * 100));
+        return '<div class="ton-col"><div class="ton-val">' + fmt(v) + '<span>kg</span></div>' +
+          '<div class="ton-bar-track"><div class="ton-bar" style="height:' + h + '%"></div></div>' +
+          '<div class="ton-wk">' + esc(labels[i] || ('S' + (i + 1))) + '</div></div>';
+      }).join('') + '</div>' +
+      '<p class="ton-note">Calculado sobre ' + data.conCarga + ' bloque(s) con carga base registrada' +
+      (data.sinCarga ? ' · ' + data.sinCarga + ' bloque(s) sin carga base (o supersets/finishers) no se contabilizan' : '') + '.</p>';
+  }
+
+  ['renderBuilder'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jpton) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(render, 40); return r; };
+    w.__jpton = 1; window[fn] = w;
+  });
+  setTimeout(render, 900);
+  window.CoachTonelaje = { calcular: calcular };
+})();
+</script>
+
+<style>
+/* ============================================================
+   MÓDULO — REDISEÑO VISUAL DEL BUILDER (JERARQUÍA TÁCTICA)
+   Pase de refinamiento puramente visual (sin tocar estructura DOM
+   ni lógica) sobre .block/.block-h/.fields/.week-box/.builder-head.
+   Objetivo: consola técnica legible de un vistazo, con --font-mono
+   reservada para lecturas numéricas (series, reps, kg, RIR, tiempos)
+   — mismos tokens reales de la app (--panel/--gold/--line), nada
+   nuevo se inventa. Reglas last-script-wins sobre el <style> base.
+   ============================================================ */
+#v-builder .builder-head{
+  border-radius:16px;padding:15px 18px;
+  background:linear-gradient(120deg,rgba(210,121,63,.1),rgba(210,121,63,.02) 55%,transparent);
+  border-color:rgba(210,121,63,.22);
+}
+#v-builder .week-grid{gap:9px}
+#v-builder .week-box{
+  padding:13px 14px;border-radius:12px;position:relative;
+  background:linear-gradient(180deg,var(--panel-2),#151A20);
+}
+#v-builder .week-box:before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:12px 0 0 12px;
+  background:var(--line-2);
+}
+#v-builder .week-box.deload:before{background:var(--teal)}
+#v-builder .week-box .wt{
+  font-family:var(--ffh);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  font-weight:800;color:var(--muted);
+}
+#v-builder .week-box input[data-wf="rpe"]{
+  font-family:var(--font-mono,monospace);font-weight:700;letter-spacing:-.01em;
+}
+
+#dayPanel .block{
+  border-radius:13px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset;
+}
+#dayPanel .block-h{
+  padding:12px 14px;gap:8px;
+  background:linear-gradient(90deg,rgba(255,255,255,.025),transparent);
+}
+#dayPanel .block-h .pill{
+  font-family:var(--ffh);letter-spacing:.06em;font-size:10.5px;
+}
+#dayPanel .block-h input.bt{font-size:14.5px;letter-spacing:-.01em}
+#dayPanel .block-h .icon-btn,#dayPanel .item-h .icon-btn{width:28px;height:28px;font-size:12px}
+#dayPanel .block-h > .icon-btn:not(.swap-touch),
+#dayPanel .item-h > .icon-btn:not(.swap-touch){margin-left:2px}
+
+#dayPanel .fields{gap:9px}
+#dayPanel .f label{font-size:9px;letter-spacing:.1em}
+#dayPanel .f input,#dayPanel .f select{
+  border:1px solid var(--line);background:var(--panel-2);border-radius:8px;
+}
+#dayPanel .f input:focus,#dayPanel .f select:focus{border-color:rgba(210,121,63,.5);outline:none}
+/* lecturas numéricas puras — series, reps, tempo, descanso — en monoespaciada */
+#dayPanel .f input[data-bf="approxSets"],
+#dayPanel .f input[data-bf="efSets"],
+#dayPanel .f input[data-bf="reps"],
+#dayPanel .f input[data-bf="tempo"],
+#dayPanel .f input[data-bf="restSeconds"],
+#dayPanel .f input[data-sf="reps"],
+#dayPanel .f input[data-sf="tempo"],
+#dayPanel .f input[data-ff="repsRange"],
+#dayPanel .f input[type="number"]{
+  font-family:var(--font-mono,monospace);font-weight:600;letter-spacing:-.01em;
+}
+
+#dayPanel .item{border-radius:11px}
+#dayPanel .item-h .num{
+  font-family:var(--font-mono,monospace);border-radius:6px;
+}
+
+#v-builder .tools-in{
+  border-radius:14px;box-shadow:0 -4px 18px rgba(0,0,0,.28);
+}
+
+/* ============================================================
+   MÓDULO — FÍSICA DE BOTONES CONSOLIDADA (dashboard del coach)
+   Unifica la sensación de "pulsación sólida" en toda la interfaz.
+   Se usa !important a propósito: el dashboard ya tenía reglas
+   :active dispersas con especificidad/valores distintos por clase
+   (.btn:active solo resetea translateY, por ejemplo) — en vez de
+   perseguir y editar cada una, esta regla consolida el resultado
+   final sin tocar (ni arriesgar romper) esas reglas previas.
+   ============================================================ */
+button:active,
+input[type="checkbox"]:active,
+input[type="radio"]:active{
+  transform:scale(.97) !important;
+  transition:transform .16s cubic-bezier(0.2,0.8,0.2,1),
+             box-shadow .16s cubic-bezier(0.2,0.8,0.2,1) !important;
+}
+</style>
