@@ -3362,7 +3362,22 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   <div class="app-frame-corner br"><svg viewBox="0 0 42 42"><path d="M42 2 H10 A8 8 0 0 0 2 10 V42" fill="none" stroke="url(#voltGrad4)" stroke-width="2.5" stroke-linecap="round"/><defs><linearGradient id="voltGrad4" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#4A93B8"/><stop offset="50%" stop-color="#7CC5E8"/><stop offset="100%" stop-color="#D2793F"/></linearGradient></defs></svg></div>
 </div>
 <div class="hd-wrap">
-  <!-- 1 · TOP NAVIGATION BAR -->
+  <!-- 0 · CABECERA ULTRA-COMPACTA (siempre visible, 50px) -->
+  <div class="hd-compact" id="hdCompact">
+    <div class="hdc-shield" aria-hidden="true">
+      <svg viewBox="0 0 64 74" role="img" aria-label="Coach JP">
+        <path d="M32 2 L60 12 V36 C60 54 47 66 32 72 C17 66 4 54 4 36 V12 Z" fill="url(#hdGold)" stroke="#FFF0A8" stroke-width="2"/>
+        <path d="M36 18 L21 40 H30 L27 58 L43 34 H33 Z" fill="#07080A"/>
+      </svg>
+    </div>
+    <div class="hdc-id">
+      <span class="hdc-name" id="hdcName">{{ATHLETE_NAME}}</span>
+    </div>
+    <div class="hdc-days-wrap" id="hdcDaysWrap"></div>
+    <button type="button" class="hdc-info" id="hdcInfoBtn" title="Perfil, credencial y herramientas">👤 <span class="lbl">Perfil / Info</span></button>
+  </div>
+  <!-- 1 · TOP NAVIGATION BAR (colapsado dentro del drawer Perfil/Info) -->
+  <div class="hd-full-drawer" id="hdFullDrawer">
   <header class="masthead hd-top">
     <a class="masthead-brand hd-brand" href="#">
       <div class="hd-shield" aria-hidden="true">
@@ -3430,6 +3445,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       <div class="hd-rule"></div>
     </div>
   </section>
+  </div><!-- /hdFullDrawer -->
 </div>
 
 <div class="sticky-bar" id="stickyBar">
@@ -3453,6 +3469,13 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     <span class="progress-label">completado</span>
   </div>
 </div>
+<!-- BOTTOM NAVIGATION DOCK: %1RM, Custom Timer, KG/LBS, Readiness -->
+<nav class="hd-dock" id="hdDock" aria-label="Accesos rápidos">
+  <button type="button" class="hdd-b" id="hddCalc"><span class="ic">📊</span><span class="tx">% 1RM</span></button>
+  <button type="button" class="hdd-b" id="hddTimer"><span class="ic">⏱</span><span class="tx">Timer</span></button>
+  <button type="button" class="hdd-b" id="hddUni"><span class="ic">⚖️</span><span class="tx" id="hddUniTx">KG</span></button>
+  <button type="button" class="hdd-b" id="hddReadiness"><span class="ic">✅</span><span class="tx">Readiness</span></button>
+</nav>
 <div class="main" id="mainContent"></div>
 <footer class="site-footer">
   <p>{{FOOTER_1}}</p>
@@ -5317,6 +5340,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '</div>';
     const body = blockEl.querySelector('.block-body');
     if(body && !body.querySelector('[data-wodb]')) body.insertAdjacentHTML('afterbegin', html);
+    /* corrección de duplicación: la pizarra táctica reemplaza visualmente la lista de
+       viñetas de la que se leyó (no solo en días 100% CrossFit, también en días
+       híbridos donde body.cf-modo nunca se activa) — se oculta la fuente, no se borra */
+    if(body){
+      body.querySelectorAll('.ex-row, .wu-phase').forEach(function(el){
+        if(!el.closest('[data-wodb]')) el.style.display = 'none';
+      });
+    }
     /* un solo cronómetro por bloque: el de la pizarra manda */
     if(body) body.querySelectorAll('.quick-timer').forEach(function(q){
       if(!q.closest('[data-wodb]')) q.remove();
@@ -9089,6 +9120,11 @@ body.cf-modo .block .directive-chip{display:none !important}
       '</div>';
     var body = bl.querySelector('.block-body') || bl;
     body.insertBefore(board, body.firstChild);
+    /* corrección de duplicación: oculta la lista de viñetas fuente, no solo depende
+       de la regla CSS body.cf-modo (que puede no estar aplicada aún en el momento) */
+    Array.prototype.forEach.call(body.querySelectorAll('.ex-row, .wu-phase'), function(el){
+      if(!el.closest('.cf-board')) el.style.display = 'none';
+    });
     /* las notas del coach quedan siempre debajo de la pizarra */
     bl.querySelectorAll('.coach-note').forEach(function(n){ body.appendChild(n); });
   }
@@ -16406,7 +16442,203 @@ input[type="checkbox"]:active{
     radial-gradient(ellipse 260px 620px at 50% -8%, rgba(255,214,0,0.06), transparent 60%),
     radial-gradient(ellipse 320px 680px at 84% -12%, rgba(210,121,63,0.065), transparent 62%) !important;
 }
+
+/* =========================================================
+   MÓDULO — CABECERA ULTRA-COMPACTA, BOTTOM DOCK Y ACORDEÓN
+   INTELIGENTE (refactor UI/UX app del alumno)
+========================================================= */
+.hd-compact{
+  position:sticky; top:0; z-index:300; display:flex; align-items:center; gap:10px;
+  height:50px; padding:0 4px;
+  background:rgba(8,9,11,.94); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid rgba(229,195,120,.18);
+}
+.hdc-shield{width:24px;height:28px;flex-shrink:0}
+.hdc-shield svg{width:100%;height:100%;display:block}
+.hdc-id{display:flex;align-items:center;min-width:0;flex-shrink:0;max-width:32vw}
+.hdc-name{font-size:12.5px;font-weight:700;color:#EDEFF3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdc-days-wrap{flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
+.hdc-days-wrap::-webkit-scrollbar{display:none}
+.hdc-days-wrap .week-tabs-wrap{margin:0;padding:0}
+.hdc-days-wrap .week-tabs{margin:0;padding:2px 0}
+.hdc-info{
+  flex-shrink:0; border:1px solid rgba(229,195,120,.32); background:rgba(229,195,120,.08);
+  color:#E5C378; border-radius:999px; padding:6px 11px; font-size:11px; font-weight:700;
+  white-space:nowrap; cursor:pointer;
+}
+.hdc-info .lbl{margin-left:2px}
+@media(max-width:480px){ .hdc-info .lbl{display:none} .hdc-info{padding:6px 9px} .hdc-id{max-width:26vw} }
+
+.hd-full-drawer{
+  position:fixed; top:50px; left:0; right:0; max-height:calc(100vh - 50px); overflow-y:auto;
+  background:#08090B; z-index:290; transform:translateY(-10px); opacity:0; pointer-events:none;
+  transition:transform .22s ease, opacity .18s ease; border-bottom:1px solid rgba(229,195,120,.18);
+  box-shadow:0 18px 40px rgba(0,0,0,.5);
+}
+.hd-full-drawer.on{ transform:translateY(0); opacity:1; pointer-events:auto; }
+@media(prefers-reduced-motion:reduce){ .hd-full-drawer{ transition:opacity .18s ease; } }
+
+.hd-dock{
+  position:fixed; left:50%; bottom:calc(14px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+  z-index:260; display:flex; gap:2px; background:rgba(10,11,14,.94);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(229,195,120,.24); border-radius:18px; padding:6px; box-shadow:0 10px 30px rgba(0,0,0,.45);
+}
+.hdd-b{
+  display:flex; flex-direction:column; align-items:center; gap:2px; border:none; background:transparent;
+  color:#9aa1ad; padding:6px 12px; border-radius:13px; cursor:pointer; font-size:9.5px; font-weight:700;
+}
+.hdd-b .ic{font-size:16px;line-height:1}
+.hdd-b:active{background:rgba(229,195,120,.14);color:#E5C378}
+.hdd-b.on{background:rgba(229,195,120,.16);color:#E5C378}
+#mainContent{padding-bottom:84px !important}
+body.focus-mode .hd-dock{display:none}
+/* evita que el HUD del descanso, el aviso offline y el "siguiente" choquen con el dock nuevo */
+.timer-hud{bottom:calc(80px + env(safe-area-inset-bottom)) !important}
+.rest-hud{bottom:calc(80px + env(safe-area-inset-bottom)) !important}
+.off-pill{bottom:calc(80px + env(safe-area-inset-bottom)) !important}
+.next-hint{bottom:calc(144px + env(safe-area-inset-bottom)) !important}
+
+/* acordeón inteligente: solo el bloque en curso queda expandido, el resto colapsa a 1 línea */
+.block.collapsed .block-subtitle{display:none}
+.block.collapsed .block-header{padding-top:12px;padding-bottom:12px}
+.block.block-current .block-header{box-shadow:inset 3px 0 0 #E5C378}
 </style>
+
+<script>
+(function(){
+  function q(id){ return document.getElementById(id); }
+
+  /* ---------- cabecera compacta: reparenta el selector de días real (misma
+     instancia de DOM que renderDayTabs() ya sabe repintar, sin duplicar nada) ---------- */
+  function montarCompacta(){
+    var wrap = q('hdcDaysWrap');
+    var tabsWrap = document.querySelector('.week-tabs-wrap');
+    if(wrap && tabsWrap && tabsWrap.parentNode !== wrap){ wrap.appendChild(tabsWrap); }
+    var infoBtn = q('hdcInfoBtn');
+    var drawer = q('hdFullDrawer');
+    if(infoBtn && drawer && !infoBtn.dataset.hdWired){
+      infoBtn.dataset.hdWired = '1';
+      infoBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        drawer.classList.toggle('on');
+      });
+      document.addEventListener('click', function(e){
+        if(drawer.classList.contains('on') && !e.target.closest('.hd-full-drawer') && !e.target.closest('#hdcInfoBtn')){
+          drawer.classList.remove('on');
+        }
+      });
+    }
+  }
+
+  /* ---------- dock inferior: reutiliza la API pública ya existente
+     (CoachWodTimer.abrir, CoachUnidad.fijar, click proxy sobre #calcBtn)
+     en vez de reimplementar calculadora / timer / unidades ---------- */
+  function montarDock(){
+    var calc = q('hddCalc'), timer = q('hddTimer'), uni = q('hddUni'), rdy = q('hddReadiness');
+    if(calc && !calc.dataset.hdWired){
+      calc.dataset.hdWired = '1';
+      calc.addEventListener('click', function(){ var b = q('calcBtn'); if(b) b.click(); });
+    }
+    if(timer && !timer.dataset.hdWired){
+      timer.dataset.hdWired = '1';
+      timer.addEventListener('click', function(){
+        if(window.CoachWodTimer && window.CoachWodTimer.abrir) window.CoachWodTimer.abrir();
+      });
+    }
+    if(uni && !uni.dataset.hdWired){
+      uni.dataset.hdWired = '1';
+      uni.addEventListener('click', function(){
+        if(!window.CoachUnidad) return;
+        var actual = window.CoachUnidad.actual();
+        window.CoachUnidad.fijar(actual === 'lb' ? 'kg' : 'lb');
+      });
+    }
+    if(rdy && !rdy.dataset.hdWired){
+      rdy.dataset.hdWired = '1';
+      rdy.addEventListener('click', function(){
+        var card = q('readinessCard');
+        if(card){
+          card.scrollIntoView({ behavior:'smooth', block:'start' });
+          card.classList.add('block-flash');
+          setTimeout(function(){ card.classList.remove('block-flash'); }, 900);
+        }
+      });
+    }
+    pintarDockUni();
+  }
+  function pintarDockUni(){
+    var tx = q('hddUniTx'), uni = q('hddUni');
+    if(!tx || !window.CoachUnidad) return;
+    var actual = window.CoachUnidad.actual();
+    tx.textContent = actual === 'lb' ? 'LBS' : 'KG';
+    if(uni) uni.classList.toggle('on', actual === 'lb');
+  }
+  if(window.CoachUnidad && typeof window.CoachUnidad.fijar === 'function' && !window.CoachUnidad.fijar.__hdDock){
+    var _fijar = window.CoachUnidad.fijar;
+    window.CoachUnidad.fijar = function(){
+      var r = _fijar.apply(this, arguments);
+      pintarDockUni();
+      return r;
+    };
+    window.CoachUnidad.fijar.__hdDock = 1;
+  }
+
+  /* ---------- acordeón inteligente ---------- */
+  function bloqueCompleto(weekIdx, dayId, blockId, blockEl){
+    if(typeof isBlockDone === 'function' && isBlockDone(weekIdx, dayId, blockId)) return true;
+    var chks = blockEl.querySelectorAll('.set-check');
+    return chks.length > 0 && Array.prototype.every.call(chks, function(c){ return c.checked; });
+  }
+  function refrescarAcordeon(){
+    var main = q('mainContent');
+    var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+    if(!main || !day) return;
+    var weekIdx = (typeof state !== 'undefined') ? state.currentWeek : 0;
+    var blockEls = main.querySelectorAll('.blocks-stack > .block');
+    if(!blockEls.length) return;
+    var activoFijado = false;
+    Array.prototype.forEach.call(blockEls, function(el){
+      var bid = el.dataset.blockId;
+      var completo = bloqueCompleto(weekIdx, day.id, bid, el);
+      if(!completo && !activoFijado){
+        el.classList.remove('collapsed');
+        el.classList.add('block-current');
+        activoFijado = true;
+      } else {
+        el.classList.add('collapsed');
+        el.classList.remove('block-current');
+      }
+    });
+  }
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.closest && (e.target.closest('.set-check') || (e.target.classList && e.target.classList.contains('block-done-cb')))){
+      setTimeout(refrescarAcordeon, 30);
+    }
+  });
+
+  function mount(){
+    montarCompacta();
+    montarDock();
+    refrescarAcordeon();
+    [300, 900, 1800].forEach(function(ms){
+      setTimeout(function(){ montarCompacta(); montarDock(); refrescarAcordeon(); }, ms);
+    });
+    if(typeof window.renderMain === 'function' && !window.renderMain.__hdCompact){
+      var _rm = window.renderMain;
+      window.renderMain = function(){
+        var r = _rm.apply(this, arguments);
+        setTimeout(function(){ montarCompacta(); pintarDockUni(); refrescarAcordeon(); }, 40);
+        return r;
+      };
+      window.renderMain.__hdCompact = 1;
+    }
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+<\/script>
 
 </body>
 </html>
@@ -41040,5 +41272,345 @@ input[type="radio"]:active{
     wrapped.__jppizarra = 1;
     window.renderDay = wrapped;
   }
+})();
+</script>
+
+<style>
+/* =========================================================
+   COACH JP · MÓDULO 46 — Banco de Sesiones Diarias PRO
+   (por grupo muscular, ambos géneros)
+========================================================= */
+.pbk-fbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.pbk-chip{border:1px solid var(--line,#1E222B);background:rgba(255,255,255,.02);color:var(--muted,#9aa1ad);
+  border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.pbk-chip.on{background:linear-gradient(135deg,rgba(229,195,120,.22),rgba(210,121,63,.16));
+  border-color:rgba(229,195,120,.5);color:#E5C378}
+.pbk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:14px}
+.pbk-card{border:1px solid var(--line,#1E222B);background:rgba(255,255,255,.02);border-radius:12px;
+  padding:12px 14px;cursor:pointer;transition:border-color .15s,background .15s}
+.pbk-card:hover{border-color:rgba(229,195,120,.35)}
+.pbk-card.on{border-color:#E5C378;background:rgba(229,195,120,.08)}
+.pbk-card .ic{font-size:1.3rem}
+.pbk-card .ti{font-weight:700;font-size:13.5px;color:var(--text,#EDEFF3);margin-top:4px}
+.pbk-card .su{font-size:11.5px;color:var(--muted,#9aa1ad);margin-top:2px}
+.pbk-card .gen{display:inline-block;margin-top:6px;font-size:10.5px;font-weight:700;letter-spacing:.02em;
+  padding:2px 8px;border-radius:999px}
+.pbk-card .gen.f{background:rgba(124,197,232,.14);color:#7CC5E8}
+.pbk-card .gen.m{background:rgba(210,121,63,.16);color:#D2793F}
+.pbk-prev{border:1px solid var(--line,#1E222B);border-radius:12px;padding:14px 16px;background:rgba(0,0,0,.18)}
+.pbk-prev h4{margin:0 0 8px;font-size:14px;color:#E5C378}
+.pbk-row{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:baseline;
+  padding:7px 0;border-bottom:1px dashed rgba(255,255,255,.06);font-size:12.5px}
+.pbk-row:last-child{border-bottom:none}
+.pbk-row .tag{font-family:ui-monospace,'JetBrains Mono',Menlo,monospace;font-size:10px;color:#6b7280}
+.pbk-row .nm{color:var(--text,#EDEFF3);font-weight:600}
+.pbk-row .nm small{display:block;color:var(--muted,#9aa1ad);font-weight:400;font-size:11px;margin-top:1px}
+.pbk-row .sc{font-family:ui-monospace,'JetBrains Mono',Menlo,monospace;color:#D2793F;white-space:nowrap}
+.pbk-warn{font-size:11.5px;color:#EFB44A;margin-top:10px;line-height:1.5}
+.pbk-empty{color:var(--muted,#9aa1ad);font-size:13px;padding:20px 4px}
+</style>
+
+<div class="modal-bg" id="mBancoDia">
+  <div class="modal" style="max-width:980px">
+    <div class="modal-h">
+      <h3>⚡ Banco de Sesiones Diarias PRO</h3>
+      <div class="spacer"></div>
+      <button class="icon-btn" data-pbk-close="1">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="pbk-fbar" id="pbkFiltros"></div>
+      <div class="pbk-grid" id="pbkGrid"></div>
+      <div class="pbk-prev" id="pbkPrev"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-pbk-close="1">Cerrar</button>
+      <button class="btn" id="pbkAgregar" disabled>➕ Agregar al día actual</button>
+      <button class="btn gold" id="pbkReemplazar" disabled>🔁 Reemplazar sesión completa</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   COACH JP · MÓDULO 46 — Banco de Sesiones Diarias PRO por
+   grupo muscular (ambos géneros)
+   -----------------------------------------------------------
+   100% aditivo: no modifica newBlock/TIPOS/addBlock ni ningún
+   render existente. Solo lee S.exercises para resolver ids
+   reales de ejercicios e inyecta bloques nuevos en d.bloques
+   del día actualmente abierto en el Builder (curDay()), vía
+   los mismos save()/renderBuilder() que usa el resto de la app.
+========================================================= */
+(function(){
+  var PB_SESS = [
+    { id:'f1', genero:'f', foco:'Glúteo', ic:'🍑', titulo:'Glúteo Máximo & Isquiosurales', sub:'Tensión mecánica / carga pesada',
+      bloques:[
+        {n:'Peso Muerto Rumano', alt:['Peso Muerto Rumano con Barra','Romanian Deadlift','RDL'], tag:'ancla', sets:4, reps:'6-8', tempo:'3110', rest:150, nota:'Cadera atrás, isquios en tensión constante, barra pegada a las piernas.'},
+        {n:'Hip Thrust', alt:['Hip Thrust con Barra','Empuje de Cadera'], tag:'ancla', sets:4, reps:'8-10', tempo:'2110', rest:150, nota:'Pausa de 1s arriba en máxima contracción glútea, mentón metido.'},
+        {n:'Sentadilla Búlgara', alt:['Zancada Búlgara','Sentadilla Búlgara con Mancuernas','Bulgarian Split Squat'], tag:'accesorio', sets:3, reps:'10-12', tempo:'2011', rest:90, nota:'Torso ligeramente inclinado adelante para sesgar glúteo.'},
+        {n:'Curl Femoral', alt:['Curl Femoral en Máquina','Curl Femoral Tumbado','Leg Curl'], tag:'accesorio', sets:3, reps:'12-15', tempo:'2011', rest:75, nota:'Controlar la fase excéntrica, no usar impulso de cadera.'},
+        {n:'Patada de Glúteo en Polea', alt:['Patada de Glúteo', 'Glute Kickback', 'Extensión de Cadera en Polea'], tag:'finisher', sets:3, reps:'15-20', tempo:'1010', rest:60, nota:'Al fallo técnico, contracción máxima 1s en cada rep.'}
+      ]},
+    { id:'f2', genero:'f', foco:'Glúteo/Cuádriceps', ic:'🦵', titulo:'Glúteo Mediano, Cuádriceps & Densidad Metabólica', sub:'Series cortas, poco descanso',
+      bloques:[
+        {n:'Sentadilla Goblet', alt:['Sentadilla Frontal','Sentadilla Copa','Goblet Squat'], tag:'ancla', sets:4, reps:'8-10', tempo:'3010', rest:150, nota:'Rodillas en línea con la punta del pie, profundidad completa.'},
+        {n:'Zancada Caminando', alt:['Zancada Caminando con Mancuernas','Walking Lunge'], tag:'accesorio', sets:3, reps:'12', tempo:'2010', rest:90, nota:'12 repeticiones por pierna, paso amplio y controlado.'},
+        {n:'Abducción de Cadera en Máquina', alt:['Abductores en Máquina','Hip Abduction'], tag:'accesorio', sets:3, reps:'15-20', tempo:'2011', rest:75, nota:'Foco en glúteo medio, sin balanceo del torso.'},
+        {n:'Extensión de Cuádriceps', alt:['Extensión de Cuádriceps en Máquina','Leg Extension'], tag:'accesorio', sets:3, reps:'15', tempo:'2011', rest:75, nota:'Pausa 1s arriba en cada repetición.'},
+        {n:'Step Up', alt:['Step Up con Peso','Subida al Cajón'], tag:'finisher', sets:3, reps:'12', tempo:'1010', rest:60, nota:'12 por pierna al fallo técnico, banco a la altura de la rodilla.'}
+      ]},
+    { id:'f3', genero:'f', foco:'Torso', ic:'🦾', titulo:'Torso Completo (Espalda V-Taper, Hombro 3D & Brazos)', sub:'Amplitud de espalda + hombro redondeado',
+      bloques:[
+        {n:'Jalón al Pecho', alt:['Jalón al Pecho en Polea','Lat Pulldown'], tag:'ancla', sets:4, reps:'8-10', tempo:'2110', rest:120, nota:'Pecho arriba, tirar con los codos hacia abajo y atrás.'},
+        {n:'Remo en Polea', alt:['Remo en Máquina','Remo Sentado en Polea','Seated Cable Row'], tag:'ancla', sets:3, reps:'10-12', tempo:'2011', rest:100, nota:'Escápulas retraídas al final del recorrido, sin balanceo.'},
+        {n:'Elevación Lateral', alt:['Elevación Lateral con Mancuernas','Lateral Raise'], tag:'accesorio', sets:3, reps:'12-15', tempo:'2011', rest:75, nota:'Codos ligeramente flexionados, subir hasta la línea del hombro.'},
+        {n:'Face Pull', alt:['Face Pull en Polea'], tag:'accesorio', sets:3, reps:'15', tempo:'2011', rest:60, nota:'Rotación externa de hombro al final, foco en deltoides posterior.'},
+        {n:'Curl de Bíceps con Mancuernas', alt:['Curl de Bíceps','Curl Alterno con Mancuernas'], tag:'finisher', sets:3, reps:'12-15', tempo:'2011', rest:60, nota:'Al fallo técnico, sin balanceo del torso.'}
+      ]},
+    { id:'f4', genero:'f', foco:'Piernas', ic:'🔥', titulo:'Leg Day Completo / Hipertrofia Global', sub:'Sesión larga, todos los patrones de pierna',
+      bloques:[
+        {n:'Sentadilla con Barra', alt:['Sentadilla Trasera','Back Squat'], tag:'ancla', sets:4, reps:'6-8', tempo:'3010', rest:180, nota:'Profundidad completa, tronco lo más vertical posible.'},
+        {n:'Peso Muerto Rumano con Mancuernas', alt:['Peso Muerto Rumano', 'RDL con Mancuernas'], tag:'ancla', sets:3, reps:'10', tempo:'3011', rest:120, nota:'Isquios en tensión constante, rodillas semi-flexionadas fijas.'},
+        {n:'Prensa de Piernas', alt:['Prensa 45°', 'Leg Press'], tag:'accesorio', sets:3, reps:'12-15', tempo:'2011', rest:90, nota:'Pies a la altura de los hombros, no bloquear rodillas arriba.'},
+        {n:'Hip Thrust en Máquina', alt:['Hip Thrust', 'Empuje de Cadera en Máquina'], tag:'accesorio', sets:3, reps:'12', tempo:'2011', rest:90, nota:'Pausa 1s en la contracción máxima glútea.'},
+        {n:'Elevación de Talones', alt:['Elevación de Talones en Máquina','Pantorrilla de Pie','Calf Raise'], tag:'finisher', sets:4, reps:'15-20', tempo:'2011', rest:60, nota:'Al fallo, rango completo (estiramiento abajo, pausa arriba).'}
+      ]},
+    { id:'m1', genero:'m', foco:'Push', ic:'🏋️', titulo:'Push Day: Pecho, Hombro Anterior/Lateral & Tríceps', sub:'Empuje horizontal + vertical',
+      bloques:[
+        {n:'Press Banca con Barra', alt:['Press de Banca','Bench Press'], tag:'ancla', sets:4, reps:'6-8', tempo:'3010', rest:180, nota:'Escápulas retraídas y deprimidas, codos ~45°.'},
+        {n:'Press Militar con Mancuernas', alt:['Press Militar', 'Press de Hombro con Mancuernas','Shoulder Press'], tag:'ancla', sets:3, reps:'8-10', tempo:'2110', rest:120, nota:'Core firme, no arquear excesivamente la zona lumbar.'},
+        {n:'Press Inclinado con Mancuernas', alt:['Press Inclinado en Máquina','Incline Press'], tag:'accesorio', sets:3, reps:'10-12', tempo:'2011', rest:90, nota:'Banco a 30°, foco en pectoral superior.'},
+        {n:'Elevación Lateral en Polea', alt:['Elevación Lateral', 'Lateral Raise en Cable'], tag:'accesorio', sets:3, reps:'15', tempo:'2011', rest:60, nota:'Tensión constante durante todo el recorrido de la polea.'},
+        {n:'Extensión de Tríceps en Polea', alt:['Extensión de Tríceps', 'Pushdown de Tríceps','Tricep Pushdown'], tag:'finisher', sets:3, reps:'12-15', tempo:'2011', rest:60, nota:'Al fallo, codos fijos pegados al torso.'}
+      ]},
+    { id:'m2', genero:'m', foco:'Pull', ic:'🏋️', titulo:'Pull Day: Espalda Completa (Amplitud + Densidad) & Bíceps', sub:'Tracción vertical + horizontal',
+      bloques:[
+        {n:'Jalón al Pecho', alt:['Dominadas','Jalón al Pecho en Polea','Pull Up'], tag:'ancla', sets:4, reps:'6-8', tempo:'3011', rest:150, nota:'Recorrido completo, pecho hacia la barra/polea.'},
+        {n:'Remo con Barra', alt:['Remo Pendlay','Barbell Row'], tag:'ancla', sets:3, reps:'8-10', tempo:'2110', rest:120, nota:'Torso ~45°, tirar hacia el abdomen bajo, espalda neutra.'},
+        {n:'Remo en Máquina Agarre Neutro', alt:['Remo en Máquina','Chest Supported Row'], tag:'accesorio', sets:3, reps:'10-12', tempo:'2011', rest:90, nota:'Pecho apoyado, evitar impulso lumbar.'},
+        {n:'Face Pull', alt:['Face Pull en Polea'], tag:'accesorio', sets:3, reps:'15', tempo:'2011', rest:60, nota:'Codos altos, rotación externa al final del recorrido.'},
+        {n:'Curl de Bíceps con Barra Z', alt:['Curl con Barra Z','Curl de Bíceps con Barra','EZ Bar Curl'], tag:'finisher', sets:3, reps:'12-15', tempo:'2011', rest:60, nota:'Al fallo técnico, sin balanceo del torso.'}
+      ]},
+    { id:'m3', genero:'m', foco:'Piernas · Cuádriceps', ic:'🦵', titulo:'Leg Day A: Cuádriceps Dominant & Pantorrillas', sub:'Sesión de piernas orientada a cuádriceps',
+      bloques:[
+        {n:'Sentadilla con Barra', alt:['Sentadilla Trasera','Back Squat'], tag:'ancla', sets:4, reps:'6-8', tempo:'3010', rest:180, nota:'Profundidad completa, control en la bajada.'},
+        {n:'Prensa Inclinada', alt:['Sentadilla Hack','Prensa de Piernas','Hack Squat'], tag:'accesorio', sets:3, reps:'10-12', tempo:'2011', rest:120, nota:'Pies bajos en la plataforma para mayor énfasis en cuádriceps.'},
+        {n:'Extensión de Cuádriceps', alt:['Extensión de Cuádriceps en Máquina','Leg Extension'], tag:'accesorio', sets:3, reps:'15', tempo:'2011', rest:75, nota:'Pausa 1s arriba en cada repetición.'},
+        {n:'Sentadilla Búlgara', alt:['Zancada Búlgara','Bulgarian Split Squat'], tag:'accesorio', sets:3, reps:'10', tempo:'2011', rest:90, nota:'10 por pierna, torso vertical para sesgar cuádriceps.'},
+        {n:'Elevación de Talones de Pie', alt:['Pantorrilla de Pie','Elevación de Talones','Calf Raise'], tag:'finisher', sets:4, reps:'15-20', tempo:'2011', rest:60, nota:'Al fallo, rango completo.'}
+      ]},
+    { id:'m4', genero:'m', foco:'Piernas · Posterior', ic:'🦵', titulo:'Leg Day B: Isquiosurales, Glúteos & Cadena Posterior', sub:'Sesión de piernas orientada a cadena posterior',
+      bloques:[
+        {n:'Peso Muerto Rumano', alt:['Peso Muerto Rumano con Barra','RDL'], tag:'ancla', sets:4, reps:'6-8', tempo:'3110', rest:180, nota:'Isquios en tensión constante, barra pegada a las piernas.'},
+        {n:'Hip Thrust', alt:['Hip Thrust con Barra','Empuje de Cadera'], tag:'ancla', sets:3, reps:'8-10', tempo:'2110', rest:150, nota:'Pausa 1s arriba en máxima contracción glútea.'},
+        {n:'Curl Femoral', alt:['Curl Femoral Tumbado','Curl Femoral en Máquina','Leg Curl'], tag:'accesorio', sets:3, reps:'12-15', tempo:'2011', rest:90, nota:'Controlar la fase excéntrica.'},
+        {n:'Extensión de Cadera en Polea', alt:['Buenos Días','Buenos Días con Barra','Good Morning'], tag:'accesorio', sets:3, reps:'10-12', tempo:'3011', rest:90, nota:'Bisagra de cadera, espalda neutra en todo momento.'},
+        {n:'Peso Muerto a Una Pierna', alt:['Peso Muerto Rumano a Una Pierna','Single Leg RDL'], tag:'finisher', sets:3, reps:'10', tempo:'2011', rest:60, nota:'10 por pierna al fallo técnico, foco en el equilibrio y la cadera.'}
+      ]},
+    { id:'m5', genero:'m', foco:'Torso Pesado', ic:'🏋️', titulo:'Upper Body / Torso Pesado Especializado', sub:'Fuerza máxima de tren superior',
+      bloques:[
+        {n:'Press Banca con Barra', alt:['Press de Banca','Bench Press'], tag:'ancla', sets:4, reps:'5-6', tempo:'3010', rest:180, nota:'Series pesadas, técnica prioritaria sobre la carga.'},
+        {n:'Dominadas', alt:['Dominadas Lastradas','Jalón al Pecho en Polea','Pull Up'], tag:'ancla', sets:4, reps:'6-8', tempo:'3011', rest:150, nota:'Agregar lastre si el peso corporal ya no es suficiente estímulo.'},
+        {n:'Press Militar con Barra', alt:['Press Militar','Overhead Press'], tag:'accesorio', sets:3, reps:'8-10', tempo:'2110', rest:120, nota:'Core firme, glúteos apretados, barra en línea recta.'},
+        {n:'Remo con Barra', alt:['Remo Pendlay','Barbell Row'], tag:'accesorio', sets:3, reps:'8-10', tempo:'2110', rest:120, nota:'Torso ~45°, espalda neutra en todo el recorrido.'},
+        {n:'Fondos en Paralelas', alt:['Press Cerrado','Fondos','Dips'], tag:'finisher', sets:3, reps:'10-12', tempo:'2011', rest:90, nota:'Al fallo, torso ligeramente inclinado para foco en pecho/tríceps.'}
+      ]},
+    { id:'m6', genero:'m', foco:'Brazos/Hombro', ic:'💪', titulo:'Brazos & Deltoides (Arm Day Táctico)', sub:'Especialización de brazos y hombro',
+      bloques:[
+        {n:'Press Militar con Mancuernas', alt:['Press Militar','Press de Hombro con Mancuernas','Shoulder Press'], tag:'ancla', sets:4, reps:'8-10', tempo:'2110', rest:120, nota:'Core firme, recorrido completo sin bloquear el codo con violencia.'},
+        {n:'Elevación Lateral con Mancuernas', alt:['Elevación Lateral', 'Lateral Raise'], tag:'accesorio', sets:3, reps:'15', tempo:'2011', rest:60, nota:'Codos ligeramente flexionados, controlar la bajada.'},
+        {n:'Curl de Bíceps con Barra', alt:['Curl con Barra','Barbell Curl'], tag:'accesorio', sets:3, reps:'10-12', tempo:'2011', rest:75, nota:'Codos fijos, sin balanceo del torso.'},
+        {n:'Extensión de Tríceps en Polea', alt:['Extensión de Tríceps','Pushdown de Tríceps','Tricep Pushdown'], tag:'accesorio', sets:3, reps:'12-15', tempo:'2011', rest:75, nota:'Codos pegados al torso durante todo el recorrido.'},
+        {n:'Curl Martillo', alt:['Curl Martillo con Mancuernas','Hammer Curl'], tag:'finisher', sets:3, reps:'12-15', tempo:'2011', rest:60, nota:'Al fallo técnico, agarre neutro todo el recorrido.'}
+      ]}
+  ];
+
+  var TAG_LBL = { ancla:'RIR 2-1 · Ancla', accesorio:'RIR 1-0 · Accesorio', finisher:'Al fallo · Finisher' };
+  var TAG_IC  = { ancla:'💪', accesorio:'⚙️', finisher:'🔥' };
+
+  function nrmPB(s){
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  /* resuelve el nombre del ejercicio contra la biblioteca real del coach:
+     exacto primero, luego alternativas, luego coincidencia parcial */
+  function buscarExPB(nombre, alts){
+    var cand = [nombre].concat(alts || []);
+    var lib = (typeof S !== 'undefined' && S.exercises) || [];
+    for(var i = 0; i < cand.length; i++){
+      var k = nrmPB(cand[i]);
+      var ex = lib.filter(function(e){ return nrmPB(e.es) === k || (e.en && nrmPB(e.en) === k); })[0];
+      if(ex) return ex;
+    }
+    for(var j = 0; j < cand.length; j++){
+      var k2 = nrmPB(cand[j]);
+      if(k2.length < 5) continue;
+      var ex2 = lib.filter(function(e){ return nrmPB(e.es).indexOf(k2) >= 0 || k2.indexOf(nrmPB(e.es)) >= 0; })[0];
+      if(ex2) return ex2;
+    }
+    /* tercer nivel: solapamiento de palabras significativas — cubre variantes de
+       la biblioteca con modificadores intercalados (ej. "Press Banca con Barra"
+       vs "Press de banca plano con barra") donde ninguna es substring literal
+       de la otra pero comparten la mayoría de las palabras relevantes */
+    var mejor = null, mejorScore = 0.6;
+    cand.forEach(function(c){
+      var wc = nrmPB(c).split(' ').filter(function(w){ return w.length > 2; });
+      if(!wc.length) return;
+      lib.forEach(function(e){
+        var we = nrmPB(e.es).split(' ').filter(function(w){ return w.length > 2; });
+        if(!we.length) return;
+        var setE = {};
+        we.forEach(function(w){ setE[w] = 1; });
+        var hits = 0;
+        wc.forEach(function(w){ if(setE[w]) hits++; });
+        var score = hits / wc.length;
+        if(score > mejorScore){ mejorScore = score; mejor = e; }
+      });
+    });
+    return mejor;
+  }
+
+  /* convierte la definición compacta de una sesión del banco en bloques reales
+     del modelo de datos del Builder (mismo shape que newBlock('block')) */
+  function construirBloquesPB(sess){
+    var out = [], faltantes = [];
+    (sess.bloques || []).forEach(function(b){
+      var ex = buscarExPB(b.n, b.alt);
+      if(!ex){ faltantes.push(b.n); return; }
+      out.push({
+        id: uid('pb'), tipo:'block', category:'strength', icon: TAG_IC[b.tag] || '💪',
+        titulo: ex.es || b.n, subtitulo: TAG_LBL[b.tag] || '',
+        optional:false, tips: b.nota || '', objective: TAG_LBL[b.tag] || '',
+        exId: ex.id, hasApprox: b.tag === 'ancla', approxSets: b.tag === 'ancla' ? 2 : 0,
+        efSets: b.sets, reps: b.reps, tempo: b.tempo, restSeconds: b.rest,
+        failCapable: b.tag !== 'ancla', altNote: ''
+      });
+    });
+    return { bloques: out, faltantes: faltantes };
+  }
+
+  var sel = null, filtroGen = '';
+
+  function chips(){
+    var host = document.getElementById('pbkFiltros'); if(!host) return;
+    var defs = [ {k:'', lb:'Todos'}, {k:'f', lb:'♀ Femenino'}, {k:'m', lb:'♂ Masculino'} ];
+    host.innerHTML = defs.map(function(d){
+      return '<button type="button" class="pbk-chip' + (filtroGen === d.k ? ' on' : '') + '" data-pbkgen="' + d.k + '">' + d.lb + '</button>';
+    }).join('');
+    host.querySelectorAll('[data-pbkgen]').forEach(function(b){
+      b.addEventListener('click', function(){ filtroGen = b.dataset.pbkgen; sel = null; chips(); grid(); prev(); });
+    });
+  }
+
+  function grid(){
+    var host = document.getElementById('pbkGrid'); if(!host) return;
+    var lista = PB_SESS.filter(function(s){ return !filtroGen || s.genero === filtroGen; });
+    if(!lista.length){ host.innerHTML = '<div class="pbk-empty">Sin resultados para este filtro.</div>'; return; }
+    host.innerHTML = lista.map(function(s){
+      return '<div class="pbk-card' + (sel === s.id ? ' on' : '') + '" data-pbksel="' + s.id + '">' +
+        '<div class="ic">' + s.ic + '</div>' +
+        '<div class="ti">' + s.titulo + '</div>' +
+        '<div class="su">' + s.sub + '</div>' +
+        '<span class="gen ' + s.genero + '">' + (s.genero === 'f' ? '♀ Femenino' : '♂ Masculino') + ' · ' + s.foco + '</span>' +
+      '</div>';
+    }).join('');
+    host.querySelectorAll('[data-pbksel]').forEach(function(c){
+      c.addEventListener('click', function(){ sel = c.dataset.pbksel; grid(); prev(); });
+    });
+  }
+
+  function prev(){
+    var host = document.getElementById('pbkPrev');
+    var btnA = document.getElementById('pbkAgregar'), btnR = document.getElementById('pbkReemplazar');
+    if(!host) return;
+    var s = PB_SESS.filter(function(x){ return x.id === sel; })[0];
+    if(!s){
+      host.innerHTML = '<div class="pbk-empty">Elegí una sesión del banco para ver el detalle.</div>';
+      if(btnA) btnA.disabled = true; if(btnR) btnR.disabled = true;
+      return;
+    }
+    if(btnA) btnA.disabled = false; if(btnR) btnR.disabled = false;
+    var c = construirBloquesPB(s);
+    host.innerHTML = '<h4>' + s.ic + ' ' + s.titulo + '</h4>' +
+      c.bloques.map(function(b){
+        return '<div class="pbk-row"><span class="tag">' + (b.icon || '') + '</span>' +
+          '<span class="nm">' + b.titulo + '<small>' + (b.tips || '') + '</small></span>' +
+          '<span class="sc">' + b.efSets + '×' + b.reps + ' · ' + b.tempo + ' · ' + b.restSeconds + 's</span></div>';
+      }).join('') +
+      (c.faltantes.length ? '<div class="pbk-warn">⚠️ No se encontraron en tu biblioteca (se omiten al aplicar): ' + c.faltantes.join(', ') + '</div>' : '');
+  }
+
+  function aplicar(modo){
+    var s = PB_SESS.filter(function(x){ return x.id === sel; })[0]; if(!s) return;
+    var d = (typeof curDay === 'function') ? curDay() : null;
+    if(!d){ if(typeof toast === 'function') toast('Seleccioná un alumno/a y un día', 'err'); return; }
+    var c = construirBloquesPB(s);
+    if(!c.bloques.length){ if(typeof toast === 'function') toast('No se pudo resolver ningún ejercicio de esta sesión contra la biblioteca', 'err'); return; }
+    if(modo === 'reemplazar' && !window.confirm('¿Reemplazar TODOS los bloques del día actual por "' + s.titulo + '"? Esta acción se puede deshacer con Ctrl+Z.')) return;
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function')
+      CoachUndo.vigilar('Banco Pro: ' + s.titulo);
+    if(modo === 'reemplazar') d.bloques = c.bloques;
+    else d.bloques = (d.bloques || []).concat(c.bloques);
+    if(typeof save === 'function') save();
+    if(typeof renderBuilder === 'function') renderBuilder();
+    if(typeof toast === 'function') toast((modo === 'reemplazar' ? 'Sesión reemplazada: ' : 'Sesión agregada: ') + s.titulo + (c.faltantes.length ? ' (' + c.faltantes.length + ' ejercicio(s) omitidos)' : ''));
+    closeModal('mBancoDia');
+  }
+
+  function abrir(){
+    sel = null; filtroGen = '';
+    chips(); grid(); prev();
+    openModal('mBancoDia');
+  }
+
+  function wireModal(){
+    if(document.body.dataset.pbkWired) return;
+    document.body.dataset.pbkWired = '1';
+    document.querySelectorAll('#mBancoDia [data-pbk-close]').forEach(function(b){
+      b.addEventListener('click', function(){ closeModal('mBancoDia'); });
+    });
+    var bg = document.getElementById('mBancoDia');
+    if(bg) bg.addEventListener('click', function(e){ if(e.target === bg) closeModal('mBancoDia'); });
+    var a = document.getElementById('pbkAgregar'); if(a) a.addEventListener('click', function(){ aplicar('agregar'); });
+    var r = document.getElementById('pbkReemplazar'); if(r) r.addEventListener('click', function(){ aplicar('reemplazar'); });
+  }
+
+  function boton(){
+    var host = document.querySelector('#v-builder .tools .tools-in');
+    if(!host || document.getElementById('btnBancoDia')) return;
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn gold sm'; b.id = 'btnBancoDia';
+    b.innerHTML = '⚡ Cargar Sesión Pro del Banco';
+    var ref = document.getElementById('btnCopyDay');
+    if(ref && ref.parentNode === host) host.insertBefore(b, ref); else host.appendChild(b);
+    b.addEventListener('click', abrir);
+  }
+
+  function mount(){
+    wireModal();
+    boton();
+    [200, 800, 1800].forEach(function(ms){ setTimeout(boton, ms); });
+    var _rb = window.renderBuilder;
+    if(typeof _rb === 'function' && !_rb.__pbkWrapped){
+      window.renderBuilder = function(){
+        var r = _rb.apply(this, arguments);
+        setTimeout(boton, 40);
+        return r;
+      };
+      window.renderBuilder.__pbkWrapped = 1;
+    }
+    var _go = window.go;
+    if(typeof _go === 'function' && !_go.__pbkWrapped){
+      window.go = function(){
+        var r = _go.apply(this, arguments);
+        setTimeout(boton, 60);
+        return r;
+      };
+      window.go.__pbkWrapped = 1;
+    }
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
 })();
 </script>
