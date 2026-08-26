@@ -3989,6 +3989,29 @@ function setDayDone(weekIdx, dayId, val, blockIds){
 /* =========================================================
    REGISTRO DE CARGAS (Kg / Reps / check por serie)
 ========================================================= */
+/* 12vo pedido (26/08) — AUDITORÍA DE INPUTS: <input type="number"> rechaza la
+   coma como separador decimal en la mayoría de los navegadores (el spec de
+   HTML solo reconoce el punto, sin importar el locale del dispositivo) — un
+   alumno argentino que escribe "87,5" ve que la coma directamente no se
+   tipea, o termina con el campo vacío/sin guardar. Los campos de carga
+   pasan de type="number" a type="text" (mismo teclado numérico en celular
+   vía inputmode="decimal"/"numeric") y se sanean acá a mano: dígitos + un
+   solo separador (coma o punto, siempre normalizado a punto), hasta 3
+   enteros y 2 decimales para peso, hasta 3 dígitos enteros para reps —
+   así el .value que terminan leyendo setLoadField()/parseFloat() en el
+   resto del archivo siempre es un número limpio, sin tocar esos otros
+   puntos de lectura. */
+function sanearPeso(v){
+  v = String(v == null ? '' : v).replace(',', '.').replace(/[^0-9.]/g, '');
+  const partes = v.split('.');
+  const ent = (partes[0] || '').slice(0, 3);
+  if(partes.length < 2) return ent;
+  const dec = partes.slice(1).join('').slice(0, 2);
+  return ent + '.' + dec;
+}
+function sanearReps(v){
+  return String(v == null ? '' : v).replace(/[^0-9]/g, '').slice(0, 3);
+}
 function getLoadKey(weekIdx, dayId, blockId, exIdx, setIdx){
   return weekIdx + '|' + dayId + '|' + blockId + '|' + exIdx + '|' + setIdx;
 }
@@ -4007,9 +4030,9 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint){
     const ld = getLoad(key);
     html += '<div class="set-row' + (ld.done?' set-row-done':'') + '" data-set-key="' + key + '">' +
       '<span class="set-row-label">Serie ' + i + '</span>' +
-      '<input class="set-input set-kg" type="number" step="0.5" min="0" inputmode="decimal" placeholder="Kg" value="' + (ld.kg!=null?ld.kg:'') + '" />' +
+      '<input class="set-input set-kg" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (ld.kg!=null?ld.kg:'') + '" />' +
       '<span class="set-x" aria-hidden="true">\\u00d7</span>' +
-      '<input class="set-input set-reps" type="number" inputmode="numeric" placeholder="' + (repsHint||'Reps') + '" value="' + (ld.reps!=null?ld.reps:'') + '" />' +
+      '<input class="set-input set-reps" type="text" inputmode="numeric" autocomplete="off" placeholder="' + (repsHint||'Reps') + '" value="' + (ld.reps!=null?ld.reps:'') + '" />' +
       '<input class="set-check" type="checkbox" ' + (ld.done?'checked':'') + ' />' +
     '</div>';
   }
@@ -4741,8 +4764,16 @@ function wireBlockInteractions(day, weekIdx, blocks){
       const kgInput = row.querySelector('.set-kg');
       const repsInput = row.querySelector('.set-reps');
       const chk = row.querySelector('.set-check');
-      kgInput.addEventListener('input', function(){ setLoadField(key, 'kg', kgInput.value); });
-      repsInput.addEventListener('input', function(){ setLoadField(key, 'reps', repsInput.value); });
+      kgInput.addEventListener('input', function(){
+        const clean = sanearPeso(kgInput.value);
+        if(clean !== kgInput.value) kgInput.value = clean;
+        setLoadField(key, 'kg', clean);
+      });
+      repsInput.addEventListener('input', function(){
+        const clean = sanearReps(repsInput.value);
+        if(clean !== repsInput.value) repsInput.value = clean;
+        setLoadField(key, 'reps', clean);
+      });
       chk.addEventListener('change', function(){
         setLoadField(key, 'done', chk.checked);
         row.classList.toggle('set-row-done', chk.checked);
@@ -9523,16 +9554,50 @@ body.cf-modo .block .directive-chip{display:none !important}
 
   /* =========================================================
      8 · DECIMALES EN TODOS LOS CAMPOS DE CARGA
+     12vo pedido (26/08) — este módulo ya venía asegurando step/inputmode,
+     pero eso NO alcanza: type="number" sigue rechazando la coma como
+     separador decimal (el spec de HTML solo reconoce el punto), así que un
+     alumno que escribe "87,5" seguía sin poder tipearla. Ahora convierte el
+     campo a type="text" (una sola vez, con dataset.pesoFix como guarda de
+     idempotencia — este módulo se re-corre en cada repintado vía
+     CoachRepaintBus) y le cablea el mismo saneador que usan los campos
+     .set-kg (sanearPeso/sanearReps, definidos más arriba junto a
+     renderSetRows). El resto de los listeners propios de cada campo
+     (.ph-edit, #tmKg, #phKg — cada uno con su propia lógica en otro
+     módulo) siguen intactos: acá solo se limpia el .value ANTES de que
+     esos otros lean, no se reemplaza su comportamiento.
   ========================================================= */
   function decimales(){
-    document.querySelectorAll('.set-kg, .ph-edit, #tmKg, #phKg, .cf-score-in, input[type="number"]').forEach(function(i){
-      if(i.classList.contains('set-reps') || i.classList.contains('ph-rp')) return;
+    document.querySelectorAll('.set-kg, .ph-edit, #tmKg, #phKg, #calcWeight, .cf-score-in, input[type="number"]').forEach(function(i){
+      if(i.classList.contains('set-reps') || i.classList.contains('ph-rp') || i.id === 'calcReps') return;
       var ph = (i.placeholder || '').toLowerCase();
       var esPeso = i.classList.contains('set-kg') || i.classList.contains('ph-edit') ||
-                   i.id === 'tmKg' || i.id === 'phKg' || /kg|lbs|peso|carga/.test(ph);
+                   i.id === 'tmKg' || i.id === 'phKg' || i.id === 'calcWeight' || /kg|lbs|peso|carga/.test(ph);
       if(!esPeso) return;
-      if(i.step !== '0.5'){ i.step = '0.5'; }
+      if(i.dataset.pesoFix) return;
+      i.dataset.pesoFix = '1';
+      if(i.type === 'number') i.type = 'text';
       if(!i.getAttribute('inputmode')) i.setAttribute('inputmode', 'decimal');
+      if(typeof sanearPeso === 'function' && i.value) i.value = sanearPeso(i.value);
+      i.addEventListener('input', function(){
+        if(typeof sanearPeso !== 'function') return;
+        var limpio = sanearPeso(i.value);
+        if(limpio !== i.value) i.value = limpio;
+      });
+    });
+    /* mismo trato para los campos de reps que NO son .set-reps (ese ya se
+       sanea en su propio wireBlockInteractions) — hoy solo #phRp/.ph-rp. */
+    document.querySelectorAll('#phRp, .ph-rp, #calcReps').forEach(function(i){
+      if(i.dataset.repsFix) return;
+      i.dataset.repsFix = '1';
+      if(i.type === 'number') i.type = 'text';
+      if(!i.getAttribute('inputmode')) i.setAttribute('inputmode', 'numeric');
+      if(typeof sanearReps === 'function' && i.value) i.value = sanearReps(i.value);
+      i.addEventListener('input', function(){
+        if(typeof sanearReps !== 'function') return;
+        var limpio = sanearReps(i.value);
+        if(limpio !== i.value) i.value = limpio;
+      });
     });
   }
 
@@ -37353,6 +37418,31 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       else setTimeout(escribir, 0);
     }, 900);
   };
+
+  /* 12vo pedido (26/08) — REPARACIÓN DE PERSISTENCIA: el debounce de 900ms
+     (bajado de 120ms en el 8vo pedido, a propósito, para no competir con el
+     hilo mientras el coach tipea) deja una ventana real: si el coach cierra
+     la pestaña o navega a otra URL en los ~900ms-1.5s posteriores a la
+     última tecla, ese guardado pendiente nunca llega a escribirse en
+     localStorage — el dato queda solo en memoria, que se pierde con la
+     pestaña. Esto no existía (o era mucho más chico, ~120ms) antes del 8vo
+     pedido. Se lo cierra con un volcado SÍNCRONO forzado justo antes de que
+     la página se descargue — "pagehide" cubre además el caso de Safari/iOS,
+     donde "beforeunload" no siempre dispara de forma confiable al cerrar la
+     pestaña o cambiar de app. No reemplaza el guardado normal (que sigue
+     diferido para no trabar el tipeo) — es una red de seguridad que solo
+     actúa en el instante de salida. */
+  function _volcadoSincrono(){
+    clearTimeout(pend);
+    try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+  }
+  window.addEventListener('pagehide', _volcadoSincrono);
+  window.addEventListener('beforeunload', _volcadoSincrono);
+  /* además, al volver de segundo plano (el coach cambia de app en el celular
+     y vuelve) tampoco está de más asegurar que no quedó nada pendiente */
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'hidden') _volcadoSincrono();
+  });
 
   /* --- backup automático semanal --- */
   function chequearBackup(){
