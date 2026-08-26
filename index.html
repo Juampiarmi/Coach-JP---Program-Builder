@@ -3381,8 +3381,45 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       <div class="hdc-days-wrap" id="hdcDaysWrap"></div>
     </div>
   </div>
-  <!-- 1 · TOP NAVIGATION BAR (colapsado dentro del drawer Perfil/Info) -->
+  <!-- 1 · DRAWER "PERFIL/INFO": panel táctico de atleta+coach (nuevo, 26/08) -->
   <div class="hd-full-drawer" id="hdFullDrawer">
+  <div class="hdp-panel" id="hdpPanel">
+    <div class="hdp-head">
+      <span class="hdp-eyebrow">Perfil &amp; Ajustes</span>
+      <button type="button" class="hdp-close" id="hdpClose">✕ Cerrar</button>
+    </div>
+
+    <section class="hdp-card hdp-athlete">
+      <div class="hdp-card-lb">Atleta</div>
+      <div class="hdp-athlete-name">{{ATHLETE_NAME}}</div>
+      <div class="hdp-badge" id="hdcProgramBadge">{{HERO_EYEBROW}}</div>
+      <div class="hdp-sync" id="hdpSync"><span class="dot"></span><span class="tx">Verificando…</span></div>
+    </section>
+
+    <section class="hdp-card hdp-coach">
+      <div class="hdp-card-lb">Coach</div>
+      <div class="hdp-coach-name">{{COACH_NAME}}</div>
+      <div class="hdp-coach-role">{{COACH_ROLE}}</div>
+    </section>
+
+    <section class="hdp-settings">
+      <div class="hdp-card-lb">Ajustes y utilidades</div>
+      <div class="hdp-row hdp-row-mode" id="hdpModeSlot"></div>
+      <div class="hdp-row hdp-row-uni">
+        <span class="hdp-row-lb">Unidad de carga</span>
+        <div class="hdp-uni-toggle" id="hdpUniToggle">
+          <button type="button" class="hdp-uni-b" data-u="kg">KG</button>
+          <button type="button" class="hdp-uni-b" data-u="lb">LBS</button>
+        </div>
+      </div>
+      <div class="hdp-row hdp-row-slot" id="hdpInstallSlot"></div>
+      <div class="hdp-row hdp-row-slot" id="hdpGuideSlot"></div>
+    </section>
+  </div>
+  <!-- contenido legado: se mantiene en el DOM (oculto) porque otras partes del
+       script lo leen/escriben directamente (heroEyebrowEl.textContent, #hdPhase,
+       pwaBoton() lo usa como punto de anclaje) — no se borra para no romper esa
+       lógica, solo se oculta visualmente. Ver módulo de perfil más abajo. -->
   <header class="masthead hd-top">
     <a class="masthead-brand hd-brand" href="#">
       <div class="hd-shield" aria-hidden="true">
@@ -16505,26 +16542,110 @@ input[type="checkbox"]:active{
 .hd-full-drawer.on{ transform:translateY(0); opacity:1; pointer-events:auto; }
 @media(prefers-reduced-motion:reduce){ .hd-full-drawer{ transition:opacity .18s ease; } }
 
-.hd-dock{
-  position:fixed; left:50%; bottom:calc(14px + env(safe-area-inset-bottom)); transform:translateX(-50%);
-  z-index:260; display:flex; gap:2px; background:rgba(10,11,14,.94);
-  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
-  border:1px solid rgba(229,195,120,.24); border-radius:18px; padding:6px; box-shadow:0 10px 30px rgba(0,0,0,.45);
+/* ---------- oculta el header/credencial/hero viejos (siguen en el DOM,
+   sin borrar, porque heroEyebrowEl/#hdPhase/pwaBoton() los siguen usando
+   como anclaje — ver montarPerfil() en el script) y muestra el panel
+   nuevo "Perfil & Ajustes" (black card pass) en su lugar. ---------- */
+#hdFullDrawer > header.masthead.hd-top,
+#hdFullDrawer > .hd-cred,
+#hdFullDrawer > .hero.hd-banner{ display:none !important; }
+
+.hdp-panel{ padding:16px 14px calc(20px + env(safe-area-inset-bottom)); }
+.hdp-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.hdp-eyebrow{
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:.68rem; letter-spacing:.14em;
+  text-transform:uppercase; color:#E5C378;
 }
+.hdp-close{
+  border:1px solid #1E222B; background:#12151B; color:#EDEFF3; border-radius:999px;
+  padding:7px 13px; font-size:12px; font-weight:700; cursor:pointer;
+  transition:transform .12s ease, border-color .15s ease;
+}
+.hdp-close:active{ transform:scale(.95); border-color:rgba(229,195,120,.5); }
+
+.hdp-card{
+  border:1px solid #1E222B; border-radius:16px; padding:14px 16px; margin-bottom:10px;
+  background:linear-gradient(155deg, rgba(255,255,255,.025), transparent);
+}
+.hdp-card-lb{
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:.62rem; letter-spacing:.16em;
+  text-transform:uppercase; color:#64748B; margin-bottom:6px;
+}
+.hdp-athlete-name{ font-size:19px; font-weight:800; color:#FFFFFF; line-height:1.2; }
+.hdp-badge{
+  display:inline-block; margin-top:8px; padding:5px 12px; border-radius:999px; font-size:10.5px;
+  font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+  color:#F2C89A; background:rgba(210,121,63,.15); border:1px solid #D2793F;
+}
+.hdp-sync{ display:flex; align-items:center; gap:7px; margin-top:11px; font-size:11.5px; color:#9aa1ad; }
+.hdp-sync .dot{ width:7px; height:7px; border-radius:50%; background:#3ECF7A; box-shadow:0 0 8px rgba(62,207,122,.7); flex-shrink:0; }
+.hdp-sync .dot.off{ background:#64748B; box-shadow:none; }
+.hdp-coach-name{ font-size:15px; font-weight:800; color:#FFFFFF; }
+.hdp-coach-role{ font-size:12px; color:#9aa1ad; margin-top:2px; line-height:1.4; }
+
+.hdp-settings .hdp-card-lb{ margin:4px 2px 8px; }
+.hdp-row{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  border:1px solid #1E222B; border-radius:14px; padding:10px 12px; margin-bottom:8px;
+  background:#0E1014;
+}
+.hdp-row-lb{ font-size:12.5px; font-weight:700; color:#EDEFF3; }
+.hdp-uni-toggle{ display:flex; gap:4px; background:#0A0B0D; border-radius:999px; padding:3px; }
+.hdp-uni-b{
+  border:none; background:transparent; color:#64748B; font-size:11px; font-weight:800;
+  letter-spacing:.04em; padding:6px 14px; border-radius:999px; cursor:pointer;
+}
+.hdp-uni-b.on{ background:rgba(210,121,63,.18); color:#F2C89A; box-shadow:inset 0 0 0 1px #D2793F; }
+/* controles reales reparentados (mode-switch, guía, instalar) — se les
+   quita el estilo de "nav-pill" viejo y se los viste como filas del panel */
+.hdp-row-mode #modeSwitch{ display:flex; gap:6px; width:100%; background:transparent; padding:0; }
+.hdp-row-mode .mode-pill{
+  flex:1; text-align:center; border-radius:11px !important; padding:9px 8px !important;
+  background:#0A0B0D !important; border:1px solid #1E222B !important; color:#9aa1ad !important;
+  font-size:11.5px !important;
+}
+.hdp-row-mode .mode-pill.active{
+  background:rgba(210,121,63,.16) !important; border-color:#D2793F !important; color:#F2C89A !important;
+}
+.hdp-row-slot{ padding:0; background:transparent; border:none; }
+.hdp-row-slot .pwa-wrap{ margin:0; padding:0; width:100%; }
+.hdp-row-slot .pwa-athlete{ margin:0 !important; width:100%; max-width:none !important; border-radius:14px !important; }
+.hdp-row-slot #guideBtn{
+  width:100%; text-align:center; border-radius:14px !important; padding:12px !important;
+  background:#0E1014 !important; border:1px solid #1E222B !important; color:#EDEFF3 !important;
+  font-size:13px !important; font-weight:700 !important;
+}
+
+/* ---------- dock táctico fijo, al ras del borde inferior (ya no es un
+   "globito" flotante centrado) — barra completa, con auto-ocultado cuando
+   hay un modal/timer/drawer abierto encima, para que nunca tape sus
+   botones de acción (ver actualizarDock() más abajo). ---------- */
+.hd-dock{
+  position:fixed; left:0; right:0; bottom:0;
+  z-index:260; display:flex; gap:0; background:rgba(8,9,11,.95);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border-top:1px solid #1E222B; border-radius:0;
+  padding:6px calc(4px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left));
+  box-shadow:0 -6px 20px rgba(0,0,0,.35);
+  transition:transform .22s ease, opacity .18s ease;
+}
+.hd-dock.is-hidden{ transform:translateY(100%); opacity:0; pointer-events:none; }
+@media(prefers-reduced-motion:reduce){ .hd-dock{ transition:opacity .18s ease; } }
 .hdd-b{
-  display:flex; flex-direction:column; align-items:center; gap:2px; border:none; background:transparent;
-  color:#9aa1ad; padding:6px 12px; border-radius:13px; cursor:pointer; font-size:9.5px; font-weight:700;
+  flex:1 1 0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  border:none; background:transparent;
+  color:#9aa1ad; padding:7px 4px; border-radius:13px; cursor:pointer; font-size:9.5px; font-weight:700;
 }
 .hdd-b .ic{font-size:16px;line-height:1}
 .hdd-b:active{background:rgba(229,195,120,.14);color:#E5C378}
 .hdd-b.on{background:rgba(229,195,120,.16);color:#E5C378}
-#mainContent{padding-bottom:84px !important}
+#mainContent{padding-bottom:90px !important}
 body.focus-mode .hd-dock{display:none}
 /* evita que el HUD del descanso, el aviso offline y el "siguiente" choquen con el dock nuevo */
-.timer-hud{bottom:calc(80px + env(safe-area-inset-bottom)) !important}
-.rest-hud{bottom:calc(80px + env(safe-area-inset-bottom)) !important}
-.off-pill{bottom:calc(80px + env(safe-area-inset-bottom)) !important}
-.next-hint{bottom:calc(144px + env(safe-area-inset-bottom)) !important}
+.timer-hud{bottom:calc(86px + env(safe-area-inset-bottom)) !important}
+.rest-hud{bottom:calc(86px + env(safe-area-inset-bottom)) !important}
+.off-pill{bottom:calc(86px + env(safe-area-inset-bottom)) !important}
+.next-hint{bottom:calc(150px + env(safe-area-inset-bottom)) !important}
 
 /* acordeón inteligente: solo el bloque en curso queda expandido, el resto colapsa a 1 línea */
 .block.collapsed .block-subtitle{display:none}
@@ -16576,6 +16697,15 @@ body.focus-mode .hd-dock{display:none}
     if(wrap && tabsWrap && tabsWrap.parentNode !== wrap){ wrap.appendChild(tabsWrap); }
     var infoBtn = q('hdcInfoBtn');
     var drawer = q('hdFullDrawer');
+    /* .hd-wrap tiene position:relative + z-index:3 (regla vieja, ~línea 5990),
+       lo que le crea su propio "stacking context" — cualquier elemento fixed
+       ADENTRO de .hd-wrap queda atrapado bajo ese contexto sin importar su
+       propio z-index, y pinta por DEBAJO de elementos externos con z-index
+       mucho más bajo (ej. .week-selector-wrap, z-index:70). Por eso el drawer
+       de Perfil se veía "transparentado" por las pills de semana al abrirlo.
+       Fix: reparentarlo a <body> una sola vez, así su z-index:290 compite en
+       el stacking context real de nivel documento. */
+    if(drawer && drawer.parentElement !== document.body){ document.body.appendChild(drawer); }
     if(infoBtn && drawer && !infoBtn.dataset.hdWired){
       infoBtn.dataset.hdWired = '1';
       infoBtn.addEventListener('click', function(e){
@@ -16589,6 +16719,78 @@ body.focus-mode .hd-dock{display:none}
       });
     }
     medirCabecera();
+    montarPerfil();
+  }
+
+  /* ---------- panel de perfil rediseñado (26/08): NO reimplementa nada.
+     Reparenta (mueve, no clona) los controles reales que ya funcionan
+     (#modeSwitch, #guideBtn, el botón de instalar que arma pwaBoton() en
+     otro módulo) hacia las filas del panel nuevo, y cablea el switch de
+     KG/LBS contra la misma API pública CoachUnidad.fijar() que usa el
+     dock. Cero mutación de datos/Supabase: solo mueve nodos del DOM y
+     lee localStorage(STORAGE_KEY) para el indicador de guardado local. ---------- */
+  function montarPerfil(){
+    var modeSlot = q('hdpModeSlot');
+    var modeSwitch = document.getElementById('modeSwitch');
+    if(modeSlot && modeSwitch && modeSwitch.parentNode !== modeSlot){ modeSlot.appendChild(modeSwitch); }
+
+    var guideSlot = q('hdpGuideSlot');
+    var guideBtn = document.getElementById('guideBtn');
+    if(guideSlot && guideBtn && guideBtn.parentNode !== guideSlot){ guideSlot.appendChild(guideBtn); }
+
+    var installSlot = q('hdpInstallSlot');
+    var pwaWrap = document.querySelector('.pwa-wrap');
+    if(installSlot && pwaWrap && pwaWrap.parentNode !== installSlot){ installSlot.appendChild(pwaWrap); }
+
+    var uniToggle = q('hdpUniToggle');
+    if(uniToggle && !uniToggle.dataset.hdWired){
+      uniToggle.dataset.hdWired = '1';
+      uniToggle.addEventListener('click', function(e){
+        var b = e.target.closest('[data-u]');
+        if(!b || !window.CoachUnidad) return;
+        window.CoachUnidad.fijar(b.dataset.u);
+      });
+    }
+    pintarUniPerfil();
+
+    var closeBtn = q('hdpClose');
+    var drawer = q('hdFullDrawer');
+    if(closeBtn && drawer && !closeBtn.dataset.hdWired){
+      closeBtn.dataset.hdWired = '1';
+      closeBtn.addEventListener('click', function(e){ e.stopPropagation(); drawer.classList.remove('on'); });
+    }
+
+    var badge = q('hdcProgramBadge');
+    var src = document.getElementById('heroEyebrow');
+    if(badge && src && src.textContent) badge.textContent = src.textContent;
+
+    pintarSync();
+  }
+  function pintarUniPerfil(){
+    var wrap = q('hdpUniToggle');
+    if(!wrap || !window.CoachUnidad) return;
+    var actual = window.CoachUnidad.actual();
+    Array.prototype.forEach.call(wrap.querySelectorAll('[data-u]'), function(b){
+      b.classList.toggle('on', b.dataset.u === actual);
+    });
+  }
+  function pintarSync(){
+    var el = q('hdpSync'); if(!el) return;
+    var dot = el.querySelector('.dot'), tx = el.querySelector('.tx');
+    var key = (typeof STORAGE_KEY !== 'undefined') ? STORAGE_KEY : null;
+    var tiene = false;
+    try{ tiene = !!(key && localStorage.getItem(key)); }catch(e){}
+    if(tx) tx.textContent = tiene ? 'Datos guardados en este dispositivo' : 'Sin progreso guardado todavía';
+    if(dot) dot.classList.toggle('off', !tiene);
+  }
+  if(window.CoachUnidad && typeof window.CoachUnidad.fijar === 'function' && !window.CoachUnidad.fijar.__hdPerfil){
+    var _fijarPerfil = window.CoachUnidad.fijar;
+    window.CoachUnidad.fijar = function(){
+      var r = _fijarPerfil.apply(this, arguments);
+      pintarUniPerfil();
+      return r;
+    };
+    window.CoachUnidad.fijar.__hdPerfil = 1;
   }
 
   /* ---------- dock inferior: reutiliza la API pública ya existente
@@ -16626,6 +16828,27 @@ body.focus-mode .hd-dock{display:none}
       });
     }
     pintarDockUni();
+    actualizarDock();
+  }
+  /* ---------- oculta el dock inferior por completo mientras hay un modal,
+     el Custom Timer a pantalla completa, la Story Card o el drawer de
+     Perfil abiertos encima — así nunca tapa sus botones de acción (antes
+     el dock, con z-index 260, quedaba por encima del Custom Timer, que
+     usa z-index 240). Reactivo vía MutationObserver: no hace falta tocar
+     cada función que abre/cierra esas capas, solo mirar sus clases. ---------- */
+  function actualizarDock(){
+    var dock = q('hdDock'); if(!dock) return;
+    var tapado = !!(
+      document.querySelector('.cwt-wrap.on') ||
+      document.querySelector('.modal-overlay.open') ||
+      document.querySelector('.hd-full-drawer.on') ||
+      document.querySelector('.story-wrap.on')
+    );
+    dock.classList.toggle('is-hidden', tapado);
+  }
+  if(!window.__hdDockObs){
+    window.__hdDockObs = new MutationObserver(function(){ actualizarDock(); });
+    window.__hdDockObs.observe(document.body, { attributes:true, attributeFilter:['class'], subtree:true });
   }
   function pintarDockUni(){
     var tx = q('hddUniTx'), uni = q('hddUni');
