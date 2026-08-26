@@ -2096,22 +2096,53 @@ function pintarMesoNote(p, esCrossfitActivo){
     : '<span class="pill gold">📈 Progresión tradicional</span> ' +
       '<span style="color:var(--muted)">' + p.meso.map(w => '<b style="color:var(--txt-2)">' + esc(w.short) + '</b>: ' + esc(w.phase)).join(' → ') + '</span>';
 }
-function exOptions(sel){
+/* 11vo pedido (26/08) — auditoría de lag del Builder: con un día "pesado"
+   (varios bloques/superset, cada uno con su propio <select> de ejercicio),
+   renderBuilder() llamaba exOptions() una vez POR SELECT, y cada llamada
+   reconstruía desde cero el MISMO string de ~424 <option> (agrupados,
+   ordenados y escapados) — medido: con 20 bloques en un día, exOptions()
+   sola se comía ~21ms de los ~73ms totales de un renderBuilder() completo,
+   trabajo 100% redundante (el único dato que cambia entre llamadas es CUÁL
+   opción va "selected"). Se cachea el HTML base (sin ningún "selected") y
+   se reusa dentro de la MISMA pasada de render — marcar el seleccionado es
+   un solo reemplazo de string sobre el HTML ya armado, no un rebuild.
+   Invalidación SIN riesgo de quedar vieja: el cache se resetea a null al
+   principio de CADA renderBuilder() (ver ahí), así que nunca sobrevive más
+   allá de una sola pasada de render — no hace falta un contador de versión
+   ni rastrear los ~10 puntos donde S.exercises se muta (el riesgo que ya
+   se había descartado en el 8vo pedido para un cache más persistente). */
+let _exOptionsBaseCache = null;
+function exOptionsBase(){
+  if(_exOptionsBaseCache !== null) return _exOptionsBaseCache;
   let h = '<option value="">— Elegir ejercicio —</option>';
   GRUPOS.forEach(g => {
     const arr = S.exercises.filter(e => e.grupo === g).sort((a,b)=>a.es.localeCompare(b.es,'es'));
     if(!arr.length) return;
     h += '<optgroup label="' + esc(g) + '">' +
-      arr.map(e => '<option value="' + e.id + '"' + (e.id===sel?' selected':'') + '>' + esc(e.es) + (e.videoId?' 🎬':'') + '</option>').join('') +
+      arr.map(e => '<option value="' + e.id + '" data-eoid="' + e.id + '">' + esc(e.es) + (e.videoId?' 🎬':'') + '</option>').join('') +
       '</optgroup>';
   });
+  _exOptionsBaseCache = h;
   return h;
+}
+function exOptions(sel){
+  const base = exOptionsBase();
+  if(!sel) return base;
+  /* el value de un exId real no trae comillas/caracteres especiales (son ids
+     generados por uid()), así que un replace directo sobre el marcador
+     data-eoid="<id>" es seguro y no necesita un parser de HTML de por medio */
+  return base.replace('<option value="' + sel + '" data-eoid="' + sel + '">', '<option value="' + sel + '" data-eoid="' + sel + '" selected>');
 }
 function catOptions(sel){
   return CATEGORIAS.map(c => '<option value="' + c.v + '"' + (c.v===sel?' selected':'') + '>' + esc(c.lb) + '</option>').join('');
 }
 
 function renderBuilder(){
+  /* invalida el cache de exOptions() de la pasada anterior — se reconstruye
+     una sola vez dentro de esta pasada (ver exOptionsBase arriba), nunca
+     sobrevive a un renderBuilder() distinto, así que no puede quedar vieja
+     aunque S.exercises se haya mutado entre medio. */
+  _exOptionsBaseCache = null;
   const ath = active();
   $('#builderNoAth').style.display = ath ? 'none' : '';
   $('#builderWrap').style.display  = ath ? '' : 'none';
@@ -15882,6 +15913,15 @@ input[type="checkbox"]:active{
 .nu-meal.hecha .tick{background:rgba(72,213,151,.15);border-color:rgba(72,213,151,.5);color:#48D597}
 .nu-meal.hecha .mn{color:#9BE9C4}
 .nu-meal .cuerpo{padding:0 13px 12px}
+/* 10mo pedido (26/08) — selector Opción A / Opción B dentro de cada comida,
+   solo aparece si el plan trae "opcionB" (preparación elaborada). */
+.nu-opt-seg{display:flex;gap:6px;margin:2px 0 8px}
+.nu-opt{
+  flex:1;min-height:38px;border-radius:10px;cursor:pointer;padding:6px 8px;text-align:center;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);color:#9AA2AD;
+  font-size:calc(11.5px * var(--fzs,1));font-weight:600;line-height:1.25;
+}
+.nu-opt.on{background:rgba(210,121,63,.14);border-color:#D2793F;color:#F0B98A}
 .nu-it{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid rgba(255,255,255,.06)}
 .nu-it .al{flex:1;font-size:calc(13px * var(--fzs,1));color:#C9CFD8}
 .nu-it .gr{font-family:ui-monospace,monospace;font-weight:700;color:#EDEFF2;font-size:calc(13px * var(--fzs,1))}
@@ -15907,7 +15947,14 @@ input[type="checkbox"]:active{
   function hoyISO(){ var d = new Date(); return d.toISOString().slice(0,10); }
   function log(){ try{ return JSON.parse(localStorage.getItem(KL) || '{}') || {}; }catch(e){ return {}; } }
   function guardarLog(o){ try{ localStorage.setItem(KL, JSON.stringify(o)); }catch(e){} }
-  function delDia(){ var o = log(), k = hoyISO(); if(!o[k]) o[k] = { comidas:{}, swap:{} }; return o[k]; }
+  function delDia(){
+    var o = log(), k = hoyISO();
+    if(!o[k]) o[k] = { comidas:{}, swap:{}, opcion:{} };
+    /* 10mo pedido (26/08): días guardados antes de que existiera "opcionB" no
+       tienen esta clave — se completa acá para no romper lecturas viejas. */
+    if(!o[k].opcion) o[k].opcion = {};
+    return o[k];
+  }
 
   function esDiaEntreno(){
     try{
@@ -15916,14 +15963,23 @@ input[type="checkbox"]:active{
     }catch(e){ return true; }
   }
 
+  function totalElegido(c, d){
+    /* 10mo pedido (26/08): si el alumno eligió "B" (preparación elaborada) para
+       esta comida hoy, y el plan trae opcionB, se cuenta ese total — si no,
+       la opción A de siempre. Así el resumen del día refleja lo que realmente
+       se preparó, no siempre la opción por defecto. */
+    return (d.opcion[c.n] === 'B' && c.opcionB && c.opcionB.total) ? c.opcionB.total : c.total;
+  }
+
   function sumaDelDia(){
     var d = delDia(), tot = { prot:0, carb:0, gras:0, kcal:0 };
     (PLAN.comidas || []).forEach(function(c){
       if(!d.comidas[c.n]) return;
-      tot.prot += (c.total && c.total.prot) || 0;
-      tot.carb += (c.total && c.total.carb) || 0;
-      tot.gras += (c.total && c.total.gras) || 0;
-      tot.kcal += (c.total && c.total.kcal) || 0;
+      var t = totalElegido(c, d);
+      tot.prot += (t && t.prot) || 0;
+      tot.carb += (t && t.carb) || 0;
+      tot.gras += (t && t.gras) || 0;
+      tot.kcal += (t && t.kcal) || 0;
     });
     return tot;
   }
@@ -15958,16 +16014,31 @@ input[type="checkbox"]:active{
     html += (PLAN.comidas || []).map(function(c, ci){
       var hecha = !!d.comidas[c.n];
       var abierta = false;
+      /* 10mo pedido (26/08): si la comida trae "opcionB" (preparación elaborada,
+         schema aditivo), se muestra un selector de 2 pestañas — la elegida hoy
+         queda guardada en d.opcion[c.n] ('A' por defecto, no hace falta setearla).
+         Las claves de intercambio ("data-swap") de la opción B llevan el
+         infijo "_B_" para no pisar los índices de la opción A. */
+      var tieneB = !!(c.opcionB && (c.opcionB.items || []).length);
+      var elegidaB = tieneB && d.opcion[c.n] === 'B';
+      var activa = elegidaB ? c.opcionB : c;
+      var itemsActivos = activa.items || [];
+      var keyPref = c.n + (elegidaB ? '_B_' : '_');
+      var kcalActiva = (activa.total && activa.total.kcal) || 0;
       return '<details class="nu-meal' + (hecha ? ' hecha' : '') + '"' + (abierta ? ' open' : '') + ' data-mn="' + c.n + '">' +
         '<summary>' +
-          '<span class="mn">' + c.n + ' · ' + esc(c.nombre) + '</span>' +
+          '<span class="mn">' + c.n + ' · ' + esc(activa.nombre || c.nombre) + '</span>' +
           '<span class="mh">' + esc(c.hora_sug || '') + '</span>' +
-          '<span class="mk">' + ((c.total && c.total.kcal) || 0) + ' kcal</span>' +
+          '<span class="mk">' + kcalActiva + ' kcal</span>' +
           '<span class="tick" data-tick="' + c.n + '">' + (hecha ? '✓' : '') + '</span>' +
         '</summary>' +
         '<div class="cuerpo">' +
-          (c.items || []).map(function(it, ii){
-            var key = c.n + '_' + ii;
+          (tieneB ? '<div class="nu-opt-seg">' +
+            '<button type="button" class="nu-opt' + (elegidaB ? '' : ' on') + '" data-opt="' + c.n + '|A">⚡ ' + esc(c.nombre) + '</button>' +
+            '<button type="button" class="nu-opt' + (elegidaB ? ' on' : '') + '" data-opt="' + c.n + '|B">🍳 ' + esc(c.opcionB.nombre) + '</button>' +
+          '</div>' : '') +
+          itemsActivos.map(function(it, ii){
+            var key = keyPref + ii;
             var alt = d.swap[key];
             var nombre = alt ? alt.alimento : it.alimento;
             var gramos = alt ? alt.gramos : it.gramos;
@@ -16053,9 +16124,24 @@ input[type="checkbox"]:active{
         e.preventDefault(); e.stopPropagation();
         var n = parseInt(t.dataset.tick, 10);
         var o = log(), k = hoyISO();
-        if(!o[k]) o[k] = { comidas:{}, swap:{} };
+        if(!o[k]) o[k] = { comidas:{}, swap:{}, opcion:{} };
         if(o[k].comidas[n]) delete o[k].comidas[n]; else o[k].comidas[n] = Date.now();
         guardarLog(o);
+        if(window.CoachVibra) CoachVibra.toque();
+        render();
+        return;
+      }
+      /* 10mo pedido (26/08): botón de pestaña Opción A / Opción B — solo cambia
+         cuál preparación está activa hoy para esa comida, no toca "hecha". */
+      var op = e.target.closest('[data-opt]');
+      if(op){
+        e.preventDefault(); e.stopPropagation();
+        var partsOp = op.dataset.opt.split('|'), mn = partsOp[0], cual = partsOp[1];
+        var oo = log(), kOp = hoyISO();
+        if(!oo[kOp]) oo[kOp] = { comidas:{}, swap:{}, opcion:{} };
+        if(!oo[kOp].opcion) oo[kOp].opcion = {};
+        if(cual === 'A') delete oo[kOp].opcion[mn]; else oo[kOp].opcion[mn] = 'B';
+        guardarLog(oo);
         if(window.CoachVibra) CoachVibra.toque();
         render();
         return;
@@ -16063,13 +16149,19 @@ input[type="checkbox"]:active{
       var sw = e.target.closest('[data-swap]');
       if(sw){
         e.preventDefault(); e.stopPropagation();
-        var key = sw.dataset.swap, part = key.split('_');
+        var key = sw.dataset.swap;
+        /* la clave lleva infijo "_B_" cuando el ítem pertenece a la opción B
+           (ver render()) — se separa antes de partir por "_" para no romper
+           el parseo del número de comida / índice de ítem. */
+        var esB = key.indexOf('_B_') >= 0;
+        var part = esB ? key.split('_B_') : key.split('_');
         var comida = (PLAN.comidas || []).filter(function(c){ return String(c.n) === part[0]; })[0];
         if(!comida) return;
-        var item = comida.items[parseInt(part[1], 10)];
+        var listaItems = esB ? ((comida.opcionB && comida.opcionB.items) || []) : (comida.items || []);
+        var item = listaItems[parseInt(part[1], 10)];
         if(!item || !(item.intercambios || []).length) return;
         var o = log(), kk = hoyISO();
-        if(!o[kk]) o[kk] = { comidas:{}, swap:{} };
+        if(!o[kk]) o[kk] = { comidas:{}, swap:{}, opcion:{} };
         var actual = o[kk].swap[key];
         var opciones = [{ alimento:item.alimento, gramos:item.gramos }].concat(item.intercambios);
         var idx = 0;
@@ -39389,6 +39481,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .np-item .al{flex:1;color:#C9CFD8}
 .np-item .gr{font-family:ui-monospace,Menlo,monospace;color:#EDEFF2;font-weight:700}
 .np-item .iv{font-size:10.5px;color:#6E7783;flex:1 1 100%;margin-left:2px}
+/* 10mo pedido (26/08) — bloque "opción B" (preparación elaborada) dentro de cada
+   comida del preview del coach; mismo look que .np-item pero en su propia caja
+   para que se note que es un plato alternativo, no parte de la lista de la A. */
+.np-comida .op-b{margin-top:8px;padding-top:8px;border-top:1px dashed #2C3542}
+.np-comida .op-b-h{display:flex;align-items:center;gap:7px;margin-bottom:5px;flex-wrap:wrap}
+.np-comida .op-b-tag{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:#7CC5E8;border:1px solid rgba(124,197,232,.35);background:rgba(124,197,232,.08);border-radius:5px;padding:2px 6px;font-weight:700}
+.np-comida .op-b-h b{font-size:12.5px;color:#EDEFF2}
+.np-comida .op-b-h .kc{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#7CC5E8}
 .np-val{margin-top:10px;padding:10px 12px;border-radius:12px;font-size:12.2px;line-height:1.6}
 .np-val.ok{border:1px solid rgba(72,213,151,.35);background:rgba(72,213,151,.06);color:#9BE9C4}
 .np-val.mal{border:1px solid rgba(224,101,74,.4);background:rgba(224,101,74,.07);color:#FFB4A2}
@@ -39915,10 +40015,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         else if(dif > 0.05) avisos.push('Desvío de ' + Math.round(dif * 100) + '% en ' + k[0].replace('_g',''));
       });
     }
-    /* 2 · ningún alimento choca con las alergias, por nombre y por familia */
+    /* 2 · ningún alimento choca con las alergias, por nombre y por familia
+       10mo pedido (26/08): la opción B (preparación elaborada) es un plato
+       aparte con sus propios ítems — si no se revisa, un alimento alergénico
+       podría colarse ahí aunque la opción A esté limpia. Se escanean las dos. */
     if(alergias.length){
       (plan.comidas || []).forEach(function(c){
-        (c.items || []).forEach(function(it){
+        var itemsChequear = (c.items || []).concat((c.opcionB && c.opcionB.items) || []);
+        itemsChequear.forEach(function(it){
           var n = norm(it.alimento || '');
           var ficha = ALIM.filter(function(a){ return norm(a.n) === n; })[0];
           alergias.forEach(function(al){
@@ -39945,33 +40049,71 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   }
 
   /* ---------- IA ---------- */
+  /* 10mo pedido (26/08) — MOTOR DE PROMPTS: antes el JSON pedido era una lista
+     de ingredientes sueltos ("nombre" = el slot del día, ej. "Almuerzo", con
+     items tipo "Pechuga de pollo 150g"). Ahora cada comida tiene que llegar
+     como un PLATO real, con nombre apetecible, y con 2 preparaciones posibles
+     (rápida/práctica y elaborada) que cierran en el mismo objetivo calórico —
+     no una lista de laboratorio. El schema de "items"/"total" (por opción) no
+     cambió de forma — así el render existente (dashboard y app del alumno)
+     sigue funcionando sin tocar nada; lo nuevo es "opcionB", que es opcional
+     y aditivo (un plan viejo sin "opcionB" se sigue viendo igual que antes). */
   function promptDe(f){
     var base = calcularBase(f);
-    return 'Sos nutricionista deportivo. Respondés SOLO con un JSON válido, sin texto alrededor.\n\n' +
+    return 'Sos nutricionista deportivo y cocinero práctico. Respondés SOLO con un JSON válido, sin texto alrededor.\n\n' +
       'DATOS\n' +
       'Sexo: ' + (f.sexo === 'm' ? 'masculino' : 'femenino') + ' · Edad: ' + f.edad +
       ' · Peso: ' + f.peso + ' kg · Altura: ' + f.altura + ' cm' + (f.grasa ? ' · Grasa: ' + f.grasa + '%' : '') + '\n' +
       'Objetivo: ' + f.obj + ' · Ritmo: ' + f.ritmo + ' · Actividad: ' + f.act + '\n' +
       'Entrena: ' + f.hora + ' · Comidas por día: ' + f.comidas + '\n' +
       'Restricciones: ' + ((f.rest || []).join(', ') || 'ninguna') + '\n' +
-      'ALERGIAS (NO PUEDEN APARECER NI ELLAS NI SU FAMILIA): ' + (f.alergias || 'ninguna') + '\n' +
+      'ALERGIAS (NO PUEDEN APARECER NI ELLAS NI SU FAMILIA, EN NINGUNA DE LAS 2 OPCIONES): ' + (f.alergias || 'ninguna') + '\n' +
       'ALERGIAS, REPETIDO: ' + (f.alergias || 'ninguna') + '\n' +
       'Notas del alumno: ' + (f.notas || 'sin notas') + '\n' +
       'Referencia calculada: basal ' + base.bmr + ' kcal · gasto ' + base.tdee + ' kcal.\n\n' +
+      'FORMATO DE CADA COMIDA — PLATO REAL, NO INGREDIENTES SUELTOS\n' +
+      '- "nombre" tiene que ser el nombre de un plato real y apetecible, no el slot del día. ' +
+      'Nunca "Desayuno" o "Almuerzo" como nombre — sí "Tostadas Francesas Proteicas", "Revuelto Cremoso", ' +
+      '"Bowl de Pollo al Verdeo con Papas Rústicas", "Parfait de Banana y Queso Untable", ' +
+      '"Hamburguesas Magras Caseras con Fideos", en ese estilo.\n' +
+      '- Cada comida lleva 2 preparaciones que cierran en macros parecidos pero son platos DISTINTOS, no el mismo ' +
+      'plato con otro nombre: la base ("nombre"/"items"/"total") es la opción A, rápida y práctica — pensada para ' +
+      'tupper o poco tiempo. "opcionB" es la opción B, más elaborada, con más pasos o mejor terminación de sabor, ' +
+      'para cuando el alumno tiene ganas de cocinar un poco más.\n\n' +
+      'ALIMENTOS — MERCADO ARGENTINO, ACCESIBLE Y COTIDIANO (usá esta lista como vocabulario base, combiná según el plato)\n' +
+      '- Proteínas: cortes de carnicería magros (nalga, cuadril, peceto, bola de lomo, carne picada especial), ' +
+      'pechuga de pollo, merluza, quesos magros locales (Port Salut Light, Cremón Light, Casancrem/Finlandia Light, ' +
+      'ricota magra), huevo, atún al natural.\n' +
+      '- Carbohidratos: avena en copos, arroz blanco/integral, fideos secos guiseros/tallarines, papa, batata, ' +
+      'choclo, pan de molde integral/salvado, galletas de arroz, frutas de estación (banana, manzana, pera, naranja).\n' +
+      '- Grasas: aceite de oliva, aceite de girasol, maní tostado sin sal, nueces, almendras, aceitunas.\n\n' +
+      'CICLADO Y PERI-ENTRENO TÁCTICO — mantenelo explícito, no lo diluyas\n' +
+      '- "meta.kcal_entreno" y "meta.kcal_descanso" tienen que ser distintos entre sí (el ciclado es real, no dos ' +
+      'números iguales), igual que "macros.entreno" vs "macros.descanso" — más carbohidrato el día de entreno.\n' +
+      '- "peri_entreno.pre": comida de fácil digestión, baja en grasa y fibra, con carbohidrato de rápida absorción — ' +
+      'el objetivo es llegar a entrenar sin pesadez.\n' +
+      '- "peri_entreno.post": foco en reponer glucógeno (carbohidrato) más proteína para la síntesis — el texto tiene ' +
+      'que nombrar explícitamente la reposición de glucógeno, no quedar genérico.\n\n' +
       'DEVOLVÉ ESTE JSON EXACTO:\n' +
       '{"meta":{"kcal_entreno":0,"kcal_descanso":0,"metodo":""},' +
       '"macros":{"entreno":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0},' +
       '"descanso":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0}},' +
       '"peri_entreno":{"pre":{"cuando":"","texto":"","carb_g":0,"prot_g":0},' +
       '"intra":{"cuando":"","texto":"","carb_g":0},"post":{"cuando":"","texto":"","carb_g":0,"prot_g":0}},' +
-      '"comidas":[{"n":1,"nombre":"","hora_sug":"","items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,' +
-      '"intercambios":[{"alimento":"","gramos":0}]}],"total":{"prot":0,"carb":0,"gras":0,"kcal":0}}],' +
+      '"comidas":[{"n":1,"nombre":"(nombre del plato — opción A, rápida/práctica)","hora_sug":"",' +
+      '"items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,"intercambios":[{"alimento":"","gramos":0}]}],' +
+      '"total":{"prot":0,"carb":0,"gras":0,"kcal":0},' +
+      '"opcionB":{"nombre":"(nombre del plato — opción B, elaborada)",' +
+      '"items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,"intercambios":[{"alimento":"","gramos":0}]}],' +
+      '"total":{"prot":0,"carb":0,"gras":0,"kcal":0}}}],' +
       '"suplementos":[{"nombre":"","dosis":"","momento":"","evidencia":"","nota":""}],' +
       '"alertas":[],"disclaimer":"Orientativo y educativo. No reemplaza el plan de un nutricionista."}\n\n' +
       'REGLAS\n' +
-      '- Alimentos de Argentina, comunes y baratos. Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
-      '- La suma de las comidas tiene que dar los macros del día de entreno con menos de 5% de desvío.\n' +
-      '- Cada ítem con 2 intercambios equivalentes en el mismo macro.\n' +
+      '- Alimentos de Argentina, comunes y baratos (ver lista de arriba). Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
+      '- La suma de las comidas (opción A) tiene que dar los macros del día de entreno con menos de 5% de desvío.\n' +
+      '- El total de "opcionB" de cada comida tiene que quedar dentro de un 10% de los macros de su opción A — mismo ' +
+      'objetivo calórico, preparación distinta, no un desvío grande.\n' +
+      '- Cada ítem (de las dos opciones) con 2 intercambios equivalentes en el mismo macro.\n' +
       '- Proteína entre 1,6 y 2,4 g/kg. Nunca menos calorías que el basal.\n' +
       '- Nada de lenguaje motivacional ni promesas de resultados.';
   }
@@ -40068,17 +40210,30 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     }).join('');
 
     document.getElementById('npComidasBox').innerHTML = (plan.comidas || []).map(function(c){
-      return '<div class="np-comida"><div class="ch"><b>' + c.n + ' · ' + esc(c.nombre) + '</b>' +
-        '<span class="hh">' + esc(c.hora_sug || '') + '</span>' +
-        '<span class="kc">' + (c.total ? c.total.kcal : 0) + ' kcal · P' + (c.total ? c.total.prot : 0) +
-        ' C' + (c.total ? c.total.carb : 0) + ' G' + (c.total ? c.total.gras : 0) + '</span></div>' +
-        (c.items || []).map(function(it){
+      var itemsHtml = function(items){
+        return (items || []).map(function(it){
           return '<div class="np-item"><span class="al">' + esc(it.alimento) + '</span>' +
             '<span class="gr">' + it.gramos + ' g</span>' +
             ((it.intercambios || []).length
               ? '<span class="iv">⇄ ' + it.intercambios.map(function(x){ return esc(x.alimento) + ' ' + x.gramos + ' g'; }).join(' · ') + '</span>'
               : '') + '</div>';
-        }).join('') + '</div>';
+        }).join('');
+      };
+      /* 10mo pedido (26/08): si el plan trae "opcionB" (preparación elaborada,
+         schema aditivo — ver promptDe), se muestra como bloque aparte debajo de
+         la opción A para que el coach revise las dos antes de publicar. Un plan
+         viejo sin opcionB simplemente no dispara este bloque — sin cambios ahí. */
+      var ob = c.opcionB;
+      return '<div class="np-comida"><div class="ch"><b>' + c.n + ' · ' + esc(c.nombre) + '</b>' +
+        '<span class="hh">' + esc(c.hora_sug || '') + '</span>' +
+        '<span class="kc">' + (c.total ? c.total.kcal : 0) + ' kcal · P' + (c.total ? c.total.prot : 0) +
+        ' C' + (c.total ? c.total.carb : 0) + ' G' + (c.total ? c.total.gras : 0) + '</span></div>' +
+        itemsHtml(c.items) +
+        (ob ? '<div class="op-b"><div class="op-b-h"><span class="op-b-tag">Opción B</span><b>' + esc(ob.nombre || '') + '</b>' +
+          '<span class="kc">' + (ob.total ? ob.total.kcal : 0) + ' kcal · P' + (ob.total ? ob.total.prot : 0) +
+          ' C' + (ob.total ? ob.total.carb : 0) + ' G' + (ob.total ? ob.total.gras : 0) + '</span></div>' +
+          itemsHtml(ob.items) + '</div>' : '') +
+        '</div>';
     }).join('');
 
     document.getElementById('npSupl').innerHTML = (plan.suplementos || []).map(function(s){
