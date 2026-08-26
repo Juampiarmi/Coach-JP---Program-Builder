@@ -4585,7 +4585,9 @@ const PCT_SEMANA = [
   { pct:[70,75], lb:'Aclimatación' },
   { pct:[80,85], lb:'Sobrecarga I' },
   { pct:[90,100], lb:'Pico / fallo técnico' },
-  { pct:[60,60], lb:'Deload' }
+  { pct:[60,60], lb:'Deload' },
+  { pct:[75,80], lb:'Reintensificación' },
+  { pct:[60,60], lb:'Deload / Cierre' }
 ];
 function redondear05(v){ return Math.round(v / 0.5) * 0.5; }
 function cargaSugeridaHtml(block, weekIdx){
@@ -4607,13 +4609,13 @@ function cargaSugeridaHtml(block, weekIdx){
     a = b = redondear05(base * propio / 100);
     pct = propio + '%';
   } else {
-    const w = PCT_SEMANA[weekIdx] || PCT_SEMANA[0];
+    const w = PCT_SEMANA[weekIdx] || PCT_SEMANA[PCT_SEMANA.length - 1];
     a = redondear05(base * w.pct[0] / 100);
     b = redondear05(base * w.pct[1] / 100);
     pct = (w.pct[0] === w.pct[1]) ? (w.pct[0] + '%') : (w.pct[0] + '-' + w.pct[1] + '%');
   }
   const rango = (a === b) ? (a + ' kg') : (a + ' – ' + b + ' kg');
-  const lb = propio ? (wm.phase || '') : (PCT_SEMANA[weekIdx] || PCT_SEMANA[0]).lb;
+  const lb = propio ? (wm.phase || '') : (PCT_SEMANA[weekIdx] || PCT_SEMANA[PCT_SEMANA.length - 1]).lb;
   return '<div class="load-suggest"><span class="ls-ic">🎯</span><div><b>Sugerido ' + (wm.short || '') + ': ' + rango + ' (' + pct + ')</b>' +
     '<span>Sobre tu carga base de ' + base + ' kg · ' + lb + '</span></div></div>';
 }
@@ -10207,7 +10209,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     var base = parseFloat(block.baseLoad);
     if(!(base > 0)) return 0;
     var pct = (block.weekPct && block.weekPct[w] != null && block.weekPct[w] !== '')
-      ? parseFloat(block.weekPct[w]) : [70, 78, 85, 60][w];
+      ? parseFloat(block.weekPct[w]) : [70, 78, 85, 60, 75, 60][w];
     if(!(pct > 0)) return 0;
     return Math.round(base * pct / 100 * 2) / 2;
   }
@@ -10223,9 +10225,12 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
       var kg = kgSemana(b, state.currentWeek);
       if(!(kg > 0)) return;
       var pct = (b.weekPctCalc && b.weekPctCalc[state.currentWeek]) ||
-                (b.weekPct && b.weekPct[state.currentWeek]) || [70, 78, 85, 60][state.currentWeek];
+                (b.weekPct && b.weekPct[state.currentWeek]) || [70, 78, 85, 60, 75, 60][state.currentWeek];
       bl.querySelectorAll('.set-kg').forEach(function(i){
-        var ph = 'Sugerido: ' + fmt(kg);
+        /* el casillero es angosto (comparte fila con reps y el check): un placeholder
+           largo tipo "Sugerido: 78 kg" se corta a la mitad y se ve roto. Adentro del
+           campo va solo el número — el detalle completo ya está en la caja de arriba. */
+        var ph = fmt(kg);
         if(i.placeholder !== ph) i.placeholder = ph;
         i.title = pct + '% de tu 1RM registrado (' + fmt(parseFloat(b.baseLoad) || 0) + ')';
       });
@@ -15337,7 +15342,7 @@ body{
    3 · el bloque terminado se pliega solo · 4 · cierre de sesión
 ========================================================= */
 .set-row .jp-hist{
-  flex:1 1 100%;order:9;margin:1px 0 0 2px;
+  flex:1 1 100%;order:-1;margin:0 0 3px 2px;
   font-family:var(--font-mono);font-size:calc(11.5px * var(--fzs));
   color:var(--jp-dim);letter-spacing:.01em;line-height:1.4;
 }
@@ -15461,12 +15466,12 @@ body{
         else if(d < 0) dif = ' <span class="dn">' + fmtN(d) + ' kg</span>';
       }
       var t = cuando(p.l.ts);
-      var html = 'La vez pasada: <b>' + (kg ? kg + ' kg' : '—') + (rp ? ' × ' + rp : '') + '</b>' +
+      var html = 'Última sem: <b>' + (kg ? kg + ' kg' : '—') + (rp ? ' × ' + rp + ' reps' : '') + '</b>' +
                  (t ? ' · ' + t : ' · semana ' + (p.w + 1)) + dif;
       if(!vieja){
         vieja = document.createElement('span');
         vieja.className = 'jp-hist';
-        row.appendChild(vieja);
+        row.insertBefore(vieja, row.firstChild);
       }
       if(vieja.innerHTML !== html) vieja.innerHTML = html;
     });
@@ -15506,7 +15511,7 @@ body{
       var kg = desdeCampo || numDe(caja && caja.textContent);
       if(!(kg > 0)) return;
       kg = Math.round(kg * 2) / 2;
-      var txt = 'Sugerido: ' + String(kg).replace('.', ',') + ' kg';
+      var txt = String(kg).replace('.', ',') + ' kg';
       campos.forEach(function(i){
         if(i.value){ i.classList.remove('jp-sug'); if(i.placeholder !== 'Kg') i.placeholder = 'Kg'; return; }
         i.classList.add('jp-sug');
@@ -15519,6 +15524,55 @@ body{
           caja.textContent = caja.textContent.replace(/(\\d+(?:[.,]\\d+)?)\\s*kg/i, String(kg).replace('.', ',') + ' kg');
         }
       }
+    });
+  }
+
+  /* ---------------------------------------------------------
+     2b · PROGRESIÓN SIN 1RM CARGADO
+     Si el ejercicio no tiene marca/1RM registrado, no hay de dónde
+     sacar un % — pero si el alumno ya cargó esa misma serie en una
+     semana anterior, se sugiere la progresión sobre esa carga real
+     en vez de dejar el campo en blanco sin ninguna referencia.
+  --------------------------------------------------------- */
+  /* el módulo "4 · CARGA PRECOMPUTADA EN CADA SERIE" vive en su propia IIFE
+     (otro <script> más arriba) y no expone kgSemana/bloqueDe hacia afuera —
+     se replica acá el mismo cálculo, liviano, para saber si ese módulo ya
+     va a cubrir el bloque con una sugerencia por %1RM antes de pisarla. */
+  function bloqueActivoLocal(blockId){
+    var d = (typeof DAYS !== 'undefined' ? DAYS : []).find(function(x){ return x.id === state.currentDay; });
+    if(!d) return null;
+    return (d.blocks || []).find(function(b){ return b.id === blockId; }) || null;
+  }
+  function kgSemanaLocal(block, w){
+    if(!block) return 0;
+    if(block.weekKg && block.weekKg[w] != null) return parseFloat(block.weekKg[w]) || 0;
+    var base = parseFloat(block.baseLoad);
+    if(!(base > 0)) return 0;
+    var pct = (block.weekPct && block.weekPct[w] != null && block.weekPct[w] !== '')
+      ? parseFloat(block.weekPct[w]) : [70, 78, 85, 60, 75, 60][w];
+    if(!(pct > 0)) return 0;
+    return Math.round(base * pct / 100 * 2) / 2;
+  }
+  function progresionSinMarca(){
+    document.querySelectorAll('.set-row[data-set-key]').forEach(function(row){
+      var kgInput = row.querySelector('.set-kg');
+      if(!kgInput) return;
+      if(kgInput.value) return;                                   /* el alumno ya tiene su propio número */
+      var blEl = row.closest('.block');
+      var blk = blEl ? bloqueActivoLocal(blEl.dataset.blockId) : null;
+      /* si el bloque tiene 1RM/carga base cargada, esa sugerencia manda: no se pisa */
+      if(kgSemanaLocal(blk, state.currentWeek) > 0) return;
+      var key = row.dataset.setKey;
+      var c = partirClave(key);
+      var p = previa(key);
+      if(!p || p.l.kg == null || p.l.kg === '') return;
+      var base = parseFloat(p.l.kg);
+      if(isNaN(base) || base <= 0) return;
+      var deload = false;
+      try{ deload = !!(typeof WEEKS_META !== 'undefined' && c && WEEKS_META[c.w] && WEEKS_META[c.w].deload); }catch(e){}
+      var sugerido = deload ? Math.round(base * 0.85 * 2) / 2 : Math.round((base + 2.5) * 2) / 2;
+      var txt = String(sugerido).replace('.', ',') + ' kg';
+      if(kgInput.placeholder !== txt){ kgInput.classList.add('jp-sug'); kgInput.placeholder = txt; kgInput.title = 'Progresión sobre tu última carga registrada (' + fmtN(base) + ' kg)'; }
     });
   }
 
@@ -15664,6 +15718,7 @@ body{
     try{ historial(); }catch(e){ console.warn('v36·hist', e); }
     try{ unaSolaSugerencia(); }catch(e){ console.warn('v36·dedup', e); }
     try{ sugerirEnCampo(); }catch(e){ console.warn('v36·sug', e); }
+    try{ progresionSinMarca(); }catch(e){ console.warn('v36·progresion', e); }
     try{ plegar(); }catch(e){ console.warn('v36·plegar', e); }
     try{ cerrarSesion(); }catch(e){ console.warn('v36·cierre', e); }
   }
@@ -16966,7 +17021,7 @@ input[type="checkbox"]:active{
 .hdd-b .ic{font-size:16px;line-height:1}
 .hdd-b:active{background:rgba(229,195,120,.14);color:#E5C378}
 .hdd-b.on{background:rgba(229,195,120,.16);color:#E5C378}
-#mainContent{padding-bottom:90px !important}
+#mainContent{padding-bottom:calc(90px + env(safe-area-inset-bottom)) !important}
 body.focus-mode .hd-dock{display:none}
 /* evita que el HUD del descanso, el aviso offline y el "siguiente" choquen con el dock nuevo */
 .timer-hud{bottom:calc(86px + env(safe-area-inset-bottom)) !important}
@@ -17667,7 +17722,7 @@ function notaMetodologica(ath){
    cada semana (S1 acumulación · S2 intensificación · S3 pico ·
    S4 descarga) y deja el peso exacto listo en cada serie.
    ============================================================ */
-const PCT_MESO = [70, 78, 85, 60];
+const PCT_MESO = [70, 78, 85, 60, 75, 60];
 
 function normEx(t){
   return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -17693,11 +17748,15 @@ function cargaPrecomputada(ath, b, out){
   let base = parseFloat(b.cargaBase);
   if(!(base > 0)) base = marcaDelAlumno(ath, nombre);
   if(!(base > 0)) return null;
+  /* el mesociclo puede tener más de 4 semanas (hasta 6) — se precomputa
+     la carga para todas las semanas reales del plan, no solo S1-S4 */
+  let nSemanas = 4;
+  try{ const pl = plan(ath.id); if(pl && pl.meso && pl.meso.length) nSemanas = pl.meso.length; }catch(e){}
   const semanas = [], pcts = [];
-  for(let i = 0; i < 4; i++){
+  for(let i = 0; i < nSemanas; i++){
     let p = null;
     if(b.weekPct && b.weekPct[i] != null && b.weekPct[i] !== '') p = parseFloat(b.weekPct[i]);
-    if(!(p > 0)) p = PCT_MESO[i];
+    if(!(p > 0)) p = PCT_MESO[i] != null ? PCT_MESO[i] : PCT_MESO[PCT_MESO.length - 1];
     pcts.push(p);
     semanas.push(Math.round(base * p / 100 * 2) / 2);
   }
@@ -26256,20 +26315,32 @@ body.man-mode .gs-fab{right:318px}
     { s:'S1', pct:[70,75],  lb:'Aclimatación',        dl:false },
     { s:'S2', pct:[80,85],  lb:'Sobrecarga I',        dl:false },
     { s:'S3', pct:[90,100], lb:'Pico / fallo técnico', dl:false },
-    { s:'S4', pct:[60,60],  lb:'Deload',              dl:true  }
+    { s:'S4', pct:[60,60],  lb:'Deload',              dl:true  },
+    { s:'S5', pct:[75,80],  lb:'Reintensificación',    dl:false },
+    { s:'S6', pct:[60,60],  lb:'Deload / Cierre',      dl:true  }
   ];
   const r05 = v => Math.round(v / 0.5) * 0.5;
+  /* cantidad real de semanas del mesociclo activo (por defecto 4, hasta 6) */
+  function nSemanasActivas(){
+    try{
+      const ath = (typeof active === 'function') ? active() : null;
+      const pl = ath ? plan(ath.id) : null;
+      if(pl && pl.meso && pl.meso.length) return Math.max(1, Math.min(PCT.length, pl.meso.length));
+    }catch(e){}
+    return 4;
+  }
   function targetSemana(base, i){
     const b = parseFloat(base);
     if(!b || b <= 0) return null;
-    const w = PCT[i] || PCT[0];
+    const w = PCT[i] || PCT[PCT.length - 1];
     const a = r05(b * w.pct[0] / 100), c = r05(b * w.pct[1] / 100);
     return { min:a, max:c, txt: a === c ? a + ' kg' : a + '–' + c + ' kg',
              pct: w.pct[0] === w.pct[1] ? w.pct[0] + '%' : w.pct[0] + '-' + w.pct[1] + '%', lb: w.lb };
   }
   function semanaActiva(){
     const ag = G().agendaDe ? G().agendaDe(S.activeId) : null;
-    return Math.max(1, Math.min(4, (ag && ag.semana) || 1));
+    const n = nSemanasActivas();
+    return Math.max(1, Math.min(n, (ag && ag.semana) || 1));
   }
   /* carga base sugerida a partir de las marcas de 1RM del alumno/a */
   function baseSugerida(b, ath){
@@ -26282,20 +26353,21 @@ body.man-mode .gs-fab{right:318px}
   }
   function barraCarga(b, ath){
     const sem = semanaActiva();
+    const nSem = nSemanasActivas();
     const base = b.cargaBase || '';
     const sug = base ? 0 : baseSugerida(b, ath);
     return '<div class="cb-bar" data-cbbar="' + b.id + '">' +
       '<span class="cbl">⚖️ Carga base (kg)</span>' +
       '<input class="cbv" type="number" step="0.5" min="0" inputmode="decimal" data-cb="' + b.id + '" value="' + esc(base) + '" placeholder="' + (sug ? sug : '—') + '">' +
       (sug ? '<button class="btn xs" data-cbuse="' + b.id + '" data-kg="' + sug + '">Usar 1RM: ' + sug + ' kg</button>' : '') +
-      '<div class="cb-weeks">' + PCT.map((w, i) => {
+      '<div class="cb-weeks">' + PCT.slice(0, nSem).map((w, i) => {
         const t = targetSemana(base, i);
         return '<button class="cb-wk ' + (sem === i+1 ? 'on' : '') + (w.dl ? ' dl' : '') + '" data-cbwk="' + (i+1) + '" title="' + esc(w.lb + ' · ' + (t ? t.pct : '')) + '">' +
           w.s + '<b>' + (t ? t.txt : '—') + '</b></button>';
       }).join('') + '</div>' +
       '<div class="cb-hint">' + (base
-        ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (targetSemana(base, sem-1) || {}).txt + '</b> (' + (targetSemana(base, sem-1) || {}).pct + ' de ' + base + ' kg · ' + PCT[sem-1].lb + '). Tocá S1-S4 para cambiar la semana activa del alumno/a.'
-        : 'Cargá el peso de referencia (1RM o peso de trabajo habitual) y la app calcula el target de cada semana: S1 70-75% · S2 80-85% · S3 90-100% · S4 60%.') + '</div>' +
+        ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (targetSemana(base, sem-1) || {}).txt + '</b> (' + (targetSemana(base, sem-1) || {}).pct + ' de ' + base + ' kg · ' + PCT[sem-1].lb + '). Tocá S1-S' + nSem + ' para cambiar la semana activa del alumno/a.'
+        : 'Cargá el peso de referencia (1RM o peso de trabajo habitual) y la app calcula el target de cada semana del mesociclo.') + '</div>' +
     '</div>';
   }
   function pintarCargas(){
@@ -28118,8 +28190,14 @@ body.man-mode .gs-fab{right:318px}
   }
 
   /* ============ B. BIBLIOTECA DE WODS ============ */
-  const FMTS = [...new Set(WODS.map(w => w.fmt))].filter(Boolean).sort();
-  const DOMS = [...new Set(WODS.map(w => w.dom))].filter(Boolean).sort();
+  /* FMTS/DOMS se calculan recorriendo todo WODS: se posterga a la primera vez
+     que se abre el modal (pintarWods) en vez de hacerlo al cargar la página,
+     para no pagar ese costo si el coach nunca abre la Biblioteca de WODs. */
+  let FMTS = null, DOMS = null;
+  function catalogosWods(){
+    if(!FMTS) FMTS = [...new Set(WODS.map(w => w.fmt))].filter(Boolean).sort();
+    if(!DOMS) DOMS = [...new Set(WODS.map(w => w.dom))].filter(Boolean).sort();
+  }
   let fFmt = '', fDom = '', fQ = '';
 
   function filtrados(){
@@ -28135,6 +28213,7 @@ body.man-mode .gs-fab{right:318px}
     });
   }
   function pintarWods(){
+    catalogosWods();
     $('#wdFmt').innerHTML = '<span class="lb" style="margin-right:4px">⏱️ Formato</span>' +
       '<button class="wchip ' + (!fFmt ? 'on' : '') + '" data-wf="">Todos</button>' +
       FMTS.map(f => '<button class="wchip ' + (fFmt === f ? 'on' : '') + '" data-wf="' + esc(f) + '">' + esc(f) +
@@ -32729,8 +32808,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
    COACH JP · MÓDULO 38 — cargas precomputadas en el Builder
 ========================================================= */
 (function(){
-  const PCT_MESO = [70, 78, 85, 60];
-  const LB = ['S1 · Acumulación', 'S2 · Intensificación', 'S3 · Pico', 'S4 · Descarga'];
+  const PCT_MESO = [70, 78, 85, 60, 75, 60];
+  const LB = ['S1 · Acumulación', 'S2 · Intensificación', 'S3 · Pico', 'S4 · Descarga', 'S5 · Reintensificación', 'S6 · Descarga'];
 
   const nrm = t => String(t || '').toLowerCase().normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '').replace(/\([^)]*\)/g, ' ')
@@ -32759,11 +32838,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     }
     return b.titulo || '';
   }
-  function semanas(b, base){
+  function semanas(b, base, nSemanas){
     const out = [], pcts = [];
-    for(let i = 0; i < 4; i++){
+    const n = nSemanas > 0 ? nSemanas : 4;
+    for(let i = 0; i < n; i++){
       let p = (b.weekPct && b.weekPct[i] != null && b.weekPct[i] !== '') ? parseFloat(b.weekPct[i]) : null;
-      if(!(p > 0)) p = PCT_MESO[i];
+      if(!(p > 0)) p = PCT_MESO[i] != null ? PCT_MESO[i] : PCT_MESO[PCT_MESO.length - 1];
       pcts.push(p);
       out.push(Math.round(base * p / 100 * 2) / 2);
     }
@@ -32813,9 +32893,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       let base = parseFloat(b.cargaBase);
       if(!(base > 0)) base = marca(a, nombreBloque(b));
       if(!(base > 0)){ if(vieja) vieja.remove(); return; }
-      const s = semanas(b, base);
+      let nSemanas = 4;
+      try{ const pl = plan(a.id); if(pl && pl.meso && pl.meso.length) nSemanas = pl.meso.length; }catch(e){}
+      const s = semanas(b, base, nSemanas);
       const html = '<span class="pb-h">⚖️ Cargas precomputadas · 1RM ' + base + ' kg</span>' +
-        s.kg.map((k, i) => '<span class="pb-w' + (i === 3 ? ' dl' : '') + '">' + LB[i] +
+        s.kg.map((k, i) => '<span class="pb-w' + (i === s.kg.length - 1 ? ' dl' : '') + '">' + (LB[i] || ('S' + (i + 1))) +
           ' · ' + s.pct[i] + '% <b>' + k + ' kg</b></span>').join('') +
         '<span class="pb-n">El alumno ve el peso exacto en cada serie: sólo tiene que tildarla.</span>';
       if(vieja){ if(vieja.innerHTML !== html) vieja.innerHTML = html; return; }
@@ -40073,6 +40155,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     });
   }
 
+  /* proteínas "livianas" — huevo, lácteos, soja — aptas para desayuno/media
+     mañana/merienda; el resto (carnes, pollo, pescado) queda para
+     almuerzo/cena. Así el motor local nunca arma un desayuno con pechuga
+     de pollo o un peceto a media mañana, aunque no haya IA disponible. */
+  var PROT_LIVIANA = ['Huevo entero', 'Claras de huevo', 'Yogur griego natural', 'Ricota magra',
+                       'Tofu firme', 'Proteína de suero', 'Proteína vegetal en polvo'];
+  var FRANJA_LIVIANA = /desayuno|media\s*ma[ñn]ana|merienda/i;
+
   function armarComidas(f, mac, rest, alergias){
     var prots = permitidos('prot', rest, alergias);
     var carbs = permitidos('carb', rest, alergias);
@@ -40080,10 +40170,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var verd  = permitidos('verd', rest, alergias);
     if(!prots.length || !carbs.length || !gras.length) return null;
 
+    var protsAM = prots.filter(function(a){ return PROT_LIVIANA.indexOf(a.n) >= 0; });
+    var protsPM = prots.filter(function(a){ return PROT_LIVIANA.indexOf(a.n) < 0; });
+    if(!protsAM.length) protsAM = prots;   /* p.ej. dieta 100% carnívora sin lácteos ni huevo */
+    if(!protsPM.length) protsPM = prots;
+
     var plan = repartir(parseInt(f.comidas, 10) || 4, f.hora);
+    var iAM = 0, iPM = 0;
     var comidas = plan.map(function(c, i){
       var pObj = mac.prot_g * c.w.p, cObj = mac.carb_g * c.w.c, gObj = mac.gras_g * c.w.g;
-      var pAl = prots[i % prots.length], cAl = carbs[i % carbs.length], gAl = gras[i % gras.length];
+      var liviana = FRANJA_LIVIANA.test(c.nombre);
+      var poolP = liviana ? protsAM : protsPM;
+      var pAl = liviana ? poolP[iAM++ % poolP.length] : poolP[iPM++ % poolP.length];
+      var cAl = carbs[i % carbs.length], gAl = gras[i % gras.length];
       var items = [];
 
       /* 1 · proteína */
@@ -40316,7 +40415,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      y aditivo (un plan viejo sin "opcionB" se sigue viendo igual que antes). */
   function promptDe(f){
     var base = calcularBase(f);
-    return 'Sos nutricionista deportivo y cocinero práctico. Respondés SOLO con un JSON válido, sin texto alrededor.\n\n' +
+    return 'Sos nutricionista deportivo y cocinero práctico. Respondés SOLO con un JSON válido: arrancás la respuesta ' +
+      'directo con "{" y la terminás en "}", sin bloques de código, sin comillas invertidas (```), sin la palabra ' +
+      '"json" y sin ningún texto antes o después del objeto.\n\n' +
       'DATOS\n' +
       'Sexo: ' + (f.sexo === 'm' ? 'masculino' : 'femenino') + ' · Edad: ' + f.edad +
       ' · Peso: ' + f.peso + ' kg · Altura: ' + f.altura + ' cm' + (f.grasa ? ' · Grasa: ' + f.grasa + '%' : '') + '\n' +
@@ -40343,6 +40444,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       '- Carbohidratos: avena en copos, arroz blanco/integral, fideos secos guiseros/tallarines, papa, batata, ' +
       'choclo, pan de molde integral/salvado, galletas de arroz, frutas de estación (banana, manzana, pera, naranja).\n' +
       '- Grasas: aceite de oliva, aceite de girasol, maní tostado sin sal, nueces, almendras, aceitunas.\n\n' +
+      'REALISMO POR FRANJA HORARIA — nada de "laboratorio", comida de casa que a alguien le den ganas de comer\n' +
+      '- Desayuno y Merienda: SIEMPRE algo liviano y cotidiano — tostadas integrales con queso untable y huevo, ' +
+      'yogur con frutas y granola, café con leche con pan/galletas de arroz o avena, huevos revueltos, licuado ' +
+      'con banana y avena. Nunca pechuga de pollo, carne de vaca, merluza ni ningún corte de carnicería en estas ' +
+      'dos comidas — quedan reservados para Almuerzo y Cena.\n' +
+      '- Media mañana: fruta, yogur, huevo, un puñado de frutos secos o una tostada — nunca carne ni pollo.\n' +
+      '- Almuerzo y Cena: plato de comida casera de verdad, con nombre de plato — milanesas al horno con puré o ' +
+      'ensalada, tarta casera de verdura, pollo al horno con papas rústicas, pastas con salsa magra o carne picada ' +
+      'especial, guiso liviano, wok de pollo o carne con vegetales y arroz. Ahí sí van las carnes/pollo/pescado.\n\n' +
       'CICLADO Y PERI-ENTRENO TÁCTICO — mantenelo explícito, no lo diluyas\n' +
       '- "meta.kcal_entreno" y "meta.kcal_descanso" tienen que ser distintos entre sí (el ciclado es real, no dos ' +
       'números iguales), igual que "macros.entreno" vs "macros.descanso" — más carbohidrato el día de entreno.\n' +
@@ -40371,12 +40481,28 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       'objetivo calórico, preparación distinta, no un desvío grande.\n' +
       '- Cada ítem (de las dos opciones) con 2 intercambios equivalentes en el mismo macro.\n' +
       '- Proteína entre 1,6 y 2,4 g/kg. Nunca menos calorías que el basal.\n' +
+      '- Ninguna comida de Desayuno, Media mañana o Merienda puede llevar carne, pollo ni pescado como fuente de ' +
+      'proteína — usá huevo, lácteos, legumbres o frutos secos ahí.\n' +
       '- Nada de lenguaje motivacional ni promesas de resultados.';
   }
   function parsearIA(txt){
     if(!txt) return null;
-    var m = String(txt).match(/\{[\s\S]*\}/); if(!m) return null;
-    try{ var o = JSON.parse(m[0]); return (o && o.comidas && o.macros) ? o : null; }catch(e){ return null; }
+    var s = String(txt).trim();
+    /* la IA a veces envuelve el JSON en un bloque de código pese a que se le pide
+       que no lo haga — se descarta el fence de markdown antes de buscar las llaves */
+    var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if(fence) s = fence[1].trim();
+    var m = s.match(/\{[\s\S]*\}/);
+    if(!m){ console.warn('nutriIA: la respuesta no trae ningún objeto {}', s.slice(0, 400)); return null; }
+    try{
+      var o = JSON.parse(m[0]);
+      if(o && o.comidas && o.macros) return o;
+      console.warn('nutriIA: el JSON parseó pero le faltan "comidas" o "macros"', o);
+      return null;
+    }catch(e){
+      console.warn('nutriIA: JSON inválido (posible respuesta truncada o con texto extra)', e.message, m[0].slice(0, 400));
+      return null;
+    }
   }
 
   /* ---------- almacenamiento ---------- */
@@ -40532,7 +40658,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       return;
     }
     toast('Consultando IA…');
-    CoachAI.generarTexto(promptDe(f), 'Devolvés únicamente JSON válido.')
+    CoachAI.generarTexto(promptDe(f), 'Devolvés únicamente un objeto JSON válido. Nunca uses bloques de código ni comillas invertidas (```). No agregues ninguna palabra antes ni después: la respuesta completa arranca en "{" y termina en "}".')
       .then(function(txt){
         var p = parsearIA(txt);
         if(p){
