@@ -2713,9 +2713,29 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     --shadow-sm: 0 2px 10px -2px rgba(0,0,0,0.35);
     --shadow-md: 0 10px 28px -8px rgba(0,0,0,0.5);
     --shadow-lg: 0 24px 64px -16px rgba(0,0,0,0.65);
+    /* escala de espaciado documentada (propuesta 27/08, Sección 01 · Espaciado):
+       más aire donde se decide (CTA, título del día), más densidad donde se
+       lee rápido (filas de serie). No reemplaza los valores existentes en
+       todo el archivo — se aplica en los puntos puntuales de esa sección. */
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
   }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; scrollbar-color: var(--border) transparent; scrollbar-width: thin; }
+  /* overflow-x:hidden vive en <html>, no en <body> (28/08 — fix de header
+     sticky): con overflow-x:hidden Y overflow-y sin declarar en el MISMO
+     elemento, la regla de "fixup" del spec de CSS computa automáticamente
+     overflow-y:auto en ESE elemento (no puede quedar un eje visible y el
+     otro no-visible en la misma caja) — eso convertía a <body> en su
+     propio contenedor de scroll independiente, con scrollTop que NUNCA
+     se mueve (el scroll real de la página siempre ocurrió en <html>,
+     confirmado con document.scrollingElement). Cualquier position:sticky
+     dentro de <body> (ej. .hd-compact, la cabecera) calculaba su reposo
+     contra ESE contenedor que no se mueve, así que en vez de quedar fija
+     arriba, se iba scrolleando con el resto del contenido — el botón de
+     Perfil/Info terminaba muy por encima del viewport apenas se scrolleaba
+     un poco. Mover la regla a <html> preserva el mismo efecto visual
+     (nunca aparece scroll horizontal) sin crear ese contenedor extra,
+     porque <html> ya era el scrollingElement real de esta página. */
+  html { scroll-behavior: smooth; scrollbar-color: var(--border) transparent; scrollbar-width: thin; overflow-x: hidden; }
   body {
     background: var(--bg);
     color: var(--text-primary);
@@ -2725,7 +2745,6 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     line-height: 1.6;
     padding-bottom: 3rem;
     position: relative;
-    overflow-x: hidden;
   }
   ::selection { background: rgba(124,197,232,0.35); color: #fff; }
   ::-webkit-scrollbar { height: 6px; width: 6px; }
@@ -3046,7 +3065,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .day-view { display: none; }
   .day-view.active { display: block; animation: dayFadeIn 0.4s cubic-bezier(0.16,1,0.3,1); }
   @keyframes dayFadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  .day-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; padding-top: 1.5rem; flex-wrap: wrap; }
+  .day-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: var(--sp-6); padding-top: var(--sp-5); flex-wrap: wrap; }
   .day-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.3rem; }
   .day-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.01em; line-height: 1.1; }
   .day-meta-row { display: flex; gap: 7px; margin-top: 0.5rem; flex-wrap: wrap; }
@@ -3087,10 +3106,25 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .safety-banner .sb-icon { font-size: 1.2rem; line-height: 1.3; flex-shrink: 0; }
   .safety-banner-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.85rem; color: var(--teal); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; }
   .safety-banner-text { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.55; }
+  /* Contexto de sesión (28/08) — "lo que trajiste la última vez", antes del
+     check-in de entrada. Misma familia visual que .safety-banner (borde +
+     fondo sutil) pero con chips numéricos en vez de texto corrido. */
+  .context-card { border-radius: var(--radius-lg); padding: 12px 16px; margin-bottom: 1.25rem; background: rgba(210,121,63,0.05); border: 1px solid rgba(210,121,63,0.2); box-shadow: var(--shadow-sm); }
+  .ctx-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .ctx-ic { font-size: 1rem; line-height: 1; }
+  .ctx-tt { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.78rem; color: var(--gold); text-transform: uppercase; letter-spacing: 0.05em; }
+  .ctx-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .ctx-chip { display: flex; align-items: baseline; gap: 7px; border: 1px solid var(--border); border-radius: 10px; padding: 0.55rem 0.7rem; background: var(--bg-card); }
+  .ctx-val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 800; font-size: 1.1rem; color: var(--gold); line-height: 1; flex-shrink: 0; }
+  .ctx-key { font-size: 0.72rem; color: var(--text-muted); letter-spacing: 0.02em; line-height: 1.3; }
   .blocks-stack { display: flex; flex-direction: column; gap: 1rem; }
   .block {
     position: relative;
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    /* profundidad vía degradé de dos tonos, no un color nuevo (propuesta
+       27/08, Sección 01 · Profundidad) — mismo cálculo ya probado en el
+       rail de escritorio, extendido acá como base para mobile también */
+    background: linear-gradient(160deg, var(--bg-card) 0%, rgba(255,255,255,.025) 100%);
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
     overflow: hidden; box-shadow: var(--shadow-sm);
     transition: border-color 0.2s ease, opacity .2s ease, box-shadow 0.25s ease, transform 0.25s ease;
     animation: blockFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) backwards;
@@ -3113,6 +3147,16 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     100% { border-color: var(--border); box-shadow: var(--shadow-sm); }
   }
   @media (prefers-reduced-motion: reduce) { .block.block-flash { animation: none; } }
+  /* momento de PR (propuesta 27/08, Sección 02) — mismo lenguaje que
+     blockCompleteGlow, en dorado en vez de celeste: un pulso breve marca
+     el instante del récord, distinto del brillo fijo de .has-pr. */
+  .block.block-pr-flash { animation: prGoldPulse 1.1s ease-out; }
+  @keyframes prGoldPulse {
+    0% { border-color: rgba(255,215,0,0.95); box-shadow: 0 0 0 rgba(255,215,0,0); }
+    22% { border-color: rgba(255,215,0,0.95); box-shadow: 0 0 38px 5px rgba(255,215,0,0.5), 0 0 0 1px rgba(255,215,0,0.55) inset; }
+    100% { border-color: var(--border); box-shadow: var(--shadow-sm); }
+  }
+  @media (prefers-reduced-motion: reduce) { .block.block-pr-flash { animation: none; } }
   .blocks-stack .block:nth-child(1) { animation-delay: 0.02s; }
   .blocks-stack .block:nth-child(2) { animation-delay: 0.07s; }
   .blocks-stack .block:nth-child(3) { animation-delay: 0.12s; }
@@ -3123,7 +3167,8 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .block-header { display: flex; align-items: center; gap: 10px; padding: 0.85rem 1.1rem; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; transition: background 0.2s ease; }
   .block-header:hover { background: rgba(255,255,255,0.025); }
   .block.collapsed .block-header { border-bottom-color: transparent; }
-  .block-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; transition: transform 0.2s ease; }
+  .block-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; transition: transform 0.2s ease; color: var(--text-primary); }
+  .block-icon .bi-svg { width: 18px; height: 18px; flex: none; }
   .block-header:hover .block-icon { transform: scale(1.08); }
   .bi-warmup { background: rgba(124,197,232,0.14); border: 1px solid rgba(124,197,232,0.15); }
   .bi-strength { background: rgba(124,197,232,0.12); border: 1px solid rgba(124,197,232,0.15); }
@@ -3172,9 +3217,26 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .load-suggest.rpe { background: rgba(74,147,184,0.07); border-color: rgba(74,147,184,0.3); }
   .load-suggest.rpe b { color: var(--teal, #4A93B8); }
   .load-suggest b { display:block; color: var(--gold); font-size:0.9rem; letter-spacing:0.01em; }
+  /* capa monoespaciada para el número que importa (propuesta 27/08, Sección
+     01 · Tipografía) — reusa --font-mono, ya cargado y usado en el resto de
+     la app (timers, kg de inputs) para no sumar una fuente nueva. Es un
+     <code> (no <span>) a propósito: así no lo agarra la regla de compact
+     mode ".load-suggest span{display:none!important}" más abajo en el
+     archivo, que solo debe ocultar el renglón secundario, no el número. */
+  .load-suggest b .ls-num,
+  .load-suggest-compact b .ls-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.08em; letter-spacing: 0; }
   .load-suggest span { display:block; color: var(--text-secondary); font-size:0.78rem; margin-top:2px; }
   .block-notes { margin-top:14px; padding-top:12px; border-top:1px dashed rgba(255,255,255,0.12); }
   .block-notes label { display:block; font-size:0.72rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--text-muted); font-weight:800; margin-bottom:6px; }
+  /* chips de 1 toque (propuesta 27/08, Sección 02 · Notas por chip) —
+     escriben al mismo textarea de siempre, no reemplazan el tipeo libre */
+  .note-chips { display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
+  .note-chip { display:inline-flex; align-items:center; gap:5px; min-height:36px; padding:0 12px; border-radius:20px;
+    background: var(--bg-elevated); border:1px solid var(--border); color: var(--text-secondary);
+    font-size:0.78rem; font-weight:700; cursor:pointer; transition:border-color .2s ease, background .2s ease, color .2s ease; }
+  .note-chip .ic { font-size:0.85rem; }
+  .note-chip:active { transform:scale(.96); }
+  .note-chip.on { background:rgba(210,121,63,.16); border-color:rgba(210,121,63,.5); color:#D2793F; }
   .block-note-input { width:100%; background: var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:9px 11px;
     color: var(--text-primary); font-family:'Inter',sans-serif; font-size:0.85rem; line-height:1.5; resize:vertical; min-height:52px; }
   .block-note-input:focus { border-color: var(--gold); outline:none; }
@@ -3504,6 +3566,13 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       <div class="hdp-acc-shell"><div class="hdp-acc-body" id="hdpNutricionBody"></div></div>
     </div>
 
+    <!-- D2 · Bóveda de PRs: reconecta el hub de récords ya existente (28/08) -->
+    <div class="hdp-acc">
+      <button type="button" class="hdp-acc-summary-link" id="hdpPrVaultBtn">
+        <span class="ic">🏆</span><span class="tt">Bóveda de PRs</span><span class="chev">›</span>
+      </button>
+    </div>
+
     <!-- E · Ajustes y utilidades (bloque inferior) + ficha del coach al pie -->
     <section class="hdp-settings">
       <div class="hdp-card-lb">Ajustes y utilidades</div>
@@ -3619,13 +3688,27 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     <span class="progress-count" id="progress-count">0%</span>
     <span class="progress-label">completado</span>
   </div>
+  <!-- anillo de progreso: solo visible en escritorio (rail lateral, ver
+       CSS/JS "MEJORA DE ESCRITORIO 27/08" más abajo). En mobile no se
+       pinta (display:none por defecto) y .progress-row de arriba sigue
+       siendo la única vista, sin cambios. -->
+  <div class="progress-ring-wrap" id="progressRingWrap">
+    <svg class="progress-ring" viewBox="0 0 36 36" aria-hidden="true">
+      <circle class="progress-ring-track" cx="18" cy="18" r="15.5"></circle>
+      <circle class="progress-ring-fill" id="progressRingFill" cx="18" cy="18" r="15.5"></circle>
+    </svg>
+    <div class="progress-ring-text">
+      <span class="progress-ring-num" id="progressRingNum">0%</span>
+      <span class="progress-ring-lbl">completado</span>
+    </div>
+  </div>
 </div>
 <!-- BOTTOM NAVIGATION DOCK: %1RM, Custom Timer, KG/LBS, Readiness -->
 <nav class="hd-dock" id="hdDock" aria-label="Accesos rápidos">
-  <button type="button" class="hdd-b" id="hddCalc"><span class="ic">📊</span><span class="tx">% 1RM</span></button>
-  <button type="button" class="hdd-b" id="hddTimer"><span class="ic">⏱</span><span class="tx">Timer</span></button>
-  <button type="button" class="hdd-b" id="hddUni"><span class="ic">⚖️</span><span class="tx" id="hddUniTx">KG</span></button>
-  <button type="button" class="hdd-b" id="hddReadiness"><span class="ic">✅</span><span class="tx">Readiness</span></button>
+  <button type="button" class="hdd-b" id="hddCalc"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.5" cy="4.5" r="1.8"/><circle cx="11.5" cy="11.5" r="1.8"/><line x1="3" y1="13" x2="13" y2="3"/></svg></span><span class="tx">% 1RM</span></button>
+  <button type="button" class="hdd-b" id="hddTimer"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="1.4" x2="10" y2="1.4"/><line x1="8" y1="1.4" x2="8" y2="3"/><circle cx="8" cy="9" r="5.6"/><line x1="8" y1="9" x2="8" y2="5.6"/><line x1="8" y1="9" x2="10.4" y2="10.6"/></svg></span><span class="tx">Timer</span></button>
+  <button type="button" class="hdd-b" id="hddUni"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="3.2" y1="8" x2="12.8" y2="8"/><rect x="1.2" y="5.5" width="2" height="5" rx="0.6"/><rect x="12.8" y="5.5" width="2" height="5" rx="0.6"/><rect x="0.3" y="6.4" width="1" height="3.2" rx="0.4"/><rect x="14.7" y="6.4" width="1" height="3.2" rx="0.4"/></svg></span><span class="tx" id="hddUniTx">KG</span></button>
+  <button type="button" class="hdd-b" id="hddReadiness"><span class="ic"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.4"/><path d="M5.2 8.2l2 2 3.6-4.2"/></svg></span><span class="tx">Readiness</span></button>
 </nav>
 <div class="main" id="mainContent"></div>
 <footer class="site-footer">
@@ -3901,7 +3984,14 @@ function videoLinkHtml(name){
      El único video que aparece es el que el coach pegó a mano en la línea. */
   if(window.__jpSinVideo) return '';
   const ytid = buscarVideo(key);
-  if(ytid) return ' <a class="video-link jp-play" href="javascript:void(0)" data-yt="' + ytid + '" ' +
+  /* trigger con thumbnail real (28/08, Fase 3 · Sección 03 pto.5): el modal
+     y el iframe NO cambian, solo el disparador — antes un ícono circular
+     chico, ahora una miniatura real de YouTube (mqdefault.jpg, mismo ID que
+     ya usa el iframe) con el triángulo superpuesto. Si la miniatura no
+     carga (privado/borrado), el fondo translúcido de abajo queda como
+     estaba antes — el botón nunca se rompe visualmente. */
+  if(ytid) return ' <a class="video-link jp-play has-thumb" href="javascript:void(0)" data-yt="' + ytid + '" ' +
+    'style="background-image:url(https://img.youtube.com/vi/' + ytid + '/mqdefault.jpg)" ' +
     'title="Ver la t\\u00e9cnica" aria-label="Ver la t\\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
   return '';
@@ -4085,6 +4175,38 @@ function readinessAdvisory(zonas){
   const lista = zonas.join(' · ');
   return '<div class="rdy-advisory"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>' +
     '<div><b>Molestia en ' + lista.toLowerCase() + '</b> — hoy autoregulamos: sumá +1 RIR y evitá el rango de dolor en los ejercicios que la comprometan. Marcá el bloque afectado con 🩹 si necesitás avisar al coach en tiempo real.</div></div>';
+}
+/* Contexto de sesión (28/08, Fase 3 · Sección 03 pto.2) — bloque compacto
+   "lo que trajiste la última vez" ANTES del check-in de entrada, para que
+   la sesión abra con contexto en vez de con un formulario en blanco.
+   Cero cálculo nuevo: racha viene de window.CoachMetricas.racha() (mismo
+   módulo que ya la usa la Story Card y la tarjeta de cierre de sesión) y
+   el último PR viene de state.session.prDetalle (ya lo llena capturarPR()
+   en cada récord, nunca se resetea entre días — es el log real de marcas
+   de todo el mesociclo, no solo "esta sesión"). Si no hay nada que mostrar
+   todavía (primera sesión, cero historial), no se renderiza nada. */
+function renderContextoSesion(){
+  const r = (window.CoachMetricas && typeof window.CoachMetricas.racha === 'function') ? window.CoachMetricas.racha() : null;
+  const det = (state.session && state.session.prDetalle) || [];
+  const ultimoPR = det.length ? det[det.length - 1] : null;
+  if(!(r && r.hechas > 0) && !ultimoPR) return '';
+  const chips = [];
+  if(r && r.hechas > 0){
+    chips.push('<div class="ctx-chip"><span class="ctx-val">' + r.actual + '</span><span class="ctx-key">🔥 racha · sesión de ' + r.total + '</span></div>');
+  }
+  if(ultimoPR){
+    /* nombre del ejercicio: se saca el paréntesis final (traducción/alias,
+       ej. "Press Guillotina (Guillotine Press)") antes de truncar, así el
+       chip no corta a mitad de palabra en el caso común */
+    const nombrePR = String(ultimoPR.ex || '').replace(/\\s*\\([^)]*\\)\\s*$/, '').trim();
+    const nombreCorto = nombrePR.length > 24 ? nombrePR.slice(0, 23).trim() + '…' : nombrePR;
+    chips.push('<div class="ctx-chip"><span class="ctx-val">' + ultimoPR.kg + 'kg</span><span class="ctx-key">🏆 último PR · ' + nombreCorto + '</span></div>');
+  }
+  if(!chips.length) return '';
+  return '<div class="context-card" id="contextCard">' +
+    '<div class="ctx-head"><span class="ctx-ic">📊</span><span class="ctx-tt">Lo que trajiste la última vez</span></div>' +
+    '<div class="ctx-chips">' + chips.join('') + '</div>' +
+  '</div>';
 }
 function renderReadinessCard(weekIdx, day){
   const sleepVal = getSleep(weekIdx, day.id);
@@ -4616,14 +4738,26 @@ function cargaSugeridaHtml(block, weekIdx){
   }
   const rango = (a === b) ? (a + ' kg') : (a + ' – ' + b + ' kg');
   const lb = propio ? (wm.phase || '') : (PCT_SEMANA[weekIdx] || PCT_SEMANA[PCT_SEMANA.length - 1]).lb;
-  return '<div class="load-suggest"><span class="ls-ic">🎯</span><div><b>Sugerido ' + (wm.short || '') + ': ' + rango + ' (' + pct + ')</b>' +
+  return '<div class="load-suggest"><span class="ls-ic">🎯</span><div><b>Sugerido ' + (wm.short || '') + ': <code class="ls-num">' + rango + '</code> (' + pct + ')</b>' +
     '<span>Sobre tu carga base de ' + base + ' kg · ' + lb + '</span></div></div>';
 }
 function notesKey(weekIdx, dayId, blockId){ return weekIdx + '|' + dayId + '|' + blockId; }
+/* chips de 1 toque para la nota del bloque (propuesta 27/08, Sección 02 ·
+   Notas por chip) — escriben al MISMO campo/clave que ya usa el textarea,
+   no agregan un dato nuevo. */
+const NOTE_CHIPS = [
+  { ic:'💪', tx:'Fácil', frase:'Sensación: fácil, quedó margen.' },
+  { ic:'😐', tx:'Justo', frase:'Sensación: justo, al límite de lo pautado.' },
+  { ic:'🥵', tx:'Al límite', frase:'Sensación: al límite, muy exigido.' }
+];
 function bloqueNotasHtml(block, day, weekIdx){
   const k = notesKey(weekIdx, day.id, block.id);
   const val = (state.notes && state.notes[k]) ? state.notes[k] : '';
-  return '<div class="block-notes"><label>📝 Notas / Observaciones del Bloque</label>' +
+  const chips = '<div class="note-chips">' + NOTE_CHIPS.map(function(c){
+    return '<button type="button" class="note-chip" data-note-frase="' + c.frase.replace(/"/g,'&quot;') + '">' +
+      '<span class="ic">' + c.ic + '</span>' + c.tx + '</button>';
+  }).join('') + '</div>';
+  return '<div class="block-notes"><label>📝 Notas / Observaciones del Bloque</label>' + chips +
     '<textarea class="block-note-input" data-note-key="' + k + '" rows="2" placeholder="Sensaciones, molestias o ajustes de hoy...">' +
     val.replace(/</g,'&lt;') + '</textarea></div>';
 }
@@ -4652,6 +4786,31 @@ function videoFeedbackHtml(block, day, weekIdx){
       '</div>' +
     '</div></details>';
 }
+/* Íconos de línea a medida para categoría de bloque (propuesta 27/08,
+   Sección 01 · Iconografía). block.icon es un DATO del atleta/rutina
+   (lo elige el coach en el builder y queda guardado tal cual) — esta
+   función SOLO cambia cómo se dibuja en pantalla, nunca toca ni
+   reescribe ese dato. Si el emoji guardado no está en el mapa, se
+   muestra el emoji original sin cambios: cero riesgo de romper rutinas
+   ya armadas con íconos que hoy no cubrimos. */
+const BLOCK_ICON_SVG = {
+  '💪': '<line x1="3.2" y1="8" x2="12.8" y2="8"/><rect x="1.2" y="5.5" width="2" height="5" rx="0.6"/><rect x="12.8" y="5.5" width="2" height="5" rx="0.6"/>',
+  '🏋️': '<line x1="3.2" y1="8" x2="12.8" y2="8"/><rect x="1.2" y="5.5" width="2" height="5" rx="0.6"/><rect x="12.8" y="5.5" width="2" height="5" rx="0.6"/>',
+  '🔥': '<polyline points="4,11 8,7 12,11"/><polyline points="5.5,13.6 8,11 10.5,13.6"/>',
+  '🎯': '<circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.4"/>',
+  '📈': '<polyline points="2.5,12 6,8.5 9,10.5 13.5,4"/><circle cx="13.5" cy="4" r="1" fill="currentColor" stroke="none"/>',
+  '🧊': '<rect x="3.5" y="3.5" width="9" height="9" rx="1" transform="rotate(45 8 8)"/>',
+  '🛡️': '<polygon points="8,1.5 13,3.6 13,8.4 8,14.5 3,8.4 3,3.6"/>',
+  '⚡': '<polygon points="8.5,1.5 4,9 7.3,9 6.3,14.5 12,7 8.3,7"/>',
+  '🔁': '<polyline points="4,6 4,3 10,3"/><polyline points="8.5,1.5 10,3 8.5,4.5"/><polyline points="12,10 12,13 6,13"/><polyline points="7.5,14.5 6,13 7.5,11.5"/>',
+  '🔗': '<rect x="2" y="6.2" width="6.2" height="3.6" rx="1.8"/><rect x="7.8" y="6.2" width="6.2" height="3.6" rx="1.8"/>',
+  '🌀': '<path d="M13 8A5 5 0 1 1 10.6 3.9"/><polyline points="10,2.4 10.6,3.9 12.3,3.6"/>'
+};
+function blockIconHtml(raw){
+  const body = BLOCK_ICON_SVG[raw];
+  if(!body) return raw;
+  return '<svg class="bi-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
+}
 function renderBlock(block, day, weekIdx, idx){
   const meta = CATEGORY_META[block.category] || CATEGORY_META.strength;
   const catCls = block.category === 'strength' ? 'cat-strength' : (block.category === 'warmup' ? 'cat-warmup' : (block.category === 'metcon' ? 'cat-metcon' : (block.category === 'cardio' ? 'cat-cardio' : 'cat-accessory')));
@@ -4659,7 +4818,7 @@ function renderBlock(block, day, weekIdx, idx){
   const optionalCls = block.optional ? ' block-optional' : '';
   return '<div class="block ' + catCls + (done?' block-done':'') + optionalCls + '" data-block-id="' + block.id + '" style="animation-delay:' + (idx*0.04) + 's">' +
     '<div class="block-header">' +
-      '<div class="block-icon ' + meta.cls + '">' + block.icon + '</div>' +
+      '<div class="block-icon ' + meta.cls + '">' + blockIconHtml(block.icon) + '</div>' +
       '<div class="block-header-text">' +
         '<div class="block-label ' + meta.labelCls + '">' + ((block.weekName && block.weekName[weekIdx]) || block.title) + '</div>' +
         '<div class="block-subtitle">' + block.subtitle + '</div>' +
@@ -4705,6 +4864,7 @@ function renderMain(){
   html += '<div class="day-meta-row">' + (day.metaChips||[]).map(function(c){ return '<span class="meta-chip">' + c + '</span>'; }).join('') + '</div></div>';
   html += '<button class="day-complete-btn' + (dayDone?' done':'') + '" id="dayCompleteBtn">' + (dayDone?'✓ Día Completo':'Marcar Día Completo') + '</button>';
   html += '</div>';
+  html += renderContextoSesion();
   html += renderReadinessCard(weekIdx, day);
   if(day.focusText){
     html += '<div class="safety-banner"><div class="sb-icon">🎯</div><div><div class="safety-banner-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div><div class="safety-banner-text">' + day.focusText + '</div></div></div>';
@@ -4790,6 +4950,20 @@ function wireBlockInteractions(day, weekIdx, blocks){
       });
       noteEl.addEventListener('click', function(e){ e.stopPropagation(); });
     }
+    blockEl.querySelectorAll('.note-chip').forEach(function(chip){
+      chip.addEventListener('click', function(e){
+        e.stopPropagation();
+        if(!noteEl) return;
+        const frase = chip.dataset.noteFrase;
+        /* si ya hay texto propio, se agrega abajo en vez de pisarlo */
+        noteEl.value = noteEl.value.trim() ? (noteEl.value.replace(/\\s+$/,'') + '\\n' + frase) : frase;
+        state.notes = state.notes || {};
+        state.notes[noteEl.dataset.noteKey] = noteEl.value;
+        chip.classList.add('on');
+        setTimeout(function(){ chip.classList.remove('on'); }, 260);
+        saveProgress();
+      });
+    });
     const vfb = blockEl.querySelector('.video-fb');
     if(vfb){
       /* Parche local del DOM (sin renderMain()) para que el <details> no se
@@ -5443,7 +5617,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       bd = document.createElement('span'); bd.className = 'pr-badge';
       bd.textContent = '🔥 NEW PR';
       row.appendChild(bd);
-      const blockEl = row.closest('.block'); if(blockEl) blockEl.classList.add('has-pr');
+      const blockEl = row.closest('.block');
+      if(blockEl){
+        blockEl.classList.add('has-pr');
+        /* pulso una sola vez, en el instante del récord — no en cada repintado */
+        blockEl.classList.add('block-pr-flash');
+        setTimeout(function(){ blockEl.classList.remove('block-pr-flash'); }, 1100);
+      }
       try{ beepGo(); }catch(e){} vibrar([60,40,60,40,120]);
       state.session.prs = state.session.prs || [];
       if(state.session.prs.indexOf(nombre) < 0) state.session.prs.push(nombre);
@@ -5624,6 +5804,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const d = resumenDatos(weekIdx, day);
     const nkey = weekIdx + '|' + day.id + '|__sesion';
     const prs = (state.session.prs || []);
+    /* racha del mesociclo: reusa window.CoachMetricas.racha() (módulo de la
+       Story Card, ya calcula esto para la tarjeta de Instagram) en vez de
+       recalcular la consistencia acá de nuevo */
+    const r = (window.CoachMetricas && typeof window.CoachMetricas.racha === 'function') ? window.CoachMetricas.racha() : null;
     const html =
       '<div class="summary-card">' +
         '<div class="sc-h"><span class="sc-ic">🏁</span><h3>Sesión completa — ' + day.short + '</h3></div>' +
@@ -5632,6 +5816,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '<div class="sc-stat"><div class="v">' + d.series + '</div><div class="k">series completadas</div></div>' +
           '<div class="sc-stat"><div class="v">' + d.reps + '</div><div class="k">repeticiones</div></div>' +
           '<div class="sc-stat"><div class="v">' + ids.length + '</div><div class="k">bloques</div></div>' +
+          /* valor de una sola cifra a propósito: el odómetro de animarResumen()
+             (más abajo) hace parseInt(v.textContent.replace(/[^\\d]/g,'')) sobre
+             CADA .sc-stat .v de la tarjeta — un formato "3/16" se leería como
+             316 y el odómetro reescribiría el texto final a "316" */
+          (r ? '<div class="sc-stat"><div class="v">' + r.actual + '</div><div class="k">🔥 racha · sesión de ' + r.total + '</div></div>' : '') +
         '</div>' +
         (prs.length ? '<div class="sc-prs">' + prs.map(p => '<span>🔥 PR en ' + p + '</span>').join('') + '</div>' : '') +
         '<div class="sc-body">' +
@@ -5653,7 +5842,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const sv = document.getElementById('scSave');
     if(sv) sv.addEventListener('click', function(){
       saveProgress();
-      sv.textContent = '✅ Guardado';
+      /* confirmación honesta: el progreso ya quedó a salvo en el teléfono
+         (localStorage + IndexedDB, ver saveProgress arriba) sea cual sea el
+         estado de la red — solo el texto cambia según haya o no conexión,
+         reusando la misma señal que ya pinta el .off-pill */
+      sv.textContent = navigator.onLine ? '✅ Guardado y a salvo' : '✅ Guardado en el teléfono';
       setTimeout(function(){ sv.textContent = '💾 Guardar y sincronizar'; }, 2200);
     });
     const sh = document.getElementById('scShare');
@@ -5862,10 +6055,10 @@ textarea,input,.wb-line,.tab-label,.week-pill-phase{
 /* =========================================================
    CÁPSULAS INTERACTIVAS DE SET
 ========================================================= */
-.set-tracker{gap:7px !important}
+.set-tracker{gap:var(--sp-1) !important}
 .set-row{
   display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-  padding:7px 10px; border-radius:999px;
+  padding:6px var(--sp-2); border-radius:999px;
   border:1px solid var(--card-border); background:rgba(255,255,255,.025);
   transition:border-color .25s var(--ease),box-shadow .25s var(--ease),transform .25s var(--ease),background-color .25s var(--ease);
 }
@@ -6042,6 +6235,40 @@ button:active,.nav-pill:active,.day-tab:active,.sc-actions button:active,
   box-shadow:0 0 12px rgba(210,121,63,0.4);
 }
 .video-link.jp-play:active{transform:scale(.9)}
+/* ---------- trigger con thumbnail real (28/08, Fase 3) ----------
+   .has-thumb solo lo agregan videoLinkHtml()/playHtml() cuando SÍ hay un
+   ytid confirmado (nunca .vsearch, que es el fallback "buscar en YouTube"
+   sin video real) — el modal/iframe no cambian, solo se agranda y
+   rectangulariza el disparador para mostrar la miniatura real de YouTube
+   como fondo. El scrim via box-shadow inset (no ::after) para que el
+   triángulo SVG, que es contenido normal del <a>, siga pintando arriba
+   sin tener que armar un contexto de apilamiento nuevo. Selector repetido
+   con la especificidad de ".block:not(.wu-card) .ex-name .video-link"
+   (línea ~12941) para ganarle a esa regla más específica que si no
+   volvería a forzar el círculo de 30x30. */
+.video-link.jp-play.has-thumb,
+.block:not(.wu-card) .ex-name .video-link.has-thumb{
+  /* el ancho/alto real los fuerza la regla de ergonomía táctil de un
+     pedido anterior (.video-link.jp-play{width/height:40px!important},
+     ~línea 15676) — 40x40 en vez del círculo de 30x30 de antes, así que
+     acá se diseña directamente para ese cuadrado, no para un rectángulo
+     que después la regla !important reescribiría igual. */
+  border-radius:9px;
+  background-color:rgba(255,255,255,.08);background-size:cover;background-position:center;
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:inset 0 0 0 999px rgba(5,6,10,.34);
+}
+.video-link.jp-play.has-thumb svg,
+.block:not(.wu-card) .ex-name .video-link.has-thumb svg{
+  width:15px;height:15px;fill:#fff;transform:translateX(1px);
+  filter:drop-shadow(0 1px 3px rgba(0,0,0,.85));
+}
+.video-link.jp-play.has-thumb:hover,.video-link.jp-play.has-thumb:focus-visible,
+.block:not(.wu-card) .ex-name .video-link.has-thumb:hover{
+  border-color:rgba(210,121,63,.6);background-color:rgba(255,255,255,.08);
+  box-shadow:inset 0 0 0 999px rgba(5,6,10,.2),0 0 12px rgba(210,121,63,.4);
+}
+@media(prefers-reduced-motion:reduce){ .video-link.jp-play.has-thumb{ transition:none; } }
 .video-link.jp-play.vsearch{border-style:dashed;border-color:rgba(255,255,255,.2)}
 .video-link.jp-play.vsearch svg{fill:#D2793F;opacity:.85}
 .video-link.jp-play.vsearch .mag{position:absolute;right:-3px;bottom:-3px;font-size:9px;line-height:1;
@@ -6129,7 +6356,29 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
 /* =========================================================
    HEAVY DUTY HEADER · COACH JP
 ========================================================= */
-.hd-wrap{position:relative;z-index:3;padding:0 clamp(18px,3.2vw,30px)}
+/* padding-top:var(--hdc-h) (27/08, fix header-scroll): compensa en el flujo
+   el espacio que deja .hd-compact al pasar a position:fixed más abajo — ver
+   el comentario largo junto a .hd-compact (~línea 17043) para el porqué.
+   --hdc-h ya la mide en vivo medirCabecera() y ya la consume .hd-full-drawer;
+   fallback 116px por si el CSS se pinta antes de que corra ese JS. En
+   escritorio (@media min-width:1024px, ~línea 17383) esta regla se pisa con
+   padding:0 !important, así que ahí no compensa nada — correcto, porque en
+   el rail de escritorio .hd-compact vuelve a position:static (no fixed).
+   z-index:300 (antes 3, 27/08 fix header-scroll): .hd-wrap tiene
+   position:relative, así que crea su propio "stacking context" — CUALQUIER
+   descendiente con position:fixed queda pintado según el z-index DE ESTE
+   contenedor visto desde afuera, no el suyo propio (mismo hallazgo que ya
+   documenta montarCompacta() ~línea 17473 para .hd-full-drawer, por eso ese
+   se reparenta a <body>). Con z-index:3 acá, .hd-compact (fixed, z-index:300
+   en su propia regla) terminaba pintando POR DEBAJO de .sticky-bar
+   (z-index:200, la vieja barra sticky de branding que sigue activa) y sus
+   clicks reales iban a parar al elemento equivocado (#hdcInfoBtn recibía el
+   click de Playwright con force pero el navegador se lo entregaba a
+   .sticky-brand, confirmado con elementFromPoint). Subir hd-wrap a 300 hace
+   que su rango externo coincida con el z-index que .hd-compact ya declaraba
+   tener. Gateado a mobile: en escritorio (~línea 17383) se revierte a 3
+   porque ahí .hd-compact vuelve a position:static y no necesita competir. */
+.hd-wrap{position:relative;z-index:300;padding:var(--hdc-h,116px) clamp(18px,3.2vw,30px) 0}
 
 /* ---------- 1. TOP NAVIGATION BAR ---------- */
 header.masthead.hd-top{
@@ -6311,7 +6560,9 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   .hd-athlete{justify-self:start}
   .hd-word .n{font-size:1.15rem}
   .masthead-brand.hd-brand{justify-content:flex-start !important;width:100%}
-  .hd-wrap{padding:0 14px}
+  /* preserva la compensación padding-top:var(--hdc-h) del fix de header-scroll
+     (~línea 6359) — solo se angosta el padding lateral en pantallas chicas */
+  .hd-wrap{padding:var(--hdc-h,116px) 14px 0}
 }
 </style>
 
@@ -7195,6 +7446,21 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     return { ok:true, barra: barra, porLado: Math.round(porLado * 100) / 100, lista: res, sobra: Math.round(resto * 100) / 100 };
   }
   window.CoachDiscos = discos;
+  /* alturas relativas de cada disco, aprox. proporcional al diámetro real
+     de un disco olímpico de gimnasio (20kg más grande, 1.25kg más chico) */
+  var DISCO_ALTO = { 20:56, 15:49, 10:41, 5:31, 2.5:24, 1.25:19 };
+  function discBarHtml(d){
+    if(!d || !d.ok || !d.lista.length) return '';
+    var placas = '';
+    d.lista.forEach(function(x){
+      var h = DISCO_ALTO[x.d] || 20;
+      for(var i = 0; i < x.n; i++){
+        placas += '<div class="db-plate" style="height:' + h + 'px" title="' + x.d + ' kg"></div>';
+      }
+    });
+    return '<div class="disc-bar"><div class="db-sleeve"></div>' + placas + '<div class="db-clip"></div></div>';
+  }
+  window.CoachDiscoBar = discBarHtml;
 
   function rampa(objetivo){
     return [0.5, 0.7, 0.8, 0.9].map(function(p){
@@ -8400,6 +8666,14 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
 .tm-out .pl{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .tm-out .pl span{padding:5px 11px;border-radius:20px;font-weight:700;font-size:.8rem;
   background:rgba(124,197,232,.12);border:1px solid rgba(124,197,232,.34);color:#B7DEF2}
+/* asistente de discos visual (propuesta 27/08, Sección 02 · Asistente de
+   discos visual) — dibuja la barra a partir del mismo cálculo de
+   window.CoachDiscos() que ya arma la lista de texto de abajo; no duplica
+   la cuenta, solo la representa. */
+.disc-bar{display:flex;align-items:center;gap:2px;height:60px;margin-top:10px;overflow-x:auto;padding:0 2px}
+.db-sleeve{flex:none;width:16px;height:16px;border-radius:3px 0 0 3px;background:linear-gradient(90deg,#2A2E38,#3A3F4A)}
+.db-plate{flex:none;width:8px;border-radius:2px;background:linear-gradient(180deg,#D2793F,#8A4C24);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.db-clip{flex:none;width:5px;height:22px;border-radius:0 3px 3px 0;background:linear-gradient(90deg,#E5C378,#B08A3E)}
 .tm-out .ramp{display:grid;gap:5px;margin-top:8px}
 .tm-out .ramp div{display:flex;justify-content:space-between;gap:10px;padding:7px 11px;border-radius:9px;
   background:rgba(255,255,255,.04)}
@@ -8413,6 +8687,11 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
 }
 .rm-sug .ic{font-size:15px}
 .rm-sug b{font-family:'Barlow Condensed',sans-serif;font-size:1rem;letter-spacing:.03em;color:#D2793F}
+/* .rm-sug/.pre-sug es, en la práctica, la caja que el alumno más ve — la
+   armado un módulo aparte (precargar()/sugerencias(), más abajo) que le
+   gana a .load-suggest en la deduplicación de "una sola sugerencia por
+   bloque" apenas el bloque tiene set-tracker. Mismo tratamiento mono acá. */
+.rm-sug b .ls-num{ font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.08em; letter-spacing: 0; color: inherit; }
 .rm-sug span{color:#A0A8B4;font-size:.76rem;display:block;margin-top:1px}
 /* ---------- feedback de cierre ---------- */
 .fb-box{padding:0 1rem 1rem}
@@ -8540,7 +8819,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       var rm = pct ? rmDe(nom) : 0;
       if(!pct || !(rm > 0)){ if(vieja) vieja.remove(); return; }
       var kg = Math.round(rm * pct / 100 * 2) / 2;
-      var html = '<span class="ic">🎯</span><div><b>Sugerido: ' + fmt(kg) + ' [' + pct + '% de 1RM]</b>' +
+      var html = '<span class="ic">🎯</span><div><b>Sugerido: <code class="ls-num">' + fmt(kg) + '</code> [' + pct + '% de 1RM]</b>' +
         '<span>Tu récord registrado es ' + fmt(rm) + ' — el sistema lo cruza con el porcentaje programado.</span></div>';
       if(vieja){ if(vieja.innerHTML !== html) vieja.innerHTML = html; return; }
       var box = document.createElement('div');
@@ -8586,6 +8865,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
           '. Usá barra corta, mancuernas o discos chicos.</div>';
       } else {
         out.innerHTML = '<b>' + fmtFino(kg) + ' = barra ' + fmt(20) + ' + ' + fmtFino(d.porLado) + ' por lado</b>' +
+          (window.CoachDiscoBar ? window.CoachDiscoBar(d) : '') +
           '<div class="pl">' + d.lista.map(function(x){ return '<span>' + x.n + ' × ' + fmtFino(x.d) + '</span>'; }).join('') + '</div>' +
           (d.sobra > 0 ? '<div style="margin-top:7px;color:#E8965E">Sobran ' + fmtFino(d.sobra) +
             ' por lado que no se arman con discos estándar: redondeá a ' + fmtFino(kg - d.sobra * 2) + '.</div>' : '');
@@ -10240,7 +10520,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
            con un número distinto se retira para no mostrar dos cifras */
         bl.querySelectorAll('.rm-sug:not(.pre-sug)').forEach(function(x){ x.remove(); });
         var vieja = bl.querySelector('.pre-sug');
-        var html = '<span class="ic">🎯</span><div><b>Sugerido esta semana: ' + fmt(kg) +
+        var html = '<span class="ic">🎯</span><div><b>Sugerido esta semana: <code class="ls-num">' + fmt(kg) + '</code>' +
           ' [' + pct + '% de 1RM]</b><span>Precomputado con tu marca registrada — sólo tildá la serie.</span></div>';
         if(vieja){ if(vieja.innerHTML !== html) vieja.innerHTML = html; }
         else {
@@ -14178,7 +14458,8 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   font-family:var(--font-head) !important; letter-spacing:.05em;
 }
 .set-input,.load-value,.sc-stat .v,.rh-time,.wb-dur,.cwt-time,.cf-time,.calc-out,
-.pr-kg,.kg-val,.jp-num,.wu-dose,.bs-rn,.cf-line span.n,.wb-line span.n{
+.pr-kg,.kg-val,.jp-num,.wu-dose,.bs-rn,.cf-line span.n,.wb-line span.n,
+.progress-count,.progress-ring-num{
   font-family:var(--font-mono) !important; font-variant-numeric:tabular-nums;
 }
 /* --- inputs de carga --- */
@@ -16617,7 +16898,11 @@ input[type="checkbox"]:active{
 
   /* 2 · excepción manual: play sólo en las líneas con link propio */
   function playHtml(id){
-    return ' <a class="video-link jp-play" href="javascript:void(0)" data-yt="' + id + '" ' +
+    /* mismo trigger con thumbnail que videoLinkHtml() (ver ~línea 3965) —
+       dos generadores porque este es el caso especial de video pegado a
+       mano en una línea de pizarra CrossFit, misma anatomía de botón. */
+    return ' <a class="video-link jp-play has-thumb" href="javascript:void(0)" data-yt="' + id + '" ' +
+      'style="background-image:url(https://img.youtube.com/vi/' + id + '/mqdefault.jpg)" ' +
       'title="Video cargado por el coach" aria-label="Ver el video de esta línea">' +
       '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
   }
@@ -16779,8 +17064,24 @@ input[type="checkbox"]:active{
    MÓDULO — CABECERA ULTRA-COMPACTA, BOTTOM DOCK Y ACORDEÓN
    INTELIGENTE (refactor UI/UX app del alumno)
 ========================================================= */
+/* FIX (27/08) header-scroll: .hd-compact usaba position:sticky, pero su padre
+   directo .hd-wrap (el "containing block" real de un sticky — no el scroller)
+   mide casi exactamente lo mismo que .hd-compact (ambos ~143px), porque
+   .hd-full-drawer se reparenta a <body> en montarCompacta() y .progress-ring-wrap
+   es display:none en mobile: sin altura extra en .hd-wrap no hay "recorrido"
+   posible para que el sticky se quede pegado. Se comporta como static puro y
+   el botón Perfil/Info (y desde F2 el acceso a la Bóveda de PRs) quedan
+   inalcanzables al scrollear en pleno entrenamiento — confirmado con
+   getBoundingClientRect().y moviéndose en lockstep 1:1 con scrollY.
+   Fix: fixed real al viewport. La compensación de espacio en flujo la suma
+   .hd-wrap vía padding-top:var(--hdc-h) (~línea 6359/6541), la misma
+   variable que ya mide medirCabecera() y ya consume .hd-full-drawer para su
+   propio top. En escritorio (@media min-width:1024px, ~línea 17383) esto se
+   revierte a position:static: ahí .hd-wrap es una columna flotante del rail
+   y el header debe scrollear junto con el resto (progreso, dock), no quedar
+   clavado arriba. */
 .hd-compact{
-  position:sticky; top:0; z-index:300; display:flex; flex-direction:column;
+  position:fixed; top:0; left:0; right:0; z-index:300; display:flex; flex-direction:column;
   padding-top:calc(14px + env(safe-area-inset-top));
   background:linear-gradient(180deg, rgba(11,12,15,.97), rgba(8,9,11,.97));
   backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
@@ -16842,6 +17143,24 @@ input[type="checkbox"]:active{
 #hdFullDrawer > header.masthead.hd-top,
 #hdFullDrawer > .hd-cred,
 #hdFullDrawer > .hero.hd-banner{ display:none !important; }
+
+/* FIX (28/08, rail de escritorio) — .sticky-bar (#stickyBar, ~línea 2859) es
+   OTRO remanente del header viejo: una mini-barra de marca que un JS aparte
+   (~línea 5158, stickyBarEl.classList.toggle('show', scrollY>260)) muestra
+   sola al pasar los 260px de scroll. Nunca se ocultó como el resto de los
+   remanentes de arriba porque en mobile, por casualidad, quedaba tapada por
+   completo debajo de .hd-compact (fixed, z-index:300 desde el fix de
+   scroll del header) — invisible sin que nadie lo pidiera. En escritorio
+   .hd-compact es position:static (no cubre nada fuera de su propio
+   lugar en el rail) y .sticky-bar sí queda encima de todo (fixed,
+   z-index:200) — por eso ahí SÍ se veía la marca vieja centrada tapando la
+   identidad del rail nuevo. No tiene ninguna función propia (el único JS
+   que la toca es el toggle de arriba; el link "COACH JP" adentro solo
+   saltaba al top de página, redundante con la navegación que ya da el
+   dock/las tabs) — se oculta directo, en vez de perseguir z-index por
+   viewport, para no dejar una carrera de stacking latente si el día de
+   mañana algo más sube su z-index por encima de 200. */
+.sticky-bar{ display:none !important; }
 
 .hdp-panel{ padding:16px 14px calc(20px + env(safe-area-inset-bottom)); }
 .hdp-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
@@ -16949,6 +17268,19 @@ input[type="checkbox"]:active{
 }
 .hdp-acc-summary .chev{ color:#64748B; font-size:17px; line-height:1; transition:transform .25s ease, color .25s ease; flex-shrink:0; }
 .hdp-acc.open .hdp-acc-summary .chev{ transform:rotate(90deg); color:#D2793F; }
+/* fila de acceso directo (no-acordeón): misma anatomía visual que
+   .hdp-acc-summary pero SIN sumarse al listener delegado de toggle
+   (abre el hub de PRs directamente, no expande un cuerpo inline) */
+.hdp-acc-summary-link{
+  display:flex; align-items:center; gap:10px; width:100%; padding:13px 14px;
+  background:transparent; border:none; cursor:pointer; text-align:left; -webkit-tap-highlight-color:transparent;
+}
+.hdp-acc-summary-link .ic{ font-size:16px; flex-shrink:0; line-height:1; }
+.hdp-acc-summary-link .tt{
+  flex:1; font-family:var(--font-head,'Chakra Petch','Barlow Condensed',sans-serif);
+  font-weight:700; font-size:12.5px; letter-spacing:.03em; text-transform:uppercase; color:#EDEFF3;
+}
+.hdp-acc-summary-link .chev{ color:#D2793F; font-size:17px; line-height:1; flex-shrink:0; }
 .hdp-acc-shell{ display:grid; grid-template-rows:0fr; transition:grid-template-rows .28s var(--ease,cubic-bezier(.4,0,.2,1)); }
 .hdp-acc.open .hdp-acc-shell{ grid-template-rows:1fr; }
 .hdp-acc-body{ min-height:0; overflow:hidden; padding:0 14px; }
@@ -17018,7 +17350,12 @@ input[type="checkbox"]:active{
   border:none; background:transparent;
   color:#9aa1ad; padding:7px 4px; border-radius:13px; cursor:pointer; font-size:9.5px; font-weight:700;
 }
-.hdd-b .ic{font-size:16px;line-height:1}
+.hdd-b .ic{font-size:16px;line-height:1;display:flex}
+/* íconos de línea a medida (propuesta 27/08, Sección 01 · Iconografía) —
+   reemplazan el emoji del dock. currentColor: heredan el mismo color que
+   ya cambiaba el emoji-container en :active/.on, así que el estado
+   "encendido" ahora también tiñe el trazo del ícono, no solo el texto. */
+.hdd-b .ic svg{width:16px;height:16px;flex:none}
 .hdd-b:active{background:rgba(229,195,120,.14);color:#E5C378}
 .hdd-b.on{background:rgba(229,195,120,.16);color:#E5C378}
 #mainContent{padding-bottom:calc(90px + env(safe-area-inset-bottom)) !important}
@@ -17058,6 +17395,150 @@ body.focus-mode .hd-dock{display:none}
 .hdc-days-wrap .day-tab.active{ background:rgba(210,121,63,.15) !important; border-color:#D2793F !important; }
 .hdc-days-wrap .day-tab.active .tab-name{ color:#F2C89A !important; }
 .hdc-days-wrap .day-tab.active::after{ display:none; }
+
+/* ---------- degradé de borde en los selectores de día/fase (28/08,
+   Fase 3 · Sección 03 pto.1) — indicio visual de que hay más para
+   scrollear. Las clases .can-scroll-l/.can-scroll-r las pone el JS de
+   montarFadeScroll() (ver mount(), más abajo) midiendo scrollLeft real
+   contra scrollWidth, así el degradé SOLO aparece del lado donde
+   efectivamente hay contenido oculto — nunca corta el primer/último
+   tab cuando todo entra sin necesidad de scroll (ej. 4 semanas en
+   escritorio, que ya entran completas hoy). */
+.week-tabs.can-scroll-r,.week-selector.can-scroll-r{
+  -webkit-mask-image:linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+  mask-image:linear-gradient(to right, black calc(100% - 28px), transparent 100%);
+}
+.week-tabs.can-scroll-l,.week-selector.can-scroll-l{
+  -webkit-mask-image:linear-gradient(to left, black calc(100% - 28px), transparent 100%);
+  mask-image:linear-gradient(to left, black calc(100% - 28px), transparent 100%);
+}
+.week-tabs.can-scroll-l.can-scroll-r,.week-selector.can-scroll-l.can-scroll-r{
+  -webkit-mask-image:linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
+  mask-image:linear-gradient(to right, transparent 0, black 24px, black calc(100% - 24px), transparent 100%);
+}
+
+/* =========================================================
+   MEJORA DE ESCRITORIO (27/08) — rail lateral, grilla de bloques,
+   anillo de progreso y relieve de tarjetas.
+   Todo gateado a min-width:1024px: por debajo de eso (donde el
+   alumno realmente entrena) no se toca ni un píxel. No reparenta
+   nada del DOM — .hd-wrap / .progress-bar-wrap / .hd-dock ya son
+   elementos independientes (el dock ya era position:fixed) y solo
+   se reposicionan por CSS. El único JS nuevo (ver script al final
+   del body) envuelve updateProgress() para pintar el anillo con el
+   mismo % que ya calcula esa función — no agrega lógica de datos. */
+.progress-ring-wrap{ display:none; }
+
+@media(min-width:1024px){
+  /* misma razón que el fix de <html> de más arriba: overflow-x:hidden en
+     body (sin overflow-y declarado) computa overflow-y:auto por la regla
+     de fixup del spec, y eso rompe el position:sticky de .hd-compact en
+     escritorio también — se mueve a html, gateado al mismo min-width. */
+  html{ overflow-x:hidden; }
+
+  /* 1 · rail lateral: identidad + progreso + accesos rápidos, flotando
+     como una sola columna izquierda de 300px */
+  .hd-wrap{ float:left; clear:left; width:300px; padding:0 !important; z-index:3; }
+  /* revierte el fix de header-scroll (~línea 17043/6359) para escritorio: acá
+     .hd-compact vuelve a ser un elemento normal en el flujo del rail
+     flotante (mismo comportamiento que tenía antes del fix, cuando el
+     sticky roto de hecho ya se comportaba como static) — no debe quedar
+     fixed clavado arriba tapando el resto de la columna (anillo de
+     progreso, dock). padding:0 !important de arriba ya anula la
+     compensación padding-top:var(--hdc-h) de .hd-wrap, y el z-index vuelve
+     a su valor original (3): con .hd-compact static ya no hace falta que
+     hd-wrap compita por stacking contra .sticky-bar (que además ahora está
+     oculta del todo, ver más arriba). */
+  .hd-compact{ position:static; }
+  .hdc-days-wrap{ overflow-x:visible; }
+  .hdc-days-wrap .week-tabs{ flex-wrap:wrap; }
+
+  /* FIX (28/08, rail de escritorio) — .hd-wrap/.progress-bar-wrap/.hd-dock
+     flotaban en el flujo normal de <body> sin ningún position:sticky (a
+     diferencia del dock de mobile, que sí es fixed): apenas el alumno
+     scrolleaba más que la altura del propio rail (~500-600px, bastante
+     menos que #mainContent con la rutina completa), el rail entero —
+     identidad, anillo de progreso Y el botón de Perfil/Info — se iba de
+     pantalla y no volvía hasta scrollear de nuevo hasta arriba de todo.
+     Mismo síntoma de fondo que el bug de mobile ya arreglado, pero acá la
+     causa es más simple: nunca se declaró sticky. Fix: position:sticky en
+     los 3 bloques del rail, con "top" escalonado para que se apilen uno
+     debajo del otro ya pegados (si los 3 tuvieran el mismo top se
+     superpondrían). El alto de .hd-wrap ya lo mide en vivo medirCabecera()
+     en --hdc-h (mismo valor que usa .hd-full-drawer) — en escritorio
+     .hd-wrap no tiene padding propio (ver arriba) así que su alto real
+     coincide con el de .hd-compact, cero medición nueva ahí. El alto del
+     anillo de progreso SÍ es nuevo — lo mide medirRail() (script al final
+     del body, mismo patrón que medirCabecera) en --rail-prog-h. No hace
+     falta containing block extra: acá el padre de los 3 es <body>, que
+     mide la altura de toda la rutina — a diferencia de .hd-wrap/.hd-compact
+     en mobile, sí hay de sobra "recorrido" para que el sticky pegue. */
+  .hd-wrap{ position:sticky; top:16px; }
+  .progress-bar-wrap{
+    float:left; clear:left; width:300px; margin:16px 0 0;
+    position:sticky; top:calc(16px + var(--hdc-h,156px) + 16px);
+  }
+  .progress-row{ display:none; }
+  .progress-ring-wrap{
+    display:flex; align-items:center; gap:14px;
+    background:linear-gradient(160deg,#111318,#15181f);
+    border:1px solid #1E222B; border-radius:10px; padding:16px 18px;
+  }
+  .progress-ring{ width:44px; height:44px; flex:none; transform:rotate(-90deg); }
+  .progress-ring-track{ fill:none; stroke:#1E222B; stroke-width:3; }
+  .progress-ring-fill{
+    fill:none; stroke:#FFD700; stroke-width:3; stroke-linecap:round;
+    stroke-dasharray:0 97.4; transition:stroke-dasharray .45s cubic-bezier(0.4,0,0.2,1);
+  }
+  .progress-ring-text{ display:flex; flex-direction:column; }
+  .progress-ring-num{ font-size:20px; font-weight:800; color:#FFD700; line-height:1.1; }
+  .progress-ring-lbl{ font-size:11px; color:#8B93A1; text-transform:uppercase; letter-spacing:.06em; margin-top:2px; }
+
+  .hd-dock{
+    position:sticky; top:calc(16px + var(--hdc-h,156px) + 16px + var(--rail-prog-h,96px) + 16px);
+    float:left; clear:left; width:300px; margin:16px 0 0;
+    flex-direction:column; gap:4px;
+    background:#111318; border:1px solid #1E222B; border-radius:10px;
+    box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none;
+    padding:8px;
+  }
+  .hd-dock.is-hidden{ transform:none !important; opacity:1 !important; pointer-events:auto !important; }
+  .hdd-b{ flex-direction:row; justify-content:flex-start; gap:10px; padding:10px 12px; font-size:12px; }
+  .hdd-b .ic{ font-size:16px; }
+
+  /* 2 · el resto de la columna cede el ancho del rail (300px + 32px de aire) */
+  .week-selector-wrap{ margin-left:332px !important; margin-right:24px !important; }
+  .week-info-bar{ margin-left:332px !important; margin-right:24px !important; }
+  #mainContent{ margin-left:332px !important; margin-right:24px !important; padding-bottom:40px !important; }
+  footer.site-footer{ clear:both; }
+  .timer-hud{ bottom:24px !important; }
+  .rest-hud{ bottom:24px !important; }
+  .off-pill{ bottom:24px !important; }
+  .next-hint{ bottom:24px !important; }
+
+  /* 3 · grilla de bloques (a partir del 3er bloque — con 1-2 bloques no
+     vale la pena partir la columna). Se usa columns en vez de grid: el
+     acordeón "solo el bloque en curso queda expandido" hace que las
+     tarjetas tengan alturas muy distintas, y columns empaqueta cada
+     columna de forma independiente sin dejar huecos verticales. */
+  .blocks-stack:has(.block:nth-of-type(3)){
+    display:block; column-count:2; column-gap:16px;
+  }
+  .blocks-stack:has(.block:nth-of-type(3)) > .block{
+    break-inside:avoid; margin-bottom:1rem;
+  }
+
+  /* 4 · relieve sutil: profundidad tonal vía degradé, no un color nuevo.
+     El dorado del bloque en curso (.block-current, ya existente) queda
+     como única marca de color para no diluir su significado. */
+  .block{ background:linear-gradient(160deg, var(--bg-card) 0%, rgba(255,255,255,.025) 100%); }
+
+  /* 5 · el watermark 'JP' de fondo (body::before, ya existente, opacity:.03)
+     estaba pensado para quedar tapado por el contenido a ancho completo.
+     El rail deja hueco vacío debajo de la identidad/anillo/dock, y ahí
+     la 'J' queda expuesta y recortada — se oculta solo en escritorio. */
+  body::before{ display:none; }
+}
 </style>
 
 <script>
@@ -17073,6 +17554,20 @@ body.focus-mode .hd-dock{display:none}
     if(!hd) return;
     var h = hd.getBoundingClientRect().height;
     if(h > 0) document.documentElement.style.setProperty('--hdc-h', h + 'px');
+  }
+
+  /* ---------- FIX (28/08, rail de escritorio): publica el alto real del
+     bloque de progreso (anillo, solo visible en escritorio, min-width:1024)
+     en --rail-prog-h, para que .hd-dock (sticky, ver @media min-width:1024
+     más abajo) sepa dónde empieza su propio "top" sin pisar el anillo de
+     arriba. Mismo patrón que medirCabecera()/--hdc-h. En mobile
+     .progress-bar-wrap mide 0 (display:none del anillo) — inocuo, esa
+     variable no se usa fuera del media query de escritorio. ---------- */
+  function medirRail(){
+    var pw = document.querySelector('.progress-bar-wrap');
+    if(!pw) return;
+    var h = pw.getBoundingClientRect().height;
+    if(h > 0) document.documentElement.style.setProperty('--rail-prog-h', h + 'px');
   }
 
   /* ---------- cabecera compacta: reparenta el selector de días real (misma
@@ -17105,6 +17600,7 @@ body.focus-mode .hd-dock{display:none}
       });
     }
     medirCabecera();
+    medirRail();
     montarPerfil();
   }
 
@@ -17127,6 +17623,21 @@ body.focus-mode .hd-dock{display:none}
     var installSlot = q('hdpInstallSlot');
     var pwaWrap = document.querySelector('.pwa-wrap');
     if(installSlot && pwaWrap && pwaWrap.parentNode !== installSlot){ installSlot.appendChild(pwaWrap); }
+
+    /* Bóveda de PRs: abre el hub de récords ya existente (window.CoachHubUI,
+       montado por otro módulo) — cierra este drawer primero porque el hub
+       (z-index 220) queda tapado por el drawer (z-index 290) si ambos
+       quedan abiertos a la vez. */
+    var prVaultBtn = q('hdpPrVaultBtn');
+    if(prVaultBtn && !prVaultBtn.dataset.hdWired){
+      prVaultBtn.dataset.hdWired = '1';
+      prVaultBtn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var drawer = q('hdFullDrawer');
+        if(drawer) drawer.classList.remove('on');
+        if(window.CoachHubUI && typeof window.CoachHubUI.abrir === 'function') window.CoachHubUI.abrir();
+      });
+    }
 
     var uniToggle = q('hdpUniToggle');
     if(uniToggle && !uniToggle.dataset.hdWired){
@@ -17401,18 +17912,49 @@ body.focus-mode .hd-dock{display:none}
     }
   });
 
+  /* ---------- degradé de scroll en selectores de día/fase (28/08) ----------
+     mide scrollLeft real contra scrollWidth y prende/apaga .can-scroll-l/
+     .can-scroll-r (el degradé lo pinta el CSS de arriba, ~línea 17236).
+     Se re-mide en cada mount()/renderMain porque el contenido de estas filas
+     cambia con la rutina (más o menos días/semanas), no solo con el resize. */
+  function medirFadeScroll(el){
+    if(!el) return;
+    var max = el.scrollWidth - el.clientWidth;
+    /* con scroll-snap-type activo el reposo "sin scrollear" a veces no cae
+       exacto en scrollLeft:0 (padding/snap del primer ítem) — se guarda la
+       primera medición como línea base real de "inicio" en vez de asumir 0,
+       para no mostrar el degradé izquierdo cuando en realidad no hay nada
+       más para scrollear de ese lado. */
+    if(el.dataset.restL === undefined) el.dataset.restL = String(el.scrollLeft);
+    var restL = parseFloat(el.dataset.restL) || 0;
+    el.classList.toggle('can-scroll-l', el.scrollLeft > restL + 4);
+    el.classList.toggle('can-scroll-r', max > 4 && el.scrollLeft < max - 4);
+  }
+  function wireFadeScroll(el){
+    if(!el || el.dataset.fadeWired) return;
+    el.dataset.fadeWired = '1';
+    el.addEventListener('scroll', function(){ medirFadeScroll(el); }, { passive:true });
+  }
+  function montarFadeScroll(){
+    var tabs = document.querySelector('.week-tabs'), sel = document.querySelector('.week-selector');
+    wireFadeScroll(tabs); wireFadeScroll(sel);
+    medirFadeScroll(tabs); medirFadeScroll(sel);
+  }
+  window.addEventListener('resize', montarFadeScroll, { passive:true });
+
   function mount(){
     montarCompacta();
     montarDock();
     refrescarAcordeon();
+    montarFadeScroll();
     [300, 900, 1800].forEach(function(ms){
-      setTimeout(function(){ montarCompacta(); montarDock(); refrescarAcordeon(); }, ms);
+      setTimeout(function(){ montarCompacta(); montarDock(); refrescarAcordeon(); montarFadeScroll(); }, ms);
     });
     if(typeof window.renderMain === 'function' && !window.renderMain.__hdCompact){
       var _rm = window.renderMain;
       window.renderMain = function(){
         var r = _rm.apply(this, arguments);
-        setTimeout(function(){ montarCompacta(); pintarDockUni(); refrescarAcordeon(); }, 40);
+        setTimeout(function(){ montarCompacta(); pintarDockUni(); refrescarAcordeon(); montarFadeScroll(); }, 40);
         return r;
       };
       window.renderMain.__hdCompact = 1;
@@ -17420,10 +17962,41 @@ body.focus-mode .hd-dock{display:none}
   }
 
   window.addEventListener('resize', medirCabecera, { passive:true });
-  window.addEventListener('orientationchange', function(){ setTimeout(medirCabecera, 60); });
+  window.addEventListener('resize', medirRail, { passive:true });
+  window.addEventListener('orientationchange', function(){ setTimeout(medirCabecera, 60); setTimeout(medirRail, 60); });
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
+})();
+<\/script>
+
+<!-- MEJORA DE ESCRITORIO (27/08) — sincroniza el anillo de progreso del
+     rail lateral. Envuelve updateProgress() (mismo patrón de monkey-patch
+     que el resto de la app: captura la función original, la ejecuta
+     primero, y solo agrega la parte visual del anillo). No lee ni escribe
+     Supabase/localStorage — el % ya lo calculó updateProgress(), esto
+     solo lo refleja en el SVG. -->
+<script>
+(function(){
+  'use strict';
+  if (typeof window.updateProgress !== 'function' || window.updateProgress.__deskRing) return;
+  var _updateProgress = window.updateProgress;
+  window.updateProgress = function(){
+    var r = _updateProgress.apply(this, arguments);
+    try{
+      var countEl = document.getElementById('progress-count');
+      var pct = countEl ? (parseInt(countEl.textContent, 10) || 0) : 0;
+      var num = document.getElementById('progressRingNum');
+      var fill = document.getElementById('progressRingFill');
+      if(num) num.textContent = pct + '%';
+      if(fill){
+        var c = 2 * Math.PI * 15.5;
+        fill.style.strokeDasharray = (c * pct / 100).toFixed(1) + ' ' + c.toFixed(1);
+      }
+    }catch(e){ /* solo UI del anillo — nunca debe romper el progreso real */ }
+    return r;
+  };
+  window.updateProgress.__deskRing = 1;
 })();
 <\/script>
 
