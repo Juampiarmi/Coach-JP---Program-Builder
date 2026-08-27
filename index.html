@@ -37637,6 +37637,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   var _save = window.save;
   var pend = null;
   window.save = function(){
+    /* Auditoría de rendimiento: este wrap pisaba TODOS los anteriores sin
+       encadenarlos — capturaba `_save` pero nunca lo llamaba. Efecto colateral
+       real (no era sólo cosmético): el indicador "Guardando… / Sincronizado"
+       de la Nube Multi-Dispositivo y el auto-push a Supabase dejaron de
+       dispararse, porque esos dos viven en wraps anteriores de save() que
+       nunca se ejecutaban. Se restaura la cadena acá — es barata (agenda
+       timers, no serializa nada) y no compite con el tipeo. */
+    if(typeof _save === 'function') _save.apply(this, arguments);
     clearTimeout(pend);
     pend = setTimeout(function(){
       var escribir = function(){
