@@ -234,6 +234,8 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 
 .block{border:1px solid var(--line);border-radius:var(--r);margin-bottom:13px;background:var(--panel);overflow:hidden;border-left:3px solid var(--line-2)}
 .block.t-superset{border-left-color:var(--gold)}
+.block.block-restweek{border-left-style:dashed;opacity:.72}
+.block.block-restweek .block-check{display:none}
 .block.t-finisher{border-left-color:var(--red)}
 .block.t-hyrox{border-left-color:var(--teal)}
 .block.t-block{border-left-color:#4A5058}
@@ -4030,7 +4032,7 @@ if(!window.CoachRepaintBus){
    STATE
 ========================================================= */
 const STORAGE_KEY = '{{STORAGE_KEY}}';
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{} };
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{} };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -4048,14 +4050,19 @@ function loadProgress(){
         state.sleep = parsed.sleep || {};
         state.readinessPain = parsed.readinessPain || {};
         state.videoLinks = parsed.videoLinks || {};
+        /* sesionNotificada (28/08, feed de actividad): guarda qué días ya
+           encolaron su evento "sesión completa", para no reenviarlo en
+           cada visita al mismo día ya terminado — ver pintarResumen() más
+           abajo. Clave nueva, no pisa ni reinterpreta ninguna de arriba. */
+        state.sesionNotificada = parsed.sesionNotificada || {};
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
     }
-  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; }
+  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; }
 }
 function saveProgress(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek })); }catch(e){}
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada })); }catch(e){}
 }
 function isBlockDone(weekIdx, dayId, blockId){
   return !!(state.completed[weekIdx] && state.completed[weekIdx][dayId] && state.completed[weekIdx][dayId][blockId]);
@@ -4620,6 +4627,16 @@ function visibleBlocks(day){
   const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
   return all.filter(function(b){ return state.mode === 'complete' || !b.optional; });
 }
+/* algunos generadores de CrossFit marcan una semana de menor frecuencia dejando
+   un bloque sin contenido real, con un texto centinela fijo en vez de la
+   sesión. Sin este chequeo, ese texto se mostraba tal cual — como si el bloque
+   estuviera roto o vacío por error — en vez de leerse como algo intencional. */
+function esBloqueSinSemana(block, weekIdx){
+  if(block.weekName && block.weekName[weekIdx] === '— Sin bloque esta semana —') return true;
+  const arr = (block.weekItems && block.weekItems[weekIdx]) ? block.weekItems[weekIdx] : null;
+  if(arr && arr.length === 1 && String(arr[0]).indexOf('No hay bloque asignado para este') === 0) return true;
+  return false;
+}
 function alertsHtml(block){
   if(!block.alerts || !block.alerts.length) return '';
   return block.alerts.map(function(a){
@@ -4689,6 +4706,8 @@ function renderBlockInner(block, day, weekIdx){
       html += '<div class="info-card" style="margin-top:0;"><p><strong style="color:var(--text-primary)">Semana de Descarga:</strong> cambiá el bloque Hyrox por 15-20 minutos de cardio Zona 2 continuo (bici, remo suave o caminata inclinada) a intensidad conversacional. El objetivo es circular sangre y disipar fatiga, no sumar más estímulo.</p></div>';
       html += '<div class="quick-timer-slot" data-seconds="1080" data-label="ZONA 2"></div>';
     }
+  } else if(esBloqueSinSemana(block, weekIdx)){
+    html += '<div class="info-card" style="margin-top:0;"><p>Esta semana el ciclo programa menor frecuencia: este bloque no tiene sesión asignada. No es un error, tranquilo/a.</p></div>';
   } else {
     const itemsSemana = (block.weekItems && block.weekItems[weekIdx] && block.weekItems[weekIdx].length)
       ? block.weekItems[weekIdx] : (block.items || []);
@@ -4816,11 +4835,13 @@ function renderBlock(block, day, weekIdx, idx){
   const catCls = block.category === 'strength' ? 'cat-strength' : (block.category === 'warmup' ? 'cat-warmup' : (block.category === 'metcon' ? 'cat-metcon' : (block.category === 'cardio' ? 'cat-cardio' : 'cat-accessory')));
   const done = isBlockDone(weekIdx, day.id, block.id);
   const optionalCls = block.optional ? ' block-optional' : '';
-  return '<div class="block ' + catCls + (done?' block-done':'') + optionalCls + '" data-block-id="' + block.id + '" style="animation-delay:' + (idx*0.04) + 's">' +
+  const vacioSemana = esBloqueSinSemana(block, weekIdx);
+  const etiquetaBloque = vacioSemana ? 'Sin sesión esta semana' : ((block.weekName && block.weekName[weekIdx]) || block.title);
+  return '<div class="block ' + catCls + (done?' block-done':'') + optionalCls + (vacioSemana?' block-restweek':'') + '" data-block-id="' + block.id + '" style="animation-delay:' + (idx*0.04) + 's">' +
     '<div class="block-header">' +
       '<div class="block-icon ' + meta.cls + '">' + blockIconHtml(block.icon) + '</div>' +
       '<div class="block-header-text">' +
-        '<div class="block-label ' + meta.labelCls + '">' + ((block.weekName && block.weekName[weekIdx]) || block.title) + '</div>' +
+        '<div class="block-label ' + meta.labelCls + '">' + etiquetaBloque + '</div>' +
         '<div class="block-subtitle">' + block.subtitle + '</div>' +
       '</div>' +
       '<label class="block-check" onclick="event.stopPropagation()"><input type="checkbox" class="block-done-cb" ' + (done?'checked':'') + ' /></label>' +
@@ -5808,6 +5829,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        Story Card, ya calcula esto para la tarjeta de Instagram) en vez de
        recalcular la consistencia acá de nuevo */
     const r = (window.CoachMetricas && typeof window.CoachMetricas.racha === 'function') ? window.CoachMetricas.racha() : null;
+    /* NUEVO (28/08, feed de actividad del coach) — hasta ahora, terminar
+       una sesión NUNCA encolaba nada: CoachOutbox solo se usaba para
+       readiness/feedback/PR/fatiga, no había ningún evento de "sesión
+       completa" (el coach no se enteraba ni siquiera con el panel nuevo).
+       Se dispara acá porque esta función ya es, en los hechos, el punto
+       donde se detecta el día 100% terminado (hechos===ids.length más
+       arriba) y ya tiene calculados vol/series/reps/PRs/racha — cero
+       cálculo nuevo. Guard de una sola vez por día (mismo patrón que
+       state.fatigaAvisada, ~línea 7620): sin esto, cada re-render de la
+       vista (renderMain corre seguido) reencolaría el mismo evento. */
+    state.sesionNotificada = state.sesionNotificada || {};
+    var skeySesion = weekIdx + '|' + day.id;
+    if(!state.sesionNotificada[skeySesion] && window.CoachOutbox && window.CoachOutbox.encolar){
+      state.sesionNotificada[skeySesion] = 1;
+      window.CoachOutbox.encolar({
+        tipo: 'sesion_completa', dia: day.short, semana: weekIdx + 1,
+        vol: d.vol, series: d.series, reps: d.reps, prs: prs, racha: r ? r.actual : null
+      });
+      saveProgress();
+    }
     const html =
       '<div class="summary-card">' +
         '<div class="sc-h"><span class="sc-ic">🏁</span><h3>Sesión completa — ' + day.short + '</h3></div>' +
@@ -7211,8 +7252,21 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     enviando = true;
     return idbTodo(STORE).then(function(items){
       if(!items.length){ enviando = false; return 0; }
+      /* FIX (28/08, feed de actividad del coach) — antes, la 'clave' de las
+         3 líneas de acá abajo era SIEMPRE la misma para un mismo atleta,
+         sin importar el tipo de evento (pr/readiness_sueno/feedback/etc).
+         Supabase upsertea por 'clave' (ver ?on_conflict=clave en el módulo
+         de Nube Multi-Dispositivo, misma tabla) — con una clave constante
+         por atleta, CADA evento nuevo pisaba al anterior en la fila, así
+         que la nube nunca acumulaba un historial real: solo sobrevivía el
+         último evento sincronizado por atleta. Se suma tipo+timestamp+un
+         sufijo random como parte de la clave para que cada evento quede en
+         su propia fila — no se toca la clave de eventos YA sincronizados
+         (esto solo cambia lo que se genera de acá en adelante), así que
+         ninguna fila existente en Supabase se altera ni se pierde. */
       var filas = items.map(function(it){
-        return { clave: (SYNC.clave || 'coachjp') + '_pr_' + (ATHID || ATH),
+        return { clave: (SYNC.clave || 'coachjp') + '_pr_' + (ATHID || ATH) + '_' +
+                   (it.tipo || 'evt') + '_' + it.ts + '_' + Math.random().toString(36).slice(2, 7),
                  data: JSON.stringify(it), updated_at: it.ts, device: 'atleta' };
       });
       return fetch(SYNC.url.replace(/\\/+$/, '') + '/rest/v1/' + (SYNC.table || 'coachjp_sync'),
@@ -18069,14 +18123,30 @@ function buildProgramConfig(ath){
   const videoMap = {};
   let bloqueCF = false;   /* lo setea cada bloque antes de resolver sus videos */
   const addVideo = (key, ex) => {
-    if(bloqueCF) return;                       /* CrossFit: no se vincula solo */
     if(withVideos && ex && ex.videoId && key) videoMap[key] = ex.videoId;
   };
 
   /* ---- CrossFit: sin videos automáticos ----
      La regla aplica cuando la disciplina del mesociclo es CrossFit o cuando
      el bloque es una pizarra de CrossFit. Un finisher metabólico dentro de
-     una planificación de musculación NO entra: ahí el video sigue como está. */
+     una planificación de musculación NO entra: ahí el video sigue como está.
+     FIX (28/08, bug reportado por el coach: "a algunos ejercicios los asigna
+     sin video", ej. plan de Frankie Bunge) — el código anterior aplicaba
+     esta regla a TODOS los tipos de bloque cuando el mesociclo entero estaba
+     tageado como CrossFit (discCF), no solo a las pizarras. Un bloque
+     'block'/'superset'/'finisher'/'hyrox' SIEMPRE apunta a un ejercicio
+     puntual y bien definido vía exId/getEx() — nunca es texto libre — así
+     que no hay ambigüedad que justifique suprimir su video, sea o no
+     CrossFit el mesociclo. Confirmado grepeando el archivo entero: cfPizarra/
+     cfFmt/cfModo/cfTipo (los flags por-bloque que también arman esBloqueCF)
+     SOLO se asignan a bloques con tipo:'list' (las pizarras de WOD), nunca a
+     block/superset/finisher/hyrox — o sea que la única forma de que uno de
+     estos 4 tipos quedara sin video era el flag de mesociclo (discCF) solo,
+     nunca un flag propio del bloque. esGenerico marca exactamente esa
+     distinción: la supresión de video (acá y en el "sinVideo" de abajo)
+     ahora solo aplica al bloque tipo 'list', igual que ya hacía para el
+     link manual pegado a mano (partirVideoManual) más abajo. */
+  const esGenerico = b => !(b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'finisher' || b.tipo === 'hyrox');
   const discCF = (p.meta && p.meta.mesoDisc === 'crossfit');
   const esBloqueCF = b => !!(discCF || b.cfPizarra || b.cfTipo || b.cfFmt || b.cfModo === 'board');
   /* link de video cargado a mano en la línea: "10 Thrusters | https://youtu.be/xxx" */
@@ -18149,11 +18219,15 @@ function buildProgramConfig(ath){
         Object.assign(out, { isHyrox: true, movements: (b.movements||[]).slice() });
       }
       else {
-        /* vinculación estricta: el video se registra sólo con coincidencia exacta */
-        (b.items||[]).forEach(it => {
-          const r = resolveExacto(it);
-          if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
-        });
+        /* vinculación estricta: el video se registra sólo con coincidencia exacta,
+           y sólo si no es un bloque CrossFit (pizarra) -- ahí el link se pega a mano
+           (partirVideoManual, abajo) porque el texto es libre y el auto-match no es confiable. */
+        if(!bloqueCF){
+          (b.items||[]).forEach(it => {
+            const r = resolveExacto(it);
+            if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
+          });
+        }
         out.items = (b.items||[]).slice();
         /* en CrossFit el video sólo aparece si el coach pegó el link en la línea */
         if(bloqueCF){
@@ -18168,7 +18242,11 @@ function buildProgramConfig(ath){
         if(b.cardioMinutes) out.cardioMinutes = parseInt(b.cardioMinutes,10) || 0;
       }
 
-      if(bloqueCF) out.sinVideo = true;
+      /* la supresión total del botón de video (sinVideo) sólo aplica a pizarras
+         de CrossFit (texto libre) -- un bloque estructurado (block/superset/
+         finisher/hyrox) siempre apunta a un ejercicio puntual vía exId/getEx(),
+         así que su video (si existe en la biblioteca) debe mostrarse siempre. */
+      if(bloqueCF && esGenerico(b)) out.sinVideo = true;
 
       /* pizarra modular de CrossFit: formato del bloque, modo de video y cierre técnico */
       if(b.cfModo === 'tech' || b.cfModo === 'board') out.boardMode = b.cfModo;
@@ -24698,6 +24776,35 @@ body{overflow-x:hidden}
 .sync-log b{color:var(--txt-2)}
 .dev-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-sm);background:var(--panel-2);border:1px solid var(--line);margin-bottom:6px;font-size:12px}
 .dev-row .di{font-size:16px}
+
+/* Panel de Actividad (28/08) — feed de sesiones/PRs/readiness de los
+   alumnos, lectura de solo consulta sobre la misma tabla que ya usa
+   CoachOutbox. Mismos tokens y patrón visual que .cloud-pill de arriba,
+   nada nuevo que aprender para el coach. */
+.activity-pill{
+  display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:11px;
+  background:linear-gradient(180deg,#111519,#0D0F11);border:1px solid var(--line-2);
+  font-size:11.5px;font-weight:800;color:var(--muted);box-shadow:0 10px 24px rgba(0,0,0,.45);
+  transition:.2s;white-space:nowrap;cursor:pointer;position:relative;
+}
+.activity-pill:hover{border-color:rgba(210,121,63,.45);color:var(--txt)}
+.activity-pill .ad{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.2s}
+.activity-pill.has-new{color:var(--gold);border-color:rgba(210,121,63,.45)}
+.activity-pill.has-new .ad{background:var(--gold);animation:blink .7s ease-in-out infinite}
+@media(max-width:820px){.activity-pill .ct{display:none}.activity-pill{padding:7px 9px}}
+
+.activity-badge{
+  position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;
+  background:var(--red);color:#fff;font-size:10px;font-weight:800;line-height:16px;text-align:center;
+}
+.activity-list{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto}
+.activity-item{display:flex;gap:10px;padding:11px 13px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--panel-2)}
+.activity-item.unread{border-color:rgba(210,121,63,.4);background:rgba(210,121,63,.06)}
+.activity-item .ai-ic{font-size:18px;flex-shrink:0;line-height:1}
+.activity-item .ai-body{flex:1;min-width:0}
+.activity-item .ai-title{font-size:12.5px;font-weight:700;color:var(--txt)}
+.activity-item .ai-meta{font-size:10.5px;color:var(--muted);margin-top:3px}
+.activity-empty{padding:24px 12px;text-align:center;color:var(--muted);font-size:12px;line-height:1.6}
 </style>
 
 <div class="modal-bg" id="mCloud">
@@ -24748,6 +24855,20 @@ body{overflow-x:hidden}
       <button class="btn ghost" data-close="mMerge">Ahora no</button>
       <button class="btn" id="mergeReplace">♻️ Reemplazar lo local</button>
       <button class="btn gold" id="mergeFusion">🔀 Fusionar (recomendado)</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="mActivity">
+  <div class="modal sm">
+    <div class="modal-h"><h3>🔔 Actividad reciente</h3><div class="spacer"></div><button class="icon-btn" data-close="mActivity">✕</button></div>
+    <div class="modal-b">
+      <div id="activityRiesgo"></div>
+      <div class="activity-list" id="activityList"><div class="activity-empty">Cargando…</div></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" id="activityMarkRead">✓ Marcar todo como leído</button>
+      <button class="btn" id="activityRefresh">🔄 Actualizar</button>
     </div>
   </div>
 </div>
@@ -25120,6 +25241,249 @@ body{overflow-x:hidden}
   else mount();
 })();
 </script>
+
+<!-- ============================================================
+     MÓDULO 15b — PANEL DE ACTIVIDAD DEL COACH (28/08)
+     Feed de solo lectura sobre la MISMA tabla/credenciales que ya
+     configura el Módulo 15 (window.CoachCloud). No escribe nada,
+     no toca CoachOutbox, no borra ni modifica filas existentes:
+     únicamente hace GET contra Supabase y guarda en localStorage,
+     bajo una clave propia (coachjp_activity_lastseen_v1), la marca
+     de "última vez que el coach revisó el feed" — un dato nuevo,
+     no reemplaza ni limpia nada que ya existiera.
+     ============================================================ -->
+<script>
+(function(){
+  var LKEY = 'coachjp_activity_lastseen_v1';
+  var pill = null, lastItems = [], polling = null;
+
+  function getLastSeen(){
+    try{ return parseInt(localStorage.getItem(LKEY), 10) || 0; }catch(e){ return 0; }
+  }
+  function setLastSeen(ts){
+    try{ localStorage.setItem(LKEY, String(ts)); }catch(e){}
+  }
+  function relTime(ts){
+    var diff = Date.now() - (ts || 0);
+    if(diff < 0) diff = 0;
+    var min = Math.floor(diff / 60000);
+    if(min < 1) return 'recién';
+    if(min < 60) return 'hace ' + min + ' min';
+    var h = Math.floor(min / 60);
+    if(h < 24) return 'hace ' + h + (h === 1 ? ' hora' : ' horas');
+    var d = Math.floor(h / 24);
+    return 'hace ' + d + (d === 1 ? ' día' : ' días');
+  }
+  function iconFor(tipo){
+    return { sesion_completa:'🏁', pr:'🔥', readiness_sueno:'🌙', readiness_molestia:'🩹',
+              feedback:'💬', video_feedback:'🎥', fatiga:'⚠️' }[tipo] || '📌';
+  }
+  function titleFor(it){
+    var ath = it.ath || 'Un alumno';
+    switch(it.tipo){
+      case 'sesion_completa':
+        return ath + ' completó ' + (it.dia || 'una sesión') + (it.semana ? ' · Semana ' + it.semana : '');
+      case 'pr':
+        return ath + ' marcó PR en ' + (it.ex || 'un ejercicio');
+      case 'readiness_sueno':
+        return ath + ' registró sueño: ' + (it.valor != null ? it.valor : '—');
+      case 'readiness_molestia':
+        return ath + ' reportó molestia' + (it.zonas && it.zonas.length ? ' en ' + it.zonas.join(', ') : '');
+      case 'feedback':
+        return ath + ' dejó un comentario' + (it.ex ? ' en ' + it.ex : '');
+      case 'video_feedback':
+        return ath + ' subió un video de técnica';
+      case 'fatiga':
+        return ath + ' — aviso de fatiga';
+      default:
+        return ath + ' — actividad';
+    }
+  }
+  function metaFor(it){
+    switch(it.tipo){
+      case 'sesion_completa':
+        var parts = [];
+        if(it.vol) parts.push('Vol ' + Math.round(it.vol) + 'kg');
+        if(it.series) parts.push(it.series + ' series');
+        if(it.prs && it.prs.length) parts.push(it.prs.length + (it.prs.length > 1 ? ' PRs' : ' PR'));
+        if(it.racha) parts.push('racha ' + it.racha);
+        return parts.join(' · ');
+      case 'pr':
+        var p2 = [];
+        if(it.kg != null) p2.push(it.kg + 'kg');
+        if(it.reps != null) p2.push('× ' + it.reps);
+        if(it.e1rm != null) p2.push('e1RM ' + Math.round(it.e1rm));
+        return p2.join(' ');
+      case 'feedback':
+      case 'fatiga':
+        return it.nota || '';
+      case 'video_feedback':
+        return it.url || '';
+      default:
+        return '';
+    }
+  }
+  function esc2(s){
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  async function fetchActivity(){
+    if(!window.CoachCloud) return { ok:false, msg:'El módulo de nube todavía no cargó. Probá de nuevo en un segundo.' };
+    var C = window.CoachCloud.cfg();
+    if(!window.CoachCloud.activo()){
+      return { ok:false, msg:'Configurá primero la sincronización en la nube (☁️, arriba) — el Panel de Actividad lee de la misma conexión, no hace falta configurar nada aparte.' };
+    }
+    if(C.prov !== 'supabase'){
+      var prov = window.CoachCloud.proveedores && window.CoachCloud.proveedores[C.prov];
+      return { ok:false, msg:'Por ahora el Panel de Actividad solo lee de Supabase. Tu proveedor activo es "' + esc2(prov ? prov.lb : C.prov) + '".' };
+    }
+    if(!C.url || !C.key){
+      return { ok:false, msg:'Faltan datos de conexión en la configuración de nube (☁️).' };
+    }
+    var clave = C.clave || 'coachjp';
+    var table = C.table || 'coachjp_sync';
+    var pattern = encodeURIComponent(clave + '_pr_*');
+    /* límite subido de 40 a 200 (28/08, Fase 2 del radar de adherencia):
+       el Radar de Adherencia (Módulo 21b) reusa esta misma lista para saber
+       la última señal real de CADA alumno, no solo de los más recientes —
+       con pocos alumnos activos, 40 filas globales podían dejar afuera a
+       un alumno inactivo hace 2 semanas. 200 filas siguen siendo un pedido
+       liviano. La campana sigue mostrando solo los 40 más recientes
+       (ver pintarLista) — el límite más alto es solo para el cálculo. */
+    var url = C.url.replace(/\/+$/, '') + '/rest/v1/' + table + '?clave=like.' + pattern + '&select=*&order=updated_at.desc&limit=200';
+    try{
+      var res = await fetch(url, { headers: { apikey: C.key, Authorization: 'Bearer ' + C.key } });
+      if(!res.ok) return { ok:false, msg:'Supabase respondió con error (' + res.status + ').' };
+      var rows = await res.json();
+      var items = (rows || []).map(function(row){
+        var it = null;
+        try{ it = JSON.parse(row.data); }catch(e){ it = null; }
+        if(!it) return null;
+        it._ts = it.ts || row.updated_at || 0;
+        return it;
+      }).filter(Boolean);
+      items.sort(function(a, b){ return (b._ts || 0) - (a._ts || 0); });
+      return { ok:true, items: items };
+    }catch(e){
+      return { ok:false, msg:'No se pudo conectar con Supabase (' + (e && e.message ? e.message : 'error de red') + ').' };
+    }
+  }
+
+  function pintarBadge(unread){
+    if(!pill) return;
+    var old = pill.querySelector('.activity-badge');
+    if(old) old.remove();
+    if(unread > 0){
+      pill.classList.add('has-new');
+      var b = document.createElement('span');
+      b.className = 'activity-badge';
+      b.textContent = unread > 99 ? '99+' : String(unread);
+      pill.appendChild(b);
+    } else {
+      pill.classList.remove('has-new');
+    }
+  }
+
+  function pintarLista(items, lastSeen){
+    var list = document.getElementById('activityList');
+    if(!list) return;
+    if(!items.length){
+      list.innerHTML = '<div class="activity-empty">Todavía no hay actividad registrada.<br>En cuanto un alumno complete una sesión o cargue un peso, va a aparecer acá.</div>';
+      return;
+    }
+    /* la campana muestra como mucho los 40 más recientes aunque la consulta
+       haya traído hasta 200 filas (ver fetchActivity) — el resto solo se usa
+       para el cálculo del Radar de Adherencia, no para esta lista visible */
+    list.innerHTML = items.slice(0, 40).map(function(it){
+      var unread = (it._ts || 0) > lastSeen;
+      var meta = metaFor(it);
+      return '<div class="activity-item' + (unread ? ' unread' : '') + '">' +
+        '<div class="ai-ic">' + iconFor(it.tipo) + '</div>' +
+        '<div class="ai-body">' +
+          '<div class="ai-title">' + esc2(titleFor(it)) + '</div>' +
+          '<div class="ai-meta">' + (meta ? esc2(meta) + ' · ' : '') + relTime(it._ts) + '</div>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  async function refrescar(){
+    var list = document.getElementById('activityList');
+    if(list) list.innerHTML = '<div class="activity-empty">Cargando…</div>';
+    var r = await fetchActivity();
+    if(!r.ok){
+      if(list) list.innerHTML = '<div class="activity-empty">' + esc2(r.msg) + '</div>';
+      pintarBadge(0);
+      return;
+    }
+    lastItems = r.items;
+    var lastSeen = getLastSeen();
+    pintarLista(lastItems, lastSeen);
+    var unread = lastItems.filter(function(it){ return (it._ts || 0) > lastSeen; }).length;
+    pintarBadge(unread);
+    /* avisa a quien le interese (Módulo 21b, Radar de Adherencia) que hay
+       datos nuevos de Supabase — evento propio, no dispara ningún fetch
+       adicional del lado de quien escucha */
+    try{ document.dispatchEvent(new CustomEvent('coachjp:activity-updated', { detail:{ items: lastItems } })); }catch(e){}
+  }
+
+  /* último timestamp real por alumno, visto en los eventos ya traídos de
+     Supabase (hasta 200 filas, ver fetchActivity) — expuesto para que el
+     Radar de Adherencia (Módulo 21b) sume esta señal a la suya sin
+     duplicar la conexión a la nube */
+  function porAtleta(){
+    var out = {};
+    lastItems.forEach(function(it){
+      var id = it.athId; if(!id) return;
+      if(!out[id] || (it._ts || 0) > out[id]) out[id] = it._ts || 0;
+    });
+    return out;
+  }
+  window.CoachActivity = { items: function(){ return lastItems; }, porAtleta: porAtleta, refrescar: refrescar };
+
+  function abrirActivity(){
+    if(document.getElementById('mActivity')) openModal('mActivity');
+    refrescar();
+  }
+
+  function marcarLeido(){
+    var maxTs = 0;
+    lastItems.forEach(function(it){ if((it._ts || 0) > maxTs) maxTs = it._ts; });
+    setLastSeen(maxTs || Date.now());
+    pintarLista(lastItems, getLastSeen());
+    pintarBadge(0);
+  }
+
+  function mount(){
+    var fab = document.querySelector('.cfg-fab');
+    if(fab && !document.getElementById('activityPill')){
+      pill = document.createElement('span');
+      pill.className = 'activity-pill'; pill.id = 'activityPill';
+      pill.innerHTML = '<span class="ad"></span><span class="ct">🔔 Actividad</span>';
+      fab.insertBefore(pill, fab.firstChild);
+      pill.addEventListener('click', abrirActivity);
+    }
+    var b1 = document.getElementById('activityRefresh');
+    if(b1) b1.addEventListener('click', refrescar);
+    var b2 = document.getElementById('activityMarkRead');
+    if(b2) b2.addEventListener('click', marcarLeido);
+    document.querySelectorAll('#mActivity [data-close]').forEach(function(b){
+      b.addEventListener('click', function(){ closeModal(b.dataset.close); });
+    });
+    var m = document.getElementById('mActivity');
+    if(m) m.addEventListener('click', function(e){ if(e.target === m) closeModal('mActivity'); });
+
+    /* refresco ambiental cada 90s, solo si hay nube activa — igual de
+       liviano que el propio pill de nube (Módulo 15), nunca escribe nada */
+    polling = setInterval(function(){
+      if(window.CoachCloud && window.CoachCloud.activo()) refrescar();
+    }, 90000);
+    setTimeout(refrescar, 1200);
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+
 <!-- ============================================================
      MÓDULO 16 — CREADOR MANUAL INTERACTIVO DE RUTINAS
      · Panel flotante de biblioteca con arrastrar y soltar (y tap en celular)
@@ -27531,6 +27895,447 @@ body.man-mode .gs-fab{right:318px}
   else mount();
 })();
 </script>
+
+<!-- ============================================================
+     MÓDULO 21b — RADAR DE ADHERENCIA PREDICTIVO (Fase 1, 28/08)
+     Semáforo por alumno en la lista de Alumnos, calculado 100% en el
+     dispositivo del coach, sin ninguna llamada nueva a Supabase — usa
+     señales que YA viajan dentro de S.athletes (a.marcas / a.feedback,
+     cargadas por el flujo existente de PR Hub + sincronización de la
+     Nube), exactamente el mismo patrón que el Módulo 21 de arriba
+     (control de pagos), del que reusa el estilo visual.
+     Fase 2 (pendiente, no en este pedido): sumar esta misma señal
+     dentro del Panel de Actividad (Módulo 15b) una vez que además se
+     quiera leer sesion_completa en tiempo real desde Supabase.
+     ============================================================ -->
+<style>
+.adh-badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:800;
+  border:1px solid var(--line-2);background:var(--panel-3);color:var(--muted);white-space:nowrap}
+.adh-badge.ok{border-color:rgba(74,147,184,.45);background:rgba(74,147,184,.1);color:var(--teal)}
+.adh-badge.watch{border-color:rgba(210,121,63,.5);background:rgba(210,121,63,.11);color:var(--gold)}
+.adh-badge.risk{border-color:rgba(168,68,44,.55);background:rgba(168,68,44,.13);color:#E0654A}
+.ath-card.adh-risk{border-color:rgba(168,68,44,.45)}
+.ath-card.adh-watch{border-color:rgba(210,121,63,.4)}
+.ath-card.adh-dim{opacity:.35}
+.adh-filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;align-items:center}
+.adhf{padding:6px 12px;border-radius:20px;font-size:11.5px;font-weight:800;border:1px solid var(--line-2);
+  background:var(--panel-3);color:var(--muted);transition:.15s;display:inline-flex;align-items:center;gap:6px}
+.adhf:hover{color:var(--txt);border-color:rgba(210,121,63,.4)}
+.adhf.on{background:linear-gradient(135deg,var(--gold),#E8965E);border-color:transparent;color:#08090B}
+.adhf .n{opacity:.7;font-size:10px}
+.activity-risk-box{border:1px dashed rgba(168,68,44,.45);background:rgba(168,68,44,.08);border-radius:var(--r-sm);
+  padding:10px 12px;margin-bottom:10px}
+.activity-risk-h{font-size:11.5px;font-weight:800;color:#E0654A;margin-bottom:6px}
+.activity-risk-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;
+  color:var(--txt-2);padding:3px 0}
+.activity-risk-row .ar-name{font-weight:700;color:var(--txt)}
+.activity-risk-row .ar-dias{color:var(--muted);font-size:11px;white-space:nowrap}
+</style>
+
+<script>
+/* ============================================================
+   27b. MÓDULO 21b — RADAR DE ADHERENCIA PREDICTIVO (Fase 1 + Fase 2)
+   ============================================================ */
+(function(){
+  const DIA = 86400000;
+
+  /* Fase 1 (28/08) — última señal real de actividad que tenemos del
+     alumno, sin red: la fecha de la marca (PR) más reciente y el
+     timestamp del comentario/feedback más reciente que ya viven en
+     a.marcas / a.feedback (poblados por registrarPR()/registrarFeedback(),
+     Módulo 34, y replicados entre dispositivos por la sincronización de
+     la Nube ya existente — Módulo 15). */
+  function ultimaSenalLocal(a){
+    let ts = 0;
+    (a.marcas || []).forEach(function(m){
+      if(!m || !m.fecha) return;
+      const t = new Date(m.fecha + 'T00:00:00').getTime();
+      if(t > ts) ts = t;
+    });
+    (a.feedback || []).forEach(function(f){
+      if(f && (f.ts || 0) > ts) ts = f.ts;
+    });
+    return ts;
+  }
+
+  /* Fase 2 (28/08) — suma la señal EN VIVO que ya trae el Panel de
+     Actividad (Módulo 15b) desde Supabase, incluido el evento
+     sesion_completa que la Fase 1 no podía ver (ese nunca pasa por
+     a.marcas/a.feedback). Cero conexión nueva: se lee lo que Módulo 15b
+     ya trajo para la campana (window.CoachActivity.porAtleta()), no se
+     dispara ningún fetch adicional desde acá. Si el coach no tiene la
+     nube configurada, porAtleta() devuelve simplemente lo que haya (nada
+     la primera vez) y el radar sigue funcionando con la señal local. */
+  function ultimaSenalLive(a){
+    if(!window.CoachActivity) return 0;
+    try{
+      const m = window.CoachActivity.porAtleta();
+      return m[a.id] || 0;
+    }catch(e){ return 0; }
+  }
+
+  /* última señal real: la más nueva entre la local (Fase 1) y la vivida
+     por Supabase (Fase 2) — esto es una SEÑAL, no un registro exhaustivo
+     de cada entrenamiento (eso vive del lado del alumno) — el texto de
+     la UI lo aclara con el título del badge. */
+  function ultimaSenal(a){
+    const ts = Math.max(ultimaSenalLocal(a), ultimaSenalLive(a));
+    return ts || null;
+  }
+
+  /* estado: ok (al día) · watch (atención) · risk (en riesgo) · none (sin señales) —
+     el umbral se estira según la frecuencia esperada del alumno (a.freq,
+     días/sem) para no marcar "en riesgo" a un alumno de 2 días/sem con
+     el mismo criterio que uno de 5 días/sem */
+  function estadoAdherencia(a){
+    const ts = ultimaSenal(a);
+    if(!ts) return { id:'none', lb:'Sin señales todavía', ic:'⚪', dias:null };
+    const dias = Math.max(0, Math.floor((Date.now() - ts) / DIA));
+    const freq = Math.max(1, Math.min(7, parseInt(a.freq, 10) || 3));
+    const ciclo = 7 / freq;
+    const txtDias = dias === 0 ? 'hoy' : 'hace ' + dias + ' día(s)';
+    if(dias <= ciclo * 2)  return { id:'ok',    lb:'Al día · última señal ' + txtDias,    ic:'🟢', dias:dias };
+    if(dias <= ciclo * 4)  return { id:'watch', lb:'Atención · última señal ' + txtDias,  ic:'🟡', dias:dias };
+    return                        { id:'risk',  lb:'En riesgo · última señal ' + txtDias, ic:'🔴', dias:dias };
+  }
+
+  const CATS_ADH = [
+    { id:'todos', lb:'Todos',      ic:'👥' },
+    { id:'ok',    lb:'Al día',     ic:'🟢' },
+    { id:'watch', lb:'Atención',   ic:'🟡' },
+    { id:'risk',  lb:'En riesgo',  ic:'🔴' },
+    { id:'none',  lb:'Sin datos',  ic:'⚪' }
+  ];
+  let adhFilter = 'todos';
+
+  function pintarListaAdh(){
+    const grid = document.getElementById('athGrid'); if(!grid) return;
+    const cont = grid.parentNode;
+    let bar = document.getElementById('adhFilters');
+    if(!bar){
+      bar = document.createElement('div');
+      bar.className = 'adh-filters'; bar.id = 'adhFilters';
+      cont.insertBefore(bar, grid);
+      bar.addEventListener('click', function(e){
+        const f = e.target.closest('[data-adhf]'); if(!f) return;
+        adhFilter = f.dataset.adhf; pintarListaAdh();
+      });
+    }
+    const est = {};
+    S.athletes.forEach(function(a){ est[a.id] = estadoAdherencia(a); });
+    const cuenta = function(id){ return id === 'todos' ? S.athletes.length : S.athletes.filter(function(a){ return est[a.id].id === id; }).length; };
+    bar.innerHTML = '<span class="lb" style="margin:0 4px 0 0" title="Calculado a partir de PRs y comentarios registrados — no de cada entrenamiento completado">🎯 Adherencia</span>' +
+      CATS_ADH.map(function(c){
+        return '<button class="adhf ' + (adhFilter === c.id ? 'on' : '') + '" data-adhf="' + c.id + '">' +
+          c.ic + ' ' + esc(c.lb) + ' <span class="n">' + cuenta(c.id) + '</span></button>';
+      }).join('') +
+      (cuenta('risk') ? '<span class="adh-badge risk" style="margin-left:auto">🔴 ' + cuenta('risk') + ' en riesgo</span>' : '');
+
+    document.querySelectorAll('.ath-card[data-ath]').forEach(function(card){
+      const a = getAth(card.dataset.ath); if(!a) return;
+      const e = est[a.id];
+      card.classList.toggle('adh-risk', e.id === 'risk');
+      card.classList.toggle('adh-watch', e.id === 'watch');
+      const tw = card.querySelector('.tagwrap');
+      if(tw && !tw.querySelector('.adh-badge')){
+        tw.insertAdjacentHTML('afterbegin', '<span class="adh-badge ' + (e.id === 'none' ? '' : e.id) + '" title="' +
+          esc(e.lb) + ' · Señal basada en PRs y comentarios registrados, no en cada entrenamiento completado.">' +
+          e.ic + ' ' + esc(e.lb.split(' · ')[0]) + '</span>');
+      }
+      /* se usa opacidad (nunca display:none) para no pisar el filtro de
+         pagos del Módulo 21, que sí usa display:none sobre la misma
+         tarjeta — los dos filtros conviven sin interferirse */
+      card.classList.toggle('adh-dim', adhFilter !== 'todos' && e.id !== adhFilter);
+    });
+  }
+
+  const _renderAthletes2 = window.renderAthletes;
+  window.renderAthletes = function(){
+    const r = _renderAthletes2.apply(this, arguments);
+    try{ pintarListaAdh(); }catch(e){ console.warn('adherencia', e); }
+    return r;
+  };
+
+  window.CoachAdherencia = { estado: estadoAdherencia, ultimaSenal: ultimaSenal, cats: CATS_ADH };
+
+  /* Fase 2 (28/08) — sección "⚠️ Alumnos en riesgo" dentro del propio
+     Panel de Actividad (Módulo 15b, modal #mActivity), como se había
+     planteado en el roadmap: el coach ve el semáforo en el mismo lugar
+     donde ya revisa la actividad reciente. Puramente de lectura sobre
+     S.athletes — si nadie está en riesgo, no se agrega nada al modal
+     (mismo criterio que renderContextoSesion del lado del alumno: si no
+     hay nada que decir, no se renderiza la sección). */
+  function pintarRiesgoModal(){
+    const el = document.getElementById('activityRiesgo'); if(!el) return;
+    const enRiesgo = (S.athletes || []).map(function(a){ return { a:a, e:estadoAdherencia(a) }; })
+                                        .filter(function(x){ return x.e.id === 'risk'; })
+                                        .sort(function(x,y){ return (y.e.dias||0) - (x.e.dias||0); });
+    if(!enRiesgo.length){ el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="activity-risk-box">' +
+      '<div class="activity-risk-h">⚠️ ' + enRiesgo.length + ' alumno(s) en riesgo de abandono</div>' +
+      enRiesgo.map(function(x){
+        return '<div class="activity-risk-row">' +
+          '<span class="ar-name">' + esc(fullName(x.a) || 'Sin nombre') + '</span>' +
+          '<span class="ar-dias">' + esc(x.e.lb.split(' · ')[1] || '') + '</span>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  }
+
+  document.addEventListener('coachjp:activity-updated', function(){
+    try{ pintarRiesgoModal(); }catch(e){}
+    /* también refresca los badges de la grilla de Alumnos si está a la
+       vista, para que la señal en vivo (sesion_completa vía Supabase) se
+       vea ahí también, no solo dentro del modal de Actividad */
+    if(S.ui.view === 'alumnos'){ try{ pintarListaAdh(); }catch(e){} }
+  });
+
+  function mount(){
+    if(S.ui.view === 'alumnos'){ try{ pintarListaAdh(); }catch(e){} }
+    try{ pintarRiesgoModal(); }catch(e){}
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+
+<!-- ============================================================
+     MÓDULO 21c — RADAR DE ADHERENCIA: AVISO PROACTIVO POR TELEGRAM (FASE 3, 28/08)
+     Cuando un alumno cae en 🔴 "en riesgo" (mismo cálculo del Módulo 21b,
+     cero lógica nueva de adherencia acá), se le manda al coach un mensaje
+     directo a Telegram usando su propio bot -- el fetch sale directo del
+     navegador del coach a la API de Telegram, sin pasar por Supabase ni
+     por ningún servidor intermedio propio. El token y el Chat ID quedan
+     SOLO en este dispositivo (localStorage, clave propia) -- nunca viajan
+     al backup .json ni a la nube del coach.
+     Limitación honesta, documentada también en la UI: esto corre en el
+     navegador del coach, así que necesita la pestaña de Coach JP abierta
+     (puede estar de fondo) para poder avisar -- no hay ningún servidor
+     propio en este proyecto que lo haga con la app cerrada. La Opción B
+     (webhook de Supabase, documentada aparte para el coach) sí corre sin
+     el navegador abierto, pero no puede calcular "está en riesgo": esa
+     cuenta depende de la AUSENCIA de señales durante varios días, algo
+     que un webhook disparado por INSERT nunca puede ver por sí solo (si
+     no hay inserción, no hay disparo). Por eso Fase 3 vive acá, reusando
+     el semáforo que el Módulo 21b ya calcula, en vez de duplicarlo en SQL.
+     ============================================================ -->
+<style>
+.telegram-pill{
+  display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:11px;
+  background:linear-gradient(180deg,#111519,#0D0F11);border:1px solid var(--line-2);
+  font-size:11.5px;font-weight:800;color:var(--muted);box-shadow:0 10px 24px rgba(0,0,0,.45);
+  transition:.2s;white-space:nowrap;cursor:pointer;
+}
+.telegram-pill:hover{border-color:rgba(74,147,184,.45);color:var(--txt)}
+.telegram-pill .td{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.2s}
+.telegram-pill.ok{color:var(--teal);border-color:rgba(74,147,184,.4)}
+.telegram-pill.ok .td{background:var(--teal)}
+.telegram-pill.off{color:var(--gold);border-color:rgba(210,121,63,.4)}
+.telegram-pill.off .td{background:var(--gold)}
+@media(max-width:820px){.telegram-pill .ct{display:none}.telegram-pill{padding:7px 9px}}
+</style>
+
+<div class="modal-bg" id="mTelegram">
+  <div class="modal">
+    <div class="modal-h"><h3>📲 Aviso automático por Telegram</h3><div class="spacer"></div><button class="icon-btn" data-close="mTelegram">✕</button></div>
+    <div class="modal-b">
+      <div class="alert info" style="padding:10px 12px"><span class="ic">🤖</span>
+        <div><b>Un bot propio, sin servidor intermedio</b>El aviso sale directo desde este navegador a Telegram, no pasa por Supabase. Para crearlo: (1) hablale a <b>@BotFather</b> en Telegram, mandale <code>/newbot</code> y seguí los pasos -- te va a dar un <b>token</b>. (2) Mandale cualquier mensaje a tu bot nuevo y después abrí <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> en el navegador -- ahí vas a ver tu <b>Chat ID</b> (<code>result[0].message.chat.id</code>).</div></div>
+
+      <div><label class="lb">🔑 Token del bot</label>
+        <input id="tgToken" placeholder="123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" style="font-family:ui-monospace,Menlo,monospace">
+      </div>
+      <div><label class="lb">💬 Chat ID (el tuyo, para recibir los avisos)</label>
+        <input id="tgChatId" placeholder="123456789" style="font-family:ui-monospace,Menlo,monospace">
+      </div>
+
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="tgOn" checked> Avisar automáticamente cuando un alumno cae en 🔴 riesgo</label>
+      </div>
+      <div class="hint">Para no saturarte, un mismo alumno no se vuelve a avisar antes de que pasen 3 días si sigue en riesgo. Necesita esta pestaña abierta (puede estar de fondo) -- no hay envío con la app cerrada.</div>
+
+      <div id="tgState"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn red ghost" id="tgOff" style="margin-right:auto">🔌 Borrar configuración</button>
+      <button class="btn" id="tgTest">📤 Enviar aviso de prueba</button>
+      <button class="btn gold" id="tgSave">💾 Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   27c. MÓDULO 21c — AVISO PROACTIVO POR TELEGRAM (Fase 3)
+   ============================================================ */
+(function(){
+  var TKEY = 'coachjp_telegram_v1';
+  var AKEY = 'coachjp_telegram_avisos_v1';
+  var DIA3 = 86400000;
+  var COOLDOWN = 3 * DIA3;
+  var pill = null, checking = false;
+
+  function getCfg(){
+    try{ return Object.assign({ token:'', chatId:'', on:true }, JSON.parse(localStorage.getItem(TKEY) || '{}') || {}); }
+    catch(e){ return { token:'', chatId:'', on:true }; }
+  }
+  function setCfg(cfg){ try{ localStorage.setItem(TKEY, JSON.stringify(cfg)); }catch(e){} }
+  function getAvisos(){
+    try{ return JSON.parse(localStorage.getItem(AKEY) || '{}') || {}; }catch(e){ return {}; }
+  }
+  function setAvisos(a){ try{ localStorage.setItem(AKEY, JSON.stringify(a)); }catch(e){} }
+
+  function configurado(cfg){ return !!(cfg.token && cfg.chatId); }
+
+  async function enviarTelegram(texto){
+    var cfg = getCfg();
+    if(!configurado(cfg)) return { ok:false, msg:'Falta el token o el Chat ID.' };
+    try{
+      var url = 'https://api.telegram.org/bot' + encodeURIComponent(cfg.token) + '/sendMessage';
+      var res = await fetch(url, {
+        method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ chat_id: cfg.chatId, text: texto })
+      });
+      var data = null; try{ data = await res.json(); }catch(e){}
+      if(!res.ok || !data || !data.ok) return { ok:false, msg:(data && data.description) || ('Telegram respondió con error (' + res.status + ')') };
+      return { ok:true };
+    }catch(e){
+      return { ok:false, msg:'No se pudo conectar con Telegram (' + (e && e.message ? e.message : 'error de red') + ').' };
+    }
+  }
+
+  /* chequeo de riesgo: reusa 100% el cálculo del Módulo 21b (window.CoachAdherencia),
+     cero lógica nueva de adherencia acá -- este módulo solo decide CUÁNDO avisar
+     y con qué cooldown, nunca recalcula el estado. */
+  async function chequearAlertas(){
+    if(checking) return;
+    var cfg = getCfg();
+    if(!cfg.on || !configurado(cfg)) return;
+    /* S es `let S = {...}` a nivel de módulo (ver línea ~1418): NUNCA cuelga de
+       window, así que se chequea la referencia directa -- no window.S (eso
+       siempre da undefined y cortaba el chequeo antes de que arrancara). */
+    if(!window.CoachAdherencia || typeof S === 'undefined' || !S.athletes || !S.athletes.length) return;
+    checking = true;
+    try{
+      var avisos = getAvisos();
+      var huboCambio = false;
+      for(var i = 0; i < S.athletes.length; i++){
+        var a = S.athletes[i];
+        var e = window.CoachAdherencia.estado(a);
+        if(e.id !== 'risk') continue;
+        var last = avisos[a.id] || 0;
+        if(Date.now() - last < COOLDOWN) continue;
+        var detalle = (e.lb.split(' · ')[1] || '');
+        var texto = '⚠️ ' + (fullName(a) || 'Un alumno') + ' está en riesgo de abandono' +
+                    (detalle ? ' -- ' + detalle : '') + '.\nRevisalo en el panel de Coach JP.';
+        var r = await enviarTelegram(texto);
+        if(r.ok){ avisos[a.id] = Date.now(); huboCambio = true; }
+        /* si falla (token inválido, sin red), no se marca como avisado --
+           se reintenta solo en el próximo chequeo, nunca se pierde el aviso */
+      }
+      if(huboCambio) setAvisos(avisos);
+    } finally { checking = false; }
+  }
+
+  function pintarPill(){
+    if(!pill) return;
+    var cfg = getCfg();
+    pill.classList.remove('ok','off');
+    if(configurado(cfg) && cfg.on) pill.classList.add('ok');
+    else if(configurado(cfg)) pill.classList.add('off');
+  }
+
+  function pintarEstadoModal(){
+    var cfg = getCfg();
+    var el = document.getElementById('tgState'); if(!el) return;
+    if(!configurado(cfg)){ el.innerHTML = '<div class="hint">Todavía no configuraste el bot.</div>'; return; }
+    el.innerHTML = '<div class="hint">' + (cfg.on ? '🟢 Avisos activados.' : '🟡 Configurado, pero los avisos están desactivados.') + '</div>';
+  }
+
+  function abrirTelegram(){
+    var cfg = getCfg();
+    $('#tgToken').value = cfg.token || '';
+    $('#tgChatId').value = cfg.chatId || '';
+    $('#tgOn').checked = cfg.on !== false;
+    pintarEstadoModal();
+    openModal('mTelegram');
+  }
+  function leerCampos(){
+    return { token: $('#tgToken').value.trim(), chatId: $('#tgChatId').value.trim(), on: $('#tgOn').checked };
+  }
+
+  function mount(){
+    var fab = document.querySelector('.cfg-fab');
+    if(fab && !document.getElementById('telegramPill')){
+      pill = document.createElement('span');
+      pill.className = 'telegram-pill'; pill.id = 'telegramPill';
+      pill.innerHTML = '<span class="td"></span><span class="ct">📲 Telegram</span>';
+      fab.insertBefore(pill, fab.firstChild);
+      pill.addEventListener('click', abrirTelegram);
+      pintarPill();
+    }
+    /* tarjeta en la vista Datos, mismo patrón que la Nube (Módulo 15) */
+    var dv = document.querySelector('#v-datos .grid');
+    if(dv && !document.getElementById('tgCard')){
+      var c = document.createElement('div');
+      c.className = 'card'; c.id = 'tgCard'; c.style.gridColumn = '1/-1';
+      c.innerHTML = '<h3>📲 Aviso automático por Telegram</h3>' +
+        '<div class="hint" style="margin-bottom:12px">Recibí un mensaje directo cuando un alumno cae en 🔴 riesgo de abandono, sin tener que abrir el Panel de Actividad. Necesita este navegador abierto (puede estar de fondo).</div>' +
+        '<div class="row"><button class="btn teal" id="tgOpen">⚙️ Configurar aviso</button></div>';
+      dv.appendChild(c);
+      c.querySelector('#tgOpen').addEventListener('click', abrirTelegram);
+    }
+
+    var bSave = document.getElementById('tgSave');
+    if(bSave) bSave.addEventListener('click', function(){
+      setCfg(leerCampos()); pintarPill(); pintarEstadoModal();
+      toast('📲 Configuración de Telegram guardada');
+      chequearAlertas();
+    });
+    var bTest = document.getElementById('tgTest');
+    if(bTest) bTest.addEventListener('click', async function(){
+      setCfg(leerCampos()); pintarPill(); pintarEstadoModal();
+      toast('Enviando aviso de prueba…');
+      var r = await enviarTelegram('✅ Coach JP conectado -- los avisos de alumnos en riesgo van a llegar por acá.');
+      toast(r.ok ? '✅ Mensaje enviado, revisá tu Telegram' : ('No se pudo enviar: ' + r.msg), r.ok ? '' : 'err');
+    });
+    var bOff = document.getElementById('tgOff');
+    if(bOff) bOff.addEventListener('click', function(){
+      if(!confirm('¿Borrar el token y desactivar los avisos de Telegram?')) return;
+      setCfg({ token:'', chatId:'', on:true });
+      $('#tgToken').value = ''; $('#tgChatId').value = ''; $('#tgOn').checked = true;
+      pintarPill(); pintarEstadoModal();
+      toast('Configuración de Telegram borrada', 'warn');
+    });
+    document.querySelectorAll('#mTelegram [data-close]').forEach(function(b){
+      b.addEventListener('click', function(){ closeModal(b.dataset.close); });
+    });
+    var m = document.getElementById('mTelegram');
+    if(m) m.addEventListener('click', function(e){ if(e.target === m) closeModal('mTelegram'); });
+
+    /* mismos disparadores que ya usa el Módulo 21b para recalcular
+       adherencia: cuando llega señal en vivo de Supabase (Fase 2) y cada
+       vez que se re-renderiza la grilla de Alumnos (señal local, Fase 1) --
+       cero fetch nuevo, solo reusa lo que ya dispara esos dos módulos. */
+    document.addEventListener('coachjp:activity-updated', function(){ try{ chequearAlertas(); }catch(e){} });
+    var _renderAthletes3 = window.renderAthletes;
+    window.renderAthletes = function(){
+      var r = _renderAthletes3.apply(this, arguments);
+      try{ chequearAlertas(); }catch(e){}
+      return r;
+    };
+    /* red de contención para el caso 100% local (sin nube): si el coach
+       deja la pestaña abierta en otra vista sin re-renderizar Alumnos,
+       igual se revisa cada 5 minutos -- cálculo puro sobre S.athletes ya
+       en memoria, no dispara ningún fetch salvo que haya que avisar */
+    setInterval(function(){ try{ chequearAlertas(); }catch(e){} }, 5 * 60000);
+    setTimeout(function(){ try{ chequearAlertas(); }catch(e){} }, 4000);
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+
 <!-- ============================================================
      MÓDULO 22 — BIBLIOTECA WEIGHTLIFTING / CROSSFIT + ETIQUETAS
      · Nombres originales en inglés (Snatch, Clean & Jerk, TTB…)
@@ -35363,6 +36168,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     p.dias = dias;
     p.meso = clon(f.meso);
     p.meta = Object.assign(p.meta || {}, f.meta);
+    /* evita que el módulo "CrossFit A/B/C" (desacoplar(), otro archivo más
+       abajo) colapse este mesociclo recién cargado a 1 sola semana genérica:
+       ese módulo detecta "todavía tiene el mesociclo default sin tocar" y lo
+       reduce a propósito para armar semana a semana desde cero -- pero el
+       mesociclo de esta plantilla (4 o 6 semanas reales, con nombres
+       "Semana N" iguales al default) calzaba con esa firma por casualidad y
+       se perdía. cfModular ya en true desde acá corta ese colapso de raíz;
+       la barra de semanas de ese mismo módulo (+ Semana N / Quitar última)
+       sigue disponible después para seguir agregando semanas sin límite. */
+    p.meta.cfModular = true;
     guardarBanco(true);
     try{ save(); }catch(e){}
     if(typeof renderBuilder === 'function') renderBuilder();
