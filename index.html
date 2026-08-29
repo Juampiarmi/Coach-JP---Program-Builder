@@ -456,6 +456,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <div class="sub">Retroalimentable · agregá links de YouTube (Shorts, watch o youtu.be)</div>
         </div>
         <div class="spacer"></div>
+        <button class="btn ghost" id="btnFeeder">⚡ Feeder Rápido</button>
         <button class="btn gold" id="btnNewEx">➕ Añadir Ejercicio</button>
       </div>
 
@@ -752,6 +753,38 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
       <button class="btn red ghost" id="btnDelEx" style="margin-right:auto;display:none">🗑️ Eliminar</button>
       <button class="btn ghost" data-close="mEx">Cancelar</button>
       <button class="btn gold" id="btnSaveEx">💾 Guardar ejercicio</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="mFeeder">
+  <div class="modal">
+    <div class="modal-h">
+      <h3>⚡ Feeder Rápido de Videos</h3>
+      <div class="spacer"></div>
+      <button class="icon-btn" data-close="mFeeder">✕</button>
+    </div>
+    <div class="modal-b">
+      <div class="hint" style="margin-bottom:12px">Pensado para cargar de a muchos: elegí el grupo y el patrón una sola vez — quedan fijos mientras pegás lote tras lote — y previsualizá antes de guardar.</div>
+      <div class="grid g2">
+        <div><label class="lb">Grupo muscular (fijo para el lote)</label><select id="fdGrupo"></select></div>
+        <div><label class="lb">Patrón de movimiento (fijo para el lote)</label><select id="fdPatron"></select></div>
+      </div>
+      <div style="margin-top:14px">
+        <label class="lb">Lote — una línea por ejercicio</label>
+        <textarea id="fdBatch" rows="6" placeholder="Curl con barra | Barbell curl | https://youtu.be/xxxxxxxxxxx
+Curl martillo | Hammer curl | https://youtu.be/yyyyyyyyyyy
+Curl concentrado"></textarea>
+        <div class="hint">Formato: <code>Nombre en Español | Nombre en Inglés | URL de YouTube</code> — el inglés y el link son opcionales, alcanza con el nombre en español.</div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="fdPreviewBtn" type="button">👁️ Previsualizar</button>
+      </div>
+      <div id="fdPreviewBox" style="margin-top:14px"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mFeeder">Cerrar</button>
+      <button class="btn gold" id="fdSaveBtn" type="button" disabled>💾 Guardar ejercicios</button>
     </div>
   </div>
 </div>
@@ -2058,6 +2091,81 @@ function delEx(){
   S.exercises = S.exercises.filter(x => x.id !== e.id);
   save(); closeModal('mEx'); renderLibrary(); toast('Ejercicio eliminado', 'warn');
 }
+/* ---------- 8b. FEEDER RÁPIDO (22do pedido, 29/08) ----------
+   Alta en lote para nutrir la biblioteca sin fricción: grupo/patrón quedan
+   "pegajosos" (los selects #fdGrupo/#fdPatron se rellenan UNA sola vez en
+   init(), nunca se vuelven a tocar salvo que el coach los cambie a mano, así
+   que conservan su valor entre altas sucesivas dentro de la misma sesión) y
+   el lote se pega como texto ("ES | EN | URL"), se previsualiza (reusa la
+   tabla .imp-prev que ya existe para la previsualización de importación de
+   documentos) y recién ahí se confirma. 100% aditivo sobre S.exercises — no
+   toca ni un ejercicio existente, y un duplicado exacto (mismo nombre en
+   español, comparado con norm() para ignorar tildes/mayúsculas) se detecta
+   en la previsualización y se omite automáticamente al guardar, para no
+   ensuciar la biblioteca con filas repetidas. */
+let fdRows = [];
+function parseFeederBatch(txt){
+  return String(txt || '').split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+    const parts = line.split('|').map(p => p.trim());
+    const es = parts[0] || '', en = parts[1] || '', video = parts[2] || '';
+    return { es: es, en: en, video: video, videoId: ytId(video) };
+  }).filter(r => r.es);
+}
+function renderFeederPreview(){
+  fdRows = parseFeederBatch($('#fdBatch').value);
+  const box = $('#fdPreviewBox'), btn = $('#fdSaveBtn');
+  if(!fdRows.length){
+    box.innerHTML = '<div class="hint">Pegá al menos una línea con nombre en español para previsualizar.</div>';
+    btn.disabled = true;
+    return;
+  }
+  const existentes = S.exercises.map(e => norm(e.es));
+  fdRows.forEach(r => { r.dup = existentes.indexOf(norm(r.es)) >= 0; });
+  const nuevos = fdRows.filter(r => !r.dup).length;
+  box.innerHTML =
+    '<div class="imp-prev" style="max-height:260px"><table><thead><tr>' +
+    '<th>Español</th><th>Inglés</th><th>Video</th><th>Estado</th>' +
+    '</tr></thead><tbody>' +
+    fdRows.map(r =>
+      '<tr>' +
+      '<td>' + esc(r.es) + '</td>' +
+      '<td>' + (r.en ? esc(r.en) : '—') + '</td>' +
+      '<td class="' + (r.videoId ? 'ok' : (r.video ? 'bad' : '')) + '">' +
+        (r.videoId ? '✔ ID detectado' : (r.video ? '⚠️ link inválido' : 'sin video')) +
+      '</td>' +
+      '<td class="' + (r.dup ? 'bad' : 'new') + '">' + (r.dup ? '⚠️ Ya existe — se omite' : '🆕 Nuevo') + '</td>' +
+      '</tr>'
+    ).join('') +
+    '</tbody></table></div>' +
+    '<div class="hint" style="margin-top:8px">' + nuevos + ' ejercicio' + (nuevos === 1 ? '' : 's') + ' nuevo' + (nuevos === 1 ? '' : 's') + ' para agregar' +
+    ((fdRows.length - nuevos) ? ' · ' + (fdRows.length - nuevos) + ' duplicado' + ((fdRows.length - nuevos) === 1 ? '' : 's') + ' omitido' + ((fdRows.length - nuevos) === 1 ? '' : 's') : '') + '.</div>';
+  btn.disabled = nuevos === 0;
+}
+function guardarFeederBatch(){
+  const grupo = $('#fdGrupo').value, patron = $('#fdPatron').value;
+  const nuevos = fdRows.filter(r => !r.dup);
+  if(!nuevos.length) return;
+  nuevos.forEach(r => {
+    S.exercises.push({
+      id: uid('ex'), custom: true,
+      es: r.es, en: r.en, grupo: grupo, patron: patron, equipo: EQUIPOS[0],
+      video: r.video, videoId: r.videoId, riesgo: [], aviso: ''
+    });
+  });
+  save();
+  toast(nuevos.length + ' ejercicio' + (nuevos.length === 1 ? '' : 's') + ' agregado' + (nuevos.length === 1 ? '' : 's') + ' a la biblioteca ✔');
+  $('#fdBatch').value = '';
+  fdRows = [];
+  $('#fdPreviewBox').innerHTML = '';
+  $('#fdSaveBtn').disabled = true;
+  renderLibrary();
+  if(S.ui.view === 'builder' && typeof renderBuilder === 'function') renderBuilder();
+}
+function openFeeder(){
+  openModal('mFeeder');
+  setTimeout(() => $('#fdBatch').focus(), 60);
+}
+
 function openVideo(exId){
   const e = getEx(exId); if(!e) return;
   $('#mVidTitle').textContent = e.es;
@@ -3510,7 +3618,10 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
         </svg>
       </div>
       <div class="hdc-id">
-        <span class="hdc-eyebrow">High Performance Program</span>
+        <div class="hdc-brand">
+          <span class="hdc-brand-mark">COACH<em>&nbsp;JP</em></span>
+          <span class="hdc-brand-sub">High Performance System</span>
+        </div>
         <span class="hdc-name" id="hdcName">{{ATHLETE_NAME}}</span>
       </div>
       <button type="button" class="hdc-info" id="hdcInfoBtn" title="Perfil, credencial y ajustes">
@@ -17152,14 +17263,26 @@ input[type="checkbox"]:active{
   background:radial-gradient(circle, rgba(255,215,0,.3), transparent 70%);
 }
 .hdc-shield svg{ width:30px; height:35px; display:block; position:relative; filter:drop-shadow(0 0 8px rgba(255,214,0,.65)); }
-.hdc-id{display:flex;flex-direction:column;justify-content:center;min-width:0;flex:1;gap:3px}
-.hdc-eyebrow{
-  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:.68rem; letter-spacing:.12em;
-  text-transform:uppercase; color:#E5C378; line-height:1;
+.hdc-id{display:flex;flex-direction:column;justify-content:center;min-width:0;flex:1;gap:2px}
+/* 22do pedido (29/08): eyebrow de 2 niveles -- "COACH JP" como marca (nivel 1,
+   dorado más saturado, mismo tono que el escudo de al lado para que lean como
+   un solo bloque de identidad) y "High Performance System" como sub-línea
+   técnica (nivel 2, más chica y apagada) arriba del nombre del atleta, que
+   sigue siendo el elemento más grande/blanco del bloque -- protagonista. */
+.hdc-brand{display:flex;flex-direction:column;gap:1px}
+.hdc-brand-mark{
+  font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:.74rem; letter-spacing:.16em;
+  text-transform:uppercase; color:#FFD600; line-height:1;
+  text-shadow:0 0 10px rgba(255,214,0,.35);
+}
+.hdc-brand-mark em{font-style:normal}
+.hdc-brand-sub{
+  font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:.56rem; letter-spacing:.13em;
+  text-transform:uppercase; color:#E5C378; opacity:.78; line-height:1;
 }
 .hdc-name{
   font-size:17px; font-weight:800; color:#FFFFFF; letter-spacing:.01em; line-height:1.2;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px;
 }
 .hdc-info{
   flex-shrink:0; width:38px; height:38px; display:flex; align-items:center; justify-content:center;
@@ -18595,6 +18718,12 @@ function init(){
   fillSelect($('#eEquipo'), EQUIPOS);
   fillSelect($('#fGrupo'),  GRUPOS,  'Todos los grupos');
   fillSelect($('#fEquipo'), EQUIPOS, 'Todo el equipamiento');
+  /* Feeder Rápido (22do pedido): se rellenan UNA sola vez acá, igual que los
+     filtros de arriba — a propósito NO se vuelven a tocar en openFeeder(),
+     así el select conserva el valor elegido por el coach entre altas
+     sucesivas ("pegajoso") sin necesitar ningún localStorage nuevo. */
+  fillSelect($('#fdGrupo'),  GRUPOS);
+  fillSelect($('#fdPatron'), PATRONES);
 
   if(!S.activeId && S.athletes.length) S.activeId = S.athletes[0].id;
 
@@ -18638,6 +18767,9 @@ function init(){
   $('#btnNewEx').addEventListener('click', () => openEx());
   $('#btnSaveEx').addEventListener('click', saveEx);
   $('#btnDelEx').addEventListener('click', delEx);
+  $('#btnFeeder').addEventListener('click', openFeeder);
+  $('#fdPreviewBtn').addEventListener('click', renderFeederPreview);
+  $('#fdSaveBtn').addEventListener('click', guardarFeederBatch);
   /* el texto tipeado se debounce (300ms) para no re-renderizar la grilla en
      cada tecla; los selects/checkboxes de filtro reaccionan al instante */
   $('#exSearch').addEventListener('input', debounce(renderLibrary, 300));
@@ -19098,9 +19230,13 @@ document.addEventListener('DOMContentLoaded', init);
     e.rate = true; e.prov = prov; e.secs = secs;
     return e;
   }
-  async function callProvider(prov, system, user){
+  async function callProvider(prov, system, user, opts){
     if(!hasKey(prov)) throw new Error('No hay API Key de ' + PROV[prov].lb + '.');
     const cfg = PROV[prov], model = AI.models[prov] || cfg.model;
+    /* opts.maxTokens permite a un llamador puntual (ej. el plan de nutrición,
+       cuyo JSON de respuesta es mucho más largo que el resto) pedir más margen
+       que el configurado en el modal de IA, sin tocar ese ajuste global. */
+    const maxTok = (opts && opts.maxTokens) || AI.maxTokens;
     let url = cfg.url, headers, body;
 
     if(prov === 'anthropic'){
@@ -19110,19 +19246,19 @@ document.addEventListener('DOMContentLoaded', init);
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       };
-      body = { model: model, max_tokens: AI.maxTokens, system: system, messages: [{ role:'user', content: user }] };
+      body = { model: model, max_tokens: maxTok, system: system, messages: [{ role:'user', content: user }] };
     } else if(prov === 'google'){
       url = cfg.url + encodeURIComponent(model) + ':generateContent';
       headers = { 'content-type': 'application/json', 'x-goog-api-key': keyOf(prov) };
       body = {
         system_instruction: { parts: [{ text: system }] },
         contents: [{ role:'user', parts: [{ text: user }] }],
-        generationConfig: { maxOutputTokens: AI.maxTokens, temperature: 0.7, responseMimeType: 'application/json' }
+        generationConfig: { maxOutputTokens: maxTok, temperature: 0.7, responseMimeType: 'application/json' }
       };
     } else {
       headers = { 'content-type': 'application/json', 'authorization': 'Bearer ' + keyOf(prov) };
       body = {
-        model: model, max_tokens: AI.maxTokens,
+        model: model, max_tokens: maxTok,
         response_format: { type:'json_object' },
         messages: [{ role:'system', content: system }, { role:'user', content: user }]
       };
@@ -19149,6 +19285,11 @@ document.addEventListener('DOMContentLoaded', init);
 
     const j = JSON.parse(raw);
     if(prov === 'anthropic'){
+      /* si el modelo se quedó sin tokens a mitad de camino, "content" trae texto
+         parcial (a veces ni siquiera JSON cerrado) -- se avisa explícito en vez
+         de dejar que el parser de turno falle silencioso y crea que la IA
+         "no devolvió JSON válido" cuando en realidad fue cortada */
+      if(j.stop_reason === 'max_tokens') throw new Error('Respuesta cortada por límite de tokens: subí "Máx. tokens" en la configuración de IA.');
       const part = (j.content || []).find(c => c.type === 'text');
       return part ? part.text : '';
     }
@@ -19158,11 +19299,12 @@ document.addEventListener('DOMContentLoaded', init);
       if(cand.finishReason === 'MAX_TOKENS') throw new Error('Respuesta cortada por límite de tokens: subí "Máx. tokens".');
       return ((cand.content && cand.content.parts) || []).map(pt => pt.text || '').join('');
     }
+    if(j.choices && j.choices[0] && j.choices[0].finish_reason === 'length') throw new Error('Respuesta cortada por límite de tokens: subí "Máx. tokens" en la configuración de IA.');
     return j.choices && j.choices[0] ? j.choices[0].message.content : '';
   }
 
   /* llamada con cooldown + fallback entre proveedores */
-  async function callAI(system, user, onLog){
+  async function callAI(system, user, onLog, opts){
     const log = onLog || function(){};
     const intentados = [];
     let prov = nextProvider(null) || AI.provider;
@@ -19171,7 +19313,7 @@ document.addEventListener('DOMContentLoaded', init);
       if(!prov) break;
       intentados.push(prov);
       try{
-        return await callProvider(prov, system, user);
+        return await callProvider(prov, system, user, opts);
       }catch(err){
         if(!err.rate) throw err;
         /* espera corta: reintenta el mismo proveedor */
@@ -19198,11 +19340,19 @@ document.addEventListener('DOMContentLoaded', init);
   function extractJson(txt){
     if(!txt) throw new Error('Respuesta vacía del modelo.');
     let s = String(txt).trim();
-    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+    /* algunos modelos envuelven el JSON en un bloque de código pese a que se les
+       pide que no lo hagan -- se lo saca antes de buscar las llaves. Si el fence
+       de cierre no está (respuesta cortada), se saca igual el de apertura para
+       no arrastrar la palabra "json" ni las comillas invertidas al parseo */
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
+    else s = s.replace(/^```(?:json)?\s*/i, '').trim();
     const a = s.indexOf('{'), b = s.lastIndexOf('}');
     if(a < 0 || b < a) throw new Error('El modelo no devolvió JSON válido.');
-    return JSON.parse(s.slice(a, b + 1));
+    /* coma colgante antes de "}" o "]" -- error de JSON muy común en respuestas
+       de LLM que igual son rescatables sin volver a llamar a la IA */
+    const slice = s.slice(a, b + 1).replace(/,(\s*[}\]])/g, '$1');
+    return JSON.parse(slice);
   }
 
   /* ---------- Prompts compactos ---------- */
@@ -19582,7 +19732,7 @@ document.addEventListener('DOMContentLoaded', init);
       cfg: () => AI, run: runAI, open: openAI, config: openCfg,
       switch: switchProvider, cooldown: setCooldown, providers: PROV,
       /* llamada genérica de texto (la usa la biblioteca para tips y objetivos) */
-      generarTexto: (user, system) => callAI(system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user),
+      generarTexto: (user, system, opts) => callAI(system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user, undefined, opts),
       hayClave: () => ['anthropic','openai','google'].some(p => hasKey(p))
     };
   }
@@ -41885,18 +42035,24 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!txt) return null;
     var s = String(txt).trim();
     /* la IA a veces envuelve el JSON en un bloque de código pese a que se le pide
-       que no lo haga — se descarta el fence de markdown antes de buscar las llaves */
+       que no lo haga — se descarta el fence de markdown antes de buscar las llaves.
+       Si sólo llegó el fence de apertura (respuesta cortada antes del cierre),
+       se saca igual para no arrastrar la palabra "json"/comillas invertidas. */
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
+    else s = s.replace(/^```(?:json)?\s*/i, '').trim();
     var m = s.match(/\{[\s\S]*\}/);
     if(!m){ console.warn('nutriIA: la respuesta no trae ningún objeto {}', s.slice(0, 400)); return null; }
+    /* coma colgante antes de "}" o "]" — error muy común en JSON generado por
+       LLM, rescatable sin volver a llamar a la IA */
+    var limpio = m[0].replace(/,(\s*[}\]])/g, '$1');
     try{
-      var o = JSON.parse(m[0]);
+      var o = JSON.parse(limpio);
       if(o && o.comidas && o.macros) return o;
       console.warn('nutriIA: el JSON parseó pero le faltan "comidas" o "macros"', o);
       return null;
     }catch(e){
-      console.warn('nutriIA: JSON inválido (posible respuesta truncada o con texto extra)', e.message, m[0].slice(0, 400));
+      console.warn('nutriIA: JSON inválido (posible respuesta truncada o con texto extra)', e.message, limpio.slice(0, 400));
       return null;
     }
   }
@@ -42054,7 +42210,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       return;
     }
     toast('Consultando IA…');
-    CoachAI.generarTexto(promptDe(f), 'Devolvés únicamente un objeto JSON válido. Nunca uses bloques de código ni comillas invertidas (```). No agregues ninguna palabra antes ni después: la respuesta completa arranca en "{" y termina en "}".')
+    /* el JSON de este plan es el más largo de toda la app (varias comidas, cada
+       una con 2 preparaciones, items e intercambios) — se le pide un piso de
+       tokens más alto que el configurado en el modal de IA para bajar el riesgo
+       de que la respuesta se corte a mitad de camino y el JSON llegue incompleto */
+    var maxTokPlan = Math.max((CoachAI.cfg().maxTokens || 0), 12000);
+    CoachAI.generarTexto(promptDe(f), 'Devolvés únicamente un objeto JSON válido. Nunca uses bloques de código ni comillas invertidas (```). No agregues ninguna palabra antes ni después: la respuesta completa arranca en "{" y termina en "}".', { maxTokens: maxTokPlan })
       .then(function(txt){
         var p = parsearIA(txt);
         if(p){
@@ -42066,10 +42227,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
         guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
       })
-      .catch(function(){
+      .catch(function(e){
         R.plan = local; R.fuente = 'local'; R.estado = 'bor'; R.ts = Date.now();
         guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
-        toast('No se pudo consultar la IA: se usó el motor local');
+        toast('No se pudo consultar la IA' + (e && e.message ? ' (' + e.message + ')' : '') + ': se usó el motor local', 'warn');
       });
   }
 
