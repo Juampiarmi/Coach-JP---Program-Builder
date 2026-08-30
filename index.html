@@ -41400,6 +41400,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         <button type="button" data-nptab="plan">2 · Plan generado</button>
       </div>
 
+      <div id="npDiag" style="display:none;margin:10px 0 0;padding:10px 12px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.03);font-size:12px;line-height:1.6"></div>
+
       <!-- ===== FICHA ===== -->
       <div class="np-pane on" id="npPaneFicha">
         <div class="np-sec">
@@ -41481,6 +41483,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
           <button class="btn primary" id="npGen">⚡ Generar plan</button>
           <button class="btn ghost sm" id="npGenIA">🤖 Generar con IA</button>
+          <button class="btn ghost sm" id="npTestIA" title="Prueba mínima de conexión con el proveedor de IA configurado, sin pedir el plan completo">🧪 Test Conexión IA</button>
           <button class="btn ghost sm" id="npSaveFicha">💾 Guardar ficha</button>
         </div>
       </div>
@@ -41901,7 +41904,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var base = calcularBase(f);
     var alergias = (f.alergias || '').split(',').map(function(x){ return norm(x.trim()); }).filter(Boolean);
 
-    /* 1 · la suma de las comidas cierra con el objetivo ±5% */
+    /* 1 · la suma de las comidas cierra con el objetivo -- flexibilizado (25to
+       pedido) para tolerar redondeo normal de un LLM generando varios platos:
+       antes 12%/5%, ahora 15%/8%. No es la causa raíz de un plan roto (eso lo
+       resuelve el schema más simple + el fallback parcial más abajo), pero una
+       diferencia de un par de gramos por redondeo no debería tirar todo el
+       plan a la basura. */
     var sum = (plan.comidas || []).reduce(function(a, c){
       return { p:a.p + (c.total ? c.total.prot : 0), c:a.c + (c.total ? c.total.carb : 0), g:a.g + (c.total ? c.total.gras : 0) };
     }, { p:0, c:0, g:0 });
@@ -41911,9 +41919,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         var k = par.split('|'), o = obj[k[0]], s = sum[k[1]];
         if(!o) return;
         var dif = Math.abs(s - o) / o;
-        if(dif > 0.12) errores.push('El total de ' + k[0].replace('_g','') + ' de las comidas (' + s + ' g) se aleja ' +
+        if(dif > 0.15) errores.push('El total de ' + k[0].replace('_g','') + ' de las comidas (' + s + ' g) se aleja ' +
           Math.round(dif * 100) + '% del objetivo (' + o + ' g)');
-        else if(dif > 0.05) avisos.push('Desvío de ' + Math.round(dif * 100) + '% en ' + k[0].replace('_g',''));
+        else if(dif > 0.08) avisos.push('Desvío de ' + Math.round(dif * 100) + '% en ' + k[0].replace('_g',''));
       });
     }
     /* 2 · ningún alimento choca con las alergias, por nombre y por familia
@@ -41934,10 +41942,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         });
       });
     }
-    /* 3 · proteína en rango fisiológico */
+    /* 3 · proteína en rango fisiológico -- rango levemente ampliado (1.3-2.7,
+       antes 1.4-2.6) para no rechazar por un desvío chico de redondeo */
     if(obj){
       var gkg = obj.prot_g / w;
-      if(gkg < 1.4 || gkg > 2.6) errores.push('Proteína fuera de rango: ' + gkg.toFixed(1) + ' g/kg');
+      if(gkg < 1.3 || gkg > 2.7) errores.push('Proteína fuera de rango: ' + gkg.toFixed(1) + ' g/kg');
     }
     /* 4 · nunca por debajo del metabolismo basal */
     if(plan.meta && plan.meta.kcal_descanso < base.bmr)
@@ -41949,16 +41958,96 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return { ok: errores.length === 0, errores: errores, avisos: avisos };
   }
 
+  /* ---------- 25to pedido (30/08): normalización + fallback parcial ----------
+     Antes, si la IA devolvía un plan con UNA comida rota (sin "total", con
+     "items" vacío, con un campo faltante) o con campos secundarios ausentes
+     (suplementos, alertas, peri_entreno), el plan entero se descartaba y caía
+     100% al motor local -- aunque el resto del plan estuviera perfecto. Estas
+     dos funciones evitan tirar trabajo bueno a la basura: primero rellenan lo
+     que falta con valores por defecto sin inventar datos nutricionales (sólo
+     aritmética: totales calculados de los propios items), y después, si
+     alguna comida puntual sigue sin ser usable, la completan con la comida
+     correspondiente del motor local en vez de descartar todo el plan. */
+
+  /* ¿esta comida tiene lo mínimo para mostrarse y contar en los totales? */
+  function comidaValida(c){
+    return !!(c && typeof c.nombre === 'string' && c.nombre.trim() &&
+      Array.isArray(c.items) && c.items.length &&
+      c.items.every(function(it){ return it && typeof it.alimento === 'string' && it.alimento.trim() && isFinite(it.gramos); }));
+  }
+
+  function totalDeItems(items){
+    var t = (items || []).reduce(function(a, it){
+      return { prot:a.prot + (Number(it.prot) || 0), carb:a.carb + (Number(it.carb) || 0), gras:a.gras + (Number(it.gras) || 0) };
+    }, { prot:0, carb:0, gras:0 });
+    t.prot = Math.round(t.prot); t.carb = Math.round(t.carb); t.gras = Math.round(t.gras);
+    t.kcal = Math.round(t.prot * 4 + t.carb * 4 + t.gras * 9);
+    return t;
+  }
+
+  /* rellena campos faltantes con defaults/aritmética -- nunca inventa un
+     alimento ni un macro que la IA no haya dado */
+  function normalizarPlan(plan){
+    if(!plan || typeof plan !== 'object') return plan;
+    plan.comidas = Array.isArray(plan.comidas) ? plan.comidas : [];
+    plan.comidas.forEach(function(c, i){
+      if(!c || typeof c !== 'object') return;
+      c.n = c.n || (i + 1);
+      c.hora_sug = c.hora_sug || '';
+      c.items = Array.isArray(c.items) ? c.items : [];
+      /* si falta "total" o quedó inconsistente (por ejemplo en 0 con items
+         reales), se recalcula de los propios items en vez de descartar la
+         comida entera por un campo secundario ausente */
+      if(!c.total || !isFinite(c.total.kcal) || (c.items.length && !c.total.kcal)) c.total = totalDeItems(c.items);
+    });
+    plan.suplementos = Array.isArray(plan.suplementos) ? plan.suplementos : [];
+    plan.alertas = Array.isArray(plan.alertas) ? plan.alertas : [];
+    plan.peri_entreno = plan.peri_entreno && typeof plan.peri_entreno === 'object' ? plan.peri_entreno : {};
+    return plan;
+  }
+
+  /* reemplaza sólo las comidas puntuales que no son usables por su equivalente
+     del motor local (misma posición) -- el resto del plan de la IA queda tal
+     cual. Devuelve la lista de nombres de comida que se completaron así, para
+     poder avisarlo con claridad en vez de que quede invisible. */
+  function fusionarConLocal(plan, local, cantidadPedida){
+    var completadas = [];
+    if(!local || !Array.isArray(local.comidas)) return completadas;
+    var n = Math.max(cantidadPedida || 0, plan.comidas.length, local.comidas.length);
+    for(var i = 0; i < n; i++){
+      var actual = plan.comidas[i];
+      if(comidaValida(actual)) continue;
+      var reemplazo = local.comidas[i];
+      if(!reemplazo) continue;
+      var clon = JSON.parse(JSON.stringify(reemplazo));
+      clon.n = i + 1;
+      plan.comidas[i] = clon;
+      completadas.push(clon.nombre);
+    }
+    /* si sobraron posiciones vacías (la IA devolvió menos comidas de las
+       pedidas y el local tampoco llega, caso raro) se descartan huecos */
+    plan.comidas = plan.comidas.filter(Boolean);
+    plan.comidas.forEach(function(c, i){ c.n = i + 1; });
+    return completadas;
+  }
+
   /* ---------- IA ---------- */
   /* 10mo pedido (26/08) — MOTOR DE PROMPTS: antes el JSON pedido era una lista
      de ingredientes sueltos ("nombre" = el slot del día, ej. "Almuerzo", con
      items tipo "Pechuga de pollo 150g"). Ahora cada comida tiene que llegar
-     como un PLATO real, con nombre apetecible, y con 2 preparaciones posibles
-     (rápida/práctica y elaborada) que cierran en el mismo objetivo calórico —
-     no una lista de laboratorio. El schema de "items"/"total" (por opción) no
-     cambió de forma — así el render existente (dashboard y app del alumno)
-     sigue funcionando sin tocar nada; lo nuevo es "opcionB", que es opcional
-     y aditivo (un plan viejo sin "opcionB" se sigue viendo igual que antes). */
+     como un PLATO real, con nombre apetecible. El schema de "items"/"total"
+     no cambió de forma — así el render existente (dashboard y app del alumno)
+     sigue funcionando sin tocar nada.
+     25to pedido (30/08) — SCHEMA SIMPLIFICADO: el pedido de "opcionB" (un
+     segundo plato completo, con sus propios items+total) se sacó del prompt —
+     era, por lejos, lo que más inflaba el JSON pedido (duplicaba casi toda la
+     comida) y lo que más probablemente hacía que el modelo rompiera la
+     estructura a mitad de camino en planes reales. La app SIGUE soportando
+     "opcionB" si algún plan viejo o cargado a mano la trae (el renderer y el
+     validador de alergias nunca dejaron de chequearla) — sólo dejó de
+     pedírsele a la IA. Los "intercambios" por ítem bajaron de 2 a 1 (mismo
+     campo, mismo shape, un solo elemento) — sigue alimentando el selector de
+     sustitución que ya usa el alumno, con la mitad del costo en tokens. */
   function promptDe(f){
     var base = calcularBase(f);
     return 'Sos nutricionista deportivo y cocinero práctico. Respondés SOLO con un JSON válido: arrancás la respuesta ' +
@@ -41979,10 +42068,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       'Nunca "Desayuno" o "Almuerzo" como nombre — sí "Tostadas Francesas Proteicas", "Revuelto Cremoso", ' +
       '"Bowl de Pollo al Verdeo con Papas Rústicas", "Parfait de Banana y Queso Untable", ' +
       '"Hamburguesas Magras Caseras con Fideos", en ese estilo.\n' +
-      '- Cada comida lleva 2 preparaciones que cierran en macros parecidos pero son platos DISTINTOS, no el mismo ' +
-      'plato con otro nombre: la base ("nombre"/"items"/"total") es la opción A, rápida y práctica — pensada para ' +
-      'tupper o poco tiempo. "opcionB" es la opción B, más elaborada, con más pasos o mejor terminación de sabor, ' +
-      'para cuando el alumno tiene ganas de cocinar un poco más.\n\n' +
+      '- UNA sola preparación por comida (no dupliques el plato en una versión "elaborada" aparte) — cada ítem de ' +
+      '"items" lleva, además de sus gramos y macros, un array "intercambios" con UN SOLO alimento equivalente que lo ' +
+      'puede reemplazar en la misma cantidad de macro (no dos, uno solo). Nada de un segundo plato completo.\n\n' +
       'ALIMENTOS — MERCADO ARGENTINO, ACCESIBLE Y COTIDIANO (usá esta lista como vocabulario base, combiná según el plato)\n' +
       '- Proteínas: cortes de carnicería magros (nalga, cuadril, peceto, bola de lomo, carne picada especial), ' +
       'pechuga de pollo, merluza, quesos magros locales (Port Salut Light, Cremón Light, Casancrem/Finlandia Light, ' +
@@ -42006,30 +42094,27 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       'el objetivo es llegar a entrenar sin pesadez.\n' +
       '- "peri_entreno.post": foco en reponer glucógeno (carbohidrato) más proteína para la síntesis — el texto tiene ' +
       'que nombrar explícitamente la reposición de glucógeno, no quedar genérico.\n\n' +
-      'DEVOLVÉ ESTE JSON EXACTO:\n' +
+      'DEVOLVÉ ESTE JSON EXACTO — SIN CAMPOS EXTRA, SIN SEGUNDO PLATO, SIN LISTAS ANIDADAS DE MÁS:\n' +
       '{"meta":{"kcal_entreno":0,"kcal_descanso":0,"metodo":""},' +
       '"macros":{"entreno":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0},' +
       '"descanso":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0}},' +
       '"peri_entreno":{"pre":{"cuando":"","texto":"","carb_g":0,"prot_g":0},' +
       '"intra":{"cuando":"","texto":"","carb_g":0},"post":{"cuando":"","texto":"","carb_g":0,"prot_g":0}},' +
-      '"comidas":[{"n":1,"nombre":"(nombre del plato — opción A, rápida/práctica)","hora_sug":"",' +
+      '"comidas":[{"n":1,"nombre":"(nombre del plato)","hora_sug":"",' +
       '"items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,"intercambios":[{"alimento":"","gramos":0}]}],' +
-      '"total":{"prot":0,"carb":0,"gras":0,"kcal":0},' +
-      '"opcionB":{"nombre":"(nombre del plato — opción B, elaborada)",' +
-      '"items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,"intercambios":[{"alimento":"","gramos":0}]}],' +
-      '"total":{"prot":0,"carb":0,"gras":0,"kcal":0}}}],' +
+      '"total":{"prot":0,"carb":0,"gras":0,"kcal":0}}],' +
       '"suplementos":[{"nombre":"","dosis":"","momento":"","evidencia":"","nota":""}],' +
       '"alertas":[],"disclaimer":"Orientativo y educativo. No reemplaza el plan de un nutricionista."}\n\n' +
       'REGLAS\n' +
       '- Alimentos de Argentina, comunes y baratos (ver lista de arriba). Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
-      '- La suma de las comidas (opción A) tiene que dar los macros del día de entreno con menos de 5% de desvío.\n' +
-      '- El total de "opcionB" de cada comida tiene que quedar dentro de un 10% de los macros de su opción A — mismo ' +
-      'objetivo calórico, preparación distinta, no un desvío grande.\n' +
-      '- Cada ítem (de las dos opciones) con 2 intercambios equivalentes en el mismo macro.\n' +
+      '- La suma de las comidas tiene que dar los macros del día de entreno con menos de 8% de desvío.\n' +
+      '- Cada ítem lleva exactamente 1 intercambio equivalente en el mismo macro — no 2, no una lista larga.\n' +
       '- Proteína entre 1,6 y 2,4 g/kg. Nunca menos calorías que el basal.\n' +
       '- Ninguna comida de Desayuno, Media mañana o Merienda puede llevar carne, pollo ni pescado como fuente de ' +
       'proteína — usá huevo, lácteos, legumbres o frutos secos ahí.\n' +
-      '- Nada de lenguaje motivacional ni promesas de resultados.';
+      '- Nada de lenguaje motivacional ni promesas de resultados.\n' +
+      '- Priorizá que el JSON cierre bien formado por sobre agregar más detalle: es preferible un plato más simple ' +
+      'pero con el JSON íntegro a uno más elaborado que corte la estructura.';
   }
   /* intenta JSON.parse tras sacar comas colgantes antes de "}" / "]" -- error
      muy común en JSON generado por LLM, rescatable sin volver a llamar a la IA */
@@ -42076,8 +42161,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return out;
   }
 
+  /* diagnóstico del último intento de parseo, para mostrar en pantalla (no sólo
+     consola) -- lo llena parsearIA() en cada salida, exitosa o no, así generar()
+     puede volcarlo en #npDiag sin duplicar lógica de extracción acá */
+  var ultimoParseDiag = null;
+
   function parsearIA(txt){
-    if(!txt) return null;
+    ultimoParseDiag = null;
+    if(!txt){
+      ultimoParseDiag = { motivo: 'La IA devolvió una respuesta vacía (sin texto) -- puede ser un bloque de contenido no-texto o un filtro del proveedor.', muestra: '' };
+      console.warn('nutriIA: respuesta vacía del proveedor');
+      return null;
+    }
     console.log('[DEBUG NUTRI IA RAW]:', txt);
     var s = String(txt).trim();
     /* la IA a veces envuelve el JSON en un bloque de código pese a que se le pide
@@ -42090,7 +42185,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     /* localización explícita del primer "{" y el último "}" reales del texto --
        cubre el caso de saludos o explicaciones antes/después del objeto */
     var a = s.indexOf('{'), b = s.lastIndexOf('}');
-    if(a < 0 || b < a){ console.warn('nutriIA: la respuesta no trae ningún objeto {}', s.slice(0, 400)); return null; }
+    if(a < 0 || b < a){
+      ultimoParseDiag = { motivo: 'La respuesta no contiene ningún objeto "{ }" reconocible.', muestra: s.slice(0, 300) };
+      console.warn('nutriIA: la respuesta no trae ningún objeto {}', s.slice(0, 400));
+      return null;
+    }
     var bloque = s.slice(a, b + 1);
     var intento = intentarParsearJSON(bloque);
     if(!intento.ok){
@@ -42098,11 +42197,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       intento = intentarParsearJSON(repararJSON(bloque));
     }
     if(!intento.ok){
+      ultimoParseDiag = { motivo: 'JSON inválido incluso tras la reparación automática: ' + intento.error, muestra: (intento.texto || bloque).slice(0, 300) };
       console.warn('nutriIA: JSON inválido incluso tras reparación (posible respuesta truncada o mal formada)', intento.error, (intento.texto || bloque).slice(0, 400));
       return null;
     }
     var o = intento.value;
     if(o && o.comidas && o.macros) return o;
+    ultimoParseDiag = { motivo: 'El JSON parseó correctamente pero le faltan las claves "comidas" y/o "macros".', muestra: JSON.stringify(o).slice(0, 300) };
     console.warn('nutriIA: el JSON parseó pero le faltan "comidas" o "macros"', o);
     return null;
   }
@@ -42231,10 +42332,76 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     e.textContent = R.estado === 'pub' ? 'publicado' : R.estado === 'bor' ? 'borrador' : 'sin plan';
     e.className = 'np-est ' + (R.estado === 'pub' ? 'pub' : R.estado === 'bor' ? 'bor' : '');
     var f = document.getElementById('npFuente');
-    f.textContent = R.fuente === 'ia' ? 'generado con IA' : R.fuente === 'local' ? 'motor local' : '—';
-    f.className = 'np-est' + (R.fuente === 'ia' ? ' pub' : '');
+    f.textContent = R.fuente === 'ia' ? 'generado con IA' : R.fuente === 'ia_parcial' ? 'IA + motor local (parcial)' : R.fuente === 'local' ? 'motor local' : '—';
+    f.className = 'np-est' + (R.fuente === 'ia' || R.fuente === 'ia_parcial' ? ' pub' : '');
     var b = document.getElementById('btnNutriPlan');
     if(b) b.classList.toggle('on', R.estado === 'pub');
+  }
+
+  /* panel de diagnóstico EN PANTALLA (no sólo consola) para la generación con IA
+     -- pedido explícito del coach tras reportar que el error seguía apareciendo
+     en su navegador real sin poder ver el detalle técnico. Se muestra arriba de
+     las dos pestañas del modal, así queda visible sin importar en cuál está. */
+  function renderDiag(info){
+    var el = document.getElementById('npDiag');
+    if(!el) return;
+    if(!info){ el.style.display = 'none'; el.innerHTML = ''; return; }
+    var color = info.ok ? '#7CD992' : '#FF8A65';
+    var titulo = info.ok ? '✅ ' + (info.etapa || 'IA') : '⚠️ ' + (info.etapa || 'Diagnóstico IA');
+    var meta = [];
+    if(info.provider) meta.push('Proveedor: ' + esc(info.provider));
+    if(info.model) meta.push('Modelo: ' + esc(info.model));
+    var html = '<div style="color:' + color + ';font-weight:700">' + titulo + '</div>';
+    if(meta.length) html += '<div style="color:#8A93A3;margin-top:2px">' + meta.join(' · ') + '</div>';
+    if(info.motivo) html += '<div style="margin-top:4px">' + esc(info.motivo) + '</div>';
+    if(info.muestra){
+      html += '<details style="margin-top:6px"><summary style="cursor:pointer;color:#8A93A3">Ver detalle técnico (primeros 300 caracteres de la respuesta cruda)</summary>' +
+        '<pre style="white-space:pre-wrap;word-break:break-word;margin-top:6px;padding:8px;background:rgba(0,0,0,.3);border-radius:6px;font-family:var(--font-mono,monospace);font-size:11px;color:#C9CFD8">' +
+        esc(info.muestra) + '</pre></details>';
+    }
+    el.innerHTML = html;
+    el.style.display = 'block';
+  }
+
+  function testConexionIA(){
+    var btn = document.getElementById('npTestIA');
+    if(!(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave())){
+      renderDiag({ ok:false, etapa:'Test de conexión', motivo:'No hay ninguna API Key de IA configurada en este dispositivo. Configurala en el modal de IA (⚙️) antes de generar el plan.' });
+      toast('Sin clave de IA configurada', 'err');
+      return;
+    }
+    var cfgAI = CoachAI.cfg();
+    var prov = cfgAI.provider;
+    var model = (cfgAI.models && cfgAI.models[prov]) || '(modelo por defecto)';
+    renderDiag({ ok:true, etapa:'Probando conexión…', provider: prov, model: model, motivo:'Enviando un pedido mínimo, esperando respuesta…' });
+    if(btn){ btn.disabled = true; btn.textContent = '🧪 Probando…'; }
+    CoachAI.generarTexto('Respondé exactamente el JSON de ejemplo, sin nada más.',
+      'Sos un servicio de verificación de conexión. Respondé ÚNICAMENTE el objeto JSON {"status":"ok"}, sin bloques de código, sin texto antes ni después.',
+      { maxTokens: 50 })
+      .then(function(txt){
+        var ok = !!(txt && /status/i.test(txt) && /ok/i.test(txt));
+        renderDiag({
+          ok: ok,
+          etapa: ok ? 'Conexión OK' : 'El proveedor respondió, pero con un contenido inesperado',
+          provider: prov, model: model,
+          motivo: ok ? 'El proveedor configurado respondió correctamente. Si el plan completo sigue fallando, el problema está en el tamaño/formato de ESA respuesta puntual, no en la conexión.' : 'La respuesta no tiene el formato esperado -- puede indicar un modelo que ignora instrucciones de formato JSON.',
+          muestra: String(txt || '').slice(0, 300)
+        });
+        toast(ok ? '✅ Conexión con ' + PROV_LB(prov) + ' OK' : 'El proveedor respondió algo inesperado — ver detalle', ok ? 'ok' : 'warn');
+      })
+      .catch(function(e){
+        renderDiag({ ok:false, etapa:'Falló el test de conexión', provider: prov, model: model, motivo: (e && e.message) || 'Error desconocido al contactar al proveedor.' });
+        toast('Test de conexión falló: ' + ((e && e.message) || 'error desconocido'), 'err');
+      })
+      .finally(function(){
+        if(btn){ btn.disabled = false; btn.textContent = '🧪 Test Conexión IA'; }
+      });
+  }
+  function PROV_LB(p){
+    try{
+      var provs = window.CoachAI && CoachAI.providers;
+      return (provs && provs[p] && provs[p].lb) || p;
+    }catch(e){ return p; }
   }
 
   function generar(conIA){
@@ -42256,15 +42423,22 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!conIA || !(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave())){
       R.plan = local; R.fuente = 'local'; R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
       guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
-      if(conIA) toast('Sin clave de IA: se usó el motor local');
+      if(conIA){
+        toast('Sin clave de IA: se usó el motor local');
+        renderDiag({ ok:false, etapa:'Sin clave de IA', motivo:'No hay ninguna API Key configurada en este dispositivo. Configurala en el modal de IA (⚙️) o usá "🧪 Test Conexión IA" para confirmarlo.' });
+      }
       return;
     }
+    var cfgAI = CoachAI.cfg();
+    var provAct = cfgAI.provider;
+    var modelAct = (cfgAI.models && cfgAI.models[provAct]) || '(modelo por defecto)';
     toast('Consultando IA…');
+    renderDiag({ ok:true, etapa:'Consultando ' + PROV_LB(provAct) + '…', provider: provAct, model: modelAct, motivo:'Pidiendo el plan completo (puede tardar varios segundos por el tamaño del JSON).' });
     /* el JSON de este plan es el más largo de toda la app (varias comidas, cada
        una con 2 preparaciones, items e intercambios) — se le pide un piso de
        tokens más alto que el configurado en el modal de IA para bajar el riesgo
        de que la respuesta se corte a mitad de camino y el JSON llegue incompleto */
-    var maxTokPlan = Math.max((CoachAI.cfg().maxTokens || 0), 12000);
+    var maxTokPlan = Math.max((cfgAI.maxTokens || 0), 12000);
     var sistemaNutri = 'Respondé ÚNICAMENTE con el objeto JSON puro. ' +
       'No incluyas bloques de código ni comillas invertidas (```json o ```). ' +
       'No agregues saludos, aclaraciones ni texto explicativo antes ni después. ' +
@@ -42274,18 +42448,48 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         console.log('[DEBUG NUTRI IA RAW]:', txt);
         var p = parsearIA(txt);
         if(p){
+          normalizarPlan(p);
           if(!p.disclaimer) p.disclaimer = 'Orientativo y educativo. No reemplaza el plan de un nutricionista.';
+          if(!p.macros || !p.macros.entreno || !p.macros.descanso) p.macros = local.macros;
+          /* fallback parcial: si alguna comida puntual no es usable (sin items,
+             sin nombre, campos rotos), se completa con la comida equivalente
+             del motor local en vez de tirar todo el plan de la IA a la basura */
+          var completadas = fusionarConLocal(p, local, parseInt(f.comidas, 10) || 0);
           var v = validar(p, f);
-          if(v.ok){ R.plan = p; R.fuente = 'ia'; }
-          else { R.plan = local; R.fuente = 'local'; toast('La IA falló la validación: se usó el motor local'); }
-        } else { R.plan = local; R.fuente = 'local'; toast('La IA no devolvió JSON válido: se usó el motor local'); }
+          if(v.ok){
+            R.plan = p; R.fuente = completadas.length ? 'ia_parcial' : 'ia';
+            var motivoOk = completadas.length
+              ? ('Se completaron con el motor local ' + completadas.length + ' de ' + p.comidas.length +
+                 ' comida(s) porque la IA no las devolvió en formato usable: ' + completadas.join(', ') + '.')
+              : (v.avisos.length ? ('Avisos menores: ' + v.avisos.join(' · ')) : 'Sin observaciones.');
+            renderDiag({ ok:true, etapa: completadas.length ? 'Plan generado (IA + motor local para ' + completadas.length + ' comida(s))' : 'Plan generado con IA', provider: provAct, model: modelAct, motivo: motivoOk });
+            toast(completadas.length ? '✅ Plan generado — ' + completadas.length + ' comida(s) se completaron con el motor local' : '✅ Plan generado con IA');
+          } else {
+            R.plan = local; R.fuente = 'local';
+            toast('La IA falló la validación: se usó el motor local');
+            renderDiag({ ok:false, etapa:'La IA respondió, pero el plan (incluso completado) no pasó la validación', provider: provAct, model: modelAct, motivo: v.errores.join(' · ') + (completadas.length ? ' — se habían completado ' + completadas.length + ' comida(s) con el motor local, no alcanzó.' : ''), muestra: JSON.stringify(p).slice(0, 300) });
+          }
+        } else {
+          R.plan = local; R.fuente = 'local';
+          toast('La IA no devolvió JSON válido: se usó el motor local');
+          renderDiag(Object.assign(
+            { ok:false, etapa:'La IA respondió, pero no se pudo interpretar como JSON válido', provider: provAct, model: modelAct },
+            ultimoParseDiag || { motivo:'Motivo desconocido -- ver consola del navegador.' }
+          ));
+        }
         R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
         guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
       })
       .catch(function(e){
         R.plan = local; R.fuente = 'local'; R.estado = 'bor'; R.ts = Date.now();
         guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
-        toast('No se pudo consultar la IA' + (e && e.message ? ' (' + e.message + ')' : '') + ': se usó el motor local', 'warn');
+        var msg = (e && e.message) || 'Error desconocido';
+        toast('No se pudo consultar la IA (' + msg + '): se usó el motor local', 'warn');
+        /* esto cubre error de red, timeout, API Key inválida (401), cuota (429)
+           y cualquier HTTP no-ok -- callProvider() ya arma el mensaje con el
+           status real y el cuerpo de error del proveedor, así que acá se vuelca
+           tal cual, sin re-envolverlo en el genérico "no devolvió JSON válido" */
+        renderDiag({ ok:false, etapa:'Falló la llamada al proveedor de IA (no llegó a intentar parsear nada)', provider: provAct, model: modelAct, motivo: msg });
       });
   }
 
@@ -42301,6 +42505,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     athAct = a; R = reg(a.id);
     document.getElementById('npWho').textContent = (typeof fullName === 'function' ? fullName(a) : '');
     volcarFicha(); pintarPlan(); pintarEstado(); tab(R.plan ? 'plan' : 'ficha');
+    renderDiag(null);
     openModal('mNP');
   }
   window.abrirNutriPlanJP = abrir;
@@ -42334,6 +42539,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       });
       document.getElementById('npGen').addEventListener('click', function(){ generar(false); });
       document.getElementById('npGenIA').addEventListener('click', function(){ generar(true); });
+      document.getElementById('npTestIA').addEventListener('click', testConexionIA);
       document.getElementById('npSaveFicha').addEventListener('click', function(){
         tomarFicha(); guardarReg(athAct.id, R); toast('💾 Ficha guardada');
       });
