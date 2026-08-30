@@ -19917,6 +19917,53 @@ document.addEventListener('DOMContentLoaded', init);
   </div>
 </div>
 
+<style>
+.estep{margin-top:12px}
+.tplf:disabled{opacity:.35;cursor:not-allowed;pointer-events:none}
+#eliteGen:disabled{opacity:.5;cursor:not-allowed}
+</style>
+
+<div class="modal-bg" id="mEliteTpl">
+  <div class="modal" style="max-width:980px">
+    <div class="modal-h">
+      <h3>🏆 Plantillas Élite Multi-Deporte</h3>
+      <div class="spacer"></div>
+      <button class="icon-btn" data-close="mEliteTpl">✕</button>
+    </div>
+    <div class="modal-b">
+      <div id="eliteAthBox"></div>
+      <div class="alert info" style="padding:9px 12px"><span class="ic">🧬</span><div><b>Motor paramétrico por deporte</b>Elegís deporte, perfil, frecuencia, duración de sesión y duración del bloque — el motor arma los días y el mesociclo completo con ejercicios de tu biblioteca, priorizando lo específico de cada deporte y dejando en manos del Feeder Rápido lo que todavía no exista.</div></div>
+
+      <div class="estep">
+        <label class="lb">1️⃣ Deporte</label>
+        <div class="tpl-filters" id="eliteStep1"></div>
+      </div>
+      <div class="estep">
+        <label class="lb">2️⃣ Perfil del atleta</label>
+        <div class="tpl-filters" id="eliteStep2"></div>
+      </div>
+      <div class="estep">
+        <label class="lb">3️⃣ Frecuencia semanal</label>
+        <div class="tpl-filters" id="eliteStep3"></div>
+      </div>
+      <div class="estep">
+        <label class="lb">4️⃣ Duración de la sesión</label>
+        <div class="tpl-filters" id="eliteStep4"></div>
+      </div>
+      <div class="estep">
+        <label class="lb">5️⃣ Duración del bloque (mesociclo)</label>
+        <div class="tpl-filters" id="eliteStep5"></div>
+      </div>
+
+      <div id="eliteLog" style="margin-top:6px"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mEliteTpl">Cancelar</button>
+      <button class="btn tpl" id="eliteGen" disabled>🏆 Completá los 5 pasos</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ============================================================
    12. MÓDULO 6 — UX DEL BUILDER (estructuras, presets, buscador)
@@ -20975,6 +21022,1078 @@ document.addEventListener('DOMContentLoaded', init);
                        construir: construirDesde, exigeMet: exigeMet, esMetcon: esMetcon,
                        porDisc: (d, n) => TEMPLATES.filter(t => (d === 'todas' || (t.disc||[]).indexOf(d) >= 0) &&
                                                                 (n === 'todos' || (t.niv || NIV_TODOS).indexOf(n) >= 0)) };
+  }
+
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
+</script>
+/* ============================================================
+   MÓDULO 48 — MOTOR DE PLANTILLAS ÉLITE MULTI-DEPORTE (28vo pedido)
+   100% aditivo: no reemplaza TEMPLATES/pickEx/construirDesde, los
+   reusa. Vive fuera de TEMPLATE_HTML — no aplica la trampa de barras
+   invertidas/backticks (esa sólo rige entre las líneas de TEMPLATE_HTML).
+   ============================================================ */
+<script>
+(function(){
+
+  /* ---------- 0. HELPERS DE ESPECIFICACIÓN DE BLOQUE ----------
+     Mismo vocabulario que pickEx()/TEMPLATES: grupo/patron/equipo/
+     prefer (blando) para ejercicios YA cubiertos por la biblioteca,
+     any (duro, por nombre) para movimientos específicos del deporte
+     que hoy NO existen — así pickEx() devuelve null en vez de
+     inventar un reemplazo genérico, y ese hueco se detecta solo y
+     se manda al Feeder. "nuevo" es sólo metadata para sugerir el
+     nombre ES/EN en el Feeder, pickEx() la ignora por completo. */
+  function W(titulo, items){
+    return { tipo:'list', category:'warmup', icon:'🔥', titulo:titulo || 'Warm-Up RAMP · Activación dirigida', items: items };
+  }
+  function BLK(titulo, pick, objective, tips, extra){
+    return Object.assign({ tipo:'block', category:'strength', icon:'🏋️', titulo:titulo, picks:[pick], objective:objective, tips:tips || '' }, extra || {});
+  }
+  function PAP(titulo, picksArr, objective, tips, extra){
+    return Object.assign({ tipo:'superset', category:'strength', icon:'⚡', titulo:titulo, picks:picksArr, objective:objective, tips:tips || '', pap:true }, extra || {});
+  }
+  function SS(titulo, picksArr, objective, tips, extra){
+    return Object.assign({ tipo:'superset', category:'accessory', icon:'📐', titulo:titulo, picks:picksArr, objective:objective, tips:tips || '' }, extra || {});
+  }
+  function CORE(titulo, pick, objective, extra){
+    return Object.assign({ tipo:'finisher', category:'accessory', icon:'🧱', titulo:titulo, picks:[pick], objective:objective }, extra || {});
+  }
+  function MET(titulo, movements, objective, extra){
+    return Object.assign({ tipo:'hyrox', category:'cardio', icon:'🔥', titulo:titulo, movements:movements, objective:objective }, extra || {});
+  }
+  /* pick "duro" por nombre — para movimientos específicos del deporte
+     que probablemente no estén todavía en la biblioteca */
+  function NUEVO(es, en, extra){ return Object.assign({ any:[es], nuevo:{ es:es, en:en||'' } }, extra || {}); }
+
+  /* ---------- 1. PERIODIZACIÓN COMPARTIDA (4/8/12 semanas) ----------
+     Reutiliza EXACTAMENTE el patrón de 4 fases que ya usa defaultWeeks()
+     (Aclimatación → Sobrecarga I → Pico → Deload) y lo repite en bloques
+     de 4 semanas para 8/12, con nota de sobrecarga acumulada entre
+     bloques. p.meso queda con el mismo shape de siempre — todo el motor
+     de ondulación que YA existe (weekDetail/supersetDetail/hyroxDetail
+     en la app del alumno/a, 100% dirigido por p.meso, sin tocar nada)
+     ondula el plan automáticamente, sin necesitar arrays semana-a-semana
+     por bloque. */
+  function oleajeElite(semanas){
+    var out = [], totalBloques = Math.ceil(semanas / 4);
+    for(var i=0;i<semanas;i++){
+      var micro = i % 4, bloqueIdx = Math.floor(i / 4), n = i + 1, base;
+      if(micro === 0) base = { phase:'Aclimatación / Carga Base', rpe:'RPE 7-8 (RIR 3-2)', icon:'🎯', deload:false, fail:false, amrapMinutes:12,
+        hyroxNote:'RPE 8-9 — técnica pulcra por encima de la velocidad.',
+        note:'Ajustás cargas y técnica en las anclas pesadas de cada día — todavía no buscás el límite.' };
+      else if(micro === 1) base = { phase:'Sobrecarga Progresiva I', rpe:'RPE 8-9 (RIR 2-1)', icon:'📈', deload:false, fail:false, amrapMinutes:10,
+        hyroxNote:'RPE 8-9 — mismo esfuerzo, menos tiempo disponible.',
+        note:'Progresión real en kg o repeticiones sobre las anclas pesadas de la semana pasada.' };
+      else if(micro === 2) base = { phase:'Pico de Exigencia / Sobrecarga Máxima', rpe:'RPE 9-10 (RIR 1-0)', icon:'🔥', deload:false, fail:true, amrapMinutes:8,
+        hyroxNote:'RPE 9 — el bloque más intenso del microciclo, en el tiempo más corto.',
+        note:'Última serie efectiva de cada ancla a fallo técnico controlado. Finishers intensificados.' };
+      else base = { phase:'Descarga Fisiológica (Deload)', rpe:'RPE 6-7 (RIR 4)', icon:'🧊', deload:true, fail:false, amrapMinutes:null,
+        hyroxNote:'Zona 2 — intensidad conversacional, sin buscar esfuerzo.',
+        note:'Alrededor de 40-50% menos series efectivas para disipar la fatiga central y articular acumulada.' };
+      var sufijo = bloqueIdx > 0 ? (' (Bloque ' + (bloqueIdx + 1) + ' de ' + totalBloques + ')') : '';
+      var notaExtra = bloqueIdx > 0 ? ' Techo recalculado sobre el nuevo nivel alcanzado en el bloque anterior — no es una repetición idéntica.' : '';
+      out.push({ n:n, short:'S' + n, name:'Semana ' + n, phase: base.phase + sufijo, rpe: base.rpe, icon: base.icon,
+        deload: base.deload, fail: base.fail, amrapMinutes: base.amrapMinutes, hyroxNote: base.hyroxNote, note: base.note + notaExtra });
+    }
+    return out;
+  }
+  function coreRoundsByWeek(semanas){
+    var out = [];
+    for(var i=0;i<semanas;i++){
+      var micro = i % 4;
+      if(micro === 0) out.push('2 rondas, sin descanso entre rondas (RIR 3-2)');
+      else if(micro === 1) out.push('3 rondas, sin descanso entre rondas (RIR 2-1)');
+      else if(micro === 2) out.push('3 rondas al fallo técnico, sin descanso entre rondas');
+      else out.push('2 rondas suaves — semana de descarga, sin buscar fallo');
+    }
+    return out;
+  }
+
+  /* ============ 2. DICCIONARIO: HYROX ============
+     Fundamento: el rendimiento en Hyrox depende de la capacidad de
+     mantener potencia y técnica bajo fatiga acumulada de carrera
+     (compromised running). El gimnasio convencional es accesorio
+     postural/de fuerza base — la prioridad real son las 8 estaciones
+     (SkiErg, Sled Push/Pull, Burpee Broad Jump, Row, Farmers Carry,
+     Sandbag Lunges, Wall Balls) entrenadas por patrón. */
+  var HYROX = {
+    id:'hyrox', nombre:'Hyrox', icon:'🥊',
+    resumen:'Fuerza de base para transferir a las estaciones + trabajo específico de patrón (empuje/tracción de trineo, acarreos, wall ball) + compromised running.',
+    dias:{
+      3:['fzInferior','superiorEngine','fullBodyRace'],
+      4:['fzInferior','superiorEngine','potenciaWB','fullBodyRace'],
+      5:['fzInferior','superiorEngine','potenciaWB','fullBodyRace','accesorioPostural']
+    },
+    diasDef:{
+      fzInferior:{
+        titulo:'Fuerza Inferior + Sled', focusText:'Base de fuerza de tren inferior para transferir a Sled Push/Pull y Sandbag Lunges.',
+        bloques:[
+          W('Warm-Up RAMP · Cadera y tobillo', ['Movilidad de cadera 90/90 — 8 por lado','Sentadilla goblet con pausa — 10 reps','Skip A + Skip B — 2x15m','Activación de glúteo con banda — 15 reps por lado']),
+          BLK('Sentadilla con barra', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Barra','Multipower'], prefer:['Sentadilla con barra','Back Squat','Sentadilla trasera'] },
+            'Fuerza máxima de tren inferior: base neuromuscular que transfiere directo a la potencia de empuje del Sled.', 'Rampa de aproximación antes de la serie efectiva — nunca la primera serie ya al límite.',
+            { dosis:{ reps:'5-6', tempo:'2110', rest:150, ef:4, apx:2 } }),
+          PAP('Complejo PAP · Transferencia de Potencia', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con salto','Jump Squat'], not:['Barra'] }, NUEVO('Sled Push', 'Sled Push') ],
+            'Potenciación post-activación: un estímulo pesado seguido de uno explosivo mejora la producción de fuerza específica de empuje.', 'Sin pausa entre el par — el descanso real va al cerrar la ronda completa.'),
+          SS('Biset · Tracción de Sled + Zancada Cargada', [ NUEVO('Sled Pull', 'Sled Pull'), { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada','Lunge','Split squat'] } ],
+            'Patrón de tracción horizontal específico (Sled Pull) emparejado con zancada cargada para RFD unilateral, igual que Sandbag Lunges en carrera.'),
+          CORE('Core Anti-Extensión', { grupo:['Core'], prefer:['Plancha frontal','Dead bug','Rueda abdominal'] },
+            'Estabilidad de tronco bajo fatiga respiratoria — sostiene la técnica de carrera y de acarreo cuando sube la frecuencia cardíaca.'),
+          MET('Bloque Metabólico · Simulación Corta', ['400m carrera moderada','20 Sled Push (carga moderada)','20 Sandbag Lunges por pierna','400m carrera moderada — repetir 2-3 rondas'],
+            'AMRAP corto que combina carrera con dos patrones específicos, replicando la fatiga cruzada real de la disciplina.')
+        ]
+      },
+      superiorEngine:{
+        titulo:'Superior + Engine + Carries', focusText:'Tracción/empuje de tren superior + capacidad aeróbica de motor (SkiErg/Row) + acarreos de agarre.',
+        bloques:[
+          W('Warm-Up RAMP · Hombro y agarre', ['Dislocaciones con banda — 15 reps','Remo con banda — 15 reps','Farmer Carry liviano — 2x20m','Rotación de muñeca y activación de antebrazo — 1 min']),
+          BLK('Dominadas o Jalón al pecho', { grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Dominadas','Jalón al pecho','Pull-up'] },
+            'Fuerza de tracción vertical — sostiene la técnica de Sled Pull y Rowing cuando cae el agarre.', '',
+            { dosis:{ reps:'6-8', tempo:'2110', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Remo Horizontal + Press de Hombro', [ { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo con barra','Remo con mancuerna','Remo en polea'] }, { grupo:['Hombros'], patron:['Empuje vertical'], prefer:['Press militar','Press de hombro'] } ],
+            'Tracción horizontal + empuje vertical: los dos vectores de fuerza superior más solicitados en el traslado del Sled y el trabajo aéreo del SkiErg.'),
+          SS('Biset · Farmer Carry + Antebrazo', [ NUEVO('Farmer Carry', 'Farmers Carry'), { grupo:['Brazos'], patron:['Antebrazo'], prefer:['Curl de muñeca','Dead hang','Wrist curl'] } ],
+            'Resistencia de agarre isométrica y dinámica — el factor limitante más citado en la estación de Farmers Carry.'),
+          CORE('Core Anti-Rotación', { grupo:['Core'], prefer:['Pallof press','Woodchopper','Anti-rotación'] },
+            'Estabilidad de tronco contra la rotación que genera el acarreo unilateral y el remo asimétrico.'),
+          MET('Bloque Metabólico · Motor Aeróbico', ['1000m SkiErg o Remo — ritmo sostenido','2 min recuperación activa','800m SkiErg o Remo — ritmo sostenido','2 min recuperación activa','500m SkiErg o Remo — a intención de ritmo de carrera'],
+            'Trabajo de motor aeróbico específico de máquina — la base energética de las dos estaciones más largas de la competencia.')
+        ]
+      },
+      potenciaWB:{
+        titulo:'Potencia + Wall Balls / Burpees', soloEn90Meta:false,
+        focusText:'Potencia de tren completo bajo fatiga — Wall Ball Shot y Burpee Broad Jump.',
+        bloques:[
+          W('Warm-Up RAMP · Potencia', ['Sentadilla con salto — 10 reps','Burpee lento técnico — 5 reps','Wall ball liviano — 10 reps','Movilidad torácica — 1 min']),
+          BLK('Sentadilla frontal o Thruster', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla frontal','Front squat','Thruster'] },
+            'Patrón de sentadilla profunda con transferencia directa de cadera-hombro, la base mecánica del Wall Ball Shot.', '',
+            { dosis:{ reps:'6-8', tempo:'2010', rest:120, ef:4, apx:1 } }),
+          PAP('Complejo PAP · Wall Ball Explosivo', [ NUEVO('Wall Ball', 'Wall Ball Shot'), { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Salto al cajón','Box Jump'] } ],
+            'Wall Ball pesado seguido de salto reactivo: potenciación específica del gesto de extensión triple bajo carga.'),
+          SS('Biset · Burpee Broad Jump + Zancada Lateral', [ NUEVO('Burpee Broad Jump', 'Burpee Broad Jump'), { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Zancada lateral','Sentadilla sumo'] } ],
+            'Patrón de salto horizontal repetido combinado con estabilidad frontal — clave para no perder velocidad en la fase final de la carrera.'),
+          CORE('Core Anti-Flexión / Control Respiratorio', { grupo:['Core'], prefer:['Hollow body','Dead bug','Plancha frontal'] },
+            'Control de tronco bajo taquipnea — sostiene la técnica de Wall Ball cuando la frecuencia respiratoria está al máximo.'),
+          MET('Bloque Metabólico · Wall Ball / Burpee Ladder', ['21 Wall Ball Shot','15 Burpee Broad Jump','15 Wall Ball Shot','10 Burpee Broad Jump','9 Wall Ball Shot','5 Burpee Broad Jump'],
+            'Escalera descendente de las dos estaciones más demandantes metabólicamente — simula el tramo final de carrera.')
+        ]
+      },
+      fullBodyRace:{
+        titulo:'Full Body Compromised Running + Simulación', focusText:'Capacidad de mantener técnica de carrera bajo fatiga acumulada de las 8 estaciones.',
+        bloques:[
+          W('Warm-Up RAMP · Carrera', ['Trote suave — 3 min','Skip A/B/C — 3x15m','Movilidad de tobillo y cadera — 1 min','Progresivos de 20m — 3 reps']),
+          BLK('Peso muerto rumano', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','RDL'] },
+            'Fuerza de cadena posterior — sostiene la técnica de carrera y de Sandbag Lunges cuando aparece la fatiga de isquiosurales.', '',
+            { dosis:{ reps:'6-8', tempo:'3011', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Zancada Cargada + Sandbag Lunge', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada','Split squat'] }, NUEVO('Sandbag Lunge', 'Sandbag Lunges') ],
+            'Unilateral con barra o mancuerna emparejado con el movimiento específico de estación (Sandbag Lunges) para transferencia directa.'),
+          SS('Biset · Row Máquina + Core Rotacional', [ { grupo:['Full Body / Cardio'], patron:['Cardio / Metcon'], equipo:['Cardio'], prefer:['Remo','Row','Assault bike'] }, { grupo:['Core'], prefer:['Russian twist','Woodchopper'] } ],
+            'Máquina de remo bajo fatiga acumulada + control rotacional — el patrón "compromised" real de la simulación de carrera.', '', { soloEn90:true }),
+          CORE('Core Full Body — Isometría Sostenida', { grupo:['Core'], prefer:['Plancha frontal','Plancha lateral'] },
+            'Isometría de tronco de larga duración — la fatiga postural acumulada en las últimas dos estaciones de una carrera real.'),
+          MET('Simulación de Carrera Reducida', ['400m carrera','20 Sandbag Lunges por pierna','400m carrera','15 Burpee Broad Jump','400m carrera','20 Wall Ball Shot'],
+            'Simulación compacta de "compromised running": carrera + estación + carrera, el patrón exacto de la competencia real.')
+        ]
+      },
+      accesorioPostural:{
+        titulo:'Accesorio Postural + Blindaje', focusText:'Prehabilitación de hombro/rodilla y trabajo postural — sostiene el volumen alto de 5 días semanales.',
+        bloques:[
+          W('Warm-Up RAMP · Movilidad General', ['Movilidad de hombro con banda — 1 min','Movilidad de cadera 90/90 — 1 min','Activación de glúteo medio — 15 reps por lado','Respiración diafragmática — 1 min']),
+          BLK('Press de banca o Press inclinado', { grupo:['Pectoral'], patron:['Empuje horizontal'], prefer:['Press de banca','Press inclinado'] },
+            'Fuerza de empuje horizontal — equilibra el volumen alto de tracción/acarreo de la semana y sostiene la postura de Sled Push.', '',
+            { dosis:{ reps:'8-10', tempo:'2011', rest:90, ef:3, apx:1 } }),
+          SS('Biset · Elevación Lateral + Face Pull', [ { grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Elevación lateral'] }, { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Face pull','Remo al mentón'] } ],
+            'Salud de manguito rotador y balance escapular — protege el hombro del volumen alto de Wall Ball y Sled Pull.'),
+          SS('Biset · Rodilla en Cadena Abierta + Aductor', [ { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Extensión de cuádriceps','Curl femoral'] }, { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Aductor','Abductor'] } ],
+            'Fuerza articular en cadena abierta — prehabilitación de rodilla frente al volumen de zancadas y sentadillas de la semana.'),
+          CORE('Core Anti-Rotación Avanzado', { grupo:['Core'], prefer:['Pallof press','Cable woodchopper'] },
+            'Refuerzo adicional de control rotacional — necesario cuando la frecuencia semanal sube a 5 sesiones.')
+        ]
+      }
+    }
+  };
+
+  /* ============ 3. DICCIONARIO: RUGBY ============
+     Fundamento: fuerza máxima como base de RFD (tasa de desarrollo de
+     fuerza), hipertrofia funcional para blindaje de contacto (cuello,
+     trapecios, hombros) y potencia de choque — patrones de empuje y
+     tracción pesados con complejos PAP hacia gestos explosivos. */
+  var RUGBY = {
+    id:'rugby', nombre:'Rugby', icon:'🏉',
+    resumen:'Fuerza máxima + RFD, hipertrofia funcional de blindaje (cuello/trapecios/hombros) y potencia de contacto.',
+    dias:{
+      3:['fzMaxima','empujeTraccBlindaje','cadenaPosteriorRFD'],
+      4:['fzMaxima','empujeTraccBlindaje','cadenaPosteriorRFD','fullBodyPower'],
+      5:['fzMaxima','empujeTraccBlindaje','cadenaPosteriorRFD','fullBodyPower','hipertrofiaComplementaria']
+    },
+    diasDef:{
+      fzMaxima:{
+        titulo:'Fuerza Máxima + RFD', focusText:'Base de fuerza absoluta de tren inferior + tasa de desarrollo de fuerza vía complejo con salto.',
+        bloques:[
+          W('Warm-Up RAMP · Potenciación', ['Movilidad de cadera y tobillo — 1 min','Sentadilla con salto — 5 reps','Skip A — 2x15m','Activación de core — Plancha 20s']),
+          BLK('Sentadilla con barra', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Barra','Multipower'], prefer:['Sentadilla con barra','Back Squat'] },
+            'Fuerza máxima como base fisiológica de la RFD: sin techo de fuerza alto, la producción de fuerza en poco tiempo (el gesto de contacto) tiene un límite bajo.', 'Rampa de aproximación obligatoria — la serie efectiva nunca es la primera serie pesada del día.',
+            { dosis:{ reps:'3-5', tempo:'2110', rest:180, ef:5, apx:3 } }),
+          PAP('Complejo PAP · Sentadilla Pesada + CMJ', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con barra','Prensa'] }, { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Salto con contramovimiento','CMJ','Sentadilla con salto'] } ],
+            'Potenciación post-activación clásica: carga pesada de corta duración seguida de salto vertical maximiza la RFD específica del despegue en el contacto.', 'Descanso completo (2-3 min) entre el par pesado y el salto — la calidad del salto manda sobre la fatiga.'),
+          SS('Biset · Peso Muerto + Empuje de Trineo', [ { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto','Peso muerto rumano'] }, NUEVO('Sled Push', 'Sled Push') ],
+            'Cadena posterior pesada + empuje horizontal específico — el vector de fuerza más parecido a la fase de impulso en el ruck y el maul.'),
+          CORE('Core Anti-Extensión / Blindaje Lumbar', { grupo:['Core'], prefer:['Plancha frontal','Rueda abdominal','Dead bug'] },
+            'Rigidez de tronco (core stiffness) — transfiere fuerza de piernas a brazos sin fuga de energía en el contacto.')
+        ]
+      },
+      empujeTraccBlindaje:{
+        titulo:'Empuje/Tracción + Blindaje Cuello-Trapecios + Contacto', focusText:'Fuerza de empuje y tracción de tren superior + isometría cervical/trapecio + potencia de choque.',
+        bloques:[
+          W('Warm-Up RAMP · Cuello y Hombro', ['Isometría de cuello suave (4 direcciones) — 10s cada una','Dislocaciones con banda — 15 reps','Remo con banda — 15 reps','Rotación de hombro — 1 min']),
+          BLK('Press de banca con barra', { grupo:['Pectoral'], patron:['Empuje horizontal'], equipo:['Barra'], prefer:['Press de banca'] },
+            'Fuerza máxima de empuje horizontal — motor principal del choque en el tackle y el ruck.', '',
+            { dosis:{ reps:'4-6', tempo:'2110', rest:150, ef:4, apx:2 } }),
+          SS('Biset · Remo Pesado + Dominadas Lastradas', [ { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo con barra','Remo con mancuerna'] }, { grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Dominadas','Jalón al pecho'] } ],
+            'Tracción horizontal y vertical pesada: sostiene el agarre y el "bind" en el scrum/maul y equilibra el volumen de empuje.'),
+          SS('Biset · Blindaje de Cuello y Trapecios', [ { grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Encogimiento','Shrug','Elevación de hombros'] }, { grupo:['Espalda'], patron:['Extensión lumbar'], prefer:['Extensión lumbar','Hiperextensión'] } ],
+            'Hipertrofia funcional de trapecio superior y extensores cervicales/lumbares — reduce el riesgo de lesión cervical en el contacto directo (tackle/scrum), evidencia consistente en programas de blindaje de rugby.',
+            'Trabajo controlado, sin buscar rango extremo — el objetivo es sección transversal y rigidez, no movilidad.'),
+          MET('Bloque de Contacto · Potencia Repetida', ['10 Empuje de trineo (carga de contacto) — 15m','10 Burpees','Recuperación 60s — repetir 4-5 rondas'],
+            'Series cortas repetidas de empuje + recuperación — replica la naturaleza intermitente de alta intensidad del contacto en partido.')
+        ]
+      },
+      cadenaPosteriorRFD:{
+        titulo:'Cadena Posterior + RFD + Cambios de Dirección', focusText:'Fuerza de cadera dominante + RFD horizontal + agilidad multidireccional.',
+        bloques:[
+          W('Warm-Up RAMP · Agilidad', ['Trote suave — 2 min','Skip lateral — 2x15m','Cambios de dirección submáximos — 4 reps','Activación de glúteo — 15 reps por lado']),
+          BLK('Peso muerto rumano', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','RDL'] },
+            'Fuerza de cadena posterior — motor principal de la aceleración horizontal y el frenado en los cambios de dirección.', '',
+            { dosis:{ reps:'5-6', tempo:'3011', rest:150, ef:4, apx:2 } }),
+          PAP('Complejo PAP · Hip Thrust + Sprint Corto', [ { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Hip thrust','Puente de glúteo'] }, { grupo:['Full Body / Cardio'], patron:['Cardio / Metcon'], prefer:['Sprint','Aceleración'] } ],
+            'Extensión de cadera pesada seguida de sprint corto: potenciación específica de la fase de aceleración en la salida del ruck.'),
+          SS('Biset · Zancada Lateral + Cambio de Dirección Resistido', [ { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Zancada lateral','Sentadilla sumo'] }, { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Banda'], prefer:['Zancada con banda','Monster walk'] } ],
+            'Fuerza frontal/lateral de cadera — sostiene la estabilidad de rodilla en los cortes y evasiones características del juego abierto.'),
+          CORE('Core Anti-Rotación', { grupo:['Core'], prefer:['Pallof press','Woodchopper'] },
+            'Transferencia de fuerza rotacional controlada — clave en el placaje angulado y el pase bajo contacto.')
+        ]
+      },
+      fullBodyPower:{
+        titulo:'Full Body Power + Acondicionamiento de Contacto', focusText:'Potencia de cuerpo completo + capacidad de repetir esfuerzos de alta intensidad (RSA de contacto).',
+        bloques:[
+          W('Warm-Up RAMP · Potencia General', ['Movilidad torácica y de cadera — 1 min','Salto al cajón submáximo — 5 reps','Lanzamiento de balón medicinal — 5 reps','Activación general — 1 min']),
+          BLK('Cargada de potencia (Power Clean) o Peso muerto con trap bar', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Cargada','Power clean','Peso muerto con trap bar','Arrancada'] },
+            'Ejercicio olímpico o derivado: el mayor productor de potencia de todo el cuerpo, transferencia directa al gesto de impulso en el contacto y el line-out.', 'Prioriza velocidad de ejecución sobre la carga máxima en cada repetición.',
+            { dosis:{ reps:'3-4', tempo:'X010', rest:180, ef:4, apx:2 } }),
+          SS('Biset · Lanzamiento Rotacional + Empuje de Trineo Pesado', [ { grupo:['Core'], prefer:['Lanzamiento rotacional','Balón medicinal','Woodchopper con salto'] }, NUEVO('Sled Push', 'Heavy Sled Push') ],
+            'Potencia rotacional (pase/placaje angulado) + empuje pesado (fase de impulso del scrum) en el mismo bloque de potencia.'),
+          CORE('Core Full Body — Anti-Extensión Dinámica', { grupo:['Core'], prefer:['Rueda abdominal','Plancha con toque de hombro'] },
+            'Control de tronco en movimiento — sostiene la postura de contacto cuando aparece la fatiga acumulada del partido.'),
+          MET('Acondicionamiento de Contacto · RSA', ['6 Burpee Broad Jump','20m Sprint','15s recuperación — repetir 6-8 series'],
+            'Capacidad de repetir esfuerzos (RSA): la cualidad metabólica más determinante en los últimos 20 minutos de un partido de rugby.', { soloEn90:true })
+        ]
+      },
+      hipertrofiaComplementaria:{
+        titulo:'Hipertrofia Funcional Complementaria', focusText:'Volumen adicional de hipertrofia orientado a masa funcional — sostiene el 5to día sin interferir en la recuperación de fuerza/potencia.',
+        bloques:[
+          W('Warm-Up RAMP · General', ['Movilidad articular general — 2 min','Activación de glúteo y escápula — 1 min']),
+          BLK('Prensa de piernas', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Máquina'], prefer:['Prensa'] },
+            'Volumen de hipertrofia de tren inferior con bajo costo articular/técnico — masa funcional adicional sin fatigar el sistema nervioso central.', '',
+            { dosis:{ reps:'10-12', tempo:'2011', rest:90, ef:3, apx:0 } }),
+          SS('Triset · Pectoral + Espalda + Hombro', [ { grupo:['Pectoral'], patron:['Empuje horizontal'], prefer:['Press inclinado con mancuernas'] }, { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo en polea','Remo con mancuerna'] }, { grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Elevación lateral'] } ],
+            'Volumen de hipertrofia de torso completo — masa funcional para el blindaje de contacto sin la intensidad neural de los días de fuerza.'),
+          CORE('Core General', { grupo:['Core'], prefer:['Plancha frontal','Dead bug'] },
+            'Volumen adicional de estabilidad de tronco de baja intensidad.')
+        ]
+      }
+    }
+  };
+
+  /* ============ 4. DICCIONARIO: BODYBUILDING ============
+     Fundamento: hipertrofia regional (fibra proximal/distal, cabeza
+     larga/corta), selección de ejercicios por SFR (Stimulus-to-Fatigue
+     Ratio — estímulo mecánico alto con el menor costo articular/
+     sistémico posible) y perfiles de resistencia (curva ascendente vs
+     descendente) para maximizar tensión mecánica en el rango donde el
+     músculo objetivo es más débil. Sin bloque metabólico: el volumen
+     efectivo por sesión es la variable prioritaria, no el
+     acondicionamiento — coherente con la literatura de hipertrofia. */
+  var BODYBUILDING = {
+    id:'bodybuilding', nombre:'Bodybuilding', icon:'💪',
+    resumen:'Hipertrofia regional por split, selección de ejercicios por SFR óptimo y perfiles de resistencia (curvas ascendente/descendente) por grupo muscular.',
+    dias:{
+      3:['empuje','traccion','pierna'],
+      4:['empuje','traccion','pierna','torsoAislamiento'],
+      5:['empuje','traccion','pierna','torsoAislamiento','piernaPosterior']
+    },
+    diasDef:{
+      empuje:{
+        titulo:'Empuje · Pectoral, Hombro y Tríceps', focusText:'Hipertrofia regional de empuje — pectoral medio/superior, deltoides y tríceps, con SFR decreciente a medida que avanza la sesión.',
+        bloques:[
+          W('Activación de Empuje', ['Movilidad de hombro con banda — 1 min','Press con banda submáximo — 15 reps','Rotación externa de hombro — 12 por lado']),
+          BLK('Press de banca con barra', { grupo:['Pectoral'], patron:['Empuje horizontal'], equipo:['Barra'], prefer:['Press de banca'] },
+            'Ejercicio multiarticular de mayor SFR para pectoral medio: máxima tensión mecánica con el menor costo articular relativo del grupo empuje.', 'Rango completo, sin rebote en el pecho — la tensión manda sobre la velocidad.',
+            { dosis:{ reps:'6-8', tempo:'3010', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Press Inclinado + Aperturas en Polea', [ { grupo:['Pectoral'], patron:['Empuje horizontal'], prefer:['Press inclinado con mancuernas'] }, { grupo:['Pectoral'], patron:['Empuje horizontal'], prefer:['Aperturas en polea','Cruce de poleas','Peck deck'] } ],
+            'Pectoral superior (ángulo de inclinación) emparejado con un ejercicio de aislamiento de curva de resistencia ascendente (poleas), que mantiene tensión en la posición de máximo estiramiento — donde el press pierde tensión.'),
+          SS('Biset · Elevación Lateral + Extensión de Tríceps en Polea', [ { grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Elevación lateral'] }, { grupo:['Brazos'], patron:['Tríceps'], prefer:['Extensión de tríceps en polea','Press francés','Jalón de tríceps'] } ],
+            'Deltoides medio (curva ascendente en polea o mancuerna) + tríceps con la cabeza larga bajo estiramiento — alto SFR, bajo costo articular de codo/hombro.'),
+          CORE('Core General', { grupo:['Core'], prefer:['Plancha frontal','Rueda abdominal'] },
+            'Volumen de mantenimiento de estabilidad de tronco — no es el foco de la sesión de empuje.')
+        ]
+      },
+      traccion:{
+        titulo:'Tracción · Espalda y Bíceps', focusText:'Hipertrofia de espalda (dorsal ancho, trapecio medio/inferior, romboides) y bíceps por cabeza, priorizando ejercicios de alto SFR.',
+        bloques:[
+          W('Activación de Tracción', ['Dead hang o suspensión activa — 20s','Remo con banda — 15 reps','Retracción escapular — 12 reps']),
+          BLK('Dominadas o Jalón al pecho', { grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Dominadas','Jalón al pecho'] },
+            'Máximo SFR para dorsal ancho en tracción vertical — patrón multiarticular con transferencia directa a la anchura de espalda.', '',
+            { dosis:{ reps:'8-10', tempo:'2110', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Remo con Barra + Pullover en Polea', [ { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo con barra','Remo con mancuerna'] }, { grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Pullover en polea','Pullover con mancuerna'] } ],
+            'Espesor de espalda media (remo) + dorsal en curva de resistencia ascendente (pullover) — estiramiento bajo carga, punto débil habitual del dorsal en tracciones verticales.'),
+          SS('Biset · Curl con Barra + Curl Martillo', [ { grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl con barra','Curl con barra Z'] }, { grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl martillo'] } ],
+            'Cabeza corta del bíceps (curl supinado) + braquial/braquiorradial (curl neutro) — cobertura regional completa del brazo flexor con alto SFR.'),
+          CORE('Core Extensión Lumbar', { grupo:['Espalda'], patron:['Extensión lumbar'], prefer:['Hiperextensión','Extensión lumbar'] },
+            'Fuerza de erectores espinales — soporta la postura de tracción con carga libre (remo con barra) del bloque principal.')
+        ]
+      },
+      pierna:{
+        titulo:'Pierna · Cuádriceps y Glúteo', focusText:'Hipertrofia de tren inferior con énfasis en cuádriceps y glúteo, curva de resistencia ascendente en el trabajo de aislamiento.',
+        bloques:[
+          W('Activación de Pierna', ['Sentadilla con peso corporal — 15 reps','Activación de glúteo con banda — 15 reps por lado','Movilidad de tobillo — 1 min']),
+          BLK('Sentadilla con barra', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Barra','Multipower'], prefer:['Sentadilla con barra'] },
+            'Máximo SFR para cuádriceps y glúteo en conjunto — el ejercicio multiarticular de referencia para tren inferior.', 'Profundidad completa y controlada — la tensión en el rango bajo es donde más hipertrofia se produce.',
+            { dosis:{ reps:'8-10', tempo:'3010', rest:120, ef:4, apx:2 } }),
+          SS('Biset · Prensa de Piernas + Extensión de Cuádriceps', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Máquina'], prefer:['Prensa'] }, { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Extensión de cuádriceps'] } ],
+            'Volumen multiarticular de bajo costo axial (prensa) + aislamiento de cuádriceps en curva de resistencia ascendente — máxima tensión en la extensión completa, punto débil de la sentadilla.'),
+          SS('Biset · Hip Thrust + Abductor en Máquina', [ { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Hip thrust','Puente de glúteo'] }, { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Abductor'] } ],
+            'Glúteo mayor en su función principal de extensión de cadera (curva de resistencia óptima del Hip Thrust) + glúteo medio en abducción — cobertura regional completa del glúteo.'),
+          CORE('Core Anti-Rotación', { grupo:['Core'], prefer:['Pallof press','Dead bug'] },
+            'Estabilidad de tronco bajo carga axial alta — soporte para la sentadilla y la prensa del bloque principal.')
+        ]
+      },
+      torsoAislamiento:{
+        titulo:'Torso · Hombro y Brazos (Aislamiento SFR Alto)', focusText:'Volumen adicional de hipertrofia de hombro y brazos con ejercicios de aislamiento puro — máximo SFR, mínima fatiga sistémica, ideal como 4to día.',
+        bloques:[
+          W('Activación de Hombro y Brazo', ['Rotación externa con banda — 15 reps por lado','Dislocaciones con banda — 15 reps']),
+          BLK('Press militar con mancuernas', { grupo:['Hombros'], patron:['Empuje vertical'], prefer:['Press militar','Press de hombro con mancuernas'] },
+            'Deltoides anterior/medio en patrón multiarticular — complementa el volumen de empuje horizontal del día de pectoral.', '',
+            { dosis:{ reps:'8-10', tempo:'2011', rest:90, ef:3, apx:1 } }),
+          SS('Triset · Elevación Lateral + Elevación Posterior + Face Pull', [ { grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Elevación lateral'] }, { grupo:['Hombros'], patron:['Aislamiento hombro'], prefer:['Elevación posterior','Pájaro'] }, { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Face pull'] } ],
+            'Cobertura completa de las tres porciones del deltoides — el trabajo de aislamiento con mayor SFR de todo el programa, prácticamente sin costo articular.'),
+          SS('Triset · Curl de Bíceps + Extensión de Tríceps + Curl de Muñeca', [ { grupo:['Brazos'], patron:['Bíceps'], prefer:['Curl con mancuernas','Curl concentrado'] }, { grupo:['Brazos'], patron:['Tríceps'], prefer:['Extensión de tríceps'] }, { grupo:['Brazos'], patron:['Antebrazo'], prefer:['Curl de muñeca'] } ],
+            'Volumen final de brazo completo (bíceps, tríceps, antebrazo) — cierre de sesión de alto SFR y bajo costo sistémico, apto para acumular volumen extra sin comprometer la recuperación de los días de fuerza.')
+        ]
+      },
+      piernaPosterior:{
+        titulo:'Pierna Posterior · Isquiosurales y Glúteo (5to día)', focusText:'Volumen complementario de cadena posterior — isquiosurales y glúteo en curva de resistencia estirada, ideal para el 5to día sin sobrecargar cuádriceps.',
+        bloques:[
+          W('Activación de Cadena Posterior', ['Puente de glúteo — 15 reps','Movilidad de cadera — 1 min','Peso muerto rumano con barra vacía — 10 reps técnicas']),
+          BLK('Peso muerto rumano', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','RDL'] },
+            'Isquiosurales bajo estiramiento — el patrón con mayor evidencia de hipertrofia regional distal de la cadena posterior.', '',
+            { dosis:{ reps:'8-10', tempo:'3011', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Curl Femoral + Peso Muerto a Una Pierna', [ { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Curl femoral'] }, { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto a una pierna','Peso muerto rumano unilateral'] } ],
+            'Aislamiento de isquiosural en curva ascendente + variante unilateral para corregir asimetrías — alto SFR, bajo costo lumbar comparado con el peso muerto convencional pesado.'),
+          SS('Biset · Hip Thrust + Zancada Búlgara', [ { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Hip thrust'] }, { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada búlgara','Sentadilla búlgara'] } ],
+            'Glúteo mayor en extensión de cadera pura + patrón unilateral de rodilla — cierre de volumen de tren inferior sin repetir el estímulo del día de cuádriceps.'),
+          CORE('Core Extensión Lumbar', { grupo:['Espalda'], patron:['Extensión lumbar'], prefer:['Hiperextensión'] },
+            'Soporte de erectores espinales tras el volumen alto de peso muerto rumano y unilaterales.')
+        ]
+      }
+    }
+  };
+
+  /* ============ 5. DICCIONARIO: MOTOCROSS ============
+     Fundamento: el piloto de motocross trabaja en isometría casi
+     constante de pie sobre la moto, absorbiendo impactos excéntricos
+     de aterrizaje, resistiendo el torque rotacional del manillar y
+     sosteniendo el agarre durante 20-40 minutos de carrera. Prioridad:
+     resistencia de agarre/antebrazo, control excéntrico de tren
+     inferior, anti-rotación/anti-flexión de tronco e isometría
+     sostenida — no fuerza máxima pura. */
+  var MOTOCROSS = {
+    id:'motocross', nombre:'Motocross', icon:'🏍️',
+    resumen:'Grip endurance, absorción excéntrica de aterrizajes, anti-rotación/anti-flexión de tronco e isometría sostenida de tren inferior y core.',
+    dias:{
+      3:['agarreAntebrazo','absorcionExcentrica','antiRotacionTorque'],
+      4:['agarreAntebrazo','absorcionExcentrica','antiRotacionTorque','isometriaFullBody'],
+      5:['agarreAntebrazo','absorcionExcentrica','antiRotacionTorque','isometriaFullBody','resistenciaNeuromuscular']
+    },
+    diasDef:{
+      agarreAntebrazo:{
+        titulo:'Fuerza de Agarre y Antebrazo', focusText:'Resistencia de agarre isométrica y dinámica — el factor limitante más citado en pilotos por fatiga de antebrazo ("arm pump").',
+        bloques:[
+          W('Warm-Up RAMP · Muñeca y Antebrazo', ['Rotación de muñeca — 1 min','Flexión/extensión de muñeca con banda — 15 reps','Dead hang liviano — 20s','Apertura y cierre de mano con banda — 15 reps']),
+          BLK('Peso muerto con agarre sostenido', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto','Peso muerto rumano'] },
+            'Cadena posterior con componente isométrico de agarre — la tensión sostenida en la barra replica la demanda de agarre prolongado del manillar.', 'Sin straps: el agarre es parte del estímulo, no una limitación a evitar.',
+            { dosis:{ reps:'5-6', tempo:'2020', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Dead Hang + Farmer Carry', [ { grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Dead hang','Suspensión'] }, NUEVO('Farmer Carry', 'Farmers Carry') ],
+            'Resistencia isométrica de agarre (dead hang) + agarre dinámico bajo carga (farmer carry) — cobertura completa de la demanda de antebrazo en carrera.'),
+          SS('Biset · Curl de Muñeca + Extensión de Muñeca', [ { grupo:['Brazos'], patron:['Antebrazo'], prefer:['Curl de muñeca'] }, { grupo:['Brazos'], patron:['Antebrazo'], prefer:['Extensión de muñeca','Curl de muñeca inverso'] } ],
+            'Flexores y extensores de muñeca en volumen alto — el desequilibrio flexor/extensor es la causa mecánica más común del "arm pump" en pilotos.',
+            'Volumen alto, carga moderada — buscás resistencia local, no fuerza máxima.', { dosis:{ reps:'15-20', tempo:'2011', rest:45, ef:3, apx:0 } }),
+          CORE('Core Anti-Extensión', { grupo:['Core'], prefer:['Plancha frontal','Dead bug'] },
+            'Rigidez de tronco que reduce la transferencia de fatiga de core a antebrazo cuando el piloto compensa con los brazos.')
+        ]
+      },
+      absorcionExcentrica:{
+        titulo:'Absorción Excéntrica de Tren Inferior', focusText:'Control excéntrico de rodilla/cadera para absorber aterrizajes de salto repetidos sin fuga de energía ni sobrecarga articular.',
+        bloques:[
+          W('Warm-Up RAMP · Aterrizaje', ['Sentadilla con pausa — 10 reps','Salto y aterrizaje controlado (sin rebote) — 5 reps','Movilidad de tobillo — 1 min']),
+          BLK('Sentadilla con tempo excéntrico', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con barra','Sentadilla goblet'] },
+            'Fuerza excéntrica controlada de rodilla — la cualidad que determina cuánta energía de impacto absorbe la articulación en cada aterrizaje de salto.', 'Bajada de 4-5 segundos controlada, subida normal — el énfasis está en la fase excéntrica.',
+            { dosis:{ reps:'6-8', tempo:'5010', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Salto al Cajón con Aterrizaje Controlado + Zancada Excéntrica', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Salto al cajón','Box jump'] }, { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada','Split squat'] } ],
+            'Salto con foco en el ATERRIZAJE (no en la altura) emparejado con zancada excéntrica lenta — transferencia directa a la absorción repetida de saltos en pista.'),
+          SS('Biset · Peso Muerto a Una Pierna + Elevación de Talones', [ { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto a una pierna'] }, { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Elevación de talones','Gemelo de pie'] } ],
+            'Control excéntrico unilateral (asimetrías típicas de la postura de pie sobre la moto) + fuerza de tobillo para absorción de impacto de bajo nivel.'),
+          CORE('Core Anti-Flexión', { grupo:['Core'], prefer:['Hollow body','Rueda abdominal'] },
+            'Control de tronco frente a la flexión brusca que genera cada aterrizaje de salto.')
+        ]
+      },
+      antiRotacionTorque:{
+        titulo:'Anti-Rotación / Core de Torque', focusText:'Estabilidad rotacional de tronco — contrarresta el torque constante del manillar y la moto en curvas.',
+        bloques:[
+          W('Warm-Up RAMP · Rotación de Tronco', ['Rotación torácica — 10 por lado','Plancha lateral — 20s por lado','Activación de oblicuos — 1 min']),
+          BLK('Press militar de pie', { grupo:['Hombros'], patron:['Empuje vertical'], prefer:['Press militar'] },
+            'Empuje vertical de pie — exige estabilidad de tronco bajo carga asimétrica, similar a la postura de pilotaje.', '',
+            { dosis:{ reps:'6-8', tempo:'2110', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Pallof Press + Woodchopper con Cable', [ { grupo:['Core'], patron:['Core / Anti-rotación'], prefer:['Pallof press'] }, { grupo:['Core'], prefer:['Woodchopper','Leñador con cable'] } ],
+            'Anti-rotación estática (Pallof) + rotación controlada dinámica (woodchopper) — cobertura completa del torque que el manillar transmite al tronco en cada curva.'),
+          SS('Biset · Remo Unilateral + Plancha Lateral con Elevación', [ { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo con mancuerna a una mano','Remo unilateral'] }, { grupo:['Core'], prefer:['Plancha lateral'] } ],
+            'Tracción unilateral que exige resistir la rotación del tronco (patrón directo del "arm pump" y la torsión del manillar) + isometría lateral de oblicuos.'),
+          CORE('Core Anti-Rotación Avanzado', { grupo:['Core'], prefer:['Pallof press','Cable woodchopper'] },
+            'Volumen final de control rotacional — la cualidad más específica y menos entrenada por pilotos que sólo hacen fuerza general.')
+        ]
+      },
+      isometriaFullBody:{
+        titulo:'Estabilidad Isométrica Full Body', focusText:'Isometría sostenida de tren inferior y tronco — replica la posición de pie prolongada sobre la moto (attack position).',
+        bloques:[
+          W('Warm-Up RAMP · Posición de Ataque', ['Sentadilla isométrica en pared submáxima — 20s','Movilidad de cadera y tobillo — 1 min','Activación de core — 30s plancha']),
+          BLK('Sentadilla isométrica en pared (Wall Sit)', { any:['Wall Sit'], nuevo:{ es:'Sentadilla isométrica en pared (Wall Sit)', en:'Wall Sit' } },
+            'Isometría de cuádriceps en ángulo de rodilla similar a la "attack position" — la posición de pie flexionada que el piloto sostiene la mayor parte de la carrera.', 'Series largas por tiempo — el objetivo es resistencia isométrica, no fuerza máxima.',
+            { dosis:{ reps:'45-60s', tempo:'ISO', rest:90, ef:4, apx:0 } }),
+          SS('Biset · Sentadilla Búlgara + Elevación de Talones Isométrica', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada búlgara','Sentadilla búlgara'] }, { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Elevación de talones'] } ],
+            'Estabilidad unilateral de rodilla + resistencia isométrica de tobillo — sostiene la postura de pie asimétrica típica al tomar curvas.'),
+          SS('Biset · Plancha Frontal Prolongada + Superman Isométrico', [ { grupo:['Core'], prefer:['Plancha frontal'] }, { grupo:['Espalda'], patron:['Extensión lumbar'], prefer:['Superman','Extensión lumbar'] } ],
+            'Isometría anterior y posterior de tronco combinadas — la co-contracción que mantiene la columna estable durante toda la carrera.'),
+          MET('Bloque Metabólico · Fatiga Neuromuscular', ['Sentadilla isométrica en pared — 45s','15s recuperación','Plancha frontal — 45s','15s recuperación — repetir 4 rondas'],
+            'Circuito isométrico de fatiga acumulada — simula la demanda neuromuscular sostenida de una manga de carrera completa.', { soloEn90:true })
+        ]
+      },
+      resistenciaNeuromuscular:{
+        titulo:'Resistencia Neuromuscular Full Body (5to día)', focusText:'Volumen complementario de resistencia de fuerza general — sostiene la fatiga acumulada de una temporada de entrenamiento y competencia.',
+        bloques:[
+          W('Warm-Up RAMP · General', ['Movilidad articular general — 2 min','Activación de core y glúteo — 1 min']),
+          BLK('Peso muerto rumano', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano'] },
+            'Volumen adicional de cadena posterior con carga moderada — mantiene la base de fuerza sin agregar fatiga articular alta antes de una carrera.', '',
+            { dosis:{ reps:'10-12', tempo:'2011', rest:90, ef:3, apx:1 } }),
+          SS('Biset · Remo en Polea + Press de Hombro con Mancuernas', [ { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo en polea'] }, { grupo:['Hombros'], patron:['Empuje vertical'], prefer:['Press de hombro con mancuernas'] } ],
+            'Volumen de torso completo de resistencia muscular general — sostiene la postura de pilotaje en carreras largas.'),
+          CORE('Core General Sostenido', { grupo:['Core'], prefer:['Plancha frontal','Pallof press'] },
+            'Cierre de sesión con resistencia de tronco de baja-moderada intensidad.')
+        ]
+      }
+    }
+  };
+
+  /* ============ 6. DICCIONARIO: MOUNTAIN BIKE (MTB / ENDURO / XC) ============
+     Fundamento: potencia de pedaleo (fuerza-velocidad de tren inferior),
+     fuerza isométrica de tracción de tren superior (control del
+     manillar en técnico/descensos), core funcional con estabilidad
+     lumbo-pélvica (transferencia de fuerza al pedal sin fuga) y
+     resistencia anaeróbica láctica (repechos, sprints de recuperación
+     de posición en XC/Enduro). */
+  var MTB = {
+    id:'mtb', nombre:'Mountain Bike (MTB / Enduro / XC)', icon:'🚵',
+    resumen:'Potencia de pedaleo, tracción isométrica de tren superior para control técnico, core funcional lumbo-pélvico y resistencia anaeróbica láctica.',
+    dias:{
+      3:['potenciaPedaleo','traccionIsometrica','resistenciaAnaerobica'],
+      4:['potenciaPedaleo','traccionIsometrica','coreFuncional','resistenciaAnaerobica'],
+      5:['potenciaPedaleo','traccionIsometrica','coreFuncional','resistenciaAnaerobica','fullBodyComplementario']
+    },
+    diasDef:{
+      potenciaPedaleo:{
+        titulo:'Potencia de Pedaleo', focusText:'Fuerza-velocidad de tren inferior — la base de la potencia máxima aplicada al pedal en repechos y salidas de curva.',
+        bloques:[
+          W('Warm-Up RAMP · Cadera y Tobillo', ['Movilidad de cadera 90/90 — 8 por lado','Sentadilla con salto submáxima — 5 reps','Activación de glúteo con banda — 15 reps por lado']),
+          BLK('Sentadilla con barra', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Barra','Multipower'], prefer:['Sentadilla con barra'] },
+            'Fuerza máxima de tren inferior — el techo de fuerza que determina cuánta potencia se puede aplicar al pedal en cada golpe.', '',
+            { dosis:{ reps:'5-6', tempo:'2110', rest:150, ef:4, apx:2 } }),
+          PAP('Complejo PAP · Sentadilla Pesada + Salto', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Prensa','Sentadilla con barra'] }, { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con salto','Salto al cajón'] } ],
+            'Potenciación post-activación hacia el gesto explosivo — transferencia directa a la potencia de pedaleo en el primer golpe de un sprint o repecho.'),
+          SS('Biset · Prensa Unilateral + Elevación de Talones', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Máquina'], prefer:['Prensa'] }, { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Elevación de talones'] } ],
+            'Fuerza unilateral de cuádriceps (corrige la asimetría típica del pedaleo) + fuerza de tobillo, relevante en la fase de empuje descendente del pedal.'),
+          CORE('Core Anti-Extensión', { grupo:['Core'], prefer:['Plancha frontal','Rueda abdominal'] },
+            'Rigidez de tronco que evita la fuga de energía hacia la zona lumbar cuando se aplica fuerza máxima al pedal de pie.')
+        ]
+      },
+      traccionIsometrica:{
+        titulo:'Tracción Isométrica de Torso', focusText:'Fuerza isométrica y dinámica de tren superior — control del manillar en terreno técnico, frenadas y descensos.',
+        bloques:[
+          W('Warm-Up RAMP · Hombro y Antebrazo', ['Dislocaciones con banda — 15 reps','Dead hang liviano — 20s','Activación de antebrazo — 1 min']),
+          BLK('Dominadas o Jalón al pecho', { grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Dominadas','Jalón al pecho'] },
+            'Fuerza de tracción vertical — sostiene el control del manillar cuando el cuerpo se desplaza hacia atrás en descensos técnicos.', '',
+            { dosis:{ reps:'6-8', tempo:'2110', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Remo Horizontal + Dead Hang', [ { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo con barra','Remo con mancuerna'] }, { grupo:['Espalda'], patron:['Tracción vertical'], prefer:['Dead hang','Suspensión'] } ],
+            'Tracción horizontal dinámica + isometría de agarre sostenida — replica la combinación de tirones cortos y agarre prolongado del manillar en técnico.'),
+          SS('Biset · Curl de Antebrazo + Face Pull', [ { grupo:['Brazos'], patron:['Antebrazo'], prefer:['Curl de muñeca'] }, { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Face pull'] } ],
+            'Resistencia de antebrazo (vibración constante del manillar en terreno irregular) + salud de manguito rotador para sostener el volumen de tracción.'),
+          CORE('Core Anti-Rotación', { grupo:['Core'], prefer:['Pallof press','Woodchopper'] },
+            'Estabilidad rotacional de tronco — necesaria cuando el manillar transmite torque lateral en terreno técnico irregular.')
+        ]
+      },
+      coreFuncional:{
+        titulo:'Core Funcional / Estabilidad Lumbo-Pélvica', focusText:'Control lumbo-pélvico bajo carga asimétrica — evita la fuga de energía entre el tren superior fijo al manillar y el tren inferior pedaleando.',
+        bloques:[
+          W('Warm-Up RAMP · Activación Pélvica', ['Puente de glúteo — 15 reps','Dead bug — 10 por lado','Respiración diafragmática — 1 min']),
+          BLK('Peso muerto rumano', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano'] },
+            'Fuerza de cadena posterior y control de la báscula pélvica bajo carga — la base de la estabilidad lumbo-pélvica en posición de pedaleo flexionada.', '',
+            { dosis:{ reps:'6-8', tempo:'3011', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Pallof Press + Dead Bug Cargado', [ { grupo:['Core'], patron:['Core / Anti-rotación'], prefer:['Pallof press'] }, { grupo:['Core'], prefer:['Dead bug'] } ],
+            'Anti-rotación de pie (posición de manillar) + control lumbo-pélvico en decúbito — cobertura completa de la estabilidad de tronco funcional al ciclismo de montaña.'),
+          SS('Biset · Zancada con Rotación + Plancha Lateral', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada','Split squat'] }, { grupo:['Core'], prefer:['Plancha lateral'] } ],
+            'Integración de tren inferior con control rotacional de tronco — el patrón que se repite en cada golpe de pedal fuera de la silla (out of the saddle).'),
+          CORE('Core Full Body Integrado', { grupo:['Core'], prefer:['Pallof press','Dead bug','Plancha frontal'] },
+            'Cierre de sesión con control lumbo-pélvico integrado bajo fatiga acumulada.')
+        ]
+      },
+      resistenciaAnaerobica:{
+        titulo:'Resistencia Anaeróbica Láctica', focusText:'Capacidad de repetir esfuerzos de alta intensidad — repechos cortos y recuperaciones de posición en XC/Enduro.',
+        bloques:[
+          W('Warm-Up RAMP · Activación General', ['Trote suave o bici estática — 3 min','Sentadilla con salto — 8 reps','Movilidad de cadera — 1 min']),
+          BLK('Sentadilla frontal', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla frontal','Front squat'] },
+            'Fuerza de tren inferior en postura erguida, similar a la posición de pedaleo fuera de la silla en repechos.', '',
+            { dosis:{ reps:'6-8', tempo:'2110', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Zancada Caminando + Salto al Cajón', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada caminando','Zancada'] }, { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Salto al cajón','Box jump'] } ],
+            'Fuerza-resistencia unilateral + potencia repetida — la combinación exacta de un repecho técnico de XC/Enduro.', '', { soloEn90:true }),
+          CORE('Core Anti-Extensión Bajo Fatiga', { grupo:['Core'], prefer:['Plancha frontal','Hollow body'] },
+            'Sostén de tronco cuando la fatiga metabólica compromete la técnica de pedaleo.'),
+          MET('Bloque Metabólico · Repechos Simulados', ['30s Assault Bike o Bicicleta a máxima intensidad','90s recuperación activa suave — repetir 6-8 series'],
+            'Intervalos de máxima intensidad con recuperación incompleta — replica la demanda anaeróbica láctica de los repechos cortos y las recuperaciones de posición en carrera.')
+        ]
+      },
+      fullBodyComplementario:{
+        titulo:'Full Body Complementario (5to día)', focusText:'Volumen complementario de fuerza general y movilidad — sostiene el volumen de rodado alto sin agregar fatiga excesiva.',
+        bloques:[
+          W('Warm-Up RAMP · General', ['Movilidad articular general — 2 min','Activación de core y glúteo — 1 min']),
+          BLK('Prensa de piernas', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Máquina'], prefer:['Prensa'] },
+            'Volumen de tren inferior de bajo costo articular — mantenimiento de fuerza sin la fatiga axial de la sentadilla con barra.', '',
+            { dosis:{ reps:'10-12', tempo:'2011', rest:90, ef:3, apx:0 } }),
+          SS('Biset · Remo en Polea + Press de Hombro', [ { grupo:['Espalda'], patron:['Tracción horizontal'], prefer:['Remo en polea'] }, { grupo:['Hombros'], patron:['Empuje vertical'], prefer:['Press de hombro'] } ],
+            'Volumen de torso general — sostiene la postura de manillar en salidas largas de rodado.'),
+          CORE('Core General', { grupo:['Core'], prefer:['Pallof press','Plancha frontal'] },
+            'Mantenimiento de estabilidad lumbo-pélvica de baja intensidad.')
+        ]
+      }
+    }
+  };
+
+  /* ============ 7. DICCIONARIO: RUNNING ============
+     Fundamento: la economía de carrera depende de la stiffness
+     (rigidez) tendinosa del complejo tobillo-Aquiles (ciclo de
+     estiramiento-acortamiento eficiente), de la fuerza unilateral
+     (cada zancada es un apoyo monopodal) y del control lumbo-pélvico
+     que evita la fuga de energía lateral. El trabajo de fuerza
+     también es la principal herramienta de prevención de
+     tendinopatías rotulianas/aquíleas y periostitis tibial. */
+  var RUNNING = {
+    id:'running', nombre:'Running', icon:'🏃',
+    resumen:'Stiffness tendinoso y reactividad de tobillo/Aquiles, fuerza unilateral, control lumbo-pélvico para economía de carrera y prevención de tendinopatías/periostitis.',
+    dias:{
+      3:['fuerzaUnilateral','stiffnessTobillo','cadenaPosterior'],
+      4:['fuerzaUnilateral','stiffnessTobillo','cadenaPosterior','coreEconomia'],
+      5:['fuerzaUnilateral','stiffnessTobillo','cadenaPosterior','coreEconomia','prevencionComplementaria']
+    },
+    diasDef:{
+      fuerzaUnilateral:{
+        titulo:'Fuerza Unilateral de Tren Inferior', focusText:'Base de fuerza monopodal — cada apoyo de carrera es unilateral, la transferencia de fuerza bilateral es limitada sin este trabajo.',
+        bloques:[
+          W('Warm-Up RAMP · Activación Unilateral', ['Sentadilla a una pierna asistida — 8 por lado','Activación de glúteo medio con banda — 15 por lado','Movilidad de cadera — 1 min']),
+          BLK('Zancada búlgara', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada búlgara','Sentadilla búlgara'] },
+            'El patrón unilateral con mayor transferencia directa a la fase de apoyo de la zancada de carrera — fuerza de cuádriceps y glúteo en cadena cerrada monopodal.', '',
+            { dosis:{ reps:'6-8', tempo:'3010', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Peso Muerto a Una Pierna + Elevación de Cadera a Una Pierna', [ { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto a una pierna'] }, { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Hip thrust a una pierna','Puente de glúteo a una pierna'] } ],
+            'Cadena posterior unilateral (equilibrio + fuerza) emparejada con extensión de cadera monopodal — el motor principal de la propulsión en cada zancada.'),
+          SS('Biset · Zancada Lateral + Abductor', [ { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Zancada lateral'] }, { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Abductor'] } ],
+            'Fuerza de glúteo medio en el plano frontal — el estabilizador de cadera cuya debilidad se asocia directamente al síndrome de la banda iliotibial y al colapso de rodilla en carrera.'),
+          CORE('Core Anti-Rotación', { grupo:['Core'], prefer:['Pallof press','Dead bug'] },
+            'Control pélvico rotacional — evita la fuga de energía lateral en cada apoyo monopodal de carrera.')
+        ]
+      },
+      stiffnessTobillo:{
+        titulo:'Stiffness Tendinoso / Reactividad Tobillo-Aquiles', focusText:'Rigidez tendinosa reactiva del complejo tobillo-Aquiles — determina la eficiencia del ciclo de estiramiento-acortamiento en cada apoyo.',
+        bloques:[
+          W('Warm-Up RAMP · Tobillo', ['Saltos de cuerda suaves — 30s','Elevación de talones dinámica — 15 reps','Skip A técnico — 2x15m']),
+          BLK('Elevación de talones con pausa isométrica', { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Elevación de talones','Gemelo de pie'] },
+            'Fuerza máxima de tríceps sural en rango controlado — la base sobre la que se construye la reactividad del Aquiles; sin fuerza de base, la pliometría añade riesgo sin beneficio.', 'Pausa isométrica de 2 segundos en el punto más alto antes de bajar.',
+            { dosis:{ reps:'8-10', tempo:'2020', rest:90, ef:4, apx:1 } }),
+          SS('Biset · Saltos con Tobillo (Ankle Hops) + Skipping Alto', [ NUEVO('Ankle Hops', 'Ankle Hops'), { grupo:['Piernas/Glúteos'], prefer:['Skipping','Rodillas altas'] } ],
+            'Pliometría de bajo tiempo de contacto centrada en el tobillo (no en la rodilla) — el estímulo específico para mejorar la stiffness reactiva del Aquiles sin sobrecargar la articulación de rodilla.'),
+          SS('Biset · Elevación de Talones a Una Pierna + Salto de Vallas Bajas', [ { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Elevación de talones a una pierna'] }, NUEVO('Salto de vallas bajas', 'Low Hurdle Hops') ],
+            'Fuerza unilateral de tobillo + reactividad horizontal — replica el patrón de contacto corto y repetido de la zancada de carrera.'),
+          CORE('Core Anti-Extensión', { grupo:['Core'], prefer:['Plancha frontal','Dead bug'] },
+            'Estabilidad de tronco durante el trabajo pliométrico — evita compensaciones lumbares en los saltos.')
+        ]
+      },
+      cadenaPosterior:{
+        titulo:'Cadena Posterior + Prevención de Tendinopatías', focusText:'Fuerza de isquiosurales y control excéntrico — la principal herramienta de prevención de tendinopatía rotuliana y aquílea en corredores.',
+        bloques:[
+          W('Warm-Up RAMP · Cadena Posterior', ['Puente de glúteo — 15 reps','Movilidad de isquiosurales activa — 1 min','Activación de glúteo — 15 reps por lado']),
+          BLK('Peso muerto rumano', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','RDL'] },
+            'Fuerza excéntrica de isquiosurales bajo estiramiento — el ejercicio con mayor evidencia para reducir lesiones de isquiosural en corredores de fondo.', '',
+            { dosis:{ reps:'6-8', tempo:'4010', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Curl Nórdico (o Curl Femoral) + Zancada Excéntrica', [ { any:['Curl nórdico','Nordic curl','Curl femoral'], nuevo:{ es:'Curl nórdico', en:'Nordic Hamstring Curl' } }, { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada','Split squat'] } ],
+            'El curl nórdico tiene la evidencia más fuerte para prevención de lesión de isquiosural en deportes de carrera; la zancada excéntrica suma control de rodilla frente a la tendinopatía rotuliana.'),
+          SS('Biset · Elevación de Talones Excéntrica + Tibial Anterior', [ { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Elevación de talones'] }, { any:['Flexión de tobillo con banda','Tibial anterior'], nuevo:{ es:'Flexión de tobillo con banda (tibial anterior)', en:'Banded Tibialis Raise' } } ],
+            'Trabajo excéntrico de Aquiles (protocolo estándar de prevención/rehabilitación de tendinopatía aquílea) + tibial anterior, el músculo cuya debilidad se asocia a la periostitis tibial.'),
+          CORE('Core Extensión Lumbar', { grupo:['Espalda'], patron:['Extensión lumbar'], prefer:['Hiperextensión'] },
+            'Soporte de erectores espinales — la postura de carrera de fondo depende de resistencia lumbar, no sólo de fuerza de piernas.')
+        ]
+      },
+      coreEconomia:{
+        titulo:'Core + Economía de Carrera', focusText:'Control lumbo-pélvico y de tronco — reduce el desplazamiento vertical/lateral innecesario y mejora la economía de carrera.',
+        bloques:[
+          W('Warm-Up RAMP · Postura de Carrera', ['Activación de core — Plancha 20s','Movilidad torácica — 1 min','Marcha con rodilla alta — 2x15m']),
+          BLK('Press militar de pie', { grupo:['Hombros'], patron:['Empuje vertical'], prefer:['Press militar'] },
+            'Fuerza de tren superior de pie — sostiene la braceada eficiente y evita la caída de hombros en la fatiga de fondo.', '',
+            { dosis:{ reps:'8-10', tempo:'2011', rest:90, ef:3, apx:1 } }),
+          SS('Biset · Pallof Press + Marcha con Carga Unilateral', [ { grupo:['Core'], patron:['Core / Anti-rotación'], prefer:['Pallof press'] }, { any:['Suitcase carry','Marcha unilateral con mancuerna'], nuevo:{ es:'Suitcase Carry (marcha unilateral)', en:'Suitcase Carry' } } ],
+            'Anti-rotación estática + anti-inclinación lateral dinámica — el par de estabilizadores que controla el desplazamiento lateral de la pelvis en cada zancada.'),
+          SS('Biset · Dead Bug + Plancha Lateral', [ { grupo:['Core'], prefer:['Dead bug'] }, { grupo:['Core'], prefer:['Plancha lateral'] } ],
+            'Control lumbo-pélvico en decúbito e isometría lateral — reduce el desplazamiento vertical excesivo, uno de los principales determinantes del costo energético de la carrera.'),
+          CORE('Core Integrado Bajo Fatiga', { grupo:['Core'], prefer:['Plancha frontal','Pallof press'] },
+            'Cierre de sesión con control postural bajo fatiga acumulada, replicando los últimos kilómetros de una carrera de fondo.')
+        ]
+      },
+      prevencionComplementaria:{
+        titulo:'Prevención Complementaria / Propiocepción (5to día)', focusText:'Volumen adicional de baja intensidad centrado en propiocepción de tobillo y prevención de periostitis — sostiene el volumen alto de kilometraje semanal.',
+        bloques:[
+          W('Warm-Up RAMP · Propiocepción', ['Equilibrio a una pierna con ojos cerrados — 20s por lado','Movilidad de tobillo — 1 min']),
+          BLK('Sentadilla a una pierna sobre superficie inestable', { any:['Sentadilla a una pierna sobre superficie inestable','Sentadilla sobre bosu','Equilibrio en superficie inestable'], nuevo:{ es:'Sentadilla a una pierna sobre superficie inestable', en:'Single-Leg Squat on Unstable Surface' } },
+            'Propiocepción de tobillo y rodilla bajo carga — reduce el riesgo de esguince y mejora la eficiencia de estabilización en terreno irregular.', '',
+            { dosis:{ reps:'8-10', tempo:'3010', rest:90, ef:3, apx:1 } }),
+          SS('Biset · Tibial Anterior + Elevación de Talones', [ { any:['Flexión de tobillo con banda','Tibial anterior'], nuevo:{ es:'Flexión de tobillo con banda (tibial anterior)', en:'Banded Tibialis Raise' } }, { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Elevación de talones'] } ],
+            'Refuerzo directo de la musculatura anterior y posterior de la pierna — la prevención más específica frente a la periostitis tibial por sobreuso.'),
+          CORE('Core General', { grupo:['Core'], prefer:['Plancha frontal','Dead bug'] },
+            'Volumen de mantenimiento de baja intensidad, apto para un 5to día sin comprometer la recuperación de las sesiones de fuerza pesada.')
+        ]
+      }
+    }
+  };
+
+  /* ============ 8. DICCIONARIO: FÚTBOL ============
+     Fundamento: el fútbol exige sprints repetidos con recuperación
+     incompleta, una enorme cantidad de frenados/desaceleraciones
+     excéntricas (más determinantes lesionalmente que la aceleración),
+     fuerza de isquiosurales a alta velocidad (mecanismo típico de
+     lesión), cambios de dirección y potencia rotacional para el
+     golpeo y el duelo. */
+  var FUTBOL = {
+    id:'futbol', nombre:'Fútbol', icon:'⚽',
+    resumen:'Frenado/desaceleración excéntrica, potencia de sprint y RFD, isquiosurales a alta velocidad, cambios de dirección y potencia rotacional.',
+    dias:{
+      3:['frenadoExcentrico','potenciaSprint','isquiosuralesVelocidad'],
+      4:['frenadoExcentrico','potenciaSprint','isquiosuralesVelocidad','cambiosDireccion'],
+      5:['frenadoExcentrico','potenciaSprint','isquiosuralesVelocidad','cambiosDireccion','resistenciaSprints']
+    },
+    diasDef:{
+      frenadoExcentrico:{
+        titulo:'Fuerza Excéntrica de Frenado / Desaceleración', focusText:'Capacidad de absorber fuerza excéntrica al frenar — el mecanismo con mayor asociación a lesión de rodilla e isquiosural en fútbol, y el más subentrenado.',
+        bloques:[
+          W('Warm-Up RAMP · Frenado', ['Skip suave — 2x15m','Frenado técnico submáximo — 4 reps','Movilidad de cadera y tobillo — 1 min']),
+          BLK('Sentadilla con tempo excéntrico', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con barra','Sentadilla goblet'] },
+            'Fuerza excéntrica controlada de rodilla — base de la capacidad de desacelerar en los últimos pasos antes de un cambio de dirección o un frenado brusco.', 'Bajada de 4 segundos controlada — el foco es la fase excéntrica, no la carga máxima.',
+            { dosis:{ reps:'6-8', tempo:'4010', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Zancada Excéntrica + Salto con Aterrizaje Estático', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada','Split squat'] }, { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Salto al cajón','Box jump'] } ],
+            'Desaceleración unilateral controlada + salto con foco exclusivo en el aterrizaje estático — el patrón exacto del frenado antes de un cambio de dirección en cancha.'),
+          SS('Biset · Peso Muerto Rumano + Nordic Curl', [ { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano'] }, { any:['Curl nórdico','Nordic curl'], nuevo:{ es:'Curl nórdico', en:'Nordic Hamstring Curl' } } ],
+            'Fuerza excéntrica de isquiosurales — el protocolo con mayor evidencia para reducir la incidencia de lesión de isquiosural en futbolistas.'),
+          CORE('Core Anti-Extensión', { grupo:['Core'], prefer:['Plancha frontal','Rueda abdominal'] },
+            'Rigidez de tronco durante la frenada — evita compensación lumbar cuando el cuerpo absorbe fuerza excéntrica a alta velocidad.')
+        ]
+      },
+      potenciaSprint:{
+        titulo:'Potencia de Sprint + RFD', focusText:'Tasa de desarrollo de fuerza y potencia horizontal — determina la aceleración en los primeros pasos de cada sprint.',
+        bloques:[
+          W('Warm-Up RAMP · Aceleración', ['Skip A + Skip B — 2x15m','Arrancadas submáximas — 3 reps','Movilidad de cadera — 1 min']),
+          BLK('Sentadilla con barra', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], equipo:['Barra','Multipower'], prefer:['Sentadilla con barra'] },
+            'Fuerza máxima como base de la RFD — sin techo de fuerza, la producción de fuerza en los 200-300ms de contacto de un sprint tiene un límite bajo.', '',
+            { dosis:{ reps:'4-6', tempo:'X010', rest:150, ef:4, apx:2 } }),
+          PAP('Complejo PAP · Sentadilla Pesada + Sprint Corto', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla con barra','Prensa'] }, { grupo:['Full Body / Cardio'], patron:['Cardio / Metcon'], prefer:['Sprint','Aceleración'] } ],
+            'Potenciación post-activación clásica hacia el gesto de sprint — la evidencia muestra mejoras agudas de velocidad en los primeros 10-20m tras un estímulo pesado.'),
+          SS('Biset · Empuje de Trineo + Zancada con Salto', [ NUEVO('Sled Push', 'Sled Push'), { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada con salto','Split jump'] } ],
+            'Fuerza horizontal específica de aceleración (trineo) + potencia reactiva unilateral — los dos vectores de fuerza más determinantes en los primeros metros de sprint.'),
+          CORE('Core Anti-Rotación', { grupo:['Core'], prefer:['Pallof press','Dead bug'] },
+            'Transferencia de fuerza de piernas a tronco sin fuga rotacional durante la fase de máxima aceleración.')
+        ]
+      },
+      isquiosuralesVelocidad:{
+        titulo:'Isquiosurales a Alta Velocidad', focusText:'Fuerza y resistencia excéntrica de isquiosurales en el rango de longitud donde ocurre la lesión típica — fase final de balanceo del sprint.',
+        bloques:[
+          W('Warm-Up RAMP · Cadena Posterior', ['Movilidad de isquiosurales activa — 1 min','Puente de glúteo — 15 reps','Skip técnico — 2x15m']),
+          BLK('Peso muerto rumano', { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto rumano','RDL'] },
+            'Isquiosurales bajo estiramiento a cadera flexionada — el rango de longitud más cercano al mecanismo de lesión en sprint (fase de balanceo terminal).', '',
+            { dosis:{ reps:'6-8', tempo:'3011', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Curl Nórdico + Peso Muerto a Una Pierna', [ { any:['Curl nórdico','Nordic curl'], nuevo:{ es:'Curl nórdico', en:'Nordic Hamstring Curl' } }, { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Peso muerto a una pierna'] } ],
+            'El ejercicio con mayor evidencia de reducción de lesión de isquiosural en fútbol (curl nórdico), combinado con su variante unilateral de mayor transferencia al apoyo monopodal del sprint.'),
+          SS('Biset · Puente de Glúteo a Una Pierna + Curl Femoral', [ { grupo:['Piernas/Glúteos'], patron:['Cadera dominante'], prefer:['Hip thrust a una pierna','Puente de glúteo a una pierna'] }, { grupo:['Piernas/Glúteos'], patron:['Aislamiento'], prefer:['Curl femoral'] } ],
+            'Extensión de cadera unilateral (el motor de la fase de apoyo del sprint) + aislamiento de isquiosural — cobertura completa del grupo muscular más lesionado del fútbol.'),
+          CORE('Core Extensión Lumbar', { grupo:['Espalda'], patron:['Extensión lumbar'], prefer:['Hiperextensión'] },
+            'Soporte de erectores espinales, sinérgico con el trabajo pesado de cadena posterior de la sesión.')
+        ]
+      },
+      cambiosDireccion:{
+        titulo:'Cambios de Dirección + Potencia Rotacional', focusText:'Fuerza multidireccional y potencia rotacional — el golpeo, el duelo y el cambio de dirección dependen de la capacidad de generar fuerza en el plano frontal y transverso.',
+        bloques:[
+          W('Warm-Up RAMP · Multidireccional', ['Skip lateral — 2x15m','Cambios de dirección submáximos — 4 reps','Activación de aductor/abductor — 1 min']),
+          BLK('Zancada lateral cargada', { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Zancada lateral','Sentadilla sumo'] },
+            'Fuerza en el plano frontal — el vector menos entrenado por default y el más solicitado en cortes y cambios de dirección.', '',
+            { dosis:{ reps:'6-8', tempo:'2110', rest:120, ef:4, apx:1 } }),
+          SS('Biset · Lanzamiento Rotacional con Balón Medicinal + Cambio de Dirección Resistido', [ { grupo:['Core'], prefer:['Lanzamiento rotacional','Balón medicinal','Woodchopper con salto'] }, { grupo:['Piernas/Glúteos'], equipo:['Banda'], prefer:['Zancada con banda','Monster walk'] } ],
+            'Potencia rotacional (transferencia directa al golpeo de media distancia y al remate) + resistencia elástica en el plano frontal para la estabilidad de rodilla en el corte.'),
+          SS('Biset · Abductor + Aductor en Máquina', [ { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Abductor'] }, { grupo:['Piernas/Glúteos'], patron:['Abducción / Aducción'], prefer:['Aductor'] } ],
+            'Fuerza de estabilizadores de cadera en ambos sentidos — la debilidad de aductores es uno de los factores de riesgo más citados de pubalgia en futbolistas.'),
+          CORE('Core Anti-Rotación', { grupo:['Core'], prefer:['Pallof press','Woodchopper'] },
+            'Control rotacional final — sostiene la técnica de golpeo y de duelo cuando aparece la fatiga.')
+        ]
+      },
+      resistenciaSprints:{
+        titulo:'Resistencia de Sprints Repetidos (RSA, 5to día)', focusText:'Capacidad de repetir sprints de alta intensidad con recuperación incompleta — la cualidad metabólica más específica del fútbol de alto nivel.',
+        bloques:[
+          W('Warm-Up RAMP · Activación General', ['Trote suave — 2 min','Skip progresivo — 2x15m','Arrancadas submáximas — 3 reps']),
+          BLK('Sentadilla frontal', { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Sentadilla frontal','Front squat'] },
+            'Volumen de fuerza de tren inferior con carga moderada — mantenimiento de base de fuerza sin comprometer la disponibilidad para el trabajo de RSA del día.', '',
+            { dosis:{ reps:'8-10', tempo:'2011', rest:90, ef:3, apx:1 } }),
+          SS('Biset · Zancada Caminando + Core Rotacional', [ { grupo:['Piernas/Glúteos'], patron:['Rodilla dominante'], prefer:['Zancada caminando','Zancada'] }, { grupo:['Core'], prefer:['Russian twist','Woodchopper'] } ],
+            'Volumen unilateral de mantenimiento + control rotacional — cierre de fuerza antes del bloque metabólico específico del día.'),
+          CORE('Core Anti-Extensión Bajo Fatiga', { grupo:['Core'], prefer:['Plancha frontal','Hollow body'] },
+            'Sostén de tronco cuando la fatiga metabólica compromete la técnica de carrera en el bloque de sprints.'),
+          MET('Bloque Metabólico · Sprints Repetidos (RSA)', ['20m Sprint máximo','20s recuperación caminando — repetir 8-10 series','Serie completa = 1 bloque; 2 bloques con 3 min entre bloques'],
+            'Protocolo estándar de RSA: sprints cortos máximos con recuperación incompleta — la cualidad que más discrimina el rendimiento en los últimos 15 minutos de un partido.')
+        ]
+      }
+    }
+  };
+
+  /* ============ 9. CATÁLOGO Y MOTOR ============ */
+  var ELITE_SPORTS = [HYROX, RUGBY, BODYBUILDING, MOTOCROSS, MTB, RUNNING, FUTBOL];
+  var elSport = null, elPerfil = null, elFreq = null, elDur = null, elSem = null;
+  var elPendingGaps = null; /* huecos detectados en el último dry-run, para el flujo Feeder-primero */
+
+  function archetypesFor(sport, freq){
+    var ids = (sport.dias && sport.dias[freq]) || sport.dias[4] || [];
+    return ids.map(function(id){ return sport.diasDef[id]; }).filter(Boolean);
+  }
+  function bloquesDeArquetipo(arch, duracion){
+    return (arch.bloques || []).filter(function(b){ return !b.soloEn90 || duracion === 90; });
+  }
+  /* ---- dry-run: detecta huecos SIN tocar S.exercises (pickEx sólo lee) ---- */
+  function detectarGaps(sport, freq, duracion, ath){
+    var arquetipos = archetypesFor(sport, freq);
+    var vistos = {}, gaps = [];
+    arquetipos.forEach(function(arch){
+      var used = [];
+      bloquesDeArquetipo(arch, duracion).forEach(function(spec){
+        if(spec.tipo !== 'block' && spec.tipo !== 'superset' && spec.tipo !== 'finisher') return;
+        (spec.picks || []).forEach(function(pk){
+          var ex = window.CoachUX.pickEx(pk, ath, used);
+          if(ex){ used.push(ex.id); return; }
+          /* sólo los picks "duros" por nombre (movimientos específicos del
+             deporte, marcados con NUEVO() en el diccionario) alimentan el
+             Feeder — un pick genérico por grupo/patrón sin match no tiene
+             un nombre de ejercicio real que sugerir, así que NO se manda
+             al Feeder con el título del bloque como si fuera un ejercicio
+             (eso generaría una fila con basura); ese caso lo cubre la nota
+             "sin candidato seguro" que ya deja buildDayElite() al construir
+             el día de verdad, con el bloque vacío pero sin romper nada. */
+          if(!pk.nuevo) return;
+          var es = pk.nuevo.es;
+          var key = norm(es);
+          if(vistos[key]) return;
+          vistos[key] = true;
+          gaps.push({ es: es, en: pk.nuevo.en || '', grupo: (pk.grupo && pk.grupo[0]) || 'General', patron: (pk.patron && pk.patron[0]) || 'General / Accesorio' });
+        });
+      });
+    });
+    return gaps;
+  }
+  /* ---- construcción real de un día a partir de un arquetipo ---- */
+  function buildDayElite(arch, ath, duracion, semanas, idx, notasOut){
+    var used = [];
+    var bloques = [];
+    bloquesDeArquetipo(arch, duracion).forEach(function(spec){
+      if(spec.tipo === 'hyrox' && !(spec.movements && spec.movements.length)) return; /* nunca se muestra un bloque vacío */
+      var b = newBlock(spec.tipo);
+      b.titulo = spec.titulo || b.titulo;
+      b.category = spec.category || b.category;
+      b.icon = spec.icon || b.icon;
+      if(spec.objective) b.objective = spec.objective;
+      if(spec.tips) b.tips = spec.tips;
+
+      if(spec.tipo === 'list'){ b.items = (spec.items || []).slice(); }
+
+      if(spec.tipo === 'block'){
+        var ex = window.CoachUX.pickEx(spec.picks[0], ath, used);
+        if(ex){
+          used.push(ex.id); b.exId = ex.id;
+          if(!b.tips) b.tips = autoNotaElite(ex, ath);
+        } else {
+          notasOut.push('Sin candidato seguro para «' + b.titulo + '» (' + arch.titulo + '): el bloque quedó vacío.');
+        }
+        var D = spec.dosis;
+        if(D){
+          if(D.reps != null) b.reps = D.reps;
+          if(D.tempo) b.tempo = D.tempo;
+          if(D.rest != null) b.restSeconds = D.rest;
+          if(D.ef != null) b.efSets = D.ef;
+          if(D.apx != null){ b.approxSets = D.apx; b.hasApprox = D.apx > 0; }
+        }
+      }
+      if(spec.tipo === 'superset'){
+        spec.picks.forEach(function(pk){
+          var ex2 = window.CoachUX.pickEx(pk, ath, used);
+          if(!ex2) return;
+          used.push(ex2.id);
+          b.ejercicios.push({ exId: ex2.id, reps: '10-12', tempo: '2011' });
+        });
+        if(b.ejercicios.length < 2) notasOut.push('«' + b.titulo + '» (' + arch.titulo + ') quedó con ' + b.ejercicios.length + ' ejercicio(s): completalo a mano.');
+        if(!b.tips && b.ejercicios.length){
+          var pr = getEx(b.ejercicios[0].exId);
+          b.tips = (spec.pap ? 'Sin pausa entre el par — el descanso real va al cerrar la ronda completa. ' : 'Encadenado sin pausa entre A y B. ') + autoNotaElite(pr, ath);
+        }
+      }
+      if(spec.tipo === 'finisher'){
+        var ex3 = window.CoachUX.pickEx(spec.picks[0], ath, used);
+        if(ex3){ used.push(ex3.id); b.fin.push({ exId: ex3.id, repsRange: '12-15' }); }
+        else notasOut.push('Sin candidato seguro para el bloque de core de «' + arch.titulo + '».');
+        b.roundsByWeek = coreRoundsByWeek(semanas);
+      }
+      if(spec.tipo === 'hyrox'){ b.movements = (spec.movements || []).slice(); }
+
+      bloques.push(b);
+    });
+    var d = newDay(idx);
+    d.short = 'DÍA ' + (idx + 1);
+    d.label = arch.titulo;
+    d.title = arch.titulo;
+    d.focusTitle = 'Foco Técnico del Día';
+    d.focusText = arch.focusText || '';
+    d.metaChips = [];
+    d.bloques = bloques;
+    return d;
+  }
+  function autoNotaElite(ex, ath){
+    if(!ex) return '';
+    try{ if(window.CoachUX && window.CoachUX.nota) return window.CoachUX.nota(ex, '2110', ath) || ''; }catch(e){}
+    return ex.aviso || '';
+  }
+
+  /* ---- inserta ejercicios "stub" (custom:true, sin video) para no dejar
+     bloques rotos si el coach elige saltear el Feeder ---- */
+  function insertarStubsGaps(gaps){
+    var existentes = S.exercises.map(function(e){ return norm(e.es); });
+    var creados = 0;
+    gaps.forEach(function(g){
+      if(existentes.indexOf(norm(g.es)) >= 0) return;
+      S.exercises.push({ id: uid('ex'), custom:true, es:g.es, en:g.en || '', grupo:g.grupo, patron:g.patron, equipo:EQUIPOS[0], video:'', videoId:'', riesgo:[], aviso:'' });
+      existentes.push(norm(g.es));
+      creados++;
+    });
+    if(creados) save();
+    return creados;
+  }
+
+  function construirPlanElite(){
+    var ath = active();
+    if(!ath){ toast('Seleccioná un alumno/a primero', 'err'); return; }
+    if(!elSport || !elPerfil || !elFreq || !elDur || !elSem){ toast('Completá los 5 pasos antes de generar', 'err'); return; }
+
+    var gaps = detectarGaps(elSport, elFreq, elDur, ath);
+    if(gaps.length){
+      elPendingGaps = gaps;
+      pintarGapsLog(gaps);
+      return;
+    }
+    generarPlanReal(ath);
+  }
+  function pintarGapsLog(gaps){
+    var box = document.getElementById('eliteLog'); if(!box) return;
+    box.innerHTML =
+      '<div class="alert warn" style="padding:10px 12px"><span class="ic">🎬</span><div>' +
+      '<b>' + gaps.length + ' ejercicio(s) específico(s) de ' + esc(elSport.nombre) + ' no están todavía en tu biblioteca</b>' +
+      '<div class="hint" style="margin-top:4px">' + gaps.map(function(g){ return esc(g.es) + (g.en ? ' (' + esc(g.en) + ')' : ''); }).join(' · ') + '</div>' +
+      '<div class="row" style="margin-top:9px;gap:8px">' +
+      '<button class="btn tpl" id="eliteToFeeder" type="button">🎥 Completar en Feeder Rápido</button>' +
+      '<button class="btn ghost" id="eliteSkipFeeder" type="button">⚠️ Generar igual (sin video)</button>' +
+      '</div>' +
+      '<div class="hint" style="margin-top:6px">Recomendado: completá los videos en el Feeder y volvé a tocar «Generar» — los ejercicios ya van a estar en la biblioteca y el plan se arma con video incluido.</div>' +
+      '</div></div>';
+  }
+  function generarPlanReal(ath){
+    var arquetipos = archetypesFor(elSport, elFreq);
+    if(!arquetipos.length){ toast('No hay arquetipos de día definidos para esa frecuencia', 'err'); return; }
+    if(!confirm('Esto va a reemplazar los ' + arquetipos.length + ' días y el mesociclo del plan actual de ' + fullName(ath) + ' con la Plantilla Élite de ' + elSport.nombre + '. Las marcas/feedback ya cargados del alumno/a no se tocan. ¿Continuar?')) return;
+    if(window.CoachUndo && window.CoachUndo.vigilar) try{ CoachUndo.vigilar('Generar Plantilla Élite · ' + elSport.nombre); }catch(e){}
+
+    var p = plan(ath.id);
+    var weeksMeta = oleajeElite(elSem);
+    var notas = [];
+    var dias = arquetipos.map(function(arch, i){ return buildDayElite(arch, ath, elDur, elSem, i, notas); });
+
+    /* plan()/newPlan() derivan la cantidad de días SIEMPRE de ath.freq
+       (clamp 3-6) y la rellenan sola en cada acceso si p.dias.length queda
+       por debajo — sin esto, elegir 3 días en el wizard con un alumno/a
+       cuyo freq guardado sea otro se autocompletaría con un día extra vacío
+       en el próximo render. Se sincroniza para que la frecuencia elegida en
+       el wizard sea la que de verdad gobierna el plan. */
+    ath.freq = elFreq;
+    p.dias = dias;
+    p.meso = weeksMeta;
+    p.meta = p.meta || {};
+    p.meta.cfModular = true;
+    p.meta.eliteTpl = true;
+    p.meta.eliteSport = elSport.id;
+    p.meta.eliteFreq = elFreq;
+    p.meta.eliteDuracion = elDur;
+    p.meta.eliteSemanas = elSem;
+    p.meta.elitePerfil = elPerfil;
+    p.meta.mesoName = 'Mesociclo Élite · ' + elSport.nombre + ' (' + elSem + ' semanas)';
+    p.meta.mesoTexto = elSport.resumen + (elPerfil === 'mujer' ? ' Perfil mujer: punto de partida con +1 serie accesoria y volumen de pliometría algo más conservador — heurística editable, nunca cambia qué ejercicio se elige.' : '');
+    S.ui.day = 0;
+    save();
+    if(typeof renderBuilder === 'function') renderBuilder();
+    closeModal('mEliteTpl');
+
+    var totalBloques = dias.reduce(function(n, d){ return n + d.bloques.length; }, 0);
+    toast('🏆 Plantilla Élite de ' + elSport.nombre + ' generada · ' + dias.length + ' días · ' + elSem + ' semanas · ' + totalBloques + ' bloques');
+    var box = document.getElementById('eliteLog');
+    if(box){
+      box.innerHTML = '<div class="alert ' + (notas.length ? 'warn' : 'good') + '" style="padding:10px 12px"><span class="ic">' + (notas.length ? '⚠️' : '✅') + '</span><div>' +
+        '<b>Plan generado: ' + dias.length + ' días · ' + totalBloques + ' bloques</b>' +
+        notas.map(function(n){ return '<div style="margin-top:3px">• ' + esc(n) + '</div>'; }).join('') +
+        '</div></div>';
+    }
+  }
+
+  /* ============ 10. WIZARD / MONTAJE ============ */
+  var DUR_LB = { 60:'60 min', 90:'90 min' };
+  var SEM_LB = { 4:'4 semanas', 8:'8 semanas', 12:'12 semanas' };
+  var FREQ_LB = { 3:'3 días / semana', 4:'4 días / semana', 5:'5 días / semana' };
+
+  function resetWizard(){
+    elSport = null; elPerfil = null; elFreq = null; elDur = null; elSem = null; elPendingGaps = null;
+  }
+  function openEliteTpl(){
+    var ath = active();
+    if(!ath){ toast('Seleccioná un alumno/a primero', 'err'); go('alumnos'); return; }
+    resetWizard();
+    document.getElementById('eliteAthBox').innerHTML =
+      '<div class="alert info" style="padding:9px 12px"><span class="ic">👤</span><div><b>' + esc(fullName(ath)) + '</b>' +
+      'El motor arma los días y el mesociclo completo con ejercicios de tu biblioteca, priorizando lo específico del deporte elegido.</div></div>';
+    document.getElementById('eliteLog').innerHTML = '';
+    pintarPasos();
+    openModal('mEliteTpl');
+  }
+  function pasoBtn(activo, on, label, extra){
+    return '<button type="button" class="tplf' + (on ? ' on' : '') + '"' + (activo ? '' : ' disabled') + ' data-eopt="' + esc(extra) + '">' + label + '</button>';
+  }
+  function pintarPasos(){
+    var s1 = document.getElementById('eliteStep1'), s2 = document.getElementById('eliteStep2'),
+        s3 = document.getElementById('eliteStep3'), s4 = document.getElementById('eliteStep4'),
+        s5 = document.getElementById('eliteStep5'), gen = document.getElementById('eliteGen');
+    if(!s1) return;
+    s1.innerHTML = ELITE_SPORTS.map(function(sp){
+      return '<button type="button" class="tplf' + (elSport && elSport.id === sp.id ? ' on' : '') + '" data-esport="' + sp.id + '">' + sp.icon + ' ' + esc(sp.nombre) + '</button>';
+    }).join('');
+    s2.innerHTML = ['hombre','mujer'].map(function(pf){
+      return pasoBtn(!!elSport, elPerfil === pf, (pf === 'hombre' ? '👨 Hombre' : '👩 Mujer'), pf).replace('data-eopt', 'data-eperfil');
+    }).join('');
+    s3.innerHTML = [3,4,5].map(function(f){
+      return pasoBtn(!!elPerfil, elFreq === f, FREQ_LB[f], f).replace('data-eopt', 'data-efreq');
+    }).join('');
+    s4.innerHTML = [60,90].map(function(d){
+      return pasoBtn(!!elFreq, elDur === d, '⏱️ ' + DUR_LB[d], d).replace('data-eopt', 'data-edur');
+    }).join('');
+    s5.innerHTML = [4,8,12].map(function(n){
+      return pasoBtn(!!elDur, elSem === n, '📅 ' + SEM_LB[n], n).replace('data-eopt', 'data-esem');
+    }).join('');
+    var listo = !!(elSport && elPerfil && elFreq && elDur && elSem);
+    gen.disabled = !listo;
+    gen.textContent = listo ? ('🏆 Generar Plantilla Élite · ' + elSport.nombre) : '🏆 Completá los 5 pasos';
+  }
+
+  function mount(){
+    var topbar = document.querySelector('#v-builder .topbar');
+    if(topbar && !document.getElementById('btnEliteTpl')){
+      var btn = document.createElement('button');
+      btn.className = 'btn tpl'; btn.id = 'btnEliteTpl';
+      btn.innerHTML = '🏆 Plantillas Élite';
+      var ref = document.getElementById('btnTpl');
+      if(ref && ref.parentNode === topbar) topbar.insertBefore(btn, ref.nextSibling); else topbar.appendChild(btn);
+      btn.addEventListener('click', openEliteTpl);
+    }
+    var s1 = document.getElementById('eliteStep1');
+    if(!s1) return; /* el modal todavía no está en el DOM (build viejo sin el HTML nuevo) */
+
+    document.getElementById('eliteStep1').addEventListener('click', function(e){
+      var c = e.target.closest('[data-esport]'); if(!c) return;
+      elSport = ELITE_SPORTS.find(function(s){ return s.id === c.dataset.esport; }) || null;
+      elPerfil = elFreq = elDur = elSem = null; elPendingGaps = null;
+      document.getElementById('eliteLog').innerHTML = '';
+      pintarPasos();
+    });
+    document.getElementById('eliteStep2').addEventListener('click', function(e){
+      var c = e.target.closest('[data-eperfil]'); if(!c || c.disabled) return;
+      elPerfil = c.dataset.eperfil; elFreq = elDur = elSem = null; elPendingGaps = null;
+      document.getElementById('eliteLog').innerHTML = '';
+      pintarPasos();
+    });
+    document.getElementById('eliteStep3').addEventListener('click', function(e){
+      var c = e.target.closest('[data-efreq]'); if(!c || c.disabled) return;
+      elFreq = parseInt(c.dataset.efreq, 10); elDur = elSem = null; elPendingGaps = null;
+      document.getElementById('eliteLog').innerHTML = '';
+      pintarPasos();
+    });
+    document.getElementById('eliteStep4').addEventListener('click', function(e){
+      var c = e.target.closest('[data-edur]'); if(!c || c.disabled) return;
+      elDur = parseInt(c.dataset.edur, 10); elSem = null; elPendingGaps = null;
+      document.getElementById('eliteLog').innerHTML = '';
+      pintarPasos();
+    });
+    document.getElementById('eliteStep5').addEventListener('click', function(e){
+      var c = e.target.closest('[data-esem]'); if(!c || c.disabled) return;
+      elSem = parseInt(c.dataset.esem, 10); elPendingGaps = null;
+      document.getElementById('eliteLog').innerHTML = '';
+      pintarPasos();
+    });
+    document.getElementById('eliteGen').addEventListener('click', construirPlanElite);
+
+    document.getElementById('eliteLog').addEventListener('click', function(e){
+      var ath = active(); if(!ath) return;
+      if(e.target.closest('#eliteToFeeder')){
+        closeModal('mEliteTpl');
+        var grupo = (elPendingGaps && elPendingGaps[0] && elPendingGaps[0].grupo) || GRUPOS[0];
+        var patron = (elPendingGaps && elPendingGaps[0] && elPendingGaps[0].patron) || PATRONES[0];
+        var gs = document.getElementById('fdGrupo'), ps = document.getElementById('fdPatron');
+        if(gs) gs.value = grupo; if(ps) ps.value = patron;
+        document.getElementById('fdBatch').value = (elPendingGaps || []).map(function(g){ return g.es + ' | ' + (g.en || '') + ' | '; }).join('\n');
+        openFeeder();
+        renderFeederPreview();
+        toast('Pegá las URLs de YouTube y guardá; después volvé a 🏆 Plantillas Élite y tocá Generar de nuevo');
+        return;
+      }
+      if(e.target.closest('#eliteSkipFeeder')){
+        var n = insertarStubsGaps(elPendingGaps || []);
+        elPendingGaps = null;
+        if(n) toast(n + ' ejercicio(s) agregado(s) a la biblioteca sin video · generando el plan…');
+        generarPlanReal(ath);
+        return;
+      }
+    });
+
+    $$('#mEliteTpl [data-close]').forEach(function(b){ b.addEventListener('click', function(){ closeModal(b.dataset.close); }); });
+    var m = document.getElementById('mEliteTpl');
+    if(m) m.addEventListener('click', function(e){ if(e.target === m) closeModal('mEliteTpl'); });
+    document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeModal('mEliteTpl'); });
+
+    window.CoachEliteTpl = { sports: ELITE_SPORTS, open: openEliteTpl, oleaje: oleajeElite, detectarGaps: detectarGaps, build: construirPlanElite };
   }
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
