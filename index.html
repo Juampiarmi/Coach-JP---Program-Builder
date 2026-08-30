@@ -16500,6 +16500,25 @@ input[type="checkbox"]:active{
 .nu-peri b{color:#7CC5E8;font-size:calc(10.5px * var(--fzs,1));letter-spacing:.14em;text-transform:uppercase;display:block;margin-top:8px}
 .nu-legal{font-size:calc(11.5px * var(--fzs,1));line-height:1.55;color:#6E7783;padding:4px 2px 20px}
 .nu-vacio{padding:40px 20px;text-align:center;color:#6E7783;font-size:calc(13px * var(--fzs,1));line-height:1.6}
+/* 29no pedido (30/08) -- píldoras LUN..DOM del plan semanal + vista previa + comida libre */
+.nu-dia-pills{display:flex;gap:6px;overflow-x:auto;padding:2px 1px 10px;margin-bottom:2px}
+.nu-dia-pill{
+  flex:0 0 auto;min-height:38px;padding:0 12px;border-radius:10px;cursor:pointer;
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.12);color:#9AA2AD;
+  font-family:ui-monospace,Menlo,monospace;font-size:calc(11.5px * var(--fzs,1));font-weight:700;
+  letter-spacing:.06em;display:flex;align-items:center;gap:5px;
+}
+.nu-dia-pill.on{background:rgba(124,197,232,.14);border-color:#7CC5E8;color:#EDEFF2}
+.nu-dia-pill b{font-size:8.5px;letter-spacing:.08em;color:#48D597;font-weight:800}
+.nu-preview-macros{font-size:calc(12px * var(--fzs,1));color:#C9CFD8;line-height:1.6}
+.nu-preview-macros b{color:#EDEFF2}
+.nu-libre-tag{
+  font-family:var(--font-head,inherit);font-size:calc(10.5px * var(--fzs,1));letter-spacing:.1em;
+  text-transform:uppercase;color:#E8965E;border:1px solid rgba(210,121,63,.4);background:rgba(210,121,63,.08);
+  border-radius:8px;padding:6px 9px;margin-bottom:8px;display:inline-block;font-weight:700;
+}
+.nu-libre-guia{font-size:calc(12px * var(--fzs,1));line-height:1.55;color:#C9CFD8;margin-bottom:10px}
+.nu-meal.libre{border-color:rgba(210,121,63,.35)}
 </style>
 <script>
 /* =========================================================
@@ -16509,6 +16528,39 @@ input[type="checkbox"]:active{
   var PLAN = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.nutriPlan) || null;
   var KL = 'coachjp_nutrilog_v1';
   var swap = {};   /* intercambios elegidos por el alumno, por comida/ítem */
+
+  /* 29no pedido (30/08) -- Plan Nutricional Semanal de 7 días. Todo lo de
+     acá abajo es aditivo: si PLAN no trae "semanal", planActivo() devuelve
+     PLAN tal cual y el resto del módulo se comporta exactamente como antes
+     (un plan viejo de un solo día sigue funcionando para siempre, sin
+     ningún cambio de comportamiento ni de dato guardado). */
+  var DIAS_SEMANA_NUT = ['lun','mar','mie','jue','vie','sab','dom'];
+  var DIAS_LB_NUT = { lun:'Lunes', mar:'Martes', mie:'Miércoles', jue:'Jueves', vie:'Viernes', sab:'Sábado', dom:'Domingo' };
+  var DIAS_CORTO_NUT = { lun:'LUN', mar:'MAR', mie:'MIÉ', jue:'JUE', vie:'VIE', sab:'SÁB', dom:'DOM' };
+  var DIAS_POR_JSGETDAY = ['dom','lun','mar','mie','jue','vie','sab'];
+  function hoyDiaSemana(){ return DIAS_POR_JSGETDAY[new Date().getDay()]; }
+  var nutriState = { diaSel: null };
+
+  /* el "día activo" para leer macros/comidas: si el plan es semanal, el día
+     elegido con las píldoras LUN..DOM (por defecto, hoy); si es un plan
+     viejo de un solo día, el PLAN entero -- así el resto de esta función no
+     necesita saber qué forma tiene el plan. */
+  function planActivo(){
+    if(!PLAN) return null;
+    if(PLAN.semanal){
+      if(!nutriState.diaSel) nutriState.diaSel = hoyDiaSemana();
+      return (PLAN.dias && PLAN.dias[nutriState.diaSel]) || null;
+    }
+    return PLAN;
+  }
+  /* ¿el día que se está mostrando es el día real de hoy? El registro de
+     "comida hecha"/intercambios siempre es el de hoy real (hoyISO(), sin
+     tocar) -- al navegar otro día de la semana se muestra en modo vista
+     previa, sin tildes ni intercambios, para no mezclar el registro de un
+     día con el menú de otro. */
+  function esHoySeleccionado(){
+    return !PLAN || !PLAN.semanal || nutriState.diaSel === hoyDiaSemana();
+  }
 
   function hoyISO(){ var d = new Date(); return d.toISOString().slice(0,10); }
   function log(){ try{ return JSON.parse(localStorage.getItem(KL) || '{}') || {}; }catch(e){ return {}; } }
@@ -16523,6 +16575,10 @@ input[type="checkbox"]:active{
   }
 
   function esDiaEntreno(){
+    if(PLAN && PLAN.semanal){
+      var tipo = (PLAN.cicloCarb && PLAN.cicloCarb[nutriState.diaSel || hoyDiaSemana()]) || 'entreno';
+      return tipo === 'entreno';
+    }
     try{
       var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
       return !!(d && (d.blocks || []).length);
@@ -16539,7 +16595,9 @@ input[type="checkbox"]:active{
 
   function sumaDelDia(){
     var d = delDia(), tot = { prot:0, carb:0, gras:0, kcal:0 };
-    (PLAN.comidas || []).forEach(function(c){
+    if(!esHoySeleccionado()) return tot;   /* el registro de "hecho" es siempre el de hoy real */
+    var activaSuma = planActivo();
+    ((activaSuma && activaSuma.comidas) || []).forEach(function(c){
       if(!d.comidas[c.n]) return;
       var t = totalElegido(c, d);
       tot.prot += (t && t.prot) || 0;
@@ -16564,61 +16622,89 @@ input[type="checkbox"]:active{
         'Mientras tanto, cada día tiene su tarjeta de nutrición de la sesión.</div>';
       return;
     }
+    var activa = planActivo();
     var ent = esDiaEntreno();
     var m = (PLAN.macros && (ent ? PLAN.macros.entreno : PLAN.macros.descanso)) || {};
     var kcal = ent ? (PLAN.meta || {}).kcal_entreno : (PLAN.meta || {}).kcal_descanso;
     var s = sumaDelDia(), d = delDia();
+    var hoy = esHoySeleccionado();
 
-    var html = '<div class="nu-card">' +
-      '<div class="nu-h">Hoy<span class="tag">' + (ent ? 'día de entreno' : 'día de descanso') + ' · ' + (kcal || '—') + ' kcal</span></div>' +
-      barra('p', 'Proteína', s.prot, m.prot_g || 0, 'g') +
-      barra('',  'Carbohidrato', s.carb, m.carb_g || 0, 'g') +
-      barra('g', 'Grasa', s.gras, m.gras_g || 0, 'g') +
-      (m.agua_ml ? barra('a', 'Agua', 0, Math.round(m.agua_ml / 100) / 10, 'L') : '') +
+    var html = '';
+    /* 29no pedido (30/08): fila de píldoras LUN..DOM -- sólo si el plan es
+       semanal; un plan viejo de un solo día no la muestra, cero cambio
+       visual para atletas con planes ya generados. */
+    if(PLAN.semanal){
+      html += '<div class="nu-dia-pills">' + DIAS_SEMANA_NUT.map(function(dk){
+        var activo = dk === nutriState.diaSel;
+        var esHoyPill = dk === hoyDiaSemana();
+        return '<button type="button" class="nu-dia-pill' + (activo ? ' on' : '') + '" data-nudia="' + dk + '">' +
+          DIAS_CORTO_NUT[dk] + (esHoyPill ? '<b>HOY</b>' : '') + '</button>';
+      }).join('') + '</div>';
+    }
+
+    html += '<div class="nu-card">' +
+      '<div class="nu-h">' + (hoy ? 'Hoy' : (DIAS_LB_NUT[nutriState.diaSel] || 'Vista previa')) +
+        '<span class="tag">' + (ent ? 'día de entreno' : 'día de descanso') + ' · ' + (kcal || '—') + ' kcal</span></div>' +
+      (hoy
+        ? barra('p', 'Proteína', s.prot, m.prot_g || 0, 'g') +
+          barra('',  'Carbohidrato', s.carb, m.carb_g || 0, 'g') +
+          barra('g', 'Grasa', s.gras, m.gras_g || 0, 'g') +
+          (m.agua_ml ? barra('a', 'Agua', 0, Math.round(m.agua_ml / 100) / 10, 'L') : '')
+        : '<div class="nu-preview-macros">Objetivo de ese día: <b>' + (m.prot_g || 0) + 'g</b> proteína · <b>' +
+          (m.carb_g || 0) + 'g</b> carbohidrato · <b>' + (m.gras_g || 0) + 'g</b> grasa</div>') +
       '</div>';
 
-    html += (PLAN.comidas || []).map(function(c, ci){
-      var hecha = !!d.comidas[c.n];
+    var comidaLibre = PLAN.semanal ? PLAN.comidaLibre : null;
+
+    html += ((activa && activa.comidas) || []).map(function(c, ci){
+      var hecha = hoy && !!d.comidas[c.n];
       var abierta = false;
       /* 10mo pedido (26/08): si la comida trae "opcionB" (preparación elaborada,
          schema aditivo), se muestra un selector de 2 pestañas — la elegida hoy
          queda guardada en d.opcion[c.n] ('A' por defecto, no hace falta setearla).
          Las claves de intercambio ("data-swap") de la opción B llevan el
-         infijo "_B_" para no pisar los índices de la opción A. */
-      var tieneB = !!(c.opcionB && (c.opcionB.items || []).length);
+         infijo "_B_" para no pisar los índices de la opción A.
+         29no pedido (30/08): al navegar un día que NO es hoy, siempre se
+         muestra la opción A y sin swap/tick -- el registro de "hecho" y de
+         intercambios es siempre el de hoy real, no correspondería mezclarlo
+         con el menú de otro día de la semana. */
+      var tieneB = hoy && !!(c.opcionB && (c.opcionB.items || []).length);
       var elegidaB = tieneB && d.opcion[c.n] === 'B';
-      var activa = elegidaB ? c.opcionB : c;
-      var itemsActivos = activa.items || [];
+      var activaOpt = elegidaB ? c.opcionB : c;
+      var itemsActivos = activaOpt.items || [];
       var keyPref = c.n + (elegidaB ? '_B_' : '_');
-      var kcalActiva = (activa.total && activa.total.kcal) || 0;
-      return '<details class="nu-meal' + (hecha ? ' hecha' : '') + '"' + (abierta ? ' open' : '') + ' data-mn="' + c.n + '">' +
+      var kcalActiva = (activaOpt.total && activaOpt.total.kcal) || 0;
+      var esLibre = !!(comidaLibre && comidaLibre.dia === nutriState.diaSel && comidaLibre.comida === c.n);
+      return '<details class="nu-meal' + (hecha ? ' hecha' : '') + (esLibre ? ' libre' : '') + '"' + (abierta ? ' open' : '') + ' data-mn="' + c.n + '">' +
         '<summary>' +
-          '<span class="mn">' + c.n + ' · ' + esc(activa.nombre || c.nombre) + '</span>' +
+          '<span class="mn">' + c.n + ' · ' + esc(activaOpt.nombre || c.nombre) + '</span>' +
           '<span class="mh">' + esc(c.hora_sug || '') + '</span>' +
           '<span class="mk">' + kcalActiva + ' kcal</span>' +
-          '<span class="tick" data-tick="' + c.n + '">' + (hecha ? '✓' : '') + '</span>' +
+          (hoy ? '<span class="tick" data-tick="' + c.n + '">' + (hecha ? '✓' : '') + '</span>' : '') +
         '</summary>' +
         '<div class="cuerpo">' +
+          (esLibre ? '<div class="nu-libre-tag">[ COMIDA LIBRE SUGERIDA · CONTROLADA ]</div>' +
+            '<div class="nu-libre-guia">Priorizá una fuente de proteína magra antes de esta comida · disfrutala sin culpa y sin atracón, comé despacio · reforzá la hidratación después.</div>' : '') +
           (tieneB ? '<div class="nu-opt-seg">' +
             '<button type="button" class="nu-opt' + (elegidaB ? '' : ' on') + '" data-opt="' + c.n + '|A">⚡ ' + esc(c.nombre) + '</button>' +
             '<button type="button" class="nu-opt' + (elegidaB ? ' on' : '') + '" data-opt="' + c.n + '|B">🍳 ' + esc(c.opcionB.nombre) + '</button>' +
           '</div>' : '') +
           itemsActivos.map(function(it, ii){
             var key = keyPref + ii;
-            var alt = d.swap[key];
+            var alt = hoy ? d.swap[key] : null;
             var nombre = alt ? alt.alimento : it.alimento;
             var gramos = alt ? alt.gramos : it.gramos;
             return '<div class="nu-it' + (alt ? ' cambiado' : '') + '">' +
               '<span class="al">' + esc(nombre) + '</span>' +
               '<span class="gr">' + gramos + ' g</span>' +
-              ((it.intercambios || []).length
+              (hoy && (it.intercambios || []).length
                 ? '<button class="sw" data-swap="' + key + '" title="Cambiar por un equivalente">⇄</button>' : '') +
               '</div>';
           }).join('') +
         '</div></details>';
     }).join('');
 
-    var pe = PLAN.peri_entreno;
+    var pe = (activa || {}).peri_entreno;
     if(pe && ent){
       html += '<div class="nu-card"><div class="nu-h">Alrededor del entrenamiento</div><div class="nu-peri">' +
         ['pre','intra','post'].map(function(k){
@@ -16637,19 +16723,22 @@ input[type="checkbox"]:active{
       'Orientativo y educativo. No reemplaza el plan de un nutricionista.') + '</div>';
     cont.innerHTML = html;
 
-    /* abre la comida más cercana a la hora actual */
-    var ahora = new Date().getHours() * 60 + new Date().getMinutes();
-    var mejor = null, dif = 1e9;
-    (PLAN.comidas || []).forEach(function(c){
-      var hm = String(c.hora_sug || '').split(':');
-      if(hm.length !== 2) return;
-      var t = parseInt(hm[0], 10) * 60 + parseInt(hm[1], 10);
-      var dd = Math.abs(t - ahora);
-      if(dd < dif && !delDia().comidas[c.n]){ dif = dd; mejor = c.n; }
-    });
-    if(mejor != null){
-      var el = cont.querySelector('.nu-meal[data-mn="' + mejor + '"]');
-      if(el) el.open = true;
+    if(hoy){
+      /* abre la comida más cercana a la hora actual -- sólo tiene sentido
+         cuando se está viendo el día real de hoy, no al navegar otros días */
+      var ahora = new Date().getHours() * 60 + new Date().getMinutes();
+      var mejor = null, dif = 1e9;
+      ((activa && activa.comidas) || []).forEach(function(c){
+        var hm = String(c.hora_sug || '').split(':');
+        if(hm.length !== 2) return;
+        var t = parseInt(hm[0], 10) * 60 + parseInt(hm[1], 10);
+        var dd = Math.abs(t - ahora);
+        if(dd < dif && !delDia().comidas[c.n]){ dif = dd; mejor = c.n; }
+      });
+      if(mejor != null){
+        var el = cont.querySelector('.nu-meal[data-mn="' + mejor + '"]');
+        if(el) el.open = true;
+      }
     }
   }
 
@@ -16685,6 +16774,14 @@ input[type="checkbox"]:active{
     document.getElementById('jpNutIrEnt').addEventListener('click', cerrar);
 
     document.getElementById('jpNutBody').addEventListener('click', function(e){
+      /* 29no pedido (30/08): píldora LUN..DOM del plan semanal */
+      var nd = e.target.closest('[data-nudia]');
+      if(nd){
+        e.preventDefault(); e.stopPropagation();
+        nutriState.diaSel = nd.dataset.nudia;
+        render();
+        return;
+      }
       var t = e.target.closest('[data-tick]');
       if(t){
         e.preventDefault(); e.stopPropagation();
@@ -16721,7 +16818,8 @@ input[type="checkbox"]:active{
            el parseo del número de comida / índice de ítem. */
         var esB = key.indexOf('_B_') >= 0;
         var part = esB ? key.split('_B_') : key.split('_');
-        var comida = (PLAN.comidas || []).filter(function(c){ return String(c.n) === part[0]; })[0];
+        var activaSwap = planActivo();
+        var comida = ((activaSwap && activaSwap.comidas) || []).filter(function(c){ return String(c.n) === part[0]; })[0];
         if(!comida) return;
         var listaItems = esB ? ((comida.opcionB && comida.opcionB.items) || []) : (comida.items || []);
         var item = listaItems[parseInt(part[1], 10)];
@@ -18441,6 +18539,13 @@ function planNutricional(ath){
     const r = o[ath.id];
     if(!r || r.estado !== 'pub' || !r.plan) return null;
     const p = r.plan;
+    /* 29no pedido (30/08): un plan SEMANAL no trae "comidas" a nivel raíz
+       (viven adentro de p.dias.{lun..dom}) -- se valida distinto según la
+       forma, sin tocar el chequeo de siempre para un plan de un solo día. */
+    if(p.semanal){
+      if(!p.dias || !Object.keys(p.dias).some(k => p.dias[k] && (p.dias[k].comidas || []).length) || !p.macros) return null;
+      return p;
+    }
     if(!p.comidas || !p.comidas.length || !p.macros) return null;
     return p;
   }catch(e){}
@@ -42469,6 +42574,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   background:transparent;border:1px solid #28303A;color:#A0A8B4;font-size:12px;font-weight:700;
 }
 .np-chips .nc.on{background:rgba(210,121,63,.14);border-color:#D2793F;color:#E8965E}
+/* 29no pedido (30/08) -- tabs de día del plan semanal + tarjeta de comida libre */
+.np-dia-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.np-dia-tabs .nc{min-width:44px}
+.np-comida.libre{border-color:rgba(210,121,63,.4)}
+.np-libre-tag{
+  font-family:var(--ffh);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#E8965E;
+  border:1px solid rgba(210,121,63,.4);background:rgba(210,121,63,.08);border-radius:8px;
+  padding:5px 9px;margin-bottom:8px;display:inline-block;font-weight:700;
+}
+.np-libre-guia{font-size:12px;line-height:1.55;color:#A0A8B4;margin-bottom:8px}
 .np-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px;margin-top:10px}
 .np-kpi{border:1px solid #28303A;border-radius:12px;background:#141920;padding:11px 12px}
 .np-kpi .k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#828A97}
@@ -42600,8 +42715,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         </div>
 
         <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
-          <button class="btn primary" id="npGen">⚡ Generar plan</button>
-          <button class="btn ghost sm" id="npGenIA">🤖 Generar con IA</button>
+          <button class="btn primary" id="npGen">⚡ Generar semana</button>
+          <button class="btn ghost sm" id="npGenIA">🤖 Generar semana con IA</button>
           <button class="btn ghost sm" id="npTestIA" title="Prueba mínima de conexión con el proveedor de IA configurado, sin pedir el plan completo">🧪 Test Conexión IA</button>
           <button class="btn ghost sm" id="npSaveFicha">💾 Guardar ficha</button>
         </div>
@@ -42610,6 +42725,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       <!-- ===== PLAN ===== -->
       <div class="np-pane" id="npPanePlan">
         <div id="npVal"></div>
+        <!-- 29no pedido (30/08): controles del plan semanal -- oculto por
+             defecto, pintarPlan() lo muestra sólo si plan.semanal -->
+        <div class="np-sec" id="npSemanaCtrl" style="display:none">
+          <div class="sh">Semana · Lunes a Domingo</div>
+          <div class="np-dia-tabs" id="npDiaTabs"></div>
+          <div class="sh" style="margin-top:12px">Ciclado de carbohidratos por día</div>
+          <div class="np-chips" id="npCiclo"></div>
+          <div class="sh" style="margin-top:12px">Comida libre sugerida (1 por semana)</div>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <select id="npLibreDia"></select>
+            <select id="npLibreComida"></select>
+          </div>
+        </div>
         <div class="np-kpis" id="npKpis"></div>
         <div class="np-sec" style="margin-top:12px">
           <div class="sh">Peri-entreno</div>
@@ -42641,6 +42769,17 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
    ========================================================= */
 (function(){
   var KNP = 'coachjp_nutriplan_v1';
+
+  /* 29no pedido (30/08) -- Plan Nutricional Semanal de 7 dias + Comida Libre.
+     Todo lo nuevo es ADITIVO: un plan viejo (sin "semanal") sigue generandose,
+     validandose y publicandose exactamente como antes -- generar(), validar()
+     y planLocal() no se tocan. Lo nuevo vive en funciones propias
+     (planLocalSemanal, generarSemana, validarSemanal, etc.) que arman un plan
+     con forma distinta (plan.semanal=true, plan.dias.{lun..dom}) reusando el
+     mismo motor de calculo (calcularBase/macros/armarComidas/corregir). */
+  var DIAS_SEMANA = ['lun','mar','mie','jue','vie','sab','dom'];
+  var DIAS_LB = { lun:'Lunes', mar:'Martes', mie:'Miércoles', jue:'Jueves', vie:'Viernes', sab:'Sábado', dom:'Domingo' };
+  var DIAS_CORTO = { lun:'LUN', mar:'MAR', mie:'MIÉ', jue:'JUE', vie:'VIE', sab:'SÁB', dom:'DOM' };
 
   var RESTR = [
     { id:'veg',    lb:'🥦 Vegetariano/a' },
@@ -42831,7 +42970,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
                        'Tofu firme', 'Proteína de suero', 'Proteína vegetal en polvo'];
   var FRANJA_LIVIANA = /desayuno|media\s*ma[ñn]ana|merienda/i;
 
-  function armarComidas(f, mac, rest, alergias){
+  function armarComidas(f, mac, rest, alergias, offsetDia){
+    /* 29no pedido (30/08): "offsetDia" es nuevo y opcional (default 0, se
+       comporta exactamente igual que antes) -- lo usa el plan SEMANAL para
+       que cada día de la semana arranque la rotación de alimentos en un
+       punto distinto del pool y así los 7 días no repitan la misma
+       combinación, sin tocar en nada el caso de un único día (planLocal). */
+    offsetDia = offsetDia || 0;
     var prots = permitidos('prot', rest, alergias);
     var carbs = permitidos('carb', rest, alergias);
     var gras  = permitidos('gras', rest, alergias);
@@ -42844,13 +42989,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!protsPM.length) protsPM = prots;
 
     var plan = repartir(parseInt(f.comidas, 10) || 4, f.hora);
-    var iAM = 0, iPM = 0;
+    var iAM = offsetDia, iPM = offsetDia;
     var comidas = plan.map(function(c, i){
       var pObj = mac.prot_g * c.w.p, cObj = mac.carb_g * c.w.c, gObj = mac.gras_g * c.w.g;
       var liviana = FRANJA_LIVIANA.test(c.nombre);
       var poolP = liviana ? protsAM : protsPM;
       var pAl = liviana ? poolP[iAM++ % poolP.length] : poolP[iPM++ % poolP.length];
-      var cAl = carbs[i % carbs.length], gAl = gras[i % gras.length];
+      var cAl = carbs[(i + offsetDia) % carbs.length], gAl = gras[(i + offsetDia) % gras.length];
       var items = [];
 
       /* 1 · proteína */
@@ -43016,6 +43161,94 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     };
   }
 
+  /* ---------- 29no pedido (30/08): PLAN SEMANAL (7 días) ----------
+     Todo lo de acá abajo es aditivo y nuevo -- planLocal() de arriba queda
+     sin tocar, byte a byte. periEntrenoDe()/suplementosDe() son el mismo
+     cálculo que ya hacía planLocal() por dentro, sacado a función propia
+     para poder reusarlo una vez por semana en vez de reescribirlo. */
+  function periEntrenoDe(f){
+    var w = parseFloat(f.peso) || 70;
+    return {
+      pre:{ cuando: f.hora === 'am' ? '20-30 min antes' : '60-90 min antes',
+            texto:'Carbohidrato de fácil digestión y poca grasa.',
+            carb_g: Math.round(w * 0.7), prot_g: Math.round(w * 0.25) },
+      intra:{ cuando:'solo si la sesión pasa los 60 min',
+              texto:'500 a 750 ml de agua con una pizca de sal; sumar 25-30 g de carbohidrato por hora.',
+              carb_g:25 },
+      post:{ cuando:'dentro de los 90 minutos', texto:'Proteína completa más carbohidrato.',
+             carb_g: Math.round(w * 1.0), prot_g: Math.round(w * 0.4) }
+    };
+  }
+  function suplementosDe(f, rest){
+    var w = parseFloat(f.peso) || 70;
+    var supl = [
+      { nombre:'Creatina monohidrato', dosis:'5 g', momento:'cualquier hora, todos los días',
+        evidencia:'alta', nota:'no requiere fase de carga' },
+      { nombre:'Vitamina D3', dosis:'1000-2000 UI', momento:'con una comida con grasa',
+        evidencia:'alta si hay déficit', nota:'conviene medir antes' }
+    ];
+    if((rest || []).indexOf('vegano') >= 0) supl.push({ nombre:'Vitamina B12', dosis:'2000 mcg semanales',
+      momento:'una vez por semana', evidencia:'alta', nota:'no es opcional en dieta vegana' });
+    if(f.obj === 'rendimiento') supl.push({ nombre:'Cafeína', dosis:String(Math.round(w * 3)) + ' mg',
+      momento:'45 a 60 min antes', evidencia:'alta', nota:'no usar de noche' });
+    return supl;
+  }
+
+  /* ciclado por defecto: si el atleta ya tenía un plan semanal, se hereda su
+     ciclado (para no perder el ajuste manual del coach al regenerar); si es
+     la primera vez, sábado y domingo arrancan como "descanso" y el resto
+     como "entreno" -- un punto de partida razonable, 100% editable después
+     con los chips del Builder. */
+  function cicloCarbPorDefecto(previo){
+    if(previo && DIAS_SEMANA.every(function(dk){ return previo[dk] === 'entreno' || previo[dk] === 'descanso'; })) return previo;
+    var c = {};
+    DIAS_SEMANA.forEach(function(dk){ c[dk] = (dk === 'sab' || dk === 'dom') ? 'descanso' : 'entreno'; });
+    return c;
+  }
+
+  /* motor local, versión semanal: arma los 7 días reusando armarComidas()
+     con un offset distinto por día (ver arriba) para que la semana completa
+     tenga variedad real de alimentos, y aplicando por cada día el set de
+     macros que le toque según el ciclado entreno/descanso. */
+  function planLocalSemanal(f, cicloCarb){
+    var rest = f.rest || [], alergias = (f.alergias || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+    var base = calcularBase(f);
+    var mEnt = macros(f, base.kEnt, true), mDes = macros(f, base.kDes, false);
+    var peri = periEntrenoDe(f);
+    var dias = {}, alertas = [];
+    var faltoAlgunDia = false;
+    DIAS_SEMANA.forEach(function(dk, i){
+      var esEnt = (cicloCarb[dk] || 'entreno') === 'entreno';
+      var mac = esEnt ? mEnt : mDes;
+      var comidas = armarComidas(f, mac, rest, alergias, i);
+      if(!comidas){ faltoAlgunDia = true; return; }
+      var tot = comidas.reduce(function(a, c){
+        return { p:a.p + c.total.prot, c:a.c + c.total.carb, g:a.g + c.total.gras };
+      }, { p:0, c:0, g:0 });
+      if(Math.abs(tot.p - mac.prot_g) / mac.prot_g > 0.10 ||
+         Math.abs(tot.c - mac.carb_g) / mac.carb_g > 0.10 ||
+         Math.abs(tot.g - mac.gras_g) / mac.gras_g > 0.10){
+        alertas.push('[' + (DIAS_LB[dk] || dk) + '] con estas restricciones el reparto ideal no cierra: ' +
+          'se ajustó a lo alcanzable (' + tot.p + ' g de proteína, ' + tot.c + ' g de carbohidrato y ' + tot.g + ' g de grasa).');
+        mac = { prot_g:tot.p, carb_g:tot.c, gras_g:tot.g, fibra_g:mac.fibra_g, agua_ml:mac.agua_ml };
+      }
+      dias[dk] = { macros: mac, peri_entreno: peri, comidas: comidas };
+    });
+    if(faltoAlgunDia) return null;
+    return {
+      semanal:true, schemaV:2,
+      meta:{ kcal_entreno:base.kEnt, kcal_descanso:base.kDes, bmr:base.bmr, tdee:base.tdee,
+             metodo:'Mifflin-St Jeor × factor de actividad' },
+      macros:{ entreno:mEnt, descanso:mDes },
+      cicloCarb: cicloCarb,
+      comidaLibre: null,
+      dias: dias,
+      suplementos: suplementosDe(f, rest),
+      alertas: alertas,
+      disclaimer:'Orientativo y educativo. No reemplaza el plan de un nutricionista.'
+    };
+  }
+
   /* ---------- VALIDACIÓN (5 reglas duras) ---------- */
   function validar(plan, f){
     var errores = [], avisos = [];
@@ -43074,6 +43307,57 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!(plan.comidas || []).length) errores.push('El plan no trae comidas');
     if(!plan.disclaimer) avisos.push('Falta el descargo; se agrega automáticamente');
 
+    return { ok: errores.length === 0, errores: errores, avisos: avisos };
+  }
+
+  /* 29no pedido (30/08): mismas 5 reglas de validar(), corridas una vez por
+     cada uno de los 7 días -- función nueva y separada, no toca validar(). */
+  function validarSemanal(plan, f){
+    var errores = [], avisos = [];
+    var w = parseFloat(f.peso) || 70;
+    var base = calcularBase(f);
+    var alergias = (f.alergias || '').split(',').map(function(x){ return norm(x.trim()); }).filter(Boolean);
+    if(!plan.dias || !DIAS_SEMANA.some(function(dk){ return !!plan.dias[dk]; })){
+      errores.push('El plan semanal no trae ningún día generado');
+      return { ok:false, errores:errores, avisos:avisos };
+    }
+    DIAS_SEMANA.forEach(function(dk){
+      var d = plan.dias[dk];
+      var lb = DIAS_LB[dk] || dk;
+      if(!d || !(d.comidas || []).length){ errores.push('[' + lb + '] el día no trae comidas'); return; }
+      var sum = d.comidas.reduce(function(a, c){
+        return { p:a.p + (c.total ? c.total.prot : 0), c:a.c + (c.total ? c.total.carb : 0), g:a.g + (c.total ? c.total.gras : 0) };
+      }, { p:0, c:0, g:0 });
+      var obj = d.macros;
+      if(obj){
+        ['prot_g|p','carb_g|c','gras_g|g'].forEach(function(par){
+          var k = par.split('|'), o = obj[k[0]], s = sum[k[1]];
+          if(!o) return;
+          var dif = Math.abs(s - o) / o;
+          if(dif > 0.15) errores.push('[' + lb + '] ' + k[0].replace('_g','') + ' de las comidas (' + s + ' g) se aleja ' +
+            Math.round(dif * 100) + '% del objetivo (' + o + ' g)');
+          else if(dif > 0.08) avisos.push('[' + lb + '] desvío de ' + Math.round(dif * 100) + '% en ' + k[0].replace('_g',''));
+        });
+        var gkg = obj.prot_g / w;
+        if(gkg < 1.3 || gkg > 2.7) errores.push('[' + lb + '] proteína fuera de rango: ' + gkg.toFixed(1) + ' g/kg');
+      }
+      if(alergias.length){
+        d.comidas.forEach(function(c){
+          (c.items || []).forEach(function(it){
+            var n = norm(it.alimento || '');
+            var ficha = ALIM.filter(function(a){ return norm(a.n) === n; })[0];
+            alergias.forEach(function(al){
+              var choca = n.indexOf(al) >= 0 ||
+                (ficha && ficha.fam.some(function(fm){ return norm(fm).indexOf(al) >= 0 || al.indexOf(norm(fm)) >= 0; }));
+              if(choca) errores.push('[' + lb + '] ALERGIA: «' + it.alimento + '» choca con «' + al + '»');
+            });
+          });
+        });
+      }
+    });
+    if(plan.meta && plan.meta.kcal_descanso < base.bmr)
+      errores.push('Las calorías de día de descanso (' + plan.meta.kcal_descanso + ') quedan por debajo del basal (' + base.bmr + ')');
+    if(!plan.disclaimer) avisos.push('Falta el descargo; se agrega automáticamente');
     return { ok: errores.length === 0, errores: errores, avisos: avisos };
   }
 
@@ -43235,6 +43519,153 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       '- Priorizá que el JSON cierre bien formado por sobre agregar más detalle: es preferible un plato más simple ' +
       'pero con el JSON íntegro a uno más elaborado que corte la estructura.';
   }
+
+  /* 29no pedido (30/08) -- MOTOR IA SEMANAL, enfoque "pool + rotación local"
+     (aprobado por el coach): en vez de pedirle a la IA los 7 días completos
+     (7x el tamaño del JSON más pesado de la app -- el mismo patrón que rompió
+     en el pedido 26), se le pide un POOL COMPACTO de 3 variantes de plato por
+     franja horaria (no por día). El motor local arma después los 7 días
+     combinando esas variantes con la misma matemática de corrección/rotación
+     que ya usa el motor 100% local (ver ensamblarSemanaDesdePool más abajo) --
+     así el tamaño del JSON pedido no depende de cuántos días tenga la semana. */
+  function promptPoolSemanal(f){
+    var base = calcularBase(f);
+    var mEnt = macros(f, base.kEnt, true);
+    var N = parseInt(f.comidas, 10) || 4;
+    var slots = repartir(N, f.hora);
+    var slotsTxt = slots.map(function(s, i){
+      var pObj = Math.round(mEnt.prot_g * s.w.p), cObj = Math.round(mEnt.carb_g * s.w.c), gObj = Math.round(mEnt.gras_g * s.w.g);
+      return (i + 1) + '. ' + s.nombre + (s.pre ? ' (pre-entreno)' : s.post ? ' (post-entreno)' : '') +
+        ' — aprox. ' + pObj + 'g proteína / ' + cObj + 'g carbohidrato / ' + gObj + 'g grasa (referencia orientativa, ' +
+        'el motor local reajusta la cantidad exacta por día -- no hace falta precisión perfecta).';
+    }).join('\n');
+    var poolSchema = slots.map(function(s, i){
+      return '"' + (i + 1) + '":[{"nombre":"","items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,' +
+        '"macro":"prot","intercambios":[{"alimento":"","gramos":0}]}]}]';
+    }).join(',');
+    return 'Sos nutricionista deportivo y cocinero práctico armando un POOL de variedad semanal — NO un plan de 7 días ' +
+      'completo. Un motor local va a combinar estas variantes y a ajustar las cantidades exactas de cada día; vos solo ' +
+      'aportás variedad realista de platos por franja horaria. Respondés SOLO con un JSON válido: arrancás la respuesta ' +
+      'directo con "{" y la terminás en "}", sin bloques de código, sin comillas invertidas, sin la palabra "json" y sin ' +
+      'ningún texto antes o después del objeto.\n\n' +
+      'DATOS\n' +
+      'Sexo: ' + (f.sexo === 'm' ? 'masculino' : 'femenino') + ' · Edad: ' + f.edad +
+      ' · Peso: ' + f.peso + ' kg · Altura: ' + f.altura + ' cm' + (f.grasa ? ' · Grasa: ' + f.grasa + '%' : '') + '\n' +
+      'Objetivo: ' + f.obj + ' · Ritmo: ' + f.ritmo + ' · Actividad: ' + f.act + '\n' +
+      'Entrena: ' + f.hora + '\n' +
+      'Restricciones: ' + ((f.rest || []).join(', ') || 'ninguna') + '\n' +
+      'ALERGIAS (NO PUEDEN APARECER NI ELLAS NI SU FAMILIA, EN NINGUNA VARIANTE): ' + (f.alergias || 'ninguna') + '\n' +
+      'ALERGIAS, REPETIDO: ' + (f.alergias || 'ninguna') + '\n' +
+      'Notas del alumno: ' + (f.notas || 'sin notas') + '\n\n' +
+      'FRANJAS DEL DÍA Y SU OBJETIVO APROXIMADO\n' + slotsTxt + '\n\n' +
+      'PARA CADA FRANJA, DEVOLVÉ EXACTAMENTE 3 VARIANTES DE PLATO DISTINTAS ENTRE SÍ (para que la semana rote sin ' +
+      'repetirse) — mismo criterio de realismo que un plan de un día: nombre de plato real y apetecible (nunca ' +
+      '"Desayuno" como nombre), comida de casa cotidiana, mercado argentino accesible y barato.\n' +
+      'REALISMO POR FRANJA — Desayuno/Media mañana/Merienda: SIEMPRE liviano, NUNCA carne/pollo/pescado (usá huevo, ' +
+      'lácteos, legumbres o frutos secos). Almuerzo/Cena: plato de comida casera de verdad, ahí sí van carnes/pollo/pescado.\n' +
+      'Cada ítem de cada variante lleva un campo "macro" que vale exactamente "prot", "carb", "gras" o "verd" según cuál ' +
+      'es su rol principal en el plato — es clave para que el motor local pueda reajustar las cantidades por día sin ' +
+      'romper nada.\n\n' +
+      'DEVOLVÉ ESTE JSON EXACTO — SIN CAMPOS EXTRA, SIN LISTAS ANIDADAS DE MÁS:\n' +
+      '{"pool":{' + poolSchema + '},' +
+      '"peri_entreno":{"pre":{"cuando":"","texto":"","carb_g":0,"prot_g":0},' +
+      '"intra":{"cuando":"","texto":"","carb_g":0},"post":{"cuando":"","texto":"","carb_g":0,"prot_g":0}},' +
+      '"suplementos":[{"nombre":"","dosis":"","momento":"","evidencia":"","nota":""}],' +
+      '"alertas":[],"disclaimer":"Orientativo y educativo. No reemplaza el plan de un nutricionista."}\n\n' +
+      'REGLAS\n' +
+      '- Cada franja lleva EXACTAMENTE 3 variantes, cada una con 2 a 4 ítems.\n' +
+      '- Alimentos de Argentina, comunes y baratos. Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
+      '- Cada ítem lleva exactamente 1 intercambio equivalente en el mismo macro.\n' +
+      '- Ninguna variante de Desayuno, Media mañana o Merienda puede llevar carne, pollo ni pescado como fuente de proteína.\n' +
+      '- Nada de lenguaje motivacional ni promesas de resultados.\n' +
+      '- Priorizá que el JSON cierre bien formado por sobre agregar más detalle: es preferible una variante más simple ' +
+      'pero con el JSON íntegro a una más elaborada que corte la estructura.';
+  }
+
+  /* ¿esta variante del pool trae lo mínimo para usarse? */
+  function poolVarianteValida(v){
+    return !!(v && typeof v.nombre === 'string' && v.nombre.trim() &&
+      Array.isArray(v.items) && v.items.length &&
+      v.items.every(function(it){
+        return it && typeof it.alimento === 'string' && it.alimento.trim() &&
+          isFinite(it.gramos) && isFinite(it.prot) && isFinite(it.carb) && isFinite(it.gras) &&
+          ['prot','carb','gras','verd'].indexOf(it.macro) >= 0;
+      }));
+  }
+  /* clona un ítem del pool de la IA calculando su "base por 100g" a partir de
+     sus propios prot/carb/gras -- así se puede reescalar con corregir() sin
+     depender de que el nombre matchee la tabla ALIM (la IA puede traer
+     alimentos que no están en la tabla local, y aun así se puede reajustar). */
+  function clonarItemPool(it){
+    var g = Math.max(5, Math.round((it.gramos || 0) / 5) * 5) || 5;
+    var b = { p:(it.prot || 0) / g * 100, c:(it.carb || 0) / g * 100, g:(it.gras || 0) / g * 100 };
+    return {
+      alimento: it.alimento, gramos: g,
+      prot: Math.round(b.p * g / 100), carb: Math.round(b.c * g / 100), gras: Math.round(b.g * g / 100),
+      base: b, macro: it.macro,
+      intercambios: (it.intercambios || []).slice(0, 1).map(function(x){ return { alimento:x.alimento, gramos:x.gramos }; })
+    };
+  }
+  /* arma los 7 días combinando el pool de variantes con rotación por día
+     (offsetDia = índice del día, igual criterio que armarComidas) y
+     reajusta cada día a sus macros exactas (entreno/descanso) con la misma
+     convergencia de 4 pasadas que ya usa el motor 100% local. Si alguna
+     franja no trajo ninguna variante válida, cae a la comida equivalente del
+     motor local para esa posición (mismo criterio de "nunca romper el día
+     por una franja puntual" que fusionarConLocal). */
+  function ensamblarSemanaDesdePool(pool, f, cicloCarb, local){
+    var N = parseInt(f.comidas, 10) || 4;
+    var slots = repartir(N, f.hora);
+    var completadas = [];
+    var poolLimpio = {};
+    for(var j = 1; j <= N; j++){
+      var variantes = (pool && Array.isArray(pool[j])) ? pool[j].filter(poolVarianteValida) : [];
+      if(!variantes.length){
+        completadas.push(slots[j - 1] ? slots[j - 1].nombre : ('franja ' + j));
+        var comidaLocal = local && local.dias && local.dias.lun && local.dias.lun.comidas[j - 1];
+        if(comidaLocal){
+          variantes = [{
+            nombre: comidaLocal.nombre.replace(/ · (pre|post)-entreno$/, ''),
+            items: comidaLocal.items.map(function(it){ return Object.assign({}, it, { macro: it.macro || 'prot' }); })
+          }];
+        }
+      }
+      poolLimpio[j] = variantes;
+    }
+
+    var base = calcularBase(f);
+    var mEnt = macros(f, base.kEnt, true), mDes = macros(f, base.kDes, false);
+    var dias = {};
+    DIAS_SEMANA.forEach(function(dk, i){
+      var esEnt = (cicloCarb[dk] || 'entreno') === 'entreno';
+      var mac = esEnt ? mEnt : mDes;
+      var comidas = slots.map(function(slotMeta, j0){
+        var j = j0 + 1;
+        var variantes = poolLimpio[j];
+        if(!variantes.length) return { n:j, nombre:slotMeta.nombre, hora_sug:slotMeta.hora, items:[], total:{prot:0,carb:0,gras:0,kcal:0} };
+        var variant = variantes[i % variantes.length];
+        var items = variant.items.map(clonarItemPool);
+        var out = { n:j, nombre: variant.nombre + (slotMeta.pre ? ' · pre-entreno' : slotMeta.post ? ' · post-entreno' : ''),
+                    hora_sug: slotMeta.hora, items: items };
+        totalComida(out);
+        return out;
+      });
+      for(var k = 0; k < 4; k++){
+        var t = totales(comidas);
+        if(Math.abs(mac.prot_g - t.prot) > 2) corregir(comidas, 'prot', mac.prot_g - t.prot);
+        t = totales(comidas);
+        if(Math.abs(mac.carb_g - t.carb) > 3) corregir(comidas, 'carb', mac.carb_g - t.carb);
+        t = totales(comidas);
+        if(Math.abs(mac.gras_g - t.gras) > 2) corregir(comidas, 'gras', mac.gras_g - t.gras);
+      }
+      totales(comidas);
+      var periDia = (local && local.dias && local.dias[dk] && local.dias[dk].peri_entreno) || periEntrenoDe(f);
+      dias[dk] = { macros: mac, peri_entreno: periDia, comidas: comidas };
+    });
+
+    return { dias: dias, completadas: completadas, mEnt: mEnt, mDes: mDes };
+  }
+
   /* intenta JSON.parse tras sacar comas colgantes antes de "}" / "]" -- error
      muy común en JSON generado por LLM, rescatable sin volver a llamar a la IA */
   function intentarParsearJSON(s){
@@ -43327,6 +43758,46 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return null;
   }
 
+  /* 29no pedido (30/08): mismo extractor que parsearIA() (fence de markdown,
+     recorte al primer/último "{ }", reparación de comillas/saltos de línea)
+     pero exige la clave "pool" en vez de "comidas"/"macros" -- variante propia
+     y separada, parsearIA() de arriba queda sin tocar. */
+  function parsearIAPool(txt){
+    ultimoParseDiag = null;
+    if(!txt){
+      ultimoParseDiag = { motivo: 'La IA devolvió una respuesta vacía (sin texto) -- puede ser un bloque de contenido no-texto o un filtro del proveedor.', muestra: '' };
+      console.warn('nutriIA(pool): respuesta vacía del proveedor');
+      return null;
+    }
+    console.log('[DEBUG NUTRI IA SEMANAL RAW]:', txt);
+    var s = String(txt).trim();
+    var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if(fence) s = fence[1].trim();
+    else s = s.replace(/^```(?:json)?\s*/i, '').trim();
+    var a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if(a < 0 || b < a){
+      ultimoParseDiag = { motivo: 'La respuesta no contiene ningún objeto "{ }" reconocible.', muestra: s.slice(0, 300) };
+      console.warn('nutriIA(pool): la respuesta no trae ningún objeto {}', s.slice(0, 400));
+      return null;
+    }
+    var bloque = s.slice(a, b + 1);
+    var intento = intentarParsearJSON(bloque);
+    if(!intento.ok){
+      console.warn('nutriIA(pool): primer intento de parseo falló, se aplica reparación', intento.error);
+      intento = intentarParsearJSON(repararJSON(bloque));
+    }
+    if(!intento.ok){
+      ultimoParseDiag = { motivo: 'JSON inválido incluso tras la reparación automática: ' + intento.error, muestra: (intento.texto || bloque).slice(0, 300) };
+      console.warn('nutriIA(pool): JSON inválido incluso tras reparación', intento.error, (intento.texto || bloque).slice(0, 400));
+      return null;
+    }
+    var o = intento.value;
+    if(o && o.pool && typeof o.pool === 'object') return o;
+    ultimoParseDiag = { motivo: 'El JSON parseó correctamente pero le falta la clave "pool".', muestra: JSON.stringify(o).slice(0, 300) };
+    console.warn('nutriIA(pool): el JSON parseó pero le falta "pool"', o);
+    return null;
+  }
+
   /* ---------- almacenamiento ---------- */
   function leer(){ try{ return JSON.parse(localStorage.getItem(KNP) || '{}') || {}; }catch(e){ return {}; } }
   function guardar(o){ try{ localStorage.setItem(KNP, JSON.stringify(o)); }catch(e){} }
@@ -43342,6 +43813,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   /* ---------- UI ---------- */
   var athAct = null, R = null;
+  var npDiaSel = 'lun';   /* 29no pedido (30/08): día LUN..DOM elegido en el Builder para el plan semanal */
 
   function chips(id, lista, sel, attr){
     var el = document.getElementById(id); if(!el) return;
@@ -43379,15 +43851,110 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return SALUD.filter(function(s){ return s.bloquea && (f.salud || []).indexOf(s.id) >= 0; });
   }
 
+  /* 29no pedido (30/08): tabs LUN..DOM + chips de ciclado + selector de
+     comida libre -- sólo se llama cuando plan.semanal, desde pintarPlan(). */
+  function pintarControlesSemana(){
+    var plan = R.plan;
+    var tabs = document.getElementById('npDiaTabs');
+    if(tabs) tabs.innerHTML = DIAS_SEMANA.map(function(dk){
+      return '<button type="button" class="nc' + (dk === npDiaSel ? ' on' : '') + '" data-npdia="' + dk + '">' + DIAS_CORTO[dk] + '</button>';
+    }).join('');
+    var ciclo = document.getElementById('npCiclo');
+    if(ciclo) ciclo.innerHTML = DIAS_SEMANA.map(function(dk){
+      var t = (plan.cicloCarb && plan.cicloCarb[dk]) || 'entreno';
+      return '<button type="button" class="nc' + (t === 'entreno' ? ' on' : '') + '" data-npciclo="' + dk + '">' +
+        DIAS_CORTO[dk] + ' · ' + (t === 'entreno' ? 'Entreno' : 'Descanso') + '</button>';
+    }).join('');
+    var selDia = document.getElementById('npLibreDia'), selCom = document.getElementById('npLibreComida');
+    if(selDia){
+      selDia.innerHTML = DIAS_SEMANA.map(function(dk){ return '<option value="' + dk + '">' + DIAS_LB[dk] + '</option>'; }).join('');
+      selDia.value = (plan.comidaLibre && plan.comidaLibre.dia) || 'sab';
+    }
+    if(selCom){
+      var diaLibre = (plan.dias && plan.dias[selDia.value]) || null;
+      var comidasLibre = (diaLibre && diaLibre.comidas) || [];
+      selCom.innerHTML = comidasLibre.map(function(c){ return '<option value="' + c.n + '">' + esc(c.nombre) + '</option>'; }).join('');
+      var valorLibre = (plan.comidaLibre && plan.comidaLibre.dia === selDia.value) ? plan.comidaLibre.comida
+        : (comidasLibre.length ? comidasLibre[comidasLibre.length - 1].n : '');
+      selCom.value = valorLibre;
+    }
+  }
+
   function pintarPlan(){
     var plan = R.plan;
     var val = document.getElementById('npVal');
+    var ctrl = document.getElementById('npSemanaCtrl');
     if(!plan){ val.innerHTML = '<div class="np-val mal">Todavía no hay plan generado.</div>';
       document.getElementById('npKpis').innerHTML = '';
       document.getElementById('npComidasBox').innerHTML = '';
       document.getElementById('npPeri').innerHTML = '';
       document.getElementById('npSupl').innerHTML = '';
+      if(ctrl) ctrl.style.display = 'none';
       return; }
+
+    /* 29no pedido (30/08): plan SEMANAL -- rama nueva y separada, la rama de
+       abajo (plan de un solo día, como siempre) queda sin tocar. */
+    if(plan.semanal){
+      if(ctrl) ctrl.style.display = '';
+      if(!npDiaSel) npDiaSel = 'lun';
+      pintarControlesSemana();
+      var diaData = (plan.dias && plan.dias[npDiaSel]) || null;
+      if(!diaData){
+        val.innerHTML = '<div class="np-val mal">Este día todavía no tiene datos generados.</div>';
+        document.getElementById('npKpis').innerHTML = '';
+        document.getElementById('npComidasBox').innerHTML = '';
+        document.getElementById('npPeri').innerHTML = '';
+        document.getElementById('npSupl').innerHTML = '';
+        return;
+      }
+      var vs = validarSemanal(plan, R.ficha);
+      val.innerHTML = '<div class="np-val ' + (vs.ok ? 'ok' : 'mal') + '">' +
+        (vs.ok ? '✅ Semana validada: los 7 días cierran con sus macros, sin choque de alergias y proteína en rango.'
+               : '⚠️ ' + vs.errores.slice(0, 8).map(esc).join(' · ') + (vs.errores.length > 8 ? ' · (+' + (vs.errores.length - 8) + ' más)' : '')) +
+        (vs.avisos.length ? '<div style="margin-top:4px;opacity:.85">' + vs.avisos.slice(0, 6).map(esc).join(' · ') + '</div>' : '') +
+        '</div>';
+      var esEntDia = (plan.cicloCarb && plan.cicloCarb[npDiaSel]) === 'entreno';
+      var mRef = esEntDia ? plan.macros.entreno : plan.macros.descanso;
+      document.getElementById('npKpis').innerHTML =
+        '<div class="np-kpi"><div class="k">' + (DIAS_LB[npDiaSel] || npDiaSel) + '</div><div class="v">' + (esEntDia ? 'Entreno' : 'Descanso') + '</div></div>' +
+        '<div class="np-kpi"><div class="k">Calorías del día</div><div class="v">' + (esEntDia ? plan.meta.kcal_entreno : plan.meta.kcal_descanso) + ' <small>kcal</small></div></div>' +
+        '<div class="np-kpi"><div class="k">Proteína</div><div class="v">' + mRef.prot_g + ' <small>g</small></div></div>' +
+        '<div class="np-kpi"><div class="k">Carbohidrato</div><div class="v">' + mRef.carb_g + ' <small>g</small></div></div>' +
+        '<div class="np-kpi"><div class="k">Grasa</div><div class="v">' + mRef.gras_g + ' <small>g</small></div></div>' +
+        '<div class="np-kpi"><div class="k">Agua</div><div class="v">' + (mRef.agua_ml / 1000).toFixed(1) + ' <small>L</small></div></div>';
+      var peD = diaData.peri_entreno || {};
+      document.getElementById('npPeri').innerHTML = ['pre','intra','post'].map(function(k){
+        var x = peD[k]; if(!x) return '';
+        return '<div style="margin-bottom:5px"><b style="color:#7CC5E8;text-transform:uppercase;font-size:11px;letter-spacing:.12em">' +
+          k + '</b> · ' + esc(x.cuando || '') + ' — ' + esc(x.texto || '') +
+          (x.carb_g ? ' <span style="color:#E8965E">(' + x.carb_g + ' g CH' + (x.prot_g ? ' · ' + x.prot_g + ' g PROT' : '') + ')</span>' : '') + '</div>';
+      }).join('');
+      var esLibreDia = plan.comidaLibre && plan.comidaLibre.dia === npDiaSel;
+      document.getElementById('npComidasBox').innerHTML = (diaData.comidas || []).map(function(c){
+        var esLibre = esLibreDia && plan.comidaLibre.comida === c.n;
+        var itemsHtml = (c.items || []).map(function(it){
+          return '<div class="np-item"><span class="al">' + esc(it.alimento) + '</span>' +
+            '<span class="gr">' + it.gramos + ' g</span>' +
+            ((it.intercambios || []).length
+              ? '<span class="iv">⇄ ' + it.intercambios.map(function(x){ return esc(x.alimento) + ' ' + x.gramos + ' g'; }).join(' · ') + '</span>'
+              : '') + '</div>';
+        }).join('');
+        return '<div class="np-comida' + (esLibre ? ' libre' : '') + '">' +
+          (esLibre ? '<div class="np-libre-tag">[ COMIDA LIBRE SUGERIDA · CONTROLADA ]</div>' +
+            '<div class="np-libre-guia">Priorizá una fuente de proteína magra antes de esta comida · disfrutala sin culpa y sin atracón, comé despacio · reforzá la hidratación después.</div>' : '') +
+          '<div class="ch"><b>' + c.n + ' · ' + esc(c.nombre) + '</b>' +
+          '<span class="hh">' + esc(c.hora_sug || '') + '</span>' +
+          '<span class="kc">' + (c.total ? c.total.kcal : 0) + ' kcal · P' + (c.total ? c.total.prot : 0) +
+          ' C' + (c.total ? c.total.carb : 0) + ' G' + (c.total ? c.total.gras : 0) + '</span></div>' +
+          itemsHtml + '</div>';
+      }).join('');
+      document.getElementById('npSupl').innerHTML = (plan.suplementos || []).map(function(s){
+        return '<div>• <b>' + esc(s.nombre) + '</b> — ' + esc(s.dosis) + ' · ' + esc(s.momento) +
+          (s.nota ? ' <span style="color:#828A97">(' + esc(s.nota) + ')</span>' : '') + '</div>';
+      }).join('');
+      return;
+    }
+    if(ctrl) ctrl.style.display = 'none';
 
     var v = validar(plan, R.ficha);
     val.innerHTML = '<div class="np-val ' + (v.ok ? 'ok' : 'mal') + '">' +
@@ -43612,6 +44179,126 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       });
   }
 
+  /* 29no pedido (30/08) -- generación SEMANAL (7 días). generar()/planLocal()
+     de arriba quedan intactos y siguen existiendo en el código (ya no están
+     enganchados a ningún botón, pero un plan viejo generado con ellos sigue
+     abriendo y editándose igual que siempre, ver pintarPlan()). */
+  function generarSemana(conIA){
+    var f = tomarFicha();
+    if(!f.peso || !f.altura || !f.edad){ toast('Faltan peso, altura o edad', 'err'); return; }
+    var bloq = bloqueoSalud(f);
+    if(bloq.length){
+      toast('Derivación obligatoria: ' + bloq.map(function(x){ return x.lb; }).join(', '), 'err');
+      document.getElementById('npVal').innerHTML =
+        '<div class="np-val mal">⛔ Con ' + bloq.map(function(x){ return esc(x.lb); }).join(' y ') +
+        ' declarado, el módulo no genera plan. Corresponde derivar a un nutricionista o médico. ' +
+        'Podés seguir usando la nutrición por sesión, que es orientativa.</div>';
+      tab('plan');
+      return;
+    }
+    var cicloCarb = cicloCarbPorDefecto(R.plan && R.plan.semanal ? R.plan.cicloCarb : null);
+    var comidaLibrePrevia = (R.plan && R.plan.semanal && R.plan.comidaLibre) || null;
+    var local = planLocalSemanal(f, cicloCarb);
+    if(!local){ toast('Las restricciones dejan sin fuentes de algún macro', 'err'); return; }
+    local.comidaLibre = comidaLibrePrevia || { dia:'sab', comida: parseInt(f.comidas, 10) || 4 };
+
+    if(!conIA || !(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave())){
+      R.plan = local; R.fuente = 'local'; R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
+      if(!npDiaSel) npDiaSel = 'lun';
+      guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
+      if(conIA){
+        toast('Sin clave de IA: se usó el motor local');
+        renderDiag({ ok:false, etapa:'Sin clave de IA', motivo:'No hay ninguna API Key configurada en este dispositivo. Configurala en el modal de IA (⚙️) o usá "🧪 Test Conexión IA" para confirmarlo.' });
+      }
+      return;
+    }
+    var cfgAI = CoachAI.cfg();
+    var provAct = cfgAI.provider;
+    var modelAct = (cfgAI.models && cfgAI.models[provAct]) || '(modelo por defecto)';
+    toast('Consultando IA (pool semanal)…');
+    renderDiag({ ok:true, etapa:'Consultando ' + PROV_LB(provAct) + ' — pool semanal…', provider: provAct, model: modelAct, motivo:'Pidiendo variantes de platos por franja horaria (no los 7 días completos, para mantener el JSON liviano y evitar el problema del pedido 26).' });
+    /* piso de tokens del pool: ~2-3x el de un día (3 variantes por franja en
+       vez de 1), bien lejos de lo que costaría pedir los 7 días completos */
+    var maxTokPool = Math.max((cfgAI.maxTokens || 0), 28000);
+    var sistemaNutri = 'Respondé ÚNICAMENTE con el objeto JSON puro. ' +
+      'No incluyas bloques de código ni comillas invertidas (```json o ```). ' +
+      'No agregues saludos, aclaraciones ni texto explicativo antes ni después. ' +
+      'La respuesta completa arranca en "{" y termina en "}", sin ningún carácter fuera de ese rango.';
+    CoachAI.generarTexto(promptPoolSemanal(f), sistemaNutri, { maxTokens: maxTokPool })
+      .then(function(txt){
+        var o = parsearIAPool(txt);
+        if(o){
+          var ensamblado = ensamblarSemanaDesdePool(o.pool, f, cicloCarb, local);
+          var periSemana = (o.peri_entreno && typeof o.peri_entreno === 'object' && o.peri_entreno.pre) ? o.peri_entreno : periEntrenoDe(f);
+          DIAS_SEMANA.forEach(function(dk){ if(ensamblado.dias[dk]) ensamblado.dias[dk].peri_entreno = periSemana; });
+          var plan = {
+            semanal:true, schemaV:2,
+            meta:{ kcal_entreno: local.meta.kcal_entreno, kcal_descanso: local.meta.kcal_descanso,
+                   bmr: local.meta.bmr, tdee: local.meta.tdee, metodo: local.meta.metodo },
+            macros:{ entreno: ensamblado.mEnt, descanso: ensamblado.mDes },
+            cicloCarb: cicloCarb,
+            comidaLibre: local.comidaLibre,
+            dias: ensamblado.dias,
+            suplementos: Array.isArray(o.suplementos) && o.suplementos.length ? o.suplementos : local.suplementos,
+            alertas: Array.isArray(o.alertas) ? o.alertas : [],
+            disclaimer: o.disclaimer || local.disclaimer
+          };
+          var v = validarSemanal(plan, f);
+          var completados = ensamblado.completadas.length;
+          if(v.ok){
+            R.plan = plan; R.fuente = completados ? 'ia_parcial' : 'ia';
+            var motivoOk = completados
+              ? ('Se completaron con el motor local ' + completados + ' franja(s) porque la IA no las devolvió en formato usable: ' + ensamblado.completadas.join(', ') + '.')
+              : (v.avisos.length ? ('Avisos menores: ' + v.avisos.slice(0, 6).join(' · ')) : 'Sin observaciones.');
+            renderDiag({ ok:true, etapa: completados ? 'Semana generada (IA + motor local para ' + completados + ' franja(s))' : 'Semana generada con IA', provider: provAct, model: modelAct, motivo: motivoOk });
+            toast(completados ? '✅ Semana generada — ' + completados + ' franja(s) se completaron con el motor local' : '✅ Semana generada con IA');
+          } else {
+            R.plan = local; R.fuente = 'local';
+            toast('La IA falló la validación de la semana: se usó el motor local');
+            renderDiag({ ok:false, etapa:'La IA respondió, pero la semana (incluso completada) no pasó la validación', provider: provAct, model: modelAct, motivo: v.errores.slice(0, 6).join(' · '), muestra: JSON.stringify(o).slice(0, 300) });
+          }
+        } else {
+          R.plan = local; R.fuente = 'local';
+          toast('La IA no devolvió un pool válido: se usó el motor local');
+          renderDiag(Object.assign(
+            { ok:false, etapa:'La IA respondió, pero no se pudo interpretar el pool', provider: provAct, model: modelAct },
+            ultimoParseDiag || { motivo:'Motivo desconocido -- ver consola del navegador.' }
+          ));
+        }
+        if(!npDiaSel) npDiaSel = 'lun';
+        R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
+        guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
+      })
+      .catch(function(e){
+        R.plan = local; R.fuente = 'local'; R.estado = 'bor'; R.ts = Date.now();
+        if(!npDiaSel) npDiaSel = 'lun';
+        guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
+        var msg = (e && e.message) || 'Error desconocido';
+        toast('No se pudo consultar la IA (' + msg + '): se usó el motor local', 'warn');
+        renderDiag({ ok:false, etapa:'Falló la llamada al proveedor de IA (no llegó a intentar parsear nada)', provider: provAct, model: modelAct, motivo: msg });
+      });
+  }
+
+  /* reescala un día ya generado (local o IA) a un nuevo tipo entreno/descanso
+     -- reusa la misma convergencia de corregir() que ya usa el ensamblador,
+     así el toggle de ciclado queda vivo incluso después de generar. */
+  function reescalarDia(dk, tipo){
+    if(!R.plan || !R.plan.semanal || !R.plan.dias[dk]) return;
+    var mac = tipo === 'entreno' ? R.plan.macros.entreno : R.plan.macros.descanso;
+    var dia = R.plan.dias[dk];
+    dia.macros = mac;
+    var comidas = dia.comidas;
+    for(var k = 0; k < 4; k++){
+      var t = totales(comidas);
+      if(Math.abs(mac.prot_g - t.prot) > 2) corregir(comidas, 'prot', mac.prot_g - t.prot);
+      t = totales(comidas);
+      if(Math.abs(mac.carb_g - t.carb) > 3) corregir(comidas, 'carb', mac.carb_g - t.carb);
+      t = totales(comidas);
+      if(Math.abs(mac.gras_g - t.gras) > 2) corregir(comidas, 'gras', mac.gras_g - t.gras);
+    }
+    totales(comidas);
+  }
+
   function tab(id){
     $$('#mNP [data-nptab]').forEach(function(b){ b.classList.toggle('on', b.dataset.nptab === id); });
     document.getElementById('npPaneFicha').classList.toggle('on', id === 'ficha');
@@ -43656,15 +44343,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(i >= 0) R.ficha.salud.splice(i, 1); else R.ficha.salud.push(c.dataset.nsalud);
         guardarReg(athAct.id, R); chips('npSalud', SALUD, R.ficha.salud, 'data-nsalud');
       });
-      document.getElementById('npGen').addEventListener('click', function(){ generar(false); });
-      document.getElementById('npGenIA').addEventListener('click', function(){ generar(true); });
+      /* 29no pedido (30/08): "Generar plan"/"Generar con IA" ahora arman la
+         semana completa -- generar()/planLocal() (motor de un solo día)
+         quedan intactos en el código, ya no atados a ningún botón. */
+      document.getElementById('npGen').addEventListener('click', function(){ generarSemana(false); });
+      document.getElementById('npGenIA').addEventListener('click', function(){ generarSemana(true); });
       document.getElementById('npTestIA').addEventListener('click', testConexionIA);
       document.getElementById('npSaveFicha').addEventListener('click', function(){
         tomarFicha(); guardarReg(athAct.id, R); toast('💾 Ficha guardada');
       });
       document.getElementById('npPub').addEventListener('click', function(){
         if(!R.plan){ toast('Generá el plan primero', 'err'); return; }
-        var v = validar(R.plan, R.ficha);
+        var v = R.plan.semanal ? validarSemanal(R.plan, R.ficha) : validar(R.plan, R.ficha);
         if(!v.ok && !confirm('El plan no pasa la validación:\n\n' + v.errores.join('\n') +
           '\n\n¿Publicarlo igual?')) return;
         R.estado = 'pub'; guardarReg(athAct.id, R); pintarEstado();
@@ -43673,6 +44363,32 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       document.getElementById('npDespub').addEventListener('click', function(){
         R.estado = R.plan ? 'bor' : 'sin'; guardarReg(athAct.id, R); pintarEstado();
         toast('Plan despublicado: no viaja a la app');
+      });
+
+      /* 29no pedido (30/08): tabs de día, chips de ciclado y selector de
+         comida libre del plan semanal -- inertes si no hay plan semanal. */
+      document.getElementById('npDiaTabs').addEventListener('click', function(e){
+        var b = e.target.closest('[data-npdia]'); if(!b) return;
+        npDiaSel = b.dataset.npdia; pintarPlan();
+      });
+      document.getElementById('npCiclo').addEventListener('click', function(e){
+        var b = e.target.closest('[data-npciclo]'); if(!b || !R.plan || !R.plan.semanal) return;
+        var dk = b.dataset.npciclo;
+        var nuevoTipo = (R.plan.cicloCarb[dk] === 'entreno') ? 'descanso' : 'entreno';
+        R.plan.cicloCarb[dk] = nuevoTipo;
+        reescalarDia(dk, nuevoTipo);
+        guardarReg(athAct.id, R); pintarPlan();
+      });
+      document.getElementById('npLibreDia').addEventListener('change', function(){
+        if(!R.plan || !R.plan.semanal) return;
+        var comidasDia = (R.plan.dias[this.value] || {}).comidas || [];
+        R.plan.comidaLibre = { dia:this.value, comida: comidasDia.length ? comidasDia[comidasDia.length - 1].n : 1 };
+        guardarReg(athAct.id, R); pintarPlan();
+      });
+      document.getElementById('npLibreComida').addEventListener('change', function(){
+        if(!R.plan || !R.plan.semanal || !R.plan.comidaLibre) return;
+        R.plan.comidaLibre.comida = parseInt(this.value, 10);
+        guardarReg(athAct.id, R); pintarPlan();
       });
     }
   }
