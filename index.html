@@ -42031,8 +42031,54 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       'proteína — usá huevo, lácteos, legumbres o frutos secos ahí.\n' +
       '- Nada de lenguaje motivacional ni promesas de resultados.';
   }
+  /* intenta JSON.parse tras sacar comas colgantes antes de "}" / "]" -- error
+     muy común en JSON generado por LLM, rescatable sin volver a llamar a la IA */
+  function intentarParsearJSON(s){
+    var limpio = s.replace(/,(\s*[}\]])/g, '$1');
+    try{ return { ok: true, value: JSON.parse(limpio) }; }
+    catch(e){ return { ok: false, error: e.message, texto: limpio }; }
+  }
+
+  /* reparación de último recurso, carácter a carácter: sólo entra en juego si
+     el primer intento de JSON.parse ya falló. Recorre el string llevando el
+     estado "¿estoy dentro de un string JSON?" para poder distinguir contenido
+     de estructura, y arregla dos fallas típicas de respuestas de LLM:
+       1) saltos de línea/tabs crudos metidos dentro de un string (rompen JSON.parse)
+       2) comillas dobles sin escapar dentro de un string (p.ej. texto con comillas
+          "así" citado tal cual) -- se detecta mirando si tras la comilla sigue
+          inmediatamente un separador válido de JSON (",", ":", "}", "]" o fin de
+          string); si no, se asume que es contenido y se escapa */
+  function repararJSON(s){
+    var out = '', inStr = false, esc = false;
+    for(var i = 0; i < s.length; i++){
+      var c = s[i];
+      if(inStr){
+        if(esc){ out += c; esc = false; continue; }
+        if(c === '\\'){ out += c; esc = true; continue; }
+        if(c === '"'){
+          var j = i + 1;
+          while(j < s.length && /\s/.test(s[j])) j++;
+          var siguiente = s[j];
+          var cierraLegit = (siguiente === undefined || ',:}]'.indexOf(siguiente) >= 0);
+          if(cierraLegit){ out += c; inStr = false; }
+          else out += '\\"';
+          continue;
+        }
+        if(c === '\n'){ out += '\\n'; continue; }
+        if(c === '\r'){ out += '\\r'; continue; }
+        if(c === '\t'){ out += '\\t'; continue; }
+        out += c;
+      } else {
+        if(c === '"') inStr = true;
+        out += c;
+      }
+    }
+    return out;
+  }
+
   function parsearIA(txt){
     if(!txt) return null;
+    console.log('[DEBUG NUTRI IA RAW]:', txt);
     var s = String(txt).trim();
     /* la IA a veces envuelve el JSON en un bloque de código pese a que se le pide
        que no lo haga — se descarta el fence de markdown antes de buscar las llaves.
@@ -42041,20 +42087,24 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
     else s = s.replace(/^```(?:json)?\s*/i, '').trim();
-    var m = s.match(/\{[\s\S]*\}/);
-    if(!m){ console.warn('nutriIA: la respuesta no trae ningún objeto {}', s.slice(0, 400)); return null; }
-    /* coma colgante antes de "}" o "]" — error muy común en JSON generado por
-       LLM, rescatable sin volver a llamar a la IA */
-    var limpio = m[0].replace(/,(\s*[}\]])/g, '$1');
-    try{
-      var o = JSON.parse(limpio);
-      if(o && o.comidas && o.macros) return o;
-      console.warn('nutriIA: el JSON parseó pero le faltan "comidas" o "macros"', o);
-      return null;
-    }catch(e){
-      console.warn('nutriIA: JSON inválido (posible respuesta truncada o con texto extra)', e.message, limpio.slice(0, 400));
+    /* localización explícita del primer "{" y el último "}" reales del texto --
+       cubre el caso de saludos o explicaciones antes/después del objeto */
+    var a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if(a < 0 || b < a){ console.warn('nutriIA: la respuesta no trae ningún objeto {}', s.slice(0, 400)); return null; }
+    var bloque = s.slice(a, b + 1);
+    var intento = intentarParsearJSON(bloque);
+    if(!intento.ok){
+      console.warn('nutriIA: primer intento de parseo falló, se aplica reparación', intento.error);
+      intento = intentarParsearJSON(repararJSON(bloque));
+    }
+    if(!intento.ok){
+      console.warn('nutriIA: JSON inválido incluso tras reparación (posible respuesta truncada o mal formada)', intento.error, (intento.texto || bloque).slice(0, 400));
       return null;
     }
+    var o = intento.value;
+    if(o && o.comidas && o.macros) return o;
+    console.warn('nutriIA: el JSON parseó pero le faltan "comidas" o "macros"', o);
+    return null;
   }
 
   /* ---------- almacenamiento ---------- */
@@ -42215,8 +42265,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        tokens más alto que el configurado en el modal de IA para bajar el riesgo
        de que la respuesta se corte a mitad de camino y el JSON llegue incompleto */
     var maxTokPlan = Math.max((CoachAI.cfg().maxTokens || 0), 12000);
-    CoachAI.generarTexto(promptDe(f), 'Devolvés únicamente un objeto JSON válido. Nunca uses bloques de código ni comillas invertidas (```). No agregues ninguna palabra antes ni después: la respuesta completa arranca en "{" y termina en "}".', { maxTokens: maxTokPlan })
+    var sistemaNutri = 'Respondé ÚNICAMENTE con el objeto JSON puro. ' +
+      'No incluyas bloques de código ni comillas invertidas (```json o ```). ' +
+      'No agregues saludos, aclaraciones ni texto explicativo antes ni después. ' +
+      'La respuesta completa arranca en "{" y termina en "}", sin ningún carácter fuera de ese rango.';
+    CoachAI.generarTexto(promptDe(f), sistemaNutri, { maxTokens: maxTokPlan })
       .then(function(txt){
+        console.log('[DEBUG NUTRI IA RAW]:', txt);
         var p = parsearIA(txt);
         if(p){
           if(!p.disclaimer) p.disclaimer = 'Orientativo y educativo. No reemplaza el plan de un nutricionista.';
