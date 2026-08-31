@@ -5786,19 +5786,35 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     return mejor;
   }
-  function formatoDe(block, lineas){
-    /* el cuerpo del bloque manda: si dice EMOM, la tarjeta dice EMOM */
-    return primerFormato(lineas.join(' ')) ||
-           primerFormato((block.title || '') + ' ' + (block.subtitle || ''));
+  function formatoDe(block, lineas, weekIdx){
+    /* el cuerpo del bloque manda: si dice EMOM, la tarjeta dice EMOM.
+       El fallback (cuando el cuerpo de ESTA semana no trae ninguna palabra
+       de formato -- ej. rotó a un superset de fuerza con notación B1/B2) usa
+       la etiqueta YA resuelta para la semana actual, nunca el título estático
+       congelado en la semana 1. El subtítulo estático sólo se suma a ese
+       fallback si esta semana NO rotó (si rotó, el subtítulo describe el
+       contenido de otra semana y arrastraría el mismo formato viejo) -- si
+       nada matchea, se muestra el badge genérico "WOD" en vez de arrastrar
+       un formato de otra semana */
+    const base = block.title || '';
+    const etiquetaWi = (block.weekName && weekIdx != null && block.weekName[weekIdx]) || base;
+    const rotado = etiquetaWi !== base;
+    const fallback = etiquetaWi + (rotado ? '' : ' ' + (block.subtitle || ''));
+    return primerFormato(lineas.join(' ')) || primerFormato(fallback);
   }
   function minutosDe(block, lineas){
     if(block.cardioMinutes) return parseInt(block.cardioMinutes, 10) || 0;
     const m = ((block.subtitle||'') + ' ' + lineas.join(' ')).match(/(\\d{1,2})\\s*(?:min|minuto|')/i);
     return m ? parseInt(m[1], 10) : 0;
   }
-  function esMetcon(block){
+  function esMetcon(block, weekIdx){
+    /* además del título/categoría estáticos, se testea la etiqueta YA
+       resuelta para la semana actual -- así un bloque cuya categoría
+       estática nunca dijo "metcon" igual muestra la pizarra si esta semana
+       rotó a un WOD (sólo agrega casos verdaderos, nunca saca uno) */
+    var etiquetaWi = (block.weekName && weekIdx != null && block.weekName[weekIdx]) || '';
     return block.category === 'metcon' ||
-           /met.?con|wod|bloque c|amrap|emom|for time|chipper/i.test((block.title||'') + ' ' + (block.subtitle||''));
+           /met.?con|wod|bloque c|amrap|emom|for time|chipper/i.test((block.title||'') + ' ' + (block.subtitle||'') + ' ' + etiquetaWi);
   }
   function pizarra(blockEl, block, weekIdx, dayId){
     const lineas = [];
@@ -5808,7 +5824,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       lineas.push(((n ? n.childNodes[0].textContent : el.textContent) + (d ? ' — ' + d.textContent : '')).trim());
     });
     if(!lineas.length) return;
-    const f = formatoDe(block, lineas);
+    const f = formatoDe(block, lineas, weekIdx);
     const min = minutosDe(block, lineas);
     const skey = weekIdx + '|' + dayId + '|' + block.id;
     const guardado = state.scores[skey] || '';
@@ -5819,8 +5835,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '<span class="wb-fmt">' + (f ? f.lb : 'WOD') + '</span>' +
         '</div>' +
         '<div class="wb-body">' +
-          /* el protocolo del bloque abre la pizarra: es el título del contenido */
-          (block.subtitle ? '<div class="wb-line head"><span>' + block.subtitle + '</span></div>' : '') +
+          /* el protocolo del bloque abre la pizarra: es el título del contenido.
+             El subtítulo estático sólo se muestra si esta semana no rotó --
+             si rotó, describe el contenido de otra semana (ej. "Core
+             antirotación" encabezando un WOD de Front Rack Lunge Walk) */
+          ((block.subtitle && !(block.weekName && block.weekName[weekIdx] && block.weekName[weekIdx] !== block.title))
+            ? '<div class="wb-line head"><span>' + block.subtitle + '</span></div>' : '') +
           lineas.map(function(l, i){
             const head = /:\\s*$/.test(l) || /^(amrap|emom|every|for time|\\d+\\s*rondas?|\\d+\\s*rounds?|chipper)/i.test(l);
             return '<div class="wb-line' + (head ? ' head' : '') + '">' +
@@ -6060,7 +6080,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(day.hyrox) mapa[day.hyrox.id] = day.hyrox;
     mainEl.querySelectorAll('.block').forEach(function(el){
       const b = mapa[el.dataset.blockId]; if(!b) return;
-      if(esMetcon(b)) pizarra(el, b, weekIdx, day.id);
+      if(esMetcon(b, weekIdx)) pizarra(el, b, weekIdx, day.id);
       /* PR sobre lo que ya estaba cargado */
       el.querySelectorAll('.set-row').forEach(function(row){ chequearPR(row); });
     });
@@ -12041,7 +12061,10 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
   function core(){
     document.querySelectorAll('.block').forEach(function(bl){
       var b = bloqueDe(bl.dataset.blockId);
-      var titulo = ((bl.querySelector('.block-label') || {}).textContent || '') + ' ' + ((b && b.title) || '');
+      /* misma corrección que en "CORE ESTRUCTURADO": usar la etiqueta ya
+         resuelta para la semana actual, no el título estático congelado */
+      var wi = (typeof state !== 'undefined' && state) ? (state.currentWeek || 0) : 0;
+      var titulo = (b && ((b.weekName && b.weekName[wi]) || b.title)) || '';
       var esCore = !!(b && b.coreBlock) || RX_CORE.test(titulo);
       bl.classList.toggle('core-card', esCore);
       if(esCore){
@@ -12300,8 +12323,11 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     if(b){
       var items = (b.weekItems && b.weekItems[wi] && b.weekItems[wi].length) ? b.weekItems[wi] : (b.items || []);
       var mov = items.filter(function(x){ return !/^\\s*(-|\\d+\\s*sets?:|rest|descanso)/i.test(x); }).length;
-      if(RX_WARM.test((b.title || '') + ' ' + (b.subtitle || ''))) return null;
-      if(b.coreBlock || /core|abdomen|estabilidad/i.test(b.title || ''))
+      /* etiqueta ya resuelta para la semana actual (no el título estático
+         congelado en la semana 1) -- misma corrección que en esCore() */
+      var etiquetaWi = (b.weekName && b.weekName[wi]) || b.title || '';
+      if(RX_WARM.test(etiquetaWi + ' ' + (b.subtitle || ''))) return null;
+      if(b.coreBlock || /core|abdomen|estabilidad/i.test(etiquetaWi))
         return { kind:'Circuito', main:'<b>CORE Y ESTABILIDAD</b> · ' + mov + ' ESTACIONES', vol: mov + ' estaciones' };
       return { kind:'Circuito', main:'<b>' + mov + ' ESTACIONES</b>', vol: mov + ' estaciones' };
     }
@@ -12422,7 +12448,14 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     document.querySelectorAll('.block').forEach(function(bl){
       var b = bloqueDe(bl.dataset.blockId);
       if(!b || b.isBlock || b.isSuperset || b.isFinisher) return;
-      var titulo = (b.title || '') + ' ' + (b.subtitle || '');
+      var wiReg = (typeof state !== 'undefined' && state) ? (state.currentWeek || 0) : 0;
+      /* el subtítulo estático sólo suma al test si esta semana no rotó
+         (mismo criterio que esCore()): si rotó, el subtítulo describe otra
+         semana y no debe hacer que este bloque pierda sus mini-logs */
+      var baseReg = b.title || '';
+      var etiquetaWiReg = (b.weekName && b.weekName[wiReg]) || baseReg;
+      var rotadoReg = etiquetaWiReg !== baseReg;
+      var titulo = etiquetaWiReg + (rotadoReg ? '' : ' ' + (b.subtitle || ''));
       if(RX_WARM.test(titulo)) return;                 /* la entrada en calor no se registra */
       /* el core se registra con sus filas de serie: nada de checkboxes genéricos en bucle */
       if(b.coreBlock || RX_CORE.test(titulo)) return;
@@ -13428,8 +13461,21 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
   function esCore(b, bl){
-    var t = ((b && (b.title || '')) || '') + ' ' + ((b && (b.subtitle || '')) || '') + ' ' +
-            (((bl && bl.querySelector('.block-label')) || {}).textContent || '');
+    /* en plantillas que rotan de semana (ej. CrossFit Atletas 6 semanas) un
+       mismo bloque puede ser "core" la semana 1 y un WOD/metcon la semana 2 --
+       b.title/b.subtitle son estáticos (congelados en la semana 1) y NUNCA
+       cambian, así que testearlos acá hacía que el bloque siguiera
+       clasificado como core aunque esta semana sea otra cosa. Se usa la
+       etiqueta YA resuelta para la semana actual (weekName[wi], la misma que
+       ve el alumno en el título del bloque); el subtítulo estático sólo se
+       suma al test cuando ESTA semana no rotó (weekName[wi] coincide con el
+       título base) -- si rotó, el subtítulo describe el contenido de otra
+       semana y sumarlo produciría el mismo falso positivo que el título */
+    var wi = (typeof state !== 'undefined' && state) ? (state.currentWeek || 0) : 0;
+    var base = (b && b.title) || '';
+    var etiquetaWi = (b && b.weekName && b.weekName[wi]) || base;
+    var rotado = etiquetaWi !== base;
+    var t = etiquetaWi + (rotado ? '' : ' ' + ((b && b.subtitle) || ''));
     return !!(b && b.coreBlock) || RX_CORE.test(t);
   }
 
@@ -13487,6 +13533,12 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     document.querySelectorAll('.block').forEach(function(bl){
       var b = bloqueDe(bl.dataset.blockId);
       if(!esCore(b, bl)) return;
+      /* si ya se pintó la pizarra WOD/Metcon para este bloque (ver "3) PIZARRA
+         METCON / WOD"), es un bloque de pizarra y nunca debe recibir
+         tratamiento de "core estructurado" -- aunque esCore() diera falso
+         positivo (ej. b.coreBlock cargado inconsistente en datos viejos),
+         esto evita la tarjeta azul "Core" duplicada sobre el tablero WOD */
+      if(bl.querySelector('.wod-board') || bl.querySelector('.cf-board')) return;
       /* el core ya estructurado (o ya unificado en rondas) sólo necesita su cabecera */
       var yaTiene = !!bl.querySelector('.set-tracker') || !!bl.querySelector('.set-row') ||
                     !!bl.querySelector('.bs-wrap');
@@ -19358,7 +19410,18 @@ document.addEventListener('DOMContentLoaded', init);
       body = {
         system_instruction: { parts: [{ text: system }] },
         contents: [{ role:'user', parts: [{ text: user }] }],
-        generationConfig: { maxOutputTokens: maxTok, temperature: 0.7, responseMimeType: 'application/json' }
+        /* thinkingConfig.thinkingBudget:0 -- los modelos Gemini "flash" traen
+           razonamiento interno activado por defecto y ese razonamiento
+           consume parte del cupo de maxOutputTokens ANTES de escribir la
+           respuesta visible. En un JSON largo (plan nutricional) eso puede
+           devolver un candidate vacío o cortado sin ningún aviso claro --
+           por eso "con OpenAI anda perfecto pero con Gemini falla o cae al
+           fallback" aun con el mismo prompt. thinkingBudget:0 apaga ese
+           razonamiento para que TODO el presupuesto de tokens vaya al JSON
+           de salida. Si el modelo puntual no admite apagarlo (algunos "pro"
+           exigen un mínimo), se reintenta una sola vez sin este campo más
+           abajo, en vez de romper el proveedor entero. */
+        generationConfig: { maxOutputTokens: maxTok, temperature: 0.7, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } }
       };
     } else {
       headers = { 'content-type': 'application/json', 'authorization': 'Bearer ' + keyOf(prov) };
@@ -19369,8 +19432,23 @@ document.addEventListener('DOMContentLoaded', init);
       };
     }
 
-    const res = await fetch(url, { method:'POST', headers: headers, body: JSON.stringify(body) });
-    const raw = await res.text();
+    async function enviar(bodyEnviado){
+      const r = await fetch(url, { method:'POST', headers: headers, body: JSON.stringify(bodyEnviado) });
+      return { res: r, raw: await r.text() };
+    }
+
+    let { res, raw } = await enviar(body);
+
+    /* algunos modelos Gemini (ej. variantes "pro" con razonamiento
+       obligatorio) rechazan thinkingConfig.thinkingBudget:0 con un HTTP 400
+       -- se reintenta una sola vez sin ese campo antes de darlo por fallido,
+       para no romper Gemini entero por un parámetro que un modelo puntual
+       no soporta desactivar */
+    if(prov === 'google' && !res.ok && res.status === 400 && body.generationConfig && body.generationConfig.thinkingConfig){
+      const bodySinThinking = JSON.parse(JSON.stringify(body));
+      delete bodySinThinking.generationConfig.thinkingConfig;
+      ({ res, raw } = await enviar(bodySinThinking));
+    }
 
     if(res.status === 429 || res.status === 529 || res.status === 503){
       let secs = 0;
@@ -19402,7 +19480,12 @@ document.addEventListener('DOMContentLoaded', init);
       const cand = (j.candidates || [])[0];
       if(!cand) throw new Error('Gemini no devolvió candidatos (¿filtro de seguridad?).');
       if(cand.finishReason === 'MAX_TOKENS') throw new Error('Respuesta cortada por límite de tokens: subí "Máx. tokens".');
-      return ((cand.content && cand.content.parts) || []).map(pt => pt.text || '').join('');
+      /* las partes marcadas thought:true son el razonamiento interno del
+         modelo, no la respuesta -- si algún modelo las devolviera pese al
+         thinkingBudget:0 de arriba, no deben mezclarse con el JSON visible */
+      const texto = ((cand.content && cand.content.parts) || []).filter(pt => !pt.thought).map(pt => pt.text || '').join('');
+      if(!texto) throw new Error('Gemini no devolvió texto visible (finishReason: ' + (cand.finishReason || 'desconocido') + '). Probá subir "Máx. tokens" o cambiar de modelo en la configuración de IA.');
+      return texto;
     }
     if(j.choices && j.choices[0] && j.choices[0].finish_reason === 'length') throw new Error('Respuesta cortada por límite de tokens: subí "Máx. tokens" en la configuración de IA.');
     return j.choices && j.choices[0] ? j.choices[0].message.content : '';
@@ -19456,8 +19539,33 @@ document.addEventListener('DOMContentLoaded', init);
     if(a < 0 || b < a) throw new Error('El modelo no devolvió JSON válido.');
     /* coma colgante antes de "}" o "]" -- error de JSON muy común en respuestas
        de LLM que igual son rescatables sin volver a llamar a la IA */
-    const slice = s.slice(a, b + 1).replace(/,(\s*[}\]])/g, '$1');
+    let slice = s.slice(a, b + 1).replace(/,(\s*[}\]])/g, '$1');
+    /* algunos modelos (Gemini incluido, incluso en modo JSON nativo) devuelven
+       saltos de línea/tabs SIN escapar dentro de un string -- JSON.parse
+       estricto los rechaza con "Bad control character". Se escapan esos
+       caracteres únicamente cuando están dentro de un string (respetando
+       comillas ya escapadas), sin tocar el resto del formato */
+    slice = escaparControlesEnStrings(slice);
     return JSON.parse(slice);
+  }
+
+  function escaparControlesEnStrings(s){
+    let out = '', dentro = false, escapando = false;
+    for(let i = 0; i < s.length; i++){
+      const c = s[i];
+      if(dentro){
+        if(escapando){ out += c; escapando = false; continue; }
+        if(c === '\\'){ out += c; escapando = true; continue; }
+        if(c === '"'){ out += c; dentro = false; continue; }
+        if(c === '\n'){ out += '\\n'; continue; }
+        if(c === '\r'){ out += '\\r'; continue; }
+        if(c === '\t'){ out += '\\t'; continue; }
+        out += c; continue;
+      }
+      if(c === '"'){ out += c; dentro = true; continue; }
+      out += c;
+    }
+    return out;
   }
 
   /* ---------- Prompts compactos ---------- */
@@ -38965,6 +39073,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   }
   window.jpEstructurarCore = estructurar;
 
+  /* ¿este bloque trae contenido realmente distinto semana a semana?
+     (plantillas multi-semana tipo "CrossFit Atletas", donde un mismo bloque
+     rota de core a WOD/fuerza y viceversa según la semana) */
+  function rotaSemanalmente(b){
+    const arr = b && b.itemsSemana;
+    if(!Array.isArray(arr) || arr.length < 2) return false;
+    const base = JSON.stringify(arr[0] || []);
+    for(let i = 1; i < arr.length; i++){
+      if(JSON.stringify(arr[i] || []) !== base) return true;
+    }
+    return false;
+  }
   /* migración silenciosa de todo lo que quedó viejo en el plan */
   function normalizar(silencioso){
     let p = null;
@@ -38973,7 +39093,31 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     let n = 0;
     p.dias.forEach(d => {
       (d.bloques || []).forEach(b => {
+        /* REPARACIÓN: este mismo módulo, en una pasada anterior, puede haber
+           convertido un bloque rotante (tipo:'list' con itemsSemana real por
+           semana) en una superset fija -- congelándolo para siempre en el
+           contenido de la semana en la que se abrió el Builder por primera
+           vez (ej. "Accessory & Core" semana 1 tapando el WOD real de la
+           semana 2). La huella de esa conversión es inconfundible: sólo este
+           módulo deja tipo:'superset' + coreBlock:true, y sólo un bloque que
+           originalmente rotaba conserva un itemsSemana con contenido
+           distinto por semana (nunca se tocó en la conversión). Se revierte
+           a su forma original tipo:'list' -- no se pierde nada: itemsSemana/
+           fmtSemana/notaSemana quedaron intactos todo este tiempo. */
+        if(b.tipo === 'superset' && b.coreBlock === true && rotaSemanalmente(b)){
+          delete b.ejercicios; delete b.coreBlock; delete b.coreModo; delete b.isTriset;
+          b.tipo = 'list';
+          if(!b.items || !b.items.length) b.items = (b.itemsSemana[0] || []).slice();
+          n++;
+          return;
+        }
         if(!esCore(b)) return;
+        /* un bloque tipo:'list' que rota de verdad semana a semana nunca se
+           debe congelar en una superset a partir de la semana 1 -- ver nota
+           arriba. Ya se clasifica bien semana a semana en la app del alumno
+           (weekItems/weekName, "CORE ESTRUCTURADO (app del alumno)" en
+           TEMPLATE_HTML) sin necesidad de tocar su estructura acá */
+        if(b.tipo === 'list' && rotaSemanalmente(b)) return;
         const roto = (b.tipo === 'list') || (b.tipo === 'superset' && !(b.ejercicios || []).length) ||
                      (b.tipo === 'block' && !b.exId && !b.coreNombre);
         if(!roto) { if(!b.coreModo){ b.coreModo = modoDe(b); b.coreBlock = true; } return; }
