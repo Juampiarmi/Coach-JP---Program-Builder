@@ -1615,10 +1615,18 @@ function totalEjercicios(p){
     return x + blockExIds(b).length;
   }, 0), 0);
 }
-/* Nombre canónico usado en el índice de videos del script base */
+/* Nombre canónico usado en el índice de videos del script base y en TODO
+   nombre de ejercicio mostrado al alumno (bloques, bisets, trisets, finisher,
+   hyrox — compile() llama a esta única función en los 4 casos). Si "en" es
+   igual a "es" (aunque difieran en mayúsculas o espacios, ej. "Toes to bar"
+   cargado igual en los dos campos) no tiene sentido mostrar el paréntesis
+   duplicado ("Toes to bar (Toes to bar)"): se muestra una sola vez. */
 function exDisplayName(ex){
   if(!ex) return '';
-  return ex.en ? (ex.es + ' (' + ex.en + ')') : ex.es;
+  const es = (ex.es || '').trim();
+  const en = (ex.en || '').trim();
+  if(!en || en.toLowerCase() === es.toLowerCase()) return ex.es || en;
+  return es + ' (' + en + ')';
 }
 /* --- migración desde el modelo v1 --- */
 function migrateV1(){
@@ -4240,7 +4248,12 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint){
       '<span class="set-row-label">Serie ' + i + '</span>' +
       '<input class="set-input set-kg" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (ld.kg!=null?ld.kg:'') + '" />' +
       '<span class="set-x" aria-hidden="true">\\u00d7</span>' +
-      '<input class="set-input set-reps" type="text" inputmode="numeric" autocomplete="off" placeholder="' + (repsHint||'Reps') + '" value="' + (ld.reps!=null?ld.reps:'') + '" />' +
+      /* el objetivo (repsHint) ya no va como placeholder acá: se veía como
+         texto tenue "dato ya cargado" y desaparecía justo al tocar el campo
+         para tipear -- ahora el objetivo se muestra afuera, en texto fijo
+         y legible (badge de prescripción / roster del biset), y el input
+         queda limpio para que el alumno cargue lo realizado. */
+      '<input class="set-input set-reps" type="text" inputmode="numeric" autocomplete="off" placeholder="Reps" value="' + (ld.reps!=null?ld.reps:'') + '" />' +
       '<input class="set-check" type="checkbox" ' + (ld.done?'checked':'') + ' />' +
     '</div>';
   }
@@ -14038,10 +14051,21 @@ body.cf-modo .block .ex-tip{display:none}
 }
 .block .bs-r .set-row{margin:0}
 .block .bs-r .set-row .set-row-label{display:none}
-.block .bs-r .bs-fila{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.block .bs-r .bs-fila{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:5px}
 .block .bs-r .bs-fila .bs-nm{
   flex:0 0 auto;max-width:34%;color:rgba(255,255,255,0.72);font-size:11.5px;line-height:1.3;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+/* objetivo de reps/tempo de ESTA ronda puntual -- mismo tratamiento
+   "Luxury Stealth" (monoespaciado + celeste) que el roster .bs-ex .bs-d de
+   arriba, repetido acá porque para cuando el alumno llega a la ronda 2/3 ya
+   scrolleó lejos del roster. La tipografía se define acá; la UBICACIÓN real
+   (grid-row/grid-column) la fija la regla ".2.2 · estación de la ronda" más
+   abajo, que es la que en definitiva gobierna el layout de .bs-fila (grid,
+   con !important) -- declararla acá también hubiera quedado muerta. */
+.block .bs-r .bs-fila .bs-rd{
+  color:#7CC5E8;font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:10.5px;letter-spacing:.01em;opacity:.9;
 }
 .block .bs-r .bs-fila .set-row{flex:1 1 auto}
 .block .bs-r .bs-cerrar{
@@ -14224,8 +14248,14 @@ body.cf-modo .block .ex-tip{display:none}
           if(!row) return;
           var f = document.createElement('div');
           f.className = 'bs-fila';
+          /* el objetivo de reps/tempo viaja también dentro de cada ronda (no
+             solo en el roster de arriba, .bs-ex .bs-d): al llegar a la ronda
+             2 o 3 el alumno ya scrolleó lejos del roster, y el input de reps
+             ya no muestra el objetivo como placeholder (ver renderSetRows) --
+             mismo estilo Luxury Stealth (monoespaciado + celeste) que .bs-d. */
           f.innerHTML = '<span class="bs-l">' + letra(i) + '</span>' +
-                        '<span class="bs-nm">' + esc(x.name) + '</span>';
+                        '<span class="bs-nm">' + esc(x.name) + '</span>' +
+                        (x.det ? '<span class="bs-rd">🎯 ' + esc(x.det) + '</span>' : '');
           f.appendChild(row);                       /* se mueve la fila real: conserva su data-set-key */
           caj.appendChild(f);
         });
@@ -14798,8 +14828,17 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   white-space:normal !important;overflow:visible !important;text-overflow:clip !important;
   max-width:none !important;font-size:12.5px;line-height:1.35;
 }
-.block .bs-r .bs-fila > .set-row{
+/* línea 2: objetivo técnico (reps/tempo) de esta ronda, entre el nombre
+   (línea 1) y la fila de carga real (línea 3, antes línea 2 -- se corrió
+   un renglón para hacerle lugar). Sin esta regla explícita el badge caía
+   en el auto-placement del grid, en la primera celda libre de la columna
+   angosta ("auto", pensada para la letra A/B) -- de ahí el hueco vacío al
+   costado y que terminara viéndose por debajo de los inputs de carga. */
+.block .bs-r .bs-fila > .bs-rd{
   grid-row:2;grid-column:1 / -1;
+}
+.block .bs-r .bs-fila > .set-row{
+  grid-row:3;grid-column:1 / -1;
   display:flex !important;align-items:center;gap:8px;flex-wrap:nowrap !important;margin:0 !important;
 }
 .block .bs-r .bs-fila > .set-row .set-input{flex:1 1 0;min-width:0;width:auto !important}
@@ -23768,8 +23807,14 @@ body{overflow-x:hidden}
     /* la barra fija cambia de ancho cuando otros módulos le agregan botones */
     try{
       const fab = document.querySelector('.cfg-fab');
-      if(fab && window.ResizeObserver) new ResizeObserver(ajustarTopbar).observe(fab);
-      if(fab && window.MutationObserver) new MutationObserver(ajustarTopbar).observe(fab, { childList:true, subtree:true, characterData:true });
+      /* ResizeObserver + MutationObserver sobre la misma barra flotante podían
+         disparar ajustarTopbar() dos veces por el mismo cambio (un módulo le
+         agrega un botón -> mutación -> el nuevo ancho dispara además el
+         resize). Se debouncea a 180ms para colapsar ambos disparos en una
+         sola medición/escritura de --fabw. */
+      const ajustarTopbarDeb = debounce(ajustarTopbar, 180);
+      if(fab && window.ResizeObserver) new ResizeObserver(ajustarTopbarDeb).observe(fab);
+      if(fab && window.MutationObserver) new MutationObserver(ajustarTopbarDeb).observe(fab, { childList:true, subtree:true, characterData:true });
     }catch(e){}
     if(document.fonts && document.fonts.ready) document.fonts.ready.then(ajustarTopbar).catch(()=>{});
 
@@ -27308,7 +27353,13 @@ body.man-mode .gs-fab{right:318px}
     fillSelect($('#manGrupo'), GRUPOS, 'Todos los grupos');
     fillSelect($('#manEquipo'), EQUIPOS, 'Todo el equipamiento');
 
-    ['#manQ','#manGrupo','#manEquipo','#manSede'].forEach(s =>
+    /* #manQ es un buscador de texto libre sobre S.exercises (recorre toda
+       la biblioteca y arma tarjetas con miniatura por cada tecla) — se
+       debouncea 300ms, mismo criterio que #exSearch/#findQ en el resto de
+       la app, para no re-renderizar la grilla en cada letra tipeada. Los
+       filtros de grupo/equipo/sede no se tipean letra por letra, quedan igual. */
+    $('#manQ').addEventListener('input', debounce(() => { manPage = 0; renderMan(); }, 300));
+    ['#manGrupo','#manEquipo','#manSede'].forEach(s =>
       $(s).addEventListener('input', () => { manPage = 0; renderMan(); }));
     $('#manClose').addEventListener('click', () => toggleMan(false));
     $('#manModes').addEventListener('click', e => {
@@ -31162,7 +31213,10 @@ body.man-mode .gs-fab{right:318px}
     $('#mcRun').addEventListener('click', cargarMeso);
     $('#mcAllBank').addEventListener('click', guardarTodos);
 
-    $('#wdQ').addEventListener('input', e => { fQ = e.target.value; pintarWods(); });
+    /* #wdQ filtra el banco de WODs y recalcula los contadores de cada chip
+       de formato/dominio escaneando WODS en cada tecla — se debouncea 300ms
+       por el mismo motivo que el resto de los buscadores de la app. */
+    $('#wdQ').addEventListener('input', debounce(e => { fQ = e.target.value; pintarWods(); }, 300));
     $('#wdFmt').addEventListener('click', e => { const c = e.target.closest('[data-wf]'); if(!c) return;
       fFmt = c.dataset.wf === fFmt ? '' : c.dataset.wf; pintarWods(); });
     $('#wdDom').addEventListener('click', e => { const c = e.target.closest('[data-wd]'); if(!c) return;
@@ -31879,7 +31933,12 @@ body.man-mode .gs-fab{right:318px}
       const pg = e.target.closest('[data-pg]'); if(pg){ pkG = pg.dataset.pg === pkG ? '' : pg.dataset.pg; pkPag = 0; pintarPicker(); return; }
       const pq = e.target.closest('[data-pq]'); if(pq){ pkQip = pq.dataset.pq === pkQip ? '' : pq.dataset.pq; pkPag = 0; pintarPicker(); return; }
     });
-    $('#pkQ').addEventListener('input', e => { pkQ = e.target.value; pkPag = 0; pintarPicker(); });
+    /* #pkQ es el buscador del picker de ejercicios (el más usado del Builder):
+       pintarPicker() reconstruye los chips de disciplina/grupo/equipo desde
+       cero escaneando TODA la biblioteca, más la grilla paginada — el más
+       costoso de los tres buscadores sin debounce que se encontraron en la
+       auditoría de rendimiento. Debounce 300ms, mismo criterio que el resto. */
+    $('#pkQ').addEventListener('input', debounce(e => { pkQ = e.target.value; pkPag = 0; pintarPicker(); }, 300));
     $('#pkPrev').addEventListener('click', () => { pkPag--; pintarPicker(); });
     $('#pkNext').addEventListener('click', () => { pkPag++; pintarPicker(); });
     $$('#mPick [data-close]').forEach(b => b.addEventListener('click', () => closeModal('mPick')));
@@ -33624,11 +33683,16 @@ input:focus,select:focus,textarea:focus{
     });
     if(!rail.dataset.obs){
       rail.dataset.obs = '1';
-      new MutationObserver(() => {
+      /* debounceada a 200ms: varios módulos "aditivos" agregan su botón a la
+         topbar casi al mismo tiempo durante el montaje del Builder, y cada
+         alta disparaba este observer por separado. Colapsando esas ráfagas
+         en una sola pasada se evita re-escanear tb.children una vez por
+         cada botón montado. */
+      new MutationObserver(debounce(() => {
         Array.prototype.slice.call(tb.children).forEach(el => {
           if(el !== rail && el.matches('button.btn, .tools-wrap, .mini-prov')) rail.appendChild(el);
         });
-      }).observe(tb, { childList:true });
+      }, 200)).observe(tb, { childList:true });
     }
   }
   function rieles(){
