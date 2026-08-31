@@ -140,6 +140,9 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .icon-btn{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;border:1px solid var(--line);background:var(--panel-3);font-size:13px;transition:.15s}
 .icon-btn:hover{background:#2A2E33;border-color:var(--line-2)}
 .icon-btn.danger:hover{background:rgba(168,68,44,.2);border-color:var(--red);color:#FF6B76}
+.icon-btn.ai{border-color:rgba(124,197,232,.35);color:var(--teal)}
+.icon-btn.ai:hover{background:rgba(124,197,232,.16);border-color:var(--teal);color:#9FDBF7}
+.icon-btn.ai[disabled]{opacity:.6;pointer-events:none}
 
 .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.02em;border:1px solid var(--line-2);background:var(--panel-3);color:var(--txt-2)}
 .pill.gold{background:rgba(210,121,63,.12);border-color:rgba(210,121,63,.35);color:var(--gold)}
@@ -2390,6 +2393,7 @@ function renderDay(){
       '<div class="block-h">' +
         '<span class="pill ' + (b.tipo==='finisher'?'red':(b.tipo==='hyrox'?'teal':(b.tipo==='superset'?'gold':''))) + '">' + T.ic + ' ' + T.lb + '</span>' +
         '<input class="bt" data-bf="titulo" data-b="' + b.id + '" value="' + esc(b.titulo||'') + '" placeholder="Título del bloque">' +
+        '<button class="icon-btn ai" data-bai="' + b.id + '" title="Nombrar con IA">🪄</button>' +
         '<div class="spacer"></div>' +
         '<button class="icon-btn" data-bmove="up" data-b="' + b.id + '" title="Subir">▲</button>' +
         '<button class="icon-btn" data-bmove="down" data-b="' + b.id + '" title="Bajar">▼</button>' +
@@ -2527,6 +2531,92 @@ function renderDay(){
   });
 
   $('#dayPanel').innerHTML = h;
+}
+
+/* ---------- Generador de nombres de bloque con IA (pedido 36) ----------
+   Junta los ejercicios/movimientos del bloque (con su patrón de movimiento
+   cuando viene de la biblioteca) y le pide a la IA activa (Gemini/OpenAI/
+   Anthropic, vía window.CoachAI ya usado en el resto del Builder) un título
+   táctico estilo "High Performance System". Rellena b.titulo/b.subtitulo. */
+function contextoBloqueIA(b){
+  const T = TIPOS[b.tipo] || TIPOS.block;
+  const items = [];
+  const addEx = exId => {
+    const ex = getEx(exId); if(!ex) return;
+    items.push({ nombre: exDisplayName(ex) || ex.es, patron: ex.patron || '' });
+  };
+  if(b.tipo === 'block') addEx(b.exId);
+  else if(b.tipo === 'superset') (b.ejercicios||[]).forEach(e => addEx(e.exId));
+  else if(b.tipo === 'finisher') (b.fin||[]).forEach(e => addEx(e.exId));
+  else if(b.tipo === 'hyrox') (b.movements||[]).forEach(m => { if((m||'').trim()) items.push({ nombre: m.trim(), patron:'' }); });
+  else if(b.tipo === 'list') (b.items||[]).forEach(l => { if((l||'').trim()) items.push({ nombre: l.trim(), patron:'' }); });
+  const nEj = b.tipo === 'superset' ? (b.ejercicios||[]).length : 0;
+  return {
+    tipoLb: T.lb,
+    esBiset: b.tipo === 'superset' && nEj === 2,
+    esTriset: b.tipo === 'superset' && nEj >= 3,
+    esFinisher: b.tipo === 'finisher',
+    esAncla: b.tipo === 'block',
+    esHyrox: b.tipo === 'hyrox',
+    items: items
+  };
+}
+async function nombrarBloqueConIA(bid, btn){
+  const b = findBlock(bid); if(!b) return;
+  if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
+    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para nombrar bloques automáticamente', 'err');
+    if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
+    return;
+  }
+  const ctx = contextoBloqueIA(b);
+  if(!ctx.items.length){ toast('Agregá al menos un ejercicio o movimiento al bloque antes de nombrarlo con IA', 'warn'); return; }
+
+  const tipoDesc = ctx.esTriset ? 'triset' : ctx.esBiset ? 'biset' : ctx.esFinisher ? 'finisher metabólico' :
+                    ctx.esHyrox ? 'bloque de cardio / Hyrox' : ctx.esAncla ? 'bloque ancla (ejercicio único)' : ctx.tipoLb.toLowerCase();
+  const lineas = ctx.items.slice(0, 8).map(it => '- ' + it.nombre + (it.patron ? ' (' + it.patron + ')' : '')).join('\n');
+  /* callProvider fuerza modo JSON puro en Gemini (responseMimeType) y OpenAI
+     (response_format json_object) para TODA llamada — así que el prompt le
+     pide el título como JSON en vez de texto plano, igual que ya hacen
+     analizarDoc()/memIA más abajo en este mismo archivo, para no pelear
+     contra ese modo forzado ni arriesgar un 400 por "falta la palabra json". */
+  const sistema = 'Sos un asistente de nomenclatura técnica para un sistema de entrenamiento de alto rendimiento ("High Performance System"). ' +
+    'Generás nombres de bloque de entrenamiento tácticos, contundentes y profesionales, en español rioplatense, sin emojis. ' +
+    'Respondé SOLO con JSON válido: {"titulo":"[ CONCEPTO CLAVE EN 2-4 PALABRAS ]","subtitulo":"DETALLE TÉCNICO EN MAYÚSCULAS"}. ' +
+    'Ejemplos de pares título/subtítulo válidos: "[ CADENA POSTERIOR ]" · "HIPERTROFIA Y CONTROL LUMBO-PÉLVICO"; ' +
+    '"[ POTENCIA ROTACIONAL ]" · "ESTABILIDAD DINÁMICA".';
+  const user = 'Generá el título JSON para este ' + tipoDesc + ' de entrenamiento.\nEjercicios/movimientos incluidos:\n' + lineas;
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  try{
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 200 });
+    const raw = String(out || '').trim();
+    let j = null;
+    try{ j = JSON.parse(raw); }catch(e1){ const m = raw.match(/\{[^]*\}/); if(m){ try{ j = JSON.parse(m[0]); }catch(e2){} } }
+    let titulo = j ? String(j.titulo || j.title || '').trim() : '';
+    let subtitulo = j ? String(j.subtitulo || j.subtitle || '').trim() : '';
+    if(!titulo){
+      /* algún proveedor/modelo puede ignorar el pedido de JSON: se acepta
+         también texto plano, con " · " separando título de subtítulo */
+      const primera = raw.split('\n')[0].trim().replace(/^["'“”]+|["'“”]+$/g,'');
+      if(primera.indexOf(' · ') >= 0){
+        const partes = primera.split(' · ');
+        titulo = partes[0].trim(); subtitulo = subtitulo || partes.slice(1).join(' · ').trim();
+      } else titulo = primera;
+    }
+    titulo = titulo.replace(/^["'“”]+|["'“”]+$/g,'').trim();
+    subtitulo = subtitulo.replace(/^["'“”]+|["'“”]+$/g,'').trim();
+    if(!titulo){ toast('La IA no devolvió un título válido, probá de nuevo', 'err'); return; }
+    b.titulo = titulo;
+    if(subtitulo) b.subtitulo = subtitulo;
+    save(); renderBuilder();
+    toast('Título generado con IA ✨');
+  }catch(e){
+    console.warn('nombrarBloqueConIA', e);
+    toast('No se pudo generar el título (revisá la conexión o la clave de IA)', 'err');
+  }finally{
+    if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
+  }
 }
 
 /* ---------- Altas ---------- */
@@ -2683,6 +2773,7 @@ function bindBuilder(){
     const d = curDay(); if(!d) return;
 
     if(t.dataset.addex){ addSubEx(t.dataset.addex, $('[data-pick="' + t.dataset.addex + '"]').value); return; }
+    if(t.dataset.bai){ nombrarBloqueConIA(t.dataset.bai, t); return; }
     if(t.dataset.bdel){
       if(!confirm('¿Eliminar este bloque completo?')) return;
       d.bloques = d.bloques.filter(b => b.id !== t.dataset.bdel); save(); renderBuilder(); return;
@@ -18434,8 +18525,33 @@ function buildProgramConfig(ath){
   const withAlerts = $('#expWarn').checked;
   const videoMap = {};
   let bloqueCF = false;   /* lo setea cada bloque antes de resolver sus videos */
+  /* FIX (pedido 36, bug reportado por el coach: ejercicio B de un biset/triset
+     exportado sin botón de video pese a tener video cargado en la Biblioteca).
+     Causa más probable: entradas duplicadas en S.exercises (ej. un stub sin
+     video generado por el Feeder Rápido / detección de huecos, insertarStubsGaps)
+     con el mismo nombre (o muy similar) que otra entrada que SÍ tiene video —
+     y el exId del bloque apunta justo a la duplicada sin video. Se arma acá un
+     índice nombre-normalizado -> videoId recorriendo TODA la biblioteca, y
+     addVideo cae a ese índice cuando el ejercicio referenciado por exId no
+     trae videoId propio, así ningún ejercicio con video en la biblioteca queda
+     sin su botón en el HTML exportado. */
+  const _videoPorNombre = {};
+  (S.exercises || []).forEach(e => {
+    if(!e || !e.videoId) return;
+    const n1 = norm(e.es || '');
+    if(n1 && !_videoPorNombre[n1]) _videoPorNombre[n1] = e.videoId;
+    const n2 = norm(e.en || '');
+    if(n2 && !_videoPorNombre[n2]) _videoPorNombre[n2] = e.videoId;
+  });
+  const resolverVideoId = ex => {
+    if(!ex) return '';
+    if(ex.videoId) return ex.videoId;
+    return _videoPorNombre[norm(ex.es || '')] || _videoPorNombre[norm(ex.en || '')] || '';
+  };
   const addVideo = (key, ex) => {
-    if(withVideos && ex && ex.videoId && key) videoMap[key] = ex.videoId;
+    if(!withVideos || !ex || !key) return;
+    const vid = resolverVideoId(ex);
+    if(vid) videoMap[key] = vid;
   };
 
   /* ---- CrossFit: sin videos automáticos ----
