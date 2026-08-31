@@ -10045,20 +10045,26 @@ body.cf-modo .block .directive-chip{display:none !important}
 
   /* =========================================================
      6 · BLOQUE COMPLETADO Y PASO AUTOMÁTICO
-  ========================================================= */
+     FIX (pedido 38, bug reportado: "cada vez que tilda una serie, el
+     bloque se cierra y la vista salta abruptamente abajo de todo"):
+     ANTES, tildar la ÚLTIMA serie de un bloque disparaba en cascada: (a)
+     setBlockDone() + tildar sola la casilla de "bloque hecho" del
+     header — lo que a su vez hacía que OTROS dos módulos independientes
+     (el acordeón de la línea ~18395 y "el bloque terminado se pliega
+     solo" de la línea ~16260) trataran el bloque como "completo" y le
+     agregaran display:none a su cuerpo — y (b) un scrollIntoView()
+     explícito hacia el bloque siguiente, el salto brusco reportado.
+     AHORA: tildar series solo deja feedback cosmético (brillo + insignia
+     "✅ Bloque completado" + vibración + el cartelito "vamos a…"),
+     nunca marca el bloque como oficialmente terminado ni mueve el
+     scroll. Marcar el bloque como terminado de verdad — lo único que
+     ahora puede colapsarlo (ver los dos módulos de más abajo, también
+     corregidos en este mismo pedido) — vuelve a ser EXCLUSIVAMENTE la
+     casilla del header (.block-done-cb), tildada a mano por el
+     alumno. */
   function marcarCompleto(bl){
     if(!bl || bl.classList.contains('jp-done')) return false;
     bl.classList.add('jp-done');
-    /* queda registrado en la memoria del alumno, igual que el tilde del bloque */
-    try{
-      var id = bl.dataset.blockId;
-      if(id){
-        setBlockDone(state.currentWeek, state.currentDay, id, true);
-        var cb = bl.querySelector('.block-done-cb');
-        if(cb && !cb.checked) cb.checked = true;
-        bl.classList.add('block-done');
-      }
-    }catch(e){}
     if(!bl.querySelector('.done-badge')){
       var b = document.createElement('div');
       b.className = 'done-badge';
@@ -10078,21 +10084,21 @@ body.cf-modo .block .directive-chip{display:none !important}
     return null;
   }
   function avanzar(bl){
+    /* solo el cartel "vamos a…" — SIN scrollIntoView: mover la pantalla
+       sola mientras el alumno sigue tildando series es exactamente el
+       salto brusco que reportó el coach. La navegación entre bloques
+       queda en manos del alumno. */
     var sig = siguienteBloque(bl);
     var hint = document.getElementById('nextHint');
+    if(!hint) return;
     if(!sig){
-      if(hint){ hint.querySelector('.tx').textContent = '¡Última serie! Sesión completa'; hint.classList.add('on');
-        setTimeout(function(){ hint.classList.remove('on'); }, 3200); }
+      hint.querySelector('.tx').textContent = '¡Última serie! Sesión completa'; hint.classList.add('on');
+      setTimeout(function(){ hint.classList.remove('on'); }, 3200);
       return;
     }
-    if(hint){
-      hint.querySelector('.tx').textContent = 'Bloque completado — vamos a ' + nombreDe(sig).slice(0, 28);
-      hint.classList.add('on');
-      setTimeout(function(){ hint.classList.remove('on'); }, 3400);
-    }
-    setTimeout(function(){
-      try{ sig.scrollIntoView({ behavior:'smooth', block:'start' }); }catch(e){ sig.scrollIntoView(); }
-    }, 420);
+    hint.querySelector('.tx').textContent = 'Bloque completado — vamos a ' + nombreDe(sig).slice(0, 28);
+    hint.classList.add('on');
+    setTimeout(function(){ hint.classList.remove('on'); }, 3400);
   }
   function revisarBloque(bl){
     if(!bl) return;
@@ -10107,6 +10113,53 @@ body.cf-modo .block .directive-chip{display:none !important}
     var c = e.target.closest('.set-check'); if(!c) return;
     setTimeout(function(){ revisarBloque(c.closest('.block')); }, 120);
   }, true);
+
+  /* =========================================================
+     6b · EL SCROLL NO SE MUEVE SOLO AL TILDAR UNA SERIE
+     FIX (pedido 38, bug reportado: "la vista hace un scroll brusco y se
+     va abajo de todo la pantalla" al tildar un checkbox). Causa: varios
+     módulos independientes de este archivo reaccionan al mismo evento
+     change de .set-check/.block-done-cb reconstruyendo porciones del DOM
+     (el más notorio: el armado de rondas de bisets/trisets, que remueve
+     y vuelve a insertar filas enteras en cada repintado). Ese vaivén de
+     nodos, sumado al "scroll anchoring" nativo del navegador, terminaba
+     recalculando el scroll del alumno lejos de donde estaba parado. En
+     vez de perseguir cada módulo que reordena DOM, se fija la posición
+     de scroll en el instante exacto del tilde y se la vuelve a imponer
+     cuadro a cuadro (requestAnimationFrame) mientras dura el repintado
+     — todos los módulos existentes usan timers de hasta ~260ms, así que
+     260ms de ventana cubre la cascada completa sin sentirse pegado.
+     Se cancela de inmediato si el alumno mueve el dedo o la rueda a
+     propósito, para nunca pelear contra un scroll real del usuario. */
+  (function(){
+    var lock = null, raf = null, limite = 0;
+    function cancelar(){
+      if(raf) cancelAnimationFrame(raf);
+      raf = null; lock = null;
+      document.removeEventListener('wheel', cancelar, true);
+      document.removeEventListener('touchmove', cancelar, true);
+    }
+    function paso(){
+      if(!lock) return;
+      if(performance.now() > limite){ cancelar(); return; }
+      if(Math.abs(window.scrollY - lock.y) > 2 || Math.abs(window.scrollX - lock.x) > 2){
+        window.scrollTo(lock.x, lock.y);
+      }
+      raf = requestAnimationFrame(paso);
+    }
+    document.addEventListener('change', function(e){
+      if(!e.target || !e.target.closest) return;
+      var esSerie = e.target.closest('.set-check') ||
+                    (e.target.classList && e.target.classList.contains('block-done-cb'));
+      if(!esSerie) return;
+      cancelar();
+      lock = { x: window.scrollX, y: window.scrollY };
+      limite = performance.now() + 260;
+      document.addEventListener('wheel', cancelar, { capture:true, passive:true, once:true });
+      document.addEventListener('touchmove', cancelar, { capture:true, passive:true, once:true });
+      raf = requestAnimationFrame(paso);
+    }, true);
+  })();
 
   /* =========================================================
      7 · MANUAL DE USO
@@ -16208,6 +16261,12 @@ body{
      3 · EL BLOQUE TERMINADO SE PLIEGA SOLO
      A medida que el alumno cierra bloques, la pantalla se
      acorta y lo que falta queda siempre arriba.
+     FIX (pedido 38): "terminado" dejó de inferirse de tener todas las
+     .set-check tildadas — tildar la última serie de un bloque NO debe
+     plegarlo. El pliegue (display:none sobre .block-body, ver CSS
+     .block.jp-hecho) ahora depende EXCLUSIVAMENTE de la casilla
+     explícita del header (.block-done-cb), la misma que el alumno
+     tilda a mano para marcar "bloque hecho".
   --------------------------------------------------------- */
   function datosBloque(bl){
     var filas = [].slice.call(bl.querySelectorAll('.set-row[data-set-key]'));
@@ -16222,11 +16281,8 @@ body{
     return { series: series, reps: reps, vol: Math.round(vol) };
   }
   function terminado(bl){
-    var checks = [].slice.call(bl.querySelectorAll('.set-check'));
-    if(checks.length) return checks.every(function(c){ return c.checked; });
     var cb = bl.querySelector('.block-done-cb');
-    if(cb) return !!cb.checked;
-    return false;
+    return !!(cb && cb.checked);
   }
   function cierre(bl){
     var c = bl.querySelector('.jp-cierre');
@@ -18336,36 +18392,57 @@ body.focus-mode .hd-dock{display:none}
     window.CoachUnidad.fijar.__hdDock = 1;
   }
 
-  /* ---------- acordeón inteligente ---------- */
+  /* ---------- auto-colapso por bloque completo (FIX pedido 37) ----------
+     ANTES: "acordeón inteligente" al estilo un-solo-bloque-abierto — dejaba
+     expandido ÚNICAMENTE el primer bloque incompleto de la lista y
+     colapsaba TODOS los demás en cada evento "change", sin importar cuál era el
+     bloque real que el alumno estaba tildando. Si un bloque temprano
+     (típicamente la entrada en calor, que no tiene .set-check) nunca
+     llegaba a "completo", ese bloque se quedaba con el foco para siempre
+     y el resto — incluida la tarjeta que el alumno tenía abierta en ese
+     momento — se cerraba de golpe apenas tildaba una serie cualquiera.
+     Bug reportado: "cada vez que tilda una serie, el bloque entero se
+     cierra" + el HUD de descanso disparándose sobre una tarjeta que
+     acababa de colapsarse.
+     AHORA: cada bloque decide su propio colapso de forma independiente y
+     nunca por el estado de otro. Un bloque se colapsa SOLO si él mismo
+     quedó marcado como hecho — jamás por tildar una serie suelta, y
+     jamás como efecto colateral de otro bloque. Un bloque incompleto no
+     se toca acá: sigue exactamente como estaba (abierto si el alumno lo
+     tenía abierto).
+     REFINAMIENTO (pedido 38): "marcado como hecho" (isBlockDone) ya no
+     se infiere de tener todas las .set-check tildadas — eso disparaba
+     el mismo colapso apenas se cerraba la última serie, exactamente lo
+     que el coach pidió eliminar. isBlockDone() ahora solo se vuelve
+     true cuando el alumno tilda a mano la casilla del header
+     (.block-done-cb, ver marcarCompleto() línea ~10046) — así que el
+     chevron manual (header click, línea ~5146) y esa casilla explícita
+     son las ÚNICAS formas de colapsar un bloque. */
   function bloqueCompleto(weekIdx, dayId, blockId, blockEl){
-    if(typeof isBlockDone === 'function' && isBlockDone(weekIdx, dayId, blockId)) return true;
-    var chks = blockEl.querySelectorAll('.set-check');
-    return chks.length > 0 && Array.prototype.every.call(chks, function(c){ return c.checked; });
+    return typeof isBlockDone === 'function' && isBlockDone(weekIdx, dayId, blockId);
   }
-  function refrescarAcordeon(){
+  function refrescarAcordeon(target){
     var main = q('mainContent');
     var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
     if(!main || !day) return;
     var weekIdx = (typeof state !== 'undefined') ? state.currentWeek : 0;
-    var blockEls = main.querySelectorAll('.blocks-stack > .block');
-    if(!blockEls.length) return;
-    var activoFijado = false;
+    var blockEls = target ? [target] : main.querySelectorAll('.blocks-stack > .block');
     Array.prototype.forEach.call(blockEls, function(el){
-      var bid = el.dataset.blockId;
+      var bid = el.dataset.blockId; if(!bid) return;
       var completo = bloqueCompleto(weekIdx, day.id, bid, el);
-      if(!completo && !activoFijado){
-        el.classList.remove('collapsed');
-        el.classList.add('block-current');
-        activoFijado = true;
-      } else {
-        el.classList.add('collapsed');
-        el.classList.remove('block-current');
-      }
+      el.classList.toggle('block-current', !completo);
+      if(completo) el.classList.add('collapsed');
+      /* un bloque incompleto NUNCA se toca: no se le agrega ni se le
+         quita 'collapsed' acá — así jamás se cierra solo mientras el
+         alumno todavía tiene series pendientes en él. */
     });
   }
   document.addEventListener('change', function(e){
-    if(e.target && e.target.closest && (e.target.closest('.set-check') || (e.target.classList && e.target.classList.contains('block-done-cb')))){
-      setTimeout(refrescarAcordeon, 30);
+    var t = e.target;
+    if(t && t.closest && (t.closest('.set-check') || (t.classList && t.classList.contains('block-done-cb')))){
+      /* se refresca SOLO el bloque tocado, nunca el resto de la lista */
+      var bl = t.closest('.block');
+      setTimeout(function(){ refrescarAcordeon(bl); }, 30);
     }
   });
 
