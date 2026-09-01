@@ -10126,18 +10126,39 @@ body.cf-modo .block .directive-chip{display:none !important}
      recalculando el scroll del alumno lejos de donde estaba parado. En
      vez de perseguir cada módulo que reordena DOM, se fija la posición
      de scroll en el instante exacto del tilde y se la vuelve a imponer
-     cuadro a cuadro (requestAnimationFrame) mientras dura el repintado
-     — todos los módulos existentes usan timers de hasta ~260ms, así que
-     260ms de ventana cubre la cascada completa sin sentirse pegado.
+     cuadro a cuadro (requestAnimationFrame) mientras dura el repintado.
      Se cancela de inmediato si el alumno mueve el dedo o la rueda a
-     propósito, para nunca pelear contra un scroll real del usuario. */
+     propósito, para nunca pelear contra un scroll real del usuario.
+
+     REFUERZO (pedido 39, el bug seguia pasando en el archivo exportado
+     abierto en un navegador real, aunque en pruebas automatizadas con
+     eventos sinteticos ya no aparecia). Causa raiz encontrada: algunos
+     navegadores mueven el scroll de forma nativa para acercar el
+     elemento tocado a la pantalla ANTES de que dispare el evento change
+     (por ejemplo al enfocar un checkbox parcialmente tapado por el
+     encabezado o por el menu inferior fijos). Ese primer salto nativo
+     ocurria antes de que este modulo llegara a fijar la posicion, asi
+     que quedaba sin corregir. Ahora la posicion se captura apenas
+     empieza el toque (pointerdown, mousedown, touchstart o focus sobre
+     la serie), no recien en el change, y el evento change solo extiende
+     la ventana de proteccion por si el repintado en cascada tarda mas
+     que el gesto de tocar en si. */
   (function(){
-    var lock = null, raf = null, limite = 0;
+    var lock = null, raf = null, limite = 0, touchXY = null;
     function cancelar(){
       if(raf) cancelAnimationFrame(raf);
-      raf = null; lock = null;
+      raf = null; lock = null; touchXY = null;
       document.removeEventListener('wheel', cancelar, true);
-      document.removeEventListener('touchmove', cancelar, true);
+      document.removeEventListener('touchmove', alTocarMover, true);
+    }
+    function alTocarMover(e){
+      // Solo cancela si el dedo realmente se desplazo a proposito (scroll
+      // intencional); el micro-temblor normal de un toque sobre la casilla
+      // no debe deshacer la proteccion.
+      if(!touchXY || !e.touches || !e.touches[0]){ cancelar(); return; }
+      var dx = Math.abs(e.touches[0].clientX - touchXY.x);
+      var dy = Math.abs(e.touches[0].clientY - touchXY.y);
+      if(dx > 10 || dy > 10) cancelar();
     }
     function paso(){
       if(!lock) return;
@@ -10147,18 +10168,29 @@ body.cf-modo .block .directive-chip{display:none !important}
       }
       raf = requestAnimationFrame(paso);
     }
-    document.addEventListener('change', function(e){
-      if(!e.target || !e.target.closest) return;
-      var esSerie = e.target.closest('.set-check') ||
-                    (e.target.classList && e.target.classList.contains('block-done-cb'));
-      if(!esSerie) return;
-      cancelar();
-      lock = { x: window.scrollX, y: window.scrollY };
-      limite = performance.now() + 260;
-      document.addEventListener('wheel', cancelar, { capture:true, passive:true, once:true });
-      document.addEventListener('touchmove', cancelar, { capture:true, passive:true, once:true });
-      raf = requestAnimationFrame(paso);
+    function esSerie(t){
+      if(!t || !t.closest) return false;
+      return !!(t.closest('.set-check') || (t.classList && t.classList.contains('block-done-cb')));
+    }
+    function armar(e, ventanaMs){
+      if(!esSerie(e.target)) return;
+      if(!lock){
+        lock = { x: window.scrollX, y: window.scrollY };
+        document.addEventListener('wheel', cancelar, { capture:true, passive:true, once:true });
+      }
+      limite = Math.max(limite, performance.now() + ventanaMs);
+      if(!raf) raf = requestAnimationFrame(paso);
+    }
+    document.addEventListener('pointerdown', function(e){ armar(e, 260); }, true);
+    document.addEventListener('mousedown', function(e){ armar(e, 260); }, true);
+    document.addEventListener('focus', function(e){ armar(e, 260); }, true);
+    document.addEventListener('touchstart', function(e){
+      if(!esSerie(e.target)) return;
+      touchXY = (e.touches && e.touches[0]) ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+      armar(e, 260);
+      document.addEventListener('touchmove', alTocarMover, { capture:true, passive:true });
     }, true);
+    document.addEventListener('change', function(e){ armar(e, 260); }, true);
   })();
 
   /* =========================================================
