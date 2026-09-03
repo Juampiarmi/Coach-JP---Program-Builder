@@ -12,7 +12,8 @@
 <meta name="apple-mobile-web-app-title" content="Coach JP">
 <meta name="application-name" content="Coach JP">
 <meta name="format-detection" content="telephone=no">
-<title>Coach JP — Ultimate Multi-Athlete Routine Builder</title>
+<title>Coach JP · Sports & Bodybuilding</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230A0A0B'/%3E%3Cpath d='M13 4L6.5 13.5 12 13l-1 6.5 6.5-9.5-5.5.5z' fill='%2338BDF8' stroke='%23000' stroke-width='0.8' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
@@ -91,6 +92,7 @@ label.lb{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.0
 }
 .brand .bl{display:flex;align-items:center;gap:5px}
 .brand .bl b{width:16px;height:2px;border-radius:2px;background:linear-gradient(90deg,var(--gold),transparent)}
+.brand .jp-disc-eyebrow{font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-top:4px}
 h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .topbar h2{font-size:27px;letter-spacing:.005em;text-transform:uppercase;font-weight:800}
 .card h3{font-size:14.5px;letter-spacing:.1em}
@@ -402,6 +404,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
       <div style="min-width:0">
         <h1>Coach JP</h1>
         <div class="bl"><b></b><span>Steel Vault v3.0</span></div>
+        <div class="jp-disc-eyebrow" style="color:#38BDF8">Bodybuilding &amp; Sports Performance</div>
       </div>
     </div>
 
@@ -869,7 +872,10 @@ Curl concentrado"></textarea>
    ============================================================ */
 
 /* ---------- 0. CONSTANTES ---------- */
-const KEY = 'coachjp_console_v2';
+const KEY = 'coachjp_console_v2'; /* blob histórico -- se lee para migrar, nunca se borra ni se reescribe (Checkpoint 3) */
+window.COACH_DISCIPLINA = 'sports';
+const LIB_KEY = 'coachjp_lib_v1'; /* compartida entre ambas ramas: atletas + biblioteca de ejercicios */
+const PLANS_KEY = window.COACH_DISCIPLINA === 'crossfit' ? 'coachjp_plans_crossfit_v1' : 'coachjp_plans_sports_v1'; /* propia de esta rama: planes/mesociclos */
 const GRUPOS  = ['Pectoral','Espalda','Hombros','Brazos','Piernas/Glúteos','Core','Multiarticular / Complejo Atlético','Full Body / Cardio','General'];
 const EQUIPOS = ['Barra','Mancuernas','Polea','Máquina','Multipower','Peso corporal','Banda','Kettlebell','Cardio'];
 const PATRONES= ['Empuje horizontal','Empuje vertical','Tracción horizontal','Tracción vertical','Rodilla dominante','Cadera dominante','Abducción / Aducción','Core / Anti-rotación','Aislamiento','Aislamiento hombro','Bíceps','Tríceps','Antebrazo','Extensión lumbar','Salud articular','Cardio / Metcon','General / Accesorio'];
@@ -1499,16 +1505,36 @@ function syncLibrary(){
 }
 function load(){
   try{
-    const raw = localStorage.getItem(KEY);
-    if(raw){
-      const d = JSON.parse(raw);
-      S = Object.assign(S, d);
-      S.athletes  = S.athletes  || [];
-      S.exercises = S.exercises || [];
-      S.plans     = S.plans     || {};
-      S.ui        = S.ui        || {day:0, view:'alumnos'};
+    /* Checkpoint 3 -- migración en frío, aditiva: coachjp_console_v2 (blob
+       histórico) nunca se borra ni se reescribe. Cada función de migración
+       es idempotente por su propia clave -- si esta rama ya tiene la suya,
+       no vuelve a tocar nada. */
+    migrarLibreria();
+    migrarPlanesRama();
+    const rawLib = localStorage.getItem(LIB_KEY);
+    if(rawLib){
+      const lib = JSON.parse(rawLib);
+      S.athletes  = lib.athletes  || [];
+      S.exercises = lib.exercises || [];
+      S.libV      = lib.libV;
     }
-    else { migrateV1(); }
+    const rawPlanes = localStorage.getItem(PLANS_KEY);
+    if(rawPlanes){
+      const pl = JSON.parse(rawPlanes);
+      S.plans    = pl.plans    || {};
+      S.activeId = pl.activeId || null;
+      S.ui       = pl.ui       || {day:0, view:'alumnos'};
+    }
+    if(!rawLib && !rawPlanes){
+      /* instalación limpia: ni el esquema nuevo ni coachjp_console_v2
+         existían -- se prueba la cadena de migración más vieja
+         (coachjp_console_v1); si tampoco existe, sigue con S inicial */
+      migrateV1();
+    }
+    S.athletes  = S.athletes  || [];
+    S.exercises = S.exercises || [];
+    S.plans     = S.plans     || {};
+    S.ui        = S.ui        || {day:0, view:'alumnos'};
   }catch(e){ console.warn('Error leyendo storage', e); }
   if(!S.exercises.length){ S.exercises = seedExercises(); S.libV = LIB_VERSION; }
   else {
@@ -1528,13 +1554,35 @@ function save(){
      asíncrono y no bloquea el frame actual. */
   saveT = setTimeout(()=>{
     const writeNow = () => {
-      try{ localStorage.setItem(KEY, JSON.stringify(S)); }
+      try{
+        /* Checkpoint 3: el blob único coachjp_console_v2 se congela como
+           respaldo histórico (nunca se le vuelve a escribir) -- de acá en
+           adelante todo guarda va a las dos claves nuevas: LIB_KEY
+           (compartida) y PLANS_KEY (propia de esta rama). */
+        localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
+        localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
+      }
       catch(e){ toast('No se pudo guardar (almacenamiento lleno)', 'err'); }
     };
     if(typeof requestIdleCallback === 'function') requestIdleCallback(writeNow, { timeout: 500 });
     else setTimeout(writeNow, 0);
   }, 900);
 }
+/* sincronización en vivo entre ramas: si la OTRA pestaña (Sports o CrossFit,
+   mismo navegador/origen) guarda una edición a la biblioteca compartida,
+   este evento la refleja acá sin esperar a un F5. No dispara en la misma
+   pestaña que hizo el cambio -- sólo en las demás abiertas, que es
+   exactamente el comportamiento nativo del evento 'storage'. */
+window.addEventListener('storage', function(e){
+  if(e.key !== LIB_KEY || !e.newValue) return;
+  try{
+    const lib = JSON.parse(e.newValue);
+    S.athletes  = lib.athletes  || [];
+    S.exercises = lib.exercises || [];
+    S.libV      = lib.libV;
+  }catch(err){ return; }
+  if(typeof renderBuilder === 'function') renderBuilder();
+});
 
 /* ---------- 4. HELPERS DE DOMINIO ---------- */
 const getAth = id => S.athletes.find(a => a.id === id) || null;
@@ -1685,6 +1733,56 @@ function migrateV1(){
     });
     S.plans[aid] = np;
   });
+  return true;
+}
+
+/* ---------- MIGRACIÓN EN FRÍO: bifurcación Sports / CrossFit (Checkpoint 3) ----------
+   coachjp_console_v2 (blob único histórico) nunca se borra ni se reescribe --
+   estas dos funciones sólo LO LEEN, una vez, para poblar las claves nuevas la
+   primera vez que a cada una le falte la suya. Cada una es idempotente por sí
+   sola (chequea su propia clave antes de escribir), así que no importa en
+   qué orden el coach abra index_sports.html / index_crossfit.html por
+   primera vez: cada rama migra sus propios planes cuando le toca, sin pisar
+   lo que la otra rama ya haya escrito. */
+function migrarLibreria(){
+  if(localStorage.getItem(LIB_KEY)) return false; /* ya migrada -- no se vuelve a tocar */
+  let raw = null;
+  try{ raw = localStorage.getItem(KEY); }catch(e){}
+  if(!raw) return false;
+  let old; try{ old = JSON.parse(raw); }catch(e){ return false; }
+  if(!old) return false;
+  try{
+    localStorage.setItem(LIB_KEY, JSON.stringify({
+      athletes: old.athletes || [], exercises: old.exercises || [], libV: old.libV
+    }));
+  }catch(e){ console.warn('Error migrando biblioteca compartida', e); return false; }
+  return true;
+}
+function migrarPlanesRama(){
+  if(localStorage.getItem(PLANS_KEY)) return false; /* esta rama ya tiene su propia clave */
+  let raw = null;
+  try{ raw = localStorage.getItem(KEY); }catch(e){}
+  if(!raw) return false;
+  let old; try{ old = JSON.parse(raw); }catch(e){ return false; }
+  if(!old) return false;
+  /* reparto por disciplina: un plan ya generado antes de la bifurcación se
+     etiqueta 'crossfit' en p.meta.mesoDisc (CrossFit Ondulado, Módulo 30) o
+     no lleva esa marca (musculación/hipertrofia/weightlifting/readaptación/
+     plantillas Élite incl. Hyrox, que no fijan mesoDisc:'crossfit') -- esa
+     misma marca, ya usada hoy por esCrossFit()/esCrossfit() en el resto del
+     Builder, es la que decide a qué rama va cada plan histórico. */
+  const esRamaCF = window.COACH_DISCIPLINA === 'crossfit';
+  const propios = {};
+  Object.keys(old.plans || {}).forEach(aid => {
+    const p = old.plans[aid];
+    const planEsCF = !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
+    if(planEsCF === esRamaCF) propios[aid] = p;
+  });
+  try{
+    localStorage.setItem(PLANS_KEY, JSON.stringify({
+      plans: propios, activeId: old.activeId || null, ui: old.ui || {day:0, view:'alumnos'}
+    }));
+  }catch(e){ console.warn('Error migrando planes de la rama', e); return false; }
   return true;
 }
 
@@ -2857,7 +2955,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 <meta name="theme-color" content="#0E0E0F" />
 <meta name="description" content="{{META_DESC}}" />
 <title>{{TITLE}}</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230A0A0B'/%3E%3Cpath d='M13 4L6.5 13.5 12 13l-1 6.5 6.5-9.5-5.5.5z' fill='%23FFD600' stroke='%23000' stroke-width='0.8' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230A0A0B'/%3E%3Cpath d='M13 4L6.5 13.5 12 13l-1 6.5 6.5-9.5-5.5.5z' fill='%2338BDF8' stroke='%23000' stroke-width='0.8' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <script>
 /* COACH JP v3.0 · resguardo de arranque: la interfaz nunca queda bloqueada */
 (function(){
@@ -4242,6 +4340,7 @@ if(!window.CoachRepaintBus){
    STATE
 ========================================================= */
 const STORAGE_KEY = '{{STORAGE_KEY}}';
+window.COACH_DISCIPLINA = 'sports';
 const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{} };
 let timerCounter = 0;
 const liveTimers = {};
@@ -4874,7 +4973,9 @@ function renderBlockInner(block, day, weekIdx){
     const lblSets = (block.weekSets && block.weekSets[weekIdx]) ? (setsSemana + ' series · ') : wd.setsLabel;
     html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + nombreSemana + videoLinkHtml(nombreSemana) + '</span>' +
       '<span class="ex-detail"><strong>' + lblSets + '</strong>' + repsSemana + ' · Tempo ' + block.tempo + '</span></div>';
-    html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana);
+    if(typeof renderSetRows === 'function'){
+      html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana);
+    }
     var notaSem = (block.weekNote && block.weekNote[weekIdx]) || block.tips;
     if(notaSem){ html += '<div class="coach-note"><strong>Coach Note</strong>' + notaSem + '</div>'; }
     if(block.altNote){
@@ -4889,7 +4990,9 @@ function renderBlockInner(block, day, weekIdx){
     html += '<div class="superset-header"><span class="sh-icon">🔗</span><span class="sh-text">' + sd.header + '</span></div>';
     sd.exercises.forEach(function(ex, exIdx){
       html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') + '</span></div>';
-      html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps);
+      if(typeof renderSetRows === 'function'){
+        html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps);
+      }
     });
     html += '<span class="directive-badge">\\u26a1 Transici\\u00f3n continua (sin pausa)</span>';
     if(block.tips){ html += '<div class="coach-note"><strong>Coach Note</strong>' + block.tips + '</div>'; }
@@ -6184,7 +6287,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(day.hyrox) mapa[day.hyrox.id] = day.hyrox;
     mainEl.querySelectorAll('.block').forEach(function(el){
       const b = mapa[el.dataset.blockId]; if(!b) return;
-      if(esMetcon(b, weekIdx)) pizarra(el, b, weekIdx, day.id);
+      /* gate de disciplina: en Sports la pizarra WOD nunca debe montarse,
+         ni siquiera sobre un bloque Hyrox con category:'metcon' -- así el
+         bloque cae siempre en su renderer estructural (isHyrox) */
+      if(window.COACH_DISCIPLINA !== 'sports' && esMetcon(b, weekIdx)) pizarra(el, b, weekIdx, day.id);
       /* PR sobre lo que ya estaba cargado */
       el.querySelectorAll('.set-row').forEach(function(row){ chequearPR(row); });
     });
@@ -10443,8 +10549,13 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   ========================================================= */
   function header(){
     var c = document.querySelector('.hd-cert');
-    if(c && c.textContent.replace(/\\s+/g, ' ').trim() !== 'High Performance Programming')
-      c.textContent = 'High Performance Programming';
+    /* Checkpoint 3: el subtítulo ahora es el diferenciador de disciplina en
+       vez de un texto fijo -- mismo mecanismo de siempre (se reafirma en
+       cada repintado), sólo cambia qué etiqueta y qué color le impone. */
+    var esCF = window.COACH_DISCIPLINA === 'crossfit';
+    var etiqueta = esCF ? 'CROSSFIT & HYROX TACTICAL' : 'BODYBUILDING & SPORTS PERFORMANCE';
+    if(c && c.textContent.replace(/\\s+/g, ' ').trim() !== etiqueta) c.textContent = etiqueta;
+    if(c) c.style.setProperty('color', esCF ? '#D2793F' : '#38BDF8', 'important');
   }
 
   /* =========================================================
@@ -10829,9 +10940,13 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     mk('btnManualTop', '📖<span class="lbl"> Manual</span>', function(){
       if(window.CoachManual) window.CoachManual.abrir();
     });
-    mk('btnVistaTop', '🔁<span class="lbl"> Vista</span>', function(){
-      if(window.CoachVista) window.CoachVista.alternar();
-    });
+    /* el toggle Musculación/CrossFit no tiene sentido en Sports: la pizarra
+       WOD nunca se monta ahí, así que el botón quedaría vacío de efecto */
+    if(window.COACH_DISCIPLINA !== 'sports'){
+      mk('btnVistaTop', '🔁<span class="lbl"> Vista</span>', function(){
+        if(window.CoachVista) window.CoachVista.alternar();
+      });
+    }
     /* el botón de instalar vive centrado debajo de la cabecera */
     var pw = document.querySelector('.pwa-wrap');
     var head = document.querySelector('header.masthead');
@@ -18113,14 +18228,14 @@ body.focus-mode .hd-dock{display:none}
    flex-wrap, así el historial cae en su propia línea como estaba
    pensado desde el principio, sin pelear por espacio con los campos.
    Se agrega además un min-width de seguridad a los inputs de carga
-   (68px, dentro del rango táctil usable) para que nunca puedan
+   (70px, dentro del rango táctil usable) para que nunca puedan
    aplastarse por completo aunque algún otro elemento futuro vuelva a
    compartir la fila. El check de la serie ya tenía 48×48px de área
    táctil (fix previo), por encima del mínimo de 44px recomendado. */
 .set-row{flex-wrap:wrap !important}
 .block .bs-r .bs-fila > .set-row{flex-wrap:wrap !important}
 .block .set-row > .set-input,
-.block .bs-r .bs-fila > .set-row .set-input{min-width:68px !important}
+.block .bs-r .bs-fila > .set-row .set-input{min-width:70px !important}
 
 /* =========================================================
    FIX (pedido 40): ergonomía táctil del dock inferior en movil.
@@ -19058,7 +19173,7 @@ function compile(ath){
   ).join('');
 
   const vals = {
-    TITLE: 'Coach JP — ' + nombre,
+    TITLE: 'Coach JP — ' + nombre + (window.COACH_DISCIPLINA === 'crossfit' ? ' · CrossFit & Hyrox' : ' · Sports & Bodybuilding'),
     META_DESC: (M.coachName || 'Coach JP') + ' · Programa de ' + nombre + ' · ' + (M.mesoName || ''),
     COACH_NAME: M.coachName || 'Prof. Juan Pablo Armiñana',
     COACH_ROLE: M.coachRole || '',
@@ -19130,7 +19245,10 @@ function renderExport(){
    11. BACKUP / DATOS
    ============================================================ */
 function renderData(){
-  const bytes = (localStorage.getItem(KEY)||'').length;
+  /* Checkpoint 3: el peso real ahora vive repartido en LIB_KEY + PLANS_KEY
+     (KEY sigue existiendo como copia redundante, pero medirlo solo
+     subestimaría lo que este esquema realmente ocupa). */
+  const bytes = (localStorage.getItem(LIB_KEY)||'').length + (localStorage.getItem(PLANS_KEY)||'').length;
   $('#dataStats').innerHTML =
     '<div class="stat"><div class="v">' + S.athletes.length + '</div><div class="k">Alumnos</div></div>' +
     '<div class="stat"><div class="v">' + S.exercises.length + '</div><div class="k">Ejercicios</div></div>' +
@@ -19350,11 +19468,17 @@ function init(){
     save(); renderLibrary(); renderData(); toast(n + ' ejercicios base restaurados ✔');
   });
   $('#btnWipe').addEventListener('click', () => {
-    if(!confirm('¿Borrar TODOS los datos (alumnos, ejercicios y planes)?')) return;
+    /* Checkpoint 3: atletas y biblioteca de ejercicios ahora son compartidos
+       entre Sports y CrossFit (LIB_KEY) -- este botón, tal como estaba,
+       los borraba también, lo que habría dejado a la OTRA rama sin sus
+       atletas de un momento a otro. Se acota a los planes propios de esta
+       rama (PLANS_KEY); la biblioteca compartida no se toca desde acá. */
+    const disc = window.COACH_DISCIPLINA === 'crossfit' ? 'CrossFit' : 'Sports';
+    if(!confirm('¿Borrar TODOS los planes de esta rama (' + disc + ')? Los atletas y la biblioteca de ejercicios son compartidos entre Sports y CrossFit y NO se tocan.')) return;
     if(!confirm('Última confirmación: esta acción es irreversible.')) return;
-    localStorage.removeItem(KEY);
-    S = { athletes:[], exercises: seedExercises(), plans:{}, activeId:null, ui:{day:0, view:'alumnos'} };
-    save(); go('alumnos'); toast('Datos borrados', 'warn');
+    localStorage.removeItem(PLANS_KEY);
+    S.plans = {}; S.activeId = null; S.ui = {day:0, view:'alumnos'};
+    save(); go('alumnos'); toast('Planes de ' + disc + ' borrados', 'warn');
   });
 
   bindPreview();
@@ -22884,7 +23008,10 @@ document.addEventListener('DOMContentLoaded', init);
     clearTimeout(syncT);
     syncT = setTimeout(() => {
       let ok = false;
-      try{ ok = !!localStorage.getItem(KEY); }catch(e){}
+      /* Checkpoint 3: el guardado real ya no escribe en KEY -- el indicador
+         tiene que mirar la clave de planes de esta rama para no quedar
+         mostrando "Sin guardar" para siempre pese a guardar bien. */
+      try{ ok = !!localStorage.getItem(PLANS_KEY); }catch(e){}
       if(ok) setSync('ok', 'Memoria sincronizada ' + hhmm());
       else setSync('err', 'Sin guardar');
     }, 320);
@@ -26252,7 +26379,10 @@ body{overflow-x:hidden}
   function storageInfo(){
     let bytes = 0, total = 0;
     try{
-      const raw = localStorage.getItem(KEY) || '';
+      /* Checkpoint 3: "bytes" (nuestro propio peso) ahora vive en LIB_KEY +
+         PLANS_KEY, no sólo en KEY (que sigue existiendo como copia
+         redundante) */
+      const raw = (localStorage.getItem(LIB_KEY) || '') + (localStorage.getItem(PLANS_KEY) || '');
       bytes = new Blob([raw]).size;
       for(let i = 0; i < localStorage.length; i++){
         const k = localStorage.key(i);
@@ -31106,7 +31236,11 @@ body.man-mode .gs-fab{right:318px}
 
   function mount(){
     const tb = document.querySelector('#v-builder .topbar');
-    if(tb && !document.getElementById('btnCF')){
+    /* Checkpoint 3: en Sports estos accesos no corresponden al flujo de
+       hipertrofia/fuerza -- se ocultan del riel del Builder, sin tocar el
+       resto del módulo (los mismos formularios siguen intactos y operativos
+       en CrossFit). */
+    if(window.COACH_DISCIPLINA !== 'sports' && tb && !document.getElementById('btnCF')){
       const b = document.createElement('button');
       b.className = 'btn teal'; b.id = 'btnCF'; b.innerHTML = '🤸 CrossFit A/B/C';
       const ref = document.getElementById('btnWeek') || document.getElementById('btnTpl');
@@ -31114,7 +31248,7 @@ body.man-mode .gs-fab{right:318px}
       b.addEventListener('click', openCF);
     }
     const pop = document.getElementById('toolsPop');
-    if(pop && !document.getElementById('btnDoc')){
+    if(window.COACH_DISCIPLINA !== 'sports' && pop && !document.getElementById('btnDoc')){
       const b = document.createElement('button');
       b.className = 'btn'; b.id = 'btnDoc'; b.innerHTML = '📄 Importar plan de CrossFit';
       b.addEventListener('click', () => { pop.classList.remove('on'); $('#docPrev').style.display = 'none'; $('#docRun').disabled = true; openModal('mDoc'); });
@@ -31479,7 +31613,7 @@ body.man-mode .gs-fab{right:318px}
       b.addEventListener('click', () => { pintarMacro(); $('#mcLog').innerHTML = ''; openModal('mMacro'); });
     }
     const tb = document.querySelector('#v-builder .topbar');
-    if(tb && !document.getElementById('btnWod')){
+    if(window.COACH_DISCIPLINA !== 'sports' && tb && !document.getElementById('btnWod')){
       const b = document.createElement('button');
       b.className = 'btn'; b.id = 'btnWod'; b.innerHTML = '🔥 WODs';
       const ref = document.getElementById('btnCF');
@@ -35545,6 +35679,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   /* botón del timer en el riel del Builder */
   function botonTimer(){
+    if(window.COACH_DISCIPLINA === 'sports') return; /* Checkpoint 3: sin acceso WOD en Sports */
     if(document.getElementById('btnWodTimer')) return;
     var host = document.querySelector('#v-builder .topbar .jp-rail') || document.querySelector('#v-builder .topbar');
     if(!host) return;
@@ -40925,7 +41060,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     pend = setTimeout(function(){
       var escribir = function(){
         try{
+          /* Checkpoint 3: además de la copia unificada de siempre (KEY,
+             respaldo redundante), este es el guardado REALMENTE activo en
+             tiempo de ejecución (pisa a los wraps anteriores) -- así que
+             tiene que escribir también en las claves nuevas, o el resto del
+             sistema de bifurcación quedaría sin su red de seguridad. */
           localStorage.setItem(KEY, JSON.stringify(S));
+          localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
+          localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
           if(fallando){
             fallando = false;
             try{ toast('Guardado restablecido ✔'); }catch(e){}
@@ -40967,6 +41109,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function _volcadoSincrono(){
     clearTimeout(pend);
     try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
+    /* Checkpoint 3: el volcado de emergencia (pagehide/beforeunload) también
+       tiene que cubrir las claves nuevas -- si sólo protegiera KEY, cerrar
+       la pestaña dentro de la ventana de debounce podía perder la última
+       edición de las claves que load() realmente usa. */
+    try{ localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV })); }catch(e){}
+    try{ localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui })); }catch(e){}
   }
   window.addEventListener('pagehide', _volcadoSincrono);
   window.addEventListener('beforeunload', _volcadoSincrono);
@@ -44916,426 +45064,6 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   [800, 2000, 3600].forEach(function(ms){ setTimeout(montar, ms); });
 })();
 </script>
-<!-- ============================================================
-     MÓDULO 30 — CROSSFIT MODULAR: SEMANA A SEMANA + IA
-     · Sólo se activa cuando la disciplina del mesociclo es CrossFit
-     · Desacopla el mesociclo rígido: se crean y prescriben semanas
-       de a una, sin autogenerar 4 semanas ni porcentajes
-     · Estructura y reordena LA SEMANA CARGADA balanceando vías
-       metabólicas y patrones (Gymnastics / Weightlifting / Mono)
-     · No toca Bodybuilding ni ningún otro módulo
-     ============================================================ -->
-<style>
-#jpCfBar{
-  display:none;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px;
-  padding:10px 13px;border-radius:12px;background:#141920;border:1px solid rgba(124,197,232,.28);
-}
-#jpCfBar.on{display:flex}
-#jpCfBar .lb{
-  font-family:var(--ffh);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
-  color:#7CC5E8;font-weight:700;
-}
-#jpCfBar .sem{display:flex;gap:6px;flex-wrap:wrap}
-#jpCfBar .sem .s{
-  min-height:32px;padding:0 12px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:700;
-  background:transparent;border:1px solid var(--line-2);color:var(--txt-2);
-}
-#jpCfBar .sem .s.on{background:rgba(124,197,232,.16);border-color:#7CC5E8;color:#7CC5E8}
-#jpCfBar .sp{flex:1}
-#jpCfBar button.acc{
-  min-height:34px;padding:0 13px;border-radius:9px;cursor:pointer;
-  background:rgba(255,255,255,.04);border:1px solid var(--line-2);color:var(--txt-2);
-  font-family:var(--ffh);font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-}
-#jpCfBar button.acc:hover{border-color:#7CC5E8;color:#7CC5E8}
-#jpCfBar button.acc.ia{border-color:rgba(210,121,63,.5);color:#E8965E}
-
-#mCfSem .cs-dia{
-  display:flex;align-items:center;gap:10px;padding:10px 12px;margin-top:8px;
-  border:1px solid #28303A;border-radius:12px;background:#141920;
-}
-#mCfSem .cs-dia .pos{
-  width:30px;height:30px;flex:0 0 30px;border-radius:9px;display:flex;align-items:center;justify-content:center;
-  font-family:ui-monospace,Menlo,monospace;font-size:12px;font-weight:800;
-  background:rgba(255,255,255,.05);border:1px solid #28303A;color:#828A97;
-}
-#mCfSem .cs-dia.mueve .pos{background:rgba(124,197,232,.15);border-color:#7CC5E8;color:#7CC5E8}
-#mCfSem .cs-dia .nb{flex:1;min-width:0}
-#mCfSem .cs-dia .nb b{display:block;font-size:13px;color:#EDEFF2}
-#mCfSem .cs-dia .nb span{font-size:11px;color:#828A97}
-#mCfSem .tags{display:flex;gap:5px;flex-wrap:wrap}
-#mCfSem .tags i{
-  font-style:normal;font-size:9.5px;font-weight:800;letter-spacing:.04em;padding:3px 8px;border-radius:999px;
-  border:1px solid var(--line-2);color:var(--muted);background:var(--panel-3);white-space:nowrap;
-}
-#mCfSem .tags i.g{border-color:rgba(124,197,232,.45);color:#7CC5E8}
-#mCfSem .tags i.w{border-color:rgba(210,121,63,.45);color:#E8965E}
-#mCfSem .tags i.m{border-color:rgba(143,185,206,.45);color:#8FB9CE}
-#mCfSem .tags i.via{border-color:rgba(255,255,255,.16);color:#C9CFD8}
-#mCfSem .cs-diag{
-  margin-top:10px;padding:10px 12px;border-radius:12px;
-  border:1px dashed #33404D;background:rgba(124,197,232,.05);color:#A0A8B4;font-size:12.3px;line-height:1.6;
-}
-#mCfSem .cs-diag b{color:#EDEFF2}
-#mCfSem .cs-flecha{text-align:center;color:#5E6570;font-size:16px;margin:10px 0 2px}
-</style>
-
-<div class="modal-bg" id="mCfSem">
-  <div class="modal" style="max-width:900px">
-    <div class="modal-h">
-      <h3>⚡ Semana de CrossFit</h3>
-      <div class="spacer"></div>
-      <span class="find-count" id="csSem">—</span>
-      <button class="icon-btn" data-close="mCfSem">✕</button>
-    </div>
-    <div class="modal-b">
-      <div class="cs-diag" id="csDiag"></div>
-      <div style="margin-top:12px">
-        <div class="lb" style="margin-bottom:4px">Orden actual</div>
-        <div id="csActual"></div>
-      </div>
-      <div class="cs-flecha">▼</div>
-      <div>
-        <div class="lb" style="margin-bottom:4px">Orden propuesto</div>
-        <div id="csPropuesto"></div>
-      </div>
-      <div class="cs-diag" id="csPorque" style="margin-top:12px"></div>
-    </div>
-    <div class="modal-f">
-      <button class="btn ghost" data-close="mCfSem">Cancelar</button>
-      <div class="spacer"></div>
-      <button class="btn ghost sm" id="csIA">🤖 Explicar con IA</button>
-      <button class="btn primary" id="csAplicar">✅ Aplicar este orden</button>
-    </div>
-  </div>
-</div>
-
-<script>
-/* =========================================================
-   CROSSFIT MODULAR · semana a semana + reordenamiento
-   ========================================================= */
-(function(){
-
-  function esCF(){
-    try{
-      var a = active(); if(!a) return false;
-      var p = plan(a.id);
-      return !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
-    }catch(e){ return false; }
-  }
-
-  /* ---------------------------------------------------------
-     1 · CLASIFICACIÓN DE CADA DÍA
-     Modalidad: G (gimnásticos) · W (levantamiento) · M (monoestructural)
-     Vía:       aláctico (potencia) · láctico (glucolítico) · oxidativo
-  --------------------------------------------------------- */
-  var RX_G = /dominad|muscle.?up|hspu|handstand|vertical|toes.?to.?bar|t2b|pull.?up|dip|fondo|escalada|rope|pino|kipping|ring/i;
-  var RX_W = /snatch|clean|jerk|thruster|deadlift|peso muerto|sentadilla|squat|press|overhead|arranque|envi[oó]n|cargada|barra|kettlebell|wall ball/i;
-  var RX_M = /row|remo erg|bike|bicicleta|assault|run|correr|ski|cuerda|comba|double under|caminata|zona 2|erg/i;
-
-  function textoDia(d){
-    return (d.bloques || []).map(function(b){
-      return [b.titulo || '', b.subtitulo || '', b.cfProtocolo || '', b.cfTipo || '']
-        .concat(b.items || [])
-        .concat((b.movements || []))
-        .concat((b.ejercicios || []).map(function(e){
-          var ex = getEx(e.exId); return ex ? ex.es : (e.nombre || '');
-        }))
-        .concat(b.exId ? [ (getEx(b.exId) || {}).es || '' ] : [])
-        .join(' ');
-    }).join(' ');
-  }
-
-  function minutosDia(d){
-    var t = textoDia(d), min = 0, m;
-    var re = /(\d{1,3})\s*(?:'|min|minutos)\b/gi;
-    while((m = re.exec(t))) min += parseInt(m[1], 10) || 0;
-    var amr = /(?:amrap|emom|for time|ftime|chipper)[^\d]{0,12}(\d{1,3})/i.exec(t);
-    if(amr) min += parseInt(amr[1], 10) || 0;
-    if(!min) min = (d.bloques || []).length * 8;
-    return min;
-  }
-
-  function clasificar(d){
-    var t = textoDia(d);
-    var mod = { G:0, W:0, M:0 };
-    if(RX_G.test(t)) mod.G++;
-    if(RX_W.test(t)) mod.W++;
-    if(RX_M.test(t)) mod.M++;
-    /* peso por cantidad de coincidencias, no sólo presencia */
-    ['G','W','M'].forEach(function(k){
-      var rx = k === 'G' ? RX_G : k === 'W' ? RX_W : RX_M;
-      var c = (t.match(new RegExp(rx.source, 'gi')) || []).length;
-      mod[k] = c;
-    });
-    var dom = ['G','W','M'].sort(function(a, b){ return mod[b] - mod[a]; })[0];
-    if(!mod[dom]) dom = 'M';
-
-    var min = minutosDia(d);
-    var pesado = /1rm|singles|heavy|pesad|e2mom|every 2|máxim|maxim/i.test(t);
-    var via = pesado || min <= 8 ? 'alactico' : (min <= 15 ? 'lactico' : 'oxidativo');
-
-    var carga = via === 'lactico' ? 3 : via === 'alactico' ? 2 : 1;
-    return { dom: dom, mod: mod, min: min, via: via, carga: carga };
-  }
-
-  var VIA_LB = { alactico:'Aláctico · potencia', lactico:'Láctico · glucolítico', oxidativo:'Oxidativo · aeróbico' };
-  var MOD_LB = { G:'Gymnastics', W:'Weightlifting', M:'Monostructural' };
-
-  /* ---------------------------------------------------------
-     2 · MOTOR DE REORDENAMIENTO
-     Penaliza: dos días lácticos seguidos, dos del mismo patrón
-     dominante seguidos, y arrancar la semana con el día más blando.
-  --------------------------------------------------------- */
-  function penalizar(orden, info){
-    var p = 0;
-    for(var i = 1; i < orden.length; i++){
-      var a = info[orden[i - 1]], b = info[orden[i]];
-      if(a.via === 'lactico' && b.via === 'lactico') p += 10;
-      if(a.dom === b.dom) p += 4;
-      if(a.carga === 3 && b.carga === 3) p += 3;
-      if(a.via === b.via) p += 2;
-    }
-    /* el día más exigente no va último, y el más liviano no va primero */
-    var cargas = orden.map(function(i){ return info[i].carga; });
-    if(cargas[0] === Math.min.apply(null, cargas)) p += 3;
-    if(cargas[cargas.length - 1] === Math.max.apply(null, cargas)) p += 2;
-    return p;
-  }
-
-  function mejorOrden(info){
-    var n = info.length;
-    var base = [];
-    for(var i = 0; i < n; i++) base.push(i);
-    if(n > 7) return base;                     /* no hace falta permutar tanto */
-    var mejor = base.slice(), mejorP = penalizar(base, info);
-    var perm = function(arr, k){
-      if(k === arr.length){
-        var p = penalizar(arr, info);
-        if(p < mejorP){ mejorP = p; mejor = arr.slice(); }
-        return;
-      }
-      for(var j = k; j < arr.length; j++){
-        var c = arr.slice();
-        var tmp = c[k]; c[k] = c[j]; c[j] = tmp;
-        perm(c, k + 1);
-      }
-    };
-    perm(base, 0);
-    return mejor;
-  }
-
-  /* ---------------------------------------------------------
-     3 · INTERFAZ
-  --------------------------------------------------------- */
-  var propuesta = null, infoDias = null, diasRef = null;
-
-  function filaDia(d, inf, pos, mueve){
-    return '<div class="cs-dia' + (mueve ? ' mueve' : '') + '">' +
-      '<span class="pos">' + pos + '</span>' +
-      '<span class="nb"><b>' + esc(d.short || ('Día ' + pos)) + ' · ' + esc(d.label || d.title || '') + '</b>' +
-      '<span>' + (d.bloques || []).length + ' bloques · ' + inf.min + ' min estimados</span></span>' +
-      '<span class="tags">' +
-        '<i class="' + inf.dom.toLowerCase() + '">' + MOD_LB[inf.dom] + '</i>' +
-        '<i class="via">' + VIA_LB[inf.via] + '</i>' +
-      '</span></div>';
-  }
-
-  function abrir(){
-    var a = active(); if(!a){ toast('Elegí un alumno/a', 'err'); return; }
-    if(!esCF()){ toast('Esta herramienta es sólo para planificaciones de CrossFit', 'err'); return; }
-    var p = plan(a.id);
-    diasRef = p.dias.slice();
-    infoDias = diasRef.map(clasificar);
-    propuesta = mejorOrden(infoDias);
-
-    var cuenta = { alactico:0, lactico:0, oxidativo:0 }, mods = { G:0, W:0, M:0 };
-    infoDias.forEach(function(i){ cuenta[i.via]++; mods[i.dom]++; });
-
-    document.getElementById('csSem').textContent = diasRef.length + ' días en la semana';
-    document.getElementById('csDiag').innerHTML =
-      'Vías metabólicas: <b>' + cuenta.alactico + '</b> aláctico · <b>' + cuenta.lactico + '</b> láctico · ' +
-      '<b>' + cuenta.oxidativo + '</b> oxidativo.<br>' +
-      'Patrones dominantes: <b>' + mods.W + '</b> weightlifting · <b>' + mods.G + '</b> gymnastics · ' +
-      '<b>' + mods.M + '</b> monoestructural.';
-
-    document.getElementById('csActual').innerHTML =
-      diasRef.map(function(d, i){ return filaDia(d, infoDias[i], i + 1, false); }).join('');
-    document.getElementById('csPropuesto').innerHTML =
-      propuesta.map(function(ix, i){ return filaDia(diasRef[ix], infoDias[ix], i + 1, ix !== i); }).join('');
-
-    var pAntes = penalizar(diasRef.map(function(_, i){ return i; }), infoDias);
-    var pDesp = penalizar(propuesta, infoDias);
-    var cambios = propuesta.filter(function(ix, i){ return ix !== i; }).length;
-    document.getElementById('csPorque').innerHTML = cambios
-      ? 'Muevo <b>' + cambios + ' día(s)</b> para que no queden dos sesiones lácticas pegadas ni dos del mismo patrón ' +
-        'una atrás de la otra. Índice de choque: <b>' + pAntes + ' → ' + pDesp + '</b> (más bajo es mejor).'
-      : 'El orden actual ya está balanceado: no hay dos días lácticos seguidos ni patrones repetidos consecutivos. ' +
-        'No hace falta mover nada.';
-    openModal('mCfSem');
-  }
-  window.abrirSemanaCF = abrir;
-
-  function aplicar(){
-    if(!propuesta || !diasRef) return;
-    var a = active(); if(!a) return;
-    var p = plan(a.id);
-    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function')
-      CoachUndo.vigilar('Reordenar semana de CrossFit');
-    var nuevos = propuesta.map(function(ix){ return diasRef[ix]; });
-    /* se conserva el id y el rótulo de posición: lo que se mueve es el contenido */
-    nuevos.forEach(function(d, i){
-      d.id = 'dia' + (i + 1);
-      d.short = 'DÍA ' + (i + 1);
-    });
-    p.dias = nuevos;
-    save();
-    if(typeof renderBuilder === 'function') renderBuilder();
-    closeModal('mCfSem');
-    toast('⚡ Semana reordenada · ' + nuevos.length + ' días');
-  }
-
-  function explicarIA(){
-    if(!window.CoachAI || !CoachAI.hayClave || !CoachAI.hayClave()){
-      toast('Sin clave de IA cargada: el análisis local ya está en pantalla'); return;
-    }
-    var txt = diasRef.map(function(d, i){
-      var inf = infoDias[i];
-      return (i + 1) + '. ' + (d.label || d.title) + ' — ' + MOD_LB[inf.dom] + ' — ' + VIA_LB[inf.via] +
-        ' — ' + inf.min + ' min';
-    }).join('\n');
-    var orden = propuesta.map(function(ix){ return diasRef[ix].label || diasRef[ix].title; }).join(' → ');
-    document.getElementById('csPorque').innerHTML = 'Consultando IA…';
-    CoachAI.generarTexto(
-      'Sos programador de CrossFit. Semana cargada:\n' + txt + '\n\nOrden propuesto: ' + orden +
-      '\n\nExplicá en dos o tres oraciones, en español rioplatense y sin emojis, por qué ese orden ' +
-      'balancea mejor las vías metabólicas y los patrones. Si ves un problema que el reordenamiento ' +
-      'no resuelve (por ejemplo, falta de trabajo aeróbico o exceso de barra), decilo en una oración más.',
-      'Respondés en texto plano, sin listas ni títulos.')
-      .then(function(r){
-        document.getElementById('csPorque').textContent = (r || '').trim() ||
-          'La IA no devolvió texto; queda el análisis local.';
-      })
-      .catch(function(){ document.getElementById('csPorque').textContent = 'No se pudo consultar la IA.'; });
-  }
-
-  /* ---------------------------------------------------------
-     4 · BARRA DE SEMANAS · microciclo, no mesociclo
-  --------------------------------------------------------- */
-  function semanaActiva(){
-    try{ return (typeof S !== 'undefined' && S.ui && S.ui.wk) || 0; }catch(e){ return 0; }
-  }
-  function nuevaSemana(n){
-    return { n:n, short:'S' + n, name:'Semana ' + n, phase:'Microciclo ' + n,
-             rpe:'', icon:'🔁', deload:false, fail:false, amrapMinutes:null, hyroxNote:'',
-             note:'Semana prescrita de forma independiente: en CrossFit el ajuste es semanal.' };
-  }
-  function barra(){
-    var host = document.querySelector('#v-builder .topbar');
-    if(!host) return null;
-    var b = document.getElementById('jpCfBar');
-    if(!b){
-      b = document.createElement('div');
-      b.id = 'jpCfBar';
-      host.parentNode.insertBefore(b, host.nextSibling);
-      b.addEventListener('click', function(e){
-        var s = e.target.closest('[data-cfw]');
-        if(s){
-          try{ S.ui.wk = parseInt(s.dataset.cfw, 10); save(); renderBuilder(); }catch(err){}
-          return;
-        }
-        if(e.target.closest('#cfAddWk')){
-          var a = active(); if(!a) return;
-          var p = plan(a.id);
-          if(window.CoachUndo) CoachUndo.vigilar('Agregar semana de CrossFit');
-          p.meso.push(nuevaSemana(p.meso.length + 1));
-          save(); renderBuilder();
-          toast('Semana ' + p.meso.length + ' creada · vacía y editable');
-          return;
-        }
-        if(e.target.closest('#cfDelWk')){
-          var a2 = active(); if(!a2) return;
-          var p2 = plan(a2.id);
-          if(p2.meso.length <= 1){ toast('Tiene que quedar al menos una semana', 'err'); return; }
-          if(!confirm('¿Quitar la Semana ' + p2.meso.length + '? Las marcas cargadas en esa semana quedan en el historial del alumno/a.')) return;
-          if(window.CoachUndo) CoachUndo.vigilar('Quitar semana de CrossFit');
-          p2.meso.pop();
-          try{ if(S.ui.wk >= p2.meso.length) S.ui.wk = p2.meso.length - 1; }catch(err){}
-          save(); renderBuilder();
-          return;
-        }
-        if(e.target.closest('#cfOrden')){ abrir(); return; }
-      });
-    }
-    return b;
-  }
-
-  function pintarBarra(){
-    var b = barra(); if(!b) return;
-    if(!esCF()){ b.classList.remove('on'); return; }
-    var a = active(); if(!a){ b.classList.remove('on'); return; }
-    var p = plan(a.id), wk = semanaActiva();
-    b.classList.add('on');
-    b.innerHTML =
-      '<span class="lb">Microciclo · semana a semana</span>' +
-      '<span class="sem">' + p.meso.map(function(w, i){
-        return '<button type="button" class="s ' + (i === wk ? 'on' : '') + '" data-cfw="' + i + '">' +
-          esc(w.short || ('S' + (i + 1))) + '</button>';
-      }).join('') + '</span>' +
-      '<span class="sp"></span>' +
-      '<button type="button" class="acc" id="cfAddWk">+ Semana ' + (p.meso.length + 1) + '</button>' +
-      '<button type="button" class="acc" id="cfDelWk">🗑 Quitar última</button>' +
-      '<button type="button" class="acc ia" id="cfOrden">⚡ Estructurar / Reordenar con IA</button>';
-  }
-
-  /* al pasar una planificación a CrossFit, el mesociclo de 4 semanas por
-     defecto se reduce a una sola: las siguientes las crea el coach */
-  function desacoplar(){
-    if(!esCF()) return;
-    var a = active(); if(!a) return;
-    var p = plan(a.id);
-    if(p.meta.cfModular) return;                 /* ya se hizo una vez */
-    var intactas = p.meso.length === 4 && p.meso.every(function(w, i){
-      return (w.name === 'Semana ' + (i + 1)) && !w.tocada;
-    });
-    var sinMarcas = true;
-    try{
-      var marcas = JSON.parse(localStorage.getItem('coachjp_marks_' + a.id) || 'null');
-      sinMarcas = !marcas;
-    }catch(e){}
-    p.meta.cfModular = true;
-    if(intactas && sinMarcas){
-      p.meso = [nuevaSemana(1)];
-      try{ S.ui.wk = 0; }catch(e){}
-      save();
-      toast('CrossFit: mesociclo desacoplado · vas a prescribir semana a semana');
-    } else {
-      save();
-    }
-  }
-
-  function montar(){
-    pintarBarra();
-    var m = document.getElementById('mCfSem');
-    if(m && !m.__jp){
-      m.__jp = 1;
-      $$('#mCfSem [data-close]').forEach(function(x){ x.addEventListener('click', function(){ closeModal('mCfSem'); }); });
-      document.getElementById('csAplicar').addEventListener('click', aplicar);
-      document.getElementById('csIA').addEventListener('click', explicarIA);
-    }
-    desacoplar();
-  }
-
-  ['renderBuilder','renderDay','go'].forEach(function(fn){
-    var _f = window[fn];
-    if(typeof _f !== 'function' || _f.__jpcf) return;
-    var w = function(){ var r = _f.apply(this, arguments); setTimeout(montar, 100); return r; };
-    w.__jpcf = 1; window[fn] = w;
-  });
-  [900, 2200, 3800].forEach(function(ms){ setTimeout(montar, ms); });
-  window.CoachCFSemana = { abrir: abrir, clasificar: clasificar, esCF: esCF };
-})();
-</script>
 
 <script>
 /* ============================================================
@@ -46250,332 +45978,8 @@ input[type="radio"]:active{
              box-shadow .16s cubic-bezier(0.2,0.8,0.2,1) !important;
 }
 
-/* ============================================================
-   MÓDULO — PARSER DE PIZARRA CROSSFIT (secuencial no lineal)
-   Lee el texto libre que el coach ya tenía en los bloques
-   tipo "list"/"hyrox" (formato pizarra/WOD) e interpreta su
-   estructura: escalera de reps (21-15-9), AMRAP, EMOM con pares/
-   impares alternados, Tabata, rondas por tiempo y complejos con
-   transición ("+"). No reemplaza el textarea existente — lo lee,
-   ofrece una vista estructurada editable, y al aplicar regenera
-   las líneas limpias de vuelta en el mismo textarea (el guardado
-   sigue pasando por el listener existente de #dayPanel/data-bf).
-   ============================================================ */
-.jp-piz-btn{
-  margin-top:8px;display:inline-flex;align-items:center;gap:6px;
-  padding:.4rem .8rem;border-radius:10px;font-size:.78rem;font-weight:700;
-  border:1px solid rgba(124,197,232,.35);background:rgba(124,197,232,.08);color:#7CC5E8;
-  cursor:pointer;
-}
-.jp-piz-btn:hover{background:rgba(124,197,232,.16)}
-.jp-piz-panel{
-  display:none;margin-top:10px;padding:14px;border-radius:12px;
-  background:rgba(124,197,232,.05);border:1px solid rgba(124,197,232,.22);
-}
-.jp-piz-panel.on{display:block}
-.jp-piz-h{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
-.jp-piz-fmt{
-  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.72rem;letter-spacing:.1em;
-  text-transform:uppercase;color:#0A0F13;background:#7CC5E8;padding:4px 10px;border-radius:20px;
-}
-.jp-piz-h select{
-  font-size:.78rem;padding:5px 8px;border-radius:8px;background:var(--bg-elevated,#1A1A1B);
-  border:1px solid var(--border,rgba(255,255,255,.12));color:#EDEFF2;
-}
-.jp-piz-x{margin-left:auto;background:none;border:none;color:#A0A8B4;cursor:pointer;font-size:1rem}
-.jp-piz-scheme{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
-.jp-piz-scheme label{
-  display:flex;flex-direction:column;gap:3px;font-size:.66rem;letter-spacing:.08em;
-  text-transform:uppercase;color:#A0A8B4;font-weight:700;
-}
-.jp-piz-scheme input{
-  width:84px;padding:6px 8px;border-radius:8px;background:var(--bg-elevated,#1A1A1B);
-  border:1px solid var(--border,rgba(255,255,255,.12));color:#EDEFF2;font-size:.82rem;
-}
-.jp-piz-mvs{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
-.jp-piz-mv{display:grid;grid-template-columns:88px 70px 1fr auto;gap:6px;align-items:center}
-.jp-piz-mv select,.jp-piz-mv input{
-  padding:6px 8px;border-radius:8px;background:var(--bg-elevated,#1A1A1B);
-  border:1px solid var(--border,rgba(255,255,255,.12));color:#EDEFF2;font-size:.8rem;width:100%;
-}
-.jp-piz-mv button{
-  background:none;border:none;color:#EF5A5A;cursor:pointer;font-size:.9rem;padding:4px;
-}
-.jp-piz-addmv{
-  align-self:flex-start;font-size:.72rem;padding:5px 10px;border-radius:8px;
-  border:1px dashed rgba(255,255,255,.2);background:transparent;color:#A0A8B4;cursor:pointer;
-}
-.jp-piz-notes{font-size:.72rem;color:#A0A8B4;margin-bottom:10px;line-height:1.5}
-.jp-piz-notes b{color:#E5C378}
-.jp-piz-actions{display:flex;gap:8px;flex-wrap:wrap}
-.jp-piz-actions button{
-  padding:.5rem .9rem;border-radius:9px;font-size:.78rem;font-weight:700;cursor:pointer;border:1px solid transparent;
-}
-.jp-piz-apply{background:linear-gradient(135deg,#D2793F,#8A4A1E);color:#0A0F13}
-.jp-piz-timer{background:rgba(229,195,120,.12);border-color:rgba(229,195,120,.4) !important;color:#E5C378}
-@media(max-width:520px){ .jp-piz-mv{grid-template-columns:78px 60px 1fr auto} }
 </style>
 
-<script>
-(function(){
-  /* ---------- parser: texto libre → estructura ---------- */
-  function parsePizarraCF(rawText){
-    var lines = String(rawText || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
-    if(!lines.length) return null;
-    var result = {
-      format:null, capMin:null, workSec:null, restSec:null, roundsCount:null,
-      intervalSec:null, totalMin:null, ladder:null, roundsN:null, movements:[], notes:[]
-    };
-    var RX = {
-      ladder:/^(\d+(?:-\d+){1,})\s*$/,
-      tabata:/\btabata\b/i,
-      tabataWR:/(\d{1,3})\s*[\/:]\s*(\d{1,3})/,
-      tabataRounds:/x\s*(\d+)\b|(\d+)\s*rounds?\b/i,
-      amrap:/\bamrap\b\s*(\d+)?/i,
-      every:/\bevery\s*(\d+)\s*min(?:ute)?s?\b(?:\s*for\s*(\d+)\s*min(?:ute)?s?)?/i,
-      emom:/\bemom\b\s*(\d+)?/i,
-      rounds:/^(\d+)\s*rounds?\b/i,
-      fortime:/\bfor\s*time\b|\brft\b|\bchipper\b/i,
-      cap:/\b(?:time\s*)?cap\s*(\d+)/i,
-      complex:/\bcomplex\b/i,
-      roundTag:/^(even|odd|impar|par|min(?:uto)?s?\.?\s*\d+(?:-\d+)?|rd\.?\s*\d+(?:-\d+)?|round\.?\s*\d+(?:-\d+)?)\s*[:\-]\s*(.+)$/i,
-      movementLead:/^(\d+)(?:\s*\/\s*(\d+))?/,
-      unitWord:/^\s*(m|km|metros|cal|cals|calor[ií]as?|reps?)\b\.?\s*/i,
-      noteLine:/^\d+\s*rounds?\b.*,/i
-    };
-    var movementLines = [];
-    lines.forEach(function(L){
-      var m;
-      if((m = L.match(RX.ladder))){ result.format='ladder'; result.ladder = m[1].split('-').map(Number); return; }
-      if(RX.tabata.test(L)){
-        result.format='tabata';
-        var wr = L.match(RX.tabataWR); if(wr){ result.workSec=+wr[1]; result.restSec=+wr[2]; }
-        var rd = L.match(RX.tabataRounds); if(rd) result.roundsCount=+(rd[1]||rd[2]);
-        return;
-      }
-      if((m = L.match(RX.amrap))){ result.format='amrap'; if(m[1]) result.capMin=+m[1]; return; }
-      if((m = L.match(RX.every))){ result.format='emom'; result.intervalSec=+m[1]*60; if(m[2]) result.totalMin=+m[2]; return; }
-      if((m = L.match(RX.emom))){ result.format='emom'; result.intervalSec = result.intervalSec || 60; if(m[1]) result.totalMin=+m[1]; return; }
-      if(RX.complex.test(L)){ result.format = result.format || 'complex'; return; }
-      if(!result.format && (m = L.match(RX.rounds))){ result.format='rounds'; result.roundsN=+m[1]; return; }
-      if(RX.fortime.test(L)){ result.format = result.format || 'fortime'; return; }
-      if((m = L.match(RX.cap))){ result.capMin=+m[1]; return; }
-      if(RX.noteLine.test(L)){ result.notes.push(L); return; }
-      movementLines.push(L);
-    });
-    if(!result.format) result.format = movementLines.length > 1 ? 'complex' : 'fortime';
-    movementLines.forEach(function(L, idx){
-      var tag = null, body = L;
-      var mt = L.match(RX.roundTag);
-      if(mt){
-        var rawTag = mt[1].toLowerCase();
-        if(/^even|^par/.test(rawTag)) tag = 'even';
-        else if(/^odd|^impar/.test(rawTag)) tag = 'odd';
-        else tag = rawTag.replace(/\s+/g, ' ');
-        body = mt[2];
-      }
-      var chainParts = body.split('+').map(function(s){ return s.trim(); }).filter(Boolean);
-      var isChain = chainParts.length > 1;
-      var parts = isChain ? chainParts : [body];
-      parts.forEach(function(part){
-        var mm = part.match(RX.movementLead);
-        var reps=null, repsAlt=null, unit=null, name=part;
-        if(mm){
-          reps = +mm[1]; repsAlt = mm[2] ? +mm[2] : null;
-          var rest = part.slice(mm[0].length);
-          var mu = rest.match(RX.unitWord);
-          if(mu){ unit = mu[1].toLowerCase(); rest = rest.slice(mu[0].length); }
-          name = rest.trim();
-        }
-        if(!name) name = part;
-        result.movements.push({
-          order: idx, tag: tag,
-          reps: reps === null && result.format === 'ladder' ? 'ladder' : reps,
-          repsAlt: repsAlt, unit: unit, name: name, raw: part
-        });
-      });
-    });
-    var timer;
-    if(result.format === 'tabata') timer = { modo:'tabata', work:result.workSec||20, rest:result.restSec||10, rounds:result.roundsCount||8 };
-    else if(result.format === 'emom') timer = { modo:'emom', intervalo:result.intervalSec||60, total:result.totalMin||null };
-    else if(result.format === 'amrap') timer = { modo:'amrap', total:result.capMin||null };
-    else timer = { modo:'fortime', cap:result.capMin||null };
-    result.timer = timer;
-    return result;
-  }
-
-  var FMT_LABEL = { ladder:'Escalera de reps', amrap:'AMRAP', emom:'EMOM', tabata:'Tabata', rounds:'Rondas por tiempo', fortime:'For Time', complex:'Complejo' };
-  var TAG_LABEL = { '':'Todas', even:'Pares', odd:'Impares' };
-
-  /* ---------- estructura editada (DOM) → texto limpio ---------- */
-  function schemeFromPanel(panel){
-    var format = panel.querySelector('[data-piz="format"]').value;
-    var num = function(sel){ var el = panel.querySelector(sel); if(!el) return null; var v = parseFloat(el.value); return isFinite(v) ? v : null; };
-    var scheme = { format: format };
-    if(format === 'ladder') scheme.ladder = String(panel.querySelector('[data-piz="ladder"]').value || '').split(/[,\-]/).map(function(s){ return parseInt(s,10); }).filter(function(n){ return n > 0; });
-    if(format === 'tabata'){ scheme.workSec = num('[data-piz="work"]') || 20; scheme.restSec = num('[data-piz="rest"]') || 10; scheme.roundsCount = num('[data-piz="rounds"]') || 8; }
-    if(format === 'emom'){ scheme.intervalSec = num('[data-piz="interval"]') || 60; scheme.totalMin = num('[data-piz="total"]'); }
-    if(format === 'amrap'){ scheme.capMin = num('[data-piz="cap"]'); }
-    if(format === 'rounds'){ scheme.roundsN = num('[data-piz="roundsn"]'); scheme.capMin = num('[data-piz="cap2"]'); }
-    if(format === 'fortime'){ scheme.capMin = num('[data-piz="cap2"]'); }
-    var movs = [];
-    panel.querySelectorAll('.jp-piz-mv').forEach(function(row){
-      var name = row.querySelector('[data-mv="name"]').value.trim();
-      if(!name) return;
-      var repsRaw = row.querySelector('[data-mv="reps"]').value.trim();
-      movs.push({
-        tag: row.querySelector('[data-mv="tag"]').value || null,
-        reps: format === 'ladder' ? 'ladder' : (repsRaw === '' ? null : parseInt(repsRaw,10)),
-        name: name
-      });
-    });
-    scheme.movements = movs;
-    scheme.notesText = (panel.querySelector('[data-piz="notes"]').value || '');
-    return scheme;
-  }
-
-  function schemeToLines(s){
-    var out = [];
-    if(s.format === 'ladder') out.push((s.ladder||[]).join('-'));
-    else if(s.format === 'tabata') out.push('Tabata ' + (s.workSec||20) + '/' + (s.restSec||10) + ' x' + (s.roundsCount||8));
-    else if(s.format === 'emom'){
-      if(s.intervalSec && s.intervalSec !== 60) out.push('Every ' + Math.round(s.intervalSec/60) + ' min' + (s.totalMin ? ' for ' + s.totalMin + ' min' : ''));
-      else out.push('EMOM' + (s.totalMin ? ' ' + s.totalMin : ''));
-    }
-    else if(s.format === 'amrap') out.push('AMRAP' + (s.capMin ? ' ' + s.capMin : ''));
-    else if(s.format === 'rounds'){
-      if(s.capMin) out.push('Cap ' + s.capMin);
-      out.push((s.roundsN||1) + ' Rounds For Time');
-    }
-    else if(s.format === 'fortime'){
-      if(s.capMin) out.push('Cap ' + s.capMin);
-      out.push('For Time');
-    }
-    else if(s.format === 'complex') out.push('Complex');
-    (s.movements||[]).forEach(function(m){
-      var prefix = m.tag === 'even' ? 'Even: ' : (m.tag === 'odd' ? 'Odd: ' : '');
-      var reps = (m.reps === 'ladder' || m.reps == null) ? '' : (m.reps + ' ');
-      out.push(prefix + reps + m.name);
-    });
-    String(s.notesText || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean).forEach(function(l){ out.push(l); });
-    return out;
-  }
-
-  /* ---------- render del panel editable ---------- */
-  function schemeFieldsHtml(p){
-    if(p.format === 'ladder') return '<label>Escalera (coma)<input type="text" data-piz="ladder" value="' + esc((p.ladder||[]).join(', ')) + '" placeholder="21, 15, 9"></label>';
-    if(p.format === 'tabata') return '<label>Trabajo (seg)<input type="number" data-piz="work" value="' + (p.workSec||20) + '"></label>' +
-      '<label>Descanso (seg)<input type="number" data-piz="rest" value="' + (p.restSec||10) + '"></label>' +
-      '<label>Rondas<input type="number" data-piz="rounds" value="' + (p.roundsCount||8) + '"></label>';
-    if(p.format === 'emom') return '<label>Intervalo (seg)<input type="number" data-piz="interval" value="' + (p.intervalSec||60) + '"></label>' +
-      '<label>Total (min)<input type="number" data-piz="total" value="' + (p.totalMin||'') + '"></label>';
-    if(p.format === 'amrap') return '<label>Cap (min)<input type="number" data-piz="cap" value="' + (p.capMin||'') + '"></label>';
-    if(p.format === 'rounds') return '<label>Rondas<input type="number" data-piz="roundsn" value="' + (p.roundsN||1) + '"></label>' +
-      '<label>Cap (min · opcional)<input type="number" data-piz="cap2" value="' + (p.capMin||'') + '"></label>';
-    if(p.format === 'fortime') return '<label>Cap (min · opcional)<input type="number" data-piz="cap2" value="' + (p.capMin||'') + '"></label>';
-    return '';
-  }
-  function tagOptionsHtml(sel){
-    return ['', 'even', 'odd'].map(function(t){
-      return '<option value="' + t + '"' + (t === (sel||'') ? ' selected' : '') + '>' + TAG_LABEL[t] + '</option>';
-    }).join('');
-  }
-  function movRowHtml(m){
-    return '<div class="jp-piz-mv">' +
-      '<select data-mv="tag">' + tagOptionsHtml(m.tag) + '</select>' +
-      '<input type="text" data-mv="reps" value="' + esc(m.reps === 'ladder' || m.reps == null ? '' : m.reps) + '" placeholder="reps">' +
-      '<input type="text" data-mv="name" value="' + esc(m.name||'') + '" placeholder="Movimiento">' +
-      '<button type="button" data-mvdel="1">🗑</button>' +
-    '</div>';
-  }
-  function panelHtml(parsed){
-    var opts = ['ladder','amrap','emom','tabata','rounds','fortime','complex'].map(function(f){
-      return '<option value="' + f + '"' + (f === parsed.format ? ' selected' : '') + '>' + FMT_LABEL[f] + '</option>';
-    }).join('');
-    return (
-      '<div class="jp-piz-h"><span class="jp-piz-fmt">' + FMT_LABEL[parsed.format] + '</span>' +
-        '<select data-piz="format">' + opts + '</select>' +
-        '<button type="button" class="jp-piz-x" data-pizclose="1">✕</button></div>' +
-      '<div class="jp-piz-scheme" data-piz-scheme>' + schemeFieldsHtml(parsed) + '</div>' +
-      '<div class="jp-piz-mvs" data-piz-mvs>' + parsed.movements.map(movRowHtml).join('') + '</div>' +
-      '<button type="button" class="jp-piz-addmv" data-pizaddmv="1">➕ Agregar movimiento</button>' +
-      (parsed.notes && parsed.notes.length ? '<div class="jp-piz-notes"><b>Notas detectadas:</b> ' + esc(parsed.notes.join(' · ')) + '</div>' : '') +
-      '<textarea data-piz="notes" style="display:none">' + esc((parsed.notes||[]).join('\n')) + '</textarea>' +
-      '<div class="jp-piz-actions">' +
-        '<button type="button" class="jp-piz-apply" data-pizapply="1">✅ Aplicar estructura</button>' +
-        '<button type="button" class="jp-piz-timer" data-piztimer="1">⏱ Prefijar Custom Timer</button>' +
-      '</div>'
-    );
-  }
-
-  /* ---------- inyección en el editor de bloques del Builder ---------- */
-  function inject(){
-    document.querySelectorAll('#dayPanel textarea[data-bf="items"], #dayPanel textarea[data-bf="movements"]').forEach(function(ta){
-      if(ta.dataset.pizWired) return;
-      ta.dataset.pizWired = '1';
-      var btn = document.createElement('button');
-      btn.type = 'button'; btn.className = 'jp-piz-btn';
-      btn.innerHTML = '🧠 Interpretar Pizarra';
-      var panel = document.createElement('div');
-      panel.className = 'jp-piz-panel';
-      ta.insertAdjacentElement('afterend', panel);
-      ta.insertAdjacentElement('afterend', btn);
-
-      btn.addEventListener('click', function(){
-        var parsed = parsePizarraCF(ta.value);
-        if(!parsed){ if(window.toast) toast('Escribí la pizarra primero', 'warn'); return; }
-        /* el panel editable no muestra un campo aparte para la unidad (cal/m/km) —
-           se pliega dentro del nombre para no perderla al regenerar las líneas */
-        parsed.movements.forEach(function(m){ if(m.unit){ m.name = m.unit + ' ' + m.name; m.unit = null; } });
-        panel.innerHTML = panelHtml(parsed);
-        panel.classList.add('on');
-        var schemeBox = panel.querySelector('[data-piz-scheme]');
-        panel.querySelector('[data-piz="format"]').addEventListener('change', function(e){
-          var refreshed = { format: e.target.value, movements: parsed.movements };
-          schemeBox.innerHTML = schemeFieldsHtml(refreshed);
-        });
-      });
-      panel.addEventListener('click', function(e){
-        if(e.target.closest('[data-pizclose]')){ panel.classList.remove('on'); return; }
-        if(e.target.closest('[data-pizaddmv]')){
-          panel.querySelector('[data-piz-mvs]').insertAdjacentHTML('beforeend', movRowHtml({ tag:null, reps:null, name:'' }));
-          return;
-        }
-        var del = e.target.closest('[data-mvdel]');
-        if(del){ del.closest('.jp-piz-mv').remove(); return; }
-        if(e.target.closest('[data-pizapply]')){
-          var scheme = schemeFromPanel(panel);
-          var lines = schemeToLines(scheme);
-          ta.value = lines.join('\n');
-          ta.dispatchEvent(new Event('input', { bubbles:true }));
-          var block = (typeof findBlock === 'function') ? findBlock(ta.dataset.b) : null;
-          if(block){ block.cfScheme = scheme; if(typeof save === 'function') save(); }
-          if(window.toast) toast('Pizarra estructurada aplicada ✔');
-          panel.classList.remove('on');
-          return;
-        }
-        if(e.target.closest('[data-piztimer]')){
-          var s2 = schemeFromPanel(panel);
-          var timerCfg;
-          if(s2.format === 'tabata') timerCfg = { modo:'tabata', work:s2.workSec, rest:s2.restSec, rounds:s2.roundsCount };
-          else if(s2.format === 'emom') timerCfg = { modo:'emom', intervalo:s2.intervalSec, total:s2.totalMin };
-          else if(s2.format === 'amrap') timerCfg = { modo:'amrap', total:s2.capMin };
-          else timerCfg = { modo:'fortime', cap:s2.capMin };
-          if(window.CoachWodTimer){ window.CoachWodTimer.abrir(); window.CoachWodTimer.precargar(timerCfg); }
-          return;
-        }
-      });
-    });
-  }
-
-  if(typeof window.renderDay === 'function' && !window.renderDay.__jppizarra){
-    var _rd = window.renderDay;
-    var wrapped = function(){ var r = _rd.apply(this, arguments); setTimeout(inject, 30); return r; };
-    wrapped.__jppizarra = 1;
-    window.renderDay = wrapped;
-  }
-})();
-</script>
 
 <style>
 /* =========================================================
