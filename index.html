@@ -678,6 +678,11 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
         </div>
       </div>
       <div>
+        <label class="lb">💳 Vencimiento de cuota (opcional)</label>
+        <input type="date" id="aPayDue">
+        <div class="hint">Se muestra al alumno/a como recordatorio discreto en su panel de Perfil (ícono de credencial). Dejalo vacío si no facturás por fecha fija.</div>
+      </div>
+      <div>
         <label class="lb">Foco principal / Objetivos de recomposición</label>
         <textarea id="aFoco" placeholder="Ej: Recomposición corporal, prioridad glúteo y espalda, mantener fuerza en tren superior…"></textarea>
       </div>
@@ -2032,6 +2037,7 @@ function openAth(id){
   $('#aFreq').value     = a ? String(a.freq||4) : '4';
   $('#aNivel').value    = a ? (a.nivel||'Intermedio') : 'Intermedio';
   $('#aColor').value    = a ? (a.color||'') : '';
+  $('#aPayDue').value   = a ? (a.payDue||'') : '';
   $('#aFoco').value     = a ? (a.foco||'') : '';
   $('#aDeportes').value = a ? (a.deportes||'') : '';
   $('#aCompat').value   = a ? (a.compat||'') : '';
@@ -2057,6 +2063,7 @@ function saveAth(){
     freq: parseInt($('#aFreq').value,10),
     nivel: $('#aNivel').value,
     color: $('#aColor').value,
+    payDue: $('#aPayDue').value || '',
     foco: $('#aFoco').value.trim(),
     deportes: $('#aDeportes').value.trim(),
     compat: $('#aCompat').value.trim(),
@@ -3402,8 +3409,27 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .fatigue-btn[data-level="red"].active { background: rgba(124,197,232,0.14); border-color: rgba(124,197,232,0.5); color: var(--red-light); box-shadow: 0 0 14px rgba(124,197,232,0.15); }
   .fatigue-suggestion { margin-top: 12px; font-size: 0.82rem; color: var(--text-secondary); line-height: 1.6; padding-top: 12px; border-top: 1px solid var(--border-subtle); display: none; }
   .fatigue-suggestion.show { display: block; }
-  /* ---- Readiness Score: checklist de entrada de 3 toques ---- */
-  .readiness-card{ border-radius:var(--radius-lg);padding:16px 18px 14px;margin-bottom:1.25rem;background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:14px; }
+  /* ---- Readiness Score: checklist de entrada de 3 toques ----
+     pedido 41: pasa de <div> fijo a <details>/<summary> (mismo patrón
+     ya usado en .nutri-card) para no empujar los ejercicios fuera de
+     pantalla en mobile -- ver renderReadinessCard(). El padding/gap
+     viejos de la tarjeta completa quedan ahora en .rdy-body (el
+     contenido plegable); la superficie exterior (fondo/borde/radio/
+     sombra) se conserva igual para no romper el lenguaje visual del
+     resto de las tarjetas de la sesión. */
+  .readiness-card{ border-radius:var(--radius-lg);margin-bottom:1.25rem;background:var(--bg-card);border:1px solid var(--border);box-shadow:var(--shadow-sm);overflow:hidden; }
+  .readiness-card .rdy-summary{ list-style:none;cursor:pointer;user-select:none;display:flex;align-items:center;gap:10px;padding:14px 18px;min-height:50px; }
+  .readiness-card .rdy-summary::-webkit-details-marker{ display:none; }
+  .rdy-sum-ic{ font-size:16px;line-height:1;flex-shrink:0; }
+  .rdy-sum-tx{ flex:1;min-width:0;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.86rem;letter-spacing:.03em;text-transform:uppercase;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .readiness-card.rdy-done .rdy-sum-tx{ color:var(--gold); }
+  .rdy-sum-tag{ font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:var(--text-secondary);font-weight:700;flex-shrink:0; }
+  .rdy-chev{ color:var(--text-muted);font-size:11px;transition:transform .2s ease;flex-shrink:0; }
+  .readiness-card[open] .rdy-chev{ transform:rotate(180deg); }
+  .readiness-card .rdy-body{ padding:2px 18px 16px;display:flex;flex-direction:column;gap:14px; }
+  .readiness-card[open] .rdy-body{ animation:rdyBodyIn .28s ease; }
+  @keyframes rdyBodyIn{ from{ opacity:0;transform:translateY(-6px); } to{ opacity:1;transform:translateY(0); } }
+  @media (prefers-reduced-motion: reduce){ .readiness-card[open] .rdy-body{ animation:none; } }
   .readiness-card .fatigue-card-title{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:0}
   .rdy-eyebrow{font-family:'Inter',sans-serif;font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-secondary);font-weight:600}
   .rdy-q{display:flex;flex-direction:column;gap:8px}
@@ -3861,6 +3887,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       <div class="hdp-badge" id="hdcProgramBadge">{{HERO_EYEBROW}}</div>
       <div class="hdp-meso-curve" id="hdpMesoCurve"></div>
       <div class="hdp-sync" id="hdpSync"><span class="dot"></span><span class="tx">Verificando…</span></div>
+      <div class="hdp-pay" id="hdpPay"></div>
     </section>
 
     <!-- B · Acordeón: Objetivos & Contexto del Atleta -->
@@ -4445,17 +4472,26 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint){
   for(let i=1;i<=numSets;i++){
     const key = getLoadKey(weekIdx, dayId, blockId, exIdx, i);
     const ld = getLoad(key);
+    /* pedido 41: Kg/×/Reps/✓ viven ahora agrupados en .set-load, un
+       sub-contenedor flex propio con flex-wrap:nowrap -- así, si algún
+       día no entran junto a la etiqueta "Serie N" en la misma línea,
+       el grupo entero baja de línea COMO UNIDAD (nunca se separa el
+       check de los inputs, que era el bug reportado en "Press
+       Guillotina"). .set-row en sí sigue con flex-wrap:wrap (pedido 40,
+       más abajo) porque .jp-hist todavía necesita su propia línea. */
     html += '<div class="set-row' + (ld.done?' set-row-done':'') + '" data-set-key="' + key + '">' +
       '<span class="set-row-label">Serie ' + i + '</span>' +
-      '<input class="set-input set-kg" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (ld.kg!=null?ld.kg:'') + '" />' +
-      '<span class="set-x" aria-hidden="true">\\u00d7</span>' +
-      /* el objetivo (repsHint) ya no va como placeholder acá: se veía como
-         texto tenue "dato ya cargado" y desaparecía justo al tocar el campo
-         para tipear -- ahora el objetivo se muestra afuera, en texto fijo
-         y legible (badge de prescripción / roster del biset), y el input
-         queda limpio para que el alumno cargue lo realizado. */
-      '<input class="set-input set-reps" type="text" inputmode="numeric" autocomplete="off" placeholder="Reps" value="' + (ld.reps!=null?ld.reps:'') + '" />' +
-      '<input class="set-check" type="checkbox" ' + (ld.done?'checked':'') + ' />' +
+      '<div class="set-load">' +
+        '<input class="set-input set-kg" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (ld.kg!=null?ld.kg:'') + '" />' +
+        '<span class="set-x" aria-hidden="true">\\u00d7</span>' +
+        /* el objetivo (repsHint) ya no va como placeholder acá: se veía como
+           texto tenue "dato ya cargado" y desaparecía justo al tocar el campo
+           para tipear -- ahora el objetivo se muestra afuera, en texto fijo
+           y legible (badge de prescripción / roster del biset), y el input
+           queda limpio para que el alumno cargue lo realizado. */
+        '<input class="set-input set-reps" type="text" inputmode="numeric" autocomplete="off" placeholder="Reps" value="' + (ld.reps!=null?ld.reps:'') + '" />' +
+        '<input class="set-check" type="checkbox" ' + (ld.done?'checked':'') + ' />' +
+      '</div>' +
     '</div>';
   }
   html += '</div>';
@@ -4540,6 +4576,20 @@ function renderContextoSesion(){
     '<div class="ctx-chips">' + chips.join('') + '</div>' +
   '</div>';
 }
+/* pedido 41: texto compacto de la barra colapsada -- '' mientras el
+   check-in de hoy no arrancó (arranca cerrada igual, muestra "Opcional"),
+   y un resumen de una línea apenas hay sueño y/o energía cargados, para
+   que el alumno vea de un vistazo qué contestó sin tener que reabrirla. */
+function readinessResumenTxt(sleepVal, stressVal, zonas){
+  if(!sleepVal && !stressVal) return '';
+  const LB_SLEEP = { optima:'sueño óptimo', regular:'sueño regular', mala:'sueño flojo' };
+  const LB_STRESS = { green:'energía alta', yellow:'energía media', red:'energía baja' };
+  const partes = [];
+  if(sleepVal) partes.push(LB_SLEEP[sleepVal] || sleepVal);
+  if(stressVal) partes.push(LB_STRESS[stressVal] || stressVal);
+  if(zonas && zonas.length) partes.push(zonas.length + ' molestia' + (zonas.length>1?'s':''));
+  return 'Check-in: ' + partes.join(' · ');
+}
 function renderReadinessCard(weekIdx, day){
   const sleepVal = getSleep(weekIdx, day.id);
   const stressVal = getFatigue(weekIdx, day.id);
@@ -4549,22 +4599,53 @@ function renderReadinessCard(weekIdx, day){
       return '<button type="button" class="' + (cur===o.v?'on':'') + '" data-v="' + o.v + '">' + o.l + '</button>';
     }).join('') + '</div>';
   };
-  return '<div class="readiness-card" id="readinessCard">' +
-    '<div class="fatigue-card-title">¿Cómo llegás hoy? <span class="rdy-eyebrow">Check de entrada · 3 toques</span></div>' +
-    '<div class="rdy-q"><div class="rdy-lb">Calidad de sueño</div>' + seg('sleep', [{v:'optima',l:'Óptima'},{v:'regular',l:'Regular'},{v:'mala',l:'Mala'}], sleepVal) + '</div>' +
-    '<div class="rdy-q"><div class="rdy-lb">Nivel de estrés / energía</div>' + seg('stress', [{v:'green',l:'Alto'},{v:'yellow',l:'Medio'},{v:'red',l:'Bajo'}], stressVal) + '</div>' +
-    '<div class="rdy-q"><div class="rdy-lb">Molestias específicas</div><div class="rdy-pills" id="rdyPills">' +
-      '<button type="button" class="rdy-pill' + (!zonas.length?' on':'') + '" data-zona="">Ninguna</button>' +
-      READINESS_PAIN_ZONES.map(function(z){
-        return '<button type="button" class="rdy-pill' + (zonas.indexOf(z)>=0?' on':'') + '" data-zona="' + z + '"><span class="flag"></span>' + z + '</button>';
-      }).join('') +
-    '</div></div>' +
-    '<div id="rdyAdvisory">' + readinessAdvisory(zonas) + '</div>' +
-  '</div>';
+  const resumen = readinessResumenTxt(sleepVal, stressVal, zonas);
+  const completo = !!(sleepVal && stressVal);
+  /* pedido 41: colapsable (<details>/<summary>, mismo patrón que
+     .nutri-card) y CERRADA por defecto siempre -- así la rutina del día
+     queda visible de entrada en mobile sin importar si el check-in de
+     hoy ya se completó o no. Al tocar la barra se despliega para
+     responder; al completar sueño + energía se pliega sola (ver
+     wireReadinessCheckin) mostrando este mismo resumen de una línea. */
+  return '<details class="readiness-card' + (completo?' rdy-done':'') + '" id="readinessCard">' +
+    '<summary class="rdy-summary">' +
+      '<span class="rdy-sum-ic">⚡</span>' +
+      '<span class="rdy-sum-tx">' + (resumen || 'Check-in de entrada') + '</span>' +
+      (resumen ? '' : '<span class="rdy-sum-tag">Opcional</span>') +
+      '<span class="rdy-chev" aria-hidden="true">▾</span>' +
+    '</summary>' +
+    '<div class="rdy-body">' +
+      '<div class="fatigue-card-title">¿Cómo llegás hoy? <span class="rdy-eyebrow">Check de entrada · 3 toques</span></div>' +
+      '<div class="rdy-q"><div class="rdy-lb">Calidad de sueño</div>' + seg('sleep', [{v:'optima',l:'Óptima'},{v:'regular',l:'Regular'},{v:'mala',l:'Mala'}], sleepVal) + '</div>' +
+      '<div class="rdy-q"><div class="rdy-lb">Nivel de estrés / energía</div>' + seg('stress', [{v:'green',l:'Alto'},{v:'yellow',l:'Medio'},{v:'red',l:'Bajo'}], stressVal) + '</div>' +
+      '<div class="rdy-q"><div class="rdy-lb">Molestias específicas</div><div class="rdy-pills" id="rdyPills">' +
+        '<button type="button" class="rdy-pill' + (!zonas.length?' on':'') + '" data-zona="">Ninguna</button>' +
+        READINESS_PAIN_ZONES.map(function(z){
+          return '<button type="button" class="rdy-pill' + (zonas.indexOf(z)>=0?' on':'') + '" data-zona="' + z + '"><span class="flag"></span>' + z + '</button>';
+        }).join('') +
+      '</div></div>' +
+      '<div id="rdyAdvisory">' + readinessAdvisory(zonas) + '</div>' +
+    '</div>' +
+  '</details>';
 }
 function wireReadinessCheckin(day, weekIdx){
   const card = document.getElementById('readinessCard');
   if(!card) return;
+  /* refresca la barra colapsada (texto + estado "completo") sin tener
+     que re-renderizar toda la tarjeta -- se llama tras cada respuesta */
+  function actualizarResumen(){
+    const sleepVal = getSleep(weekIdx, day.id);
+    const stressVal = getFatigue(weekIdx, day.id);
+    const zonas = getPainZones(weekIdx, day.id);
+    const resumen = readinessResumenTxt(sleepVal, stressVal, zonas);
+    const tx = card.querySelector('.rdy-sum-tx');
+    const tag = card.querySelector('.rdy-sum-tag');
+    if(tx) tx.textContent = resumen || 'Check-in de entrada';
+    if(tag) tag.style.display = resumen ? 'none' : '';
+    const completo = !!(sleepVal && stressVal);
+    card.classList.toggle('rdy-done', completo);
+    return completo;
+  }
   card.addEventListener('click', function(e){
     const zBtn = e.target.closest('.rdy-pill');
     if(zBtn){
@@ -4576,17 +4657,28 @@ function wireReadinessCheckin(day, weekIdx){
       });
       const host = document.getElementById('rdyAdvisory');
       if(host) host.innerHTML = readinessAdvisory(zonas);
+      actualizarResumen();
       return;
     }
     const seg = e.target.closest('.rdy-seg');
     if(seg && e.target.tagName === 'BUTTON'){
       const v = e.target.getAttribute('data-v');
+      const eraCompleto = !!(getSleep(weekIdx, day.id) && getFatigue(weekIdx, day.id));
       seg.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === e.target); });
       if(seg.getAttribute('data-rdy-seg') === 'sleep') setSleep(weekIdx, day.id, v);
       else if(seg.getAttribute('data-rdy-seg') === 'stress') setFatigue(weekIdx, day.id, v);
+      const esAhoraCompleto = actualizarResumen();
+      /* al completar sueño + energía (las 2 preguntas obligatorias) se
+         pliega sola para devolver la pantalla a la rutina -- si el
+         alumno la abrió solo para revisar/tocar molestias después de
+         ya haber completado, no la vuelve a cerrar de golpe */
+      if(esAhoraCompleto && !eraCompleto && card.open){
+        setTimeout(function(){ card.open = false; }, 550);
+      }
       return;
     }
   });
+  actualizarResumen();
 }
 /* =========================================================
    AUDIO
@@ -15979,10 +16071,15 @@ body{font-size:var(--fz-body) !important}
 .set-check{accent-color:var(--jp-brand)}
 /* los campos reparten el ancho: el placeholder "8-10" ya no se corta */
 .block .set-row{display:flex;align-items:center;gap:8px}
-.block .set-row > .set-input{flex:1 1 0 !important;width:auto !important;min-width:0 !important}
+/* pedido 41: Kg/×/Reps/✓ pasaron a vivir dentro de .set-load (ver
+   renderSetRows) para que nunca se separen entre sí -- estas reglas
+   pasan de hijo directo (>) a descendiente para seguir aplicando
+   sobre esa nueva capa intermedia sin duplicar declaraciones. */
+.block .set-row .set-load{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;flex-wrap:nowrap}
+.block .set-row .set-load > .set-input{flex:1 1 0 !important;width:auto !important;min-width:0 !important}
 .block .set-row > .set-row-label{flex:0 0 auto}
-.block .set-row > .set-check{flex:0 0 auto;margin-left:auto}
-.block .set-row > .set-x{flex:0 0 auto}
+.block .set-row .set-load > .set-check{flex:0 0 auto;margin-left:auto}
+.block .set-row .set-load > .set-x{flex:0 0 auto}
 </style>
 
 <style>
@@ -17827,6 +17924,16 @@ input[type="checkbox"]:active{
 .hdp-sync{ display:flex; align-items:center; gap:7px; margin-top:11px; font-size:11.5px; color:#9aa1ad; }
 .hdp-sync .dot{ width:7px; height:7px; border-radius:50%; background:#3ECF7A; box-shadow:0 0 8px rgba(62,207,122,.7); flex-shrink:0; }
 .hdp-sync .dot.off{ background:#64748B; box-shadow:none; }
+/* pedido 41 · micro-badge de vencimiento de cuota (ver pintarPago()) */
+.hdp-pay{ margin-top:10px; }
+.hdp-pay:empty{ display:none; }
+.hdp-pay-b{
+  display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:20px;
+  font-family:var(--font-mono); font-variant-numeric:tabular-nums;
+  font-size:.72rem; font-weight:700; letter-spacing:.02em;
+}
+.hdp-pay-b.ok{ background:rgba(229,195,120,.1); border:1px solid rgba(229,195,120,.34); color:#E5C378; }
+.hdp-pay-b.venc{ background:rgba(210,121,63,.12); border:1px solid rgba(210,121,63,.4); color:#E8965E; }
 .hdp-coach-name{ font-size:15px; font-weight:800; color:#FFFFFF; }
 .hdp-coach-role{ font-size:12px; color:#9aa1ad; margin-top:2px; line-height:1.4; }
 
@@ -18209,7 +18316,10 @@ body.focus-mode .hd-dock{display:none}
    táctil (fix previo), por encima del mínimo de 44px recomendado. */
 .set-row{flex-wrap:wrap !important}
 .block .bs-r .bs-fila > .set-row{flex-wrap:wrap !important}
-.block .set-row > .set-input,
+/* pedido 41: el input de carga ahora vive dentro de .set-load, no como
+   hijo directo de .set-row -- selector actualizado a descendiente para
+   que este mínimo táctil (70px) se siga aplicando igual. */
+.block .set-row .set-load > .set-input,
 .block .bs-r .bs-fila > .set-row .set-input{min-width:70px !important}
 
 /* =========================================================
@@ -18377,6 +18487,7 @@ body.focus-mode .hd-dock{display:none}
     pintarMetodologia();
     pintarNutricion();
     pintarSync();
+    pintarPago();
   }
   /* Chapa local: PCT_MESO (la curva de intensidad por defecto S1→S4) vive
      del lado del dashboard (fuera de TEMPLATE_HTML) porque ahí se usa para
@@ -18474,6 +18585,30 @@ body.focus-mode .hd-dock{display:none}
       if(window.CoachNutricion) window.CoachNutricion.abrir();
     });
   }
+  /* pedido 41 · micro-badge de vencimiento de cuota. payDue viaja como
+     fecha ISO ("YYYY-MM-DD", el formato nativo de <input type=date>) en
+     PROGRAM_CONFIG.payDue -- ver buildProgramConfig(ath) del lado del
+     Builder. Campo opcional: si el coach no lo cargó, no se muestra
+     nada (no hay "vencimiento" que inventar). Tono neutro/dorado si
+     está al día; solo si venció cambia a un recordatorio discreto,
+     nunca alarmante (sin rojo, sin ícono de alerta). */
+  function fmtFechaCortaISO(iso){
+    var m = /^(\\d{4})-(\\d{2})-(\\d{2})/.exec(String(iso || ''));
+    return m ? (m[3] + '/' + m[2]) : '';
+  }
+  function pintarPago(){
+    var el = q('hdpPay'); if(!el) return;
+    var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
+    var due = cfg.payDue || '';
+    var corta = fmtFechaCortaISO(due);
+    if(!due || !corta){ el.innerHTML = ''; return; }
+    var hoy = new Date(); hoy.setHours(0,0,0,0);
+    var venc = new Date(due + 'T00:00:00');
+    var vencido = !isNaN(venc.getTime()) && venc.getTime() < hoy.getTime();
+    el.innerHTML = vencido
+      ? '<span class="hdp-pay-b venc">💳 Cuota vencida · ' + escAcc(corta) + '</span>'
+      : '<span class="hdp-pay-b ok">💳 Plan activo · Renueva: ' + escAcc(corta) + '</span>';
+  }
   function pintarUniPerfil(){
     var wrap = q('hdpUniToggle');
     if(!wrap || !window.CoachUnidad) return;
@@ -18529,6 +18664,9 @@ body.focus-mode .hd-dock{display:none}
       rdy.addEventListener('click', function(){
         var card = q('readinessCard');
         if(card){
+          /* pedido 41: la tarjeta ahora arranca colapsada -- el acceso
+             del dock la abre directo, no solo la muestra cerrada */
+          card.open = true;
           card.scrollIntoView({ behavior:'smooth', block:'start' });
           card.classList.add('block-flash');
           setTimeout(function(){ card.classList.remove('block-flash'); }, 900);
@@ -18716,6 +18854,50 @@ body.focus-mode .hd-dock{display:none}
   window.updateProgress.__deskRing = 1;
 })();
 <\/script>
+
+<style>
+/* =========================================================
+   FIX (pedido 41): la prescripción (series efectivas/de aproximación,
+   reps, tempo) se leía apagada en tarjetas oscuras. Causa: el pase de
+   "no grita" (SYSTEM v3.1, más arriba) bajó .rx-badge y .blk-tag
+   .bt-main a texto casi blanco sobre fondo casi transparente, para que
+   no compitiera visualmente con el resto del bloque -- pero terminó
+   apagando justo el dato que el alumno más necesita leer de un
+   vistazo: cuánto y cómo. Se reinstala jerarquía sin volver al ruido
+   de antes: tipografía monoespaciada (--font-mono, el mismo recurso ya
+   usado en .ctx-val para "lo que trajiste la última vez") + el acento
+   de categoría que el propio sistema ya define más arriba ("1 · COBRE
+   = CARGA" / "2 · HIELO = TIEMPO"): Dorado en fuerza/accesorio, Celeste
+   Técnico en metcon/cardio -- nunca un color nuevo por bloque, el mismo
+   lenguaje que ya usa todo lo demás. */
+.block .rx-badge{
+  font-family:var(--font-mono) !important;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.02em !important;
+}
+.block .rx-badge > span{ font-weight:800 !important; }
+.block .rx-badge .rx-sep{ color:rgba(255,255,255,.32) !important; }
+.block:not(.cat-metcon):not(.cat-cardio) .rx-badge{
+  background:rgba(229,195,120,.1) !important; border-color:rgba(229,195,120,.36) !important;
+  color:#E5C378 !important;
+}
+.block:not(.cat-metcon):not(.cat-cardio) .rx-badge > span{ color:#E5C378 !important; }
+.block:not(.cat-metcon):not(.cat-cardio) .rx-badge .rx-alt{ color:rgba(229,195,120,.72) !important; }
+.block.cat-metcon .rx-badge,.block.cat-cardio .rx-badge{
+  background:rgba(56,189,248,.1) !important; border-color:rgba(56,189,248,.36) !important;
+  color:#38BDF8 !important;
+}
+.block.cat-metcon .rx-badge > span,.block.cat-cardio .rx-badge > span{ color:#38BDF8 !important; }
+.block.cat-metcon .rx-badge .rx-alt,.block.cat-cardio .rx-badge .rx-alt{ color:rgba(56,189,248,.72) !important; }
+
+.block .blk-tag .bt-main,.block .blk-tag > span:not(.bt-kind):not(.bt-dot){
+  font-family:var(--font-mono) !important; font-variant-numeric:tabular-nums;
+}
+.block:not(.cat-metcon):not(.cat-cardio) .blk-tag .bt-main,
+.block:not(.cat-metcon):not(.cat-cardio) .blk-tag .bt-main b{ color:#E5C378 !important; }
+.block.cat-metcon .blk-tag .bt-main,.block.cat-cardio .blk-tag .bt-main,
+.block.cat-metcon .blk-tag .bt-main b,.block.cat-cardio .blk-tag .bt-main b{ color:#38BDF8 !important; }
+</style>
 
 </body>
 </html>
@@ -18980,6 +19162,7 @@ function buildProgramConfig(ath){
   return {
     athleteName: fullName(ath),
     athleteId: ath.id || '',
+    payDue: ath.payDue || '',
     sync: canalSync(ath),
     nota: notaMetodologica(ath),
     mesoName: (p.meta.mesoName || 'Mesociclo'),
