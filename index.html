@@ -1550,13 +1550,15 @@ function load(){
 let saveT;
 function save(){
   clearTimeout(saveT);
-  /* Debounce de 900ms: mientras el coach tipea en el Builder, save() se llama
-     en cada tecla, pero la escritura real a localStorage (que serializa TODO
-     el estado con JSON.stringify) se pospone hasta que hay una pausa real de
-     tipeo. requestIdleCallback además corre esa escritura cuando el hilo
-     principal está libre, en vez de competir con el renderizado del teclado;
-     donde no existe (Safari) cae a setTimeout(...,0), que sigue siendo
-     asíncrono y no bloquea el frame actual. */
+  /* Debounce de 1100ms (antes 900ms -- ajustado en la auditoría de
+     performance de sesiones largas): mientras el coach tipea en el Builder,
+     save() se llama en cada tecla, pero la escritura real a localStorage
+     (que serializa TODO el estado con JSON.stringify) se pospone hasta que
+     hay una pausa real de tipeo de al menos 1.1s. requestIdleCallback además
+     corre esa escritura cuando el hilo principal está libre, en vez de
+     competir con el renderizado del teclado; donde no existe (Safari) cae a
+     setTimeout(...,0), que sigue siendo asíncrono y no bloquea el frame
+     actual. */
   saveT = setTimeout(()=>{
     const writeNow = () => {
       try{
@@ -1571,7 +1573,7 @@ function save(){
     };
     if(typeof requestIdleCallback === 'function') requestIdleCallback(writeNow, { timeout: 500 });
     else setTimeout(writeNow, 0);
-  }, 900);
+  }, 1100);
 }
 /* sincronización en vivo entre ramas: si la OTRA pestaña (Sports o CrossFit,
    mismo navegador/origen) guarda una edición a la biblioteca compartida,
@@ -17421,6 +17423,15 @@ input[type="checkbox"]:active{
   }
   function vigilarLed(){
     try{
+      /* Auditoría de performance: este observer mira TODO document.body con
+         subtree+characterData, así que cualquier mutación en cualquier parte
+         de la app (tipeo en el Builder, timers de la sesión, etc.) lo
+         disparaba. El repintado puntual de ghost(el) por nodo es barato y se
+         mantiene sincrónico, pero led() escanea el documento completo
+         (querySelectorAll(SEL_LED)) -- eso se debouncea a 150ms para
+         colapsar ráfagas de mutaciones en un solo escaneo en vez de uno por
+         mutación. */
+      var ledPend = null;
       new MutationObserver(function(muts){
         for(var i = 0; i < muts.length; i++){
           var t = muts[i].target;
@@ -17428,7 +17439,8 @@ input[type="checkbox"]:active{
           if(!el) continue;
           if(el.classList && el.classList.contains('jp-led')) ghost(el);
         }
-        led();
+        clearTimeout(ledPend);
+        ledPend = setTimeout(led, 150);
       }).observe(document.body, { childList:true, subtree:true, characterData:true });
     }catch(e){}
   }
@@ -29884,7 +29896,31 @@ body.man-mode .gs-fab{right:318px}
     _saveAth.apply(this, arguments);
     if(document.getElementById('mAth').classList.contains('on')) return;
     const t = editing ? getAth(editing) : (S.athletes.length > antes ? S.athletes[S.athletes.length-1] : null);
-    if(t && datos){ t.pago = datos; save(); if(S.ui.view === 'alumnos') renderAthletes(); }
+    if(t && datos){
+      /* Hallazgo Checkpoint 8, resuelto en la auditoría de performance:
+         t.payDue (fecha simple y opcional, se muestra tal cual al alumno/a
+         en su panel) y t.pago (ciclo recurrente con vencimiento calculado,
+         solo alimenta el semáforo interno del/de la coach en el listado)
+         son dos campos independientes que conviven en la misma ficha desde
+         checkpoints distintos -- no se fusionan, porque un/a coach puede
+         querer llevar el ciclo interno sin exponerle la fecha al alumno/a
+         (por eso el campo dice "opcional" y "dejalo vacío si no facturás
+         por fecha fija"). El único enganche seguro: la PRIMERA vez que se
+         carga un ciclo de pago para este/a alumno/a, si el campo del
+         alumno/a todavía está vacío, se autocompleta una sola vez con el
+         próximo vencimiento calculado -- así no hace falta tipear la misma
+         fecha dos veces al dar de alta la cuota. No se vuelve a tocar en
+         guardados posteriores, así que un vaciado deliberado del campo del
+         alumno/a nunca se pisa. */
+      const teniaCicloAntes = !!(t.pago && t.pago.ultimo);
+      t.pago = datos;
+      if(!teniaCicloAntes && !t.payDue && datos.ultimo){
+        const v = venceISO(t);
+        if(v) t.payDue = v;
+      }
+      save();
+      if(S.ui.view === 'alumnos') renderAthletes();
+    }
   };
 
   /* ---------- badges y filtro en la lista ---------- */
@@ -34794,10 +34830,24 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     /* el módulo de nube reescribe la cápsula: observamos la barra flotante
        (la cápsula se crea después del arranque) para reflejar el estado al instante */
     if(window.MutationObserver){
-      const obs = new MutationObserver(() => { try{ pintarNube(); }catch(e){} });
+      /* Auditoría de performance: antes, si .cfg-fab todavía no existía en el
+         primer intento, se caía a observar document.body entero -- y como un
+         MutationObserver ACUMULA targets (observe() no reemplaza el
+         anterior), esa observación de TODO el body quedaba pegada para
+         siempre, incluso después de que .cfg-fab apareciera en un reintento
+         posterior, disparando pintarNube() sin debounce en cualquier
+         mutación de cualquier parte de la app durante el resto de la sesión
+         -- exactamente el tipo de fuga que se nota recién tras varios
+         minutos con muchos bloques cargados. Ahora se desconecta antes de
+         cada re-observe (un único target activo por vez) y el callback se
+         debouncea a 150ms. */
+      let nubePend = null;
+      const disparar = () => { clearTimeout(nubePend); nubePend = setTimeout(() => { try{ pintarNube(); }catch(e){} }, 150); };
+      const obs = new MutationObserver(disparar);
       const enganchar = () => {
-        const host = document.querySelector('.cfg-fab') || document.body;
-        obs.observe(host, { attributes:true, childList:true, subtree:true, characterData:true });
+        const host = document.querySelector('.cfg-fab');
+        obs.disconnect();
+        obs.observe(host || document.body, { attributes:true, childList:true, subtree:true, characterData:true });
       };
       enganchar();
       [500, 1500, 3000].forEach(ms => setTimeout(enganchar, ms));
@@ -39016,10 +39066,23 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       w.__jpv = 1;
       window[fn] = w;
     });
-    [900, 2200, 4000].forEach(function(ms){ setTimeout(mount, ms); });
   }
+  /* CAUSA RAÍZ del jank en sesiones largas, hallada en la auditoría de
+     performance: este reintento de "mount" vivía DENTRO del cuerpo de
+     mount() (a diferencia de todos los módulos hermanos del archivo, que
+     usan exactamente este mismo patrón de 3 reintentos pero SIEMPRE a
+     nivel del módulo, fuera de la función). Al estar adentro, cada
+     ejecución de mount() programaba 3 ejecuciones más de sí misma, que a
+     su vez programaban 3 más cada una -- una cadena que crece x3 en cada
+     generación y nunca se corta mientras la pestaña siga abierta. El
+     perfilado de CPU durante una sesión con 28 bloques mostró justamente
+     insignias()/barra() (llamadas por este mount()/repintar()) entre las
+     funciones con más tiempo acumulado. Se movió el reintento acá afuera,
+     al nivel del módulo -- mismo comportamiento (3 reintentos tras el
+     montaje inicial), pero uno solo, no recursivo. */
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 700); });
   else setTimeout(mount, 700);
+  [900, 2200, 4000].forEach(function(ms){ setTimeout(mount, ms); });
 })();
 </script>
 <!-- ============================================================
@@ -42777,9 +42840,28 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       if(btn) btn.click();
     }, { root:null, rootMargin:'600px' }).observe(sentinela);
   }
+  /* Auditoría de performance: #mPick (reemplazar/agregar ejercicio) también
+     pagina en lotes de 24 (PK_POR_PAG), igual que #findGrid, pero su nav
+     vive FUERA de la grilla -- #pkPrev/#pkNext son botones fijos del modal,
+     no se recrean con data-fpage por página como en #findGrid/#exGrid. Se
+     arma un sentinela propio que clickea #pkNext en vez de reutilizar
+     siguienteBtn() (que busca [data-lpage]/[data-fpage] DENTRO de la
+     grilla y no los encontraría acá). */
+  function observarScrollInfinitoPick(){
+    if(!('IntersectionObserver' in window)) return;
+    var sentinela = armarSentinela('pkGrid');
+    if(!sentinela || sentinela.__jpio) return;
+    sentinela.__jpio = 1;
+    new IntersectionObserver(function(entries){
+      if(!entries.some(function(en){ return en.isIntersecting; })) return;
+      var btn = document.getElementById('pkNext');
+      if(btn && !btn.disabled) btn.click();
+    }, { root:null, rootMargin:'600px' }).observe(sentinela);
+  }
   function boot(){
     observarScrollInfinito('exGrid');
     observarScrollInfinito('findGrid');
+    observarScrollInfinitoPick();
     /* el modal del Builder crea/recrea su contenido al abrirse: reintenta
        montar el centinela cada vez por si el nodo cambió */
     var _openFind = window.openFind;
@@ -42789,6 +42871,17 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         setTimeout(function(){ observarScrollInfinito('findGrid'); }, 80);
         return r;
       };
+    }
+    /* abrirPicker() (el equivalente de openFind para #mPick) no está
+       expuesta en window, así que en vez de envolverla se vigila el propio
+       modal: cuando #mPick gana la clase "on" (se abre), se reintenta
+       montar el centinela de #pkGrid. */
+    var mPick = document.getElementById('mPick');
+    if(mPick && !mPick.__jpioWatch){
+      mPick.__jpioWatch = 1;
+      new MutationObserver(function(){
+        if(mPick.classList.contains('on')) setTimeout(observarScrollInfinitoPick, 80);
+      }).observe(mPick, { attributes:true, attributeFilter:['class'] });
     }
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
