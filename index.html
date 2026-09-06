@@ -1715,6 +1715,22 @@ function exDisplayName(ex){
   if(!en || en.toLowerCase() === es.toLowerCase()) return ex.es || en;
   return es + ' (' + en + ')';
 }
+/* Nombre corto (sólo español) mostrado al alumno en la cabecera del
+   ejercicio (2026-09, pedido de refinamiento visual: el paréntesis en
+   inglés generaba hasta 4 líneas de título en mobile). El inglés no se
+   pierde -- exNombreIngles() lo devuelve aparte para el micro-badge
+   táctil "EN" que arma enBadgeHtml() dentro de TEMPLATE_HTML. */
+function exNombreCorto(ex){
+  if(!ex) return '';
+  return (ex.es || ex.en || '').trim();
+}
+function exNombreIngles(ex){
+  if(!ex) return '';
+  const es = (ex.es || '').trim();
+  const en = (ex.en || '').trim();
+  if(!en || en.toLowerCase() === es.toLowerCase()) return '';
+  return en;
+}
 /* --- migración desde el modelo v1 --- */
 function migrateV1(){
   let raw = null;
@@ -4448,6 +4464,31 @@ function videoLinkHtml(name){
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
   return '';
 }
+/* Micro-badge "EN" (2026-09, refinamiento visual): el nombre en inglés del
+   ejercicio ya no se muestra pegado al español en la cabecera -- compile()
+   lo manda aparte (block.exerciseNameEn / x.nameEn) y esta cápsula táctil
+   lo deja a un toque de distancia sin ocupar espacio de título. Toque =
+   toggle de una mini burbuja (::after, lee data-en) en vez de :hover, que
+   no existe en el celular del alumno. */
+function enBadgeHtml(en){
+  if(!en) return '';
+  /* escapado propio: esta función vive en el ámbito superior de la app
+     exportada, sin un esc() global compartido (cada módulo abajo define
+     el suyo local dentro de su propia IIFE) -- se evita esa dependencia
+     para no atarse al orden de carga de los scripts. */
+  var safe = String(en).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return ' <button type="button" class="ex-en-badge" data-en="' + safe +
+    '" aria-label="Nombre en ingl\\u00e9s: ' + safe + '">EN</button>';
+}
+(function(){
+  document.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('.ex-en-badge');
+    document.querySelectorAll('.ex-en-badge.on').forEach(function(el){
+      if(el !== b) el.classList.remove('on');
+    });
+    if(b){ b.classList.toggle('on'); e.stopPropagation(); e.preventDefault(); }
+  }, true);
+})();
 window.buscarVideo = buscarVideo;
 /* CoachRepaintBus — shim local para esta app exportada (standalone).
    Los módulos de este documento llaman window.CoachRepaintBus.register(fn, target)
@@ -4867,7 +4908,8 @@ const WakeLockManager = (function(){
 /* =========================================================
    ITEM LINE PARSER
 ========================================================= */
-function renderLine(text){
+function renderLine(text, enBadge){
+  enBadge = enBadge || '';
   /* las fases del calentamiento se muestran como subtítulo, no como ejercicio */
   if(/^\\s*\\d+\\.\\s/.test(text) && text.indexOf(' — ') < 0){
     return '<div class="wu-phase">' + text.trim() + '</div>';
@@ -4876,9 +4918,9 @@ function renderLine(text){
   if(dashSplit.length >= 2){
     const name = dashSplit[0];
     const detail = dashSplit.slice(1).join(' — ');
-    return '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + name + videoLinkHtml(name) + '</span><span class="ex-detail">' + detail + '</span></div>';
+    return '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + name + enBadge + videoLinkHtml(name) + '</span><span class="ex-detail">' + detail + '</span></div>';
   }
-  return '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + text + videoLinkHtml(text) + '</span></div>';
+  return '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + text + enBadge + videoLinkHtml(text) + '</span></div>';
 }
 /* =========================================================
    QUICK TIMER (cuenta regresiva simple, un solo tramo)
@@ -5175,10 +5217,14 @@ function renderBlockInner(block, day, weekIdx){
   if(block.isBlock){
     const wd = weekDetail(block, weekIdx);
     const nombreSemana = (block.weekExercise && block.weekExercise[weekIdx]) || block.exerciseName;
+    /* el badge "EN" sólo corresponde al ejercicio por defecto: si el coach
+       escribió un reemplazo puntual para esta semana (weekExercise), ese
+       texto libre no tiene un inglés asociado que mostrar aparte. */
+    const enBadgeBlock = (!(block.weekExercise && block.weekExercise[weekIdx]) && block.exerciseNameEn) ? enBadgeHtml(block.exerciseNameEn) : '';
     const repsSemana = (block.weekReps && block.weekReps[weekIdx]) || block.reps;
     const setsSemana = (block.weekSets && block.weekSets[weekIdx]) || wd.efSets;
     const lblSets = (block.weekSets && block.weekSets[weekIdx]) ? (setsSemana + ' series · ') : wd.setsLabel;
-    html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + nombreSemana + videoLinkHtml(nombreSemana) + '</span>' +
+    html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + nombreSemana + enBadgeBlock + videoLinkHtml(nombreSemana) + '</span>' +
       '<span class="ex-detail"><strong>' + lblSets + '</strong>' + repsSemana + ' · Tempo ' + block.tempo + '</span></div>';
     if(typeof renderSetRows === 'function'){
       html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana);
@@ -5196,7 +5242,7 @@ function renderBlockInner(block, day, weekIdx){
     const sd = supersetDetail(block, weekIdx);
     html += '<div class="superset-header"><span class="sh-icon">🔗</span><span class="sh-text">' + sd.header + '</span></div>';
     sd.exercises.forEach(function(ex, exIdx){
-      html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') + '</span></div>';
+      html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + enBadgeHtml(ex.nameEn) + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') + '</span></div>';
       if(typeof renderSetRows === 'function'){
         html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps);
       }
@@ -5211,7 +5257,7 @@ function renderBlockInner(block, day, weekIdx){
     const fd = finisherDetail(block, weekIdx);
     if(fd){
       fd.exercises.forEach(function(ex){
-        html += renderLine(ex.name + ' — ' + ex.repsRange);
+        html += renderLine(ex.name + ' — ' + ex.repsRange, enBadgeHtml(ex.nameEn));
       });
       html += '<div class="directive-chip round-chip">' + fd.roundsText + '</div>';
       if(block.tips){ html += '<div class="coach-note"><strong>Coach Note</strong>' + block.tips + '</div>'; }
@@ -11714,19 +11760,35 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
 .set-row-done .set-input{border-color:rgba(72,213,151,.3) !important}
 .set-check{
   appearance:none;-webkit-appearance:none;cursor:pointer;
+  /* refinamiento visual (2026-09): este es el checkbox appearance:none que
+     Chromium igual re-tiñe con su ajuste de auto-dark-mode para controles
+     de formulario (misma cautela documentada en fases anteriores para leer
+     su color real vía reglas CSS calzadas, no getComputedStyle). El
+     documento entero declara <meta name="color-scheme" content="dark">
+     para que selects/scrollbars nativos se vean bien en oscuro -- pero acá
+     el checkbox ya es 100% custom (appearance:none + toda propiedad visual
+     puesta a mano), así que se lo excluye puntualmente de ese ajuste para
+     que el gris que se ve en pantalla sea el gris exacto que se escribe
+     abajo, sin reinterpretación del navegador. */
+  color-scheme:light;
   border-radius:14px !important;
-  background:rgba(18,22,31,.9) !important;
-  border:1px solid rgba(255,255,255,.16) !important;
+  background:linear-gradient(180deg,#16191F 0%,#0E1013 100%) !important;
+  border:1px solid rgba(255,255,255,.12) !important;
   position:relative;
   transition:transform .18s ease,box-shadow .18s ease,background-color .18s ease,border-color .18s ease;
 }
 .set-check::after{
   content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  font-size:22px;font-weight:800;color:rgba(255,255,255,.28);transition:color .18s ease;
+  font-size:22px;font-weight:800;color:rgba(255,255,255,.18);transition:color .18s ease;
 }
+/* Verde Esmeralda Táctico: el check completado ya no comparte color con
+   ninguno de los dos significados existentes (COBRE=carga, HIELO=tiempo)
+   ni con el Cyan Táctico de datos (Phase 4) -- pasa a tener su propio
+   significado fijo, "confirmación", igual en toda la app salvo la
+   excepción dorada de fuerza principal (ver .block.cat-strength abajo). */
 .set-check:checked{
-  background:#48D597 !important;border-color:#48D597 !important;
-  box-shadow:0 0 16px rgba(72,213,151,.45) !important;
+  background:#10B981 !important;border-color:#10B981 !important;
+  box-shadow:0 0 16px rgba(16,185,129,.45) !important;
 }
 .set-check:checked::after{color:#0A0F13}
 .set-check:active{transform:scale(.94)}
@@ -14741,6 +14803,7 @@ body.cf-modo .block .ex-tip{display:none}
         var row = filas[i];
         var nombre = row ? (row.querySelector('.ex-name') || {}) : {};
         return { name: x.name || (nombre.textContent || '').trim(),
+                 nameEn: x.nameEn || '',
                  /* formato tactico oficial (2026-09): "10-12 REPS" o, con
                     tempo real, "10-12 REPS · TEMPO 2011" -- mayusculas,
                     sin el emoji de objetivo que tenia antes (el pedido de
@@ -14768,7 +14831,7 @@ body.cf-modo .block .ex-tip{display:none}
         var e = document.createElement('div');
         e.className = 'bs-e';
         e.innerHTML = '<span class="bs-l">' + letra(i) + '</span>' +
-          '<span class="bs-n">' + esc(x.name) + '</span>' +
+          '<span class="bs-n">' + esc(x.name) + (typeof enBadgeHtml === 'function' ? enBadgeHtml(x.nameEn) : '') + '</span>' +
           (x.det ? '<span class="bs-d">' + esc(x.det) + '</span>' : '') +
           (x.tecnica ? '<span class="jp-tecnica-badge">' + esc(x.tecnica) + '</span>' : '');
         /* el botón de video viaja con su nombre, sin duplicarse */
@@ -14803,7 +14866,7 @@ body.cf-modo .block .ex-tip{display:none}
              (el mismo bug que ya documentó el comentario de .bs-rd más
              arriba). Anidado adentro de .bs-rd hereda su ubicación gratis. */
           f.innerHTML = '<span class="bs-l">' + letra(i) + '</span>' +
-                        '<span class="bs-nm">' + esc(x.name) + '</span>' +
+                        '<span class="bs-nm">' + esc(x.name) + (typeof enBadgeHtml === 'function' ? enBadgeHtml(x.nameEn) : '') + '</span>' +
                         ((x.det || x.tecnica) ? '<span class="bs-rd">' +
                           (x.det ? esc(x.det) : '') +
                           (x.tecnica ? '<span class="jp-tecnica-badge">' + esc(x.tecnica) + '</span>' : '') +
@@ -16247,15 +16310,18 @@ body{font-size:var(--fz-body) !important}
    problema reportado.
 ========================================================= */
 .set-check:checked{
-  /* Ajuste de branding tactico oficial (2026-09): el Cyan Tactico pasa a
-     ser el acabado por defecto del check completado (antes Dorado Elite
-     acá) -- el dorado queda reservado como acento opcional solo para
-     bloques de fuerza principal (ver regla .block.cat-strength más abajo,
-     que es la que gana ahí por especificidad). */
-  background:rgba(56,189,248,.15) !important;border-color:#38BDF8 !important;
-  box-shadow:0 0 14px rgba(56,189,248,.32) !important;
+  /* Refinamiento visual (2026-09): el Cyan Táctico (branding de DATOS,
+     Phase 4) quedaba en conflicto cromático con la paleta cálida de la
+     tarjeta (bordes naranja/ocre, badges S1/S2 marrones, acentos dorados)
+     -- el check pasa a Verde Esmeralda Táctico (#10B981), un significado
+     propio de "confirmación" que no compite con carga (cobre/dorado),
+     tiempo (hielo) ni datos (cyan). El dorado sigue como acento opcional
+     en fuerza principal (ver regla .block.cat-strength más abajo, que es
+     la que gana ahí por especificidad). */
+  background:rgba(16,185,129,.16) !important;border-color:#10B981 !important;
+  box-shadow:0 0 14px rgba(16,185,129,.35) !important;
 }
-.set-check:checked::after{color:#38BDF8 !important;text-shadow:0 0 8px rgba(56,189,248,.6)}
+.set-check:checked::after{color:#10B981 !important;text-shadow:0 0 8px rgba(16,185,129,.6)}
 .set-row.set-row-done{
   background:rgba(210,121,63,.07) !important;
   border-color:rgba(210,121,63,.38) !important;
@@ -16285,6 +16351,48 @@ body{font-size:var(--fz-body) !important}
 .block .set-row > .set-row-label{flex:0 0 auto}
 .block .set-row .set-load > .set-check{flex:0 0 auto;margin-left:auto}
 .block .set-row .set-load > .set-x{flex:0 0 auto}
+</style>
+
+<style>
+/* =========================================================
+   COACH JP · REFINAMIENTO VISUAL (2026-09)
+   Micro-badge "EN": el nombre en inglés del ejercicio ya no
+   ocupa espacio de cabecera (dejaba hasta 4 líneas de título
+   en mobile) -- queda a un toque de distancia en una cápsula
+   discreta, estilo Luxury Stealth / Cyan Táctico. Toque =
+   toggle de una mini burbuja (no :hover, que no existe en el
+   celular del alumno).
+========================================================= */
+.ex-en-badge{
+  -webkit-appearance:none; appearance:none;
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:20px; height:15px; padding:0 5px; margin-left:5px;
+  border-radius:4px; border:1px solid rgba(56,189,248,.3);
+  background:rgba(56,189,248,.07); color:#7DD3FC;
+  font-family:var(--font-mono); font-size:8.5px; font-weight:700;
+  letter-spacing:.04em; line-height:1; cursor:pointer;
+  position:relative; flex:0 0 auto; vertical-align:middle;
+  transition:background .2s ease,border-color .2s ease,color .2s ease;
+}
+.ex-en-badge:active{transform:scale(.94)}
+.ex-en-badge.on{background:rgba(56,189,248,.18); border-color:#38BDF8; color:#38BDF8}
+.ex-en-badge::after{
+  content:attr(data-en); position:absolute; left:50%; bottom:calc(100% + 7px);
+  transform:translateX(-50%) translateY(4px); white-space:nowrap; max-width:none;
+  background:#0E1013; border:1px solid rgba(56,189,248,.35); color:#F1F5F9;
+  font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:.01em;
+  padding:6px 10px; border-radius:6px; box-shadow:0 8px 20px rgba(0,0,0,.5);
+  opacity:0; pointer-events:none; transition:opacity .15s ease,transform .15s ease;
+  z-index:60;
+}
+.ex-en-badge::before{
+  content:''; position:absolute; left:50%; bottom:100%;
+  transform:translateX(-50%) translateY(4px); border:5px solid transparent;
+  border-top-color:#0E1013; opacity:0; transition:opacity .15s ease;
+  pointer-events:none; z-index:60;
+}
+.ex-en-badge.on::after{opacity:1; transform:translateX(-50%) translateY(0)}
+.ex-en-badge.on::before{opacity:1; transform:translateX(-50%) translateY(-1px)}
 </style>
 
 <style>
@@ -16370,25 +16478,21 @@ body{
   background:var(--jp-brand) !important;color:#0A0F13 !important;
 }
 .block.cat-strength .set-check:checked{
-  /* Ajuste de branding tactico oficial (2026-09): el dorado ahora es un
-     acento OPCIONAL reservado solo a "bloque de fuerza principal"
-     (cat-strength) -- accesorio pasa al Cyan Tactico general (ver regla
-     siguiente). Antes esta regla cubria cat-strength Y cat-accessory
-     juntos (con :not(.cat-metcon):not(.cat-cardio)); se angosta a
-     cat-strength para que el dorado quede excepcional, como se pidió. */
+  /* dorado: acento OPCIONAL reservado solo a "bloque de fuerza principal"
+     (cat-strength) -- accesorio usa el Verde Esmeralda general (ver regla
+     siguiente), no el dorado. */
   background:rgba(229,195,120,.18) !important;border-color:#E5C378 !important;
   box-shadow:0 0 14px rgba(229,195,120,.32) !important;
 }
 .block.cat-strength .set-check:checked::after{color:#E5C378 !important;text-shadow:0 0 8px rgba(229,195,120,.55)}
 .block.cat-accessory .set-check:checked{
-  /* accesorio usa el Cyan Tactico general -- misma regla que el default,
-     repetida acá solo para ganarle en especificidad a cualquier regla
-     de categoría (no hay ninguna hoy, pero deja la intención explícita
-     por si se suma una regla de cat-accessory con otro color a futuro). */
-  background:rgba(56,189,248,.15) !important;border-color:#38BDF8 !important;
-  box-shadow:0 0 14px rgba(56,189,248,.32) !important;
+  /* accesorio usa el Verde Esmeralda Táctico general (refinamiento visual
+     2026-09) -- misma regla que el default, repetida acá sólo para
+     ganarle en especificidad a cualquier regla de categoría futura. */
+  background:rgba(16,185,129,.16) !important;border-color:#10B981 !important;
+  box-shadow:0 0 14px rgba(16,185,129,.35) !important;
 }
-.block.cat-accessory .set-check:checked::after{color:#38BDF8 !important;text-shadow:0 0 8px rgba(56,189,248,.6)}
+.block.cat-accessory .set-check:checked::after{color:#10B981 !important;text-shadow:0 0 8px rgba(16,185,129,.6)}
 .block:not(.cat-metcon):not(.cat-cardio) .set-row.set-row-done{
   background:rgba(210,121,63,.06) !important;border-color:rgba(210,121,63,.34) !important;
 }
@@ -19296,10 +19400,11 @@ function buildProgramConfig(ath){
 
       if(b.tipo === 'block'){
         const ex = getEx(b.exId);
-        const nm = exDisplayName(ex) || b.coreNombre || (b.titulo || 'Ejercicio');
+        const nm = exNombreCorto(ex) || b.coreNombre || (b.titulo || 'Ejercicio');
+        const nmEn = exNombreIngles(ex);
         addVideo(nm, ex);
         Object.assign(out, {
-          isBlock: true, exerciseName: nm,
+          isBlock: true, exerciseName: nm, exerciseNameEn: nmEn,
           hasApprox: !!b.hasApprox, approxSets: parseInt(b.approxSets,10) || 0,
           efSets: parseInt(b.efSets,10) || 1, reps: b.reps || '', tempo: b.tempo || '',
           restSeconds: parseInt(b.restSeconds,10) || 90, failCapable: !!b.failCapable,
@@ -19310,9 +19415,10 @@ function buildProgramConfig(ath){
       }
       else if(b.tipo === 'superset'){
         const list = (b.ejercicios||[]).map(e => {
-          const ex = getEx(e.exId), nm = exDisplayName(ex) || e.nombre || 'Ejercicio';
+          const ex = getEx(e.exId), nm = exNombreCorto(ex) || e.nombre || 'Ejercicio';
+          const nmEn = exNombreIngles(ex);
           addVideo(nm, ex);
-          return { name: nm, reps: e.reps || '', tempo: e.tempo || '', tip: e.tip || '', metodologia: e.metodologia || '' };
+          return { name: nm, nameEn: nmEn, reps: e.reps || '', tempo: e.tempo || '', tip: e.tip || '', metodologia: e.metodologia || '' };
         });
         Object.assign(out, {
           isSuperset: true, isTriset: list.length >= 3, exercises: list,
@@ -19325,9 +19431,10 @@ function buildProgramConfig(ath){
       }
       else if(b.tipo === 'finisher'){
         const list = (b.fin||[]).map(e => {
-          const ex = getEx(e.exId), nm = exDisplayName(ex) || 'Ejercicio';
+          const ex = getEx(e.exId), nm = exNombreCorto(ex) || 'Ejercicio';
+          const nmEn = exNombreIngles(ex);
           addVideo(nm, ex);
-          return { name: nm, repsRange: e.repsRange || '', tip: e.tip || '' };
+          return { name: nm, nameEn: nmEn, repsRange: e.repsRange || '', tip: e.tip || '' };
         });
         Object.assign(out, { isFinisher: true, exercises: list, roundsByWeek: (b.roundsByWeek||['','','','']).map(r => r || null) });
       }
