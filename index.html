@@ -154,10 +154,37 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .pill button{color:inherit;opacity:.6;font-weight:900;line-height:1}
 .pill button:hover{opacity:1}
 
-.tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:0;margin-bottom:16px}
-.tab{padding:9px 15px;border-radius:11px 11px 0 0;color:var(--muted);font-weight:700;font-size:13px;border:1px solid transparent;border-bottom:none;position:relative;top:1px}
-.tab:hover{color:var(--txt)}
-.tab.on{background:var(--panel);color:var(--gold);border-color:var(--line);border-bottom:1px solid var(--panel)}
+/* Días del Builder (#dayTabs): pedido de UX -- pasa de franja delgada
+   entre el gráfico de tonelaje y la ficha del día a navegación primaria
+   con jerarquía propia: mayor altura táctil, tarjeta con borde definido
+   en vez de "pestaña de carpeta", y acento dorado distintivo (#E5C378,
+   deliberadamente más claro que el --gold general de la app) en el día
+   activo. Es el único lugar del archivo que usa .tabs/.tab. */
+:root{ --gold-active:#E5C378; }
+/* Nota: se escala #dayTabs .tab (en vez de .tab a secas) a propósito -- hay
+   una regla compartida de piso de accesibilidad más abajo en la hoja de
+   estilos (".pill button,.chk input,.tab,.nav-pill{min-height:32px}") que,
+   con la misma especificidad y viniendo después en la cascada, le ganaba a
+   un ".tab{min-height:52px}" plano. Anteponer #dayTabs sube la
+   especificidad y hace que esta regla gane sin depender del orden ni tocar
+   ese piso compartido (lo siguen usando otros elementos). */
+#dayTabs.tabs{display:flex;gap:9px;flex-wrap:wrap;padding:4px 2px 16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+#dayTabs .tab{
+  display:flex;flex-direction:column;align-items:flex-start;gap:3px;
+  min-height:52px;padding:11px 18px;border-radius:12px;
+  background:var(--panel-2);color:var(--muted);border:1px solid var(--line);
+  font-weight:700;font-size:13.5px;cursor:pointer;
+  transition:background .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease;
+}
+#dayTabs .tab:hover{color:var(--txt);border-color:var(--line-2)}
+#dayTabs .tab .tab-short{letter-spacing:.02em}
+#dayTabs .tab .tab-label{font-size:11px;font-weight:600;color:var(--muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dayTabs .tab.on{
+  background:var(--panel);color:var(--gold-active);
+  border-color:var(--gold-active);
+  box-shadow:0 0 0 1px var(--gold-active),0 2px 10px rgba(229,195,120,.18);
+}
+#dayTabs .tab.on .tab-label{color:var(--txt-2)}
 
 .alert{display:flex;gap:11px;padding:12px 14px;border-radius:var(--r-sm);font-size:12.8px;line-height:1.5;border:1px solid;align-items:flex-start}
 .alert .ic{font-size:16px;line-height:1.2}
@@ -545,6 +572,8 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
             <button class="btn" data-add="finisher">🔥 Finisher</button>
             <button class="btn" data-add="hyrox">🏃 Cardio / Hyrox / Zona 2</button>
             <div class="spacer"></div>
+            <button class="btn ghost sm" id="btnMoveDayL" title="Mover este día una posición antes">◀ Mover día</button>
+            <button class="btn ghost sm" id="btnMoveDayR" title="Mover este día una posición después">Mover día ▶</button>
             <button class="btn ghost sm" id="btnCopyDay">📋 Copiar día…</button>
             <button class="btn ghost sm" id="btnClearDay">🗑️ Vaciar día</button>
           </div>
@@ -2308,6 +2337,25 @@ function curDay(){
   if(S.ui.day >= p.dias.length) S.ui.day = 0;
   return p.dias[S.ui.day];
 }
+/* Reordenar días (pedido de UX): mueve el día en la posición `desde` una
+   posición a la izquierda (dir=-1) o derecha (dir=+1) dentro de p.dias.
+   Cada día es un objeto autocontenido (id/short/label/bloques/etc. --
+   ver newDay()); nada en el resto del archivo indexa un día por su
+   posición fuera de S.ui.day, así que reordenar el array alcanza: no hace
+   falta reasignar ids ni tocar los bloques. Devuelve el nuevo índice del
+   día movido, o null si el movimiento no era válido (ya estaba en el
+   borde, o no hay plan/alumno activo). */
+function moverDia(desde, dir){
+  const p = plan(S.activeId); if(!p) return null;
+  const hasta = desde + dir;
+  if(hasta < 0 || hasta >= p.dias.length || desde < 0 || desde >= p.dias.length) return null;
+  const [dia] = p.dias.splice(desde, 1);
+  p.dias.splice(hasta, 0, dia);
+  if(S.ui.day === desde) S.ui.day = hasta;
+  else if(S.ui.day === hasta) S.ui.day = desde; /* el día que estaba ahí corrió al lugar que dejó el que se movió */
+  save();
+  return hasta;
+}
 function findBlock(bid){
   const d = curDay(); if(!d) return null;
   return d.bloques.find(b => b.id === bid) || null;
@@ -2434,10 +2482,16 @@ function renderBuilder(){
   ).join('');
 
   $('#dayTabs').innerHTML = p.dias.map((d,i) =>
-    '<button class="tab ' + (i === S.ui.day ? 'on' : '') + '" data-day="' + i + '">' + esc(d.short) +
-    (d.bloques.length ? ' <span style="opacity:.6;font-size:11px">(' + d.bloques.length + ')</span>' : '') +
+    '<button class="tab ' + (i === S.ui.day ? 'on' : '') + '" data-day="' + i + '" title="' + esc(d.short + ' · ' + d.label) + '">' +
+      '<span class="tab-short">' + esc(d.short) +
+        (d.bloques.length ? ' <span style="opacity:.6;font-size:11px;font-weight:600">(' + d.bloques.length + ')</span>' : '') +
+      '</span>' +
+      (d.label ? '<span class="tab-label">' + esc(d.label) + '</span>' : '') +
     '</button>'
   ).join('');
+  const btnML = $('#btnMoveDayL'), btnMR = $('#btnMoveDayR');
+  if(btnML) btnML.disabled = S.ui.day <= 0;
+  if(btnMR) btnMR.disabled = S.ui.day >= p.dias.length - 1;
 
   renderDay();
   renderGlobalAlerts();
@@ -2789,6 +2843,18 @@ function bindBuilder(){
 
   /* toolbar */
   $$('[data-add]').forEach(b => b.addEventListener('click', () => addBlock(b.dataset.add)));
+  $('#btnMoveDayL').addEventListener('click', () => {
+    const d = curDay(); if(!d) return;
+    const nuevo = moverDia(S.ui.day, -1);
+    if(nuevo === null) return;
+    renderBuilder(); toast('◀ ' + d.short + ' pasó a la posición ' + (nuevo+1));
+  });
+  $('#btnMoveDayR').addEventListener('click', () => {
+    const d = curDay(); if(!d) return;
+    const nuevo = moverDia(S.ui.day, 1);
+    if(nuevo === null) return;
+    renderBuilder(); toast(d.short + ' pasó a la posición ' + (nuevo+1) + ' ▶');
+  });
   $('#btnClearDay').addEventListener('click', () => {
     const d = curDay(); if(!d || !d.bloques.length) return;
     if(confirm('¿Vaciar por completo ' + d.short + '?')){ d.bloques = []; save(); renderBuilder(); toast('Día vaciado', 'warn'); }
@@ -2826,7 +2892,25 @@ function bindBuilder(){
       else if(f === 'cooldown') d.cooldown = t.value.split('\n').map(s => s.trim()).filter(Boolean);
       else d[f] = t.value;
       save();
-      if(f === 'short') { const tab = $$('#dayTabs .tab')[S.ui.day]; if(tab) tab.firstChild.nodeValue = t.value; }
+      /* actualización en vivo de la pestaña sin renderBuilder() completo --
+         desde que la pestaña muestra "short" + "label" en dos líneas (pedido
+         de UX de jerarquía visual), cada uno vive en su propio <span>. */
+      if(f === 'short' || f === 'label'){
+        const tab = $$('#dayTabs .tab')[S.ui.day];
+        if(tab){
+          if(f === 'short'){
+            const sp = tab.querySelector('.tab-short');
+            if(sp){ const cnt = sp.querySelector('span'); sp.textContent = t.value; if(cnt) sp.appendChild(cnt); }
+          } else {
+            let lb = tab.querySelector('.tab-label');
+            if(t.value){
+              if(!lb){ lb = document.createElement('span'); lb.className = 'tab-label'; tab.appendChild(lb); }
+              lb.textContent = t.value;
+            } else if(lb){ lb.remove(); }
+          }
+          tab.title = (d.short||'') + ' · ' + (d.label||'');
+        }
+      }
       return;
     }
     if(t.dataset.bf){
@@ -24082,8 +24166,9 @@ body{overflow-x:hidden}
   .find-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));max-height:46vh}
   .pg button{padding:8px 12px;font-size:12px}
   .pg .pgn{min-width:0;font-size:10.5px}
-  .tabs{gap:4px}
-  .tab{padding:8px 11px;font-size:12px}
+  #dayTabs.tabs{gap:6px}
+  #dayTabs .tab{padding:9px 13px;font-size:12.5px;min-height:46px}
+  #dayTabs .tab .tab-label{font-size:10.5px;max-width:96px}
 }
 @media(max-width:420px){
   .fields{grid-template-columns:1fr}
