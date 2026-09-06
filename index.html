@@ -1672,7 +1672,7 @@ function newBlock(tipo){
     tips: '', objective: ''
   };
   if(tipo === 'list'){ b.items = []; b.cardioMinutes = ''; }
-  if(tipo === 'block'){ Object.assign(b, { exId:'', hasApprox:true, approxSets:2, efSets:4, reps:'6-8', tempo:'2110', restSeconds:150, failCapable:true, altNote:'' }); }
+  if(tipo === 'block'){ Object.assign(b, { exId:'', hasApprox:true, approxSets:2, efSets:4, reps:'6-8', tempo:'2110', restSeconds:150, failCapable:true, altNote:'', metodologia:'' }); }
   if(tipo === 'superset'){ Object.assign(b, { ejercicios:[], efSets:3, restSeconds:90, failCapable:true, altNote:'' }); }
   if(tipo === 'finisher'){ Object.assign(b, { fin:[], roundsByWeek:[
       '2 rondas, sin descanso entre rondas (RIR 1-2)',
@@ -2412,6 +2412,22 @@ function exOptions(sel){
 function catOptions(sel){
   return CATEGORIAS.map(c => '<option value="' + c.v + '"' + (c.v===sel?' selected':'') + '>' + esc(c.lb) + '</option>').join('');
 }
+/* Catálogo de técnicas de intensidad (directiva Metodologías, 2026-09).
+   Campo opcional y aditivo -- las mismas claves viven también dentro de
+   TEMPLATE_HTML (módulos de prescripción y de bisets/rondas) para pintar
+   el micro-badge en la app del alumno; si se agrega una técnica nueva acá,
+   hay que sumarla en los dos lugares de TEMPLATE_HTML también. */
+const TECNICAS = [
+  {v:'',          lb:'— Sin técnica asignada —'},
+  {v:'dropset',   lb:'🔥 Drop Set (bajada de carga al fallo)'},
+  {v:'restpause', lb:'⚡ Rest-Pause (pausa 10-15s y reanuda)'},
+  {v:'isometria', lb:'⏸️ Isometría / Pausa (pico o estiramiento)'},
+  {v:'myoreps',   lb:'🔁 Myo-Reps'},
+  {v:'fallo',     lb:'🎯 Serie al Fallo (+Repetir / Parciales)'}
+];
+function tecOptions(sel){
+  return TECNICAS.map(t => '<option value="' + t.v + '"' + (t.v===(sel||'')?' selected':'') + '>' + esc(t.lb) + '</option>').join('');
+}
 
 function renderBuilder(){
   /* invalida el cache de exOptions() de la pasada anterior — se reconstruye
@@ -2594,6 +2610,7 @@ function renderDay(){
         '<div class="f"><label>Series efectivas</label><input type="number" data-bf="efSets" data-b="' + b.id + '" value="' + esc(b.efSets) + '"></div>' +
         '<div class="f"><label>Reps</label><input data-bf="reps" data-b="' + b.id + '" value="' + esc(b.reps) + '" placeholder="6-8"></div>' +
         '<div class="f"><label>Tempo</label><input data-bf="tempo" data-b="' + b.id + '" value="' + esc(b.tempo) + '" placeholder="2110"></div>' +
+        '<div class="f"><label>Técnica de intensidad</label><select data-bf="metodologia" data-b="' + b.id + '">' + tecOptions(b.metodologia) + '</select></div>' +
         '<div class="f"><label>Descanso (seg)</label>' +
           '<div class="row" style="flex-wrap:nowrap;gap:5px">' +
             '<input type="number" data-bf="restSeconds" data-b="' + b.id + '" value="' + esc(b.restSeconds) + '" style="min-width:60px">' +
@@ -2635,6 +2652,7 @@ function renderDay(){
             '<div class="f wide"><label>Ejercicio</label><select data-sf="exId" data-b="' + b.id + '" data-i="' + i + '">' + exOptions(e.exId) + '</select></div>' +
             '<div class="f"><label>Reps</label><input data-sf="reps" data-b="' + b.id + '" data-i="' + i + '" value="' + esc(e.reps||'') + '" placeholder="10-12"></div>' +
             '<div class="f"><label>Tempo</label><input data-sf="tempo" data-b="' + b.id + '" data-i="' + i + '" value="' + esc(e.tempo||'') + '" placeholder="2011"></div>' +
+            '<div class="f"><label>Técnica</label><select data-sf="metodologia" data-b="' + b.id + '" data-i="' + i + '">' + tecOptions(e.metodologia) + '</select></div>' +
           '</div>' +
         '</div>';
       });
@@ -2790,7 +2808,7 @@ function addSubEx(bid, exId){
   const b = findBlock(bid); if(!b) return;
   if(!exId){ toast('Elegí un ejercicio primero', 'err'); return; }
   const ex = getEx(exId), ath = active();
-  if(b.tipo === 'superset') b.ejercicios.push({ exId: exId, reps:'10-12', tempo:'2011' });
+  if(b.tipo === 'superset') b.ejercicios.push({ exId: exId, reps:'10-12', tempo:'2011', metodologia:'' });
   else if(b.tipo === 'finisher') b.fin.push({ exId: exId, repsRange:'15-20' });
   save(); renderBuilder();
   const w = worst(checkExercise(ath, ex));
@@ -12581,6 +12599,16 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
 .rx-badge .rx-sep{color:rgba(255,255,255,0.28);font-weight:600}
 .rx-badge .rx-alt{color:rgba(255,255,255,0.72)}
 .block .ex-detail{display:none !important}
+/* micro-badge de técnica de intensidad (Drop Set / Rest-Pause / Isometría /
+   Myo-Reps / Al Fallo) -- aditivo y opcional (block.metodologia / ex.
+   metodologia): sin valor asignado no se agrega nada al DOM. Chip discreto
+   estilo Luxury Stealth, no un cartel -- va junto al badge de prescripción. */
+.jp-tecnica-badge{
+  display:inline-flex;align-items:center;margin:5px 0 2px 6px;padding:5px 10px;
+  border-radius:9px;font-family:var(--font-mono);font-size:.72rem;font-weight:700;
+  letter-spacing:.03em;white-space:nowrap;
+  background:rgba(210,121,63,.14);border:1px solid rgba(210,121,63,.4);color:#D2793F;
+}
 /* ---------- tag de estructura estandarizado ---------- */
 .blk-tag{
   display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;
@@ -12692,11 +12720,30 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   var RX_WARM = /entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|estiramiento/i;
   var RX_CORE = /\\bcore\\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
 
+  /* Catalogo de tecnicas de intensidad (Drop Set, Rest-Pause, Isometria,
+     Myo-Reps, Serie al Fallo). Campo opcional y aditivo (block.metodologia
+     dentro de un bloque simple 'isBlock' -- ver mas abajo, prescripcion()).
+     Sin valor asignado no se renderiza nada: planes viejos quedan igual. */
+  var TECNICAS_BADGE = {
+    dropset: '🔥 DROP SET',
+    restpause: '⚡ REST-PAUSE',
+    isometria: '⏸️ ISOMETRÍA',
+    myoreps: '🔁 MYO-REPS',
+    fallo: '🎯 AL FALLO'
+  };
+  function tecnicaBadgeTexto(key){
+    var t = TECNICAS_BADGE[key];
+    return t ? ('[ ' + t + ' ]') : '';
+  }
+
   /* ---------------------------------------------------------
      1 · PRESCRIPCIÓN COMO BADGE PRIORITARIO
   --------------------------------------------------------- */
   function prescripcion(){
-    document.querySelectorAll('.block .ex-row').forEach(function(row){
+    document.querySelectorAll('.block').forEach(function(bl){
+      var b = bloqueDe(bl.dataset.blockId);
+      var filas = bl.querySelectorAll('.ex-row');
+      filas.forEach(function(row, fi){
       var det = row.querySelector('.ex-detail');
       if(!det) return;
       var crudo = (det.textContent || '').replace(/\\s+/g, ' ').trim();
@@ -12732,11 +12779,23 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         row.appendChild(badge);
       }
       if(badge.innerHTML !== html) badge.innerHTML = html;
+      /* técnica de intensidad: solo aplica a bloques ancla simples
+         (b.isBlock) -- los bisets/trisets (b.isSuperset) se reconstruyen
+         aparte en CoachV3/unificar(), que trae su propio badge por
+         ejercicio, así que acá no hay nada que hacer para esos. */
+      var mKey = (b && b.isBlock) ? b.metodologia : '';
+      var tTxt = tecnicaBadgeTexto(mKey);
+      var tBadge = row.querySelector('.jp-tecnica-badge');
+      if(tTxt){
+        if(!tBadge){ tBadge = document.createElement('span'); tBadge.className = 'jp-tecnica-badge'; badge.parentNode.insertBefore(tBadge, badge.nextSibling); }
+        if(tBadge.textContent !== tTxt) tBadge.textContent = tTxt;
+      } else if(tBadge){ tBadge.remove(); }
       /* la caja de herramientas siempre después del badge */
       var tools = row.parentNode ? row.parentNode.querySelector('.jp-tools') : null;
       if(tools && tools.previousElementSibling !== row && row.nextElementSibling !== tools){
         row.parentNode.insertBefore(tools, row.nextSibling);
       }
+      });
     });
   }
 
@@ -14508,8 +14567,10 @@ body.cf-modo .block .ex-tip{display:none}
    abajo, que es la que en definitiva gobierna el layout de .bs-fila (grid,
    con !important) -- declararla acá también hubiera quedado muerta. */
 .block .bs-r .bs-fila .bs-rd{
-  color:#7CC5E8;font-family:ui-monospace,Menlo,Consolas,monospace;
-  font-size:10.5px;letter-spacing:.01em;opacity:.9;
+  /* Escala subida de 10.5px a 0.86rem (~13.8px) por legibilidad -- se
+     mantiene la fuente --font-mono (monoespaciada) pedida explicitamente. */
+  color:#7CC5E8;font-family:var(--font-mono);
+  font-size:.86rem;letter-spacing:.01em;opacity:.9;
 }
 .block .bs-r .bs-fila .set-row{flex:1 1 auto}
 .block .bs-r .bs-cerrar{
@@ -14634,6 +14695,34 @@ body.cf-modo .block .ex-tip{display:none}
       return wm.rpe || '';
     }catch(e){ return ''; }
   }
+  /* Regla estricta del Tempo (bisets/rondas): un tempo "vacio" no debe
+     mostrar la palabra Tempo ni el separador -- solo las reps. Cubre
+     null/undefined, string vacio, guion suelto, cero literal y el
+     string literal 'undefined' (por si algun dato viejo quedo asi). */
+  function tempoValido(t){
+    if(t == null) return false;
+    var s = String(t).trim();
+    if(s === '' || s === '-' || s === '0' || s === 'undefined') return false;
+    return true;
+  }
+
+  /* Catalogo de tecnicas de intensidad (mismo set que el modulo de
+     prescripcion mas arriba en el archivo -- se repite acá porque cada
+     modulo de este export es un IIFE independiente, sin helpers
+     compartidos, siguiendo el mismo criterio que esc()/letra() de acá
+     abajo). Campo opcional y aditivo (ex.metodologia por estacion del
+     biset/triset): sin valor no se agrega nada. */
+  var TECNICAS_BADGE = {
+    dropset: '🔥 DROP SET',
+    restpause: '⚡ REST-PAUSE',
+    isometria: '⏸️ ISOMETRÍA',
+    myoreps: '🔁 MYO-REPS',
+    fallo: '🎯 AL FALLO'
+  };
+  function tecnicaBadgeTexto(key){
+    var t = TECNICAS_BADGE[key];
+    return t ? ('[ ' + t + ' ]') : '';
+  }
 
   function unificar(){
     document.querySelectorAll('.block').forEach(function(bl){
@@ -14649,7 +14738,8 @@ body.cf-modo .block .ex-tip{display:none}
         var row = filas[i];
         var nombre = row ? (row.querySelector('.ex-name') || {}) : {};
         return { name: x.name || (nombre.textContent || '').trim(),
-                 det: x.reps ? (x.reps + (x.tempo ? ' · Tempo ' + x.tempo : '')) : '',
+                 det: x.reps ? (x.reps + (tempoValido(x.tempo) ? ' · Tempo ' + x.tempo : '')) : '',
+                 tecnica: tecnicaBadgeTexto(x.metodologia),
                  row: row, tracker: trackers[i],
                  /* la lista se congela antes de mover nada: si no, los índices se corren */
                  filas: trackers[i] ? [].slice.call(trackers[i].querySelectorAll('.set-row')) : [] };
@@ -14672,7 +14762,8 @@ body.cf-modo .block .ex-tip{display:none}
         e.className = 'bs-e';
         e.innerHTML = '<span class="bs-l">' + letra(i) + '</span>' +
           '<span class="bs-n">' + esc(x.name) + '</span>' +
-          (x.det ? '<span class="bs-d">' + esc(x.det) + '</span>' : '');
+          (x.det ? '<span class="bs-d">' + esc(x.det) + '</span>' : '') +
+          (x.tecnica ? '<span class="jp-tecnica-badge">' + esc(x.tecnica) + '</span>' : '');
         /* el botón de video viaja con su nombre, sin duplicarse */
         var vl = x.row ? x.row.querySelector('.video-link') : null;
         if(vl) e.querySelector('.bs-n').appendChild(vl);
@@ -14697,9 +14788,19 @@ body.cf-modo .block .ex-tip{display:none}
              2 o 3 el alumno ya scrolleó lejos del roster, y el input de reps
              ya no muestra el objetivo como placeholder (ver renderSetRows) --
              mismo estilo Luxury Stealth (monoespaciado + celeste) que .bs-d. */
+          /* el badge de técnica (si hay) viaja ANIDADO dentro de .bs-rd, no
+             como hermano suelto: .bs-fila es un grid con ubicación fija por
+             hijo (.bs-l fila1/col1, .bs-nm fila1/col2, .bs-rd fila2/col
+             1-al-final, .set-row fila3) -- un span extra sin regla propia
+             caería en auto-placement, en una fila/columna nueva y angosta
+             (el mismo bug que ya documentó el comentario de .bs-rd más
+             arriba). Anidado adentro de .bs-rd hereda su ubicación gratis. */
           f.innerHTML = '<span class="bs-l">' + letra(i) + '</span>' +
                         '<span class="bs-nm">' + esc(x.name) + '</span>' +
-                        (x.det ? '<span class="bs-rd">🎯 ' + esc(x.det) + '</span>' : '');
+                        ((x.det || x.tecnica) ? '<span class="bs-rd">' +
+                          (x.det ? '🎯 ' + esc(x.det) : '') +
+                          (x.tecnica ? '<span class="jp-tecnica-badge">' + esc(x.tecnica) + '</span>' : '') +
+                          '</span>' : '');
           f.appendChild(row);                       /* se mueve la fila real: conserva su data-set-key */
           caj.appendChild(f);
         });
@@ -16131,12 +16232,18 @@ body{font-size:var(--fz-body) !important}
    4 · EL TILDE ENTRA EN LA PALETA
    Serie cerrada = acento de marca, igual que el resto de los
    estados activos. El verde queda sólo para el cronómetro.
+   Ajuste de branding: el naranja opaco (--jp-brand solido) no
+   encajaba con Luxury Stealth -- pasa a Dorado Elite translucido
+   (fondo rgba(229,195,120,.18) + borde/glyph #E5C378) con glow
+   sutil. El HIELO de metcon/cardio (mas abajo) no se toca: es un
+   significado de color distinto (tiempo, no carga) y no era el
+   problema reportado.
 ========================================================= */
 .set-check:checked{
-  background:var(--jp-brand) !important;border-color:var(--jp-brand) !important;
-  box-shadow:0 0 16px rgba(210,121,63,.4) !important;
+  background:rgba(229,195,120,.18) !important;border-color:#E5C378 !important;
+  box-shadow:0 0 14px rgba(229,195,120,.32) !important;
 }
-.set-check:checked::after{color:#0A0F13 !important}
+.set-check:checked::after{color:#E5C378 !important}
 .set-row.set-row-done{
   background:rgba(210,121,63,.07) !important;
   border-color:rgba(210,121,63,.38) !important;
@@ -16239,9 +16346,14 @@ body{
   background:var(--jp-brand) !important;color:#0A0F13 !important;
 }
 .block:not(.cat-metcon):not(.cat-cardio) .set-check:checked{
-  background:var(--jp-brand) !important;border-color:var(--jp-brand) !important;
-  box-shadow:0 0 16px rgba(210,121,63,.42) !important;
+  /* mismo ajuste de branding que la regla general de mas arriba --
+     esta version con .block:not(...) es mas especifica y es la que
+     realmente gana en bloques de fuerza/accesorio, asi que tiene que
+     quedar igual o el naranja reaparece justo ahi. */
+  background:rgba(229,195,120,.18) !important;border-color:#E5C378 !important;
+  box-shadow:0 0 14px rgba(229,195,120,.32) !important;
 }
+.block:not(.cat-metcon):not(.cat-cardio) .set-check:checked::after{color:#E5C378 !important}
 .block:not(.cat-metcon):not(.cat-cardio) .set-row.set-row-done{
   background:rgba(210,121,63,.06) !important;border-color:rgba(210,121,63,.34) !important;
 }
@@ -19149,7 +19261,8 @@ function buildProgramConfig(ath){
           isBlock: true, exerciseName: nm,
           hasApprox: !!b.hasApprox, approxSets: parseInt(b.approxSets,10) || 0,
           efSets: parseInt(b.efSets,10) || 1, reps: b.reps || '', tempo: b.tempo || '',
-          restSeconds: parseInt(b.restSeconds,10) || 90, failCapable: !!b.failCapable
+          restSeconds: parseInt(b.restSeconds,10) || 90, failCapable: !!b.failCapable,
+          metodologia: b.metodologia || ''
         });
         if(b.altNote) out.altNote = b.altNote;
         if(b.exTip) out.exTip = b.exTip;
@@ -19158,7 +19271,7 @@ function buildProgramConfig(ath){
         const list = (b.ejercicios||[]).map(e => {
           const ex = getEx(e.exId), nm = exDisplayName(ex) || e.nombre || 'Ejercicio';
           addVideo(nm, ex);
-          return { name: nm, reps: e.reps || '', tempo: e.tempo || '', tip: e.tip || '' };
+          return { name: nm, reps: e.reps || '', tempo: e.tempo || '', tip: e.tip || '', metodologia: e.metodologia || '' };
         });
         Object.assign(out, {
           isSuperset: true, isTriset: list.length >= 3, exercises: list,
@@ -24375,8 +24488,29 @@ body{overflow-x:hidden}
       r.hasApprox = false; r.approx = 0;
       r.efSets = 2; r.reps = '15-20'; r.tempo = '1010'; r.rest = 45;
     }
+
+    /* sugerencia de técnica de intensidad (directiva Metodologías, 2026-09):
+       heurística local por patrón/equipamiento, sin IA real -- mismo
+       criterio "sin API" que el resto de este autocompletado. Solo aplica
+       a bloques con set-tracker propio (block/superset); un finisher ya es,
+       por diseño, trabajo de bombeo al fallo y no necesita la sugerencia. */
+    r.metodologia = '';
+    if(tipo !== 'finisher'){
+      if(PESADO.indexOf(p) >= 0){
+        /* compuestos pesados: sin sugerencia por defecto -- el pedido del
+           coach fue Drop Set en máquinas/aislamiento y Rest-Pause en
+           accesorios, no en el levantamiento principal. */
+      } else if(AISLADO.indexOf(p) >= 0 || p === 'Antebrazo'){
+        r.metodologia = EQ_GUIADO.indexOf(eq) >= 0 ? 'dropset' : 'restpause';
+      } else if(p === 'Abducción / Aducción'){
+        r.metodologia = 'restpause';
+      } else if(p === 'Core / Anti-rotación' || p === 'Salud articular' || p === 'Extensión lumbar'){
+        r.metodologia = 'isometria';
+      }
+    }
     return r;
   }
+  const TEC_LB_CORTA = { dropset:'Drop Set', restpause:'Rest-Pause', isometria:'Isometría', myoreps:'Myo-Reps', fallo:'Al Fallo' };
 
   function autocompletar(bid){
     const b = findBlock(bid);
@@ -24391,17 +24525,25 @@ body{overflow-x:hidden}
       b.hasApprox = r.hasApprox; b.approxSets = r.approx;
       if(!b.tips) b.tips = nota(ex, r.tempo); else resumen.push('coaching note respetada');
       if(!b.subtitulo) b.subtitulo = r.hasApprox ? 'Aproximaciones + series efectivas' : 'Series efectivas';
+      /* técnica de intensidad: solo se sugiere si el coach no eligió una
+         ya a mano -- 100% aditivo, nunca pisa una elección existente. */
+      if(!b.metodologia && r.metodologia){
+        b.metodologia = r.metodologia;
+        resumen.push('técnica sugerida: ' + (TEC_LB_CORTA[r.metodologia] || r.metodologia));
+      }
       resumen.unshift(r.efSets + ' × ' + r.reps + ' · tempo ' + r.tempo + ' · ' + r.rest + 's');
     }
     else if(b.tipo === 'superset'){
       if(!(b.ejercicios || []).length){ toast('Agregá ejercicios al biset primero', 'err'); return; }
-      let rest = 0, sets = 3;
+      let rest = 0, sets = 3, tecSugeridas = 0;
       b.ejercicios.forEach(e => {
         const ex = getEx(e.exId); if(!ex) return;
         const r = autoParams(ex, 'superset');
         e.reps = r.reps; e.tempo = r.tempo;
+        if(!e.metodologia && r.metodologia){ e.metodologia = r.metodologia; tecSugeridas++; }
         rest = Math.max(rest, r.rest); sets = Math.min(sets, r.efSets);
       });
+      if(tecSugeridas) resumen.push('técnica sugerida en ' + tecSugeridas + ' ejercicio' + (tecSugeridas > 1 ? 's' : ''));
       b.restSeconds = rest || 90; b.efSets = sets || 3;
       const primero = getEx((b.ejercicios[0] || {}).exId);
       if(!b.tips && primero) b.tips = notaCompleta(primero, autoParams(primero, 'superset').tempo, active());
@@ -24435,7 +24577,7 @@ body{overflow-x:hidden}
       const btn = document.createElement('button');
       btn.className = 'magic';
       btn.dataset.magic = bid;
-      btn.title = 'Calcula series, reps, tempo, descanso y coaching note según el patrón, el equipamiento y el riesgo articular del ejercicio — sin usar la API';
+      btn.title = 'Calcula series, reps, tempo, descanso, coaching note y sugiere una técnica de intensidad (Drop Set / Rest-Pause / Isometría) según el patrón, el equipamiento y el riesgo articular del ejercicio — sin usar la API';
       btn.innerHTML = '🪄 Autocompletar Parámetros';
       bar.insertBefore(btn, bar.querySelector('.qhint') || null);
     });
