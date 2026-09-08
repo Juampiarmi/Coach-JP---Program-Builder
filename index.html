@@ -4553,9 +4553,26 @@ function loadProgress(){
     }
   }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; }
 }
-function saveProgress(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada })); }catch(e){}
+let _spT = null, _spDirty = false;
+function _spSerialize(){
+  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada });
 }
+function _spFlush(){
+  if(!_spDirty) return;
+  try{ localStorage.setItem(STORAGE_KEY, _spSerialize()); }catch(e){}
+  _spDirty = false;
+}
+function saveProgress(){
+  _spDirty = true;
+  clearTimeout(_spT);
+  _spT = setTimeout(function(){
+    if(typeof requestIdleCallback === 'function') requestIdleCallback(_spFlush, { timeout: 500 });
+    else setTimeout(_spFlush, 0);
+  }, 1100);
+}
+window.addEventListener('pagehide', function(){ _spFlush(); });
+window.addEventListener('beforeunload', function(){ _spFlush(); });
+document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'hidden') _spFlush(); });
 function isBlockDone(weekIdx, dayId, blockId){
   return !!(state.completed[weekIdx] && state.completed[weekIdx][dayId] && state.completed[weekIdx][dayId][blockId]);
 }
@@ -6077,9 +6094,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   state.restSec = state.restSec || 90;
 
   /* ---------- persistencia extra (se suma a la que ya había) ---------- */
-  const _save = saveProgress;
-  saveProgress = function(){
-    _save.apply(this, arguments);
+  const _flushExtraSesion = _spFlush;
+  _spFlush = function(){
+    _flushExtraSesion();
     try{
       const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
       raw.scores = state.scores; raw.session = state.session; raw.restSec = state.restSec;
@@ -6507,31 +6524,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const day = diaActual(); if(!day) return;
     const weekIdx = state.currentWeek;
 
-    /* barra de inicio + navegación */
-    if(!mainEl.querySelector('.tv-bar')){
-      mainEl.insertAdjacentHTML('afterbegin',
-        '<div class="tv-bar"><button class="tv-start" id="tvStart" type="button">🚀 Iniciar Entrenamiento</button></div>');
-      mainEl.insertAdjacentHTML('beforeend',
-        '<div class="tv-nav" id="tvNav">' +
-          '<button type="button" data-tv="prev">◀</button>' +
-          '<span class="tv-pos"></span>' +
-          '<button type="button" data-tv="next">▶</button>' +
-          '<button type="button" class="tv-done" data-tv="fin">🏁 Terminar</button>' +
-        '</div>');
-      document.getElementById('tvStart').addEventListener('click', function(){
-        tvOn = !tvOn; tvIdx = 0;
-        try{ unlockAudio(); }catch(e){}
-        pintarTV();
-      });
-      document.getElementById('tvNav').addEventListener('click', function(e){
-        const b = e.target.closest('[data-tv]'); if(!b) return;
-        if(b.dataset.tv === 'prev') tvMover(-1);
-        else if(b.dataset.tv === 'next') tvMover(1);
-        else { tvMover(1); tvOn = false; pintarTV();
-               const s = mainEl.querySelector('.summary-card');
-               if(s) s.scrollIntoView({behavior:'smooth', block:'center'}); }
-      });
-    }
+    /* 05/09 — se retira el botón "🚀 Iniciar Entrenamiento" y su barra: bloqueaba
+       la navegación y empujaba los ejercicios fuera del viewport inicial. La
+       sesión debe quedar lista de inmediato, sin paso intermedio. El Focus/TV
+       Mode (window.CoachTV.focus/salir) queda intacto como API por si algún
+       otro punto de entrada lo activa, pero ya no tiene disparador visible en
+       esta vista. */
 
     /* pizarra en los bloques de MetCon */
     const mapa = {};
@@ -7589,13 +7587,20 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     if(document.fonts && document.fonts.ready) document.fonts.ready.then(medir).catch(function(){});
     const m = document.getElementById('mainContent');
     if(m) obs.observe(m, { childList:true, subtree:true });
-    /* marca de tiempo de inicio de sesión para la Story Card */
-    const tv = document.getElementById('tvStart');
-    if(tv) tv.addEventListener('click', function(){
+    /* marca de tiempo de inicio de sesión para la Story Card: antes se fijaba
+       al tocar "Iniciar Entrenamiento" (05/09: botón retirado); ahora se
+       dispara sola, en silencio, en la primera interacción real del alumno
+       (un check o una carga de kg/reps), sin depender de ningún botón. */
+    function _marcarInicioSesion(e){
+      if(!e.target || !e.target.closest) return;
+      if(!e.target.closest('.set-check, .set-input, .block-done-cb')) return;
       state.session = state.session || {};
-      if(!state.session.inicio) state.session.inicio = Date.now();
+      if(state.session.inicio) return;
+      state.session.inicio = Date.now();
       saveProgress();
-    });
+    }
+    document.addEventListener('change', _marcarInicioSesion);
+    document.addEventListener('input', _marcarInicioSesion);
       window.CoachPWA = { icono: iconoPNG, boton: pwaBoton, rol: 'athlete' };
     window.CoachStory = { abrir: abrirStory, dibujar: dibujar, cerrar: cerrarStory };
   }
@@ -7905,10 +7910,10 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   window.addEventListener('offline', pintarOffline);
 
   /* el progreso también se respalda en IndexedDB en cada guardado */
-  if(typeof window.saveProgress === 'function'){
-    var _sp = window.saveProgress;
-    window.saveProgress = function(){
-      var r = _sp.apply(this, arguments);
+  if(typeof window._spFlush === 'function'){
+    var _flushExtraIDB = window._spFlush;
+    window._spFlush = function(){
+      var r = _flushExtraIDB.apply(this, arguments);
       try{ idbPut('progreso', { k:'state', v: JSON.stringify(state), ts: Date.now() }); }catch(e){}
       return r;
     };
@@ -13074,10 +13079,10 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     try{ saveProgress(); }catch(x){}
   });
   /* el registro viaja con el resto del progreso */
-  if(typeof saveProgress === 'function'){
-    var _sp = saveProgress;
-    saveProgress = function(){
-      var r = _sp.apply(this, arguments);
+  if(typeof _spFlush === 'function'){
+    var _flushExtraLogs = _spFlush;
+    _spFlush = function(){
+      var r = _flushExtraLogs.apply(this, arguments);
       try{
         var raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
         raw.logs = state.logs || {};
@@ -14602,11 +14607,12 @@ body.cf-modo .block .ex-tip{display:none}
 .block .bs-r{
   margin:0 0 9px;padding:9px 11px 10px;border-radius:12px;
   background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);
+  transition:padding .15s ease;
 }
 .block .bs-r.bs-activa{border-color:rgba(210,121,63,0.42);background:rgba(210,121,63,0.04)}
 .block .bs-r.bs-lista{opacity:.62}
 .block .bs-r .bs-rh{
-  display:flex;align-items:center;gap:8px;margin-bottom:7px;
+  display:flex;align-items:center;gap:8px;margin-bottom:7px;cursor:pointer;
   font-family:var(--font-head,inherit);font-size:11.5px;letter-spacing:0.11em;
   text-transform:uppercase;color:#D2793F;font-weight:800;
 }
@@ -14614,6 +14620,22 @@ body.cf-modo .block .ex-tip{display:none}
   margin-left:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;
   letter-spacing:0;color:rgba(255,255,255,0.4);text-transform:none;font-weight:400;
 }
+/* 05/09 · acordeón activo inteligente: colapsa toda ronda que no esté
+   marcada .bs-abierta (la activa lo está siempre; el resto sólo si el
+   alumno la abrió a mano para revisarla) a una barra de una sola línea,
+   evitando que un biset de 3-4 rondas dispare un scroll interminable. */
+.block .bs-r:not(.bs-abierta){padding:8px 11px;cursor:pointer}
+.block .bs-r:not(.bs-abierta) .bs-rh{margin-bottom:0}
+.block .bs-r:not(.bs-abierta) .bs-rn,
+.block .bs-r:not(.bs-abierta) .bs-cerrar{display:none}
+.block .bs-r:not(.bs-abierta) .bs-fila{display:none !important}
+.block .bs-r .bs-rst{
+  margin-left:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;
+  letter-spacing:.02em;color:rgba(255,255,255,0.45);text-transform:none;font-weight:600;
+}
+.block .bs-r.bs-activa .bs-rst{color:#D2793F}
+.block .bs-r.bs-lista .bs-rst{color:#9BE9C4}
+.block .bs-r .bs-chev{font-size:12px;color:rgba(255,255,255,0.4);line-height:1}
 .block .bs-r .set-row{margin:0}
 .block .bs-r .set-row .set-row-label{display:none}
 .block .bs-r .bs-fila{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:5px}
@@ -14862,8 +14884,13 @@ body.cf-modo .block .ex-tip{display:none}
         var caj = document.createElement('div');
         caj.className = 'bs-r';
         caj.dataset.ronda = String(r + 1);
+        /* 05/09 — acordeón activo inteligente: sólo la ronda en curso viaja
+           expandida; el resto se pliega a una barra de una línea (RONDA N ·
+           [estado] ▾) hasta que le toca su turno o el alumno la toca para
+           revisarla (ver estado() y el listener de .bs-rh más abajo). */
         caj.innerHTML = '<div class="bs-rh">Ronda ' + (r + 1) +
-          '<span class="bs-rn">' + lista.length + ' estaciones sin pausa</span></div>';
+          '<span class="bs-rn">' + lista.length + ' estaciones sin pausa</span>' +
+          '<span class="bs-rst"></span><span class="bs-chev"></span></div>';
         lista.forEach(function(x, i){
           var row = x.filas ? x.filas[r] : null;
           if(!row) return;
@@ -14926,9 +14953,11 @@ body.cf-modo .block .ex-tip{display:none}
   /* ronda activa, ronda cerrada y texto del botón */
   function estado(bl){
     var pend = null;
-    bl.querySelectorAll('.bs-r').forEach(function(caj){
+    var cajas = [].slice.call(bl.querySelectorAll('.bs-r'));
+    cajas.forEach(function(caj){
       var checks = [].slice.call(caj.querySelectorAll('.set-check'));
       var lista = checks.length > 0 && checks.every(function(c){ return c.checked; });
+      var eraLista = caj.classList.contains('bs-lista');
       caj.classList.toggle('bs-lista', lista);
       caj.classList.remove('bs-activa');
       if(!lista && !pend) pend = caj;
@@ -14938,9 +14967,36 @@ body.cf-modo .block .ex-tip{display:none}
                       : '✓ Cerrar ronda ' + caj.dataset.ronda;
         if(btn.textContent !== t) btn.textContent = t;
       }
+      /* acordeón activo inteligente: al completarse recién ahora (por los
+         checks o por "Cerrar ronda"), se limpia cualquier apertura manual
+         para que la ronda colapse sola y ceda el lugar a la siguiente */
+      if(lista && !eraLista) delete caj.dataset.bsAbierta;
     });
     if(pend) pend.classList.add('bs-activa');
+    cajas.forEach(function(caj){
+      var activa = caj.classList.contains('bs-activa');
+      var abierta = activa || caj.dataset.bsAbierta === '1';
+      caj.classList.toggle('bs-abierta', abierta);
+      var st = caj.querySelector('.bs-rst');
+      if(st){
+        var t2 = activa ? '[En curso]' : (caj.classList.contains('bs-lista') ? '[Completa]' : '[Pendiente]');
+        if(st.textContent !== t2) st.textContent = t2;
+      }
+      var chev = caj.querySelector('.bs-chev');
+      if(chev){ var c2 = abierta ? '▾' : '▸'; if(chev.textContent !== c2) chev.textContent = c2; }
+    });
   }
+  /* tocar el encabezado de una ronda plegada la abre para revisarla (peek);
+     la ronda activa queda siempre expandida y no se puede plegar a mano */
+  document.addEventListener('click', function(e){
+    var head = e.target.closest('.bs-r .bs-rh');
+    if(!head) return;
+    var caj = head.closest('.bs-r');
+    if(!caj || caj.classList.contains('bs-activa')) return;
+    caj.dataset.bsAbierta = caj.classList.contains('bs-abierta') ? '0' : '1';
+    var bl = caj.closest('.block');
+    if(bl) estado(bl);
+  });
 
   /* cerrar la ronda tilda las estaciones que falten: el descanso arranca una sola vez */
   document.addEventListener('click', function(e){
@@ -15376,8 +15432,12 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
 /* =========================================================
    2 · JERARQUÍA DEL BLOQUE
 ========================================================= */
-/* 2.2 · en bisets/trisets la lista teórica superior se elimina */
-.block .bs-wrap > .bs-ex{display:none !important}
+/* 2.2 · roster superior de bisets/trisets: se había ocultado por completo
+   (jerarquía visual, pedido anterior) pero el botón/miniatura de video de
+   cada estación A/B vive ÚNICAMENTE acá (unificar() lo mueve adentro de
+   .bs-ex .bs-n) -- al ocultar el roster entero, el video quedaba invisible
+   en todo el bloque (05/09, hallazgo colateral). Se restaura el roster: es
+   la única forma de que el alumno pueda ver y tocar el video sin fricción. */
 .block .bs-r .bs-fila .bs-nm{display:inline-flex;align-items:center;gap:5px}
 .block .bs-r .bs-fila .video-link{margin-left:3px}
 /* 2.3 · cápsula de transición sutil (reemplaza la caja roja invasiva) */
@@ -16720,8 +16780,9 @@ body{
     if(isNaN(n)) return '';
     return (Math.round(n * 10) / 10).toString().replace('.', ',');
   }
-  function historial(){
-    document.querySelectorAll('.set-row[data-set-key]').forEach(function(row){
+  function historial(scope){
+    var root = (scope && typeof scope.querySelectorAll === 'function') ? scope : document;
+    root.querySelectorAll('.set-row[data-set-key]').forEach(function(row){
       var key = row.dataset.setKey;
       var p = previa(key);
       var vieja = row.querySelector('.jp-hist');
@@ -16988,8 +17049,8 @@ body{
   /* ---------------------------------------------------------
      ORQUESTACIÓN
   --------------------------------------------------------- */
-  function repintar(){
-    try{ historial(); }catch(e){ console.warn('v36·hist', e); }
+  function repintar(scope){
+    try{ historial(scope); }catch(e){ console.warn('v36·hist', e); }
     try{ unaSolaSugerencia(); }catch(e){ console.warn('v36·dedup', e); }
     try{ sugerirEnCampo(); }catch(e){ console.warn('v36·sug', e); }
     try{ progresionSinMarca(); }catch(e){ console.warn('v36·progresion', e); }
@@ -16998,9 +17059,11 @@ body{
   }
   document.addEventListener('change', function(e){
     if(!e.target.closest) return;
-    if(e.target.closest('.set-check, .set-input, .block-done-cb')){
+    var hit = e.target.closest('.set-check, .set-input, .block-done-cb');
+    if(hit){
       marcarActividad();
-      setTimeout(repintar, 90);
+      var scope = hit.closest('.block');
+      setTimeout(function(){ repintar(scope); }, 90);
     }
   });
   document.addEventListener('input', function(e){
