@@ -1731,6 +1731,21 @@ function exNombreIngles(ex){
   if(!en || en.toLowerCase() === es.toLowerCase()) return '';
   return en;
 }
+/* 08/09 · aviso táctico en el Builder cuando el ejercicio elegido no tiene
+   video/ID cargado o le falta nombre real -- badge ámbar + acceso directo
+   para asignarlo (editor de ejercicio) o buscarlo en YouTube, sin salir
+   del armado del bloque. No reemplaza ni oculta el nombre real en ningún
+   lado -- sólo se agrega AL LADO como advertencia adicional. */
+function avisoVideoHtml(ex){
+  if(!ex) return '';
+  const sinNombre = !((ex.es || ex.en || '').trim());
+  const sinVideo = !ex.videoId;
+  if(!sinNombre && !sinVideo) return '';
+  const msg = sinNombre ? '⚠️ SIN NOMBRE ASIGNADO' : '⚠️ SIN VIDEO ASIGNADO';
+  return '<span class="pill orange" style="white-space:nowrap">' + msg + '</span>' +
+    '<button type="button" class="btn xs" data-editex="' + esc(ex.id) + '" title="Editar ejercicio">✏️ Asignar</button>' +
+    (sinNombre ? '' : '<button type="button" class="btn xs" data-ytsearch="' + esc(exNombreCorto(ex) || ex.es || '') + '" title="Buscar en YouTube">🔎 YouTube</button>');
+}
 /* --- migración desde el modelo v1 --- */
 function migrateV1(){
   let raw = null;
@@ -2620,8 +2635,11 @@ function renderDay(){
 
     /* --- cuerpo por tipo --- */
     if(b.tipo === 'block'){
+      const exAncla = getEx(b.exId);
       h += '<div class="fields">' +
-        '<div class="f wide"><label>Ejercicio ancla</label><select data-bf="exId" data-b="' + b.id + '">' + exOptions(b.exId) + '</select></div>' +
+        '<div class="f wide"><label>Ejercicio ancla</label><select data-bf="exId" data-b="' + b.id + '">' + exOptions(b.exId) + '</select>' +
+          (avisoVideoHtml(exAncla) ? '<div class="row" style="margin-top:5px;align-items:center;gap:6px">' + avisoVideoHtml(exAncla) + '</div>' : '') +
+        '</div>' +
         '<div class="f"><label>Series aprox.</label><input type="number" data-bf="approxSets" data-b="' + b.id + '" value="' + esc(b.approxSets) + '"></div>' +
         '<div class="f"><label>Series efectivas</label><input type="number" data-bf="efSets" data-b="' + b.id + '" value="' + esc(b.efSets) + '"></div>' +
         '<div class="f"><label>Reps</label><input data-bf="reps" data-b="' + b.id + '" value="' + esc(b.reps) + '" placeholder="6-8"></div>' +
@@ -2659,6 +2677,7 @@ function renderDay(){
           '<div class="item-h"><span class="num">' + String.fromCharCode(65+i) + '</span>' +
             '<span class="nm">' + esc(ex ? ex.es : '⚠️ Sin ejercicio') + '</span>' +
             (ex && ex.videoId ? '<button class="btn xs" data-vid="' + ex.id + '">▶</button>' : '') +
+            avisoVideoHtml(ex) +
             '<div class="spacer"></div>' +
             '<button class="icon-btn" data-imove="up" data-b="' + b.id + '" data-i="' + i + '">▲</button>' +
             '<button class="icon-btn" data-imove="down" data-b="' + b.id + '" data-i="' + i + '">▼</button>' +
@@ -2684,6 +2703,8 @@ function renderDay(){
         h += '<div class="item">' +
           '<div class="item-h"><span class="num">' + (i+1) + '</span>' +
             '<span class="nm">' + esc(ex ? ex.es : '⚠️ Sin ejercicio') + '</span>' +
+            (ex && ex.videoId ? '<button class="btn xs" data-vid="' + ex.id + '">▶</button>' : '') +
+            avisoVideoHtml(ex) +
             '<div class="spacer"></div>' +
             '<button class="icon-btn danger" data-idel="' + i + '" data-b="' + b.id + '">🗑</button>' +
           '</div>' +
@@ -3038,6 +3059,11 @@ function bindBuilder(){
     }
     if(t.dataset.timer){ startTimer(parseInt(t.dataset.timer,10) || 60, t.dataset.tl || 'Descanso'); return; }
     if(t.dataset.vid){ openVideo(t.dataset.vid); return; }
+    /* 08/09 · aviso de video/nombre faltante: acceso directo al editor del
+       ejercicio (ya precargado con su fila de video) sin salir del armado
+       del bloque -- ver avisoVideoHtml() más abajo. */
+    if(t.dataset.editex){ openEx(t.dataset.editex); return; }
+    if(t.dataset.ytsearch){ window.open(ytSearch(t.dataset.ytsearch), '_blank', 'noopener'); return; }
   });
 
   /* Checkpoint 6: Ctrl/Cmd+D duplica el bloque donde está el foco --
@@ -14638,43 +14664,13 @@ body.cf-modo .block .ex-tip{display:none}
 .block .bs-r .bs-chev{font-size:12px;color:rgba(255,255,255,0.4);line-height:1}
 .block .bs-r .set-row{margin:0}
 .block .bs-r .set-row .set-row-label{display:none}
-.block .bs-r .bs-fila{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:5px}
-.block .bs-r .bs-fila .bs-nm{
-  flex:0 0 auto;max-width:34%;color:rgba(255,255,255,0.72);font-size:11.5px;line-height:1.3;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-/* objetivo de reps/tempo de ESTA ronda puntual -- mismo tratamiento
-   "Luxury Stealth" (monoespaciado + celeste) que el roster .bs-ex .bs-d de
-   arriba, repetido acá porque para cuando el alumno llega a la ronda 2/3 ya
-   scrolleó lejos del roster. La tipografía se define acá; la UBICACIÓN real
-   (grid-row/grid-column) la fija la regla ".2.2 · estación de la ronda" más
-   abajo, que es la que en definitiva gobierna el layout de .bs-fila (grid,
-   con !important) -- declararla acá también hubiera quedado muerta. */
-.block .bs-r .bs-fila .bs-rd{
-  /* Integración Luxury Stealth / tipografía de marca en prescripción
-     (2026-09, pedido explícito): de JetBrains Mono a la tipografía angular
-     de marca (Chakra Petch 700, mayúsculas forzadas, tracking .08em),
-     IDÉNTICA al tratamiento de los encabezados técnicos de las piezas
-     oficiales.
-     Ajuste posterior, mismo día (pedido explícito: "quitale el recuadro de
-     la vuelta"): se prueba primero como micro-cápsula/chip (fondo cyan al
-     7%, borde cyan al 22%, esquinas 4px, padding 2px 8px) y el usuario pide
-     sacar ese recuadro mirando la app ya renderizada -- se retira el
-     tratamiento de caja (background/border/border-radius/padding) y todo
-     el aparataje que existía sólo para que la cápsula abrazara su
-     contenido (inline-flex/align-items/gap/width:max-content/justify-self),
-     que ya no cumple ninguna función sin la caja visible. Queda texto
-     plano otra vez, como antes, pero con la tipografía de marca y sin caja.
-     OJO -- esto sigue siendo una EXCEPCIÓN DELIBERADA, puntual a esta
-     línea, a la regla del manual de marca oficial ("los números van en
-     monoespaciada, siempre"): el usuario pidió a propósito Chakra Petch acá
-     para que hermane con el encabezado de marca. El manual sigue rigiendo
-     las piezas de Instagram sin cambios; esto es sólo para esta línea del
-     HUD del alumno. El color Cyan Táctico no cambia. */
-  color:#38BDF8;font-family:'Chakra Petch','Rajdhani',sans-serif;
-  font-weight:700;font-size:.95rem;letter-spacing:.08em;text-transform:uppercase;
-  opacity:1;
-}
+/* 08/09 -- fila mínima de registro (badge + Kg/×/Reps/check, una sola
+   línea): nombre y prescripción de la estación ya NO viven acá, se
+   retiraron del HTML (ver unificar()) porque duplicaban el roster .bs-ex
+   de arriba. .bs-nm/.bs-rd quedan sin uso dentro de .bs-fila; las reglas
+   viejas de esas clases más abajo (2.2 · estación de la ronda) quedan
+   inertes a propósito -- no se tocan por si se reactiva ese layout. */
+.block .bs-r .bs-fila{display:flex;align-items:center;gap:8px;margin-bottom:5px}
 .block .bs-r .bs-fila .set-row{flex:1 1 auto}
 .block .bs-r .bs-cerrar{
   width:100%;margin-top:6px;min-height:40px;border-radius:10px;cursor:pointer;
@@ -14896,24 +14892,14 @@ body.cf-modo .block .ex-tip{display:none}
           if(!row) return;
           var f = document.createElement('div');
           f.className = 'bs-fila';
-          /* el objetivo de reps/tempo viaja también dentro de cada ronda (no
-             solo en el roster de arriba, .bs-ex .bs-d): al llegar a la ronda
-             2 o 3 el alumno ya scrolleó lejos del roster, y el input de reps
-             ya no muestra el objetivo como placeholder (ver renderSetRows) --
-             mismo estilo Luxury Stealth (monoespaciado + celeste) que .bs-d. */
-          /* el badge de técnica (si hay) viaja ANIDADO dentro de .bs-rd, no
-             como hermano suelto: .bs-fila es un grid con ubicación fija por
-             hijo (.bs-l fila1/col1, .bs-nm fila1/col2, .bs-rd fila2/col
-             1-al-final, .set-row fila3) -- un span extra sin regla propia
-             caería en auto-placement, en una fila/columna nueva y angosta
-             (el mismo bug que ya documentó el comentario de .bs-rd más
-             arriba). Anidado adentro de .bs-rd hereda su ubicación gratis. */
-          f.innerHTML = '<span class="bs-l">' + letra(i) + '</span>' +
-                        '<span class="bs-nm">' + esc(x.name) + (typeof enBadgeHtml === 'function' ? enBadgeHtml(x.nameEn) : '') + '</span>' +
-                        ((x.det || x.tecnica) ? '<span class="bs-rd">' +
-                          (x.det ? esc(x.det) : '') +
-                          (x.tecnica ? '<span class="jp-tecnica-badge">' + esc(x.tecnica) + '</span>' : '') +
-                          '</span>' : '');
+          /* 08/09 -- estructura matricial limpia: nombre, video y
+             prescripción de cada estación viven UNA sola vez, en el roster
+             de arriba (.bs-ex, siempre visible). Repetirlos acá adentro de
+             cada ronda era la duplicación exacta que se pidió eliminar --
+             la fila de una ronda ahora es sólo el mínimo de registro:
+             letra de estación + Kg/×/Reps/check (la fila real, con su
+             data-set-key intacto). */
+          f.innerHTML = '<span class="bs-l">' + letra(i) + '</span>';
           f.appendChild(row);                       /* se mueve la fila real: conserva su data-set-key */
           caj.appendChild(f);
         });
@@ -15507,29 +15493,23 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   min-height:38px;transition:min-height .18s ease;
 }
 .block .block-note-input:focus{border-color:rgba(210,121,63,.4) !important;outline:none}
-/* --- 2.2 · estación de la ronda: nombre arriba, serie compacta abajo --- */
+/* --- 2.2 · estación de la ronda (08/09: matriz limpia, una sola línea) ---
+   Nombre, video y prescripción ya no viven acá (viven una sola vez en el
+   roster .bs-ex de arriba) -- la fila de la ronda es sólo la letra de
+   estación + la carga real (Kg/×/Reps/check), en una línea. Se cambia de
+   grid a flex porque ya no hace falta apilar renglones. */
 .block .bs-r .bs-fila{
-  display:grid !important;grid-template-columns:auto 1fr;gap:5px 8px;align-items:center;
-  margin:0 0 9px !important;padding:0 0 9px;border-bottom:1px dashed rgba(255,255,255,.05);
+  display:flex !important;align-items:center;gap:8px;
+  margin:0 0 7px !important;padding:0 0 7px;border-bottom:1px dashed rgba(255,255,255,.05);
 }
 .block .bs-r .bs-fila:last-of-type{border-bottom:none;padding-bottom:0}
-.block .bs-r .bs-fila > .bs-l{grid-row:1;grid-column:1;margin:0}
-.block .bs-r .bs-fila > .bs-nm{
-  grid-row:1;grid-column:2;
-  white-space:normal !important;overflow:visible !important;text-overflow:clip !important;
-  max-width:none !important;font-size:12.5px;line-height:1.35;
-}
-/* línea 2: objetivo técnico (reps/tempo) de esta ronda, entre el nombre
-   (línea 1) y la fila de carga real (línea 3, antes línea 2 -- se corrió
-   un renglón para hacerle lugar). Sin esta regla explícita el badge caía
-   en el auto-placement del grid, en la primera celda libre de la columna
-   angosta ("auto", pensada para la letra A/B) -- de ahí el hueco vacío al
-   costado y que terminara viéndose por debajo de los inputs de carga. */
-.block .bs-r .bs-fila > .bs-rd{
-  grid-row:2;grid-column:1 / -1;
-}
+.block .bs-r .bs-fila > .bs-l{flex:0 0 auto;margin:0}
+/* min-width:0 acá es lo que evita que .set-row se desborde: sin él, un
+   hijo flex hereda min-width:auto (ancho de su contenido sin comprimir)
+   y no se achica por debajo de eso -- el grid viejo no sufría esto
+   porque sus columnas (1fr) sí se comprimen por defecto. */
 .block .bs-r .bs-fila > .set-row{
-  grid-row:3;grid-column:1 / -1;
+  flex:1 1 auto;min-width:0;
   display:flex !important;align-items:center;gap:8px;flex-wrap:nowrap !important;margin:0 !important;
 }
 .block .bs-r .bs-fila > .set-row .set-input{flex:1 1 0;min-width:0;width:auto !important}
@@ -15607,10 +15587,15 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   }
 
   /* ---------------------------------------------------------
-     2.2 · CERO REDUNDANCIA EN BISET / TRISET
-     La lista teórica superior queda oculta y el botón de video
-     viaja con el nombre de cada estación dentro de la ronda.
-  --------------------------------------------------------- */
+     2.2 · CERO REDUNDANCIA EN BISET / TRISET (histórico)
+     Pedido original: la lista teórica superior queda oculta y el
+     botón de video viaja con el nombre de cada estación dentro de
+     la ronda. 08/09: se invirtió el enfoque -- ahora el roster
+     (.bs-ex) es el que queda VISIBLE arriba (única cabecera, con su
+     propio video), y la ronda ya no repite ni nombre ni video
+     (unificar() dejó de crear .bs-nm dentro de .bs-fila). Esta
+     función queda inerte a propósito (no encuentra .bs-nm, no hace
+     nada) en vez de borrarse, por si se necesita revertir. */
   function videosEnEstaciones(){
     document.querySelectorAll('.block .bs-r .bs-fila').forEach(function(f){
       var nm = f.querySelector('.bs-nm');
