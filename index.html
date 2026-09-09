@@ -2759,13 +2759,18 @@ function contextoBloqueIA(b){
   const items = [];
   const addEx = exId => {
     const ex = getEx(exId); if(!ex) return;
-    items.push({ nombre: exDisplayName(ex) || ex.es, patron: ex.patron || '' });
+    /* 09/09 -- se suma el grupo muscular (ex.grupo) además del patrón: sin
+       esto la IA no tenía forma de detectar si un biset/triset es
+       agonista-antagonista (ej. pecho + espalda) o mismo grupo en serie,
+       y terminaba tirando nombres genéricos porque no "veía" la relación
+       real entre los ejercicios del bloque. */
+    items.push({ nombre: exDisplayName(ex) || ex.es, patron: ex.patron || '', grupo: ex.grupo || '' });
   };
   if(b.tipo === 'block') addEx(b.exId);
   else if(b.tipo === 'superset') (b.ejercicios||[]).forEach(e => addEx(e.exId));
   else if(b.tipo === 'finisher') (b.fin||[]).forEach(e => addEx(e.exId));
-  else if(b.tipo === 'hyrox') (b.movements||[]).forEach(m => { if((m||'').trim()) items.push({ nombre: m.trim(), patron:'' }); });
-  else if(b.tipo === 'list') (b.items||[]).forEach(l => { if((l||'').trim()) items.push({ nombre: l.trim(), patron:'' }); });
+  else if(b.tipo === 'hyrox') (b.movements||[]).forEach(m => { if((m||'').trim()) items.push({ nombre: m.trim(), patron:'', grupo:'' }); });
+  else if(b.tipo === 'list') (b.items||[]).forEach(l => { if((l||'').trim()) items.push({ nombre: l.trim(), patron:'', grupo:'' }); });
   const nEj = b.tipo === 'superset' ? (b.ejercicios||[]).length : 0;
   return {
     tipoLb: T.lb,
@@ -2777,6 +2782,22 @@ function contextoBloqueIA(b){
     items: items
   };
 }
+/* 09/09 -- AUDITORÍA DEL GENERADOR DE NOMBRES: contexto jerárquico del
+   alumno/día/mesociclo, la parte que faltaba (el generador sólo miraba el
+   bloque en el vacío). Mismos campos que ya usan otros llamados a
+   window.CoachAI en este archivo (ath.tags para lesiones, p.meta.mesoDisc/
+   mesoName para disciplina) -- no se inventa una fuente de datos nueva. */
+function contextoAtletaDiaIA(){
+  const p = plan(S.activeId);
+  const d = curDay();
+  const ath = getAth(S.activeId);
+  return {
+    disciplina: (p && p.meta && (p.meta.mesoName || p.meta.mesoDisc)) || '',
+    focoDia: (d && (d.label || d.title)) || '',
+    nivel: (ath && ath.nivel) || '',
+    lesiones: (ath && ath.tags && ath.tags.length) ? ath.tags.join('; ') : ''
+  };
+}
 async function nombrarBloqueConIA(bid, btn){
   const b = findBlock(bid); if(!b) return;
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
@@ -2786,10 +2807,28 @@ async function nombrarBloqueConIA(bid, btn){
   }
   const ctx = contextoBloqueIA(b);
   if(!ctx.items.length){ toast('Agregá al menos un ejercicio o movimiento al bloque antes de nombrarlo con IA', 'warn'); return; }
+  const ad = contextoAtletaDiaIA();
 
-  const tipoDesc = ctx.esTriset ? 'triset' : ctx.esBiset ? 'biset' : ctx.esFinisher ? 'finisher metabólico' :
-                    ctx.esHyrox ? 'bloque de cardio / Hyrox' : ctx.esAncla ? 'bloque ancla (ejercicio único)' : ctx.tipoLb.toLowerCase();
-  const lineas = ctx.items.slice(0, 8).map(it => '- ' + it.nombre + (it.patron ? ' (' + it.patron + ')' : '')).join('\n');
+  const tipoDesc = ctx.esTriset ? 'triset agonista-antagonista o en serie (según el grupo muscular de cada estación)' :
+                    ctx.esBiset ? 'biset agonista-antagonista o en serie (según el grupo muscular de cada estación)' :
+                    ctx.esFinisher ? 'finisher metabólico' :
+                    ctx.esHyrox ? 'bloque de cardio / Hyrox' : ctx.esAncla ? 'ancla pesada (ejercicio único, carga principal del día)' : ctx.tipoLb.toLowerCase();
+  const lineas = ctx.items.slice(0, 8).map(it => '- ' + it.nombre +
+    (it.patron || it.grupo ? ' (' + [it.grupo, it.patron].filter(Boolean).join(' · ') + ')' : '')).join('\n');
+  /* 09/09 -- AUDITORÍA: antes esto sólo miraba el bloque en el vacío
+     (ejercicios + tipo), sin saber nada del alumno ni del día -- de ahí
+     los títulos genéricos/desconectados que se reportaron. Ahora se
+     inyecta, en orden jerárquico, la misma info que ya usan otros
+     llamados a la IA en este archivo (disciplina, foco del día, nivel y
+     lesiones del alumno vía ath.tags) y se prohíbe explícitamente el
+     cliché -- el system prompt exige que el título nombre la función
+     biomecánica real (grupo/patrón) en vez de una etiqueta genérica. */
+  const contextoLineas = [
+    ad.disciplina ? 'Disciplina activa: ' + ad.disciplina : '',
+    ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
+    ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
+    ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas del atleta: ' + ad.lesiones + ' -- el nombre NO debe contradecir ni ignorar esto (ej. no llamar "empuje pesado sin límites" a algo con antecedente de hombro).' : ''
+  ].filter(Boolean).join('\n');
   /* callProvider fuerza modo JSON puro en Gemini (responseMimeType) y OpenAI
      (response_format json_object) para TODA llamada — así que el prompt le
      pide el título como JSON en vez de texto plano, igual que ya hacen
@@ -2797,10 +2836,15 @@ async function nombrarBloqueConIA(bid, btn){
      contra ese modo forzado ni arriesgar un 400 por "falta la palabra json". */
   const sistema = 'Sos un asistente de nomenclatura técnica para un sistema de entrenamiento de alto rendimiento ("High Performance System"). ' +
     'Generás nombres de bloque de entrenamiento tácticos, contundentes y profesionales, en español rioplatense, sin emojis. ' +
+    'El título y el subtítulo tienen que nombrar la función biomecánica REAL del bloque (grupo muscular, patrón de movimiento, cualidad física que se busca), ' +
+    'cruzada con la disciplina, el foco del día y el nivel/lesiones del atleta que te paso abajo -- no una etiqueta genérica que serviría para cualquier bloque. ' +
+    'PROHIBIDO devolver nombres cliché o de relleno como "Entrenamiento de fuerza", "Cardio intenso", "Rutina de hoy", "Trabajo de piernas", "Ejercicio funcional" ' +
+    'o cualquier variante igual de vaga que no mencione el grupo/patrón real de los ejercicios listados. ' +
     'Respondé SOLO con JSON válido: {"titulo":"[ CONCEPTO CLAVE EN 2-4 PALABRAS ]","subtitulo":"DETALLE TÉCNICO EN MAYÚSCULAS"}. ' +
     'Ejemplos de pares título/subtítulo válidos: "[ CADENA POSTERIOR ]" · "HIPERTROFIA Y CONTROL LUMBO-PÉLVICO"; ' +
     '"[ POTENCIA ROTACIONAL ]" · "ESTABILIDAD DINÁMICA".';
-  const user = 'Generá el título JSON para este ' + tipoDesc + ' de entrenamiento.\nEjercicios/movimientos incluidos:\n' + lineas;
+  const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
+    'Generá el título JSON para este ' + tipoDesc + ' de entrenamiento.\nEjercicios/movimientos incluidos (grupo muscular · patrón):\n' + lineas;
 
   const originalHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
@@ -3704,11 +3748,23 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .ex-name { font-size: 1rem; font-weight: 600; flex: 1; line-height: 1.5; color: #F7F7F7; }
   .ex-detail { font-size: 13.5px; font-weight: 600; color: #D1D5DB; text-align: right; flex-shrink: 0; line-height: 1.55; max-width: 240px; min-width: 60px; }
   .ex-detail strong { display: block; color: var(--gold); font-weight: 800; font-size: 15.5px; letter-spacing: 0.01em; }
+  /* 09/09 -- "Ref previa: 80 kg × 10" (motor de progresión semanal): lo
+     último que el alumno registró en S-1 para esta estación, referencia
+     de un solo vistazo mientras mira el número ya precargado abajo. */
+  .ref-previa { display: block; margin-top: 3px; font-size: 11px; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
+  .ref-previa b { color: var(--text-secondary); font-weight: 700; }
+  .bs-ex .ref-previa { margin-top: 1px; }
   .set-tracker { display: flex; flex-direction: column; gap: 4px; padding: 6px 0.4rem 10px 1.4rem; }
   .set-row { display: flex; align-items: center; gap: 8px; }
   .set-row-label { width: 54px; flex-shrink: 0; font-size: 10.5px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; transition: color .2s ease; }
   .set-row.set-row-done .set-row-label { color: var(--teal); }
   .set-input { width: 58px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px; color: var(--text-primary); font-size: 12.5px; text-align: center; font-family: 'Inter', sans-serif; }
+  /* 09/09 -- valor precargado por el motor de progresión semanal (todavía
+     no confirmado a mano por el alumno): borde punteado sutil, mismo
+     tamaño y foco que un input normal -- se ve, pero no grita error. En
+     cuanto el alumno toca el campo y dispara el listener de 'input', el
+     próximo render ya lo encuentra con dato propio y esto desaparece. */
+  .set-input-sug { border-style: dashed; border-color: rgba(210,121,63,0.55); color: var(--gold); }
   .set-input:focus { border-color: var(--red); outline: none; }
   .set-input::placeholder { color: var(--text-muted); }
   .set-check { width: 16px; height: 16px; accent-color: var(--teal); cursor: pointer; margin-left: 2px; }
@@ -3733,6 +3789,20 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .load-suggest b .ls-num,
   .load-suggest-compact b .ls-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 1.08em; letter-spacing: 0; }
   .load-suggest span { display:block; color: var(--text-secondary); font-size:0.78rem; margin-top:2px; }
+  /* 09/09 -- ASISTENTE DE SOBRECARGA VÍA READINESS: renglón que se agrega
+     adentro de .load-suggest/.rm-sug (nunca los reemplaza) cuando el
+     check-in de entrada ya está contestado. .rdy-load-up = condición
+     óptima (sueño+energía altos) -> sugiere sumar; .rdy-load-hold =
+     energía baja/sueño flojo/molestia -> sugiere sostener y priorizar
+     técnica. Mismo grid-column que el resto del cajón (width:100% via
+     display:block) para que quede como una segunda línea, no un chip
+     suelto. */
+  .rdy-load-tip { display:block; margin-top:6px; padding-top:6px; border-top:1px dashed rgba(255,255,255,0.14); font-size:0.78rem; line-height:1.45; }
+  .rdy-load-tip b { font-weight:800; }
+  .rdy-load-up { color: #9BE9C4; }
+  .rdy-load-up b { color: #39FF88; }
+  .rdy-load-hold { color: #F2C79A; }
+  .rdy-load-hold b { color: #D2793F; }
   .block-notes { margin-top:14px; padding-top:12px; border-top:1px dashed rgba(255,255,255,0.12); }
   .block-notes label { display:block; font-size:0.72rem; letter-spacing:0.1em; text-transform:uppercase; color: var(--text-muted); font-weight:800; margin-bottom:6px; }
   /* chips de 1 toque (propuesta 27/08, Sección 02 · Notas por chip) —
@@ -3753,7 +3823,15 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .wu-phase:first-child { margin-top: 0; }
   .video-link.vsearch { color: var(--text-secondary); border-color: rgba(255,255,255,0.22); }
   .video-link.vsearch:hover { color: var(--gold); border-color: rgba(210,121,63,0.5); }
-  .video-popup-wrap { display: none; position: fixed; bottom: 20px; right: 20px; z-index: 300; width: 320px; max-width: calc(100vw - 32px); }
+  /* 09/09 -- PICTURE-IN-PICTURE DEL VIDEO: ya era compacto y flotante (no
+     un modal de pantalla completa), pero compartía la misma franja inferior
+     que el .timer-hud del descanso -- en mobile ambos van bottom:12px de
+     borde a borde, así que al tocar un video DURANTE el descanso el popup
+     quedaba literalmente arriba del cronómetro, tapándolo entero. La
+     transición (la propiedad "bottom") más el ajuste dinámico de ajustarPosicionVideoPopup()
+     (ver más abajo, junto a openVideoPopup) lo despegan del HUD cuando
+     está visible, sin tocar su tamaño ni su cierre rápido [ ✕ ] de siempre. */
+  .video-popup-wrap { display: none; position: fixed; bottom: 20px; right: 20px; z-index: 220; width: 320px; max-width: calc(100vw - 32px); transition: bottom 0.25s ease; }
   .video-popup-wrap.open { display: block; }
   .video-popup { position: relative; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: 0 16px 44px rgba(0,0,0,0.6); animation: videoPopIn 0.22s cubic-bezier(0.16,1,0.3,1); }
   @keyframes videoPopIn { from { transform: translateY(16px) scale(0.96); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
@@ -3765,7 +3843,10 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .video-popup-fallback { padding: 7px 12px; background: rgba(255,255,255,0.02); border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-align: center; }
   .video-popup-fallback a { color: var(--gold); font-weight: 600; text-decoration: none; }
   .video-popup-fallback a:hover { color: var(--red-light); }
-  @media (max-width: 640px) { .video-popup-wrap { left: 12px; right: 12px; bottom: 12px; width: auto; max-width: none; } }
+  /* en mobile sigue siendo una ventanita de esquina, no una franja de borde
+     a borde -- así queda claro (y se siente) que es un flotante liviano y
+     no un modal que toma la pantalla. */
+  @media (max-width: 640px) { .video-popup-wrap { right: 10px; bottom: 12px; width: min(248px, calc(100vw - 20px)); max-width: none; } }
   .coach-note { background: rgba(124,197,232,0.05); border-left: 2px solid rgba(124,197,232,0.4); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 0.65rem 0.9rem; margin-top: 0.75rem; font-size: 12.5px; color: #A8A8AE; line-height: 1.6; }
   .coach-note strong { color: #828A97; display: block; margin-bottom: 3px; font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; }
   .coach-note.note-danger { background: rgba(124,197,232,0.09); border-left-color: var(--red); color: #CFE7F4; }
@@ -4677,11 +4758,34 @@ function setLoadField(key, field, value){
   state.loads[key].ts = Date.now();
   saveProgress();
 }
-function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint){
+function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg){
   let html = '<div class="set-tracker">';
   for(let i=1;i<=numSets;i++){
     const key = getLoadKey(weekIdx, dayId, blockId, exIdx, i);
     const ld = getLoad(key);
+    /* 09/09 -- MOTOR DE PROGRESION SEMANAL ENTRE MICROCICLOS: si el alumno
+       todavía no cargó nada para ESTA semana en esta estación/serie
+       puntual, se precarga con un valor sugerido -- y se GUARDA de una
+       (no es sólo un placeholder visual): así, si el alumno confía en el
+       número y sólo toca el check, el dato real queda persistido igual.
+       Nunca pisa un valor que el alumno ya haya cargado esta semana.
+       Prioridad de la sugerencia de Kg: (1) el target por %1RM/carga base
+       del bloque -- el mismo número que ya muestra el badge .load-suggest,
+       calculado afuera y pasado acá en sugKg -- si no hay, (2) lo que el
+       alumno efectivamente levantó la semana pasada en esta MISMA
+       estación y serie (S-1). Las reps sugeridas son siempre lo
+       ejecutado en S-1 (el objetivo programado suele ser un rango tipo
+       "10-12", no sirve para precargar un número exacto). */
+    let kgVal = ld.kg, repsVal = ld.reps, sugerido = false;
+    if((kgVal == null || kgVal === '') && weekIdx > 0){
+      const prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
+      const kgPrev = (prevLd.kg != null && prevLd.kg !== '') ? prevLd.kg : null;
+      const kgSug = (sugKg && sugKg > 0) ? sugKg : kgPrev;
+      if(kgSug != null){ kgVal = kgSug; setLoadField(key, 'kg', kgVal); sugerido = true; }
+      if((repsVal == null || repsVal === '') && prevLd.reps != null && prevLd.reps !== ''){
+        repsVal = prevLd.reps; setLoadField(key, 'reps', repsVal); sugerido = true;
+      }
+    }
     /* pedido 41: Kg/×/Reps/✓ viven ahora agrupados en .set-load, un
        sub-contenedor flex propio con flex-wrap:nowrap -- así, si algún
        día no entran junto a la etiqueta "Serie N" en la misma línea,
@@ -4689,23 +4793,49 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint){
        check de los inputs, que era el bug reportado en "Press
        Guillotina"). .set-row en sí sigue con flex-wrap:wrap (pedido 40,
        más abajo) porque .jp-hist todavía necesita su propia línea. */
-    html += '<div class="set-row' + (ld.done?' set-row-done':'') + '" data-set-key="' + key + '">' +
+    html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + '" data-set-key="' + key + '">' +
       '<span class="set-row-label">Serie ' + i + '</span>' +
       '<div class="set-load">' +
-        '<input class="set-input set-kg" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (ld.kg!=null?ld.kg:'') + '" />' +
+        '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (kgVal!=null?kgVal:'') + '" />' +
         '<span class="set-x" aria-hidden="true">\\u00d7</span>' +
         /* el objetivo (repsHint) ya no va como placeholder acá: se veía como
            texto tenue "dato ya cargado" y desaparecía justo al tocar el campo
            para tipear -- ahora el objetivo se muestra afuera, en texto fijo
            y legible (badge de prescripción / roster del biset), y el input
            queda limpio para que el alumno cargue lo realizado. */
-        '<input class="set-input set-reps" type="text" inputmode="numeric" autocomplete="off" placeholder="Reps" value="' + (ld.reps!=null?ld.reps:'') + '" />' +
+        '<input class="set-input set-reps' + (sugerido&&repsVal!=null?' set-input-sug':'') + '" type="text" inputmode="numeric" autocomplete="off" placeholder="Reps" value="' + (repsVal!=null?repsVal:'') + '" />' +
         '<input class="set-check" type="checkbox" ' + (ld.done?'checked':'') + ' />' +
       '</div>' +
     '</div>';
   }
   html += '</div>';
   return html;
+}
+/* target de Kg sugerido para la semana, mismo cálculo que ya usa el badge
+   .load-suggest (cargaSugeridaHtml) pero devolviendo un único número listo
+   para precargar un input -- ver PCT_SEMANA/redondear05 más abajo. */
+function cargaSugeridaKg(block, weekIdx){
+  const base = parseFloat(block && block.baseLoad);
+  if(!base || base <= 0) return 0;
+  const propio = block.weekPct && block.weekPct[weekIdx] != null && block.weekPct[weekIdx] !== ''
+    ? parseFloat(block.weekPct[weekIdx]) : null;
+  if(propio) return redondear05(base * propio / 100);
+  const w = PCT_SEMANA[weekIdx] || PCT_SEMANA[PCT_SEMANA.length - 1];
+  return redondear05((base * w.pct[0] / 100 + base * w.pct[1] / 100) / 2);
+}
+/* chip "Ref previa: 80 kg × 10" -- lo último que el alumno efectivamente
+   registró en esta estación la semana pasada (última serie con Kg y Reps
+   cargados). Vacío si es la Semana 1 o si no hay nada que mostrar. */
+function refPreviaHtml(weekIdx, dayId, blockId, exIdx, numSets){
+  if(!(weekIdx > 0)) return '';
+  for(let i = numSets; i >= 1; i--){
+    const prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
+    if(prevLd.kg != null && prevLd.kg !== '' && prevLd.reps != null && prevLd.reps !== ''){
+      return '<span class="ref-previa" title="Lo que registraste la semana pasada en esta estación">' +
+        '↩ Ref previa: <b>' + prevLd.kg + ' kg × ' + prevLd.reps + '</b></span>';
+    }
+  }
+  return '';
 }
 function fatigueKey(weekIdx, dayId){ return weekIdx + '_' + dayId; }
 function getFatigue(weekIdx, dayId){ return state.fatigue[fatigueKey(weekIdx, dayId)] || null; }
@@ -4753,6 +4883,38 @@ function readinessAdvisory(zonas){
   const lista = zonas.join(' · ');
   return '<div class="rdy-advisory"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>' +
     '<div><b>Molestia en ' + lista.toLowerCase() + '</b> — hoy autoregulamos: sumá +1 RIR y evitá el rango de dolor en los ejercicios que la comprometan. Marcá el bloque afectado con 🩹 si necesitás avisar al coach en tiempo real.</div></div>';
+}
+/* 09/09 -- ASISTENTE DE SOBRECARGA DINÁMICA VÍA READINESS: cruza el
+   check-in de entrada (sueño + energía + molestias) con la sugerencia de
+   carga que YA se muestra en .load-suggest (cargaSugeridaHtml, target por
+   %1RM) y .rm-sug (sugerencias(), target por marca personal) -- no
+   reemplaza ese número, le agrega un renglón aparte dentro de la misma
+   caja, así nunca hay dos fuentes de verdad compitiendo por el mismo Kg. */
+function readinessCargaTexto(weekIdx, dayId){
+  const sleepVal = getSleep(weekIdx, dayId);
+  const stressVal = getFatigue(weekIdx, dayId);
+  const zonas = getPainZones(weekIdx, dayId);
+  if(!sleepVal && !stressVal) return null; /* todavía no contestó el check-in: sin sugerencia */
+  if(zonas.length){
+    return { cls:'hold', html:'🛡️ <b>Sostené la carga de hoy:</b> molestia declarada en ' + zonas.join(' · ').toLowerCase() + ' — priorizá técnica, RIR 2-3.' };
+  }
+  if(sleepVal === 'optima' && stressVal === 'green'){
+    return { cls:'up', html:'⚡ <b>Condición óptima:</b> +2.5 kg recomendados para la serie efectiva.' };
+  }
+  if(stressVal === 'red' || sleepVal === 'mala'){
+    return { cls:'hold', html:'🛡️ <b>Sostené la carga:</b> ' + (stressVal === 'red' ? 'energía baja hoy' : 'dormiste flojo') + ' — priorizá técnica, RIR 2-3.' };
+  }
+  return null; /* combinación intermedia (ej. sueño regular + energía alta): sin ajuste, se sigue el plan tal cual */
+}
+function aplicarSobrecargaReadiness(weekIdx, dayId){
+  const tip = readinessCargaTexto(weekIdx, dayId);
+  document.querySelectorAll('.load-suggest, .rm-sug').forEach(function(box){
+    let el = box.querySelector('.rdy-load-tip');
+    if(!tip){ if(el) el.remove(); return; }
+    if(!el){ el = document.createElement('div'); el.className = 'rdy-load-tip'; box.appendChild(el); }
+    el.className = 'rdy-load-tip rdy-load-' + tip.cls;
+    el.innerHTML = tip.html;
+  });
 }
 /* Contexto de sesión (28/08, Fase 3 · Sección 03 pto.2) — bloque compacto
    "lo que trajiste la última vez" ANTES del check-in de entrada, para que
@@ -4868,6 +5030,7 @@ function wireReadinessCheckin(day, weekIdx){
       const host = document.getElementById('rdyAdvisory');
       if(host) host.innerHTML = readinessAdvisory(zonas);
       actualizarResumen();
+      if(typeof aplicarSobrecargaReadiness === 'function') aplicarSobrecargaReadiness(weekIdx, day.id);
       return;
     }
     const seg = e.target.closest('.rdy-seg');
@@ -4878,6 +5041,10 @@ function wireReadinessCheckin(day, weekIdx){
       if(seg.getAttribute('data-rdy-seg') === 'sleep') setSleep(weekIdx, day.id, v);
       else if(seg.getAttribute('data-rdy-seg') === 'stress') setFatigue(weekIdx, day.id, v);
       const esAhoraCompleto = actualizarResumen();
+      /* el atleta recién contestó sueño o energía -- la sugerencia de
+         sobrecarga (⚡ +2.5kg / 🛡️ sostener carga) se recalcula en el acto,
+         no hace falta cerrar y reabrir el check-in para verla aplicada. */
+      if(typeof aplicarSobrecargaReadiness === 'function') aplicarSobrecargaReadiness(weekIdx, day.id);
       /* al completar sueño + energía (las 2 preguntas obligatorias) se
          pliega sola para devolver la pantalla a la rutina -- si el
          alumno la abrió solo para revisar/tocar molestias después de
@@ -5159,6 +5326,10 @@ function showHudFor(tid){
   hudTimeEl.textContent = fmt(s.remaining);
   setHudPhaseClass(s.phaseCls);
   hudPlayEl.textContent = s.running ? '❚❚' : '▶';
+  /* si el video ya estaba abierto (el alumno lo dejó puesto entre series),
+     el HUD que recién aparece no debe quedar tapado por él -- ver
+     ajustarPosicionVideoPopup() junto a openVideoPopup(). */
+  if(typeof ajustarPosicionVideoPopup === 'function') setTimeout(ajustarPosicionVideoPopup, 0);
 }
 function syncHudFrom(tid){
   if(activeTimerId !== tid) return;
@@ -5330,9 +5501,10 @@ function renderBlockInner(block, day, weekIdx){
     const setsSemana = (block.weekSets && block.weekSets[weekIdx]) || wd.efSets;
     const lblSets = (block.weekSets && block.weekSets[weekIdx]) ? (setsSemana + ' series · ') : wd.setsLabel;
     html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + nombreSemana + enBadgeBlock + videoLinkHtml(nombreSemana) + '</span>' +
-      '<span class="ex-detail"><strong>' + lblSets + '</strong>' + repsSemana + ' · Tempo ' + block.tempo + '</span></div>';
+      '<span class="ex-detail"><strong>' + lblSets + '</strong>' + repsSemana + ' · Tempo ' + block.tempo +
+      refPreviaHtml(weekIdx, day.id, block.id, 0, setsSemana) + '</span></div>';
     if(typeof renderSetRows === 'function'){
-      html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana);
+      html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana, cargaSugeridaKg(block, weekIdx));
     }
     var notaSem = (block.weekNote && block.weekNote[weekIdx]) || block.tips;
     if(notaSem){ html += '<div class="coach-note"><strong>Coach Note</strong>' + notaSem + '</div>'; }
@@ -5347,9 +5519,10 @@ function renderBlockInner(block, day, weekIdx){
     const sd = supersetDetail(block, weekIdx);
     html += '<div class="superset-header"><span class="sh-icon">🔗</span><span class="sh-text">' + sd.header + '</span></div>';
     sd.exercises.forEach(function(ex, exIdx){
-      html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + enBadgeHtml(ex.nameEn) + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') + '</span></div>';
+      html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + enBadgeHtml(ex.nameEn) + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') +
+        refPreviaHtml(weekIdx, day.id, block.id, exIdx, sd.rounds) + '</span></div>';
       if(typeof renderSetRows === 'function'){
-        html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps);
+        html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps, cargaSugeridaKg(block, weekIdx));
       }
     });
     html += '<span class="directive-badge">\\u26a1 Transici\\u00f3n continua (sin pausa)</span>';
@@ -5584,6 +5757,13 @@ function renderMain(){
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);
   wireReadinessCheckin(day, weekIdx);
+  /* .load-suggest ya está en el DOM (vino armado en el html de arriba);
+     .rm-sug lo agrega un módulo aparte (CoachMetodologia) unos milisegundos
+     después de renderMain() -- se reintenta una vez más a los 300ms para
+     alcanzarlo también a él, mismo patrón de "repintar con demora corta"
+     que ya usan los demás módulos que dependen de otro módulo. */
+  aplicarSobrecargaReadiness(weekIdx, day.id);
+  setTimeout(function(){ try{ aplicarSobrecargaReadiness(weekIdx, day.id); }catch(e){} }, 300);
   updateProgress(day, weekIdx, blocks);
 }
 /* =========================================================
@@ -5748,10 +5928,37 @@ const videoWrapEl = document.getElementById('video-popup-wrap');
 const videoIframeEl = document.getElementById('video-popup-iframe');
 const videoFallbackEl = document.getElementById('video-popup-fallback-link');
 const videoCloseEl = document.getElementById('video-popup-close');
+/* 09/09 -- si el cronómetro de descanso (.timer-hud) está visible, el popup
+   de video se levanta arriba de él en vez de compartir la misma franja
+   inferior (ver comentario de la clase .video-popup-wrap más arriba). Mide
+   la posición REAL del HUD en vez de asumir un alto fijo, porque el propio
+   HUD tiene varios "bottom" distintos según el contexto de la página (ver
+   los !important de .timer-hud más abajo en el archivo). */
+function ajustarPosicionVideoPopup(){
+  if(!videoWrapEl) return;
+  if(hudEl && hudEl.classList.contains('show')){
+    const r = hudEl.getBoundingClientRect();
+    const gap = 10;
+    const offset = Math.max(20, Math.round(window.innerHeight - r.top + gap));
+    videoWrapEl.style.bottom = offset + 'px';
+  } else {
+    videoWrapEl.style.bottom = '';
+  }
+}
+window.addEventListener('resize', function(){
+  if(videoWrapEl && videoWrapEl.classList.contains('open')) ajustarPosicionVideoPopup();
+});
+/* el HUD se mueve con una transición CSS (transform), así que medir su
+   posición justo al togglear la clase .show puede leer un estado a mitad
+   de camino -- se vuelve a medir cuando esa transición termina de asentarse. */
+if(hudEl) hudEl.addEventListener('transitionend', function(){
+  if(videoWrapEl && videoWrapEl.classList.contains('open')) ajustarPosicionVideoPopup();
+});
 function openVideoPopup(ytid){
   videoIframeEl.src = 'https://www.youtube-nocookie.com/embed/' + ytid + '?autoplay=1&rel=0';
   videoFallbackEl.href = 'https://www.youtube.com/watch?v=' + ytid;
   videoWrapEl.classList.add('open');
+  ajustarPosicionVideoPopup();
 }
 function closeVideoPopup(){
   videoWrapEl.classList.remove('open');
@@ -7064,7 +7271,7 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
   background:linear-gradient(180deg,rgba(210,121,63,.09),rgba(0,0,0,0)) !important}
 .summary-card .sc-h{border-bottom-color:rgba(210,121,63,.26) !important}
 .sc-save{background:linear-gradient(135deg,#D2793F,#8A4A1E) !important;color:#0A0F13 !important}
-.sc-story{background:linear-gradient(135deg,#7CC5E8,#4A93B8) !important;color:#021214 !important;border:none !important}
+.sc-story{background:linear-gradient(135deg,#E5C378,#9C7A2E) !important;color:#0A0F13 !important;border:none !important}
 /* =========================================================
    STORY CARD 9:16
 ========================================================= */
@@ -7078,8 +7285,8 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
 .story-actions button{padding:.75rem 1.2rem;border-radius:999px;border:1px solid var(--card-border);
   background:var(--bg-card);color:var(--text-primary);cursor:pointer;
   font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:.07em;text-transform:uppercase;font-size:.95rem}
-.story-actions .sa-dl{background:linear-gradient(135deg,#D2793F,#8A4A1E);color:#0A0F13;border:none}
-.story-actions .sa-cp{background:linear-gradient(135deg,#7CC5E8,#4A93B8);color:#021214;border:none}
+.story-actions .sa-dl{background:linear-gradient(135deg,#E5C378,#9C7A2E);color:#0A0F13;border:none}
+.story-actions .sa-cp{background:linear-gradient(135deg,#38BDF8,#1E7AA8);color:#021214;border:none}
 .story-hint{font-family:'Inter',sans-serif;font-size:.8rem;color:var(--text-secondary);text-align:center;max-width:340px}
 </style>
 <style>
@@ -7359,47 +7566,69 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     ctx.arcTo(x, y, x + w, y, r);
     ctx.closePath();
   }
+  /* 09/09 -- LUXURY STEALTH: escudo en miniatura para la cabecera de la
+     Story Card (estilo Cyber-Grit). Mismo path/gradiente que .hd-shield
+     svg (~línea 4197) y que escudoCanvas() del módulo "M5" más abajo
+     (~línea 8658) -- se duplica acá adentro (en vez de llamar a la otra
+     función) porque esta IIFE corre ANTES que esa y escudoCanvas() no
+     queda expuesta en window; total, dibujar() sólo se ejecuta al tocar
+     el botón, mucho después de que todos los módulos ya cargaron. */
+  function escudoMini(g, cx, cy, alto){
+    var s = alto / 74;
+    g.save(); g.translate(cx - 32 * s, cy); g.scale(s, s);
+    var grad = g.createLinearGradient(0, 0, 64, 74);
+    grad.addColorStop(0, '#FFE873'); grad.addColorStop(.38, '#FFD600');
+    grad.addColorStop(.72, '#C9A100'); grad.addColorStop(1, '#8A6B00');
+    g.fillStyle = grad;
+    g.beginPath(); g.moveTo(32, 2); g.lineTo(60, 12); g.lineTo(60, 36);
+    g.bezierCurveTo(60, 54, 47, 66, 32, 72); g.bezierCurveTo(17, 66, 4, 54, 4, 36);
+    g.lineTo(4, 12); g.closePath(); g.fill();
+    g.strokeStyle = '#FFF0A8'; g.lineWidth = 1.6; g.stroke();
+    g.fillStyle = '#07080A';
+    g.beginPath(); g.moveTo(36, 18); g.lineTo(21, 40); g.lineTo(30, 40);
+    g.lineTo(27, 58); g.lineTo(43, 34); g.lineTo(33, 34); g.closePath(); g.fill();
+    g.restore();
+  }
   function dibujar(d){
     const c = document.getElementById('storyCanvas');
     const g = c.getContext('2d');
     g.clearRect(0, 0, W, H);
 
-    /* fondo */
+    /* fondo -- Luxury Stealth: negro base + halos dorado/cyan (antes naranja/celeste) */
     g.fillStyle = '#08090B'; g.fillRect(0, 0, W, H);
     let r1 = g.createRadialGradient(W * .92, -120, 40, W * .92, -120, 900);
-    r1.addColorStop(0, 'rgba(210,121,63,.20)'); r1.addColorStop(1, 'rgba(210,121,63,0)');
+    r1.addColorStop(0, 'rgba(229,195,120,.20)'); r1.addColorStop(1, 'rgba(229,195,120,0)');
     g.fillStyle = r1; g.fillRect(0, 0, W, H);
     let r2 = g.createRadialGradient(-80, H + 120, 40, -80, H + 120, 900);
-    r2.addColorStop(0, 'rgba(124,197,232,.16)'); r2.addColorStop(1, 'rgba(124,197,232,0)');
+    r2.addColorStop(0, 'rgba(56,189,248,.16)'); r2.addColorStop(1, 'rgba(56,189,248,0)');
     g.fillStyle = r2; g.fillRect(0, 0, W, H);
 
     /* marca de agua JP en la esquina, al 3% */
     g.save();
     g.globalAlpha = .03; g.fillStyle = '#FFFFFF';
-    g.font = '700 620px "Barlow Condensed", sans-serif';
+    g.font = '700 620px "Chakra Petch", sans-serif';
     g.textAlign = 'right'; g.textBaseline = 'alphabetic';
     g.fillText('JP', W - 40, H - 40);
     g.restore();
 
-    /* header */
+    /* header -- escudo dorado en vez del asterisco suelto */
     g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 2;
     redondear(g, 90, 108, W - 180, 84, 42); g.stroke();
     g.fillStyle = 'rgba(255,255,255,.05)'; g.fill();
-    g.fillStyle = '#D2793F'; g.font = '700 40px "Barlow Condensed", sans-serif';
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText('✦', 160, 150);
-    g.fillStyle = '#EDEFF2'; g.font = '700 34px "Barlow Condensed", sans-serif';
-    g.fillText('COACH JP PERFORMANCE SYSTEM', W / 2 + 24, 152);
+    escudoMini(g, 160, 150, 60);
+    g.fillStyle = '#E5C378'; g.font = '700 34px "Chakra Petch", sans-serif';
+    g.fillText('COACH JP PERFORMANCE SYSTEM', W / 2 + 34, 152);
 
     /* atleta y fecha */
     g.textAlign = 'left';
     g.fillStyle = '#A0A8B4'; g.font = '500 30px Inter, sans-serif';
     g.fillText(d.fecha.toUpperCase(), 90, 300);
-    g.fillStyle = '#FFFFFF'; g.font = '700 96px "Barlow Condensed", sans-serif';
+    g.fillStyle = '#FFFFFF'; g.font = '700 96px "Chakra Petch", sans-serif';
     g.fillText(d.atleta.toUpperCase(), 90, 384);
 
     /* sesión y disciplina */
-    g.fillStyle = '#D2793F'; g.font = '700 44px "Barlow Condensed", sans-serif';
+    g.fillStyle = '#E5C378'; g.font = '700 44px "Chakra Petch", sans-serif';
     g.fillText(d.sesion.toUpperCase(), 90, 470);
     /* el subtítulo puede ser largo (mesociclo + porcentajes + semana):
        se envuelve en un máximo de 2 líneas y nunca pasa el margen derecho */
@@ -7417,12 +7646,13 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     })();
 
     /* línea volt */
-    g.fillStyle = '#D2793F'; g.fillRect(90, 566, 150, 6);
+    g.fillStyle = '#E5C378'; g.fillRect(90, 566, 150, 6);
 
-    /* métricas */
+    /* métricas -- tonelaje total en dorado (métrica protagonista del
+       directiva de la Story Card), series en cyan técnico, tiempo neutro */
     const cajas = [
-      { k:'VOLUMEN TOTAL', v: d.vol.toLocaleString('es-AR'), u:'KG', col:'#D2793F' },
-      { k:'SERIES COMPLETADAS', v: String(d.series), u:'SETS', col:'#7CC5E8' },
+      { k:'VOLUMEN TOTAL', v: d.vol.toLocaleString('es-AR'), u:'KG', col:'#E5C378' },
+      { k:'SERIES COMPLETADAS', v: String(d.series), u:'SETS', col:'#38BDF8' },
       { k:'TIEMPO DE ENTRENAMIENTO', v: d.tiempo, u:'MIN', col:'#FFFFFF' }
     ];
     let y = 640;
@@ -7432,23 +7662,23 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = 2;
       redondear(g, 90, y, W - 180, 194, 28); g.stroke();
       g.fillStyle = b.col; g.fillRect(90, y + 36, 6, 122);
-      g.fillStyle = '#A0A8B4'; g.font = '700 28px "Barlow Condensed", sans-serif';
+      g.fillStyle = '#A0A8B4'; g.font = '700 28px "Chakra Petch", sans-serif';
       g.textAlign = 'left'; g.fillText(b.k, 134, y + 58);
-      g.fillStyle = b.col; g.font = '700 112px "Barlow Condensed", sans-serif';
+      g.fillStyle = b.col; g.font = '700 112px "Chakra Petch", sans-serif';
       g.fillText(b.v, 134, y + 152);
       const w = g.measureText(b.v).width;
-      g.fillStyle = '#A0A8B4'; g.font = '700 38px "Barlow Condensed", sans-serif';
+      g.fillStyle = '#A0A8B4'; g.font = '700 38px "Chakra Petch", sans-serif';
       g.fillText(b.u, 134 + w + 20, y + 152);
       y += 214;
     });
 
     /* PR del día */
     if(d.prs && d.prs.length){
-      g.fillStyle = 'rgba(210,121,63,.12)';
+      g.fillStyle = 'rgba(229,195,120,.12)';
       redondear(g, 90, y, W - 180, 128, 28); g.fill();
-      g.strokeStyle = 'rgba(210,121,63,.45)'; g.lineWidth = 2;
+      g.strokeStyle = 'rgba(229,195,120,.45)'; g.lineWidth = 2;
       redondear(g, 90, y, W - 180, 128, 28); g.stroke();
-      g.fillStyle = '#D2793F'; g.font = '700 40px "Barlow Condensed", sans-serif';
+      g.fillStyle = '#E5C378'; g.font = '700 40px "Chakra Petch", sans-serif';
       g.fillText('🔥 NUEVA MARCA PERSONAL', 130, y + 52);
       g.fillStyle = '#FFFFFF'; g.font = '500 30px Inter, sans-serif';
       g.fillText(d.prs.slice(0, 2).join('  ·  ').slice(0, 46), 130, y + 96);
@@ -7824,8 +8054,8 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   font-family:'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.06em;font-weight:700;font-size:13px;
   background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#EDEFF2;
 }
-.sc-style.on{background:rgba(210,121,63,.16);border-color:rgba(210,121,63,.5);color:#D2793F}
-.sc-style.champ.on{background:rgba(210,121,63,.2);border-color:rgba(210,121,63,.6);color:#D2793F}
+.sc-style.on{background:rgba(229,195,120,.16);border-color:rgba(229,195,120,.5);color:#E5C378}
+.sc-style.champ.on{background:rgba(229,195,120,.2);border-color:rgba(229,195,120,.6);color:#E5C378}
 /* ---------- estado offline ---------- */
 .off-pill{
   position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom));
@@ -8467,10 +8697,10 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   /* achica la tipografía hasta que el texto entre en el ancho disponible */
   function ajustar(g, txt, maxW, base, minimo){
     var t = base;
-    g.font = '700 ' + t + 'px "Barlow Condensed", sans-serif';
+    g.font = '700 ' + t + 'px "Chakra Petch", sans-serif';
     while(g.measureText(txt).width > maxW && t > (minimo || 28)){
       t -= 2;
-      g.font = '700 ' + t + 'px "Barlow Condensed", sans-serif';
+      g.font = '700 ' + t + 'px "Chakra Petch", sans-serif';
     }
     return t;
   }
@@ -8479,22 +8709,22 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   function champion(d){
     var c = document.getElementById('storyCanvas'), g = c.getContext('2d');
     g.clearRect(0, 0, W, HH);
-    g.fillStyle = '#080703'; g.fillRect(0, 0, W, HH);
+    g.fillStyle = '#08090B'; g.fillRect(0, 0, W, HH);
     var r1 = g.createRadialGradient(W / 2, 520, 60, W / 2, 520, 1000);
-    r1.addColorStop(0, 'rgba(210,121,63,.28)'); r1.addColorStop(1, 'rgba(210,121,63,0)');
+    r1.addColorStop(0, 'rgba(229,195,120,.28)'); r1.addColorStop(1, 'rgba(229,195,120,0)');
     g.fillStyle = r1; g.fillRect(0, 0, W, HH);
     var r2 = g.createRadialGradient(W / 2, HH - 260, 40, W / 2, HH - 260, 760);
-    r2.addColorStop(0, 'rgba(232,150,94,.16)'); r2.addColorStop(1, 'rgba(232,150,94,0)');
+    r2.addColorStop(0, 'rgba(56,189,248,.14)'); r2.addColorStop(1, 'rgba(56,189,248,0)');
     g.fillStyle = r2; g.fillRect(0, 0, W, HH);
-    /* marco cepillado */
-    g.strokeStyle = 'rgba(210,121,63,.55)'; g.lineWidth = 4;
+    /* marco cepillado -- Luxury Stealth: dorado en vez de naranja */
+    g.strokeStyle = 'rgba(229,195,120,.55)'; g.lineWidth = 4;
     rr(g, 46, 46, W - 92, HH - 92, 34); g.stroke();
     g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = 2;
     rr(g, 64, 64, W - 128, HH - 128, 26); g.stroke();
 
     escudoCanvas(g, W / 2, 150, 210);
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = '#D2793F'; g.font = '700 40px "Barlow Condensed", sans-serif';
+    g.fillStyle = '#E5C378'; g.font = '700 40px "Chakra Petch", sans-serif';
     g.fillText('COACH JP • PERFORMANCE SYSTEM', W / 2, 430);
 
     ajustar(g, '🏆 NEW PERSONAL RECORD', W - 200, 92, 46);
@@ -8506,17 +8736,17 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     var kilos  = pr ? (pr.kg + ' KG × ' + pr.reps) : '';
     var est    = pr ? pr.e1rm : 0;
 
-    g.fillStyle = 'rgba(210,121,63,.12)';
+    g.fillStyle = 'rgba(229,195,120,.12)';
     rr(g, 100, 640, W - 200, 470, 30); g.fill();
-    g.strokeStyle = 'rgba(210,121,63,.6)'; g.lineWidth = 3;
+    g.strokeStyle = 'rgba(229,195,120,.6)'; g.lineWidth = 3;
     rr(g, 100, 640, W - 200, 470, 30); g.stroke();
 
-    g.fillStyle = '#D2793F'; g.font = '700 74px "Barlow Condensed", sans-serif';
+    g.fillStyle = '#E5C378'; g.font = '700 74px "Chakra Petch", sans-serif';
     var nm = nombre.toUpperCase();
-    if(g.measureText(nm).width > W - 260) g.font = '700 54px "Barlow Condensed", sans-serif';
+    if(g.measureText(nm).width > W - 260) g.font = '700 54px "Chakra Petch", sans-serif';
     g.fillText(nm, W / 2, 740);
     if(kilos){
-      g.fillStyle = '#FFFFFF'; g.font = '700 150px "Barlow Condensed", sans-serif';
+      g.fillStyle = '#FFFFFF'; g.font = '700 150px "Chakra Petch", sans-serif';
       g.fillText(kilos, W / 2, 890);
     }
     if(est){
@@ -8534,12 +8764,12 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       var bx = x + i * (ancho + 20);
       g.fillStyle = 'rgba(255,255,255,.05)'; rr(g, bx, 1150, ancho, 206, 24); g.fill();
       g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 2; rr(g, bx, 1150, ancho, 206, 24); g.stroke();
-      g.fillStyle = '#A0A8B4'; g.font = '700 26px "Barlow Condensed", sans-serif';
+      g.fillStyle = '#A0A8B4'; g.font = '700 26px "Chakra Petch", sans-serif';
       g.fillText(b.k, bx + ancho / 2, 1196);
       ajustar(g, b.v, ancho - 30, 78, 44);
-      g.fillStyle = '#D2793F';
+      g.fillStyle = '#E5C378';
       g.fillText(b.v, bx + ancho / 2, 1272);
-      g.fillStyle = '#A0A8B4'; g.font = '700 28px "Barlow Condensed", sans-serif';
+      g.fillStyle = '#A0A8B4'; g.font = '700 28px "Chakra Petch", sans-serif';
       g.fillText(b.u, bx + ancho / 2, 1328);
     });
 
@@ -9209,17 +9439,19 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     var c = document.getElementById('storyCanvas'); if(!c) return;
     var g = c.getContext('2d');
     var dorado = estilo === 'champ';
-    var acento = dorado ? '#D2793F' : '#D2793F';
+    /* 09/09 -- Luxury Stealth: acento único dorado en los dos estilos
+       (antes era naranja #D2793F en ambos) */
+    var acento = '#E5C378';
     var y = 1508;
     var ancho = W - 180;
 
     /* limpia la franja inferior para reescribirla */
     g.save();
-    g.fillStyle = dorado ? '#080703' : '#08090B';
+    g.fillStyle = '#08090B';
     g.fillRect(70, y - 16, W - 140, HH - y + 16);
     if(dorado){
       var rg = g.createRadialGradient(W / 2, HH - 260, 40, W / 2, HH - 260, 760);
-      rg.addColorStop(0, 'rgba(232,150,94,.16)'); rg.addColorStop(1, 'rgba(232,150,94,0)');
+      rg.addColorStop(0, 'rgba(56,189,248,.14)'); rg.addColorStop(1, 'rgba(56,189,248,0)');
       g.fillStyle = rg; g.fillRect(70, y - 16, W - 140, HH - y + 16);
     }
     g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -9228,11 +9460,11 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       g.fillStyle = fondo; rr(g, 90, yy, ancho, alto, 24); g.fill();
       g.strokeStyle = borde; g.lineWidth = 2; rr(g, 90, yy, ancho, alto, 24); g.stroke();
     };
-    var ajusta = window.CoachAjustarTexto || function(gg, t, w, b){ gg.font = '700 ' + b + 'px "Barlow Condensed", sans-serif'; return b; };
+    var ajusta = window.CoachAjustarTexto || function(gg, t, w, b){ gg.font = '700 ' + b + 'px "Chakra Petch", sans-serif'; return b; };
 
     /* 🔥 racha y consistencia */
     caja(y, 118, 'rgba(255,255,255,.05)', 'rgba(255,255,255,.12)');
-    g.fillStyle = '#A0A8B4'; g.font = '700 26px "Barlow Condensed", sans-serif';
+    g.fillStyle = '#A0A8B4'; g.font = '700 26px "Chakra Petch", sans-serif';
     g.fillText('🔥 RACHA Y CONSISTENCIA', W / 2, y + 34);
     var txtRacha = 'SESIÓN ' + d.sesionN + ' DE ' + d.sesionTotal + ' DEL MESOCICLO';
     ajusta(g, txtRacha, ancho - 60, 50, 30);
@@ -9241,8 +9473,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     y += 140;
 
     /* 🏋️ top lift o RPE promedio */
-    caja(y, 122, dorado ? 'rgba(210,121,63,.10)' : 'rgba(210,121,63,.09)',
-                 dorado ? 'rgba(210,121,63,.4)' : 'rgba(210,121,63,.34)');
+    caja(y, 122, 'rgba(229,195,120,.10)', 'rgba(229,195,120,.4)');
     var rot, val;
     if(d.topKg > 0){
       rot = 'TOP LIFT · CARGA MÁXIMA DEL DÍA';
@@ -9251,19 +9482,19 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       rot = 'RPE PROMEDIO DE LA SESIÓN';
       val = d.rpe ? ('RPE ' + d.rpe) : 'SESIÓN COMPLETADA';
     }
-    g.fillStyle = '#A0A8B4'; g.font = '700 26px "Barlow Condensed", sans-serif';
+    g.fillStyle = '#A0A8B4'; g.font = '700 26px "Chakra Petch", sans-serif';
     g.fillText(rot, W / 2, y + 36);
     ajusta(g, val, ancho - 60, 54, 26);
     g.fillStyle = '#FFFFFF';
     g.fillText(val, W / 2, y + 86);
 
     /* firma discreta, siempre al pie */
-    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '700 28px "Barlow Condensed", sans-serif';
+    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '700 28px "Chakra Petch", sans-serif';
     g.fillText('✦ VERIFIED PROGRAMMING • COACH JP', W / 2, HH - 88);
 
     /* el marco cepillado se redibuja arriba de la franja nueva */
     if(dorado){
-      g.strokeStyle = 'rgba(210,121,63,.55)'; g.lineWidth = 4;
+      g.strokeStyle = 'rgba(229,195,120,.55)'; g.lineWidth = 4;
       rr(g, 46, 46, W - 92, HH - 92, 34); g.stroke();
       g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = 2;
       rr(g, 64, 64, W - 128, HH - 128, 26); g.stroke();
@@ -14964,10 +15195,16 @@ body.cf-modo .block .ex-tip{display:none}
       lista.forEach(function(x, i){
         var e = document.createElement('div');
         e.className = 'bs-e';
+        /* 09/09 -- "Ref previa: 80 kg × 10" también en el roster del biset:
+           el .ex-row original (donde vive el mismo chip, ver renderBlockInner)
+           se descarta más abajo al convertir a acordeón, así que sin esto
+           el dato de referencia desaparecía justo en el layout donde más
+           bisets/trisets hay. Mismo helper (refPreviaHtml), misma fuente. */
         e.innerHTML = '<span class="bs-l">' + letra(i) + '</span>' +
           '<span class="bs-n">' + esc(x.name) + (typeof enBadgeHtml === 'function' ? enBadgeHtml(x.nameEn) : '') + '</span>' +
           (x.det ? '<span class="bs-d">' + esc(x.det) + '</span>' : '') +
-          (x.tecnica ? '<span class="jp-tecnica-badge">' + esc(x.tecnica) + '</span>' : '');
+          (x.tecnica ? '<span class="jp-tecnica-badge">' + esc(x.tecnica) + '</span>' : '') +
+          (typeof refPreviaHtml === 'function' ? refPreviaHtml(state.currentWeek || 0, state.currentDay, bl.dataset.blockId || '', i, x.filas.length) : '');
         /* el botón de video viaja con su nombre, sin duplicarse */
         var vl = x.row ? x.row.querySelector('.video-link') : null;
         if(vl) e.querySelector('.bs-n').appendChild(vl);
