@@ -3513,6 +3513,23 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .week-info-card.is-deload .week-info-title { color: var(--teal); }
   .week-info-text { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.55; }
   .week-info-text b { color: var(--text-primary); }
+  /* 09/09 -- badge "Entrenando en: Semana N" -- ver renderWeekActiveBadge().
+     A propósito NO es sticky (para no tener que tocar el cálculo de
+     --wsel-h que apila .week-selector-wrap + .week-tabs-wrap): vive en el
+     flujo normal, entre el selector de semanas y las pestañas de días,
+     así se ve siempre al entrar y cada vez que se vuelve arriba a cambiar
+     de semana o de día. */
+  .week-active-badge-wrap { max-width: 1140px; margin: 0 auto; padding: 8px 1.25rem; }
+  .week-active-badge {
+    display: flex; align-items: center; gap: 9px;
+    background: linear-gradient(135deg, rgba(210,121,63,0.16), rgba(210,121,63,0.05));
+    border: 1px solid rgba(210,121,63,0.42); border-radius: 10px; padding: 8px 14px;
+    font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 0.92rem;
+    letter-spacing: 0.04em; text-transform: uppercase; color: var(--jp-brand-hi, #E8965E);
+  }
+  .wab-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--jp-brand, #D2793F); box-shadow: 0 0 8px rgba(210,121,63,0.7); }
+  .wab-text { white-space: normal; }
   .week-tabs-wrap { background: rgba(14,14,15,0.95); border-bottom: 1px solid var(--border); position: sticky; top: 105px; z-index: 100; overflow-x: auto; }
   .week-tabs-wrap::-webkit-scrollbar { display: none; }
   .week-tabs { max-width: 1140px; margin: 0 auto; display: flex; padding: 0 1.25rem; min-width: max-content; }
@@ -4172,6 +4189,11 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 <div class="week-selector-wrap">
   <div class="week-selector" id="weekSelector"></div>
 </div>
+<!-- 09/09 -- refuerzo de claridad de semana (pedido tras confusión real de un
+     atleta que anotó el Día 2 en S2 creyendo estar en S1): badge grande y
+     fijo, arriba del selector de días, que siempre dice en qué semana está
+     parado -- ver renderWeekActiveBadge() más abajo. -->
+<div class="week-active-badge-wrap"><div class="week-active-badge" id="weekActiveBadge"></div></div>
 <div class="week-tabs-wrap">
   <div class="week-tabs" id="week-tabs"></div>
 </div>
@@ -5161,7 +5183,32 @@ hudCloseEl.addEventListener('click', function(){ hideHud(); });
 ========================================================= */
 const weekSelectorEl = document.getElementById('weekSelector');
 const weekInfoCardEl = document.getElementById('weekInfoCard');
+const weekActiveBadgeEl = document.getElementById('weekActiveBadge');
 const heroEyebrowEl = document.getElementById('heroEyebrow');
+/* 09/09 -- "semana que le corresponde" a un atleta, sin fecha de inicio
+   guardada: la primera semana (en orden) que todavía no tiene TODOS sus
+   días marcados como terminados. Si ya terminó todo el programa, se queda
+   en la última. Se usa para (a) ubicarlo ahí solo al ABRIR la app -- ver
+   init() -- y (b) avisarle si navega a mano a una semana posterior sin
+   haber cerrado la que le toca (ver el click de .week-pill más abajo). */
+function semanaActivaCorrespondiente(){
+  for(var i = 0; i < WEEKS_META.length; i++){
+    var completa = DAYS.every(function(d){ return isDayDone(i, d.id); });
+    if(!completa) return i;
+  }
+  return Math.max(0, WEEKS_META.length - 1);
+}
+function renderWeekActiveBadge(){
+  if(!weekActiveBadgeEl) return;
+  const w = WEEKS_META[state.currentWeek] || {};
+  /* mismo criterio que renderWeekInfo() de arriba: w.phase es texto que
+     carga el coach al armar el programa, no un dato del alumno -- se
+     concatena tal cual, igual que ya se hace con weekInfoCardEl. */
+  weekActiveBadgeEl.innerHTML =
+    '<span class="wab-dot" aria-hidden="true"></span>' +
+    '<span class="wab-text">Entrenando en: Semana ' + (state.currentWeek + 1) +
+      (w.phase ? ' · ' + w.phase : '') + '</span>';
+}
 function renderWeekSelector(){
   weekSelectorEl.innerHTML = WEEKS_META.map(function(w,i){
     return '<div class="week-pill' + (i===state.currentWeek?' active':'') + '" data-week="' + i + '">' +
@@ -5171,7 +5218,21 @@ function renderWeekSelector(){
   }).join('');
   weekSelectorEl.querySelectorAll('.week-pill').forEach(function(p){
     p.addEventListener('click', function(){
-      state.currentWeek = parseInt(p.dataset.week, 10);
+      var destino = parseInt(p.dataset.week, 10);
+      /* aviso suave (no bloqueante): si salta a una semana posterior a la
+         que le corresponde y esa semana propia todavía no está cerrada,
+         se lo hacemos notar -- pero lo dejamos avanzar si quiere (puede
+         estar repasando el plan a propósito, no es un error nuestro que
+         cortarle el paso). */
+      try{
+        var correcta = semanaActivaCorrespondiente();
+        if(destino > correcta && window.CoachAviso && window.CoachAviso.mostrar){
+          window.CoachAviso.mostrar('fatiga', '⚠️', 'Semana adelantada',
+            'Todavía no cerraste del todo la Semana ' + (correcta + 1) + '. Podés seguir viendo la Semana ' +
+            (destino + 1) + ', pero lo que registres acá no se mezcla con esa -- cada semana guarda sus propios datos.', 7000);
+        }
+      }catch(e){}
+      state.currentWeek = destino;
       saveProgress();
       renderWeekSelector();
       renderWeekInfo();
@@ -5190,6 +5251,7 @@ function renderWeekInfo(){
         '<div class="week-info-text">' + w.note + '</div>' +
       '</div>' +
     '</div>';
+  renderWeekActiveBadge();
 }
 /* =========================================================
    RENDER: DAY TABS
@@ -5932,6 +5994,15 @@ function init(){
   /* blindaje: ninguna excepción puede dejar la pantalla en blanco */
   try{
     try{ loadProgress(); }catch(e){ console.warn('init·loadProgress', e); }
+    /* 09/09 -- al ABRIR la app (no durante la navegación manual dentro de
+       la sesión) se corrige silenciosamente si quedó parado en una semana
+       posterior a la que le corresponde según lo que ya completó -- ver
+       semanaActivaCorrespondiente(). Si está en la semana correcta o en
+       una ANTERIOR (repasando algo viejo a propósito) no se toca nada. */
+    try{
+      var _semCorrecta = semanaActivaCorrespondiente();
+      if(state.currentWeek > _semCorrecta) state.currentWeek = _semCorrecta;
+    }catch(e){ console.warn('init·semanaCorrecta', e); }
     try{ renderWeekSelector(); }catch(e){ console.warn('init·weekSelector', e); }
     try{ renderWeekInfo(); }catch(e){ console.warn('init·weekInfo', e); }
     try{ renderDayTabs(); }catch(e){ console.warn('init·dayTabs', e); }
@@ -5973,7 +6044,7 @@ if(document.readyState === 'loading'){
   box-shadow:0 10px 26px rgba(124,197,232,0.34);transition:transform .15s ease,box-shadow .15s ease}
 .tv-start:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(124,197,232,0.45)}
 .tv-start.on{background:linear-gradient(135deg,#4A93B8,#00806F);box-shadow:0 10px 26px rgba(74,147,184,0.32)}
-body.focus-mode .hero,body.focus-mode .week-info-bar,body.focus-mode .site-footer,
+body.focus-mode .hero,body.focus-mode .week-info-bar,body.focus-mode .week-active-badge-wrap,body.focus-mode .site-footer,
 body.focus-mode .day-meta-chips,body.focus-mode .focus-card,body.focus-mode .cooldown-card{display:none!important}
 body.focus-mode .block{display:none}
 body.focus-mode .block.tv-active{display:block;animation:tvIn .22s ease}
@@ -14650,12 +14721,17 @@ body.cf-modo .block .ex-tip{display:none}
 .block .bs-r.bs-activa{border-color:rgba(210,121,63,0.42);background:rgba(210,121,63,0.04)}
 .block .bs-r.bs-lista{opacity:.62}
 .block .bs-r .bs-rh{
-  display:flex;align-items:center;gap:8px;margin-bottom:7px;cursor:pointer;
+  display:flex;flex-direction:column;gap:3px;margin-bottom:7px;cursor:pointer;
   font-family:var(--font-head,inherit);font-size:11.5px;letter-spacing:0.11em;
   text-transform:uppercase;color:#D2793F;font-weight:800;
 }
+/* 09/09 -- fila superior de la cabecera: título + estado/chevron a la
+   derecha. El título vive en su propio span con nowrap para que nunca se
+   parta en dos líneas en pantallas angostas (ver comentario en unificar()). */
+.block .bs-r .bs-rh-top{ display:flex;align-items:center;gap:8px; }
+.block .bs-r .bs-rtitle{ white-space:nowrap;flex:0 0 auto; }
 .block .bs-r .bs-rh .bs-rn{
-  margin-left:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;
+  margin-left:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;
   letter-spacing:0;color:rgba(255,255,255,0.4);text-transform:none;font-weight:400;
 }
 /* 05/09 · acordeón activo inteligente: colapsa toda ronda que no esté
@@ -14907,10 +14983,18 @@ body.cf-modo .block .ex-tip{display:none}
         /* 05/09 — acordeón activo inteligente: sólo la ronda en curso viaja
            expandida; el resto se pliega a una barra de una línea (RONDA N ·
            [estado] ▾) hasta que le toca su turno o el alumno la toca para
-           revisarla (ver estado() y el listener de .bs-rh más abajo). */
-        caj.innerHTML = '<div class="bs-rh">Ronda ' + (r + 1) +
-          '<span class="bs-rn">' + lista.length + ' estaciones sin pausa</span>' +
-          '<span class="bs-rst"></span><span class="bs-chev"></span></div>';
+           revisarla (ver estado() y el listener de .bs-rh más abajo).
+           09/09 -- "Ronda N" pasa a vivir en su propio span (.bs-rtitle,
+           white-space:nowrap) en una fila propia (.bs-rh-top) junto con el
+           estado/chevron; "N estaciones sin pausa" baja a una segunda línea
+           propia y atenuada. En 390px, "Ronda N" como texto suelto dentro
+           del flex-row se quebraba en dos líneas ("RONDA" / "1") y el "1"
+           terminaba pegado a la línea de "estaciones sin pausa" -- se leía
+           como "1 2 estaciones sin pausa". Ver CSS de .bs-rh más abajo. */
+        caj.innerHTML = '<div class="bs-rh"><div class="bs-rh-top">' +
+          '<span class="bs-rtitle">Ronda ' + (r + 1) + '</span>' +
+          '<span class="bs-rst"></span><span class="bs-chev"></span></div>' +
+          '<span class="bs-rn">' + lista.length + ' estaciones sin pausa</span></div>';
         lista.forEach(function(x, i){
           var row = x.filas ? x.filas[r] : null;
           if(!row) return;
