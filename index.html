@@ -7549,14 +7549,26 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   }
   function pwaSW(){
     if(!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+    /* 09/09 -- antes esto era cache-first: una vez que el celular del
+       alumno guardaba una versión, la servía para siempre y nunca volvía
+       a pedirle nada al servidor, así se subiera una versión nueva. Eso
+       podía explicar una app "mezclada" (una versión vieja del acordeón
+       conviviendo con contenido nuevo). Ahora es network-first: si hay
+       conexión, siempre trae la versión más fresca del servidor y de paso
+       refresca la caché; sólo usa lo guardado si está sin conexión. El
+       nombre de caché también se subió de versión y las cachés viejas se
+       borran solas al activarse, para no dejar basura de versiones previas. */
     const src =
-      "const CACHE='coachjp-athlete-v1';" +
+      "const CACHE='coachjp-athlete-v2';" +
       "self.addEventListener('install',e=>self.skipWaiting());" +
-      "self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));" +
+      "self.addEventListener('activate',e=>e.waitUntil(Promise.all([" +
+        "caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE&&k.indexOf('coachjp-athlete-')===0).map(k=>caches.delete(k))))," +
+        "self.clients.claim()" +
+      "])));" +
       "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;" +
-        "e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{" +
+        "e.respondWith(fetch(e.request).then(res=>{" +
         "const c=res.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return res;})" +
-        ".catch(()=>caches.match(location.href))));});";
+        ".catch(()=>caches.match(e.request).then(r=>r||caches.match(location.href))));});";
     navigator.serviceWorker.register('./sw.js').catch(function(){
       try{
         const u = URL.createObjectURL(new Blob([src], { type:'text/javascript' }));
@@ -14823,14 +14835,26 @@ body.cf-modo .block .ex-tip{display:none}
     return t ? ('[ ' + t + ' ]') : '';
   }
 
+  /* 09/09 -- blindaje "un solo bucle de rondas": si por cualquier motivo
+     (una excepción a mitad de conversión, un repintado que llegó fuera de
+     orden, etc.) sobrevive algo del render viejo -- .ex-row / .set-tracker
+     sueltos, o más de un .bs-wrap -- en un bloque que YA tiene su acordeón
+     armado, se descarta acá. Nunca deben convivir las dos representaciones
+     de las rondas en el mismo bloque. */
+  function limpiarResiduos(bl){
+    [].slice.call(bl.querySelectorAll('.block-body > .ex-row, .block-body > .set-tracker')).forEach(function(n){ n.remove(); });
+    [].slice.call(bl.querySelectorAll('.bs-wrap')).forEach(function(w, i){ if(i > 0) w.remove(); });
+  }
   function unificar(){
     document.querySelectorAll('.block').forEach(function(bl){
+      try{
       var b = bloqueDe(bl.dataset.blockId);
       if(!agrupado(b, bl)){ bl.classList.remove('bs-uni'); return; }
+      /* ya convertido: sólo se refresca el estado de las rondas (más el
+         blindaje de residuos de arriba) */
+      if(bl.querySelector('.bs-wrap')){ limpiarResiduos(bl); estado(bl); return; }
       var trackers = [].slice.call(bl.querySelectorAll('.set-tracker'));
       var filas = [].slice.call(bl.querySelectorAll('.ex-row'));
-      /* ya convertido: sólo se refresca el estado de las rondas */
-      if(bl.querySelector('.bs-wrap')){ estado(bl); return; }
       if(trackers.length < 2) return;
 
       var lista = (b.exercises || []).map(function(x, i){
@@ -14933,6 +14957,7 @@ body.cf-modo .block .ex-tip{display:none}
       else cuerpo.insertBefore(wrap, cuerpo.firstElementChild);
       bl.classList.add('bs-uni');
       estado(bl);
+      }catch(e){ /* un bloque roto no debe tumbar la conversión del resto */ }
     });
   }
 
@@ -15051,6 +15076,13 @@ body.cf-modo .block .ex-tip{display:none}
       var _rm = window.renderMain;
       window.renderMain = function(){
         var r = _rm.apply(this, arguments);
+        /* 09/09 -- se convierte YA, en el mismo tick: así la pantalla nunca
+           llega a pintar el bloque en su formato viejo (todas las rondas
+           desplegadas) antes de que el acordeón lo reemplace. Los dos
+           setTimeout de abajo se mantienen porque otros módulos siguen
+           tocando el DOM un instante después de renderMain() (decorar,
+           warm-up, etc.) y esta es la red de seguridad para eso. */
+        try{ repintar(); }catch(e){}
         setTimeout(repintar, 340);
         setTimeout(repintar, 880);
         return r;
@@ -33851,15 +33883,22 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   }
   function registrarSW(){
     if(!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+    /* 09/09 -- mismo cambio que en la app del alumno: de cache-first a
+       network-first, con limpieza de cachés viejas al activarse, para que
+       una actualización del coach.html no se quede pegada en una versión
+       vieja guardada en el celular/PC del coach. */
     const src =
-      "const CACHE='coachjp-coach-v1';" +
+      "const CACHE='coachjp-coach-v2';" +
       "self.addEventListener('install',e=>{self.skipWaiting();});" +
-      "self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim());});" +
+      "self.addEventListener('activate',e=>{e.waitUntil(Promise.all([" +
+        "caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE&&k.indexOf('coachjp-coach-')===0).map(k=>caches.delete(k))))," +
+        "self.clients.claim()" +
+      "]));});" +
       "self.addEventListener('fetch',e=>{" +
         "if(e.request.method!=='GET')return;" +
-        "e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{" +
+        "e.respondWith(fetch(e.request).then(res=>{" +
           "const c=res.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return res;" +
-        "}).catch(()=>caches.match('./index.html'))));" +
+        "}).catch(()=>caches.match(e.request).then(r=>r||caches.match('./index.html'))));" +
       "});";
     try{
       navigator.serviceWorker.register('./sw.js').catch(() => {
