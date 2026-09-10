@@ -683,7 +683,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
         <div><label class="lb">Nombre *</label><input id="aNombre" placeholder="Ej: Martina"></div>
         <div><label class="lb">Apellido</label><input id="aApellido" placeholder="Ej: Gómez"></div>
       </div>
-      <div class="grid g3">
+      <div class="grid g4">
         <div>
           <label class="lb">Frecuencia semanal</label>
           <select id="aFreq">
@@ -698,6 +698,15 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <select id="aNivel">
             <option>Inicial</option><option selected>Intermedio</option><option>Avanzado</option>
           </select>
+        </div>
+        <div>
+          <label class="lb">Género</label>
+          <select id="aGenero">
+            <option value="">Sin especificar</option>
+            <option value="F">Femenino</option>
+            <option value="M">Masculino</option>
+          </select>
+          <div class="hint">Ajusta automáticamente los textos de la app del alumno/a (bienvenida, check-in, mensajes de sesión) a la concordancia de género correspondiente.</div>
         </div>
         <div>
           <label class="lb">Color de ficha</label>
@@ -2098,6 +2107,7 @@ function openAth(id){
   $('#aApellido').value = a ? (a.apellido||'') : '';
   $('#aFreq').value     = a ? String(a.freq||4) : '4';
   $('#aNivel').value    = a ? (a.nivel||'Intermedio') : 'Intermedio';
+  $('#aGenero').value   = a ? (a.genero||'') : '';
   $('#aColor').value    = a ? (a.color||'') : '';
   $('#aPayDue').value   = a ? (a.payDue||'') : '';
   $('#aFoco').value     = a ? (a.foco||'') : '';
@@ -2124,6 +2134,7 @@ function saveAth(){
     apellido: $('#aApellido').value.trim(),
     freq: parseInt($('#aFreq').value,10),
     nivel: $('#aNivel').value,
+    genero: $('#aGenero').value,
     color: $('#aColor').value,
     payDue: $('#aPayDue').value || '',
     foco: $('#aFoco').value.trim(),
@@ -3821,6 +3832,13 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .wu-phase { font-family: 'Barlow Condensed', sans-serif; font-weight: 800; font-size: 0.95rem; letter-spacing: 0.04em; text-transform: uppercase;
     color: var(--gold); margin: 12px 0 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(210,121,63,0.22); }
   .wu-phase:first-child { margin-top: 0; }
+  /* 10/09 -- líneas de directiva/descanso/nota dentro de un circuito o
+     pizarra (ej. "- Rest 60s entre rondas -", "Cap 12:00"): texto plano
+     sin bullet ni casillero, para que no se confundan con un ejercicio
+     real (ver esLineaDirectiva()/RX_LINEA_DIRECTIVA más arriba). */
+  .circuit-note { font-family:'Inter',sans-serif; font-style:italic; font-size:0.82rem;
+    color: var(--text-muted); margin: 6px 0 6px 4px; padding-left: 10px;
+    border-left: 2px solid rgba(255,255,255,0.14); }
   .video-link.vsearch { color: var(--text-secondary); border-color: rgba(255,255,255,0.22); }
   .video-link.vsearch:hover { color: var(--gold); border-color: rgba(210,121,63,0.5); }
   /* 09/09 -- PICTURE-IN-PICTURE DEL VIDEO: ya era compacto y flotante (no
@@ -4445,6 +4463,21 @@ const PROGRAM_CONFIG = {{PROGRAM_CONFIG_JSON}};
 const WEEKS_META = PROGRAM_CONFIG.weeks;
 const VIDEO_MAP = PROGRAM_CONFIG.videoMap;
 const DAYS = PROGRAM_CONFIG.days;
+/* 10/09 -- CONCORDANCIA DE GÉNERO: PROGRAM_CONFIG.genero llega 'F'/'M'/''
+   desde la ficha del alumno/a en el Builder (#aGenero, ver saveAth()).
+   generoTxt(masc, fem) devuelve la forma que corresponde; sin dato
+   cargado ('' o ausente) se mantiene la forma masculina, que es la que
+   ya usaba toda la app antes de esta directiva -- así ningún atleta sin
+   el campo cargado ve un cambio de texto. Queda como función global (no
+   adentro de un IIFE de módulo) para que cualquier módulo del archivo
+   compilado la pueda usar sin depender de orden de carga. Deliberadamente
+   NO hay detección automática de género por nombre de pila: adivinar
+   género a partir de un nombre no es confiable y puede terminar
+   misgenerizando al alumno/a -- el selector explícito del Builder es la
+   única fuente de verdad. */
+function generoTxt(masc, fem){
+  return (PROGRAM_CONFIG.genero === 'F') ? fem : masc;
+}
 function weekDetail(block, weekIdx){
   const wm = WEEKS_META[weekIdx];
   let efSets = block.efSets;
@@ -4960,7 +4993,14 @@ function readinessResumenTxt(sleepVal, stressVal, zonas){
   if(sleepVal) partes.push(LB_SLEEP[sleepVal] || sleepVal);
   if(stressVal) partes.push(LB_STRESS[stressVal] || stressVal);
   if(zonas && zonas.length) partes.push(zonas.length + ' molestia' + (zonas.length>1?'s':''));
-  return 'Check-in: ' + partes.join(' · ');
+  let txt = 'Check-in: ' + partes.join(' · ');
+  /* 10/09 -- texto de estado con concordancia de género: condición óptima
+     (mismo criterio que readinessCargaTexto/"+2.5 kg recomendados") suma
+     "Lista/Listo para entrenar" al resumen colapsado del check-in. */
+  if(sleepVal === 'optima' && stressVal === 'green' && !(zonas && zonas.length)){
+    txt += ' · ' + generoTxt('Listo', 'Lista') + ' para entrenar';
+  }
+  return txt;
 }
 function renderReadinessCard(weekIdx, day){
   const sleepVal = getSleep(weekIdx, day.id);
@@ -5140,11 +5180,31 @@ const WakeLockManager = (function(){
 /* =========================================================
    ITEM LINE PARSER
 ========================================================= */
+/* 10/09 -- FIX casilleros fantasma en finisher/lista/metcon: antes,
+   CUALQUIER renglón de texto de un bloque tipo 'list' (pizarras de
+   CrossFit, circuitos, cardio) se envolvía en .ex-row vía renderLine(),
+   y el módulo de "registro compacto en circuitos" (más abajo, función
+   registro()) le clavaba un mini-log ([ ] Hecho | Reps o kg) a CADA
+   .ex-row sin distinguir si era un ejercicio real o una línea de
+   directiva/descanso/nota tipo "- Rest 60s entre rondas -", "Cap 12:00"
+   o "min 1:". Esta lista de patrones identifica esas líneas para que
+   NUNCA se conviertan en .ex-row (y por lo tanto nunca reciban input). */
+const RX_LINEA_DIRECTIVA = /^[-–—].*[-–—]$|^\\(.*\\)$|^(cap|rest|descanso|nota|amrap|emom|e2mom|e3mom|for\\s*time|ft|min\\s*\\d+\\s*:)\\b/i;
+function esLineaDirectiva(text){
+  const t = String(text == null ? '' : text).trim();
+  if(!t) return true;
+  return RX_LINEA_DIRECTIVA.test(t);
+}
 function renderLine(text, enBadge){
   enBadge = enBadge || '';
   /* las fases del calentamiento se muestran como subtítulo, no como ejercicio */
   if(/^\\s*\\d+\\.\\s/.test(text) && text.indexOf(' — ') < 0){
     return '<div class="wu-phase">' + text.trim() + '</div>';
+  }
+  /* líneas de directiva/descanso/nota: texto plano, nunca .ex-row (así
+     nunca terminan con un casillero "Hecho | Reps o kg" fantasma) */
+  if(esLineaDirectiva(text)){
+    return '<div class="circuit-note">' + String(text).trim() + '</div>';
   }
   const dashSplit = text.split(' — ');
   if(dashSplit.length >= 2){
@@ -5915,9 +5975,17 @@ function wireBlockInteractions(day, weekIdx, blocks){
     dayCompleteBtn.addEventListener('click', function(){
       const currentlyDone = isDayDone(weekIdx, day.id);
       const blockIds = dayBlockIds(day);
-      setDayDone(weekIdx, day.id, !currentlyDone, blockIds);
+      const pasaACompleto = !currentlyDone;
+      setDayDone(weekIdx, day.id, pasaACompleto, blockIds);
       renderDayTabs();
       renderMain();
+      /* 10/09 -- mensaje de cierre de sesión (sólo al marcar como completo,
+         no al desmarcar), con concordancia de género vía generoTxt() */
+      if(pasaACompleto && window.CoachAviso && typeof window.CoachAviso.mostrar === 'function'){
+        const quedaste = (typeof generoTxt === 'function') ? generoTxt('listo', 'lista') : 'listo';
+        window.CoachAviso.mostrar('ok', '🎉', '¡Sesión completada, felicitaciones!',
+          'Quedaste ' + quedaste + ' para lo que viene. Buen entrenamiento.', 5000);
+      }
     });
   }
 }
@@ -10981,7 +11049,7 @@ body.cf-modo .block .directive-chip{display:none !important}
     if(!visto) setTimeout(function(){
       var tt = document.getElementById('jpToast');
       if(tt) tt.dataset.jpOnb = '1';
-      aviso('ok', '📖', 'Primera vez por acá',
+      aviso('ok', '📖', (typeof generoTxt === 'function' ? generoTxt('¡Bienvenido!', '¡Bienvenida!') : 'Primera vez por acá'),
         'Tenés el <b>Manual de Uso</b> en el menú 🧰 Herramientas: te explica en 5 pasos cómo cargar tus marcas, usar el timer, reportar molestias y compartir tu Story Card.', 0);
       /* si se cierra solo por inactividad, tampoco vuelve a aparecer */
       setTimeout(function(){
@@ -12180,11 +12248,20 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   /* =========================================================
      2 · SERIES: BADGES COMPACTOS Y AUTO-FILL
   ========================================================= */
+  /* 10/09 -- FIX nomenclatura de series vs semanas: esta función compactaba
+     "Serie 1"/"Serie 2" a "S1"/"S2", y "S1".."S4" son tambien la
+     abreviatura oficial de las SEMANAS del mesociclo (ver WEEKS_META /
+     week-pill) -- el atleta veía "S2" en una tarjeta de ejercicio y creía
+     que había cambiado de semana. Se compacta a "R" + número (Ronda/Round
+     de la serie) en vez de "S" + número: mismo ancho, cero ambigüedad con
+     la letra reservada para semanas. Se guarda "R" en vez de "S" tambien
+     en el regex de guarda (evita que un repintado repetido vuelva a
+     tocar un label que ya quedó compactado). */
   function badges(){
     document.querySelectorAll('.set-row-label').forEach(function(l){
       var t = l.textContent.trim();
       var m = t.match(/(\\d+)/);
-      if(m && !/^S\\d+$/.test(t)) l.textContent = 'S' + m[1];
+      if(m && !/^R\\d+$/.test(t)) l.textContent = 'R' + m[1];
     });
   }
   /* al completar una serie, la siguiente hereda los kilos */
@@ -13072,6 +13149,24 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
 }
 .mini-log input[type=text]:focus{border-color:#D2793F;outline:none}
 .ex-row.log-done .ex-name{color:#9BE9C4}
+/* 10/09 -- tracker único de rondas completadas para circuitos por
+   tiempo/rondas (AMRAP/EMOM/For Time), en vez de un mini-log por cada
+   renglón del circuito. Ver esCircuitoRondas() más arriba. */
+.circuit-rounds{margin-left:4px}
+.cr-lb{font-family:'Inter',sans-serif;font-size:0.72rem;color:rgba(255,255,255,0.55)}
+.cr-stepper{display:inline-flex;align-items:center;gap:8px}
+.cr-btn{
+  width:30px;height:30px;border-radius:8px;flex:0 0 auto;cursor:pointer;
+  background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);
+  color:#fff;font-size:1rem;font-weight:700;line-height:1;
+}
+.cr-btn:active{background:rgba(210,121,63,0.22);border-color:rgba(210,121,63,0.5)}
+.cr-val{
+  width:52px;padding:5px 6px;border-radius:8px;font-size:0.85rem;text-align:center;
+  background:rgba(18,22,31,0.9);border:1px solid rgba(255,255,255,0.15);
+  color:#fff;font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.cr-val:focus{border-color:#D2793F;outline:none}
 /* ---------- jerarquía del bloque de CrossFit ---------- */
 .cf-board .cf-h,.wod-board .wb-h{flex-wrap:wrap}
 .cf-idtype{
@@ -13366,6 +13461,17 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   function claveLog(bl, i){
     return (state.currentWeek || 0) + '|' + state.currentDay + '|' + (bl.dataset.blockId || '') + '|' + i;
   }
+  /* 10/09 -- circuito por tiempo/rondas (AMRAP/EMOM/For Time/"N rondas"):
+     acá NO tiene sentido un casillero "Hecho | Reps o kg" por cada
+     renglón del circuito (ej. "10 cal bike" + "10 cal remo" son las DOS
+     mitades de UNA sola ronda, no dos series independientes) -- se
+     registra una sola fila con un contador de rondas completadas para
+     todo el bloque. */
+  var RX_CIRCUITO_RONDAS = /\\bamrap\\b|\\be[23]?mom\\b|\\bfor\\s*time\\b|\\bft\\b|\\brondas?\\b|\\brounds?\\b/i;
+  function esCircuitoRondas(b){
+    var texto = (b.title || '') + ' ' + (b.subtitle || '') + ' ' + (b.items || []).join(' ');
+    return RX_CIRCUITO_RONDAS.test(texto);
+  }
   function registro(){
     if(document.body.classList.contains('cf-modo')) return;
     document.querySelectorAll('.block').forEach(function(bl){
@@ -13384,6 +13490,25 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
       if(b.coreBlock || RX_CORE.test(titulo)) return;
       if(bl.querySelector('.set-tracker')) return;
       state.logs = state.logs || {};
+
+      if(esCircuitoRondas(b)){
+        if(bl.querySelector('.circuit-rounds')) return;
+        var kR = claveLog(bl, 'rondas');
+        var vR = state.logs[kR] || { ok:false, txt:'' };
+        var ultimaFila = bl.querySelector('.ex-row:last-of-type') || bl.querySelector('.circuit-note:last-of-type');
+        var cajaR = document.createElement('div');
+        cajaR.className = 'mini-log circuit-rounds';
+        cajaR.innerHTML = '<label class="cr-lb">🔁 Rondas completadas</label>' +
+          '<div class="cr-stepper">' +
+            '<button type="button" class="cr-btn" data-cr-dec="' + kR + '" aria-label="Restar ronda">–</button>' +
+            '<input type="text" inputmode="numeric" class="cr-val" data-lgt="' + kR + '" value="' + esc(String(vR.txt || '0')) + '">' +
+            '<button type="button" class="cr-btn" data-cr-inc="' + kR + '" aria-label="Sumar ronda">+</button>' +
+          '</div>';
+        if(ultimaFila && ultimaFila.parentNode) ultimaFila.parentNode.insertBefore(cajaR, ultimaFila.nextSibling);
+        else bl.appendChild(cajaR);
+        return;                                        /* un solo tracker para todo el bloque */
+      }
+
       bl.querySelectorAll('.ex-row').forEach(function(row, i){
         if(row.querySelector('.mini-log')) return;
         var k = claveLog(bl, i);
@@ -13397,6 +13522,19 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
       });
     });
   }
+  document.addEventListener('click', function(e){
+    var incBtn = e.target.closest('[data-cr-inc]');
+    var decBtn = e.target.closest('[data-cr-dec]');
+    if(!incBtn && !decBtn) return;
+    var stepper = (incBtn || decBtn).closest('.cr-stepper');
+    var input = stepper ? stepper.querySelector('.cr-val') : null;
+    if(!input) return;
+    var n = parseInt(input.value, 10) || 0;
+    n = incBtn ? (n + 1) : Math.max(0, n - 1);
+    input.value = String(n);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    try{ if(navigator.vibrate) navigator.vibrate(15); }catch(x){}
+  });
   document.addEventListener('change', function(e){
     var c = e.target.closest('[data-lg]');
     if(!c) return;
@@ -19948,6 +20086,12 @@ function buildProgramConfig(ath){
   return {
     athleteName: fullName(ath),
     athleteId: ath.id || '',
+    /* 10/09 -- concordancia de género: 'F'/'M'/'' (sin especificar), tal
+       cual lo carga el coach en la ficha del alumno/a (#aGenero). No hay
+       detección automática por nombre -- adivinar género a partir de un
+       nombre de pila no es confiable y puede terminar misgenerizando al
+       alumno/a; el selector explícito es la única fuente de verdad. */
+    genero: ath.genero || '',
     payDue: ath.payDue || '',
     sync: canalSync(ath),
     nota: notaMetodologica(ath),
