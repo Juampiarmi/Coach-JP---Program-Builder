@@ -44446,11 +44446,35 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .fin-legal{margin-top:11px;font-size:11.5px;color:#6E7783;line-height:1.55}
 .fin-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;vertical-align:middle}
 #btnFinanzas.on{border-color:var(--gold-active);color:var(--gold-active)}
+.fin-pill{
+  display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border-radius:999px;
+  border:1px solid rgba(72,213,151,.35);background:rgba(72,213,151,.08);color:#48D597;cursor:pointer;
+  font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;
+  font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;white-space:nowrap;
+}
+.fin-pill:hover{background:rgba(72,213,151,.14)}
+.fin-sub{margin-top:3px;font-size:10.5px;color:#828A97;font-weight:500}
+.fin-mes-lb{font-size:11px;color:#828A97;margin:0 2px 0 8px}
+.fin-mes-sel{
+  min-height:30px;padding:0 8px;border-radius:8px;background:#141920;border:1px solid #28303A;
+  color:#EDEFF2;font-size:12px;
+}
+.fin-row-hist{grid-template-columns:1.3fr 1fr 1fr 1.8fr !important}
+.fin-hist-panel{
+  border:1px dashed #28303A;border-radius:10px;background:#10151B;padding:9px 11px;margin:-2px 0 4px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.fin-hist-item{display:grid;grid-template-columns:1fr 1fr 1fr 2fr auto;gap:8px;align-items:center;font-size:12px}
+.fin-hist-item.fin-hist-head{
+  font-family:var(--ffh);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#828A97;
+}
+.fin-hist-nota{color:#A0A8B4;font-size:11.5px}
 @media (max-width:720px){
   .fin-row{grid-template-columns:1fr;gap:3px}
   .fin-row.fin-head{display:none}
-  .fin-row > span:nth-child(2)::before{content:'Arancel: '}
-  .fin-row > span:nth-child(3)::before{content:'Vencimiento: '}
+  .fin-row:not(.fin-row-hist) > span:nth-child(2)::before{content:'Arancel: '}
+  .fin-row:not(.fin-row-hist) > span:nth-child(3)::before{content:'Vencimiento: '}
+  .fin-hist-item{grid-template-columns:1fr}
 }
 </style>
 
@@ -44472,6 +44496,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   var GRACIA_DIAS = 3;
   var PROXIMO_DIAS = 5;
+  var MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var MESES_ABR  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var finHistAbiertoId = null; // id del alumno/a con el acordeon de historial expandido (o null)
 
   function finDefaults(){
     return { arancel:0, moneda:'ARS', diaVencimiento:null, fechaUltimoPago:'', estado:'al_dia', metodo:'transferencia', historial:[] };
@@ -44488,6 +44515,22 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!s) return null;
     var d = new Date(s + 'T00:00:00');
     return isNaN(d.getTime()) ? null : d;
+  }
+
+  function finFechaLarga(s){
+    var d = finParseFecha(s);
+    if(!d) return s || '—';
+    return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
+  }
+
+  function finPeriodoActual(){
+    var hoy = new Date();
+    return hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0');
+  }
+
+  function finMesSeleccionado(){
+    var sel = document.getElementById('finMesSel');
+    return (sel && sel.value) || finPeriodoActual();
   }
 
   /* Fuente de verdad del estado -- se recalcula siempre en vivo a partir
@@ -44569,40 +44612,133 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     f.historial = f.historial || [];
     var calc = estadoFinanciero(a);
     if(calc) f.estado = calc;
+    finRefreshPill();
   }
   window.finAplicarCondicionComercial = finAplicarCondicionComercial;
 
-  function finAgregados(){
+  function finPillTexto(){
+    var hoy = new Date();
+    var ag = finAgregados(hoy.getFullYear(), hoy.getMonth());
+    return '💳 Cobrado ' + MESES_ABR[hoy.getMonth()] + ': ' + finFormatMoneda(ag.recaudado) + ' / MRR ' + finFormatMoneda(ag.mrr);
+  }
+
+  function finRefreshPill(){
+    var pill = document.getElementById('finPill');
+    if(!pill) return;
+    /* OJO: este bloque corre en cada tick del CoachRepaintBus (que observa
+       #mainContent con un unico MutationObserver compartido). Si se
+       reescribiera .textContent incondicionalmente, cada refresh generaria
+       una mutacion que vuelve a disparar el propio observer -> bucle
+       infinito de mutacion/callback que cuelga la pagina. Por eso se
+       compara antes de tocar el DOM: solo se escribe si el valor cambio. */
+    var nuevo = finPillTexto();
+    if(pill.textContent !== nuevo) pill.textContent = nuevo;
+  }
+
+  /* y/m opcionales -- sin argumentos, agrega el mes en curso (comportamiento
+     original, usado por el widget de la barra y por defecto al abrir el
+     panel). Con y/m, agrega para ese mes puntual (usado por el selector de
+     periodo del panel para navegar meses anteriores). El arancel usado es
+     siempre el vigente hoy -- no se guarda historial de cambios de tarifa,
+     asi que "facturado" en un mes pasado es una aproximacion con la tarifa
+     actual, aclarada en el panel. */
+  function finAgregados(y, m){
+    var hoy = new Date();
+    if(y == null || m == null){ y = hoy.getFullYear(); m = hoy.getMonth(); }
     var mrr = 0, recaudado = 0, saldo = 0;
-    var hoy = new Date(), y = hoy.getFullYear(), m = hoy.getMonth();
     (S.athletes || []).forEach(function(a){
       var f = a.finanzas;
       if(!f || !f.arancel) return;
       mrr += f.arancel;
-      var pagoEsteMes = false;
+      var pagoEseMes = false;
       (f.historial || []).forEach(function(h){
         var d = finParseFecha(h && h.fecha);
         if(d && d.getFullYear() === y && d.getMonth() === m){
           recaudado += (h.monto || 0);
-          pagoEsteMes = true;
+          pagoEseMes = true;
         }
       });
-      if(!pagoEsteMes) saldo += f.arancel;
+      if(!pagoEseMes) saldo += f.arancel;
     });
     return { mrr: mrr, recaudado: recaudado, saldo: saldo };
   }
 
-  function finRenderKpis(){
+  function finRenderKpis(periodo){
     var host = document.getElementById('finKpis'); if(!host) return;
-    var ag = finAgregados();
+    periodo = periodo || finPeriodoActual();
+    var partes = periodo.split('-');
+    var y = parseInt(partes[0], 10), m = parseInt(partes[1], 10) - 1;
+    var ag = finAgregados(y, m);
+    var esActual = periodo === finPeriodoActual();
+    var tituloMes = (MESES_FULL[m] || '') + ' ' + y;
+    var k1 = esActual ? 'MRR Total' : ('Total Facturado · ' + tituloMes);
+    var k2 = esActual ? 'Recaudado del mes' : ('Recaudado en ' + tituloMes);
+    var k3 = esActual ? 'Saldo pendiente / en mora' : ('Sin cobrar en ' + tituloMes);
     host.innerHTML =
-      '<div class="fin-kpi"><div class="k">MRR Total</div><div class="v">' + finFormatMoneda(ag.mrr) + '</div></div>' +
-      '<div class="fin-kpi"><div class="k">Recaudado del mes</div><div class="v" style="color:#48D597">' + finFormatMoneda(ag.recaudado) + '</div></div>' +
-      '<div class="fin-kpi"><div class="k">Saldo pendiente / en mora</div><div class="v" style="color:#E0654A">' + finFormatMoneda(ag.saldo) + '</div></div>';
+      '<div class="fin-kpi"><div class="k">' + k1 + '</div><div class="v">' + finFormatMoneda(ag.mrr) + '</div></div>' +
+      '<div class="fin-kpi"><div class="k">' + k2 + '</div><div class="v" style="color:#48D597">' + finFormatMoneda(ag.recaudado) + '</div></div>' +
+      '<div class="fin-kpi"><div class="k">' + k3 + '</div><div class="v" style="color:#E0654A">' + finFormatMoneda(ag.saldo) + '</div></div>' +
+      (esActual ? '' : '<div class="fin-legal" style="margin-top:8px">Nota: "Total Facturado" y "Sin cobrar" en meses anteriores se calculan con las tarifas configuradas hoy — no se guarda un historial de cambios de arancel.</div>');
   }
 
-  function finRenderTabla(){
-    var host = document.getElementById('finTabla'); if(!host) return;
+  function finUltimoCobroTxt(f){
+    var hist = (f && f.historial) || [];
+    if(!hist.length) return 'Sin cobros registrados';
+    var ultimo = hist.slice().sort(function(x, y){ return (x.fecha||'') < (y.fecha||'') ? 1 : -1; })[0];
+    return 'Último cobro: ' + finFormatMoneda(ultimo.monto, f.moneda) + ' (' + finFechaLarga(ultimo.fecha) + ')';
+  }
+
+  /* Asegura que cada item de historial tenga un id estable (para poder
+     eliminarlo puntualmente sin depender del orden en pantalla). Los
+     registros creados antes de esta mejora no tenian id -- se les asigna
+     uno la primera vez que se listan y se persiste. Devuelve true si hubo
+     que asignar algo nuevo (para que el llamador decida si hace save()). */
+  function finAsegurarIds(f){
+    var cambio = false;
+    (f && f.historial || []).forEach(function(h){
+      if(h && !h.id){ h.id = uid('pago'); cambio = true; }
+    });
+    return cambio;
+  }
+
+  function finRenderHistorialPanel(a){
+    var f = a.finanzas || {};
+    if(finAsegurarIds(f)) save();
+    var hist = (f.historial || []).slice().sort(function(x, y){ return (x.fecha||'') < (y.fecha||'') ? 1 : -1; });
+    if(!hist.length){
+      return '<div class="fin-hist-panel"><div class="hint">Sin pagos registrados todavía.</div></div>';
+    }
+    return '<div class="fin-hist-panel">' +
+      '<div class="fin-hist-item fin-hist-head"><span>Fecha</span><span>Monto</span><span>Período</span><span>Nota</span><span></span></div>' +
+      hist.map(function(h){
+        return '<div class="fin-hist-item">' +
+          '<span class="mono">' + esc(finFechaLarga(h.fecha)) + '</span>' +
+          '<span class="mono">' + esc(finFormatMoneda(h.monto, f.moneda)) + '</span>' +
+          '<span class="mono">' + esc(h.periodo || (h.fecha ? h.fecha.slice(0,7) : '')) + '</span>' +
+          '<span class="fin-hist-nota">' + esc(h.nota || '—') + '</span>' +
+          '<button type="button" class="icon-btn sm" data-fin-del="' + a.id + '" data-fin-del-id="' + esc(h.id) + '" title="Eliminar este registro">🗑️</button>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  }
+
+  function finToggleHistorial(athId){
+    finHistAbiertoId = (finHistAbiertoId === athId) ? null : athId;
+    finRenderTabla(finMesSeleccionado());
+  }
+
+  function finEliminarPago(athId, pagoId){
+    var a = getAth(athId); if(!a || !a.finanzas) return;
+    if(!confirm('¿Eliminar este registro de pago? Esta acción no se puede deshacer.')) return;
+    a.finanzas.historial = (a.finanzas.historial || []).filter(function(h){ return h.id !== pagoId; });
+    var calc = estadoFinanciero(a);
+    if(calc) a.finanzas.estado = calc;
+    save();
+    toast('Registro de pago eliminado', 'warn');
+    finRenderKpis(finMesSeleccionado()); finRenderTabla(finMesSeleccionado()); renderAthletes(); finRefreshPill();
+  }
+
+  function finRenderTablaActual(host){
     var lista = S.athletes || [];
     if(!lista.length){
       host.innerHTML = '<div class="hint">Todavía no hay alumnos/as cargados/as.</div>';
@@ -44616,16 +44752,54 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         var acciones = configurado ?
           '<button type="button" class="btn sm gold" data-fin-pago="' + a.id + '">✓ Registrar Pago</button>' +
           '<button type="button" class="btn sm ghost" data-fin-wa="' + a.id + '">📲 WhatsApp</button>' +
+          '<button type="button" class="btn sm ghost" data-fin-hist="' + a.id + '">📋 Historial</button>' +
           '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '" title="Editar condición comercial">✏️</button>'
           : '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '">⚙️ Configurar</button>';
-        return '<div class="fin-row">' +
+        var fila = '<div class="fin-row">' +
           '<span>' + esc(fullName(a)) + '</span>' +
           '<span class="mono">' + (configurado ? esc(finFormatMoneda(f.arancel, f.moneda)) : '—') + '</span>' +
           '<span class="mono">' + (configurado ? esc(finProximoVencTxt(f)) : '—') + '</span>' +
-          '<span>' + finBadgeHTML(estado) + '</span>' +
+          '<span>' + finBadgeHTML(estado) + (configurado ? '<div class="fin-sub">' + esc(finUltimoCobroTxt(f)) + '</div>' : '') + '</span>' +
           '<span class="fin-acts">' + acciones + '</span>' +
         '</div>';
+        if(configurado && finHistAbiertoId === a.id) fila += finRenderHistorialPanel(a);
+        return fila;
       }).join('');
+  }
+
+  function finRenderTablaHistorica(host, periodo){
+    var partes = periodo.split('-');
+    var tituloMes = (MESES_FULL[parseInt(partes[1],10)-1] || '') + ' ' + partes[0];
+    var pagos = [];
+    (S.athletes || []).forEach(function(a){
+      var f = a.finanzas; if(!f || !f.historial) return;
+      f.historial.forEach(function(h){
+        if(h && h.fecha && h.fecha.slice(0,7) === periodo){
+          pagos.push({ atleta: fullName(a), monto: h.monto || 0, fecha: h.fecha, nota: h.nota || '', moneda: f.moneda });
+        }
+      });
+    });
+    if(!pagos.length){
+      host.innerHTML = '<div class="hint">Nadie registró pagos en ' + esc(tituloMes) + '.</div>';
+      return;
+    }
+    pagos.sort(function(x, y){ return (x.fecha||'') < (y.fecha||'') ? 1 : -1; });
+    host.innerHTML = '<div class="fin-row fin-row-hist fin-head"><span>Atleta</span><span>Monto</span><span>Fecha</span><span>Nota</span></div>' +
+      pagos.map(function(p){
+        return '<div class="fin-row fin-row-hist">' +
+          '<span>' + esc(p.atleta) + '</span>' +
+          '<span class="mono">' + esc(finFormatMoneda(p.monto, p.moneda)) + '</span>' +
+          '<span class="mono">' + esc(finFechaLarga(p.fecha)) + '</span>' +
+          '<span>' + esc(p.nota || '—') + '</span>' +
+        '</div>';
+      }).join('');
+  }
+
+  function finRenderTabla(periodo){
+    var host = document.getElementById('finTabla'); if(!host) return;
+    periodo = periodo || finPeriodoActual();
+    if(periodo === finPeriodoActual()) finRenderTablaActual(host);
+    else finRenderTablaHistorica(host, periodo);
   }
 
   function finRegistrarPago(a){
@@ -44638,13 +44812,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var hoy = new Date();
     var fechaStr = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
     f.historial = f.historial || [];
-    f.historial.push({ fecha: fechaStr, monto: monto, periodo: fechaStr.slice(0,7), nota: notaStr });
+    f.historial.push({ id: uid('pago'), fecha: fechaStr, monto: monto, periodo: fechaStr.slice(0,7), nota: notaStr });
     f.fechaUltimoPago = fechaStr;
     var calc = estadoFinanciero(a);
     if(calc) f.estado = calc;
     save();
     toast('✅ Pago registrado — ' + fullName(a));
-    finRenderKpis(); finRenderTabla(); renderAthletes();
+    finRenderKpis(finMesSeleccionado()); finRenderTabla(finMesSeleccionado()); renderAthletes(); finRefreshPill();
   }
 
   function finAbrirWhatsapp(a){
@@ -44660,6 +44834,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     window.open(url, '_blank', 'noopener');
   }
 
+  function finPoblarMesSelector(){
+    var sel = document.getElementById('finMesSel'); if(!sel) return;
+    var hoy = new Date();
+    var opts = '';
+    for(var i = 0; i < 12; i++){
+      var y = hoy.getFullYear(), m = hoy.getMonth() - i;
+      while(m < 0){ m += 12; y -= 1; }
+      var val = y + '-' + String(m + 1).padStart(2, '0');
+      opts += '<option value="' + val + '">' + MESES_FULL[m] + ' ' + y + '</option>';
+    }
+    sel.innerHTML = opts;
+    sel.value = finPeriodoActual();
+  }
+
   function finMontarModal(){
     if(document.getElementById('mFin')) return;
     var wrap = document.createElement('div');
@@ -44667,7 +44855,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     wrap.id = 'mFin';
     wrap.innerHTML =
       '<div class="modal" style="max-width:980px">' +
-        '<div class="modal-h"><h3>💳 Finanzas / MRR</h3><div class="spacer"></div><button class="icon-btn" data-close="mFin">✕</button></div>' +
+        '<div class="modal-h"><h3>💳 Finanzas / MRR</h3><div class="spacer"></div>' +
+          '<label class="fin-mes-lb" for="finMesSel">Mes:</label>' +
+          '<select id="finMesSel" class="fin-mes-sel"></select>' +
+          '<button class="icon-btn" data-close="mFin">✕</button>' +
+        '</div>' +
         '<div class="modal-b">' +
           '<div class="fin-kpis" id="finKpis"></div>' +
           '<div class="fin-sec"><div class="sh">Atletas</div><div class="fin-table" id="finTabla"></div></div>' +
@@ -44675,42 +44867,67 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         '</div>' +
       '</div>';
     document.body.appendChild(wrap);
+    finPoblarMesSelector();
     wrap.querySelectorAll('[data-close]').forEach(function(x){ x.addEventListener('click', function(){ closeModal('mFin'); }); });
     wrap.addEventListener('click', function(e){ if(e.target === wrap) closeModal('mFin'); });
+    document.getElementById('finMesSel').addEventListener('change', function(){
+      finHistAbiertoId = null;
+      finRenderKpis(this.value);
+      finRenderTabla(this.value);
+    });
     document.getElementById('finTabla').addEventListener('click', function(e){
       var bp = e.target.closest('[data-fin-pago]');
       if(bp){ finRegistrarPago(getAth(bp.getAttribute('data-fin-pago'))); return; }
       var bw = e.target.closest('[data-fin-wa]');
       if(bw){ finAbrirWhatsapp(getAth(bw.getAttribute('data-fin-wa'))); return; }
+      var bh = e.target.closest('[data-fin-hist]');
+      if(bh){ finToggleHistorial(bh.getAttribute('data-fin-hist')); return; }
+      var bd = e.target.closest('[data-fin-del]');
+      if(bd){ finEliminarPago(bd.getAttribute('data-fin-del'), bd.getAttribute('data-fin-del-id')); return; }
       var bc = e.target.closest('[data-fin-cfg]');
       if(bc){ var id = bc.getAttribute('data-fin-cfg'); closeModal('mFin'); openAth(id); return; }
     });
   }
 
   function finAbrir(){
-    var a = (typeof active === 'function') ? active() : null;
     if(!S.athletes || !S.athletes.length){ if(typeof toast === 'function') toast('Registrá al menos un alumno/a primero', 'err'); return; }
     finMontarModal();
-    finRenderKpis();
-    finRenderTabla();
+    finHistAbiertoId = null;
+    var sel = document.getElementById('finMesSel');
+    if(sel) sel.value = finPeriodoActual();
+    finRenderKpis(finPeriodoActual());
+    finRenderTabla(finPeriodoActual());
     openModal('mFin');
-    if(a){ /* no-op: se deja el gancho por si a futuro se quiere abrir con foco en el activo */ }
   }
   window.abrirFinanzasJP = finAbrir;
-  window.CoachFinanzas = { abrir: finAbrir, estadoFinanciero: estadoFinanciero };
+  window.CoachFinanzas = { abrir: finAbrir, estadoFinanciero: estadoFinanciero, agregados: finAgregados };
 
   function boton(){
     var barra = document.querySelector('#v-builder .tools-in');
-    if(!barra || document.getElementById('btnFinanzas')) return;
-    var b = document.createElement('button');
-    b.className = 'btn ghost sm';
-    b.id = 'btnFinanzas';
-    b.type = 'button';
-    b.textContent = '💳 Finanzas / MRR';
-    b.addEventListener('click', finAbrir);
-    var ref = document.getElementById('btnNutriPlan') || document.getElementById('btnCheckout');
-    if(ref && ref.parentNode) ref.parentNode.insertBefore(b, ref.nextSibling);
-    else barra.appendChild(b);
+    if(!barra) return;
+    if(!document.getElementById('btnFinanzas')){
+      var b = document.createElement('button');
+      b.className = 'btn ghost sm';
+      b.id = 'btnFinanzas';
+      b.type = 'button';
+      b.textContent = '💳 Finanzas / MRR';
+      b.addEventListener('click', finAbrir);
+      var ref = document.getElementById('btnNutriPlan') || document.getElementById('btnCheckout');
+      if(ref && ref.parentNode) ref.parentNode.insertBefore(b, ref.nextSibling);
+      else barra.appendChild(b);
+    }
+    if(!document.getElementById('finPill')){
+      var pill = document.createElement('button');
+      pill.type = 'button';
+      pill.id = 'finPill';
+      pill.className = 'fin-pill';
+      pill.title = 'Abrir 💳 Finanzas / MRR';
+      pill.addEventListener('click', finAbrir);
+      var btnRef = document.getElementById('btnFinanzas');
+      if(btnRef && btnRef.parentNode) btnRef.parentNode.insertBefore(pill, btnRef.nextSibling);
+      else barra.appendChild(pill);
+    }
+    finRefreshPill();
   }
   if(window.CoachRepaintBus && window.CoachRepaintBus.register){
     window.CoachRepaintBus.register(function(){ try{ boton(); }catch(e){} });
