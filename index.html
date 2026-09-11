@@ -4158,6 +4158,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <span class="hdc-brand-sub">High Performance System</span>
         </div>
         <span class="hdc-name" id="hdcName">{{ATHLETE_NAME}}</span>
+        <span class="hdc-pay-chip" id="hdcPayChip"></span>
       </div>
       <button type="button" class="hdc-info" id="hdcInfoBtn" title="Perfil, credencial y ajustes">
         <svg class="hdc-info-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -5346,7 +5347,19 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
   let round = 0;
   let remaining = restSeconds;
   let running = false;
-  let rafId = null, lastTs = null, lastBeepSec = null;
+  let rafId = null, lastBeepSec = null;
+  /* directiva10 -- arquitectura de tiempo absoluto (epoch target), no más
+     "remaining -= dt" acumulado entre frames de requestAnimationFrame.
+     rAF YA se pausa por completo cuando el navegador manda la pestaña/app
+     a segundo plano (pantalla bloqueada, cambio de app) -- al volver, el
+     próximo frame llega con el remaining de antes de irse, intacto, en vez
+     de reflejar el tiempo real transcurrido. endTs guarda el instante
+     absoluto (Date.now()) en el que debería terminar la fase actual;
+     "remaining" se recalcula siempre a partir de endTs - Date.now(), así
+     que no importa cuánto haya durado la pausa del navegador: el próximo
+     tick (natural o forzado por visibilitychange/pageshow/focus, ver
+     sincronizarTimersActivos() más abajo) corrige de un salto. */
+  let endTs = 0;
   container.innerHTML =
     '<div class="timer-box timer-compact tb-rest" data-tid="'+tid+'">' +
       '<div class="timer-box-label">DESCANSO ENTRE SERIES</div>' +
@@ -5389,17 +5402,16 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
       hudPhaseEl.textContent = tagText;
     }
   }
-  function tick(ts){
+  function tick(){
     if(!running) return;
-    const dt = (ts - lastTs) / 1000; lastTs = ts;
-    remaining -= dt;
+    remaining = Math.max(0, (endTs - Date.now()) / 1000);
     if(remaining <= 3.2 && remaining > 0){
       const sec = Math.ceil(remaining);
       if(sec !== lastBeepSec && sec <= 3){ beepCountdown(); CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual(); lastBeepSec = sec; }
     }
     if(remaining <= 0){
       remaining = 0; updateDisplay();
-      running = false; round++;
+      running = false; round++; if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
       beepFinish(); CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
       WakeLockManager.release();
       if(round >= rounds){
@@ -5409,6 +5421,7 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
         if(activeTimerId === tid) hideHud();
       }else{
         remaining = restSeconds;
+        endTs = Date.now() + restSeconds * 1000;
         setPhaseBox('tb-rest', 'LISTO PARA LA PRÓXIMA');
         playBtn.textContent = '▶'; playBtn.classList.remove('is-running');
         updateDisplay();
@@ -5424,14 +5437,19 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     if(round >= rounds) return;
     unlockAudio();
     if(running){
+      /* pausa manual: se congela "remaining" con el último valor calculado
+         contra endTs (ya está al día por el propio tick de más arriba). */
       running = false;
-      if(rafId) cancelAnimationFrame(rafId);
+      if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
       playBtn.textContent = '▶'; playBtn.classList.remove('is-running');
       WakeLockManager.release();
       if(activeTimerId === tid) hudPlayEl.textContent = '▶';
       return;
     }
-    running = true; lastTs = performance.now(); lastBeepSec = null;
+    running = true; lastBeepSec = null;
+    /* reanudar: nueva marca de tiempo absoluta a partir de los segundos
+       que habían quedado congelados en la pausa. */
+    endTs = Date.now() + remaining * 1000;
     playBtn.textContent = '❚❚'; playBtn.classList.add('is-running');
     setPhaseBox('tb-rest', 'DESCANSO');
     beepGo(); vibrate(60);
@@ -5441,13 +5459,24 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
     rafId = requestAnimationFrame(tick);
   }
   function reset(){
-    running = false; if(rafId) cancelAnimationFrame(rafId);
-    round = 0; remaining = restSeconds; lastBeepSec = null;
+    running = false; if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    round = 0; remaining = restSeconds; lastBeepSec = null; endTs = 0;
     playBtn.disabled = false; playBtn.textContent = '▶'; playBtn.classList.remove('is-running');
     setPhaseBox('tb-rest', 'DESCANSO');
     updateDisplay();
     WakeLockManager.release();
     if(activeTimerId === tid) hideHud();
+  }
+  /* directiva10 -- llamado por sincronizarTimersActivos() (Page Visibility
+     API) para recalcular YA, sin esperar el próximo requestAnimationFrame
+     (que en algunos navegadores tarda en retomar tras volver de segundo
+     plano). Al llamar tick() directamente se recalcula remaining contra
+     endTs y, si ya se cumplió el descanso mientras estuvo bloqueado, dispara
+     la rutina de fin (beep/vibración/avance de ronda) en el acto. */
+  function resync(){
+    if(!running) return;
+    if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+    tick();
   }
   playBtn.addEventListener('click', play);
   resetBtn.addEventListener('click', reset);
@@ -5455,7 +5484,8 @@ function buildRoundTimer(container, rounds, restSeconds, opts){
   liveTimers[tid] = {
     getState: function(){ return { running: running, remaining: remaining, phaseText: tagEl.textContent, phaseCls: box.classList.contains('tb-done')?'hud-done':(box.classList.contains('tb-work')?'hud-work':'hud-rest') }; },
     togglePlay: play,
-    reset: reset
+    reset: reset,
+    resync: resync
   };
   return liveTimers[tid];
 }
@@ -5492,6 +5522,22 @@ function hideHud(){
 hudPlayEl.addEventListener('click', function(){ if(activeTimerId && liveTimers[activeTimerId]) liveTimers[activeTimerId].togglePlay(); });
 hudResetEl.addEventListener('click', function(){ if(activeTimerId && liveTimers[activeTimerId]) liveTimers[activeTimerId].reset(); });
 hudCloseEl.addEventListener('click', function(){ hideHud(); });
+/* directiva10 -- al volver de segundo plano (pantalla bloqueada, cambio de
+   app, o simplemente foco de la pestaña), se resincronizan YA todos los
+   cronómetros de rondas activos contra su endTs real, sin esperar a que
+   requestAnimationFrame retome por su cuenta (que puede demorar, o en
+   algunos navegadores quedar pausado hasta la próxima interacción). */
+function sincronizarTimersRonda(){
+  Object.keys(liveTimers).forEach(function(k){
+    const t = liveTimers[k];
+    if(t && typeof t.resync === 'function') t.resync();
+  });
+}
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible') sincronizarTimersRonda();
+});
+window.addEventListener('pageshow', sincronizarTimersRonda);
+window.addEventListener('focus', sincronizarTimersRonda);
 /* =========================================================
    RENDER: WEEK SELECTOR + WEEK INFO
 ========================================================= */
@@ -6594,6 +6640,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   const hudTime = document.getElementById('rhTime');
   const hudLb = document.getElementById('rhLb');
   let restLeft = 0, restInt = null, restRun = false, restTotal = 90;
+  /* directiva10 -- mismo cambio de arquitectura que buildRoundTimer (ver
+     comentario largo junto a esa función, ~línea 5346): restTargetEnd
+     guarda el instante absoluto (epoch ms) en el que debería terminar el
+     descanso. tick() ya no resta 1 de restLeft a ciegas cada segundo --
+     antes, si el navegador suspendía este setInterval al bloquear la
+     pantalla (comportamiento normal en iOS/Android para ahorrar batería),
+     restLeft se quedaba clavado en el valor de antes de irse y sólo
+     retomaba la cuenta regresiva de a 1 por segundo real cuando volvía,
+     mostrando un tiempo "viejo" que ya no reflejaba lo que pasó en
+     verdad. Ahora restLeft se recalcula siempre contra restTargetEnd. */
+  let restTargetEnd = 0;
 
   function pintarRest(){
     hudTime.textContent = mmss(restLeft);
@@ -6605,7 +6662,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   function tick(){
     if(!restRun) return;
-    restLeft--;
+    restLeft = Math.max(0, Math.round((restTargetEnd - Date.now()) / 1000));
     if(restLeft <= 3 && restLeft > 0){
       try{ beepCountdown(); }catch(e){}
       CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
@@ -6622,12 +6679,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function arrancarRest(seg, etiqueta){
     restLeft = seg || state.restSec;
     restTotal = restLeft;
+    restTargetEnd = Date.now() + restLeft * 1000;
     hudLb.textContent = etiqueta || 'Descanso';
     hud.classList.add('on'); restRun = true;
     clearInterval(restInt); restInt = setInterval(tick, 1000);
     pintarRest();
   }
   function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); }
+  /* directiva10 -- resync forzado (Page Visibility API), llamado apenas la
+     app vuelve a primer plano: recalcula restLeft contra restTargetEnd YA,
+     sin esperar el próximo tick natural del setInterval (que en background
+     puede haber quedado en pausa total, o -- según el navegador -- retomar
+     recién en su próximo múltiplo de 1s real, con hasta 1s de demora extra
+     además del tiempo que ya estuvo bloqueado). Si el descanso ya se
+     cumplió mientras el celular estaba bloqueado, dispara la finalización
+     (beep + vibración + cierre) en el acto, en vez de dejarlo "colgado". */
+  function sincronizarRestActivo(){ if(restRun) tick(); }
   function cerrarRest(){ pararRest(); hud.classList.remove('on'); }
   document.getElementById('rhX').addEventListener('click', cerrarRest);
   document.getElementById('rhSkip').addEventListener('click', cerrarRest);
@@ -6641,14 +6708,25 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function sumarRest(n){
     restLeft = Math.max(0, restLeft + n);
     if(restLeft > restTotal) restTotal = restLeft;
+    /* directiva10 -- todo ajuste manual (+30s, y cualquier otro delta que
+       llegue por acá, ej. window.CoachTV.sumar) redefine también la marca
+       de tiempo absoluta, para que el próximo tick siga contando en base
+       al reloj real y no arrastre el offset viejo. */
+    restTargetEnd = Date.now() + restLeft * 1000;
     try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
     pintarRest();
   }
   document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(30); });
   document.getElementById('rhToggle').addEventListener('click', function(){
     restRun = !restRun;
-    if(restRun && !restInt) restInt = setInterval(tick, 1000);
-    if(!restRun){ clearInterval(restInt); restInt = null; }
+    if(restRun){
+      /* reanudar tras una pausa manual: nueva marca de tiempo absoluta a
+         partir de los segundos que habían quedado congelados. */
+      restTargetEnd = Date.now() + restLeft * 1000;
+      if(!restInt) restInt = setInterval(tick, 1000);
+    }else{
+      clearInterval(restInt); restInt = null;
+    }
     pintarRest();
   });
   hud.querySelectorAll('[data-rest]').forEach(b => b.addEventListener('click', function(){
@@ -6656,6 +6734,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     saveProgress();
     arrancarRest(state.restSec, 'Descanso');
   }));
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible') sincronizarRestActivo();
+  });
+  window.addEventListener('pageshow', sincronizarRestActivo);
+  window.addEventListener('focus', sincronizarRestActivo);
 
   /* =========================================================
      2) NEW PR
@@ -7213,22 +7296,25 @@ textarea,input,.wb-line,.tab-label,.week-pill-phase{
 ========================================================= */
 .rest-hud{
   right:14px; bottom:calc(14px + env(safe-area-inset-bottom,0px));
-  min-width:200px; padding:14px; border-radius:20px;
+  min-width:152px; padding:11px; border-radius:18px;
   border:1px solid rgba(210,121,63,.35) !important;
   background:rgba(8,9,11,.94) !important;
   box-shadow:0 20px 50px rgba(0,0,0,.66),0 0 26px rgba(210,121,63,.1) !important;
 }
 .rest-hud .rh-lb{color:var(--accent-volt) !important}
+/* directiva9 -- anillo ~27% más chico (132px -> 96px) para que el HUD de
+   descanso no tape el contexto de la rutina detrás; inset/tipografía
+   reducidos en la misma proporción para mantener el mismo look. */
 .rh-ring{
-  position:relative; width:132px; height:132px; margin:2px auto 4px; border-radius:50%;
+  position:relative; width:96px; height:96px; margin:2px auto 4px; border-radius:50%;
   background:conic-gradient(var(--accent-volt) calc(var(--p,1) * 360deg), rgba(255,255,255,.07) 0);
   display:flex; align-items:center; justify-content:center;
   transition:background .3s linear;
 }
-.rh-ring::after{content:'';position:absolute;inset:9px;border-radius:50%;background:rgba(8,9,11,.96)}
+.rh-ring::after{content:'';position:absolute;inset:7px;border-radius:50%;background:rgba(8,9,11,.96)}
 .rh-ring .rh-time{
   position:relative; z-index:1; margin:0 !important;
-  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:2.5rem; line-height:1;
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:1.85rem; line-height:1;
   color:#fff !important; font-variant-numeric:tabular-nums;
 }
 .rest-hud.warn .rh-ring{background:conic-gradient(var(--accent-crimson) calc(var(--p,1) * 360deg), rgba(255,255,255,.07) 0)}
@@ -7466,6 +7552,18 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
 .story-actions .sa-dl{background:linear-gradient(135deg,#E5C378,#9C7A2E);color:#0A0F13;border:none}
 .story-actions .sa-cp{background:linear-gradient(135deg,#38BDF8,#1E7AA8);color:#021214;border:none}
 .story-hint{font-family:'Inter',sans-serif;font-size:.8rem;color:var(--text-secondary);text-align:center;max-width:340px}
+/* directiva9 -- en móviles angostos (≤420px, ej 390px) el padding lateral
+   del overlay se reduce solo (16px ya alcanza para no tocar el borde),
+   pero los 3 botones en fila se apretaban/desbordaban; se apilan en
+   columna a ancho completo para que queden prolijos y con buen target
+   táctil, sin flotar sobre ningún otro control. */
+@media(max-width:420px){
+  .story-wrap{padding:12px}
+  .story-box{width:100%;gap:10px}
+  .story-actions{flex-direction:column;width:100%;gap:8px}
+  .story-actions button{width:100%;box-sizing:border-box;padding:.85rem 1rem}
+  .story-hint{max-width:100%;padding:0 6px}
+}
 </style>
 <style>
 /* =========================================================
@@ -7831,7 +7929,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     const cajas = [
       { k:'VOLUMEN TOTAL', v: d.vol.toLocaleString('es-AR'), u:'KG', col:'#E5C378' },
       { k:'SERIES COMPLETADAS', v: String(d.series), u:'SETS', col:'#38BDF8' },
-      { k:'TIEMPO DE ENTRENAMIENTO', v: d.tiempo, u:'MIN', col:'#FFFFFF' }
+      { k:'TIEMPO DE ENTRENAMIENTO', v: d.tiempo, u:'', col:'#FFFFFF' }
     ];
     let y = 640;
     cajas.forEach(b => {
@@ -7842,7 +7940,18 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       g.fillStyle = b.col; g.fillRect(90, y + 36, 6, 122);
       g.fillStyle = '#A0A8B4'; g.font = '700 28px "Chakra Petch", sans-serif';
       g.textAlign = 'left'; g.fillText(b.k, 134, y + 58);
-      g.fillStyle = b.col; g.font = '700 112px "Chakra Petch", sans-serif';
+      g.fillStyle = b.col;
+      /* directiva9 -- el valor de TIEMPO ahora puede ser un texto más largo
+         ("1h 18m") en vez de sólo un número corto; se achica la tipografía
+         si hace falta para que no se salga de la caja, igual que hace
+         ajustar() en el estilo "champion". */
+      let fsCyber = 112;
+      g.font = '700 ' + fsCyber + 'px "Chakra Petch", sans-serif';
+      const maxValW = (W - 180) - 84;
+      while(g.measureText(b.v).width > maxValW && fsCyber > 60){
+        fsCyber -= 4;
+        g.font = '700 ' + fsCyber + 'px "Chakra Petch", sans-serif';
+      }
       g.fillText(b.v, 134, y + 152);
       const w = g.measureText(b.v).width;
       g.fillStyle = '#A0A8B4'; g.font = '700 38px "Chakra Petch", sans-serif';
@@ -7866,6 +7975,15 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     /* el pie lo escribe el módulo de métricas: racha, top lift y firma */
     g.textAlign = 'center';
     return c;
+  }
+
+  /* directiva9 -- formatea minutos de sesión en "XX min" (<60) o "Xh YYm"
+     (>=60), para el contador del Story Card. */
+  function fmtDuracionStory(mins){
+    var m = Math.max(1, Math.round(mins || 0));
+    if(m < 60) return m + ' min';
+    var h = Math.floor(m / 60), rem = m % 60;
+    return h + 'h ' + String(rem).padStart(2, '0') + 'm';
   }
 
   function abrirStory(d){
@@ -7915,14 +8033,23 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       const day = DAYS.find(function(x){ return x.id === state.currentDay; }) || DAYS[0];
       const r = (window.CoachTV && window.CoachTV.resumen) ? window.CoachTV.resumen(state.currentWeek, day) : { vol:0, series:0, reps:0 };
       const ini = (state.session && state.session.inicio) || 0;
-      const mins = ini ? Math.max(1, Math.round((Date.now() - ini) / 60000)) : Math.max(1, r.series * 3);
+      const elapsedMin = ini ? Math.round((Date.now() - ini) / 60000) : 0;
+      /* directiva9 -- state.session.inicio se setea una sola vez por sesión
+         y nunca se resetea (ver _marcarInicioSesion/latido()), así que si
+         pasó mucho tiempo real desde el primer set trackeado el cálculo
+         "ingenuo" daba minutos absurdos (ej. 28774 MIN). Se acota a un
+         rango de sesión razonable (1 a 240 min) y, si el valor no es
+         creíble o no hay registro real, se cae a una estimación coherente
+         en base a las series completadas (o 55 min por defecto). */
+      const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 240) ? elapsedMin : Math.max(1, r.series * 3 || 55);
+      const tiempoFmt = fmtDuracionStory(minsCrudo);
       const f = new Date();
       abrirStory({
         atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
         fecha: f.toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }),
         sesion: (day.short || '') + ' · ' + (day.label || ''),
         disciplina: (PROGRAM_CONFIG.mesoName || 'Coach JP') + ' — ' + (WEEKS_META[state.currentWeek] || {}).name,
-        vol: r.vol, series: r.series, tiempo: String(mins),
+        vol: r.vol, series: r.series, tiempo: tiempoFmt,
         prs: (state.session && state.session.prs) || []
       });
     });
@@ -8120,6 +8247,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     document.addEventListener('input', _marcarInicioSesion);
       window.CoachPWA = { icono: iconoPNG, boton: pwaBoton, rol: 'athlete' };
     window.CoachStory = { abrir: abrirStory, dibujar: dibujar, cerrar: cerrarStory };
+    window.CoachFmtDuracion = fmtDuracionStory;
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
@@ -8935,7 +9063,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     var cajas = [
       { k:'VOLUMEN', v: (d.vol || 0).toLocaleString('es-AR'), u:'KG' },
       { k:'SERIES',  v: String(d.series || 0), u:'SETS' },
-      { k:'TIEMPO',  v: String(d.tiempo || 0), u:'MIN' }
+      { k:'TIEMPO',  v: String(d.tiempo || fmtDuracionStory(55)), u:'' }
     ];
     var x = 100, ancho = (W - 200 - 40) / 3;
     cajas.forEach(function(b, i){
@@ -9164,9 +9292,25 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
      1 · CUSTOM WOD TIMER (motor reutilizable)
   --------------------------------------------------------- */
   var modo = 'tabata', corriendo = false, tick = null;
-  var t0 = 0, restante = 0, ronda = 1, rondas = 8, fase = 'work', transcurrido = 0, vueltas = [];
+  var restante = 0, ronda = 1, rondas = 8, fase = 'work', transcurrido = 0, vueltas = [];
   var pendiente = null, wl = null;
   var ultimoBeep = -1;
+  /* directiva10 -- arquitectura de tiempo absoluto: este es el ÚNICO
+     cronómetro que queda realmente activo en la app del alumno hoy (el
+     descanso automático al tildar una serie se retiró, ver comentario en
+     el módulo de Training View), así que aunque la directiva nombraba
+     buildRoundTimer/#timerHud (código sin uso real, nunca se invoca en
+     esta versión) y #restHud, el motor que de verdad hace falta blindar
+     contra el bloqueo de pantalla es este. Mismo patrón que los otros dos:
+     faseTargetEnd es el instante absoluto (epoch ms) en el que debería
+     terminar la fase de cuenta regresiva actual (prep/work/rest/interval/
+     amrap); transcurridoBase + transcurridoStart reconstruyen el
+     cronómetro de cuenta-arriba (fortime) del mismo modo. "restante--" /
+     "transcurrido++" a ciegas en cada setInterval(paso,1000) es justo el
+     bug reportado: si el navegador suspende el intervalo al bloquear la
+     pantalla, al volver seguía sumando/restando de a 1 por segundo real
+     desde el valor viejo, sin reflejar el tiempo real que pasó bloqueado. */
+  var faseTargetEnd = 0, transcurridoBase = 0, transcurridoStart = 0;
 
   var ACtx = null;
   var CWT_MUTE_KEY = 'jp_audio_muted';
@@ -9247,6 +9391,12 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     /* conteo de preparación antes del tiempo activo */
     if(c.prep > 0){ pendiente = { fase: fase, restante: restante }; fase = 'prep'; restante = c.prep; }
     else pendiente = null;
+    /* directiva10 -- deja el estado de reloj coherente incluso antes de
+       arrancar() (que es quien realmente fija estos targets al ponerse en
+       marcha); evita lecturas rancias si algo consulta el estado recién
+       reseteado mientras el timer sigue en pausa. */
+    transcurridoBase = 0; transcurridoStart = Date.now();
+    faseTargetEnd = Date.now() + restante * 1000;
   }
   function pintar(){
     var t = document.getElementById('cwtTime'), f = document.getElementById('cwtPhase');
@@ -9297,44 +9447,75 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     }
   }
   function paso(){
-    var c = cfg();
-    if(fase === 'prep'){
-      restante--;
-      avisar(restante);
-      if(restante > 0){ pintar(); return; }
-      fase = pendiente ? pendiente.fase : 'work';
-      restante = pendiente ? pendiente.restante : 0;
-      pendiente = null; ultimoBeep = -1;
-      beep(1080, 240, .2); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
-      pintar(); return;
+    /* directiva10 -- en vez de resolver una sola transición de fase por
+       llamada (lo que dejaría "debiendo" el resto del salto si el celular
+       estuvo bloqueado más tiempo que la fase actual, y de paso estiraría
+       la duración real del WOD un poquito cada vez que se bloquea), este
+       bucle arrastra el sobrante de tiempo ("overshoot": cuánto ya se pasó
+       del final de la fase) hacia la fase siguiente, encadenando tantas
+       transiciones como hagan falta hasta llegar a la fase donde
+       realmente está parado el reloj ahora mismo -- así el próximo
+       "restante" que se pinta es siempre exacto, no una fase recién
+       reiniciada de cero. guard corta cualquier bucle inesperado. */
+    var guard = 0;
+    while(true){
+      if(++guard > 1000) return;
+      var c = cfg();
+      var now = Date.now();
+      if(fase === 'prep'){
+        var faltaPrep = faseTargetEnd - now;
+        if(faltaPrep > 0){ restante = Math.round(faltaPrep / 1000); avisar(restante); pintar(); return; }
+        var overPrep = -faltaPrep;
+        fase = pendiente ? pendiente.fase : 'work';
+        restante = pendiente ? pendiente.restante : 0;
+        pendiente = null; ultimoBeep = -1;
+        faseTargetEnd = now + restante * 1000 - overPrep;
+        /* la fase real recién arranca ahora -- el cuenta-arriba tampoco debe
+           contar el tiempo que duró la preparación. */
+        transcurridoBase = 0; transcurridoStart = now; transcurrido = 0;
+        beep(1080, 240, .2); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+        continue;
+      }
+      transcurrido = transcurridoBase + Math.round((now - transcurridoStart) / 1000);
+      if(modo === 'fortime'){
+        if(c.cap && transcurrido >= c.cap * 60){ transcurrido = c.cap * 60; finalizar('Time cap'); return; }
+        pintar(); return;
+      }
+      var falta = faseTargetEnd - now;
+      if(falta > 0){ restante = Math.round(falta / 1000); avisar(restante); pintar(); return; }
+      var over = -falta;
+      if(modo === 'amrap'){ finalizar('AMRAP completo'); return; }
+      if(modo === 'tabata'){
+        if(fase === 'work' && c.rest > 0){
+          fase = 'rest'; restante = c.rest; faseTargetEnd = now + c.rest * 1000 - over; ultimoBeep = -1;
+          continue;
+        }
+        vueltas.push(c.work + (fase === 'rest' ? c.rest : 0));
+        if(ronda >= rondas){ finalizar('Tabata completo'); return; }
+        ronda++; fase = 'work'; restante = c.work; faseTargetEnd = now + c.work * 1000 - over; ultimoBeep = -1;
+        continue;
+      }
+      /* EMOM */
+      vueltas.push(c.intervalo);
+      if(ronda >= rondas){ finalizar('EMOM completo'); return; }
+      ronda++; restante = c.intervalo; faseTargetEnd = now + c.intervalo * 1000 - over; ultimoBeep = -1;
+      beep(980, 180, .18); vibrar([100, 50, 100]);
+      continue;
     }
-    if(modo === 'fortime'){
-      transcurrido++;
-      if(c.cap && transcurrido >= c.cap * 60){ finalizar('Time cap'); return; }
-      pintar(); return;
-    }
-    restante--;
-    transcurrido++;
-    avisar(restante);
-    if(restante > 0){ pintar(); return; }
-    if(modo === 'amrap'){ finalizar('AMRAP completo'); return; }
-    if(modo === 'tabata'){
-      if(fase === 'work' && c.rest > 0){ fase = 'rest'; restante = c.rest; ultimoBeep = -1; pintar(); return; }
-      vueltas.push(c.work + (fase === 'rest' ? c.rest : 0));
-      if(ronda >= rondas){ finalizar('Tabata completo'); return; }
-      ronda++; fase = 'work'; restante = c.work; ultimoBeep = -1; pintar(); return;
-    }
-    /* EMOM */
-    vueltas.push(c.intervalo);
-    if(ronda >= rondas){ finalizar('EMOM completo'); return; }
-    ronda++; restante = c.intervalo; ultimoBeep = -1;
-    beep(980, 180, .18); vibrar([100, 50, 100]);
-    pintar();
   }
   function arrancar(){
     if(corriendo){ pausar(); return; }
     if(!restante && !transcurrido) estadoInicial();
     corriendo = true;
+    /* directiva10 -- al arrancar o reanudar tras una pausa manual, se fija
+       (o se refija) el instante absoluto en el que debe terminar la fase
+       de cuenta regresiva actual, y el punto de partida real del
+       cronómetro de cuenta-arriba -- exactamente el "targetEndTime =
+       Date.now() + segundosRestantes*1000" pedido. */
+    var now = Date.now();
+    faseTargetEnd = now + restante * 1000;
+    transcurridoBase = transcurrido;
+    transcurridoStart = now;
     document.getElementById('cwtGo').textContent = '⏸ Pausar';
     beep(620, 120); vibrar([30]);
     tick = setInterval(paso, 1000);
@@ -9351,12 +9532,27 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     }catch(e){ wl = null; }
   }
   function pausar(){
+    /* directiva10 -- recalcula contra el reloj real antes de congelar
+       restante/transcurrido (si no, quedarían con el valor del último
+       tick entero, hasta ~1s desactualizado respecto del clic real). */
+    var now = Date.now();
+    if(fase !== 'up') restante = Math.max(0, Math.round((faseTargetEnd - now) / 1000));
+    if(fase !== 'prep') transcurrido = transcurridoBase + Math.round((now - transcurridoStart) / 1000);
     corriendo = false;
     clearInterval(tick); tick = null;
     despierto(false);
     document.getElementById('cwtGo').textContent = '▶ Continuar';
     pintar();
   }
+  /* directiva10 -- resync forzado por Page Visibility API (ver
+     montarTimer() más abajo): recalcula restante/transcurrido YA contra
+     faseTargetEnd, sin esperar el próximo tick natural del setInterval
+     (que en algunos navegadores queda en pausa completa mientras la app
+     está en segundo plano). Si la fase ya se cumplió mientras el celular
+     estaba bloqueado, dispara de una la rutina de cambio de fase/fin
+     (beep + vibración + avance), en vez de quedar "colgado" mostrando un
+     tiempo viejo. */
+  function sincronizarWodActivo(){ if(corriendo) paso(); }
   function reset(){
     corriendo = false; clearInterval(tick); tick = null;
     despierto(false);
@@ -9408,12 +9604,22 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     if(muteBtn) muteBtn.addEventListener('click', toggleMute);
     pintarMute();
     pintarCampos();
+    /* directiva10 -- Page Visibility API: apenas la app vuelve a primer
+       plano (se destraba la pantalla, se vuelve de otra app, o simplemente
+       la pestaña recupera el foco) se resincroniza YA el cronómetro activo
+       contra el reloj real. */
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState === 'visible') sincronizarWodActivo();
+    });
+    window.addEventListener('pageshow', sincronizarWodActivo);
+    window.addEventListener('focus', sincronizarWodActivo);
   }
   window.CoachWodTimer = { abrir: abrirTimer, cerrar: cerrarTimer, modo: function(m){ modo = m; pintarCampos(); },
                            prep: function(){ return fase === 'prep'; },
                            estado: function(){ return { modo: modo, corriendo: corriendo, restante: restante,
                                                         transcurrido: transcurrido, ronda: ronda, rondas: rondas, fase: fase }; },
-                           paso: paso, reset: reset, arrancar: arrancar, finalizar: finalizar, mmss: mmss };
+                           paso: paso, reset: reset, arrancar: arrancar, finalizar: finalizar, mmss: mmss,
+                           resync: sincronizarWodActivo };
 
 
   function montar(){
@@ -9683,7 +9889,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   function enriquecer(d){
     d = d || {};
     var r = rachaMesociclo(), t = topLift();
-    d.tiempo = String(minutosActivos());
+    d.tiempo = (typeof window.CoachFmtDuracion === 'function') ? window.CoachFmtDuracion(minutosActivos()) : String(minutosActivos());
     d.sesionN = r.actual; d.sesionTotal = r.total;
     d.topKg = t.kg; d.topEx = t.ex;
     d.rpe = rpePromedio();
@@ -18166,6 +18372,17 @@ input[type="checkbox"]:active{
     var s = sumaDelDia(), d = delDia();
     var hoy = esHoySeleccionado();
 
+    /* directiva9 -- preserva qué comidas estaban abiertas antes de este
+       re-render (ej: tras tocar el swap ⇄) para que el acordeón no se
+       colapse solo; si no había ninguna abierta (carga inicial) se deja
+       en manos de la lógica de "abrir la más cercana a la hora actual"
+       de más abajo, sin cambiar ese comportamiento. */
+    var abiertasPrevias = {};
+    cont.querySelectorAll('details.nu-meal[open]').forEach(function(dt){
+      if(dt.dataset && dt.dataset.mn) abiertasPrevias[dt.dataset.mn] = true;
+    });
+    var huboAbiertasPrevias = Object.keys(abiertasPrevias).length > 0;
+
     var html = '';
     /* 29no pedido (30/08): fila de píldoras LUN..DOM -- sólo si el plan es
        semanal; un plan viejo de un solo día no la muestra, cero cambio
@@ -18199,7 +18416,7 @@ input[type="checkbox"]:active{
 
     html += ((activa && activa.comidas) || []).map(function(c, ci){
       var hecha = hoy && !!d.comidas[c.n];
-      var abierta = false;
+      var abierta = !!abiertasPrevias[c.n];
       /* 10mo pedido (26/08): si la comida trae "opcionB" (preparación elaborada,
          schema aditivo), se muestra un selector de 2 pestañas — la elegida hoy
          queda guardada en d.opcion[c.n] ('A' por defecto, no hace falta setearla).
@@ -18291,9 +18508,12 @@ input[type="checkbox"]:active{
     html += '<div class="nu-legal">' + esc(PLAN.disclaimer || NUTRI_DISCLAIMER_TXT) + '</div>';
     cont.innerHTML = html;
 
-    if(hoy){
+    if(hoy && !huboAbiertasPrevias){
       /* abre la comida más cercana a la hora actual -- sólo tiene sentido
-         cuando se está viendo el día real de hoy, no al navegar otros días */
+         cuando se está viendo el día real de hoy, no al navegar otros días.
+         directiva9: sólo en la carga "en frío" (nada abierto todavía);
+         si el atleta ya tenía una comida abierta (por ej. tras un swap),
+         no la pisamos ni saltamos el scroll. */
       var ahora = new Date().getHours() * 60 + new Date().getMinutes();
       var mejor = null, dif = 1e9;
       ((activa && activa.comidas) || []).forEach(function(c){
@@ -18960,6 +19180,21 @@ input[type="checkbox"]:active{
   font-size:17px; font-weight:800; color:#FFFFFF; letter-spacing:.01em; line-height:1.2;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px;
 }
+/* directiva9 -- micro-badge sutil de abono, junto al nombre del atleta.
+   Minimalista a propósito (texto chico, opacidad reducida, sin fondo/borde
+   como el badge del drawer) para no competir visualmente con el nombre;
+   pintarPago() lo deja vacío (:empty => display:none) si no hay payDue
+   cargado, igual que ya hacía con el badge del drawer. */
+.hdc-pay-chip{ margin-top:2px; line-height:1; }
+.hdc-pay-chip:empty{ display:none; }
+.hdc-pay-b{
+  display:inline-flex; align-items:center; gap:3px;
+  font-family:var(--font-mono); font-size:.62rem; font-weight:600;
+  letter-spacing:.02em; line-height:1.3; opacity:.85;
+}
+.hdc-pay-b.ok{ color:#9AA3B0; }
+.hdc-pay-b.proximo{ color:#D9A672; }
+.hdc-pay-b.venc{ color:#C97B54; }
 .hdc-info{
   flex-shrink:0; width:38px; height:38px; display:flex; align-items:center; justify-content:center;
   border:1px solid #1E222B; background:#12151B;
@@ -19054,6 +19289,7 @@ input[type="checkbox"]:active{
   font-size:.72rem; font-weight:700; letter-spacing:.02em;
 }
 .hdp-pay-b.ok{ background:rgba(229,195,120,.1); border:1px solid rgba(229,195,120,.34); color:#E5C378; }
+.hdp-pay-b.proximo{ background:rgba(210,121,63,.08); border:1px solid rgba(210,121,63,.3); color:#D9A672; }
 .hdp-pay-b.venc{ background:rgba(210,121,63,.12); border:1px solid rgba(210,121,63,.4); color:#E8965E; }
 .hdp-coach-name{ font-size:15px; font-weight:800; color:#FFFFFF; }
 .hdp-coach-role{ font-size:12px; color:#9aa1ad; margin-top:2px; line-height:1.4; }
@@ -19247,14 +19483,21 @@ body.focus-mode .hd-dock{display:none}
 .hdc-days-wrap .week-tabs-wrap{ position:static !important; top:auto !important; background:transparent !important; box-shadow:none !important; border-bottom:none !important; }
 .hdc-days-wrap .week-tabs{ align-items:center; }
 .hdc-days-wrap .day-tab{
-  flex-direction:row !important; align-items:center; gap:6px;
-  min-width:0 !important; height:34px; box-sizing:border-box;
-  padding:0 13px !important; border-radius:999px !important;
+  flex-direction:column !important; align-items:center; justify-content:center; gap:1px;
+  min-width:0 !important; height:auto; min-height:34px; box-sizing:border-box;
+  padding:5px 13px !important; border-radius:16px !important;
   background:#0E1014; border:1px solid #1E222B; transition:background .2s ease, border-color .2s ease;
 }
-.hdc-days-wrap .day-tab .tab-name{ font-size:11px; line-height:1; color:#64748B; }
-.hdc-days-wrap .day-tab .tab-label{ display:none; }
-.hdc-days-wrap .day-tab .day-dot{ margin-top:0; width:6px; height:6px; }
+.hdc-days-wrap .day-tab .tab-name{ font-size:11px; line-height:1.1; color:#64748B; }
+/* directiva9 -- subtítulo (foco del día, ej "Pierna A") en 2da línea,
+   chico y atenuado; sólo se ve si el día trae d.label real (ver render
+   en ~L5586), un plan viejo sin ese dato sigue mostrando 1 sola línea. */
+.hdc-days-wrap .day-tab .tab-label{
+  display:block; font-size:0.65rem; line-height:1.1; color:#4B5563;
+  max-width:88px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.hdc-days-wrap .day-tab.active .tab-label{ color:#C99A6F; }
+.hdc-days-wrap .day-tab .day-dot{ margin-top:2px; width:6px; height:6px; }
 .hdc-days-wrap .day-tab.active{ background:rgba(210,121,63,.15) !important; border-color:#D2793F !important; }
 .hdc-days-wrap .day-tab.active .tab-name{ color:#F2C89A !important; }
 .hdc-days-wrap .day-tab.active::after{ display:none; }
@@ -19717,18 +19960,49 @@ body.focus-mode .hd-dock{display:none}
     var m = /^(\\d{4})-(\\d{2})-(\\d{2})/.exec(String(iso || ''));
     return m ? (m[3] + '/' + m[2]) : '';
   }
-  function pintarPago(){
-    var el = q('hdpPay'); if(!el) return;
-    var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
-    var due = cfg.payDue || '';
+  /* directiva9 -- ahora con 3 estados (antes sólo ok/venc): "proximo" cubre
+     los últimos días antes del vencimiento, con el mismo umbral (5 días)
+     que ya usa el panel de cobros del coach para su propia franja de
+     "próximo a vencer", por consistencia de criterio -- payDue sigue
+     siendo un campo totalmente aparte de ese panel. */
+  var HDP_PROXIMO_DIAS = 5;
+  function estadoAbono(due){
     var corta = fmtFechaCortaISO(due);
-    if(!due || !corta){ el.innerHTML = ''; return; }
-    var hoy = new Date(); hoy.setHours(0,0,0,0);
+    if(!due || !corta) return null;
     var venc = new Date(due + 'T00:00:00');
-    var vencido = !isNaN(venc.getTime()) && venc.getTime() < hoy.getTime();
-    el.innerHTML = vencido
-      ? '<span class="hdp-pay-b venc">💳 Cuota vencida · ' + escAcc(corta) + '</span>'
-      : '<span class="hdp-pay-b ok">💳 Plan activo · Renueva: ' + escAcc(corta) + '</span>';
+    if(isNaN(venc.getTime())) return null;
+    var hoy = new Date(); hoy.setHours(0,0,0,0);
+    var diffDias = Math.round((venc.getTime() - hoy.getTime()) / 86400000);
+    var estado = diffDias < 0 ? 'venc' : (diffDias <= HDP_PROXIMO_DIAS ? 'proximo' : 'ok');
+    return { estado: estado, corta: corta };
+  }
+  function pintarPago(){
+    var elDrawer = q('hdpPay'), elChip = q('hdcPayChip');
+    if(!elDrawer && !elChip) return;
+    var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
+    var info = estadoAbono(cfg.payDue || '');
+    if(!info){
+      if(elDrawer) elDrawer.innerHTML = '';
+      if(elChip) elChip.innerHTML = '';
+      return;
+    }
+    if(elDrawer){
+      elDrawer.innerHTML = info.estado === 'venc'
+        ? '<span class="hdp-pay-b venc">💳 Cuota vencida · ' + escAcc(info.corta) + '</span>'
+        : info.estado === 'proximo'
+          ? '<span class="hdp-pay-b proximo">💳 Renueva pronto · ' + escAcc(info.corta) + '</span>'
+          : '<span class="hdp-pay-b ok">💳 Plan activo · Renueva: ' + escAcc(info.corta) + '</span>';
+    }
+    /* micro-badge sutil junto al nombre, en la cabecera siempre visible
+       (no sólo dentro del drawer Perfil/Info) -- pedido explícito de
+       ubicación de la directiva. */
+    if(elChip){
+      elChip.innerHTML = info.estado === 'venc'
+        ? '<span class="hdc-pay-b venc">● Cuota vencida</span>'
+        : info.estado === 'proximo'
+          ? '<span class="hdc-pay-b proximo">● Renueva pronto</span>'
+          : '<span class="hdc-pay-b ok">● Vence: ' + escAcc(info.corta) + '</span>';
+    }
   }
   function pintarUniPerfil(){
     var wrap = q('hdpUniToggle');
