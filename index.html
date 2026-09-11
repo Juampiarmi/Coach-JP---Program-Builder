@@ -744,7 +744,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
             </select>
           </div>
         </div>
-        <div class="hint">Uso exclusivo del coach: nunca se sincroniza ni se muestra en la app del alumno/a. El historial de pagos y los recordatorios se gestionan desde 💳 Finanzas / MRR en la barra del Builder.</div>
+        <div class="hint">Uso exclusivo del coach: nunca se sincroniza ni se muestra en la app del alumno/a. El historial de pagos y los recordatorios se gestionan desde la tarjeta 💳 Control Financiero en el Home.</div>
       </div>
       <div>
         <label class="lb">Foco principal / Objetivos de recomposición</label>
@@ -27670,6 +27670,23 @@ body{overflow-x:hidden}
   </div>
   <div class="qa-grid" id="homeQA"></div>
   <div id="homeKpis"></div>
+
+  <!-- MÓDULO 30 — Control Financiero: tarjeta fija en el Home, sin modal.
+       El HTML vive acá (estático) para que sea "visible de entrada" al
+       abrir el Home; la lógica y el render completo están en el bloque
+       de script cerca del final del archivo (ver "MÓDULO 30"). -->
+  <div class="card fin-home-card" id="finHomeCard">
+    <div class="fin-home-h">
+      <h3>💳 Control Financiero</h3>
+      <div class="spacer"></div>
+      <label class="fin-mes-lb" for="finMesSel">Mes:</label>
+      <select id="finMesSel" class="fin-mes-sel"></select>
+    </div>
+    <div class="fin-kpis" id="finKpis"></div>
+    <div class="fin-sec"><div class="sh">Atletas</div><div class="fin-table" id="finTabla"></div></div>
+    <div class="fin-legal">Módulo interno del coach — los montos, vencimientos e historiales de pago nunca se sincronizan ni se muestran en la app del alumno/a.</div>
+  </div>
+
   <div class="grid g2" style="align-items:start">
     <div class="card"><h3>🚨 Atletas en alerta</h3><div id="homeAlerts"></div></div>
     <div class="card"><h3>💾 Estado del sistema</h3><div id="homeSys"></div></div>
@@ -44421,7 +44438,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 }
 .fin-sec{border:1px solid #28303A;border-radius:12px;background:#141920;padding:12px 13px;margin-top:12px}
 .fin-sec > .sh{
-  font-family:var(--ffh);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#7CC5E8;
+  font-family:var(--ffh);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#38BDF8;
   margin-bottom:9px;
 }
 .fin-table{display:flex;flex-direction:column;gap:6px}
@@ -44445,14 +44462,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .fin-acts{display:flex;gap:6px;flex-wrap:wrap}
 .fin-legal{margin-top:11px;font-size:11.5px;color:#6E7783;line-height:1.55}
 .fin-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;vertical-align:middle}
-#btnFinanzas.on{border-color:var(--gold-active);color:var(--gold-active)}
-.fin-pill{
-  display:inline-flex;align-items:center;min-height:32px;padding:0 12px;border-radius:999px;
-  border:1px solid rgba(72,213,151,.35);background:rgba(72,213,151,.08);color:#48D597;cursor:pointer;
-  font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:11.5px;font-weight:700;
-  font-variant-numeric:tabular-nums;font-feature-settings:'tnum' 1;white-space:nowrap;
-}
-.fin-pill:hover{background:rgba(72,213,151,.14)}
+.fin-home-card{background:#141920;border:1px solid #28303A;margin-top:16px}
+.fin-home-h{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.fin-home-h h3{margin:0;color:var(--gold-active)}
 .fin-sub{margin-top:3px;font-size:10.5px;color:#828A97;font-weight:500}
 .fin-mes-lb{font-size:11px;color:#828A97;margin:0 2px 0 8px}
 .fin-mes-sel{
@@ -44497,7 +44509,6 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   var GRACIA_DIAS = 3;
   var PROXIMO_DIAS = 5;
   var MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  var MESES_ABR  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   var finHistAbiertoId = null; // id del alumno/a con el acordeon de historial expandido (o null)
 
   function finDefaults(){
@@ -44612,28 +44623,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     f.historial = f.historial || [];
     var calc = estadoFinanciero(a);
     if(calc) f.estado = calc;
-    finRefreshPill();
+    if(finHomeVisible()) finRenderHome();
   }
   window.finAplicarCondicionComercial = finAplicarCondicionComercial;
-
-  function finPillTexto(){
-    var hoy = new Date();
-    var ag = finAgregados(hoy.getFullYear(), hoy.getMonth());
-    return '💳 Cobrado ' + MESES_ABR[hoy.getMonth()] + ': ' + finFormatMoneda(ag.recaudado) + ' / MRR ' + finFormatMoneda(ag.mrr);
-  }
-
-  function finRefreshPill(){
-    var pill = document.getElementById('finPill');
-    if(!pill) return;
-    /* OJO: este bloque corre en cada tick del CoachRepaintBus (que observa
-       #mainContent con un unico MutationObserver compartido). Si se
-       reescribiera .textContent incondicionalmente, cada refresh generaria
-       una mutacion que vuelve a disparar el propio observer -> bucle
-       infinito de mutacion/callback que cuelga la pagina. Por eso se
-       compara antes de tocar el DOM: solo se escribe si el valor cambio. */
-    var nuevo = finPillTexto();
-    if(pill.textContent !== nuevo) pill.textContent = nuevo;
-  }
 
   /* y/m opcionales -- sin argumentos, agrega el mes en curso (comportamiento
      original, usado por el widget de la barra y por defecto al abrir el
@@ -44735,7 +44727,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(calc) a.finanzas.estado = calc;
     save();
     toast('Registro de pago eliminado', 'warn');
-    finRenderKpis(finMesSeleccionado()); finRenderTabla(finMesSeleccionado()); renderAthletes(); finRefreshPill();
+    finRenderHome(); renderAthletes();
   }
 
   function finRenderTablaActual(host){
@@ -44818,7 +44810,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(calc) f.estado = calc;
     save();
     toast('✅ Pago registrado — ' + fullName(a));
-    finRenderKpis(finMesSeleccionado()); finRenderTabla(finMesSeleccionado()); renderAthletes(); finRefreshPill();
+    finRenderHome(); renderAthletes();
   }
 
   function finAbrirWhatsapp(a){
@@ -44848,34 +44840,42 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     sel.value = finPeriodoActual();
   }
 
-  function finMontarModal(){
-    if(document.getElementById('mFin')) return;
-    var wrap = document.createElement('div');
-    wrap.className = 'modal-bg';
-    wrap.id = 'mFin';
-    wrap.innerHTML =
-      '<div class="modal" style="max-width:980px">' +
-        '<div class="modal-h"><h3>💳 Finanzas / MRR</h3><div class="spacer"></div>' +
-          '<label class="fin-mes-lb" for="finMesSel">Mes:</label>' +
-          '<select id="finMesSel" class="fin-mes-sel"></select>' +
-          '<button class="icon-btn" data-close="mFin">✕</button>' +
-        '</div>' +
-        '<div class="modal-b">' +
-          '<div class="fin-kpis" id="finKpis"></div>' +
-          '<div class="fin-sec"><div class="sh">Atletas</div><div class="fin-table" id="finTabla"></div></div>' +
-          '<div class="fin-legal">Módulo interno del coach — los montos, vencimientos e historiales de pago nunca se sincronizan ni se muestran en la app del alumno/a.</div>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(wrap);
+  /* La tarjeta "Control Financiero" es HTML estático dentro de #v-home (no
+     un modal creado por JS) -- ver el <div class="card fin-home-card"> más
+     arriba en el archivo, junto al resto del Home / Mando Central. Acá solo
+     se cablea una vez (selector de mes + delegación de clicks) y se pinta. */
+  function finHomeVisible(){
+    var v = document.getElementById('v-home');
+    return !!v && v.style.display !== 'none';
+  }
+
+  function finRenderHome(){
+    if(!document.getElementById('finHomeCard')) return;
+    var periodo = finMesSeleccionado();
+    finRenderKpis(periodo);
+    finRenderTabla(periodo);
+  }
+  window.finRenderHome = finRenderHome;
+  window.CoachFinanzas = { estadoFinanciero: estadoFinanciero, agregados: finAgregados, render: finRenderHome };
+  /* alias de compatibilidad: antes abría un modal, ahora solo navega al
+     Home (donde el panel ya está siempre visible) y lo refresca. */
+  window.abrirFinanzasJP = function(){ go('home'); };
+
+  var finWireado = false;
+  function finWireHomeCard(){
+    var tabla = document.getElementById('finTabla');
+    if(!tabla || finWireado) return;
+    finWireado = true;
     finPoblarMesSelector();
-    wrap.querySelectorAll('[data-close]').forEach(function(x){ x.addEventListener('click', function(){ closeModal('mFin'); }); });
-    wrap.addEventListener('click', function(e){ if(e.target === wrap) closeModal('mFin'); });
-    document.getElementById('finMesSel').addEventListener('change', function(){
-      finHistAbiertoId = null;
-      finRenderKpis(this.value);
-      finRenderTabla(this.value);
-    });
-    document.getElementById('finTabla').addEventListener('click', function(e){
+    var sel = document.getElementById('finMesSel');
+    if(sel){
+      sel.addEventListener('change', function(){
+        finHistAbiertoId = null;
+        finRenderKpis(this.value);
+        finRenderTabla(this.value);
+      });
+    }
+    tabla.addEventListener('click', function(e){
       var bp = e.target.closest('[data-fin-pago]');
       if(bp){ finRegistrarPago(getAth(bp.getAttribute('data-fin-pago'))); return; }
       var bw = e.target.closest('[data-fin-wa]');
@@ -44885,54 +44885,31 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       var bd = e.target.closest('[data-fin-del]');
       if(bd){ finEliminarPago(bd.getAttribute('data-fin-del'), bd.getAttribute('data-fin-del-id')); return; }
       var bc = e.target.closest('[data-fin-cfg]');
-      if(bc){ var id = bc.getAttribute('data-fin-cfg'); closeModal('mFin'); openAth(id); return; }
+      if(bc){ openAth(bc.getAttribute('data-fin-cfg')); return; }
     });
   }
 
-  function finAbrir(){
-    if(!S.athletes || !S.athletes.length){ if(typeof toast === 'function') toast('Registrá al menos un alumno/a primero', 'err'); return; }
-    finMontarModal();
-    finHistAbiertoId = null;
-    var sel = document.getElementById('finMesSel');
-    if(sel) sel.value = finPeriodoActual();
-    finRenderKpis(finPeriodoActual());
-    finRenderTabla(finPeriodoActual());
-    openModal('mFin');
-  }
-  window.abrirFinanzasJP = finAbrir;
-  window.CoachFinanzas = { abrir: finAbrir, estadoFinanciero: estadoFinanciero, agregados: finAgregados };
-
-  function boton(){
-    var barra = document.querySelector('#v-builder .tools-in');
-    if(!barra) return;
-    if(!document.getElementById('btnFinanzas')){
-      var b = document.createElement('button');
-      b.className = 'btn ghost sm';
-      b.id = 'btnFinanzas';
-      b.type = 'button';
-      b.textContent = '💳 Finanzas / MRR';
-      b.addEventListener('click', finAbrir);
-      var ref = document.getElementById('btnNutriPlan') || document.getElementById('btnCheckout');
-      if(ref && ref.parentNode) ref.parentNode.insertBefore(b, ref.nextSibling);
-      else barra.appendChild(b);
-    }
-    if(!document.getElementById('finPill')){
-      var pill = document.createElement('button');
-      pill.type = 'button';
-      pill.id = 'finPill';
-      pill.className = 'fin-pill';
-      pill.title = 'Abrir 💳 Finanzas / MRR';
-      pill.addEventListener('click', finAbrir);
-      var btnRef = document.getElementById('btnFinanzas');
-      if(btnRef && btnRef.parentNode) btnRef.parentNode.insertBefore(pill, btnRef.nextSibling);
-      else barra.appendChild(pill);
-    }
-    finRefreshPill();
-  }
-  if(window.CoachRepaintBus && window.CoachRepaintBus.register){
-    window.CoachRepaintBus.register(function(){ try{ boton(); }catch(e){} });
-  }
-  [400, 1200, 2500].forEach(function(ms){ setTimeout(function(){ try{ boton(); }catch(e){} }, ms); });
+  /* Render automático al iniciar o al entrar al Home, sin depender de
+     ningún click: se engancha sobre window.go (que MÓDULO 14 ya envuelve
+     para llamar a renderHome()) y además se reintenta un puñado de veces
+     con setTimeout acotado por si S.athletes todavía se está restaurando
+     desde Supabase cuando este script corre. A propósito NO se usa
+     CoachRepaintBus acá: ese bus dispara este mismo callback cada vez que
+     hay una mutación dentro de #mainContent, y como finRenderHome() reescribe
+     el DOM de la tarjeta en cada llamada, terminaría retro-disparando al
+     propio observer en un bucle infinito (ya nos pasó una vez con la
+     píldora de la barra -- ver historial de commits). Los setTimeout son
+     finitos y no vuelven a dispararse solos, así que son seguros. */
+  finWireHomeCard();
+  finRenderHome();
+  var _finGoPrev = window.go;
+  window.go = function(view){
+    _finGoPrev.apply(this, arguments);
+    if(view === 'home'){ try{ finWireHomeCard(); finRenderHome(); }catch(e){} }
+  };
+  [100, 500, 1200, 2500].forEach(function(ms){
+    setTimeout(function(){ try{ finWireHomeCard(); if(finHomeVisible()) finRenderHome(); }catch(e){} }, ms);
+  });
 })();
 </script>
 
