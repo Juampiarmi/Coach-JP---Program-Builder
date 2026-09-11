@@ -44734,17 +44734,30 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:700;white-space:nowrap;
 }
 .fin-acts{display:flex;gap:6px;flex-wrap:wrap}
+/* Mas especifica que la regla vieja/huerfana ".fin-acts .btn{flex:1 1 190px}"
+   (linea ~36979, previa al rediseño de la tabla embebida en el Home) para
+   que los 4 botones de accion entren en la columna Acciones sin apilarse
+   en una sola columna vertical. */
+.fin-row .fin-acts .btn{flex:0 0 auto;padding:6px 10px;border-color:#333D49}
+.fin-row .fin-acts .btn.ghost{border-color:#333D49;background:#171C23}
+.fin-row .fin-acts .btn.ghost:hover{border-color:#4A5563;background:#1D232B}
+.fin-row .fin-nombre{color:#EDEFF2;font-weight:600}
+.fin-row .mono.fin-arancel{color:#E5C378;font-weight:700}
 .fin-legal{margin-top:11px;font-size:11.5px;color:#6E7783;line-height:1.55}
 .fin-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;vertical-align:middle}
 .fin-home-card{background:#141920;border:1px solid #28303A;margin-top:16px}
 .fin-home-h{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .fin-home-h h3{margin:0;color:var(--gold-active)}
 .fin-sub{margin-top:3px;font-size:10.5px;color:#828A97;font-weight:500}
-.fin-mes-lb{font-size:11px;color:#828A97;margin:0 2px 0 8px}
+.fin-mes-lb{font-size:11px;color:#828A97;margin:0 2px 0 8px;white-space:nowrap;flex:0 0 auto}
 .fin-mes-sel{
-  min-height:30px;padding:0 8px;border-radius:8px;background:#141920;border:1px solid #28303A;
-  color:#EDEFF2;font-size:12px;
+  width:auto;flex:0 0 auto;min-height:32px;padding:0 28px 0 12px;border-radius:9px;
+  background:#141920 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="6" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4" stroke="%23C9A25F" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>') no-repeat right 10px center;
+  border:1px solid #28303A;color:#EDEFF2;font-size:12px;font-weight:600;
+  -webkit-appearance:none;appearance:none;cursor:pointer;transition:.15s;
 }
+.fin-mes-sel:hover{border-color:#3A4450}
+.fin-mes-sel:focus{outline:none;border-color:var(--gold-active,#D2793F)}
 .fin-row-hist{grid-template-columns:1.3fr 1fr 1fr 1.8fr !important}
 .fin-hist-panel{
   border:1px dashed #28303A;border-radius:10px;background:#10151B;padding:9px 11px;margin:-2px 0 4px;
@@ -44782,6 +44795,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   var GRACIA_DIAS = 3;
   var PROXIMO_DIAS = 5;
+  var DIA_VENC_DEFAULT = 10; // dia de corte visual por defecto cuando el atleta tiene arancel cargado pero nunca definio un dia de vencimiento explicito
   var MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   var finHistAbiertoId = null; // id del alumno/a con el acordeon de historial expandido (o null)
 
@@ -44790,6 +44804,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   }
 
   function finDiasEnMes(y, m){ return new Date(y, m+1, 0).getDate(); }
+
+  // Dia de vencimiento "efectivo" a usar para mostrar/calcular: el explicito
+  // si el atleta lo tiene cargado, o el default visual (DIA_VENC_DEFAULT) si
+  // solo tiene arancel. Un atleta con arancel NUNCA debe quedar "sin
+  // configurar" solo por no tener dia de vencimiento explicito.
+  function finDiaVencEfectivo(f){
+    return (f && f.diaVencimiento) ? f.diaVencimiento : DIA_VENC_DEFAULT;
+  }
 
   function finVencimientoDelMes(y, m, dia){
     var d = Math.min(dia || 1, finDiasEnMes(y, m));
@@ -44824,14 +44846,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      guardar la ficha o registrar un pago), nunca lo que se muestra. */
   function estadoFinanciero(a){
     var f = a && a.finanzas;
-    if(!f || !f.arancel || !f.diaVencimiento) return null;
+    if(!f || !f.arancel) return null;
     var hoy = new Date(); hoy.setHours(0,0,0,0);
     var y = hoy.getFullYear(), m = hoy.getMonth();
     var pagoEsteMes = false;
     var up = finParseFecha(f.fechaUltimoPago);
     if(up && up.getFullYear() === y && up.getMonth() === m) pagoEsteMes = true;
     if(pagoEsteMes) return 'al_dia';
-    var venc = finVencimientoDelMes(y, m, f.diaVencimiento);
+    var venc = finVencimientoDelMes(y, m, finDiaVencEfectivo(f));
     var diffDias = Math.round((venc.getTime() - hoy.getTime()) / 86400000);
     if(diffDias < -GRACIA_DIAS) return 'vencido';
     if(diffDias < 0) return 'vencido';
@@ -44851,10 +44873,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   function finProximoVencTxt(f){
     var hoy = new Date();
-    var v = finVencimientoDelMes(hoy.getFullYear(), hoy.getMonth(), f.diaVencimiento);
+    var v = finVencimientoDelMes(hoy.getFullYear(), hoy.getMonth(), finDiaVencEfectivo(f));
     var dd = String(v.getDate()).padStart(2, '0');
     var mm = String(v.getMonth() + 1).padStart(2, '0');
-    return dd + '/' + mm;
+    return dd + '/' + mm + (f && f.diaVencimiento ? '' : '*'); // "*" marca dia estimado (sin vencimiento explicito cargado)
   }
 
   function finBadgeHTML(estado){
@@ -45013,17 +45035,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     host.innerHTML = '<div class="fin-row fin-head"><span>Atleta</span><span>Arancel</span><span>Vencimiento</span><span>Estado</span><span>Acciones</span></div>' +
       lista.map(function(a){
         var f = a.finanzas;
-        var configurado = !!(f && f.arancel && f.diaVencimiento);
+        // Un atleta con arancel cargado (aunque no tenga dia de vencimiento
+        // explicito) SIEMPRE se considera "configurado": nunca debe figurar
+        // como "Sin configurar" mientras tenga un arancel > 0.
+        var configurado = !!(f && f.arancel > 0);
         var estado = configurado ? (estadoFinanciero(a) || 'al_dia') : null;
         var acciones = configurado ?
-          '<button type="button" class="btn sm gold" data-fin-pago="' + a.id + '">✓ Registrar Pago</button>' +
-          '<button type="button" class="btn sm ghost" data-fin-wa="' + a.id + '">📲 WhatsApp</button>' +
+          '<button type="button" class="btn sm gold" data-fin-pago="' + a.id + '">✓ Cobrar</button>' +
           '<button type="button" class="btn sm ghost" data-fin-hist="' + a.id + '">📋 Historial</button>' +
+          '<button type="button" class="btn sm ghost" data-fin-wa="' + a.id + '">📲 WA</button>' +
           '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '" title="Editar condición comercial">✏️</button>'
           : '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '">⚙️ Configurar</button>';
         var fila = '<div class="fin-row">' +
-          '<span>' + esc(fullName(a)) + '</span>' +
-          '<span class="mono">' + (configurado ? esc(finFormatMoneda(f.arancel, f.moneda)) : '—') + '</span>' +
+          '<span class="fin-nombre">' + esc(fullName(a)) + '</span>' +
+          '<span class="mono fin-arancel">' + (configurado ? esc(finFormatMoneda(f.arancel, f.moneda)) : '—') + '</span>' +
           '<span class="mono">' + (configurado ? esc(finProximoVencTxt(f)) : '—') + '</span>' +
           '<span>' + finBadgeHTML(estado) + (configurado ? '<div class="fin-sub">' + esc(finUltimoCobroTxt(f)) + '</div>' : '') + '</span>' +
           '<span class="fin-acts">' + acciones + '</span>' +
@@ -45090,7 +45115,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function finAbrirWhatsapp(a){
     if(!a) return;
     var f = a.finanzas;
-    if(!f || !f.arancel || !f.diaVencimiento){ toast('Configurá antes el arancel y el día de corte', 'err'); return; }
+    if(!f || !f.arancel){ toast('Configurá antes el arancel', 'err'); return; }
     var vencTxt = finProximoVencTxt(f);
     var montoTxt = finFormatMoneda(f.arancel, f.moneda);
     var primerNombre = (a.nombre || fullName(a) || '').trim();
