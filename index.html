@@ -16,7 +16,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230A0A0B'/%3E%3Cpath d='M13 4L6.5 13.5 12 13l-1 6.5 6.5-9.5-5.5.5z' fill='%2338BDF8' stroke='%23000' stroke-width='0.8' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
 <script>
 /* ---- blindaje de consola: algunos visores embebidos recortan console.* ---- */
 (function(){
@@ -161,6 +161,12 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
    deliberadamente más claro que el --gold general de la app) en el día
    activo. Es el único lugar del archivo que usa .tabs/.tab. */
 :root{ --gold-active:#E5C378; }
+/* Módulo financiero táctico (Builder, ver más abajo cerca del cierre del
+   archivo) -- caja "Condición Comercial / Cuota" dentro de la ficha del
+   alumno/a (#mAth). Vive acá arriba porque el HTML del modal es estático. */
+.fin-cc-box{border:1px solid rgba(229,195,120,.3);border-radius:12px;padding:12px 13px;background:rgba(229,195,120,.05)}
+.fin-cc-box .grid{margin-top:8px}
+.fin-cc-lb{color:var(--gold-active)}
 /* Nota: se escala #dayTabs .tab (en vez de .tab a secas) a propósito -- hay
    una regla compartida de piso de accesibilidad más abajo en la hoja de
    estilos (".pill button,.chk input,.tab,.nav-pill{min-height:32px}") que,
@@ -719,6 +725,26 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
         <label class="lb">💳 Vencimiento de cuota (opcional)</label>
         <input type="date" id="aPayDue">
         <div class="hint">Se muestra al alumno/a como recordatorio discreto en su panel de Perfil (ícono de credencial). Dejalo vacío si no facturás por fecha fija.</div>
+      </div>
+      <div class="fin-cc-box">
+        <label class="lb fin-cc-lb">💳 Condición Comercial / Cuota</label>
+        <div class="grid g4">
+          <div><label class="lb">Arancel</label><input id="aFinArancel" type="number" step="0.01" min="0" placeholder="Ej: 45000"></div>
+          <div>
+            <label class="lb">Moneda</label>
+            <select id="aFinMoneda"><option value="ARS">ARS</option><option value="USD">USD</option></select>
+          </div>
+          <div><label class="lb">Día de corte</label><input id="aFinDia" type="number" min="1" max="31" placeholder="Ej: 10"></div>
+          <div>
+            <label class="lb">Método habitual</label>
+            <select id="aFinMetodo">
+              <option value="transferencia">Transferencia</option>
+              <option value="efectivo">Efectivo</option>
+              <option value="mp">Mercado Pago</option>
+            </select>
+          </div>
+        </div>
+        <div class="hint">Uso exclusivo del coach: nunca se sincroniza ni se muestra en la app del alumno/a. El historial de pagos y los recordatorios se gestionan desde 💳 Finanzas / MRR en la barra del Builder.</div>
       </div>
       <div>
         <label class="lb">Foco principal / Objetivos de recomposición</label>
@@ -2043,7 +2069,7 @@ function renderAthletes(){
         '<div class="ath-top">' +
           '<div class="avatar ' + esc(a.color||'') + '">' + esc(initials(a)) + '</div>' +
           '<div style="min-width:0">' +
-            '<div class="ath-name">' + esc(fullName(a) || 'Sin nombre') + '</div>' +
+            '<div class="ath-name">' + esc(fullName(a) || 'Sin nombre') + (typeof finDotHTML === 'function' ? finDotHTML(a) : '') + '</div>' +
             '<div class="ath-meta">' + esc(a.freq) + ' días/sem · ' + esc(a.nivel || 'Intermedio') + '</div>' +
           '</div>' +
         '</div>' +
@@ -2110,6 +2136,11 @@ function openAth(id){
   $('#aGenero').value   = a ? (a.genero||'') : '';
   $('#aColor').value    = a ? (a.color||'') : '';
   $('#aPayDue').value   = a ? (a.payDue||'') : '';
+  const fz = a ? (a.finanzas||null) : null;
+  $('#aFinArancel').value = fz && fz.arancel ? fz.arancel : '';
+  $('#aFinMoneda').value  = (fz && fz.moneda) || 'ARS';
+  $('#aFinDia').value     = fz && fz.diaVencimiento ? fz.diaVencimiento : '';
+  $('#aFinMetodo').value  = (fz && fz.metodo) || 'transferencia';
   $('#aFoco').value     = a ? (a.foco||'') : '';
   $('#aDeportes').value = a ? (a.deportes||'') : '';
   $('#aCompat').value   = a ? (a.compat||'') : '';
@@ -2149,12 +2180,14 @@ function saveAth(){
     const a = getAth(editAthId);
     Object.assign(a, data);
     if(S.plans[a.id]) plan(a.id);
+    if(typeof finAplicarCondicionComercial === 'function') finAplicarCondicionComercial(a);
     toast('Alumno/a actualizado/a');
   } else {
     const a = Object.assign({ id: uid('ath'), createdAt: Date.now() }, data);
     S.athletes.push(a);
     S.plans[a.id] = newPlan(a);
     S.activeId = a.id;
+    if(typeof finAplicarCondicionComercial === 'function') finAplicarCondicionComercial(a);
     toast('Alumno/a registrado/a ✔');
   }
   save(); closeModal('mAth'); renderAthletes();
@@ -44360,6 +44393,322 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     b.textContent = '✅ Checkout de sesión';
     b.addEventListener('click', abrir);
     const ref = document.getElementById('btnNutri');
+    if(ref && ref.parentNode) ref.parentNode.insertBefore(b, ref.nextSibling);
+    else barra.appendChild(b);
+  }
+  if(window.CoachRepaintBus && window.CoachRepaintBus.register){
+    window.CoachRepaintBus.register(function(){ try{ boton(); }catch(e){} });
+  }
+  [400, 1200, 2500].forEach(function(ms){ setTimeout(function(){ try{ boton(); }catch(e){} }, ms); });
+})();
+</script>
+
+<style>
+/* ============================================================
+   MÓDULO 30 — FINANZAS TÁCTICO (cuotas, vencimientos, MRR)
+   100% exclusivo del Builder: no toca TEMPLATE_HTML ni PROGRAM_CONFIG.
+   El objeto ath.payDue (fecha visible al alumno/a) es un campo aparte,
+   preexistente, y queda completamente intacto -- este módulo nunca lo
+   lee ni lo escribe.
+   ============================================================ */
+.fin-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:6px}
+.fin-kpi{border:1px solid #28303A;border-radius:12px;background:#141920;padding:12px 13px}
+.fin-kpi .k{font-family:'Chakra Petch','Barlow Condensed',var(--ffh),sans-serif;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#828A97}
+.fin-kpi .v{
+  font-family:'Chakra Petch','JetBrains Mono',ui-monospace,Menlo,monospace;
+  font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
+  font-size:23px;font-weight:700;margin-top:4px;color:#EDEFF2;
+}
+.fin-sec{border:1px solid #28303A;border-radius:12px;background:#141920;padding:12px 13px;margin-top:12px}
+.fin-sec > .sh{
+  font-family:var(--ffh);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#7CC5E8;
+  margin-bottom:9px;
+}
+.fin-table{display:flex;flex-direction:column;gap:6px}
+.fin-row{
+  display:grid;grid-template-columns:1.4fr .9fr .8fr 1fr 1.6fr;gap:8px;align-items:center;
+  padding:8px 10px;border:1px solid #28303A;border-radius:10px;background:#191E25;font-size:12.5px;
+}
+.fin-row.fin-head{
+  background:transparent;border:none;padding:0 10px;
+  font-family:var(--ffh);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#828A97;
+}
+.fin-row .mono{
+  font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;
+  font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
+  color:#C9CFD8;
+}
+.fin-badge{
+  display:inline-block;padding:3px 9px;border-radius:999px;border:1px solid #28303A;
+  font-family:ui-monospace,Menlo,monospace;font-size:11px;font-weight:700;white-space:nowrap;
+}
+.fin-acts{display:flex;gap:6px;flex-wrap:wrap}
+.fin-legal{margin-top:11px;font-size:11.5px;color:#6E7783;line-height:1.55}
+.fin-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:6px;vertical-align:middle}
+#btnFinanzas.on{border-color:var(--gold-active);color:var(--gold-active)}
+@media (max-width:720px){
+  .fin-row{grid-template-columns:1fr;gap:3px}
+  .fin-row.fin-head{display:none}
+  .fin-row > span:nth-child(2)::before{content:'Arancel: '}
+  .fin-row > span:nth-child(3)::before{content:'Vencimiento: '}
+}
+</style>
+
+<script>
+/* ============================================================
+   MÓDULO 30 — FINANZAS TÁCTICO (cuotas, vencimientos, MRR)
+   ------------------------------------------------------------
+   Extiende ath con ath.finanzas = { arancel, moneda, diaVencimiento,
+   fechaUltimoPago, estado, metodo, historial[] }. Se persiste como
+   parte normal de S.athletes -- mismo save() de siempre, mismo viaje
+   a Supabase que el resto de la ficha del alumno/a, sin tabla nueva
+   ni store propio.
+
+   Aislamiento estricto: ningún identificador de este módulo aparece
+   en compile() ni dentro de TEMPLATE_HTML. El alumno/a nunca ve nada
+   de esto -- ni siquiera el campo "estado" viaja al PROGRAM_CONFIG.
+   ============================================================ */
+(function(){
+
+  var GRACIA_DIAS = 3;
+  var PROXIMO_DIAS = 5;
+
+  function finDefaults(){
+    return { arancel:0, moneda:'ARS', diaVencimiento:null, fechaUltimoPago:'', estado:'al_dia', metodo:'transferencia', historial:[] };
+  }
+
+  function finDiasEnMes(y, m){ return new Date(y, m+1, 0).getDate(); }
+
+  function finVencimientoDelMes(y, m, dia){
+    var d = Math.min(dia || 1, finDiasEnMes(y, m));
+    return new Date(y, m, d);
+  }
+
+  function finParseFecha(s){
+    if(!s) return null;
+    var d = new Date(s + 'T00:00:00');
+    return isNaN(d.getTime()) ? null : d;
+  }
+
+  /* Fuente de verdad del estado -- se recalcula siempre en vivo a partir
+     de arancel/diaVencimiento/fechaUltimoPago; el campo ath.finanzas.estado
+     que pide el esquema es solo un espejo de conveniencia (se actualiza al
+     guardar la ficha o registrar un pago), nunca lo que se muestra. */
+  function estadoFinanciero(a){
+    var f = a && a.finanzas;
+    if(!f || !f.arancel || !f.diaVencimiento) return null;
+    var hoy = new Date(); hoy.setHours(0,0,0,0);
+    var y = hoy.getFullYear(), m = hoy.getMonth();
+    var pagoEsteMes = false;
+    var up = finParseFecha(f.fechaUltimoPago);
+    if(up && up.getFullYear() === y && up.getMonth() === m) pagoEsteMes = true;
+    if(pagoEsteMes) return 'al_dia';
+    var venc = finVencimientoDelMes(y, m, f.diaVencimiento);
+    var diffDias = Math.round((venc.getTime() - hoy.getTime()) / 86400000);
+    if(diffDias < -GRACIA_DIAS) return 'vencido';
+    if(diffDias < 0) return 'vencido';
+    if(diffDias <= PROXIMO_DIAS) return 'proximo';
+    return 'al_dia';
+  }
+
+  function finGeneroTxt(a, masc, fem){
+    return (a && a.genero === 'F') ? fem : masc;
+  }
+
+  function finFormatMoneda(n, moneda){
+    var v = Math.round((n || 0) * 100) / 100;
+    var s = v.toLocaleString('es-AR');
+    return '$' + s + (moneda && moneda !== 'ARS' ? ' ' + moneda : '');
+  }
+
+  function finProximoVencTxt(f){
+    var hoy = new Date();
+    var v = finVencimientoDelMes(hoy.getFullYear(), hoy.getMonth(), f.diaVencimiento);
+    var dd = String(v.getDate()).padStart(2, '0');
+    var mm = String(v.getMonth() + 1).padStart(2, '0');
+    return dd + '/' + mm;
+  }
+
+  function finBadgeHTML(estado){
+    var map = {
+      al_dia:  ['🟢', 'Al día',  '#48D597'],
+      proximo: ['🟡', 'Próximo', '#EFB44A'],
+      vencido: ['🔴', 'Vencido', '#E0654A']
+    };
+    if(!estado || !map[estado]) return '<span class="fin-badge" style="color:#828A97">⚪ Sin configurar</span>';
+    var mm = map[estado];
+    return '<span class="fin-badge" style="color:' + mm[2] + ';border-color:' + mm[2] + '55">' + mm[0] + ' ' + mm[1] + '</span>';
+  }
+
+  /* Micro-punto de semáforo para el selector/lista principal de alumnos
+     (renderAthletes -> .ath-name). Devuelve '' si el alumno/a no tiene
+     condición comercial configurada -- no se inventan vencimientos. */
+  function finDotHTML(a){
+    var estado = estadoFinanciero(a);
+    if(!estado) return '';
+    var map = { al_dia:['#48D597','Al día'], proximo:['#EFB44A','Próximo a vencer'], vencido:['#E0654A','Cuota vencida'] };
+    var mm = map[estado]; if(!mm) return '';
+    return ' <span class="fin-dot" title="' + esc(mm[1]) + '" style="background:' + mm[0] + ';box-shadow:0 0 6px ' + mm[0] + '88"></span>';
+  }
+  window.finDotHTML = finDotHTML;
+  window.estadoFinanciero = estadoFinanciero;
+
+  /* Se llama desde saveAth() (edición de ficha), tanto para alta como para
+     edición. Solo toca arancel/moneda/diaVencimiento/metodo -- nunca
+     historial ni fechaUltimoPago, que solo cambian vía "Registrar Pago". */
+  function finAplicarCondicionComercial(a){
+    var elArancel = document.getElementById('aFinArancel');
+    if(!elArancel) return;
+    a.finanzas = a.finanzas || finDefaults();
+    var f = a.finanzas;
+    f.arancel = parseFloat(elArancel.value) || 0;
+    f.moneda = document.getElementById('aFinMoneda').value || 'ARS';
+    var dia = parseInt(document.getElementById('aFinDia').value, 10);
+    f.diaVencimiento = (dia >= 1 && dia <= 31) ? dia : null;
+    f.metodo = document.getElementById('aFinMetodo').value || 'transferencia';
+    f.historial = f.historial || [];
+    var calc = estadoFinanciero(a);
+    if(calc) f.estado = calc;
+  }
+  window.finAplicarCondicionComercial = finAplicarCondicionComercial;
+
+  function finAgregados(){
+    var mrr = 0, recaudado = 0, saldo = 0;
+    var hoy = new Date(), y = hoy.getFullYear(), m = hoy.getMonth();
+    (S.athletes || []).forEach(function(a){
+      var f = a.finanzas;
+      if(!f || !f.arancel) return;
+      mrr += f.arancel;
+      var pagoEsteMes = false;
+      (f.historial || []).forEach(function(h){
+        var d = finParseFecha(h && h.fecha);
+        if(d && d.getFullYear() === y && d.getMonth() === m){
+          recaudado += (h.monto || 0);
+          pagoEsteMes = true;
+        }
+      });
+      if(!pagoEsteMes) saldo += f.arancel;
+    });
+    return { mrr: mrr, recaudado: recaudado, saldo: saldo };
+  }
+
+  function finRenderKpis(){
+    var host = document.getElementById('finKpis'); if(!host) return;
+    var ag = finAgregados();
+    host.innerHTML =
+      '<div class="fin-kpi"><div class="k">MRR Total</div><div class="v">' + finFormatMoneda(ag.mrr) + '</div></div>' +
+      '<div class="fin-kpi"><div class="k">Recaudado del mes</div><div class="v" style="color:#48D597">' + finFormatMoneda(ag.recaudado) + '</div></div>' +
+      '<div class="fin-kpi"><div class="k">Saldo pendiente / en mora</div><div class="v" style="color:#E0654A">' + finFormatMoneda(ag.saldo) + '</div></div>';
+  }
+
+  function finRenderTabla(){
+    var host = document.getElementById('finTabla'); if(!host) return;
+    var lista = S.athletes || [];
+    if(!lista.length){
+      host.innerHTML = '<div class="hint">Todavía no hay alumnos/as cargados/as.</div>';
+      return;
+    }
+    host.innerHTML = '<div class="fin-row fin-head"><span>Atleta</span><span>Arancel</span><span>Vencimiento</span><span>Estado</span><span>Acciones</span></div>' +
+      lista.map(function(a){
+        var f = a.finanzas;
+        var configurado = !!(f && f.arancel && f.diaVencimiento);
+        var estado = configurado ? (estadoFinanciero(a) || 'al_dia') : null;
+        var acciones = configurado ?
+          '<button type="button" class="btn sm gold" data-fin-pago="' + a.id + '">✓ Registrar Pago</button>' +
+          '<button type="button" class="btn sm ghost" data-fin-wa="' + a.id + '">📲 WhatsApp</button>' +
+          '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '" title="Editar condición comercial">✏️</button>'
+          : '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '">⚙️ Configurar</button>';
+        return '<div class="fin-row">' +
+          '<span>' + esc(fullName(a)) + '</span>' +
+          '<span class="mono">' + (configurado ? esc(finFormatMoneda(f.arancel, f.moneda)) : '—') + '</span>' +
+          '<span class="mono">' + (configurado ? esc(finProximoVencTxt(f)) : '—') + '</span>' +
+          '<span>' + finBadgeHTML(estado) + '</span>' +
+          '<span class="fin-acts">' + acciones + '</span>' +
+        '</div>';
+      }).join('');
+  }
+
+  function finRegistrarPago(a){
+    if(!a) return;
+    var f = a.finanzas = a.finanzas || finDefaults();
+    var montoStr = prompt('Monto cobrado a ' + fullName(a) + ' (' + (f.moneda || 'ARS') + ')', String(f.arancel || ''));
+    if(montoStr === null) return;
+    var monto = parseFloat(String(montoStr).replace(',', '.')) || 0;
+    var notaStr = prompt('Nota (opcional)', '') || '';
+    var hoy = new Date();
+    var fechaStr = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
+    f.historial = f.historial || [];
+    f.historial.push({ fecha: fechaStr, monto: monto, periodo: fechaStr.slice(0,7), nota: notaStr });
+    f.fechaUltimoPago = fechaStr;
+    var calc = estadoFinanciero(a);
+    if(calc) f.estado = calc;
+    save();
+    toast('✅ Pago registrado — ' + fullName(a));
+    finRenderKpis(); finRenderTabla(); renderAthletes();
+  }
+
+  function finAbrirWhatsapp(a){
+    if(!a) return;
+    var f = a.finanzas;
+    if(!f || !f.arancel || !f.diaVencimiento){ toast('Configurá antes el arancel y el día de corte', 'err'); return; }
+    var vencTxt = finProximoVencTxt(f);
+    var montoTxt = finFormatMoneda(f.arancel, f.moneda);
+    var primerNombre = (a.nombre || fullName(a) || '').trim();
+    var msg = 'Hola ' + primerNombre + ', te paso el recordatorio de renovación para tu ciclo de entrenamiento Coach JP. ' +
+      'Vencimiento: ' + vencTxt + '. Monto: ' + montoTxt + '. ¡Seguimos firmes, ' + finGeneroTxt(a, 'campeón', 'campeona') + '!';
+    var url = 'https://wa.me/?text=' + encodeURIComponent(msg);
+    window.open(url, '_blank', 'noopener');
+  }
+
+  function finMontarModal(){
+    if(document.getElementById('mFin')) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'modal-bg';
+    wrap.id = 'mFin';
+    wrap.innerHTML =
+      '<div class="modal" style="max-width:980px">' +
+        '<div class="modal-h"><h3>💳 Finanzas / MRR</h3><div class="spacer"></div><button class="icon-btn" data-close="mFin">✕</button></div>' +
+        '<div class="modal-b">' +
+          '<div class="fin-kpis" id="finKpis"></div>' +
+          '<div class="fin-sec"><div class="sh">Atletas</div><div class="fin-table" id="finTabla"></div></div>' +
+          '<div class="fin-legal">Módulo interno del coach — los montos, vencimientos e historiales de pago nunca se sincronizan ni se muestran en la app del alumno/a.</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.querySelectorAll('[data-close]').forEach(function(x){ x.addEventListener('click', function(){ closeModal('mFin'); }); });
+    wrap.addEventListener('click', function(e){ if(e.target === wrap) closeModal('mFin'); });
+    document.getElementById('finTabla').addEventListener('click', function(e){
+      var bp = e.target.closest('[data-fin-pago]');
+      if(bp){ finRegistrarPago(getAth(bp.getAttribute('data-fin-pago'))); return; }
+      var bw = e.target.closest('[data-fin-wa]');
+      if(bw){ finAbrirWhatsapp(getAth(bw.getAttribute('data-fin-wa'))); return; }
+      var bc = e.target.closest('[data-fin-cfg]');
+      if(bc){ var id = bc.getAttribute('data-fin-cfg'); closeModal('mFin'); openAth(id); return; }
+    });
+  }
+
+  function finAbrir(){
+    var a = (typeof active === 'function') ? active() : null;
+    if(!S.athletes || !S.athletes.length){ if(typeof toast === 'function') toast('Registrá al menos un alumno/a primero', 'err'); return; }
+    finMontarModal();
+    finRenderKpis();
+    finRenderTabla();
+    openModal('mFin');
+    if(a){ /* no-op: se deja el gancho por si a futuro se quiere abrir con foco en el activo */ }
+  }
+  window.abrirFinanzasJP = finAbrir;
+  window.CoachFinanzas = { abrir: finAbrir, estadoFinanciero: estadoFinanciero };
+
+  function boton(){
+    var barra = document.querySelector('#v-builder .tools-in');
+    if(!barra || document.getElementById('btnFinanzas')) return;
+    var b = document.createElement('button');
+    b.className = 'btn ghost sm';
+    b.id = 'btnFinanzas';
+    b.type = 'button';
+    b.textContent = '💳 Finanzas / MRR';
+    b.addEventListener('click', finAbrir);
+    var ref = document.getElementById('btnNutriPlan') || document.getElementById('btnCheckout');
     if(ref && ref.parentNode) ref.parentNode.insertBefore(b, ref.nextSibling);
     else barra.appendChild(b);
   }
