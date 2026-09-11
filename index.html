@@ -12412,6 +12412,27 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   color:#8FA0B4;font-size:.74rem;line-height:1.5;font-style:italic;
 }
 .nota-meso .nm-ref b{color:#A0A8B4;font-style:normal;letter-spacing:.08em}
+/* directiva de refactor (2026-09): la nota ya no ocupa toda la pantalla de
+   inicio -- se reduce a una píldora discreta en la cabecera del día que
+   abre esta misma tarjeta dentro de un modal centrado/drawer inferior. */
+.nm-pill{
+  display:inline-flex;align-items:center;gap:6px;margin:0 0 .85rem;padding:7px 13px;
+  border-radius:999px;background:rgba(210,121,63,.08);border:1px solid rgba(210,121,63,.35);
+  color:#E8AE8E;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.78rem;
+  letter-spacing:.04em;text-transform:uppercase;cursor:pointer;transition:background .15s ease,border-color .15s ease;
+}
+.nm-pill:hover{background:rgba(210,121,63,.16);border-color:rgba(210,121,63,.55)}
+.nm-modal-overlay{
+  position:fixed;inset:0;background:rgba(4,6,9,.72);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  display:flex;align-items:flex-end;justify-content:center;z-index:900;padding:0;
+  opacity:0;visibility:hidden;pointer-events:none;transition:opacity .2s ease;
+}
+.nm-modal-overlay.on{opacity:1;visibility:visible;pointer-events:auto}
+.nm-modal-overlay .nota-meso{margin:0;width:100%;max-width:560px;max-height:82vh;overflow-y:auto;border-radius:18px 18px 0 0}
+@media(min-width:640px){
+  .nm-modal-overlay{align-items:center;padding:20px}
+  .nm-modal-overlay .nota-meso{border-radius:16px}
+}
 /* ---------------------------------------------------------
    2 · CUSTOM TIMER RESPONSIVE
 --------------------------------------------------------- */
@@ -12541,28 +12562,50 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
      1 · NOTA METODOLÓGICA DEL MESOCICLO
   ========================================================= */
   function esc(s){ var d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
+  /* directiva de refactor (2026-09): la tarjeta gigante generaba fricción
+     visual ocupando toda la pantalla de inicio del día -- se reemplaza por
+     una píldora sutil en la cabecera que abre el mismo contenido en un
+     modal/drawer, sin estorbar la rutina. El modal se crea UNA sola vez en
+     <body> (no lo pisa renderMain, que solo reemplaza #mainContent) y se
+     abre/cierra con una clase; la píldora sí hay que reinsertarla en cada
+     render porque #mainContent se reconstruye entero cada vez. */
+  function crearModal(n){
+    if(document.getElementById('notaMesoOverlay')) return;
+    var overlay = document.createElement('div');
+    overlay.className = 'nm-modal-overlay';
+    overlay.id = 'notaMesoOverlay';
+    overlay.innerHTML =
+      '<div class="nota-meso" role="dialog" aria-modal="true" aria-label="Nota metodológica del mesociclo">' +
+        '<div class="nm-h"><span style="font-size:1.3rem">📋</span>' +
+          '<h3>Nota Metodológica del Mesociclo</h3>' +
+          '<button type="button" class="nm-tog" id="notaMesoClose" aria-label="Cerrar">✕</button></div>' +
+        '<div class="nm-b">' +
+          '<div><h4>Foco y justificación fisiológica</h4><p>' + esc(n.foco) + '</p></div>' +
+          '<div><h4>Puntos de adaptación personalizada</h4><p>' + esc(n.adaptacion) + '</p></div>' +
+        '</div>' +
+        '<div class="nm-ref"><b>Evidencia:</b> ' + (n.refs || []).map(esc).join('<br>') + '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    var cerrar = function(){ overlay.classList.remove('on'); };
+    overlay.addEventListener('click', function(e){ if(e.target === overlay) cerrar(); });
+    overlay.querySelector('#notaMesoClose').addEventListener('click', cerrar);
+    window.CoachNotaMesoAbrir = function(){
+      overlay.classList.add('on');
+      try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
+    };
+  }
   function nota(){
     var n = CFG.nota;
     if(!n || !n.foco) return;
     var main = document.getElementById('mainContent');
-    if(!main || document.getElementById('notaMeso')) return;
-    var box = document.createElement('div');
-    box.className = 'nota-meso'; box.id = 'notaMeso';
-    box.innerHTML =
-      '<div class="nm-h"><span style="font-size:1.3rem">📋</span>' +
-        '<h3>Nota Metodológica del Mesociclo</h3>' +
-        '<button type="button" class="nm-tog" aria-label="Plegar o desplegar">▾</button></div>' +
-      '<div class="nm-b">' +
-        '<div><h4>Foco y justificación fisiológica</h4><p>' + esc(n.foco) + '</p></div>' +
-        '<div><h4>Puntos de adaptación personalizada</h4><p>' + esc(n.adaptacion) + '</p></div>' +
-      '</div>' +
-      '<div class="nm-ref"><b>Evidencia:</b> ' + (n.refs || []).map(esc).join('<br>') + '</div>';
-    main.insertBefore(box, main.firstChild);
-    box.querySelector('.nm-tog').addEventListener('click', function(){
-      box.classList.toggle('plegada');
-      this.textContent = box.classList.contains('plegada') ? '▸' : '▾';
-      try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
-    });
+    if(!main) return;
+    crearModal(n);
+    if(main.querySelector('#notaMesoPill')) return;
+    var pill = document.createElement('button');
+    pill.type = 'button'; pill.className = 'nm-pill'; pill.id = 'notaMesoPill';
+    pill.innerHTML = '<span style="font-size:1rem">📋</span> Ver Nota Metodológica';
+    pill.addEventListener('click', function(){ if(window.CoachNotaMesoAbrir) window.CoachNotaMesoAbrir(); });
+    main.insertBefore(pill, main.firstChild);
   }
 
   /* =========================================================
@@ -14223,20 +14266,28 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         origen.querySelectorAll('.cf-line, .wb-line').forEach(function(l){
           var head = l.classList.contains('head');
           var txt = (l.querySelector('span:not(.n)') || l).textContent;
-          filas.push({ head: head, txt: txt });
+          var vidEl = l.querySelector('.video-link');
+          filas.push({ head: head, txt: txt, vid: vidEl ? vidEl.outerHTML : '' });
         });
       } else {
         bl.querySelectorAll('.block-body .ex-row, .block-body .wu-phase').forEach(function(r){
-          if(r.classList.contains('wu-phase')){ filas.push({ head:true, txt:r.textContent }); return; }
+          if(r.classList.contains('wu-phase')){ filas.push({ head:true, txt:r.textContent, vid:'' }); return; }
           var n = r.querySelector('.ex-name');
           var d = r.querySelector('.ex-detail');
+          var vidEl = r.querySelector('.video-link');
           var nombre = n ? (n.childNodes[0] ? n.childNodes[0].textContent : n.textContent) : r.textContent;
-          filas.push({ head:false, txt: String(nombre || '').trim() + (d ? ' — ' + d.textContent.trim() : '') });
+          filas.push({ head:false, txt: String(nombre || '').trim() + (d ? ' — ' + d.textContent.trim() : ''), vid: vidEl ? vidEl.outerHTML : '' });
         });
       }
       filas = filas.filter(function(f){ return String(f.txt || '').replace(/\\s+/g, ' ').trim(); });
       if(!filas.length){ return; }
 
+      /* directiva de refactor (2026-09): el video demostrativo del ítem NO
+         puede perderse al reconstruir la lista limpia -- antes se
+         descartaba (solo se leía el texto), dejando el warm-up sin acceso
+         a video. Se conserva el <a class="video-link"> original tal cual
+         (mismo data-yt/thumbnail que ya arma videoLinkHtml) y se reinserta
+         a la derecha del nombre, igual que en los bloques principales. */
       var html = filas.map(function(f){
         var t = String(f.txt).replace(/\\s+/g, ' ').trim();
         if(f.head || /^\\d+\\s*[\\.\\)]\\s/.test(t) || /:$/.test(t))
@@ -14245,7 +14296,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         if(!p) return '';
         return '<div class="wu-item">' +
           (p.dosis ? '<span class="wu-dose">' + esc(p.dosis) + '</span>' : '<span class="wu-dose">·</span>') +
-          '<span class="wu-name">' + esc(p.nombre) + '</span></div>';
+          '<span class="wu-name">' + esc(p.nombre) + '</span>' + (f.vid || '') + '</div>';
       }).join('');
 
       var lista = bl.querySelector('.wu-list');
@@ -14300,6 +14351,17 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   }
 
   function repintar(){ try{ warmup(); sinDuplicados(); }catch(e){} }
+  /* click delegado para el botón de video reinsertado en .wu-list: el
+     bloque se reconstruye por completo en cada repintado (innerHTML), así
+     que un listener atado a un <a> puntual no sobrevive; delegando en el
+     documento una sola vez alcanza para siempre, sin importar cuántas
+     veces se repinte la lista. */
+  document.addEventListener('click', function(e){
+    var link = e.target.closest && e.target.closest('.wu-list .video-link');
+    if(!link) return;
+    var ytid = link.dataset.yt;
+    if(ytid && typeof openVideoPopup === 'function') openVideoPopup(ytid);
+  });
   function mount(){
     repintar();
     var main = document.getElementById('mainContent') || document.body;
@@ -14390,13 +14452,21 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         subtítulo, dosis o instrucción — nunca una píldora vacía
   --------------------------------------------------------- */
   var RX_FASE = /^(?:\\d+\\s*[\\.\\)]\\s*)?(?:fase\\s*\\d|elevaci[óo]n de (?:temperatura|pulso)|elevar temperatura|activaci[óo]n|movilidad(?: articular)?|series de aproximaci[óo]n|aproximaci[óo]n|cool.?down|vuelta a la calma|preparaci[óo]n)/i;
+  /* directiva de refactor (2026-09): RX_FASE detecta títulos de sección por
+     una palabra genérica al inicio ("Movilidad...", "Activación...") -- eso
+     atrapaba ejercicios reales con nombres que arrancan igual (ej.
+     "Movilidad de cadera 90/90 — rotaciones por lado") y los mostraba como
+     título plano en vez de ítem con su chip. Ahora la dosis manda primero:
+     si el renglón trae un número de series/tiempo/reps en cualquier parte
+     del texto, SIEMPRE es un ítem de trabajo, nunca un título de sección,
+     sin importar con qué palabra empiece. */
   function claseDe(txt, dosis){
     var t = String(txt || '').replace(/\\s+/g, ' ').trim();
     if(!t) return null;
-    if(/:\\s*$/.test(t) || RX_FASE.test(t)) return 'fase';
     if(dosis) return 'item';
     /* si declara una dosis en el texto, es trabajo y no un subtítulo */
     if(/\\d/.test(t) && /(\\bmin\\b|\\bseg\\b|\\d\\s*s\\b|\\breps?\\b|[x×]\\s*\\d|\\d\\s*\\/\\s*\\d|\\bm\\b|\\bcal\\b)/i.test(t)) return 'item';
+    if(/:\\s*$/.test(t) || RX_FASE.test(t)) return 'fase';
     /* sin dosis: subtítulo si es corto, instrucción si es una frase */
     return (t.length <= 46 && !/[.,;]/.test(t)) ? 'fase' : 'nota';
   }
@@ -14410,6 +14480,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         var dosis = dose ? dose.textContent.replace(/\\s+/g, ' ').trim() : '';
         if(dosis === '·' || dosis === '.') dosis = '';
         var cls = claseDe(txt, dosis);
+        var vid = it.querySelector('.video-link'); /* se preserva al reclasificar */
         if(cls === 'fase'){
           var f = document.createElement('div');
           f.className = 'wu-fase';
@@ -14421,31 +14492,21 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
           var n = document.createElement('div');
           n.className = 'wu-nota';
           n.textContent = txt;
+          if(vid) n.insertAdjacentHTML('beforeend', vid.outerHTML);
           it.parentNode.replaceChild(n, it);
           return;
         }
-        /* línea con dosis: cápsula compacta alineada */
-        if(dose && !dosis){ dose.remove(); dose = null; }
-        if(!dose && !it.querySelector('.wu-bullet')){
-          it.classList.add('plain');
-          var b = document.createElement('span');
-          b.className = 'wu-bullet';
-          it.insertBefore(b, it.firstChild);
+        /* línea de trabajo: siempre lleva chip de volumen a la izquierda --
+           ninguna queda como bullet pelado. Si no se pudo extraer una
+           dosis concreta (series/tiempo), se marca como movilidad libre. */
+        if(!dose){
+          dose = document.createElement('span');
+          dose.className = 'wu-dose';
+          it.insertBefore(dose, it.firstChild);
         }
-      });
-      /* ninguna píldora puede quedar con un punto solo */
-      lista.querySelectorAll('.wu-dose').forEach(function(d){
-        var t = d.textContent.replace(/\\s+/g, '').trim();
-        if(!t || t === '·' || t === '.'){
-          var it = d.closest('.wu-item');
-          d.remove();
-          if(it && !it.querySelector('.wu-bullet')){
-            it.classList.add('plain');
-            var b = document.createElement('span');
-            b.className = 'wu-bullet';
-            it.insertBefore(b, it.firstChild);
-          }
-        }
+        if(!dosis) dose.textContent = 'MOB';
+        it.classList.remove('plain');
+        var bOld = it.querySelector('.wu-bullet'); if(bOld) bOld.remove();
       });
     });
   }
@@ -15759,8 +15820,25 @@ body.cf-modo .block .ex-tip{display:none}
       }
       /* acordeón activo inteligente: al completarse recién ahora (por los
          checks o por "Cerrar ronda"), se limpia cualquier apertura manual
-         para que la ronda colapse sola y ceda el lugar a la siguiente */
-      if(lista && !eraLista) delete caj.dataset.bsAbierta;
+         para que la ronda colapse sola y ceda el lugar a la siguiente.
+         AUDITORÍA DE CHECKBOXES (directiva 12): esto se hacía en el mismo
+         tick del tilde que completaba la ronda, así que la fila entera
+         (incluido el checkbox recién marcado) se ocultaba de inmediato por
+         el display:none de la fila colapsada (ver regla CSS .bs-r:not(.bs-abierta) .bs-fila)
+         -- el alumno ni llegaba a ver el check en verde y, si se arrepentía,
+         el checkbox "desaparecía" en vez de permitir destildarlo, lo que
+         se percibía como un checkbox roto. Se da un respiro de 900ms para
+         que el tilde final quede visible antes de plegar la ronda sola; si
+         en ese ínterin el alumno la destilda, el colapso se cancela solo
+         (se vuelve a chequear bs-lista antes de aplicar). */
+      if(lista && !eraLista){
+        caj.dataset.bsAbierta = '1';
+        setTimeout(function(){
+          if(caj.classList.contains('bs-lista')) delete caj.dataset.bsAbierta;
+          var blRef = caj.closest('.block');
+          if(blRef) estado(blRef);
+        }, 900);
+      }
     });
     if(pend) pend.classList.add('bs-activa');
     cajas.forEach(function(caj){
@@ -18251,6 +18329,17 @@ input[type="checkbox"]:active{
 }
 .nu-libre-guia{font-size:calc(12px * var(--fzs,1));line-height:1.55;color:#C9CFD8;margin-bottom:10px}
 .nu-meal.libre{border-color:rgba(210,121,63,.35)}
+/* directiva de refactor (2026-09): plan externo pegado por el coach --
+   tarjetas legibles por comida, sin cálculo de macros forzado. */
+.nu-ext-banner{
+  font-size:calc(11.5px * var(--fzs,1));line-height:1.5;color:#D9A672;
+  background:rgba(210,121,63,.08);border:1px solid rgba(210,121,63,.28);
+  border-radius:10px;padding:8px 11px;margin-bottom:12px;
+}
+.nu-ext-card{border:1px solid rgba(255,255,255,.08);border-radius:14px;margin-bottom:9px;overflow:hidden;background:rgba(255,255,255,.02);padding:11px 13px}
+.nu-ext-h{font-size:calc(13.5px * var(--fzs,1));font-weight:700;color:#EDEFF2;margin-bottom:5px}
+.nu-ext-b p{margin:0 0 4px;font-size:calc(12.5px * var(--fzs,1));line-height:1.55;color:#C9CFD8}
+.nu-ext-b p:last-child{margin-bottom:0}
 </style>
 <script>
 /* =========================================================
@@ -18358,6 +18447,36 @@ input[type="checkbox"]:active{
     if(t.indexOf('baja') >= 0 || t.indexOf('limitada') >= 0) return 'C';
     return 'B';
   }
+  /* directiva de refactor (2026-09): importador de dieta externa -- si el
+     coach pegó el plan armado por un nutricionista externo (PLAN.modo ===
+     'externo'), se muestra tal cual estructurado en tarjetas por comida,
+     sin pasar por el calculador de macros ni por ninguna de las funciones
+     de abajo (log de comidas, intercambios, barras, etc.) que asumen un
+     plan con .comidas/.macros -- rama 100% aparte y aditiva. */
+  function parrafosPlanExterno(texto){
+    var bloques = String(texto || '').replace(/\\r\\n/g, '\\n').split(/\\n\\s*\\n+/);
+    var out = [];
+    bloques.forEach(function(b){
+      var lineas = b.split('\\n').map(function(l){ return l.trim(); }).filter(Boolean);
+      if(!lineas.length) return;
+      var esTitulo = lineas[0].length <= 42 && !/[.:,]$/.test(lineas[0]) && lineas.length > 1;
+      out.push({ titulo: esTitulo ? lineas[0].replace(/:$/, '') : '', cuerpo: esTitulo ? lineas.slice(1) : lineas });
+    });
+    return out;
+  }
+  function renderPlanExterno(cont){
+    var txt = (PLAN.externo && PLAN.externo.texto) || '';
+    var bloques = parrafosPlanExterno(txt);
+    cont.innerHTML =
+      '<div class="nu-ext-banner">📄 Plan cargado por tu coach a partir del plan armado por tu nutricionista.</div>' +
+      bloques.map(function(b){
+        return '<div class="nu-ext-card">' +
+          (b.titulo ? '<div class="nu-ext-h">' + esc(b.titulo) + '</div>' : '') +
+          '<div class="nu-ext-b">' + b.cuerpo.map(function(l){ return '<p>' + esc(l) + '</p>'; }).join('') + '</div>' +
+        '</div>';
+      }).join('') +
+      '<div class="nu-legal">' + esc(PLAN.disclaimer || NUTRI_DISCLAIMER_TXT) + '</div>';
+  }
   function render(){
     var cont = document.getElementById('jpNutBody'); if(!cont) return;
     if(!PLAN){
@@ -18365,6 +18484,7 @@ input[type="checkbox"]:active{
         'Mientras tanto, cada día tiene su tarjeta de nutrición de la sesión.</div>';
       return;
     }
+    if(PLAN.modo === 'externo'){ renderPlanExterno(cont); return; }
     var activa = planActivo();
     var ent = esDiaEntreno();
     var m = (PLAN.macros && (ent ? PLAN.macros.entreno : PLAN.macros.descanso)) || {};
@@ -19185,16 +19305,21 @@ input[type="checkbox"]:active{
    como el badge del drawer) para no competir visualmente con el nombre;
    pintarPago() lo deja vacío (:empty => display:none) si no hay payDue
    cargado, igual que ya hacía con el badge del drawer. */
-.hdc-pay-chip{ margin-top:2px; line-height:1; }
+.hdc-pay-chip{ margin-top:3px; line-height:1; }
 .hdc-pay-chip:empty{ display:none; }
+/* directiva de refactor (2026-09): micro-chip Luxury Stealth -- fondo y
+   borde sutil (mismo lenguaje visual que .fin-badge del panel del coach),
+   nunca un banner invasivo. Verde atenuado = al día; ámbar/rojo apagado =
+   próximo a vencer / vencido, sin ícono de alarma. */
 .hdc-pay-b{
-  display:inline-flex; align-items:center; gap:3px;
-  font-family:var(--font-mono); font-size:.62rem; font-weight:600;
-  letter-spacing:.02em; line-height:1.3; opacity:.85;
+  display:inline-flex; align-items:center; gap:4px; padding:2px 8px;
+  border-radius:999px; background:#141920; border:1px solid #28303A;
+  font-family:var(--font-mono); font-size:.62rem; font-weight:700;
+  letter-spacing:.02em; line-height:1.5; white-space:nowrap;
 }
-.hdc-pay-b.ok{ color:#9AA3B0; }
-.hdc-pay-b.proximo{ color:#D9A672; }
-.hdc-pay-b.venc{ color:#C97B54; }
+.hdc-pay-b.ok{ color:#6FBF95; border-color:rgba(111,191,149,.3); }
+.hdc-pay-b.proximo{ color:#D9A672; border-color:rgba(217,166,114,.35); }
+.hdc-pay-b.venc{ color:#C97B54; border-color:rgba(201,123,84,.4); }
 .hdc-info{
   flex-shrink:0; width:38px; height:38px; display:flex; align-items:center; justify-content:center;
   border:1px solid #1E222B; background:#12151B;
@@ -19928,8 +20053,19 @@ body.focus-mode .hd-dock{display:none}
     var box = q('hdpNutricionBody'); if(!box) return;
     var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
     var plan = cfg.nutriPlan;
-    if(!plan || !plan.macros){
+    if(!plan || (plan.modo !== 'externo' && !plan.macros)){
       box.innerHTML = '<p class="hdp-acc-empty">ℹ️ Plan nutricional no asignado actualmente.</p>';
+      return;
+    }
+    /* plan externo pegado por el coach: sin macros calculados, se muestra
+       directo el botón a la tarjeta con el documento estructurado. */
+    if(plan.modo === 'externo'){
+      box.innerHTML = '<p class="hdp-acc-empty" style="padding-bottom:8px">📄 Tu coach cargó tu plan armado por un nutricionista externo.</p>' +
+        '<button type="button" class="hdp-nutri-btn" id="hdpNutriOpen">📋 Ver Plan de Alimentación Completo</button>';
+      var btnExt = q('hdpNutriOpen');
+      if(btnExt) btnExt.addEventListener('click', function(){
+        if(window.CoachNutricion) window.CoachNutricion.abrir();
+      });
       return;
     }
     var m = plan.macros.entreno || {};
@@ -20594,6 +20730,13 @@ function planNutricional(ath){
     const r = o[ath.id];
     if(!r || r.estado !== 'pub' || !r.plan) return null;
     const p = r.plan;
+    /* directiva de refactor (2026-09): plan externo pegado por el coach --
+       no tiene comidas/macros calculados, así que valida distinto (solo
+       exige el texto) y viaja tal cual para que planNutricional() no lo
+       descarte como si fuera un plan estructurado incompleto. */
+    if(p.modo === 'externo'){
+      return (p.externo && p.externo.texto && p.externo.texto.trim()) ? p : null;
+    }
     /* 29no pedido (30/08): un plan SEMANAL no trae "comidas" a nivel raíz
        (viven adentro de p.dias.{lun..dom}) -- se valida distinto según la
        forma, sin tocar el chequeo de siempre para un plan de un solo día. */
@@ -21647,10 +21790,17 @@ document.addEventListener('DOMContentLoaded', init);
       (opts.notes ? 'Extra: ' + opts.notes + '\n' : '') +
       (inc.length ? 'Incluí: ' + inc.join(', ') + '.\n' : '') +
       '4 a 6 bloques. tempo = 4 dígitos. restSeconds entero.\n' +
+      /* directiva de refactor (2026-09): cada ítem de warm-up SIEMPRE debe
+         traer su dosis pegada con " — " (serie×rep, segundos o minutos),
+         nunca un nombre suelto -- la app la convierte en un chip de volumen
+         consistente ([2x10] / [60s] / etc.) a la izquierda del nombre. Si
+         es movilidad libre sin dosis medible, igual hay que ponerle un
+         tiempo aproximado (ej. "2-3 min") para que nunca quede sin chip. */
+      'Cada ítem del warm-up lleva SIEMPRE su dosis pegada con " — " (series×reps, segundos o minutos) — nunca un nombre sin dosis. Si es movilidad libre sin dosis medible, poné un tiempo aproximado igual (ej. "Movilidad de cadera 90/90 — 2 min").\n' +
       'JSON exacto:\n' +
       '{"short":"DÍA ' + (i + 1) + '","label":"corto","title":"título","metaChips":["🎯 chip","💪 chip"],' +
       '"focusTitle":"Foco Técnico del Día","focusText":"2 frases","summary":"volumen real de la sesión","cooldown":["Estiramiento — 2x30s"],"bloques":[' +
-      '{"tipo":"list","titulo":"Warm-Up Específico","subtitulo":"Activación (6-8 min)","icon":"🔥","category":"warmup","optional":false,"items":["Nombre — 3 min"],"tips":"cue"},' +
+      '{"tipo":"list","titulo":"Warm-Up Específico","subtitulo":"Activación (6-8 min)","icon":"🔥","category":"warmup","optional":false,"items":["Nombre del ejercicio — 3 min","Otro ejercicio — 2x10"],"tips":"cue"},' +
       '{"tipo":"block","titulo":"Block A: nombre","subtitulo":"Ancla pesada","icon":"💪","category":"strength","optional":false,"exId":"ID","hasApprox":true,"approxSets":2,"efSets":4,"reps":"6-8","tempo":"2110","restSeconds":150,"failCapable":true,"tips":"cue","objective":"para qué sirve"},' +
       '{"tipo":"superset","titulo":"Block B: Biset — X + Y","subtitulo":"sin descanso entre ejercicios","icon":"🔗","category":"strength","optional":false,"ejercicios":[{"exId":"ID","reps":"10-12","tempo":"2011"},{"exId":"ID","reps":"12-15","tempo":"2011"}],"efSets":3,"restSeconds":90,"failCapable":true,"tips":"cue","objective":"objetivo"},' +
       '{"tipo":"finisher","titulo":"🔥 Finisher","subtitulo":"Bombeo","icon":"🔥","category":"metcon","optional":true,"fin":[{"exId":"ID","repsRange":"15-20"}],"roundsByWeek":["2 rondas (RIR 1-2)","2 rondas (RIR 1)","3 rondas al fallo",""],"tips":"cue"},' +
@@ -42484,6 +42634,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       <div class="np-tabs">
         <button type="button" data-nptab="ficha" class="on">1 · Ficha</button>
         <button type="button" data-nptab="plan">2 · Plan generado</button>
+        <button type="button" data-nptab="externo">📄 Plan Externo</button>
       </div>
 
       <div id="npDiag" style="display:none;margin:10px 0 0;padding:10px 12px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.03);font-size:12px;line-height:1.6"></div>
@@ -42651,6 +42802,24 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         <div class="np-legal">
           Sugerencias orientativas y educativas de un entrenador. No reemplazan la consulta con
           un nutricionista, y así se le muestra al alumno/a.
+        </div>
+      </div>
+
+      <!-- ===== PLAN EXTERNO (pegado por el coach, sin cálculo de macros) ===== -->
+      <div class="np-pane" id="npPaneExterno">
+        <div class="np-sec">
+          <div class="sh">📄 Pegar plan externo (texto / transcript de PDF)</div>
+          <div class="hint" style="margin-bottom:8px">Si el alumno/a ya tiene un plan armado por su nutricionista, pegalo acá tal cual (una comida por bloque, separadas por una línea en blanco). Se muestra en la app del alumno/a sin recalcular macros ni forzar ningún formato.</div>
+          <textarea id="npExternoTexto" style="min-height:260px" placeholder="Desayuno&#10;3 huevos&#10;1 banana&#10;Café con leche descremada&#10;&#10;Almuerzo&#10;150g de pollo&#10;Arroz integral 1 taza&#10;Ensalada verde"></textarea>
+        </div>
+        <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+          <button class="btn primary" id="npExternoPub">✅ Publicar plan externo al alumno/a</button>
+          <button class="btn ghost sm" id="npExternoSave">💾 Guardar sin publicar</button>
+          <button class="btn ghost sm" id="npExternoDespub">Despublicar</button>
+        </div>
+        <div class="np-legal">
+          El plan externo reemplaza al plan calculado mientras esté publicado: el alumno/a ve
+          este texto estructurado en tarjetas, no las macros del wizard.
         </div>
       </div>
     </div>
@@ -43880,6 +44049,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       if(ctrl) ctrl.style.display = 'none';
       return; }
 
+    /* plan externo pegado por el coach: no tiene comidas/macros calculados
+       -- esta pestaña ("2 · Plan generado") no aplica, se deriva a la
+       pestaña propia. Evita que el resto de esta función (que asume
+       plan.comidas/plan.macros) rompa con un plan de forma distinta. */
+    if(plan.modo === 'externo'){
+      val.innerHTML = '<div class="np-val ok">📄 Hay un plan externo cargado -- vé a la pestaña "Plan Externo" para verlo o editarlo.</div>';
+      document.getElementById('npKpis').innerHTML = '';
+      document.getElementById('npComidasBox').innerHTML = '';
+      document.getElementById('npPeri').innerHTML = '';
+      document.getElementById('npSupl').innerHTML = '';
+      if(ctrl) ctrl.style.display = 'none';
+      return;
+    }
+
     /* 29no pedido (30/08): plan SEMANAL -- rama nueva y separada, la rama de
        abajo (plan de un solo día, como siempre) queda sin tocar. */
     if(plan.semanal){
@@ -44006,8 +44189,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     e.textContent = R.estado === 'pub' ? 'publicado' : R.estado === 'bor' ? 'borrador' : 'sin plan';
     e.className = 'np-est ' + (R.estado === 'pub' ? 'pub' : R.estado === 'bor' ? 'bor' : '');
     var f = document.getElementById('npFuente');
-    f.textContent = R.fuente === 'ia' ? 'generado con IA' : R.fuente === 'ia_parcial' ? 'IA + motor local (parcial)' : R.fuente === 'local' ? 'motor local' : '—';
-    f.className = 'np-est' + (R.fuente === 'ia' || R.fuente === 'ia_parcial' ? ' pub' : '');
+    f.textContent = R.fuente === 'ia' ? 'generado con IA' : R.fuente === 'ia_parcial' ? 'IA + motor local (parcial)' : R.fuente === 'local' ? 'motor local' : R.fuente === 'externo' ? 'plan externo pegado' : '—';
+    f.className = 'np-est' + (R.fuente === 'ia' || R.fuente === 'ia_parcial' || R.fuente === 'externo' ? ' pub' : '');
     var b = document.getElementById('btnNutriPlan');
     if(b) b.classList.toggle('on', R.estado === 'pub');
   }
@@ -44291,6 +44474,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     $$('#mNP [data-nptab]').forEach(function(b){ b.classList.toggle('on', b.dataset.nptab === id); });
     document.getElementById('npPaneFicha').classList.toggle('on', id === 'ficha');
     document.getElementById('npPanePlan').classList.toggle('on', id === 'plan');
+    var pe = document.getElementById('npPaneExterno');
+    if(pe) pe.classList.toggle('on', id === 'externo');
   }
 
   /* ---------- Biblioteca de Protocolos: UI del wizard (10/09) ---------- */
@@ -44331,7 +44516,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!a){ toast('Elegí un alumno/a primero', 'err'); return; }
     athAct = a; R = reg(a.id);
     document.getElementById('npWho').textContent = (typeof fullName === 'function' ? fullName(a) : '');
-    volcarFicha(); pintarPlan(); pintarEstado(); tab(R.plan ? 'plan' : 'ficha');
+    volcarFicha(); pintarPlan(); pintarEstado();
+    var txtExt = document.getElementById('npExternoTexto');
+    if(txtExt) txtExt.value = (R.plan && R.plan.modo === 'externo' && R.plan.externo) ? (R.plan.externo.texto || '') : '';
+    tab((R.plan && R.plan.modo === 'externo') ? 'externo' : (R.plan ? 'plan' : 'ficha'));
     renderDiag(null);
     poblarProtocolos();
     document.getElementById('npProtoEditor').style.display = 'none';
@@ -44429,6 +44617,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       });
       document.getElementById('npPub').addEventListener('click', function(){
         if(!R.plan){ toast('Generá el plan primero', 'err'); return; }
+        /* el plan externo se publica desde su propia pestaña (sin motor de
+           validación de macros, no aplica acá) -- este botón del pie del
+           modal es el de siempre para el plan calculado. */
+        if(R.plan.modo === 'externo'){ document.getElementById('npExternoPub').click(); return; }
         var v = R.plan.semanal ? validarSemanal(R.plan, R.ficha) : validar(R.plan, R.ficha);
         if(!v.ok && !confirm('El plan no pasa la validación:\n\n' + v.errores.join('\n') +
           '\n\n¿Publicarlo igual?')) return;
@@ -44438,6 +44630,36 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       document.getElementById('npDespub').addEventListener('click', function(){
         R.estado = R.plan ? 'bor' : 'sin'; guardarReg(athAct.id, R); pintarEstado();
         toast('Plan despublicado: no viaja a la app');
+      });
+
+      /* Plan Externo · pegado a mano por el coach, sin motor de cálculo.
+         Reusa el mismo R/reg/guardarReg de siempre, con su propio "modo"
+         (R.plan.modo === 'externo') para que pintarPlan()/planNutricional()
+         (Builder y compile()) lo reconozcan y no intenten leer
+         comidas/macros que este plan no tiene. */
+      function tomarExterno(){
+        var texto = (document.getElementById('npExternoTexto').value || '').trim();
+        return { modo:'externo', externo:{ texto: texto } };
+      }
+      document.getElementById('npExternoSave').addEventListener('click', function(){
+        var texto = (document.getElementById('npExternoTexto').value || '').trim();
+        if(!texto){ toast('Pegá el plan antes de guardar', 'err'); return; }
+        R.plan = tomarExterno(); R.fuente = 'externo';
+        if(R.estado !== 'pub') R.estado = 'bor';
+        guardarReg(athAct.id, R); pintarEstado(); pintarPlan();
+        toast('💾 Plan externo guardado (sin publicar)');
+      });
+      document.getElementById('npExternoPub').addEventListener('click', function(){
+        var texto = (document.getElementById('npExternoTexto').value || '').trim();
+        if(!texto){ toast('Pegá el plan antes de publicar', 'err'); return; }
+        R.plan = tomarExterno(); R.fuente = 'externo'; R.estado = 'pub';
+        guardarReg(athAct.id, R); pintarEstado(); pintarPlan();
+        toast('✅ Plan externo publicado: se incluye al recompilar la app');
+      });
+      document.getElementById('npExternoDespub').addEventListener('click', function(){
+        if(!R.plan || R.plan.modo !== 'externo') return;
+        R.estado = 'bor'; guardarReg(athAct.id, R); pintarEstado();
+        toast('Plan externo despublicado: no viaja a la app');
       });
 
       /* 29no pedido (30/08): tabs de día, chips de ciclado y selector de
