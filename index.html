@@ -237,6 +237,19 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .ath-card.on{border-color:rgba(210,121,63,.4);background:linear-gradient(180deg,rgba(210,121,63,.06),#0C1014)}
 .ath-card.on:before{background:var(--gold)}
 .ath-top{display:flex;gap:11px;align-items:center;margin-bottom:12px}
+/* directiva 13: chip de estado de planificación (borrador/listo) en la
+   tarjeta del alumno -- Luxury Stealth, mismo lenguaje visual que el
+   micro-badge de cuota (fondo oscuro, borde sutil, texto atenuado) */
+.plan-stat-wrap{flex:0 0 auto;text-align:right;line-height:1.3}
+.plan-stat-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;
+  background:#141920;border:1px solid #28303A;font-family:var(--font-mono);font-size:.62rem;font-weight:700;
+  letter-spacing:.03em;white-space:nowrap}
+.plan-stat-chip.borrador{color:#D9A672;border-color:rgba(217,166,114,.35)}
+.plan-stat-chip.listo{color:#6FBF95;border-color:rgba(111,191,149,.3)}
+.plan-stat-rango{margin-top:3px;font-size:.62rem;color:var(--muted);white-space:nowrap}
+.plan-stat-tog{font-family:var(--font-mono);letter-spacing:.02em}
+.plan-stat-tog.borrador{color:#D9A672;border-color:rgba(217,166,114,.4)}
+.plan-stat-tog.listo{color:#6FBF95;border-color:rgba(111,191,149,.4)}
 .avatar{width:44px;height:44px;flex:0 0 44px;border-radius:13px;display:grid;place-items:center;font-weight:900;font-size:15px;color:#08090B;background:linear-gradient(135deg,var(--gold),#E8965E)}
 .avatar.t2{background:linear-gradient(135deg,var(--teal),#00897B);color:#0B1A22}
 .avatar.t3{background:linear-gradient(135deg,#8E7BFF,#5C3FE0);color:#fff}
@@ -1677,7 +1690,11 @@ function newPlan(ath){
   const n = Math.max(3, Math.min(6, parseInt(ath.freq,10) || 4));
   const dias = [];
   for(let i=0;i<n;i++) dias.push(newDay(i));
-  return { athleteId: ath.id, meta: defaultMeta(ath), meso: defaultWeeks(), dias: dias };
+  /* directiva 13: estado de planificación (borrador/listo) + vigencia del
+     ciclo -- un plan recién creado arranca siempre en borrador, sin fechas
+     forzadas (el coach las carga si quiere mostrarlas). */
+  return { athleteId: ath.id, meta: defaultMeta(ath), meso: defaultWeeks(), dias: dias,
+    estado: 'borrador', vigenciaDesde: '', vigenciaHasta: '' };
 }
 function plan(athId){
   const a = getAth(athId); if(!a) return null;
@@ -1685,6 +1702,11 @@ function plan(athId){
   const p = S.plans[athId];
   if(!p.meta) p.meta = defaultMeta(a);
   if(!p.meso || !p.meso.length || p.meso[0].phase === undefined) p.meso = defaultWeeks();
+  /* plan preexistente (de antes de esta directiva) sin el campo: se
+     completa con el default sin tocar nada más del objeto */
+  if(p.estado !== 'borrador' && p.estado !== 'listo') p.estado = 'borrador';
+  if(p.vigenciaDesde == null) p.vigenciaDesde = '';
+  if(p.vigenciaHasta == null) p.vigenciaHasta = '';
   const need = Math.max(3, Math.min(6, parseInt(a.freq,10)||4));
   while(p.dias.length < need) p.dias.push(newDay(p.dias.length));
   p.dias.forEach((d,i) => {
@@ -2047,6 +2069,61 @@ function closeModal(id){
 let editAthId = null;
 let tmpTags = [], tmpBans = [], tmpPrefs = [];
 
+/* directiva 13: chip de estado de planificación + rango de vigencia para
+   la tarjeta de un alumno en el grid. Lee S.plans[a.id] directo (no
+   plan(a.id)) para no crear un plan nuevo sólo por pintar la lista. */
+function fmtVigCorta(iso){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso||''));
+  return m ? (m[3] + '/' + m[2]) : '';
+}
+/* directiva 13, capa 2 (aviso al marcar la planificación como COMPLETADA):
+   esta app no tiene backend propio -- no hay servidor de suscripciones
+   push ni claves VAPID -- así que un push real al celular del alumno
+   todavía no es posible desde acá. Lo que SÍ se deja armado es la
+   estructura completa del lado de "qué avisar y a quién": un registro
+   local con el payload ya redactado (mismo formato title/body/tag que
+   ya entiende el listener 'push' del Service Worker, ver pwaSW()), listo
+   para que el día que exista un endpoint de push remoto sólo haga falta
+   leer esta cola y despacharla -- CoachPushStub.pendientes() la expone
+   para eso. */
+const KAVISOS = 'coachjp_avisos_pendientes_v1';
+function leerAvisosPendientes(){
+  try{ return JSON.parse(localStorage.getItem(KAVISOS) || '{}') || {}; }catch(e){ return {}; }
+}
+function armarAvisoPlanListo(ath, p){
+  try{
+    const o = leerAvisosPendientes();
+    o[ath.id] = {
+      athId: ath.id, tipo: 'plan_listo', armadoTs: Date.now(), enviado: false,
+      payload: {
+        title: 'Nueva rutina lista · Coach JP',
+        body: fullName(ath) + ', tu programación ya está lista' +
+              (p.vigenciaDesde && p.vigenciaHasta ? ' (ciclo ' + p.vigenciaDesde.slice(8,10) + '/' + p.vigenciaDesde.slice(5,7) +
+                ' al ' + p.vigenciaHasta.slice(8,10) + '/' + p.vigenciaHasta.slice(5,7) + ')' : '') + '. ¡A entrenar!',
+        tag: 'coachjp-plan-listo'
+      }
+    };
+    localStorage.setItem(KAVISOS, JSON.stringify(o));
+  }catch(e){}
+}
+window.CoachPushStub = {
+  pendientes: function(){ return leerAvisosPendientes(); },
+  marcarEnviado: function(athId){
+    const o = leerAvisosPendientes();
+    if(o[athId]){ o[athId].enviado = true; o[athId].enviadoTs = Date.now(); localStorage.setItem(KAVISOS, JSON.stringify(o)); }
+  }
+};
+function planStatusChipHTML(a){
+  const p = S.plans[a.id];
+  if(!p) return '';
+  const listo = p.estado === 'listo';
+  const chip = '<span class="plan-stat-chip ' + (listo ? 'listo' : 'borrador') + '">' +
+    (listo ? '⚡ COMPLETADA' : '⏳ EN PROGRESO') + '</span>';
+  const desde = fmtVigCorta(p.vigenciaDesde), hasta = fmtVigCorta(p.vigenciaHasta);
+  const rango = (desde && hasta) ? '<div class="plan-stat-rango">Ciclo: ' + desde + ' al ' + hasta + '</div>' : '';
+  return '<div class="plan-stat-wrap">' + chip + rango + '</div>';
+}
+
 function renderAthletes(){
   const q = norm($('#athSearch').value);
   const list = S.athletes.filter(a =>
@@ -2072,6 +2149,8 @@ function renderAthletes(){
             '<div class="ath-name">' + esc(fullName(a) || 'Sin nombre') + (typeof finDotHTML === 'function' ? finDotHTML(a) : '') + '</div>' +
             '<div class="ath-meta">' + esc(a.freq) + ' días/sem · ' + esc(a.nivel || 'Intermedio') + '</div>' +
           '</div>' +
+          '<div class="spacer"></div>' +
+          planStatusChipHTML(a) +
         '</div>' +
         (a.foco ? '<div class="mini"><b>Foco:</b> ' + esc(a.foco) + '</div>' : '') +
         (a.deportes ? '<div class="mini"><b>Extra:</b> ' + esc(a.deportes) + '</div>' : '') +
@@ -2529,6 +2608,18 @@ function renderBuilder(){
       (ath.tags||[]).map(t => '<span class="pill orange">🦴 ' + esc(t) + '</span>').join('') +
       (ath.prohibidos||[]).map(t => '<span class="pill red">⛔ ' + esc(t) + '</span>').join('') +
       (ath.preferidos||[]).map(t => '<span class="pill teal">⭐ ' + esc(t) + '</span>').join('') +
+    '</div>' +
+    /* directiva 13: switch de estado de planificación + vigencia del ciclo,
+       en su propia fila (flex-basis:100%) para no competir por espacio con
+       las etiquetas del alumno de arriba */
+    '<div style="flex:0 0 100%;display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:2px;padding-top:10px;border-top:1px dashed var(--line)">' +
+      '<button type="button" class="btn sm plan-stat-tog ' + (p.estado==='listo'?'listo':'borrador') + '" id="btnPlanEstado">' +
+        (p.estado==='listo' ? '⚡ Planificación: COMPLETADA' : '⏳ Planificación: EN BORRADOR') +
+      '</button>' +
+      '<label class="lb" style="margin:0">Vigencia del ciclo</label>' +
+      '<input type="date" id="planVigDesde" value="' + esc(p.vigenciaDesde||'') + '" style="width:auto">' +
+      '<span class="hint" style="margin:0">al</span>' +
+      '<input type="date" id="planVigHasta" value="' + esc(p.vigenciaHasta||'') + '" style="width:auto">' +
     '</div>';
 
   /* ---------- Mesociclo (WEEKS_META) ---------- */
@@ -3019,6 +3110,28 @@ function bindBuilder(){
     toast('Chequeo de seguridad ejecutado');
   });
   $('#btnGoExport').addEventListener('click', () => go('exportar'));
+
+  /* directiva 13: estado de planificación (borrador/listo) + vigencia --
+     #bHead se reconstruye entero en cada renderBuilder(), así que se
+     delega sobre el propio nodo #bHead (no sobre sus hijos) para que el
+     listener sobreviva a cada innerHTML nuevo. */
+  $('#bHead').addEventListener('click', e => {
+    if(!e.target.closest('#btnPlanEstado')) return;
+    const ath = active();
+    const p = plan(S.activeId); if(!p) return;
+    p.estado = (p.estado === 'listo') ? 'borrador' : 'listo';
+    save(); renderBuilder(); renderAthletes();
+    if(p.estado === 'listo' && ath && typeof armarAvisoPlanListo === 'function') armarAvisoPlanListo(ath, p);
+    toast(p.estado === 'listo' ? '⚡ Planificación marcada como COMPLETADA' : '⏳ Planificación vuelta a BORRADOR');
+  });
+  $('#bHead').addEventListener('change', e => {
+    const id = e.target.id;
+    if(id !== 'planVigDesde' && id !== 'planVigHasta') return;
+    const p = plan(S.activeId); if(!p) return;
+    if(id === 'planVigDesde') p.vigenciaDesde = e.target.value;
+    else p.vigenciaHasta = e.target.value;
+    save(); renderAthletes();
+  });
 
   /* panel del día */
   const panel = $('#dayPanel');
@@ -4158,7 +4271,10 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <span class="hdc-brand-sub">High Performance System</span>
         </div>
         <span class="hdc-name" id="hdcName">{{ATHLETE_NAME}}</span>
-        <span class="hdc-pay-chip" id="hdcPayChip"></span>
+        <span class="hdc-chip-row">
+          <span class="hdc-pay-chip" id="hdcPayChip"></span>
+          <span class="hdc-pay-chip" id="hdcPlanChip"></span>
+        </span>
       </div>
       <button type="button" class="hdc-info" id="hdcInfoBtn" title="Perfil, credencial y ajustes">
         <svg class="hdc-info-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -6652,6 +6768,45 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      verdad. Ahora restLeft se recalcula siempre contra restTargetEnd. */
   let restTargetEnd = 0;
 
+  /* =========================================================
+     DIRECTIVA 13, CAPA 1: NOTIFICACIÓN LOCAL DE DESCANSO TERMINADO
+     Sólo tiene sentido avisar por notificación cuando el alumno YA no
+     está mirando la pantalla (app minimizada o en otra pestaña) -- si
+     la tiene abierta, el HUD de descanso (beep + vibración + flash
+     visual, ya existentes arriba) alcanza y sobra; una notificación
+     encima sería ruido duplicado. document.hidden es la señal estándar
+     para "no la está mirando ahora mismo". El permiso se pide una sola
+     vez, recién en el primer descanso real que arranca el alumno (gesto
+     propio: tocó el check de una serie) -- nunca al cargar la página,
+     que es la razón más común por la que un navegador termina bloqueando
+     el permiso para siempre. ========================================= */
+  let notifPermPedido = false;
+  function pedirPermisoNotifDescanso(){
+    if(notifPermPedido) return;
+    notifPermPedido = true;
+    try{
+      if('Notification' in window && Notification.permission === 'default'){
+        Notification.requestPermission().catch(function(){});
+      }
+    }catch(e){}
+  }
+  function mostrarNotifDescanso(){
+    try{
+      if(!('Notification' in window) || Notification.permission !== 'granted') return;
+      if(!document.hidden) return; /* app en primer plano: el HUD ya avisó */
+      if(!('serviceWorker' in navigator)) return;
+      navigator.serviceWorker.getRegistration().then(function(reg){
+        if(!reg || !reg.showNotification) return;
+        reg.showNotification('Descanso completado · Coach JP', {
+          body: 'Listo para la siguiente serie. ¡A los fierros!',
+          vibrate: [200, 100, 200],
+          tag: 'coachjp-descanso',
+          renotify: true
+        }).catch(function(){});
+      }).catch(function(){});
+    }catch(e){}
+  }
+
   function pintarRest(){
     hudTime.textContent = mmss(restLeft);
     hud.style.setProperty('--p', restTotal > 0 ? Math.max(0, Math.min(1, restLeft / restTotal)) : 0);
@@ -6671,12 +6826,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       restLeft = 0; pararRest();
       try{ beepGo(); }catch(e){}
       CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+      mostrarNotifDescanso();
       hudLb.textContent = '¡A la próxima serie!';
       setTimeout(cerrarRest, 3200);
     }
     pintarRest();
   }
   function arrancarRest(seg, etiqueta){
+    pedirPermisoNotifDescanso();
     restLeft = seg || state.restSec;
     restTotal = restLeft;
     restTargetEnd = Date.now() + restLeft * 1000;
@@ -8174,7 +8331,26 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;" +
         "e.respondWith(fetch(e.request).then(res=>{" +
         "const c=res.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return res;})" +
-        ".catch(()=>caches.match(e.request).then(r=>r||caches.match(location.href))));});";
+        ".catch(()=>caches.match(e.request).then(r=>r||caches.match(location.href))));});" +
+      /* directiva 13, capa 2: infraestructura para push remotas. Ningún
+         backend de esta app manda pushes todavía (no hay servidor de
+         suscripciones ni claves VAPID) -- esto sólo deja el SW listo para
+         RECIBIR un payload JSON del día en que exista ese envío remoto,
+         mostrándolo con el mismo idioma visual (título/cuerpo/vibración)
+         que ya usa la notificación local de descanso de abajo. */
+      "self.addEventListener('push',e=>{" +
+        "let d={};try{d=e.data?e.data.json():{};}catch(err){}" +
+        "const title=d.title||'Coach JP';" +
+        "const opts={body:d.body||'',icon:d.icon,badge:d.badge,vibrate:d.vibrate||[200,100,200],data:d.data||d,tag:d.tag||'coachjp'};" +
+        "e.waitUntil(self.registration.showNotification(title,opts));" +
+      "});" +
+      "self.addEventListener('notificationclick',e=>{" +
+        "e.notification.close();" +
+        "e.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{" +
+          "for(const c of list){if('focus' in c)return c.focus();}" +
+          "if(self.clients.openWindow)return self.clients.openWindow('./');" +
+        "}));" +
+      "});";
     navigator.serviceWorker.register('./sw.js').catch(function(){
       try{
         const u = URL.createObjectURL(new Blob([src], { type:'text/javascript' }));
@@ -19305,7 +19481,11 @@ input[type="checkbox"]:active{
    como el badge del drawer) para no competir visualmente con el nombre;
    pintarPago() lo deja vacío (:empty => display:none) si no hay payDue
    cargado, igual que ya hacía con el badge del drawer. */
-.hdc-pay-chip{ margin-top:3px; line-height:1; }
+/* directiva 13: fila para el chip de cuota + el nuevo chip de vigencia del
+   plan, uno al lado del otro cuando ambos tienen contenido (cada chip
+   individual sigue colapsando solo si queda vacío, ver :empty abajo) */
+.hdc-chip-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px; }
+.hdc-pay-chip{ line-height:1; }
 .hdc-pay-chip:empty{ display:none; }
 /* directiva de refactor (2026-09): micro-chip Luxury Stealth -- fondo y
    borde sutil (mismo lenguaje visual que .fin-badge del panel del coach),
@@ -19977,6 +20157,7 @@ body.focus-mode .hd-dock{display:none}
     pintarNutricion();
     pintarSync();
     pintarPago();
+    pintarVigenciaPlan();
   }
   /* Chapa local: PCT_MESO (la curva de intensidad por defecto S1→S4) vive
      del lado del dashboard (fuera de TEMPLATE_HTML) porque ahí se usa para
@@ -20138,6 +20319,23 @@ body.focus-mode .hd-dock{display:none}
         : info.estado === 'proximo'
           ? '<span class="hdc-pay-b proximo">● Renueva pronto</span>'
           : '<span class="hdc-pay-b ok">● Vence: ' + escAcc(info.corta) + '</span>';
+    }
+  }
+  /* directiva 13: micro-badge de vigencia/estado del plan, mismo lenguaje
+     visual Luxury Stealth que el chip de cuota de arriba -- nunca un
+     banner, y se queda vacío (oculto) si el coach todavía no cargó nada
+     de esto (plan en borrador sin fechas de vigencia). */
+  function pintarVigenciaPlan(){
+    var el = q('hdcPlanChip'); if(!el) return;
+    var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
+    var desde = fmtFechaCortaISO(cfg.vigenciaDesde || '');
+    var hasta = fmtFechaCortaISO(cfg.vigenciaHasta || '');
+    if(desde && hasta){
+      el.innerHTML = '<span class="hdc-pay-b ok">● Ciclo: ' + escAcc(desde) + ' al ' + escAcc(hasta) + '</span>';
+    } else if(cfg.planEstado === 'listo'){
+      el.innerHTML = '<span class="hdc-pay-b ok">● Plan Activo</span>';
+    } else {
+      el.innerHTML = '';
     }
   }
   function pintarUniPerfil(){
@@ -20430,6 +20628,29 @@ body.focus-mode .hd-dock{display:none}
 .block.cat-metcon .blk-tag .bt-main b,.block.cat-cardio .blk-tag .bt-main b{ color:#38BDF8 !important; }
 </style>
 
+<style>
+/* =========================================================
+   DIRECTIVA 13 — ESPACIADO DEL HEADER (menos "ahogo" antes del
+   primer bloque). Auditoría: entre el header fijo (#hdCompact) y
+   #mainContent viven APILADOS el selector de semanas (#weekSelector),
+   el badge "Entrenando en: Semana X" (#weekActiveBadge -- ojo, es un
+   fix deliberado de una confusión real de un atleta, no se toca su
+   contenido ni se oculta) y la tarjeta de nota de la semana
+   (#weekInfoCard, texto real del coach, tampoco se acorta). No hay
+   nada roto ni redundante para borrar acá: son tres piezas de
+   información legítimas y distintas. Lo que sí se puede achicar sin
+   perder nada es el padding "de sobra" de cada envoltorio -- pase
+   puramente visual, cero cambios de estructura/JS/datos. */
+@media(max-width:640px){
+  .week-selector-wrap{padding-top:6px}
+  .week-pill{padding:8px 14px !important}
+  .week-active-badge-wrap{padding:5px 1.25rem}
+  .week-active-badge{padding:6px 12px;font-size:.85rem}
+  .week-info-card{padding:8px 12px;margin-bottom:.6rem}
+  .progress-bar-wrap{padding-top:4px !important;padding-bottom:4px !important}
+}
+</style>
+
 </body>
 </html>
 `;
@@ -20704,6 +20925,13 @@ function buildProgramConfig(ath){
        alumno/a; el selector explícito es la única fuente de verdad. */
     genero: ath.genero || '',
     payDue: ath.payDue || '',
+    /* directiva 13: estado de planificación + vigencia del ciclo (p.estado/
+       p.vigenciaDesde/p.vigenciaHasta, ver plan()/newPlan()) -- viaja al
+       alumno solo para pintar el micro-badge del header, nunca para
+       bloquear nada del lado del alumno */
+    planEstado: p.estado || 'borrador',
+    vigenciaDesde: p.vigenciaDesde || '',
+    vigenciaHasta: p.vigenciaHasta || '',
     sync: canalSync(ath),
     nota: notaMetodologica(ath),
     mesoName: (p.meta.mesoName || 'Mesociclo'),
@@ -32545,11 +32773,21 @@ body.man-mode .gs-fab{right:318px}
   width:100%;height:110px;display:flex;align-items:center;justify-content:center;
   font-size:22px;opacity:.3;
 }
+/* directiva 13: fix de preview de video -- el botón de play vivía en la
+   esquina inferior-derecha de la miniatura, exactamente debajo de la banda
+   donde aparece ".pk-sel" (el overlay "Seleccionar") al hacer hover, y al
+   ser un <span> decorativo sin pointer-events propios, ese overlay lo
+   tapaba por completo e interceptaba el click. Se lo sube a la esquina
+   SUPERIOR-derecha (fuera de la banda de .pk-sel, ver top:74px más abajo)
+   y se lo convierte en un <button> real con z-index/pointer-events propios,
+   así queda siempre clickeable sin importar el estado de hover de la tarjeta. */
 .pk-card .pk-th .pk-play{
-  position:absolute;right:7px;bottom:7px;width:26px;height:26px;border-radius:50%;
+  position:absolute;right:7px;top:7px;width:26px;height:26px;border-radius:50%;
   display:flex;align-items:center;justify-content:center;font-size:11px;
   background:rgba(9,10,15,.82);border:1px solid rgba(210,121,63,.5);color:#D2793F;
+  cursor:pointer;z-index:2;pointer-events:auto;transition:transform .12s,background .12s;
 }
+.pk-card .pk-th .pk-play:hover{background:rgba(210,121,63,.85);color:#08090B;transform:scale(1.08)}
 /* nombre siempre visible, 2 líneas máximo */
 .pk-card .pk-body{display:flex;flex-direction:column;gap:7px;padding:10px 11px 11px;flex:1 1 auto;min-height:0;overflow:hidden}
 .pk-card .pk-nm{
@@ -33099,7 +33337,8 @@ body.man-mode .gs-fab{right:318px}
       return '<div class="pk-card" data-pkex="' + e.id + '" tabindex="0">' +
         '<div class="pk-th">' +
           (e.videoId
-            ? '<img src="' + ytThumb(e.videoId) + '" alt="" loading="lazy"><span class="pk-play">▶</span>'
+            ? '<img src="' + ytThumb(e.videoId) + '" alt="" loading="lazy">' +
+              '<button type="button" class="pk-play" data-vid="' + e.id + '" title="Vista previa del video" aria-label="Vista previa del video">▶</button>'
             : '<div class="pk-none">🏋️</div>') +
         '</div>' +
         '<div class="pk-body">' +
@@ -33202,6 +33441,10 @@ body.man-mode .gs-fab{right:318px}
         if(b && ex){ b.heredado = true; const n = heredar(b, ex); save(); renderBuilder();
           toast(n ? '⬇️ Objetivo y Coach Note copiados al bloque' : 'Ese ejercicio todavía no tiene técnica cargada'); }
         return; }
+      /* directiva 13: preview de video desacoplado de la selección -- se
+         chequea ANTES que data-pksel/data-pkex para que tocar el botón ▶
+         nunca dispare "elegir()" aunque esté anidado dentro de la tarjeta */
+      const pvv = e.target.closest('[data-vid]'); if(pvv){ openVideo(pvv.dataset.vid); return; }
       const ps = e.target.closest('[data-pksel]'); if(ps){ elegir(ps.dataset.pksel); return; }
       const pk = e.target.closest('[data-pkex]'); if(pk){ elegir(pk.dataset.pkex); return; }
       const pp = e.target.closest('[data-pprep]'); if(pp){ pkPrep = !pkPrep; pkPag = 0; pintarPicker(); return; }
@@ -46143,6 +46386,60 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 #v-builder .tools-in{
   border-radius:14px;box-shadow:0 -4px 18px rgba(0,0,0,.28);
 }
+
+/* ============================================================
+   DIRECTIVA 13 — JERARQUÍA VISUAL Y SEPARACIÓN DE SECCIONES
+   Continúa el módulo de arriba (misma filosofía: sólo visual, tokens
+   reales de la app, last-script-wins). Ataca el reclamo puntual de
+   "las distintas áreas del Builder se perciben planas": más contraste
+   de borde entre paneles estructurales (Atletas/Editor/Finanzas/
+   Bloques, todos comparten .card), cabeceras de sección con más
+   presencia (Chakra Petch + tracking expandido), y acentos de color
+   consistentes por nivel de jerarquía -- oro para el título de vista
+   (jerarquía 1, .topbar h2) y cian para el título de tarjeta/sección
+   (jerarquía 2, .card h3) -- para que de un vistazo se note en qué
+   nivel de la estructura está parado el ojo. */
+:root{ --line-3:#333E4D; --panel-nested:#0F1318; }
+
+/* jerarquía 1: título de la vista actual (Alumnos, Constructor de
+   Sesiones, Biblioteca, Finanzas, Exportar...) */
+.topbar h2{
+  font-family:'Chakra Petch',var(--ffh);letter-spacing:.06em;color:var(--gold-active,var(--gold));
+  text-shadow:0 0 22px rgba(229,195,120,.14);
+}
+
+/* jerarquía 2: título de cada tarjeta/panel dentro de la vista --
+   mismo peso de siempre, pero con más aire y un divisor limpio que
+   separa el título del contenido en vez de un simple margen */
+.card h3{
+  font-family:'Chakra Petch',var(--ffh);letter-spacing:.12em;color:#7FD4F5;
+  padding-bottom:11px;margin-bottom:16px;border-bottom:1px solid var(--line);
+}
+
+/* delimitación más clara entre paneles estructurales: el borde de
+   .card pasa de var(--line) (apenas visible, pensado para separar
+   controles sueltos) a un tono más frío y sólido, reservando el tono
+   más claro (--line-2) para remarcar sólo hover/foco como ya hacía. */
+.card{border-color:var(--line-3)}
+#v-builder .builder-head{border-color:rgba(210,121,63,.28)}
+
+/* paneles anidados dentro de una tarjeta ya delimitada (los recuadros
+   de semana del mesociclo, la barra de herramientas de bloques) usan
+   un fondo un escalón más oscuro que .card, para que se lea "esto vive
+   adentro de esto otro" sin necesitar otro borde encima. */
+#v-builder .week-box{background:linear-gradient(180deg,var(--panel-nested),#151A20)}
+#v-builder .tools-in{background:var(--panel-nested);border-color:var(--line-3)}
+
+/* divisores limpios entre las tres franjas del Builder: configuración
+   general del mesociclo, selector de días del microciclo, y el editor
+   de bloques del día activo -- antes eran simples márgenes, ahora una
+   línea sutil marca el cambio de sección sin agregar otra tarjeta. */
+#dayTabs{border-top:1px solid var(--line);padding-top:16px;margin-top:2px}
+#v-builder .tools{border-top:1px solid var(--line)}
+
+/* acento cian reservado para tags secundarios (metadata de apoyo,
+   no la acción principal de la tarjeta) */
+.pill.cyan{background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.35);color:#7FD4F5}
 
 /* ============================================================
    MÓDULO — FÍSICA DE BOTONES CONSOLIDADA (dashboard del coach)
