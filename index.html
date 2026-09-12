@@ -19499,7 +19499,11 @@ input[type="checkbox"]:active{
 }
 .hdc-pay-b.ok{ color:#6FBF95; border-color:rgba(111,191,149,.3); }
 .hdc-pay-b.proximo{ color:#D9A672; border-color:rgba(217,166,114,.35); }
-.hdc-pay-b.venc{ color:#C97B54; border-color:rgba(201,123,84,.4); }
+/* directiva14: pide explícitamente un acento rojo/alerta (tenue) para
+   vencido -- reemplaza el naranja anterior, que era deliberadamente
+   "sin rojo" en una directiva previa. Se mantiene tenue (opacidad baja
+   en el borde, sin ícono de alarma) para no romper el tono Luxury Stealth. */
+.hdc-pay-b.venc{ color:#D9695C; border-color:rgba(217,105,92,.4); }
 .hdc-info{
   flex-shrink:0; width:38px; height:38px; display:flex; align-items:center; justify-content:center;
   border:1px solid #1E222B; background:#12151B;
@@ -19595,7 +19599,7 @@ input[type="checkbox"]:active{
 }
 .hdp-pay-b.ok{ background:rgba(229,195,120,.1); border:1px solid rgba(229,195,120,.34); color:#E5C378; }
 .hdp-pay-b.proximo{ background:rgba(210,121,63,.08); border:1px solid rgba(210,121,63,.3); color:#D9A672; }
-.hdp-pay-b.venc{ background:rgba(210,121,63,.12); border:1px solid rgba(210,121,63,.4); color:#E8965E; }
+.hdp-pay-b.venc{ background:rgba(217,105,92,.1); border:1px solid rgba(217,105,92,.4); color:#D9695C; }
 .hdp-coach-name{ font-size:15px; font-weight:800; color:#FFFFFF; }
 .hdp-coach-role{ font-size:12px; color:#9aa1ad; margin-top:2px; line-height:1.4; }
 
@@ -20269,10 +20273,11 @@ body.focus-mode .hd-dock{display:none}
   /* pedido 41 · micro-badge de vencimiento de cuota. payDue viaja como
      fecha ISO ("YYYY-MM-DD", el formato nativo de <input type=date>) en
      PROGRAM_CONFIG.payDue -- ver buildProgramConfig(ath) del lado del
-     Builder. Campo opcional: si el coach no lo cargó, no se muestra
-     nada (no hay "vencimiento" que inventar). Tono neutro/dorado si
-     está al día; solo si venció cambia a un recordatorio discreto,
-     nunca alarmante (sin rojo, sin ícono de alerta). */
+     Builder, y desde directiva14 también se recalcula solo con cada
+     "Registrar Pago" (ver finRegistrarPago(), fuera de TEMPLATE_HTML).
+     Es siempre el payDue puntual de ESE atleta -- nunca un fallback
+     estático compartido -- y si no hay ninguna fecha cargada el chip
+     no inventa una: cae al estado neutro "Plan Activo" (ver más abajo). */
   function fmtFechaCortaISO(iso){
     var m = /^(\\d{4})-(\\d{2})-(\\d{2})/.exec(String(iso || ''));
     return m ? (m[3] + '/' + m[2]) : '';
@@ -20299,26 +20304,32 @@ body.focus-mode .hd-dock{display:none}
     var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
     var info = estadoAbono(cfg.payDue || '');
     if(!info){
+      // directiva14 · sin fecha cargada para ESTE atleta puntual: nada de
+      // inventar un vencimiento -- el chip de la cabecera cae a un estado
+      // neutro "Plan Activo" (el drawer de Perfil/Info se deja vacío como
+      // antes, no es el elemento que pide la directiva).
       if(elDrawer) elDrawer.innerHTML = '';
-      if(elChip) elChip.innerHTML = '';
+      if(elChip) elChip.innerHTML = '<span class="hdc-pay-b ok">● Plan Activo</span>';
       return;
     }
     if(elDrawer){
       elDrawer.innerHTML = info.estado === 'venc'
-        ? '<span class="hdp-pay-b venc">💳 Cuota vencida · ' + escAcc(info.corta) + '</span>'
+        ? '<span class="hdp-pay-b venc">💳 Cuota vencida el ' + escAcc(info.corta) + '</span>'
         : info.estado === 'proximo'
-          ? '<span class="hdp-pay-b proximo">💳 Renueva pronto · ' + escAcc(info.corta) + '</span>'
-          : '<span class="hdp-pay-b ok">💳 Plan activo · Renueva: ' + escAcc(info.corta) + '</span>';
+          ? '<span class="hdp-pay-b proximo">💳 Renueva el ' + escAcc(info.corta) + '</span>'
+          : '<span class="hdp-pay-b ok">💳 Plan activo · Renueva el ' + escAcc(info.corta) + '</span>';
     }
     /* micro-badge sutil junto al nombre, en la cabecera siempre visible
        (no sólo dentro del drawer Perfil/Info) -- pedido explícito de
-       ubicación de la directiva. */
+       ubicación de la directiva. directiva14: los 3 estados con fecha
+       siempre muestran el DD/MM puntual de ESE atleta -- antes "próximo"
+       y "vencido" no mostraban fecha alguna en el chip. */
     if(elChip){
       elChip.innerHTML = info.estado === 'venc'
-        ? '<span class="hdc-pay-b venc">● Cuota vencida</span>'
+        ? '<span class="hdc-pay-b venc">● Cuota vencida el ' + escAcc(info.corta) + '</span>'
         : info.estado === 'proximo'
-          ? '<span class="hdc-pay-b proximo">● Renueva pronto</span>'
-          : '<span class="hdc-pay-b ok">● Vence: ' + escAcc(info.corta) + '</span>';
+          ? '<span class="hdc-pay-b proximo">● Renueva el ' + escAcc(info.corta) + '</span>'
+          : '<span class="hdc-pay-b ok">● Plan activo · Renueva el ' + escAcc(info.corta) + '</span>';
     }
   }
   /* directiva 13: micro-badge de vigencia/estado del plan, mismo lenguaje
@@ -20648,6 +20659,113 @@ body.focus-mode .hd-dock{display:none}
   .week-active-badge{padding:6px 12px;font-size:.85rem}
   .week-info-card{padding:8px 12px;margin-bottom:.6rem}
   .progress-bar-wrap{padding-top:4px !important;padding-bottom:4px !important}
+}
+
+/* =========================================================
+   DIRECTIVA 14 — VISTA DE ESCRITORIO DEL ALUMNO/A (App Frame
+   Luxury Stealth). En mobile (<768px, el uso real de la app) esto no
+   cambia NADA -- toda la regla vive detrás del media query.
+
+   OJO -- primer intento descartado: probar esto centrando el <body>
+   con un transform (para que actúe como containing block de todo lo
+   position:fixed) rompía de verdad la interacción en escritorio: le
+   cambia el stacking/containing context a TODA la app de una sola
+   vez, y el acordeón de bisets (.bs-rh) dejaba de ser clickeable de
+   forma intermitente en los tests de Playwright (regresión real,
+   detectada en directiva12_refactor_check.py). Se descarta ese
+   approach por completo.
+
+   En su lugar: (1) esta app YA tenía un modo de escritorio previo (a
+   partir de min-width:1024px, más arriba -- rail lateral de 300px +
+   grilla de 2 columnas para #mainContent, que crece libre hasta el
+   borde de la ventana). Ese es exactamente el layout que la directiva
+   reporta como roto ("se desparrama a lo ancho, los botones pierden
+   proporción, se desordena la jerarquía"). No se lo edita in-situ
+   (arriesgado, tiene matemática de sticky-stacking delicada) -- se lo
+   neutraliza por completo con un bloque más tardío (gana la cascada
+   por orden, mismo patrón "last-style-wins" ya usado en el archivo) a
+   partir de min-width:768px, restaurando cada selector que tocaba el
+   riel a su comportamiento mobile de siempre. (2) Recién ENCIMA de
+   eso se agrega el marco centrado: <body> a max-width:480px con
+   margin:auto, y -- en vez de tocar el containing block global -- se
+   centran individualmente los DOS elementos fixed que están siempre
+   visibles en pantalla (el header #hdCompact y el dock inferior
+   #hdDock) con left:50%+transform:translateX(-50%), la técnica
+   estándar para centrar un elemento position:fixed sin efectos
+   colaterales sobre el resto del árbol. Los modales/drawers
+   ocasionales (inset:0) no se tocan: ya se ven bien porque dimean
+   toda la pantalla por igual, y no era el síntoma reportado. */
+@media(min-width:768px){
+  /* ---- 1) neutraliza el riel de escritorio previo (min-width:1024px,
+     más arriba) devolviendo cada selector a su comportamiento mobile ---- */
+  .hd-wrap{
+    float:none !important; clear:none !important; width:auto !important;
+    padding:var(--hdc-h,116px) clamp(18px,3.2vw,30px) 0 !important;
+    position:relative !important; top:auto !important; z-index:300 !important;
+  }
+  .hd-compact{ position:fixed !important; }
+  .hdc-days-wrap{ overflow-x:auto !important; }
+  .hdc-days-wrap .week-tabs{ flex-wrap:nowrap !important; }
+  .progress-bar-wrap{
+    float:none !important; clear:none !important; width:auto !important; margin:0 auto !important;
+    position:relative !important; top:auto !important; max-width:1140px;
+  }
+  .progress-row{ display:flex !important; }
+  .progress-ring-wrap{ display:none !important; }
+  .hd-dock{
+    position:fixed !important; left:0 !important; right:0 !important; bottom:0 !important;
+    float:none !important; width:auto !important; top:auto !important; margin:0 !important;
+    z-index:260; display:flex !important; flex-direction:row !important; gap:0 !important;
+    background:rgba(8,9,11,.95); border:none; border-top:1px solid #1E222B; border-radius:0;
+    padding:6px calc(4px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left));
+    box-shadow:0 -6px 20px rgba(0,0,0,.35);
+  }
+  .hdd-b{
+    flex-direction:column !important; justify-content:center !important;
+    gap:2px !important; padding:7px 4px !important; font-size:9.5px !important;
+  }
+  .week-selector-wrap{ margin-left:0 !important; margin-right:0 !important; }
+  .week-info-bar{ margin-left:0 !important; margin-right:0 !important; }
+  #mainContent{ margin-left:0 !important; margin-right:0 !important; padding-bottom:calc(90px + env(safe-area-inset-bottom)) !important; }
+  .timer-hud{ bottom:calc(86px + env(safe-area-inset-bottom)) !important; }
+  .rest-hud{ bottom:calc(86px + env(safe-area-inset-bottom)) !important; }
+  .off-pill{ bottom:calc(86px + env(safe-area-inset-bottom)) !important; }
+  .next-hint{ bottom:calc(150px + env(safe-area-inset-bottom)) !important; }
+  .blocks-stack{ display:flex !important; column-count:auto !important; }
+  .blocks-stack > .block{ break-inside:auto !important; margin-bottom:0; }
+  .block{ background:var(--card-bg) !important; }
+
+  /* ---- 2) el marco centrado propiamente dicho ---- */
+  html{ background:#0A0D12; overflow-x:hidden !important; }
+  body{
+    max-width:480px;
+    margin:0 auto;
+    min-height:100vh;
+    box-shadow:0 0 0 1px #1F2630, 0 30px 80px rgba(0,0,0,.55);
+  }
+  body::before{ display:none; } /* watermark "JP": sin marco de referencia propio se vería fuera de lugar, se apaga en escritorio */
+  .hd-compact, .hd-dock{
+    left:50% !important; right:auto !important;
+    transform:translateX(-50%) !important;
+    width:100% !important; max-width:480px !important;
+  }
+  /* el dock inferior se sigue pudiendo ocultar (modal/timer abierto encima,
+     igual que en mobile) -- sin esto, la regla de arriba (misma
+     especificidad que .hd-dock.is-hidden de la base, pero más tardía)
+     ganaría y el dock quedaría siempre visible tapando lo que hay debajo. */
+  .hd-dock.is-hidden{
+    transform:translate(-50%, 100%) !important; opacity:0 !important; pointer-events:none !important;
+  }
+  /* drawer "Perfil/Info" (Objetivos, Metodología, Nutrición, Bóveda de PRs
+     -- todo vive en esta misma pieza, ver .hd-full-drawer más arriba):
+     mismo problema y misma solución que el header/dock -- sin esto se ve
+     desparramado a los 1440px mientras el resto del marco queda a 480px. */
+  .hd-full-drawer{
+    left:50% !important; right:auto !important;
+    width:100% !important; max-width:480px !important;
+    transform:translate(-50%, -10px) !important;
+  }
+  .hd-full-drawer.on{ transform:translate(-50%, 0) !important; }
 }
 </style>
 
@@ -45558,6 +45676,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     else finRenderTablaHistorica(host, periodo);
   }
 
+  /* directiva14 · el nuevo vencimiento NUNCA es una fecha fija/hardcodeada:
+     se proyecta siempre a partir de la fecha de cobro real que se está
+     registrando ahora mismo (+28 dias, formula fija pedida explicitamente).
+     Se guarda tanto en ath.payDue (lo que lee el header del alumno/a, ver
+     pintarPago() mas abajo en TEMPLATE_HTML) como en f.proximoVencimiento
+     (espejo dentro del modulo financiero del coach, por si se necesita mas
+     adelante) -- las dos quedan siempre sincronizadas en cada pago. */
+  function finFechaMasDias(fechaBase, dias){
+    var d = new Date(fechaBase.getTime() + (dias * 24 * 60 * 60 * 1000));
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+  var DIAS_CICLO_PAGO = 28;
   function finRegistrarPago(a){
     if(!a) return;
     var f = a.finanzas = a.finanzas || finDefaults();
@@ -45572,8 +45702,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     f.fechaUltimoPago = fechaStr;
     var calc = estadoFinanciero(a);
     if(calc) f.estado = calc;
+    // vencimiento automatico: fecha de cobro + 28 dias, siempre recalculado
+    // en cada "Registrar Pago" (si el coach editó la fecha a mano en la
+    // ficha mientras tanto, esta acción la reemplaza -- es el default
+    // explícito que pide la directiva ante cada pago nuevo).
+    var proximoVenc = finFechaMasDias(hoy, DIAS_CICLO_PAGO);
+    a.payDue = proximoVenc;
+    f.proximoVencimiento = proximoVenc;
     save();
-    toast('✅ Pago registrado — ' + fullName(a));
+    toast('✅ Pago registrado — ' + fullName(a) + ' · próximo vencimiento ' + finFechaLarga(proximoVenc));
     finRenderHome(); renderAthletes();
   }
 
