@@ -2988,7 +2988,18 @@ async function nombrarBloqueConIA(bid, btn){
     const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 200 });
     const raw = String(out || '').trim();
     let j = null;
-    try{ j = JSON.parse(raw); }catch(e1){ const m = raw.match(/\{[^]*\}/); if(m){ try{ j = JSON.parse(m[0]); }catch(e2){} } }
+    /* directiva crítica (2026-09) -- mismo bug de parseo frágil ya
+       encontrado y corregido en el generador de warm-up/cool-down: un
+       regex crudo /\{[^]*\}/ + JSON.parse directo se rompía entero ante
+       fences de markdown, comas colgantes o un salto de línea sin escapar
+       dentro de un string (común en Gemini) -- y esta función SÍ tiene un
+       fallback a texto plano más abajo (if(!titulo)), pero ese fallback
+       nunca se activaba realmente porque `raw` casi siempre contenía un
+       JSON aprovechable, sólo que mal extraído. extractJson() (el mismo
+       extractor robusto ya expuesto en window.CoachAI) reemplaza el
+       intento crudo; el fallback a texto plano se conserva intacto para
+       el caso límite en que la IA ignore el pedido de JSON por completo. */
+    try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
     let titulo = j ? String(j.titulo || j.title || '').trim() : '';
     let subtitulo = j ? String(j.subtitulo || j.subtitle || '').trim() : '';
     if(!titulo){
@@ -21940,10 +21951,24 @@ document.addEventListener('DOMContentLoaded', init);
 (function(){
   const AI_KEY = 'coachjp_ai_cfg_v2';
   const PROV = {
+    /* directiva crítica (2026-09) -- auditoría de modelos: claude-3-5-sonnet-
+       20241022 y claude-3-haiku-20240307 quedaron RETIRADOS por Anthropic
+       (28/10/2025 y 20/04/2026 respectivamente) -- se sacan de los hints
+       porque elegirlos hoy garantiza que ese proveedor falle siempre, sin
+       importar la clave. claude-sonnet-5/claude-opus-5/claude-haiku-4-5
+       siguen vigentes, confirmado contra la doc oficial. */
     anthropic: { lb:'Anthropic', sub:'Claude', model:'claude-sonnet-5',  url:'https://api.anthropic.com/v1/messages',
-      hints:['claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-3-5-sonnet-20241022','claude-3-haiku-20240307'] },
-    openai:    { lb:'OpenAI',    sub:'GPT',    model:'gpt-4o',           url:'https://api.openai.com/v1/chat/completions',
-      hints:['gpt-4o','gpt-4o-mini'] },
+      hints:['claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001'] },
+    /* gpt-4o (snapshot 2024-05-13) tiene retiro anunciado por OpenAI para el
+       23/10/2026 -- a menos de 6 semanas de esta directiva. Se actualiza el
+       default a la familia vigente (GPT-5.6): "terra" balancea inteligencia
+       y costo, el rol más parecido al que cumplía gpt-4o acá. Ver además el
+       aviso de CORS agregado más abajo en callProvider(): la API de OpenAI
+       no habilita CORS para fetch() directo desde el navegador (confirmado,
+       problema de la plataforma, no de este código) -- este proveedor
+       requeriría un proxy propio para funcionar de verdad desde esta PWA. */
+    openai:    { lb:'OpenAI',    sub:'GPT',    model:'gpt-5.6-terra',    url:'https://api.openai.com/v1/chat/completions',
+      hints:['gpt-5.6-terra','gpt-5.6-luna','gpt-5.6-sol','gpt-6-astra'] },
     google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.6-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
       hints:['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-pro'] }
   };
@@ -21974,6 +21999,33 @@ document.addEventListener('DOMContentLoaded', init);
     }catch(e){}
     AI.keys = AI.keys || {}; AI.models = AI.models || {}; AI.cooldown = AI.cooldown || {};
     ORDEN.forEach(p => { if(!AI.models[p]) AI.models[p] = PROV[p].model; });
+    /* directiva crítica (2026-09) -- migración de modelos retirados: si un
+       dispositivo ya tenía guardado (en una config vieja) un modelo que el
+       proveedor discontinuó de verdad, ese proveedor iba a fallar SIEMPRE a
+       partir de ahí, sin importar la clave ni el resto del código -- y sin
+       ningún aviso claro (justo el síntoma de "todos los motores fallaron").
+       Se pisa acá, una sola vez, por el default vigente de cada proveedor. */
+    const MODELOS_RETIRADOS = [
+      'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307',           /* Anthropic, retirados oct-2025/abr-2026 */
+      'gemini-pro', 'gemini-1.0-pro', 'gemini-1.5-pro-preview', 'gemini-1.5-pro', 'gemini-1.5-flash', /* Google, discontinuados */
+      'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'                            /* OpenAI, familias ya fuera de vigencia */
+    ];
+    let huboMigracion = false;
+    ORDEN.forEach(p => {
+      if(MODELOS_RETIRADOS.indexOf(AI.models[p]) >= 0){
+        AI.models[p] = PROV[p].model;
+        huboMigracion = true;
+      }
+    });
+    /* gpt-4o/gpt-4o-mini no están retirados TODAVÍA (gpt-4o-2024-05-13 se
+       apaga el 23/10/2026), pero conviene migrar proactivamente antes de esa
+       fecha en vez de esperar a que un coach se quede sin aviso a mitad de
+       temporada -- se migran igual que los ya retirados. */
+    if(AI.models.openai === 'gpt-4o' || AI.models.openai === 'gpt-4o-mini'){
+      AI.models.openai = PROV.openai.model;
+      huboMigracion = true;
+    }
+    if(huboMigracion) saveAI();
   }
   function saveAI(){
     try{ localStorage.setItem(AI_KEY, JSON.stringify(AI)); }catch(e){ toast('No se pudo guardar la configuración','err'); }
@@ -22079,6 +22131,17 @@ document.addEventListener('DOMContentLoaded', init);
       : (hasKey(p)
         ? '<div class="alert good" style="padding:9px 12px"><span class="ic">🔑</span><div><b>Clave guardada</b>El botón ✨ del builder está operativo con ' + PROV[p].lb + '.</div></div>'
         : '<div class="alert info" style="padding:9px 12px"><span class="ic">ℹ️</span><div><b>Sin clave para ' + PROV[p].lb + '</b>Pegá la API Key para habilitar la generación automática.</div></div>');
+    /* directiva crítica (2026-09): aviso proactivo, no sólo reactivo al
+       fallar -- la API de OpenAI no admite llamadas directas desde el
+       navegador (CORS), así que un coach que carga su clave acá se va a
+       encontrar con que "nunca anda" pese a que la clave es válida. Mejor
+       avisarlo ANTES de que pierda tiempo, con Anthropic/Google marcados
+       como alternativa que sí funciona sin proxy. */
+    if(p === 'openai'){
+      $('#cfgStatus').innerHTML +=
+        '<div class="alert warn" style="padding:9px 12px;margin-top:8px"><span class="ic">🌐</span>' +
+        '<div><b>OpenAI puede fallar siempre desde acá</b>Su API no habilita llamadas directas desde una página web (CORS) — necesitaría un servidor propio de por medio. Anthropic y Google sí funcionan directo desde esta app.</div></div>';
+    }
     const rst = document.getElementById('cfgReset');
     if(rst) rst.addEventListener('click', () => { delete AI.cooldown[AI.provider]; saveAI(); fillCfgForm(); paintProviders(); toast('Cooldown reiniciado'); });
   }
@@ -22144,7 +22207,29 @@ document.addEventListener('DOMContentLoaded', init);
     }
 
     async function enviar(bodyEnviado){
-      const r = await fetch(url, { method:'POST', headers: headers, body: JSON.stringify(bodyEnviado) });
+      let r;
+      try{
+        r = await fetch(url, { method:'POST', headers: headers, body: JSON.stringify(bodyEnviado) });
+      }catch(errRed){
+        /* directiva crítica (2026-09) -- diagnóstico de "todos los motores
+           fallaron": fetch() rechaza con el mismo TypeError genérico
+           ("Failed to fetch"/"NetworkError"/"Load failed") tanto si no hay
+           internet como si el navegador bloqueó la respuesta por CORS -- y
+           la API de OpenAI, confirmado, NO habilita CORS para llamadas
+           directas desde el navegador (requeriría un proxy propio; esto es
+           una limitación de la plataforma de OpenAI, no de este código).
+           En vez de dejar pasar el TypeError críptico tal cual, para OpenAI
+           se explica la causa más probable en vez de un "Failed to fetch"
+           que no dice nada. Anthropic y Google sí soportan la llamada
+           directa desde el navegador (Anthropic vía el header
+           anthropic-dangerous-direct-browser-access ya usado arriba; Google
+           habilita CORS en su API REST) -- por eso el aviso queda sólo para
+           OpenAI, no aplica al resto. */
+        if(prov === 'openai'){
+          throw new Error('OpenAI bloqueó la conexión directa desde el navegador (CORS) — es una limitación de la plataforma de OpenAI, no de esta app: su API no admite llamadas directas desde una página web sin un servidor intermedio propio. Usá Anthropic o Google mientras tanto, que sí funcionan directo desde acá.');
+        }
+        throw new Error('No se pudo conectar con ' + PROV[prov].lb + ' (' + (errRed && errRed.message || 'error de red') + '). Revisá tu conexión a internet.');
+      }
       return { res: r, raw: await r.text() };
     }
 
@@ -22664,7 +22749,19 @@ document.addEventListener('DOMContentLoaded', init);
       switch: switchProvider, cooldown: setCooldown, providers: PROV,
       /* llamada genérica de texto (la usa la biblioteca para tips y objetivos) */
       generarTexto: (user, system, opts) => callAI(system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user, undefined, opts),
-      hayClave: () => ['anthropic','openai','google'].some(p => hasKey(p))
+      hayClave: () => ['anthropic','openai','google'].some(p => hasKey(p)),
+      /* directiva crítica (2026-09) -- auditoría de todos los generadores con
+         IA: extractJson() (fences de markdown, comas colgantes, caracteres
+         de control sin escapar dentro de strings) sólo se usaba acá adentro;
+         cada módulo que parseaba la respuesta de la IA por su cuenta
+         (warm-up/cool-down, tips de bloque, títulos de mesociclo) tenía su
+         propia extracción más frágil, típicamente un simple regex /\{.*\}/s
+         sin reparación -- una respuesta con un salto de línea sin escapar
+         dentro de un string (algo que Gemini y otros hacen seguido) rompía
+         esos módulos aunque el proveedor haya respondido bien. Se expone acá
+         para que todos reusen la misma extracción robusta en vez de
+         duplicarla con distinto nivel de calidad. */
+      extractJson: extractJson
     };
   }
 
@@ -34114,8 +34211,13 @@ body.man-mode .gs-fab{right:318px}
           '- "tips": una coaching note por bloque, en el mismo orden en que aparecen.\n' +
           'REGLA INNEGOCIABLE: los nombres de movimientos de Weightlifting y CrossFit se escriben SIEMPRE en inglés, sin traducir.',
           'Sos Coach JP, entrenador argentino de fuerza y CrossFit. Escribís en segunda persona ("vos"). Respondés solo con JSON válido.');
+        /* directiva crítica (2026-09) -- auditoría total de generadores: este
+           genera títulos de día + tips por bloque para el mesociclo armado
+           desde la memoria del documento -- tenía el mismo parseo frágil
+           (JSON.parse directo con un regex de respaldo sin reparación) que
+           el resto de los módulos; se repara con extractJson(). */
         let j = null;
-        try{ j = JSON.parse(out); }catch(e){ const m = String(out).match(/\{[^]*\}/); if(m) j = JSON.parse(m[0]); }
+        try{ j = window.CoachAI.extractJson(out); }catch(e){}
         if(j && Array.isArray(j.dias)){
           j.dias.forEach((x, i) => {
             const d = p.dias[i]; if(!d) return;
@@ -37518,15 +37620,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           (a.prohibidos && a.prohibidos.length ? 'Ejercicios vetados: ' + a.prohibidos.join(', ') + '. ' : '') +
           'Notas rápidas del coach: ' + borrador;
         const txt = await window.CoachAI.generarTexto(user, SISTEMA);
-        const m = String(txt).match(/\{[\s\S]*\}/);
-        if(m){
-          const j = JSON.parse(m[0]);
-          if(j && j.foco && j.adaptacion){
-            const nom = (a.nombre || '');
-            nota = { foco: segundaPersona(j.foco, nom), adaptacion: segundaPersona(j.adaptacion, nom),
-                     refs: Array.isArray(j.refs) && j.refs.length ? j.refs.slice(0, 2) : refsPara(borrador),
-                     motor: 'ia' };
-          }
+        /* directiva crítica (2026-09) -- auditoría total de generadores:
+           mismo bug de parseo frágil (regex crudo + JSON.parse directo, sin
+           tolerar fences de markdown ni saltos de línea sin escapar dentro
+           de un string) ya corregido en el resto de los módulos de IA de
+           este archivo. Se reemplaza por extractJson(), que sí repara esos
+           casos en vez de descartar una respuesta buena. */
+        let j = null;
+        try{ j = window.CoachAI.extractJson(txt); }catch(e1){}
+        if(j && j.foco && j.adaptacion){
+          const nom = (a.nombre || '');
+          nota = { foco: segundaPersona(j.foco, nom), adaptacion: segundaPersona(j.adaptacion, nom),
+                   refs: Array.isArray(j.refs) && j.refs.length ? j.refs.slice(0, 2) : refsPara(borrador),
+                   motor: 'ia' };
         }
       }catch(e){
         try{ toast('La IA no respondió: se redactó con el motor local', 'warn'); }catch(x){}
@@ -37875,19 +37981,21 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           (a.prohibidos && a.prohibidos.length ? 'Ejercicios vetados: ' + a.prohibidos.join(', ') + '. ' : '') +
           'Idea del entrenador: ' + borrador;
         const txt = await window.CoachAI.generarTexto(user, SISTEMA);
-        const m = String(txt).match(/\{[\s\S]*\}/);
-        if(m){
-          const j = JSON.parse(m[0]);
-          if(j && j.protocolo && j.objetivos){
-            fin = { protocolo: sinEmojis(j.protocolo).toUpperCase(),
-                    trabajo: sinEmojis(j.trabajo || '').replace(/\\n/g, '\n').trim(),
-                    objetivos: directo(j.objetivos),
-                    tips: directo(j.tips || ''),
-                    motor: 'ia' };
-            if(!fin.trabajo){
-              const l = redaccionLocal(borrador);
-              fin.trabajo = l.trabajo;
-            }
+        /* directiva crítica (2026-09) -- auditoría total de generadores: este
+           es el generador de "tips de bloque y criterio de sobrecarga" del
+           finisher (protocolo/trabajo/objetivos/tips) -- tenía el mismo bug
+           de parseo frágil que el resto; se repara con extractJson(). */
+        let j = null;
+        try{ j = window.CoachAI.extractJson(txt); }catch(e1){}
+        if(j && j.protocolo && j.objetivos){
+          fin = { protocolo: sinEmojis(j.protocolo).toUpperCase(),
+                  trabajo: sinEmojis(j.trabajo || '').replace(/\\n/g, '\n').trim(),
+                  objetivos: directo(j.objetivos),
+                  tips: directo(j.tips || ''),
+                  motor: 'ia' };
+          if(!fin.trabajo){
+            const l = redaccionLocal(borrador);
+            fin.trabajo = l.trabajo;
           }
         }
       }catch(e){
@@ -40026,8 +40134,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(conIA){
       try{
         const txt = await window.CoachAI.generarTexto(contexto(r), tipo === 'wu' ? SIS_WU : SIS_CD);
-        const m = String(txt).match(/\{[\s\S]*\}/);
-        if(m) out = normalizar(JSON.parse(m[0]), tipo === 'wu' ? 3 : 2);
+        /* directiva crítica (2026-09): antes era un regex crudo /\{.*\}/s +
+           JSON.parse directo -- cualquier salto de línea sin escapar dentro
+           de un string (frecuente en Gemini) rompía el parseo entero y caía
+           en silencio al motor local, aunque la IA haya respondido bien.
+           extractJson() (mismo extractor robusto que ya usa el resto de la
+           app) tolera fences de markdown, comas colgantes y esos caracteres
+           de control sin escapar. */
+        out = normalizar(window.CoachAI.extractJson(txt), tipo === 'wu' ? 3 : 2);
       }catch(e){
         try{ toast('La IA no respondió: se prescribió con el motor local', 'warn'); }catch(x){}
       }
@@ -42934,10 +43048,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   function parsearIA(txt){
     if(!txt) return null;
-    var m = String(txt).match(/\{[\s\S]*\}/);
-    if(!m) return null;
+    /* directiva crítica (2026-09) -- auditoría total de generadores: este
+       módulo (Cool-Down específico y resumen metodológico) tenía el mismo
+       parseo frágil (regex crudo + JSON.parse directo) que el resto --
+       se repara con extractJson(), que tolera fences de markdown, comas
+       colgantes y saltos de línea sin escapar dentro de un string. */
     try{
-      var o = JSON.parse(m[0]);
+      var o = window.CoachAI.extractJson(txt);
       var items = (o.cooldown || []).filter(function(x){ return typeof x === 'string' && x.trim(); });
       if(items.length < 2 || typeof o.resumen !== 'string' || o.resumen.length < 80) return null;
       return { items: items.slice(0, 4), nota: String(o.nota || '').trim(),
@@ -45900,23 +46017,41 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      siempre el vigente hoy -- no se guarda historial de cambios de tarifa,
      asi que "facturado" en un mes pasado es una aproximacion con la tarifa
      actual, aclarada en el panel. */
+  /* directiva crítica (idempotencia de cobros) -- localiza EL pago de un
+     período dado para un alumno/a, tolerando que ya existan duplicados
+     viejos en f.historial (cargados antes de esta directiva, por el bug
+     de clic repetido): nunca se borra nada solo, se toma el más reciente
+     como "el" cobro válido de ese período. Sirve tanto para la validación
+     antes de registrar un cobro nuevo como para el cálculo de KPIs (evita
+     sumar dos veces el mismo período si hay más de un registro). */
+  function finPagoDePeriodo(f, periodo){
+    var hist = (f && f.historial) || [];
+    var candidatos = hist.filter(function(h){
+      return h && ((h.periodo || (h.fecha ? h.fecha.slice(0,7) : '')) === periodo);
+    });
+    if(!candidatos.length) return null;
+    candidatos.sort(function(x, y){ return (x.fecha||'') < (y.fecha||'') ? 1 : -1; });
+    return candidatos[0];
+  }
+
+  /* directiva crítica (idempotencia de cobros): antes sumaba TODOS los
+     registros de historial que cayeran en el mes -- si el botón [✓ Cobrar]
+     se clickeaba dos veces (el bug reportado), "Recaudado del mes" quedaba
+     inflado con el doble del arancel real. Ahora cuenta como máximo UN
+     cobro por alumno/a por período (finPagoDePeriodo), sin importar cuántos
+     registros de historial existan para ese mes. */
   function finAgregados(y, m){
     var hoy = new Date();
     if(y == null || m == null){ y = hoy.getFullYear(); m = hoy.getMonth(); }
+    var periodo = y + '-' + String(m + 1).padStart(2, '0');
     var mrr = 0, recaudado = 0, saldo = 0;
     (S.athletes || []).forEach(function(a){
       var f = a.finanzas;
       if(!f || !f.arancel) return;
       mrr += f.arancel;
-      var pagoEseMes = false;
-      (f.historial || []).forEach(function(h){
-        var d = finParseFecha(h && h.fecha);
-        if(d && d.getFullYear() === y && d.getMonth() === m){
-          recaudado += (h.monto || 0);
-          pagoEseMes = true;
-        }
-      });
-      if(!pagoEseMes) saldo += f.arancel;
+      var pago = finPagoDePeriodo(f, periodo);
+      if(pago) recaudado += (pago.monto || 0);
+      else saldo += f.arancel;
     });
     return { mrr: mrr, recaudado: recaudado, saldo: saldo };
   }
@@ -46002,6 +46137,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       host.innerHTML = '<div class="hint">Todavía no hay alumnos/as cargados/as.</div>';
       return;
     }
+    var periodoActual = finPeriodoActual();
     host.innerHTML = '<div class="fin-row fin-head"><span>Atleta</span><span>Arancel</span><span>Vencimiento</span><span>Estado</span><span>Acciones</span></div>' +
       lista.map(function(a){
         var f = a.finanzas;
@@ -46010,17 +46146,30 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         // como "Sin configurar" mientras tenga un arancel > 0.
         var configurado = !!(f && f.arancel > 0);
         var estado = configurado ? (estadoFinanciero(a) || 'al_dia') : null;
+        /* directiva crítica (idempotencia de cobros): si ya hay un cobro
+           asentado para el período en curso, [✓ Cobrar] se reemplaza por
+           un botón bloqueado [✓ Cobrado] (disabled real, no solo visual)
+           y aparece [↺ Anular] para poder revertir un cobro cargado por
+           error -- nunca queda disponible un botón que vuelva a cobrar
+           con un clic accidental. */
+        var pagoActual = configurado ? finPagoDePeriodo(f, periodoActual) : null;
+        var btnCobro = pagoActual
+          ? '<button type="button" class="btn sm gold" disabled title="Ya cobrado este período — ' + esc(finFechaLarga(pagoActual.fecha)) + '">✓ Cobrado</button>' +
+            '<button type="button" class="btn sm ghost" data-fin-anular="' + a.id + '" style="color:#E0654A" title="Anular el cobro de este período">↺ Anular</button>'
+          : '<button type="button" class="btn sm gold" data-fin-pago="' + a.id + '">✓ Cobrar</button>';
         var acciones = configurado ?
-          '<button type="button" class="btn sm gold" data-fin-pago="' + a.id + '">✓ Cobrar</button>' +
+          btnCobro +
           '<button type="button" class="btn sm ghost" data-fin-hist="' + a.id + '">📋 Historial</button>' +
           '<button type="button" class="btn sm ghost" data-fin-wa="' + a.id + '">📲 WA</button>' +
           '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '" title="Editar condición comercial">✏️</button>'
           : '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '">⚙️ Configurar</button>';
+        var subTxt = configurado ? esc(finUltimoCobroTxt(f)) : '';
+        if(pagoActual) subTxt = '<b style="color:#48D597">🟢 Cobrado este período</b> · ' + subTxt;
         var fila = '<div class="fin-row">' +
           '<span class="fin-nombre">' + esc(fullName(a)) + '</span>' +
           '<span class="mono fin-arancel">' + (configurado ? esc(finFormatMoneda(f.arancel, f.moneda)) : '—') + '</span>' +
           '<span class="mono">' + (configurado ? esc(finProximoVencTxt(f)) : '—') + '</span>' +
-          '<span>' + finBadgeHTML(estado) + (configurado ? '<div class="fin-sub">' + esc(finUltimoCobroTxt(f)) + '</div>' : '') + '</span>' +
+          '<span>' + finBadgeHTML(estado) + (configurado ? '<div class="fin-sub">' + subTxt + '</div>' : '') + '</span>' +
           '<span class="fin-acts">' + acciones + '</span>' +
         '</div>';
         if(configurado && finHistAbiertoId === a.id) fila += finRenderHistorialPanel(a);
@@ -46102,9 +46251,23 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return proximoVenc;
   }
 
+  /* directiva crítica (idempotencia de cobros): guarda de seguridad en el
+     PUNTO DE ENTRADA, no solo en el botón -- aunque la fila ya deshabilita
+     [✓ Cobrar] cuando el período actual ya está cobrado, esta función
+     puede llegar a ejecutarse igual (doble bind accidental, clic en cola
+     mientras se repinta la tabla, etc.). Si ya existe un cobro para el
+     período en curso, se bloquea acá también: cero duplicados posibles
+     sin importar por dónde se dispare el registro. */
   function finRegistrarPago(a){
     if(!a) return;
     var f = a.finanzas = a.finanzas || finDefaults();
+    var periodoActual = finPeriodoActual();
+    var yaPagado = finPagoDePeriodo(f, periodoActual);
+    if(yaPagado){
+      toast('🟢 ' + fullName(a) + ' ya tiene un cobro registrado este período (' + finFechaLarga(yaPagado.fecha) + '). Anulalo primero si necesitás corregirlo.', 'warn');
+      finRenderHome();
+      return;
+    }
     var montoStr = prompt('Monto cobrado a ' + fullName(a) + ' (' + (f.moneda || 'ARS') + ')', String(f.arancel || ''));
     if(montoStr === null) return;
     var monto = parseFloat(String(montoStr).replace(',', '.')) || 0;
@@ -46112,6 +46275,34 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var proximoVenc = finAplicarPago(a, monto, notaStr);
     save();
     toast('✅ Pago registrado — ' + fullName(a) + ' · próximo vencimiento ' + finFechaLarga(proximoVenc));
+    finRenderHome(); renderAthletes();
+  }
+
+  /* directiva crítica (idempotencia de cobros): reemplaza el botón
+     [✓ Cobrar] cuando el alumno/a ya tiene un cobro asentado en el período
+     en curso -- "Anular" borra específicamente el/los registro(s) de ESE
+     período (nunca el historial completo) para permitir corregir un cobro
+     cargado por error sin arriesgar un clic accidental que vuelva a cobrar.
+     Si por datos previos a esta directiva hubiera más de un registro
+     duplicado en el mismo período, los anula todos de una vez: es la
+     limpieza explícita que el propio coach pide con este botón, no una
+     mutación automática. */
+  function finAnularPagoPeriodo(athId, periodo){
+    var a = getAth(athId); if(!a || !a.finanzas) return;
+    var f = a.finanzas;
+    var periodoObjetivo = periodo || finPeriodoActual();
+    var esDelPeriodo = function(h){ return h && ((h.periodo || (h.fecha ? h.fecha.slice(0,7) : '')) === periodoObjetivo); };
+    var previos = (f.historial || []).filter(esDelPeriodo);
+    if(!previos.length){ toast('No hay ningún cobro registrado en este período para anular', 'warn'); return; }
+    var msg = previos.length > 1
+      ? '¿Anular los ' + previos.length + ' cobros registrados de ' + fullName(a) + ' en este período? Esta acción no se puede deshacer.'
+      : '¿Anular el cobro de ' + fullName(a) + ' de este período? Esta acción no se puede deshacer.';
+    if(!confirm(msg)) return;
+    f.historial = (f.historial || []).filter(function(h){ return !esDelPeriodo(h); });
+    var calc = estadoFinanciero(a);
+    if(calc) f.estado = calc;
+    save();
+    toast('↺ Cobro anulado — ' + fullName(a), 'warn');
     finRenderHome(); renderAthletes();
   }
 
@@ -46153,6 +46344,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     btn.addEventListener('click', function(){
       var a = editAthId ? getAth(editAthId) : null;
       if(!a){ toast('Guardá primero el alumno/a para poder registrar un pago', 'err'); return; }
+      /* directiva crítica (idempotencia de cobros): este botón escribe en
+         el mismo f.historial que [✓ Cobrar] del Home -- sin este mismo
+         resguardo quedaría una segunda puerta abierta para el mismo bug
+         (doble cobro del período por clic repetido). Acá, a diferencia
+         del Home, se permite seguir adelante con una confirmación
+         explícita en vez de bloquear directo: el coach puede estar en la
+         ficha a propósito para cargar una corrección puntual. */
+      var fPrev = a.finanzas;
+      var yaPagado = fPrev && finPagoDePeriodo(fPrev, finPeriodoActual());
+      if(yaPagado && !confirm('Ya hay un cobro registrado este período (' + finFechaLarga(yaPagado.fecha) + '). ¿Registrar igual un cobro adicional?')) return;
       var elArancel = document.getElementById('aFinArancel');
       var monto = (elArancel && parseFloat(elArancel.value)) || (a.finanzas && a.finanzas.arancel) || 0;
       var proximoVenc = finAplicarPago(a, monto, '');
@@ -46232,6 +46433,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     tabla.addEventListener('click', function(e){
       var bp = e.target.closest('[data-fin-pago]');
       if(bp){ finRegistrarPago(getAth(bp.getAttribute('data-fin-pago'))); return; }
+      var ba = e.target.closest('[data-fin-anular]');
+      if(ba){ finAnularPagoPeriodo(ba.getAttribute('data-fin-anular')); return; }
       var bw = e.target.closest('[data-fin-wa]');
       if(bw){ finAbrirWhatsapp(getAth(bw.getAttribute('data-fin-wa'))); return; }
       var bh = e.target.closest('[data-fin-hist]');
