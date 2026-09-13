@@ -21978,17 +21978,30 @@ document.addEventListener('DOMContentLoaded', init);
        discuss.ai.google.dev) es que la familia "2.5" (incluido el
        "gemini-2.5-pro" que estaba en los hints) devuelve 404 para
        cualquier clave/proyecto SIN uso previo de esos modelos -- Google
-       limita el acceso a usuarios que ya los venían usando. Se saca
-       "gemini-2.5-pro" de los hints (siempre 404 para una clave nueva) y
-       se lo reemplaza por "gemini-3.1-flash-lite", de la misma familia 3.x
-       sin esa restricción de acceso. El default queda en gemini-3.6-flash
-       (confirmado vigente y sin restricción). Si igual algún dispositivo
-       puntual arrastra un modelo que la API rechaza con 404, el fix real
-       está en callProvider(): detecta el 404 de Google, lo explica en vez
-       de dejar el HTTP crudo, y NUNCA lo confunde con problema de cuota
-       (ver el bloque de cooldown más abajo). */
-    google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.6-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
-      hints:['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'] }
+       limita el acceso a usuarios que ya los venían usando.
+       directiva crítica (2026-09, seguimiento) -- un coach reportó 429
+       ("cuota agotada") con gemini-3.6-flash y pidió bajar a
+       "gemini-2.5-flash"/"gemini-1.5-flash": se verificó de nuevo contra
+       ai.google.dev y NINGUNO de los dos sirve --  gemini-1.5-flash ya NO
+       figura en el catálogo vigente de modelos (retirado del todo, confirma
+       lo que ya decía MODELOS_RETIRADOS más abajo) y gemini-2.5-flash sigue
+       cargando el mismo riesgo de 404 por acceso restringido de la familia
+       "2.5" para una clave sin uso previo -- bajar a cualquiera de los dos
+       hubiera cambiado un 429 (temporal, la cuota se repone sola) por un
+       404 (permanente hasta cambiar de modelo). En cambio se confirmó el
+       catálogo ESTABLE vigente completo de la familia 3.x (todos "Stable",
+       sin restricciones de acceso publicadas): gemini-3.8-flash es ahora el
+       modelo recomendado por Google (lanzado 02/09/2026, reemplaza a 3.6/
+       3.7 como tope de línea) -- pasa a ser el nuevo default para
+       instalaciones nuevas (no pisa el modelo ya guardado de quien ya tenía
+       3.6-flash configurado, ver loadAI()/MODELOS_RETIRADOS). Se amplían
+       los hints con el catálogo 3.x completo: cada modelo tiene su propia
+       cuota de RPM/RPD independiente en la API de Google, así que un coach
+       con 429 en un modelo puede probar otro de la lista sin esperar a que
+       resetee -- el selector manual del panel de nutrición (directiva
+       anterior) ya permite tipear cualquiera de estos sin tocar código. */
+    google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.8-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
+      hints:['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'] }
   };
   const ORDEN = ['anthropic','openai','google'];
   let AI = {
@@ -45158,8 +45171,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         toast(ok ? '✅ Conexión con ' + PROV_LB(prov) + ' OK' : 'El proveedor respondió algo inesperado — ver detalle', ok ? 'ok' : 'warn');
       })
       .catch(function(e){
-        renderDiag({ ok:false, etapa:'Falló el test de conexión', provider: prov, model: model, motivo: (e && e.message) || 'Error desconocido al contactar al proveedor.' });
-        toast('Test de conexión falló: ' + ((e && e.message) || 'error desconocido'), 'err');
+        var msg = (e && e.message) || 'Error desconocido al contactar al proveedor.';
+        /* directiva crítica (2026-09, seguimiento) -- un 429 acá es cuota
+           agotada (temporal, no una clave rota): se aclara con el mismo
+           criterio que generarSemana(), para que el coach no lo lea como
+           "la configuración está mal" cuando en realidad sólo hay que
+           esperar o probar otro modelo/proveedor. */
+        if(e && e.rate){
+          renderDiag({ ok:false, etapa:'⏳ Límite temporal de cuota en ' + PROV_LB(prov), provider: prov, model: model, motivo: msg + ' -- es temporal: probá de nuevo en un rato, o elegí otro modelo/proveedor arriba (cada uno tiene su propia cuota).' });
+          toast('⏳ ' + PROV_LB(prov) + ' sin cuota disponible ahora mismo -- probá de nuevo en un rato o cambiá de modelo/proveedor', 'warn');
+        } else {
+          renderDiag({ ok:false, etapa:'Falló el test de conexión', provider: prov, model: model, motivo: msg });
+          toast('Test de conexión falló: ' + msg, 'err');
+        }
       })
       .finally(function(){
         if(btn){ btn.disabled = false; btn.textContent = '🧪 Test Conexión IA'; }
@@ -45382,9 +45406,21 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var modelAct = selIA.model || (cfgAI.models && cfgAI.models[provAct]) || '(modelo por defecto)';
     toast('Consultando ' + PROV_LB(provAct) + ' (pool semanal)…');
     renderDiag({ ok:true, etapa:'Consultando ' + PROV_LB(provAct) + ' — pool semanal…', provider: provAct, model: modelAct, motivo:'Llamada directa y única a este proveedor/modelo elegido -- sin reintentos automáticos ni cambio de proveedor a ciegas.' });
-    /* piso de tokens del pool: ~2-3x el de un día (3 variantes por franja en
-       vez de 1), bien lejos de lo que costaría pedir los 7 días completos */
-    var maxTokPool = Math.max((cfgAI.maxTokens || 0), 28000);
+    /* directiva crítica (2026-09, seguimiento) -- se pidió bajar este piso a
+       4096-8192 pensando que el 429 venía de pedir "7 días completos" en un
+       solo tiro -- no es así: promptPoolSemanal() YA arma un pool compacto
+       de arquetipos por franja (3 variantes × hasta 5 franjas = hasta 15
+       variantes de 2 a 4 ítems cada una), no 7 días completos, y el 429 de
+       Google es RESOURCE_EXHAUSTED por cuota de la cuenta (RPM/RPD/TPM),
+       algo que el tamaño de ESTA respuesta puntual no origina ni evita --
+       de hecho, el peor caso real (5 comidas/día, el máximo de #npComidas)
+       ronda unos 7000-9000 tokens de salida, así que bajar a 4096-8192
+       hubiera cortado el JSON a mitad de camino (ver el chequeo de
+       MAX_TOKENS en callProvider) y cambiado un 429 por una respuesta
+       incompleta. Se recorta igual el piso viejo de 28000 -- desproporcionado
+       frente a ese máximo real -- a 12000, con margen de sobra sin
+       desperdiciar cupo de golpe si la cuenta está justa de TPM. */
+    var maxTokPool = Math.max((cfgAI.maxTokens || 0), 12000);
     var sistemaNutri = 'Respondé ÚNICAMENTE con el objeto JSON puro. ' +
       'No incluyas bloques de código ni comillas invertidas (```json o ```). ' +
       'No agregues saludos, aclaraciones ni texto explicativo antes ni después. ' +
@@ -45439,8 +45475,22 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(!npDiaSel) npDiaSel = 'lun';
         guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
         var msg = (e && e.message) || 'Error desconocido';
-        toast('No se pudo consultar la IA (' + msg + '): se usó el motor local', 'warn');
-        renderDiag({ ok:false, etapa:'Falló la llamada al proveedor de IA (no llegó a intentar parsear nada)', provider: provAct, model: modelAct, motivo: msg });
+        /* directiva crítica (2026-09, seguimiento) -- "no dejes la pantalla en
+           error muerto": esto YA caía al motor local ante cualquier falla
+           (ver arriba, R.plan=local antes de este toast), pero el aviso era
+           el mismo texto técnico genérico para un 429 pasajero que para una
+           clave inválida. Un 429/503/529 (e.rate === true, seteado por
+           RateErr en callProvider) es SIEMPRE temporal -- se distingue con un
+           mensaje tranquilizador y accionable; el resto de errores (config,
+           red, parsing) sigue mostrando el detalle técnico real, que ahí sí
+           hace falta para que el coach corrija algo. */
+        if(e && e.rate){
+          toast('⚡ Semana generada con el motor local (límite temporal de cuota alcanzado en ' + PROV_LB(provAct) + '). Podés editar los alimentos a mano o reintentar con IA más tarde.', 'warn');
+          renderDiag({ ok:false, etapa:'Límite temporal de cuota en ' + PROV_LB(provAct), provider: provAct, model: modelAct, motivo: 'Se usó el motor local mientras tanto. ' + msg + ' -- probá de nuevo en un rato, o elegí otro modelo/proveedor arriba (cada uno tiene su propia cuota).' });
+        } else {
+          toast('No se pudo consultar la IA (' + msg + '): se usó el motor local', 'warn');
+          renderDiag({ ok:false, etapa:'Falló la llamada al proveedor de IA (no llegó a intentar parsear nada)', provider: provAct, model: modelAct, motivo: msg });
+        }
       });
   }
 
