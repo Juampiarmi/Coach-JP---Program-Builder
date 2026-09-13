@@ -734,20 +734,18 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           </select>
         </div>
       </div>
-      <div>
-        <label class="lb">💳 Vencimiento de cuota (opcional)</label>
-        <input type="date" id="aPayDue">
-        <div class="hint">Se muestra al alumno/a como recordatorio discreto en su panel de Perfil (ícono de credencial). Dejalo vacío si no facturás por fecha fija.</div>
-      </div>
       <div class="fin-cc-box">
-        <label class="lb fin-cc-lb">💳 Condición Comercial / Cuota</label>
+        <label class="lb fin-cc-lb">💳 Cuota / Vencimiento <span id="aFinVencBadge" class="fin-badge" style="margin-left:8px"></span></label>
         <div class="grid g4">
           <div><label class="lb">Arancel</label><input id="aFinArancel" type="number" step="0.01" min="0" placeholder="Ej: 45000"></div>
           <div>
             <label class="lb">Moneda</label>
             <select id="aFinMoneda"><option value="ARS">ARS</option><option value="USD">USD</option></select>
           </div>
-          <div><label class="lb">Día de corte</label><input id="aFinDia" type="number" min="1" max="31" placeholder="Ej: 10"></div>
+          <div><label class="lb">Fecha de último pago</label><input type="date" id="aFinUltimoPago"></div>
+          <div><label class="lb">Próximo vencimiento</label><input type="date" id="aFinProximoVenc"></div>
+        </div>
+        <div class="grid g4" style="margin-top:8px">
           <div>
             <label class="lb">Método habitual</label>
             <select id="aFinMetodo">
@@ -756,8 +754,11 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
               <option value="mp">Mercado Pago</option>
             </select>
           </div>
+          <div style="grid-column:span 3;display:flex;align-items:flex-end">
+            <button type="button" class="btn xs gold" id="aFinRegistrarHoy" style="width:100%">✅ Registrar pago de hoy</button>
+          </div>
         </div>
-        <div class="hint">Uso exclusivo del coach: nunca se sincroniza ni se muestra en la app del alumno/a. El historial de pagos y los recordatorios se gestionan desde la tarjeta 💳 Control Financiero en el Home.</div>
+        <div class="hint">Fuente única de la cuota: esta fecha es la que ve el alumno/a en su panel (recordatorio discreto) y la que evalúa todos los semáforos del Builder. "Próximo vencimiento" se calcula solo (+28 días desde el último pago) salvo que lo edites a mano acá. El historial completo de pagos se gestiona desde la tarjeta 💳 Control Financiero en el Home.</div>
       </div>
       <div>
         <label class="lb">Foco principal / Objetivos de recomposición</label>
@@ -2214,12 +2215,13 @@ function openAth(id){
   $('#aNivel').value    = a ? (a.nivel||'Intermedio') : 'Intermedio';
   $('#aGenero').value   = a ? (a.genero||'') : '';
   $('#aColor').value    = a ? (a.color||'') : '';
-  $('#aPayDue').value   = a ? (a.payDue||'') : '';
   const fz = a ? (a.finanzas||null) : null;
   $('#aFinArancel').value = fz && fz.arancel ? fz.arancel : '';
   $('#aFinMoneda').value  = (fz && fz.moneda) || 'ARS';
-  $('#aFinDia').value     = fz && fz.diaVencimiento ? fz.diaVencimiento : '';
+  $('#aFinUltimoPago').value   = (fz && fz.fechaUltimoPago) || '';
+  $('#aFinProximoVenc').value  = (fz && fz.proximoVencimiento) || (a ? (a.payDue||'') : '');
   $('#aFinMetodo').value  = (fz && fz.metodo) || 'transferencia';
+  if(typeof pintarBadgeFicha === 'function') pintarBadgeFicha(a);
   $('#aFoco').value     = a ? (a.foco||'') : '';
   $('#aDeportes').value = a ? (a.deportes||'') : '';
   $('#aCompat').value   = a ? (a.compat||'') : '';
@@ -2246,7 +2248,6 @@ function saveAth(){
     nivel: $('#aNivel').value,
     genero: $('#aGenero').value,
     color: $('#aColor').value,
-    payDue: $('#aPayDue').value || '',
     foco: $('#aFoco').value.trim(),
     deportes: $('#aDeportes').value.trim(),
     compat: $('#aCompat').value.trim(),
@@ -3407,7 +3408,15 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
      un poco. Mover la regla a <html> preserva el mismo efecto visual
      (nunca aparece scroll horizontal) sin crear ese contenedor extra,
      porque <html> ya era el scrollingElement real de esta página. */
-  html { scroll-behavior: smooth; scrollbar-color: var(--border) transparent; scrollbar-width: thin; overflow-x: hidden; }
+  /* directiva crítica (rediseño de header, 2026-09): <html> es el
+     scrollingElement real (ver nota arriba) y .hd-compact es fixed --
+     cualquier scroll-into-view nativo (o el de Playwright) que apunte a
+     un elemento cerca del tope de la página lo deja tapado bajo la
+     cabecera si no se le avisa cuánto mide. scroll-padding-top usa la
+     misma variable --hdc-h que ya mide en vivo medirCabecera(), así que
+     queda correcto sin importar cuántas líneas ocupe el nombre del
+     atleta o el badge de cuota. */
+  html { scroll-behavior: smooth; scrollbar-color: var(--border) transparent; scrollbar-width: thin; overflow-x: hidden; scroll-padding-top: var(--hdc-h, 140px); }
   body {
     background: var(--bg);
     color: var(--text-primary);
@@ -19444,7 +19453,7 @@ input[type="checkbox"]:active{
   backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
   border-bottom:1px solid #1E222B; box-shadow:0 1px 0 rgba(229,195,120,.10);
 }
-.hdc-top{ display:flex; align-items:center; gap:12px; padding:0 14px 12px; }
+.hdc-top{ display:flex; align-items:center; gap:12px; padding:0 14px 14px; }
 .hdc-shield{
   width:46px; height:52px; flex-shrink:0; position:relative;
   display:flex; align-items:center; justify-content:center; border-radius:14px;
@@ -19461,20 +19470,26 @@ input[type="checkbox"]:active{
    un solo bloque de identidad) y "High Performance System" como sub-línea
    técnica (nivel 2, más chica y apagada) arriba del nombre del atleta, que
    sigue siendo el elemento más grande/blanco del bloque -- protagonista. */
-.hdc-brand{display:flex;flex-direction:column;gap:1px}
+.hdc-brand{display:flex;flex-direction:column;gap:2px}
+/* directiva crítica (rediseño de header): "COACH JP" quedaba diminuto y
+   apretado contra el nombre del atleta -- sube de .74rem/11.8px a 13px
+   y pasa del amarillo saturado (#FFD600, pensado para el escudo) al
+   dorado de marca (#E5C378) para que ambos niveles del bloque de
+   identidad (marca + subtítulo) lean como un mismo lenguaje tonal,
+   dejando el blanco/crema exclusivo para el nombre del atleta debajo. */
 .hdc-brand-mark{
-  font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:.74rem; letter-spacing:.16em;
-  text-transform:uppercase; color:#FFD600; line-height:1;
-  text-shadow:0 0 10px rgba(255,214,0,.35);
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800; font-size:13px; letter-spacing:.14em;
+  text-transform:uppercase; color:#E5C378; line-height:1.1;
+  text-shadow:0 0 10px rgba(229,195,120,.3);
 }
 .hdc-brand-mark em{font-style:normal}
 .hdc-brand-sub{
-  font-family:'Barlow Condensed',sans-serif; font-weight:600; font-size:.56rem; letter-spacing:.13em;
-  text-transform:uppercase; color:#E5C378; opacity:.78; line-height:1;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:600; font-size:9px; letter-spacing:.12em;
+  text-transform:uppercase; color:#6E7783; opacity:1; line-height:1.1;
 }
 .hdc-name{
-  font-size:17px; font-weight:800; color:#FFFFFF; letter-spacing:.01em; line-height:1.2;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px;
+  font-size:19px; font-weight:800; color:#EDEFF2; letter-spacing:.01em; line-height:1.25;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:3px;
 }
 /* directiva9 -- micro-badge sutil de abono, junto al nombre del atleta.
    Minimalista a propósito (texto chico, opacidad reducida, sin fondo/borde
@@ -19484,15 +19499,20 @@ input[type="checkbox"]:active{
 /* directiva 13: fila para el chip de cuota + el nuevo chip de vigencia del
    plan, uno al lado del otro cuando ambos tienen contenido (cada chip
    individual sigue colapsando solo si queda vacío, ver :empty abajo) */
-.hdc-chip-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:3px; }
+.hdc-chip-row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:6px 0 2px; }
 .hdc-pay-chip{ line-height:1; }
 .hdc-pay-chip:empty{ display:none; }
 /* directiva de refactor (2026-09): micro-chip Luxury Stealth -- fondo y
    borde sutil (mismo lenguaje visual que .fin-badge del panel del coach),
    nunca un banner invasivo. Verde atenuado = al día; ámbar/rojo apagado =
-   próximo a vencer / vencido, sin ícono de alarma. */
+   próximo a vencer / vencido, sin ícono de alarma.
+   directiva crítica (rediseño de header): padding balanceado (3px 10px,
+   antes 2px 8px, se sentía apretado) y más aire respecto al selector de
+   días -- .hdc-chip-row ahora suma margen abajo (2px) y .hdc-top gana un
+   padding-bottom mayor (ver más abajo), así el badge nunca queda pegado
+   contra el borde superior de #dayTabs / .hdc-days-row. */
 .hdc-pay-b{
-  display:inline-flex; align-items:center; gap:4px; padding:2px 8px;
+  display:inline-flex; align-items:center; gap:4px; padding:3px 10px;
   border-radius:999px; background:#141920; border:1px solid #28303A;
   font-family:var(--font-mono); font-size:.62rem; font-weight:700;
   letter-spacing:.02em; line-height:1.5; white-space:nowrap;
@@ -31725,39 +31745,27 @@ body.man-mode .gs-fab{right:318px}
     return _go.apply(this, arguments);
   };
 
-  /* ============ B. CONTROL DE PAGOS ============ */
-  const HOY = () => new Date(new Date().toISOString().slice(0,10) + 'T00:00:00');
-  const DIA = 86400000;
+  /* ============ B. CONTROL DE PAGOS ============
+     directiva crítica (rediseño header + unificación financiera):
+     ESTE módulo ya no lleva su propio ciclo de pago (ath.pago, con
+     "ultimo"/"modo"/"diaMes") -- era una TERCERA fuente de fecha
+     independiente de ath.finanzas y ath.payDue, y su desincronización
+     (un ciclo que seguía corriendo acá mientras el campo del alumno/a
+     quedaba congelado en otro lado) era exactamente lo que producía
+     badges contradictorios y el "vencimiento fantasma" reportados.
+     estadoPago() ahora es un simple traductor de nombres de id sobre
+     estadoCuota() (MÓDULO 30, más abajo en el archivo, expuesto en
+     window.estadoCuota) -- que es la ÚNICA función que evalúa fechas de
+     cuota en toda la app. Se conserva el nombre/forma de retorno
+     {id,lb,ic,dias,vence} tal cual para no tocar el resto de este
+     módulo (payFilters, resumen, badge de la tarjeta), que sigue
+     funcionando igual, ahora con datos siempre consistentes. */
   const fmt = iso => iso ? iso.split('-').reverse().join('/') : '—';
-
-  function pagoDe(a){
-    if(!a.pago) a.pago = { ultimo:'', modo:'30', diaMes: 1 };
-    if(!a.pago.modo) a.pago.modo = '30';
-    return a.pago;
-  }
-  function venceISO(a){
-    const p = pagoDe(a);
-    if(!p.ultimo) return '';
-    const d0 = new Date(p.ultimo + 'T00:00:00');
-    if(isNaN(d0.getTime())) return '';
-    if(p.modo === 'mes'){
-      const dia = Math.max(1, Math.min(31, parseInt(p.diaMes, 10) || d0.getDate()));
-      const v = new Date(d0.getFullYear(), d0.getMonth() + 1, 1);
-      const ult = new Date(v.getFullYear(), v.getMonth() + 1, 0).getDate();
-      v.setDate(Math.min(dia, ult));
-      return v.toISOString().slice(0,10);
-    }
-    const n = Math.max(1, parseInt(p.modo, 10) || 30);
-    return new Date(d0.getTime() + n * DIA).toISOString().slice(0,10);
-  }
-  /* estado: ok (más de 5 días) · soon (5 o menos) · late (vencido) · none (sin datos) */
+  const MAP_ID_LEGACY = { al_dia:'ok', proximo:'soon', vencido:'late', none:'none' };
   function estadoPago(a){
-    const v = venceISO(a);
-    if(!v) return { id:'none', lb:'Sin datos de pago', ic:'⚪', dias:null, vence:'' };
-    const dias = Math.round((new Date(v + 'T00:00:00') - HOY()) / DIA);
-    if(dias < 0)  return { id:'late', lb:'Vencido hace ' + Math.abs(dias) + ' día(s)', ic:'🔴', dias:dias, vence:v };
-    if(dias <= 5) return { id:'soon', lb:'Por vencer · ' + (dias === 0 ? 'vence hoy' : 'faltan ' + dias + ' día(s)'), ic:'🟡', dias:dias, vence:v };
-    return { id:'ok', lb:'Al día · faltan ' + dias + ' días', ic:'🟢', dias:dias, vence:v };
+    const e = (typeof window.estadoCuota === 'function') ? window.estadoCuota(a) : null;
+    if(!e) return { id:'none', lb:'Sin datos de cuota', ic:'⚪', dias:null, vence:'' };
+    return { id: MAP_ID_LEGACY[e.id] || 'none', lb: e.lb, ic: e.ic, dias: e.dias, vence: e.vence };
   }
   const CATS = [
     { id:'todos', lb:'Todos',      ic:'👥' },
@@ -31768,111 +31776,18 @@ body.man-mode .gs-fab{right:318px}
   ];
   let payFilter = 'todos';
 
-  /* ---------- campos en la ficha ---------- */
-  function campos(){
-    return '<div id="aPagoWrap" style="grid-column:1/-1">' +
-      '<label class="lb">💳 Administración de la cuota</label>' +
-      '<div class="grid g3">' +
-        '<div><label class="lb" style="font-size:10px">📅 Fecha de último pago</label><input type="date" id="aPagoFecha"></div>' +
-        '<div><label class="lb" style="font-size:10px">🔄 Vencimiento</label>' +
-          '<select id="aPagoModo">' +
-            '<option value="30">A los 30 días</option>' +
-            '<option value="15">A los 15 días</option>' +
-            '<option value="7">Semanal (7 días)</option>' +
-            '<option value="60">Bimestral (60 días)</option>' +
-            '<option value="mes">Mismo día de cada mes</option>' +
-          '</select></div>' +
-        '<div id="aPagoDiaWrap" style="display:none"><label class="lb" style="font-size:10px">Día del mes</label>' +
-          '<input type="number" id="aPagoDia" min="1" max="31" value="1"></div>' +
-      '</div>' +
-      '<div class="pay-box">' +
-        '<div class="row" style="gap:8px">' +
-          '<span id="aPagoBadge" class="pay-badge">⚪ Sin datos de pago</span>' +
-          '<button type="button" class="btn xs" id="aPagoHoy">✅ Registrar pago de hoy</button>' +
-          '<button type="button" class="btn xs ghost" id="aPagoClear">🧹 Borrar</button>' +
-        '</div>' +
-        '<div class="pst" id="aPagoTxt"></div>' +
-      '</div></div>';
-  }
-  function pintarFicha(){
-    const f = $('#aPagoFecha'); if(!f) return;
-    const modo = $('#aPagoModo').value;
-    $('#aPagoDiaWrap').style.display = modo === 'mes' ? '' : 'none';
-    const fake = { pago: { ultimo: f.value, modo: modo, diaMes: $('#aPagoDia').value } };
-    const e = estadoPago(fake);
-    const b = $('#aPagoBadge');
-    b.className = 'pay-badge ' + (e.id === 'none' ? '' : e.id);
-    b.textContent = e.ic + ' ' + e.lb;
-    $('#aPagoTxt').innerHTML = f.value
-      ? 'Último pago: <b>' + fmt(f.value) + '</b> · Próximo vencimiento: <b style="color:var(--gold)">' + fmt(e.vence) + '</b>' +
-        (e.id === 'late' ? '<br><b style="color:#E0654A">Cuota vencida:</b> conviene avisarle antes de la próxima sesión.' :
-         e.id === 'soon' ? '<br><b style="color:var(--gold)">Está por vencer:</b> buen momento para recordarle el pago.' :
-         '<br>Todo en orden. El semáforo se actualiza solo con el paso de los días.')
-      : 'Cargá la fecha del último pago para activar el semáforo de cuota (🟢 al día · 🟡 faltan 5 días o menos · 🔴 vencida).';
-  }
-
-  const _openAth = window.openAth;
-  window.openAth = function(id){
-    _openAth.apply(this, arguments);
-    const a = id ? getAth(id) : null;
-    const ref = document.getElementById('aSedeRow') || document.getElementById('aColor');
-    if(ref && !document.getElementById('aPagoWrap')){
-      const anchor = document.getElementById('aSedeRow') || ref.parentNode.parentNode;
-      anchor.insertAdjacentHTML('afterend', campos());
-      ['aPagoFecha','aPagoModo','aPagoDia'].forEach(x => {
-        const el = document.getElementById(x);
-        if(el) el.addEventListener('input', pintarFicha);
-        if(el) el.addEventListener('change', pintarFicha);
-      });
-      document.getElementById('aPagoHoy').addEventListener('click', () => {
-        $('#aPagoFecha').value = new Date().toISOString().slice(0,10);
-        pintarFicha(); toast('💳 Pago registrado con la fecha de hoy');
-      });
-      document.getElementById('aPagoClear').addEventListener('click', () => { $('#aPagoFecha').value = ''; pintarFicha(); });
-    }
-    const p = a ? pagoDe(a) : { ultimo:'', modo:'30', diaMes:1 };
-    if($('#aPagoFecha')) $('#aPagoFecha').value = p.ultimo || '';
-    if($('#aPagoModo'))  $('#aPagoModo').value  = p.modo || '30';
-    if($('#aPagoDia'))   $('#aPagoDia').value   = p.diaMes || 1;
-    pintarFicha();
-  };
-  const _saveAth = window.saveAth;
-  window.saveAth = function(){
-    const editing = editAthId, antes = S.athletes.length;
-    const datos = $('#aPagoFecha') ? {
-      ultimo: $('#aPagoFecha').value,
-      modo: $('#aPagoModo').value,
-      diaMes: parseInt($('#aPagoDia').value, 10) || 1
-    } : null;
-    _saveAth.apply(this, arguments);
-    if(document.getElementById('mAth').classList.contains('on')) return;
-    const t = editing ? getAth(editing) : (S.athletes.length > antes ? S.athletes[S.athletes.length-1] : null);
-    if(t && datos){
-      /* Hallazgo Checkpoint 8, resuelto en la auditoría de performance:
-         t.payDue (fecha simple y opcional, se muestra tal cual al alumno/a
-         en su panel) y t.pago (ciclo recurrente con vencimiento calculado,
-         solo alimenta el semáforo interno del/de la coach en el listado)
-         son dos campos independientes que conviven en la misma ficha desde
-         checkpoints distintos -- no se fusionan, porque un/a coach puede
-         querer llevar el ciclo interno sin exponerle la fecha al alumno/a
-         (por eso el campo dice "opcional" y "dejalo vacío si no facturás
-         por fecha fija"). El único enganche seguro: la PRIMERA vez que se
-         carga un ciclo de pago para este/a alumno/a, si el campo del
-         alumno/a todavía está vacío, se autocompleta una sola vez con el
-         próximo vencimiento calculado -- así no hace falta tipear la misma
-         fecha dos veces al dar de alta la cuota. No se vuelve a tocar en
-         guardados posteriores, así que un vaciado deliberado del campo del
-         alumno/a nunca se pisa. */
-      const teniaCicloAntes = !!(t.pago && t.pago.ultimo);
-      t.pago = datos;
-      if(!teniaCicloAntes && !t.payDue && datos.ultimo){
-        const v = venceISO(t);
-        if(v) t.payDue = v;
-      }
-      save();
-      if(S.ui.view === 'alumnos') renderAthletes();
-    }
-  };
+  /* directiva crítica (unificación financiera): la ficha #mAth YA NO
+     tiene un bloque de "Administración de la cuota" propio de este
+     módulo (campos()/pintarFicha(), que se inyectaba acá por JS con
+     insertAdjacentHTML y guardaba un ciclo independiente en t.pago).
+     Ese bloque -- y el monkeypatch de window.openAth/window.saveAth que
+     lo montaba -- era exactamente la TERCERA fuente de fecha descripta
+     arriba, con su propio autocompletado de una sola vez hacia
+     t.payDue. Se elimina por completo: el único bloque financiero de
+     la ficha ahora vive en MÓDULO 30 (#aFinArancel/#aFinMoneda/
+     #aFinUltimoPago/#aFinProximoVenc), cableado desde openAth()/
+     saveAth() del script principal (fuera de este módulo) y desde
+     finAplicarCondicionComercial()/finWireFicha() en MÓDULO 30. */
 
   /* ---------- badges y filtro en la lista ---------- */
   function pintarLista(){
@@ -31982,7 +31897,7 @@ body.man-mode .gs-fab{right:318px}
     }
     if(S.ui.view === 'alumnos') { try{ pintarLista(); }catch(e){} }
 
-    window.CoachPagos = { estado: estadoPago, vence: venceISO, resumen: resumen, limpiar: limpiarSeleccion,
+    window.CoachPagos = { estado: estadoPago, vence: a => (a && a.payDue) || '', resumen: resumen, limpiar: limpiarSeleccion,
                           filtro: v => { payFilter = v; pintarLista(); }, cats: CATS };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
@@ -45280,10 +45195,21 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 <style>
 /* ============================================================
    MÓDULO 30 — FINANZAS TÁCTICO (cuotas, vencimientos, MRR)
-   100% exclusivo del Builder: no toca TEMPLATE_HTML ni PROGRAM_CONFIG.
-   El objeto ath.payDue (fecha visible al alumno/a) es un campo aparte,
-   preexistente, y queda completamente intacto -- este módulo nunca lo
-   lee ni lo escribe.
+   No toca TEMPLATE_HTML ni PROGRAM_CONFIG directamente -- el alumno/a
+   nunca ve arancel, historial ni moneda.
+   directiva crítica (rediseño header + unificación financiera): ath.payDue
+   (la única fecha que lee el header del alumno/a) DEJÓ de ser un campo
+   aparte -- ahora es un espejo que este módulo escribe siempre que se
+   registra un pago o se edita la condición comercial (ver
+   finAplicarPago()/finAplicarCondicionComercial() más abajo). Es también
+   la ÚNICA fuente que consulta estadoCuota(), el evaluador de estado
+   compartido por la tabla de Finanzas de este módulo, la tarjeta del
+   alumno/a en el Builder (MÓDULO 21, más arriba, que ahora delega acá) y
+   el chip del header del alumno/a. Antes convivían tres fuentes de fecha
+   independientes (ath.pago del MÓDULO 21, ath.finanzas.diaVencimiento de
+   este módulo, y ath.payDue editado a mano en la ficha) que podían
+   desincronizarse sin que nada lo detectara -- de ahí los badges
+   contradictorios reportados.
    ============================================================ */
 .fin-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:6px}
 .fin-kpi{border:1px solid #28303A;border-radius:12px;background:#141920;padding:12px 13px}
@@ -45365,37 +45291,38 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
    MÓDULO 30 — FINANZAS TÁCTICO (cuotas, vencimientos, MRR)
    ------------------------------------------------------------
    Extiende ath con ath.finanzas = { arancel, moneda, diaVencimiento,
-   fechaUltimoPago, estado, metodo, historial[] }. Se persiste como
-   parte normal de S.athletes -- mismo save() de siempre, mismo viaje
-   a Supabase que el resto de la ficha del alumno/a, sin tabla nueva
-   ni store propio.
+   fechaUltimoPago, proximoVencimiento, estado, metodo, historial[] }.
+   Se persiste como parte normal de S.athletes -- mismo save() de
+   siempre, mismo viaje a Supabase que el resto de la ficha del
+   alumno/a, sin tabla nueva ni store propio.
 
-   Aislamiento estricto: ningún identificador de este módulo aparece
-   en compile() ni dentro de TEMPLATE_HTML. El alumno/a nunca ve nada
-   de esto -- ni siquiera el campo "estado" viaja al PROGRAM_CONFIG.
+   ath.payDue es el espejo público de f.proximoVencimiento -- es el
+   único campo de fecha que compile()/TEMPLATE_HTML leen (vía
+   PROGRAM_CONFIG.payDue), nunca arancel/moneda/historial/estado.
+
+   diaVencimiento queda en el esquema por compatibilidad con datos
+   viejos pero ya NO se usa para calcular nada (era la causa de la
+   desincronización con ath.payDue) -- ver estadoCuota() más abajo.
    ============================================================ */
 (function(){
 
-  var GRACIA_DIAS = 3;
   var PROXIMO_DIAS = 5;
-  var DIA_VENC_DEFAULT = 10; // dia de corte visual por defecto cuando el atleta tiene arancel cargado pero nunca definio un dia de vencimiento explicito
   var MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   var finHistAbiertoId = null; // id del alumno/a con el acordeon de historial expandido (o null)
 
   function finDefaults(){
-    return { arancel:0, moneda:'ARS', diaVencimiento:null, fechaUltimoPago:'', estado:'al_dia', metodo:'transferencia', historial:[] };
+    return { arancel:0, moneda:'ARS', diaVencimiento:null, fechaUltimoPago:'', proximoVencimiento:'', estado:'al_dia', metodo:'transferencia', historial:[] };
   }
 
+  /* huérfanas desde la directiva crítica de unificación financiera: el
+     "día de corte" mensual (diaVencimiento) ya no alimenta ningún
+     cálculo en vivo -- estadoCuota() usa directamente a.payDue. Se
+     dejan sin borrar por si algún dato viejo todavía trae
+     diaVencimiento cargado y se quiere recuperar en el futuro. */
   function finDiasEnMes(y, m){ return new Date(y, m+1, 0).getDate(); }
-
-  // Dia de vencimiento "efectivo" a usar para mostrar/calcular: el explicito
-  // si el atleta lo tiene cargado, o el default visual (DIA_VENC_DEFAULT) si
-  // solo tiene arancel. Un atleta con arancel NUNCA debe quedar "sin
-  // configurar" solo por no tener dia de vencimiento explicito.
   function finDiaVencEfectivo(f){
-    return (f && f.diaVencimiento) ? f.diaVencimiento : DIA_VENC_DEFAULT;
+    return (f && f.diaVencimiento) ? f.diaVencimiento : 10;
   }
-
   function finVencimientoDelMes(y, m, dia){
     var d = Math.min(dia || 1, finDiasEnMes(y, m));
     return new Date(y, m, d);
@@ -45423,25 +45350,45 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return (sel && sel.value) || finPeriodoActual();
   }
 
-  /* Fuente de verdad del estado -- se recalcula siempre en vivo a partir
-     de arancel/diaVencimiento/fechaUltimoPago; el campo ath.finanzas.estado
-     que pide el esquema es solo un espejo de conveniencia (se actualiza al
-     guardar la ficha o registrar un pago), nunca lo que se muestra. */
+  /* directiva crítica (rediseño header + unificación financiera) — EL
+     ÚNICO evaluador de estado de cuota de toda la app. Se calcula
+     siempre en vivo contra a.payDue (la fecha real y única de
+     vencimiento, espejo de f.proximoVencimiento) vs new Date() -- nunca
+     contra un "día de corte" mensual desconectado, que era la causa de
+     los badges contradictorios (una fecha para el Builder, otra para el
+     alumno/a). Devuelve también el conteo de días y el texto ya armado
+     con el formato exacto que pide la directiva, para que cada
+     consumidor (tarjeta del alumno/a, tabla de Finanzas, drawer del
+     alumno/a) no tenga que reimplementar el cálculo por su cuenta. */
+  function estadoCuota(a){
+    var due = a && a.payDue;
+    var v = finParseFecha(due);
+    if(!v) return { id:'none', lb:'Sin datos de cuota', ic:'⚪', dias:null, vence:'' };
+    var hoy = new Date(); hoy.setHours(0,0,0,0);
+    var dias = Math.round((v.getTime() - hoy.getTime()) / 86400000);
+    if(dias < 0){
+      var atraso = Math.abs(dias);
+      return { id:'vencido', lb:'Vencido hace ' + atraso + ' día' + (atraso === 1 ? '' : 's'), ic:'🔴', dias:dias, vence:due };
+    }
+    if(dias <= PROXIMO_DIAS){
+      return { id:'proximo', lb:'Por vencer (faltan ' + dias + ' día' + (dias === 1 ? '' : 's') + ')', ic:'🟡', dias:dias, vence:due };
+    }
+    return { id:'al_dia', lb:'Al día (faltan ' + dias + ' días)', ic:'🟢', dias:dias, vence:due };
+  }
+  window.estadoCuota = estadoCuota;
+
+  /* Compatibilidad: mantiene el contrato viejo (null · 'al_dia' ·
+     'proximo' · 'vencido') que ya consumen finBadgeHTML()/finDotHTML()/
+     la tabla de Finanzas -- pero ahora es un simple delegado de
+     estadoCuota(), nunca un cálculo propio. "Sin arancel" sigue
+     mostrando "Sin configurar" en la tabla de Finanzas (esa vista es
+     específicamente sobre condición comercial con monto), aunque haya
+     payDue cargado -- criterio sin cambios respecto de antes. */
   function estadoFinanciero(a){
     var f = a && a.finanzas;
     if(!f || !f.arancel) return null;
-    var hoy = new Date(); hoy.setHours(0,0,0,0);
-    var y = hoy.getFullYear(), m = hoy.getMonth();
-    var pagoEsteMes = false;
-    var up = finParseFecha(f.fechaUltimoPago);
-    if(up && up.getFullYear() === y && up.getMonth() === m) pagoEsteMes = true;
-    if(pagoEsteMes) return 'al_dia';
-    var venc = finVencimientoDelMes(y, m, finDiaVencEfectivo(f));
-    var diffDias = Math.round((venc.getTime() - hoy.getTime()) / 86400000);
-    if(diffDias < -GRACIA_DIAS) return 'vencido';
-    if(diffDias < 0) return 'vencido';
-    if(diffDias <= PROXIMO_DIAS) return 'proximo';
-    return 'al_dia';
+    var e = estadoCuota(a);
+    return e.id === 'none' ? null : e.id;
   }
 
   function finGeneroTxt(a, masc, fem){
@@ -45454,12 +45401,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return '$' + s + (moneda && moneda !== 'ARS' ? ' ' + moneda : '');
   }
 
+  /* directiva crítica: ya NO estima un "día de corte" mensual -- muestra
+     directamente f.proximoVencimiento (el mismo valor, espejado en
+     a.payDue, que evalúa estadoCuota() y que ve el alumno/a). Sin eso
+     cargado, "Sin definir" en vez de inventar una fecha. */
   function finProximoVencTxt(f){
-    var hoy = new Date();
-    var v = finVencimientoDelMes(hoy.getFullYear(), hoy.getMonth(), finDiaVencEfectivo(f));
-    var dd = String(v.getDate()).padStart(2, '0');
-    var mm = String(v.getMonth() + 1).padStart(2, '0');
-    return dd + '/' + mm + (f && f.diaVencimiento ? '' : '*'); // "*" marca dia estimado (sin vencimiento explicito cargado)
+    var v = finParseFecha(f && f.proximoVencimiento);
+    if(!v) return 'Sin definir';
+    return String(v.getDate()).padStart(2, '0') + '/' + String(v.getMonth() + 1).padStart(2, '0');
   }
 
   function finBadgeHTML(estado){
@@ -45486,9 +45435,17 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   window.finDotHTML = finDotHTML;
   window.estadoFinanciero = estadoFinanciero;
 
-  /* Se llama desde saveAth() (edición de ficha), tanto para alta como para
-     edición. Solo toca arancel/moneda/diaVencimiento/metodo -- nunca
-     historial ni fechaUltimoPago, que solo cambian vía "Registrar Pago". */
+  /* directiva crítica (unificación financiera) -- se llama desde
+     saveAth() (edición de ficha), tanto para alta como para edición.
+     Bloque único #mAth: Arancel/Moneda, Fecha de último pago y Próximo
+     vencimiento (ver #aFinArancel/#aFinMoneda/#aFinUltimoPago/
+     #aFinProximoVenc en la ficha). "Día de corte" (aFinDia) queda
+     retirado del formulario -- ya no se usa para calcular nada, ver
+     estadoCuota() más arriba.
+     Si el coach cargó una fecha de último pago pero dejó "Próximo
+     vencimiento" vacío, se autocompleta a +28 días (mismo default que
+     "Registrar pago de hoy") -- si el coach SÍ escribió algo en
+     "Próximo vencimiento", esa edición manual se respeta tal cual. */
   function finAplicarCondicionComercial(a){
     var elArancel = document.getElementById('aFinArancel');
     if(!elArancel) return;
@@ -45496,10 +45453,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var f = a.finanzas;
     f.arancel = parseFloat(elArancel.value) || 0;
     f.moneda = document.getElementById('aFinMoneda').value || 'ARS';
-    var dia = parseInt(document.getElementById('aFinDia').value, 10);
-    f.diaVencimiento = (dia >= 1 && dia <= 31) ? dia : null;
     f.metodo = document.getElementById('aFinMetodo').value || 'transferencia';
     f.historial = f.historial || [];
+    var elUltimo = document.getElementById('aFinUltimoPago');
+    var elVenc = document.getElementById('aFinProximoVenc');
+    if(elUltimo) f.fechaUltimoPago = elUltimo.value || '';
+    var vencManual = elVenc ? (elVenc.value || '') : '';
+    if(!vencManual && f.fechaUltimoPago){
+      var base = finParseFecha(f.fechaUltimoPago);
+      if(base) vencManual = finFechaMasDias(base, DIAS_CICLO_PAGO);
+    }
+    f.proximoVencimiento = vencManual;
+    a.payDue = vencManual;
     var calc = estadoFinanciero(a);
     if(calc) f.estado = calc;
     if(finHomeVisible()) finRenderHome();
@@ -45688,6 +45653,33 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
   var DIAS_CICLO_PAGO = 28;
+
+  /* directiva crítica (unificación financiera) -- lógica compartida de
+     "aplicar un pago", extraída para que la use tanto el botón [✓ Cobrar]
+     del Home (finRegistrarPago(), que sigue preguntando monto/nota por
+     prompt()) como el nuevo botón [✓ Registrar pago de hoy] dentro de la
+     ficha del alumno/a (#mAth, ver saveAth()/openAth() fuera de este
+     módulo). Una sola función que escribe historial + fechaUltimoPago +
+     payDue/proximoVencimiento -- ningún llamador vuelve a duplicar el
+     cálculo de +28 días por su cuenta. */
+  function finAplicarPago(a, monto, nota, fechaStr){
+    var f = a.finanzas = a.finanzas || finDefaults();
+    if(!fechaStr){
+      var hoy0 = new Date();
+      fechaStr = hoy0.getFullYear() + '-' + String(hoy0.getMonth()+1).padStart(2,'0') + '-' + String(hoy0.getDate()).padStart(2,'0');
+    }
+    f.historial = f.historial || [];
+    f.historial.push({ id: uid('pago'), fecha: fechaStr, monto: monto || 0, periodo: fechaStr.slice(0,7), nota: nota || '' });
+    f.fechaUltimoPago = fechaStr;
+    var base = finParseFecha(fechaStr) || new Date();
+    var proximoVenc = finFechaMasDias(base, DIAS_CICLO_PAGO);
+    a.payDue = proximoVenc;
+    f.proximoVencimiento = proximoVenc;
+    var calc = estadoFinanciero(a);
+    if(calc) f.estado = calc;
+    return proximoVenc;
+  }
+
   function finRegistrarPago(a){
     if(!a) return;
     var f = a.finanzas = a.finanzas || finDefaults();
@@ -45695,20 +45687,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(montoStr === null) return;
     var monto = parseFloat(String(montoStr).replace(',', '.')) || 0;
     var notaStr = prompt('Nota (opcional)', '') || '';
-    var hoy = new Date();
-    var fechaStr = hoy.getFullYear() + '-' + String(hoy.getMonth()+1).padStart(2,'0') + '-' + String(hoy.getDate()).padStart(2,'0');
-    f.historial = f.historial || [];
-    f.historial.push({ id: uid('pago'), fecha: fechaStr, monto: monto, periodo: fechaStr.slice(0,7), nota: notaStr });
-    f.fechaUltimoPago = fechaStr;
-    var calc = estadoFinanciero(a);
-    if(calc) f.estado = calc;
-    // vencimiento automatico: fecha de cobro + 28 dias, siempre recalculado
-    // en cada "Registrar Pago" (si el coach editó la fecha a mano en la
-    // ficha mientras tanto, esta acción la reemplaza -- es el default
-    // explícito que pide la directiva ante cada pago nuevo).
-    var proximoVenc = finFechaMasDias(hoy, DIAS_CICLO_PAGO);
-    a.payDue = proximoVenc;
-    f.proximoVencimiento = proximoVenc;
+    var proximoVenc = finAplicarPago(a, monto, notaStr);
     save();
     toast('✅ Pago registrado — ' + fullName(a) + ' · próximo vencimiento ' + finFechaLarga(proximoVenc));
     finRenderHome(); renderAthletes();
@@ -45726,6 +45705,54 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var url = 'https://wa.me/?text=' + encodeURIComponent(msg);
     window.open(url, '_blank', 'noopener');
   }
+
+  /* directiva crítica (unificación financiera) -- semáforo en vivo dentro
+     de la ficha #mAth (badge junto al título "Cuota / Vencimiento"),
+     usando el mismo estadoCuota() que el resto de la app. Se recalcula
+     al abrir la ficha (ver openAth() fuera de este módulo) y cada vez
+     que el coach toca a mano las fechas, sin esperar a guardar. */
+  function pintarBadgeFicha(a){
+    var el = document.getElementById('aFinVencBadge'); if(!el) return;
+    if(!a){ el.innerHTML = ''; return; }
+    var e = estadoCuota(a);
+    var colorMap = { al_dia:'#48D597', proximo:'#EFB44A', vencido:'#E0654A', none:'#828A97' };
+    var color = colorMap[e.id] || '#828A97';
+    el.style.color = color;
+    el.style.borderColor = color + '55';
+    el.textContent = e.ic + ' ' + e.lb;
+  }
+  window.pintarBadgeFicha = pintarBadgeFicha;
+
+  var finFichaWireada = false;
+  function finWireFicha(){
+    var btn = document.getElementById('aFinRegistrarHoy');
+    if(!btn || finFichaWireada) return;
+    finFichaWireada = true;
+    btn.addEventListener('click', function(){
+      var a = editAthId ? getAth(editAthId) : null;
+      if(!a){ toast('Guardá primero el alumno/a para poder registrar un pago', 'err'); return; }
+      var elArancel = document.getElementById('aFinArancel');
+      var monto = (elArancel && parseFloat(elArancel.value)) || (a.finanzas && a.finanzas.arancel) || 0;
+      var proximoVenc = finAplicarPago(a, monto, '');
+      document.getElementById('aFinUltimoPago').value = a.finanzas.fechaUltimoPago;
+      document.getElementById('aFinProximoVenc').value = proximoVenc;
+      pintarBadgeFicha(a);
+      save();
+      toast('✅ Pago registrado — próximo vencimiento ' + finFechaLarga(proximoVenc));
+      if(finHomeVisible()) finRenderHome();
+      if(typeof renderAthletes === 'function') renderAthletes();
+    });
+    ['aFinUltimoPago','aFinProximoVenc'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.addEventListener('change', function(){
+        var base = editAthId ? getAth(editAthId) : null;
+        var venc = document.getElementById('aFinProximoVenc').value || (base && base.payDue) || '';
+        pintarBadgeFicha(Object.assign({}, base, { payDue: venc }));
+      });
+    });
+  }
+  finWireFicha();
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', finWireFicha);
 
   function finPoblarMesSelector(){
     var sel = document.getElementById('finMesSel'); if(!sel) return;
@@ -45757,7 +45784,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     finRenderTabla(periodo);
   }
   window.finRenderHome = finRenderHome;
-  window.CoachFinanzas = { estadoFinanciero: estadoFinanciero, agregados: finAgregados, render: finRenderHome };
+  window.CoachFinanzas = {
+    estadoFinanciero: estadoFinanciero, estadoCuota: estadoCuota,
+    agregados: finAgregados, render: finRenderHome,
+    aplicarPago: finAplicarPago, defaults: finDefaults, fechaLarga: finFechaLarga
+  };
   /* alias de compatibilidad: antes abría un modal, ahora solo navega al
      Home (donde el panel ya está siempre visible) y lo refresca. */
   window.abrirFinanzasJP = function(){ go('home'); };
