@@ -22214,7 +22214,12 @@ document.addEventListener('DOMContentLoaded', init);
   }
   async function callProvider(prov, system, user, opts){
     if(!hasKey(prov)) throw new Error('No hay API Key de ' + PROV[prov].lb + '.');
-    const cfg = PROV[prov], model = AI.models[prov] || cfg.model;
+    const cfg = PROV[prov];
+    /* directiva crítica (2026-09) -- selector manual de proveedor/modelo: un
+       llamador puntual (ej. el selector del panel de nutrición) puede pedir
+       un modelo EXACTO sin tocar la configuración global guardada en
+       AI.models[prov] -- opts.model tiene prioridad si viene informado. */
+    const model = (opts && opts.model) || AI.models[prov] || cfg.model;
     /* opts.maxTokens permite a un llamador puntual (ej. el plan de nutrición,
        cuyo JSON de respuesta es mucho más largo que el resto) pedir más margen
        que el configurado en el modal de IA, sin tocar ese ajuste global. */
@@ -22829,6 +22834,23 @@ document.addEventListener('DOMContentLoaded', init);
       /* llamada genérica de texto (la usa la biblioteca para tips y objetivos) */
       generarTexto: (user, system, opts) => callAI(system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user, undefined, opts),
       hayClave: () => ['anthropic','openai','google'].some(p => hasKey(p)),
+      /* directiva crítica (2026-09) -- selector manual de proveedor/modelo y
+         fin del bloqueo ciego por cooldown: se exponen los chequeos internos
+         (antes sólo de uso privado acá adentro) para que un módulo consumidor
+         -- el panel de nutrición -- pueda mostrar el estado real de un
+         proveedor puntual sin duplicar esta lógica. hasKey/isCool/coolLeft
+         son de sólo lectura, no mutan nada. */
+      hasKey: hasKey, isCool: isCool, coolLeft: coolLeft,
+      /* llamada DIRECTA y única a un proveedor/modelo exactos, sin el bucle
+         de reintento-y-espera ni el fallback automático a otro proveedor que
+         hace callAI() (usado por generarTexto). No setea cooldown por su
+         cuenta: si el proveedor puntual devuelve 429/503/529, se rechaza la
+         promesa de inmediato con el detalle real (res.status + mensaje de la
+         API), en vez de esperar en silencio hasta 80s como podía pasar antes
+         al pasar por el bucle de callAI() con reintentos cortos. Pensada para
+         flujos donde el coach ya eligió a mano el proveedor y el modelo (no
+         corresponde que la app itere a ciegas sobre otros). */
+      llamarDirecto: (prov, user, system, opts) => callProvider(prov, system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user, opts),
       /* directiva crítica (2026-09) -- auditoría de todos los generadores con
          IA: extractJson() (fences de markdown, comas colgantes, caracteres
          de control sin escapar dentro de strings) sólo se usaba acá adentro;
@@ -43490,10 +43512,35 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
             placeholder="Ej: trabajo de 6 a 15 h y almuerzo en el laburo · odio el pescado · los domingos como en casa de mi vieja"></textarea>
         </div>
 
+        <div class="np-sec">
+          <div class="sh">🤖 Motor de generación con IA</div>
+          <div class="hint" style="margin-bottom:8px">Elegí el proveedor y el modelo exactos a usar -- la app respeta esta elección sin iterar a ciegas por otros proveedores. Si preferís no usar ninguna API, elegí el Motor Local (genera al instante, sin internet).</div>
+          <div class="grid g3">
+            <div>
+              <label class="lb">Proveedor</label>
+              <select id="npIAProv">
+                <option value="local">⚡ Motor Local Determinístico</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="openai">OpenAI GPT</option>
+                <option value="google">Google Gemini</option>
+              </select>
+            </div>
+            <div id="npIAModelWrap">
+              <label class="lb">Modelo</label>
+              <input id="npIAModel" list="npDlModels" placeholder="ej: gemini-3.6-flash">
+              <datalist id="npDlModels"></datalist>
+            </div>
+            <div style="display:flex;align-items:flex-end">
+              <button class="btn ghost sm" type="button" id="npIAReset" title="Limpia cualquier cooldown pendiente y permite reintentar de inmediato, sin esperar ningún temporizador" style="width:100%">↺ Resetear Estado / Forzar Reintento</button>
+            </div>
+          </div>
+          <div class="hint" id="npIAEstado" style="margin-top:6px"></div>
+        </div>
+
         <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
           <button class="btn primary" id="npGen">⚡ Generar semana</button>
           <button class="btn ghost sm" id="npGenIA">🤖 Generar semana con IA</button>
-          <button class="btn ghost sm" id="npTestIA" title="Prueba mínima de conexión con el proveedor de IA configurado, sin pedir el plan completo">🧪 Test Conexión IA</button>
+          <button class="btn ghost sm" id="npTestIA" title="Prueba mínima de conexión con el proveedor/modelo elegidos arriba, sin pedir el plan completo">🧪 Test Conexión IA</button>
           <button class="btn ghost sm" id="npSaveFicha">💾 Guardar ficha</button>
         </div>
       </div>
@@ -45077,19 +45124,28 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   function testConexionIA(){
     var btn = document.getElementById('npTestIA');
-    if(!(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave())){
-      renderDiag({ ok:false, etapa:'Test de conexión', motivo:'No hay ninguna API Key de IA configurada en este dispositivo. Configurala en el modal de IA (⚙️) antes de generar el plan.' });
-      toast('Sin clave de IA configurada', 'err');
+    /* directiva crítica (2026-09) -- el test prueba EXACTAMENTE el proveedor
+       y modelo elegidos arriba (#npIAProv/#npIAModel), no el proveedor
+       "activo" global del modal de ⚙️ Configuración -- así el coach confirma
+       de verdad lo que va a usar al generar. */
+    var selIA = leerSelectorIA();
+    if(selIA.prov === 'local'){
+      renderDiag({ ok:true, etapa:'Motor Local Determinístico', motivo:'No hay ninguna conexión que probar: este motor genera sin usar internet ni ninguna API.' });
+      toast('Motor Local seleccionado: no usa conexión a internet');
       return;
     }
-    var cfgAI = CoachAI.cfg();
-    var prov = cfgAI.provider;
-    var model = (cfgAI.models && cfgAI.models[prov]) || '(modelo por defecto)';
-    renderDiag({ ok:true, etapa:'Probando conexión…', provider: prov, model: model, motivo:'Enviando un pedido mínimo, esperando respuesta…' });
+    if(!(window.CoachAI && CoachAI.hasKey && CoachAI.hasKey(selIA.prov))){
+      renderDiag({ ok:false, etapa:'Test de conexión', motivo:'No hay ninguna API Key de ' + PROV_LB(selIA.prov) + ' configurada en este dispositivo. Configurala en el modal de IA (⚙️) o elegí otro proveedor arriba.' });
+      toast('Sin clave de ' + PROV_LB(selIA.prov) + ' configurada', 'err');
+      return;
+    }
+    var prov = selIA.prov;
+    var model = selIA.model || (CoachAI.cfg().models && CoachAI.cfg().models[prov]) || '(modelo por defecto)';
+    renderDiag({ ok:true, etapa:'Probando conexión con ' + PROV_LB(prov) + '…', provider: prov, model: model, motivo:'Enviando un pedido mínimo, esperando respuesta…' });
     if(btn){ btn.disabled = true; btn.textContent = '🧪 Probando…'; }
-    CoachAI.generarTexto('Respondé exactamente el JSON de ejemplo, sin nada más.',
+    CoachAI.llamarDirecto(prov, 'Respondé exactamente el JSON de ejemplo, sin nada más.',
       'Sos un servicio de verificación de conexión. Respondé ÚNICAMENTE el objeto JSON {"status":"ok"}, sin bloques de código, sin texto antes ni después.',
-      { maxTokens: 50 })
+      { maxTokens: 50, model: selIA.model })
       .then(function(txt){
         var ok = !!(txt && /status/i.test(txt) && /ok/i.test(txt));
         renderDiag({
@@ -45114,6 +45170,73 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       var provs = window.CoachAI && CoachAI.providers;
       return (provs && provs[p] && provs[p].lb) || p;
     }catch(e){ return p; }
+  }
+
+  /* ---------- Selector manual de Proveedor/Modelo (directiva crítica 2026-09) ----------
+     El coach elige EXACTAMENTE qué proveedor y modelo usar para el generador
+     semanal (o el Motor Local, sin tocar ninguna API). generarSemana() y
+     testConexionIA() respetan esta elección de forma estricta: una única
+     llamada directa a ESE proveedor/modelo (CoachAI.llamarDirecto), sin
+     iterar a ciegas por otros proveedores ni esperar en silencio un
+     cooldown -- eso sigue existiendo sólo para el resto de los generadores
+     del Builder (bloques, mesociclo), que sí se benefician de ese respaldo. */
+  var NP_IA_SEL_KEY = 'coachjp_np_ia_sel_v1';
+  function leerSelGuardadaIA(){
+    try{ var r = JSON.parse(localStorage.getItem(NP_IA_SEL_KEY) || 'null'); return (r && r.prov) ? r : null; }catch(e){ return null; }
+  }
+  function guardarSelIA(prov, model){
+    try{ localStorage.setItem(NP_IA_SEL_KEY, JSON.stringify({ prov: prov, model: model || '' })); }catch(e){}
+  }
+  function poblarModelosIA(prov){
+    var dl = document.getElementById('npDlModels');
+    var input = document.getElementById('npIAModel');
+    var wrap = document.getElementById('npIAModelWrap');
+    if(!input) return;
+    var esLocal = prov === 'local';
+    if(wrap) wrap.style.opacity = esLocal ? '.45' : '';
+    input.disabled = esLocal;
+    if(esLocal){ input.value = ''; if(dl) dl.innerHTML = ''; return; }
+    var provs = (window.CoachAI && CoachAI.providers) || {};
+    var hints = (provs[prov] && provs[prov].hints) || [];
+    if(dl) dl.innerHTML = hints.map(function(m){ return '<option value="' + esc(m) + '">'; }).join('');
+    var sel = leerSelGuardadaIA();
+    var actualGlobal = (window.CoachAI && CoachAI.cfg && CoachAI.cfg().models && CoachAI.cfg().models[prov]) || (provs[prov] && provs[prov].model) || '';
+    input.value = (sel && sel.prov === prov && sel.model) ? sel.model : actualGlobal;
+  }
+  function actualizarEstadoIA(){
+    var el = document.getElementById('npIAEstado');
+    var provEl = document.getElementById('npIAProv');
+    if(!el || !provEl) return;
+    var prov = provEl.value;
+    if(prov === 'local'){
+      el.textContent = 'Genera al instante con la base ALIM localizada para Argentina, sin usar internet ni ninguna API.';
+      return;
+    }
+    var tieneClave = !!(window.CoachAI && CoachAI.hasKey && CoachAI.hasKey(prov));
+    if(!tieneClave){
+      el.textContent = '⚠ Sin clave de ' + PROV_LB(prov) + ' configurada -- cargala en el modal de IA (⚙️) o elegí otro proveedor arriba.';
+      return;
+    }
+    var enCooldown = !!(window.CoachAI && CoachAI.isCool && CoachAI.isCool(prov));
+    el.textContent = enCooldown
+      ? '⏳ ' + PROV_LB(prov) + ' tiene un cooldown de rate-limit registrado (no bloquea esta llamada directa igual -- usá "↺ Resetear Estado" si querés limpiarlo).'
+      : '✔ Clave cargada para ' + PROV_LB(prov) + ' -- listo para generar.';
+  }
+  function poblarSelectorIA(){
+    var selEl = document.getElementById('npIAProv');
+    if(!selEl) return;
+    var sel = leerSelGuardadaIA();
+    var provDefault = 'local';
+    if(sel && sel.prov){ provDefault = sel.prov; }
+    else if(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave()){ provDefault = CoachAI.cfg().provider; }
+    selEl.value = provDefault;
+    poblarModelosIA(selEl.value);
+    actualizarEstadoIA();
+  }
+  function leerSelectorIA(){
+    var prov = (document.getElementById('npIAProv') || {}).value || 'local';
+    var model = (document.getElementById('npIAModel') || {}).value || '';
+    return { prov: prov, model: model.trim() };
   }
 
   function generar(conIA){
@@ -45228,21 +45351,37 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!local){ toast('Las restricciones dejan sin fuentes de algún macro', 'err'); return; }
     local.comidaLibre = comidaLibrePrevia || { dia:'sab', comida: parseInt(f.comidas, 10) || 4 };
 
-    if(!conIA || !(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave())){
+    /* directiva crítica (2026-09) -- selector manual de proveedor/modelo: se
+       respeta ESTRICTAMENTE lo elegido en #npIAProv/#npIAModel, sin iterar a
+       ciegas por otros proveedores. "Motor Local" (o "Generar semana" sin
+       IA) genera al instante, sin tocar internet ni ninguna API. */
+    var selIA = leerSelectorIA();
+    if(!conIA || selIA.prov === 'local'){
       R.plan = local; R.fuente = 'local'; R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
       if(!npDiaSel) npDiaSel = 'lun';
       guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
-      if(conIA){
+      if(conIA && selIA.prov === 'local'){
+        toast('✅ Semana generada con el Motor Local Determinístico');
+        renderDiag({ ok:true, etapa:'Motor Local Determinístico', motivo:'Generado al instante con la base ALIM localizada para Argentina, sin llamar a ninguna API.' });
+      } else if(conIA){
         toast('Sin clave de IA: se usó el motor local');
         renderDiag({ ok:false, etapa:'Sin clave de IA', motivo:'No hay ninguna API Key configurada en este dispositivo. Configurala en el modal de IA (⚙️) o usá "🧪 Test Conexión IA" para confirmarlo.' });
       }
       return;
     }
+    if(!(window.CoachAI && CoachAI.hasKey && CoachAI.hasKey(selIA.prov))){
+      R.plan = local; R.fuente = 'local'; R.estado = R.estado === 'pub' ? 'pub' : 'bor'; R.ts = Date.now();
+      if(!npDiaSel) npDiaSel = 'lun';
+      guardarReg(athAct.id, R); pintarPlan(); pintarEstado(); tab('plan');
+      toast('Sin clave de ' + PROV_LB(selIA.prov) + ': se usó el motor local');
+      renderDiag({ ok:false, etapa:'Sin clave de IA', motivo:'No hay ninguna API Key de ' + PROV_LB(selIA.prov) + ' configurada en este dispositivo. Configurala en el modal de IA (⚙️) o elegí otro proveedor arriba.' });
+      return;
+    }
     var cfgAI = CoachAI.cfg();
-    var provAct = cfgAI.provider;
-    var modelAct = (cfgAI.models && cfgAI.models[provAct]) || '(modelo por defecto)';
-    toast('Consultando IA (pool semanal)…');
-    renderDiag({ ok:true, etapa:'Consultando ' + PROV_LB(provAct) + ' — pool semanal…', provider: provAct, model: modelAct, motivo:'Pidiendo variantes de platos por franja horaria (no los 7 días completos, para mantener el JSON liviano y evitar el problema del pedido 26).' });
+    var provAct = selIA.prov;
+    var modelAct = selIA.model || (cfgAI.models && cfgAI.models[provAct]) || '(modelo por defecto)';
+    toast('Consultando ' + PROV_LB(provAct) + ' (pool semanal)…');
+    renderDiag({ ok:true, etapa:'Consultando ' + PROV_LB(provAct) + ' — pool semanal…', provider: provAct, model: modelAct, motivo:'Llamada directa y única a este proveedor/modelo elegido -- sin reintentos automáticos ni cambio de proveedor a ciegas.' });
     /* piso de tokens del pool: ~2-3x el de un día (3 variantes por franja en
        vez de 1), bien lejos de lo que costaría pedir los 7 días completos */
     var maxTokPool = Math.max((cfgAI.maxTokens || 0), 28000);
@@ -45250,7 +45389,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       'No incluyas bloques de código ni comillas invertidas (```json o ```). ' +
       'No agregues saludos, aclaraciones ni texto explicativo antes ni después. ' +
       'La respuesta completa arranca en "{" y termina en "}", sin ningún carácter fuera de ese rango.';
-    CoachAI.generarTexto(promptPoolSemanal(f), sistemaNutri, { maxTokens: maxTokPool })
+    CoachAI.llamarDirecto(provAct, promptPoolSemanal(f), sistemaNutri, { maxTokens: maxTokPool, model: selIA.model })
       .then(function(txt){
         var o = parsearIAPool(txt);
         if(o){
@@ -45377,6 +45516,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     tab((R.plan && R.plan.modo === 'externo') ? 'externo' : (R.plan ? 'plan' : 'ficha'));
     renderDiag(null);
     poblarProtocolos();
+    poblarSelectorIA();
     document.getElementById('npProtoEditor').style.display = 'none';
     openModal('mNP');
   }
@@ -45467,6 +45607,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       document.getElementById('npGen').addEventListener('click', function(){ generarSemana(false); });
       document.getElementById('npGenIA').addEventListener('click', function(){ generarSemana(true); });
       document.getElementById('npTestIA').addEventListener('click', testConexionIA);
+      /* directiva crítica (2026-09) -- selector manual de proveedor/modelo */
+      document.getElementById('npIAProv').addEventListener('change', function(){
+        poblarModelosIA(this.value);
+        actualizarEstadoIA();
+        guardarSelIA(this.value, document.getElementById('npIAModel').value);
+      });
+      document.getElementById('npIAModel').addEventListener('change', function(){
+        guardarSelIA(document.getElementById('npIAProv').value, this.value);
+      });
+      document.getElementById('npIAReset').addEventListener('click', function(){
+        var hubo = !!(window.CoachAI && CoachAI.resetCooldown && CoachAI.resetCooldown());
+        actualizarEstadoIA();
+        toast(hubo ? '↺ Estado de IA reseteado -- podés reintentar de inmediato' : 'No había ningún cooldown pendiente -- ya podés reintentar');
+      });
       document.getElementById('npSaveFicha').addEventListener('click', function(){
         tomarFicha(); guardarReg(athAct.id, R); toast('💾 Ficha guardada');
       });
