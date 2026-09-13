@@ -43729,7 +43729,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           <div id="npShopResult" style="display:none;margin-top:8px"></div>
         </div>
         <div class="np-kpis" id="npKpis"></div>
-        <div class="np-sec" style="margin-top:12px">
+        <div class="np-sec" style="margin-top:12px" id="npPeriSec">
           <div class="sh">Peri-entreno</div>
           <div id="npPeri" style="font-size:12.5px;line-height:1.6;color:#C9CFD8"></div>
         </div>
@@ -43859,6 +43859,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     { n:'Polenta cocida',         p:2,  c:15, g:0.5, tipo:'carb', ex:[],               fam:['maiz'] },
     { n:'Banana',                 p:1,  c:23, g:0.3, tipo:'carb', ex:[],               fam:['fruta'] },
     { n:'Manzana',                p:0.3,c:14, g:0.2, tipo:'carb', ex:[],               fam:['fruta'] },
+    /* directiva de implementación (2026-09) -- suman al vocabulario de
+       desayuno/merienda pedido explícitamente: no había ningún carbohidrato
+       "de fruta variada" ni de cereal listo aparte de la avena. */
+    { n:'Frutos rojos',           p:1,  c:12, g:0.3, tipo:'carb', ex:[],               fam:['fruta'] },
+    { n:'Granola sin azúcar',     p:10, c:63, g:14,  tipo:'carb', ex:['singlu'],       fam:['avena','gluten','fruto seco'] },
 
     { n:'Aceite de oliva virgen extra', p:0, c:0, g:100, tipo:'gras', ex:[],           fam:['aceite'] },
     { n:'Aceite de girasol alto oleico', p:0, c:0, g:100, tipo:'gras', ex:[],          fam:['aceite'] },
@@ -44073,7 +44078,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   /* reparto por comida: la proteína se distribuye pareja, el carbohidrato
      se carga alrededor del entrenamiento y la grasa baja en la comida previa */
-  function repartir(n, horaEntreno){
+  /* directiva crítica (2026-09) -- "esEntreno" es nuevo y opcional (default
+     true, igual que siempre): día de descanso ("Distribuye los carbohidratos
+     de forma homogénea en las 4 comidas base" + "elimina los bloques o notas
+     de peri-entreno") -- sin sesión no hay pre/post-entreno que sincronizar,
+     así que se devuelven pesos parejos y ninguna franja marcada pre/post. El
+     mapeo pre/post por horario de entreno (mañana → Desayuno/Almuerzo,
+     tarde/otro → Merienda/Cena) sigue exactamente igual para los días que sí
+     son de entreno. */
+  function repartir(n, horaEntreno, esEntreno){
     var base = {
       3: [{ nb:'Desayuno', h:'08:00' }, { nb:'Almuerzo', h:'13:00' }, { nb:'Cena', h:'21:00' }],
       4: [{ nb:'Desayuno', h:'07:30' }, { nb:'Almuerzo', h:'13:00' }, { nb:'Merienda', h:'17:30' }, { nb:'Cena', h:'21:00' }],
@@ -44081,6 +44094,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           { nb:'Merienda', h:'17:30' }, { nb:'Cena', h:'21:00' }]
     }[n] || [];
     var pesos = base.map(function(){ return { p: 1 / base.length, c: 1 / base.length, g: 1 / base.length }; });
+    if(esEntreno === false){
+      return base.map(function(b, i){ return { nombre:b.nb, hora:b.h, w:pesos[i], pre:false, post:false }; });
+    }
     var idxPre = horaEntreno === 'am' ? 0 : horaEntreno === 'mid' ? 1 : base.length - 2;
     var idxPost = Math.min(base.length - 1, idxPre + 1);
     if(pesos[idxPre]){ pesos[idxPre].c *= 1.4; pesos[idxPre].g *= 0.4; }
@@ -44153,9 +44169,17 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   var PROT_LIVIANA = ['Huevo entero', 'Claras de huevo', 'Yogur griego natural', 'Ricota magra',
                        'Queso Port Salut light', 'Queso untable descremado',
                        'Proteína de suero', 'Proteína vegetal en polvo'];
+  /* directiva crítica (2026-09) -- mismo criterio que PROT_LIVIANA, ahora
+     para el carbohidrato: sin esto, armarComidas() podía elegir "Arroz
+     cocido"/"Papa cocida"/"Fideos de sémola cocidos"/"Batata cocida" como
+     carbohidrato de un desayuno o una merienda (nunca pasaba con la
+     proteína, que ya estaba resuelto, pero sí con el carbohidrato -- carbs
+     se elegía siempre del pool completo, sin distinguir franja). */
+  var CARB_LIVIANO = ['Avena', 'Pan integral de molde', 'Galletas de arroz', 'Banana', 'Manzana',
+                       'Frutos rojos', 'Granola sin azúcar'];
   var FRANJA_LIVIANA = /desayuno|media\s*ma[ñn]ana|merienda/i;
 
-  function armarComidas(f, mac, rest, alergias, offsetDia){
+  function armarComidas(f, mac, rest, alergias, offsetDia, esEntreno){
     /* 29no pedido (30/08): "offsetDia" es nuevo y opcional (default 0, se
        comporta exactamente igual que antes) -- lo usa el plan SEMANAL para
        que cada día de la semana arranque la rotación de alimentos en un
@@ -44173,14 +44197,22 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!protsAM.length) protsAM = prots;   /* p.ej. dieta 100% carnívora sin lácteos ni huevo */
     if(!protsPM.length) protsPM = prots;
 
-    var plan = repartir(parseInt(f.comidas, 10) || 4, f.hora);
+    /* directiva crítica (2026-09) -- mismo split que las proteínas, ahora
+       para el carbohidrato (ver CARB_LIVIANO más arriba). */
+    var carbsAM = carbs.filter(function(a){ return CARB_LIVIANO.indexOf(a.n) >= 0; });
+    var carbsPM = carbs.filter(function(a){ return CARB_LIVIANO.indexOf(a.n) < 0; });
+    if(!carbsAM.length) carbsAM = carbs;   /* p.ej. restricciones que dejan sin ningún carb liviano */
+    if(!carbsPM.length) carbsPM = carbs;
+
+    var plan = repartir(parseInt(f.comidas, 10) || 4, f.hora, esEntreno);
     var iAM = offsetDia, iPM = offsetDia;
     var comidas = plan.map(function(c, i){
       var pObj = mac.prot_g * c.w.p, cObj = mac.carb_g * c.w.c, gObj = mac.gras_g * c.w.g;
       var liviana = FRANJA_LIVIANA.test(c.nombre);
       var poolP = liviana ? protsAM : protsPM;
+      var poolC = liviana ? carbsAM : carbsPM;
       var pAl = liviana ? poolP[iAM++ % poolP.length] : poolP[iPM++ % poolP.length];
-      var cAl = carbs[(i + offsetDia) % carbs.length], gAl = gras[(i + offsetDia) % gras.length];
+      var cAl = poolC[(i + offsetDia) % poolC.length], gAl = gras[(i + offsetDia) % gras.length];
       var items = [];
 
       /* 1 · proteína -- directiva de localización (2026-09): los
@@ -44200,9 +44232,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         items.push(itV);
       }
 
-      /* 3 · carbohidrato, restando lo que ya aportaron los anteriores */
+      /* 3 · carbohidrato, restando lo que ya aportaron los anteriores --
+         mismo criterio que la proteína: intercambios dentro de poolC (la
+         franja horaria correspondiente), nunca contra "carbs" completo. */
       var carbRest = cObj - itP.carb - (itV ? itV.carb : 0);
-      if(carbRest > 4) items.push(item(cAl, carbRest / (cAl.c || 1) * 100, 'carb', carbs));
+      if(carbRest > 4) items.push(item(cAl, carbRest / (cAl.c || 1) * 100, 'carb', poolC));
 
       /* 4 · grasa, restando la que ya viene de la proteína y del carbohidrato */
       var yaGrasa = items.reduce(function(a, x){ return a + x.gras; }, 0);
@@ -44234,27 +44268,41 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
     /* si aun sacando la grasa agregada sigue sobrando (pasa en planes
        veganos o vegetarianos, donde la grasa viene dentro de la propia
-       fuente de proteína), se cambia la fuente por la más magra disponible */
+       fuente de proteína), se cambia la fuente por la más magra disponible.
+       directiva crítica (2026-09) -- esto elegía "la más magra" de TODO
+       "prots" sin distinguir franja horaria: un desayuno con huevo (grasa
+       alta) podía terminar con merluza o atún puesto acá, violando la
+       misma regla de franja que ya protegía la selección inicial más
+       arriba. Se calcula una "más magra" por pool (AM/PM) y el swap
+       respeta la franja de la comida que se está corrigiendo. */
     var magro = function(a){ return a.g / Math.max(1, a.p); };
-    var masMagra = prots.slice().sort(function(a, b){ return magro(a) - magro(b); })[0];
+    var masMagraAM = protsAM.slice().sort(function(a, b){ return magro(a) - magro(b); })[0];
+    var masMagraPM = protsPM.slice().sort(function(a, b){ return magro(a) - magro(b); })[0];
     var polvos = permitidos('prot', rest, alergias, true).filter(function(a){ return a.supl; });
     var polvo = polvos.sort(function(a, b){ return magro(a) - magro(b); })[0];
     var usePolvo = false;
     for(var q2 = 0; q2 < 8 && sobra() > mac.gras_g * 0.08; q2++){
-      /* después de 3 intentos con fuentes enteras se habilita el polvo,
-         una sola vez en todo el día */
-      if(q2 >= 3 && polvo && !usePolvo){ masMagra = polvo; usePolvo = true; }
-      var peorC = null, peorI = -1, ratio = -1;
+      /* después de 3 intentos con fuentes enteras se habilita el polvo (es
+         "liviano" por definición -- ver PROT_LIVIANA -- así que sirve para
+         cualquier franja sin romper la regla), una sola vez en todo el día */
+      if(q2 >= 3 && polvo && !usePolvo) usePolvo = true;
+      var peorC = null, peorI = -1, ratio = -1, peorLiviana = false;
       comidas.forEach(function(c){
+        var liviana = FRANJA_LIVIANA.test(c.nombre);
+        var actual = liviana ? masMagraAM : masMagraPM;
         c.items.forEach(function(x, ix){
-          if(x.macro !== 'prot' || x.alimento === masMagra.n) return;
+          if(x.macro !== 'prot') return;
+          if(usePolvo && polvo && x.alimento === polvo.n) return;
+          if(!usePolvo && actual && x.alimento === actual.n) return;
           var r = x.base.g / Math.max(1, x.base.p);
-          if(r > ratio){ ratio = r; peorC = c; peorI = ix; }
+          if(r > ratio){ ratio = r; peorC = c; peorI = ix; peorLiviana = liviana; }
         });
       });
       if(!peorC) break;
+      var elegido = usePolvo ? polvo : (peorLiviana ? masMagraAM : masMagraPM);
+      var poolIntercambio = peorLiviana ? protsAM : protsPM;
       var protActual = peorC.items[peorI].prot;
-      peorC.items[peorI] = item(masMagra, protActual / (masMagra.p || 1) * 100, 'prot', prots);
+      peorC.items[peorI] = item(elegido, protActual / (elegido.p || 1) * 100, 'prot', poolIntercambio);
       totales(comidas);
     }
 
@@ -44284,11 +44332,27 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       if(Math.abs(mac.gras_g - t.gras) > 2) corregir(comidas, 'gras', mac.gras_g - t.gras);
     }
     totales(comidas);
-    /* los intercambios se recalculan con los gramos definitivos */
+    /* los intercambios se recalculan con los gramos definitivos --
+       directiva crítica (2026-09): este recálculo final usaba
+       permitidos(x.macro, ...) SIN distinguir franja horaria, así que aunque
+       la selección inicial de arriba ya respetaba poolP/poolC, este paso
+       podía pisarla y terminar sugiriendo un intercambio de "carne picada"
+       para el huevo de un desayuno (o "arroz" para la avena de una
+       merienda). Se filtra al mismo pool liviano/pesado que corresponde a
+       la franja de esa comida, con el mismo fallback a la lista completa
+       que ya usan protsAM/protsPM si el pool específico queda vacío. */
     comidas.forEach(function(c){
+      var liviana = FRANJA_LIVIANA.test(c.nombre);
       c.items.forEach(function(x){
         if(x.macro === 'verd') return;
         var lista = permitidos(x.macro, rest, alergias);
+        if(x.macro === 'prot' || x.macro === 'carb'){
+          var whitelist = x.macro === 'prot' ? PROT_LIVIANA : CARB_LIVIANO;
+          var filtrada = lista.filter(function(a){
+            return liviana ? whitelist.indexOf(a.n) >= 0 : whitelist.indexOf(a.n) < 0;
+          });
+          if(filtrada.length) lista = filtrada;
+        }
         var al = ALIM.filter(function(a){ return a.n === x.alimento; })[0];
         if(al) x.intercambios = intercambios(al, x.macro, x.gramos, lista);
       });
@@ -44440,7 +44504,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     DIAS_SEMANA.forEach(function(dk, i){
       var esEnt = (cicloCarb[dk] || 'entreno') === 'entreno';
       var mac = esEnt ? mEnt : mDes;
-      var comidas = armarComidas(f, mac, rest, alergias, i);
+      var comidas = armarComidas(f, mac, rest, alergias, i, esEnt);
       if(!comidas){ faltoAlgunDia = true; return; }
       var tot = comidas.reduce(function(a, c){
         return { p:a.p + c.total.prot, c:a.c + c.total.carb, g:a.g + c.total.gras };
@@ -44452,7 +44516,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           'se ajustó a lo alcanzable (' + tot.p + ' g de proteína, ' + tot.c + ' g de carbohidrato y ' + tot.g + ' g de grasa).');
         mac = { prot_g:tot.p, carb_g:tot.c, gras_g:tot.g, fibra_g:mac.fibra_g, agua_ml:mac.agua_ml, sodio_mg:mac.sodio_mg };
       }
-      dias[dk] = { macros: mac, peri_entreno: peri, comidas: comidas };
+      /* directiva crítica (2026-09) -- "Días de Descanso: elimina los
+         bloques o notas de peri-entreno" -- sin esEnt, este objeto se
+         asignaba idéntico en todos los días, entreno o no. */
+      dias[dk] = { macros: mac, peri_entreno: esEnt ? peri : null, comidas: comidas };
     });
     if(faltoAlgunDia) return null;
     return {
@@ -44693,7 +44760,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       'Referencia: basal ' + base.bmr + ' kcal · gasto ' + base.tdee + ' kcal.\n\n' +
       'Cada comida es un plato real y apetecible con nombre propio (nunca "Desayuno" como nombre). UNA sola preparación por comida, con 1 intercambio equivalente por ítem (no más).\n' +
       'Alimentos argentinos, comunes y baratos: carnicería magra, pollo, pescado, quesos light, huevo, atún, avena, arroz, fideos, papa/batata, pan integral, fruta de estación, aceite, frutos secos.\n' +
-      'Desayuno/Media mañana/Merienda: liviano, NUNCA carne/pollo/pescado (huevo/lácteos/legumbres/frutos secos/fruta). Almuerzo/Cena: comida casera de verdad, ahí sí carnes/pollo/pescado.\n' +
+      /* directiva crítica (2026-09) -- lista explícita de prohibidos/
+         permitidos por franja, alineada 1 a 1 con PROT_LIVIANA/CARB_LIVIANO
+         del motor local (más abajo en el archivo) para que IA y motor local
+         nunca se contradigan entre sí. */
+      'Desayuno/Media mañana/Merienda: liviano -- NUNCA carne/pollo/pescado NI arroz/fideos/papa/batata (proteína: huevo, yogur, ricota, queso magro, whey; carbohidrato: avena, pan integral, galletas de arroz, fruta). Almuerzo/Cena: plato casero de verdad -- ahí sí carnes/pollo/pescado y arroz/fideos/papa/batata/legumbres.\n' +
       'Ciclado real: kcal y macros de entreno ≠ descanso (más carbohidrato el día de entreno). "peri_entreno.pre": digestión fácil, carbohidrato rápido. "peri_entreno.post": glucógeno + proteína, nombralo explícito.\n\n' +
       'JSON EXACTO — sin campos extra, sin segundo plato:\n' +
       '{"meta":{"kcal_entreno":0,"kcal_descanso":0,"metodo":""},' +
@@ -44711,7 +44782,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       '- Suma de comidas = macros del día de entreno con <8% de desvío.\n' +
       '- 1 intercambio equivalente por ítem, no más.\n' +
       '- Proteína 1,6-2,4 g/kg. Nunca menos calorías que el basal.\n' +
-      '- Sin carne/pollo/pescado en Desayuno/Media mañana/Merienda.\n' +
+      '- Sin carne/pollo/pescado NI arroz/fideos/papa/batata en Desayuno/Media mañana/Merienda.\n' +
       '- Sin lenguaje motivacional ni promesas de resultados.\n' +
       '- Priorizá JSON bien cerrado por sobre más detalle: mejor un plato simple pero íntegro que uno elaborado que corte la estructura.';
   }
@@ -44756,7 +44827,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       (f.notas ? 'Notas: ' + f.notas + '\n' : '') + '\n' +
       'FRANJAS\n' + slotsTxt + '\n\n' +
       'Por franja: EXACTAMENTE 3 variantes distintas entre sí, plato real y apetecible (nunca "Desayuno" como nombre), comida casera argentina barata.\n' +
-      'Desayuno/Media mañana/Merienda: liviano, NUNCA carne/pollo/pescado (huevo/lácteos/legumbres/frutos secos). Almuerzo/Cena: plato casero de verdad, ahí sí carnes/pollo/pescado.\n' +
+      'Desayuno/Media mañana/Merienda: liviano -- NUNCA carne/pollo/pescado NI arroz/fideos/papa/batata (proteína: huevo, yogur, ricota, queso magro, whey; carbohidrato: avena, pan integral, galletas de arroz, fruta). Almuerzo/Cena: plato casero de verdad -- ahí sí carnes/pollo/pescado y arroz/fideos/papa/batata/legumbres.\n' +
       '"macro" en cada ítem: "prot"/"carb"/"gras"/"verd" según su rol principal — necesario para reajustar cantidades por día.\n\n' +
       'JSON EXACTO — sin campos extra:\n' +
       '{"pool":{' + poolSchema + '},' +
@@ -44768,7 +44839,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       '- 3 variantes por franja, 2 a 4 ítems cada una.\n' +
       '- Alimentos argentinos, comunes y baratos. Gramos en crudo salvo arroz/fideos (cocidos).\n' +
       '- 1 intercambio equivalente por ítem.\n' +
-      '- Sin carne/pollo/pescado en Desayuno/Media mañana/Merienda.\n' +
+      '- Sin carne/pollo/pescado NI arroz/fideos/papa/batata en Desayuno/Media mañana/Merienda.\n' +
       '- Sin lenguaje motivacional.\n' +
       '- Priorizá JSON bien cerrado por sobre más detalle: mejor una variante simple pero íntegra que una elaborada que corte la estructura.';
   }
@@ -44806,7 +44877,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      por una franja puntual" que fusionarConLocal). */
   function ensamblarSemanaDesdePool(pool, f, cicloCarb, local){
     var N = parseInt(f.comidas, 10) || 4;
-    var slots = repartir(N, f.hora);
+    /* directiva crítica (2026-09) -- un solo "slots" se reusaba para los 7
+       días, entreno o descanso: todos terminaban con la misma franja
+       marcada " · pre-entreno"/" · post-entreno" y el mismo sesgo de
+       carbohidrato hacia esa franja, aunque ESE día puntual fuera de
+       descanso. Se calculan los dos juegos de pesos (repartir() ya sabe
+       devolver el reparto parejo con esEntreno=false) y se elige el que
+       corresponde a cada día dentro del loop de abajo. */
+    var slots = repartir(N, f.hora, true);
+    var slotsDescanso = repartir(N, f.hora, false);
     var completadas = [];
     var poolLimpio = {};
     for(var j = 1; j <= N; j++){
@@ -44830,7 +44909,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     DIAS_SEMANA.forEach(function(dk, i){
       var esEnt = (cicloCarb[dk] || 'entreno') === 'entreno';
       var mac = esEnt ? mEnt : mDes;
-      var comidas = slots.map(function(slotMeta, j0){
+      var slotsDia = esEnt ? slots : slotsDescanso;
+      var comidas = slotsDia.map(function(slotMeta, j0){
         var j = j0 + 1;
         var variantes = poolLimpio[j];
         if(!variantes.length) return { n:j, nombre:slotMeta.nombre, hora_sug:slotMeta.hora, items:[], total:{prot:0,carb:0,gras:0,kcal:0} };
@@ -44850,7 +44930,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(Math.abs(mac.gras_g - t.gras) > 2) corregir(comidas, 'gras', mac.gras_g - t.gras);
       }
       totales(comidas);
-      var periDia = (local && local.dias && local.dias[dk] && local.dias[dk].peri_entreno) || periEntrenoDe(f);
+      /* directiva crítica (2026-09) -- mismo criterio que planLocalSemanal():
+         sin esEnt acá, un día de descanso heredaba el peri_entreno del local
+         (o caía a periEntrenoDe(f)) igual que un día de entreno. */
+      var periDia = esEnt ? ((local && local.dias && local.dias[dk] && local.dias[dk].peri_entreno) || periEntrenoDe(f)) : null;
       dias[dk] = { macros: mac, peri_entreno: periDia, comidas: comidas };
     });
 
@@ -45161,7 +45244,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         '<div class="np-kpi"><div class="k">Grasa</div><div class="v">' + mRef.gras_g + ' <small>g</small></div></div>' +
         '<div class="np-kpi"><div class="k">Agua</div><div class="v">' + (mRef.agua_ml / 1000).toFixed(1) + ' <small>L</small></div></div>';
       var peD = diaData.peri_entreno || {};
-      document.getElementById('npPeri').innerHTML = ['pre','intra','post'].map(function(k){
+      /* directiva crítica (2026-09) -- día de descanso: se oculta la sección
+         entera (no sólo el contenido) en vez de dejar el título "Peri-
+         entreno" flotando sin nada debajo. */
+      var npPeriSec = document.getElementById('npPeriSec');
+      if(npPeriSec) npPeriSec.style.display = esEntDia ? '' : 'none';
+      document.getElementById('npPeri').innerHTML = !esEntDia ? '' : ['pre','intra','post'].map(function(k){
         var x = peD[k]; if(!x) return '';
         return '<div style="margin-bottom:5px"><b style="color:#7CC5E8;text-transform:uppercase;font-size:11px;letter-spacing:.12em">' +
           k + '</b> · ' + esc(x.cuando || '') + ' — ' + esc(x.texto || '') +
@@ -45594,7 +45682,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(o){
           var ensamblado = ensamblarSemanaDesdePool(o.pool, f, cicloCarb, local);
           var periSemana = (o.peri_entreno && typeof o.peri_entreno === 'object' && o.peri_entreno.pre) ? o.peri_entreno : periEntrenoDe(f);
-          DIAS_SEMANA.forEach(function(dk){ if(ensamblado.dias[dk]) ensamblado.dias[dk].peri_entreno = periSemana; });
+          /* directiva crítica (2026-09) -- "Días de Descanso: elimina los
+             bloques o notas de peri-entreno": esto pisaba el peri_entreno de
+             TODOS los días (entreno o no) con el de la IA, incluso el null
+             que ensamblarSemanaDesdePool() ya había puesto correctamente en
+             los días de descanso. Se respeta cicloCarb acá también. */
+          DIAS_SEMANA.forEach(function(dk){
+            if(!ensamblado.dias[dk]) return;
+            var esEntDia = (cicloCarb[dk] || 'entreno') === 'entreno';
+            ensamblado.dias[dk].peri_entreno = esEntDia ? periSemana : null;
+          });
           var plan = {
             semanal:true, schemaV:2,
             meta:{ kcal_entreno: local.meta.kcal_entreno, kcal_descanso: local.meta.kcal_descanso,
