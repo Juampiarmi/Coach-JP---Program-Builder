@@ -22000,20 +22000,19 @@ document.addEventListener('DOMContentLoaded', init);
        con 429 en un modelo puede probar otro de la lista sin esperar a que
        resetee -- el selector manual del panel de nutrición (directiva
        anterior) ya permite tipear cualquiera de estos sin tocar código. */
-    /* directiva de implementación (2026-09, pedido explícito del coach) --
-       gemini-2.5-flash/gemini-2.5-pro vuelven a la lista de sugerencias a
-       pedido puntual, aun cuando la auditoría de una directiva anterior (ver
-       más arriba) haya confirmado 404 en generateContent para cualquier
-       clave/proyecto SIN uso previo de la familia "2.5" -- Google restringe
-       el acceso a quien ya la venía usando. El DEFAULT sigue siendo
-       gemini-3.8-flash (la familia 3.x, sin restricciones publicadas) --
-       2.5 queda como opción manual para quien sepa que su clave sí tiene
-       acceso. El aviso de riesgo se muestra en el modal de ⚙️ Configuración
-       de IA cuando el modelo elegido empieza con "gemini-2.5" (ver
-       fillCfgForm() más abajo), así el coach lo ve ANTES de gastar un intento
-       fallido, sin bloquearle la elección. */
-    google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.8-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
-      hints:['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-2.5-flash','gemini-2.5-pro'] }
+    /* directiva crítica (2026-09, confirmación explícita del coach) --
+       gemini-2.5-flash pasa a ser el DEFAULT de Google, pisando gemini-3.8-
+       flash. Se le mostró al coach el antecedente documentado más arriba
+       (404 en generateContent para cualquier clave/proyecto SIN uso previo
+       de la familia "2.5") y confirmó igual: su clave puntual sí tiene
+       acceso a "2.5" -- el síntoma real que reportó ("máximos tokens diarios
+       alcanzados") es un 429 genuino de la API (cuota, no acceso), como
+       queda registrado también en el audit de MÓDULO 5/29 sobre fallback.
+       El aviso de riesgo en fillCfgForm() se deja igual: esta app puede
+       terminar en la máquina de OTRO coach cuya clave no tenga ese acceso, y
+       ahí sí seguiría siendo información útil, no bloqueante. */
+    google:    { lb:'Google',    sub:'Gemini', model:'gemini-2.5-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
+      hints:['gemini-2.5-flash','gemini-2.5-pro','gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'] }
   };
   const ORDEN = ['anthropic','openai','google'];
   let AI = {
@@ -22051,13 +22050,14 @@ document.addEventListener('DOMContentLoaded', init);
     const MODELOS_RETIRADOS = [
       'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307',           /* Anthropic, retirados oct-2025/abr-2026 */
       'gemini-pro', 'gemini-1.0-pro', 'gemini-1.5-pro-preview', 'gemini-1.5-pro', 'gemini-1.5-flash', /* Google, discontinuados */
-      /* directiva crítica (2026-09) -- "gemini-2.5-pro" estuvo un rato corto
-         en los hints (directiva anterior) y se saca ahora: confirmado que
-         Google devuelve 404 en generateContent para TODA clave/proyecto sin
-         uso previo de la familia "2.5" -- para cualquier coach que lo haya
-         elegido de nuestro propio hint (agregado hace días), eso es 404
-         garantizado. Se migra al default vigente igual que un retiro real. */
-      'gemini-2.5-pro', 'gemini-2.5-flash',
+      /* directiva crítica (2026-09, seguimiento) -- "gemini-2.5-pro"/"gemini-
+         2.5-flash" estuvieron acá (auto-migración por riesgo de 404 sin uso
+         previo de la familia "2.5") pero gemini-2.5-flash ahora ES el default
+         vigente de Google, confirmado por el coach -- no puede estar al
+         mismo tiempo en "modelo default" y en "modelo a migrar lejos de él"
+         (quedaba pisándose a sí mismo en cada carga). Se sacan de la lista;
+         el aviso de riesgo de 404 para claves sin acceso previo sigue vivo en
+         fillCfgForm(), sólo que ya no fuerza un reset silencioso. */
       'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'                            /* OpenAI, familias ya fuera de vigencia */
     ];
     let huboMigracion = false;
@@ -22216,7 +22216,7 @@ document.addEventListener('DOMContentLoaded', init);
     if(p === 'google' && /^gemini-2\.5/.test(AI.models[p] || '')){
       $('#cfgStatus').innerHTML +=
         '<div class="alert warn" style="padding:9px 12px;margin-top:8px"><span class="ic">⚠️</span>' +
-        '<div><b>gemini-2.5 puede devolver 404 con esta clave</b>Google restringe la familia "2.5" a proyectos que ya la venían usando -- si tu clave es nueva para este modelo, probá primero con gemini-3.8-flash (el default, sin esa restricción) o usá "🧪 Test Conexión IA" para confirmarlo antes de generar un plan completo.</div></div>';
+        '<div><b>gemini-2.5 puede devolver 404 con esta clave</b>Google restringe la familia "2.5" a proyectos que ya la venían usando -- si tu clave es nueva para este modelo, usá "🧪 Test Conexión IA" para confirmarlo antes de generar un plan completo, o probá gemini-3.8-flash (familia 3.x, sin esa restricción) mientras tanto.</div></div>';
     }
     const rst = document.getElementById('cfgReset');
     if(rst) rst.addEventListener('click', () => { resetAICooldown(AI.provider); toast('Cooldown reiniciado'); });
@@ -22350,6 +22350,11 @@ document.addEventListener('DOMContentLoaded', init);
        quedado pegado de un 429 anterior, así que un coach podía corregir
        su modelo/clave y seguir viendo "en cooldown" un buen rato igual. */
     if(res.status === 429 || res.status === 529 || res.status === 503){
+      /* directiva crítica (2026-09) -- payload exacto del error de cuota en
+         consola (status + cuerpo crudo de la respuesta), para que el coach o
+         quien lo asista pueda ver el motivo real (RESOURCE_EXHAUSTED, RPD/
+         RPM/TPM, etc.) sin adivinar a partir del toast truncado. */
+      console.error('[CoachAI] ' + PROV[prov].lb + ' HTTP ' + res.status + ' — respuesta completa:', raw);
       let secs = 0;
       try{ secs = parseInt(res.headers.get('retry-after') || res.headers.get('Retry-After') || '0', 10) || 0; }catch(e){}
       if(!secs){
@@ -44666,53 +44671,31 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      pedírsele a la IA. Los "intercambios" por ítem bajaron de 2 a 1 (mismo
      campo, mismo shape, un solo elemento) — sigue alimentando el selector de
      sustitución que ya usa el alumno, con la mitad del costo en tokens. */
+  /* directiva crítica (2026-09) -- compactación de payload: se retira la
+     lista larga de ejemplos de nombres de plato, el vocabulario extendido de
+     ALIMENTOS y la prosa explicativa de cada sección -- quedan sólo las
+     reglas que cambian el resultado (esquema JSON, límites numéricos,
+     restricción por franja horaria, ciclado). Reduce el prompt de entrada
+     sin tocar ninguna clave del JSON de salida (el parser/consumidor de este
+     motor no se toca). La duplicación de ALERGIAS se deja a propósito: es
+     una salvaguarda de seguridad alimentaria, no prosa de relleno. */
   function promptDe(f){
     var base = calcularBase(f);
-    return 'Sos nutricionista deportivo y cocinero práctico. Respondés SOLO con un JSON válido: arrancás la respuesta ' +
-      'directo con "{" y la terminás en "}", sin bloques de código, sin comillas invertidas (```), sin la palabra ' +
-      '"json" y sin ningún texto antes o después del objeto.\n\n' +
+    return 'Nutricionista deportivo argentino, cocinero práctico. Respondé SOLO JSON: arranca en "{", termina en "}", sin fences ni texto extra.\n\n' +
       'DATOS\n' +
-      'Sexo: ' + (f.sexo === 'm' ? 'masculino' : 'femenino') + ' · Edad: ' + f.edad +
-      ' · Peso: ' + f.peso + ' kg · Altura: ' + f.altura + ' cm' + (f.grasa ? ' · Grasa: ' + f.grasa + '%' : '') + '\n' +
-      'Objetivo: ' + f.obj + ' · Ritmo: ' + f.ritmo + ' · Actividad: ' + f.act + '\n' +
-      'Entrena: ' + f.hora + ' · Comidas por día: ' + f.comidas + '\n' +
+      (f.sexo === 'm' ? 'M' : 'F') + ' · ' + f.edad + 'a · ' + f.peso + 'kg · ' + f.altura + 'cm' + (f.grasa ? ' · ' + f.grasa + '% grasa' : '') + '\n' +
+      f.obj + ' · ritmo ' + f.ritmo + ' · actividad ' + f.act + '\n' +
+      'Entrena ' + f.hora + ' · ' + f.comidas + ' comidas/día\n' +
       'Restricciones: ' + ((f.rest || []).join(', ') || 'ninguna') + '\n' +
-      'ALERGIAS (NO PUEDEN APARECER NI ELLAS NI SU FAMILIA, EN NINGUNA DE LAS 2 OPCIONES): ' + (f.alergias || 'ninguna') + '\n' +
-      'ALERGIAS, REPETIDO: ' + (f.alergias || 'ninguna') + '\n' +
-      'Notas del alumno: ' + (f.notas || 'sin notas') + '\n' +
-      'Referencia calculada: basal ' + base.bmr + ' kcal · gasto ' + base.tdee + ' kcal.\n\n' +
-      'FORMATO DE CADA COMIDA — PLATO REAL, NO INGREDIENTES SUELTOS\n' +
-      '- "nombre" tiene que ser el nombre de un plato real y apetecible, no el slot del día. ' +
-      'Nunca "Desayuno" o "Almuerzo" como nombre — sí "Tostadas Francesas Proteicas", "Revuelto Cremoso", ' +
-      '"Bowl de Pollo al Verdeo con Papas Rústicas", "Parfait de Banana y Queso Untable", ' +
-      '"Hamburguesas Magras Caseras con Fideos", en ese estilo.\n' +
-      '- UNA sola preparación por comida (no dupliques el plato en una versión "elaborada" aparte) — cada ítem de ' +
-      '"items" lleva, además de sus gramos y macros, un array "intercambios" con UN SOLO alimento equivalente que lo ' +
-      'puede reemplazar en la misma cantidad de macro (no dos, uno solo). Nada de un segundo plato completo.\n\n' +
-      'ALIMENTOS — MERCADO ARGENTINO, ACCESIBLE Y COTIDIANO (usá esta lista como vocabulario base, combiná según el plato)\n' +
-      '- Proteínas: cortes de carnicería magros (nalga, cuadril, peceto, bola de lomo, carne picada especial), ' +
-      'pechuga de pollo, merluza, quesos magros locales (Port Salut Light, Cremón Light, Casancrem/Finlandia Light, ' +
-      'ricota magra), huevo, atún al natural.\n' +
-      '- Carbohidratos: avena en copos, arroz blanco/integral, fideos secos guiseros/tallarines, papa, batata, ' +
-      'choclo, pan de molde integral/salvado, galletas de arroz, frutas de estación (banana, manzana, pera, naranja).\n' +
-      '- Grasas: aceite de oliva, aceite de girasol, maní tostado sin sal, nueces, almendras, aceitunas.\n\n' +
-      'REALISMO POR FRANJA HORARIA — nada de "laboratorio", comida de casa que a alguien le den ganas de comer\n' +
-      '- Desayuno y Merienda: SIEMPRE algo liviano y cotidiano — tostadas integrales con queso untable y huevo, ' +
-      'yogur con frutas y granola, café con leche con pan/galletas de arroz o avena, huevos revueltos, licuado ' +
-      'con banana y avena. Nunca pechuga de pollo, carne de vaca, merluza ni ningún corte de carnicería en estas ' +
-      'dos comidas — quedan reservados para Almuerzo y Cena.\n' +
-      '- Media mañana: fruta, yogur, huevo, un puñado de frutos secos o una tostada — nunca carne ni pollo.\n' +
-      '- Almuerzo y Cena: plato de comida casera de verdad, con nombre de plato — milanesas al horno con puré o ' +
-      'ensalada, tarta casera de verdura, pollo al horno con papas rústicas, pastas con salsa magra o carne picada ' +
-      'especial, guiso liviano, wok de pollo o carne con vegetales y arroz. Ahí sí van las carnes/pollo/pescado.\n\n' +
-      'CICLADO Y PERI-ENTRENO TÁCTICO — mantenelo explícito, no lo diluyas\n' +
-      '- "meta.kcal_entreno" y "meta.kcal_descanso" tienen que ser distintos entre sí (el ciclado es real, no dos ' +
-      'números iguales), igual que "macros.entreno" vs "macros.descanso" — más carbohidrato el día de entreno.\n' +
-      '- "peri_entreno.pre": comida de fácil digestión, baja en grasa y fibra, con carbohidrato de rápida absorción — ' +
-      'el objetivo es llegar a entrenar sin pesadez.\n' +
-      '- "peri_entreno.post": foco en reponer glucógeno (carbohidrato) más proteína para la síntesis — el texto tiene ' +
-      'que nombrar explícitamente la reposición de glucógeno, no quedar genérico.\n\n' +
-      'DEVOLVÉ ESTE JSON EXACTO — SIN CAMPOS EXTRA, SIN SEGUNDO PLATO, SIN LISTAS ANIDADAS DE MÁS:\n' +
+      'ALERGIAS (excluir ellas y su familia, en TODAS las comidas): ' + (f.alergias || 'ninguna') + '\n' +
+      'ALERGIAS (repetido, no ignorar): ' + (f.alergias || 'ninguna') + '\n' +
+      (f.notas ? 'Notas: ' + f.notas + '\n' : '') +
+      'Referencia: basal ' + base.bmr + ' kcal · gasto ' + base.tdee + ' kcal.\n\n' +
+      'Cada comida es un plato real y apetecible con nombre propio (nunca "Desayuno" como nombre). UNA sola preparación por comida, con 1 intercambio equivalente por ítem (no más).\n' +
+      'Alimentos argentinos, comunes y baratos: carnicería magra, pollo, pescado, quesos light, huevo, atún, avena, arroz, fideos, papa/batata, pan integral, fruta de estación, aceite, frutos secos.\n' +
+      'Desayuno/Media mañana/Merienda: liviano, NUNCA carne/pollo/pescado (huevo/lácteos/legumbres/frutos secos/fruta). Almuerzo/Cena: comida casera de verdad, ahí sí carnes/pollo/pescado.\n' +
+      'Ciclado real: kcal y macros de entreno ≠ descanso (más carbohidrato el día de entreno). "peri_entreno.pre": digestión fácil, carbohidrato rápido. "peri_entreno.post": glucógeno + proteína, nombralo explícito.\n\n' +
+      'JSON EXACTO — sin campos extra, sin segundo plato:\n' +
       '{"meta":{"kcal_entreno":0,"kcal_descanso":0,"metodo":""},' +
       '"macros":{"entreno":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0},' +
       '"descanso":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0}},' +
@@ -44724,15 +44707,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       '"suplementos":[{"nombre":"","dosis":"","momento":"","evidencia":"","nota":""}],' +
       '"alertas":[],"disclaimer":"Orientativo y educativo. No reemplaza el plan de un nutricionista."}\n\n' +
       'REGLAS\n' +
-      '- Alimentos de Argentina, comunes y baratos (ver lista de arriba). Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
-      '- La suma de las comidas tiene que dar los macros del día de entreno con menos de 8% de desvío.\n' +
-      '- Cada ítem lleva exactamente 1 intercambio equivalente en el mismo macro — no 2, no una lista larga.\n' +
-      '- Proteína entre 1,6 y 2,4 g/kg. Nunca menos calorías que el basal.\n' +
-      '- Ninguna comida de Desayuno, Media mañana o Merienda puede llevar carne, pollo ni pescado como fuente de ' +
-      'proteína — usá huevo, lácteos, legumbres o frutos secos ahí.\n' +
-      '- Nada de lenguaje motivacional ni promesas de resultados.\n' +
-      '- Priorizá que el JSON cierre bien formado por sobre agregar más detalle: es preferible un plato más simple ' +
-      'pero con el JSON íntegro a uno más elaborado que corte la estructura.';
+      '- Alimentos argentinos, comunes y baratos. Gramos en crudo salvo arroz/fideos (cocidos).\n' +
+      '- Suma de comidas = macros del día de entreno con <8% de desvío.\n' +
+      '- 1 intercambio equivalente por ítem, no más.\n' +
+      '- Proteína 1,6-2,4 g/kg. Nunca menos calorías que el basal.\n' +
+      '- Sin carne/pollo/pescado en Desayuno/Media mañana/Merienda.\n' +
+      '- Sin lenguaje motivacional ni promesas de resultados.\n' +
+      '- Priorizá JSON bien cerrado por sobre más detalle: mejor un plato simple pero íntegro que uno elaborado que corte la estructura.';
   }
 
   /* 29no pedido (30/08) -- MOTOR IA SEMANAL, enfoque "pool + rotación local"
@@ -44758,43 +44739,38 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       return '"' + (i + 1) + '":[{"nombre":"","items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,' +
         '"macro":"prot","intercambios":[{"alimento":"","gramos":0}]}]}]';
     }).join(',');
-    return 'Sos nutricionista deportivo y cocinero práctico armando un POOL de variedad semanal — NO un plan de 7 días ' +
-      'completo. Un motor local va a combinar estas variantes y a ajustar las cantidades exactas de cada día; vos solo ' +
-      'aportás variedad realista de platos por franja horaria. Respondés SOLO con un JSON válido: arrancás la respuesta ' +
-      'directo con "{" y la terminás en "}", sin bloques de código, sin comillas invertidas, sin la palabra "json" y sin ' +
-      'ningún texto antes o después del objeto.\n\n' +
+    /* directiva crítica (2026-09) -- compactación de payload: mismo criterio
+       que promptDe() -- se retira la prosa explicativa redundante, se
+       acortan las etiquetas de las franjas y se resume el objetivo por
+       franja a números crudos. El esquema JSON (poolSchema) y las claves
+       que consume ensamblarSemanaDesdePool()/clonarItemPool() no se tocan. */
+    return 'Nutricionista deportivo argentino armando un POOL de variedad semanal (NO un plan de 7 días) para que un ' +
+      'motor local combine y ajuste las cantidades exactas. Respondé SOLO JSON: arranca en "{", termina en "}", sin ' +
+      'fences ni texto extra.\n\n' +
       'DATOS\n' +
-      'Sexo: ' + (f.sexo === 'm' ? 'masculino' : 'femenino') + ' · Edad: ' + f.edad +
-      ' · Peso: ' + f.peso + ' kg · Altura: ' + f.altura + ' cm' + (f.grasa ? ' · Grasa: ' + f.grasa + '%' : '') + '\n' +
-      'Objetivo: ' + f.obj + ' · Ritmo: ' + f.ritmo + ' · Actividad: ' + f.act + '\n' +
-      'Entrena: ' + f.hora + '\n' +
+      (f.sexo === 'm' ? 'M' : 'F') + ' · ' + f.edad + 'a · ' + f.peso + 'kg · ' + f.altura + 'cm' + (f.grasa ? ' · ' + f.grasa + '% grasa' : '') + '\n' +
+      f.obj + ' · ritmo ' + f.ritmo + ' · actividad ' + f.act + ' · entrena ' + f.hora + '\n' +
       'Restricciones: ' + ((f.rest || []).join(', ') || 'ninguna') + '\n' +
-      'ALERGIAS (NO PUEDEN APARECER NI ELLAS NI SU FAMILIA, EN NINGUNA VARIANTE): ' + (f.alergias || 'ninguna') + '\n' +
-      'ALERGIAS, REPETIDO: ' + (f.alergias || 'ninguna') + '\n' +
-      'Notas del alumno: ' + (f.notas || 'sin notas') + '\n\n' +
-      'FRANJAS DEL DÍA Y SU OBJETIVO APROXIMADO\n' + slotsTxt + '\n\n' +
-      'PARA CADA FRANJA, DEVOLVÉ EXACTAMENTE 3 VARIANTES DE PLATO DISTINTAS ENTRE SÍ (para que la semana rote sin ' +
-      'repetirse) — mismo criterio de realismo que un plan de un día: nombre de plato real y apetecible (nunca ' +
-      '"Desayuno" como nombre), comida de casa cotidiana, mercado argentino accesible y barato.\n' +
-      'REALISMO POR FRANJA — Desayuno/Media mañana/Merienda: SIEMPRE liviano, NUNCA carne/pollo/pescado (usá huevo, ' +
-      'lácteos, legumbres o frutos secos). Almuerzo/Cena: plato de comida casera de verdad, ahí sí van carnes/pollo/pescado.\n' +
-      'Cada ítem de cada variante lleva un campo "macro" que vale exactamente "prot", "carb", "gras" o "verd" según cuál ' +
-      'es su rol principal en el plato — es clave para que el motor local pueda reajustar las cantidades por día sin ' +
-      'romper nada.\n\n' +
-      'DEVOLVÉ ESTE JSON EXACTO — SIN CAMPOS EXTRA, SIN LISTAS ANIDADAS DE MÁS:\n' +
+      'ALERGIAS (excluir ellas y su familia, en TODAS las variantes): ' + (f.alergias || 'ninguna') + '\n' +
+      'ALERGIAS (repetido, no ignorar): ' + (f.alergias || 'ninguna') + '\n' +
+      (f.notas ? 'Notas: ' + f.notas + '\n' : '') + '\n' +
+      'FRANJAS\n' + slotsTxt + '\n\n' +
+      'Por franja: EXACTAMENTE 3 variantes distintas entre sí, plato real y apetecible (nunca "Desayuno" como nombre), comida casera argentina barata.\n' +
+      'Desayuno/Media mañana/Merienda: liviano, NUNCA carne/pollo/pescado (huevo/lácteos/legumbres/frutos secos). Almuerzo/Cena: plato casero de verdad, ahí sí carnes/pollo/pescado.\n' +
+      '"macro" en cada ítem: "prot"/"carb"/"gras"/"verd" según su rol principal — necesario para reajustar cantidades por día.\n\n' +
+      'JSON EXACTO — sin campos extra:\n' +
       '{"pool":{' + poolSchema + '},' +
       '"peri_entreno":{"pre":{"cuando":"","texto":"","carb_g":0,"prot_g":0},' +
       '"intra":{"cuando":"","texto":"","carb_g":0},"post":{"cuando":"","texto":"","carb_g":0,"prot_g":0}},' +
       '"suplementos":[{"nombre":"","dosis":"","momento":"","evidencia":"","nota":""}],' +
       '"alertas":[],"disclaimer":"Orientativo y educativo. No reemplaza el plan de un nutricionista."}\n\n' +
       'REGLAS\n' +
-      '- Cada franja lleva EXACTAMENTE 3 variantes, cada una con 2 a 4 ítems.\n' +
-      '- Alimentos de Argentina, comunes y baratos. Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
-      '- Cada ítem lleva exactamente 1 intercambio equivalente en el mismo macro.\n' +
-      '- Ninguna variante de Desayuno, Media mañana o Merienda puede llevar carne, pollo ni pescado como fuente de proteína.\n' +
-      '- Nada de lenguaje motivacional ni promesas de resultados.\n' +
-      '- Priorizá que el JSON cierre bien formado por sobre agregar más detalle: es preferible una variante más simple ' +
-      'pero con el JSON íntegro a una más elaborada que corte la estructura.';
+      '- 3 variantes por franja, 2 a 4 ítems cada una.\n' +
+      '- Alimentos argentinos, comunes y baratos. Gramos en crudo salvo arroz/fideos (cocidos).\n' +
+      '- 1 intercambio equivalente por ítem.\n' +
+      '- Sin carne/pollo/pescado en Desayuno/Media mañana/Merienda.\n' +
+      '- Sin lenguaje motivacional.\n' +
+      '- Priorizá JSON bien cerrado por sobre más detalle: mejor una variante simple pero íntegra que una elaborada que corte la estructura.';
   }
 
   /* ¿esta variante del pool trae lo mínimo para usarse? */
@@ -45672,7 +45648,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
            red, parsing) sigue mostrando el detalle técnico real, que ahí sí
            hace falta para que el coach corrija algo. */
         if(e && e.rate){
-          toast('⚡ Semana generada con el motor local (límite temporal de cuota alcanzado en ' + PROV_LB(provAct) + '). Podés editar los alimentos a mano o reintentar con IA más tarde.', 'warn');
+          /* directiva crítica (2026-09) -- texto pedido puntualmente por el
+             coach, parametrizado por proveedor (el mismo flujo sirve para
+             Anthropic/OpenAI/Google, no sólo Google -- ver PROV_LB(provAct)). */
+          toast('⚡ Se aplicó el plan base local (cuota de API de ' + PROV_LB(provAct) + ' en pausa). Podés ajustar las cantidades manualmente.', 'warn');
           renderDiag({ ok:false, etapa:'Límite temporal de cuota en ' + PROV_LB(provAct), provider: provAct, model: modelAct, motivo: 'Se usó el motor local mientras tanto. ' + msg + ' -- probá de nuevo en un rato, o elegí otro modelo/proveedor arriba (cada uno tiene su propia cuota).' });
         } else {
           toast('No se pudo consultar la IA (' + msg + '): se usó el motor local', 'warn');
