@@ -4331,6 +4331,18 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <span class="hdc-pay-chip" id="hdcPlanChip"></span>
         </span>
       </div>
+      <!-- directiva de accesibilidad (2026-09, 2do seguimiento) -- el switch
+           Aa completo (A/A+/A++) vive en el drawer de Perfil/Info (ya
+           corregido y visible ahí), pero eso pide un toque extra para
+           abrirlo -- el pedido explícito ahora es un control DIRECTO en
+           esta fila superior, al lado del botón de ficha, sin abrir nada.
+           Comparte el mismo motor (window.CoachTexto / data-fz /
+           localStorage coachjp_fz) que el switch del drawer -- ver SYSTEM
+           v3.1 más abajo en el archivo -- así ambos quedan siempre
+           sincronizados entre sí. -->
+      <button type="button" class="hdc-fz" id="hdcFzBtn" title="Tamaño de letra: Normal / Grande / Extra Grande" aria-label="Cambiar tamaño de letra">
+        <span class="hdc-fz-tx">aA</span>
+      </button>
       <button type="button" class="hdc-info" id="hdcInfoBtn" title="Perfil, credencial y ajustes">
         <svg class="hdc-info-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="3" y="5" width="18" height="14" rx="3.2" stroke="currentColor" stroke-width="1.6"/>
@@ -17216,13 +17228,22 @@ body{font-size:var(--fz-body) !important}
     pintar();
   }
   function pintar(){
-    var sw = document.getElementById('jpFzSwitch');
-    if(!sw) return;
     var k = actual();
-    sw.querySelectorAll('.fz-p').forEach(function(p){
-      p.classList.toggle('on', p.dataset.fz === k);
-      p.setAttribute('aria-pressed', p.dataset.fz === k ? 'true' : 'false');
-    });
+    var sw = document.getElementById('jpFzSwitch');
+    if(sw){
+      sw.querySelectorAll('.fz-p').forEach(function(p){
+        p.classList.toggle('on', p.dataset.fz === k);
+        p.setAttribute('aria-pressed', p.dataset.fz === k ? 'true' : 'false');
+      });
+    }
+    /* botón de la fila superior: se mantiene sincronizado con el mismo
+       estado (data-fz), sin importar si el coach o el alumno/a cambió el
+       tamaño desde el drawer o desde acá -- una sola fuente de verdad. */
+    var hb = document.getElementById('hdcFzBtn');
+    if(hb){
+      hb.setAttribute('data-fz-lvl', k);
+      hb.setAttribute('aria-pressed', k !== 'n' ? 'true' : 'false');
+    }
   }
   /* directiva crítica (2026-09) -- "el selector no está visible / sólo
      aparece un ícono comprimido que no abre nada": montarSwitch() apuntaba
@@ -17263,6 +17284,32 @@ body{font-size:var(--fz-body) !important}
     });
     pintar();
     try{ if(window.CoachTopBar && CoachTopBar.repintar) CoachTopBar.repintar(); }catch(e){}
+  }
+
+  /* directiva de accesibilidad (2026-09, 2do seguimiento) -- control directo
+     en la fila superior (#hdcFzBtn, ya en el HTML base junto a #hdcInfoBtn):
+     ciclo de 3 estados con un solo botón, más práctico que sumar 2-3
+     botones nuevos en una fila que ya tiene escudo + identidad + chips +
+     ficha. Reusa aplicar()/actual() -- mismo estado que el switch del
+     drawer, ambos quedan sincronizados por pintar(). */
+  var CICLO = ['n', 'g', 'x'];
+  var ETIQ_TOAST = { n:'Normal', g:'Grande', x:'Muy Grande' };
+  function siguienteNivel(){
+    var i = CICLO.indexOf(actual());
+    return CICLO[(i + 1) % CICLO.length];
+  }
+  function montarBotonHeader(){
+    var b = document.getElementById('hdcFzBtn');
+    if(!b || b.dataset.wired === '1') { pintar(); return; }
+    b.dataset.wired = '1';
+    b.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation();
+      var nuevo = siguienteNivel();
+      aplicar(nuevo);
+      try{ if(navigator.vibrate) navigator.vibrate(nuevo === 'n' ? 10 : [10, 30, 10]); }catch(x){}
+      try{ if(typeof aviso === 'function') aviso('info', '🔤', 'Texto: ' + ETIQ_TOAST[nuevo], '', 1400); }catch(x){}
+    });
+    pintar();
   }
 
   /* ---------------------------------------------------------
@@ -17369,6 +17416,7 @@ body{font-size:var(--fz-body) !important}
   }
   function repintar(){
     try{ montarSwitch(); }catch(e){ console.warn('v31·aa', e); }
+    try{ montarBotonHeader(); }catch(e){ console.warn('v31·aa-header', e); }
     try{ reclasificar(); }catch(e){ console.warn('v31·heads', e); }
     try{ limpiarTitulos(); }catch(e){ console.warn('v31·titulos', e); }
     try{ desduplicarDosis(); }catch(e){ console.warn('v31·dosis', e); }
@@ -19850,6 +19898,24 @@ input[type="checkbox"]:active{
 }
 .hdc-info:active{ transform:scale(.95); border-color:rgba(229,195,120,.5); background:#171B22; }
 .hdc-info .lbl{display:none}
+/* directiva de accesibilidad (2026-09, 2do seguimiento) -- control directo
+   de tamaño de letra en la fila superior, paleta pedida explícitamente
+   (fondo #141920, borde #28303A, texto dorado #E5C378), 36x36 mínimo
+   táctil. Ciclo de 3 estados con un solo botón (Normal -> Grande -> Extra
+   Grande -> Normal) en vez de 2-3 botones separados: en esta fila ya
+   conviven escudo + identidad + chips + botón de ficha, no hay margen para
+   sumar más de un control sin apretar el layout. */
+.hdc-fz{
+  flex-shrink:0; width:36px; height:36px; min-width:36px; min-height:36px;
+  display:flex; align-items:center; justify-content:center;
+  border:1px solid #28303A; background:#141920; border-radius:10px;
+  color:#E5C378; cursor:pointer; transition:transform .12s ease, border-color .15s ease, background .15s ease;
+}
+.hdc-fz:active{ transform:scale(.95); border-color:rgba(229,195,120,.5); background:#1A2029; }
+.hdc-fz-tx{ font-family:var(--font-head,inherit); font-weight:800; font-size:13px; letter-spacing:-.01em; line-height:1; }
+.hdc-fz[data-fz-lvl="g"] .hdc-fz-tx{ font-size:14.5px; color:#F2D9A8 }
+.hdc-fz[data-fz-lvl="x"]{ border-color:#E5C378; background:rgba(229,195,120,.1) }
+.hdc-fz[data-fz-lvl="x"] .hdc-fz-tx{ font-size:16px; color:#F2D9A8 }
 /* Ícono de credencial táctica (reemplaza el emoji 👤 genérico, 8vo pedido) —
    currentColor hereda el dorado #E5C378 ya definido en .hdc-info arriba. */
 .hdc-info-ic{ width:19px; height:19px; display:block; }
