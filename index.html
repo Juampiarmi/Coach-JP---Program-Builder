@@ -21879,6 +21879,7 @@ document.addEventListener('DOMContentLoaded', init);
     </div>
     <div class="modal-f">
       <button class="btn red ghost" id="cfgClear" style="margin-right:auto">🗑️ Borrar clave</button>
+      <button class="btn ghost" id="cfgResetAll" title="Forzar el reseteo del cooldown de todos los proveedores — usalo si corregiste tu clave o tu modelo y la interfaz sigue mostrando cooldown">↺ Resetear cooldown</button>
       <button class="btn" id="cfgTest">🔌 Probar conexión</button>
       <button class="btn gold" id="cfgSave">💾 Guardar</button>
     </div>
@@ -21969,8 +21970,25 @@ document.addEventListener('DOMContentLoaded', init);
        requeriría un proxy propio para funcionar de verdad desde esta PWA. */
     openai:    { lb:'OpenAI',    sub:'GPT',    model:'gpt-5.6-terra',    url:'https://api.openai.com/v1/chat/completions',
       hints:['gpt-5.6-terra','gpt-5.6-luna','gpt-5.6-sol','gpt-6-astra'] },
+    /* directiva crítica (2026-09) -- corrección de endpoint Gemini: se
+       verificó contra documentación oficial vigente (ai.google.dev y Google
+       Cloud) que "gemini-3.6-flash" SÍ es un modelo real y activo -- no es
+       la causa del 404 reportado. Lo que sí se confirmó como causa real de
+       404 en la API de Google (foro oficial de desarrolladores,
+       discuss.ai.google.dev) es que la familia "2.5" (incluido el
+       "gemini-2.5-pro" que estaba en los hints) devuelve 404 para
+       cualquier clave/proyecto SIN uso previo de esos modelos -- Google
+       limita el acceso a usuarios que ya los venían usando. Se saca
+       "gemini-2.5-pro" de los hints (siempre 404 para una clave nueva) y
+       se lo reemplaza por "gemini-3.1-flash-lite", de la misma familia 3.x
+       sin esa restricción de acceso. El default queda en gemini-3.6-flash
+       (confirmado vigente y sin restricción). Si igual algún dispositivo
+       puntual arrastra un modelo que la API rechaza con 404, el fix real
+       está en callProvider(): detecta el 404 de Google, lo explica en vez
+       de dejar el HTTP crudo, y NUNCA lo confunde con problema de cuota
+       (ver el bloque de cooldown más abajo). */
     google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.6-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
-      hints:['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-2.5-pro'] }
+      hints:['gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'] }
   };
   const ORDEN = ['anthropic','openai','google'];
   let AI = {
@@ -22008,6 +22026,13 @@ document.addEventListener('DOMContentLoaded', init);
     const MODELOS_RETIRADOS = [
       'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307',           /* Anthropic, retirados oct-2025/abr-2026 */
       'gemini-pro', 'gemini-1.0-pro', 'gemini-1.5-pro-preview', 'gemini-1.5-pro', 'gemini-1.5-flash', /* Google, discontinuados */
+      /* directiva crítica (2026-09) -- "gemini-2.5-pro" estuvo un rato corto
+         en los hints (directiva anterior) y se saca ahora: confirmado que
+         Google devuelve 404 en generateContent para TODA clave/proyecto sin
+         uso previo de la familia "2.5" -- para cualquier coach que lo haya
+         elegido de nuestro propio hint (agregado hace días), eso es 404
+         garantizado. Se migra al default vigente igual que un retiro real. */
+      'gemini-2.5-pro', 'gemini-2.5-flash',
       'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'                            /* OpenAI, familias ya fuera de vigencia */
     ];
     let huboMigracion = false;
@@ -22043,6 +22068,20 @@ document.addEventListener('DOMContentLoaded', init);
   function setCooldown(p, secs){
     AI.cooldown[p] = Date.now() + (secs * 1000);
     saveAI(); paintProviders(); paintDot();
+  }
+  /* directiva crítica (2026-09) -- fix del cooldown de API: función rápida
+     para forzar el reseteo del cooldown desde la interfaz (o desde consola,
+     window.CoachAI.resetCooldown()) apenas el coach corrigió su clave o su
+     modelo, sin tener que esperar a que venza el temporizador. Sin
+     argumento, limpia TODOS los proveedores de una vez (más simple que
+     tener que saber cuál quedó bloqueado); con un proveedor puntual
+     ('google', 'anthropic', 'openai'), limpia sólo ese. */
+  function resetAICooldown(prov){
+    const provs = prov ? [prov] : ORDEN.slice();
+    let huboAlguno = false;
+    provs.forEach(p => { if(AI.cooldown[p]){ delete AI.cooldown[p]; huboAlguno = true; } });
+    if(huboAlguno){ saveAI(); try{ paintProviders(); paintDot(); }catch(e){} try{ fillCfgForm(); }catch(e){} }
+    return huboAlguno;
   }
   /* proveedor disponible: con clave y sin cooldown */
   function nextProvider(excluir){
@@ -22143,9 +22182,21 @@ document.addEventListener('DOMContentLoaded', init);
         '<div><b>OpenAI puede fallar siempre desde acá</b>Su API no habilita llamadas directas desde una página web (CORS) — necesitaría un servidor propio de por medio. Anthropic y Google sí funcionan directo desde esta app.</div></div>';
     }
     const rst = document.getElementById('cfgReset');
-    if(rst) rst.addEventListener('click', () => { delete AI.cooldown[AI.provider]; saveAI(); fillCfgForm(); paintProviders(); toast('Cooldown reiniciado'); });
+    if(rst) rst.addEventListener('click', () => { resetAICooldown(AI.provider); toast('Cooldown reiniciado'); });
   }
   function openCfg(){ paintProviders(); fillCfgForm(); openModal('mCfg'); setTimeout(() => $('#cfgKey').focus(), 60); }
+  var cfgResetAllWireado = false;
+  function wireCfgResetAll(){
+    const btn = document.getElementById('cfgResetAll');
+    if(!btn || cfgResetAllWireado) return;
+    cfgResetAllWireado = true;
+    btn.addEventListener('click', () => {
+      const huboAlguno = resetAICooldown();
+      toast(huboAlguno ? '↺ Cooldown reseteado en todos los proveedores' : 'Ningún proveedor estaba en cooldown');
+    });
+  }
+  wireCfgResetAll();
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireCfgResetAll);
   function readCfgForm(){
     const p = AI.provider;
     AI.keys[p]   = $('#cfgKey').value.trim();
@@ -22246,6 +22297,16 @@ document.addEventListener('DOMContentLoaded', init);
       ({ res, raw } = await enviar(bodySinThinking));
     }
 
+    /* directiva crítica (2026-09) -- fix del cooldown de API: el cooldown
+       (que bloquea el proveedor por minutos/horas) es EXCLUSIVO de un
+       problema real de cuota/capacidad -- 429 (rate limit), 529 (Anthropic
+       "overloaded") o 503 (modelo saturado). Un 400/401/404 es siempre un
+       problema de CONFIGURACIÓN (clave inválida, modelo inexistente o sin
+       acceso, endpoint mal armado) y jamás debe poner al proveedor en
+       cooldown -- antes de esta directiva el código ya distinguía esto
+       correctamente acá, pero no limpiaba un cooldown viejo que hubiera
+       quedado pegado de un 429 anterior, así que un coach podía corregir
+       su modelo/clave y seguir viendo "en cooldown" un buen rato igual. */
     if(res.status === 429 || res.status === 529 || res.status === 503){
       let secs = 0;
       try{ secs = parseInt(res.headers.get('retry-after') || res.headers.get('Retry-After') || '0', 10) || 0; }catch(e){}
@@ -22259,7 +22320,25 @@ document.addEventListener('DOMContentLoaded', init);
     if(!res.ok){
       let msg = raw;
       try{ const j = JSON.parse(raw); msg = (j.error && (j.error.message || j.error.type)) || raw; }catch(e){}
-      throw new Error('HTTP ' + res.status + ' — ' + String(msg).slice(0, 220));
+      if(res.status === 400 || res.status === 401 || res.status === 404){
+        /* nunca es cuota: se muestra el detalle exacto en consola (para que
+           el coach o quien lo asista vea el mensaje completo de Google/
+           OpenAI/Anthropic sin el recorte de 220 caracteres del toast) y se
+           limpia cualquier cooldown que ese proveedor tuviera guardado --
+           si el coach está en medio de corregir su clave o su modelo, no
+           tiene sentido que la interfaz siga bloqueada por un rate-limit
+           de otro momento que ya no tiene nada que ver con este error. */
+        console.error('[CoachAI] ' + PROV[prov].lb + ' HTTP ' + res.status + ' — respuesta completa:', raw);
+        if(AI.cooldown[prov]){
+          delete AI.cooldown[prov]; saveAI();
+          try{ paintProviders(); paintDot(); }catch(e){}
+        }
+      }
+      let msgFinal = String(msg).slice(0, 220);
+      if(prov === 'google' && res.status === 404){
+        msgFinal += ' — el modelo "' + model + '" no existe o no está disponible para tu clave en la API de Google. Elegí otro modelo en ⚙️ Configuración de IA (por ejemplo, uno de los sugeridos en la lista).';
+      }
+      throw new Error('HTTP ' + res.status + ' — ' + msgFinal);
     }
 
     const j = JSON.parse(raw);
@@ -22746,7 +22825,7 @@ document.addEventListener('DOMContentLoaded', init);
 
     window.CoachAI = {
       cfg: () => AI, run: runAI, open: openAI, config: openCfg,
-      switch: switchProvider, cooldown: setCooldown, providers: PROV,
+      switch: switchProvider, cooldown: setCooldown, resetCooldown: resetAICooldown, providers: PROV,
       /* llamada genérica de texto (la usa la biblioteca para tips y objetivos) */
       generarTexto: (user, system, opts) => callAI(system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user, undefined, opts),
       hayClave: () => ['anthropic','openai','google'].some(p => hasKey(p)),
