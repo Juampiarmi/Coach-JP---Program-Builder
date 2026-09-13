@@ -22000,8 +22000,20 @@ document.addEventListener('DOMContentLoaded', init);
        con 429 en un modelo puede probar otro de la lista sin esperar a que
        resetee -- el selector manual del panel de nutrición (directiva
        anterior) ya permite tipear cualquiera de estos sin tocar código. */
+    /* directiva de implementación (2026-09, pedido explícito del coach) --
+       gemini-2.5-flash/gemini-2.5-pro vuelven a la lista de sugerencias a
+       pedido puntual, aun cuando la auditoría de una directiva anterior (ver
+       más arriba) haya confirmado 404 en generateContent para cualquier
+       clave/proyecto SIN uso previo de la familia "2.5" -- Google restringe
+       el acceso a quien ya la venía usando. El DEFAULT sigue siendo
+       gemini-3.8-flash (la familia 3.x, sin restricciones publicadas) --
+       2.5 queda como opción manual para quien sepa que su clave sí tiene
+       acceso. El aviso de riesgo se muestra en el modal de ⚙️ Configuración
+       de IA cuando el modelo elegido empieza con "gemini-2.5" (ver
+       fillCfgForm() más abajo), así el coach lo ve ANTES de gastar un intento
+       fallido, sin bloquearle la elección. */
     google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.8-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
-      hints:['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'] }
+      hints:['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-2.5-flash','gemini-2.5-pro'] }
   };
   const ORDEN = ['anthropic','openai','google'];
   let AI = {
@@ -22193,6 +22205,18 @@ document.addEventListener('DOMContentLoaded', init);
       $('#cfgStatus').innerHTML +=
         '<div class="alert warn" style="padding:9px 12px;margin-top:8px"><span class="ic">🌐</span>' +
         '<div><b>OpenAI puede fallar siempre desde acá</b>Su API no habilita llamadas directas desde una página web (CORS) — necesitaría un servidor propio de por medio. Anthropic y Google sí funcionan directo desde esta app.</div></div>';
+    }
+    /* directiva de implementación (2026-09) -- mismo criterio de aviso
+       proactivo que el de OpenAI arriba: gemini-2.5-flash/pro están en la
+       lista de sugerencias a pedido puntual, pero Google devuelve 404 en
+       generateContent para cualquier clave/proyecto sin uso previo de esa
+       familia (confirmado contra el foro oficial de desarrolladores). No se
+       le saca la opción al coach -- se le avisa ANTES de que la pruebe y
+       pierda un intento, igual que con OpenAI/CORS. */
+    if(p === 'google' && /^gemini-2\.5/.test(AI.models[p] || '')){
+      $('#cfgStatus').innerHTML +=
+        '<div class="alert warn" style="padding:9px 12px;margin-top:8px"><span class="ic">⚠️</span>' +
+        '<div><b>gemini-2.5 puede devolver 404 con esta clave</b>Google restringe la familia "2.5" a proyectos que ya la venían usando -- si tu clave es nueva para este modelo, probá primero con gemini-3.8-flash (el default, sin esa restricción) o usá "🧪 Test Conexión IA" para confirmarlo antes de generar un plan completo.</div></div>';
     }
     const rst = document.getElementById('cfgReset');
     if(rst) rst.addEventListener('click', () => { resetAICooldown(AI.provider); toast('Cooldown reiniciado'); });
@@ -22418,6 +22442,36 @@ document.addEventListener('DOMContentLoaded', init);
     throw new Error('No se pudo completar la llamada: sin proveedores disponibles.');
   }
 
+  /* directiva crítica (2026-09) -- corte balanceado de llaves: antes se usaba
+     s.lastIndexOf('}'), el ÚLTIMO "}" de todo el texto, para encontrar el
+     cierre del objeto raíz. Si el modelo agrega texto conversacional DESPUÉS
+     del JSON (notas, disclaimers, un ejemplo) y ese texto trae su propia "}"
+     en cualquier lado, lastIndexOf agarraba esa llave posterior en vez de la
+     que realmente cierra el objeto -- el slice quedaba con contenido de más y
+     JSON.parse fallaba con "Unexpected non-whitespace character after JSON at
+     position N" pese a que el JSON en sí era válido. Este contador de balance
+     (ignorando llaves dentro de strings, respetando el escape "\\") corta
+     EXACTAMENTE en el cierre real del objeto raíz. Si el objeto vino truncado
+     por límite de tokens (nunca vuelve a balance 0), cae al mismo
+     comportamiento de antes: se entrega el resto del string tal cual. */
+  function cortarBloqueJSON(s, firstBrace){
+    let openBraces = 0, inString = false, escapeNext = false, lastIndex = -1;
+    for(let i = firstBrace; i < s.length; i++){
+      const ch = s[i];
+      if(escapeNext){ escapeNext = false; continue; }
+      if(ch === '\\'){ escapeNext = true; continue; }
+      if(ch === '"'){ inString = !inString; continue; }
+      if(!inString){
+        if(ch === '{') openBraces++;
+        else if(ch === '}'){
+          openBraces--;
+          if(openBraces === 0){ lastIndex = i; break; }
+        }
+      }
+    }
+    return (lastIndex !== -1) ? s.substring(firstBrace, lastIndex + 1) : s.substring(firstBrace);
+  }
+
   function extractJson(txt){
     if(!txt) throw new Error('Respuesta vacía del modelo.');
     let s = String(txt).trim();
@@ -22428,11 +22482,11 @@ document.addEventListener('DOMContentLoaded', init);
     const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
     else s = s.replace(/^```(?:json)?\s*/i, '').trim();
-    const a = s.indexOf('{'), b = s.lastIndexOf('}');
-    if(a < 0 || b < a) throw new Error('El modelo no devolvió JSON válido.');
+    const a = s.indexOf('{');
+    if(a < 0) throw new Error('El modelo no devolvió JSON válido.');
     /* coma colgante antes de "}" o "]" -- error de JSON muy común en respuestas
        de LLM que igual son rescatables sin volver a llamar a la IA */
-    let slice = s.slice(a, b + 1).replace(/,(\s*[}\]])/g, '$1');
+    let slice = cortarBloqueJSON(s, a).replace(/,(\s*[}\]])/g, '$1');
     /* algunos modelos (Gemini incluido, incluso en modo JSON nativo) devuelven
        saltos de línea/tabs SIN escapar dentro de un string -- JSON.parse
        estricto los rechaza con "Bad control character". Se escapan esos
@@ -44827,6 +44881,38 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return { dias: dias, completadas: completadas, mEnt: mEnt, mDes: mDes };
   }
 
+  /* directiva crítica (2026-09) -- corte balanceado de llaves: hasta acá el
+     bloque se cortaba con s.lastIndexOf('}'), el ÚLTIMO "}" de todo el texto.
+     Si la IA agrega texto conversacional DESPUÉS del JSON (notas, disclaimers,
+     un ejemplo) y ESE texto trae su propia "}" en cualquier lado, lastIndexOf
+     agarraba esa llave posterior en vez de la que realmente cierra el objeto
+     raíz -- el bloque cortado quedaba con contenido de más y JSON.parse
+     fallaba con "Unexpected non-whitespace character after JSON at position
+     N" pese a que la IA había respondido un JSON perfectamente válido. Este
+     contador de balance (ignorando llaves dentro de strings, respetando el
+     escape "\\") corta EXACTAMENTE en el cierre real del objeto raíz, venga
+     lo que venga después. Si el objeto vino truncado por límite de tokens
+     (nunca vuelve a balance 0), cae al mismo comportamiento de antes: se
+     entrega el resto del string tal cual para que intentarParsearJSON/
+     repararJSON hagan su mejor esfuerzo. */
+  function cortarBloqueJSON(s, firstBrace){
+    var openBraces = 0, inString = false, escapeNext = false, lastIndex = -1;
+    for(var i = firstBrace; i < s.length; i++){
+      var ch = s[i];
+      if(escapeNext){ escapeNext = false; continue; }
+      if(ch === '\\'){ escapeNext = true; continue; }
+      if(ch === '"'){ inString = !inString; continue; }
+      if(!inString){
+        if(ch === '{') openBraces++;
+        else if(ch === '}'){
+          openBraces--;
+          if(openBraces === 0){ lastIndex = i; break; }
+        }
+      }
+    }
+    return (lastIndex !== -1) ? s.substring(firstBrace, lastIndex + 1) : s.substring(firstBrace);
+  }
+
   /* intenta JSON.parse tras sacar comas colgantes antes de "}" / "]" -- error
      muy común en JSON generado por LLM, rescatable sin volver a llamar a la IA */
   function intentarParsearJSON(s){
@@ -44893,15 +44979,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
     else s = s.replace(/^```(?:json)?\s*/i, '').trim();
-    /* localización explícita del primer "{" y el último "}" reales del texto --
-       cubre el caso de saludos o explicaciones antes/después del objeto */
-    var a = s.indexOf('{'), b = s.lastIndexOf('}');
-    if(a < 0 || b < a){
+    /* localización explícita del primer "{" -- cubre el caso de saludos o
+       explicaciones antes del objeto; el cierre se resuelve con el contador
+       de balance de llaves (cortarBloqueJSON), no con lastIndexOf('}') */
+    var a = s.indexOf('{');
+    if(a < 0){
       ultimoParseDiag = { motivo: 'La respuesta no contiene ningún objeto "{ }" reconocible.', muestra: s.slice(0, 300) };
       console.warn('nutriIA: la respuesta no trae ningún objeto {}', s.slice(0, 400));
       return null;
     }
-    var bloque = s.slice(a, b + 1);
+    var bloque = cortarBloqueJSON(s, a);
     var intento = intentarParsearJSON(bloque);
     if(!intento.ok){
       console.warn('nutriIA: primer intento de parseo falló, se aplica reparación', intento.error);
@@ -44935,13 +45022,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
     else s = s.replace(/^```(?:json)?\s*/i, '').trim();
-    var a = s.indexOf('{'), b = s.lastIndexOf('}');
-    if(a < 0 || b < a){
+    var a = s.indexOf('{');
+    if(a < 0){
       ultimoParseDiag = { motivo: 'La respuesta no contiene ningún objeto "{ }" reconocible.', muestra: s.slice(0, 300) };
       console.warn('nutriIA(pool): la respuesta no trae ningún objeto {}', s.slice(0, 400));
       return null;
     }
-    var bloque = s.slice(a, b + 1);
+    var bloque = cortarBloqueJSON(s, a);
     var intento = intentarParsearJSON(bloque);
     if(!intento.ok){
       console.warn('nutriIA(pool): primer intento de parseo falló, se aplica reparación', intento.error);
