@@ -25707,13 +25707,33 @@ document.addEventListener('DOMContentLoaded', init);
   };
 
   /* ============ E. DUPLICAR PLANIFICACIÓN ============ */
-  function openDup(){
+  /* directiva de implementación (2026-09) -- "Copiar desde" ahora sólo lista
+     alumnos/as con un plan realmente armado (al menos un bloque cargado en
+     algún día): clonar un plan vacío no tiene sentido y antes aparecían
+     mezclados con el resto. Si nadie tiene plan todavía (instalación nueva),
+     cae a la lista completa para no dejar el selector vacío. "Hacia" sigue
+     listando a todos -- el destino puede no tener plan aún, es el caso de uso
+     normal. haciaActivo=true (llamado desde el Builder) invierte el sentido
+     por defecto: el alumno/a activo pasa a ser el DESTINO, no el origen. */
+  function openDup(haciaActivo){
     if(S.athletes.length < 2){ toast('Necesitás al menos dos alumnos cargados', 'err'); return; }
+    const conPlan = S.athletes.filter(a => {
+      const p = plan(a.id);
+      return p && (p.dias || []).some(d => (d.bloques || []).length);
+    });
+    const origenLista = conPlan.length ? conPlan : S.athletes;
     const opts = S.athletes.map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
-    $('#dupFrom').innerHTML = opts; $('#dupTo').innerHTML = opts;
-    $('#dupFrom').value = S.activeId || S.athletes[0].id;
-    const otro = S.athletes.find(a => a.id !== $('#dupFrom').value);
-    $('#dupTo').value = otro ? otro.id : S.athletes[0].id;
+    const optsOrigen = origenLista.map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
+    $('#dupFrom').innerHTML = optsOrigen; $('#dupTo').innerHTML = opts;
+    if(haciaActivo && S.activeId && origenLista.some(a => a.id !== S.activeId)){
+      $('#dupTo').value = S.activeId;
+      const otro = origenLista.find(a => a.id !== S.activeId);
+      $('#dupFrom').value = otro ? otro.id : origenLista[0].id;
+    } else {
+      $('#dupFrom').value = (origenLista.some(a => a.id === S.activeId) ? S.activeId : origenLista[0].id);
+      const otro = S.athletes.find(a => a.id !== $('#dupFrom').value);
+      $('#dupTo').value = otro ? otro.id : S.athletes[0].id;
+    }
     $('#dupLog').innerHTML = '';
     openModal('mDup');
   }
@@ -25988,7 +26008,22 @@ document.addEventListener('DOMContentLoaded', init);
       const b = document.createElement('button');
       b.className = 'btn'; b.id = 'btnDup'; b.innerHTML = '📋 Duplicar planificación';
       athTop.insertBefore(b, document.getElementById('btnNewAth'));
-      b.addEventListener('click', openDup);
+      b.addEventListener('click', () => openDup(false));
+    }
+
+    /* directiva de implementación (2026-09) -- mismo modal mDup/openDup() de
+       arriba, ahora también accesible desde la barra del Builder (pedido:
+       "Clonar Plan de Otro Atleta" cerca de donde el coach ya está armando
+       la ficha del alumno activo). haciaActivo=true invierte el sentido por
+       defecto de los selects: acá el alumno activo del Builder es el
+       DESTINO (se le clona el plan de otro), al revés que desde Alumnos. */
+    const buildTop = document.querySelector('#v-builder .tools-in');
+    if(buildTop && !document.getElementById('btnDupBuilder')){
+      const b = document.createElement('button');
+      b.className = 'btn ghost sm'; b.id = 'btnDupBuilder'; b.type = 'button';
+      b.innerHTML = '📋 Clonar Plan de Otro Atleta';
+      buildTop.appendChild(b);
+      b.addEventListener('click', () => openDup(true));
     }
 
     /* importador (vista Biblioteca) */
@@ -31681,6 +31716,14 @@ body.man-mode .gs-fab{right:318px}
 .cb-wk.on b{color:#08090B}
 .cb-wk.dl.on{background:linear-gradient(135deg,#7FDBFF,#4A93B8);color:#0B1A22}
 .cb-hint{font-size:10.5px;color:var(--muted);flex:1 1 100%}
+/* override manual de %1RM por semana -- independiente por bloque, no pisa
+   el esquema automático (70/78/85/60%…) salvo que el coach tipee un valor */
+.cb-pcts{display:flex;gap:6px;flex-wrap:wrap;flex:1 1 100%;margin-top:2px}
+.cb-pct-in{display:flex;align-items:center;gap:3px;padding:3px 6px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-3)}
+.cb-pct-in span{font-size:9.5px;font-weight:800;color:var(--muted)}
+.cb-pct-in input{width:38px;padding:2px 1px;font-size:11px;text-align:center;border:none;background:transparent;color:var(--teal);font-family:ui-monospace,Menlo,monospace;font-weight:800}
+.cb-pct-in input::placeholder{color:var(--muted);font-weight:600}
+.cb-pct-in.custom{border-color:rgba(210,121,63,.5);background:rgba(210,121,63,.08)}
 </style>
 
 <section id="v-banco" class="view" style="display:none">
@@ -31773,6 +31816,24 @@ body.man-mode .gs-fab{right:318px}
     return { min:a, max:c, txt: a === c ? a + ' kg' : a + '–' + c + ' kg',
              pct: w.pct[0] === w.pct[1] ? w.pct[0] + '%' : w.pct[0] + '-' + w.pct[1] + '%', lb: w.lb };
   }
+  /* directiva de implementación (2026-09) -- override manual de %1RM por
+     semana: usa block.weekPct[i], el mismo campo que ya lee cargaPrecomputada()
+     (compilador, línea ~21400) y cargaSugeridaHtml() (app del alumno, línea
+     ~5908) -- hasta esta directiva ningún lugar de la UI lo escribía, así que
+     el override existía en el modelo de datos pero nunca era alcanzable desde
+     acá. Vacío/ausente = sigue el esquema automático de PCT (targetSemana);
+     un número puntual fija SOLO esa semana, sin tocar las demás -- S1..S4/S6
+     quedan totalmente independientes entre sí. */
+  function targetSemanaB(b, i, base){
+    const bs = base != null ? parseFloat(base) : parseFloat(b && b.cargaBase);
+    const propio = b && b.weekPct && b.weekPct[i] != null && b.weekPct[i] !== '' ? parseFloat(b.weekPct[i]) : null;
+    if(propio > 0 && bs > 0){
+      const v = r05(bs * propio / 100);
+      const w = PCT[i] || PCT[PCT.length - 1];
+      return { min:v, max:v, txt: v + ' kg', pct: propio + '%', lb: w.lb, custom:true };
+    }
+    return targetSemana(bs, i);
+  }
   function semanaActiva(){
     const ag = G().agendaDe ? G().agendaDe(S.activeId) : null;
     const n = nSemanasActivas();
@@ -31792,17 +31853,24 @@ body.man-mode .gs-fab{right:318px}
     const nSem = nSemanasActivas();
     const base = b.cargaBase || '';
     const sug = base ? 0 : baseSugerida(b, ath);
+    const hintSem = targetSemanaB(b, sem-1, base);
     return '<div class="cb-bar" data-cbbar="' + b.id + '">' +
       '<span class="cbl">⚖️ Carga base (kg)</span>' +
       '<input class="cbv" type="number" step="0.5" min="0" inputmode="decimal" data-cb="' + b.id + '" value="' + esc(base) + '" placeholder="' + (sug ? sug : '—') + '">' +
       (sug ? '<button class="btn xs" data-cbuse="' + b.id + '" data-kg="' + sug + '">Usar 1RM: ' + sug + ' kg</button>' : '') +
       '<div class="cb-weeks">' + PCT.slice(0, nSem).map((w, i) => {
-        const t = targetSemana(base, i);
+        const t = targetSemanaB(b, i, base);
         return '<button class="cb-wk ' + (sem === i+1 ? 'on' : '') + (w.dl ? ' dl' : '') + '" data-cbwk="' + (i+1) + '" title="' + esc(w.lb + ' · ' + (t ? t.pct : '')) + '">' +
           w.s + '<b>' + (t ? t.txt : '—') + '</b></button>';
       }).join('') + '</div>' +
+      '<div class="cb-pcts">' + PCT.slice(0, nSem).map((w, i) => {
+        const custom = (b.weekPct && b.weekPct[i] != null && b.weekPct[i] !== '') ? b.weekPct[i] : '';
+        const ph = w.pct[0] === w.pct[1] ? w.pct[0] : (w.pct[0] + '-' + w.pct[1]);
+        return '<label class="cb-pct-in' + (custom !== '' ? ' custom' : '') + '" title="% de 1RM propio para ' + esc(w.s) + ' -- vacío usa el esquema automático (' + ph + '%)">' +
+          '<span>' + w.s + '</span><input type="number" step="1" min="1" max="100" inputmode="numeric" data-cbwpct="' + b.id + '" data-wi="' + i + '" value="' + esc(custom) + '" placeholder="' + ph + '"><span>%</span></label>';
+      }).join('') + '</div>' +
       '<div class="cb-hint">' + (base
-        ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (targetSemana(base, sem-1) || {}).txt + '</b> (' + (targetSemana(base, sem-1) || {}).pct + ' de ' + base + ' kg · ' + PCT[sem-1].lb + '). Tocá S1-S' + nSem + ' para cambiar la semana activa del alumno/a.'
+        ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (hintSem || {}).txt + '</b> (' + (hintSem || {}).pct + ' de ' + base + ' kg · ' + PCT[sem-1].lb + (hintSem && hintSem.custom ? ' · % propio de esta semana' : '') + '). Tocá S1-S' + nSem + ' para cambiar la semana activa del alumno/a.'
         : 'Cargá el peso de referencia (1RM o peso de trabajo habitual) y la app calcula el target de cada semana del mesociclo.') + '</div>' +
     '</div>';
   }
@@ -32049,6 +32117,28 @@ body.man-mode .gs-fab{right:318px}
 
     /* carga base: input y botones de semana */
     document.addEventListener('input', e => {
+      const wp = e.target.closest('[data-cbwpct]');
+      if(wp){
+        const b = findBlock(wp.dataset.cbwpct); if(!b) return;
+        const wi = parseInt(wp.dataset.wi, 10);
+        if(!Array.isArray(b.weekPct)) b.weekPct = [];
+        while(b.weekPct.length <= wi) b.weekPct.push('');
+        b.weekPct[wi] = wp.value === '' ? '' : parseFloat(wp.value);
+        save();
+        wp.closest('.cb-pct-in').classList.toggle('custom', wp.value !== '');
+        const bar = wp.closest('[data-cbbar]');
+        if(bar){
+          const sem = semanaActiva();
+          $$('.cb-wk', bar).forEach((w, idx) => {
+            const t = targetSemanaB(b, idx, b.cargaBase);
+            const strong = w.querySelector('b'); if(strong) strong.textContent = t ? t.txt : '—';
+          });
+          const hint = bar.querySelector('.cb-hint');
+          const t = targetSemanaB(b, sem - 1, b.cargaBase);
+          if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b> (' + t.pct + ' de ' + b.cargaBase + ' kg · ' + t.lb + (t.custom ? ' · % propio de esta semana' : '') + ').';
+        }
+        return;
+      }
       const i = e.target.closest('[data-cb]'); if(!i) return;
       const b = findBlock(i.dataset.cb); if(!b) return;
       b.cargaBase = i.value === '' ? '' : parseFloat(i.value);
@@ -32057,12 +32147,12 @@ body.man-mode .gs-fab{right:318px}
       if(bar){
         const sem = semanaActiva();
         $$('.cb-wk', bar).forEach((w, idx) => {
-          const t = targetSemana(b.cargaBase, idx);
+          const t = targetSemanaB(b, idx, b.cargaBase);
           const strong = w.querySelector('b'); if(strong) strong.textContent = t ? t.txt : '—';
         });
         const hint = bar.querySelector('.cb-hint');
-        const t = targetSemana(b.cargaBase, sem - 1);
-        if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b> (' + t.pct + ' de ' + b.cargaBase + ' kg · ' + t.lb + ').';
+        const t = targetSemanaB(b, sem - 1, b.cargaBase);
+        if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b> (' + t.pct + ' de ' + b.cargaBase + ' kg · ' + t.lb + (t.custom ? ' · % propio de esta semana' : '') + ').';
       }
     });
     document.addEventListener('click', e => {
@@ -43540,8 +43630,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
             </div>
             <div id="npIAModelWrap">
               <label class="lb">Modelo</label>
-              <input id="npIAModel" list="npDlModels" placeholder="ej: gemini-3.6-flash">
-              <datalist id="npDlModels"></datalist>
+              <select id="npIAModel"></select>
             </div>
             <div style="display:flex;align-items:flex-end">
               <button class="btn ghost sm" type="button" id="npIAReset" title="Limpia cualquier cooldown pendiente y permite reintentar de inmediato, sin esperar ningún temporizador" style="width:100%">↺ Resetear Estado / Forzar Reintento</button>
@@ -45211,21 +45300,32 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function guardarSelIA(prov, model){
     try{ localStorage.setItem(NP_IA_SEL_KEY, JSON.stringify({ prov: prov, model: model || '' })); }catch(e){}
   }
+  /* directiva de implementación (2026-09) -- dropdown estricto de modelo: antes
+     era un <input> de texto libre con <datalist> de sugerencias (permitía
+     tipear cualquier cosa, incluidos modelos retirados/con 404 confirmado).
+     Ahora es un <select> con SOLO los modelos que MÓDULO 5 ya audita y
+     mantiene vigentes por proveedor (PROV[prov].hints, ver más arriba en el
+     archivo) -- si algún dispositivo tenía guardado un modelo que ya no
+     figura en esa lista (config vieja), se lo agrega igual como primera
+     opción para no perder en silencio la elección guardada del coach. */
   function poblarModelosIA(prov){
-    var dl = document.getElementById('npDlModels');
-    var input = document.getElementById('npIAModel');
+    var sel = document.getElementById('npIAModel');
     var wrap = document.getElementById('npIAModelWrap');
-    if(!input) return;
+    if(!sel) return;
     var esLocal = prov === 'local';
     if(wrap) wrap.style.opacity = esLocal ? '.45' : '';
-    input.disabled = esLocal;
-    if(esLocal){ input.value = ''; if(dl) dl.innerHTML = ''; return; }
+    sel.disabled = esLocal;
+    if(esLocal){ sel.innerHTML = '<option value="">— Motor Local, sin modelo —</option>'; return; }
     var provs = (window.CoachAI && CoachAI.providers) || {};
     var hints = (provs[prov] && provs[prov].hints) || [];
-    if(dl) dl.innerHTML = hints.map(function(m){ return '<option value="' + esc(m) + '">'; }).join('');
-    var sel = leerSelGuardadaIA();
+    var guardada = leerSelGuardadaIA();
     var actualGlobal = (window.CoachAI && CoachAI.cfg && CoachAI.cfg().models && CoachAI.cfg().models[prov]) || (provs[prov] && provs[prov].model) || '';
-    input.value = (sel && sel.prov === prov && sel.model) ? sel.model : actualGlobal;
+    var elegido = (guardada && guardada.prov === prov && guardada.model) ? guardada.model : actualGlobal;
+    var opciones = hints.slice();
+    if(elegido && opciones.indexOf(elegido) < 0) opciones.unshift(elegido);
+    sel.innerHTML = opciones.map(function(m){
+      return '<option value="' + esc(m) + '"' + (m === elegido ? ' selected' : '') + '>' + esc(m) + '</option>';
+    }).join('');
   }
   function actualizarEstadoIA(){
     var el = document.getElementById('npIAEstado');
