@@ -939,9 +939,23 @@ Curl concentrado"></textarea>
 .prev-modes .btn.on{background:rgba(229,195,120,.16);border-color:#E5C378;color:#E5C378}
 .prev-stage{display:flex;justify-content:center;padding:18px 14px;background:
   radial-gradient(680px 300px at 50% 0%, rgba(229,195,120,.06), transparent 70%), #0A0B0D}
-#prevFrame{width:100%;max-width:100%;height:74vh;min-height:520px;border:1px solid rgba(255,255,255,.1);
-  border-radius:14px;background:#08090B;box-shadow:0 18px 50px rgba(0,0,0,.6);transition:max-width .22s ease}
-.prev-stage.celular #prevFrame{max-width:390px;border-radius:26px;height:78vh}
+/* directiva crítica (2026-09) -- "cartel/panel fantasma asomando por detrás
+   del frame del celular": el border-radius vivía en el <iframe> mismo. La
+   mayoría de los navegadores clipea el contenido de un iframe a su propio
+   border-radius, pero elementos con position:fixed adentro (el drawer de
+   Perfil/Info, el dock inferior, toasts) son un caso borde conocido que
+   algunos motores NO clipean igual al resto -- se ve como si algo del
+   fondo (colores/textos de esos paneles fixed) "asomara" en las esquinas
+   redondeadas o los bordes del marco de celular. Fix robusto: el radio y el
+   overflow:hidden pasan a un DIV contenedor que envuelve al iframe -- un
+   overflow:hidden en un elemento normal sí clipea SIEMPRE todo lo de
+   adentro, sin importar position:fixed ni el motor de renderizado. El
+   iframe pasa a ocupar 100% del contenedor, sin su propio radio/borde. */
+#prevFrameShell{width:100%;max-width:100%;height:74vh;min-height:520px;border:1px solid rgba(255,255,255,.1);
+  border-radius:14px;background:#0A0D12;box-shadow:0 18px 50px rgba(0,0,0,.6);transition:max-width .22s ease;
+  overflow:hidden;position:relative;isolation:isolate}
+.prev-stage.celular #prevFrameShell{max-width:390px;border-radius:26px;height:78vh}
+#prevFrame{display:block;width:100%;height:100%;border:none;background:#08090B}
 .prev-note{padding:8px 16px 14px;font-size:12px;color:var(--dim,#8a8f98);text-align:center}
 </style>
 <div class="modal-bg" id="mPrev">
@@ -958,8 +972,10 @@ Curl concentrado"></textarea>
     </div>
     <div class="modal-b">
       <div class="prev-stage celular" id="prevStage">
-        <iframe id="prevFrame" title="Previsualización de la app del alumno"
-                sandbox="allow-scripts allow-same-origin allow-popups allow-modals"></iframe>
+        <div id="prevFrameShell">
+          <iframe id="prevFrame" title="Previsualización de la app del alumno"
+                  sandbox="allow-scripts allow-same-origin allow-popups allow-modals"></iframe>
+        </div>
       </div>
       <div class="prev-note" id="prevNote"></div>
     </div>
@@ -4389,6 +4405,27 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <button type="button" class="hdp-uni-b" data-u="lb">LBS</button>
         </div>
       </div>
+      <!-- directiva de accesibilidad (2026-09, seguimiento) -- mismo
+           diagnóstico que el switch Aa de acá abajo: el botón "🧰
+           Herramientas" (Marcas, Manual de uso, Cambiar vista) se armaba
+           dentro de ".hd-actions"/"#hdRowUtil", el header LEGADO oculto
+           (display:none) desde el rediseño de cabecera compacta -- tres
+           funciones más, invisibles para cualquier alumno/a real. Ver
+           host()/hostUtil() en "TOP BAR MINIMALISTA (QUICK TOOLS DRAWER)",
+           más abajo en el archivo. -->
+      <div class="hdp-row hdp-row-qt" id="hdpQtSlot"></div>
+      <!-- directiva crítica (2026-09) -- el switch Aa (id="jpFzSwitch", ver
+           SYSTEM v3.1 más abajo en el archivo) se montaba en ".hd-actions",
+           que vive dentro del <header class="masthead hd-top"> LEGADO que
+           el propio archivo deja oculto a propósito (ver comentario "se
+           mantiene en el DOM oculto" más arriba) -- el switch nunca era
+           visible para un alumno/a real. Se le da un ancla fija acá, en el
+           drawer de Perfil/Info que sí está siempre disponible (mismo lugar
+           que ya sugiere la directiva de accesibilidad como alternativa).
+           Se saca a propósito del grupo "Sesión y vista" de #hdpQtSlot de
+           arriba para que quede DIRECTAMENTE accesible con un solo toque,
+           sin anidarlo un nivel más adentro de "🧰 Herramientas". -->
+      <div class="hdp-row hdp-row-fz" id="hdpFzSlot"></div>
       <div class="hdp-row hdp-row-slot" id="hdpInstallSlot"></div>
       <div class="hdp-row hdp-row-slot" id="hdpGuideSlot"></div>
     </section>
@@ -15517,15 +15554,31 @@ body.cf-modo .block .ex-tip{display:none}
   var GRUPOS = [
     { h:'Cálculo y marcas', ids:['prHubBtn'] },
     { h:'Documentación',    ids:['btnManualTop'] },
-    { h:'Sesión y vista',   ids:['btnVistaTop', 'jpFzSwitch'] }
+    /* directiva de accesibilidad (2026-09, seguimiento) -- "jpFzSwitch" se
+       saca de este grupo: la directiva pide el selector Aa DIRECTAMENTE
+       visible/accesible, no escondido un nivel más adentro de "🧰
+       Herramientas". Se monta aparte, directo en el drawer de Perfil/Info
+       (ver #hdpFzSlot y SYSTEM v3.1 más abajo). Este drawer de Quick Tools
+       sigue con el resto (Marcas, Manual, Cambiar vista). */
+    { h:'Sesión y vista',   ids:['btnVistaTop'] }
   ];
   var ETIQUETA = {
     prHubBtn:'🏆 Mis Marcas y récords', btnManualTop:'📘 Manual de Uso',
     btnVistaTop:'🔁 Cambiar vista de la rutina'
   };
 
-  function host(){ return document.querySelector('.hd-actions'); }
-  function hostUtil(){ return document.getElementById('hdRowUtil') || host(); }
+  /* directiva de accesibilidad (2026-09, seguimiento) -- "el botón sólo
+     aparece como ícono comprimido que no abre nada": host()/hostUtil()
+     apuntaban a ".hd-actions"/"#hdRowUtil", ambos dentro del <header
+     class="masthead hd-top"> LEGADO que el propio archivo deja con
+     display:none (ver comentario "contenido legado... oculto" más arriba)
+     desde el rediseño de cabecera compacta (#hdCompact/.hdc-top). El botón
+     "🧰 Herramientas" y TODO lo que agrupa (Marcas, Manual, Cambiar vista)
+     se armaban ahí igual, sin tirar error -- visibles en el DOM, invisibles
+     e inclicables en pantalla. Nuevo host: #hdpQtSlot, una fila fija del
+     drawer de Perfil/Info (que sí es visible/interactivo siempre). */
+  function host(){ return document.getElementById('hdpQtSlot'); }
+  function hostUtil(){ return host(); }
   function armar(){
     var h = host();
     if(!h) return null;
@@ -17061,18 +17114,31 @@ body{font-size:var(--fz-body) !important}
 .hero h1,.day-title{font-size:var(--fz-hero) !important;line-height:1.1 !important}
 .hero-sub{font-size:var(--fz-dose) !important}
 
-/* --- 6 · CONTROL Aa EN EL DRAWER --- */
-#jpFzSwitch{display:flex;gap:5px;padding:5px;width:100%;border-radius:10px;
-  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)}
-#jpFzSwitch .fz-p{
-  flex:1 1 0;min-height:38px;border-radius:8px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:5px;
-  background:transparent;border:1px solid transparent;color:var(--jp-titanium);
-  font-family:var(--font-head);font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+/* --- 6 · CONTROL Aa EN EL DRAWER ---
+   directiva de accesibilidad (2026-09, seguimiento) -- paleta Luxury
+   Stealth pedida explícitamente (fondo #141920, borde #28303A, texto
+   dorado #E5C378), botones grandes (padding 6px 10px cómodo al dedo). El
+   selector #jpFzSwitch ya no depende de vivir dentro de .jp-qt/.qt-slot
+   (ese contexto era del header legado oculto) -- ahora cuelga de
+   #hdpFzSlot, una fila más de "Ajustes y utilidades" en el drawer. */
+.jp-font-scaler{display:flex;gap:6px;align-items:center}
+#jpFzSwitch.jp-font-scaler{display:flex;gap:6px}
+.jp-btn-font.fz-p{
+  min-width:40px;min-height:36px;padding:6px 10px;border-radius:8px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:#141920;border:1px solid #28303A;color:#EDEFF2;
+  font-family:var(--font-head);font-weight:800;font-size:13px;letter-spacing:.02em;
+  transition:.15s;
 }
-#jpFzSwitch .fz-p .a{font-size:15px;line-height:1}
-#jpFzSwitch .fz-p .b{font-size:10.5px;line-height:1}
-#jpFzSwitch .fz-p.on{background:rgba(210,121,63,.16);border-color:var(--jp-brand);color:var(--jp-brand-hi)}
+.jp-btn-font.fz-p:hover{border-color:#3A4450;background:#1A2029}
+/* !important necesario: una regla compartida más abajo en el archivo
+   (.rx-chip.on,.rir-chip.on,.nav-pill.active,.mode-pill.active,.fz-p.on)
+   pinta cualquier ".fz-p.on" de naranja marca con !important -- el dorado
+   pedido explícitamente para este selector puntual necesita igual peso
+   para ganar (esta regla es más específica, pero !important vs !important
+   se desempata por especificidad, y "!important" solo vs sin él siempre
+   gana el que lo tiene). */
+.jp-btn-font.fz-p.on{background:rgba(229,195,120,.14) !important;border-color:#E5C378 !important;color:#E5C378 !important}
 .jp-qt .qt-slot > #jpFzSwitch{min-height:48px}
 
 /* la prescripción por ejercicio acompaña, no grita */
@@ -17126,10 +17192,17 @@ body{font-size:var(--fz-body) !important}
 (function(){
   'use strict';
   var KFZ = 'coachjp_fz';
+  /* directiva de accesibilidad (2026-09, seguimiento) -- etiquetas A / A+ /
+     A++ pedidas explícitamente; se mantienen las claves internas n/g/x
+     (data-fz="g"/"x", ver :root y html[data-fz] más arriba en el archivo)
+     porque son las que ya lee toda la cascada de variables fz y fzs, y el
+     localStorage 'coachjp_fz' ya persistido -- cambiar las claves ahora
+     rompería la preferencia ya guardada de cualquier alumno/a que la haya
+     usado. */
   var OPC = [
-    { k:'n', a:'Aa', b:'Normal' },
-    { k:'g', a:'Aa', b:'Grande' },
-    { k:'x', a:'Aa', b:'Extra'  }
+    { k:'n', a:'A',   b:'Normal' },
+    { k:'g', a:'A+',  b:'Grande' },
+    { k:'x', a:'A++', b:'Extra Grande' }
   ];
   function actual(){
     var v = document.documentElement.getAttribute('data-fz');
@@ -17151,19 +17224,34 @@ body{font-size:var(--fz-body) !important}
       p.setAttribute('aria-pressed', p.dataset.fz === k ? 'true' : 'false');
     });
   }
+  /* directiva crítica (2026-09) -- "el selector no está visible / sólo
+     aparece un ícono comprimido que no abre nada": montarSwitch() apuntaba
+     a ".hd-actions", que vive dentro de <header class="masthead hd-top">
+     -- el header LEGADO que el propio archivo ya deja oculto a propósito
+     (ver comentario "contenido legado... se mantiene en el DOM oculto"
+     unas líneas más arriba). El switch se montaba ahí igual, sin tirar
+     error (el elemento existe en el DOM), pero con getBoundingClientRect()
+     en 0x0 -- invisible e inclicable para cualquier alumno/a real. Lo que
+     el coach veía como "ícono comprimido" es #hdcInfoBtn, el disparador del
+     drawer de Perfil/Info -- un botón distinto, no el switch Aa.
+     Nuevo anchor: #hdpFzSlot, una fila fija dentro de ese mismo drawer
+     (sección "Ajustes y utilidades", al lado de "Unidad de carga") que sí
+     está siempre disponible. */
   function montarSwitch(){
-    if(document.getElementById('jpFzSwitch')) { pintar(); return; }
-    var h = document.querySelector('.hd-actions');
+    var yaEstaba = document.getElementById('jpFzSwitch');
+    var h = document.getElementById('hdpFzSlot');
+    if(yaEstaba && yaEstaba.parentNode === h){ pintar(); return; }
     if(!h) return;
+    if(yaEstaba) yaEstaba.remove(); /* migra una única vez si quedó un switch viejo montado en el header legado */
+    h.innerHTML = '<span class="hdp-row-lb">Tamaño de texto</span>';
     var sw = document.createElement('div');
     sw.id = 'jpFzSwitch';
+    sw.className = 'jp-font-scaler';
     sw.setAttribute('role', 'group');
     sw.setAttribute('aria-label', 'Tamaño del texto');
     sw.innerHTML = OPC.map(function(o){
-      return '<button type="button" class="fz-p" data-fz="' + o.k + '" ' +
-             'title="Texto ' + o.b + '"><span class="a" style="font-size:' +
-             (o.k === 'n' ? 13 : o.k === 'g' ? 16 : 19) + 'px">Aa</span>' +
-             '<span class="b">' + o.b + '</span></button>';
+      return '<button type="button" class="fz-p jp-btn-font" data-fz="' + o.k + '" ' +
+             'title="Texto ' + o.b + '" aria-label="Texto ' + o.b + '">' + o.a + '</button>';
     }).join('');
     h.appendChild(sw);
     sw.addEventListener('click', function(e){
