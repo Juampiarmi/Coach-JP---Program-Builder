@@ -6683,6 +6683,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1rem;letter-spacing:0.07em;text-transform:uppercase}
 .sc-save{background:linear-gradient(135deg,#4A93B8,#00806F);color:#04120F}
 .sc-share{background:var(--bg-card);border:1px solid var(--border)!important;color:var(--text-primary)}
+/* directiva de implementación (2026-09) -- Checkout de sesión, RPE/RIR
+   auto-reportado por el alumno/a al terminar. Mismo lenguaje visual y
+   mismo acento (#D2793F) que usa el coach del lado del Builder para su
+   propio picker de RPE (jp-rpe-chip) -- acá se replica sólo el patrón
+   visual (toggle inline por JS, como el original), no hay CSS compartida
+   entre Builder y TEMPLATE_HTML porque se compilan como documentos aparte. */
+.sc-rpe-row{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 14px}
+.sc-rpe-chip{
+  min-width:34px;padding:8px 0;border-radius:8px;cursor:pointer;
+  border:1px solid var(--border);background:transparent;color:inherit;
+  font-weight:700;font-size:0.85rem;font-family:inherit;
+}
+.sc-rpe-chip.on{background:#D2793F;border-color:#D2793F;color:#0A0A0C}
+.sc-rpe-ok{margin-left:8px;font-size:0.72rem;color:#4AA}
 .sc-prs{padding:0 1rem 0.6rem;display:flex;gap:6px;flex-wrap:wrap}
 .sc-prs span{font-size:0.74rem;padding:3px 9px;border-radius:20px;background:linear-gradient(135deg,#D2793F,#FF8A00);
   color:#0A0A0B;font-weight:800}
@@ -7143,6 +7157,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   /* =========================================================
      5) SESSION SUMMARY
   ========================================================= */
+  /* directiva de implementación (2026-09) -- checkout de RIR/RPE
+     auto-reportado (ítem 1 de la consultoría). Clave propia de localStorage
+     (mismo criterio que coachjp_nutrilog_v1 u otros módulos chicos de esta
+     vista), en vez de sumarse al allowlist de _spSerialize()/loadProgress()
+     de más arriba -- así queda 100% aislado, cero riesgo de tocar el
+     guardado de progreso ya existente (series, pesos, notas, etc.). */
+  var KCR = 'coachjp_checkout_rpe_v1';
+  function checkoutRpeLeer(){ try{ return JSON.parse(localStorage.getItem(KCR) || '{}') || {}; }catch(e){ return {}; } }
+  function checkoutRpeGuardar(o){ try{ localStorage.setItem(KCR, JSON.stringify(o)); }catch(e){} }
   function resumenDatos(weekIdx, day){
     let vol = 0, series = 0, reps = 0;
     const pref = weekIdx + '|' + day.id + '|';
@@ -7204,6 +7227,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '</div>' +
         (prs.length ? '<div class="sc-prs">' + prs.map(p => '<span>🔥 PR en ' + p + '</span>').join('') + '</div>' : '') +
         '<div class="sc-body">' +
+          /* directiva de implementación (2026-09) -- checkout de RIR/RPE
+             auto-reportado por el alumno/a (ítem 1 de la consultoría): se
+             muestra el mismo picker táctico de 1 a 10 que ya usa el coach
+             del lado del Builder (jp-rpe-chip), acá reimplementado con las
+             clases propias de esta vista (sc-rpe-chip) porque Builder y
+             TEMPLATE_HTML se compilan como documentos aparte. La elección
+             viaja a Coach JP como evento 'checkout_rpe' (mismo circuito de
+             CoachOutbox que readiness_sueno/readiness_molestia) para que el
+             coach no tenga que cargarlo de memoria en su Checkout de sesión. */
+          '<label>💪 Esfuerzo percibido de la sesión (RIR/RPE 1–10)</label>' +
+          '<div class="sc-rpe-row" id="scRpeRow">' +
+            Array.from({ length: 10 }, (_, i) => {
+              const n = i + 1, on = checkoutRpeLeer()[nkey] === n;
+              return '<button type="button" class="sc-rpe-chip' + (on ? ' on' : '') + '" data-scrpe="' + n + '">' + n + '</button>';
+            }).join('') +
+            '<span class="sc-rpe-ok" id="scRpeOk">' + (checkoutRpeLeer()[nkey] ? '✅ Enviado a tu coach' : '') + '</span>' +
+          '</div>' +
           '<label>📝 Notas generales de la sesión</label>' +
           '<textarea id="scNotes" placeholder="¿Cómo te sentiste? ¿Qué costó, qué salió mejor que la semana pasada?">' +
             ((state.notes && state.notes[nkey]) || '') + '</textarea>' +
@@ -7215,6 +7255,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '</div>';
     if(viejo) viejo.outerHTML = html;
     else mainEl.insertAdjacentHTML('beforeend', html);
+    const rpeRow = document.getElementById('scRpeRow');
+    if(rpeRow) rpeRow.addEventListener('click', function(e){
+      const chip = e.target.closest('[data-scrpe]');
+      if(!chip) return;
+      const n = parseInt(chip.dataset.scrpe, 10);
+      const oRpe = checkoutRpeLeer();
+      oRpe[nkey] = n;
+      checkoutRpeGuardar(oRpe);
+      rpeRow.querySelectorAll('.sc-rpe-chip').forEach(function(b){
+        b.classList.toggle('on', parseInt(b.dataset.scrpe, 10) === n);
+      });
+      if(window.CoachOutbox && window.CoachOutbox.encolar){
+        window.CoachOutbox.encolar({
+          tipo: 'checkout_rpe', dia: day.short, diaId: day.id, semana: weekIdx + 1, rpe: n
+        });
+      }
+      const okEl = document.getElementById('scRpeOk');
+      if(okEl) okEl.textContent = '✅ Enviado a tu coach';
+      if(window.CoachVibra) CoachVibra.toque();
+    });
     const ta = document.getElementById('scNotes');
     if(ta) ta.addEventListener('input', function(){
       state.notes = state.notes || {}; state.notes[nkey] = ta.value; saveProgress();
@@ -18514,6 +18574,28 @@ input[type="checkbox"]:active{
 }
 .nu-libre-guia{font-size:calc(12px * var(--fzs,1));line-height:1.55;color:#C9CFD8;margin-bottom:10px}
 .nu-meal.libre{border-color:rgba(210,121,63,.35)}
+/* directiva de implementación (2026-09) -- Lista de compras semanal, vista
+   del alumno/a. Mismo lenguaje visual "Luxury Stealth" que el resto de la
+   pestaña Nutrición: botón dorado (#E5C378) sobre fondo oscuro, lista con
+   separadores sutiles, confirmación de copiado en verde. */
+.nu-shop-btn{
+  width:100%;min-height:44px;border-radius:12px;cursor:pointer;
+  background:rgba(229,195,120,.1);border:1px solid rgba(229,195,120,.4);color:#E5C378;
+  font-family:var(--font-head,inherit);font-size:calc(12.5px * var(--fzs,1));font-weight:700;
+  letter-spacing:.03em;
+}
+.nu-shop-btn:active{background:rgba(229,195,120,.18)}
+.nu-shop-hint{font-size:calc(11px * var(--fzs,1));color:#8A929E;margin-top:6px;line-height:1.5}
+.nu-shop-list{margin-top:10px}
+.nu-shop-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid rgba(255,255,255,.06);font-size:calc(12.5px * var(--fzs,1))}
+.nu-shop-row .g{color:#C9CFD8;flex:1;min-width:0}
+.nu-shop-row .q{font-family:ui-monospace,monospace;font-weight:700;color:#EDEFF2;white-space:nowrap;font-variant-numeric:tabular-nums}
+.nu-shop-copy{
+  margin-top:10px;min-height:38px;padding:0 14px;border-radius:10px;cursor:pointer;
+  background:rgba(229,195,120,.14);border:1px solid #E5C378;color:#F5E1B0;
+  font-size:calc(11.5px * var(--fzs,1));font-weight:700;
+}
+.nu-shop-ok{margin-left:8px;font-size:calc(11px * var(--fzs,1));color:#48D597}
 /* directiva de refactor (2026-09): plan externo pegado por el coach --
    tarjetas legibles por comida, sin cálculo de macros forzado. */
 .nu-ext-banner{
@@ -18545,7 +18627,68 @@ input[type="checkbox"]:active{
   var DIAS_CORTO_NUT = { lun:'LUN', mar:'MAR', mie:'MIÉ', jue:'JUE', vie:'VIE', sab:'SÁB', dom:'DOM' };
   var DIAS_POR_JSGETDAY = ['dom','lun','mar','mie','jue','vie','sab'];
   function hoyDiaSemana(){ return DIAS_POR_JSGETDAY[new Date().getDay()]; }
-  var nutriState = { diaSel: null };
+  var nutriState = { diaSel: null, shopOpen: false };
+
+  /* directiva de implementación (2026-09) -- Lista de compras semanal (vista
+     del alumno/a). Misma lógica de consolidación que el exportador del Coach
+     (módulo "NUTRICIÓN PERSONALIZADA · VARIANTE B" del lado del Builder):
+     se duplica acá porque TEMPLATE_HTML se compila como documento aparte y
+     no comparte scope de JS con el Builder -- mismo patrón ya usado en este
+     archivo para otros pares de utilidades espejadas (ej. NUTRI_DISCLAIMER /
+     NUTRI_DISCLAIMER_TXT). Cualquier cambio de criterio (agrupación, cortes,
+     factores de cocción→crudo) debe replicarse en ambos lados. */
+  var GRUPO_COMPRA_NUT = {
+    'Pechuga de pollo':          'Pechuga/Suprema de pollo',
+    'Suprema de pollo':          'Pechuga/Suprema de pollo',
+    'Nalga':                     'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Bola de lomo':              'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Cuadrada':                  'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Cuadril':                   'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Peceto (carne magra)':      'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Solomillo de cerdo':        'Cerdo (solomillo/carré)',
+    'Carré de cerdo':            'Cerdo (solomillo/carré)',
+    'Huevo entero':              'Huevos'
+  };
+  var UNIDADES_COMPRA_NUT = { 'Huevo entero': 50, 'Banana': 120, 'Manzana': 150 };
+  var CONVERSION_COMPRA_NUT = {
+    'Arroz cocido':                1 / 2.5,
+    'Arroz integral cocido':       1 / 2.4,
+    'Fideos de sémola cocidos':    1 / 2.2,
+    'Polenta cocida':              1 / 4.5
+  };
+  function formatoGramosNut(g){
+    return g >= 1000 ? (Math.round(g / 100) / 10) + ' kg' : (Math.max(10, Math.round(g / 10) * 10)) + ' g';
+  }
+  function listaDeComprasSemanalNut(plan){
+    if(!plan || !plan.semanal || !plan.dias) return [];
+    var gramosPorGrupo = {}, unidadesPorGrupo = {};
+    Object.keys(plan.dias).forEach(function(dk){
+      var dia = plan.dias[dk];
+      if(!dia || !dia.comidas) return;
+      dia.comidas.forEach(function(c){
+        (c.items || []).forEach(function(it){
+          if(!it.alimento || !it.gramos) return;
+          var nombre = it.alimento;
+          var grupo = GRUPO_COMPRA_NUT[nombre] || nombre;
+          if(UNIDADES_COMPRA_NUT[nombre]){
+            unidadesPorGrupo[grupo] = (unidadesPorGrupo[grupo] || 0) + it.gramos / UNIDADES_COMPRA_NUT[nombre];
+          } else {
+            var factor = CONVERSION_COMPRA_NUT[nombre] || 1;
+            gramosPorGrupo[grupo] = (gramosPorGrupo[grupo] || 0) + it.gramos * factor;
+          }
+        });
+      });
+    });
+    var out = [];
+    Object.keys(unidadesPorGrupo).forEach(function(g){
+      out.push({ grupo:g, orden: unidadesPorGrupo[g] * 50, texto: Math.round(unidadesPorGrupo[g]) + ' unidades' });
+    });
+    Object.keys(gramosPorGrupo).forEach(function(g){
+      out.push({ grupo:g, orden: gramosPorGrupo[g], texto: formatoGramosNut(gramosPorGrupo[g]) });
+    });
+    out.sort(function(a, b){ return b.orden - a.orden; });
+    return out;
+  }
 
   /* el "día activo" para leer macros/comidas: si el plan es semanal, el día
      elegido con las píldoras LUN..DOM (por defecto, hoy); si es un plan
@@ -18810,6 +18953,29 @@ input[type="checkbox"]:active{
             '</div></div>';
         }).join('') + '</div>';
     }
+    /* directiva de implementación (2026-09) -- Lista de compras semanal,
+       vista del alumno/a (ítem 5 de la consultoría). Sólo aplica a un plan
+       semanal (7 días estructurados); un plan viejo de un solo día no la
+       muestra. El resultado se recalcula en cada render() en base a
+       nutriState.shopOpen, para sobrevivir a un re-render por cambio de
+       día sin perder el estado abierto/cerrado. */
+    if(PLAN.semanal){
+      var listaCompras = nutriState.shopOpen ? listaDeComprasSemanalNut(PLAN) : null;
+      html += '<div class="nu-card"><div class="nu-h">Lista de compras semanal</div>' +
+        '<button type="button" class="nu-shop-btn" data-nutshop="1">🛒 ' +
+          (nutriState.shopOpen ? 'Ocultar lista de compras' : 'Ver Lista de Compras Semanal') + '</button>' +
+        '<div class="nu-shop-hint">Suma los 7 días de tu plan, agrupados por alimento.</div>' +
+        (listaCompras ? (
+          listaCompras.length
+            ? '<div class="nu-shop-list">' + listaCompras.map(function(it){
+                return '<div class="nu-shop-row"><span class="g">' + esc(it.grupo) + '</span><span class="q">' + esc(it.texto) + '</span></div>';
+              }).join('') + '</div>' +
+              '<button type="button" class="nu-shop-copy" data-nutshopcopy="1">📋 Copiar para WhatsApp</button>' +
+              '<span class="nu-shop-ok" id="nuShopOk"></span>'
+            : '<div class="nu-shop-hint">Todavía no hay comidas cargadas en ningún día de tu plan.</div>'
+        ) : '') +
+      '</div>';
+    }
     html += '<div class="nu-legal">' + esc(PLAN.disclaimer || NUTRI_DISCLAIMER_TXT) + '</div>';
     cont.innerHTML = html;
 
@@ -18929,6 +19095,30 @@ input[type="checkbox"]:active{
         guardarLog(o);
         if(window.CoachVibra) CoachVibra.toque();
         render();
+        return;
+      }
+      /* directiva de implementación (2026-09) -- Lista de compras semanal */
+      var shopBtn = e.target.closest('[data-nutshop]');
+      if(shopBtn){
+        e.preventDefault(); e.stopPropagation();
+        nutriState.shopOpen = !nutriState.shopOpen;
+        render();
+        return;
+      }
+      var shopCopy = e.target.closest('[data-nutshopcopy]');
+      if(shopCopy){
+        e.preventDefault(); e.stopPropagation();
+        var itemsCompra = listaDeComprasSemanalNut(PLAN);
+        var textoCompra = '🛒 Lista de compras semanal\\n\\n' +
+          itemsCompra.map(function(it){ return '• ' + it.grupo + ': ' + it.texto; }).join('\\n');
+        var okEl = document.getElementById('nuShopOk');
+        function marcarShopOk(){ if(okEl) okEl.textContent = '✅ Copiado'; }
+        if(navigator.clipboard && navigator.clipboard.writeText){
+          navigator.clipboard.writeText(textoCompra).then(marcarShopOk).catch(function(){
+            if(okEl) okEl.textContent = '⚠️ No se pudo copiar';
+          });
+        } else if(okEl){ okEl.textContent = '⚠️ Copiado no disponible en este navegador'; }
+        return;
       }
     });
 
@@ -29360,7 +29550,7 @@ body{overflow-x:hidden}
   }
   function iconFor(tipo){
     return { sesion_completa:'🏁', pr:'🔥', readiness_sueno:'🌙', readiness_molestia:'🩹',
-              feedback:'💬', video_feedback:'🎥', fatiga:'⚠️' }[tipo] || '📌';
+              feedback:'💬', video_feedback:'🎥', fatiga:'⚠️', checkout_rpe:'📈' }[tipo] || '📌';
   }
   function titleFor(it){
     var ath = it.ath || 'Un alumno';
@@ -29379,6 +29569,12 @@ body{overflow-x:hidden}
         return ath + ' subió un video de técnica';
       case 'fatiga':
         return ath + ' — aviso de fatiga';
+      /* directiva de implementación (2026-09) -- checkout RIR/RPE
+         auto-reportado (ítem 1 de la consultoría): este evento además se
+         aplica solo a S.checkouts (ver módulo aparte más abajo), esta
+         entrada del feed es sólo la traza visible de lo que ya pasó. */
+      case 'checkout_rpe':
+        return ath + ' completó su Checkout de sesión' + (it.dia ? ' · ' + it.dia : '');
       default:
         return ath + ' — actividad';
     }
@@ -29403,6 +29599,8 @@ body{overflow-x:hidden}
         return it.nota || '';
       case 'video_feedback':
         return it.url || '';
+      case 'checkout_rpe':
+        return it.rpe != null ? ('RIR/RPE ' + it.rpe + '/10') : '';
       default:
         return '';
     }
@@ -32105,6 +32303,61 @@ body.man-mode .gs-fab{right:318px}
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
+})();
+</script>
+
+<script>
+/* ============================================================
+   MÓDULO — APLICACIÓN AUTOMÁTICA DEL CHECKOUT RIR/RPE (ítem 1 de la
+   consultoría, directiva de implementación 2026-09)
+   El alumno/a elige su RPE/RIR percibido al terminar la sesión (tarjeta de
+   Resumen de Sesión, TEMPLATE_HTML) y eso viaja como evento 'checkout_rpe'
+   por el mismo circuito de CoachOutbox → Supabase que ya usan pr/readiness/
+   sesion_completa (cero tabla nueva). Este módulo escucha el mismo evento
+   'coachjp:activity-updated' que ya dispara el Panel de Actividad (Módulo
+   15b) en cada refresco (automático cada 90s + al abrir el modal) y, para
+   cada 'checkout_rpe' todavía no aplicado, escribe el RPE directamente en
+   S.checkouts — así el coach nunca tiene que cargarlo de memoria en su
+   propio Checkout de sesión manual (panel ya existente, sin tocar).
+   100% aditivo: no crea tabla nueva, no toca CoachOutbox ni el Panel de
+   Actividad (que sigue siendo de solo lectura), y nunca pisa un checkout
+   más nuevo que el que trae el evento (ver "prev.ts" abajo). */
+(function(){
+  var KAP = 'coachjp_checkout_rpe_aplicados_v1';
+  function aplicados(){ try{ return JSON.parse(localStorage.getItem(KAP) || '{}') || {}; }catch(e){ return {}; } }
+  function marcarAplicados(o){ try{ localStorage.setItem(KAP, JSON.stringify(o)); }catch(e){} }
+
+  function aplicar(){
+    if(!window.CoachActivity || typeof window.CoachActivity.items !== 'function') return;
+    var items = window.CoachActivity.items() || [];
+    var hechos = aplicados();
+    var huboNuevo = false;
+    items.forEach(function(it){
+      if(!it || it.tipo !== 'checkout_rpe' || !it.athId || !it.diaId || it.rpe == null) return;
+      var tsEvento = it._ts || it.ts || 0;
+      var idEvento = it.athId + '|' + it.diaId + '|' + tsEvento;
+      if(hechos[idEvento]) return;   /* ya aplicado en una pasada anterior */
+      hechos[idEvento] = 1;
+      S.checkouts = S.checkouts || {};
+      var k = it.athId + '|' + it.diaId;
+      var prev = S.checkouts[k] || {};
+      /* nunca pisa un checkout más nuevo (ej. uno que el coach ya cargó a
+         mano después de este evento) -- sólo aplica si no había nada
+         guardado todavía, o si lo guardado es igual o más viejo */
+      if(!prev.ts || tsEvento >= prev.ts){
+        S.checkouts[k] = { rpe: it.rpe, zonas: (prev.zonas || []).slice(), ts: tsEvento || Date.now(), origenRpe:'alumno' };
+        huboNuevo = true;
+      }
+    });
+    marcarAplicados(hechos);
+    if(huboNuevo){
+      save();
+      if(typeof toast === 'function') toast('📈 Checkout de sesión actualizado con el RIR/RPE del alumno/a');
+    }
+  }
+
+  document.addEventListener('coachjp:activity-updated', function(){ try{ aplicar(); }catch(e){} });
+  setTimeout(aplicar, 2000);
 })();
 </script>
 
@@ -43064,6 +43317,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
             <select id="npLibreDia"></select>
             <select id="npLibreComida"></select>
           </div>
+          <div class="sh" style="margin-top:12px">Lista de compras semanal</div>
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+            <button type="button" class="btn ghost sm" id="npShopBtn">🛒 Ver Lista de Compras Semanal</button>
+            <span style="font-size:11px;color:#8B93A0">Suma los 7 días del plan estructurado, agrupados por alimento.</span>
+          </div>
+          <div id="npShopResult" style="display:none;margin-top:8px"></div>
         </div>
         <div class="np-kpis" id="npKpis"></div>
         <div class="np-sec" style="margin-top:12px">
@@ -43145,37 +43404,155 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   ];
 
   /* ---------- tabla de alimentos por 100 g ---------- */
-  /* p=proteína c=carbohidrato g=grasa · fam para validar alergias */
+  /* p=proteína c=carbohidrato g=grasa · fam para validar alergias
+     directiva de localización (2026-09): esta lista era genérica/
+     internacional (Tofu, Tempeh, Seitán) y no reflejaba la canasta real
+     de carnicería/dietética argentina que el prompt de IA (promptDe(),
+     más abajo) ya pedía -- así que cada vez que no había IA disponible
+     o la respuesta no pasaba validar(), el motor local (este) le
+     entregaba al alumno/a un plan con vocabulario distinto al que el
+     coach promociona. Reemplazada por la canasta deportiva argentina:
+     misma estructura {n,p,c,g,tipo,ex,fam}, cero cambios de motor.
+     Notas de equivalencia (para no inflar la lista sin necesidad real):
+     "Arroz cocido" representa blanco Y parboil por igual (macros
+     prácticamente idénticos una vez cocidos) -- el integral sí se separa
+     porque tiene menos carbohidrato/más fibra real. "Avena" sirve para
+     tradicional e instantánea (mismo perfil en seco). */
   var ALIM = [
     { n:'Pechuga de pollo',       p:31, c:0,  g:3.6, tipo:'prot', ex:['veg','vegano'], fam:['pollo','ave'] },
-    { n:'Carne magra (peceto)',   p:26, c:0,  g:8,   tipo:'prot', ex:['veg','vegano'], fam:['carne','vaca'] },
+    { n:'Suprema de pollo',       p:30, c:0,  g:4,   tipo:'prot', ex:['veg','vegano'], fam:['pollo','ave'] },
+    { n:'Pata-muslo de pollo sin piel', p:26, c:0, g:8, tipo:'prot', ex:['veg','vegano'], fam:['pollo','ave'] },
+    { n:'Nalga',                  p:27, c:0,  g:3,   tipo:'prot', ex:['veg','vegano'], fam:['carne','vaca'] },
+    { n:'Bola de lomo',           p:26, c:0,  g:5,   tipo:'prot', ex:['veg','vegano'], fam:['carne','vaca'] },
+    { n:'Cuadrada',               p:27, c:0,  g:3.5, tipo:'prot', ex:['veg','vegano'], fam:['carne','vaca'] },
+    { n:'Cuadril',                p:25, c:0,  g:6,   tipo:'prot', ex:['veg','vegano'], fam:['carne','vaca'] },
+    { n:'Peceto (carne magra)',   p:26, c:0,  g:8,   tipo:'prot', ex:['veg','vegano'], fam:['carne','vaca'] },
+    { n:'Carne picada especial',  p:20, c:0,  g:10,  tipo:'prot', ex:['veg','vegano'], fam:['carne','vaca'] },
+    { n:'Solomillo de cerdo',     p:22, c:0,  g:4,   tipo:'prot', ex:['veg','vegano','sincer'], fam:['cerdo'] },
+    { n:'Carré de cerdo',         p:21, c:0,  g:8,   tipo:'prot', ex:['veg','vegano','sincer'], fam:['cerdo'] },
+    { n:'Merluza',                p:17, c:0,  g:1,   tipo:'prot', ex:['veg','vegano'], fam:['pescado','merluza'] },
     { n:'Atún al natural',        p:25, c:0,  g:1,   tipo:'prot', ex:['veg','vegano'], fam:['pescado','atun'] },
     { n:'Huevo entero',           p:13, c:1,  g:11,  tipo:'prot', ex:['vegano'],       fam:['huevo'] },
     { n:'Claras de huevo',        p:11, c:0.7,g:0.2, tipo:'prot', ex:['vegano'],       fam:['huevo'] },
     { n:'Yogur griego natural',   p:9,  c:4,  g:3,   tipo:'prot', ex:['vegano','sinlac'], fam:['lacteo','leche'] },
     { n:'Ricota magra',           p:11, c:4,  g:8,   tipo:'prot', ex:['vegano','sinlac'], fam:['lacteo','leche'] },
-    { n:'Tofu firme',             p:12, c:2,  g:7,   tipo:'prot', ex:[],               fam:['soja'] },
+    { n:'Queso Port Salut light', p:24, c:2,  g:14,  tipo:'prot', ex:['vegano','sinlac'], fam:['lacteo','leche','queso'] },
+    { n:'Queso untable descremado', p:9, c:4, g:4,   tipo:'prot', ex:['vegano','sinlac'], fam:['lacteo','leche','queso'] },
     { n:'Lentejas cocidas',       p:9,  c:20, g:0.4, tipo:'prot', ex:[],               fam:['legumbre'] },
-    { n:'Tempeh',                 p:19, c:9,  g:11,  tipo:'prot', ex:[],               fam:['soja'] },
-    { n:'Seitán',                 p:24, c:14, g:1.5, tipo:'prot', ex:['singlu'],       fam:['trigo','gluten'] },
+    { n:'Garbanzos cocidos',      p:8,  c:20, g:2.6, tipo:'prot', ex:[],               fam:['legumbre'] },
     { n:'Proteína de suero',      p:80, c:8,  g:6,   tipo:'prot', ex:['vegano','sinlac'], fam:['lacteo','leche'], supl:true },
     { n:'Proteína vegetal en polvo', p:80, c:6, g:3, tipo:'prot', ex:[],               fam:['arveja','soja'], supl:true },
 
     { n:'Arroz cocido',           p:2.7,c:28, g:0.3, tipo:'carb', ex:[],               fam:['arroz'] },
+    { n:'Arroz integral cocido',  p:2.6,c:23, g:0.9, tipo:'carb', ex:[],               fam:['arroz'] },
     { n:'Papa cocida',            p:2,  c:20, g:0.1, tipo:'carb', ex:[],               fam:['papa'] },
     { n:'Batata cocida',          p:1.6,c:20, g:0.1, tipo:'carb', ex:[],               fam:['batata'] },
+    { n:'Choclo',                 p:3.4,c:19, g:1.5, tipo:'carb', ex:[],               fam:['maiz','choclo'] },
     { n:'Avena',                  p:13, c:60, g:7,   tipo:'carb', ex:['singlu'],       fam:['avena','gluten'] },
-    { n:'Pan integral',           p:9,  c:43, g:3.5, tipo:'carb', ex:['singlu'],       fam:['trigo','gluten'] },
-    { n:'Fideos cocidos',         p:5,  c:25, g:1,   tipo:'carb', ex:['singlu'],       fam:['trigo','gluten'] },
+    { n:'Pan integral de molde',  p:9,  c:43, g:3.5, tipo:'carb', ex:['singlu'],       fam:['trigo','gluten'] },
+    { n:'Fideos de sémola cocidos', p:5,c:25, g:1,   tipo:'carb', ex:['singlu'],       fam:['trigo','gluten'] },
+    { n:'Galletas de arroz',      p:7,  c:81, g:2.5, tipo:'carb', ex:[],               fam:['arroz'] },
+    { n:'Polenta cocida',         p:2,  c:15, g:0.5, tipo:'carb', ex:[],               fam:['maiz'] },
     { n:'Banana',                 p:1,  c:23, g:0.3, tipo:'carb', ex:[],               fam:['fruta'] },
     { n:'Manzana',                p:0.3,c:14, g:0.2, tipo:'carb', ex:[],               fam:['fruta'] },
 
-    { n:'Aceite de oliva',        p:0,  c:0,  g:100, tipo:'gras', ex:[],               fam:['aceite'] },
+    { n:'Aceite de oliva virgen extra', p:0, c:0, g:100, tipo:'gras', ex:[],           fam:['aceite'] },
+    { n:'Aceite de girasol alto oleico', p:0, c:0, g:100, tipo:'gras', ex:[],          fam:['aceite'] },
     { n:'Palta',                  p:2,  c:9,  g:15,  tipo:'gras', ex:[],               fam:['palta'] },
+    { n:'Maní tostado sin sal',   p:26, c:16, g:49,  tipo:'gras', ex:['sinfru'],       fam:['fruto seco','mani'] },
+    { n:'Pasta de maní 100% natural', p:25, c:20, g:50, tipo:'gras', ex:['sinfru'],    fam:['fruto seco','mani'] },
+    { n:'Nueces',                 p:15, c:14, g:65,  tipo:'gras', ex:['sinfru'],       fam:['fruto seco','nuez'] },
     { n:'Almendras',              p:21, c:22, g:50,  tipo:'gras', ex:['sinfru'],       fam:['fruto seco','almendra'] },
 
     { n:'Verduras variadas',      p:2,  c:5,  g:0.3, tipo:'verd', ex:[],               fam:['verdura'] }
   ];
+
+  /* ---------- LISTA DE COMPRAS SEMANAL (2026-09) ----------
+     Consolida R.plan.dias (7 días estructurados de la Variante B) en
+     cantidades reales para ir a comprar -- no reinventa nada del motor
+     de cálculo, sólo suma los "gramos" que ya trae cada ítem de cada
+     comida de cada día. Dos correcciones necesarias para que el número
+     sirva de verdad en una carnicería/dietética real:
+     1) GRUPO_COMPRA junta cortes/variantes que un coach compraría como
+        "lo mismo" (ej: nalga/bola de lomo/cuadrada/cuadril/peceto son
+        todos "carne magra" en el mostrador) -- sin esto la lista queda
+        atomizada en 5 líneas de 200g en vez de una sola útil.
+     2) CONVERSION_COMPRA: los alimentos "cocidos" de ALIM (arroz,
+        fideos, polenta) guardan sus gramos ya cocidos/hidratados -- si
+        no se convierte de vuelta a crudo, la lista pide comprar 2-4
+        veces más de lo que realmente hace falta (el agua absorbida no
+        se compra). UNIDADES_COMPRA hace lo mismo para lo que se compra
+        por unidad (huevos, fruta), no por peso. */
+  var GRUPO_COMPRA = {
+    'Pechuga de pollo':          'Pechuga/Suprema de pollo',
+    'Suprema de pollo':          'Pechuga/Suprema de pollo',
+    'Nalga':                     'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Bola de lomo':              'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Cuadrada':                  'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Cuadril':                   'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Peceto (carne magra)':      'Carne vacuna magra (nalga/bola de lomo/cuadrada/cuadril/peceto)',
+    'Solomillo de cerdo':        'Cerdo (solomillo/carré)',
+    'Carré de cerdo':            'Cerdo (solomillo/carré)',
+    'Huevo entero':              'Huevos'
+  };
+  /* peso promedio por unidad, en gramos -- alcanza para pasar de "gramos
+     que pide el plan" a "cuántos comprar", no pretende ser una tabla
+     nutricional de precisión */
+  var UNIDADES_COMPRA = {
+    'Huevo entero': 50,
+    'Banana':       120,
+    'Manzana':      150
+  };
+  /* factor gramos-cocidos -> gramos-a-comprar (crudo/seco). Sólo lleva
+     los alimentos de ALIM cuyo "n" dice explícitamente "cocido/cocida"
+     -- el resto de la tabla (avena, papa, batata, choclo) ya declara
+     sus macros en base comprable, sin conversión necesaria. */
+  var CONVERSION_COMPRA = {
+    'Arroz cocido':                1 / 2.5,
+    'Arroz integral cocido':       1 / 2.4,
+    'Fideos de sémola cocidos':    1 / 2.2,
+    'Polenta cocida':              1 / 4.5
+  };
+  function formatoGramos(g){
+    return g >= 1000 ? (Math.round(g / 100) / 10) + ' kg' : (Math.max(10, Math.round(g / 10) * 10)) + ' g';
+  }
+  /* itera los 7 días de un plan semanal y devuelve [{grupo, texto}], de
+     mayor a menor cantidad -- plan de un solo día (sin .semanal) no
+     tiene ".dias" y devuelve []. */
+  function listaDeComprasSemanal(plan){
+    if(!plan || !plan.semanal || !plan.dias) return [];
+    var gramosPorGrupo = {}, unidadesPorGrupo = {};
+    Object.keys(plan.dias).forEach(function(dk){
+      var dia = plan.dias[dk];
+      if(!dia || !dia.comidas) return;
+      dia.comidas.forEach(function(c){
+        /* sólo la opción A (la que arma el plan por defecto): opcionB es
+           una preparación alternativa que el alumno/a puede no llegar a
+           cocinar nunca -- sumarla infla la lista con ingredientes que
+           quizás no hacen falta comprar */
+        (c.items || []).forEach(function(it){
+          if(!it.alimento || !it.gramos) return;
+          var nombre = it.alimento;
+          var grupo = GRUPO_COMPRA[nombre] || nombre;
+          if(UNIDADES_COMPRA[nombre]){
+            unidadesPorGrupo[grupo] = (unidadesPorGrupo[grupo] || 0) + it.gramos / UNIDADES_COMPRA[nombre];
+          } else {
+            var factor = CONVERSION_COMPRA[nombre] || 1;
+            gramosPorGrupo[grupo] = (gramosPorGrupo[grupo] || 0) + it.gramos * factor;
+          }
+        });
+      });
+    });
+    var out = [];
+    Object.keys(unidadesPorGrupo).forEach(function(g){
+      out.push({ grupo:g, orden: unidadesPorGrupo[g] * 50, texto: Math.round(unidadesPorGrupo[g]) + ' unidades' });
+    });
+    Object.keys(gramosPorGrupo).forEach(function(g){
+      out.push({ grupo:g, orden: gramosPorGrupo[g], texto: formatoGramos(gramosPorGrupo[g]) });
+    });
+    out.sort(function(a, b){ return b.orden - a.orden; });
+    return out;
+  }
 
   function permitidos(tipo, rest, alergias, conSupl){
     return ALIM.filter(function(a){
@@ -43370,7 +43747,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      almuerzo/cena. Así el motor local nunca arma un desayuno con pechuga
      de pollo o un peceto a media mañana, aunque no haya IA disponible. */
   var PROT_LIVIANA = ['Huevo entero', 'Claras de huevo', 'Yogur griego natural', 'Ricota magra',
-                       'Tofu firme', 'Proteína de suero', 'Proteína vegetal en polvo'];
+                       'Queso Port Salut light', 'Queso untable descremado',
+                       'Proteína de suero', 'Proteína vegetal en polvo'];
   var FRANJA_LIVIANA = /desayuno|media\s*ma[ñn]ana|merienda/i;
 
   function armarComidas(f, mac, rest, alergias, offsetDia){
@@ -43401,8 +43779,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       var cAl = carbs[(i + offsetDia) % carbs.length], gAl = gras[(i + offsetDia) % gras.length];
       var items = [];
 
-      /* 1 · proteína */
-      var itP = item(pAl, pObj / (pAl.p || 1) * 100, 'prot', prots);
+      /* 1 · proteína -- directiva de localización (2026-09): los
+         intercambios se ofrecen dentro del mismo pool de franja horaria
+         (poolP: liviana o pesada) y no contra "prots" completo, para que
+         un desayuno con huevo nunca sugiera como equivalente un corte de
+         carnicería (ni al revés, un almuerzo con carne sugerir ricota) --
+         antes con "prots" completo eso podía pasar. */
+      var itP = item(pAl, pObj / (pAl.p || 1) * 100, 'prot', poolP);
       items.push(itP);
 
       /* 2 · verduras fijas en almuerzo y cena, y descuentan del carbohidrato */
@@ -44962,6 +45345,45 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(!R.plan || !R.plan.semanal || !R.plan.comidaLibre) return;
         R.plan.comidaLibre.comida = parseInt(this.value, 10);
         guardarReg(athAct.id, R); pintarPlan();
+      });
+
+      /* Lista de compras semanal (2026-09) -- exportador del coach: mismo
+         patrón visual/UX que el generador de lista de compras de la
+         nutrición por sesión (MÓDULO más abajo, #ntShopBtn), pero
+         sumando gramos reales de R.plan.dias en vez de texto libre. */
+      document.getElementById('npShopBtn').addEventListener('click', function(){
+        var out = document.getElementById('npShopResult');
+        if(!R.plan || !R.plan.semanal){
+          out.style.display = '';
+          out.innerHTML = '<div class="hint">La lista de compras necesita un plan semanal generado (arriba). Un plan de un solo día todavía no la soporta.</div>';
+          return;
+        }
+        var items = listaDeComprasSemanal(R.plan);
+        if(!items.length){
+          out.style.display = '';
+          out.innerHTML = '<div class="hint">Este plan todavía no tiene comidas cargadas en ningún día.</div>';
+          return;
+        }
+        var nombreAth = (typeof fullName === 'function') ? fullName(athAct) : '';
+        var texto = '🛒 Lista de compras semanal — ' + nombreAth + '\n\n' +
+          items.map(function(it){ return '• ' + it.grupo + ': ' + it.texto; }).join('\n');
+        out.style.display = '';
+        out.innerHTML =
+          '<div style="font-size:11px;color:#8B93A0;margin-bottom:6px">Sumado de los 7 días del plan · ' + items.length + ' ítem(s)</div>' +
+          '<ul style="margin:0 0 10px 18px;padding:0;font-size:13px;line-height:1.7;color:#DADFE4">' +
+            items.map(function(it){ return '<li>' + esc(it.grupo) + ': <b>' + esc(it.texto) + '</b></li>'; }).join('') +
+          '</ul>' +
+          '<button type="button" class="btn xs gold" id="npShopCopy">📋 Copiar para WhatsApp</button>' +
+          '<span id="npShopOk" style="margin-left:8px;font-size:12px;color:#8FD19E"></span>';
+        document.getElementById('npShopCopy').addEventListener('click', function(){
+          var ok = document.getElementById('npShopOk');
+          function marcarOk(){ if(ok) ok.textContent = '✅ Copiado'; }
+          if(navigator.clipboard && navigator.clipboard.writeText){
+            navigator.clipboard.writeText(texto).then(marcarOk).catch(function(){
+              if(ok) ok.textContent = '⚠️ No se pudo copiar — seleccioná el texto manualmente';
+            });
+          } else if(ok){ ok.textContent = '⚠️ Copiado no disponible en este navegador'; }
+        });
       });
     }
   }
