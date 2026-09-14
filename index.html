@@ -3067,12 +3067,38 @@ function addBlock(tipo){
   d.bloques.push(newBlock(tipo)); save(); renderBuilder();
   toast((TIPOS[tipo]||{}).lb + ' agregado');
 }
+/* UX/UI integral (13/09), parte 2: título automático de biset/triset a
+   partir de los ejercicios elegidos (ej. Hack Squat + PM Rumano →
+   "Hack squat + Peso muerto rumano"). Mismo criterio "seguro" que ya usa
+   el bloque normal más abajo (data-bf==='exId', línea ~3249: solo
+   autocompleta si el título está vacío o sigue siendo el default/el auto
+   anterior) -- si el coach ya escribió un título propio, nunca se lo pisa. */
+function autoTituloBiset(ejercicios){
+  return (ejercicios||[]).map(function(e){
+    var ex = getEx(e.exId); return ex ? ex.es : '';
+  }).filter(Boolean).join(' + ');
+}
+/* "previoAuto" es el título AUTO-generado que hubiera correspondido a la
+   lista de ejercicios ANTES de este cambio (autoTituloBiset(ejercicios)
+   calculado por el caller antes de mutar el array) -- no el b.titulo
+   crudo, que siempre coincide consigo mismo y volvería la protección un
+   no-op (pisaría cualquier título, incluso uno escrito a mano). */
+function syncTituloBiset(b, previoAuto){
+  if(!b || b.tipo !== 'superset') return;
+  var defaultLb = (TIPOS.superset || {}).lb;
+  if(!b.titulo || b.titulo === defaultLb || b.titulo === previoAuto){
+    var auto = autoTituloBiset(b.ejercicios);
+    if(auto) b.titulo = auto;
+  }
+}
 function addSubEx(bid, exId){
   const b = findBlock(bid); if(!b) return;
   if(!exId){ toast('Elegí un ejercicio primero', 'err'); return; }
   const ex = getEx(exId), ath = active();
+  const previoAuto = b.tipo === 'superset' ? autoTituloBiset(b.ejercicios) : null;
   if(b.tipo === 'superset') b.ejercicios.push({ exId: exId, reps:'10-12', tempo:'2011', metodologia:'' });
   else if(b.tipo === 'finisher') b.fin.push({ exId: exId, repsRange:'15-20' });
+  syncTituloBiset(b, previoAuto);
   save(); renderBuilder();
   const w = worst(checkExercise(ath, ex));
   if(w === 'danger') toast('🚨 ALERTA: ejercicio restringido para ' + fullName(ath), 'err');
@@ -3249,7 +3275,11 @@ function bindBuilder(){
         if(ex && (!b.titulo || b.titulo === TIPOS.block.lb)) b.titulo = ex.es;
         if(ex && !b.tips) b.tips = (window.CoachAuto && window.CoachAuto.notaCompleta) ? window.CoachAuto.notaCompleta(ex, b.tempo, active()) : (ex.aviso || '');
       }
-      if(t.dataset.sf === 'exId') b.ejercicios[parseInt(t.dataset.i,10)].exId = t.value;
+      if(t.dataset.sf === 'exId'){
+        const previoAuto = autoTituloBiset(b.ejercicios);
+        b.ejercicios[parseInt(t.dataset.i,10)].exId = t.value;
+        syncTituloBiset(b, previoAuto);
+      }
       if(t.dataset.ff === 'exId') b.fin[parseInt(t.dataset.i,10)].exId = t.value;
       save(); renderBuilder();
       const w = worst(checkExercise(active(), getEx(t.value)));
@@ -3287,7 +3317,10 @@ function bindBuilder(){
     if(t.dataset.idel){
       const b = findBlock(t.dataset.b); if(!b) return;
       const arr = b.tipo === 'superset' ? b.ejercicios : b.fin;
-      arr.splice(parseInt(t.dataset.idel,10), 1); save(); renderBuilder(); return;
+      const previoAuto = b.tipo === 'superset' ? autoTituloBiset(b.ejercicios) : null;
+      arr.splice(parseInt(t.dataset.idel,10), 1);
+      syncTituloBiset(b, previoAuto);
+      save(); renderBuilder(); return;
     }
     if(t.dataset.imove){
       const b = findBlock(t.dataset.b); if(!b) return;
@@ -4071,10 +4104,21 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .video-popup-fallback { padding: 7px 12px; background: rgba(255,255,255,0.02); border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-align: center; }
   .video-popup-fallback a { color: var(--gold); font-weight: 600; text-decoration: none; }
   .video-popup-fallback a:hover { color: var(--red-light); }
-  /* en mobile sigue siendo una ventanita de esquina, no una franja de borde
-     a borde -- así queda claro (y se siente) que es un flotante liviano y
-     no un modal que toma la pantalla. */
-  @media (max-width: 640px) { .video-popup-wrap { right: 10px; bottom: 12px; width: min(248px, calc(100vw - 20px)); max-width: none; } }
+  /* UX/UI integral (13/09), parte 5: en mobile el video quedaba chico y
+     arrinconado abajo a la derecha -- ahora se centra como un modal real
+     (top/left 50% + translate), 90-95% del ancho de pantalla hasta 500px,
+     con su [ ✕ ] agrandado para que sea un cierre claro. En desktop (arriba
+     de 640px) se deja el comportamiento de ventanita de esquina de siempre,
+     sin cambios -- ese caso no fue el reportado. */
+  @media (max-width: 640px) {
+    .video-popup-wrap {
+      right: auto; bottom: auto; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 92vw; max-width: 500px;
+      transition: none; z-index: 9999;
+    }
+    .video-popup-close { width: 32px; height: 32px; font-size: 15px; }
+  }
   .coach-note { background: rgba(124,197,232,0.05); border-left: 2px solid rgba(124,197,232,0.4); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 0.65rem 0.9rem; margin-top: 0.75rem; font-size: 12.5px; color: #A8A8AE; line-height: 1.6; }
   .coach-note strong { color: #828A97; display: block; margin-bottom: 3px; font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; }
   .coach-note.note-danger { background: rgba(124,197,232,0.09); border-left-color: var(--red); color: #CFE7F4; }
@@ -4449,6 +4493,14 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       <div class="hdp-row hdp-row-fz" id="hdpFzSlot"></div>
       <div class="hdp-row hdp-row-slot" id="hdpInstallSlot"></div>
       <div class="hdp-row hdp-row-slot" id="hdpGuideSlot"></div>
+      <!-- DIRECTIVA UX/UI integral (13/09), parte 1: la píldora "Ver Nota
+           Metodológica" se insertaba antes como primer hijo de #mainContent
+           (ver nota()/repintar() en "NOTA METODOLÓGICA DEL MESOCICLO" más
+           abajo), empujando la rutina hacia abajo en cada carga. Se le da
+           ancla fija acá, mismo patrón que #hdpGuideSlot/#hdpInstallSlot:
+           el botón real se reparenta (no se clona ni se recrea) vía
+           montarPerfil(), cero pérdida de la nota ni del modal que abre. -->
+      <div class="hdp-row hdp-row-slot" id="hdpNotaSlot"></div>
     </section>
 
     <section class="hdp-card hdp-coach">
@@ -5804,14 +5856,17 @@ function renderWeekActiveBadge(){
    (nota metodológica, RPE) se movió a #weekInfoModal -- se abre tocando el
    botón ℹ️ o el chip activo, nunca ocupa espacio en el flujo principal. */
 function renderWeekSelector(){
+  /* DIRECTIVA UX/UI integral (13/09), parte 1: se retira el botón ℹ️
+     flotante -- el chip activo (.wpc-current) ya abre el mismo modal al
+     tocarlo (ver el addEventListener de abajo), así que el ícono aparte
+     era pura redundancia colgando junto a la pastilla. */
   weekSelectorEl.innerHTML = WEEKS_META.map(function(w,i){
     if(i === state.currentWeek){
-      return '<div class="week-pill active wpc-current" data-week="' + i + '">' +
+      return '<div class="week-pill active wpc-current" data-week="' + i + '" ' +
+          'title="Ver explicación de la semana" aria-label="Ver explicación de la semana">' +
           '<span class="week-pill-name">' + w.icon + ' ' + w.short + '</span>' +
           '<span class="week-pill-phase">' + w.phase + '</span>' +
-        '</div>' +
-        '<button type="button" class="wpc-info-btn" id="weekInfoBtn" ' +
-          'title="Ver explicación de la semana" aria-label="Ver explicación de la semana">ℹ️</button>';
+        '</div>';
     }
     return '<div class="week-pill wpc-mini" data-week="' + i + '">' +
       '<span class="week-pill-name">' + w.short + '</span>' +
@@ -5841,8 +5896,6 @@ function renderWeekSelector(){
       renderMain();
     });
   });
-  var infoBtn = weekSelectorEl.querySelector('#weekInfoBtn');
-  if(infoBtn) infoBtn.addEventListener('click', function(e){ e.stopPropagation(); abrirWeekInfoModal(); });
 }
 function abrirWeekInfoModal(){
   var m = document.getElementById('weekInfoModal');
@@ -6143,7 +6196,12 @@ function renderBlock(block, day, weekIdx, idx){
     '</div>' +
     '<div class="block-body">' + cargaSugeridaHtml(block, weekIdx) + renderBlockInner(block, day, weekIdx) +
       (block.category === 'warmup' ? '' : bloqueNotasHtml(block, day, weekIdx)) +
-      videoFeedbackHtml(block, day, weekIdx) + '</div>' +
+      /* UX/UI integral (13/09), parte 3: el buzón de feedback en video se
+         retira de la vista del alumno -- esa interacción ahora se gestiona
+         por WhatsApp. videoFeedbackHtml() y state.videoLinks quedan intactos
+         (cero mutación de datos ya guardados), solo se deja de invocar el
+         render acá. */
+      '</div>' +
   '</div>';
 }
 /* Tarjeta de nutrición de la sesión: la arma el coach en el builder */
@@ -6182,8 +6240,16 @@ function renderMain(){
      listeners via wireReadinessCheckin/wireBlockInteractions, que ya
      buscan los nodos en el DOM recién pintado sin importar su posición),
      solo se reordena la jerarquía visual. */
+  /* UX/UI integral (13/09), parte 1: "Foco Técnico del Día" pasa de banner
+     fijo (empujaba el primer bloque hacia abajo) a micro-acordeón cerrado
+     por defecto -- mismo patrón <details>/<summary> que .nutri-card y
+     .block-methodology-accordion, cero JS nuevo para abrir/cerrar. El
+     texto no se pierde ni se acorta, solo se pliega hasta que lo tocan. */
   if(day.focusText){
-    html += '<div class="safety-banner"><div class="sb-icon">🎯</div><div><div class="safety-banner-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div><div class="safety-banner-text">' + day.focusText + '</div></div></div>';
+    html += '<details class="focus-accordion"><summary class="focus-sum">' +
+      '<span class="focus-ic">🎯</span><span class="focus-ti">' + (day.focusTitle||'Foco Técnico del Día') + '</span>' +
+      '<span class="focus-cv">▾</span></summary>' +
+      '<div class="focus-body">' + day.focusText + '</div></details>';
   }
   html += '<div class="blocks-stack">';
   blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
@@ -6398,6 +6464,13 @@ const videoCloseEl = document.getElementById('video-popup-close');
    los !important de .timer-hud más abajo en el archivo). */
 function ajustarPosicionVideoPopup(){
   if(!videoWrapEl) return;
+  /* UX/UI integral (13/09): en mobile (<=640px) el popup ahora se centra
+     con top/left/transform (ver @media(max-width:640px) más arriba) -- si
+     esta función además le fija un "bottom" inline, position:fixed con
+     top y bottom no-auto a la vez fuerza el alto del elemento a estirarse
+     entre los dos, rompiendo el centrado. Ese ajuste de "bottom" solo
+     tenía sentido para la ventanita de esquina de escritorio. */
+  if(window.innerWidth <= 640) return;
   if(hudEl && hudEl.classList.contains('show')){
     const r = hudEl.getBoundingClientRect();
     const gap = 10;
@@ -6778,6 +6851,31 @@ body.focus-mode .tv-nav{display:flex}
 .rest-hud .rh-ctl{display:flex;gap:5px}
 .rest-hud .rh-ctl button{flex:1;padding:6px 0;border-radius:8px;border:1px solid var(--border);
   background:var(--bg-card);color:var(--text-primary);font-size:0.85rem;cursor:pointer}
+/* UX/UI integral (13/09), parte 6: por defecto (sin .expanded) el rest
+   timer pasa de tarjeta vertical (anillo + 4 botones + label, ~200px de
+   alto) a una píldora táctica de una sola línea: "⏱️ 01:45 · [+30s]
+   [Saltar] [✕]". .expanded (el toggle #rhExpand de siempre, sin tocar)
+   sigue mostrando el layout de columna completo -- anillo grande, los 4
+   controles y los presets de duración -- para quien quiera ver los
+   dígitos en grande. Reordena vía flex "order" sobre los mismos nodos que
+   ya arma anillo()/tick(): cero cambios de JS/datos. */
+.rest-hud:not(.expanded){
+  flex-direction:row;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;
+  min-width:0;width:auto;max-width:calc(100vw - 24px);
+  padding:6px 8px 6px 14px;border-radius:999px;
+}
+.rest-hud:not(.expanded) .rh-top{order:3;flex:0 0 auto;gap:2px}
+.rest-hud:not(.expanded) .rh-lb{display:none}
+.rest-hud:not(.expanded) .rh-ring{order:1;width:auto !important;height:auto !important;margin:0 !important;background:none !important}
+.rest-hud:not(.expanded) .rh-ring::after{content:none !important}
+.rest-hud:not(.expanded) .rh-time{order:1;font-size:1.05rem !important}
+.rest-hud:not(.expanded) .rh-ring .rh-time{font-size:1.05rem !important}
+.rest-hud:not(.expanded) #rhTime::before{content:'⏱️ ';font-size:.8rem}
+.rest-hud:not(.expanded) .rh-set{display:none !important}
+.rest-hud:not(.expanded) .rh-ctl{order:2;gap:4px}
+.rest-hud:not(.expanded) .rh-ctl #rhMinus,
+.rest-hud:not(.expanded) .rh-ctl #rhToggle{display:none}
+.rest-hud:not(.expanded) .rh-ctl button{padding:5px 10px;font-size:.7rem;border-radius:999px}
 /* ---------- NEW PR ---------- */
 .pr-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;margin-left:8px;
   font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:0.72rem;letter-spacing:0.09em;text-transform:uppercase;
@@ -8119,20 +8217,21 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
    activo (.wpc-current) conserva nombre+fase; el resto de las semanas
    (.wpc-mini) se reducen a un chip chico sin subtítulo -- toda la fila
    queda en una sola línea horizontal en vez de la tarjeta grande de antes.
-   El detalle completo (nota metodológica) vive en #weekInfoModal, atrás de
-   .wpc-info-btn o del chip activo -- nunca empuja el resto hacia abajo. */
+   El detalle completo (nota metodológica) vive en #weekInfoModal, atrás del
+   chip activo -- nunca empuja el resto hacia abajo. */
 .week-selector{align-items:center}
 .week-pill.wpc-current{padding:8px 14px !important;gap:0}
 .week-pill.wpc-mini{padding:6px 12px !important;min-width:0 !important}
 .week-pill.wpc-mini .week-pill-name{font-size:.8rem !important;opacity:.7}
-.wpc-info-btn{
-  flex-shrink:0;width:30px;height:30px;min-width:30px;border-radius:50%;
-  border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);
-  color:var(--text-secondary);display:flex;align-items:center;justify-content:center;
-  font-size:13px;cursor:pointer;transition:border-color .15s ease,transform .12s ease;margin:0 2px 0 -2px;
+/* UX/UI integral (13/09): se retiró el botón ℹ️ aparte (redundante con el
+   propio chip activo, que ya abre el modal al tocarlo -- ver
+   renderWeekSelector()). Se deja un puntito sutil como única pista visual
+   de que el chip es tocable, sin volver a ocupar el espacio de un botón. */
+.week-pill.wpc-current{cursor:pointer;position:relative}
+.week-pill.wpc-current::after{
+  content:'';position:absolute;top:6px;right:7px;width:5px;height:5px;border-radius:50%;
+  background:#D2793F;opacity:.75;
 }
-.wpc-info-btn:hover{border-color:rgba(210,121,63,.4);color:#D2793F}
-.wpc-info-btn:active{transform:scale(.92)}
 #weekInfoModal .guide-section{max-width:640px}
 #weekInfoModal #weekInfoModalText{font-size:.92rem;line-height:1.6;color:var(--text-secondary)}
 
@@ -10498,12 +10597,8 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
 
 <div class="tm-wrap" id="tmWrap">
   <div class="tm">
-    <h3>🧮 Herramientas de serie</h3>
-    <p class="tm-sub">Calculá cómo armar la barra y cómo entrar en calor hasta el peso objetivo.</p>
-    <div class="tm-tabs">
-      <button type="button" class="tm-tab on" data-tm="discos">🏋️ Discos por lado</button>
-      <button type="button" class="tm-tab" data-tm="rampa">🔥 Aproximación</button>
-    </div>
+    <h3>🔥 Serie de Aproximación</h3>
+    <p class="tm-sub">Calculá cómo entrar en calor hasta el peso objetivo.</p>
     <div class="tm-peso">
       <input id="tmKg" type="number" step="0.5" min="0" inputmode="decimal" placeholder="Peso objetivo">
       <span id="tmUni" style="color:#A0A8B4;font-weight:700">kg</span>
@@ -10625,7 +10720,13 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   /* =========================================================
      3 · MENÚ DE HERRAMIENTAS (ícono + modal)
   ========================================================= */
-  var tmTab = 'discos', tmBloque = null;
+  /* UX/UI integral (13/09), parte 3: se retira el Asistente de Discos --
+     tmTab arranca directo en 'rampa' (aproximación) y ya no hay forma de
+     pisarlo a 'discos' (el tab que lo hacía se quitó del HTML de abajo).
+     window.CoachDiscos y la rama tmTab==='discos' de tmPintar() quedan
+     intactas sin uso: si el coach algún día pide reactivarlo, el cálculo
+     ya está probado y ahí. */
+  var tmTab = 'rampa', tmBloque = null;
   function pesoObjetivo(bl){
     var kg = 0;
     if(bl){
@@ -10689,12 +10790,9 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     w.addEventListener('click', function(e){ if(e.target === w) cerrarTM(); });
     document.getElementById('tmX').addEventListener('click', cerrarTM);
     document.getElementById('tmKg').addEventListener('input', tmPintar);
-    w.querySelector('.tm-tabs').addEventListener('click', function(e){
-      var b = e.target.closest('[data-tm]'); if(!b) return;
-      tmTab = b.dataset.tm;
-      w.querySelectorAll('.tm-tab').forEach(function(x){ x.classList.toggle('on', x === b); });
-      tmPintar();
-    });
+    /* UX/UI integral (13/09): las pestañas .tm-tabs se quitaron del HTML
+       (era el selector discos/rampa) -- tmTab queda fijo en 'rampa', así
+       que ya no hace falta cablear el click de las pestañas. */
   }
   window.CoachHerramientas = { abrir: abrirTM, cerrar: cerrarTM, pintar: tmPintar };
 
@@ -11398,7 +11496,7 @@ body.cf-modo .block .directive-chip{display:none !important}
         '<div class="mh">Cálculo y carga</div>' +
         '<button type="button" data-m="rm"><i>📊</i>%1RM · Calculadora</button>' +
         '<button type="button" data-m="marcas"><i>🏆</i>Mis Marcas y récords</button>' +
-        '<button type="button" data-m="discos"><i>🧮</i>Discos y aproximación</button>' +
+        '<button type="button" data-m="discos"><i>🔥</i>Serie de Aproximación</button>' +
         '<div class="sep"></div>' +
         '<div class="mh">Entrenamiento</div>' +
         '<button type="button" data-m="timer"><i>⏱️</i>Custom WOD Timer</button>' +
@@ -11859,6 +11957,21 @@ body.cf-modo .block .directive-chip{display:none !important}
 .cap-tool.alt{border-color:rgba(210,121,63,.42);color:#D2793F}
 .cap-tool.alt:hover{border-color:rgba(210,121,63,.75);box-shadow:0 0 18px rgba(210,121,63,.3)}
 @media(max-width:520px){ .cap-tool{flex:1 1 100%} }
+/* UX/UI integral (13/09), parte 3: "Series de Aproximación" pasa de botón
+   ancho completo a enlace diminuto -- ya no compite visualmente con las
+   series efectivas reales de abajo. */
+.jp-tools-mini{margin:0 0 8px !important}
+/* especificidad .jp-tools .cap-tool-mini (2 clases) a propósito, para
+   ganarle a los ".jp-tools button{...} !important" más abajo en el
+   archivo (min-height:44px, fondo, borde) que si no lo convertirían de
+   vuelta en un botón de tamaño completo. */
+.jp-tools .cap-tool-mini{
+  display:inline-flex !important;align-items:center;background:none !important;
+  border:none !important;min-height:0 !important;height:auto !important;padding:2px 0 !important;
+  font-family:'Barlow Condensed',sans-serif;text-transform:none;letter-spacing:.02em;
+  font-weight:600;font-size:.78rem;color:var(--text-muted,#8B93A1) !important;cursor:pointer;
+}
+.jp-tools .cap-tool-mini:hover,.jp-tools .cap-tool-mini:active{color:#D2793F !important}
 /* ---------------------------------------------------------
    5 · UNA SOLA RENDERIZACIÓN DEL WOD
 --------------------------------------------------------- */
@@ -11925,6 +12038,11 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   /* =========================================================
      CÁPSULAS VISIBLES DEL ASISTENTE DE CARGA
   ========================================================= */
+  /* UX/UI integral (13/09), parte 3: se retira por completo el botón
+     "Asistente de Discos" (bullet 2 de la directiva). "Series de
+     Aproximación" no se elimina -- se ocultaba/reducía en la tarjeta a un
+     enlace diminuto ("[ + Ver aproximación ]") para que no compita con
+     las series efectivas reales, en vez de un botón de ancho completo. */
   function capsulas(){
     document.querySelectorAll('.block').forEach(function(bl){
       var box = bl.querySelector('.jp-tools');
@@ -11932,21 +12050,14 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
       if(!bl.querySelector('.set-row')) return;
       box.dataset.cap = '1';
       box.innerHTML = '';
-      var mk = function(cls, ic, texto, tab){
-        var b = document.createElement('button');
-        b.type = 'button'; b.className = 'cap-tool' + (cls ? ' ' + cls : '');
-        b.innerHTML = '<span class="ic">' + ic + '</span>' + texto;
-        b.addEventListener('click', function(){
-          if(window.CoachHerramientas){
-            window.CoachHerramientas.abrir(bl);
-            var t = document.querySelector('[data-tm="' + tab + '"]');
-            if(t) t.click();
-          }
-        });
-        return b;
-      };
-      box.appendChild(mk('', '🧮', 'Asistente de Discos', 'discos'));
-      box.appendChild(mk('alt', '⚖️', 'Series de Aproximación', 'rampa'));
+      box.classList.add('jp-tools-mini');
+      var link = document.createElement('button');
+      link.type = 'button'; link.className = 'cap-tool-mini';
+      link.innerHTML = '[ + Ver aproximación ]';
+      link.addEventListener('click', function(){
+        if(window.CoachHerramientas) window.CoachHerramientas.abrir(bl);
+      });
+      box.appendChild(link);
       /* la salida vieja del bloque ya no se usa: todo va al modal */
       var out = bl.querySelector('.jp-out'); if(out) out.remove();
       /* las cápsulas van justo encima de las series */
@@ -13008,18 +13119,22 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
       try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
     };
   }
+  /* UX/UI integral (13/09): la píldora ya no vive dentro de #mainContent
+     (empujaba la rutina hacia abajo en cada carga) -- se crea UNA sola vez
+     colgada de <body> y montarPerfil() (más abajo en el archivo) la
+     reparenta a #hdpNotaSlot, dentro del drawer de Perfil/Info. El check
+     de "ya existe" ahora es global (no scoped a #mainContent) porque el
+     nodo puede vivir fuera de #mainContent en cualquier momento. */
   function nota(){
     var n = CFG.nota;
     if(!n || !n.foco) return;
-    var main = document.getElementById('mainContent');
-    if(!main) return;
     crearModal(n);
-    if(main.querySelector('#notaMesoPill')) return;
+    if(document.getElementById('notaMesoPill')) return;
     var pill = document.createElement('button');
     pill.type = 'button'; pill.className = 'nm-pill'; pill.id = 'notaMesoPill';
     pill.innerHTML = '<span style="font-size:1rem">📋</span> Ver Nota Metodológica';
     pill.addEventListener('click', function(){ if(window.CoachNotaMesoAbrir) window.CoachNotaMesoAbrir(); });
-    main.insertBefore(pill, main.firstChild);
+    document.body.appendChild(pill);
   }
 
   /* =========================================================
@@ -13122,22 +13237,33 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   padding:10px 14px !important;
   margin:0 0 0.75rem !important;
   box-shadow:none !important;
+  /* UX/UI integral (13/09), parte 4: el banner desbordaba con textos
+     largos de biset/triset -- .sh-kind/.sh-text/.sh-meta son hijos flex
+     sin min-width:0, así que el navegador nunca los dejaba encoger para
+     hacer wrap y el banner terminaba más ancho que su contenedor padre.
+     box-sizing + ancho 100% + min-width:0 en cada hijo es el fix estándar
+     para ese patrón de overflow en flex-wrap. */
+  box-sizing:border-box !important;width:100% !important;max-width:100% !important;min-width:0 !important;
 }
+.superset-header *{box-sizing:border-box}
 .superset-header .sh-icon{display:none !important}
 .superset-header .sh-kind{
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.74rem;
   letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.55);
+  min-width:0;overflow-wrap:break-word;word-break:break-word;
 }
 .superset-header .sh-dot{color:#D2793F;font-size:0.8rem;line-height:1;opacity:.9}
 .superset-header .sh-text{
   font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.06rem;
   letter-spacing:0.06em;text-transform:uppercase;color:#FFFFFF;
   text-shadow:none !important;line-height:1.2;
+  min-width:0;flex:1 1 auto;overflow-wrap:break-word;word-break:break-word;
 }
 .superset-header .sh-text b{color:#D2793F;font-weight:800}
 .superset-header .sh-meta{
   flex:1 1 100%;font-family:'Inter',sans-serif;font-size:0.72rem;letter-spacing:0.02em;
   text-transform:none;color:rgba(255,255,255,0.5);
+  min-width:0;overflow-wrap:break-word;word-break:break-word;
 }
 /* el banner de estructura manda: va arriba de la caja de intensidad */
 .block-body .superset-header{order:-1}
@@ -13875,15 +14001,25 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
   display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;
   background:rgba(210,121,63,0.05);border:1px solid rgba(255,255,255,0.08);
   border-left:4px solid #D2793F;border-radius:10px;padding:10px 14px;margin:0 0 0.75rem;
+  /* UX/UI integral (13/09), parte 4: este es el banner real de biset/triset
+     que la directiva reporta desbordando ("BISET DINÁMICO • 3 RONDAS...",
+     ver estructura() más arriba) -- .superset-header, con el mismo look,
+     no es el que efectivamente se pinta acá (quedó sin uso en este flujo).
+     Mismo fix estándar: box-sizing + ancho 100% + min-width:0 en los hijos
+     flex para que el texto largo haga wrap en vez de desbordar. */
+  box-sizing:border-box !important;width:100% !important;max-width:100% !important;min-width:0 !important;
 }
+.blk-tag *{box-sizing:border-box}
 .blk-tag .bt-kind{
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.72rem;
   letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.5);
+  min-width:0;overflow-wrap:break-word;word-break:break-word;
 }
 .blk-tag .bt-dot{color:#D2793F;font-size:0.8rem;line-height:1;opacity:.9}
 .blk-tag .bt-main{
   font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.04rem;
   letter-spacing:0.06em;text-transform:uppercase;color:#FFFFFF;line-height:1.2;
+  min-width:0;flex:1 1 auto;overflow-wrap:break-word;word-break:break-word;
 }
 .blk-tag .bt-main b{color:#D2793F}
 .blk-tag .bt-meta{
@@ -15271,14 +15407,21 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   padding:9px 12px;border-radius:12px;
   background:rgba(124,197,232,0.06);border:1px solid rgba(124,197,232,0.24);
   border-left:4px solid #7CC5E8;backdrop-filter:blur(12px);
+  /* UX/UI integral (13/09), parte 4: mismo fix de desborde que .blk-tag
+     (arriba) -- .core-head es la variante "core estructurado" del mismo
+     banner de protocolo biset/triset/circuito. */
+  box-sizing:border-box !important;width:100% !important;max-width:100% !important;min-width:0 !important;
 }
+.block.core-card .core-head *{box-sizing:border-box}
 .block.core-card .core-head .ch-k{
   font-family:var(--font-head,inherit);font-size:11px;letter-spacing:0.12em;
   text-transform:uppercase;color:#7CC5E8;font-weight:800;
+  min-width:0;overflow-wrap:break-word;word-break:break-word;
 }
 .block.core-card .core-head .ch-d{color:rgba(255,255,255,0.28)}
 .block.core-card .core-head .ch-m{
   font-size:12.5px;color:#FFFFFF;font-weight:600;letter-spacing:0.02em;
+  min-width:0;flex:1 1 auto;overflow-wrap:break-word;word-break:break-word;
 }
 .block.core-card .core-head .ch-r{
   margin-left:auto;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;
@@ -17126,9 +17269,14 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   /* --- escala tipográfica (base +18%) --- */
   --fzs:1;
   --fz-hero:calc(30px * var(--fzs));
-  --fz-title:calc(22px * var(--fzs));
+  /* UX/UI integral (13/09), parte 2: el título de bloque (.block-label,
+     "BLOQUE NORMAL (ANCLA)") era el elemento más grande de la tarjeta
+     (22px, más que el propio nombre del ejercicio) -- se baja a un tamaño
+     sobrio de rótulo (14-16px) y el nombre del ejercicio (--fz-ex, abajo)
+     sube para ser el elemento dominante real, como pide la directiva. */
+  --fz-title:calc(15px * var(--fzs));
   --fz-board:calc(20px * var(--fzs));
-  --fz-ex:calc(17px * var(--fzs));
+  --fz-ex:calc(19px * var(--fzs));
   --fz-body:calc(15.5px * var(--fzs));
   --fz-dose:calc(14px * var(--fzs));
   --fz-sub:calc(14px * var(--fzs));
@@ -17143,15 +17291,14 @@ html[data-fz="g"]{--fzs:1.15}
 html[data-fz="x"]{--fzs:1.30}
 body{font-size:var(--fz-body) !important}
 
-/* --- 1 · TÍTULO DEL BLOQUE: el elemento más grande de la tarjeta --- */
+/* --- 1 · TÍTULO DEL BLOQUE: rótulo sobrio, el ejercicio manda (ver --fz-ex) --- */
 .block .block-label{
   font-size:var(--fz-title) !important;
-  line-height:1.14 !important;
-  font-weight:900 !important;
-  letter-spacing:.01em !important;
+  line-height:1.2 !important;
+  font-weight:700 !important;
+  letter-spacing:.05em !important;
   color:var(--jp-bone) !important;
 }
-@media(min-width:560px){ .block .block-label{font-size:calc(26px * var(--fzs)) !important} }
 /* la categoría se lee por el ícono y la barra lateral, no por el color del título */
 .block.cat-strength .block-label,.block.cat-metcon .block-label,
 .block.cat-warmup .block-label,.block.cat-cardio .block-label,
@@ -18532,6 +18679,29 @@ body{
 }
 .nutri-card .nut-legal{
   margin:2px 0 0;font-size:calc(11.5px * var(--fzs,1));line-height:1.5;color:#6E7783;
+}
+/* UX/UI integral (13/09) -- "Foco Técnico del Día" como micro-acordeón,
+   mismas proporciones que .nutri-card (52px de alto colapsado) para que
+   los dos convivan con la misma jerarquía visual delante del primer bloque. */
+.focus-accordion{
+  margin:0 0 14px;border-radius:14px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(124,197,232,.05),rgba(255,255,255,.015));
+  border:1px solid rgba(124,197,232,.22);
+}
+.focus-accordion .focus-sum{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+  padding:0 14px;min-height:52px;user-select:none;
+}
+.focus-accordion .focus-sum::-webkit-details-marker{display:none}
+.focus-accordion .focus-ic{font-size:17px;line-height:1}
+.focus-accordion .focus-ti{
+  font-family:var(--font-head,inherit);font-size:calc(13px * var(--fzs,1));
+  letter-spacing:.06em;color:#EDEFF2;font-weight:700;
+}
+.focus-accordion .focus-cv{margin-left:auto;color:#7CC5E8;font-size:13px;transition:transform .2s ease}
+.focus-accordion[open] .focus-cv{transform:rotate(180deg)}
+.focus-accordion .focus-body{
+  padding:0 14px 14px;font-size:calc(13.5px * var(--fzs,1));line-height:1.6;color:#C9CFD8;
 }
 @media(max-width:520px){
   .nutri-card .nut-hint{display:none}
@@ -20137,6 +20307,15 @@ input[type="checkbox"]:active{
   background:#0E1014 !important; border:1px solid #1E222B !important; color:#EDEFF3 !important;
   font-size:13px !important; font-weight:700 !important;
 }
+/* UX/UI integral (13/09): #notaMesoPill reparentado al drawer -- mismo
+   tratamiento visual que #guideBtn de arriba, para que las dos filas de
+   "Ajustes y utilidades" luzcan consistentes entre sí. */
+.hdp-row-slot #notaMesoPill{
+  width:100%; text-align:center; border-radius:14px !important; padding:12px !important;
+  background:#0E1014 !important; border:1px solid #1E222B !important; color:#EDEFF3 !important;
+  font-size:13px !important; font-weight:700 !important; display:flex !important;
+  align-items:center; justify-content:center; gap:6px; cursor:pointer;
+}
 
 /* ---------- Curva del mesociclo (tarjeta de Identidad) — 8vo pedido:
    badge dinámico "MESOCICLO {NIVEL} · S1 70% · S2 78% · ..." usando la
@@ -20600,6 +20779,10 @@ body.focus-mode .hd-dock{display:none}
     var guideSlot = q('hdpGuideSlot');
     var guideBtn = document.getElementById('guideBtn');
     if(guideSlot && guideBtn && guideBtn.parentNode !== guideSlot){ guideSlot.appendChild(guideBtn); }
+
+    var notaSlot = q('hdpNotaSlot');
+    var notaPill = document.getElementById('notaMesoPill');
+    if(notaSlot && notaPill && notaPill.parentNode !== notaSlot){ notaSlot.appendChild(notaPill); }
 
     var installSlot = q('hdpInstallSlot');
     var pwaWrap = document.querySelector('.pwa-wrap');
