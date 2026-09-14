@@ -3751,6 +3751,15 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .wab-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
     background: var(--jp-brand, #D2793F); box-shadow: 0 0 8px rgba(210,121,63,0.7); }
   .wab-text { white-space: normal; }
+  /* directiva de rediseño: el chip de semana absorbe la apertura del drawer
+     de Perfil/Info (antes un botón (i) suelto en el header) -- necesita
+     leerse como tocable y no sólo informativo. */
+  .week-active-badge.week-badge-tap{ cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+  .week-active-badge.week-badge-tap:active{ background: linear-gradient(135deg, rgba(210,121,63,0.26), rgba(210,121,63,0.08)); }
+  .week-active-badge.week-badge-tap:focus-visible{ outline: 2px solid var(--red); outline-offset: 2px; }
+  .week-active-badge.week-badge-tap::after{
+    content: '›'; margin-left: 2px; opacity: .65; font-weight: 700;
+  }
   .week-tabs-wrap { background: rgba(14,14,15,0.95); border-bottom: 1px solid var(--border); position: sticky; top: 105px; z-index: 100; overflow-x: auto; }
   .week-tabs-wrap::-webkit-scrollbar { display: none; }
   .week-tabs { max-width: 1140px; margin: 0 auto; display: flex; padding: 0 1.25rem; min-width: max-content; }
@@ -4212,6 +4221,54 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     .fatigue-btn { min-width: 0; }
   }
 </style>
+<style>
+/* =========================================================
+   COACH JP · REDISEÑO F — HÍBRIDO TÁCTICO
+   Sólo capa visual: rótulos entre corchetes monoespaciados,
+   conector de biset y escala numérica de la serie activa.
+   No define nuevos data-*, no toca .set-row/.block existentes
+   más que sumarles una clase de estado calculada en el render.
+   ========================================================= */
+/* rótulo de categoría del bloque ("Principal", "Accesorio", etc.)
+   dentro del banner .blk-tag, en formato corchete monoespaciado */
+.block .blk-tag .bt-kind{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+}
+.block .blk-tag .bt-kind::before{ content:"[ "; opacity:.75; }
+.block .blk-tag .bt-kind::after{ content:" ]"; opacity:.75; }
+
+/* disparador del acordeón de metodología: mismo lenguaje monoespaciado
+   entre corchetes que ya trae el texto (ver metodologia() más abajo) */
+.methodology-summary{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  letter-spacing: .02em !important;
+}
+
+/* conector de biset: acento en el margen de .bs-wrap, el contenedor real
+   que unificar() ya arma (roster .bs-ex + rondas .bs-r) -- no se toca su
+   estructura, sólo se le suma la línea lateral de marca. */
+.block .bs-wrap{ position: relative; padding-left: 14px; }
+.block .bs-wrap::before{
+  content:''; position:absolute; left:2px; top:2px; bottom:14px; width:2px; border-radius:2px;
+  background: linear-gradient(var(--gold, #D2793F), var(--red-dim, #2E5A72));
+}
+
+/* escala numérica de la primera serie sin completar (set-row-active,
+   calculada en renderSetRows sobre datos ya leídos, ver más arriba) */
+.set-row.set-row-active{
+  border-color: rgba(210,121,63,.55) !important;
+  background: rgba(210,121,63,.07) !important;
+  border-radius: 12px !important;
+}
+.set-row.set-row-active .set-row-label{ color: var(--gold, #D2793F) !important; font-weight: 800 !important; }
+.set-row.set-row-active .set-kg,
+.set-row.set-row-active .set-reps{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  font-size: 1.15rem !important;
+  font-weight: 700 !important;
+  color: var(--text-primary, #EDEFF2) !important;
+}
+</style>
 </head>
 <body>
 <style>
@@ -4296,15 +4353,6 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <span class="hdc-pay-chip" id="hdcPlanChip"></span>
         </span>
       </div>
-      <button type="button" class="hdc-info" id="hdcInfoBtn" title="Perfil, credencial y ajustes">
-        <svg class="hdc-info-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="3" y="5" width="18" height="14" rx="3.2" stroke="currentColor" stroke-width="1.6"/>
-          <circle cx="8.6" cy="10.2" r="1.65" fill="currentColor"/>
-          <path d="M5.7 15.3c.5-1.55 1.65-2.35 2.9-2.35s2.4.8 2.9 2.35" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>
-          <path d="M13.6 9.3h4.7M13.6 12h4.7M13.6 14.7h2.9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
-        </svg>
-        <span class="lbl">Perfil / Info</span>
-      </button>
     </div>
     <div class="hdc-days-row">
       <div class="hdc-days-wrap" id="hdcDaysWrap"></div>
@@ -4372,6 +4420,10 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       </div>
       <div class="hdp-row hdp-row-slot" id="hdpInstallSlot"></div>
       <div class="hdp-row hdp-row-slot" id="hdpGuideSlot"></div>
+      <div class="hdp-row hdp-row-fz">
+        <span class="hdp-row-lb">Tamaño del texto</span>
+        <div class="hdp-row-slot" id="hdpFzSlot"></div>
+      </div>
     </section>
 
     <section class="hdp-card hdp-coach">
@@ -5013,6 +5065,11 @@ function setLoadField(key, field, value){
 }
 function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg){
   let html = '<div class="set-tracker">';
+  /* directiva de rediseño: marca la primera serie sin completar como
+     "activa" para darle escala numérica destacada (kg/reps más grandes) --
+     puramente visual, se calcula sobre state.loads ya leído más abajo
+     (ld.done), no agrega ni cambia ningún dato. */
+  let activaMarcada = false;
   for(let i=1;i<=numSets;i++){
     const key = getLoadKey(weekIdx, dayId, blockId, exIdx, i);
     const ld = getLoad(key);
@@ -5046,7 +5103,9 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg)
        check de los inputs, que era el bug reportado en "Press
        Guillotina"). .set-row en sí sigue con flex-wrap:wrap (pedido 40,
        más abajo) porque .jp-hist todavía necesita su propia línea. */
-    html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + '" data-set-key="' + key + '">' +
+    let claseActiva = '';
+    if(!ld.done && !activaMarcada){ claseActiva = ' set-row-active'; activaMarcada = true; }
+    html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + claseActiva + '" data-set-key="' + key + '">' +
       '<span class="set-row-label">Serie ' + i + '</span>' +
       '<div class="set-load">' +
         '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (kgVal!=null?kgVal:'') + '" />' +
@@ -6023,7 +6082,7 @@ function renderBlock(block, day, weekIdx, idx){
     '</div>' +
     '<div class="block-body">' + cargaSugeridaHtml(block, weekIdx) + renderBlockInner(block, day, weekIdx) +
       (block.category === 'warmup' ? '' : bloqueNotasHtml(block, day, weekIdx)) +
-      videoFeedbackHtml(block, day, weekIdx) + '</div>' +
+      '</div>' +
   '</div>';
 }
 /* Tarjeta de nutrición de la sesión: la arma el coach en el builder */
@@ -10750,7 +10809,10 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   function repintar(){
     try{
       cargarScaling(); wodSinVideo(); complexes(); glosario();
-      escalado(); sugerencias(); iconizar(); feedback(); pintarUnidad();
+      /* iconizar() queda deshabilitado: capsulas() (más abajo) es la que
+         monta las herramientas de serie sobre .jp-tools, sin el ícono
+         combinado de "Asistente de Discos" (directiva de rediseño). */
+      escalado(); sugerencias(); feedback(); pintarUnidad();
     }catch(e){}
   }
   window.CoachMetodologia = { repintar: repintar, glosario: glosario, sugerencias: sugerencias };
@@ -11787,7 +11849,9 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
         });
         return b;
       };
-      box.appendChild(mk('', '🧮', 'Asistente de Discos', 'discos'));
+      /* botón "Asistente de Discos" retirado (directiva de rediseño): la
+         calculadora de discos sigue existiendo adentro del modal, sólo se
+         quitó su acceso directo desde la tarjeta del bloque. */
       box.appendChild(mk('alt', '⚖️', 'Series de Aproximación', 'rampa'));
       /* la salida vieja del bloque ya no se usa: todo va al modal */
       var out = bl.querySelector('.jp-out'); if(out) out.remove();
@@ -15498,7 +15562,12 @@ body.cf-modo .block .ex-tip{display:none}
   var GRUPOS = [
     { h:'Cálculo y marcas', ids:['prHubBtn'] },
     { h:'Documentación',    ids:['btnManualTop'] },
-    { h:'Sesión y vista',   ids:['btnVistaTop', 'jpFzSwitch'] }
+    /* directiva de rediseño: 'jpFzSwitch' se sacó de este grupo -- este panel
+       "🧰 Herramientas" vive dentro de .hd-actions (header legado, oculto),
+       así que el selector Aa quedaba inalcanzable. Ahora tiene un hogar
+       visible propio en el drawer de Perfil/Info (#hdpFzSlot, ver
+       montarPerfil() más abajo); el resto del grupo no se toca. */
+    { h:'Sesión y vista',   ids:['btnVistaTop'] }
   ];
   var ETIQUETA = {
     prHubBtn:'🏆 Mis Marcas y récords', btnManualTop:'📘 Manual de Uso',
@@ -16798,7 +16867,7 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
       }
 
       var html =
-        '<summary class="methodology-summary">▼ 💡 Pautas Técnicas, Tips y Objetivo</summary>' +
+        '<summary class="methodology-summary">[ 💡 Pautas Técnicas, Tips y Objetivo ]</summary>' +
         '<div class="m-body">' +
           (objetivo ? '<div class="m-sec"><h6>🎯 Objetivo</h6><p>' + esc(objetivo) + '</p></div>' : '') +
           (notas.length ? '<div class="m-sec"><h6>🧭 Estrategia del bloque</h6><p>' +
@@ -19850,6 +19919,11 @@ input[type="checkbox"]:active{
 }
 .hdp-row-slot{ padding:0; background:transparent; border:none; }
 .hdp-row-slot .pwa-wrap{ margin:0; padding:0; width:100%; }
+/* fila del selector Aa: el control ya viene a ancho completo (3 botones),
+   así que la etiqueta va arriba en vez de al costado como .hdp-row-uni */
+.hdp-row-fz{ flex-direction:column; align-items:stretch; gap:8px; }
+.hdp-row-fz .hdp-row-lb{ margin-bottom:0; }
+.hdp-row-fz #hdpFzSlot{ width:100%; }
 .hdp-row-slot .pwa-athlete{ margin:0 !important; width:100%; max-width:none !important; border-radius:14px !important; }
 .hdp-row-slot #guideBtn{
   width:100%; text-align:center; border-radius:14px !important; padding:12px !important;
@@ -20276,7 +20350,12 @@ body.focus-mode .hd-dock{display:none}
     var wrap = q('hdcDaysWrap');
     var tabsWrap = document.querySelector('.week-tabs-wrap');
     if(wrap && tabsWrap && tabsWrap.parentNode !== wrap){ wrap.appendChild(tabsWrap); }
-    var infoBtn = q('hdcInfoBtn');
+    /* directiva de rediseño: el botón (i) suelto se retiró del header --
+       el drawer de Perfil/Info ahora se abre tocando el chip de semana
+       (#weekActiveBadge, "Entrenando en: Semana X"), que ya vive fijo
+       arriba del selector de días. Mismo drawer, mismo cableado, sólo
+       cambia el disparador. */
+    var infoBtn = q('weekActiveBadge');
     var drawer = q('hdFullDrawer');
     /* .hd-wrap tiene position:relative + z-index:3 (regla vieja, ~línea 5990),
        lo que le crea su propio "stacking context" — cualquier elemento fixed
@@ -20289,12 +20368,19 @@ body.focus-mode .hd-dock{display:none}
     if(drawer && drawer.parentElement !== document.body){ document.body.appendChild(drawer); }
     if(infoBtn && drawer && !infoBtn.dataset.hdWired){
       infoBtn.dataset.hdWired = '1';
+      infoBtn.classList.add('week-badge-tap');
+      infoBtn.setAttribute('role', 'button');
+      infoBtn.setAttribute('tabindex', '0');
+      infoBtn.setAttribute('title', 'Perfil, credencial y ajustes');
       infoBtn.addEventListener('click', function(e){
         e.stopPropagation();
         drawer.classList.toggle('on');
       });
+      infoBtn.addEventListener('keydown', function(e){
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); infoBtn.click(); }
+      });
       document.addEventListener('click', function(e){
-        if(drawer.classList.contains('on') && !e.target.closest('.hd-full-drawer') && !e.target.closest('#hdcInfoBtn')){
+        if(drawer.classList.contains('on') && !e.target.closest('.hd-full-drawer') && !e.target.closest('#weekActiveBadge')){
           drawer.classList.remove('on');
         }
       });
@@ -20323,6 +20409,16 @@ body.focus-mode .hd-dock{display:none}
     var installSlot = q('hdpInstallSlot');
     var pwaWrap = document.querySelector('.pwa-wrap');
     if(installSlot && pwaWrap && pwaWrap.parentNode !== installSlot){ installSlot.appendChild(pwaWrap); }
+
+    /* directiva de rediseño: el selector Aa (módulo "SYSTEM v3.1 ·
+       ACCESIBILIDAD", más abajo) ya trae su propio CSS pensado para vivir
+       "en el drawer" (ver comentario ahí), pero se montaba con
+       document.querySelector('.hd-actions') -- el header legado, oculto
+       con display:none. Se reparenta acá al nuevo slot, visible dentro
+       del panel de Perfil/Info que abre el chip de semana. */
+    var fzSlot = q('hdpFzSlot');
+    var fzSwitch = document.getElementById('jpFzSwitch');
+    if(fzSlot && fzSwitch && fzSwitch.parentNode !== fzSlot){ fzSlot.appendChild(fzSwitch); }
 
     /* Bóveda de PRs: abre el hub de récords ya existente (window.CoachHubUI,
        montado por otro módulo) — cierra este drawer primero porque el hub
