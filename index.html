@@ -3810,6 +3810,15 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .day-view.active { display: block; animation: dayFadeIn 0.4s cubic-bezier(0.16,1,0.3,1); }
   @keyframes dayFadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   .day-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: var(--sp-6); padding-top: var(--sp-5); flex-wrap: wrap; }
+  /* workout-first (13/09): .day-header ahora vive DESPUÉS de .blocks-stack
+     (antes era lo primero del día) -- el padding-top que separaba del
+     progress-bar-wrap de arriba ahora sobra ahí y hace falta como
+     separación respecto del último bloque de arriba. .blocks-stack (o el
+     banner de foco técnico, si el día lo trae) pasan a ser lo primero, así
+     que son ellos los que ahora necesitan ese aire superior. */
+  .day-view > .day-header { padding-top: 0; margin-top: var(--sp-6); }
+  .day-view > .blocks-stack:first-child,
+  .day-view > .safety-banner:first-child { margin-top: var(--sp-5); }
   .day-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.3rem; }
   .day-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.01em; line-height: 1.1; }
   .day-meta-row { display: flex; gap: 7px; margin-top: 0.5rem; flex-wrap: wrap; }
@@ -4529,18 +4538,37 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   </a>
 </div>
 
+<!-- directiva crítica (2026-09) -- "workout-first": el selector de semana
+     (.week-selector, tarjetas apiladas), el badge "Entrenando en..." y la
+     tarjeta grande de objetivo/nota metodológica (.week-info-card) eran 3
+     bloques verticales separados antes de llegar a los días. Se funden en
+     UNA sola barra horizontal compacta: la semana activa con su fase +
+     un botón ℹ️ que abre el detalle completo en #weekInfoModal (mismo
+     patrón .modal-overlay/.modal que ya usa #guideModal más abajo), y las
+     semanas restantes como chips chicos sin subtítulo. weekSelectorEl seguía
+     apuntando a este mismo contenedor (ver renderWeekSelector() reescrito)
+     -- #weekActiveBadge/#weekInfoCard quedan en el DOM ocultos, sólo para no
+     romper renderWeekActiveBadge()/renderWeekInfo() si algo externo llegara
+     a llamarlas -- ya no se pintan visibles. -->
 <div class="week-selector-wrap">
   <div class="week-selector" id="weekSelector"></div>
 </div>
-<!-- 09/09 -- refuerzo de claridad de semana (pedido tras confusión real de un
-     atleta que anotó el Día 2 en S2 creyendo estar en S1): badge grande y
-     fijo, arriba del selector de días, que siempre dice en qué semana está
-     parado -- ver renderWeekActiveBadge() más abajo. -->
-<div class="week-active-badge-wrap"><div class="week-active-badge" id="weekActiveBadge"></div></div>
 <div class="week-tabs-wrap">
   <div class="week-tabs" id="week-tabs"></div>
 </div>
-<div class="week-info-bar"><div id="weekInfoCard"></div></div>
+<div class="week-active-badge-wrap" style="display:none"><div class="week-active-badge" id="weekActiveBadge"></div></div>
+<div class="week-info-bar" style="display:none"><div id="weekInfoCard"></div></div>
+<div id="weekInfoModal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2><span class="mh-icon" id="weekInfoModalIcon">🎯</span> <span id="weekInfoModalTitle">Semana</span></h2>
+      <button id="weekInfoModalClose" class="modal-close" type="button">&times;</button>
+    </div>
+    <div class="guide-section">
+      <p id="weekInfoModalText"></p>
+    </div>
+  </div>
+</div>
 <div class="progress-bar-wrap">
   <div class="progress-row">
     <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
@@ -5762,26 +5790,36 @@ function semanaActivaCorrespondiente(){
   }
   return Math.max(0, WEEKS_META.length - 1);
 }
+/* directiva crítica (2026-09) -- "workout-first": ya no se pinta un banner
+   aparte para "Entrenando en: Semana N" -- ese estado vive directamente en
+   el chip activo de renderWeekSelector() (mismo dato, un solo lugar). Se
+   deja como función segura (no-op sobre un elemento oculto) por si algo
+   externo todavía la llama -- nunca rompía antes, tampoco ahora. */
 function renderWeekActiveBadge(){
   if(!weekActiveBadgeEl) return;
-  const w = WEEKS_META[state.currentWeek] || {};
-  /* mismo criterio que renderWeekInfo() de arriba: w.phase es texto que
-     carga el coach al armar el programa, no un dato del alumno -- se
-     concatena tal cual, igual que ya se hace con weekInfoCardEl. */
-  weekActiveBadgeEl.innerHTML =
-    '<span class="wab-dot" aria-hidden="true"></span>' +
-    '<span class="wab-text">Entrenando en: Semana ' + (state.currentWeek + 1) +
-      (w.phase ? ' · ' + w.phase : '') + '</span>';
 }
+/* directiva crítica (2026-09) -- barra compacta de semana: el chip activo
+   muestra semana + fase inline; el resto de las semanas son chips chicos
+   sin subtítulo (mismo click-to-switch de siempre). El detalle completo
+   (nota metodológica, RPE) se movió a #weekInfoModal -- se abre tocando el
+   botón ℹ️ o el chip activo, nunca ocupa espacio en el flujo principal. */
 function renderWeekSelector(){
   weekSelectorEl.innerHTML = WEEKS_META.map(function(w,i){
-    return '<div class="week-pill' + (i===state.currentWeek?' active':'') + '" data-week="' + i + '">' +
-      '<span class="week-pill-name">' + w.icon + ' ' + w.short + '</span>' +
-      '<span class="week-pill-phase">' + w.phase + '</span>' +
+    if(i === state.currentWeek){
+      return '<div class="week-pill active wpc-current" data-week="' + i + '">' +
+          '<span class="week-pill-name">' + w.icon + ' ' + w.short + '</span>' +
+          '<span class="week-pill-phase">' + w.phase + '</span>' +
+        '</div>' +
+        '<button type="button" class="wpc-info-btn" id="weekInfoBtn" ' +
+          'title="Ver explicación de la semana" aria-label="Ver explicación de la semana">ℹ️</button>';
+    }
+    return '<div class="week-pill wpc-mini" data-week="' + i + '">' +
+      '<span class="week-pill-name">' + w.short + '</span>' +
     '</div>';
   }).join('');
   weekSelectorEl.querySelectorAll('.week-pill').forEach(function(p){
     p.addEventListener('click', function(){
+      if(p.classList.contains('wpc-current')){ abrirWeekInfoModal(); return; }
       var destino = parseInt(p.dataset.week, 10);
       /* aviso suave (no bloqueante): si salta a una semana posterior a la
          que le corresponde y esa semana propia todavía no está cerrada,
@@ -5803,11 +5841,19 @@ function renderWeekSelector(){
       renderMain();
     });
   });
+  var infoBtn = weekSelectorEl.querySelector('#weekInfoBtn');
+  if(infoBtn) infoBtn.addEventListener('click', function(e){ e.stopPropagation(); abrirWeekInfoModal(); });
+}
+function abrirWeekInfoModal(){
+  var m = document.getElementById('weekInfoModal');
+  if(m && typeof openModal === 'function') openModal(m);
 }
 function renderWeekInfo(){
   const w = WEEKS_META[state.currentWeek];
   heroEyebrowEl.textContent = PROGRAM_CONFIG.mesoName + ' — ' + w.name;
-  weekInfoCardEl.innerHTML =
+  /* elemento legado oculto -- se mantiene sincronizado por si algo externo
+     lo lee, pero ya no es lo que ve el alumno/a (ver #weekInfoModal). */
+  if(weekInfoCardEl) weekInfoCardEl.innerHTML =
     '<div class="week-info-card' + (w.deload?' is-deload':'') + '">' +
       '<div class="week-info-icon">' + w.icon + '</div>' +
       '<div>' +
@@ -5815,6 +5861,12 @@ function renderWeekInfo(){
         '<div class="week-info-text">' + w.note + '</div>' +
       '</div>' +
     '</div>';
+  var mIcon = document.getElementById('weekInfoModalIcon');
+  var mTitle = document.getElementById('weekInfoModalTitle');
+  var mText = document.getElementById('weekInfoModalText');
+  if(mIcon) mIcon.textContent = w.icon;
+  if(mTitle) mTitle.textContent = w.name + ' · ' + w.phase + ' — ' + w.rpe;
+  if(mText) mText.innerHTML = w.note;
   renderWeekActiveBadge();
 }
 /* =========================================================
@@ -6121,6 +6173,21 @@ function renderMain(){
   const blocks = visibleBlocks(day);
   const dayDone = isDayDone(weekIdx, day.id);
   let html = '<div class="day-view active">';
+  /* DIRECTIVA "WORKOUT-FIRST" (13/09): el primer bloque de ejercicio va
+     INMEDIATAMENTE debajo del selector de día/semana (arriba del pliegue,
+     sin scroll). El header grande del día (título duplicado, ya lo dice
+     el selector de arriba), el contexto de sesión, el check-in de
+     readiness y el foco técnico/nutrición pasan a vivir DESPUÉS de los
+     bloques: cero dato ni funcionalidad se pierde (mismos ids, mismos
+     listeners via wireReadinessCheckin/wireBlockInteractions, que ya
+     buscan los nodos en el DOM recién pintado sin importar su posición),
+     solo se reordena la jerarquía visual. */
+  if(day.focusText){
+    html += '<div class="safety-banner"><div class="sb-icon">🎯</div><div><div class="safety-banner-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div><div class="safety-banner-text">' + day.focusText + '</div></div></div>';
+  }
+  html += '<div class="blocks-stack">';
+  blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
+  html += '</div>';
   html += '<div class="day-header">';
   html += '<div><div class="day-eyebrow">' + day.short + ' — ' + WEEKS_META[weekIdx].name + '</div>';
   html += '<div class="day-title">' + day.title + '</div>';
@@ -6129,13 +6196,7 @@ function renderMain(){
   html += '</div>';
   html += renderContextoSesion();
   html += renderReadinessCard(weekIdx, day);
-  if(day.focusText){
-    html += '<div class="safety-banner"><div class="sb-icon">🎯</div><div><div class="safety-banner-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div><div class="safety-banner-text">' + day.focusText + '</div></div></div>';
-  }
   html += nutriCard(day);
-  html += '<div class="blocks-stack">';
-  blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
-  html += '</div>';
   if(day.summary){ html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + day.summary + '</p></div>'; }
   if((day.cooldown||[]).length){
     /* las fases numeradas del generador se leen como subtítulo, no como una viñeta más */
@@ -6392,6 +6453,15 @@ function closeModal(el){ el.classList.remove('open'); }
 guideBtnEl.addEventListener('click', function(){ openModal(guideModalEl); });
 guideCloseEl.addEventListener('click', function(){ closeModal(guideModalEl); });
 guideModalEl.addEventListener('click', function(e){ if(e.target === guideModalEl) closeModal(guideModalEl); });
+/* directiva crítica (2026-09) -- modal de detalle de semana ("workout-first"),
+   mismo patrón exacto que guideModal de arriba: cerrar con la X o tocando
+   afuera. Se abre desde renderWeekSelector()/abrirWeekInfoModal() más arriba. */
+const weekInfoModalEl = document.getElementById('weekInfoModal');
+const weekInfoModalCloseEl = document.getElementById('weekInfoModalClose');
+if(weekInfoModalEl && weekInfoModalCloseEl){
+  weekInfoModalCloseEl.addEventListener('click', function(){ closeModal(weekInfoModalEl); });
+  weekInfoModalEl.addEventListener('click', function(e){ if(e.target === weekInfoModalEl) closeModal(weekInfoModalEl); });
+}
 /* 10/09 -- pestañas internas de la Guía (Técnica / Glosario / Zonas FC) */
 (function guiaTabs(){
   var tabs = document.querySelectorAll('#guideTabs .tm-tab');
@@ -8045,6 +8115,26 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 }
 .week-pill.active .week-pill-name{color:#D2793F !important;text-shadow:0 0 12px rgba(210,121,63,.4)}
 .week-pill-name{font-size:1rem !important}
+/* directiva crítica (2026-09) -- barra compacta "workout-first": el chip
+   activo (.wpc-current) conserva nombre+fase; el resto de las semanas
+   (.wpc-mini) se reducen a un chip chico sin subtítulo -- toda la fila
+   queda en una sola línea horizontal en vez de la tarjeta grande de antes.
+   El detalle completo (nota metodológica) vive en #weekInfoModal, atrás de
+   .wpc-info-btn o del chip activo -- nunca empuja el resto hacia abajo. */
+.week-selector{align-items:center}
+.week-pill.wpc-current{padding:8px 14px !important;gap:0}
+.week-pill.wpc-mini{padding:6px 12px !important;min-width:0 !important}
+.week-pill.wpc-mini .week-pill-name{font-size:.8rem !important;opacity:.7}
+.wpc-info-btn{
+  flex-shrink:0;width:30px;height:30px;min-width:30px;border-radius:50%;
+  border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04);
+  color:var(--text-secondary);display:flex;align-items:center;justify-content:center;
+  font-size:13px;cursor:pointer;transition:border-color .15s ease,transform .12s ease;margin:0 2px 0 -2px;
+}
+.wpc-info-btn:hover{border-color:rgba(210,121,63,.4);color:#D2793F}
+.wpc-info-btn:active{transform:scale(.92)}
+#weekInfoModal .guide-section{max-width:640px}
+#weekInfoModal #weekInfoModalText{font-size:.92rem;line-height:1.6;color:var(--text-secondary)}
 
 /* ---------- riel de días ---------- */
 .week-tabs-wrap{border-bottom:1px solid rgba(255,255,255,.07)}
@@ -16768,6 +16858,14 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
 .block .block-body > .blk-tag,.block .block-body > .core-head{order:1}
 .block .block-body > .bs-wrap,.block .block-body > .core-build,
 .block .block-body > .set-tracker,.block .block-body > .ex-row{order:2}
+/* workout-first (13/09): dentro de esta tabla de orden estricto, .blk-tag
+   ("Trabajo principal · X series · Y reps") tapaba el nombre del ejercicio
+   arriba del pliegue -- y esa misma info de series/reps ya se repite en
+   .ex-row > .ex-detail, así que no se pierde nada al mostrarla después.
+   Se mueve SOLO .blk-tag a order:3 (justo después de .ex-row/order:2;
+   "order" exige un entero, no admite decimales); core-head, que comparte
+   selector arriba, no se toca. */
+.block .block-body > .blk-tag{order:3 !important}
 .block .block-body > .directive-badge,.block .block-body > .directive-chip{order:3}
 .block .block-body > .jp-tools,.block .block-body > .cap-bar{order:4}
 .block .block-body > .load-suggest,.block .block-body > .load-suggest-compact{order:5}
