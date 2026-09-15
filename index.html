@@ -5331,6 +5331,15 @@ function setLoadField(key, field, value){
   saveProgress();
 }
 function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg){
+  /* parser de unidades: si la prescripción de esta estación ya viene en
+     distancia/tiempo ("20 metros", "30 seg", "400m"), el segundo input
+     no debe seguir etiquetado "Reps" -- se adapta a la unidad real. */
+  let repsPlaceholder = 'Reps';
+  if(repsHint != null){
+    const rh = String(repsHint);
+    if(/\\d\\s*(metros?|km|m)\\b/i.test(rh)) repsPlaceholder = 'm';
+    else if(/\\d\\s*(segundos?|seg|minutos?|min|s)\\b/i.test(rh)) repsPlaceholder = 'seg';
+  }
   let html = '<div class="set-tracker">';
   /* directiva de rediseño: marca la primera serie sin completar como
      "activa" para darle escala numérica destacada (kg/reps más grandes) --
@@ -5386,14 +5395,20 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg)
         '<span class="set-row-compact">' + resumenCompacto + '</span>' +
       '</button>' +
       '<div class="set-load">' +
-        '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (kgVal!=null?kgVal:'') + '" />' +
+        '<span class="set-field"><span class="set-unit">kg</span>' +
+          '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (kgVal!=null?kgVal:'') + '" />' +
+        '</span>' +
         '<span class="set-x" aria-hidden="true">\\u00d7</span>' +
         /* el objetivo (repsHint) ya no va como placeholder acá: se veía como
            texto tenue "dato ya cargado" y desaparecía justo al tocar el campo
            para tipear -- ahora el objetivo se muestra afuera, en texto fijo
            y legible (badge de prescripción / roster del biset), y el input
-           queda limpio para que el alumno cargue lo realizado. */
-        '<input class="set-input set-reps' + (sugerido&&repsVal!=null?' set-input-sug':'') + '" type="text" inputmode="numeric" autocomplete="off" placeholder="Reps" value="' + (repsVal!=null?repsVal:'') + '" />' +
+           queda limpio para que el alumno cargue lo realizado. La etiqueta
+           chica arriba (.set-unit) sí queda fija -- "reps", o "m"/"seg"
+           cuando la estación es de distancia/tiempo (repsPlaceholder). */
+        '<span class="set-field"><span class="set-unit">' + repsPlaceholder.toLowerCase() + '</span>' +
+          '<input class="set-input set-reps' + (sugerido&&repsVal!=null?' set-input-sug':'') + '" type="text" inputmode="numeric" autocomplete="off" placeholder="' + repsPlaceholder + '" value="' + (repsVal!=null?repsVal:'') + '" />' +
+        '</span>' +
         '<input class="set-check" type="checkbox" ' + (ld.done?'checked':'') + ' />' +
       '</div>' +
     '</div>';
@@ -7830,7 +7845,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const row = chk.closest('.set-row');
       beepSetCheck(chk.checked);
       if(chk.checked){
-        vibrar(40);
+        /* pulido háptico: tap corto en cada serie, pulso de éxito más largo
+           y distinto cuando ESA marca deja el bloque entero completo -- el
+           cierre de ronda (bs-cerrar, módulo aparte) dispara su propio
+           pulso de éxito y usa window.__jpRondaCerrando para no duplicar
+           el buzz corto en cada estación que marca de paso. */
+        if(!window.__jpRondaCerrando){
+          const bloqueEl = chk.closest('.block');
+          const todos = bloqueEl ? [].slice.call(bloqueEl.querySelectorAll('.set-check')) : [];
+          const completo = todos.length > 0 && todos.every(function(c){ return c.checked; });
+          vibrar(completo ? [30, 50, 60] : [15, 30, 15]);
+        }
         /* el reloj de descanso automático se retiró: el único temporizador es
            el ⏱️ Custom WOD Timer de la barra superior, que abrís cuando lo necesitás */
       }
@@ -14370,6 +14395,13 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   function esc(s){
     return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
+  /* mismo parser de unidades que unificar(): si la prescripción ya trae
+     distancia/tiempo pegado a un número ("20 metros", "30 seg"), no se le
+     suma "REPS" atrás. */
+  function esUnidadNoRep(s){
+    if(s == null) return false;
+    return /\\d\\s*(metros?|minutos?|min|segundos?|seg|km|m|s)\\b/i.test(String(s));
+  }
   var RX_WARM = /entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|estiramiento/i;
   var RX_CORE = /\\bcore\\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
 
@@ -14479,8 +14511,9 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     if(b && b.isBlock){
       var ef = (b.weekSets && b.weekSets[wi]) || b.efSets || 0;
       var reps = (b.weekReps && b.weekReps[wi]) || b.reps || '';
-      return { kind:'Trabajo principal', main:'<b>' + ef + ' SERIES EFECTIVAS</b>' + (reps ? ' · ' + reps + ' REPS' : ''),
-               vol: ef + ' series' + (reps ? ' × ' + reps + ' reps' : '') };
+      var repsEsUnidad = esUnidadNoRep(reps);
+      return { kind:'Trabajo principal', main:'<b>' + ef + ' SERIES EFECTIVAS</b>' + (reps ? ' · ' + reps + (repsEsUnidad ? '' : ' REPS') : ''),
+               vol: ef + ' series' + (reps ? ' × ' + reps + (repsEsUnidad ? '' : ' reps') : '') };
     }
     if(b && b.isFinisher){
       var n = (b.exercises || []).length;
@@ -16453,6 +16486,16 @@ body.cf-modo .block .ex-tip{display:none}
     if(s === '' || s === '-' || s === '0' || s === 'undefined') return false;
     return true;
   }
+  /* directiva de pulido (parser de unidades): si el campo de reps ya trae
+     una unidad de distancia/tiempo pegada a un número ("20 metros", "30
+     seg", "400m", "1 min"), no hay que sumarle "REPS" atrás -- eso es lo
+     que generaba "20 metros REPS". Sólo cuenta cuando el número precede
+     directamente al token de unidad (evita falsos positivos con "12 reps"
+     o "10-12", que no traen ninguna unidad pegada). */
+  function esUnidadNoRep(s){
+    if(s == null) return false;
+    return /\\d\\s*(metros?|minutos?|min|segundos?|seg|km|m|s)\\b/i.test(String(s));
+  }
 
   /* Catalogo de tecnicas de intensidad (mismo set que el modulo de
      prescripcion mas arriba en el archivo -- se repite acá porque cada
@@ -16503,7 +16546,7 @@ body.cf-modo .block .ex-tip{display:none}
                     tempo real, "10-12 REPS · TEMPO 2011" -- mayusculas,
                     sin el emoji de objetivo que tenia antes (el pedido de
                     branding fue "capsula limpia", no un icono). */
-                 det: x.reps ? (x.reps + ' REPS' + (tempoValido(x.tempo) ? ' · TEMPO ' + x.tempo : '')) : '',
+                 det: x.reps ? (x.reps + (esUnidadNoRep(x.reps) ? '' : ' REPS') + (tempoValido(x.tempo) ? ' · TEMPO ' + x.tempo : '')) : '',
                  tecnica: tecnicaBadgeTexto(x.metodologia),
                  row: row, tracker: trackers[i],
                  /* la lista se congela antes de mover nada: si no, los índices se corren */
@@ -16567,14 +16610,19 @@ body.cf-modo .block .ex-tip{display:none}
           if(!row) return;
           var f = document.createElement('div');
           f.className = 'bs-fila';
-          /* 08/09 -- estructura matricial limpia: nombre, video y
-             prescripción de cada estación viven UNA sola vez, en el roster
-             de arriba (.bs-ex, siempre visible). Repetirlos acá adentro de
-             cada ronda era la duplicación exacta que se pidió eliminar --
-             la fila de una ronda ahora es sólo el mínimo de registro:
-             letra de estación + Kg/×/Reps/check (la fila real, con su
-             data-set-key intacto). */
-          f.innerHTML = '<span class="bs-l">' + letra(i) + '</span>';
+          /* pulido (directiva "trisets/unidades/háptica"): el roster de
+             arriba (.bs-ex) sigue siendo la fuente única del nombre/video/
+             prescripción completos, pero pedirle al alumno que scrollee
+             hasta ahí en medio de una ronda para recordar qué estación
+             está haciendo (B, C...) resultó peor que la redundancia mínima
+             que se había evitado en 08/09 -- se reincorpora un mini-nombre
+             chico (.bs-fila-nm, sólo texto, sin video ni prescripción) en
+             la cabecera de cada fila de ronda. Nombre distinto de .bs-nm
+             a propósito: videosEnEstaciones() (más abajo, módulo aparte)
+             sigue buscando esa clase vieja para no reinyectar el botón de
+             video acá, que ya vive una sola vez en el roster. */
+          f.innerHTML = '<div class="bs-fila-head"><span class="bs-l">' + letra(i) + '</span>' +
+            '<span class="bs-fila-nm">' + esc(x.name) + '</span></div>';
           f.appendChild(row);                       /* se mueve la fila real: conserva su data-set-key */
           caj.appendChild(f);
         });
@@ -16687,15 +16735,25 @@ body.cf-modo .block .ex-tip{display:none}
     var checks = [].slice.call(caj.querySelectorAll('.set-check'));
     var faltan = checks.filter(function(c){ return !c.checked; });
     if(!faltan.length){
+      window.__jpRondaCerrando = true;
       checks.forEach(function(c){ c.checked = false; c.dispatchEvent(new Event('change', { bubbles:true })); });
+      window.__jpRondaCerrando = false;
       setTimeout(function(){ estado(bl); }, 60);
       return;
     }
+    /* pulido háptico: pulso de éxito único al cerrar la ronda -- las
+       marcas individuales que dispara este mismo cierre quedan en
+       silencio (window.__jpRondaCerrando, ver listener de .set-check
+       más arriba en el archivo) para no sumar varios buzz cortos
+       encima del pulso de éxito. */
+    try{ if(navigator.vibrate) navigator.vibrate([30, 50, 60]); }catch(err){}
+    window.__jpRondaCerrando = true;
     /* las intermedias se marcan en silencio y la última dispara el reloj de la ronda */
     faltan.forEach(function(c, i){
       c.checked = true;
       c.dispatchEvent(new Event('change', { bubbles:true }));
     });
+    window.__jpRondaCerrando = false;
     setTimeout(function(){ estado(bl); }, 80);
   });
   document.addEventListener('change', function(e){
@@ -17110,6 +17168,14 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   letter-spacing:.06em !important;
   min-height:42px;
 }
+/* pulido: el botón de cierre de ronda en biset/triset pasa a monoespaciado
+   compacto (táctico), distinto del resto de los botones "cerrar" del
+   sistema que siguen con la tipografía de titulares. */
+.bs-cerrar{
+  font-family:var(--font-mono,'JetBrains Mono',monospace) !important;
+  font-size:11.5px !important;
+  letter-spacing:.03em !important;
+}
 .bs-cerrar:hover{background:rgba(210,121,63,.2) !important}
 .bs-r.bs-lista .bs-cerrar{
   background:rgba(124,197,232,.09) !important;border-color:rgba(124,197,232,.5) !important;color:var(--jp-cyan) !important;
@@ -17193,26 +17259,35 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   min-height:38px;transition:min-height .18s ease;
 }
 .block .block-note-input:focus{border-color:rgba(210,121,63,.4) !important;outline:none}
-/* --- 2.2 · estación de la ronda (08/09: matriz limpia, una sola línea) ---
-   Nombre, video y prescripción ya no viven acá (viven una sola vez en el
-   roster .bs-ex de arriba) -- la fila de la ronda es sólo la letra de
-   estación + la carga real (Kg/×/Reps/check), en una línea. Se cambia de
-   grid a flex porque ya no hace falta apilar renglones. */
+/* --- 2.2 · estación de la ronda (pulido posterior: dos líneas) ---
+   La prescripción completa (reps/tempo/técnica/ref previa) y el video
+   siguen viviendo una sola vez en el roster .bs-ex de arriba -- acá sólo
+   se agrega un mini-nombre de una línea (.bs-fila-nm) para no obligar al
+   alumno a scrollear en medio de una ronda. Se pasa de una fila (letra +
+   carga compartiendo el mismo ancho) a dos: cabecera (letra + nombre) y,
+   debajo, la carga real a ancho completo -- así el check de 48px nunca
+   compite por espacio contra el nombre de la estación. */
 .block .bs-r .bs-fila{
-  display:flex !important;align-items:center;gap:8px;
-  margin:0 0 7px !important;padding:0 0 7px;border-bottom:1px dashed rgba(255,255,255,.05);
+  display:flex !important;flex-direction:column;align-items:stretch;gap:6px;
+  margin:0 0 10px !important;padding:0 0 10px;border-bottom:1px dashed rgba(255,255,255,.05);
 }
 .block .bs-r .bs-fila:last-of-type{border-bottom:none;padding-bottom:0}
-.block .bs-r .bs-fila > .bs-l{flex:0 0 auto;margin:0}
+.block .bs-r .bs-fila-head{display:flex;align-items:center;gap:8px;min-width:0}
+.block .bs-r .bs-fila-head > .bs-l{flex:0 0 auto;margin:0}
+.block .bs-r .bs-fila-nm{
+  flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:'Inter',var(--font-body),system-ui,sans-serif !important;
+  font-size:12.5px;font-weight:600;color:#EDEFF2;text-transform:none !important;letter-spacing:0 !important;
+}
 /* min-width:0 acá es lo que evita que .set-row se desborde: sin él, un
    hijo flex hereda min-width:auto (ancho de su contenido sin comprimir)
    y no se achica por debajo de eso -- el grid viejo no sufría esto
    porque sus columnas (1fr) sí se comprimen por defecto. */
 .block .bs-r .bs-fila > .set-row{
-  flex:1 1 auto;min-width:0;
+  flex:1 1 auto;min-width:0;width:100%;
   display:flex !important;align-items:center;gap:8px;flex-wrap:nowrap !important;margin:0 !important;
 }
-.block .bs-r .bs-fila > .set-row .set-input{flex:1 1 0;min-width:0;width:auto !important}
+.block .bs-r .bs-fila > .set-row .set-field{flex:1 1 0;min-width:0}
 .block .bs-r .bs-fila > .set-row .set-check{flex:0 0 auto;margin-left:auto}
 /* títulos informativos en oro champán, no en ámbar de alerta */
 .week-info-title,.guide-section-title,.mh-icon,.hd-phase.peak{color:var(--jp-gold) !important}
@@ -18217,10 +18292,23 @@ body{font-size:var(--fz-body) !important}
    pasan de hijo directo (>) a descendiente para seguir aplicando
    sobre esa nueva capa intermedia sin duplicar declaraciones. */
 .block .set-row .set-load{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;flex-wrap:nowrap}
-.block .set-row .set-load > .set-input{flex:1 1 0 !important;width:auto !important;min-width:0 !important}
+.block .set-row .set-load > .set-field{flex:1 1 0 !important;min-width:0 !important}
 .block .set-row > .set-row-label{flex:0 0 auto}
 .block .set-row .set-load > .set-check{flex:0 0 auto;margin-left:auto}
 .block .set-row .set-load > .set-x{flex:0 0 auto}
+/* pulido (trisets/unidades/háptica): Kg/Reps pasan a vivir dentro de un
+   campo propio (.set-field) con una etiqueta chica y persistente ("kg",
+   "reps", o "m"/"seg" cuando la estación es de distancia/tiempo -- ver
+   repsPlaceholder en renderSetRows) arriba del input, en vez de sólo el
+   placeholder que desaparece al tipear. Columna, no superposición: así
+   nunca compite con el número cargado sin importar cuántos dígitos tenga. */
+.set-field{display:flex !important;flex-direction:column;align-items:stretch;gap:2px;min-width:0}
+.set-field > .set-input{width:100% !important;min-width:0 !important}
+.set-unit{
+  font-family:var(--font-mono,'JetBrains Mono',monospace);font-size:8.5px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;text-align:center;color:rgba(237,239,242,.4);
+  line-height:1;pointer-events:none;
+}
 </style>
 
 <style>
@@ -20942,8 +21030,8 @@ body.focus-mode .hd-dock{display:none}
 /* pedido 41: el input de carga ahora vive dentro de .set-load, no como
    hijo directo de .set-row -- selector actualizado a descendiente para
    que este mínimo táctil (70px) se siga aplicando igual. */
-.block .set-row .set-load > .set-input,
-.block .bs-r .bs-fila > .set-row .set-input{min-width:70px !important}
+.block .set-row .set-load > .set-field,
+.block .bs-r .bs-fila > .set-row .set-field{min-width:70px !important}
 
 /* =========================================================
    FIX (pedido 40): ergonomía táctil del dock inferior en movil.
