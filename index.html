@@ -3819,7 +3819,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .wab-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
     background: var(--jp-brand, #D2793F); box-shadow: 0 0 8px rgba(210,121,63,0.7); }
   .wab-text { white-space: normal; }
-  .week-tabs-wrap { background: rgba(14,14,15,0.95); border-bottom: 1px solid var(--border); position: sticky; top: 105px; z-index: 100; overflow-x: auto; }
+  .week-tabs-wrap { background: rgba(14,14,15,0.95); border-bottom: 1px solid var(--border); position: sticky; top: 105px; z-index: 100; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
   .week-tabs-wrap::-webkit-scrollbar { display: none; }
   .week-tabs { max-width: 1140px; margin: 0 auto; display: flex; padding: 0 1.25rem; min-width: max-content; }
   .day-tab { display: flex; flex-direction: column; align-items: center; padding: 0.7rem 1.1rem; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s ease; gap: 2px; min-width: 80px; user-select: none; }
@@ -3843,17 +3843,18 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .day-view.active { display: block; animation: dayFadeIn 0.4s cubic-bezier(0.16,1,0.3,1); }
   @keyframes dayFadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   .day-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: var(--sp-6); padding-top: var(--sp-5); flex-wrap: wrap; }
-  /* workout-first (13/09): .day-header ahora vive DESPUÉS de .blocks-stack
-     (antes era lo primero del día) -- el padding-top que separaba del
-     progress-bar-wrap de arriba ahora sobra ahí y hace falta como
-     separación respecto del último bloque de arriba. .blocks-stack (o el
-     banner de foco técnico, si el día lo trae) pasan a ser lo primero, así
-     que son ellos los que ahora necesitan ese aire superior. */
-  .day-view > .day-header { padding-top: 0; margin-top: var(--sp-6); }
-  .day-view > .blocks-stack:first-child,
-  .day-view > .safety-banner:first-child { margin-top: var(--sp-5); }
+  /* pulido de jerarquía: .day-header vuelve a ser lo primero del día
+     (reportado "descolgado muy abajo, espacio vacío y barra cortada
+     arriba" en la posición post-bloques de "workout-first") -- el
+     padding-top de la regla base ya separa del selector de días de
+     arriba, sin margin-top extra que sume aire de más. */
+  .day-view > .day-header { margin-top: 0; }
   .day-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.3rem; }
-  .day-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.01em; line-height: 1.1; }
+  /* la tipografía técnica oficial del sistema (--font-head, Chakra
+     Petch) en vez de Barlow Condensed -- se veía "genérica/pesada",
+     desentonaba con el resto del branding (block-label, ex-name, etc.
+     ya usan --font-head). */
+  .day-title { font-family: var(--font-head, 'Chakra Petch', 'Barlow Condensed', sans-serif); font-weight: 700; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.02em; line-height: 1.1; }
   .day-meta-row { display: flex; gap: 7px; margin-top: 0.5rem; flex-wrap: wrap; }
   .meta-chip { background: rgba(124,197,232,0.08); border: 1px solid rgba(124,197,232,0.22); color: var(--red-light); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.05em; }
   .day-complete-btn { background: rgba(74,147,184,0.1); border: 1px solid rgba(74,147,184,0.3); color: var(--teal); font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.9rem; letter-spacing: 0.07em; text-transform: uppercase; padding: 10px 22px; border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s ease; white-space: nowrap; align-self: flex-start; }
@@ -5317,7 +5318,19 @@ function _spSerialize(){
 }
 function _spFlush(){
   if(!_spDirty) return;
-  try{ localStorage.setItem(STORAGE_KEY, _spSerialize()); }catch(e){}
+  /* directiva (timer en segundo plano persistente): esto pisaba TODO el
+     blob de localStorage con sólo los campos de "state" -- cualquier
+     campo aparte que otro módulo hubiera guardado en la misma clave
+     (ej. restTimer, agregado más abajo para que el descanso sobreviva
+     a un cierre real de la app) desaparecía cada vez que este flush
+     corría, y corre justo en pagehide/visibilitychange:hidden -- el
+     instante exacto en que background timer más lo necesita. Pasa a
+     mezclar sobre lo que ya había en vez de reemplazarlo entero. */
+  try{
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    Object.assign(raw, JSON.parse(_spSerialize()));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+  }catch(e){}
   _spDirty = false;
 }
 function saveProgress(){
@@ -5782,7 +5795,7 @@ var CoachVibra = (function(){
   return {
     soporta: function(){ return soporta; },
     cuenta:  function(){ return disparar(200); },   /* segundos 3, 2 y 1 */
-    fin:     function(){ return disparar(500); },   /* final del conteo   */
+    fin:     function(){ return disparar([200, 100, 200, 100, 400]); },   /* final del conteo   */
     toque:   function(){ return disparar(20); },    /* feedback de botón  */
     patron:  function(p){ return disparar(p); }
   };
@@ -6508,15 +6521,19 @@ function renderMain(){
   const blocks = visibleBlocks(day);
   const dayDone = isDayDone(weekIdx, day.id);
   let html = '<div class="day-view active">';
-  /* DIRECTIVA "WORKOUT-FIRST" (13/09): el primer bloque de ejercicio va
-     INMEDIATAMENTE debajo del selector de día/semana (arriba del pliegue,
-     sin scroll). El header grande del día (título duplicado, ya lo dice
-     el selector de arriba), el contexto de sesión, el check-in de
-     readiness y el foco técnico/nutrición pasan a vivir DESPUÉS de los
-     bloques: cero dato ni funcionalidad se pierde (mismos ids, mismos
-     listeners via wireReadinessCheckin/wireBlockInteractions, que ya
-     buscan los nodos en el DOM recién pintado sin importar su posición),
-     solo se reordena la jerarquía visual. */
+  /* pulido de jerarquía (directiva posterior a "workout-first"): el
+     header del día había quedado DESPUÉS de los bloques -- reportado
+     como "descolgado muy abajo, con espacio vacío y una barra cortada
+     arriba". Vuelve a ser lo primero que se ve, pegado debajo del
+     selector de días, sin tocar ningún dato ni listener (wireBlockInteractions/
+     wireReadinessCheckin siguen buscando los mismos ids en el DOM ya
+     pintado, sin importar el orden). */
+  html += '<div class="day-header">';
+  html += '<div><div class="day-eyebrow">' + day.short + ' — ' + WEEKS_META[weekIdx].name + '</div>';
+  html += '<div class="day-title">' + day.title + '</div>';
+  html += '<div class="day-meta-row">' + (day.metaChips||[]).map(function(c){ return '<span class="meta-chip">' + c + '</span>'; }).join('') + '</div></div>';
+  html += '<button class="day-complete-btn' + (dayDone?' done':'') + '" id="dayCompleteBtn">' + (dayDone?'✓ Día Completo':'Marcar Día Completo') + '</button>';
+  html += '</div>';
   /* UX/UI integral (13/09), parte 1: "Foco Técnico del Día" pasa de banner
      fijo (empujaba el primer bloque hacia abajo) a micro-acordeón cerrado
      por defecto -- mismo patrón <details>/<summary> que .nutri-card y
@@ -6530,12 +6547,6 @@ function renderMain(){
   }
   html += '<div class="blocks-stack">';
   blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
-  html += '</div>';
-  html += '<div class="day-header">';
-  html += '<div><div class="day-eyebrow">' + day.short + ' — ' + WEEKS_META[weekIdx].name + '</div>';
-  html += '<div class="day-title">' + day.title + '</div>';
-  html += '<div class="day-meta-row">' + (day.metaChips||[]).map(function(c){ return '<span class="meta-chip">' + c + '</span>'; }).join('') + '</div></div>';
-  html += '<button class="day-complete-btn' + (dayDone?' done':'') + '" id="dayCompleteBtn">' + (dayDone?'✓ Día Completo':'Marcar Día Completo') + '</button>';
   html += '</div>';
   html += renderContextoSesion();
   html += renderReadinessCard(weekIdx, day);
@@ -7381,8 +7392,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       navigator.serviceWorker.getRegistration().then(function(reg){
         if(!reg || !reg.showNotification) return;
         reg.showNotification('Descanso completado · Coach JP', {
-          body: 'Listo para la siguiente serie. ¡A los fierros!',
-          vibrate: [200, 100, 200],
+          body: '¡Tiempo cumplido! Dale a la siguiente serie 🔥',
+          vibrate: [200, 100, 200, 100, 400],
           tag: 'coachjp-descanso',
           renotify: true
         }).catch(function(){});
@@ -7415,6 +7426,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     pintarRest();
   }
+  /* directiva (timer en segundo plano persistente): el resync por
+     visibilitychange/focus/pageshow de arriba ya cubre "minimizar,
+     bloquear el celular, cambiar de app" -- pero si el navegador o el
+     SO matan la pestaña de verdad (memoria baja, PWA recién reabierta)
+     restTargetEnd se pierde por completo, al vivir sólo en memoria. Se
+     guarda en el mismo blob de localStorage que ya usa este módulo
+     (STORAGE_KEY, ver _spFlush arriba) para poder reconstruir la cuenta
+     regresiva al milisegundo exacto también después de un cierre real. */
+  function guardarRestTimer(){
+    try{
+      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      if(restRun) raw.restTimer = { targetEnd: restTargetEnd, total: restTotal, label: hudLb.textContent };
+      else delete raw.restTimer;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
+    }catch(e){}
+  }
   function arrancarRest(seg, etiqueta){
     pedirPermisoNotifDescanso();
     restLeft = seg || state.restSec;
@@ -7424,8 +7451,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     hud.classList.add('on'); restRun = true;
     clearInterval(restInt); restInt = setInterval(tick, 1000);
     pintarRest();
+    guardarRestTimer();
   }
-  function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); }
+  function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); guardarRestTimer(); }
   /* directiva10 -- resync forzado (Page Visibility API), llamado apenas la
      app vuelve a primer plano: recalcula restLeft contra restTargetEnd YA,
      sin esperar el próximo tick natural del setInterval (que en background
@@ -7455,6 +7483,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     restTargetEnd = Date.now() + restLeft * 1000;
     try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
     pintarRest();
+    guardarRestTimer();
   }
   document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(30); });
   document.getElementById('rhToggle').addEventListener('click', function(){
@@ -7468,6 +7497,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       clearInterval(restInt); restInt = null;
     }
     pintarRest();
+    guardarRestTimer();
   });
   hud.querySelectorAll('[data-rest]').forEach(b => b.addEventListener('click', function(){
     state.restSec = parseInt(b.dataset.rest, 10);
@@ -7479,6 +7509,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   });
   window.addEventListener('pageshow', sincronizarRestActivo);
   window.addEventListener('focus', sincronizarRestActivo);
+
+  /* restaura un descanso activo guardado en localStorage al cargar la
+     página de cero (la pestaña se cerró/mató de verdad, no sólo se
+     minimizó) -- reconstruye restTargetEnd desde el timestamp absoluto
+     guardado y llama a tick() ya mismo: si el descanso se cumplió
+     mientras la app estaba cerrada, dispara la finalización en el acto
+     en vez de dejarlo "colgado" (mismo criterio que sincronizarRestActivo). */
+  (function restaurarRestTimer(){
+    try{
+      const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      const rt = raw.restTimer;
+      if(!rt || !(rt.targetEnd > 0)) return;
+      restTargetEnd = rt.targetEnd;
+      restTotal = rt.total || 90;
+      hudLb.textContent = rt.label || 'Descanso';
+      hud.classList.add('on'); restRun = true;
+      clearInterval(restInt); restInt = setInterval(tick, 1000);
+      tick();
+    }catch(e){}
+  })();
 
   /* =========================================================
      2) NEW PR
