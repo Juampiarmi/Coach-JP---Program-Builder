@@ -15100,14 +15100,33 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   function esc(s){
     return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
+  /* rótulo táctico del bloque para prefijar cada fase ("[ CALENTAMIENTO ·
+     FASE 1: ... ]") -- el mismo esWarm() cubre entrada en calor Y vuelta
+     a la calma bajo un único diseño (.wu-card), así que el prefijo tiene
+     que distinguir cuál de los dos es para no rotular un cool-down como
+     "Calentamiento". Los corchetes los pone el CSS (.wu-fase::before/
+     ::after); acá sólo se arma el texto de adentro. */
+  var RX_ENFRIAMIENTO = /cool.?down|vuelta a la calma|enfriamiento/i;
+  function prefijoFase(b){
+    var t = ((b && b.title) || '') + ' ' + ((b && b.subtitle) || '');
+    return RX_ENFRIAMIENTO.test(t) ? 'ENFRIAMIENTO' : 'CALENTAMIENTO';
+  }
   /* separa la dosis (tiempo, reps, distancia) del nombre del ejercicio */
   function partir(txt){
     var t = String(txt || '').replace(/\\s+/g, ' ').trim();
     if(!t) return null;
     var dosis = '', nombre = t;
     var m;
-    /* «Row 4 min», «Bicicleta o cinta — 6 min progresivos» */
-    if((m = t.match(/^(.*?)\\s*[—–-]\\s*(.+)$/)) && /\\d/.test(m[2])){
+    /* «Row 4 min», «Bicicleta o cinta — 6 min progresivos» -- \\s+ (no \\s*)
+       alrededor del guion a propósito: un guion sin espacio a los lados
+       casi siempre es parte de un nombre compuesto ("Pass-Through",
+       "Sit-up", "Face-pull"), no el separador nombre/dosis. Con \\s*
+       .*? no-codicioso paraba en ESE guion interno (ej. "Banded Pass" +
+       "Through — 15 reps", que igual "parecía" válido porque el resto
+       tenía un dígito) y perdía la dosis real más adelante. Exigir
+       espacio real de los dos lados obliga a saltar los guiones de
+       compuestos y llegar al separador real. */
+    if((m = t.match(/^(.*?)\\s+[—–-]\\s+(.+)$/)) && /\\d/.test(m[2])){
       nombre = m[1].trim(); dosis = m[2].trim();
     }
     /* «3x12 Curl», «2x15 Face pull» */
@@ -15175,10 +15194,11 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
          a video. Se conserva el <a class="video-link"> original tal cual
          (mismo data-yt/thumbnail que ya arma videoLinkHtml) y se reinserta
          a la derecha del nombre, igual que en los bloques principales. */
+      var prefijo = prefijoFase(b);
       var html = filas.map(function(f){
         var t = String(f.txt).replace(/\\s+/g, ' ').trim();
         if(f.head || /^\\d+\\s*[\\.\\)]\\s/.test(t) || /:$/.test(t))
-          return '<div class="wu-fase">' + esc(t.replace(/^\\d+\\s*[\\.\\)]\\s*/, '').replace(/:$/, '')) + '</div>';
+          return '<div class="wu-fase">' + esc(prefijo + ' \\u00b7 ' + t.replace(/^\\d+\\s*[\\.\\)]\\s*/, '').replace(/:$/, '')) + '</div>';
         var p = partir(t);
         if(!p) return '';
         return '<div class="wu-item">' +
@@ -15283,17 +15303,24 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
 /* =========================================================
    COACH JP · WARM-UP LIMPIO + RELOJ DE DESCANSO ACTIVO
 ========================================================= */
-/* ---------- protocolo de entrada en calor ---------- */
-.wu-list{gap:8px !important;line-height:1.6 !important;padding:12px 13px !important}
+/* ---------- protocolo de entrada en calor (armonización Concepto F) ---------- */
+.wu-list{display:flex !important;flex-direction:column;gap:8px !important;padding:12px 13px !important;line-height:1.6 !important;box-sizing:border-box;max-width:100%}
+/* cada ejercicio vive en su propia tarjeta táctica -- antes era una fila
+   suelta dentro de .wu-list, sin fondo ni borde propio, que era justo lo
+   que hacía que un ítem "sin caja" (el bug de arriba, claseDe()) se
+   sintiera roto: no había ninguna superficie que lo sostuviera. */
 .wu-list .wu-item{
-  display:flex;align-items:baseline;gap:10px;padding:4px 2px;border-bottom:none !important;
-  line-height:1.6;
+  display:flex !important;align-items:center;gap:10px;
+  padding:10px 12px;margin:0;border-bottom:none !important;
+  background:rgba(10,12,15,.55) !important;border:1px solid #262626 !important;border-radius:12px !important;
+  box-sizing:border-box;max-width:100%;min-width:0;line-height:1.4;
+  transform:translateZ(0);
 }
 .wu-list .wu-dose{
-  flex:0 0 auto;min-width:0;text-align:center;padding:2px 9px;border-radius:6px;
-  background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);
+  flex:0 0 auto;min-width:0;text-align:center;padding:3px 9px;border-radius:6px;
+  background:rgba(124,197,232,.08);border:1px solid rgba(124,197,232,.22);
   font-family:'JetBrains Mono',ui-monospace,monospace;font-size:0.68rem;font-weight:700;
-  color:rgba(255,255,255,0.78);white-space:nowrap;
+  color:var(--jp-cyan,#7CC5E8);white-space:nowrap;
 }
 /* la línea sin dosis no lleva caja: sólo un bullet discreto */
 .wu-list .wu-item.plain{gap:9px}
@@ -15301,17 +15328,27 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   flex:0 0 auto;width:4px;height:4px;border-radius:50%;margin-top:8px;
   background:rgba(255,255,255,0.28);
 }
-.wu-list .wu-name{line-height:1.6}
-/* subtítulos internos: acento sin caja */
+.wu-list .wu-name{flex:1 1 auto;min-width:0;line-height:1.4;overflow-wrap:break-word}
+/* el thumbnail de video, si lo hay, siempre pegado al borde derecho de
+   la tarjeta -- nunca pegado al nombre ni suelto en medio de la fila. */
+.wu-list .wu-item .video-link{flex:0 0 auto;margin-left:auto !important}
+/* rótulo de fase: mismo lenguaje táctico que el resto de la app
+   (corchetes + monoespaciado + acento de marca), no más texto plano
+   naranja. El prefijo "CALENTAMIENTO"/"ENFRIAMIENTO" lo arma warmup()
+   en JS (según el bloque sea entrada en calor o vuelta a la calma) --
+   acá sólo se envuelve entre corchetes, igual que .block-label. */
 .wu-list .wu-fase{
-  margin:10px 0 1px;padding:0;font-family:'Barlow Condensed',sans-serif;font-weight:800;
-  font-size:0.76rem;letter-spacing:0.15em;text-transform:uppercase;color:#FFB067;
+  margin:14px 0 6px;padding:0;font-family:var(--font-mono,'JetBrains Mono',monospace);
+  font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--jp-cyan,#7CC5E8);white-space:normal;overflow-wrap:break-word;
 }
+.wu-list .wu-fase::before{content:"[ ";opacity:.75;color:var(--jp-gold,#D2793F)}
+.wu-list .wu-fase::after{content:" ]";opacity:.75;color:var(--jp-gold,#D2793F)}
 .wu-list .wu-fase:first-child{margin-top:0}
 /* instrucción larga: texto sutil, sin bullet ni caja */
 .wu-list .wu-nota{
   font-family:'Inter',sans-serif;font-size:0.79rem;line-height:1.6;
-  color:rgba(255,255,255,0.55);padding:2px 0;
+  color:rgba(255,255,255,0.55);padding:2px 0;overflow-wrap:break-word;
 }
 /* ---------- reloj de descanso ---------- */
 #restHud{z-index:260 !important}
@@ -15332,6 +15369,14 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   }
   function esc(s){
     return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  /* mismo prefijo táctico que arma warmup() -- IIFE aparte, sin helpers
+     compartidos, así que se repite acá (ver comentario largo junto al
+     original). */
+  var RX_ENFRIAMIENTO = /cool.?down|vuelta a la calma|enfriamiento/i;
+  function prefijoFase(b){
+    var t = ((b && b.title) || '') + ' ' + ((b && b.subtitle) || '');
+    return RX_ENFRIAMIENTO.test(t) ? 'ENFRIAMIENTO' : 'CALENTAMIENTO';
   }
 
   /* ---------------------------------------------------------
@@ -15354,8 +15399,19 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     /* si declara una dosis en el texto, es trabajo y no un subtítulo */
     if(/\\d/.test(t) && /(\\bmin\\b|\\bseg\\b|\\d\\s*s\\b|\\breps?\\b|[x×]\\s*\\d|\\d\\s*\\/\\s*\\d|\\bm\\b|\\bcal\\b)/i.test(t)) return 'item';
     if(/:\\s*$/.test(t) || RX_FASE.test(t)) return 'fase';
-    /* sin dosis: subtítulo si es corto, instrucción si es una frase */
-    return (t.length <= 46 && !/[.,;]/.test(t)) ? 'fase' : 'nota';
+    /* pulido (armonización Concepto F): "es corto y sin puntuación" ya no
+       se usa como aproximación de "debe ser un subtítulo de fase" -- eso
+       atrapaba ejercicios reales sin dosis explícita (técnica corporal,
+       movilidad libre: "Eccentric Hip Flexor Sit-up", "Dead Bug con
+       control respiratorio") y los mostraba como texto plano de sección
+       en vez de tarjeta de ejercicio, justo el bug reportado. Misma
+       filosofía que el fix de "la dosis manda primero" de arriba: sin
+       coincidir con una palabra clave de fase reconocida (RX_FASE) ni
+       terminar en ":", se asume ítem de trabajo -- limpiar() ya sabe
+       darle el chip "MOB" cuando no hay dosis numérica. Una frase larga
+       con puntuación real (instrucción del coach, no nombre de
+       ejercicio) sigue yendo a "nota". */
+    return /[.,;]/.test(t) ? 'nota' : 'item';
   }
   function limpiar(){
     document.querySelectorAll('.block.wu-card .wu-list').forEach(function(lista){
@@ -15369,9 +15425,11 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         var cls = claseDe(txt, dosis);
         var vid = it.querySelector('.video-link'); /* se preserva al reclasificar */
         if(cls === 'fase'){
+          var blDe = it.closest('.block');
+          var bDe = blDe ? bloqueDe(blDe.dataset.blockId) : null;
           var f = document.createElement('div');
           f.className = 'wu-fase';
-          f.textContent = txt.replace(/^\\d+\\s*[\\.\\)]\\s*/, '').replace(/:\\s*$/, '');
+          f.textContent = prefijoFase(bDe) + ' \\u00b7 ' + txt.replace(/^\\d+\\s*[\\.\\)]\\s*/, '').replace(/:\\s*$/, '');
           it.parentNode.replaceChild(f, it);
           return;
         }
