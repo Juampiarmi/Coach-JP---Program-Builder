@@ -7851,10 +7851,42 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     const sh = document.getElementById('scShare');
     if(sh) sh.addEventListener('click', function(){
-      const txt = '🏁 ' + PROGRAM_CONFIG.athleteName + ' — ' + day.short + ' (' + WEEKS_META[weekIdx].short + ')\\n' +
-        '💪 Volumen: ' + d.vol + ' kg · ' + d.series + ' series · ' + d.reps + ' reps\\n' +
-        (prs.length ? '🔥 PR: ' + prs.join(', ') + '\\n' : '') +
-        ((state.notes && state.notes[nkey]) ? '📝 ' + state.notes[nkey] : '');
+      /* reparación del reporte de WhatsApp: antes "prs" (arriba, state.
+         session.prs) era el resultado de chequearPR()/mejorPrevio(), que
+         matchea nombres por substring contra TODO el catálogo (PRS_N) --
+         eso es lo que terminaba concatenando ejercicios de más en el
+         mensaje. Acá se usa state.session.prDetalle en cambio: lo llena
+         capturarPR()/anotarMarca() (arriba, mismo archivo), que compara
+         la marca real contra el mejor 1RM estimado previo -- sin falsos
+         positivos por nombre parecido. prDetalle es el log de TODO el
+         mesociclo (nunca se resetea), así que se filtra por la fecha de
+         hoy para que el reporte sea sólo de esta sesión. */
+      const hoyISO = new Date().toISOString().slice(0, 10);
+      const prsHoy = ((state.session && state.session.prDetalle) || []).filter(function(p){ return p.fecha === hoyISO; });
+      const prLineas = prsHoy.length
+        ? prsHoy.map(function(p){
+            const deltaTxt = (p.delta != null && p.delta > 0) ? ' (+' + p.delta + 'kg)' : '';
+            return '🔥 PR: ' + p.ex + ' ' + p.kg + 'kg × ' + p.reps + deltaTxt;
+          }).join('\\n')
+        : '🔥 Sin récords nuevos hoy';
+      /* mismo cálculo de duración que ya usa la Story Card (inyectarBoton,
+         más abajo en el archivo) -- state.session.inicio se fija una sola
+         vez, en la primera interacción real, y nunca se resetea, así que
+         se acota a un rango de sesión creíble (1 a 240 min). */
+      const ini = (state.session && state.session.inicio) || 0;
+      const elapsedMin = ini ? Math.round((Date.now() - ini) / 60000) : 0;
+      const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 240) ? elapsedMin : Math.max(1, d.series * 3 || 55);
+      const rpeHoy = checkoutRpeLeer()[nkey];
+      const notaHoy = (state.notes && state.notes[nkey]) || '';
+      let txt = '🏁 COACH JP · REPORTE DE SESIÓN\\n' +
+        '👤 ' + PROGRAM_CONFIG.athleteName + ' — ' + day.short + ' (' + WEEKS_META[weekIdx].short + ')\\n\\n' +
+        '📊 RESUMEN DE SESIÓN\\n' +
+        '• Volumen Total: ' + d.vol + ' kg\\n' +
+        '• Series Completadas: ' + d.series + ' sets (' + d.reps + ' reps)\\n' +
+        '• Tiempo: ' + minsCrudo + ' min\\n\\n' +
+        prLineas;
+      if(rpeHoy) txt += '\\n\\n💪 Esfuerzo percibido (RPE): ' + rpeHoy + '/10';
+      if(notaHoy) txt += '\\n📝 ' + notaHoy;
       const url = 'https://wa.me/?text=' + encodeURIComponent(txt);
       window.open(url, '_blank', 'noopener');
     });
@@ -8339,7 +8371,15 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
   padding:16px;background:rgba(4,5,8,.92);backdrop-filter:blur(10px)}
 .story-wrap.on{display:flex}
 .story-box{display:flex;flex-direction:column;gap:12px;align-items:center;max-height:96vh}
-.story-box canvas{width:auto;height:min(72vh,640px);max-width:94vw;border-radius:18px;
+/* directiva (fix integral StoryCard): el canvas es 1080x1920 real (9:16)
+   -- antes se limitaba con height:min(72vh,640px), que en viewports
+   bajos (poca altura real, con teclado abierto o en horizontal) dejaba
+   muy poco margen para los 3 botones de abajo y la tarjeta terminaba
+   tapada/cortada. aspect-ratio + max-height:65vh le deja más aire al
+   footer de acciones siempre, en cualquier alto de pantalla. */
+.story-box canvas{
+  aspect-ratio:9/16;max-height:65vh;width:auto;max-width:94vw;
+  object-fit:contain;margin:0 auto;border-radius:18px;
   box-shadow:0 26px 70px rgba(0,0,0,.7),0 0 30px rgba(210,121,63,.12);border:1px solid rgba(255,255,255,.1)}
 .story-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .story-actions button{padding:.75rem 1.2rem;border-radius:999px;border:1px solid var(--card-border);
@@ -8687,13 +8727,21 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     const g = c.getContext('2d');
     g.clearRect(0, 0, W, H);
 
-    /* fondo -- Luxury Stealth: negro base + halos dorado/cyan (antes naranja/celeste) */
-    g.fillStyle = '#08090B'; g.fillRect(0, 0, W, H);
+    /* fondo -- Dark Stealth Tactical (directiva de fix integral): gradiente
+       carbón profundo #0a0c10 -> #121820, viñeta suave hacia los bordes,
+       reflejos sutiles en los colores de marca reales (antes usaba negro
+       plano + halos en la paleta champagne "Luxury Stealth"). */
+    let bg = g.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#0a0c10'); bg.addColorStop(1, '#121820');
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    let vig = g.createRadialGradient(W / 2, H / 2, H * .28, W / 2, H / 2, H * .72);
+    vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,.45)');
+    g.fillStyle = vig; g.fillRect(0, 0, W, H);
     let r1 = g.createRadialGradient(W * .92, -120, 40, W * .92, -120, 900);
-    r1.addColorStop(0, 'rgba(229,195,120,.20)'); r1.addColorStop(1, 'rgba(229,195,120,0)');
+    r1.addColorStop(0, 'rgba(210,121,63,.18)'); r1.addColorStop(1, 'rgba(210,121,63,0)');
     g.fillStyle = r1; g.fillRect(0, 0, W, H);
     let r2 = g.createRadialGradient(-80, H + 120, 40, -80, H + 120, 900);
-    r2.addColorStop(0, 'rgba(56,189,248,.16)'); r2.addColorStop(1, 'rgba(56,189,248,0)');
+    r2.addColorStop(0, 'rgba(124,197,232,.14)'); r2.addColorStop(1, 'rgba(124,197,232,0)');
     g.fillStyle = r2; g.fillRect(0, 0, W, H);
 
     /* marca de agua JP en la esquina, al 3% */
@@ -8704,42 +8752,57 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     g.fillText('JP', W - 40, H - 40);
     g.restore();
 
-    /* header -- escudo dorado en vez del asterisco suelto */
-    g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 2;
-    redondear(g, 90, 108, W - 180, 84, 42); g.stroke();
-    g.fillStyle = 'rgba(255,255,255,.05)'; g.fill();
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    escudoMini(g, 160, 150, 60);
-    g.fillStyle = '#E5C378'; g.font = '700 34px "Chakra Petch", sans-serif';
-    g.fillText('COACH JP PERFORMANCE SYSTEM', W / 2 + 34, 152);
+    /* header -- reubicado arriba de todo, 3 líneas (directiva de fix
+       integral): [ DÍA X · SEMANA Y ] chico y táctico, el título real de
+       la sesión bien grande (protagonista), y la marca COACH JP al pie
+       del bloque, nunca al revés. diaCorto/semanaN/tituloSesion vienen
+       de inyectarBoton(); si algo llama a dibujar() sin esos campos (un
+       caller viejo, o un test), se derivan de sesion/disciplina como
+       antes para no romper nada. */
+    const diaCorto = d.diaCorto || String(d.sesion || '').split(' · ')[0] || 'DÍA';
+    const semanaN = d.semanaN || (function(){ var m = String(d.disciplina || '').match(/(\\d+)\\s*$/); return m ? m[1] : ''; })();
+    const tituloSesion = d.tituloSesion || String(d.sesion || '').split(' · ').slice(1).join(' · ') || d.disciplina || 'Sesión';
 
-    /* atleta y fecha */
-    g.textAlign = 'left';
-    g.fillStyle = '#A0A8B4'; g.font = '500 30px Inter, sans-serif';
-    g.fillText(d.fecha.toUpperCase(), 90, 300);
-    g.fillStyle = '#FFFFFF'; g.font = '700 96px "Chakra Petch", sans-serif';
-    g.fillText(d.atleta.toUpperCase(), 90, 384);
+    /* atleta, chico, arriba de todo -- se conserva para no perder la
+       personalización, pero ya no compite con el título de la sesión */
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    g.fillStyle = 'rgba(255,255,255,.5)'; g.font = '500 26px Inter, sans-serif';
+    g.fillText((d.atleta || '').toUpperCase(), 90, 128);
 
-    /* sesión y disciplina */
-    g.fillStyle = '#E5C378'; g.font = '700 44px "Chakra Petch", sans-serif';
-    g.fillText(d.sesion.toUpperCase(), 90, 470);
-    /* el subtítulo puede ser largo (mesociclo + porcentajes + semana):
-       se envuelve en un máximo de 2 líneas y nunca pasa el margen derecho */
+    /* línea 1 -- [ DÍA X · SEMANA Y ], rótulo táctico monoespaciado */
+    g.fillStyle = '#38BDF8'; g.font = '700 32px "JetBrains Mono", ui-monospace, monospace';
+    g.fillText('[ ' + diaCorto.toUpperCase() + (semanaN ? ' · SEMANA ' + semanaN : '') + ' ]', 90, 186);
+
+    /* línea 2 -- título de la sesión, tipografía de alto impacto,
+       envuelto hasta 2 líneas si hace falta (mismo helper que ya usaba
+       el subtítulo viejo) */
+    var tituloLineas;
     (function(){
-      var maxW = W - 180, tam = 30, lineas;
+      var maxW = W - 180, tam = 84, lineas;
       var env = window.CoachEnvolverTexto || function(gg, t){ return [t]; };
       do {
-        g.font = '400 ' + tam + 'px Inter, sans-serif';
-        lineas = env(g, String(d.disciplina || ''), maxW, 2);
+        g.font = '700 ' + tam + 'px "Chakra Petch", sans-serif';
+        lineas = env(g, String(tituloSesion).toUpperCase(), maxW, 2);
         if(lineas.length <= 2 && !lineas.recortado) break;
-        tam -= 2;
-      } while(tam > 22);
-      g.fillStyle = '#A0A8B4';
-      lineas.forEach(function(ln, i){ g.fillText(ln, 90, 522 + i * (tam + 8)); });
+        tam -= 6;
+      } while(tam > 48);
+      tituloLineas = { lineas: lineas, tam: tam };
+      g.fillStyle = '#FFFFFF';
+      lineas.forEach(function(ln, i){ g.fillText(ln, 90, 268 + i * (tam + 14)); });
     })();
+    var yTrasTitulo = 268 + tituloLineas.lineas.length * (tituloLineas.tam + 14) + 26;
+
+    /* línea 3 -- COACH JP · HIGH PERFORMANCE SYSTEM, con isotipo, al pie
+       del bloque de encabezado */
+    escudoMini(g, 116, yTrasTitulo + 26, 46);
+    g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillStyle = '#E5C378'; g.font = '700 28px "Chakra Petch", sans-serif';
+    g.fillText('COACH JP · HIGH PERFORMANCE SYSTEM', 150, yTrasTitulo + 26);
+    g.textBaseline = 'alphabetic';
 
     /* línea volt */
-    g.fillStyle = '#E5C378'; g.fillRect(90, 566, 150, 6);
+    var yAccent = yTrasTitulo + 76;
+    g.fillStyle = '#E5C378'; g.fillRect(90, yAccent, 150, 6);
 
     /* métricas -- tonelaje total en dorado (métrica protagonista del
        directiva de la Story Card), series en cyan técnico, tiempo neutro */
@@ -8748,7 +8811,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       { k:'SERIES COMPLETADAS', v: String(d.series), u:'SETS', col:'#38BDF8' },
       { k:'TIEMPO DE ENTRENAMIENTO', v: d.tiempo, u:'', col:'#FFFFFF' }
     ];
-    let y = 640;
+    let y = yAccent + 60;
     cajas.forEach(b => {
       g.fillStyle = 'rgba(255,255,255,.045)';
       redondear(g, 90, y, W - 180, 194, 28); g.fill();
@@ -8866,6 +8929,13 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
         fecha: f.toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }),
         sesion: (day.short || '') + ' · ' + (day.label || ''),
         disciplina: (PROGRAM_CONFIG.mesoName || 'Coach JP') + ' — ' + (WEEKS_META[state.currentWeek] || {}).name,
+        /* directiva (fix integral StoryCard): día/semana y título de la
+           sesión por separado -- "sesion"/"disciplina" de arriba quedan
+           intactos (los sigue leyendo champion()), estos son sólo para
+           el nuevo encabezado de 3 líneas de dibujar(). */
+        diaCorto: day.short || '',
+        semanaN: (state.currentWeek || 0) + 1,
+        tituloSesion: day.label || (day.short || 'Sesión'),
         vol: r.vol, series: r.series, tiempo: tiempoFmt,
         prs: (state.session && state.session.prs) || []
       });
@@ -9461,7 +9531,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       encolar({ tipo:'pr', ex: ex, kg: parseFloat(kg), reps: parseInt(reps, 10) || 1, e1rm: nuevo1rm });
     pintarHub();
     return { ex: ex, kg: kg, reps: reps, e1rm: nuevo1rm, esPR: esPR, primera: primera,
-             mejora: Math.round((nuevo1rm - antes1rm) * 10) / 10 };
+             mejora: Math.round((nuevo1rm - antes1rm) * 10) / 10, prevKg: prev };
   }
   window.CoachAnotarMarca = anotarMarca;
 
@@ -9763,7 +9833,15 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       state.session.prs = state.session.prs || [];
       if(state.session.prs.indexOf(ex) < 0) state.session.prs.push(ex);
       state.session.prDetalle = state.session.prDetalle || [];
-      state.session.prDetalle.push({ ex: ex, kg: kg, reps: reps, e1rm: r.e1rm });
+      /* directiva (reparación reporte WhatsApp): prDetalle es el log real
+         de marcas de TODO el mesociclo (nunca se resetea, ver comentario
+         junto a renderContextoSesion más arriba en el archivo) -- para
+         que el reporte de WhatsApp pueda filtrar "sólo los PR de HOY" en
+         vez de arrastrar el historial completo, cada entrada suma su
+         propia fecha. delta/prevKg quedan también para poder mostrar
+         "70kg × 10 (+5kg)" en vez de sólo el nombre suelto. */
+      state.session.prDetalle.push({ ex: ex, kg: kg, reps: reps, e1rm: r.e1rm,
+        fecha: hoy(), prevKg: r.prevKg, delta: (r.prevKg > 0) ? Math.round((kg - r.prevKg) * 100) / 100 : null });
       saveProgress();
     }
   }
@@ -9851,12 +9929,20 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   function champion(d){
     var c = document.getElementById('storyCanvas'), g = c.getContext('2d');
     g.clearRect(0, 0, W, HH);
-    g.fillStyle = '#08090B'; g.fillRect(0, 0, W, HH);
+    /* fondo -- Dark Stealth Tactical, mismo tratamiento que dibujar() para
+       que los dos estilos de Story Card (Cyber-Grit / PR Champion) no
+       desentonen al cambiar de uno a otro. */
+    var bgCh = g.createLinearGradient(0, 0, 0, HH);
+    bgCh.addColorStop(0, '#0a0c10'); bgCh.addColorStop(1, '#121820');
+    g.fillStyle = bgCh; g.fillRect(0, 0, W, HH);
+    var vigCh = g.createRadialGradient(W / 2, HH / 2, HH * .28, W / 2, HH / 2, HH * .72);
+    vigCh.addColorStop(0, 'rgba(0,0,0,0)'); vigCh.addColorStop(1, 'rgba(0,0,0,.45)');
+    g.fillStyle = vigCh; g.fillRect(0, 0, W, HH);
     var r1 = g.createRadialGradient(W / 2, 520, 60, W / 2, 520, 1000);
-    r1.addColorStop(0, 'rgba(229,195,120,.28)'); r1.addColorStop(1, 'rgba(229,195,120,0)');
+    r1.addColorStop(0, 'rgba(210,121,63,.24)'); r1.addColorStop(1, 'rgba(210,121,63,0)');
     g.fillStyle = r1; g.fillRect(0, 0, W, HH);
     var r2 = g.createRadialGradient(W / 2, HH - 260, 40, W / 2, HH - 260, 760);
-    r2.addColorStop(0, 'rgba(56,189,248,.14)'); r2.addColorStop(1, 'rgba(56,189,248,0)');
+    r2.addColorStop(0, 'rgba(124,197,232,.14)'); r2.addColorStop(1, 'rgba(124,197,232,0)');
     g.fillStyle = r2; g.fillRect(0, 0, W, HH);
     /* marco cepillado -- Luxury Stealth: dorado en vez de naranja */
     g.strokeStyle = 'rgba(229,195,120,.55)'; g.lineWidth = 4;
@@ -10665,9 +10751,12 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     var y = 1508;
     var ancho = W - 180;
 
-    /* limpia la franja inferior para reescribirla */
+    /* limpia la franja inferior para reescribirla -- #121820 (no #08090B)
+       para que no quede una costura visible contra el nuevo fondo en
+       degradé "Dark Stealth Tactical" de dibujar()/champion() (el pie de
+       la tarjeta cae justo en la parte más oscura del gradiente). */
     g.save();
-    g.fillStyle = '#08090B';
+    g.fillStyle = '#121820';
     g.fillRect(70, y - 16, W - 140, HH - y + 16);
     if(dorado){
       var rg = g.createRadialGradient(W / 2, HH - 260, 40, W / 2, HH - 260, 760);
