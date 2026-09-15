@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
 <meta name="description" content="Coach JP — consola multi-atleta de planificación de entrenamiento, biblioteca de ejercicios y exportador de apps para alumnos.">
 <meta name="theme-color" content="#08090B">
 <meta name="color-scheme" content="dark">
@@ -278,6 +278,23 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .builder-head{display:flex;gap:14px;align-items:center;background:linear-gradient(90deg,rgba(210,121,63,.07),transparent);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:16px;flex-wrap:wrap}
 .week-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:11px}
 .week-box{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:12px;display:grid;gap:8px}
+/* directiva crítica (2026-09) -- acordeones tácticos: Configuración de
+   Mesociclo y Plantillas Profesionales colapsan por defecto (<details> sin
+   "open") para no ocupar media pantalla mientras el coach arma la sesión. */
+.meso-summary, .tpl-summary{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-family:var(--ffh);font-size:13.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--gold);
+  padding:2px 0;user-select:none;
+}
+.meso-summary::-webkit-details-marker, .tpl-summary::-webkit-details-marker{ display:none }
+.meso-summary::before, .tpl-summary::before{
+  content:'▸'; display:inline-block; font-size:12px; color:var(--muted); transition:transform .15s;
+}
+details[open] > .meso-summary::before, details[open] > .tpl-summary::before{ transform:rotate(90deg) }
+.meso-summary-hint, .tpl-summary-hint{
+  font-family:var(--ff,sans-serif);font-size:11px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--muted);
+}
+#mesoDetails .week-grid{ margin-top:12px }
 .week-box.deload{border-color:rgba(74,147,184,.4);background:linear-gradient(180deg,rgba(74,147,184,.08),var(--panel-2))}
 .week-box .wt{font-weight:800;font-size:12.5px;display:flex;align-items:center;gap:7px}
 .chk{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--txt-2);cursor:pointer;user-select:none;font-weight:600}
@@ -573,9 +590,11 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
         <div class="builder-head" id="bHead"></div>
 
         <div class="card" style="margin-bottom:16px">
-          <h3>📅 Configuración de Mesociclo (4 semanas)</h3>
-          <div id="mesoDiscNote" class="hint" style="margin:-6px 0 12px"></div>
-          <div class="week-grid" id="weekGrid"></div>
+          <details id="mesoDetails">
+            <summary class="meso-summary">⚙️ Ajustes de Mesociclo (4 semanas)<span class="meso-summary-hint">Fase, RPE, deload y notas por semana — tocá para editar</span></summary>
+            <div id="mesoDiscNote" class="hint" style="margin:10px 0 12px"></div>
+            <div class="week-grid" id="weekGrid"></div>
+          </details>
         </div>
 
         <div id="alertsPanel" style="margin-bottom:16px"></div>
@@ -920,9 +939,23 @@ Curl concentrado"></textarea>
 .prev-modes .btn.on{background:rgba(229,195,120,.16);border-color:#E5C378;color:#E5C378}
 .prev-stage{display:flex;justify-content:center;padding:18px 14px;background:
   radial-gradient(680px 300px at 50% 0%, rgba(229,195,120,.06), transparent 70%), #0A0B0D}
-#prevFrame{width:100%;max-width:100%;height:74vh;min-height:520px;border:1px solid rgba(255,255,255,.1);
-  border-radius:14px;background:#08090B;box-shadow:0 18px 50px rgba(0,0,0,.6);transition:max-width .22s ease}
-.prev-stage.celular #prevFrame{max-width:390px;border-radius:26px;height:78vh}
+/* directiva crítica (2026-09) -- "cartel/panel fantasma asomando por detrás
+   del frame del celular": el border-radius vivía en el <iframe> mismo. La
+   mayoría de los navegadores clipea el contenido de un iframe a su propio
+   border-radius, pero elementos con position:fixed adentro (el drawer de
+   Perfil/Info, el dock inferior, toasts) son un caso borde conocido que
+   algunos motores NO clipean igual al resto -- se ve como si algo del
+   fondo (colores/textos de esos paneles fixed) "asomara" en las esquinas
+   redondeadas o los bordes del marco de celular. Fix robusto: el radio y el
+   overflow:hidden pasan a un DIV contenedor que envuelve al iframe -- un
+   overflow:hidden en un elemento normal sí clipea SIEMPRE todo lo de
+   adentro, sin importar position:fixed ni el motor de renderizado. El
+   iframe pasa a ocupar 100% del contenedor, sin su propio radio/borde. */
+#prevFrameShell{width:100%;max-width:100%;height:74vh;min-height:520px;border:1px solid rgba(255,255,255,.1);
+  border-radius:14px;background:#0A0D12;box-shadow:0 18px 50px rgba(0,0,0,.6);transition:max-width .22s ease;
+  overflow:hidden;position:relative;isolation:isolate}
+.prev-stage.celular #prevFrameShell{max-width:390px;border-radius:26px;height:78vh}
+#prevFrame{display:block;width:100%;height:100%;border:none;background:#08090B}
 .prev-note{padding:8px 16px 14px;font-size:12px;color:var(--dim,#8a8f98);text-align:center}
 </style>
 <div class="modal-bg" id="mPrev">
@@ -939,8 +972,10 @@ Curl concentrado"></textarea>
     </div>
     <div class="modal-b">
       <div class="prev-stage celular" id="prevStage">
-        <iframe id="prevFrame" title="Previsualización de la app del alumno"
-                sandbox="allow-scripts allow-same-origin allow-popups allow-modals"></iframe>
+        <div id="prevFrameShell">
+          <iframe id="prevFrame" title="Previsualización de la app del alumno"
+                  sandbox="allow-scripts allow-same-origin allow-popups allow-modals"></iframe>
+        </div>
       </div>
       <div class="prev-note" id="prevNote"></div>
     </div>
@@ -3032,12 +3067,38 @@ function addBlock(tipo){
   d.bloques.push(newBlock(tipo)); save(); renderBuilder();
   toast((TIPOS[tipo]||{}).lb + ' agregado');
 }
+/* UX/UI integral (13/09), parte 2: título automático de biset/triset a
+   partir de los ejercicios elegidos (ej. Hack Squat + PM Rumano →
+   "Hack squat + Peso muerto rumano"). Mismo criterio "seguro" que ya usa
+   el bloque normal más abajo (data-bf==='exId', línea ~3249: solo
+   autocompleta si el título está vacío o sigue siendo el default/el auto
+   anterior) -- si el coach ya escribió un título propio, nunca se lo pisa. */
+function autoTituloBiset(ejercicios){
+  return (ejercicios||[]).map(function(e){
+    var ex = getEx(e.exId); return ex ? ex.es : '';
+  }).filter(Boolean).join(' + ');
+}
+/* "previoAuto" es el título AUTO-generado que hubiera correspondido a la
+   lista de ejercicios ANTES de este cambio (autoTituloBiset(ejercicios)
+   calculado por el caller antes de mutar el array) -- no el b.titulo
+   crudo, que siempre coincide consigo mismo y volvería la protección un
+   no-op (pisaría cualquier título, incluso uno escrito a mano). */
+function syncTituloBiset(b, previoAuto){
+  if(!b || b.tipo !== 'superset') return;
+  var defaultLb = (TIPOS.superset || {}).lb;
+  if(!b.titulo || b.titulo === defaultLb || b.titulo === previoAuto){
+    var auto = autoTituloBiset(b.ejercicios);
+    if(auto) b.titulo = auto;
+  }
+}
 function addSubEx(bid, exId){
   const b = findBlock(bid); if(!b) return;
   if(!exId){ toast('Elegí un ejercicio primero', 'err'); return; }
   const ex = getEx(exId), ath = active();
+  const previoAuto = b.tipo === 'superset' ? autoTituloBiset(b.ejercicios) : null;
   if(b.tipo === 'superset') b.ejercicios.push({ exId: exId, reps:'10-12', tempo:'2011', metodologia:'' });
   else if(b.tipo === 'finisher') b.fin.push({ exId: exId, repsRange:'15-20' });
+  syncTituloBiset(b, previoAuto);
   save(); renderBuilder();
   const w = worst(checkExercise(ath, ex));
   if(w === 'danger') toast('🚨 ALERTA: ejercicio restringido para ' + fullName(ath), 'err');
@@ -3214,7 +3275,11 @@ function bindBuilder(){
         if(ex && (!b.titulo || b.titulo === TIPOS.block.lb)) b.titulo = ex.es;
         if(ex && !b.tips) b.tips = (window.CoachAuto && window.CoachAuto.notaCompleta) ? window.CoachAuto.notaCompleta(ex, b.tempo, active()) : (ex.aviso || '');
       }
-      if(t.dataset.sf === 'exId') b.ejercicios[parseInt(t.dataset.i,10)].exId = t.value;
+      if(t.dataset.sf === 'exId'){
+        const previoAuto = autoTituloBiset(b.ejercicios);
+        b.ejercicios[parseInt(t.dataset.i,10)].exId = t.value;
+        syncTituloBiset(b, previoAuto);
+      }
       if(t.dataset.ff === 'exId') b.fin[parseInt(t.dataset.i,10)].exId = t.value;
       save(); renderBuilder();
       const w = worst(checkExercise(active(), getEx(t.value)));
@@ -3252,7 +3317,10 @@ function bindBuilder(){
     if(t.dataset.idel){
       const b = findBlock(t.dataset.b); if(!b) return;
       const arr = b.tipo === 'superset' ? b.ejercicios : b.fin;
-      arr.splice(parseInt(t.dataset.idel,10), 1); save(); renderBuilder(); return;
+      const previoAuto = b.tipo === 'superset' ? autoTituloBiset(b.ejercicios) : null;
+      arr.splice(parseInt(t.dataset.idel,10), 1);
+      syncTituloBiset(b, previoAuto);
+      save(); renderBuilder(); return;
     }
     if(t.dataset.imove){
       const b = findBlock(t.dataset.b); if(!b) return;
@@ -3328,7 +3396,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
 <meta name="theme-color" content="#0E0E0F" />
 <meta name="description" content="{{META_DESC}}" />
 <title>{{TITLE}}</title>
@@ -3751,15 +3819,6 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .wab-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
     background: var(--jp-brand, #D2793F); box-shadow: 0 0 8px rgba(210,121,63,0.7); }
   .wab-text { white-space: normal; }
-  /* directiva de rediseño: el chip de semana absorbe la apertura del drawer
-     de Perfil/Info (antes un botón (i) suelto en el header) -- necesita
-     leerse como tocable y no sólo informativo. */
-  .week-active-badge.week-badge-tap{ cursor: pointer; transition: border-color .15s ease, background .15s ease; }
-  .week-active-badge.week-badge-tap:active{ background: linear-gradient(135deg, rgba(210,121,63,0.26), rgba(210,121,63,0.08)); }
-  .week-active-badge.week-badge-tap:focus-visible{ outline: 2px solid var(--red); outline-offset: 2px; }
-  .week-active-badge.week-badge-tap::after{
-    content: '›'; margin-left: 2px; opacity: .65; font-weight: 700;
-  }
   .week-tabs-wrap { background: rgba(14,14,15,0.95); border-bottom: 1px solid var(--border); position: sticky; top: 105px; z-index: 100; overflow-x: auto; }
   .week-tabs-wrap::-webkit-scrollbar { display: none; }
   .week-tabs { max-width: 1140px; margin: 0 auto; display: flex; padding: 0 1.25rem; min-width: max-content; }
@@ -3784,6 +3843,15 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .day-view.active { display: block; animation: dayFadeIn 0.4s cubic-bezier(0.16,1,0.3,1); }
   @keyframes dayFadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   .day-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: var(--sp-6); padding-top: var(--sp-5); flex-wrap: wrap; }
+  /* workout-first (13/09): .day-header ahora vive DESPUÉS de .blocks-stack
+     (antes era lo primero del día) -- el padding-top que separaba del
+     progress-bar-wrap de arriba ahora sobra ahí y hace falta como
+     separación respecto del último bloque de arriba. .blocks-stack (o el
+     banner de foco técnico, si el día lo trae) pasan a ser lo primero, así
+     que son ellos los que ahora necesitan ese aire superior. */
+  .day-view > .day-header { padding-top: 0; margin-top: var(--sp-6); }
+  .day-view > .blocks-stack:first-child,
+  .day-view > .safety-banner:first-child { margin-top: var(--sp-5); }
   .day-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.3rem; }
   .day-title { font-family: 'Barlow Condensed', sans-serif; font-weight: 900; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.01em; line-height: 1.1; }
   .day-meta-row { display: flex; gap: 7px; margin-top: 0.5rem; flex-wrap: wrap; }
@@ -4036,10 +4104,21 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .video-popup-fallback { padding: 7px 12px; background: rgba(255,255,255,0.02); border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); text-align: center; }
   .video-popup-fallback a { color: var(--gold); font-weight: 600; text-decoration: none; }
   .video-popup-fallback a:hover { color: var(--red-light); }
-  /* en mobile sigue siendo una ventanita de esquina, no una franja de borde
-     a borde -- así queda claro (y se siente) que es un flotante liviano y
-     no un modal que toma la pantalla. */
-  @media (max-width: 640px) { .video-popup-wrap { right: 10px; bottom: 12px; width: min(248px, calc(100vw - 20px)); max-width: none; } }
+  /* UX/UI integral (13/09), parte 5: en mobile el video quedaba chico y
+     arrinconado abajo a la derecha -- ahora se centra como un modal real
+     (top/left 50% + translate), 90-95% del ancho de pantalla hasta 500px,
+     con su [ ✕ ] agrandado para que sea un cierre claro. En desktop (arriba
+     de 640px) se deja el comportamiento de ventanita de esquina de siempre,
+     sin cambios -- ese caso no fue el reportado. */
+  @media (max-width: 640px) {
+    .video-popup-wrap {
+      right: auto; bottom: auto; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 92vw; max-width: 500px;
+      transition: none; z-index: 9999;
+    }
+    .video-popup-close { width: 32px; height: 32px; font-size: 15px; }
+  }
   .coach-note { background: rgba(124,197,232,0.05); border-left: 2px solid rgba(124,197,232,0.4); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 0.65rem 0.9rem; margin-top: 0.75rem; font-size: 12.5px; color: #A8A8AE; line-height: 1.6; }
   .coach-note strong { color: #828A97; display: block; margin-bottom: 3px; font-size: 11.5px; letter-spacing: 0.1em; text-transform: uppercase; }
   .coach-note.note-danger { background: rgba(124,197,232,0.09); border-left-color: var(--red); color: #CFE7F4; }
@@ -4353,6 +4432,32 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <span class="hdc-pay-chip" id="hdcPlanChip"></span>
         </span>
       </div>
+      <!-- directiva de accesibilidad (2026-09, 2do seguimiento) -- el switch
+           Aa completo (A/A+/A++) vive en el drawer de Perfil/Info (ya
+           corregido y visible ahí), pero eso pide un toque extra para
+           abrirlo -- el pedido explícito ahora es un control DIRECTO en
+           esta fila superior, al lado del botón de ficha, sin abrir nada.
+           Comparte el mismo motor (window.CoachTexto / data-fz /
+           localStorage coachjp_fz) que el switch del drawer -- ver SYSTEM
+           v3.1 más abajo en el archivo -- así ambos quedan siempre
+           sincronizados entre sí. -->
+      <button type="button" class="hdc-fz" id="hdcFzBtn" title="Tamaño de letra: Normal / Grande / Extra Grande" aria-label="Cambiar tamaño de letra">
+        <span class="hdc-fz-tx">aA</span>
+      </button>
+      <!-- reconciliación (merge Concepto F + directiva de accesibilidad):
+           el botón (i) vuelve al DOM -- sigue abriendo el mismo drawer de
+           Perfil/Info, ahora con DOS disparadores en paralelo: este ícono
+           reconocible y el chip de semana (#weekActiveBadge, ver
+           montarCompacta() más abajo), sin duplicar el panel ni su lógica. -->
+      <button type="button" class="hdc-info" id="hdcInfoBtn" title="Perfil, credencial y ajustes">
+        <svg class="hdc-info-ic" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="3" y="5" width="18" height="14" rx="3.2" stroke="currentColor" stroke-width="1.6"/>
+          <circle cx="8.6" cy="10.2" r="1.65" fill="currentColor"/>
+          <path d="M5.7 15.3c.5-1.55 1.65-2.35 2.9-2.35s2.4.8 2.9 2.35" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+          <path d="M13.6 9.3h4.7M13.6 12h4.7M13.6 14.7h2.9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
+        </svg>
+        <span class="lbl">Perfil / Info</span>
+      </button>
     </div>
     <div class="hdc-days-row">
       <div class="hdc-days-wrap" id="hdcDaysWrap"></div>
@@ -4418,12 +4523,37 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <button type="button" class="hdp-uni-b" data-u="lb">LBS</button>
         </div>
       </div>
+      <!-- directiva de accesibilidad (2026-09, seguimiento) -- mismo
+           diagnóstico que el switch Aa de acá abajo: el botón "🧰
+           Herramientas" (Marcas, Manual de uso, Cambiar vista) se armaba
+           dentro de ".hd-actions"/"#hdRowUtil", el header LEGADO oculto
+           (display:none) desde el rediseño de cabecera compacta -- tres
+           funciones más, invisibles para cualquier alumno/a real. Ver
+           host()/hostUtil() en "TOP BAR MINIMALISTA (QUICK TOOLS DRAWER)",
+           más abajo en el archivo. -->
+      <div class="hdp-row hdp-row-qt" id="hdpQtSlot"></div>
+      <!-- directiva crítica (2026-09) -- el switch Aa (id="jpFzSwitch", ver
+           SYSTEM v3.1 más abajo en el archivo) se montaba en ".hd-actions",
+           que vive dentro del <header class="masthead hd-top"> LEGADO que
+           el propio archivo deja oculto a propósito (ver comentario "se
+           mantiene en el DOM oculto" más arriba) -- el switch nunca era
+           visible para un alumno/a real. Se le da un ancla fija acá, en el
+           drawer de Perfil/Info que sí está siempre disponible (mismo lugar
+           que ya sugiere la directiva de accesibilidad como alternativa).
+           Se saca a propósito del grupo "Sesión y vista" de #hdpQtSlot de
+           arriba para que quede DIRECTAMENTE accesible con un solo toque,
+           sin anidarlo un nivel más adentro de "🧰 Herramientas". -->
+      <div class="hdp-row hdp-row-fz" id="hdpFzSlot"></div>
       <div class="hdp-row hdp-row-slot" id="hdpInstallSlot"></div>
       <div class="hdp-row hdp-row-slot" id="hdpGuideSlot"></div>
-      <div class="hdp-row hdp-row-fz">
-        <span class="hdp-row-lb">Tamaño del texto</span>
-        <div class="hdp-row-slot" id="hdpFzSlot"></div>
-      </div>
+      <!-- DIRECTIVA UX/UI integral (13/09), parte 1: la píldora "Ver Nota
+           Metodológica" se insertaba antes como primer hijo de #mainContent
+           (ver nota()/repintar() en "NOTA METODOLÓGICA DEL MESOCICLO" más
+           abajo), empujando la rutina hacia abajo en cada carga. Se le da
+           ancla fija acá, mismo patrón que #hdpGuideSlot/#hdpInstallSlot:
+           el botón real se reparenta (no se clona ni se recrea) vía
+           montarPerfil(), cero pérdida de la nota ni del modal que abre. -->
+      <div class="hdp-row hdp-row-slot" id="hdpNotaSlot"></div>
     </section>
 
     <section class="hdp-card hdp-coach">
@@ -4513,18 +4643,37 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   </a>
 </div>
 
+<!-- directiva crítica (2026-09) -- "workout-first": el selector de semana
+     (.week-selector, tarjetas apiladas), el badge "Entrenando en..." y la
+     tarjeta grande de objetivo/nota metodológica (.week-info-card) eran 3
+     bloques verticales separados antes de llegar a los días. Se funden en
+     UNA sola barra horizontal compacta: la semana activa con su fase +
+     un botón ℹ️ que abre el detalle completo en #weekInfoModal (mismo
+     patrón .modal-overlay/.modal que ya usa #guideModal más abajo), y las
+     semanas restantes como chips chicos sin subtítulo. weekSelectorEl seguía
+     apuntando a este mismo contenedor (ver renderWeekSelector() reescrito)
+     -- #weekActiveBadge/#weekInfoCard quedan en el DOM ocultos, sólo para no
+     romper renderWeekActiveBadge()/renderWeekInfo() si algo externo llegara
+     a llamarlas -- ya no se pintan visibles. -->
 <div class="week-selector-wrap">
   <div class="week-selector" id="weekSelector"></div>
 </div>
-<!-- 09/09 -- refuerzo de claridad de semana (pedido tras confusión real de un
-     atleta que anotó el Día 2 en S2 creyendo estar en S1): badge grande y
-     fijo, arriba del selector de días, que siempre dice en qué semana está
-     parado -- ver renderWeekActiveBadge() más abajo. -->
-<div class="week-active-badge-wrap"><div class="week-active-badge" id="weekActiveBadge"></div></div>
 <div class="week-tabs-wrap">
   <div class="week-tabs" id="week-tabs"></div>
 </div>
-<div class="week-info-bar"><div id="weekInfoCard"></div></div>
+<div class="week-active-badge-wrap" style="display:none"><div class="week-active-badge" id="weekActiveBadge"></div></div>
+<div class="week-info-bar" style="display:none"><div id="weekInfoCard"></div></div>
+<div id="weekInfoModal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2><span class="mh-icon" id="weekInfoModalIcon">🎯</span> <span id="weekInfoModalTitle">Semana</span></h2>
+      <button id="weekInfoModalClose" class="modal-close" type="button">&times;</button>
+    </div>
+    <div class="guide-section">
+      <p id="weekInfoModalText"></p>
+    </div>
+  </div>
+</div>
 <div class="progress-bar-wrap">
   <div class="progress-row">
     <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
@@ -5753,26 +5902,39 @@ function semanaActivaCorrespondiente(){
   }
   return Math.max(0, WEEKS_META.length - 1);
 }
+/* directiva crítica (2026-09) -- "workout-first": ya no se pinta un banner
+   aparte para "Entrenando en: Semana N" -- ese estado vive directamente en
+   el chip activo de renderWeekSelector() (mismo dato, un solo lugar). Se
+   deja como función segura (no-op sobre un elemento oculto) por si algo
+   externo todavía la llama -- nunca rompía antes, tampoco ahora. */
 function renderWeekActiveBadge(){
   if(!weekActiveBadgeEl) return;
-  const w = WEEKS_META[state.currentWeek] || {};
-  /* mismo criterio que renderWeekInfo() de arriba: w.phase es texto que
-     carga el coach al armar el programa, no un dato del alumno -- se
-     concatena tal cual, igual que ya se hace con weekInfoCardEl. */
-  weekActiveBadgeEl.innerHTML =
-    '<span class="wab-dot" aria-hidden="true"></span>' +
-    '<span class="wab-text">Entrenando en: Semana ' + (state.currentWeek + 1) +
-      (w.phase ? ' · ' + w.phase : '') + '</span>';
 }
+/* directiva crítica (2026-09) -- barra compacta de semana: el chip activo
+   muestra semana + fase inline; el resto de las semanas son chips chicos
+   sin subtítulo (mismo click-to-switch de siempre). El detalle completo
+   (nota metodológica, RPE) se movió a #weekInfoModal -- se abre tocando el
+   botón ℹ️ o el chip activo, nunca ocupa espacio en el flujo principal. */
 function renderWeekSelector(){
+  /* DIRECTIVA UX/UI integral (13/09), parte 1: se retira el botón ℹ️
+     flotante -- el chip activo (.wpc-current) ya abre el mismo modal al
+     tocarlo (ver el addEventListener de abajo), así que el ícono aparte
+     era pura redundancia colgando junto a la pastilla. */
   weekSelectorEl.innerHTML = WEEKS_META.map(function(w,i){
-    return '<div class="week-pill' + (i===state.currentWeek?' active':'') + '" data-week="' + i + '">' +
-      '<span class="week-pill-name">' + w.icon + ' ' + w.short + '</span>' +
-      '<span class="week-pill-phase">' + w.phase + '</span>' +
+    if(i === state.currentWeek){
+      return '<div class="week-pill active wpc-current" data-week="' + i + '" ' +
+          'title="Ver explicación de la semana" aria-label="Ver explicación de la semana">' +
+          '<span class="week-pill-name">' + w.icon + ' ' + w.short + '</span>' +
+          '<span class="week-pill-phase">' + w.phase + '</span>' +
+        '</div>';
+    }
+    return '<div class="week-pill wpc-mini" data-week="' + i + '">' +
+      '<span class="week-pill-name">' + w.short + '</span>' +
     '</div>';
   }).join('');
   weekSelectorEl.querySelectorAll('.week-pill').forEach(function(p){
     p.addEventListener('click', function(){
+      if(p.classList.contains('wpc-current')){ abrirWeekInfoModal(); return; }
       var destino = parseInt(p.dataset.week, 10);
       /* aviso suave (no bloqueante): si salta a una semana posterior a la
          que le corresponde y esa semana propia todavía no está cerrada,
@@ -5795,10 +5957,16 @@ function renderWeekSelector(){
     });
   });
 }
+function abrirWeekInfoModal(){
+  var m = document.getElementById('weekInfoModal');
+  if(m && typeof openModal === 'function') openModal(m);
+}
 function renderWeekInfo(){
   const w = WEEKS_META[state.currentWeek];
   heroEyebrowEl.textContent = PROGRAM_CONFIG.mesoName + ' — ' + w.name;
-  weekInfoCardEl.innerHTML =
+  /* elemento legado oculto -- se mantiene sincronizado por si algo externo
+     lo lee, pero ya no es lo que ve el alumno/a (ver #weekInfoModal). */
+  if(weekInfoCardEl) weekInfoCardEl.innerHTML =
     '<div class="week-info-card' + (w.deload?' is-deload':'') + '">' +
       '<div class="week-info-icon">' + w.icon + '</div>' +
       '<div>' +
@@ -5806,6 +5974,12 @@ function renderWeekInfo(){
         '<div class="week-info-text">' + w.note + '</div>' +
       '</div>' +
     '</div>';
+  var mIcon = document.getElementById('weekInfoModalIcon');
+  var mTitle = document.getElementById('weekInfoModalTitle');
+  var mText = document.getElementById('weekInfoModalText');
+  if(mIcon) mIcon.textContent = w.icon;
+  if(mTitle) mTitle.textContent = w.name + ' · ' + w.phase + ' — ' + w.rpe;
+  if(mText) mText.innerHTML = w.note;
   renderWeekActiveBadge();
 }
 /* =========================================================
@@ -6082,6 +6256,11 @@ function renderBlock(block, day, weekIdx, idx){
     '</div>' +
     '<div class="block-body">' + cargaSugeridaHtml(block, weekIdx) + renderBlockInner(block, day, weekIdx) +
       (block.category === 'warmup' ? '' : bloqueNotasHtml(block, day, weekIdx)) +
+      /* UX/UI integral (13/09), parte 3: el buzón de feedback en video se
+         retira de la vista del alumno -- esa interacción ahora se gestiona
+         por WhatsApp. videoFeedbackHtml() y state.videoLinks quedan intactos
+         (cero mutación de datos ya guardados), solo se deja de invocar el
+         render acá. */
       '</div>' +
   '</div>';
 }
@@ -6112,6 +6291,29 @@ function renderMain(){
   const blocks = visibleBlocks(day);
   const dayDone = isDayDone(weekIdx, day.id);
   let html = '<div class="day-view active">';
+  /* DIRECTIVA "WORKOUT-FIRST" (13/09): el primer bloque de ejercicio va
+     INMEDIATAMENTE debajo del selector de día/semana (arriba del pliegue,
+     sin scroll). El header grande del día (título duplicado, ya lo dice
+     el selector de arriba), el contexto de sesión, el check-in de
+     readiness y el foco técnico/nutrición pasan a vivir DESPUÉS de los
+     bloques: cero dato ni funcionalidad se pierde (mismos ids, mismos
+     listeners via wireReadinessCheckin/wireBlockInteractions, que ya
+     buscan los nodos en el DOM recién pintado sin importar su posición),
+     solo se reordena la jerarquía visual. */
+  /* UX/UI integral (13/09), parte 1: "Foco Técnico del Día" pasa de banner
+     fijo (empujaba el primer bloque hacia abajo) a micro-acordeón cerrado
+     por defecto -- mismo patrón <details>/<summary> que .nutri-card y
+     .block-methodology-accordion, cero JS nuevo para abrir/cerrar. El
+     texto no se pierde ni se acorta, solo se pliega hasta que lo tocan. */
+  if(day.focusText){
+    html += '<details class="focus-accordion"><summary class="focus-sum">' +
+      '<span class="focus-ic">🎯</span><span class="focus-ti">' + (day.focusTitle||'Foco Técnico del Día') + '</span>' +
+      '<span class="focus-cv">▾</span></summary>' +
+      '<div class="focus-body">' + day.focusText + '</div></details>';
+  }
+  html += '<div class="blocks-stack">';
+  blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
+  html += '</div>';
   html += '<div class="day-header">';
   html += '<div><div class="day-eyebrow">' + day.short + ' — ' + WEEKS_META[weekIdx].name + '</div>';
   html += '<div class="day-title">' + day.title + '</div>';
@@ -6120,13 +6322,7 @@ function renderMain(){
   html += '</div>';
   html += renderContextoSesion();
   html += renderReadinessCard(weekIdx, day);
-  if(day.focusText){
-    html += '<div class="safety-banner"><div class="sb-icon">🎯</div><div><div class="safety-banner-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div><div class="safety-banner-text">' + day.focusText + '</div></div></div>';
-  }
   html += nutriCard(day);
-  html += '<div class="blocks-stack">';
-  blocks.forEach(function(b, idx){ html += renderBlock(b, day, weekIdx, idx); });
-  html += '</div>';
   if(day.summary){ html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + day.summary + '</p></div>'; }
   if((day.cooldown||[]).length){
     /* las fases numeradas del generador se leen como subtítulo, no como una viñeta más */
@@ -6328,6 +6524,13 @@ const videoCloseEl = document.getElementById('video-popup-close');
    los !important de .timer-hud más abajo en el archivo). */
 function ajustarPosicionVideoPopup(){
   if(!videoWrapEl) return;
+  /* UX/UI integral (13/09): en mobile (<=640px) el popup ahora se centra
+     con top/left/transform (ver @media(max-width:640px) más arriba) -- si
+     esta función además le fija un "bottom" inline, position:fixed con
+     top y bottom no-auto a la vez fuerza el alto del elemento a estirarse
+     entre los dos, rompiendo el centrado. Ese ajuste de "bottom" solo
+     tenía sentido para la ventanita de esquina de escritorio. */
+  if(window.innerWidth <= 640) return;
   if(hudEl && hudEl.classList.contains('show')){
     const r = hudEl.getBoundingClientRect();
     const gap = 10;
@@ -6383,6 +6586,15 @@ function closeModal(el){ el.classList.remove('open'); }
 guideBtnEl.addEventListener('click', function(){ openModal(guideModalEl); });
 guideCloseEl.addEventListener('click', function(){ closeModal(guideModalEl); });
 guideModalEl.addEventListener('click', function(e){ if(e.target === guideModalEl) closeModal(guideModalEl); });
+/* directiva crítica (2026-09) -- modal de detalle de semana ("workout-first"),
+   mismo patrón exacto que guideModal de arriba: cerrar con la X o tocando
+   afuera. Se abre desde renderWeekSelector()/abrirWeekInfoModal() más arriba. */
+const weekInfoModalEl = document.getElementById('weekInfoModal');
+const weekInfoModalCloseEl = document.getElementById('weekInfoModalClose');
+if(weekInfoModalEl && weekInfoModalCloseEl){
+  weekInfoModalCloseEl.addEventListener('click', function(){ closeModal(weekInfoModalEl); });
+  weekInfoModalEl.addEventListener('click', function(e){ if(e.target === weekInfoModalEl) closeModal(weekInfoModalEl); });
+}
 /* 10/09 -- pestañas internas de la Guía (Técnica / Glosario / Zonas FC) */
 (function guiaTabs(){
   var tabs = document.querySelectorAll('#guideTabs .tm-tab');
@@ -6699,6 +6911,31 @@ body.focus-mode .tv-nav{display:flex}
 .rest-hud .rh-ctl{display:flex;gap:5px}
 .rest-hud .rh-ctl button{flex:1;padding:6px 0;border-radius:8px;border:1px solid var(--border);
   background:var(--bg-card);color:var(--text-primary);font-size:0.85rem;cursor:pointer}
+/* UX/UI integral (13/09), parte 6: por defecto (sin .expanded) el rest
+   timer pasa de tarjeta vertical (anillo + 4 botones + label, ~200px de
+   alto) a una píldora táctica de una sola línea: "⏱️ 01:45 · [+30s]
+   [Saltar] [✕]". .expanded (el toggle #rhExpand de siempre, sin tocar)
+   sigue mostrando el layout de columna completo -- anillo grande, los 4
+   controles y los presets de duración -- para quien quiera ver los
+   dígitos en grande. Reordena vía flex "order" sobre los mismos nodos que
+   ya arma anillo()/tick(): cero cambios de JS/datos. */
+.rest-hud:not(.expanded){
+  flex-direction:row;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;
+  min-width:0;width:auto;max-width:calc(100vw - 24px);
+  padding:6px 8px 6px 14px;border-radius:999px;
+}
+.rest-hud:not(.expanded) .rh-top{order:3;flex:0 0 auto;gap:2px}
+.rest-hud:not(.expanded) .rh-lb{display:none}
+.rest-hud:not(.expanded) .rh-ring{order:1;width:auto !important;height:auto !important;margin:0 !important;background:none !important}
+.rest-hud:not(.expanded) .rh-ring::after{content:none !important}
+.rest-hud:not(.expanded) .rh-time{order:1;font-size:1.05rem !important}
+.rest-hud:not(.expanded) .rh-ring .rh-time{font-size:1.05rem !important}
+.rest-hud:not(.expanded) #rhTime::before{content:'⏱️ ';font-size:.8rem}
+.rest-hud:not(.expanded) .rh-set{display:none !important}
+.rest-hud:not(.expanded) .rh-ctl{order:2;gap:4px}
+.rest-hud:not(.expanded) .rh-ctl #rhMinus,
+.rest-hud:not(.expanded) .rh-ctl #rhToggle{display:none}
+.rest-hud:not(.expanded) .rh-ctl button{padding:5px 10px;font-size:.7rem;border-radius:999px}
 /* ---------- NEW PR ---------- */
 .pr-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;margin-left:8px;
   font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:0.72rem;letter-spacing:0.09em;text-transform:uppercase;
@@ -8036,6 +8273,27 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 }
 .week-pill.active .week-pill-name{color:#D2793F !important;text-shadow:0 0 12px rgba(210,121,63,.4)}
 .week-pill-name{font-size:1rem !important}
+/* directiva crítica (2026-09) -- barra compacta "workout-first": el chip
+   activo (.wpc-current) conserva nombre+fase; el resto de las semanas
+   (.wpc-mini) se reducen a un chip chico sin subtítulo -- toda la fila
+   queda en una sola línea horizontal en vez de la tarjeta grande de antes.
+   El detalle completo (nota metodológica) vive en #weekInfoModal, atrás del
+   chip activo -- nunca empuja el resto hacia abajo. */
+.week-selector{align-items:center}
+.week-pill.wpc-current{padding:8px 14px !important;gap:0}
+.week-pill.wpc-mini{padding:6px 12px !important;min-width:0 !important}
+.week-pill.wpc-mini .week-pill-name{font-size:.8rem !important;opacity:.7}
+/* UX/UI integral (13/09): se retiró el botón ℹ️ aparte (redundante con el
+   propio chip activo, que ya abre el modal al tocarlo -- ver
+   renderWeekSelector()). Se deja un puntito sutil como única pista visual
+   de que el chip es tocable, sin volver a ocupar el espacio de un botón. */
+.week-pill.wpc-current{cursor:pointer;position:relative}
+.week-pill.wpc-current::after{
+  content:'';position:absolute;top:6px;right:7px;width:5px;height:5px;border-radius:50%;
+  background:#D2793F;opacity:.75;
+}
+#weekInfoModal .guide-section{max-width:640px}
+#weekInfoModal #weekInfoModalText{font-size:.92rem;line-height:1.6;color:var(--text-secondary)}
 
 /* ---------- riel de días ---------- */
 .week-tabs-wrap{border-bottom:1px solid rgba(255,255,255,.07)}
@@ -10399,12 +10657,8 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
 
 <div class="tm-wrap" id="tmWrap">
   <div class="tm">
-    <h3>🧮 Herramientas de serie</h3>
-    <p class="tm-sub">Calculá cómo armar la barra y cómo entrar en calor hasta el peso objetivo.</p>
-    <div class="tm-tabs">
-      <button type="button" class="tm-tab on" data-tm="discos">🏋️ Discos por lado</button>
-      <button type="button" class="tm-tab" data-tm="rampa">🔥 Aproximación</button>
-    </div>
+    <h3>🔥 Serie de Aproximación</h3>
+    <p class="tm-sub">Calculá cómo entrar en calor hasta el peso objetivo.</p>
     <div class="tm-peso">
       <input id="tmKg" type="number" step="0.5" min="0" inputmode="decimal" placeholder="Peso objetivo">
       <span id="tmUni" style="color:#A0A8B4;font-weight:700">kg</span>
@@ -10526,7 +10780,13 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   /* =========================================================
      3 · MENÚ DE HERRAMIENTAS (ícono + modal)
   ========================================================= */
-  var tmTab = 'discos', tmBloque = null;
+  /* UX/UI integral (13/09), parte 3: se retira el Asistente de Discos --
+     tmTab arranca directo en 'rampa' (aproximación) y ya no hay forma de
+     pisarlo a 'discos' (el tab que lo hacía se quitó del HTML de abajo).
+     window.CoachDiscos y la rama tmTab==='discos' de tmPintar() quedan
+     intactas sin uso: si el coach algún día pide reactivarlo, el cálculo
+     ya está probado y ahí. */
+  var tmTab = 'rampa', tmBloque = null;
   function pesoObjetivo(bl){
     var kg = 0;
     if(bl){
@@ -10590,12 +10850,9 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     w.addEventListener('click', function(e){ if(e.target === w) cerrarTM(); });
     document.getElementById('tmX').addEventListener('click', cerrarTM);
     document.getElementById('tmKg').addEventListener('input', tmPintar);
-    w.querySelector('.tm-tabs').addEventListener('click', function(e){
-      var b = e.target.closest('[data-tm]'); if(!b) return;
-      tmTab = b.dataset.tm;
-      w.querySelectorAll('.tm-tab').forEach(function(x){ x.classList.toggle('on', x === b); });
-      tmPintar();
-    });
+    /* UX/UI integral (13/09): las pestañas .tm-tabs se quitaron del HTML
+       (era el selector discos/rampa) -- tmTab queda fijo en 'rampa', así
+       que ya no hace falta cablear el click de las pestañas. */
   }
   window.CoachHerramientas = { abrir: abrirTM, cerrar: cerrarTM, pintar: tmPintar };
 
@@ -11302,7 +11559,7 @@ body.cf-modo .block .directive-chip{display:none !important}
         '<div class="mh">Cálculo y carga</div>' +
         '<button type="button" data-m="rm"><i>📊</i>%1RM · Calculadora</button>' +
         '<button type="button" data-m="marcas"><i>🏆</i>Mis Marcas y récords</button>' +
-        '<button type="button" data-m="discos"><i>🧮</i>Discos y aproximación</button>' +
+        '<button type="button" data-m="discos"><i>🔥</i>Serie de Aproximación</button>' +
         '<div class="sep"></div>' +
         '<div class="mh">Entrenamiento</div>' +
         '<button type="button" data-m="timer"><i>⏱️</i>Custom WOD Timer</button>' +
@@ -11763,6 +12020,21 @@ body.cf-modo .block .directive-chip{display:none !important}
 .cap-tool.alt{border-color:rgba(210,121,63,.42);color:#D2793F}
 .cap-tool.alt:hover{border-color:rgba(210,121,63,.75);box-shadow:0 0 18px rgba(210,121,63,.3)}
 @media(max-width:520px){ .cap-tool{flex:1 1 100%} }
+/* UX/UI integral (13/09), parte 3: "Series de Aproximación" pasa de botón
+   ancho completo a enlace diminuto -- ya no compite visualmente con las
+   series efectivas reales de abajo. */
+.jp-tools-mini{margin:0 0 8px !important}
+/* especificidad .jp-tools .cap-tool-mini (2 clases) a propósito, para
+   ganarle a los ".jp-tools button{...} !important" más abajo en el
+   archivo (min-height:44px, fondo, borde) que si no lo convertirían de
+   vuelta en un botón de tamaño completo. */
+.jp-tools .cap-tool-mini{
+  display:inline-flex !important;align-items:center;background:none !important;
+  border:none !important;min-height:0 !important;height:auto !important;padding:2px 0 !important;
+  font-family:'Barlow Condensed',sans-serif;text-transform:none;letter-spacing:.02em;
+  font-weight:600;font-size:.78rem;color:var(--text-muted,#8B93A1) !important;cursor:pointer;
+}
+.jp-tools .cap-tool-mini:hover,.jp-tools .cap-tool-mini:active{color:#D2793F !important}
 /* ---------------------------------------------------------
    5 · UNA SOLA RENDERIZACIÓN DEL WOD
 --------------------------------------------------------- */
@@ -11829,6 +12101,11 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   /* =========================================================
      CÁPSULAS VISIBLES DEL ASISTENTE DE CARGA
   ========================================================= */
+  /* UX/UI integral (13/09), parte 3: se retira por completo el botón
+     "Asistente de Discos" (bullet 2 de la directiva). "Series de
+     Aproximación" no se elimina -- se ocultaba/reducía en la tarjeta a un
+     enlace diminuto ("[ + Ver aproximación ]") para que no compita con
+     las series efectivas reales, en vez de un botón de ancho completo. */
   function capsulas(){
     document.querySelectorAll('.block').forEach(function(bl){
       var box = bl.querySelector('.jp-tools');
@@ -11836,23 +12113,14 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
       if(!bl.querySelector('.set-row')) return;
       box.dataset.cap = '1';
       box.innerHTML = '';
-      var mk = function(cls, ic, texto, tab){
-        var b = document.createElement('button');
-        b.type = 'button'; b.className = 'cap-tool' + (cls ? ' ' + cls : '');
-        b.innerHTML = '<span class="ic">' + ic + '</span>' + texto;
-        b.addEventListener('click', function(){
-          if(window.CoachHerramientas){
-            window.CoachHerramientas.abrir(bl);
-            var t = document.querySelector('[data-tm="' + tab + '"]');
-            if(t) t.click();
-          }
-        });
-        return b;
-      };
-      /* botón "Asistente de Discos" retirado (directiva de rediseño): la
-         calculadora de discos sigue existiendo adentro del modal, sólo se
-         quitó su acceso directo desde la tarjeta del bloque. */
-      box.appendChild(mk('alt', '⚖️', 'Series de Aproximación', 'rampa'));
+      box.classList.add('jp-tools-mini');
+      var link = document.createElement('button');
+      link.type = 'button'; link.className = 'cap-tool-mini';
+      link.innerHTML = '[ + Ver aproximación ]';
+      link.addEventListener('click', function(){
+        if(window.CoachHerramientas) window.CoachHerramientas.abrir(bl);
+      });
+      box.appendChild(link);
       /* la salida vieja del bloque ya no se usa: todo va al modal */
       var out = bl.querySelector('.jp-out'); if(out) out.remove();
       /* las cápsulas van justo encima de las series */
@@ -12914,18 +13182,22 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
       try{ if(navigator.vibrate) navigator.vibrate(15); }catch(e){}
     };
   }
+  /* UX/UI integral (13/09): la píldora ya no vive dentro de #mainContent
+     (empujaba la rutina hacia abajo en cada carga) -- se crea UNA sola vez
+     colgada de <body> y montarPerfil() (más abajo en el archivo) la
+     reparenta a #hdpNotaSlot, dentro del drawer de Perfil/Info. El check
+     de "ya existe" ahora es global (no scoped a #mainContent) porque el
+     nodo puede vivir fuera de #mainContent en cualquier momento. */
   function nota(){
     var n = CFG.nota;
     if(!n || !n.foco) return;
-    var main = document.getElementById('mainContent');
-    if(!main) return;
     crearModal(n);
-    if(main.querySelector('#notaMesoPill')) return;
+    if(document.getElementById('notaMesoPill')) return;
     var pill = document.createElement('button');
     pill.type = 'button'; pill.className = 'nm-pill'; pill.id = 'notaMesoPill';
     pill.innerHTML = '<span style="font-size:1rem">📋</span> Ver Nota Metodológica';
     pill.addEventListener('click', function(){ if(window.CoachNotaMesoAbrir) window.CoachNotaMesoAbrir(); });
-    main.insertBefore(pill, main.firstChild);
+    document.body.appendChild(pill);
   }
 
   /* =========================================================
@@ -13028,22 +13300,33 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   padding:10px 14px !important;
   margin:0 0 0.75rem !important;
   box-shadow:none !important;
+  /* UX/UI integral (13/09), parte 4: el banner desbordaba con textos
+     largos de biset/triset -- .sh-kind/.sh-text/.sh-meta son hijos flex
+     sin min-width:0, así que el navegador nunca los dejaba encoger para
+     hacer wrap y el banner terminaba más ancho que su contenedor padre.
+     box-sizing + ancho 100% + min-width:0 en cada hijo es el fix estándar
+     para ese patrón de overflow en flex-wrap. */
+  box-sizing:border-box !important;width:100% !important;max-width:100% !important;min-width:0 !important;
 }
+.superset-header *{box-sizing:border-box}
 .superset-header .sh-icon{display:none !important}
 .superset-header .sh-kind{
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.74rem;
   letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.55);
+  min-width:0;overflow-wrap:break-word;word-break:break-word;
 }
 .superset-header .sh-dot{color:#D2793F;font-size:0.8rem;line-height:1;opacity:.9}
 .superset-header .sh-text{
   font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.06rem;
   letter-spacing:0.06em;text-transform:uppercase;color:#FFFFFF;
   text-shadow:none !important;line-height:1.2;
+  min-width:0;flex:1 1 auto;overflow-wrap:break-word;word-break:break-word;
 }
 .superset-header .sh-text b{color:#D2793F;font-weight:800}
 .superset-header .sh-meta{
   flex:1 1 100%;font-family:'Inter',sans-serif;font-size:0.72rem;letter-spacing:0.02em;
   text-transform:none;color:rgba(255,255,255,0.5);
+  min-width:0;overflow-wrap:break-word;word-break:break-word;
 }
 /* el banner de estructura manda: va arriba de la caja de intensidad */
 .block-body .superset-header{order:-1}
@@ -13781,15 +14064,25 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
   display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;
   background:rgba(210,121,63,0.05);border:1px solid rgba(255,255,255,0.08);
   border-left:4px solid #D2793F;border-radius:10px;padding:10px 14px;margin:0 0 0.75rem;
+  /* UX/UI integral (13/09), parte 4: este es el banner real de biset/triset
+     que la directiva reporta desbordando ("BISET DINÁMICO • 3 RONDAS...",
+     ver estructura() más arriba) -- .superset-header, con el mismo look,
+     no es el que efectivamente se pinta acá (quedó sin uso en este flujo).
+     Mismo fix estándar: box-sizing + ancho 100% + min-width:0 en los hijos
+     flex para que el texto largo haga wrap en vez de desbordar. */
+  box-sizing:border-box !important;width:100% !important;max-width:100% !important;min-width:0 !important;
 }
+.blk-tag *{box-sizing:border-box}
 .blk-tag .bt-kind{
   font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:0.72rem;
   letter-spacing:0.18em;text-transform:uppercase;color:rgba(255,255,255,0.5);
+  min-width:0;overflow-wrap:break-word;word-break:break-word;
 }
 .blk-tag .bt-dot{color:#D2793F;font-size:0.8rem;line-height:1;opacity:.9}
 .blk-tag .bt-main{
   font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.04rem;
   letter-spacing:0.06em;text-transform:uppercase;color:#FFFFFF;line-height:1.2;
+  min-width:0;flex:1 1 auto;overflow-wrap:break-word;word-break:break-word;
 }
 .blk-tag .bt-main b{color:#D2793F}
 .blk-tag .bt-meta{
@@ -15177,14 +15470,21 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   padding:9px 12px;border-radius:12px;
   background:rgba(124,197,232,0.06);border:1px solid rgba(124,197,232,0.24);
   border-left:4px solid #7CC5E8;backdrop-filter:blur(12px);
+  /* UX/UI integral (13/09), parte 4: mismo fix de desborde que .blk-tag
+     (arriba) -- .core-head es la variante "core estructurado" del mismo
+     banner de protocolo biset/triset/circuito. */
+  box-sizing:border-box !important;width:100% !important;max-width:100% !important;min-width:0 !important;
 }
+.block.core-card .core-head *{box-sizing:border-box}
 .block.core-card .core-head .ch-k{
   font-family:var(--font-head,inherit);font-size:11px;letter-spacing:0.12em;
   text-transform:uppercase;color:#7CC5E8;font-weight:800;
+  min-width:0;overflow-wrap:break-word;word-break:break-word;
 }
 .block.core-card .core-head .ch-d{color:rgba(255,255,255,0.28)}
 .block.core-card .core-head .ch-m{
   font-size:12.5px;color:#FFFFFF;font-weight:600;letter-spacing:0.02em;
+  min-width:0;flex:1 1 auto;overflow-wrap:break-word;word-break:break-word;
 }
 .block.core-card .core-head .ch-r{
   margin-left:auto;padding:3px 11px;border-radius:20px;font-size:11px;font-weight:700;
@@ -15562,11 +15862,12 @@ body.cf-modo .block .ex-tip{display:none}
   var GRUPOS = [
     { h:'Cálculo y marcas', ids:['prHubBtn'] },
     { h:'Documentación',    ids:['btnManualTop'] },
-    /* directiva de rediseño: 'jpFzSwitch' se sacó de este grupo -- este panel
-       "🧰 Herramientas" vive dentro de .hd-actions (header legado, oculto),
-       así que el selector Aa quedaba inalcanzable. Ahora tiene un hogar
-       visible propio en el drawer de Perfil/Info (#hdpFzSlot, ver
-       montarPerfil() más abajo); el resto del grupo no se toca. */
+    /* directiva de accesibilidad (2026-09, seguimiento) -- "jpFzSwitch" se
+       saca de este grupo: la directiva pide el selector Aa DIRECTAMENTE
+       visible/accesible, no escondido un nivel más adentro de "🧰
+       Herramientas". Se monta aparte, directo en el drawer de Perfil/Info
+       (ver #hdpFzSlot y SYSTEM v3.1 más abajo). Este drawer de Quick Tools
+       sigue con el resto (Marcas, Manual, Cambiar vista). */
     { h:'Sesión y vista',   ids:['btnVistaTop'] }
   ];
   var ETIQUETA = {
@@ -15574,8 +15875,18 @@ body.cf-modo .block .ex-tip{display:none}
     btnVistaTop:'🔁 Cambiar vista de la rutina'
   };
 
-  function host(){ return document.querySelector('.hd-actions'); }
-  function hostUtil(){ return document.getElementById('hdRowUtil') || host(); }
+  /* directiva de accesibilidad (2026-09, seguimiento) -- "el botón sólo
+     aparece como ícono comprimido que no abre nada": host()/hostUtil()
+     apuntaban a ".hd-actions"/"#hdRowUtil", ambos dentro del <header
+     class="masthead hd-top"> LEGADO que el propio archivo deja con
+     display:none (ver comentario "contenido legado... oculto" más arriba)
+     desde el rediseño de cabecera compacta (#hdCompact/.hdc-top). El botón
+     "🧰 Herramientas" y TODO lo que agrupa (Marcas, Manual, Cambiar vista)
+     se armaban ahí igual, sin tirar error -- visibles en el DOM, invisibles
+     e inclicables en pantalla. Nuevo host: #hdpQtSlot, una fila fija del
+     drawer de Perfil/Info (que sí es visible/interactivo siempre). */
+  function host(){ return document.getElementById('hdpQtSlot'); }
+  function hostUtil(){ return host(); }
   function armar(){
     var h = host();
     if(!h) return null;
@@ -16753,6 +17064,14 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
 .block .block-body > .blk-tag,.block .block-body > .core-head{order:1}
 .block .block-body > .bs-wrap,.block .block-body > .core-build,
 .block .block-body > .set-tracker,.block .block-body > .ex-row{order:2}
+/* workout-first (13/09): dentro de esta tabla de orden estricto, .blk-tag
+   ("Trabajo principal · X series · Y reps") tapaba el nombre del ejercicio
+   arriba del pliegue -- y esa misma info de series/reps ya se repite en
+   .ex-row > .ex-detail, así que no se pierde nada al mostrarla después.
+   Se mueve SOLO .blk-tag a order:3 (justo después de .ex-row/order:2;
+   "order" exige un entero, no admite decimales); core-head, que comparte
+   selector arriba, no se toca. */
+.block .block-body > .blk-tag{order:3 !important}
 .block .block-body > .directive-badge,.block .block-body > .directive-chip{order:3}
 .block .block-body > .jp-tools,.block .block-body > .cap-bar{order:4}
 .block .block-body > .load-suggest,.block .block-body > .load-suggest-compact{order:5}
@@ -17013,9 +17332,14 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   /* --- escala tipográfica (base +18%) --- */
   --fzs:1;
   --fz-hero:calc(30px * var(--fzs));
-  --fz-title:calc(22px * var(--fzs));
+  /* UX/UI integral (13/09), parte 2: el título de bloque (.block-label,
+     "BLOQUE NORMAL (ANCLA)") era el elemento más grande de la tarjeta
+     (22px, más que el propio nombre del ejercicio) -- se baja a un tamaño
+     sobrio de rótulo (14-16px) y el nombre del ejercicio (--fz-ex, abajo)
+     sube para ser el elemento dominante real, como pide la directiva. */
+  --fz-title:calc(15px * var(--fzs));
   --fz-board:calc(20px * var(--fzs));
-  --fz-ex:calc(17px * var(--fzs));
+  --fz-ex:calc(19px * var(--fzs));
   --fz-body:calc(15.5px * var(--fzs));
   --fz-dose:calc(14px * var(--fzs));
   --fz-sub:calc(14px * var(--fzs));
@@ -17023,19 +17347,21 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   --fz-meta:calc(11.5px * var(--fzs));
   --fz-num:calc(16px * var(--fzs));
 }
-html[data-fz="g"]{--fzs:1.12}
-html[data-fz="x"]{--fzs:1.26}
+/* directiva de accesibilidad (2026-09) -- alineado a los porcentajes
+   pedidos explícitamente (+15% / +30%); antes eran 1.12/1.26, ajuste menor
+   sin ningún motivo documentado en contra para no igualarlos. */
+html[data-fz="g"]{--fzs:1.15}
+html[data-fz="x"]{--fzs:1.30}
 body{font-size:var(--fz-body) !important}
 
-/* --- 1 · TÍTULO DEL BLOQUE: el elemento más grande de la tarjeta --- */
+/* --- 1 · TÍTULO DEL BLOQUE: rótulo sobrio, el ejercicio manda (ver --fz-ex) --- */
 .block .block-label{
   font-size:var(--fz-title) !important;
-  line-height:1.14 !important;
-  font-weight:900 !important;
-  letter-spacing:.01em !important;
+  line-height:1.2 !important;
+  font-weight:700 !important;
+  letter-spacing:.05em !important;
   color:var(--jp-bone) !important;
 }
-@media(min-width:560px){ .block .block-label{font-size:calc(26px * var(--fzs)) !important} }
 /* la categoría se lee por el ícono y la barra lateral, no por el color del título */
 .block.cat-strength .block-label,.block.cat-metcon .block-label,
 .block.cat-warmup .block-label,.block.cat-cardio .block-label,
@@ -17108,18 +17434,31 @@ body{font-size:var(--fz-body) !important}
 .hero h1,.day-title{font-size:var(--fz-hero) !important;line-height:1.1 !important}
 .hero-sub{font-size:var(--fz-dose) !important}
 
-/* --- 6 · CONTROL Aa EN EL DRAWER --- */
-#jpFzSwitch{display:flex;gap:5px;padding:5px;width:100%;border-radius:10px;
-  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08)}
-#jpFzSwitch .fz-p{
-  flex:1 1 0;min-height:38px;border-radius:8px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;gap:5px;
-  background:transparent;border:1px solid transparent;color:var(--jp-titanium);
-  font-family:var(--font-head);font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+/* --- 6 · CONTROL Aa EN EL DRAWER ---
+   directiva de accesibilidad (2026-09, seguimiento) -- paleta Luxury
+   Stealth pedida explícitamente (fondo #141920, borde #28303A, texto
+   dorado #E5C378), botones grandes (padding 6px 10px cómodo al dedo). El
+   selector #jpFzSwitch ya no depende de vivir dentro de .jp-qt/.qt-slot
+   (ese contexto era del header legado oculto) -- ahora cuelga de
+   #hdpFzSlot, una fila más de "Ajustes y utilidades" en el drawer. */
+.jp-font-scaler{display:flex;gap:6px;align-items:center}
+#jpFzSwitch.jp-font-scaler{display:flex;gap:6px}
+.jp-btn-font.fz-p{
+  min-width:40px;min-height:36px;padding:6px 10px;border-radius:8px;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:#141920;border:1px solid #28303A;color:#EDEFF2;
+  font-family:var(--font-head);font-weight:800;font-size:13px;letter-spacing:.02em;
+  transition:.15s;
 }
-#jpFzSwitch .fz-p .a{font-size:15px;line-height:1}
-#jpFzSwitch .fz-p .b{font-size:10.5px;line-height:1}
-#jpFzSwitch .fz-p.on{background:rgba(210,121,63,.16);border-color:var(--jp-brand);color:var(--jp-brand-hi)}
+.jp-btn-font.fz-p:hover{border-color:#3A4450;background:#1A2029}
+/* !important necesario: una regla compartida más abajo en el archivo
+   (.rx-chip.on,.rir-chip.on,.nav-pill.active,.mode-pill.active,.fz-p.on)
+   pinta cualquier ".fz-p.on" de naranja marca con !important -- el dorado
+   pedido explícitamente para este selector puntual necesita igual peso
+   para ganar (esta regla es más específica, pero !important vs !important
+   se desempata por especificidad, y "!important" solo vs sin él siempre
+   gana el que lo tiene). */
+.jp-btn-font.fz-p.on{background:rgba(229,195,120,.14) !important;border-color:#E5C378 !important;color:#E5C378 !important}
 .jp-qt .qt-slot > #jpFzSwitch{min-height:48px}
 
 /* la prescripción por ejercicio acompaña, no grita */
@@ -17173,10 +17512,17 @@ body{font-size:var(--fz-body) !important}
 (function(){
   'use strict';
   var KFZ = 'coachjp_fz';
+  /* directiva de accesibilidad (2026-09, seguimiento) -- etiquetas A / A+ /
+     A++ pedidas explícitamente; se mantienen las claves internas n/g/x
+     (data-fz="g"/"x", ver :root y html[data-fz] más arriba en el archivo)
+     porque son las que ya lee toda la cascada de variables fz y fzs, y el
+     localStorage 'coachjp_fz' ya persistido -- cambiar las claves ahora
+     rompería la preferencia ya guardada de cualquier alumno/a que la haya
+     usado. */
   var OPC = [
-    { k:'n', a:'Aa', b:'Normal' },
-    { k:'g', a:'Aa', b:'Grande' },
-    { k:'x', a:'Aa', b:'Extra'  }
+    { k:'n', a:'A',   b:'Normal' },
+    { k:'g', a:'A+',  b:'Grande' },
+    { k:'x', a:'A++', b:'Extra Grande' }
   ];
   function actual(){
     var v = document.documentElement.getAttribute('data-fz');
@@ -17190,27 +17536,51 @@ body{font-size:var(--fz-body) !important}
     pintar();
   }
   function pintar(){
-    var sw = document.getElementById('jpFzSwitch');
-    if(!sw) return;
     var k = actual();
-    sw.querySelectorAll('.fz-p').forEach(function(p){
-      p.classList.toggle('on', p.dataset.fz === k);
-      p.setAttribute('aria-pressed', p.dataset.fz === k ? 'true' : 'false');
-    });
+    var sw = document.getElementById('jpFzSwitch');
+    if(sw){
+      sw.querySelectorAll('.fz-p').forEach(function(p){
+        p.classList.toggle('on', p.dataset.fz === k);
+        p.setAttribute('aria-pressed', p.dataset.fz === k ? 'true' : 'false');
+      });
+    }
+    /* botón de la fila superior: se mantiene sincronizado con el mismo
+       estado (data-fz), sin importar si el coach o el alumno/a cambió el
+       tamaño desde el drawer o desde acá -- una sola fuente de verdad. */
+    var hb = document.getElementById('hdcFzBtn');
+    if(hb){
+      hb.setAttribute('data-fz-lvl', k);
+      hb.setAttribute('aria-pressed', k !== 'n' ? 'true' : 'false');
+    }
   }
+  /* directiva crítica (2026-09) -- "el selector no está visible / sólo
+     aparece un ícono comprimido que no abre nada": montarSwitch() apuntaba
+     a ".hd-actions", que vive dentro de <header class="masthead hd-top">
+     -- el header LEGADO que el propio archivo ya deja oculto a propósito
+     (ver comentario "contenido legado... se mantiene en el DOM oculto"
+     unas líneas más arriba). El switch se montaba ahí igual, sin tirar
+     error (el elemento existe en el DOM), pero con getBoundingClientRect()
+     en 0x0 -- invisible e inclicable para cualquier alumno/a real. Lo que
+     el coach veía como "ícono comprimido" es #hdcInfoBtn, el disparador del
+     drawer de Perfil/Info -- un botón distinto, no el switch Aa.
+     Nuevo anchor: #hdpFzSlot, una fila fija dentro de ese mismo drawer
+     (sección "Ajustes y utilidades", al lado de "Unidad de carga") que sí
+     está siempre disponible. */
   function montarSwitch(){
-    if(document.getElementById('jpFzSwitch')) { pintar(); return; }
-    var h = document.querySelector('.hd-actions');
+    var yaEstaba = document.getElementById('jpFzSwitch');
+    var h = document.getElementById('hdpFzSlot');
+    if(yaEstaba && yaEstaba.parentNode === h){ pintar(); return; }
     if(!h) return;
+    if(yaEstaba) yaEstaba.remove(); /* migra una única vez si quedó un switch viejo montado en el header legado */
+    h.innerHTML = '<span class="hdp-row-lb">Tamaño de texto</span>';
     var sw = document.createElement('div');
     sw.id = 'jpFzSwitch';
+    sw.className = 'jp-font-scaler';
     sw.setAttribute('role', 'group');
     sw.setAttribute('aria-label', 'Tamaño del texto');
     sw.innerHTML = OPC.map(function(o){
-      return '<button type="button" class="fz-p" data-fz="' + o.k + '" ' +
-             'title="Texto ' + o.b + '"><span class="a" style="font-size:' +
-             (o.k === 'n' ? 13 : o.k === 'g' ? 16 : 19) + 'px">Aa</span>' +
-             '<span class="b">' + o.b + '</span></button>';
+      return '<button type="button" class="fz-p jp-btn-font" data-fz="' + o.k + '" ' +
+             'title="Texto ' + o.b + '" aria-label="Texto ' + o.b + '">' + o.a + '</button>';
     }).join('');
     h.appendChild(sw);
     sw.addEventListener('click', function(e){
@@ -17222,6 +17592,32 @@ body{font-size:var(--fz-body) !important}
     });
     pintar();
     try{ if(window.CoachTopBar && CoachTopBar.repintar) CoachTopBar.repintar(); }catch(e){}
+  }
+
+  /* directiva de accesibilidad (2026-09, 2do seguimiento) -- control directo
+     en la fila superior (#hdcFzBtn, ya en el HTML base junto a #hdcInfoBtn):
+     ciclo de 3 estados con un solo botón, más práctico que sumar 2-3
+     botones nuevos en una fila que ya tiene escudo + identidad + chips +
+     ficha. Reusa aplicar()/actual() -- mismo estado que el switch del
+     drawer, ambos quedan sincronizados por pintar(). */
+  var CICLO = ['n', 'g', 'x'];
+  var ETIQ_TOAST = { n:'Normal', g:'Grande', x:'Muy Grande' };
+  function siguienteNivel(){
+    var i = CICLO.indexOf(actual());
+    return CICLO[(i + 1) % CICLO.length];
+  }
+  function montarBotonHeader(){
+    var b = document.getElementById('hdcFzBtn');
+    if(!b || b.dataset.wired === '1') { pintar(); return; }
+    b.dataset.wired = '1';
+    b.addEventListener('click', function(e){
+      e.preventDefault(); e.stopPropagation();
+      var nuevo = siguienteNivel();
+      aplicar(nuevo);
+      try{ if(navigator.vibrate) navigator.vibrate(nuevo === 'n' ? 10 : [10, 30, 10]); }catch(x){}
+      try{ if(typeof aviso === 'function') aviso('info', '🔤', 'Texto: ' + ETIQ_TOAST[nuevo], '', 1400); }catch(x){}
+    });
+    pintar();
   }
 
   /* ---------------------------------------------------------
@@ -17328,6 +17724,7 @@ body{font-size:var(--fz-body) !important}
   }
   function repintar(){
     try{ montarSwitch(); }catch(e){ console.warn('v31·aa', e); }
+    try{ montarBotonHeader(); }catch(e){ console.warn('v31·aa-header', e); }
     try{ reclasificar(); }catch(e){ console.warn('v31·heads', e); }
     try{ limpiarTitulos(); }catch(e){ console.warn('v31·titulos', e); }
     try{ desduplicarDosis(); }catch(e){ console.warn('v31·dosis', e); }
@@ -17746,7 +18143,14 @@ body{
   background:linear-gradient(180deg,#16191F 0%,#0E1013 100%) !important;
   border-color:rgba(56,189,248,.25) !important;border-radius:6px !important;
   color:#F1F5F9 !important;font-family:var(--font-mono) !important;
-  font-size:.95rem !important;font-weight:700 !important;text-align:center !important;
+  /* directiva de accesibilidad (2026-09) -- este rediseño táctico fijaba
+     .95rem sin depender de --fzs, así que el selector Aa (Normal/Grande/
+     Extra) no tenía ningún efecto sobre el campo más importante de la
+     tarjeta de serie: el Kg/Reps que el alumno lee bajo esfuerzo. Vuelve a
+     usar var(--fz-num) (ver :root más arriba en el archivo), que ya escala
+     con data-fz="g"/"x" -- gana igual esta regla por ser la última en
+     cascada con la misma especificidad, sólo que ahora sí respeta la escala. */
+  font-size:var(--fz-num) !important;font-weight:700 !important;text-align:center !important;
 }
 .set-input::placeholder{color:#F1F5F9 !important;opacity:.55;font-family:var(--font-mono) !important;font-weight:700 !important}
 
@@ -18338,6 +18742,29 @@ body{
 }
 .nutri-card .nut-legal{
   margin:2px 0 0;font-size:calc(11.5px * var(--fzs,1));line-height:1.5;color:#6E7783;
+}
+/* UX/UI integral (13/09) -- "Foco Técnico del Día" como micro-acordeón,
+   mismas proporciones que .nutri-card (52px de alto colapsado) para que
+   los dos convivan con la misma jerarquía visual delante del primer bloque. */
+.focus-accordion{
+  margin:0 0 14px;border-radius:14px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(124,197,232,.05),rgba(255,255,255,.015));
+  border:1px solid rgba(124,197,232,.22);
+}
+.focus-accordion .focus-sum{
+  list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;
+  padding:0 14px;min-height:52px;user-select:none;
+}
+.focus-accordion .focus-sum::-webkit-details-marker{display:none}
+.focus-accordion .focus-ic{font-size:17px;line-height:1}
+.focus-accordion .focus-ti{
+  font-family:var(--font-head,inherit);font-size:calc(13px * var(--fzs,1));
+  letter-spacing:.06em;color:#EDEFF2;font-weight:700;
+}
+.focus-accordion .focus-cv{margin-left:auto;color:#7CC5E8;font-size:13px;transition:transform .2s ease}
+.focus-accordion[open] .focus-cv{transform:rotate(180deg)}
+.focus-accordion .focus-body{
+  padding:0 14px 14px;font-size:calc(13.5px * var(--fzs,1));line-height:1.6;color:#C9CFD8;
 }
 @media(max-width:520px){
   .nutri-card .nut-hint{display:none}
@@ -19802,6 +20229,24 @@ input[type="checkbox"]:active{
 }
 .hdc-info:active{ transform:scale(.95); border-color:rgba(229,195,120,.5); background:#171B22; }
 .hdc-info .lbl{display:none}
+/* directiva de accesibilidad (2026-09, 2do seguimiento) -- control directo
+   de tamaño de letra en la fila superior, paleta pedida explícitamente
+   (fondo #141920, borde #28303A, texto dorado #E5C378), 36x36 mínimo
+   táctil. Ciclo de 3 estados con un solo botón (Normal -> Grande -> Extra
+   Grande -> Normal) en vez de 2-3 botones separados: en esta fila ya
+   conviven escudo + identidad + chips + botón de ficha, no hay margen para
+   sumar más de un control sin apretar el layout. */
+.hdc-fz{
+  flex-shrink:0; width:36px; height:36px; min-width:36px; min-height:36px;
+  display:flex; align-items:center; justify-content:center;
+  border:1px solid #28303A; background:#141920; border-radius:10px;
+  color:#E5C378; cursor:pointer; transition:transform .12s ease, border-color .15s ease, background .15s ease;
+}
+.hdc-fz:active{ transform:scale(.95); border-color:rgba(229,195,120,.5); background:#1A2029; }
+.hdc-fz-tx{ font-family:var(--font-head,inherit); font-weight:800; font-size:13px; letter-spacing:-.01em; line-height:1; }
+.hdc-fz[data-fz-lvl="g"] .hdc-fz-tx{ font-size:14.5px; color:#F2D9A8 }
+.hdc-fz[data-fz-lvl="x"]{ border-color:#E5C378; background:rgba(229,195,120,.1) }
+.hdc-fz[data-fz-lvl="x"] .hdc-fz-tx{ font-size:16px; color:#F2D9A8 }
 /* Ícono de credencial táctica (reemplaza el emoji 👤 genérico, 8vo pedido) —
    currentColor hereda el dorado #E5C378 ya definido en .hdc-info arriba. */
 .hdc-info-ic{ width:19px; height:19px; display:block; }
@@ -19919,16 +20364,26 @@ input[type="checkbox"]:active{
 }
 .hdp-row-slot{ padding:0; background:transparent; border:none; }
 .hdp-row-slot .pwa-wrap{ margin:0; padding:0; width:100%; }
-/* fila del selector Aa: el control ya viene a ancho completo (3 botones),
-   así que la etiqueta va arriba en vez de al costado como .hdp-row-uni */
+/* fila del selector Aa (#hdpFzSlot, poblado por montarSwitch() en SYSTEM
+   v3.1 más abajo): el control ya viene a ancho completo (3 botones), así
+   que la etiqueta va arriba en vez de al costado como .hdp-row-uni */
 .hdp-row-fz{ flex-direction:column; align-items:stretch; gap:8px; }
 .hdp-row-fz .hdp-row-lb{ margin-bottom:0; }
-.hdp-row-fz #hdpFzSlot{ width:100%; }
+.hdp-row-fz #jpFzSwitch{ width:100%; }
 .hdp-row-slot .pwa-athlete{ margin:0 !important; width:100%; max-width:none !important; border-radius:14px !important; }
 .hdp-row-slot #guideBtn{
   width:100%; text-align:center; border-radius:14px !important; padding:12px !important;
   background:#0E1014 !important; border:1px solid #1E222B !important; color:#EDEFF3 !important;
   font-size:13px !important; font-weight:700 !important;
+}
+/* UX/UI integral (13/09): #notaMesoPill reparentado al drawer -- mismo
+   tratamiento visual que #guideBtn de arriba, para que las dos filas de
+   "Ajustes y utilidades" luzcan consistentes entre sí. */
+.hdp-row-slot #notaMesoPill{
+  width:100%; text-align:center; border-radius:14px !important; padding:12px !important;
+  background:#0E1014 !important; border:1px solid #1E222B !important; color:#EDEFF3 !important;
+  font-size:13px !important; font-weight:700 !important; display:flex !important;
+  align-items:center; justify-content:center; gap:6px; cursor:pointer;
 }
 
 /* ---------- Curva del mesociclo (tarjeta de Identidad) — 8vo pedido:
@@ -20350,12 +20805,12 @@ body.focus-mode .hd-dock{display:none}
     var wrap = q('hdcDaysWrap');
     var tabsWrap = document.querySelector('.week-tabs-wrap');
     if(wrap && tabsWrap && tabsWrap.parentNode !== wrap){ wrap.appendChild(tabsWrap); }
-    /* directiva de rediseño: el botón (i) suelto se retiró del header --
-       el drawer de Perfil/Info ahora se abre tocando el chip de semana
+    /* reconciliación (merge Concepto F + directiva de accesibilidad): el
+       drawer de Perfil/Info ahora tiene DOS disparadores -- el ícono (i)
+       de siempre (#hdcInfoBtn) y, además, el chip de semana
        (#weekActiveBadge, "Entrenando en: Semana X"), que ya vive fijo
-       arriba del selector de días. Mismo drawer, mismo cableado, sólo
-       cambia el disparador. */
-    var infoBtn = q('weekActiveBadge');
+       arriba del selector de días. Mismo drawer, mismo cableado, sin
+       duplicar el panel. */
     var drawer = q('hdFullDrawer');
     /* .hd-wrap tiene position:relative + z-index:3 (regla vieja, ~línea 5990),
        lo que le crea su propio "stacking context" — cualquier elemento fixed
@@ -20366,21 +20821,21 @@ body.focus-mode .hd-dock{display:none}
        Fix: reparentarlo a <body> una sola vez, así su z-index:290 compite en
        el stacking context real de nivel documento. */
     if(drawer && drawer.parentElement !== document.body){ document.body.appendChild(drawer); }
+    /* nota de reconciliación: #weekActiveBadge quedó deprecado por la
+       directiva crítica "workout-first" (ver renderWeekActiveBadge(), más
+       arriba) -- su wrap sigue con display:none a propósito y el chip de
+       semana real es ahora .wpc-current (renderWeekSelector()), que abre
+       #weekInfoModal, no este drawer. #hdcInfoBtn es el único disparador
+       real de Perfil/Info. */
+    var infoBtn = q('hdcInfoBtn');
     if(infoBtn && drawer && !infoBtn.dataset.hdWired){
       infoBtn.dataset.hdWired = '1';
-      infoBtn.classList.add('week-badge-tap');
-      infoBtn.setAttribute('role', 'button');
-      infoBtn.setAttribute('tabindex', '0');
-      infoBtn.setAttribute('title', 'Perfil, credencial y ajustes');
       infoBtn.addEventListener('click', function(e){
         e.stopPropagation();
         drawer.classList.toggle('on');
       });
-      infoBtn.addEventListener('keydown', function(e){
-        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); infoBtn.click(); }
-      });
       document.addEventListener('click', function(e){
-        if(drawer.classList.contains('on') && !e.target.closest('.hd-full-drawer') && !e.target.closest('#weekActiveBadge')){
+        if(drawer.classList.contains('on') && !e.target.closest('.hd-full-drawer') && !e.target.closest('#hdcInfoBtn')){
           drawer.classList.remove('on');
         }
       });
@@ -20406,19 +20861,13 @@ body.focus-mode .hd-dock{display:none}
     var guideBtn = document.getElementById('guideBtn');
     if(guideSlot && guideBtn && guideBtn.parentNode !== guideSlot){ guideSlot.appendChild(guideBtn); }
 
+    var notaSlot = q('hdpNotaSlot');
+    var notaPill = document.getElementById('notaMesoPill');
+    if(notaSlot && notaPill && notaPill.parentNode !== notaSlot){ notaSlot.appendChild(notaPill); }
+
     var installSlot = q('hdpInstallSlot');
     var pwaWrap = document.querySelector('.pwa-wrap');
     if(installSlot && pwaWrap && pwaWrap.parentNode !== installSlot){ installSlot.appendChild(pwaWrap); }
-
-    /* directiva de rediseño: el selector Aa (módulo "SYSTEM v3.1 ·
-       ACCESIBILIDAD", más abajo) ya trae su propio CSS pensado para vivir
-       "en el drawer" (ver comentario ahí), pero se montaba con
-       document.querySelector('.hd-actions') -- el header legado, oculto
-       con display:none. Se reparenta acá al nuevo slot, visible dentro
-       del panel de Perfil/Info que abre el chip de semana. */
-    var fzSlot = q('hdpFzSlot');
-    var fzSwitch = document.getElementById('jpFzSwitch');
-    if(fzSlot && fzSwitch && fzSwitch.parentNode !== fzSlot){ fzSlot.appendChild(fzSwitch); }
 
     /* Bóveda de PRs: abre el hub de récords ya existente (window.CoachHubUI,
        montado por otro módulo) — cierra este drawer primero porque el hub
@@ -22096,8 +22545,19 @@ document.addEventListener('DOMContentLoaded', init);
        con 429 en un modelo puede probar otro de la lista sin esperar a que
        resetee -- el selector manual del panel de nutrición (directiva
        anterior) ya permite tipear cualquiera de estos sin tocar código. */
-    google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.8-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
-      hints:['gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'] }
+    /* directiva crítica (2026-09, confirmación explícita del coach) --
+       gemini-2.5-flash pasa a ser el DEFAULT de Google, pisando gemini-3.8-
+       flash. Se le mostró al coach el antecedente documentado más arriba
+       (404 en generateContent para cualquier clave/proyecto SIN uso previo
+       de la familia "2.5") y confirmó igual: su clave puntual sí tiene
+       acceso a "2.5" -- el síntoma real que reportó ("máximos tokens diarios
+       alcanzados") es un 429 genuino de la API (cuota, no acceso), como
+       queda registrado también en el audit de MÓDULO 5/29 sobre fallback.
+       El aviso de riesgo en fillCfgForm() se deja igual: esta app puede
+       terminar en la máquina de OTRO coach cuya clave no tenga ese acceso, y
+       ahí sí seguiría siendo información útil, no bloqueante. */
+    google:    { lb:'Google',    sub:'Gemini', model:'gemini-2.5-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
+      hints:['gemini-2.5-flash','gemini-2.5-pro','gemini-3.8-flash','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'] }
   };
   const ORDEN = ['anthropic','openai','google'];
   let AI = {
@@ -22135,13 +22595,14 @@ document.addEventListener('DOMContentLoaded', init);
     const MODELOS_RETIRADOS = [
       'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307',           /* Anthropic, retirados oct-2025/abr-2026 */
       'gemini-pro', 'gemini-1.0-pro', 'gemini-1.5-pro-preview', 'gemini-1.5-pro', 'gemini-1.5-flash', /* Google, discontinuados */
-      /* directiva crítica (2026-09) -- "gemini-2.5-pro" estuvo un rato corto
-         en los hints (directiva anterior) y se saca ahora: confirmado que
-         Google devuelve 404 en generateContent para TODA clave/proyecto sin
-         uso previo de la familia "2.5" -- para cualquier coach que lo haya
-         elegido de nuestro propio hint (agregado hace días), eso es 404
-         garantizado. Se migra al default vigente igual que un retiro real. */
-      'gemini-2.5-pro', 'gemini-2.5-flash',
+      /* directiva crítica (2026-09, seguimiento) -- "gemini-2.5-pro"/"gemini-
+         2.5-flash" estuvieron acá (auto-migración por riesgo de 404 sin uso
+         previo de la familia "2.5") pero gemini-2.5-flash ahora ES el default
+         vigente de Google, confirmado por el coach -- no puede estar al
+         mismo tiempo en "modelo default" y en "modelo a migrar lejos de él"
+         (quedaba pisándose a sí mismo en cada carga). Se sacan de la lista;
+         el aviso de riesgo de 404 para claves sin acceso previo sigue vivo en
+         fillCfgForm(), sólo que ya no fuerza un reset silencioso. */
       'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'                            /* OpenAI, familias ya fuera de vigencia */
     ];
     let huboMigracion = false;
@@ -22290,6 +22751,18 @@ document.addEventListener('DOMContentLoaded', init);
         '<div class="alert warn" style="padding:9px 12px;margin-top:8px"><span class="ic">🌐</span>' +
         '<div><b>OpenAI puede fallar siempre desde acá</b>Su API no habilita llamadas directas desde una página web (CORS) — necesitaría un servidor propio de por medio. Anthropic y Google sí funcionan directo desde esta app.</div></div>';
     }
+    /* directiva de implementación (2026-09) -- mismo criterio de aviso
+       proactivo que el de OpenAI arriba: gemini-2.5-flash/pro están en la
+       lista de sugerencias a pedido puntual, pero Google devuelve 404 en
+       generateContent para cualquier clave/proyecto sin uso previo de esa
+       familia (confirmado contra el foro oficial de desarrolladores). No se
+       le saca la opción al coach -- se le avisa ANTES de que la pruebe y
+       pierda un intento, igual que con OpenAI/CORS. */
+    if(p === 'google' && /^gemini-2\.5/.test(AI.models[p] || '')){
+      $('#cfgStatus').innerHTML +=
+        '<div class="alert warn" style="padding:9px 12px;margin-top:8px"><span class="ic">⚠️</span>' +
+        '<div><b>gemini-2.5 puede devolver 404 con esta clave</b>Google restringe la familia "2.5" a proyectos que ya la venían usando -- si tu clave es nueva para este modelo, usá "🧪 Test Conexión IA" para confirmarlo antes de generar un plan completo, o probá gemini-3.8-flash (familia 3.x, sin esa restricción) mientras tanto.</div></div>';
+    }
     const rst = document.getElementById('cfgReset');
     if(rst) rst.addEventListener('click', () => { resetAICooldown(AI.provider); toast('Cooldown reiniciado'); });
   }
@@ -22422,6 +22895,11 @@ document.addEventListener('DOMContentLoaded', init);
        quedado pegado de un 429 anterior, así que un coach podía corregir
        su modelo/clave y seguir viendo "en cooldown" un buen rato igual. */
     if(res.status === 429 || res.status === 529 || res.status === 503){
+      /* directiva crítica (2026-09) -- payload exacto del error de cuota en
+         consola (status + cuerpo crudo de la respuesta), para que el coach o
+         quien lo asista pueda ver el motivo real (RESOURCE_EXHAUSTED, RPD/
+         RPM/TPM, etc.) sin adivinar a partir del toast truncado. */
+      console.error('[CoachAI] ' + PROV[prov].lb + ' HTTP ' + res.status + ' — respuesta completa:', raw);
       let secs = 0;
       try{ secs = parseInt(res.headers.get('retry-after') || res.headers.get('Retry-After') || '0', 10) || 0; }catch(e){}
       if(!secs){
@@ -22514,6 +22992,36 @@ document.addEventListener('DOMContentLoaded', init);
     throw new Error('No se pudo completar la llamada: sin proveedores disponibles.');
   }
 
+  /* directiva crítica (2026-09) -- corte balanceado de llaves: antes se usaba
+     s.lastIndexOf('}'), el ÚLTIMO "}" de todo el texto, para encontrar el
+     cierre del objeto raíz. Si el modelo agrega texto conversacional DESPUÉS
+     del JSON (notas, disclaimers, un ejemplo) y ese texto trae su propia "}"
+     en cualquier lado, lastIndexOf agarraba esa llave posterior en vez de la
+     que realmente cierra el objeto -- el slice quedaba con contenido de más y
+     JSON.parse fallaba con "Unexpected non-whitespace character after JSON at
+     position N" pese a que el JSON en sí era válido. Este contador de balance
+     (ignorando llaves dentro de strings, respetando el escape "\\") corta
+     EXACTAMENTE en el cierre real del objeto raíz. Si el objeto vino truncado
+     por límite de tokens (nunca vuelve a balance 0), cae al mismo
+     comportamiento de antes: se entrega el resto del string tal cual. */
+  function cortarBloqueJSON(s, firstBrace){
+    let openBraces = 0, inString = false, escapeNext = false, lastIndex = -1;
+    for(let i = firstBrace; i < s.length; i++){
+      const ch = s[i];
+      if(escapeNext){ escapeNext = false; continue; }
+      if(ch === '\\'){ escapeNext = true; continue; }
+      if(ch === '"'){ inString = !inString; continue; }
+      if(!inString){
+        if(ch === '{') openBraces++;
+        else if(ch === '}'){
+          openBraces--;
+          if(openBraces === 0){ lastIndex = i; break; }
+        }
+      }
+    }
+    return (lastIndex !== -1) ? s.substring(firstBrace, lastIndex + 1) : s.substring(firstBrace);
+  }
+
   function extractJson(txt){
     if(!txt) throw new Error('Respuesta vacía del modelo.');
     let s = String(txt).trim();
@@ -22524,11 +23032,11 @@ document.addEventListener('DOMContentLoaded', init);
     const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
     else s = s.replace(/^```(?:json)?\s*/i, '').trim();
-    const a = s.indexOf('{'), b = s.lastIndexOf('}');
-    if(a < 0 || b < a) throw new Error('El modelo no devolvió JSON válido.');
+    const a = s.indexOf('{');
+    if(a < 0) throw new Error('El modelo no devolvió JSON válido.');
     /* coma colgante antes de "}" o "]" -- error de JSON muy común en respuestas
        de LLM que igual son rescatables sin volver a llamar a la IA */
-    let slice = s.slice(a, b + 1).replace(/,(\s*[}\]])/g, '$1');
+    let slice = cortarBloqueJSON(s, a).replace(/,(\s*[}\]])/g, '$1');
     /* algunos modelos (Gemini incluido, incluso en modo JSON nativo) devuelven
        saltos de línea/tabs SIN escapar dentro de un string -- JSON.parse
        estricto los rechaza con "Bad control character". Se escapan esos
@@ -25383,11 +25891,18 @@ document.addEventListener('DOMContentLoaded', init);
 .vol-card{background:linear-gradient(180deg,var(--panel),#0F1113);border:1px solid var(--line);border-radius:var(--r);padding:13px 15px;margin-bottom:16px}
 .vol-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:10px}
 .vol-head h3{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--txt-2);font-weight:800}
-.vol-chips{display:flex;flex-wrap:wrap;gap:7px}
-.vchip{display:inline-flex;align-items:baseline;gap:6px;padding:5px 11px;border-radius:20px;font-size:11.5px;font-weight:800;
+/* directiva crítica (2026-09) -- micro-grid horizontal scrollable en vez de
+   flex-wrap: con 8-10 grupos musculares, el wrap generaba 3 filas de chips
+   antes de llegar al día. Una sola fila que desliza horizontal (mismo patrón
+   que .pk-f/.pchip en el picker de ejercicios) ocupa una franja fija chica,
+   sin importar cuántos grupos tenga el atleta. */
+.vol-chips{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+.vol-chips::-webkit-scrollbar{height:4px}
+.vol-chips::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px}
+.vchip{display:inline-flex;flex:0 0 auto;align-items:baseline;gap:4px;padding:2px 6px;border-radius:20px;font-size:11px;font-weight:800;white-space:nowrap;
   border:1px solid var(--line-2);background:var(--panel-3);color:var(--txt-2)}
-.vchip b{font-size:14px;letter-spacing:-.3px}
-.vchip .vr{font-size:9.5px;opacity:.6;font-weight:700;margin-left:1px}
+.vchip b{font-size:12.5px;letter-spacing:-.3px}
+.vchip .vr{font-size:9px;opacity:.6;font-weight:700;margin-left:1px}
 .vchip.ok{border-color:rgba(74,147,184,.4);background:rgba(74,147,184,.1);color:var(--teal)}
 .vchip.under{border-color:rgba(210,121,63,.5);background:rgba(210,121,63,.1);color:var(--gold)}
 .vchip.over{border-color:rgba(168,68,44,.55);background:rgba(168,68,44,.12);color:#E0654A}
@@ -25803,13 +26318,33 @@ document.addEventListener('DOMContentLoaded', init);
   };
 
   /* ============ E. DUPLICAR PLANIFICACIÓN ============ */
-  function openDup(){
+  /* directiva de implementación (2026-09) -- "Copiar desde" ahora sólo lista
+     alumnos/as con un plan realmente armado (al menos un bloque cargado en
+     algún día): clonar un plan vacío no tiene sentido y antes aparecían
+     mezclados con el resto. Si nadie tiene plan todavía (instalación nueva),
+     cae a la lista completa para no dejar el selector vacío. "Hacia" sigue
+     listando a todos -- el destino puede no tener plan aún, es el caso de uso
+     normal. haciaActivo=true (llamado desde el Builder) invierte el sentido
+     por defecto: el alumno/a activo pasa a ser el DESTINO, no el origen. */
+  function openDup(haciaActivo){
     if(S.athletes.length < 2){ toast('Necesitás al menos dos alumnos cargados', 'err'); return; }
+    const conPlan = S.athletes.filter(a => {
+      const p = plan(a.id);
+      return p && (p.dias || []).some(d => (d.bloques || []).length);
+    });
+    const origenLista = conPlan.length ? conPlan : S.athletes;
     const opts = S.athletes.map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
-    $('#dupFrom').innerHTML = opts; $('#dupTo').innerHTML = opts;
-    $('#dupFrom').value = S.activeId || S.athletes[0].id;
-    const otro = S.athletes.find(a => a.id !== $('#dupFrom').value);
-    $('#dupTo').value = otro ? otro.id : S.athletes[0].id;
+    const optsOrigen = origenLista.map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
+    $('#dupFrom').innerHTML = optsOrigen; $('#dupTo').innerHTML = opts;
+    if(haciaActivo && S.activeId && origenLista.some(a => a.id !== S.activeId)){
+      $('#dupTo').value = S.activeId;
+      const otro = origenLista.find(a => a.id !== S.activeId);
+      $('#dupFrom').value = otro ? otro.id : origenLista[0].id;
+    } else {
+      $('#dupFrom').value = (origenLista.some(a => a.id === S.activeId) ? S.activeId : origenLista[0].id);
+      const otro = S.athletes.find(a => a.id !== $('#dupFrom').value);
+      $('#dupTo').value = otro ? otro.id : S.athletes[0].id;
+    }
     $('#dupLog').innerHTML = '';
     openModal('mDup');
   }
@@ -26084,7 +26619,22 @@ document.addEventListener('DOMContentLoaded', init);
       const b = document.createElement('button');
       b.className = 'btn'; b.id = 'btnDup'; b.innerHTML = '📋 Duplicar planificación';
       athTop.insertBefore(b, document.getElementById('btnNewAth'));
-      b.addEventListener('click', openDup);
+      b.addEventListener('click', () => openDup(false));
+    }
+
+    /* directiva de implementación (2026-09) -- mismo modal mDup/openDup() de
+       arriba, ahora también accesible desde la barra del Builder (pedido:
+       "Clonar Plan de Otro Atleta" cerca de donde el coach ya está armando
+       la ficha del alumno activo). haciaActivo=true invierte el sentido por
+       defecto de los selects: acá el alumno activo del Builder es el
+       DESTINO (se le clona el plan de otro), al revés que desde Alumnos. */
+    const buildTop = document.querySelector('#v-builder .tools-in');
+    if(buildTop && !document.getElementById('btnDupBuilder')){
+      const b = document.createElement('button');
+      b.className = 'btn ghost sm'; b.id = 'btnDupBuilder'; b.type = 'button';
+      b.innerHTML = '📋 Clonar Plan de Otro Atleta';
+      buildTop.appendChild(b);
+      b.addEventListener('click', () => openDup(true));
     }
 
     /* importador (vista Biblioteca) */
@@ -31777,6 +32327,19 @@ body.man-mode .gs-fab{right:318px}
 .cb-wk.on b{color:#08090B}
 .cb-wk.dl.on{background:linear-gradient(135deg,#7FDBFF,#4A93B8);color:#0B1A22}
 .cb-hint{font-size:10.5px;color:var(--muted);flex:1 1 100%}
+/* override manual de %1RM por semana -- independiente por bloque, no pisa
+   el esquema automático (70/78/85/60%…) salvo que el coach tipee un valor */
+.cb-pcts{display:flex;gap:6px;flex-wrap:wrap;flex:1 1 100%;margin-top:2px}
+.cb-pct-in{display:flex;align-items:center;gap:3px;padding:3px 6px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-3)}
+.cb-pct-in span{font-size:9.5px;font-weight:800;color:var(--muted)}
+.cb-pct-in input{width:38px;padding:2px 1px;font-size:11px;text-align:center;border:none;background:transparent;color:var(--teal);font-family:ui-monospace,Menlo,monospace;font-weight:800}
+.cb-pct-in input::placeholder{color:var(--muted);font-weight:600}
+.cb-pct-in.custom{border-color:rgba(210,121,63,.5);background:rgba(210,121,63,.08)}
+/* directiva crítica (2026-09) -- selector de modo de progresión (% vs +kg fijo) */
+.cb-modo-in, .cb-paso-in{display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-3)}
+.cb-modo-in span, .cb-paso-in span{font-size:9.5px;font-weight:800;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.cb-modo-in select{border:none;background:transparent;color:var(--teal);font-size:11px;font-weight:800;font-family:ui-monospace,Menlo,monospace;cursor:pointer}
+.cb-paso-in input{width:36px;padding:2px 1px;font-size:11px;text-align:center;border:none;background:transparent;color:var(--teal);font-family:ui-monospace,Menlo,monospace;font-weight:800}
 </style>
 
 <section id="v-banco" class="view" style="display:none">
@@ -31869,6 +32432,56 @@ body.man-mode .gs-fab{right:318px}
     return { min:a, max:c, txt: a === c ? a + ' kg' : a + '–' + c + ' kg',
              pct: w.pct[0] === w.pct[1] ? w.pct[0] + '%' : w.pct[0] + '-' + w.pct[1] + '%', lb: w.lb };
   }
+  /* directiva de implementación (2026-09) -- override manual de %1RM por
+     semana: usa block.weekPct[i], el mismo campo que ya lee cargaPrecomputada()
+     (compilador, línea ~21400) y cargaSugeridaHtml() (app del alumno, línea
+     ~5908) -- hasta esta directiva ningún lugar de la UI lo escribía, así que
+     el override existía en el modelo de datos pero nunca era alcanzable desde
+     acá. Vacío/ausente = sigue el esquema automático de PCT (targetSemana);
+     un número puntual fija SOLO esa semana, sin tocar las demás -- S1..S4/S6
+     quedan totalmente independientes entre sí. */
+  /* directiva crítica (2026-09) -- segundo modo de progresión, "+kg fijo por
+     semana", alternativa al esquema por %1RM de arriba (PCT/targetSemana).
+     Mismo caso de uso (80kg x 8 en S1 -> 82.5 en S2 -> 85 en S3 -> deload
+     -10% en S4) pero como incremento ADITIVO en vez de porcentual -- útil
+     para ejercicios donde el coach piensa en kilos fijos, no en %1RM (la
+     mayoría de los accesorios, donde no hay una marca de 1RM cargada).
+     b.progresionModo: 'pct' (default, sin tocar nada de lo de arriba) |
+     'kg'. b.progresionPasoKg: incremento por semana (default 2.5). Override
+     por semana: b.weekKgAbs[i], mismo patrón exacto que b.weekPct[i] --
+     vacío = sigue la progresión lineal, un número fija SOLO esa semana. */
+  function targetSemanaKg(b, i, base){
+    const bs = parseFloat(base);
+    if(!bs || bs <= 0) return null;
+    const w = PCT[i] || PCT[PCT.length - 1];
+    const propio = b && b.weekKgAbs && b.weekKgAbs[i] != null && b.weekKgAbs[i] !== '' ? parseFloat(b.weekKgAbs[i]) : null;
+    if(propio > 0){
+      return { min:propio, max:propio, txt: r05(propio) + ' kg', pct: '', lb: w.lb, custom:true, modoKg:true };
+    }
+    const paso = parseFloat(b && b.progresionPasoKg) || 2.5;
+    let v;
+    if(w.dl){
+      /* semana de descarga: -10% sobre lo que daría la semana de pico
+         inmediata anterior (la última semana no-deload de la progresión) */
+      const previaNoDeload = Math.max(0, i - 1);
+      const picoIdx = (PCT[previaNoDeload] && !PCT[previaNoDeload].dl) ? previaNoDeload : Math.max(0, i - 1);
+      v = r05((bs + paso * picoIdx) * 0.9);
+    } else {
+      v = r05(bs + paso * i);
+    }
+    return { min:v, max:v, txt: v + ' kg', pct: '+' + (paso * i) + ' kg', lb: w.lb, custom:false, modoKg:true };
+  }
+  function targetSemanaB(b, i, base){
+    const bs = base != null ? parseFloat(base) : parseFloat(b && b.cargaBase);
+    if(b && b.progresionModo === 'kg') return targetSemanaKg(b, i, bs);
+    const propio = b && b.weekPct && b.weekPct[i] != null && b.weekPct[i] !== '' ? parseFloat(b.weekPct[i]) : null;
+    if(propio > 0 && bs > 0){
+      const v = r05(bs * propio / 100);
+      const w = PCT[i] || PCT[PCT.length - 1];
+      return { min:v, max:v, txt: v + ' kg', pct: propio + '%', lb: w.lb, custom:true };
+    }
+    return targetSemana(bs, i);
+  }
   function semanaActiva(){
     const ag = G().agendaDe ? G().agendaDe(S.activeId) : null;
     const n = nSemanasActivas();
@@ -31888,17 +32501,45 @@ body.man-mode .gs-fab{right:318px}
     const nSem = nSemanasActivas();
     const base = b.cargaBase || '';
     const sug = base ? 0 : baseSugerida(b, ath);
+    const hintSem = targetSemanaB(b, sem-1, base);
+    const modoKg = b.progresionModo === 'kg';
+    const paso = b.progresionPasoKg != null && b.progresionPasoKg !== '' ? b.progresionPasoKg : 2.5;
+    const pctTxt = (hintSem && hintSem.pct) ? ' (' + hintSem.pct + (modoKg ? '' : ' de ' + base + ' kg') + ')' : '';
     return '<div class="cb-bar" data-cbbar="' + b.id + '">' +
       '<span class="cbl">⚖️ Carga base (kg)</span>' +
       '<input class="cbv" type="number" step="0.5" min="0" inputmode="decimal" data-cb="' + b.id + '" value="' + esc(base) + '" placeholder="' + (sug ? sug : '—') + '">' +
       (sug ? '<button class="btn xs" data-cbuse="' + b.id + '" data-kg="' + sug + '">Usar 1RM: ' + sug + ' kg</button>' : '') +
+      /* directiva crítica (2026-09) -- selector de modo de progresión */
+      '<label class="cb-modo-in" title="Cómo se calculan los targets de S2/S3/S4 a partir de la carga base">' +
+        '<span>Progresión</span>' +
+        '<select data-cbmodo="' + b.id + '">' +
+          '<option value="pct"' + (modoKg ? '' : ' selected') + '>% automático (1RM)</option>' +
+          '<option value="kg"' + (modoKg ? ' selected' : '') + '>+kg fijo / semana</option>' +
+        '</select>' +
+      '</label>' +
+      (modoKg ? '<label class="cb-paso-in" title="Cuánto sube la carga base por semana (antes del deload de S4)">' +
+        '<span>Paso</span><input type="number" step="0.5" min="0" inputmode="decimal" data-cbpaso="' + b.id + '" value="' + esc(paso) + '"><span>kg/sem</span></label>' : '') +
       '<div class="cb-weeks">' + PCT.slice(0, nSem).map((w, i) => {
-        const t = targetSemana(base, i);
+        const t = targetSemanaB(b, i, base);
         return '<button class="cb-wk ' + (sem === i+1 ? 'on' : '') + (w.dl ? ' dl' : '') + '" data-cbwk="' + (i+1) + '" title="' + esc(w.lb + ' · ' + (t ? t.pct : '')) + '">' +
           w.s + '<b>' + (t ? t.txt : '—') + '</b></button>';
       }).join('') + '</div>' +
+      (modoKg
+        ? '<div class="cb-pcts">' + PCT.slice(0, nSem).map((w, i) => {
+            const custom = (b.weekKgAbs && b.weekKgAbs[i] != null && b.weekKgAbs[i] !== '') ? b.weekKgAbs[i] : '';
+            const auto = targetSemanaKg(Object.assign({}, b, { weekKgAbs: null }), i, base);
+            const ph = auto ? auto.txt.replace(' kg', '') : '—';
+            return '<label class="cb-pct-in' + (custom !== '' ? ' custom' : '') + '" title="Kg propio para ' + esc(w.s) + ' -- vacío sigue la progresión lineal (' + ph + ' kg)">' +
+              '<span>' + w.s + '</span><input type="number" step="0.5" min="0" inputmode="decimal" data-cbwkg="' + b.id + '" data-wi="' + i + '" value="' + esc(custom) + '" placeholder="' + ph + '"><span>kg</span></label>';
+          }).join('') + '</div>'
+        : '<div class="cb-pcts">' + PCT.slice(0, nSem).map((w, i) => {
+            const custom = (b.weekPct && b.weekPct[i] != null && b.weekPct[i] !== '') ? b.weekPct[i] : '';
+            const ph = w.pct[0] === w.pct[1] ? w.pct[0] : (w.pct[0] + '-' + w.pct[1]);
+            return '<label class="cb-pct-in' + (custom !== '' ? ' custom' : '') + '" title="% de 1RM propio para ' + esc(w.s) + ' -- vacío usa el esquema automático (' + ph + '%)">' +
+              '<span>' + w.s + '</span><input type="number" step="1" min="1" max="100" inputmode="numeric" data-cbwpct="' + b.id + '" data-wi="' + i + '" value="' + esc(custom) + '" placeholder="' + ph + '"><span>%</span></label>';
+          }).join('') + '</div>') +
       '<div class="cb-hint">' + (base
-        ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (targetSemana(base, sem-1) || {}).txt + '</b> (' + (targetSemana(base, sem-1) || {}).pct + ' de ' + base + ' kg · ' + PCT[sem-1].lb + '). Tocá S1-S' + nSem + ' para cambiar la semana activa del alumno/a.'
+        ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (hintSem || {}).txt + '</b>' + pctTxt + ' · ' + PCT[sem-1].lb + (hintSem && hintSem.custom ? ' · valor propio de esta semana' : '') + '. Tocá S1-S' + nSem + ' para cambiar la semana activa del alumno/a.'
         : 'Cargá el peso de referencia (1RM o peso de trabajo habitual) y la app calcula el target de cada semana del mesociclo.') + '</div>' +
     '</div>';
   }
@@ -32145,6 +32786,65 @@ body.man-mode .gs-fab{right:318px}
 
     /* carga base: input y botones de semana */
     document.addEventListener('input', e => {
+      const wk = e.target.closest('[data-cbwkg]');
+      if(wk){
+        const b = findBlock(wk.dataset.cbwkg); if(!b) return;
+        const wi = parseInt(wk.dataset.wi, 10);
+        if(!Array.isArray(b.weekKgAbs)) b.weekKgAbs = [];
+        while(b.weekKgAbs.length <= wi) b.weekKgAbs.push('');
+        b.weekKgAbs[wi] = wk.value === '' ? '' : parseFloat(wk.value);
+        save();
+        wk.closest('.cb-pct-in').classList.toggle('custom', wk.value !== '');
+        const bar = wk.closest('[data-cbbar]');
+        if(bar){
+          const sem = semanaActiva();
+          $$('.cb-wk', bar).forEach((w, idx) => {
+            const t = targetSemanaB(b, idx, b.cargaBase);
+            const strong = w.querySelector('b'); if(strong) strong.textContent = t ? t.txt : '—';
+          });
+          const hint = bar.querySelector('.cb-hint');
+          const t = targetSemanaB(b, sem - 1, b.cargaBase);
+          if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b>' + (t.pct ? ' (' + t.pct + ')' : '') + ' · ' + t.lb + (t.custom ? ' · valor propio de esta semana' : '') + '.';
+        }
+        return;
+      }
+      const paso = e.target.closest('[data-cbpaso]');
+      if(paso){
+        const b = findBlock(paso.dataset.cbpaso); if(!b) return;
+        b.progresionPasoKg = paso.value === '' ? '' : parseFloat(paso.value);
+        save();
+        const bar = paso.closest('[data-cbbar]');
+        if(bar){
+          const sem = semanaActiva();
+          $$('.cb-wk', bar).forEach((w, idx) => {
+            const t = targetSemanaB(b, idx, b.cargaBase);
+            const strong = w.querySelector('b'); if(strong) strong.textContent = t ? t.txt : '—';
+          });
+        }
+        return;
+      }
+      const wp = e.target.closest('[data-cbwpct]');
+      if(wp){
+        const b = findBlock(wp.dataset.cbwpct); if(!b) return;
+        const wi = parseInt(wp.dataset.wi, 10);
+        if(!Array.isArray(b.weekPct)) b.weekPct = [];
+        while(b.weekPct.length <= wi) b.weekPct.push('');
+        b.weekPct[wi] = wp.value === '' ? '' : parseFloat(wp.value);
+        save();
+        wp.closest('.cb-pct-in').classList.toggle('custom', wp.value !== '');
+        const bar = wp.closest('[data-cbbar]');
+        if(bar){
+          const sem = semanaActiva();
+          $$('.cb-wk', bar).forEach((w, idx) => {
+            const t = targetSemanaB(b, idx, b.cargaBase);
+            const strong = w.querySelector('b'); if(strong) strong.textContent = t ? t.txt : '—';
+          });
+          const hint = bar.querySelector('.cb-hint');
+          const t = targetSemanaB(b, sem - 1, b.cargaBase);
+          if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b> (' + t.pct + ' de ' + b.cargaBase + ' kg · ' + t.lb + (t.custom ? ' · % propio de esta semana' : '') + ').';
+        }
+        return;
+      }
       const i = e.target.closest('[data-cb]'); if(!i) return;
       const b = findBlock(i.dataset.cb); if(!b) return;
       b.cargaBase = i.value === '' ? '' : parseFloat(i.value);
@@ -32153,12 +32853,12 @@ body.man-mode .gs-fab{right:318px}
       if(bar){
         const sem = semanaActiva();
         $$('.cb-wk', bar).forEach((w, idx) => {
-          const t = targetSemana(b.cargaBase, idx);
+          const t = targetSemanaB(b, idx, b.cargaBase);
           const strong = w.querySelector('b'); if(strong) strong.textContent = t ? t.txt : '—';
         });
         const hint = bar.querySelector('.cb-hint');
-        const t = targetSemana(b.cargaBase, sem - 1);
-        if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b> (' + t.pct + ' de ' + b.cargaBase + ' kg · ' + t.lb + ').';
+        const t = targetSemanaB(b, sem - 1, b.cargaBase);
+        if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b> (' + t.pct + ' de ' + b.cargaBase + ' kg · ' + t.lb + (t.custom ? ' · % propio de esta semana' : '') + ').';
       }
     });
     document.addEventListener('click', e => {
@@ -32177,6 +32877,21 @@ body.man-mode .gs-fab{right:318px}
         if(window.CoachTools && window.CoachTools.inyectarCargas){ try{ window.CoachTools.inyectarCargas(false); }catch(e2){} }
         toast('📅 Semana activa: ' + PCT[(ag ? ag.semana : 1) - 1].s + ' · ' + PCT[(ag ? ag.semana : 1) - 1].lb);
       }
+    });
+    /* directiva crítica (2026-09) -- cambiar el modo de progresión (%/kg fijo)
+       cambia la forma de la fila de overrides (% vs kg) y muestra/oculta el
+       input de "paso" -- se re-renderiza sólo esta barra puntual (outerHTML),
+       no todo el Builder, para no perder el scroll ni el foco del resto del
+       día mientras el coach ajusta este bloque. */
+    document.addEventListener('change', e => {
+      const modo = e.target.closest('[data-cbmodo]');
+      if(!modo) return;
+      const b = findBlock(modo.dataset.cbmodo); if(!b) return;
+      b.progresionModo = modo.value === 'kg' ? 'kg' : 'pct';
+      save();
+      const bar = modo.closest('[data-cbbar]');
+      const ath = (typeof active === 'function') ? active() : null;
+      if(bar && ath) bar.outerHTML = barraCarga(b, ath);
     });
 
     $$('#mBank [data-close], #mBankAsig [data-close]').forEach(b =>
@@ -39147,12 +39862,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         'con protocolo, escalados, objetivos, coaching tips y estrategia de pacing.</p>' +
         '<textarea id="s2Txt" placeholder="A) Every 2:00 x 7 sets&#10;1 Power Clean + 2 Front Squat @ RPE 8&#10;&#10;B) 5 Sets - 3:00 Work / 2:00 Rest&#10;15 Wall Balls&#10;12 Deadlifts&#10;9 Toes to Bar&#10;&#10;C) 4 Sets Quality&#10;12 GHD hip extensions&#10;20 Hollow Rocks"></textarea>' +
         '<button type="button" class="btn-ia" id="s2Run">⚡ Estructurar y profesionalizar con IA</button>'
-      : '<div class="s2-h"><span class="sb-step">2</span> Plantillas profesionales</div>' +
-        '<p class="s2-sub">Elegí el objetivo y el sistema arma la sesión con criterio biomecánico, ' +
-        'o construí bloque a bloque desde las herramientas.</p>' +
-        '<div class="tpl-cats">' + CATS.map(c =>
+      /* directiva crítica (2026-09) -- colapsado por defecto (acordeón
+         táctico): la grilla de categorías ocupaba una franja grande de
+         pantalla apenas se entraba al Builder, incluso para un coach que ya
+         sabe qué va a armar a mano. Se envuelve en <details> sin "open". */
+      : '<details class="step2-details"><summary class="tpl-summary"><span class="sb-step">2</span> Plantillas profesionales<span class="tpl-summary-hint">Arrancá desde una plantilla, o construí bloque a bloque desde las herramientas de abajo</span></summary>' +
+        '<div class="tpl-cats" style="margin-top:10px">' + CATS.map(c =>
           '<button type="button" class="tpl-cat" data-tplcat="' + c.k + '"><b>' + c.lb + '</b><span>' + c.d + '</span></button>').join('') +
-        '</div>';
+        '</div></details>';
     if(caja.dataset.modo !== (cf ? 'cf' : 'fz')){
       caja.dataset.modo = cf ? 'cf' : 'fz';
       caja.innerHTML = html;
@@ -41872,8 +42589,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     b.type = 'button';
     b.textContent = '🍽️ Nutrición';
     b.addEventListener('click', abrir);
+    /* directiva crítica (2026-09) -- guarda de parentNode: el módulo de
+       reorganización de la barra (Más Opciones) puede haber movido
+       btnCopyDay fuera de "barra" antes de que esto corra -- insertBefore
+       con un ref que ya no es hijo directo de barra tira DOMException y
+       aborta el montaje entero de este botón en silencio. */
     var ref = document.getElementById('btnCopyDay');
-    if(ref) barra.insertBefore(b, ref); else barra.appendChild(b);
+    if(ref && ref.parentNode === barra) barra.insertBefore(b, ref); else barra.appendChild(b);
     marcar();
   }
   function marcar(){
@@ -43362,8 +44084,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       b.className = 'btn ghost sm'; b.id = 'btnCool'; b.type = 'button';
       b.textContent = '⚡ Cool-Down y Resumen IA';
       b.addEventListener('click', abrir);
+      /* directiva crítica (2026-09) -- guarda de parentNode, ver btnNutri */
       var ref = document.getElementById('btnNutri') || document.getElementById('btnCopyDay');
-      if(ref) barra.insertBefore(b, ref); else barra.appendChild(b);
+      if(ref && ref.parentNode === barra) barra.insertBefore(b, ref); else barra.appendChild(b);
     }
     var m = document.getElementById('mCool');
     if(m && !m.__jp){
@@ -43636,8 +44359,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
             </div>
             <div id="npIAModelWrap">
               <label class="lb">Modelo</label>
-              <input id="npIAModel" list="npDlModels" placeholder="ej: gemini-3.6-flash">
-              <datalist id="npDlModels"></datalist>
+              <select id="npIAModel"></select>
             </div>
             <div style="display:flex;align-items:flex-end">
               <button class="btn ghost sm" type="button" id="npIAReset" title="Limpia cualquier cooldown pendiente y permite reintentar de inmediato, sin esperar ningún temporizador" style="width:100%">↺ Resetear Estado / Forzar Reintento</button>
@@ -43677,7 +44399,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           <div id="npShopResult" style="display:none;margin-top:8px"></div>
         </div>
         <div class="np-kpis" id="npKpis"></div>
-        <div class="np-sec" style="margin-top:12px">
+        <div class="np-sec" style="margin-top:12px" id="npPeriSec">
           <div class="sh">Peri-entreno</div>
           <div id="npPeri" style="font-size:12.5px;line-height:1.6;color:#C9CFD8"></div>
         </div>
@@ -43807,6 +44529,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     { n:'Polenta cocida',         p:2,  c:15, g:0.5, tipo:'carb', ex:[],               fam:['maiz'] },
     { n:'Banana',                 p:1,  c:23, g:0.3, tipo:'carb', ex:[],               fam:['fruta'] },
     { n:'Manzana',                p:0.3,c:14, g:0.2, tipo:'carb', ex:[],               fam:['fruta'] },
+    /* directiva de implementación (2026-09) -- suman al vocabulario de
+       desayuno/merienda pedido explícitamente: no había ningún carbohidrato
+       "de fruta variada" ni de cereal listo aparte de la avena. */
+    { n:'Frutos rojos',           p:1,  c:12, g:0.3, tipo:'carb', ex:[],               fam:['fruta'] },
+    { n:'Granola sin azúcar',     p:10, c:63, g:14,  tipo:'carb', ex:['singlu'],       fam:['avena','gluten','fruto seco'] },
 
     { n:'Aceite de oliva virgen extra', p:0, c:0, g:100, tipo:'gras', ex:[],           fam:['aceite'] },
     { n:'Aceite de girasol alto oleico', p:0, c:0, g:100, tipo:'gras', ex:[],          fam:['aceite'] },
@@ -44021,7 +44748,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   /* reparto por comida: la proteína se distribuye pareja, el carbohidrato
      se carga alrededor del entrenamiento y la grasa baja en la comida previa */
-  function repartir(n, horaEntreno){
+  /* directiva crítica (2026-09) -- "esEntreno" es nuevo y opcional (default
+     true, igual que siempre): día de descanso ("Distribuye los carbohidratos
+     de forma homogénea en las 4 comidas base" + "elimina los bloques o notas
+     de peri-entreno") -- sin sesión no hay pre/post-entreno que sincronizar,
+     así que se devuelven pesos parejos y ninguna franja marcada pre/post. El
+     mapeo pre/post por horario de entreno (mañana → Desayuno/Almuerzo,
+     tarde/otro → Merienda/Cena) sigue exactamente igual para los días que sí
+     son de entreno. */
+  function repartir(n, horaEntreno, esEntreno){
     var base = {
       3: [{ nb:'Desayuno', h:'08:00' }, { nb:'Almuerzo', h:'13:00' }, { nb:'Cena', h:'21:00' }],
       4: [{ nb:'Desayuno', h:'07:30' }, { nb:'Almuerzo', h:'13:00' }, { nb:'Merienda', h:'17:30' }, { nb:'Cena', h:'21:00' }],
@@ -44029,6 +44764,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           { nb:'Merienda', h:'17:30' }, { nb:'Cena', h:'21:00' }]
     }[n] || [];
     var pesos = base.map(function(){ return { p: 1 / base.length, c: 1 / base.length, g: 1 / base.length }; });
+    if(esEntreno === false){
+      return base.map(function(b, i){ return { nombre:b.nb, hora:b.h, w:pesos[i], pre:false, post:false }; });
+    }
     var idxPre = horaEntreno === 'am' ? 0 : horaEntreno === 'mid' ? 1 : base.length - 2;
     var idxPost = Math.min(base.length - 1, idxPre + 1);
     if(pesos[idxPre]){ pesos[idxPre].c *= 1.4; pesos[idxPre].g *= 0.4; }
@@ -44101,9 +44839,66 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   var PROT_LIVIANA = ['Huevo entero', 'Claras de huevo', 'Yogur griego natural', 'Ricota magra',
                        'Queso Port Salut light', 'Queso untable descremado',
                        'Proteína de suero', 'Proteína vegetal en polvo'];
+  /* directiva crítica (2026-09) -- mismo criterio que PROT_LIVIANA, ahora
+     para el carbohidrato: sin esto, armarComidas() podía elegir "Arroz
+     cocido"/"Papa cocida"/"Fideos de sémola cocidos"/"Batata cocida" como
+     carbohidrato de un desayuno o una merienda (nunca pasaba con la
+     proteína, que ya estaba resuelto, pero sí con el carbohidrato -- carbs
+     se elegía siempre del pool completo, sin distinguir franja). */
+  var CARB_LIVIANO = ['Avena', 'Pan integral de molde', 'Galletas de arroz', 'Banana', 'Manzana',
+                       'Frutos rojos', 'Granola sin azúcar'];
   var FRANJA_LIVIANA = /desayuno|media\s*ma[ñn]ana|merienda/i;
 
-  function armarComidas(f, mac, rest, alergias, offsetDia){
+  /* directiva crítica (2026-09) -- combinaciones cerradas reales para
+     Desayuno/Media mañana/Merienda: en vez de armar la comida eligiendo
+     independientemente 1 proteína + 1 carbohidrato + 1 grasa de los pools
+     PROT_LIVIANA/CARB_LIVIANO (que ya no permiten carne/arroz ahí, pero
+     podían combinar cosas que nutricionalmente van juntas pero no como
+     "plato" reconocible -- ej. yogur + galletas de arroz sueltas), el motor
+     elige uno de estos 4 patrones gastronómicos argentinos cerrados y arma
+     la comida con SUS alimentos -- todos ya presentes en ALIM. Cada rol
+     (carb/prot/gras) tiene 1-2 variantes para dar rotación sin salirse del
+     patrón. "fruta" es un ítem extra fijo (mismo criterio que la verdura de
+     almuerzo/cena, itV más abajo) sólo en los combos que la llevan.
+     Fallback: si algún alimento del combo elegido queda excluido por
+     alergia/restricción del alumno/a, cae al pool general (protsAM/carbsAM)
+     para ESE rol puntual -- nunca rompe el día por un combo incompatible. */
+  var COMBOS_LIVIANOS = [
+    { id:'A', nombre:'Tostadas Proteicas',
+      carb:['Pan integral de molde', 'Galletas de arroz'],
+      prot:['Huevo entero', 'Claras de huevo'],
+      gras:['Palta', 'Palta'] },
+    { id:'B', nombre:'Yogur Bowl Deportivo',
+      carb:['Avena', 'Avena'],
+      prot:['Yogur griego natural', 'Proteína de suero'],
+      gras:['Maní tostado sin sal', 'Nueces'],
+      fruta:['Banana', 'Manzana'] },
+    { id:'C', nombre:'Panqueques de Avena Tácticos',
+      carb:['Avena', 'Avena'],
+      prot:['Claras de huevo', 'Huevo entero'],
+      gras:['Pasta de maní 100% natural', 'Pasta de maní 100% natural'],
+      fruta:['Banana', 'Frutos rojos'] },
+    { id:'D', nombre:'Merienda Criolla Proteica',
+      carb:['Pan integral de molde', 'Galletas de arroz'],
+      prot:['Queso untable descremado', 'Queso Port Salut light'],
+      gras:['Palta', 'Palta'] }
+  ];
+  /* pool de swaps permitido dentro de las comidas livianas: la unión de los
+     4 combos por rol -- "los intercambios sólo pueden sugerir alimentos de
+     estas mismas 4 opciones", nunca del pool general aunque sea liviano */
+  function comboPool(macro){
+    var vistos = {}, out = [];
+    COMBOS_LIVIANOS.forEach(function(c){
+      (c[macro] || []).forEach(function(nombre){
+        if(vistos[nombre]) return; vistos[nombre] = true;
+        var al = ALIM.filter(function(a){ return a.n === nombre; })[0];
+        if(al) out.push(al);
+      });
+    });
+    return out;
+  }
+
+  function armarComidas(f, mac, rest, alergias, offsetDia, esEntreno){
     /* 29no pedido (30/08): "offsetDia" es nuevo y opcional (default 0, se
        comporta exactamente igual que antes) -- lo usa el plan SEMANAL para
        que cada día de la semana arranque la rotación de alimentos en un
@@ -44121,14 +44916,49 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!protsAM.length) protsAM = prots;   /* p.ej. dieta 100% carnívora sin lácteos ni huevo */
     if(!protsPM.length) protsPM = prots;
 
-    var plan = repartir(parseInt(f.comidas, 10) || 4, f.hora);
+    /* directiva crítica (2026-09) -- mismo split que las proteínas, ahora
+       para el carbohidrato (ver CARB_LIVIANO más arriba). */
+    var carbsAM = carbs.filter(function(a){ return CARB_LIVIANO.indexOf(a.n) >= 0; });
+    var carbsPM = carbs.filter(function(a){ return CARB_LIVIANO.indexOf(a.n) < 0; });
+    if(!carbsAM.length) carbsAM = carbs;   /* p.ej. restricciones que dejan sin ningún carb liviano */
+    if(!carbsPM.length) carbsPM = carbs;
+
+    var comboProtPool = comboPool('prot'), comboCarbPool = comboPool('carb'), comboGrasPool = comboPool('gras');
+    var plan = repartir(parseInt(f.comidas, 10) || 4, f.hora, esEntreno);
     var iAM = offsetDia, iPM = offsetDia;
     var comidas = plan.map(function(c, i){
       var pObj = mac.prot_g * c.w.p, cObj = mac.carb_g * c.w.c, gObj = mac.gras_g * c.w.g;
       var liviana = FRANJA_LIVIANA.test(c.nombre);
       var poolP = liviana ? protsAM : protsPM;
-      var pAl = liviana ? poolP[iAM++ % poolP.length] : poolP[iPM++ % poolP.length];
-      var cAl = carbs[(i + offsetDia) % carbs.length], gAl = gras[(i + offsetDia) % gras.length];
+      var poolC = liviana ? carbsAM : carbsPM;
+      var poolG = gras;
+      /* directiva crítica (2026-09) -- combinaciones cerradas: en franja
+         liviana no se arma con "cualquier proteína liviana + cualquier
+         carbohidrato liviano" sino con UNO de los 4 patrones de
+         COMBOS_LIVIANOS -- rota por día (offsetDia) y por franja (i) para
+         variedad semanal, con 2 variantes de alimento por rol adentro de
+         cada combo (rota por día). Si el alimento elegido del combo quedó
+         afuera por alergia/restricción (no está en protsAM/carbsAM/gras),
+         cae al pool general de esa franja para ESE rol puntual -- nunca
+         null, nunca rompe el día. */
+      var combo = liviana ? COMBOS_LIVIANOS[(offsetDia + i) % COMBOS_LIVIANOS.length] : null;
+      var variant = offsetDia % 2;
+      var pAl, cAl, gAl, itFruta = null;
+      if(combo){
+        var nP = combo.prot[variant] || combo.prot[0];
+        var nC = combo.carb[variant] || combo.carb[0];
+        var nG = combo.gras[variant] || combo.gras[0];
+        pAl = protsAM.filter(function(a){ return a.n === nP; })[0] || poolP[iAM % poolP.length];
+        cAl = carbsAM.filter(function(a){ return a.n === nC; })[0] || poolC[i % poolC.length];
+        gAl = gras.filter(function(a){ return a.n === nG; })[0] || poolG[i % poolG.length];
+        if(comboProtPool.length) poolP = comboProtPool;
+        if(comboCarbPool.length) poolC = comboCarbPool;
+        if(comboGrasPool.length) poolG = comboGrasPool;
+        iAM++;
+      } else {
+        pAl = liviana ? poolP[iAM++ % poolP.length] : poolP[iPM++ % poolP.length];
+        cAl = poolC[(i + offsetDia) % poolC.length]; gAl = poolG[(i + offsetDia) % poolG.length];
+      }
       var items = [];
 
       /* 1 · proteína -- directiva de localización (2026-09): los
@@ -44136,7 +44966,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
          (poolP: liviana o pesada) y no contra "prots" completo, para que
          un desayuno con huevo nunca sugiera como equivalente un corte de
          carnicería (ni al revés, un almuerzo con carne sugerir ricota) --
-         antes con "prots" completo eso podía pasar. */
+         antes con "prots" completo eso podía pasar. En franja liviana con
+         combo, poolP ya es comboProtPool -- el swap sólo ofrece alimentos
+         de los 4 combos, como pide la regla absoluta. */
       var itP = item(pAl, pObj / (pAl.p || 1) * 100, 'prot', poolP);
       items.push(itP);
 
@@ -44148,14 +44980,31 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         items.push(itV);
       }
 
-      /* 3 · carbohidrato, restando lo que ya aportaron los anteriores */
+      /* 3 · carbohidrato, restando lo que ya aportaron los anteriores --
+         mismo criterio que la proteína: intercambios dentro de poolC (la
+         franja horaria correspondiente), nunca contra "carbs" completo. */
       var carbRest = cObj - itP.carb - (itV ? itV.carb : 0);
-      if(carbRest > 4) items.push(item(cAl, carbRest / (cAl.c || 1) * 100, 'carb', carbs));
+      if(carbRest > 4) items.push(item(cAl, carbRest / (cAl.c || 1) * 100, 'carb', poolC));
+
+      /* 2b · fruta fija del combo (Yogur Bowl / Panqueques de Avena) -- ítem
+         chico y fijo, mismo criterio que la verdura de arriba: no reemplaza
+         el cálculo de macros, es la variedad real del plato ("+ fruta
+         fresca"). Si el desvío de carbohidrato del día la hace sobrar, la
+         limpia el mismo paso de "se sacan ítems de carbohidrato" más abajo,
+         que ya corre sobre TODOS los ítems macro:'carb' del día. */
+      if(combo && combo.fruta){
+        var nF = combo.fruta[variant] || combo.fruta[0];
+        var alF = carbsAM.filter(function(a){ return a.n === nF; })[0] || comboCarbPool.filter(function(a){ return a.n !== cAl.n; })[0];
+        if(alF && alF.n !== cAl.n){
+          itFruta = item(alF, 80, 'carb', poolC);
+          items.push(itFruta);
+        }
+      }
 
       /* 4 · grasa, restando la que ya viene de la proteína y del carbohidrato */
       var yaGrasa = items.reduce(function(a, x){ return a + x.gras; }, 0);
       var grasRest = gObj - yaGrasa;
-      if(grasRest > 3) items.push(item(gAl, grasRest / (gAl.g || 1) * 100, 'gras', gras));
+      if(grasRest > 3) items.push(item(gAl, grasRest / (gAl.g || 1) * 100, 'gras', poolG));
 
       var out = { n:i + 1, nombre:c.nombre + (c.pre ? ' · pre-entreno' : c.post ? ' · post-entreno' : ''),
                   hora_sug:c.hora, items:items };
@@ -44182,27 +45031,41 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
     /* si aun sacando la grasa agregada sigue sobrando (pasa en planes
        veganos o vegetarianos, donde la grasa viene dentro de la propia
-       fuente de proteína), se cambia la fuente por la más magra disponible */
+       fuente de proteína), se cambia la fuente por la más magra disponible.
+       directiva crítica (2026-09) -- esto elegía "la más magra" de TODO
+       "prots" sin distinguir franja horaria: un desayuno con huevo (grasa
+       alta) podía terminar con merluza o atún puesto acá, violando la
+       misma regla de franja que ya protegía la selección inicial más
+       arriba. Se calcula una "más magra" por pool (AM/PM) y el swap
+       respeta la franja de la comida que se está corrigiendo. */
     var magro = function(a){ return a.g / Math.max(1, a.p); };
-    var masMagra = prots.slice().sort(function(a, b){ return magro(a) - magro(b); })[0];
+    var masMagraAM = protsAM.slice().sort(function(a, b){ return magro(a) - magro(b); })[0];
+    var masMagraPM = protsPM.slice().sort(function(a, b){ return magro(a) - magro(b); })[0];
     var polvos = permitidos('prot', rest, alergias, true).filter(function(a){ return a.supl; });
     var polvo = polvos.sort(function(a, b){ return magro(a) - magro(b); })[0];
     var usePolvo = false;
     for(var q2 = 0; q2 < 8 && sobra() > mac.gras_g * 0.08; q2++){
-      /* después de 3 intentos con fuentes enteras se habilita el polvo,
-         una sola vez en todo el día */
-      if(q2 >= 3 && polvo && !usePolvo){ masMagra = polvo; usePolvo = true; }
-      var peorC = null, peorI = -1, ratio = -1;
+      /* después de 3 intentos con fuentes enteras se habilita el polvo (es
+         "liviano" por definición -- ver PROT_LIVIANA -- así que sirve para
+         cualquier franja sin romper la regla), una sola vez en todo el día */
+      if(q2 >= 3 && polvo && !usePolvo) usePolvo = true;
+      var peorC = null, peorI = -1, ratio = -1, peorLiviana = false;
       comidas.forEach(function(c){
+        var liviana = FRANJA_LIVIANA.test(c.nombre);
+        var actual = liviana ? masMagraAM : masMagraPM;
         c.items.forEach(function(x, ix){
-          if(x.macro !== 'prot' || x.alimento === masMagra.n) return;
+          if(x.macro !== 'prot') return;
+          if(usePolvo && polvo && x.alimento === polvo.n) return;
+          if(!usePolvo && actual && x.alimento === actual.n) return;
           var r = x.base.g / Math.max(1, x.base.p);
-          if(r > ratio){ ratio = r; peorC = c; peorI = ix; }
+          if(r > ratio){ ratio = r; peorC = c; peorI = ix; peorLiviana = liviana; }
         });
       });
       if(!peorC) break;
+      var elegido = usePolvo ? polvo : (peorLiviana ? masMagraAM : masMagraPM);
+      var poolIntercambio = peorLiviana ? protsAM : protsPM;
       var protActual = peorC.items[peorI].prot;
-      peorC.items[peorI] = item(masMagra, protActual / (masMagra.p || 1) * 100, 'prot', prots);
+      peorC.items[peorI] = item(elegido, protActual / (elegido.p || 1) * 100, 'prot', poolIntercambio);
       totales(comidas);
     }
 
@@ -44232,11 +45095,35 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       if(Math.abs(mac.gras_g - t.gras) > 2) corregir(comidas, 'gras', mac.gras_g - t.gras);
     }
     totales(comidas);
-    /* los intercambios se recalculan con los gramos definitivos */
+    /* los intercambios se recalculan con los gramos definitivos --
+       directiva crítica (2026-09): este recálculo final usaba
+       permitidos(x.macro, ...) SIN distinguir franja horaria, así que aunque
+       la selección inicial de arriba ya respetaba poolP/poolC, este paso
+       podía pisarla y terminar sugiriendo un intercambio de "carne picada"
+       para el huevo de un desayuno (o "arroz" para la avena de una
+       merienda). En franja liviana se restringe además a los 4 combos
+       cerrados (comboProtPool/comboCarbPool/comboGrasPool) -- "los
+       intercambios sólo pueden sugerir alimentos de estas mismas 4
+       opciones" -- con el mismo fallback a la lista completa que ya usan
+       protsAM/protsPM si el pool específico queda vacío. */
     comidas.forEach(function(c){
+      var liviana = FRANJA_LIVIANA.test(c.nombre);
       c.items.forEach(function(x){
         if(x.macro === 'verd') return;
         var lista = permitidos(x.macro, rest, alergias);
+        if(liviana && (x.macro === 'prot' || x.macro === 'carb' || x.macro === 'gras')){
+          var comboLista = x.macro === 'prot' ? comboProtPool : (x.macro === 'carb' ? comboCarbPool : comboGrasPool);
+          if(comboLista.length) lista = comboLista;
+          else {
+            var whitelist = x.macro === 'prot' ? PROT_LIVIANA : CARB_LIVIANO;
+            var filtrada = lista.filter(function(a){ return whitelist.indexOf(a.n) >= 0; });
+            if(filtrada.length) lista = filtrada;
+          }
+        } else if(!liviana && (x.macro === 'prot' || x.macro === 'carb')){
+          var whitelist2 = x.macro === 'prot' ? PROT_LIVIANA : CARB_LIVIANO;
+          var filtrada2 = lista.filter(function(a){ return whitelist2.indexOf(a.n) < 0; });
+          if(filtrada2.length) lista = filtrada2;
+        }
         var al = ALIM.filter(function(a){ return a.n === x.alimento; })[0];
         if(al) x.intercambios = intercambios(al, x.macro, x.gramos, lista);
       });
@@ -44388,7 +45275,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     DIAS_SEMANA.forEach(function(dk, i){
       var esEnt = (cicloCarb[dk] || 'entreno') === 'entreno';
       var mac = esEnt ? mEnt : mDes;
-      var comidas = armarComidas(f, mac, rest, alergias, i);
+      var comidas = armarComidas(f, mac, rest, alergias, i, esEnt);
       if(!comidas){ faltoAlgunDia = true; return; }
       var tot = comidas.reduce(function(a, c){
         return { p:a.p + c.total.prot, c:a.c + c.total.carb, g:a.g + c.total.gras };
@@ -44400,7 +45287,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           'se ajustó a lo alcanzable (' + tot.p + ' g de proteína, ' + tot.c + ' g de carbohidrato y ' + tot.g + ' g de grasa).');
         mac = { prot_g:tot.p, carb_g:tot.c, gras_g:tot.g, fibra_g:mac.fibra_g, agua_ml:mac.agua_ml, sodio_mg:mac.sodio_mg };
       }
-      dias[dk] = { macros: mac, peri_entreno: peri, comidas: comidas };
+      /* directiva crítica (2026-09) -- "Días de Descanso: elimina los
+         bloques o notas de peri-entreno" -- sin esEnt, este objeto se
+         asignaba idéntico en todos los días, entreno o no. */
+      dias[dk] = { macros: mac, peri_entreno: esEnt ? peri : null, comidas: comidas };
     });
     if(faltoAlgunDia) return null;
     return {
@@ -44619,53 +45509,35 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      pedírsele a la IA. Los "intercambios" por ítem bajaron de 2 a 1 (mismo
      campo, mismo shape, un solo elemento) — sigue alimentando el selector de
      sustitución que ya usa el alumno, con la mitad del costo en tokens. */
+  /* directiva crítica (2026-09) -- compactación de payload: se retira la
+     lista larga de ejemplos de nombres de plato, el vocabulario extendido de
+     ALIMENTOS y la prosa explicativa de cada sección -- quedan sólo las
+     reglas que cambian el resultado (esquema JSON, límites numéricos,
+     restricción por franja horaria, ciclado). Reduce el prompt de entrada
+     sin tocar ninguna clave del JSON de salida (el parser/consumidor de este
+     motor no se toca). La duplicación de ALERGIAS se deja a propósito: es
+     una salvaguarda de seguridad alimentaria, no prosa de relleno. */
   function promptDe(f){
     var base = calcularBase(f);
-    return 'Sos nutricionista deportivo y cocinero práctico. Respondés SOLO con un JSON válido: arrancás la respuesta ' +
-      'directo con "{" y la terminás en "}", sin bloques de código, sin comillas invertidas (```), sin la palabra ' +
-      '"json" y sin ningún texto antes o después del objeto.\n\n' +
+    return 'Nutricionista deportivo argentino, cocinero práctico. Respondé SOLO JSON: arranca en "{", termina en "}", sin fences ni texto extra.\n\n' +
       'DATOS\n' +
-      'Sexo: ' + (f.sexo === 'm' ? 'masculino' : 'femenino') + ' · Edad: ' + f.edad +
-      ' · Peso: ' + f.peso + ' kg · Altura: ' + f.altura + ' cm' + (f.grasa ? ' · Grasa: ' + f.grasa + '%' : '') + '\n' +
-      'Objetivo: ' + f.obj + ' · Ritmo: ' + f.ritmo + ' · Actividad: ' + f.act + '\n' +
-      'Entrena: ' + f.hora + ' · Comidas por día: ' + f.comidas + '\n' +
+      (f.sexo === 'm' ? 'M' : 'F') + ' · ' + f.edad + 'a · ' + f.peso + 'kg · ' + f.altura + 'cm' + (f.grasa ? ' · ' + f.grasa + '% grasa' : '') + '\n' +
+      f.obj + ' · ritmo ' + f.ritmo + ' · actividad ' + f.act + '\n' +
+      'Entrena ' + f.hora + ' · ' + f.comidas + ' comidas/día\n' +
       'Restricciones: ' + ((f.rest || []).join(', ') || 'ninguna') + '\n' +
-      'ALERGIAS (NO PUEDEN APARECER NI ELLAS NI SU FAMILIA, EN NINGUNA DE LAS 2 OPCIONES): ' + (f.alergias || 'ninguna') + '\n' +
-      'ALERGIAS, REPETIDO: ' + (f.alergias || 'ninguna') + '\n' +
-      'Notas del alumno: ' + (f.notas || 'sin notas') + '\n' +
-      'Referencia calculada: basal ' + base.bmr + ' kcal · gasto ' + base.tdee + ' kcal.\n\n' +
-      'FORMATO DE CADA COMIDA — PLATO REAL, NO INGREDIENTES SUELTOS\n' +
-      '- "nombre" tiene que ser el nombre de un plato real y apetecible, no el slot del día. ' +
-      'Nunca "Desayuno" o "Almuerzo" como nombre — sí "Tostadas Francesas Proteicas", "Revuelto Cremoso", ' +
-      '"Bowl de Pollo al Verdeo con Papas Rústicas", "Parfait de Banana y Queso Untable", ' +
-      '"Hamburguesas Magras Caseras con Fideos", en ese estilo.\n' +
-      '- UNA sola preparación por comida (no dupliques el plato en una versión "elaborada" aparte) — cada ítem de ' +
-      '"items" lleva, además de sus gramos y macros, un array "intercambios" con UN SOLO alimento equivalente que lo ' +
-      'puede reemplazar en la misma cantidad de macro (no dos, uno solo). Nada de un segundo plato completo.\n\n' +
-      'ALIMENTOS — MERCADO ARGENTINO, ACCESIBLE Y COTIDIANO (usá esta lista como vocabulario base, combiná según el plato)\n' +
-      '- Proteínas: cortes de carnicería magros (nalga, cuadril, peceto, bola de lomo, carne picada especial), ' +
-      'pechuga de pollo, merluza, quesos magros locales (Port Salut Light, Cremón Light, Casancrem/Finlandia Light, ' +
-      'ricota magra), huevo, atún al natural.\n' +
-      '- Carbohidratos: avena en copos, arroz blanco/integral, fideos secos guiseros/tallarines, papa, batata, ' +
-      'choclo, pan de molde integral/salvado, galletas de arroz, frutas de estación (banana, manzana, pera, naranja).\n' +
-      '- Grasas: aceite de oliva, aceite de girasol, maní tostado sin sal, nueces, almendras, aceitunas.\n\n' +
-      'REALISMO POR FRANJA HORARIA — nada de "laboratorio", comida de casa que a alguien le den ganas de comer\n' +
-      '- Desayuno y Merienda: SIEMPRE algo liviano y cotidiano — tostadas integrales con queso untable y huevo, ' +
-      'yogur con frutas y granola, café con leche con pan/galletas de arroz o avena, huevos revueltos, licuado ' +
-      'con banana y avena. Nunca pechuga de pollo, carne de vaca, merluza ni ningún corte de carnicería en estas ' +
-      'dos comidas — quedan reservados para Almuerzo y Cena.\n' +
-      '- Media mañana: fruta, yogur, huevo, un puñado de frutos secos o una tostada — nunca carne ni pollo.\n' +
-      '- Almuerzo y Cena: plato de comida casera de verdad, con nombre de plato — milanesas al horno con puré o ' +
-      'ensalada, tarta casera de verdura, pollo al horno con papas rústicas, pastas con salsa magra o carne picada ' +
-      'especial, guiso liviano, wok de pollo o carne con vegetales y arroz. Ahí sí van las carnes/pollo/pescado.\n\n' +
-      'CICLADO Y PERI-ENTRENO TÁCTICO — mantenelo explícito, no lo diluyas\n' +
-      '- "meta.kcal_entreno" y "meta.kcal_descanso" tienen que ser distintos entre sí (el ciclado es real, no dos ' +
-      'números iguales), igual que "macros.entreno" vs "macros.descanso" — más carbohidrato el día de entreno.\n' +
-      '- "peri_entreno.pre": comida de fácil digestión, baja en grasa y fibra, con carbohidrato de rápida absorción — ' +
-      'el objetivo es llegar a entrenar sin pesadez.\n' +
-      '- "peri_entreno.post": foco en reponer glucógeno (carbohidrato) más proteína para la síntesis — el texto tiene ' +
-      'que nombrar explícitamente la reposición de glucógeno, no quedar genérico.\n\n' +
-      'DEVOLVÉ ESTE JSON EXACTO — SIN CAMPOS EXTRA, SIN SEGUNDO PLATO, SIN LISTAS ANIDADAS DE MÁS:\n' +
+      'ALERGIAS (excluir ellas y su familia, en TODAS las comidas): ' + (f.alergias || 'ninguna') + '\n' +
+      'ALERGIAS (repetido, no ignorar): ' + (f.alergias || 'ninguna') + '\n' +
+      (f.notas ? 'Notas: ' + f.notas + '\n' : '') +
+      'Referencia: basal ' + base.bmr + ' kcal · gasto ' + base.tdee + ' kcal.\n\n' +
+      'Cada comida es un plato real y apetecible con nombre propio (nunca "Desayuno" como nombre). UNA sola preparación por comida, con 1 intercambio equivalente por ítem (no más).\n' +
+      'Alimentos argentinos, comunes y baratos: carnicería magra, pollo, pescado, quesos light, huevo, atún, avena, arroz, fideos, papa/batata, pan integral, fruta de estación, aceite, frutos secos.\n' +
+      /* directiva crítica (2026-09) -- combinaciones cerradas: reemplaza la
+         guía genérica ("proteína liviana + carbohidrato liviano") por los 4
+         patrones fijos de COMBOS_LIVIANOS (motor local, más abajo en el
+         archivo) para que IA y motor local arriben al mismo resultado. */
+      'Desayuno/Media mañana/Merienda: SOLO uno de estos 4 patrones (podés variar cuál usás en cada franja/día) -- A) pan integral o galletas de arroz + huevo o claras + palta; B) yogur descremado + avena + fruta + maní o nueces; C) avena + claras o huevo + pasta de maní 100% + fruta; D) pan integral o galletas de arroz + queso untable descremado o Port Salut light + huevo. NUNCA carne/pollo/pescado NI arroz/fideos/papa/batata acá. Almuerzo/Cena: plato casero de verdad -- ahí sí carnes/pollo/pescado y arroz/fideos/papa/batata/legumbres.\n' +
+      'Ciclado real: kcal y macros de entreno ≠ descanso (más carbohidrato el día de entreno). "peri_entreno.pre": digestión fácil, carbohidrato rápido. "peri_entreno.post": glucógeno + proteína, nombralo explícito.\n\n' +
+      'JSON EXACTO — sin campos extra, sin segundo plato:\n' +
       '{"meta":{"kcal_entreno":0,"kcal_descanso":0,"metodo":""},' +
       '"macros":{"entreno":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0},' +
       '"descanso":{"prot_g":0,"carb_g":0,"gras_g":0,"fibra_g":0,"agua_ml":0}},' +
@@ -44677,15 +45549,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       '"suplementos":[{"nombre":"","dosis":"","momento":"","evidencia":"","nota":""}],' +
       '"alertas":[],"disclaimer":"Orientativo y educativo. No reemplaza el plan de un nutricionista."}\n\n' +
       'REGLAS\n' +
-      '- Alimentos de Argentina, comunes y baratos (ver lista de arriba). Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
-      '- La suma de las comidas tiene que dar los macros del día de entreno con menos de 8% de desvío.\n' +
-      '- Cada ítem lleva exactamente 1 intercambio equivalente en el mismo macro — no 2, no una lista larga.\n' +
-      '- Proteína entre 1,6 y 2,4 g/kg. Nunca menos calorías que el basal.\n' +
-      '- Ninguna comida de Desayuno, Media mañana o Merienda puede llevar carne, pollo ni pescado como fuente de ' +
-      'proteína — usá huevo, lácteos, legumbres o frutos secos ahí.\n' +
-      '- Nada de lenguaje motivacional ni promesas de resultados.\n' +
-      '- Priorizá que el JSON cierre bien formado por sobre agregar más detalle: es preferible un plato más simple ' +
-      'pero con el JSON íntegro a uno más elaborado que corte la estructura.';
+      '- Alimentos argentinos, comunes y baratos. Gramos en crudo salvo arroz/fideos (cocidos).\n' +
+      '- Suma de comidas = macros del día de entreno con <8% de desvío.\n' +
+      '- 1 intercambio equivalente por ítem, no más.\n' +
+      '- Proteína 1,6-2,4 g/kg. Nunca menos calorías que el basal.\n' +
+      '- Sin carne/pollo/pescado NI arroz/fideos/papa/batata en Desayuno/Media mañana/Merienda.\n' +
+      '- Sin lenguaje motivacional ni promesas de resultados.\n' +
+      '- Priorizá JSON bien cerrado por sobre más detalle: mejor un plato simple pero íntegro que uno elaborado que corte la estructura.';
   }
 
   /* 29no pedido (30/08) -- MOTOR IA SEMANAL, enfoque "pool + rotación local"
@@ -44711,43 +45581,43 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       return '"' + (i + 1) + '":[{"nombre":"","items":[{"alimento":"","gramos":0,"prot":0,"carb":0,"gras":0,' +
         '"macro":"prot","intercambios":[{"alimento":"","gramos":0}]}]}]';
     }).join(',');
-    return 'Sos nutricionista deportivo y cocinero práctico armando un POOL de variedad semanal — NO un plan de 7 días ' +
-      'completo. Un motor local va a combinar estas variantes y a ajustar las cantidades exactas de cada día; vos solo ' +
-      'aportás variedad realista de platos por franja horaria. Respondés SOLO con un JSON válido: arrancás la respuesta ' +
-      'directo con "{" y la terminás en "}", sin bloques de código, sin comillas invertidas, sin la palabra "json" y sin ' +
-      'ningún texto antes o después del objeto.\n\n' +
+    /* directiva crítica (2026-09) -- compactación de payload: mismo criterio
+       que promptDe() -- se retira la prosa explicativa redundante, se
+       acortan las etiquetas de las franjas y se resume el objetivo por
+       franja a números crudos. El esquema JSON (poolSchema) y las claves
+       que consume ensamblarSemanaDesdePool()/clonarItemPool() no se tocan. */
+    return 'Nutricionista deportivo argentino armando un POOL de variedad semanal (NO un plan de 7 días) para que un ' +
+      'motor local combine y ajuste las cantidades exactas. Respondé SOLO JSON: arranca en "{", termina en "}", sin ' +
+      'fences ni texto extra.\n\n' +
       'DATOS\n' +
-      'Sexo: ' + (f.sexo === 'm' ? 'masculino' : 'femenino') + ' · Edad: ' + f.edad +
-      ' · Peso: ' + f.peso + ' kg · Altura: ' + f.altura + ' cm' + (f.grasa ? ' · Grasa: ' + f.grasa + '%' : '') + '\n' +
-      'Objetivo: ' + f.obj + ' · Ritmo: ' + f.ritmo + ' · Actividad: ' + f.act + '\n' +
-      'Entrena: ' + f.hora + '\n' +
+      (f.sexo === 'm' ? 'M' : 'F') + ' · ' + f.edad + 'a · ' + f.peso + 'kg · ' + f.altura + 'cm' + (f.grasa ? ' · ' + f.grasa + '% grasa' : '') + '\n' +
+      f.obj + ' · ritmo ' + f.ritmo + ' · actividad ' + f.act + ' · entrena ' + f.hora + '\n' +
       'Restricciones: ' + ((f.rest || []).join(', ') || 'ninguna') + '\n' +
-      'ALERGIAS (NO PUEDEN APARECER NI ELLAS NI SU FAMILIA, EN NINGUNA VARIANTE): ' + (f.alergias || 'ninguna') + '\n' +
-      'ALERGIAS, REPETIDO: ' + (f.alergias || 'ninguna') + '\n' +
-      'Notas del alumno: ' + (f.notas || 'sin notas') + '\n\n' +
-      'FRANJAS DEL DÍA Y SU OBJETIVO APROXIMADO\n' + slotsTxt + '\n\n' +
-      'PARA CADA FRANJA, DEVOLVÉ EXACTAMENTE 3 VARIANTES DE PLATO DISTINTAS ENTRE SÍ (para que la semana rote sin ' +
-      'repetirse) — mismo criterio de realismo que un plan de un día: nombre de plato real y apetecible (nunca ' +
-      '"Desayuno" como nombre), comida de casa cotidiana, mercado argentino accesible y barato.\n' +
-      'REALISMO POR FRANJA — Desayuno/Media mañana/Merienda: SIEMPRE liviano, NUNCA carne/pollo/pescado (usá huevo, ' +
-      'lácteos, legumbres o frutos secos). Almuerzo/Cena: plato de comida casera de verdad, ahí sí van carnes/pollo/pescado.\n' +
-      'Cada ítem de cada variante lleva un campo "macro" que vale exactamente "prot", "carb", "gras" o "verd" según cuál ' +
-      'es su rol principal en el plato — es clave para que el motor local pueda reajustar las cantidades por día sin ' +
-      'romper nada.\n\n' +
-      'DEVOLVÉ ESTE JSON EXACTO — SIN CAMPOS EXTRA, SIN LISTAS ANIDADAS DE MÁS:\n' +
+      'ALERGIAS (excluir ellas y su familia, en TODAS las variantes): ' + (f.alergias || 'ninguna') + '\n' +
+      'ALERGIAS (repetido, no ignorar): ' + (f.alergias || 'ninguna') + '\n' +
+      (f.notas ? 'Notas: ' + f.notas + '\n' : '') + '\n' +
+      'FRANJAS\n' + slotsTxt + '\n\n' +
+      'Por franja: EXACTAMENTE 3 variantes distintas entre sí, plato real y apetecible (nunca "Desayuno" como nombre), comida casera argentina barata.\n' +
+      /* directiva crítica (2026-09) -- combinaciones cerradas, ver nota en
+         promptDe() más arriba: las 3 variantes de Desayuno/Media mañana/
+         Merienda tienen que salir de estos 4 patrones (una por combo o
+         repitiendo el más apropiado), nunca de una proteína+carbohidrato
+         liviano libre. */
+      'Desayuno/Media mañana/Merienda: las 3 variantes salen SOLO de estos 4 patrones -- A) pan integral o galletas de arroz + huevo o claras + palta; B) yogur descremado + avena + fruta + maní o nueces; C) avena + claras o huevo + pasta de maní 100% + fruta; D) pan integral o galletas de arroz + queso untable descremado o Port Salut light + huevo. NUNCA carne/pollo/pescado NI arroz/fideos/papa/batata acá. Almuerzo/Cena: plato casero de verdad -- ahí sí carnes/pollo/pescado y arroz/fideos/papa/batata/legumbres.\n' +
+      '"macro" en cada ítem: "prot"/"carb"/"gras"/"verd" según su rol principal — necesario para reajustar cantidades por día.\n\n' +
+      'JSON EXACTO — sin campos extra:\n' +
       '{"pool":{' + poolSchema + '},' +
       '"peri_entreno":{"pre":{"cuando":"","texto":"","carb_g":0,"prot_g":0},' +
       '"intra":{"cuando":"","texto":"","carb_g":0},"post":{"cuando":"","texto":"","carb_g":0,"prot_g":0}},' +
       '"suplementos":[{"nombre":"","dosis":"","momento":"","evidencia":"","nota":""}],' +
       '"alertas":[],"disclaimer":"Orientativo y educativo. No reemplaza el plan de un nutricionista."}\n\n' +
       'REGLAS\n' +
-      '- Cada franja lleva EXACTAMENTE 3 variantes, cada una con 2 a 4 ítems.\n' +
-      '- Alimentos de Argentina, comunes y baratos. Gramos en crudo salvo arroz y fideos, que van cocidos.\n' +
-      '- Cada ítem lleva exactamente 1 intercambio equivalente en el mismo macro.\n' +
-      '- Ninguna variante de Desayuno, Media mañana o Merienda puede llevar carne, pollo ni pescado como fuente de proteína.\n' +
-      '- Nada de lenguaje motivacional ni promesas de resultados.\n' +
-      '- Priorizá que el JSON cierre bien formado por sobre agregar más detalle: es preferible una variante más simple ' +
-      'pero con el JSON íntegro a una más elaborada que corte la estructura.';
+      '- 3 variantes por franja, 2 a 4 ítems cada una.\n' +
+      '- Alimentos argentinos, comunes y baratos. Gramos en crudo salvo arroz/fideos (cocidos).\n' +
+      '- 1 intercambio equivalente por ítem.\n' +
+      '- Sin carne/pollo/pescado NI arroz/fideos/papa/batata en Desayuno/Media mañana/Merienda.\n' +
+      '- Sin lenguaje motivacional.\n' +
+      '- Priorizá JSON bien cerrado por sobre más detalle: mejor una variante simple pero íntegra que una elaborada que corte la estructura.';
   }
 
   /* ¿esta variante del pool trae lo mínimo para usarse? */
@@ -44783,7 +45653,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      por una franja puntual" que fusionarConLocal). */
   function ensamblarSemanaDesdePool(pool, f, cicloCarb, local){
     var N = parseInt(f.comidas, 10) || 4;
-    var slots = repartir(N, f.hora);
+    /* directiva crítica (2026-09) -- un solo "slots" se reusaba para los 7
+       días, entreno o descanso: todos terminaban con la misma franja
+       marcada " · pre-entreno"/" · post-entreno" y el mismo sesgo de
+       carbohidrato hacia esa franja, aunque ESE día puntual fuera de
+       descanso. Se calculan los dos juegos de pesos (repartir() ya sabe
+       devolver el reparto parejo con esEntreno=false) y se elige el que
+       corresponde a cada día dentro del loop de abajo. */
+    var slots = repartir(N, f.hora, true);
+    var slotsDescanso = repartir(N, f.hora, false);
     var completadas = [];
     var poolLimpio = {};
     for(var j = 1; j <= N; j++){
@@ -44807,7 +45685,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     DIAS_SEMANA.forEach(function(dk, i){
       var esEnt = (cicloCarb[dk] || 'entreno') === 'entreno';
       var mac = esEnt ? mEnt : mDes;
-      var comidas = slots.map(function(slotMeta, j0){
+      var slotsDia = esEnt ? slots : slotsDescanso;
+      var comidas = slotsDia.map(function(slotMeta, j0){
         var j = j0 + 1;
         var variantes = poolLimpio[j];
         if(!variantes.length) return { n:j, nombre:slotMeta.nombre, hora_sug:slotMeta.hora, items:[], total:{prot:0,carb:0,gras:0,kcal:0} };
@@ -44827,11 +45706,46 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(Math.abs(mac.gras_g - t.gras) > 2) corregir(comidas, 'gras', mac.gras_g - t.gras);
       }
       totales(comidas);
-      var periDia = (local && local.dias && local.dias[dk] && local.dias[dk].peri_entreno) || periEntrenoDe(f);
+      /* directiva crítica (2026-09) -- mismo criterio que planLocalSemanal():
+         sin esEnt acá, un día de descanso heredaba el peri_entreno del local
+         (o caía a periEntrenoDe(f)) igual que un día de entreno. */
+      var periDia = esEnt ? ((local && local.dias && local.dias[dk] && local.dias[dk].peri_entreno) || periEntrenoDe(f)) : null;
       dias[dk] = { macros: mac, peri_entreno: periDia, comidas: comidas };
     });
 
     return { dias: dias, completadas: completadas, mEnt: mEnt, mDes: mDes };
+  }
+
+  /* directiva crítica (2026-09) -- corte balanceado de llaves: hasta acá el
+     bloque se cortaba con s.lastIndexOf('}'), el ÚLTIMO "}" de todo el texto.
+     Si la IA agrega texto conversacional DESPUÉS del JSON (notas, disclaimers,
+     un ejemplo) y ESE texto trae su propia "}" en cualquier lado, lastIndexOf
+     agarraba esa llave posterior en vez de la que realmente cierra el objeto
+     raíz -- el bloque cortado quedaba con contenido de más y JSON.parse
+     fallaba con "Unexpected non-whitespace character after JSON at position
+     N" pese a que la IA había respondido un JSON perfectamente válido. Este
+     contador de balance (ignorando llaves dentro de strings, respetando el
+     escape "\\") corta EXACTAMENTE en el cierre real del objeto raíz, venga
+     lo que venga después. Si el objeto vino truncado por límite de tokens
+     (nunca vuelve a balance 0), cae al mismo comportamiento de antes: se
+     entrega el resto del string tal cual para que intentarParsearJSON/
+     repararJSON hagan su mejor esfuerzo. */
+  function cortarBloqueJSON(s, firstBrace){
+    var openBraces = 0, inString = false, escapeNext = false, lastIndex = -1;
+    for(var i = firstBrace; i < s.length; i++){
+      var ch = s[i];
+      if(escapeNext){ escapeNext = false; continue; }
+      if(ch === '\\'){ escapeNext = true; continue; }
+      if(ch === '"'){ inString = !inString; continue; }
+      if(!inString){
+        if(ch === '{') openBraces++;
+        else if(ch === '}'){
+          openBraces--;
+          if(openBraces === 0){ lastIndex = i; break; }
+        }
+      }
+    }
+    return (lastIndex !== -1) ? s.substring(firstBrace, lastIndex + 1) : s.substring(firstBrace);
   }
 
   /* intenta JSON.parse tras sacar comas colgantes antes de "}" / "]" -- error
@@ -44900,15 +45814,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
     else s = s.replace(/^```(?:json)?\s*/i, '').trim();
-    /* localización explícita del primer "{" y el último "}" reales del texto --
-       cubre el caso de saludos o explicaciones antes/después del objeto */
-    var a = s.indexOf('{'), b = s.lastIndexOf('}');
-    if(a < 0 || b < a){
+    /* localización explícita del primer "{" -- cubre el caso de saludos o
+       explicaciones antes del objeto; el cierre se resuelve con el contador
+       de balance de llaves (cortarBloqueJSON), no con lastIndexOf('}') */
+    var a = s.indexOf('{');
+    if(a < 0){
       ultimoParseDiag = { motivo: 'La respuesta no contiene ningún objeto "{ }" reconocible.', muestra: s.slice(0, 300) };
       console.warn('nutriIA: la respuesta no trae ningún objeto {}', s.slice(0, 400));
       return null;
     }
-    var bloque = s.slice(a, b + 1);
+    var bloque = cortarBloqueJSON(s, a);
     var intento = intentarParsearJSON(bloque);
     if(!intento.ok){
       console.warn('nutriIA: primer intento de parseo falló, se aplica reparación', intento.error);
@@ -44942,13 +45857,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     var fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
     if(fence) s = fence[1].trim();
     else s = s.replace(/^```(?:json)?\s*/i, '').trim();
-    var a = s.indexOf('{'), b = s.lastIndexOf('}');
-    if(a < 0 || b < a){
+    var a = s.indexOf('{');
+    if(a < 0){
       ultimoParseDiag = { motivo: 'La respuesta no contiene ningún objeto "{ }" reconocible.', muestra: s.slice(0, 300) };
       console.warn('nutriIA(pool): la respuesta no trae ningún objeto {}', s.slice(0, 400));
       return null;
     }
-    var bloque = s.slice(a, b + 1);
+    var bloque = cortarBloqueJSON(s, a);
     var intento = intentarParsearJSON(bloque);
     if(!intento.ok){
       console.warn('nutriIA(pool): primer intento de parseo falló, se aplica reparación', intento.error);
@@ -45105,7 +46020,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         '<div class="np-kpi"><div class="k">Grasa</div><div class="v">' + mRef.gras_g + ' <small>g</small></div></div>' +
         '<div class="np-kpi"><div class="k">Agua</div><div class="v">' + (mRef.agua_ml / 1000).toFixed(1) + ' <small>L</small></div></div>';
       var peD = diaData.peri_entreno || {};
-      document.getElementById('npPeri').innerHTML = ['pre','intra','post'].map(function(k){
+      /* directiva crítica (2026-09) -- día de descanso: se oculta la sección
+         entera (no sólo el contenido) en vez de dejar el título "Peri-
+         entreno" flotando sin nada debajo. */
+      var npPeriSec = document.getElementById('npPeriSec');
+      if(npPeriSec) npPeriSec.style.display = esEntDia ? '' : 'none';
+      document.getElementById('npPeri').innerHTML = !esEntDia ? '' : ['pre','intra','post'].map(function(k){
         var x = peD[k]; if(!x) return '';
         return '<div style="margin-bottom:5px"><b style="color:#7CC5E8;text-transform:uppercase;font-size:11px;letter-spacing:.12em">' +
           k + '</b> · ' + esc(x.cuando || '') + ' — ' + esc(x.texto || '') +
@@ -45307,21 +46227,32 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function guardarSelIA(prov, model){
     try{ localStorage.setItem(NP_IA_SEL_KEY, JSON.stringify({ prov: prov, model: model || '' })); }catch(e){}
   }
+  /* directiva de implementación (2026-09) -- dropdown estricto de modelo: antes
+     era un <input> de texto libre con <datalist> de sugerencias (permitía
+     tipear cualquier cosa, incluidos modelos retirados/con 404 confirmado).
+     Ahora es un <select> con SOLO los modelos que MÓDULO 5 ya audita y
+     mantiene vigentes por proveedor (PROV[prov].hints, ver más arriba en el
+     archivo) -- si algún dispositivo tenía guardado un modelo que ya no
+     figura en esa lista (config vieja), se lo agrega igual como primera
+     opción para no perder en silencio la elección guardada del coach. */
   function poblarModelosIA(prov){
-    var dl = document.getElementById('npDlModels');
-    var input = document.getElementById('npIAModel');
+    var sel = document.getElementById('npIAModel');
     var wrap = document.getElementById('npIAModelWrap');
-    if(!input) return;
+    if(!sel) return;
     var esLocal = prov === 'local';
     if(wrap) wrap.style.opacity = esLocal ? '.45' : '';
-    input.disabled = esLocal;
-    if(esLocal){ input.value = ''; if(dl) dl.innerHTML = ''; return; }
+    sel.disabled = esLocal;
+    if(esLocal){ sel.innerHTML = '<option value="">— Motor Local, sin modelo —</option>'; return; }
     var provs = (window.CoachAI && CoachAI.providers) || {};
     var hints = (provs[prov] && provs[prov].hints) || [];
-    if(dl) dl.innerHTML = hints.map(function(m){ return '<option value="' + esc(m) + '">'; }).join('');
-    var sel = leerSelGuardadaIA();
+    var guardada = leerSelGuardadaIA();
     var actualGlobal = (window.CoachAI && CoachAI.cfg && CoachAI.cfg().models && CoachAI.cfg().models[prov]) || (provs[prov] && provs[prov].model) || '';
-    input.value = (sel && sel.prov === prov && sel.model) ? sel.model : actualGlobal;
+    var elegido = (guardada && guardada.prov === prov && guardada.model) ? guardada.model : actualGlobal;
+    var opciones = hints.slice();
+    if(elegido && opciones.indexOf(elegido) < 0) opciones.unshift(elegido);
+    sel.innerHTML = opciones.map(function(m){
+      return '<option value="' + esc(m) + '"' + (m === elegido ? ' selected' : '') + '>' + esc(m) + '</option>';
+    }).join('');
   }
   function actualizarEstadoIA(){
     var el = document.getElementById('npIAEstado');
@@ -45527,7 +46458,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(o){
           var ensamblado = ensamblarSemanaDesdePool(o.pool, f, cicloCarb, local);
           var periSemana = (o.peri_entreno && typeof o.peri_entreno === 'object' && o.peri_entreno.pre) ? o.peri_entreno : periEntrenoDe(f);
-          DIAS_SEMANA.forEach(function(dk){ if(ensamblado.dias[dk]) ensamblado.dias[dk].peri_entreno = periSemana; });
+          /* directiva crítica (2026-09) -- "Días de Descanso: elimina los
+             bloques o notas de peri-entreno": esto pisaba el peri_entreno de
+             TODOS los días (entreno o no) con el de la IA, incluso el null
+             que ensamblarSemanaDesdePool() ya había puesto correctamente en
+             los días de descanso. Se respeta cicloCarb acá también. */
+          DIAS_SEMANA.forEach(function(dk){
+            if(!ensamblado.dias[dk]) return;
+            var esEntDia = (cicloCarb[dk] || 'entreno') === 'entreno';
+            ensamblado.dias[dk].peri_entreno = esEntDia ? periSemana : null;
+          });
           var plan = {
             semanal:true, schemaV:2,
             meta:{ kcal_entreno: local.meta.kcal_entreno, kcal_descanso: local.meta.kcal_descanso,
@@ -45581,7 +46521,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
            red, parsing) sigue mostrando el detalle técnico real, que ahí sí
            hace falta para que el coach corrija algo. */
         if(e && e.rate){
-          toast('⚡ Semana generada con el motor local (límite temporal de cuota alcanzado en ' + PROV_LB(provAct) + '). Podés editar los alimentos a mano o reintentar con IA más tarde.', 'warn');
+          /* directiva crítica (2026-09) -- texto pedido puntualmente por el
+             coach, parametrizado por proveedor (el mismo flujo sirve para
+             Anthropic/OpenAI/Google, no sólo Google -- ver PROV_LB(provAct)). */
+          toast('⚡ Se aplicó el plan base local (cuota de API de ' + PROV_LB(provAct) + ' en pausa). Podés ajustar las cantidades manualmente.', 'warn');
           renderDiag({ ok:false, etapa:'Límite temporal de cuota en ' + PROV_LB(provAct), provider: provAct, model: modelAct, motivo: 'Se usó el motor local mientras tanto. ' + msg + ' -- probá de nuevo en un rato, o elegí otro modelo/proveedor arriba (cada uno tiene su propia cuota).' });
         } else {
           toast('No se pudo consultar la IA (' + msg + '): se usó el motor local', 'warn');
@@ -45675,8 +46618,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       b.className = 'btn ghost sm'; b.id = 'btnNutriPlan'; b.type = 'button';
       b.textContent = '🥗 Plan nutricional';
       b.addEventListener('click', abrir);
+      /* directiva crítica (2026-09) -- guarda de parentNode, ver btnNutri */
       var ref = document.getElementById('btnNutri') || document.getElementById('btnCopyDay');
-      if(ref) barra.insertBefore(b, ref); else barra.appendChild(b);
+      if(ref && ref.parentNode === barra) barra.insertBefore(b, ref); else barra.appendChild(b);
     }
     var m = document.getElementById('mNP');
     if(m && !m.__jp){
@@ -47451,6 +48395,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!tabs || !tabs.parentNode) return;
     var p = plan(a.id);
     var data = calcular(p);
+    /* directiva crítica (2026-09) -- "caja de Tonelaje con 0 kg" era ruido
+       visual puro: sin ningún bloque con carga base cargada, las 4 barras
+       muestran 0 kg siempre, ocupando espacio sin aportar nada. Se oculta la
+       tarjeta entera hasta que haya al menos un bloque con carga base
+       registrada -- mismo criterio que ya usa esta función para CrossFit. */
+    if(!data.conCarga){ var old2 = document.getElementById('tonCard'); if(old2) old2.remove(); return; }
     var max = Math.max.apply(null, data.totales.concat([1]));
     var card = document.getElementById('tonCard');
     if(!card){
@@ -47480,6 +48430,91 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   });
   setTimeout(render, 900);
   window.CoachTonelaje = { calcular: calcular };
+})();
+</script>
+
+<style>
+/* ============================================================
+   MÓDULO — REORGANIZACIÓN DE LA BARRA DE HERRAMIENTAS DEL BUILDER
+   directiva crítica (2026-09): más de una decena de módulos distintos del
+   archivo inyectan su propio botón en #v-builder .tools-in a lo largo de
+   los años (Nutrición, Cool-Down, Checkout, Clonar Plan, Banco, Copiar/
+   Vaciar día...) -- cada uno por separado tiene sentido, pero juntos
+   saturan la barra. En vez de tocar cada inyección (alto riesgo, son
+   +6 módulos independientes con sus propios anchors de insertBefore), se
+   ordena el RESULTADO después de que todos ya inyectaron: los botones de
+   "agregar bloque" quedan siempre visibles, el resto se mueve (no se
+   clona -- mismo nodo, mismos listeners) a un panel plegable "Más Opciones".
+   ============================================================ */
+.tools-more-wrap{flex:1 1 100%;order:99;display:flex;flex-direction:column;gap:8px}
+.tools-more-btn{align-self:flex-start}
+.tools-more-panel{display:none;flex-wrap:wrap;gap:8px;padding-top:8px;border-top:1px dashed var(--line-2)}
+.tools-more-panel.open{display:flex}
+</style>
+<script>
+(function(){
+  /* IDs de botones "de gestión/modal" -- todo lo que NO sea agregar un
+     bloque nuevo a la sesión. Se identifican por id porque cada módulo ya
+     les pone uno propio y estable; si un módulo nuevo agrega un botón acá
+     con un id no listado, simplemente queda visible arriba (fallback seguro
+     -- nunca se pierde un botón, en el peor caso no se agrupa). */
+  var SECUNDARIOS = [
+    'btnMoveDayL', 'btnMoveDayR', 'btnCopyDay', 'btnClearDay',
+    'btnDupBuilder', 'btnNutri', 'btnCool', 'btnNutriPlan', 'btnCheckout', 'btnBancoDia'
+  ];
+
+  function panel(barra){
+    var wrap = document.getElementById('toolsMoreWrap');
+    if(wrap) return wrap;
+    wrap = document.createElement('div');
+    wrap.className = 'tools-more-wrap'; wrap.id = 'toolsMoreWrap';
+    var btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'btn ghost sm tools-more-btn'; btn.id = 'toolsMoreBtn';
+    btn.textContent = '⚙️ Más Opciones ▾';
+    var body = document.createElement('div');
+    body.className = 'tools-more-panel'; body.id = 'toolsMorePanel';
+    btn.addEventListener('click', function(){
+      var open = body.classList.toggle('open');
+      btn.textContent = open ? '⚙️ Más Opciones ▴' : '⚙️ Más Opciones ▾';
+    });
+    wrap.appendChild(btn); wrap.appendChild(body);
+    barra.appendChild(wrap);
+    return wrap;
+  }
+
+  function reorganizar(){
+    var barra = document.querySelector('#v-builder .tools-in');
+    if(!barra) return;
+    var wrap = panel(barra);
+    var body = document.getElementById('toolsMorePanel');
+    if(!body) return;
+    SECUNDARIOS.forEach(function(id){
+      var b = document.getElementById(id);
+      /* sólo mueve si vive directo en la barra principal -- si ya está
+         dentro del panel (o no existe todavía, porque su módulo no montó
+         aún), no hace nada; se reintenta en la próxima pasada */
+      if(b && b.parentNode === barra) body.appendChild(b);
+    });
+    /* el separador ("spacer") de la barra original empujaba el resto de los
+       botones a la derecha -- ya no hace falta, todo lo que quedaba a su
+       derecha se movió al panel. Se oculta, no se borra (nada de romper
+       referencias vivas por si algún otro módulo lo vuelve a necesitar). */
+    var spacer = barra.querySelector('.spacer');
+    if(spacer) spacer.style.display = 'none';
+    /* siempre al final de la barra */
+    if(wrap.parentNode === barra && barra.lastElementChild !== wrap) barra.appendChild(wrap);
+  }
+
+  ['renderBuilder'].forEach(function(fn){
+    var _f = window[fn];
+    if(typeof _f !== 'function' || _f.__jptools) return;
+    var w = function(){ var r = _f.apply(this, arguments); setTimeout(reorganizar, 60); return r; };
+    w.__jptools = 1; window[fn] = w;
+  });
+  /* pasadas extra: varios módulos montan su botón con su propio setTimeout
+     escalonado (200/800/1800/2200/3800ms) -- se reintenta reorganizar en
+     esos mismos puntos para no dejar ninguno atrás en la barra principal */
+  [300, 1000, 2000, 3000, 4000].forEach(function(ms){ setTimeout(reorganizar, ms); });
 })();
 </script>
 
