@@ -4302,50 +4302,153 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 </style>
 <style>
 /* =========================================================
-   COACH JP · REDISEÑO F — HÍBRIDO TÁCTICO
-   Sólo capa visual: rótulos entre corchetes monoespaciados,
-   conector de biset y escala numérica de la serie activa.
-   No define nuevos data-*, no toca .set-row/.block existentes
-   más que sumarles una clase de estado calculada en el render.
+   COACH JP · REDISEÑO F — HÍBRIDO TÁCTICO (v2, estructural)
+   No es sólo maquillaje: reorganiza qué se ve y qué se oculta.
+   - Cero cambios a state.*/localStorage/Supabase.
+   - Cero cambios a data-set-key, IDs, ni a la lógica de
+     setLoadField()/getLoadKey() — sólo se reordena y se oculta
+     lo que ya existe, y se suman clases de estado puramente
+     visuales (.set-row-active/.set-row-expanded) calculadas en
+     el render o en wireBlockInteractions().
    ========================================================= */
-/* rótulo de categoría del bloque ("Principal", "Accesorio", etc.)
-   dentro del banner .blk-tag, en formato corchete monoespaciado */
-.block .blk-tag .bt-kind{
-  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
-}
-.block .blk-tag .bt-kind::before{ content:"[ "; opacity:.75; }
-.block .blk-tag .bt-kind::after{ content:" ]"; opacity:.75; }
 
-/* disparador del acordeón de metodología: mismo lenguaje monoespaciado
-   entre corchetes que ya trae el texto (ver metodologia() más abajo) */
+/* -- 1. Un solo título: el header del bloque pasa a ser el rótulo
+   chico entre corchetes (antes repetía el nombre del ejercicio en
+   letra gigante, duplicado con .ex-name de abajo). El nombre grande
+   real vive UNA sola vez, en el cuerpo (.ex-name). -------------- */
+.block .block-header{ gap: 10px !important; }
+.block .block-label{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .05em !important;
+  text-transform: uppercase !important;
+  line-height: 1.3 !important;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.block .block-label::before{ content:"[ "; opacity:.7; }
+.block .block-label::after{ content:" ]"; opacity:.7; }
+.block .block-subtitle{ display: none !important; } /* redundante con el rótulo de arriba */
+
+.block .ex-name{
+  font-family: var(--font-head, 'Barlow Condensed', sans-serif) !important;
+  font-size: 1.4rem !important;
+  font-weight: 800 !important;
+  line-height: 1.15 !important;
+  color: var(--text-primary, #EDEFF2) !important;
+}
+
+/* -- 2. Las cajas de prescripción sueltas (.blk-tag, .rx-badge) quedan
+   ocultas -- son restataciones grandes de lo mismo que ya dice, chico
+   y prolijo, .ex-detail (ver punto 3). Nada de lo que generan esos
+   módulos se borra ni se deja de calcular, sólo no se pinta. --------- */
+.block .blk-tag,
+.block .rx-badge{ display: none !important; }
+
+/* -- 3. .ex-detail pasa a ser la micro-línea (Tempo · Descanso · RIR),
+   monoespaciada y discreta, debajo del nombre. --------------------- */
+.block .ex-detail{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  color: var(--red, #7CC5E8) !important;
+  text-align: left !important;
+  letter-spacing: .01em;
+}
+.block .ex-detail strong{ color: var(--gold, #D2793F) !important; font-weight: 700 !important; }
+.block .ex-row{ flex-direction: column !important; align-items: flex-start !important; gap: 3px !important; }
+.block .ex-row .ex-bullet{ display: none; }
+
+/* -- 4. tracker de series: la activa ocupa toda la fila con números
+   grandes; el resto colapsa a chips angostos, tocables para expandir
+   sin perder su input real. Todo esto va ACOTADO a ".set-tracker"
+   (el bloque de un solo ejercicio) a propósito: en un biset/triset,
+   unificar() (más abajo) saca las mismas filas .set-row de adentro
+   de .set-tracker y las reparte en las "rondas" (.bs-r) -- ahí las
+   filas tienen que seguir viéndose TODAS completas para poder cargar
+   cada estación sin toques extra, así que el colapso a chip no debe
+   alcanzarlas. La escala numérica grande de la fila activa (fuera de
+   este bloque, más abajo) sí se deja general: en la Ronda 1 realmente
+   activa se ve linda y no le tapa nada a nadie. ------------------- */
+.set-tracker{ display: flex !important; flex-wrap: wrap !important; gap: 8px !important; }
+.set-tracker .set-row{
+  flex: 1 1 100%;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 6px !important;
+}
+.set-row-toggle{
+  display: none; width: 100%; background: none; border: none; padding: 0;
+  align-items: center; justify-content: space-between; cursor: pointer; color: inherit;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded){
+  flex: 0 1 auto !important;
+  padding: 8px 12px !important;
+  border-radius: 999px !important;
+}
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-load{ display: none !important; }
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-toggle{
+  display: flex !important; gap: 8px;
+}
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-label{
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted, #64748B);
+}
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-compact{
+  font-size: 11px; font-weight: 700; color: var(--text-primary, #EDEFF2);
+}
+.set-tracker .set-row.set-row-done:not(.set-row-active):not(.set-row-expanded){
+  border-color: rgba(111,191,149,.35) !important;
+}
+.set-tracker .set-row.set-row-active,
+.set-tracker .set-row.set-row-expanded{
+  border-color: rgba(210,121,63,.55) !important;
+  background: rgba(210,121,63,.07) !important;
+  border-radius: 14px !important;
+  padding: 14px !important;
+}
+.set-tracker .set-row.set-row-active .set-row-toggle,
+.set-tracker .set-row.set-row-expanded .set-row-toggle{ display: none; }
+.set-tracker .set-row.set-row-active .set-load,
+.set-tracker .set-row.set-row-expanded .set-load{
+  display: flex !important; align-items: center !important; gap: 10px !important;
+}
+.set-tracker .set-row.set-row-expanded .set-kg,
+.set-tracker .set-row.set-row-expanded .set-reps{ font-size: 1.1rem !important; }
+/* escala numérica grande: general a propósito (también embellece la
+   estación activa de una ronda de biset, sin ocultar nada ahí) */
+.set-row.set-row-active .set-kg,
+.set-row.set-row-active .set-reps{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  font-size: 2.1rem !important;
+  font-weight: 700 !important;
+  color: var(--text-primary, #EDEFF2) !important;
+  background: transparent !important; border: none !important;
+  width: auto !important; max-width: 92px; padding: 0 !important; text-align: center;
+}
+.set-row.set-row-active .set-x{ font-size: 1.3rem; opacity: .4; }
+.set-row.set-row-active .set-check{
+  margin-left: auto !important; border-radius: 50% !important;
+}
+
+/* -- 5. disparador del acordeón de metodología: mismo lenguaje
+   monoespaciado entre corchetes que ya trae el texto (ver
+   metodologia() más abajo) -- acá vive todo lo que no es la
+   ejecución inmediata de la serie (objetivo, criterio del coach,
+   alternativa, aproximación). ------------------------------------- */
 .methodology-summary{
   font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
   letter-spacing: .02em !important;
 }
 
-/* conector de biset: acento en el margen de .bs-wrap, el contenedor real
-   que unificar() ya arma (roster .bs-ex + rondas .bs-r) -- no se toca su
-   estructura, sólo se le suma la línea lateral de marca. */
+/* -- 6. conector de biset: acento en el margen de .bs-wrap, el
+   contenedor real que unificar() ya arma (roster .bs-ex + rondas
+   .bs-r) -- no se toca su estructura, sólo se le suma la línea
+   lateral de marca. -------------------------------------------- */
 .block .bs-wrap{ position: relative; padding-left: 14px; }
 .block .bs-wrap::before{
   content:''; position:absolute; left:2px; top:2px; bottom:14px; width:2px; border-radius:2px;
   background: linear-gradient(var(--gold, #D2793F), var(--red-dim, #2E5A72));
-}
-
-/* escala numérica de la primera serie sin completar (set-row-active,
-   calculada en renderSetRows sobre datos ya leídos, ver más arriba) */
-.set-row.set-row-active{
-  border-color: rgba(210,121,63,.55) !important;
-  background: rgba(210,121,63,.07) !important;
-  border-radius: 12px !important;
-}
-.set-row.set-row-active .set-row-label{ color: var(--gold, #D2793F) !important; font-weight: 800 !important; }
-.set-row.set-row-active .set-kg,
-.set-row.set-row-active .set-reps{
-  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
-  font-size: 1.15rem !important;
-  font-weight: 700 !important;
-  color: var(--text-primary, #EDEFF2) !important;
 }
 </style>
 </head>
@@ -5254,8 +5357,19 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg)
        más abajo) porque .jp-hist todavía necesita su propia línea. */
     let claseActiva = '';
     if(!ld.done && !activaMarcada){ claseActiva = ' set-row-active'; activaMarcada = true; }
+    /* directiva de rediseño F (v2): resumen compacto server-side para la
+       fila cuando está colapsada (no activa, no expandida a mano) --
+       "62.5×10" si ya tiene carga, "—" si todavía no. Se calcula acá
+       porque acá es donde ya están kgVal/repsVal resueltos (sugeridos o
+       reales); el CSS decide cuándo mostrar esto vs. los inputs reales,
+       nunca se lee/escribe un dato nuevo. */
+    const resumenCompacto = (kgVal != null && kgVal !== '' && repsVal != null && repsVal !== '')
+      ? (kgVal + '\\u00d7' + repsVal) : '\\u2014';
     html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + claseActiva + '" data-set-key="' + key + '">' +
-      '<span class="set-row-label">Serie ' + i + '</span>' +
+      '<button type="button" class="set-row-toggle" aria-label="Ver serie ' + i + '">' +
+        '<span class="set-row-label">Serie ' + i + '</span>' +
+        '<span class="set-row-compact">' + resumenCompacto + '</span>' +
+      '</button>' +
       '<div class="set-load">' +
         '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (kgVal!=null?kgVal:'') + '" />' +
         '<span class="set-x" aria-hidden="true">\\u00d7</span>' +
@@ -6383,20 +6497,51 @@ function wireBlockInteractions(day, weekIdx, blocks){
       const kgInput = row.querySelector('.set-kg');
       const repsInput = row.querySelector('.set-reps');
       const chk = row.querySelector('.set-check');
+      const compactEl = row.querySelector('.set-row-compact');
+      /* directiva de rediseño F (v2): resumen compacto en vivo (mismo texto
+         que ya arma renderSetRows() al pintar, recalculado acá sólo para
+         que no quede desactualizado si el alumno tipea sin recargar la
+         página -- no es una fuente de datos nueva, sólo texto derivado). */
+      function refrescarResumen(){
+        if(!compactEl) return;
+        const kg = kgInput.value, reps = repsInput.value;
+        compactEl.textContent = (kg && reps) ? (kg + '\\u00d7' + reps) : '\\u2014';
+      }
       kgInput.addEventListener('input', function(){
         const clean = sanearPeso(kgInput.value);
         if(clean !== kgInput.value) kgInput.value = clean;
         setLoadField(key, 'kg', clean);
+        refrescarResumen();
       });
       repsInput.addEventListener('input', function(){
         const clean = sanearReps(repsInput.value);
         if(clean !== repsInput.value) repsInput.value = clean;
         setLoadField(key, 'reps', clean);
+        refrescarResumen();
       });
       chk.addEventListener('change', function(){
         setLoadField(key, 'done', chk.checked);
         row.classList.toggle('set-row-done', chk.checked);
+        /* la fila "activa" (la que se ve grande) tiene que avanzar a la
+           próxima serie pendiente apenas se tilda la actual -- el server
+           sólo la calcula al pintar, y acá no hay un renderMain() en cada
+           check (sería carísimo re-renderizar todo el día por un tilde). */
+        const tracker = row.closest('.set-tracker');
+        if(tracker){
+          const filas = Array.prototype.slice.call(tracker.querySelectorAll('.set-row'));
+          filas.forEach(function(f){ f.classList.remove('set-row-active'); });
+          const proxima = filas.filter(function(f){ return !f.classList.contains('set-row-done'); })[0];
+          if(proxima) proxima.classList.add('set-row-active');
+        }
       });
+      const toggleBtn = row.querySelector('.set-row-toggle');
+      if(toggleBtn){
+        toggleBtn.addEventListener('click', function(e){
+          e.stopPropagation();
+          if(row.classList.contains('set-row-active')) return; /* ya está expandida */
+          row.classList.toggle('set-row-expanded');
+        });
+      }
     });
     const noteEl = blockEl.querySelector('.block-note-input');
     if(noteEl){
