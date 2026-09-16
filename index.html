@@ -2666,6 +2666,52 @@ const CF_PARAM = {
   emom:    { lb:'Intervalo', ph:'1:00' }
 };
 
+/* botonera rápida de formato sobre la prescripción de CrossFit -- inserta
+   los mismos marcadores que después reconoce el parser jerárquico de la
+   Pizarra Táctica del alumno (jpCfFila() en TEMPLATE_HTML): negrita **texto**,
+   encabezado "Subtítulo:", carga "@ 00/00kg" y medida "@ 00/00cm". */
+function cfFmtToolbar(bId){
+  const btns = [
+    { k:'bold',    lb:'B' },
+    { k:'sub',     lb:': Subtítulo' },
+    { k:'load',    lb:'@ Carga' },
+    { k:'measure', lb:'Medida' },
+    { k:'cap',     lb:'Cap' }
+  ];
+  return '<div class="cf-fmt-tools">' +
+    btns.map(b => '<button type="button" class="cf-fmt-btn" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
+  '</div>';
+}
+/* inserta el snippet en la posición del cursor del textarea (o envuelve la
+   selección, en el caso de negrita) y deja seleccionado el placeholder para
+   que el coach lo sobrescriba escribiendo encima sin perder el foco. */
+function insertarFormatoCF(ta, kind){
+  const val = ta.value;
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  const sel = val.slice(start, end);
+  let ins, ph;
+  if(kind === 'bold'){
+    const texto = sel || 'texto';
+    ins = '**' + texto + '**'; ph = texto;
+  } else if(kind === 'sub'){
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = 'Subtítulo';
+    ins = nl + ph + ':';
+  } else if(kind === 'load'){
+    ph = '00/00'; ins = '@ ' + ph + 'kg ';
+  } else if(kind === 'measure'){
+    ph = '00/00'; ins = '@ ' + ph + 'cm';
+  } else if(kind === 'cap'){
+    ph = '00:00'; ins = 'Time Cap: ' + ph;
+  } else return;
+  const selFrom = start + ins.indexOf(ph);
+  const selTo = selFrom + ph.length;
+  ta.value = val.slice(0, start) + ins + val.slice(end);
+  ta.focus();
+  ta.setSelectionRange(selFrom, selTo);
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function renderBuilder(){
   /* invalida el cache de exOptions() de la pasada anterior — se reconstruye
      una sola vez dentro de esta pasada (ver exOptionsBase arriba), nunca
@@ -2988,6 +3034,7 @@ function renderDay(){
 
     if(b.tipo === 'list'){
       h += '<label class="lb">' + (esBloqueCF ? 'Prescripción de ejercicios (uno por línea · carga en KG, distancia en CM/M)' : 'Ítems (uno por línea · formato «Nombre — detalle»)') + '</label>' +
+        (esBloqueCF ? cfFmtToolbar(b.id) : '') +
         '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="' +
           (esBloqueCF ? '10 Thrusters — 42.5/30 KG\n10 Pull-ups\n20 Wall Balls\nRemo — 500 M' : 'Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15') +
         '">' + esc((b.items||[]).join('\n')) + '</textarea>';
@@ -3511,6 +3558,11 @@ function bindBuilder(){
     if(t.dataset.ytsearch){ window.open(ytSearch(t.dataset.ytsearch), '_blank', 'noopener'); return; }
     if(t.dataset.addcfblock){ addBlockCF(); return; }
     if(t.dataset.savecf){ save(); toast('✅ Sesión de CrossFit guardada'); return; }
+    if(t.dataset.fmtins){
+      const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.b + '"]');
+      if(ta) insertarFormatoCF(ta, t.dataset.fmtins);
+      return;
+    }
   });
 
   /* Checkpoint 6: Ctrl/Cmd+D duplica el bloque donde está el foco --
@@ -7931,6 +7983,47 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   var CF_FASE_LB = { warmup:'WARM-UP', strength:'SKILL / STRENGTH', metcon:'WOD / METCON', cardio:'HYROX STATIONS', accessory:'ACCESSORY / COOLDOWN' };
   var CF_PARAM_PREFIX = { fortime:'Cap ', chipper:'Cap ', emom:'Cada ' };
+  /* parser de la Pizarra Táctica: distingue encabezado de protocolo (termina en
+     ':' o arranca con '#'), instrucción/transición de intervalo (Cap/Rest/AMRAP
+     suelto, ya sin prescripción de carga) y movimiento real (reps+nombre con
+     carga '@ 70kg', medida 'cm/m' o el separador estructurado 'Nombre — valor')
+     -- sólo el movimiento real va en tarjeta modular con pastilla de carga. */
+  function jpMdBold(t){ return String(t || '').replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>'); }
+  function jpCfEsHeader(l){ return /^\\s*#+\\s*/.test(l) || /:\\s*$/.test(l.replace(/\\*\\*/g, '').trim()); }
+  function jpCfTieneCarga(l){ return /@\\s*[\\d.]/.test(l) || /\\d[\\d.\\/]*\\s*(?:kg|kgs|lb|lbs|cm|m)\\b/i.test(l); }
+  function jpCfSplit(l){
+    const i = l.indexOf(' — ');
+    if(i >= 0) return { nm: l.slice(0, i).trim(), val: l.slice(i + 3).trim() };
+    const m = l.match(/^(.*?)(@\\s*[^()]+(?:\\([^)]*\\))?)\\s*$/);
+    if(m && m[1].trim()) return { nm: m[1].trim(), val: m[2].trim() };
+    const m2 = l.match(/^(.*?)(\\d[\\d.\\/]*\\s*(?:kg|kgs|lb|lbs|cm|m)\\b.*)$/i);
+    if(m2 && m2[1].trim()) return { nm: m2[1].trim(), val: m2[2].trim() };
+    return { nm: l, val: '' };
+  }
+  function jpCfFila(raw){
+    const l = String(raw || '').trim();
+    if(jpCfEsHeader(l)){
+      const txt = l.replace(/^\\s*#+\\s*/, '');
+      return '<div class="jp-cf-row jp-cf-header">' + jpMdBold(txt) + '</div>';
+    }
+    if(/^\\s*\\d+\\.\\s/.test(l) && l.indexOf(' — ') < 0 && !jpCfTieneCarga(l)){
+      return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
+    }
+    if(esLineaDirectiva(l) && !jpCfTieneCarga(l)){
+      return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
+    }
+    /* objetivo/transición de intervalo suelto (ej: "90 Seg AMRAP") -- lleva
+       AMRAP/EMOM/rest en el cuerpo (no sólo al inicio, por eso esLineaDirectiva
+       no lo agarra) pero no prescribe carga ni movimiento puntual */
+    if(/\\b(amrap|emom|rest|descanso)\\b/i.test(l) && !jpCfTieneCarga(l) && l.indexOf(' — ') < 0){
+      return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
+    }
+    const partes = jpCfSplit(l);
+    return '<div class="jp-cf-row">' +
+        '<span class="jp-cf-rn">' + jpMdBold(partes.nm) + '</span>' +
+        (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
+      '</div>';
+  }
   function pizarra(blockEl, block, weekIdx, dayId){
     /* lee las líneas directo del dato compilado (block.items), no del DOM
        ya renderizado -- más robusto y permite el parseo nombre/valor sin
@@ -7949,16 +8042,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const c = block.cierre || {};
     const tieneCierre = !!(c.objetivo || c.tips || c.pacing || c.escalado);
 
-    const filas = lineas.map(function(l){
-      if(esLineaDirectiva(l)) return '<div class="jp-cf-row jp-cf-note">' + l + '</div>';
-      if(/^\\s*\\d+\\.\\s/.test(l) && l.indexOf(' — ') < 0) return '<div class="jp-cf-row jp-cf-note">' + l.trim() + '</div>';
-      const partes = l.split(' — ');
-      const nm = partes[0], val = partes.length > 1 ? partes.slice(1).join(' — ') : '';
-      return '<div class="jp-cf-row">' +
-          '<span class="jp-cf-rn">' + nm + '</span>' +
-          (val ? '<span class="jp-cf-rv">' + val + '</span>' : '') +
-        '</div>';
-    }).join('');
+    const filas = lineas.map(jpCfFila).join('');
 
     const html =
       '<div class="wod-board jp-cfboard" data-wodb="' + block.id + '">' +
@@ -11766,7 +11850,11 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       /* iconizar() queda deshabilitado: capsulas() (más abajo) es la que
          monta las herramientas de serie sobre .jp-tools, sin el ícono
          combinado de "Asistente de Discos" (directiva de rediseño). */
-      escalado(); sugerencias(); feedback(); pintarUnidad();
+      /* escalado() (panel "Nivel de hoy" RX/Advanced/Scaled/Intro) se retira
+         de la Pizarra Táctica: la prescripción ya aclara RX/Scaled en el
+         texto de cada línea, y el panel quedaba como ruido residual al pie
+         del bloque (directiva de refactor del parser de Pizarra). */
+      sugerencias(); feedback(); pintarUnidad();
     }catch(e){}
   }
   window.CoachMetodologia = { repintar: repintar, glosario: glosario, sugerencias: sugerencias };
@@ -22562,12 +22650,22 @@ body.focus-mode .hd-dock{display:none}
   display:flex; align-items:center; justify-content:space-between; gap:10px;
   padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.02);
 }
-.jp-cfboard .jp-cf-row.jp-cf-note{
-  display:block; background:none; border:none; padding:2px 0;
-  font-family:'JetBrains Mono',monospace; font-size:11.5px; letter-spacing:.05em; text-transform:uppercase; color:#7CC5E8;
+.jp-cfboard .jp-cf-row.jp-cf-header{
+  display:block; background:none; border:none; padding:14px 0 2px; margin:0;
+  font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:14.5px;
+  letter-spacing:.01em; color:#fff;
+}
+.jp-cfboard .jp-cf-rows .jp-cf-row.jp-cf-header:first-child{ padding-top:0; }
+.jp-cfboard .jp-cf-row.jp-cf-badge{
+  display:inline-flex; align-items:center; width:fit-content;
+  padding:5px 10px; margin:1px 0; border-radius:20px;
+  background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.3);
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:10.5px;
+  letter-spacing:.05em; text-transform:uppercase; color:#7CC5E8;
 }
 .jp-cfboard .jp-cf-rn{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#EDEFF2; }
 .jp-cfboard .jp-cf-rv{ font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; flex-shrink:0; text-align:right; }
+.jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
 .jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.12); }
 .jp-cfboard details.jp-cf-acc summary{
   cursor:pointer; list-style:none; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px;
@@ -22593,23 +22691,6 @@ body.focus-mode .hd-dock{display:none}
   background:rgba(0,0,0,.35) !important; color:#EDEFF2 !important; font-family:'JetBrains Mono',monospace; font-size:14px !important;
 }
 .jp-cfboard .ws-ok{ color:#48D597 !important; font-size:11px; font-weight:700; }
-/* nivel de escalado (RX/Advanced/Scaled/Intro) que elige el alumno --
-   función real, se mantiene, sólo se realinea a la identidad nueva */
-.jp-cfboard .rx-bar{
-  padding:12px 0 0 !important; margin-top:12px !important; border-top:1px solid rgba(255,255,255,.1) !important;
-  display:flex !important; flex-wrap:wrap; gap:6px; align-items:center;
-}
-.jp-cfboard .rx-bar .lb{
-  font-family:'JetBrains Mono',monospace !important; font-size:10px !important; letter-spacing:.08em !important;
-  text-transform:uppercase; color:#7CC5E8 !important; margin-right:2px; width:100%;
-}
-.jp-cfboard .rx-chip{
-  font-family:'JetBrains Mono',monospace !important; font-size:10.5px !important; font-weight:700 !important;
-  letter-spacing:.03em; padding:6px 10px !important; border-radius:7px !important;
-  border:1px solid rgba(255,255,255,.16) !important; background:rgba(255,255,255,.03) !important; color:#A0A8B4 !important;
-  min-height:auto !important;
-}
-.jp-cfboard .rx-chip.on{ background:rgba(56,189,248,.14) !important; border-color:rgba(56,189,248,.5) !important; color:#38BDF8 !important; }
 
 /* Vault Técnico del Día */
 .jp-vault-day{
@@ -38870,6 +38951,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .wod-badge.tabata {background:rgba(210,121,63,.16);border-color:rgba(210,121,63,.55);color:#D2793F}
 .wod-badge.otro   {background:rgba(255,255,255,.06);border-color:var(--line-2);color:var(--muted)}
 .blk-wodbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0 2px}
+/* botonera rápida de formato sobre la prescripción de CrossFit (ver cfFmtToolbar()/insertarFormatoCF()) */
+.cf-fmt-tools{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
+.cf-fmt-btn{
+  font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.03em;
+  padding:5px 10px;border-radius:7px;border:1px solid var(--line-2);
+  background:rgba(255,255,255,.03);color:var(--muted);cursor:pointer;
+}
+.cf-fmt-btn:hover{border-color:var(--gold);color:var(--orange)}
+.cf-fmt-btn[data-fmtins="bold"]{font-weight:900}
 /* ---------- notas rápidas de adaptación ---------- */
 .sc-notes{
   margin:9px 0 2px;padding:11px 12px;border-radius:12px;
