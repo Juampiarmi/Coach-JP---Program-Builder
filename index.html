@@ -2619,6 +2619,32 @@ function tecOptions(sel){
   return TECNICAS.map(t => '<option value="' + t.v + '"' + (t.v===(sel||'')?' selected':'') + '>' + esc(t.lb) + '</option>').join('');
 }
 
+/* Formato nativo y tipo de score de un bloque de Pizarra Táctica (CrossFit).
+   Campos aditivos b.cfFmt / b.cfScore -- si el coach no los completa, la
+   app del alumno sigue infiriendo el formato por regex del texto libre
+   (comportamiento previo, sin cambios). */
+const CF_FORMATOS = [
+  {v:'',        lb:'— Auto (se infiere del texto) —'},
+  {v:'fortime', lb:'FOR TIME'},
+  {v:'amrap',   lb:'AMRAP'},
+  {v:'emom',    lb:'EMOM'},
+  {v:'tabata',  lb:'TABATA / INTERVALS'},
+  {v:'chipper', lb:'CHIPPER / LADDER / DEATH BY'}
+];
+const CF_SCORES = [
+  {v:'',       lb:'— Auto (según formato) —'},
+  {v:'tiempo', lb:'⏱ Tiempo final'},
+  {v:'rondas', lb:'🔁 Rondas + reps'},
+  {v:'reps',   lb:'# Reps totales'},
+  {v:'kg',     lb:'⚖ Carga total'}
+];
+function cfFmtOptions(sel){
+  return CF_FORMATOS.map(f => '<option value="' + f.v + '"' + (f.v===(sel||'')?' selected':'') + '>' + esc(f.lb) + '</option>').join('');
+}
+function cfScoreOptions(sel){
+  return CF_SCORES.map(s => '<option value="' + s.v + '"' + (s.v===(sel||'')?' selected':'') + '>' + esc(s.lb) + '</option>').join('');
+}
+
 function renderBuilder(){
   /* invalida el cache de exOptions() de la pasada anterior — se reconstruye
      una sola vez dentro de esta pasada (ver exOptionsBase arriba), nunca
@@ -2905,9 +2931,22 @@ function renderDay(){
     }
 
     if(b.tipo === 'list'){
+      const pMeta = (plan(S.activeId) || {}).meta || {};
+      const esBloqueCF = !!(b.cfPizarra || pMeta.mesoDisc === 'crossfit');
       h += '<label class="lb">Ítems (uno por línea · formato «Nombre — detalle»)</label>' +
-        '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15">' + esc((b.items||[]).join('\n')) + '</textarea>' +
-        '<div style="margin-top:10px;max-width:260px"><label class="lb">Timer Zona 2 (min · opcional)</label><input type="number" data-bf="cardioMinutes" data-b="' + b.id + '" value="' + esc(b.cardioMinutes||'') + '"></div>';
+        '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15">' + esc((b.items||[]).join('\n')) + '</textarea>';
+      if(esBloqueCF){
+        h += '<div class="fields" style="margin-top:10px">' +
+            '<div class="f"><label>Formato del WOD</label><select data-bf="cfFmt" data-b="' + b.id + '">' + cfFmtOptions(b.cfFmt) + '</select></div>' +
+            '<div class="f"><label>Tipo de score</label><select data-bf="cfScore" data-b="' + b.id + '">' + cfScoreOptions(b.cfScore) + '</select></div>' +
+          '</div>' +
+          '<div style="margin-top:10px"><label class="lb">Objetivo del estímulo (Pizarra)</label><textarea data-bf="cfCierre.objetivo" data-b="' + b.id + '" style="min-height:44px" placeholder="Buscá salir rápido y sostener — el 21 no se gana, se sobrevive.">' + esc((b.cfCierre && b.cfCierre.objetivo) || '') + '</textarea></div>' +
+          '<div style="margin-top:8px"><label class="lb">Coaching tips (Pizarra)</label><textarea data-bf="cfCierre.tips" data-b="' + b.id + '" style="min-height:52px" placeholder="Thrusters: no bajes de tempo en la sentadilla…">' + esc((b.cfCierre && b.cfCierre.tips) || '') + '</textarea></div>' +
+          '<div style="margin-top:8px"><label class="lb">Pacing sugerido</label><input data-bf="cfCierre.pacing" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.pacing) || '') + '" placeholder="Salí sub-2:00 la primera ronda…"></div>' +
+          '<div style="margin-top:8px"><label class="lb">Escalado / RX alternativo</label><input data-bf="cfCierre.escalado" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.escalado) || '') + '" placeholder="RX 42.5/30kg · Scaled 30/20kg"></div>';
+      } else {
+        h += '<div style="margin-top:10px;max-width:260px"><label class="lb">Timer Zona 2 (min · opcional)</label><input type="number" data-bf="cardioMinutes" data-b="' + b.id + '" value="' + esc(b.cardioMinutes||'') + '"></div>';
+      }
     }
 
     h += '<div style="margin-top:11px"><label class="lb">Coach Note</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:60px">' + esc(b.tips||'') + '</textarea></div>';
@@ -3110,6 +3149,13 @@ function setBlockField(b, f, val){
   if(f === 'items' || f === 'movements') b[f] = String(val).split('\n').map(s => s.trim()).filter(Boolean);
   else if(f === 'optional') b.optional = (val === '1' || val === true);
   else if(['approxSets','efSets','restSeconds'].indexOf(f) >= 0) b[f] = parseInt(val,10) || 0;
+  else if(f.indexOf('.') >= 0){
+    /* rutas anidadas tipo "cfCierre.objetivo" -- genérico, no específico de CrossFit */
+    const partes = f.split('.');
+    let obj = b;
+    for(let i = 0; i < partes.length - 1; i++){ obj[partes[i]] = obj[partes[i]] || {}; obj = obj[partes[i]]; }
+    obj[partes[partes.length - 1]] = val;
+  }
   else b[f] = val;
 }
 
@@ -3287,7 +3333,7 @@ function bindBuilder(){
       else if(w === 'warn') toast('⚠️ Riesgo biomecánico detectado', 'warn');
       return;
     }
-    if(t.dataset.bf === 'category' || t.dataset.bf === 'optional'){
+    if(t.dataset.bf === 'category' || t.dataset.bf === 'optional' || t.dataset.bf === 'cfFmt' || t.dataset.bf === 'cfScore'){
       const b = findBlock(t.dataset.b); if(!b) return;
       setBlockField(b, t.dataset.bf, t.value); save(); return;
     }
@@ -5328,7 +5374,14 @@ if(!window.CoachRepaintBus){
    STATE
 ========================================================= */
 const STORAGE_KEY = '{{STORAGE_KEY}}';
-window.COACH_DISCIPLINA = 'sports';
+/* Bug preexistente: este flag quedaba fijo en 'sports' en TODO documento
+   compilado, sin importar la disciplina real del plan -- eso apagaba en
+   silencio la Pizarra Táctica (gate de pizarra() más abajo) y el botón de
+   Vista Musculación/CrossFit para cualquier atleta de CrossFit ya exportado.
+   Se deriva del mismo flag que ya calcula bien buildProgramConfig() en el
+   Builder (PROGRAM_CONFIG.modoSemanal); en Sports sigue siendo 'sports'
+   exactamente igual que antes, cero cambio de comportamiento. */
+window.COACH_DISCIPLINA = PROGRAM_CONFIG.modoSemanal ? 'crossfit' : 'sports';
 const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{} };
 let timerCounter = 0;
 const liveTimers = {};
@@ -7679,6 +7732,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     return mejor;
   }
+  /* formato estructurado (block.boardFmt, seteado por el coach en el Builder) --
+     si está presente gana sobre la inferencia por regex de abajo; si no, el
+     comportamiento previo (formatoDe/primerFormato) sigue exactamente igual. */
+  var CF_FMT_MAP = {
+    fortime: { lb:'FOR TIME', modo:'up' },
+    amrap:   { lb:'AMRAP',    modo:'down' },
+    emom:    { lb:'EMOM',     modo:'down' },
+    tabata:  { lb:'TABATA',   modo:'down' },
+    chipper: { lb:'CHIPPER',  modo:'up' }
+  };
+  function formatoEstructurado(block){
+    var k = String(block.boardFmt || '').toLowerCase().replace(/[^a-z]/g, '');
+    return CF_FMT_MAP[k] || null;
+  }
+  var CF_SCORE_PH = {
+    tiempo: 'Tiempo final (ej: 11:42)',
+    rondas: 'Rondas + reps (ej: 6+12)',
+    reps:   'Reps totales (ej: 143)',
+    kg:     'Carga total (ej: 82.5 kg)'
+  };
   function formatoDe(block, lineas, weekIdx){
     /* el cuerpo del bloque manda: si dice EMOM, la tarjeta dice EMOM.
        El fallback (cuando el cuerpo de ESTA semana no trae ninguna palabra
@@ -7717,11 +7790,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       lineas.push(((n ? n.childNodes[0].textContent : el.textContent) + (d ? ' — ' + d.textContent : '')).trim());
     });
     if(!lineas.length) return;
-    const f = formatoDe(block, lineas, weekIdx);
+    const f = formatoEstructurado(block) || formatoDe(block, lineas, weekIdx);
     const min = minutosDe(block, lineas);
     const skey = weekIdx + '|' + dayId + '|' + block.id;
     const guardado = state.scores[skey] || '';
-    const ph = f && f.modo === 'up' ? 'Tiempo final (ej: 11:42)' : 'Rondas + reps (ej: 6+12)';
+    const ph = (block.scoreType && CF_SCORE_PH[block.scoreType]) ||
+      (f && f.modo === 'up' ? 'Tiempo final (ej: 11:42)' : 'Rondas + reps (ej: 6+12)');
+    /* el cierre técnico (objetivo/tips/pacing/escalado) NO se pinta acá:
+       cierres() (más abajo, sección "2 · CIERRE TÉCNICO DEL BLOQUE") ya lee
+       block.cierre y arma su propia caja .cf-cierre sin emojis -- pintarlo
+       también en pizarra() lo duplicaría en el DOM. */
     const html =
       '<div class="wod-board" data-wodb="' + block.id + '">' +
         '<div class="wb-h"><span style="font-size:1.15rem">🏁</span>' +
