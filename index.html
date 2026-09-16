@@ -2666,6 +2666,52 @@ const CF_PARAM = {
   emom:    { lb:'Intervalo', ph:'1:00' }
 };
 
+/* botonera rápida de formato sobre la prescripción de CrossFit -- inserta
+   los mismos marcadores que después reconoce el parser jerárquico de la
+   Pizarra Táctica del alumno (jpCfFila() en TEMPLATE_HTML): negrita **texto**,
+   encabezado "Subtítulo:", carga "@ 00/00kg" y medida "@ 00/00cm". */
+function cfFmtToolbar(bId){
+  const btns = [
+    { k:'bold',    lb:'B' },
+    { k:'sub',     lb:': Subtítulo' },
+    { k:'load',    lb:'@ Carga' },
+    { k:'measure', lb:'Medida' },
+    { k:'cap',     lb:'Cap' }
+  ];
+  return '<div class="cf-fmt-tools">' +
+    btns.map(b => '<button type="button" class="cf-fmt-btn" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
+  '</div>';
+}
+/* inserta el snippet en la posición del cursor del textarea (o envuelve la
+   selección, en el caso de negrita) y deja seleccionado el placeholder para
+   que el coach lo sobrescriba escribiendo encima sin perder el foco. */
+function insertarFormatoCF(ta, kind){
+  const val = ta.value;
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  const sel = val.slice(start, end);
+  let ins, ph;
+  if(kind === 'bold'){
+    const texto = sel || 'texto';
+    ins = '**' + texto + '**'; ph = texto;
+  } else if(kind === 'sub'){
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = 'Subtítulo';
+    ins = nl + ph + ':';
+  } else if(kind === 'load'){
+    ph = '00/00'; ins = '@ ' + ph + 'kg ';
+  } else if(kind === 'measure'){
+    ph = '00/00'; ins = '@ ' + ph + 'cm';
+  } else if(kind === 'cap'){
+    ph = '00:00'; ins = 'Time Cap: ' + ph;
+  } else return;
+  const selFrom = start + ins.indexOf(ph);
+  const selTo = selFrom + ph.length;
+  ta.value = val.slice(0, start) + ins + val.slice(end);
+  ta.focus();
+  ta.setSelectionRange(selFrom, selTo);
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function renderBuilder(){
   /* invalida el cache de exOptions() de la pasada anterior — se reconstruye
      una sola vez dentro de esta pasada (ver exOptionsBase arriba), nunca
@@ -2988,6 +3034,7 @@ function renderDay(){
 
     if(b.tipo === 'list'){
       h += '<label class="lb">' + (esBloqueCF ? 'Prescripción de ejercicios (uno por línea · carga en KG, distancia en CM/M)' : 'Ítems (uno por línea · formato «Nombre — detalle»)') + '</label>' +
+        (esBloqueCF ? cfFmtToolbar(b.id) : '') +
         '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="' +
           (esBloqueCF ? '10 Thrusters — 42.5/30 KG\n10 Pull-ups\n20 Wall Balls\nRemo — 500 M' : 'Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15') +
         '">' + esc((b.items||[]).join('\n')) + '</textarea>';
@@ -3511,6 +3558,11 @@ function bindBuilder(){
     if(t.dataset.ytsearch){ window.open(ytSearch(t.dataset.ytsearch), '_blank', 'noopener'); return; }
     if(t.dataset.addcfblock){ addBlockCF(); return; }
     if(t.dataset.savecf){ save(); toast('✅ Sesión de CrossFit guardada'); return; }
+    if(t.dataset.fmtins){
+      const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.b + '"]');
+      if(ta) insertarFormatoCF(ta, t.dataset.fmtins);
+      return;
+    }
   });
 
   /* Checkpoint 6: Ctrl/Cmd+D duplica el bloque donde está el foco --
@@ -38899,6 +38951,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .wod-badge.tabata {background:rgba(210,121,63,.16);border-color:rgba(210,121,63,.55);color:#D2793F}
 .wod-badge.otro   {background:rgba(255,255,255,.06);border-color:var(--line-2);color:var(--muted)}
 .blk-wodbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0 2px}
+/* botonera rápida de formato sobre la prescripción de CrossFit (ver cfFmtToolbar()/insertarFormatoCF()) */
+.cf-fmt-tools{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
+.cf-fmt-btn{
+  font-family:var(--font-mono);font-size:11px;font-weight:700;letter-spacing:.03em;
+  padding:5px 10px;border-radius:7px;border:1px solid var(--line-2);
+  background:rgba(255,255,255,.03);color:var(--muted);cursor:pointer;
+}
+.cf-fmt-btn:hover{border-color:var(--gold);color:var(--orange)}
+.cf-fmt-btn[data-fmtins="bold"]{font-weight:900}
 /* ---------- notas rápidas de adaptación ---------- */
 .sc-notes{
   margin:9px 0 2px;padding:11px 12px;border-radius:12px;
