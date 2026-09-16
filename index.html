@@ -2645,6 +2645,27 @@ function cfScoreOptions(sel){
   return CF_SCORES.map(s => '<option value="' + s.v + '"' + (s.v===(sel||'')?' selected':'') + '>' + esc(s.lb) + '</option>').join('');
 }
 
+/* Fase de un bloque de Pizarra Táctica -- reusa el mismo campo b.category
+   que ya existía (mismos 5 valores: warmup/strength/metcon/cardio/accessory),
+   sólo con el vocabulario nativo de CrossFit en vez del de Bodybuilding. */
+const CF_FASES = [
+  {v:'warmup',    lb:'WARM-UP'},
+  {v:'strength',  lb:'SKILL / STRENGTH'},
+  {v:'metcon',    lb:'WOD / METCON'},
+  {v:'cardio',    lb:'HYROX STATIONS'},
+  {v:'accessory', lb:'ACCESSORY / COOLDOWN'}
+];
+function cfFaseOptions(sel){
+  return CF_FASES.map(f => '<option value="' + f.v + '"' + (f.v===(sel||'metcon')?' selected':'') + '>' + esc(f.lb) + '</option>').join('');
+}
+/* parámetro único del formato (Time Cap / Minutos / Intervalo) -- un solo
+   campo b.cfParam reetiquetado según b.cfFmt, en vez de 3 campos sueltos */
+const CF_PARAM = {
+  fortime: { lb:'Time Cap',  ph:'12:00' },
+  amrap:   { lb:'Minutos',   ph:'18' },
+  emom:    { lb:'Intervalo', ph:'1:00' }
+};
+
 function renderBuilder(){
   /* invalida el cache de exOptions() de la pasada anterior — se reconstruye
      una sola vez dentro de esta pasada (ver exOptionsBase arriba), nunca
@@ -2767,37 +2788,66 @@ function renderDay(){
   const d = curDay(), ath = active();
   if(!d) return;
 
-  let h = '<div class="card" style="margin-bottom:14px">' +
-    '<h3>📌 Ficha del día</h3>' +
-    '<div class="grid g3">' +
-      '<div><label class="lb">Chip (short)</label><input data-df="short" value="' + esc(d.short) + '" placeholder="DÍA 1"></div>' +
-      '<div><label class="lb">Etiqueta de pestaña</label><input data-df="label" value="' + esc(d.label) + '" placeholder="Espalda/Bíceps"></div>' +
-      '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1"></div>' +
+  const pAct = plan(S.activeId);
+  const cfActiva = !!(pAct && pAct.meta && pAct.meta.mesoDisc === 'crossfit');
+
+  /* Directiva de limpieza del Builder CrossFit (2026-09-16): la barra de
+     bloques de musculación (Biset/Triset/Finisher/Bloque Normal) es ruido
+     heredado de Bodybuilding en esta modalidad -- se oculta, reemplazada
+     por el botón "+ Agregar Bloque de Pizarra" de más abajo. */
+  const toolsEl = document.querySelector('.tools');
+  if(toolsEl) toolsEl.style.display = cfActiva ? 'none' : '';
+
+  let h = '';
+
+  if(cfActiva){
+    h += '<div class="card" style="margin-bottom:14px">' +
+      '<div class="grid g2">' +
+        '<div><label class="lb">Título del día</label><input data-df="title" value="' + esc(d.title) + '" placeholder="Día de WOD y Skill"></div>' +
+        '<div><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Movilidad de cadera — 2 min">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
+      '</div>' +
     '</div>' +
-    '<div class="grid g2" style="margin-top:12px">' +
-      '<div><label class="lb">Título del día</label><input data-df="title" value="' + esc(d.title) + '" placeholder="Espalda, Bíceps y Tracción Pesada"></div>' +
-      '<div><label class="lb">Chips de meta (separados por «;»)</label><input data-df="metaChips" value="' + esc((d.metaChips||[]).join('; ')) + '" placeholder="🎯 Tracción Horizontal; 💪 Ancla Doble"></div>' +
-    '</div>' +
-    '<div class="grid g2" style="margin-top:12px">' +
-      '<div><label class="lb">Título del foco técnico</label><input data-df="focusTitle" value="' + esc(d.focusTitle||'') + '"></div>' +
-      '<div><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Estiramiento de dorsal — 2x30s">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
-    '</div>' +
-    '<div style="margin-top:12px"><label class="lb">Foco técnico del día</label><textarea data-df="focusText">' + esc(d.focusText||'') + '</textarea></div>' +
-    '<div style="margin-top:12px"><label class="lb">Resumen de la sesión</label><textarea data-df="summary">' + esc(d.summary||'') + '</textarea></div>' +
-  '</div>';
+    '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-bottom:14px" data-addcfblock="1">➕ AGREGAR BLOQUE DE PIZARRA</button>';
+  } else {
+    h += '<div class="card" style="margin-bottom:14px">' +
+      '<h3>📌 Ficha del día</h3>' +
+      '<div class="grid g3">' +
+        '<div><label class="lb">Chip (short)</label><input data-df="short" value="' + esc(d.short) + '" placeholder="DÍA 1"></div>' +
+        '<div><label class="lb">Etiqueta de pestaña</label><input data-df="label" value="' + esc(d.label) + '" placeholder="Espalda/Bíceps"></div>' +
+        '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1"></div>' +
+      '</div>' +
+      '<div class="grid g2" style="margin-top:12px">' +
+        '<div><label class="lb">Título del día</label><input data-df="title" value="' + esc(d.title) + '" placeholder="Espalda, Bíceps y Tracción Pesada"></div>' +
+        '<div><label class="lb">Chips de meta (separados por «;»)</label><input data-df="metaChips" value="' + esc((d.metaChips||[]).join('; ')) + '" placeholder="🎯 Tracción Horizontal; 💪 Ancla Doble"></div>' +
+      '</div>' +
+      '<div class="grid g2" style="margin-top:12px">' +
+        '<div><label class="lb">Título del foco técnico</label><input data-df="focusTitle" value="' + esc(d.focusTitle||'') + '"></div>' +
+        '<div><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Estiramiento de dorsal — 2x30s">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
+      '</div>' +
+      '<div style="margin-top:12px"><label class="lb">Foco técnico del día</label><textarea data-df="focusText">' + esc(d.focusText||'') + '</textarea></div>' +
+      '<div style="margin-top:12px"><label class="lb">Resumen de la sesión</label><textarea data-df="summary">' + esc(d.summary||'') + '</textarea></div>' +
+    '</div>';
+  }
 
   if(!d.bloques.length){
-    h += '<div class="card"><div class="empty"><div class="big">🏗️</div><h4>Día vacío</h4><p>Agregá un bloque desde la barra inferior para construir la sesión.</p></div></div>';
+    h += '<div class="card"><div class="empty"><div class="big">🏗️</div><h4>Día vacío</h4><p>' +
+      (cfActiva ? 'Agregá un bloque de pizarra con el botón de arriba.' : 'Agregá un bloque desde la barra inferior para construir la sesión.') +
+    '</p></div></div>';
   }
 
   d.bloques.forEach((b, bi) => {
     const T = TIPOS[b.tipo] || TIPOS.block;
     const al = blockAlerts(ath, b);
     const w = worst(al);
+    const esBloqueCF = cfActiva && b.tipo === 'list';
+    /* el pill de cabecera mostraba el TIPO de bloque ("Warm-Up / Lista"),
+       fijo, aunque el coach cambiara la Fase real más abajo -- en
+       CrossFit el pill refleja la Fase elegida para no contradecirla */
+    const pillLb = esBloqueCF ? ((CF_FASES.find(f => f.v === b.category) || CF_FASES[2]).lb) : T.lb;
     h += '<div class="block ' + T.cls + ' ' + (w==='danger'?'bad':'') + '">' +
       '<div class="block-h">' +
-        '<span class="pill ' + (b.tipo==='finisher'?'red':(b.tipo==='hyrox'?'teal':(b.tipo==='superset'?'gold':''))) + '">' + T.ic + ' ' + T.lb + '</span>' +
-        '<input class="bt" data-bf="titulo" data-b="' + b.id + '" value="' + esc(b.titulo||'') + '" placeholder="Título del bloque">' +
+        '<span class="pill ' + (b.tipo==='finisher'?'red':(b.tipo==='hyrox'?'teal':(b.tipo==='superset'?'gold':''))) + '">' + T.ic + ' ' + pillLb + '</span>' +
+        '<input class="bt" data-bf="titulo" data-b="' + b.id + '" value="' + esc(b.titulo||'') + '" placeholder="' + (esBloqueCF ? 'Título del bloque (ej. El Cierre, Barbell Cycling)' : 'Título del bloque') + '">' +
         '<button class="icon-btn ai" data-bai="' + b.id + '" title="Nombrar con IA">🪄</button>' +
         '<div class="spacer"></div>' +
         '<button class="icon-btn" data-bmove="up" data-b="' + b.id + '" title="Subir">▲</button>' +
@@ -2822,13 +2872,19 @@ function renderDay(){
       '</div></div>';
     });
 
-    /* --- cabecera común --- */
-    h += '<div class="fields" style="margin-bottom:10px">' +
-      '<div class="f"><label>Icono</label><input data-bf="icon" data-b="' + b.id + '" value="' + esc(b.icon||'') + '"></div>' +
-      '<div class="f" style="grid-column:span 2"><label>Subtítulo</label><input data-bf="subtitulo" data-b="' + b.id + '" value="' + esc(b.subtitulo||'') + '" placeholder="Ancla de Tracción Horizontal Pesada"></div>' +
-      '<div class="f"><label>Color / categoría</label><select data-bf="category" data-b="' + b.id + '">' + catOptions(b.category) + '</select></div>' +
-      '<div class="f"><label>Visibilidad</label><select data-bf="optional" data-b="' + b.id + '"><option value="0"' + (!b.optional?' selected':'') + '>Siempre visible</option><option value="1"' + (b.optional?' selected':'') + '>Solo Modo Completo</option></select></div>' +
-    '</div>';
+    /* --- cabecera común (limpia a un solo selector de Fase en CrossFit) --- */
+    if(esBloqueCF){
+      h += '<div class="fields" style="margin-bottom:10px">' +
+        '<div class="f wide"><label>Fase</label><select data-bf="category" data-b="' + b.id + '">' + cfFaseOptions(b.category) + '</select></div>' +
+      '</div>';
+    } else {
+      h += '<div class="fields" style="margin-bottom:10px">' +
+        '<div class="f"><label>Icono</label><input data-bf="icon" data-b="' + b.id + '" value="' + esc(b.icon||'') + '"></div>' +
+        '<div class="f" style="grid-column:span 2"><label>Subtítulo</label><input data-bf="subtitulo" data-b="' + b.id + '" value="' + esc(b.subtitulo||'') + '" placeholder="Ancla de Tracción Horizontal Pesada"></div>' +
+        '<div class="f"><label>Color / categoría</label><select data-bf="category" data-b="' + b.id + '">' + catOptions(b.category) + '</select></div>' +
+        '<div class="f"><label>Visibilidad</label><select data-bf="optional" data-b="' + b.id + '"><option value="0"' + (!b.optional?' selected':'') + '>Siempre visible</option><option value="1"' + (b.optional?' selected':'') + '>Solo Modo Completo</option></select></div>' +
+      '</div>';
+    }
 
     /* --- cuerpo por tipo --- */
     if(b.tipo === 'block'){
@@ -2931,32 +2987,63 @@ function renderDay(){
     }
 
     if(b.tipo === 'list'){
-      const pMeta = (plan(S.activeId) || {}).meta || {};
-      const esBloqueCF = !!(b.cfPizarra || pMeta.mesoDisc === 'crossfit');
-      h += '<label class="lb">Ítems (uno por línea · formato «Nombre — detalle»)</label>' +
-        '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15">' + esc((b.items||[]).join('\n')) + '</textarea>';
+      h += '<label class="lb">' + (esBloqueCF ? 'Prescripción de ejercicios (uno por línea · carga en KG, distancia en CM/M)' : 'Ítems (uno por línea · formato «Nombre — detalle»)') + '</label>' +
+        '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="' +
+          (esBloqueCF ? '10 Thrusters — 42.5/30 KG\n10 Pull-ups\n20 Wall Balls\nRemo — 500 M' : 'Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15') +
+        '">' + esc((b.items||[]).join('\n')) + '</textarea>';
       if(esBloqueCF){
+        const fmtInfo = CF_PARAM[b.cfFmt];
         h += '<div class="fields" style="margin-top:10px">' +
-            '<div class="f"><label>Formato del WOD</label><select data-bf="cfFmt" data-b="' + b.id + '">' + cfFmtOptions(b.cfFmt) + '</select></div>' +
+            '<div class="f"><label>Formato del trabajo</label><select data-bf="cfFmt" data-b="' + b.id + '">' + cfFmtOptions(b.cfFmt) + '</select></div>' +
+            (fmtInfo ? '<div class="f"><label>' + fmtInfo.lb + '</label><input data-bf="cfParam" data-b="' + b.id + '" value="' + esc(b.cfParam||'') + '" placeholder="' + fmtInfo.ph + '"></div>' : '') +
             '<div class="f"><label>Tipo de score</label><select data-bf="cfScore" data-b="' + b.id + '">' + cfScoreOptions(b.cfScore) + '</select></div>' +
           '</div>' +
-          '<div style="margin-top:10px"><label class="lb">Objetivo del estímulo (Pizarra)</label><textarea data-bf="cfCierre.objetivo" data-b="' + b.id + '" style="min-height:44px" placeholder="Buscá salir rápido y sostener — el 21 no se gana, se sobrevive.">' + esc((b.cfCierre && b.cfCierre.objetivo) || '') + '</textarea></div>' +
-          '<div style="margin-top:8px"><label class="lb">Coaching tips (Pizarra)</label><textarea data-bf="cfCierre.tips" data-b="' + b.id + '" style="min-height:52px" placeholder="Thrusters: no bajes de tempo en la sentadilla…">' + esc((b.cfCierre && b.cfCierre.tips) || '') + '</textarea></div>' +
-          '<div style="margin-top:8px"><label class="lb">Pacing sugerido</label><input data-bf="cfCierre.pacing" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.pacing) || '') + '" placeholder="Salí sub-2:00 la primera ronda…"></div>' +
-          '<div style="margin-top:8px"><label class="lb">Escalado / RX alternativo</label><input data-bf="cfCierre.escalado" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.escalado) || '') + '" placeholder="RX 42.5/30kg · Scaled 30/20kg"></div>';
+          '<details class="cf-acc">' +
+            '<summary class="lb">▾ Objetivo del estímulo &amp; Coaching Tips</summary>' +
+            '<div style="margin-top:10px"><label class="lb">Objetivo del estímulo</label><textarea data-bf="cfCierre.objetivo" data-b="' + b.id + '" style="min-height:44px" placeholder="Buscá salir rápido y sostener — el 21 no se gana, se sobrevive.">' + esc((b.cfCierre && b.cfCierre.objetivo) || '') + '</textarea></div>' +
+            '<div style="margin-top:8px"><label class="lb">Coaching tips</label><textarea data-bf="cfCierre.tips" data-b="' + b.id + '" style="min-height:52px" placeholder="Thrusters: no bajes de tempo en la sentadilla…">' + esc((b.cfCierre && b.cfCierre.tips) || '') + '</textarea></div>' +
+            '<div style="margin-top:8px"><label class="lb">Pacing sugerido</label><input data-bf="cfCierre.pacing" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.pacing) || '') + '" placeholder="Salí sub-2:00 la primera ronda…"></div>' +
+            '<div style="margin-top:8px"><label class="lb">Escalado / RX alternativo</label><input data-bf="cfCierre.escalado" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.escalado) || '') + '" placeholder="RX 42.5/30kg · Scaled 30/20kg"></div>' +
+          '</details>';
       } else {
         h += '<div style="margin-top:10px;max-width:260px"><label class="lb">Timer Zona 2 (min · opcional)</label><input type="number" data-bf="cardioMinutes" data-b="' + b.id + '" value="' + esc(b.cardioMinutes||'') + '"></div>';
       }
     }
 
-    h += '<div style="margin-top:11px"><label class="lb">Coach Note</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:60px">' + esc(b.tips||'') + '</textarea></div>';
-    if(b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'list'){
-      h += '<div style="margin-top:10px"><label class="lb">Objetivo del bloque (recuadro 🎯)</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:52px">' + esc(b.objective||'') + '</textarea></div>';
+    /* Coach Note y Objetivo del bloque quedan reemplazados, en CrossFit,
+       por el acordeón de Objetivo del estímulo & Coaching Tips de arriba
+       -- mostrarlos también sería duplicar el mismo contenido. */
+    if(!esBloqueCF){
+      h += '<div style="margin-top:11px"><label class="lb">Coach Note</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:60px">' + esc(b.tips||'') + '</textarea></div>';
+      if(b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'list'){
+        h += '<div style="margin-top:10px"><label class="lb">Objetivo del bloque (recuadro 🎯)</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:52px">' + esc(b.objective||'') + '</textarea></div>';
+      }
     }
     h += '</div></div>';
   });
 
+  if(cfActiva && d.bloques.length){
+    h += renderVaultFooterCF(d);
+  }
+
   $('#dayPanel').innerHTML = h;
+}
+
+/* Vault Técnico del Día (CrossFit): selector rápido de hasta 5 ejercicios
+   de la biblioteca + CTA de guardado explícito. d.cfVault es un campo
+   nuevo, aditivo, propio del día -- no reemplaza ni toca nada existente. */
+function renderVaultFooterCF(d){
+  const vault = d.cfVault || [];
+  let rows = '';
+  for(let i = 0; i < 5; i++){
+    rows += '<div class="f"><label>Clip ' + (i+1) + '</label><select data-cfvault="' + i + '">' + exOptions(vault[i]||'') + '</select></div>';
+  }
+  return '<div class="card" style="margin-top:6px">' +
+      '<h3>📹 Vault Técnico del Día</h3>' +
+      '<p class="cx-sub">Elegí hasta 5 ejercicios de la biblioteca para el carrusel de clips técnicos que ve el alumno en la Pizarra.</p>' +
+      '<div class="fields">' + rows + '</div>' +
+    '</div>' +
+    '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-top:14px" data-savecf="1">💾 GUARDAR SESIÓN DE CROSSFIT</button>';
 }
 
 /* ---------- Generador de nombres de bloque con IA (pedido 36) ----------
@@ -3105,6 +3192,18 @@ function addBlock(tipo){
   const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
   d.bloques.push(newBlock(tipo)); save(); renderBuilder();
   toast((TIPOS[tipo]||{}).lb + ' agregado');
+}
+/* generador único de bloques en modalidad CrossFit & Hyrox: siempre crea
+   un bloque de pizarra (tipo 'list'), con WOD/Metcon como fase por defecto
+   -- el coach la cambia con el selector de Fase de la propia tarjeta. */
+function addBlockCF(){
+  const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
+  const b = newBlock('list');
+  b.category = 'metcon';
+  b.cfPizarra = true;
+  b.titulo = '';
+  d.bloques.push(b); save(); renderBuilder();
+  toast('🧩 Bloque de pizarra agregado');
 }
 /* UX/UI integral (13/09), parte 2: título automático de biset/triset a
    partir de los ejercicios elegidos (ej. Hack Squat + PM Rumano →
@@ -3333,9 +3432,28 @@ function bindBuilder(){
       else if(w === 'warn') toast('⚠️ Riesgo biomecánico detectado', 'warn');
       return;
     }
-    if(t.dataset.bf === 'category' || t.dataset.bf === 'optional' || t.dataset.bf === 'cfFmt' || t.dataset.bf === 'cfScore'){
+    if(t.dataset.bf === 'optional' || t.dataset.bf === 'cfScore'){
       const b = findBlock(t.dataset.b); if(!b) return;
       setBlockField(b, t.dataset.bf, t.value); save(); return;
+    }
+    if(t.dataset.bf === 'category'){
+      /* re-renderiza para que el pill de cabecera (Fase, en CrossFit)
+         quede sincronizado con lo recién elegido */
+      const b = findBlock(t.dataset.b); if(!b) return;
+      setBlockField(b, 'category', t.value); save(); renderBuilder(); return;
+    }
+    if(t.dataset.bf === 'cfFmt'){
+      /* re-renderiza para que el campo de parámetro (Time Cap/Minutos/
+         Intervalo) cambie de rótulo según el formato recién elegido */
+      const b = findBlock(t.dataset.b); if(!b) return;
+      setBlockField(b, 'cfFmt', t.value); save(); renderBuilder(); return;
+    }
+    if(t.dataset.cfvault !== undefined){
+      const d = curDay(); if(!d) return;
+      const idx = parseInt(t.dataset.cfvault, 10);
+      d.cfVault = d.cfVault || [];
+      d.cfVault[idx] = t.value;
+      save(); return;
     }
   });
   panel.addEventListener('click', e => {
@@ -3391,6 +3509,8 @@ function bindBuilder(){
        del bloque -- ver avisoVideoHtml() más abajo. */
     if(t.dataset.editex){ openEx(t.dataset.editex); return; }
     if(t.dataset.ytsearch){ window.open(ytSearch(t.dataset.ytsearch), '_blank', 'noopener'); return; }
+    if(t.dataset.addcfblock){ addBlockCF(); return; }
+    if(t.dataset.savecf){ save(); toast('✅ Sesión de CrossFit guardada'); return; }
   });
 
   /* Checkpoint 6: Ctrl/Cmd+D duplica el bloque donde está el foco --
@@ -35532,10 +35652,21 @@ body.man-mode .gs-fab{right:318px}
   /* ============ E. INYECCIÓN EN EL BUILDER ============ */
   function pintarEdicion(){
     const panel = document.getElementById('dayPanel'); if(!panel) return;
+    /* limpieza del Builder CrossFit (2026-09-16): la barra de edición de
+       ejercicios (Agregar/Reemplazar/Eliminar) es para bloques rígidos de
+       series -- en un bloque de pizarra (tipo 'list', modalidad crossfit)
+       el editor de movimientos ya es el propio textarea de la tarjeta. */
+    const pEd = plan(S.activeId);
+    const cfEdActiva = !!(pEd && pEd.meta && pEd.meta.mesoDisc === 'crossfit');
     $$('#dayPanel .block').forEach(el => {
       const ref = el.querySelector('[data-b]'); if(!ref) return;
       const b = findBlock(ref.dataset.b); if(!b) return;
       const body = el.querySelector('.block-body'); if(!body) return;
+      if(cfEdActiva && b.tipo === 'list'){
+        const vieja2 = body.querySelector('[data-exbar]'); if(vieja2) vieja2.remove();
+        const bio2 = body.querySelector('[data-biob]'); if(bio2) bio2.remove();
+        return;
+      }
       const html = barraEdicion(b) + cajaBio(b);
       const vieja = body.querySelector('[data-exbar]');
       const bio = body.querySelector('[data-biob]');
@@ -38719,9 +38850,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
   function pintarBloques(){
     const panel = document.getElementById('dayPanel'); if(!panel) return;
+    /* limpieza del Builder CrossFit (2026-09-16): el badge de formato
+       detectado por regex y las notas de scaling quedan reemplazados por
+       el selector de Formato y el campo Escalado de la propia tarjeta de
+       pizarra -- mostrar los dos a la vez duplica la misma información. */
+    const pWod = plan(S.activeId);
+    const cfWodActiva = !!(pWod && pWod.meta && pWod.meta.mesoDisc === 'crossfit');
     panel.querySelectorAll('.block').forEach(bl => {
       const ref = bl.querySelector('[data-b]');
       const b = ref ? findBlock(ref.dataset.b) : null;
+      if(cfWodActiva && b && b.tipo === 'list'){
+        const oldBar = bl.querySelector('.blk-wodbar'); if(oldBar) oldBar.remove();
+        const oldSc = bl.querySelector('.sc-notes'); if(oldSc) oldSc.remove();
+        return;
+      }
       const texto = bl.textContent || '';
       if(!esWodBloque(b, texto)) return;
       /* badge de formato */
@@ -39461,6 +39603,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const ta = document.getElementById('ctxTxt');
     const motor = document.getElementById('ctxMotor');
     if(!a){ card.style.display = 'none'; return; }
+    /* limpieza del Builder CrossFit (2026-09-16): la nota metodológica de
+       hipertrofia es ruido heredado de Bodybuilding en esta modalidad */
+    const pCtx = plan(a.id);
+    if(pCtx && pCtx.meta && pCtx.meta.mesoDisc === 'crossfit'){ card.style.display = 'none'; return; }
     card.style.display = '';
     const c = ctxDe(a.id);
     if(ta && ta.value !== c.borrador && document.activeElement !== ta) ta.value = c.borrador || '';
@@ -40456,6 +40602,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .mod-toggle button.on{background:linear-gradient(135deg,#D2793F,#D2793F);color:#08090B}
 .mod-toggle button.on.cf{background:linear-gradient(135deg,#7CC5E8,#3A86FF);color:#02121A}
 .mod-toggle button:hover:not(.on){background:rgba(255,255,255,.07);color:var(--txt-2)}
+/* limpieza del Builder CrossFit: acordeón "Objetivo del estímulo & Coaching Tips" */
+details.cf-acc{margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
+details.cf-acc summary{cursor:pointer;list-style:none}
+details.cf-acc summary::-webkit-details-marker{display:none}
+details.cf-acc[open] summary{margin-bottom:2px}
 /* ---------- paso 2: ingesta ---------- */
 .step2{
   margin:0 0 14px;padding:14px 15px;border-radius:16px;
@@ -40682,12 +40833,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       else vista.insertBefore(caja, vista.firstChild);
     }
     caja.classList.toggle('cf', cf);
+    /* limpieza del Builder CrossFit (2026-09-16): el pegado de sesión bruta
+       con IA pasa a ser una herramienta secundaria colapsada por defecto
+       -- el protagonista de esta modalidad es el Generador de Bloques de
+       Pizarra Táctica (botón "+ Agregar Bloque de Pizarra" del panel del
+       día), no este cuadro. Mismo patrón <details> que ya usa Fuerza. */
     const html = cf
-      ? '<div class="s2-h"><span class="sb-step">2</span> Pegar sesión bruta de CrossFit</div>' +
-        '<p class="s2-sub">Pegá el texto tal como te llega: la IA lo divide en Warm-Up y Bloques A, B y C, ' +
+      ? '<details class="step2-details"><summary class="tpl-summary"><span class="sb-step">2</span> Pegar sesión bruta de CrossFit (opcional)<span class="tpl-summary-hint">Herramienta secundaria: pegá texto libre y la IA lo estructura en bloques de pizarra</span></summary>' +
+        '<p class="s2-sub" style="margin-top:10px">Pegá el texto tal como te llega: la IA lo divide en Warm-Up y Bloques A, B y C, ' +
         'con protocolo, escalados, objetivos, coaching tips y estrategia de pacing.</p>' +
         '<textarea id="s2Txt" placeholder="A) Every 2:00 x 7 sets&#10;1 Power Clean + 2 Front Squat @ RPE 8&#10;&#10;B) 5 Sets - 3:00 Work / 2:00 Rest&#10;15 Wall Balls&#10;12 Deadlifts&#10;9 Toes to Bar&#10;&#10;C) 4 Sets Quality&#10;12 GHD hip extensions&#10;20 Hollow Rocks"></textarea>' +
-        '<button type="button" class="btn-ia" id="s2Run">⚡ Estructurar y profesionalizar con IA</button>'
+        '<button type="button" class="btn-ia" id="s2Run">⚡ Estructurar y profesionalizar con IA</button>' +
+      '</details>'
       /* directiva crítica (2026-09) -- colapsado por defecto (acordeón
          táctico): la grilla de categorías ocupaba una franja grande de
          pantalla apenas se entraba al Builder, incluso para un coach que ya
