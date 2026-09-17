@@ -7403,6 +7403,16 @@ const calc1rmEl = document.getElementById('calc1rm');
 const calcTableEl = document.getElementById('calcTable');
 const PCT_TABLE = [50,55,60,65,70,75,80,85,90,95,100];
 function roundTo(value, step){ return Math.round(value/step) * step; }
+/* FIX (bug matemático reportado): con reps===1 el 1RM DEBE ser idéntico
+   al peso levantado -- Epley/Brzycki sin este caso especial infla el
+   100% (190kg x 1 rep estimaba 197.5kg en vez de 190kg). Con reps>1 se
+   capea a 12 para no proyectar 1RMs irreales en series de altas reps. */
+function calcOneRM(w, r){
+  if(!(w > 0)) return 0;
+  if(r <= 1) return w;
+  const rCap = Math.min(r, 12);
+  return w * (1 + rCap/30);
+}
 function recalcOneRM(){
   const w = parseFloat(calcWeightEl.value);
   const r = parseFloat(calcRepsEl.value);
@@ -7412,7 +7422,7 @@ function recalcOneRM(){
     calcTableEl.innerHTML = '<p class="calc-empty">Ingresá peso y repeticiones para calcular tu 1RM estimado (fórmula de Epley) y la tabla de porcentajes.</p>';
     return;
   }
-  const oneRM = w * (1 + r/30);
+  const oneRM = calcOneRM(w, r);
   calc1rmEl.textContent = '1RM Estimado: ' + roundTo(oneRM, step) + ' kg';
   calcTableEl.innerHTML = PCT_TABLE.map(function(pct){
     const val = roundTo(oneRM * pct/100, step);
@@ -8180,6 +8190,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            /met.?con|wod|bloque c|amrap|emom|for time|chipper/i.test((block.title||'') + ' ' + (block.subtitle||'') + ' ' + etiquetaWi);
   }
   var CF_FASE_LB = { warmup:'WARM-UP', strength:'SKILL / STRENGTH', metcon:'WOD / METCON', cardio:'HYROX STATIONS', accessory:'ACCESSORY / COOLDOWN' };
+  /* identidad visual táctica por fase (directiva): un glifo distinto por
+     tipo de trabajo para que se reconozca de un vistazo, además del
+     color de borde/tag ya diferenciado por CSS (.jp-cf-fase-*). */
+  var CF_FASE_ICON = { warmup:'\\ud83d\\udd25', strength:'\\ud83c\\udfcb\\ufe0f', metcon:'\\u26a1', cardio:'\\ud83c\\udfc3', accessory:'\\ud83e\\udde9' };
   var CF_PARAM_PREFIX = { fortime:'Cap ', chipper:'Cap ', emom:'Cada ' };
   /* solo las fases de competencia/tiempo (WOD-Metcon, Hyrox Stations) llevan
      campo de Score -- Warm-up, Skill/Strength y Accessory/Cooldown no se
@@ -8279,6 +8293,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const c = block.cierre || {};
     const tieneCierre = !!(c.objetivo || c.tips || c.pacing || c.escalado);
     const scoreVisible = !!CF_SCORE_FASES[block.category];
+    /* Accessory/Cooldown no trackea serie por serie: sólo un campo libre
+       de notas de carga/sensaciones, al pie del bloque -- reutiliza
+       state.notes (mismo store que las notas de sesión) con una key
+       propia (sufijo __accnotas) para no pisar ningún otro uso. */
+    const notasVisible = block.category === 'accessory';
+    const notaKey = skey + '|__accnotas';
+    const notaGuardada = (state.notes && state.notes[notaKey]) || '';
 
     const conVideo = block.category === 'accessory';
     const filas = lineas.map(function(l){ return jpCfFila(l, conVideo); }).join('');
@@ -8286,7 +8307,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const html =
       '<div class="wod-board jp-cfboard ' + faseCls + '" data-wodb="' + block.id + '">' +
-        '<div class="jp-cf-tag">[ CROSSFIT &middot; ' + fase + ' ]</div>' +
+        '<div class="jp-cf-tag">[ CROSSFIT &middot; ' + (CF_FASE_ICON[block.category] || '') + ' ' + fase + ' ]</div>' +
         '<div class="jp-cf-title">' + jpCfTituloHtml(block.title) + '</div>' +
         (f ? '<div class="jp-cf-fmtbar"><span class="a">' + f.lb + '</span>' + (paramTxt ? ' <span class="b">' + paramTxt + '</span>' : '') + '</div>' : '') +
         ((block.subtitle && !(block.weekName && block.weekName[weekIdx] && block.weekName[weekIdx] !== block.title))
@@ -8304,6 +8325,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '<label>[ SCORE ]</label>' +
             '<input class="wod-score-in" data-skey="' + skey + '" placeholder="' + ph + '" value="' + (guardado || '') + '" />' +
             '<span class="ws-ok" data-sok="' + skey + '">' + (guardado ? '✓ guardado' : '') + '</span>' +
+          '</div>' : '') +
+        (notasVisible ?
+          '<div class="jp-cf-notas">' +
+            '<label>[ NOTAS DE CARGA / SENSACIONES ]</label>' +
+            '<input class="jp-cf-notas-in" data-nkey="' + notaKey + '" placeholder="Ej: Usé KB de 24kg y banda roja" value="' + String(notaGuardada).replace(/"/g, '&quot;') + '" />' +
           '</div>' : '') +
       '</div>';
     const body = blockEl.querySelector('.block-body');
@@ -8334,6 +8360,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         if(ok) ok.textContent = inp.value ? '✓ guardado' : '';
       });
       inp.addEventListener('click', function(e){ e.stopPropagation(); });
+    }
+    const notasInp = body ? body.querySelector('.jp-cf-notas-in') : null;
+    if(notasInp && !notasInp.dataset.on){
+      notasInp.dataset.on = '1';
+      notasInp.addEventListener('input', function(){
+        state.notes = state.notes || {};
+        state.notes[notasInp.dataset.nkey] = notasInp.value;
+        saveProgress();
+      });
+      notasInp.addEventListener('click', function(e){ e.stopPropagation(); });
     }
   }
 
@@ -10297,7 +10333,8 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     var k = parseFloat(kg) || 0, r = parseInt(reps, 10) || 1;
     if(!(k > 0)) return 0;
     if(r <= 1) return k;
-    return Math.round(k * (1 + r / 30) * 10) / 10;
+    var rCap = Math.min(r, 12);
+    return Math.round(k * (1 + rCap / 30) * 10) / 10;
   }
   window.CoachE1RM = e1rm;
 
@@ -23048,12 +23085,12 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-warmup{ border-top-color:rgba(245,
 body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-strength{ border-top-color:rgba(56,189,248,.4) !important; }
 body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-metcon{ border-top-color:rgba(224,109,45,.5) !important; }
 body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-cardio{ border-top-color:rgba(45,212,191,.4) !important; }
-body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-accessory{ border-top-color:rgba(139,124,246,.35) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-accessory{ border-top-color:rgba(129,140,248,.4) !important; }
 .jp-cfboard.jp-cf-fase-warmup .jp-cf-tag{ color:#F5C518; }
 .jp-cfboard.jp-cf-fase-strength .jp-cf-tag{ color:#38BDF8; }
 .jp-cfboard.jp-cf-fase-metcon .jp-cf-tag{ color:#E06D2D; }
 .jp-cfboard.jp-cf-fase-cardio .jp-cf-tag{ color:#2DD4BF; }
-.jp-cfboard.jp-cf-fase-accessory .jp-cf-tag{ color:#8B7CF6; }
+.jp-cfboard.jp-cf-fase-accessory .jp-cf-tag{ color:#818CF8; }
 .jp-cfboard .jp-cf-tag{
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:.1em;
   text-transform:uppercase; color:#38BDF8; margin-bottom:8px;
@@ -23127,6 +23164,21 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-accessory{ border-top-color:rgba(1
   background:rgba(0,0,0,.35) !important; color:#EDEFF2 !important; font-family:'JetBrains Mono',monospace; font-size:14px !important;
 }
 .jp-cfboard .ws-ok{ color:#48D597 !important; font-size:11px; font-weight:700; }
+/* Accessory/Cooldown: campo libre de notas de carga/sensaciones en vez
+   del tracker serie por serie -- mismo tratamiento visual que [ SCORE ]
+   pero en violeta, la identidad de esta fase. */
+.jp-cfboard .jp-cf-notas{
+  margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,.1);
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+}
+.jp-cfboard .jp-cf-notas label{
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:10.5px;
+  letter-spacing:.08em; text-transform:uppercase; color:#818CF8;
+}
+.jp-cfboard .jp-cf-notas input{
+  flex:1; min-width:160px; padding:9px 11px; border-radius:8px; border:1px solid rgba(255,255,255,.16);
+  background:rgba(0,0,0,.35); color:#EDEFF2; font-family:'Inter',sans-serif; font-size:13px;
+}
 
 /* Vault Técnico del Día */
 .jp-vault-day{
@@ -23438,6 +23490,23 @@ function buildProgramConfig(ath){
           });
           if(Object.keys(manual).length) out.itemVideos = manual;
         }
+        /* auto-conversión de % a kilos (directiva): "Back Squat @ 85%" con
+           el 1RM del alumno ya cargado (ath.marcas, ver marcaDelAlumno())
+           se resuelve acá mismo en el texto -- "Back Squat @ 85% (~XXkg)"
+           -- así el parser jerárquico de la Pizarra (jpCfSplit/jpCfFila)
+           no necesita saber nada de 1RM, sólo sigue leyendo texto plano.
+           Sin marca cargada, la línea queda intacta (@ 85% a secas). */
+        if(bloqueCF){
+          out.items = out.items.map(it => {
+            const m = String(it).match(RX_PCT_LIFT);
+            if(!m || !LIFT_TRONCAL.test(m[1])) return it;
+            const pct = parseInt(m[2], 10);
+            const rm = marcaDelAlumno(ath, m[1].trim());
+            if(!(rm > 0)) return it;
+            const kg = Math.round((rm * pct / 100) / 2.5) * 2.5;
+            return m[1].trim() + ' @ ' + pct + '% (~' + kg + ' kg)';
+          });
+        }
         if(b.cardioMinutes) out.cardioMinutes = parseInt(b.cardioMinutes,10) || 0;
       }
 
@@ -23619,6 +23688,13 @@ function normEx(t){
   return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
+/* auto-conversión de % a kilos en la Pizarra (directiva): sólo los
+   movimientos troncales de Weightlifting/CrossFit listados acá activan
+   la conversión -- una línea "Snatch @ 75%" (o "Arranque @ 75%") con el
+   1RM del alumno ya cargado en su ficha (ath.marcas) se resuelve en
+   compile() mismo, ver el bloque 'else' (list/pizarra) más abajo. */
+const RX_PCT_LIFT = /^(.*?)@\s*(\d{1,3})\s*%\s*$/;
+const LIFT_TRONCAL = /\b(snatch|arranque|clean\s*(?:&|and|y)?\s*jerk|dos\s*tiempos|cargada|front\s*squat|sentadilla\s*frontal|back\s*squat|sentadilla(?:\s*trasera)?|deadlift|peso\s*muerto)\b/i;
 function marcaDelAlumno(ath, nombre){
   if(!ath || !ath.marcas || !nombre) return 0;
   const n = normEx(nombre);
