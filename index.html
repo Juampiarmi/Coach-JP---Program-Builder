@@ -23408,7 +23408,49 @@ function buildProgramConfig(ath){
       };
       if(b.objective) out.objective = b.objective;
 
-      if(b.tipo === 'block'){
+      /* SUPRESIÓN TOTAL DEL TRACKER DE RONDAS/SETS EN CROSSFIT (directiva
+         crítica): un bloque legado tipo 'block'/'superset'/'finisher'/
+         'hyrox' -- guardado antes de que existiera la Pizarra, o migrado
+         desde una plantilla de Bodybuilding -- SIEMPRE montaba el tracker
+         de series (renderSetRows) y el conversor a "RONDA N" con casilleros
+         de KG x REPS (agrupado(), ~línea 17530), sin importar la disciplina
+         del plan. Si el plan es CrossFit (discCF), se aplana ACÁ a texto
+         plano de Pizarra (out.items, sin isBlock/isSuperset/isFinisher/
+         isHyrox) -- el compilado queda idéntico a un bloque 'list' real, así
+         que decorar()/pizarra() lo toman tal cual (mismo gate ya existente:
+         Array.isArray(b.items)) y renderBlockInner() cae solo en su rama
+         genérica (ninguna de las flags isX está seteada), sin tocar en
+         absoluto la lógica de Sports & Bodybuilding (discCF siempre es
+         false ahí, así que esta rama nunca se activa). */
+      if(discCF && !esGenerico(b)){
+        var itemsPlanos = [];
+        if(b.tipo === 'block'){
+          const ex = getEx(b.exId);
+          const nm = exNombreCorto(ex) || b.coreNombre || (b.titulo || 'Ejercicio (sin vincular)');
+          addVideo(nm, ex);
+          itemsPlanos = [nm + (b.reps ? ' — ' + b.reps : '')];
+        } else if(b.tipo === 'superset'){
+          itemsPlanos = (b.ejercicios||[]).map(e => {
+            const ex = getEx(e.exId), nm = exNombreCorto(ex) || e.nombre || 'Ejercicio (sin vincular)';
+            addVideo(nm, ex);
+            return nm + (e.reps ? ' — ' + e.reps : '');
+          });
+        } else if(b.tipo === 'finisher'){
+          itemsPlanos = (b.fin||[]).map(e => {
+            const ex = getEx(e.exId), nm = exNombreCorto(ex) || e.nombre || 'Ejercicio (sin vincular)';
+            addVideo(nm, ex);
+            return nm + (e.repsRange ? ' — ' + e.repsRange : '');
+          });
+        } else if(b.tipo === 'hyrox'){
+          itemsPlanos = (b.movements||[]).slice();
+          itemsPlanos.forEach(m => {
+            const r = resolveExacto(m);
+            if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
+          });
+        }
+        out.items = itemsPlanos;
+      }
+      else if(b.tipo === 'block'){
         const ex = getEx(b.exId);
         const nm = exNombreCorto(ex) || b.coreNombre || (b.titulo || 'Ejercicio (sin vincular)');
         const nmEn = exNombreIngles(ex);
