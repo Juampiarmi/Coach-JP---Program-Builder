@@ -1709,6 +1709,60 @@ const getAth = id => S.athletes.find(a => a.id === id) || null;
 const getEx  = id => S.exercises.find(e => e.id === id) || null;
 const active = () => getAth(S.activeId);
 const fullName = a => a ? ((a.nombre||'') + ' ' + (a.apellido||'')).trim() : '';
+/* ---------- AUDITORÍA Y AUTORREPARACIÓN DE PLANES (consola) ----------
+   Directiva crítica (auditoría de 33 atletas / fix Karina Dantur, Día 4):
+   un exId que ya no matchea contra la biblioteca (ejercicio borrado o
+   renombrado) dejaba el nombre irrecuperable en superset/finisher, porque
+   esos sub-ejercicios sólo guardan exId -- nunca un texto de respaldo. El
+   compilador ya blinda el fallback (exNombreCorto(ex) || e.nombre ||
+   'Ejercicio (sin vincular)'), pero e.nombre nunca existía: esta función
+   lo completa una sola vez, a mano, ejecutada por el coach en SU propio
+   navegador (los datos reales de los 33 atletas viven en su localStorage,
+   nunca en este repo). Ejecutar desde la consola del Builder ya abierto:
+     window.auditarYRepararPlanes()
+   Recorre S.plans, detecta exId huérfanos sin ningún respaldo de texto,
+   les asigna un nombre identificable (nunca deja la fila muda) y guarda. */
+window.auditarYRepararPlanes = function(){
+  const detalle = [];
+  let atletasRevisados = 0, erroresReparados = 0;
+  const FALLBACK = 'Ejercicio (revisar vínculo)';
+  S.athletes.forEach(function(ath){
+    const p = S.plans[ath.id];
+    if(!p) return;
+    atletasRevisados++;
+    (p.dias || []).forEach(function(d){
+      (d.bloques || []).forEach(function(b){
+        if(b.tipo === 'block' && b.exId){
+          if(!getEx(b.exId) && !b.titulo){
+            b.titulo = b.coreNombre || FALLBACK;
+            erroresReparados++;
+            detalle.push({ atleta: fullName(ath), dia: d.short || d.id, bloque: 'block', accion: 'título de respaldo asignado' });
+          }
+        } else if(b.tipo === 'superset'){
+          (b.ejercicios || []).forEach(function(e){
+            if(e.exId && !getEx(e.exId) && !e.nombre){
+              e.nombre = FALLBACK;
+              erroresReparados++;
+              detalle.push({ atleta: fullName(ath), dia: d.short || d.id, bloque: 'superset', accion: 'nombre de respaldo asignado' });
+            }
+          });
+        } else if(b.tipo === 'finisher'){
+          (b.fin || []).forEach(function(e){
+            if(e.exId && !getEx(e.exId) && !e.nombre){
+              e.nombre = FALLBACK;
+              erroresReparados++;
+              detalle.push({ atleta: fullName(ath), dia: d.short || d.id, bloque: 'finisher', accion: 'nombre de respaldo asignado' });
+            }
+          });
+        }
+      });
+    });
+  });
+  if(erroresReparados && typeof save === 'function') save();
+  console.log('[AUDITORÍA] Atletas revisados: ' + atletasRevisados + ' | Errores reparados: ' + erroresReparados);
+  if(detalle.length && console.table) console.table(detalle);
+  return { atletasRevisados: atletasRevisados, erroresReparados: erroresReparados, detalle: detalle };
+};
 const initials = a => {
   const n = (a.nombre||'?').trim()[0] || '?';
   const p = (a.apellido||'').trim()[0] || '';
@@ -5545,7 +5599,16 @@ function videoLinkHtml(name){
     'style="background-image:url(https://img.youtube.com/vi/' + ytid + '/mqdefault.jpg)" ' +
     'title="Ver la t\\u00e9cnica" aria-label="Ver la t\\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
-  return '';
+  /* FIX (auditoría Karina Dantur): sin match en la biblioteca -- el ID
+     puede estar roto o el ejercicio renombrado/borrado. Nunca se deja el
+     nombre sin ninguna vía de acceso al video: acceso directo de búsqueda
+     en YouTube con el nombre ya guardado, en vez de un ícono ausente.
+     Reutiliza .vsearch, la clase de fallback que ya existía en el CSS
+     (~línea 8915) pero que había quedado sin ningún generador conectado. */
+  return ' <a class="video-link jp-play vsearch" href="https://www.youtube.com/results?search_query=' +
+    encodeURIComponent(key + ' t\\u00e9cnica ejercicio') + '" target="_blank" rel="noopener noreferrer" ' +
+    'title="Buscar t\\u00e9cnica en YouTube" aria-label="Buscar t\\u00e9cnica de ' + key.replace(/"/g,'') + ' en YouTube">' +
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg><span class="mag">\\ud83d\\udd0d</span></a>';
 }
 /* Micro-badge "EN" (2026-09, refinamiento visual): el nombre en inglés del
    ejercicio ya no se muestra pegado al español en la cabecera -- compile()
@@ -8167,7 +8230,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(m2 && m2[1].trim()) return { nm: m2[1].trim(), val: m2[2].trim() };
     return { nm: l, val: '' };
   }
-  function jpCfFila(raw){
+  function jpCfFila(raw, conVideo){
     const l = String(raw || '').trim();
     if(jpCfEsHeader(l)){
       const txt = l.replace(/^\\s*#+\\s*/, '');
@@ -8189,8 +8252,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     const partes = jpCfSplit(l);
+    /* estrategia de videos (directiva): sólo Accessory/Cooldown vincula
+       video por ejercicio, igual que Sports & Bodybuilding -- WOD y
+       Fuerza/Skill quedan tácticos y limpios, sin miniaturas flotantes. */
+    const video = conVideo ? videoLinkHtml(partes.nm) : '';
     return '<div class="jp-cf-row">' +
-        '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
+        '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + video + '</span>' +
         (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
       '</div>';
   }
@@ -8213,7 +8280,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const tieneCierre = !!(c.objetivo || c.tips || c.pacing || c.escalado);
     const scoreVisible = !!CF_SCORE_FASES[block.category];
 
-    const filas = lineas.map(jpCfFila).join('');
+    const conVideo = block.category === 'accessory';
+    const filas = lineas.map(function(l){ return jpCfFila(l, conVideo); }).join('');
 
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const html =
@@ -11966,6 +12034,15 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     return /complex/i.test(t) || (/weightlifting|halterofilia/i.test(t) && /\\+/.test((bl.querySelector('.ex-name') || {}).textContent || ''));
   }
   function esWodBloque(bl){
+    /* FIX (estrategia de videos en CrossFit/Hyrox): Accessory/Cooldown
+       vincula video por ejercicio igual que Sports & Bodybuilding -- no
+       se agrupa en el glosario final como el resto de las fases de la
+       Pizarra (Warm-up/Skill/WOD/Hyrox Stations), donde sí se suprime.
+       .jp-cfboard también carga la clase .wod-board (identidad visual
+       compartida), así que sin esta excepción el chequeo de abajo
+       (bl.querySelector('.wod-board')) le vaciaba el video recién
+       auto-matcheado en compile() -- limpiar() lo movía al glosario. */
+    if(bl.querySelector('.jp-cfboard.jp-cf-fase-accessory')) return false;
     /* en la vista CrossFit todos los videos se agrupan en el glosario final */
     if(document.body.classList.contains('cf-modo')) return true;
     if(bl.classList.contains('cat-metcon')) return true;
@@ -23281,7 +23358,7 @@ function buildProgramConfig(ath){
 
       if(b.tipo === 'block'){
         const ex = getEx(b.exId);
-        const nm = exNombreCorto(ex) || b.coreNombre || (b.titulo || 'Ejercicio');
+        const nm = exNombreCorto(ex) || b.coreNombre || (b.titulo || 'Ejercicio (sin vincular)');
         const nmEn = exNombreIngles(ex);
         addVideo(nm, ex);
         Object.assign(out, {
@@ -23296,7 +23373,7 @@ function buildProgramConfig(ath){
       }
       else if(b.tipo === 'superset'){
         const list = (b.ejercicios||[]).map(e => {
-          const ex = getEx(e.exId), nm = exNombreCorto(ex) || e.nombre || 'Ejercicio';
+          const ex = getEx(e.exId), nm = exNombreCorto(ex) || e.nombre || 'Ejercicio (sin vincular)';
           const nmEn = exNombreIngles(ex);
           addVideo(nm, ex);
           return { name: nm, nameEn: nmEn, reps: e.reps || '', tempo: e.tempo || '', tip: e.tip || '', metodologia: e.metodologia || '' };
@@ -23311,8 +23388,15 @@ function buildProgramConfig(ath){
         if(b.altNote) out.altNote = b.altNote;
       }
       else if(b.tipo === 'finisher'){
+        /* FIX (auditoría Karina Dantur, Día 4): a diferencia de superset
+           (arriba), este fallback nunca miraba e.nombre -- si el exId
+           quedaba huérfano (ejercicio borrado/renombrado en la biblioteca),
+           el nombre real se perdía sin remedio y la fila mostraba el
+           genérico "Ejercicio" sin ninguna pista de cuál era. Se agrega la
+           misma cadena de respaldo que ya usa superset, más un texto final
+           identificable en vez de un "Ejercicio" mudo. */
         const list = (b.fin||[]).map(e => {
-          const ex = getEx(e.exId), nm = exNombreCorto(ex) || 'Ejercicio';
+          const ex = getEx(e.exId), nm = exNombreCorto(ex) || e.nombre || 'Ejercicio (sin vincular)';
           const nmEn = exNombreIngles(ex);
           addVideo(nm, ex);
           return { name: nm, nameEn: nmEn, repsRange: e.repsRange || '', tip: e.tip || '' };
@@ -23329,16 +23413,23 @@ function buildProgramConfig(ath){
       else {
         /* vinculación estricta: el video se registra sólo con coincidencia exacta,
            y sólo si no es un bloque CrossFit (pizarra) -- ahí el link se pega a mano
-           (partirVideoManual, abajo) porque el texto es libre y el auto-match no es confiable. */
-        if(!bloqueCF){
+           (partirVideoManual, abajo) porque el texto es libre y el auto-match no es confiable.
+           EXCEPCIÓN (directiva de estrategia de videos): la fase Accessory/Cooldown
+           SÍ admite auto-match idéntico a Sports & Bodybuilding -- ahí cada línea
+           suele ser un movimiento puntual real (igual que un bloque estructurado),
+           a diferencia de un WOD/Skill de texto libre donde el auto-match no es
+           confiable. */
+        const accesorioConVideo = bloqueCF && b.category === 'accessory';
+        if(!bloqueCF || accesorioConVideo){
           (b.items||[]).forEach(it => {
             const r = resolveExacto(it);
             if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
           });
         }
         out.items = (b.items||[]).slice();
-        /* en CrossFit el video sólo aparece si el coach pegó el link en la línea */
-        if(bloqueCF){
+        /* en CrossFit el video sólo aparece si el coach pegó el link en la línea
+           -- salvo Accessory, que ya auto-matchea arriba como Bodybuilding */
+        if(bloqueCF && !accesorioConVideo){
           const manual = {};
           out.items = out.items.map((it, ix) => {
             const r = partirVideoManual(it);
@@ -23353,8 +23444,10 @@ function buildProgramConfig(ath){
       /* la supresión total del botón de video (sinVideo) sólo aplica a pizarras
          de CrossFit (texto libre) -- un bloque estructurado (block/superset/
          finisher/hyrox) siempre apunta a un ejercicio puntual vía exId/getEx(),
-         así que su video (si existe en la biblioteca) debe mostrarse siempre. */
-      if(bloqueCF && esGenerico(b)) out.sinVideo = true;
+         así que su video (si existe en la biblioteca) debe mostrarse siempre.
+         Accessory/Cooldown queda afuera de la supresión: ahí el video se
+         muestra igual que en Bodybuilding (ver accesorioConVideo arriba). */
+      if(bloqueCF && esGenerico(b) && b.category !== 'accessory') out.sinVideo = true;
 
       /* pizarra modular de CrossFit: formato del bloque, modo de video y cierre técnico */
       if(b.cfModo === 'tech' || b.cfModo === 'board') out.boardMode = b.cfModo;
