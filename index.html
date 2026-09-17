@@ -8017,6 +8017,32 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function jpMdBold(t){ return String(t || '').replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>'); }
   function jpCfEsHeader(l){ return /^\\s*#+\\s*/.test(l) || /:\\s*$/.test(l.replace(/\\*\\*/g, '').trim()); }
   function jpCfTieneCarga(l){ return /@\\s*[\\d.]/.test(l) || /\\d[\\d.\\/]*\\s*(?:kg|kgs|lb|lbs|cm|m)\\b/i.test(l); }
+  /* esquema de reps puro (ej. "21-15-9", "5-5-5-5-5") -- pastilla táctica
+     propia, no es ni encabezado ni movimiento con carga */
+  function jpCfEsEsquema(l){ return /^\\d+(-\\d+){1,}$/.test(l.trim()); }
+  /* resalta el número/unidad inicial de una línea de movimiento (reps,
+     calorías, minutos) en Cyan Táctico -- el resto del nombre del
+     ejercicio queda en blanco nítido. Sólo reconoce unidades reales
+     (kg/cm/min/seg/cal/reps/rondas/%) para no comerse la primera palabra
+     de ejercicios que arrancan con número pero no traen unidad (ej.
+     "10 Front squats" -> "10" + "Front squats", nunca "10 Front"). */
+  var JP_CF_UNIT_RX = /^(\\d+(?:[.,]\\d+)?)\\s*(kgs?|lbs?|cms?|kms?|mins?|minutos?|segs?|segundos?|cals?|reps?|rondas?|rounds?|%|m)?\\s*(.*)$/i;
+  function jpCfHighlightNum(t){
+    const raw = String(t || '');
+    const m = raw.match(JP_CF_UNIT_RX);
+    if(!m || !m[1]) return jpMdBold(raw);
+    const num = m[1], unit = m[2] || '', rest = (m[3] || '').trim();
+    return '<span class="jp-cf-num">' + num + (unit ? ' ' + unit : '') + '</span>' + (rest ? ' ' + jpMdBold(rest) : '');
+  }
+  /* título del bloque con tratamiento de marca: primera palabra en blanco
+     puro, el remate en Naranja Marca -- ej. "EL CIERRE" -> "EL" blanco +
+     "CIERRE" naranja. */
+  function jpCfTituloHtml(t){
+    const s = String(t || 'WOD');
+    const i = s.indexOf(' ');
+    if(i < 0) return '<span class="jp-cf-t1">' + s + '</span>';
+    return '<span class="jp-cf-t1">' + s.slice(0, i) + '</span> <span class="jp-cf-t2">' + s.slice(i + 1) + '</span>';
+  }
   function jpCfSplit(l){
     const i = l.indexOf(' — ');
     if(i >= 0) return { nm: l.slice(0, i).trim(), val: l.slice(i + 3).trim() };
@@ -8032,6 +8058,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const txt = l.replace(/^\\s*#+\\s*/, '');
       return '<div class="jp-cf-row jp-cf-header">' + jpMdBold(txt) + '</div>';
     }
+    if(jpCfEsEsquema(l)){
+      return '<div class="jp-cf-row jp-cf-scheme">' + l.trim() + '</div>';
+    }
     if(/^\\s*\\d+\\.\\s/.test(l) && l.indexOf(' — ') < 0 && !jpCfTieneCarga(l)){
       return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
@@ -8046,7 +8075,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     const partes = jpCfSplit(l);
     return '<div class="jp-cf-row">' +
-        '<span class="jp-cf-rn">' + jpMdBold(partes.nm) + '</span>' +
+        '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
         (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
       '</div>';
   }
@@ -8071,10 +8100,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
 
     const filas = lineas.map(jpCfFila).join('');
 
+    const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const html =
-      '<div class="wod-board jp-cfboard" data-wodb="' + block.id + '">' +
+      '<div class="wod-board jp-cfboard ' + faseCls + '" data-wodb="' + block.id + '">' +
         '<div class="jp-cf-tag">[ CROSSFIT &middot; ' + fase + ' ]</div>' +
-        '<div class="jp-cf-title">' + (block.title || 'WOD') + '</div>' +
+        '<div class="jp-cf-title">' + jpCfTituloHtml(block.title) + '</div>' +
         (f ? '<div class="jp-cf-fmtbar"><span class="a">' + f.lb + '</span>' + (paramTxt ? ' <span class="b">' + paramTxt + '</span>' : '') + '</div>' : '') +
         ((block.subtitle && !(block.weekName && block.weekName[weekIdx] && block.weekName[weekIdx] !== block.title))
           ? '<div class="jp-cf-row jp-cf-note">' + block.subtitle + '</div>' : '') +
@@ -22685,18 +22715,37 @@ body.cf-disc .block:has(.jp-cfboard) > .block-body > *:not(.jp-cfboard){ display
   background:rgba(14,19,28,.85) !important;
   backdrop-filter:blur(8px) !important; -webkit-backdrop-filter:blur(8px) !important;
   border:1px solid rgba(255,255,255,.08) !important;
+  border-top:2px solid rgba(224,109,45,.5) !important;
   border-radius:10px !important;
   padding:14px !important;
   display:block !important;
 }
+/* codificación cromática táctica por fase: borde superior + color del tag
+   propios de cada etapa de la sesión (branding editorial suizo).
+   Prefijo body.cf-disc + .wod-board repetido a propósito: el sistema viejo
+   de "disciplina" (.block.disc-warm/.disc-met/... .wod-board{border-color
+   !important}, ~línea 15451) tiene 3 clases de especificidad y si no, gana
+   él y pisa el borde por fase acá definido. */
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-warmup{ border-top-color:rgba(245,197,24,.4) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-strength{ border-top-color:rgba(56,189,248,.4) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-metcon{ border-top-color:rgba(224,109,45,.5) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-cardio{ border-top-color:rgba(45,212,191,.4) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-accessory{ border-top-color:rgba(139,124,246,.35) !important; }
+.jp-cfboard.jp-cf-fase-warmup .jp-cf-tag{ color:#F5C518; }
+.jp-cfboard.jp-cf-fase-strength .jp-cf-tag{ color:#38BDF8; }
+.jp-cfboard.jp-cf-fase-metcon .jp-cf-tag{ color:#E06D2D; }
+.jp-cfboard.jp-cf-fase-cardio .jp-cf-tag{ color:#2DD4BF; }
+.jp-cfboard.jp-cf-fase-accessory .jp-cf-tag{ color:#8B7CF6; }
 .jp-cfboard .jp-cf-tag{
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:.1em;
   text-transform:uppercase; color:#38BDF8; margin-bottom:8px;
 }
 .jp-cfboard .jp-cf-title{
   font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:1.35rem;
-  color:#fff; text-transform:uppercase; line-height:1.05; margin-bottom:10px;
+  text-transform:uppercase; line-height:1.05; margin-bottom:10px;
 }
+.jp-cfboard .jp-cf-t1{ color:#fff; }
+.jp-cfboard .jp-cf-t2{ color:#E06D2D; }
 .jp-cfboard .jp-cf-fmtbar{
   font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13px; letter-spacing:.04em;
   padding:8px 11px; border-radius:8px; background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.3);
@@ -22720,11 +22769,21 @@ body.cf-disc .block:has(.jp-cfboard) > .block-body > *:not(.jp-cfboard){ display
   padding:5px 10px; margin:1px 0; border-radius:20px;
   background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.3);
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:10.5px;
-  letter-spacing:.05em; text-transform:uppercase; color:#7CC5E8;
+  letter-spacing:.05em; text-transform:uppercase; color:#38BDF8;
+}
+/* esquema de reps (21-15-9, 5-5-5-5-5): pastilla táctica en Naranja Marca,
+   distinta de los badges de transición (Cap/Rest/AMRAP suelto) en Cyan */
+.jp-cfboard .jp-cf-row.jp-cf-scheme{
+  display:inline-flex; align-items:center; width:fit-content;
+  padding:5px 10px; margin:1px 0; border-radius:20px;
+  background:rgba(224,109,45,.12); border:1px solid rgba(224,109,45,.4);
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:11px;
+  letter-spacing:.05em; color:#E06D2D;
 }
 .jp-cfboard .jp-cf-rn{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#EDEFF2; }
 .jp-cfboard .jp-cf-rv{ font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; flex-shrink:0; text-align:right; }
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
+.jp-cfboard .jp-cf-num{ color:#38BDF8; font-weight:800; }
 .jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.12); }
 .jp-cfboard details.jp-cf-acc summary{
   cursor:pointer; list-style:none; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px;
