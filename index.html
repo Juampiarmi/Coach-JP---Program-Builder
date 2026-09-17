@@ -6746,6 +6746,17 @@ const ROL_BLOQUE_CAT = { strength:'Principal', accessory:'Accesorio', metcon:'Fi
    -- "metcon" ahí NO es "Finisher", así que el pill de cada bloque usa un
    vocabulario propio en vez del de ROL_BLOQUE_CAT (pensado para musculación). */
 const ROL_BLOQUE_CAT_CF = { warmup:'Warm-Up', strength:'Skill / Strength', metcon:'WOD / Metcon', cardio:'Hyrox Stations', accessory:'Accessory / Cooldown' };
+/* placeholder que el compilador del Builder auto-completa en bloques vacíos
+   (ver Módulo 44, "auto-fill vacío") -- si es lo único que trae el bloque,
+   para el alumno es un bloque sin contenido real y no debe renderizarse.
+   Global (no dentro del IIFE de pizarra()) porque tanto renderBlock() acá
+   como pizarra() más abajo necesitan la misma regla. */
+const CF_PLACEHOLDER = 'Cargá acá los ítems del bloque, uno por línea';
+function esBloqueVacioCF(block){
+  const items = (block.items || []).map(x => String(x || '').trim()).filter(Boolean);
+  if(!items.length) return true;
+  return items.length === 1 && items[0] === CF_PLACEHOLDER;
+}
 function rolBloque(block){
   if(window.COACH_DISCIPLINA !== 'sports') return ROL_BLOQUE_CAT_CF[block.category] || 'WOD';
   if(block.isSuperset) return block.isTriset ? 'Triset' : 'Biset';
@@ -6754,6 +6765,10 @@ function rolBloque(block){
   return ROL_BLOQUE_CAT[block.category] || 'Bloque';
 }
 function renderBlock(block, day, weekIdx, idx){
+  /* purga de bloques vacíos/placeholder en CrossFit: si el bloque de
+     pizarra no trae contenido real, no se renderiza ni la tarjeta ni su
+     envoltorio -- una card vacía no le sirve al alumno para nada. */
+  if(window.COACH_DISCIPLINA !== 'sports' && Array.isArray(block.items) && esBloqueVacioCF(block)) return '';
   const meta = CATEGORY_META[block.category] || CATEGORY_META.strength;
   const catCls = block.category === 'strength' ? 'cat-strength' : (block.category === 'warmup' ? 'cat-warmup' : (block.category === 'metcon' ? 'cat-metcon' : (block.category === 'cardio' ? 'cat-cardio' : 'cat-accessory')));
   const done = isBlockDone(weekIdx, day.id, block.id);
@@ -7988,6 +8003,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   var CF_FASE_LB = { warmup:'WARM-UP', strength:'SKILL / STRENGTH', metcon:'WOD / METCON', cardio:'HYROX STATIONS', accessory:'ACCESSORY / COOLDOWN' };
   var CF_PARAM_PREFIX = { fortime:'Cap ', chipper:'Cap ', emom:'Cada ' };
+  /* solo las fases de competencia/tiempo (WOD-Metcon, Hyrox Stations) llevan
+     campo de Score -- Warm-up, Skill/Strength y Accessory/Cooldown no se
+     puntúan, no importa qué formato tenga el texto suelto. */
+  var CF_SCORE_FASES = { metcon:1, cardio:1 };
+  /* esBloqueVacioCF() es global (ver renderBlock() más arriba en el script
+     anterior) -- misma función, un solo lugar donde vive la definición. */
   /* parser de la Pizarra Táctica: distingue encabezado de protocolo (termina en
      ':' o arranca con '#'), instrucción/transición de intervalo (Cap/Rest/AMRAP
      suelto, ya sin prescripción de carga) y movimiento real (reps+nombre con
@@ -7996,6 +8017,32 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function jpMdBold(t){ return String(t || '').replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>'); }
   function jpCfEsHeader(l){ return /^\\s*#+\\s*/.test(l) || /:\\s*$/.test(l.replace(/\\*\\*/g, '').trim()); }
   function jpCfTieneCarga(l){ return /@\\s*[\\d.]/.test(l) || /\\d[\\d.\\/]*\\s*(?:kg|kgs|lb|lbs|cm|m)\\b/i.test(l); }
+  /* esquema de reps puro (ej. "21-15-9", "5-5-5-5-5") -- pastilla táctica
+     propia, no es ni encabezado ni movimiento con carga */
+  function jpCfEsEsquema(l){ return /^\\d+(-\\d+){1,}$/.test(l.trim()); }
+  /* resalta el número/unidad inicial de una línea de movimiento (reps,
+     calorías, minutos) en Cyan Táctico -- el resto del nombre del
+     ejercicio queda en blanco nítido. Sólo reconoce unidades reales
+     (kg/cm/min/seg/cal/reps/rondas/%) para no comerse la primera palabra
+     de ejercicios que arrancan con número pero no traen unidad (ej.
+     "10 Front squats" -> "10" + "Front squats", nunca "10 Front"). */
+  var JP_CF_UNIT_RX = /^(\\d+(?:[.,]\\d+)?)\\s*(kgs?|lbs?|cms?|kms?|mins?|minutos?|segs?|segundos?|cals?|reps?|rondas?|rounds?|%|m)?\\s*(.*)$/i;
+  function jpCfHighlightNum(t){
+    const raw = String(t || '');
+    const m = raw.match(JP_CF_UNIT_RX);
+    if(!m || !m[1]) return jpMdBold(raw);
+    const num = m[1], unit = m[2] || '', rest = (m[3] || '').trim();
+    return '<span class="jp-cf-num">' + num + (unit ? ' ' + unit : '') + '</span>' + (rest ? ' ' + jpMdBold(rest) : '');
+  }
+  /* título del bloque con tratamiento de marca: primera palabra en blanco
+     puro, el remate en Naranja Marca -- ej. "EL CIERRE" -> "EL" blanco +
+     "CIERRE" naranja. */
+  function jpCfTituloHtml(t){
+    const s = String(t || 'WOD');
+    const i = s.indexOf(' ');
+    if(i < 0) return '<span class="jp-cf-t1">' + s + '</span>';
+    return '<span class="jp-cf-t1">' + s.slice(0, i) + '</span> <span class="jp-cf-t2">' + s.slice(i + 1) + '</span>';
+  }
   function jpCfSplit(l){
     const i = l.indexOf(' — ');
     if(i >= 0) return { nm: l.slice(0, i).trim(), val: l.slice(i + 3).trim() };
@@ -8011,6 +8058,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const txt = l.replace(/^\\s*#+\\s*/, '');
       return '<div class="jp-cf-row jp-cf-header">' + jpMdBold(txt) + '</div>';
     }
+    if(jpCfEsEsquema(l)){
+      return '<div class="jp-cf-row jp-cf-scheme">' + l.trim() + '</div>';
+    }
     if(/^\\s*\\d+\\.\\s/.test(l) && l.indexOf(' — ') < 0 && !jpCfTieneCarga(l)){
       return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
@@ -8025,7 +8075,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     const partes = jpCfSplit(l);
     return '<div class="jp-cf-row">' +
-        '<span class="jp-cf-rn">' + jpMdBold(partes.nm) + '</span>' +
+        '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
         (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
       '</div>';
   }
@@ -8033,8 +8083,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     /* lee las líneas directo del dato compilado (block.items), no del DOM
        ya renderizado -- más robusto y permite el parseo nombre/valor sin
        depender de cómo el renderer genérico haya envuelto cada línea. */
+    if(esBloqueVacioCF(block)) return;
     const lineas = (block.items || []).slice();
-    if(!lineas.length) return;
     const f = formatoEstructurado(block) || formatoDe(block, lineas, weekIdx);
     const min = minutosDe(block, lineas);
     const skey = weekIdx + '|' + dayId + '|' + block.id;
@@ -8046,13 +8096,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const paramTxt = block.cfParam ? ((CF_PARAM_PREFIX[kFmt] || '') + block.cfParam) : (min ? (min + ' min') : '');
     const c = block.cierre || {};
     const tieneCierre = !!(c.objetivo || c.tips || c.pacing || c.escalado);
+    const scoreVisible = !!CF_SCORE_FASES[block.category];
 
     const filas = lineas.map(jpCfFila).join('');
 
+    const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const html =
-      '<div class="wod-board jp-cfboard" data-wodb="' + block.id + '">' +
+      '<div class="wod-board jp-cfboard ' + faseCls + '" data-wodb="' + block.id + '">' +
         '<div class="jp-cf-tag">[ CROSSFIT &middot; ' + fase + ' ]</div>' +
-        '<div class="jp-cf-title">' + (block.title || 'WOD') + '</div>' +
+        '<div class="jp-cf-title">' + jpCfTituloHtml(block.title) + '</div>' +
         (f ? '<div class="jp-cf-fmtbar"><span class="a">' + f.lb + '</span>' + (paramTxt ? ' <span class="b">' + paramTxt + '</span>' : '') + '</div>' : '') +
         ((block.subtitle && !(block.weekName && block.weekName[weekIdx] && block.weekName[weekIdx] !== block.title))
           ? '<div class="jp-cf-row jp-cf-note">' + block.subtitle + '</div>' : '') +
@@ -8064,11 +8116,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             (c.pacing ? '<div class="jp-cf-accrow"><span class="lb">Pacing</span><p>' + c.pacing + '</p></div>' : '') +
             (c.escalado ? '<div class="jp-cf-accrow"><span class="lb">Escalado</span><p>' + c.escalado + '</p></div>' : '') +
           '</details>' : '') +
-        '<div class="wod-score">' +
-          '<label>[ SCORE ]</label>' +
-          '<input class="wod-score-in" data-skey="' + skey + '" placeholder="' + ph + '" value="' + (guardado || '') + '" />' +
-          '<span class="ws-ok" data-sok="' + skey + '">' + (guardado ? '✓ guardado' : '') + '</span>' +
-        '</div>' +
+        (scoreVisible ?
+          '<div class="wod-score">' +
+            '<label>[ SCORE ]</label>' +
+            '<input class="wod-score-in" data-skey="' + skey + '" placeholder="' + ph + '" value="' + (guardado || '') + '" />' +
+            '<span class="ws-ok" data-sok="' + skey + '">' + (guardado ? '✓ guardado' : '') + '</span>' +
+          '</div>' : '') +
       '</div>';
     const body = blockEl.querySelector('.block-body');
     if(body && !body.querySelector('[data-wodb]')) body.insertAdjacentHTML('afterbegin', html);
@@ -8357,8 +8410,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const b = mapa[el.dataset.blockId]; if(!b) return;
       /* gate de disciplina: en Sports la pizarra WOD nunca debe montarse,
          ni siquiera sobre un bloque Hyrox con category:'metcon' -- así el
-         bloque cae siempre en su renderer estructural (isHyrox) */
-      if(window.COACH_DISCIPLINA !== 'sports' && esMetcon(b, weekIdx)) pizarra(el, b, weekIdx, day.id);
+         bloque cae siempre en su renderer estructural (isHyrox).
+         En CrossFit, la pizarra monta en CUALQUIER fase (Warm-up, Skill/
+         Strength, WOD/Metcon, Hyrox Stations, Accessory/Cooldown), no sólo
+         en la detectada como "metcon" -- de lo contrario Warm-up/Strength
+         caían en el renderer genérico de Bodybuilding, que el CSS de modo
+         CrossFit deja prácticamente vacío (el "bloque colapsado" reportado). */
+      if(window.COACH_DISCIPLINA !== 'sports' && Array.isArray(b.items)) pizarra(el, b, weekIdx, day.id);
       /* PR sobre lo que ya estaba cargado */
       el.querySelectorAll('.set-row').forEach(function(row){ chequearPR(row); });
     });
@@ -22634,22 +22692,60 @@ body.cf-disc{
     radial-gradient(rgba(255,255,255,.08) 1px, transparent 1px) 0 0/20px 20px,
     linear-gradient(180deg, #080B10, #0D1117) !important;
 }
+/* la Pizarra Táctica (.jp-cfboard) es el contenedor principal del bloque en
+   CrossFit -- se retira la doble cabecera de Bodybuilding (ícono + label +
+   checkbox + chevron) y el "cajón" del .block que la envolvía, para que el
+   bloque arranque directo con "[ CROSSFIT · FASE ]". Sin chevron/checkbox
+   visibles no hay forma de disparar el colapso manual, pero se refuerza
+   igual por si algo más agrega .collapsed: en CrossFit el cuerpo del
+   bloque SIEMPRE queda abierto. */
+body.cf-disc .block:has(.jp-cfboard){
+  border:none !important; background:none !important; border-left:none !important;
+  box-shadow:none !important; border-radius:0 !important; overflow:visible !important;
+}
+body.cf-disc .block:has(.jp-cfboard) > .block-header{ display:none !important; }
+body.cf-disc .block:has(.jp-cfboard) > .block-body{ padding:0 !important; display:block !important; }
+body.cf-disc .block.collapsed:has(.jp-cfboard) > .block-body{ display:block !important; }
+/* cinturón y tiradores: cualquier resabio de Bodybuilding que quedara como
+   hermano de la pizarra dentro del mismo .block-body (carga sugerida, notas
+   del bloque) se oculta acá -- no depende de body.cf-modo, que sólo se
+   activa en días 100% CrossFit y nunca en días híbridos. */
+body.cf-disc .block:has(.jp-cfboard) > .block-body > *:not(.jp-cfboard){ display:none !important; }
 .wod-board.jp-cfboard{
   background:rgba(14,19,28,.85) !important;
   backdrop-filter:blur(8px) !important; -webkit-backdrop-filter:blur(8px) !important;
   border:1px solid rgba(255,255,255,.08) !important;
+  border-top:2px solid rgba(224,109,45,.5) !important;
   border-radius:10px !important;
   padding:14px !important;
   display:block !important;
 }
+/* codificación cromática táctica por fase: borde superior + color del tag
+   propios de cada etapa de la sesión (branding editorial suizo).
+   Prefijo body.cf-disc + .wod-board repetido a propósito: el sistema viejo
+   de "disciplina" (.block.disc-warm/.disc-met/... .wod-board{border-color
+   !important}, ~línea 15451) tiene 3 clases de especificidad y si no, gana
+   él y pisa el borde por fase acá definido. */
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-warmup{ border-top-color:rgba(245,197,24,.4) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-strength{ border-top-color:rgba(56,189,248,.4) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-metcon{ border-top-color:rgba(224,109,45,.5) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-cardio{ border-top-color:rgba(45,212,191,.4) !important; }
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-accessory{ border-top-color:rgba(139,124,246,.35) !important; }
+.jp-cfboard.jp-cf-fase-warmup .jp-cf-tag{ color:#F5C518; }
+.jp-cfboard.jp-cf-fase-strength .jp-cf-tag{ color:#38BDF8; }
+.jp-cfboard.jp-cf-fase-metcon .jp-cf-tag{ color:#E06D2D; }
+.jp-cfboard.jp-cf-fase-cardio .jp-cf-tag{ color:#2DD4BF; }
+.jp-cfboard.jp-cf-fase-accessory .jp-cf-tag{ color:#8B7CF6; }
 .jp-cfboard .jp-cf-tag{
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:.1em;
   text-transform:uppercase; color:#38BDF8; margin-bottom:8px;
 }
 .jp-cfboard .jp-cf-title{
   font-family:'Plus Jakarta Sans',sans-serif; font-weight:800; font-size:1.35rem;
-  color:#fff; text-transform:uppercase; line-height:1.05; margin-bottom:10px;
+  text-transform:uppercase; line-height:1.05; margin-bottom:10px;
 }
+.jp-cfboard .jp-cf-t1{ color:#fff; }
+.jp-cfboard .jp-cf-t2{ color:#E06D2D; }
 .jp-cfboard .jp-cf-fmtbar{
   font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13px; letter-spacing:.04em;
   padding:8px 11px; border-radius:8px; background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.3);
@@ -22673,11 +22769,21 @@ body.cf-disc{
   padding:5px 10px; margin:1px 0; border-radius:20px;
   background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.3);
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:10.5px;
-  letter-spacing:.05em; text-transform:uppercase; color:#7CC5E8;
+  letter-spacing:.05em; text-transform:uppercase; color:#38BDF8;
+}
+/* esquema de reps (21-15-9, 5-5-5-5-5): pastilla táctica en Naranja Marca,
+   distinta de los badges de transición (Cap/Rest/AMRAP suelto) en Cyan */
+.jp-cfboard .jp-cf-row.jp-cf-scheme{
+  display:inline-flex; align-items:center; width:fit-content;
+  padding:5px 10px; margin:1px 0; border-radius:20px;
+  background:rgba(224,109,45,.12); border:1px solid rgba(224,109,45,.4);
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:11px;
+  letter-spacing:.05em; color:#E06D2D;
 }
 .jp-cfboard .jp-cf-rn{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#EDEFF2; }
 .jp-cfboard .jp-cf-rv{ font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; flex-shrink:0; text-align:right; }
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
+.jp-cfboard .jp-cf-num{ color:#38BDF8; font-weight:800; }
 .jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.12); }
 .jp-cfboard details.jp-cf-acc summary{
   cursor:pointer; list-style:none; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px;
