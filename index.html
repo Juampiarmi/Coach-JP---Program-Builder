@@ -1754,6 +1754,29 @@ window.auditarYRepararPlanes = function(){
               detalle.push({ atleta: fullName(ath), dia: d.short || d.id, bloque: 'finisher', accion: 'nombre de respaldo asignado' });
             }
           });
+        } else if(b.tipo === 'list'){
+          /* Pizarra Táctica (CrossFit): texto libre, sin exId -- el único
+             riesgo es una línea vacía/nula que deje una fila muda o rompa
+             el parser jpCfFila() al recorrer items. */
+          if(!Array.isArray(b.items)){ b.items = []; }
+          else {
+            const limpio = b.items.filter(function(x){ return x != null && String(x).trim() !== ''; });
+            if(limpio.length !== b.items.length){
+              b.items = limpio;
+              erroresReparados++;
+              detalle.push({ atleta: fullName(ath), dia: d.short || d.id, bloque: 'list', accion: 'líneas vacías purgadas' });
+            }
+          }
+        } else if(b.tipo === 'hyrox'){
+          if(!Array.isArray(b.movements)){ b.movements = []; }
+          else {
+            const limpio = b.movements.filter(function(x){ return x != null && String(x).trim() !== ''; });
+            if(limpio.length !== b.movements.length){
+              b.movements = limpio;
+              erroresReparados++;
+              detalle.push({ atleta: fullName(ath), dia: d.short || d.id, bloque: 'hyrox', accion: 'movimientos vacíos purgados' });
+            }
+          }
         }
       });
     });
@@ -1891,7 +1914,13 @@ function avisoVideoHtml(ex){
   const msg = sinNombre ? '⚠️ SIN NOMBRE ASIGNADO' : '⚠️ SIN VIDEO ASIGNADO';
   return '<span class="pill orange" style="white-space:nowrap">' + msg + '</span>' +
     '<button type="button" class="btn xs" data-editex="' + esc(ex.id) + '" title="Editar ejercicio">✏️ Asignar</button>' +
-    (sinNombre ? '' : '<button type="button" class="btn xs" data-ytsearch="' + esc(exNombreCorto(ex) || ex.es || '') + '" title="Buscar en YouTube">🔎 YouTube</button>');
+    (sinNombre ? '' :
+      '<button type="button" class="btn xs" data-ytsearch="' + esc(exNombreCorto(ex) || ex.es || '') + '" title="Buscar en YouTube">🔎 YouTube</button>' +
+      /* directiva "pegado rápido de videos": pegar la URL acá mismo (sin
+         abrir el editor del ejercicio) la vincula al instante -- ytId()
+         ya reconoce el link estándar, youtu.be y Shorts. */
+      '<input type="text" class="vpaste-in" data-vpaste="' + esc(ex.id) + '" placeholder="🔗 Pegar link YouTube" title="Pegar link de YouTube para vincular el video">'
+    );
 }
 /* --- migración desde el modelo v1 --- */
 function migrateV1(){
@@ -2561,7 +2590,7 @@ function openVideo(exId){
   const e = getEx(exId); if(!e) return;
   $('#mVidTitle').textContent = e.es;
   $('#mVidBody').innerHTML = e.videoId
-    ? '<div class="vid-wrap"><iframe src="https://www.youtube.com/embed/' + e.videoId + '?rel=0" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen></iframe></div>' +
+    ? '<div class="vid-wrap"><iframe src="https://www.youtube-nocookie.com/embed/' + e.videoId + '?rel=0&modestbranding=1&playsinline=1" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen></iframe></div>' +
       (e.aviso ? '<div class="alert warn" style="margin-top:13px"><span class="ic">⚠️</span><div><b>Advertencia biomecánica</b>' + esc(e.aviso) + '</div></div>' : '')
     : '<div class="empty"><div class="big">🎬</div><h4>Este ejercicio todavía no tiene video</h4><p>Buscalo en YouTube y pegá el link en la ficha del ejercicio.</p>' +
       '<div class="row" style="justify-content:center;margin-top:14px">' +
@@ -3505,6 +3534,22 @@ function bindBuilder(){
   const alertasDebounced = debounce(renderGlobalAlerts, 300);
   panel.addEventListener('input', e => {
     const t = e.target, d = curDay(); if(!d) return;
+    /* 17/09 · pegado rápido de video: al pegar una URL de YouTube (estándar,
+       youtu.be o Shorts) se extrae el ID y se vincula al ejercicio de una,
+       sin pasar por el editor -- ver avisoVideoHtml() más arriba. */
+    if(t.dataset.vpaste){
+      const id = ytId(t.value);
+      if(id){
+        const ex = getEx(t.dataset.vpaste);
+        if(ex){
+          ex.videoId = id;
+          save();
+          toast('✅ Video vinculado a "' + (ex.es || ex.en || 'ejercicio') + '"');
+          renderBuilder();
+        }
+      }
+      return;
+    }
     if(t.dataset.df){
       const f = t.dataset.df;
       if(f === 'metaChips') d.metaChips = t.value.split(';').map(s => s.trim()).filter(Boolean);
@@ -5482,7 +5527,8 @@ function finisherDetail(block, weekIdx){
 }
 function hyroxDetail(block, weekIdx){
   const wm = WEEKS_META[weekIdx];
-  return { minutes: wm.amrapMinutes, movements: block.movements, note: wm.hyroxNote };
+  const movements = (block.movements || []).filter(function(m){ return m != null && String(m).trim() !== ''; });
+  return { minutes: wm.amrapMinutes, movements: movements, note: wm.hyroxNote };
 }
 const CATEGORY_META = {
   warmup:{ cls:'bi-warmup', labelCls:'bl-warmup', insightsCls:'insights-warmup' },
@@ -5799,16 +5845,24 @@ function setLoadField(key, field, value){
   state.loads[key].ts = Date.now();
   saveProgress();
 }
-function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg){
+function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg, nombreEx){
   /* parser de unidades: si la prescripción de esta estación ya viene en
      distancia/tiempo ("20 metros", "30 seg", "400m"), el segundo input
-     no debe seguir etiquetado "Reps" -- se adapta a la unidad real. */
+     no debe seguir etiquetado "Reps" -- se adapta a la unidad real.
+     Directiva "casilleros dinámicos": mira nombre Y prescripción (antes
+     sólo miraba repsHint -- "Farmer carry" avisa por el NOMBRE, no
+     siempre trae metros en el detalle). */
+  const nm = String(nombreEx || '');
+  const rh = String(repsHint || '');
   let repsPlaceholder = 'Reps';
-  if(repsHint != null){
-    const rh = String(repsHint);
-    if(/\\d\\s*(metros?|km|m)\\b/i.test(rh)) repsPlaceholder = 'm';
-    else if(/\\d\\s*(segundos?|seg|minutos?|min|s)\\b/i.test(rh)) repsPlaceholder = 'seg';
-  }
+  if(/\\bcarry\\b/i.test(nm) || /\\d\\s*(metros?|km|m)\\b/i.test(rh) || /\\d\\s*(metros?|km|m)\\b/i.test(nm)) repsPlaceholder = 'm';
+  else if(/\\d\\s*(segundos?|seg|minutos?|min|s)\\b/i.test(rh)) repsPlaceholder = 'seg';
+  /* bandas/peso corporal: el estímulo lo da la tensión de la banda o el
+     propio peso, no un número de Kg real -- se oculta ese casillero y
+     queda sólo Reps, centrado. Sólo mira el NOMBRE (no la prescripción)
+     para no deshabilitar el campo por accidente en un ejercicio con
+     barra que mencione un peso en el detalle. */
+  const esBanda = /\\b(banda|band|el[aá]stica|bw|bodyweight)\\b/i.test(nm);
   let html = '<div class="set-tracker">';
   /* directiva de rediseño: marca la primera serie sin completar como
      "activa" para darle escala numérica destacada (kg/reps más grandes) --
@@ -5832,7 +5886,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg)
        ejecutado en S-1 (el objetivo programado suele ser un rango tipo
        "10-12", no sirve para precargar un número exacto). */
     let kgVal = ld.kg, repsVal = ld.reps, sugerido = false;
-    if((kgVal == null || kgVal === '') && weekIdx > 0){
+    if(!esBanda && (kgVal == null || kgVal === '') && weekIdx > 0){
       const prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
       const kgPrev = (prevLd.kg != null && prevLd.kg !== '') ? prevLd.kg : null;
       const kgSug = (sugKg && sugKg > 0) ? sugKg : kgPrev;
@@ -5840,6 +5894,9 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg)
       if((repsVal == null || repsVal === '') && prevLd.reps != null && prevLd.reps !== ''){
         repsVal = prevLd.reps; setLoadField(key, 'reps', repsVal); sugerido = true;
       }
+    } else if(esBanda && (repsVal == null || repsVal === '') && weekIdx > 0){
+      const prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
+      if(prevLd.reps != null && prevLd.reps !== ''){ repsVal = prevLd.reps; setLoadField(key, 'reps', repsVal); sugerido = true; }
     }
     /* pedido 41: Kg/×/Reps/✓ viven ahora agrupados en .set-load, un
        sub-contenedor flex propio con flex-wrap:nowrap -- así, si algún
@@ -5856,18 +5913,24 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg)
        porque acá es donde ya están kgVal/repsVal resueltos (sugeridos o
        reales); el CSS decide cuándo mostrar esto vs. los inputs reales,
        nunca se lee/escribe un dato nuevo. */
-    const resumenCompacto = (kgVal != null && kgVal !== '' && repsVal != null && repsVal !== '')
-      ? (kgVal + '\\u00d7' + repsVal) : '\\u2014';
-    html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + claseActiva + '" data-set-key="' + key + '">' +
+    const resumenCompacto = esBanda
+      ? (repsVal != null && repsVal !== '' ? (repsVal + ' ' + repsPlaceholder.toLowerCase()) : '\\u2014')
+      : ((kgVal != null && kgVal !== '' && repsVal != null && repsVal !== '')
+        ? (kgVal + '\\u00d7' + repsVal) : '\\u2014');
+    html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + claseActiva + (esBanda?' set-row-banda':'') + '" data-set-key="' + key + '">' +
       '<button type="button" class="set-row-toggle" aria-label="Ver serie ' + i + '">' +
         '<span class="set-row-label">Serie ' + i + '</span>' +
         '<span class="set-row-compact">' + resumenCompacto + '</span>' +
       '</button>' +
-      '<div class="set-load">' +
-        '<span class="set-field"><span class="set-unit">kg</span>' +
-          '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (kgVal!=null?kgVal:'') + '" />' +
-        '</span>' +
-        '<span class="set-x" aria-hidden="true">\\u00d7</span>' +
+      '<div class="set-load' + (esBanda?' set-load-banda':'') + '">' +
+        /* bandas/peso corporal: sin casillero de Kg -- el estímulo no se
+           mide en un número de carga real (ver esBanda más arriba). */
+        (esBanda ? '' :
+          '<span class="set-field"><span class="set-unit">kg</span>' +
+            '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (kgVal!=null?kgVal:'') + '" />' +
+          '</span>' +
+          '<span class="set-x" aria-hidden="true">\\u00d7</span>'
+        ) +
         /* el objetivo (repsHint) ya no va como placeholder acá: se veía como
            texto tenue "dato ya cargado" y desaparecía justo al tocar el campo
            para tipear -- ahora el objetivo se muestra afuera, en texto fijo
@@ -6679,7 +6742,7 @@ function renderBlockInner(block, day, weekIdx){
       '<span class="ex-detail"><strong>' + lblSets + '</strong>' + repsSemana + ' · Tempo ' + block.tempo +
       refPreviaHtml(weekIdx, day.id, block.id, 0, setsSemana) + '</span></div>';
     if(typeof renderSetRows === 'function'){
-      html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana, cargaSugeridaKg(block, weekIdx));
+      html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana, cargaSugeridaKg(block, weekIdx), nombreSemana);
     }
     var notaSem = (block.weekNote && block.weekNote[weekIdx]) || block.tips;
     if(notaSem){ html += '<div class="coach-note"><strong>Coach Note</strong>' + notaSem + '</div>'; }
@@ -6697,7 +6760,7 @@ function renderBlockInner(block, day, weekIdx){
       html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + enBadgeHtml(ex.nameEn) + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') +
         refPreviaHtml(weekIdx, day.id, block.id, exIdx, sd.rounds) + '</span></div>';
       if(typeof renderSetRows === 'function'){
-        html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps, cargaSugeridaKg(block, weekIdx));
+        html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps, cargaSugeridaKg(block, weekIdx), ex.name);
       }
     });
     html += '<span class="directive-badge">\\u26a1 Transici\\u00f3n continua (sin pausa)</span>';
@@ -7041,7 +7104,7 @@ function renderMain(){
       '<div class="jp-vault-strip">' +
         day.cfVault.map(function(v){
           return '<div class="jp-vault-clip">' +
-            '<div class="jp-vault-frame"><iframe src="https://www.youtube-nocookie.com/embed/' + v.videoId + '" loading="lazy" allow="encrypted-media" allowfullscreen title="' + v.nombre + '"></iframe></div>' +
+            '<div class="jp-vault-frame"><iframe src="https://www.youtube-nocookie.com/embed/' + v.videoId + '?rel=0&modestbranding=1&playsinline=1" loading="lazy" allow="encrypted-media" allowfullscreen title="' + v.nombre + '"></iframe></div>' +
             '<div class="jp-vault-lb">' + v.nombre + '</div>' +
           '</div>';
         }).join('') +
@@ -7113,6 +7176,7 @@ function wireBlockInteractions(day, weekIdx, blocks){
     });
     blockEl.querySelectorAll('.set-row').forEach(function(row){
       const key = row.dataset.setKey;
+      const esBandaRow = row.classList.contains('set-row-banda');
       const kgInput = row.querySelector('.set-kg');
       const repsInput = row.querySelector('.set-reps');
       const chk = row.querySelector('.set-check');
@@ -7120,24 +7184,37 @@ function wireBlockInteractions(day, weekIdx, blocks){
       /* directiva de rediseño F (v2): resumen compacto en vivo (mismo texto
          que ya arma renderSetRows() al pintar, recalculado acá sólo para
          que no quede desactualizado si el alumno tipea sin recargar la
-         página -- no es una fuente de datos nueva, sólo texto derivado). */
+         página -- no es una fuente de datos nueva, sólo texto derivado).
+         17/09 · casilleros dinámicos (bandas/peso corporal): esas filas no
+         tienen .set-kg en el DOM (renderSetRows() lo omite a propósito), así
+         que kgInput puede ser null -- ambos listeners y el resumen se
+         blindan contra eso en vez de asumir que el campo siempre existe. */
       function refrescarResumen(){
         if(!compactEl) return;
-        const kg = kgInput.value, reps = repsInput.value;
+        const reps = repsInput ? repsInput.value : '';
+        if(esBandaRow){
+          compactEl.textContent = reps ? (reps + ' ' + (repsInput.placeholder||'reps').toLowerCase()) : '\\u2014';
+          return;
+        }
+        const kg = kgInput ? kgInput.value : '';
         compactEl.textContent = (kg && reps) ? (kg + '\\u00d7' + reps) : '\\u2014';
       }
-      kgInput.addEventListener('input', function(){
-        const clean = sanearPeso(kgInput.value);
-        if(clean !== kgInput.value) kgInput.value = clean;
-        setLoadField(key, 'kg', clean);
-        refrescarResumen();
-      });
-      repsInput.addEventListener('input', function(){
-        const clean = sanearReps(repsInput.value);
-        if(clean !== repsInput.value) repsInput.value = clean;
-        setLoadField(key, 'reps', clean);
-        refrescarResumen();
-      });
+      if(kgInput){
+        kgInput.addEventListener('input', function(){
+          const clean = sanearPeso(kgInput.value);
+          if(clean !== kgInput.value) kgInput.value = clean;
+          setLoadField(key, 'kg', clean);
+          refrescarResumen();
+        });
+      }
+      if(repsInput){
+        repsInput.addEventListener('input', function(){
+          const clean = sanearReps(repsInput.value);
+          if(clean !== repsInput.value) repsInput.value = clean;
+          setLoadField(key, 'reps', clean);
+          refrescarResumen();
+        });
+      }
       chk.addEventListener('change', function(){
         setLoadField(key, 'done', chk.checked);
         row.classList.toggle('set-row-done', chk.checked);
@@ -7322,7 +7399,7 @@ if(hudEl) hudEl.addEventListener('transitionend', function(){
   if(videoWrapEl && videoWrapEl.classList.contains('open')) ajustarPosicionVideoPopup();
 });
 function openVideoPopup(ytid){
-  videoIframeEl.src = 'https://www.youtube-nocookie.com/embed/' + ytid + '?autoplay=1&rel=0';
+  videoIframeEl.src = 'https://www.youtube-nocookie.com/embed/' + ytid + '?autoplay=1&rel=0&modestbranding=1&playsinline=1';
   videoFallbackEl.href = 'https://www.youtube.com/watch?v=' + ytid;
   videoWrapEl.classList.add('open');
   ajustarPosicionVideoPopup();
@@ -8280,7 +8357,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        ya renderizado -- más robusto y permite el parseo nombre/valor sin
        depender de cómo el renderer genérico haya envuelto cada línea. */
     if(esBloqueVacioCF(block)) return;
-    const lineas = (block.items || []).slice();
+    /* 17/09 · auditoría general: una línea nula o vacía en block.items (dato
+       viejo, pegado con saltos de más, etc.) no debe sobrevivir como fila
+       muda en la Pizarra -- se purga acá, en el propio render, para que la
+       reparación no dependa de que el coach corra auditarYRepararPlanes(). */
+    const lineas = (block.items || []).map(function(l){ return l; }).filter(function(l){ return l != null && String(l).trim() !== ''; });
     const f = formatoEstructurado(block) || formatoDe(block, lineas, weekIdx);
     const min = minutosDe(block, lineas);
     const skey = weekIdx + '|' + dayId + '|' + block.id;
@@ -16859,9 +16940,9 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   function video(nombre){
     return (typeof videoLinkHtml === 'function') ? videoLinkHtml(nombre) : '';
   }
-  function filas(dayId, blockId, exIdx, rondas, hint){
+  function filas(dayId, blockId, exIdx, rondas, hint, nombre){
     if(typeof renderSetRows === 'function')
-      return renderSetRows(state.currentWeek || 0, dayId, blockId, exIdx, rondas, hint || 'Reps');
+      return renderSetRows(state.currentWeek || 0, dayId, blockId, exIdx, rondas, hint || 'Reps', 0, nombre);
     return '';
   }
   function reconstruir(){
@@ -16949,7 +17030,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
             '<span class="ex-name">' + esc(x.name) + video(x.name) + '</span>' +
             (x.reps ? '<span class="ex-detail">' + esc(x.reps) + '</span>' : '') +
           '</div>' +
-          filas(dia.id, bl.dataset.blockId, i, rondas, x.reps);
+          filas(dia.id, bl.dataset.blockId, i, rondas, x.reps, x.name);
       }).join('');
 
       var caja = bl.querySelector('.core-build');
@@ -19376,6 +19457,10 @@ body{font-size:var(--fz-body) !important}
 .block .set-row .set-load{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;flex-wrap:nowrap}
 .block .set-row .set-load > .set-field{flex:1 1 0 !important;min-width:0 !important}
 .block .set-row > .set-row-label{flex:0 0 auto}
+/* casilleros dinámicos (bandas/peso corporal): sin campo de Kg, el único
+   .set-field (Reps) queda centrado en vez de pegado a la izquierda */
+.block .set-row .set-load.set-load-banda{justify-content:center}
+.block .set-row .set-load.set-load-banda > .set-field{flex:0 1 140px !important}
 .block .set-row .set-load > .set-check{flex:0 0 auto;margin-left:auto}
 .block .set-row .set-load > .set-x{flex:0 0 auto}
 /* pulido (trisets/unidades/háptica): Kg/Reps pasan a vivir dentro de un
@@ -22104,6 +22189,7 @@ body.focus-mode .hd-dock{display:none}
      El rail deja hueco vacío debajo de la identidad/anillo/dock, y ahí
      la 'J' queda expuesta y recortada — se oculta solo en escritorio. */
   body::before{ display:none; }
+  body::after{ display:none; }
 }
 </style>
 
@@ -22911,6 +22997,7 @@ body.focus-mode .hd-dock{display:none}
     box-shadow:0 0 0 1px #1F2630, 0 30px 80px rgba(0,0,0,.55);
   }
   body::before{ display:none; } /* watermark "JP": sin marco de referencia propio se vería fuera de lugar, se apaga en escritorio */
+  body::after{ display:none; } /* filamentos "Thunder Stealth": van atados al isotipo JP, se apagan junto con él */
   .hd-compact, .hd-dock{
     left:50% !important; right:auto !important;
     transform:translateX(-50%) !important;
@@ -23264,20 +23351,40 @@ body.cf-disc .story-cta{
   color:#EDEFF2; cursor:pointer; min-height:54px;
 }
 body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; }
-/* directiva de unificación de branding (Showroom aprobado): el botón de
-   cierre de sesión pasa a la paleta oficial en TODA la aplicación, no
-   sólo en CrossFit -- Sports & Bodybuilding pierde el verde brillante
-   que quedaba fuera de paleta. Sin prefijo body.cf-disc a propósito;
-   gana por orden de aparición (es el último <style> del documento)
-   sobre la regla original de .day-complete-cta/.done más arriba. */
+/* directiva de unificación de branding (Showroom aprobado) + pulido
+   "Glass Táctico Pro": el botón de cierre de sesión pasa a la paleta
+   oficial en TODA la aplicación (ya no sólo CrossFit) -- Sports &
+   Bodybuilding pierde el verde brillante que quedaba fuera de paleta.
+   Sin prefijo body.cf-disc a propósito; gana por orden de aparición
+   (es el último <style> del documento) sobre la regla original de
+   .day-complete-cta/.done más arriba. */
 .day-complete-cta{
-  background:var(--orange) !important; border:1px solid rgba(255,255,255,.14) !important;
-  color:#0A0C10 !important; box-shadow:0 10px 28px -10px rgba(224,109,45,.5) !important;
+  background:linear-gradient(135deg, rgba(224,109,45,.85), rgba(224,109,45,.45)) !important;
+  backdrop-filter:blur(12px) !important; -webkit-backdrop-filter:blur(12px) !important;
+  border:1px solid transparent !important;
+  border-image:linear-gradient(180deg, rgba(245,197,24,.6), rgba(224,109,45,.2)) 1 !important;
+  box-shadow:0 8px 32px rgba(224,109,45,.25), inset 0 1px 0 rgba(255,255,255,.2) !important;
+  color:#fff !important;
+  font-family:'Plus Jakarta Sans',sans-serif !important; font-weight:800 !important;
+  letter-spacing:.08em !important;
+  transition:background .5s ease, box-shadow .5s ease !important;
 }
-.day-complete-cta .dcc-ic{ background:rgba(10,12,16,.16) !important; border-color:rgba(10,12,16,.25) !important; }
+.day-complete-cta .dcc-ic{
+  background:rgba(255,255,255,.16) !important; border-color:rgba(255,255,255,.28) !important;
+  color:#fff !important; transition:background .5s ease, color .5s ease, box-shadow .5s ease !important;
+}
+/* al completarse: fondo carbón/cyan (en vez del naranja sólido) + el
+   checkmark pasa a dorado con un micro-glow -- misma tarjeta, estado
+   claramente distinto sin volver al verde fuera de paleta. */
 .day-complete-cta.done{
-  background:var(--cyan) !important; border-color:rgba(255,255,255,.14) !important;
-  color:#04202B !important; box-shadow:0 10px 28px -10px rgba(56,189,248,.5) !important;
+  background:linear-gradient(135deg, rgba(8,11,16,.92), rgba(56,189,248,.28)) !important;
+  border-image:linear-gradient(180deg, rgba(245,197,24,.55), rgba(56,189,248,.25)) 1 !important;
+  box-shadow:0 8px 32px rgba(56,189,248,.22), inset 0 1px 0 rgba(255,255,255,.16) !important;
+  color:#EDEFF2 !important;
+}
+.day-complete-cta.done .dcc-ic{
+  background:rgba(245,197,24,.18) !important; border-color:rgba(245,197,24,.55) !important;
+  color:#F5C518 !important; box-shadow:0 0 12px rgba(245,197,24,.55) !important;
 }
 </style>
 
@@ -37930,6 +38037,18 @@ body::before{
   font-family:var(--ffh); font-weight:700; font-size:min(46vh,420px); line-height:.8;
   letter-spacing:-.03em; color:#FFFFFF; opacity:.03; user-select:none;
 }
+/* --- "Thunder Stealth": filamentos eléctricos sutiles detrás del isotipo JP.
+   Vectores SVG (no texto, no imagen), degradé ámbar→cyan, opacidad muy baja
+   para dar profundidad sin competir con la legibilidad del contenido. --- */
+body::after{
+  content:'';
+  position:fixed; inset:auto auto -4vh 0vw; z-index:0; pointer-events:none;
+  width:min(52vh,480px); height:min(60vh,540px);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 460'%3E%3Cdefs%3E%3ClinearGradient id='tg' x1='0' y1='0' x2='.3' y2='1'%3E%3Cstop offset='0' stop-color='%23F5C518'/%3E%3Cstop offset='1' stop-color='%2338BDF8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg fill='none' stroke='url(%23tg)' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M70 10 L100 90 L62 130 L108 210 L76 260 L118 350 L86 420'/%3E%3Cpath d='M150 0 L128 80 L172 140 L134 220 L176 300 L142 400' opacity='.6'/%3E%3Cpath d='M20 40 L54 120 L14 170 L58 280 L22 380' opacity='.4'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-size:100% 100%;
+  opacity:.075; mix-blend-mode:screen; filter:blur(.3px);
+}
+@media(max-width:520px){ body::after{ opacity:.06; } }
 /* =========================================================
    TIPOGRAFÍA SPORT-TECH
 ========================================================= */
