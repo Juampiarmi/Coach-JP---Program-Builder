@@ -885,6 +885,11 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
     </div>
     <div class="modal-b">
       <div class="hint" style="margin-bottom:12px">Pensado para cargar de a muchos: elegí el grupo y el patrón una sola vez — quedan fijos mientras pegás lote tras lote — y previsualizá antes de guardar.</div>
+      <div class="row" style="margin-bottom:12px;gap:8px">
+        <button class="btn sm ghost" id="fdPendCF" type="button" title="Carga en el lote todos los ejercicios de CrossFit sin video">⚡ Pendientes CrossFit</button>
+        <button class="btn sm ghost" id="fdPendHyrox" type="button" title="Carga en el lote todos los ejercicios de Hyrox sin video">⚡ Pendientes Hyrox</button>
+        <span class="hint" id="fdPendCount" style="margin:0"></span>
+      </div>
       <div class="grid g2">
         <div><label class="lb">Grupo muscular (fijo para el lote)</label><select id="fdGrupo"></select></div>
         <div><label class="lb">Patrón de movimiento (fijo para el lote)</label><select id="fdPatron"></select></div>
@@ -1006,8 +1011,16 @@ window.COACH_DISCIPLINA = 'sports';
 const LIB_KEY = 'coachjp_lib_v1'; /* compartida entre ambas ramas: atletas + biblioteca de ejercicios */
 const PLANS_KEY = window.COACH_DISCIPLINA === 'crossfit' ? 'coachjp_plans_crossfit_v1' : 'coachjp_plans_sports_v1'; /* propia de esta rama: planes/mesociclos */
 const GRUPOS  = ['Pectoral','Espalda','Hombros','Brazos','Piernas/Glúteos','Core','Multiarticular / Complejo Atlético','Full Body / Cardio','General'];
-const EQUIPOS = ['Barra','Mancuernas','Polea','Máquina','Multipower','Peso corporal','Banda','Kettlebell','Cardio'];
-const PATRONES= ['Empuje horizontal','Empuje vertical','Tracción horizontal','Tracción vertical','Rodilla dominante','Cadera dominante','Abducción / Aducción','Core / Anti-rotación','Aislamiento','Aislamiento hombro','Bíceps','Tríceps','Antebrazo','Extensión lumbar','Salud articular','Cardio / Metcon','General / Accesorio'];
+/* directiva de expansión CrossFit/Hyrox (2026-09): sólo se AGREGAN opciones
+   al final de cada array -- ningún valor existente se renombra ni se
+   elimina, así que los 718 ejercicios ya guardados (y los planes de los
+   33 atletas que referencian estas cadenas como texto plano en ex.equipo/
+   ex.patron) mantienen su metadata intacta con 100% retrocompatibilidad. */
+const EQUIPOS = ['Barra','Mancuernas','Polea','Máquina','Multipower','Peso corporal','Banda','Kettlebell','Cardio',
+  'Anillas (Rings)','Rig / Barra de Dominadas','Cajón / Plyobox','Trineo / Sled','Balón Medicinal / Wall Ball',
+  'Saco / Sandbag','Cuerda de Saltar','Cuerda de Trepar','Ergómetro (Remo/Ski/Bike)'];
+const PATRONES= ['Empuje horizontal','Empuje vertical','Tracción horizontal','Tracción vertical','Rodilla dominante','Cadera dominante','Abducción / Aducción','Core / Anti-rotación','Aislamiento','Aislamiento hombro','Bíceps','Tríceps','Antebrazo','Extensión lumbar','Salud articular','Cardio / Metcon','General / Accesorio',
+  'Gimnástico en Barra','Gimnástico en Anillas','Gimnástico de Suelo','Halterofilia / Weightlifting','Potencia / Cíclico','Estación Hyrox','Movilidad & Activación'];
 const ZONAS   = ['hombro','rodilla','lumbar','cadera','muñeca','codo','cuello','tobillo'];
 const ZONA_LB = {hombro:'Hombro',rodilla:'Rodilla',lumbar:'Zona lumbar',cadera:'Cadera',['muñeca']:'Muñeca',codo:'Codo',cuello:'Cuello',tobillo:'Tobillo'};
 const TIPOS = {
@@ -2680,6 +2693,26 @@ function guardarFeederBatch(){
 function openFeeder(){
   openModal('mFeeder');
   setTimeout(() => $('#fdBatch').focus(), 60);
+}
+/* directiva de expansión CrossFit/Hyrox: carga en un clic todos los
+   ejercicios de esa disciplina que todavía no tienen video, listos para
+   pegarles la URL uno abajo del otro -- mismo formato "es | en | " que ya
+   usa el flujo de Plantillas Élite -> Feeder (ver #eliteToFeeder). */
+function cargarPendientesFeeder(disc){
+  const pend = S.exercises
+    .filter(e => !e.videoId && (e.disciplinas || []).indexOf(disc) >= 0)
+    .sort((a,b) => (a.es||'').localeCompare(b.es||'', 'es'));
+  const cnt = $('#fdPendCount');
+  if(!pend.length){
+    if(cnt) cnt.textContent = 'Sin pendientes de ' + disc + ': todos los ejercicios ya tienen video 🎉';
+    toast('Ningún ejercicio de ' + disc + ' está pendiente de video');
+    return;
+  }
+  $('#fdBatch').value = pend.map(e => e.es + ' | ' + (e.en || '') + ' | ').join('\n');
+  if(cnt) cnt.textContent = pend.length + ' ejercicio(s) de ' + disc + ' pendientes de video cargados en el lote';
+  openFeeder();
+  renderFeederPreview();
+  toast('⚡ ' + pend.length + ' pendiente(s) de ' + disc + ' cargados — pegá las URLs de YouTube y guardá');
 }
 
 function openVideo(exId){
@@ -24429,6 +24462,8 @@ function init(){
   $('#btnFeeder').addEventListener('click', openFeeder);
   $('#fdPreviewBtn').addEventListener('click', renderFeederPreview);
   $('#fdSaveBtn').addEventListener('click', guardarFeederBatch);
+  $('#fdPendCF').addEventListener('click', () => cargarPendientesFeeder('CrossFit'));
+  $('#fdPendHyrox').addEventListener('click', () => cargarPendientesFeeder('Hyrox'));
   /* el texto tipeado se debounce (300ms) para no re-renderizar la grilla en
      cada tecla; los selects/checkboxes de filtro reaccionan al instante */
   $('#exSearch').addEventListener('input', debounce(renderLibrary, 300));
@@ -35908,9 +35943,14 @@ body.man-mode .gs-fab{right:318px}
 .dchip.on{border-color:var(--gold);background:rgba(210,121,63,.13);color:var(--gold)}
 .dchip.on[data-d="CrossFit"]{border-color:rgba(74,147,184,.5);background:rgba(74,147,184,.12);color:var(--teal)}
 .dchip.on[data-d="Weightlifting"]{border-color:rgba(168,68,44,.5);background:rgba(168,68,44,.14);color:#FF9AA2}
+/* directiva de expansión CrossFit/Hyrox: badge propio en Esmeralda (#2DD4BF),
+   distinto del cyan de CrossFit y el rojo de Weightlifting, para las
+   estaciones y movimientos específicos de Hyrox. */
+.dchip.on[data-d="Hyrox"]{border-color:rgba(45,212,191,.5);background:rgba(45,212,191,.14);color:#2DD4BF}
 .pill.disc{background:rgba(210,121,63,.1);border:1px solid rgba(210,121,63,.32);color:var(--gold);font-size:9.5px}
 .pill.disc.cf{background:rgba(74,147,184,.1);border-color:rgba(74,147,184,.35);color:var(--teal)}
 .pill.disc.wl{background:rgba(168,68,44,.12);border-color:rgba(168,68,44,.4);color:#FF9AA2}
+.pill.disc.hyrox{background:rgba(45,212,191,.1);border-color:rgba(45,212,191,.35);color:#2DD4BF}
 .lib-disc{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center}
 </style>
 
@@ -35919,8 +35959,8 @@ body.man-mode .gs-fab{right:318px}
    28. MÓDULO 22 — WEIGHTLIFTING / CROSSFIT + DISCIPLINAS
    ============================================================ */
 (function(){
-  const DISC = ['Weightlifting','CrossFit','Bodybuilding','Fuerza Pura','MTB','Athletic'];
-  const CLS = { CrossFit:'cf', Weightlifting:'wl' };
+  const DISC = ['Weightlifting','CrossFit','Hyrox','Bodybuilding','Fuerza Pura','MTB','Athletic'];
+  const CLS = { CrossFit:'cf', Weightlifting:'wl', Hyrox:'hyrox' };
 
   /* ============ A. BIBLIOTECA EN INGLÉS (nombres originales) ============ */
   /* [nombre EN, grupo, patrón, equipo, riesgo, disciplinas, coach note] */
@@ -36036,6 +36076,12 @@ body.man-mode .gs-fab{right:318px}
   const REGLAS = [
     { d:'Weightlifting', kw:['snatch','clean','jerk','overhead squat','front squat','power clean','sots press','pull from','muscle snatch'] },
     { d:'CrossFit',      kw:['wod','amrap','emom','burpee','thruster','wall ball','double under','muscle-up','muscle up','toes to bar','handstand','kipping','butterfly','devil press','wall walk','box jump','kettlebell swing','pistol','rope climb','ghd','assault','skierg','ski erg'] },
+    /* directiva de expansión CrossFit/Hyrox: vocabulario de las 8 estaciones
+       de Hyrox (Ski, Sled Push/Pull, Burpee Broad Jump, Farmers, Sandbag
+       Lunges, Wall Balls, Row) -- varios movimientos comparten palabras con
+       CrossFit/Athletic/MTB, así que un ejercicio puede quedar con varios
+       tags a la vez (autoDisc ya dedupea y limita a 4). */
+    { d:'Hyrox',         kw:['hyrox','sled push','sled pull','roxzone','sandbag lunge','sandbag','burpee broad jump','farmers carry','bikeerg','bike erg','echo bike'] },
     { d:'Fuerza Pura',   kw:['back squat','deadlift','bench press','strict press','peso muerto','sentadilla con barra','press de banca','pendlay','good morning','box squat'] },
     { d:'MTB',           kw:['bike','bicicleta','gemelo','soleo','step up','prensa','sled','isquio','femoral'] },
     { d:'Athletic',      kw:['salto','jump','sprint','landmine','carry','farmer','unilateral','bulgarian','split squat','swing','potencia'] }
