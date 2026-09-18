@@ -318,6 +318,16 @@ details[open] > .meso-summary::before, details[open] > .tpl-summary::before{ tra
 .item-h{display:flex;gap:9px;align-items:center;margin-bottom:9px;flex-wrap:wrap}
 .item-h .num{width:23px;height:23px;flex:0 0 23px;border-radius:7px;background:var(--panel-3);display:grid;place-items:center;font-size:11px;font-weight:900;color:var(--muted);border:1px solid var(--line)}
 .item-h .nm{font-weight:800;font-size:13.5px;flex:1;min-width:130px}
+.nm-desvinc{font-size:11px;font-weight:600;color:#C99A3A;opacity:.85}
+/* auditoría de ejercicios (directiva): fila nunca muda -- si no hay ni exId
+   válido ni nombre de respaldo, el campo se destaca en ámbar para que el
+   coach lo complete ahí mismo, sin salir del bloque. */
+.item-h .nm-warn, .f .nm-warn{
+  flex:1;min-width:160px;padding:6px 9px;border-radius:8px;
+  border:1.5px solid #F5C518;background:rgba(245,197,24,.1);
+  color:#F5C518;font-weight:700;font-size:12.5px;
+}
+.item-h .nm-warn::placeholder, .f .nm-warn::placeholder{color:rgba(245,197,24,.75)}
 .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:8px}
 .f label{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-bottom:3px;font-weight:800}
 .f input,.f select{padding:6px 8px;font-size:12.5px;border-radius:8px}
@@ -572,6 +582,7 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <div class="sub">Mesociclo · bloques · motor de reglas biomecánicas en tiempo real</div>
         </div>
         <div class="spacer"></div>
+        <button class="btn" id="btnAuditEx" title="Escanea todos los planes en busca de ejercicios sin nombre o desvinculados del catálogo">🔍 Auditar Atletas &amp; Ejercicios</button>
         <button class="btn" id="btnCheckAll">🛡️ Chequeo de seguridad</button>
         <button class="btn" id="btnExportPdf" title="Vista de impresión limpia en A4 de la sesión del día">🖨️ Exportar PDF</button>
         <button class="btn teal" id="btnGoExport">🚀 Ir a Exportar</button>
@@ -1786,6 +1797,91 @@ window.auditarYRepararPlanes = function(){
   if(detalle.length && console.table) console.table(detalle);
   return { atletasRevisados: atletasRevisados, erroresReparados: erroresReparados, detalle: detalle };
 };
+/* ---------- MODAL DE AUDITORÍA VISUAL (directiva: blindaje de ejercicios) ----------
+   Mismo criterio de detección que auditarYRepararPlanes() (consola) -- exId
+   huérfano sin nombre de respaldo -- expuesto acá como UI: lista cada fila
+   afectada con su ubicación exacta y dos acciones directas (completar el
+   nombre a mano o eliminar la fila vacía) sin pasar por la consola. */
+let _auditFilas = [];
+function escanearAuditoria(){
+  const filas = [];
+  S.athletes.forEach(function(ath){
+    const p = S.plans[ath.id];
+    if(!p) return;
+    (p.dias || []).forEach(function(d){
+      (d.bloques || []).forEach(function(b){
+        if(b.tipo === 'block'){
+          const ex = getEx(b.exId);
+          const nombre = ex ? ex.es : (b.coreNombre || '');
+          if(!nombre.trim()){
+            filas.push({ athId: ath.id, athName: fullName(ath), dia: d.short || d.id, dayId: d.id,
+                         blockId: b.id, tipo: 'block', tipoLb: 'Bloque Ancla', idx: null, pos: 'Ejercicio principal', deletable: false });
+          }
+        } else if(b.tipo === 'superset'){
+          (b.ejercicios || []).forEach(function(e, i){
+            const ex = getEx(e.exId);
+            const nombre = ex ? ex.es : (e.nombre || '');
+            if(!nombre.trim()){
+              filas.push({ athId: ath.id, athName: fullName(ath), dia: d.short || d.id, dayId: d.id,
+                           blockId: b.id, tipo: 'superset', tipoLb: 'Biset/Triset', idx: i, pos: 'Ítem ' + String.fromCharCode(65 + i), deletable: true });
+            }
+          });
+        } else if(b.tipo === 'finisher'){
+          (b.fin || []).forEach(function(e, i){
+            const ex = getEx(e.exId);
+            const nombre = ex ? ex.es : (e.nombre || '');
+            if(!nombre.trim()){
+              filas.push({ athId: ath.id, athName: fullName(ath), dia: d.short || d.id, dayId: d.id,
+                           blockId: b.id, tipo: 'finisher', tipoLb: 'Finisher', idx: i, pos: 'Ítem ' + (i + 1), deletable: true });
+            }
+          });
+        }
+      });
+    });
+  });
+  return filas;
+}
+function auditAplicarNombre(f, val){
+  const p = S.plans[f.athId]; if(!p) return;
+  const d = (p.dias || []).find(x => x.id === f.dayId); if(!d) return;
+  const b = (d.bloques || []).find(x => x.id === f.blockId); if(!b) return;
+  if(f.tipo === 'block') b.coreNombre = val;
+  else if(f.tipo === 'superset'){ const it = (b.ejercicios || [])[f.idx]; if(it) it.nombre = val; }
+  else if(f.tipo === 'finisher'){ const it = (b.fin || [])[f.idx]; if(it) it.nombre = val; }
+}
+function auditEliminarFila(f){
+  const p = S.plans[f.athId]; if(!p) return;
+  const d = (p.dias || []).find(x => x.id === f.dayId); if(!d) return;
+  const b = (d.bloques || []).find(x => x.id === f.blockId); if(!b) return;
+  if(f.tipo === 'superset') (b.ejercicios || []).splice(f.idx, 1);
+  else if(f.tipo === 'finisher') (b.fin || []).splice(f.idx, 1);
+}
+function renderAuditModal(){
+  const filas = escanearAuditoria();
+  _auditFilas = filas;
+  const cnt = document.getElementById('auditCount');
+  if(cnt) cnt.textContent = filas.length + (filas.length === 1 ? ' hallazgo' : ' hallazgos');
+  const intro = document.getElementById('auditIntro');
+  if(intro) intro.textContent = filas.length
+    ? 'Se detectaron ' + filas.length + ' ejercicio(s) sin nombre o desvinculado(s) del catálogo. Completá el nombre acá mismo o eliminá la fila vacía.'
+    : '✅ No se detectaron ejercicios sin nombre en ningún plan.';
+  const list = document.getElementById('auditList');
+  if(!list) return;
+  if(!filas.length){
+    list.innerHTML = '<div class="empty"><div class="big">✅</div><h4>Todo en orden</h4><p>Ningún atleta tiene ejercicios sin nombre.</p></div>';
+    return;
+  }
+  list.innerHTML = filas.map(function(f, idx){
+    return '<div class="audit-row" data-audit-idx="' + idx + '">' +
+      '<div class="audit-meta">' +
+        '<span class="audit-ath">' + esc(f.athName) + '</span>' +
+        '<span class="audit-loc">' + esc(f.dia) + ' &middot; ' + esc(f.tipoLb) + ' &middot; ' + esc(f.pos) + '</span>' +
+      '</div>' +
+      '<input type="text" class="audit-in" placeholder="Nombre del ejercicio…" />' +
+      (f.deletable ? '<button type="button" class="icon-btn danger" data-auditdel="' + idx + '" title="Eliminar esta fila vacía">🗑</button>' : '') +
+    '</div>';
+  }).join('');
+}
 const initials = a => {
   const n = (a.nombre||'?').trim()[0] || '?';
   const p = (a.apellido||'').trim()[0] || '';
@@ -2736,7 +2832,8 @@ const CF_FASES = [
   {v:'strength',  lb:'SKILL / STRENGTH'},
   {v:'metcon',    lb:'WOD / METCON'},
   {v:'cardio',    lb:'HYROX STATIONS'},
-  {v:'accessory', lb:'ACCESSORY / COOLDOWN'}
+  {v:'accessory', lb:'ACCESSORY / COOLDOWN'},
+  {v:'endurance', lb:'2º TURNO · ENDURANCE / RUNNING'}
 ];
 function cfFaseOptions(sel){
   return CF_FASES.map(f => '<option value="' + f.v + '"' + (f.v===(sel||'metcon')?' selected':'') + '>' + esc(f.lb) + '</option>').join('');
@@ -3062,8 +3159,17 @@ function renderDay(){
     /* --- cuerpo por tipo --- */
     if(b.tipo === 'block'){
       const exAncla = getEx(b.exId);
+      /* blindaje de auditoría: un exId huérfano en el ancla principal no debe
+         quedar en silencio detrás del placeholder "— Elegir ejercicio —" del
+         select -- si hay un coreNombre de respaldo se muestra, y si tampoco
+         hay eso se destaca un campo ámbar editable (mismo criterio que
+         biset/triset/finisher más arriba). */
+      const anclaHuerfana = !exAncla && b.exId;
       h += '<div class="fields">' +
         '<div class="f wide"><label>Ejercicio ancla</label><select data-bf="exId" data-b="' + b.id + '">' + exOptions(b.exId) + '</select>' +
+          (anclaHuerfana ? (b.coreNombre
+            ? '<div class="row" style="margin-top:5px;align-items:center;gap:6px"><span class="nm-desvinc">⚠️ Desvinculado &mdash; nombre de respaldo: <b>' + esc(b.coreNombre) + '</b></span></div>'
+            : '<div class="row" style="margin-top:5px;align-items:center;gap:6px"><input type="text" class="nm-warn" data-bf="coreNombre" data-b="' + b.id + '" placeholder="⚠️ Completar nombre de ejercicio" value=""></div>') : '') +
           (avisoVideoHtml(exAncla) ? '<div class="row" style="margin-top:5px;align-items:center;gap:6px">' + avisoVideoHtml(exAncla) + '</div>' : '') +
         '</div>' +
         '<div class="f"><label>Series aprox.</label><input type="number" data-bf="approxSets" data-b="' + b.id + '" value="' + esc(b.approxSets) + '"></div>' +
@@ -3099,9 +3205,17 @@ function renderDay(){
       '<label class="chk" style="margin-bottom:9px"><input type="checkbox" data-bf="failCapable" data-b="' + b.id + '" ' + (b.failCapable?'checked':'') + '> Última ronda al fallo técnico</label>';
       (b.ejercicios||[]).forEach((e, i) => {
         const ex = getEx(e.exId);
+        /* blindaje de auditoría (directiva): un exId huérfano NUNCA debe tapar
+           un e.nombre real ya guardado -- antes acá se pisaba con el genérico
+           "⚠️ Sin ejercicio" sin mirar e.nombre. Sólo si NI el catálogo NI el
+           nombre de respaldo resuelven algo se dibuja el campo editable en
+           ámbar (nunca una fila muda/invisible). */
+        const nombreMostrado = ex ? ex.es : (e.nombre || '').trim();
         h += '<div class="item ' + (al.some(a => a.i===i && a.exId===e.exId && a.level==='danger') ? 'bad' : '') + '">' +
           '<div class="item-h"><span class="num">' + String.fromCharCode(65+i) + '</span>' +
-            '<span class="nm">' + esc(ex ? ex.es : '⚠️ Sin ejercicio') + '</span>' +
+            (nombreMostrado
+              ? '<span class="nm">' + esc(nombreMostrado) + (!ex ? ' <small class="nm-desvinc">(desvinculado)</small>' : '') + '</span>'
+              : '<input type="text" class="nm-warn" data-sf="nombre" data-b="' + b.id + '" data-i="' + i + '" placeholder="⚠️ Completar nombre de ejercicio" value="">') +
             (ex && ex.videoId ? '<button class="btn xs" data-vid="' + ex.id + '">▶</button>' : '') +
             avisoVideoHtml(ex) +
             '<div class="spacer"></div>' +
@@ -3126,9 +3240,16 @@ function renderDay(){
     if(b.tipo === 'finisher'){
       (b.fin||[]).forEach((e, i) => {
         const ex = getEx(e.exId);
+        /* mismo blindaje que en el biset/triset (ver comentario más arriba):
+           e.nombre manda sobre el genérico "⚠️ Sin ejercicio" cuando el exId
+           quedó huérfano; sólo si tampoco hay nombre se dibuja el campo
+           editable en ámbar. */
+        const nombreMostrado = ex ? ex.es : (e.nombre || '').trim();
         h += '<div class="item">' +
           '<div class="item-h"><span class="num">' + (i+1) + '</span>' +
-            '<span class="nm">' + esc(ex ? ex.es : '⚠️ Sin ejercicio') + '</span>' +
+            (nombreMostrado
+              ? '<span class="nm">' + esc(nombreMostrado) + (!ex ? ' <small class="nm-desvinc">(desvinculado)</small>' : '') + '</span>'
+              : '<input type="text" class="nm-warn" data-ff="nombre" data-b="' + b.id + '" data-i="' + i + '" placeholder="⚠️ Completar nombre de ejercicio" value="">') +
             (ex && ex.videoId ? '<button class="btn xs" data-vid="' + ex.id + '">▶</button>' : '') +
             avisoVideoHtml(ex) +
             '<div class="spacer"></div>' +
@@ -3502,6 +3623,31 @@ function bindBuilder(){
     toast('Chequeo de seguridad ejecutado');
   });
   $('#btnGoExport').addEventListener('click', () => go('exportar'));
+  $('#btnAuditEx').addEventListener('click', () => { renderAuditModal(); openModal('mAudit'); });
+  $('#auditFixAll').addEventListener('click', () => {
+    const r = window.auditarYRepararPlanes();
+    toast(r.erroresReparados ? '🩹 ' + r.erroresReparados + ' fila(s) reparada(s)' : 'Nada para reparar: ya estaba todo con nombre de respaldo');
+    renderAuditModal();
+  });
+  $('#auditList').addEventListener('change', e => {
+    const inp = e.target.closest('.audit-in'); if(!inp) return;
+    const row = inp.closest('.audit-row'); if(!row) return;
+    const f = _auditFilas[parseInt(row.dataset.auditIdx, 10)]; if(!f) return;
+    const val = inp.value.trim(); if(!val) return;
+    auditAplicarNombre(f, val);
+    save();
+    toast('✅ Nombre asignado: ' + val);
+    renderAuditModal();
+  });
+  $('#auditList').addEventListener('click', e => {
+    const del = e.target.closest('[data-auditdel]'); if(!del) return;
+    const f = _auditFilas[parseInt(del.dataset.auditdel, 10)]; if(!f) return;
+    if(!confirm('¿Eliminar esta fila vacía del plan de ' + f.athName + '? No se puede deshacer.')) return;
+    auditEliminarFila(f);
+    save();
+    toast('🗑 Fila eliminada');
+    renderAuditModal();
+  });
 
   /* directiva 13: estado de planificación (borrador/listo) + vigencia --
      #bHead se reconstruye entero en cada renderBuilder(), así que se
@@ -5535,7 +5681,8 @@ const CATEGORY_META = {
   strength:{ cls:'bi-strength', labelCls:'bl-strength', insightsCls:'insights-strength' },
   metcon:{ cls:'bi-metcon', labelCls:'bl-metcon', insightsCls:'insights-metcon' },
   cardio:{ cls:'bi-cardio', labelCls:'bl-cardio', insightsCls:'insights-cardio' },
-  accessory:{ cls:'bi-accessory', labelCls:'bl-accessory', insightsCls:'insights-accessory' }
+  accessory:{ cls:'bi-accessory', labelCls:'bl-accessory', insightsCls:'insights-accessory' },
+  endurance:{ cls:'bi-cardio', labelCls:'bl-cardio', insightsCls:'insights-cardio' }
 };
 function limpiarNombre(n){
   let t = String(n||'').trim();
@@ -6931,7 +7078,7 @@ const ROL_BLOQUE_CAT = { strength:'Principal', accessory:'Accesorio', metcon:'Fi
    WOD-Metcon/Hyrox Stations/Accessory-Cooldown), no el rol de Bodybuilding
    -- "metcon" ahí NO es "Finisher", así que el pill de cada bloque usa un
    vocabulario propio en vez del de ROL_BLOQUE_CAT (pensado para musculación). */
-const ROL_BLOQUE_CAT_CF = { warmup:'Warm-Up', strength:'Skill / Strength', metcon:'WOD / Metcon', cardio:'Hyrox Stations', accessory:'Accessory / Cooldown' };
+const ROL_BLOQUE_CAT_CF = { warmup:'Warm-Up', strength:'Skill / Strength', metcon:'WOD / Metcon', cardio:'Hyrox Stations', accessory:'Accessory / Cooldown', endurance:'2º Turno / Endurance' };
 /* placeholder que el compilador del Builder auto-completa en bloques vacíos
    (ver Módulo 44, "auto-fill vacío") -- si es lo único que trae el bloque,
    para el alumno es un bloque sin contenido real y no debe renderizarse.
@@ -6995,7 +7142,11 @@ function renderBlock(block, day, weekIdx, idx){
      envoltorio -- una card vacía no le sirve al alumno para nada. */
   if(window.COACH_DISCIPLINA !== 'sports' && Array.isArray(block.items) && esBloqueVacioCF(block)) return '';
   const meta = CATEGORY_META[block.category] || CATEGORY_META.strength;
-  const catCls = block.category === 'strength' ? 'cat-strength' : (block.category === 'warmup' ? 'cat-warmup' : (block.category === 'metcon' ? 'cat-metcon' : (block.category === 'cardio' ? 'cat-cardio' : 'cat-accessory')));
+  /* "2º Turno / Endurance & Running" (directiva) se agrupa con cardio a
+     efectos de esta clasificación legada (aeróbico/medible, con Score) --
+     su identidad visual propia (coral) viene de .jp-cf-fase-endurance más
+     específica, no de acá. */
+  const catCls = block.category === 'strength' ? 'cat-strength' : (block.category === 'warmup' ? 'cat-warmup' : (block.category === 'metcon' ? 'cat-metcon' : ((block.category === 'cardio' || block.category === 'endurance') ? 'cat-cardio' : 'cat-accessory')));
   const done = isBlockDone(weekIdx, day.id, block.id);
   const optionalCls = block.optional ? ' block-optional' : '';
   const vacioSemana = esBloqueSinSemana(block, weekIdx);
@@ -8266,16 +8417,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return block.category === 'metcon' ||
            /met.?con|wod|bloque c|amrap|emom|for time|chipper/i.test((block.title||'') + ' ' + (block.subtitle||'') + ' ' + etiquetaWi);
   }
-  var CF_FASE_LB = { warmup:'WARM-UP', strength:'SKILL / STRENGTH', metcon:'WOD / METCON', cardio:'HYROX STATIONS', accessory:'ACCESSORY / COOLDOWN' };
+  var CF_FASE_LB = { warmup:'WARM-UP', strength:'SKILL / STRENGTH', metcon:'WOD / METCON', cardio:'HYROX STATIONS', accessory:'ACCESSORY / COOLDOWN', endurance:'2º TURNO · ENDURANCE' };
   /* identidad visual táctica por fase (directiva): un glifo distinto por
      tipo de trabajo para que se reconozca de un vistazo, además del
      color de borde/tag ya diferenciado por CSS (.jp-cf-fase-*). */
-  var CF_FASE_ICON = { warmup:'\\ud83d\\udd25', strength:'\\ud83c\\udfcb\\ufe0f', metcon:'\\u26a1', cardio:'\\ud83c\\udfc3', accessory:'\\ud83e\\udde9' };
+  var CF_FASE_ICON = { warmup:'\\ud83d\\udd25', strength:'\\ud83c\\udfcb\\ufe0f', metcon:'\\u26a1', cardio:'\\ud83c\\udfc3', accessory:'\\ud83e\\udde9', endurance:'\\ud83c\\udfc3' };
   var CF_PARAM_PREFIX = { fortime:'Cap ', chipper:'Cap ', emom:'Cada ' };
-  /* solo las fases de competencia/tiempo (WOD-Metcon, Hyrox Stations) llevan
-     campo de Score -- Warm-up, Skill/Strength y Accessory/Cooldown no se
-     puntúan, no importa qué formato tenga el texto suelto. */
-  var CF_SCORE_FASES = { metcon:1, cardio:1 };
+  /* solo las fases de competencia/tiempo (WOD-Metcon, Hyrox Stations,
+     2º Turno/Endurance) llevan campo de Score -- Warm-up, Skill/Strength y
+     Accessory/Cooldown no se puntúan, no importa qué formato tenga el
+     texto suelto. */
+  var CF_SCORE_FASES = { metcon:1, cardio:1, endurance:1 };
+  /* "2º Turno / Endurance & Running" (directiva): placeholder de registro
+     propio -- el resto de las fases usa el genérico de formato/tiempo, pero
+     acá el alumno carga splits/zona/distancia, no rondas+reps. */
+  var CF_ENDURANCE_PH = "Tiempo, splits o distancia (ej: 5km @ 4:45 min/km o 30' Z2)";
   /* esBloqueVacioCF() es global (ver renderBlock() más arriba en el script
      anterior) -- misma función, un solo lugar donde vive la definición. */
   /* parser de la Pizarra Táctica: distingue encabezado de protocolo (termina en
@@ -8367,7 +8523,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const skey = weekIdx + '|' + dayId + '|' + block.id;
     const guardado = state.scores[skey] || '';
     const ph = (block.scoreType && CF_SCORE_PH[block.scoreType]) ||
-      (f && f.modo === 'up' ? 'Tiempo final (ej: 11:42)' : 'Rondas + reps (ej: 6+12)');
+      (block.category === 'endurance' ? CF_ENDURANCE_PH :
+      (f && f.modo === 'up' ? 'Tiempo final (ej: 11:42)' : 'Rondas + reps (ej: 6+12)'));
+    const scoreLb = block.category === 'endurance' ? 'REGISTRO' : 'SCORE';
     const fase = CF_FASE_LB[block.category] || 'WOD / METCON';
     const kFmt = String(block.boardFmt || '').toLowerCase().replace(/[^a-z]/g, '');
     const paramTxt = block.cfParam ? ((CF_PARAM_PREFIX[kFmt] || '') + block.cfParam) : (min ? (min + ' min') : '');
@@ -8403,7 +8561,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '</details>' : '') +
         (scoreVisible ?
           '<div class="wod-score">' +
-            '<label>[ SCORE ]</label>' +
+            '<label>[ ' + scoreLb + ' ]</label>' +
             '<input class="wod-score-in" data-skey="' + skey + '" placeholder="' + ph + '" value="' + (guardado || '') + '" />' +
             '<span class="ws-ok" data-sok="' + skey + '">' + (guardado ? '✓ guardado' : '') + '</span>' +
           '</div>' : '') +
@@ -15260,7 +15418,7 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
                    ((b && b.title) || '') + ' ' + ((b && b.subtitle) || '');
       var cat = (b && b.category) || '';
       var medible = !RX_WARM.test(titulo) && cat !== 'warmup' &&
-                    (cat === 'metcon' || cat === 'cardio' ||
+                    (cat === 'metcon' || cat === 'cardio' || cat === 'endurance' ||
                      /\\bemom\\b|\\bamrap\\b|for\\s*time|\\brft\\b|tabata|chipper|met.?con|\\bwod\\b|test|\\brm\\b|1rm/i
                        .test(titulo + ' ' + ((bl.querySelector('.cf-body, .wb-body') || {}).textContent || '')));
       bl.classList.toggle('sin-score', !medible);
@@ -15975,6 +16133,12 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     var cat = (b && b.category) || '';
     var t = ((b && b.title) || '') + ' ' + ((b && b.subtitle) || '');
     if(cat === 'warmup' || /warm.?up|entrada en calor|movilidad/i.test(t)) return 'disc-warm';
+    /* "2º Turno / Endurance & Running" (directiva): se clasifica como
+       disc-met sólo a efectos de este módulo legado -- así conserva su
+       campo de Score/Registro -- el borde/tag coral propios de la fase
+       vienen de la regla .jp-cf-fase-endurance (más específica, gana por
+       encima de este sistema viejo, ver nota más abajo en el archivo). */
+    if(cat === 'endurance') return 'disc-met';
     if(cat === 'metcon' || bl.querySelector('.wod-board')) return 'disc-met';
     if(cat === 'accessory' || /accessor|midline|accesorio|core|abdomen/i.test(t)) return 'disc-acc';
     if(/gymnastic|skill|gimn/i.test(t)) return 'disc-gym';
@@ -23135,7 +23299,7 @@ body.focus-mode .hd-dock{display:none}
 :root{
   --stealth-0:#080B10; --stealth-1:#0D1117;
   --orange:#E06D2D; --cyan:#38BDF8; --amber:#F5C518;
-  --emerald:#2DD4BF; --violet:#818CF8;
+  --emerald:#2DD4BF; --violet:#818CF8; --coral:#FF6B57;
   --panel:#0E131C; --panel-glass:rgba(14,19,28,.85); --line:rgba(255,255,255,.08);
 }
 /* fondo global de alto rendimiento (micro-dot matrix) -- reemplaza la
@@ -23186,11 +23350,21 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-strength{ border-top-color:rgba(56
 body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-metcon{ border-top-color:rgba(224,109,45,.5) !important; }
 body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-cardio{ border-top-color:rgba(45,212,191,.4) !important; }
 body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-accessory{ border-top-color:rgba(129,140,248,.4) !important; }
+/* "2º Turno / Endurance & Running": fase exclusiva de CrossFit & Hyrox (ver
+   CF_FASES/CF_SCORE_FASES arriba) -- coral táctico distinto del cyan de
+   Skill/Strength para que la sesión complementaria de cardio/running se
+   reconozca de un vistazo, con un glow propio además del borde (el resto
+   de las fases sólo llevan borde superior de color). */
+body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
+  border-top-color:rgba(255,107,87,.55) !important;
+  box-shadow:0 0 0 1px rgba(255,107,87,.08), 0 12px 30px -12px rgba(255,107,87,.35) !important;
+}
 .jp-cfboard.jp-cf-fase-warmup .jp-cf-tag{ color:var(--amber); }
 .jp-cfboard.jp-cf-fase-strength .jp-cf-tag{ color:var(--cyan); }
 .jp-cfboard.jp-cf-fase-metcon .jp-cf-tag{ color:var(--orange); }
 .jp-cfboard.jp-cf-fase-cardio .jp-cf-tag{ color:var(--emerald); }
 .jp-cfboard.jp-cf-fase-accessory .jp-cf-tag{ color:var(--violet); }
+.jp-cfboard.jp-cf-fase-endurance .jp-cf-tag{ color:var(--coral); }
 .jp-cfboard .jp-cf-tag{
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:.1em;
   text-transform:uppercase; color:#38BDF8; margin-bottom:8px;
@@ -25609,10 +25783,42 @@ document.addEventListener('DOMContentLoaded', init);
   </div>
 </div>
 
+<div class="modal-bg" id="mAudit">
+  <div class="modal" style="max-width:980px">
+    <div class="modal-h">
+      <h3>🔍 Auditoría de Atletas &amp; Ejercicios</h3>
+      <div class="spacer"></div>
+      <span class="find-count" id="auditCount"></span>
+      <button class="icon-btn" data-close="mAudit">✕</button>
+    </div>
+    <div class="modal-b">
+      <div id="auditIntro" class="hint" style="margin-bottom:12px"></div>
+      <div id="auditList"></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mAudit">Cerrar</button>
+      <button class="btn gold" id="auditFixAll">🩹 Reparar / Limpiar Todo</button>
+    </div>
+  </div>
+</div>
+
 <style>
 .estep{margin-top:12px}
 .tplf:disabled{opacity:.35;cursor:not-allowed;pointer-events:none}
 #eliteGen:disabled{opacity:.5;cursor:not-allowed}
+#auditList{display:flex;flex-direction:column;gap:8px;max-height:56vh;overflow-y:auto;padding:2px}
+.audit-row{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  border:1px solid var(--line-2);border-radius:10px;padding:10px 12px;background:var(--panel-2);
+}
+.audit-meta{display:flex;flex-direction:column;gap:2px;flex:1 1 220px;min-width:180px}
+.audit-ath{font-weight:800;font-size:13px}
+.audit-loc{font-size:11px;color:var(--muted)}
+.audit-in{
+  flex:1 1 200px;min-width:160px;padding:7px 10px;border-radius:8px;
+  border:1.5px solid #F5C518;background:rgba(245,197,24,.08);color:var(--txt);font-weight:600;
+}
+.audit-in::placeholder{color:rgba(245,197,24,.7)}
 </style>
 
 <div class="modal-bg" id="mEliteTpl">
@@ -26697,14 +26903,14 @@ document.addEventListener('DOMContentLoaded', init);
       if(fb){ openFind({ bid: fb.dataset.find, i: parseInt(fb.dataset.fi, 10) }); return; }
     });
 
-    $$('#mTpl [data-close], #mFind [data-close]').forEach(b =>
+    $$('#mTpl [data-close], #mFind [data-close], #mAudit [data-close]').forEach(b =>
       b.addEventListener('click', () => closeModal(b.dataset.close)));
-    ['mTpl','mFind'].forEach(id => {
+    ['mTpl','mFind','mAudit'].forEach(id => {
       const m = document.getElementById(id);
       m.addEventListener('click', e => { if(e.target === m) closeModal(id); });
     });
     document.addEventListener('keydown', e => {
-      if(e.key === 'Escape'){ closeModal('mTpl'); closeModal('mFind'); }
+      if(e.key === 'Escape'){ closeModal('mTpl'); closeModal('mFind'); closeModal('mAudit'); }
     });
 
     if($('#dayPanel').children.length) enhanceBlocks();
@@ -41071,6 +41277,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 #dayPanel .block > .block-h .bnum.c-str {background:linear-gradient(135deg,#D2793F,#D2793F);box-shadow:0 0 16px rgba(210,121,63,.4)}
 #dayPanel .block > .block-h .bnum.c-met {background:linear-gradient(135deg,#FF2A85,#FF6FB1);box-shadow:0 0 16px rgba(255,42,133,.4);color:#12000A}
 #dayPanel .block > .block-h .bnum.c-acc {background:linear-gradient(135deg,#7CC5E8,#67F8FF);box-shadow:0 0 16px rgba(124,197,232,.35)}
+#dayPanel .block > .block-h .bnum.c-end {background:linear-gradient(135deg,#FF6B57,#FF9A80);box-shadow:0 0 16px rgba(255,107,87,.4)}
 #dayPanel .block > .block-h input.bt{
   flex:1 1 260px;min-width:200px;font-family:var(--ffh);font-size:18px;font-weight:700;
   letter-spacing:.02em;color:var(--txt);background:rgba(9,10,15,.6);
@@ -41228,7 +41435,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   /* =========================================================
      2 · MAXI-HEADER DE BLOQUES
   ========================================================= */
-  const COLOR = { warmup:'c-warm', strength:'c-str', metcon:'c-met', accessory:'c-acc', cardio:'c-acc' };
+  const COLOR = { warmup:'c-warm', strength:'c-str', metcon:'c-met', accessory:'c-acc', cardio:'c-acc', endurance:'c-end' };
   function maxi(){
     const panel = document.getElementById('dayPanel');
     if(!panel) return;
