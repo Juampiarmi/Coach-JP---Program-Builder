@@ -3063,7 +3063,23 @@ function renderDay(){
   let h = '';
 
   if(cfActiva){
-    h += '<div class="card" style="margin-bottom:14px">' +
+    /* desacoplamiento de semanas (directiva crítica): selector de "semana
+       que estoy editando" para la Pizarra Táctica -- ver activeCfWeek()/
+       cfWeekItems()/setCfWeekItems() más abajo en el archivo. Cada bloque
+       tipo:'list' de este día muestra y guarda en la semana elegida acá,
+       nunca en otra. */
+    const cfWkActiva = activeCfWeek();
+    h += '<div class="card cf-week-bar" style="margin-bottom:14px">' +
+      '<label class="lb">📆 Semana que estás editando (Pizarra Táctica)</label>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">' +
+        (pAct.meso||[]).map((w,i) =>
+          '<button type="button" class="btn sm' + (i===cfWkActiva?' gold':' ghost') + '" data-cfwk="' + i + '">' +
+            esc(w.short || ('S'+(i+1))) + '</button>'
+        ).join('') +
+      '</div>' +
+      '<div class="hint" style="margin-top:6px">Cada semana de CrossFit &amp; Hyrox es una prescripción 100% independiente -- editar acá nunca modifica el contenido de otra semana.</div>' +
+    '</div>' +
+    '<div class="card" style="margin-bottom:14px">' +
       '<div class="grid g2">' +
         '<div><label class="lb">Título del día</label><input data-df="title" value="' + esc(d.title) + '" placeholder="Día de WOD y Skill"></div>' +
         '<div><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Movilidad de cadera — 2 min">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
@@ -3281,11 +3297,15 @@ function renderDay(){
     }
 
     if(b.tipo === 'list'){
-      h += '<label class="lb">' + (esBloqueCF ? 'Prescripción de ejercicios (uno por línea · carga en KG, distancia en CM/M)' : 'Ítems (uno por línea · formato «Nombre — detalle»)') + '</label>' +
+      const cfWk = esBloqueCF ? activeCfWeek() : 0;
+      const cfWkLb = esBloqueCF && cfWk > 0 ? ((pAct.meso[cfWk]||{}).short || ('S'+(cfWk+1))) : '';
+      h += '<label class="lb">' + (esBloqueCF ? 'Prescripción de ejercicios (uno por línea · carga en KG, distancia en CM/M)' : 'Ítems (uno por línea · formato «Nombre — detalle»)') +
+          (cfWkLb ? ' <span class="pill gold" style="margin-left:6px">✎ Editando ' + esc(cfWkLb) + '</span>' : '') +
+        '</label>' +
         (esBloqueCF ? cfFmtToolbar(b.id) : '') +
         '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="' +
           (esBloqueCF ? '10 Thrusters — 42.5/30 KG\n10 Pull-ups\n20 Wall Balls\nRemo — 500 M' : 'Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15') +
-        '">' + esc((b.items||[]).join('\n')) + '</textarea>';
+        '">' + esc((esBloqueCF ? cfWeekItems(b, cfWk) : (b.items||[])).join('\n')) + '</textarea>';
       if(esBloqueCF){
         const fmtInfo = CF_PARAM[b.cfFmt];
         h += '<div class="fields" style="margin-top:10px">' +
@@ -3553,6 +3573,32 @@ function setBlockField(b, f, val){
   else b[f] = val;
 }
 
+/* ---------- DESACOPLAMIENTO DE SEMANAS (CrossFit & Hyrox) ----------
+   Directiva crítica: en CrossFit cada semana es una prescripción
+   independiente (no la sobrecarga progresiva de Bodybuilding sobre la
+   MISMA estructura) -- antes, la Pizarra de un bloque tipo:'list' vivía
+   en un único array (b.items) sin ningún concepto de semana, así que
+   "Semana 2" mostraba y, peor, EDITABA el mismo array que "Semana 1".
+   Semana 1 (índice 0) sigue siendo b.items -- fuente única, sin cambios,
+   compatible con los 33 atletas ya cargados. A partir de la primera vez
+   que el coach toca Semana 2/3/4 en el selector nuevo del Builder, esa
+   semana se bifurca a su propio array independiente en b.weekItems[i]
+   (nunca una referencia compartida) y desde ahí edita y compila aparte,
+   sin tocar jamás b.items ni las otras semanas. */
+function activeCfWeek(){
+  return (S.ui && typeof S.ui.cfWeek === 'number' && S.ui.cfWeek > 0) ? S.ui.cfWeek : 0;
+}
+function cfWeekItems(b, weekIdx){
+  if(weekIdx > 0 && b.weekItems && b.weekItems[weekIdx] && b.weekItems[weekIdx].length) return b.weekItems[weekIdx];
+  return b.items || [];
+}
+function setCfWeekItems(b, weekIdx, val){
+  const arr = String(val).split('\n').map(s => s.trim()).filter(Boolean);
+  if(weekIdx <= 0){ b.items = arr; return; }
+  b.weekItems = b.weekItems || [];
+  b.weekItems[weekIdx] = arr;
+}
+
 /* ---------- Eventos ---------- */
 function bindBuilder(){
   /* mesociclo */
@@ -3725,7 +3771,19 @@ function bindBuilder(){
     }
     if(t.dataset.bf){
       const b = findBlock(t.dataset.b); if(!b) return;
-      setBlockField(b, t.dataset.bf, t.type === 'checkbox' ? t.checked : t.value);
+      /* desacoplamiento de semanas (CrossFit): la Pizarra (tipo:'list') se
+         edita semana por semana -- ver setCfWeekItems() arriba. Cualquier
+         otro campo (Bodybuilding incluido) sigue el camino genérico. El
+         chequeo de disciplina evita que un bloque tipo:'list' genérico de
+         Bodybuilding (circuito) se vea afectado si S.ui.cfWeek quedó > 0
+         de una sesión anterior con un atleta de CrossFit. */
+      const pActivo = plan(S.activeId);
+      const esPlanCF = !!(pActivo && pActivo.meta && pActivo.meta.mesoDisc === 'crossfit');
+      if(t.dataset.bf === 'items' && b.tipo === 'list' && esPlanCF && activeCfWeek() > 0){
+        setCfWeekItems(b, activeCfWeek(), t.value);
+      } else {
+        setBlockField(b, t.dataset.bf, t.type === 'checkbox' ? t.checked : t.value);
+      }
       save();
       if(t.dataset.bf === 'movements' || t.dataset.bf === 'items') alertasDebounced();
       return;
@@ -3796,6 +3854,12 @@ function bindBuilder(){
     const t = e.target.closest('button'); if(!t) return;
     const d = curDay(); if(!d) return;
 
+    if(t.dataset.cfwk !== undefined){
+      S.ui = S.ui || {};
+      S.ui.cfWeek = parseInt(t.dataset.cfwk, 10) || 0;
+      save(); renderBuilder();
+      return;
+    }
     if(t.dataset.addex){ addSubEx(t.dataset.addex, $('[data-pick="' + t.dataset.addex + '"]').value); return; }
     if(t.dataset.bai){ nombrarBloqueConIA(t.dataset.bai, t); return; }
     if(t.dataset.bdel){
@@ -8513,11 +8577,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        ya renderizado -- más robusto y permite el parseo nombre/valor sin
        depender de cómo el renderer genérico haya envuelto cada línea. */
     if(esBloqueVacioCF(block)) return;
-    /* 17/09 · auditoría general: una línea nula o vacía en block.items (dato
-       viejo, pegado con saltos de más, etc.) no debe sobrevivir como fila
-       muda en la Pizarra -- se purga acá, en el propio render, para que la
-       reparación no dependa de que el coach corra auditarYRepararPlanes(). */
-    const lineas = (block.items || []).map(function(l){ return l; }).filter(function(l){ return l != null && String(l).trim() !== ''; });
+    /* desacoplamiento de semanas (directiva crítica): Semana 1 sigue
+       viviendo en block.items -- si el coach bifurcó esta semana puntual
+       en el Builder (weekIdx > 0), block.weekItems[weekIdx] trae SU PROPIO
+       contenido, ya procesado por separado en buildProgramConfig() (%1RM,
+       auto-match de video en Accessory). Una semana nunca bifurcada cae en
+       el fallback de siempre (block.items), sin ningún cambio de
+       comportamiento para planes que no usaron el selector nuevo. */
+    const itemsSemana = (weekIdx > 0 && block.weekItems && block.weekItems[weekIdx] && block.weekItems[weekIdx].length)
+      ? block.weekItems[weekIdx] : (block.items || []);
+    /* 17/09 · auditoría general: una línea nula o vacía (dato viejo, pegado
+       con saltos de más, etc.) no debe sobrevivir como fila muda en la
+       Pizarra -- se purga acá, en el propio render, para que la reparación
+       no dependa de que el coach corra auditarYRepararPlanes(). */
+    const lineas = itemsSemana.map(function(l){ return l; }).filter(function(l){ return l != null && String(l).trim() !== ''; });
     const f = formatoEstructurado(block) || formatoDe(block, lineas, weekIdx);
     const min = minutosDe(block, lineas);
     const skey = weekIdx + '|' + dayId + '|' + block.id;
@@ -23384,7 +23457,8 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
 .jp-cfboard .jp-cf-fmtbar .b{ color:#E06D2D; margin-left:6px; }
 .jp-cfboard .jp-cf-rows{ display:flex; flex-direction:column; gap:8px; margin-bottom:10px; }
 .jp-cfboard .jp-cf-row{
-  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between; gap:6px 12px;
+  width:100%;
   padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.02);
 }
 .jp-cfboard .jp-cf-row.jp-cf-header{
@@ -23409,8 +23483,21 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   font-family:'JetBrains Mono',monospace; font-weight:800; font-size:11px;
   letter-spacing:.05em; color:#E06D2D;
 }
-.jp-cfboard .jp-cf-rn{ font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#EDEFF2; }
-.jp-cfboard .jp-cf-rv{ font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; flex-shrink:0; text-align:right; }
+/* fix de desborde/wrapping (directiva): sin flex:1+min-width:0 en la
+   columna izquierda, el badge de carga (.jp-cf-rv, flex-shrink:0) le
+   robaba todo el ancho a .jp-cf-rn en una sola línea forzada (nowrap por
+   defecto), aplastándola a una columna angosta donde cada palabra del
+   movimiento terminaba en su propio renglón. Con .jp-cf-row en
+   flex-wrap:wrap, cuando el badge no entra al lado del nombre baja limpio
+   a su propia línea completa -- nunca parte las palabras de la izquierda. */
+.jp-cfboard .jp-cf-rn{
+  flex:1 1 auto; min-width:0; word-break:normal; overflow-wrap:break-word;
+  font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#EDEFF2;
+}
+.jp-cfboard .jp-cf-rv{
+  flex:0 1 auto; flex-shrink:1; white-space:normal; overflow-wrap:break-word; max-width:100%;
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; text-align:right;
+}
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
 .jp-cfboard .jp-cf-num{ color:#38BDF8; font-weight:800; }
 .jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.12); }
@@ -23850,6 +23937,40 @@ function buildProgramConfig(ath){
           });
         }
         if(b.cardioMinutes) out.cardioMinutes = parseInt(b.cardioMinutes,10) || 0;
+        /* desacoplamiento de semanas (directiva crítica): out.items de arriba
+           es SIEMPRE Semana 1 (b.items, fuente única e intacta). Si el coach
+           bifurcó alguna semana 2/3/4 en el Builder (ver setCfWeekItems()),
+           se compila cada una por separado acá -- mismo pipeline de %1RM y
+           de auto-match de video en Accessory -- para que pizarra() del lado
+           del alumno encuentre contenido genuinamente propio por semana en
+           vez de repetir siempre Semana 1. Las semanas nunca bifurcadas
+           simplemente no aparecen en out.weekItems y pizarra() sigue usando
+           out.items como ya hacía (mismo comportamiento de siempre, cero
+           impacto en planes existentes que no usaron el selector nuevo). */
+        if(bloqueCF && Array.isArray(b.weekItems) && b.weekItems.length){
+          const wItems = {};
+          b.weekItems.forEach((arr, wi) => {
+            if(wi <= 0 || !arr || !arr.length) return;
+            if(accesorioConVideo){
+              arr.forEach(it => {
+                const r = resolveExacto(it);
+                if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
+              });
+            }
+            let procesado = accesorioConVideo ? arr.slice() : arr.map(it => partirVideoManual(it).texto);
+            procesado = procesado.map(it => {
+              const m = String(it).match(RX_PCT_LIFT);
+              if(!m || !LIFT_TRONCAL.test(m[1])) return it;
+              const pct = parseInt(m[2], 10);
+              const rm = marcaDelAlumno(ath, m[1].trim());
+              if(!(rm > 0)) return it;
+              const kg = Math.round((rm * pct / 100) / 2.5) * 2.5;
+              return m[1].trim() + ' @ ' + pct + '% (~' + kg + ' kg)';
+            });
+            wItems[wi] = procesado;
+          });
+          if(Object.keys(wItems).length) out.weekItems = wItems;
+        }
       }
 
       /* la supresión total del botón de video (sinVideo) sólo aplica a pizarras
