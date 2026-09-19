@@ -6107,7 +6107,7 @@ function setLoadField(key, field, value){
   state.loads[key].ts = Date.now();
   saveProgress();
 }
-function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg, nombreEx){
+function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg, nombreEx, blockLabel){
   /* parser de unidades: si la prescripción de esta estación ya viene en
      distancia/tiempo ("20 metros", "30 seg", "400m"), el segundo input
      no debe seguir etiquetado "Reps" -- se adapta a la unidad real.
@@ -6116,6 +6116,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
      siempre trae metros en el detalle). */
   const nm = String(nombreEx || '');
   const rh = String(repsHint || '');
+  const bl = String(blockLabel || '');
   let repsPlaceholder = 'Reps';
   if(/\\bcarry\\b/i.test(nm) || /\\d\\s*(metros?|km|m)\\b/i.test(rh) || /\\d\\s*(metros?|km|m)\\b/i.test(nm)) repsPlaceholder = 'm';
   else if(/\\d\\s*(segundos?|seg|minutos?|min|s)\\b/i.test(rh)) repsPlaceholder = 'seg';
@@ -6125,6 +6126,16 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
      para no deshabilitar el campo por accidente en un ejercicio con
      barra que mencione un peso en el detalle. */
   const esBanda = /\\b(banda|band|el[aá]stica|bw|bodyweight)\\b/i.test(nm);
+  /* supresión de Kg en Core/abdominales (directiva): estos ejercicios se
+     miden en reps o tiempo, nunca en Kg -- ni siquiera cuando llevan algo
+     de lastre, ese dato no es lo que el coach quiere trackear semana a
+     semana acá. Se detecta por el NOMBRE del ejercicio (lista cerrada de
+     patrones de Core) o por la etiqueta del BLOQUE ("Core"/"Zona Media"),
+     esta última pasada aparte en blockLabel porque acá sólo se recibe el
+     nombre del ejercicio puntual. */
+  const esCore = /\\b(plank|rollout|flutter|dead\\s*bug|hollow|crunch|ab\\s*wheel|pallof|twist|v-?up|sit-?up)\\b/i.test(nm) ||
+    /\\b(core|zona\\s*media)\\b/i.test(bl);
+  const ocultaKg = esBanda || esCore;
   /* claridad mancuernas (directiva): "15 kg" es ambiguo -- ¿una mancuerna
      o las dos sumadas? El label/placeholder aclaran que es POR MANO; el
      número que el alumno tipea se guarda y se usa igual que cualquier
@@ -6156,7 +6167,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
        ejecutado en S-1 (el objetivo programado suele ser un rango tipo
        "10-12", no sirve para precargar un número exacto). */
     let kgVal = ld.kg, repsVal = ld.reps, sugerido = false;
-    if(!esBanda && (kgVal == null || kgVal === '') && weekIdx > 0){
+    if(!ocultaKg && (kgVal == null || kgVal === '') && weekIdx > 0){
       const prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
       const kgPrev = (prevLd.kg != null && prevLd.kg !== '') ? prevLd.kg : null;
       const kgSug = (sugKg && sugKg > 0) ? sugKg : kgPrev;
@@ -6164,7 +6175,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
       if((repsVal == null || repsVal === '') && prevLd.reps != null && prevLd.reps !== ''){
         repsVal = prevLd.reps; setLoadField(key, 'reps', repsVal); sugerido = true;
       }
-    } else if(esBanda && (repsVal == null || repsVal === '') && weekIdx > 0){
+    } else if(ocultaKg && (repsVal == null || repsVal === '') && weekIdx > 0){
       const prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
       if(prevLd.reps != null && prevLd.reps !== ''){ repsVal = prevLd.reps; setLoadField(key, 'reps', repsVal); sugerido = true; }
     }
@@ -6183,21 +6194,29 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
        porque acá es donde ya están kgVal/repsVal resueltos (sugeridos o
        reales); el CSS decide cuándo mostrar esto vs. los inputs reales,
        nunca se lee/escribe un dato nuevo. */
-    const resumenCompacto = esBanda
+    const resumenCompacto = ocultaKg
       ? (repsVal != null && repsVal !== '' ? (repsVal + ' ' + repsPlaceholder.toLowerCase()) : '\\u2014')
       : ((kgVal != null && kgVal !== '' && repsVal != null && repsVal !== '')
         ? (kgVal + '\\u00d7' + repsVal) : '\\u2014');
-    html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + claseActiva + (esBanda?' set-row-banda':'') + '" data-set-key="' + key + '">' +
+    /* Core/abdominales (directiva): cuando la prescripción es por tiempo
+       ("30 seg", "45s", '30"'), la etiqueta chica del campo de Reps pasa
+       a decir "SEGUNDOS / TIEMPO" en vez de "seg" -- más claro para el
+       alumno que ese número no son repeticiones. Sólo aplica a Core (las
+       bandas siguen con su etiqueta habitual m/seg/reps). */
+    const esTiempo = /seg|\\d\\s*s\\b|"/i.test(rh);
+    const repsUnitLabel = (esCore && esTiempo) ? 'SEGUNDOS / TIEMPO' : repsPlaceholder.toLowerCase();
+    html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + claseActiva + (ocultaKg?' set-row-banda':'') + '" data-set-key="' + key + '">' +
       '<button type="button" class="set-row-toggle" aria-label="Ver serie ' + i + '">' +
         '<span class="set-row-label">Serie ' + i + '</span>' +
         '<span class="set-row-compact">' + resumenCompacto + '</span>' +
       '</button>' +
-      '<div class="set-load' + (esBanda?' set-load-banda':'') + '">' +
-        /* bandas/peso corporal: sin casillero de Kg -- el estímulo no se
-           mide en un número de carga real (ver esBanda más arriba). */
-        (esBanda ? '' :
-          '<span class="set-field"><span class="set-unit">' + (esMancuerna ? 'kg (c/u)' : 'kg') + '</span>' +
-            '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="' + (esMancuerna ? 'c/u (ej: 15)' : 'Kg') + '" value="' + (kgVal!=null?kgVal:'') + '" />' +
+      '<div class="set-load' + (ocultaKg?' set-load-banda':'') + '">' +
+        /* bandas/peso corporal y Core/abdominales: sin casillero de Kg --
+           el estímulo no se mide en un número de carga real (ver
+           ocultaKg más arriba). */
+        (ocultaKg ? '' :
+          '<span class="set-field"><span class="set-unit">' + (esMancuerna ? 'KG (C/U)' : 'kg') + '</span>' +
+            '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="' + (esMancuerna ? 'Por mano (ej: 15)' : 'Kg') + '" value="' + (kgVal!=null?kgVal:'') + '" />' +
           '</span>' +
           '<span class="set-x" aria-hidden="true">\\u00d7</span>'
         ) +
@@ -6207,8 +6226,9 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
            y legible (badge de prescripción / roster del biset), y el input
            queda limpio para que el alumno cargue lo realizado. La etiqueta
            chica arriba (.set-unit) sí queda fija -- "reps", o "m"/"seg"
-           cuando la estación es de distancia/tiempo (repsPlaceholder). */
-        '<span class="set-field"><span class="set-unit">' + repsPlaceholder.toLowerCase() + '</span>' +
+           cuando la estación es de distancia/tiempo (repsPlaceholder), o
+           "SEGUNDOS / TIEMPO" en Core por tiempo (repsUnitLabel). */
+        '<span class="set-field"><span class="set-unit">' + repsUnitLabel + '</span>' +
           '<input class="set-input set-reps' + (sugerido&&repsVal!=null?' set-input-sug':'') + '" type="text" inputmode="numeric" autocomplete="off" placeholder="' + repsPlaceholder + '" value="' + (repsVal!=null?repsVal:'') + '" />' +
         '</span>' +
         '<input class="set-check" type="checkbox" ' + (ld.done?'checked':'') + ' />' +
@@ -7074,7 +7094,7 @@ function renderBlockInner(block, day, weekIdx){
       '<span class="ex-detail"><strong>' + lblSets + '</strong>' + repsSemana + ' · Tempo ' + block.tempo +
       refPreviaHtml(weekIdx, day.id, block.id, 0, setsSemana) + '</span></div>';
     if(typeof renderSetRows === 'function'){
-      html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana, cargaSugeridaKg(block, weekIdx), nombreSemana);
+      html += renderSetRows(weekIdx, day.id, block.id, 0, setsSemana, repsSemana, cargaSugeridaKg(block, weekIdx), nombreSemana, (block.title||'') + ' ' + (block.subtitle||''));
     }
     var notaSem = (block.weekNote && block.weekNote[weekIdx]) || block.tips;
     if(notaSem){ html += '<div class="coach-note"><strong>Coach Note</strong>' + notaSem + '</div>'; }
@@ -7092,7 +7112,7 @@ function renderBlockInner(block, day, weekIdx){
       html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + enBadgeHtml(ex.nameEn) + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') +
         refPreviaHtml(weekIdx, day.id, block.id, exIdx, sd.rounds) + '</span></div>';
       if(typeof renderSetRows === 'function'){
-        html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps, cargaSugeridaKg(block, weekIdx), ex.name);
+        html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps, cargaSugeridaKg(block, weekIdx), ex.name, (block.title||'') + ' ' + (block.subtitle||''));
       }
     });
     html += '<span class="directive-badge">\\u26a1 Transici\\u00f3n continua (sin pausa)</span>';
@@ -17299,8 +17319,14 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     return (typeof videoLinkHtml === 'function') ? videoLinkHtml(nombre) : '';
   }
   function filas(dayId, blockId, exIdx, rondas, hint, nombre){
+    /* este módulo sólo reconstruye bloques que esCore(b, bl) ya clasificó
+       como Core más arriba (ver reconstruir()) -- se le pasa 'Core' fijo
+       como etiqueta de bloque para que renderSetRows() oculte el Kg acá
+       también, sin depender de que el NOMBRE puntual del ejercicio matchee
+       la lista de patrones (un WOD viejo puede traer movimientos de Core
+       con nombres libres que esa lista no cubre). */
     if(typeof renderSetRows === 'function')
-      return renderSetRows(state.currentWeek || 0, dayId, blockId, exIdx, rondas, hint || 'Reps', 0, nombre);
+      return renderSetRows(state.currentWeek || 0, dayId, blockId, exIdx, rondas, hint || 'Reps', 0, nombre, 'Core');
     return '';
   }
   function reconstruir(){
