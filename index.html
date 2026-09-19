@@ -4864,10 +4864,27 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .hud-reset { width: 32px; height: 32px; font-size: 0.9rem; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary); }
   .hud-close { border: none; background: transparent; color: var(--text-muted); font-size: 1.1rem; cursor: pointer; padding: 4px 2px 4px 6px; line-height: 1; }
   .hud-close:hover { color: var(--text-primary); }
+  .hud-min { border: none; background: transparent; color: var(--text-muted); font-size: 1rem; cursor: pointer; padding: 4px 2px; line-height: 1; }
+  .hud-min:hover { color: var(--text-primary); }
   @media (max-width: 600px) {
     .timer-hud { left: 12px; right: 12px; bottom: 12px; transform: translateY(140%); border-radius: 20px; padding: 8px 10px 8px 16px; max-width: none; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
     .timer-hud.show { transform: translateY(0); }
     .hud-time { font-size: 1.25rem; min-width: 56px; }
+    /* directiva ergonómica: el pill full-width, aunque ya vive arriba del
+       dock (ver .timer-hud{bottom:...} en el módulo del dock más abajo),
+       todavía puede taparle al alumno los casilleros de Kg×Reps de la
+       ronda activa si esa fila queda cerca del borde inferior al abrir el
+       timer. El botón de minimizar lo reduce a un chip angosto en la
+       esquina, liberando el resto del ancho para seguir cargando datos. */
+    .timer-hud.minimized{
+      left: auto !important; right: 12px !important; width: auto !important; max-width: 128px !important;
+      border-radius: 100px !important; padding: 7px 12px 7px 14px !important;
+      gap: 8px !important;
+    }
+    .timer-hud.minimized .hud-phase,
+    .timer-hud.minimized .hud-reset{ display: none !important; }
+    .timer-hud.minimized .hud-time{ font-size: 1rem !important; min-width: auto !important; }
+    .timer-hud.minimized .hud-play{ width: 30px !important; height: 30px !important; font-size: .85rem !important; }
   }
   @media (prefers-reduced-motion: reduce) { .timer-hud { transition: opacity .2s ease; } }
   .quick-timer { display: flex; align-items: center; justify-content: space-between; background: linear-gradient(135deg, rgba(124,197,232,0.1), rgba(124,197,232,0.04)); border: 1.5px solid rgba(124,197,232,0.4); border-radius: var(--radius-sm); padding: 12px 16px; margin-top: 0.9rem; flex-wrap: wrap; gap: 10px; box-shadow: var(--shadow-sm), 0 0 18px rgba(124,197,232,0.08) inset; }
@@ -5690,11 +5707,12 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   </div>
 </div>
 <div id="timerHud" class="timer-hud" aria-hidden="true">
-  <div class="hud-info"><span class="hud-phase" id="hudPhase">DESCANSO</span><span class="hud-time" id="hudTime">00:00</span></div>
+  <div class="hud-info" id="hudInfo"><span class="hud-phase" id="hudPhase">DESCANSO</span><span class="hud-time" id="hudTime">00:00</span></div>
   <div class="hud-controls">
     <button class="hud-btn hud-reset" id="hudReset" type="button" title="Reiniciar" aria-label="Reiniciar">↺</button>
     <button class="hud-btn hud-play" id="hudPlay" type="button" title="Pausar o reanudar" aria-label="Pausar o reanudar">⏸</button>
   </div>
+  <button class="hud-min" id="hudMin" type="button" title="Minimizar (no tapar los casilleros)" aria-label="Minimizar">‒</button>
   <button class="hud-close" id="hudClose" type="button" title="Ocultar" aria-label="Ocultar">×</button>
 </div>
 <div class="video-popup-wrap" id="video-popup-wrap">
@@ -6107,6 +6125,14 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
      para no deshabilitar el campo por accidente en un ejercicio con
      barra que mencione un peso en el detalle. */
   const esBanda = /\\b(banda|band|el[aá]stica|bw|bodyweight)\\b/i.test(nm);
+  /* claridad mancuernas (directiva): "15 kg" es ambiguo -- ¿una mancuerna
+     o las dos sumadas? El label/placeholder aclaran que es POR MANO; el
+     número que el alumno tipea se guarda y se usa igual que cualquier
+     otro Kg (PR hub, %1RM, sugerencia de carga de la semana siguiente),
+     sin multiplicarlo por 2 en ningún lado -- convención unitaria
+     consistente en todo el sistema, para no arriesgar los históricos de
+     carga ya guardados de los atletas reales con una duplicación oculta. */
+  const esMancuerna = /\\b(mancuernas?|dumbbell|db)\\b/i.test(nm);
   let html = '<div class="set-tracker">';
   /* directiva de rediseño: marca la primera serie sin completar como
      "activa" para darle escala numérica destacada (kg/reps más grandes) --
@@ -6170,8 +6196,8 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
         /* bandas/peso corporal: sin casillero de Kg -- el estímulo no se
            mide en un número de carga real (ver esBanda más arriba). */
         (esBanda ? '' :
-          '<span class="set-field"><span class="set-unit">kg</span>' +
-            '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="Kg" value="' + (kgVal!=null?kgVal:'') + '" />' +
+          '<span class="set-field"><span class="set-unit">' + (esMancuerna ? 'kg (c/u)' : 'kg') + '</span>' +
+            '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="' + (esMancuerna ? 'c/u (ej: 15)' : 'Kg') + '" value="' + (kgVal!=null?kgVal:'') + '" />' +
           '</span>' +
           '<span class="set-x" aria-hidden="true">\\u00d7</span>'
         ) +
@@ -6605,6 +6631,8 @@ const hudTimeEl = document.getElementById('hudTime');
 const hudPlayEl = document.getElementById('hudPlay');
 const hudResetEl = document.getElementById('hudReset');
 const hudCloseEl = document.getElementById('hudClose');
+const hudMinEl = document.getElementById('hudMin');
+const hudInfoEl = document.getElementById('hudInfo');
 function setHudPhaseClass(cls){
   hudEl.classList.remove('hud-work','hud-rest','hud-prep','hud-done');
   hudEl.classList.add(cls);
@@ -6790,6 +6818,66 @@ function hideHud(){
 hudPlayEl.addEventListener('click', function(){ if(activeTimerId && liveTimers[activeTimerId]) liveTimers[activeTimerId].togglePlay(); });
 hudResetEl.addEventListener('click', function(){ if(activeTimerId && liveTimers[activeTimerId]) liveTimers[activeTimerId].reset(); });
 hudCloseEl.addEventListener('click', function(){ hideHud(); });
+/* directiva ergonómica: minimizar a un chip angosto en vez de taparle al
+   alumno los casilleros de Kg×Reps de la ronda activa -- el chip sigue
+   contando el tiempo (mismo DOM, sólo CSS), y tocarlo en cualquier punto
+   lo vuelve a expandir. */
+hudMinEl.addEventListener('click', function(e){
+  e.stopPropagation();
+  hudEl.classList.add('minimized');
+  hudMinEl.textContent = '⤢';
+  hudMinEl.title = 'Expandir';
+});
+hudInfoEl.addEventListener('click', function(){
+  if(hudEl.classList.contains('minimized')){
+    hudEl.classList.remove('minimized');
+    hudMinEl.textContent = '‒';
+    hudMinEl.title = 'Minimizar (no tapar los casilleros)';
+  }
+});
+/* fix ergonómico (directiva): en mobile, .rest-hud y .timer-hud pasan a
+   anclarse arriba (ver @media(max-width:600px) más abajo en el archivo)
+   para nunca competir con los casilleros de Kg×Reps de la fila activa,
+   sin importar en qué punto del scroll estaba el alumno cuando el
+   descanso se disparó. Se mide la posición REAL de la cabecera pegajosa
+   en vez de asumir un alto fijo -- mismo criterio que ya usa
+   ajustarPosicionVideoPopup() para el popup de video. Un MutationObserver
+   sobre la clase de cada HUD dispara el reposicionamiento apenas
+   aparecen, sin tener que tocar arrancarRest()/showHudFor() desde acá. */
+(function(){
+  function reposicionarHuds(){
+    if(window.innerWidth > 600) return;
+    /* .hd-compact (cabecera mobile) es fixed con z-index:300 -- más alto
+       que .week-selector-wrap/.week-tabs-wrap (sticky, z-index 69-72) --
+       así que es LA que hay que esquivar: al ser fixed (no sticky), su
+       altura es constante sin importar el scroll. Se mide igual en vez de
+       asumirla fija, por si algún día cambia de alto (ej. banner encima). */
+    const wrap = document.querySelector('.hd-compact') || document.querySelector('.week-selector-wrap');
+    let top = 8;
+    if(wrap){
+      const r = wrap.getBoundingClientRect();
+      if(r.bottom > 0) top = Math.max(8, Math.round(r.bottom + 8));
+    }
+    const px = top + 'px';
+    const rh = document.getElementById('restHud');
+    if(rh && rh.classList.contains('on')) rh.style.top = px;
+    if(hudEl.classList.contains('show')) hudEl.style.top = px;
+  }
+  ['scroll','resize'].forEach(function(ev){ window.addEventListener(ev, reposicionarHuds, { passive: true }); });
+  new MutationObserver(reposicionarHuds).observe(hudEl, { attributes: true, attributeFilter: ['class'] });
+  /* #restHud (el <div> del descanso) todavía no existe en el DOM en este
+     punto del parseo -- se declara más abajo en el HTML, después de este
+     <script> -- así que observarlo acá mismo con getElementById devolvía
+     null y el MutationObserver nunca llegaba a engancharse. Se difiere a
+     DOMContentLoaded (o se dispara ya si el documento ya terminó de
+     cargar), mismo patrón que usan los demás módulos de esta plantilla. */
+  function engancharObserverRestHud(){
+    const rhEl = document.getElementById('restHud');
+    if(rhEl) new MutationObserver(reposicionarHuds).observe(rhEl, { attributes: true, attributeFilter: ['class'] });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', engancharObserverRestHud);
+  else engancharObserverRestHud();
+})();
 /* directiva10 -- al volver de segundo plano (pantalla bloqueada, cambio de
    app, o simplemente foco de la pestaña), se resincronizan YA todos los
    cronómetros de rondas activos contra su endTs real, sin esperar a que
@@ -17714,8 +17802,15 @@ body.cf-modo .block .ex-tip{display:none}
   flex:1 1 140px;color:#FFFFFF;font-family:'Inter',var(--font-body),system-ui,sans-serif;
   font-size:14.5px;font-weight:600;line-height:1.3;display:flex;align-items:center;gap:7px;
 }
+/* fix de desborde en mobile (directiva): flex:0 0 auto + sin min-width
+   mantenía la cápsula de reps/tempo rígida a su ancho de contenido
+   completo (nunca se achicaba ni envolvía texto internamente), así que
+   en 360-390px "10 por lado REPS · TEMPO 3110" se salía del borde de la
+   card en vez de acomodarse en una o dos líneas. */
 .block .bs-ex .bs-d{
-  flex:0 0 auto;color:#7CC5E8;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
+  flex:0 1 auto;min-width:0;max-width:100%;
+  color:#7CC5E8;font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;
+  word-break:normal;overflow-wrap:break-word;white-space:normal;
 }
 .block .bs-rpe{
   display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:8px 12px;border-radius:10px;
@@ -22524,6 +22619,25 @@ body.focus-mode .hd-dock{display:none}
   .rest-hud{ bottom:calc(108px + env(safe-area-inset-bottom)) !important; }
   .off-pill{ bottom:calc(108px + env(safe-area-inset-bottom)) !important; }
   .next-hint{ bottom:calc(172px + env(safe-area-inset-bottom)) !important; }
+}
+/* fix ergonómico (directiva): .rest-hud y .timer-hud se anclaban al fondo
+   de la pantalla -- el descanso se dispara al tildar una serie, en
+   CUALQUIER punto del scroll (no sólo al final del día), así que si la
+   fila activa con los casilleros de Kg×Reps quedaba cerca del borde
+   inferior justo en ese momento, el temporizador se posaba encima y
+   bloqueaba la carga de datos (el padding-bottom reservado sólo protege
+   el último bloque de la página, no una fila activa a mitad de camino).
+   Se reubican arriba, debajo de la cabecera pegajosa -- reposicionarHuds()
+   (más abajo, junto al módulo del timer) mide su alto real en vez de
+   asumir un valor fijo. */
+@media(max-width:600px){
+  .rest-hud, .timer-hud{
+    top: 8px; bottom: auto !important;
+    left: 12px !important; right: 12px !important;
+    width: auto !important; max-width: none !important;
+  }
+  .timer-hud{ transform: translateY(-140%) !important; }
+  .timer-hud.show{ transform: translateY(0) !important; }
 }
 </style>
 
