@@ -1905,7 +1905,7 @@ function newDay(i){
   return {
     id: 'dia' + (i+1), short: 'DÍA ' + (i+1), label: 'Sesión ' + (i+1),
     title: 'Día ' + (i+1), metaChips: [], focusTitle: 'Foco Técnico del Día', focusText: '',
-    summary: '', cooldown: [], optional: false, bloques: []
+    briefing: '', summary: '', cooldown: [], optional: false, bloques: []
   };
 }
 function newPlan(ath){
@@ -2848,7 +2848,13 @@ const CF_SCORES = [
   {v:'tiempo', lb:'⏱ Tiempo final'},
   {v:'rondas', lb:'🔁 Rondas + reps'},
   {v:'reps',   lb:'# Reps totales'},
-  {v:'kg',     lb:'⚖ Carga total'}
+  {v:'kg',     lb:'⚖ Carga total'},
+  /* directiva: bloques técnicos (Skill/Strength, un EMOM de técnica, etc.)
+     no siempre tienen un número que puntuar -- estas 3 opciones cubren
+     "lo hice", "algo de contexto libre" y "no aplica trackear nada acá". */
+  {v:'check',  lb:'✅ Completado / Check'},
+  {v:'notas',  lb:'📝 Cargas logradas / Notas libres'},
+  {v:'ninguno',lb:'🚫 Sin registro'}
 ];
 function cfFmtOptions(sel){
   return CF_FORMATOS.map(f => '<option value="' + f.v + '"' + (f.v===(sel||'')?' selected':'') + '>' + esc(f.lb) + '</option>').join('');
@@ -2924,6 +2930,7 @@ function cfFmtToolbar(bId){
   ];
   return '<div class="cf-fmt-tools">' +
     btns.map(b => '<button type="button" class="cf-fmt-btn" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
+    '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="emom" data-b="' + bId + '">⏱ + Estructura EMOM</button>' +
   '</div>';
 }
 /* inserta el snippet en la posición del cursor del textarea (o envuelve la
@@ -2947,6 +2954,13 @@ function insertarFormatoCF(ta, kind){
     ph = '00/00'; ins = '@ ' + ph + 'cm';
   } else if(kind === 'cap'){
     ph = '00:00'; ins = 'Time Cap: ' + ph;
+  } else if(kind === 'emom'){
+    /* directiva: template limpio de EMOM (minutos por estación) -- el "12"
+       queda seleccionado para que el coach lo pise con la duración real
+       de un saque; las 3 estaciones son placeholders de texto libre. */
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = '12';
+    ins = nl + 'EMOM ' + ph + ' (estaciones rotando cada minuto):\nMin 1 -- Estación A\nMin 2 -- Estación B\nMin 3 -- Estación C\n';
   } else return;
   const selFrom = start + ins.indexOf(ph);
   const selTo = selFrom + ph.length;
@@ -3053,6 +3067,17 @@ function renderBuilder(){
     }
   }
   pintarMesoNote(p, esCrossfitActivo);
+  /* fix definitivo (directiva): el acordeón "Ajustes de Mesociclo (4
+     semanas)" es vocabulario de Sports & Bodybuilding (Fase/RPE/deload por
+     semana) -- en CrossFit la progresión es modular semana a semana (ver
+     la Pizarra Táctica / activeCfWeek()), así que mostrarlo es ruido sin
+     función real. pintarMesoNote() ya reescribía la NOTA de adentro; esto
+     oculta la tarjeta entera. */
+  const mesoCard = document.getElementById('mesoDetails');
+  if(mesoCard && mesoCard.closest('.card')) mesoCard.closest('.card').style.display = esCrossfitActivo ? 'none' : '';
+  /* título de pestaña dinámico (directiva): que se note a simple vista, en
+     la barra del navegador/apps, qué disciplina se está editando. */
+  document.title = esCrossfitActivo ? 'Coach JP • CrossFit & Hyrox System' : 'Coach JP · Sports & Bodybuilding';
 
   $('#weekGrid').innerHTML = p.meso.map((w,i) =>
     '<div class="week-box ' + (w.deload ? 'deload' : '') + '" data-wk="' + i + '" id="weekBox-' + i + '">' +
@@ -3149,6 +3174,11 @@ function renderDay(){
         '<div><label class="lb">Título del día</label><input data-df="title" value="' + esc(d.title) + '" placeholder="Día de WOD y Skill"></div>' +
         '<div><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Movilidad de cadera — 2 min">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
       '</div>' +
+      '<div style="margin-top:12px"><label class="lb">🎯 Foco táctico / Stimulus briefing</label>' +
+        '<textarea data-df="briefing" style="min-height:52px" placeholder="Día de potencia anaeróbica láctica -- salí agresivo los primeros 2 minutos, sostené el ritmo con respiración nasal en las transiciones.">' + esc(d.briefing||'') + '</textarea>' +
+        '<div class="hint" style="margin-top:4px">Se muestra como banner destacado arriba de todo en la app del alumno.</div>' +
+      '</div>' +
+      ('' + prsBarCF(ath)) +
     '</div>' +
     '<details class="card" style="margin-bottom:14px">' +
       '<summary class="lb" style="cursor:pointer">📋 Pegar Día Completo (auto-split por bloque)</summary>' +
@@ -3160,23 +3190,38 @@ function renderDay(){
     '</details>' +
     '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-bottom:14px" data-addcfblock="1">➕ AGREGAR BLOQUE DE PIZARRA</button>';
   } else {
+    /* fix definitivo (directiva): "Ficha del día" tenía 8 campos sueltos
+       (short/label/id/title/metaChips/focusTitle/cooldown/focusText/
+       summary), varios redundantes entre sí desde el punto de vista del
+       coach (short/label/title todos "nombran" el día de una forma u
+       otra). La barra simple de acá arriba cubre el 95% del uso diario
+       con 2 campos -- "Nombre del Día" escribe en d.title (lo que ve el
+       alumno como título grande) y "Foco del Coach" en d.focusText (el
+       mismo campo de siempre, sin cambiar el esquema). Nada se elimina
+       del modelo de datos ni deja de compilarse: short/label/id/
+       metaChips/focusTitle/cooldown/summary siguen existiendo tal cual,
+       sólo se pliegan detrás de "Avanzado" para quien de verdad los
+       necesite tocar (id en particular NUNCA se deriva a mano acá --
+       es la clave estable de getLoadKey(), tocarla desconecta el
+       historial de cargas ya guardado del alumno). */
     h += '<div class="card" style="margin-bottom:14px">' +
       '<h3>📌 Ficha del día</h3>' +
-      '<div class="grid g3">' +
-        '<div><label class="lb">Chip (short)</label><input data-df="short" value="' + esc(d.short) + '" placeholder="DÍA 1"></div>' +
-        '<div><label class="lb">Etiqueta de pestaña</label><input data-df="label" value="' + esc(d.label) + '" placeholder="Espalda/Bíceps"></div>' +
-        '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1"></div>' +
+      '<div class="grid g2">' +
+        '<div><label class="lb">Nombre del Día</label><input data-df="title" value="' + esc(d.title) + '" placeholder="Espalda, Bíceps y Tracción Pesada"></div>' +
+        '<div><label class="lb">Foco del Coach</label><textarea data-df="focusText" style="min-height:38px">' + esc(d.focusText||'') + '</textarea></div>' +
       '</div>' +
-      '<div class="grid g2" style="margin-top:12px">' +
-        '<div><label class="lb">Título del día</label><input data-df="title" value="' + esc(d.title) + '" placeholder="Espalda, Bíceps y Tracción Pesada"></div>' +
-        '<div><label class="lb">Chips de meta (separados por «;»)</label><input data-df="metaChips" value="' + esc((d.metaChips||[]).join('; ')) + '" placeholder="🎯 Tracción Horizontal; 💪 Ancla Doble"></div>' +
-      '</div>' +
-      '<div class="grid g2" style="margin-top:12px">' +
-        '<div><label class="lb">Título del foco técnico</label><input data-df="focusTitle" value="' + esc(d.focusTitle||'') + '"></div>' +
-        '<div><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Estiramiento de dorsal — 2x30s">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
-      '</div>' +
-      '<div style="margin-top:12px"><label class="lb">Foco técnico del día</label><textarea data-df="focusText">' + esc(d.focusText||'') + '</textarea></div>' +
-      '<div style="margin-top:12px"><label class="lb">Resumen de la sesión</label><textarea data-df="summary">' + esc(d.summary||'') + '</textarea></div>' +
+      '<details class="cf-acc" style="margin-top:12px">' +
+        '<summary class="lb">▾ Avanzado: chip de pestaña, ID interno y notas extra</summary>' +
+        '<div class="grid g3" style="margin-top:10px">' +
+          '<div><label class="lb">Chip (short)</label><input data-df="short" value="' + esc(d.short) + '" placeholder="DÍA 1"></div>' +
+          '<div><label class="lb">Etiqueta de pestaña</label><input data-df="label" value="' + esc(d.label) + '" placeholder="Espalda/Bíceps"></div>' +
+          '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1"></div>' +
+        '</div>' +
+        '<div style="margin-top:10px"><label class="lb">Chips de meta (separados por «;»)</label><input data-df="metaChips" value="' + esc((d.metaChips||[]).join('; ')) + '" placeholder="🎯 Tracción Horizontal; 💪 Ancla Doble"></div>' +
+        '<div style="margin-top:10px"><label class="lb">Título del foco técnico</label><input data-df="focusTitle" value="' + esc(d.focusTitle||'') + '"></div>' +
+        '<div style="margin-top:10px"><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Estiramiento de dorsal — 2x30s">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
+        '<div style="margin-top:10px"><label class="lb">Resumen de la sesión</label><textarea data-df="summary">' + esc(d.summary||'') + '</textarea></div>' +
+      '</details>' +
     '</div>';
   }
 
@@ -3225,7 +3270,11 @@ function renderDay(){
 
     /* --- cabecera común (limpia a un solo selector de Fase en CrossFit) --- */
     if(esBloqueCF){
-      h += '<div class="fields" style="margin-bottom:10px">' +
+      /* fix definitivo (directiva): badge fijo para que un bloque de
+         Accesorio/Core en CrossFit se identifique de un vistazo como
+         Pizarra Táctica pura -- nunca musculación estructurada. */
+      h += (b.category === 'accessory' ? '<div class="cf-acc-badge">🧩 ACCESORIOS / CORE</div>' : '') +
+        '<div class="fields" style="margin-bottom:10px">' +
         '<div class="f wide"><label>Fase</label><select data-bf="category" data-b="' + b.id + '">' + cfFaseOptions(b.category) + '</select></div>' +
       '</div>';
     } else {
@@ -3380,6 +3429,7 @@ function renderDay(){
           '</div>' +
           '<details class="cf-acc">' +
             '<summary class="lb">▾ Objetivo del estímulo &amp; Coaching Tips</summary>' +
+            '<button type="button" class="btn sm gold" style="margin-top:8px" data-btips="' + b.id + '">⚡ Auto-generar Tips &amp; Pacing con IA</button>' +
             '<div style="margin-top:10px"><label class="lb">Objetivo del estímulo</label><textarea data-bf="cfCierre.objetivo" data-b="' + b.id + '" style="min-height:44px" placeholder="Buscá salir rápido y sostener — el 21 no se gana, se sobrevive.">' + esc((b.cfCierre && b.cfCierre.objetivo) || '') + '</textarea></div>' +
             '<div style="margin-top:8px"><label class="lb">Coaching tips</label><textarea data-bf="cfCierre.tips" data-b="' + b.id + '" style="min-height:52px" placeholder="Thrusters: no bajes de tempo en la sentadilla…">' + esc((b.cfCierre && b.cfCierre.tips) || '') + '</textarea></div>' +
             '<div style="margin-top:8px"><label class="lb">Pacing sugerido</label><input data-bf="cfCierre.pacing" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.pacing) || '') + '" placeholder="Salí sub-2:00 la primera ronda…"></div>' +
@@ -3567,6 +3617,70 @@ async function nombrarBloqueConIA(bid, btn){
   }
 }
 
+/* ---------- Auto-generar Tips & Pacing con IA (directiva) ----------
+   Mismo esquema que nombrarBloqueConIA() de arriba (contextoBloqueIA() +
+   contextoAtletaDiaIA() + window.CoachAI.generarTexto + extractJson con
+   fallback a texto plano) -- reescribe "Objetivo del estímulo" y
+   "Coaching Tips" (b.cfCierre.objetivo/.tips) a partir de los movimientos
+   ya cargados en la Pizarra Táctica del bloque. */
+async function generarTipsPacingIA(bid, btn){
+  const b = findBlock(bid); if(!b) return;
+  if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
+    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar tips automáticamente', 'err');
+    if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
+    return;
+  }
+  const ctx = contextoBloqueIA(b);
+  if(!ctx.items.length){ toast('Agregá al menos un movimiento a la Pizarra antes de generar tips con IA', 'warn'); return; }
+  const ad = contextoAtletaDiaIA();
+  const lineas = ctx.items.slice(0, 12).map(it => '- ' + it.nombre).join('\n');
+  const contextoLineas = [
+    ad.disciplina ? 'Disciplina activa: ' + ad.disciplina : '',
+    ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
+    ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
+    ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el pacing/objetivo NO debe contradecir esto.' : '',
+    b.cfFmt ? 'Formato del trabajo: ' + b.cfFmt.toUpperCase() : '',
+    b.cfParam ? 'Parámetro (time cap / intervalo / minutos): ' + b.cfParam : ''
+  ].filter(Boolean).join('\n');
+  const sistema = 'Sos un coach de CrossFit & Hyrox de alto rendimiento. Dado un WOD/bloque, escribís en español rioplatense, ' +
+    'corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del estímulo" (1 frase, qué busca lograr fisiológicamente ' +
+    'esta sesión -- ej. "Salir rápido y sostener, el score se define en el último tercio") y "coaching tips" (2-4 frases separadas por salto ' +
+    'de línea, consejos técnicos/de pacing puntuales por movimiento o por el WOD en general, citando el nombre real de los movimientos listados). ' +
+    'Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre frases si hay más de una).';
+  const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
+    'Generá objetivo y coaching tips en JSON para este bloque.\nMovimientos incluidos:\n' + lineas;
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  try{
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 320 });
+    const raw = String(out || '').trim();
+    let j = null;
+    try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
+    let objetivo = j ? String(j.objetivo || '').trim() : '';
+    let tips = j ? String(j.tips || '').trim() : '';
+    if(!objetivo && !tips){
+      /* fallback a texto plano si el proveedor ignoró el pedido de JSON --
+         primera línea como objetivo, el resto como tips, igual criterio
+         que nombrarBloqueConIA() de arriba. */
+      const partes = raw.split('\n').filter(Boolean);
+      objetivo = (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g,'').trim();
+      tips = partes.slice(1).join('\n').trim();
+    }
+    if(!objetivo && !tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
+    b.cfCierre = b.cfCierre || {};
+    if(objetivo) b.cfCierre.objetivo = objetivo;
+    if(tips) b.cfCierre.tips = tips;
+    save(); renderBuilder();
+    toast('Tips y pacing generados con IA ⚡');
+  }catch(e){
+    console.warn('generarTipsPacingIA', e);
+    toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
+  }finally{
+    if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
+  }
+}
+
 /* ---------- Altas ---------- */
 function addBlock(tipo){
   const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
@@ -3662,6 +3776,37 @@ function setCfWeekItems(b, weekIdx, val){
   if(weekIdx <= 0){ b.items = arr; return; }
   b.weekItems = b.weekItems || [];
   b.weekItems[weekIdx] = arr;
+}
+/* barra de consulta rápida de PRs (directiva): sólo lectura, para que el
+   coach vea de un vistazo los 4 levantamientos clave mientras arma la
+   sesión de CrossFit -- lee ath.marcas (array {nombre,kg,reps,fecha,
+   origen}) con match difuso por nombre, mismo criterio que ya usan otros
+   módulos del Builder (marca()/marcaDe()) -- se implementa acá de nuevo,
+   liviano, para no depender de un módulo que carga mucho más abajo en el
+   archivo. Nunca escribe nada -- de editar los PRs se sigue encargando
+   la ficha del atleta, esto es sólo una chuleta visual. */
+const CF_PRS_BAR = [
+  { lb:'Snatch', rx:/\bsnatch\b/i },
+  { lb:'Clean & Jerk', rx:/\bclean\s*(?:&|and|y)?\s*(?:and|y)?\s*jerk\b/i },
+  { lb:'Back Squat', rx:/\bback\s*squat\b|\bsentadilla\b.*\bbarra\b/i },
+  { lb:'Deadlift', rx:/\bdeadlift\b|\bpeso\s*muerto\b/i }
+];
+function prsBarCF(ath){
+  if(!ath) return '';
+  const marcas = ath.marcas || [];
+  const vals = CF_PRS_BAR.map(l => {
+    const hits = marcas.filter(m => l.rx.test(m.nombre || ''));
+    if(!hits.length) return { lb: l.lb, kg: null };
+    const mejor = hits.reduce((a, b) => (parseFloat(b.kg) || 0) > (parseFloat(a.kg) || 0) ? b : a);
+    return { lb: l.lb, kg: mejor.kg };
+  });
+  if(!vals.some(v => v.kg)) return '';
+  return '<div style="margin-top:12px">' +
+    '<label class="lb">🏋️ PRs actuales (consulta rápida)</label>' +
+    '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">' +
+      vals.map(v => '<span class="pill' + (v.kg ? ' gold' : '') + '">' + esc(v.lb) + ': ' + (v.kg ? esc(v.kg) + ' kg' : '—') + '</span>').join('') +
+    '</div>' +
+  '</div>';
 }
 /* "Clonar semana anterior" (directiva): arma la semana activa a partir de
    la anterior en UN toque -- recorre TODOS los días del plan (no sólo el
@@ -3962,6 +4107,7 @@ function bindBuilder(){
     if(t.dataset.cfclonewk !== undefined){ clonarSemanaAnteriorCF(); return; }
     if(t.dataset.addex){ addSubEx(t.dataset.addex, $('[data-pick="' + t.dataset.addex + '"]').value); return; }
     if(t.dataset.bai){ nombrarBloqueConIA(t.dataset.bai, t); return; }
+    if(t.dataset.btips){ generarTipsPacingIA(t.dataset.btips, t); return; }
     if(t.dataset.bdel){
       if(!confirm('¿Eliminar este bloque completo?')) return;
       d.bloques = d.bloques.filter(b => b.id !== t.dataset.bdel); save(); renderBuilder(); return;
@@ -4536,6 +4682,16 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
      padding-top de la regla base ya separa del selector de días de
      arriba, sin margin-top extra que sume aire de más. */
   .day-view > .day-header { margin-top: 0; }
+  /* banner de Foco Táctico / Stimulus Briefing (directiva, CrossFit) --
+     vive fuera de .day-header a propósito (ver renderMain()) para
+     sobrevivir a body.cf-disc .day-header{display:none}. */
+  .tactical-briefing{
+    display:flex;align-items:flex-start;gap:12px;margin:0 0 var(--sp-6);padding:14px 16px;
+    border-radius:14px;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.3);
+  }
+  .tactical-briefing .tb-ic{font-size:22px;line-height:1;flex:0 0 auto}
+  .tactical-briefing .tb-label{font-family:var(--font-head,'Chakra Petch',sans-serif);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#38BDF8;margin-bottom:3px}
+  .tactical-briefing .tb-text{font-size:14px;line-height:1.5;color:var(--text-primary)}
   .day-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.3rem; }
   /* la tipografía técnica oficial del sistema (--font-head, Chakra
      Petch) en vez de Barlow Condensed -- se veía "genérica/pesada",
@@ -7482,6 +7638,15 @@ function renderMain(){
   html += '<div class="day-title">' + day.title + '</div>';
   html += '<div class="day-meta-row">' + (day.metaChips||[]).map(function(c){ return '<span class="meta-chip">' + c + '</span>'; }).join('') + '</div></div>';
   html += '</div>';
+  /* fix definitivo (directiva): "Foco táctico / Stimulus briefing" -- en
+     CrossFit .day-header queda oculto por completo (ver body.cf-disc
+     .day-header{display:none}), así que este banner vive en un elemento
+     PROPIO, fuera de ese contenedor, para no depender de una regla CSS
+     pensada para otra cosa. Sólo aparece si el coach cargó texto. */
+  if(window.COACH_DISCIPLINA === 'crossfit' && day.briefing){
+    html += '<div class="tactical-briefing"><span class="tb-ic">🎯</span>' +
+      '<div><div class="tb-label">FOCO TÁCTICO</div><div class="tb-text">' + day.briefing + '</div></div></div>';
+  }
   /* directiva (reajuste UI): el check-in de entrada vivía al fondo de la
      pantalla, después de las notas metodológicas, perdiendo su función de
      entrada -- sube a ser lo primero visible debajo del título del día,
@@ -8657,7 +8822,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     tiempo: 'Tiempo final (ej: 11:42)',
     rondas: 'Rondas + reps (ej: 6+12)',
     reps:   'Reps totales (ej: 143)',
-    kg:     'Carga total (ej: 82.5 kg)'
+    kg:     'Carga total (ej: 82.5 kg)',
+    check:  '✓ Completado',
+    notas:  'Cargas logradas / notas libres'
   };
   function formatoDe(block, lineas, weekIdx){
     /* el cuerpo del bloque manda: si dice EMOM, la tarjeta dice EMOM.
@@ -8812,7 +8979,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const paramTxt = block.cfParam ? ((CF_PARAM_PREFIX[kFmt] || '') + block.cfParam) : (min ? (min + ' min') : '');
     const c = block.cierre || {};
     const tieneCierre = !!(c.objetivo || c.tips || c.pacing || c.escalado);
-    const scoreVisible = !!CF_SCORE_FASES[block.category];
+    /* directiva: "Sin registro" es una elección explícita del coach de no
+       trackear nada en este bloque -- pisa el criterio por fase de más
+       arriba (CF_SCORE_FASES), nunca al revés. */
+    const scoreVisible = !!CF_SCORE_FASES[block.category] && block.scoreType !== 'ninguno';
     /* Accessory/Cooldown no trackea serie por serie: sólo un campo libre
        de notas de carga/sensaciones, al pie del bloque -- reutiliza
        state.notes (mismo store que las notas de sesión) con una key
@@ -9609,7 +9779,7 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
    tapada/cortada. aspect-ratio + max-height:65vh le deja más aire al
    footer de acciones siempre, en cualquier alto de pantalla. */
 .story-box canvas{
-  aspect-ratio:9/16;max-height:65vh;width:auto;max-width:94vw;
+  aspect-ratio:9/16;max-height:72vh;width:auto;max-width:94vw;
   object-fit:contain;margin:0 auto;border-radius:18px;
   box-shadow:0 26px 70px rgba(0,0,0,.7),0 0 30px rgba(210,121,63,.12);border:1px solid rgba(255,255,255,.1)}
 .story-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
@@ -9618,6 +9788,9 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
   font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:.07em;text-transform:uppercase;font-size:.95rem}
 .story-actions .sa-dl{background:linear-gradient(135deg,#E5C378,#9C7A2E);color:#0A0F13;border:none}
 .story-actions .sa-cp{background:linear-gradient(135deg,#38BDF8,#1E7AA8);color:#021214;border:none}
+/* foto de fondo personalizada (directiva) */
+.story-actions .sa-foto{background:linear-gradient(135deg,#7CC5E8,#2E6B8A);color:#021214;border:none}
+.story-actions .sa-fotox{display:none;background:transparent;color:var(--text-secondary);font-size:.8rem;padding:.6rem 1rem}
 .story-hint{font-family:'Inter',sans-serif;font-size:.8rem;color:var(--text-secondary);text-align:center;max-width:340px}
 /* directiva9 -- en móviles angostos (≤420px, ej 390px) el padding lateral
    del overlay se reduce solo (16px ya alcanza para no tocar el borde),
@@ -9872,10 +10045,13 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   <div class="story-box">
     <canvas id="storyCanvas" width="1080" height="1920"></canvas>
     <div class="story-actions">
+      <button class="sa-foto" id="storyFotoBtn" type="button">📷 Subir Foto de la Sesión</button>
+      <input type="file" id="storyFotoInput" accept="image/*" style="display:none">
       <button class="sa-dl" id="storyDl" type="button">⬇ Descargar</button>
       <button class="sa-cp" id="storyCp" type="button">📋 Copiar imagen</button>
       <button id="storyX" type="button">✕ Cerrar</button>
     </div>
+    <button class="sa-fotox" id="storyFotoQuitar" type="button">✕ Quitar foto (volver al fondo táctico)</button>
     <div class="story-hint">Formato 1080×1920, listo para tu historia de Instagram.</div>
   </div>
 </div>
@@ -9953,27 +10129,53 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     g.lineTo(27, 58); g.lineTo(43, 34); g.lineTo(33, 34); g.closePath(); g.fill();
     g.restore();
   }
+  /* ---------- FOTO DE FONDO PERSONALIZADA (directiva) ----------
+     Estado compartido en window (no en esta IIFE) porque dibujar()/
+     dibujarCF()/champion() no viven todas en el mismo closure -- ver
+     __storyLast más abajo, que guarda qué función y con qué datos se
+     dibujó por última vez, para poder re-pintar cuando el alumno sube o
+     saca la foto sin tener que reabrir el modal. */
+  window.storyFondoFoto = function(g, Wp, Hp, fallback){
+    const img = window.__storyFotoImg;
+    if(img && img.complete && img.naturalWidth){
+      const ir = img.naturalWidth / img.naturalHeight, cr = Wp / Hp;
+      let sw, sh, sx, sy;
+      if(ir > cr){ sh = img.naturalHeight; sw = sh * cr; sx = (img.naturalWidth - sw) / 2; sy = 0; }
+      else { sw = img.naturalWidth; sh = sw / cr; sx = 0; sy = (img.naturalHeight - sh) / 2; }
+      g.drawImage(img, sx, sy, sw, sh, 0, 0, Wp, Hp);
+      /* overlay oscuro -- garantiza legibilidad del texto sobre CUALQUIER
+         foto, sea clara u oscura (directiva pide 0.60-0.75 de opacidad) */
+      g.fillStyle = 'rgba(6,7,10,.68)';
+      g.fillRect(0, 0, Wp, Hp);
+      return true;
+    }
+    if(typeof fallback === 'function') fallback();
+    return false;
+  }
   function dibujar(d){
     const c = document.getElementById('storyCanvas');
     const g = c.getContext('2d');
     g.clearRect(0, 0, W, H);
+    window.__storyLast = { tipo: 'cyber', d: d };
 
-    /* fondo -- Dark Stealth Tactical (directiva de fix integral): gradiente
-       carbón profundo #0a0c10 -> #121820, viñeta suave hacia los bordes,
-       reflejos sutiles en los colores de marca reales (antes usaba negro
-       plano + halos en la paleta champagne "Luxury Stealth"). */
-    let bg = g.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#0a0c10'); bg.addColorStop(1, '#121820');
-    g.fillStyle = bg; g.fillRect(0, 0, W, H);
-    let vig = g.createRadialGradient(W / 2, H / 2, H * .28, W / 2, H / 2, H * .72);
-    vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,.45)');
-    g.fillStyle = vig; g.fillRect(0, 0, W, H);
-    let r1 = g.createRadialGradient(W * .92, -120, 40, W * .92, -120, 900);
-    r1.addColorStop(0, 'rgba(210,121,63,.18)'); r1.addColorStop(1, 'rgba(210,121,63,0)');
-    g.fillStyle = r1; g.fillRect(0, 0, W, H);
-    let r2 = g.createRadialGradient(-80, H + 120, 40, -80, H + 120, 900);
-    r2.addColorStop(0, 'rgba(124,197,232,.14)'); r2.addColorStop(1, 'rgba(124,197,232,0)');
-    g.fillStyle = r2; g.fillRect(0, 0, W, H);
+    /* fondo -- foto de la sesión si el alumno subió una (cover + overlay
+       oscuro), si no Dark Stealth Tactical de siempre: gradiente carbón
+       profundo #0a0c10 -> #121820, viñeta suave hacia los bordes, reflejos
+       sutiles en los colores de marca reales. */
+    window.storyFondoFoto(g, W, H, function(){
+      let bg = g.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#0a0c10'); bg.addColorStop(1, '#121820');
+      g.fillStyle = bg; g.fillRect(0, 0, W, H);
+      let vig = g.createRadialGradient(W / 2, H / 2, H * .28, W / 2, H / 2, H * .72);
+      vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,.45)');
+      g.fillStyle = vig; g.fillRect(0, 0, W, H);
+      let r1 = g.createRadialGradient(W * .92, -120, 40, W * .92, -120, 900);
+      r1.addColorStop(0, 'rgba(210,121,63,.18)'); r1.addColorStop(1, 'rgba(210,121,63,0)');
+      g.fillStyle = r1; g.fillRect(0, 0, W, H);
+      let r2 = g.createRadialGradient(-80, H + 120, 40, -80, H + 120, 900);
+      r2.addColorStop(0, 'rgba(124,197,232,.14)'); r2.addColorStop(1, 'rgba(124,197,232,0)');
+      g.fillStyle = r2; g.fillRect(0, 0, W, H);
+    });
 
     /* marca de agua JP en la esquina, al 3% */
     g.save();
@@ -10105,19 +10307,22 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     const c = document.getElementById('storyCanvas');
     const g = c.getContext('2d');
     g.clearRect(0, 0, W, H);
+    window.__storyLast = { tipo: 'cf', d: d };
 
-    let bg = g.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#05070A'); bg.addColorStop(1, '#0D1117');
-    g.fillStyle = bg; g.fillRect(0, 0, W, H);
-    g.save();
-    g.fillStyle = 'rgba(255,255,255,.05)';
-    for(let yy = 20; yy < H; yy += 40){
-      for(let xx = 20; xx < W; xx += 40){ g.beginPath(); g.arc(xx, yy, 1.4, 0, Math.PI * 2); g.fill(); }
-    }
-    g.restore();
-    let vig = g.createRadialGradient(W / 2, H / 2, H * .25, W / 2, H / 2, H * .75);
-    vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,.55)');
-    g.fillStyle = vig; g.fillRect(0, 0, W, H);
+    window.storyFondoFoto(g, W, H, function(){
+      let bg = g.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, '#05070A'); bg.addColorStop(1, '#0D1117');
+      g.fillStyle = bg; g.fillRect(0, 0, W, H);
+      g.save();
+      g.fillStyle = 'rgba(255,255,255,.05)';
+      for(let yy = 20; yy < H; yy += 40){
+        for(let xx = 20; xx < W; xx += 40){ g.beginPath(); g.arc(xx, yy, 1.4, 0, Math.PI * 2); g.fill(); }
+      }
+      g.restore();
+      let vig = g.createRadialGradient(W / 2, H / 2, H * .25, W / 2, H / 2, H * .75);
+      vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,.55)');
+      g.fillStyle = vig; g.fillRect(0, 0, W, H);
+    });
 
     /* marco táctico -- esquinas tipo bracket, mismo lenguaje visual que
        los "[ ]" de la Pizarra */
@@ -10256,6 +10461,60 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
           .catch(function(){ b.textContent = '⚠️ Usá Descargar'; });
       }, 'image/png');
     }catch(e){ b.textContent = '⚠️ Usá Descargar'; }
+  });
+
+  /* ---------- foto de fondo personalizada (directiva) ----------
+     __storyLast (seteado al tope de dibujar/dibujarCF/champion) guarda
+     con qué función y datos se pintó la tarjeta por última vez, así el
+     redibujado post-foto no depende de reabrir el modal ni de saber a
+     mano qué estilo estaba activo. */
+  function redibujarStoryActual(){
+    const last = window.__storyLast;
+    if(!last || !last.d) return;
+    if(last.tipo === 'cf'){
+      if(window.CoachStory && typeof window.CoachStory.abrirCF === 'function') window.CoachStory.abrirCF(last.d);
+    } else if(window.CoachStory && typeof window.CoachStory.abrir === 'function'){
+      const estiloAntes = (window.CoachStoryStyles && typeof window.CoachStoryStyles.actual === 'function') ? window.CoachStoryStyles.actual() : null;
+      window.CoachStory.abrir(last.d);
+      if(estiloAntes && window.CoachStoryStyles && typeof window.CoachStoryStyles.fijar === 'function') window.CoachStoryStyles.fijar(estiloAntes);
+    }
+  }
+  const storyFotoBtn = document.getElementById('storyFotoBtn');
+  const storyFotoInput = document.getElementById('storyFotoInput');
+  const storyFotoQuitar = document.getElementById('storyFotoQuitar');
+  if(storyFotoBtn && storyFotoInput){
+    storyFotoBtn.addEventListener('click', function(){ storyFotoInput.click(); });
+    storyFotoInput.addEventListener('change', function(e){
+      const f = e.target.files[0]; if(!f) return;
+      const r = new FileReader();
+      r.onload = function(){
+        const img = new Image();
+        img.onload = function(){
+          window.__storyFotoImg = img;
+          if(storyFotoQuitar) storyFotoQuitar.style.display = 'inline-block';
+          redibujarStoryActual();
+          try{ toast('📷 Foto de fondo aplicada'); }catch(x){}
+        };
+        img.onerror = function(){ try{ toast('No se pudo leer esa imagen', 'err'); }catch(x){} };
+        img.src = r.result;
+      };
+      r.readAsDataURL(f);
+      e.target.value = '';
+    });
+  }
+  if(storyFotoQuitar){
+    storyFotoQuitar.addEventListener('click', function(){
+      window.__storyFotoImg = null;
+      storyFotoQuitar.style.display = 'none';
+      redibujarStoryActual();
+    });
+  }
+  document.getElementById('storyX').addEventListener('click', function(){
+    /* la foto no sobrevive a cerrar el modal -- cada Story Card arranca
+       limpia con el fondo táctico por defecto, nunca arrastra la foto de
+       una sesión vieja a la sesión siguiente sin que el alumno la suba de nuevo */
+    window.__storyFotoImg = null;
+    if(storyFotoQuitar) storyFotoQuitar.style.display = 'none';
   });
 
   /* ---------- botón dentro del Session Summary ---------- */
@@ -11287,21 +11546,24 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   function champion(d){
     var c = document.getElementById('storyCanvas'), g = c.getContext('2d');
     g.clearRect(0, 0, W, HH);
-    /* fondo -- Dark Stealth Tactical, mismo tratamiento que dibujar() para
-       que los dos estilos de Story Card (Cyber-Grit / PR Champion) no
-       desentonen al cambiar de uno a otro. */
-    var bgCh = g.createLinearGradient(0, 0, 0, HH);
-    bgCh.addColorStop(0, '#0a0c10'); bgCh.addColorStop(1, '#121820');
-    g.fillStyle = bgCh; g.fillRect(0, 0, W, HH);
-    var vigCh = g.createRadialGradient(W / 2, HH / 2, HH * .28, W / 2, HH / 2, HH * .72);
-    vigCh.addColorStop(0, 'rgba(0,0,0,0)'); vigCh.addColorStop(1, 'rgba(0,0,0,.45)');
-    g.fillStyle = vigCh; g.fillRect(0, 0, W, HH);
-    var r1 = g.createRadialGradient(W / 2, 520, 60, W / 2, 520, 1000);
-    r1.addColorStop(0, 'rgba(210,121,63,.24)'); r1.addColorStop(1, 'rgba(210,121,63,0)');
-    g.fillStyle = r1; g.fillRect(0, 0, W, HH);
-    var r2 = g.createRadialGradient(W / 2, HH - 260, 40, W / 2, HH - 260, 760);
-    r2.addColorStop(0, 'rgba(124,197,232,.14)'); r2.addColorStop(1, 'rgba(124,197,232,0)');
-    g.fillStyle = r2; g.fillRect(0, 0, W, HH);
+    window.__storyLast = { tipo: 'cyber', d: d };
+    /* fondo -- foto de la sesión si hay, si no Dark Stealth Tactical, mismo
+       tratamiento que dibujar() para que los dos estilos de Story Card
+       (Cyber-Grit / PR Champion) no desentonen al cambiar de uno a otro. */
+    window.storyFondoFoto(g, W, HH, function(){
+      var bgCh = g.createLinearGradient(0, 0, 0, HH);
+      bgCh.addColorStop(0, '#0a0c10'); bgCh.addColorStop(1, '#121820');
+      g.fillStyle = bgCh; g.fillRect(0, 0, W, HH);
+      var vigCh = g.createRadialGradient(W / 2, HH / 2, HH * .28, W / 2, HH / 2, HH * .72);
+      vigCh.addColorStop(0, 'rgba(0,0,0,0)'); vigCh.addColorStop(1, 'rgba(0,0,0,.45)');
+      g.fillStyle = vigCh; g.fillRect(0, 0, W, HH);
+      var r1 = g.createRadialGradient(W / 2, 520, 60, W / 2, 520, 1000);
+      r1.addColorStop(0, 'rgba(210,121,63,.24)'); r1.addColorStop(1, 'rgba(210,121,63,0)');
+      g.fillStyle = r1; g.fillRect(0, 0, W, HH);
+      var r2 = g.createRadialGradient(W / 2, HH - 260, 40, W / 2, HH - 260, 760);
+      r2.addColorStop(0, 'rgba(124,197,232,.14)'); r2.addColorStop(1, 'rgba(124,197,232,0)');
+      g.fillStyle = r2; g.fillRect(0, 0, W, HH);
+    });
     /* marco cepillado -- Luxury Stealth: dorado en vez de naranja */
     g.strokeStyle = 'rgba(229,195,120,.55)'; g.lineWidth = 4;
     rr(g, 46, 46, W - 92, HH - 92, 34); g.stroke();
@@ -12112,10 +12374,18 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     /* limpia la franja inferior para reescribirla -- #121820 (no #08090B)
        para que no quede una costura visible contra el nuevo fondo en
        degradé "Dark Stealth Tactical" de dibujar()/champion() (el pie de
-       la tarjeta cae justo en la parte más oscura del gradiente). */
+       la tarjeta cae justo en la parte más oscura del gradiente). Si hay
+       foto de fondo (directiva), ese relleno opaco taparía la foto justo
+       en la franja del pie -- se salta: el overlay oscuro ya pintado por
+       storyFondoFoto() sobre TODO el canvas ya deja el texto legible acá
+       también, y las cajas de abajo (fondo propio, semi-transparente)
+       siguen leyéndose igual de bien encima de la foto. */
+    var fotoActivaPie = !!(window.__storyFotoImg && window.__storyFotoImg.complete && window.__storyFotoImg.naturalWidth);
     g.save();
-    g.fillStyle = '#121820';
-    g.fillRect(70, y - 16, W - 140, HH - y + 16);
+    if(!fotoActivaPie){
+      g.fillStyle = '#121820';
+      g.fillRect(70, y - 16, W - 140, HH - y + 16);
+    }
     if(dorado){
       var rg = g.createRadialGradient(W / 2, HH - 260, 40, W / 2, HH - 260, 760);
       rg.addColorStop(0, 'rgba(56,189,248,.14)'); rg.addColorStop(1, 'rgba(56,189,248,0)');
@@ -24256,6 +24526,7 @@ function buildProgramConfig(ath){
       dayNum: di+1, optional: !!d.optional, title: d.title || '',
       metaChips: (d.metaChips||[]).slice(),
       focusTitle: d.focusTitle || 'Foco Técnico del Día', focusText: d.focusText || '',
+      briefing: d.briefing || '',
       blocks: blocks, summary: d.summary || '', cooldown: (d.cooldown||[]).slice(),
       cooldownNota: d.cooldownNota || '',
       finisherIA: finisherDelDia(ath, d),
@@ -34992,9 +35263,27 @@ body.man-mode .gs-fab{right:318px}
     }
     return { min:v, max:v, txt: v + ' kg', pct: '+' + (paso * i) + ' kg', lb: w.lb, custom:false, modoKg:true };
   }
+  /* directiva -- tercer modo de progresión, "RIR / Sobrecarga Directa":
+     no calcula ningún kg (ni pide 1RM ni carga base) -- el objetivo de
+     cada semana es un esfuerzo percibido (Reps In Reserve), el alumno
+     ajusta el peso real que usa según cuánto le queda en reserva. Pensado
+     para culturistas/accesorios sin una marca de 1RM cargada, donde
+     forzar un % es inventar un número. Progresión por defecto: más duro
+     semana a semana (RIR 3 -> 2 -> 1) y más cómodo en las semanas de
+     deload (según PCT[i].dl, la misma bandera que ya usan pct/kg) --
+     override puntual por semana en b.weekRir[i], mismo patrón exacto que
+     weekPct/weekKgAbs. */
+  function targetSemanaRir(b, i){
+    const w = PCT[i] || PCT[PCT.length - 1];
+    const propio = b && b.weekRir && b.weekRir[i] != null && String(b.weekRir[i]).trim() !== '' ? String(b.weekRir[i]).trim() : null;
+    if(propio) return { txt: 'RIR ' + propio, pct: '', lb: w.lb, custom: true, modoRir: true };
+    const auto = w.dl ? '3-4' : (i === 0 ? '3' : i === 1 ? '2' : '1');
+    return { txt: 'RIR ' + auto, pct: '', lb: w.lb, custom: false, modoRir: true };
+  }
   function targetSemanaB(b, i, base){
     const bs = base != null ? parseFloat(base) : parseFloat(b && b.cargaBase);
     if(b && b.progresionModo === 'kg') return targetSemanaKg(b, i, bs);
+    if(b && b.progresionModo === 'rir') return targetSemanaRir(b, i);
     const propio = b && b.weekPct && b.weekPct[i] != null && b.weekPct[i] !== '' ? parseFloat(b.weekPct[i]) : null;
     if(propio > 0 && bs > 0){
       const v = r05(bs * propio / 100);
@@ -35024,18 +35313,26 @@ body.man-mode .gs-fab{right:318px}
     const sug = base ? 0 : baseSugerida(b, ath);
     const hintSem = targetSemanaB(b, sem-1, base);
     const modoKg = b.progresionModo === 'kg';
+    const modoRir = b.progresionModo === 'rir';
     const paso = b.progresionPasoKg != null && b.progresionPasoKg !== '' ? b.progresionPasoKg : 2.5;
     const pctTxt = (hintSem && hintSem.pct) ? ' (' + hintSem.pct + (modoKg ? '' : ' de ' + base + ' kg') + ')' : '';
     return '<div class="cb-bar" data-cbbar="' + b.id + '">' +
-      '<span class="cbl">⚖️ Carga base (kg)</span>' +
-      '<input class="cbv" type="number" step="0.5" min="0" inputmode="decimal" data-cb="' + b.id + '" value="' + esc(base) + '" placeholder="' + (sug ? sug : '—') + '">' +
-      (sug ? '<button class="btn xs" data-cbuse="' + b.id + '" data-kg="' + sug + '">Usar 1RM: ' + sug + ' kg</button>' : '') +
+      /* directiva -- en modo RIR no se pide ni se muestra carga base: es
+         justamente el punto ("sin forzar porcentajes de 1RM"), el alumno
+         define el peso real según el esfuerzo percibido, no hay un
+         número de referencia que el coach tenga que cargar acá. */
+      (modoRir ? '' :
+        '<span class="cbl">⚖️ Carga base (kg)</span>' +
+        '<input class="cbv" type="number" step="0.5" min="0" inputmode="decimal" data-cb="' + b.id + '" value="' + esc(base) + '" placeholder="' + (sug ? sug : '—') + '">' +
+        (sug ? '<button class="btn xs" data-cbuse="' + b.id + '" data-kg="' + sug + '">Usar 1RM: ' + sug + ' kg</button>' : '')
+      ) +
       /* directiva crítica (2026-09) -- selector de modo de progresión */
-      '<label class="cb-modo-in" title="Cómo se calculan los targets de S2/S3/S4 a partir de la carga base">' +
+      '<label class="cb-modo-in" title="Cómo se calculan los targets de S2/S3/S4">' +
         '<span>Progresión</span>' +
         '<select data-cbmodo="' + b.id + '">' +
-          '<option value="pct"' + (modoKg ? '' : ' selected') + '>% automático (1RM)</option>' +
+          '<option value="pct"' + (!modoKg && !modoRir ? ' selected' : '') + '>% automático (1RM)</option>' +
           '<option value="kg"' + (modoKg ? ' selected' : '') + '>+kg fijo / semana</option>' +
+          '<option value="rir"' + (modoRir ? ' selected' : '') + '>RIR / Sobrecarga directa</option>' +
         '</select>' +
       '</label>' +
       (modoKg ? '<label class="cb-paso-in" title="Cuánto sube la carga base por semana (antes del deload de S4)">' +
@@ -35045,7 +35342,15 @@ body.man-mode .gs-fab{right:318px}
         return '<button class="cb-wk ' + (sem === i+1 ? 'on' : '') + (w.dl ? ' dl' : '') + '" data-cbwk="' + (i+1) + '" title="' + esc(w.lb + ' · ' + (t ? t.pct : '')) + '">' +
           w.s + '<b>' + (t ? t.txt : '—') + '</b></button>';
       }).join('') + '</div>' +
-      (modoKg
+      (modoRir
+        ? '<div class="cb-pcts">' + PCT.slice(0, nSem).map((w, i) => {
+            const custom = (b.weekRir && b.weekRir[i] != null && b.weekRir[i] !== '') ? b.weekRir[i] : '';
+            const auto = targetSemanaRir(Object.assign({}, b, { weekRir: null }), i);
+            const ph = auto ? auto.txt.replace('RIR ', '') : '—';
+            return '<label class="cb-pct-in' + (custom !== '' ? ' custom' : '') + '" title="RIR propio para ' + esc(w.s) + ' -- vacío sigue la progresión automática (RIR ' + ph + ')">' +
+              '<span>' + w.s + '</span><input type="text" inputmode="text" maxlength="6" data-cbwrir="' + b.id + '" data-wi="' + i + '" value="' + esc(custom) + '" placeholder="' + ph + '"><span>RIR</span></label>';
+          }).join('') + '</div>'
+        : modoKg
         ? '<div class="cb-pcts">' + PCT.slice(0, nSem).map((w, i) => {
             const custom = (b.weekKgAbs && b.weekKgAbs[i] != null && b.weekKgAbs[i] !== '') ? b.weekKgAbs[i] : '';
             const auto = targetSemanaKg(Object.assign({}, b, { weekKgAbs: null }), i, base);
@@ -35059,7 +35364,9 @@ body.man-mode .gs-fab{right:318px}
             return '<label class="cb-pct-in' + (custom !== '' ? ' custom' : '') + '" title="% de 1RM propio para ' + esc(w.s) + ' -- vacío usa el esquema automático (' + ph + '%)">' +
               '<span>' + w.s + '</span><input type="number" step="1" min="1" max="100" inputmode="numeric" data-cbwpct="' + b.id + '" data-wi="' + i + '" value="' + esc(custom) + '" placeholder="' + ph + '"><span>%</span></label>';
           }).join('') + '</div>') +
-      '<div class="cb-hint">' + (base
+      '<div class="cb-hint">' + (modoRir
+        ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (hintSem || {}).txt + '</b> · ' + PCT[sem-1].lb + (hintSem && hintSem.custom ? ' · valor propio de esta semana' : '') + '. El alumno elige el peso real según cuántas reps le quedan en reserva -- sin 1RM de por medio. Tocá S1-S' + nSem + ' para cambiar la semana activa del alumno/a.'
+        : base
         ? 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + (hintSem || {}).txt + '</b>' + pctTxt + ' · ' + PCT[sem-1].lb + (hintSem && hintSem.custom ? ' · valor propio de esta semana' : '') + '. Tocá S1-S' + nSem + ' para cambiar la semana activa del alumno/a.'
         : 'Cargá el peso de referencia (1RM o peso de trabajo habitual) y la app calcula el target de cada semana del mesociclo.') + '</div>' +
     '</div>';
@@ -35307,6 +35614,28 @@ body.man-mode .gs-fab{right:318px}
 
     /* carga base: input y botones de semana */
     document.addEventListener('input', e => {
+      const wr = e.target.closest('[data-cbwrir]');
+      if(wr){
+        const b = findBlock(wr.dataset.cbwrir); if(!b) return;
+        const wi = parseInt(wr.dataset.wi, 10);
+        if(!Array.isArray(b.weekRir)) b.weekRir = [];
+        while(b.weekRir.length <= wi) b.weekRir.push('');
+        b.weekRir[wi] = wr.value.trim();
+        save();
+        wr.closest('.cb-pct-in').classList.toggle('custom', wr.value.trim() !== '');
+        const bar = wr.closest('[data-cbbar]');
+        if(bar){
+          const sem = semanaActiva();
+          $$('.cb-wk', bar).forEach((w, idx) => {
+            const t = targetSemanaB(b, idx, b.cargaBase);
+            const strong = w.querySelector('b'); if(strong) strong.textContent = t ? t.txt : '—';
+          });
+          const hint = bar.querySelector('.cb-hint');
+          const t = targetSemanaB(b, sem - 1, b.cargaBase);
+          if(hint && t) hint.innerHTML = 'Target de ' + PCT[sem-1].s + ': <b style="color:var(--teal)">' + t.txt + '</b> · ' + t.lb + (t.custom ? ' · valor propio de esta semana' : '') + '. El alumno elige el peso real según cuántas reps le quedan en reserva -- sin 1RM de por medio.';
+        }
+        return;
+      }
       const wk = e.target.closest('[data-cbwkg]');
       if(wk){
         const b = findBlock(wk.dataset.cbwkg); if(!b) return;
@@ -35408,7 +35737,7 @@ body.man-mode .gs-fab{right:318px}
       const modo = e.target.closest('[data-cbmodo]');
       if(!modo) return;
       const b = findBlock(modo.dataset.cbmodo); if(!b) return;
-      b.progresionModo = modo.value === 'kg' ? 'kg' : 'pct';
+      b.progresionModo = (modo.value === 'kg' || modo.value === 'rir') ? modo.value : 'pct';
       save();
       const bar = modo.closest('[data-cbbar]');
       const ath = (typeof active === 'function') ? active() : null;
@@ -40313,6 +40642,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 }
 .cf-fmt-btn:hover{border-color:var(--gold);color:var(--orange)}
 .cf-fmt-btn[data-fmtins="bold"]{font-weight:900}
+/* botón táctico "+ Estructura EMOM" (directiva): se destaca del resto de
+   la mini-toolbar de formato -- inserta un template completo, no un
+   snippet inline, se lo trata como una acción propia. */
+.cf-fmt-emom{
+  background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.4);color:#7CC5E8;
+}
+.cf-fmt-emom:hover{background:rgba(56,189,248,.18);border-color:#38BDF8;color:#38BDF8}
 /* ---------- notas rápidas de adaptación ---------- */
 .sc-notes{
   margin:9px 0 2px;padding:11px 12px;border-radius:12px;
@@ -41267,6 +41603,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 }
 .fin-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .fin-acts .btn{flex:1 1 190px}
+/* selector de enfoque (directiva): elegido ANTES de generar -- sesga el
+   método sugerido (bombeo/congestión vs acondicionamiento metabólico) */
+.fin-enfoque{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.fin-enfoque .fn-foco{
+  flex:1 1 190px;padding:9px 12px;border-radius:10px;cursor:pointer;
+  font-family:var(--ff);font-size:12.5px;font-weight:700;
+  background:rgba(255,255,255,.03);border:1px solid var(--line-2);color:var(--muted);
+}
+.fin-enfoque .fn-foco.on{background:rgba(210,121,63,.14);border-color:#D2793F;color:var(--accent-volt)}
 .fin-badge{
   margin-left:auto;padding:3px 10px;border-radius:20px;font-size:9.5px;letter-spacing:.1em;
   text-transform:uppercase;font-family:var(--ffh);
@@ -41281,8 +41626,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 }
 .fin-out.on{display:block}
 .fin-out .fn-proto{
+  width:100%;margin:0 0 10px;padding:8px 10px;border-radius:8px;
   font-family:var(--ffh);font-size:13.5px;letter-spacing:.09em;text-transform:uppercase;
-  color:#D2793F;margin:0 0 10px;
+  color:#D2793F;background:rgba(9,10,15,.5);border:1px solid rgba(210,121,63,.3);
 }
 .fin-out h4{
   margin:0 0 4px;font-family:var(--ffh);font-size:11.5px;letter-spacing:.09em;
@@ -41290,9 +41636,17 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 }
 .fin-out .fn-b{margin:0 0 11px}
 .fin-out .fn-b:last-child{margin-bottom:0}
-.fin-out p{margin:0;color:var(--txt-2);font-size:12.8px;line-height:1.62;font-family:var(--ff)}
+/* directiva -- protocolo/objetivos/tips son editables antes de aplicar,
+   ver pintarFin(): mismo tratamiento visual que ya tenían de sólo lectura,
+   pero como campos de formulario */
+.fin-out textarea{
+  width:100%;resize:vertical;margin:0;padding:9px 11px;border-radius:10px;
+  color:var(--txt-2);font-size:12.8px;line-height:1.62;font-family:var(--ff);
+  background:rgba(9,10,15,.5);border:1px solid rgba(210,121,63,.24);
+}
+.fin-out #finObjetivos, .fin-out #finTips{min-height:58px}
 .fin-out .fn-work{
-  margin:0;padding:10px 12px;border-radius:10px;white-space:pre-wrap;
+  min-height:96px;white-space:pre-wrap;
   font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.7;
   color:#FFFFFF;background:rgba(9,10,15,.72);border:1px solid rgba(210,121,63,.24);
 }
@@ -41334,34 +41688,45 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   /* ---------------------------------------------------------
      MOTOR LOCAL (sin IA configurada)
   --------------------------------------------------------- */
+  /* directiva -- foco: 'bombeo' (congestión/hipertrofia local, tiempo bajo
+     tensión) vs 'acondicionamiento' (metabólico/cardiovascular, densidad
+     de trabajo) -- clasifica cada método para poder sugerir uno acorde
+     cuando el borrador del coach no nombra una técnica puntual (metodo()
+     de más abajo, fallback por enfoque en vez de un único genérico fijo). */
   const METODOS = [
-    { re:/drop\s*-?\s*set|descendente/i, lb:'DROP-SET DENSITY FINISHER',
+    { re:/drop\s*-?\s*set|descendente/i, lb:'DROP-SET DENSITY FINISHER', foco:'bombeo',
       obj:'Buscás estrés metabólico máximo: al bajar la carga sin cortar la serie extendés el tiempo bajo tensión más allá del fallo técnico y acumulás metabolitos que disparan la señal de hipertrofia.',
       tip:'Dejá los descensos de carga preparados antes de arrancar. Bajás entre un 20 y un 30 por ciento y seguís sin pausa. Cortás la serie cuando el rango de movimiento se acorta, no cuando aparece la molestia.' },
-    { re:/rest\s*-?\s*pause/i, lb:'REST-PAUSE FINISHER',
+    { re:/rest\s*-?\s*pause/i, lb:'REST-PAUSE FINISHER', foco:'bombeo',
       obj:'Trabajás cerca del fallo con pausas cortísimas para reclutar fibras de umbral alto con menos volumen total y una fatiga sistémica controlada.',
       tip:'Llevás la primera serie a 1 repetición en reserva, descansás entre 15 y 20 segundos y volvés. Repetís hasta perder la mitad de las repeticiones iniciales.' },
-    { re:/myo\s*-?\s*reps/i, lb:'MYO-REPS FINISHER',
+    { re:/myo\s*-?\s*reps/i, lb:'MYO-REPS FINISHER', foco:'bombeo',
       obj:'Aprovechás una serie de activación para dejar las fibras de umbral alto ya reclutadas y sumar mini-series muy efectivas por unidad de tiempo.',
       tip:'Serie de activación a 1 o 2 repeticiones en reserva, después mini-series de 3 a 5 repeticiones con 5 respiraciones de pausa entre cada una.' },
-    { re:/amrap/i, lb:'AMRAP CONGESTION FINISHER',
+    { re:/amrap/i, lb:'AMRAP CONGESTION FINISHER', foco:'acondicionamiento',
       obj:'Acumulás densidad de trabajo en una ventana fija: el volumen efectivo por minuto sube y la congestión local se sostiene de punta a punta.',
       tip:'Elegí una carga que te permita series limpias de 12 a 15 repeticiones. Administrá el ritmo desde el primer minuto: la idea es no frenar, no romperte en la primera ronda.' },
-    { re:/emom/i, lb:'EMOM DENSITY FINISHER',
+    { re:/emom/i, lb:'EMOM DENSITY FINISHER', foco:'acondicionamiento',
       obj:'La cadencia fija ordena el descanso y sostiene la congestión sin que la técnica se degrade con la fatiga.',
       tip:'Ajustá las repeticiones para terminar cada minuto con 15 a 20 segundos de descanso. Si perdés esa ventana, bajás la carga.' },
-    { re:/superserie|super\s*set|biserie|biset/i, lb:'ANTAGONIST SUPERSET FINISHER',
+    { re:/superserie|super\s*set|biserie|biset/i, lb:'ANTAGONIST SUPERSET FINISHER', foco:'acondicionamiento',
       obj:'Alternás patrones opuestos para sostener el flujo sanguíneo local y duplicar la densidad del bloque sin comprometer la calidad de cada serie.',
       tip:'Dejás las dos estaciones montadas antes de arrancar. Pasás de un ejercicio al otro sin pausa y descansás recién al cerrar la ronda completa.' },
-    { re:/isom[ée]tric|iso\b|est[áa]tic/i, lb:'ISOMETRIC BURNOUT FINISHER',
+    { re:/isom[ée]tric|iso\b|est[áa]tic/i, lb:'ISOMETRIC BURNOUT FINISHER', foco:'bombeo',
       obj:'La contracción sostenida mantiene la oclusión del músculo y multiplica el estrés metabólico con muy poca carga articular.',
       tip:'Sostenés la posición de mayor tensión sin bloquear la respiración. Cortás cuando empieza a moverse la postura, no cuando arde.' }
   ];
-  function metodo(txt){
-    for(let i = 0; i < METODOS.length; i++) if(METODOS[i].re.test(txt)) return METODOS[i];
-    return { lb:'METABOLIC STRESS FINISHER',
+  const METODO_DEFAULT = {
+    bombeo: { lb:'METABOLIC STRESS FINISHER', foco:'bombeo',
       obj:'Cerrás la sesión con un bloque de congestión: series cortas, descansos mínimos y alta demanda metabólica local para sumar volumen efectivo sin cargar el sistema nervioso.',
-      tip:'Mantené la técnica por encima de la carga. Descansás entre 20 y 30 segundos y cortás cada serie con 1 repetición en reserva.' };
+      tip:'Mantené la técnica por encima de la carga. Descansás entre 20 y 30 segundos y cortás cada serie con 1 repetición en reserva.' },
+    acondicionamiento: { lb:'METABOLIC CONDITIONING FINISHER', foco:'acondicionamiento',
+      obj:'Cerrás la sesión con una ventana de trabajo continuo, corta y densa: sube la frecuencia cardíaca y el gasto calórico sin agregar carga articular ni volumen de fuerza extra.',
+      tip:'Elegí movimientos que ya domines técnicamente -- acá lo que manda es el ritmo, no la carga. Sostené una intensidad que puedas mantener de punta a punta, sin pausas largas.' }
+  };
+  function metodo(txt, enfoque){
+    for(let i = 0; i < METODOS.length; i++) if(METODOS[i].re.test(txt)) return METODOS[i];
+    return METODO_DEFAULT[enfoque] || METODO_DEFAULT.bombeo;
   }
   function duracion(txt){
     const r = String(txt || '').match(/(\d{1,2}\s*[-–a]\s*\d{1,2})\s*(?:min|minutos|')/i);
@@ -41381,9 +41746,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       .filter(s => s.length > 2 && /[a-záéíóúñ]/i.test(s) && !RX_RELLENO.test(s))
       .slice(0, 6);
   }
-  function redaccionLocal(borrador){
+  function redaccionLocal(borrador, enfoque){
     const t = String(borrador || '');
-    const m = METODOS.filter(x => x.re.test(t))[0] || metodo(t);
+    const m = METODOS.filter(x => x.re.test(t))[0] || metodo(t, enfoque);
     const dur = duracion(t);
     const lista = ejercicios(t);
     return {
@@ -41465,6 +41830,23 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     '(estrés metabólico, congestión máxima, reclutamiento de fibras de umbral alto, tiempo bajo tensión). ' +
     '"tips" da en 2 o 4 oraciones las pautas de ejecución, el ritmo de trabajo y el criterio de corte de cada serie.';
 
+  /* directiva -- enfoque elegido ANTES de generar: sesga tanto el motor
+     local (metodo()/redaccionLocal() de arriba) como el prompt de IA hacia
+     un finisher de bombeo/congestión (hipertrofia local) o de
+     acondicionamiento metabólico (cardio/densidad), en vez de dejar que
+     el sistema adivine sólo por las palabras sueltas del borrador. Estado
+     efímero de UI (no se persiste) -- se resetea a 'bombeo' cada vez que
+     se monta la tarjeta en un día distinto, ver montar() más abajo. */
+  let finEnfoque = 'bombeo';
+  /* directiva -- el resultado de "Optimizar" ya NO se aplica solo: queda
+     en preview (editable) hasta que el coach toca "Aplicar Finisher al
+     Plan". Antes, optimizar() llamaba a setFin() de una, así que el
+     alumno podía terminar viendo un borrador a medio escribir apenas la
+     IA respondía -- ahora finDraft guarda el resultado sin tocar el
+     storage que lee finisherDelDia()/compile() hasta la aplicación
+     explícita. */
+  let finDraft = null;
+
   async function optimizar(){
     const a = (typeof active === 'function') ? active() : null;
     const d = (typeof curDay === 'function') ? curDay() : null;
@@ -41476,11 +41858,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const load = document.getElementById('finLoad');
     if(load) load.style.display = 'inline-flex';
 
+    const enfoqueLb = finEnfoque === 'acondicionamiento' ? 'acondicionamiento metabólico (cardio/densidad de trabajo, no hipertrofia local)' : 'bombeo / congestión muscular (hipertrofia local, tiempo bajo tensión)';
     let fin = null;
     const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
     if(conIA){
       try{
         const user = 'Sesión de bodybuilding: ' + (d.title || d.label || d.short || '') + '. ' +
+          'Enfoque elegido por el coach para este finisher: ' + enfoqueLb + ' -- el método y la redacción tienen que ser coherentes con ese enfoque. ' +
           (a.tags && a.tags.length ? 'Antecedentes del alumno: ' + a.tags.join(', ') + '. ' : '') +
           (a.prohibidos && a.prohibidos.length ? 'Ejercicios vetados: ' + a.prohibidos.join(', ') + '. ' : '') +
           'Idea del entrenador: ' + borrador;
@@ -41498,7 +41882,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
                   tips: directo(j.tips || ''),
                   motor: 'ia' };
           if(!fin.trabajo){
-            const l = redaccionLocal(borrador);
+            const l = redaccionLocal(borrador, finEnfoque);
             fin.trabajo = l.trabajo;
           }
         }
@@ -41507,35 +41891,45 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       }
     }
     if(!fin){
-      fin = redaccionLocal(borrador);
+      fin = redaccionLocal(borrador, finEnfoque);
       fin.objetivos = directo(fin.objetivos);
       fin.tips = directo(fin.tips);
     }
     fin.ts = Date.now();
-    if(!fin.trabajo) fin.trabajo = redaccionLocal(borrador).trabajo;
+    fin.enfoque = finEnfoque;
+    if(!fin.trabajo) fin.trabajo = redaccionLocal(borrador, finEnfoque).trabajo;
 
     if(load) load.style.display = 'none';
-    /* DOBLE PROCESAMIENTO: el input superior queda con el protocolo formateado
-       y el recuadro inferior con la teoría. El borrador crudo se archiva aparte. */
-    if(ta) ta.value = fin.trabajo;
-    setFin(a.id, d.id, { borrador: fin.trabajo, crudo: borrador, fin: fin });
+    /* preview editable -- ver pintarFin() y el botón "Aplicar Finisher al
+       Plan": nada de esto llega al alumno hasta que el coach lo aplica. */
+    finDraft = fin;
     pintarFin(fin);
-    try{ toast(fin.motor === 'ia' ? '✨ Finisher reescrito y estructurado con IA' : '✨ Finisher reescrito con el motor local'); }catch(e){}
+    try{ toast((fin.motor === 'ia' ? '✨ Borrador generado con IA' : '✨ Borrador generado con el motor local') + ' -- revisalo y aplicalo al plan'); }catch(e){}
     return fin;
   }
   window.jpOptimizarFinisher = optimizar;
 
-  function pintarFin(fin){
+  /* directiva -- protocolo/objetivos/tips pasan de texto de solo lectura a
+     campos editables: el coach puede corregir la redacción de la IA (o del
+     motor local) ANTES de que llegue al alumno. "aplicado" sólo cambia el
+     rótulo/color del botón -- true cuando esto es lo que YA está guardado
+     (montar() repintando desde storage), false/undefined cuando es un
+     borrador fresco de optimizar() todavía sin aplicar. */
+  function pintarFin(fin, aplicado){
     const out = document.getElementById('finOut');
     if(!out) return;
     if(!fin){ out.classList.remove('on'); out.innerHTML = ''; return; }
     out.classList.add('on');
     out.innerHTML =
-      '<div class="fn-proto">' + esc(fin.protocolo) + '</div>' +
-      (fin.trabajo ? '<div class="fn-b"><h4>Protocolo de trabajo (así lo ve tu alumno)</h4>' +
-        '<pre class="fn-work">' + esc(fin.trabajo) + '</pre></div>' : '') +
-      '<div class="fn-b"><h4>Objetivos fisiológicos</h4><p>' + esc(fin.objetivos) + '</p></div>' +
-      '<div class="fn-b"><h4>Coaching tips y estrategia</h4><p>' + esc(fin.tips) + '</p></div>';
+      '<div class="fn-proto"><input id="finProto" value="' + esc(fin.protocolo || '') + '"></div>' +
+      '<div class="fn-b"><h4>Protocolo de trabajo (así lo ve tu alumno)</h4>' +
+        '<textarea id="finTrabajo" class="fn-work">' + esc(fin.trabajo || '') + '</textarea></div>' +
+      '<div class="fn-b"><h4>Objetivos fisiológicos</h4><textarea id="finObjetivos">' + esc(fin.objetivos || '') + '</textarea></div>' +
+      '<div class="fn-b"><h4>Coaching tips y estrategia</h4><textarea id="finTips">' + esc(fin.tips || '') + '</textarea></div>' +
+      '<button type="button" class="btn gold" id="finApply" style="width:100%;margin-top:10px">' +
+        (aplicado ? '✅ Aplicado al plan (volver a aplicar)' : '✅ Aplicar Finisher al Plan') +
+      '</button>' +
+      '<div class="hint" style="margin-top:6px">Corregí lo que haga falta arriba antes de aplicar -- recién al tocar el botón esto queda visible para tu alumno/a.</div>';
   }
 
   /* ---------------------------------------------------------
@@ -41564,6 +41958,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         '<h3>🔥 Finisher / Bloque de Congestión Final<span class="fin-badge" id="finMotor">IA</span></h3>' +
         '<p class="fn-sub">Opcional. Escribí la idea rápida y el sistema la ordena en protocolo, objetivo ' +
         'fisiológico y pautas de ejecución, redactadas directamente para tu alumno.</p>' +
+        /* directiva -- selector de enfoque, ANTES de generar: sesga tanto el
+           motor local como el prompt de IA (ver finEnfoque/optimizar()). */
+        '<div class="fin-enfoque" id="finEnfoqueBar">' +
+          '<button type="button" class="fn-foco on" data-finfoco="bombeo">🩸 Bombeo / Congestión Muscular</button>' +
+          '<button type="button" class="fn-foco" data-finfoco="acondicionamiento">🔥 Acondicionamiento Metabólico</button>' +
+        '</div>' +
         '<textarea id="finTxt" placeholder="Ej: Bíceps en polea + extensiones de tríceps en drop-set hasta el fallo en 5 minutos"></textarea>' +
         '<div class="fin-acts">' +
           '<button class="btn gold" id="finRun" type="button">✨ Optimizar Finisher con IA</button>' +
@@ -41573,11 +41973,17 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         '<div class="fin-out" id="finOut"></div>';
       panel.appendChild(card);
 
+      document.getElementById('finEnfoqueBar').addEventListener('click', e => {
+        const b = e.target.closest('[data-finfoco]'); if(!b) return;
+        finEnfoque = b.dataset.finfoco;
+        $$('.fn-foco', card).forEach(x => x.classList.toggle('on', x === b));
+      });
       document.getElementById('finRun').addEventListener('click', () => optimizar());
       document.getElementById('finClear').addEventListener('click', () => {
         const at = (typeof active === 'function') ? active() : null;
         const dy = (typeof curDay === 'function') ? curDay() : null;
         if(!at || !dy) return;
+        finDraft = null;
         setFin(at.id, dy.id, { borrador: document.getElementById('finTxt').value, fin: null });
         pintarFin(null);
         try{ toast('Finisher eliminado de este día'); }catch(e){}
@@ -41588,6 +41994,32 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(!at || !dy) return;
         const c = finDe(at.id, dy.id);
         setFin(at.id, dy.id, { borrador: document.getElementById('finTxt').value, fin: c.fin });
+      });
+      /* directiva -- "Aplicar Finisher al Plan": #finOut se reescribe entero
+         en cada pintarFin(), así que #finApply nunca es el mismo nodo dos
+         veces -- delegado sobre la card (estable) en vez de un listener
+         directo sobre el botón. Toma el texto EDITADO en pantalla en ese
+         momento (no finDraft crudo), para que una corrección de último
+         momento en los textareas sí quede guardada. */
+      card.addEventListener('click', e => {
+        const btn = e.target.closest('#finApply'); if(!btn) return;
+        const at = (typeof active === 'function') ? active() : null;
+        const dy = (typeof curDay === 'function') ? curDay() : null;
+        if(!at || !dy || !finDraft) return;
+        const protoEl = document.getElementById('finProto');
+        const trabEl = document.getElementById('finTrabajo');
+        const objEl = document.getElementById('finObjetivos');
+        const tipsEl = document.getElementById('finTips');
+        const finAplicado = Object.assign({}, finDraft, {
+          protocolo: protoEl ? protoEl.value.trim() : finDraft.protocolo,
+          trabajo: trabEl ? trabEl.value.trim() : finDraft.trabajo,
+          objetivos: objEl ? objEl.value.trim() : finDraft.objetivos,
+          tips: tipsEl ? tipsEl.value.trim() : finDraft.tips
+        });
+        setFin(at.id, dy.id, { borrador: document.getElementById('finTxt').value, fin: finAplicado });
+        finDraft = finAplicado;
+        pintarFin(finAplicado, true);
+        try{ toast('✅ Finisher aplicado al plan -- tu alumno ya lo ve'); }catch(e2){}
       });
     } else {
       /* el finisher cierra el trabajo; sólo el cool-down puede ir después */
@@ -41610,9 +42042,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     }
     if(card.dataset.k !== clave){
       card.dataset.k = clave;
+      /* cambiar de alumno/día invalida cualquier borrador sin aplicar del
+         día anterior -- nunca debe poder "aplicarse" por error sobre el
+         día/alumno equivocado. El enfoque vuelve a bombeo (default) cada
+         vez, es una preferencia de UI efímera, no un dato del plan. */
+      finDraft = null;
+      finEnfoque = 'bombeo';
+      $$('.fn-foco', card).forEach(x => x.classList.toggle('on', x.dataset.finfoco === 'bombeo'));
       const c = finDe(a.id, d.id);
       if(ta) ta.value = c.borrador || '';
-      pintarFin(c.fin);
+      pintarFin(c.fin, true);
     }
   }
 
@@ -41690,6 +42129,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 }
 #dayPanel .block.pizarra textarea[data-bf="items"]:focus{border-color:rgba(124,197,232,.6)}
 .pz-hint{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.55}
+/* badge de bloque de Accesorio/Core en CrossFit (directiva): violeta a
+   propósito para diferenciarlo de los tonos cobre/cyan/dorado del resto
+   de la paleta -- señal deliberada de "esto es Pizarra pura, no
+   musculación estructurada", nunca se confunde con otra fase. */
+.cf-acc-badge{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;
+  font-family:var(--ffh);font-size:11px;font-weight:700;letter-spacing:.08em;
+  background:rgba(167,139,250,.14);border:1px solid rgba(167,139,250,.45);color:#C4B5FD;
+  margin-bottom:10px;
+}
 /* ---------- chips de reconocimiento de video ---------- */
 .vid-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
 .vid-chips .vc-h{
@@ -42092,6 +42541,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   }
   window.jpAgregarCore = agregarCore;
 
+  /* fix definitivo (directiva): window.COACH_DISCIPLINA es un flag de RAMA
+     fijo al cargar la app (siempre 'sports' en este branch, ver línea
+     ~1010) -- no seguía al toggle de MODALIDAD por plan (p.meta.mesoDisc),
+     así que #btnCore quedaba SIEMPRE visible aunque el plan activo fuera
+     CrossFit. Se chequea el plan activo, igual que hace cfActiva en
+     renderDay(). */
+  function esPlanCFActivoM45(){
+    try{ const p = plan(S.activeId); return !!(p && p.meta && p.meta.mesoDisc === 'crossfit'); }catch(e){ return false; }
+  }
   function botones(){
     const host = document.querySelector('#v-builder .topbar .jp-rail') || document.querySelector('#v-builder .topbar');
     if(!host) return;
@@ -42099,7 +42557,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        una herramienta de musculación clásica y no debe existir en el DOM
        de CrossFit; #btnPizarra es táctica de CrossFit y no debe existir
        en el DOM de Sports. Antes sólo se ocultaban con display:none. */
-    if(window.COACH_DISCIPLINA !== 'crossfit'){
+    if(!esPlanCFActivoM45()){
       if(!document.getElementById('btnCore')){
         const b = document.createElement('button');
         b.className = 'btn'; b.id = 'btnCore'; b.type = 'button';
@@ -42112,7 +42570,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       const viejo = document.getElementById('btnCore');
       if(viejo) viejo.remove();
     }
-    if(window.COACH_DISCIPLINA === 'crossfit'){
+    if(esPlanCFActivoM45()){
       if(!document.getElementById('btnPizarra')){
         const b = document.createElement('button');
         b.className = 'btn'; b.id = 'btnPizarra'; b.type = 'button';
@@ -43171,6 +43629,16 @@ details.cf-acc[open] summary{margin-bottom:2px}
     let p = null;
     try{ p = plan(S.activeId); }catch(e){ return 0; }
     if(!p || !p.dias) return 0;
+    /* fix definitivo (directiva): este módulo estructura bloques de "Core"
+       en biset/triset/circuito con exId real -- una mejora pensada para
+       Sports & Bodybuilding. En un plan de CrossFit la única UI válida es
+       la Pizarra Táctica (texto libre + chips de video); dejar que este
+       módulo tocara un bloque tipo:'list' de un plan CrossFit era la causa
+       del parpadeo reportado: renderDay() pintaba la Pizarra bien, y ~110ms
+       después normalizar() (enganchado a CADA renderDay/renderBuilder/go,
+       ver ['renderDay','renderBuilder','go'].forEach más abajo) lo mutaba
+       a tipo:'superset'/'block', montando de golpe la UI de culturismo. */
+    const esCF = !!(p.meta && p.meta.mesoDisc === 'crossfit');
     let n = 0;
     p.dias.forEach(d => {
       (d.bloques || []).forEach(b => {
@@ -43190,6 +43658,22 @@ details.cf-acc[open] summary{margin-bottom:2px}
           b.tipo = 'list';
           if(!b.items || !b.items.length) b.items = (b.itemsSemana[0] || []).slice();
           n++;
+          return;
+        }
+        if(esCF){
+          /* REPARACIÓN CrossFit: si este plan YA tiene un bloque con la
+             huella coreBlock:true de una corrida vieja de este bug (antes
+             de este fix), se revierte a Pizarra -- nunca pudo llegar a
+             tipo:'superset'/'block' con esa marca por otro camino en un
+             plan CrossFit. De acá en más, en CrossFit este módulo NUNCA
+             estructura nada nuevo (return al final del if). */
+          if((b.tipo === 'superset' || b.tipo === 'block') && b.coreBlock === true){
+            delete b.ejercicios; delete b.coreBlock; delete b.coreModo; delete b.isTriset;
+            delete b.exId; delete b.coreNombre;
+            b.tipo = 'list';
+            if(!b.items || !b.items.length) b.items = ((b.itemsSemana && b.itemsSemana[0]) || []).slice();
+            n++;
+          }
           return;
         }
         if(!esCore(b)) return;
@@ -43226,10 +43710,17 @@ details.cf-acc[open] summary{margin-bottom:2px}
   function panel(){
     const host = document.getElementById('dayPanel');
     if(!host) return;
+    /* fix definitivo (directiva): la caja "Estructura del bloque de core"
+       (selector single/biset/triset/circuito + rondas) es UI de culturismo
+       -- no debe montarse nunca sobre un bloque de Pizarra de CrossFit. */
+    let pCtx = null;
+    try{ pCtx = plan(S.activeId); }catch(e){}
+    const esCFPanel = !!(pCtx && pCtx.meta && pCtx.meta.mesoDisc === 'crossfit');
     host.querySelectorAll('.block').forEach(bl => {
+      let caja = bl.querySelector('.core-cfg');
+      if(esCFPanel){ if(caja) caja.remove(); return; }
       const ref = bl.querySelector('[data-b]');
       const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
-      let caja = bl.querySelector('.core-cfg');
       if(!b || !esCore(b)){ if(caja) caja.remove(); return; }
       const modo = modoDe(b);
       const rondas = parseInt(b.efSets, 10) || 3;
@@ -43799,9 +44290,25 @@ details.cf-acc[open] summary{margin-bottom:2px}
                   tipo:'list', category:'warmup', icon:'🔥',
                   titulo:'ENTRADA EN CALOR ESPECÍFICA',
                   subtitulo:'Temperatura · Movilidad · Activación · 5-7 min',
+                  autoWu: true,
                   items: lineas(out), tips: out.nota || '' };
+      /* fix definitivo (directiva): el match por category==='warmup' o por
+         regex sobre el título fallaba en cuanto el coach renombraba el
+         bloque ("Calentamiento", "Movilidad", "Activación Neural" -- nada
+         de eso matchea /entrada en calor|warm.?up/i) o le cambiaba la
+         categoría -- entonces "Generar" volvía a crear un "Bloque 1"
+         duplicado con el mismo contenido en vez de reemplazar el
+         existente. autoWu:true es una marca estable que sólo este botón
+         escribe, y sobrevive a que el coach edite título/categoría a mano
+         (si lo edita, sigue siendo "el bloque que generó el warm-up",
+         y una nueva generación lo actualiza en vez de duplicarlo). */
+      /* retrocompatibilidad (Regla de Oro): un warm-up ya generado ANTES de
+         este fix no tiene autoWu todavía -- se lo sigue encontrando por el
+         criterio viejo (OR, nunca AND) para no duplicarlo la primera vez
+         que el coach regenera después de este cambio; a partir de esa
+         regeneración ya queda marcado y usa el criterio nuevo, estable. */
       const prev = (d.bloques || []).findIndex(x =>
-        x.category === 'warmup' || /entrada en calor|warm.?up/i.test(x.titulo || ''));
+        x.autoWu === true || x.category === 'warmup' || /entrada en calor|warm.?up/i.test(x.titulo || ''));
       if(prev >= 0){ b.id = d.bloques[prev].id; d.bloques.splice(prev, 1, b); }
       else d.bloques.unshift(b);
     } else {
@@ -43870,7 +44377,12 @@ details.cf-acc[open] summary{margin-bottom:2px}
       document.getElementById('wuClear').addEventListener('click', () => {
         const at = active(), dy = curDay();
         if(!at || !dy) return;
-        const i = (dy.bloques || []).findIndex(x => x.category === 'warmup' || /entrada en calor|warm.?up/i.test(x.titulo || ''));
+        /* mismo criterio estable que aplicar() (ver autoWu más abajo) -- si
+           sólo se buscara por category/regex, un bloque ya renombrado por
+           el coach ("Activación Neural") quedaba imposible de quitar con
+           este botón. */
+        const i = (dy.bloques || []).findIndex(x =>
+          x.autoWu === true || x.category === 'warmup' || /entrada en calor|warm.?up/i.test(x.titulo || ''));
         if(i >= 0) dy.bloques.splice(i, 1);
         setPrep(at.id, dy.id, { wu:null });
         pintar('wu', null);
