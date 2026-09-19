@@ -2856,6 +2856,37 @@ function cfFmtOptions(sel){
 function cfScoreOptions(sel){
   return CF_SCORES.map(s => '<option value="' + s.v + '"' + (s.v===(sel||'')?' selected':'') + '>' + esc(s.lb) + '</option>').join('');
 }
+/* auto-detección de formato (directiva): si la primera línea de la
+   prescripción trae la palabra clave del formato ("AMRAP 18", "Every 2:30
+   x8", "EMOM 12", "For Time", "Tabata"), el coach no debería tener que
+   repetir esa elección a mano en el selector de al lado -- se infiere UNA
+   sola vez, la primera vez que el bloque queda en 'Auto' (b.cfFmt vacío),
+   para no pisar una corrección manual posterior si el coach ya lo cambió
+   a mano. "Every" se trata como EMOM: es la forma en que se prescribe casi
+   cualquier EMOM ("Every 1:00 x 12 rounds"). */
+const CF_AUTO_FORMATO = [
+  { rx: /\b(emom|every)\b/i, fmt: 'emom',    score: 'reps'   },
+  { rx: /\bamrap\b/i,        fmt: 'amrap',   score: 'rondas' },
+  { rx: /\bfor\s*time\b/i,   fmt: 'fortime', score: 'tiempo' },
+  { rx: /\btabata\b/i,       fmt: 'tabata',  score: 'reps'   }
+];
+function detectarFormatoCF(texto){
+  const primera = String(texto || '').split('\n').map(l => l.trim()).find(l => l.length) || '';
+  for(let i = 0; i < CF_AUTO_FORMATO.length; i++){
+    if(CF_AUTO_FORMATO[i].rx.test(primera)) return CF_AUTO_FORMATO[i];
+  }
+  return null;
+}
+/* refleja b.cfFmt/b.cfScore en los <select> ya pintados sin re-renderizar
+   el bloque entero -- un renderBuilder() a mitad de tipeo le robaría el
+   foco (y el cursor) al textarea de la prescripción. */
+function sincronizarFormatoCF(bl, b){
+  if(!bl) return;
+  const selFmt = bl.querySelector('select[data-bf="cfFmt"]');
+  const selScore = bl.querySelector('select[data-bf="cfScore"]');
+  if(selFmt && selFmt.value !== (b.cfFmt||'')) selFmt.value = b.cfFmt || '';
+  if(selScore && selScore.value !== (b.cfScore||'')) selScore.value = b.cfScore || '';
+}
 
 /* Fase de un bloque de Pizarra Táctica -- reusa el mismo campo b.category
    que ya existía (mismos 5 valores: warmup/strength/metcon/cardio/accessory),
@@ -3104,11 +3135,12 @@ function renderDay(){
     const cfWkActiva = activeCfWeek();
     h += '<div class="card cf-week-bar" style="margin-bottom:14px">' +
       '<label class="lb">📆 Semana que estás editando (Pizarra Táctica)</label>' +
-      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">' +
         (pAct.meso||[]).map((w,i) =>
           '<button type="button" class="btn sm' + (i===cfWkActiva?' gold':' ghost') + '" data-cfwk="' + i + '">' +
             esc(w.short || ('S'+(i+1))) + '</button>'
         ).join('') +
+        (cfWkActiva > 0 ? '<button type="button" class="btn sm ghost" data-cfclonewk="1" title="Copia todos los días y bloques de la semana anterior en la semana activa">📋 Clonar semana anterior</button>' : '') +
       '</div>' +
       '<div class="hint" style="margin-top:6px">Cada semana de CrossFit &amp; Hyrox es una prescripción 100% independiente -- editar acá nunca modifica el contenido de otra semana.</div>' +
     '</div>' +
@@ -3631,6 +3663,32 @@ function setCfWeekItems(b, weekIdx, val){
   b.weekItems = b.weekItems || [];
   b.weekItems[weekIdx] = arr;
 }
+/* "Clonar semana anterior" (directiva): arma la semana activa a partir de
+   la anterior en UN toque -- recorre TODOS los días del plan (no sólo el
+   día que se está mirando) y, bloque por bloque tipo:'list' (la Pizarra,
+   que es lo único que de verdad está separado por semana -- ver comentario
+   de arriba), copia el array de texto de la semana anterior en la activa.
+   setCfWeekItems() ya arma un array nuevo desde cero (split/trim), así que
+   esto es un deep clone real: la semana activa nunca queda apuntando al
+   mismo array que la anterior. */
+function clonarSemanaAnteriorCF(){
+  const wk = activeCfWeek();
+  if(wk <= 0) return;
+  const p = plan(S.activeId);
+  if(!p) return;
+  const lbActiva = (p.meso && p.meso[wk] && p.meso[wk].short) || ('S' + (wk + 1));
+  const lbPrev = (p.meso && p.meso[wk - 1] && p.meso[wk - 1].short) || ('S' + wk);
+  if(!confirm('¿Clonar la estructura completa de ' + lbPrev + ' en ' + lbActiva + '? Esto reemplaza todo lo que ya esté cargado en ' + lbActiva + ' de la Pizarra Táctica, en TODOS los días del plan. Esta acción se puede deshacer con Ctrl+Z.')) return;
+  if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Clonar ' + lbPrev + ' en ' + lbActiva);
+  (p.dias || []).forEach(d => {
+    (d.bloques || []).forEach(b => {
+      if(b.tipo !== 'list') return;
+      setCfWeekItems(b, wk, cfWeekItems(b, wk - 1).join('\n'));
+    });
+  });
+  save(); renderBuilder();
+  toast('📋 ' + lbPrev + ' clonada en ' + lbActiva + ' ✔');
+}
 
 /* ---------- Eventos ---------- */
 function bindBuilder(){
@@ -3817,6 +3875,14 @@ function bindBuilder(){
       } else {
         setBlockField(b, t.dataset.bf, t.type === 'checkbox' ? t.checked : t.value);
       }
+      if(t.dataset.bf === 'items' && b.tipo === 'list' && esPlanCF && !b.cfFmt){
+        const det = detectarFormatoCF(t.value);
+        if(det){
+          b.cfFmt = det.fmt;
+          if(!b.cfScore) b.cfScore = det.score;
+          sincronizarFormatoCF(t.closest('.block'), b);
+        }
+      }
       save();
       if(t.dataset.bf === 'movements' || t.dataset.bf === 'items') alertasDebounced();
       return;
@@ -3893,6 +3959,7 @@ function bindBuilder(){
       save(); renderBuilder();
       return;
     }
+    if(t.dataset.cfclonewk !== undefined){ clonarSemanaAnteriorCF(); return; }
     if(t.dataset.addex){ addSubEx(t.dataset.addex, $('[data-pick="' + t.dataset.addex + '"]').value); return; }
     if(t.dataset.bai){ nombrarBloqueConIA(t.dataset.bai, t); return; }
     if(t.dataset.bdel){
@@ -28741,6 +28808,12 @@ document.addEventListener('DOMContentLoaded', init);
     if(!wrap) return;
     const p = plan(S.activeId);
     if(!p){ wrap.innerHTML = ''; return; }
+    /* directiva: "series efectivas" es una métrica de hipertrofia (Sports &
+       Bodybuilding) -- en CrossFit & Hyrox no tiene sentido (los bloques de
+       Pizarra Táctica son tipo:'list' y calcVolumen() ya los ignora), así
+       que el panel entero se oculta en vez de mostrar una tarjeta vacía o
+       con datos parciales de algún bloque tradicional suelto. */
+    if(p.meta && p.meta.mesoDisc === 'crossfit'){ wrap.innerHTML = ''; return; }
     const v = calcVolumen(p);
     const keys = Object.keys(v.total).sort((a, b) => v.total[b] - v.total[a]);
     const suma = keys.reduce((s, k) => s + v.total[k], 0);
@@ -41635,6 +41708,28 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .vid-chips .vc img{width:34px;height:20px;object-fit:cover;border-radius:4px;border:1px solid var(--line-2)}
 .vid-chips .vc b{font-weight:800}
 .vid-chips .vc-none{font-size:11px;color:var(--muted)}
+/* micro-input in-line de "+ Vincular" (directiva): mismo chip amarillo,
+   pero con un input de URL + acciones en vez de abrir el modal completo */
+.vc-inline{
+  display:inline-flex;align-items:center;gap:5px;padding:4px 6px 4px 11px;border-radius:20px;
+  background:rgba(239,180,74,.09);border:1px solid rgba(239,180,74,.42);min-height:30px;
+}
+.vc-inline-name{font-size:11.5px;font-weight:600;color:#EFB44A;white-space:nowrap}
+.vc-inline-input{
+  width:190px;max-width:40vw;font-size:11.5px;font-family:var(--ff);
+  background:rgba(9,10,15,.6);border:1px solid rgba(239,180,74,.4);border-radius:12px;
+  color:var(--text);padding:4px 9px;
+}
+.vc-inline-input:focus{border-color:#EFB44A;outline:none}
+.vc-inline-btn{
+  display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+  border-radius:50%;border:1px solid rgba(239,180,74,.42);background:transparent;
+  color:#EFB44A;font-size:12px;cursor:pointer;flex:0 0 auto;
+}
+.vc-inline-btn.ok{background:rgba(0,230,118,.12);border-color:rgba(0,230,118,.45);color:#7CFFB2}
+.vc-inline-btn.ok:hover{background:rgba(0,230,118,.22)}
+.vc-inline-btn.cancel:hover{background:rgba(239,90,74,.18);border-color:rgba(239,90,74,.5);color:#FF8A78}
+.vc-inline-btn.full:hover{background:rgba(239,180,74,.18)}
 </style>
 
 <script>
@@ -41659,7 +41754,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     return m;
   }
   /* candidatos de movimiento dentro de una línea de pizarra */
-  const RUIDO = /^(?:\d+\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\b[:.]?\s*)+/i;
+  /* rango de reps al inicio ("10-15 HSPU", "10–15 Wall Balls"): el guion
+     entre los dos números no es parte del nombre del ejercicio, pero antes
+     sólo se pisaba el PRIMER número -- "10-15 HSPU" quedaba como "-15 HSPU"
+     y nunca matcheaba contra la biblioteca. RANGO cubre el segundo número
+     opcional (guion medio, en-dash o em-dash) en ambos puntos donde se pisa
+     un número inicial (RUIDO a nivel línea, y el recorte por token). */
+  const RANGO = '(?:\\s*[-–—]\\s*\\d+)?';
+  const RUIDO = new RegExp('^(?:\\d+' + RANGO + '\\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\\b[:.]?\\s*)+', 'i');
   function candidatos(linea){
     let t = String(linea || '').replace(/^[\s\-•*]+/, '');
     if(/^(?:-\s*or\s*-|amrap|emom|every|for time|time cap|target|rest|descanso|cargas?|min \d)/i.test(t)) {
@@ -41669,8 +41771,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     t = t.replace(RUIDO, '');
     return t.split(/\s*\+\s*|\s*\/\s*|\s+y\s+/i).map(p => {
       let s = p.replace(/\([^)]*\)/g, ' ')
+               /* el rango inicial se pisa ANTES del recorte de "— nota"
+                  de más abajo: si el coach usa en-dash/em-dash como
+                  separador del rango ("10–15 HSPU"), ese recorte de
+                  comentario final lo tomaría por un "— nota" y volaría
+                  también el nombre del ejercicio si corriera primero. */
+               .replace(new RegExp('^\\s*\\d+' + RANGO + '\\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\\b)?\\s*', 'i'), '')
                .replace(/[—–]\s*.*$/, '')
-               .replace(/^\s*\d+\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\b)?\s*/i, '')
                .replace(/\b\d+\s*(?:kg|lbs?|cal|m|s|seg|min|%)\b.*$/i, '')
                .replace(/\bx\s*\d+.*$/i, '')
                .replace(/\s{2,}/g, ' ').trim();
@@ -41721,17 +41828,77 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     (ta.parentNode === bl ? bl : ta.parentNode).insertBefore(caja, ta.nextSibling);
   }
 
+  /* micro-input de vinculación (directiva): "+ Vincular" abría siempre el
+     modal completo de ficha de ejercicio -- para el caso frecuente de "ya sé
+     el nombre, sólo me falta pegar el link", eso era fricción de más. Ahora
+     el chip se transforma in-line en un mini-formulario (URL + guardar) que
+     resuelve todo sin salir de la Pizarra; el modal completo sigue una
+     tecla más lejos (⋯) para cuando hace falta tocar grupo/patrón/equipo. */
+  function abrirMicroVincular(btn){
+    const nombre = btn.dataset.vcno || '';
+    const exId = btn.dataset.vcex || '';
+    const span = document.createElement('span');
+    span.className = 'vc-inline';
+    span.innerHTML =
+      '<span class="vc-inline-name">⚠️ ' + esc(nombre) + '</span>' +
+      '<input type="text" class="vc-inline-input" placeholder="Pegar URL de YouTube (youtu.be/...)" autocomplete="off">' +
+      '<button type="button" class="vc-inline-btn ok" data-vcsave="1" data-vcname="' + esc(nombre) + '" data-vcex="' + esc(exId) + '" title="Guardar">✔</button>' +
+      '<button type="button" class="vc-inline-btn full" data-vcfull="' + esc(exId) + '" data-vcname="' + esc(nombre) + '" title="Editar ficha completa">⋯</button>' +
+      '<button type="button" class="vc-inline-btn cancel" data-vcancel="1" title="Cancelar">✕</button>';
+    btn.replaceWith(span);
+    const input = span.querySelector('.vc-inline-input');
+    input.focus();
+    input.addEventListener('keydown', ev => {
+      if(ev.key === 'Enter'){ ev.preventDefault(); span.querySelector('[data-vcsave]').click(); }
+      else if(ev.key === 'Escape'){ ev.preventDefault(); span.querySelector('[data-vcancel]').click(); }
+    });
+  }
+  function refrescarChipsDe(el){
+    const bl = el.closest('.block');
+    const ref = bl && bl.querySelector('[data-b]');
+    const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+    if(bl && b) chips(bl, b);
+  }
+  function guardarMicroVincular(btn){
+    const span = btn.closest('.vc-inline');
+    const input = span && span.querySelector('.vc-inline-input');
+    const url = input ? input.value.trim() : '';
+    const id = ytId(url);
+    if(!id){ toast('No se pudo extraer un ID de YouTube válido de esa URL', 'err'); if(input) input.focus(); return; }
+    const nombre = btn.dataset.vcname || '';
+    const exId = btn.dataset.vcex || '';
+    if(exId){
+      const ex = getEx(exId);
+      if(ex){ ex.video = url; ex.videoId = id; }
+    } else {
+      S.exercises.push({ id: uid('ex'), custom: true, es: nombre, en: '',
+        grupo: GRUPOS[0], patron: PATRONES[0], equipo: EQUIPOS[0],
+        video: url, videoId: id, riesgo: [], aviso: '' });
+    }
+    save();
+    if(typeof renderLibrary === 'function') renderLibrary();
+    toast('Video vinculado ✔');
+    refrescarChipsDe(span);
+  }
+
   document.addEventListener('click', e => {
     const ok = e.target.closest('[data-vcok]');
     if(ok){ if(typeof openVideo === 'function') openVideo(ok.dataset.vcok); return; }
     const no = e.target.closest('[data-vcno]');
-    if(no){
-      const exId = no.dataset.vcex || '';
+    if(no){ abrirMicroVincular(no); return; }
+    const cancel = e.target.closest('[data-vcancel]');
+    if(cancel){ refrescarChipsDe(cancel); return; }
+    const guardar = e.target.closest('[data-vcsave]');
+    if(guardar){ guardarMicroVincular(guardar); return; }
+    const full = e.target.closest('[data-vcfull]');
+    if(full){
+      const exId = full.dataset.vcfull || '';
+      const nombre = full.dataset.vcname || '';
       if(typeof openEx !== 'function') return;
       openEx(exId || null);
       setTimeout(() => {
         const nom = document.getElementById('eEs');
-        if(nom && !exId) nom.value = no.dataset.vcno;
+        if(nom && !exId) nom.value = nombre;
         const vid = document.getElementById('eVideo');
         if(vid) vid.focus();
         try{ toast('Pegá el link de YouTube y guardá: el bloque queda vinculado'); }catch(x){}
