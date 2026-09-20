@@ -2825,10 +2825,33 @@ const TECNICAS = [
   {v:'restpause', lb:'⚡ Rest-Pause (pausa 10-15s y reanuda)'},
   {v:'isometria', lb:'⏸️ Isometría / Pausa (pico o estiramiento)'},
   {v:'myoreps',   lb:'🔁 Myo-Reps'},
-  {v:'fallo',     lb:'🎯 Serie al Fallo (+Repetir / Parciales)'}
+  {v:'fallo',     lb:'🎯 Serie al Fallo (+Repetir / Parciales)'},
+  {v:'topset',    lb:'🏆 Top Set + Back-off'},
+  {v:'intervalo', lb:'⏱ Densidad (ON/OFF por tiempo)'}
 ];
 function tecOptions(sel){
   return TECNICAS.map(t => '<option value="' + t.v + '"' + (t.v===(sel||'')?' selected':'') + '>' + esc(t.lb) + '</option>').join('');
+}
+/* directiva (Metodologías avanzadas): parámetro libre y opcional por
+   técnica -- un solo input de texto (b.tecParam / e.tecParam) en vez de
+   4 juegos de campos que aparecen/desaparecen según la técnica, mismo
+   criterio "aditivo, nunca rompe lo viejo" que el resto del catálogo.
+   El formato esperado cambia según la técnica (ver parseTecParam() en
+   TEMPLATE_HTML, misma lógica de parseo duplicada ahí para el render del
+   alumno/a). */
+const TEC_PARAM_META = {
+  dropset:   { lb: 'Cargas de bajada (kg, separadas por coma)', ph: 'Ej: 30,22.5,15' },
+  restpause: { lb: 'Esquema (reps encadenadas + pausa)', ph: 'Ej: 10+4+3 / 15s' },
+  myoreps:   { lb: 'Esquema (reps encadenadas + pausa)', ph: 'Ej: 12+5+5+4 / 15s' },
+  topset:    { lb: 'Back-off (% de bajada, separados por coma)', ph: 'Ej: 10,15,20' },
+  intervalo: { lb: 'Trabajo / Descanso / Sets (seg)', ph: 'Ej: 40/20/4' }
+};
+function tecParamFieldHtml(source, blockId, dataAttr, i){
+  const meta = TEC_PARAM_META[source.metodologia || ''];
+  if(!meta) return '';
+  const idxAttr = (i != null) ? ' data-i="' + i + '"' : '';
+  return '<div class="f wide"><label>' + esc(meta.lb) + '</label>' +
+    '<input data-' + dataAttr + '="tecParam" data-b="' + blockId + '"' + idxAttr + ' value="' + esc(source.tecParam||'') + '" placeholder="' + esc(meta.ph) + '"></div>';
 }
 
 /* Formato nativo y tipo de score de un bloque de Pizarra Táctica (CrossFit).
@@ -3307,6 +3330,7 @@ function renderDay(){
         '<div class="f"><label>Reps</label><input data-bf="reps" data-b="' + b.id + '" value="' + esc(b.reps) + '" placeholder="6-8"></div>' +
         '<div class="f"><label>Tempo</label><input data-bf="tempo" data-b="' + b.id + '" value="' + esc(b.tempo) + '" placeholder="2110"></div>' +
         '<div class="f"><label>Técnica de intensidad</label><select data-bf="metodologia" data-b="' + b.id + '">' + tecOptions(b.metodologia) + '</select></div>' +
+        tecParamFieldHtml(b, b.id, 'bf') +
         '<div class="f"><label>Descanso (seg)</label>' +
           '<div class="row" style="flex-wrap:nowrap;gap:5px">' +
             '<input type="number" data-bf="restSeconds" data-b="' + b.id + '" value="' + esc(b.restSeconds) + '" style="min-width:60px">' +
@@ -3317,8 +3341,7 @@ function renderDay(){
       '<div class="row" style="margin-top:9px">' +
         '<label class="chk"><input type="checkbox" data-bf="hasApprox" data-b="' + b.id + '" ' + (b.hasApprox?'checked':'') + '> Mostrar series de aproximación</label>' +
         '<label class="chk"><input type="checkbox" data-bf="failCapable" data-b="' + b.id + '" ' + (b.failCapable?'checked':'') + '> Apto para fallo técnico</label>' +
-      '</div>' +
-      '<div style="margin-top:10px"><label class="lb">Nota alternativa (recuadro teal)</label><input data-bf="altNote" data-b="' + b.id + '" value="' + esc(b.altNote||'') + '" placeholder="Alternativa sin peso / regresión sugerida"></div>';
+      '</div>';
     }
 
     if(b.tipo === 'superset'){
@@ -3358,6 +3381,7 @@ function renderDay(){
             '<div class="f"><label>Reps</label><input data-sf="reps" data-b="' + b.id + '" data-i="' + i + '" value="' + esc(e.reps||'') + '" placeholder="10-12"></div>' +
             '<div class="f"><label>Tempo</label><input data-sf="tempo" data-b="' + b.id + '" data-i="' + i + '" value="' + esc(e.tempo||'') + '" placeholder="2011"></div>' +
             '<div class="f"><label>Técnica</label><select data-sf="metodologia" data-b="' + b.id + '" data-i="' + i + '">' + tecOptions(e.metodologia) + '</select></div>' +
+            tecParamFieldHtml(e, b.id, 'sf', i) +
           '</div>' +
         '</div>';
       });
@@ -3442,12 +3466,25 @@ function renderDay(){
 
     /* Coach Note y Objetivo del bloque quedan reemplazados, en CrossFit,
        por el acordeón de Objetivo del estímulo & Coaching Tips de arriba
-       -- mostrarlos también sería duplicar el mismo contenido. */
+       -- mostrarlos también sería duplicar el mismo contenido.
+       Directiva (limpieza Builder Bodybuilding): Coach Note, Objetivo del
+       bloque y Nota alternativa vivían como 3 campos sueltos, repartidos
+       en distintos puntos del formulario -- unificados en un solo
+       acordeón colapsable, mismos data-bf/keys de siempre (altNote se
+       mueve acá desde el bloque 'block' de más arriba, cero cambio de
+       dato guardado). */
     if(!esBloqueCF){
-      h += '<div style="margin-top:11px"><label class="lb">Coach Note</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:60px">' + esc(b.tips||'') + '</textarea></div>';
-      if(b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'list'){
-        h += '<div style="margin-top:10px"><label class="lb">Objetivo del bloque (recuadro 🎯)</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:52px">' + esc(b.objective||'') + '</textarea></div>';
-      }
+      h += '<details class="cf-acc" style="margin-top:11px"><summary>📋 Pautas &amp; Estrategia del Coach</summary>' +
+        '<div style="padding-top:8px">' +
+          '<div><label class="lb">Coach Note</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:60px">' + esc(b.tips||'') + '</textarea></div>' +
+          (b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'list'
+            ? '<div style="margin-top:10px"><label class="lb">Objetivo del bloque (recuadro 🎯)</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:52px">' + esc(b.objective||'') + '</textarea></div>'
+            : '') +
+          (b.tipo === 'block'
+            ? '<div style="margin-top:10px"><label class="lb">Nota alternativa (recuadro teal)</label><input data-bf="altNote" data-b="' + b.id + '" value="' + esc(b.altNote||'') + '" placeholder="Alternativa sin peso / regresión sugerida"></div>'
+            : '') +
+        '</div>' +
+      '</details>';
     }
     h += '</div></div>';
   });
@@ -4030,12 +4067,21 @@ function bindBuilder(){
       }
       save();
       if(t.dataset.bf === 'movements' || t.dataset.bf === 'items') alertasDebounced();
+      /* directiva (Metodologías avanzadas): el campo de parámetro
+         (cargas de drop set, esquema de rest-pause, % de back-off, etc.)
+         sólo existe para ciertas técnicas -- re-renderiza al cambiar la
+         técnica para que aparezca/desaparezca de inmediato (select
+         discreto, no texto: no hay riesgo de perder foco a mitad de
+         tipeo como con un input de texto). */
+      if(t.dataset.bf === 'metodologia'){ renderBuilder(); return; }
       return;
     }
     if(t.dataset.sf){
       const b = findBlock(t.dataset.b); if(!b) return;
       const it = b.ejercicios[parseInt(t.dataset.i,10)]; if(!it) return;
-      it[t.dataset.sf] = t.value; save(); return;
+      it[t.dataset.sf] = t.value; save();
+      if(t.dataset.sf === 'metodologia') renderBuilder();
+      return;
     }
     if(t.dataset.ff){
       const b = findBlock(t.dataset.b); if(!b) return;
@@ -5861,6 +5907,12 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <tr><td class="gt-strong">Deload</td><td>Semana de descarga — baja el volumen (menos series efectivas) para disipar la fatiga acumulada antes del siguiente bloque de carga.</td></tr>
           <tr><td class="gt-strong">Finisher</td><td>Bloque corto de bombeo metabólico al cierre de la sesión — busca sensación muscular, no carga máxima.</td></tr>
           <tr><td class="gt-strong">Biset / Triset</td><td>2 o 3 ejercicios encadenados sin descanso entre ellos — el descanso llega recién después de completar la ronda completa.</td></tr>
+          <tr><td class="gt-strong">Drop Set</td><td>Al llegar al fallo (o cerca), bajás la carga de inmediato (sin descanso) y seguís sumando reps — una o varias bajadas encadenadas, cada una hasta el fallo otra vez.</td></tr>
+          <tr><td class="gt-strong">Rest-Pause</td><td>Serie de activación hasta cerca del fallo, pausa corta (10-15s) sin soltar la carga, y micro-series adicionales con la misma carga hasta agotar el estímulo.</td></tr>
+          <tr><td class="gt-strong">Myo-Reps</td><td>Variante de Rest-Pause: una serie de activación algo más larga, seguida de varias micro-series muy cortas (2-5 reps) con pausas breves — maximiza el volumen efectivo sin series completas.</td></tr>
+          <tr><td class="gt-strong">Top Set + Back-off</td><td>Una serie pesada de referencia (Top Set) al mayor peso posible para las reps pedidas, seguida de series de "bajada" (Back-off) a un % menor de esa carga — la app sugiere el peso de cada Back-off apenas cargás el Top Set.</td></tr>
+          <tr><td class="gt-strong">Densidad (ON/OFF)</td><td>Bloque de trabajo por tiempo: alternás tramos de esfuerzo ("ON") y pausa breve ("OFF") en vez de contar reps — más rondas en menos tiempo total sube la densidad del estímulo.</td></tr>
+          <tr><td class="gt-strong">C/U (mancuernas)</td><td>"Cada Uno" — en ejercicios con dos mancuernas, la carga anotada es siempre el peso de <b style="color:var(--text-primary)">una sola mancuerna</b>, nunca la suma de las dos.</td></tr>
           <tr><td class="gt-strong">AMRAP</td><td>As Many Rounds As Possible — la mayor cantidad de rondas posibles en el tiempo indicado.</td></tr>
           <tr><td class="gt-strong">EMOM</td><td>Every Minute On the Minute — arrancás un trabajo puntual al inicio de cada minuto y descansás lo que sobre de ese minuto.</td></tr>
           <tr><td class="gt-strong">For Time</td><td>Completás el trabajo indicado lo más rápido posible, contra un time cap.</td></tr>
@@ -6112,7 +6164,8 @@ function buscarVideo(name){
   }
   return null;
 }
-function videoLinkHtml(name, soloMatch){
+function videoLinkHtml(name, soloMatch, opts){
+  opts = opts || {};
   const key = (name||'').trim();
   if(!key) return '';
   if(esEstructura(key)) return '';
@@ -6128,14 +6181,30 @@ function videoLinkHtml(name, soloMatch){
      búsqueda de más abajo. Con match real el botón se muestra igual,
      pase lo que pase con soloMatch. */
   if(!ytid && soloMatch) return '';
+  /* directiva (limpieza visual Pizarra CrossFit) -- deduplicación estricta:
+     si el mismo video (mismo ytid resuelto, no el mismo texto -- "Back
+     squat" y "Back squats" resuelven al mismo ytid) ya se mostró antes en
+     este bloque/tarjeta, las series subsiguientes quedan limpias, sin
+     ícono repetido saturando la pantalla. opts.vistos es un Set que vive
+     en el scope del caller (una vuelta de pizarra/bloque), nunca global. */
+  if(ytid && opts.vistos){
+    if(opts.vistos.has(ytid)) return '';
+    opts.vistos.add(ytid);
+  }
   /* trigger con thumbnail real (28/08, Fase 3 · Sección 03 pto.5): el modal
      y el iframe NO cambian, solo el disparador — antes un ícono circular
      chico, ahora una miniatura real de YouTube (mqdefault.jpg, mismo ID que
      ya usa el iframe) con el triángulo superpuesto. Si la miniatura no
      carga (privado/borrado), el fondo translúcido de abajo queda como
      estaba antes — el botón nunca se rompe visualmente. */
-  if(ytid) return ' <a class="video-link jp-play has-thumb" href="javascript:void(0)" data-yt="' + ytid + '" ' +
+  if(ytid && !opts.compact) return ' <a class="video-link jp-play has-thumb" href="javascript:void(0)" data-yt="' + ytid + '" ' +
     'style="background-image:url(https://img.youtube.com/vi/' + ytid + '/mqdefault.jpg)" ' +
+    'title="Ver la t\\u00e9cnica" aria-label="Ver la t\\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
+  /* directiva (limpieza visual Pizarra CrossFit) -- botón discreto sin
+     miniatura pesada, para WOD/Skill/Strength/Warm-up (ver jpCfFila):
+     mismo trigger/data-yt/popup, sin cargar la imagen de fondo. */
+  if(ytid && opts.compact) return ' <a class="video-link jp-play pill" href="javascript:void(0)" data-yt="' + ytid + '" ' +
     'title="Ver la t\\u00e9cnica" aria-label="Ver la t\\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
   /* FIX (auditoría Karina Dantur): sin match en la biblioteca -- el ID
@@ -6221,7 +6290,12 @@ window.COACH_DISCIPLINA = PROGRAM_CONFIG.modoSemanal ? 'crossfit' : 'sports';
    vez, apenas se conoce la disciplina) en vez de depender de body.cf-modo,
    que sólo se activa en días 100% CrossFit y nunca en días híbridos. */
 if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{} };
+/* historialCargas (directiva "Memoria de Cargas Históricas"): índice por
+   nombre de ejercicio (normalizado) -> {kg, reps, ts}, independiente de
+   semana/día/bloque (a diferencia de state.loads, que vive atado a un
+   set puntual). Clave nueva, aditiva -- planes/atletas viejos sin este
+   campo siguen funcionando exactamente igual, arranca vacío. */
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{} };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -6244,15 +6318,16 @@ function loadProgress(){
            cada visita al mismo día ya terminado — ver pintarResumen() más
            abajo. Clave nueva, no pisa ni reinterpreta ninguna de arriba. */
         state.sesionNotificada = parsed.sesionNotificada || {};
+        state.historialCargas = parsed.historialCargas || {};
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
     }
-  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; }
+  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; }
 }
 let _spT = null, _spDirty = false;
 function _spSerialize(){
-  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada });
+  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas });
 }
 function _spFlush(){
   if(!_spDirty) return;
@@ -6329,6 +6404,17 @@ function sanearReps(v){
 }
 function getLoadKey(weekIdx, dayId, blockId, exIdx, setIdx){
   return weekIdx + '|' + dayId + '|' + blockId + '|' + exIdx + '|' + setIdx;
+}
+/* misma normalización que usa el módulo de PR (Training View, _nrm) --
+   duplicada acá en el ámbito superior porque renderSetRows() vive afuera
+   de esa IIFE: ambas deben coincidir letra por letra para que la clave
+   que graba registrarHistorial() sea la misma que lee ultimoHistorial(). */
+function nrmHist(s){
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
+}
+function ultimoHistorial(nombreEx){
+  const hk = nrmHist(nombreEx);
+  return hk ? (state.historialCargas[hk] || null) : null;
 }
 function getLoad(key){ return state.loads[key] || {}; }
 function setLoadField(key, field, value){
@@ -6436,11 +6522,24 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
        bandas siguen con su etiqueta habitual m/seg/reps). */
     const esTiempo = /seg|\\d\\s*s\\b|"/i.test(rh);
     const repsUnitLabel = (esCore && esTiempo) ? 'SEGUNDOS / TIEMPO' : repsPlaceholder.toLowerCase();
+    /* directiva "Memoria de Cargas Históricas": chip sutil "Último: X kg"
+       sólo en la Serie 1, sólo cuando todavía no hay un valor cargado ni
+       sugerido para este set (nunca pisa la sugerencia por %1RM/semana
+       anterior, que ya tiene prioridad más arriba) -- clickeable, autocompleta
+       el casillero de Kg sin forzar nada que el alumno no haya elegido. */
+    let historialChipHtml = '';
+    if(!ocultaKg && i === 1 && (kgVal == null || kgVal === '')){
+      const hReg = ultimoHistorial(nm);
+      if(hReg && hReg.kg > 0){
+        historialChipHtml = '<button type="button" class="set-hist-chip" data-hist-kg="' + hReg.kg + '">\\u21a9 \\u00daltimo: <b>' + hReg.kg + ' kg</b></button>';
+      }
+    }
     html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + claseActiva + (ocultaKg?' set-row-banda':'') + '" data-set-key="' + key + '">' +
       '<button type="button" class="set-row-toggle" aria-label="Ver serie ' + i + '">' +
         '<span class="set-row-label">Serie ' + i + '</span>' +
         '<span class="set-row-compact">' + resumenCompacto + '</span>' +
       '</button>' +
+      (historialChipHtml ? '<div class="set-hist-row">' + historialChipHtml + '</div>' : '') +
       '<div class="set-load' + (ocultaKg?' set-load-banda':'') + '">' +
         /* bandas/peso corporal y Core/abdominales: sin casillero de Kg --
            el estímulo no se mide en un número de carga real (ver
@@ -7695,8 +7794,14 @@ function renderMain(){
      Va después del cooldown y antes de "Marcar Día Completo", nunca al
      revés -- ver directiva de la Pizarra Táctica. */
   if(window.COACH_DISCIPLINA !== 'sports' && day.cfVault && day.cfVault.length){
-    html += '<div class="jp-vault-day">' +
-      '<div class="jp-vault-head">[ VAULT TÉCNICO DEL DÍA ]</div>' +
+    /* directiva (limpieza visual Pizarra CrossFit): si los ejercicios ya
+       tienen su propio acceso al video en la fila (dedup + pill de más
+       arriba), un carrusel de 5 iframes abierto de entrada era ruido
+       redundante -- pasa a acordeón colapsado por defecto, consulta
+       rápida opcional. Misma clase .jp-vault-day/.jp-vault-strip (cero
+       cambio para el CSS existente ni para el test que la lee). */
+    html += '<details class="jp-vault-day">' +
+      '<summary class="jp-vault-head">[ VAULT TÉCNICO DEL DÍA ]</summary>' +
       '<div class="jp-vault-strip">' +
         day.cfVault.map(function(v){
           return '<div class="jp-vault-clip">' +
@@ -7705,7 +7810,7 @@ function renderMain(){
           '</div>';
         }).join('') +
       '</div>' +
-    '</div>';
+    '</details>';
   }
   /* Story Card CrossFit: botón fijo al cierre de la sesión, siempre justo
      antes de "Marcar Día Completo" -- no depende de tildar cada bloque a
@@ -8791,6 +8896,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
 
   /* =========================================================
+     2.1) MEMORIA DE CARGAS HISTÓRICAS
+     Al tildar un set completado, indexa la carga por nombre de ejercicio
+     (normalizado, mismo _nrm que ya usa el PR) en state.historialCargas
+     -- independiente de semana/día/bloque, a diferencia de state.loads
+     (atado a un set puntual). Sirve la sugerencia "Último: X kg" de
+     renderSetRows(), reutilizando la MISMA fuente de verdad. */
+  function registrarHistorial(row){
+    const kgIn = row.querySelector('.set-kg'); if(!kgIn) return;
+    const kg = parseFloat(kgIn.value); if(!(kg > 0)) return;
+    const nombre = nombreDeFila(row); if(!nombre) return;
+    const repsIn = row.querySelector('.set-reps');
+    const reps = repsIn ? parseInt(repsIn.value, 10) : NaN;
+    const hk = nrmHist(nombre); if(!hk) return;
+    state.historialCargas[hk] = { nombre: nombre, kg: kg, reps: (reps > 0 ? reps : ''), ts: Date.now() };
+  }
+
+  /* =========================================================
      3) PIZARRA METCON / WOD
   ========================================================= */
   const FMT_RX = [
@@ -8898,7 +9020,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      (kg/cm/min/seg/cal/reps/rondas/%) para no comerse la primera palabra
      de ejercicios que arrancan con número pero no traen unidad (ej.
      "10 Front squats" -> "10" + "Front squats", nunca "10 Front"). */
-  var JP_CF_UNIT_RX = /^(\\d+(?:[.,]\\d+)?)\\s*(kgs?|lbs?|cms?|kms?|mins?|minutos?|segs?|segundos?|cals?|reps?|rondas?|rounds?|%|m)?\\s*(.*)$/i;
+  /* directiva crítica (limpieza visual Pizarra CrossFit): la unidad "m"
+     (metros) sin límite de palabra matcheaba la primera letra de CUALQUIER
+     nombre que empezara con "M" ("Muscle snatches" -> unidad "M" + resto
+     "uscle snatches", pintado como "10 M uscle snatches" -- el corte de
+     palabra reportado NUNCA fue un bug de CSS/word-break). El lookahead
+     (?![a-zA-Z]) exige que la unidad no siga en letras -- así "300m" (fin
+     de cadena) sigue reconociéndose igual que antes, pero "Muscle..."
+     nunca vuelve a interpretarse como unidad + resto. */
+  var JP_CF_UNIT_RX = /^(\\d+(?:[.,]\\d+)?)\\s*(?:(kgs?|lbs?|cms?|kms?|mins?|minutos?|segs?|segundos?|cals?|reps?|rondas?|rounds?|%|m)(?![a-zA-Z]))?\\s*(.*)$/i;
   function jpCfHighlightNum(t){
     const raw = String(t || '');
     const m = raw.match(JP_CF_UNIT_RX);
@@ -8924,7 +9054,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(m2 && m2[1].trim()) return { nm: m2[1].trim(), val: m2[2].trim() };
     return { nm: l, val: '' };
   }
-  function jpCfFila(raw, esAccessory){
+  function jpCfFila(raw, esAccessory, vistos){
     const l = String(raw || '').trim();
     if(jpCfEsHeader(l)){
       const txt = l.replace(/^\\s*#+\\s*/, '');
@@ -8953,11 +9083,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        nunca el ícono de "buscar en YouTube" para una línea sin match
        real, eso sí ensuciaría una pizarra táctica; con match real el
        botón se muestra en cualquier fase, igual que el chip verde que ya
-       ve el coach en el Builder. */
-    const video = videoLinkHtml(partes.nm, !esAccessory);
+       ve el coach en el Builder.
+       Directiva (limpieza visual Pizarra CrossFit): Accessory conserva el
+       thumbnail grande pegado al nombre (comportamiento ya validado, sin
+       cambios). Fuera de Accessory el botón pasa a ser compacto (pill,
+       sin miniatura pesada) y se muda al lado derecho, junto a la carga
+       -- y en cualquier fase, vistos (Set) deduplica por ytid real: si el
+       mismo video ya se mostró en una serie anterior de este mismo
+       bloque, las siguientes quedan limpias (sin ícono repetido). */
+    if(esAccessory){
+      const video = videoLinkHtml(partes.nm, false, { vistos: vistos });
+      return '<div class="jp-cf-row">' +
+          '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + video + '</span>' +
+          (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
+        '</div>';
+    }
+    const video = videoLinkHtml(partes.nm, true, { compact: true, vistos: vistos });
+    const rv = (video || '') + (partes.val ? jpMdBold(partes.val) : '');
     return '<div class="jp-cf-row">' +
-        '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + video + '</span>' +
-        (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
+        '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
+        (rv ? '<span class="jp-cf-rv">' + rv + '</span>' : '') +
       '</div>';
   }
   function pizarra(blockEl, block, weekIdx, dayId){
@@ -9005,7 +9150,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const notaGuardada = (state.notes && state.notes[notaKey]) || '';
 
     const esAccessory = block.category === 'accessory';
-    const filas = lineas.map(function(l){ return jpCfFila(l, esAccessory); }).join('');
+    /* dedup por ytid a nivel de bloque completo -- vive acá (no dentro de
+       jpCfFila) porque una sola pizarra puede repetir el mismo movimiento
+       varias veces (Every 2:30 x 6 Sets, EMOM de N vueltas, etc.) y el
+       acceso al video sólo debe verse una vez por bloque. */
+    const vistos = new Set();
+    const filas = lineas.map(function(l){ return jpCfFila(l, esAccessory, vistos); }).join('');
 
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const html =
@@ -9369,6 +9519,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            el ⏱️ Custom WOD Timer de la barra superior, que abrís cuando lo necesitás */
       }
       if(row) chequearPR(row);
+      if(row && chk.checked){ registrarHistorial(row); saveProgress(); }
       const day = diaActual();
       if(day) pintarResumen(state.currentWeek, day, day.blocks || []);
     }
@@ -9376,6 +9527,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   document.addEventListener('input', function(e){
     const kg = e.target.closest('.set-kg');
     if(kg){ const row = kg.closest('.set-row'); if(row){ chequearPR(row); saveProgress(); } }
+  });
+  /* chip "Último: X kg" (Memoria de Cargas Históricas): click autocompleta
+     el casillero de Kg de la Serie 1 con el último valor registrado para
+     ese ejercicio, en cualquier semana/bloque -- el alumno sigue pudiendo
+     editarlo antes de guardar, nunca se fuerza el número. */
+  document.addEventListener('click', function(e){
+    const chip = e.target.closest('.set-hist-chip');
+    if(!chip) return;
+    const row = chip.closest('.set-row'); if(!row) return;
+    const kgIn = row.querySelector('.set-kg'); if(!kgIn) return;
+    kgIn.value = chip.dataset.histKg;
+    kgIn.dispatchEvent(new Event('input', { bubbles: true }));
+    chip.remove();
   });
   /* al marcar un bloque como hecho se recalcula el resumen de la sesión
      (el label del bloque corta la propagación, así que se engancha el estado) */
@@ -9533,6 +9697,18 @@ textarea,input,.wb-line,.tab-label,.week-pill-phase{
 }
 .set-check:checked::after{color:#0A0F13}
 .set-check:active{transform:scale(.94)}
+/* chip "Último: X kg" (Memoria de Cargas Históricas) -- fila propia
+   (flex:1 1 100%) para no competir por ancho con Serie N / Kg×Reps,
+   discreta y opcional: sólo existe cuando hay historial y el casillero
+   de esa serie sigue vacío (ver renderSetRows/ultimoHistorial). */
+.set-hist-row{ flex:1 1 100%; order:3; }
+.set-hist-chip{
+  display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px;
+  background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.3); color:#38BDF8;
+  font-family:'Inter',sans-serif; font-size:.72rem; font-weight:600; cursor:pointer;
+}
+.set-hist-chip b{color:#7CC5E8}
+.set-hist-chip:active{transform:scale(.96)}
 /* =========================================================
    REST TIMER CON ANILLO CONIC
 ========================================================= */
@@ -16081,6 +16257,46 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
   letter-spacing:.03em;white-space:nowrap;
   background:rgba(210,121,63,.14);border:1px solid rgba(210,121,63,.4);color:#D2793F;
 }
+/* Técnicas de intensidad interactivas (Drop Set / Rest-Pause / Myo-Reps /
+   Top Set + Back-off / Densidad ON-OFF) -- aditivo y opcional, sin
+   block.metodologia+tecParam asignados no se agrega nada al DOM. */
+.tec-extra{
+  margin:6px 0 8px 22px;padding:10px 12px;border-radius:10px;
+  background:rgba(210,121,63,.05);border:1px solid rgba(210,121,63,.22);
+}
+.tec-extra-lb{
+  font-family:var(--font-mono);font-size:.72rem;font-weight:700;letter-spacing:.04em;
+  color:#D2793F;margin-bottom:8px;
+}
+.tec-drop-row,.tec-rp-row,.tec-int-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.tec-drop-arrow{color:rgba(255,255,255,.4);font-size:.85rem}
+.tec-drop-chip,.tec-rp-chip{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:20px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.16);
+  font-family:var(--font-mono);font-size:.78rem;font-weight:700;color:#fff;
+  min-height:36px;
+}
+.tec-drop-chip input,.tec-rp-chip input{width:16px;height:16px;accent-color:#48D597;cursor:pointer}
+.tec-drop-chip .tec-drop-kg small{opacity:.6;font-weight:600;margin-left:2px}
+.tec-drop-chip.done,.tec-rp-chip.done{
+  background:rgba(72,213,151,.14);border-color:rgba(72,213,151,.45);color:#9BE9C4;
+}
+.tec-rp-pause,.tec-int-btn{
+  padding:6px 12px;border-radius:20px;min-height:36px;cursor:pointer;
+  background:rgba(56,189,248,.1);border:1px solid rgba(56,189,248,.35);
+  font-family:var(--font-mono);font-size:.74rem;font-weight:700;color:#38BDF8;
+}
+.tec-int-btn.off{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.18);color:rgba(255,255,255,.72)}
+.tec-rp-pause:active,.tec-int-btn:active{transform:scale(.96)}
+.tec-topset-hint{font-family:'Inter',sans-serif;font-size:.74rem;color:rgba(255,255,255,.55);margin-bottom:8px}
+.tec-topset-chips{display:flex;flex-wrap:wrap;gap:8px}
+.tec-backoff-chip{
+  padding:6px 11px;border-radius:20px;cursor:pointer;
+  background:rgba(72,213,151,.1);border:1px solid rgba(72,213,151,.4);
+  font-family:var(--font-mono);font-size:.74rem;font-weight:700;color:#9BE9C4;
+}
+.tec-backoff-chip b{color:#48D597}
+.tec-backoff-chip:active{transform:scale(.96)}
 /* ---------- tag de estructura estandarizado ---------- */
 .blk-tag{
   display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;
@@ -16236,7 +16452,9 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     restpause: '⚡ REST-PAUSE',
     isometria: '⏸️ ISOMETRÍA',
     myoreps: '🔁 MYO-REPS',
-    fallo: '🎯 AL FALLO'
+    fallo: '🎯 AL FALLO',
+    topset: '🏆 TOP SET + BACK-OFF',
+    intervalo: '⏱ DENSIDAD ON/OFF'
   };
   function tecnicaBadgeTexto(key){
     var t = TECNICAS_BADGE[key];
@@ -18407,7 +18625,9 @@ body.cf-modo .block .ex-tip{display:none}
     restpause: '⚡ REST-PAUSE',
     isometria: '⏸️ ISOMETRÍA',
     myoreps: '🔁 MYO-REPS',
-    fallo: '🎯 AL FALLO'
+    fallo: '🎯 AL FALLO',
+    topset: '🏆 TOP SET + BACK-OFF',
+    intervalo: '⏱ DENSIDAD ON/OFF'
   };
   function tecnicaBadgeTexto(key){
     var t = TECNICAS_BADGE[key];
@@ -19382,6 +19602,177 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
   }
 
   /* ---------------------------------------------------------
+     2.6 · TÉCNICAS DE INTENSIDAD INTERACTIVAS
+     Drop Set (cascada de descargas) / Rest-Pause & Myo-Reps (activación +
+     micro-series con pausa corta) / Top Set + Back-off (sugerencia de
+     kg en vivo) / Densidad ON-OFF (intervalos manuales, reutiliza el
+     mismo HUD de descanso que ya usa toda la app). Lee block.metodologia
+     + block.tecParam (o ex.metodologia/ex.tecParam por estación en
+     biset/triset) -- campos opcionales y aditivos, sin valor asignado no
+     agrega nada al DOM: planes viejos quedan exactamente igual.
+  --------------------------------------------------------- */
+  function parseTecParam(met, raw){
+    var s = String(raw == null ? '' : raw).trim();
+    if(!s) return null;
+    if(met === 'dropset'){
+      var arr = s.split(/[,;]/).map(function(x){ return parseFloat(String(x).trim().replace(',', '.')); })
+        .filter(function(x){ return !isNaN(x) && x > 0; });
+      return arr.length ? arr : null;
+    }
+    if(met === 'restpause' || met === 'myoreps'){
+      var m = s.match(/^([\\d+]+)/);
+      if(!m) return null;
+      var reps = m[1].split('+').map(function(x){ return parseInt(x, 10); }).filter(function(x){ return x > 0; });
+      var pm = s.match(/(\\d+)\\s*s(?:eg)?\\.?\\s*$/i);
+      var pausa = pm ? parseInt(pm[1], 10) : 15;
+      return reps.length ? { reps: reps, pausa: pausa } : null;
+    }
+    if(met === 'topset'){
+      var arrb = s.split(/[,;]/).map(function(x){ return parseFloat(String(x).trim().replace(',', '.')); })
+        .filter(function(x){ return !isNaN(x) && x > 0; });
+      return arrb.length ? arrb : null;
+    }
+    if(met === 'intervalo'){
+      var nums = s.match(/\\d+/g);
+      if(!nums || nums.length < 3) return null;
+      return { work: parseInt(nums[0], 10), rest: parseInt(nums[1], 10), sets: parseInt(nums[2], 10) };
+    }
+    return null;
+  }
+  function tecExtraHtml(met, param, keyBase){
+    if(met === 'dropset'){
+      if(!param || !param.length) return '';
+      var chips = param.map(function(kg, i){
+        var dk = keyBase + '|drop' + i;
+        var done = !!(state.loads[dk] && state.loads[dk].done);
+        return '<label class="tec-drop-chip' + (done ? ' done' : '') + '"><input type="checkbox" class="tec-drop-check" data-dk="' + dk + '"' + (done ? ' checked' : '') + '><span class="tec-drop-kg">' + kg + '<small>kg</small></span></label>';
+      }).join('<span class="tec-drop-arrow">&#10132;</span>');
+      return '<div class="tec-extra tec-dropset"><div class="tec-extra-lb">&#128293; Drop Set &mdash; bajada al fallo</div><div class="tec-drop-row">' + chips + '</div></div>';
+    }
+    if(met === 'restpause' || met === 'myoreps'){
+      if(!param) return '';
+      var lb = met === 'myoreps' ? '&#128257; Myo-Reps' : '&#9889; Rest-Pause';
+      var html = '<div class="tec-extra tec-restpause"><div class="tec-extra-lb">' + lb + ' &mdash; pausas de ' + param.pausa + 's</div><div class="tec-rp-row">';
+      html += param.reps.map(function(r, i){
+        var rk = keyBase + '|rp' + i;
+        var done = !!(state.loads[rk] && state.loads[rk].done);
+        var chip = '<label class="tec-rp-chip' + (done ? ' done' : '') + '"><input type="checkbox" class="tec-rp-check" data-rk="' + rk + '"' + (done ? ' checked' : '') + '><span>' + (i === 0 ? 'Activaci&oacute;n ' : '+') + r + '</span></label>';
+        var pausaBtn = (i < param.reps.length - 1) ? '<button type="button" class="tec-rp-pause" data-pausa="' + param.pausa + '" data-lb="Rest-Pause &middot; Pausa ' + param.pausa + 's">&#9201; ' + param.pausa + 's</button>' : '';
+        return chip + pausaBtn;
+      }).join('');
+      html += '</div></div>';
+      return html;
+    }
+    if(met === 'topset'){
+      if(!param || !param.length) return '';
+      var pctTxt = param.map(function(x){ return '-' + x + '%'; }).join(' &middot; ');
+      return '<div class="tec-extra tec-topset" data-pct="' + param.join(',') + '"><div class="tec-extra-lb">&#127942; Top Set + Back-off (' + pctTxt + ')</div>' +
+        '<div class="tec-topset-hint">Carg&aacute; el peso de la Serie 1 (Top Set) &mdash; las siguientes muestran el back-off sugerido.</div>' +
+        '<div class="tec-topset-chips"></div></div>';
+    }
+    if(met === 'intervalo'){
+      if(!param || !param.sets) return '';
+      var html2 = '<div class="tec-extra tec-interval"><div class="tec-extra-lb">&#9201; Densidad &mdash; ' + param.work + 's ON / ' + param.rest + 's OFF &times; ' + param.sets + '</div><div class="tec-int-row">';
+      for(var i = 1; i <= param.sets; i++){
+        html2 += '<button type="button" class="tec-int-btn on" data-sec="' + param.work + '" data-lb="ON &middot; Ronda ' + i + '/' + param.sets + '">&#9654; ON ' + i + '</button>';
+        if(param.rest > 0) html2 += '<button type="button" class="tec-int-btn off" data-sec="' + param.rest + '" data-lb="OFF &middot; Ronda ' + i + '/' + param.sets + '">OFF ' + i + '</button>';
+      }
+      html2 += '</div></div>';
+      return html2;
+    }
+    return '';
+  }
+  function tecnicaExtra(){
+    document.querySelectorAll('.block').forEach(function(bl){
+      if(document.body.classList.contains('cf-modo')) return;
+      var cuerpo = bl.querySelector('.block-body');
+      if(!cuerpo) return;
+      var b = bloqueDe(bl.dataset.blockId) || {};
+      var trackers = cuerpo.querySelectorAll(':scope > .set-tracker');
+      var contextos = [];
+      if(b.isBlock){
+        contextos = [{ met: b.metodologia, param: b.tecParam, exIdx: 0 }];
+      } else if(b.isSuperset){
+        contextos = (b.exercises || []).map(function(ex, i){ return { met: ex.metodologia, param: ex.tecParam, exIdx: i }; });
+      }
+      contextos.forEach(function(ctx, i){
+        var tracker = trackers[i];
+        if(!tracker) return;
+        var existente = tracker.nextElementSibling;
+        var esNuestro = existente && existente.classList && existente.classList.contains('tec-extra');
+        var keyBase = (state.currentWeek || 0) + '|' + state.currentDay + '|' + bl.dataset.blockId + '|' + ctx.exIdx;
+        var html = ctx.met ? tecExtraHtml(ctx.met, parseTecParam(ctx.met, ctx.param), keyBase) : '';
+        if(!html){ if(esNuestro) existente.remove(); return; }
+        if(esNuestro){
+          if(existente.dataset.h !== html){ existente.outerHTML = html; }
+        } else {
+          tracker.insertAdjacentHTML('afterend', html);
+        }
+      });
+    });
+  }
+  /* delegación única (no depende del repintado): checkboxes de Drop Set/
+     Rest-Pause persisten en state.loads (mismo store que .set-check, con
+     sufijo propio para no pisar ninguna serie real) y los botones de
+     pausa/intervalo reusan el HUD de descanso ya probado en toda la app
+     (window.CoachTV.rest), sin ningún motor de timer nuevo. */
+  document.addEventListener('change', function(e){
+    var chk = e.target.closest('.tec-drop-check, .tec-rp-check');
+    if(!chk) return;
+    var key = chk.dataset.dk || chk.dataset.rk;
+    if(!key) return;
+    state.loads[key] = state.loads[key] || {};
+    state.loads[key].done = chk.checked;
+    if(typeof saveProgress === 'function') saveProgress();
+    var chip = chk.closest('label');
+    if(chip) chip.classList.toggle('done', chk.checked);
+  });
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('.tec-rp-pause, .tec-int-btn');
+    if(!btn) return;
+    var sec = parseInt(btn.dataset.pausa || btn.dataset.sec, 10);
+    if(!(sec > 0)) return;
+    var lb = btn.dataset.lb || 'Pausa';
+    if(window.CoachTV && typeof window.CoachTV.rest === 'function') window.CoachTV.rest(sec, lb);
+  });
+  document.addEventListener('input', function(e){
+    var top = e.target.closest('.set-kg');
+    if(!top) return;
+    var tracker = top.closest('.set-tracker');
+    if(!tracker) return;
+    var extra = tracker.nextElementSibling;
+    if(!extra || !extra.classList || !extra.classList.contains('tec-topset')) return;
+    var filas = [].slice.call(tracker.querySelectorAll('.set-row'));
+    if(filas[0] !== top.closest('.set-row')) return; // sólo la Serie 1 (Top Set) dispara la sugerencia
+    var pct = (extra.dataset.pct || '').split(',').map(Number).filter(function(x){ return !isNaN(x); });
+    var chipsWrap = extra.querySelector('.tec-topset-chips');
+    if(!chipsWrap) return;
+    var topKg = parseFloat(top.value);
+    if(!(topKg > 0)){ chipsWrap.innerHTML = ''; return; }
+    chipsWrap.innerHTML = pct.map(function(p, i){
+      var sug = Math.round(topKg * (1 - p / 100) * 2) / 2;
+      return '<button type="button" class="tec-backoff-chip" data-i="' + i + '" data-kg="' + sug + '">Back-off ' + (i + 1) + ': <b>' + sug + ' kg</b> (-' + p + '%)</button>';
+    }).join('');
+  });
+  document.addEventListener('click', function(e){
+    var chip = e.target.closest('.tec-backoff-chip');
+    if(!chip) return;
+    var extra = chip.closest('.tec-topset');
+    var tracker = extra && extra.previousElementSibling;
+    if(!tracker || !tracker.classList.contains('set-tracker')) return;
+    var i = parseInt(chip.dataset.i, 10);
+    var filas = tracker.querySelectorAll('.set-row');
+    var row = filas[i + 1];
+    if(!row) return;
+    var kgIn = row.querySelector('.set-kg');
+    if(kgIn){
+      kgIn.value = chip.dataset.kg;
+      kgIn.dispatchEvent(new Event('input', { bubbles: true }));
+      kgIn.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
+
+  /* ---------------------------------------------------------
      2.5 · NOTAS DEL ALUMNO: UNA FILA QUE CRECE AL ESCRIBIR
   --------------------------------------------------------- */
   function crecer(t){
@@ -19445,6 +19836,7 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
     try{ sanearNumeracion(); }catch(e){ console.warn('v3·pizarra', e); }
     try{ purgarHuerfanos(); }catch(e){ console.warn('v3·huerfanos', e); }
     try{ metodologia(); }catch(e){ console.warn('v3·metodologia', e); }
+    try{ tecnicaExtra(); }catch(e){ console.warn('v3·tecnicaExtra', e); }
     try{ notas(); }catch(e){ console.warn('v3·notas', e); }
   }
   function mount(){
@@ -24024,12 +24416,27 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    flex-wrap:wrap, cuando el badge no entra al lado del nombre baja limpio
    a su propia línea completa -- nunca parte las palabras de la izquierda. */
 .jp-cfboard .jp-cf-rn{
-  flex:1 1 auto; min-width:0; word-break:normal; overflow-wrap:break-word;
+  flex:1 1 auto; min-width:0; word-break:normal; overflow-wrap:break-word; white-space:normal;
   font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#EDEFF2;
 }
 .jp-cfboard .jp-cf-rv{
   flex:0 1 auto; flex-shrink:1; white-space:normal; overflow-wrap:break-word; max-width:100%;
+  display:inline-flex; align-items:center; gap:7px; justify-content:flex-end;
   font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; text-align:right;
+}
+/* directiva (limpieza visual Pizarra CrossFit): botón de video compacto para
+   WOD/Skill/Strength/Warm-up -- reemplaza el thumbnail cuadrado grande
+   (.has-thumb, reservado a Accessory) por un ícono de Play discreto,
+   alineado a la derecha junto a la carga en vez de pegado al nombre. Mismo
+   trigger/data-yt/popup de siempre, sólo cambia el aspecto visual. */
+.jp-cfboard .jp-cf-rv .video-link.jp-play.pill{
+  margin-left:0; border-color:rgba(72,213,151,.4); background:rgba(72,213,151,.08);
+}
+.jp-cfboard .jp-cf-rv .video-link.jp-play.pill svg{ fill:#48D597; }
+.jp-cfboard .jp-cf-rv .video-link.jp-play.pill:hover,
+.jp-cfboard .jp-cf-rv .video-link.jp-play.pill:focus-visible{
+  background:rgba(210,121,63,.14); border-color:rgba(210,121,63,.5);
+  box-shadow:0 0 10px rgba(210,121,63,.35);
 }
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
 .jp-cfboard .jp-cf-num{ color:#38BDF8; font-weight:800; }
@@ -24082,8 +24489,15 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
 }
 .jp-vault-head{
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:.1em;
-  text-transform:uppercase; color:#38BDF8; margin-bottom:10px;
+  text-transform:uppercase; color:#38BDF8; cursor:pointer; list-style:none;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
 }
+/* acordeón colapsado por defecto (<details>): la tira sólo agrega margen
+   arriba cuando está abierta, para que cerrado no deje un hueco vacío */
+.jp-vault-day .jp-vault-strip{ margin-top:10px; }
+.jp-vault-head::-webkit-details-marker{ display:none; }
+.jp-vault-head::after{ content:'▾'; font-size:10px; opacity:.7; transition:transform .2s ease; }
+.jp-vault-day[open] .jp-vault-head::after{ transform:rotate(180deg); }
 .jp-vault-strip{ display:flex; gap:10px; overflow-x:auto; padding-bottom:2px; scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch; }
 .jp-vault-strip::-webkit-scrollbar{ display:none; }
 .jp-vault-clip{ flex-shrink:0; width:150px; }
@@ -24407,13 +24821,14 @@ function buildProgramConfig(ath){
         });
         if(b.altNote) out.altNote = b.altNote;
         if(b.exTip) out.exTip = b.exTip;
+        if(b.tecParam) out.tecParam = b.tecParam;
       }
       else if(b.tipo === 'superset'){
         const list = (b.ejercicios||[]).map(e => {
           const ex = getEx(e.exId), nm = exNombreCorto(ex) || e.nombre || 'Ejercicio (sin vincular)';
           const nmEn = exNombreIngles(ex);
           addVideo(nm, ex);
-          return { name: nm, nameEn: nmEn, reps: e.reps || '', tempo: e.tempo || '', tip: e.tip || '', metodologia: e.metodologia || '' };
+          return { name: nm, nameEn: nmEn, reps: e.reps || '', tempo: e.tempo || '', tip: e.tip || '', metodologia: e.metodologia || '', tecParam: e.tecParam || '' };
         });
         Object.assign(out, {
           isSuperset: true, isTriset: list.length >= 3, exercises: list,
@@ -30137,7 +30552,7 @@ body{overflow-x:hidden}
     }
     return r;
   }
-  const TEC_LB_CORTA = { dropset:'Drop Set', restpause:'Rest-Pause', isometria:'Isometría', myoreps:'Myo-Reps', fallo:'Al Fallo' };
+  const TEC_LB_CORTA = { dropset:'Drop Set', restpause:'Rest-Pause', isometria:'Isometría', myoreps:'Myo-Reps', fallo:'Al Fallo', topset:'Top Set + Back-off', intervalo:'Densidad ON/OFF' };
 
   function autocompletar(bid){
     const b = findBlock(bid);
