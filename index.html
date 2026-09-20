@@ -6282,7 +6282,13 @@ if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
    semana/día/bloque (a diferencia de state.loads, que vive atado a un
    set puntual). Clave nueva, aditiva -- planes/atletas viejos sin este
    campo siguen funcionando exactamente igual, arranca vacío. */
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{} };
+/* oneRM (directiva "Resolución activa de % 1RM a kilogramos"): índice
+   por nombre de ejercicio (normalizado, misma clave que historialCargas)
+   -> kg, cargado por el propio atleta desde la Pizarra CrossFit (tocar
+   el "@ 76%" de una fila) -- gana siempre sobre la marca del coach que
+   compile() ya haya resuelto en el texto, para recalcular todo el
+   bloque al instante con el 1RM real del día. Clave nueva, aditiva. */
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{} };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -6306,15 +6312,16 @@ function loadProgress(){
            abajo. Clave nueva, no pisa ni reinterpreta ninguna de arriba. */
         state.sesionNotificada = parsed.sesionNotificada || {};
         state.historialCargas = parsed.historialCargas || {};
+        state.oneRM = parsed.oneRM || {};
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
     }
-  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; }
+  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; }
 }
 let _spT = null, _spDirty = false;
 function _spSerialize(){
-  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas });
+  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM });
 }
 function _spFlush(){
   if(!_spDirty) return;
@@ -9100,9 +9107,37 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     const partes = jpCfSplit(l);
+    /* directiva ("Resolución activa de % 1RM a Kilogramos"): "@ 76%" (con
+       o sin el "(~XX kg)" que compile() ya haya resuelto con la marca
+       del COACH) se vuelve un botón tocable -- si el atleta cargó su
+       propio 1RM para este movimiento (state.oneRM, ver jpAbrirPct1RM
+       más abajo), ese valor manda sobre la estimación del coach y
+       recalcula EN VIVO, sin recompilar nada. */
+    const pctMatch = partes.val && partes.val.match(/^@\\s*(\\d{1,3})\\s*%/);
+    let valHtml = jpMdBold(partes.val);
+    if(pctMatch){
+      const pct = parseInt(pctMatch[1], 10);
+      /* directiva -- la clave del 1RM no puede incluir el conteo de reps
+         de ESA serie puntual ("5 Back squat" vs "3 Back squat"): son el
+         mismo levantamiento, un solo 1RM cargado por el atleta tiene que
+         aplicar a TODAS las filas del bloque que lo usan, no sólo a la
+         que tocó primero. */
+      const liftBase = partes.nm.replace(/^\\d+\\s*/, '') || partes.nm;
+      const liftKey = nrmHist(liftBase);
+      const propio = state.oneRM && state.oneRM[liftKey];
+      let kgTxt;
+      if(propio > 0){
+        const kg = Math.round((propio * pct / 100) / 2.5) * 2.5;
+        kgTxt = ' (' + kg + ' kg)';
+      } else {
+        const resto = partes.val.replace(/^@\\s*\\d{1,3}\\s*%/, '').trim();
+        kgTxt = resto ? ' ' + resto : '';
+      }
+      valHtml = '<button type="button" class="jp-cf-pct" data-pct-lift="' + liftBase.replace(/"/g,'') + '" data-pct-key="' + liftKey + '">@ ' + pct + '%' + kgTxt + '</button>';
+    }
     return '<div class="jp-cf-row">' +
         '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
-        (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
+        (partes.val ? '<span class="jp-cf-rv">' + valHtml + '</span>' : '') +
       '</div>';
   }
   /* recolector de clips únicos del bloque completo -- una sola pasada
@@ -9125,14 +9160,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     return out;
   }
+  /* directiva (ergonomía integral): el módulo de videos pasa a acordeón
+     colapsado por defecto -- consulta rápida opcional, la pizarra
+     principal queda 100% libre de íconos para entrenar. */
   function jpCfClipsHtml(clips){
     if(!clips.length) return '';
-    return '<div class="jp-cf-clips"><div class="jp-cf-clips-lb">&#127909; Clips T\\u00e9cnicos del Bloque</div><div class="jp-cf-clips-row">' +
+    return '<details class="jp-cf-clips"><summary class="jp-cf-clips-lb">&#127909; Videos T\\u00e9cnicos del Bloque (' + clips.length + ')</summary><div class="jp-cf-clips-row">' +
       clips.map(function(c){
         return '<button type="button" class="jp-cf-clip" data-yt="' + c.ytid + '" aria-label="Ver la t\\u00e9cnica de ' + String(c.nombre).replace(/"/g,'') + '">' +
           '<span class="jp-cf-clip-ic">&#9654;</span><span class="jp-cf-clip-nm">' + c.nombre + '</span></button>';
       }).join('') +
-    '</div></div>';
+    '</div></details>';
   }
   function pizarra(blockEl, block, weekIdx, dayId){
     /* lee las líneas directo del dato compilado (block.items), no del DOM
@@ -9186,7 +9224,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '<div class="wod-board jp-cfboard ' + faseCls + '" data-wodb="' + block.id + '">' +
         '<div class="jp-cf-tag">[ CROSSFIT &middot; ' + (CF_FASE_ICON[block.category] || '') + ' ' + fase + ' ]</div>' +
         '<div class="jp-cf-title">' + jpCfTituloHtml(block.title) + '</div>' +
-        (f ? '<div class="jp-cf-fmtbar"><span class="a">' + f.lb + '</span>' + (paramTxt ? ' <span class="b">' + paramTxt + '</span>' : '') + '</div>' : '') +
+        /* directiva (ergonomía integral): se retira el badge de formato
+           ("TABATA"/"EMOM"/etc, .jp-cf-fmtbar) -- redundante con la
+           bajada de texto del propio bloque ("Every 2:30 x 6 Sets:"),
+           sobrecargaba la vista. f/paramTxt se conservan (siguen
+           usándose más abajo para el placeholder del casillero de
+           score), sólo se retira este render puntual. */
         ((block.subtitle && !(block.weekName && block.weekName[weekIdx] && block.weekName[weekIdx] !== block.title))
           ? '<div class="jp-cf-row jp-cf-note">' + block.subtitle + '</div>' : '') +
         '<div class="jp-cf-rows">' + filas + '</div>' +
@@ -9251,6 +9294,67 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
   }
 
+  /* directiva ("Resolución activa de % 1RM a Kilogramos") -- micro-prompt
+     táctico: tocar "@ 76%" en cualquier fila abre un popover chico junto
+     al botón para cargar/actualizar el 1RM propio de ESE movimiento;
+     guardar recalcula al instante TODAS las filas del día que usen ese
+     mismo 1RM (re-renderiza vía renderMain(), mismo criterio que ya usan
+     otros módulos de esta vista para reflejar un cambio de estado). */
+  function jpPctEsc(s){ return String(s == null ? '' : s).replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+  function jpCerrarPct1RM(){
+    var ex = document.querySelector('.jp-pct-pop');
+    if(ex) ex.remove();
+  }
+  function jpAbrirPct1RM(btn){
+    jpCerrarPct1RM();
+    var liftName = btn.dataset.pctLift || '';
+    var key = btn.dataset.pctKey || '';
+    var actual = (state.oneRM && state.oneRM[key]) || '';
+    var pop = document.createElement('div');
+    pop.className = 'jp-pct-pop';
+    pop.innerHTML =
+      '<div class="jp-pct-pop-lb">1RM de ' + jpPctEsc(liftName) + '</div>' +
+      '<div class="jp-pct-pop-row">' +
+        '<input type="text" inputmode="decimal" class="jp-pct-pop-in" placeholder="Kg" value="' + jpPctEsc(actual) + '">' +
+        '<button type="button" class="jp-pct-pop-ok" data-pctsave="' + jpPctEsc(key) + '">&#10003;</button>' +
+        '<button type="button" class="jp-pct-pop-x" data-pctcancel="1">&#10005;</button>' +
+      '</div>';
+    document.body.appendChild(pop);
+    var r = btn.getBoundingClientRect();
+    var top = window.scrollY + r.bottom + 6;
+    var left = window.scrollX + r.left;
+    var maxLeft = window.scrollX + document.documentElement.clientWidth - 230;
+    pop.style.top = top + 'px';
+    pop.style.left = Math.max(8, Math.min(left, maxLeft)) + 'px';
+    var input = pop.querySelector('.jp-pct-pop-in');
+    input.focus(); input.select();
+    input.addEventListener('keydown', function(ev){
+      if(ev.key === 'Enter'){ ev.preventDefault(); pop.querySelector('[data-pctsave]').click(); }
+      else if(ev.key === 'Escape'){ ev.preventDefault(); jpCerrarPct1RM(); }
+    });
+  }
+  function jpGuardarPct1RM(btn){
+    var pop = btn.closest('.jp-pct-pop');
+    var input = pop && pop.querySelector('.jp-pct-pop-in');
+    var kg = parseFloat(input ? input.value : '');
+    var key = btn.dataset.pctsave || '';
+    jpCerrarPct1RM();
+    if(!(kg > 0) || !key) return;
+    state.oneRM = state.oneRM || {};
+    state.oneRM[key] = kg;
+    saveProgress();
+    if(typeof renderMain === 'function') renderMain();
+  }
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('.jp-cf-pct');
+    if(btn){ e.stopPropagation(); jpAbrirPct1RM(btn); return; }
+    var save = e.target.closest('[data-pctsave]');
+    if(save){ e.stopPropagation(); jpGuardarPct1RM(save); return; }
+    var cancel = e.target.closest('[data-pctcancel]');
+    if(cancel){ e.stopPropagation(); jpCerrarPct1RM(); return; }
+    if(!e.target.closest('.jp-pct-pop')) jpCerrarPct1RM();
+  });
+
   /* =========================================================
      4) TRAINING VIEW / FOCUS MODE
   ========================================================= */
@@ -9311,7 +9415,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function checkoutRpeLeer(){ try{ return JSON.parse(localStorage.getItem(KCR) || '{}') || {}; }catch(e){ return {}; } }
   function checkoutRpeGuardar(o){ try{ localStorage.setItem(KCR, JSON.stringify(o)); }catch(e){} }
   function resumenDatos(weekIdx, day){
-    let vol = 0, series = 0, reps = 0;
+    let vol = 0, series = 0, reps = 0, maxKg = 0;
     const pref = weekIdx + '|' + day.id + '|';
     Object.keys(state.loads).forEach(function(k){
       if(k.indexOf(pref) !== 0) return;
@@ -9320,8 +9424,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       series++;
       const kg = parseFloat(l.kg) || 0, rp = parseInt(l.reps, 10) || 0;
       reps += rp; vol += kg * rp;
+      if(kg > maxKg) maxKg = kg;
     });
-    return { vol: Math.round(vol), series: series, reps: reps };
+    /* directiva (resumen de sesión CrossFit): score del WOD del día, si
+       ya lo cargó -- mismo criterio de "bloque metcon/cardio/endurance"
+       que ya usa datosStoryCF() para la Story Card. */
+    let scoreWod = '';
+    const wodBlk = (day.blocks || []).find(b => b.category === 'metcon') ||
+      (day.blocks || []).find(b => b.category === 'cardio' || b.category === 'endurance');
+    if(wodBlk){
+      const skeyWod = weekIdx + '|' + day.id + '|' + wodBlk.id;
+      scoreWod = (state.scores && state.scores[skeyWod]) || '';
+    }
+    return { vol: Math.round(vol), series: series, reps: reps, maxKg: maxKg, scoreWod: scoreWod };
   }
   function pintarResumen(weekIdx, day, blocks){
     const ids = dayBlockIds(day);
@@ -9355,18 +9470,35 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       });
       saveProgress();
     }
+    /* directiva (resumen de sesión CrossFit): Tiempo Total / Bloques
+       Completados / Carga Máxima / Score del WOD, en vez del set de
+       Bodybuilding (kg de volumen/series/reps) que no representa una
+       sesión de CrossFit -- "Kg de Volumen" queda reservado a modalidades
+       de musculación, como pide la directiva. Mismo cálculo de duración
+       ya usado por el reporte de WhatsApp (state.session.inicio, acotado
+       a 1-240 min para no mostrar un número sin sentido). */
+    const esCF = window.COACH_DISCIPLINA !== 'sports';
+    const iniSesion = (state.session && state.session.inicio) || 0;
+    const minSesion = iniSesion ? Math.round((Date.now() - iniSesion) / 60000) : 0;
+    const minSesionOk = (minSesion >= 1 && minSesion <= 240) ? minSesion : 0;
+    const statsHtml = esCF
+      ? ('<div class="sc-stat"><div class="v">' + (minSesionOk || '—') + '</div><div class="k">min de sesión</div></div>' +
+         '<div class="sc-stat"><div class="v">' + ids.length + '</div><div class="k">bloques completados</div></div>' +
+         '<div class="sc-stat"><div class="v">' + Math.round(d.maxKg) + '</div><div class="k">kg carga máxima</div></div>' +
+         '<div class="sc-stat"><div class="v" data-no-odo="1">' + (d.scoreWod || '—') + '</div><div class="k">score del wod</div></div>')
+      : ('<div class="sc-stat"><div class="v">' + d.vol.toLocaleString('es-AR') + '</div><div class="k">kg de volumen</div></div>' +
+         '<div class="sc-stat"><div class="v">' + d.series + '</div><div class="k">series completadas</div></div>' +
+         '<div class="sc-stat"><div class="v">' + d.reps + '</div><div class="k">repeticiones</div></div>' +
+         '<div class="sc-stat"><div class="v">' + ids.length + '</div><div class="k">bloques</div></div>');
     const html =
       '<div class="summary-card">' +
         '<div class="sc-h"><span class="sc-ic">🏁</span><h3>Sesión completa — ' + day.short + '</h3></div>' +
         '<div class="sc-stats">' +
-          '<div class="sc-stat"><div class="v">' + d.vol.toLocaleString('es-AR') + '</div><div class="k">kg de volumen</div></div>' +
-          '<div class="sc-stat"><div class="v">' + d.series + '</div><div class="k">series completadas</div></div>' +
-          '<div class="sc-stat"><div class="v">' + d.reps + '</div><div class="k">repeticiones</div></div>' +
-          '<div class="sc-stat"><div class="v">' + ids.length + '</div><div class="k">bloques</div></div>' +
+          statsHtml +
           /* valor de una sola cifra a propósito: el odómetro de animarResumen()
              (más abajo) hace parseInt(v.textContent.replace(/[^\\d]/g,'')) sobre
-             CADA .sc-stat .v de la tarjeta — un formato "3/16" se leería como
-             316 y el odómetro reescribiría el texto final a "316" */
+             CADA .sc-stat .v de la tarjeta salvo data-no-odo -- un formato "3/16"
+             se leería como 316 y el odómetro reescribiría el texto final a "316" */
           (r ? '<div class="sc-stat"><div class="v">' + r.actual + '</div><div class="k">🔥 racha · sesión de ' + r.total + '</div></div>' : '') +
         '</div>' +
         (prs.length ? '<div class="sc-prs">' + prs.map(p => '<span>🔥 PR en ' + p + '</span>').join('') + '</div>' : '') +
@@ -14857,6 +14989,10 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     if(!card || card.dataset.odo) return;
     card.dataset.odo = '1';
     card.querySelectorAll('.sc-stat .v').forEach(function(v){
+      /* directiva (resumen de sesión CrossFit): el Score del WOD es texto
+         libre ("11:42", "6+12 reps") -- el odómetro lo reescribiría como
+         un número sin sentido (parseInt de los dígitos, sin los separadores). */
+      if(v.dataset.noOdo) return;
       var n = parseInt(String(v.textContent).replace(/[^\\d]/g, ''), 10);
       if(!isNaN(n)) odometro(v, n, 900);
     });
@@ -24496,8 +24632,13 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
 }
 .jp-cf-clips-lb{
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:.08em;
-  text-transform:uppercase; color:#38BDF8; margin-bottom:9px;
+  text-transform:uppercase; color:#38BDF8; cursor:pointer; list-style:none;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
 }
+.jp-cf-clips-lb::-webkit-details-marker{ display:none; }
+.jp-cf-clips-lb::after{ content:'▾'; font-size:10px; opacity:.7; transition:transform .2s ease; }
+.jp-cf-clips[open] .jp-cf-clips-lb::after{ transform:rotate(180deg); }
+.jp-cf-clips .jp-cf-clips-row{ margin-top:10px; }
 .jp-cf-clips-row{ display:flex; flex-wrap:wrap; gap:8px; }
 .jp-cf-clip{
   display:inline-flex; align-items:center; gap:7px; padding:7px 12px 7px 8px; border-radius:20px;
@@ -24513,6 +24654,35 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   background:rgba(210,121,63,.14); border-color:rgba(210,121,63,.5);
   box-shadow:0 0 10px rgba(210,121,63,.3);
 }
+/* directiva ("Resolución activa de % 1RM a Kilogramos"): "@ 76%" pasa a
+   botón tocable dentro del valor de la fila -- mismo tono cyan del resto
+   de .jp-cf-rv, con un borde punteado sutil que insinúa "tocable" sin
+   sumar otro ícono más a la Pizarra. */
+.jp-cf-pct{
+  background:transparent; border:1px dashed rgba(56,189,248,.4); border-radius:8px;
+  padding:2px 8px; font:inherit; color:inherit; cursor:pointer; min-height:28px;
+}
+.jp-cf-pct:hover,.jp-cf-pct:focus-visible{ border-color:#38BDF8; background:rgba(56,189,248,.08); }
+.jp-pct-pop{
+  position:absolute; z-index:60; min-width:200px; padding:10px 12px; border-radius:12px;
+  background:#12161F; border:1px solid rgba(56,189,248,.4); box-shadow:0 8px 28px rgba(0,0,0,.45);
+}
+.jp-pct-pop-lb{
+  font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; letter-spacing:.04em;
+  color:#7CC5E8; margin-bottom:7px;
+}
+.jp-pct-pop-row{ display:flex; align-items:center; gap:6px; }
+.jp-pct-pop-in{
+  flex:1; min-width:0; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.18);
+  background:rgba(8,9,11,.6); color:#EDEFF2; font-family:'JetBrains Mono',monospace; font-size:14px;
+}
+.jp-pct-pop-in:focus{ border-color:#38BDF8; outline:none; }
+.jp-pct-pop-ok,.jp-pct-pop-x{
+  display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px;
+  border-radius:50%; border:1px solid rgba(255,255,255,.18); background:transparent; color:#fff; flex:0 0 auto;
+}
+.jp-pct-pop-ok{ background:rgba(72,213,151,.14); border-color:rgba(72,213,151,.45); color:#7CFFB2; }
+.jp-pct-pop-x:hover{ background:rgba(239,90,74,.15); border-color:rgba(239,90,74,.5); color:#FF8A78; }
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
 .jp-cfboard .jp-cf-num{ color:#38BDF8; font-weight:800; }
 .jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.12); }
@@ -24708,11 +24878,22 @@ function resolveByText(txt){
    alinea con la misma limpieza. */
 const CAND_RANGO = '(?:\\s*[-–—]\\s*\\d+)?';
 const CAND_RUIDO = new RegExp('^(?:\\d+' + CAND_RANGO + '\\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\\b[:.]?\\s*)+', 'i');
-const CAND_PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
+/* directiva ("Lista Negra de Palabras de Estructura"): además de
+   "Set N:"/"Ronda N:"/"Round N -"/"Min N:", ahora también pisa
+   "Lift N:" (EMOMs de técnica con 2-3 levantamientos por vuelta,
+   "Lift 1: 1 Power snatch") -- mismo criterio, nunca se busca "Lift 1"
+   como si fuera un ejercicio. */
+const CAND_PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|lift\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
 function candidatosTexto(txt){
   let t = String(txt || '').replace(/^[\s\-•*]+/, '');
   t = t.replace(CAND_PREFIJO_ORDEN, '');
-  if(/^(?:-\s*or\s*-|amrap|emom|every|for time|time cap|target|rest|descanso|cargas?|min \d)/i.test(t)){
+  /* directiva ("Lista Negra de Palabras de Estructura"): suma Super Sets/
+     Warm Up/Buy-in/Cash-out/Then/Sets sueltos a la lista de líneas que
+     son 100% estructura (nunca ejercicios) -- mismo criterio que ya
+     regía amrap/emom/every/rest/etc, con el mismo escape "+" para no
+     perder una línea real que arranque parecido pero encadene un
+     ejercicio con "+". */
+  if(/^(?:-\s*or\s*-|amrap|emom|every|for time|time cap|target|rest|descanso|cargas?|min \d|super\s*sets?|warm[\s-]*up|buy-?in|cash-?out|then\s*:?|sets?\s*:)/i.test(t)){
     if(!/\+/.test(t)) return [];
   }
   t = t.replace(CAND_RUIDO, '');
@@ -42826,7 +43007,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      cada línea del mismo ejercicio sobrevivía casi literal (con "Set N:"
      y la carga "@ 70%" adentro) y nunca coincidía con la de la línea de
      al lado -- de ahí los chips duplicados/rotos del caso reportado. */
-  const PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
+  /* directiva ("Lista Negra de Palabras de Estructura"): suma "Lift N:"
+     (EMOMs de técnica, "Lift 1: 1 Power snatch") al mismo criterio de
+     Set/Ronda/Round/Min -- nunca se busca "Lift 1" como ejercicio. */
+  const PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|lift\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
   function candidatos(linea){
     let t = String(linea || '').replace(/^[\s\-•*]+/, '');
     /* el prefijo de orden se pisa ANTES del chequeo de "línea de
@@ -42837,7 +43021,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        realmente sólo "Rest"/"Descanso" lo sigue agarrando esa misma
        palabra clave más abajo en el propio chequeo. */
     t = t.replace(PREFIJO_ORDEN, '');
-    if(/^(?:-\s*or\s*-|amrap|emom|every|for time|time cap|target|rest|descanso|cargas?|min \d)/i.test(t)) {
+    /* directiva ("Lista Negra de Palabras de Estructura"): Super Sets/
+       Warm Up/Buy-in/Cash-out/Then/Sets sueltos suman a la lista de
+       líneas 100% estructura -- mismo escape "+" de siempre. */
+    if(/^(?:-\s*or\s*-|amrap|emom|every|for time|time cap|target|rest|descanso|cargas?|min \d|super\s*sets?|warm[\s-]*up|buy-?in|cash-?out|then\s*:?|sets?\s*:)/i.test(t)) {
       /* las líneas de estructura no son ejercicios */
       if(!/\+/.test(t)) return [];
     }
