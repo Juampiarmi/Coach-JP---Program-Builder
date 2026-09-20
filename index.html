@@ -7705,6 +7705,7 @@ function datosStoryCF(weekIdx, day){
   const blocks = (day.blocks || []).filter(b => !esBloqueVacioCF(b));
   const warmup = blocks.find(b => b.category === 'warmup');
   const strengthBlocks = blocks.filter(b => b.category === 'strength');
+  const accessoryBlocks = blocks.filter(b => b.category === 'accessory');
   const wod = blocks.find(b => b.category === 'metcon') || blocks.find(b => b.category === 'cardio' || b.category === 'endurance');
   /* directiva (fix integral Story Card 9:16): antes la tarjeta sólo
      mostraba kilos clave + estructura + score -- si el bloque de fuerza
@@ -7719,46 +7720,34 @@ function datosStoryCF(weekIdx, day){
     const hecho = isBlockDone(weekIdx, day.id, warmup.id);
     warmupTxt = (hecho ? '✓ ' : '') + (warmup.title || 'Warm-Up');
   }
-  /* directiva ("Story Card 9:16 de alto impacto") -- Hero Card 1 pasa de
-     mostrar sólo la carga máxima puntual a dos métricas de mayor
-     impacto para redes: VOLUMEN TOTAL de la sesión (kg x reps de TODAS
-     las series marcadas hechas, mismo cálculo que resumenDatos().vol
-     del Session Summary, duplicado acá en miniatura porque esa función
-     vive en otro closure) y un badge de TOP LIFT -- que se vuelve
-     "NUEVO PR" si state.session.prs ya registró al menos un récord esta
-     sesión (mismo flag que usa capturarPR() en el M5, sin duplicar su
-     lógica de detección: sólo lee el resultado). */
-  let volumenTotal = 0, topLiftKg = 0;
   const prefDia = weekIdx + '|' + day.id + '|';
-  Object.keys(state.loads || {}).forEach(function(k){
-    if(k.indexOf(prefDia) !== 0) return;
-    const l = state.loads[k];
-    if(!l || !l.done) return;
-    const kg = parseFloat(l.kg) || 0, rp = parseInt(l.reps, 10) || 0;
-    volumenTotal += kg * rp;
-    if(kg > topLiftKg) topLiftKg = kg;
-  });
-  volumenTotal = Math.round(volumenTotal);
-  /* directiva ("FIX: Tonelaje Real") -- bug real reportado: si el bloque
-     de fuerza que aparece PRIMERO en el día (ej. "SNATCH COMPLEX") no
-     tenía series tildadas en state.loads NI un "@ Xkg" literal, el Hero
-     Card 1 quedaba sin ninguna métrica -- e ignoraba POR COMPLETO otro
-     bloque de fuerza más pesado del mismo día (ej. "BACK SQUAT WAVE",
-     progresión hasta 174.8 kg) porque antes sólo se miraba el primer
-     bloque strength del array. Ahora se recorren TODOS los bloques de
-     fuerza del día y se resuelve cada línea prescripta (series x reps x
-     kg, "@ N%" contra el 1RM propio o "@ Xkg" literal) con el MISMO
-     motor que ya usa la Pizarra (jpCfResolverKgLinea, expuesto en
-     window por el módulo de 1RM) -- funciona SIEMPRE, sin depender de
-     que el alumno haya tildado cada serie individual. Este tonelaje
-     prescripto es el RESPALDO cuando state.loads no aportó nada (0);
-     cuando sí hay series reales tildadas, esas mandan (reflejan mejor
-     lo que pasó de verdad en la sesión, incluidas cargas ajustadas en
-     vivo). El bloque con el kg máximo -- prescripto o logueado, el que
-     sea mayor -- es el que protagoniza el título de la Hero Card 1. */
-  let volumenPrescripto = 0, topKgPrescripto = 0, mejorBloque = null, mejorBloqueKg = -1;
-  strengthBlocks.forEach(function(b){
-    let setsActuales = 1, topDeEsteBloque = 0;
+  /* directiva ("Consolidación Multi-Bloque Dinámica") -- el volumen ya
+     NO se resuelve a nivel DÍA completo (o todo desde state.loads, o
+     todo prescripto): se resuelve BLOQUE POR BLOQUE, mezclando lo que
+     el alumno realmente tildó en state.loads con el cálculo prescripto
+     SOLO para los bloques que no tengan series propias logueadas. Antes,
+     si el alumno tildaba series de UN bloque (ej. Back Squat) pero no
+     de otro (ej. Snatch Complex), el DÍA ENTERO caía al modo
+     "loads-based" apenas volumenTotal > 0, y el Snatch quedaba
+     directamente afuera de la suma -- el bug real reportado ("dejó
+     afuera los Snatches y arrojó sólo 1.531 kg"). Ahora cada bloque
+     aporta su propio volumen real (si el alumno lo tildó) o prescripto
+     (si no), y la suma final es la unión de los dos, nunca uno u otro
+     a nivel día. */
+  function volumenDeBloque(b){
+    let vol = 0, top = 0, huboLoads = false;
+    const prefBloque = prefDia + b.id + '|';
+    Object.keys(state.loads || {}).forEach(function(k){
+      if(k.indexOf(prefBloque) !== 0) return;
+      const l = state.loads[k];
+      if(!l || !l.done) return;
+      huboLoads = true;
+      const kg = parseFloat(l.kg) || 0, rp = parseInt(l.reps, 10) || 0;
+      vol += kg * rp;
+      if(kg > top) top = kg;
+    });
+    if(huboLoads) return { vol: vol, top: top };
+    let setsActuales = 1, volP = 0, topP = 0;
     (b.items || []).forEach(function(raw){
       const l = String(raw || '').trim();
       if(!l) return;
@@ -7771,29 +7760,68 @@ function datosStoryCF(weekIdx, day){
       const resuelto = (typeof window.jpCfResolverKgLinea === 'function') ? window.jpCfResolverKgLinea(l) : null;
       const kg = (resuelto && resuelto.kg != null) ? resuelto.kg : null;
       if(kg == null || kg <= 0) return;
-      volumenPrescripto += reps * setsActuales * kg;
-      if(kg > topDeEsteBloque) topDeEsteBloque = kg;
+      volP += reps * setsActuales * kg;
+      if(kg > topP) topP = kg;
     });
-    if(topDeEsteBloque > topKgPrescripto) topKgPrescripto = topDeEsteBloque;
-    if(topDeEsteBloque > mejorBloqueKg){ mejorBloqueKg = topDeEsteBloque; mejorBloque = b; }
+    return { vol: volP, top: topP };
+  }
+  let volumenTotal = 0, topLiftKg = 0;
+  strengthBlocks.forEach(function(b){
+    const r = volumenDeBloque(b);
+    volumenTotal += r.vol;
+    if(r.top > topLiftKg) topLiftKg = r.top;
   });
-  if(!mejorBloque && strengthBlocks.length) mejorBloque = strengthBlocks[0];
+  volumenTotal = Math.round(volumenTotal);
   const esPR = !!(state.session && state.session.prs && state.session.prs.length > 0);
-  const volumenFinal = volumenTotal > 0 ? volumenTotal : Math.round(volumenPrescripto);
-  const topKgFinal = topLiftKg > 0 ? topLiftKg : topKgPrescripto;
-  let kgClave = '', skillTxt = '';
-  if(mejorBloque){
-    if(topKgFinal > 0){
-      kgClave = (Number.isInteger(topKgFinal) ? String(topKgFinal) : String(Math.round(topKgFinal * 10) / 10)) + ' KG';
-    } else if(mejorBloque.items){
-      for(const l of mejorBloque.items){
-        const m = String(l).match(/@\\s*([\\d.,\/]+)\\s*kg/i) || String(l).match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
-        if(m){ kgClave = m[1] + ' KG'; break; }
+  /* directiva ("Composición Universal de Movimientos") -- Hero Card 1
+     ya no protagoniza con el título de UN solo bloque (el más pesado):
+     el título pasa a ser una categoría dinámica según la MEZCLA real de
+     bloques de fuerza del día (halterofilia vs. básicos de barra), y un
+     subtexto lista TODOS los bloques trabajados como chips ("Snatch
+     Complex · Back Squat Wave"), no sólo el ganador. */
+  function esOlimpico(b){
+    const texto = ((b.title || '') + ' ' + (b.items || []).join(' ')).toLowerCase();
+    return /snatch|clean|jerk|c&j|complex/.test(texto);
+  }
+  function limpiarTituloBloque(b){
+    return String((b && b.title) || '').replace(/^\\s*(?:bloque|block)\\s*\\d+\\s*:\\s*/i, '').trim();
+  }
+  let skillTitulo = '', skillChips = '', kgClave = '';
+  if(strengthBlocks.length){
+    const tieneOlimpico = strengthBlocks.some(esOlimpico);
+    const tieneBasico = strengthBlocks.some(function(b){ return !esOlimpico(b); });
+    if(tieneOlimpico && tieneBasico) skillTitulo = 'OLYMPIC LIFTING & STRENGTH';
+    else if(tieneOlimpico) skillTitulo = 'OLYMPIC WEIGHTLIFTING';
+    else skillTitulo = 'STRENGTH & TONNAGE';
+    skillChips = strengthBlocks.map(limpiarTituloBloque).filter(Boolean).join(' · ');
+    if(topLiftKg <= 0){
+      outer: for(const b of strengthBlocks){
+        for(const l of (b.items || [])){
+          const m = String(l).match(/@\\s*([\\d.,\/]+)\\s*kg/i) || String(l).match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
+          if(m){ kgClave = m[1] + ' KG'; break outer; }
+        }
       }
     }
-    /* pela el prefijo "Bloque N:"/"Block N:" del título crudo del coach
-       -- el alumno ve "BACK SQUAT WAVE", nunca "BLOQUE 1: BACK SQUAT WAVE" */
-    skillTxt = String(mejorBloque.title || '').replace(/^\\s*(?:bloque|block)\\s*\\d+\\s*:\\s*/i, '');
+  }
+  /* directiva ("Bloque Complementario Core/Accesorios") -- micro-píldora
+     compacta al pie con los movimientos principales de Corework/
+     Accesorios (ej. Bloque 5), sólo si el día tiene alguno -- si no,
+     el canvas reclama ese espacio para las hero cards, sin dejarlo vacío. */
+  let coreTxt = '';
+  if(accessoryBlocks.length){
+    const movs = [];
+    accessoryBlocks.forEach(function(b){
+      (b.items || []).forEach(function(raw){
+        const l = String(raw || '').trim();
+        if(!l) return;
+        if(/^\\d+\\s*(?:sets?|rounds?)\\b/i.test(l)) return;
+        if(/^(?:rest|descanso|cap|nota)\\b/i.test(l)) return;
+        if(/:\\s*$/.test(l)) return;
+        const limpio = l.split(' — ')[0].split('@')[0].replace(/^\\d+\\s+/, '').trim();
+        if(limpio) movs.push(limpio);
+      });
+    });
+    if(movs.length) coreTxt = movs.slice(0, 4).join(' + ');
   }
   let estructura = '';
   if(wod && wod.items){
@@ -7839,15 +7867,17 @@ function datosStoryCF(weekIdx, day){
     modo: 'crossfit',
     atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
     tituloWod: (wod && wod.title) || day.title || day.short || 'WOD',
-    volumenTotal: volumenFinal,
-    topLiftKg: topKgFinal,
+    volumenTotal: volumenTotal,
+    topLiftKg: topLiftKg,
     esPR: esPR,
     fecha: new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }),
     warmupTxt: warmupTxt,
-    skillTxt: skillTxt,
+    skillTitulo: skillTitulo,
+    skillChips: skillChips,
     kgClave: kgClave,
     estructura: estructura,
-    score: score
+    score: score,
+    coreTxt: coreTxt
   };
 }
 function rolBloque(block){
@@ -11301,7 +11331,13 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
        lógica de medición (g.font/env/measureText, sin efecto visual) sin
        dibujar nada -- permite decidir el alto REAL antes de decidir el
        layout final (centrado si sólo hay una card). */
-    function heroCard(x0, y0, w, hMax, label, colorAccent, titulo, captionMetrica, metrica, badgeTxt, soloMedir){
+    /* directiva ("Composición Universal de Movimientos") -- nuevo
+       parámetro "subtitulo": línea chica de chips debajo del título
+       (ej. "SNATCH COMPLEX · BACK SQUAT WAVE"), para separar la
+       categoría dinámica del título ("OLYMPIC LIFTING & STRENGTH") de
+       los nombres reales de los bloques trabajados. Opcional -- las
+       demás cards (WOD, vacío) siguen pasando '' sin cambiar su layout. */
+    function heroCard(x0, y0, w, hMax, label, colorAccent, titulo, subtitulo, captionMetrica, metrica, badgeTxt, soloMedir){
       var padX = 46, padTop = 44;
       var tituloTam = 46, tituloLineas2 = [], tituloLH = 0;
       if(titulo){
@@ -11317,6 +11353,13 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       }
       var labelH = 58;
       var tituloBlockH = tituloLineas2.length ? (tituloLineas2.length * tituloLH + 18) : 0;
+      var subTam = 25, subLineas = [], subLH = 0;
+      if(subtitulo){
+        g.font = '600 ' + subTam + 'px "JetBrains Mono", monospace';
+        subLineas = env(g, String(subtitulo).toUpperCase(), w - padX * 2, 2);
+        subLH = Math.round(subTam * 1.3);
+      }
+      var subBlockH = subLineas.length ? (subLineas.length * subLH + 14) : 0;
       var fsM = 0;
       if(metrica){
         fsM = 120;
@@ -11331,7 +11374,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
          (🔥 TOP LIFT / 🔥 NUEVO PR) como pastilla chica debajo de la
          métrica gigante, nunca compitiendo en tamaño con ella. */
       var badgeH = badgeTxt ? 66 : 0;
-      var h = Math.min(hMax, padTop + labelH + tituloBlockH + captionH + metricaH + badgeH + 40);
+      var h = Math.min(hMax, padTop + labelH + tituloBlockH + subBlockH + captionH + metricaH + badgeH + 40);
       h = Math.max(h, 220);
 
       if(!soloMedir){
@@ -11354,6 +11397,12 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
           g.font = '800 ' + tituloTam + 'px "Plus Jakarta Sans", sans-serif';
           tituloLineas2.forEach(function(ln, i){ g.fillText(ln, x0 + padX, cy + Math.round(tituloLH * .82) + i * tituloLH); });
           cy += tituloBlockH;
+        }
+        if(subLineas.length){
+          g.fillStyle = 'rgba(255,255,255,.62)';
+          g.font = '600 ' + subTam + 'px "JetBrains Mono", monospace';
+          subLineas.forEach(function(ln, i){ g.fillText(ln, x0 + padX, cy + Math.round(subLH * .82) + i * subLH); });
+          cy += subBlockH;
         }
         if(captionMetrica){
           g.fillStyle = 'rgba(255,255,255,.5)'; g.font = '700 24px "JetBrains Mono", monospace';
@@ -11379,9 +11428,14 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       return h;
     }
 
-    var tieneSkill = !!(d.skillTxt || d.kgClave || d.volumenTotal > 0 || d.topLiftKg > 0);
+    var tieneSkill = !!(d.skillTitulo || d.kgClave || d.volumenTotal > 0 || d.topLiftKg > 0);
     var tieneWod = !!(d.estructura || d.score);
-    var bodyBottom = footerTop - 26;
+    /* directiva ("Bloque Complementario Core/Accesorios") -- reserva un
+       renglón extra al pie del cuerpo SÓLO si el día trae Corework/
+       Accesorios; si no, ese espacio vuelve directo a las hero cards
+       (nunca queda un hueco vacío colgando). */
+    var coreReserve = d.coreTxt ? 96 : 0;
+    var bodyBottom = footerTop - 26 - coreReserve;
     var bodyH = Math.max(240, bodyBottom - y);
     var gap = 44;
     var wCard = W - 180;
@@ -11396,27 +11450,52 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 
     if(tieneSkill && tieneWod){
       var hMaxSkill = Math.round(bodyH * .42);
-      var hSkill = heroCard(90, y, wCard, hMaxSkill, 'FUERZA / SKILL', '#E06D2D', d.skillTxt, skillCaption, skillMetrica, skillBadge, true);
+      var hSkill = heroCard(90, y, wCard, hMaxSkill, 'FUERZA / SKILL', '#E06D2D', d.skillTitulo, d.skillChips, skillCaption, skillMetrica, skillBadge, true);
       var hMaxWod = bodyH - hSkill - gap;
-      var hWod = heroCard(90, y + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.estructura, d.score ? 'SCORE FINAL' : '', d.score || '', '', true);
+      var hWod = heroCard(90, y + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.estructura, '', d.score ? 'SCORE FINAL' : '', d.score || '', '', true);
       var sobra = Math.max(0, bodyH - hSkill - gap - hWod);
       var yStart = y + Math.round(sobra / 2);
-      heroCard(90, yStart, wCard, hMaxSkill, 'FUERZA / SKILL', '#E06D2D', d.skillTxt, skillCaption, skillMetrica, skillBadge, false);
-      heroCard(90, yStart + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.estructura, d.score ? 'SCORE FINAL' : '', d.score || '', '', false);
+      heroCard(90, yStart, wCard, hMaxSkill, 'FUERZA / SKILL', '#E06D2D', d.skillTitulo, d.skillChips, skillCaption, skillMetrica, skillBadge, false);
+      heroCard(90, yStart + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.estructura, '', d.score ? 'SCORE FINAL' : '', d.score || '', '', false);
     } else if(tieneSkill || tieneWod){
       var soloLabel = tieneSkill ? 'FUERZA / SKILL' : 'METCON / WOD';
       var soloColor = tieneSkill ? '#E06D2D' : '#38BDF8';
-      var soloTitulo = tieneSkill ? d.skillTxt : d.estructura;
+      var soloTitulo = tieneSkill ? d.skillTitulo : d.estructura;
+      var soloSubtitulo = tieneSkill ? d.skillChips : '';
       var soloCaption = tieneSkill ? skillCaption : (d.score ? 'SCORE FINAL' : '');
       var soloMetrica = tieneSkill ? skillMetrica : (d.score || '');
       var soloBadge = tieneSkill ? skillBadge : '';
-      var hSolo = heroCard(90, y, wCard, bodyH, soloLabel, soloColor, soloTitulo, soloCaption, soloMetrica, soloBadge, true);
+      var hSolo = heroCard(90, y, wCard, bodyH, soloLabel, soloColor, soloTitulo, soloSubtitulo, soloCaption, soloMetrica, soloBadge, true);
       var yCentrada = y + Math.max(0, Math.round((bodyH - hSolo) / 2));
-      heroCard(90, yCentrada, wCard, bodyH, soloLabel, soloColor, soloTitulo, soloCaption, soloMetrica, soloBadge, false);
+      heroCard(90, yCentrada, wCard, bodyH, soloLabel, soloColor, soloTitulo, soloSubtitulo, soloCaption, soloMetrica, soloBadge, false);
     } else {
-      var hVacio = heroCard(90, y, wCard, bodyH, 'SESIÓN', '#7CC5E8', d.tituloWod || 'ENTRENAMIENTO', '', '', '', true);
+      var hVacio = heroCard(90, y, wCard, bodyH, 'SESIÓN', '#7CC5E8', d.tituloWod || 'ENTRENAMIENTO', '', '', '', '', true);
       var yVacia = y + Math.max(0, Math.round((bodyH - hVacio) / 2));
-      heroCard(90, yVacia, wCard, bodyH, 'SESIÓN', '#7CC5E8', d.tituloWod || 'ENTRENAMIENTO', '', '', '', false);
+      heroCard(90, yVacia, wCard, bodyH, 'SESIÓN', '#7CC5E8', d.tituloWod || 'ENTRENAMIENTO', '', '', '', '', false);
+    }
+
+    /* directiva ("Bloque Complementario Core/Accesorios") -- micro-
+       píldora compacta con los movimientos principales de Corework/
+       Accesorios del día (ej. "⚡ CORE: Banded Deadlifts + KB Swings +
+       Deadbugs"), en una sola línea (auto-shrink si no entra) dentro
+       del renglón reservado arriba (coreReserve) -- nunca compite en
+       tamaño con las hero cards. */
+    if(d.coreTxt){
+      var coreLabel = '⚡ CORE: ' + d.coreTxt.toUpperCase();
+      var coreFs = 24;
+      g.font = '700 ' + coreFs + 'px "JetBrains Mono", monospace';
+      while(g.measureText(coreLabel).width > (wCard - 70) && coreFs > 15){
+        coreFs -= 1; g.font = '700 ' + coreFs + 'px "JetBrains Mono", monospace';
+      }
+      var coreBoxH = 64;
+      var coreY = footerTop - 26 - coreReserve + Math.round((coreReserve - coreBoxH) / 2);
+      g.save();
+      redondear(g, 90, coreY, wCard, coreBoxH, 22);
+      g.fillStyle = 'rgba(124,197,232,.10)'; g.fill();
+      g.strokeStyle = 'rgba(124,197,232,.4)'; g.lineWidth = 2; redondear(g, 90, coreY, wCard, coreBoxH, 22); g.stroke();
+      g.restore();
+      g.textAlign = 'center'; g.fillStyle = '#7CC5E8';
+      g.fillText(coreLabel, W / 2, coreY + coreBoxH / 2 + coreFs * 0.32);
     }
 
     /* FOOTER: sello Coach JP + badge Session Completed (directiva) --
