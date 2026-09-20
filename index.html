@@ -7705,7 +7705,6 @@ function datosStoryCF(weekIdx, day){
   const blocks = (day.blocks || []).filter(b => !esBloqueVacioCF(b));
   const warmup = blocks.find(b => b.category === 'warmup');
   const strengthBlocks = blocks.filter(b => b.category === 'strength');
-  const accessoryBlocks = blocks.filter(b => b.category === 'accessory');
   const wod = blocks.find(b => b.category === 'metcon') || blocks.find(b => b.category === 'cardio' || b.category === 'endurance');
   /* directiva (fix integral Story Card 9:16): antes la tarjeta sólo
      mostraba kilos clave + estructura + score -- si el bloque de fuerza
@@ -7803,26 +7802,6 @@ function datosStoryCF(weekIdx, day){
       }
     }
   }
-  /* directiva ("Bloque Complementario Core/Accesorios") -- micro-píldora
-     compacta al pie con los movimientos principales de Corework/
-     Accesorios (ej. Bloque 5), sólo si el día tiene alguno -- si no,
-     el canvas reclama ese espacio para las hero cards, sin dejarlo vacío. */
-  let coreTxt = '';
-  if(accessoryBlocks.length){
-    const movs = [];
-    accessoryBlocks.forEach(function(b){
-      (b.items || []).forEach(function(raw){
-        const l = String(raw || '').trim();
-        if(!l) return;
-        if(/^\\d+\\s*(?:sets?|rounds?)\\b/i.test(l)) return;
-        if(/^(?:rest|descanso|cap|nota)\\b/i.test(l)) return;
-        if(/:\\s*$/.test(l)) return;
-        const limpio = l.split(' — ')[0].split('@')[0].replace(/^\\d+\\s+/, '').trim();
-        if(limpio) movs.push(limpio);
-      });
-    });
-    if(movs.length) coreTxt = movs.slice(0, 4).join(' + ');
-  }
   let estructura = '';
   if(wod && wod.items){
     /* directiva -- "Formato y nombre del WOD": si el bloque arranca con
@@ -7876,8 +7855,7 @@ function datosStoryCF(weekIdx, day){
     skillChips: skillChips,
     kgClave: kgClave,
     estructura: estructura,
-    score: score,
-    coreTxt: coreTxt
+    score: score
   };
 }
 function rolBloque(block){
@@ -11244,6 +11222,10 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     const g = c.getContext('2d');
     g.clearRect(0, 0, W, H);
     window.__storyLast = { tipo: 'cf', d: d };
+    /* debug -- geometría real de cada hero card dibujada (no solo
+       medida), para poder validar en tests que nunca se superponen sin
+       tener que hacer forense de píxeles sobre el canvas. */
+    window.__storyRects = [];
 
     window.storyFondoFoto(g, W, H, function(){
       let bg = g.createLinearGradient(0, 0, 0, H);
@@ -11374,10 +11356,24 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
          (🔥 TOP LIFT / 🔥 NUEVO PR) como pastilla chica debajo de la
          métrica gigante, nunca compitiendo en tamaño con ella. */
       var badgeH = badgeTxt ? 66 : 0;
-      var h = Math.min(hMax, padTop + labelH + tituloBlockH + subBlockH + captionH + metricaH + badgeH + 40);
-      h = Math.max(h, 220);
+      /* FIX CRÍTICO ("Eliminación de superposiciones") -- este alto se
+         usa DESPUÉS para posicionar la card siguiente (yStart + hSkill +
+         gap). Antes se recortaba a hMax vía Math.min(hMax, natural) --
+         pero el DIBUJADO de abajo nunca respetaba ese recorte, seguía
+         escribiendo TODOS los elementos con su alto natural completo. El
+         resultado: si el contenido real (título + subtítulo + métrica +
+         badge) superaba hMax, la card se reportaba más baja de lo que en
+         verdad medía, la siguiente card arrancaba antes de que la
+         anterior terminara de dibujarse, y el badge de Top Lift quedaba
+         literalmente montado sobre el borde de la card del WOD -- el bug
+         reportado. Ahora el alto devuelto SIEMPRE es el natural real (sin
+         recorte a hMax): la card puede terminar más alta que "lo
+         preferido", pero jamás miente sobre cuánto espacio ocupa de
+         verdad, así que nunca se superpone con lo que viene después. */
+      var h = Math.max(220, padTop + labelH + tituloBlockH + subBlockH + captionH + metricaH + badgeH + 40);
 
       if(!soloMedir){
+        if(window.__storyRects) window.__storyRects.push({ label: label, x0: x0, y0: y0, w: w, h: h });
         g.save();
         redondear(g, x0, y0, w, h, 34);
         var gradGlass = g.createLinearGradient(x0, y0, x0, y0 + h);
@@ -11430,12 +11426,12 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 
     var tieneSkill = !!(d.skillTitulo || d.kgClave || d.volumenTotal > 0 || d.topLiftKg > 0);
     var tieneWod = !!(d.estructura || d.score);
-    /* directiva ("Bloque Complementario Core/Accesorios") -- reserva un
-       renglón extra al pie del cuerpo SÓLO si el día trae Corework/
-       Accesorios; si no, ese espacio vuelve directo a las hero cards
-       (nunca queda un hueco vacío colgando). */
-    var coreReserve = d.coreTxt ? 96 : 0;
-    var bodyBottom = footerTop - 26 - coreReserve;
+    /* directiva ("Fix definitivo Story Card 9:16") -- la píldora de
+       Corework/Accesorios se retira del todo: el canvas 9:16 se centra
+       exclusivamente en las 2 Hero Cards (Fuerza/Skill y Metcon/WOD),
+       sin un tercer elemento que sobrecargue la lectura. Todo el cuerpo
+       entre el header y el footer queda disponible para esas 2 cards. */
+    var bodyBottom = footerTop - 26;
     var bodyH = Math.max(240, bodyBottom - y);
     var gap = 44;
     var wCard = W - 180;
@@ -11472,30 +11468,6 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       var hVacio = heroCard(90, y, wCard, bodyH, 'SESIÓN', '#7CC5E8', d.tituloWod || 'ENTRENAMIENTO', '', '', '', '', true);
       var yVacia = y + Math.max(0, Math.round((bodyH - hVacio) / 2));
       heroCard(90, yVacia, wCard, bodyH, 'SESIÓN', '#7CC5E8', d.tituloWod || 'ENTRENAMIENTO', '', '', '', '', false);
-    }
-
-    /* directiva ("Bloque Complementario Core/Accesorios") -- micro-
-       píldora compacta con los movimientos principales de Corework/
-       Accesorios del día (ej. "⚡ CORE: Banded Deadlifts + KB Swings +
-       Deadbugs"), en una sola línea (auto-shrink si no entra) dentro
-       del renglón reservado arriba (coreReserve) -- nunca compite en
-       tamaño con las hero cards. */
-    if(d.coreTxt){
-      var coreLabel = '⚡ CORE: ' + d.coreTxt.toUpperCase();
-      var coreFs = 24;
-      g.font = '700 ' + coreFs + 'px "JetBrains Mono", monospace';
-      while(g.measureText(coreLabel).width > (wCard - 70) && coreFs > 15){
-        coreFs -= 1; g.font = '700 ' + coreFs + 'px "JetBrains Mono", monospace';
-      }
-      var coreBoxH = 64;
-      var coreY = footerTop - 26 - coreReserve + Math.round((coreReserve - coreBoxH) / 2);
-      g.save();
-      redondear(g, 90, coreY, wCard, coreBoxH, 22);
-      g.fillStyle = 'rgba(124,197,232,.10)'; g.fill();
-      g.strokeStyle = 'rgba(124,197,232,.4)'; g.lineWidth = 2; redondear(g, 90, coreY, wCard, coreBoxH, 22); g.stroke();
-      g.restore();
-      g.textAlign = 'center'; g.fillStyle = '#7CC5E8';
-      g.fillText(coreLabel, W / 2, coreY + coreBoxH / 2 + coreFs * 0.32);
     }
 
     /* FOOTER: sello Coach JP + badge Session Completed (directiva) --
