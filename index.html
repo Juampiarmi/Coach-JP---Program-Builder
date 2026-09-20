@@ -4751,7 +4751,11 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .tactical-briefing .tb-label{font-family:var(--font-head,'Chakra Petch',sans-serif);font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#38BDF8;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tactical-briefing .tb-chev{color:#38BDF8;font-size:11px;transition:transform .2s ease;flex:0 0 auto}
   .tactical-briefing[open] .tb-chev{transform:rotate(180deg)}
-  .tactical-briefing .tb-body{font-size:14px;line-height:1.5;color:var(--text-primary);padding:0 16px 14px 41px}
+  /* directiva ("Briefing Táctico Operativo de 3 apartados") -- el texto
+     generado por la IA (o el motor local) ahora trae saltos de línea
+     entre apartados; sin white-space:pre-line un <div> normal los
+     colapsa a un solo párrafo corrido. */
+  .tactical-briefing .tb-body{font-size:14px;line-height:1.5;color:var(--text-primary);padding:0 16px 14px 41px;white-space:pre-line}
   .day-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.3rem; }
   /* la tipografía técnica oficial del sistema (--font-head, Chakra
      Petch) en vez de Barlow Condensed -- se veía "genérica/pesada",
@@ -8558,6 +8562,13 @@ body.focus-mode .tv-nav{display:flex}
   min-width:186px;padding:12px 14px;border-radius:16px;border:1px solid rgba(74,147,184,0.42);
   background:rgba(8,10,11,0.96);backdrop-filter:blur(12px);box-shadow:0 18px 44px rgba(0,0,0,0.62)}
 .rest-hud.on{display:flex}
+/* directiva ("Rest Timer Premium in-situ") -- cuando el descanso lo
+   arrancó un botón de CrossFit (arrancarRest(seg,etiqueta,true)), la
+   cuenta regresiva se muestra espejada DENTRO del bloque (ver
+   .jp-cf-rest más abajo); la barra flotante sigue corriendo el motor
+   por debajo (persistencia/beep/vibración/notificación intactos) pero
+   se oculta para no duplicar la UI -- "sin barras flotantes desfasadas". */
+.rest-hud.on.cf-mirrored{display:none}
 .rest-hud.warn{border-color:rgba(210,121,63,0.6)}
 .rest-hud .rh-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .rest-hud .rh-lb{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:0.72rem;letter-spacing:0.12em;
@@ -8769,6 +8780,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      mostrando un tiempo "viejo" que ya no reflejaba lo que pasó en
      verdad. Ahora restLeft se recalcula siempre contra restTargetEnd. */
   let restTargetEnd = 0;
+  /* directiva ("Rest Timer Premium in-situ") -- el motor del descanso
+     sigue siendo ÚNICO y compartido (persistencia, resync en background,
+     notificaciones, beep/vibración ya blindados arriba), pero ahora
+     puede "espejarse" en un widget que vive DENTRO del bloque de
+     CrossFit en vez de la barra flotante (#restHud), igual que espejo()
+     ya hace con el Timer de Box. restActive cubre TODA la vida del
+     descanso (arranque -> cierre), independiente de restRun (que sólo
+     indica corriendo/pausado) y de restJustFinished (la ventana breve
+     de "listo" antes del auto-cierre) -- así un espejo externo puede
+     distinguir sin ambigüedad sus 3 estados aun cuando restLeft/restTotal
+     queden en su último valor tras cerrar. */
+  let restActive = false, restJustFinished = false, onRestTick = null;
+  function estadoRest(){
+    return { active: restActive, running: restRun, finished: restJustFinished,
+      left: restLeft, total: restTotal, label: hudLb ? hudLb.textContent : '' };
+  }
 
   /* =========================================================
      DIRECTIVA 13, CAPA 1: NOTIFICACIÓN LOCAL DE DESCANSO TERMINADO
@@ -8816,6 +8843,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     document.getElementById('rhToggle').textContent = restRun ? '⏸' : '▶';
     hud.querySelectorAll('[data-rest]').forEach(b =>
       b.classList.toggle('on', parseInt(b.dataset.rest,10) === state.restSec));
+    if(onRestTick) try{ onRestTick(estadoRest()); }catch(e){}
   }
   function tick(){
     if(!restRun) return;
@@ -8826,6 +8854,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     if(restLeft <= 0){
       restLeft = 0; pararRest();
+      restJustFinished = true;
       try{ beepGo(); }catch(e){}
       CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
       mostrarNotifDescanso();
@@ -8850,18 +8879,41 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
     }catch(e){}
   }
-  function arrancarRest(seg, etiqueta){
+  /* directiva ("Rest Timer Premium in-situ") -- tercer parámetro "oculto"
+     (opcional, default false: comportamiento sin cambios para todo
+     llamador existente): cuando un botón de descanso de CrossFit arranca
+     el motor, pide que la barra flotante NO se muestre (ese caso ya
+     tiene su propio espejo in-situ, ver jpCfRestBadge/jpCfRestOnTick
+     más abajo) -- "sin barras flotantes desfasadas" del enunciado. */
+  function arrancarRest(seg, etiqueta, oculto){
     pedirPermisoNotifDescanso();
     restLeft = seg || state.restSec;
     restTotal = restLeft;
     restTargetEnd = Date.now() + restLeft * 1000;
     hudLb.textContent = etiqueta || 'Descanso';
+    restActive = true; restJustFinished = false;
+    hud.classList.toggle('cf-mirrored', !!oculto);
     hud.classList.add('on'); restRun = true;
     clearInterval(restInt); restInt = setInterval(tick, 1000);
     pintarRest();
     guardarRestTimer();
   }
   function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); guardarRestTimer(); }
+  /* pausa/reanuda el descanso activo sin cerrarlo -- misma lógica que ya
+     tenía el toggle ▶/⏸ de la barra flotante, ahora nombrada aparte para
+     que el widget in-situ de CrossFit (jpCfRestOnTick) pueda dispararla
+     también vía window.CoachTV.toggle(). */
+  function toggleRest(){
+    restRun = !restRun;
+    if(restRun){
+      restTargetEnd = Date.now() + restLeft * 1000;
+      if(!restInt) restInt = setInterval(tick, 1000);
+    }else{
+      clearInterval(restInt); restInt = null;
+    }
+    pintarRest();
+    guardarRestTimer();
+  }
   /* directiva10 -- resync forzado (Page Visibility API), llamado apenas la
      app vuelve a primer plano: recalcula restLeft contra restTargetEnd YA,
      sin esperar el próximo tick natural del setInterval (que en background
@@ -8871,7 +8923,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      cumplió mientras el celular estaba bloqueado, dispara la finalización
      (beep + vibración + cierre) en el acto, en vez de dejarlo "colgado". */
   function sincronizarRestActivo(){ if(restRun) tick(); }
-  function cerrarRest(){ pararRest(); hud.classList.remove('on'); }
+  function cerrarRest(){ restActive = false; restJustFinished = false; pararRest(); hud.classList.remove('on'); }
   document.getElementById('rhX').addEventListener('click', cerrarRest);
   document.getElementById('rhSkip').addEventListener('click', cerrarRest);
   /* 10/09 -- toggle vista expandida: puramente visual (agrega/quita una
@@ -8894,19 +8946,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     guardarRestTimer();
   }
   document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(30); });
-  document.getElementById('rhToggle').addEventListener('click', function(){
-    restRun = !restRun;
-    if(restRun){
-      /* reanudar tras una pausa manual: nueva marca de tiempo absoluta a
-         partir de los segundos que habían quedado congelados. */
-      restTargetEnd = Date.now() + restLeft * 1000;
-      if(!restInt) restInt = setInterval(tick, 1000);
-    }else{
-      clearInterval(restInt); restInt = null;
-    }
-    pintarRest();
-    guardarRestTimer();
-  });
+  document.getElementById('rhToggle').addEventListener('click', toggleRest);
   hud.querySelectorAll('[data-rest]').forEach(b => b.addEventListener('click', function(){
     state.restSec = parseInt(b.dataset.rest, 10);
     saveProgress();
@@ -9249,6 +9289,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      literal. Extraído a función propia para que jpCfCargaBloque()
      pueda reusarlo sobre CUALQUIER bloque del día, no sólo el que se
      está pintando en este momento. */
+  /* directiva ("Resolución Reactiva de Cargas Cruzadas") -- devuelve
+     { kg, benchmark, liftKey } en vez de sólo el número: cuando la
+     línea es "@ N%" pero el atleta TODAVÍA no cargó su 1RM, kg queda
+     en null pero benchmark/liftKey sí viajan -- eso es lo que permite
+     ofrecer el badge interactivo "@ Usar carga Bloque N" (abre el
+     mismo modal de 1RM) en vez del mensaje de depuración "sin
+     resolver" que veía el alumno antes. */
   function jpCfResolverKgLinea(l){
     const partes = jpCfSplit(l);
     if(!partes.val) return null;
@@ -9259,27 +9306,37 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const benchmark = jpBenchmarkMadre(liftBase);
       const liftKey = nrmHist(benchmark);
       const propio = state.oneRM && state.oneRM[liftKey];
-      if(propio > 0) return parseFloat(jpKgExacto(propio, pct));
-      return null;
+      return { kg: (propio > 0) ? parseFloat(jpKgExacto(propio, pct)) : null, benchmark: benchmark, liftKey: liftKey };
     }
     const kgMatch = partes.val.match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
-    if(kgMatch) return parseFloat(kgMatch[1].replace(',', '.'));
+    if(kgMatch) return { kg: parseFloat(kgMatch[1].replace(',', '.')), benchmark: null, liftKey: null };
     return null;
   }
-  /* recorre el bloque N (1-indexado, mismo orden en que el coach los
-     carga y el atleta los ve en la Pizarra) del día indicado y devuelve
-     la primera carga resoluble que encuentra en su texto -- null si el
-     bloque no existe todavía o ninguna de sus líneas trae carga. */
+  /* directiva ("Resolución Reactiva de Cargas Cruzadas") -- bug real
+     encontrado: "@ carga bloque 1" siempre leía day.blocks[0] (el
+     PRIMER bloque del día, casi siempre el Warm-up, sin carga que
+     resolver), nunca el bloque que el coach realmente escribe como
+     "BLOQUE 1" en su título -- el índice del array no tiene por qué
+     coincidir con el número que el coach le puso al bloque a mano
+     ("BLOQUE 1: BACK SQUAT WAVE" bien podría ser el SEGUNDO bloque del
+     día, después del Warm-up). Ahora se busca PRIMERO un bloque cuyo
+     título declare "Bloque N"/"Block N" explícitamente; si ninguno lo
+     hace, cae al índice posicional (1-indexado) como respaldo. */
   function jpCfCargaBloque(dayId, n){
     const day = (typeof DAYS !== 'undefined') ? DAYS.find(function(d){ return d.id === dayId; }) : null;
     if(!day || !day.blocks) return null;
-    const block = day.blocks[n - 1];
+    const rxTitulo = new RegExp('\\\\b(?:bloque|block)\\\\s*' + n + '\\\\b', 'i');
+    let block = day.blocks.find(function(b){ return b.title && rxTitulo.test(b.title); });
+    if(!block) block = day.blocks[n - 1];
     if(!block || !block.items) return null;
+    let fallback = null;
     for(let i = 0; i < block.items.length; i++){
-      const kg = jpCfResolverKgLinea(String(block.items[i] || ''));
-      if(kg != null) return kg;
+      const r = jpCfResolverKgLinea(String(block.items[i] || ''));
+      if(!r) continue;
+      if(r.kg != null) return r;
+      if(!fallback && r.benchmark) fallback = r;
     }
-    return null;
+    return fallback;
   }
   /* directiva ("Cronómetro de Descanso Integrado") -- extrae segundos de
      una línea de rest/descanso en cualquiera de los formatos que ya usa
@@ -9298,16 +9355,65 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(m) return Math.round(parseFloat(m[1].replace(',', '.')) * 60);
     return null;
   }
-  /* botón "[ ⏱️ Iniciar Rest 1:30 ]" -- reusa window.CoachTV.rest(seg,
-     etiqueta), el MISMO motor de cuenta regresiva (#restHud: anillo de
-     progreso, sonido, vibración, +15s/+30s) que ya usa Bodybuilding al
-     tildar una serie, nunca un timer nuevo. Si la duración no es
-     reconocible, cae al badge de texto plano de siempre (comportamiento
-     sin cambios para ese caso). */
+  /* directiva ("Rediseño Premium del Rest Timer") -- el botón "[ ⏱️
+     INICIAR REST 1:30 ]" reusa window.CoachTV.rest/toggle/sumar/parar/
+     estado(seg,etiqueta), el MISMO motor de cuenta regresiva compartido
+     (persistencia, resync en background, beep, vibración, notificación)
+     que ya usa Bodybuilding al tildar una serie -- nunca un timer nuevo.
+     La diferencia: acá NO se muestra la barra flotante (#restHud, 3er
+     arg "true") -- el PROPIO botón se convierte en el timer in-situ,
+     espejando el estado del motor en cada tick (window.CoachTV.mirror),
+     con 3 estados: Reposo -> Corriendo (cuenta + barra de progreso +
+     micro-controles +30s/✕) -> Listo (auto-revierte a Reposo, igual que
+     ya hacía la barra flotante). Si la duración no es reconocible, cae
+     al badge de texto plano de siempre (comportamiento sin cambios). */
+  let jpCfRestBoundWrap = null;
+  function jpCfRestMMSS(seg){
+    const s = Math.max(0, Math.round(seg || 0));
+    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  }
+  function jpCfRestPintarIdle(wrap){
+    wrap.classList.remove('running', 'listo');
+    wrap.innerHTML = '<button type="button" class="jp-cf-rest-main">&#9201;&#65039; INICIAR REST ' + jpCfRestMMSS(parseInt(wrap.dataset.restSec, 10)) + '</button>';
+  }
+  function jpCfRestPintarRunning(wrap, st){
+    wrap.classList.add('running'); wrap.classList.remove('listo');
+    const pct = st.total > 0 ? Math.max(0, Math.min(1, st.left / st.total)) : 0;
+    wrap.style.setProperty('--rp', (pct * 100).toFixed(1) + '%');
+    wrap.innerHTML =
+      '<button type="button" class="jp-cf-rest-main">' + (st.running ? '&#9208;' : '&#9654;&#65039;') + ' ' + jpCfRestMMSS(st.left) + '</button>' +
+      '<button type="button" class="jp-cf-rest-plus">+30s</button>' +
+      '<button type="button" class="jp-cf-rest-x">&#10005;</button>';
+  }
+  function jpCfRestPintarListo(wrap){
+    wrap.classList.remove('running'); wrap.classList.add('listo');
+    wrap.innerHTML = '<span class="jp-cf-rest-listo">&#10003; LISTO PARA LA SIGUIENTE RONDA</span>';
+  }
+  /* espejo del motor: se registra vía window.CoachTV.mirror() apenas se
+     arranca el primer descanso desde un bloque de CrossFit (ver el
+     delegado de click más abajo) y a partir de ahí se llama en CADA
+     tick del motor compartido, arranque o cierre haya sido. Si el wrap
+     vinculado quedó desmontado (cambio de día/pestaña que re-renderiza
+     la Pizarra), se lo intenta re-ubicar por etiqueta entre los widgets
+     actualmente en pantalla -- autocuración sin tocar el motor. */
+  function jpCfRestOnTick(st){
+    let wrap = jpCfRestBoundWrap;
+    if(wrap && !document.body.contains(wrap)) wrap = null;
+    if(!wrap && (st.active || st.finished)){
+      const cands = document.querySelectorAll('.jp-cf-rest[data-rest-lb]');
+      for(let i = 0; i < cands.length; i++){ if(cands[i].dataset.restLb === st.label){ wrap = cands[i]; break; } }
+    }
+    jpCfRestBoundWrap = wrap;
+    if(!wrap) return;
+    if(st.finished) jpCfRestPintarListo(wrap);
+    else if(st.active) jpCfRestPintarRunning(wrap, st);
+    else jpCfRestPintarIdle(wrap);
+  }
   function jpCfRestBadge(l){
     const seg = jpCfParsearDescanso(l);
     if(seg == null || seg <= 0) return null;
-    return '<div class="jp-cf-row jp-cf-badge"><button type="button" class="jp-cf-rest-btn" data-rest-sec="' + seg + '" data-rest-lb="' + String(l).replace(/"/g, '') + '">&#9201;&#65039; Iniciar ' + jpMdBold(l) + '</button></div>';
+    return '<div class="jp-cf-row jp-cf-rest-row"><div class="jp-cf-rest" data-rest-sec="' + seg + '" data-rest-lb="' + String(l).replace(/"/g, '') + '">' +
+      '<button type="button" class="jp-cf-rest-main">&#9201;&#65039; INICIAR REST ' + jpCfRestMMSS(seg) + '</button></div></div>';
   }
   function jpCfFila(raw, dayId){
     const l = String(raw || '').trim();
@@ -9337,22 +9443,30 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        propio 1RM para este movimiento (state.oneRM, ver jpAbrirPct1RM
        más abajo), ese valor manda sobre la estimación del coach y
        recalcula EN VIVO, sin recompilar nada. */
-    /* directiva ("Resuelve dinámicamente referencias de carga entre
-       bloques"): "@ carga bloque 1" (o "@ carga del bloque 1") lee el
-       peso ya resuelto (por % de 1RM o literal en kg) en el Bloque 1
-       del MISMO día y lo muestra directo en kg -- nunca un botón
-       tocable (no hay 1RM propio que pedirle acá, es un espejo de otro
-       bloque), con un rótulo explícito si ese bloque todavía no tiene
-       ninguna carga resuelta para copiar. */
+    /* directiva ("Resolución Reactiva de Cargas Cruzadas"): "@ carga
+       bloque 1" (o "@ carga del bloque 1") lee el peso ya resuelto (por
+       % de 1RM o literal en kg) en el Bloque 1 del MISMO día y lo
+       muestra directo en kg, en cian táctico -- tres estados posibles:
+       (a) resuelto -> span "@ X kg"; (b) el bloque referenciado tiene
+       un % de 1RM pero el atleta todavía no cargó el suyo -> botón
+       tocable "@ Usar carga Bloque N" que abre el mismo modal de 1RM
+       (reusa .jp-cf-pct y su delegación de click, ver jpAbrirPct1RM);
+       (c) el bloque no existe o no tiene ninguna carga referenciable ->
+       span neutro "@ -- kg". Nunca el mensaje de depuración "sin
+       resolver" que veía el alumno antes. */
     const refBloqueMatch = partes.val && partes.val.match(/^@\\s*carga\\s*(?:del\\s*)?bloque\\s*(\\d+)/i);
     const pctMatch = partes.val && partes.val.match(/^@\\s*(\\d{1,3})\\s*%/);
     let valHtml = jpMdBold(partes.val);
     if(refBloqueMatch){
       const nBloque = parseInt(refBloqueMatch[1], 10);
-      const kgRef = jpCfCargaBloque(dayId, nBloque);
-      valHtml = '<span class="jp-cf-refload">' +
-        (kgRef != null ? (Number.isInteger(kgRef) ? kgRef : kgRef) + ' kg' : 'Carga del Bloque ' + nBloque + ' sin resolver') +
-        '</span>';
+      const ref = jpCfCargaBloque(dayId, nBloque);
+      if(ref && ref.kg != null){
+        valHtml = '<span class="jp-cf-refload">@ ' + ref.kg + ' kg</span>';
+      } else if(ref && ref.benchmark){
+        valHtml = '<button type="button" class="jp-cf-pct" data-pct-lift="' + ref.benchmark.replace(/"/g,'') + '" data-pct-key="' + ref.liftKey + '">@ Usar carga Bloque ' + nBloque + '</button>';
+      } else {
+        valHtml = '<span class="jp-cf-refload jp-cf-refload-empty">@ -- kg</span>';
+      }
     } else if(pctMatch){
       const pct = parseInt(pctMatch[1], 10);
       /* directiva -- la clave del 1RM no puede incluir el conteo de reps
@@ -9413,13 +9527,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     partes.push(jpLemaPalabra(ultima));
     return jpCfClipTitleCase(partes.join(' '));
   }
+  /* directiva ("Parser de Complexes y Videos Técnicos Aislados") --
+     un complex olímpico ("1 Power snatch + 1 Low hang power snatch + 1
+     Hang power snatch") es UNA línea con VARIOS movimientos, nunca un
+     solo ejercicio: antes se buscaba video para la frase completa y
+     salía deformada ("Power Snatch + 1 Low Hang", recortada por el
+     tope de 6 palabras de limpiarNombre()). Se tokeniza por +/,&//
+     ANTES de limpiar, cada segmento se procesa como un movimiento
+     propio (misma limpieza + match exacto + fallback de benchmark que
+     ya usa una línea simple) -- una línea sin separador produce un
+     único segmento, comportamiento sin cambios para el caso normal. */
+  function jpCfTokenizarComplex(nm){
+    return String(nm || '').split(/\\s*[+\/&,]\\s*/).map(function(s){ return s.trim(); }).filter(Boolean);
+  }
   function jpCfClips(lineas){
     const vistos = new Set();
     const out = [];
     lineas.forEach(function(raw){
       const l = String(raw || '').trim();
       if(!jpCfEsMovimiento(l)) return;
-      const nm = jpCfSplit(l).nm;
+      const nmCrudo = jpCfSplit(l).nm;
       /* directiva (fix de videos en Warm-up/Corework/Accesorios) -- acá
          NO se vuelve a filtrar con esEstructura(nm): ese chequeo corre
          sobre el nombre CRUDO de jpCfSplit (todavía con la nota entre
@@ -9431,14 +9558,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          (limpiarNombre(): saca paréntesis, conteo de reps, "@...", etc.)
          antes de buscar match directo/exacto -- soloDirecto=true sigue
          garantizando que nunca se asigna un video por aproximación. */
-      if(!nm) return;
-      /* directiva ("Fallback inteligente"): si la variante puntual no
-         tiene video propio, se prueba el benchmark de base antes de
-         omitir el clip por completo -- ver jpVideoFallbackBenchmark(). */
-      const ytid = buscarVideo(nm, true) || jpVideoFallbackBenchmark(nm);
-      if(!ytid || vistos.has(ytid)) return;
-      vistos.add(ytid);
-      out.push({ nombre: jpCfClipNombre(nm) || nm, ytid: ytid });
+      if(!nmCrudo) return;
+      jpCfTokenizarComplex(nmCrudo).forEach(function(seg){
+        if(!seg) return;
+        /* directiva ("Fallback inteligente"): si la variante puntual no
+           tiene video propio, se prueba el benchmark de base antes de
+           omitir el clip por completo -- ver jpVideoFallbackBenchmark(). */
+        const ytid = buscarVideo(seg, true) || jpVideoFallbackBenchmark(seg);
+        if(!ytid || vistos.has(ytid)) return;
+        vistos.add(ytid);
+        out.push({ nombre: jpCfClipNombre(seg) || seg, ytid: ytid });
+      });
     });
     return out;
   }
@@ -9671,14 +9801,37 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(save){ e.stopPropagation(); jpGuardarPct1RM(save); return; }
     var cancel = e.target.closest('[data-pctcancel]');
     if(cancel){ e.stopPropagation(); jpCerrarPct1RM(); return; }
-    var restBtn = e.target.closest('.jp-cf-rest-btn');
-    if(restBtn){
+    var restMain = e.target.closest('.jp-cf-rest-main');
+    if(restMain){
       e.stopPropagation();
-      var seg = parseInt(restBtn.dataset.restSec, 10);
-      if(seg > 0 && window.CoachTV && typeof window.CoachTV.rest === 'function'){
-        window.CoachTV.rest(seg, restBtn.dataset.restLb || 'Descanso');
-        try{ if(navigator.vibrate) navigator.vibrate(20); }catch(x){}
+      var restWrap = restMain.closest('.jp-cf-rest');
+      if(restWrap){
+        if(restWrap.classList.contains('running')){
+          if(window.CoachTV && typeof window.CoachTV.toggle === 'function') window.CoachTV.toggle();
+        } else if(!restWrap.classList.contains('listo')){
+          var seg = parseInt(restWrap.dataset.restSec, 10);
+          if(seg > 0 && window.CoachTV && typeof window.CoachTV.rest === 'function'){
+            if(jpCfRestBoundWrap && jpCfRestBoundWrap !== restWrap && document.body.contains(jpCfRestBoundWrap)) jpCfRestPintarIdle(jpCfRestBoundWrap);
+            jpCfRestBoundWrap = restWrap;
+            if(typeof window.CoachTV.mirror === 'function') window.CoachTV.mirror(jpCfRestOnTick);
+            window.CoachTV.rest(seg, restWrap.dataset.restLb || 'Descanso', true);
+            try{ if(navigator.vibrate) navigator.vibrate(20); }catch(x){}
+          }
+        }
       }
+      return;
+    }
+    var restPlus = e.target.closest('.jp-cf-rest-plus');
+    if(restPlus){
+      e.stopPropagation();
+      if(window.CoachTV && typeof window.CoachTV.sumar === 'function') window.CoachTV.sumar(30);
+      try{ if(navigator.vibrate) navigator.vibrate(15); }catch(x){}
+      return;
+    }
+    var restX = e.target.closest('.jp-cf-rest-x');
+    if(restX){
+      e.stopPropagation();
+      if(window.CoachTV && typeof window.CoachTV.parar === 'function') window.CoachTV.parar();
       return;
     }
     if(!e.target.closest('.jp-pct-pop')) jpCerrarPct1RM();
@@ -10061,7 +10214,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
 
   window.CoachTV = { focus: () => { tvOn = true; pintarTV(); }, salir: () => { tvOn = false; pintarTV(); },
                      rest: arrancarRest, sumar: sumarRest, pr: chequearPR, resumen: resumenDatos,
-                     pintar: () => decorar() };
+                     pintar: () => decorar(),
+                     /* directiva ("Rest Timer Premium in-situ") -- hooks para que el
+                        widget espejado dentro del bloque de CrossFit controle y lea
+                        el MISMO motor compartido sin duplicar su lógica de conteo. */
+                     toggle: toggleRest, parar: cerrarRest, estado: estadoRest,
+                     mirror: (cb) => { onRestTick = cb; } };
   /* la vista ya se dibujó en init(): se decora una vez al cargar el módulo */
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ try{ decorar(); }catch(e){} });
   else { try{ decorar(); }catch(e){ console.warn('training view', e); } }
@@ -23742,7 +23900,7 @@ input[type="checkbox"]:active{
 .hdp-acc.open .hdp-acc-body{ padding:0 14px 15px; }
 @media(prefers-reduced-motion:reduce){ .hdp-acc-shell{ transition:none; } }
 
-.hdp-acc-body p{ font-size:12.5px; line-height:1.6; color:#C9CFD8; margin-bottom:10px; }
+.hdp-acc-body p{ font-size:12.5px; line-height:1.6; color:#C9CFD8; margin-bottom:10px; white-space:pre-line; }
 .hdp-acc-body p:last-child{ margin-bottom:0; }
 .hdp-acc-k{
   display:block; font-family:var(--font-head,'Chakra Petch','Barlow Condensed',sans-serif);
@@ -25133,6 +25291,46 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   display:inline-flex; align-items:center; gap:7px; justify-content:flex-end;
   font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; text-align:right;
 }
+/* directiva ("Rediseño Premium del Rest Timer") -- widget integrado al
+   pie del bloque, Dark Stealth: carbón + cian neón tenue en reposo,
+   la MISMA superficie se transforma en la cuenta regresiva in-situ
+   (barra de progreso vía --rp, +30s/✕) mientras corre, y en dorado al
+   terminar -- nunca una barra flotante aparte conviviendo al lado. */
+.jp-cfboard .jp-cf-row.jp-cf-rest-row{ display:block; width:100%; margin:8px 0 2px; }
+.jp-cf-rest{
+  position:relative; display:flex; align-items:center; gap:8px; overflow:hidden;
+  width:100%; min-height:44px; padding:2px; border-radius:12px;
+  background:rgba(0,229,255,.06); border:1px solid rgba(0,229,255,.3);
+}
+.jp-cf-rest-main{
+  position:relative; z-index:1; flex:1 1 auto; min-height:40px; padding:8px 14px;
+  background:transparent; border:none; border-radius:10px; cursor:pointer;
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:12.5px;
+  letter-spacing:.08em; text-transform:uppercase; color:#00e5ff; text-align:center;
+}
+.jp-cf-rest-plus,.jp-cf-rest-x{
+  position:relative; z-index:1; flex:0 0 auto; min-height:40px; min-width:40px; padding:8px 10px;
+  background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.25); border-radius:10px; cursor:pointer;
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; color:#00e5ff;
+}
+.jp-cf-rest-x{ color:#94a3b8; border-color:rgba(148,163,184,.25); background:rgba(148,163,184,.08); }
+.jp-cf-rest.running{ border-color:rgba(0,229,255,.5); box-shadow:0 0 0 1px rgba(0,229,255,.12) inset; }
+/* barra de progreso fluida: capa absoluta detrás del contenido, ancho
+   animado por --rp (0%..100%, seteado en cada tick por jpCfRestOnTick) */
+.jp-cf-rest.running::before{
+  content:''; position:absolute; inset:0; z-index:0; width:var(--rp,0%);
+  background:rgba(0,229,255,.16); transition:width 1s linear;
+}
+.jp-cf-rest.listo{
+  background:rgba(245,158,11,.1); border-color:rgba(245,158,11,.5);
+  animation:jpCfRestListoPulse 1.1s ease-in-out infinite;
+}
+@keyframes jpCfRestListoPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(245,158,11,.35); } 50%{ box-shadow:0 0 0 6px rgba(245,158,11,0); } }
+.jp-cf-rest-listo{
+  display:block; width:100%; padding:10px 14px; text-align:center;
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:12.5px;
+  letter-spacing:.08em; text-transform:uppercase; color:#f59e0b;
+}
 /* directiva (rediseño de acceso a videos, 2026-09): "Clips Técnicos del
    Bloque" -- ya no hay ningún botón de video adentro de las filas (ver
    jpCfFila más arriba); acá se agrupan, una sola vez por bloque, todos
@@ -25180,8 +25378,11 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    punteado, para que se lea como un valor YA resuelto, no como un
    control interactivo. */
 .jp-cf-refload{
-  display:inline-block; background:rgba(245,197,24,.08); border:1px solid rgba(245,197,24,.4);
-  border-radius:8px; padding:2px 8px; color:#F5C518; font-weight:700;
+  display:inline-block; background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.4);
+  border-radius:8px; padding:2px 8px; color:#00e5ff; font-weight:700;
+}
+.jp-cf-refload.jp-cf-refload-empty{
+  background:rgba(148,163,184,.08); border-color:rgba(148,163,184,.35); color:#94a3b8; font-weight:600;
 }
 /* directiva ("Motor de 1RM exacto") -- modal centrado de pantalla
    completa (mismo patrón que guideModal/painModal/calcModal): el
@@ -43468,37 +43669,75 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     }catch(e){ return false; }
   }
   const NIVELES = ['RX', 'Scaled', 'Hyrox Pro', 'Hyrox Open'];
-  /* directiva ("Módulo Athlete Tactical Profile & IA Context") -- el
-     prompt se ajusta a EXACTAMENTE 2 oraciones operativas (estímulo
-     fisiológico/pacing sugerido + cuidado biomecánico), nunca vuelca
-     notas privadas de evaluación del coach -- sólo recibe nivel, focos
-     y antecedentes (los mismos 3 datos que ya arma generar() más
-     abajo, ningún campo de evaluación interna existe en este modelo). */
-  const SISTEMA = 'Sos Coach JP, entrenador experto de CrossFit y Hyrox. Redactás el "Foco Táctico / Stimulus Briefing" que el atleta lee arriba de su sesión, antes de entrenar: EXACTAMENTE 2 oraciones operativas en español rioplatense, en segunda persona, sin emojis, sin encabezados ni listas -- la primera sobre el estímulo fisiológico esperado y el pacing sugerido, la segunda sobre el cuidado biomecánico puntual de la sesión. Nunca vuelques notas privadas de evaluación del coach ni des una descripción genérica de qué es CrossFit.';
+  /* directiva ("Refactor del Generador de IA en el Builder de CrossFit,
+     Profundidad Táctica") -- el prompt viejo pedía 2 oraciones genéricas
+     y el motor local concatenaba el texto de "focos" tal cual lo
+     escribió el coach ("Foco de esta sesión: fuerza maxima"), el bug
+     reportado. Ahora: Head Coach de élite, TRES apartados breves (vía
+     energética/plan de fuerza/estrategia de WOD), y el insumo real son
+     los EJERCICIOS Y ESQUEMAS de los bloques (ver resumenBloques(), que
+     ahora manda el texto crudo de cada línea, no sólo la categoría) --
+     nivel/focos/lesiones informan el tono pero nunca se repiten
+     literalmente, tanto en el prompt de IA como en el motor local de
+     respaldo (redaccionLocal(), más abajo). */
+  const SISTEMA = 'Sos un Head Coach de CrossFit y Hyrox de élite, con formación en fisiología del esfuerzo y programación de fuerza olímpica. A partir de los bloques REALES de la sesión (ejercicios, esquemas de series/reps, porcentajes) y el perfil del atleta, redactás el "Briefing Táctico Operativo" que el atleta lee antes de entrenar: español rioplatense, profesional, motivante y metodológicamente riguroso -- NUNCA genérico, NUNCA una copia literal de las notas del coach (nivel/focos/lesiones son insumo para razonar, no texto para repetir). Estructuralo en tres apartados breves, como párrafos cortos corridos (sin encabezados numerados ni listas, sin emojis):\n' +
+    '1) Vía energética e intención fisiológica del día: qué domina la sesión (potencia anaeróbica aláctica, umbral de lactato, base aeróbica) según los bloques reales.\n' +
+    '2) Plan de batalla en fuerza: consigna técnica concreta para el/los levantamiento(s) prescriptos -- trayectoria, descanso intra-serie, RPE o % de esfuerzo. Omití este apartado si no hay bloque de fuerza.\n' +
+    '3) Estrategia en el WOD/Metcon: pacing sugerido por ronda, si conviene ir unbroken o fraccionar reps, tiempo target o cap. Omití este apartado si no hay WOD.\n' +
+    'Nunca vuelques notas privadas de evaluación del coach tal cual.';
 
-  function limpiar(txt){ return String(txt || '').replace(/\\s+/g, ' ').trim(); }
+  /* directiva -- antes colapsaba TODO whitespace a un espacio, lo que
+     aplastaba los saltos de línea entre los tres apartados del briefing
+     en un solo párrafo corrido. Ahora sólo normaliza espacios/tabs
+     horizontales y limita corridas de líneas en blanco, preservando la
+     separación en párrafos que pide la directiva. */
+  function limpiar(txt){
+    return String(txt || '')
+      .replace(/[ \\t]+/g, ' ')
+      .replace(/\\n{3,}/g, '\n\n')
+      .trim();
+  }
 
+  /* directiva -- antes sólo mandaba título+categoría (sin ejercicios
+     reales), la causa de fondo de los textos genéricos: la IA no tenía
+     de qué agarrarse. Ahora manda el texto crudo de cada línea del
+     bloque (hasta 8 por bloque, sin las líneas 100% vacías) -- el
+     mismo dato que ya ve el coach en el textarea de la Pizarra. */
   function resumenBloques(d){
     const bs = (d.bloques || []).filter(function(b){
       const items = (b.items || []).map(function(x){ return String(x || '').trim(); }).filter(Boolean);
       return items.length > 0;
     });
     if(!bs.length) return 'sin bloques cargados todavía';
-    return bs.map(function(b){ return (b.titulo || 'Bloque') + ' [' + (b.category || 'strength') + ']'; }).join('; ');
+    return bs.map(function(b){
+      const items = (b.items || []).map(function(x){ return String(x || '').trim(); }).filter(Boolean).slice(0, 8);
+      return '· ' + (b.titulo || 'Bloque') + ' [' + (b.category || 'strength') + ']: ' + items.join(' | ');
+    }).join('\n');
   }
 
-  /* motor local (sin IA): compone el briefing a partir de las categorías
-     de bloque presentes -- mismo criterio de "nunca queda vacío" que ya
-     usa redaccionLocal() del Finisher para Bodybuilding. */
+  /* motor local (sin IA): compone el briefing en los mismos tres
+     apartados que el prompt de IA, a partir de los bloques REALES (no
+     sólo su categoría) -- nivel/focos ajustan el tono, nunca se pegan
+     literales ("Foco de esta sesión: <texto crudo>", el bug reportado,
+     desaparece por completo). Nunca queda vacío: siempre hay al menos
+     una frase, con o sin bloques cargados. */
   function redaccionLocal(d, nivel, focos){
-    const cats = (d.bloques || []).map(function(b){ return b.category; });
-    const frases = [];
-    if(cats.indexOf('strength') >= 0) frases.push('priorizá técnica y control de la barra en el bloque de fuerza antes de sumar intensidad');
-    if(cats.indexOf('metcon') >= 0 || cats.indexOf('cardio') >= 0 || cats.indexOf('endurance') >= 0) frases.push('en el metcon administrá el ritmo desde el arranque para sostenerlo hasta el final');
-    if(!frases.length) frases.push('sostené la técnica por encima de la velocidad en cada bloque de la sesión');
-    let base = 'Hoy ' + frases.join('; ') + '.';
+    const fuerza = (d.bloques || []).find(function(b){ return b.category === 'strength'; });
+    const wod = (d.bloques || []).find(function(b){ return b.category === 'metcon' || b.category === 'cardio' || b.category === 'endurance'; });
+    const partes = [];
+    if(fuerza && wod) partes.push('Hoy combinás fuerza con un componente metabólico exigente: llegá fresco al bloque de fuerza y guardá margen para sostener el ritmo en el WOD.');
+    else if(fuerza) partes.push('La sesión de hoy prioriza fuerza y control neuromuscular por sobre el acondicionamiento metabólico.');
+    else if(wod) partes.push('Hoy el estímulo es metabólico: preparate para sostener un ritmo alto desde el arranque.');
+    else partes.push('Sostené la técnica por encima de la velocidad en cada bloque de la sesión.');
+    if(fuerza) partes.push('En ' + (fuerza.titulo || 'el bloque de fuerza') + ', priorizá la trayectoria de la barra y un descanso intra-serie completo antes de sumar carga.');
+    if(wod) partes.push('En ' + (wod.titulo || 'el WOD') + ', administrá el ritmo desde la primera ronda -- salir demasiado fuerte cuesta más caro que sostener un pacing parejo.');
+    /* directiva -- "focos" ya NO se concatena literal (era exactamente el
+       bug reportado, "Foco de esta sesión: fuerza maxima"): sólo ajusta
+       el tono/énfasis de la primera frase cuando corresponde, nunca
+       aparece como texto propio pegado al final. */
+    if(focos && fuerza && /fuerza|max|pesad/i.test(focos)) partes[0] = partes[0].replace('.', ', priorizando fuerza máxima por sobre el volumen.');
+    let base = partes.join(' ');
     if(nivel) base = '[' + nivel.toUpperCase() + '] ' + base;
-    if(focos) base += ' Foco de esta sesión: ' + focos + '.';
     return base;
   }
 
@@ -43523,11 +43762,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
     if(conIA){
       try{
-        const user = 'Nivel/categoría del atleta: ' + (nivel || 'sin especificar') + '. ' +
-          'Focos diana / debilidades a trabajar: ' + (focos || 'sin especificar') + '. ' +
-          (lesiones ? 'Lesiones/antecedentes activos (integrados desde su historial médico): ' + lesiones + '. ' : '') +
-          'Bloques programados hoy: ' + resumenBloques(d) + '. ' +
-          'Redactá el briefing táctico de esta sesión.';
+        const user = 'Nivel/categoría del atleta: ' + (nivel || 'sin especificar') + '.\n' +
+          'Focos diana / debilidades a trabajar: ' + (focos || 'sin especificar') + '.\n' +
+          (lesiones ? 'Lesiones/antecedentes activos (integrados desde su historial médico): ' + lesiones + '.\n' : '') +
+          'Bloques programados hoy (ejercicios y esquemas reales):\n' + resumenBloques(d) + '\n\n' +
+          'Redactá el Briefing Táctico Operativo de esta sesión en los tres apartados indicados, usando estos datos como insumo -- nunca los repitas literalmente.';
         const txt = await window.CoachAI.generarTexto(user, SISTEMA);
         const limpio = limpiar(txt);
         if(limpio) briefing = limpio;
