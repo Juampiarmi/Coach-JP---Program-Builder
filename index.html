@@ -6143,7 +6143,7 @@ function vidIndex(){
   _vidIdx.claves.sort(function(a, b){ return b.length - a.length; });
   return _vidIdx;
 }
-function buscarVideo(name){
+function buscarVideo(name, soloDirecto){
   var idx = vidIndex();
   var directo = VIDEO_MAP[name] || VIDEO_MAP[String(name || '').trim()];
   if(directo) return directo;
@@ -6152,6 +6152,17 @@ function buscarVideo(name){
     var n = candidatos[i];
     if(n && idx.exacto[n]) return idx.exacto[n];
   }
+  /* directiva (rediseño "Clips Técnicos del Bloque" de la Pizarra
+     CrossFit): soloDirecto corta acá, antes del fallback de abajo --
+     ese fallback por coincidencia parcial era la causa real de variantes
+     mal vinculadas ("low hang power snatch" heredando el video de "hang
+     power snatch", "muscle snatch" el de "snatch"): un nombre que
+     CONTIENE a otro no es necesariamente el mismo movimiento. Los Clips
+     del bloque sólo deben mostrar un match directo/exacto (mismo criterio
+     estricto que ya usa el chip "Video vinculado" del Builder). El resto
+     de la app (Bodybuilding, warmup/cooldown, biset) sigue exactamente
+     igual, con el fallback aproximado que ya tenía. */
+  if(soloDirecto) return null;
   /* coincidencia parcial: gana la clave m\\u00e1s larga contenida en el nombre */
   for(var j = 0; j < candidatos.length; j++){
     var t = candidatos[j];
@@ -6164,8 +6175,7 @@ function buscarVideo(name){
   }
   return null;
 }
-function videoLinkHtml(name, soloMatch, opts){
-  opts = opts || {};
+function videoLinkHtml(name){
   const key = (name||'').trim();
   if(!key) return '';
   if(esEstructura(key)) return '';
@@ -6174,37 +6184,14 @@ function videoLinkHtml(name, soloMatch, opts){
      chequeo por si algún caller viejo todavía lo setea a mano. */
   if(window.__jpSinVideo) return '';
   const ytid = buscarVideo(key);
-  /* directiva crítica -- fuera de Accessory, un WOD/Skill de texto libre
-     no debe llenarse de íconos de "buscar en YouTube" para cada línea sin
-     match real (eso sí sería ruido táctico) -- soloMatch=true corta acá
-     mismo si no hay coincidencia real, en vez de caer al fallback de
-     búsqueda de más abajo. Con match real el botón se muestra igual,
-     pase lo que pase con soloMatch. */
-  if(!ytid && soloMatch) return '';
-  /* directiva (limpieza visual Pizarra CrossFit) -- deduplicación estricta:
-     si el mismo video (mismo ytid resuelto, no el mismo texto -- "Back
-     squat" y "Back squats" resuelven al mismo ytid) ya se mostró antes en
-     este bloque/tarjeta, las series subsiguientes quedan limpias, sin
-     ícono repetido saturando la pantalla. opts.vistos es un Set que vive
-     en el scope del caller (una vuelta de pizarra/bloque), nunca global. */
-  if(ytid && opts.vistos){
-    if(opts.vistos.has(ytid)) return '';
-    opts.vistos.add(ytid);
-  }
   /* trigger con thumbnail real (28/08, Fase 3 · Sección 03 pto.5): el modal
      y el iframe NO cambian, solo el disparador — antes un ícono circular
      chico, ahora una miniatura real de YouTube (mqdefault.jpg, mismo ID que
      ya usa el iframe) con el triángulo superpuesto. Si la miniatura no
      carga (privado/borrado), el fondo translúcido de abajo queda como
      estaba antes — el botón nunca se rompe visualmente. */
-  if(ytid && !opts.compact) return ' <a class="video-link jp-play has-thumb" href="javascript:void(0)" data-yt="' + ytid + '" ' +
+  if(ytid) return ' <a class="video-link jp-play has-thumb" href="javascript:void(0)" data-yt="' + ytid + '" ' +
     'style="background-image:url(https://img.youtube.com/vi/' + ytid + '/mqdefault.jpg)" ' +
-    'title="Ver la t\\u00e9cnica" aria-label="Ver la t\\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
-  /* directiva (limpieza visual Pizarra CrossFit) -- botón discreto sin
-     miniatura pesada, para WOD/Skill/Strength/Warm-up (ver jpCfFila):
-     mismo trigger/data-yt/popup, sin cargar la imagen de fondo. */
-  if(ytid && opts.compact) return ' <a class="video-link jp-play pill" href="javascript:void(0)" data-yt="' + ytid + '" ' +
     'title="Ver la t\\u00e9cnica" aria-label="Ver la t\\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
   /* FIX (auditoría Karina Dantur): sin match en la biblioteca -- el ID
@@ -7631,14 +7618,31 @@ function esBloqueVacioCF(block){
    compilados que ya usa pizarra(), sin duplicar lógica de parseo). */
 function datosStoryCF(weekIdx, day){
   const blocks = (day.blocks || []).filter(b => !esBloqueVacioCF(b));
-  const wod = blocks.find(b => b.category === 'metcon') || blocks.find(b => b.category === 'cardio');
+  const warmup = blocks.find(b => b.category === 'warmup');
   const skill = blocks.find(b => b.category === 'strength');
-  let kgClave = '';
-  if(skill && skill.items){
-    for(const l of skill.items){
-      const m = String(l).match(/@\\s*([\\d.,\/]+)\\s*kg/i) || String(l).match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
-      if(m){ kgClave = m[1] + ' KG'; break; }
+  const wod = blocks.find(b => b.category === 'metcon') || blocks.find(b => b.category === 'cardio' || b.category === 'endurance');
+  /* directiva (fix integral Story Card 9:16): antes la tarjeta sólo
+     mostraba kilos clave + estructura + score -- si el bloque de fuerza
+     no traía un "@ Xkg" literal (ej. técnica/skill sin carga puntual) o
+     el WOD todavía no tenía score cargado, el cuerpo de la tarjeta
+     quedaba con una sola card y el resto del lienzo vacío (el "lienzo
+     casi vacío" reportado). Ahora Warm-up/Skill/WOD siempre aportan al
+     menos un texto de resumen (con fallback al título del bloque), así
+     el cuerpo nunca depende de un solo regex para tener contenido. */
+  let warmupTxt = '';
+  if(warmup){
+    const hecho = isBlockDone(weekIdx, day.id, warmup.id);
+    warmupTxt = (hecho ? '✓ ' : '') + (warmup.title || 'Warm-Up');
+  }
+  let kgClave = '', skillTxt = '';
+  if(skill){
+    if(skill.items){
+      for(const l of skill.items){
+        const m = String(l).match(/@\\s*([\\d.,\/]+)\\s*kg/i) || String(l).match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
+        if(m){ kgClave = m[1] + ' KG'; break; }
+      }
     }
+    skillTxt = skill.title || '';
   }
   let estructura = '';
   if(wod && wod.items){
@@ -7650,6 +7654,7 @@ function datosStoryCF(weekIdx, day){
       .map(l => l.split(' — ')[0].split('@')[0].trim());
     estructura = [esquema, movs.join(' / ')].filter(Boolean).join(' ').toUpperCase();
   }
+  if(!estructura && wod) estructura = (wod.title || '').toUpperCase();
   let score = '';
   if(wod){
     const skey = weekIdx + '|' + day.id + '|' + wod.id;
@@ -7659,6 +7664,8 @@ function datosStoryCF(weekIdx, day){
     modo: 'crossfit',
     atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
     tituloWod: (wod && wod.title) || day.title || day.short || 'WOD',
+    warmupTxt: warmupTxt,
+    skillTxt: skillTxt,
     kgClave: kgClave,
     estructura: estructura,
     score: score
@@ -9054,7 +9061,24 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(m2 && m2[1].trim()) return { nm: m2[1].trim(), val: m2[2].trim() };
     return { nm: l, val: '' };
   }
-  function jpCfFila(raw, esAccessory, vistos){
+  /* directiva crítica (rediseño de acceso a videos, 2026-09) -- la
+     Pizarra Táctica ya NO muestra ningún botón de video adentro de la
+     fila: el texto de cada movimiento fluye limpio de punta a punta con
+     su carga/distancia a la derecha, sin nada empujándolo ni rompiendo
+     el flujo de lectura. El acceso a los videos se mudó por completo al
+     módulo "Clips Técnicos del Bloque" (jpCfClips/jpCfClipsHtml, más
+     abajo), que se arma una sola vez por bloque -- no por línea -- y
+     sólo con coincidencias directas/exactas (nunca por aproximación,
+     ver buscarVideo(nombre, true)). */
+  function jpCfEsMovimiento(l){
+    if(jpCfEsHeader(l)) return false;
+    if(jpCfEsEsquema(l)) return false;
+    if(/^\\s*\\d+\\.\\s/.test(l) && l.indexOf(' — ') < 0 && !jpCfTieneCarga(l)) return false;
+    if(esLineaDirectiva(l) && !jpCfTieneCarga(l)) return false;
+    if(/\\b(amrap|emom|rest|descanso)\\b/i.test(l) && !jpCfTieneCarga(l) && l.indexOf(' — ') < 0) return false;
+    return true;
+  }
+  function jpCfFila(raw){
     const l = String(raw || '').trim();
     if(jpCfEsHeader(l)){
       const txt = l.replace(/^\\s*#+\\s*/, '');
@@ -9076,34 +9100,39 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     const partes = jpCfSplit(l);
-    /* directiva crítica -- el video ya no se limita a Accessory/Cooldown:
-       se intenta SIEMPRE, en cualquier fase (WOD, Skill/Strength,
-       Warm-up), porque compile() ahora auto-matchea ahí también (ver
-       buildProgramConfig). Fuera de Accessory se pide soloMatch=true --
-       nunca el ícono de "buscar en YouTube" para una línea sin match
-       real, eso sí ensuciaría una pizarra táctica; con match real el
-       botón se muestra en cualquier fase, igual que el chip verde que ya
-       ve el coach en el Builder.
-       Directiva (limpieza visual Pizarra CrossFit): Accessory conserva el
-       thumbnail grande pegado al nombre (comportamiento ya validado, sin
-       cambios). Fuera de Accessory el botón pasa a ser compacto (pill,
-       sin miniatura pesada) y se muda al lado derecho, junto a la carga
-       -- y en cualquier fase, vistos (Set) deduplica por ytid real: si el
-       mismo video ya se mostró en una serie anterior de este mismo
-       bloque, las siguientes quedan limpias (sin ícono repetido). */
-    if(esAccessory){
-      const video = videoLinkHtml(partes.nm, false, { vistos: vistos });
-      return '<div class="jp-cf-row">' +
-          '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + video + '</span>' +
-          (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
-        '</div>';
-    }
-    const video = videoLinkHtml(partes.nm, true, { compact: true, vistos: vistos });
-    const rv = (video || '') + (partes.val ? jpMdBold(partes.val) : '');
     return '<div class="jp-cf-row">' +
         '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
-        (rv ? '<span class="jp-cf-rv">' + rv + '</span>' : '') +
+        (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
       '</div>';
+  }
+  /* recolector de clips únicos del bloque completo -- una sola pasada
+     sobre TODAS las líneas (cualquier fase), matcheando sólo contra
+     video real y directo (soloDirecto=true en buscarVideo): un nombre
+     que sólo CONTIENE a otro ("low hang power snatch" vs "hang power
+     snatch") ya no cuenta como el mismo movimiento acá. */
+  function jpCfClips(lineas){
+    const vistos = new Set();
+    const out = [];
+    lineas.forEach(function(raw){
+      const l = String(raw || '').trim();
+      if(!jpCfEsMovimiento(l)) return;
+      const nm = jpCfSplit(l).nm;
+      if(!nm || esEstructura(nm)) return;
+      const ytid = buscarVideo(nm, true);
+      if(!ytid || vistos.has(ytid)) return;
+      vistos.add(ytid);
+      out.push({ nombre: nm, ytid: ytid });
+    });
+    return out;
+  }
+  function jpCfClipsHtml(clips){
+    if(!clips.length) return '';
+    return '<div class="jp-cf-clips"><div class="jp-cf-clips-lb">&#127909; Clips T\\u00e9cnicos del Bloque</div><div class="jp-cf-clips-row">' +
+      clips.map(function(c){
+        return '<button type="button" class="jp-cf-clip" data-yt="' + c.ytid + '" aria-label="Ver la t\\u00e9cnica de ' + String(c.nombre).replace(/"/g,'') + '">' +
+          '<span class="jp-cf-clip-ic">&#9654;</span><span class="jp-cf-clip-nm">' + c.nombre + '</span></button>';
+      }).join('') +
+    '</div></div>';
   }
   function pizarra(blockEl, block, weekIdx, dayId){
     /* lee las líneas directo del dato compilado (block.items), no del DOM
@@ -9149,13 +9178,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const notaKey = skey + '|__accnotas';
     const notaGuardada = (state.notes && state.notes[notaKey]) || '';
 
-    const esAccessory = block.category === 'accessory';
-    /* dedup por ytid a nivel de bloque completo -- vive acá (no dentro de
-       jpCfFila) porque una sola pizarra puede repetir el mismo movimiento
-       varias veces (Every 2:30 x 6 Sets, EMOM de N vueltas, etc.) y el
-       acceso al video sólo debe verse una vez por bloque. */
-    const vistos = new Set();
-    const filas = lineas.map(function(l){ return jpCfFila(l, esAccessory, vistos); }).join('');
+    const filas = lineas.map(function(l){ return jpCfFila(l); }).join('');
+    const clips = jpCfClips(lineas);
 
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const html =
@@ -9166,6 +9190,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         ((block.subtitle && !(block.weekName && block.weekName[weekIdx] && block.weekName[weekIdx] !== block.title))
           ? '<div class="jp-cf-row jp-cf-note">' + block.subtitle + '</div>' : '') +
         '<div class="jp-cf-rows">' + filas + '</div>' +
+        jpCfClipsHtml(clips) +
         (tieneCierre ?
           '<details class="jp-cf-acc"><summary>&#9662; Objetivo del est&iacute;mulo &amp; Coaching Tips</summary>' +
             (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">Objetivo</span><p>' + c.objetivo + '</p></div>' : '') +
@@ -10552,38 +10577,75 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     var yTras = 338 + tituloLineas.lineas.length * (tituloLineas.tam + 10) + 30;
 
     g.fillStyle = '#E06D2D'; g.fillRect(W / 2 - 75, yTras, 150, 6);
-    var y = yTras + 60;
+    var y = yTras + 50;
+
+    /* directiva (fix integral Story Card 9:16) -- distribución vertical
+       armónica, sin desbordes:
+       1) el pie ("Atleta · Day Completed" + píldora de marca) reserva su
+          propio espacio fijo abajo, SIEMPRE -- el cuerpo nunca dibuja
+          sobre esa franja, así nunca queda "colapsado" por falta de
+          lugar.
+       2) cada card de texto (Warm-up/Skill sin kg/Estructura del WOD) se
+          mide ANTES de dibujarse (mismo wrap seguro de envolverTexto que
+          ya usa el título) y su alto de caja sale de esa medición real,
+          nunca de un número fijo -- un texto largo nunca desborda el
+          contenedor, uno corto no deja una caja vacía de más.
+       3) Warm-up y Skill/Strength (con o sin carga puntual detectada)
+          siempre aportan una card si el bloque existe -- antes el
+          cuerpo dependía 100% de que el regex de "@ Xkg" encontrara algo
+          y de que el WOD ya tuviera score cargado; si ninguno de los dos
+          pegaba, el lienzo quedaba casi vacío (bug reportado). */
+    var footerReserve = 220;
+    var footerTop = H - footerReserve;
+    var env = window.CoachEnvolverTexto || function(gg, t){ return [t]; };
+
+    function cardTexto(label, texto, color, fontSize, maxLineas){
+      var tam = fontSize, lineas, lineH, alto, presupuesto = Math.max(140, footerTop - y);
+      do {
+        g.font = '800 ' + tam + 'px "Plus Jakarta Sans", sans-serif';
+        lineas = env(g, texto, W - 268, maxLineas);
+        lineH = Math.round(tam * 1.22);
+        alto = 78 + lineas.length * lineH;
+        if(alto <= presupuesto || tam <= 26) break;
+        tam -= 4;
+      } while(true);
+      g.textAlign = 'left';
+      g.fillStyle = 'rgba(255,255,255,.045)'; redondear(g, 90, y, W - 180, alto, 26); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, alto, 26); g.stroke();
+      g.fillStyle = color; g.fillRect(90, y + 26, 6, alto - 52);
+      g.fillStyle = '#A0A8B4'; g.font = '700 26px "JetBrains Mono", monospace';
+      g.fillText(label, 134, y + 46);
+      g.fillStyle = '#FFFFFF'; g.font = '800 ' + tam + 'px "Plus Jakarta Sans", sans-serif';
+      lineas.forEach(function(ln, i){ g.fillText(ln, 134, y + 46 + Math.round(lineH * .84) + i * lineH); });
+      y += alto + 22;
+    }
+
+    if(d.warmupTxt) cardTexto('WARM-UP', d.warmupTxt.toUpperCase(), '#48D597', 38, 1);
 
     if(d.kgClave){
+      var altoKg = 168;
       g.textAlign = 'left';
-      g.fillStyle = 'rgba(255,255,255,.045)'; redondear(g, 90, y, W - 180, 168, 26); g.fill();
-      g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, 168, 26); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.045)'; redondear(g, 90, y, W - 180, altoKg, 26); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, altoKg, 26); g.stroke();
       g.fillStyle = '#E06D2D'; g.fillRect(90, y + 30, 6, 108);
       g.fillStyle = '#A0A8B4'; g.font = '700 26px "JetBrains Mono", monospace';
       g.fillText('KILOS CLAVE', 134, y + 50);
       g.fillStyle = '#E06D2D'; g.font = '800 84px "Plus Jakarta Sans", sans-serif';
       g.fillText(d.kgClave, 134, y + 132);
-      y += 190;
+      y += altoKg + 22;
+    } else if(d.skillTxt){
+      /* fallback (directiva): sin "@ Xkg" literal en el bloque de
+         Fuerza/Skill (técnica, EMOM de skill, etc.) la card nunca
+         desaparece -- muestra el título del bloque en su lugar. */
+      cardTexto('FUERZA / SKILL', d.skillTxt.toUpperCase(), '#E06D2D', 40, 2);
     }
 
-    if(d.estructura){
-      g.textAlign = 'left';
-      g.fillStyle = 'rgba(255,255,255,.045)'; redondear(g, 90, y, W - 180, 168, 26); g.fill();
-      g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, 168, 26); g.stroke();
-      g.fillStyle = '#38BDF8'; g.fillRect(90, y + 30, 6, 108);
-      g.fillStyle = '#A0A8B4'; g.font = '700 26px "JetBrains Mono", monospace';
-      g.fillText('ESTRUCTURA DEL WOD', 134, y + 50);
-      var env2 = window.CoachEnvolverTexto || function(gg, t){ return [t]; };
-      g.font = '800 46px "Plus Jakarta Sans", sans-serif';
-      var el = env2(g, d.estructura, W - 268, 2);
-      g.fillStyle = '#FFFFFF';
-      el.forEach(function(ln, i){ g.fillText(ln, 134, y + 100 + i * 52); });
-      y += 190;
-    }
+    if(d.estructura) cardTexto('ESTRUCTURA DEL WOD', d.estructura, '#38BDF8', 46, 2);
 
     if(d.score){
-      g.fillStyle = 'rgba(56,189,248,.08)'; redondear(g, 90, y, W - 180, 210, 26); g.fill();
-      g.strokeStyle = 'rgba(56,189,248,.45)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, 210, 26); g.stroke();
+      var altoScore = 210;
+      g.fillStyle = 'rgba(56,189,248,.08)'; redondear(g, 90, y, W - 180, altoScore, 26); g.fill();
+      g.strokeStyle = 'rgba(56,189,248,.45)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, altoScore, 26); g.stroke();
       g.textAlign = 'center';
       g.fillStyle = '#7CC5E8'; g.font = '700 28px "JetBrains Mono", monospace';
       g.fillText('[ SCORE FINAL ]', W / 2, y + 56);
@@ -10595,7 +10657,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       }
       g.fillStyle = '#38BDF8';
       g.fillText(scoreTxt, W / 2, y + 160);
-      y += 240;
+      y += altoScore + 22;
     }
 
     g.textAlign = 'center';
@@ -24424,19 +24486,32 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   display:inline-flex; align-items:center; gap:7px; justify-content:flex-end;
   font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; text-align:right;
 }
-/* directiva (limpieza visual Pizarra CrossFit): botón de video compacto para
-   WOD/Skill/Strength/Warm-up -- reemplaza el thumbnail cuadrado grande
-   (.has-thumb, reservado a Accessory) por un ícono de Play discreto,
-   alineado a la derecha junto a la carga en vez de pegado al nombre. Mismo
-   trigger/data-yt/popup de siempre, sólo cambia el aspecto visual. */
-.jp-cfboard .jp-cf-rv .video-link.jp-play.pill{
-  margin-left:0; border-color:rgba(72,213,151,.4); background:rgba(72,213,151,.08);
+/* directiva (rediseño de acceso a videos, 2026-09): "Clips Técnicos del
+   Bloque" -- ya no hay ningún botón de video adentro de las filas (ver
+   jpCfFila más arriba); acá se agrupan, una sola vez por bloque, todos
+   los movimientos con video real/directo detectados en cualquier fase
+   de la Pizarra. Va justo encima del acordeón "Objetivo del estímulo". */
+.jp-cf-clips{
+  margin-top:12px; padding-top:12px; border-top:1px dashed rgba(255,255,255,.12);
 }
-.jp-cfboard .jp-cf-rv .video-link.jp-play.pill svg{ fill:#48D597; }
-.jp-cfboard .jp-cf-rv .video-link.jp-play.pill:hover,
-.jp-cfboard .jp-cf-rv .video-link.jp-play.pill:focus-visible{
+.jp-cf-clips-lb{
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:.08em;
+  text-transform:uppercase; color:#38BDF8; margin-bottom:9px;
+}
+.jp-cf-clips-row{ display:flex; flex-wrap:wrap; gap:8px; }
+.jp-cf-clip{
+  display:inline-flex; align-items:center; gap:7px; padding:7px 12px 7px 8px; border-radius:20px;
+  background:rgba(72,213,151,.08); border:1px solid rgba(72,213,151,.35); cursor:pointer;
+  font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:12.5px; color:#EDEFF2;
+  min-height:36px;
+}
+.jp-cf-clip-ic{
+  display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
+  border-radius:50%; background:#48D597; color:#0A0F13; font-size:9px; flex:0 0 auto;
+}
+.jp-cf-clip:hover,.jp-cf-clip:focus-visible{
   background:rgba(210,121,63,.14); border-color:rgba(210,121,63,.5);
-  box-shadow:0 0 10px rgba(210,121,63,.35);
+  box-shadow:0 0 10px rgba(210,121,63,.3);
 }
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
 .jp-cfboard .jp-cf-num{ color:#38BDF8; font-weight:800; }
@@ -24652,9 +24727,33 @@ function candidatosTexto(txt){
       .replace(/\s{2,}/g, ' ').trim())
     .filter(s => s.length > 2 && /[a-záéíóúñ]/i.test(s));
 }
-function resolveExacto(txt){
+/* misma normalización EXACTA que usa el módulo de chips del Builder
+   (MÓDULO 43, nrm()) para calcular la clave de b.videoOverrides -- tiene
+   que coincidir letra por letra con la que guarda vc-reasign, si no la
+   reasignación del coach nunca encontraría su propia clave acá. Distinta
+   a norm() (usada más abajo para el match contra la biblioteca): esa no
+   colapsa espacios ni puntuación, y ambas normalizaciones NO son
+   intercambiables para nombres con espacios dobles o puntuación suelta. */
+function nrmOverrideKey(s){
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[.,;:!¡?¿"'`]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+/* overrides (directiva "rediseño de acceso a videos", 2026-09): mapa
+   nombre-normalizado -> exId cargado a mano por el coach en el Builder
+   (ver vc-reasign/b.videoOverrides) cuando la detección automática o la
+   aproximación de buscarVideo() en TEMPLATE_HTML eligieron la variante
+   incorrecta. Gana SIEMPRE sobre el match automático; sin overrides
+   (parámetro ausente/vacío) el comportamiento es idéntico al de siempre. */
+function resolveExacto(txt, overrides){
   const cands = candidatosTexto(txt);
   for(let i = 0; i < cands.length; i++){
+    if(overrides){
+      const ok = nrmOverrideKey(cands[i]);
+      if(overrides[ok]){
+        const exOv = getEx(overrides[ok]);
+        if(exOv) return { name: cands[i], ex: exOv };
+      }
+    }
     const c = norm(cands[i]);
     const ex = S.exercises.find(e => norm(exDisplayName(e)) === c || norm(e.es) === c ||
                                      (e.en && norm(e.en) === c));
@@ -24801,7 +24900,7 @@ function buildProgramConfig(ath){
         } else if(b.tipo === 'hyrox'){
           itemsPlanos = (b.movements||[]).slice();
           itemsPlanos.forEach(m => {
-            const r = resolveExacto(m);
+            const r = resolveExacto(m, b.videoOverrides);
             if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
           });
         }
@@ -24857,7 +24956,7 @@ function buildProgramConfig(ath){
       }
       else if(b.tipo === 'hyrox'){
         (b.movements||[]).forEach(m => {
-          const r = resolveExacto(m);
+          const r = resolveExacto(m, b.videoOverrides);
           if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
         });
         Object.assign(out, { isHyrox: true, movements: (b.movements||[]).slice() });
@@ -24880,7 +24979,7 @@ function buildProgramConfig(ath){
            abajo, sin cambios en ese comportamiento. */
         const accesorioConVideo = bloqueCF && b.category === 'accessory';
         (b.items||[]).forEach(it => {
-          const r = resolveExacto(it);
+          const r = resolveExacto(it, b.videoOverrides);
           if(r.ex){
             addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex);
             if(bloqueCF && r.ex.videoId) vaultAuto.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, videoId: r.ex.videoId });
@@ -24933,7 +25032,7 @@ function buildProgramConfig(ath){
             /* mismo auto-match ampliado que arriba, replicado acá para las
                semanas bifurcadas (ver comentario en el bloque de S1). */
             arr.forEach(it => {
-              const r = resolveExacto(it);
+              const r = resolveExacto(it, b.videoOverrides);
               if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
             });
             let procesado = accesorioConVideo ? arr.slice() : arr.map(it => partirVideoManual(it).texto);
@@ -42670,6 +42769,23 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .vc-inline-btn.ok:hover{background:rgba(0,230,118,.22)}
 .vc-inline-btn.cancel:hover{background:rgba(239,90,74,.18);border-color:rgba(239,90,74,.5);color:#FF8A78}
 .vc-inline-btn.full:hover{background:rgba(239,180,74,.18)}
+/* reasignación manual (directiva "rediseño de acceso a videos"): agrupa
+   el chip principal (ok/no) con su botón 🔀 de reasignar, y el chip que
+   ya tiene una reasignación cargada se distingue con un borde propio. */
+.vc-group{display:inline-flex;align-items:center;gap:3px}
+.vid-chips .vc.ok.override{border-color:rgba(124,197,232,.55);box-shadow:0 0 0 1px rgba(124,197,232,.25) inset}
+.vc-reasign{
+  display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+  border-radius:50%;border:1px solid var(--line-2);background:transparent;
+  color:var(--muted);font-size:11px;cursor:pointer;flex:0 0 auto;
+}
+.vc-reasign:hover{border-color:#7CC5E8;color:#7CC5E8;background:rgba(124,197,232,.1)}
+.vc-inline-select{
+  max-width:46vw;font-size:11.5px;font-family:var(--ff);
+  background:rgba(9,10,15,.6);border:1px solid rgba(124,197,232,.4);border-radius:12px;
+  color:var(--text);padding:4px 9px;
+}
+.vc-inline-select:focus{border-color:#7CC5E8;outline:none}
 </style>
 
 <script>
@@ -42748,10 +42864,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       return s;
     }).filter(s => s.length > 2 && /[a-záéíóúñ]/i.test(s));
   }
-  /* coincidencia 100% exacta: nunca se asigna un video por aproximación */
-  function exacto(nombre, idx){
+  /* coincidencia 100% exacta: nunca se asigna un video por aproximación.
+     overrides (directiva "rediseño de acceso a videos", 2026-09):
+     b.videoOverrides -- mapa nombre-normalizado -> exId, cargado a mano
+     por el coach cuando la detección automática eligió la variante
+     incorrecta ("low hang power snatch" ≠ "hang power snatch"). Gana
+     SIEMPRE sobre el match automático. */
+  function exacto(nombre, idx, overrides){
     const k = nrm(nombre);
     if(!k) return null;
+    if(overrides && overrides[k]){
+      const exOv = getEx(overrides[k]);
+      if(exOv) return exOv;
+    }
     const e = idx[k];
     return (e && e.videoId) ? e : (e || null);
   }
@@ -42772,19 +42897,28 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         const k = nrm(n);
         if(!k || vistos[k]) return;
         vistos[k] = 1;
-        const ex = exacto(n, idx);
-        lista.push({ nombre: n, ex: ex && ex.videoId ? ex : null, ficha: ex || null });
+        const ex = exacto(n, idx, b.videoOverrides);
+        const esOverride = !!(b.videoOverrides && b.videoOverrides[k]);
+        lista.push({ nombre: n, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: esOverride });
       });
     });
     let caja = bl.querySelector('.vid-chips');
     if(!lista.length){ if(caja) caja.remove(); return; }
     const html = '<span class="vc-h">🎬 Videos reconocidos en la biblioteca</span>' +
-      lista.map(x => x.ex
-        ? '<button type="button" class="vc ok" data-vcok="' + esc(x.ex.id) + '" title="Ver el video vinculado">' +
-            '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.nombre) + '</b> (Video vinculado)</button>'
-        : '<button type="button" class="vc no" data-vcno="' + esc(x.nombre) + '"' +
-            (x.ficha ? ' data-vcex="' + esc(x.ficha.id) + '"' : '') +
-            ' title="Vincular un video sin salir del Builder">⚠️ ' + esc(x.nombre) + ' — + Vincular</button>').join('');
+      lista.map(x => {
+        const principal = x.ex
+          ? '<button type="button" class="vc ok' + (x.override ? ' override' : '') + '" data-vcok="' + esc(x.ex.id) + '" title="Ver el video vinculado">' +
+              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.nombre) + '</b> (Video vinculado' + (x.override ? ', manual' : '') + ')</button>'
+          : '<button type="button" class="vc no" data-vcno="' + esc(x.nombre) + '"' +
+              (x.ficha ? ' data-vcex="' + esc(x.ficha.id) + '"' : '') +
+              ' title="Vincular un video sin salir del Builder">⚠️ ' + esc(x.nombre) + ' — + Vincular</button>';
+        /* directiva (rediseño de acceso a videos): reasignación manual --
+           si la detección automática (o la aproximación de buscarVideo en
+           TEMPLATE_HTML) eligió la variante incorrecta, el coach reasigna
+           a mano acá mismo, sin salir del Builder. */
+        const reasignar = '<button type="button" class="vc-reasign" data-vcswap="' + esc(x.key) + '" data-vcswapname="' + esc(x.nombre) + '" title="Reasignar a otro ejercicio de la biblioteca">🔀</button>';
+        return '<span class="vc-group">' + principal + reasignar + '</span>';
+      }).join('');
     if(caja){ if(caja.innerHTML !== html) caja.innerHTML = html; return; }
     caja = document.createElement('div');
     caja.className = 'vid-chips';
@@ -42845,11 +42979,54 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     refrescarChipsDe(span);
   }
 
+  /* reasignación manual (directiva "rediseño de acceso a videos"): mismo
+     patrón in-line que abrirMicroVincular/guardarMicroVincular, pero con
+     un <select> de toda la biblioteca en vez de un input de URL --
+     corrige de un toque una variante mal detectada (auto o aproximada). */
+  function abrirReasignar(btn){
+    const key = btn.dataset.vcswap || '';
+    const nombre = btn.dataset.vcswapname || '';
+    const grupo = btn.closest('.vc-group');
+    if(!grupo) return;
+    const conVideo = (S.exercises || []).filter(e => e.videoId)
+      .slice().sort((a, b) => (a.es || '').localeCompare(b.es || ''));
+    const opts = '<option value="">— Elegir ejercicio de la biblioteca —</option>' +
+      conVideo.map(e => '<option value="' + esc(e.id) + '">' + esc(e.es) + '</option>').join('');
+    const span = document.createElement('span');
+    span.className = 'vc-inline vc-reasign-inline';
+    span.innerHTML =
+      '<span class="vc-inline-name">🔀 ' + esc(nombre) + '</span>' +
+      '<select class="vc-inline-select">' + opts + '</select>' +
+      '<button type="button" class="vc-inline-btn ok" data-vcswapsave="1" data-vcswapkey="' + esc(key) + '" title="Guardar">✔</button>' +
+      '<button type="button" class="vc-inline-btn cancel" data-vcancel="1" title="Cancelar">✕</button>';
+    grupo.replaceWith(span);
+  }
+  function guardarReasignar(btn){
+    const span = btn.closest('.vc-reasign-inline');
+    const sel = span && span.querySelector('.vc-inline-select');
+    const exId = sel ? sel.value : '';
+    const key = btn.dataset.vcswapkey || '';
+    const bl = span && span.closest('.block');
+    const ref = bl && bl.querySelector('[data-b]');
+    const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+    if(!b || !key) return;
+    b.videoOverrides = b.videoOverrides || {};
+    if(exId) b.videoOverrides[key] = exId;
+    else delete b.videoOverrides[key];
+    save();
+    toast(exId ? 'Video reasignado ✔' : 'Reasignación quitada');
+    refrescarChipsDe(span);
+  }
+
   document.addEventListener('click', e => {
     const ok = e.target.closest('[data-vcok]');
     if(ok){ if(typeof openVideo === 'function') openVideo(ok.dataset.vcok); return; }
     const no = e.target.closest('[data-vcno]');
     if(no){ abrirMicroVincular(no); return; }
+    const swap = e.target.closest('[data-vcswap]');
+    if(swap){ abrirReasignar(swap); return; }
+    const swapSave = e.target.closest('[data-vcswapsave]');
+    if(swapSave){ guardarReasignar(swapSave); return; }
     const cancel = e.target.closest('[data-vcancel]');
     if(cancel){ refrescarChipsDe(cancel); return; }
     const guardar = e.target.closest('[data-vcsave]');
