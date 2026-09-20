@@ -4729,16 +4729,29 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
      padding-top de la regla base ya separa del selector de días de
      arriba, sin margin-top extra que sume aire de más. */
   .day-view > .day-header { margin-top: 0; }
-  /* banner de Foco Táctico / Stimulus Briefing (directiva, CrossFit) --
-     vive fuera de .day-header a propósito (ver renderMain()) para
-     sobrevivir a body.cf-disc .day-header{display:none}. */
+  /* directiva ("Limpieza de Header y Eliminación de Pared de Texto") --
+     el banner de Foco Táctico ocupaba hasta el 70% del scroll inicial
+     con el texto siempre expandido; pasa a <details> colapsado por
+     defecto (mismo patrón ya probado en .readiness-card/.nutri-card),
+     mostrando sólo un micro-badge de una línea hasta que el alumno lo
+     toca. El texto completo (Briefing Metodológico de la Semana) vive
+     también en la Ficha Técnica -- ver montarEstrategiaSemana() más
+     abajo en el archivo. Vive fuera de .day-header a propósito (ver
+     renderMain()) para sobrevivir a body.cf-disc .day-header{display:none}. */
   .tactical-briefing{
-    display:flex;align-items:flex-start;gap:12px;margin:0 0 var(--sp-6);padding:14px 16px;
-    border-radius:14px;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.3);
+    margin:0 0 var(--sp-6); border-radius:14px; background:rgba(56,189,248,.08);
+    border:1px solid rgba(56,189,248,.3); overflow:hidden;
   }
-  .tactical-briefing .tb-ic{font-size:22px;line-height:1;flex:0 0 auto}
-  .tactical-briefing .tb-label{font-family:var(--font-head,'Chakra Petch',sans-serif);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#38BDF8;margin-bottom:3px}
-  .tactical-briefing .tb-text{font-size:14px;line-height:1.5;color:var(--text-primary)}
+  .tactical-briefing .tb-summary{
+    display:flex; align-items:center; gap:9px; padding:11px 16px; cursor:pointer; user-select:none;
+    list-style:none;
+  }
+  .tactical-briefing .tb-summary::-webkit-details-marker{ display:none; }
+  .tactical-briefing .tb-ic{font-size:16px;line-height:1;flex:0 0 auto}
+  .tactical-briefing .tb-label{font-family:var(--font-head,'Chakra Petch',sans-serif);font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#38BDF8;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tactical-briefing .tb-chev{color:#38BDF8;font-size:11px;transition:transform .2s ease;flex:0 0 auto}
+  .tactical-briefing[open] .tb-chev{transform:rotate(180deg)}
+  .tactical-briefing .tb-body{font-size:14px;line-height:1.5;color:var(--text-primary);padding:0 16px 14px 41px}
   .day-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.3rem; }
   /* la tipografía técnica oficial del sistema (--font-head, Chakra
      Petch) en vez de Barlow Condensed -- se veía "genérica/pesada",
@@ -5622,10 +5635,10 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
       <div class="hdp-acc-shell"><div class="hdp-acc-body" id="hdpObjetivosBody"></div></div>
     </div>
 
-    <!-- C · Acordeón: Metodología del Mesociclo -->
+    <!-- C · Acordeón: Metodología del Mesociclo / Estrategia CrossFit -->
     <div class="hdp-acc" id="hdpAccMetodo">
       <button type="button" class="hdp-acc-summary" data-acc="metodo">
-        <span class="ic">📊</span><span class="tt">Metodología del Mesociclo</span><span class="chev">›</span>
+        <span class="ic">📊</span><span class="tt" id="hdpMetodoTt">Metodología del Mesociclo</span><span class="chev">›</span>
       </button>
       <div class="hdp-acc-shell"><div class="hdp-acc-body" id="hdpMetodoBody"></div></div>
     </div>
@@ -6198,6 +6211,29 @@ function buscarVideo(name, soloDirecto){
       if(c.length < 4) break;
       if(t === c || t.indexOf(c) >= 0 || (c.indexOf(t) >= 0 && t.length >= 5)) return idx.exacto[c];
     }
+  }
+  return null;
+}
+/* directiva ("Fallback inteligente" de Videos Técnicos) -- si una
+   variante puntual como "Low hang power snatch" no tiene video propio
+   en la biblioteca, en vez de omitirla se prueba el movimiento
+   benchmark de base sacando UNA palabra calificadora a la vez desde el
+   principio de la frase ("hang power snatch" -> "power snatch" ->
+   "snatch"), probando un match EXACTO (buscarVideo con soloDirecto) en
+   cada paso -- nunca una coincidencia parcial/por contención (ese
+   fallback fue el que causó variantes mal vinculadas en una directiva
+   anterior, ver comentario de soloDirecto en buscarVideo() más arriba).
+   Sacar sólo la PRIMERA palabra a la vez reproduce exactamente la
+   jerarquía Low Hang Power Snatch -> Hang Power Snatch -> Power Snatch
+   -> Snatch que pide la directiva, deteniéndose en el primer nivel que
+   sí tenga video cargado. */
+function jpVideoFallbackBenchmark(nombre){
+  var palabras = String(nombre || '').trim().split(/\\s+/);
+  for(var corte = 1; corte < palabras.length; corte++){
+    var candidato = palabras.slice(corte).join(' ');
+    if(candidato.length < 3) break;
+    var ytid = buscarVideo(candidato, true);
+    if(ytid) return ytid;
   }
   return null;
 }
@@ -7718,8 +7754,9 @@ function datosStoryCF(weekIdx, day){
        una palabra de formato reconocible (EMOM/AMRAP/TABATA/FOR TIME/
        EVERY X:XX x N SETS), esa línea va primero -- es lo que el atleta
        reconoce de un vistazo, antes que el esquema de reps. */
-    const formatoTxt = wod.items.map(x => String(x).trim())
-      .find(l => /^(emom|e2mom|e3mom|amrap|tabata|for\\s*time|ft|every\\s*\\d)/i.test(l));
+    const formatoTxt = (wod.items.map(x => String(x).trim())
+      .find(l => /^(emom|e2mom|e3mom|amrap|tabata|for\\s*time|ft|every\\s*\\d)/i.test(l)) || '')
+      .replace(/:\\s*$/, '') || undefined;
     const esquema = wod.items.map(x => String(x).trim()).find(l => /^\\d+(-\\d+){1,}$/.test(l));
     const movs = wod.items
       .map(x => String(x).trim())
@@ -7836,8 +7873,9 @@ function renderMain(){
      PROPIO, fuera de ese contenedor, para no depender de una regla CSS
      pensada para otra cosa. Sólo aparece si el coach cargó texto. */
   if(window.COACH_DISCIPLINA === 'crossfit' && day.briefing){
-    html += '<div class="tactical-briefing"><span class="tb-ic">🎯</span>' +
-      '<div><div class="tb-label">FOCO TÁCTICO</div><div class="tb-text">' + day.briefing + '</div></div></div>';
+    html += '<details class="tactical-briefing"><summary class="tb-summary">' +
+      '<span class="tb-ic">⚡</span><span class="tb-label">Briefing del Día</span><span class="tb-chev">▾</span>' +
+      '</summary><div class="tb-body">' + day.briefing + '</div></details>';
   }
   /* directiva (reajuste UI): el check-in de entrada vivía al fondo de la
      pantalla, después de las notas metodológicas, perdiendo su función de
@@ -9204,7 +9242,74 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(/\\b(amrap|emom|rest|descanso)\\b/i.test(l) && !jpCfTieneCarga(l) && l.indexOf(' — ') < 0) return false;
     return true;
   }
-  function jpCfFila(raw){
+  /* directiva ("Resuelve dinámicamente referencias de carga entre
+     bloques") -- dado el texto crudo de una línea, intenta resolver su
+     carga en kg: primero un "@ N%" contra el 1RM del atleta (mismo
+     criterio que ya usa jpCfFila más abajo), si no un "@ Xkg"/"Xkg"
+     literal. Extraído a función propia para que jpCfCargaBloque()
+     pueda reusarlo sobre CUALQUIER bloque del día, no sólo el que se
+     está pintando en este momento. */
+  function jpCfResolverKgLinea(l){
+    const partes = jpCfSplit(l);
+    if(!partes.val) return null;
+    const pctMatch = partes.val.match(/^@\\s*(\\d{1,3})\\s*%/);
+    if(pctMatch){
+      const pct = parseInt(pctMatch[1], 10);
+      const liftBase = partes.nm.replace(/^\\d+\\s*/, '') || partes.nm;
+      const benchmark = jpBenchmarkMadre(liftBase);
+      const liftKey = nrmHist(benchmark);
+      const propio = state.oneRM && state.oneRM[liftKey];
+      if(propio > 0) return parseFloat(jpKgExacto(propio, pct));
+      return null;
+    }
+    const kgMatch = partes.val.match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
+    if(kgMatch) return parseFloat(kgMatch[1].replace(',', '.'));
+    return null;
+  }
+  /* recorre el bloque N (1-indexado, mismo orden en que el coach los
+     carga y el atleta los ve en la Pizarra) del día indicado y devuelve
+     la primera carga resoluble que encuentra en su texto -- null si el
+     bloque no existe todavía o ninguna de sus líneas trae carga. */
+  function jpCfCargaBloque(dayId, n){
+    const day = (typeof DAYS !== 'undefined') ? DAYS.find(function(d){ return d.id === dayId; }) : null;
+    if(!day || !day.blocks) return null;
+    const block = day.blocks[n - 1];
+    if(!block || !block.items) return null;
+    for(let i = 0; i < block.items.length; i++){
+      const kg = jpCfResolverKgLinea(String(block.items[i] || ''));
+      if(kg != null) return kg;
+    }
+    return null;
+  }
+  /* directiva ("Cronómetro de Descanso Integrado") -- extrae segundos de
+     una línea de rest/descanso en cualquiera de los formatos que ya usa
+     el coach: "mm:ss" (Rest 1:30), "N seg"/"Ns" (Descanso 90 seg) o "N
+     min" (Rest 1.5 min). null si la línea menciona rest/descanso pero
+     no trae una duración reconocible -- ahí se sigue mostrando como
+     texto plano, nunca un botón que no sabría cuánto contar. */
+  function jpCfParsearDescanso(l){
+    const t = String(l || '');
+    if(!/\\brest\\b|\\bdescanso\\b/i.test(t)) return null;
+    let m = t.match(/(\\d{1,2}):(\\d{2})/);
+    if(m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    m = t.match(/(\\d+(?:[.,]\\d+)?)\\s*(?:seg|segundos?|s)\\b/i);
+    if(m) return Math.round(parseFloat(m[1].replace(',', '.')));
+    m = t.match(/(\\d+(?:[.,]\\d+)?)\\s*(?:min|minutos?)\\b/i);
+    if(m) return Math.round(parseFloat(m[1].replace(',', '.')) * 60);
+    return null;
+  }
+  /* botón "[ ⏱️ Iniciar Rest 1:30 ]" -- reusa window.CoachTV.rest(seg,
+     etiqueta), el MISMO motor de cuenta regresiva (#restHud: anillo de
+     progreso, sonido, vibración, +15s/+30s) que ya usa Bodybuilding al
+     tildar una serie, nunca un timer nuevo. Si la duración no es
+     reconocible, cae al badge de texto plano de siempre (comportamiento
+     sin cambios para ese caso). */
+  function jpCfRestBadge(l){
+    const seg = jpCfParsearDescanso(l);
+    if(seg == null || seg <= 0) return null;
+    return '<div class="jp-cf-row jp-cf-badge"><button type="button" class="jp-cf-rest-btn" data-rest-sec="' + seg + '" data-rest-lb="' + String(l).replace(/"/g, '') + '">&#9201;&#65039; Iniciar ' + jpMdBold(l) + '</button></div>';
+  }
+  function jpCfFila(raw, dayId){
     const l = String(raw || '').trim();
     if(jpCfEsHeader(l)){
       const txt = l.replace(/^\\s*#+\\s*/, '');
@@ -9217,13 +9322,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     if(esLineaDirectiva(l) && !jpCfTieneCarga(l)){
-      return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
+      return jpCfRestBadge(l) || '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     /* objetivo/transición de intervalo suelto (ej: "90 Seg AMRAP") -- lleva
        AMRAP/EMOM/rest en el cuerpo (no sólo al inicio, por eso esLineaDirectiva
        no lo agarra) pero no prescribe carga ni movimiento puntual */
     if(/\\b(amrap|emom|rest|descanso)\\b/i.test(l) && !jpCfTieneCarga(l) && l.indexOf(' — ') < 0){
-      return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
+      return jpCfRestBadge(l) || '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     const partes = jpCfSplit(l);
     /* directiva ("Resolución activa de % 1RM a Kilogramos"): "@ 76%" (con
@@ -9232,9 +9337,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        propio 1RM para este movimiento (state.oneRM, ver jpAbrirPct1RM
        más abajo), ese valor manda sobre la estimación del coach y
        recalcula EN VIVO, sin recompilar nada. */
+    /* directiva ("Resuelve dinámicamente referencias de carga entre
+       bloques"): "@ carga bloque 1" (o "@ carga del bloque 1") lee el
+       peso ya resuelto (por % de 1RM o literal en kg) en el Bloque 1
+       del MISMO día y lo muestra directo en kg -- nunca un botón
+       tocable (no hay 1RM propio que pedirle acá, es un espejo de otro
+       bloque), con un rótulo explícito si ese bloque todavía no tiene
+       ninguna carga resuelta para copiar. */
+    const refBloqueMatch = partes.val && partes.val.match(/^@\\s*carga\\s*(?:del\\s*)?bloque\\s*(\\d+)/i);
     const pctMatch = partes.val && partes.val.match(/^@\\s*(\\d{1,3})\\s*%/);
     let valHtml = jpMdBold(partes.val);
-    if(pctMatch){
+    if(refBloqueMatch){
+      const nBloque = parseInt(refBloqueMatch[1], 10);
+      const kgRef = jpCfCargaBloque(dayId, nBloque);
+      valHtml = '<span class="jp-cf-refload">' +
+        (kgRef != null ? (Number.isInteger(kgRef) ? kgRef : kgRef) + ' kg' : 'Carga del Bloque ' + nBloque + ' sin resolver') +
+        '</span>';
+    } else if(pctMatch){
       const pct = parseInt(pctMatch[1], 10);
       /* directiva -- la clave del 1RM no puede incluir el conteo de reps
          de ESA serie puntual ("5 Back squat" vs "3 Back squat"): son el
@@ -9313,7 +9432,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          antes de buscar match directo/exacto -- soloDirecto=true sigue
          garantizando que nunca se asigna un video por aproximación. */
       if(!nm) return;
-      const ytid = buscarVideo(nm, true);
+      /* directiva ("Fallback inteligente"): si la variante puntual no
+         tiene video propio, se prueba el benchmark de base antes de
+         omitir el clip por completo -- ver jpVideoFallbackBenchmark(). */
+      const ytid = buscarVideo(nm, true) || jpVideoFallbackBenchmark(nm);
       if(!ytid || vistos.has(ytid)) return;
       vistos.add(ytid);
       out.push({ nombre: jpCfClipNombre(nm) || nm, ytid: ytid });
@@ -9376,7 +9498,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const notaKey = skey + '|__accnotas';
     const notaGuardada = (state.notes && state.notes[notaKey]) || '';
 
-    const filas = lineas.map(function(l){ return jpCfFila(l); }).join('');
+    const filas = lineas.map(function(l){ return jpCfFila(l, dayId); }).join('');
     const clips = jpCfClips(lineas);
 
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
@@ -9549,6 +9671,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(save){ e.stopPropagation(); jpGuardarPct1RM(save); return; }
     var cancel = e.target.closest('[data-pctcancel]');
     if(cancel){ e.stopPropagation(); jpCerrarPct1RM(); return; }
+    var restBtn = e.target.closest('.jp-cf-rest-btn');
+    if(restBtn){
+      e.stopPropagation();
+      var seg = parseInt(restBtn.dataset.restSec, 10);
+      if(seg > 0 && window.CoachTV && typeof window.CoachTV.rest === 'function'){
+        window.CoachTV.rest(seg, restBtn.dataset.restLb || 'Descanso');
+        try{ if(navigator.vibrate) navigator.vibrate(20); }catch(x){}
+      }
+      return;
+    }
     if(!e.target.closest('.jp-pct-pop')) jpCerrarPct1RM();
   });
 
@@ -12446,6 +12578,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       <button type="button" class="cwt-mode" data-cwt="emom">EMOM</button>
       <button type="button" class="cwt-mode" data-cwt="amrap">AMRAP</button>
       <button type="button" class="cwt-mode" data-cwt="fortime">For Time</button>
+      <button type="button" class="cwt-mode" data-cwt="intervalos">Intervalos / Hyrox</button>
     </div>
     <div class="cwt-cfg" id="cwtCfg">
       <label data-f="prep"><span>Preparación</span>
@@ -12564,7 +12697,8 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     tabata:  ['work','rest','rounds'],
     emom:    ['interval','total'],
     amrap:   ['total'],
-    fortime: ['cap']
+    fortime: ['cap'],
+    intervalos: ['work','rest','rounds']
   };
   function pintarCampos(){
     var vis = (CAMPOS[modo] || []).concat(['prep']);
@@ -12578,7 +12712,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   function estadoInicial(){
     var c = cfg();
     vueltas = []; ronda = 1; transcurrido = 0; ultimoBeep = -1;
-    if(modo === 'tabata'){ fase = 'work'; restante = c.work; rondas = c.rounds; }
+    if(modo === 'tabata' || modo === 'intervalos'){ fase = 'work'; restante = c.work; rondas = c.rounds; }
     else if(modo === 'emom'){ fase = 'work'; restante = c.intervalo; rondas = Math.max(1, Math.round(c.total * 60 / c.intervalo)); }
     else if(modo === 'amrap'){ fase = 'amrap'; restante = c.total * 60; rondas = 1; }
     else { fase = 'up'; restante = 0; rondas = 1; }
@@ -12599,18 +12733,18 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     if(!t) return;
     t.textContent = (modo === 'fortime' && fase !== 'prep') ? mmss(transcurrido) : mmss(restante);
     var etiqueta = fase === 'prep' ? '⏳ PREPARACIÓN'
-                 : modo === 'tabata' ? (fase === 'work' ? 'TRABAJO' : 'DESCANSO')
+                 : (modo === 'tabata' || modo === 'intervalos') ? (fase === 'work' ? 'TRABAJO' : 'DESCANSO')
                  : modo === 'emom'   ? 'EMOM · MINUTO ' + ronda
                  : modo === 'amrap'  ? 'AMRAP'
                  : 'FOR TIME';
     f.textContent = corriendo ? etiqueta : (transcurrido || restante ? etiqueta + ' · en pausa' : 'Listo para arrancar');
     f.className = 'cwt-phase' + (corriendo ? (fase === 'rest' ? ' rest' : ' work') : '');
-    if(modo === 'tabata' || modo === 'emom') r.innerHTML = 'Ronda <b>' + ronda + '</b> de <b>' + rondas + '</b>';
+    if(modo === 'tabata' || modo === 'intervalos' || modo === 'emom') r.innerHTML = 'Ronda <b>' + ronda + '</b> de <b>' + rondas + '</b>';
     else if(modo === 'amrap') r.innerHTML = 'Tiempo total <b>' + mmss(cfg().total * 60) + '</b>';
     else r.innerHTML = cfg().cap ? 'Time cap <b>' + cfg().cap + ' min</b>' : 'Cronómetro <b>libre</b>';
     var c = cfg(), pct = 0;
     if(fase === 'prep') pct = c.prep ? 1 - restante / c.prep : 0;
-    else if(modo === 'tabata') pct = 1 - restante / (fase === 'work' ? c.work : Math.max(1, c.rest));
+    else if(modo === 'tabata' || modo === 'intervalos') pct = 1 - restante / (fase === 'work' ? c.work : Math.max(1, c.rest));
     else if(modo === 'emom') pct = 1 - restante / c.intervalo;
     else if(modo === 'amrap') pct = 1 - restante / (c.total * 60);
     else if(c.cap) pct = transcurrido / (c.cap * 60);
@@ -12626,6 +12760,24 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       barra.classList.toggle('warn', cuentaAtras && restante <= 10);
       barra.classList.toggle('work', corriendo && fase !== 'rest');
       barra.classList.toggle('rest', corriendo && fase === 'rest');
+    }
+    /* directiva ("Refactor total del Cronómetro de Box") -- Thunder Gold
+       (trabajo) & Cyan Táctico (descanso), fijado por estilo INLINE con
+       prioridad "important": el archivo acumula varias generaciones de
+       CSS para .cwt-phase/.cwt-bar (varios :root sucesivos redefiniendo
+       las mismas variables --jp-work/--jp-brand-hi), y ninguna combinación
+       de selector/orden en una hoja de estilos nueva logra ganarles de
+       forma confiable. Los últimos 10 segundos (.warn) conservan su
+       color de alerta ya existente -- sólo se limpia el inline para
+       que la regla de warn de la hoja de estilos vuelva a mandar. */
+    var enWarn = cuentaAtras && restante <= 10;
+    if(f){
+      if(corriendo && !enWarn) f.style.setProperty('color', fase === 'rest' ? '#00e5ff' : '#f59e0b', 'important');
+      else f.style.removeProperty('color');
+    }
+    if(b){
+      if(corriendo && !enWarn) b.style.setProperty('background', fase === 'rest' ? '#00e5ff' : '#f59e0b', 'important');
+      else b.style.removeProperty('background');
     }
     if(l) l.innerHTML = vueltas.map(function(v, i){
       return '<div><span>Ronda ' + (i + 1) + '</span><b>' + mmss(v) + '</b></div>';
@@ -12679,13 +12831,13 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
       if(falta > 0){ restante = Math.round(falta / 1000); avisar(restante); pintar(); return; }
       var over = -falta;
       if(modo === 'amrap'){ finalizar('AMRAP completo'); return; }
-      if(modo === 'tabata'){
+      if(modo === 'tabata' || modo === 'intervalos'){
         if(fase === 'work' && c.rest > 0){
           fase = 'rest'; restante = c.rest; faseTargetEnd = now + c.rest * 1000 - over; ultimoBeep = -1;
           continue;
         }
         vueltas.push(c.work + (fase === 'rest' ? c.rest : 0));
-        if(ronda >= rondas){ finalizar('Tabata completo'); return; }
+        if(ronda >= rondas){ finalizar((modo === 'intervalos' ? 'Intervalos' : 'Tabata') + ' completo'); return; }
         ronda++; fase = 'work'; restante = c.work; faseTargetEnd = now + c.work * 1000 - over; ultimoBeep = -1;
         continue;
       }
@@ -19486,9 +19638,15 @@ body.cf-modo .block .ex-tip{display:none}
     if(!cfg || document.getElementById('cwtSteps')) return;
     var box = document.createElement('div');
     box.className = 'cwt-steps'; box.id = 'cwtSteps';
+    /* directiva ("Refactor total del Cronómetro de Box") -- se saca el
+       botón 🎡 Ruleta del ajuste rápido: los pasos numéricos (-10s/+10s/
+       +30s/+1m) ya cubren el mismo caso de uso de forma más directa,
+       sin un selector de rueda superpuesto. ruleta()/rollo() quedan sin
+       invocar (no se borran: otro módulo externo podría referenciarlas,
+       mismo criterio de bajo riesgo que ya usa el archivo con código
+       legado sin uso, ver buildRoundTimer()). */
     box.innerHTML = '<span class="cwt-sl" id="cwtStepLb">Ajuste rápido</span>' +
-      PASOS.map(function(p){ return '<button type="button" data-cwtstep="' + p.v + '">' + p.lb + '</button>'; }).join('') +
-      '<button type="button" data-cwtwheel="1">🎡 Ruleta</button>';
+      PASOS.map(function(p){ return '<button type="button" data-cwtstep="' + p.v + '">' + p.lb + '</button>'; }).join('');
     cfg.parentNode.insertBefore(box, cfg.nextSibling);
     box.addEventListener('click', function(e){
       var s = e.target.closest('[data-cwtstep]');
@@ -19500,7 +19658,6 @@ body.cf-modo .block .ex-tip{display:none}
         etiqueta();
         return;
       }
-      if(e.target.closest('[data-cwtwheel]')){ ruleta(); vib([16]); }
     });
     etiqueta();
   }
@@ -19645,6 +19802,12 @@ body.cf-modo .block .ex-tip{display:none}
       fp.className = 'cf-phase' + (p.classList.contains('rest') ? ' rest' : '') +
                      (p.classList.contains('work') ? ' work' : '') +
                      (p.classList.contains('warn') ? ' warn' : '');
+      /* directiva -- espeja también el color inline dorado/cián fijado en
+         pintar() (ver comentario ahí): sin esto, la pantalla completa
+         quedaba con los colores viejos aunque el motor chico ya mostrara
+         los nuevos. */
+      if(p.style.color) fp.style.setProperty('color', p.style.color, 'important');
+      else fp.style.removeProperty('color');
     }
     if(r && fr){
       var e = T() ? T().estado() : null;
@@ -19659,6 +19822,8 @@ body.cf-modo .block .ex-tip{display:none}
                 (b.parentNode.classList.contains('rest') ? ' rest' : '') +
                 (b.parentNode.classList.contains('warn') ? ' warn' : '');
       if(fb.parentNode.className !== cls) fb.parentNode.className = cls;
+      if(b.style.background) fb.style.setProperty('background', b.style.background, 'important');
+      else fb.style.removeProperty('background');
     }
     var go = document.getElementById('cwtGo'), fg = document.getElementById('cfGo');
     if(go && fg && fg.textContent !== go.textContent) fg.textContent = go.textContent;
@@ -20915,6 +21080,42 @@ body{font-size:var(--fz-body) !important}
   color:rgba(237,239,242,.85) !important}
 .cwt-fs:hover{border-color:var(--jp-brand) !important;color:var(--jp-brand-hi) !important}
 .cwt-full .cf-acts .cf-go{background:linear-gradient(135deg,var(--jp-brand),var(--jp-brand-deep)) !important;color:#fff !important}
+
+/* =========================================================
+   2B · CRONÓMETRO TÁCTICO: THUNDER GOLD & CYAN TÁCTICO
+   directiva ("Refactor total del Cronómetro de Box"): el naranja
+   quemado (var(--jp-brand)) es la identidad de interfaz del RESTO de
+   la app (sección 3 de abajo, sin tocar) -- acá, scopeado SÓLO a
+   .cwt-*/.cf-* (nunca a las variables globales, que siguen alimentando
+   Bodybuilding y el resto de CrossFit sin cambios), dorado neón
+   #f59e0b para trabajo/arranque y cian neón #00e5ff para descanso,
+   última regla del cascade así gana sobre el paso "2" de arriba.
+========================================================= */
+.cwt-phase.work,.cwt-full .cf-phase.work{color:#f59e0b !important}
+.cwt-phase.rest,.cwt-full .cf-phase.rest{color:#00e5ff !important}
+.cwt-bar.work i,.cwt-full .cf-bar.work i{background:#f59e0b !important}
+.cwt-bar.rest i,.cwt-full .cf-bar.rest i{background:#00e5ff !important}
+.cwt-mode.on{background:rgba(245,158,11,.16) !important;border-color:rgba(245,158,11,.55) !important;color:#f59e0b !important}
+.cwt-go{background:linear-gradient(135deg,#f59e0b,#c2790a) !important;color:#171100 !important}
+.cwt-full .cf-acts .cf-go{background:linear-gradient(135deg,#f59e0b,#c2790a) !important;color:#171100 !important}
+.cwt-fs:hover{border-color:#00e5ff !important;color:#00e5ff !important}
+.cwt-time.alerta,.cwt-full .cf-time.alerta{color:#00e5ff !important}
+/* directiva -- "dígitos borrosos de fondo con blur/sombras superpuestas":
+   el módulo LED (.jp-led, más abajo en el archivo) pinta un dígito
+   fantasma semitransparente detrás de cada número real y un text-shadow
+   de resplandor -- exactamente el efecto de "blur de fondo" reportado.
+   Se apaga sólo para el cronómetro de Box (otros usos de .jp-led, si
+   los hay, no se tocan): tipografía monoespaciada limpia, alto
+   contraste, sin capas superpuestas. */
+.cwt-time.jp-led,.cwt-full .cf-time.jp-led{ color:#EDEFF2 !important; text-shadow:none !important; }
+.cwt-time.jp-led::before,.cwt-full .cf-time.jp-led::before{ content:none !important; }
+.cwt-time,.cwt-full .cf-time{
+  font-family:'JetBrains Mono',ui-monospace,monospace !important; letter-spacing:.03em !important;
+}
+/* grid de modos: de 4 fijas a auto-fit -- acomoda las 5 pestañas
+   (Tabata/EMOM/AMRAP/For Time/Intervalos-Hyrox) sin dejar una quinta
+   celda huérfana en una fila propia. */
+.cwt-modes{grid-template-columns:repeat(auto-fit,minmax(92px,1fr)) !important}
 
 /* =========================================================
    3 · IDENTIDAD EN DORADO, INTERFAZ EN NARANJA
@@ -24107,9 +24308,34 @@ body.focus-mode .hd-dock{display:none}
     box.innerHTML = partes.length ? partes.join('') :
       '<p class="hdp-acc-empty">Tu coach todavía no cargó objetivos específicos acá — se los podés pedir directamente.</p>';
   }
+  /* directiva ("Limpieza del Modal de Ficha Técnica / Ajustes") -- en
+     CrossFit el texto de RIR/RPE (jerga de hipertrofia de Bodybuilding,
+     no aplica a la prescripción de CrossFit) se reemplaza por completo:
+     "ESTRATEGIA & ENFOQUE DE LA SEMANA" (p.meta.cfEstrategia, campo
+     editable nuevo del Builder, ver "Athlete Tactical Profile") +
+     "Briefing Metodológico del Día" (day.briefing, el MISMO texto que
+     el micro-badge colapsable de la pantalla principal -- acá vive
+     completo, sin recortar el scroll inicial). Bodybuilding no cambia
+     un solo carácter de su sección. */
   function pintarMetodologia(){
     var box = q('hdpMetodoBody'); if(!box) return;
     var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
+    var tt = q('hdpMetodoTt');
+    if(cfg.disciplina === 'crossfit' || cfg.modoSemanal){
+      if(tt) tt.textContent = 'Estrategia & Enfoque de la Semana';
+      var partesCF = [];
+      partesCF.push('<div class="hdp-acc-k">📋 Estrategia &amp; Enfoque de la Semana</div>');
+      partesCF.push(cfg.cfEstrategia
+        ? '<p>' + escAcc(cfg.cfEstrategia) + '</p>'
+        : '<p class="hdp-acc-empty">Tu coach todavía no cargó la estrategia de esta semana.</p>');
+      var diaAct = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+      partesCF.push('<div class="hdp-acc-k" style="margin-top:14px">🎯 Briefing Metodológico del Día</div>');
+      partesCF.push((diaAct && diaAct.briefing)
+        ? '<p>' + escAcc(diaAct.briefing) + '</p>'
+        : '<p class="hdp-acc-empty">Sin briefing táctico cargado para la sesión de hoy.</p>');
+      box.innerHTML = partesCF.join('');
+      return;
+    }
     var weeks = cfg.weeks || [];
     var curWeek = (typeof state !== 'undefined' && typeof state.currentWeek === 'number') ? state.currentWeek : 0;
     var html = '';
@@ -24119,9 +24345,7 @@ body.focus-mode .hd-dock{display:none}
     } else {
       html += '<p>Tu programa avanza con una periodización ondulada: cada semana sube o baja el estímulo a propósito, no al azar — la idea es acumular fatiga productiva y disiparla antes de que se vuelva improductiva.</p>';
     }
-    if(cfg.modoSemanal){
-      html += '<p class="hdp-acc-note">Formato CrossFit: cada semana se prescribe y se ajusta por separado, no hay una plantilla fija de 4 semanas.</p>';
-    } else if(weeks.length){
+    if(weeks.length){
       html += '<div class="hdp-week-rows">' + weeks.map(function(w, i){
         var pct = (PCT_CURVA[i] != null) ? (PCT_CURVA[i] + '%') : '';
         return '<div class="hdp-wk-row' + (i === curWeek ? ' cur' : '') + '">' +
@@ -24950,6 +25174,15 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   padding:2px 8px; font:inherit; color:inherit; cursor:pointer; min-height:28px;
 }
 .jp-cf-pct:hover,.jp-cf-pct:focus-visible{ border-color:#38BDF8; background:rgba(56,189,248,.08); }
+/* directiva ("referencia dinámica @ carga bloque N") -- espejo de otro
+   bloque, nunca tocable (no hay 1RM propio que pedirle acá): mismo
+   lenguaje visual que .jp-cf-pct pero con borde sólido en vez de
+   punteado, para que se lea como un valor YA resuelto, no como un
+   control interactivo. */
+.jp-cf-refload{
+  display:inline-block; background:rgba(245,197,24,.08); border:1px solid rgba(245,197,24,.4);
+  border-radius:8px; padding:2px 8px; color:#F5C518; font-weight:700;
+}
 /* directiva ("Motor de 1RM exacto") -- modal centrado de pantalla
    completa (mismo patrón que guideModal/painModal/calcModal): el
    viewport visible de iOS se achica cuando aparece el teclado numérico,
@@ -25693,6 +25926,14 @@ function buildProgramConfig(ath){
     mesoNivel: (p.meta && p.meta.mesoNivel) || '',
     disciplina: (p.meta && p.meta.mesoDisc) || '',
     modoSemanal: !!discCF,
+    /* directiva ("Estrategia & Enfoque de la Semana") -- campo nuevo,
+       aditivo, propio de CrossFit (p.meta.cfEstrategia, ver módulo
+       "Athlete Tactical Profile" del Builder): reemplaza en la Ficha
+       Técnica el texto genérico de RIR/RPE heredado de Bodybuilding,
+       que no aplica a la prescripción de CrossFit. */
+    cfEstrategia: (p.meta && p.meta.cfEstrategia) || '',
+    cfNivel: (p.meta && p.meta.cfNivel) || '',
+    cfFocos: (p.meta && p.meta.cfFocos) || '',
     nutriPlan: planNutricional(ath),
     /* Objetivos y contexto del atleta — alimenta el acordeón "Objetivos &
        Contexto" del panel de Perfil (ver módulo de cabecera). Se manda tal
@@ -43227,7 +43468,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     }catch(e){ return false; }
   }
   const NIVELES = ['RX', 'Scaled', 'Hyrox Pro', 'Hyrox Open'];
-  const SISTEMA = 'Sos Coach JP, entrenador experto de CrossFit y Hyrox. Redactás el "Foco Táctico / Stimulus Briefing" que el atleta lee arriba de su sesión, antes de entrenar: entre 2 y 3 frases directas en español rioplatense, en segunda persona, sin emojis, sin encabezados ni listas -- un párrafo corto y accionable, nunca una descripción genérica de qué es CrossFit.';
+  /* directiva ("Módulo Athlete Tactical Profile & IA Context") -- el
+     prompt se ajusta a EXACTAMENTE 2 oraciones operativas (estímulo
+     fisiológico/pacing sugerido + cuidado biomecánico), nunca vuelca
+     notas privadas de evaluación del coach -- sólo recibe nivel, focos
+     y antecedentes (los mismos 3 datos que ya arma generar() más
+     abajo, ningún campo de evaluación interna existe en este modelo). */
+  const SISTEMA = 'Sos Coach JP, entrenador experto de CrossFit y Hyrox. Redactás el "Foco Táctico / Stimulus Briefing" que el atleta lee arriba de su sesión, antes de entrenar: EXACTAMENTE 2 oraciones operativas en español rioplatense, en segunda persona, sin emojis, sin encabezados ni listas -- la primera sobre el estímulo fisiológico esperado y el pacing sugerido, la segunda sobre el cuidado biomecánico puntual de la sesión. Nunca vuelques notas privadas de evaluación del coach ni des una descripción genérica de qué es CrossFit.';
 
   function limpiar(txt){ return String(txt || '').replace(/\\s+/g, ' ').trim(); }
 
@@ -43329,6 +43576,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
               '<textarea id="atpFocos" placeholder="Ej: capacidad de trabajo en gimnásticos, umbral anaeróbico láctico, fuerza explosiva"></textarea></div>' +
             '<div class="atp-row atp-lesiones"><label class="lb">Lesiones activas (desde el historial médico)</label>' +
               '<div class="atp-lesiones-tags" id="atpLesiones"></div></div>' +
+            /* directiva -- campo explícito editable, weekly/plan-level,
+               DISTINTO del Foco Táctico diario (d.briefing): esto es lo
+               que alimenta "Estrategia & Enfoque de la Semana" en la
+               Ficha Técnica del alumno (ver pintarMetodologia()) -- el
+               coach lo redacta a mano, sin depender de la IA. */
+            '<div class="atp-row"><label class="lb">Estrategia / Briefing del Atleta (editable)</label>' +
+              '<textarea id="atpEstrategia" placeholder="Enfoque general de la semana -- qué se prioriza, qué se cuida, hacia dónde apunta el bloque de mesociclo actual."></textarea></div>' +
             '<div class="atp-acts">' +
               '<button class="btn gold" id="atpRun" type="button">⚡ Generar Directiva Táctica con IA</button>' +
             '</div>' +
@@ -43349,6 +43603,24 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         pl.meta.cfFocos = e.target.value;
         save();
       });
+      q('atpEstrategia').addEventListener('input', function(e){
+        const ath = active(); if(!ath) return;
+        const pl = plan(ath.id); pl.meta = pl.meta || {};
+        pl.meta.cfEstrategia = e.target.value;
+        save();
+      });
+      /* directiva -- chips de lesiones interactivos con botón (x): la
+         misma fuente (a.tags) que ya edita el modal "Editar Alumno/a"
+         (renderTagWrap/tmpTags), pero mutada en vivo -- acá no hay
+         staging array ni "Guardar" aparte, el (x) saca la lesión al
+         toque y persiste de inmediato. */
+      q('atpLesiones').addEventListener('click', function(e){
+        const b = e.target.closest('[data-atprm]'); if(!b) return;
+        const ath = active(); if(!ath || !ath.tags) return;
+        ath.tags.splice(parseInt(b.dataset.atprm, 10), 1);
+        save();
+        pintarLesiones(ath);
+      });
       q('atpRun').addEventListener('click', function(){ generar(); });
     }
 
@@ -43361,14 +43633,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       if(nivelSel) nivelSel.value = p.meta.cfNivel || '';
       const focosTa = q('atpFocos');
       if(focosTa) focosTa.value = p.meta.cfFocos || '';
-      const lesionesHost = q('atpLesiones');
-      if(lesionesHost){
-        const tags = a.tags || [];
-        lesionesHost.innerHTML = tags.length
-          ? tags.map(function(t){ return '<span class="pill orange">🦴 ' + esc(t) + '</span>'; }).join('')
-          : '<span class="atp-lesiones-empty">Sin antecedentes cargados -- se editan en la ficha del atleta.</span>';
-      }
+      const estrategiaTa = q('atpEstrategia');
+      if(estrategiaTa) estrategiaTa.value = p.meta.cfEstrategia || '';
+      pintarLesiones(a);
     }
+  }
+
+  function pintarLesiones(a){
+    const lesionesHost = q('atpLesiones');
+    if(!lesionesHost) return;
+    const tags = a.tags || [];
+    lesionesHost.innerHTML = tags.length
+      ? tags.map(function(t, i){ return '<span class="pill orange">🦴 ' + esc(t) + ' <button type="button" data-atprm="' + i + '" title="Desactivar">✕</button></span>'; }).join('')
+      : '<span class="atp-lesiones-empty">Sin antecedentes cargados -- se editan en la ficha del atleta.</span>';
   }
 
   function repintar(){ try{ montar(); }catch(e){} }
