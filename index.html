@@ -43690,12 +43690,54 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      aplastaba los saltos de línea entre los tres apartados del briefing
      en un solo párrafo corrido. Ahora sólo normaliza espacios/tabs
      horizontales y limita corridas de líneas en blanco, preservando la
-     separación en párrafos que pide la directiva. */
+     separación en párrafos que pide la directiva.
+     FIX CRÍTICO -- este código vive en el script del BUILDER, NO dentro
+     del template literal de TEMPLATE_HTML: acá los regex se parsean UNA
+     sola vez, directo, así que van con un solo backslash. Con doble
+     backslash ("\\t"/"\\n", la convención correcta sólo DENTRO de
+     TEMPLATE_HTML, donde el literal exterior los reduce a la mitad) el
+     motor de regex los lee como "\\" (backslash escapado) + el carácter
+     suelto -- [ \\t] pasaba a matchear espacio, backslash O LA LETRA "t"
+     literal, borrando toda "t" del texto generado ("está" -> "es á",
+     "potencia" -> "po encia": el bug reportado). Con un solo backslash
+     quedan los escapes de verdad: \t = tab, \n = salto de línea. */
   function limpiar(txt){
     return String(txt || '')
-      .replace(/[ \\t]+/g, ' ')
-      .replace(/\\n{3,}/g, '\n\n')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
+  }
+
+  /* FIX CRÍTICO -- callProvider() fuerza modo JSON en TODA llamada a
+     Google/OpenAI-compatible (response_format/responseMimeType, ver
+     callAI más arriba en el módulo de IA), aun para este prompt de
+     texto libre: sin un schema explícito, el modelo termina envolviendo
+     la prosa en un objeto improvisado tipo {"briefing":"..."} en vez de
+     devolver el string plano que pide SISTEMA -- de ahí las llaves/
+     comillas crudas volcadas directo al alumno. Se reutiliza
+     extractJson() (mismo extractor robusto -- fences de markdown, comas
+     colgantes, control chars sin escapar dentro de un string -- que ya
+     usa el resto de los módulos de IA de este archivo) para sacar el
+     texto real sea cual sea el proveedor; si la respuesta es texto
+     plano de entrada (Anthropic, sin modo JSON forzado) extractJson()
+     no encuentra "{" y falla silencioso, y se usa tal cual. Si viniera
+     JSON roto más allá de lo que extractJson() puede reparar, último
+     respaldo por regex explícito sobre la propiedad "briefing",
+     decodificando sus escapes (\n/\t/\") antes de usarla -- nunca deja
+     una secuencia \n o \t cruda pegada en el texto que lee el alumno. */
+  function extraerBriefing(txt){
+    const s = String(txt || '');
+    try{
+      const j = window.CoachAI && window.CoachAI.extractJson ? window.CoachAI.extractJson(s) : null;
+      if(j && typeof j.briefing === 'string' && j.briefing.trim()) return j.briefing;
+      if(j && typeof j === 'object'){
+        const strVal = Object.keys(j).map(function(k){ return j[k]; }).find(function(v){ return typeof v === 'string' && v.trim(); });
+        if(strVal) return strVal;
+      }
+    }catch(e1){}
+    const m = s.match(/"briefing"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+    if(m){ try{ return JSON.parse('"' + m[1] + '"'); }catch(e2){ return m[1]; } }
+    return s;
   }
 
   /* directiva -- antes sólo mandaba título+categoría (sin ejercicios
@@ -43768,7 +43810,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           'Bloques programados hoy (ejercicios y esquemas reales):\n' + resumenBloques(d) + '\n\n' +
           'Redactá el Briefing Táctico Operativo de esta sesión en los tres apartados indicados, usando estos datos como insumo -- nunca los repitas literalmente.';
         const txt = await window.CoachAI.generarTexto(user, SISTEMA);
-        const limpio = limpiar(txt);
+        const limpio = limpiar(extraerBriefing(txt));
         if(limpio) briefing = limpio;
       }catch(e){
         try{ toast('La IA no respondió: se generó con el motor local', 'warn'); }catch(x){}
