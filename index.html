@@ -42211,8 +42211,25 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      un número inicial (RUIDO a nivel línea, y el recorte por token). */
   const RANGO = '(?:\\s*[-–—]\\s*\\d+)?';
   const RUIDO = new RegExp('^(?:\\d+' + RANGO + '\\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\\b[:.]?\\s*)+', 'i');
+  /* directiva crítica -- prefijo de ORDEN/TIEMPO por línea ("Set 1:",
+     "Ronda 2:", "Round 3 -", "Min 4:", "3.", "2)"): RUIDO de arriba sólo
+     reconoce un NÚMERO al principio de línea ("8 Sets:") -- una pizarra
+     de esquema serie-por-serie escribe la palabra ANTES del número
+     ("Set 1: 5 Strict press @ 70%"), que RUIDO nunca matcheaba, así que
+     cada línea del mismo ejercicio sobrevivía casi literal (con "Set N:"
+     y la carga "@ 70%" adentro) y nunca coincidía con la de la línea de
+     al lado -- de ahí los chips duplicados/rotos del caso reportado. */
+  const PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
   function candidatos(linea){
     let t = String(linea || '').replace(/^[\s\-•*]+/, '');
+    /* el prefijo de orden se pisa ANTES del chequeo de "línea de
+       estructura" de abajo: si no, "Min 4: 15 Cal Row" quedaba atrapado
+       por el patrón "min \d" (pensado para un renglón de descanso suelto
+       tipo "Min 3: Rest") y la estación entera se perdía sin generar
+       candidato -- una vez pisado el prefijo, si lo que queda es
+       realmente sólo "Rest"/"Descanso" lo sigue agarrando esa misma
+       palabra clave más abajo en el propio chequeo. */
+    t = t.replace(PREFIJO_ORDEN, '');
     if(/^(?:-\s*or\s*-|amrap|emom|every|for time|time cap|target|rest|descanso|cargas?|min \d)/i.test(t)) {
       /* las líneas de estructura no son ejercicios */
       if(!/\+/.test(t)) return [];
@@ -42220,6 +42237,13 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     t = t.replace(RUIDO, '');
     return t.split(/\s*\+\s*|\s*\/\s*|\s+y\s+/i).map(p => {
       let s = p.replace(/\([^)]*\)/g, ' ')
+               .replace(/\[[^\]]*\]/g, ' ')
+               /* directiva crítica -- corta desde "@" en adelante: carga/
+                  porcentaje pegado al nombre ("Strict press @ 70%") no
+                  es parte del ejercicio. Corre ANTES del recorte por
+                  rango inicial de abajo, sin pisarlo (son posiciones
+                  distintas de la línea). */
+               .replace(/\s*@.*$/, '')
                /* el rango inicial se pisa ANTES del recorte de "— nota"
                   de más abajo: si el coach usa en-dash/em-dash como
                   separador del rango ("10–15 HSPU"), ese recorte de
