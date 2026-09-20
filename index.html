@@ -7704,7 +7704,7 @@ function esBloqueVacioCF(block){
 function datosStoryCF(weekIdx, day){
   const blocks = (day.blocks || []).filter(b => !esBloqueVacioCF(b));
   const warmup = blocks.find(b => b.category === 'warmup');
-  const skill = blocks.find(b => b.category === 'strength');
+  const strengthBlocks = blocks.filter(b => b.category === 'strength');
   const wod = blocks.find(b => b.category === 'metcon') || blocks.find(b => b.category === 'cardio' || b.category === 'endurance');
   /* directiva (fix integral Story Card 9:16): antes la tarjeta sólo
      mostraba kilos clave + estructura + score -- si el bloque de fuerza
@@ -7719,7 +7719,6 @@ function datosStoryCF(weekIdx, day){
     const hecho = isBlockDone(weekIdx, day.id, warmup.id);
     warmupTxt = (hecho ? '✓ ' : '') + (warmup.title || 'Warm-Up');
   }
-  let kgClave = '', skillTxt = '';
   /* directiva ("Story Card 9:16 de alto impacto") -- Hero Card 1 pasa de
      mostrar sólo la carga máxima puntual a dos métricas de mayor
      impacto para redes: VOLUMEN TOTAL de la sesión (kg x reps de TODAS
@@ -7740,17 +7739,61 @@ function datosStoryCF(weekIdx, day){
     if(kg > topLiftKg) topLiftKg = kg;
   });
   volumenTotal = Math.round(volumenTotal);
+  /* directiva ("FIX: Tonelaje Real") -- bug real reportado: si el bloque
+     de fuerza que aparece PRIMERO en el día (ej. "SNATCH COMPLEX") no
+     tenía series tildadas en state.loads NI un "@ Xkg" literal, el Hero
+     Card 1 quedaba sin ninguna métrica -- e ignoraba POR COMPLETO otro
+     bloque de fuerza más pesado del mismo día (ej. "BACK SQUAT WAVE",
+     progresión hasta 174.8 kg) porque antes sólo se miraba el primer
+     bloque strength del array. Ahora se recorren TODOS los bloques de
+     fuerza del día y se resuelve cada línea prescripta (series x reps x
+     kg, "@ N%" contra el 1RM propio o "@ Xkg" literal) con el MISMO
+     motor que ya usa la Pizarra (jpCfResolverKgLinea, expuesto en
+     window por el módulo de 1RM) -- funciona SIEMPRE, sin depender de
+     que el alumno haya tildado cada serie individual. Este tonelaje
+     prescripto es el RESPALDO cuando state.loads no aportó nada (0);
+     cuando sí hay series reales tildadas, esas mandan (reflejan mejor
+     lo que pasó de verdad en la sesión, incluidas cargas ajustadas en
+     vivo). El bloque con el kg máximo -- prescripto o logueado, el que
+     sea mayor -- es el que protagoniza el título de la Hero Card 1. */
+  let volumenPrescripto = 0, topKgPrescripto = 0, mejorBloque = null, mejorBloqueKg = -1;
+  strengthBlocks.forEach(function(b){
+    let setsActuales = 1, topDeEsteBloque = 0;
+    (b.items || []).forEach(function(raw){
+      const l = String(raw || '').trim();
+      if(!l) return;
+      const schemeM = l.match(/x\\s*(\\d+)\\s*sets?\\b/i) || l.match(/^(\\d+)\\s*sets?\\b/i);
+      if(schemeM){ setsActuales = parseInt(schemeM[1], 10) || 1; return; }
+      const repsM = l.match(/^(\\d+)\\s+\\S/);
+      if(!repsM) return;
+      const reps = parseInt(repsM[1], 10) || 0;
+      if(!reps) return;
+      const resuelto = (typeof window.jpCfResolverKgLinea === 'function') ? window.jpCfResolverKgLinea(l) : null;
+      const kg = (resuelto && resuelto.kg != null) ? resuelto.kg : null;
+      if(kg == null || kg <= 0) return;
+      volumenPrescripto += reps * setsActuales * kg;
+      if(kg > topDeEsteBloque) topDeEsteBloque = kg;
+    });
+    if(topDeEsteBloque > topKgPrescripto) topKgPrescripto = topDeEsteBloque;
+    if(topDeEsteBloque > mejorBloqueKg){ mejorBloqueKg = topDeEsteBloque; mejorBloque = b; }
+  });
+  if(!mejorBloque && strengthBlocks.length) mejorBloque = strengthBlocks[0];
   const esPR = !!(state.session && state.session.prs && state.session.prs.length > 0);
-  if(skill){
-    if(topLiftKg > 0){
-      kgClave = (Number.isInteger(topLiftKg) ? String(topLiftKg) : String(Math.round(topLiftKg * 10) / 10)) + ' KG';
-    } else if(skill.items){
-      for(const l of skill.items){
+  const volumenFinal = volumenTotal > 0 ? volumenTotal : Math.round(volumenPrescripto);
+  const topKgFinal = topLiftKg > 0 ? topLiftKg : topKgPrescripto;
+  let kgClave = '', skillTxt = '';
+  if(mejorBloque){
+    if(topKgFinal > 0){
+      kgClave = (Number.isInteger(topKgFinal) ? String(topKgFinal) : String(Math.round(topKgFinal * 10) / 10)) + ' KG';
+    } else if(mejorBloque.items){
+      for(const l of mejorBloque.items){
         const m = String(l).match(/@\\s*([\\d.,\/]+)\\s*kg/i) || String(l).match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
         if(m){ kgClave = m[1] + ' KG'; break; }
       }
     }
-    skillTxt = skill.title || '';
+    /* pela el prefijo "Bloque N:"/"Block N:" del título crudo del coach
+       -- el alumno ve "BACK SQUAT WAVE", nunca "BLOQUE 1: BACK SQUAT WAVE" */
+    skillTxt = String(mejorBloque.title || '').replace(/^\\s*(?:bloque|block)\\s*\\d+\\s*:\\s*/i, '');
   }
   let estructura = '';
   if(wod && wod.items){
@@ -7762,12 +7805,18 @@ function datosStoryCF(weekIdx, day){
       .find(l => /^(emom|e2mom|e3mom|amrap|tabata|for\\s*time|ft|every\\s*\\d)/i.test(l)) || '')
       .replace(/:\\s*$/, '') || undefined;
     const esquema = wod.items.map(x => String(x).trim()).find(l => /^\\d+(-\\d+){1,}$/.test(l));
+    /* directiva ("Movimientos condensados COMPLETOS") -- antes se
+       cortaba a los primeros 2 movimientos (".slice(0,2)"), la causa del
+       bug reportado que omitía el 3er movimiento real del WOD (ej. "12
+       Thrusters" desaparecía de "12 Front Squats / 16 Toes to Bar / 12
+       Thrusters"). Sin tope: heroCard() ya autoajusta el tamaño de
+       fuente y envuelve a 2 líneas, así que una lista más larga se ve
+       más chica en vez de perder movimientos reales. */
     const movs = wod.items
       .map(x => String(x).trim())
       .filter(l => l && !/^\\d+(-\\d+){1,}$/.test(l) && !/^(cap|rest|descanso|nota|amrap|emom|for\\s*time)\\b/i.test(l) && !/:\\s*$/.test(l))
-      .slice(0, 2)
       .map(l => l.split(' — ')[0].split('@')[0].trim());
-    estructura = [formatoTxt, esquema, movs.join(' / ')].filter(Boolean).join(' · ').toUpperCase();
+    estructura = [formatoTxt, esquema, movs.join(' · ')].filter(Boolean).join(' · ').toUpperCase();
   }
   if(!estructura && wod) estructura = (wod.title || '').toUpperCase();
   let score = '';
@@ -7775,12 +7824,23 @@ function datosStoryCF(weekIdx, day){
     const skey = weekIdx + '|' + day.id + '|' + wod.id;
     score = (typeof state !== 'undefined' && state.scores && state.scores[skey]) || '';
   }
+  /* directiva ("Métrica de Performance") -- si no hay score cargado pero
+     el WOD ya está marcado como hecho y su esquema declara "Every X:XX x
+     N Sets" (intervalos), se muestra "N / N INTERVALOS COMPLETADOS" en
+     vez de dejar la Hero Card 2 sin ninguna métrica de cierre. */
+  if(!score && wod && wod.items){
+    const schemeLine = wod.items.map(x => String(x).trim()).find(l => /every\\s*\\d/i.test(l));
+    const nM = schemeLine && schemeLine.match(/x\\s*(\\d+)\\s*sets?/i);
+    if(nM && isBlockDone(weekIdx, day.id, wod.id)){
+      score = nM[1] + ' / ' + nM[1] + ' INTERVALOS COMPLETADOS';
+    }
+  }
   return {
     modo: 'crossfit',
     atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
     tituloWod: (wod && wod.title) || day.title || day.short || 'WOD',
-    volumenTotal: volumenTotal,
-    topLiftKg: topLiftKg,
+    volumenTotal: volumenFinal,
+    topLiftKg: topKgFinal,
     esPR: esPR,
     fecha: new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }),
     warmupTxt: warmupTxt,
@@ -9790,6 +9850,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      PRs de Bodybuilding; se expone en window porque montarPerfil() vive
      en otro closure y no tiene acceso directo a esta función. */
   window.jpAbrirListaPRs = jpAbrirListaPRs;
+  /* directiva ("Story Card: Tonelaje Real") -- datosStoryCF() (módulo de
+     la Story Card, otro closure más arriba en el archivo) necesita el
+     MISMO motor de resolución de "@ N%"/"@ Xkg" que ya usa la Pizarra
+     para calcular el tonelaje real de la sesión -- se expone acá para
+     no duplicar la lógica de 1RM/lematización en otro lado. */
+  window.jpCfResolverKgLinea = jpCfResolverKgLinea;
   document.addEventListener('click', function(e){
     var quick = e.target.closest('.jp-prs-quickbtn');
     if(quick){ e.stopPropagation(); jpAbrirListaPRs(); return; }
@@ -11182,9 +11248,16 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     g.fillStyle = glow; g.fillRect(0, 0, W, 320);
     escudoMini(g, W / 2, 70, 110);
 
+    /* directiva ("Rediseño Story Card 9:16") -- línea de marca chica
+       arriba del badge táctico: "COACH JP · HIGH PERFORMANCE SYSTEM",
+       mismo texto institucional que ya usa dibujar() (estilo Bodybuilding)
+       en su propio encabezado, ahora también en la versión CrossFit. */
     g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    g.fillStyle = 'rgba(255,255,255,.65)'; g.font = '700 22px "JetBrains Mono", ui-monospace, monospace';
+    g.fillText('COACH JP · HIGH PERFORMANCE SYSTEM', W / 2, 216);
+
     g.fillStyle = '#38BDF8'; g.font = '700 30px "JetBrains Mono", ui-monospace, monospace';
-    g.fillText('[ CROSSFIT & FUNCTIONAL ]', W / 2, 258);
+    g.fillText('[ CROSSFIT & HYROX TACTICAL ]', W / 2, 258);
 
     /* directiva (rediseño total Story Card 9:16, ultra profesional) --
        el header ahora manda con el NOMBRE DEL ATLETA en tipografía
@@ -11354,10 +11427,19 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     g.fillStyle = '#7CFFB2'; g.font = '800 26px "JetBrains Mono", monospace';
     g.fillText('✓ SESSION COMPLETED', W / 2, H - footerReserve + 68);
 
-    g.fillStyle = 'rgba(245,197,24,.14)'; redondear(g, W / 2 - 190, H - 106, 380, 58, 29); g.fill();
-    g.strokeStyle = 'rgba(245,197,24,.5)'; g.lineWidth = 2; redondear(g, W / 2 - 190, H - 106, 380, 58, 29); g.stroke();
-    g.fillStyle = '#F5C518'; g.font = '700 22px "JetBrains Mono", monospace';
-    g.fillText('COACH JP · HIGH PERFORMANCE', W / 2, H - 68);
+    /* directiva ("Actualización del footer de marca") -- frase
+       institucional exacta pedida: "COACH JP · DISCIPLINE EQUALS
+       FREEDOM" (reemplaza "COACH JP · HIGH PERFORMANCE"). Es más larga,
+       así que la píldora se dimensiona a partir del ancho real medido
+       (mismo patrón que el badge de heroCard) en vez de un ancho fijo
+       que la hubiera cortado. */
+    var footerFrase = 'COACH JP · DISCIPLINE EQUALS FREEDOM';
+    g.font = '700 22px "JetBrains Mono", monospace';
+    var footerW = g.measureText(footerFrase).width + 64;
+    g.fillStyle = 'rgba(245,197,24,.14)'; redondear(g, W / 2 - footerW / 2, H - 106, footerW, 58, 29); g.fill();
+    g.strokeStyle = 'rgba(245,197,24,.5)'; g.lineWidth = 2; redondear(g, W / 2 - footerW / 2, H - 106, footerW, 58, 29); g.stroke();
+    g.fillStyle = '#F5C518';
+    g.fillText(footerFrase, W / 2, H - 68);
 
     return c;
   }
@@ -11384,14 +11466,65 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   document.getElementById('storyWrap').addEventListener('click', e => {
     if(e.target.id === 'storyWrap') cerrarStory();
   });
+  /* directiva ("Fix descarga/guardado nativo de imagen") -- en iPhone
+     (Safari/PWA) el atributo download de un <a> con un Data URL o Blob
+     es bloqueado o ignorado en silencio por WebKit: el alumno tocaba
+     "Descargar" y no pasaba nada, sin ningún error visible. Web Share
+     API con soporte de archivos (navigator.canShare({files})) es la vía
+     confiable en iOS -- abre el Action Sheet nativo (Guardar en Fotos/
+     Copiar/compartir directo a Instagram o WhatsApp). Android/desktop
+     (o iOS viejo sin soporte de archivos en Share) caen al link
+     <a download> de siempre, con Blob + Object URL en vez de Data URL
+     (más liviano, sin el límite de tamaño de un data: URI); si ESE
+     también fallara en algún WebKit raro, el último respaldo abre la
+     imagen en una pestaña nueva con la instrucción de mantener
+     presionado para guardarla a mano -- nunca falla en silencio. */
+  function storyDescargaFallback(blob, nombreArchivo, btn, textoOriginal, restaurar){
+    try{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.download = nombreArchivo;
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+      btn.textContent = '✅ Descargada';
+      restaurar(textoOriginal, 2200);
+    }catch(e){
+      try{
+        const url2 = URL.createObjectURL(blob);
+        window.open(url2, '_blank');
+        btn.textContent = '📲 Mantené presionado para guardar';
+      }catch(e2){ btn.textContent = '⚠️ Usá Copiar imagen'; }
+      restaurar(textoOriginal, 3600);
+    }
+  }
   document.getElementById('storyDl').addEventListener('click', function(){
+    const btn = this;
+    const textoOriginal = btn.textContent;
+    const restaurar = function(txt, delay){ setTimeout(function(){ btn.textContent = txt; }, delay); };
     const c = document.getElementById('storyCanvas');
-    const a = document.createElement('a');
-    a.download = 'coachjp-story.png';
-    a.href = c.toDataURL('image/png');
-    a.click();
-    this.textContent = '✅ Descargada';
-    const b = this; setTimeout(function(){ b.textContent = '⬇ Descargar'; }, 2200);
+    btn.disabled = true;
+    c.toBlob(function(blob){
+      btn.disabled = false;
+      if(!blob){ btn.textContent = '⚠️ No se pudo generar'; restaurar(textoOriginal, 2200); return; }
+      const nombreArchivo = 'coach-jp-story.png';
+      let file = null;
+      try{ file = new File([blob], nombreArchivo, { type: 'image/png' }); }catch(e){}
+      if(file && navigator.canShare && navigator.canShare({ files: [file] })){
+        navigator.share({ files: [file], title: 'Story Coach JP' })
+          .then(function(){ btn.textContent = '✅ Compartida'; restaurar(textoOriginal, 2200); })
+          .catch(function(err){
+            /* el alumno cerró el Action Sheet sin elegir nada -- no es un
+               error real, se restaura el botón en silencio */
+            if(err && err.name === 'AbortError'){ btn.textContent = textoOriginal; return; }
+            storyDescargaFallback(blob, nombreArchivo, btn, textoOriginal, restaurar);
+          });
+        return;
+      }
+      storyDescargaFallback(blob, nombreArchivo, btn, textoOriginal, restaurar);
+    }, 'image/png');
   });
   document.getElementById('storyCp').addEventListener('click', function(){
     const b = this, c = document.getElementById('storyCanvas');
@@ -43701,8 +43834,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      literal, borrando toda "t" del texto generado ("está" -> "es á",
      "potencia" -> "po encia": el bug reportado). Con un solo backslash
      quedan los escapes de verdad: \t = tab, \n = salto de línea. */
+  /* directiva ("Fix y Refactor Táctico") -- decodifica entidades HTML
+     (&amp;/&quot;/&#39;/...) usando el propio parser RCDATA del navegador
+     (textarea.innerHTML -> .value nunca ejecuta el contenido como HTML
+     real, sólo decodifica entidades) en vez de una tabla manual --
+     cubre cualquier entidad, no sólo las 5 más comunes. */
+  function decodificarEntidades(s){
+    try{
+      const ta = document.createElement('textarea');
+      ta.innerHTML = s;
+      return ta.value;
+    }catch(e){ return s; }
+  }
   function limpiar(txt){
-    return String(txt || '')
+    return decodificarEntidades(String(txt || ''))
       .replace(/[ \t]+/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
@@ -43735,8 +43880,21 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(strVal) return strVal;
       }
     }catch(e1){}
-    const m = s.match(/"briefing"\s*:\s*"([\s\S]*?)"\s*[,}]/);
+    /* respaldo por regex explícito (directiva) -- clave opcionalmente
+       entre comillas simples o dobles, tolera comas colgantes o cierre
+       directo de objeto */
+    const m = s.match(/["']?briefing["']?\s*:\s*"([\s\S]*?)"\s*(?:[,}]|$)/);
     if(m){ try{ return JSON.parse('"' + m[1] + '"'); }catch(e2){ return m[1]; } }
+    /* último respaldo -- si después de extractJson() y el regex el texto
+       TODAVÍA arranca como un objeto crudo (payload realmente roto),
+       nunca se imprimen "{"/"}" ni la clave "briefing" tal cual: se
+       pelan a mano antes de mostrarlo, mejor un texto imperfecto que
+       sintaxis JSON cruda en la pantalla del alumno. */
+    if(/^\s*\{[\s\S]*\}\s*$/.test(s)){
+      return s.replace(/^\s*\{/, '').replace(/\}\s*$/, '')
+        .replace(/^\s*["']?briefing["']?\s*:\s*/, '')
+        .replace(/^"|"\s*$/g, '').trim();
+    }
     return s;
   }
 
