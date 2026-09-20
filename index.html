@@ -2187,8 +2187,13 @@ function checkExercise(ath, ex){
   (ath.tags||[]).forEach(t => zonasDeTag(t).forEach(z => { (zonasAth[z] = zonasAth[z] || []).push(t); }));
   (ex.riesgo||[]).forEach(z => {
     if(zonasAth[z]){
+      /* FASE 1.2 -- "zona"/"zonaLb" crudos además del title/msg ya
+         formateados: así el Builder puede agrupar por articulación
+         (chips) sin tener que parsear el texto del título. Cero cambio
+         para quien ya lee title/msg (Guía, exportación, etc.). */
       out.push({ level:'warn', title:'⚠️ RIESGO BIOMECÁNICO — ' + (ZONA_LB[z]||z),
-        msg:'El ejercicio compromete ' + (ZONA_LB[z]||z).toLowerCase() + ' y el alumno/a tiene: ' + zonasAth[z].join(' · ') + (ex.aviso ? ' — ' + ex.aviso : '') });
+        msg:'El ejercicio compromete ' + (ZONA_LB[z]||z).toLowerCase() + ' y el alumno/a tiene: ' + zonasAth[z].join(' · ') + (ex.aviso ? ' — ' + ex.aviso : ''),
+        zona:z, zonaLb:(ZONA_LB[z]||z) });
     }
   });
 
@@ -2213,21 +2218,47 @@ function worst(alerts){
   if(alerts.some(a => a.level === 'good'))   return 'good';
   return '';
 }
+/* FASE 1.2 (fix de mapeo, captura 192608) -- antes filtraba por
+   "mismo patrón O mismo grupo muscular", con el grupo sumando apenas
+   6 puntos menos que el patrón (12): un candidato de OTRO patrón pero
+   sin ninguna bandera de riesgo (+8) y con video (+3) podía terminar
+   empatando o superando a un candidato del patrón correcto con alguna
+   advertencia leve -- así aparecía "Patada de glúteo" (patrón de
+   extensión de cadera) como "variante segura" de "Sentadilla" (patrón
+   de rodilla dominante): comparten grupo muscular (Piernas/Glúteos)
+   pero NO el patrón que en realidad hay que preservar al buscar un
+   reemplazo. Ahora el mismo patrón de movimiento es una condición
+   de PRIMER NIVEL: sólo se completa con candidatos de mismo grupo
+   (patrón distinto) si no alcanzan los del patrón correcto, y esos
+   nunca pueden desplazar a uno de patrón real (se agregan
+   después, nunca se mezclan en el mismo sort). */
 function suggestAlts(ath, ex, n){
-  const cand = S.exercises.filter(e => e.id !== ex.id && (e.patron === ex.patron || e.grupo === ex.grupo));
-  const scored = cand.map(e => {
+  const cupo = n || 3;
+  function puntuar(e){
     const al = checkExercise(ath, e);
     let sc = 0;
     if(al.some(a => a.level === 'danger')) sc -= 100;
     if(al.some(a => a.level === 'warn'))   sc -= 20;
     if(al.some(a => a.level === 'good'))   sc += 30;
-    if(e.patron === ex.patron) sc += 12;
-    if(e.grupo  === ex.grupo)  sc += 6;
     if(!(e.riesgo||[]).length) sc += 8;
     if(e.videoId) sc += 3;
-    return {e:e, sc:sc};
-  }).filter(x => x.sc > -50).sort((a,b) => b.sc - a.sc);
-  return scored.slice(0, n || 3).map(x => x.e);
+    return sc;
+  }
+  const porPatron = S.exercises
+    .filter(e => e.id !== ex.id && e.patron === ex.patron)
+    .map(e => ({e:e, sc:puntuar(e)}))
+    .filter(x => x.sc > -50)
+    .sort((a,b) => b.sc - a.sc);
+  let resultado = porPatron;
+  if(resultado.length < cupo){
+    const porGrupo = S.exercises
+      .filter(e => e.id !== ex.id && e.patron !== ex.patron && e.grupo === ex.grupo)
+      .map(e => ({e:e, sc:puntuar(e)}))
+      .filter(x => x.sc > -50)
+      .sort((a,b) => b.sc - a.sc);
+    resultado = resultado.concat(porGrupo);
+  }
+  return resultado.slice(0, cupo).map(x => x.e);
 }
 /* Chequeo de texto libre (items de warm-up, movimientos Hyrox) */
 function checkFreeText(ath, txt){
@@ -2248,6 +2279,36 @@ function checkFreeText(ath, txt){
   return out;
 }
 /* Todas las alertas de un bloque (ejercicios de biblioteca + texto libre) */
+/* FASE 1.4 -- Pre-Flight Validator: detecta bloques de Bodybuilding
+   (block/superset/finisher) que llegarían "mudos" al alumno porque
+   ningún ejercicio tiene series/reps cargadas -- nunca toca CrossFit
+   (cfFmt/cfParam es un esquema de dosis totalmente distinto, ver el
+   guardrail en renderDay()). */
+function bloqueSinDosis(b){
+  if(b.tipo === 'block') return !b.efSets || !String(b.reps||'').trim();
+  if(b.tipo === 'superset') return (b.ejercicios||[]).some(e => !String(e.reps||'').trim());
+  if(b.tipo === 'finisher') return (b.fin||[]).some(e => !String(e.repsRange||'').trim());
+  return false;
+}
+/* dosis por defecto: Core/Accesorio y Finisher son series cortas de
+   bombeo (2-3x15, per la propia directiva); el resto usa un default de
+   fuerza/hipertrofia general (4x8-10) -- nunca inventa una carga en Kg,
+   sólo series/reps, que es lo que de verdad deja al bloque "mudo". */
+function aplicarDosisEstandar(b){
+  const esCoreOAccesorio = b.category === 'accessory' || /\b(core|zona\s*media)\b/i.test((b.titulo||'') + ' ' + (b.subtitulo||''));
+  const cortoYAlto = b.tipo === 'finisher' || esCoreOAccesorio;
+  const setsDef = cortoYAlto ? 3 : 4;
+  const repsDef = cortoYAlto ? '15' : '8-10';
+  if(b.tipo === 'block'){
+    if(!b.efSets) b.efSets = setsDef;
+    if(!String(b.reps||'').trim()) b.reps = repsDef;
+  } else if(b.tipo === 'superset'){
+    if(!b.efSets) b.efSets = setsDef;
+    (b.ejercicios||[]).forEach(e => { if(!String(e.reps||'').trim()) e.reps = repsDef; });
+  } else if(b.tipo === 'finisher'){
+    (b.fin||[]).forEach(e => { if(!String(e.repsRange||'').trim()) e.repsRange = repsDef; });
+  }
+}
 function blockAlerts(ath, b){
   if(!ath) return [];
   let out = [];
@@ -3307,6 +3368,13 @@ function renderDay(){
        fijo, aunque el coach cambiara la Fase real más abajo -- en
        CrossFit el pill refleja la Fase elegida para no contradecirla */
     const pillLb = esBloqueCF ? ((CF_FASES.find(f => f.v === b.category) || CF_FASES[2]).lb) : T.lb;
+    /* FASE 1.4 -- Pre-Flight Validator de bloques incompletos. Sólo aplica
+       a los tipos de Bodybuilding con campos de reps/series estructurados
+       (block/superset/finisher): CrossFit resuelve la dosis por completo
+       en b.cfFmt/cfParam (formato nativo), un esquema totalmente distinto
+       que este validador no toca -- nunca se marca un bloque de Pizarra
+       como "sin dosis". */
+    const sinDosis = !esBloqueCF && bloqueSinDosis(b);
     h += '<div class="block ' + T.cls + ' ' + (w==='danger'?'bad':'') + '">' +
       '<div class="block-h">' +
         '<span class="pill ' + (b.tipo==='finisher'?'red':(b.tipo==='hyrox'?'teal':(b.tipo==='superset'?'gold':''))) + '">' + T.ic + ' ' + pillLb + '</span>' +
@@ -3318,15 +3386,43 @@ function renderDay(){
         '<button class="icon-btn" data-bdup="' + b.id + '" title="Duplicar">⧉</button>' +
         '<button class="icon-btn danger" data-bdel="' + b.id + '" title="Eliminar">🗑</button>' +
       '</div>' +
+      (sinDosis ? '<div class="row" style="padding:0 12px;margin-top:-2px;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<span class="pill" style="background:rgba(210,80,60,.14);border-color:rgba(210,80,60,.45);color:#F0A08C">⚠️ FALTA DOSIS (REPS / TIEMPO)</span>' +
+        '<button type="button" class="btn xs" data-asignardosis="' + b.id + '">Asignar dosis estándar</button>' +
+      '</div>' : '') +
       '<div class="block-body">';
 
-    /* --- alertas del motor biomecánico --- */
+    /* --- alertas del motor biomecánico ---
+       FASE 1.2 (deduplicación, captura 192608): antes cada zona de riesgo
+       compartida (Rodilla, Cadera...) de UN MISMO ejercicio generaba su
+       propia tarjeta "⚠️ RIESGO BIOMECÁNICO — Zona" completa Y su propia
+       tarjeta espejo "Variantes seguras para X" -- un ejercicio con 2
+       zonas comprometidas se veía como 4 tarjetas casi idénticas. Ahora
+       las entradas warn de tipo riesgo biomecánico (tienen .zona, ver
+       checkExercise()) se agrupan por exId en UN solo contenedor con un
+       chip por articulación; danger/good siguen una tarjeta por entrada
+       (son mensajes distintos entre sí, no hay nada que deduplicar ahí). */
+    const riesgoPorEx = {};
     al.forEach(a => {
+      if(a.level === 'warn' && a.zona && a.exId){
+        (riesgoPorEx[a.exId] = riesgoPorEx[a.exId] || { exName:a.exName, zonas:[] }).zonas.push(a.zonaLb);
+        return;
+      }
       h += '<div class="alert ' + a.level + ' flash" style="margin-bottom:9px"><span class="ic">' + (a.level==='danger'?'🚨':(a.level==='warn'?'⚠️':'⭐')) + '</span>' +
         '<div><b>' + esc(a.title) + '</b>' + esc(a.msg) + '</div></div>';
     });
-    /* --- sugerencias de variantes seguras --- */
+    Object.keys(riesgoPorEx).forEach(exId => {
+      const r = riesgoPorEx[exId];
+      h += '<div class="alert warn flash" style="margin-bottom:9px"><span class="ic">🛡️</span><div><b>ALERTAS BIOMECÁNICAS — ' + esc(r.exName) + '</b>' +
+        '<div class="row" style="margin-top:5px;gap:5px;flex-wrap:wrap">' +
+          r.zonas.map(z => '<span class="pill" style="background:rgba(210,121,63,.14);border-color:rgba(210,121,63,.4);color:#E8965E">' + esc(z) + '</span>').join('') +
+        '</div></div></div>';
+    });
+    /* --- sugerencias de variantes seguras: una sola tarjeta por exId --- */
+    const vistoVariantes = {};
     al.filter(a => a.exId && a.level !== 'good').forEach(a => {
+      if(vistoVariantes[a.exId]) return;
+      vistoVariantes[a.exId] = 1;
       const ex = getEx(a.exId); if(!ex) return;
       const alts = suggestAlts(ath, ex, 3);
       if(!alts.length) return;
@@ -3381,7 +3477,7 @@ function renderDay(){
         '<div class="f"><label>Series aprox.</label><input type="number" data-bf="approxSets" data-b="' + b.id + '" value="' + esc(b.approxSets) + '"></div>' +
         '<div class="f"><label>Series efectivas</label><input type="number" data-bf="efSets" data-b="' + b.id + '" value="' + esc(b.efSets) + '"></div>' +
         '<div class="f"><label>Reps</label><input data-bf="reps" data-b="' + b.id + '" value="' + esc(b.reps) + '" placeholder="6-8"></div>' +
-        '<div class="f"><label>Tempo</label><input data-bf="tempo" data-b="' + b.id + '" value="' + esc(b.tempo) + '" placeholder="2110">' + tempoChipsHtml() + '</div>' +
+        '<div class="f f-tempo"><label>Tempo</label><input data-bf="tempo" data-b="' + b.id + '" value="' + esc(b.tempo) + '" placeholder="2110">' + tempoChipsHtml() + '</div>' +
         '<div class="f"><label>Técnica de intensidad</label><select data-bf="metodologia" data-b="' + b.id + '">' + tecOptions(b.metodologia) + '</select></div>' +
         tecParamFieldHtml(b, b.id, 'bf') +
         '<div class="f"><label>Descanso (seg)</label>' +
@@ -3434,7 +3530,7 @@ function renderDay(){
           '<div class="fields">' +
             '<div class="f wide"><label>Ejercicio</label><select data-sf="exId" data-b="' + b.id + '" data-i="' + i + '">' + exOptions(e.exId) + '</select></div>' +
             '<div class="f"><label>Reps</label><input data-sf="reps" data-b="' + b.id + '" data-i="' + i + '" value="' + esc(e.reps||'') + '" placeholder="10-12"></div>' +
-            '<div class="f"><label>Tempo</label><input data-sf="tempo" data-b="' + b.id + '" data-i="' + i + '" value="' + esc(e.tempo||'') + '" placeholder="2011">' + tempoChipsHtml() + '</div>' +
+            '<div class="f f-tempo"><label>Tempo</label><input data-sf="tempo" data-b="' + b.id + '" data-i="' + i + '" value="' + esc(e.tempo||'') + '" placeholder="2011">' + tempoChipsHtml() + '</div>' +
             '<div class="f"><label>Técnica</label><select data-sf="metodologia" data-b="' + b.id + '" data-i="' + i + '">' + tecOptions(e.metodologia) + '</select></div>' +
             tecParamFieldHtml(e, b.id, 'sf', i) +
           '</div>' +
@@ -4236,6 +4332,17 @@ function bindBuilder(){
       }
       return;
     }
+    /* FASE 1.4 -- "Asignar dosis estándar": renderBuilder() completo para
+       que el badge ⚠️ desaparezca y los inputs recién completados se vean
+       de una (mismo patrón que cualquier otro botón que muta el bloque
+       en este mismo listener, ver data-bdup/data-bdel más abajo). */
+    if(t.dataset.asignardosis){
+      const b = findBlock(t.dataset.asignardosis); if(!b) return;
+      aplicarDosisEstandar(b);
+      save(); renderBuilder();
+      toast('Dosis estándar asignada');
+      return;
+    }
     if(t.dataset.cfwk !== undefined){
       S.ui = S.ui || {};
       S.ui.cfWeek = parseInt(t.dataset.cfwk, 10) || 0;
@@ -4852,7 +4959,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
      Petch) en vez de Barlow Condensed -- se veía "genérica/pesada",
      desentonaba con el resto del branding (block-label, ex-name, etc.
      ya usan --font-head). */
-  .day-title { font-family: var(--font-head, 'Chakra Petch', 'Barlow Condensed', sans-serif); font-weight: 700; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.02em; line-height: 1.1; }
+  .day-title { font-family: var(--font-head, 'Chakra Petch', 'Barlow Condensed', sans-serif); font-weight: 800; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.1; }
   .day-meta-row { display: flex; gap: 7px; margin-top: 0.5rem; flex-wrap: wrap; }
   .meta-chip { background: rgba(124,197,232,0.08); border: 1px solid rgba(124,197,232,0.22); color: var(--red-light); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.05em; }
   .day-complete-btn { background: rgba(74,147,184,0.1); border: 1px solid rgba(74,147,184,0.3); color: var(--teal); font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.9rem; letter-spacing: 0.07em; text-transform: uppercase; padding: 10px 22px; border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s ease; white-space: nowrap; align-self: flex-start; }
@@ -4929,7 +5036,15 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   /* Athlete A+B -- sección de Foco Técnico fusionada dentro de .rdy-body;
      separador sutil para diferenciarla de las preguntas de check-in que
      le siguen (mismo .rdy-body, dos secciones). */
-  .rdy-foco{padding-bottom:12px;border-bottom:1px dashed rgba(255,255,255,.12)}
+  .rdy-foco{
+    margin-bottom:12px;padding:10px 12px;border-radius:11px;
+    background:rgba(0,229,255,.045);border:1px solid rgba(0,229,255,.25);
+  }
+  .rdy-foco-badge{
+    display:inline-flex;align-items:center;font-family:'Barlow Condensed',sans-serif;
+    font-weight:800;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;
+    color:#38BDF8;margin-bottom:5px;
+  }
   .rdy-foco-title{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.85rem;text-transform:uppercase;letter-spacing:.03em;color:var(--gold,#D2793F);margin-bottom:4px}
   .rdy-foco-text{margin:0;font-size:.85rem;line-height:1.55;color:var(--text-secondary)}
   .rdy-q{display:flex;flex-direction:column;gap:8px}
@@ -5059,6 +5174,22 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .block.collapsed .block-body { display: none; }
   body.quick-mode .block-optional { display: none !important; }
   .ex-row { display: flex; gap: 10px; padding: 0.5rem 0.4rem; margin: 0 -0.4rem; border-bottom: 1px solid var(--border-subtle); align-items: flex-start; border-radius: 6px; transition: background 0.15s ease; }
+  /* FASE 2.2 -- píldora horizontal de calentamiento: dosis | nombre+foco | miniatura */
+  .ex-row.wu-pill{
+    align-items: center; flex-wrap: nowrap; gap: 10px; padding: 0.55rem 0.6rem;
+    background: rgba(255,255,255,.02); border-radius: 12px;
+  }
+  .ex-row.wu-pill .ex-bullet{ display: none; }
+  .wu-pill-dose{
+    flex: 0 0 auto; font-family: var(--font-head, 'Chakra Petch', 'Barlow Condensed', sans-serif);
+    font-weight: 800; font-size: .72rem; letter-spacing: .03em; white-space: nowrap;
+    color: #38BDF8; background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.3);
+    border-radius: 8px; padding: 5px 9px;
+  }
+  .wu-pill-mid{ flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .wu-pill-name{ display: block; font-weight: 700; white-space: normal; }
+  .wu-pill-focus{ display: block; margin-top: 0; color: var(--text-muted); font-size: .78rem; line-height: 1.35; }
+  .ex-row.wu-pill .video-link.jp-play{ flex: 0 0 auto; margin-left: 0; }
   .ex-row:hover { background: rgba(255,255,255,0.02); }
   .ex-row:last-child { border-bottom: none; padding-bottom: 0.5rem; }
   .ex-bullet { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); flex-shrink: 0; margin-top: 8px; box-shadow: 0 0 6px rgba(210,121,63,0.4); }
@@ -5607,10 +5738,13 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
    .bs-r) -- no se toca su estructura, sólo se le suma la línea
    lateral de marca. -------------------------------------------- */
 .block .bs-wrap{ position: relative; padding-left: 14px; }
-.block .bs-wrap::before{
-  content:''; position:absolute; left:2px; top:2px; bottom:14px; width:2px; border-radius:2px;
-  background: linear-gradient(var(--gold, #D2793F), var(--red-dim, #2E5A72));
-}
+/* FASE 2.3 -- bracket lateral cian continuo (antes gold→red-dim): une
+   visualmente estación A con estación B/C, mismo acento cian que ya usa
+   el resto del sistema para "protocolo/estructura enlazada" (.jp-cf-rest,
+   .rdy-foco). border-left en vez de ::before + gradiente: una línea
+   sólida y continua, no un degradé que se apaga. */
+.block .bs-wrap{ border-left: 2px solid #00e5ff; padding-left: 12px; }
+.block .bs-wrap::before{ content: none; }
 </style>
 </head>
 <body>
@@ -6611,6 +6745,28 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
   let repsPlaceholder = 'Reps';
   if(/\\bcarry\\b/i.test(nm) || /\\d\\s*(metros?|km|m)\\b/i.test(rh) || /\\d\\s*(metros?|km|m)\\b/i.test(nm)) repsPlaceholder = 'm';
   else if(/\\d\\s*(segundos?|seg|minutos?|min|s)\\b/i.test(rh)) repsPlaceholder = 'seg';
+  /* FASE 2.4 -- fallback táctico: numSets llega en 0/NaN cuando el
+     ejercicio no tiene series cargadas (dato viejo, importación
+     incompleta, o el coach todavía escribiendo) -- antes esto pintaba un
+     .set-tracker VACÍO (el for de abajo nunca entraba), un ejercicio
+     "mudo" sin ningún casillero para registrar nada. Nunca se debe
+     mostrar así: se fuerza UNA fila de ejecución operativa (Set 1,
+     target "Libre / Fallo" en vez de un número inventado) para que el
+     alumno siempre tenga dónde cargar lo que hizo, sea cual sea la
+     prescripción real. */
+  const numSetsInt = parseInt(numSets, 10) || 0;
+  /* el defecto real que reporta la auditoría (193024) es la RESISTENCIA
+     LIBRE -- reps vacío ("" o null): efSets ya llega con un mínimo de 1
+     puesto más arriba (weekDetail), así que numSetsInt<=0 casi nunca
+     ocurre en la práctica. sinReps sólo cambia el placeholder de cada
+     fila (nunca inventa un número de series que el coach no cargó);
+     sinFilas es el caso extremo -- ninguna serie en absoluto -- y es lo
+     único que fuerza a un mínimo de 1 fila para que el bloque no quede
+     mudo. */
+  const sinReps = !String(repsHint || '').trim();
+  const sinFilas = numSetsInt <= 0;
+  const sinDosisReal = sinReps || sinFilas;
+  if(sinDosisReal) repsPlaceholder = 'Libre / Fallo';
   /* bandas/peso corporal: el estímulo lo da la tensión de la banda o el
      propio peso, no un número de Kg real -- se oculta ese casillero y
      queda sólo Reps, centrado. Sólo mira el NOMBRE (no la prescripción)
@@ -6641,7 +6797,8 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
      puramente visual, se calcula sobre state.loads ya leído más abajo
      (ld.done), no agrega ni cambia ningún dato. */
   let activaMarcada = false;
-  for(let i=1;i<=numSets;i++){
+  const numSetsEfectivo = sinFilas ? 1 : numSetsInt;
+  for(let i=1;i<=numSetsEfectivo;i++){
     const key = getLoadKey(weekIdx, dayId, blockId, exIdx, i);
     const ld = getLoad(key);
     /* 09/09 -- MOTOR DE PROGRESION SEMANAL ENTRE MICROCICLOS: si el alumno
@@ -6925,8 +7082,12 @@ function renderReadinessCard(weekIdx, day){
      mismo auto-colapso al completar sueño+energía, mismo open
      programático desde el dock) -- pedido 41 y todo lo de acá arriba
      sigue intacto, solo se le agrega contenido al final del body. */
+  /* FASE 2.1 -- tarjeta táctica de foco, con borde cian y badge propio
+     para separarla limpiamente del check-in de 3 toques que la sigue
+     dentro del mismo body fusionado. */
   const focoHtml = day.focusText ? (
     '<div class="rdy-foco">' +
+      '<div class="rdy-foco-badge">🎯 DIRECTIVA TÁCTICA</div>' +
       '<div class="rdy-foco-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div>' +
       '<p class="rdy-foco-text">' + day.focusText + '</p>' +
     '</div>'
@@ -7108,6 +7269,25 @@ function esLineaDirectiva(text){
   if(!t) return true;
   return RX_LINEA_DIRECTIVA.test(t);
 }
+/* FASE 2.2 -- extrae una "dosis" corta y prolija (5/LADO, 2X15S, 2 MIN,
+   8 REPS) del detalle libre que el coach escribió después del " — ". Cada
+   patrón exige que el detalle EMPIECE con ese número/unidad (^...), y si
+   ninguno matchea se devuelve dosis:null -- el detalle completo se
+   muestra tal cual, SIN cortar ni una palabra. Esto es a propósito lo que
+   evita el bug reportado (texto roto tipo "rotaciones de cadera
+   repeticiones por lado", donde un extractor menos estricto se comía el
+   número pero dejaba sueltas las palabras de al lado): mejor no mostrar
+   dosis corta que mostrar una rota. */
+function extraerDosisWU(detail){
+  const t = String(detail || '').trim();
+  let m;
+  if((m = t.match(/^(\\d+)\\s*(?:x|\\*)\\s*(\\d+)\\s*(s|seg|segundos?)\\b/i))) return { dosis: m[1] + 'X' + m[2] + 'S', resto: t };
+  if((m = t.match(/^(\\d+)\\s*(?:min|minutos?)\\b/i))) return { dosis: m[1] + ' MIN', resto: t };
+  if((m = t.match(/^(\\d+)\\s*(?:s|seg|segundos?)\\b/i))) return { dosis: m[1] + ' SEG', resto: t };
+  if((m = t.match(/^(\\d+)\\s*(?:reps?|repeticiones?)\\s*(?:por\\s*lado|c\\/u|cada\\s*lado)\\b/i))) return { dosis: m[1] + '/LADO', resto: t };
+  if((m = t.match(/^(\\d+)\\s*(?:reps?|repeticiones?)\\b/i))) return { dosis: m[1] + ' REPS', resto: t };
+  return { dosis: null, resto: t };
+}
 function renderLine(text, enBadge){
   enBadge = enBadge || '';
   /* las fases del calentamiento se muestran como subtítulo, no como ejercicio */
@@ -7123,7 +7303,20 @@ function renderLine(text, enBadge){
   if(dashSplit.length >= 2){
     const name = dashSplit[0];
     const detail = dashSplit.slice(1).join(' — ');
-    return '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + name + enBadge + videoLinkHtml(name) + '</span><span class="ex-detail">' + detail + '</span></div>';
+    const d = extraerDosisWU(detail);
+    /* pastilla horizontal de 3 columnas: dosis (si se pudo extraer con
+       confianza) | nombre + micro-foco | miniatura de video (videoLinkHtml
+       ya la arma en 48x48, ver FASE 2 de la directiva anterior). Sin
+       dosis reconocida, la columna izquierda no se pinta -- el detalle
+       completo pasa entero al micro-foco, nunca se pierde información. */
+    return '<div class="ex-row wu-pill"><div class="ex-bullet"></div>' +
+      (d.dosis ? '<span class="wu-pill-dose">' + d.dosis + '</span>' : '') +
+      '<span class="wu-pill-mid">' +
+        '<span class="ex-name wu-pill-name">' + name + enBadge + '</span>' +
+        '<span class="ex-detail wu-pill-focus">' + d.resto + '</span>' +
+      '</span>' +
+      videoLinkHtml(name) +
+    '</div>';
   }
   return '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + text + enBadge + videoLinkHtml(text) + '</span></div>';
 }
@@ -7636,7 +7829,15 @@ function renderBlockInner(block, day, weekIdx){
     const sd = supersetDetail(block, weekIdx);
     html += '<div class="superset-header"><span class="sh-icon">🔗</span><span class="sh-text">' + sd.header + '</span></div>';
     sd.exercises.forEach(function(ex, exIdx){
-      html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + enBadgeHtml(ex.nameEn) + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') +
+      /* FASE 2.3 -- se retira el badge [EN] específicamente acá (leído
+         como "desconocido" en la auditoría visual): en biset/triset ya
+         hay dos o tres nombres de ejercicio compitiendo por espacio en
+         cada fila, así que la cápsula extra de "nombre en inglés" suma
+         más ruido que valor justo en este contexto denso. enBadgeHtml()
+         sigue existiendo tal cual para el resto de la app (bloque normal,
+         finisher, calentamiento) -- no se toca la función, solo se deja
+         de invocar en esta rama puntual. */
+      html += '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + ex.name + videoLinkHtml(ex.name) + '</span><span class="ex-detail">' + ex.reps + (ex.tempo ? ' · Tempo ' + ex.tempo : '') +
         refPreviaHtml(weekIdx, day.id, block.id, exIdx, sd.rounds) + '</span></div>';
       if(typeof renderSetRows === 'function'){
         html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps, cargaSugeridaKg(block, weekIdx), ex.name, (block.title||'') + ' ' + (block.subtitle||''));
@@ -8135,14 +8336,19 @@ function renderMain(){
      por completo (Regla de Oro: day.cfVault, si algún plan viejo de los
      33 atletas ya lo trae resuelto, sigue viajando intacto en el dato
      compilado, simplemente no se pinta; nada se borra ni se recalcula). */
-  /* Story Card CrossFit: botón fijo al cierre de la sesión, siempre justo
-     antes de "Marcar Día Completo" -- no depende de tildar cada bloque a
-     mano (esa vía sigue existiendo dentro de .summary-card para
-     Bodybuilding, sin tocar). Sólo en disciplina CrossFit; dibujarCF()
-     lee el bloque de fuerza/skill y el WOD/Metcon del día ya renderizado. */
-  if(window.COACH_DISCIPLINA !== 'sports'){
-    html += '<button type="button" class="story-cta" id="storyCtaBtn">📸 Generar Story Card</button>';
-  }
+  /* Story Card: botón fijo al cierre de la sesión, siempre justo antes de
+     "Marcar Día Completo" -- no depende de tildar cada bloque a mano.
+     FASE 2.5 -- antes esto era sólo CrossFit (dibujarCF() lee el bloque
+     de fuerza/skill y el WOD/Metcon ya renderizado); Bodybuilding tenía
+     el mismo botón pero ESCONDIDO dentro de .summary-card (ver
+     inyectarBoton(), módulo de Story Card), invisible hasta terminar de
+     tildar cada bloque a mano. Se pinta también acá para Bodybuilding, en
+     el mismo lugar destacado que ya tiene CrossFit -- el click de abajo
+     ahora elige abrirCF()/datosStoryCF() o abrir()/datosSports() según
+     window.COACH_DISCIPLINA, cero cambio para CrossFit. */
+  const esSports = window.COACH_DISCIPLINA === 'sports';
+  html += '<button type="button" class="story-cta" id="storyCtaBtn">📸 ' +
+    (esSports ? 'Generar Story Card · Día Completado' : 'Generar Story Card') + '</button>';
   /* directiva (reubicación de cierre): "Marcar Día Completo" era una
      acción de cierre viviendo arriba, apretando el inicio del
      entrenamiento -- baja al final absoluto de la rutina, debajo del
@@ -8358,7 +8564,12 @@ function wireBlockInteractions(day, weekIdx, blocks){
   const storyCtaBtn = document.getElementById('storyCtaBtn');
   if(storyCtaBtn){
     storyCtaBtn.addEventListener('click', function(){
-      if(window.CoachStory && typeof window.CoachStory.abrirCF === 'function'){
+      if(!window.CoachStory) return;
+      if(window.COACH_DISCIPLINA === 'sports'){
+        if(typeof window.CoachStory.abrir === 'function' && typeof window.CoachStory.datosSports === 'function'){
+          window.CoachStory.abrir(window.CoachStory.datosSports(weekIdx, day));
+        }
+      } else if(typeof window.CoachStory.abrirCF === 'function'){
         window.CoachStory.abrirCF(datosStoryCF(weekIdx, day));
       }
     });
@@ -11048,6 +11259,23 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 .week-pill.wpc-current{padding:8px 14px !important;gap:0}
 .week-pill.wpc-mini{padding:6px 12px !important;min-width:0 !important}
 .week-pill.wpc-mini .week-pill-name{font-size:.8rem !important;opacity:.7}
+/* FASE 2.1 -- compactación definitiva: la pastilla activa (.wpc-current)
+   pasaba nombre+fase en dos líneas (.week-pill{flex-direction:column},
+   línea ~4869) y terminaba en ~87px de alto. "[ 🎯 S1: CARGA BASE ]" pide
+   una sola línea de ≤36px -- se fuerza fila (row) sólo en la pastilla
+   activa, con la fase truncada con elipsis si el coach escribió un
+   nombre largo (nunca se acorta el dato real, sólo su despliegue). */
+.week-pill.wpc-current{
+  flex-direction:row !important;align-items:center !important;gap:5px !important;
+  padding:7px 12px !important;max-height:36px;min-height:0 !important;
+}
+.week-pill.wpc-current .week-pill-name{white-space:nowrap;flex:0 0 auto}
+.week-pill.wpc-current .week-pill-phase::before{content:': '}
+.week-pill.wpc-current .week-pill-phase{
+  max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-transform:uppercase;font-size:.68rem !important;letter-spacing:.03em;
+}
+.week-pill.wpc-mini{max-height:36px}
 /* UX/UI integral (13/09): se retiró el botón ℹ️ aparte (redundante con el
    propio chip activo, que ya abre el modal al tocarlo -- ver
    renderWeekSelector()). Se deja un puntito sutil como única pista visual
@@ -11787,6 +12015,42 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     if(storyFotoQuitar) storyFotoQuitar.style.display = 'none';
   });
 
+  /* FASE 2.5 -- datos del Story Card de Bodybuilding extraídos a función
+     propia (antes vivían sólo adentro del click del botón de
+     .summary-card) para poder reusarlos también desde el CTA fijo de
+     cierre de sesión (ver el guardrail en renderMain(): "sólo CrossFit"
+     pasa a incluir Bodybuilding también, cada uno con su propia función
+     de datos -- CF sigue con datosStoryCF() tal cual, sin tocar). */
+  function datosStorySports(weekIdx, day){
+    const r = (window.CoachTV && window.CoachTV.resumen) ? window.CoachTV.resumen(weekIdx, day) : { vol:0, series:0, reps:0 };
+    const ini = (state.session && state.session.inicio) || 0;
+    const elapsedMin = ini ? Math.round((Date.now() - ini) / 60000) : 0;
+    /* directiva9 -- state.session.inicio se setea una sola vez por sesión
+       y nunca se resetea (ver _marcarInicioSesion/latido()), así que si
+       pasó mucho tiempo real desde el primer set trackeado el cálculo
+       "ingenuo" daba minutos absurdos (ej. 28774 MIN). Se acota a un
+       rango de sesión razonable (1 a 240 min) y, si el valor no es
+       creíble o no hay registro real, se cae a una estimación coherente
+       en base a las series completadas (o 55 min por defecto). */
+    const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 240) ? elapsedMin : Math.max(1, r.series * 3 || 55);
+    const tiempoFmt = fmtDuracionStory(minsCrudo);
+    const f = new Date();
+    return {
+      atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
+      fecha: f.toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }),
+      sesion: (day.short || '') + ' · ' + (day.label || ''),
+      disciplina: (PROGRAM_CONFIG.mesoName || 'Coach JP') + ' — ' + (WEEKS_META[weekIdx] || {}).name,
+      /* directiva (fix integral StoryCard): día/semana y título de la
+         sesión por separado -- "sesion"/"disciplina" de arriba quedan
+         intactos (los sigue leyendo champion()), estos son sólo para
+         el nuevo encabezado de 3 líneas de dibujar(). */
+      diaCorto: day.short || '',
+      semanaN: (weekIdx || 0) + 1,
+      tituloSesion: day.label || (day.short || 'Sesión'),
+      vol: r.vol, series: r.series, tiempo: tiempoFmt,
+      prs: (state.session && state.session.prs) || []
+    };
+  }
   /* ---------- botón dentro del Session Summary ---------- */
   function inyectarBoton(){
     const acts = document.querySelector('.summary-card .sc-actions');
@@ -11797,34 +12061,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     acts.insertBefore(b, acts.firstChild);
     b.addEventListener('click', function(){
       const day = DAYS.find(function(x){ return x.id === state.currentDay; }) || DAYS[0];
-      const r = (window.CoachTV && window.CoachTV.resumen) ? window.CoachTV.resumen(state.currentWeek, day) : { vol:0, series:0, reps:0 };
-      const ini = (state.session && state.session.inicio) || 0;
-      const elapsedMin = ini ? Math.round((Date.now() - ini) / 60000) : 0;
-      /* directiva9 -- state.session.inicio se setea una sola vez por sesión
-         y nunca se resetea (ver _marcarInicioSesion/latido()), así que si
-         pasó mucho tiempo real desde el primer set trackeado el cálculo
-         "ingenuo" daba minutos absurdos (ej. 28774 MIN). Se acota a un
-         rango de sesión razonable (1 a 240 min) y, si el valor no es
-         creíble o no hay registro real, se cae a una estimación coherente
-         en base a las series completadas (o 55 min por defecto). */
-      const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 240) ? elapsedMin : Math.max(1, r.series * 3 || 55);
-      const tiempoFmt = fmtDuracionStory(minsCrudo);
-      const f = new Date();
-      abrirStory({
-        atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
-        fecha: f.toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }),
-        sesion: (day.short || '') + ' · ' + (day.label || ''),
-        disciplina: (PROGRAM_CONFIG.mesoName || 'Coach JP') + ' — ' + (WEEKS_META[state.currentWeek] || {}).name,
-        /* directiva (fix integral StoryCard): día/semana y título de la
-           sesión por separado -- "sesion"/"disciplina" de arriba quedan
-           intactos (los sigue leyendo champion()), estos son sólo para
-           el nuevo encabezado de 3 líneas de dibujar(). */
-        diaCorto: day.short || '',
-        semanaN: (state.currentWeek || 0) + 1,
-        tituloSesion: day.label || (day.short || 'Sesión'),
-        vol: r.vol, series: r.series, tiempo: tiempoFmt,
-        prs: (state.session && state.session.prs) || []
-      });
+      abrirStory(datosStorySports(state.currentWeek, day));
     });
   }
   const _rm = renderMain;
@@ -12038,7 +12275,7 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
     document.addEventListener('change', _marcarInicioSesion);
     document.addEventListener('input', _marcarInicioSesion);
       window.CoachPWA = { icono: iconoPNG, boton: pwaBoton, rol: 'athlete' };
-    window.CoachStory = { abrir: abrirStory, abrirCF: abrirCF, dibujar: dibujar, dibujarCF: dibujarCF, cerrar: cerrarStory };
+    window.CoachStory = { abrir: abrirStory, abrirCF: abrirCF, datosSports: datosStorySports, dibujar: dibujar, dibujarCF: dibujarCF, cerrar: cerrarStory };
     window.CoachFmtDuracion = fmtDuracionStory;
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
@@ -18671,6 +18908,16 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     return i >= 0 ? ('Descanso · Ronda ' + (i + 1) + ' completa') : null;
   }
   window.jpRondaCompleta = rondaCompleta;
+  /* FASE 2.3 -- único punto de entrada para que "✓ Cerrar Ronda N"
+     (módulo aparte, ver su listener de .bs-cerrar) dispare el reloj de
+     descanso: arrancar()/descansoDe()/etiquetaRonda() viven en ESTE
+     closure (RELOJ DE DESCANSO EMERGENTE), así que se exponen acá en vez
+     de duplicar esa lógica en el otro módulo. */
+  window.jpArrancarDescansoRonda = function(bl, caj){
+    if(!bl || esCF()) return;
+    var lb = (caj && etiquetaRonda(bl, caj.querySelector('.set-row'))) || ('Descanso · ' + nombreDe(bl));
+    arrancar(descansoDe(bl), lb);
+  };
 
   /* al tildar una serie */
   document.addEventListener('change', function(e){
@@ -18684,11 +18931,17 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     var trabajo = (b && (b.isBlock || b.isSuperset || b.isFinisher)) ||
                   (bl && bl.classList.contains('core-live'));
     if(!trabajo) return;
+    /* FASE 2.3 (Lógica de Check en Biset) -- un bloque agrupado (biset/
+       triset/circuito) YA NO dispara el reloj acá, ni siquiera cuando la
+       última estación de la ronda queda tildada a mano: eso todavía se
+       sentía como "se disparó solo" sin que el alumno tocara nada. El
+       único disparador para trabajo agrupado pasa a ser el botón
+       explícito "✓ Cerrar Ronda N" (ver su listener .bs-cerrar más abajo,
+       que llama arrancar() directamente) -- acá simplemente no hace nada
+       si agrupado(bl) es cierto. Bloque individual (isBlock/isFinisher,
+       nunca agrupado) sigue exactamente igual que siempre. */
+    if(agrupado(bl)) return;
     var lb = 'Descanso · ' + nombreDe(bl, row);
-    if(agrupado(bl)){
-      if(!rondaCompleta(bl, row)) return;       /* todavía falta cerrar la ronda */
-      lb = etiquetaRonda(bl, row) || lb;
-    }
     setTimeout(function(){ arrancar(descansoDe(bl), lb, row); }, 90);
   });
   /* al cerrar un bloque de fuerza */
@@ -19868,7 +20121,7 @@ body.cf-modo .block .ex-tip{display:none}
            el dato de referencia desaparecía justo en el layout donde más
            bisets/trisets hay. Mismo helper (refPreviaHtml), misma fuente. */
         e.innerHTML = '<span class="bs-l">' + letra(i) + '</span>' +
-          '<span class="bs-n">' + esc(x.name) + (typeof enBadgeHtml === 'function' ? enBadgeHtml(x.nameEn) : '') + '</span>' +
+          '<span class="bs-n">' + esc(x.name) + '</span>' +
           (x.det ? '<span class="bs-d">' + esc(x.det) + '</span>' : '') +
           (x.tecnica ? '<span class="jp-tecnica-badge">' + esc(x.tecnica) + '</span>' : '') +
           (typeof refPreviaHtml === 'function' ? refPreviaHtml(state.currentWeek || 0, state.currentDay, bl.dataset.blockId || '', i, x.filas.length) : '');
@@ -19927,6 +20180,16 @@ body.cf-modo .block .ex-tip{display:none}
         cerrar.textContent = '✓ Cerrar ronda ' + (r + 1);
         caj.appendChild(cerrar);
         wrap.appendChild(caj);
+        /* hidratación desde estado guardado: si la ronda ya venía completa
+           (checks tildados de una sesión previa), se marca bs-lista ACÁ,
+           antes del primer estado(bl) de abajo -- si no, ese primer
+           estado() la vería pasar de "no lista" a "lista" como si se
+           acabara de cerrar recién ahora y dispararía el reloj de
+           descanso apenas se abre la app. */
+        var checksHidratados = [].slice.call(caj.querySelectorAll('.set-check'));
+        if(checksHidratados.length && checksHidratados.every(function(c){ return c.checked; })){
+          caj.classList.add('bs-lista');
+        }
       }
 
       /* las filas viejas y los trackers vacíos ya no hacen falta */
@@ -19986,6 +20249,16 @@ body.cf-modo .block .ex-tip{display:none}
          (se vuelve a chequear bs-lista antes de aplicar). */
       if(lista && !eraLista){
         caj.dataset.bsAbierta = '1';
+        /* FASE 2.3 -- este es el ÚNICO punto donde una ronda pasa de
+           "no lista" a "lista" (ya sea tildando cada estación a mano o
+           usando el botón "Cerrar Ronda"), así que es acá donde vive el
+           disparador del reloj de descanso -- no en el listener de
+           .bs-cerrar (ver más abajo), que de otro modo nunca se ejecuta
+           si el alumno tilda la última estación a mano en vez de tocar
+           el botón. */
+        if(typeof window.jpArrancarDescansoRonda === 'function'){
+          window.jpArrancarDescansoRonda(bl, caj);
+        }
         setTimeout(function(){
           if(caj.classList.contains('bs-lista')) delete caj.dataset.bsAbierta;
           var blRef = caj.closest('.block');
@@ -20019,7 +20292,11 @@ body.cf-modo .block .ex-tip{display:none}
     if(bl) estado(bl);
   });
 
-  /* cerrar la ronda tilda las estaciones que falten: el descanso arranca una sola vez */
+  /* cerrar la ronda tilda las estaciones que falten: el descanso arranca una sola vez
+     FASE 2.3 -- este botón es ahora el ÚNICO disparador del reloj de
+     descanso entre rondas (ver jpArrancarDescansoRonda(), módulo del
+     reloj): el listener de .set-check individual ya no lo dispara solo,
+     ni siquiera al tildar la última estación a mano. */
   document.addEventListener('click', function(e){
     var btn = e.target.closest('.bs-cerrar');
     if(!btn) return;
@@ -20042,12 +20319,16 @@ body.cf-modo .block .ex-tip{display:none}
        encima del pulso de éxito. */
     try{ if(navigator.vibrate) navigator.vibrate([30, 50, 60]); }catch(err){}
     window.__jpRondaCerrando = true;
-    /* las intermedias se marcan en silencio y la última dispara el reloj de la ronda */
+    /* las intermedias se marcan en silencio -- el reloj YA NO sale de acá */
     faltan.forEach(function(c, i){
       c.checked = true;
       c.dispatchEvent(new Event('change', { bubbles:true }));
     });
     window.__jpRondaCerrando = false;
+    /* el reloj de descanso ya no se dispara acá -- lo dispara estado()
+       apenas detecta la transición real a "ronda completa" (ver más
+       arriba, bloque "lista && !eraLista"), sea que la ronda se haya
+       completado con este botón o tildando cada estación a mano. */
     setTimeout(function(){ estado(bl); }, 80);
   });
   document.addEventListener('change', function(e){
@@ -43742,7 +44023,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   }
   function redaccionLocal(borrador, enfoque){
     const t = String(borrador || '');
-    const m = METODOS.filter(x => x.re.test(t))[0] || metodo(t, enfoque);
+    /* FASE 1.3 (calibración de enfoque, ítem "Acondicionamiento
+       Metabólico") -- antes tomaba el PRIMER método de METODOS cuyo regex
+       matcheara el borrador, sin mirar si ese método coincide con el
+       enfoque que el coach ya eligió en la barra de arriba. "AMRAP
+       CONGESTION FINISHER" (foco:'acondicionamiento' en el catálogo, pero
+       con texto de obj/tip que en la práctica describe congestión/bombeo)
+       podía terminar redactando pautas de hipertrofia local para un
+       finisher que el coach pidió explícitamente como aeróbico. Ahora
+       sólo se acepta un método de METODOS si además coincide su foco con
+       el enfoque elegido -- si no hay ninguno así, se cae al default
+       correcto de ESE enfoque (METODO_DEFAULT[enfoque], ya redactado en
+       términos de RPE/ritmo/respiración para acondicionamiento) en vez de
+       aceptar cualquier match de regex sin filtrar. */
+    const m = METODOS.filter(x => x.re.test(t) && x.foco === enfoque)[0] || metodo(t, enfoque);
     const dur = duracion(t);
     const lista = ejercicios(t);
     return {
@@ -43802,8 +44096,30 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   /* ---------------------------------------------------------
      REDACCIÓN CON IA
   --------------------------------------------------------- */
-  const SISTEMA =
-    'Sos Coach JP, preparador físico argentino. Convertís la idea rápida del entrenador en un finisher de ' +
+  /* FASE 1.3 (calibración de prompt IA, ítem "Acondicionamiento
+     Metabólico") -- SISTEMA era un string fijo cuya instrucción de
+     "objetivos" hardcodeaba ejemplos de bombeo/hipertrofia ("congestión
+     máxima, reclutamiento de fibras de umbral alto, tiempo bajo tensión")
+     SIN importar qué enfoque haya elegido el coach en la barra de arriba
+     -- esa única línea, mucho más detallada que la mención de enfoque en
+     el mensaje "user", podía inclinar a la IA a redactar pautas de
+     congestión incluso para un finisher que el coach pidió como
+     acondicionamiento metabólico. Se convierte en función de "enfoque"
+     para que la instrucción de objetivos/tips sea la correcta para cada
+     caso desde el propio SISTEMA, no sólo desde una mención al pasar. */
+  function sistemaTexto(enfoque){
+    const guiaObjetivos = enfoque === 'acondicionamiento'
+      ? '"objetivos" explica en 2 o 3 oraciones el estímulo de acondicionamiento metabólico buscado ' +
+        '(zona aeróbica sostenida, densidad de trabajo por minuto, gasto calórico, capacidad de recuperación ' +
+        'entre esfuerzos) -- PROHIBIDO mencionar congestión, bombeo, hipertrofia local o tiempo bajo tensión, ' +
+        'ese vocabulario es de otro enfoque. '
+      : '"objetivos" explica en 2 o 3 oraciones el estímulo fisiológico buscado ' +
+        '(estrés metabólico, congestión máxima, reclutamiento de fibras de umbral alto, tiempo bajo tensión). ';
+    const guiaTips = enfoque === 'acondicionamiento'
+      ? '"tips" da en 2 o 4 oraciones el criterio de ritmo (RPE objetivo, respiración nasal si el ritmo lo permite, ' +
+        'cadencia sostenible) y cuándo bajar la intensidad -- nunca un criterio de "cortar la serie" propio de bombeo.'
+      : '"tips" da en 2 o 4 oraciones las pautas de ejecución, el ritmo de trabajo y el criterio de corte de cada serie.';
+    return 'Sos Coach JP, preparador físico argentino. Convertís la idea rápida del entrenador en un finisher de ' +
     'bodybuilding estructurado, listo para que tu alumno lo lea en la app. ' +
     'REGLA INNEGOCIABLE DE PERSPECTIVA: escribís SIEMPRE en segunda persona del singular (vos / tu / tuyo), ' +
     'hablándole directamente al alumno. PROHIBIDO hablar del alumno en tercera persona: nunca escribas ' +
@@ -43820,9 +44136,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     'por ejercicio usando saltos de línea reales, por ejemplo: ' +
     '"AMRAP 8 MIN:\\n01. 30s RowErg (ritmo moderado-alto)\\n02. Escalera ascendente 3-6-9-12-15 Sit-ups". ' +
     'Nunca copies el borrador crudo ni dejes abreviaturas sueltas del entrenador. ' +
-    '"objetivos" explica en 2 o 3 oraciones el estímulo fisiológico buscado ' +
-    '(estrés metabólico, congestión máxima, reclutamiento de fibras de umbral alto, tiempo bajo tensión). ' +
-    '"tips" da en 2 o 4 oraciones las pautas de ejecución, el ritmo de trabajo y el criterio de corte de cada serie.';
+    guiaObjetivos + guiaTips;
+  }
 
   /* directiva -- enfoque elegido ANTES de generar: sesga tanto el motor
      local (metodo()/redaccionLocal() de arriba) como el prompt de IA hacia
@@ -43862,7 +44177,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           (a.tags && a.tags.length ? 'Antecedentes del alumno: ' + a.tags.join(', ') + '. ' : '') +
           (a.prohibidos && a.prohibidos.length ? 'Ejercicios vetados: ' + a.prohibidos.join(', ') + '. ' : '') +
           'Idea del entrenador: ' + borrador;
-        const txt = await window.CoachAI.generarTexto(user, SISTEMA);
+        const txt = await window.CoachAI.generarTexto(user, sistemaTexto(finEnfoque));
         /* directiva crítica (2026-09) -- auditoría total de generadores: este
            es el generador de "tips de bloque y criterio de sobrecarga" del
            finisher (protocolo/trabajo/objetivos/tips) -- tenía el mismo bug
@@ -45087,25 +45402,38 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!p || !p.dias) return 0;
     const cf = esCF();
     let n = 0;
+    /* FASE 1.4 (Pre-Flight Validator) -- el pase SILENCIOSO (llamado solo
+       desde repintar(), cada ~90ms tras cualquier render) autocompletaba
+       series/reps SIN que el coach lo viera, así que el badge nuevo
+       "⚠️ FALTA DOSIS" (ver bloqueSinDosis()/renderDay()) nunca llegaba a
+       pintarse: el dato ya estaba parchado antes de que renderDay()
+       terminara. Series/reps/repsRange dejan de tocarse en el pase
+       silencioso -- el coach ve el badge y decide (con el botón nuevo
+       "Asignar dosis estándar", o cargando la suya) en vez de que el
+       sistema adivine solo. El botón manual "🩺 Auditar esquema"
+       (silencioso=false) sigue completando TODO como siempre, series/reps
+       incluidas, para quien de verdad quiera ese barrido completo de una. */
     p.dias.forEach(d => {
       (d.bloques || []).forEach(b => {
         if(!b.titulo){ b.titulo = 'Bloque'; n++; }
         if(!b.category){ b.category = 'strength'; n++; }
         if(!b.icon){ b.icon = '💪'; n++; }
         if(b.tipo === 'block'){
-          if(!(parseInt(b.efSets, 10) > 0)){ b.efSets = 4; n++; }
-          if(!String(b.reps || '').trim()){ b.reps = '8-12'; n++; }
+          if(!silencioso){
+            if(!(parseInt(b.efSets, 10) > 0)){ b.efSets = 4; n++; }
+            if(!String(b.reps || '').trim()){ b.reps = '8-12'; n++; }
+          }
           if(!String(b.tempo || '').trim()){ b.tempo = '2011'; n++; }
           if(!(parseInt(b.restSeconds, 10) > 0)){ b.restSeconds = 90; n++; }
         } else if(b.tipo === 'superset'){
-          if(!(parseInt(b.efSets, 10) > 0)){ b.efSets = 3; n++; }
+          if(!silencioso && !(parseInt(b.efSets, 10) > 0)){ b.efSets = 3; n++; }
           if(!(parseInt(b.restSeconds, 10) > 0)){ b.restSeconds = 90; n++; }
           (b.ejercicios || []).forEach(e => {
-            if(!String(e.reps || '').trim()){ e.reps = '10-12'; n++; }
+            if(!silencioso && !String(e.reps || '').trim()){ e.reps = '10-12'; n++; }
             if(!String(e.tempo || '').trim()){ e.tempo = '2011'; n++; }
           });
         } else if(b.tipo === 'finisher'){
-          (b.fin || []).forEach(e => { if(!String(e.repsRange || '').trim()){ e.repsRange = '15-20'; n++; } });
+          if(!silencioso) (b.fin || []).forEach(e => { if(!String(e.repsRange || '').trim()){ e.repsRange = '15-20'; n++; } });
         } else if(b.tipo === 'list'){
           const vacio = !(b.items || []).length;
           const core = !!b.coreBlock || /core|abdomen|estabilidad/i.test(b.titulo || '');
@@ -45263,11 +45591,22 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
   border-color:var(--accent-cyan,#7CC5E8) !important;
   box-shadow:0 0 0 3px rgba(124,197,232,.16) !important;
 }
-/* Builder D -- chips de selección rápida (Tempo / Descanso) */
-.chip-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+/* Builder D -- chips de selección rápida (Tempo / Descanso)
+   FASE 1.1 (fix de desborde vertical, capturas 192620/192659/192710):
+   la celda "Tempo" de .fields (grid auto-fit, minmax(86px,1fr)) es tan
+   angosta que cada chip ("3-0-1-0", ~65px) no entraba ni de a uno junto a
+   otro -- flex-wrap:wrap ya estaba puesto, pero "envolver" en un
+   contenedor de ~90px sigue significando una sola columna infinita hacia
+   abajo. .f-tempo (agregado a los dos <div class="f"> que traen
+   tempoChipsHtml(), ver renderDay()) le pide al grid 2 columnas en vez
+   de 1 -- con ese ancho real, max-width:220px + flex-wrap alcanzan para
+   que los 6 chips acomoden 2-3 por línea, como pide la directiva. */
+.f-tempo{grid-column:span 2}
+@media(max-width:520px){ .f-tempo{grid-column:span 1} }
+.chip-row{display:flex;flex-direction:row;flex-wrap:wrap;gap:4px;margin-top:6px;max-width:220px}
 .chip-quick{
   padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px;font-weight:700;
-  font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.02em;
+  font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.02em;white-space:nowrap;
   background:rgba(13,16,23,.7);border:1px solid var(--line);color:var(--muted);
   transition:border-color .15s ease,color .15s ease,background .15s ease;
 }
