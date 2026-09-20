@@ -5788,6 +5788,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 </div>
 <div class="week-tabs-wrap">
   <div class="week-tabs" id="week-tabs"></div>
+  <button type="button" class="jp-prs-quickbtn" style="display:none">&#9889; PRs / 1RM</button>
 </div>
 <div class="week-active-badge-wrap" style="display:none"><div class="week-active-badge" id="weekActiveBadge"></div></div>
 <div class="week-info-bar" style="display:none"><div id="weekInfoCard"></div></div>
@@ -6143,6 +6144,15 @@ function vidIndex(){
   _vidIdx.claves.sort(function(a, b){ return b.length - a.length; });
   return _vidIdx;
 }
+/* singular/plural del último token ("deadlifts"->"deadlift",
+   "squats"->"squat") -- nunca toca una palabra que ya termina en doble
+   "s" ("press") para no destrozarla. Sigue siendo un match EXACTO del
+   resto de la clave, muy distinto (y mucho más seguro) del fallback por
+   contención de más abajo: "low hang power snatch" nunca "pasa a"
+   "hang power snatch" por esta vía, sólo se tolera la "s" final. */
+function nrmVidSingular(t){
+  return String(t || '').replace(/([a-z])s\\b/gi, function(m, prev){ return prev.toLowerCase() === 's' ? m : prev; });
+}
 function buscarVideo(name, soloDirecto){
   var idx = vidIndex();
   var directo = VIDEO_MAP[name] || VIDEO_MAP[String(name || '').trim()];
@@ -6151,6 +6161,14 @@ function buscarVideo(name, soloDirecto){
   for(var i = 0; i < candidatos.length; i++){
     var n = candidatos[i];
     if(n && idx.exacto[n]) return idx.exacto[n];
+  }
+  /* directiva (fix de videos en Warm-up/Corework/Accesorios) -- tolerancia
+     de plural: "Banded deadlifts" (texto del coach) vs "Banded Deadlift"
+     (nombre exacto en la biblioteca) no matcheaban por la "s" final --
+     mismo criterio EXACTO de arriba, sólo que sobre la forma singular. */
+  for(var s = 0; s < candidatos.length; s++){
+    var ns = nrmVidSingular(candidatos[s]);
+    if(ns && ns !== candidatos[s] && idx.exacto[ns]) return idx.exacto[ns];
   }
   /* directiva (rediseño "Clips Técnicos del Bloque" de la Pizarra
      CrossFit): soloDirecto corta acá, antes del fallback de abajo --
@@ -7272,6 +7290,18 @@ function renderWeekActiveBadge(){
    (nota metodológica, RPE) se movió a #weekInfoModal -- se abre tocando el
    botón ℹ️ o el chip activo, nunca ocupa espacio en el flujo principal. */
 function renderWeekSelector(){
+  /* directiva ("rediseño header CrossFit"): la botonera de fases de
+     mesociclo de musculación (S1 Aclimatación/Carga Base, S2, S3, S4)
+     es ruido en CrossFit -- el atleta de CrossFit navega por DÍA
+     (week-tabs), no por fase de mesociclo; Bodybuilding/Sports sigue
+     exactamente igual, sin ningún cambio de comportamiento. */
+  const wrapMeso = weekSelectorEl.closest('.week-selector-wrap');
+  if(window.COACH_DISCIPLINA !== 'sports'){
+    weekSelectorEl.innerHTML = '';
+    if(wrapMeso) wrapMeso.style.display = 'none';
+    return;
+  }
+  if(wrapMeso) wrapMeso.style.display = '';
   /* DIRECTIVA UX/UI integral (13/09), parte 1: se retira el botón ℹ️
      flotante -- el chip activo (.wpc-current) ya abre el mismo modal al
      tocarlo (ver el addEventListener de abajo), así que el ícono aparte
@@ -7643,7 +7673,24 @@ function datosStoryCF(weekIdx, day){
   }
   let kgClave = '', skillTxt = '';
   if(skill){
-    if(skill.items){
+    /* directiva (rediseño total Story Card 9:16) -- la "carga máxima" de
+       la Hero Card FUERZA/SKILL prioriza lo que el alumno REALMENTE cargó
+       y marcó como hecho en la Pizarra (misma fuente que "kg carga
+       máxima" del Session Summary, resumenDatos() en el módulo M5) en vez
+       de depender de encontrar un "@ Xkg" literal en el texto del bloque
+       -- ese regex queda como fallback si todavía no hay series cargadas. */
+    let maxKgReal = 0;
+    const prefSkill = weekIdx + '|' + day.id + '|';
+    Object.keys(state.loads || {}).forEach(function(k){
+      if(k.indexOf(prefSkill) !== 0) return;
+      const l = state.loads[k];
+      if(!l || !l.done) return;
+      const kg = parseFloat(l.kg) || 0;
+      if(kg > maxKgReal) maxKgReal = kg;
+    });
+    if(maxKgReal > 0){
+      kgClave = (Number.isInteger(maxKgReal) ? String(maxKgReal) : String(Math.round(maxKgReal * 10) / 10)) + ' KG';
+    } else if(skill.items){
       for(const l of skill.items){
         const m = String(l).match(/@\\s*([\\d.,\/]+)\\s*kg/i) || String(l).match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
         if(m){ kgClave = m[1] + ' KG'; break; }
@@ -7671,6 +7718,7 @@ function datosStoryCF(weekIdx, day){
     modo: 'crossfit',
     atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
     tituloWod: (wod && wod.title) || day.title || day.short || 'WOD',
+    fecha: new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }),
     warmupTxt: warmupTxt,
     skillTxt: skillTxt,
     kgClave: kgClave,
@@ -9068,6 +9116,35 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(m2 && m2[1].trim()) return { nm: m2[1].trim(), val: m2[2].trim() };
     return { nm: l, val: '' };
   }
+  /* directiva ("Motor de 1RM exacto") -- benchmark madre: cualquier
+     variante/complejo de un levantamiento olímpico o troncal comparte
+     UN SOLO 1RM ("Low hang power snatch"/"Muscle snatch"/"Snatch
+     balance" -> "Snatch"), en vez de pedirle al atleta un 1RM distinto
+     por cada variante de la misma familia. Sin familia reconocida,
+     usa el nombre tal cual llegó (ningún movimiento se queda sin poder
+     cargar su propio 1RM). */
+  function jpBenchmarkMadre(nombre){
+    const n = String(nombre || '').toLowerCase();
+    if(/\\bsnatch\\b/.test(n)) return 'Snatch';
+    if(/\\bclean\\b/.test(n) && /\\bjerk\\b/.test(n)) return 'Clean & Jerk';
+    if(/\\bclean\\b/.test(n)) return 'Clean';
+    if(/\\bjerk\\b/.test(n)) return 'Jerk';
+    if(/\\bfront\\s*squat\\b/.test(n)) return 'Front Squat';
+    if(/\\bback\\s*squat\\b|\\bsquat\\b/.test(n)) return 'Back Squat';
+    if(/\\bdeadlift\\b/.test(n)) return 'Deadlift';
+    if(/\\bbench\\b/.test(n)) return 'Bench Press';
+    if(/\\bstrict\\s*press\\b|\\bpress\\b/.test(n)) return 'Strict Press';
+    return String(nombre || '').trim();
+  }
+  /* directiva -- "sin redondeos forzados": (1RM * %) / 100 exacto, sin
+     forzar el resultado a múltiplos de 2.5kg. Se redondea sólo a 1
+     decimal para evitar ruido de punto flotante (67.5, no
+     67.49999999999999), y ese decimal se oculta cuando el resultado ya
+     es un número entero (75, no 75.0). */
+  function jpKgExacto(rm, pct){
+    const v = Math.round((rm * pct / 100) * 10) / 10;
+    return (Math.abs(v - Math.round(v)) < 0.001) ? String(Math.round(v)) : String(v);
+  }
   /* directiva crítica (rediseño de acceso a videos, 2026-09) -- la
      Pizarra Táctica ya NO muestra ningún botón de video adentro de la
      fila: el texto de cada movimiento fluye limpio de punta a punta con
@@ -9123,17 +9200,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          aplicar a TODAS las filas del bloque que lo usan, no sólo a la
          que tocó primero. */
       const liftBase = partes.nm.replace(/^\\d+\\s*/, '') || partes.nm;
-      const liftKey = nrmHist(liftBase);
+      /* directiva ("Motor de 1RM exacto") -- la clave y el nombre que ve
+         el atleta en el modal son el benchmark madre (Snatch/Clean &
+         Jerk/Back Squat/Deadlift/...), no el texto literal del complejo:
+         "Low hang power snatch" y "Muscle snatch" comparten el 1RM de
+         "Snatch", nunca piden uno cada uno. */
+      const benchmark = jpBenchmarkMadre(liftBase);
+      const liftKey = nrmHist(benchmark);
       const propio = state.oneRM && state.oneRM[liftKey];
       let kgTxt;
       if(propio > 0){
-        const kg = Math.round((propio * pct / 100) / 2.5) * 2.5;
-        kgTxt = ' (' + kg + ' kg)';
+        kgTxt = ' (' + jpKgExacto(propio, pct) + ' kg)';
       } else {
         const resto = partes.val.replace(/^@\\s*\\d{1,3}\\s*%/, '').trim();
         kgTxt = resto ? ' ' + resto : '';
       }
-      valHtml = '<button type="button" class="jp-cf-pct" data-pct-lift="' + liftBase.replace(/"/g,'') + '" data-pct-key="' + liftKey + '">@ ' + pct + '%' + kgTxt + '</button>';
+      valHtml = '<button type="button" class="jp-cf-pct" data-pct-lift="' + benchmark.replace(/"/g,'') + '" data-pct-key="' + liftKey + '">@ ' + pct + '%' + kgTxt + '</button>';
     }
     return '<div class="jp-cf-row">' +
         '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
@@ -9152,7 +9234,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const l = String(raw || '').trim();
       if(!jpCfEsMovimiento(l)) return;
       const nm = jpCfSplit(l).nm;
-      if(!nm || esEstructura(nm)) return;
+      /* directiva (fix de videos en Warm-up/Corework/Accesorios) -- acá
+         NO se vuelve a filtrar con esEstructura(nm): ese chequeo corre
+         sobre el nombre CRUDO de jpCfSplit (todavía con la nota entre
+         paréntesis sin limpiar, ej. "20 Single-leg glute bridges (10 por
+         pierna)"), y NO_VIDEO rechaza cualquier texto que contenga "("
+         en cualquier posición -- así un ejercicio real con una
+         aclaración entre paréntesis nunca llegaba a intentar
+         buscarVideo(). buscarVideo() ya limpia el nombre por su cuenta
+         (limpiarNombre(): saca paréntesis, conteo de reps, "@...", etc.)
+         antes de buscar match directo/exacto -- soloDirecto=true sigue
+         garantizando que nunca se asigna un video por aproximación. */
+      if(!nm) return;
       const ytid = buscarVideo(nm, true);
       if(!ytid || vistos.has(ytid)) return;
       vistos.add(ytid);
@@ -9294,49 +9387,50 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
   }
 
-  /* directiva ("Resolución activa de % 1RM a Kilogramos") -- micro-prompt
-     táctico: tocar "@ 76%" en cualquier fila abre un popover chico junto
-     al botón para cargar/actualizar el 1RM propio de ESE movimiento;
-     guardar recalcula al instante TODAS las filas del día que usen ese
-     mismo 1RM (re-renderiza vía renderMain(), mismo criterio que ya usan
-     otros módulos de esta vista para reflejar un cambio de estado). */
+  /* directiva ("Motor de 1RM exacto") -- modal táctico CENTRADO: el
+     popover chico anclado al botón quedaba tapado por el teclado
+     numérico de iOS (posición absoluta contra las coordenadas de la
+     página, que no se reacomoda cuando el visual viewport se achica) y
+     podía desbordar el ancho en pantallas angostas. Ahora es un overlay
+     de pantalla completa (mismo patrón que guideModal/painModal/
+     calcModal) con la tarjeta SIEMPRE centrada en el viewport visible,
+     título con el benchmark madre y cálculo exacto (1RM×%/100, sin
+     redondear a múltiplos de 2.5kg) que recalcula TODAS las filas del
+     día que usan ese mismo 1RM al guardar. */
   function jpPctEsc(s){ return String(s == null ? '' : s).replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
   function jpCerrarPct1RM(){
-    var ex = document.querySelector('.jp-pct-pop');
+    var ex = document.querySelector('.jp-pct-overlay');
     if(ex) ex.remove();
   }
-  function jpAbrirPct1RM(btn){
+  function jpAbrirPct1RM(liftName, key){
     jpCerrarPct1RM();
-    var liftName = btn.dataset.pctLift || '';
-    var key = btn.dataset.pctKey || '';
     var actual = (state.oneRM && state.oneRM[key]) || '';
-    var pop = document.createElement('div');
-    pop.className = 'jp-pct-pop';
-    pop.innerHTML =
-      '<div class="jp-pct-pop-lb">1RM de ' + jpPctEsc(liftName) + '</div>' +
-      '<div class="jp-pct-pop-row">' +
-        '<input type="text" inputmode="decimal" class="jp-pct-pop-in" placeholder="Kg" value="' + jpPctEsc(actual) + '">' +
-        '<button type="button" class="jp-pct-pop-ok" data-pctsave="' + jpPctEsc(key) + '">&#10003;</button>' +
-        '<button type="button" class="jp-pct-pop-x" data-pctcancel="1">&#10005;</button>' +
+    var overlay = document.createElement('div');
+    overlay.className = 'jp-pct-overlay';
+    overlay.innerHTML =
+      '<div class="jp-pct-pop">' +
+        '<div class="jp-pct-pop-lb">Ingresar 1RM: ' + jpPctEsc(liftName) + '</div>' +
+        '<div class="jp-pct-pop-row">' +
+          '<input type="text" inputmode="decimal" class="jp-pct-pop-in" placeholder="Kg" value="' + jpPctEsc(actual) + '">' +
+        '</div>' +
+        '<div class="jp-pct-pop-actions">' +
+          '<button type="button" class="jp-pct-pop-ok" data-pctsave="' + jpPctEsc(key) + '">Guardar</button>' +
+          '<button type="button" class="jp-pct-pop-x" data-pctcancel="1">Cancelar</button>' +
+        '</div>' +
       '</div>';
-    document.body.appendChild(pop);
-    var r = btn.getBoundingClientRect();
-    var top = window.scrollY + r.bottom + 6;
-    var left = window.scrollX + r.left;
-    var maxLeft = window.scrollX + document.documentElement.clientWidth - 230;
-    pop.style.top = top + 'px';
-    pop.style.left = Math.max(8, Math.min(left, maxLeft)) + 'px';
-    var input = pop.querySelector('.jp-pct-pop-in');
+    document.body.appendChild(overlay);
+    var input = overlay.querySelector('.jp-pct-pop-in');
     input.focus(); input.select();
     input.addEventListener('keydown', function(ev){
-      if(ev.key === 'Enter'){ ev.preventDefault(); pop.querySelector('[data-pctsave]').click(); }
+      if(ev.key === 'Enter'){ ev.preventDefault(); overlay.querySelector('[data-pctsave]').click(); }
       else if(ev.key === 'Escape'){ ev.preventDefault(); jpCerrarPct1RM(); }
     });
+    overlay.addEventListener('click', function(ev){ if(ev.target === overlay) jpCerrarPct1RM(); });
   }
   function jpGuardarPct1RM(btn){
     var pop = btn.closest('.jp-pct-pop');
     var input = pop && pop.querySelector('.jp-pct-pop-in');
-    var kg = parseFloat(input ? input.value : '');
+    var kg = parseFloat(input ? input.value.replace(',', '.') : '');
     var key = btn.dataset.pctsave || '';
     jpCerrarPct1RM();
     if(!(kg > 0) || !key) return;
@@ -9345,9 +9439,39 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     saveProgress();
     if(typeof renderMain === 'function') renderMain();
   }
+  /* directiva ("rediseño header CrossFit") -- chip de acceso rápido
+     "⚡ PRs / 1RM": lista los benchmarks madre (Snatch/Clean & Jerk/
+     Back Squat/Deadlift/etc.) con el 1RM que el atleta ya cargó (o "—"
+     si todavía no cargó ninguno), cada fila abre el mismo modal de
+     arriba para cargar/actualizar -- no hace falta esperar a tocar un
+     "@ 76%" puntual en la Pizarra para revisar o corregir un 1RM. */
+  var JP_BENCHMARKS_LISTA = ['Snatch', 'Clean & Jerk', 'Clean', 'Jerk', 'Back Squat', 'Front Squat', 'Deadlift', 'Bench Press', 'Strict Press'];
+  function jpAbrirListaPRs(){
+    jpCerrarPct1RM();
+    var overlay = document.createElement('div');
+    overlay.className = 'jp-pct-overlay';
+    var filas = JP_BENCHMARKS_LISTA.map(function(nombre){
+      var key = nrmHist(nombre);
+      var val = state.oneRM && state.oneRM[key];
+      return '<button type="button" class="jp-prs-row" data-pct-lift="' + nombre + '" data-pct-key="' + key + '">' +
+        '<span>' + nombre + '</span><span class="jp-prs-val">' + (val > 0 ? val + ' kg' : '— cargar') + '</span></button>';
+    }).join('');
+    overlay.innerHTML =
+      '<div class="jp-pct-pop jp-prs-pop">' +
+        '<div class="jp-pct-pop-lb">&#9889; PRs / 1RM</div>' +
+        '<div class="jp-prs-list">' + filas + '</div>' +
+        '<div class="jp-pct-pop-actions"><button type="button" class="jp-pct-pop-x" data-pctcancel="1">Cerrar</button></div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', function(ev){ if(ev.target === overlay) jpCerrarPct1RM(); });
+  }
   document.addEventListener('click', function(e){
+    var quick = e.target.closest('.jp-prs-quickbtn');
+    if(quick){ e.stopPropagation(); jpAbrirListaPRs(); return; }
+    var row = e.target.closest('.jp-prs-row');
+    if(row){ e.stopPropagation(); jpAbrirPct1RM(row.dataset.pctLift || '', row.dataset.pctKey || ''); return; }
     var btn = e.target.closest('.jp-cf-pct');
-    if(btn){ e.stopPropagation(); jpAbrirPct1RM(btn); return; }
+    if(btn){ e.stopPropagation(); jpAbrirPct1RM(btn.dataset.pctLift || '', btn.dataset.pctKey || ''); return; }
     var save = e.target.closest('[data-pctsave]');
     if(save){ e.stopPropagation(); jpGuardarPct1RM(save); return; }
     var cancel = e.target.closest('[data-pctcancel]');
@@ -10114,7 +10238,14 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
 /* =========================================================
    STORY CARD 9:16
 ========================================================= */
-.story-wrap{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;
+/* directiva (rediseño total Story Card 9:16) -- z-index:200 quedaba POR
+   DEBAJO de .hd-wrap/.hd-compact (header sticky del atleta, z-index:300),
+   así que la cabecera (escudo COACH JP + nombre + pestañas de DÍA)
+   quedaba pintada ENCIMA del modal en vez de taparse por él -- eso
+   recortaba el aire visual de la Story Card contra el borde superior del
+   lienzo. Mismo nivel que los demás overlays de pantalla completa de la
+   app (champion, #jpAlarma, .nm-modal-overlay), todos en z-index:900. */
+.story-wrap{position:fixed;inset:0;z-index:900;display:none;align-items:center;justify-content:center;
   padding:16px;background:rgba(4,5,8,.92);backdrop-filter:blur(10px)}
 .story-wrap.on{display:flex}
 .story-box{display:flex;flex-direction:column;gap:12px;align-items:center;max-height:96vh}
@@ -10690,115 +10821,156 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 
     g.textAlign = 'center'; g.textBaseline = 'alphabetic';
     g.fillStyle = '#38BDF8'; g.font = '700 30px "JetBrains Mono", ui-monospace, monospace';
-    g.fillText('[ CROSSFIT & HYROX ]', W / 2, 258);
+    g.fillText('[ CROSSFIT & FUNCTIONAL ]', W / 2, 258);
 
-    var tituloLineas;
+    /* directiva (rediseño total Story Card 9:16, ultra profesional) --
+       el header ahora manda con el NOMBRE DEL ATLETA en tipografía
+       impactante (antes el protagonista era "COACH JP · <título del
+       WOD>", que competía visualmente con las cards de abajo); el
+       título/estructura del WOD pasa a vivir DENTRO de su propia hero
+       card, nunca en el header. Cuerpo reducido a DOS hero cards
+       protagonistas (Fuerza/Skill y WOD/Metcon) en vez de 3+ cajitas
+       chicas -- cada una mide su alto real ANTES de dibujarse (nunca
+       desborda, nunca deja aire de más) y si sólo existe una de las dos
+       (o ninguna), se centra en todo el espacio disponible para que el
+       lienzo nunca luzca "vacío". */
+    var env = window.CoachEnvolverTexto || function(gg, t){ return [t]; };
+    var nombreLineas;
     (function(){
-      var maxW = W - 160, tam = 76, lineas;
-      var env = window.CoachEnvolverTexto || function(gg, t){ return [t]; };
+      var maxW = W - 160, tam = 84, lineas;
       do {
         g.font = '900 ' + tam + 'px "Plus Jakarta Sans", sans-serif';
-        lineas = env(g, ('COACH JP · ' + String(d.tituloWod || 'WOD')).toUpperCase(), maxW, 3);
-        if(lineas.length <= 3 && !lineas.recortado) break;
+        lineas = env(g, (d.atleta || 'ATLETA').toUpperCase(), maxW, 2);
+        if(lineas.length <= 2 && !lineas.recortado) break;
         tam -= 6;
-      } while(tam > 44);
-      tituloLineas = { lineas: lineas, tam: tam };
-      g.fillStyle = '#FFFFFF';
-      lineas.forEach(function(ln, i){ g.fillText(ln, W / 2, 338 + i * (tam + 10)); });
+      } while(tam > 48);
+      nombreLineas = { lineas: lineas, tam: tam };
+      g.textAlign = 'center'; g.fillStyle = '#FFFFFF';
+      lineas.forEach(function(ln, i){ g.fillText(ln, W / 2, 352 + i * (tam + 8)); });
     })();
-    var yTras = 338 + tituloLineas.lineas.length * (tituloLineas.tam + 10) + 30;
-
-    g.fillStyle = '#E06D2D'; g.fillRect(W / 2 - 75, yTras, 150, 6);
-    var y = yTras + 50;
-
-    /* directiva (fix integral Story Card 9:16) -- distribución vertical
-       armónica, sin desbordes:
-       1) el pie ("Atleta · Day Completed" + píldora de marca) reserva su
-          propio espacio fijo abajo, SIEMPRE -- el cuerpo nunca dibuja
-          sobre esa franja, así nunca queda "colapsado" por falta de
-          lugar.
-       2) cada card de texto (Warm-up/Skill sin kg/Estructura del WOD) se
-          mide ANTES de dibujarse (mismo wrap seguro de envolverTexto que
-          ya usa el título) y su alto de caja sale de esa medición real,
-          nunca de un número fijo -- un texto largo nunca desborda el
-          contenedor, uno corto no deja una caja vacía de más.
-       3) Warm-up y Skill/Strength (con o sin carga puntual detectada)
-          siempre aportan una card si el bloque existe -- antes el
-          cuerpo dependía 100% de que el regex de "@ Xkg" encontrara algo
-          y de que el WOD ya tuviera score cargado; si ninguno de los dos
-          pegaba, el lienzo quedaba casi vacío (bug reportado). */
-    var footerReserve = 220;
-    var footerTop = H - footerReserve;
-    var env = window.CoachEnvolverTexto || function(gg, t){ return [t]; };
-
-    function cardTexto(label, texto, color, fontSize, maxLineas){
-      var tam = fontSize, lineas, lineH, alto, presupuesto = Math.max(140, footerTop - y);
-      do {
-        g.font = '800 ' + tam + 'px "Plus Jakarta Sans", sans-serif';
-        lineas = env(g, texto, W - 268, maxLineas);
-        lineH = Math.round(tam * 1.22);
-        alto = 78 + lineas.length * lineH;
-        if(alto <= presupuesto || tam <= 26) break;
-        tam -= 4;
-      } while(true);
-      g.textAlign = 'left';
-      g.fillStyle = 'rgba(255,255,255,.045)'; redondear(g, 90, y, W - 180, alto, 26); g.fill();
-      g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, alto, 26); g.stroke();
-      g.fillStyle = color; g.fillRect(90, y + 26, 6, alto - 52);
-      g.fillStyle = '#A0A8B4'; g.font = '700 26px "JetBrains Mono", monospace';
-      g.fillText(label, 134, y + 46);
-      g.fillStyle = '#FFFFFF'; g.font = '800 ' + tam + 'px "Plus Jakarta Sans", sans-serif';
-      lineas.forEach(function(ln, i){ g.fillText(ln, 134, y + 46 + Math.round(lineH * .84) + i * lineH); });
-      y += alto + 22;
-    }
-
-    if(d.warmupTxt) cardTexto('WARM-UP', d.warmupTxt.toUpperCase(), '#48D597', 38, 1);
-
-    if(d.kgClave){
-      var altoKg = 168;
-      g.textAlign = 'left';
-      g.fillStyle = 'rgba(255,255,255,.045)'; redondear(g, 90, y, W - 180, altoKg, 26); g.fill();
-      g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, altoKg, 26); g.stroke();
-      g.fillStyle = '#E06D2D'; g.fillRect(90, y + 30, 6, 108);
-      g.fillStyle = '#A0A8B4'; g.font = '700 26px "JetBrains Mono", monospace';
-      g.fillText('KILOS CLAVE', 134, y + 50);
-      g.fillStyle = '#E06D2D'; g.font = '800 84px "Plus Jakarta Sans", sans-serif';
-      g.fillText(d.kgClave, 134, y + 132);
-      y += altoKg + 22;
-    } else if(d.skillTxt){
-      /* fallback (directiva): sin "@ Xkg" literal en el bloque de
-         Fuerza/Skill (técnica, EMOM de skill, etc.) la card nunca
-         desaparece -- muestra el título del bloque en su lugar. */
-      cardTexto('FUERZA / SKILL', d.skillTxt.toUpperCase(), '#E06D2D', 40, 2);
-    }
-
-    if(d.estructura) cardTexto('ESTRUCTURA DEL WOD', d.estructura, '#38BDF8', 46, 2);
-
-    if(d.score){
-      var altoScore = 210;
-      g.fillStyle = 'rgba(56,189,248,.08)'; redondear(g, 90, y, W - 180, altoScore, 26); g.fill();
-      g.strokeStyle = 'rgba(56,189,248,.45)'; g.lineWidth = 2; redondear(g, 90, y, W - 180, altoScore, 26); g.stroke();
-      g.textAlign = 'center';
-      g.fillStyle = '#7CC5E8'; g.font = '700 28px "JetBrains Mono", monospace';
-      g.fillText('[ SCORE FINAL ]', W / 2, y + 56);
-      var scoreTxt = String(d.score).toUpperCase();
-      var fsScore = 96;
-      g.font = '900 ' + fsScore + 'px "Plus Jakarta Sans", sans-serif';
-      while(g.measureText(scoreTxt).width > (W - 260) && fsScore > 48){
-        fsScore -= 4; g.font = '900 ' + fsScore + 'px "Plus Jakarta Sans", sans-serif';
-      }
-      g.fillStyle = '#38BDF8';
-      g.fillText(scoreTxt, W / 2, y + 160);
-      y += altoScore + 22;
-    }
+    var yTrasNombre = 352 + nombreLineas.lineas.length * (nombreLineas.tam + 8) + 14;
 
     g.textAlign = 'center';
-    g.fillStyle = '#FFFFFF'; g.font = '700 34px "Plus Jakarta Sans", sans-serif';
-    g.fillText((d.atleta || 'Atleta') + ' · Day Completed', W / 2, H - 130);
-    g.fillStyle = 'rgba(245,197,24,.14)'; redondear(g, W / 2 - 170, H - 100, 340, 56, 28); g.fill();
-    g.strokeStyle = 'rgba(245,197,24,.5)'; g.lineWidth = 2; redondear(g, W / 2 - 170, H - 100, 340, 56, 28); g.stroke();
+    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '600 28px "Inter", sans-serif';
+    g.fillText(String(d.fecha || '').toUpperCase(), W / 2, yTrasNombre);
+
+    g.fillStyle = '#E06D2D'; g.fillRect(W / 2 - 75, yTrasNombre + 30, 150, 6);
+    var y = yTrasNombre + 30 + 6 + 54;
+
+    var footerReserve = 240;
+    var footerTop = H - footerReserve;
+
+    /* hero card glassmorphism: rótulo + título (opcional) + métrica
+       gigante (opcional). soloMedir=true corre exactamente la misma
+       lógica de medición (g.font/env/measureText, sin efecto visual) sin
+       dibujar nada -- permite decidir el alto REAL antes de decidir el
+       layout final (centrado si sólo hay una card). */
+    function heroCard(x0, y0, w, hMax, label, colorAccent, titulo, captionMetrica, metrica, soloMedir){
+      var padX = 46, padTop = 44;
+      var tituloTam = 46, tituloLineas2 = [], tituloLH = 0;
+      if(titulo){
+        var tam2 = tituloTam;
+        do {
+          g.font = '800 ' + tam2 + 'px "Plus Jakarta Sans", sans-serif';
+          tituloLineas2 = env(g, String(titulo).toUpperCase(), w - padX * 2, 2);
+          if(tituloLineas2.length <= 2 && !tituloLineas2.recortado) break;
+          tam2 -= 3;
+        } while(tam2 > 30);
+        tituloTam = tam2;
+        tituloLH = Math.round(tituloTam * 1.22);
+      }
+      var labelH = 58;
+      var tituloBlockH = tituloLineas2.length ? (tituloLineas2.length * tituloLH + 18) : 0;
+      var fsM = 0;
+      if(metrica){
+        fsM = 120;
+        g.font = '900 ' + fsM + 'px "Plus Jakarta Sans", sans-serif';
+        while(g.measureText(String(metrica)).width > (w - padX * 2) && fsM > 54){
+          fsM -= 4; g.font = '900 ' + fsM + 'px "Plus Jakarta Sans", sans-serif';
+        }
+      }
+      var captionH = captionMetrica ? 42 : 0;
+      var metricaH = metrica ? (Math.round(fsM * 1.2) + 20) : 0;
+      var h = Math.min(hMax, padTop + labelH + tituloBlockH + captionH + metricaH + 40);
+      h = Math.max(h, 220);
+
+      if(!soloMedir){
+        g.save();
+        redondear(g, x0, y0, w, h, 34);
+        var gradGlass = g.createLinearGradient(x0, y0, x0, y0 + h);
+        gradGlass.addColorStop(0, 'rgba(255,255,255,.10)'); gradGlass.addColorStop(1, 'rgba(255,255,255,.03)');
+        g.fillStyle = gradGlass; g.fill();
+        g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 2; redondear(g, x0, y0, w, h, 34); g.stroke();
+        redondear(g, x0, y0, w, 8, 34); g.fillStyle = colorAccent; g.fill();
+        g.restore();
+
+        var cy = y0 + padTop;
+        g.textAlign = 'left';
+        g.fillStyle = colorAccent; g.font = '700 27px "JetBrains Mono", monospace';
+        g.fillText('[ ' + label + ' ]', x0 + padX, cy + 20);
+        cy += labelH;
+        if(tituloLineas2.length){
+          g.fillStyle = '#FFFFFF';
+          g.font = '800 ' + tituloTam + 'px "Plus Jakarta Sans", sans-serif';
+          tituloLineas2.forEach(function(ln, i){ g.fillText(ln, x0 + padX, cy + Math.round(tituloLH * .82) + i * tituloLH); });
+          cy += tituloBlockH;
+        }
+        if(captionMetrica){
+          g.fillStyle = 'rgba(255,255,255,.5)'; g.font = '700 24px "JetBrains Mono", monospace';
+          g.fillText(captionMetrica, x0 + padX, cy + 22);
+          cy += captionH;
+        }
+        if(metrica){
+          g.fillStyle = colorAccent; g.font = '900 ' + fsM + 'px "Plus Jakarta Sans", sans-serif';
+          g.fillText(String(metrica), x0 + padX, cy + Math.round(fsM * .86));
+        }
+      }
+      return h;
+    }
+
+    var tieneSkill = !!(d.skillTxt || d.kgClave);
+    var tieneWod = !!(d.estructura || d.score);
+    var bodyBottom = footerTop - 26;
+    var bodyH = Math.max(240, bodyBottom - y);
+    var gap = 44;
+    var wCard = W - 180;
+
+    if(tieneSkill && tieneWod){
+      var hMaxSkill = Math.round(bodyH * .42);
+      var hSkill = heroCard(90, y, wCard, hMaxSkill, 'FUERZA / SKILL', '#E06D2D', d.skillTxt, d.kgClave ? 'CARGA MÁXIMA (KG)' : '', d.kgClave || '', true);
+      var hMaxWod = bodyH - hSkill - gap;
+      var hWod = heroCard(90, y + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.estructura, d.score ? 'SCORE FINAL' : '', d.score || '', true);
+      var sobra = Math.max(0, bodyH - hSkill - gap - hWod);
+      var yStart = y + Math.round(sobra / 2);
+      heroCard(90, yStart, wCard, hMaxSkill, 'FUERZA / SKILL', '#E06D2D', d.skillTxt, d.kgClave ? 'CARGA MÁXIMA (KG)' : '', d.kgClave || '', false);
+      heroCard(90, yStart + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.estructura, d.score ? 'SCORE FINAL' : '', d.score || '', false);
+    } else if(tieneSkill || tieneWod){
+      var soloLabel = tieneSkill ? 'FUERZA / SKILL' : 'METCON / WOD';
+      var soloColor = tieneSkill ? '#E06D2D' : '#38BDF8';
+      var soloTitulo = tieneSkill ? d.skillTxt : d.estructura;
+      var soloCaption = tieneSkill ? (d.kgClave ? 'CARGA MÁXIMA (KG)' : '') : (d.score ? 'SCORE FINAL' : '');
+      var soloMetrica = tieneSkill ? (d.kgClave || '') : (d.score || '');
+      var hSolo = heroCard(90, y, wCard, bodyH, soloLabel, soloColor, soloTitulo, soloCaption, soloMetrica, true);
+      var yCentrada = y + Math.max(0, Math.round((bodyH - hSolo) / 2));
+      heroCard(90, yCentrada, wCard, bodyH, soloLabel, soloColor, soloTitulo, soloCaption, soloMetrica, false);
+    } else {
+      var hVacio = heroCard(90, y, wCard, bodyH, 'SESIÓN', '#7CC5E8', d.tituloWod || 'ENTRENAMIENTO', '', '', true);
+      var yVacia = y + Math.max(0, Math.round((bodyH - hVacio) / 2));
+      heroCard(90, yVacia, wCard, bodyH, 'SESIÓN', '#7CC5E8', d.tituloWod || 'ENTRENAMIENTO', '', '', false);
+    }
+
+    /* FOOTER: sello Coach JP + badge Session Completed (directiva) --
+       zona reservada fija (footerReserve), el cuerpo nunca dibuja acá. */
+    g.textAlign = 'center';
+    g.fillStyle = 'rgba(72,213,151,.14)'; redondear(g, W / 2 - 210, H - footerReserve + 30, 420, 60, 30); g.fill();
+    g.strokeStyle = 'rgba(72,213,151,.5)'; g.lineWidth = 2; redondear(g, W / 2 - 210, H - footerReserve + 30, 420, 60, 30); g.stroke();
+    g.fillStyle = '#7CFFB2'; g.font = '800 26px "JetBrains Mono", monospace';
+    g.fillText('✓ SESSION COMPLETED', W / 2, H - footerReserve + 68);
+
+    g.fillStyle = 'rgba(245,197,24,.14)'; redondear(g, W / 2 - 190, H - 106, 380, 58, 29); g.fill();
+    g.strokeStyle = 'rgba(245,197,24,.5)'; g.lineWidth = 2; redondear(g, W / 2 - 190, H - 106, 380, 58, 29); g.stroke();
     g.fillStyle = '#F5C518'; g.font = '700 22px "JetBrains Mono", monospace';
-    g.fillText('COACH JP · HIGH PERFORMANCE', W / 2, H - 64);
+    g.fillText('COACH JP · HIGH PERFORMANCE', W / 2, H - 68);
 
     return c;
   }
@@ -24663,26 +24835,49 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   padding:2px 8px; font:inherit; color:inherit; cursor:pointer; min-height:28px;
 }
 .jp-cf-pct:hover,.jp-cf-pct:focus-visible{ border-color:#38BDF8; background:rgba(56,189,248,.08); }
+/* directiva ("Motor de 1RM exacto") -- modal centrado de pantalla
+   completa (mismo patrón que guideModal/painModal/calcModal): el
+   viewport visible de iOS se achica cuando aparece el teclado numérico,
+   pero al estar centrado con flexbox dentro de un overlay fixed, la
+   tarjeta se sigue viendo completa y centrada en el espacio que queda
+   -- ya no un popover anclado a coordenadas fijas de la página que el
+   teclado tapaba. */
+.jp-pct-overlay{
+  position:fixed; inset:0; z-index:300; display:flex; align-items:center; justify-content:center;
+  padding:16px; background:rgba(4,5,8,.8); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+}
 .jp-pct-pop{
-  position:absolute; z-index:60; min-width:200px; padding:10px 12px; border-radius:12px;
-  background:#12161F; border:1px solid rgba(56,189,248,.4); box-shadow:0 8px 28px rgba(0,0,0,.45);
+  width:min(320px,100%); padding:20px 18px; border-radius:16px;
+  background:#12161F; border:1px solid rgba(56,189,248,.4); box-shadow:0 20px 60px rgba(0,0,0,.55);
 }
 .jp-pct-pop-lb{
-  font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; letter-spacing:.04em;
-  color:#7CC5E8; margin-bottom:7px;
+  font-family:'Plus Jakarta Sans',sans-serif; font-size:16px; font-weight:800;
+  color:#EDEFF2; margin-bottom:14px; text-align:center;
 }
 .jp-pct-pop-row{ display:flex; align-items:center; gap:6px; }
 .jp-pct-pop-in{
-  flex:1; min-width:0; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,.18);
-  background:rgba(8,9,11,.6); color:#EDEFF2; font-family:'JetBrains Mono',monospace; font-size:14px;
+  flex:1; min-width:0; padding:13px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.18);
+  background:rgba(8,9,11,.6); color:#EDEFF2; font-family:'JetBrains Mono',monospace; font-size:20px;
+  text-align:center; font-weight:700;
 }
 .jp-pct-pop-in:focus{ border-color:#38BDF8; outline:none; }
+.jp-pct-pop-actions{ display:flex; gap:10px; margin-top:16px; }
 .jp-pct-pop-ok,.jp-pct-pop-x{
-  display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px;
-  border-radius:50%; border:1px solid rgba(255,255,255,.18); background:transparent; color:#fff; flex:0 0 auto;
+  flex:1; min-height:46px; border-radius:12px; border:1px solid rgba(255,255,255,.18);
+  background:transparent; color:#fff; font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14px;
 }
 .jp-pct-pop-ok{ background:rgba(72,213,151,.14); border-color:rgba(72,213,151,.45); color:#7CFFB2; }
 .jp-pct-pop-x:hover{ background:rgba(239,90,74,.15); border-color:rgba(239,90,74,.5); color:#FF8A78; }
+.jp-prs-pop{ width:min(360px,100%); }
+.jp-prs-list{ display:flex; flex-direction:column; gap:6px; max-height:52vh; overflow-y:auto; }
+.jp-prs-row{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:12px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.03); color:#EDEFF2; font-family:'Plus Jakarta Sans',sans-serif;
+  font-weight:700; font-size:13px; text-align:left;
+}
+.jp-prs-row:active{ background:rgba(56,189,248,.1); border-color:rgba(56,189,248,.4); }
+.jp-prs-val{ font-family:'JetBrains Mono',monospace; font-weight:700; color:#F5C518; font-size:13px; }
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
 .jp-cfboard .jp-cf-num{ color:#38BDF8; font-weight:800; }
 .jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.12); }
@@ -24759,10 +24954,26 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    body.cf-disc, Bodybuilding no se toca.
 ========================================================= */
 body.cf-disc .day-header{ display:none !important; }
+/* directiva ("rediseño header CrossFit"): backdrop-filter sobre un
+   sticky+fondo TRANSPARENTE es la combinación que iOS Safari renderiza
+   mal (ghosting/parpadeo al hacer scroll, contenido de la página
+   "sangrando" detrás de la barra pegajosa) -- fondo sólido y opaco (sin
+   transparencia ni blur) en vez de transparent, mismo criterio "bordes
+   nítidos de estilo táctico" que ya rige .day-tab más abajo. */
 body.cf-disc .week-tabs-wrap,
 body.cf-disc .week-selector-wrap{
-  background:transparent !important; border:none !important; box-shadow:none !important; backdrop-filter:none !important;
+  background:#0A0B0F !important; border:none !important; box-shadow:none !important; backdrop-filter:none !important;
+  -webkit-backdrop-filter:none !important;
 }
+body.cf-disc .week-tabs-wrap{ display:flex !important; align-items:center; gap:8px; padding-right:10px; }
+body.cf-disc .week-tabs{ flex:1; min-width:0; }
+body.cf-disc .jp-prs-quickbtn{
+  display:inline-flex !important; align-items:center; gap:5px; flex-shrink:0;
+  padding:7px 12px; border-radius:999px; border:1px solid rgba(245,197,24,.45) !important;
+  background:rgba(245,197,24,.1) !important; color:#F5C518 !important; font-family:'JetBrains Mono',monospace;
+  font-weight:700; font-size:11px; letter-spacing:.04em; white-space:nowrap;
+}
+body.cf-disc .jp-prs-quickbtn:active{ background:rgba(245,197,24,.22) !important; }
 body.cf-disc .day-tab{
   background:rgba(255,255,255,.04) !important; border:1px solid rgba(255,255,255,.1) !important;
   border-radius:999px !important; box-shadow:none !important;
