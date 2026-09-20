@@ -132,6 +132,11 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .btn:active{transform:translateY(0)}
 .btn.gold{background:linear-gradient(135deg,var(--gold),#E8965E);color:#08090B;border:none;box-shadow:0 8px 20px rgba(210,121,63,.2)}
 .btn.gold:hover{filter:brightness(1.07)}
+/* directiva ("Independencia Total de Semanas") -- la pastilla de semana
+   activa en la barra de CrossFit necesita destacarse más que un botón
+   dorado cualquiera: anillo propio + peso de fuente mayor, para que el
+   coach nunca dude en qué semana está parado antes de escribir. */
+.cf-week-bar .btn.cf-wk-activa{box-shadow:0 0 0 3px rgba(210,121,63,.38),0 8px 20px rgba(210,121,63,.3);font-weight:800}
 .btn.teal{background:linear-gradient(135deg,var(--teal),#009e88);color:#0B1A22;border:none;box-shadow:0 8px 20px rgba(74,147,184,.18)}
 .btn.red{background:linear-gradient(135deg,var(--red),#8E0D17);color:#fff;border:none}
 .btn.ghost{background:transparent}
@@ -3181,16 +3186,20 @@ function renderDay(){
        tipo:'list' de este día muestra y guarda en la semana elegida acá,
        nunca en otra. */
     const cfWkActiva = activeCfWeek();
+    /* directiva ("Independencia Total de Semanas") -- refuerzo visual de
+       la pastilla activa: checkmark + anillo dorado propio (.cf-wk-activa,
+       ver CSS), para que el coach tenga certeza absoluta de qué semana
+       está editando de un vistazo, sin depender sólo del color de fondo. */
     h += '<div class="card cf-week-bar" style="margin-bottom:14px">' +
       '<label class="lb">📆 Semana que estás editando (Pizarra Táctica)</label>' +
       '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">' +
         (pAct.meso||[]).map((w,i) =>
-          '<button type="button" class="btn sm' + (i===cfWkActiva?' gold':' ghost') + '" data-cfwk="' + i + '">' +
-            esc(w.short || ('S'+(i+1))) + '</button>'
+          '<button type="button" class="btn sm' + (i===cfWkActiva?' gold cf-wk-activa':' ghost') + '" data-cfwk="' + i + '" aria-current="' + (i===cfWkActiva?'true':'false') + '">' +
+            (i===cfWkActiva?'✓ ':'') + esc(w.short || ('S'+(i+1))) + '</button>'
         ).join('') +
         (cfWkActiva > 0 ? '<button type="button" class="btn sm ghost" data-cfclonewk="1" title="Copia todos los días y bloques de la semana anterior en la semana activa">📋 Clonar semana anterior</button>' : '') +
       '</div>' +
-      '<div class="hint" style="margin-top:6px">Cada semana de CrossFit &amp; Hyrox es una prescripción 100% independiente -- editar acá nunca modifica el contenido de otra semana.</div>' +
+      '<div class="hint" style="margin-top:6px">Cada semana de CrossFit &amp; Hyrox es una prescripción 100% independiente -- editar acá nunca modifica el contenido de otra semana. Una semana nunca prescripta arranca en blanco, nunca copia otra semana.</div>' +
     '</div>' +
     '<div class="card" style="margin-bottom:14px">' +
       '<div class="grid g2">' +
@@ -3801,12 +3810,23 @@ function setBlockField(b, f, val){
    que el coach toca Semana 2/3/4 en el selector nuevo del Builder, esa
    semana se bifurca a su propio array independiente en b.weekItems[i]
    (nunca una referencia compartida) y desde ahí edita y compila aparte,
-   sin tocar jamás b.items ni las otras semanas. */
+   sin tocar jamás b.items ni las otras semanas.
+
+   FIX CRÍTICO ("Independencia Total de Semanas") -- hasta acá esto sólo
+   garantizaba que ESCRIBIR en Semana 2/3/4 nunca tocara Semana 1: la
+   LECTURA (esta función) seguía cayendo al contenido de Semana 1 como
+   fallback cuando la semana activa todavía no se había bifurcado, así
+   que el coach abría S2 por primera vez y encontraba el textarea YA
+   LLENO con el WOD de S1 -- un solo caracter tipeado ahí bifurcaba esa
+   semana con contenido heredado, exactamente la "herencia automática"
+   que la directiva prohíbe. Ahora una semana > 0 sin bifurcar devuelve
+   directamente un array vacío: pizarra en blanco, lista para prescribir
+   desde cero, sin arrastrar nunca el contenido de otra semana. */
 function activeCfWeek(){
   return (S.ui && typeof S.ui.cfWeek === 'number' && S.ui.cfWeek > 0) ? S.ui.cfWeek : 0;
 }
 function cfWeekItems(b, weekIdx){
-  if(weekIdx > 0 && b.weekItems && b.weekItems[weekIdx] && b.weekItems[weekIdx].length) return b.weekItems[weekIdx];
+  if(weekIdx > 0) return (b.weekItems && b.weekItems[weekIdx] && b.weekItems[weekIdx].length) ? b.weekItems[weekIdx] : [];
   return b.items || [];
 }
 function setCfWeekItems(b, weekIdx, val){
@@ -7550,9 +7570,15 @@ function renderBlockInner(block, day, weekIdx){
   } else if(esBloqueSinSemana(block, weekIdx)){
     html += '<div class="info-card" style="margin-top:0;"><p>Esta semana el ciclo programa menor frecuencia: este bloque no tiene sesión asignada. No es un error, tranquilo/a.</p></div>';
   } else {
-    const itemsSemana = (block.weekItems && block.weekItems[weekIdx] && block.weekItems[weekIdx].length)
-      ? block.weekItems[weekIdx] : (block.items || []);
-    itemsSemana.forEach(function(item){ html += renderLine(item); });
+    const itemsSemana = itemsDeSemana(block, weekIdx);
+    if(!itemsSemana.length && weekIdx > 0){
+      /* directiva ("Independencia Total de Semanas") -- semana sin
+         prescripción propia todavía: mensaje explícito en vez de
+         mostrar (o heredar) el contenido de otra semana. */
+      html += '<div class="info-card" style="margin-top:0;"><p>Todavía no se cargó la prescripción de esta semana. Consultá con tu coach.</p></div>';
+    } else {
+      itemsSemana.forEach(function(item){ html += renderLine(item); });
+    }
     if(block.tips){ html += '<div class="coach-note"><strong>Coach Note</strong>' + block.tips + '</div>'; }
     html += alertsHtml(block);
     html += objectiveHtml(block);
@@ -7696,6 +7722,23 @@ function esBloqueVacioCF(block){
   const items = (block.items || []).map(x => String(x || '').trim()).filter(Boolean);
   if(!items.length) return true;
   return items.length === 1 && items[0] === CF_PLACEHOLDER;
+}
+/* directiva ("Independencia Total de Semanas") -- fuente ÚNICA de la
+   regla "qué líneas le corresponden a esta semana", global igual que
+   esBloqueVacioCF de arriba, para que los 3 puntos del archivo que
+   necesitan esto (renderBlockInner, pizarra(), el resumen de estructura
+   de sesión) dejen de tener cada uno su propia copia de la misma
+   fórmula. Semana 1 (weekIdx 0) sigue viviendo en block.items, sin
+   cambios. Semana 2/3/4 (weekIdx > 0): si el coach bifurcó esa semana
+   puntual en el Builder, block.weekItems[weekIdx] trae SU PROPIO
+   contenido -- pero si NUNCA la tocó, antes esto caía al fallback de
+   Semana 1 (block.items), mostrándole al alumno el WOD de otra semana
+   sin que el coach lo haya prescripto ("herencia" prohibida por la
+   directiva). Ahora una semana sin bifurcar devuelve directamente un
+   array vacío: pizarra en blanco, nunca el contenido de otra semana. */
+function itemsDeSemana(block, weekIdx){
+  if(weekIdx > 0) return (block.weekItems && block.weekItems[weekIdx] && block.weekItems[weekIdx].length) ? block.weekItems[weekIdx] : [];
+  return block.items || [];
 }
 /* datos para la Story Card exclusiva de CrossFit: kg clave del bloque de
    fuerza/skill, estructura del WOD/Metcon y el score que el alumno ya
@@ -9657,15 +9700,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        ya renderizado -- más robusto y permite el parseo nombre/valor sin
        depender de cómo el renderer genérico haya envuelto cada línea. */
     if(esBloqueVacioCF(block)) return;
-    /* desacoplamiento de semanas (directiva crítica): Semana 1 sigue
-       viviendo en block.items -- si el coach bifurcó esta semana puntual
-       en el Builder (weekIdx > 0), block.weekItems[weekIdx] trae SU PROPIO
-       contenido, ya procesado por separado en buildProgramConfig() (%1RM,
-       auto-match de video en Accessory). Una semana nunca bifurcada cae en
-       el fallback de siempre (block.items), sin ningún cambio de
-       comportamiento para planes que no usaron el selector nuevo. */
-    const itemsSemana = (weekIdx > 0 && block.weekItems && block.weekItems[weekIdx] && block.weekItems[weekIdx].length)
-      ? block.weekItems[weekIdx] : (block.items || []);
+    /* directiva ("Independencia Total de Semanas") -- itemsDeSemana()
+       (helper global, ver junto a esBloqueVacioCF) es la fuente única de
+       esta regla: Semana 1 sigue viviendo en block.items; Semana 2/3/4
+       sin bifurcar en el Builder devuelve directamente vacío, NUNCA el
+       contenido de otra semana. */
+    const itemsSemana = itemsDeSemana(block, weekIdx);
     /* 17/09 · auditoría general: una línea nula o vacía (dato viejo, pegado
        con saltos de más, etc.) no debe sobrevivir como fila muda en la
        Pizarra -- se purga acá, en el propio render, para que la reparación
@@ -9696,7 +9736,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const notaKey = skey + '|__accnotas';
     const notaGuardada = (state.notes && state.notes[notaKey]) || '';
 
-    const filas = lineas.map(function(l){ return jpCfFila(l, dayId); }).join('');
+    /* directiva ("Independencia Total de Semanas") -- si esta semana
+       todavía no tiene prescripción propia (lineas vacío por semana > 1),
+       nunca se deja el tablero con las filas en blanco sin explicación:
+       un mensaje claro en vez del WOD de otra semana. */
+    const filas = lineas.length ? lineas.map(function(l){ return jpCfFila(l, dayId); }).join('')
+      : (weekIdx > 0 ? '<div class="jp-cf-row jp-cf-badge">Todavía no se cargó la prescripción de esta semana. Consultá con tu coach.</div>' : '');
     const clips = jpCfClips(lineas);
 
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
@@ -17524,7 +17569,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
       return { kind:'Engine', main:'<b>TRABAJO CONTINUO</b>', vol:'Bloque de motor' };
     }
     if(b){
-      var items = (b.weekItems && b.weekItems[wi] && b.weekItems[wi].length) ? b.weekItems[wi] : (b.items || []);
+      var items = itemsDeSemana(b, wi);
       var mov = items.filter(function(x){ return !/^\\s*(-|\\d+\\s*sets?:|rest|descanso)/i.test(x); }).length;
       /* etiqueta ya resuelta para la semana actual (no el título estático
          congelado en la semana 1) -- misma corrección que en esCore() */
