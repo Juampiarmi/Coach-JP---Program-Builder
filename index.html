@@ -6112,14 +6112,22 @@ function buscarVideo(name){
   }
   return null;
 }
-function videoLinkHtml(name){
+function videoLinkHtml(name, soloMatch){
   const key = (name||'').trim();
   if(!key) return '';
   if(esEstructura(key)) return '';
-  /* CrossFit: el bloque no vincula videos por defecto (regla del builder).
-     El único video que aparece es el que el coach pegó a mano en la línea. */
+  /* window.__jpSinVideo (módulo "v4.1") ya no recibe true desde compile()
+     para pizarras de CrossFit (ver buildProgramConfig) -- se deja el
+     chequeo por si algún caller viejo todavía lo setea a mano. */
   if(window.__jpSinVideo) return '';
   const ytid = buscarVideo(key);
+  /* directiva crítica -- fuera de Accessory, un WOD/Skill de texto libre
+     no debe llenarse de íconos de "buscar en YouTube" para cada línea sin
+     match real (eso sí sería ruido táctico) -- soloMatch=true corta acá
+     mismo si no hay coincidencia real, en vez de caer al fallback de
+     búsqueda de más abajo. Con match real el botón se muestra igual,
+     pase lo que pase con soloMatch. */
+  if(!ytid && soloMatch) return '';
   /* trigger con thumbnail real (28/08, Fase 3 · Sección 03 pto.5): el modal
      y el iframe NO cambian, solo el disparador — antes un ícono circular
      chico, ahora una miniatura real de YouTube (mqdefault.jpg, mismo ID que
@@ -8916,7 +8924,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(m2 && m2[1].trim()) return { nm: m2[1].trim(), val: m2[2].trim() };
     return { nm: l, val: '' };
   }
-  function jpCfFila(raw, conVideo){
+  function jpCfFila(raw, esAccessory){
     const l = String(raw || '').trim();
     if(jpCfEsHeader(l)){
       const txt = l.replace(/^\\s*#+\\s*/, '');
@@ -8938,10 +8946,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     const partes = jpCfSplit(l);
-    /* estrategia de videos (directiva): sólo Accessory/Cooldown vincula
-       video por ejercicio, igual que Sports & Bodybuilding -- WOD y
-       Fuerza/Skill quedan tácticos y limpios, sin miniaturas flotantes. */
-    const video = conVideo ? videoLinkHtml(partes.nm) : '';
+    /* directiva crítica -- el video ya no se limita a Accessory/Cooldown:
+       se intenta SIEMPRE, en cualquier fase (WOD, Skill/Strength,
+       Warm-up), porque compile() ahora auto-matchea ahí también (ver
+       buildProgramConfig). Fuera de Accessory se pide soloMatch=true --
+       nunca el ícono de "buscar en YouTube" para una línea sin match
+       real, eso sí ensuciaría una pizarra táctica; con match real el
+       botón se muestra en cualquier fase, igual que el chip verde que ya
+       ve el coach en el Builder. */
+    const video = videoLinkHtml(partes.nm, !esAccessory);
     return '<div class="jp-cf-row">' +
         '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + video + '</span>' +
         (partes.val ? '<span class="jp-cf-rv">' + jpMdBold(partes.val) + '</span>' : '') +
@@ -8991,8 +9004,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const notaKey = skey + '|__accnotas';
     const notaGuardada = (state.notes && state.notes[notaKey]) || '';
 
-    const conVideo = block.category === 'accessory';
-    const filas = lineas.map(function(l){ return jpCfFila(l, conVideo); }).join('');
+    const esAccessory = block.category === 'accessory';
+    const filas = lineas.map(function(l){ return jpCfFila(l, esAccessory); }).join('');
 
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const html =
@@ -12903,7 +12916,17 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   function wodSinVideo(){
     document.querySelectorAll('.block').forEach(function(bl){
       if(!esWodBloque(bl)) return;
-      limpiar(bl);
+      /* directiva crítica -- ya no se "limpia" (saca de la fila y manda al
+         glosario del pie de sesión) el video de un bloque de Pizarra de
+         CrossFit (.jp-cfboard, CUALQUIER fase, no sólo Accessory desde
+         este fix). El auto-match de compile()/jpCfFila() ahora resuelve
+         el video en cualquier fase -- si esta limpieza siguiera corriendo
+         acá, le sacaría a la fila exactamente el botón que ese fix
+         acaba de agregar, apenas unos milisegundos después de pintarlo
+         (bug real reportado: el botón aparecía y desaparecía solo). Se
+         sigue limpiando en todo lo demás que esWodBloque() ya cubría
+         (complex, metcon clásico de musculación fuera de la Pizarra). */
+      if(!bl.querySelector('.jp-cfboard')) limpiar(bl);
       /* color del formato en la pizarra */
       var board = bl.querySelector('.wod-board');
       if(board && !board.dataset.tipo){
@@ -24186,18 +24209,34 @@ function resolveByText(txt){
 
 /* ---------- coincidencia EXACTA para líneas de pizarra ----------
    Nunca se asigna un video por aproximación: si el movimiento escrito
-   no existe tal cual en la biblioteca, la línea viaja como texto plano. */
-const CAND_RUIDO = /^(?:\d+\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\b[:.]?\s*)+/i;
+   no existe tal cual en la biblioteca, la línea viaja como texto plano.
+   directiva crítica -- esta limpieza era una copia más vieja/débil de
+   candidatos() (Builder-side, MÓDULO 43, "VIDEOS RECONOCIDOS EN LA
+   BIBLIOTECA"): no sabía pisar "Set 1:"/"Ronda 2:"/"Min 4:" ni una carga
+   pegada con "@ 70%", así que el chip verde que el coach veía en el
+   Builder (ya limpio con la lógica nueva) no encontraba el mismo nombre
+   acá al compilar -- la promesa del chip nunca llegaba al alumno. Se
+   alinea con la misma limpieza. */
+const CAND_RANGO = '(?:\\s*[-–—]\\s*\\d+)?';
+const CAND_RUIDO = new RegExp('^(?:\\d+' + CAND_RANGO + '\\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\\b[:.]?\\s*)+', 'i');
+const CAND_PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
 function candidatosTexto(txt){
-  let t = String(txt || '').replace(/^[\s\-•*]+/, '').replace(CAND_RUIDO, '');
-  return t.split(/\s*\+\s*|\s*\/\s*/).map(s => s
+  let t = String(txt || '').replace(/^[\s\-•*]+/, '');
+  t = t.replace(CAND_PREFIJO_ORDEN, '');
+  if(/^(?:-\s*or\s*-|amrap|emom|every|for time|time cap|target|rest|descanso|cargas?|min \d)/i.test(t)){
+    if(!/\+/.test(t)) return [];
+  }
+  t = t.replace(CAND_RUIDO, '');
+  return t.split(/\s*\+\s*|\s*\/\s*|\s+y\s+/i).map(s => s
       .replace(/\([^)]*\)/g, ' ')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\s*@.*$/, '')
+      .replace(new RegExp('^\\s*\\d+' + CAND_RANGO + '\\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\\b)?\\s*', 'i'), '')
       .replace(/[—–]\s*.*$/, '')
-      .replace(/^\s*\d+\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\b)?\s*/i, '')
       .replace(/\b\d+\s*(?:kg|lbs?|cal|m|s|seg|min|%)\b.*$/i, '')
       .replace(/\bx\s*\d+.*$/i, '')
       .replace(/\s{2,}/g, ' ').trim())
-    .filter(s => s.length > 2);
+    .filter(s => s.length > 2 && /[a-záéíóúñ]/i.test(s));
 }
 function resolveExacto(txt){
   const cands = candidatosTexto(txt);
@@ -24296,6 +24335,13 @@ function buildProgramConfig(ath){
   }));
 
   const days = p.dias.map((d, di) => {
+    /* Vault Técnico del Día (directiva C): además de los hasta 5 clips que
+       el coach cura a mano (d.cfVault), los ejercicios que el auto-match
+       de abajo reconoce en la Pizarra de este día se juntan acá -- se
+       mezclan con los manuales más abajo (los manuales SIEMPRE primero,
+       el auto-match sólo rellena los huecos que queden hasta 5, sin
+       duplicar por videoId). */
+    const vaultAuto = [];
     const blocks = d.bloques.map(b => {
       bloqueCF = esBloqueCF(b);
       const out = {
@@ -24402,21 +24448,29 @@ function buildProgramConfig(ath){
         Object.assign(out, { isHyrox: true, movements: (b.movements||[]).slice() });
       }
       else {
-        /* vinculación estricta: el video se registra sólo con coincidencia exacta,
-           y sólo si no es un bloque CrossFit (pizarra) -- ahí el link se pega a mano
-           (partirVideoManual, abajo) porque el texto es libre y el auto-match no es confiable.
-           EXCEPCIÓN (directiva de estrategia de videos): la fase Accessory/Cooldown
-           SÍ admite auto-match idéntico a Sports & Bodybuilding -- ahí cada línea
-           suele ser un movimiento puntual real (igual que un bloque estructurado),
-           a diferencia de un WOD/Skill de texto libre donde el auto-match no es
-           confiable. */
+        /* directiva crítica -- el auto-match YA NO se limita a Accessory: el
+           coach ve el chip verde "Video vinculado" en el Builder (Videos
+           reconocidos en la biblioteca) para CUALQUIER fase de la Pizarra
+           -- WOD, Skill/Strength, Warm-up -- porque candidatos()/
+           resolveExacto() comparten la misma limpieza de línea (ver
+           candidatosTexto() más arriba). Restringir esto sólo a Accessory
+           dejaba ese chip como una promesa que nunca llegaba al alumno
+           para el resto de las fases -- caso reportado: "SkiErg 300m" en
+           un bloque WARM-UP mostraba el chip vinculado en el Builder pero
+           ningún botón de video en el teléfono. La vinculación sigue
+           siendo por coincidencia EXACTA (resolveExacto/candidatosTexto),
+           nunca aproximada -- eso no cambia, sólo la fase en la que se
+           aplica. accesorioConVideo se conserva sólo para decidir si
+           además se corre partirVideoManual (link pegado a mano) más
+           abajo, sin cambios en ese comportamiento. */
         const accesorioConVideo = bloqueCF && b.category === 'accessory';
-        if(!bloqueCF || accesorioConVideo){
-          (b.items||[]).forEach(it => {
-            const r = resolveExacto(it);
-            if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
-          });
-        }
+        (b.items||[]).forEach(it => {
+          const r = resolveExacto(it);
+          if(r.ex){
+            addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex);
+            if(bloqueCF && r.ex.videoId) vaultAuto.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, videoId: r.ex.videoId });
+          }
+        });
         out.items = (b.items||[]).slice();
         /* en CrossFit el video sólo aparece si el coach pegó el link en la línea
            -- salvo Accessory, que ya auto-matchea arriba como Bodybuilding */
@@ -24461,12 +24515,12 @@ function buildProgramConfig(ath){
           const wItems = {};
           b.weekItems.forEach((arr, wi) => {
             if(wi <= 0 || !arr || !arr.length) return;
-            if(accesorioConVideo){
-              arr.forEach(it => {
-                const r = resolveExacto(it);
-                if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
-              });
-            }
+            /* mismo auto-match ampliado que arriba, replicado acá para las
+               semanas bifurcadas (ver comentario en el bloque de S1). */
+            arr.forEach(it => {
+              const r = resolveExacto(it);
+              if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
+            });
             let procesado = accesorioConVideo ? arr.slice() : arr.map(it => partirVideoManual(it).texto);
             procesado = procesado.map(it => {
               const m = String(it).match(RX_PCT_LIFT);
@@ -24483,13 +24537,16 @@ function buildProgramConfig(ath){
         }
       }
 
-      /* la supresión total del botón de video (sinVideo) sólo aplica a pizarras
-         de CrossFit (texto libre) -- un bloque estructurado (block/superset/
-         finisher/hyrox) siempre apunta a un ejercicio puntual vía exId/getEx(),
-         así que su video (si existe en la biblioteca) debe mostrarse siempre.
-         Accessory/Cooldown queda afuera de la supresión: ahí el video se
-         muestra igual que en Bodybuilding (ver accesorioConVideo arriba). */
-      if(bloqueCF && esGenerico(b) && b.category !== 'accessory') out.sinVideo = true;
+      /* directiva crítica -- el kill-switch "sinVideo" (por bloque, todo o
+         nada) queda retirado para pizarras de CrossFit: ahora que el
+         auto-match corre en todas las fases (arriba) y que jpCfFila()/
+         videoLinkHtml() del lado del alumno deciden línea por línea (con
+         soloMatch=true fuera de Accessory, ver pizarra() más abajo), un
+         apagado total por bloque volvería a tapar exactamente los
+         botones que este fix agrega. No se borra out.sinVideo del todo
+         por compatibilidad con quien lo lea, simplemente nunca se
+         asigna en true acá -- window.__jpSinVideo (módulo "v4.1") sigue
+         andando, pero ya no recibe true desde ningún lado. */
 
       /* pizarra modular de CrossFit: formato del bloque, modo de video y cierre técnico */
       if(b.cfModo === 'tech' || b.cfModo === 'board') out.boardMode = b.cfModo;
@@ -24540,6 +24597,25 @@ function buildProgramConfig(ath){
         const ex = getEx(exId);
         return ex ? { nombre: exNombreCorto(ex) || ex.es || '', videoId: resolverVideoId(ex) } : null;
       }).filter(x => x && x.videoId);
+    }
+    /* directiva C -- los videos reconocidos automáticamente en la Pizarra
+       de este día (vaultAuto, cargado arriba durante el auto-match)
+       también aparecen acá, para el alumno que prefiere revisarlos todos
+       antes de arrancar en vez de tocar cada línea. Los elegidos a mano
+       por el coach SIEMPRE van primero (ya están en out.cfVault); el
+       auto-match sólo rellena los huecos que queden hasta 5, sin repetir
+       un videoId que ya esté. */
+    if(vaultAuto.length){
+      out.cfVault = out.cfVault || [];
+      const yaPuesto = {};
+      out.cfVault.forEach(v => { yaPuesto[v.videoId] = 1; });
+      for(let vi = 0; vi < vaultAuto.length && out.cfVault.length < 5; vi++){
+        const v = vaultAuto[vi];
+        if(yaPuesto[v.videoId]) continue;
+        yaPuesto[v.videoId] = 1;
+        out.cfVault.push(v);
+      }
+      if(!out.cfVault.length) delete out.cfVault;
     }
     return out;
   });
