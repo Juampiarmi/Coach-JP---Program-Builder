@@ -3278,6 +3278,58 @@ function vaciarDiaCompleto(){
   save(); renderBuilder();
   toast('🗑️ Día vaciado — Pizarra Táctica en blanco', 'warn');
 }
+/* directiva ("Clonar experiencia pura de CrossFit"): migración explícita y
+   NO destructiva de un bloque clásico ('block'/'superset'/'finisher'/
+   'hyrox', quedado de antes de este refactor) a Bloque de Pizarra -- se
+   aplana la info real ya cargada (ejercicio(s), dosis) a texto plano
+   editable, en el MISMO formato que ya reconoce parsearPizarraSB() del
+   lado del alumno (líneas "A1./A2." para biset/triset, "Nombre: dosis"
+   para el resto). Los campos clásicos (b.exId/b.ejercicios/b.fin/...)
+   quedan intactos sin usarse -- ninguna auditoría puede acusar pérdida
+   de dato, sólo se agrega b.items/b.sportsPizarra y se cambia b.tipo. */
+function migrarBloqueAPizarra(bid){
+  const d = curDay(); if(!d) return;
+  const b = (d.bloques||[]).find(x => x.id === bid); if(!b) return;
+  if(!confirm('¿Convertir este bloque a formato Pizarra? El bloque clásico se reemplaza por texto libre editable (no se borra ningún dato).')) return;
+  const dosisLinea = (sets, reps, tempo, restSeconds) => {
+    const partes = [];
+    if(sets && reps) partes.push(sets + 'x' + reps);
+    else if(reps) partes.push(reps);
+    if(tempo) partes.push('Tempo ' + tempo);
+    if(restSeconds) partes.push('Rest ' + restSeconds + 's');
+    return partes.join(' | ');
+  };
+  let lineas = [];
+  if(b.tipo === 'block'){
+    const ex = getEx(b.exId);
+    const nombre = (ex ? ex.es : (b.coreNombre || '')).trim() || 'Ejercicio';
+    lineas.push(nombre);
+    const dl = dosisLinea(b.efSets || b.approxSets, b.reps, b.tempo, b.restSeconds);
+    if(dl) lineas.push(dl);
+  } else if(b.tipo === 'superset'){
+    (b.ejercicios||[]).forEach((e, i) => {
+      const ex = getEx(e.exId);
+      const nombre = (ex ? ex.es : (e.nombre || '')).trim() || 'Ejercicio ' + (i+1);
+      const dl = dosisLinea(b.efSets, e.reps, e.tempo, b.restSeconds);
+      lineas.push('A' + (i+1) + '. ' + nombre + (dl ? ': ' + dl : ''));
+    });
+  } else if(b.tipo === 'finisher'){
+    (b.fin||[]).forEach((e) => {
+      const ex = getEx(e.exId);
+      const nombre = (ex ? ex.es : (e.nombre || '')).trim() || 'Ejercicio';
+      lineas.push(nombre + (e.repsRange ? ': ' + e.repsRange : ''));
+    });
+  } else if(b.tipo === 'hyrox'){
+    lineas = (b.movements||[]).slice();
+  }
+  if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Convertir a Pizarra ' + (b.titulo || ''));
+  b.tipo = 'list';
+  b.sportsPizarra = true;
+  b.items = lineas;
+  if(!b.category) b.category = 'strength';
+  save(); renderBuilder();
+  toast('🔄 Bloque convertido a Pizarra — revisá el texto');
+}
 /* Escaneo reactivo de "Ejercicios Detectados" para la Pizarra Sports:
    mismo criterio que chips()/candidatos() ya usa CrossFit (MÓDULO 43,
    más abajo en el archivo) para reconocer nombres de ejercicio dentro
@@ -3618,6 +3670,18 @@ function renderDay(){
        antes de esta directiva (esos siguen su rama de siempre, sin
        cambios). */
     const esBloqueSportsPizarra = !cfActiva && b.tipo === 'list' && !!b.sportsPizarra;
+    /* REFACTOR CRÍTICO DEFINITIVO (directiva "Clonar experiencia pura de
+       CrossFit"): en Sports, un bloque 'block'/'superset'/'finisher'/'hyrox'
+       sólo puede existir ya en los datos de un atleta real por venir de ANTES
+       de este refactor (herramienta "Armar rutina manualmente"/plantillas de
+       estructura de sesión/el viejo parser retirado) -- ningún botón vigente
+       crea uno nuevo (ver addBlockSportsPizarra(), el único alta posible).
+       Nunca se auto-convierte ni se borra el dato (guardrail de cero mutación
+       destructiva): se reemplaza sólo el RENDERIZADO del cuerpo por una
+       tarjeta compacta de migración explícita (ver más abajo), purgando la
+       botonera vieja de EJERCICIOS DEL BLOQUE/AGREGAR/REEMPLAZAR/ELIMINAR y
+       el card huérfano de FINISHER sin tocar un solo campo del bloque. */
+    const esBloqueLegadoSports = !cfActiva && (b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'finisher' || b.tipo === 'hyrox');
     /* el pill de cabecera mostraba el TIPO de bloque ("Warm-Up / Lista"),
        fijo, aunque el coach cambiara la Fase real más abajo -- en
        CrossFit el pill refleja la Fase elegida para no contradecirla */
@@ -3694,13 +3758,16 @@ function renderDay(){
         '<div class="fields" style="margin-bottom:10px">' +
         '<div class="f wide"><label>Fase</label><select data-bf="category" data-b="' + b.id + '">' + cfFaseOptions(b.category) + '</select></div>' +
       '</div>';
-    } else {
+    } else if(!esBloqueSportsPizarra){
       /* UX/UI táctico (Builder B+C): Icono/Subtítulo/Color/Visibilidad
          vivían siempre abiertos, ocupando una fila completa arriba de
          cada bloque -- se agrupan en el mismo acordeón <details
          class="cf-acc"> que ya usa este archivo (Pautas & Estrategia,
          Objetivo del estímulo CF), colapsado por defecto. Mismos
-         data-bf/keys de siempre, cero cambio de dato guardado. */
+         data-bf/keys de siempre, cero cambio de dato guardado.
+         REFACTOR CRÍTICO DEFINITIVO: un bloque de Pizarra Sports no lo
+         muestra -- la directiva pide que quede IDÉNTICO a la Pizarra de
+         CrossFit, cuya cabecera común sólo tiene el selector de Fase. */
       h += '<details class="cf-acc cf-acc-tac" style="margin-bottom:10px">' +
         '<summary class="lb">▾ Ícono, subtítulo, color y visibilidad</summary>' +
         '<div class="fields" style="margin-top:10px">' +
@@ -3713,7 +3780,16 @@ function renderDay(){
     }
 
     /* --- cuerpo por tipo --- */
-    if(b.tipo === 'block'){
+    if(esBloqueLegadoSports){
+      /* tarjeta compacta de migración (directiva "Clonar experiencia pura de
+         CrossFit"): purga por completo la botonera vieja de EJERCICIOS DEL
+         BLOQUE/AGREGAR/REEMPLAZAR/ELIMINAR EJERCICIO y el card huérfano de
+         FINISHER -- ningún dato se toca hasta que el coach elige convertir
+         (migrarBloqueAPizarra) o eliminar el bloque (🗑 de la cabecera, ya
+         existente arriba). */
+      h += '<div class="alert warn" style="margin-bottom:9px"><span class="ic">🗂️</span><div><b>Bloque en formato anterior</b><br>Este bloque se armó con el formulario clásico (previo a la Pizarra Táctica). Convertilo para poder editarlo como texto libre, con chips y alertas biomecánicas en vivo.</div></div>' +
+        '<button type="button" class="btn sm gold" data-migrarpizarra="' + b.id + '">🔄 Convertir a Bloque de Pizarra</button>';
+    } else if(b.tipo === 'block'){
       const exAncla = getEx(b.exId);
       /* blindaje de auditoría: un exId huérfano en el ancla principal no debe
          quedar en silencio detrás del placeholder "— Elegir ejercicio —" del
@@ -3746,9 +3822,7 @@ function renderDay(){
         '<label class="chk"><input type="checkbox" data-bf="hasApprox" data-b="' + b.id + '" ' + (b.hasApprox?'checked':'') + '> Mostrar series de aproximación</label>' +
         '<label class="chk"><input type="checkbox" data-bf="failCapable" data-b="' + b.id + '" ' + (b.failCapable?'checked':'') + '> Apto para fallo técnico</label>' +
       '</div>';
-    }
-
-    if(b.tipo === 'superset'){
+    } else if(b.tipo === 'superset'){
       h += '<div class="fields" style="margin-bottom:9px">' +
         '<div class="f"><label>Rondas</label><input type="number" data-bf="efSets" data-b="' + b.id + '" value="' + esc(b.efSets) + '"></div>' +
         '<div class="f"><label>Descanso entre rondas (seg)</label>' +
@@ -3794,9 +3868,7 @@ function renderDay(){
         '<div class="col"><label class="lb">Añadir ejercicio al biset/triset</label><select data-pick="' + b.id + '">' + exOptions('') + '</select></div>' +
         '<button class="btn gold sm" data-addex="' + b.id + '">➕ Agregar</button>' +
       '</div>';
-    }
-
-    if(b.tipo === 'finisher'){
+    } else if(b.tipo === 'finisher'){
       (b.fin||[]).forEach((e, i) => {
         const ex = getEx(e.exId);
         /* mismo blindaje que en el biset/triset (ver comentario más arriba):
@@ -3831,15 +3903,11 @@ function renderDay(){
           ).join('') +
         '</div>' +
       '</div>';
-    }
-
-    if(b.tipo === 'hyrox'){
+    } else if(b.tipo === 'hyrox'){
       h += '<div class="alert info" style="margin-bottom:9px;padding:8px 11px"><span class="ic">ℹ️</span><div>Los minutos del AMRAP salen de la configuración de cada semana. Escribí un movimiento por línea; si el nombre coincide con un ejercicio de la biblioteca con video, se agrega el botón <b>▶ Ver técnica</b> automáticamente.</div></div>' +
       '<label class="lb">Movimientos (uno por línea)</label>' +
       '<textarea data-bf="movements" data-b="' + b.id + '" style="min-height:96px" placeholder="12 Kettlebell Swings (Rusas)\n200m en Remo Ergómetro\n20m Caminata del Granjero">' + esc((b.movements||[]).join('\n')) + '</textarea>';
-    }
-
-    if(b.tipo === 'list'){
+    } else if(b.tipo === 'list'){
       const cfWk = esBloqueCF ? activeCfWeek() : 0;
       const cfWkLb = esBloqueCF && cfWk > 0 ? ((pAct.meso[cfWk]||{}).short || ('S'+(cfWk+1))) : '';
       h += '<label class="lb">' + (esBloqueCF ? 'Prescripción de ejercicios (uno por línea · carga en KG, distancia en CM/M)' : esBloqueSportsPizarra ? 'Redacción libre del bloque (ejercicio, series, reps, tempo, dropsets o supersets)' : 'Ítems (uno por línea · formato «Nombre — detalle»)') +
@@ -4751,6 +4819,7 @@ function bindBuilder(){
     if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
     if(t.dataset.btipssports){ generarTipsSports(t.dataset.btipssports, t); return; }
     if(t.dataset.vaciardia){ vaciarDiaCompleto(); return; }
+    if(t.dataset.migrarpizarra){ migrarBloqueAPizarra(t.dataset.migrarpizarra); return; }
     if(t.dataset.fmtins){
       const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.b + '"]');
       if(ta) insertarFormatoCF(ta, t.dataset.fmtins);
@@ -7065,7 +7134,7 @@ function setLoadField(key, field, value){
   state.loads[key].ts = Date.now();
   saveProgress();
 }
-function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg, nombreEx, blockLabel){
+function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg, nombreEx, blockLabel, refSemanaAnterior){
   /* parser de unidades: si la prescripción de esta estación ya viene en
      distancia/tiempo ("20 metros", "30 seg", "400m"), el segundo input
      no debe seguir etiquetado "Reps" -- se adapta a la unidad real.
@@ -7148,7 +7217,25 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
        ejecutado en S-1 (el objetivo programado suele ser un rango tipo
        "10-12", no sirve para precargar un número exacto). */
     let kgVal = ld.kg, repsVal = ld.reps, sugerido = false;
-    if(!ocultaKg && (kgVal == null || kgVal === '') && weekIdx > 0){
+    /* directiva ("Feature exclusiva Sports & Bodybuilding: Referencia de
+       Carga Semana a Semana"): pizarraSports() pasa refSemanaAnterior=true
+       -- en vez de precargar Y GUARDAR de una el kg/reps de la semana
+       anterior (comportamiento de siempre, ver comentario original más
+       abajo, sin cambios para quien NO pasa este flag), acá sólo se
+       calcula prevLd para mostrar un micro-badge táctico y dejar el kg
+       previo como PLACEHOLDER visible -- el alumno decide si lo confirma
+       tipeando/tildando, nunca queda un dato de esta semana persistido
+       sin que él lo haya cargado. CrossFit nunca pasa este flag (pizarra()
+       de CF no llama renderSetRows en absoluto), así que esta rama es
+       inalcanzable para CrossFit. */
+    let prevRefKg = null, prevRefReps = null;
+    if(refSemanaAnterior){
+      if(weekIdx > 0){
+        const prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
+        if(prevLd.kg != null && prevLd.kg !== '') prevRefKg = prevLd.kg;
+        if(prevLd.reps != null && prevLd.reps !== '') prevRefReps = prevLd.reps;
+      }
+    } else if(!ocultaKg && (kgVal == null || kgVal === '') && weekIdx > 0){
       const prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
       const kgPrev = (prevLd.kg != null && prevLd.kg !== '') ? prevLd.kg : null;
       const kgSug = (sugKg && sugKg > 0) ? sugKg : kgPrev;
@@ -7198,19 +7285,33 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
         historialChipHtml = '<button type="button" class="set-hist-chip" data-hist-kg="' + hReg.kg + '">\\u21a9 \\u00daltimo: <b>' + hReg.kg + ' kg</b></button>';
       }
     }
+    /* directiva ("Referencia de Carga Semana a Semana"): micro-badge
+       "S{N-1}: {kg}kg × {reps}" -- sólo existe cuando refSemanaAnterior
+       vino en true (exclusivo pizarraSports(), ver arriba) y hay un dato
+       real de la semana anterior para ESTE mismo bloque/estación/serie. */
+    let refBadgeHtml = '';
+    if(refSemanaAnterior && (prevRefKg != null || prevRefReps != null)){
+      const refTxt = (prevRefKg != null ? prevRefKg + 'kg' : '') +
+        (prevRefKg != null && prevRefReps != null ? ' \\u00d7 ' : '') +
+        (prevRefReps != null ? prevRefReps : '');
+      refBadgeHtml = '<span class="set-ref-badge">S' + weekIdx + ': ' + refTxt + '</span>';
+    }
+    const kgPlaceholder = (refSemanaAnterior && (kgVal == null || kgVal === '') && prevRefKg != null)
+      ? String(prevRefKg)
+      : (esMancuerna ? 'Por mano (ej: 15)' : 'Kg');
     html += '<div class="set-row' + (ld.done?' set-row-done':'') + (sugerido?' set-row-sug':'') + claseActiva + (ocultaKg?' set-row-banda':'') + '" data-set-key="' + key + '">' +
       '<button type="button" class="set-row-toggle" aria-label="Ver serie ' + i + '">' +
         '<span class="set-row-label">Serie ' + i + '</span>' +
         '<span class="set-row-compact">' + resumenCompacto + '</span>' +
       '</button>' +
-      (historialChipHtml ? '<div class="set-hist-row">' + historialChipHtml + '</div>' : '') +
+      (refBadgeHtml ? '<div class="set-hist-row">' + refBadgeHtml + '</div>' : (historialChipHtml ? '<div class="set-hist-row">' + historialChipHtml + '</div>' : '')) +
       '<div class="set-load' + (ocultaKg?' set-load-banda':'') + '">' +
         /* bandas/peso corporal y Core/abdominales: sin casillero de Kg --
            el estímulo no se mide en un número de carga real (ver
            ocultaKg más arriba). */
         (ocultaKg ? '' :
           '<span class="set-field"><span class="set-unit">' + (esMancuerna ? 'KG (C/U)' : 'kg') + '</span>' +
-            '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="' + (esMancuerna ? 'Por mano (ej: 15)' : 'Kg') + '" value="' + (kgVal!=null?kgVal:'') + '" />' +
+            '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="' + kgPlaceholder + '" value="' + (kgVal!=null?kgVal:'') + '" />' +
           '</span>' +
           '<span class="set-x" aria-hidden="true">\\u00d7</span>'
         ) +
@@ -10639,7 +10740,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
               (sub.tecnica && TECNICAS_BADGE_SB[sub.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + sub.tecnica + '">' + TECNICAS_BADGE_SB[sub.tecnica] + '</span>' : '') +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
-              renderSetRows(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.reps || 'Reps', 0, sub.nombre, block.title) +
+              renderSetRows(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.reps || 'Reps', 0, sub.nombre, block.title, true) +
             '</div>';
         }).join('');
         filas += '<div class="jp-sb-biset">' +
@@ -10650,13 +10751,32 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       if(entry.tipo !== 'simple') return;
       const exIdx = 'e' + idx;
+      /* directiva ("Clonar experiencia pura de CrossFit", requerimiento 2):
+         una línea sin patrón SxReps jamás tuvo una dosis real asignada
+         (entry.sets sigue en 0, ver parsearPizarraSB) -- típico de
+         calentamiento/movilidad/cardio suave ("Remo suave — 3 min", "20
+         cal Row"). Para esos casos NUNCA se inventa un tracker de series
+         mudo: se replica la fila táctica limpia de CrossFit (pastilla de
+         dosis + nombre, vía el mismo jpCfSplit() que ya usa jpCfFila()
+         más arriba en este archivo -- función pura, sin estado de CF,
+         reutilizable tal cual). */
+      if(!entry.sets){
+        const partesPlain = jpCfSplit(entry.titulo);
+        filas += '<div class="jp-sb-plain">' +
+            (partesPlain.val ? '<span class="jp-sb-plain-pill">' + escSB(partesPlain.val) + '</span>' : '') +
+            '<span class="jp-sb-plain-nombre">' + escSB(partesPlain.nm) + '</span>' + videoLinkHtml(partesPlain.nm) +
+            (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
+            (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
+          '</div>';
+        return;
+      }
       const dosisTxt = [entry.reps ? entry.reps + ' reps' : '', entry.tempo ? 'Tempo ' + entry.tempo : ''].filter(Boolean).join(' · ');
       filas += '<div class="jp-sb-ex">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
           (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
           (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
-          renderSetRows(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.reps || 'Libre', 0, entry.titulo, block.title) +
+          renderSetRows(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.reps || 'Libre', 0, entry.titulo, block.title, true) +
         '</div>';
     });
     if(!filas) return;
@@ -11364,6 +11484,16 @@ textarea,input,.wb-line,.tab-label,.week-pill-phase{
 }
 .set-hist-chip b{color:#7CC5E8}
 .set-hist-chip:active{transform:scale(.96)}
+/* directiva ("Referencia de Carga Semana a Semana", Sports & Bodybuilding
+   exclusivo): micro-badge no-interactivo (a diferencia de .set-hist-chip,
+   que es un botón que autocompleta) -- sólo informa lo que el alumno
+   levantó la semana pasada en esta misma serie, el placeholder del
+   casillero de Kg ya hace el trabajo de sugerir el número. */
+.set-ref-badge{
+  display:inline-flex; align-items:center; padding:3px 9px; border-radius:20px;
+  background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.3); color:#00e5ff;
+  font-family:'Inter',sans-serif; font-size:.7rem; font-weight:600;
+}
 /* =========================================================
    REST TIMER CON ANILLO CONIC
 ========================================================= */
@@ -19140,7 +19270,17 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   function warmup(){
     document.querySelectorAll('.block').forEach(function(bl){
       var b = bloqueDe(bl.dataset.blockId);
-      if(!esWarm(b, bl)){ bl.classList.remove('wu-card'); return; }
+      /* directiva ("Clonar experiencia pura de CrossFit", requerimiento 2):
+         este conversor es genérico (detecta "warm-up" por TÍTULO, sin
+         mirar disciplina) y corre para cualquier .block -- un Bloque de
+         Pizarra Sports titulado "Entrada en calor"/"Movilidad" (nombre
+         perfectamente normal que un coach le pondría) quedaba duplicado:
+         pizarraSports() ya dibuja SU PROPIA fila limpia dosis+nombre para
+         estos casos (ver requerimiento 2 de la misma directiva), así que
+         este módulo -- pensado para el viejo bloque 'list' clásico -- se
+         retira por completo de cualquier bloque marcado b.sportsPizarra.
+         Nunca se ejecuta para CrossFit (b.sportsPizarra no existe ahí). */
+      if(!esWarm(b, bl) || (b && b.sportsPizarra)){ bl.classList.remove('wu-card'); return; }
       bl.classList.add('wu-card');
       /* fuera todo lo que pertenece a un bloque de trabajo medible */
       bl.querySelectorAll('.rx-badge, .mini-log, .set-tracker, .jp-tools, .rir-bar, .load-suggest, .pre-bar, .blk-tag, .cf-score, .wod-score, .cf-proto, .cf-levels')
@@ -27080,6 +27220,23 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
   font-size:.92rem; color:#EDEFF2; text-transform:uppercase;
 }
+/* fila táctica limpia (calentamiento/movilidad/cardio sin carga
+   prescrita) -- mismo espíritu que .jp-cf-row de CrossFit (pastilla de
+   dosis + nombre), namespaced bajo .jp-sb-* porque .jp-cf-row vive
+   scopeado a .jp-cfboard (nunca se mezclan selectores entre disciplinas). */
+.jp-sb-plain{
+  display:flex; align-items:center; flex-wrap:wrap; gap:9px;
+  padding:9px 2px; border-top:1px solid var(--line);
+}
+.jp-sb-ex:first-child + .jp-sb-plain, .jp-sb-board .jp-sb-plain:first-of-type{ border-top:none; }
+.jp-sb-plain-pill{
+  display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+  min-width:48px; padding:3px 9px; border-radius:6px;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.72rem; letter-spacing:.03em; text-transform:uppercase;
+  background:rgba(56,189,248,.12); color:var(--cyan); border:1px solid rgba(56,189,248,.35);
+}
+.jp-sb-plain-nombre{ font-size:.9rem; color:#EDEFF2; letter-spacing:.01em; }
 </style>
 
 </body>
@@ -40589,14 +40746,24 @@ body.man-mode .gs-fab{right:318px}
     /* limpieza del Builder CrossFit (2026-09-16): la barra de edición de
        ejercicios (Agregar/Reemplazar/Eliminar) es para bloques rígidos de
        series -- en un bloque de pizarra (tipo 'list', modalidad crossfit)
-       el editor de movimientos ya es el propio textarea de la tarjeta. */
+       el editor de movimientos ya es el propio textarea de la tarjeta.
+       REFACTOR CRÍTICO DEFINITIVO (directiva "Clonar experiencia pura de
+       CrossFit"): este módulo es AJENO a renderDay()/esBloqueSportsPizarra
+       -- corre después, inyectando su barra en CUALQUIER bloque no-CF sin
+       mirar b.sportsPizarra, así que hasta un Bloque de Pizarra 100% nuevo
+       de Sports terminaba con la botonera vieja de todos modos (la causa
+       real, más de fondo que el renderizado de renderDay() ya purgado
+       arriba). Mismo criterio que ya usa CrossFit: un bloque de Pizarra
+       (cualquier disciplina) resuelve sus ejercicios con su propio
+       textarea, nunca con esta barra. */
     const pEd = plan(S.activeId);
     const cfEdActiva = !!(pEd && pEd.meta && pEd.meta.mesoDisc === 'crossfit');
     $$('#dayPanel .block').forEach(el => {
       const ref = el.querySelector('[data-b]'); if(!ref) return;
       const b = findBlock(ref.dataset.b); if(!b) return;
       const body = el.querySelector('.block-body'); if(!body) return;
-      if(cfEdActiva && b.tipo === 'list'){
+      const esPizarraCualquiera = b.tipo === 'list' && (cfEdActiva ? true : !!b.sportsPizarra);
+      if(esPizarraCualquiera){
         const vieja2 = body.querySelector('[data-exbar]'); if(vieja2) vieja2.remove();
         const bio2 = body.querySelector('[data-biob]'); if(bio2) bio2.remove();
         return;
@@ -45002,7 +45169,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const d = (typeof curDay === 'function') ? curDay() : null;
     let card = document.getElementById('finCard');
 
-    if(!a || !d || esCrossFit()){ if(card) card.remove(); return; }
+    /* directiva ("Clonar experiencia pura de CrossFit", requerimiento 1):
+       este panel quedaba "huérfano" -- siempre visible al fondo de CADA
+       día de Sports, incluso uno recién armado 100% con Bloques de
+       Pizarra que nunca lo usó. Se oculta cuando el día no tiene ya un
+       finisher aplicado (c.fin nulo); si el coach ya aplicó uno antes,
+       sigue viéndose y editándose exactamente igual que siempre -- cero
+       pérdida de dato ni de funcionalidad real. */
+    const sinFinisherAplicado = a && d && !esCrossFit() && !finDe(a.id, d.id).fin;
+    if(!a || !d || esCrossFit() || sinFinisherAplicado){ if(card) card.remove(); return; }
 
     if(!card){
       card = document.createElement('div');
