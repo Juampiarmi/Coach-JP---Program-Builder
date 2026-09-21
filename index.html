@@ -3245,76 +3245,77 @@ function extraerTecnicaSports(texto){
   });
   return { tecnica: tecnica, texto: limpio.trim() };
 }
-/* separa el texto pegado en "trozos" (uno por bloque), por línea en
-   blanco -- mismo criterio simple que ya separa ejercicios al escribir. */
-function partirTrozosSports(texto){
-  return String(texto || '').split(/\n\s*\n+/).map(function(t){ return t.trim(); }).filter(Boolean);
+/* REFACTOR DEFINITIVO: el conversor de una sola vez (texto -> bloques
+   'block'/'superset' clásicos) queda retirado -- no resolvía la
+   necesidad real (el bloque resultante seguía siendo el formulario
+   rígido de siempre). normSports()/resolverExSports()/
+   parsearDosisSports()/extraerTecnicaSports() de arriba se conservan:
+   ahora las reutiliza el escaneo reactivo de la pizarra Sports (ver
+   escanearPizarraSports() más abajo) y el parser del lado del alumno
+   (duplicado en TEMPLATE_HTML por vivir en un script aparte, mismo
+   criterio que ya documenta el resto del archivo para jpCfSplit/etc). */
+function addBlockSportsPizarra(){
+  const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
+  const b = newBlock('list');
+  b.category = 'strength';
+  b.sportsPizarra = true;
+  b.titulo = '';
+  d.bloques.push(b); save(); renderBuilder();
+  toast('🧩 Bloque de pizarra agregado');
 }
-function esTrozoBiserieSports(lineas){
-  return /\b(biset|superset|triset|circuito)\b/i.test(lineas[0] || '') ||
-    lineas.some(function(l){ return /^A\d+[.)]/i.test(l.trim()); });
-}
-function parsearBloqueSimpleSports(lineas){
-  const b = newBlock('block');
-  const titulo = lineas[0] || '';
-  b.titulo = titulo;
-  const ex = resolverExSports(titulo);
-  if(ex) b.exId = ex.id; else b.coreNombre = titulo;
-  const notas = [];
-  for(let i = 1; i < lineas.length; i++){
-    const linea = lineas[i];
+/* Escaneo reactivo de "Ejercicios Detectados" para la Pizarra Sports:
+   mismo criterio que chips()/candidatos() ya usa CrossFit (MÓDULO 43,
+   más abajo en el archivo) para reconocer nombres de ejercicio dentro
+   de texto libre y vincular video -- pero ESTA función es propia de
+   Sports (no toca ni depende de chips()/candidatos(), que siguen
+   corriendo sin cambios para CrossFit) y además cruza cada ejercicio
+   resuelto contra checkExercise() para mostrar alertas biomecánicas
+   reales (zona de riesgo/lesión), algo que el mecanismo de CrossFit no
+   hace hoy para bloques de texto libre (sólo detecta "prohibido"/"tag"
+   por substring, ver checkFreeText() más arriba). */
+function detectarEjerciciosSports(texto){
+  const lineas = String(texto || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+  const vistos = {}, out = [];
+  lineas.forEach(function(linea){
     const dosis = parsearDosisSports(linea);
-    if(dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds){
-      if(dosis.sets) b.efSets = dosis.sets;
-      if(dosis.reps) b.reps = dosis.reps;
-      if(dosis.tempo) b.tempo = dosis.tempo;
-      if(dosis.restSeconds) b.restSeconds = dosis.restSeconds;
-      if(dosis.rir) notas.push('RIR ' + dosis.rir);
-      continue;
-    }
-    notas.push(linea.replace(/^\*\s*/, ''));
-  }
-  const res = extraerTecnicaSports(notas.join(' · '));
-  if(res.tecnica) b.metodologia = res.tecnica;
-  if(res.texto) b.tips = res.texto;
-  return b;
+    const soloEsDosis = (dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir) &&
+      linea.replace(/[0-9x×|.:\-–]/gi, '').replace(/tempo|rir|rest|s\b/gi, '').trim().length < 4;
+    if(soloEsDosis) return;
+    if(esLineaDirectivaSports(linea)) return;
+    const nombreLimpio = linea.replace(/^A\d+[.)]\s*/i, '').split(/[:\-–]/)[0].trim();
+    if(!nombreLimpio || nombreLimpio.length < 3) return;
+    const k = normSports(nombreLimpio);
+    if(vistos[k]) return;
+    vistos[k] = 1;
+    out.push({ nombre: nombreLimpio, ex: resolverExSports(nombreLimpio) });
+  });
+  return out;
 }
-function parsearBiserieSports(lineas){
-  const b = newBlock('superset');
-  b.titulo = (lineas[0] || '').replace(/^(biset|superset|triset|circuito)\s*[·:\-]?\s*/i, '').trim() || lineas[0] || 'Biset / Triset';
-  const notasBloque = [];
-  for(let i = 1; i < lineas.length; i++){
-    const linea = lineas[i];
-    const subM = linea.match(/^A(\d+)[.)]\s*(.+?):\s*(.+)$/i);
-    if(subM){
-      const nombreEx = subM[2].trim();
-      const res = extraerTecnicaSports(subM[3]);
-      const parenM = res.texto.match(/\(([^)]+)\)/);
-      const dosis = parsearDosisSports(res.texto);
-      const e = { exId:'', reps: dosis.reps || '', tempo: dosis.tempo || '' };
-      const exResuelto = resolverExSports(nombreEx);
-      if(exResuelto) e.exId = exResuelto.id; else e.nombre = nombreEx;
-      if(res.tecnica) e.metodologia = res.tecnica;
-      if(parenM) notasBloque.push('A' + subM[1] + ' (' + nombreEx + '): ' + parenM[1]);
-      b.ejercicios.push(e);
-      continue;
-    }
-    const rondaM = linea.match(/(\d+)\s*rondas?/i);
-    if(rondaM) b.efSets = parseInt(rondaM[1], 10);
-    const restM = linea.match(/rest\s*(\d+)/i);
-    if(restM) b.restSeconds = parseInt(restM[1], 10);
-    if(!rondaM && !restM) notasBloque.push(linea.replace(/^\*\s*/, ''));
-  }
-  const res = extraerTecnicaSports(notasBloque.join(' · '));
-  if(res.texto) b.tips = res.texto;
-  return b;
+function esLineaDirectivaSports(linea){
+  return /^(rest|descanso|nota|rir|rondas?)\b/i.test(linea) || /^\*/.test(linea);
 }
-function parsearPizarraLibreSports(texto){
-  return partirTrozosSports(texto).map(function(trozo){
-    const lineas = trozo.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
-    if(!lineas.length) return null;
-    return esTrozoBiserieSports(lineas) ? parsearBiserieSports(lineas) : parsearBloqueSimpleSports(lineas);
-  }).filter(Boolean);
+function alertasChipsSports(bl, b){
+  const ta = bl.querySelector('textarea[data-bf="items"]');
+  if(!ta) return;
+  const ath = active();
+  const detectados = detectarEjerciciosSports(ta.value);
+  let caja = bl.querySelector('.sb-alerts');
+  const conAlerta = detectados.map(function(d){
+    if(!d.ex) return { d: d, alertas: [] };
+    return { d: d, alertas: checkExercise(ath, d.ex).filter(function(a){ return a.level !== 'good'; }) };
+  }).filter(function(x){ return x.alertas.length; });
+  if(!conAlerta.length){ if(caja) caja.remove(); return; }
+  const html = '<span class="vc-h">🛡️ Alertas biomecánicas</span>' +
+    conAlerta.map(function(x){
+      return x.alertas.map(function(a){
+        return '<span class="sb-alert-chip sb-alert-' + a.level + '">' + (a.level === 'danger' ? '⛔' : '⚠️') + ' ' + esc(x.d.nombre) + ' — ' + esc(a.title.replace(/^[^A-Za-zÀ-ÿ]*/,'')) + '</span>';
+      }).join('');
+    }).join('');
+  if(caja){ if(caja.innerHTML !== html) caja.innerHTML = html; return; }
+  caja = document.createElement('div');
+  caja.className = 'sb-alerts';
+  caja.innerHTML = html;
+  ta.parentNode.insertBefore(caja, ta.nextSibling);
 }
 
 function renderBuilder(){
@@ -3471,23 +3472,21 @@ function renderDay(){
 
   const pAct = plan(S.activeId);
   const cfActiva = !!(pAct && pAct.meta && pAct.meta.mesoDisc === 'crossfit');
-  /* directiva ("Modo Pizarra Libre & Parser Táctico"): igual que CrossFit
-     ya tiene su propio selector de modo de carga, Sports & Bodybuilding
-     ahora puede redactar el día en texto libre en vez de armar cada
-     bloque a mano -- d.modoSports es un campo nuevo y aditivo (ausente
-     en cualquier día ya guardado = Modo Guiado Clásico, cero cambio de
-     comportamiento para planes existentes). Nunca aplica en CrossFit. */
-  const modoTexto = !cfActiva && d.modoSports === 'texto';
 
-  /* Directiva de limpieza del Builder CrossFit (2026-09-16): la barra de
-     bloques de musculación (Biset/Triset/Finisher/Bloque Normal) es ruido
-     heredado de Bodybuilding en esta modalidad -- se oculta, reemplazada
-     por el botón "+ Agregar Bloque de Pizarra" de más abajo. Mismo
-     criterio en Sports cuando está en Modo Pizarra Libre: la barra de
-     "+ Agregar Bloque" clásica queda reemplazada por el textarea de
-     redacción fluida de más abajo. */
+  /* REFACTOR DEFINITIVO (directiva): Sports & Bodybuilding replica ahora
+     la misma arquitectura de carga que CrossFit -- la barra clásica de
+     "+ Agregar Bloque" (Normal/Biset/Finisher/Hyrox, formularios de
+     micro-inputs) deja de ser la vía de alta para bloques nuevos, se
+     oculta igual que en CrossFit, reemplazada por el mismo botón único
+     "+ Agregar Bloque de Pizarra" (ver más abajo). Los bloques
+     'block'/'superset'/'finisher'/'hyrox' que un atleta YA tenga
+     cargados (a mano, o por el parser de la directiva anterior) siguen
+     renderizando y editando exactamente igual que siempre -- mismo
+     precedente que ya usa CrossFit para sus propios bloques legado (ver
+     esGenerico()/discCF en buildProgramConfig): nada se migra ni se
+     elimina, sólo cambia la vía de alta hacia adelante. */
   const toolsEl = document.querySelector('.tools');
-  if(toolsEl) toolsEl.style.display = (cfActiva || modoTexto) ? 'none' : '';
+  if(toolsEl) toolsEl.style.display = 'none';
 
   let h = '';
 
@@ -3567,33 +3566,18 @@ function renderDay(){
         '<div style="margin-top:10px"><label class="lb">Resumen de la sesión</label><textarea data-df="summary">' + esc(d.summary||'') + '</textarea></div>' +
       '</details>' +
     '</div>';
-    /* directiva ("Modo Pizarra Libre & Parser Táctico"): selector de modo
-       de carga, exclusivo de Sports & Bodybuilding -- mismo criterio
-       visual que la pastilla de semana de CrossFit (botones sm gold/
-       ghost). Cambiar de modo NUNCA borra bloques ya cargados: sólo
-       decide si se muestra el textarea de redacción fluida o la barra
-       clásica de "+ Agregar Bloque" de siempre. */
-    h += '<div class="card" style="margin-bottom:14px">' +
-      '<label class="lb">Modo de carga del día</label>' +
-      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">' +
-        '<button type="button" class="btn sm ' + (modoTexto ? 'gold' : 'ghost') + '" data-modosports="texto">📝 Modo Pizarra Libre</button>' +
-        '<button type="button" class="btn sm ' + (!modoTexto ? 'gold' : 'ghost') + '" data-modosports="clasico">⚙️ Modo Guiado Clásico</button>' +
-      '</div>' +
-      '<div class="hint" style="margin-top:6px">Pizarra Libre parsea el texto a bloques reales -- después se editan igual que si se hubieran armado a mano, con video, alertas y descanso funcionando desde el primer momento.</div>' +
-    '</div>';
-    if(modoTexto){
-      h += '<div class="card" style="margin-bottom:14px">' +
-        '<label class="lb">📝 Redacción fluida de la sesión</label>' +
-        '<textarea id="sportsPegarTxt" style="min-height:170px;margin-top:6px" placeholder="PRESS DE BANCA CON BARRA\n4x6-8 | Tempo 3010 | RIR 2 | Rest 120s\n*Nota: Última serie en Drop-set al 20% al fallo.\n\nBISET · CUÁDRICEPS &amp; FEMORAL\n3 rondas | Rest 90s:\nA1. Prensa 45°: 3x10-12 | Tempo 2011\nA2. Curl femoral tumbado: 3x12-15 (pausa 1s en contracción)"></textarea>' +
-        '<button type="button" class="btn gold sm" style="margin-top:8px" data-parsesports="1">✨ Parsear y Generar Bloques</button>' +
-        '<div class="hint" style="margin-top:6px">Un ejercicio o biserie por párrafo (separados por línea en blanco). Biseries: encabezado con "Biset"/"Superset" y sub-líneas "A1."/"A2.". Técnicas: escribí [DROPSET], [REST-PAUSE], [MYO-REPS] o [AL FALLO], o mencionalas en la nota.</div>' +
-      '</div>';
-    }
+    /* REFACTOR DEFINITIVO: mismo botón único de alta que ya usa CrossFit
+       (data-addcfblock/addBlockCF), acá su equivalente Sports
+       (data-addsportsblock/addBlockSportsPizarra) -- genera un bloque
+       tipo:'list' con b.sportsPizarra=true, editado con la MISMA pizarra
+       de redacción libre + detección reactiva de ejercicios que ya usa
+       CrossFit (ver más abajo, rama esBloqueSportsPizarra). */
+    h += '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-bottom:14px" data-addsportsblock="1">➕ AGREGAR BLOQUE DE PIZARRA</button>';
   }
 
   if(!d.bloques.length){
     h += '<div class="card"><div class="empty"><div class="big">🏗️</div><h4>Día vacío</h4><p>' +
-      (cfActiva ? 'Agregá un bloque de pizarra con el botón de arriba.' : 'Agregá un bloque desde la Pizarra Libre o la barra inferior para construir la sesión.') +
+      'Agregá un bloque de pizarra con el botón de arriba.' +
     '</p></div></div>';
   }
 
@@ -3602,10 +3586,17 @@ function renderDay(){
     const al = blockAlerts(ath, b);
     const w = worst(al);
     const esBloqueCF = cfActiva && b.tipo === 'list';
+    /* REFACTOR DEFINITIVO: bloque de Pizarra Táctica propio de Sports &
+       Bodybuilding -- mismo tipo:'list' que ya usa CrossFit, distinguido
+       por b.sportsPizarra (ver addBlockSportsPizarra()) para no
+       confundirse con un 'list' clásico de warm-up/cooldown ya cargado
+       antes de esta directiva (esos siguen su rama de siempre, sin
+       cambios). */
+    const esBloqueSportsPizarra = !cfActiva && b.tipo === 'list' && !!b.sportsPizarra;
     /* el pill de cabecera mostraba el TIPO de bloque ("Warm-Up / Lista"),
        fijo, aunque el coach cambiara la Fase real más abajo -- en
        CrossFit el pill refleja la Fase elegida para no contradecirla */
-    const pillLb = esBloqueCF ? ((CF_FASES.find(f => f.v === b.category) || CF_FASES[2]).lb) : T.lb;
+    const pillLb = esBloqueCF ? ((CF_FASES.find(f => f.v === b.category) || CF_FASES[2]).lb) : (esBloqueSportsPizarra ? '📝 Pizarra' : T.lb);
     /* FASE 1.4 -- Pre-Flight Validator de bloques incompletos. Sólo aplica
        a los tipos de Bodybuilding con campos de reps/series estructurados
        (block/superset/finisher): CrossFit resuelve la dosis por completo
@@ -3826,12 +3817,14 @@ function renderDay(){
     if(b.tipo === 'list'){
       const cfWk = esBloqueCF ? activeCfWeek() : 0;
       const cfWkLb = esBloqueCF && cfWk > 0 ? ((pAct.meso[cfWk]||{}).short || ('S'+(cfWk+1))) : '';
-      h += '<label class="lb">' + (esBloqueCF ? 'Prescripción de ejercicios (uno por línea · carga en KG, distancia en CM/M)' : 'Ítems (uno por línea · formato «Nombre — detalle»)') +
+      h += '<label class="lb">' + (esBloqueCF ? 'Prescripción de ejercicios (uno por línea · carga en KG, distancia en CM/M)' : esBloqueSportsPizarra ? 'Redacción libre del bloque (ejercicio, series, reps, tempo, dropsets o supersets)' : 'Ítems (uno por línea · formato «Nombre — detalle»)') +
           (cfWkLb ? ' <span class="pill gold" style="margin-left:6px">✎ Editando ' + esc(cfWkLb) + '</span>' : '') +
         '</label>' +
         (esBloqueCF ? cfFmtToolbar(b.id) : '') +
-        '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="' +
-          (esBloqueCF ? '10 Thrusters — 42.5/30 KG\n10 Pull-ups\n20 Wall Balls\nRemo — 500 M' : 'Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15') +
+        '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:' + (esBloqueSportsPizarra ? '130' : '96') + 'px" placeholder="' +
+          (esBloqueCF ? '10 Thrusters — 42.5/30 KG\n10 Pull-ups\n20 Wall Balls\nRemo — 500 M' :
+           esBloqueSportsPizarra ? 'Press de banca con barra\n4x6-8 | Tempo 3010 | RIR 2 | Rest 120s\n[DROPSET] última serie al 20% al fallo\n\nA1. Prensa 45°: 3x10-12 | Tempo 2011\nA2. Curl femoral tumbado: 3x12-15' :
+           'Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15') +
         '">' + esc((b.items||[]).join('\n')) + '</textarea>';
       if(esBloqueCF){
         const fmtInfo = CF_PARAM[b.cfFmt];
@@ -3848,6 +3841,16 @@ function renderDay(){
             '<div style="margin-top:8px"><label class="lb">Pacing sugerido</label><input data-bf="cfCierre.pacing" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.pacing) || '') + '" placeholder="Salí sub-2:00 la primera ronda…"></div>' +
             '<div style="margin-top:8px"><label class="lb">Escalado / RX alternativo</label><input data-bf="cfCierre.escalado" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.escalado) || '') + '" placeholder="RX 42.5/30kg · Scaled 30/20kg"></div>' +
           '</details>';
+      } else if(esBloqueSportsPizarra){
+        /* REFACTOR DEFINITIVO: caja compacta de Objetivo/Tips + IA, visible
+           directamente (sin acordeón) -- son los MISMOS campos genéricos
+           b.objective/b.tips que ya usa cualquier bloque de Sports, así
+           que compile()/la app del alumno no necesitan saber nada nuevo. */
+        h += '<div class="fields" style="margin-top:10px">' +
+            '<div class="f wide"><label>🎯 Objetivo Fisiológico</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:40px" placeholder="Máxima tensión mecánica en el rango medio">' + esc(b.objective||'') + '</textarea></div>' +
+            '<div class="f wide"><label>💡 Coaching Tips &amp; Estrategia</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:48px" placeholder="Controlar el descenso, no rebotar en el pecho">' + esc(b.tips||'') + '</textarea></div>' +
+          '</div>' +
+          '<button type="button" class="btn sm gold" style="margin-top:8px" data-btipssports="' + b.id + '">✨ Sugerir Tips &amp; Pacing con IA</button>';
       } else {
         h += '<div style="margin-top:10px;max-width:260px"><label class="lb">Timer Zona 2 (min · opcional)</label><input type="number" data-bf="cardioMinutes" data-b="' + b.id + '" value="' + esc(b.cardioMinutes||'') + '"></div>';
       }
@@ -3862,7 +3865,7 @@ function renderDay(){
        acordeón colapsable, mismos data-bf/keys de siempre (altNote se
        mueve acá desde el bloque 'block' de más arriba, cero cambio de
        dato guardado). */
-    if(!esBloqueCF){
+    if(!esBloqueCF && !esBloqueSportsPizarra){
       h += '<details class="cf-acc" style="margin-top:11px"><summary>📋 Pautas &amp; Estrategia del Coach</summary>' +
         '<div style="padding-top:8px">' +
           (b.tipo === 'block' || b.tipo === 'superset'
@@ -3886,6 +3889,16 @@ function renderDay(){
   }
 
   $('#dayPanel').innerHTML = h;
+  /* primer escaneo de "Ejercicios Detectados" apenas se pinta el día --
+     después de esto, el escaneo en vivo (panel input handler, ver
+     bindBuilder()) toma la posta mientras el coach escribe. */
+  setTimeout(function(){
+    document.querySelectorAll('.block').forEach(function(blEl){
+      const ref = blEl.querySelector('[data-b]');
+      const b = ref ? findBlock(ref.dataset.b) : null;
+      if(b && b.tipo === 'list' && b.sportsPizarra) alertasChipsSports(blEl, b);
+    });
+  }, 80);
 }
 
 /* directiva ("Limpieza del Parser y Fin de Falsos Ejercicios") -- se
@@ -4503,7 +4516,16 @@ function bindBuilder(){
          b.items acá ya escribe en el bloque propio de ESA semana, sin
          ningún desvío especial por campo/disciplina como antes. */
       setBlockField(b, t.dataset.bf, t.type === 'checkbox' ? t.checked : t.value);
-      if(t.dataset.bf === 'items' && b.tipo === 'list' && esPlanCF && !b.cfFmt){
+      /* FIX (bug introducido en la directiva de independencia de semanas):
+         esta rama dependía de una variable esPlanCF que ese refactor había
+         retirado sin darse cuenta de este segundo uso -- cualquier tecla
+         en un textarea data-bf="items" tiraba ReferenceError acá, cortando
+         en silencio el resto del handler (save()/alertasDebounced() de
+         abajo nunca llegaban a correr). Se recalcula acá mismo, sin
+         depender de ningún estado externo. */
+      const pActivoIn = plan(S.activeId);
+      const esPlanCFIn = !!(pActivoIn && pActivoIn.meta && pActivoIn.meta.mesoDisc === 'crossfit');
+      if(t.dataset.bf === 'items' && b.tipo === 'list' && esPlanCFIn && !b.cfFmt){
         const det = detectarFormatoCF(t.value);
         if(det){
           b.cfFmt = det.fmt;
@@ -4513,6 +4535,16 @@ function bindBuilder(){
       }
       save();
       if(t.dataset.bf === 'movements' || t.dataset.bf === 'items') alertasDebounced();
+      /* Pizarra Sports (directiva "Refactor definitivo"): escaneo reactivo
+         de ejercicios detectados + alertas biomecánicas, en vivo mientras
+         el coach escribe -- análogo a chips()/candidatos() de CrossFit
+         (MÓDULO 43 más abajo), que ya corre para CUALQUIER textarea
+         data-bf="items" sin importar la disciplina y sigue funcionando
+         sin cambios; esto es un escaneo ADICIONAL, propio de Sports. */
+      if(t.dataset.bf === 'items' && b.tipo === 'list' && b.sportsPizarra){
+        const blEl = t.closest('.block');
+        if(blEl) alertasChipsSports(blEl, b);
+      }
       /* directiva (Metodologías avanzadas): el campo de parámetro
          (cargas de drop set, esquema de rest-pause, % de back-off, etc.)
          sólo existe para ciertas técnicas -- re-renderiza al cambiar la
@@ -4691,20 +4723,7 @@ function bindBuilder(){
       toast('✅ ' + parsed.length + ' bloque(s) creado(s) desde el texto pegado');
       return;
     }
-    if(t.dataset.modosports){
-      d.modoSports = t.dataset.modosports === 'texto' ? 'texto' : 'clasico';
-      save(); renderBuilder();
-      return;
-    }
-    if(t.dataset.parsesports){
-      const ta = document.getElementById('sportsPegarTxt');
-      const nuevos = parsearPizarraLibreSports(ta ? ta.value : '');
-      if(!nuevos.length){ toast('No se detectó ningún ejercicio en el texto -- separá cada bloque con una línea en blanco', 'warn'); return; }
-      nuevos.forEach(function(b){ d.bloques.push(b); });
-      save(); renderBuilder();
-      toast('✨ ' + nuevos.length + ' bloque(s) generado(s) desde la Pizarra Libre');
-      return;
-    }
+    if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
     if(t.dataset.btipssports){ generarTipsSports(t.dataset.btipssports, t); return; }
     if(t.dataset.fmtins){
       const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.b + '"]');
@@ -10454,6 +10473,180 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
   }
 
+  /* ============================================================
+     REFACTOR DEFINITIVO -- PIZARRA TÁCTICA SPORTS & BODYBUILDING
+     Réplica exacta de la experiencia de pizarra() de arriba, pero para
+     block.sportsPizarra (nunca para bloques CrossFit -- pizarra() de
+     arriba sigue intacta, sin un solo cambio). La diferencia real: acá
+     cada línea de ejercicio se resuelve a un tracker de series REAL
+     ([KG][REPS][✓], vía renderSetRows(), MISMO motor que ya usan los
+     bloques 'block'/'superset' clásicos) en vez de texto plano -- el
+     descanso automático al tildar una serie ya lo dispara el listener
+     global existente (ver "eventos globales: descanso al tildar una
+     serie" más abajo en el archivo), cero JS nuevo ahí.
+     NOTA IMPORTANTE: b.items se guarda SIN líneas en blanco
+     (setBlockField las descarta, ver Builder) -- así que a diferencia
+     de un parser que separa "por párrafo", acá cada línea se clasifica
+     una por una (nombre / dosis / nota / sub-línea de biserie) para
+     reconstruir dónde empieza cada ejercicio, sin depender de blancos
+     que nunca llegan a esta altura. */
+  /* esc() vive redeclarada localmente en decenas de IIFEs separadas a lo
+     largo de este documento (ninguna versión es realmente "global") --
+     el closure donde vive pizarra()/decorar() no define la suya, así
+     que se agrega acá una copia mínima, mismo criterio ya establecido
+     en el resto del archivo. */
+  function escSB(s){ return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  var TAGS_TECNICA_SB = [
+    { reBracket:/\\[\\s*drop\\s*-?\\s*set\\s*\\]/i, reLibre:/\\bdrop[\\s-]?set\\b/i, v:'dropset' },
+    { reBracket:/\\[\\s*rest\\s*-?\\s*pause\\s*\\]/i, reLibre:/\\brest[\\s-]?pause\\b/i, v:'restpause' },
+    { reBracket:/\\[\\s*myo\\s*-?\\s*reps?\\s*\\]/i, reLibre:/\\bmyo[\\s-]?reps?\\b/i, v:'myoreps' },
+    { reBracket:/\\[\\s*al\\s+fallo\\s*\\]/i, reLibre:/\\bal\\s+fallo\\b/i, v:'fallo' }
+  ];
+  var TECNICAS_BADGE_SB = {
+    dropset: '🔥 DROP SET', restpause: '⚡ REST-PAUSE',
+    myoreps: '🔁 MYO-REPS', fallo: '🎯 AL FALLO'
+  };
+  function extraerTecnicaSB(texto){
+    var limpio = String(texto || ''), tecnica = '';
+    TAGS_TECNICA_SB.forEach(function(tag){
+      if(tag.reBracket.test(limpio)){ tecnica = tag.v; limpio = limpio.replace(tag.reBracket, '').trim(); }
+      else if(!tecnica && tag.reLibre.test(limpio)){ tecnica = tag.v; }
+    });
+    return { tecnica: tecnica, texto: limpio.trim() };
+  }
+  function parsearDosisSB(txt){
+    var t = String(txt || ''), out = {}, m;
+    if((m = t.match(/(\\d+)\\s*[x×]\\s*(\\d+(?:\\s*-\\s*\\d+)?)/i))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+/g, ''); }
+    if((m = t.match(/tempo\\s*(\\d{3,4})/i))) out.tempo = m[1];
+    if((m = t.match(/rir\\s*(\\d+)/i))) out.rir = m[1];
+    if((m = t.match(/rest\\s*(\\d+)\\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
+    return out;
+  }
+  function esSoloDosisSB(linea, dosis){
+    if(!(dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir)) return false;
+    var resto = linea.replace(/\\d+\\s*[x×]\\s*\\d+(?:\\s*-\\s*\\d+)?/gi, '')
+      .replace(/tempo\\s*\\d{3,4}/gi, '').replace(/rir\\s*\\d+/gi, '').replace(/rest\\s*\\d+\\s*s?/gi, '')
+      .replace(/[|.:,\\-–]/g, '').trim();
+    return resto.length < 4;
+  }
+  var RX_SUBEJ_SB = /^A(\\d+)[.)]\\s*(.+?):\\s*(.+)$/i;
+  var RX_BISET_HEAD_SB = /\\b(biset|superset|triset|circuito)\\b/i;
+  var RX_RONDAS_SB = /(\\d+)\\s*rondas?/i;
+  var RX_REST_SB = /rest\\s*(\\d+)/i;
+  /* clasifica línea por línea (sin depender de blancos, ver nota de
+     arriba) y reconstruye ejercicios simples y biseries/trisets. */
+  function parsearPizarraSB(lineas){
+    var entries = [], actual = null;
+    lineas.forEach(function(raw){
+      var linea = String(raw || '').trim();
+      if(!linea) return;
+      var subM = linea.match(RX_SUBEJ_SB);
+      if(subM){
+        if(!actual || actual.tipo !== 'biserie'){ actual = { tipo:'biserie', titulo:'Biset / Triset', subs:[], rondas:3, restSeconds:90 }; entries.push(actual); }
+        var resSub = extraerTecnicaSB(subM[3]);
+        var dosisSub = parsearDosisSB(resSub.texto);
+        var parenM = resSub.texto.match(/\\(([^)]+)\\)/);
+        actual.subs.push({ nombre: subM[2].trim(), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: parenM ? parenM[1] : '' });
+        return;
+      }
+      if(RX_BISET_HEAD_SB.test(linea) && (!actual || actual.tipo !== 'biserie' || actual.subs.length)){
+        actual = { tipo:'biserie', titulo: linea.replace(/^(biset|superset|triset|circuito)\\s*[·:\\-]?\\s*/i, '').trim() || linea, subs:[], rondas:3, restSeconds:90 };
+        entries.push(actual);
+        return;
+      }
+      if(actual && actual.tipo === 'biserie' && !actual.subs.length && (RX_RONDAS_SB.test(linea) || RX_REST_SB.test(linea))){
+        var rM = linea.match(RX_RONDAS_SB); if(rM) actual.rondas = parseInt(rM[1], 10);
+        var restM = linea.match(RX_REST_SB); if(restM) actual.restSeconds = parseInt(restM[1], 10);
+        return;
+      }
+      var dosis = parsearDosisSB(linea);
+      if(actual && actual.tipo === 'simple' && !actual.dosisAsignada && esSoloDosisSB(linea, dosis)){
+        actual.sets = dosis.sets || actual.sets;
+        actual.reps = dosis.reps || actual.reps;
+        actual.tempo = dosis.tempo || actual.tempo;
+        actual.restSeconds = dosis.restSeconds || actual.restSeconds;
+        actual.dosisAsignada = true;
+        var resDosis = extraerTecnicaSB(linea);
+        if(resDosis.tecnica) actual.tecnica = resDosis.tecnica;
+        return;
+      }
+      /* una línea de nota/técnica avanzada NUNCA arranca un ejercicio
+         nuevo -- se detecta por: empezar con "*", matchear
+         esLineaDirectiva() (rest/cap/nota/amrap/...), o mencionar una
+         técnica reconocida (con o sin corchetes, ver extraerTecnicaSB) --
+         esto último es clave para el ejemplo de la propia directiva
+         ("[DROPSET] última serie al 20% al fallo", sin "*" adelante). */
+      var resTecLinea = extraerTecnicaSB(linea);
+      if(actual && actual.tipo === 'simple' && (esLineaDirectiva(linea) || /^\\*/.test(linea) || resTecLinea.tecnica)){
+        var resNota = extraerTecnicaSB(linea.replace(/^\\*\\s*/, ''));
+        if(resNota.tecnica) actual.tecnica = resNota.tecnica;
+        if(resNota.texto) actual.notas.push(resNota.texto);
+        return;
+      }
+      actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, dosisAsignada:false, tecnica:'', notas:[] };
+      entries.push(actual);
+    });
+    return entries;
+  }
+  function pizarraSports(blockEl, block, weekIdx, dayId){
+    if(esBloqueVacioCF(block)) return;
+    const body = blockEl.querySelector('.block-body');
+    if(!body || body.querySelector('[data-sportsboard]')) return;
+    const lineas = itemsDeSemana(block, weekIdx).filter(function(l){ return l != null && String(l).trim() !== ''; });
+    if(!lineas.length){
+      if(weekIdx > 0){
+        body.insertAdjacentHTML('afterbegin', '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '"><div class="jp-sb-tag">[ SPORTS ]</div><div class="jp-sb-nota">Todavía no se cargó la prescripción de esta semana.</div></div>');
+      }
+      return;
+    }
+    const entries = parsearPizarraSB(lineas);
+    if(!entries.length) return;
+    let filas = '';
+    entries.forEach(function(entry, idx){
+      if(entry.tipo === 'biserie' && entry.subs.length){
+        const subsHtml = entry.subs.map(function(sub, si){
+          const exIdx = 'b' + idx + 's' + si;
+          const dosisTxt = [sub.reps ? sub.reps + ' reps' : '', sub.tempo ? 'Tempo ' + sub.tempo : ''].filter(Boolean).join(' · ');
+          return '<div class="jp-sb-subex">' +
+              '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
+                '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + videoLinkHtml(sub.nombre) + '</div>' +
+              (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
+              (sub.tecnica && TECNICAS_BADGE_SB[sub.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + sub.tecnica + '">' + TECNICAS_BADGE_SB[sub.tecnica] + '</span>' : '') +
+              (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
+              renderSetRows(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.reps || 'Reps', 0, sub.nombre, block.title) +
+            '</div>';
+        }).join('');
+        filas += '<div class="jp-sb-biset">' +
+            '<div class="jp-sb-biset-title">' + escSB(entry.titulo) + '</div>' +
+            '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
+          '</div>';
+        return;
+      }
+      if(entry.tipo !== 'simple') return;
+      const exIdx = 'e' + idx;
+      const dosisTxt = [entry.reps ? entry.reps + ' reps' : '', entry.tempo ? 'Tempo ' + entry.tempo : ''].filter(Boolean).join(' · ');
+      filas += '<div class="jp-sb-ex">' +
+          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
+          (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
+          (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
+          (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
+          renderSetRows(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.reps || 'Libre', 0, entry.titulo, block.title) +
+        '</div>';
+    });
+    if(!filas) return;
+    const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
+        '<div class="jp-sb-tag">[ SPORTS &middot; 💪 BLOQUE ]</div>' +
+        '<div class="jp-sb-title">' + escSB(block.title || '') + '</div>' +
+        (block.objective ? '<div class="jp-sb-objective">🎯 ' + block.objective + '</div>' : '') +
+        filas +
+        (block.tips ? '<div class="jp-sb-tips">💡 ' + block.tips + '</div>' : '') +
+      '</div>';
+    body.insertAdjacentHTML('afterbegin', html);
+    body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
+      if(!el.closest('[data-sportsboard]')) el.style.display = 'none';
+    });
+  }
+
   /* directiva ("Motor de 1RM exacto") -- modal táctico CENTRADO: el
      popover chico anclado al botón quedaba tapado por el teclado
      numérico de iOS (posición absoluta contra las coordenadas de la
@@ -10910,6 +11103,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          caían en el renderer genérico de Bodybuilding, que el CSS de modo
          CrossFit deja prácticamente vacío (el "bloque colapsado" reportado). */
       if(window.COACH_DISCIPLINA !== 'sports' && Array.isArray(b.items)) pizarra(el, b, weekIdx, day.id);
+      /* REFACTOR DEFINITIVO: equivalente Sports de la línea de arriba --
+         nunca se ejecuta para CrossFit (gate exclusivo COACH_DISCIPLINA
+         === 'sports'), así que pizarra()/CF no se ven afectados. */
+      else if(window.COACH_DISCIPLINA === 'sports' && Array.isArray(b.items) && b.sportsPizarra) pizarraSports(el, b, weekIdx, day.id);
       /* PR sobre lo que ya estaba cargado */
       el.querySelectorAll('.set-row').forEach(function(row){ chequearPR(row); });
     });
@@ -19274,7 +19471,20 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
      del bloque quedó tildada, nunca al cerrar el primer ejercicio de la ronda. */
   function agrupado(bl){
     if(!bl) return false;
-    return bl.querySelectorAll('.set-tracker').length > 1 || !!bl.querySelector('.bs-r');
+    /* FIX (Pizarra Táctica Sports & Bodybuilding, REFACTOR DEFINITIVO): un
+       bloque de pizarra libre puede tener MÁS de un .set-tracker (varios
+       ejercicios independientes redactados en el mismo bloque de texto,
+       igual que un WOD de CrossFit puede tener varios movimientos) sin
+       que eso signifique que están agrupados en rondas -- a diferencia
+       de un biset/triset clásico, donde cada .set-tracker cuelga
+       DIRECTO de .block-body (mismo criterio que ya usa unificar()/
+       limpiarResiduos() para detectar la estructura "cruda" antes de
+       convertirla a rondas, ver más abajo), los de pizarraSports() viven
+       anidados dentro de su propia tarjeta (.jp-sb-ex/.jp-sb-subex) --
+       nunca directo de .block-body. Contar sólo los directos evita que
+       un bloque de pizarra con 3 ejercicios independientes se lea como
+       "agrupado" y se quede sin su descanso automático por ejercicio. */
+    return bl.querySelectorAll(':scope > .block-body > .set-tracker').length > 1 || !!bl.querySelector('.bs-r');
   }
   function rondaCompleta(bl, row){
     /* bloque unificado: la ronda es la caja .bs-r que contiene la fila */
@@ -19323,8 +19533,15 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     var b = bloqueDe(bl ? bl.dataset.blockId : '');
     /* la entrada en calor y los circuitos livianos no abren el reloj */
     if(bl && bl.classList.contains('wu-card')) return;
+    /* Pizarra Táctica Sports (REFACTOR DEFINITIVO): un bloque tipo:'list'
+       con b.sportsPizarra nunca trae isBlock/isSuperset/isFinisher (esos
+       flags sólo los pone renderBlockInner() para los tipos clásicos),
+       así que sin este OR se quedaba mudo -- ninguna serie disparaba
+       descanso. Se reconoce por la marca .jp-sb-board que pizarraSports()
+       ya inserta dentro de .block-body. */
     var trabajo = (b && (b.isBlock || b.isSuperset || b.isFinisher)) ||
-                  (bl && bl.classList.contains('core-live'));
+                  (bl && bl.classList.contains('core-live')) ||
+                  (bl && !!bl.querySelector('.jp-sb-board'));
     if(!trabajo) return;
     /* FASE 2.3 (Lógica de Check en Biset) -- un bloque agrupado (biset/
        triset/circuito) YA NO dispara el reloj acá, ni siquiera cuando la
@@ -26753,6 +26970,78 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
   background:rgba(245,197,24,.18) !important; border-color:rgba(245,197,24,.55) !important;
   color:#F5C518 !important; box-shadow:0 0 12px rgba(245,197,24,.55) !important;
 }
+/* =========================================================
+   PIZARRA TÁCTICA — identidad Sports & Bodybuilding
+   (REFACTOR DEFINITIVO). Réplica visual de .jp-cfboard de arriba con
+   nombres de clase 100% propios (.jp-sb-*) para no heredar ninguna
+   regla condicionada a body.cf-disc ni pisar una sola línea de
+   CrossFit -- usa los MISMOS design tokens compartidos (--stealth-0/1,
+   --cyan, --amber, --panel, --line) declarados arriba en este mismo
+   <style>, cero duplicación de paleta.
+========================================================= */
+.jp-sb-board{
+  background:linear-gradient(180deg, var(--panel), var(--stealth-1)) !important;
+  border:1px solid rgba(56,189,248,.22) !important; border-radius:14px !important;
+  padding:16px !important; margin-bottom:12px;
+}
+.jp-sb-tag{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.72rem; letter-spacing:.06em; color:var(--cyan); text-transform:uppercase;
+  margin-bottom:6px;
+}
+.jp-sb-title{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:1.15rem; letter-spacing:.02em; color:#EDEFF2; text-transform:uppercase;
+  margin-bottom:10px;
+}
+.jp-sb-objective, .jp-sb-tips{
+  font-size:.86rem; line-height:1.5; color:rgba(237,239,242,.82);
+  background:rgba(56,189,248,.06); border:1px solid var(--line); border-radius:10px;
+  padding:8px 11px; margin:8px 0;
+}
+.jp-sb-ex{
+  background:rgba(255,255,255,.02); border:1px solid var(--line); border-radius:12px;
+  padding:12px; margin-top:10px;
+}
+.jp-sb-ex-head{ display:flex; align-items:center; gap:8px; }
+.jp-sb-ex-nombre{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
+  font-size:1rem; color:#EDEFF2; text-transform:uppercase; letter-spacing:.01em;
+}
+.jp-sb-dosis{ font-size:.8rem; color:rgba(237,239,242,.6); margin-top:3px; letter-spacing:.02em; }
+.jp-sb-nota{ font-size:.8rem; color:rgba(237,239,242,.7); margin-top:5px; font-style:italic; }
+.jp-sb-badge{
+  display:inline-block; margin-top:6px; padding:3px 9px; border-radius:6px;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.68rem; letter-spacing:.05em; text-transform:uppercase;
+  background:rgba(245,197,24,.14); color:var(--amber); border:1px solid rgba(245,197,24,.4);
+}
+.jp-sb-badge-fallo{ background:rgba(255,107,87,.14); color:var(--coral); border-color:rgba(255,107,87,.4); }
+.jp-sb-badge-restpause, .jp-sb-badge-myoreps{ background:rgba(56,189,248,.14); color:var(--cyan); border-color:rgba(56,189,248,.4); }
+/* biserie/triset: mismo bracket cian continuo que .bs-wrap ya usa en el
+   resto de la app (guardrail estético: reusar el primitivo compartido,
+   nunca inventar un cian distinto). */
+.jp-sb-biset{ margin-top:10px; }
+.jp-sb-biset-title{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
+  font-size:.85rem; letter-spacing:.03em; color:#EDEFF2; text-transform:uppercase; margin-bottom:8px;
+}
+.jp-sb-bracket{ border-left:2px solid #00e5ff; padding-left:12px; }
+.jp-sb-subex{
+  background:rgba(255,255,255,.02); border:1px solid var(--line); border-radius:12px;
+  padding:12px; margin-bottom:10px;
+}
+.jp-sb-subex:last-child{ margin-bottom:0; }
+.jp-sb-subex-head{ display:flex; align-items:center; gap:8px; }
+.jp-sb-letra{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:22px; height:22px; border-radius:6px; background:rgba(56,189,248,.16);
+  color:var(--cyan); font-weight:800; font-size:.75rem;
+}
+.jp-sb-subex-nombre{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
+  font-size:.92rem; color:#EDEFF2; text-transform:uppercase;
+}
 </style>
 
 </body>
@@ -27143,6 +27432,7 @@ function buildProgramConfig(ath){
       if(b.coreBlock) out.coreBlock = true;
       if(b.coreModo) out.coreMode = b.coreModo;
       if(b.cfPizarra) out.pizarra = true;
+      if(b.sportsPizarra) out.sportsPizarra = true;
       if(b.cfFmt) out.boardFmt = b.cfFmt;
       if(b.cfParam) out.cfParam = b.cfParam;
       if(b.cfId) out.blockId = b.cfId;
