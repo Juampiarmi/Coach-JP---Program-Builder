@@ -10436,7 +10436,32 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(hechos < ids.length || !ids.length){ if(viejo) viejo.remove(); return; }
     const d = resumenDatos(weekIdx, day);
     const nkey = weekIdx + '|' + day.id + '|__sesion';
-    const prs = (state.session.prs || []);
+    const esCF = window.COACH_DISCIPLINA !== 'sports';
+    /* directiva (aislamiento de PRs por día, Sports & Bodybuilding):
+       state.session.prs es un log de nombres de ejercicio de TODO el
+       mesociclo que nunca se resetea (mismo bug ya reparado antes en el
+       reporte de WhatsApp, ver scShare más abajo) -- filtrarlo acá
+       también, para que la pantalla de fin de sesión y el evento que se
+       le manda al coach (más abajo) nunca arrastren PRs de días
+       anteriores. Se cruza state.session.prDetalle (trae fecha) contra
+       HOY y contra los ejercicios reales de ESTE día -- no alcanza con
+       la fecha sola porque el mismo día calendario puede tener más de
+       una sesión. CrossFit sigue leyendo state.session.prs tal cual,
+       sin ningún cambio de comportamiento. */
+    let prs = (state.session.prs || []);
+    if(!esCF){
+      const hoyISO = new Date().toISOString().slice(0, 10);
+      const nombresHoy = {};
+      (day.blocks || []).forEach(function(b){
+        if(b.exerciseName) nombresHoy[nrmHist(b.exerciseName)] = 1;
+        (b.exercises || []).forEach(function(e){ if(e.name) nombresHoy[nrmHist(e.name)] = 1; });
+      });
+      const vistos = {};
+      prs = ((state.session && state.session.prDetalle) || [])
+        .filter(function(p){ return p.fecha === hoyISO && nombresHoy[nrmHist(p.ex)]; })
+        .map(function(p){ return p.ex; })
+        .filter(function(nombre){ if(vistos[nombre]) return false; vistos[nombre] = 1; return true; });
+    }
     /* racha del mesociclo: reusa window.CoachMetricas.racha() (módulo de la
        Story Card, ya calcula esto para la tarjeta de Instagram) en vez de
        recalcular la consistencia acá de nuevo */
@@ -10468,7 +10493,6 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        de musculación, como pide la directiva. Mismo cálculo de duración
        ya usado por el reporte de WhatsApp (state.session.inicio, acotado
        a 1-240 min para no mostrar un número sin sentido). */
-    const esCF = window.COACH_DISCIPLINA !== 'sports';
     const iniSesion = (state.session && state.session.inicio) || 0;
     const minSesion = iniSesion ? Math.round((Date.now() - iniSesion) / 60000) : 0;
     const minSesionOk = (minSesion >= 1 && minSesion <= 240) ? minSesion : 0;
@@ -10579,10 +10603,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       /* mismo cálculo de duración que ya usa la Story Card (inyectarBoton,
          más abajo en el archivo) -- state.session.inicio se fija una sola
          vez, en la primera interacción real, y nunca se resetea, así que
-         se acota a un rango de sesión creíble (1 a 240 min). */
+         se acota a un rango de sesión creíble (guardián de tiempo,
+         directiva: 1 a 180 min en Sports & Bodybuilding -- CrossFit sigue
+         con el cálculo de siempre, sin tocar). */
       const ini = (state.session && state.session.inicio) || 0;
       const elapsedMin = ini ? Math.round((Date.now() - ini) / 60000) : 0;
-      const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 240) ? elapsedMin : Math.max(1, d.series * 3 || 55);
+      const minsCrudo = (window.COACH_DISCIPLINA === 'sports')
+        ? ((elapsedMin >= 1 && elapsedMin <= 180) ? elapsedMin : (d.series > 0 ? Math.min(180, Math.max(20, d.series * 3)) : 60))
+        : ((elapsedMin >= 1 && elapsedMin <= 240) ? elapsedMin : Math.max(1, d.series * 3 || 55));
       const rpeHoy = checkoutRpeLeer()[nkey];
       const notaHoy = (state.notes && state.notes[nkey]) || '';
       let txt = '🏁 COACH JP · REPORTE DE SESIÓN\\n' +
@@ -12128,16 +12156,35 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     const r = (window.CoachTV && window.CoachTV.resumen) ? window.CoachTV.resumen(weekIdx, day) : { vol:0, series:0, reps:0 };
     const ini = (state.session && state.session.inicio) || 0;
     const elapsedMin = ini ? Math.round((Date.now() - ini) / 60000) : 0;
-    /* directiva9 -- state.session.inicio se setea una sola vez por sesión
-       y nunca se resetea (ver _marcarInicioSesion/latido()), así que si
-       pasó mucho tiempo real desde el primer set trackeado el cálculo
-       "ingenuo" daba minutos absurdos (ej. 28774 MIN). Se acota a un
-       rango de sesión razonable (1 a 240 min) y, si el valor no es
-       creíble o no hay registro real, se cae a una estimación coherente
-       en base a las series completadas (o 55 min por defecto). */
-    const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 240) ? elapsedMin : Math.max(1, r.series * 3 || 55);
+    /* GUARDIÁN DE TIEMPO (directiva crítica) -- state.session.inicio se
+       setea una sola vez por sesión y nunca se resetea (ver
+       _marcarInicioSesion/latido()), así que si pasó mucho tiempo real
+       desde el primer set trackeado el cálculo "ingenuo" daba minutos
+       absurdos (ej. 28774 MIN, o "13h 41m" reportado en producción).
+       Se acota a un rango de sesión creíble (1 a 180 min) y, si el valor
+       no es creíble o no hay registro real, se cae a una estimación
+       coherente en base a las series completadas (20-180 min, 60 por
+       defecto si no hay series). */
+    const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 180) ? elapsedMin : (r.series > 0 ? Math.min(180, Math.max(20, r.series * 3)) : 60);
     const tiempoFmt = fmtDuracionStory(minsCrudo);
     const f = new Date();
+    /* directiva (aislamiento de PRs por día) -- mismo criterio que
+       pintarResumen(): state.session.prs es un log de nombres de TODO el
+       mesociclo que nunca se resetea (esto era lo que hacía aparecer,
+       ej., "Bulgarian Split Squat" como PR destacado en un día de
+       empuje). Se filtra state.session.prDetalle (trae fecha) por HOY y
+       por pertenencia real a un ejercicio de ESTE día. */
+    const hoyISO = f.toISOString().slice(0, 10);
+    const nombresHoy = {};
+    (day.blocks || []).forEach(function(b){
+      if(b.exerciseName) nombresHoy[nrmHist(b.exerciseName)] = 1;
+      (b.exercises || []).forEach(function(e){ if(e.name) nombresHoy[nrmHist(e.name)] = 1; });
+    });
+    const vistosPr = {};
+    const prsHoy = ((state.session && state.session.prDetalle) || [])
+      .filter(function(p){ return p.fecha === hoyISO && nombresHoy[nrmHist(p.ex)]; })
+      .map(function(p){ return p.ex; })
+      .filter(function(nombre){ if(vistosPr[nombre]) return false; vistosPr[nombre] = 1; return true; });
     return {
       atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
       fecha: f.toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' }),
@@ -12151,7 +12198,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       semanaN: (weekIdx || 0) + 1,
       tituloSesion: day.label || (day.short || 'Sesión'),
       vol: r.vol, series: r.series, tiempo: tiempoFmt,
-      prs: (state.session && state.session.prs) || []
+      prs: prsHoy
     };
   }
   /* ---------- botón dentro del Session Summary ---------- */
@@ -22816,8 +22863,21 @@ body{
     var k = claveSesion(); if(!k) return;
     state.session = state.session || {};
     var s = state.session[k] = state.session[k] || {};
-    if(!s.ini) s.ini = Date.now();
-    s.fin = Date.now();
+    var ahora = Date.now();
+    /* GUARDIÁN DE TIEMPO (directiva crítica, Sports & Bodybuilding): s.ini
+       se fija una sola vez por día/semana y nunca se resetea -- si el
+       alumno tocó este día hace varios días (una serie a medias, por
+       ejemplo) y recién ahora vuelve a completarlo, s.fin - s.ini medía
+       el tiempo real entre esos dos toques (ej. "288 h"), no la duración
+       de ESTA sesión. Si pasaron más de 4 horas desde la última
+       actividad registrada acá, se considera una sesión nueva y el
+       cronómetro arranca de nuevo. CrossFit no se toca: sigue exactamente
+       igual que siempre. */
+    if(window.COACH_DISCIPLINA === 'sports' && s.fin && (ahora - s.fin) > 4 * 60 * 60000){
+      s.ini = ahora;
+    }
+    if(!s.ini) s.ini = ahora;
+    s.fin = ahora;
     try{ saveProgress(); }catch(e){}
   }
   function duracion(){
@@ -22825,6 +22885,17 @@ body{
     var s = (state.session || {})[k];
     if(!s || !s.ini || !s.fin) return '';
     var min = Math.max(1, Math.round((s.fin - s.ini) / 60000));
+    /* guardián de tiempo, segunda barrera (Sports & Bodybuilding): por
+       más que marcarActividad() ya reinicie el cronómetro tras un hueco
+       de 4h+, un dato viejo guardado ANTES de este fix puede seguir
+       teniendo s.ini de hace días -- se sanea acá también antes de
+       mostrarlo. CrossFit sigue con el cálculo de siempre. */
+    if(window.COACH_DISCIPLINA === 'sports' && min > 180){
+      var dia = DAYS.find(function(d){ return d.id === state.currentDay; });
+      var r = (dia && window.CoachTV && typeof window.CoachTV.resumen === 'function')
+        ? window.CoachTV.resumen(state.currentWeek || 0, dia) : null;
+      min = (r && r.series > 0) ? Math.min(180, Math.max(20, r.series * 3)) : 60;
+    }
     if(min < 60) return min + ' min';
     return Math.floor(min / 60) + ' h ' + (min % 60) + ' min';
   }
