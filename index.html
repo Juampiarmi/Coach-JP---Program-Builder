@@ -2805,6 +2805,75 @@ function curDay(){
   if(S.ui.day >= p.dias.length) S.ui.day = 0;
   return p.dias[S.ui.day];
 }
+/* BUG CRÍTICO ("Independencia Total de Semanas en CrossFit & Hyrox"):
+   d.bloques era UN solo array compartido por las 4 semanas -- cargar,
+   borrar o editar un bloque en cualquier semana mutaba las otras 3,
+   porque nada partía la LISTA de bloques por semana (sólo el texto de la
+   Pizarra tenía ese desacople, vía b.weekItems, hoy retirado). El resto
+   del archivo (generadores, wizards, import/export, analíticas,
+   auditorías -- más de cien puntos) sigue leyendo/escribiendo d.bloques
+   tal cual, así que la solución NO es agregar un accessor nuevo que
+   habría que injertar en cada uno de esos puntos (altísimo riesgo de
+   dejar alguno afuera): en su lugar, d.bloques pasa a ser un PUNTERO que
+   este módulo mantiene apuntando siempre al array de la semana
+   actualmente activa (activeCfWeek()), guardado de verdad en
+   d.bloquesPorSemana[0..3] -- cuatro copias 100% independientes.
+   Sports & Bodybuilding no tiene semanas independientes por diseño (la
+   progresión es la MISMA estructura de bloques con cargas/series que
+   escalan semana a semana) y sigue exactamente igual que siempre:
+   esPlanCFActivo() es la única puerta, y para un plan que no es
+   CrossFit estas funciones son no-ops totales. */
+function esPlanCFActivo(p){
+  return !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
+}
+function asegurarBloquesPorSemana(d){
+  if(!Array.isArray(d.bloquesPorSemana)){
+    if(!Array.isArray(d.bloques)) d.bloques = [];
+    /* migración perezosa y NO destructiva, una sola vez por día: si el
+       coach ya había bifurcado contenido de semana 2/3/4 con el
+       mecanismo viejo de la Pizarra (b.weekItems[i]), ese contenido gana
+       sobre el de Semana 1 al armar la copia de esa semana puntual --
+       así ningún atleta real pierde lo que ya estaba cargado. */
+    d.bloquesPorSemana = [0,1,2,3].map(function(wi){
+      return d.bloques.map(function(b){
+        var copia = JSON.parse(JSON.stringify(b));
+        if(wi > 0 && b.tipo === 'list' && Array.isArray(b.weekItems) && b.weekItems[wi] && b.weekItems[wi].length){
+          copia.items = JSON.parse(JSON.stringify(b.weekItems[wi]));
+        }
+        delete copia.weekItems;
+        return copia;
+      });
+    });
+  }
+  return d.bloquesPorSemana;
+}
+/* memoria de módulo: qué semana está actualmente "cargada" en d.bloques
+   de todos los días (no persiste, se resetea sola al recargar la
+   página -- la primera sincronización siempre re-carga bien la semana
+   activa real, ver más abajo). */
+let _cfSemanaCargada = null;
+/* Único punto de sincronización entre d.bloques (lo que TODO el resto
+   del archivo ya usa) y d.bloquesPorSemana (donde en verdad viven las 4
+   semanas independientes). Se llama al principio de CADA renderBuilder()
+   -- que ya corre después de absolutamente cualquier mutación en este
+   archivo (patrón save(); renderBuilder(); repetido en cientos de
+   puntos) -- así que por más que algún handler haya REASIGNADO d.bloques
+   entero (borrar con filter(), "vaciar día", un wizard que arma el día
+   de una, importar JSON...) en vez de mutarlo en el lugar, acá se
+   comitea esa reasignación de vuelta a su semana ANTES de, recién
+   después, apuntar d.bloques a la semana que esté activa ahora. */
+function sincronizarBloquesSemana(p){
+  if(!esPlanCFActivo(p)){ _cfSemanaCargada = null; return; }
+  const wk = activeCfWeek();
+  (p.dias || []).forEach(function(d){
+    const porSemana = asegurarBloquesPorSemana(d);
+    const semanaAComitear = (_cfSemanaCargada !== null) ? _cfSemanaCargada : wk;
+    porSemana[semanaAComitear] = Array.isArray(d.bloques) ? d.bloques : (porSemana[semanaAComitear] || []);
+    if(!Array.isArray(porSemana[wk])) porSemana[wk] = [];
+    d.bloques = porSemana[wk];
+  });
+  _cfSemanaCargada = wk;
+}
 /* Reordenar días (pedido de UX): mueve el día en la posición `desde` una
    posición a la izquierda (dir=-1) o derecha (dir=+1) dentro de p.dias.
    Cada día es un objeto autocontenido (id/short/label/bloques/etc. --
@@ -3125,6 +3194,9 @@ function renderBuilder(){
   $('#builderWrap').style.display  = ath ? '' : 'none';
   if(!ath) return;
   const p = plan(ath.id);
+  /* punto único: mantiene d.bloques apuntando a la semana activa antes de
+     que nada de lo de abajo lo lea (ver comentario junto a curDay()). */
+  sincronizarBloquesSemana(p);
 
   $('#bHead').innerHTML =
     '<div class="avatar ' + esc(ath.color||'') + '">' + esc(initials(ath)) + '</div>' +
@@ -3277,10 +3349,10 @@ function renderDay(){
 
   if(cfActiva){
     /* desacoplamiento de semanas (directiva crítica): selector de "semana
-       que estoy editando" para la Pizarra Táctica -- ver activeCfWeek()/
-       cfWeekItems()/setCfWeekItems() más abajo en el archivo. Cada bloque
-       tipo:'list' de este día muestra y guarda en la semana elegida acá,
-       nunca en otra. */
+       que estoy editando" -- ver activeCfWeek()/asegurarBloquesPorSemana()/
+       sincronizarBloquesSemana() junto a curDay(). TODOS los bloques de
+       este día (no sólo la Pizarra) se muestran y guardan en la semana
+       elegida acá, nunca en otra. */
     const cfWkActiva = activeCfWeek();
     /* directiva ("Independencia Total de Semanas") -- refuerzo visual de
        la pastilla activa: checkmark + anillo dorado propio (.cf-wk-activa,
@@ -3594,7 +3666,7 @@ function renderDay(){
         (esBloqueCF ? cfFmtToolbar(b.id) : '') +
         '<textarea data-bf="items" data-b="' + b.id + '" style="min-height:96px" placeholder="' +
           (esBloqueCF ? '10 Thrusters — 42.5/30 KG\n10 Pull-ups\n20 Wall Balls\nRemo — 500 M' : 'Remo en ergómetro, ritmo suave — 3 min\nFace Pull con cuerda — 2x15') +
-        '">' + esc((esBloqueCF ? cfWeekItems(b, cfWk) : (b.items||[])).join('\n')) + '</textarea>';
+        '">' + esc((b.items||[]).join('\n')) + '</textarea>';
       if(esBloqueCF){
         const fmtInfo = CF_PARAM[b.cfFmt];
         h += '<div class="fields" style="margin-top:10px">' +
@@ -3944,38 +4016,18 @@ function setBlockField(b, f, val){
 /* ---------- DESACOPLAMIENTO DE SEMANAS (CrossFit & Hyrox) ----------
    Directiva crítica: en CrossFit cada semana es una prescripción
    independiente (no la sobrecarga progresiva de Bodybuilding sobre la
-   MISMA estructura) -- antes, la Pizarra de un bloque tipo:'list' vivía
-   en un único array (b.items) sin ningún concepto de semana, así que
-   "Semana 2" mostraba y, peor, EDITABA el mismo array que "Semana 1".
-   Semana 1 (índice 0) sigue siendo b.items -- fuente única, sin cambios,
-   compatible con los 33 atletas ya cargados. A partir de la primera vez
-   que el coach toca Semana 2/3/4 en el selector nuevo del Builder, esa
-   semana se bifurca a su propio array independiente en b.weekItems[i]
-   (nunca una referencia compartida) y desde ahí edita y compila aparte,
-   sin tocar jamás b.items ni las otras semanas.
-
-   FIX CRÍTICO ("Independencia Total de Semanas") -- hasta acá esto sólo
-   garantizaba que ESCRIBIR en Semana 2/3/4 nunca tocara Semana 1: la
-   LECTURA (esta función) seguía cayendo al contenido de Semana 1 como
-   fallback cuando la semana activa todavía no se había bifurcado, así
-   que el coach abría S2 por primera vez y encontraba el textarea YA
-   LLENO con el WOD de S1 -- un solo caracter tipeado ahí bifurcaba esa
-   semana con contenido heredado, exactamente la "herencia automática"
-   que la directiva prohíbe. Ahora una semana > 0 sin bifurcar devuelve
-   directamente un array vacío: pizarra en blanco, lista para prescribir
-   desde cero, sin arrastrar nunca el contenido de otra semana. */
+   MISMA estructura). Hasta acá esto sólo bifurcaba el TEXTO de la
+   Pizarra (b.weekItems[i]) mientras el resto del bloque -- y la lista de
+   qué bloques existen en cada día -- seguía siendo un único array
+   compartido por las 4 semanas (bug crítico reportado: cargar/borrar un
+   bloque en una semana se reflejaba en las demás). Reemplazado por
+   d.bloquesPorSemana (ver asegurarBloquesPorSemana()/
+   sincronizarBloquesSemana() junto a curDay()): cada semana es ahora un
+   array de bloques 100% propio, así que b.weekItems queda obsoleto (la
+   migración de asegurarBloquesPorSemana() ya absorbió cualquier
+   contenido que hubiera ahí antes de este fix). */
 function activeCfWeek(){
   return (S.ui && typeof S.ui.cfWeek === 'number' && S.ui.cfWeek > 0) ? S.ui.cfWeek : 0;
-}
-function cfWeekItems(b, weekIdx){
-  if(weekIdx > 0) return (b.weekItems && b.weekItems[weekIdx] && b.weekItems[weekIdx].length) ? b.weekItems[weekIdx] : [];
-  return b.items || [];
-}
-function setCfWeekItems(b, weekIdx, val){
-  const arr = String(val).split('\n').map(s => s.trim()).filter(Boolean);
-  if(weekIdx <= 0){ b.items = arr; return; }
-  b.weekItems = b.weekItems || [];
-  b.weekItems[weekIdx] = arr;
 }
 /* barra de consulta rápida de PRs (directiva): sólo lectura, para que el
    coach vea de un vistazo los 4 levantamientos clave mientras arma la
@@ -4010,12 +4062,12 @@ function prsBarCF(ath){
 }
 /* "Clonar semana anterior" (directiva): arma la semana activa a partir de
    la anterior en UN toque -- recorre TODOS los días del plan (no sólo el
-   día que se está mirando) y, bloque por bloque tipo:'list' (la Pizarra,
-   que es lo único que de verdad está separado por semana -- ver comentario
-   de arriba), copia el array de texto de la semana anterior en la activa.
-   setCfWeekItems() ya arma un array nuevo desde cero (split/trim), así que
-   esto es un deep clone real: la semana activa nunca queda apuntando al
-   mismo array que la anterior. */
+   día que se está mirando) y reemplaza la lista ENTERA de bloques de la
+   semana activa por un deep clone real de la lista de la semana anterior
+   (estructura completa: qué bloques hay, en qué orden, cada campo de
+   cada uno -- no sólo el texto de la Pizarra como en la versión vieja de
+   este botón, ya obsoleta ahora que cada semana es un array de bloques
+   propio e independiente, ver asegurarBloquesPorSemana()). */
 function clonarSemanaAnteriorCF(){
   const wk = activeCfWeek();
   if(wk <= 0) return;
@@ -4023,13 +4075,12 @@ function clonarSemanaAnteriorCF(){
   if(!p) return;
   const lbActiva = (p.meso && p.meso[wk] && p.meso[wk].short) || ('S' + (wk + 1));
   const lbPrev = (p.meso && p.meso[wk - 1] && p.meso[wk - 1].short) || ('S' + wk);
-  if(!confirm('¿Clonar la estructura completa de ' + lbPrev + ' en ' + lbActiva + '? Esto reemplaza todo lo que ya esté cargado en ' + lbActiva + ' de la Pizarra Táctica, en TODOS los días del plan. Esta acción se puede deshacer con Ctrl+Z.')) return;
+  if(!confirm('¿Clonar la estructura completa de ' + lbPrev + ' en ' + lbActiva + '? Esto reemplaza TODOS los bloques que ya estén cargados en ' + lbActiva + ', en TODOS los días del plan. Esta acción se puede deshacer con Ctrl+Z.')) return;
   if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Clonar ' + lbPrev + ' en ' + lbActiva);
   (p.dias || []).forEach(d => {
-    (d.bloques || []).forEach(b => {
-      if(b.tipo !== 'list') return;
-      setCfWeekItems(b, wk, cfWeekItems(b, wk - 1).join('\n'));
-    });
+    const porSemana = asegurarBloquesPorSemana(d);
+    porSemana[wk] = JSON.parse(JSON.stringify(porSemana[wk - 1] || []));
+    d.bloques = porSemana[wk];
   });
   save(); renderBuilder();
   toast('📋 ' + lbPrev + ' clonada en ' + lbActiva + ' ✔');
@@ -4217,19 +4268,11 @@ function bindBuilder(){
     }
     if(t.dataset.bf){
       const b = findBlock(t.dataset.b); if(!b) return;
-      /* desacoplamiento de semanas (CrossFit): la Pizarra (tipo:'list') se
-         edita semana por semana -- ver setCfWeekItems() arriba. Cualquier
-         otro campo (Bodybuilding incluido) sigue el camino genérico. El
-         chequeo de disciplina evita que un bloque tipo:'list' genérico de
-         Bodybuilding (circuito) se vea afectado si S.ui.cfWeek quedó > 0
-         de una sesión anterior con un atleta de CrossFit. */
-      const pActivo = plan(S.activeId);
-      const esPlanCF = !!(pActivo && pActivo.meta && pActivo.meta.mesoDisc === 'crossfit');
-      if(t.dataset.bf === 'items' && b.tipo === 'list' && esPlanCF && activeCfWeek() > 0){
-        setCfWeekItems(b, activeCfWeek(), t.value);
-      } else {
-        setBlockField(b, t.dataset.bf, t.type === 'checkbox' ? t.checked : t.value);
-      }
+      /* findBlock() ya resuelve `b` DENTRO de la semana activa (d.bloques
+         apunta ahí, ver sincronizarBloquesSemana()) -- así que escribir en
+         b.items acá ya escribe en el bloque propio de ESA semana, sin
+         ningún desvío especial por campo/disciplina como antes. */
+      setBlockField(b, t.dataset.bf, t.type === 'checkbox' ? t.checked : t.value);
       if(t.dataset.bf === 'items' && b.tipo === 'list' && esPlanCF && !b.cfFmt){
         const det = detectarFormatoCF(t.value);
         if(det){
@@ -7702,6 +7745,7 @@ function renderWeekSelector(){
         }
       }catch(e){}
       state.currentWeek = destino;
+      aplicarSemanaActivaBlocks();
       saveProgress();
       renderWeekSelector();
       renderWeekInfo();
@@ -7771,6 +7815,24 @@ const progressFillEl = document.getElementById('progress-fill');
 const progressCountEl = document.getElementById('progress-count');
 function getCurrentDay(){
   return DAYS.find(function(d){ return d.id === state.currentDay; }) || DAYS[0];
+}
+/* Independencia real de semanas (CrossFit): day.blocks es la propiedad que
+   TODO el resto de este script ya lee directamente (decorar(), pintarResumen(),
+   datosStoryCF(), y una veintena más de módulos de repintado) -- en vez de
+   injertar el selector de semana en cada uno de esos puntos, se mantiene
+   day.blocks apuntando siempre al array de la semana activa (day.blocksPorSemana
+   [state.currentWeek], exportado por el Builder sólo para planes CrossFit --
+   ver buildProgramConfig()). Un plan sin blocksPorSemana (Sports/Bodybuilding,
+   o una página ya exportada antes de este fix) no se toca: day.blocks sigue
+   siendo exactamente el array fijo de siempre. Se llama al iniciar la app y
+   cada vez que el alumno cambia de semana con la pastilla S1-S4. */
+function aplicarSemanaActivaBlocks(){
+  var wk = state.currentWeek || 0;
+  DAYS.forEach(function(day){
+    if(Array.isArray(day.blocksPorSemana)){
+      day.blocks = day.blocksPorSemana[wk] || day.blocksPorSemana[0] || [];
+    }
+  });
 }
 function visibleBlocks(day){
   const all = day.blocks.concat(day.finisher ? [day.finisher] : [], day.hyrox ? [day.hyrox] : []);
@@ -8029,21 +8091,13 @@ function esBloqueVacioCF(block){
   if(!items.length) return true;
   return items.length === 1 && items[0] === CF_PLACEHOLDER;
 }
-/* directiva ("Independencia Total de Semanas") -- fuente ÚNICA de la
-   regla "qué líneas le corresponden a esta semana", global igual que
-   esBloqueVacioCF de arriba, para que los 3 puntos del archivo que
-   necesitan esto (renderBlockInner, pizarra(), el resumen de estructura
-   de sesión) dejen de tener cada uno su propia copia de la misma
-   fórmula. Semana 1 (weekIdx 0) sigue viviendo en block.items, sin
-   cambios. Semana 2/3/4 (weekIdx > 0): si el coach bifurcó esa semana
-   puntual en el Builder, block.weekItems[weekIdx] trae SU PROPIO
-   contenido -- pero si NUNCA la tocó, antes esto caía al fallback de
-   Semana 1 (block.items), mostrándole al alumno el WOD de otra semana
-   sin que el coach lo haya prescripto ("herencia" prohibida por la
-   directiva). Ahora una semana sin bifurcar devuelve directamente un
-   array vacío: pizarra en blanco, nunca el contenido de otra semana. */
+/* Independencia real de semanas: el parámetro block ya es el bloque
+   propio de la semana activa (day.blocks fue apuntado ahí por
+   aplicarSemanaActivaBlocks(), ver junto a getCurrentDay()) -- así que
+   block.items YA es el contenido correcto de esa semana, sin ningún
+   overlay adicional. weekIdx se mantiene en la firma sólo por
+   compatibilidad con quien la llame, no se usa más. */
 function itemsDeSemana(block, weekIdx){
-  if(weekIdx > 0) return (block.weekItems && block.weekItems[weekIdx] && block.weekItems[weekIdx].length) ? block.weekItems[weekIdx] : [];
   return block.items || [];
 }
 /* datos para la Story Card exclusiva de CrossFit: kg clave del bloque de
@@ -8921,6 +8975,7 @@ function init(){
       var _semCorrecta = semanaActivaCorrespondiente();
       if(state.currentWeek > _semCorrecta) state.currentWeek = _semCorrecta;
     }catch(e){ console.warn('init·semanaCorrecta', e); }
+    try{ aplicarSemanaActivaBlocks(); }catch(e){ console.warn('init·semanaBlocks', e); }
     try{ renderWeekSelector(); }catch(e){ console.warn('init·weekSelector', e); }
     try{ renderWeekInfo(); }catch(e){ console.warn('init·weekInfo', e); }
     try{ renderDayTabs(); }catch(e){ console.warn('init·dayTabs', e); }
@@ -19360,8 +19415,7 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         lista = [{ name: b.exerciseName, reps: b.reps }];
         rondas = parseInt(b.efSets, 10) || 3;
       } else if(b){
-        var items = (b.weekItems && b.weekItems[state.currentWeek] && b.weekItems[state.currentWeek].length)
-                    ? b.weekItems[state.currentWeek] : (b.items || []);
+        var items = b.items || [];
         lista = movimientosDe(items);
         rondas = rondasDe(items);
       }
@@ -26532,7 +26586,16 @@ function buildProgramConfig(ath){
        el auto-match sólo rellena los huecos que queden hasta 5, sin
        duplicar por videoId). */
     const vaultAuto = [];
-    const blocks = d.bloques.map(b => {
+    /* Independencia real de semanas en CrossFit: hasta acá esto mapeaba
+       SIEMPRE d.bloques (una sola lista, compartida por las 4 semanas)
+       -- ahora, para un plan CrossFit, se corre esta MISMA lógica (sin
+       cambios en su cuerpo) una vez por cada semana, sobre su propia
+       lista independiente (d.bloquesPorSemana[wi], ver
+       asegurarBloquesPorSemana() junto a curDay() en el Builder). Sports
+       & Bodybuilding sigue mapeando d.bloques una sola vez, exactamente
+       como siempre. */
+    function mapearBloques(bloquesDelDia){
+      return bloquesDelDia.map(b => {
       bloqueCF = esBloqueCF(b);
       const out = {
         id: b.id, category: b.category || 'strength', icon: b.icon || '💪',
@@ -26692,40 +26755,12 @@ function buildProgramConfig(ath){
           });
         }
         if(b.cardioMinutes) out.cardioMinutes = parseInt(b.cardioMinutes,10) || 0;
-        /* desacoplamiento de semanas (directiva crítica): out.items de arriba
-           es SIEMPRE Semana 1 (b.items, fuente única e intacta). Si el coach
-           bifurcó alguna semana 2/3/4 en el Builder (ver setCfWeekItems()),
-           se compila cada una por separado acá -- mismo pipeline de %1RM y
-           de auto-match de video en Accessory -- para que pizarra() del lado
-           del alumno encuentre contenido genuinamente propio por semana en
-           vez de repetir siempre Semana 1. Las semanas nunca bifurcadas
-           simplemente no aparecen en out.weekItems y pizarra() sigue usando
-           out.items como ya hacía (mismo comportamiento de siempre, cero
-           impacto en planes existentes que no usaron el selector nuevo). */
-        if(bloqueCF && Array.isArray(b.weekItems) && b.weekItems.length){
-          const wItems = {};
-          b.weekItems.forEach((arr, wi) => {
-            if(wi <= 0 || !arr || !arr.length) return;
-            /* mismo auto-match ampliado que arriba, replicado acá para las
-               semanas bifurcadas (ver comentario en el bloque de S1). */
-            arr.forEach(it => {
-              const r = resolveExacto(it, b.videoOverrides);
-              if(r.ex){ addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex); }
-            });
-            let procesado = accesorioConVideo ? arr.slice() : arr.map(it => partirVideoManual(it).texto);
-            procesado = procesado.map(it => {
-              const m = String(it).match(RX_PCT_LIFT);
-              if(!m || !LIFT_TRONCAL.test(m[1])) return it;
-              const pct = parseInt(m[2], 10);
-              const rm = marcaDelAlumno(ath, m[1].trim());
-              if(!(rm > 0)) return it;
-              const kg = Math.round((rm * pct / 100) / 2.5) * 2.5;
-              return m[1].trim() + ' @ ' + pct + '% (~' + kg + ' kg)';
-            });
-            wItems[wi] = procesado;
-          });
-          if(Object.keys(wItems).length) out.weekItems = wItems;
-        }
+        /* independencia real de semanas (CrossFit): ya no hace falta un
+           overlay de "semanas bifurcadas" acá -- mapearBloques() corre una
+           vez por cada semana (ver más arriba en esta función) sobre su
+           propia lista de bloques ya independiente, así que este MISMO
+           bloque (b), cuando corresponde a la semana 2/3/4, ya trae su
+           propio b.items real -- no el de semana 1. */
       }
 
       /* directiva crítica -- el kill-switch "sinVideo" (por bloque, todo o
@@ -26767,7 +26802,17 @@ function buildProgramConfig(ath){
         if(al.length) out.alerts = al.map(a => ({ level: a.level, title: a.title, msg: a.msg }));
       }
       return out;
-    });
+      });
+    }
+    let blocksPorSemana = null;
+    let blocks;
+    if(discCF){
+      asegurarBloquesPorSemana(d);
+      blocksPorSemana = d.bloquesPorSemana.map(arr => mapearBloques(arr || []));
+      blocks = blocksPorSemana[0];
+    } else {
+      blocks = mapearBloques(d.bloques);
+    }
 
     const out = {
       id: d.id || ('dia'+(di+1)), short: d.short || ('DÍA '+(di+1)), label: d.label || '',
@@ -26780,6 +26825,13 @@ function buildProgramConfig(ath){
       finisherIA: finisherDelDia(ath, d),
       nutri: nutriDelDia(ath, d)
     };
+    /* Independencia real de semanas (CrossFit): además de `blocks` (arriba,
+       Semana 1 -- se mantiene por compatibilidad con cualquier lectura
+       vieja que no sepa de semanas), se exportan las 4 listas completas
+       para que la app del alumno pueda mostrar la estructura propia de
+       cada semana al cambiar de pastilla (ver aplicarSemanaActivaBlocks()
+       del lado del alumno). */
+    if(blocksPorSemana) out.blocksPorSemana = blocksPorSemana;
     /* Vault Técnico del Día: hasta 5 ejercicios elegidos en el Builder
        (d.cfVault) -- se resuelven acá a {nombre, videoId} para que la app
        del alumno no dependa de la biblioteca completa, solo de estos ids. */
