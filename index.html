@@ -3182,6 +3182,140 @@ function parsearDiaCompletoCF(texto){
     return { titulo: b.titulo || 'Bloque', category: inferirFaseCF(b.titulo), items: b.items };
   });
 }
+/* ============================================================
+   MODO PIZARRA LIBRE (Sports & Bodybuilding) -- directiva
+   "Pizarra Libre & Parser Táctico": redactar la sesión en texto
+   libre estructurado y parsearla a bloques REALES (newBlock('block')/
+   newBlock('superset')), con los MISMOS campos que ya llena el Modo
+   Guiado Clásico a mano. A propósito NO se inventa ningún tipo de
+   bloque nuevo ni ningún renderizado nuevo del lado del alumno: video,
+   alertas biomecánicas, rest timer y bracket de biset ya funcionan
+   para 'block'/'superset' desde antes -- lo único que cambia es CÓMO
+   el coach los arma acá. Exclusivo de Sports (nunca se invoca desde
+   una rama de CrossFit). */
+function normSports(s){
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+/* match exacto por nombre normalizado primero; si no hay, cae a
+   matchNombre() (mismo criterio de substring/palabras en común que ya
+   usa suggestAlts()/checkExercise() más arriba en este archivo) --
+   nunca se inventa un exId sin al menos una coincidencia real. */
+function resolverExSports(nombreCrudo){
+  const nombre = String(nombreCrudo || '').trim();
+  if(!nombre) return null;
+  const n = normSports(nombre);
+  const exacto = S.exercises.find(function(e){ return normSports(e.es) === n || normSports(e.en || '') === n; });
+  if(exacto) return exacto;
+  const candidatos = S.exercises.filter(function(e){ return matchNombre(e.es, nombre) || (e.en && matchNombre(e.en, nombre)); });
+  if(!candidatos.length) return null;
+  candidatos.sort(function(a, b){ return normSports(a.es).length - normSports(b.es).length; });
+  return candidatos[0];
+}
+/* extrae {sets, reps, tempo, rir, restSeconds} de una línea de dosis
+   tipo "4x6-8 | Tempo 3010 | RIR 2 | Rest 120s" -- cada segmento es
+   opcional y el orden no importa. */
+function parsearDosisSports(linea){
+  const t = String(linea || '');
+  const out = {};
+  let m;
+  if((m = t.match(/(\d+)\s*[x×]\s*(\d+(?:\s*-\s*\d+)?)/i))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\s+/g, ''); }
+  if((m = t.match(/tempo\s*(\d{3,4})/i))) out.tempo = m[1];
+  if((m = t.match(/rir\s*(\d+)/i))) out.rir = m[1];
+  if((m = t.match(/rest\s*(\d+)\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
+  return out;
+}
+/* técnicas avanzadas reconocidas -- acepta tanto la etiqueta entre
+   corchetes ("[DROPSET]", que se retira del texto visible porque es
+   sintaxis, no prosa) como la mención libre en una nota ("Drop-set al
+   fallo", que se detecta pero se deja intacta porque es parte legible
+   de la nota del coach). Mapea 1:1 a los valores reales de TECNICAS
+   (ver más arriba), así que el badge que ya pinta la app del alumno
+   para block.metodologia sale gratis, sin inventar un badge nuevo. */
+const TAGS_TECNICA_SPORTS = [
+  { reBracket:/\[\s*drop\s*-?\s*set\s*\]/i, reLibre:/\bdrop[\s-]?set\b/i, v:'dropset' },
+  { reBracket:/\[\s*rest\s*-?\s*pause\s*\]/i, reLibre:/\brest[\s-]?pause\b/i, v:'restpause' },
+  { reBracket:/\[\s*myo\s*-?\s*reps?\s*\]/i, reLibre:/\bmyo[\s-]?reps?\b/i, v:'myoreps' },
+  { reBracket:/\[\s*al\s+fallo\s*\]/i, reLibre:/\bal\s+fallo\b/i, v:'fallo' }
+];
+function extraerTecnicaSports(texto){
+  let limpio = String(texto || ''), tecnica = '';
+  TAGS_TECNICA_SPORTS.forEach(function(tag){
+    if(tag.reBracket.test(limpio)){ tecnica = tag.v; limpio = limpio.replace(tag.reBracket, '').trim(); }
+    else if(!tecnica && tag.reLibre.test(limpio)){ tecnica = tag.v; }
+  });
+  return { tecnica: tecnica, texto: limpio.trim() };
+}
+/* separa el texto pegado en "trozos" (uno por bloque), por línea en
+   blanco -- mismo criterio simple que ya separa ejercicios al escribir. */
+function partirTrozosSports(texto){
+  return String(texto || '').split(/\n\s*\n+/).map(function(t){ return t.trim(); }).filter(Boolean);
+}
+function esTrozoBiserieSports(lineas){
+  return /\b(biset|superset|triset|circuito)\b/i.test(lineas[0] || '') ||
+    lineas.some(function(l){ return /^A\d+[.)]/i.test(l.trim()); });
+}
+function parsearBloqueSimpleSports(lineas){
+  const b = newBlock('block');
+  const titulo = lineas[0] || '';
+  b.titulo = titulo;
+  const ex = resolverExSports(titulo);
+  if(ex) b.exId = ex.id; else b.coreNombre = titulo;
+  const notas = [];
+  for(let i = 1; i < lineas.length; i++){
+    const linea = lineas[i];
+    const dosis = parsearDosisSports(linea);
+    if(dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds){
+      if(dosis.sets) b.efSets = dosis.sets;
+      if(dosis.reps) b.reps = dosis.reps;
+      if(dosis.tempo) b.tempo = dosis.tempo;
+      if(dosis.restSeconds) b.restSeconds = dosis.restSeconds;
+      if(dosis.rir) notas.push('RIR ' + dosis.rir);
+      continue;
+    }
+    notas.push(linea.replace(/^\*\s*/, ''));
+  }
+  const res = extraerTecnicaSports(notas.join(' · '));
+  if(res.tecnica) b.metodologia = res.tecnica;
+  if(res.texto) b.tips = res.texto;
+  return b;
+}
+function parsearBiserieSports(lineas){
+  const b = newBlock('superset');
+  b.titulo = (lineas[0] || '').replace(/^(biset|superset|triset|circuito)\s*[·:\-]?\s*/i, '').trim() || lineas[0] || 'Biset / Triset';
+  const notasBloque = [];
+  for(let i = 1; i < lineas.length; i++){
+    const linea = lineas[i];
+    const subM = linea.match(/^A(\d+)[.)]\s*(.+?):\s*(.+)$/i);
+    if(subM){
+      const nombreEx = subM[2].trim();
+      const res = extraerTecnicaSports(subM[3]);
+      const parenM = res.texto.match(/\(([^)]+)\)/);
+      const dosis = parsearDosisSports(res.texto);
+      const e = { exId:'', reps: dosis.reps || '', tempo: dosis.tempo || '' };
+      const exResuelto = resolverExSports(nombreEx);
+      if(exResuelto) e.exId = exResuelto.id; else e.nombre = nombreEx;
+      if(res.tecnica) e.metodologia = res.tecnica;
+      if(parenM) notasBloque.push('A' + subM[1] + ' (' + nombreEx + '): ' + parenM[1]);
+      b.ejercicios.push(e);
+      continue;
+    }
+    const rondaM = linea.match(/(\d+)\s*rondas?/i);
+    if(rondaM) b.efSets = parseInt(rondaM[1], 10);
+    const restM = linea.match(/rest\s*(\d+)/i);
+    if(restM) b.restSeconds = parseInt(restM[1], 10);
+    if(!rondaM && !restM) notasBloque.push(linea.replace(/^\*\s*/, ''));
+  }
+  const res = extraerTecnicaSports(notasBloque.join(' · '));
+  if(res.texto) b.tips = res.texto;
+  return b;
+}
+function parsearPizarraLibreSports(texto){
+  return partirTrozosSports(texto).map(function(trozo){
+    const lineas = trozo.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+    if(!lineas.length) return null;
+    return esTrozoBiserieSports(lineas) ? parsearBiserieSports(lineas) : parsearBloqueSimpleSports(lineas);
+  }).filter(Boolean);
+}
 
 function renderBuilder(){
   /* invalida el cache de exOptions() de la pasada anterior — se reconstruye
@@ -3337,13 +3471,23 @@ function renderDay(){
 
   const pAct = plan(S.activeId);
   const cfActiva = !!(pAct && pAct.meta && pAct.meta.mesoDisc === 'crossfit');
+  /* directiva ("Modo Pizarra Libre & Parser Táctico"): igual que CrossFit
+     ya tiene su propio selector de modo de carga, Sports & Bodybuilding
+     ahora puede redactar el día en texto libre en vez de armar cada
+     bloque a mano -- d.modoSports es un campo nuevo y aditivo (ausente
+     en cualquier día ya guardado = Modo Guiado Clásico, cero cambio de
+     comportamiento para planes existentes). Nunca aplica en CrossFit. */
+  const modoTexto = !cfActiva && d.modoSports === 'texto';
 
   /* Directiva de limpieza del Builder CrossFit (2026-09-16): la barra de
      bloques de musculación (Biset/Triset/Finisher/Bloque Normal) es ruido
      heredado de Bodybuilding en esta modalidad -- se oculta, reemplazada
-     por el botón "+ Agregar Bloque de Pizarra" de más abajo. */
+     por el botón "+ Agregar Bloque de Pizarra" de más abajo. Mismo
+     criterio en Sports cuando está en Modo Pizarra Libre: la barra de
+     "+ Agregar Bloque" clásica queda reemplazada por el textarea de
+     redacción fluida de más abajo. */
   const toolsEl = document.querySelector('.tools');
-  if(toolsEl) toolsEl.style.display = cfActiva ? 'none' : '';
+  if(toolsEl) toolsEl.style.display = (cfActiva || modoTexto) ? 'none' : '';
 
   let h = '';
 
@@ -3423,11 +3567,33 @@ function renderDay(){
         '<div style="margin-top:10px"><label class="lb">Resumen de la sesión</label><textarea data-df="summary">' + esc(d.summary||'') + '</textarea></div>' +
       '</details>' +
     '</div>';
+    /* directiva ("Modo Pizarra Libre & Parser Táctico"): selector de modo
+       de carga, exclusivo de Sports & Bodybuilding -- mismo criterio
+       visual que la pastilla de semana de CrossFit (botones sm gold/
+       ghost). Cambiar de modo NUNCA borra bloques ya cargados: sólo
+       decide si se muestra el textarea de redacción fluida o la barra
+       clásica de "+ Agregar Bloque" de siempre. */
+    h += '<div class="card" style="margin-bottom:14px">' +
+      '<label class="lb">Modo de carga del día</label>' +
+      '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">' +
+        '<button type="button" class="btn sm ' + (modoTexto ? 'gold' : 'ghost') + '" data-modosports="texto">📝 Modo Pizarra Libre</button>' +
+        '<button type="button" class="btn sm ' + (!modoTexto ? 'gold' : 'ghost') + '" data-modosports="clasico">⚙️ Modo Guiado Clásico</button>' +
+      '</div>' +
+      '<div class="hint" style="margin-top:6px">Pizarra Libre parsea el texto a bloques reales -- después se editan igual que si se hubieran armado a mano, con video, alertas y descanso funcionando desde el primer momento.</div>' +
+    '</div>';
+    if(modoTexto){
+      h += '<div class="card" style="margin-bottom:14px">' +
+        '<label class="lb">📝 Redacción fluida de la sesión</label>' +
+        '<textarea id="sportsPegarTxt" style="min-height:170px;margin-top:6px" placeholder="PRESS DE BANCA CON BARRA\n4x6-8 | Tempo 3010 | RIR 2 | Rest 120s\n*Nota: Última serie en Drop-set al 20% al fallo.\n\nBISET · CUÁDRICEPS &amp; FEMORAL\n3 rondas | Rest 90s:\nA1. Prensa 45°: 3x10-12 | Tempo 2011\nA2. Curl femoral tumbado: 3x12-15 (pausa 1s en contracción)"></textarea>' +
+        '<button type="button" class="btn gold sm" style="margin-top:8px" data-parsesports="1">✨ Parsear y Generar Bloques</button>' +
+        '<div class="hint" style="margin-top:6px">Un ejercicio o biserie por párrafo (separados por línea en blanco). Biseries: encabezado con "Biset"/"Superset" y sub-líneas "A1."/"A2.". Técnicas: escribí [DROPSET], [REST-PAUSE], [MYO-REPS] o [AL FALLO], o mencionalas en la nota.</div>' +
+      '</div>';
+    }
   }
 
   if(!d.bloques.length){
     h += '<div class="card"><div class="empty"><div class="big">🏗️</div><h4>Día vacío</h4><p>' +
-      (cfActiva ? 'Agregá un bloque de pizarra con el botón de arriba.' : 'Agregá un bloque desde la barra inferior para construir la sesión.') +
+      (cfActiva ? 'Agregá un bloque de pizarra con el botón de arriba.' : 'Agregá un bloque desde la Pizarra Libre o la barra inferior para construir la sesión.') +
     '</p></div></div>';
   }
 
@@ -3699,7 +3865,10 @@ function renderDay(){
     if(!esBloqueCF){
       h += '<details class="cf-acc" style="margin-top:11px"><summary>📋 Pautas &amp; Estrategia del Coach</summary>' +
         '<div style="padding-top:8px">' +
-          '<div><label class="lb">Coach Note</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:60px">' + esc(b.tips||'') + '</textarea></div>' +
+          (b.tipo === 'block' || b.tipo === 'superset'
+            ? '<button type="button" class="btn sm gold" data-btipssports="' + b.id + '">✨ Sugerir Tips &amp; Pacing con IA</button>'
+            : '') +
+          '<div style="margin-top:10px"><label class="lb">Coach Note</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:60px">' + esc(b.tips||'') + '</textarea></div>' +
           (b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'list'
             ? '<div style="margin-top:10px"><label class="lb">Objetivo del bloque (recuadro 🎯)</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:52px">' + esc(b.objective||'') + '</textarea></div>'
             : '') +
@@ -3936,6 +4105,67 @@ async function generarTipsPacingIA(bid, btn){
     toast('Tips y pacing generados con IA ⚡');
   }catch(e){
     console.warn('generarTipsPacingIA', e);
+    toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
+  }finally{
+    if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
+  }
+}
+/* Equivalente de generarTipsPacingIA() de arriba pero para bloques de
+   Sports & Bodybuilding ('block'/'superset'): mismo esqueleto de
+   llamada a la IA (contextoBloqueIA/contextoAtletaDiaIA/generarTexto/
+   extractJson con fallback a texto plano), pero escribe en los campos
+   genéricos b.tips/b.objective (los que ya lee y guarda el acordeón
+   "📋 Pautas & Estrategia del Coach" de renderDay()) en vez de
+   b.cfCierre.*, que es exclusivo de CrossFit. */
+async function generarTipsSports(bid, btn){
+  const b = findBlock(bid); if(!b) return;
+  if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
+    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar tips automáticamente', 'err');
+    if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
+    return;
+  }
+  const ctx = contextoBloqueIA(b);
+  if(!ctx.items.length){ toast('Vinculá al menos un ejercicio antes de generar tips con IA', 'warn'); return; }
+  const ad = contextoAtletaDiaIA();
+  const lineas = ctx.items.slice(0, 8).map(it => '- ' + it.nombre +
+    (it.patron || it.grupo ? ' (' + [it.grupo, it.patron].filter(Boolean).join(' · ') + ')' : '')).join('\n');
+  const contextoLineas = [
+    ad.disciplina ? 'Mesociclo: ' + ad.disciplina : '',
+    ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
+    ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
+    ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el objetivo/tips NO deben contradecir esto.' : '',
+    b.tempo ? 'Tempo prescripto: ' + b.tempo : '',
+    b.metodologia ? 'Técnica avanzada asignada: ' + b.metodologia : ''
+  ].filter(Boolean).join('\n');
+  const sistema = 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. Dado un bloque de fuerza/hipertrofia, ' +
+    'escribís en español rioplatense, corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del bloque" (1 frase, ' +
+    'qué busca lograr fisiológicamente este ejercicio/biset -- ej. "Máxima tensión mecánica en el rango medio, sin perder tempo excéntrico") ' +
+    'y "coaching tips" (2-4 frases separadas por salto de línea, consejos técnicos de ejecución/postura/respiración puntuales por ejercicio, ' +
+    'citando el nombre real de los ejercicios listados). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre frases si hay más de una).';
+  const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
+    'Generá objetivo y coaching tips en JSON para este bloque.\nEjercicios incluidos:\n' + lineas;
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  try{
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 320 });
+    const raw = String(out || '').trim();
+    let j = null;
+    try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
+    let objetivo = j ? String(j.objetivo || '').trim() : '';
+    let tips = j ? String(j.tips || '').trim() : '';
+    if(!objetivo && !tips){
+      const partes = raw.split('\n').filter(Boolean);
+      objetivo = (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g,'').trim();
+      tips = partes.slice(1).join('\n').trim();
+    }
+    if(!objetivo && !tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
+    if(objetivo) b.objective = objetivo;
+    if(tips) b.tips = tips;
+    save(); renderBuilder();
+    toast('Tips y objetivo generados con IA ⚡');
+  }catch(e){
+    console.warn('generarTipsSports', e);
     toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
   }finally{
     if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
@@ -4461,6 +4691,21 @@ function bindBuilder(){
       toast('✅ ' + parsed.length + ' bloque(s) creado(s) desde el texto pegado');
       return;
     }
+    if(t.dataset.modosports){
+      d.modoSports = t.dataset.modosports === 'texto' ? 'texto' : 'clasico';
+      save(); renderBuilder();
+      return;
+    }
+    if(t.dataset.parsesports){
+      const ta = document.getElementById('sportsPegarTxt');
+      const nuevos = parsearPizarraLibreSports(ta ? ta.value : '');
+      if(!nuevos.length){ toast('No se detectó ningún ejercicio en el texto -- separá cada bloque con una línea en blanco', 'warn'); return; }
+      nuevos.forEach(function(b){ d.bloques.push(b); });
+      save(); renderBuilder();
+      toast('✨ ' + nuevos.length + ' bloque(s) generado(s) desde la Pizarra Libre');
+      return;
+    }
+    if(t.dataset.btipssports){ generarTipsSports(t.dataset.btipssports, t); return; }
     if(t.dataset.fmtins){
       const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.b + '"]');
       if(ta) insertarFormatoCF(ta, t.dataset.fmtins);
