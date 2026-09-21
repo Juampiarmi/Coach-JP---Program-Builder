@@ -7358,51 +7358,76 @@ function renderWeekActiveBadge(){
    (nota metodológica, RPE) se movió a #weekInfoModal -- se abre tocando el
    botón ℹ️ o el chip activo, nunca ocupa espacio en el flujo principal. */
 function renderWeekSelector(){
-  /* directiva ("rediseño header CrossFit"): la botonera de fases de
-     mesociclo de musculación (S1 Aclimatación/Carga Base, S2, S3, S4)
-     es ruido en CrossFit -- el atleta de CrossFit navega por DÍA
-     (week-tabs), no por fase de mesociclo; Bodybuilding/Sports sigue
-     exactamente igual, sin ningún cambio de comportamiento. */
+  /* FIX QUIRÚRGICO ("Habilitar selector de semanas en CrossFit") -- una
+     directiva anterior ("rediseño header CrossFit") ocultaba esta barra
+     por completo para CrossFit, razonando que el atleta navega por DÍA
+     (week-tabs) y no por fase de mesociclo -- pero eso dejaba SIN forma
+     de llegar a Semana 2/3/4 ya prescriptas por el coach (la
+     independencia de semanas de CrossFit, ver itemsDeSemana()/pizarra(),
+     necesita una forma de moverse entre semanas para tener sentido).
+     Ahora CrossFit vuelve a mostrar la barra, pero con una variante
+     propia compacta (.wpc-cf, ver CSS) -- sólo "S1/S2/S3/S4", SIN el
+     ícono+fase de mesociclo de Bodybuilding (esos conceptos son de
+     Sports, no aplican acá) -- reusando la MISMA lógica de click que
+     ya cambia state.currentWeek + renderMain(). Bodybuilding/Sports
+     sigue exactamente igual, cero cambios de comportamiento ahí. */
   const wrapMeso = weekSelectorEl.closest('.week-selector-wrap');
-  if(window.COACH_DISCIPLINA !== 'sports'){
-    weekSelectorEl.innerHTML = '';
-    if(wrapMeso) wrapMeso.style.display = 'none';
-    return;
+  const esCF = window.COACH_DISCIPLINA !== 'sports';
+  if(wrapMeso){
+    wrapMeso.style.display = '';
+    wrapMeso.classList.toggle('week-selector-wrap-cf', esCF);
   }
-  if(wrapMeso) wrapMeso.style.display = '';
-  /* DIRECTIVA UX/UI integral (13/09), parte 1: se retira el botón ℹ️
-     flotante -- el chip activo (.wpc-current) ya abre el mismo modal al
-     tocarlo (ver el addEventListener de abajo), así que el ícono aparte
-     era pura redundancia colgando junto a la pastilla. */
-  weekSelectorEl.innerHTML = WEEKS_META.map(function(w,i){
-    if(i === state.currentWeek){
-      return '<div class="week-pill active wpc-current" data-week="' + i + '" ' +
-          'title="Ver explicación de la semana" aria-label="Ver explicación de la semana">' +
-          '<span class="week-pill-name">' + w.icon + ' ' + w.short + '</span>' +
-          '<span class="week-pill-phase">' + w.phase + '</span>' +
+  if(esCF){
+    weekSelectorEl.innerHTML = (WEEKS_META || []).map(function(w, i){
+      const activa = i === state.currentWeek;
+      return '<div class="week-pill wpc-cf' + (activa ? ' active wpc-current' : ' wpc-mini') + '" data-week="' + i + '">' +
+          '<span class="week-pill-name">' + (w.short || ('S' + (i + 1))) + '</span>' +
         '</div>';
-    }
-    return '<div class="week-pill wpc-mini" data-week="' + i + '">' +
-      '<span class="week-pill-name">' + w.short + '</span>' +
-    '</div>';
-  }).join('');
+    }).join('');
+  } else {
+    /* DIRECTIVA UX/UI integral (13/09), parte 1: se retira el botón ℹ️
+       flotante -- el chip activo (.wpc-current) ya abre el mismo modal al
+       tocarlo (ver el addEventListener de abajo), así que el ícono aparte
+       era pura redundancia colgando junto a la pastilla. */
+    weekSelectorEl.innerHTML = WEEKS_META.map(function(w,i){
+      if(i === state.currentWeek){
+        return '<div class="week-pill active wpc-current" data-week="' + i + '" ' +
+            'title="Ver explicación de la semana" aria-label="Ver explicación de la semana">' +
+            '<span class="week-pill-name">' + w.icon + ' ' + w.short + '</span>' +
+            '<span class="week-pill-phase">' + w.phase + '</span>' +
+          '</div>';
+      }
+      return '<div class="week-pill wpc-mini" data-week="' + i + '">' +
+        '<span class="week-pill-name">' + w.short + '</span>' +
+      '</div>';
+    }).join('');
+  }
   weekSelectorEl.querySelectorAll('.week-pill').forEach(function(p){
     p.addEventListener('click', function(){
-      if(p.classList.contains('wpc-current')){ abrirWeekInfoModal(); return; }
+      if(p.classList.contains('wpc-current')){
+        /* el modal de detalle de fase (RPE/deload/nota metodológica) es
+           contenido de Bodybuilding -- en CrossFit el chip activo no
+           tiene nada que explicar aparte, así que tocarlo no hace nada. */
+        if(!esCF) abrirWeekInfoModal();
+        return;
+      }
       var destino = parseInt(p.dataset.week, 10);
-      /* aviso suave (no bloqueante): si salta a una semana posterior a la
-         que le corresponde y esa semana propia todavía no está cerrada,
-         se lo hacemos notar -- pero lo dejamos avanzar si quiere (puede
-         estar repasando el plan a propósito, no es un error nuestro que
-         cortarle el paso). */
-      try{
-        var correcta = semanaActivaCorrespondiente();
-        if(destino > correcta && window.CoachAviso && window.CoachAviso.mostrar){
-          window.CoachAviso.mostrar('fatiga', '⚠️', 'Semana adelantada',
-            'Todavía no cerraste del todo la Semana ' + (correcta + 1) + '. Podés seguir viendo la Semana ' +
-            (destino + 1) + ', pero lo que registres acá no se mezcla con esa -- cada semana guarda sus propios datos.', 7000);
-        }
-      }catch(e){}
+      /* aviso suave (no bloqueante, sólo Bodybuilding): si salta a una
+         semana posterior a la que le corresponde y esa semana propia
+         todavía no está cerrada, se lo hacemos notar -- pero lo dejamos
+         avanzar si quiere. En CrossFit las semanas son independientes a
+         propósito (directiva de independencia de semanas): no hay una
+         "semana correcta" que reforzar, así que este aviso no aplica. */
+      if(!esCF){
+        try{
+          var correcta = semanaActivaCorrespondiente();
+          if(destino > correcta && window.CoachAviso && window.CoachAviso.mostrar){
+            window.CoachAviso.mostrar('fatiga', '⚠️', 'Semana adelantada',
+              'Todavía no cerraste del todo la Semana ' + (correcta + 1) + '. Podés seguir viendo la Semana ' +
+              (destino + 1) + ', pero lo que registres acá no se mezcla con esa -- cada semana guarda sus propios datos.', 7000);
+          }
+        }catch(e){}
+      }
       state.currentWeek = destino;
       saveProgress();
       renderWeekSelector();
@@ -10958,6 +10983,29 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
   content:'';position:absolute;top:6px;right:7px;width:5px;height:5px;border-radius:50%;
   background:#D2793F;opacity:.75;
 }
+/* FIX QUIRÚRGICO ("Habilitar selector de semanas en CrossFit") --
+   variante compacta y oscura propia (.wpc-cf), separada de la pastilla
+   metálica naranja de Bodybuilding de arriba (que sigue intacta): barra
+   esbelta ~36px, sin ícono/fase de mesociclo, acento cian táctico en vez
+   del cobre de Sports. Escopeada a body.cf-disc para no tocar Sports. */
+body.cf-disc .week-selector-wrap.week-selector-wrap-cf{padding-top:6px;padding-bottom:6px}
+body.cf-disc .week-pill.wpc-cf{
+  border-radius:10px !important;border:1px solid rgba(0,229,255,.22) !important;
+  border-bottom:1px solid rgba(0,229,255,.22) !important;
+  background:rgba(0,229,255,.05) !important;box-shadow:none !important;
+  padding:0 14px !important;min-height:36px;min-width:0 !important;
+  display:flex !important;align-items:center !important;justify-content:center;cursor:pointer;
+}
+body.cf-disc .week-pill.wpc-cf .week-pill-name{
+  font-family:'JetBrains Mono',monospace !important;font-size:12px !important;font-weight:800 !important;
+  letter-spacing:.06em;color:rgba(255,255,255,.55) !important;text-shadow:none !important;opacity:1 !important;
+}
+body.cf-disc .week-pill.wpc-cf.active{
+  border-color:#00e5ff !important;background:rgba(0,229,255,.14) !important;
+  box-shadow:0 0 12px rgba(0,229,255,.25) !important;
+}
+body.cf-disc .week-pill.wpc-cf.active .week-pill-name{color:#00e5ff !important}
+body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 #weekInfoModal .guide-section{max-width:640px}
 #weekInfoModal #weekInfoModalText{font-size:.92rem;line-height:1.6;color:var(--text-secondary)}
 
