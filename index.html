@@ -3263,6 +3263,21 @@ function addBlockSportsPizarra(){
   d.bloques.push(b); save(); renderBuilder();
   toast('🧩 Bloque de pizarra agregado');
 }
+/* directiva ("Reset Total de Día"): purga total de un día acumulado con
+   bloques de prueba -- deja d.bloques en [] (la Pizarra queda en blanco,
+   lista para prescribir desde cero) y la duración estimada vuelve sola
+   a 0 min en el próximo repintar() (estimar() ya suma sobre d.bloques
+   vacío = 0, sin nada extra que recalcular acá). Mismo respaldo de
+   deshacer (Ctrl+Z) que ya usa clonarSemanaAnteriorCF() para una acción
+   igual de destructiva. */
+function vaciarDiaCompleto(){
+  const d = curDay(); if(!d || !d.bloques.length) return;
+  if(!confirm('¿Seguro que querés vaciar todos los bloques de este día?')) return;
+  if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Vaciar ' + d.short);
+  d.bloques = [];
+  save(); renderBuilder();
+  toast('🗑️ Día vaciado — Pizarra Táctica en blanco', 'warn');
+}
 /* Escaneo reactivo de "Ejercicios Detectados" para la Pizarra Sports:
    mismo criterio que chips()/candidatos() ya usa CrossFit (MÓDULO 43,
    más abajo en el archivo) para reconocer nombres de ejercicio dentro
@@ -3573,6 +3588,16 @@ function renderDay(){
        de redacción libre + detección reactiva de ejercicios que ya usa
        CrossFit (ver más abajo, rama esBloqueSportsPizarra). */
     h += '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-bottom:14px" data-addsportsblock="1">➕ AGREGAR BLOQUE DE PIZARRA</button>';
+    /* directiva ("Reset Total de Día"): botón dedicado y propio de Sports
+       -- NO reutiliza #btnClearDay/.tools (esos quedan ocultos siempre,
+       ver arriba, y tocar su lógica de visibilidad arriesgaría CrossFit,
+       que también los oculta hoy). Vaciar bloques ya alcanza para "0 min"
+       (pintarDuracion()/estimar() recalculan solos de d.bloques en el
+       próximo repintar(), sin nada extra que llamar acá) y para "Pizarra
+       en blanco" (sin bloques no hay nada que mostrar). */
+    if(d.bloques.length){
+      h += '<button type="button" class="btn ghost sm" style="width:100%;margin-bottom:14px;border-color:rgba(255,107,87,.4);color:#FF6B57" data-vaciardia="1">🗑️ VACIAR DÍA COMPLETO</button>';
+    }
   }
 
   if(!d.bloques.length){
@@ -4725,6 +4750,7 @@ function bindBuilder(){
     }
     if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
     if(t.dataset.btipssports){ generarTipsSports(t.dataset.btipssports, t); return; }
+    if(t.dataset.vaciardia){ vaciarDiaCompleto(); return; }
     if(t.dataset.fmtins){
       const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.b + '"]');
       if(ta) insertarFormatoCF(ta, t.dataset.fmtins);
@@ -11209,15 +11235,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
    JP SYSTEM · STEALTH ATHLETIC — app del alumno
 ========================================================= */
 :root{
-  --bg-canvas:#08090B;
-  --card-bg:rgba(18,22,31,.75);
-  --card-border:rgba(255,255,255,.08);
+  /* directiva ("Reskin Estético CrossFit"): carbón táctico + borde de
+     tarjeta cian translúcido, mismo criterio visual que ya usa la app
+     del alumno de CrossFit (nunca se toca body.cf-disc). --accent-cyan
+     y --accent-crimson estaban puestas a un celeste apagado idéntico
+     pese a que su propio comentario decía "Cyan Neón" y "Ámbar de
+     alerta" -- ahora sí son lo que dicen ser. */
+  --bg-canvas:#0b0e14;
+  --card-bg:rgba(22,27,34,.85);
+  --card-border:rgba(0,229,255,.2);
   --accent-volt:#D2793F;          /* Oro Cálido / Champán */
   --accent-gold:#D2793F;
   --accent-bone:#EDEFF2;          /* Blanco Hueso */
   --accent-titanium:#828A97;      /* Titanio Mate */
-  --accent-cyan:#7CC5E8;          /* Cyan Neón táctico */
-  --accent-crimson:#7CC5E8;       /* Ámbar de alerta (sin rosas) */
+  --accent-cyan:#00e5ff;          /* Cyan Neón táctico */
+  --accent-crimson:#f59e0b;       /* Ámbar de alerta */
   --font-head:'Chakra Petch','Barlow Condensed',sans-serif;
   --font-mono:'JetBrains Mono','SFMono-Regular',ui-monospace,monospace;
   --ease:cubic-bezier(.4,0,.2,1);
@@ -11568,7 +11600,7 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
 .jp-badge .dot{width:3px;height:3px;border-radius:50%;background:var(--text-secondary);opacity:.7}
 .jp-badge-wrap{display:flex;justify-content:center;padding:12px 1rem 0;position:relative;z-index:2}
 /* --- PR --- */
-.pr-badge{background:linear-gradient(135deg,#D2793F,#7CC5E8) !important;color:#0A0F13 !important}
+.pr-badge{background:linear-gradient(135deg,#ff9100,#f59e0b) !important;color:#0A0F13 !important}
 .set-row.is-pr{border-color:rgba(210,121,63,.65) !important;background:rgba(210,121,63,.14) !important}
 .block.has-pr{box-shadow:0 0 0 1px rgba(210,121,63,.45),0 0 30px rgba(210,121,63,.16) !important}
 /* --- resumen --- */
@@ -11792,12 +11824,12 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 .week-pill:active{transform:scale(.97)}
 .week-pill:hover{border-color:rgba(210,121,63,.35) !important}
 .week-pill.active{
-  border-bottom:3px solid #D2793F !important;
-  background:linear-gradient(180deg,rgba(210,121,63,.14),rgba(210,121,63,.03)) !important;
+  border-bottom:3px solid #00e5ff !important;
+  background:linear-gradient(180deg,rgba(0,229,255,.14),rgba(0,229,255,.03)) !important;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1px 0 rgba(0,0,0,.5),
-             0 6px 20px rgba(210,121,63,.16) !important;
+             0 6px 20px rgba(0,229,255,.16) !important;
 }
-.week-pill.active .week-pill-name{color:#D2793F !important;text-shadow:0 0 12px rgba(210,121,63,.4)}
+.week-pill.active .week-pill-name{color:#00e5ff !important;text-shadow:0 0 12px rgba(0,229,255,.4)}
 .week-pill-name{font-size:1rem !important}
 /* directiva crítica (2026-09) -- barra compacta "workout-first": el chip
    activo (.wpc-current) conserva nombre+fase; el resto de las semanas
@@ -11872,13 +11904,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.18);
   margin-top:5px;transition:all .2s var(--ease);
 }
-.day-tab.active{background:rgba(210,121,63,.07)}
+.day-tab.active{background:rgba(0,229,255,.07)}
 .day-tab.active::after{
   content:'';position:absolute;left:14%;right:14%;bottom:0;height:3px;border-radius:3px 3px 0 0;
-  background:#D2793F;box-shadow:0 0 14px rgba(210,121,63,.6);
+  background:#00e5ff;box-shadow:0 0 14px rgba(0,229,255,.6);
 }
-.day-tab.active .tab-name{color:#D2793F !important}
-.day-tab.active .day-dot{background:#D2793F !important;box-shadow:0 0 8px rgba(210,121,63,.7) !important}
+.day-tab.active .tab-name{color:#00e5ff !important}
+.day-tab.active .day-dot{background:#00e5ff !important;box-shadow:0 0 8px rgba(0,229,255,.7) !important}
 .day-tab.completed-day .day-dot{background:#7CC5E8 !important;box-shadow:0 0 8px rgba(124,197,232,.55) !important}
 
 /* ---------- sticky bar ---------- */
@@ -22787,8 +22819,10 @@ body{font-size:var(--fz-body) !important}
    HIELO = tiempo (cronómetros, intervalos, WODs, lo que corre)
 ========================================================= */
 :root{
-  /* superficies */
-  --jp-bg:#08090B;
+  /* superficies -- directiva ("Reskin Estético CrossFit"): carbón táctico
+     más oscuro, mismo criterio de fondo que ya usa la app del alumno de
+     CrossFit (nunca se toca body.cf-disc, esto es la versión Sports). */
+  --jp-bg:#0b0e14;
   --jp-card:#111519;
   --jp-card-2:#191E25;
   --jp-ink:#07080A;
@@ -22797,20 +22831,24 @@ body{font-size:var(--fz-body) !important}
   --jp-board-line:#2E3944;
   --jp-shadow:0 8px 24px rgba(0,0,0,.55);
 
-  /* acentos con significado */
+  /* acentos con significado -- COBRE (carga) se conserva tal cual (no es
+     parte de este reskin, sigue significando "esto es peso/series");
+     HIELO (tiempo/estructura) pasa de un celeste apagado a cian
+     eléctrico, que es exactamente el rol que la directiva pide para
+     "bloques activos, foco técnico y brackets de biseries". */
   --jp-brand:#D2793F;        /* cobre · carga */
   --jp-brand-hi:#E8965E;
   --jp-brand-deep:#8A4A1E;
-  --jp-ice:#7CC5E8;          /* hielo · tiempo */
-  --jp-ice-hi:#B7DEF2;
-  --jp-ice-deep:#2E5A72;
-  --jp-data:#7CC5E8;
-  --jp-heat:#7CC5E8;
-  --jp-gold:#D2793F;
+  --jp-ice:#00e5ff;          /* hielo · tiempo/estructura -- cian eléctrico */
+  --jp-ice-hi:#7DF0FF;
+  --jp-ice-deep:#0891B2;
+  --jp-data:#00e5ff;
+  --jp-heat:#00e5ff;
+  --jp-gold:#ff9100;         /* ámbar fuego -- PRs y advertencias */
 
   /* estados */
   --jp-work:#48D597;
-  --jp-warn:#EFB44A;
+  --jp-warn:#f59e0b;
   --jp-ok:#48D597;
 
   /* texto */
