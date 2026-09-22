@@ -8787,7 +8787,22 @@ function renderMain(){
   /* directiva de emergencia (rediseño F): la tarjeta de nutrición de la
      sesión se retira del flujo del día -- la nutrición se va a desarrollar
      en una app aparte. nutriCard() queda intacta y sin usar. */
-  if(day.summary){ html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + day.summary + '</p></div>'; }
+  /* directiva ("Refactor visual: tabla táctica de series y limpieza
+     definitiva en Sports") -- day.summary es un campo de texto libre que
+     el coach puede tipear a mano (ver Builder, data-df="summary"), pero
+     en la práctica quedaba con texto viejo arrastrado de una plantilla
+     clásica aplicada antes de este refactor ("2 Anclas Pesadas + 2
+     Bisets + Finisher · 5 bloques"), mostrado tal cual aunque el día ya
+     fuera 100% Pizarra. En Sports se reemplaza por un conteo real y
+     dinámico de bloques completados (isBlockDone ya es la misma fuente
+     de verdad que usa el check "Marcar Día Completo"); CrossFit no se
+     toca, sigue mostrando day.summary tal cual siempre lo hizo. */
+  if(window.COACH_DISCIPLINA === 'sports'){
+    if(blocks.length){
+      const doneCount = blocks.filter(function(b){ return isBlockDone(weekIdx, day.id, b.id); }).length;
+      html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + doneCount + ' / ' + blocks.length + ' bloques completados</p></div>';
+    }
+  } else if(day.summary){ html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + day.summary + '</p></div>'; }
   if((day.cooldown||[]).length){
     /* las fases numeradas del generador se leen como subtítulo, no como una viñeta más */
     html += '<div class="info-card cooldown-card"><div class="info-card-title">Cool-Down y Recuperación</div><ul>' +
@@ -10790,6 +10805,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     body.insertAdjacentHTML('afterbegin', html);
     body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
       if(!el.closest('[data-sportsboard]')) el.style.display = 'none';
+    });
+    /* directiva ("Refactor visual: tabla táctica de series"): el colapso a
+       chip compacto ("SET 2 -") de .set-tracker sólo está pensado para una
+       lista larga en una lista vieja -- en la Pizarra se ve como "cajas
+       rotas". Se reutiliza .set-row-expanded (la MISMA clase que ya usan
+       las rondas de biset para mostrarse siempre completas, ver
+       unificar()/.bs-r más abajo) en TODAS las filas del tablero: ningún
+       CSS nuevo de colapso/expansión, sólo se fuerza el estado que el
+       sistema ya sabía dibujar. El listener de "tildar serie" (más abajo
+       en este archivo) sólo toca/remueve .set-row-active, nunca esta
+       clase, así que queda estable incluso después de tildar. */
+    body.querySelectorAll('[data-sportsboard] .set-row').forEach(function(r){
+      r.classList.add('set-row-expanded');
     });
   }
 
@@ -27237,6 +27265,34 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
   background:rgba(56,189,248,.12); color:var(--cyan); border:1px solid rgba(56,189,248,.35);
 }
 .jp-sb-plain-nombre{ font-size:.9rem; color:#EDEFF2; letter-spacing:.01em; }
+/* directiva ("Refactor visual: tabla táctica de series"): recolorea SÓLO
+   dentro del tablero de Pizarra Sports la fila "expandida" (ver
+   set-row-expanded forzada en pizarraSports()) de fondo cobre/ámbar
+   genérico a carbón + borde cian táctico -- .jp-sb-board es el único
+   selector de entrada, así que un bloque clásico de Sports fuera de la
+   Pizarra (o cualquier cosa en CrossFit, que ni siquiera genera esta
+   clase) no se ve afectado. */
+.jp-sb-board .set-tracker .set-row.set-row-active,
+.jp-sb-board .set-tracker .set-row.set-row-expanded{
+  background:#161b22 !important;
+  border-color:rgba(0,229,255,.35) !important;
+  border-radius:10px !important;
+  display:flex !important; flex-direction:row !important; align-items:center !important;
+  flex-wrap:nowrap !important; gap:8px !important; padding:8px 10px !important;
+}
+.jp-sb-board .set-tracker .set-row.set-row-active .set-row-toggle,
+.jp-sb-board .set-tracker .set-row.set-row-expanded .set-row-toggle{
+  width:auto !important; flex:0 0 auto !important; padding:0 !important;
+}
+.jp-sb-board .set-tracker .set-row.set-row-active .set-load,
+.jp-sb-board .set-tracker .set-row.set-row-expanded .set-load{
+  width:auto !important; flex:1 1 auto !important; min-width:0 !important; gap:6px !important;
+}
+.jp-sb-board .set-tracker .set-row .set-kg,
+.jp-sb-board .set-tracker .set-row .set-reps{
+  font-size:1rem !important; padding:5px 2px !important;
+}
+.jp-sb-board .set-check{ accent-color:#00e5ff !important; }
 </style>
 
 </body>
@@ -48195,6 +48251,19 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     });
     /* el warm-up de CrossFit lo maneja la pizarra: la tarjeta se oculta */
     wu.style.display = esCF() ? 'none' : '';
+    /* directiva ("Refactor visual: tabla táctica de series y limpieza
+       definitiva en Sports") -- mismo criterio ya aplicado al panel de
+       Finisher (ver esCrossFit()/sinFinisherAplicado más arriba en el
+       archivo): el Cool-Down quedaba SIEMPRE visible al fondo de cada día
+       en Sports, incluso uno recién armado 100% con Bloques de Pizarra
+       que nunca generó cooldown, viéndose "huérfano". Se oculta cuando
+       el día no tiene cooldown real cargado (d.cooldown vacío); si el
+       coach ya generó uno antes, sigue viéndose y editándose igual que
+       siempre. Nunca toca el comportamiento existente para CrossFit
+       (esCF() ya decidido arriba, nunca se le agrega 'none' acá). */
+    const sinCooldownReal = !esCF() && !((d.cooldown || []).length);
+    if(!esCF() && sinCooldownReal) cd.style.display = 'none';
+    else if(!esCF()) cd.style.display = '';
 
     const clave = a.id + '|' + d.id;
     if(wu.dataset.k !== clave){
