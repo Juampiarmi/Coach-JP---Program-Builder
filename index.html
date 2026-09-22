@@ -8277,7 +8277,16 @@ function alertsHtml(block){
   }).join('');
 }
 function objectiveHtml(block){
-  if(!block.objective) return '';
+  /* directiva ("Unificación de tips/videos") -- cuarta fuente de la
+     misma duplicación, esta vez ESTÁTICA (horneada en el HTML de
+     compile(), antes de que pizarraSports() corra en el navegador): la
+     rama genérica de renderBlockInner() ya llamaba a esto para
+     CUALQUIER bloque 'list' no-CF, pizarra incluida -- el mismo
+     block.objective terminaba mostrándose acá Y en el acordeón único
+     de la Pizarra. mapearBloques() marca block.sportsPizarra en el
+     JSON compilado (ver buildProgramConfig), así que alcanza con cortar
+     acá, un solo punto, para los 3 call-sites de esta función. */
+  if(!block.objective || block.sportsPizarra) return '';
   const meta = CATEGORY_META[block.category] || CATEGORY_META.strength;
   return '<div class="block-insights ' + meta.insightsCls + '"><div class="insights-header">🎯 Objetivo del bloque</div><div class="insights-body"><div class="insight-item"><span class="insight-icon">✦</span><div class="insight-content"><div class="insight-text">' + block.objective + '</div></div></div></div></div>';
 }
@@ -8368,7 +8377,13 @@ function renderBlockInner(block, day, weekIdx){
     } else {
       itemsSemana.forEach(function(item){ html += renderLine(item); });
     }
-    if(block.tips){ html += '<div class="coach-note"><strong>Coach Note</strong>' + block.tips + '</div>'; }
+    /* directiva ("Unificación de tips/videos") -- quinta fuente de la
+       misma duplicación (Coach Note = block.tips, esta vez): el
+       acordeón único de la Pizarra (.jp-sb-board) ya muestra
+       block.tips una sola vez, así que este "Coach Note" estático se
+       corta para cualquier bloque marcado sportsPizarra (ver comentario
+       gemelo en objectiveHtml(), arriba en este mismo archivo). */
+    if(block.tips && !block.sportsPizarra){ html += '<div class="coach-note"><strong>Coach Note</strong>' + block.tips + '</div>'; }
     html += alertsHtml(block);
     html += objectiveHtml(block);
     if(block.cardioMinutes){
@@ -10747,6 +10762,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       .replace(/[|.:,\\-–]/g, '').trim();
     return resto.length < 4;
   }
+  /* directiva ("Parser avanzado de metodologías de hipertrofia") -- un
+     título de fase ("ANCLA DE FUERZA", "VOLUMEN EFECTIVO", "DROP OFF",
+     "PUMP FINAL") es imposible de cubrir con una lista cerrada de
+     palabras (cada coach redacta distinto), así que se detecta por
+     FORMA, no por contenido: una línea corta, sin ningún dígito y
+     escrita TODO EN MAYÚSCULAS es, en la convención real de escritura
+     de un coach, casi siempre un separador táctico, nunca el nombre de
+     un ejercicio real (esos se escriben en minúscula/Title Case). */
+  function esFaseTacticaSB(linea){
+    var t = String(linea || '').trim();
+    if(!t || t.length > 40) return false;
+    if(/\\d/.test(t)) return false;
+    if(esLineaDirectiva(t)) return false;
+    var soloLetras = t.replace(/[^A-Za-zÀ-ÿ]/g, '');
+    if(!soloLetras) return false;
+    return t === t.toUpperCase() && t !== t.toLowerCase();
+  }
   var RX_SUBEJ_SB = /^A(\\d+)[.)]\\s*(.+?):\\s*(.+)$/i;
   var RX_BISET_HEAD_SB = /\\b(biset|superset|triset|circuito)\\b/i;
   var RX_RONDAS_SB = /(\\d+)\\s*rondas?/i;
@@ -10775,6 +10807,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(actual && actual.tipo === 'biserie' && !actual.subs.length && (RX_RONDAS_SB.test(linea) || RX_REST_SB.test(linea))){
         var rM = linea.match(RX_RONDAS_SB); if(rM) actual.rondas = parseInt(rM[1], 10);
         var restM = linea.match(RX_REST_SB); if(restM) actual.restSeconds = parseInt(restM[1], 10);
+        return;
+      }
+      /* directiva ("Parser avanzado de metodologías") -- separador
+         táctico de fase: nunca se vuelve "actual" (la próxima línea real
+         sigue arrancando su propio ejercicio nuevo con normalidad, sin
+         que un título de fase se interponga). */
+      if(esFaseTacticaSB(linea)){
+        entries.push({ tipo:'fase', titulo: linea });
         return;
       }
       var dosis = parsearDosisSB(linea);
@@ -10831,9 +10871,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(/^cal(?:or[ií]as?)?\\b/i.test(t)) return 'cal';
     return 'reps';
   }
-  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior){
+  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo){
     unidadSec = unidadSec || 'reps';
     var numSetsInt = parseInt(numSets, 10) || 1;
+    /* directiva ("Parser avanzado de metodologías") -- [DROPSET]/[MYO-
+       REPS]/[REST-PAUSE]/[AL FALLO]/[PARCIALES] son técnicas que
+       normalmente se aplican a la ÚLTIMA serie ("última serie al 20% al
+       fallo"), nunca al ejercicio completo -- antes el badge vivía una
+       sola vez en la cabecera del ejercicio, sin indicar a cuál serie
+       correspondía. Sin un número de serie explícito en el texto del
+       coach, se asume la última (el caso real de uso casi siempre). */
+    var setTecnica = (tecnicaInfo && tecnicaInfo.tecnica) ? tecnicaInfo : null;
+    var setTecnicaIdx = setTecnica ? (setTecnica.setIndex || numSetsInt) : 0;
     var html = '<div class="jp-set-tracker-native">';
     for(var i = 1; i <= numSetsInt; i++){
       var key = getLoadKey(weekIdx, dayId, blockId, exIdx, i);
@@ -10855,9 +10904,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var secVal = ld.reps != null ? ld.reps : '';
       var kgPlaceholder = (kgVal === '' && prevKg != null) ? String(prevKg) : '0';
       var doneCls = ld.done ? ' completed' : '';
+      var badgeHtml = '';
+      if(setTecnica && i === setTecnicaIdx && TECNICAS_BADGE_SB[setTecnica.tecnica]){
+        badgeHtml = '<span class="jp-sb-set-badge jp-sb-badge-' + setTecnica.tecnica + '">' + TECNICAS_BADGE_SB[setTecnica.tecnica] + '</span>';
+      }
       html += '<div class="jp-set-row-native' + doneCls + '" data-set-key="' + key + '">' +
           '<span class="jp-set-pill">SET ' + i + '</span>' +
-          refHtml +
+          refHtml + badgeHtml +
           '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
           '<span class="jp-unit">kg</span>' +
           '<span class="jp-sep">\\u00d7</span>' +
@@ -10868,6 +10921,36 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     html += '</div>';
     return html;
+  }
+  /* directiva ("Unificación de tips/videos") -- recolecta los videos
+     ÚNICOS de todo el bloque (ejercicios simples + subs de biset) para
+     el listado "🎬 VIDEOS TÉCNICOS DEL BLOQUE" del acordeón único --
+     reusa buscarVideo() (mismo matching que ya usa videoLinkHtml() en
+     cada fila individual, cero lógica nueva de resolución). */
+  function recolectarVideosSB(entries){
+    var vistos = {}, out = [];
+    entries.forEach(function(entry){
+      if(entry.tipo === 'simple' && entry.sets){
+        var nm = jpCfSplit(entry.titulo).nm || entry.titulo;
+        var yt = buscarVideo(nm);
+        if(yt && !vistos[yt]){ vistos[yt] = 1; out.push({ nombre: nm, ytid: yt }); }
+      } else if(entry.tipo === 'biserie'){
+        (entry.subs || []).forEach(function(sub){
+          var yt = buscarVideo(sub.nombre);
+          if(yt && !vistos[yt]){ vistos[yt] = 1; out.push({ nombre: sub.nombre, ytid: yt }); }
+        });
+      }
+    });
+    return out;
+  }
+  function chipsVideoSB(lista){
+    if(!lista.length) return '';
+    return '<div class="jp-sb-vid-title">🎬 Videos t\\u00e9cnicos del bloque</div>' +
+      '<div class="jp-sb-vid-chips">' + lista.map(function(v){
+        return '<button type="button" class="jp-sb-vid-chip has-thumb" style="background-image:url(https://img.youtube.com/vi/' + v.ytid + '/mqdefault.jpg)" data-yt="' + v.ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(v.nombre).replace(/"/g,'') + '">' +
+          '<span class="jp-sb-vid-chip-label">' + escSB(v.nombre) + '</span>' +
+        '</button>';
+      }).join('') + '</div>';
   }
   function pizarraSports(blockEl, block, weekIdx, dayId){
     if(esBloqueVacioCF(block)) return;
@@ -10884,6 +10967,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(!entries.length) return;
     let filas = '';
     entries.forEach(function(entry, idx){
+      if(entry.tipo === 'fase'){
+        filas += '<div class="jp-sb-fase">' + escSB(entry.titulo) + '</div>';
+        return;
+      }
       if(entry.tipo === 'biserie' && entry.subs.length){
         const subsHtml = entry.subs.map(function(sub, si){
           const exIdx = 'b' + idx + 's' + si;
@@ -10892,9 +10979,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
                 '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + videoLinkHtml(sub.nombre) + '</div>' +
               (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
-              (sub.tecnica && TECNICAS_BADGE_SB[sub.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + sub.tecnica + '">' + TECNICAS_BADGE_SB[sub.tecnica] + '</span>' : '') +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
-              renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true) +
+              renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica } : null) +
             '</div>';
         }).join('');
         filas += '<div class="jp-sb-biset">' +
@@ -10928,32 +11014,34 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       filas += '<div class="jp-sb-ex">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
           (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
-          (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
-          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true) +
+          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica } : null) +
         '</div>';
     });
     if(!filas) return;
-    /* directiva ("Refactor urgente: acordeón compacto de tips") -- el
-       objetivo fisiológico y los coaching tips se mostraban SIEMPRE
-       visibles, sin colapsar -- el "drawer" genérico que ya junta RIR/
-       Criterio/Notas (MÓDULO "Rediseño F", más abajo en el archivo) sólo
-       barre HIJOS DIRECTOS de .block-body, y .jp-sb-objective/.jp-sb-tips
-       viven un nivel más adentro (dentro de .jp-sb-board), así que ese
-       barrido nunca los alcanzaba -- quedaban como el único texto largo
-       sin colapsar de todo el bloque, inflando el scroll. Mismo patrón
-       <details class="cf-acc"> que ya usa CrossFit para su "Objetivo del
-       estímulo & Coaching Tips" (y el Builder para "Pautas & Estrategia"
-       de Sports clásico) -- colapsado por defecto. */
+    /* directiva ("Unificación de tips/videos"): UN SOLO acordeón por
+       bloque -- absorbe lo que antes se veía triplicado (este mismo
+       acordeón + "Criterio del Coach" + "Pautas Técnicas, Tips y
+       Objetivo", ver pintarCriterios()/metodologia() más abajo en el
+       archivo, ambos ahora se retiran para cualquier bloque con
+       .jp-sb-board) y suma un listado de chips de video únicos del
+       bloque completo (ejercicios simples + sub-ejercicios de biset),
+       reusando videoLinkHtml()/buscarVideo() -- mismos datos que ya
+       resuelve cada fila, sin duplicar lógica de matching. */
+    const videosBloque = recolectarVideosSB(entries);
     const tieneObjTips = block.objective || block.tips;
+    const tieneAcc = tieneObjTips || videosBloque.length;
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
         '<div class="jp-sb-tag">[ SPORTS &middot; 💪 BLOQUE ]</div>' +
         '<div class="jp-sb-title">' + escSB(block.title || '') + '</div>' +
         filas +
-        (tieneObjTips ?
-          '<details class="cf-acc jp-sb-acc"><summary>▾ Objetivo Fisiológico &amp; Coaching Tips</summary>' +
-            (block.objective ? '<div class="jp-sb-objective">🎯 ' + block.objective + '</div>' : '') +
-            (block.tips ? '<div class="jp-sb-tips">💡 ' + block.tips + '</div>' : '') +
+        (tieneAcc ?
+          '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS &amp; OBJETIVO DEL BLOQUE</summary>' +
+            '<div class="jp-details-content">' +
+              (block.objective ? '<div class="jp-sb-objective">🎯 ' + block.objective + '</div>' : '') +
+              (block.tips ? '<div class="jp-sb-tips">💡 ' + block.tips + '</div>' : '') +
+              chipsVideoSB(videosBloque) +
+            '</div>' +
           '</details>' : '') +
       '</div>';
     body.insertAdjacentHTML('afterbegin', html);
@@ -22011,6 +22099,16 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
       if(document.body.classList.contains('cf-modo')) return;
       var cuerpo = bl.querySelector('.block-body');
       if(!cuerpo) return;
+      /* directiva ("Unificación de tips/videos"): tercera fuente de la
+         misma duplicación -- este acordeón ("Pautas Técnicas, Tips y
+         Objetivo") lee los MISMOS b.objective/b.tips que ya muestra el
+         acordeón propio de la Pizarra (.jp-sb-board), ver comentario
+         gemelo en pintarCriterios() más arriba en el archivo. */
+      if(cuerpo.querySelector('.jp-sb-board')){
+        var viejaMeto = cuerpo.querySelector('.block-methodology-accordion');
+        if(viejaMeto) viejaMeto.remove();
+        return;
+      }
       var b = bloqueDe(bl.dataset.blockId) || {};
 
       /* --- objetivo --- */
@@ -25057,6 +25155,15 @@ input[type="checkbox"]:active{
     var bloques = document.querySelectorAll('.block[data-block-id]');
     for(var i = 0; i < bloques.length; i++){
       var bl = bloques[i];
+      /* directiva ("Unificación de tips/videos"): un Bloque de Pizarra
+         Sports ya tiene su PROPIO acordeón único (.jp-block-details,
+         ver pizarraSports()) con los MISMOS campos objective/tips que
+         lee criterios() acá abajo -- sin este corte, el alumno veía el
+         objetivo y los tips repetidos DOS veces (acá + en el acordeón
+         de la pizarra). Un bloque CLÁSICO de Sports (fuera de la
+         Pizarra) no tiene ese acordeón propio, así que sigue mostrando
+         "Criterio del Coach" exactamente igual que siempre. */
+      if(bl.querySelector('.jp-sb-board')) continue;
       /* el criterio se inyecta dentro de .block-body, así que hay que buscarlo
          en todo el bloque, no solo entre los hijos directos. Si quedaron
          copias de un repintado anterior, dejo solo la primera. */
@@ -27619,6 +27726,67 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
   cursor:pointer; padding:0;
 }
 .jp-btn-check-native.completed{ background:#00e5ff; color:#000000; border-color:#00e5ff; }
+/* directiva ("Refactoring definitivo: unificación de tips/videos, parser
+   de metodologías y pulido visual premium") */
+/* 1 · separador táctico de fase ("ANCLA DE FUERZA", "VOLUMEN EFECTIVO"...) */
+.jp-sb-fase{
+  margin:14px 0 6px; padding-top:10px; border-top:1px dashed rgba(0,229,255,.25);
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.72rem; letter-spacing:.08em; color:rgba(0,229,255,.75); text-transform:uppercase;
+}
+.jp-sb-fase:first-child{ margin-top:0; border-top:none; padding-top:0; }
+/* 2 · badge de técnica de intensidad, junto al SET puntual (no más en la
+   cabecera del ejercicio) -- naranja táctico, per directiva de paleta. */
+.jp-sb-set-badge{
+  flex:0 0 auto; white-space:nowrap; font-family:'Chakra Petch','Barlow Condensed',sans-serif;
+  font-weight:800; font-size:.6rem; letter-spacing:.04em; text-transform:uppercase;
+  padding:2px 6px; border-radius:5px;
+  background:rgba(249,115,22,.14); color:#f97316; border:1px solid rgba(249,115,22,.4);
+}
+/* 3 · acordeón ÚNICO por bloque (jp-block-details), naranja táctico en
+   el disparador -- mismo esqueleto visual que .cf-acc, namespaced para
+   no heredar nada de CrossFit. */
+.jp-block-details{ margin-top:12px; padding-top:10px; border-top:1px dashed var(--line); }
+.jp-summary-btn{
+  cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:#f97316;
+}
+.jp-summary-btn::-webkit-details-marker{ display:none; }
+.jp-block-details[open] .jp-summary-btn{ margin-bottom:8px; }
+.jp-details-content{ display:flex; flex-direction:column; gap:8px; }
+/* 4 · chips de video del bloque, dentro del acordeón único */
+.jp-sb-vid-title{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.68rem; letter-spacing:.04em; color:rgba(237,239,242,.6); text-transform:uppercase;
+  margin-top:4px;
+}
+.jp-sb-vid-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+.jp-sb-vid-chip{
+  position:relative; width:64px; height:40px; border-radius:6px; overflow:hidden;
+  background-size:cover; background-position:center; border:1px solid rgba(0,229,255,.3);
+  cursor:pointer; padding:0;
+}
+.jp-sb-vid-chip::after{
+  content:'\\25b6'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.35); color:#fff; font-size:.7rem;
+}
+.jp-sb-vid-chip-label{
+  position:absolute; left:0; right:0; bottom:0; padding:2px 4px;
+  background:rgba(0,0,0,.65); color:#fff; font-size:.5rem; line-height:1.2;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* 5 · paleta ámbar/oro para acentos de PR y ancla, sutil -- reservado para
+   .jp-sb-anchor si algún bloque llega a marcarse como ancla principal. */
+.jp-sb-anchor-badge{
+  display:inline-block; margin-left:6px; padding:2px 7px; border-radius:5px;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.6rem; letter-spacing:.04em; text-transform:uppercase;
+  background:rgba(245,158,11,.14); color:#f59e0b; border:1px solid rgba(245,158,11,.4);
+}
+.jp-set-row-native.pr{ border-color:#f59e0b !important; box-shadow:0 0 0 1px rgba(245,158,11,.25); }
+/* biset/superset: título en naranja táctico, per directiva de paleta */
+.jp-sb-biset-title{ color:#f97316 !important; }
 </style>
 
 </body>
