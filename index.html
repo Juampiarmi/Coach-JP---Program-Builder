@@ -3214,11 +3214,16 @@ function resolverExSports(nombreCrudo){
 /* extrae {sets, reps, tempo, rir, restSeconds} de una línea de dosis
    tipo "4x6-8 | Tempo 3010 | RIR 2 | Rest 120s" -- cada segmento es
    opcional y el orden no importa. */
+/* directiva ("Fix crítico: parser flexible") -- misma regex tolerante que
+   parsearDosisSB() del lado del alumno (ver comentario ahí): admite
+   "4 sets x 10-12 reps"/"3 series de 12"/"4 rondas x 8", no sólo
+   "4x6-8" pegado. */
+const RX_DOSIS_SPORTS = /(\d+)\s*(?:x|×|sets?\s*(?:x|de)?|series?\s*(?:x|de)?|rondas?\s*(?:x|de)?)\s*(\d+(?:\s*-\s*\d+)?)/i;
 function parsearDosisSports(linea){
   const t = String(linea || '');
   const out = {};
   let m;
-  if((m = t.match(/(\d+)\s*[x×]\s*(\d+(?:\s*-\s*\d+)?)/i))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\s+/g, ''); }
+  if((m = t.match(RX_DOSIS_SPORTS))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\s+/g, ''); }
   if((m = t.match(/tempo\s*(\d{3,4})/i))) out.tempo = m[1];
   if((m = t.match(/rir\s*(\d+)/i))) out.rir = m[1];
   if((m = t.match(/rest\s*(\d+)\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
@@ -3346,7 +3351,7 @@ function detectarEjerciciosSports(texto){
   lineas.forEach(function(linea){
     const dosis = parsearDosisSports(linea);
     const soloEsDosis = (dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir) &&
-      linea.replace(/[0-9x×|.:\-–]/gi, '').replace(/tempo|rir|rest|s\b/gi, '').trim().length < 4;
+      linea.replace(/[0-9x×|.:\-–]/gi, '').replace(/tempo|rir|rest|sets?|series|rondas?|reps?/gi, '').trim().length < 4;
     if(soloEsDosis) return;
     if(esLineaDirectivaSports(linea)) return;
     const nombreLimpio = linea.replace(/^A\d+[.)]\s*/i, '').split(/[:\-–]/)[0].trim();
@@ -10703,9 +10708,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     return { tecnica: tecnica, texto: limpio.trim() };
   }
+  /* directiva ("Fix crítico: parser flexible") -- "4x6-8" era el ÚNICO
+     formato aceptado (número pegado directo a x/×). Un coach escribiendo
+     en prosa normal ("4 sets x 10-12 reps", "3 series de 12", "4 rondas
+     x 8") no matcheaba nada: dosis.sets quedaba undefined, la línea caía
+     al catch-all de parsearPizarraSB() como un ejercicio NUEVO en vez de
+     la dosis del anterior -- el bug reportado (texto crudo sin
+     casilleros). "sets?/series?/rondas?" con su conector x/de opcional
+     cubren la prosa humana real sin dejar de matchear "4x6-8" (la
+     primera alternativa sigue siendo "x" pelado). */
+  var RX_DOSIS_SB = /(\\d+)\\s*(?:x|×|sets?\\s*(?:x|de)?|series?\\s*(?:x|de)?|rondas?\\s*(?:x|de)?)\\s*(\\d+(?:\\s*-\\s*\\d+)?)/i;
   function parsearDosisSB(txt){
     var t = String(txt || ''), out = {}, m;
-    if((m = t.match(/(\\d+)\\s*[x×]\\s*(\\d+(?:\\s*-\\s*\\d+)?)/i))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+/g, ''); }
+    if((m = t.match(RX_DOSIS_SB))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+/g, ''); }
     if((m = t.match(/tempo\\s*(\\d{3,4})/i))) out.tempo = m[1];
     if((m = t.match(/rir\\s*(\\d+)/i))) out.rir = m[1];
     if((m = t.match(/rest\\s*(\\d+)\\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
@@ -10713,7 +10728,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   function esSoloDosisSB(linea, dosis){
     if(!(dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir)) return false;
-    var resto = linea.replace(/\\d+\\s*[x×]\\s*\\d+(?:\\s*-\\s*\\d+)?/gi, '')
+    var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|de)?|series?\\s*(?:x|de)?|rondas?\\s*(?:x|de)?)\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*reps?\\b)?/gi, '')
       .replace(/tempo\\s*\\d{3,4}/gi, '').replace(/rir\\s*\\d+/gi, '').replace(/rest\\s*\\d+\\s*s?/gi, '')
       .replace(/[|.:,\\-–]/g, '').trim();
     return resto.length < 4;
