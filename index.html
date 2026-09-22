@@ -8892,6 +8892,93 @@ function updateProgress(day, weekIdx, blocks){
   progressFillEl.style.width = pct + '%';
   progressCountEl.textContent = pct + '%';
 }
+/* directiva ("Bug crítico athlete-side: casilleros estáticos sin
+   interacción") -- BUG RAÍZ encontrado: wireBlockInteractions() (más
+   abajo) corre UNA sola vez, apenas mainEl.innerHTML = html se pinta con
+   el HTML ESTÁTICO de compile() -- para un bloque de Pizarra Sports, ese
+   HTML estático son líneas .ex-row planas (mapearBloques() nunca marca
+   isBlock/isSuperset/etc para 'list', ver comentario ahí mismo), CERO
+   .set-row todavía. decorar() (que llama pizarraSports()) corre DESPUÉS,
+   inyectando recién ahí los .set-row/.set-kg/.set-reps/.set-check
+   reales -- pero para ese momento wireBlockInteractions() ya pasó y
+   nunca vuelve a mirar esos elementos. Resultado: el check tildaba su
+   propio estado nativo (por eso "algo" parecía reaccionar, vía los
+   listeners delegados en document en otro lado del archivo) pero
+   setLoadField() NUNCA se llamaba -- kg/reps/done jamás se guardaban en
+   state.loads, se perdían apenas se re-pintaba la semana. Esta función
+   se extrae tal cual (mismo comportamiento, cero cambio de lógica) para
+   poder invocarla TAMBIÉN desde pizarraSports() sobre sus propias filas
+   recién insertadas -- data-sr-wired la vuelve segura de llamar más de
+   una vez sobre la misma fila (nunca duplica listeners). */
+function wireSetRow(row){
+  if(row.dataset.srWired) return;
+  row.dataset.srWired = '1';
+  const key = row.dataset.setKey;
+  const esBandaRow = row.classList.contains('set-row-banda');
+  const kgInput = row.querySelector('.set-kg');
+  const repsInput = row.querySelector('.set-reps');
+  const chk = row.querySelector('.set-check');
+  const compactEl = row.querySelector('.set-row-compact');
+  /* directiva de rediseño F (v2): resumen compacto en vivo (mismo texto
+     que ya arma renderSetRows() al pintar, recalculado acá sólo para
+     que no quede desactualizado si el alumno tipea sin recargar la
+     página -- no es una fuente de datos nueva, sólo texto derivado).
+     17/09 · casilleros dinámicos (bandas/peso corporal): esas filas no
+     tienen .set-kg en el DOM (renderSetRows() lo omite a propósito), así
+     que kgInput puede ser null -- ambos listeners y el resumen se
+     blindan contra eso en vez de asumir que el campo siempre existe. */
+  function refrescarResumen(){
+    if(!compactEl) return;
+    const reps = repsInput ? repsInput.value : '';
+    if(esBandaRow){
+      compactEl.textContent = reps ? (reps + ' ' + (repsInput.placeholder||'reps').toLowerCase()) : '\\u2014';
+      return;
+    }
+    const kg = kgInput ? kgInput.value : '';
+    compactEl.textContent = (kg && reps) ? (kg + '\\u00d7' + reps) : '\\u2014';
+  }
+  if(kgInput){
+    kgInput.addEventListener('input', function(){
+      const clean = sanearPeso(kgInput.value);
+      if(clean !== kgInput.value) kgInput.value = clean;
+      setLoadField(key, 'kg', clean);
+      refrescarResumen();
+    });
+  }
+  if(repsInput){
+    repsInput.addEventListener('input', function(){
+      const clean = sanearReps(repsInput.value);
+      if(clean !== repsInput.value) repsInput.value = clean;
+      setLoadField(key, 'reps', clean);
+      refrescarResumen();
+    });
+  }
+  if(chk){
+    chk.addEventListener('change', function(){
+      setLoadField(key, 'done', chk.checked);
+      row.classList.toggle('set-row-done', chk.checked);
+      /* la fila "activa" (la que se ve grande) tiene que avanzar a la
+         próxima serie pendiente apenas se tilda la actual -- el server
+         sólo la calcula al pintar, y acá no hay un renderMain() en cada
+         check (sería carísimo re-renderizar todo el día por un tilde). */
+      const tracker = row.closest('.set-tracker');
+      if(tracker){
+        const filas = Array.prototype.slice.call(tracker.querySelectorAll('.set-row'));
+        filas.forEach(function(f){ f.classList.remove('set-row-active'); });
+        const proxima = filas.filter(function(f){ return !f.classList.contains('set-row-done'); })[0];
+        if(proxima) proxima.classList.add('set-row-active');
+      }
+    });
+  }
+  const toggleBtn = row.querySelector('.set-row-toggle');
+  if(toggleBtn){
+    toggleBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      if(row.classList.contains('set-row-active')) return; /* ya está expandida */
+      row.classList.toggle('set-row-expanded');
+    });
+  }
+}
 function wireBlockInteractions(day, weekIdx, blocks){
   mainEl.querySelectorAll('.block').forEach(function(blockEl){
     const blockId = blockEl.dataset.blockId;
@@ -8913,71 +9000,7 @@ function wireBlockInteractions(day, weekIdx, blocks){
       updateProgress(day, weekIdx, blocks);
       renderDayTabs();
     });
-    blockEl.querySelectorAll('.set-row').forEach(function(row){
-      const key = row.dataset.setKey;
-      const esBandaRow = row.classList.contains('set-row-banda');
-      const kgInput = row.querySelector('.set-kg');
-      const repsInput = row.querySelector('.set-reps');
-      const chk = row.querySelector('.set-check');
-      const compactEl = row.querySelector('.set-row-compact');
-      /* directiva de rediseño F (v2): resumen compacto en vivo (mismo texto
-         que ya arma renderSetRows() al pintar, recalculado acá sólo para
-         que no quede desactualizado si el alumno tipea sin recargar la
-         página -- no es una fuente de datos nueva, sólo texto derivado).
-         17/09 · casilleros dinámicos (bandas/peso corporal): esas filas no
-         tienen .set-kg en el DOM (renderSetRows() lo omite a propósito), así
-         que kgInput puede ser null -- ambos listeners y el resumen se
-         blindan contra eso en vez de asumir que el campo siempre existe. */
-      function refrescarResumen(){
-        if(!compactEl) return;
-        const reps = repsInput ? repsInput.value : '';
-        if(esBandaRow){
-          compactEl.textContent = reps ? (reps + ' ' + (repsInput.placeholder||'reps').toLowerCase()) : '\\u2014';
-          return;
-        }
-        const kg = kgInput ? kgInput.value : '';
-        compactEl.textContent = (kg && reps) ? (kg + '\\u00d7' + reps) : '\\u2014';
-      }
-      if(kgInput){
-        kgInput.addEventListener('input', function(){
-          const clean = sanearPeso(kgInput.value);
-          if(clean !== kgInput.value) kgInput.value = clean;
-          setLoadField(key, 'kg', clean);
-          refrescarResumen();
-        });
-      }
-      if(repsInput){
-        repsInput.addEventListener('input', function(){
-          const clean = sanearReps(repsInput.value);
-          if(clean !== repsInput.value) repsInput.value = clean;
-          setLoadField(key, 'reps', clean);
-          refrescarResumen();
-        });
-      }
-      chk.addEventListener('change', function(){
-        setLoadField(key, 'done', chk.checked);
-        row.classList.toggle('set-row-done', chk.checked);
-        /* la fila "activa" (la que se ve grande) tiene que avanzar a la
-           próxima serie pendiente apenas se tilda la actual -- el server
-           sólo la calcula al pintar, y acá no hay un renderMain() en cada
-           check (sería carísimo re-renderizar todo el día por un tilde). */
-        const tracker = row.closest('.set-tracker');
-        if(tracker){
-          const filas = Array.prototype.slice.call(tracker.querySelectorAll('.set-row'));
-          filas.forEach(function(f){ f.classList.remove('set-row-active'); });
-          const proxima = filas.filter(function(f){ return !f.classList.contains('set-row-done'); })[0];
-          if(proxima) proxima.classList.add('set-row-active');
-        }
-      });
-      const toggleBtn = row.querySelector('.set-row-toggle');
-      if(toggleBtn){
-        toggleBtn.addEventListener('click', function(e){
-          e.stopPropagation();
-          if(row.classList.contains('set-row-active')) return; /* ya está expandida */
-          row.classList.toggle('set-row-expanded');
-        });
-      }
-    });
+    blockEl.querySelectorAll('.set-row').forEach(wireSetRow);
     const noteEl = blockEl.querySelector('.block-note-input');
     if(noteEl){
       noteEl.addEventListener('input', function(){
@@ -10842,6 +10865,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        clase, así que queda estable incluso después de tildar. */
     body.querySelectorAll('[data-sportsboard] .set-row').forEach(function(r){
       r.classList.add('set-row-expanded');
+      /* directiva ("Bug crítico athlete-side: casilleros estáticos sin
+         interacción") -- estas filas se insertan DESPUÉS de que
+         wireBlockInteractions() ya recorrió el DOM (ver comentario junto
+         a wireSetRow(), más arriba en el archivo): sin esta llamada, los
+         inputs de Kg/Reps y el check tildaban visualmente pero jamás
+         llamaban a setLoadField(), perdiendo el dato apenas se
+         re-pintaba la semana. wireSetRow() es idempotente (data-sr-
+         wired), así que tampoco pasa nada si esta función corre de
+         nuevo sobre una fila ya conectada. */
+      if(typeof wireSetRow === 'function') wireSetRow(r);
     });
   }
 
@@ -13703,6 +13736,16 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     document.querySelectorAll('.block').forEach(function(bl){
       if(bl.querySelector('.rir-bar')) return;
       if(!bl.querySelector('.set-row')) return;
+      /* directiva ("Bug crítico athlete-side"): esta barra es UNA sola
+         por bloque (RIR del ejercicio completo), pensada para la tarjeta
+         clásica de un solo ancla -- en un Bloque de Pizarra Sports puede
+         haber varios ejercicios/bisets con sus propios .set-tracker, y la
+         barra se insertaba pegada al PRIMERO de ellos, viéndose
+         "flotando" y sin asociación clara a ninguna serie puntual (el bug
+         reportado). Se retira sólo de bloques de Pizarra -- un bloque
+         CLÁSICO de Sports fuera de la Pizarra la sigue mostrando igual
+         que siempre. */
+      if(bl.querySelector('.jp-sb-board')) return;
       var k = claveBloque(bl);
       state.rir = state.rir || {}; state.dolor = state.dolor || {};
       var bar = document.createElement('div');
@@ -27309,6 +27352,22 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
    selector). */
 .jp-sb-board .set-tracker{
   padding:4px 2px !important; gap:5px !important;
+}
+/* directiva ("Bug crítico athlete-side: casilleros estáticos") -- el
+   módulo "FOCUS MODE DE SERIE ACTIVA" (.set-tracker.foco, más arriba en
+   el archivo) apaga a opacity:.4 CUALQUIER .set-row que no sea la
+   .set-activa -- pensado para cuando sólo UNA fila a la vez está
+   "expandida" (el resto queda colapsado a chip). Al forzar
+   set-row-expanded en TODAS las filas de la Pizarra (ver
+   pizarraSports()) para lograr la tabla de una sola línea, la regla que
+   antes protegía a las filas colapsadas ("...set-row:not(.set-row-
+   expanded){opacity:1 !important}") dejó de aplicar a NINGUNA fila de acá
+   -- SET 2/3/4 quedaban atenuadas al 40%, con pinta de "deshabilitadas"
+   (el bug reportado). Se restaura opacity:1 en las tres, sin tocar el
+   focus mode para bloques CLÁSICOS de Sports (fuera de la Pizarra), que
+   lo siguen usando tal cual. */
+.jp-sb-board .set-tracker.foco .set-row{
+  opacity:1 !important;
 }
 .jp-sb-board .set-tracker .set-row.set-row-active,
 .jp-sb-board .set-tracker .set-row.set-row-expanded{
