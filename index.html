@@ -8803,7 +8803,31 @@ function renderMain(){
       html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + doneCount + ' / ' + blocks.length + ' bloques completados</p></div>';
     }
   } else if(day.summary){ html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + day.summary + '</p></div>'; }
-  if((day.cooldown||[]).length){
+  /* directiva ("Refactor urgente de interfaz Athlete", requerimiento 2):
+     day.cooldown puede quedar poblado con un relleno GENÉRICO que varias
+     herramientas de generación de día (Generador de Día por Estilo,
+     Autocompletado con IA, etc., todas fuera del alcance de esta
+     directiva) escriben por su cuenta con "if(!(dia.cooldown||[]).length)
+     dia.cooldown = [...texto fijo...]" -- nunca porque el coach haya
+     redactado o generado uno de verdad con el botón dedicado "Generar
+     Cool-Down con IA". Esas herramientas son ajenas a este refactor (no
+     se tocan), pero el requerimiento es explícito: la tarjeta nunca debe
+     mostrarse salvo que el cool-down sea real. Como ningún dato marca la
+     diferencia hoy, se detecta por coincidencia EXACTA con los rellenos
+     conocidos (los mismos strings, literales, que usan esas
+     herramientas) -- sólo en Sports, CrossFit ni siquiera lee esta
+     rama. */
+  var COOLDOWN_RELLENOS_GENERICOS = [
+    'Respiración diafragmática — 2 min|Estiramiento suave de los grupos trabajados — 3 min',
+    'Respiración diafragmática — 3 min|Movilidad suave de la zona, sin forzar — 3 min',
+    'Respiración diafragmática — 4 min|Movilidad suave de la zona — 3 min',
+    'Respiración nasal — 3 min|Movilidad de hombro y cadera — 3 min',
+    'Estiramiento del grupo trabajado — 2x30s|Respiración nasal — 2 min',
+    'Movilidad de muñeca y hombro — 3 min|Respiración nasal — 2 min'
+  ];
+  var cooldownEsRelleno = window.COACH_DISCIPLINA === 'sports' && !day.cooldownNota &&
+    COOLDOWN_RELLENOS_GENERICOS.indexOf((day.cooldown||[]).join('|')) >= 0;
+  if((day.cooldown||[]).length && !cooldownEsRelleno){
     /* las fases numeradas del generador se leen como subtítulo, no como una viñeta más */
     html += '<div class="info-card cooldown-card"><div class="info-card-title">Cool-Down y Recuperación</div><ul>' +
       day.cooldown.map(function(c){
@@ -27188,7 +27212,7 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
 .jp-sb-board{
   background:linear-gradient(180deg, var(--panel), var(--stealth-1)) !important;
   border:1px solid rgba(56,189,248,.22) !important; border-radius:14px !important;
-  padding:16px !important; margin-bottom:12px;
+  padding:12px !important; margin-bottom:12px;
 }
 .jp-sb-tag{
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
@@ -27207,7 +27231,7 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
 }
 .jp-sb-ex{
   background:rgba(255,255,255,.02); border:1px solid var(--line); border-radius:12px;
-  padding:12px; margin-top:10px;
+  padding:10px; margin-top:10px;
 }
 .jp-sb-ex-head{ display:flex; align-items:center; gap:8px; }
 .jp-sb-ex-nombre{
@@ -27272,27 +27296,78 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
    selector de entrada, así que un bloque clásico de Sports fuera de la
    Pizarra (o cualquier cosa en CrossFit, que ni siquiera genera esta
    clase) no se ve afectado. */
+/* directiva ("Refactor urgente de interfaz Athlete: erradicar cajas
+   verticales anidadas por tabla táctica horizontal"): .set-tracker trae
+   de fábrica un padding asimétrico (1.4rem/0.4rem, pensado para la caja
+   grande "activa" de un bloque clásico) que, sumado al padding propio de
+   .jp-sb-board + .jp-sb-ex, dejaba menos de 210px reales para una fila
+   de 375px de ancho de pantalla -- ahí es imposible que [SET][KG][REPS]
+   [✓] entren en una sola línea sin que algo se recorte contra el
+   overflow:hidden del <html>. Se recupera ese ancho en cada nivel,
+   exclusivamente dentro de .jp-sb-board (un bloque clásico de Sports
+   fuera de la Pizarra, o cualquier cosa en CrossFit, nunca matchea este
+   selector). */
+.jp-sb-board .set-tracker{
+  padding:4px 2px !important; gap:5px !important;
+}
 .jp-sb-board .set-tracker .set-row.set-row-active,
 .jp-sb-board .set-tracker .set-row.set-row-expanded{
   background:#161b22 !important;
   border-color:rgba(0,229,255,.35) !important;
-  border-radius:10px !important;
+  border-radius:8px !important;
   display:flex !important; flex-direction:row !important; align-items:center !important;
-  flex-wrap:nowrap !important; gap:8px !important; padding:8px 10px !important;
+  flex-wrap:nowrap !important; gap:5px !important; padding:5px 6px !important;
+  width:100% !important; box-sizing:border-box !important;
+}
+/* directiva ("Refactor urgente de interfaz Athlete") -- la fila ACTIVA
+   (.set-activa, la primera serie sin tildar) seguía viéndose cobre/ámbar
+   pese al override de arriba: ".block:not(.cat-metcon):not(.cat-cardio)
+   .set-row.set-activa" (tema "COBRE = CARGA", más arriba en el archivo)
+   tiene 5 clases de especificidad contra las 4 de mi selector -- gana
+   aunque el mío esté después en el archivo. Se agrega acá, con .block
+   sumado, para superar esa especificidad sin tocar un solo carácter de
+   la regla original (que sigue intacta y sigue pintando cobre a
+   cualquier bloque CLÁSICO de Sports fuera de la Pizarra). */
+.block .jp-sb-board .set-tracker .set-row.set-row-active.set-activa,
+.block .jp-sb-board .set-tracker .set-row.set-row-expanded.set-activa{
+  background:#161b22 !important;
+  border-color:rgba(0,229,255,.35) !important;
+}
+.block .jp-sb-board .set-tracker .set-row.set-activa .set-row-label{
+  background:rgba(0,229,255,.16) !important; color:#00e5ff !important;
 }
 .jp-sb-board .set-tracker .set-row.set-row-active .set-row-toggle,
 .jp-sb-board .set-tracker .set-row.set-row-expanded .set-row-toggle{
   width:auto !important; flex:0 0 auto !important; padding:0 !important;
 }
+.jp-sb-board .set-tracker .set-row .set-row-label{
+  font-size:9.5px !important; white-space:nowrap !important;
+}
 .jp-sb-board .set-tracker .set-row.set-row-active .set-load,
 .jp-sb-board .set-tracker .set-row.set-row-expanded .set-load{
-  width:auto !important; flex:1 1 auto !important; min-width:0 !important; gap:6px !important;
+  width:auto !important; flex:1 1 auto !important; min-width:0 !important; gap:4px !important;
+}
+/* el mini-label "KG"/"REPS" arriba del input queda redundante: el mismo
+   texto ya vive en el placeholder del input (o en el badge de
+   referencia S{N-1}) -- se retira SÓLO acá para que .set-field deje de
+   apilar label+input en 2 líneas y la fila sea una sola línea real. */
+.jp-sb-board .set-tracker .set-row .set-unit{ display:none !important; }
+.jp-sb-board .set-tracker .set-row .set-field{
+  flex:1 1 0 !important; min-width:0 !important;
 }
 .jp-sb-board .set-tracker .set-row .set-kg,
 .jp-sb-board .set-tracker .set-row .set-reps{
-  font-size:1rem !important; padding:5px 2px !important;
+  font-size:.82rem !important; padding:5px 2px !important; width:100% !important;
+  min-width:0 !important; box-sizing:border-box !important;
 }
-.jp-sb-board .set-check{ accent-color:#00e5ff !important; }
+.jp-sb-board .set-tracker .set-row .set-x{ font-size:.8rem !important; flex:0 0 auto !important; }
+.jp-sb-board .set-hist-row{
+  order:0 !important; flex:0 0 auto !important; width:auto !important; margin:0 !important;
+}
+.jp-sb-board .set-ref-badge{ font-size:.6rem !important; padding:2px 6px !important; white-space:nowrap !important; }
+.jp-sb-board .set-check{
+  accent-color:#00e5ff !important; flex:0 0 auto !important; width:20px !important; height:20px !important;
+}
 </style>
 
 </body>
