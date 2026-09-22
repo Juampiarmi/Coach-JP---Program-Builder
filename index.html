@@ -3229,6 +3229,46 @@ function parsearDosisSports(linea){
   if((m = t.match(/rest\s*(\d+)\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
   return out;
 }
+/* MOTOR DE ONDULACIÓN S1 -> S2/S3/S4 (directiva "Ondulación de Cargas"):
+   proyecta el texto crudo de la Pizarra de Semana 1 a las otras 3 semanas
+   sin tocar jamás nombres de ejercicio ni tempos -- sólo re-escribe, línea
+   por línea, la dosis (series) y la anotación de RIR. Reutiliza
+   RX_DOSIS_SPORTS: una línea que no matchea (nombre de ejercicio, nota,
+   encabezado de biserie, fase) se copia intacta. wk es el índice de
+   semana destino (1=S2, 2=S3, 3=S4); S1 (wk 0) nunca se ondula. */
+function ondularLineaSports(linea, wk){
+  const t = String(linea || '');
+  const m = t.match(RX_DOSIS_SPORTS);
+  if(!m) return t;
+  let out = t;
+  if(wk === 3){
+    /* Semana 4 (Descarga): -1 serie por ejercicio (piso de 1), reps intactas.
+       Se reemplaza sólo el número de series en su posición original --
+       nunca se toca el resto de la línea (reps, tempo, nombre). */
+    const nuevoSets = Math.max(1, parseInt(m[1], 10) - 1);
+    out = out.slice(0, m.index) + String(nuevoSets) + out.slice(m.index + m[1].length);
+  }
+  const rirLabel = wk === 1 ? 'RIR 1' : wk === 2 ? 'RIR 0-1 / Fallo técnico' : 'RIR 3-4';
+  if(/\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/i.test(out)){
+    out = out.replace(/\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/i, rirLabel);
+  } else {
+    out = out.replace(/\s+$/, '') + ' | ' + rirLabel;
+  }
+  return out;
+}
+function ondularMesocicloAutomatico(){
+  const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
+  const bloques = (d.bloques || []).filter(function(b){ return b.tipo === 'list' && b.sportsPizarra && Array.isArray(b.items) && b.items.length; });
+  if(!bloques.length){ toast('No hay bloques de Pizarra con contenido en Semana 1', 'err'); return; }
+  bloques.forEach(function(b){
+    if(!Array.isArray(b.weekItems)) b.weekItems = [];
+    [1, 2, 3].forEach(function(wk){
+      b.weekItems[wk] = b.items.map(function(linea){ return ondularLineaSports(linea, wk); });
+    });
+  });
+  save(); renderBuilder();
+  toast('🪄 Mesociclo ondulado: S2, S3 y S4 generadas desde Semana 1');
+}
 /* técnicas avanzadas reconocidas -- acepta tanto la etiqueta entre
    corchetes ("[DROPSET]", que se retira del texto visible porque es
    sintaxis, no prosa) como la mención libre en una nota ("Drop-set al
@@ -3351,7 +3391,7 @@ function detectarEjerciciosSports(texto){
   lineas.forEach(function(linea){
     const dosis = parsearDosisSports(linea);
     const soloEsDosis = (dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir) &&
-      linea.replace(/[0-9x×|.:\-–]/gi, '').replace(/tempo|rir|rest|sets?|series|rondas?|reps?/gi, '').trim().length < 4;
+      linea.replace(/[0-9x×|.:\-–\/]/gi, '').replace(/tempo|rir|rest|sets?|series|rondas?|reps?|fallo\s*t[eé]cnico/gi, '').trim().length < 4;
     if(soloEsDosis) return;
     if(esLineaDirectivaSports(linea)) return;
     const nombreLimpio = linea.replace(/^A\d+[.)]\s*/i, '').split(/[:\-–]/)[0].trim();
@@ -3645,6 +3685,13 @@ function renderDay(){
        de redacción libre + detección reactiva de ejercicios que ya usa
        CrossFit (ver más abajo, rama esBloqueSportsPizarra). */
     h += '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-bottom:14px" data-addsportsblock="1">➕ AGREGAR BLOQUE DE PIZARRA</button>';
+    /* directiva ("Motor de Ondulación S1 -> S4"): proyecta automáticamente
+       el texto crudo de Semana 1 de CADA bloque de Pizarra del día a S2/S3/
+       S4 (ver ondularMesocicloAutomatico()) -- sólo aparece si ya hay al
+       menos un bloque de Pizarra con contenido para ondular. */
+    if(d.bloques.some(function(b){ return b.tipo === 'list' && b.sportsPizarra && Array.isArray(b.items) && b.items.length; })){
+      h += '<button type="button" class="btn ghost sm" style="width:100%;margin-bottom:14px;border-color:rgba(124,197,232,.4);color:#7CC5E8" data-ondularmeso="1">🪄 ONDULAR MESOCICLO AUTOMÁTICO</button>';
+    }
     /* directiva ("Reset Total de Día"): botón dedicado y propio de Sports
        -- NO reutiliza #btnClearDay/.tools (esos quedan ocultos siempre,
        ver arriba, y tocar su lógica de visibilidad arriesgaría CrossFit,
@@ -4824,6 +4871,7 @@ function bindBuilder(){
     if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
     if(t.dataset.btipssports){ generarTipsSports(t.dataset.btipssports, t); return; }
     if(t.dataset.vaciardia){ vaciarDiaCompleto(); return; }
+    if(t.dataset.ondularmeso){ ondularMesocicloAutomatico(); return; }
     if(t.dataset.migrarpizarra){ migrarBloqueAPizarra(t.dataset.migrarpizarra); return; }
     if(t.dataset.fmtins){
       const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.b + '"]');
@@ -6774,8 +6822,16 @@ function limpiarNombre(n){
   if(w.length > 6) t = w.slice(0, 6).join(' ');
   return t.trim();
 }
-/* líneas que son estructura del entrenamiento, no ejercicios: no llevan link de video */
-const NO_VIDEO = /^(\\s*[-–—]|min\\s*\\d+\\s*[:\\-]?\\s*$|rest\\b|descans|x\\s*\\d+\\s*(sets?|rondas?|rounds?)|\\d+\\s*(sets?|rondas?|rounds?)\\b|amrap\\b|emom\\b|every\\s*\\d|for\\s*time|cap\\b|elite\\s*:|rx\\+?\\s*:|int(ermediate|ermedio)?\\s*:|scaled\\s*:|target|notas?\\b|luego\\b|then\\b|despu[eé]s\\b|objetivo\\b|score\\b|\\(|\\d+\\s*$)/i;
+/* líneas que son estructura del entrenamiento, no ejercicios: no llevan link de video.
+   directiva ("Purga y refinamiento del Glosario Técnico") -- "8 minutos"/
+   "WARM-UP ESPECÍFICO"/"Calentamiento" colaban acá porque el filtro sólo
+   conocía vocabulario de CrossFit (rest/amrap/emom/score/...); ninguna de
+   sus alternativas cubría los títulos/duraciones genéricas que un
+   calentamiento de Sports redacta en prosa. Se suman esas palabras
+   (siempre ancladas al INICIO de la línea, mismo criterio ya usado acá
+   para "rest"/"amrap"/etc., admitiendo un número + espacio adelante para
+   "8 minutos"/"30 segundos"). */
+const NO_VIDEO = /^(\\s*[-–—]|min\\s*\\d+\\s*[:\\-]?\\s*$|rest\\b|descans|x\\s*\\d+\\s*(sets?|rondas?|rounds?)|\\d+\\s*(sets?|rondas?|rounds?)\\b|amrap\\b|emom\\b|every\\s*\\d|for\\s*time|cap\\b|elite\\s*:|rx\\+?\\s*:|int(ermediate|ermedio)?\\s*:|scaled\\s*:|target|notas?\\b|luego\\b|then\\b|despu[eé]s\\b|objetivo\\b|score\\b|\\(|\\d+\\s*$|\\d*\\s*(minutos?|segundos?)\\b|warm.?up|calentamiento\\b|movilidad\\b|activaci[oó]n\\b|enfriamiento\\b|vuelta a la calma\\b)/i;
 function esEstructura(t){
   const s = String(t || '').trim();
   if(!s) return true;
@@ -8534,6 +8590,16 @@ function esBloqueVacioCF(block){
    overlay adicional. weekIdx se mantiene en la firma sólo por
    compatibilidad con quien la llame, no se usa más. */
 function itemsDeSemana(block, weekIdx){
+  /* directiva ("Motor de Ondulación S1 -> S4"): un bloque de Pizarra
+     Sports puede traer, además de block.items (Semana 1), una proyección
+     propia por semana en block.weekItems[1..3] (ver
+     ondularMesocicloAutomatico() en el Builder). CrossFit nunca llega acá
+     con weekItems poblado -- su independencia de semanas vive en
+     day.blocksPorSemana (block YA es el de la semana activa), así que
+     este chequeo es un no-op total para CF. */
+  if(weekIdx > 0 && Array.isArray(block.weekItems) && Array.isArray(block.weekItems[weekIdx]) && block.weekItems[weekIdx].length){
+    return block.weekItems[weekIdx];
+  }
   return block.items || [];
 }
 /* datos para la Story Card exclusiva de CrossFit: kg clave del bloque de
@@ -8877,7 +8943,7 @@ function renderMain(){
      window.COACH_DISCIPLINA, cero cambio para CrossFit. */
   const esSports = window.COACH_DISCIPLINA === 'sports';
   html += '<button type="button" class="story-cta" id="storyCtaBtn">📸 ' +
-    (esSports ? 'Generar Story Card · Día Completado' : 'Generar Story Card') + '</button>';
+    (esSports ? 'GENERAR STORY PARA REDES' : 'Generar Story Card') + '</button>';
   /* directiva (reubicación de cierre): "Marcar Día Completo" era una
      acción de cierre viviendo arriba, apretando el inicio del
      entrenamiento -- baja al final absoluto de la rutina, debajo del
@@ -10757,8 +10823,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   function esSoloDosisSB(linea, dosis){
     if(!(dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir)) return false;
+    /* directiva ("Motor de Ondulación S1 -> S4"): el RIR que genera
+       ondularMesocicloAutomatico() en el Builder viene en rango ("RIR
+       0-1") y S3 suma el sufijo "/ Fallo técnico" -- el strip original
+       sólo reconocía "RIR" + UN dígito suelto, así que esa línea quedaba
+       con residuo >= 4 caracteres y la dosis dejaba de reconocerse como
+       continuación del ejercicio anterior (se abría un ejercicio nuevo
+       fantasma con el texto de la dosis como nombre). */
     var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|de)?|series?\\s*(?:x|de)?|rondas?\\s*(?:x|de)?)\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*reps?\\b)?/gi, '')
-      .replace(/tempo\\s*\\d{3,4}/gi, '').replace(/rir\\s*\\d+/gi, '').replace(/rest\\s*\\d+\\s*s?/gi, '')
+      .replace(/tempo\\s*\\d{3,4}/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '').replace(/rest\\s*\\d+\\s*s?/gi, '')
       .replace(/[|.:,\\-–]/g, '').trim();
     return resto.length < 4;
   }
@@ -12041,7 +12114,17 @@ header.masthead.hd-top{justify-content:center !important;gap:14px}
   background:linear-gradient(180deg,rgba(210,121,63,.09),rgba(0,0,0,0)) !important}
 .summary-card .sc-h{border-bottom-color:rgba(210,121,63,.26) !important}
 .sc-save{background:linear-gradient(135deg,#D2793F,#8A4A1E) !important;color:#0A0F13 !important}
-.sc-story{background:linear-gradient(135deg,#E5C378,#9C7A2E) !important;color:#0A0F13 !important;border:none !important}
+/* directiva ("Story Card Viral Compartible") -- botón táctico glass
+   (cyan/oro) en vez del pill sólido dorado: distingue visualmente el
+   disparador de "compartir en redes" del resto de acciones opacas del
+   resumen (.sc-save sigue sólida). */
+.sc-story{
+  background:linear-gradient(135deg,rgba(124,197,232,.14),rgba(229,195,120,.10)) !important;
+  color:#EDEFF2 !important;
+  border:1.5px solid rgba(124,197,232,.5) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 18px rgba(229,195,120,.16) !important;
+  letter-spacing:.03em;font-weight:800;
+}
 /* =========================================================
    STORY CARD 9:16
 ========================================================= */
@@ -16777,7 +16860,10 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
     t = t.replace(/^\\d+\\s*[.)]?\\s*/, '');                 /* numeración inicial */
     t = t.replace(/\\([^)]*\\)/g, ' ');                      /* aclaraciones entre paréntesis */
     t = t.replace(/\\b\\d+([.,]\\d+)?\\s*(kg|lbs?|m|km|cal|min|s|seg|reps?)\\b/gi, ' ');
-    t = t.replace(/\\b\\d+\\s*[x×]\\s*\\d+\\b/gi, ' ').replace(/\\d+/g, ' ');
+    t = t.replace(/\\b\\d+\\s*[x×]\\s*\\d+\\b/gi, ' ');
+    /* preserva ángulos/variantes propias del nombre (ej. "Prensa 45°") al
+       barrer el resto de números sueltos (series/rondas residuales) */
+    t = t.replace(/\\d+(?:\\s*°)?/g, function(m){ return /°$/.test(m) ? m : ' '; });
     /* restos de unidades al inicio: "200 m Row" -> "Row" */
     t = t.replace(/^(m|km|cal|kg|lbs?|min|s|seg|reps?|x)\\b\\s*/i, '');
     t = t.replace(/\\s+/g, ' ').replace(/^[·:,\\-–\\s]+|[·:,\\-–\\s]+$/g, '').trim();
@@ -16785,7 +16871,10 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   }
   function esEjercicioDeBiblioteca(nombre){
     if(!nombre || nombre.length < 3) return false;
-    if(/\\d/.test(nombre)) return false;
+    /* los ángulos/variantes numéricas propias del nombre (ej. "Prensa 45°")
+       no cuentan como dígito residual de dosis -- se descartan antes de
+       chequear si queda algún número suelto (indicio real de reps/series) */
+    if(/\\d/.test(nombre.replace(/\\d+\\s*°/g, ''))) return false;
     var n = nombre.toLowerCase();
     if(BASURA.test(n)) return false;
     var palabras = nombre.split(/\\s+/);
@@ -27460,6 +27549,24 @@ body.cf-disc .story-cta{
   color:#EDEFF2; cursor:pointer; min-height:54px;
 }
 body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; }
+/* directiva ("Story Card Viral Compartible") -- la regla de arriba está
+   escopeada a body.cf-disc (CrossFit): Sports & Bodybuilding nunca
+   heredaba NINGÚN estilo para este botón (quedaba un <button> crudo sin
+   chrome, el "botón de texto plano" reportado). Se agrega acá su propio
+   look glass cyan/oro -- selector body:not(.cf-disc) para blindar
+   CrossFit (que SIEMPRE trae .cf-disc, ver COACH_DISCIPLINA arriba en
+   el archivo): esta regla es matemáticamente inalcanzable para CF. */
+body:not(.cf-disc) .story-cta{
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  width:100%; margin:22px 0 0; padding:15px 20px;
+  background:linear-gradient(135deg,rgba(124,197,232,.14),rgba(229,195,120,.10));
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border:1.5px solid rgba(124,197,232,.5); border-radius:14px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 18px rgba(229,195,120,.16);
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:.85rem; letter-spacing:.1em; text-transform:uppercase;
+  color:#EDEFF2; cursor:pointer; min-height:54px;
+}
+body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E5C378; }
 /* directiva de unificación de branding (Showroom aprobado) + pulido
    "Glass Táctico Pro": el botón de cierre de sesión pasa a la paleta
    oficial en TODA la aplicación (ya no sólo CrossFit) -- Sports &
@@ -28178,6 +28285,11 @@ function buildProgramConfig(ath){
       if(b.coreModo) out.coreMode = b.coreModo;
       if(b.cfPizarra) out.pizarra = true;
       if(b.sportsPizarra) out.sportsPizarra = true;
+      /* directiva ("Motor de Ondulación S1 -> S4"): itemsDeSemana() del
+         lado del alumno lee block.weekItems[weekIdx] para S2/S3/S4 -- sin
+         copiarlo acá al objeto compilado, la proyección generada en el
+         Builder (ondularMesocicloAutomatico()) nunca llegaría al teléfono. */
+      if(Array.isArray(b.weekItems)) out.weekItems = b.weekItems.map(arr => Array.isArray(arr) ? arr.slice() : arr);
       if(b.cfFmt) out.boardFmt = b.cfFmt;
       if(b.cfParam) out.cfParam = b.cfParam;
       if(b.cfId) out.blockId = b.cfId;
