@@ -10720,7 +10720,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   var RX_DOSIS_SB = /(\\d+)\\s*(?:x|×|sets?\\s*(?:x|de)?|series?\\s*(?:x|de)?|rondas?\\s*(?:x|de)?)\\s*(\\d+(?:\\s*-\\s*\\d+)?)/i;
   function parsearDosisSB(txt){
     var t = String(txt || ''), out = {}, m;
-    if((m = t.match(RX_DOSIS_SB))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+/g, ''); }
+    if((m = t.match(RX_DOSIS_SB))){
+      out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+/g, '');
+      /* directiva ("Reconstrucción total del tracker de series") --
+         detecta la unidad de la magnitud secundaria mirando SÓLO el
+         tramo de texto justo después del rango de reps (hasta el
+         próximo "|" o ~12 caracteres si no hay pipe) -- "3x30s" ->
+         seg, "3x50m"/"3x50 mts" -> mts, "4x20 cal" -> cal. Nunca la
+         línea COMPLETA: "4x8-10 | Tempo 3010 | RIR 2 | Rest 150s"
+         también tiene una "s" pegada a un número ("150s"), y mirar
+         toda la línea la clasificaba como tiempo por error. */
+      var tras0 = m.index + m[0].length;
+      var pipeIdx = t.indexOf('|', tras0);
+      var tras = pipeIdx >= 0 ? t.slice(tras0, pipeIdx) : t.slice(tras0, tras0 + 12);
+      out.unidad = detectarUnidadSecundariaSB(tras);
+    }
     if((m = t.match(/tempo\\s*(\\d{3,4})/i))) out.tempo = m[1];
     if((m = t.match(/rir\\s*(\\d+)/i))) out.rir = m[1];
     if((m = t.match(/rest\\s*(\\d+)\\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
@@ -10750,7 +10764,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var resSub = extraerTecnicaSB(subM[3]);
         var dosisSub = parsearDosisSB(resSub.texto);
         var parenM = resSub.texto.match(/\\(([^)]+)\\)/);
-        actual.subs.push({ nombre: subM[2].trim(), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: parenM ? parenM[1] : '' });
+        actual.subs.push({ nombre: subM[2].trim(), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: parenM ? parenM[1] : '', unidad: dosisSub.unidad || 'reps' });
         return;
       }
       if(RX_BISET_HEAD_SB.test(linea) && (!actual || actual.tipo !== 'biserie' || actual.subs.length)){
@@ -10769,6 +10783,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         actual.reps = dosis.reps || actual.reps;
         actual.tempo = dosis.tempo || actual.tempo;
         actual.restSeconds = dosis.restSeconds || actual.restSeconds;
+        actual.unidad = dosis.unidad || actual.unidad;
         actual.dosisAsignada = true;
         var resDosis = extraerTecnicaSB(linea);
         if(resDosis.tecnica) actual.tecnica = resDosis.tecnica;
@@ -10787,10 +10802,72 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         if(resNota.texto) actual.notas.push(resNota.texto);
         return;
       }
-      actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, dosisAsignada:false, tecnica:'', notas:[] };
+      actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, dosisAsignada:false, tecnica:'', notas:[], unidad:'reps' };
       entries.push(actual);
     });
     return entries;
+  }
+  /* ============================================================
+     REFACTORING INTEGRAL (directiva "Reconstrucción total del tracker
+     de series en Sports"): tabla de registro nativa desde cero, EXCLUSIVA
+     de la Pizarra Sports (nunca tocada por CrossFit -- pizarra() de CF
+     sigue usando su propio único input de score, nunca esta función ni
+     renderSetRows()). Reemplaza únicamente el uso que hacía pizarraSports()
+     de renderSetRows()/.set-tracker (que sigue existiendo intacta para
+     bloques CLÁSICOS de Sports, fuera de la Pizarra -- esta función nueva
+     no la modifica ni la reemplaza ahí). Inputs 100% nativos, sin la capa
+     de colapso/expansión de .set-tracker que venía arrastrando ajustes de
+     especificidad CSS de rondas anteriores. */
+  /* recibe SÓLO el tramo de texto justo después del rango de reps (ver
+     parsearDosisSB) -- por eso los patrones anclan al inicio (^), sin
+     exigir un dígito propio: ese dígito ya quedó consumido en el match
+     de sets×reps, acá sólo queda leer la palabra/letra de unidad que
+     sigue pegada o con un espacio de por medio ("s"/"seg", "m"/"mts"/
+     "metros", "cal"). */
+  function detectarUnidadSecundariaSB(trasTexto){
+    var t = String(trasTexto || '').trim();
+    if(/^(?:seg(?:undos?)?|s)\\b/i.test(t)) return 'seg';
+    if(/^(?:m|mts?|metros?)\\b/i.test(t)) return 'mts';
+    if(/^cal(?:or[ií]as?)?\\b/i.test(t)) return 'cal';
+    return 'reps';
+  }
+  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior){
+    unidadSec = unidadSec || 'reps';
+    var numSetsInt = parseInt(numSets, 10) || 1;
+    var html = '<div class="jp-set-tracker-native">';
+    for(var i = 1; i <= numSetsInt; i++){
+      var key = getLoadKey(weekIdx, dayId, blockId, exIdx, i);
+      var ld = getLoad(key);
+      var prevKg = null, prevSec = null;
+      if(refSemanaAnterior && weekIdx > 0){
+        var prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
+        if(prevLd.kg != null && prevLd.kg !== '') prevKg = prevLd.kg;
+        if(prevLd.reps != null && prevLd.reps !== '') prevSec = prevLd.reps;
+      }
+      var refHtml = '';
+      if(prevKg != null || prevSec != null){
+        var refTxt = (prevKg != null ? prevKg + 'kg' : '') +
+          (prevKg != null && prevSec != null ? ' \\u00d7 ' : '') +
+          (prevSec != null ? prevSec : '');
+        refHtml = '<span class="jp-set-ref">S' + weekIdx + ': ' + refTxt + '</span>';
+      }
+      var kgVal = ld.kg != null ? ld.kg : '';
+      var secVal = ld.reps != null ? ld.reps : '';
+      var kgPlaceholder = (kgVal === '' && prevKg != null) ? String(prevKg) : '0';
+      var doneCls = ld.done ? ' completed' : '';
+      html += '<div class="jp-set-row-native' + doneCls + '" data-set-key="' + key + '">' +
+          '<span class="jp-set-pill">SET ' + i + '</span>' +
+          refHtml +
+          '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
+          '<span class="jp-unit">kg</span>' +
+          '<span class="jp-sep">\\u00d7</span>' +
+          '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="0" value="' + escSB(secVal) + '" />' +
+          '<span class="jp-unit">' + unidadSec + '</span>' +
+          '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\\u2713</button>' +
+        '</div>';
+    }
+    html += '</div>';
+    return html;
   }
   function pizarraSports(blockEl, block, weekIdx, dayId){
     if(esBloqueVacioCF(block)) return;
@@ -10810,14 +10887,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(entry.tipo === 'biserie' && entry.subs.length){
         const subsHtml = entry.subs.map(function(sub, si){
           const exIdx = 'b' + idx + 's' + si;
-          const dosisTxt = [sub.reps ? sub.reps + ' reps' : '', sub.tempo ? 'Tempo ' + sub.tempo : ''].filter(Boolean).join(' · ');
+          const dosisTxt = [sub.reps ? sub.reps + ' ' + (sub.unidad || 'reps') : '', sub.tempo ? 'Tempo ' + sub.tempo : ''].filter(Boolean).join(' · ');
           return '<div class="jp-sb-subex">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
                 '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + videoLinkHtml(sub.nombre) + '</div>' +
               (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
               (sub.tecnica && TECNICAS_BADGE_SB[sub.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + sub.tecnica + '">' + TECNICAS_BADGE_SB[sub.tecnica] + '</span>' : '') +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
-              renderSetRows(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.reps || 'Reps', 0, sub.nombre, block.title, true) +
+              renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true) +
             '</div>';
         }).join('');
         filas += '<div class="jp-sb-biset">' +
@@ -10847,13 +10924,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '</div>';
         return;
       }
-      const dosisTxt = [entry.reps ? entry.reps + ' reps' : '', entry.tempo ? 'Tempo ' + entry.tempo : ''].filter(Boolean).join(' · ');
+      const dosisTxt = [entry.reps ? entry.reps + ' ' + (entry.unidad || 'reps') : '', entry.tempo ? 'Tempo ' + entry.tempo : ''].filter(Boolean).join(' · ');
       filas += '<div class="jp-sb-ex">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
           (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
           (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
-          renderSetRows(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.reps || 'Libre', 0, entry.titulo, block.title, true) +
+          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true) +
         '</div>';
     });
     if(!filas) return;
@@ -10883,30 +10960,53 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
       if(!el.closest('[data-sportsboard]')) el.style.display = 'none';
     });
-    /* directiva ("Refactor visual: tabla táctica de series"): el colapso a
-       chip compacto ("SET 2 -") de .set-tracker sólo está pensado para una
-       lista larga en una lista vieja -- en la Pizarra se ve como "cajas
-       rotas". Se reutiliza .set-row-expanded (la MISMA clase que ya usan
-       las rondas de biset para mostrarse siempre completas, ver
-       unificar()/.bs-r más abajo) en TODAS las filas del tablero: ningún
-       CSS nuevo de colapso/expansión, sólo se fuerza el estado que el
-       sistema ya sabía dibujar. El listener de "tildar serie" (más abajo
-       en este archivo) sólo toca/remueve .set-row-active, nunca esta
-       clase, así que queda estable incluso después de tildar. */
-    body.querySelectorAll('[data-sportsboard] .set-row').forEach(function(r){
-      r.classList.add('set-row-expanded');
-      /* directiva ("Bug crítico athlete-side: casilleros estáticos sin
-         interacción") -- estas filas se insertan DESPUÉS de que
-         wireBlockInteractions() ya recorrió el DOM (ver comentario junto
-         a wireSetRow(), más arriba en el archivo): sin esta llamada, los
-         inputs de Kg/Reps y el check tildaban visualmente pero jamás
-         llamaban a setLoadField(), perdiendo el dato apenas se
-         re-pintaba la semana. wireSetRow() es idempotente (data-sr-
-         wired), así que tampoco pasa nada si esta función corre de
-         nuevo sobre una fila ya conectada. */
-      if(typeof wireSetRow === 'function') wireSetRow(r);
-    });
+    /* directiva ("Refactoring integral: reconstrucción total del tracker
+       de series en Sports"): renderSetRowsNativeSB() ya arma filas nativas
+       (.jp-set-row-native) autosuficientes -- no quedan .set-row/.set-
+       tracker acá adentro, así que no hace falta ninguna clase de
+       colapso/expansión ni wireSetRow() (ese sigue existiendo intacto
+       para bloques CLÁSICOS de Sports, fuera de la Pizarra). La conexión
+       de eventos de estas filas nuevas vive en un único listener
+       delegado sobre document (ver más abajo en el archivo, junto a
+       "RELOJ DE DESCANSO EMERGENTE"), así que ni siquiera importa en qué
+       momento se insertan en el DOM. */
   }
+
+  /* ============================================================
+     REFACTORING INTEGRAL -- EVENTOS DELEGADOS DE LA FILA NATIVA
+     Únicos listeners que tocan .jp-input-native/.jp-btn-check-native
+     (exclusivos de la Pizarra Sports, ver renderSetRowsNativeSB() más
+     arriba) -- delegados sobre document, así que conectan CUALQUIER fila
+     sin importar cuándo se insertó al DOM (nunca hace falta re-cablear
+     nada a mano, a diferencia del viejo wireSetRow() por-elemento). Cero
+     alcance sobre CrossFit: esas clases no existen en ningún HTML que
+     genere pizarra() de CF.
+     ============================================================ */
+  document.addEventListener('input', function(e){
+    const el = e.target;
+    const esKg = el.classList && el.classList.contains('jp-val-primary');
+    const esSec = el.classList && el.classList.contains('jp-val-secondary');
+    if(!esKg && !esSec) return;
+    const row = el.closest('.jp-set-row-native'); if(!row) return;
+    const key = row.dataset.setKey; if(!key) return;
+    setLoadField(key, esKg ? 'kg' : 'reps', el.value);
+  });
+  document.addEventListener('click', function(e){
+    const btn = e.target.closest('.jp-btn-check-native');
+    if(!btn) return;
+    const row = btn.closest('.jp-set-row-native'); if(!row) return;
+    const key = row.dataset.setKey; if(!key) return;
+    const nowDone = !btn.classList.contains('completed');
+    btn.classList.toggle('completed', nowDone);
+    row.classList.toggle('completed', nowDone);
+    setLoadField(key, 'done', nowDone);
+    try{ beepSetCheck(nowDone); }catch(err){}
+    if(nowDone){
+      try{ if(navigator.vibrate) navigator.vibrate([15, 30, 15]); }catch(err){}
+      const bl = btn.closest('.block');
+      if(bl && typeof window.jpArrancarDescansoSetNative === 'function') window.jpArrancarDescansoSetNative(bl);
+    }
+  });
 
   /* directiva ("Motor de 1RM exacto") -- modal táctico CENTRADO: el
      popover chico anclado al botón quedaba tapado por el teclado
@@ -19820,6 +19920,21 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     var lb = (caj && etiquetaRonda(bl, caj.querySelector('.set-row'))) || ('Descanso · ' + nombreDe(bl));
     arrancar(descansoDe(bl), lb);
   };
+  /* directiva ("Reconstrucción total del tracker de series en Sports") --
+     mismo puente que jpArrancarDescansoRonda: el nuevo botón de check
+     nativo (.jp-btn-check-native) es un <button>, nunca dispara 'change'
+     sobre .set-check, así que el listener de más abajo ("al tildar una
+     serie") nunca lo ve. Se expone acá (mismo closure que ya tiene
+     arrancar()/descansoDe()/nombreDe()/agrupado()/esCF(), sin duplicar
+     esa lógica) para que el listener delegado de la Pizarra Sports (ver
+     pizarraSports(), otro módulo) dispare el mismo reloj compartido. */
+  window.jpArrancarDescansoSetNative = function(bl){
+    if(!bl || esCF()) return;
+    if(bl.classList.contains('wu-card')) return;
+    if(agrupado(bl)) return;
+    var lb = 'Descanso · ' + nombreDe(bl);
+    setTimeout(function(){ arrancar(descansoDe(bl), lb); }, 90);
+  };
 
   /* al tildar una serie */
   document.addEventListener('change', function(e){
@@ -27457,6 +27572,53 @@ body.cf-disc .story-cta:hover{ border-color:rgba(224,109,45,.4); color:#E06D2D; 
 .jp-sb-board .set-check{
   accent-color:#00e5ff !important; flex:0 0 auto !important; width:20px !important; height:20px !important;
 }
+/* directiva ("Refactoring integral: reconstrucción total del tracker de
+   series en Sports") -- fila de registro NATIVA, desde cero, exclusiva
+   de la Pizarra Sports (renderSetRowsNativeSB()). Reemplaza el uso que
+   pizarraSports() hacía de .set-tracker/.set-row (las reglas de arriba
+   quedan intactas para no romper nada, simplemente ya no las genera
+   nadie acá -- un bloque CLÁSICO de Sports fuera de la Pizarra las
+   sigue usando tal cual). Cero pointer-events/user-select/disabled: los
+   inputs son <input type="number"> reales, sin capa intermedia. */
+.jp-set-tracker-native{ display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+.jp-set-row-native{
+  display:flex; align-items:center; gap:6px; flex-wrap:nowrap;
+  height:40px; max-height:40px; padding:0 8px; box-sizing:border-box;
+  background:#111620; border:1px solid #1e2638; border-radius:8px;
+}
+.jp-set-row-native.completed{ opacity:.8; }
+.jp-set-pill{
+  flex:0 0 auto;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.68rem; letter-spacing:.04em; text-transform:uppercase; color:#00e5ff;
+  background:rgba(0,229,255,.1); border:1px solid rgba(0,229,255,.3); border-radius:5px;
+  padding:3px 7px; white-space:nowrap;
+}
+.jp-set-ref{
+  flex:0 0 auto; white-space:nowrap; font-size:.62rem; color:rgba(0,229,255,.8);
+  background:rgba(0,229,255,.06); border:1px solid rgba(0,229,255,.2); border-radius:5px;
+  padding:2px 6px;
+}
+.jp-input-native{
+  flex:1 1 0; min-width:0; width:100%; height:28px; box-sizing:border-box;
+  background:#0b0e14; color:#ffffff; border:1px solid #1e2638; border-radius:5px;
+  text-align:center; font-size:.85rem; font-family:'JetBrains Mono',monospace;
+}
+.jp-input-native::-webkit-outer-spin-button,
+.jp-input-native::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+.jp-input-native{ -moz-appearance:textfield; }
+.jp-input-native:focus{ outline:none; border-color:#00e5ff; box-shadow:0 0 0 1px rgba(0,229,255,.3); }
+.jp-unit{
+  flex:0 0 auto; font-size:.62rem; color:rgba(237,239,242,.55); text-transform:lowercase; white-space:nowrap;
+}
+.jp-sep{ flex:0 0 auto; font-size:.75rem; color:rgba(237,239,242,.4); }
+.jp-btn-check-native{
+  flex:0 0 auto; width:26px; height:26px; border-radius:50%; box-sizing:border-box;
+  background:transparent; border:1px solid #00e5ff; color:#00e5ff;
+  font-size:.8rem; line-height:1; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; padding:0;
+}
+.jp-btn-check-native.completed{ background:#00e5ff; color:#000000; border-color:#00e5ff; }
 </style>
 
 </body>
