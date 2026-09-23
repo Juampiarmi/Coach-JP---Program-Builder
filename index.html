@@ -3394,7 +3394,10 @@ function detectarEjerciciosSports(texto){
       linea.replace(/[0-9x×|.:\-–\/]/gi, '').replace(/tempo|rir|rest|sets?|series|rondas?|reps?|fallo\s*t[eé]cnico/gi, '').trim().length < 4;
     if(soloEsDosis) return;
     if(esLineaDirectivaSports(linea)) return;
-    const nombreLimpio = linea.replace(/^A\d+[.)]\s*/i, '').split(/[:\-–]/)[0].trim();
+    /* directiva ("Fuzzy Matching Inteligente de Videos") -- sanitización:
+       prefijo de estación (A1./A2.), viñetas sueltas, y TODO lo que sigue
+       a un "|" (Tempo/RIR/Rest) nunca es parte del nombre. */
+    const nombreLimpio = linea.replace(/^A\d+[.)]\s*/i, '').replace(/^[\s\-•*]+/, '').split(/[:\-–|]/)[0].trim();
     if(!nombreLimpio || nombreLimpio.length < 3) return;
     const k = normSports(nombreLimpio);
     if(vistos[k]) return;
@@ -3403,25 +3406,18 @@ function detectarEjerciciosSports(texto){
   });
   return out;
 }
+/* directiva ("Fuzzy Matching Inteligente de Videos") -- descarte de
+   tokens de control: una línea que MENCIONA biset/triset/circuito/
+   myo-reps/dropset (en cualquier posición, no sólo al inicio) es
+   metadata de la Pizarra, nunca un ejercicio -- suma "3 rondas" (dosis
+   de rondas SIN sets/reps, que parsearDosisSports() no reconoce como
+   dosis así que soloEsDosis de arriba no la agarra) a la lista ya
+   existente de rest/descanso/nota/rir/rondas al inicio de línea. */
 function esLineaDirectivaSports(linea){
-  return /^(rest|descanso|nota|rir|rondas?)\b/i.test(linea) || /^\*/.test(linea);
-}
-/* directiva ("Pizarra Única"): vista previa de sólo lectura de lo que
-   extraerMetadatosPizarraSports() ya dejó en b.objective/b.tips -- HTML
-   compartido entre el render completo (renderDay()) y el refresco en
-   vivo de abajo (mismo patrón que .sb-alerts/alertasChipsSports). */
-function metaHintSportsHtml(b){
-  if(b.objective || b.tips){
-    return '<div class="hint sb-meta-hint" style="margin-top:8px;line-height:1.5">' +
-      (b.objective ? '<div>🎯 <b>Objetivo:</b> ' + esc(b.objective) + '</div>' : '') +
-      (b.tips ? '<div>💡 <b>Tips:</b> ' + esc(b.tips) + '</div>' : '') +
-    '</div>';
-  }
-  return '<div class="hint sb-meta-hint" style="margin-top:8px">Escribí una línea con 🎯/Objetivo: o 💡/Tip:/Pauta: dentro de la Pizarra de arriba para que aparezcan acá.</div>';
+  return /^(rest|descanso|nota|rir|rondas?)\b/i.test(linea) || /^\*/.test(linea) ||
+    /^\d+\s*rondas?\b/i.test(linea) || /\b(biset|triset|circuito|myo-?reps|dropset)\b/i.test(linea);
 }
 function alertasChipsSports(bl, b){
-  const hintEl = bl.querySelector('.sb-meta-hint');
-  if(hintEl) hintEl.outerHTML = metaHintSportsHtml(b);
   const ta = bl.querySelector('textarea[data-bf="items"]');
   if(!ta) return;
   const ath = active();
@@ -4008,17 +4004,20 @@ function renderDay(){
             '<div style="margin-top:8px"><label class="lb">Escalado / RX alternativo</label><input data-bf="cfCierre.escalado" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.escalado) || '') + '" placeholder="RX 42.5/30kg · Scaled 30/20kg"></div>' +
           '</details>';
       } else if(esBloqueSportsPizarra){
-        /* directiva ("Pizarra Única"): se retiran los textareas sueltos de
-           Objetivo/Tips -- todo se redacta DENTRO del textarea principal
-           de arriba con prefijos reconocidos (🎯/Objetivo: · 💡/Tip:/
-           Pauta:), extraídos automáticamente por
-           extraerMetadatosPizarraSports() cada vez que se edita "items"
-           (ver setBlockField()). b.objective/b.tips siguen siendo los
-           MISMOS campos genéricos de siempre -- compile()/la app del
-           alumno no cambian. Acá sólo queda una vista previa de sólo
-           lectura para que el coach confirme qué quedó vinculado (nunca
-           un input propio, así no hay dos fuentes de verdad). */
-        h += metaHintSportsHtml(b);
+        /* directiva ("Separación de conceptos en el Builder"): la
+           Pizarra Libre vuelve a ser EXCLUSIVA de la rutina (ejercicios,
+           series, reps, tempos, descansos, metodologías) -- Objetivo/
+           Tips se editan en su propio acordeón colapsado debajo, nunca
+           mezclados como prosa dentro del textarea (revierte el
+           esquema de prefijos 🎯/💡 en línea de la directiva anterior,
+           que el coach reportó confuso). Mismos campos genéricos de
+           siempre (b.objective/b.tips) -- compile()/la app del alumno
+           no cambian, sólo cambia DÓNDE se editan. */
+        h += '<details class="cf-acc" style="margin-top:10px">' +
+            '<summary class="lb">▾ Objetivo Fisiológico &amp; Coaching Tips del bloque</summary>' +
+            '<div style="margin-top:10px"><label class="lb">🎯 Objetivo Fisiológico</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:40px" placeholder="Máxima tensión mecánica en el rango medio">' + esc(b.objective||'') + '</textarea></div>' +
+            '<div style="margin-top:8px"><label class="lb">💡 Coaching Tips &amp; Estrategia Biomecánica</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:48px" placeholder="Controlar el descenso, no rebotar en el pecho">' + esc(b.tips||'') + '</textarea></div>' +
+          '</details>';
       } else {
         h += '<div style="margin-top:10px;max-width:260px"><label class="lb">Timer Zona 2 (min · opcional)</label><input type="number" data-bf="cardioMinutes" data-b="' + b.id + '" value="' + esc(b.cardioMinutes||'') + '"></div>';
       }
@@ -4410,28 +4409,6 @@ function addSubEx(bid, exId){
   else if(w === 'good') toast('⭐ Ejercicio prioritario agregado');
   else toast('Ejercicio agregado');
 }
-/* directiva ("Pizarra Única"): una línea que empieza con 🎯/"Objetivo:"
-   dentro de la Pizarra libre se vuelve el objetivo fisiológico del
-   bloque; 💡/"Tip:"/"Pauta:" se vuelve coaching tips -- mismo criterio
-   que ya usa el parser de fases/técnica del lado del alumno (prefijo
-   reconocido por FORMA, se detecta y no compite con el nombre de un
-   ejercicio real). Sólo SOBRESCRIBE b.objective/b.tips cuando encuentra
-   al menos una línea con el prefijo correspondiente -- si el coach no
-   usa la convención nueva (bloques ya cargados con el viejo textarea
-   separado, o generados por IA), el valor existente queda intacto: cero
-   mutación destructiva sobre datos reales ya guardados. */
-var RX_META_OBJETIVO_SPORTS = /^(?:🎯|objetivo\s*:)\s*/i;
-var RX_META_TIP_SPORTS = /^(?:💡|tip\s*:|pauta\s*:)\s*/i;
-function extraerMetadatosPizarraSports(b){
-  const objetivos = [], tips = [];
-  (b.items || []).forEach(function(linea){
-    const t = String(linea || '');
-    if(RX_META_OBJETIVO_SPORTS.test(t)) objetivos.push(t.replace(RX_META_OBJETIVO_SPORTS, '').trim());
-    else if(RX_META_TIP_SPORTS.test(t)) tips.push(t.replace(RX_META_TIP_SPORTS, '').trim());
-  });
-  if(objetivos.length) b.objective = objetivos.filter(Boolean).join(' · ');
-  if(tips.length) b.tips = tips.filter(Boolean).join(' · ');
-}
 function setBlockField(b, f, val){
   if(f === 'items' || f === 'movements') b[f] = String(val).split('\n').map(s => s.trim()).filter(Boolean);
   else if(f === 'optional') b.optional = (val === '1' || val === true);
@@ -4444,7 +4421,6 @@ function setBlockField(b, f, val){
     obj[partes[partes.length - 1]] = val;
   }
   else b[f] = val;
-  if(f === 'items' && b.sportsPizarra) extraerMetadatosPizarraSports(b);
 }
 
 /* ---------- DESACOPLAMIENTO DE SEMANAS (CrossFit & Hyrox) ----------
@@ -27875,28 +27851,36 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 /* directiva ("Unificación Total de Core") -- contador táctico de rondas
    al pie del circuito/biset/triset. Cyan táctico (control interactivo,
    igual que los inputs/check nativos), compacto, una sola línea. */
+/* directiva ("Fix de desencuadre / overflow en app del alumno"): la
+   barra desbordaba los marcos verticales del bloque -- box-sizing +
+   width/max-width 100% + overflow:hidden en el contenedor, y
+   flex-shrink:0 en cada control (nunca se comprimen entre sí, el que
+   cede es el gap/el propio contenedor recorta antes que romper el
+   ancho del bloque padre). */
 .jp-sb-rondas-ctl{
-  display:flex; align-items:center; justify-content:center; gap:10px;
-  margin-top:12px; padding:8px 10px; border-radius:10px;
+  box-sizing:border-box; width:100%; max-width:100%; overflow:hidden;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  margin:12px 0; padding:6px 10px; border-radius:10px;
   background:#111620; border:1px solid #1e2638;
 }
 .jp-ronda-btn{
-  flex:0 0 auto; width:28px; height:28px; border-radius:50%; box-sizing:border-box;
+  flex-shrink:0; flex-grow:0; width:28px; height:28px; border-radius:50%; box-sizing:border-box;
   background:transparent; border:1px solid #00e5ff; color:#00e5ff;
   font-size:1rem; font-weight:800; line-height:1; display:flex; align-items:center; justify-content:center;
   cursor:pointer; padding:0;
 }
 .jp-ronda-btn:active{ background:rgba(0,229,255,.16); }
 .jp-ronda-txt{
-  flex:0 0 auto; font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
-  font-size:.82rem; letter-spacing:.03em; text-transform:uppercase; color:#f8fafc; white-space:nowrap;
+  flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
+  font-size:.82rem; letter-spacing:.03em; text-transform:uppercase; color:#f8fafc;
 }
 .jp-ronda-txt b{ color:#00e5ff; font-size:1rem; }
 .jp-ronda-ok{
-  flex:0 0 auto; padding:6px 12px; border-radius:20px; box-sizing:border-box;
+  flex-shrink:0; flex-grow:0; box-sizing:border-box; padding:6px 12px; border-radius:20px;
   background:#00e5ff; color:#0b0e14; border:1px solid #00e5ff;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
-  font-size:.7rem; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; cursor:pointer;
+  font-size:.68rem; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; cursor:pointer;
 }
 .jp-sb-subex{
   background:rgba(255,255,255,.02); border:1px solid var(--line); border-radius:12px;
@@ -46740,6 +46724,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   color:var(--text);padding:4px 9px;
 }
 .vc-inline-select:focus{border-color:#7CC5E8;outline:none}
+/* directiva ("Gestor y agregado manual de videos por bloque") */
+.vc-remove{
+  display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;
+  border-radius:50%;border:1px solid var(--line-2);background:transparent;
+  color:var(--muted);font-size:10px;cursor:pointer;flex:0 0 auto;
+}
+.vc-remove:hover{border-color:#FF6B57;color:#FF6B57;background:rgba(255,107,87,.1)}
+.vc-add{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 13px;border-radius:20px;
+  font-size:11.5px;font-weight:700;cursor:pointer;border:1px dashed rgba(124,197,232,.5);
+  background:rgba(124,197,232,.06);color:#7CC5E8;min-height:30px;font-family:var(--ff);
+}
+.vc-add:hover{background:rgba(124,197,232,.14);border-style:solid}
 </style>
 
 <script>
@@ -46879,26 +46876,73 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function chips(bl, b){
     const ta = bl.querySelector('textarea[data-bf="items"], textarea[data-bf="movements"]');
     if(!ta) return;
-    const lineas = String(ta.value || '').split('\n');
-    const idx = indice();
-    const vistos = {}, lista = [];
-    lineas.forEach(l => {
-      candidatos(l).forEach(n => {
-        const k = nrm(n);
-        if(!k || vistos[k]) return;
+    let lista;
+    if(b.sportsPizarra){
+      /* directiva ("Fuzzy Matching Inteligente de Videos"): Pizarra
+         Sports usa su propio detector -- detectarEjerciciosSports() ya
+         descarta BISET/TRISET/CIRCUITO/TEMPO/RONDAS/MYO-REPS/DROPSET y
+         sanea A1./A2./pipe -- y resolverExSports() (match exacto, si no
+         cae a matchNombre(): substring/palabras en común, así
+         "Dislocaciones de hombro" matchea "Dislocaciones de hombro con
+         banda elástica"). candidatos()/exacto() de abajo son 100%
+         exactos a propósito -- pensados para CrossFit, nunca tocados. */
+      const vistos = {};
+      lista = [];
+      const dismissed = b.videosDismissed || [];
+      detectarEjerciciosSports(ta.value).forEach(function(d){
+        const k = nrm(d.nombre);
+        if(!k || vistos[k] || dismissed.indexOf(k) >= 0) return;
         vistos[k] = 1;
-        const ex = exacto(n, idx, b.videoOverrides);
+        const manual = (b.videosManual || []).find(function(v){ return nrm(v.nombre) === k; });
         const esOverride = !!(b.videoOverrides && b.videoOverrides[k]);
-        lista.push({ nombre: n, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: esOverride });
+        const exId = manual ? manual.exId : (esOverride ? b.videoOverrides[k] : '');
+        const ex = exId ? getEx(exId) : d.ex;
+        lista.push({ nombre: d.nombre, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: esOverride || !!manual, manual: !!manual });
       });
-    });
+      /* directiva ("Gestor y agregado manual de videos"): un video
+         agregado a mano para un nombre que el texto de la Pizarra no
+         trae tal cual (o que detectarEjerciciosSports() no llegó a
+         reconocer) igual aparece como su propio chip. */
+      (b.videosManual || []).forEach(function(v){
+        const k = nrm(v.nombre);
+        if(!k || vistos[k] || dismissed.indexOf(k) >= 0) return;
+        vistos[k] = 1;
+        const ex = getEx(v.exId);
+        lista.push({ nombre: v.nombre, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: true, manual: true });
+      });
+    } else {
+      const lineas = String(ta.value || '').split('\n');
+      const idx = indice();
+      const vistos = {};
+      lista = [];
+      lineas.forEach(l => {
+        candidatos(l).forEach(n => {
+          const k = nrm(n);
+          if(!k || vistos[k]) return;
+          vistos[k] = 1;
+          const ex = exacto(n, idx, b.videoOverrides);
+          const esOverride = !!(b.videoOverrides && b.videoOverrides[k]);
+          lista.push({ nombre: n, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: esOverride });
+        });
+      });
+    }
     let caja = bl.querySelector('.vid-chips');
-    if(!lista.length){ if(caja) caja.remove(); return; }
+    /* directiva ("Gestor y agregado manual de videos"): el botón
+       "➕ Agregar Video" vive AL FINAL de la tira -- exclusivo de Pizarra
+       Sports (b.id disponible acá, b.sportsPizarra ya filtró todo lo
+       de arriba). CrossFit nunca ve este botón: si la tira queda vacía
+       (!lista.length) para un bloque de Pizarra Sports, igual se monta
+       la caja sólo con el botón, para poder agregar el primer video a
+       mano sin depender de que el texto matchee algo primero. */
+    const botonAgregar = b.sportsPizarra
+      ? '<button type="button" class="vc-add" data-vcaddblock="' + esc(b.id) + '" title="Agregar un video manualmente">➕ Agregar Video</button>'
+      : '';
+    if(!lista.length && !botonAgregar){ if(caja) caja.remove(); return; }
     const html = '<span class="vc-h">🎬 Videos reconocidos en la biblioteca</span>' +
       lista.map(x => {
         const principal = x.ex
           ? '<button type="button" class="vc ok' + (x.override ? ' override' : '') + '" data-vcok="' + esc(x.ex.id) + '" title="Ver el video vinculado">' +
-              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.nombre) + '</b> (Video vinculado' + (x.override ? ', manual' : '') + ')</button>'
+              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.nombre) + '</b> (Video vinculado' + (x.override ? (x.manual ? ', manual' : ', override') : '') + ')</button>'
           : '<button type="button" class="vc no" data-vcno="' + esc(x.nombre) + '"' +
               (x.ficha ? ' data-vcex="' + esc(x.ficha.id) + '"' : '') +
               ' title="Vincular un video sin salir del Builder">⚠️ ' + esc(x.nombre) + ' — + Vincular</button>';
@@ -46907,8 +46951,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
            TEMPLATE_HTML) eligió la variante incorrecta, el coach reasigna
            a mano acá mismo, sin salir del Builder. */
         const reasignar = '<button type="button" class="vc-reasign" data-vcswap="' + esc(x.key) + '" data-vcswapname="' + esc(x.nombre) + '" title="Reasignar a otro ejercicio de la biblioteca">🔀</button>';
-        return '<span class="vc-group">' + principal + reasignar + '</span>';
-      }).join('');
+        /* directiva ("Gestor y agregado manual de videos"): [✕] por chip
+           -- quita un falso positivo (auto-detectado) o un video manual
+           por igual, sin salir del Builder. Exclusivo de Pizarra Sports
+           (guardrail: CrossFit no gana NINGÚN elemento nuevo de UI, ni
+           siquiera uno inofensivo -- "100% intacto" es al pie de la letra). */
+        const quitar = b.sportsPizarra ? '<button type="button" class="vc-remove" data-vcremove="' + esc(x.key) + '" title="Quitar este video del bloque">✕</button>' : '';
+        return '<span class="vc-group">' + principal + reasignar + quitar + '</span>';
+      }).join('') + botonAgregar;
     if(caja){ if(caja.innerHTML !== html) caja.innerHTML = html; return; }
     caja = document.createElement('div');
     caja.className = 'vid-chips';
@@ -47008,6 +47058,135 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     refrescarChipsDe(span);
   }
 
+  /* directiva ("Gestor y agregado manual de videos por bloque") --
+     modal liviano (creado por JS, mismo criterio que abrirMicroVincular/
+     abrirReasignar de arriba, sin depender de agregar un nuevo bloque
+     estático a la sección MODALES): buscador de la biblioteca (select,
+     mismo patrón ya probado de abrirReasignar) + opción de pegar URL
+     directa para un ejercicio nuevo. Exclusivo del botón "➕ Agregar
+     Video" que sólo se monta para b.sportsPizarra -- CrossFit nunca lo ve. */
+  function abrirModalAgregarVideo(blockId){
+    const b = findBlock(blockId); if(!b) return;
+    const existentes = (S.exercises || []).filter(e => e.videoId)
+      .slice().sort((a, bb) => (a.es || '').localeCompare(bb.es || ''));
+    const opts = '<option value="">— Buscar en la biblioteca —</option>' +
+      existentes.map(e => '<option value="' + esc(e.id) + '">' + esc(e.es) + '</option>').join('');
+    const bg = document.createElement('div');
+    bg.className = 'modal-bg on';
+    bg.id = 'mVideoManual';
+    bg.innerHTML =
+      '<div class="modal" style="max-width:420px">' +
+        '<div class="modal-h"><h3>➕ Agregar Video al Bloque</h3><div class="spacer"></div><button class="icon-btn" data-vmcancel="1">✕</button></div>' +
+        '<div class="modal-b">' +
+          '<label class="lb">Nombre del ejercicio</label>' +
+          '<input type="text" id="vmNombre" placeholder="Ej: Dislocaciones de hombro" autocomplete="off">' +
+          '<label class="lb" style="margin-top:12px">O elegí de la biblioteca</label>' +
+          '<select id="vmSelect">' + opts + '</select>' +
+          '<label class="lb" style="margin-top:12px">O pegar URL directa (YouTube/Vimeo)</label>' +
+          '<input type="text" id="vmUrl" placeholder="https://youtu.be/..." autocomplete="off">' +
+          '<div class="row" style="margin-top:16px;gap:8px">' +
+            '<button type="button" class="btn ghost" data-vmcancel="1" style="flex:1">Cancelar</button>' +
+            '<button type="button" class="btn gold" data-vmsave="' + esc(blockId) + '" style="flex:1">Guardar</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(bg);
+    document.body.style.overflow = 'hidden';
+    const nombreInput = bg.querySelector('#vmNombre');
+    nombreInput.focus();
+    bg.querySelector('#vmSelect').addEventListener('change', function(){
+      const ex = getEx(this.value);
+      if(ex && !nombreInput.value.trim()) nombreInput.value = ex.es;
+    });
+  }
+  function cerrarModalVideoManual(){
+    const bg = document.getElementById('mVideoManual');
+    if(bg) bg.remove();
+    document.body.style.overflow = '';
+  }
+  function guardarVideoManual(blockId){
+    const bg = document.getElementById('mVideoManual'); if(!bg) return;
+    const b = findBlock(blockId); if(!b) return;
+    const nombre = (bg.querySelector('#vmNombre').value || '').trim();
+    const selId = bg.querySelector('#vmSelect').value;
+    const url = (bg.querySelector('#vmUrl').value || '').trim();
+    if(!nombre){ toast('Escribí el nombre del ejercicio', 'err'); return; }
+    let exId = '';
+    if(selId){
+      exId = selId;
+    } else if(url){
+      const id = ytId(url);
+      if(!id){ toast('No se pudo extraer un ID de YouTube/Vimeo válido de esa URL', 'err'); return; }
+      /* directiva ("Gestor y agregado manual de videos") -- si el nombre
+         coincide con un ejercicio YA existente en la biblioteca, nunca
+         se le pisa el video en silencio: eso corrompería una ficha real
+         que otro bloque/atleta puede estar usando (bug real detectado
+         en pruebas: tipear el nombre de un ejercicio de catálogo con una
+         URL de prueba sobreescribía su video oficial). Sin video propio
+         todavía, sí se completa (mismo criterio, más seguro, que ya usa
+         guardarMicroVincular() más arriba: sólo llena, nunca reemplaza). */
+      const existente = (S.exercises || []).find(e => normSports(e.es) === normSports(nombre));
+      if(existente && existente.videoId){
+        exId = existente.id;
+        toast('Ese ejercicio ya tenía un video en la biblioteca -- se usó el existente');
+      } else if(existente){
+        existente.video = url; existente.videoId = id; exId = existente.id;
+      } else{
+        const nuevo = { id: uid('ex'), custom: true, es: nombre, en: '',
+          grupo: GRUPOS[0], patron: PATRONES[0], equipo: EQUIPOS[0],
+          video: url, videoId: id, riesgo: [], aviso: '' };
+        S.exercises.push(nuevo);
+        exId = nuevo.id;
+      }
+    } else{
+      toast('Elegí un ejercicio de la biblioteca o pegá una URL de video', 'err');
+      return;
+    }
+    b.videosManual = b.videosManual || [];
+    const k = nrm(nombre);
+    const existenteManual = b.videosManual.find(v => nrm(v.nombre) === k);
+    if(existenteManual) existenteManual.exId = exId;
+    else b.videosManual.push({ nombre: nombre, exId: exId });
+    /* directiva ("Gestor y agregado manual de videos") -- también se
+       escribe en b.videoOverrides (mismo mapa nombre-normalizado -> exId
+       que ya lee compile()/resolveExacto(), ver nrmOverrideKey() más
+       arriba en el archivo) para que el video agregado a mano viaje al
+       alumno cuando el nombre SÍ aparece como línea de la Pizarra --
+       b.videosManual por sí solo sólo controla el chip del Builder. */
+    b.videoOverrides = b.videoOverrides || {};
+    b.videoOverrides[k] = exId;
+    if(b.videosDismissed) b.videosDismissed = b.videosDismissed.filter(x => x !== k);
+    save();
+    if(typeof renderLibrary === 'function') renderLibrary();
+    toast('🎬 Video agregado al bloque');
+    cerrarModalVideoManual();
+    const ref = document.querySelector('.block [data-b="' + blockId + '"]');
+    const blockEl = ref ? ref.closest('.block') : null;
+    if(blockEl) chips(blockEl, b);
+  }
+  /* directiva ("Gestor y agregado manual de videos"): [✕] por chip --
+     un video manual se saca del todo (b.videosManual); uno
+     auto-detectado se marca "descartado" (b.videosDismissed) para que
+     detectarEjerciciosSports() no lo vuelva a mostrar aunque el texto
+     siga mencionándolo -- el coach lo puede volver a agregar a mano si
+     se arrepiente. */
+  function quitarVideoChip(btn){
+    const grupo = btn.closest('.vc-group');
+    const bl = btn.closest('.block');
+    const ref = bl && bl.querySelector('[data-b]');
+    const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+    if(!b) return;
+    const key = btn.dataset.vcremove || '';
+    if(!key) return;
+    b.videosManual = (b.videosManual || []).filter(v => nrm(v.nombre) !== key);
+    b.videosDismissed = b.videosDismissed || [];
+    if(b.videosDismissed.indexOf(key) < 0) b.videosDismissed.push(key);
+    if(b.videoOverrides) delete b.videoOverrides[key];
+    save();
+    toast('Video quitado del bloque');
+    refrescarChipsDe(grupo || btn);
+  }
+
   document.addEventListener('click', e => {
     const ok = e.target.closest('[data-vcok]');
     if(ok){ if(typeof openVideo === 'function') openVideo(ok.dataset.vcok); return; }
@@ -47034,7 +47213,17 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         if(vid) vid.focus();
         try{ toast('Pegá el link de YouTube y guardá: el bloque queda vinculado'); }catch(x){}
       }, 90);
+      return;
     }
+    const addBlock = e.target.closest('[data-vcaddblock]');
+    if(addBlock){ abrirModalAgregarVideo(addBlock.dataset.vcaddblock); return; }
+    const vmCancel = e.target.closest('[data-vmcancel]');
+    if(vmCancel){ cerrarModalVideoManual(); return; }
+    const vmSave = e.target.closest('[data-vmsave]');
+    if(vmSave){ guardarVideoManual(vmSave.dataset.vmsave); return; }
+    if(e.target.id === 'mVideoManual'){ cerrarModalVideoManual(); return; }
+    const remove = e.target.closest('[data-vcremove]');
+    if(remove){ quitarVideoChip(remove); return; }
   });
 
   /* =========================================================
