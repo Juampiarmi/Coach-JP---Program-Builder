@@ -10296,6 +10296,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      -- sólo el movimiento real va en tarjeta modular con pastilla de carga. */
   function jpMdBold(t){ return String(t || '').replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>'); }
   function jpCfEsHeader(l){ return /^\\s*#+\\s*/.test(l) || /:\\s*$/.test(l.replace(/\\*\\*/g, '').trim()); }
+  /* directiva ("Rediseño y reubicación del texto colgado de Core") -- un
+     header que declara el FORMATO del bloque ("5 Super Sets:", "Every
+     4:00 x 4 Sets:", "3 Rondas:") es distinto de un header narrativo
+     suelto ("Objetivo:") -- se detecta por terminar en sets/rounds/
+     rondas y se renderiza como pastilla táctica propia (.cf-format-
+     badge, naranja), nunca como el bloque de texto blanco genérico. */
+  function jpCfEsFormatoHeader(l){
+    return /\\b(sets?|rounds?|rondas?)\\s*:\\s*$/i.test(String(l || '').replace(/\\*\\*/g, '').trim());
+  }
   function jpCfTieneCarga(l){ return /@\\s*[\\d.]/.test(l) || /\\d[\\d.\\/]*\\s*(?:kg|kgs|lb|lbs|cm|m)\\b/i.test(l); }
   /* esquema de reps puro (ej. "21-15-9", "5-5-5-5-5") -- pastilla táctica
      propia, no es ni encabezado ni movimiento con carga */
@@ -10407,7 +10416,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      fila: el texto de cada movimiento fluye limpio de punta a punta con
      su carga/distancia a la derecha, sin nada empujándolo ni rompiendo
      el flujo de lectura. El acceso a los videos se mudó por completo al
-     módulo "Clips Técnicos del Bloque" (jpCfClips/jpCfClipsHtml, más
+     módulo "Clips Técnicos del Bloque" (jpCfClips/jpCfClipsRowHtml, más
      abajo), que se arma una sola vez por bloque -- no por línea -- y
      sólo con coincidencias directas/exactas (nunca por aproximación,
      ver buscarVideo(nombre, true)). */
@@ -10556,6 +10565,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const l = String(raw || '').trim();
     if(jpCfEsHeader(l)){
       const txt = l.replace(/^\\s*#+\\s*/, '');
+      if(jpCfEsFormatoHeader(txt)){
+        return '<div class="cf-format-badge">\\u26a1 ' + jpMdBold(txt) + '</div>';
+      }
       return '<div class="jp-cf-row jp-cf-header">' + jpMdBold(txt) + '</div>';
     }
     if(jpCfEsEsquema(l)){
@@ -10628,6 +10640,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         kgTxt = resto ? ' ' + resto : '';
       }
       valHtml = '<button type="button" class="jp-cf-pct" data-pct-lift="' + benchmark.replace(/"/g,'') + '" data-pct-key="' + liftKey + '">@ ' + pct + '%' + kgTxt + '</button>';
+    } else if(partes.val && /^@?\\s*[\\d.]+(?:\\s*\\/\\s*[\\d.]+)?\\s*(?:kg|kgs|lbs?)\\b/i.test(partes.val)){
+      /* directiva ("Integración del Amarillo Oro de Branding") -- carga
+         literal en kg/lb ("@ 43/29kg", "42.5/30kg") sin porcentaje ni
+         referencia cruzada: mismo tratamiento visual de pastilla que
+         .jp-cf-pct/.jp-cf-refload (ver CSS .jp-cf-load), pero como texto
+         plano (no hay 1RM ni bloque que resolver, ya es un valor final). */
+      valHtml = '<span class="jp-cf-load">' + jpMdBold(partes.val) + '</span>';
     }
     return '<div class="jp-cf-row">' +
         '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
@@ -10709,17 +10728,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     return out;
   }
-  /* directiva (ergonomía integral): el módulo de videos pasa a acordeón
-     colapsado por defecto -- consulta rápida opcional, la pizarra
-     principal queda 100% libre de íconos para entrenar. */
-  function jpCfClipsHtml(clips){
+  /* directiva ("Unificación de Acordeones al Pie del Bloque") -- ya no
+     arma su propio <details>: sólo la tira de chips, para que
+     "Videos Técnicos" y "Objetivo del estímulo & Coaching Tips" vivan
+     en UN SOLO acordeón (ver pizarra() más abajo, arma el <details>
+     único combinando esto con objetivo/tips/pacing/escalado). */
+  function jpCfClipsRowHtml(clips){
     if(!clips.length) return '';
-    return '<details class="jp-cf-clips"><summary class="jp-cf-clips-lb">&#127909; Videos T\\u00e9cnicos del Bloque (' + clips.length + ')</summary><div class="jp-cf-clips-row">' +
+    return '<div class="jp-cf-clips-row">' +
       clips.map(function(c){
         return '<button type="button" class="jp-cf-clip" data-yt="' + c.ytid + '" aria-label="Ver la t\\u00e9cnica de ' + String(c.nombre).replace(/"/g,'') + '">' +
           '<span class="jp-cf-clip-ic">&#9654;</span><span class="jp-cf-clip-nm">' + c.nombre + '</span></button>';
       }).join('') +
-    '</div></details>';
+    '</div>';
   }
   function pizarra(blockEl, block, weekIdx, dayId){
     /* lee las líneas directo del dato compilado (block.items), no del DOM
@@ -10750,6 +10771,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const paramTxt = block.cfParam ? ((CF_PARAM_PREFIX[kFmt] || '') + block.cfParam) : (min ? (min + ' min') : '');
     const c = block.cierre || {};
     const tieneCierre = !!(c.objetivo || c.tips || c.pacing || c.escalado);
+    /* directiva ("Rediseño y reubicación del texto colgado de Core") --
+       block.subtitle ("Trabajo de core focalizado") ya NO se pinta como
+       recuadro gris flotante antes de las filas -- pasa a ser una fila
+       más dentro del acordeón único de pautas técnicas (ver abajo). */
+    const subtituloVisible = (block.subtitle && !(block.weekName && block.weekName[weekIdx] && block.weekName[weekIdx] !== block.title)) ? block.subtitle : '';
     /* directiva: "Sin registro" es una elección explícita del coach de no
        trackear nada en este bloque -- pisa el criterio por fase de más
        arriba (CF_SCORE_FASES), nunca al revés. */
@@ -10781,16 +10807,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            sobrecargaba la vista. f/paramTxt se conservan (siguen
            usándose más abajo para el placeholder del casillero de
            score), sólo se retira este render puntual. */
-        ((block.subtitle && !(block.weekName && block.weekName[weekIdx] && block.weekName[weekIdx] !== block.title))
-          ? '<div class="jp-cf-row jp-cf-note">' + block.subtitle + '</div>' : '') +
         '<div class="jp-cf-rows">' + filas + '</div>' +
-        jpCfClipsHtml(clips) +
-        (tieneCierre ?
-          '<details class="jp-cf-acc"><summary>&#9662; Objetivo del est&iacute;mulo &amp; Coaching Tips</summary>' +
+        /* directiva ("Unificación de Acordeones al Pie del Bloque") --
+           UN SOLO <details> táctico agrupa el foco del bloque, el
+           objetivo/tips/pacing/escalado y los chips de video (antes
+           tres piezas sueltas: recuadro gris de subtítulo, acordeón de
+           videos, acordeón de objetivo). El contador "(N)" del título
+           es la cantidad de videos, igual que mostraba el acordeón
+           viejo de clips. */
+        ((tieneCierre || clips.length || subtituloVisible) ?
+          '<details class="jp-cf-acc"><summary>&#9656; PAUTAS T\\u00c9CNICAS, TIPS &amp; VIDEOS' + (clips.length ? ' (' + clips.length + ')' : '') + '</summary>' +
+            (subtituloVisible ? '<div class="jp-cf-accrow"><span class="lb">Foco del bloque</span><p>' + subtituloVisible + '</p></div>' : '') +
             (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">Objetivo</span><p>' + c.objetivo + '</p></div>' : '') +
             (c.tips ? '<div class="jp-cf-accrow"><span class="lb">Coaching tips</span><p>' + c.tips + '</p></div>' : '') +
             (c.pacing ? '<div class="jp-cf-accrow"><span class="lb">Pacing</span><p>' + c.pacing + '</p></div>' : '') +
             (c.escalado ? '<div class="jp-cf-accrow"><span class="lb">Escalado</span><p>' + c.escalado + '</p></div>' : '') +
+            (clips.length ? '<div class="jp-cf-accrow"><span class="lb">Videos t\\u00e9cnicos</span>' + jpCfClipsRowHtml(clips) + '</div>' : '') +
           '</details>' : '') +
         (scoreVisible ?
           '<div class="wod-score">' +
@@ -27469,6 +27501,18 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   letter-spacing:.01em; color:#fff;
 }
 .jp-cfboard .jp-cf-rows .jp-cf-row.jp-cf-header:first-child{ padding-top:0; }
+/* directiva ("Rediseño y reubicación del texto colgado de Core") --
+   header de FORMATO ("5 Super Sets:", "Every 4:00 x 4 Sets:") como
+   pastilla táctica naranja propia, nunca el bloque de texto blanco
+   genérico -- se distingue de un header narrativo suelto. */
+.cf-format-badge{
+  display:inline-flex; align-items:center; gap:6px; width:fit-content;
+  margin:2px 0 6px; padding:6px 12px; border-radius:20px;
+  background:rgba(255,107,0,.12); border:1px solid rgba(255,107,0,.4);
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:12px;
+  letter-spacing:.06em; text-transform:uppercase; color:#ff6b00;
+}
+.jp-cfboard .jp-cf-rows .cf-format-badge:first-child{ margin-top:0; }
 .jp-cfboard .jp-cf-row.jp-cf-badge{
   display:inline-flex; align-items:center; width:fit-content;
   padding:5px 10px; margin:1px 0; border-radius:20px;
@@ -27493,13 +27537,18 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    flex-wrap:wrap, cuando el badge no entra al lado del nombre baja limpio
    a su propia línea completa -- nunca parte las palabras de la izquierda. */
 .jp-cfboard .jp-cf-rn{
+  /* directiva ("Homogeneización Cromática" CF): blanco nítido exacto #f8fafc */
   flex:1 1 auto; min-width:0; word-break:normal; overflow-wrap:break-word; white-space:normal;
-  font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#EDEFF2;
+  font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#f8fafc;
 }
 .jp-cfboard .jp-cf-rv{
+  /* directiva ("Integración del Amarillo Oro de Branding"): el valor de
+     la fila (carga/kg/%) ya no es cyan por defecto -- .jp-cf-pct/
+     .jp-cf-refload/.jp-cf-load (los casos reales de carga) traen su
+     propio color oro; esto es sólo el contenedor flex. */
   flex:0 1 auto; flex-shrink:1; white-space:normal; overflow-wrap:break-word; max-width:100%;
   display:inline-flex; align-items:center; gap:7px; justify-content:flex-end;
-  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#38BDF8; text-align:right;
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#ffd600; text-align:right;
 }
 /* directiva ("Rediseño Premium del Rest Timer") -- widget integrado al
    pie del bloque, Dark Stealth: carbón + cian neón tenue en reposo,
@@ -27565,7 +27614,11 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    los movimientos con video real/directo detectados en cualquier fase
    de la Pizarra. Va justo encima del acordeón "Objetivo del estímulo". */
 .jp-cf-clips{
-  margin-top:12px; padding-top:12px; border-top:1px dashed rgba(255,255,255,.12);
+  /* directiva ("Erradicar Bordes Punteados"): línea sólida sutil -- esta
+     clase quedó sin uso tras unificar los acordeones (jpCfClipsRowHtml
+     ya no trae su propio <details>), se corrige igual por si algún dato
+     viejo la referencia. */
+  margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,.08);
 }
 .jp-cf-clips-lb{
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; letter-spacing:.08em;
@@ -27591,26 +27644,33 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   background:rgba(210,121,63,.14); border-color:rgba(210,121,63,.5);
   box-shadow:0 0 10px rgba(210,121,63,.3);
 }
-/* directiva ("Resolución activa de % 1RM a Kilogramos"): "@ 76%" pasa a
-   botón tocable dentro del valor de la fila -- mismo tono cyan del resto
-   de .jp-cf-rv, con un borde punteado sutil que insinúa "tocable" sin
-   sumar otro ícono más a la Pizarra. */
+/* directiva ("Erradicar Bordes Punteados" / "Integración del Amarillo
+   Oro de Branding"): "@ 76%" pasa a botón tocable dentro del valor de
+   la fila -- borde SÓLIDO oro (antes punteado cyan), fondo carbón
+   profundo, mismo idioma visual que el escudo/botón de PRs. */
 .jp-cf-pct{
-  background:transparent; border:1px dashed rgba(56,189,248,.4); border-radius:8px;
-  padding:2px 8px; font:inherit; color:inherit; cursor:pointer; min-height:28px;
+  background:#0b0e14; border:1px solid rgba(255,214,0,.3); border-radius:8px;
+  padding:2px 8px; font:inherit; font-weight:700; color:#ffd600; cursor:pointer; min-height:28px;
 }
-.jp-cf-pct:hover,.jp-cf-pct:focus-visible{ border-color:#38BDF8; background:rgba(56,189,248,.08); }
+.jp-cf-pct:hover,.jp-cf-pct:focus-visible{ border-color:#ffd600; background:rgba(255,214,0,.08); }
 /* directiva ("referencia dinámica @ carga bloque N") -- espejo de otro
-   bloque, nunca tocable (no hay 1RM propio que pedirle acá): mismo
-   lenguaje visual que .jp-cf-pct pero con borde sólido en vez de
-   punteado, para que se lea como un valor YA resuelto, no como un
-   control interactivo. */
+   bloque, nunca tocable (no hay 1RM propio que pedirle acá): mismo oro
+   sólido de .jp-cf-pct, para que se lea como un valor YA resuelto, no
+   como un control interactivo (el estado "empty" se queda neutro gris,
+   no hay carga real que resaltar en oro todavía). */
 .jp-cf-refload{
-  display:inline-block; background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.4);
-  border-radius:8px; padding:2px 8px; color:#00e5ff; font-weight:700;
+  display:inline-block; background:#0b0e14; border:1px solid rgba(255,214,0,.3);
+  border-radius:8px; padding:2px 8px; color:#ffd600; font-weight:700;
 }
 .jp-cf-refload.jp-cf-refload-empty{
   background:rgba(148,163,184,.08); border-color:rgba(148,163,184,.35); color:#94a3b8; font-weight:600;
+}
+/* directiva ("Integración del Amarillo Oro de Branding") -- carga
+   literal en kg/lb ("@ 43/29kg") sin porcentaje ni referencia cruzada,
+   mismo tratamiento de pastilla oro sólida que .jp-cf-pct/.jp-cf-refload. */
+.jp-cf-load{
+  display:inline-block; background:#0b0e14; border:1px solid rgba(255,214,0,.3);
+  border-radius:8px; padding:2px 8px; color:#ffd600; font-weight:700;
 }
 /* directiva ("Motor de 1RM exacto") -- modal centrado de pantalla
    completa (mismo patrón que guideModal/painModal/calcModal): el
@@ -27654,13 +27714,24 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   font-weight:700; font-size:13px; text-align:left;
 }
 .jp-prs-row:active{ background:rgba(56,189,248,.1); border-color:rgba(56,189,248,.4); }
-.jp-prs-val{ font-family:'JetBrains Mono',monospace; font-weight:700; color:#F5C518; font-size:13px; }
+/* directiva ("Integración del Amarillo Oro de Branding"): PRs en oro
+   exacto #ffd600 (antes #F5C518, un dorado cercano pero no idéntico). */
+.jp-prs-val{ font-family:'JetBrains Mono',monospace; font-weight:700; color:#ffd600; font-size:13px; }
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
-.jp-cfboard .jp-cf-num{ color:#38BDF8; font-weight:800; }
-.jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px dashed rgba(255,255,255,.12); }
+/* directiva ("Tipografía y Display Táctico de Reps"): cyan #00e5ff
+   exacto, más presencia (tamaño/tracking), monospace táctico -- antes
+   #38BDF8 (cercano pero no exacto) a font-size heredado del texto. */
+.jp-cfboard .jp-cf-num{
+  color:#00e5ff; font-weight:800; font-size:1.15rem;
+  font-family:'JetBrains Mono',monospace; letter-spacing:.02em;
+}
+/* directiva ("Erradicar Bordes Punteados"): separador sólido sutil. */
+.jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px solid rgba(255,255,255,.08); }
 .jp-cfboard details.jp-cf-acc summary{
+  /* directiva ("Homogeneización Cromática" CF): naranja táctico exacto,
+     mismo tono que el tag de cabecera del bloque -- antes cyan. */
   cursor:pointer; list-style:none; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px;
-  letter-spacing:.08em; text-transform:uppercase; color:#38BDF8;
+  letter-spacing:.08em; text-transform:uppercase; color:#ff6b00;
 }
 .jp-cfboard details.jp-cf-acc summary::-webkit-details-marker{ display:none; }
 .jp-cfboard .jp-cf-accrow{ margin-top:9px; }
