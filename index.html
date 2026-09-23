@@ -11201,23 +11201,43 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function esBloqueCalentamientoSB(block){
     return RX_CALENTAMIENTO_SB.test(String((block && block.title) || ''));
   }
-  /* directiva ("Impresión completa de dosis en el header") -- el
-     subtítulo táctico bajo cada ejercicio omitía sets/RIR/Rest (sólo
-     mostraba "reps · Tempo"): el atleta no sabía cuántas series
-     efectivas ni a qué proximidad del fallo entrenar. Arma el texto
-     base ("N sets × reps · Tempo XXXX") y, aparte, los micro-badges de
-     RIR/Rest (resaltados con su propio estilo, ver CSS .jp-sb-dosis-
-     badge) -- nunca se concatenan al texto plano para que puedan
-     destacarse visualmente distinto. */
+  /* directiva ("Jerarquía de RIR vs Sets"): el RIR mezclado en cian con
+     los pills [SET 1]/[SET 2] del tracker nativo confundía al alumno
+     (mismo borde/texto que un botón de serie). El cian queda reservado
+     EXCLUSIVAMENTE para el tracker (número de serie/inputs/check) --
+     el RIR usa el espectro de esfuerzo (rojo=fallo, naranja=alto,
+     oro=margen), nunca cian. La tier se decide por el número MÁS BAJO
+     que haya en el texto (el más exigente: "RIR 2-1" -> tier de "1") o
+     por la mención de "fallo" sin importar el número. */
+  function tierRirSB(rir){
+    const t = String(rir || '').toLowerCase();
+    if(!t) return null;
+    if(/fallo/.test(t)) return 'danger';
+    const nums = t.match(/\\d+/g);
+    if(!nums) return 'margen';
+    const min = Math.min.apply(null, nums.map(Number));
+    if(min <= 0) return 'danger';
+    if(min <= 2) return 'alto';
+    return 'margen';
+  }
+  var ICONO_RIR_SB = { danger:'\\ud83d\\udd25', alto:'\\u26a1', margen:'\\ud83d\\udcaa' };
+  /* directiva ("Prescripción Táctica Ilustrativa de la Dosis"): banner de
+     micro-badges tácticos (series/reps/tempo/RIR/rest) en vez del texto
+     plano gris de antes -- cada campo es su propio pill de alto
+     contraste, tipografía condensada. SETS/REPS/TEMPO/REST comparten un
+     estilo neutro "carbón integrado" (nunca cian, ese color es sólo del
+     tracker); el RIR es el ÚNICO con color propio, por tier de esfuerzo. */
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds){
-    const partes = [];
-    if(sets && reps) partes.push(sets + ' sets \\u00d7 ' + reps + ' ' + (unidad || 'reps'));
-    else if(reps) partes.push(reps + ' ' + (unidad || 'reps'));
-    if(tempo) partes.push('Tempo ' + tempo);
-    const txt = partes.join(' · ');
-    const badges = (rir ? '<span class="jp-sb-dosis-badge jp-sb-badge-rir">RIR ' + escSB(rir) + '</span>' : '') +
-      (restSeconds ? '<span class="jp-sb-dosis-badge jp-sb-badge-rest">Rest ' + restSeconds + 's</span>' : '');
-    return { txt: txt, badges: badges };
+    const badges = [];
+    if(sets && reps) badges.push('<span class="jp-badge-sets">' + sets + ' SERIES</span><span class="jp-badge-reps">' + escSB(reps) + ' ' + escSB(String(unidad || 'reps').toUpperCase()) + '</span>');
+    else if(reps) badges.push('<span class="jp-badge-reps">' + escSB(reps) + ' ' + escSB(String(unidad || 'reps').toUpperCase()) + '</span>');
+    if(tempo) badges.push('<span class="jp-badge-tempo">TEMPO ' + escSB(tempo) + '</span>');
+    if(rir){
+      const tier = tierRirSB(rir);
+      badges.push('<span class="jp-badge-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
+    }
+    if(restSeconds) badges.push('<span class="jp-badge-rest">REST ' + restSeconds + 'S</span>');
+    return badges.length ? '<div class="jp-dose-banner">' + badges.join('') + '</div>' : '';
   }
   function pizarraSports(blockEl, block, weekIdx, dayId){
     if(esBloqueVacioCF(block)) return;
@@ -11263,11 +11283,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
         const subsHtml = entry.subs.map(function(sub, si){
           const exIdx = 'b' + idx + 's' + si;
-          const dosisSub = dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds);
           return '<div class="jp-sb-subex">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
                 '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + videoLinkHtml(sub.nombre) + '</div>' +
-              (dosisSub.txt || dosisSub.badges ? '<div class="jp-sb-dosis">' + escSB(dosisSub.txt) + dosisSub.badges + '</div>' : '') +
+              dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds) +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
               renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica } : null) +
             '</div>';
@@ -11307,10 +11326,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
-      const dosisEntry = dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds);
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
-          (dosisEntry.txt || dosisEntry.badges ? '<div class="jp-sb-dosis">' + escSB(dosisEntry.txt) + dosisEntry.badges + '</div>' : '') +
+          dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica } : null) +
         '</div>';
@@ -27903,18 +27921,32 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
    exacto -- diferencia el movimiento pesado principal de los
    accesorios (blanco nítido, regla de arriba). */
 .jp-sb-ex-ancla .jp-sb-ex-nombre{ color:#ffd600; }
-.jp-sb-dosis{ font-size:.8rem; color:rgba(237,239,242,.6); margin-top:3px; letter-spacing:.02em; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
-/* directiva ("Impresión completa de dosis en el header") -- RIR/Rest
-   resaltados como micro-badges propios, nunca texto plano perdido en
-   la línea -- cyan táctico (misma paleta que inputs/check nativos, ver
-   jerarquía cromática Coach JP). */
-.jp-sb-dosis-badge{
-  display:inline-flex; align-items:center; flex-shrink:0;
-  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
-  font-size:.66rem; letter-spacing:.03em; text-transform:uppercase;
-  padding:2px 7px; border-radius:5px;
-  background:rgba(0,229,255,.1); color:#00e5ff; border:1px solid rgba(0,229,255,.35);
+/* directiva ("Refactoring Visual: Jerarquía de RIR vs Sets y
+   Prescripción Táctica Ilustrativa") -- reemplaza el texto plano gris
+   ("N sets × reps · Tempo") + badges sueltos de la directiva anterior
+   por un banner único de micro-badges tácticos, uno por campo. El cian
+   queda RESERVADO EXCLUSIVAMENTE para el tracker nativo (pills [SET N],
+   inputs, check de completado) -- acá SETS/REPS/TEMPO/REST comparten un
+   estilo neutro "carbón integrado" (nunca cian), y el RIR es el ÚNICO
+   con color propio, por espectro de esfuerzo (ver .jp-rir-* abajo). */
+.jp-dose-banner{
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+  margin-top:6px; padding:8px 9px; border-radius:8px;
+  background:#0b0e14; border:1px solid #1e2638;
 }
+.jp-dose-banner > span{
+  display:inline-flex; align-items:center; flex-shrink:0;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
+  letter-spacing:.05em; text-transform:uppercase; font-size:.66rem;
+  padding:3px 8px; border-radius:5px; white-space:nowrap;
+}
+.jp-badge-sets, .jp-badge-reps, .jp-badge-tempo, .jp-badge-rest{
+  background:rgba(237,239,242,.06); color:#f8fafc; border:1px solid rgba(237,239,242,.18);
+}
+.jp-badge-rir{ font-weight:800; }
+.jp-badge-rir.jp-rir-danger{ background:rgba(255,59,48,.2); border:1px solid #ff3b30; color:#ff453a; }
+.jp-badge-rir.jp-rir-alto{ background:rgba(255,107,0,.15); border:1px solid #ff6b00; color:#ff8533; }
+.jp-badge-rir.jp-rir-margen{ background:rgba(255,214,0,.12); border:1px solid #ffd600; color:#ffd600; }
 .jp-sb-nota{ font-size:.8rem; color:rgba(237,239,242,.7); margin-top:5px; font-style:italic; }
 .jp-sb-badge{
   /* directiva ("Jerarquía Cromática" / "Homogeneización Cromática
