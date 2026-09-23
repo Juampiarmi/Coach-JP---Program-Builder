@@ -10914,7 +10914,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       out.unidad = detectarUnidadSecundariaSB(tras);
     }
     if((m = t.match(/tempo\\s*(\\d{3,4})/i))) out.tempo = m[1];
-    if((m = t.match(/rir\\s*(\\d+)/i))) out.rir = m[1];
+    /* directiva ("Impresión completa de dosis en el header") -- antes
+       sólo capturaba UN dígito ("RIR 2-1" perdía el "-1"): el header del
+       alumno necesita el RIR EXACTO que escribió el coach, rango u
+       observación "/ Fallo técnico" incluidos. */
+    if((m = t.match(/rir\\s*(\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?)/i))) out.rir = m[1].replace(/\\s+/g, ' ').trim();
     if((m = t.match(/rest\\s*(\\d+)\\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
     return out;
   }
@@ -10977,7 +10981,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var resSub = extraerTecnicaSB(subM[3]);
         var dosisSub = parsearDosisSB(resSub.texto);
         var parenM = resSub.texto.match(/\\(([^)]+)\\)/);
-        actual.subs.push({ nombre: subM[2].trim(), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: parenM ? parenM[1] : '', unidad: dosisSub.unidad || 'reps' });
+        actual.subs.push({ nombre: subM[2].trim(), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: parenM ? parenM[1] : '', unidad: dosisSub.unidad || 'reps', rir: dosisSub.rir || '', restSeconds: dosisSub.restSeconds || 0 });
         return;
       }
       if(RX_BISET_HEAD_SB.test(linea) && (!actual || actual.tipo !== 'biserie' || actual.subs.length)){
@@ -11004,6 +11008,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         actual.reps = dosis.reps || actual.reps;
         actual.tempo = dosis.tempo || actual.tempo;
         actual.restSeconds = dosis.restSeconds || actual.restSeconds;
+        actual.rir = dosis.rir || actual.rir;
         actual.unidad = dosis.unidad || actual.unidad;
         actual.dosisAsignada = true;
         var resDosis = extraerTecnicaSB(linea);
@@ -11023,7 +11028,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         if(resNota.texto) actual.notas.push(resNota.texto);
         return;
       }
-      actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, dosisAsignada:false, tecnica:'', notas:[], unidad:'reps' };
+      actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, rir:'', dosisAsignada:false, tecnica:'', notas:[], unidad:'reps' };
       entries.push(actual);
     });
     return entries;
@@ -11196,6 +11201,24 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function esBloqueCalentamientoSB(block){
     return RX_CALENTAMIENTO_SB.test(String((block && block.title) || ''));
   }
+  /* directiva ("Impresión completa de dosis en el header") -- el
+     subtítulo táctico bajo cada ejercicio omitía sets/RIR/Rest (sólo
+     mostraba "reps · Tempo"): el atleta no sabía cuántas series
+     efectivas ni a qué proximidad del fallo entrenar. Arma el texto
+     base ("N sets × reps · Tempo XXXX") y, aparte, los micro-badges de
+     RIR/Rest (resaltados con su propio estilo, ver CSS .jp-sb-dosis-
+     badge) -- nunca se concatenan al texto plano para que puedan
+     destacarse visualmente distinto. */
+  function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds){
+    const partes = [];
+    if(sets && reps) partes.push(sets + ' sets \\u00d7 ' + reps + ' ' + (unidad || 'reps'));
+    else if(reps) partes.push(reps + ' ' + (unidad || 'reps'));
+    if(tempo) partes.push('Tempo ' + tempo);
+    const txt = partes.join(' · ');
+    const badges = (rir ? '<span class="jp-sb-dosis-badge jp-sb-badge-rir">RIR ' + escSB(rir) + '</span>' : '') +
+      (restSeconds ? '<span class="jp-sb-dosis-badge jp-sb-badge-rest">Rest ' + restSeconds + 's</span>' : '');
+    return { txt: txt, badges: badges };
+  }
   function pizarraSports(blockEl, block, weekIdx, dayId){
     if(esBloqueVacioCF(block)) return;
     const body = blockEl.querySelector('.block-body');
@@ -11240,11 +11263,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
         const subsHtml = entry.subs.map(function(sub, si){
           const exIdx = 'b' + idx + 's' + si;
-          const dosisTxt = [sub.reps ? sub.reps + ' ' + (sub.unidad || 'reps') : '', sub.tempo ? 'Tempo ' + sub.tempo : ''].filter(Boolean).join(' · ');
+          const dosisSub = dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds);
           return '<div class="jp-sb-subex">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
                 '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + videoLinkHtml(sub.nombre) + '</div>' +
-              (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
+              (dosisSub.txt || dosisSub.badges ? '<div class="jp-sb-dosis">' + escSB(dosisSub.txt) + dosisSub.badges + '</div>' : '') +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
               renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica } : null) +
             '</div>';
@@ -11284,10 +11307,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
-      const dosisTxt = [entry.reps ? entry.reps + ' ' + (entry.unidad || 'reps') : '', entry.tempo ? 'Tempo ' + entry.tempo : ''].filter(Boolean).join(' · ');
+      const dosisEntry = dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds);
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
-          (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
+          (dosisEntry.txt || dosisEntry.badges ? '<div class="jp-sb-dosis">' + escSB(dosisEntry.txt) + dosisEntry.badges + '</div>' : '') +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica } : null) +
         '</div>';
@@ -15859,8 +15882,16 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   }
   function glosario(){
     var main = document.getElementById('mainContent'); if(!main) return;
-    var hayCF = !!document.querySelector('.wod-board, .block.cat-metcon, .jp-complex');
     var viejo = document.getElementById('glosarioSesion');
+    /* directiva ("Eliminación definitiva del Glosario en Sports"): los
+       videos ya viven de forma nativa dentro del acordeón de cada
+       bloque (ver recolectarVideosSB()/chipsVideoSB(), directiva
+       "Videos Enraizados en Cada Bloque") -- la caja del pie de sesión
+       queda obsoleta en Sports y se retira del todo. CrossFit nunca
+       tuvo ese acordeón por-bloque, así que sigue dependiendo 100% del
+       glosario final: cero cambio para esa disciplina. */
+    if(window.COACH_DISCIPLINA === 'sports'){ if(viejo) viejo.remove(); return; }
+    var hayCF = !!document.querySelector('.wod-board, .block.cat-metcon, .jp-complex');
     if(!hayCF || !LEXICO.length){ if(viejo) viejo.remove(); return; }
     var vistos = {}, lista = [];
     var filtro = window.CoachGlosarioFiltro || null;
@@ -27840,11 +27871,11 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   padding:12px !important; margin-bottom:12px;
 }
 .jp-sb-tag{
-  /* directiva ("Jerarquía Cromática Coach JP"): título de bloque en
-     naranja táctico -- antes cian, que la directiva reserva para
-     accesorios/inputs. */
+  /* directiva ("Homogeneización Cromática Exacta"): naranja táctico
+     #ff6b00 exacto -- título de bloque, valor pinneado por la
+     directiva (antes #f97316, una variante cercana pero no idéntica). */
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
-  font-size:.72rem; letter-spacing:.06em; color:#f97316; text-transform:uppercase;
+  font-size:.72rem; letter-spacing:.06em; color:#ff6b00; text-transform:uppercase;
   margin-bottom:6px;
 }
 .jp-sb-title{
@@ -27866,21 +27897,34 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
   font-size:1rem; color:#f8fafc; text-transform:uppercase; letter-spacing:.01em;
 }
-/* directiva ("Jerarquía Cromática Coach JP"): el ejercicio ancla (primero
-   con dosis real de cada bloque, ver esAncla en pizarraSports()) se
-   destaca en amarillo oro -- diferencia el movimiento pesado principal
-   de los accesorios (blanco nítido, regla de arriba). */
-.jp-sb-ex-ancla .jp-sb-ex-nombre{ color:#f59e0b; }
-.jp-sb-dosis{ font-size:.8rem; color:rgba(237,239,242,.6); margin-top:3px; letter-spacing:.02em; }
+/* directiva ("Jerarquía Cromática Coach JP" / "Homogeneización Cromática
+   Exacta"): el ejercicio ancla (primero con dosis real de cada bloque,
+   ver esAncla en pizarraSports()) se destaca en amarillo oro #ffd600
+   exacto -- diferencia el movimiento pesado principal de los
+   accesorios (blanco nítido, regla de arriba). */
+.jp-sb-ex-ancla .jp-sb-ex-nombre{ color:#ffd600; }
+.jp-sb-dosis{ font-size:.8rem; color:rgba(237,239,242,.6); margin-top:3px; letter-spacing:.02em; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+/* directiva ("Impresión completa de dosis en el header") -- RIR/Rest
+   resaltados como micro-badges propios, nunca texto plano perdido en
+   la línea -- cyan táctico (misma paleta que inputs/check nativos, ver
+   jerarquía cromática Coach JP). */
+.jp-sb-dosis-badge{
+  display:inline-flex; align-items:center; flex-shrink:0;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.66rem; letter-spacing:.03em; text-transform:uppercase;
+  padding:2px 7px; border-radius:5px;
+  background:rgba(0,229,255,.1); color:#00e5ff; border:1px solid rgba(0,229,255,.35);
+}
 .jp-sb-nota{ font-size:.8rem; color:rgba(237,239,242,.7); margin-top:5px; font-style:italic; }
 .jp-sb-badge{
-  /* directiva ("Jerarquía Cromática Coach JP"): pastilla naranja/fuego de
-     alto contraste para TODA técnica metodológica (antes ámbar) -- mismo
-     tratamiento que .jp-sb-set-badge, unificado. */
+  /* directiva ("Jerarquía Cromática" / "Homogeneización Cromática
+     Exacta"): pastilla naranja táctico #ff6b00 exacto, alto contraste,
+     para TODA técnica metodológica -- mismo tratamiento que
+     .jp-sb-set-badge, unificado. */
   display:inline-block; margin-top:6px; padding:3px 9px; border-radius:6px;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
   font-size:.68rem; letter-spacing:.05em; text-transform:uppercase;
-  background:#f97316; color:#0b0e14; border:1px solid #f97316;
+  background:#ff6b00; color:#0b0e14; border:1px solid #ff6b00;
 }
 /* biserie/triset: mismo bracket cian continuo que .bs-wrap ya usa en el
    resto de la app (guardrail estético: reusar el primitivo compartido,
@@ -27932,9 +27976,12 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .jp-sb-subex:last-child{ margin-bottom:0; }
 .jp-sb-subex-head{ display:flex; align-items:center; gap:8px; }
 .jp-sb-letra{
+  /* directiva ("Homogeneización Cromática Exacta"): cyan táctico #00e5ff
+     exacto para el prefijo A1/A2 -- antes var(--cyan), un tono cercano
+     (#38BDF8) pero no idéntico al pinneado por la directiva. */
   display:inline-flex; align-items:center; justify-content:center;
-  width:22px; height:22px; border-radius:6px; background:rgba(56,189,248,.16);
-  color:var(--cyan); font-weight:800; font-size:.75rem;
+  width:22px; height:22px; border-radius:6px; background:rgba(0,229,255,.16);
+  color:#00e5ff; font-weight:800; font-size:.75rem;
 }
 .jp-sb-subex-nombre{
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
@@ -27950,11 +27997,12 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 }
 .jp-sb-ex:first-child + .jp-sb-plain, .jp-sb-board .jp-sb-plain:first-of-type{ border-top:none; }
 .jp-sb-plain-pill{
+  /* directiva ("Homogeneización Cromática Exacta"): cyan #00e5ff exacto. */
   display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
   min-width:48px; padding:3px 9px; border-radius:6px;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
   font-size:.72rem; letter-spacing:.03em; text-transform:uppercase;
-  background:rgba(56,189,248,.12); color:var(--cyan); border:1px solid rgba(56,189,248,.35);
+  background:rgba(0,229,255,.12); color:#00e5ff; border:1px solid rgba(0,229,255,.35);
 }
 .jp-sb-plain-nombre{ font-size:.9rem; color:#f8fafc; letter-spacing:.01em; }
 /* directiva ("Refactor visual: tabla táctica de series"): recolorea SÓLO
@@ -28111,22 +28159,24 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 /* 2 · badge de técnica de intensidad, junto al SET puntual (no más en la
    cabecera del ejercicio) -- naranja táctico, per directiva de paleta. */
 .jp-sb-set-badge{
-  /* directiva ("Jerarquía Cromática Coach JP"): pastilla naranja/fuego
-     SÓLIDA con texto oscuro de alto contraste (antes traslúcida) -- mismo
+  /* directiva ("Homogeneización Cromática Exacta"): naranja táctico
+     #ff6b00 exacto, sólida, texto oscuro de alto contraste -- mismo
      tratamiento que .jp-sb-badge, unificado. */
   flex:0 0 auto; white-space:nowrap; font-family:'Chakra Petch','Barlow Condensed',sans-serif;
   font-weight:800; font-size:.6rem; letter-spacing:.04em; text-transform:uppercase;
   padding:2px 6px; border-radius:5px;
-  background:#f97316; color:#0b0e14; border:1px solid #f97316;
+  background:#ff6b00; color:#0b0e14; border:1px solid #ff6b00;
 }
 /* 3 · acordeón ÚNICO por bloque (jp-block-details), naranja táctico en
    el disparador -- mismo esqueleto visual que .cf-acc, namespaced para
    no heredar nada de CrossFit. */
 .jp-block-details{ margin-top:12px; padding-top:10px; border-top:1px dashed var(--line); }
 .jp-summary-btn{
+  /* directiva ("Homogeneización Cromática Exacta"): naranja táctico
+     #ff6b00 exacto, mismo tono que .jp-sb-tag. */
   cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
-  font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:#f97316;
+  font-size:.72rem; letter-spacing:.05em; text-transform:uppercase; color:#ff6b00;
 }
 .jp-summary-btn::-webkit-details-marker{ display:none; }
 .jp-block-details[open] .jp-summary-btn{ margin-bottom:8px; }
@@ -28158,11 +28208,11 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   display:inline-block; margin-left:6px; padding:2px 7px; border-radius:5px;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
   font-size:.6rem; letter-spacing:.04em; text-transform:uppercase;
-  background:rgba(245,158,11,.14); color:#f59e0b; border:1px solid rgba(245,158,11,.4);
+  background:rgba(255,214,0,.14); color:#ffd600; border:1px solid rgba(255,214,0,.4);
 }
-.jp-set-row-native.pr{ border-color:#f59e0b !important; box-shadow:0 0 0 1px rgba(245,158,11,.25); }
+.jp-set-row-native.pr{ border-color:#ffd600 !important; box-shadow:0 0 0 1px rgba(255,214,0,.25); }
 /* biset/superset: título en naranja táctico, per directiva de paleta */
-.jp-sb-biset-title{ color:#f97316 !important; }
+.jp-sb-biset-title{ color:#ff6b00 !important; }
 </style>
 
 </body>
@@ -41174,11 +41224,11 @@ body.man-mode .gs-fab{right:318px}
      modalidad elegida para no romper nada que ya lea category (glosario,
      desvinculación de warm-up, etc). */
   const MODALIDADES = [
-    { id:'fuerza',        ic:'🏋️', lb:'Carga · Fuerza',            color:'#f97316', category:'strength' },
-    { id:'hipertrofia',   ic:'💪', lb:'Carga · Hipertrofia',       color:'#f97316', category:'strength' },
-    { id:'core',          ic:'🧩', lb:'Estabilidad · Core',         color:'#f97316', category:'accessory' },
-    { id:'calentamiento', ic:'🔥', lb:'Tiempo · Entrada en calor', color:'#f59e0b', category:'warmup' },
-    { id:'metcon',        ic:'⏱️', lb:'Cardio · MetCon',           color:'#7CC5E8', category:'metcon' }
+    { id:'fuerza',        ic:'🏋️', lb:'Carga · Fuerza',            color:'#ff6b00', category:'strength' },
+    { id:'hipertrofia',   ic:'💪', lb:'Carga · Hipertrofia',       color:'#ff6b00', category:'strength' },
+    { id:'core',          ic:'🧩', lb:'Estabilidad · Core',         color:'#ff6b00', category:'accessory' },
+    { id:'calentamiento', ic:'🔥', lb:'Tiempo · Entrada en calor', color:'#ffd600', category:'warmup' },
+    { id:'metcon',        ic:'⏱️', lb:'Cardio · MetCon',           color:'#00e5ff', category:'metcon' }
   ];
   /* inferencia de arranque para un bloque que todavía no tiene
      b.modalidad guardado (todo bloque real cargado antes de esta
