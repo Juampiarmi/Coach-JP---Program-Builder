@@ -7804,7 +7804,14 @@ const WakeLockManager = (function(){
    directiva/descanso/nota tipo "- Rest 60s entre rondas -", "Cap 12:00"
    o "min 1:". Esta lista de patrones identifica esas líneas para que
    NUNCA se conviertan en .ex-row (y por lo tanto nunca reciban input). */
-const RX_LINEA_DIRECTIVA = /^[-–—].*[-–—]$|^\\(.*\\)$|^(cap|rest|descanso|nota|amrap|emom|e2mom|e3mom|for\\s*time|ft|min\\s*\\d+\\s*:)\\b/i;
+/* directiva ("Sanitización del detector de videos y parser") -- suma
+   encabezados estructurales de la Pizarra (biset/triset/circuito, "N
+   rondas") a la lista de líneas que NUNCA se convierten en .ex-row ni
+   reciben videoLinkHtml() -- antes "Triset de Core" colaba como
+   ejercicio fantasma en el Glosario Técnico (el mismo renderer genérico
+   paralelo que ya limpia nombreLimpioParaVideo() en renderLine(), ver
+   más abajo). */
+const RX_LINEA_DIRECTIVA = /^[-–—].*[-–—]$|^\\(.*\\)$|^(cap|rest|descanso|nota|amrap|emom|e2mom|e3mom|for\\s*time|ft|min\\s*\\d+\\s*:)\\b|^\\d+\\s*rondas?\\b|\\b(biset|superset|triset|circuito)\\b/i;
 function esLineaDirectiva(text){
   const t = String(text == null ? '' : text).trim();
   if(!t) return true;
@@ -7828,6 +7835,29 @@ function extraerDosisWU(detail){
   if((m = t.match(/^(\\d+)\\s*(?:reps?|repeticiones?)\\s*(?:por\\s*lado|c\\/u|cada\\s*lado)\\b/i))) return { dosis: m[1] + '/LADO', resto: t };
   if((m = t.match(/^(\\d+)\\s*(?:reps?|repeticiones?)\\b/i))) return { dosis: m[1] + ' REPS', resto: t };
   return { dosis: null, resto: t };
+}
+/* directiva ("Sanitización del detector de videos y parser"): antes de
+   resolver un nombre contra la biblioteca de videos, se limpia toda
+   anotación que NUNCA es parte del nombre real del ejercicio --
+   "A1. Nombre: dosis" (biset/triset/circuito), viñetas sueltas
+   ("-"/"*"), y todo lo que sigue a un "|" (Tempo/RIR/Rest). Una línea
+   que, ya limpia, queda como una dosis pura sin nombre ("3x10-12",
+   típico cuando el nombre va en la línea de arriba) se descarta del
+   todo -- nunca se llama a videoLinkHtml() con eso, así nunca aparece
+   un chip fantasma "3x10-12 | Tempo 2011"/"Rest ... entre sets"/
+   "BISET..." como el reportado. */
+const RX_SUBEJ_VIDEO = /^A\\d+[.)]\\s*(.+?):\\s*(.+)$/i;
+const RX_DOSIS_SOLA_VIDEO = /^\\d+\\s*(?:x|×|sets?\\s*(?:x|de)?|series?\\s*(?:x|de)?|rondas?\\s*(?:x|de)?)\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*(?:reps?|kg|lbs?|min|s|seg)\\b)?\\s*$/i;
+function nombreLimpioParaVideo(text){
+  let t = String(text || '').trim();
+  const subM = t.match(RX_SUBEJ_VIDEO);
+  if(subM) t = subM[1].trim();
+  else{
+    t = t.replace(/^[\\s\\-•*]+/, '');
+    t = t.split('|')[0].trim();
+  }
+  if(!t || RX_DOSIS_SOLA_VIDEO.test(t)) return '';
+  return t;
 }
 function renderLine(text, enBadge){
   enBadge = enBadge || '';
@@ -7856,10 +7886,10 @@ function renderLine(text, enBadge){
         '<span class="ex-name wu-pill-name">' + name + enBadge + '</span>' +
         '<span class="ex-detail wu-pill-focus">' + d.resto + '</span>' +
       '</span>' +
-      videoLinkHtml(name) +
+      videoLinkHtml(nombreLimpioParaVideo(name)) +
     '</div>';
   }
-  return '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + text + enBadge + videoLinkHtml(text) + '</span></div>';
+  return '<div class="ex-row"><div class="ex-bullet"></div><span class="ex-name">' + text + enBadge + videoLinkHtml(nombreLimpioParaVideo(text)) + '</span></div>';
 }
 /* =========================================================
    QUICK TIMER (cuenta regresiva simple, un solo tramo)
@@ -8471,26 +8501,30 @@ function renderBlockInner(block, day, weekIdx){
     html += '<div class="info-card" style="margin-top:0;"><p>Esta semana el ciclo programa menor frecuencia: este bloque no tiene sesión asignada. No es un error, tranquilo/a.</p></div>';
   } else {
     const itemsSemana = itemsDeSemana(block, weekIdx);
-    /* directiva ("Desvinculación del Warm-up del Glosario"): este bloque
-       'list' genérico se ejecuta SIEMPRE, hasta para un bloque
+    /* directiva ("Sanitización del detector de videos y parser"): este
+       bloque 'list' genérico se ejecuta SIEMPRE, hasta para un bloque
        sportsPizarra -- pizarraSports() ya pinta su propia UI encima de
        este HTML (oculto vía display:none, ver su cola más abajo en el
        archivo), así que este .ex-row nunca se VE para la Pizarra, pero
        sigue existiendo en el DOM. renderLine() llama a videoLinkHtml()
-       para cada línea cruda tal cual -- para un bloque de calentamiento
-       eso generaba igual un .video-link oculto que limpiar() barría
-       hacia el Glosario Técnico (el leak real: pizarraSports() nunca
-       llamaba a videoLinkHtml() para estas líneas, pero ESTE renderer
-       paralelo sí). Se salta por completo para calentamiento/warm-up/
-       movilidad -- nunca afecta bloques de Pizarra normales (Fuerza,
-       Hipertrofia, etc.) ni a CrossFit (nunca trae sportsPizarra). */
-    const esCalentamientoGenerico = block.sportsPizarra && /calentamiento|warm.?up|movilidad/i.test(String(block.title || ''));
+       para cada línea cruda tal cual -- eso generaba un SEGUNDO
+       .video-link oculto por ejercicio (pizarraSports() ya crea el suyo
+       propio, limpio) que limpiar() barría igual hacia el Glosario
+       Técnico: tarjetas DUPLICADAS por ejercicio, algunas con el ícono
+       🔍 pegado al nombre porque la estructura .ex-name de renderLine()
+       envuelve texto+link juntos sin un span de nombre propio que
+       aislar. Se salta por completo para CUALQUIER bloque sportsPizarra
+       -- pizarraSports() ya resuelve el video de cada ejercicio (simple,
+       biset, "sin dosis") por su cuenta, este renderer paralelo nunca
+       aporta nada nuevo ahí. Nunca afecta CrossFit (nunca trae
+       sportsPizarra) ni un bloque 'list' clásico de Sports fuera de la
+       Pizarra. */
     if(!itemsSemana.length && weekIdx > 0){
       /* directiva ("Independencia Total de Semanas") -- semana sin
          prescripción propia todavía: mensaje explícito en vez de
          mostrar (o heredar) el contenido de otra semana. */
       html += '<div class="info-card" style="margin-top:0;"><p>Todavía no se cargó la prescripción de esta semana. Consultá con tu coach.</p></div>';
-    } else if(!esCalentamientoGenerico){
+    } else if(!block.sportsPizarra){
       itemsSemana.forEach(function(item){ html += renderLine(item); });
     }
     /* directiva ("Unificación de tips/videos") -- quinta fuente de la
@@ -11096,6 +11130,40 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '</button>';
       }).join('') + '</div>';
   }
+  /* directiva ("Unificación Total de Core") -- contador táctico compacto
+     de rondas al pie de un biset/triset/circuito: [ - ] Ronda X de N
+     [ + ] [ ✓ Ronda Completa ]. Estado puramente de sesión en memoria
+     (window.__jpRondaActual, nunca persiste ni compite con state.loads/
+     setLoadField -- las series reales de cada ejercicio siguen siendo la
+     fuente de verdad, esto es sólo una referencia rápida de "en qué
+     ronda estoy" mientras se corre el circuito). */
+  window.__jpRondaActual = window.__jpRondaActual || {};
+  function contadorRondasSB(weekIdx, dayId, blockId, idx, totalRondas){
+    const key = weekIdx + '|' + dayId + '|' + blockId + '|' + idx;
+    const actual = window.__jpRondaActual[key] || 1;
+    return '<div class="jp-sb-rondas-ctl" data-rondakey="' + key + '" data-rondatotal="' + totalRondas + '">' +
+        '<button type="button" class="jp-ronda-btn" data-rondadelta="-1" aria-label="Ronda anterior">−</button>' +
+        '<span class="jp-ronda-txt">Ronda <b class="jp-ronda-n">' + actual + '</b> de ' + totalRondas + '</span>' +
+        '<button type="button" class="jp-ronda-btn" data-rondadelta="1" aria-label="Ronda siguiente">+</button>' +
+        '<button type="button" class="jp-ronda-ok">&#10003; Ronda Completa</button>' +
+      '</div>';
+  }
+  document.addEventListener('click', function(e){
+    const ctl = e.target.closest('.jp-sb-rondas-ctl'); if(!ctl) return;
+    const key = ctl.dataset.rondakey, total = parseInt(ctl.dataset.rondatotal, 10) || 3;
+    const btnDelta = e.target.closest('[data-rondadelta]');
+    const btnOk = e.target.closest('.jp-ronda-ok');
+    if(!btnDelta && !btnOk) return;
+    let actual = window.__jpRondaActual[key] || 1;
+    if(btnDelta) actual = Math.max(1, Math.min(total, actual + parseInt(btnDelta.dataset.rondadelta, 10)));
+    else actual = Math.min(total, actual + 1);
+    window.__jpRondaActual[key] = actual;
+    const n = ctl.querySelector('.jp-ronda-n'); if(n) n.textContent = actual;
+    if(btnOk){
+      try{ if(navigator.vibrate) navigator.vibrate([15, 30, 15]); }catch(err){}
+      try{ beepSetCheck(true); }catch(err){}
+    }
+  });
   /* directiva ("Desvinculación del Warm-up del Glosario"): un bloque de
      Pizarra cuyo TÍTULO lo identifica como calentamiento/activación
      nunca debe alimentar el glosario de video (por eso NUNCA se llama a
@@ -11123,6 +11191,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const entries = parsearPizarraSB(lineas);
     if(!entries.length) return;
     const esCalentamiento = esBloqueCalentamientoSB(block);
+    /* directiva ("Jerarquía Cromática Coach JP"): el PRIMER ejercicio con
+       dosis real de cada bloque es el "ancla" (el movimiento pesado
+       principal) -- se destaca en amarillo oro (ver .jp-sb-ex-ancla en
+       CSS), el resto queda en blanco/cyan como accesorio. Nunca aplica a
+       un bloque de calentamiento (ahí no hay ancla, es activación). */
+    let anclaUsada = false;
     let filas = '';
     entries.forEach(function(entry, idx){
       if(entry.tipo === 'fase'){
@@ -11159,6 +11233,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         filas += '<div class="jp-sb-biset">' +
             '<div class="jp-sb-biset-title">' + escSB(entry.titulo) + '</div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
+            contadorRondasSB(weekIdx, dayId, block.id, idx, entry.rondas || 3) +
           '</div>';
         return;
       }
@@ -11189,8 +11264,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '</div>';
         return;
       }
+      const esAncla = !anclaUsada; anclaUsada = true;
       const dosisTxt = [entry.reps ? entry.reps + ' ' + (entry.unidad || 'reps') : '', entry.tempo ? 'Tempo ' + entry.tempo : ''].filter(Boolean).join(' · ');
-      filas += '<div class="jp-sb-ex">' +
+      filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
           (dosisTxt ? '<div class="jp-sb-dosis">' + escSB(dosisTxt) + '</div>' : '') +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
@@ -15698,7 +15774,16 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   function limpiar(bl){
     /* los videos molestan dentro del WOD y del complex: se guardan para el glosario */
     bl.querySelectorAll('.video-link').forEach(function(a){
-      var fila = a.closest('.ex-row, .wb-line, .ex-name') || a.parentElement;
+      /* directiva ("Sanitización del detector de videos") -- cuando el
+         video vive junto a un span dedicado de NOMBRE (estructura real
+         de la Pizarra Sports: .jp-sb-ex-nombre/.jp-sb-subex-nombre/
+         .jp-sb-plain-nombre), se usa SÓLO ese texto. El fallback viejo
+         (closest .ex-row/.wb-line/.ex-name, o directo a parentElement)
+         se comía TODO el contenedor -- en .jp-sb-subex-head eso incluye
+         la letra de estación pegada sin separador (bug real:
+         "AElevación de piernas colgado"). */
+      var nombreEl = a.parentElement ? a.parentElement.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-nombre, .jp-sb-plain-nombre') : null;
+      var fila = nombreEl || a.closest('.ex-row, .wb-line, .ex-name') || a.parentElement;
       var nombre = (fila ? fila.textContent : '').replace(/\\s+/g, ' ').trim();
       nombre = nombre.split(' — ')[0].replace(/^\\d+\\s*/, '').trim();
       if(nombre) LEXICO.push({ nombre: nombre, html: a.outerHTML });
@@ -20570,6 +20655,19 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
   function esCore(b, bl){
+    /* directiva ("Erradicación total del componente legacy de Core"): un
+       bloque marcado b.sportsPizarra ya vive en el sistema moderno de
+       Pizarra Libre (pizarraSports() lo pinta con la misma UI táctica que
+       Fuerza/Hipertrofia) -- NUNCA debe caer acá, sin importar el título
+       ("Core & Estabilidad" matchea RX_CORE igual que antes de migrar).
+       Chequeado ANTES que cualquier otra cosa y sin depender de que
+       pizarraSports() ya haya insertado su .wod-board (guardia de abajo,
+       bl.querySelector('.wod-board')): esa guardia sólo protege una vez
+       que la Pizarra YA pintó, pero reconstruir() puede correr en una
+       pasada más temprana (mount()/repintar() con sus propios timers) --
+       chequear el dato del bloque en vez del DOM ya pintado es inmune a
+       esa carrera. */
+    if(b && b.sportsPizarra) return false;
     /* en plantillas que rotan de semana (ej. CrossFit Atletas 6 semanas) un
        mismo bloque puede ser "core" la semana 1 y un WOD/metcon la semana 2 --
        b.title/b.subtitle son estáticos (congelados en la semana 1) y NUNCA
@@ -27723,8 +27821,11 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   padding:12px !important; margin-bottom:12px;
 }
 .jp-sb-tag{
+  /* directiva ("Jerarquía Cromática Coach JP"): título de bloque en
+     naranja táctico -- antes cian, que la directiva reserva para
+     accesorios/inputs. */
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
-  font-size:.72rem; letter-spacing:.06em; color:var(--cyan); text-transform:uppercase;
+  font-size:.72rem; letter-spacing:.06em; color:#f97316; text-transform:uppercase;
   margin-bottom:6px;
 }
 .jp-sb-title{
@@ -27744,18 +27845,24 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .jp-sb-ex-head{ display:flex; align-items:center; gap:8px; }
 .jp-sb-ex-nombre{
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
-  font-size:1rem; color:#EDEFF2; text-transform:uppercase; letter-spacing:.01em;
+  font-size:1rem; color:#f8fafc; text-transform:uppercase; letter-spacing:.01em;
 }
+/* directiva ("Jerarquía Cromática Coach JP"): el ejercicio ancla (primero
+   con dosis real de cada bloque, ver esAncla en pizarraSports()) se
+   destaca en amarillo oro -- diferencia el movimiento pesado principal
+   de los accesorios (blanco nítido, regla de arriba). */
+.jp-sb-ex-ancla .jp-sb-ex-nombre{ color:#f59e0b; }
 .jp-sb-dosis{ font-size:.8rem; color:rgba(237,239,242,.6); margin-top:3px; letter-spacing:.02em; }
 .jp-sb-nota{ font-size:.8rem; color:rgba(237,239,242,.7); margin-top:5px; font-style:italic; }
 .jp-sb-badge{
+  /* directiva ("Jerarquía Cromática Coach JP"): pastilla naranja/fuego de
+     alto contraste para TODA técnica metodológica (antes ámbar) -- mismo
+     tratamiento que .jp-sb-set-badge, unificado. */
   display:inline-block; margin-top:6px; padding:3px 9px; border-radius:6px;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
   font-size:.68rem; letter-spacing:.05em; text-transform:uppercase;
-  background:rgba(245,197,24,.14); color:var(--amber); border:1px solid rgba(245,197,24,.4);
+  background:#f97316; color:#0b0e14; border:1px solid #f97316;
 }
-.jp-sb-badge-fallo{ background:rgba(255,107,87,.14); color:var(--coral); border-color:rgba(255,107,87,.4); }
-.jp-sb-badge-restpause, .jp-sb-badge-myoreps{ background:rgba(56,189,248,.14); color:var(--cyan); border-color:rgba(56,189,248,.4); }
 /* biserie/triset: mismo bracket cian continuo que .bs-wrap ya usa en el
    resto de la app (guardrail estético: reusar el primitivo compartido,
    nunca inventar un cian distinto). */
@@ -27765,6 +27872,32 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-size:.85rem; letter-spacing:.03em; color:#EDEFF2; text-transform:uppercase; margin-bottom:8px;
 }
 .jp-sb-bracket{ border-left:2px solid #00e5ff; padding-left:12px; }
+/* directiva ("Unificación Total de Core") -- contador táctico de rondas
+   al pie del circuito/biset/triset. Cyan táctico (control interactivo,
+   igual que los inputs/check nativos), compacto, una sola línea. */
+.jp-sb-rondas-ctl{
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  margin-top:12px; padding:8px 10px; border-radius:10px;
+  background:#111620; border:1px solid #1e2638;
+}
+.jp-ronda-btn{
+  flex:0 0 auto; width:28px; height:28px; border-radius:50%; box-sizing:border-box;
+  background:transparent; border:1px solid #00e5ff; color:#00e5ff;
+  font-size:1rem; font-weight:800; line-height:1; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; padding:0;
+}
+.jp-ronda-btn:active{ background:rgba(0,229,255,.16); }
+.jp-ronda-txt{
+  flex:0 0 auto; font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
+  font-size:.82rem; letter-spacing:.03em; text-transform:uppercase; color:#f8fafc; white-space:nowrap;
+}
+.jp-ronda-txt b{ color:#00e5ff; font-size:1rem; }
+.jp-ronda-ok{
+  flex:0 0 auto; padding:6px 12px; border-radius:20px; box-sizing:border-box;
+  background:#00e5ff; color:#0b0e14; border:1px solid #00e5ff;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.7rem; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; cursor:pointer;
+}
 .jp-sb-subex{
   background:rgba(255,255,255,.02); border:1px solid var(--line); border-radius:12px;
   padding:12px; margin-bottom:10px;
@@ -27778,7 +27911,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 }
 .jp-sb-subex-nombre{
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
-  font-size:.92rem; color:#EDEFF2; text-transform:uppercase;
+  font-size:.92rem; color:#f8fafc; text-transform:uppercase;
 }
 /* fila táctica limpia (calentamiento/movilidad/cardio sin carga
    prescrita) -- mismo espíritu que .jp-cf-row de CrossFit (pastilla de
@@ -27796,7 +27929,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-size:.72rem; letter-spacing:.03em; text-transform:uppercase;
   background:rgba(56,189,248,.12); color:var(--cyan); border:1px solid rgba(56,189,248,.35);
 }
-.jp-sb-plain-nombre{ font-size:.9rem; color:#EDEFF2; letter-spacing:.01em; }
+.jp-sb-plain-nombre{ font-size:.9rem; color:#f8fafc; letter-spacing:.01em; }
 /* directiva ("Refactor visual: tabla táctica de series"): recolorea SÓLO
    dentro del tablero de Pizarra Sports la fila "expandida" (ver
    set-row-expanded forzada en pizarraSports()) de fondo cobre/ámbar
@@ -27951,10 +28084,13 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 /* 2 · badge de técnica de intensidad, junto al SET puntual (no más en la
    cabecera del ejercicio) -- naranja táctico, per directiva de paleta. */
 .jp-sb-set-badge{
+  /* directiva ("Jerarquía Cromática Coach JP"): pastilla naranja/fuego
+     SÓLIDA con texto oscuro de alto contraste (antes traslúcida) -- mismo
+     tratamiento que .jp-sb-badge, unificado. */
   flex:0 0 auto; white-space:nowrap; font-family:'Chakra Petch','Barlow Condensed',sans-serif;
   font-weight:800; font-size:.6rem; letter-spacing:.04em; text-transform:uppercase;
   padding:2px 6px; border-radius:5px;
-  background:rgba(249,115,22,.14); color:#f97316; border:1px solid rgba(249,115,22,.4);
+  background:#f97316; color:#0b0e14; border:1px solid #f97316;
 }
 /* 3 · acordeón ÚNICO por bloque (jp-block-details), naranja táctico en
    el disparador -- mismo esqueleto visual que .cf-acc, namespaced para
@@ -40838,6 +40974,16 @@ body.man-mode .gs-fab{right:318px}
   padding:3px 8px;border-radius:6px;background:var(--acc,var(--gold));color:#08090B;white-space:nowrap}
 .blk-tema{font-size:11px;font-weight:700;letter-spacing:.03em;padding:3px 9px;border-radius:20px;
   border:1px solid var(--acc,var(--gold));color:var(--acc,var(--gold));background:transparent;white-space:nowrap}
+/* directiva ("Selector de Modalidad del Bloque") -- dropdown funcional
+   que reemplaza el badge estático, exclusivo de Pizarra Sports (nunca
+   CrossFit, ver pintarCabeceras()). Paleta lila/violeta propia para
+   distinguirlo de un badge de sólo lectura. */
+.blk-modalidad{font-size:11px;font-weight:700;letter-spacing:.03em;padding:4px 10px;border-radius:20px;
+  border:1px solid var(--acc,#B08CE8);color:var(--acc,#B08CE8);background:rgba(176,140,232,.08);
+  white-space:nowrap;cursor:pointer;font-family:inherit;max-width:230px}
+.blk-modalidad:hover{background:rgba(176,140,232,.16)}
+.blk-modalidad:focus{outline:none;box-shadow:0 0 0 2px rgba(176,140,232,.35)}
+.blk-modalidad option{background:#12141a;color:#EDEFF2}
 .ex-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 10px;margin:0 0 10px;
   border:1px dashed var(--line-2);border-radius:10px;background:rgba(255,255,255,.02)}
 .ex-bar .el{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-right:2px}
@@ -40995,6 +41141,32 @@ body.man-mode .gs-fab{right:318px}
   ];
   const tema = b => TEMA.find(t => { try{ return t.test(b); }catch(e){ return false; } }) || TEMA[TEMA.length-1];
 
+  /* directiva ("Selector de Modalidad del Bloque"): sólo para Pizarra
+     Sports (b.sportsPizarra) -- CrossFit sigue con el badge estático de
+     TEMA de siempre, sin tocar. b.category se sincroniza con la
+     modalidad elegida para no romper nada que ya lea category (glosario,
+     desvinculación de warm-up, etc). */
+  const MODALIDADES = [
+    { id:'fuerza',        ic:'🏋️', lb:'Carga · Fuerza',            color:'#f97316', category:'strength' },
+    { id:'hipertrofia',   ic:'💪', lb:'Carga · Hipertrofia',       color:'#f97316', category:'strength' },
+    { id:'core',          ic:'🧩', lb:'Estabilidad · Core',         color:'#f97316', category:'accessory' },
+    { id:'calentamiento', ic:'🔥', lb:'Tiempo · Entrada en calor', color:'#f59e0b', category:'warmup' },
+    { id:'metcon',        ic:'⏱️', lb:'Cardio · MetCon',           color:'#7CC5E8', category:'metcon' }
+  ];
+  /* inferencia de arranque para un bloque que todavía no tiene
+     b.modalidad guardado (todo bloque real cargado antes de esta
+     directiva) -- SÓLO decide qué opción se ve preseleccionada, nunca
+     escribe nada: b.modalidad recién se persiste cuando el coach elige
+     algo a mano en el dropdown (cero mutación de datos ya cargados). */
+  function inferirModalidad(b){
+    if(b.modalidad) return b.modalidad;
+    const t = String(b.titulo || '');
+    if(/calentamiento|warm.?up|movilidad/i.test(t)) return 'calentamiento';
+    if(/\bcore\b|abdomen|abdominal|estabilidad/i.test(t)) return 'core';
+    if(/metcon|amrap|emom|for\s*time|\bwod\b/i.test(t)) return 'metcon';
+    return 'fuerza';
+  }
+
   function pintarCabeceras(){
     const panel = document.getElementById('dayPanel'); if(!panel) return;
     /* sólo cuentan las tarjetas que son un bloque real del día */
@@ -41010,6 +41182,23 @@ body.man-mode .gs-fab{right:318px}
       let ord = h.querySelector('.blk-ord');
       if(!ord){ ord = document.createElement('span'); ord.className = 'blk-ord'; h.insertBefore(ord, h.firstChild); }
       ord.textContent = 'BLOQUE ' + (i+1) + '/' + total;
+      if(b.sportsPizarra){
+        const tmViejo = h.querySelector('.blk-tema'); if(tmViejo) tmViejo.remove();
+        let sel = h.querySelector('.blk-modalidad');
+        if(!sel){
+          sel = document.createElement('select');
+          sel.className = 'blk-modalidad';
+          sel.dataset.bmodalidad = b.id;
+          const sp2 = h.querySelector('.spacer');
+          if(sp2) h.insertBefore(sel, sp2); else h.appendChild(sel);
+        }
+        const actual = inferirModalidad(b);
+        const opciones = MODALIDADES.map(m => '<option value="' + m.id + '"' + (m.id === actual ? ' selected' : '') + '>' + m.ic + ' ' + m.lb + '</option>').join('');
+        if(sel.dataset.opts !== actual){ sel.innerHTML = opciones; sel.dataset.opts = actual; }
+        const mSel = MODALIDADES.find(m => m.id === actual) || MODALIDADES[0];
+        sel.style.setProperty('--acc', mSel.color);
+        return;
+      }
       let tm = h.querySelector('.blk-tema');
       if(!tm){
         tm = document.createElement('span'); tm.className = 'blk-tema';
@@ -41019,6 +41208,16 @@ body.man-mode .gs-fab{right:318px}
       tm.textContent = t.ic + ' ' + t.lb;
     });
   }
+  document.addEventListener('change', e => {
+    const sel = e.target.closest('.blk-modalidad');
+    if(!sel) return;
+    const b = findBlock(sel.dataset.bmodalidad); if(!b) return;
+    const m = MODALIDADES.find(x => x.id === sel.value) || MODALIDADES[0];
+    b.modalidad = m.id;
+    b.category = m.category;
+    try{ save(); }catch(x){}
+    try{ pintarCabeceras(); }catch(x){}
+  });
 
   /* ============ B. BARRA DE EDICIÓN DE EJERCICIOS ============ */
   function filas(b){
@@ -47009,13 +47208,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function agregarCore(){
     const d = (typeof curDay === 'function') ? curDay() : null;
     if(!d){ try{ toast('Elegí un alumno y un día primero', 'warn'); }catch(e){} return; }
+    /* directiva ("Erradicación total del componente legacy de Core"): este
+       módulo queda superado por MÓDULO 46 (reengancharBoton() reemplaza el
+       listener de #btnCore por agregar() más abajo en el archivo), pero se
+       corrige igual como respaldo -- de lo contrario, si algún día el
+       reenganche no llegara a correr, este handler viejo seguiría armando
+       coreBlock:true sin sportsPizarra, que es exactamente el formato
+       arcaico que la directiva pide eliminar. Mismo bloque de Pizarra
+       Libre que crea addBlockSportsPizarra(). */
     d.bloques.push({
       id: 'core' + Math.random().toString(36).slice(2, 8),
       tipo: 'list', category: 'accessory', icon: '🧩',
-      titulo: 'CORE & ESTABILIDAD ABDOMINAL',
-      subtitulo: 'Circuito de core',
-      coreBlock: true,
-      items: ['3 Sets:', '15 Russian Twists', '20 Hollow Rocks', '45s Plancha Prona', '- Rest 60s entre sets -'],
+      titulo: 'CORE & ESTABILIDAD ABDOMINAL', sportsPizarra: true,
+      items: ['Circuito de Core', '3 rondas', 'A1. Elevación de piernas colgado: 10-12 | Tempo 2011', 'A2. Rueda abdominal: 8-10 | Tempo 3011', 'A3. Plancha frontal: 30-40s'],
       tips: ''
     });
     try{ save(); }catch(e){}
@@ -47122,6 +47327,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         } else if(b.tipo === 'finisher'){
           if(!silencioso) (b.fin || []).forEach(e => { if(!String(e.repsRange || '').trim()){ e.repsRange = '15-20'; n++; } });
         } else if(b.tipo === 'list'){
+          /* directiva ("Erradicación total del componente legacy de Core"):
+             un bloque sportsPizarra administra su PROPIO formato de dosis
+             (parser A1./A2./"N rondas"/"NxM", ver TEMPLATE_HTML) -- este
+             auditor es de una convención MÁS VIEJA ("Nombre — 12-15
+             reps") que no reconoce esos patrones y los reescribía
+             (bug real: "3 Sets:" + " — 12-15 reps" pegado a cada línea,
+             incluidos los encabezados A1./A2. y "N rondas", corrompiendo
+             el bloque recién migrado). b.sportsPizarra === true es la
+             señal explícita de "Pizarra Libre moderna, no tocar". */
+          if(b.sportsPizarra === true) return;
           const vacio = !(b.items || []).length;
           const core = !!b.coreBlock || /core|abdomen|estabilidad/i.test(b.titulo || '');
           if(vacio && core && !cf){ b.items = CORE_DEF.slice(); b.coreBlock = true; n++; }
@@ -48158,11 +48373,42 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     }
     return false;
   }
+  /* directiva ("Erradicación total del componente legacy de Core"):
+     convierte un bloque YA estructurado (tipo:'block'/'superset' +
+     coreBlock:true, de una corrida vieja de estructurar()) al texto de
+     Pizarra equivalente -- mismo formato A1./A2. + "N rondas" que ya
+     entiende parsearPizarraSB() del lado del alumno, así que
+     pizarraSports() lo pinta con la fila nativa real. Nunca se pierde
+     ejercicio/reps/tempo/rondas, sólo cambia el FORMATO de almacenamiento
+     (de campos estructurados a texto libre, la dirección inversa de
+     estructurar()). */
+  function coreBlockToPizarraLines(b){
+    const rondas = Math.max(1, Math.min(10, parseInt(b.efSets, 10) || 3));
+    if(b.tipo === 'block'){
+      const ex = (typeof getEx === 'function' && b.exId) ? getEx(b.exId) : null;
+      const nombre = b.coreNombre || (ex && ex.es) || 'Ejercicio';
+      const reps = b.reps || '10-12';
+      const tempo = b.tempo ? ' | Tempo ' + b.tempo : '';
+      return [nombre, rondas + 'x' + reps + tempo];
+    }
+    const ejercicios = b.ejercicios || [];
+    const modoLb = b.coreModo === 'circuito' ? 'Circuito' : b.coreModo === 'triset' ? 'Triset' : 'Biset';
+    const lineas = [modoLb + ' de Core', rondas + ' rondas'];
+    ejercicios.forEach(function(e, i){
+      const ex = (typeof getEx === 'function' && e.exId) ? getEx(e.exId) : null;
+      const nombre = e.nombre || (ex && ex.es) || 'Ejercicio';
+      const reps = e.reps || '10-12';
+      const tempo = e.tempo ? ' | Tempo ' + e.tempo : '';
+      lineas.push('A' + (i + 1) + '. ' + nombre + ': ' + reps + tempo);
+    });
+    return lineas;
+  }
   /* migración silenciosa de todo lo que quedó viejo en el plan */
   function normalizar(silencioso){
     let p = null;
     try{ p = plan(S.activeId); }catch(e){ return 0; }
     if(!p || !p.dias) return 0;
+    let huboMigracionAPizarra = false;
     /* fix definitivo (directiva): este módulo estructura bloques de "Core"
        en biset/triset/circuito con exId real -- una mejora pensada para
        Sports & Bodybuilding. En un plan de CrossFit la única UI válida es
@@ -48210,6 +48456,17 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
           }
           return;
         }
+        /* directiva ("Erradicación total del componente legacy de Core"):
+           un bloque de Core de Sports & Bodybuilding YA NO se estructura
+           en Individual/Biset/Triset/Circuito -- es una Pizarra Libre
+           idéntica al resto (tipo:'list' + b.sportsPizarra), misma vía de
+           alta única que addBlockSportsPizarra() usa para cualquier otro
+           bloque. b.sportsPizarra === true es la marca explícita de "ya
+           vive en el sistema moderno": este módulo nunca la toca, ni
+           siquiera para un bloque nuevo cuyo título matchee esCore() por
+           RX_CORE (de lo contrario recapturaría un bloque de Pizarra
+           recién creado apenas el coach escribe "Core" en el título). */
+        if(b.sportsPizarra === true) return;
         if(!esCore(b)) return;
         /* un bloque tipo:'list' que rota de verdad semana a semana nunca se
            debe congelar en una superset a partir de la semana 1 -- ver nota
@@ -48217,22 +48474,39 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
            (weekItems/weekName, "CORE ESTRUCTURADO (app del alumno)" en
            TEMPLATE_HTML) sin necesidad de tocar su estructura acá */
         if(b.tipo === 'list' && rotaSemanalmente(b)) return;
-        const roto = (b.tipo === 'list') || (b.tipo === 'superset' && !(b.ejercicios || []).length) ||
-                     (b.tipo === 'block' && !b.exId && !b.coreNombre);
-        if(!roto) { if(!b.coreModo){ b.coreModo = modoDe(b); b.coreBlock = true; } return; }
-        /* la cantidad real de movimientos del borrador decide el modo de arranque */
-        let modo = modoDe(b);
-        if(b.tipo === 'list'){
-          const c = movimientosDe(b.items || []).length;
-          modo = c >= 4 ? 'circuito' : c === 3 ? 'triset' : c === 1 ? 'single' : 'biset';
+        /* migración no destructiva de un bloque YA estructurado en una
+           corrida vieja de este módulo -- se revierte a Pizarra Libre
+           convirtiendo ejercicio/reps/tempo/rondas a texto equivalente
+           (ver coreBlockToPizarraLines()), nunca se pierde la
+           prescripción real del coach, sólo cambia el formato en que se
+           guarda. De acá en más este módulo NUNCA vuelve a estructurar
+           nada nuevo. */
+        if((b.tipo === 'superset' || b.tipo === 'block') && b.coreBlock === true){
+          const lineas = coreBlockToPizarraLines(b);
+          delete b.ejercicios; delete b.coreModo; delete b.exId; delete b.coreNombre;
+          delete b.reps; delete b.tempo; delete b.hasApprox; delete b.approxSets;
+          delete b.failCapable; delete b.efSets; delete b.isTriset; delete b.coreBlock;
+          b.tipo = 'list';
+          b.sportsPizarra = true;
+          b.items = lineas;
+          n++;
+          huboMigracionAPizarra = true;
         }
-        estructurar(b, modo, null);
-        n++;
       });
     });
     if(n){
       try{ save(); }catch(e){}
       if(!silencioso){ try{ toast('🧩 ' + n + ' bloque(s) de core reestructurado(s)'); }catch(e){} }
+      /* directiva ("Erradicación total del componente legacy de Core"):
+         a diferencia del resto de este módulo (que sólo TOCA datos, el
+         próximo render natural ya alcanza), migrar de la estructura
+         vieja a Pizarra Libre cambia el TIPO de UI del bloque por
+         completo (de tarjetas/botones a un textarea) -- sin repintar acá
+         mismo, el coach seguía viendo la tarjeta vieja stale hasta la
+         próxima interacción real. Sólo se repinta si hubo migración de
+         verdad (nunca por los otros casos silenciosos de arriba, que
+         siempre ya tenían este comportamiento y no hace falta tocar). */
+      if(huboMigracionAPizarra && typeof renderBuilder === 'function') setTimeout(renderBuilder, 0);
     }
     return n;
   }
@@ -48255,7 +48529,11 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       if(esCFPanel){ if(caja) caja.remove(); return; }
       const ref = bl.querySelector('[data-b]');
       const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
-      if(!b || !esCore(b)){ if(caja) caja.remove(); return; }
+      /* directiva ("Erradicación total del componente legacy de Core"): un
+         bloque sportsPizarra es Pizarra Libre pura -- la caja "Estructura
+         del bloque de core" nunca debe montarse encima, aunque el título
+         siga matcheando esCore() por RX_CORE. */
+      if(!b || b.sportsPizarra || !esCore(b)){ if(caja) caja.remove(); return; }
       const modo = modoDe(b);
       const rondas = parseInt(b.efSets, 10) || 3;
       const cuantos = b.tipo === 'superset' ? (b.ejercicios || []).length : 1;
@@ -48314,6 +48592,27 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
   function agregar(modo){
     const d = (typeof curDay === 'function') ? curDay() : null;
     if(!d){ try{ toast('Elegí un alumno y un día primero', 'warn'); }catch(e){} return; }
+    let pCtx = null; try{ pCtx = plan(S.activeId); }catch(e){}
+    const esCFCtx = !!(pCtx && pCtx.meta && pCtx.meta.mesoDisc === 'crossfit');
+    if(!esCFCtx){
+      /* directiva ("Erradicación total del componente legacy de Core"): en
+         Sports & Bodybuilding el botón de Core agrega el MISMO tipo de
+         bloque que "➕ Agregar Bloque de Pizarra" (tipo:'list' +
+         sportsPizarra:true) -- ya nunca arma la estructura
+         Individual/Biset/Triset/Circuito vieja. La plantilla de ejemplo
+         deja el formato A1./A2. + rondas a la vista para que el coach
+         entienda de una el patrón de biset. */
+      const b = { id: 'core' + Math.random().toString(36).slice(2, 8),
+                  tipo:'list', category:'accessory', icon:'🧩',
+                  titulo:'CORE & ESTABILIDAD ABDOMINAL', sportsPizarra:true,
+                  tips:'Sostené la pelvis en retroversión y respirá sin soltar la tensión del abdomen.',
+                  items:['Biset de Core', '3 rondas', 'A1. Elevación de piernas colgado: 10-12 | Tempo 2011', 'A2. Pallof press: 10-12 por lado | Tempo 2012'] };
+      d.bloques.push(b);
+      try{ save(); }catch(e){}
+      if(typeof renderBuilder === 'function') renderBuilder();
+      try{ toast('🧩 Bloque de Core agregado — Pizarra Libre lista para editar'); }catch(e){}
+      return;
+    }
     const b = { id: 'core' + Math.random().toString(36).slice(2, 8),
                 tipo:'superset', category:'accessory', icon:'🧩',
                 titulo:'CORE & ESTABILIDAD ABDOMINAL', subtitulo:'', coreBlock:true,
