@@ -3236,8 +3236,41 @@ function parsearDosisSports(linea){
    RX_DOSIS_SPORTS: una línea que no matchea (nombre de ejercicio, nota,
    encabezado de biserie, fase) se copia intacta. wk es el índice de
    semana destino (1=S2, 2=S3, 3=S4); S1 (wk 0) nunca se ondula. */
+function aplicarRirSports(texto, rirLabel){
+  if(/\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/i.test(texto)){
+    return texto.replace(/\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/i, rirLabel);
+  }
+  return texto.replace(/\s+$/, '') + ' | ' + rirLabel;
+}
 function ondularLineaSports(linea, wk){
   const t = String(linea || '');
+  const rirLabel = wk === 1 ? 'RIR 1' : wk === 2 ? 'RIR 0-1 / Fallo técnico' : 'RIR 3-4';
+  /* directiva ("Testeo riguroso del motor de ondulación") -- el formato
+     de Core/circuito reparte el conteo de series en su PROPIA línea
+     ("3 rondas"), separada de cada ejercicio ("A1. Nombre: reps |
+     Tempo") -- RX_DOSIS_SPORTS (NxM pegado en una sola línea) nunca
+     matcheaba ninguna de las dos, así que un bloque de Core pasaba de
+     largo sin ondular (bug real: S2/S3/S4 quedaban IDÉNTICAS a S1,
+     detectado con el harness de testeo riguroso de esta directiva). Se
+     maneja ANTES del camino genérico de abajo, que sigue intacto para
+     el formato de una sola línea (Fuerza/Accesorio/Biset con su propio
+     "NxM" pegado a cada A1./A2.). */
+  const mRondas = t.match(/^(\d+)\s*rondas?\b/i);
+  if(mRondas){
+    /* la línea de rondas nunca lleva RIR propio (es del circuito
+       entero, no de un ejercicio puntual) -- sólo -1 ronda en Descarga. */
+    if(wk !== 3) return t;
+    const nuevo = Math.max(1, parseInt(mRondas[1], 10) - 1);
+    return t.slice(0, mRondas.index) + String(nuevo) + t.slice(mRondas.index + mRondas[1].length);
+  }
+  const mSub = t.match(/^(A\d+[.)]\s*.+?:\s*)([\s\S]*)$/i);
+  if(mSub && !RX_DOSIS_SPORTS.test(mSub[2])){
+    /* sub-ejercicio de circuito SIN su propio "NxM" (el conteo vive en
+       la línea "N rondas" de arriba) -- nunca se toca el nombre
+       (mSub[1], el prefijo "A1. Nombre: "), sólo se suma/reemplaza el
+       RIR en lo que sigue. */
+    return mSub[1] + aplicarRirSports(mSub[2], rirLabel);
+  }
   const m = t.match(RX_DOSIS_SPORTS);
   if(!m) return t;
   let out = t;
@@ -3248,13 +3281,7 @@ function ondularLineaSports(linea, wk){
     const nuevoSets = Math.max(1, parseInt(m[1], 10) - 1);
     out = out.slice(0, m.index) + String(nuevoSets) + out.slice(m.index + m[1].length);
   }
-  const rirLabel = wk === 1 ? 'RIR 1' : wk === 2 ? 'RIR 0-1 / Fallo técnico' : 'RIR 3-4';
-  if(/\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/i.test(out)){
-    out = out.replace(/\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/i, rirLabel);
-  } else {
-    out = out.replace(/\s+$/, '') + ' | ' + rirLabel;
-  }
-  return out;
+  return aplicarRirSports(out, rirLabel);
 }
 function ondularMesocicloAutomatico(){
   const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
@@ -11081,10 +11108,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      el listado "🎬 VIDEOS TÉCNICOS DEL BLOQUE" del acordeón único --
      reusa buscarVideo() (mismo matching que ya usa videoLinkHtml() en
      cada fila individual, cero lógica nueva de resolución). */
-  function recolectarVideosSB(entries){
+  /* directiva ("Videos Enraizados en Cada Bloque") -- antes sólo
+     entraban acá los ejercicios "simple" con dosis real (entry.sets
+     truthy): un ejercicio sin dosis reconocida (línea única "3x10
+     Nombre", vía la rama "plain" de pizarraSports() más abajo) SÍ tenía
+     su propio ícono de video inline en la fila, pero ESE ícono es un
+     .video-link real que limpiar() (módulo CROSSFIT: SIN VIDEOS EN EL
+     WOD, más abajo en el archivo -- corre para .jp-sb-board igual que
+     para un WOD de CrossFit porque comparte la clase wod-board) barre
+     hacia el Glosario Técnico del PIE de la sesión -- el alumno tenía
+     que scrollear hasta el final para ver un ejercicio del Bloque 1.
+     Ahora TODO ejercicio simple (con o sin dosis reconocida) entra acá,
+     así el chip sobrevive DENTRO del acordeón del bloque aunque su
+     ícono inline se haya ido al glosario. Nunca para calentamiento
+     (esCalentamiento): esos bloques no llevan video en absoluto, ver
+     esBloqueCalentamientoSB()/directiva "Desvinculación del Warm-up". */
+  function recolectarVideosSB(entries, esCalentamiento){
+    if(esCalentamiento) return [];
     var vistos = {}, out = [];
     entries.forEach(function(entry){
-      if(entry.tipo === 'simple' && entry.sets){
+      if(entry.tipo === 'simple'){
         var nm = jpCfSplit(entry.titulo).nm || entry.titulo;
         var yt = buscarVideo(nm);
         if(yt && !vistos[yt]){ vistos[yt] = 1; out.push({ nombre: nm, ytid: yt }); }
@@ -11099,10 +11142,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   function chipsVideoSB(lista){
     if(!lista.length) return '';
-    return '<div class="jp-sb-vid-title">🎬 Videos t\\u00e9cnicos del bloque</div>' +
+    return '<div class="jp-sb-vid-title">🎬 Videos del bloque</div>' +
       '<div class="jp-sb-vid-chips">' + lista.map(function(v){
         return '<button type="button" class="jp-sb-vid-chip has-thumb" style="background-image:url(https://img.youtube.com/vi/' + v.ytid + '/mqdefault.jpg)" data-yt="' + v.ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(v.nombre).replace(/"/g,'') + '">' +
-          '<span class="jp-sb-vid-chip-label">' + escSB(v.nombre) + '</span>' +
+          '<span class="jp-sb-vid-chip-label">🎬 Ver: ' + escSB(v.nombre) + '</span>' +
         '</button>';
       }).join('') + '</div>';
   }
@@ -11259,7 +11302,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        bloque completo (ejercicios simples + sub-ejercicios de biset),
        reusando videoLinkHtml()/buscarVideo() -- mismos datos que ya
        resuelve cada fila, sin duplicar lógica de matching. */
-    const videosBloque = recolectarVideosSB(entries);
+    const videosBloque = recolectarVideosSB(entries, esCalentamiento);
     const tieneObjTips = block.objective || block.tips;
     const tieneAcc = tieneObjTips || videosBloque.length;
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
@@ -11267,7 +11310,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<div class="jp-sb-title">' + escSB(block.title || '') + '</div>' +
         filas +
         (tieneAcc ?
-          '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS &amp; OBJETIVO DEL BLOQUE</summary>' +
+          '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS, TIPS &amp; VIDEOS DEL BLOQUE</summary>' +
             '<div class="jp-details-content">' +
               (block.objective ? '<div class="jp-sb-objective">🎯 ' + block.objective + '</div>' : '') +
               (block.tips ? '<div class="jp-sb-tips">💡 ' + block.tips + '</div>' : '') +
