@@ -3406,7 +3406,22 @@ function detectarEjerciciosSports(texto){
 function esLineaDirectivaSports(linea){
   return /^(rest|descanso|nota|rir|rondas?)\b/i.test(linea) || /^\*/.test(linea);
 }
+/* directiva ("Pizarra Única"): vista previa de sólo lectura de lo que
+   extraerMetadatosPizarraSports() ya dejó en b.objective/b.tips -- HTML
+   compartido entre el render completo (renderDay()) y el refresco en
+   vivo de abajo (mismo patrón que .sb-alerts/alertasChipsSports). */
+function metaHintSportsHtml(b){
+  if(b.objective || b.tips){
+    return '<div class="hint sb-meta-hint" style="margin-top:8px;line-height:1.5">' +
+      (b.objective ? '<div>🎯 <b>Objetivo:</b> ' + esc(b.objective) + '</div>' : '') +
+      (b.tips ? '<div>💡 <b>Tips:</b> ' + esc(b.tips) + '</div>' : '') +
+    '</div>';
+  }
+  return '<div class="hint sb-meta-hint" style="margin-top:8px">Escribí una línea con 🎯/Objetivo: o 💡/Tip:/Pauta: dentro de la Pizarra de arriba para que aparezcan acá.</div>';
+}
 function alertasChipsSports(bl, b){
+  const hintEl = bl.querySelector('.sb-meta-hint');
+  if(hintEl) hintEl.outerHTML = metaHintSportsHtml(b);
   const ta = bl.querySelector('textarea[data-bf="items"]');
   if(!ta) return;
   const ath = active();
@@ -3750,6 +3765,12 @@ function renderDay(){
         '<span class="pill ' + (b.tipo==='finisher'?'red':(b.tipo==='hyrox'?'teal':(b.tipo==='superset'?'gold':''))) + '">' + T.ic + ' ' + pillLb + '</span>' +
         '<input class="bt" data-bf="titulo" data-b="' + b.id + '" value="' + esc(b.titulo||'') + '" placeholder="' + (esBloqueCF ? 'Título del bloque (ej. El Cierre, Barbell Cycling)' : 'Título del bloque') + '">' +
         '<button class="icon-btn ai" data-bai="' + b.id + '" title="Nombrar con IA">🪄</button>' +
+        /* directiva ("Pizarra Única"): botón de IA compacto en la barra
+           superior del bloque -- único disparador de generarTipsSports(),
+           reemplaza al que vivía duplicado al pie del bloque (uno visible
+           siempre + otro dentro del acordeón de bloques clásicos, ver más
+           abajo esa rama que sigue intacta para 'block'/'superset'). */
+        (esBloqueSportsPizarra ? '<button class="icon-btn ai" data-btipssports="' + b.id + '" title="Sugerir Tips &amp; Pacing con IA">✨</button>' : '') +
         '<div class="spacer"></div>' +
         '<button class="icon-btn" data-bmove="up" data-b="' + b.id + '" title="Subir">▲</button>' +
         '<button class="icon-btn" data-bmove="down" data-b="' + b.id + '" title="Bajar">▼</button>' +
@@ -3987,15 +4008,17 @@ function renderDay(){
             '<div style="margin-top:8px"><label class="lb">Escalado / RX alternativo</label><input data-bf="cfCierre.escalado" data-b="' + b.id + '" value="' + esc((b.cfCierre && b.cfCierre.escalado) || '') + '" placeholder="RX 42.5/30kg · Scaled 30/20kg"></div>' +
           '</details>';
       } else if(esBloqueSportsPizarra){
-        /* REFACTOR DEFINITIVO: caja compacta de Objetivo/Tips + IA, visible
-           directamente (sin acordeón) -- son los MISMOS campos genéricos
-           b.objective/b.tips que ya usa cualquier bloque de Sports, así
-           que compile()/la app del alumno no necesitan saber nada nuevo. */
-        h += '<div class="fields" style="margin-top:10px">' +
-            '<div class="f wide"><label>🎯 Objetivo Fisiológico</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:40px" placeholder="Máxima tensión mecánica en el rango medio">' + esc(b.objective||'') + '</textarea></div>' +
-            '<div class="f wide"><label>💡 Coaching Tips &amp; Estrategia</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:48px" placeholder="Controlar el descenso, no rebotar en el pecho">' + esc(b.tips||'') + '</textarea></div>' +
-          '</div>' +
-          '<button type="button" class="btn sm gold" style="margin-top:8px" data-btipssports="' + b.id + '">✨ Sugerir Tips &amp; Pacing con IA</button>';
+        /* directiva ("Pizarra Única"): se retiran los textareas sueltos de
+           Objetivo/Tips -- todo se redacta DENTRO del textarea principal
+           de arriba con prefijos reconocidos (🎯/Objetivo: · 💡/Tip:/
+           Pauta:), extraídos automáticamente por
+           extraerMetadatosPizarraSports() cada vez que se edita "items"
+           (ver setBlockField()). b.objective/b.tips siguen siendo los
+           MISMOS campos genéricos de siempre -- compile()/la app del
+           alumno no cambian. Acá sólo queda una vista previa de sólo
+           lectura para que el coach confirme qué quedó vinculado (nunca
+           un input propio, así no hay dos fuentes de verdad). */
+        h += metaHintSportsHtml(b);
       } else {
         h += '<div style="margin-top:10px;max-width:260px"><label class="lb">Timer Zona 2 (min · opcional)</label><input type="number" data-bf="cardioMinutes" data-b="' + b.id + '" value="' + esc(b.cardioMinutes||'') + '"></div>';
       }
@@ -4387,6 +4410,28 @@ function addSubEx(bid, exId){
   else if(w === 'good') toast('⭐ Ejercicio prioritario agregado');
   else toast('Ejercicio agregado');
 }
+/* directiva ("Pizarra Única"): una línea que empieza con 🎯/"Objetivo:"
+   dentro de la Pizarra libre se vuelve el objetivo fisiológico del
+   bloque; 💡/"Tip:"/"Pauta:" se vuelve coaching tips -- mismo criterio
+   que ya usa el parser de fases/técnica del lado del alumno (prefijo
+   reconocido por FORMA, se detecta y no compite con el nombre de un
+   ejercicio real). Sólo SOBRESCRIBE b.objective/b.tips cuando encuentra
+   al menos una línea con el prefijo correspondiente -- si el coach no
+   usa la convención nueva (bloques ya cargados con el viejo textarea
+   separado, o generados por IA), el valor existente queda intacto: cero
+   mutación destructiva sobre datos reales ya guardados. */
+var RX_META_OBJETIVO_SPORTS = /^(?:🎯|objetivo\s*:)\s*/i;
+var RX_META_TIP_SPORTS = /^(?:💡|tip\s*:|pauta\s*:)\s*/i;
+function extraerMetadatosPizarraSports(b){
+  const objetivos = [], tips = [];
+  (b.items || []).forEach(function(linea){
+    const t = String(linea || '');
+    if(RX_META_OBJETIVO_SPORTS.test(t)) objetivos.push(t.replace(RX_META_OBJETIVO_SPORTS, '').trim());
+    else if(RX_META_TIP_SPORTS.test(t)) tips.push(t.replace(RX_META_TIP_SPORTS, '').trim());
+  });
+  if(objetivos.length) b.objective = objetivos.filter(Boolean).join(' · ');
+  if(tips.length) b.tips = tips.filter(Boolean).join(' · ');
+}
 function setBlockField(b, f, val){
   if(f === 'items' || f === 'movements') b[f] = String(val).split('\n').map(s => s.trim()).filter(Boolean);
   else if(f === 'optional') b.optional = (val === '1' || val === true);
@@ -4399,6 +4444,7 @@ function setBlockField(b, f, val){
     obj[partes[partes.length - 1]] = val;
   }
   else b[f] = val;
+  if(f === 'items' && b.sportsPizarra) extraerMetadatosPizarraSports(b);
 }
 
 /* ---------- DESACOPLAMIENTO DE SEMANAS (CrossFit & Hyrox) ----------
@@ -8425,12 +8471,26 @@ function renderBlockInner(block, day, weekIdx){
     html += '<div class="info-card" style="margin-top:0;"><p>Esta semana el ciclo programa menor frecuencia: este bloque no tiene sesión asignada. No es un error, tranquilo/a.</p></div>';
   } else {
     const itemsSemana = itemsDeSemana(block, weekIdx);
+    /* directiva ("Desvinculación del Warm-up del Glosario"): este bloque
+       'list' genérico se ejecuta SIEMPRE, hasta para un bloque
+       sportsPizarra -- pizarraSports() ya pinta su propia UI encima de
+       este HTML (oculto vía display:none, ver su cola más abajo en el
+       archivo), así que este .ex-row nunca se VE para la Pizarra, pero
+       sigue existiendo en el DOM. renderLine() llama a videoLinkHtml()
+       para cada línea cruda tal cual -- para un bloque de calentamiento
+       eso generaba igual un .video-link oculto que limpiar() barría
+       hacia el Glosario Técnico (el leak real: pizarraSports() nunca
+       llamaba a videoLinkHtml() para estas líneas, pero ESTE renderer
+       paralelo sí). Se salta por completo para calentamiento/warm-up/
+       movilidad -- nunca afecta bloques de Pizarra normales (Fuerza,
+       Hipertrofia, etc.) ni a CrossFit (nunca trae sportsPizarra). */
+    const esCalentamientoGenerico = block.sportsPizarra && /calentamiento|warm.?up|movilidad/i.test(String(block.title || ''));
     if(!itemsSemana.length && weekIdx > 0){
       /* directiva ("Independencia Total de Semanas") -- semana sin
          prescripción propia todavía: mensaje explícito en vez de
          mostrar (o heredar) el contenido de otra semana. */
       html += '<div class="info-card" style="margin-top:0;"><p>Todavía no se cargó la prescripción de esta semana. Consultá con tu coach.</p></div>';
-    } else {
+    } else if(!esCalentamientoGenerico){
       itemsSemana.forEach(function(item){ html += renderLine(item); });
     }
     /* directiva ("Unificación de tips/videos") -- quinta fuente de la
@@ -10856,6 +10916,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   var RX_BISET_HEAD_SB = /\\b(biset|superset|triset|circuito)\\b/i;
   var RX_RONDAS_SB = /(\\d+)\\s*rondas?/i;
   var RX_REST_SB = /rest\\s*(\\d+)/i;
+  /* directiva ("Pizarra Única"): 🎯/"Objetivo:" y 💡/"Tip:"/"Pauta:" son
+     metadata del bloque (ver extraerMetadatosPizarraSports() del lado
+     del Builder, mismo par de prefijos) -- NUNCA deben convertirse en un
+     ejercicio fantasma ni en la dosis del ejercicio anterior, así que se
+     detectan y descartan ANTES que cualquier otra clasificación. */
+  var RX_META_OBJETIVO_SB = /^(?:🎯|objetivo\\s*:)/i;
+  var RX_META_TIP_SB = /^(?:💡|tip\\s*:|pauta\\s*:)/i;
+  function esLineaMetaSB(linea){
+    return RX_META_OBJETIVO_SB.test(linea) || RX_META_TIP_SB.test(linea);
+  }
   /* clasifica línea por línea (sin depender de blancos, ver nota de
      arriba) y reconstruye ejercicios simples y biseries/trisets. */
   function parsearPizarraSB(lineas){
@@ -10863,6 +10933,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     lineas.forEach(function(raw){
       var linea = String(raw || '').trim();
       if(!linea) return;
+      if(esLineaMetaSB(linea)) return;
       var subM = linea.match(RX_SUBEJ_SB);
       if(subM){
         if(!actual || actual.tipo !== 'biserie'){ actual = { tipo:'biserie', titulo:'Biset / Triset', subs:[], rondas:3, restSeconds:90 }; entries.push(actual); }
@@ -11025,6 +11096,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '</button>';
       }).join('') + '</div>';
   }
+  /* directiva ("Desvinculación del Warm-up del Glosario"): un bloque de
+     Pizarra cuyo TÍTULO lo identifica como calentamiento/activación
+     nunca debe alimentar el glosario de video (por eso NUNCA se llama a
+     videoLinkHtml() para sus ejercicios más abajo -- sin .video-link en
+     el DOM, limpiar() no tiene nada que barrer hacia LEXICO) ni montar
+     casilleros de Kg/series efectivas -- se detecta por título, igual
+     criterio de "forma, no lista cerrada de una sola palabra" que ya usa
+     esWarm() para bloques clásicos (que nunca toca la Pizarra, ver esa
+     función más abajo en el archivo). */
+  var RX_CALENTAMIENTO_SB = /calentamiento|warm.?up|movilidad/i;
+  function esBloqueCalentamientoSB(block){
+    return RX_CALENTAMIENTO_SB.test(String((block && block.title) || ''));
+  }
   function pizarraSports(blockEl, block, weekIdx, dayId){
     if(esBloqueVacioCF(block)) return;
     const body = blockEl.querySelector('.block-body');
@@ -11038,6 +11122,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     const entries = parsearPizarraSB(lineas);
     if(!entries.length) return;
+    const esCalentamiento = esBloqueCalentamientoSB(block);
     let filas = '';
     entries.forEach(function(entry, idx){
       if(entry.tipo === 'fase'){
@@ -11045,6 +11130,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       if(entry.tipo === 'biserie' && entry.subs.length){
+        if(esCalentamiento){
+          const subsPlain = entry.subs.map(function(sub){
+            const dosisTxt = sub.reps ? sub.reps + ' ' + (sub.unidad || 'reps') : '';
+            return '<div class="jp-sb-plain">' +
+                (dosisTxt ? '<span class="jp-sb-plain-pill">' + escSB(dosisTxt) + '</span>' : '') +
+                '<span class="jp-sb-plain-nombre">' + escSB(sub.nombre) + '</span>' +
+                (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
+              '</div>';
+          }).join('');
+          filas += '<div class="jp-sb-biset">' +
+              '<div class="jp-sb-biset-title">' + escSB(entry.titulo) + '</div>' +
+              '<div class="jp-sb-bracket">' + subsPlain + '</div>' +
+            '</div>';
+          return;
+        }
         const subsHtml = entry.subs.map(function(sub, si){
           const exIdx = 'b' + idx + 's' + si;
           const dosisTxt = [sub.reps ? sub.reps + ' ' + (sub.unidad || 'reps') : '', sub.tempo ? 'Tempo ' + sub.tempo : ''].filter(Boolean).join(' · ');
@@ -11072,12 +11172,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          mudo: se replica la fila táctica limpia de CrossFit (pastilla de
          dosis + nombre, vía el mismo jpCfSplit() que ya usa jpCfFila()
          más arriba en este archivo -- función pura, sin estado de CF,
-         reutilizable tal cual). */
-      if(!entry.sets){
+         reutilizable tal cual). directiva ("Desvinculación del Warm-up"):
+         un bloque de calentamiento SIEMPRE cae acá, aunque la línea sí
+         haya matcheado una dosis numérica (ej. "3x10 Air Squats") -- para
+         eso el valor de la pastilla se arma con entry.sets/reps cuando
+         existen, en vez de sólo con jpCfSplit(), y nunca se llama a
+         videoLinkHtml(). */
+      if(!entry.sets || esCalentamiento){
         const partesPlain = jpCfSplit(entry.titulo);
+        const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
         filas += '<div class="jp-sb-plain">' +
-            (partesPlain.val ? '<span class="jp-sb-plain-pill">' + escSB(partesPlain.val) + '</span>' : '') +
-            '<span class="jp-sb-plain-nombre">' + escSB(partesPlain.nm) + '</span>' + videoLinkHtml(partesPlain.nm) +
+            (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
+            '<span class="jp-sb-plain-nombre">' + escSB(partesPlain.nm) + '</span>' + (esCalentamiento ? '' : videoLinkHtml(partesPlain.nm)) +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
             (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           '</div>';
@@ -11105,7 +11211,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const tieneObjTips = block.objective || block.tips;
     const tieneAcc = tieneObjTips || videosBloque.length;
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
-        '<div class="jp-sb-tag">[ SPORTS &middot; 💪 BLOQUE ]</div>' +
+        '<div class="jp-sb-tag">[ SPORTS &middot; ' + (esCalentamiento ? '🔥 ACTIVACI\\u00d3N' : '💪 BLOQUE') + ' ]</div>' +
         '<div class="jp-sb-title">' + escSB(block.title || '') + '</div>' +
         filas +
         (tieneAcc ?
