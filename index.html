@@ -10935,6 +10935,34 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     return { tecnica: tecnica, texto: limpio.trim() };
   }
+  /* directiva ("Compilación estructurada de Myo-Reps") -- una línea de
+     dosis puede traer la serie Myo-Rep INLINE, pegada al resto ("3 sets
+     x 12 reps + 1 set MYO-REPS (12 reps activación + 3x4 miniseries con
+     10s de pausa) | Tempo 2011 | RIR 0 | Rest 75s"): antes esto rompía
+     esSoloDosisSB() (el residuo tras sacar sólo "3 sets x 12" era
+     larguísimo) y la línea entera terminaba como nota cruda en cursiva,
+     sin sets ni inputs. Se recorta la cláusula "+ N set myo-reps (...)"
+     ANTES de parsear la dosis base, así "3 sets x 12" se reconoce limpio
+     y el detalle (activación/microseries/pausa) se extrae aparte. */
+  var RX_MYO_CLAUSE_SB = /\\+?\\s*(?:\\d+\\s*sets?\\s*)?myo[\\s-]?reps?\\s*(?:\\(([^)]*)\\))?/i;
+  function extraerMyoInfoSB(detalle){
+    var t = String(detalle || ''), out = {};
+    var mAct = t.match(/(\\d+)\\s*reps?\\s*(?:de\\s*)?activaci[o\\u00f3]n/i);
+    if(mAct) out.activacion = parseInt(mAct[1], 10);
+    var mMicro = t.match(/(\\d+)\\s*x\\s*(\\d+)\\s*(?:micro\\s*-?\\s*series|miniseries)/i);
+    if(mMicro){ out.microCount = parseInt(mMicro[1], 10); out.microReps = parseInt(mMicro[2], 10); }
+    var mRest = t.match(/(\\d+)\\s*s(?:eg(?:undos)?)?\\s*(?:de\\s*)?(?:pausa|descanso|rest)/i);
+    if(mRest) out.restSeg = parseInt(mRest[1], 10);
+    return (out.activacion || out.microCount || out.restSeg) ? out : null;
+  }
+  /* directiva ("Limpieza de residuos en Drop Set") -- "-30%"/"20%" dentro
+     del texto de una línea de técnica: se guarda para integrarlo en el
+     badge del set ("🔥 DROP SET (-30%)") en vez de dejarlo como texto
+     suelto. */
+  function extraerPctSB(texto){
+    var m = String(texto || '').match(/(-?\\d+)\\s*%/);
+    return m ? parseInt(m[1], 10) : null;
+  }
   /* directiva ("Fix crítico: parser flexible") -- "4x6-8" era el ÚNICO
      formato aceptado (número pegado directo a x/×). Un coach escribiendo
      en prosa normal ("4 sets x 10-12 reps", "3 series de 12", "4 rondas
@@ -11051,8 +11079,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         entries.push({ tipo:'fase', titulo: linea });
         return;
       }
-      var dosis = parsearDosisSB(linea);
-      if(actual && actual.tipo === 'simple' && !actual.dosisAsignada && esSoloDosisSB(linea, dosis)){
+      /* directiva ("Compilación estructurada de Myo-Reps") -- si la línea
+         trae la cláusula "+ N set myo-reps (...)" pegada a la dosis base,
+         se recorta ANTES de intentar parsear/validar la dosis: así "3
+         sets x 12 reps" se sigue reconociendo limpio aunque comparta
+         línea con el detalle de Myo-Reps. */
+      var myoClauseM = linea.match(RX_MYO_CLAUSE_SB);
+      var lineaParaDosis = myoClauseM ? (linea.slice(0, myoClauseM.index) + linea.slice(myoClauseM.index + myoClauseM[0].length)).replace(/\\s+/g, ' ').trim() : linea;
+      var dosis = parsearDosisSB(lineaParaDosis);
+      if(actual && actual.tipo === 'simple' && !actual.dosisAsignada && esSoloDosisSB(lineaParaDosis, dosis)){
         actual.sets = dosis.sets || actual.sets;
         actual.reps = dosis.reps || actual.reps;
         actual.tempo = dosis.tempo || actual.tempo;
@@ -11060,8 +11095,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         actual.rir = dosis.rir || actual.rir;
         actual.unidad = dosis.unidad || actual.unidad;
         actual.dosisAsignada = true;
-        var resDosis = extraerTecnicaSB(linea);
-        if(resDosis.tecnica) actual.tecnica = resDosis.tecnica;
+        var resDosis = extraerTecnicaSB(lineaParaDosis);
+        if(resDosis.tecnica){
+          actual.tecnica = resDosis.tecnica;
+          if(resDosis.tecnica === 'dropset') actual.tecnicaPct = extraerPctSB(resDosis.texto);
+        }
+        if(myoClauseM){
+          actual.tecnica = 'myoreps';
+          actual.myoInfo = extraerMyoInfoSB(myoClauseM[1] || '');
+        }
         return;
       }
       /* una línea de nota/técnica avanzada NUNCA arranca un ejercicio
@@ -11074,10 +11116,24 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(actual && actual.tipo === 'simple' && (esLineaDirectiva(linea) || /^\\*/.test(linea) || resTecLinea.tecnica)){
         var resNota = extraerTecnicaSB(linea.replace(/^\\*\\s*/, ''));
         if(resNota.tecnica) actual.tecnica = resNota.tecnica;
-        if(resNota.texto) actual.notas.push(resNota.texto);
+        /* directiva ("Limpieza de residuos en técnicas avanzadas") -- el
+           texto explicativo crudo de una línea de técnica (dropset/rest-
+           pause/myo-reps/al fallo) NUNCA se vuelve a mostrar como nota
+           suelta en cursiva: ya se comunica por completo con su badge en
+           el set correspondiente. Sólo se conserva el dato útil (% para
+           dropset, detalle estructurado para myo-reps); una nota SIN
+           técnica (ej. "* usar agarre cerrado") se sigue mostrando igual
+           que siempre. */
+        if(resNota.tecnica === 'dropset'){
+          actual.tecnicaPct = extraerPctSB(resNota.texto);
+        } else if(resNota.tecnica === 'myoreps'){
+          actual.myoInfo = extraerMyoInfoSB(resNota.texto) || actual.myoInfo;
+        } else if(!resNota.tecnica && resNota.texto){
+          actual.notas.push(resNota.texto);
+        }
         return;
       }
-      actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, rir:'', dosisAsignada:false, tecnica:'', notas:[], unidad:'reps' };
+      actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, rir:'', dosisAsignada:false, tecnica:'', tecnicaPct:null, myoInfo:null, notas:[], unidad:'reps' };
       entries.push(actual);
     });
     return entries;
@@ -11115,9 +11171,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        fallo"), nunca al ejercicio completo -- antes el badge vivía una
        sola vez en la cabecera del ejercicio, sin indicar a cuál serie
        correspondía. Sin un número de serie explícito en el texto del
-       coach, se asume la última (el caso real de uso casi siempre). */
+       coach, se asume la última (el caso real de uso casi siempre).
+       Myo-Reps es la excepción: nunca modifica una serie base existente,
+       siempre AGREGA una serie de activación propia + microseries (ver
+       más abajo), así que nunca participa del badge-en-la-última-serie
+       genérico. */
     var setTecnica = (tecnicaInfo && tecnicaInfo.tecnica) ? tecnicaInfo : null;
-    var setTecnicaIdx = setTecnica ? (setTecnica.setIndex || numSetsInt) : 0;
+    var esMyo = !!(setTecnica && setTecnica.tecnica === 'myoreps');
+    var setTecnicaIdx = (setTecnica && !esMyo) ? (setTecnica.setIndex || numSetsInt) : 0;
     var html = '<div class="jp-set-tracker-native">';
     for(var i = 1; i <= numSetsInt; i++){
       var key = getLoadKey(weekIdx, dayId, blockId, exIdx, i);
@@ -11140,8 +11201,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var kgPlaceholder = (kgVal === '' && prevKg != null) ? String(prevKg) : '0';
       var doneCls = ld.done ? ' completed' : '';
       var badgeHtml = '';
-      if(setTecnica && i === setTecnicaIdx && TECNICAS_BADGE_SB[setTecnica.tecnica]){
-        badgeHtml = '<span class="jp-sb-set-badge jp-sb-badge-' + setTecnica.tecnica + '">' + TECNICAS_BADGE_SB[setTecnica.tecnica] + '</span>';
+      if(setTecnica && !esMyo && i === setTecnicaIdx && TECNICAS_BADGE_SB[setTecnica.tecnica]){
+        /* directiva ("Limpieza de residuos en Drop Set") -- el % detectado
+           en la línea original ("-30%") se integra en el propio badge en
+           vez de quedar como texto suelto aparte. */
+        var pctSufijo = (setTecnica.tecnica === 'dropset' && setTecnica.pct != null) ? ' (' + setTecnica.pct + '%)' : '';
+        badgeHtml = '<span class="jp-sb-set-badge jp-sb-badge-' + setTecnica.tecnica + '">' + TECNICAS_BADGE_SB[setTecnica.tecnica] + pctSufijo + '</span>';
       }
       html += '<div class="jp-set-row-native' + doneCls + '" data-set-key="' + key + '">' +
           '<span class="jp-set-pill">SET ' + i + '</span>' +
@@ -11152,6 +11217,44 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="0" value="' + escSB(secVal) + '" />' +
           '<span class="jp-unit">' + unidadSec + '</span>' +
           '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\\u2713</button>' +
+        '</div>';
+    }
+    /* directiva ("Compilación estructurada de Myo-Reps") -- serie de
+       activación propia (misma fila nativa .jp-set-row-native que las
+       series base, reusa getLoadKey/setLoadField sin ningún código
+       nuevo de persistencia: cuenta para el volumen real de la sesión
+       igual que cualquier otra serie tildada) + microseries en una
+       sub-fila compacta debajo, cada una con su propio input chico. */
+    if(esMyo){
+      var myo = setTecnica.myo || {};
+      var activIdx = numSetsInt + 1;
+      var activKey = getLoadKey(weekIdx, dayId, blockId, exIdx, activIdx);
+      var activLd = getLoad(activKey);
+      var activKgVal = activLd.kg != null ? activLd.kg : '';
+      var activRepsVal = activLd.reps != null ? activLd.reps : '';
+      var activRepsPh = myo.activacion ? String(myo.activacion) : '0';
+      html += '<div class="jp-set-row-native' + (activLd.done ? ' completed' : '') + '" data-set-key="' + activKey + '">' +
+          '<span class="jp-set-pill">SET ' + activIdx + '</span>' +
+          '<span class="jp-sb-set-badge jp-sb-badge-myoreps">\\ud83d\\udd25 MYO-ACTIVACI\\u00d3N</span>' +
+          '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="0" value="' + escSB(activKgVal) + '" />' +
+          '<span class="jp-unit">kg</span>' +
+          '<span class="jp-sep">\\u00d7</span>' +
+          '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="' + activRepsPh + '" value="' + escSB(activRepsVal) + '" />' +
+          '<span class="jp-unit">' + unidadSec + '</span>' +
+          '<button type="button" class="jp-btn-check-native' + (activLd.done ? ' completed' : '') + '" aria-label="Marcar serie ' + activIdx + ' completada">\\u2713</button>' +
+        '</div>';
+      var microCount = myo.microCount > 0 ? myo.microCount : 3;
+      var microReps = myo.microReps > 0 ? myo.microReps : 4;
+      var restSeg = myo.restSeg > 0 ? myo.restSeg : 10;
+      var microInputs = '';
+      for(var mi = 1; mi <= microCount; mi++){
+        var microKey = getLoadKey(weekIdx, dayId, blockId, exIdx, 'm' + mi);
+        var microVal = getLoad(microKey).reps;
+        microInputs += '<input type="number" step="1" inputmode="numeric" class="jp-myo-mini" data-micro-key="' + microKey + '" placeholder="+' + microReps + '" value="' + (microVal != null ? escSB(microVal) : '') + '" />';
+      }
+      html += '<div class="jp-myo-micro-row">' +
+          '<span class="jp-myo-micro-lb">\\u26a1 MICROSERIES (' + restSeg + 's rest):</span>' +
+          '<div class="jp-myo-micro-inputs">' + microInputs + '</div>' +
         '</div>';
     }
     html += '</div>';
@@ -11379,7 +11482,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
           dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
-          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica } : null) +
+          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null) +
         '</div>';
     });
     if(!filas) return;
@@ -11438,10 +11541,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const el = e.target;
     const esKg = el.classList && el.classList.contains('jp-val-primary');
     const esSec = el.classList && el.classList.contains('jp-val-secondary');
-    if(!esKg && !esSec) return;
-    const row = el.closest('.jp-set-row-native'); if(!row) return;
-    const key = row.dataset.setKey; if(!key) return;
-    setLoadField(key, esKg ? 'kg' : 'reps', el.value);
+    if(esKg || esSec){
+      const row = el.closest('.jp-set-row-native'); if(!row) return;
+      const key = row.dataset.setKey; if(!key) return;
+      setLoadField(key, esKg ? 'kg' : 'reps', el.value);
+      return;
+    }
+    /* directiva ("Compilación estructurada de Myo-Reps") -- cada input
+       chico de microserie persiste su propio conteo de reps, mismo
+       mecanismo getLoadKey/setLoadField que el resto del tracker (clave
+       con sufijo 'm1'/'m2'/... en vez de un número de serie, ver
+       renderSetRowsNativeSB) -- nunca compite con el volumen (kg*reps)
+       de las series reales, es sólo referencia de la activación. */
+    if(el.classList && el.classList.contains('jp-myo-mini')){
+      const microKey = el.dataset.microKey; if(!microKey) return;
+      setLoadField(microKey, 'reps', el.value);
+    }
   });
   document.addEventListener('click', function(e){
     const btn = e.target.closest('.jp-btn-check-native');
@@ -12986,52 +13101,63 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     var yAccent = yTrasTitulo + 76;
     g.fillStyle = '#E5C378'; g.fillRect(90, yAccent, 150, 6);
 
-    /* métricas -- tonelaje total en dorado (métrica protagonista del
-       directiva de la Story Card), series en cyan técnico, tiempo neutro */
-    const cajas = [
-      { k:'VOLUMEN TOTAL', v: d.vol.toLocaleString('es-AR'), u:'KG', col:'#E5C378' },
-      { k:'SERIES COMPLETADAS', v: String(d.series), u:'SETS', col:'#38BDF8' },
-      { k:'TIEMPO DE ENTRENAMIENTO', v: d.tiempo, u:'', col:'#FFFFFF' }
+    /* directiva ("Cálculo real y rediseño de Story Card") -- las 3 cajas
+       verticales apiladas (194px cada una + espaciado, ~640px de alto
+       total) dejaban muy poco margen para la foto de fondo del atleta.
+       Se reemplazan por UNA barra horizontal compacta de 3 columnas,
+       anclada al tercio inferior del canvas -- por encima de la franja
+       FIJA del pie (racha/top-lift/firma, ver pieYMetricas() más abajo
+       en el archivo: siempre redibuja/limpia desde y=1508 hacia abajo,
+       así que la barra nunca puede pisar esa zona) -- para dejar el
+       resto del canvas (~70%) despejado para la foto. d.vol/d.series
+       llegan ya calculados por resumenDatos() (suma kg*reps de TODA
+       fila de state.loads con .done=true del día/semana actual, ver
+       ese motor más arriba en el archivo) -- nunca 0 si hay series
+       tildadas con carga cargada. */
+    var barY = 1320, barH = 150, barX = 90, barW = W - 180;
+    g.fillStyle = 'rgba(255,255,255,.045)';
+    redondear(g, barX, barY, barW, barH, 24); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = 2;
+    redondear(g, barX, barY, barW, barH, 24); g.stroke();
+    const cols = [
+      { icono: '🏋️', v: d.vol.toLocaleString('es-AR') + ' KG', col: '#E5C378' },
+      { icono: '⚡', v: d.series + ' SETS', col: '#38BDF8' },
+      { icono: '⏱️', v: String(d.tiempo).toUpperCase(), col: '#FFFFFF' }
     ];
-    let y = yAccent + 60;
-    cajas.forEach(b => {
-      g.fillStyle = 'rgba(255,255,255,.045)';
-      redondear(g, 90, y, W - 180, 194, 28); g.fill();
-      g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = 2;
-      redondear(g, 90, y, W - 180, 194, 28); g.stroke();
-      g.fillStyle = b.col; g.fillRect(90, y + 36, 6, 122);
-      g.fillStyle = '#A0A8B4'; g.font = '700 28px "Chakra Petch", sans-serif';
-      g.textAlign = 'left'; g.fillText(b.k, 134, y + 58);
-      g.fillStyle = b.col;
-      /* directiva9 -- el valor de TIEMPO ahora puede ser un texto más largo
-         ("1h 18m") en vez de sólo un número corto; se achica la tipografía
-         si hace falta para que no se salga de la caja, igual que hace
-         ajustar() en el estilo "champion". */
-      let fsCyber = 112;
+    const colW = barW / 3;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    cols.forEach((cItem, i) => {
+      const cx = barX + colW * i + colW / 2;
+      if(i > 0){
+        g.strokeStyle = 'rgba(255,255,255,.14)'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(barX + colW * i, barY + 26); g.lineTo(barX + colW * i, barY + barH - 26); g.stroke();
+      }
+      let fsCyber = 42;
+      const txt = cItem.icono + ' ' + cItem.v;
       g.font = '700 ' + fsCyber + 'px "Chakra Petch", sans-serif';
-      const maxValW = (W - 180) - 84;
-      while(g.measureText(b.v).width > maxValW && fsCyber > 60){
-        fsCyber -= 4;
+      const maxColW = colW - 32;
+      while(g.measureText(txt).width > maxColW && fsCyber > 22){
+        fsCyber -= 2;
         g.font = '700 ' + fsCyber + 'px "Chakra Petch", sans-serif';
       }
-      g.fillText(b.v, 134, y + 152);
-      const w = g.measureText(b.v).width;
-      g.fillStyle = '#A0A8B4'; g.font = '700 38px "Chakra Petch", sans-serif';
-      g.fillText(b.u, 134 + w + 20, y + 152);
-      y += 214;
+      g.fillStyle = cItem.col;
+      g.fillText(txt, cx, barY + barH / 2);
     });
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
 
-    /* PR del día */
+    /* PR del día -- vive JUSTO ARRIBA de la barra (nunca abajo: ahí ya
+       empieza la franja fija del pie) para no restarle más espacio a la
+       foto que el estrictamente necesario en un día con marca nueva. */
     if(d.prs && d.prs.length){
+      var prH = 118, prY = barY - 24 - prH;
       g.fillStyle = 'rgba(229,195,120,.12)';
-      redondear(g, 90, y, W - 180, 128, 28); g.fill();
+      redondear(g, 90, prY, barW, prH, 28); g.fill();
       g.strokeStyle = 'rgba(229,195,120,.45)'; g.lineWidth = 2;
-      redondear(g, 90, y, W - 180, 128, 28); g.stroke();
+      redondear(g, 90, prY, barW, prH, 28); g.stroke();
       g.fillStyle = '#E5C378'; g.font = '700 40px "Chakra Petch", sans-serif';
-      g.fillText('🔥 NUEVA MARCA PERSONAL', 130, y + 52);
+      g.fillText('🔥 NUEVA MARCA PERSONAL', 130, prY + 48);
       g.fillStyle = '#FFFFFF'; g.font = '500 30px Inter, sans-serif';
-      g.fillText(d.prs.slice(0, 2).join('  ·  ').slice(0, 46), 130, y + 96);
-      y += 142;
+      g.fillText(d.prs.slice(0, 2).join('  ·  ').slice(0, 46), 130, prY + 92);
     }
 
     /* el pie lo escribe el módulo de métricas: racha, top lift y firma */
@@ -28088,6 +28214,19 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   border:1px solid rgba(56,189,248,.22) !important; border-radius:14px !important;
   padding:12px !important; margin-bottom:12px;
 }
+/* directiva ("Eliminar el segundo acordeón redundante") -- el bottom-sheet
+   "☰ Notas, RIR y criterio del coach" (.wf-sheet-drawer, ver el módulo
+   REDISEÑO F más abajo en este archivo) sigue montándose como hermano de
+   .jp-sb-board dentro de .block-body: toda la información que ese drawer
+   junta ya vive en "[ ▸ PAUTAS TÉCNICAS, TIPS & VIDEOS DEL BLOQUE ]" que
+   arma pizarraSports(). Mismo patrón exacto ya usado para .jp-cfboard
+   (ver body.cf-disc .block:has(.jp-cfboard) > .block-body > *:not(...)
+   más abajo) -- puramente CSS, cero cambio al módulo JS compartido que
+   sigue montando el drawer para bloques CLÁSICOS de Sports (fuera de la
+   Pizarra) sin ningún cambio. .jp-sb-board nunca existe en CrossFit
+   (pizarraSports() sólo corre con COACH_DISCIPLINA === 'sports'), así
+   que no hace falta ningún prefijo body.cf-disc acá. */
+.block:has(.jp-sb-board) > .block-body > *:not(.jp-sb-board){ display:none !important; }
 .jp-sb-tag{
   /* directiva ("Homogeneización Cromática Exacta"): naranja táctico
      #ff6b00 exacto -- título de bloque, valor pinneado por la
@@ -28399,6 +28538,25 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   padding:2px 6px; border-radius:5px;
   background:#ff6b00; color:#0b0e14; border:1px solid #ff6b00;
 }
+/* directiva ("Compilación estructurada de Myo-Reps") -- sub-fila táctica
+   compacta con las microseries (10s rest), anidada justo debajo de la
+   serie de activación. */
+.jp-myo-micro-row{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:6px 4px 2px; margin-top:-4px;
+}
+.jp-myo-micro-lb{
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:.62rem;
+  letter-spacing:.04em; text-transform:uppercase; color:var(--text-secondary,#A0A8B4);
+  white-space:nowrap;
+}
+.jp-myo-micro-inputs{ display:flex; gap:6px; flex-wrap:wrap; }
+.jp-myo-mini{
+  width:44px; padding:6px 4px; border-radius:7px; border:1px solid rgba(255,255,255,.16);
+  background:rgba(0,0,0,.35); color:#EDEFF2; font-family:'JetBrains Mono',monospace;
+  font-size:.72rem; text-align:center;
+}
+.jp-myo-mini:focus{ border-color:#ff6b00; outline:none; }
 /* 3 · acordeón ÚNICO por bloque (jp-block-details), naranja táctico en
    el disparador -- mismo esqueleto visual que .cf-acc, namespaced para
    no heredar nada de CrossFit. */
