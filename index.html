@@ -3490,22 +3490,37 @@ function parsearDosisSports(linea){
   if((m = t.match(/rest\s*(\d+)\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
   return out;
 }
-/* MOTOR DE ONDULACIÓN S1 -> S2/S3/S4 (directiva "Ondulación de Cargas"):
-   proyecta el texto crudo de la Pizarra de Semana 1 a las otras 3 semanas
-   sin tocar jamás nombres de ejercicio ni tempos -- sólo re-escribe, línea
-   por línea, la dosis (series) y la anotación de RIR. Reutiliza
-   RX_DOSIS_SPORTS: una línea que no matchea (nombre de ejercicio, nota,
-   encabezado de biserie, fase) se copia intacta. wk es el índice de
-   semana destino (1=S2, 2=S3, 3=S4); S1 (wk 0) nunca se ondula. */
+/* MOTOR DE ONDULACIÓN S1 -> S2/S3/S4 (directiva "Ondulación de Cargas";
+   directiva crítica "Motor de Ondulación Recursiva S1-S4" -- fix del bug
+   por el cual Semana 3 quedaba en RIR 2-1 en vez de RIR 1-0): proyecta el
+   texto crudo de la Pizarra de Semana 1 a las otras 3 semanas sin tocar
+   jamás nombres de ejercicio ni tempos -- sólo re-escribe, línea por
+   línea, la dosis (series) y la anotación de RIR. Reutiliza RX_DOSIS_SPORTS:
+   una línea que no matchea (nombre de ejercicio, nota, encabezado de
+   biserie, fase) se copia intacta. wk es el índice de semana destino
+   (1=S2, 2=S3, 3=S4); S1 (wk 0) nunca se ondula. */
+/* directiva crítica -- aplicarRirSports() reemplazaba sólo la PRIMERA
+   mención de "RIR ..." con reemplazo no-global: si la línea original ya
+   traía más de una mención (copy-paste de otra semana, o una nota suelta
+   con "RIR" adentro) la segunda quedaba intacta y el parser del lado del
+   alumno (que lee la PRIMERA coincidencia) podía terminar mostrando el
+   valor viejo. Se reescribe a "limpiar TODAS las menciones existentes,
+   después agregar UNA sola al final" -- nunca puede quedar una mención
+   vieja compitiendo con la nueva, sea cual sea el origen del texto. */
 function aplicarRirSports(texto, rirLabel){
-  if(/\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/i.test(texto)){
-    return texto.replace(/\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/i, rirLabel);
-  }
-  return texto.replace(/\s+$/, '') + ' | ' + rirLabel;
+  const limpio = String(texto || '').replace(/\s*\|?\s*\brir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/gi, '');
+  return limpio.replace(/\s+$/, '') + ' | ' + rirLabel;
 }
 function ondularLineaSports(linea, wk){
   const t = String(linea || '');
-  const rirLabel = wk === 1 ? 'RIR 1' : wk === 2 ? 'RIR 0-1 / Fallo técnico' : 'RIR 3-4';
+  /* directiva crítica ("Motor de Ondulación Recursiva S1-S4") -- valores
+     EXACTOS pedidos por semana destino, alineados 1:1 con el RIR entre
+     paréntesis que ya muestra el badge de semana (WEEKS_META/defaultWeeks,
+     ver ondularMesocicloAutomatico() más abajo, que ahora también
+     sincroniza esa metadata): S2 = RIR 2-1, S3 = RIR 1-0 (pico de
+     exigencia, antes quedaba mal en RIR 2-1 -- el bug reportado), S4 =
+     RIR 3-4 (descarga). */
+  const rirLabel = wk === 1 ? 'RIR 2-1' : wk === 2 ? 'RIR 1-0' : 'RIR 3-4';
   /* directiva ("Testeo riguroso del motor de ondulación") -- el formato
      de Core/circuito reparte el conteo de series en su PROPIA línea
      ("3 rondas"), separada de cada ejercicio ("A1. Nombre: reps |
@@ -3544,18 +3559,54 @@ function ondularLineaSports(linea, wk){
   }
   return aplicarRirSports(out, rirLabel);
 }
+/* directiva crítica ("Motor de Ondulación Recursiva S1-S4") -- el bug
+   real reportado ("no impacta en los bloques") era que esta función sólo
+   tocaba curDay() (el día VISIBLE en el Builder en ese momento) -- un
+   mesociclo real tiene varios días, y ondular "el mesociclo" desde un
+   botón que dice justamente eso debe recorrer TODOS los días del plan
+   activo, no sólo el que el coach tenía abierto en pantalla. Se reescribe
+   para recorrer p.dias completo (recursión real sobre el árbol
+   día→bloques→semana) y, además, sincronizar la metadata de RPE por
+   semana (p.meso[1..3].rpe) con el mismo RIR que ahora queda escrito en
+   cada bloque -- así el badge de la semana (que ya lee p.meso, ver
+   defaultWeeks()) nunca vuelve a desentonar con el texto real de la
+   Pizarra, sea un plan nuevo o uno viejo con metadata desactualizada. */
+const META_ONDULACION_SEMANA = {
+  1: { rpe:'RPE 8-9 (RIR 2-1)' },
+  2: { rpe:'RPE 9-10 (RIR 1-0)', fail:true },
+  3: { rpe:'RPE 6-7 (RIR 3-4)', deload:true }
+};
 function ondularMesocicloAutomatico(){
-  const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
-  const bloques = (d.bloques || []).filter(function(b){ return b.tipo === 'list' && b.sportsPizarra && Array.isArray(b.items) && b.items.length; });
-  if(!bloques.length){ toast('No hay bloques de Pizarra con contenido en Semana 1', 'err'); return; }
-  bloques.forEach(function(b){
-    if(!Array.isArray(b.weekItems)) b.weekItems = [];
-    [1, 2, 3].forEach(function(wk){
-      b.weekItems[wk] = b.items.map(function(linea){ return ondularLineaSports(linea, wk); });
+  const p = plan(S.activeId); if(!p){ toast('Seleccioná un alumno/a', 'err'); return; }
+  const dias = p.dias || [];
+  let bloquesTocados = 0, diasTocados = 0;
+  dias.forEach(function(d){
+    const bloques = (d.bloques || []).filter(function(b){ return b.tipo === 'list' && b.sportsPizarra && Array.isArray(b.items) && b.items.length; });
+    if(!bloques.length) return;
+    diasTocados++;
+    bloques.forEach(function(b){
+      if(!Array.isArray(b.weekItems)) b.weekItems = [];
+      [1, 2, 3].forEach(function(wk){
+        b.weekItems[wk] = b.items.map(function(linea){ return ondularLineaSports(linea, wk); });
+      });
+      bloquesTocados++;
     });
   });
+  if(!bloquesTocados){ toast('No hay bloques de Pizarra con contenido en Semana 1 en ningún día', 'err'); return; }
+  /* metadata de semana (badge RPE/deload/fail que lee el resto de la app
+     vía WEEKS_META, ver defaultWeeks()) -- se fuerza en las 4 semanas del
+     mesociclo activo, nunca sólo en la memoria de un plan nuevo. */
+  if(Array.isArray(p.meso)){
+    [1, 2, 3].forEach(function(wk){
+      const w = p.meso[wk]; const meta = META_ONDULACION_SEMANA[wk];
+      if(!w || !meta) return;
+      w.rpe = meta.rpe;
+      if(meta.fail) w.fail = true;
+      if(meta.deload) w.deload = true;
+    });
+  }
   save(); renderBuilder();
-  toast('🪄 Mesociclo ondulado: S2, S3 y S4 generadas desde Semana 1');
+  toast('🪄 Mesociclo ondulado: S2, S3 y S4 generadas en los ' + diasTocados + ' día(s) con Pizarra (' + bloquesTocados + ' bloques)');
 }
 /* técnicas avanzadas reconocidas -- acepta tanto la etiqueta entre
    corchetes ("[DROPSET]", que se retira del texto visible porque es
@@ -5977,8 +6028,25 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
      desentonaba con el resto del branding (block-label, ex-name, etc.
      ya usan --font-head). */
   .day-title { font-family: var(--font-head, 'Chakra Petch', 'Barlow Condensed', sans-serif); font-weight: 800; font-size: clamp(1.5rem, 4vw, 2.1rem); letter-spacing: 0.04em; text-transform: uppercase; line-height: 1.1; }
+  /* directiva crítica ("Reingeniería cromática del encabezado de sesión")
+     -- jerarquía de 3 niveles de color en vez del bloque masivo en blanco
+     puro de antes: pretag táctico cian (chico, monoespaciado), nombre
+     principal en blanco titanio nítido, énfasis muscular en naranja
+     táctico como dato aparte, nunca compitiendo con el nombre principal. */
+  .jp-session-pretag{
+    font-family:'JetBrains Mono',ui-monospace,monospace; font-size:0.75rem; font-weight:700;
+    letter-spacing:0.08em; color:#00e5ff; margin-bottom:0.35rem; text-transform:uppercase;
+  }
+  .jp-session-main{ color:#f8fafc !important; font-weight:800; line-height:1.1; }
+  .jp-session-emphasis{
+    font-size:0.95rem; color:#ff6b00; font-weight:700; letter-spacing:0.04em; margin-top:4px;
+    font-family:var(--font-head,'Chakra Petch','Barlow Condensed',sans-serif); text-transform:uppercase;
+  }
   .day-meta-row { display: flex; gap: 7px; margin-top: 0.5rem; flex-wrap: wrap; }
-  .meta-chip { background: rgba(124,197,232,0.08); border: 1px solid rgba(124,197,232,0.22); color: var(--red-light); font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; letter-spacing: 0.05em; }
+  /* directiva crítica -- badges de patrón motor: antes fondo cian
+     apagado/marrón que saturaba sin jerarquía táctica; ahora carbón
+     translúcido con borde cian tenue, texto titanio nítido. */
+  .meta-chip { background: rgba(17,24,39,0.75); border: 1px solid rgba(0,229,255,0.25); color: #e2e8f0; font-size: 0.75rem; font-weight: 600; padding: 3px 10px; border-radius: 6px; letter-spacing: 0.05em; }
   .day-complete-btn { background: rgba(74,147,184,0.1); border: 1px solid rgba(74,147,184,0.3); color: var(--teal); font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 0.9rem; letter-spacing: 0.07em; text-transform: uppercase; padding: 10px 22px; border-radius: var(--radius-md); cursor: pointer; transition: all 0.2s ease; white-space: nowrap; align-self: flex-start; }
   .day-complete-btn:hover { border-color: rgba(74,147,184,0.5); box-shadow: 0 0 16px rgba(74,147,184,0.15); transform: translateY(-1px); }
   .day-complete-btn:active { transform: scale(0.97); }
@@ -9485,6 +9553,33 @@ function nutriCard(day){
       '<p class="nut-legal">' + NUTRI_DISCLAIMER_TXT + '</p>' +
     '</div></details>';
 }
+/* directiva crítica ("Reingeniería cromática del encabezado de sesión") --
+   el título crudo del día suele traer "DÍA N:" pegado a mano por el coach
+   Y el énfasis muscular entre paréntesis al final ("HIPERTROFIA DE PIERNA
+   COMPLETA (ÉNFASIS CUÁDRICEPS & CADENA POSTERIOR)") -- eso, sumado al tag
+   de arriba que YA dice "DÍA N", duplicaba "DÍA 1" dos veces en la misma
+   pantalla, todo en el mismo blanco puro sin jerarquía. Esta función
+   separa: (a) un prefijo redundante "DÍA N:"/"DÍA N —" (se recorta, ya lo
+   cubre el pretag de arriba), (b) el nombre principal de la sesión, (c) el
+   énfasis entre paréntesis, si lo hay, como dato aparte. */
+function splitTituloSesionSports(tituloRaw, dayNum){
+  let t = String(tituloRaw || '').trim();
+  /* directiva crítica -- construir el regex por concatenación de strings
+     (new RegExp(str)) acá adentro es una trampa: el string pasa DOS veces
+     por des-escapado de backslash (una al parsear TEMPLATE_HTML como
+     template literal en el Builder, otra al parsear ESE string literal ya
+     compilado como JS real en el navegador del alumno) -- \\\\s sobrevive
+     la primera pasada como \\s, pero \\s todavía no es un escape válido
+     para un STRING literal (sólo lo es para un regex literal), así que la
+     segunda pasada se come el backslash igual. Un regex LITERAL sólo pasa
+     por la primera desescapada, así que \\d+ genérico (sin interpolar
+     dayNum) evita el problema de raíz. */
+  const mPrefijo = t.match(/^d[ií]a\\s*\\d+\\s*[:\\-–—]\\s*/i);
+  if(mPrefijo) t = t.slice(mPrefijo[0].length);
+  const m = t.match(/^(.*?)\\s*\\(([^)]+)\\)\\s*$/);
+  if(m) return { principal: m[1].trim() || t, enfasis: m[2].trim() };
+  return { principal: t, enfasis: '' };
+}
 function renderMain(){
   const day = getCurrentDay();
   const weekIdx = state.currentWeek;
@@ -9498,9 +9593,21 @@ function renderMain(){
      selector de días, sin tocar ningún dato ni listener (wireBlockInteractions/
      wireReadinessCheckin siguen buscando los mismos ids en el DOM ya
      pintado, sin importar el orden). */
+  /* directiva crítica ("Reingeniería cromática del encabezado de sesión")
+     -- reemplaza la línea doble ".day-eyebrow"+".day-title" (bloque
+     masivo en blanco puro, "DÍA 1" repetido) por 3 niveles con jerarquía
+     de color real: pretag táctico cian ("[ DÍA N · SEMANA N ]"), nombre
+     principal en blanco titanio, y el énfasis muscular (si el coach lo
+     escribió entre paréntesis) en su propia línea naranja táctico con
+     prefijo "// ". CrossFit nunca ve esto (.day-header sigue oculto por
+     completo vía body.cf-disc .day-header{display:none}, sin tocar). */
+  const partesTitulo = splitTituloSesionSports(day.title, day.dayNum);
   html += '<div class="day-header">';
-  html += '<div><div class="day-eyebrow">' + day.short + ' — ' + WEEKS_META[weekIdx].name + '</div>';
-  html += '<div class="day-title">' + day.title + '</div>';
+  html += '<div><div class="jp-session-pretag">[ ' + day.short + ' · SEMANA ' + (weekIdx + 1) + ' ]</div>';
+  html += '<div class="day-title jp-session-main">' + partesTitulo.principal + '</div>';
+  if(partesTitulo.enfasis){
+    html += '<div class="jp-session-emphasis">// ' + partesTitulo.enfasis.toUpperCase() + '</div>';
+  }
   html += '<div class="day-meta-row">' + (day.metaChips||[]).map(function(c){ return '<span class="meta-chip">' + c + '</span>'; }).join('') + '</div></div>';
   html += '</div>';
   /* fix definitivo (directiva): "Foco táctico / Stimulus briefing" -- en
@@ -13586,6 +13693,20 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
              0 6px 20px rgba(0,229,255,.16) !important;
 }
 .week-pill.active .week-pill-name{color:#00e5ff !important;text-shadow:0 0 12px rgba(0,229,255,.4)}
+/* directiva crítica ("Reingeniería cromática del encabezado de sesión") --
+   S3 (Pico de Exigencia, ícono 🔥) heredaba el mismo glow celeste que
+   cualquier otra semana activa -- desentonaba con el propio ícono de
+   fuego. Se scoppea SÓLO a la 3ra pestaña (data-week="2", 0-indexado) y
+   SÓLO a Sports (:not(.wpc-cf) -- CrossFit siempre carga esa clase en su
+   propio render de arriba, ver esCF ? ... : ... -- así que esto nunca
+   toca la semana activa de CrossFit/Hyrox). */
+.week-pill.active[data-week="2"]:not(.wpc-cf){
+  border-bottom-color:#ff6b00 !important;
+  background:linear-gradient(180deg,rgba(255,107,0,.14),rgba(255,107,0,.03)) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1px 0 rgba(0,0,0,.5),
+             0 6px 20px rgba(255,107,0,.35) !important;
+}
+.week-pill.active[data-week="2"]:not(.wpc-cf) .week-pill-name{color:#ff6b00 !important;text-shadow:0 0 12px rgba(255,107,0,.4)}
 .week-pill-name{font-size:1rem !important}
 /* directiva crítica (2026-09) -- barra compacta "workout-first": el chip
    activo (.wpc-current) conserva nombre+fase; el resto de las semanas
