@@ -138,6 +138,12 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
    coach nunca dude en qué semana está parado antes de escribir. */
 .cf-week-bar .btn.cf-wk-activa{box-shadow:0 0 0 3px rgba(210,121,63,.38),0 8px 20px rgba(210,121,63,.3);font-weight:800}
 .btn.teal{background:linear-gradient(135deg,var(--teal),#009e88);color:#0B1A22;border:none;box-shadow:0 8px 20px rgba(74,147,184,.18)}
+/* directiva ("Gestión de Alumnos") -- botón primario de la tarjeta de
+   alumno/a: acento naranja táctico #ff6b00 exacto, distinto del dorado
+   genérico de siempre, para que "Ir al Builder" se lea como LA acción
+   principal de la tarjeta. */
+.btn.cf-primary{background:linear-gradient(135deg,#ff6b00,#ff8533);color:#08090B;border:none;box-shadow:0 8px 20px rgba(255,107,0,.25)}
+.btn.cf-primary:hover{filter:brightness(1.08)}
 .btn.red{background:linear-gradient(135deg,var(--red),#8E0D17);color:#fff;border:none}
 .btn.ghost{background:transparent}
 .btn.sm{padding:6px 11px;font-size:12px;border-radius:9px}
@@ -1067,7 +1073,7 @@ function defaultMeta(ath){
     heroEm: 'Densidad Metabólica.',
     heroSub: 'Mesociclo de 4 semanas — planificación personalizada, bloques de fuerza, densidad y acondicionamiento metabólico.',
     coachName: 'Prof. Juan Pablo Armiñana',
-    coachRole: 'Especialista en Biomecánica<span class="role-dot">·</span>Alto Rendimiento Deportivo y Readaptación Física',
+    coachRole: 'Especialista en Biomecánica · Alto Rendimiento Deportivo y Readaptación Física',
     footer2: 'Mesociclo de 4 semanas · Planificación personalizada para ' + nom
   };
 }
@@ -1671,6 +1677,25 @@ function load(){
       S.plans    = pl.plans    || {};
       S.activeId = pl.activeId || null;
       S.ui       = pl.ui       || {day:0, view:'alumnos'};
+    }
+    /* directiva ("Prevención de desborde de almacenamiento") -- el blob
+       histórico coachjp_console_v2 se guardó a propósito "para siempre"
+       en Checkpoint 3 como red de seguridad durante la migración a
+       LIB_KEY/PLANS_KEY. Confirmado que esa migración quedó estable (acá
+       arriba ya se leyó todo desde los dos esquemas nuevos con éxito),
+       ese duplicado congelado ya no cumple ningún propósito -- sólo
+       ocupa espacio real de cupo (era el blob ÚNICO con TODO el estado,
+       aprox. la mitad del total usado). Se borra UNA sola vez, sólo
+       cuando ambas claves nuevas existen y parsearon bien, nunca si algo
+       falló arriba (try/catch general de load() protege este bloque
+       también). */
+    if(rawLib && rawPlanes){
+      try{
+        if(localStorage.getItem(KEY) != null){
+          localStorage.removeItem(KEY);
+          setTimeout(() => { try{ toast('🧹 Se liberó espacio: se limpió un respaldo histórico duplicado ya no necesario'); }catch(e){} }, 1200);
+        }
+      }catch(e){}
     }
     if(!rawLib && !rawPlanes){
       /* instalación limpia: ni el esquema nuevo ni coachjp_console_v2
@@ -2456,8 +2481,8 @@ function renderAthletes(){
         '</div>' +
         '<div class="mini" style="margin-top:11px">Plan: <b>' + nEj + '</b> ejercicios cargados</div>' +
         '<div class="row" style="margin-top:12px">' +
-          '<button class="btn sm gold" data-act="activate" data-id="' + a.id + '">🎯 Activar</button>' +
-          '<button class="btn sm" data-act="build" data-id="' + a.id + '">🏗️ Builder</button>' +
+          '<button class="btn sm cf-primary" data-act="build" data-id="' + a.id + '" style="flex:1 1 auto">🏋️ Ir al Builder</button>' +
+          '<button class="btn sm ghost" data-act="activate" data-id="' + a.id + '" title="Marcar como activo/a sin salir de esta pantalla">🎯</button>' +
           '<button class="btn sm ghost" data-act="edit" data-id="' + a.id + '">✏️</button>' +
         '</div>' +
       '</div>';
@@ -2471,6 +2496,23 @@ function renderAthletes(){
   $('#badgeAth').textContent = S.athletes.length;
   $('#sideActive').textContent = active() ? fullName(active()) : '— ninguno —';
   $('#dlEx').innerHTML = S.exercises.map(e => '<option value="' + esc(e.es) + '">').join('');
+  actualizarDiscEyebrow();
+}
+/* directiva ("Contexto dinámico de disciplina en cabecera") -- el
+   subtítulo del logo (.jp-disc-eyebrow) quedaba fijo en "Bodybuilding &
+   Sports Performance" sin importar el alumno/a activo/a. Se repinta acá
+   (llamado al final de renderAthletes(), que ya corre después de CADA
+   cambio de S.activeId en todo el archivo) según la disciplina real del
+   plan activo -- mismo criterio de color que ya usa la app del alumno
+   (esCF -> naranja #D2793F, Sports -> celeste #38BDF8). */
+function actualizarDiscEyebrow(){
+  const el = document.querySelector('.jp-disc-eyebrow');
+  if(!el) return;
+  const a = S.activeId ? getAth(S.activeId) : null;
+  const p = a ? plan(a.id) : null;
+  const esCF = !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
+  el.textContent = esCF ? 'CrossFit & Hyrox' : 'Bodybuilding & Sports Performance';
+  el.style.color = esCF ? '#D2793F' : '#38BDF8';
 }
 
 function renderTagWrap(el, arr, cls, ic){
@@ -29396,7 +29438,16 @@ function compile(ath){
     TITLE: 'Coach JP — ' + nombre + (window.COACH_DISCIPLINA === 'crossfit' ? ' · CrossFit & Hyrox' : ' · Sports & Bodybuilding'),
     META_DESC: (M.coachName || 'Coach JP') + ' · Programa de ' + nombre + ' · ' + (M.mesoName || ''),
     COACH_NAME: M.coachName || 'Prof. Juan Pablo Armiñana',
-    COACH_ROLE: M.coachRole || '',
+    /* directiva ("Sanitización de HTML en inputs") -- el campo ya no
+       "acepta HTML": lo que el coach tipeó se escapa siempre (nunca se
+       inyecta una etiqueta cruda al HTML compilado) y el separador "·"
+       se envuelve automáticamente en el span con estilo. El reemplazo
+       del patrón viejo (planes guardados antes de esta directiva, con
+       el <span class="role-dot"> crudo baked como default) se
+       autocura: se desenvuelve a "·" plano antes de escapar, así nunca
+       se ve la etiqueta como texto literal. */
+    COACH_ROLE: esc(String(M.coachRole || '').replace(/<span class="role-dot">\s*·\s*<\/span>/gi, '·').replace(/<[^>]+>/g, ''))
+      .replace(/·/g, '<span class="role-dot">·</span>'),
     ATHLETE_NAME: nombre,
     HERO_EYEBROW: (M.mesoName || '') + ' — ' + (cfg.weeks[0] ? cfg.weeks[0].name : 'Semana 1'),
     HERO_H1: (M.heroTitle || '') + (M.heroEm ? ' <em>' + M.heroEm + '</em>' : ''),
@@ -29438,7 +29489,7 @@ function renderExport(){
       '<div><label class="lb">Nombre del mesociclo</label><input data-mf="mesoName" value="' + esc(M.mesoName||'') + '"></div>' +
       '<div><label class="lb">Coach (firma)</label><input data-mf="coachName" value="' + esc(M.coachName||'') + '"></div>' +
     '</div>' +
-    '<div style="margin-top:12px"><label class="lb">Rol / especialidad (acepta HTML)</label><input data-mf="coachRole" value="' + esc(M.coachRole||'') + '"></div>' +
+    '<div style="margin-top:12px"><label class="lb">Rol / especialidad</label><input data-mf="coachRole" value="' + esc(M.coachRole||'') + '" placeholder="Ej: Especialista en Biomecánica · Alto Rendimiento"></div>' +
     '<div class="grid g2" style="margin-top:12px">' +
       '<div><label class="lb">Titular (parte blanca)</label><input data-mf="heroTitle" value="' + esc(M.heroTitle||'') + '"></div>' +
       '<div><label class="lb">Titular (parte roja)</label><input data-mf="heroEm" value="' + esc(M.heroEm||'') + '"></div>' +
@@ -29446,11 +29497,28 @@ function renderExport(){
     '<div style="margin-top:12px"><label class="lb">Bajada del titular</label><textarea data-mf="heroSub" style="min-height:60px">' + esc(M.heroSub||'') + '</textarea></div>' +
     '<div style="margin-top:12px"><label class="lb">Segunda línea del pie de página</label><input data-mf="footer2" value="' + esc(M.footer2||'') + '"></div>';
 
+  /* directiva ("Fix de contador real de videos") -- blockExIds() sólo
+     cubre bloques CLÁSICOS (tipo 'block'/'superset'/'finisher'), nunca
+     'list'/'hyrox' (Pizarra Táctica, el formato que usan TANTO CrossFit
+     como la Pizarra moderna de Sports): "Con video" siempre marcaba 0
+     para esos planes aunque tuvieran videos reales, de biblioteca o
+     agregados a mano. resolveExacto(linea, b.videoOverrides) es la MISMA
+     resolución que usa buildProgramConfig() al compilar -- cubre match
+     automático por nombre Y video agregado manualmente (que se escribe
+     en b.videoOverrides, ver agregarVideoManual() más abajo), así el
+     conteo acá queda IDÉNTICO al que de verdad viaja al alumno. */
   let conf = 0, vids = 0, blocks = 0;
   p.dias.forEach(d => d.bloques.forEach(b => {
     blocks++;
     conf += blockAlerts(ath, b).filter(a => a.level !== 'good').length;
-    blockExIds(b).forEach(x => { const ex = getEx(x.exId); if(ex && ex.videoId) vids++; });
+    if(b.tipo === 'list' || b.tipo === 'hyrox'){
+      blockFreeText(b).forEach(linea => {
+        const r = resolveExacto(linea, b.videoOverrides);
+        if(r && r.ex && r.ex.videoId) vids++;
+      });
+    } else {
+      blockExIds(b).forEach(x => { const ex = getEx(x.exId); if(ex && ex.videoId) vids++; });
+    }
   }));
   box.innerHTML =
     '<div class="stat"><div class="v">' + p.dias.length + '</div><div class="k">Días</div></div>' +
@@ -36962,7 +37030,7 @@ body{overflow-x:hidden}
       <select id="finMesSel" class="fin-mes-sel"></select>
     </div>
     <div class="fin-kpis" id="finKpis"></div>
-    <div class="fin-sec"><div class="sh">Atletas</div><div class="fin-table" id="finTabla"></div></div>
+    <div class="fin-sec"><div class="sh">Atletas</div><div class="fin-athf" id="finAthFilters"></div><div class="fin-table" id="finTabla"></div></div>
     <div class="fin-legal">Módulo interno del coach — los montos, vencimientos e historiales de pago nunca se sincronizan ni se muestran en la app del alumno/a.</div>
   </div>
 
@@ -40538,8 +40606,13 @@ body.man-mode .gs-fab{right:318px}
       card.classList.toggle('pay-soon', e.id === 'soon');
       const tw = card.querySelector('.tagwrap');
       if(tw && !tw.querySelector('.pay-badge')){
+        /* directiva ("Gestión de Alumnos") -- ícono sutil constante (💳)
+           en vez del círculo de color: la severidad ya la comunica el
+           color de fondo/borde por clase (.pay-badge.late/.soon/...),
+           mismo criterio "ícono + texto, una sola fila compacta" que
+           pide la directiva. */
         tw.insertAdjacentHTML('afterbegin', '<span class="pay-badge ' + (e.id === 'none' ? '' : e.id) + '" title="' +
-          (e.vence ? 'Vence el ' + fmt(e.vence) : 'Sin fecha de pago cargada') + '">' + e.ic + ' ' + esc(e.lb) + '</span>');
+          (e.vence ? 'Vence el ' + fmt(e.vence) : 'Sin fecha de pago cargada') + '">💳 ' + esc(e.lb) + '</span>');
       }
       card.style.display = (payFilter === 'todos' || e.id === payFilter) ? '' : 'none';
     });
@@ -40767,9 +40840,13 @@ body.man-mode .gs-fab{right:318px}
       card.classList.toggle('adh-watch', e.id === 'watch');
       const tw = card.querySelector('.tagwrap');
       if(tw && !tw.querySelector('.adh-badge')){
+        /* directiva ("Gestión de Alumnos") -- mismo criterio que el
+           badge de cuota: ícono sutil constante (⚡), color de severidad
+           vía la clase (.adh-badge.risk/.watch/...), una sola fila
+           compacta junto al badge de cuota en .tagwrap. */
         tw.insertAdjacentHTML('afterbegin', '<span class="adh-badge ' + (e.id === 'none' ? '' : e.id) + '" title="' +
           esc(e.lb) + ' · Señal basada en PRs y comentarios registrados, no en cada entrenamiento completado.">' +
-          e.ic + ' ' + esc(e.lb.split(' · ')[0]) + '</span>');
+          '⚡ ' + esc(e.lb.split(' · ')[0]) + '</span>');
       }
       /* se usa opacidad (nunca display:none) para no pisar el filtro de
          pagos del Módulo 21, que sí usa display:none sobre la misma
@@ -40827,6 +40904,151 @@ body.man-mode .gs-fab{right:318px}
   else mount();
 })();
 </script>
+
+<script>
+/* ============================================================
+   MÓDULO — FILTRO UNIFICADO DE ALUMNOS (directiva "Gestión de
+   Alumnos"): las dos filas de botones de Estado de Cuota (Módulo 21) y
+   Adherencia (Módulo 21b) quedaban ocultas por CSS y reemplazadas acá
+   por UNA sola barra de tabs compacta -- reusa 100% el cálculo de esos
+   dos módulos (window.CoachPagos.estado / window.CoachAdherencia.estado,
+   ya expuestos, cero lógica de estado duplicada), corre ÚLTIMO en la
+   cadena de renderAthletes() (se registra después de ambos), así que
+   su card.style.display siempre tiene la última palabra -- los dos
+   filtros viejos quedan con payFilter/adhFilter fijos en 'todos' (sus
+   botones están ocultos, nunca más se tocan) y por lo tanto nunca
+   vuelven a ocultar una tarjeta por su cuenta.
+   ============================================================ */
+(function(){
+  'use strict';
+  var UCATS = [
+    { id:'todos', lb:'Todos',                    ic:'👥' },
+    { id:'ok',    lb:'Al Día',                    ic:'🟢' },
+    { id:'venc',  lb:'Por Vencer / Vencidos',     ic:'🟡' },
+    { id:'risk',  lb:'En Riesgo de Adherencia',   ic:'🔴' }
+  ];
+  var uFilter = 'todos';
+
+  function matchea(id, pago, adh){
+    if(id === 'todos') return true;
+    if(id === 'ok') return pago.id === 'ok';
+    if(id === 'venc') return pago.id === 'soon' || pago.id === 'late';
+    if(id === 'risk') return adh.id === 'risk';
+    return true;
+  }
+
+  function pintarUnificado(){
+    var grid = document.getElementById('athGrid'); if(!grid) return;
+    var cont = grid.parentNode;
+    var bar = document.getElementById('unifiedFilters');
+    if(!bar){
+      bar = document.createElement('div');
+      bar.className = 'unified-filters'; bar.id = 'unifiedFilters';
+      cont.insertBefore(bar, grid);
+      bar.addEventListener('click', function(e){
+        var f = e.target.closest('[data-uf]'); if(!f) return;
+        uFilter = f.dataset.uf; pintarUnificado();
+      });
+    }
+    var pagoDe = (window.CoachPagos && window.CoachPagos.estado) || function(){ return { id:'none' }; };
+    var adhDe = (window.CoachAdherencia && window.CoachAdherencia.estado) || function(){ return { id:'none' }; };
+    var est = {};
+    S.athletes.forEach(function(a){ est[a.id] = { pago: pagoDe(a), adh: adhDe(a) }; });
+    var cuenta = function(id){
+      return id === 'todos' ? S.athletes.length : S.athletes.filter(function(a){
+        return matchea(id, est[a.id].pago, est[a.id].adh);
+      }).length;
+    };
+    bar.innerHTML = UCATS.map(function(c){
+      return '<button class="uf ' + (uFilter === c.id ? 'on' : '') + '" data-uf="' + c.id + '">' +
+        c.ic + ' ' + esc(c.lb) + ' <span class="n">' + cuenta(c.id) + '</span></button>';
+    }).join('') +
+      '<button class="uf-disc" id="ufDiscBtn" data-ufdisc="1" title="Filtrar por disciplina"></button>';
+    document.querySelectorAll('.ath-card[data-ath]').forEach(function(card){
+      var a = getAth(card.dataset.ath); if(!a) return;
+      var e = est[a.id];
+      var pasaFiltro = matchea(uFilter, e.pago, e.adh);
+      var pasaDisc = pasaDiscFiltro(a);
+      card.style.display = (pasaFiltro && pasaDisc) ? '' : 'none';
+    });
+  }
+
+  /* --------- filtro rápido por disciplina --------- */
+  var discFilter = 'todas';
+  var DISC_CATS = [
+    { id:'todas',    lb:'Todas' },
+    { id:'sports',   lb:'Sports & Bodybuilding' },
+    { id:'crossfit', lb:'CrossFit & Hyrox' }
+  ];
+  function discDe(a){
+    try{ var p = plan(a.id); return (p && p.meta && p.meta.mesoDisc === 'crossfit') ? 'crossfit' : 'sports'; }
+    catch(e){ return 'sports'; }
+  }
+  function pasaDiscFiltro(a){ return discFilter === 'todas' || discDe(a) === discFilter; }
+  function pintarDiscFiltro(){
+    var btn = document.getElementById('ufDiscBtn'); if(!btn) return;
+    var actualLb = (DISC_CATS.filter(function(c){ return c.id === discFilter; })[0] || DISC_CATS[0]).lb;
+    btn.textContent = '🧩 ' + actualLb;
+    var pop = document.getElementById('ufDiscPop');
+    if(!pop){
+      pop = document.createElement('div');
+      pop.id = 'ufDiscPop'; pop.className = 'uf-disc-pop';
+      pop.innerHTML = DISC_CATS.map(function(c){
+        return '<button type="button" data-ufdiscset="' + c.id + '">' + esc(c.lb) + '</button>';
+      }).join('');
+      document.body.appendChild(pop);
+      pop.addEventListener('click', function(e){
+        var b = e.target.closest('[data-ufdiscset]'); if(!b) return;
+        discFilter = b.dataset.ufdiscset; pop.classList.remove('on'); pintarUnificado();
+      });
+      document.addEventListener('click', function(e){
+        if(e.target.closest('#ufDiscPop') || e.target.closest('#ufDiscBtn')) return;
+        pop.classList.remove('on');
+      });
+    }
+    btn.onclick = function(e){
+      e.stopPropagation();
+      var r = btn.getBoundingClientRect();
+      pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
+      pop.style.left = r.left + 'px';
+      pop.classList.toggle('on');
+    };
+  }
+  var _pintarUnificado = pintarUnificado;
+  pintarUnificado = function(){ _pintarUnificado(); pintarDiscFiltro(); };
+
+  const _renderAthletesUF = window.renderAthletes;
+  window.renderAthletes = function(){
+    const r = _renderAthletesUF.apply(this, arguments);
+    try{ pintarUnificado(); }catch(e){ console.warn('filtro unificado', e); }
+    return r;
+  };
+})();
+</script>
+<style>
+.unified-filters{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:12px; }
+.unified-filters .uf{
+  display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:9px;
+  border:1px solid #28303A; background:#141920; color:#A0A8B4; font-size:12px; font-weight:700; cursor:pointer;
+}
+.unified-filters .uf .n{ font-family:'JetBrains Mono',monospace; opacity:.75; }
+.unified-filters .uf.on{ border-color:#ff6b00; background:rgba(255,107,0,.12); color:#ff8533; }
+.unified-filters .uf-disc{
+  margin-left:auto; display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:9px;
+  border:1px solid #28303A; background:#141920; color:#A0A8B4; font-size:12px; font-weight:700; cursor:pointer;
+}
+.uf-disc-pop{
+  display:none; position:absolute; z-index:80; min-width:200px; padding:6px; border-radius:10px;
+  border:1px solid #28303A; background:#141920; box-shadow:0 12px 30px rgba(0,0,0,.4); flex-direction:column; gap:2px;
+}
+.uf-disc-pop.on{ display:flex; }
+.uf-disc-pop button{
+  text-align:left; padding:8px 10px; border-radius:7px; border:none; background:transparent; color:#EDEFF2;
+  font-size:12.5px; cursor:pointer;
+}
+.uf-disc-pop button:hover{ background:#1D232B; }
+#payFilters, #adhFilters{ display:none !important; }
+</style>
 
 <script>
 /* ============================================================
@@ -50695,10 +50917,16 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
   font-family:var(--ffh);font-size:13px;font-weight:700;letter-spacing:.07em;text-transform:uppercase}
 #jpAlarma .go{background:#EFB44A;border:none;color:#1A1204}
 #jpAlarma .gh{background:transparent;border:1px solid #28303A;color:#A0A8B4}
-.jp-vbadge{font-size:10.5px;padding:2px 8px;border-radius:999px;border:1px solid #28303A;
-  color:#828A97;margin-left:6px;white-space:nowrap;font-family:var(--fm,monospace)}
-.jp-vbadge.old{border-color:rgba(239,180,74,.5);color:#EFB44A}
-.jp-vbadge.ok{border-color:rgba(72,213,151,.4);color:#48D597}
+/* directiva ("Gestión de Alumnos") -- micro-badge táctico, nunca texto
+   suelto: borde tenue #64748b visible contra el fondo oscuro de la
+   tarjeta (el #28303A anterior casi se fundía con el borde de la
+   tarjeta) por default (nunca exportado), amarillo si hay cambios
+   pendientes de compilación (versión de plantilla desactualizada). */
+.jp-vbadge{font-size:10.5px;padding:2px 8px;border-radius:5px;border:1px solid #64748b;
+  background:rgba(100,116,139,.1);
+  color:#94a3b8;margin-left:6px;white-space:nowrap;font-family:var(--fm,monospace);font-weight:700}
+.jp-vbadge.old{border-color:rgba(239,180,74,.6);background:rgba(239,180,74,.12);color:#EFB44A}
+.jp-vbadge.ok{border-color:rgba(72,213,151,.45);background:rgba(72,213,151,.1);color:#48D597}
 #jpLote{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
 #jpLote .hint{font-size:12.5px;color:#828A97}
 </style>
@@ -55893,8 +56121,14 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
    desincronizarse sin que nada lo detectara -- de ahí los badges
    contradictorios reportados.
    ============================================================ */
-.fin-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:6px}
-.fin-kpi{border:1px solid #28303A;border-radius:12px;background:#141920;padding:12px 13px}
+/* directiva ("Solapamiento en tabla financiera") -- el contenedor de
+   montos totales necesita fondo sólido opaco + z-index propio: sin
+   eso, al scrollear una lista larga de atletas los títulos de columna
+   (Atleta/Arancel/Vencimiento) podían quedar visualmente detrás/
+   mezclados con los KPIs. position:relative es necesario para que el
+   z-index tenga efecto (si no, el navegador lo ignora). */
+.fin-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:6px;position:relative;z-index:2}
+.fin-kpi{border:1px solid #28303A;border-radius:12px;background:#0b0e14;padding:12px 13px}
 .fin-kpi .k{font-family:'Chakra Petch','Barlow Condensed',var(--ffh),sans-serif;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:#828A97}
 .fin-kpi .v{
   font-family:'Chakra Petch','JetBrains Mono',ui-monospace,Menlo,monospace;
@@ -55906,13 +56140,21 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
   font-family:var(--ffh);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:#38BDF8;
   margin-bottom:9px;
 }
+/* directiva ("Filtro de atletas en cobros") */
+.fin-athf{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.fin-athf-btn{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:9px;
+  border:1px solid #28303A;background:#141920;color:#A0A8B4;font-size:11.5px;font-weight:700;cursor:pointer;
+}
+.fin-athf-btn .n{font-family:'JetBrains Mono',monospace;opacity:.75}
+.fin-athf-btn.on{border-color:#D2793F;background:rgba(210,121,63,.12);color:#E8965E}
 .fin-table{display:flex;flex-direction:column;gap:6px}
 .fin-row{
   display:grid;grid-template-columns:1.4fr .9fr .8fr 1fr 1.6fr;gap:8px;align-items:center;
   padding:8px 10px;border:1px solid #28303A;border-radius:10px;background:#191E25;font-size:12.5px;
 }
 .fin-row.fin-head{
-  background:transparent;border:none;padding:0 10px;
+  background:#0b0e14;border:none;padding:6px 10px;position:relative;z-index:1;
   font-family:var(--ffh);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#828A97;
 }
 .fin-row .mono{
@@ -56274,13 +56516,59 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     finRenderHome(); renderAthletes();
   }
 
+  /* directiva ("Filtro de atletas en cobros") -- tabs sobre la lista de
+     atletas del módulo financiero: Todos / Cobrados (ya pagó este
+     período) / Pendientes-Vencidos (configurado, sin cobrar todavía) /
+     Sin Configurar (sin arancel cargado). Reusa exactamente la MISMA
+     clasificación configurado/pagoActual que ya arma cada fila, sólo se
+     calcula una vez más arriba para decidir qué mostrar. */
+  var finAthFilter = 'todos';
+  function finClasificarAth(a, periodoActual){
+    var f = a.finanzas;
+    var configurado = !!(f && f.arancel > 0);
+    if(!configurado) return 'sinconfig';
+    var pagoActual = finPagoDePeriodo(f, periodoActual);
+    return pagoActual ? 'cobrado' : 'pendiente';
+  }
+  function finPintarFiltroAth(lista, periodoActual){
+    var bar = document.getElementById('finAthFilters'); if(!bar) return;
+    var CATS = [
+      { id:'todos',     lb:'Todos' },
+      { id:'cobrado',   lb:'Cobrados' },
+      { id:'pendiente', lb:'Pendientes / Vencidos' },
+      { id:'sinconfig', lb:'Sin Configurar' }
+    ];
+    var cuenta = {};
+    lista.forEach(function(a){ var c = finClasificarAth(a, periodoActual); cuenta[c] = (cuenta[c]||0) + 1; });
+    bar.innerHTML = CATS.map(function(c){
+      var n = c.id === 'todos' ? lista.length : (cuenta[c.id] || 0);
+      return '<button type="button" class="fin-athf-btn ' + (finAthFilter === c.id ? 'on' : '') + '" data-finathf="' + c.id + '">' +
+        esc(c.lb) + ' <span class="n">' + n + '</span></button>';
+    }).join('');
+    if(!bar.dataset.wired){
+      bar.dataset.wired = '1';
+      bar.addEventListener('click', function(e){
+        var b = e.target.closest('[data-finathf]'); if(!b) return;
+        finAthFilter = b.dataset.finathf;
+        finRenderTablaActual(document.getElementById('finTabla'));
+      });
+    }
+  }
   function finRenderTablaActual(host){
-    var lista = S.athletes || [];
-    if(!lista.length){
+    var listaCompleta = S.athletes || [];
+    if(!listaCompleta.length){
       host.innerHTML = '<div class="hint">Todavía no hay alumnos/as cargados/as.</div>';
       return;
     }
     var periodoActual = finPeriodoActual();
+    finPintarFiltroAth(listaCompleta, periodoActual);
+    var lista = finAthFilter === 'todos' ? listaCompleta : listaCompleta.filter(function(a){
+      return finClasificarAth(a, periodoActual) === finAthFilter;
+    });
+    if(!lista.length){
+      host.innerHTML = '<div class="hint">Ningún alumno/a coincide con este filtro.</div>';
+      return;
+    }
     host.innerHTML = '<div class="fin-row fin-head"><span>Atleta</span><span>Arancel</span><span>Vencimiento</span><span>Estado</span><span>Acciones</span></div>' +
       lista.map(function(a){
         var f = a.finanzas;
