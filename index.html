@@ -9429,7 +9429,21 @@ function renderBlock(block, day, weekIdx, idx){
   const done = isBlockDone(weekIdx, day.id, block.id);
   const optionalCls = block.optional ? ' block-optional' : '';
   const vacioSemana = esBloqueSinSemana(block, weekIdx);
-  const etiquetaBloque = vacioSemana ? 'Sin sesión esta semana' : ('Bloque ' + String.fromCharCode(65 + (idx % 26)) + ' · ' + rolBloque(block));
+  /* directiva ("Refactoring maestro UI/UX Sports: doble header
+     desincronizado") -- para un bloque de Pizarra Sports, esta cabecera
+     genérica (icono + label + checkbox + chevron, compartida por TODOS
+     los tipos de bloque) mostraba una etiqueta auto-numerada sin relación
+     real con el contenido ("Bloque A · Principal"), mientras que
+     pizarraSports() pinta SU PROPIA cabecera canónica ("[ SPORTS · BLOQUE
+     ] BLOQUE 6 | CORE FUNCIONAL") apenas debajo, dentro del cuerpo -- dos
+     títulos distintos para un mismo bloque, uno de ellos sin sentido real
+     para el alumno. Se reemplaza la etiqueta genérica por el título REAL
+     del bloque (nunca afecta CrossFit: sportsPizarra jamás viaja ahí, ver
+     esBloqueSportsPizarra()/mapearBloques()) -- la cabecera colapsable
+     queda sincronizada con lo que hay adentro, colapsada o expandida. */
+  const etiquetaBloque = vacioSemana ? 'Sin sesión esta semana'
+    : (block.sportsPizarra && block.title) ? block.title
+    : ('Bloque ' + String.fromCharCode(65 + (idx % 26)) + ' · ' + rolBloque(block));
   return '<div class="block ' + catCls + (done?' block-done':'') + optionalCls + (vacioSemana?' block-restweek':'') + '" data-block-id="' + block.id + '" style="animation-delay:' + (idx*0.04) + 's">' +
     '<div class="block-header">' +
       '<div class="block-icon ' + meta.cls + '">' + blockIconHtml(block.icon) + '</div>' +
@@ -11699,7 +11713,24 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        alumno necesita el RIR EXACTO que escribió el coach, rango u
        observación "/ Fallo técnico" incluidos. */
     if((m = t.match(/rir\\s*(\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?)/i))) out.rir = m[1].replace(/\\s+/g, ' ').trim();
-    if((m = t.match(/rest\\s*(\\d+)\\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
+    /* directiva ("Refactoring maestro UI/UX Sports: bloques desestructurados
+       por especificaciones complejas") -- descanso COMPUESTO ("Rest 60s
+       entre piernas / 90s entre sets", típico de unilaterales): el número
+       relevante para el reloj de descanso real es el ÚLTIMO ("entre
+       sets"/"entre rondas", el que separa una serie completa de la
+       siguiente) -- el primero ("entre piernas"/"entre lados") queda como
+       dato secundario, absorbido en notaSecundaria más abajo. Sin el
+       patrón compuesto, sólo el primer "rest\\s*(\\d+)" simple sigue
+       cubriendo el caso de siempre (un solo descanso). */
+    var restCompM = t.match(/rest\\s*\\d+\\s*s?\\s*entre\\s*[a-záéíóúñ]+\\s*\\/\\s*(\\d+)\\s*s?\\s*entre\\s*[a-záéíóúñ]+/i);
+    if(restCompM) out.restSeconds = parseInt(restCompM[1], 10);
+    else if((m = t.match(/rest\\s*(\\d+)\\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
+    /* especificación secundaria ("por pierna"/"por lado"/"c/u"/"cada
+       lado"): nunca debe romper el reconocimiento de la dosis base ni
+       colarse como nombre de ejercicio nuevo -- se guarda aparte para que
+       el llamador la muestre como micro-etiqueta de soporte. */
+    if(/\\bpor\\s*pierna\\b/i.test(t)) out.notaSecundaria = 'Por pierna';
+    else if(/\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b/i.test(t)) out.notaSecundaria = 'Por lado';
     return out;
   }
   function esSoloDosisSB(linea, dosis){
@@ -11711,9 +11742,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        con residuo >= 4 caracteres y la dosis dejaba de reconocerse como
        continuación del ejercicio anterior (se abría un ejercicio nuevo
        fantasma con el texto de la dosis como nombre). */
+    /* directiva ("Refactoring maestro UI/UX Sports: bloques desestructurados
+       por especificaciones complejas") -- se suma el strip del descanso
+       COMPUESTO completo ("Rest 60s entre piernas / 90s entre sets", antes
+       sólo se comía "Rest 60s" y el resto de la cláusula quedaba como
+       residuo largo, tumbando la línea a "ejercicio nuevo" fantasma) y de
+       las especificaciones secundarias en prosa ("por pierna", "por
+       lado", "c/u", "cada lado") que nunca son parte del nombre. */
     var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|de)?|series?\\s*(?:x|de)?|rondas?\\s*(?:x|de)?)\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*reps?\\b)?/gi, '')
-      .replace(/tempo\\s*\\d{3,4}/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '').replace(/rest\\s*\\d+\\s*s?/gi, '')
-      .replace(/[|.:,\\-–]/g, '').trim();
+      .replace(/tempo\\s*\\d{3,4}/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '')
+      .replace(/rest\\s*\\d+\\s*s?\\s*entre\\s*[a-záéíóúñ]+\\s*\\/\\s*\\d+\\s*s?\\s*entre\\s*[a-záéíóúñ]+/gi, '')
+      .replace(/rest\\s*\\d+\\s*s?/gi, '')
+      .replace(/\\bpor\\s*pierna\\b|\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b/gi, '')
+      .replace(/[|.:,\\-–\\/]/g, '').trim();
     return resto.length < 4;
   }
   /* directiva ("Parser avanzado de metodologías de hipertrofia") -- un
@@ -11734,6 +11775,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return t === t.toUpperCase() && t !== t.toLowerCase();
   }
   var RX_SUBEJ_SB = /^A(\\d+)[.)]\\s*(.+?):\\s*(.+)$/i;
+  /* directiva ("Refactoring maestro UI/UX Sports: colisión de letras en
+     circuitos de Core") -- RX_SUBEJ_SB captura el nombre hasta el ÚLTIMO
+     ":" antes de la dosis (no greedy pero ancla al primer ":" que
+     encuentra): si la línea trae un prefijo de estación duplicado o
+     residual ("A3. A2. Press Pallof: 3x12"), ese "A2." queda pegado
+     DENTRO de subM[2] -- el badge de estación (.jp-sb-letra, letra
+     calculada por índice) se pinta aparte, generando el texto ilegible
+     reportado ("A3. A2. PRESS PALLOF" con una pastilla "C" montada
+     encima). Se limpia CUALQUIER prefijo de estación sobrante (uno o
+     varios, "A1.", "B2)", etc.) del nombre antes de asignarlo. */
+  var RX_PREFIJO_ESTACION_SB = /^[A-Za-z]\\d*[.)]\\s*/;
+  function limpiarPrefijoEstacionSB(nombre){
+    var t = String(nombre || '').trim();
+    var guard = 0;
+    while(RX_PREFIJO_ESTACION_SB.test(t) && guard < 5){ t = t.replace(RX_PREFIJO_ESTACION_SB, '').trim(); guard++; }
+    return t;
+  }
   var RX_BISET_HEAD_SB = /\\b(biset|superset|triset|circuito)\\b/i;
   var RX_RONDAS_SB = /(\\d+)\\s*rondas?/i;
   var RX_REST_SB = /rest\\s*(\\d+)/i;
@@ -11761,7 +11819,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var resSub = extraerTecnicaSB(subM[3]);
         var dosisSub = parsearDosisSB(resSub.texto);
         var parenM = resSub.texto.match(/\\(([^)]+)\\)/);
-        actual.subs.push({ nombre: subM[2].trim(), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: parenM ? parenM[1] : '', unidad: dosisSub.unidad || 'reps', rir: dosisSub.rir || '', restSeconds: dosisSub.restSeconds || 0 });
+        var notaSubCombinada = [parenM ? parenM[1] : '', dosisSub.notaSecundaria || ''].filter(Boolean).join(' · ');
+        actual.subs.push({ nombre: limpiarPrefijoEstacionSB(subM[2]), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: notaSubCombinada, unidad: dosisSub.unidad || 'reps', rir: dosisSub.rir || '', restSeconds: dosisSub.restSeconds || 0 });
         return;
       }
       if(RX_BISET_HEAD_SB.test(linea) && (!actual || actual.tipo !== 'biserie' || actual.subs.length)){
@@ -11798,6 +11857,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         actual.rir = dosis.rir || actual.rir;
         actual.unidad = dosis.unidad || actual.unidad;
         actual.dosisAsignada = true;
+        if(dosis.notaSecundaria) actual.notas.push(dosis.notaSecundaria);
         var resDosis = extraerTecnicaSB(lineaParaDosis);
         if(resDosis.tecnica){
           actual.tecnica = resDosis.tecnica;
@@ -13814,10 +13874,22 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 
     /* línea 3 -- COACH JP · HIGH PERFORMANCE SYSTEM, con isotipo, al pie
        del bloque de encabezado */
-    escudoMini(g, 116, yTrasTitulo + 26, 46);
+    /* directiva ("Pulido visual de la Story Card: logo alineado y con
+       presencia") -- escudoMini(g,cx,cy,alto) traslada el origen a cy y
+       dibuja el path del escudo (viewBox 64x74) hacia ABAJO desde ahí --
+       el centro real del isotipo queda en cy + alto/2, nunca en cy. El
+       texto de al lado usa textBaseline='middle' con ese mismo cy como su
+       centro real, así que el isotipo quedaba ~23px por debajo del centro
+       del texto (sin presencia, desalineado del wordmark). Se compensa el
+       cy que recibe el escudo para que su centro real coincida con el del
+       texto -- mismo patrón que ya usa escudoCanvas() en el estilo PR
+       Champion, sin tocar escudoMini() (la otra llamada, línea ~14005,
+       la usa como ancla superior a propósito). */
+    var yLogoLinea = yTrasTitulo + 26;
+    escudoMini(g, 116, yLogoLinea - 23, 46);
     g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillStyle = '#E5C378'; g.font = '700 28px "Chakra Petch", sans-serif';
-    g.fillText('COACH JP · HIGH PERFORMANCE SYSTEM', 150, yTrasTitulo + 26);
+    g.fillText('COACH JP · HIGH PERFORMANCE SYSTEM', 150, yLogoLinea);
     g.textBaseline = 'alphabetic';
 
     /* línea volt */
@@ -16296,14 +16368,22 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
        siguen leyéndose igual de bien encima de la foto. */
     var fotoActivaPie = !!(window.__storyFotoImg && window.__storyFotoImg.complete && window.__storyFotoImg.naturalWidth);
     g.save();
+    /* directiva ("Pulido visual de la Story Card: caja residual detrás de
+       la pastilla de métricas") -- este relleno usaba x=70/ancho=W-140,
+       20px más ancho a cada lado que TODAS las cápsulas reales que
+       contiene (la pastilla VOLUMEN·SETS·TIEMPO de dibujar()/champion() y
+       las cajas de racha/top-lift de acá abajo, todas x=90/ancho=W-180) --
+       ese borde de 20px sobrante quedaba como una franja oscura residual
+       y desalineada asomando a los costados, en vez de un fondo limpio.
+       Mismo inset que el resto del layout, sin excepción. */
     if(!fotoActivaPie){
       g.fillStyle = '#121820';
-      g.fillRect(70, y - 16, W - 140, HH - y + 16);
+      g.fillRect(90, y - 16, W - 180, HH - y + 16);
     }
     if(dorado){
       var rg = g.createRadialGradient(W / 2, HH - 260, 40, W / 2, HH - 260, 760);
       rg.addColorStop(0, 'rgba(56,189,248,.14)'); rg.addColorStop(1, 'rgba(56,189,248,0)');
-      g.fillStyle = rg; g.fillRect(70, y - 16, W - 140, HH - y + 16);
+      g.fillStyle = rg; g.fillRect(90, y - 16, W - 180, HH - y + 16);
     }
     g.textAlign = 'center'; g.textBaseline = 'middle';
 
@@ -20119,8 +20199,15 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
    tiempo/rondas (AMRAP/EMOM/For Time), en vez de un mini-log por cada
    renglón del circuito. Ver esCircuitoRondas() más arriba. */
 .circuit-rounds{margin-left:4px}
-.cr-lb{font-family:'Inter',sans-serif;font-size:0.72rem;color:rgba(255,255,255,0.55)}
-.cr-stepper{display:inline-flex;align-items:center;gap:8px}
+/* directiva ("Limpieza de texto truncado en contador de rondas"): etiqueta
+   corta con flex-shrink:0 -- nunca vuelve a comerse contra el stepper, sin
+   importar el ancho de pantalla ni si suma el botón COMPLETAR. */
+.cr-lb{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:0.72rem; letter-spacing:.04em; color:rgba(255,255,255,0.6);
+  white-space:nowrap; flex:0 0 auto;
+}
+.cr-stepper{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto}
 .cr-btn{
   width:30px;height:30px;border-radius:8px;flex:0 0 auto;cursor:pointer;
   background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);
@@ -20133,6 +20220,13 @@ body.cf-modo .block .block-body > .cf-cierre{display:block !important}
   color:#fff;font-family:'JetBrains Mono',ui-monospace,monospace;
 }
 .cr-val:focus{border-color:#D2793F;outline:none}
+.cr-btn-completar{
+  flex:0 0 auto; margin-left:2px; padding:6px 12px; border-radius:8px; cursor:pointer;
+  background:rgba(0,229,255,.1); border:1px solid rgba(0,229,255,.35); color:#00e5ff;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.68rem; letter-spacing:.04em; white-space:nowrap;
+}
+.cr-btn-completar:active{ background:rgba(0,229,255,.22); transform:scale(.97); }
 /* ---------- jerarquía del bloque de CrossFit ---------- */
 .cf-board .cf-h,.wod-board .wb-h{flex-wrap:wrap}
 .cf-idtype{
@@ -20472,14 +20566,27 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
         var kR = claveLog(bl, 'rondas');
         var vR = state.logs[kR] || { ok:false, txt:'' };
         var ultimaFila = bl.querySelector('.ex-row:last-of-type') || bl.querySelector('.circuit-note:last-of-type');
+        /* directiva ("Refactoring maestro UI/UX Sports: limpieza de texto
+           truncado en contador de rondas") -- la etiqueta larga "🔁 Rondas
+           completadas" se recortaba visualmente a "RO..." contra el
+           stepper [-] [input] [+] en pantallas angostas. Etiqueta corta
+           ("RONDAS:") que nunca necesita truncarse + total detectado del
+           propio texto del bloque (si el coach escribió "N rondas") para
+           mostrar meta real + botón directo de una sola acción para
+           cerrar el circuito sin tener que tocar [+] repetidas veces. */
+        var totalRondasTxt = (b.title || '') + ' ' + (b.subtitle || '') + ' ' + (b.items || []).join(' ');
+        var mTotalRondas = totalRondasTxt.match(/(\\d+)\\s*rondas?\\b/i) || totalRondasTxt.match(/(\\d+)\\s*rounds?\\b/i);
+        var totalRondasN = mTotalRondas ? parseInt(mTotalRondas[1], 10) : 0;
         var cajaR = document.createElement('div');
         cajaR.className = 'mini-log circuit-rounds';
-        cajaR.innerHTML = '<label class="cr-lb">🔁 Rondas completadas</label>' +
+        cajaR.dataset.crTotal = String(totalRondasN);
+        cajaR.innerHTML = '<label class="cr-lb">RONDAS' + (totalRondasN ? ' DE ' + totalRondasN : '') + ':</label>' +
           '<div class="cr-stepper">' +
             '<button type="button" class="cr-btn" data-cr-dec="' + kR + '" aria-label="Restar ronda">–</button>' +
             '<input type="text" inputmode="numeric" class="cr-val" data-lgt="' + kR + '" value="' + esc(String(vR.txt || '0')) + '">' +
             '<button type="button" class="cr-btn" data-cr-inc="' + kR + '" aria-label="Sumar ronda">+</button>' +
-          '</div>';
+          '</div>' +
+          '<button type="button" class="cr-btn-completar" data-cr-completar="' + kR + '" aria-label="Marcar circuito completo">\\u2713 COMPLETAR</button>';
         if(ultimaFila && ultimaFila.parentNode) ultimaFila.parentNode.insertBefore(cajaR, ultimaFila.nextSibling);
         else bl.appendChild(cajaR);
         return;                                        /* un solo tracker para todo el bloque */
@@ -20501,15 +20608,22 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
   document.addEventListener('click', function(e){
     var incBtn = e.target.closest('[data-cr-inc]');
     var decBtn = e.target.closest('[data-cr-dec]');
-    if(!incBtn && !decBtn) return;
-    var stepper = (incBtn || decBtn).closest('.cr-stepper');
-    var input = stepper ? stepper.querySelector('.cr-val') : null;
+    var completarBtn = e.target.closest('[data-cr-completar]');
+    if(!incBtn && !decBtn && !completarBtn) return;
+    var caja = (incBtn || decBtn || completarBtn).closest('.circuit-rounds');
+    var input = caja ? caja.querySelector('.cr-val') : null;
     if(!input) return;
     var n = parseInt(input.value, 10) || 0;
-    n = incBtn ? (n + 1) : Math.max(0, n - 1);
+    if(completarBtn){
+      var totalRondas = parseInt(caja.dataset.crTotal, 10) || 0;
+      n = totalRondas ? totalRondas : n + 1;
+      try{ jpAudioTactical.soundTimerEnd(); jpAudioTactical.vibrateTimerEnd(); }catch(x){}
+    } else {
+      n = incBtn ? (n + 1) : Math.max(0, n - 1);
+      try{ if(navigator.vibrate) navigator.vibrate(15); }catch(x){}
+    }
     input.value = String(n);
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    try{ if(navigator.vibrate) navigator.vibrate(15); }catch(x){}
   });
   document.addEventListener('change', function(e){
     var c = e.target.closest('[data-lg]');
@@ -26840,19 +26954,28 @@ input[type="checkbox"]:active{
    días -- .hdc-chip-row ahora suma margen abajo (2px) y .hdc-top gana un
    padding-bottom mayor (ver más abajo), así el badge nunca queda pegado
    contra el borde superior de #dayTabs / .hdc-days-row. */
-.hdc-pay-b{
+/* directiva ("Refactoring maestro UI/UX Sports: unificación cromática de
+   badges de estado") -- reemplaza la pastilla genérica .hdc-pay-b (verde
+   plano para "ok", usada por igual en los DOS chips de la fila -- cuota Y
+   vigencia -- lo que los hacía verse como dos cápsulas idénticas
+   apiladas). .jp-status-pill es el estado PRIMARIO (única pastilla real,
+   oro táctico cuando está al día -- acento reservado para cargas/estado
+   en el resto de la app); .jp-status-cycle es dato SECUNDARIO de sólo
+   texto (titanio apagado, sin fondo ni borde propio), nunca compite
+   visualmente con la pastilla principal. */
+.jp-status-pill{
   display:inline-flex; align-items:center; gap:4px; padding:3px 10px;
   border-radius:999px; background:#141920; border:1px solid #28303A;
   font-family:var(--font-mono); font-size:.62rem; font-weight:700;
-  letter-spacing:.02em; line-height:1.5; white-space:nowrap;
+  letter-spacing:.02em; line-height:1.5; white-space:nowrap; color:#94A3B8;
 }
-.hdc-pay-b.ok{ color:#6FBF95; border-color:rgba(111,191,149,.3); }
-.hdc-pay-b.proximo{ color:#D9A672; border-color:rgba(217,166,114,.35); }
-/* directiva14: pide explícitamente un acento rojo/alerta (tenue) para
-   vencido -- reemplaza el naranja anterior, que era deliberadamente
-   "sin rojo" en una directiva previa. Se mantiene tenue (opacidad baja
-   en el borde, sin ícono de alarma) para no romper el tono Luxury Stealth. */
-.hdc-pay-b.venc{ color:#D9695C; border-color:rgba(217,105,92,.4); }
+.jp-status-pill.jp-status-active{ color:#FFD600; border-color:rgba(255,214,0,.32); }
+.jp-status-pill.jp-status-proximo{ color:#D9A672; border-color:rgba(217,166,114,.35); }
+.jp-status-pill.jp-status-venc{ color:#D9695C; border-color:rgba(217,105,92,.4); }
+.jp-status-cycle{
+  font-family:var(--font-mono); font-size:.6rem; font-weight:600;
+  letter-spacing:.03em; color:#94A3B8; white-space:nowrap;
+}
 .hdc-info{
   flex-shrink:0; width:38px; height:38px; display:flex; align-items:center; justify-content:center;
   border:1px solid #1E222B; background:#12151B;
@@ -27190,7 +27313,16 @@ body.focus-mode .hd-dock{display:none}
 }
 .hdc-days-wrap .day-tab.active .tab-label{ color:#C99A6F; }
 .hdc-days-wrap .day-tab .day-dot{ margin-top:2px; width:6px; height:6px; }
-.hdc-days-wrap .day-tab.active{ background:rgba(210,121,63,.15) !important; border-color:#D2793F !important; }
+/* directiva ("Refactoring maestro UI/UX Sports: erradicación del cyan dot
+   bajo pestañas de días") -- el día activo ya se comunica por completo con
+   el marco/fondo de la propia cápsula (ver reglas de abajo): el punto
+   flotante debajo (heredado de .day-dot, pensado para el pill original de
+   2 líneas, ver comentario de esta sección) quedaba redundante Y se leía
+   como un elemento roto/descentrado -- se apaga sólo para el día activo
+   (el de los demás días sigue marcando sesión completada, sin tocar esa
+   señal). */
+.hdc-days-wrap .day-tab.active .day-dot{ display:none; }
+.hdc-days-wrap .day-tab.active{ background:rgba(255,107,0,.12) !important; border-color:#ff6b00 !important; }
 .hdc-days-wrap .day-tab.active .tab-name{ color:#F2C89A !important; }
 .hdc-days-wrap .day-tab.active::after{ display:none; }
 
@@ -27787,7 +27919,15 @@ body.focus-mode .hd-dock{display:none}
       // neutro "Plan Activo" (el drawer de Perfil/Info se deja vacío como
       // antes, no es el elemento que pide la directiva).
       if(elDrawer) elDrawer.innerHTML = '';
-      if(elChip) elChip.innerHTML = '<span class="hdc-pay-b ok">● Plan Activo</span>';
+      /* directiva ("Refactoring maestro UI/UX Sports: unificación de badges
+         de estado") -- ambos chips de la cabecera (cuota y vigencia del
+         ciclo) compartían la MISMA pastilla verde genérica .hdc-pay-b:
+         cuando los dos traían contenido se veían como dos pastillas
+         idénticas apiladas, redundantes. Reemplazo por jerarquía propia
+         (.jp-status-pill = estado primario, oro táctico cuando está al
+         día; .jp-status-cycle = dato secundario, titanio apagado, sin
+         pastilla) -- una sola línea compacta, nunca dos cápsulas iguales. */
+      if(elChip) elChip.innerHTML = '<span class="jp-status-pill jp-status-active">\\u26a1 ACTIVO</span>';
       return;
     }
     if(elDrawer){
@@ -27804,10 +27944,10 @@ body.focus-mode .hd-dock{display:none}
        y "vencido" no mostraban fecha alguna en el chip. */
     if(elChip){
       elChip.innerHTML = info.estado === 'venc'
-        ? '<span class="hdc-pay-b venc">● Cuota vencida el ' + escAcc(info.corta) + '</span>'
+        ? '<span class="jp-status-pill jp-status-venc">\\u26a1 VENCIDO ' + escAcc(info.corta) + '</span>'
         : info.estado === 'proximo'
-          ? '<span class="hdc-pay-b proximo">● Renueva el ' + escAcc(info.corta) + '</span>'
-          : '<span class="hdc-pay-b ok">● Plan activo · Renueva el ' + escAcc(info.corta) + '</span>';
+          ? '<span class="jp-status-pill jp-status-proximo">\\u26a1 VENCE ' + escAcc(info.corta) + '</span>'
+          : '<span class="jp-status-pill jp-status-active">\\u26a1 ACTIVO \\u00b7 HASTA ' + escAcc(info.corta) + '</span>';
     }
   }
   /* directiva 13: micro-badge de vigencia/estado del plan, mismo lenguaje
@@ -27820,10 +27960,12 @@ body.focus-mode .hd-dock{display:none}
     var desde = fmtFechaCortaISO(cfg.vigenciaDesde || '');
     var hasta = fmtFechaCortaISO(cfg.vigenciaHasta || '');
     if(desde && hasta){
-      el.innerHTML = '<span class="hdc-pay-b ok">● Ciclo: ' + escAcc(desde) + ' al ' + escAcc(hasta) + '</span>';
-    } else if(cfg.planEstado === 'listo'){
-      el.innerHTML = '<span class="hdc-pay-b ok">● Plan Activo</span>';
+      el.innerHTML = '<span class="jp-status-cycle">CICLO: ' + escAcc(desde) + ' - ' + escAcc(hasta) + '</span>';
     } else {
+      /* el estado "Plan Activo" ya lo cubre #hdcPayChip (jp-status-pill) --
+         este segundo chip queda reservado EXCLUSIVAMENTE al rango de
+         fechas del ciclo, así nunca se repite el mismo texto en las dos
+         pastillas de la fila (ver directiva de unificación de badges). */
       el.innerHTML = '';
     }
   }
@@ -29316,6 +29458,14 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .jp-input-native::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
 .jp-input-native{ -moz-appearance:textfield; }
 .jp-input-native:focus{ outline:none; border-color:#00e5ff; box-shadow:0 0 0 1px rgba(0,229,255,.3); }
+/* directiva ("Refactoring maestro UI/UX Sports: formato de inputs de carga
+   y reps") -- el kg cargado por el alumno es SIEMPRE oro táctico (mismo
+   código que 1RM/cargas en el resto de la app), las reps/seg SIEMPRE cian
+   (mismo código que el tracker de series) -- monospace ya venía heredado
+   de .jp-input-native, acá sólo se agrega peso 800 para que el número
+   pese visualmente igual que el resto de los badges tácticos. */
+.jp-input-native.jp-val-primary{ color:#ffd600; font-weight:800; }
+.jp-input-native.jp-val-secondary{ color:#00e5ff; font-weight:800; }
 .jp-unit{
   flex:0 0 auto; font-size:.62rem; color:rgba(237,239,242,.55); text-transform:lowercase; white-space:nowrap;
 }
@@ -51668,13 +51818,15 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
 #jpAlarma .go{background:#EFB44A;border:none;color:#1A1204}
 #jpAlarma .gh{background:transparent;border:1px solid #28303A;color:#A0A8B4}
 /* directiva ("Gestión de Alumnos") -- micro-badge táctico, nunca texto
-   suelto: borde tenue #64748b visible contra el fondo oscuro de la
-   tarjeta (el #28303A anterior casi se fundía con el borde de la
-   tarjeta) por default (nunca exportado), amarillo si hay cambios
-   pendientes de compilación (versión de plantilla desactualizada). */
-.jp-vbadge{font-size:10.5px;padding:2px 8px;border-radius:5px;border:1px solid #64748b;
-  background:rgba(100,116,139,.1);
-  color:#94a3b8;margin-left:6px;white-space:nowrap;font-family:var(--fm,monospace);font-weight:700}
+   suelto. directiva ("Refactoring maestro UI/UX Sports: workflow del
+   Builder") pide explícitamente amarillo de advertencia (#ffd600) para
+   el estado "sin exportar" (nunca compilado -- el que más necesita
+   llamar la atención del coach, antes titanio/gris apagado igual que
+   cualquier chip neutro); "old" (versión vieja, hay una nueva disponible)
+   y "ok" (al día) conservan sus propios acentos semánticos, sin cambios. */
+.jp-vbadge{font-size:10.5px;padding:2px 8px;border-radius:5px;border:1px solid rgba(255,214,0,.5);
+  background:rgba(255,214,0,.12);
+  color:#FFD600;margin-left:6px;white-space:nowrap;font-family:var(--fm,monospace);font-weight:700}
 .jp-vbadge.old{border-color:rgba(239,180,74,.6);background:rgba(239,180,74,.12);color:#EFB44A}
 .jp-vbadge.ok{border-color:rgba(72,213,151,.45);background:rgba(72,213,151,.1);color:#48D597}
 #jpLote{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
