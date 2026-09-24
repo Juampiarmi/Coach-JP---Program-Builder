@@ -7114,7 +7114,7 @@ if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
    el "@ 76%" de una fila) -- gana siempre sobre la marca del coach que
    compile() ya haya resuelto en el texto, para recalcular todo el
    bloque al instante con el 1RM real del día. Clave nueva, aditiva. */
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{} };
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{}, customBenchmarks:[] };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -7139,15 +7139,16 @@ function loadProgress(){
         state.sesionNotificada = parsed.sesionNotificada || {};
         state.historialCargas = parsed.historialCargas || {};
         state.oneRM = parsed.oneRM || {};
+        state.customBenchmarks = parsed.customBenchmarks || [];
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
     }
-  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; }
+  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = []; }
 }
 let _spT = null, _spDirty = false;
 function _spSerialize(){
-  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM });
+  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM, customBenchmarks: state.customBenchmarks });
 }
 function _spFlush(){
   if(!_spDirty) return;
@@ -8948,7 +8949,7 @@ function renderMain(){
      pensada para otra cosa. Sólo aparece si el coach cargó texto. */
   if(window.COACH_DISCIPLINA === 'crossfit' && day.briefing){
     html += '<details class="tactical-briefing"><summary class="tb-summary">' +
-      '<span class="tb-ic">⚡</span><span class="tb-label">Briefing del Día</span><span class="tb-chev">▾</span>' +
+      '<span class="tb-ic">⚡</span><span class="tb-label">Briefing del Coach</span><span class="tb-chev">▾</span>' +
       '</summary><div class="tb-body">' + day.briefing + '</div></details>';
   }
   /* directiva (reajuste UI): el check-in de entrada vivía al fondo de la
@@ -10606,7 +10607,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const refBloqueMatch = partes.val && partes.val.match(/^@\\s*carga\\s*(?:del\\s*)?bloque\\s*(\\d+)/i);
     const pctMatch = partes.val && partes.val.match(/^@\\s*(\\d{1,3})\\s*%/);
     let valHtml = jpMdBold(partes.val);
-    if(refBloqueMatch){
+    /* directiva ("Separación de Metadatos") -- una línea con DOS o más
+       etiquetas "@" (ej. "@ 45/30kg @ 60s") no es un único valor: es
+       carga + tiempo, cada uno en su propia pastilla táctica. Sólo entra
+       acá cuando hay 2+ "@" en partes.val -- el caso de un único "@"
+       (pctMatch/refBloqueMatch/kg-lb de abajo, todos probados y en
+       producción) sigue exactamente el mismo camino de siempre. */
+    const multiAtMatch = partes.val && (partes.val.match(/@/g) || []).length >= 2;
+    if(multiAtMatch){
+      valHtml = partes.val.split(/(?=@)/).map(function(seg){
+        seg = seg.trim().replace(/^@\\s*/, '');
+        if(!seg) return '';
+        if(/^\\d+\\s*(?:seg|segundos|s|sec|min|minutos)\\b/i.test(seg) || /^\\u23f1/.test(seg)){
+          return '<span class="jp-cf-time">\\u23f1\\ufe0f ' + jpMdBold(seg.replace(/^\\u23f1\\ufe0f?\\s*/, '')) + '</span>';
+        }
+        return '<span class="jp-cf-load">' + jpMdBold(seg) + '</span>';
+      }).join(' ');
+    } else if(refBloqueMatch){
       const nBloque = parseInt(refBloqueMatch[1], 10);
       const ref = jpCfCargaBloque(dayId, nBloque);
       if(ref && ref.kg != null){
@@ -10832,7 +10849,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '</div>' : '') +
         (notasVisible ?
           '<div class="jp-cf-notas">' +
-            '<label>[ NOTAS DE CARGA / SENSACIONES ]</label>' +
+            '<label>[ NOTAS ]</label>' +
             '<input class="jp-cf-notas-in" data-nkey="' + notaKey + '" placeholder="Ej: Usé KB de 24kg y banda roja" value="' + String(notaGuardada).replace(/"/g, '&quot;') + '" />' +
           '</div>' : '') +
       '</div>';
@@ -11501,21 +11518,57 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      si todavía no cargó ninguno), cada fila abre el mismo modal de
      arriba para cargar/actualizar -- no hace falta esperar a tocar un
      "@ 76%" puntual en la Pizarra para revisar o corregir un 1RM. */
-  var JP_BENCHMARKS_LISTA = ['Snatch', 'Clean & Jerk', 'Clean', 'Jerk', 'Back Squat', 'Front Squat', 'Deadlift', 'Bench Press', 'Strict Press'];
+  /* directiva ("Expansión y Personalización de PRs/1RM") -- se agregan las
+     variantes olímpicas/de fuerza más usadas en CrossFit; los nombres
+     ORIGINALES ('Clean & Jerk', 'Jerk') se mantienen tal cual para no
+     huerfanar el 1RM que un atleta ya haya guardado bajo esas claves
+     (nrmHist() indexa por nombre normalizado). */
+  var JP_BENCHMARKS_LISTA = [
+    'Snatch', 'Power Snatch', 'Hang Power Snatch', 'Hang Squat Snatch',
+    'Clean & Jerk', 'Clean', 'Power Clean', 'Hang Power Clean', 'Hang Squat Clean',
+    'Jerk', 'Push Jerk', 'Split Jerk',
+    'Strict Press', 'Push Press', 'Bench Press',
+    'Back Squat', 'Front Squat', 'Overhead Squat (OHS)',
+    'Deadlift', 'Sumo Deadlift'
+  ];
+  function jpBenchmarkFila(nombre){
+    var key = nrmHist(nombre);
+    var val = state.oneRM && state.oneRM[key];
+    return '<button type="button" class="jp-prs-row" data-pct-lift="' + nombre + '" data-pct-key="' + key + '">' +
+      '<span>' + nombre + '</span><span class="jp-prs-val">' + (val > 0 ? val + ' kg' : '— cargar') + '</span></button>';
+  }
+  /* directiva -- ejercicios personalizados agregados por el propio atleta
+     (ej. "Thruster", "Weighted Pull-Up"), persistidos aparte de la lista
+     fija en state.customBenchmarks (ver loadProgress/_spSerialize) para
+     que sobrevivan a un reload/cierre de la app. */
+  function jpAgregarBenchmarkPersonalizado(nombre, kg){
+    nombre = String(nombre || '').trim();
+    if(!nombre || !(kg > 0)) return false;
+    state.customBenchmarks = state.customBenchmarks || [];
+    var key = nrmHist(nombre);
+    var yaExiste = JP_BENCHMARKS_LISTA.concat(state.customBenchmarks).some(function(n){ return nrmHist(n) === key; });
+    if(!yaExiste) state.customBenchmarks.push(nombre);
+    state.oneRM = state.oneRM || {};
+    state.oneRM[key] = kg;
+    saveProgress();
+    return true;
+  }
   function jpAbrirListaPRs(){
     jpCerrarPct1RM();
     var overlay = document.createElement('div');
     overlay.className = 'jp-pct-overlay';
-    var filas = JP_BENCHMARKS_LISTA.map(function(nombre){
-      var key = nrmHist(nombre);
-      var val = state.oneRM && state.oneRM[key];
-      return '<button type="button" class="jp-prs-row" data-pct-lift="' + nombre + '" data-pct-key="' + key + '">' +
-        '<span>' + nombre + '</span><span class="jp-prs-val">' + (val > 0 ? val + ' kg' : '— cargar') + '</span></button>';
-    }).join('');
+    var filas = JP_BENCHMARKS_LISTA.map(jpBenchmarkFila).join('') +
+      (state.customBenchmarks || []).map(jpBenchmarkFila).join('');
     overlay.innerHTML =
       '<div class="jp-pct-pop jp-prs-pop">' +
         '<div class="jp-pct-pop-lb">&#9889; PRs / 1RM</div>' +
         '<div class="jp-prs-list">' + filas + '</div>' +
+        '<button type="button" class="jp-prs-addbtn" data-pct-addcustom="1">&#10133; Agregar Ejercicio Personalizado</button>' +
+        '<div class="jp-prs-addform" id="jpPrsAddForm" style="display:none">' +
+          '<input type="text" class="jp-prs-addform-name" id="jpPrsAddName" placeholder="Nombre (ej: Thruster)" maxlength="40">' +
+          '<input type="number" class="jp-prs-addform-kg" id="jpPrsAddKg" placeholder="kg" min="0" step="0.5">' +
+          '<button type="button" class="jp-prs-addform-save" data-pct-savecustom="1">Guardar</button>' +
+        '</div>' +
         '<div class="jp-pct-pop-actions"><button type="button" class="jp-pct-pop-x" data-pctcancel="1">Cerrar</button></div>' +
       '</div>';
     document.body.appendChild(overlay);
@@ -11538,6 +11591,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(quick){ e.stopPropagation(); jpAbrirListaPRs(); return; }
     var row = e.target.closest('.jp-prs-row');
     if(row){ e.stopPropagation(); jpAbrirPct1RM(row.dataset.pctLift || '', row.dataset.pctKey || ''); return; }
+    var addCustom = e.target.closest('[data-pct-addcustom]');
+    if(addCustom){
+      e.stopPropagation();
+      var form = document.getElementById('jpPrsAddForm');
+      if(form){ form.style.display = 'flex'; addCustom.style.display = 'none'; var nm = document.getElementById('jpPrsAddName'); if(nm) nm.focus(); }
+      return;
+    }
+    var saveCustom = e.target.closest('[data-pct-savecustom]');
+    if(saveCustom){
+      e.stopPropagation();
+      var nmEl = document.getElementById('jpPrsAddName'), kgEl = document.getElementById('jpPrsAddKg');
+      var ok = jpAgregarBenchmarkPersonalizado(nmEl ? nmEl.value : '', kgEl ? parseFloat(kgEl.value) : 0);
+      if(ok) jpAbrirListaPRs();
+      return;
+    }
     var btn = e.target.closest('.jp-cf-pct');
     if(btn){ e.stopPropagation(); jpAbrirPct1RM(btn.dataset.pctLift || '', btn.dataset.pctKey || ''); return; }
     var save = e.target.closest('[data-pctsave]');
@@ -13109,16 +13177,28 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         subLH = Math.round(subTam * 1.3);
       }
       var subBlockH = subLineas.length ? (subLineas.length * subLH + 14) : 0;
-      var fsM = 0;
+      /* directiva ("Ajuste de Encuadre de Story Card") -- antes la métrica
+         gigante (ej. un score/estructura largo tipo "EVERY 6:00 X 5
+         SETS...") era SIEMPRE una sola línea que sólo se achicaba hasta
+         un piso de 54px sin garantía de caber: si a 54px todavía no
+         entraba, se dibujaba igual y colapsaba contra el borde/padding
+         de la tarjeta. Mismo patrón ya probado de nombreLineas/
+         tituloLineas2 -- envuelve hasta 2 líneas dentro de w - padX*2,
+         nunca desborda el padding interno de la card. */
+      var fsM = 0, metricaLineas = [], metricaLH = 0;
       if(metrica){
-        fsM = 120;
-        g.font = '900 ' + fsM + 'px "Plus Jakarta Sans", sans-serif';
-        while(g.measureText(String(metrica)).width > (w - padX * 2) && fsM > 54){
-          fsM -= 4; g.font = '900 ' + fsM + 'px "Plus Jakarta Sans", sans-serif';
-        }
+        var tamM = 120, metricaTxt = String(metrica);
+        do {
+          g.font = '900 ' + tamM + 'px "Plus Jakarta Sans", sans-serif';
+          metricaLineas = env(g, metricaTxt, w - padX * 2, 2);
+          if(metricaLineas.length <= 2 && !metricaLineas.recortado) break;
+          tamM -= 6;
+        } while(tamM > 40);
+        fsM = tamM;
+        metricaLH = Math.round(fsM * 1.18);
       }
       var captionH = captionMetrica ? 42 : 0;
-      var metricaH = metrica ? (Math.round(fsM * 1.2) + 20) : 0;
+      var metricaH = metrica ? (metricaLineas.length * metricaLH + 20) : 0;
       /* directiva ("Story Card de alto impacto") -- badge destacado
          (🔥 TOP LIFT / 🔥 NUEVO PR) como pastilla chica debajo de la
          métrica gigante, nunca compitiendo en tamaño con ella. */
@@ -13174,7 +13254,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         }
         if(metrica){
           g.fillStyle = colorAccent; g.font = '900 ' + fsM + 'px "Plus Jakarta Sans", sans-serif';
-          g.fillText(String(metrica), x0 + padX, cy + Math.round(fsM * .86));
+          metricaLineas.forEach(function(ln, i){ g.fillText(ln, x0 + padX, cy + Math.round(fsM * .86) + i * metricaLH); });
           cy += metricaH;
         }
         if(badgeTxt){
@@ -27630,19 +27710,27 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
 .jp-cf-clips[open] .jp-cf-clips-lb::after{ transform:rotate(180deg); }
 .jp-cf-clips .jp-cf-clips-row{ margin-top:10px; }
 .jp-cf-clips-row{ display:flex; flex-wrap:wrap; gap:8px; }
+/* directiva ("Miniaturas Tácticas de Video") -- reemplaza el botón verde
+   brillante plano por una micro-tarjeta táctica: fondo carbón, borde
+   continuo cyan sutil (mismo lenguaje visual que .jp-cfboard), ícono
+   play cian y nombre en blanco nítido, tipografía compacta monoespaciada. */
 .jp-cf-clip{
-  display:inline-flex; align-items:center; gap:7px; padding:7px 12px 7px 8px; border-radius:20px;
-  background:rgba(72,213,151,.08); border:1px solid rgba(72,213,151,.35); cursor:pointer;
-  font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:12.5px; color:#EDEFF2;
-  min-height:36px;
+  display:inline-flex; align-items:center; gap:8px; padding:7px 12px 7px 7px; border-radius:10px;
+  background:#161b26; border:1px solid rgba(0,229,255,.25); cursor:pointer;
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11.5px; letter-spacing:.02em;
+  color:#f8fafc; min-height:36px;
 }
 .jp-cf-clip-ic{
   display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
-  border-radius:50%; background:#48D597; color:#0A0F13; font-size:9px; flex:0 0 auto;
+  border-radius:50%; background:rgba(0,229,255,.12); border:1px solid rgba(0,229,255,.4);
+  color:#00e5ff; font-size:9px; flex:0 0 auto;
 }
 .jp-cf-clip:hover,.jp-cf-clip:focus-visible{
-  background:rgba(210,121,63,.14); border-color:rgba(210,121,63,.5);
-  box-shadow:0 0 10px rgba(210,121,63,.3);
+  background:#1b2230; border-color:rgba(255,214,0,.5);
+  box-shadow:0 0 10px rgba(255,214,0,.18);
+}
+.jp-cf-clip:hover .jp-cf-clip-ic,.jp-cf-clip:focus-visible .jp-cf-clip-ic{
+  border-color:#ffd600; color:#ffd600; background:rgba(255,214,0,.12);
 }
 /* directiva ("Erradicar Bordes Punteados" / "Integración del Amarillo
    Oro de Branding"): "@ 76%" pasa a botón tocable dentro del valor de
@@ -27671,6 +27759,13 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
 .jp-cf-load{
   display:inline-block; background:#0b0e14; border:1px solid rgba(255,214,0,.3);
   border-radius:8px; padding:2px 8px; color:#ffd600; font-weight:700;
+}
+/* directiva ("Separación de Metadatos") -- pastilla de tiempo ("@ 60s"),
+   hermana de .jp-cf-load pero en cian (nunca compite con el oro de
+   carga/%/PRs), para una línea con doble etiqueta "@ carga @ tiempo". */
+.jp-cf-time{
+  display:inline-block; background:#0b0e14; border:1px solid rgba(0,229,255,.3);
+  border-radius:8px; padding:2px 8px; color:#00e5ff; font-weight:700;
 }
 /* directiva ("Motor de 1RM exacto") -- modal centrado de pantalla
    completa (mismo patrón que guideModal/painModal/calcModal): el
@@ -27717,6 +27812,31 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
 /* directiva ("Integración del Amarillo Oro de Branding"): PRs en oro
    exacto #ffd600 (antes #F5C518, un dorado cercano pero no idéntico). */
 .jp-prs-val{ font-family:'JetBrains Mono',monospace; font-weight:700; color:#ffd600; font-size:13px; }
+/* directiva ("Expansión y Personalización de PRs/1RM") -- botón +
+   formulario inline para que el atleta agregue su propio ejercicio
+   (ej. "Thruster") con su 1RM, sin salir del modal. */
+.jp-prs-addbtn{
+  width:100%; margin-top:10px; padding:12px 14px; border-radius:10px;
+  border:1px dashed rgba(0,229,255,.35); background:transparent; color:#00e5ff;
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12.5px; text-align:center;
+}
+.jp-prs-addbtn:active{ background:rgba(0,229,255,.08); }
+.jp-prs-addform{
+  display:flex; gap:8px; margin-top:10px; align-items:center;
+}
+.jp-prs-addform-name{
+  flex:1.4; min-width:0; padding:11px 10px; border-radius:10px; border:1px solid rgba(255,255,255,.18);
+  background:rgba(8,9,11,.6); color:#EDEFF2; font-family:'Plus Jakarta Sans',sans-serif; font-size:13px;
+}
+.jp-prs-addform-kg{
+  flex:.8; min-width:0; padding:11px 10px; border-radius:10px; border:1px solid rgba(255,255,255,.18);
+  background:rgba(8,9,11,.6); color:#ffd600; font-family:'JetBrains Mono',monospace; font-size:13px; text-align:center;
+}
+.jp-prs-addform-name:focus,.jp-prs-addform-kg:focus{ border-color:#38BDF8; outline:none; }
+.jp-prs-addform-save{
+  flex:0 0 auto; min-height:40px; padding:0 14px; border-radius:10px; border:1px solid rgba(72,213,151,.45);
+  background:rgba(72,213,151,.14); color:#7CFFB2; font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:12.5px;
+}
 .jp-cfboard .jp-cf-row strong{ color:#E06D2D; font-weight:800; }
 /* directiva ("Tipografía y Display Táctico de Reps"): cyan #00e5ff
    exacto, más presencia (tamaño/tracking), monospace táctico -- antes
@@ -27758,14 +27878,15 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    pero en violeta, la identidad de esta fase. */
 .jp-cfboard .jp-cf-notas{
   margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,.1);
-  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  display:flex; gap:8px; align-items:center; flex-wrap:nowrap;
 }
 .jp-cfboard .jp-cf-notas label{
+  flex:0 0 auto; white-space:nowrap;
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:10.5px;
   letter-spacing:.08em; text-transform:uppercase; color:#818CF8;
 }
 .jp-cfboard .jp-cf-notas input{
-  flex:1; min-width:160px; padding:9px 11px; border-radius:8px; border:1px solid rgba(255,255,255,.16);
+  flex:1 1 auto; min-width:0; padding:9px 11px; border-radius:8px; border:1px solid rgba(255,255,255,.16);
   background:rgba(0,0,0,.35); color:#EDEFF2; font-family:'Inter',sans-serif; font-size:13px;
 }
 
@@ -27802,6 +27923,14 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    body.cf-disc, Bodybuilding no se toca.
 ========================================================= */
 body.cf-disc .day-header{ display:none !important; }
+/* directiva ("Purga y limpieza del header CrossFit") -- el check-in de
+   sueño/estrés/dolor (#readinessCard) es un flujo de Bodybuilding/Sports
+   (set-por-set) que en CrossFit queda duplicado e inerte junto al
+   Briefing del Coach; la barra "0% completado" tampoco aplica porque CF
+   no trackea sets individuales. Ambos se ocultan sólo por CSS (nunca se
+   toca su JS/markup compartido) para no arriesgar nada de Sports. */
+body.cf-disc #readinessCard{ display:none !important; }
+body.cf-disc .progress-bar-wrap{ display:none !important; }
 /* directiva ("rediseño header CrossFit"): backdrop-filter sobre un
    sticky+fondo TRANSPARENTE es la combinación que iOS Safari renderiza
    mal (ghosting/parpadeo al hacer scroll, contenido de la página
