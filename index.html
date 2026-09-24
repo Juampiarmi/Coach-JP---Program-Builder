@@ -10307,6 +10307,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return /\\b(sets?|rounds?|rondas?)\\s*:\\s*$/i.test(String(l || '').replace(/\\*\\*/g, '').trim());
   }
   function jpCfTieneCarga(l){ return /@\\s*[\\d.]/.test(l) || /\\d[\\d.\\/]*\\s*(?:kg|kgs|lb|lbs|cm|m)\\b/i.test(l); }
+  /* directiva ("Erradicar Óvalos y Textos Sueltos") -- una palabra de
+     transición entre movimientos/series ("Then:", "Rest between sets")
+     no es ni un header de protocolo ni una instrucción con badge propio
+     -- es un separador visual puro. Se detecta por FORMA (línea corta,
+     matchea una de las frases de transición conocidas) y se renderiza
+     como divisor (.jp-cf-transition), nunca como pastilla ni texto
+     blanco suelto. */
+  var RX_CF_TRANSICION = /^(then|rest\\s*between\\s*(?:sets?|rounds?)|immediately\\s*after|straight\\s*into|no\\s*rest)\\s*:?\\s*$/i;
+  function jpCfEsTransicion(l){ return RX_CF_TRANSICION.test(String(l || '').replace(/\\*\\*/g, '').trim()); }
   /* esquema de reps puro (ej. "21-15-9", "5-5-5-5-5") -- pastilla táctica
      propia, no es ni encabezado ni movimiento con carga */
   function jpCfEsEsquema(l){ return /^\\d+(-\\d+){1,}$/.test(l.trim()); }
@@ -10563,7 +10572,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '<button type="button" class="jp-cf-rest-main">&#9201;&#65039; INICIAR REST ' + jpCfRestMMSS(seg) + '</button></div></div>';
   }
   function jpCfFila(raw, dayId){
-    const l = String(raw || '').trim();
+    /* directiva ("Alineación Táctica en Movilidad y Cooldown") -- una
+       viñeta manual tipeada por el coach ("✦ Foam roll — 2 min") queda
+       desalineada porque es sólo texto suelto pegado al nombre -- se
+       recorta acá, ANTES de cualquier clasificación, así la fila usa
+       siempre la sangría/alineación uniforme que ya da .jp-cf-row (flex),
+       nunca el carácter crudo del coach. */
+    const l = String(raw || '').trim().replace(/^[\\u2726\\u2022\\u2023\\u25aa\\u00b7\\u2043]\\s*/, '');
+    if(jpCfEsTransicion(l)){
+      return '<div class="jp-cf-transition"><span>' + jpMdBold(l.replace(/:\\s*$/, '')) + '</span></div>';
+    }
     if(jpCfEsHeader(l)){
       const txt = l.replace(/^\\s*#+\\s*/, '');
       if(jpCfEsFormatoHeader(txt)){
@@ -10664,6 +10682,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          .jp-cf-pct/.jp-cf-refload (ver CSS .jp-cf-load), pero como texto
          plano (no hay 1RM ni bloque que resolver, ya es un valor final). */
       valHtml = '<span class="jp-cf-load">' + jpMdBold(partes.val) + '</span>';
+    } else if(partes.val && /^@?\\s*rpe\\s*\\d+(?:\\.\\d+)?/i.test(partes.val)){
+      /* directiva ("Regex de Oro: cargas reales únicamente") -- "@ RPE 8"
+         es una carga de esfuerzo real (igual que un %/kg), va en oro --
+         nunca el texto descriptivo genérico de abajo (dimensiones,
+         indicaciones sin número de esfuerzo real: "@ cuadrado 1x1m", "@
+         suave"), que ahora queda neutro por default en .jp-cf-rv (ver
+         CSS, ya no es oro por defecto). */
+      valHtml = '<span class="jp-cf-load">' + jpMdBold(partes.val) + '</span>';
+    } else if(partes.val && /^\\d+\\s*(?:min|minutos?|s|sec|seg|segundos?)\\s*$/i.test(partes.val)){
+      /* directiva ("Alineación Táctica en Movilidad y Cooldown") -- un
+         tiempo prescrito suelto ("— 2 min", "— 60 s", típico de Warm-up/
+         Cooldown) se extrae a su propia pastilla de tiempo a la derecha,
+         mismo tratamiento visual que .jp-cf-time del split de "@ ... @
+         ..." de arriba -- nunca texto plano gris sin jerarquía. */
+      valHtml = '<span class="jp-cf-time">\\u23f1\\ufe0f ' + jpMdBold(partes.val) + '</span>';
     }
     return '<div class="jp-cf-row">' +
         '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
@@ -27711,14 +27744,30 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    header de FORMATO ("5 Super Sets:", "Every 4:00 x 4 Sets:") como
    pastilla táctica naranja propia, nunca el bloque de texto blanco
    genérico -- se distingue de un header narrativo suelto. */
+/* directiva ("Erradicar Óvalos y Textos Sueltos") -- micro-chip táctico
+   rectangular (radio mínimo, nunca la pastilla ovalada de antes), mismo
+   idioma visual que el resto de los chips tácticos del board. */
 .cf-format-badge{
-  display:inline-flex; align-items:center; gap:6px; width:fit-content;
-  margin:2px 0 6px; padding:6px 12px; border-radius:20px;
-  background:rgba(255,107,0,.12); border:1px solid rgba(255,107,0,.4);
-  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:12px;
-  letter-spacing:.06em; text-transform:uppercase; color:#ff6b00;
+  display:inline-flex; align-items:center; gap:4px; width:fit-content;
+  margin:2px 0 6px; padding:3px 8px; border-radius:4px;
+  background:rgba(255,107,0,.12); border:1px solid #ff6b00;
+  font-family:'JetBrains Mono',monospace; font-weight:700; font-size:.75rem;
+  letter-spacing:.05em; text-transform:uppercase; color:#ff8533;
 }
 .jp-cfboard .jp-cf-rows .cf-format-badge:first-child{ margin-top:0; }
+/* directiva ("Erradicar Óvalos y Textos Sueltos") -- divisor táctico de
+   transición ("Then", "Rest between sets"): nunca texto suelto ni
+   pastilla, línea continua a los costados con la palabra centrada. */
+.jp-cf-transition{
+  display:flex; align-items:center; gap:10px; margin:10px 0; width:100%;
+}
+.jp-cf-transition::before, .jp-cf-transition::after{
+  content:''; flex:1 1 auto; height:1px; background:rgba(255,255,255,.14);
+}
+.jp-cf-transition span{
+  flex:0 0 auto; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:.68rem;
+  letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,.5); white-space:nowrap;
+}
 .jp-cfboard .jp-cf-row.jp-cf-badge{
   display:inline-flex; align-items:center; width:fit-content;
   padding:5px 10px; margin:1px 0; border-radius:20px;
@@ -27748,13 +27797,16 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   font-family:'Plus Jakarta Sans',sans-serif; font-weight:700; font-size:14.5px; color:#f8fafc;
 }
 .jp-cfboard .jp-cf-rv{
-  /* directiva ("Integración del Amarillo Oro de Branding"): el valor de
-     la fila (carga/kg/%) ya no es cyan por defecto -- .jp-cf-pct/
-     .jp-cf-refload/.jp-cf-load (los casos reales de carga) traen su
-     propio color oro; esto es sólo el contenedor flex. */
+  /* directiva ("Regex de Oro: cargas reales únicamente") -- el oro ya NO
+     es el color por defecto del contenedor: .jp-cf-pct/.jp-cf-refload/
+     .jp-cf-load (kg/lb/%/RPE, los casos reales de carga o esfuerzo)
+     traen su PROPIO color oro explícito. Cualquier valor "@ ..." sin
+     dígito de carga real (dimensiones, indicaciones genéricas: "@
+     cuadrado 1x1m", "@ suave") cae acá sin span propio y hereda este
+     neutro -- nunca más oro por default. */
   flex:0 1 auto; flex-shrink:1; white-space:normal; overflow-wrap:break-word; max-width:100%;
   display:inline-flex; align-items:center; gap:7px; justify-content:flex-end;
-  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#ffd600; text-align:right;
+  font-family:'JetBrains Mono',monospace; font-weight:800; font-size:13.5px; color:#94a3b8; text-align:right;
 }
 /* directiva ("Rediseño Premium del Rest Timer") -- widget integrado al
    pie del bloque, Dark Stealth: carbón + cian neón tenue en reposo,
@@ -27778,6 +27830,16 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.25); border-radius:10px; cursor:pointer;
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11px; color:#00e5ff;
 }
+/* directiva ("Botón de Rest / Timer") -- efecto hover/active sólido en
+   estado idle (nunca sobre .running/.listo, que ya tienen su propia
+   identidad visual): el borde cian sutil se vuelve sólido y el fondo se
+   intensifica al tocar/pasar el cursor, feedback táctil real. */
+.jp-cf-rest:not(.running):not(.listo):hover,
+.jp-cf-rest:not(.running):not(.listo):active{
+  background:rgba(0,229,255,.14); border-color:#00e5ff;
+  box-shadow:0 0 12px rgba(0,229,255,.22);
+}
+.jp-cf-rest-main:active{ transform:scale(.98); }
 .jp-cf-rest-x{ color:#94a3b8; border-color:rgba(148,163,184,.25); background:rgba(148,163,184,.08); }
 .jp-cf-rest.running{ border-color:rgba(0,229,255,.5); box-shadow:0 0 0 1px rgba(0,229,255,.12) inset; }
 /* barra de progreso fluida: capa absoluta detrás del contenido, ancho
@@ -27841,8 +27903,9 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    continuo cyan sutil (mismo lenguaje visual que .jp-cfboard), ícono
    play cian y nombre en blanco nítido, tipografía compacta monoespaciada. */
 .jp-cf-clip{
-  display:inline-flex; align-items:center; gap:8px; padding:7px 12px 7px 7px; border-radius:10px;
-  background:#161b26; border:1px solid rgba(0,229,255,.25); cursor:pointer;
+  display:inline-flex; align-items:center; gap:8px; width:auto; max-width:100%;
+  padding:6px 12px; border-radius:10px;
+  background:#111722; border:1px solid rgba(0,229,255,.3); cursor:pointer;
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:11.5px; letter-spacing:.02em;
   color:#f8fafc; min-height:36px;
 }
@@ -27850,6 +27913,12 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
   border-radius:50%; background:rgba(0,229,255,.12); border:1px solid rgba(0,229,255,.4);
   color:#00e5ff; font-size:9px; flex:0 0 auto;
+}
+/* directiva ("Miniaturas Compactas de Video") -- el chip nunca se
+   estira en una barra horizontal gigante: el nombre se recorta con
+   ellipsis a partir de cierto ancho, el chip entero queda inline. */
+.jp-cf-clip-nm{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px;
 }
 .jp-cf-clip:hover,.jp-cf-clip:focus-visible{
   background:#1b2230; border-color:rgba(255,214,0,.5);
