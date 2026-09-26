@@ -1,0 +1,267 @@
+import Anthropic from '@anthropic-ai/sdk';
+import { aisGroupA } from './evidence';
+import { macrosFor, matchFood, round1, round2 } from './foods';
+import { uid } from './seed';
+import type { AiProvider, AiSettings, AthletePlan, FoodItem, Meal, MealDay, MealRole, Phase, Supplement } from './types';
+
+export const SYSTEM_PROMPT =
+  'Actúas como el motor de IA de bioenergética de Coach JP (@coachjp.training). Tu tono es táctico, basado en evidencia (ISSN, Morton 2018). Recibes notas del atleta y devuelves OBLIGATORIAMENTE un JSON válido con la siguiente estructura: { athleteName, sportType, bmr, tdee, targetKcalOn, targetKcalOff, macrosOn: {p, c, f}, macrosOff: {p, c, f}, meals: [{ name, time, items: [{food, grams, p, c, f, leucine}], leucineTotal, mpsAchieved: boolean }], supplements: [{name, dose, timing, evidenceDOI}] }. Usar alimentos habituales de Argentina y asegurar umbral de leucina >= 2.7g por comida principal.';
+
+/** Extensión del contrato: campos opcionales que el Builder usa para rellenar todas las pestañas. */
+export const SYSTEM_PROMPT_EXTENSION = `
+REGLAS DE CÁLCULO Y FORMATO (obligatorias):
+- BMR por Katch-McArdle (370 + 21,6 × masa libre de grasa) cuando haya % graso; si no, Mifflin-St Jeor.
+- Periodización ON/OFF: DÍA ON carbos 4-7 g/kg, proteína 2,0-2,4 g/kg, grasas 0,6-0,8 g/kg. DÍA OFF carbos bajos, proteína constante, grasas 0,9-1,2 g/kg.
+- macrosOn / macrosOff en GRAMOS totales diarios. Gramos de alimentos en peso neto (cocido para carnes, arroz, fideos, papa, batata).
+- Cada item de "meals" lleva p, c, f y leucine en gramos para la porción indicada.
+- Agregá a cada meal: "day": "ON" | "OFF" | "AMBOS" y "role": "breakfast" | "lunch" | "peri" | "post" | "snack" | "dinner". La suma de las comidas de cada día debe aproximar sus macros objetivo (±5 %).
+- Agregá el objeto opcional "profile": { sex: "M"|"F", age, heightCm, weightKg, bodyFatPct, phase: "recomp"|"maintenance"|"surplus", trainingDaysPerWeek, sessionKcal, activityFactor } con lo que se desprenda de las notas.
+- Agregá "coachNote": una directiva táctica breve (máx. 2 frases) para el atleta.
+- Suplementos: sólo AIS Grupo A (creatina 0,04 g/kg, cafeína 3-6 mg/kg, beta-alanina, bicarbonato, nitrato) con DOI real.
+- Respondé SOLO con el objeto JSON, sin texto antes ni después y sin bloques de código.`;
+
+export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> = {
+  claude: [
+    { id: 'claude-opus-5', label: 'Claude Opus 5' },
+    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+  ],
+  gemini: [
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  ],
+  openai: [
+    { id: 'gpt-4.1', label: 'GPT-4.1' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
+  ],
+};
+
+export interface AiMacros {
+  p: number;
+  c: number;
+  f: number;
+}
+
+export interface AiPlanJson {
+  athleteName?: string;
+  sportType?: string;
+  bmr?: number;
+  tdee?: number;
+  targetKcalOn?: number;
+  targetKcalOff?: number;
+  macrosOn?: AiMacros;
+  macrosOff?: AiMacros;
+  meals?: {
+    name?: string;
+    time?: string;
+    day?: string;
+    role?: string;
+    items?: { food?: string; grams?: number; p?: number; c?: number; f?: number; leucine?: number }[];
+    leucineTotal?: number;
+    mpsAchieved?: boolean;
+  }[];
+  supplements?: { name?: string; dose?: string; timing?: string; evidenceDOI?: string }[];
+  profile?: Partial<{
+    sex: string;
+    age: number;
+    heightCm: number;
+    weightKg: number;
+    bodyFatPct: number;
+    phase: string;
+    trainingDaysPerWeek: number;
+    sessionKcal: number;
+    activityFactor: number;
+  }>;
+  coachNote?: string;
+}
+
+async function callClaude(ai: AiSettings, user: string): Promise<string> {
+  // La key vive sólo en este navegador: la llamada va directo a la API de Anthropic.
+  const client = new Anthropic({ apiKey: ai.apiKey, dangerouslyAllowBrowser: true });
+  const params = {
+    model: ai.model,
+    max_tokens: 32000,
+    system: `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}`,
+    messages: [{ role: 'user' as const, content: user }],
+  };
+  const stream =
+    ai.model === 'claude-opus-5'
+      ? client.beta.messages.stream({ ...params, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' })
+      : client.beta.messages.stream(params);
+  const message = await stream.finalMessage();
+  if (message.stop_reason === 'refusal') {
+    throw new Error('El modelo rechazó la solicitud. Revisá las notas del atleta e intentá de nuevo.');
+  }
+  if (message.stop_reason === 'max_tokens') {
+    throw new Error('La respuesta se cortó por longitud. Reducí las notas o probá con otro modelo.');
+  }
+  return message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+}
+
+async function callGemini(ai: AiSettings, user: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ai.model)}:generateContent`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': ai.apiKey },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}` }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || `Gemini respondió ${res.status}`);
+  return (data?.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? '').join('');
+}
+
+async function callOpenAI(ai: AiSettings, user: string): Promise<string> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ai.apiKey}` },
+    body: JSON.stringify({
+      model: ai.model,
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+      messages: [
+        { role: 'system', content: `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}` },
+        { role: 'user', content: user },
+      ],
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || `OpenAI respondió ${res.status}`);
+  return data?.choices?.[0]?.message?.content ?? '';
+}
+
+export function extractJson(text: string): AiPlanJson {
+  const cleaned = text.replace(/```(?:json)?/gi, '');
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('La IA no devolvió un JSON reconocible.');
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    throw new Error('El JSON devuelto por la IA está malformado. Reintentá la compilación.');
+  }
+}
+
+export async function compileWithAi(ai: AiSettings, notes: string): Promise<AiPlanJson> {
+  if (!ai.apiKey.trim()) throw new Error('Cargá una API key para compilar con IA.');
+  if (!notes.trim()) throw new Error('Volcá las notas del atleta antes de compilar.');
+  const user = `NOTAS BRUTAS DEL ATLETA:\n${notes.trim()}`;
+  const raw =
+    ai.provider === 'claude'
+      ? await callClaude(ai, user)
+      : ai.provider === 'gemini'
+        ? await callGemini(ai, user)
+        : await callOpenAI(ai, user);
+  return extractJson(raw);
+}
+
+const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback);
+
+function inferRole(name: string, explicit?: string): MealRole {
+  const roles: MealRole[] = ['breakfast', 'lunch', 'peri', 'post', 'snack', 'dinner'];
+  if (explicit && roles.includes(explicit as MealRole)) return explicit as MealRole;
+  const n = name.toLowerCase();
+  if (/desayuno/.test(n)) return 'breakfast';
+  if (/almuerzo/.test(n)) return 'lunch';
+  if (/post/.test(n)) return 'post';
+  if (/peri|pre|intra/.test(n)) return 'peri';
+  if (/cena/.test(n)) return 'dinner';
+  return 'snack';
+}
+
+function inferDay(day: string | undefined, role: MealRole): MealDay {
+  const d = (day ?? '').toUpperCase();
+  if (d === 'ON') return 'on';
+  if (d === 'OFF') return 'off';
+  if (d) return 'both';
+  return role === 'peri' || role === 'post' ? 'on' : 'both';
+}
+
+/** Convierte la respuesta de la IA en el plan del Builder (todas las pestañas). */
+export function planFromAi(json: AiPlanJson, base: AthletePlan): AthletePlan {
+  const pr = json.profile ?? {};
+  const weightKg = num(pr.weightKg, base.profile.weightKg);
+  const phases: Phase[] = ['recomp', 'maintenance', 'surplus'];
+  const toGkg = (m: AiMacros | undefined, fb: AiMacros) => ({
+    p: round2(num(m?.p, fb.p * weightKg) / weightKg),
+    c: round2(num(m?.c, fb.c * weightKg) / weightKg),
+    f: round2(num(m?.f, fb.f * weightKg) / weightKg),
+  });
+
+  const meals: Meal[] = (json.meals ?? []).map((m) => {
+    const name = m.name?.trim() || 'Bloque';
+    const role = inferRole(name, m.role);
+    const items: FoodItem[] = (m.items ?? [])
+      .filter((i) => i.food && num(i.grams, 0) > 0)
+      .map((i) => {
+        const grams = Math.round(num(i.grams, 100));
+        const ref = matchFood(i.food!);
+        if (ref) return { id: uid(), foodId: ref.id, food: ref.name, grams, ...macrosFor(ref.id, grams)! };
+        return {
+          id: uid(),
+          food: i.food!,
+          grams,
+          p: round1(num(i.p, 0)),
+          c: round1(num(i.c, 0)),
+          f: round1(num(i.f, 0)),
+          leucine: round2(num(i.leucine, 0)),
+        };
+      });
+    return { id: uid(), name, time: /^\d{1,2}:\d{2}$/.test(m.time ?? '') ? m.time!.padStart(5, '0') : '12:00', day: inferDay(m.day, role), role, items };
+  });
+
+  const known = Object.fromEntries(aisGroupA(weightKg).map((s) => [s.id, s]));
+  const supplements: Supplement[] = (json.supplements ?? []).map((s) => {
+    const n = (s.name ?? '').toLowerCase();
+    const id = /creat/.test(n)
+      ? 'creatina'
+      : /cafe/.test(n)
+        ? 'cafeina'
+        : /beta/.test(n)
+          ? 'beta-alanina'
+          : /bicarb/.test(n)
+            ? 'bicarbonato'
+            : /nitra|remolacha/.test(n)
+              ? 'nitrato'
+              : uid();
+    const ref = known[id];
+    return {
+      id,
+      name: s.name || ref?.name || 'Suplemento',
+      dose: s.dose || ref?.dose || '',
+      timing: s.timing || ref?.timing || '',
+      evidence: ref?.evidence ?? 'EVIDENCIA CITADA POR IA',
+      doi: (s.evidenceDOI || ref?.doi || '').replace(/^https?:\/\/(dx\.)?doi\.org\//, ''),
+      enabled: true,
+    };
+  });
+
+  return {
+    ...base,
+    profile: {
+      ...base.profile,
+      name: json.athleteName?.trim() || base.profile.name,
+      discipline: /cross|hyrox|h[ií]brid|funcional|wod/i.test(json.sportType ?? '') ? 'hybrid' : json.sportType ? 'bodybuilding' : base.profile.discipline,
+      sex: pr.sex === 'F' ? 'F' : pr.sex === 'M' ? 'M' : base.profile.sex,
+      age: num(pr.age, base.profile.age),
+      heightCm: num(pr.heightCm, base.profile.heightCm),
+      weightKg,
+      bodyFatPct: num(pr.bodyFatPct, base.profile.bodyFatPct),
+      phase: phases.includes(pr.phase as Phase) ? (pr.phase as Phase) : base.profile.phase,
+      trainingDaysPerWeek: Math.min(7, num(pr.trainingDaysPerWeek, base.profile.trainingDaysPerWeek)),
+      sessionKcal: num(pr.sessionKcal, base.profile.sessionKcal),
+      activityFactor: num(pr.activityFactor, base.profile.activityFactor),
+    },
+    periodization: {
+      ...base.periodization,
+      on: toGkg(json.macrosOn, base.periodization.on),
+      off: toGkg(json.macrosOff, base.periodization.off),
+    },
+    meals: meals.length ? meals : base.meals,
+    supplements: supplements.length ? supplements : aisGroupA(weightKg),
+    coachNote: json.coachNote?.trim() || base.coachNote,
+  };
+}
