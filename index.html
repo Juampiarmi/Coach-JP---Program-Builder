@@ -4016,6 +4016,11 @@ function renderDay(){
         '<div><label class="lb">Nombre del Día</label><input data-df="title" value="' + esc(d.title) + '" placeholder="Espalda, Bíceps y Tracción Pesada"></div>' +
         '<div><label class="lb">Foco del Coach</label><textarea data-df="focusText" style="min-height:38px">' + esc(d.focusText||'') + '</textarea></div>' +
       '</div>' +
+      /* directiva maestra ("Generador Asistido por IA en Builder") --
+         botón táctico pedido explícitamente en la Ficha del Día: analiza
+         todos los bloques/ejercicios/semana activa y genera título+foco
+         (ver generarFocoDiaConIA(), reusa window.CoachAI). */
+      '<button type="button" class="btn sm gold" style="margin-top:10px" onclick="generarFocoDiaConIA(this)">✨ Generar Tips &amp; Objetivos con IA</button>' +
       '<details class="cf-acc" style="margin-top:12px">' +
         '<summary class="lb">▾ Avanzado: chip de pestaña, ID interno y notas extra</summary>' +
         '<div class="grid g3" style="margin-top:10px">' +
@@ -4468,11 +4473,22 @@ function contextoAtletaDiaIA(){
   const p = plan(S.activeId);
   const d = curDay();
   const ath = getAth(S.activeId);
+  /* directiva maestra ("Generador Asistido por IA en Builder: Objetivos y
+     Coaching Tips") -- suma la semana activa del mesociclo (S1 a S4) con
+     su RIR/RPE correspondiente (p.meso[S.ui.week].rpe, mismo dato que ya
+     muestra el pill S1-S4 del Builder) al contexto compartido que
+     consumen TODOS los generadores de IA de este archivo (nombrarBloqueConIA/
+     generarTipsSports/generarTipsPacingIA) -- antes el prompt no sabía en
+     qué semana de intensidad estaba parado el bloque, así que el tono del
+     objetivo/tips podía no coincidir con el RIR real de esa semana. */
+  const wi = (typeof S.ui.week === 'number' && p && p.meso && S.ui.week >= 0 && S.ui.week < p.meso.length) ? S.ui.week : 0;
+  const wm = (p && p.meso && p.meso[wi]) || null;
   return {
     disciplina: (p && p.meta && (p.meta.mesoName || p.meta.mesoDisc)) || '',
     focoDia: (d && (d.label || d.title)) || '',
     nivel: (ath && ath.nivel) || '',
-    lesiones: (ath && ath.tags && ath.tags.length) ? ath.tags.join('; ') : ''
+    lesiones: (ath && ath.tags && ath.tags.length) ? ath.tags.join('; ') : '',
+    semana: wm ? ((wm.short || ('S' + (wi + 1))) + (wm.phase ? ' · ' + wm.phase : '') + (wm.rpe ? ' · ' + wm.rpe : '')) : ''
   };
 }
 async function nombrarBloqueConIA(bid, btn){
@@ -4573,6 +4589,72 @@ async function nombrarBloqueConIA(bid, btn){
    fallback a texto plano) -- reescribe "Objetivo del estímulo" y
    "Coaching Tips" (b.cfCierre.objetivo/.tips) a partir de los movimientos
    ya cargados en la Pizarra Táctica del bloque. */
+/* directiva maestra ("Generador Asistido por IA en Builder: Objetivos y
+   Coaching Tips") -- botón táctico en la Ficha del Día, pedido
+   explícitamente: analiza TODOS los bloques del día activo (ejercicios,
+   patrones motores) + semana/RIR/RPE + disciplina, y genera "Foco del
+   Coach" (d.focusText) y su título (d.focusTitle) bajo el mismo tono
+   metodológico que ya usan generarTipsSports()/generarTipsPacingIA() por
+   bloque -- reutiliza el MISMO motor (window.CoachAI), sin inventar un
+   sistema de IA paralelo. */
+async function generarFocoDiaConIA(btn){
+  const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
+  if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
+    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar el foco automáticamente', 'err');
+    if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
+    return;
+  }
+  const esCF = esPlanCFActivo(plan(S.activeId));
+  const bloques = (d.bloques || []).filter(b => b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'finisher' || b.tipo === 'hyrox' || (b.tipo === 'list' && Array.isArray(b.items) && b.items.length));
+  const items = [];
+  bloques.forEach(b => { contextoBloqueIA(b).items.forEach(it => items.push(it)); });
+  if(!items.length){ toast('Agregá al menos un bloque con ejercicios antes de generar el foco con IA', 'warn'); return; }
+  const ad = contextoAtletaDiaIA();
+  const lineas = items.slice(0, 16).map(it => '- ' + it.nombre +
+    (it.patron || it.grupo ? ' (' + [it.grupo, it.patron].filter(Boolean).join(' · ') + ')' : '')).join('\n');
+  const contextoLineas = [
+    ad.disciplina ? 'Mesociclo: ' + ad.disciplina : '',
+    ad.semana ? 'Semana activa del mesociclo: ' + ad.semana + ' -- el foco debe reflejar ese nivel de esfuerzo real (no genérico).' : '',
+    ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
+    ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el foco NO debe contradecir esto.' : ''
+  ].filter(Boolean).join('\n');
+  const sistema = (esCF
+    ? 'Sos un coach de CrossFit & Hyrox de alto rendimiento. '
+    : 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. ') +
+    'Dado el listado completo de ejercicios/movimientos de la sesión de HOY, escribís en español rioplatense, ' +
+    'corto y directo (sin emojis, sin relleno), dos textos: un "título del foco técnico" (2-5 palabras, la síntesis biomecánica ' +
+    'de la sesión -- ej. "Tracción Horizontal & Densidad Metabólica") y "foco del coach" (1-2 frases, la directiva táctica ' +
+    'que el atleta lee antes de empezar, fundamentando brevemente el porqué fisiológico de la sesión). ' +
+    'Respondé SOLO con JSON válido: {"titulo":"...","foco":"..."}.';
+  const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
+    'Generá el título del foco y el foco del coach en JSON para la sesión de hoy.\nEjercicios/movimientos incluidos:\n' + lineas;
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
+  try{
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 260 });
+    const raw = String(out || '').trim();
+    let j = null;
+    try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
+    let titulo = j ? String(j.titulo || '').trim() : '';
+    let foco = j ? String(j.foco || '').trim() : '';
+    if(!titulo && !foco){
+      const partes = raw.split('\n').filter(Boolean);
+      titulo = (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g,'').trim();
+      foco = partes.slice(1).join(' ').trim();
+    }
+    if(!titulo && !foco){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
+    if(titulo) d.focusTitle = titulo;
+    if(foco) d.focusText = foco;
+    save(); renderBuilder();
+    toast('Foco del día generado con IA ⚡');
+  }catch(e){
+    console.warn('generarFocoDiaConIA', e);
+    toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
+  }finally{
+    if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
+  }
+}
 async function generarTipsPacingIA(bid, btn){
   const b = findBlock(bid); if(!b) return;
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
@@ -4586,6 +4668,7 @@ async function generarTipsPacingIA(bid, btn){
   const lineas = ctx.items.slice(0, 12).map(it => '- ' + it.nombre).join('\n');
   const contextoLineas = [
     ad.disciplina ? 'Disciplina activa: ' + ad.disciplina : '',
+    ad.semana ? 'Semana activa del mesociclo: ' + ad.semana + ' -- el objetivo/tips deben reflejar ese nivel de esfuerzo real (no genérico).' : '',
     ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
     ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el pacing/objetivo NO debe contradecir esto.' : '',
@@ -4651,6 +4734,7 @@ async function generarTipsSports(bid, btn){
     (it.patron || it.grupo ? ' (' + [it.grupo, it.patron].filter(Boolean).join(' · ') + ')' : '')).join('\n');
   const contextoLineas = [
     ad.disciplina ? 'Mesociclo: ' + ad.disciplina : '',
+    ad.semana ? 'Semana activa del mesociclo: ' + ad.semana + ' -- el objetivo/tips deben reflejar ese nivel de esfuerzo real (no genérico).' : '',
     ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
     ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el objetivo/tips NO deben contradecir esto.' : '',
@@ -5132,7 +5216,21 @@ function bindBuilder(){
     $('#alertsPanel').scrollIntoView({behavior:'smooth', block:'center'});
     toast('Chequeo de seguridad ejecutado');
   });
-  $('#btnGoExport').addEventListener('click', () => go('exportar'));
+  /* directiva maestra ("Persistencia del Alumno Activo en el Exportador")
+     -- el selector #expAth "recordaba" su propia última selección (ver
+     pintarExpAth()/repintarExportar(), más abajo: cur = $('#expAth').value
+     || S.activeId, prioriza SIEMPRE el valor previo del <select> por
+     encima del alumno realmente activo en el Builder) -- clic en "Ir a
+     Exportar" ignoraba de plano al alumno que el coach tenía abierto.
+     Mismo patrón ya usado para la fila de un alumno puntual (ver más
+     abajo, "else { go('exportar'); ... s.dispatchEvent(...) }"): sincroniza
+     el <select> con S.activeId ANTES de navegar, así carga directo su
+     planificación sin pasos manuales. */
+  $('#btnGoExport').addEventListener('click', () => {
+    go('exportar');
+    const s = $('#expAth');
+    if(s && S.activeId){ s.value = S.activeId; s.dispatchEvent(new Event('change')); }
+  });
   $('#btnAuditEx').addEventListener('click', () => { renderAuditModal(); openModal('mAudit'); });
   $('#auditFixAll').addEventListener('click', () => {
     const r = window.auditarYRepararPlanes();
@@ -5686,9 +5784,49 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   }
   @keyframes lightFlare { 0%, 100% { opacity: 0.82; } 50% { opacity: 1; } }
   .layer-storm { width: 100%; height: 100%; display: block; mix-blend-mode: screen; }
+  /* directiva maestra ("Atmósfera táctica y efecto de rayos/relámpagos
+     hiperrealistas") -- 3 destellos difusos, 100% CSS (sin canvas/timers
+     JS -- ver buildElectricStorm() apagado más abajo en el archivo):
+     refracción orgánica simulando luz de descarga filtrada entre nubes
+     de tormenta profunda. Cada capa usa un período y un retraso propios
+     (17s/23s/29s, números co-primos entre sí a propósito) para que la
+     superposición de los 3 ciclos nunca vuelva a caer en el mismo patrón
+     de forma perceptible -- variación estocástica sin una sola línea de
+     JS. Rendimiento: blur amplio + will-change + translateZ(0) fuerzan
+     su propia capa de composición en GPU, pointer-events:none para que
+     nunca intercepte scroll/tap, mix-blend-mode:screen para que sólo
+     aclare (nunca oscurece) el fondo carbón de abajo. */
+  .jp-storm-glow{
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    mix-blend-mode: screen; will-change: opacity; transform: translateZ(0);
+    opacity: 0.04;
+  }
+  .jp-storm-glow-1{
+    background: radial-gradient(ellipse 60% 46% at 22% 8%, rgba(0,229,255,.5), transparent 68%);
+    filter: blur(70px);
+    animation: jpStormDrift 17s ease-in-out infinite;
+  }
+  .jp-storm-glow-2{
+    background: radial-gradient(ellipse 55% 50% at 82% 4%, rgba(20,60,200,.45), transparent 66%);
+    filter: blur(90px);
+    animation: jpStormDrift 23s ease-in-out infinite -6s;
+  }
+  .jp-storm-glow-3{
+    background: radial-gradient(ellipse 70% 40% at 50% -6%, rgba(40,50,70,.4), transparent 70%);
+    filter: blur(50px);
+    animation: jpStormDrift 29s ease-in-out infinite -13s;
+  }
+  @keyframes jpStormDrift{
+    0%, 100% { opacity: 0.04; }
+    28%      { opacity: 0.11; }
+    52%      { opacity: 0.06; }
+    71%      { opacity: 0.15; }
+    86%      { opacity: 0.05; }
+  }
   @media (prefers-reduced-motion: reduce) {
     .layer-lights { animation: none !important; }
     .layer-storm { display: none; }
+    .jp-storm-glow{ animation: none !important; opacity: 0.06; }
   }
   .app-frame { position: fixed; inset: 0; z-index: 500; pointer-events: none; }
   .app-frame-edge {
@@ -6142,6 +6280,32 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
      (fuera del acordeón eliminado): mismo margen inferior que tenía toda
      la tarjeta .readiness-card antes, para no correr el resto del layout. */
   .rdy-foco-standalone{ margin-bottom:1.25rem; }
+  /* directiva maestra ("Micro-Acordeón Colapsable para Foco Técnico") --
+     wrapper collapsado por defecto (nativo <details>, sin atributo
+     "open"): pretag + preview truncada en una sola línea compacta,
+     expande con la MISMA animación ya establecida (rdyBodyIn) al tocar. */
+  .jp-foco-acc{ border-radius:11px; margin-bottom:1.25rem; background:rgba(0,229,255,.045); border:1px solid rgba(0,229,255,.25); overflow:hidden; }
+  .jp-foco-acc-summary{
+    list-style:none; cursor:pointer; user-select:none; display:flex; align-items:center; gap:8px;
+    padding:10px 12px; min-height:20px;
+  }
+  .jp-foco-acc-summary::-webkit-details-marker{ display:none; }
+  .jp-foco-acc-ic{ font-size:14px; line-height:1; flex-shrink:0; }
+  .jp-foco-acc-tx{
+    flex-shrink:0; font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:.66rem;
+    letter-spacing:.08em; text-transform:uppercase; color:#38BDF8;
+  }
+  .jp-foco-acc-preview{
+    flex:1; min-width:0; font-size:.78rem; color:#94a3b8;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .jp-foco-acc[open] .jp-foco-acc-preview{ display:none; }
+  .jp-foco-acc-chev{ color:var(--text-muted,#484848); font-size:11px; flex-shrink:0; transition:transform .2s ease; }
+  .jp-foco-acc[open] .jp-foco-acc-chev{ transform:rotate(180deg); }
+  .jp-foco-acc-body{ padding:0 12px 12px; }
+  .jp-foco-acc[open] .jp-foco-acc-body{ animation:rdyBodyIn .28s ease; }
+  @media (prefers-reduced-motion: reduce){ .jp-foco-acc[open] .jp-foco-acc-body{ animation:none; } }
+  .jp-foco-acc-body .rdy-foco{ margin-bottom:0; padding:0; background:none; border:none; }
   .rdy-foco{
     margin-bottom:12px;padding:10px 12px;border-radius:11px;
     background:rgba(0,229,255,.045);border:1px solid rgba(0,229,255,.25);
@@ -6918,7 +7082,17 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 
 <div class="steel-vault-bg" aria-hidden="true">
   <div class="ambient-layer layer-lights"></div>
-  <canvas class="ambient-layer layer-storm" id="stormCanvas" aria-hidden="true"></canvas>
+  <canvas class="ambient-layer layer-storm" id="stormCanvas" aria-hidden="true" hidden></canvas>
+  <!-- directiva maestra ("Atmósfera táctica y efecto de rayos/relámpagos
+       hiperrealistas") -- reemplaza el canvas de rayos fractales (ahora
+       apagado, ver buildElectricStorm() más abajo) por 3 destellos
+       difusos 100% CSS: refracción orgánica no lineal (cada capa con su
+       propio período/retraso, la superposición de 3 ciclos distintos
+       nunca se siente repetitiva), tonos cian táctico + azul eléctrico
+       profundo + carbón, desenfoque amplio, cero JS/timers. -->
+  <div class="jp-storm-glow jp-storm-glow-1"></div>
+  <div class="jp-storm-glow jp-storm-glow-2"></div>
+  <div class="jp-storm-glow jp-storm-glow-3"></div>
 </div>
 <div class="app-frame" aria-hidden="true">
   <div class="app-frame-edge top"></div>
@@ -8227,15 +8401,33 @@ function readinessResumenTxt(sleepVal, stressVal, zonas){
    ya estilizado, sin el <details>/<summary> ni las preguntas de check-in
    que lo rodeaban). renderReadinessCard()/wireReadinessCheckin() quedan
    intactas (sin invocarse) por si algo más las necesita más adelante. */
+/* directiva maestra ("Micro-Acordeón Colapsable para 'Directiva Táctica /
+   Foco Técnico'") -- la tarjeta fija (directiva anterior) ocupaba casi el
+   70% de la primera pantalla en mobile. Pasa a <details> nativo COLAPSADO
+   por defecto (mismo patrón <details>[open]+animación ya establecido en
+   el archivo para .readiness-card/.tactical-briefing, cero JS nuevo de
+   animación): [ 🎯 DIRECTIVA TÁCTICA · FOCO TÉCNICO ] ▾ + una línea de
+   previsualización truncada en titanio -- el Bloque 1 queda visible de
+   entrada sin tener que scrollear el foco completo. */
 function renderFocoTecnico(day){
   if(!day.focusText) return '';
-  return '<div class="rdy-foco-standalone">' +
-    '<div class="rdy-foco">' +
-      '<div class="rdy-foco-badge">🎯 DIRECTIVA TÁCTICA</div>' +
-      '<div class="rdy-foco-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div>' +
-      '<p class="rdy-foco-text">' + day.focusText + '</p>' +
+  var preview = String(day.focusText).replace(/\\s+/g, ' ').trim();
+  if(preview.length > 72) preview = preview.slice(0, 72).trim() + '…';
+  return '<details class="jp-foco-acc">' +
+    '<summary class="jp-foco-acc-summary">' +
+      '<span class="jp-foco-acc-ic">🎯</span>' +
+      '<span class="jp-foco-acc-tx">DIRECTIVA TÁCTICA \\u00b7 FOCO T\\u00c9CNICO</span>' +
+      '<span class="jp-foco-acc-preview">' + preview + '</span>' +
+      '<span class="jp-foco-acc-chev" aria-hidden="true">\\u25be</span>' +
+    '</summary>' +
+    '<div class="jp-foco-acc-body">' +
+      '<div class="rdy-foco">' +
+        '<div class="rdy-foco-badge">🎯 DIRECTIVA TÁCTICA</div>' +
+        '<div class="rdy-foco-title">' + (day.focusTitle||'Foco Técnico del Día') + '</div>' +
+        '<p class="rdy-foco-text">' + day.focusText + '</p>' +
+      '</div>' +
     '</div>' +
-  '</div>';
+  '</details>';
 }
 function renderReadinessCard(weekIdx, day){
   const sleepVal = getSleep(weekIdx, day.id);
@@ -10302,6 +10494,19 @@ window.addEventListener('scroll', function(){
    ELECTRIC STORM (decoración ambiental, tormenta lejana sutil)
 ========================================================= */
 (function buildElectricStorm(){
+  /* directiva maestra ("Atmósfera táctica y efecto de rayos/relámpagos
+     hiperrealistas") -- el rayo fractal de líneas duras (buildBolt/
+     strokeBolt, canvas 2D con shadowBlur + setTimeout recursivo cada
+     ~65ms mientras el flash está activo) es EXACTAMENTE lo que la
+     directiva reporta como "tosco, rígido, interfiere con la lectura" --
+     y el timer JS recursivo indefinido (scheduleNext/flash, nunca se
+     detiene salvo pestaña oculta) es costo de batería real en mobile.
+     Se apaga por completo (early return, función y canvas intactos por
+     si hace falta revertir) a favor de una atmósfera 100% CSS -- ver
+     .jp-storm-glow más abajo en el <style>, sin timers JS, difusa,
+     acelerada por GPU. */
+  return;
+  // eslint-disable-next-line no-unreachable
   const canvas = document.getElementById('stormCanvas');
   if(!canvas) return;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -11871,24 +12076,30 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        alumno necesita el RIR EXACTO que escribió el coach, rango u
        observación "/ Fallo técnico" incluidos. */
     if((m = t.match(/rir\\s*(\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?)/i))) out.rir = m[1].replace(/\\s+/g, ' ').trim();
-    /* directiva ("Refactoring maestro UI/UX Sports: bloques desestructurados
-       por especificaciones complejas") -- descanso COMPUESTO ("Rest 60s
-       entre piernas / 90s entre sets", típico de unilaterales): el número
-       relevante para el reloj de descanso real es el ÚLTIMO ("entre
-       sets"/"entre rondas", el que separa una serie completa de la
-       siguiente) -- el primero ("entre piernas"/"entre lados") queda como
-       dato secundario, absorbido en notaSecundaria más abajo. Sin el
-       patrón compuesto, sólo el primer "rest\\s*(\\d+)" simple sigue
-       cubriendo el caso de siempre (un solo descanso). */
-    var restCompM = t.match(/rest\\s*\\d+\\s*s?\\s*entre\\s*[a-záéíóúñ]+\\s*\\/\\s*(\\d+)\\s*s?\\s*entre\\s*[a-záéíóúñ]+/i);
-    if(restCompM) out.restSeconds = parseInt(restCompM[1], 10);
-    else if((m = t.match(/rest\\s*(\\d+)\\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
+    /* directiva maestra ("Parser universal y tolerante para Sports &
+       Bodybuilding") -- reescritura genérica: en vez de intentar cubrir
+       formas COMPUESTAS puntuales de descanso a mano (frágil, se rompe
+       apenas el coach redacta distinto -- "Rest 60s entre piernas / 90s
+       AL COMPLETAR AMBAS" nunca hubiera matcheado el patrón anterior,
+       anclado a "entre <palabra>" en las DOS mitades), se captura TODA la
+       cláusula de descanso tal cual venga (Rest\\s*([^|]+), hasta el
+       próximo "|" o fin de línea, sin asumir estructura interna) y se usa
+       el ÚLTIMO número mencionado ahí como el descanso real del
+       temporizador -- es siempre el que separa una serie/ronda completa
+       de la siguiente, sin importar cuántas aclaraciones vengan antes. */
+    var restM = t.match(/rest\\s*([^|]+)/i);
+    if(restM){
+      var restNums = restM[1].match(/\\d+/g);
+      if(restNums) out.restSeconds = parseInt(restNums[restNums.length - 1], 10);
+    }
     /* especificación secundaria ("por pierna"/"por lado"/"c/u"/"cada
-       lado"): nunca debe romper el reconocimiento de la dosis base ni
-       colarse como nombre de ejercicio nuevo -- se guarda aparte para que
-       el llamador la muestre como micro-etiqueta de soporte. */
+       lado"/"isométrico"): nunca debe romper el reconocimiento de la
+       dosis base ni colarse como nombre de ejercicio nuevo -- se guarda
+       aparte para que el llamador la muestre como micro-etiqueta de
+       soporte (directiva: "[ ⚡ UNILATERAL · POR PIERNA ]"). */
     if(/\\bpor\\s*pierna\\b/i.test(t)) out.notaSecundaria = 'Por pierna';
     else if(/\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b/i.test(t)) out.notaSecundaria = 'Por lado';
+    else if(/\\bisom[eé]tric[oa]\\b/i.test(t)) out.notaSecundaria = 'Isométrico';
     return out;
   }
   function esSoloDosisSB(linea, dosis){
@@ -11900,18 +12111,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        con residuo >= 4 caracteres y la dosis dejaba de reconocerse como
        continuación del ejercicio anterior (se abría un ejercicio nuevo
        fantasma con el texto de la dosis como nombre). */
-    /* directiva ("Refactoring maestro UI/UX Sports: bloques desestructurados
-       por especificaciones complejas") -- se suma el strip del descanso
-       COMPUESTO completo ("Rest 60s entre piernas / 90s entre sets", antes
-       sólo se comía "Rest 60s" y el resto de la cláusula quedaba como
-       residuo largo, tumbando la línea a "ejercicio nuevo" fantasma) y de
-       las especificaciones secundarias en prosa ("por pierna", "por
-       lado", "c/u", "cada lado") que nunca son parte del nombre. */
+    /* directiva maestra ("Parser universal y tolerante") -- el strip del
+       segmento de descanso ahora consume TODA la cláusula (rest\\s*[^|]+,
+       mismo patrón agnóstico que parsearDosisSB de arriba) sin importar
+       cuántas aclaraciones/barras traiga -- antes sólo se comía "Rest
+       60s" y el resto quedaba como residuo largo, tumbando la línea a
+       "ejercicio nuevo" fantasma. Se suma "isométrico" a las
+       especificaciones secundarias en prosa que nunca son parte del
+       nombre. */
     var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|de)?|series?\\s*(?:x|de)?|rondas?\\s*(?:x|de)?)\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*reps?\\b)?/gi, '')
       .replace(/tempo\\s*\\d{3,4}/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '')
-      .replace(/rest\\s*\\d+\\s*s?\\s*entre\\s*[a-záéíóúñ]+\\s*\\/\\s*\\d+\\s*s?\\s*entre\\s*[a-záéíóúñ]+/gi, '')
-      .replace(/rest\\s*\\d+\\s*s?/gi, '')
-      .replace(/\\bpor\\s*pierna\\b|\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b/gi, '')
+      .replace(/rest\\s*[^|]+/gi, '')
+      .replace(/\\bpor\\s*pierna\\b|\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b|\\bisom[eé]tric[oa]\\b/gi, '')
       .replace(/[|.:,\\-–\\/]/g, '').trim();
     return resto.length < 4;
   }
@@ -11977,8 +12188,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var resSub = extraerTecnicaSB(subM[3]);
         var dosisSub = parsearDosisSB(resSub.texto);
         var parenM = resSub.texto.match(/\\(([^)]+)\\)/);
-        var notaSubCombinada = [parenM ? parenM[1] : '', dosisSub.notaSecundaria || ''].filter(Boolean).join(' · ');
-        actual.subs.push({ nombre: limpiarPrefijoEstacionSB(subM[2]), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: notaSubCombinada, unidad: dosisSub.unidad || 'reps', rir: dosisSub.rir || '', restSeconds: dosisSub.restSeconds || 0 });
+        /* directiva maestra ("Parser universal y tolerante") -- "por
+           pierna"/"por lado" se montan como micro-chip táctico propio
+           (ver jp-sb-unilateral en el render, más abajo), nunca mezclados
+           dentro de la nota en cursiva genérica. */
+        var esUnilateralSub = dosisSub.notaSecundaria === 'Por pierna' || dosisSub.notaSecundaria === 'Por lado';
+        var notaSubCombinada = [parenM ? parenM[1] : '', (!esUnilateralSub && dosisSub.notaSecundaria) || ''].filter(Boolean).join(' · ');
+        actual.subs.push({ nombre: limpiarPrefijoEstacionSB(subM[2]), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: notaSubCombinada, unilateral: esUnilateralSub ? dosisSub.notaSecundaria : '', unidad: dosisSub.unidad || 'reps', rir: dosisSub.rir || '', restSeconds: dosisSub.restSeconds || 0 });
         return;
       }
       if(RX_BISET_HEAD_SB.test(linea) && (!actual || actual.tipo !== 'biserie' || actual.subs.length)){
@@ -12015,7 +12231,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         actual.rir = dosis.rir || actual.rir;
         actual.unidad = dosis.unidad || actual.unidad;
         actual.dosisAsignada = true;
-        if(dosis.notaSecundaria) actual.notas.push(dosis.notaSecundaria);
+        if(dosis.notaSecundaria){
+          if(dosis.notaSecundaria === 'Por pierna' || dosis.notaSecundaria === 'Por lado') actual.unilateral = dosis.notaSecundaria;
+          else actual.notas.push(dosis.notaSecundaria);
+        }
         var resDosis = extraerTecnicaSB(lineaParaDosis);
         if(resDosis.tecnica){
           actual.tecnica = resDosis.tecnica;
@@ -12052,6 +12271,31 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         } else if(!resNota.tecnica && resNota.texto){
           actual.notas.push(resNota.texto);
         }
+        return;
+      }
+      /* directiva maestra ("Parser universal y tolerante para Sports &
+         Bodybuilding") -- "Nombre: dosis" en UNA sola línea (sin el
+         prefijo "A1." de biset/triset, ej. "Sentadilla búlgara: 3 sets x
+         8-10 reps por pierna | Tempo 3010 | RIR 2 | Rest 60s entre
+         piernas / 90s al completar ambas") nunca abría un ejercicio con
+         dosis real -- caía siempre al catch-all de abajo con sets:0 (la
+         línea ENTERA quedaba como "nombre"), y el bloque se rendía como
+         texto plano crudo sin SET 1/SET 2 interactivos -- el bug
+         reportado explícitamente. Mismo criterio que RX_SUBEJ_SB (nombre
+         : dosis) pero sin exigir el prefijo de estación -- sólo dispara
+         si lo que sigue al PRIMER ":" matchea una dosis real reconocible
+         (nunca con un "Nota: ..."/"Objetivo: ..." suelto, que no trae
+         NxM adentro). */
+      var mNombreDosis = linea.match(/^([^:]+):\\s*(.+)$/);
+      if(mNombreDosis && RX_DOSIS_SB.test(mNombreDosis[2])){
+        var resND = extraerTecnicaSB(mNombreDosis[2]);
+        var dosisND = parsearDosisSB(resND.texto);
+        actual = { tipo:'simple', titulo: limpiarPrefijoEstacionSB(mNombreDosis[1]), sets: dosisND.sets || 0, reps: dosisND.reps || '', tempo: dosisND.tempo || '', restSeconds: dosisND.restSeconds || 0, rir: dosisND.rir || '', dosisAsignada:true, tecnica: resND.tecnica || '', tecnicaPct: resND.tecnica === 'dropset' ? extraerPctSB(resND.texto) : null, myoInfo:null, notas:[], unidad: dosisND.unidad || 'reps' };
+        if(dosisND.notaSecundaria){
+          if(dosisND.notaSecundaria === 'Por pierna' || dosisND.notaSecundaria === 'Por lado') actual.unilateral = dosisND.notaSecundaria;
+          else actual.notas.push(dosisND.notaSecundaria);
+        }
+        entries.push(actual);
         return;
       }
       actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, rir:'', dosisAsignada:false, tecnica:'', tecnicaPct:null, myoInfo:null, notas:[], unidad:'reps' };
@@ -12312,6 +12556,24 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(restSeconds) badges.push('<span class="jp-badge-rest">REST ' + restSeconds + 'S</span>');
     return badges.length ? '<div class="jp-dose-banner">' + badges.join('') + '</div>' : '';
   }
+  /* directiva maestra ("Parser universal y tolerante para Sports &
+     Bodybuilding") -- micro-chip táctico de soporte para modificadores de
+     unilateralidad/ejecución ("por pierna"/"por lado"): formato exacto
+     pedido "[ ⚡ UNILATERAL · POR PIERNA ]", nunca mezclado con la nota en
+     cursiva genérica (ver notaSubCombinada/actual.notas en
+     parsearPizarraSB, más abajo). */
+  function chipUnilateralSB(valor){
+    if(!valor) return '';
+    return '<span class="jp-sb-unilateral">\\u26a1 UNILATERAL \\u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
+  }
+  /* directiva maestra ("Estilización de Listados de Activación") -- el
+     glifo táctico (▸, cian, ver .jp-sb-plain-warmup::before en CSS) ya
+     comunica el bullet visualmente -- un guión común "-" que el coach
+     tipeó a mano al redactar la línea ("- Movilidad de cadera: ...")
+     nunca debe quedar duplicado/colgando al inicio del nombre. */
+  function limpiarGuionActivacionSB(nombre){
+    return String(nombre || '').replace(/^[\\s\\-–—•*]+/, '').trim();
+  }
   function pizarraSports(blockEl, block, weekIdx, dayId){
     if(esBloqueVacioCF(block)) return;
     const body = blockEl.querySelector('.block-body');
@@ -12342,9 +12604,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         if(esCalentamiento){
           const subsPlain = entry.subs.map(function(sub){
             const dosisTxt = sub.reps ? sub.reps + ' ' + (sub.unidad || 'reps') : '';
-            return '<div class="jp-sb-plain">' +
+            return '<div class="jp-sb-plain jp-sb-plain-warmup">' +
                 (dosisTxt ? '<span class="jp-sb-plain-pill">' + escSB(dosisTxt) + '</span>' : '') +
-                '<span class="jp-sb-plain-nombre">' + escSB(sub.nombre) + '</span>' +
+                '<span class="jp-sb-plain-nombre">' + escSB(limpiarGuionActivacionSB(sub.nombre)) + '</span>' +
                 (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
               '</div>';
           }).join('');
@@ -12360,14 +12622,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
                 '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + videoLinkHtml(sub.nombre) + '</div>' +
               dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds) +
+              chipUnilateralSB(sub.unilateral) +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
               renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica } : null) +
             '</div>';
         }).join('');
+        /* directiva maestra ("Erradicación del contador de rondas en
+           Sports") -- se retira por completo el widget [-] RONDA X DE N
+           [+] [✓ RONDA COMPLETA]: en Sports el progreso se mide
+           exclusivamente por la completitud de CADA serie individual (ya
+           interactiva vía renderSetRowsNativeSB arriba), nunca por un
+           contador de rondas aparte. contadorRondasSB() queda intacta
+           (sin invocarse) -- es un componente conceptualmente de
+           WOD/AMRAP/For Time, nunca usado por CrossFit de todos modos
+           (pizarraSports() es exclusiva de Sports). */
         filas += '<div class="jp-sb-biset">' +
             '<div class="jp-sb-biset-title">' + escSB(entry.titulo) + '</div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
-            contadorRondasSB(weekIdx, dayId, block.id, idx, entry.rondas || 3) +
           '</div>';
         return;
       }
@@ -12390,9 +12661,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(!entry.sets || esCalentamiento){
         const partesPlain = jpCfSplit(entry.titulo);
         const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
-        filas += '<div class="jp-sb-plain">' +
+        filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
             (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
-            '<span class="jp-sb-plain-nombre">' + escSB(partesPlain.nm) + '</span>' + (esCalentamiento ? '' : videoLinkHtml(partesPlain.nm)) +
+            '<span class="jp-sb-plain-nombre">' + escSB(esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm) + '</span>' + (esCalentamiento ? '' : videoLinkHtml(partesPlain.nm)) +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
             (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           '</div>';
@@ -12402,6 +12673,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
           dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
+          chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null) +
         '</div>';
@@ -12419,9 +12691,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const videosBloque = recolectarVideosSB(entries, esCalentamiento);
     const tieneObjTips = block.objective || block.tips;
     const tieneAcc = tieneObjTips || videosBloque.length;
+    /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
+       -- el énfasis muscular/técnico que el coach agrega entre paréntesis
+       al título del bloque ("BLOQUE 4 | GLÚTEO (EXTENSIÓN DE CADERA &
+       TENSIÓN MECÁNICA)") ya no se deja pegado al título principal en
+       naranja pleno -- se separa a su propia línea técnica con doble
+       barra ("// ..."), mismo patrón ya usado para el título de la
+       sesión (splitTituloSesionSports). */
+    const tituloBloqueM = String(block.title || '').match(/^(.*?)\\s*\\(([^)]+)\\)\\s*$/);
+    const tituloBloquePrincipal = tituloBloqueM ? (tituloBloqueM[1].trim() || block.title) : (block.title || '');
+    const tituloBloqueEnfasis = tituloBloqueM ? tituloBloqueM[2].trim() : '';
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
         '<div class="jp-sb-tag">[ SPORTS &middot; ' + (esCalentamiento ? '🔥 ACTIVACI\\u00d3N' : '💪 BLOQUE') + ' ]</div>' +
-        '<div class="jp-sb-title">' + escSB(block.title || '') + '</div>' +
+        '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>' +
+        (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         filas +
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS, TIPS &amp; VIDEOS DEL BLOQUE</summary>' +
@@ -20733,35 +21016,16 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
       if(bl.querySelector('.set-tracker')) return;
       state.logs = state.logs || {};
 
+      /* directiva maestra ("Erradicación del contador de rondas en
+         Sports") -- se retira por completo el widget [-] RONDA X DE N [+]
+         [✓ COMPLETAR] de TODA la vista de Sports (registro() sólo corre
+         acá, nunca en CrossFit -- ver el guard cf-modo al inicio de la
+         función). En Sports el progreso se mide exclusivamente por la
+         completitud de cada serie individual, nunca por un contador de
+         rondas aparte. esCircuitoRondas()/claveLog() quedan intactas (sin
+         invocarse acá) por si algo más las necesita más adelante. */
       if(esCircuitoRondas(b)){
-        if(bl.querySelector('.circuit-rounds')) return;
-        var kR = claveLog(bl, 'rondas');
-        var vR = state.logs[kR] || { ok:false, txt:'' };
-        var ultimaFila = bl.querySelector('.ex-row:last-of-type') || bl.querySelector('.circuit-note:last-of-type');
-        /* directiva ("Refactoring maestro UI/UX Sports: limpieza de texto
-           truncado en contador de rondas") -- la etiqueta larga "🔁 Rondas
-           completadas" se recortaba visualmente a "RO..." contra el
-           stepper [-] [input] [+] en pantallas angostas. Etiqueta corta
-           ("RONDAS:") que nunca necesita truncarse + total detectado del
-           propio texto del bloque (si el coach escribió "N rondas") para
-           mostrar meta real + botón directo de una sola acción para
-           cerrar el circuito sin tener que tocar [+] repetidas veces. */
-        var totalRondasTxt = (b.title || '') + ' ' + (b.subtitle || '') + ' ' + (b.items || []).join(' ');
-        var mTotalRondas = totalRondasTxt.match(/(\\d+)\\s*rondas?\\b/i) || totalRondasTxt.match(/(\\d+)\\s*rounds?\\b/i);
-        var totalRondasN = mTotalRondas ? parseInt(mTotalRondas[1], 10) : 0;
-        var cajaR = document.createElement('div');
-        cajaR.className = 'mini-log circuit-rounds';
-        cajaR.dataset.crTotal = String(totalRondasN);
-        cajaR.innerHTML = '<label class="cr-lb">RONDAS' + (totalRondasN ? ' DE ' + totalRondasN : '') + ':</label>' +
-          '<div class="cr-stepper">' +
-            '<button type="button" class="cr-btn" data-cr-dec="' + kR + '" aria-label="Restar ronda">–</button>' +
-            '<input type="text" inputmode="numeric" class="cr-val" data-lgt="' + kR + '" value="' + esc(String(vR.txt || '0')) + '">' +
-            '<button type="button" class="cr-btn" data-cr-inc="' + kR + '" aria-label="Sumar ronda">+</button>' +
-          '</div>' +
-          '<button type="button" class="cr-btn-completar" data-cr-completar="' + kR + '" aria-label="Marcar circuito completo">\\u2713 COMPLETAR</button>';
-        if(ultimaFila && ultimaFila.parentNode) ultimaFila.parentNode.insertBefore(cajaR, ultimaFila.nextSibling);
-        else bl.appendChild(cajaR);
-        return;                                        /* un solo tracker para todo el bloque */
+        return;
       }
 
       bl.querySelectorAll('.ex-row').forEach(function(row, i){
@@ -27523,16 +27787,17 @@ body.focus-mode .hd-dock{display:none}
   max-width:88px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 .hdc-days-wrap .day-tab.active .tab-label{ color:#C99A6F; }
-.hdc-days-wrap .day-tab .day-dot{ margin-top:2px; width:6px; height:6px; }
 /* directiva ("Refactoring maestro UI/UX Sports: erradicación del cyan dot
-   bajo pestañas de días") -- el día activo ya se comunica por completo con
-   el marco/fondo de la propia cápsula (ver reglas de abajo): el punto
-   flotante debajo (heredado de .day-dot, pensado para el pill original de
-   2 líneas, ver comentario de esta sección) quedaba redundante Y se leía
-   como un elemento roto/descentrado -- se apaga sólo para el día activo
-   (el de los demás días sigue marcando sesión completada, sin tocar esa
-   señal). */
-.hdc-days-wrap .day-tab.active .day-dot{ display:none; }
+   bajo pestañas de días") -- primera pasada sólo apagaba el punto del día
+   ACTIVO (el resto seguía marcando sesión completada). directiva maestra
+   ("Limpieza de indicadores y títulos secundarios") pide erradicar
+   CUALQUIER punto residual, activo o inactivo -- el estado de día
+   completado/activo ya se comunica por completo con el marco/fondo de la
+   propia cápsula (ver reglas de abajo), sin necesidad de ningún punto
+   flotante. Scopeado a Sports (body:not(.cf-disc)): CrossFit tiene su
+   propio .day-dot con semántica y color propios (body.cf-disc .day-tab
+   .day-dot, más abajo en el archivo) y no se toca. */
+body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:none !important; }
 .hdc-days-wrap .day-tab.active{ background:rgba(255,107,0,.12) !important; border-color:#ff6b00 !important; }
 .hdc-days-wrap .day-tab.active .tab-name{ color:#F2C89A !important; }
 .hdc-days-wrap .day-tab.active::after{ display:none; }
@@ -29404,6 +29669,13 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-size:1.15rem; letter-spacing:.02em; color:#EDEFF2; text-transform:uppercase;
   margin-bottom:10px;
 }
+/* directiva maestra ("Limpieza de indicadores y títulos secundarios") --
+   línea técnica de énfasis muscular/de ejecución, valores EXACTOS
+   pedidos: nunca naranja pleno "tosco" pegado al título principal. */
+.jp-block-emphasis{
+  font-size:.85rem; color:#ff6b00; font-weight:700; letter-spacing:.04em;
+  margin:-4px 0 10px; text-transform:uppercase;
+}
 .jp-sb-objective, .jp-sb-tips{
   font-size:.86rem; line-height:1.5; color:rgba(237,239,242,.82);
   background:rgba(56,189,248,.06); border:1px solid var(--line); border-radius:10px;
@@ -29451,6 +29723,15 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .jp-badge-rir.jp-rir-alto{ background:rgba(255,107,0,.15); border:1px solid #ff6b00; color:#ff8533; }
 .jp-badge-rir.jp-rir-margen{ background:rgba(255,214,0,.12); border:1px solid #ffd600; color:#ffd600; }
 .jp-sb-nota{ font-size:.8rem; color:rgba(237,239,242,.7); margin-top:5px; font-style:italic; }
+/* directiva maestra ("Parser universal y tolerante") -- micro-chip
+   táctico cian de soporte para modificadores de unilateralidad/ejecución
+   ("por pierna"/"por lado"), separado de la nota en cursiva genérica. */
+.jp-sb-unilateral{
+  display:inline-block; margin-top:6px; padding:3px 9px; border-radius:6px;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.66rem; letter-spacing:.05em; text-transform:uppercase;
+  background:rgba(0,229,255,.1); color:#00e5ff; border:1px solid rgba(0,229,255,.35);
+}
 .jp-sb-badge{
   /* directiva ("Jerarquía Cromática" / "Homogeneización Cromática
      Exacta"): pastilla naranja táctico #ff6b00 exacto, alto contraste,
@@ -29540,6 +29821,13 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   background:rgba(0,229,255,.12); color:#00e5ff; border:1px solid rgba(0,229,255,.35);
 }
 .jp-sb-plain-nombre{ font-size:.9rem; color:#f8fafc; letter-spacing:.01em; }
+/* directiva maestra ("Estilización de Listados de Activación") -- glifo
+   táctico cian en vez del guión común "-", con sangría uniforme, para
+   bloques de movilidad/entrada en calor. */
+.jp-sb-plain-warmup{ padding-left:4px; }
+.jp-sb-plain-warmup::before{
+  content:'\\25b8'; color:#00e5ff; font-weight:800; font-size:.9rem; flex-shrink:0; line-height:1;
+}
 /* directiva ("Refactor visual: tabla táctica de series"): recolorea SÓLO
    dentro del tablero de Pizarra Sports la fila "expandida" (ver
    set-row-expanded forzada en pizarraSports()) de fondo cobre/ámbar
