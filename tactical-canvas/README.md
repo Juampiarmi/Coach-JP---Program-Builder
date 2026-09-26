@@ -18,10 +18,16 @@ funciona sin conexión.
 
 ## Qué hace
 
-- **4 plantillas**: Métrica Gigante, Comparativa A/B, Gráfico/Telemetría (dispersión o
-  curvas, con zona óptima, umbral y marcador vertical) y Sentencia de Texto.
-- **Formatos**: 4:5 Feed (1080×1350) y 9:16 Story (1080×1920, con márgenes seguros para
-  la UI de Instagram).
+- **4 plantillas**: Métrica Gigante, Comparativa A/B, Gráfico/Telemetría y Sentencia de Texto.
+- **Gráfico simplificado**: se define con mínimo, máximo, unidad, etiqueta y zona óptima en
+  texto (`70-90`). Tres modos: curva (pico en zona, sube o cae), barras (etiquetas y valores
+  separados por coma) y medidor de umbral (valor actual y umbral).
+- **Foto de fondo**: se reduce a 2400 px y se guarda en el navegador. Tiene una capa
+  táctica de oscurecimiento ajustable del 30 al 90 % y la opción de placa sólida flotante
+  con efecto de vidrio esmerilado.
+- **Formatos**: 4:5 Feed (1080×1350) y 9:16 Story (1080×1920). En Story todo queda dentro
+  de la zona segura central de 1080×1420, con 250 px libres arriba y abajo; la vista previa
+  muestra esas franjas como guía.
 - **Exportación**: PNG con `pixelRatio: 3`, o sea 3240×4050 (feed) o 3240×5760 (story).
   En iOS el ratio se ajusta solo para no pasarse del límite de canvas de Safari. En el
   celular también aparece un botón **Compartir** que manda el archivo directo a

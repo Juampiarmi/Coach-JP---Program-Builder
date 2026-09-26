@@ -53,7 +53,7 @@ export function ExportButtons({ target, state, compact }: Props) {
           disabled={status === 'busy'}
           className={`group relative flex-1 overflow-hidden rounded-xl bg-fire font-mono font-bold tracking-[0.1em] text-carbon transition hover:brightness-110 active:scale-[.99] disabled:cursor-wait disabled:opacity-80 ${
             compact ? 'px-3 py-3 text-[11px]' : 'px-5 py-4 text-[13px]'
-          } shadow-[0_10px_40px_-12px_rgba(255,107,0,.8)]`}
+          } shadow-[0_10px_40px_-12px_rgba(234,88,12,.8)]`}
         >
           {status === 'busy' && <span className="absolute inset-0 animate-pulse bg-white/20" />}
           <span className="relative flex items-center justify-center gap-2">

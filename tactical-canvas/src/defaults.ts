@@ -1,25 +1,19 @@
-import { generateScatter } from './lib/chart'
 import type { CanvasState, ChartConfig, TemplateId } from './types'
 
 const baseChart: ChartConfig = {
-  mode: 'scatter',
-  title: 'CADENCIA (RPM) VS. FUERZA POR PEDALADA',
-  scatter: generateScatter(7),
-  seriesA: '62, 66, 58, 72, 63, 68, 65',
-  seriesALabel: 'Semana normal',
-  seriesB: '',
-  seriesBLabel: 'Semana de fatiga',
-  showZone: true,
-  zoneFrom: 45,
-  zoneTo: 70,
+  mode: 'curve',
+  title: 'CADENCIA (RPM) VS. EFICIENCIA NEUROMUSCULAR',
+  min: 40,
+  max: 130,
+  unit: 'rpm',
+  zone: '70-90',
   zoneLabel: 'Zona óptima de eficiencia neuromuscular (70–90 rpm)',
-  showThreshold: false,
-  threshold: 35,
-  thresholdLabel: 'umbral de alerta',
-  showMarker: false,
-  marker: 33,
-  markerLabel: 'Acá aparece la sed',
-  markerSub: '(2% de pérdida de fluidos)',
+  shape: 'bell',
+  barLabels: '50, 60, 70, 80, 90, 100, 110',
+  barValues: '58, 66, 81, 88, 84, 70, 61',
+  gaugeValue: 82,
+  gaugeThreshold: 95,
+  gaugeLabel: 'Cadencia media',
 }
 
 export const DEFAULT_STATE: CanvasState = {
@@ -41,6 +35,8 @@ export const DEFAULT_STATE: CanvasState = {
   verdict: 'MISMA GANANCIA. DISTINTO DOLOR.',
   chart: baseChart,
   kicker: 'EL RESULTADO NO SE NEGOCIA. EL MÉTODO, TAMPOCO.',
+  bgOverlay: 65,
+  floatingPlate: false,
 }
 
 /** Contenido de ejemplo por plantilla (tomado de las placas de referencia). */
@@ -87,58 +83,39 @@ export const SAMPLES: Record<TemplateId, Partial<CanvasState>> = {
   },
 }
 
-/** Presets extra del gráfico para las dos placas de curva de referencia. */
+/** Presets rápidos del gráfico. */
 export const CHART_PRESETS: { label: string; chart: Partial<ChartConfig> }[] = [
-  {
-    label: 'Dispersión · cadencia',
-    chart: { ...baseChart },
-  },
-  {
-    label: 'Curvas · HRV fatiga',
-    chart: {
-      mode: 'curve',
-      title: 'HRV DIARIO · SEMANA NORMAL VS. SEMANA DE FATIGA',
-      seriesA: '62, 66, 58, 72, 63, 68, 65',
-      seriesALabel: 'Semana normal',
-      seriesB: '56, 47, 41, 35, 30, 25, 22',
-      seriesBLabel: 'Semana de fatiga',
-      showZone: false,
-      showThreshold: true,
-      threshold: 38,
-      thresholdLabel: 'umbral de alerta',
-      showMarker: false,
-    },
-  },
-  {
-    label: 'Curva · potencia vs. sed',
-    chart: {
-      mode: 'curve',
-      title: 'POTENCIA SOSTENIDA VS. % DESHIDRATACIÓN',
-      seriesA: '100, 98, 94, 88, 80, 72, 65',
-      seriesALabel: 'Potencia sostenida',
-      seriesB: '',
-      showZone: false,
-      showThreshold: false,
-      showMarker: true,
-      marker: 33,
-      markerLabel: 'Acá aparece la sed',
-      markerSub: '(2% de pérdida de fluidos)',
-    },
-  },
+  { label: 'Curva · cadencia', chart: { ...baseChart } },
   {
     label: 'Curva · lactato',
     chart: {
       mode: 'curve',
-      title: 'LACTATO SANGUÍNEO (MMOL/L) VS. INTENSIDAD',
-      seriesA: '1.1, 1.2, 1.3, 1.5, 1.9, 2.6, 4.0, 6.2, 9.0',
-      seriesALabel: 'Lactato',
-      seriesB: '',
-      showZone: true,
-      zoneFrom: 50,
-      zoneTo: 72,
+      shape: 'rise',
+      title: 'LACTATO SANGUÍNEO VS. POTENCIA (W)',
+      min: 100,
+      max: 400,
+      unit: 'W',
+      zone: '240-280',
       zoneLabel: 'Zona de umbral: donde se construye la resistencia',
-      showThreshold: false,
-      showMarker: false,
+    },
+  },
+  {
+    label: 'Barras · cadencia',
+    chart: { ...baseChart, mode: 'bars', title: 'EFICIENCIA (%) POR CADENCIA (RPM)', min: 0, max: 100, unit: '%' },
+  },
+  {
+    label: 'Medidor · HRV',
+    chart: {
+      mode: 'gauge',
+      title: 'HRV DE HOY VS. TU LÍNEA BASE',
+      min: 20,
+      max: 100,
+      unit: 'ms',
+      zone: '55-80',
+      zoneLabel: 'Rango normal de tu HRV',
+      gaugeValue: 41,
+      gaugeThreshold: 50,
+      gaugeLabel: 'HRV matinal',
     },
   },
 ]

@@ -5,17 +5,19 @@ import { Segmented } from './components/controls/primitives'
 import { ExportButtons } from './components/ExportButtons'
 import { Preview } from './components/Preview'
 import { DEFAULT_STATE } from './defaults'
+import { useBackgroundImage } from './hooks/useBackgroundImage'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { usePersistentState } from './hooks/usePersistentState'
 import type { AspectId, CanvasState } from './types'
 
-const STORAGE_KEY = 'jp-tactical-canvas:v1'
+const STORAGE_KEY = 'jp-tactical-canvas:v2'
 
 export default function App() {
   const [state, setState] = usePersistentState<CanvasState>(STORAGE_KEY, DEFAULT_STATE)
   const canvasRef = useRef<HTMLDivElement>(null)
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const bg = useBackgroundImage()
 
   const update = useCallback((patch: Partial<CanvasState>) => setState((s) => ({ ...s, ...patch })), [setState])
   const reset = useCallback(() => setState(DEFAULT_STATE), [setState])
@@ -40,7 +42,14 @@ export default function App() {
             <BrandBar />
           </div>
           <div className="tc-scroll flex-1 overflow-y-auto">
-            <ControlPanel state={state} update={update} onReset={reset} />
+            <ControlPanel
+              state={state}
+              update={update}
+              onReset={reset}
+              bgImage={bg.image}
+              setBgImage={bg.setImage}
+              bgPersisted={bg.persisted}
+            />
           </div>
         </aside>
         <main className="tc-grid-bg flex min-w-0 flex-1 flex-col">
@@ -51,7 +60,7 @@ export default function App() {
             <div className="w-64">{aspectToggle}</div>
           </div>
           <div className="min-h-0 flex-1 p-6">
-            <Preview state={state} canvasRef={canvasRef} gutter={16} />
+            <Preview state={state} bgImage={bg.image} canvasRef={canvasRef} gutter={16} />
           </div>
           <div className="mx-auto w-full max-w-xl px-6 pb-6">
             <ExportButtons target={canvasRef} state={state} />
@@ -69,7 +78,7 @@ export default function App() {
       </header>
 
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
-        <Preview state={state} canvasRef={canvasRef} gutter={4} />
+        <Preview state={state} bgImage={bg.image} canvasRef={canvasRef} gutter={4} />
       </main>
 
       <section
@@ -96,7 +105,14 @@ export default function App() {
         </button>
         {drawerOpen && (
           <div className="tc-scroll min-h-0 flex-1 overflow-y-auto border-t border-line">
-            <ControlPanel state={state} update={update} onReset={reset} />
+            <ControlPanel
+              state={state}
+              update={update}
+              onReset={reset}
+              bgImage={bg.image}
+              setBgImage={bg.setImage}
+              bgPersisted={bg.persisted}
+            />
           </div>
         )}
         <div className="border-t border-line px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">

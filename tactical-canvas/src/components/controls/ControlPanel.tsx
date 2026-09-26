@@ -1,40 +1,56 @@
+import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
 import { HEADLINE_FONTS, TAG_PRESETS } from '../../lib/brand'
-import { generateScatter } from '../../lib/chart'
-import type { Accent, CanvasState, ChartConfig, CompareCard, HeadlineFont, TemplateId } from '../../types'
-import { AccentPicker, Field, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
+import { loadBackground } from '../../lib/image'
+import type { Accent, CanvasState, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, TemplateId } from '../../types'
+import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
-  { id: 'metric', n: '01', label: 'Métrica Gigante' },
-  { id: 'compare', n: '02', label: 'Comparativa A/B' },
-  { id: 'chart', n: '03', label: 'Gráfico / Telemetría' },
-  { id: 'statement', n: '04', label: 'Sentencia de Texto' },
+  { id: 'metric', n: '01', label: 'Métrica' },
+  { id: 'compare', n: '02', label: 'A/B' },
+  { id: 'chart', n: '03', label: 'Gráfico' },
+  { id: 'statement', n: '04', label: 'Sentencia' },
 ]
 
 const CARD_ACCENTS: Accent[] = ['cyan', 'orange', 'gold', 'gray', 'white']
-
-function AspectLabel({ ratio, size }: { ratio: string; size: string }) {
-  return (
-    <span className="block leading-tight">
-      [ {ratio} ]<span className="block text-[10px] font-normal opacity-70">{size}</span>
-    </span>
-  )
-}
 
 interface Props {
   state: CanvasState
   update: (patch: Partial<CanvasState>) => void
   onReset: () => void
+  bgImage: string | null
+  setBgImage: (img: string | null) => void
+  bgPersisted: boolean
 }
 
-export function ControlPanel({ state, update, onReset }: Props) {
+export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted }: Props) {
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [loadingImg, setLoadingImg] = useState(false)
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return
+    setLoadingImg(true)
+    try {
+      setBgImage(await loadBackground(file))
+    } catch (err) {
+      console.error(err)
+      alert('No se pudo leer la imagen.')
+    } finally {
+      setLoadingImg(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const chart = state.chart
+  const templateLabel = TEMPLATES.find((t) => t.id === state.template)!.label
 
   return (
     <div>
-      <Section index="01" title="Plantilla">
-        <div className="grid grid-cols-2 gap-2">
+      {/* Plantilla: pestañas compactas siempre visibles */}
+      <div className="border-b border-line px-4 py-3">
+        <div className="grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
           {TEMPLATES.map((t) => {
             const on = state.template === t.id
             return (
@@ -43,63 +59,45 @@ export function ControlPanel({ state, update, onReset }: Props) {
                 type="button"
                 onClick={() => update({ template: t.id })}
                 aria-pressed={on}
-                className={`rounded-xl border px-3 py-3 text-left transition ${
-                  on
-                    ? 'border-cyan/70 bg-cyan/10 shadow-[inset_0_0_0_1px_rgba(0,229,255,.25)]'
-                    : 'border-line bg-surface-2 hover:border-steel/40'
-                }`}
+                className={`rounded-md px-1 py-1.5 text-center transition ${on ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'}`}
               >
-                <span className={`block font-mono text-[10px] tracking-[0.2em] ${on ? 'text-cyan' : 'text-steel/70'}`}>{t.n}</span>
-                <span className={`mt-1 block text-[13px] leading-tight font-semibold ${on ? 'text-white' : 'text-steel'}`}>{t.label}</span>
+                <span className="block font-mono text-[9px] tracking-[0.18em] opacity-70">{t.n}</span>
+                <span className="block text-[12px] leading-tight font-semibold">{t.label}</span>
               </button>
             )
           })}
         </div>
-        <button
-          type="button"
-          onClick={() => update(SAMPLES[state.template])}
-          className="w-full rounded-lg border border-dashed border-line py-2 font-mono text-[11px] tracking-[0.14em] text-steel uppercase transition hover:border-cyan/50 hover:text-cyan"
-        >
-          Cargar ejemplo de esta plantilla
-        </button>
-      </Section>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => update(SAMPLES[state.template])}
+            className="flex-1 rounded-md border border-dashed border-line py-1.5 font-mono text-[10px] tracking-[0.12em] text-steel uppercase transition hover:border-cyan/50 hover:text-cyan"
+          >
+            Cargar ejemplo
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (confirm('¿Restablecer todos los campos a los valores iniciales?')) onReset()
+            }}
+            className="rounded-md border border-line px-3 py-1.5 font-mono text-[10px] tracking-[0.12em] text-steel uppercase transition hover:border-fire/60 hover:text-fire"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
 
-      <Section index="02" title="Formato">
-        <Field label="Relación de aspecto" plain>
-          <Segmented
-            value={state.aspect}
-            onChange={(aspect) => update({ aspect })}
-            options={[
-              { value: 'feed', label: <AspectLabel ratio="4:5 FEED" size="1080×1350" /> },
-              { value: 'story', label: <AspectLabel ratio="9:16 STORY" size="1080×1920" /> },
-            ]}
-            size="sm"
-          />
-        </Field>
-        <Field label="Tipografía del titular" plain>
-          <Segmented<HeadlineFont>
-            value={state.headlineFont}
-            onChange={(headlineFont) => update({ headlineFont })}
-            options={(Object.keys(HEADLINE_FONTS) as HeadlineFont[]).map((k) => ({ value: k, label: HEADLINE_FONTS[k].label }))}
-            size="sm"
-          />
-        </Field>
-        <Field label="Escala del titular">
-          <Range value={state.headlineScale} onChange={(headlineScale) => update({ headlineScale })} min={60} max={140} step={2} suffix="%" />
-        </Field>
-      </Section>
-
-      <Section index="03" title="Header">
-        <Field label="Tag superior" hint="se muestra entre [ corchetes ]">
+      <Section index="01" title="Texto" summary={`${state.headlineA} ${state.headlineB}`}>
+        <Field label="Tag superior">
           <TextInput value={state.tag} onChange={(tag) => update({ tag })} uppercase placeholder="DISCIPLINA · CATEGORÍA" />
         </Field>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="-mt-1 flex gap-1.5 overflow-x-auto pb-1 tc-scroll">
           {TAG_PRESETS.map((p) => (
             <button
               key={p}
               type="button"
               onClick={() => update({ tag: p })}
-              className={`rounded-md border px-2 py-1 font-mono text-[10px] tracking-wider transition ${
+              className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] tracking-wider whitespace-nowrap transition ${
                 state.tag === p ? 'border-cyan/60 bg-cyan/10 text-cyan' : 'border-line text-steel hover:text-white'
               }`}
             >
@@ -107,50 +105,51 @@ export function ControlPanel({ state, update, onReset }: Props) {
             </button>
           ))}
         </div>
-        <Field label="Titular · parte 1" hint={<span className="text-white">blanco</span>}>
-          <TextArea value={state.headlineA} onChange={(headlineA) => update({ headlineA })} rows={2} />
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Titular · blanco">
+            <TextArea value={state.headlineA} onChange={(headlineA) => update({ headlineA })} rows={2} />
+          </Field>
+          <Field label="Remate · naranja">
+            <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
+          </Field>
+        </div>
+        <Field label="Párrafo" hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
+          <TextArea value={state.body} onChange={(body) => update({ body })} rows={3} />
         </Field>
-        <Field label="Titular · parte 2" hint={<span className="text-fire">naranja fuego</span>}>
-          <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
-        </Field>
-        <p className="font-mono text-[11px] leading-relaxed text-steel/70">
-          Tip: envolvé una palabra en <span className="text-white">*asteriscos*</span> para invertir su color dentro de cualquier parte.
-        </p>
       </Section>
 
-      <Section index="04" title={TEMPLATES.find((t) => t.id === state.template)!.label}>
+      <Section index="02" title={templateLabel} summary={summaryFor(state)}>
         {state.template === 'metric' && (
           <>
-            <Field label="Métrica gigante" hint="ej: 3X · ~600 · 7700 · +14%">
-              <TextInput value={state.metricValue} onChange={(metricValue) => update({ metricValue })} />
-            </Field>
-            <Field label="Subtítulo de la métrica">
-              <TextInput value={state.metricLabel} onChange={(metricLabel) => update({ metricLabel })} uppercase />
-            </Field>
-            <Field label="Color de la métrica" plain>
-              <AccentPicker value={state.metricAccent} onChange={(metricAccent) => update({ metricAccent })} options={['orange', 'cyan', 'gold']} />
-            </Field>
+            <div className="grid grid-cols-[1fr_2fr] gap-2">
+              <Field label="Métrica">
+                <TextInput value={state.metricValue} onChange={(metricValue) => update({ metricValue })} placeholder="+14%" />
+              </Field>
+              <Field label="Subtítulo">
+                <TextInput value={state.metricLabel} onChange={(metricLabel) => update({ metricLabel })} uppercase />
+              </Field>
+            </div>
+            <AccentPicker value={state.metricAccent} onChange={(metricAccent) => update({ metricAccent })} options={['orange', 'cyan', 'gold']} />
           </>
         )}
 
         {state.template === 'compare' && (
           <>
             {(['cardA', 'cardB'] as const).map((key, i) => (
-              <div key={key} className="space-y-3 rounded-xl border border-line bg-surface-2/60 p-3">
-                <p className="font-mono text-[10px] tracking-[0.2em] text-steel/70">TARJETA {i === 0 ? 'A' : 'B'}</p>
-                <Field label="Etiqueta">
-                  <TextInput value={state[key].label} onChange={(label) => setCard(key, { label })} uppercase />
-                </Field>
-                <Field label="Valor">
-                  <TextInput value={state[key].value} onChange={(value) => setCard(key, { value })} />
-                </Field>
-                <Field label="Descripción">
-                  <TextInput value={state[key].caption} onChange={(caption) => setCard(key, { caption })} />
-                </Field>
+              <div key={key} className="space-y-2 rounded-lg border border-line bg-surface-2/60 p-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label={`Tarjeta ${i === 0 ? 'A' : 'B'} · etiqueta`}>
+                    <TextInput value={state[key].label} onChange={(label) => setCard(key, { label })} uppercase />
+                  </Field>
+                  <Field label="Valor">
+                    <TextInput value={state[key].value} onChange={(value) => setCard(key, { value })} />
+                  </Field>
+                </div>
+                <TextInput value={state[key].caption} onChange={(caption) => setCard(key, { caption })} placeholder="Descripción" />
                 <AccentPicker value={state[key].accent} onChange={(accent) => setCard(key, { accent })} options={CARD_ACCENTS} />
               </div>
             ))}
-            <Field label="Veredicto" hint={<span className="text-gold">oro táctico</span>}>
+            <Field label="Veredicto · oro">
               <TextInput value={state.verdict} onChange={(verdict) => update({ verdict })} uppercase />
             </Field>
           </>
@@ -158,154 +157,174 @@ export function ControlPanel({ state, update, onReset }: Props) {
 
         {state.template === 'chart' && (
           <>
-            <Field label="Preset de gráfico" plain>
-              <div className="grid grid-cols-2 gap-1.5">
-                {CHART_PRESETS.map((p) => (
-                  <button
-                    key={p.label}
-                    type="button"
-                    onClick={() => setChart(p.chart)}
-                    className="rounded-md border border-line px-2 py-1.5 text-left font-mono text-[10px] tracking-wider text-steel transition hover:border-cyan/50 hover:text-cyan"
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 tc-scroll">
+              {CHART_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => setChart(p.chart)}
+                  className="shrink-0 rounded border border-line px-1.5 py-0.5 font-mono text-[9px] tracking-wider whitespace-nowrap text-steel transition hover:border-cyan/50 hover:text-cyan"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <Segmented<ChartMode>
+              value={chart.mode}
+              onChange={(mode) => setChart({ mode })}
+              options={[
+                { value: 'curve', label: 'CURVA' },
+                { value: 'bars', label: 'BARRAS' },
+                { value: 'gauge', label: 'MEDIDOR' },
+              ]}
+              size="sm"
+            />
+            <Field label="Etiqueta de la curva">
+              <TextInput value={chart.title} onChange={(title) => setChart({ title })} uppercase placeholder="CADENCIA VS. FUERZA" />
             </Field>
-            <Field label="Tipo" plain>
-              <Segmented
-                value={state.chart.mode}
-                onChange={(mode) => setChart({ mode })}
-                options={[
-                  { value: 'scatter', label: 'DISPERSIÓN' },
-                  { value: 'curve', label: 'CURVA' },
-                ]}
-                size="sm"
-              />
-            </Field>
-            <Field label="Título del gráfico">
-              <TextInput value={state.chart.title} onChange={(title) => setChart({ title })} uppercase />
-            </Field>
-
-            {state.chart.mode === 'scatter' ? (
-              <Field
-                label="Puntos (x,y · 0–100)"
-                plain
-                hint={
-                  <button
-                    type="button"
-                    className="font-mono text-[11px] text-cyan hover:underline"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      setChart({ scatter: generateScatter(Math.floor(Math.random() * 1e6)) })
-                    }}
-                  >
-                    ↻ regenerar
-                  </button>
-                }
-              >
-                <TextArea value={state.chart.scatter} onChange={(scatter) => setChart({ scatter })} rows={5} mono />
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="Mínimo">
+                <NumberInput value={chart.min} onChange={(min) => setChart({ min })} />
               </Field>
-            ) : (
+              <Field label="Máximo">
+                <NumberInput value={chart.max} onChange={(max) => setChart({ max })} />
+              </Field>
+              <Field label="Unidad">
+                <TextInput value={chart.unit} onChange={(unit) => setChart({ unit })} placeholder="rpm" />
+              </Field>
+            </div>
+            <div className="grid grid-cols-[1fr_2fr] gap-2">
+              <Field label="Zona óptima">
+                <TextInput value={chart.zone} onChange={(zone) => setChart({ zone })} placeholder="70-90" />
+              </Field>
+              <Field label="Leyenda de zona">
+                <TextInput value={chart.zoneLabel} onChange={(zoneLabel) => setChart({ zoneLabel })} />
+              </Field>
+            </div>
+
+            {chart.mode === 'curve' && (
+              <Field label="Forma" plain>
+                <Segmented<CurveShape>
+                  value={chart.shape}
+                  onChange={(shape) => setChart({ shape })}
+                  options={[
+                    { value: 'bell', label: '∩ PICO EN ZONA' },
+                    { value: 'rise', label: '↗ SUBE' },
+                    { value: 'fall', label: '↘ CAE' },
+                  ]}
+                  size="sm"
+                />
+              </Field>
+            )}
+            {chart.mode === 'bars' && (
               <>
-                <Field label="Serie principal · cian" hint="valores separados por coma">
-                  <TextInput value={state.chart.seriesA} onChange={(seriesA) => setChart({ seriesA })} />
+                <Field label="Etiquetas" hint="separadas por coma">
+                  <TextInput value={chart.barLabels} onChange={(barLabels) => setChart({ barLabels })} placeholder="60, 70, 80, 90" />
                 </Field>
-                <Field label="Leyenda serie principal">
-                  <TextInput value={state.chart.seriesALabel} onChange={(seriesALabel) => setChart({ seriesALabel })} />
-                </Field>
-                <Field label="Serie secundaria · naranja" hint="opcional">
-                  <TextInput value={state.chart.seriesB} onChange={(seriesB) => setChart({ seriesB })} />
-                </Field>
-                <Field label="Leyenda serie secundaria">
-                  <TextInput value={state.chart.seriesBLabel} onChange={(seriesBLabel) => setChart({ seriesBLabel })} />
+                <Field label="Valores" hint="en cian las que caen en la zona">
+                  <TextInput value={chart.barValues} onChange={(barValues) => setChart({ barValues })} placeholder="62, 80, 88, 71" />
                 </Field>
               </>
             )}
-
-            <div className="space-y-3 rounded-xl border border-line bg-surface-2/60 p-3">
-              <Toggle label="Zona óptima (cian)" checked={state.chart.showZone} onChange={(showZone) => setChart({ showZone })} />
-              {state.chart.showZone && (
-                <>
-                  <Field label="Desde (eje X)">
-                    <Range value={state.chart.zoneFrom} onChange={(zoneFrom) => setChart({ zoneFrom })} min={0} max={100} suffix="%" />
-                  </Field>
-                  <Field label="Hasta (eje X)">
-                    <Range value={state.chart.zoneTo} onChange={(zoneTo) => setChart({ zoneTo })} min={0} max={100} suffix="%" />
-                  </Field>
-                  <Field label="Leyenda de la zona">
-                    <TextInput value={state.chart.zoneLabel} onChange={(zoneLabel) => setChart({ zoneLabel })} />
-                  </Field>
-                </>
-              )}
-            </div>
-
-            <div className="space-y-3 rounded-xl border border-line bg-surface-2/60 p-3">
-              <Toggle label="Umbral horizontal" checked={state.chart.showThreshold} onChange={(showThreshold) => setChart({ showThreshold })} />
-              {state.chart.showThreshold && (
-                <>
-                  <Field label="Altura (eje Y)">
-                    <Range value={state.chart.threshold} onChange={(threshold) => setChart({ threshold })} min={0} max={100} suffix="%" />
-                  </Field>
-                  <Field label="Leyenda del umbral">
-                    <TextInput value={state.chart.thresholdLabel} onChange={(thresholdLabel) => setChart({ thresholdLabel })} />
-                  </Field>
-                </>
-              )}
-            </div>
-
-            <div className="space-y-3 rounded-xl border border-line bg-surface-2/60 p-3">
-              <Toggle label="Marcador vertical (naranja)" checked={state.chart.showMarker} onChange={(showMarker) => setChart({ showMarker })} />
-              {state.chart.showMarker && (
-                <>
-                  <Field label="Posición (eje X)">
-                    <Range value={state.chart.marker} onChange={(marker) => setChart({ marker })} min={0} max={100} suffix="%" />
-                  </Field>
-                  <Field label="Etiqueta">
-                    <TextInput value={state.chart.markerLabel} onChange={(markerLabel) => setChart({ markerLabel })} />
-                  </Field>
-                  <Field label="Detalle">
-                    <TextInput value={state.chart.markerSub} onChange={(markerSub) => setChart({ markerSub })} />
-                  </Field>
-                </>
-              )}
-            </div>
+            {chart.mode === 'gauge' && (
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Valor actual">
+                  <NumberInput value={chart.gaugeValue} onChange={(gaugeValue) => setChart({ gaugeValue })} />
+                </Field>
+                <Field label="Umbral">
+                  <NumberInput value={chart.gaugeThreshold} onChange={(gaugeThreshold) => setChart({ gaugeThreshold })} />
+                </Field>
+                <Field label="Rótulo">
+                  <TextInput value={chart.gaugeLabel} onChange={(gaugeLabel) => setChart({ gaugeLabel })} />
+                </Field>
+              </div>
+            )}
           </>
         )}
 
         {state.template === 'statement' && (
           <Field label="Remate / sentencia" hint="barra naranja">
-            <TextArea value={state.kicker} onChange={(kicker) => update({ kicker })} rows={3} />
+            <TextArea value={state.kicker} onChange={(kicker) => update({ kicker })} rows={2} />
           </Field>
         )}
       </Section>
 
-      <Section index="05" title="Argumento">
-        <Field label="Párrafo descriptivo" hint={`${state.body.length} car.`}>
-          <TextArea value={state.body} onChange={(body) => update({ body })} rows={4} />
-        </Field>
+      <Section index="03" title="Fondo" summary={bgImage ? `Foto · capa ${state.bgOverlay}%` : 'Carbón sólido'} defaultOpen={Boolean(bgImage)}>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={loadingImg}
+            className="flex flex-1 items-center gap-2.5 rounded-md border border-dashed border-cyan/40 bg-cyan/5 px-2.5 py-2 text-left font-mono text-[11px] tracking-[0.1em] text-cyan transition hover:bg-cyan/10 disabled:opacity-60"
+          >
+            {bgImage ? (
+              <img src={bgImage} alt="" className="size-8 shrink-0 rounded object-cover ring-1 ring-line" />
+            ) : (
+              <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="m3 16 5-5 4 4 3-3 6 6M15 9h.01" />
+              </svg>
+            )}
+            {loadingImg ? 'PROCESANDO…' : bgImage ? '[ CAMBIAR IMAGEN ]' : '[ SUBIR IMAGEN DE FONDO ]'}
+          </button>
+          {bgImage && (
+            <button
+              type="button"
+              onClick={() => setBgImage(null)}
+              className="rounded-md border border-line px-3 font-mono text-[10px] tracking-wider text-steel uppercase transition hover:border-fire/60 hover:text-fire"
+            >
+              Quitar
+            </button>
+          )}
+        </div>
+        {bgImage && (
+          <>
+            <Field label="Opacidad de capa táctica">
+              <Range value={state.bgOverlay} onChange={(bgOverlay) => update({ bgOverlay })} min={30} max={90} suffix="%" />
+            </Field>
+            <Toggle label="Placa sólida flotante" checked={state.floatingPlate} onChange={(floatingPlate) => update({ floatingPlate })} />
+            {!bgPersisted && (
+              <p className="font-mono text-[10px] text-gold/80">La foto es muy pesada para guardarse: se usa en esta sesión.</p>
+            )}
+          </>
+        )}
       </Section>
 
-      <Section index="06" title="Fuente científica">
-        <Field label="Cita principal" hint="autor, año · revista">
-          <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="DAMAS Y COL., 2016 · EUROPEAN JOURNAL OF APPLIED PHYSIOLOGY" />
-        </Field>
-        <Field label="Descripción del estudio">
-          <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} />
-        </Field>
+      <Section index="04" title="Fuente científica" summary={state.citeMain} defaultOpen={false}>
+        <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
+        <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
       </Section>
 
-      <div className="px-5 py-6">
-        <button
-          type="button"
-          onClick={() => {
-            if (confirm('¿Restablecer todos los campos a los valores iniciales?')) onReset()
-          }}
-          className="w-full rounded-lg border border-line py-2.5 font-mono text-[11px] tracking-[0.14em] text-steel uppercase transition hover:border-fire/60 hover:text-fire"
-        >
-          Restablecer todo
-        </button>
-      </div>
+      <Section
+        index="05"
+        title="Estilo"
+        summary={`${HEADLINE_FONTS[state.headlineFont].label} · ${state.headlineScale}%`}
+        defaultOpen={false}
+      >
+        <Segmented<HeadlineFont>
+          value={state.headlineFont}
+          onChange={(headlineFont) => update({ headlineFont })}
+          options={(Object.keys(HEADLINE_FONTS) as HeadlineFont[]).map((k) => ({ value: k, label: HEADLINE_FONTS[k].label }))}
+          size="sm"
+        />
+        <Field label="Escala del titular">
+          <Range value={state.headlineScale} onChange={(headlineScale) => update({ headlineScale })} min={60} max={140} step={2} suffix="%" />
+        </Field>
+      </Section>
     </div>
   )
+}
+
+function summaryFor(s: CanvasState) {
+  switch (s.template) {
+    case 'metric':
+      return `${s.metricValue} · ${s.metricLabel}`
+    case 'compare':
+      return `${s.cardA.value} vs ${s.cardB.value}`
+    case 'chart':
+      return `${s.chart.mode.toUpperCase()} · ${s.chart.min}–${s.chart.max} ${s.chart.unit} · zona ${s.chart.zone}`
+    case 'statement':
+      return s.kicker
+  }
 }

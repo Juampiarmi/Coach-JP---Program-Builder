@@ -10,32 +10,29 @@ export interface CompareCard {
   accent: Accent
 }
 
-export type ChartMode = 'scatter' | 'curve'
+export type ChartMode = 'curve' | 'bars' | 'gauge'
+export type CurveShape = 'bell' | 'rise' | 'fall'
 
+/** Gráfico simplificado: todo se define con pocos inputs. */
 export interface ChartConfig {
   mode: ChartMode
+  /** Etiqueta de la curva / título del gráfico */
   title: string
-  /** Pares "x,y" por línea (0–100) */
-  scatter: string
-  /** Serie principal: valores separados por coma */
-  seriesA: string
-  seriesALabel: string
-  /** Serie secundaria (opcional) */
-  seriesB: string
-  seriesBLabel: string
-  showZone: boolean
-  zoneFrom: number
-  zoneTo: number
+  min: number
+  max: number
+  unit: string
+  /** Rango de la zona óptima en texto libre, ej: "70-90" o "70–90 rpm" */
+  zone: string
   zoneLabel: string
-  /** Umbral horizontal (0–100, en escala de Y) */
-  showThreshold: boolean
-  threshold: number
-  thresholdLabel: string
-  /** Marcador vertical (0–100, en escala de X) */
-  showMarker: boolean
-  marker: number
-  markerLabel: string
-  markerSub: string
+  /** Curva: forma */
+  shape: CurveShape
+  /** Barras: etiquetas y valores separados por coma */
+  barLabels: string
+  barValues: string
+  /** Medidor: valor actual y umbral */
+  gaugeValue: number
+  gaugeThreshold: number
+  gaugeLabel: string
 }
 
 export interface CanvasState {
@@ -61,4 +58,7 @@ export interface CanvasState {
   chart: ChartConfig
   // Sentencia
   kicker: string
+  // Fondo fotográfico
+  bgOverlay: number
+  floatingPlate: boolean
 }
