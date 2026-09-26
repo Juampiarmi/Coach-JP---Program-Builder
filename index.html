@@ -6145,6 +6145,24 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .progress-fill { height: 100%; background: linear-gradient(90deg, var(--jp-cyan-tactical), var(--jp-orange-tactical)); border-radius: 2px; box-shadow: 0 0 10px rgba(0,229,255,0.4); transition: width 0.45s cubic-bezier(0.4,0,0.2,1); }
   .progress-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
   .progress-count { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+  /* directiva maestra ("HUD de telemetría en vivo: tonelaje acumulado de
+     sesión") -- monospace tabular (las cifras nunca desalinean el
+     ancho), oro táctico sólo en el número (protagonista), titanio en la
+     etiqueta. jpTonelajeFlash: destello tenue de 300ms al sumar/restar,
+     mismo lenguaje "táctico" que el resto de la app. */
+  .jp-tonelaje-hud{
+    display:flex; align-items:baseline; gap:6px; margin-top:6px;
+    font-family:'JetBrains Mono',ui-monospace,monospace;
+  }
+  .jp-tonelaje-lb{ font-size:11px; letter-spacing:.04em; color:#94a3b8; text-transform:uppercase; }
+  .jp-tonelaje-val{
+    font-size:15px; font-weight:800; color:#ffd600; font-variant-numeric:tabular-nums;
+    transition:color .3s ease, transform .3s ease;
+  }
+  .jp-tonelaje-un{ font-size:11px; font-weight:700; color:#ffd600; letter-spacing:.03em; }
+  .jp-tonelaje-hud.jp-tonelaje-flash .jp-tonelaje-val{
+    color:#fff9e0; transform:scale(1.14); text-shadow:0 0 14px rgba(255,214,0,.75);
+  }
   .main { max-width: 1140px; margin: 0 auto; padding: 0 1.25rem 4rem; }
   .day-view { display: none; }
   .day-view.active { display: block; animation: dayFadeIn 0.4s cubic-bezier(0.16,1,0.3,1); }
@@ -7394,6 +7412,19 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     <span class="progress-count" id="progress-count">0%</span>
     <span class="progress-label">completado</span>
   </div>
+  <!-- directiva maestra ("HUD de telemetría en vivo: tonelaje acumulado
+       de sesión") -- contador reactivo de kg*reps de toda serie tildada
+       en el día/semana activos (calcularTonelajeSesion()/actualizarTonelajeHUD(),
+       más abajo en el script). Arranca en "0" y se recalcula al entrar a
+       cada día (renderMain()) y en cada check/edición de kg-reps
+       (setLoadField()) -- sin scoping por disciplina: state.loads es la
+       misma fuente compartida que ya usa CrossFit para sus propios
+       bloques de fuerza/skill, el tonelaje es un dato útil para ambas. -->
+  <div class="jp-tonelaje-hud" id="jpTonelajeHud">
+    <span class="jp-tonelaje-lb">TONELAJE DE SESIÓN:</span>
+    <span class="jp-tonelaje-val" id="jpTonelajeVal">0</span>
+    <span class="jp-tonelaje-un">KG</span>
+  </div>
   <!-- anillo de progreso: solo visible en escritorio (rail lateral, ver
        CSS/JS "MEJORA DE ESCRITORIO 27/08" más abajo). En mobile no se
        pinta (display:none por defecto) y .progress-row de arriba sigue
@@ -8028,12 +8059,86 @@ function ultimoHistorial(nombreEx){
   return hk ? (state.historialCargas[hk] || null) : null;
 }
 function getLoad(key){ return state.loads[key] || {}; }
+/* directiva maestra ("HUD de telemetría en vivo: tonelaje acumulado de
+   sesión") -- suma kg*reps de TODA serie tildada (done===true) en el
+   día/semana activos, leyendo directo de state.loads (misma fuente de
+   verdad que ya usa el resto de la app, cero cálculo paralelo). Las
+   claves de state.loads son "weekIdx|dayId|blockId|exIdx|setIdx" (ver
+   getLoadKey más arriba) -- filtrar por el prefijo "weekIdx|dayId|"
+   basta para aislar sólo el día/semana que el alumno tiene abiertos
+   ahora mismo, sin tocar el resto del historial guardado. */
+function calcularTonelajeSesion(){
+  var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
+  if(!day) return 0;
+  var prefix = state.currentWeek + '|' + day.id + '|';
+  var total = 0;
+  Object.keys(state.loads).forEach(function(k){
+    if(k.indexOf(prefix) !== 0) return;
+    var ld = state.loads[k];
+    if(!ld || !ld.done) return;
+    var kg = parseFloat(ld.kg), reps = parseFloat(ld.reps);
+    if(!isFinite(kg) || !isFinite(reps) || kg <= 0 || reps <= 0) return;
+    total += kg * reps;
+  });
+  return Math.round(total);
+}
+var _tonelajeAnimId = null, _tonelajeActual = 0;
+/* odómetro de 300ms (directiva: "transición rápida (300ms)") + destello
+   dorado tenue -- reactivo desde setLoadField() de acá abajo, así que
+   cubre check/uncheck Y edición manual de kg o reps en el mismo tick. */
+function actualizarTonelajeHUD(){
+  var hud = document.getElementById('jpTonelajeHud'); var val = document.getElementById('jpTonelajeVal');
+  if(!hud || !val) return;
+  var nuevo = calcularTonelajeSesion();
+  var desde = _tonelajeActual;
+  if(nuevo === desde){ return; }
+  /* directiva maestra ("HUD de telemetría en vivo") -- requestAnimationFrame
+     se suspende por completo en una pestaña/documento oculto (throttling
+     estándar de todo navegador moderno, para ahorrar batería): si el
+     alumno tildó el set justo cuando la app pasó a segundo plano (o el
+     entorno de test la tiene oculta), la animación jamás dispararía y el
+     número quedaría trabado en el valor viejo. Salto directo al valor
+     final sin animar en ese caso -- nunca se pierde el dato, sólo el
+     efecto visual del odómetro, que de todos modos nadie está mirando
+     mientras la pantalla está apagada/oculta. */
+  if(document.hidden){
+    val.textContent = nuevo.toLocaleString('es-AR');
+    _tonelajeActual = nuevo;
+    hud.classList.add('jp-tonelaje-flash');
+    clearTimeout(hud._tonelajeFlashT);
+    hud._tonelajeFlashT = setTimeout(function(){ hud.classList.remove('jp-tonelaje-flash'); }, 320);
+    return;
+  }
+  var t0 = null, dur = 300;
+  if(_tonelajeAnimId) cancelAnimationFrame(_tonelajeAnimId);
+  function frame(ts){
+    if(t0 === null) t0 = ts;
+    var p = Math.min(1, (ts - t0) / dur);
+    var v = Math.round(desde + (nuevo - desde) * p);
+    val.textContent = v.toLocaleString('es-AR');
+    if(p < 1){ _tonelajeAnimId = requestAnimationFrame(frame); }
+    else{ _tonelajeAnimId = null; _tonelajeActual = nuevo; }
+  }
+  _tonelajeAnimId = requestAnimationFrame(frame);
+  hud.classList.remove('jp-tonelaje-flash');
+  void hud.offsetWidth; /* fuerza reflow para poder re-disparar la animación en tildes consecutivos */
+  hud.classList.add('jp-tonelaje-flash');
+  clearTimeout(hud._tonelajeFlashT);
+  hud._tonelajeFlashT = setTimeout(function(){ hud.classList.remove('jp-tonelaje-flash'); }, 320);
+}
 function setLoadField(key, field, value){
   state.loads[key] = state.loads[key] || {};
   state.loads[key][field] = value;
   /* sello de tiempo: permite mostrarle al alumno cuándo hizo esa serie */
   state.loads[key].ts = Date.now();
   saveProgress();
+  /* directiva maestra ("HUD de telemetría en vivo") -- recalcula SIEMPRE
+     que kg/reps/done cambian (tildar, destildar o corregir un valor ya
+     cargado), nunca sólo al tildar -- así el tonelaje jamás queda
+     desactualizado si el alumno corrige una serie después de cerrarla. */
+  if(field === 'kg' || field === 'reps' || field === 'done'){
+    try{ actualizarTonelajeHUD(); }catch(e){}
+  }
 }
 function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg, nombreEx, blockLabel, refSemanaAnterior){
   /* parser de unidades: si la prescripción de esta estación ya viene en
@@ -8615,7 +8720,10 @@ var jpAudioTactical = {
   },
   /* el switch "🔔 Sonido & Haptic" apaga los DOS a la vez -- misma
      lectura de isAudioMuted() que ya gatea playBeep() más arriba. */
-  vibrateCheckSet: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate(25); }catch(e){} },
+  /* directiva maestra ("Feedback háptico y cierre mecánico de serie
+     'Lock-In'") -- 35ms exactos pedidos (antes 25ms); if(navigator.vibrate)
+     ya blinda contra dispositivos sin soporte, sin arrojar warnings. */
+  vibrateCheckSet: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate(35); }catch(e){} },
   vibrateTimerEnd: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate([50, 40, 80]); }catch(e){} },
   vibratePrRecord: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate([40, 30, 40, 30, 120]); }catch(e){} }
 };
@@ -9981,6 +10089,12 @@ function renderMain(){
   aplicarSobrecargaReadiness(weekIdx, day.id);
   setTimeout(function(){ try{ aplicarSobrecargaReadiness(weekIdx, day.id); }catch(e){} }, 300);
   updateProgress(day, weekIdx, blocks);
+  /* directiva maestra ("HUD de telemetría en vivo") -- recalcula al
+     entrar/cambiar de día o semana (el HUD vive fuera de #mainContent,
+     sobrevive el innerHTML de arriba, pero su NÚMERO es por día/semana
+     activos -- sin este llamado quedaría mostrando el total del día
+     anterior hasta el primer check nuevo). */
+  try{ actualizarTonelajeHUD(); }catch(e){}
 }
 /* =========================================================
    WIRE: interacciones de bloques (checkbox, colapso, timers, video)
@@ -12333,7 +12447,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(/^cal(?:or[ií]as?)?\\b/i.test(t)) return 'cal';
     return 'reps';
   }
-  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo){
+  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo, rirAnterior){
     unidadSec = unidadSec || 'reps';
     var numSetsInt = parseInt(numSets, 10) || 1;
     /* directiva ("Parser avanzado de metodologías") -- [DROPSET]/[MYO-
@@ -12360,12 +12474,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         if(prevLd.kg != null && prevLd.kg !== '') prevKg = prevLd.kg;
         if(prevLd.reps != null && prevLd.reps !== '') prevSec = prevLd.reps;
       }
+      /* directiva maestra ("Ghost Load & Target Pacing") -- formato EXACTO
+         pedido: "// S ANTERIOR: {kg} kg × {reps} reps · [RIR {n}]". Sin
+         registro previo (prevKg/prevSec null) se mantiene el placeholder
+         limpio de siempre -- refHtml queda vacío, nunca se ensucia la
+         interfaz con un "// S ANTERIOR:" fantasma sin datos. */
       var refHtml = '';
       if(prevKg != null || prevSec != null){
-        var refTxt = (prevKg != null ? prevKg + 'kg' : '') +
+        var refTxt = (prevKg != null ? prevKg + ' kg' : '') +
           (prevKg != null && prevSec != null ? ' \\u00d7 ' : '') +
-          (prevSec != null ? prevSec : '');
-        refHtml = '<span class="jp-set-ref">S' + weekIdx + ': ' + refTxt + '</span>';
+          (prevSec != null ? prevSec + ' ' + unidadSec : '') +
+          (rirAnterior ? ' \\u00b7 [RIR ' + rirAnterior + ']' : '');
+        refHtml = '<span class="jp-set-ref">// S ANTERIOR: ' + refTxt + '</span>';
       }
       var kgVal = ld.kg != null ? ld.kg : '';
       var secVal = ld.reps != null ? ld.reps : '';
@@ -12448,11 +12568,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      que scrollear hasta el final para ver un ejercicio del Bloque 1.
      Ahora TODO ejercicio simple (con o sin dosis reconocida) entra acá,
      así el chip sobrevive DENTRO del acordeón del bloque aunque su
-     ícono inline se haya ido al glosario. Nunca para calentamiento
-     (esCalentamiento): esos bloques no llevan video en absoluto, ver
-     esBloqueCalentamientoSB()/directiva "Desvinculación del Warm-up". */
+     ícono inline se haya ido al glosario. */
+  /* directiva maestra ("Reparación y compilación universal de videos por
+     bloque") -- revierte la exclusión total de calentamiento ("Desvinculación
+     del Warm-up", una directiva anterior): el coach SÍ carga/vincula
+     videos técnicos para movilidad y activación desde el Builder
+     (b.videoOverrides, compilados en VIDEO_MAP igual que cualquier otro
+     bloque, ver buildProgramConfig()) y esos videos nunca llegaban al
+     alumno -- el parámetro esCalentamiento se conserva en la firma (otros
+     llamadores lo siguen pasando) pero ya no corta la recolección. */
   function recolectarVideosSB(entries, esCalentamiento){
-    if(esCalentamiento) return [];
     var vistos = {}, out = [];
     entries.forEach(function(entry){
       if(entry.tipo === 'simple'){
@@ -12580,6 +12705,30 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function limpiarGuionActivacionSB(nombre){
     return String(nombre || '').replace(/^[\\s\\-–—•*]+/, '').trim();
   }
+  /* directiva maestra ("Ghost Load & Target Pacing") -- el RIR de la
+     ghost load es el que el coach prescribió la semana ANTERIOR para
+     ese mismo ejercicio, nunca el de la semana activa. block.weekItems[
+     weekIdx-1] guarda el texto ya ondulado de esa semana (ver
+     ondularMesocicloAutomatico() del Builder) -- se re-parsea con el
+     MISMO parsearPizarraSB() (cero lógica nueva de extracción) y se lee
+     el RIR de la entrada en la MISMA posición idx/si que la semana
+     activa: el orden de líneas nunca cambia entre semanas (la
+     ondulación sólo reescribe dosis in-place), así que la posición es
+     un identificador estable. Se degrada a '' con cualquier desajuste
+     (plan viejo, texto editado a mano de forma irregular) -- nunca
+     rompe el render por un dato ausente. */
+  function rirSemanaAnteriorSB(block, weekIdx, idx, si){
+    if(!(weekIdx > 0)) return '';
+    try{
+      var prevLineas = itemsDeSemana(block, weekIdx - 1);
+      if(!prevLineas.length) return '';
+      var prevEntries = parsearPizarraSB(prevLineas);
+      var prevEntry = prevEntries[idx];
+      if(!prevEntry) return '';
+      if(si != null) return (prevEntry.tipo === 'biserie' && prevEntry.subs && prevEntry.subs[si]) ? (prevEntry.subs[si].rir || '') : '';
+      return prevEntry.rir || '';
+    }catch(e){ return ''; }
+  }
   function pizarraSports(blockEl, block, weekIdx, dayId){
     if(esBloqueVacioCF(block)) return;
     const body = blockEl.querySelector('.block-body');
@@ -12608,11 +12757,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       if(entry.tipo === 'biserie' && entry.subs.length){
         if(esCalentamiento){
+          /* directiva maestra ("Reparación y compilación universal de
+             videos por bloque") -- videoLinkHtml(sub.nombre) faltaba por
+             completo acá: un sub-ejercicio de calentamiento (biset/triset
+             de movilidad) nunca tuvo ícono de video, ni siquiera cuando
+             la biblioteca/videoOverrides sí tenían el match real. */
           const subsPlain = entry.subs.map(function(sub){
             const dosisTxt = sub.reps ? sub.reps + ' ' + (sub.unidad || 'reps') : '';
+            const nombreLimpio = limpiarGuionActivacionSB(sub.nombre);
             return '<div class="jp-sb-plain jp-sb-plain-warmup">' +
                 (dosisTxt ? '<span class="jp-sb-plain-pill">' + escSB(dosisTxt) + '</span>' : '') +
-                '<span class="jp-sb-plain-nombre">' + escSB(limpiarGuionActivacionSB(sub.nombre)) + '</span>' +
+                '<span class="jp-sb-plain-nombre">' + escSB(nombreLimpio) + '</span>' + videoLinkHtml(nombreLimpio) +
                 (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
               '</div>';
           }).join('');
@@ -12638,7 +12793,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds) +
               chipUnilateralSB(sub.unilateral) +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
-              renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica } : null) +
+              renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si)) +
             '</div>';
         }).join('');
         /* directiva maestra ("Erradicación del contador de rondas en
@@ -12666,18 +12821,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          mudo: se replica la fila táctica limpia de CrossFit (pastilla de
          dosis + nombre, vía el mismo jpCfSplit() que ya usa jpCfFila()
          más arriba en este archivo -- función pura, sin estado de CF,
-         reutilizable tal cual). directiva ("Desvinculación del Warm-up"):
-         un bloque de calentamiento SIEMPRE cae acá, aunque la línea sí
-         haya matcheado una dosis numérica (ej. "3x10 Air Squats") -- para
-         eso el valor de la pastilla se arma con entry.sets/reps cuando
-         existen, en vez de sólo con jpCfSplit(), y nunca se llama a
-         videoLinkHtml(). */
+         reutilizable tal cual). Un bloque de calentamiento SIEMPRE cae
+         acá, aunque la línea sí haya matcheado una dosis numérica (ej.
+         "3x10 Air Squats") -- para eso el valor de la pastilla se arma
+         con entry.sets/reps cuando existen, en vez de sólo con
+         jpCfSplit(). directiva maestra ("Reparación y compilación
+         universal de videos por bloque"): revierte la supresión de
+         videoLinkHtml() para calentamiento ("Desvinculación del
+         Warm-up", una directiva anterior) -- el coach SÍ vincula videos
+         de movilidad/activación y nunca llegaban al alumno. */
       if(!entry.sets || esCalentamiento){
         const partesPlain = jpCfSplit(entry.titulo);
         const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
+        const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm;
         filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
             (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
-            '<span class="jp-sb-plain-nombre">' + escSB(esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm) + '</span>' + (esCalentamiento ? '' : videoLinkHtml(partesPlain.nm)) +
+            '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' + videoLinkHtml(nombrePlain) +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
             (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           '</div>';
@@ -12691,7 +12850,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
-          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null) +
+          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null)) +
         '</div>';
     });
     if(!filas) return;
@@ -17343,6 +17502,20 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
        (bl.querySelector('.wod-board')) le vaciaba el video recién
        auto-matcheado en compile() -- limpiar() lo movía al glosario. */
     if(bl.querySelector('.jp-cfboard.jp-cf-fase-accessory')) return false;
+    /* directiva maestra ("Reparación y compilación universal de videos
+       por bloque") -- BUG REAL encontrado en la auditoría: .jp-sb-board
+       (la Pizarra NATIVA de Sports & Bodybuilding) también carga la
+       clase compartida .wod-board (identidad visual, igual que
+       .jp-cfboard) -- el chequeo genérico de abajo (bl.querySelector
+       ('.wod-board')) la confundía con un WOD de CrossFit SIEMPRE, sin
+       importar la disciplina del plan ni si el bloque era Warm-up o
+       trabajo principal: limpiar() le sacaba el ícono .video-link recién
+       pintado por videoLinkHtml() a TODO bloque de Pizarra Sports,
+       mandándolo a un glosario final que ni siquiera se muestra en modo
+       Sports. Mismo patrón de excepción que ya existía para
+       .jp-cfboard.jp-cf-fase-accessory, ahora también para .jp-sb-board:
+       nunca es un WOD, sin importar qué más contenga el bloque. */
+    if(bl.querySelector('.jp-sb-board')) return false;
     /* en la vista CrossFit todos los videos se agrupan en el glosario final */
     if(document.body.classList.contains('cf-modo')) return true;
     if(bl.classList.contains('cat-metcon')) return true;
@@ -29982,9 +30155,14 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   background:rgba(0,229,255,.1); border:1px solid rgba(0,229,255,.3); border-radius:5px;
   padding:3px 7px; white-space:nowrap;
 }
+/* directiva maestra ("Ghost Load & Target Pacing: carga fantasma de la
+   semana anterior") -- monospace titanio tenue EXACTO pedido, ya no
+   cian (ese color queda reservado para el tracker interactivo real, la
+   ghost load es sólo referencia pasiva). */
 .jp-set-ref{
-  flex:0 0 auto; white-space:nowrap; font-size:.62rem; color:rgba(0,229,255,.8);
-  background:rgba(0,229,255,.06); border:1px solid rgba(0,229,255,.2); border-radius:5px;
+  flex:0 0 auto; white-space:nowrap; font-size:.62rem; color:#94a3b8;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+  background:rgba(148,163,184,.06); border:1px solid rgba(148,163,184,.18); border-radius:5px;
   padding:2px 6px;
 }
 .jp-input-native{
