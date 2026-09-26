@@ -3571,8 +3571,14 @@ function ondularLineaSports(linea, wk){
    cada bloque -- así el badge de la semana (que ya lee p.meso, ver
    defaultWeeks()) nunca vuelve a desentonar con el texto real de la
    Pizarra, sea un plan nuevo o uno viejo con metadata desactualizada. */
+/* directiva técnica ("Motor de Ondulación Híbrido Determinista") -- valores
+   EXACTOS fijados por el núcleo matemático puro (sin IA, sin red): S1 RIR
+   3-2/RPE 7-8 (nunca se reescribe, es la fuente S1 original del coach),
+   S2 RIR 2-1/RPE 8-8.5, S3 RIR 1-0/RPE 9-10 (pico de exigencia, fail
+   técnico), S4 RIR 3-4/RPE 6-7 (deload, -1 serie por bloque vía
+   ondularLineaSports wk===3, ver más arriba). */
 const META_ONDULACION_SEMANA = {
-  1: { rpe:'RPE 8-9 (RIR 2-1)' },
+  1: { rpe:'RPE 8-8.5 (RIR 2-1)' },
   2: { rpe:'RPE 9-10 (RIR 1-0)', fail:true },
   3: { rpe:'RPE 6-7 (RIR 3-4)', deload:true }
 };
@@ -12618,7 +12624,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
         const subsHtml = entry.subs.map(function(sub, si){
           const exIdx = 'b' + idx + 's' + si;
-          return '<div class="jp-sb-subex">' +
+          /* directiva técnica ("Auditoría integral del reloj emergente")
+             -- descansoDe() (motor del timer, más abajo) nunca tenía de
+             dónde leer el "Rest Xs" REAL de ESTE ejercicio puntual dentro
+             de un bloque de Pizarra: caía siempre al fallback genérico
+             (state.restSec, 90s por defecto), ignorando el descanso que
+             el coach prescribió línea por línea. data-rest-sec expone ese
+             valor en el propio contenedor del ejercicio para que el
+             listener de [ ✓ ] lo lea antes de arrancar el reloj. */
+          return '<div class="jp-sb-subex" data-rest-sec="' + (sub.restSeconds || '') + '">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
                 '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + videoLinkHtml(sub.nombre) + '</div>' +
               dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds) +
@@ -12670,7 +12684,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
-      filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '">' +
+      /* directiva técnica ("Auditoría integral del reloj emergente") --
+         mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
+      filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + (entry.restSeconds || '') + '">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
           dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           chipUnilateralSB(entry.unilateral) +
@@ -12780,7 +12796,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       try{ jpAudioTactical.soundCheckSet(); }catch(err){}
       try{ jpAudioTactical.vibrateCheckSet(); }catch(err){}
       const bl = btn.closest('.block');
-      if(bl && typeof window.jpArrancarDescansoSetNative === 'function') window.jpArrancarDescansoSetNative(bl);
+      /* directiva técnica ("Auditoría integral del reloj emergente") --
+         el descanso real de ESTE ejercicio puntual (data-rest-sec, ver
+         pizarraSports() más arriba) viaja como override explícito -- sin
+         él, jpArrancarDescansoSetNative()/descansoDe() caían siempre al
+         fallback genérico (state.restSec) e ignoraban el "Rest Xs" que el
+         coach prescribió línea por línea. */
+      const exWrap = btn.closest('.jp-sb-ex, .jp-sb-subex');
+      const restOverride = exWrap ? parseInt(exWrap.dataset.restSec, 10) || 0 : 0;
+      if(bl && typeof window.jpArrancarDescansoSetNative === 'function') window.jpArrancarDescansoSetNative(bl, restOverride);
     } else {
       try{ beepSetCheck(false); }catch(err){}
     }
@@ -21875,12 +21899,22 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
      arrancar()/descansoDe()/nombreDe()/agrupado()/esCF(), sin duplicar
      esa lógica) para que el listener delegado de la Pizarra Sports (ver
      pizarraSports(), otro módulo) dispare el mismo reloj compartido. */
-  window.jpArrancarDescansoSetNative = function(bl){
+  /* directiva técnica ("Auditoría integral del reloj emergente") -- segOverride
+     (opcional, el "Rest Xs" REAL de ESTE ejercicio puntual, ver
+     data-rest-sec en pizarraSports() y el listener de .jp-btn-check-native)
+     tiene prioridad absoluta sobre descansoDe(bl), que sólo sabe leer un
+     descanso a nivel BLOQUE (b.restSeconds/.timer-slot) -- nunca el de un
+     ejercicio individual dentro de un bloque de Pizarra con varios
+     ejercicios de descansos distintos. Sin esto, TODO check de serie
+     arrancaba siempre el fallback genérico (state.restSec, 90s), sin
+     importar lo que el coach haya escrito línea por línea. */
+  window.jpArrancarDescansoSetNative = function(bl, segOverride){
     if(!bl || esCF()) return;
     if(bl.classList.contains('wu-card')) return;
     if(agrupado(bl)) return;
     var lb = 'Descanso · ' + nombreDe(bl);
-    setTimeout(function(){ arrancar(descansoDe(bl), lb); }, 90);
+    var seg = (segOverride && segOverride > 0) ? segOverride : descansoDe(bl);
+    setTimeout(function(){ arrancar(seg, lb); }, 90);
   };
 
   /* al tildar una serie */
