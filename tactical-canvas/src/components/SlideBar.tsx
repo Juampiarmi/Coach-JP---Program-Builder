@@ -5,11 +5,12 @@ interface Props {
   onAdd: () => void
   onRemove: () => void
   onExportAll: () => void
+  onExportZip: () => void
   exporting: string | null
 }
 
-/** Paginación de la secuencia: [ SLIDE 1 | SLIDE 2 | ... ] + exportar todas. */
-export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll, exporting }: Props) {
+/** Paginación de la secuencia: [ PLACA 1 | PLACA 2 | ... ] + exportar todas (PNG sueltos o .zip). */
+export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll, onExportZip, exporting }: Props) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       <div className="tc-scroll flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg border border-line bg-surface-2 p-0.5">
@@ -24,7 +25,7 @@ export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll
               i === active ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
             }`}
           >
-            {count > 1 ? `SLIDE ${i + 1}` : 'PLACA'}
+            {count > 1 ? `PLACA ${i + 1}` : 'PLACA'}
           </button>
         ))}
         <button type="button" onClick={onAdd} title="Duplicar slide actual" className="shrink-0 rounded-md px-2 py-1 font-mono text-[11px] text-steel hover:text-cyan">
@@ -37,16 +38,32 @@ export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll
         )}
         <span className="shrink-0 px-1.5 font-mono text-[10px] text-steel">]</span>
       </div>
-      {count > 1 && (
-        <button
-          type="button"
-          onClick={onExportAll}
-          disabled={Boolean(exporting)}
-          className="shrink-0 rounded-lg border border-fire/60 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-fire transition hover:bg-fire/10 disabled:opacity-60"
-        >
-          {exporting ?? `EXPORTAR ${count} [PNG]`}
-        </button>
-      )}
+      {count > 1 &&
+        (exporting ? (
+          <span className="shrink-0 rounded-lg border border-fire/40 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-fire">
+            {exporting}
+          </span>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={onExportZip}
+              aria-label="Descargar todas (.zip)"
+              className="shrink-0 rounded-lg bg-fire px-2.5 py-1.5 font-mono text-[10px] font-bold tracking-wider text-carbon transition hover:brightness-110"
+            >
+              <span className="hidden sm:inline">[ DESCARGAR TODAS (.ZIP) ]</span>
+              <span className="sm:hidden">.ZIP</span>
+            </button>
+            <button
+              type="button"
+              onClick={onExportAll}
+              title="Descargar cada placa por separado (en el celular: compartir todas)"
+              className="shrink-0 rounded-lg border border-fire/60 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-fire transition hover:bg-fire/10"
+            >
+              {count} PNG
+            </button>
+          </>
+        ))}
     </div>
   )
 }

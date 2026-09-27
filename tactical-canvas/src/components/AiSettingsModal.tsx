@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MODEL_OPTIONS, type AiProvider, type AiSettings } from '../lib/ai'
+import { KEY_PLACEHOLDER, MODEL_OPTIONS, PROVIDER_LABEL, type AiProvider, type AiSettings } from '../lib/ai'
 import { Field, Segmented } from './controls/primitives'
 
 interface Props {
@@ -38,19 +38,20 @@ export function AiSettingsModal({ settings, onSave, onClose }: Props) {
               options={[
                 { value: 'openai', label: 'OPENAI' },
                 { value: 'anthropic', label: 'ANTHROPIC' },
+                { value: 'gemini', label: 'GEMINI' },
               ]}
               size="sm"
             />
           </Field>
-          <Field label={p === 'openai' ? 'API Key de OpenAI' : 'API Key de Anthropic'} hint={draft.keys[p] ? 'guardada' : undefined}>
+          <Field label={`API Key de ${PROVIDER_LABEL[p]}`} hint={draft.keys[p] ? 'guardada' : undefined}>
             <div className="flex gap-2">
               <input
                 className="tc-input font-mono"
                 type={show ? 'text' : 'password'}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder={p === 'openai' ? 'sk-...' : 'sk-ant-...'}
-                value={draft.keys[p]}
+                placeholder={KEY_PLACEHOLDER[p]}
+                value={draft.keys[p] ?? ''}
                 onChange={(e) => setKey(e.target.value.trim())}
               />
               <button
@@ -66,7 +67,7 @@ export function AiSettingsModal({ settings, onSave, onClose }: Props) {
             </div>
           </Field>
           <Field label="Modelo">
-            <input className="tc-input font-mono" list={`models-${p}`} value={draft.models[p]} onChange={(e) => setModel(e.target.value)} />
+            <input className="tc-input font-mono" list={`models-${p}`} value={draft.models[p] ?? ''} onChange={(e) => setModel(e.target.value)} />
             <datalist id={`models-${p}`}>
               {MODEL_OPTIONS[p].map((m) => (
                 <option key={m.id} value={m.id}>
@@ -89,6 +90,12 @@ export function AiSettingsModal({ settings, onSave, onClose }: Props) {
               </button>
             ))}
           </div>
+          {p === 'gemini' && (
+            <p className="font-mono text-[10px] leading-relaxed text-steel/80">
+              Conseguí tu key gratis en aistudio.google.com → Get API key. Google retira modelos viejos: si 1.5 responde "not
+              found", usá gemini-2.5-flash.
+            </p>
+          )}
           <p className="rounded-md border border-gold/20 bg-gold/5 p-2.5 font-mono text-[10px] leading-relaxed text-steel">
             La key se guarda sólo en este navegador (localStorage) y viaja directo al proveedor. No uses esta app en computadoras
             compartidas con tu key cargada, y ponele un límite de gasto en el panel del proveedor.

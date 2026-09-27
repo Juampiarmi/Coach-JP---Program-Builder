@@ -16,7 +16,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon-192-maskable.png', 'icon-512-maskable.png', 'favicon.svg'],
+      includeAssets: ['favicon.svg', 'canvas-apple-touch-icon.png'],
       manifest: {
         name: 'JP Tactical Canvas',
         short_name: 'JP Canvas',
@@ -29,11 +29,12 @@ export default defineConfig({
         background_color: '#0B0E14',
         theme_color: '#0B0E14',
         categories: ['productivity', 'design', 'fitness'],
+        // Ícono propio (placa 4:5 + escudo) para no confundirse con el Builder en la pantalla de inicio
         icons: [
-          { src: 'icon-192-maskable.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: 'icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: 'icon-192-maskable.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-          { src: 'icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'canvas-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'canvas-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'canvas-icon-192-maskable.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: 'canvas-icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {

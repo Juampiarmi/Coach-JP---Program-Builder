@@ -21,11 +21,15 @@ funciona sin conexión.
 - **5 plantillas**: Métrica Gigante, Comparativa A/B, Gráfico/Telemetría, Sentencia de Texto y
   Manifiesto / Cita Táctica (frase gigante con barra naranja o comillas militares, firma
   opcional y sin cita académica).
-- **Generador con IA (BYOK)**: con tu propia API Key de OpenAI (gpt-4o / gpt-4o-mini) o de
-  Anthropic (Claude), guardada sólo en tu navegador. Escribís el tema, elegís Auto, 1 placa,
-  Historias (3) o Carrusel (4-5) y la IA completa todos los campos. Las secuencias se
-  navegan con `[ SLIDE 1 | SLIDE 2 | … ]` y se exportan todas juntas; en el celular se
-  comparten de una sola vez. El prompt y la validación de la respuesta están en
+- **Generador con IA (BYOK)**: con tu propia API Key de OpenAI (gpt-4o / gpt-4o-mini),
+  Anthropic (Claude) o Google Gemini, guardada sólo en tu navegador. Escribís el tema, podés
+  marcar un enfoque (`SPORTS & BODYBUILDING` prioriza biomecánica e hipertrofia;
+  `CROSSFIT & HYROX` prioriza bioenergética y pacing), elegís Auto, 1 placa, Historias (3) o
+  Carrusel (4-5) y la IA completa todos los campos y además escribe el caption de Instagram
+  (botón `[ COPIAR CAPTION ]`, que también se puede ver y editar).
+- **Secuencias**: se navegan con `[ PLACA 1 | PLACA 2 | … ]`. `[ DESCARGAR TODAS (.ZIP) ]`
+  baja las láminas numeradas junto con `caption.txt` en un solo archivo; el botón `N PNG`
+  las baja por separado (en el celular, las comparte todas de una vez). El prompt y la validación de la respuesta están en
   `src/lib/ai.ts`.
 - **Gráfico simplificado**: se define con mínimo, máximo, unidad, etiqueta y zona óptima en
   texto (`70-90`). Tres modos: curva (pico en zona, sube o cae), barras (etiquetas y valores

@@ -2,7 +2,8 @@ import { DEFAULT_STATE } from '../defaults'
 import type { Accent, CanvasState, ChartMode, CurveShape, TemplateId } from '../types'
 import { DEFAULT_AUTHOR } from './brand'
 
-export type AiProvider = 'openai' | 'anthropic'
+export type AiProvider = 'openai' | 'anthropic' | 'gemini'
+export type Discipline = 'general' | 'sports' | 'crossfit'
 export type GenMode = 'auto' | 'single' | 'stories' | 'carousel'
 
 export interface AiSettings {
@@ -21,12 +22,21 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 · rápido' },
     { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 · máxima calidad' },
   ],
+  gemini: [
+    { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash · rápido y gratuito' },
+    { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro · máxima precisión analítica' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · generación actual' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro · generación actual' },
+  ],
 }
+
+export const PROVIDER_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' }
+export const KEY_PLACEHOLDER: Record<AiProvider, string> = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIzaSy...' }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   provider: 'openai',
-  keys: { openai: '', anthropic: '' },
-  models: { openai: 'gpt-4o-mini', anthropic: 'claude-sonnet-5' },
+  keys: { openai: '', anthropic: '', gemini: '' },
+  models: { openai: 'gpt-4o-mini', anthropic: 'claude-sonnet-5', gemini: 'gemini-1.5-flash' },
 }
 
 export const MODE_LABEL: Record<GenMode, string> = {
@@ -34,6 +44,19 @@ export const MODE_LABEL: Record<GenMode, string> = {
   single: '1 Placa',
   stories: 'Historias (3)',
   carousel: 'Carrusel (4-5)',
+}
+
+export const DISCIPLINE_LABEL: Record<Exclude<Discipline, 'general'>, string> = {
+  sports: 'SPORTS & BODYBUILDING',
+  crossfit: 'CROSSFIT & HYROX',
+}
+
+const DISCIPLINE_RULE: Record<Discipline, string> = {
+  general: '',
+  sports:
+    'Disciplina: SPORTS & BODYBUILDING. Priorizá biomecánica, hipertrofia, fuerza, técnica de ejecución, RIR/RPE, volumen efectivo, rango de movimiento, tensión mecánica y recuperación muscular. Los ejemplos van en ejercicios de gimnasio (sentadilla, press, peso muerto, remo, aislamiento). Tags sugeridos: BIOMECÁNICA APLICADA, FUERZA · HIPERTROFIA.',
+  crossfit:
+    'Disciplina: CROSSFIT & HYROX. Priorizá bioenergética, pacing, umbrales de lactato, VO2máx, economía de movimiento bajo fatiga, transiciones, estrategia de carrera en Hyrox (running + estaciones), densidad de trabajo y recuperación entre WODs. Tags sugeridos: BIOENERGÉTICA · PACING, RESISTENCIA · UMBRAL DE LACTATO.',
 }
 
 const MODE_RULE: Record<GenMode, string> = {
@@ -65,6 +88,7 @@ REGLAS DE CONTENIDO:
 FORMATO DE SALIDA: respondé ÚNICAMENTE con un objeto JSON válido, sin markdown ni texto alrededor, con esta forma exacta:
 {
   "format": "single" | "stories" | "carousel",
+  "caption": string,
   "slides": [
     {
       "templateId": "metric" | "ab" | "chart" | "statement" | "manifesto",
@@ -86,10 +110,19 @@ FORMATO DE SALIDA: respondé ÚNICAMENTE con un objeto JSON válido, sin markdow
 - statement: { "kicker": string (remate en MAYÚSCULAS, máx 14 palabras) }
 - manifesto: { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) }
 
-Variá las plantillas dentro de una secuencia: no repitas la misma más de dos veces seguidas.`
+Variá las plantillas dentro de una secuencia: no repitas la misma más de dos veces seguidas.
 
-export function buildUserPrompt(topic: string, mode: GenMode) {
-  return `Tema o concepto a comunicar: "${topic.trim()}"\n\n${MODE_RULE[mode]}`
+"caption": el COPY COMPLETO para el pie de foto de Instagram de toda la pieza (placa, historias o carrusel). Estructura:
+1. Primera línea: gancho de una oración que frene el scroll (sin repetir literal el titular).
+2. 2 o 3 párrafos cortos (1 a 3 oraciones cada uno) que expliquen el porqué fisiológico, con el mismo tono táctico y autoritario.
+3. Micro-bullets (3 a 5 líneas que empiezan con "▸ ") con los puntos accionables.
+4. Llamado a la acción con PALABRA CLAVE en mayúsculas, por ejemplo: Comentá "RIR" y te mando la guía completa.
+5. Cierre con 3 a 5 hashtags de nicho en español en la última línea.
+Separá los bloques con una línea en blanco (usá \n\n dentro del string). Máximo 1800 caracteres. Sin emojis.`
+
+export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discipline = 'general') {
+  const focus = DISCIPLINE_RULE[discipline]
+  return `Tema o concepto a comunicar: "${topic.trim()}"\n\n${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +160,7 @@ async function callAnthropic(key: string, model: string, user: string, signal?: 
     },
     body: JSON.stringify({
       model,
-      max_tokens: 4096,
+      max_tokens: 6000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: user }],
     }),
@@ -139,6 +172,30 @@ async function callAnthropic(key: string, model: string, user: string, signal?: 
     .filter((b) => b.type === 'text')
     .map((b) => b.text ?? '')
     .join('')
+}
+
+async function callGemini(key: string, model: string, user: string, signal?: AbortSignal) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`
+  const res = await fetch(url, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: { temperature: 0.8, responseMimeType: 'application/json', maxOutputTokens: 8192 },
+    }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const msg: string = json?.error?.message ?? `Gemini respondió ${res.status}`
+    if (res.status === 404) throw new Error(`${msg} · Si el modelo fue retirado por Google, probá con gemini-2.5-flash.`)
+    throw new Error(msg)
+  }
+  const cand = json?.candidates?.[0]
+  if (!cand?.content) throw new Error(`Gemini no devolvió contenido${cand?.finishReason ? ` (${cand.finishReason})` : ''}.`)
+  const parts: { text?: string }[] = cand.content.parts ?? []
+  return parts.map((p) => p.text ?? '').join('')
 }
 
 /** Extrae el primer objeto JSON de la respuesta (tolera ```json ... ``` o texto alrededor). */
@@ -234,6 +291,7 @@ export function slideToPatch(raw: unknown): Partial<CanvasState> {
 export interface GenerationResult {
   format: 'single' | 'stories' | 'carousel'
   slides: Partial<CanvasState>[]
+  caption: string
 }
 
 export function parseGeneration(payload: unknown, mode: GenMode): GenerationResult {
@@ -245,20 +303,22 @@ export function parseGeneration(payload: unknown, mode: GenMode): GenerationResu
   slides = slides.slice(0, limit)
   const declared = oneOf(root.format, ['single', 'stories', 'carousel'] as const, 'single')
   const format = mode === 'auto' ? (slides.length === 1 ? 'single' : declared === 'single' ? 'carousel' : declared) : mode
-  return { format, slides }
+  const caption = str(root.caption).replace(/\r\n/g, '\n')
+  return { format, slides, caption }
 }
 
 export async function generateContent(
   settings: AiSettings,
   topic: string,
   mode: GenMode,
+  discipline: Discipline,
   signal?: AbortSignal,
 ): Promise<GenerationResult> {
-  const key = settings.keys[settings.provider].trim()
+  const key = (settings.keys[settings.provider] ?? '').trim()
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
-  const model = settings.models[settings.provider].trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
-  const user = buildUserPrompt(topic, mode)
-  const text =
-    settings.provider === 'openai' ? await callOpenAI(key, model, user, signal) : await callAnthropic(key, model, user, signal)
+  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
+  const user = buildUserPrompt(topic, mode, discipline)
+  const call = { openai: callOpenAI, anthropic: callAnthropic, gemini: callGemini }[settings.provider] ?? callOpenAI
+  const text = await call(key, model, user, signal)
   return parseGeneration(extractJson(text), mode)
 }

@@ -1,5 +1,14 @@
 import { useRef, useState } from 'react'
-import { DEFAULT_AI_SETTINGS, generateContent, MODE_LABEL, type AiSettings, type GenerationResult, type GenMode } from '../lib/ai'
+import {
+  DEFAULT_AI_SETTINGS,
+  DISCIPLINE_LABEL,
+  generateContent,
+  MODE_LABEL,
+  type AiSettings,
+  type Discipline,
+  type GenerationResult,
+  type GenMode,
+} from '../lib/ai'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { AiSettingsModal } from './AiSettingsModal'
 
@@ -11,9 +20,18 @@ const MODES: GenMode[] = ['auto', 'single', 'stories', 'carousel']
 
 /** Barra de generación táctica con IA (BYOK). */
 export function AiGenerator({ onResult }: Props) {
-  const [settings, setSettings] = usePersistentState<AiSettings>('jp-tactical-canvas:ai', DEFAULT_AI_SETTINGS)
+  const [stored, setSettings] = usePersistentState<AiSettings>('jp-tactical-canvas:ai', DEFAULT_AI_SETTINGS)
+  // Fusión profunda: settings guardados antes de sumar un proveedor no traen su key/modelo.
+  const settings: AiSettings = {
+    ...stored,
+    keys: { ...DEFAULT_AI_SETTINGS.keys, ...stored.keys },
+    models: { ...DEFAULT_AI_SETTINGS.models, ...stored.models },
+  }
   const [topic, setTopic] = useState('')
-  const [mode, setMode] = usePersistentState<{ mode: GenMode }>('jp-tactical-canvas:ai-mode', { mode: 'auto' })
+  const [mode, setMode] = usePersistentState<{ mode: GenMode; discipline: Discipline }>('jp-tactical-canvas:ai-mode', {
+    mode: 'auto',
+    discipline: 'general',
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [modal, setModal] = useState(false)
@@ -37,7 +55,7 @@ export function AiGenerator({ onResult }: Props) {
     setError('')
     abort.current = new AbortController()
     try {
-      onResult(await generateContent(settings, topic, mode.mode, abort.current.signal))
+      onResult(await generateContent(settings, topic, mode.mode, mode.discipline ?? 'general', abort.current.signal))
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         setError(err instanceof Error ? err.message : 'Error desconocido')
@@ -76,12 +94,35 @@ export function AiGenerator({ onResult }: Props) {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run()
         }}
       />
+      <div className="mt-2 flex gap-1.5">
+        {(Object.keys(DISCIPLINE_LABEL) as Exclude<Discipline, 'general'>[]).map((d) => {
+          const on = mode.discipline === d
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setMode({ ...mode, discipline: on ? 'general' : d })}
+              aria-pressed={on}
+              title={on ? 'Tocá de nuevo para volver a enfoque general' : undefined}
+              className={`flex-1 rounded-md border px-1.5 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
+                on
+                  ? d === 'sports'
+                    ? 'border-fire/70 bg-fire/15 text-fire'
+                    : 'border-gold/70 bg-gold/10 text-gold'
+                  : 'border-line text-steel hover:text-white'
+              }`}
+            >
+              [ {DISCIPLINE_LABEL[d]} ]
+            </button>
+          )
+        })}
+      </div>
       <div className="mt-2 grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
         {MODES.map((m) => (
           <button
             key={m}
             type="button"
-            onClick={() => setMode({ mode: m })}
+            onClick={() => setMode({ ...mode, mode: m })}
             aria-pressed={mode.mode === m}
             className={`rounded-md px-1 py-1.5 font-mono text-[9px] leading-tight tracking-wider transition ${
               mode.mode === m ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'

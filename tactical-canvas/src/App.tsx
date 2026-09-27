@@ -10,6 +10,8 @@ import { DEFAULT_STATE } from './defaults'
 import type { GenerationResult } from './lib/ai'
 import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
+import { zipFiles } from './lib/zip'
+import { CaptionBar } from './components/CaptionBar'
 import { useBackgroundImage } from './hooks/useBackgroundImage'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { usePersistentState } from './hooks/usePersistentState'
@@ -23,9 +25,11 @@ const GLOBAL_KEYS = ['aspect', 'headlineFont', 'headlineScale', 'bgOverlay', 'fl
 interface Deck {
   slides: CanvasState[]
   active: number
+  /** Copy de Instagram generado por la IA para toda la pieza */
+  caption?: string
 }
 
-const DEFAULT_DECK: Deck = { slides: [DEFAULT_STATE], active: 0 }
+const DEFAULT_DECK: Deck = { slides: [DEFAULT_STATE], active: 0, caption: '' }
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export default function App() {
@@ -62,32 +66,46 @@ export default function App() {
         for (const k of GLOBAL_KEYS) Object.assign(globals, { [k]: current[k] })
         if (r.format === 'stories') globals.aspect = 'story'
         if (r.format === 'carousel') globals.aspect = 'feed'
-        return { slides: r.slides.map((p) => ({ ...DEFAULT_STATE, ...globals, ...p })), active: 0 }
+        return { slides: r.slides.map((p) => ({ ...DEFAULT_STATE, ...globals, ...p })), active: 0, caption: r.caption }
       }),
     [setDeck],
   )
 
   const selectSlide = (i: number) => setDeck((d) => ({ ...d, active: i }))
-  const addSlide = () => setDeck((d) => ({ slides: [...d.slides.slice(0, active + 1), { ...state }, ...d.slides.slice(active + 1)], active: active + 1 }))
+  const addSlide = () =>
+    setDeck((d) => ({ ...d, slides: [...d.slides.slice(0, active + 1), { ...state }, ...d.slides.slice(active + 1)], active: active + 1 }))
   const removeSlide = () =>
-    setDeck((d) => (d.slides.length > 1 ? { slides: d.slides.filter((_, i) => i !== active), active: Math.max(0, active - 1) } : d))
+    setDeck((d) => (d.slides.length > 1 ? { ...d, slides: d.slides.filter((_, i) => i !== active), active: Math.max(0, active - 1) } : d))
+  const setCaption = (caption: string) => setDeck((d) => ({ ...d, caption }))
+  const caption = deck.caption ?? ''
 
-  /** Recorre la secuencia, renderiza cada slide a 3x y descarga (o comparte en móvil). */
-  const exportAll = async () => {
+  /** Recorre la secuencia y renderiza cada placa a 3x con nombre numerado. */
+  const renderAll = async () => {
     const { w, h } = ASPECTS[state.aspect]
     const files: { blob: Blob; name: string }[] = []
+    for (let i = 0; i < slides.length; i++) {
+      setExporting(`RENDER ${i + 1}/${slides.length}…`)
+      selectSlide(i)
+      await wait(450) // deja que React pinte y el auto-ajuste converja
+      if (!canvasRef.current) continue
+      const { blob } = await renderPng(canvasRef.current, w, h)
+      const s = slides[i]
+      files.push({ blob, name: `coachjp_${String(i + 1).padStart(2, '0')}_${s.template}_${slugify(`${s.headlineA} ${s.headlineB}`)}.png` })
+    }
+    return files
+  }
+
+  const runBatch = async (kind: 'png' | 'zip') => {
     const back = active
     try {
-      for (let i = 0; i < slides.length; i++) {
-        setExporting(`RENDER ${i + 1}/${slides.length}…`)
-        selectSlide(i)
-        await wait(450) // deja que React pinte y el auto-ajuste converja
-        if (!canvasRef.current) continue
-        const { blob } = await renderPng(canvasRef.current, w, h)
-        const s = slides[i]
-        files.push({ blob, name: `coachjp_${String(i + 1).padStart(2, '0')}_${s.template}_${slugify(`${s.headlineA} ${s.headlineB}`)}.png` })
-      }
-      if (!isDesktop && canShareFiles()) {
+      const files = await renderAll()
+      if (kind === 'zip') {
+        setExporting('EMPAQUETANDO .ZIP…')
+        const first = slides[0]
+        const extras = caption.trim() ? [{ name: 'caption.txt', text: caption }] : []
+        const zip = await zipFiles(files, extras)
+        downloadBlob(zip, `coachjp_${state.aspect === 'story' ? 'historias' : 'carrusel'}_${slugify(`${first.headlineA} ${first.headlineB}`)}.zip`)
+      } else if (!isDesktop && canShareFiles()) {
         try {
           await shareBlobs(files)
         } catch (err) {
@@ -115,7 +133,8 @@ export default function App() {
       onSelect={selectSlide}
       onAdd={addSlide}
       onRemove={removeSlide}
-      onExportAll={exportAll}
+      onExportAll={() => runBatch('png')}
+      onExportZip={() => runBatch('zip')}
       exporting={exporting}
     />
   )
@@ -165,7 +184,8 @@ export default function App() {
           <div className="min-h-0 flex-1 p-6">
             <Preview state={state} bgImage={bg.image} canvasRef={canvasRef} gutter={16} />
           </div>
-          <div className="mx-auto w-full max-w-xl px-6 pb-6">
+          <div className="mx-auto flex w-full max-w-xl flex-col gap-2 px-6 pb-6">
+            <CaptionBar caption={caption} onChange={setCaption} />
             <ExportButtons target={canvasRef} state={state} />
           </div>
         </main>
@@ -213,7 +233,10 @@ export default function App() {
           </div>
         )}
         <div className="border-t border-line px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-          <ExportButtons target={canvasRef} state={state} compact />
+          <div className="flex flex-col gap-2">
+            <CaptionBar caption={caption} onChange={setCaption} />
+            <ExportButtons target={canvasRef} state={state} compact />
+          </div>
         </div>
       </section>
     </div>
