@@ -26,6 +26,8 @@ const GLOBAL_KEYS = [
   'headlineScale',
   'bgOverlay',
   'floatingPlate',
+  'bgGradient',
+  'bgMono',
   'bgZoom',
   'bgX',
   'bgY',

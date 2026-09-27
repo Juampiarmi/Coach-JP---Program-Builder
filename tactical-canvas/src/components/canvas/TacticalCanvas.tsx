@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ASPECTS, BRAND, FONT_MONO, HEADLINE_FONTS } from '../../lib/brand'
+import { ASPECTS, BRAND, CONTRAST_GRADIENT, FONT_MONO, HEADLINE_FONTS, MONO_FILTER, TEXT_SHADOW } from '../../lib/brand'
 import type { CanvasState } from '../../types'
 import { Footer } from './Footer'
 import { Headline } from './Headline'
@@ -171,8 +171,13 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
     >
       {hasBg && (
         <>
-          <img src={bgImage!} alt="" style={{ position: 'absolute', maxWidth: 'none', ...bgGeo }} />
+          <img
+            src={bgImage!}
+            alt=""
+            style={{ position: 'absolute', maxWidth: 'none', ...bgGeo, filter: state.bgMono ? MONO_FILTER : undefined }}
+          />
           <div style={{ position: 'absolute', inset: 0, background: `rgba(11,14,20,${state.bgOverlay / 100})` }} />
+          {state.bgGradient && <div style={{ position: 'absolute', inset: 0, background: CONTRAST_GRADIENT }} />}
         </>
       )}
 
@@ -190,6 +195,12 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           borderRadius: plate ? 30 : 0,
           border: plate ? '2px solid rgba(30,38,56,.95)' : undefined,
           boxShadow: plate ? '0 40px 120px -30px rgba(0,0,0,.9)' : undefined,
+          // Placa translúcida: en pantalla actúa el backdrop-filter; en el PNG lo reproduce la
+          // copia desenfocada de abajo (html-to-image no rasteriza backdrop-filter).
+          backdropFilter: plate ? 'blur(12px)' : undefined,
+          WebkitBackdropFilter: plate ? 'blur(12px)' : undefined,
+          // Sombra de legibilidad heredada por todos los textos (tag, titular, párrafos, citas).
+          textShadow: TEXT_SHADOW,
         }}
       >
         {plate && (
@@ -204,10 +215,10 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                 ...bgGeo,
                 left: bgGeo.left - frame.left - 2,
                 top: bgGeo.top - frame.top - 2,
-                filter: 'blur(26px)',
+                filter: `${state.bgMono ? `${MONO_FILTER} ` : ''}blur(12px)`,
               }}
             />
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(11,14,20,.72)' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(11, 14, 20, 0.75)' }} />
           </>
         )}
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>

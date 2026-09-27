@@ -323,6 +323,8 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <Field label="Opacidad de capa táctica">
               <Range value={state.bgOverlay} onChange={(bgOverlay) => update({ bgOverlay })} min={30} max={90} suffix="%" />
             </Field>
+            <Toggle label="[ Tratamiento táctico B/N ]" checked={state.bgMono} onChange={(bgMono) => update({ bgMono })} />
+            <Toggle label="Gradiente de contraste" checked={state.bgGradient} onChange={(bgGradient) => update({ bgGradient })} />
             <Toggle label="Placa sólida flotante" checked={state.floatingPlate} onChange={(floatingPlate) => update({ floatingPlate })} />
             <div className="space-y-2 rounded-lg border border-line bg-surface-2/60 p-2.5">
               <div className="flex items-center justify-between">

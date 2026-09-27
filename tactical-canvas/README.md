@@ -35,9 +35,12 @@ funciona sin conexión.
   texto (`70-90`). Tres modos: curva (pico en zona, sube o cae), barras (etiquetas y valores
   separados por coma) y medidor de umbral (valor actual y umbral).
 - **Foto de fondo**: se reduce a 2400 px y se guarda en el navegador. Tiene una capa
-  táctica de oscurecimiento ajustable del 30 al 90 % y la opción de placa sólida flotante
+  táctica de oscurecimiento ajustable del 30 al 90 % (75 % por defecto), gradiente de
+  contraste oscuro arriba y abajo, tratamiento táctico B/N y la opción de placa sólida flotante
   con efecto de vidrio esmerilado. El encuadre se ajusta con zoom (100–160 %) y
   desplazamiento vertical y horizontal (±50 %), con botón para centrar.
+- **Legibilidad**: todo el texto del canvas lleva una sombra definida para no fundirse
+  con fotos ruidosas.
 - **Layout**: alineación vertical del cuerpo (auto, arriba, centro o abajo, siempre dentro
   de la zona segura) y separación entre el titular y el bloque de la plantilla.
 - **Formatos**: 4:5 Feed (1080×1350) y 9:16 Story (1080×1920). En Story todo queda dentro

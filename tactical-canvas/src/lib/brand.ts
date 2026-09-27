@@ -59,3 +59,10 @@ export const TAG_PRESETS = [
 
 export const MANIFESTO_TAGS = ['FILOSOFÍA TÁCTICA', 'ESTÁNDAR OPERATIVO', 'DISCIPLINA Y MÉTODO']
 export const DEFAULT_AUTHOR = 'COACH JP · HIGH PERFORMANCE SYSTEM'
+
+/** Sombra de legibilidad para todo el texto del canvas (se hereda a todos los hijos). */
+export const TEXT_SHADOW = '0 2px 10px rgba(0, 0, 0, 0.95), 0 0 2px rgba(0, 0, 0, 0.8)'
+/** Degradé de contraste sobre la foto: oscuro arriba (tag/titular) y abajo (footer). */
+export const CONTRAST_GRADIENT = 'linear-gradient(180deg, rgba(11,14,20,0.85) 0%, rgba(11,14,20,0.55) 45%, rgba(11,14,20,0.92) 100%)'
+/** Tratamiento táctico B/N de la foto. */
+export const MONO_FILTER = 'grayscale(100%) brightness(0.7) contrast(115%)'
