@@ -3750,13 +3750,73 @@ function detectarEjerciciosSports(texto){
     if(esLineaDirectivaSports(linea)) return;
     /* directiva ("Fuzzy Matching Inteligente de Videos") -- sanitización:
        prefijo de estación (A1./A2.), viñetas sueltas, y TODO lo que sigue
-       a un "|" (Tempo/RIR/Rest) nunca es parte del nombre. */
-    const nombreLimpio = linea.replace(/^A\d+[.)]\s*/i, '').replace(/^[\s\-•*]+/, '').split(/[:\-–|]/)[0].trim();
+       a un "|" (Tempo/RIR/Rest) nunca es parte del nombre.
+       directiva maestra ("Auditoría integral de videos") -- BUG REAL: el
+       split de arriba cortaba en CUALQUIER guión, incluido el que es
+       parte real del nombre de un ejercicio compuesto ("Pull-ups",
+       "Push-ups", "Sit-ups", "T-bar row") -- "Colgado pasivo y activo en
+       barra (Scapular Pull-ups)" quedaba tronchado en "...Scapular
+       Pull". Ahora el guión/en-dash sólo separa nombre de dosis cuando
+       tiene espacio de los DOS lados (" - ", el separador real que
+       escribe el coach); ":" y "|" siguen cortando siempre. También se
+       recorta un sufijo de dosis "x N reps/seg/..." pegado sin
+       separador ("...banda elástica x 10 reps" -> "...banda elástica"),
+       nunca el paréntesis (ese SÍ es parte del nombre en Sports, ej. el
+       alias "(Scapular Pull-ups)" -- a diferencia de CrossFit, acá nunca
+       se descarta). */
+    const nombreLimpio = linea.replace(/^A\d+[.)]\s*/i, '').replace(/^[\s\-•*]+/, '')
+      .split(/\s*[:|]\s*|\s+[-–]\s+/)[0]
+      .replace(/\s*[x×]\s*\d[\w.\/]*.*$/i, '')
+      .trim();
     if(!nombreLimpio || nombreLimpio.length < 3) return;
     const k = normSports(nombreLimpio);
     if(vistos[k]) return;
     vistos[k] = 1;
     out.push({ nombre: nombreLimpio, ex: resolverExSports(nombreLimpio) });
+  });
+  return out;
+}
+/* directiva maestra ("Auditoría integral de videos") -- replica letra
+   por letra la normalización nrm() de MÓDULO 43 (closure privado, no
+   accesible desde acá) para que resolverVideosBloqueSports() cruce
+   b.videosManual/b.videoOverrides/b.videosDismissed EXACTAMENTE como
+   chips() -- las tres claves se guardan con esa normalización, nunca
+   con normSports() (que además pisa paréntesis/guiones). */
+function nrmChip(s){
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[.,;:!¡?¿"'`]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+/* directiva maestra ("Auditoría integral de videos") -- ÚNICA fuente de
+   verdad para "qué videos tiene asignados este bloque de Pizarra
+   Sports", compartida entre el chip verde del Builder (chips(), MÓDULO
+   43) y el compilado que recibe el alumno (buildProgramConfig()): mismo
+   detectarEjerciciosSports()/resolverExSports() (fuzzy, sanea A1./A2./
+   pipe/paréntesis) + mismo orden de prioridad video manual > override >
+   auto-match + mismo respeto por videosDismissed. Sin este cruce
+   idéntico, un chip visible en el Builder podía no viajar al alumno (o
+   viceversa) por una divergencia de normalización entre dos funciones
+   que en los hechos hacían "lo mismo" con datos ligeramente distintos. */
+function resolverVideosBloqueSports(b){
+  const vistos = {};
+  const out = [];
+  const dismissed = b.videosDismissed || [];
+  const texto = (b.items || []).join('\n');
+  detectarEjerciciosSports(texto).forEach(function(d){
+    const k = nrmChip(d.nombre);
+    if(!k || vistos[k] || dismissed.indexOf(k) >= 0) return;
+    vistos[k] = 1;
+    const manual = (b.videosManual || []).find(function(v){ return nrmChip(v.nombre) === k; });
+    const esOverride = !!(b.videoOverrides && b.videoOverrides[k]);
+    const exId = manual ? manual.exId : (esOverride ? b.videoOverrides[k] : '');
+    const ex = exId ? getEx(exId) : d.ex;
+    if(ex) out.push({ nombre: d.nombre, ex: ex });
+  });
+  (b.videosManual || []).forEach(function(v){
+    const k = nrmChip(v.nombre);
+    if(!k || vistos[k] || dismissed.indexOf(k) >= 0) return;
+    vistos[k] = 1;
+    const ex = getEx(v.exId);
+    if(ex) out.push({ nombre: v.nombre, ex: ex });
   });
   return out;
 }
@@ -30660,7 +30720,7 @@ const CAND_PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*
    limpiarPrefijoEstacionSB() del lado del alumno) quedaba pegado al
    nombre y rompía el match exacto contra la biblioteca. */
 const CAND_PREFIJO_ESTACION = /^[A-Za-z]\d*[.)]\s*/;
-function candidatosTexto(txt){
+function candidatosTexto(txt, sinY){
   let t = String(txt || '').replace(/^[\s\-•*]+/, '');
   t = t.replace(CAND_PREFIJO_ESTACION, '');
   t = t.replace(CAND_PREFIJO_ORDEN, '');
@@ -30674,7 +30734,17 @@ function candidatosTexto(txt){
     if(!/\+/.test(t)) return [];
   }
   t = t.replace(CAND_RUIDO, '');
-  return t.split(/\s*\+\s*|\s*\/\s*|\s+y\s+/i).map(s => s
+  /* directiva maestra ("Auditoría integral de videos" · "Desactivación
+     de heurísticas conflictivas en Sports") -- separar por " y " sirve
+     para líneas de CrossFit que combinan dos movimientos en una sola
+     ("Thrusters y Pull-ups"), pero en Sports & Bodybuilding rompía
+     nombres de ejercicio compuestos que traen esa conjunción como parte
+     real del nombre ("Colgado pasivo y activo en barra"). sinY (true
+     para cualquier bloque que NO sea CrossFit) desactiva sólo esa
+     alternativa del split, sin tocar "+" ni "/" -- CrossFit sigue
+     exactamente igual. */
+  const splitRx = sinY ? /\s*\+\s*|\s*\/\s*/i : /\s*\+\s*|\s*\/\s*|\s+y\s+/i;
+  return t.split(splitRx).map(s => s
       .replace(/\([^)]*\)/g, ' ')
       .replace(/\[[^\]]*\]/g, ' ')
       /* directiva maestra ("Compilación universal de videos en
@@ -30711,8 +30781,8 @@ function nrmOverrideKey(s){
    aproximación de buscarVideo() en TEMPLATE_HTML eligieron la variante
    incorrecta. Gana SIEMPRE sobre el match automático; sin overrides
    (parámetro ausente/vacío) el comportamiento es idéntico al de siempre. */
-function resolveExacto(txt, overrides){
-  const cands = candidatosTexto(txt);
+function resolveExacto(txt, overrides, sinY){
+  const cands = candidatosTexto(txt, sinY);
   for(let i = 0; i < cands.length; i++){
     if(overrides){
       const ok = nrmOverrideKey(cands[i]);
@@ -30954,39 +31024,51 @@ function buildProgramConfig(ath){
            además se corre partirVideoManual (link pegado a mano) más
            abajo, sin cambios en ese comportamiento. */
         const accesorioConVideo = bloqueCF && b.category === 'accessory';
-        /* directiva maestra ("Compilación universal de videos en
-           desplegable inferior") -- BUG REAL: el desplegable "PAUTAS
-           TÉCNICAS, TIPS & VIDEOS DEL BLOQUE" del lado del alumno
-           (recolectarVideosSB(), TEMPLATE_HTML) volvía a PARSEAR el texto
-           crudo de la Pizarra con su propio regex para adivinar a qué
-           video corresponde cada línea -- una segunda fuente de verdad
-           que diverge de resolveExacto()/candidatosTexto() (la resolución
-           REAL que ya corre acá abajo y que alimenta el chip verde "Video
-           vinculado" del Builder), así que un video manual o
-           auto-matcheado podía perderse o mostrarse mezclado con otro
-           bloque en el teléfono aunque el Builder lo diera por resuelto.
-           Se resuelve UNA sola vez, ACÁ, con el mismo resolveExacto() de
-           siempre (sin lógica nueva de matching) y se persiste el
-           resultado ya resuelto en out.videosBloque -- el lado del
-           alumno sólo lo lee, nunca vuelve a adivinar. Sólo Sports (nunca
-           CrossFit): ese sistema ya tiene su propio circuito de video
-           establecido (vaultAuto/itemVideos) que esto no toca. */
+        /* directiva maestra ("Auditoría integral de videos") -- BUG REAL
+           encontrado en la auditoría: esta rama usaba resolveExacto()/
+           candidatosTexto(), la familia "100% exacta, pensada para
+           CrossFit, nunca tocada" (ver su propio comentario más arriba)
+           -- NUNCA fue la misma fuente que alimenta el chip verde
+           "VIDEOS RECONOCIDOS EN LA BIBLIOTECA" de un bloque de Pizarra
+           Sports (b.sportsPizarra === true), que en el Builder usa
+           detectarEjerciciosSports()/resolverExSports() (fuzzy: sustring
+           + palabras en común, sanea A1./A2./pipe) + b.videosManual
+           ("+ Agregar Video") + b.videoOverrides + b.videosDismissed
+           (ver chips(), MÓDULO 43). Esa divergencia entre "lo que el
+           coach ve" y "lo que se compila" es la causa real de los
+           acordeones vacíos o parciales. Para b.sportsPizarra se usa
+           AHORA resolverVideosBloqueSports(b) -- misma función, mismos
+           datos, mismo orden que el chip del Builder, sin ningún regex
+           nuevo. Los bloques 'list' viejos sin migrar a Pizarra (no
+           sportsPizarra) y CrossFit conservan resolveExacto() tal cual,
+           sin cambios de comportamiento. */
         const videosBloqueVistos = {};
         const videosBloque = [];
-        (b.items||[]).forEach(it => {
-          const r = resolveExacto(it, b.videoOverrides);
-          if(r.ex){
-            addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex);
-            if(bloqueCF && r.ex.videoId) vaultAuto.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, videoId: r.ex.videoId });
-            if(!bloqueCF){
-              const vid = resolverVideoId(r.ex);
-              if(vid && !videosBloqueVistos[vid]){
-                videosBloqueVistos[vid] = 1;
-                videosBloque.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, ytid: vid });
+        if(!bloqueCF && b.sportsPizarra){
+          resolverVideosBloqueSports(b).forEach(function(d){
+            addVideo(exDisplayName(d.ex), d.ex); addVideo(d.nombre, d.ex);
+            const vid = resolverVideoId(d.ex);
+            if(vid && !videosBloqueVistos[vid]){
+              videosBloqueVistos[vid] = 1;
+              videosBloque.push({ nombre: exNombreCorto(d.ex) || d.ex.es || d.nombre, ytid: vid });
+            }
+          });
+        } else {
+          (b.items||[]).forEach(it => {
+            const r = resolveExacto(it, b.videoOverrides, !bloqueCF);
+            if(r.ex){
+              addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex);
+              if(bloqueCF && r.ex.videoId) vaultAuto.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, videoId: r.ex.videoId });
+              if(!bloqueCF){
+                const vid = resolverVideoId(r.ex);
+                if(vid && !videosBloqueVistos[vid]){
+                  videosBloqueVistos[vid] = 1;
+                  videosBloque.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, ytid: vid });
+                }
               }
             }
-          }
-        });
+          });
+        }
         if(!bloqueCF && videosBloque.length) out.videosBloque = videosBloque;
         out.items = (b.items||[]).slice();
         /* en CrossFit el video sólo aparece si el coach pegó el link en la línea
