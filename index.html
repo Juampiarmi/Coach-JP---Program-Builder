@@ -12701,7 +12701,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     t = t.replace(/\\s*\\bc\\/u\\b.*$/i, '');
     return t.trim();
   }
-  function recolectarVideosSB(entries, esCalentamiento){
+  /* directiva maestra ("Compilación universal de videos en desplegable
+     inferior") -- block.videosBloque es la lista YA RESUELTA por
+     buildProgramConfig() (mismo resolveExacto()/candidatosTexto() que
+     alimenta el chip verde "Video vinculado" del Builder, ver el
+     comentario gemelo ahí), persistida en el propio objeto del bloque:
+     ésa es ahora la ÚNICA fuente de verdad. El re-parseo con
+     parsearPizarraSB()/buscarVideo() de abajo queda SOLO como fallback
+     para exports viejos (compilados antes de esta directiva, sin el
+     campo nuevo) -- nunca se ejecutan los dos a la vez. */
+  function recolectarVideosSB(entries, esCalentamiento, block){
+    if(block && Array.isArray(block.videosBloque) && block.videosBloque.length){
+      return block.videosBloque;
+    }
     var vistos = {}, out = [];
     entries.forEach(function(entry){
       if(entry.tipo === 'simple'){
@@ -12987,7 +12999,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        bloque completo (ejercicios simples + sub-ejercicios de biset),
        reusando videoLinkHtml()/buscarVideo() -- mismos datos que ya
        resuelve cada fila, sin duplicar lógica de matching. */
-    const videosBloque = recolectarVideosSB(entries, esCalentamiento);
+    const videosBloque = recolectarVideosSB(entries, esCalentamiento, block);
     const tieneObjTips = block.objective || block.tips;
     const tieneAcc = tieneObjTips || videosBloque.length;
     /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
@@ -30680,8 +30692,19 @@ const CAND_RUIDO = new RegExp('^(?:\\d+' + CAND_RANGO + '\\s*(?:sets?|series?|ro
    "Lift 1: 1 Power snatch") -- mismo criterio, nunca se busca "Lift 1"
    como si fuera un ejercicio. */
 const CAND_PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|lift\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
+/* directiva maestra ("Compilación universal de videos en desplegable
+   inferior") -- BUG REAL encontrado auditando Bloque 3 (Biset): una
+   estación de biset/triset ("A1. Press banca Floor Press: 3x8") nunca
+   resolvía video porque candidatosTexto() sólo sabía pisar prefijos
+   NUMÉRICOS ("Set 1:", "2)", ver CAND_PREFIJO_ORDEN arriba) -- el
+   prefijo de estación con LETRA ("A1."/"B2)") del formato biset/triset
+   de la Pizarra Sports (mismo RX_PREFIJO_ESTACION_SB que ya limpia
+   limpiarPrefijoEstacionSB() del lado del alumno) quedaba pegado al
+   nombre y rompía el match exacto contra la biblioteca. */
+const CAND_PREFIJO_ESTACION = /^[A-Za-z]\d*[.)]\s*/;
 function candidatosTexto(txt){
   let t = String(txt || '').replace(/^[\s\-•*]+/, '');
+  t = t.replace(CAND_PREFIJO_ESTACION, '');
   t = t.replace(CAND_PREFIJO_ORDEN, '');
   /* directiva ("Lista Negra de Palabras de Estructura"): suma Super Sets/
      Warm Up/Buy-in/Cash-out/Then/Sets sueltos a la lista de líneas que
@@ -30696,6 +30719,15 @@ function candidatosTexto(txt){
   return t.split(/\s*\+\s*|\s*\/\s*|\s+y\s+/i).map(s => s
       .replace(/\([^)]*\)/g, ' ')
       .replace(/\[[^\]]*\]/g, ' ')
+      /* directiva maestra ("Compilación universal de videos en
+         desplegable inferior") -- segunda mitad del mismo BUG REAL: el
+         formato "Nombre: dosis" en una sola línea (biset/triset, ej.
+         "A1. Press banca Floor Press: 3x8", mismo RX_SUBEJ_SB que ya usa
+         el parser del lado del alumno) dejaba la dosis completa PEGADA
+         al nombre -- ningún ":" aparece nunca como parte de un nombre de
+         ejercicio real en esta app, así que cortar en el primer ":" es
+         seguro y directo. */
+      .replace(/:\s*.*$/, '')
       .replace(/\s*@.*$/, '')
       .replace(new RegExp('^\\s*\\d+' + CAND_RANGO + '\\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\\b)?\\s*', 'i'), '')
       .replace(/[—–]\s*.*$/, '')
@@ -30964,13 +30996,40 @@ function buildProgramConfig(ath){
            además se corre partirVideoManual (link pegado a mano) más
            abajo, sin cambios en ese comportamiento. */
         const accesorioConVideo = bloqueCF && b.category === 'accessory';
+        /* directiva maestra ("Compilación universal de videos en
+           desplegable inferior") -- BUG REAL: el desplegable "PAUTAS
+           TÉCNICAS, TIPS & VIDEOS DEL BLOQUE" del lado del alumno
+           (recolectarVideosSB(), TEMPLATE_HTML) volvía a PARSEAR el texto
+           crudo de la Pizarra con su propio regex para adivinar a qué
+           video corresponde cada línea -- una segunda fuente de verdad
+           que diverge de resolveExacto()/candidatosTexto() (la resolución
+           REAL que ya corre acá abajo y que alimenta el chip verde "Video
+           vinculado" del Builder), así que un video manual o
+           auto-matcheado podía perderse o mostrarse mezclado con otro
+           bloque en el teléfono aunque el Builder lo diera por resuelto.
+           Se resuelve UNA sola vez, ACÁ, con el mismo resolveExacto() de
+           siempre (sin lógica nueva de matching) y se persiste el
+           resultado ya resuelto en out.videosBloque -- el lado del
+           alumno sólo lo lee, nunca vuelve a adivinar. Sólo Sports (nunca
+           CrossFit): ese sistema ya tiene su propio circuito de video
+           establecido (vaultAuto/itemVideos) que esto no toca. */
+        const videosBloqueVistos = {};
+        const videosBloque = [];
         (b.items||[]).forEach(it => {
           const r = resolveExacto(it, b.videoOverrides);
           if(r.ex){
             addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex);
             if(bloqueCF && r.ex.videoId) vaultAuto.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, videoId: r.ex.videoId });
+            if(!bloqueCF){
+              const vid = resolverVideoId(r.ex);
+              if(vid && !videosBloqueVistos[vid]){
+                videosBloqueVistos[vid] = 1;
+                videosBloque.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, ytid: vid });
+              }
+            }
           }
         });
+        if(!bloqueCF && videosBloque.length) out.videosBloque = videosBloque;
         out.items = (b.items||[]).slice();
         /* en CrossFit el video sólo aparece si el coach pegó el link en la línea
            -- salvo Accessory, que ya auto-matchea arriba como Bodybuilding */
