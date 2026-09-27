@@ -69,6 +69,7 @@ src/
 │   ├── brand.ts                paleta, fuentes, formatos, presets de tags
 │   ├── ai.ts                   prompt de sistema, llamadas a OpenAI/Anthropic/Gemini, validación del JSON
 │   ├── geminiModels.ts         detección de modelos Gemini habilitados (ListModels)
+│   ├── safeJson.ts             parser resiliente del JSON de la IA (markdown, comillas, comas)
 │   ├── chart.ts                parseo de series, normalización, curvas suaves
 │   └── exporter.ts             html-to-image 3x, descarga, Web Share
 ├── hooks/                      usePersistentState, useFitScale, useMediaQuery

@@ -2,6 +2,7 @@ import { DEFAULT_STATE } from '../defaults'
 import type { Accent, CanvasState, ChartMode, CurveShape, TemplateId } from '../types'
 import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
+import { JsonRepairError, safeParseJson } from './safeJson'
 
 export type AiProvider = 'openai' | 'anthropic' | 'gemini'
 export type Discipline = 'general' | 'sports' | 'crossfit'
@@ -88,7 +89,7 @@ REGLAS DE CONTENIDO:
 - citation: estudio REAL y verificable con formato "APELLIDO Y COL., AÑO · REVISTA" en mayúsculas. description: de qué trata ese estudio en una línea. Si no estás seguro de que el estudio exista tal cual, dejá ambos vacíos (""). Nunca inventes citas. Vacíos en manifesto.
 - Los números deben ser coherentes con la literatura. No inventes precisión que no existe.
 
-FORMATO DE SALIDA: respondé ÚNICAMENTE con un objeto JSON válido, sin markdown ni texto alrededor, con esta forma exacta:
+FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloques de código markdown (\`\`\`json), sin saltos de línea sin escapar dentro de strings y sin comillas dobles internas sin escapar (\\"). Dentro de los textos usá comillas angulares « » en lugar de comillas dobles. Nada de texto antes ni después del JSON. Forma exacta:
 {
   "format": "single" | "stories" | "carousel",
   "caption": string,
@@ -119,7 +120,7 @@ Variá las plantillas dentro de una secuencia: no repitas la misma más de dos v
 1. Primera línea: gancho de una oración que frene el scroll (sin repetir literal el titular).
 2. 2 o 3 párrafos cortos (1 a 3 oraciones cada uno) que expliquen el porqué fisiológico, con el mismo tono táctico y autoritario.
 3. Micro-bullets (3 a 5 líneas que empiezan con "▸ ") con los puntos accionables.
-4. Llamado a la acción con PALABRA CLAVE en mayúsculas, por ejemplo: Comentá "RIR" y te mando la guía completa.
+4. Llamado a la acción con PALABRA CLAVE en mayúsculas entre comillas angulares, por ejemplo: Comentá «RIR» y te mando la guía completa.
 5. Cierre con 3 a 5 hashtags de nicho en español en la última línea.
 Separá los bloques con una línea en blanco (usá \n\n dentro del string). Máximo 1800 caracteres. Sin emojis.`
 
@@ -427,10 +428,12 @@ async function callGemini(
 
 /** Extrae el primer objeto JSON de la respuesta (tolera ```json ... ``` o texto alrededor). */
 export function extractJson(text: string): unknown {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start === -1 || end <= start) throw new Error('La IA no devolvió JSON.')
-  return JSON.parse(text.slice(start, end + 1))
+  return safeParseJson(text)
+}
+
+/** Pedido de corrección sintáctica: mismo contenido, JSON válido. */
+function repairPrompt(err: JsonRepairError) {
+  return `Tu respuesta anterior no es JSON válido (error: ${err.message}). Devolvé EXACTAMENTE el mismo contenido corregido como un único objeto JSON válido con la misma estructura: escapá las comillas dobles internas como \\" (o reemplazalas por « »), usá \\n para los saltos de línea dentro de strings, sin comas sobrantes y sin markdown.\n\nRespuesta a corregir:\n${err.raw.slice(0, 12000)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -547,11 +550,28 @@ export async function generateContent(
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
   const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
   const user = buildUserPrompt(topic, mode, discipline)
-  const text =
+  const ask = (prompt: string) =>
     settings.provider === 'gemini'
-      ? await callGemini(key, model, user, signal, onStatus, onModelChange, settings.geminiModels ?? [])
+      ? callGemini(key, model, prompt, signal, onStatus, onModelChange, settings.geminiModels ?? [])
       : settings.provider === 'anthropic'
-        ? await callAnthropic(key, model, user, signal)
-        : await callOpenAI(key, model, user, signal)
-  return parseGeneration(extractJson(text), mode)
+        ? callAnthropic(key, model, prompt, signal)
+        : callOpenAI(key, model, prompt, signal)
+  const text = await ask(user)
+  try {
+    return parseGeneration(safeParseJson(text), mode)
+  } catch (err) {
+    if (!(err instanceof JsonRepairError)) throw err
+    // Ni la limpieza local lo salvó: un único reintento pidiéndole al modelo la corrección.
+    onStatus?.('[ Respuesta con JSON inválido · Pidiendo corrección sintáctica... ]')
+    const fixed = await ask(repairPrompt(err))
+    try {
+      const result = parseGeneration(safeParseJson(fixed), mode)
+      onStatus?.(null)
+      return result
+    } catch (again) {
+      onStatus?.(null)
+      if (again instanceof JsonRepairError) throw new Error(`La IA devolvió un JSON inválido dos veces (${again.message}). Probá de nuevo.`)
+      throw again
+    }
+  }
 }
