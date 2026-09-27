@@ -105,6 +105,25 @@ export function macrosFor(foodId: string, grams: number) {
   };
 }
 
+/** Gramos de `toId` que aportan lo mismo del macro ancla del grupo que `grams` de `fromId` (redondeo a 5 g). */
+export function equivalentGrams(fromId: string, grams: number, toId: string) {
+  const from = FOOD_BY_ID[fromId];
+  const to = FOOD_BY_ID[toId];
+  if (!from || !to || fromId === toId) return grams;
+  const anchor = GROUP_ANCHOR[from.group];
+  if (!(to[anchor] > 0)) return grams;
+  return Math.max(5, Math.round((from[anchor] * grams) / to[anchor] / 5) * 5);
+}
+
+/** Medida casera legible ("≈ 3 u", "≈ 1 scoop"). Vacío si no aplica. */
+export function householdHint(foodId: string | undefined, grams: number) {
+  const ref = foodId ? FOOD_BY_ID[foodId] : undefined;
+  if (!ref?.unit) return '';
+  const q = Math.round((grams / ref.unit.grams) * 2) / 2;
+  if (q < 0.5) return '';
+  return `≈ ${String(q).replace('.', ',')} ${ref.unit.label}`;
+}
+
 /** Busca un alimento de la base por nombre aproximado (para mapear la respuesta de la IA). */
 export function matchFood(name: string): FoodRef | undefined {
   const n = normalize(name);

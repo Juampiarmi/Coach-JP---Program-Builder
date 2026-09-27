@@ -14,9 +14,9 @@ export const BRAND = {
     panel: '#121820',
     line: '#1F2937',
     cyan: '#00E5FF',
-    fire: '#FF6B00',
+    fire: '#F97316',
     gold: '#FFD600',
-    ink: '#F9FAFB',
+    ink: '#F3F4F6',
     steel: '#8A99AD',
   },
 };

@@ -11,9 +11,9 @@ const config: Config = {
         line: '#1F2937',
         line2: '#263342',
         cyan: { hud: '#00E5FF' },
-        fire: '#FF6B00',
+        fire: { DEFAULT: '#F97316', deep: '#E65100' },
         gold: '#FFD600',
-        ink: '#F9FAFB',
+        ink: '#F3F4F6',
         steel: '#8A99AD',
       },
       fontFamily: {
@@ -23,8 +23,8 @@ const config: Config = {
       },
       boxShadow: {
         hud: '0 0 0 1px #1F2937, 0 20px 60px -30px rgba(0,229,255,.25)',
-        fire: '0 0 24px -6px rgba(255,107,0,.7)',
-        gold: '0 0 24px -6px rgba(255,214,0,.55)',
+        fire: '0 0 0 1px rgba(249,115,22,.35), 0 8px 24px -12px rgba(230,81,0,.55)',
+        gold: '0 0 0 1px rgba(255,214,0,.3), 0 8px 24px -14px rgba(255,214,0,.4)',
       },
     },
   },

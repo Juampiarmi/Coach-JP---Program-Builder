@@ -108,7 +108,11 @@ export default function Home() {
                 onClick={() => setBuilderTab(id)}
                 className={cx(
                   'flex flex-none items-center gap-2 rounded-lg px-3.5 py-2.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.12em] transition',
-                  builderTab === id ? (id === 'intake' ? 'bg-fire text-carbon shadow-fire' : 'bg-cyan-hud text-carbon shadow-[0_0_20px_-6px_rgba(0,229,255,.9)]') : 'text-steel hover:bg-panel2 hover:text-ink',
+                  builderTab === id
+                    ? id === 'intake'
+                      ? 'bg-fire/10 text-[#FDBA74] ring-1 ring-inset ring-fire/40'
+                      : 'bg-cyan-hud/10 text-ink ring-1 ring-inset ring-cyan-hud/35'
+                    : 'text-steel hover:bg-panel2 hover:text-ink',
                 )}
               >
                 <Icon className="h-3.5 w-3.5" /> {label}
@@ -130,7 +134,7 @@ export default function Home() {
                 onClick={() => setDeployTab(id)}
                 className={cx(
                   'flex items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition',
-                  deployTab === id ? 'bg-gold text-carbon shadow-gold' : 'text-steel hover:bg-panel2 hover:text-ink',
+                  deployTab === id ? 'bg-gold/10 text-gold ring-1 ring-inset ring-gold/35' : 'text-steel hover:bg-panel2 hover:text-ink',
                 )}
               >
                 <Icon className="h-3.5 w-3.5" /> {label}

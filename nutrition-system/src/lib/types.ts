@@ -2,6 +2,10 @@ export type Sex = 'M' | 'F';
 export type Discipline = 'bodybuilding' | 'hybrid';
 export type Phase = 'recomp' | 'maintenance' | 'surplus';
 export type BmrFormula = 'katch' | 'mifflin';
+export type PrecisionMode = 'quick' | 'isak';
+/** Pliegues ISAK usados por Jackson-Pollock 7 (mm). */
+export type SkinfoldSite = 'triceps' | 'subscapular' | 'chest' | 'midaxillary' | 'suprailiac' | 'abdominal' | 'thigh';
+export type Skinfolds = Record<SkinfoldSite, number>;
 export type DayMode = 'on' | 'off';
 export type MealDay = 'on' | 'off' | 'both';
 export type MealRole = 'breakfast' | 'lunch' | 'peri' | 'post' | 'snack' | 'dinner';
@@ -19,6 +23,13 @@ export interface Profile {
   heightCm: number;
   weightKg: number;
   bodyFatPct: number;
+  /** Rápida: % graso por banda visual + gasto inferido. ISAK: pliegues / FFM medidos. */
+  precisionMode: PrecisionMode;
+  /** Banda visual elegida en modo rápido (id de BODY_FAT_BANDS). */
+  bodyFatBand: string | null;
+  skinfolds: Skinfolds;
+  /** FFM medida (DEXA / bioimpedancia) en kg. 0 = derivar del % graso. */
+  measuredFfmKg: number;
   discipline: Discipline;
   phase: Phase;
   bmrFormula: BmrFormula;

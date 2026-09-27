@@ -10,7 +10,7 @@ export function cx(...c: (string | false | null | undefined)[]) {
 
 export function Shield({ size = 40, className }: { size?: number; className?: string }) {
   return (
-    <svg width={size} height={size * 1.2} viewBox="0 0 100 120" className={cx('drop-shadow-[0_0_14px_rgba(255,214,0,.35)]', className)} aria-hidden>
+    <svg width={size} height={size * 1.2} viewBox="0 0 100 120" className={cx('drop-shadow-[0_0_10px_rgba(255,214,0,.22)]', className)} aria-hidden>
       <defs>
         <linearGradient id="shield-g" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#FFE45C" />
@@ -156,9 +156,9 @@ export function Segmented<T extends string>({
   size?: 'sm' | 'md';
 }) {
   const active = {
-    cyan: 'bg-cyan-hud text-carbon shadow-[0_0_18px_-4px_rgba(0,229,255,.8)]',
-    gold: 'bg-gold text-carbon shadow-[0_0_18px_-4px_rgba(255,214,0,.7)]',
-    fire: 'bg-fire text-carbon shadow-fire',
+    cyan: 'bg-cyan-hud/10 text-cyan-hud ring-1 ring-inset ring-cyan-hud/35',
+    gold: 'bg-gold/10 text-gold ring-1 ring-inset ring-gold/35',
+    fire: 'bg-fire/10 text-fire ring-1 ring-inset ring-fire/40',
   }[tone];
   return (
     <div className="grid gap-1 rounded-lg border border-line2 bg-panel2 p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
@@ -202,7 +202,7 @@ export function Slider({
   /** Rango recomendado por evidencia: se marca en la pista y alerta si se sale. */
   range?: readonly [number, number];
 }) {
-  const color = { cyan: '#00E5FF', gold: '#FFD600', fire: '#FF6B00' }[tone];
+  const color = { cyan: '#00E5FF', gold: '#FFD600', fire: '#F97316' }[tone];
   const pct = ((value - min) / (max - min)) * 100;
   const out = range && (value < range[0] - 1e-9 || value > range[1] + 1e-9);
   return (
@@ -247,11 +247,12 @@ export function Slider({
 }
 
 export function Toggle({ checked, onChange, label, tone = 'gold' }: { checked: boolean; onChange: (v: boolean) => void; label: ReactNode; tone?: 'gold' | 'cyan' | 'fire' }) {
-  const bg = { gold: 'bg-gold', cyan: 'bg-cyan-hud', fire: 'bg-fire' }[tone];
+  const bg = { gold: 'bg-gold/20 border-gold/60', cyan: 'bg-cyan-hud/15 border-cyan-hud/50', fire: 'bg-fire/20 border-fire/60' }[tone];
+  const knob = { gold: 'bg-gold', cyan: 'bg-cyan-hud', fire: 'bg-fire' }[tone];
   return (
     <button type="button" onClick={() => onChange(!checked)} className="flex w-full items-center gap-3 text-left">
       <span className={cx('relative h-6 w-11 flex-none rounded-full border border-line2 transition', checked ? bg : 'bg-panel2')}>
-        <span className={cx('absolute top-0.5 h-[18px] w-[18px] rounded-full transition-all', checked ? 'left-[22px] bg-carbon' : 'left-0.5 bg-steel')} />
+        <span className={cx('absolute top-0.5 h-[18px] w-[18px] rounded-full transition-all', checked ? `left-[22px] ${knob}` : 'left-0.5 bg-steel')} />
       </span>
       <span className="text-sm">{label}</span>
     </button>
@@ -271,9 +272,11 @@ export function Readout({
   tone?: 'ink' | 'cyan' | 'fire' | 'gold';
   sub?: ReactNode;
 }) {
-  const color = { ink: 'text-ink', cyan: 'text-cyan-hud', fire: 'text-fire', gold: 'text-gold' }[tone];
+  // Las cifras van en blanco suave; el tono sólo marca un filete lateral (fire = alerta, se lee en ámbar).
+  const color = tone === 'fire' ? 'text-fire' : 'text-ink';
+  const edge = { ink: 'before:bg-line2', cyan: 'before:bg-cyan-hud/60', fire: 'before:bg-fire', gold: 'before:bg-gold/70' }[tone];
   return (
-    <div className="rounded-lg border border-line bg-panel2 px-3 py-2.5">
+    <div className={cx('relative overflow-hidden rounded-lg border border-line bg-panel2 px-3 py-2.5 before:absolute before:inset-y-2 before:left-0 before:w-[2px] before:rounded-r', edge)}>
       <div className="font-mono text-[9px] uppercase tracking-[0.16em] text-steel">{label}</div>
       <div className={cx('mt-1 font-display text-2xl font-bold leading-none', color)}>
         {value}
@@ -302,15 +305,16 @@ export function HudButton({
   type?: 'button' | 'submit';
 }) {
   const solid = {
-    fire: 'bg-fire text-carbon shadow-fire hover:brightness-110',
-    cyan: 'bg-cyan-hud text-carbon shadow-[0_0_24px_-6px_rgba(0,229,255,.8)] hover:brightness-110',
-    gold: 'bg-gold text-carbon shadow-gold hover:brightness-110',
+    // Acción principal: gradiente oscuro sobrio, acento ámbar en borde y texto; se enciende sólo en hover.
+    fire: 'border border-fire/45 bg-gradient-to-b from-[#1E1712] to-[#140F0B] text-[#FDBA74] hover:border-fire hover:text-fire hover:shadow-fire',
+    cyan: 'border border-cyan-hud/35 bg-gradient-to-b from-[#10202A] to-[#0C161D] text-cyan-hud hover:border-cyan-hud/70',
+    gold: 'border border-gold/40 bg-gradient-to-b from-[#211D0E] to-[#16130A] text-gold hover:border-gold/80 hover:shadow-gold',
     steel: 'bg-line2 text-ink hover:bg-line',
   }[tone];
   const ghost = {
-    fire: 'border border-fire/50 text-fire hover:bg-fire/10',
-    cyan: 'border border-cyan-hud/40 text-cyan-hud hover:bg-cyan-hud/10',
-    gold: 'border border-gold/50 text-gold hover:bg-gold/10',
+    fire: 'border border-fire/35 text-fire hover:bg-fire/10',
+    cyan: 'border border-cyan-hud/30 text-cyan-hud hover:bg-cyan-hud/10',
+    gold: 'border border-gold/35 text-gold hover:bg-gold/10',
     steel: 'border border-line2 text-steel hover:text-ink',
   }[tone];
   return (
