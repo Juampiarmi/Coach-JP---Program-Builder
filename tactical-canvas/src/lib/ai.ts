@@ -23,17 +23,17 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 · máxima calidad' },
   ],
   gemini: [
-    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · rápido, última generación recomendada' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · estable' },
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · recomendado' },
+    { id: 'gemini-3.8-flash-lite', label: 'Gemini 3.8 Flash-Lite · canal rápido / fallback' },
   ],
 }
 
 /** Modelo de Gemini por defecto. */
 export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash'
-/** Único reintento si falla el default. */
-export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash'
-/** Generaciones que Google ya dio de baja (1.x, 2.0 y los alias sin versión): se migran solas al default. */
-export const isRetiredGemini = (model: string) => /^gemini-(1\.\d|2\.0)(-|$)|^gemini-pro(-vision)?$/.test(model.trim())
+/** Canal rápido: entra de inmediato si 3.8 Flash está saturado. */
+export const GEMINI_LITE_MODEL = 'gemini-3.8-flash-lite'
+/** Generaciones que Google ya no habilita para usuarios nuevos (1.x, 2.x y alias sin versión): se migran solas a 3.8. */
+export const isRetiredGemini = (model: string) => /^gemini-(1|2)\.\d/.test(model.trim()) || /^gemini-pro(-vision)?$/.test(model.trim())
 
 export const PROVIDER_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' }
 export const KEY_PLACEHOLDER: Record<AiProvider, string> = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIzaSy...' }
@@ -125,6 +125,12 @@ Variá las plantillas dentro de una secuencia: no repitas la misma más de dos v
 5. Cierre con 3 a 5 hashtags de nicho en español en la última línea.
 Separá los bloques con una línea en blanco (usá \n\n dentro del string). Máximo 1800 caracteres. Sin emojis.`
 
+/** Mismo prompt sin sangrías ni espacios repetidos: menos tokens por pedido. */
+const COMPACT_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(/[ \t]+/g, ' ')
+  .replace(/\n /g, '\n')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim()
+
 export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discipline = 'general') {
   const focus = DISCIPLINE_RULE[discipline]
   return `Tema o concepto a comunicar: "${topic.trim()}"\n\n${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
@@ -188,6 +194,22 @@ class HttpError extends Error {
   }
 }
 
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const t = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => {
+      clearTimeout(t)
+      reject(new DOMException('Cancelado', 'AbortError'))
+    })
+  })
+
+/** Saturación temporal del servicio (503 / "high demand"): se reintenta el mismo modelo. */
+function isOverloaded(err: unknown) {
+  if (!(err instanceof HttpError)) return false
+  if (err.status === 503) return true
+  return /high demand|spikes in demand|overloaded/i.test(err.message)
+}
+
 async function requestGemini(key: string, model: string, prompt: string, signal?: AbortSignal) {
   const apiKey = key
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
@@ -197,7 +219,10 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        maxOutputTokens: 4096,
+      },
     }),
   })
   const json = await res.json().catch(() => ({}))
@@ -205,27 +230,61 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
   const cand = json?.candidates?.[0]
   if (!cand?.content) throw new Error(`Gemini no devolvió contenido${cand?.finishReason ? ` (${cand.finishReason})` : ''}.`)
   const parts: { text?: string }[] = cand.content.parts ?? []
-  return parts.map((p) => p.text ?? '').join('')
+  const text = parts.map((p) => p.text ?? '').join('')
+  if (cand.finishReason === 'MAX_TOKENS') {
+    try {
+      extractJson(text)
+    } catch {
+      throw new Error('La respuesta de Gemini se cortó por largo. Probá con 1 placa o un tema más acotado.')
+    }
+  }
+  return text
 }
 
-async function callGemini(key: string, model: string, user: string, signal?: AbortSignal) {
-  // Estructura estándar: un solo turno con el prompt completo (sistema + pedido).
-  const prompt = `${SYSTEM_PROMPT}\n\n---\n\n${user}`
-  const selected = isRetiredGemini(model) ? GEMINI_DEFAULT_MODEL : model.trim()
-  try {
-    return await requestGemini(key, selected, prompt, signal)
-  } catch (err) {
-    // Modelo no encontrado o dado de baja → un único reintento automático:
-    // si falla 3.8-flash se prueba sólo 2.5-flash; si falla otro modelo, se vuelve al default.
-    const unavailable =
-      err instanceof HttpError &&
-      (err.status === 404 || err.status === 410 || /not found|no longer available|not supported|deprecated/i.test(err.message))
-    if (unavailable) {
-      const retry = selected === GEMINI_DEFAULT_MODEL ? GEMINI_FALLBACK_MODEL : GEMINI_DEFAULT_MODEL
-      console.warn(`[Gemini] ${selected} no disponible. Reintentando con ${retry}.`)
-      return await requestGemini(key, retry, prompt, signal)
+export type StatusFn = (message: string | null) => void
+
+export const OVERLOAD_FINAL_MSG = 'Servidores de Google temporalmente saturados. Aguarda unos segundos y reintenta.'
+const OVERLOAD_RETRIES = 2
+const OVERLOAD_WAIT_MS = 2000
+
+export const OVERLOAD_LITE_MSG = '[ Servidor de Google saturado · Reintentando con canal rápido (3.8 Flash-Lite)... ]'
+
+/**
+ * Llamada a Gemini:
+ * - Si gemini-3.8-flash está saturado (503 / "high demand"), reintenta DE INMEDIATO con
+ *   gemini-3.8-flash-lite.
+ * - Si el canal que queda también está saturado, espera 2 s y lo reintenta hasta 2 veces.
+ */
+async function callGemini(key: string, model: string, user: string, signal?: AbortSignal, onStatus?: StatusFn) {
+  // Un solo turno con el prompt completo (sistema + pedido), sin espacios redundantes.
+  const prompt = `${COMPACT_SYSTEM_PROMPT}\n\n${user}`
+  const selected = !model.trim() || isRetiredGemini(model) ? GEMINI_DEFAULT_MODEL : model.trim()
+  let current = selected
+  let waits = 0
+  for (;;) {
+    try {
+      const text = await requestGemini(key, current, prompt, signal)
+      onStatus?.(current !== selected ? `Generado con ${current} (canal rápido).` : null)
+      return text
+    } catch (err) {
+      if (isOverloaded(err)) {
+        if (current === GEMINI_DEFAULT_MODEL) {
+          onStatus?.(OVERLOAD_LITE_MSG)
+          current = GEMINI_LITE_MODEL
+          continue
+        }
+        if (waits < OVERLOAD_RETRIES) {
+          waits++
+          onStatus?.(`[ Servidor de Google saturado · Reintentando ${waits}/${OVERLOAD_RETRIES}... ]`)
+          await sleep(OVERLOAD_WAIT_MS, signal)
+          continue
+        }
+        onStatus?.(null)
+        throw new Error(OVERLOAD_FINAL_MSG)
+      }
+      onStatus?.(null)
+      throw err
     }
-    throw err
   }
 }
 
@@ -344,12 +403,17 @@ export async function generateContent(
   mode: GenMode,
   discipline: Discipline,
   signal?: AbortSignal,
+  onStatus?: StatusFn,
 ): Promise<GenerationResult> {
   const key = (settings.keys[settings.provider] ?? '').trim()
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
   const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
   const user = buildUserPrompt(topic, mode, discipline)
-  const call = { openai: callOpenAI, anthropic: callAnthropic, gemini: callGemini }[settings.provider] ?? callOpenAI
-  const text = await call(key, model, user, signal)
+  const text =
+    settings.provider === 'gemini'
+      ? await callGemini(key, model, user, signal, onStatus)
+      : settings.provider === 'anthropic'
+        ? await callAnthropic(key, model, user, signal)
+        : await callOpenAI(key, model, user, signal)
   return parseGeneration(extractJson(text), mode)
 }

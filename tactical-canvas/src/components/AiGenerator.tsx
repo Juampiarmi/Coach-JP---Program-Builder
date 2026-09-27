@@ -38,6 +38,7 @@ export function AiGenerator({ onResult }: Props) {
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [status, setStatus] = useState<string | null>(null)
   const [modal, setModal] = useState(false)
   const abort = useRef<AbortController | null>(null)
   const hasKey = Boolean(settings.keys[settings.provider])
@@ -57,13 +58,15 @@ export function AiGenerator({ onResult }: Props) {
     }
     setBusy(true)
     setError('')
+    setStatus(null)
     abort.current = new AbortController()
     try {
-      onResult(await generateContent(settings, topic, mode.mode, mode.discipline ?? 'general', abort.current.signal))
+      onResult(await generateContent(settings, topic, mode.mode, mode.discipline ?? 'general', abort.current.signal, setStatus))
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         setError(err instanceof Error ? err.message : 'Error desconocido')
       }
+      setStatus(null)
     } finally {
       setBusy(false)
     }
@@ -146,6 +149,14 @@ export function AiGenerator({ onResult }: Props) {
         {busy && <span className="absolute inset-y-0 left-0 w-1/3 animate-[tcscan_1.2s_ease-in-out_infinite] bg-cyan/25" />}
         <span className="relative">{busy ? 'GENERANDO… (TOCÁ PARA CANCELAR)' : 'GENERAR CONTENIDO [IA]'}</span>
       </button>
+      {status && (
+        <p
+          role="status"
+          className={`mt-2 font-mono text-[10px] leading-relaxed tracking-wider ${busy ? 'animate-pulse text-gold/90' : 'text-steel/80'}`}
+        >
+          {status}
+        </p>
+      )}
       {error && <p className="mt-2 font-mono text-[10px] leading-relaxed text-fire">{error}</p>}
       {modal && <AiSettingsModal settings={settings} onSave={setSettings} onClose={() => setModal(false)} />}
     </div>
