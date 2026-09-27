@@ -8,10 +8,11 @@ interface Props {
   fontSize: number
   tracking: string
   scale: number
+  gap?: number
 }
 
 /** Manifiesto / cita táctica: la frase es la pieza. Barra naranja o comillas militares. */
-export function ManifestoTemplate({ state, fontFamily, fontSize, tracking, scale }: Props) {
+export function ManifestoTemplate({ state, fontFamily, fontSize, tracking, scale, gap = 1 }: Props) {
   const author = state.manifestoAuthor.trim()
   const quotes = state.manifestoStyle === 'quotes'
   const phrase = (
@@ -71,7 +72,7 @@ export function ManifestoTemplate({ state, fontFamily, fontSize, tracking, scale
       {author && (
         <p
           style={{
-            margin: `${(quotes ? 20 : 56) * scale}px 0 0`,
+            margin: `${(quotes ? 20 : 56) * scale * gap}px 0 0`,
             paddingLeft: quotes ? 0 : 52 * scale,
             fontFamily: FONT_MONO,
             fontWeight: 600,

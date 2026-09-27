@@ -1,5 +1,6 @@
 export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto'
 export type ManifestoStyle = 'bar' | 'quotes'
+export type ContentAlign = 'auto' | 'top' | 'center' | 'bottom'
 export type AspectId = 'feed' | 'story'
 export type Accent = 'orange' | 'cyan' | 'gold' | 'white' | 'gray'
 export type HeadlineFont = 'chakra' | 'barlow' | 'inter'
@@ -65,4 +66,12 @@ export interface CanvasState {
   // Fondo fotográfico
   bgOverlay: number
   floatingPlate: boolean
+  /** Encuadre de la foto: zoom 100–160 %, desplazamiento -50…+50 % */
+  bgZoom: number
+  bgX: number
+  bgY: number
+  // Layout
+  contentAlign: ContentAlign
+  /** Separación titular → bloque de plantilla, en % del valor base */
+  contentGap: number
 }
