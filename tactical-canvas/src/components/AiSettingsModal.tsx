@@ -92,8 +92,8 @@ export function AiSettingsModal({ settings, onSave, onClose }: Props) {
           </div>
           {p === 'gemini' && (
             <p className="font-mono text-[10px] leading-relaxed text-steel/80">
-              Conseguí tu key gratis en aistudio.google.com → Get API key. Google retira modelos viejos: si 1.5 responde "not
-              found", usá gemini-2.5-flash.
+              Conseguí tu key gratis en aistudio.google.com → Get API key. Si el modelo elegido no existe, la app reintenta sola
+              con gemini-2.5-flash.
             </p>
           )}
           <p className="rounded-md border border-gold/20 bg-gold/5 p-2.5 font-mono text-[10px] leading-relaxed text-steel">
