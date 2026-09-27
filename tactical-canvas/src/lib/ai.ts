@@ -152,6 +152,7 @@ async function callOpenAI(key: string, model: string, user: string, signal?: Abo
     }),
   })
   const json = await res.json().catch(() => ({}))
+  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Rate limit')
   if (!res.ok) throw new Error(json?.error?.message ?? `OpenAI respondió ${res.status}`)
   return String(json?.choices?.[0]?.message?.content ?? '')
 }
@@ -175,6 +176,7 @@ async function callAnthropic(key: string, model: string, user: string, signal?: 
     }),
   })
   const json = await res.json().catch(() => ({}))
+  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Rate limit')
   if (!res.ok) throw new Error(json?.error?.message ?? `Anthropic respondió ${res.status}`)
   const blocks: { type: string; text?: string }[] = json?.content ?? []
   return blocks
@@ -190,6 +192,38 @@ class HttpError extends Error {
   ) {
     super(message)
   }
+}
+
+/** Cuota por minuto agotada (429): trae los segundos que hay que esperar. */
+export class RateLimitError extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterSec: number,
+  ) {
+    super(message)
+  }
+}
+
+const DEFAULT_RATE_WAIT_SEC = 30
+
+/**
+ * Segundos de espera que indica el proveedor ante un 429:
+ * RetryInfo.retryDelay ("31s") de Google, "retry in 31.2s" en el mensaje o el header Retry-After.
+ */
+function retryAfterSeconds(res: Response, json: unknown, message: string) {
+  const details = (json as { error?: { details?: { retryDelay?: string }[] } })?.error?.details ?? []
+  const fromDetails = details.map((d) => d?.retryDelay).find(Boolean)
+  const candidates = [
+    fromDetails && parseFloat(fromDetails),
+    parseFloat(message.match(/retry (?:in|after) ([\d.]+)\s*s/i)?.[1] ?? ''),
+    parseFloat(res.headers.get('retry-after') ?? ''),
+  ]
+  const sec = candidates.find((n): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0)
+  return Math.min(600, Math.ceil(sec ?? DEFAULT_RATE_WAIT_SEC))
+}
+
+function rateLimitError(res: Response, json: unknown, message: string) {
+  return new RateLimitError(message, retryAfterSeconds(res, json, message))
 }
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -224,6 +258,7 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
     }),
   })
   const json = await res.json().catch(() => ({}))
+  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Quota exceeded')
   if (!res.ok) throw new HttpError(json?.error?.message ?? `Gemini respondió ${res.status}`, res.status)
   const cand = json?.candidates?.[0]
   if (!cand?.content) throw new Error(`Gemini no devolvió contenido${cand?.finishReason ? ` (${cand.finishReason})` : ''}.`)

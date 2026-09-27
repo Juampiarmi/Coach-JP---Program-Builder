@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_AI_SETTINGS,
   DISCIPLINE_LABEL,
@@ -8,6 +8,7 @@ import {
   type Discipline,
   type GenerationResult,
   type GenMode,
+  RateLimitError,
 } from '../lib/ai'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { AiSettingsModal } from './AiSettingsModal'
@@ -17,6 +18,50 @@ interface Props {
 }
 
 const MODES: GenMode[] = ['auto', 'single', 'stories', 'carousel']
+const COOLDOWN_KEY = 'jp-tactical-canvas:ai-cooldown'
+
+/** Fin del enfriamiento por cuota (persistido: recargar la página no lo saltea). */
+function readCooldown() {
+  try {
+    const until = Number(localStorage.getItem(COOLDOWN_KEY) ?? 0)
+    return until > Date.now() ? until : 0
+  } catch {
+    return 0
+  }
+}
+
+function useCooldown() {
+  const [until, setUntil] = useState(readCooldown)
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!until) return
+    const id = window.setInterval(() => {
+      const t = Date.now()
+      setNow(t)
+      if (t >= until) {
+        setUntil(0)
+        try {
+          localStorage.removeItem(COOLDOWN_KEY)
+        } catch {
+          /* sin almacenamiento */
+        }
+      }
+    }, 250)
+    return () => window.clearInterval(id)
+  }, [until])
+  const start = (seconds: number) => {
+    const u = Date.now() + seconds * 1000
+    setNow(Date.now())
+    setUntil(u)
+    try {
+      localStorage.setItem(COOLDOWN_KEY, String(u))
+    } catch {
+      /* sin almacenamiento */
+    }
+  }
+  const remaining = until ? Math.max(0, Math.ceil((until - now) / 1000)) : 0
+  return { remaining, start }
+}
 
 /** Barra de generación táctica con IA (BYOK). */
 export function AiGenerator({ onResult }: Props) {
@@ -37,13 +82,19 @@ export function AiGenerator({ onResult }: Props) {
   const [status, setStatus] = useState<string | null>(null)
   const [modal, setModal] = useState(false)
   const abort = useRef<AbortController | null>(null)
+  // Candado síncrono: bloquea el doble clic antes de que React re-renderice el botón.
+  const inFlight = useRef(false)
+  const cooldown = useCooldown()
+  const locked = busy || cooldown.remaining > 0
+  const RATE_MSG = 'Límite de cuota por minuto alcanzado.'
+  // Al terminar la cuenta regresiva se limpia el aviso de cuota (queda listo para reintentar).
+  useEffect(() => {
+    if (cooldown.remaining === 0) setError((e) => (e.startsWith(RATE_MSG) ? '' : e))
+  }, [cooldown.remaining])
   const hasKey = Boolean(settings.keys[settings.provider])
 
   const run = async () => {
-    if (busy) {
-      abort.current?.abort()
-      return
-    }
+    if (inFlight.current || locked) return
     if (!hasKey) {
       setModal(true)
       return
@@ -52,6 +103,7 @@ export function AiGenerator({ onResult }: Props) {
       setError('Escribí el tema o concepto a comunicar.')
       return
     }
+    inFlight.current = true
     setBusy(true)
     setError('')
     setStatus(null)
@@ -69,11 +121,15 @@ export function AiGenerator({ onResult }: Props) {
         ),
       )
     } catch (err) {
-      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+      if (err instanceof RateLimitError) {
+        cooldown.start(err.retryAfterSec)
+        setError(`${RATE_MSG} El botón se habilita solo cuando termine la cuenta regresiva.`)
+      } else if (!(err instanceof DOMException && err.name === 'AbortError')) {
         setError(err instanceof Error ? err.message : 'Error desconocido')
       }
       setStatus(null)
     } finally {
+      inFlight.current = false
       setBusy(false)
     }
   }
@@ -148,13 +204,35 @@ export function AiGenerator({ onResult }: Props) {
       <button
         type="button"
         onClick={run}
-        className={`relative mt-2 w-full overflow-hidden rounded-lg border py-2.5 font-mono text-[11px] font-bold tracking-[0.14em] transition ${
-          busy ? 'border-cyan/60 bg-cyan/10 text-cyan' : 'border-cyan bg-cyan text-carbon hover:brightness-110'
+        disabled={locked}
+        aria-busy={busy}
+        className={`relative mt-2 w-full overflow-hidden rounded-lg border py-2.5 font-mono text-[11px] font-bold tracking-[0.14em] transition disabled:cursor-not-allowed ${
+          busy
+            ? 'border-cyan/60 bg-cyan/10 text-cyan'
+            : cooldown.remaining > 0
+              ? 'border-gold/50 bg-gold/10 text-gold'
+              : 'border-cyan bg-cyan text-carbon hover:brightness-110'
         }`}
       >
         {busy && <span className="absolute inset-y-0 left-0 w-1/3 animate-[tcscan_1.2s_ease-in-out_infinite] bg-cyan/25" />}
-        <span className="relative">{busy ? 'GENERANDO… (TOCÁ PARA CANCELAR)' : 'GENERAR CONTENIDO [IA]'}</span>
+        <span className="relative flex items-center justify-center gap-2">
+          {busy && <span className="size-3 animate-spin rounded-full border-2 border-cyan/30 border-t-cyan" aria-hidden />}
+          {busy
+            ? '[ GENERANDO... ]'
+            : cooldown.remaining > 0
+              ? `[ ESPERÁ ${cooldown.remaining}s · CUOTA RESETEANDO ]`
+              : 'GENERAR CONTENIDO [IA]'}
+        </span>
       </button>
+      {busy && (
+        <button
+          type="button"
+          onClick={() => abort.current?.abort()}
+          className="mt-1 w-full font-mono text-[9px] tracking-[0.14em] text-steel/60 hover:text-fire"
+        >
+          CANCELAR
+        </button>
+      )}
       {status && (
         <p
           role="status"
