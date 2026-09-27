@@ -3253,6 +3253,11 @@ function sbFmtToolbar(bId){
   ];
   return '<div class="cf-fmt-tools">' +
     btns.map(b => '<button type="button" class="cf-fmt-btn cf-fmt-tec" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
+    /* directiva maestra ("Explorador Táctico de Ejercicios por Grupo
+       Muscular e Inserción Segura") -- disparador junto al resto de la
+       botonera de prescripción; abrirExploradorEjercicios() hace TODO el
+       trabajo (buscar/filtrar/insertar sin destruir texto existente). */
+    '<button type="button" class="cf-fmt-btn sb-explorer-btn" data-explorarej="' + bId + '">📚 Explorar Ejercicios</button>' +
   '</div>' +
   '<div class="cf-fmt-tools sb-quick-pills">' +
     rirBtns.map(b => '<button type="button" class="cf-fmt-btn sb-pill-rir" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
@@ -3327,6 +3332,122 @@ function insertarFormatoCF(ta, kind){
   ta.focus();
   ta.setSelectionRange(selFrom, selTo);
   ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/* ============================================================
+   directiva maestra ("Explorador Táctico de Ejercicios por Grupo
+   Muscular e Inserción Segura") -- drawer de búsqueda/filtro sobre
+   S.exercises (la MISMA biblioteca global, nombres oficiales ya
+   indexados) para insertar una línea nueva en la Pizarra SIN tocar una
+   sola letra de lo ya redactado. La posición del cursor se captura acá,
+   ANTES de abrir el modal (el foco se va al input de búsqueda, así que
+   ta.selectionStart/End ya no sirven después). La inserción reusa el
+   MISMO patrón de insertarFormatoCF() (newline sólo si hace falta,
+   value.slice + dispatchEvent('input') para que setBlockField()/chips()/
+   alertasChipsSports() -- todos ya escuchan ese evento -- reaccionen
+   solos, cero lógica nueva de persistencia o de matching de video).
+   ============================================================ */
+function abrirExploradorEjercicios(ta){
+  const cursor = { start: ta.selectionStart, end: ta.selectionEnd };
+  const blockId = ta.dataset.b;
+  cerrarExploradorEjercicios();
+  const grupos = ['Todos'].concat(Array.from(new Set((S.exercises||[]).map(e => e.grupo).filter(Boolean))).sort());
+  const equipos = ['Todos'].concat(Array.from(new Set((S.exercises||[]).map(e => e.equipo).filter(Boolean))).sort());
+  let grupoActivo = 'Todos', equipoActivo = 'Todos', busqueda = '';
+
+  const bg = document.createElement('div');
+  bg.className = 'sb-ex-modal-bg';
+  bg.id = 'sbExplorerModal';
+  bg.innerHTML =
+    '<div class="sb-ex-modal">' +
+      '<div class="sb-ex-head"><h3>📚 Explorar Ejercicios</h3><button type="button" class="sb-ex-close" data-exclose="1">✕</button></div>' +
+      '<input type="text" class="sb-ex-search" id="sbExSearch" placeholder="Buscar por nombre..." autocomplete="off">' +
+      '<div class="sb-ex-chiprow" id="sbExGrupos">' +
+        grupos.map(g => '<span class="sb-ex-chip' + (g==='Todos'?' on':'') + '" data-grupo="' + esc(g) + '">' + esc(g) + '</span>').join('') +
+      '</div>' +
+      '<div class="sb-ex-chiprow" id="sbExEquipos">' +
+        equipos.map(eq => '<span class="sb-ex-chip' + (eq==='Todos'?' on':'') + '" data-equipo="' + esc(eq) + '">' + esc(eq) + '</span>').join('') +
+      '</div>' +
+      '<div class="sb-ex-list" id="sbExList"></div>' +
+    '</div>';
+  document.body.appendChild(bg);
+  document.body.style.overflow = 'hidden';
+
+  function pintarLista(){
+    const q = norm(busqueda);
+    const list = document.getElementById('sbExList');
+    const filtrados = (S.exercises||[]).filter(function(e){
+      if(grupoActivo !== 'Todos' && e.grupo !== grupoActivo) return false;
+      if(equipoActivo !== 'Todos' && e.equipo !== equipoActivo) return false;
+      if(q && norm(e.es || '').indexOf(q) < 0 && norm(e.en || '').indexOf(q) < 0) return false;
+      return true;
+    }).sort(function(a,b){ return (a.es||'').localeCompare(b.es||''); }).slice(0, 80);
+    if(!filtrados.length){ list.innerHTML = '<div class="sb-ex-empty">Sin resultados para este filtro.</div>'; return; }
+    list.innerHTML = filtrados.map(function(e){
+      return '<div class="sb-ex-row">' +
+          '<div class="sb-ex-row-info">' +
+            '<div class="sb-ex-row-nombre">' + esc(e.es || e.en || '') + '</div>' +
+            '<div class="sb-ex-row-badges">' +
+              (e.grupo ? '<span class="sb-ex-row-badge">' + esc(e.grupo) + '</span>' : '') +
+              (e.equipo ? '<span class="sb-ex-row-badge">' + esc(e.equipo) + '</span>' : '') +
+              (e.videoId ? '<span class="sb-ex-row-badge vid">🎥 Video</span>' : '') +
+            '</div>' +
+          '</div>' +
+          '<button type="button" class="sb-ex-row-ins" data-insertarex="' + esc(e.id) + '">+ INSERTAR</button>' +
+        '</div>';
+    }).join('');
+  }
+  pintarLista();
+
+  document.getElementById('sbExSearch').focus();
+  document.getElementById('sbExSearch').addEventListener('input', function(e){ busqueda = e.target.value; pintarLista(); });
+  document.getElementById('sbExGrupos').addEventListener('click', function(e){
+    const chip = e.target.closest('[data-grupo]'); if(!chip) return;
+    grupoActivo = chip.dataset.grupo;
+    this.querySelectorAll('.sb-ex-chip').forEach(c => c.classList.toggle('on', c === chip));
+    pintarLista();
+  });
+  document.getElementById('sbExEquipos').addEventListener('click', function(e){
+    const chip = e.target.closest('[data-equipo]'); if(!chip) return;
+    equipoActivo = chip.dataset.equipo;
+    this.querySelectorAll('.sb-ex-chip').forEach(c => c.classList.toggle('on', c === chip));
+    pintarLista();
+  });
+  bg.addEventListener('click', function(e){
+    if(e.target === bg || e.target.closest('[data-exclose]')){ cerrarExploradorEjercicios(); return; }
+    const insBtn = e.target.closest('[data-insertarex]');
+    if(insBtn) insertarEjercicioEnBloque(ta, cursor, insBtn.dataset.insertarex, blockId);
+  });
+}
+function cerrarExploradorEjercicios(){
+  const bg = document.getElementById('sbExplorerModal');
+  if(bg) bg.remove();
+  document.body.style.overflow = '';
+}
+function insertarEjercicioEnBloque(ta, cursor, exId, blockId){
+  const ex = getEx(exId); if(!ex) return;
+  /* directiva maestra: plantilla EXACTA pedida, nombre canónico tal cual
+     vive en la biblioteca (ex.es) -- garantiza el match determinista con
+     resolverVideosBloqueSports()/resolverExSports() al primer intento. */
+  const linea = (ex.es || ex.en || '') + ': 3 sets x 8-12 reps | Tempo 2011 | RIR 2 | Rest 90s';
+  const val = ta.value;
+  const atEnd = cursor.start == null || cursor.start < 0 || cursor.start > val.length;
+  let ins;
+  if(atEnd || cursor.start === val.length){
+    ins = (val && !val.endsWith('\n') ? '\n' : '') + linea;
+    ta.value = val + ins;
+  } else {
+    const nl = (cursor.start > 0 && val[cursor.start - 1] !== '\n') ? '\n' : '';
+    const nlEnd = (val[cursor.start] && val[cursor.start] !== '\n') ? '\n' : '';
+    ins = nl + linea + nlEnd;
+    ta.value = val.slice(0, cursor.start) + ins + val.slice(cursor.start);
+  }
+  cerrarExploradorEjercicios();
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+  toast('✅ "' + (ex.es || ex.en) + '" insertado en el bloque');
+  const blEl = document.querySelector('.block [data-b="' + blockId + '"]');
+  const bloqueEl = blEl ? blEl.closest('.block') : ta.closest('.block');
+  if(bloqueEl) bloqueEl.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
 /* ============================================================
@@ -5663,6 +5784,11 @@ function bindBuilder(){
     if(t.dataset.fmtins){
       const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.b + '"]');
       if(ta) insertarFormatoCF(ta, t.dataset.fmtins);
+      return;
+    }
+    if(t.dataset.explorarej){
+      const ta = panel.querySelector('textarea[data-bf="items"][data-b="' + t.dataset.explorarej + '"]');
+      if(ta) abrirExploradorEjercicios(ta);
       return;
     }
   });
@@ -47783,6 +47909,58 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .sb-pill-rir:hover{ background:rgba(210,121,63,.16); border-color:#D2793F; color:#E8965E; }
 .sb-pill-rest{ background:rgba(56,189,248,.08); border-color:rgba(56,189,248,.35); color:#38BDF8; }
 .sb-pill-rest:hover{ background:rgba(56,189,248,.16); border-color:#38BDF8; color:#7CC5E8; }
+/* directiva maestra ("Explorador Táctico de Ejercicios por Grupo
+   Muscular e Inserción Segura") */
+.sb-explorer-btn{
+  background:rgba(56,189,248,.1); border-color:rgba(56,189,248,.4); color:#38BDF8; font-weight:800;
+}
+.sb-explorer-btn:hover{ background:rgba(56,189,248,.18); border-color:#38BDF8; color:#7CC5E8; }
+.sb-ex-modal-bg{
+  position:fixed; inset:0; z-index:400; display:flex; align-items:flex-start; justify-content:center;
+  background:rgba(4,5,8,.78); backdrop-filter:blur(6px); padding:5vh 16px 16px;
+}
+.sb-ex-modal{
+  width:min(560px,100%); max-height:90vh; display:flex; flex-direction:column;
+  background:#12151b; border:1px solid rgba(56,189,248,.3); border-radius:16px;
+  box-shadow:0 24px 70px rgba(0,0,0,.6); overflow:hidden;
+}
+.sb-ex-head{
+  display:flex; align-items:center; gap:8px; padding:14px 16px 10px; border-bottom:1px solid var(--line-2);
+}
+.sb-ex-head h3{ margin:0; font-size:15px; font-weight:800; color:#EDEFF2; flex:1 1 auto; }
+.sb-ex-close{ background:transparent; border:none; color:var(--muted); font-size:18px; cursor:pointer; line-height:1; padding:4px; }
+.sb-ex-search{
+  margin:10px 16px 0; padding:10px 12px; border-radius:10px; border:1px solid var(--line-2);
+  background:rgba(255,255,255,.03); color:#EDEFF2; font-size:14px;
+}
+.sb-ex-search:focus{ outline:none; border-color:#38BDF8; }
+.sb-ex-chiprow{ display:flex; flex-wrap:wrap; gap:6px; padding:10px 16px 0; }
+.sb-ex-chip{
+  font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.02em;
+  padding:4px 10px; border-radius:20px; border:1px solid var(--line-2);
+  background:rgba(255,255,255,.03); color:var(--muted); cursor:pointer;
+}
+.sb-ex-chip.on{ background:rgba(56,189,248,.16); border-color:#38BDF8; color:#38BDF8; }
+.sb-ex-list{ flex:1 1 auto; overflow-y:auto; padding:10px 16px 16px; display:flex; flex-direction:column; gap:6px; }
+.sb-ex-row{
+  display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px;
+  border:1px solid var(--line-2); background:rgba(255,255,255,.02);
+}
+.sb-ex-row-info{ flex:1 1 auto; min-width:0; }
+.sb-ex-row-nombre{ font-size:13px; font-weight:700; color:#EDEFF2; }
+.sb-ex-row-badges{ display:flex; gap:5px; margin-top:3px; flex-wrap:wrap; }
+.sb-ex-row-badge{
+  font-family:var(--font-mono); font-size:9.5px; font-weight:700; padding:1px 7px; border-radius:5px;
+  background:rgba(255,255,255,.05); color:var(--muted); border:1px solid var(--line-2);
+}
+.sb-ex-row-badge.vid{ background:rgba(72,213,151,.12); border-color:rgba(72,213,151,.4); color:#7CFFB2; }
+.sb-ex-row-ins{
+  flex:0 0 auto; font-family:var(--font-mono); font-size:11px; font-weight:800;
+  padding:7px 11px; border-radius:8px; border:1px solid rgba(72,213,151,.45);
+  background:rgba(72,213,151,.14); color:#7CFFB2; cursor:pointer; white-space:nowrap;
+}
+.sb-ex-row-ins:hover{ background:rgba(72,213,151,.24); }
+.sb-ex-empty{ text-align:center; color:var(--muted); font-size:13px; padding:24px 0; }
 /* directiva ("Botones Rápidos de Inyección Metodológica") -- técnicas
    de intensidad (biset/dropset/myo-reps), mismo trato "acción propia"
    que EMOM/AMRAP pero en el tono naranja de marca en vez de cyan, para
