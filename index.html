@@ -1135,6 +1135,15 @@ function defaultMeta(ath){
     heroSub: 'Mesociclo de 4 semanas — planificación personalizada, bloques de fuerza, densidad y acondicionamiento metabólico.',
     coachName: 'Prof. Juan Pablo Armiñana',
     coachRole: 'Especialista en Biomecánica · Alto Rendimiento Deportivo y Readaptación Física',
+    /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- número
+       de WhatsApp del coach (sólo dígitos, código de país incluido, sin
+       "+" ni espacios -- formato exacto que espera wa.me/<numero>) para
+       que "Enviar resumen al coach" abra directo la conversación con el
+       coach en vez de un selector de contacto genérico. Vacío por
+       defecto: sin número cargado, el botón sigue funcionando con el
+       comportamiento de siempre (wa.me/?text=, el alumno elige a quién
+       mandarlo). */
+    coachPhone: '',
     footer2: 'Mesociclo de 4 semanas · Planificación personalizada para ' + nom
   };
 }
@@ -10864,6 +10873,25 @@ body.focus-mode .tv-nav{display:flex}
 .rest-hud .rh-ctl{display:flex;gap:5px}
 .rest-hud .rh-ctl button{flex:1;padding:6px 0;border-radius:8px;border:1px solid var(--border);
   background:var(--bg-card);color:var(--text-primary);font-size:0.85rem;cursor:pointer}
+/* directiva maestra ("Botonera rápida de ajuste en descanso") -- mismo
+   patrón que .rh-set: sólo visible en el HUD expandido (en la píldora
+   colapsada no hay espacio ni es el momento de tocar tres botones más),
+   y sólo cuando JS confirma que hay una próxima serie real a ajustar
+   (atributo [hidden], ver mostrarAjusteKgRest() más abajo en el script). */
+.rest-hud .rh-kgadjust{display:none;flex-direction:column;gap:4px;margin-top:2px}
+.rest-hud.expanded .rh-kgadjust:not([hidden]){display:flex}
+.rh-kgadjust-lb{font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);text-align:center}
+.rh-kgadjust-row{display:flex;align-items:center;gap:5px}
+.rh-kgadjust-row button{
+  flex:1;padding:6px 0;border-radius:8px;border:1px solid rgba(0,229,255,.3);
+  background:rgba(0,229,255,.08);color:#00e5ff;font-size:.74rem;font-weight:800;cursor:pointer;
+  font-family:'JetBrains Mono',ui-monospace,monospace;
+}
+.rh-kgadjust-row button:active{background:rgba(0,229,255,.2);transform:scale(.96)}
+.rh-kgadjust-val{
+  flex:0 0 auto; min-width:52px; text-align:center; font-weight:800; font-size:.85rem;
+  color:#ffd600; font-family:'JetBrains Mono',ui-monospace,monospace;
+}
 /* UX/UI integral (13/09), parte 6: por defecto (sin .expanded) el rest
    timer pasa de tarjeta vertical (anillo + 4 botones + label, ~200px de
    alto) a una píldora táctica de una sola línea: "⏱️ 01:45 · [+30s]
@@ -10945,7 +10973,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
 .sc-actions button{flex:1 1 auto;padding:0.7rem 1rem;border-radius:11px;border:none;cursor:pointer;
   font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1rem;letter-spacing:0.07em;text-transform:uppercase}
 .sc-save{background:linear-gradient(135deg,#4A93B8,#00806F);color:#04120F}
-.sc-share{background:var(--bg-card);border:1px solid var(--border)!important;color:var(--text-primary)}
+/* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- estilo
+   táctico verde esmeralda/dorado pedido explícitamente para el botón de
+   cierre de sesión, distinto del resto de los CTA neutros de la tarjeta. */
+.sc-share{
+  background:linear-gradient(135deg, rgba(16,185,129,.16), rgba(255,214,0,.1))!important;
+  border:1px solid rgba(16,185,129,.4)!important; color:#48D597; font-weight:800;
+}
+.sc-share:active{ background:rgba(16,185,129,.24)!important; }
 /* directiva de implementación (2026-09) -- Checkout de sesión, RPE/RIR
    auto-reportado por el alumno/a al terminar. Mismo lenguaje visual y
    mismo acento (#D2793F) que usa el coach del lado del Builder para su
@@ -10977,6 +11012,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     <button type="button" data-rest="60">60s</button>
     <button type="button" data-rest="90">90s</button>
     <button type="button" data-rest="120">120s</button>
+  </div>
+  <!-- directiva maestra ("Optimización en el registro de cargas: botonera
+       rápida de ajuste en descanso") -- micro-steppers de kg para la
+       PRÓXIMA serie de este mismo ejercicio (ver __jpRestKgInput, fijado
+       al arrancar el descanso), sin abrir el teclado numérico. Oculto
+       por defecto (JS lo muestra sólo si hay una próxima serie real a
+       la que ajustar, ver arrancar()/mostrarAjusteKgRest() más abajo). -->
+  <div class="rh-kgadjust" id="rhKgAdjust" hidden>
+    <span class="rh-kgadjust-lb">Próxima serie</span>
+    <div class="rh-kgadjust-row">
+      <button type="button" data-kgdelta="-2.5">−2.5kg</button>
+      <span class="rh-kgadjust-val" id="rhKgAdjustVal">—</span>
+      <button type="button" data-kgdelta="2.5">+2.5kg</button>
+      <button type="button" data-kgdelta="5">+5kg</button>
+    </div>
   </div>
   <div class="rh-ctl">
     <button type="button" id="rhToggle">⏸</button>
@@ -11167,6 +11217,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      el motor, pide que la barra flotante NO se muestre (ese caso ya
      tiene su propio espejo in-situ, ver jpCfRestBadge/jpCfRestOnTick
      más abajo) -- "sin barras flotantes desfasadas" del enunciado. */
+  /* directiva maestra ("Optimización en el registro de cargas: botonera
+     rápida de ajuste en descanso") -- muestra/oculta el mini-panel de
+     steppers +/-2.5kg/+5kg según si window.__jpRestKgInput (fijado por
+     el listener de check nativo, ver .jp-btn-check-native en la otra
+     IIFE de Pizarra Sports) apunta a una próxima serie real -- nunca se
+     inventa un objetivo, si no hay próxima serie el panel queda oculto. */
+  function mostrarAjusteKgRest(){
+    var panel = document.getElementById('rhKgAdjust');
+    var valEl = document.getElementById('rhKgAdjustVal');
+    if(!panel || !valEl) return;
+    var input = window.__jpRestKgInput;
+    if(!input || !document.body.contains(input)){ panel.hidden = true; return; }
+    panel.hidden = false;
+    var actual = parseFloat(input.value) || parseFloat(input.placeholder) || 0;
+    valEl.textContent = actual > 0 ? (actual + ' kg') : '— kg';
+  }
   function arrancarRest(seg, etiqueta, oculto){
     pedirPermisoNotifDescanso();
     restLeft = seg || state.restSec;
@@ -11178,6 +11244,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     hud.classList.add('on'); restRun = true;
     clearInterval(restInt); restInt = setInterval(tick, 1000);
     pintarRest();
+    mostrarAjusteKgRest();
     guardarRestTimer();
   }
   function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); guardarRestTimer(); }
@@ -11229,6 +11296,27 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(30); });
   document.getElementById('rhToggle').addEventListener('click', toggleRest);
+  /* directiva maestra ("Botonera rápida de ajuste en descanso") -- ajusta
+     directo el input de kg de la PRÓXIMA serie (window.__jpRestKgInput,
+     fijado al arrancar este mismo descanso) sin abrir el teclado
+     numérico del celular; persiste con el mismo setLoadField() que ya
+     usa la edición manual, así el valor sobrevive aunque el alumno
+     cierre la app antes de tocar [ ✓ ]. */
+  var rhKgAdjustPanel = document.getElementById('rhKgAdjust');
+  if(rhKgAdjustPanel) rhKgAdjustPanel.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-kgdelta]'); if(!btn) return;
+    var input = window.__jpRestKgInput;
+    if(!input || !document.body.contains(input)) return;
+    var delta = parseFloat(btn.dataset.kgdelta) || 0;
+    var actual = parseFloat(input.value) || parseFloat(input.placeholder) || 0;
+    var nuevo = Math.max(0, Math.round((actual + delta) * 2) / 2);
+    input.value = nuevo;
+    var row = input.closest('.jp-set-row-native');
+    if(row && row.dataset.setKey) setLoadField(row.dataset.setKey, 'kg', nuevo);
+    var valEl = document.getElementById('rhKgAdjustVal');
+    if(valEl) valEl.textContent = nuevo + ' kg';
+    try{ if(navigator.vibrate) navigator.vibrate(15); }catch(err){}
+  });
   hud.querySelectorAll('[data-rest]').forEach(b => b.addEventListener('click', function(){
     state.restSec = parseInt(b.dataset.rest, 10);
     saveProgress();
@@ -12423,6 +12511,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     return entries;
   }
+  /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- expuesta
+     a window para que el desglose por bloque/set del reporte (otra IIFE,
+     ver generarDesgloseBloquesWA() más abajo en el archivo) pueda
+     re-parsear el texto de la Pizarra sin duplicar el parser. */
+  window.parsearPizarraSB = parsearPizarraSB;
   /* ============================================================
      REFACTORING INTEGRAL (directiva "Reconstrucción total del tracker
      de series en Sports"): tabla de registro nativa desde cero, EXCLUSIVA
@@ -12490,6 +12583,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var kgVal = ld.kg != null ? ld.kg : '';
       var secVal = ld.reps != null ? ld.reps : '';
       var kgPlaceholder = (kgVal === '' && prevKg != null) ? String(prevKg) : '0';
+      /* directiva maestra ("Quick-Check con carga previa/fantasma") -- el
+         placeholder de reps nunca reflejaba el Ghost Load (siempre "0",
+         a diferencia de kg): el quick-fill del check [✓] (ver el
+         listener de .jp-btn-check-native más abajo) no tenía de dónde
+         tomar una reps sugerida cuando era la primera serie de la
+         semana. Mismo criterio que kgPlaceholder, ahora simétrico. */
+      var secPlaceholder = (secVal === '' && prevSec != null) ? String(prevSec) : '0';
       var doneCls = ld.done ? ' completed' : '';
       var badgeHtml = '';
       if(setTecnica && !esMyo && i === setTecnicaIdx && TECNICAS_BADGE_SB[setTecnica.tecnica]){
@@ -12505,7 +12605,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
           '<span class="jp-unit">kg</span>' +
           '<span class="jp-sep">\\u00d7</span>' +
-          '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="0" value="' + escSB(secVal) + '" />' +
+          '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />' +
           '<span class="jp-unit">' + unidadSec + '</span>' +
           '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\\u2713</button>' +
         '</div>';
@@ -12577,16 +12677,40 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      bloque, ver buildProgramConfig()) y esos videos nunca llegaban al
      alumno -- el parámetro esCalentamiento se conserva en la firma (otros
      llamadores lo siguen pasando) pero ya no corta la recolección. */
+  /* directiva maestra ("Fix de asociación de videos en Warm-up/Pizarra")
+     -- una línea del catch-all sin dosis reconocida (ver parsearPizarraSB,
+     entry.titulo cae ahí como la LÍNEA CRUDA completa, ej.
+     "Rotaciones torácicas en cuadrupedia x 8 reps por lado") nunca
+     matcheaba contra la biblioteca porque buscarVideo() comparaba la
+     prescripción pegada como si fuera parte del nombre. Se recorta acá,
+     SOLO para la búsqueda de video (nunca toca entry.titulo/nombre que
+     se siguen mostrando tal cual en el render), todo sufijo reconocible
+     de dosis/ejecución al final del texto: "x N reps/seg/mts/cal",
+     "tempo NNNN", "RIR N", "rest Ns", "por lado/pierna", paréntesis
+     finales y el resto de texto tras un "|". */
+  function limpiarNombreParaVideoSB(nombre){
+    var t = String(nombre || '').trim();
+    t = t.replace(/^[\\s\\-–—•*]+/, '');
+    t = t.split('|')[0].trim();
+    t = t.replace(/\\s*\\([^)]*\\)\\s*$/, '');
+    t = t.replace(/\\s*[x\\u00d7]\\s*\\d[\\w.\\/]*.*$/i, '');
+    t = t.replace(/\\s*\\btempo\\s*\\d+\\w*.*$/i, '');
+    t = t.replace(/\\s*\\brir\\s*\\d+(?:-\\d+)?.*$/i, '');
+    t = t.replace(/\\s*\\brest\\s*\\d+\\s*s(?:eg)?.*$/i, '');
+    t = t.replace(/\\s*\\bpor\\s+(?:lado|pierna)\\b.*$/i, '');
+    t = t.replace(/\\s*\\bc\\/u\\b.*$/i, '');
+    return t.trim();
+  }
   function recolectarVideosSB(entries, esCalentamiento){
     var vistos = {}, out = [];
     entries.forEach(function(entry){
       if(entry.tipo === 'simple'){
         var nm = jpCfSplit(entry.titulo).nm || entry.titulo;
-        var yt = buscarVideo(nm);
+        var yt = buscarVideo(limpiarNombreParaVideoSB(nm));
         if(yt && !vistos[yt]){ vistos[yt] = 1; out.push({ nombre: nm, ytid: yt }); }
       } else if(entry.tipo === 'biserie'){
         (entry.subs || []).forEach(function(sub){
-          var yt = buscarVideo(sub.nombre);
+          var yt = buscarVideo(limpiarNombreParaVideoSB(sub.nombre));
           if(yt && !vistos[yt]){ vistos[yt] = 1; out.push({ nombre: sub.nombre, ytid: yt }); }
         });
       }
@@ -12767,7 +12891,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             const nombreLimpio = limpiarGuionActivacionSB(sub.nombre);
             return '<div class="jp-sb-plain jp-sb-plain-warmup">' +
                 (dosisTxt ? '<span class="jp-sb-plain-pill">' + escSB(dosisTxt) + '</span>' : '') +
-                '<span class="jp-sb-plain-nombre">' + escSB(nombreLimpio) + '</span>' + videoLinkHtml(nombreLimpio) +
+                '<span class="jp-sb-plain-nombre">' + escSB(nombreLimpio) + '</span>' +
                 (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
               '</div>';
           }).join('');
@@ -12789,7 +12913,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
              listener de [ ✓ ] lo lea antes de arrancar el reloj. */
           return '<div class="jp-sb-subex" data-rest-sec="' + (sub.restSeconds || '') + '">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
-                '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + videoLinkHtml(sub.nombre) + '</div>' +
+                '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span></div>' +
               dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds) +
               chipUnilateralSB(sub.unilateral) +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
@@ -12836,7 +12960,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm;
         filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
             (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
-            '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' + videoLinkHtml(nombrePlain) +
+            '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
             (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           '</div>';
@@ -12846,7 +12970,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       /* directiva técnica ("Auditoría integral del reloj emergente") --
          mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + (entry.restSeconds || '') + '">' +
-          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + videoLinkHtml(entry.titulo) + '</div>' +
+          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span></div>' +
           dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
@@ -12876,11 +13000,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const tituloBloqueM = String(block.title || '').match(/^(.*?)\\s*\\(([^)]+)\\)\\s*$/);
     const tituloBloquePrincipal = tituloBloqueM ? (tituloBloqueM[1].trim() || block.title) : (block.title || '');
     const tituloBloqueEnfasis = tituloBloqueM ? tituloBloqueM[2].trim() : '';
+    /* directiva maestra ("Optimización en el registro de cargas: acción
+       rápida de bloque") -- botón discreto al pie, sólo si el bloque
+       tiene AL MENOS 2 filas de serie reales (con 1 sola fila no hay
+       "resto del bloque" al que transferir nada). Nunca en calentamiento
+       (ahí no hay cargas uniformes que propagar). El handler delegado
+       (más abajo, junto al resto de listeners de .jp-sb-board) toma el
+       PRIMER kg cargado del bloque y lo copia a todo input de kg vacío. */
+    const totalFilasSet = (filas.match(/class="jp-set-row-native/g) || []).length;
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
         '<div class="jp-sb-tag">[ SPORTS &middot; ' + (esCalentamiento ? '🔥 ACTIVACI\\u00d3N' : '💪 BLOQUE') + ' ]</div>' +
         '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>' +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         filas +
+        (!esCalentamiento && totalFilasSet > 1 ?
+          '<button type="button" class="jp-sb-applyall" data-sbapplyall="' + block.id + '">\\u26a1 APLICAR ESTOS PESOS AL RESTO DEL BLOQUE</button>' : '') +
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS, TIPS &amp; VIDEOS DEL BLOQUE</summary>' +
             '<div class="jp-details-content">' +
@@ -12943,6 +13077,36 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const row = btn.closest('.jp-set-row-native'); if(!row) return;
     const key = row.dataset.setKey; if(!key) return;
     const nowDone = !btn.classList.contains('completed');
+    /* directiva maestra ("Optimización en el registro de cargas: Quick-
+       Check con carga previa/fantasma") -- si el alumno tilda [✓] con el
+       input de kg vacío, se completa solo ANTES de marcar la serie,
+       tomando primero la serie INMEDIATAMENTE ANTERIOR de este mismo
+       ejercicio ya cargada en esta sesión (más precisa: es lo que el
+       alumno acaba de levantar hace 90 segundos) y, si no hay ninguna
+       previa (Set 1), cae al Ghost Load / target ya precalculado que
+       kgPlaceholder/placeholder de reps ya muestran como sugerencia (ver
+       renderSetRowsNativeSB() más arriba) -- así el reloj de descanso
+       arranca en el mismo toque, sin que el alumno tenga que parar a
+       escribir en medio de la serie. Nunca pisa un valor que el alumno
+       ya haya tipeado a mano (sólo actúa si el input está vacío), y
+       nunca corre al DEStildar. */
+    if(nowDone){
+      const kgInput = row.querySelector('.jp-val-primary');
+      const repsInput = row.querySelector('.jp-val-secondary');
+      const prevRow = row.previousElementSibling;
+      const prevKgInput = (prevRow && prevRow.classList && prevRow.classList.contains('jp-set-row-native')) ? prevRow.querySelector('.jp-val-primary') : null;
+      const prevRepsInput = (prevRow && prevRow.classList && prevRow.classList.contains('jp-set-row-native')) ? prevRow.querySelector('.jp-val-secondary') : null;
+      if(kgInput && !kgInput.value){
+        const autoKg = (prevKgInput && prevKgInput.value) ? prevKgInput.value
+          : (kgInput.placeholder && kgInput.placeholder !== '0' ? kgInput.placeholder : '');
+        if(autoKg){ kgInput.value = autoKg; setLoadField(key, 'kg', autoKg); }
+      }
+      if(repsInput && !repsInput.value){
+        const autoReps = (prevRepsInput && prevRepsInput.value) ? prevRepsInput.value
+          : (repsInput.placeholder && repsInput.placeholder !== '0' ? repsInput.placeholder : '');
+        if(autoReps){ repsInput.value = autoReps; setLoadField(key, 'reps', autoReps); }
+      }
+    }
     btn.classList.toggle('completed', nowDone);
     row.classList.toggle('completed', nowDone);
     setLoadField(key, 'done', nowDone);
@@ -12963,9 +13127,45 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          coach prescribió línea por línea. */
       const exWrap = btn.closest('.jp-sb-ex, .jp-sb-subex');
       const restOverride = exWrap ? parseInt(exWrap.dataset.restSec, 10) || 0 : 0;
+      /* directiva maestra ("Botonera rápida de ajuste en descanso") -- la
+         próxima fila del MISMO ejercicio (siguiente .jp-set-row-native
+         hermano directo, ver renderSetRowsNativeSB()) es el objetivo de
+         los steppers +/- del HUD de descanso -- referencia global simple
+         (mismo patrón __jpRondaActual ya usado en este archivo) porque
+         el HUD vive en OTRA IIFE (RELOJ DE DESCANSO EMERGENTE) y no
+         comparte closure con este listener. */
+      const nextRow = row.nextElementSibling;
+      window.__jpRestKgInput = (nextRow && nextRow.classList && nextRow.classList.contains('jp-set-row-native'))
+        ? nextRow.querySelector('.jp-val-primary') : null;
       if(bl && typeof window.jpArrancarDescansoSetNative === 'function') window.jpArrancarDescansoSetNative(bl, restOverride);
     } else {
       try{ beepSetCheck(false); }catch(err){}
+    }
+  });
+
+  /* directiva maestra ("Acción Rápida de Bloque") -- [data-sbapplyall]
+     toma el primer kg NO VACÍO entre todas las filas .jp-set-row-native
+     del bloque (.jp-sb-board) y lo propaga SÓLO a las filas que estén
+     vacías, para transferir cargas uniformes con un solo toque. */
+  document.addEventListener('click', function(e){
+    const applyBtn = e.target.closest('[data-sbapplyall]');
+    if(!applyBtn) return;
+    const board = applyBtn.closest('.jp-sb-board');
+    if(!board) return;
+    const kgInputs = Array.from(board.querySelectorAll('.jp-val-primary'));
+    const refInput = kgInputs.find(function(i){ return i.value; });
+    if(!refInput) return;
+    let aplicados = 0;
+    kgInputs.forEach(function(inp){
+      if(inp === refInput || inp.value) return;
+      inp.value = refInput.value;
+      const row = inp.closest('.jp-set-row-native');
+      if(row && row.dataset.setKey){ setLoadField(row.dataset.setKey, 'kg', refInput.value); aplicados++; }
+    });
+    if(aplicados){
+      try{ if(navigator.vibrate) navigator.vibrate(20); }catch(err){}
+      applyBtn.textContent = '✓ PESOS APLICADOS';
+      setTimeout(function(){ applyBtn.textContent = '⚡ APLICAR ESTOS PESOS AL RESTO DEL BLOQUE'; }, 1600);
     }
   });
 
@@ -13246,6 +13446,56 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     return { vol: Math.round(vol), series: series, reps: reps, maxKg: maxKg, scoreWod: scoreWod };
   }
+  /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- desglose
+     por bloque de ejercicios completados, formato EXACTO pedido: nombre
+     del ejercicio en negrita (markdown de WhatsApp, "*texto*") y una
+     línea "• Set N: {kg} kg × {reps} reps" por cada serie REALMENTE
+     tildada (done===true) con carga y reps cargados -- si faltan sets
+     por completar, quedan afuera solos (nunca se inventa un "Set N" sin
+     dato real). Sólo alcanza a bloques de Pizarra (Array.isArray(
+     block.items), el formato activo de Sports & CrossFit) -- re-parsea
+     con el MISMO parser ya expuesto (window.parsearPizarraSB, ver
+     pizarraSports() más arriba) para no duplicar lógica de extracción de
+     nombres/rondas. Un bloque clásico ('block'/'superset'/'finisher',
+     formato legado) no rompe nada -- simplemente no aporta desglose,
+     mismo comportamiento (ausencia, no error) que ya tenía el reporte
+     viejo para cualquier bloque. */
+  function generarDesgloseBloquesWA(weekIdx, day){
+    var out = [];
+    if(typeof window.parsearPizarraSB !== 'function') return out;
+    (day.blocks || []).forEach(function(block){
+      if(!Array.isArray(block.items) || !block.items.length) return;
+      var lineasBloque = itemsDeSemana(block, weekIdx);
+      if(!lineasBloque.length) return;
+      var entries;
+      try{ entries = window.parsearPizarraSB(lineasBloque); }catch(e){ return; }
+      entries.forEach(function(entry, idx){
+        if(entry.tipo === 'simple' && entry.sets){
+          var setsTxt = [];
+          for(var i = 1; i <= entry.sets; i++){
+            var ld = getLoad(getLoadKey(weekIdx, day.id, block.id, 'e' + idx, i));
+            if(ld && ld.done && ld.kg != null && ld.kg !== '' && ld.reps != null && ld.reps !== ''){
+              setsTxt.push('  • Set ' + i + ': ' + ld.kg + ' kg \\u00d7 ' + ld.reps + ' reps');
+            }
+          }
+          if(setsTxt.length) out.push('*' + entry.titulo + '*:\\n' + setsTxt.join('\\n'));
+        } else if(entry.tipo === 'biserie'){
+          (entry.subs || []).forEach(function(sub, si){
+            var setsTxt = [];
+            var totalSets = entry.rondas || 3;
+            for(var i = 1; i <= totalSets; i++){
+              var ld = getLoad(getLoadKey(weekIdx, day.id, block.id, 'b' + idx + 's' + si, i));
+              if(ld && ld.done && ld.kg != null && ld.kg !== '' && ld.reps != null && ld.reps !== ''){
+                setsTxt.push('  • Set ' + i + ': ' + ld.kg + ' kg \\u00d7 ' + ld.reps + ' reps');
+              }
+            }
+            if(setsTxt.length) out.push('*' + sub.nombre + '*:\\n' + setsTxt.join('\\n'));
+          });
+        }
+      });
+    });
+    return out;
+  }
   function pintarResumen(weekIdx, day, blocks){
     const ids = dayBlockIds(day);
     const hechos = ids.filter(id => isBlockDone(weekIdx, day.id, id)).length;
@@ -13357,7 +13607,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             ((state.notes && state.notes[nkey]) || '') + '</textarea>' +
           '<div class="sc-actions">' +
             '<button class="sc-save" id="scSave" type="button">💾 Guardar y sincronizar</button>' +
-            '<button class="sc-share" id="scShare" type="button">📤 Enviar a Coach JP</button>' +
+            '<button class="sc-share" id="scShare" type="button">\\ud83d\\udcf2 ENVIAR RESUMEN DE SESI\\u00d3N AL COACH</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -13399,47 +13649,46 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     const sh = document.getElementById('scShare');
     if(sh) sh.addEventListener('click', function(){
-      /* reparación del reporte de WhatsApp: antes "prs" (arriba, state.
-         session.prs) era el resultado de chequearPR()/mejorPrevio(), que
-         matchea nombres por substring contra TODO el catálogo (PRS_N) --
-         eso es lo que terminaba concatenando ejercicios de más en el
-         mensaje. Acá se usa state.session.prDetalle en cambio: lo llena
-         capturarPR()/anotarMarca() (arriba, mismo archivo), que compara
-         la marca real contra el mejor 1RM estimado previo -- sin falsos
-         positivos por nombre parecido. prDetalle es el log de TODO el
-         mesociclo (nunca se resetea), así que se filtra por la fecha de
-         hoy para que el reporte sea sólo de esta sesión. */
+      /* directiva maestra ("Reporte táctico de sesión a WhatsApp") --
+         reescribe el mensaje al formato EXACTO pedido: encabezado con
+         negrita markdown de WhatsApp ("*texto*"), fecha, tonelaje real
+         (mismo calcularTonelajeSesion() que ya alimenta el HUD en vivo,
+         nunca un cálculo paralelo) y desglose por bloque/set (sólo los
+         sets con el check marcado, ver generarDesgloseBloquesWA() más
+         arriba). PRs y RPE se conservan como líneas de valor agregado --
+         no las pide el formato pero tampoco lo contradicen. */
       const hoyISO = new Date().toISOString().slice(0, 10);
       const prsHoy = ((state.session && state.session.prDetalle) || []).filter(function(p){ return p.fecha === hoyISO; });
-      const prLineas = prsHoy.length
-        ? prsHoy.map(function(p){
+      const prLinea = prsHoy.length
+        ? '🔥 *PRs de hoy:* ' + prsHoy.map(function(p){
             const deltaTxt = (p.delta != null && p.delta > 0) ? ' (+' + p.delta + 'kg)' : '';
-            return '🔥 PR: ' + p.ex + ' ' + p.kg + 'kg × ' + p.reps + deltaTxt;
-          }).join('\\n')
-        : '🔥 Sin récords nuevos hoy';
-      /* mismo cálculo de duración que ya usa la Story Card (inyectarBoton,
-         más abajo en el archivo) -- state.session.inicio se fija una sola
-         vez, en la primera interacción real, y nunca se resetea, así que
-         se acota a un rango de sesión creíble (guardián de tiempo,
-         directiva: 1 a 180 min en Sports & Bodybuilding -- CrossFit sigue
-         con el cálculo de siempre, sin tocar). */
-      const ini = (state.session && state.session.inicio) || 0;
-      const elapsedMin = ini ? Math.round((Date.now() - ini) / 60000) : 0;
-      const minsCrudo = (window.COACH_DISCIPLINA === 'sports')
-        ? ((elapsedMin >= 1 && elapsedMin <= 180) ? elapsedMin : (d.series > 0 ? Math.min(180, Math.max(20, d.series * 3)) : 60))
-        : ((elapsedMin >= 1 && elapsedMin <= 240) ? elapsedMin : Math.max(1, d.series * 3 || 55));
+            return p.ex + ' ' + p.kg + 'kg \\u00d7 ' + p.reps + deltaTxt;
+          }).join(', ')
+        : '';
       const rpeHoy = checkoutRpeLeer()[nkey];
       const notaHoy = (state.notes && state.notes[nkey]) || '';
-      let txt = '🏁 COACH JP · REPORTE DE SESIÓN\\n' +
-        '👤 ' + PROGRAM_CONFIG.athleteName + ' — ' + day.short + ' (' + WEEKS_META[weekIdx].short + ')\\n\\n' +
-        '📊 RESUMEN DE SESIÓN\\n' +
-        '• Volumen Total: ' + d.vol + ' kg\\n' +
-        '• Series Completadas: ' + d.series + ' sets (' + d.reps + ' reps)\\n' +
-        '• Tiempo: ' + minsCrudo + ' min\\n\\n' +
-        prLineas;
-      if(rpeHoy) txt += '\\n\\n💪 Esfuerzo percibido (RPE): ' + rpeHoy + '/10';
-      if(notaHoy) txt += '\\n📝 ' + notaHoy;
-      const url = 'https://wa.me/?text=' + encodeURIComponent(txt);
+      const fechaHoy = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
+      const tonelajeHoy = (typeof calcularTonelajeSesion === 'function') ? calcularTonelajeSesion() : d.vol;
+      const desglose = generarDesgloseBloquesWA(weekIdx, day);
+
+      let txt = '🏋️\\u200d\\u2642\\ufe0f *REPORTE DE SESI\\u00d3N \\u00b7 COACH JP*\\n' +
+        '\\ud83d\\udc64 *Atleta:* ' + PROGRAM_CONFIG.athleteName + '\\n' +
+        '\\ud83d\\udcc5 *D\\u00eda:* ' + day.short + ' | *Fase:* ' + WEEKS_META[weekIdx].short + ' | ' + fechaHoy + '\\n' +
+        '\\u26a1 *Tonelaje Total Acumulado:* ' + tonelajeHoy.toLocaleString('es-AR') + ' KG\\n' +
+        '-----------------------------\\n' +
+        (desglose.length ? desglose.join('\\n\\n') : '_A\\u00fan no hay series completadas con carga registrada._') +
+        '\\n-----------------------------';
+      if(prLinea) txt += '\\n' + prLinea;
+      if(rpeHoy) txt += '\\n\\ud83d\\udcaa *Esfuerzo percibido (RPE):* ' + rpeHoy + '/10';
+      if(notaHoy) txt += '\\n\\ud83d\\udcdd *Comentarios del Alumno/a:* ' + notaHoy;
+
+      /* directiva: wa.me/<numero>?text= abre directo la conversación con
+         el coach cuando PROGRAM_CONFIG.coachPhone está cargado (Builder,
+         ficha de identidad) -- sin número configurado, degrada solo al
+         comportamiento de siempre (wa.me/?text=, el alumno elige a
+         quién mandárselo), cero regresión para planes ya exportados. */
+      const coachPhone = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '';
+      const url = 'https://wa.me/' + coachPhone + '?text=' + encodeURIComponent(txt);
       window.open(url, '_blank', 'noopener');
     });
   }
@@ -15304,9 +15553,59 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     else document.body.insertBefore(w, document.body.firstChild);
   }
 
+  /* directiva maestra ("Modal Onboarding de Instalación PWA") -- guía
+     táctica de 2 pasos según OS, mostrada UNA sola vez (primera apertura
+     de un alumno/a nuevo) y sólo si la app todavía no corre standalone.
+     No reemplaza el botón manual pwaBoton() de arriba: éste queda intacto
+     para que el alumno pueda reabrir la instalación cuando quiera. */
+  function mostrarGuiaPWAInstalacion(){
+    if(document.querySelector('.jp-pwaguide-overlay')) return;
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    if(standalone){
+      try{ localStorage.setItem('jp_pwa_guide_viewed', '1'); }catch(e){}
+      return;
+    }
+    let visto = false;
+    try{ visto = localStorage.getItem('jp_pwa_guide_viewed') === '1'; }catch(e){}
+    if(visto) return;
+    const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const pasos = iOS ? [
+      { ic: '⎋', tx: 'Pulsá el ícono de <strong>Compartir</strong> abajo en Safari (el cuadrado con la flecha hacia arriba).' },
+      { ic: '⊞', tx: 'Deslizá y elegí <strong>«Agregar a inicio»</strong>.' }
+    ] : [
+      { ic: '⋮', tx: 'Pulsá el menú de <strong>tres puntos</strong> arriba a la derecha.' },
+      { ic: '⊞', tx: 'Elegí <strong>«Instalar aplicación»</strong> o <strong>«Agregar a la pantalla principal»</strong>.' }
+    ];
+    const overlay = document.createElement('div');
+    overlay.className = 'jp-pwaguide-overlay';
+    overlay.innerHTML =
+      '<div class="jp-pwaguide-pop">' +
+        '<div class="jp-pwaguide-title">📲 Instalación táctica de la app</div>' +
+        '<div class="jp-pwaguide-sub">' + (iOS ? 'iPhone / iPad · Safari' : 'Android · Chrome') + '</div>' +
+        '<div class="jp-pwaguide-steps">' +
+          pasos.map(function(p, i){
+            return '<div class="jp-pwaguide-step">' +
+              '<div class="jp-pwaguide-step-n">' + (i + 1) + '</div>' +
+              '<div class="jp-pwaguide-step-ic">' + p.ic + '</div>' +
+              '<div class="jp-pwaguide-step-tx">' + p.tx + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+        '<button type="button" class="jp-pwaguide-ok">Entendido · Ingresar al sistema</button>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    const cerrar = function(){
+      try{ localStorage.setItem('jp_pwa_guide_viewed', '1'); }catch(e){}
+      overlay.remove();
+    };
+    overlay.querySelector('.jp-pwaguide-ok').addEventListener('click', cerrar);
+    overlay.addEventListener('click', function(e){ if(e.target === overlay) cerrar(); });
+  }
+
   function mount(){
     badge(); anillo(); inyectarBoton(); fase(); titulo();
     pwaMetas(); pwaSW(); pwaBoton();
+    mostrarGuiaPWAInstalacion();
     medir();
     [120, 400, 1000].forEach(function(ms){ setTimeout(medir, ms); });
     window.addEventListener('resize', medir, { passive:true });
@@ -29551,6 +29850,50 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
 }
 .jp-pct-pop-ok{ background:rgba(72,213,151,.14); border-color:rgba(72,213,151,.45); color:#7CFFB2; }
 .jp-pct-pop-x:hover{ background:rgba(239,90,74,.15); border-color:rgba(239,90,74,.5); color:#FF8A78; }
+/* directiva maestra ("Guía PWA OS-Specific") -- onboarding táctico de
+   instalación, mismo patrón de overlay centrado full-screen que
+   .jp-pct-overlay, mostrado UNA sola vez (localStorage jp_pwa_guide_viewed)
+   y sólo si la app no corre ya como PWA standalone. */
+.jp-pwaguide-overlay{
+  position:fixed; inset:0; z-index:400; display:flex; align-items:center; justify-content:center;
+  padding:20px; background:rgba(4,5,8,.86); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+}
+.jp-pwaguide-pop{
+  width:min(360px,100%); padding:26px 22px; border-radius:18px;
+  background:linear-gradient(160deg, rgba(18,22,31,.98), rgba(10,12,16,.98));
+  border:1px solid rgba(255,214,0,.3); box-shadow:0 24px 70px rgba(0,0,0,.6);
+}
+.jp-pwaguide-title{
+  font-family:'Barlow Condensed','Chakra Petch',sans-serif; font-weight:800; font-size:1.15rem;
+  letter-spacing:.03em; text-transform:uppercase; color:#ffd600; text-align:center; margin-bottom:4px;
+}
+.jp-pwaguide-sub{
+  font-family:'Plus Jakarta Sans',sans-serif; font-size:.78rem; color:rgba(237,239,242,.55);
+  text-align:center; margin-bottom:20px; letter-spacing:.02em;
+}
+.jp-pwaguide-steps{ display:flex; flex-direction:column; gap:14px; margin-bottom:22px; }
+.jp-pwaguide-step{
+  display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px;
+  background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08);
+}
+.jp-pwaguide-step-n{
+  flex:0 0 auto; width:22px; height:22px; border-radius:50%; background:rgba(16,185,129,.18);
+  border:1px solid rgba(16,185,129,.5); color:#48D597; font-family:'JetBrains Mono',monospace;
+  font-weight:800; font-size:.72rem; display:flex; align-items:center; justify-content:center;
+}
+.jp-pwaguide-step-ic{
+  flex:0 0 auto; width:34px; height:34px; border-radius:10px; background:rgba(255,214,0,.1);
+  border:1px solid rgba(255,214,0,.3); color:#ffd600; font-size:1.1rem; display:flex;
+  align-items:center; justify-content:center;
+}
+.jp-pwaguide-step-tx{ flex:1; font-family:'Plus Jakarta Sans',sans-serif; font-size:.83rem; color:#EDEFF2; line-height:1.5; }
+.jp-pwaguide-step-tx strong{ color:#ffd600; font-weight:700; }
+.jp-pwaguide-ok{
+  display:block; width:100%; padding:14px; border-radius:12px; border:1px solid rgba(16,185,129,.45);
+  background:rgba(16,185,129,.14); color:#48D597; font-family:'Chakra Petch','Barlow Condensed',sans-serif;
+  font-weight:800; font-size:.82rem; letter-spacing:.04em; text-transform:uppercase; cursor:pointer;
+}
+.jp-pwaguide-ok:active{ background:rgba(16,185,129,.26); }
 .jp-prs-pop{ width:min(360px,100%); }
 .jp-prs-list{ display:flex; flex-direction:column; gap:6px; max-height:52vh; overflow-y:auto; }
 .jp-prs-row{
@@ -29883,6 +30226,16 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-size:.85rem; color:#ff6b00; font-weight:700; letter-spacing:.04em;
   margin:-4px 0 10px; text-transform:uppercase;
 }
+/* directiva maestra ("Optimización en el registro de cargas: acción
+   rápida de bloque") -- botón secundario discreto, nunca compite
+   visualmente con el CTA principal de la tarjeta de cierre de sesión. */
+.jp-sb-applyall{
+  display:block; width:100%; margin-top:10px; padding:8px 10px; border-radius:8px;
+  background:rgba(255,214,0,.06); border:1px solid rgba(255,214,0,.25); color:#ffd600;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
+  font-size:.72rem; letter-spacing:.04em; text-transform:uppercase; cursor:pointer;
+}
+.jp-sb-applyall:active{ background:rgba(255,214,0,.14); }
 .jp-sb-objective, .jp-sb-tips{
   font-size:.86rem; line-height:1.5; color:rgba(237,239,242,.82);
   background:rgba(56,189,248,.06); border:1px solid var(--line); border-radius:10px;
@@ -30765,6 +31118,11 @@ function buildProgramConfig(ath){
   return {
     athleteName: fullName(ath),
     athleteId: ath.id || '',
+    /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- sólo
+       dígitos (wa.me/<numero> no acepta "+"/espacios/guiones); vacío si
+       el coach todavía no lo cargó, el botón de WhatsApp del lado del
+       alumno degrada solo a wa.me/?text= (selector de contacto manual). */
+    coachPhone: String((p.meta && p.meta.coachPhone) || '').replace(/\D/g, ''),
     /* 10/09 -- concordancia de género: 'F'/'M'/'' (sin especificar), tal
        cual lo carga el coach en la ficha del alumno/a (#aGenero). No hay
        detección automática por nombre -- adivinar género a partir de un
@@ -31024,6 +31382,12 @@ function renderExport(){
       '<div><label class="lb">Coach (firma)</label><input data-mf="coachName" value="' + esc(M.coachName||'') + '"></div>' +
     '</div>' +
     '<div style="margin-top:12px"><label class="lb">Rol / especialidad</label><input data-mf="coachRole" value="' + esc(M.coachRole||'') + '" placeholder="Ej: Especialista en Biomecánica · Alto Rendimiento"></div>' +
+    /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- número
+       que usa "Enviar resumen al coach" del lado del alumno (wa.me/<numero>).
+       Placeholder deja explícito el formato esperado (sólo dígitos, código
+       de país primero, sin "+"/espacios/guiones) para que el coach no
+       cargue un valor que wa.me no sepa interpretar. */
+    '<div style="margin-top:12px"><label class="lb">WhatsApp del coach (para "Enviar resumen de sesión")</label><input data-mf="coachPhone" value="' + esc(M.coachPhone||'') + '" placeholder="Ej: 5491122334455 (sólo dígitos, con código de país)"></div>' +
     '<div class="grid g2" style="margin-top:12px">' +
       '<div><label class="lb">Titular (parte blanca)</label><input data-mf="heroTitle" value="' + esc(M.heroTitle||'') + '"></div>' +
       '<div><label class="lb">Titular (parte roja)</label><input data-mf="heroEm" value="' + esc(M.heroEm||'') + '"></div>' +
@@ -31283,8 +31647,19 @@ function init(){
   $('#timerAdd').addEventListener('click', () => { tLeft += 15; paintTimer(); });
 
   /* ---- exportar ---- */
+  /* directiva maestra ("Persistencia bidireccional del alumno activo:
+     Builder <-> Exportador") -- el sentido Builder -> Exportador ya
+     estaba resuelto (ver #btnGoExport más arriba), pero cambiar de
+     alumno/a ACÁ, en el Exportador, nunca escribía S.activeId: al volver
+     al Builder (u otra pestaña que lea S.activeId) seguía mostrando el
+     alumno/a viejo. save() ya persiste S.activeId en PLANS_KEY (ver
+     save() más arriba) -- mismo mecanismo que usa toda la app, sin
+     agregar una segunda fuente de verdad en localStorage que se pueda
+     desincronizar. */
   $('#expAth').addEventListener('change', () => {
     $('#expPreviewBox').innerHTML = '';
+    S.activeId = $('#expAth').value || S.activeId;
+    save();
     renderExport();
   });
   ['#expVideos','#expWarn','#expSync'].forEach(s => { const el = $(s); if(el) el.addEventListener('change', renderExport); });
