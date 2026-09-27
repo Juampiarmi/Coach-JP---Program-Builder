@@ -13012,21 +13012,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const tituloBloqueM = String(block.title || '').match(/^(.*?)\\s*\\(([^)]+)\\)\\s*$/);
     const tituloBloquePrincipal = tituloBloqueM ? (tituloBloqueM[1].trim() || block.title) : (block.title || '');
     const tituloBloqueEnfasis = tituloBloqueM ? tituloBloqueM[2].trim() : '';
-    /* directiva maestra ("Optimización en el registro de cargas: acción
-       rápida de bloque") -- botón discreto al pie, sólo si el bloque
-       tiene AL MENOS 2 filas de serie reales (con 1 sola fila no hay
-       "resto del bloque" al que transferir nada). Nunca en calentamiento
-       (ahí no hay cargas uniformes que propagar). El handler delegado
-       (más abajo, junto al resto de listeners de .jp-sb-board) toma el
-       PRIMER kg cargado del bloque y lo copia a todo input de kg vacío. */
-    const totalFilasSet = (filas.match(/class="jp-set-row-native/g) || []).length;
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
         '<div class="jp-sb-tag">[ SPORTS &middot; ' + (esCalentamiento ? '🔥 ACTIVACI\\u00d3N' : '💪 BLOQUE') + ' ]</div>' +
         '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>' +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         filas +
-        (!esCalentamiento && totalFilasSet > 1 ?
-          '<button type="button" class="jp-sb-applyall" data-sbapplyall="' + block.id + '">\\u26a1 APLICAR ESTOS PESOS AL RESTO DEL BLOQUE</button>' : '') +
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS, TIPS &amp; VIDEOS DEL BLOQUE</summary>' +
             '<div class="jp-details-content">' +
@@ -13152,32 +13142,6 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(bl && typeof window.jpArrancarDescansoSetNative === 'function') window.jpArrancarDescansoSetNative(bl, restOverride);
     } else {
       try{ beepSetCheck(false); }catch(err){}
-    }
-  });
-
-  /* directiva maestra ("Acción Rápida de Bloque") -- [data-sbapplyall]
-     toma el primer kg NO VACÍO entre todas las filas .jp-set-row-native
-     del bloque (.jp-sb-board) y lo propaga SÓLO a las filas que estén
-     vacías, para transferir cargas uniformes con un solo toque. */
-  document.addEventListener('click', function(e){
-    const applyBtn = e.target.closest('[data-sbapplyall]');
-    if(!applyBtn) return;
-    const board = applyBtn.closest('.jp-sb-board');
-    if(!board) return;
-    const kgInputs = Array.from(board.querySelectorAll('.jp-val-primary'));
-    const refInput = kgInputs.find(function(i){ return i.value; });
-    if(!refInput) return;
-    let aplicados = 0;
-    kgInputs.forEach(function(inp){
-      if(inp === refInput || inp.value) return;
-      inp.value = refInput.value;
-      const row = inp.closest('.jp-set-row-native');
-      if(row && row.dataset.setKey){ setLoadField(row.dataset.setKey, 'kg', refInput.value); aplicados++; }
-    });
-    if(aplicados){
-      try{ if(navigator.vibrate) navigator.vibrate(20); }catch(err){}
-      applyBtn.textContent = '✓ PESOS APLICADOS';
-      setTimeout(function(){ applyBtn.textContent = '⚡ APLICAR ESTOS PESOS AL RESTO DEL BLOQUE'; }, 1600);
     }
   });
 
@@ -28265,7 +28229,11 @@ input[type="checkbox"]:active{
 .hdd-b .ic svg{width:16px;height:16px;flex:none}
 .hdd-b:active{background:rgba(229,195,120,.14);color:#E5C378}
 .hdd-b.on{background:rgba(229,195,120,.16);color:#E5C378}
-#mainContent{padding-bottom:calc(90px + env(safe-area-inset-bottom)) !important}
+/* directiva maestra ("Pulido de interfaz") -- 90px dejaba el acordeón
+   "Pautas técnicas, tips & videos del bloque" del ÚLTIMO bloque del día
+   asomado justo detrás del dock flotante (%1RM/Timer/KG/Readiness);
+   110px da margen real para que el scroll lo despeje por completo. */
+#mainContent{padding-bottom:calc(110px + env(safe-area-inset-bottom)) !important}
 body.focus-mode .hd-dock{display:none}
 /* evita que el HUD del descanso, el aviso offline y el "siguiente" choquen con el dock nuevo */
 .timer-hud{bottom:calc(86px + env(safe-area-inset-bottom)) !important}
@@ -29350,7 +29318,7 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:none !important; }
   }
   .week-selector-wrap{ margin-left:0 !important; margin-right:0 !important; }
   .week-info-bar{ margin-left:0 !important; margin-right:0 !important; }
-  #mainContent{ margin-left:0 !important; margin-right:0 !important; padding-bottom:calc(90px + env(safe-area-inset-bottom)) !important; }
+  #mainContent{ margin-left:0 !important; margin-right:0 !important; padding-bottom:calc(110px + env(safe-area-inset-bottom)) !important; }
   .timer-hud{ bottom:calc(86px + env(safe-area-inset-bottom)) !important; }
   .rest-hud{ bottom:calc(86px + env(safe-area-inset-bottom)) !important; }
   .off-pill{ bottom:calc(86px + env(safe-area-inset-bottom)) !important; }
@@ -30238,16 +30206,6 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-size:.85rem; color:#ff6b00; font-weight:700; letter-spacing:.04em;
   margin:-4px 0 10px; text-transform:uppercase;
 }
-/* directiva maestra ("Optimización en el registro de cargas: acción
-   rápida de bloque") -- botón secundario discreto, nunca compite
-   visualmente con el CTA principal de la tarjeta de cierre de sesión. */
-.jp-sb-applyall{
-  display:block; width:100%; margin-top:10px; padding:8px 10px; border-radius:8px;
-  background:rgba(255,214,0,.06); border:1px solid rgba(255,214,0,.25); color:#ffd600;
-  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
-  font-size:.72rem; letter-spacing:.04em; text-transform:uppercase; cursor:pointer;
-}
-.jp-sb-applyall:active{ background:rgba(255,214,0,.14); }
 .jp-sb-objective, .jp-sb-tips{
   font-size:.86rem; line-height:1.5; color:rgba(237,239,242,.82);
   background:rgba(56,189,248,.06); border:1px solid var(--line); border-radius:10px;
