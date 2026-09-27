@@ -1,6 +1,7 @@
 import { DEFAULT_STATE } from '../defaults'
 import type { Accent, CanvasState, ChartMode, CurveShape, TemplateId } from '../types'
 import { DEFAULT_AUTHOR } from './brand'
+import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 
 export type AiProvider = 'openai' | 'anthropic' | 'gemini'
 export type Discipline = 'general' | 'sports' | 'crossfit'
@@ -10,6 +11,9 @@ export interface AiSettings {
   provider: AiProvider
   keys: Record<AiProvider, string>
   models: Record<AiProvider, string>
+  /** Modelos de Gemini detectados con ListModels para la key guardada */
+  geminiModels?: GeminiModel[]
+  geminiCheckedAt?: number
 }
 
 export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> = {
@@ -24,17 +28,11 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
   ],
   gemini: [
     { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · recomendado' },
-    { id: 'gemini-3.8-flash-lite', label: 'Gemini 3.8 Flash-Lite · canal rápido / fallback' },
   ],
 }
 
-/** Modelo de Gemini por defecto. */
+/** Modelo de Gemini por defecto hasta detectar los habilitados para la key (ListModels). */
 export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash'
-/** Canal rápido: entra de inmediato si 3.8 Flash está saturado. */
-export const GEMINI_LITE_MODEL = 'gemini-3.8-flash-lite'
-/** Generaciones que Google ya no habilita para usuarios nuevos (1.x, 2.x y alias sin versión): se migran solas a 3.8. */
-export const isRetiredGemini = (model: string) => /^gemini-(1|2)\.\d/.test(model.trim()) || /^gemini-pro(-vision)?$/.test(model.trim())
-
 export const PROVIDER_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' }
 export const KEY_PLACEHOLDER: Record<AiProvider, string> = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIzaSy...' }
 
@@ -243,44 +241,66 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
 
 export type StatusFn = (message: string | null) => void
 
-export const OVERLOAD_FINAL_MSG = 'Servidores de Google temporalmente saturados. Aguarda unos segundos y reintenta.'
-const OVERLOAD_RETRIES = 2
-const OVERLOAD_WAIT_MS = 2000
+export const OVERLOAD_FINAL_MSG =
+  'El servidor de Google está recibiendo alto tráfico en este instante. Esperá 15-30 segundos y volvé a presionar Generar.'
+/** Esperas antes de cada reintento con el MISMO modelo (3 intentos en total). */
+const OVERLOAD_WAITS_MS = [2500, 4000]
 
-export const OVERLOAD_LITE_MSG = '[ Servidor de Google saturado · Reintentando con canal rápido (3.8 Flash-Lite)... ]'
+/** Modelo inexistente o no habilitado para esta key. */
+function isModelGone(err: unknown) {
+  if (!(err instanceof HttpError)) return false
+  return err.status === 404 || err.status === 410 || /not found|no longer available|not supported/i.test(err.message)
+}
+
+export type ModelChangeFn = (model: string, detected: GeminiModel[]) => void
 
 /**
  * Llamada a Gemini:
- * - Si gemini-3.8-flash está saturado (503 / "high demand"), reintenta DE INMEDIATO con
- *   gemini-3.8-flash-lite.
- * - Si el canal que queda también está saturado, espera 2 s y lo reintenta hasta 2 veces.
+ * - Saturación (503 / "experiencing high demand"): espera 2,5 s y reintenta el mismo modelo;
+ *   luego espera 4 s y reintenta. Tras 3 intentos, mensaje claro para el usuario.
+ * - Modelo inexistente para esta key: consulta ListModels una vez, elige el Flash más
+ *   moderno disponible, lo guarda y reintenta con él.
  */
-async function callGemini(key: string, model: string, user: string, signal?: AbortSignal, onStatus?: StatusFn) {
+async function callGemini(
+  key: string,
+  model: string,
+  user: string,
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+  onModelChange?: ModelChangeFn,
+) {
   // Un solo turno con el prompt completo (sistema + pedido), sin espacios redundantes.
   const prompt = `${COMPACT_SYSTEM_PROMPT}\n\n${user}`
-  const selected = !model.trim() || isRetiredGemini(model) ? GEMINI_DEFAULT_MODEL : model.trim()
-  let current = selected
-  let waits = 0
+  let current = model.trim() || GEMINI_DEFAULT_MODEL
+  let retries = 0
+  let redetected = false
   for (;;) {
     try {
       const text = await requestGemini(key, current, prompt, signal)
-      onStatus?.(current !== selected ? `Generado con ${current} (canal rápido).` : null)
+      onStatus?.(null)
       return text
     } catch (err) {
       if (isOverloaded(err)) {
-        if (current === GEMINI_DEFAULT_MODEL) {
-          onStatus?.(OVERLOAD_LITE_MSG)
-          current = GEMINI_LITE_MODEL
-          continue
-        }
-        if (waits < OVERLOAD_RETRIES) {
-          waits++
-          onStatus?.(`[ Servidor de Google saturado · Reintentando ${waits}/${OVERLOAD_RETRIES}... ]`)
-          await sleep(OVERLOAD_WAIT_MS, signal)
+        if (retries < OVERLOAD_WAITS_MS.length) {
+          const wait = OVERLOAD_WAITS_MS[retries]
+          retries++
+          onStatus?.(`[ Servidor de Google saturado · Reintento ${retries}/${OVERLOAD_WAITS_MS.length} en ${wait / 1000} s... ]`)
+          await sleep(wait, signal)
           continue
         }
         onStatus?.(null)
         throw new Error(OVERLOAD_FINAL_MSG)
+      }
+      if (isModelGone(err) && !redetected) {
+        redetected = true
+        onStatus?.('[ Modelo no disponible para tu key · Detectando modelos habilitados... ]')
+        const detected = await listGeminiModels(key, signal).catch(() => [] as GeminiModel[])
+        const next = preferredGeminiModel(detected)
+        if (next && next !== current) {
+          onModelChange?.(next, detected)
+          current = next
+          continue
+        }
       }
       onStatus?.(null)
       throw err
@@ -404,6 +424,7 @@ export async function generateContent(
   discipline: Discipline,
   signal?: AbortSignal,
   onStatus?: StatusFn,
+  onModelChange?: ModelChangeFn,
 ): Promise<GenerationResult> {
   const key = (settings.keys[settings.provider] ?? '').trim()
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
@@ -411,7 +432,7 @@ export async function generateContent(
   const user = buildUserPrompt(topic, mode, discipline)
   const text =
     settings.provider === 'gemini'
-      ? await callGemini(key, model, user, signal, onStatus)
+      ? await callGemini(key, model, user, signal, onStatus, onModelChange)
       : settings.provider === 'anthropic'
         ? await callAnthropic(key, model, user, signal)
         : await callOpenAI(key, model, user, signal)

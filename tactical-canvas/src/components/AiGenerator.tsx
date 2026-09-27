@@ -2,8 +2,6 @@ import { useRef, useState } from 'react'
 import {
   DEFAULT_AI_SETTINGS,
   DISCIPLINE_LABEL,
-  GEMINI_DEFAULT_MODEL,
-  isRetiredGemini,
   generateContent,
   MODE_LABEL,
   type AiSettings,
@@ -29,8 +27,6 @@ export function AiGenerator({ onResult }: Props) {
     keys: { ...DEFAULT_AI_SETTINGS.keys, ...stored.keys },
     models: { ...DEFAULT_AI_SETTINGS.models, ...stored.models },
   }
-  // Migración: quien guardó gemini-1.5-* (ya retirado por Google) pasa al modelo vigente.
-  if (isRetiredGemini(settings.models.gemini ?? '')) settings.models.gemini = GEMINI_DEFAULT_MODEL
   const [topic, setTopic] = useState('')
   const [mode, setMode] = usePersistentState<{ mode: GenMode; discipline: Discipline }>('jp-tactical-canvas:ai-mode', {
     mode: 'auto',
@@ -61,7 +57,17 @@ export function AiGenerator({ onResult }: Props) {
     setStatus(null)
     abort.current = new AbortController()
     try {
-      onResult(await generateContent(settings, topic, mode.mode, mode.discipline ?? 'general', abort.current.signal, setStatus))
+      onResult(
+        await generateContent(settings, topic, mode.mode, mode.discipline ?? 'general', abort.current.signal, setStatus, (model, detected) =>
+          // El modelo guardado no existe para esta key: se persiste el detectado con ListModels.
+          setSettings((s) => ({
+            ...s,
+            models: { ...DEFAULT_AI_SETTINGS.models, ...s.models, gemini: model },
+            geminiModels: detected,
+            geminiCheckedAt: Date.now(),
+          })),
+        ),
+      )
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         setError(err instanceof Error ? err.message : 'Error desconocido')
