@@ -23,15 +23,16 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 · máxima calidad' },
   ],
   gemini: [
-    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · rápido, última generación recomendada' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · estable' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · recomendado' },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite · anti-saturación / ultra rápido' },
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · última generación' },
   ],
 }
 
 /** Modelo de Gemini por defecto. */
-export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash'
-/** Único reintento si falla el default. */
-export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash'
+export const GEMINI_DEFAULT_MODEL = 'gemini-2.5-flash'
+/** Canal rápido: el modelo más liviano y con menos rechazos por saturación. */
+export const GEMINI_LITE_MODEL = 'gemini-2.5-flash-lite'
 /** Generaciones que Google ya dio de baja (1.x, 2.0 y los alias sin versión): se migran solas al default. */
 export const isRetiredGemini = (model: string) => /^gemini-(1\.\d|2\.0)(-|$)|^gemini-pro(-vision)?$/.test(model.trim())
 
@@ -125,6 +126,12 @@ Variá las plantillas dentro de una secuencia: no repitas la misma más de dos v
 5. Cierre con 3 a 5 hashtags de nicho en español en la última línea.
 Separá los bloques con una línea en blanco (usá \n\n dentro del string). Máximo 1800 caracteres. Sin emojis.`
 
+/** Mismo prompt sin sangrías ni espacios repetidos: menos tokens por pedido. */
+const COMPACT_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(/[ \t]+/g, ' ')
+  .replace(/\n /g, '\n')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim()
+
 export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discipline = 'general') {
   const focus = DISCIPLINE_RULE[discipline]
   return `Tema o concepto a comunicar: "${topic.trim()}"\n\n${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
@@ -188,44 +195,121 @@ class HttpError extends Error {
   }
 }
 
-async function requestGemini(key: string, model: string, prompt: string, signal?: AbortSignal) {
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    const t = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => {
+      clearTimeout(t)
+      reject(new DOMException('Cancelado', 'AbortError'))
+    })
+  })
+
+/** Saturación temporal del servicio (tier gratuito): conviene esperar y/o bajar a Flash-Lite. */
+function isOverloaded(err: unknown) {
+  if (!(err instanceof HttpError)) return false
+  if (err.status === 503 || err.status === 429) return true
+  return /high demand|spikes in demand|overloaded|resource.?exhausted|rate.?limit|try again later/i.test(err.message)
+}
+
+/** Modelo inexistente o dado de baja: no sirve reintentar el mismo. */
+function isModelGone(err: unknown) {
+  if (!(err instanceof HttpError)) return false
+  return err.status === 404 || err.status === 410 || /not found|no longer available|not supported|deprecated/i.test(err.message)
+}
+
+/** Modelo alternativo cuando el elegido no existe: 3.8 → 2.5 Flash; 2.5 Flash ↔ Flash-Lite. */
+function replacementFor(model: string) {
+  if (model === GEMINI_DEFAULT_MODEL) return GEMINI_LITE_MODEL
+  return GEMINI_DEFAULT_MODEL
+}
+
+/** Los Flash 2.5 permiten apagar el razonamiento interno: menos tokens, menos latencia y menos rechazos. */
+const supportsNoThinking = (model: string) => /^gemini-2\.5-flash(-lite)?$/.test(model)
+
+async function requestGemini(key: string, model: string, prompt: string, signal?: AbortSignal, thinking = true) {
   const apiKey = key
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+  const lean = thinking && supportsNoThinking(model)
   const res = await fetch(url, {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        ...(lean ? { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 4096 } : {}),
+      },
     }),
   })
   const json = await res.json().catch(() => ({}))
-  if (!res.ok) throw new HttpError(json?.error?.message ?? `Gemini respondió ${res.status}`, res.status)
+  if (!res.ok) {
+    const message: string = json?.error?.message ?? `Gemini respondió ${res.status}`
+    // Si alguna versión no acepta thinkingConfig, se repite una vez sin él.
+    if (lean && res.status === 400 && /thinking/i.test(message)) return requestGemini(key, model, prompt, signal, false)
+    throw new HttpError(message, res.status)
+  }
   const cand = json?.candidates?.[0]
   if (!cand?.content) throw new Error(`Gemini no devolvió contenido${cand?.finishReason ? ` (${cand.finishReason})` : ''}.`)
   const parts: { text?: string }[] = cand.content.parts ?? []
   return parts.map((p) => p.text ?? '').join('')
 }
 
-async function callGemini(key: string, model: string, user: string, signal?: AbortSignal) {
-  // Estructura estándar: un solo turno con el prompt completo (sistema + pedido).
-  const prompt = `${SYSTEM_PROMPT}\n\n---\n\n${user}`
+export type StatusFn = (message: string | null) => void
+
+export const OVERLOAD_RETRY_MSG = '[ Servidor de Google saturado · Reintentando... ]'
+export const OVERLOAD_LITE_MSG = '[ Servidor de Google saturado · Reintentando con canal rápido... ]'
+
+/**
+ * Llamada resiliente a Gemini:
+ * - Saturación (503 / 429 / "high demand"): espera 1,5 s y reintenta el mismo modelo; si vuelve
+ *   a fallar, degrada solo a gemini-2.5-flash-lite (y le da una última espera de 3 s).
+ * - Modelo inexistente o dado de baja: un único cambio al modelo alternativo.
+ */
+async function callGemini(key: string, model: string, user: string, signal?: AbortSignal, onStatus?: StatusFn) {
+  // Un solo turno con el prompt completo (sistema + pedido), sin espacios redundantes.
+  const prompt = `${COMPACT_SYSTEM_PROMPT}\n\n${user}`
   const selected = isRetiredGemini(model) ? GEMINI_DEFAULT_MODEL : model.trim()
-  try {
-    return await requestGemini(key, selected, prompt, signal)
-  } catch (err) {
-    // Modelo no encontrado o dado de baja → un único reintento automático:
-    // si falla 3.8-flash se prueba sólo 2.5-flash; si falla otro modelo, se vuelve al default.
-    const unavailable =
-      err instanceof HttpError &&
-      (err.status === 404 || err.status === 410 || /not found|no longer available|not supported|deprecated/i.test(err.message))
-    if (unavailable) {
-      const retry = selected === GEMINI_DEFAULT_MODEL ? GEMINI_FALLBACK_MODEL : GEMINI_DEFAULT_MODEL
-      console.warn(`[Gemini] ${selected} no disponible. Reintentando con ${retry}.`)
-      return await requestGemini(key, retry, prompt, signal)
+  let current = selected
+  let overloads = 0
+  let swapped = false
+
+  for (;;) {
+    try {
+      const text = await requestGemini(key, current, prompt, signal)
+      onStatus?.(current !== selected ? `Generado con ${current} (canal alternativo).` : null)
+      return text
+    } catch (err) {
+      if (isModelGone(err) && !swapped) {
+        swapped = true
+        const next = replacementFor(current)
+        console.warn(`[Gemini] ${current} no disponible. Reintentando con ${next}.`)
+        current = next
+        continue
+      }
+      if (isOverloaded(err)) {
+        overloads++
+        if (overloads === 1) {
+          onStatus?.(OVERLOAD_RETRY_MSG)
+          await sleep(1500, signal)
+          continue
+        }
+        if (current !== GEMINI_LITE_MODEL) {
+          onStatus?.(OVERLOAD_LITE_MSG)
+          current = GEMINI_LITE_MODEL
+          continue
+        }
+        if (overloads <= 3) {
+          onStatus?.(OVERLOAD_LITE_MSG)
+          await sleep(3000, signal)
+          continue
+        }
+        onStatus?.(null)
+        throw new Error('Los servidores de Google siguen saturados (también el canal rápido). Probá de nuevo en un minuto.')
+      }
+      onStatus?.(null)
+      throw err
     }
-    throw err
   }
 }
 
@@ -344,12 +428,17 @@ export async function generateContent(
   mode: GenMode,
   discipline: Discipline,
   signal?: AbortSignal,
+  onStatus?: StatusFn,
 ): Promise<GenerationResult> {
   const key = (settings.keys[settings.provider] ?? '').trim()
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
   const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
   const user = buildUserPrompt(topic, mode, discipline)
-  const call = { openai: callOpenAI, anthropic: callAnthropic, gemini: callGemini }[settings.provider] ?? callOpenAI
-  const text = await call(key, model, user, signal)
+  const text =
+    settings.provider === 'gemini'
+      ? await callGemini(key, model, user, signal, onStatus)
+      : settings.provider === 'anthropic'
+        ? await callAnthropic(key, model, user, signal)
+        : await callOpenAI(key, model, user, signal)
   return parseGeneration(extractJson(text), mode)
 }
