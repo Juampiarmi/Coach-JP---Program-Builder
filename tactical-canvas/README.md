@@ -22,7 +22,7 @@ funciona sin conexión.
   Manifiesto / Cita Táctica (frase gigante con barra naranja o comillas militares, firma
   opcional y sin cita académica).
 - **Generador con IA (BYOK)**: con tu propia API Key de OpenAI (gpt-4o / gpt-4o-mini),
-  Anthropic (Claude) o Google Gemini (modelo gemini-3.8-flash; si Google está saturado espera 2 s y reintenta el mismo modelo hasta 2 veces), guardada sólo en tu navegador. Escribís el tema, podés
+  Anthropic (Claude) o Google Gemini (gemini-3.8-flash por defecto o gemini-3.8-flash-lite; si 3.8 Flash está saturado reintenta al instante con Flash-Lite y, si sigue saturado, espera 2 s y reintenta hasta 2 veces), guardada sólo en tu navegador. Escribís el tema, podés
   marcar un enfoque (`SPORTS & BODYBUILDING` prioriza biomecánica e hipertrofia;
   `CROSSFIT & HYROX` prioriza bioenergética y pacing), elegís Auto, 1 placa, Historias (3) o
   Carrusel (4-5) y la IA completa todos los campos y además escribe el caption de Instagram

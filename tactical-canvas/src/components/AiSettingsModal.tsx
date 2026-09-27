@@ -92,8 +92,8 @@ export function AiSettingsModal({ settings, onSave, onClose }: Props) {
           </div>
           {p === 'gemini' && (
             <p className="font-mono text-[10px] leading-relaxed text-steel/80">
-              Conseguí tu key gratis en aistudio.google.com → Get API key. Si Google está saturado, la app espera y reintenta
-              sola con el mismo modelo.
+              Conseguí tu key gratis en aistudio.google.com → Get API key. Si 3.8 Flash está saturado, la app reintenta al
+              instante con 3.8 Flash-Lite.
             </p>
           )}
           <p className="rounded-md border border-gold/20 bg-gold/5 p-2.5 font-mono text-[10px] leading-relaxed text-steel">

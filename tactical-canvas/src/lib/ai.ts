@@ -24,11 +24,14 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
   ],
   gemini: [
     { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · recomendado' },
+    { id: 'gemini-3.8-flash-lite', label: 'Gemini 3.8 Flash-Lite · canal rápido / fallback' },
   ],
 }
 
 /** Modelo de Gemini por defecto. */
 export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash'
+/** Canal rápido: entra de inmediato si 3.8 Flash está saturado. */
+export const GEMINI_LITE_MODEL = 'gemini-3.8-flash-lite'
 /** Generaciones que Google ya no habilita para usuarios nuevos (1.x, 2.x y alias sin versión): se migran solas a 3.8. */
 export const isRetiredGemini = (model: string) => /^gemini-(1|2)\.\d/.test(model.trim()) || /^gemini-pro(-vision)?$/.test(model.trim())
 
@@ -244,23 +247,35 @@ export const OVERLOAD_FINAL_MSG = 'Servidores de Google temporalmente saturados.
 const OVERLOAD_RETRIES = 2
 const OVERLOAD_WAIT_MS = 2000
 
+export const OVERLOAD_LITE_MSG = '[ Servidor de Google saturado · Reintentando con canal rápido (3.8 Flash-Lite)... ]'
+
 /**
- * Llamada a Gemini con un único modelo (gemini-3.8-flash). Ante saturación (503 / "high
- * demand") espera 2 s y reintenta el MISMO modelo hasta 2 veces; nunca cambia de modelo.
+ * Llamada a Gemini:
+ * - Si gemini-3.8-flash está saturado (503 / "high demand"), reintenta DE INMEDIATO con
+ *   gemini-3.8-flash-lite.
+ * - Si el canal que queda también está saturado, espera 2 s y lo reintenta hasta 2 veces.
  */
 async function callGemini(key: string, model: string, user: string, signal?: AbortSignal, onStatus?: StatusFn) {
   // Un solo turno con el prompt completo (sistema + pedido), sin espacios redundantes.
   const prompt = `${COMPACT_SYSTEM_PROMPT}\n\n${user}`
   const selected = !model.trim() || isRetiredGemini(model) ? GEMINI_DEFAULT_MODEL : model.trim()
-  for (let attempt = 0; ; attempt++) {
+  let current = selected
+  let waits = 0
+  for (;;) {
     try {
-      const text = await requestGemini(key, selected, prompt, signal)
-      onStatus?.(null)
+      const text = await requestGemini(key, current, prompt, signal)
+      onStatus?.(current !== selected ? `Generado con ${current} (canal rápido).` : null)
       return text
     } catch (err) {
       if (isOverloaded(err)) {
-        if (attempt < OVERLOAD_RETRIES) {
-          onStatus?.(`[ Servidor de Google saturado · Reintentando ${attempt + 1}/${OVERLOAD_RETRIES}... ]`)
+        if (current === GEMINI_DEFAULT_MODEL) {
+          onStatus?.(OVERLOAD_LITE_MSG)
+          current = GEMINI_LITE_MODEL
+          continue
+        }
+        if (waits < OVERLOAD_RETRIES) {
+          waits++
+          onStatus?.(`[ Servidor de Google saturado · Reintentando ${waits}/${OVERLOAD_RETRIES}... ]`)
           await sleep(OVERLOAD_WAIT_MS, signal)
           continue
         }
