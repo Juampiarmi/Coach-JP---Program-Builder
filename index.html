@@ -12682,9 +12682,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          esLineaDirectiva() (rest/cap/nota/amrap/...), o mencionar una
          técnica reconocida (con o sin corchetes, ver extraerTecnicaSB) --
          esto último es clave para el ejemplo de la propia directiva
-         ("[DROPSET] última serie al 20% al fallo", sin "*" adelante). */
+         ("[DROPSET] última serie al 20% al fallo", sin "*" adelante).
+         directiva maestra ("Registro ágil de 1 toque para Drop Sets y
+         Myo-Reps") -- BUG REAL: una línea que SÍ trae su propio nombre
+         antes de los dos puntos ("Abducción de cadera en máquina: 12
+         reps al fallo [DROPSET]") es un EJERCICIO NUEVO con su propia
+         técnica, no una nota suelta sobre el ejercicio anterior -- pero
+         el único chequeo era "¿menciona una técnica?", así que se
+         tragaba la línea entera como continuación y el ejercicio
+         desaparecía. esPropioNombreConDosis descarta la continuación
+         cuando la línea tiene "algo: algo" (estructura de declaración
+         propia) -- el ejemplo real de la directiva ("[DROPSET] última
+         serie...", el tag ARRANCA la línea, sin nombre ni ":" antes)
+         sigue funcionando exactamente igual. */
       var resTecLinea = extraerTecnicaSB(linea);
-      if(actual && actual.tipo === 'simple' && (esLineaDirectiva(linea) || /^\\*/.test(linea) || resTecLinea.tecnica)){
+      var esPropioNombreConDosis = /^[^:\\[\\n]{3,}:\\s*\\S/.test(linea);
+      if(actual && actual.tipo === 'simple' && (esLineaDirectiva(linea) || /^\\*/.test(linea) || (resTecLinea.tecnica && !esPropioNombreConDosis))){
         var resNota = extraerTecnicaSB(linea.replace(/^\\*\\s*/, ''));
         if(resNota.tecnica) actual.tecnica = resNota.tecnica;
         /* directiva ("Limpieza de residuos en técnicas avanzadas") -- el
@@ -12729,7 +12742,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         entries.push(actual);
         return;
       }
-      actual = { tipo:'simple', titulo: linea, sets:0, reps:'', tempo:'', restSeconds:0, rir:'', dosisAsignada:false, tecnica:'', tecnicaPct:null, myoInfo:null, notas:[], unidad:'reps' };
+      /* directiva maestra ("Registro ágil de 1 toque para Drop Sets y
+         Myo-Reps") -- BUG REAL: el catch-all final (línea sin dosis
+         reconocible, típico de "Nombre: 15 reps activación [MYO-REPS]"
+         cuando "15 reps" solo no matchea RX_DOSIS_SB) nunca corría
+         extraerTecnicaSB() -- tecnica quedaba SIEMPRE vacía acá, así que
+         un MYO-REPS/DROP SET escrito en formato libre (sin "NxM" claro)
+         perdía su técnica por completo y el badge/registro de 1 toque
+         nunca podían dispararse. Se extrae acá también, con el mismo
+         resTecLinea ya calculado arriba (cero llamada duplicada) --
+         nunca se le suma al título/nombre visible, que sigue siendo la
+         línea original menos el corchete de técnica si lo traía. */
+      var tituloSinTecnica = resTecLinea.tecnica ? resTecLinea.texto : linea;
+      actual = { tipo:'simple', titulo: tituloSinTecnica, sets:0, reps:'', tempo:'', restSeconds:0, rir:'', dosisAsignada:false,
+        tecnica: resTecLinea.tecnica || '',
+        tecnicaPct: resTecLinea.tecnica === 'dropset' ? extraerPctSB(resTecLinea.texto) : null,
+        myoInfo: resTecLinea.tecnica === 'myoreps' ? extraerMyoInfoSB(resTecLinea.texto) : null,
+        notas:[], unidad:'reps' };
       entries.push(actual);
     });
     return entries;
@@ -12762,6 +12791,55 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(/^(?:m|mts?|metros?)\\b/i.test(t)) return 'mts';
     if(/^cal(?:or[ií]as?)?\\b/i.test(t)) return 'cal';
     return 'reps';
+  }
+  /* directiva maestra ("Registro ágil de 1 toque para Drop Sets y Myo-
+     Reps") -- en sala de pesas no hay pausa pasiva entre bajadas/micro-
+     series para manipular el celular: un ejercicio con técnica MYO-REPS
+     o DROP SET SIEMPRE se registra con UNA sola fila interactiva (nunca
+     el tracker tradicional de N sets ni una UI de microseries aparte),
+     sin importar cómo el coach haya fraseado la dosis (incluso si no
+     matcheó ningún patrón "NxM" y entry.sets quedó en 0 -- antes esos
+     casos se caían al render "plano" sin tracker, el bug reportado).
+     Reusa data-set-key/.jp-input-native/.jp-btn-check-native TAL CUAL
+     (mismo listener delegado, mismo setLoadField(), mismo cálculo de
+     tonelaje) -- cero JS nuevo para completar/cargar kg×reps, sólo
+     cambia el rótulo de la píldora y se suma la línea de protocolo +
+     nota opcional (persistida en state.notes, mismo mecanismo ya usado
+     por el resto de la app, ver listener .jp-intensity-note más abajo). */
+  var PROTOCOLO_TECNICA_SB = {
+    myoreps: { pill: 'SET ACTIVACI\\u00d3N', icono: '\\u26a1', texto: 'Protocolo Myo-reps: 3 a 5 mini-sets al fallo t\\u00e9cnico (RIR 0) con 5 respiraciones de pausa.', ph: '4 mini-sets completados' },
+    dropset: { pill: 'CARGA INICIAL', icono: '\\ud83d\\udcc9', texto: 'Protocolo Drop Set: Descarga inmediata (-20% a -25%) al fallo sin descanso.', ph: '2 bajadas hasta 20kg' }
+  };
+  function renderRegistroTecnicaUnicaSB(weekIdx, dayId, blockId, exIdx, tecnica, unidadSec, refSemanaAnterior){
+    unidadSec = unidadSec || 'reps';
+    var proto = PROTOCOLO_TECNICA_SB[tecnica];
+    var key = getLoadKey(weekIdx, dayId, blockId, exIdx, 1);
+    var ld = getLoad(key);
+    var prevKg = null, prevSec = null;
+    if(refSemanaAnterior && weekIdx > 0){
+      var prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, 1));
+      if(prevLd.kg != null && prevLd.kg !== '') prevKg = prevLd.kg;
+      if(prevLd.reps != null && prevLd.reps !== '') prevSec = prevLd.reps;
+    }
+    var kgVal = ld.kg != null ? ld.kg : '';
+    var secVal = ld.reps != null ? ld.reps : '';
+    var kgPlaceholder = (kgVal === '' && prevKg != null) ? String(prevKg) : '0';
+    var secPlaceholder = (secVal === '' && prevSec != null) ? String(prevSec) : '0';
+    var notaKey = key + '|nota';
+    var notaVal = (state.notes && state.notes[notaKey]) || '';
+    return '<div class="jp-set-tracker-native jp-set-tracker-tecnica">' +
+        '<div class="jp-set-row-native' + (ld.done ? ' completed' : '') + '" data-set-key="' + key + '">' +
+          '<span class="jp-set-pill">' + proto.pill + '</span>' +
+          '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
+          '<span class="jp-unit">kg</span>' +
+          '<span class="jp-sep">\\u00d7</span>' +
+          '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />' +
+          '<span class="jp-unit">' + unidadSec + '</span>' +
+          '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie completada">\\u2713</button>' +
+        '</div>' +
+        '<div class="jp-tecnica-protocolo">' + proto.icono + ' ' + proto.texto + '</div>' +
+        '<input type="text" class="jp-intensity-note" data-notekey="' + notaKey + '" placeholder="Nota opcional (ej. ' + proto.ph + ')" value="' + escSB(notaVal) + '" />' +
+      '</div>';
   }
   function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo, rirAnterior){
     unidadSec = unidadSec || 'reps';
@@ -13188,6 +13266,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       if(entry.tipo !== 'simple') return;
       const exIdx = 'e' + idx;
+      /* directiva maestra ("Registro ágil de 1 toque para Drop Sets y
+         Myo-Reps") -- toma prioridad ANTES del chequeo de "sin dosis"
+         de abajo: un MYO-REPS/DROP SET se registra igual con la fila
+         única, tenga o no el coach un patrón "NxM" reconocible en la
+         línea. Nunca en calentamiento (ahí la técnica no aplica). */
+      if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
+        const esAnclaTec = !anclaUsada; anclaUsada = true;
+        filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + (entry.restSeconds || '') + '">' +
+            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span></div>' +
+            dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
+            chipUnilateralSB(entry.unilateral) +
+            (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' \\u00b7 ')) + '</div>' : '') +
+            renderRegistroTecnicaUnicaSB(weekIdx, dayId, block.id, exIdx, entry.tecnica, entry.unidad, true) +
+          '</div>';
+        return;
+      }
       /* directiva ("Clonar experiencia pura de CrossFit", requerimiento 2):
          una línea sin patrón SxReps jamás tuvo una dosis real asignada
          (entry.sets sigue en 0, ver parsearPizarraSB) -- típico de
@@ -13383,6 +13477,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     } else {
       try{ beepSetCheck(false); }catch(err){}
     }
+  });
+  /* directiva maestra ("Registro ágil de 1 toque para Drop Sets y Myo-
+     Reps") -- persistencia de la nota opcional de intensidad, mismo
+     mecanismo state.notes[key] ya usado en el resto de la app (ver
+     comentario en renderRegistroTecnicaUnicaSB más arriba): nunca traba
+     el flujo -- no hay validación, no hay confirmación, se guarda sola
+     mientras el alumno/a tipea. */
+  document.addEventListener('input', function(e){
+    var el = e.target.closest('.jp-intensity-note'); if(!el) return;
+    state.notes = state.notes || {};
+    state.notes[el.dataset.notekey] = el.value;
+    saveProgress();
   });
 
   /* directiva ("Motor de 1RM exacto") -- modal táctico CENTRADO: el
@@ -30839,6 +30945,22 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-size:.72rem; text-align:center;
 }
 .jp-myo-mini:focus{ border-color:#ff6b00; outline:none; }
+/* directiva maestra ("Registro ágil de 1 toque para Drop Sets y Myo-
+   Reps") -- línea de protocolo (texto fijo, sin inputs) + nota opcional
+   discreta, debajo de la única fila interactiva SET ACTIVACIÓN/CARGA
+   INICIAL. Nunca compite visualmente con el tracker real. */
+.jp-tecnica-protocolo{
+  font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.72rem; line-height:1.5;
+  color:rgba(237,239,242,.7); padding:2px 4px 0;
+}
+.jp-intensity-note{
+  width:100%; margin-top:2px; padding:7px 9px; border-radius:8px;
+  border:1px dashed rgba(255,255,255,.18); background:rgba(255,255,255,.02);
+  color:#94a3b8; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.72rem;
+  box-sizing:border-box;
+}
+.jp-intensity-note::placeholder{ color:rgba(148,163,184,.55); }
+.jp-intensity-note:focus{ outline:none; border-color:#38bdf8; border-style:solid; color:#EDEFF2; }
 /* 3 · acordeón ÚNICO por bloque (jp-block-details), naranja táctico en
    el disparador -- mismo esqueleto visual que .cf-acc, namespaced para
    no heredar nada de CrossFit. */
