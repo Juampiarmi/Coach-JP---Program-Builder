@@ -9,6 +9,7 @@ import {
   type GenerationResult,
   type GenMode,
   RateLimitError,
+  resetQuotaMemory,
 } from '../lib/ai'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { AiSettingsModal } from './AiSettingsModal'
@@ -18,49 +19,52 @@ interface Props {
 }
 
 const MODES: GenMode[] = ['auto', 'single', 'stories', 'carousel']
-const COOLDOWN_KEY = 'jp-tactical-canvas:ai-cooldown'
+/** Clave vieja: el enfriamiento ya no se persiste (recargar siempre deja el botón activo). */
+const LEGACY_COOLDOWN_KEY = 'jp-tactical-canvas:ai-cooldown'
 
-/** Fin del enfriamiento por cuota (persistido: recargar la página no lo saltea). */
-function readCooldown() {
-  try {
-    const until = Number(localStorage.getItem(COOLDOWN_KEY) ?? 0)
-    return until > Date.now() ? until : 0
-  } catch {
-    return 0
-  }
-}
-
+/** Cuenta regresiva en memoria para el límite por minuto (nunca bloquea más allá de la sesión). */
 function useCooldown() {
-  const [until, setUntil] = useState(readCooldown)
+  const [until, setUntil] = useState(0)
   const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_COOLDOWN_KEY)
+    } catch {
+      /* sin almacenamiento */
+    }
+  }, [])
   useEffect(() => {
     if (!until) return
     const id = window.setInterval(() => {
       const t = Date.now()
       setNow(t)
-      if (t >= until) {
-        setUntil(0)
-        try {
-          localStorage.removeItem(COOLDOWN_KEY)
-        } catch {
-          /* sin almacenamiento */
-        }
-      }
+      if (t >= until) setUntil(0)
     }, 250)
     return () => window.clearInterval(id)
   }, [until])
   const start = (seconds: number) => {
-    const u = Date.now() + seconds * 1000
     setNow(Date.now())
-    setUntil(u)
-    try {
-      localStorage.setItem(COOLDOWN_KEY, String(u))
-    } catch {
-      /* sin almacenamiento */
-    }
+    setUntil(Date.now() + seconds * 1000)
   }
+  const clear = () => setUntil(0)
   const remaining = until ? Math.max(0, Math.ceil((until - now) / 1000)) : 0
-  return { remaining, start }
+  return { remaining, start, clear }
+}
+
+/** Texto claro según el tipo de límite que devolvió el proveedor. */
+function quotaMessage(err: RateLimitError, provider: string) {
+  const m = err.model ? ` de ${err.model}` : ''
+  const others = provider === 'gemini' ? ' Ya se probaron los otros modelos habilitados de tu key.' : ''
+  switch (err.kind) {
+    case 'minute':
+      return `Límite por minuto (RPM)${m} alcanzado.${others} Se libera solo al terminar la cuenta regresiva.`
+    case 'daily':
+      return `Cuota diaria (RPD)${m} consumida por completo.${others} Se renueva a medianoche (hora del Pacífico): cambiá de API Key o de proveedor para seguir hoy.`
+    case 'zero':
+      return `El modelo${m ? ` ${err.model}` : ''} no tiene cuota gratuita para esta key (límite 0).${others} Elegí otro modelo o usá una key con facturación.`
+    default:
+      return `El proveedor rechazó la petición por cuota (429).${others} Esperá unos segundos o cambiá de API Key.`
+  }
 }
 
 /** Barra de generación táctica con IA (BYOK). */
@@ -86,15 +90,30 @@ export function AiGenerator({ onResult }: Props) {
   const inFlight = useRef(false)
   const cooldown = useCooldown()
   const locked = busy || cooldown.remaining > 0
-  const RATE_MSG = 'Límite de cuota por minuto alcanzado.'
-  // Al terminar la cuenta regresiva se limpia el aviso de cuota (queda listo para reintentar).
+  const [quotaError, setQuotaError] = useState<RateLimitError | null>(null)
+  // Cambiar de proveedor, key o modelo libera el botón al instante (es otra cuota).
+  const quotaScope = `${settings.provider}|${settings.keys[settings.provider] ?? ''}|${settings.models[settings.provider] ?? ''}`
   useEffect(() => {
-    if (cooldown.remaining === 0) setError((e) => (e.startsWith(RATE_MSG) ? '' : e))
-  }, [cooldown.remaining])
+    cooldown.clear()
+    setQuotaError(null)
+    setError('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quotaScope])
+  // Al vencer el límite por minuto se limpia el aviso y el botón vuelve a quedar activo.
+  useEffect(() => {
+    if (cooldown.remaining === 0 && quotaError && (quotaError.kind === 'minute' || quotaError.kind === 'unknown')) {
+      setQuotaError(null)
+      setError('')
+    }
+  }, [cooldown.remaining, quotaError])
   const hasKey = Boolean(settings.keys[settings.provider])
 
-  const run = async () => {
-    if (inFlight.current || locked) return
+  const run = async (force = false) => {
+    if (inFlight.current || busy || (!force && cooldown.remaining > 0)) return
+    if (force) {
+      resetQuotaMemory()
+      cooldown.clear()
+    }
     if (!hasKey) {
       setModal(true)
       return
@@ -106,6 +125,7 @@ export function AiGenerator({ onResult }: Props) {
     inFlight.current = true
     setBusy(true)
     setError('')
+    setQuotaError(null)
     setStatus(null)
     abort.current = new AbortController()
     try {
@@ -122,8 +142,11 @@ export function AiGenerator({ onResult }: Props) {
       )
     } catch (err) {
       if (err instanceof RateLimitError) {
-        cooldown.start(err.retryAfterSec)
-        setError(`${RATE_MSG} El botón se habilita solo cuando termine la cuenta regresiva.`)
+        // Sólo el límite por minuto tiene sentido esperarlo; el diario / límite 0 no se
+        // arregla con un contador: se informa y el botón queda libre para cambiar key o modelo.
+        if (err.kind === 'minute' || err.kind === 'unknown') cooldown.start(err.retryAfterSec)
+        setQuotaError(err)
+        setError(quotaMessage(err, settings.provider))
       } else if (!(err instanceof DOMException && err.name === 'AbortError')) {
         setError(err instanceof Error ? err.message : 'Error desconocido')
       }
@@ -203,7 +226,7 @@ export function AiGenerator({ onResult }: Props) {
       </div>
       <button
         type="button"
-        onClick={run}
+        onClick={() => run()}
         disabled={locked}
         aria-busy={busy}
         className={`relative mt-2 w-full overflow-hidden rounded-lg border py-2.5 font-mono text-[11px] font-bold tracking-[0.14em] transition disabled:cursor-not-allowed ${
@@ -221,7 +244,7 @@ export function AiGenerator({ onResult }: Props) {
             ? '[ GENERANDO... ]'
             : cooldown.remaining > 0
               ? `[ ESPERÁ ${cooldown.remaining}s · CUOTA RESETEANDO ]`
-              : 'GENERAR CONTENIDO [IA]'}
+              : '[ ✨ GENERAR PLACAS ]'}
         </span>
       </button>
       {busy && (
@@ -241,7 +264,30 @@ export function AiGenerator({ onResult }: Props) {
           {status}
         </p>
       )}
-      {error && <p className="mt-2 font-mono text-[10px] leading-relaxed text-fire">{error}</p>}
+      {error && (
+        <div className="mt-2 space-y-2">
+          <p className="font-mono text-[10px] leading-relaxed text-fire">{error}</p>
+          {!busy && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => run(true)}
+                title="Ignora la cuenta regresiva y vuelve a probar todos los modelos"
+                className="flex-1 whitespace-nowrap rounded-md border border-fire/50 bg-fire/10 px-1.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-fire transition hover:bg-fire/20"
+              >
+                [ 🔄 REINTENTAR FORZADO ]
+              </button>
+              <button
+                type="button"
+                onClick={() => setModal(true)}
+                className="flex-1 whitespace-nowrap rounded-md border border-line px-1.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-steel transition hover:border-cyan/50 hover:text-cyan"
+              >
+                [ 🔑 CAMBIAR KEY ]
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {modal && <AiSettingsModal settings={settings} onSave={setSettings} onClose={() => setModal(false)} />}
     </div>
   )

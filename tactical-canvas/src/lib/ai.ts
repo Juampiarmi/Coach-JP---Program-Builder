@@ -194,11 +194,16 @@ class HttpError extends Error {
   }
 }
 
-/** Cuota por minuto agotada (429): trae los segundos que hay que esperar. */
+/** Tipo de límite detrás de un 429. */
+export type QuotaKind = 'minute' | 'daily' | 'zero' | 'unknown'
+
+/** Cuota agotada (429): tipo de límite, modelo y segundos sugeridos de espera. */
 export class RateLimitError extends Error {
   constructor(
     message: string,
     readonly retryAfterSec: number,
+    readonly kind: QuotaKind = 'unknown',
+    readonly model = '',
   ) {
     super(message)
   }
@@ -206,12 +211,13 @@ export class RateLimitError extends Error {
 
 const DEFAULT_RATE_WAIT_SEC = 30
 
+type QuotaDetail = { retryDelay?: string; violations?: { quotaId?: string; quotaMetric?: string; quotaValue?: string }[] }
+
 /**
  * Segundos de espera que indica el proveedor ante un 429:
  * RetryInfo.retryDelay ("31s") de Google, "retry in 31.2s" en el mensaje o el header Retry-After.
  */
-function retryAfterSeconds(res: Response, json: unknown, message: string) {
-  const details = (json as { error?: { details?: { retryDelay?: string }[] } })?.error?.details ?? []
+function retryAfterSeconds(res: Response, details: QuotaDetail[], message: string) {
   const fromDetails = details.map((d) => d?.retryDelay).find(Boolean)
   const candidates = [
     fromDetails && parseFloat(fromDetails),
@@ -222,8 +228,50 @@ function retryAfterSeconds(res: Response, json: unknown, message: string) {
   return Math.min(600, Math.ceil(sec ?? DEFAULT_RATE_WAIT_SEC))
 }
 
-function rateLimitError(res: Response, json: unknown, message: string) {
-  return new RateLimitError(message, retryAfterSeconds(res, json, message))
+/**
+ * Clasifica el 429 con QuotaFailure.violations[].quotaId de Google
+ * (…PerMinute… = RPM, …PerDay… = RPD) y, si no viene, con el texto del mensaje.
+ * "limit: 0" = el modelo no tiene cuota gratuita para esta key.
+ */
+function quotaKind(details: QuotaDetail[], message: string): QuotaKind {
+  const violations = details.flatMap((d) => d?.violations ?? [])
+  const ids = violations.map((v) => `${v.quotaId ?? ''} ${v.quotaMetric ?? ''}`).join(' ')
+  const text = `${ids} ${message}`
+  if (/limit:\s*0\b/i.test(message) || violations.some((v) => v.quotaValue === '0')) return 'zero'
+  if (/per ?day|daily|PerDay/i.test(text)) return 'daily'
+  if (/per ?minute|PerMinute|rpm|tpm/i.test(text)) return 'minute'
+  return 'unknown'
+}
+
+function rateLimitError(res: Response, json: unknown, message: string, model = '') {
+  const details = ((json as { error?: { details?: QuotaDetail[] } })?.error?.details ?? []) as QuotaDetail[]
+  return new RateLimitError(message, retryAfterSeconds(res, details, message), quotaKind(details, message), model)
+}
+
+/**
+ * Memoria de la sesión: modelos con cuota agotada. Los diarios / sin cuota se saltean hasta
+ * recargar la página o forzar el reintento; los por-minuto, hasta que vence su espera.
+ */
+const exhausted = new Map<string, { kind: QuotaKind; until: number }>()
+
+function markExhausted(err: RateLimitError) {
+  const long = err.kind === 'daily' || err.kind === 'zero'
+  exhausted.set(err.model, { kind: err.kind, until: long ? Infinity : Date.now() + err.retryAfterSec * 1000 })
+}
+
+function isExhausted(model: string) {
+  const e = exhausted.get(model)
+  if (!e) return false
+  if (e.until <= Date.now()) {
+    exhausted.delete(model)
+    return false
+  }
+  return true
+}
+
+/** REINTENTAR FORZADO: olvida los modelos marcados como agotados. */
+export function resetQuotaMemory() {
+  exhausted.clear()
 }
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -258,7 +306,7 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
     }),
   })
   const json = await res.json().catch(() => ({}))
-  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Quota exceeded')
+  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Quota exceeded', model)
   if (!res.ok) throw new HttpError(json?.error?.message ?? `Gemini respondió ${res.status}`, res.status)
   const cand = json?.candidates?.[0]
   if (!cand?.content) throw new Error(`Gemini no devolvió contenido${cand?.finishReason ? ` (${cand.finishReason})` : ''}.`)
@@ -303,18 +351,51 @@ async function callGemini(
   signal?: AbortSignal,
   onStatus?: StatusFn,
   onModelChange?: ModelChangeFn,
+  known: GeminiModel[] = [],
 ) {
   // Un solo turno con el prompt completo (sistema + pedido), sin espacios redundantes.
   const prompt = `${COMPACT_SYSTEM_PROMPT}\n\n${user}`
-  let current = model.trim() || GEMINI_DEFAULT_MODEL
+  const selected = model.trim() || GEMINI_DEFAULT_MODEL
+  let current = selected
   let retries = 0
   let redetected = false
+  let switches = 0
+  let candidates = known
+  let lastQuota: RateLimitError | null = null
+
+  /** Siguiente modelo habilitado para la key cuya cuota no esté agotada (cada modelo tiene cuota propia). */
+  const nextModel = async () => {
+    if (!candidates.length) candidates = await listGeminiModels(key, signal).catch(() => [] as GeminiModel[])
+    return candidates.find((m) => m.id !== current && !isExhausted(m.id))?.id ?? null
+  }
+
+  // Si el modelo elegido ya agotó su cuota en esta sesión, se arranca directo con otro.
+  if (isExhausted(current)) {
+    const alt = await nextModel()
+    if (alt) current = alt
+  }
+
   for (;;) {
     try {
       const text = await requestGemini(key, current, prompt, signal)
-      onStatus?.(null)
+      onStatus?.(current !== selected ? `Generado con ${current} (la cuota de ${selected} está agotada).` : null)
       return text
     } catch (err) {
+      if (err instanceof RateLimitError) {
+        // 429: se marca el modelo y se prueba otro habilitado (hasta 3 cambios). Recién si
+        // todos están agotados se informa al usuario, con el tipo de límite (RPM / RPD).
+        markExhausted(err)
+        lastQuota = err
+        const alt = switches < 3 ? await nextModel() : null
+        if (alt) {
+          switches++
+          onStatus?.(`[ Cuota de ${current} agotada · probando ${alt}... ]`)
+          current = alt
+          continue
+        }
+        onStatus?.(null)
+        throw lastQuota
+      }
       if (isOverloaded(err)) {
         if (retries < OVERLOAD_WAITS_MS.length) {
           const wait = OVERLOAD_WAITS_MS[retries]
@@ -330,7 +411,8 @@ async function callGemini(
         redetected = true
         onStatus?.('[ Modelo no disponible para tu key · Detectando modelos habilitados... ]')
         const detected = await listGeminiModels(key, signal).catch(() => [] as GeminiModel[])
-        const next = preferredGeminiModel(detected)
+        if (detected.length) candidates = detected
+        const next = preferredGeminiModel(detected.filter((m) => !isExhausted(m.id)))
         if (next && next !== current) {
           onModelChange?.(next, detected)
           current = next
@@ -467,7 +549,7 @@ export async function generateContent(
   const user = buildUserPrompt(topic, mode, discipline)
   const text =
     settings.provider === 'gemini'
-      ? await callGemini(key, model, user, signal, onStatus, onModelChange)
+      ? await callGemini(key, model, user, signal, onStatus, onModelChange, settings.geminiModels ?? [])
       : settings.provider === 'anthropic'
         ? await callAnthropic(key, model, user, signal)
         : await callOpenAI(key, model, user, signal)
