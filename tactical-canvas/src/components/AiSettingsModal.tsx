@@ -93,7 +93,7 @@ export function AiSettingsModal({ settings, onSave, onClose }: Props) {
           {p === 'gemini' && (
             <p className="font-mono text-[10px] leading-relaxed text-steel/80">
               Conseguí tu key gratis en aistudio.google.com → Get API key. Si el modelo elegido no existe, la app reintenta sola
-              con gemini-2.5-flash.
+              con gemini-2.5-flash (o 2.0-flash).
             </p>
           )}
           <p className="rounded-md border border-gold/20 bg-gold/5 p-2.5 font-mono text-[10px] leading-relaxed text-steel">
@@ -101,7 +101,8 @@ export function AiSettingsModal({ settings, onSave, onClose }: Props) {
             compartidas con tu key cargada, y ponele un límite de gasto en el panel del proveedor.
           </p>
         </div>
-        <div className="mt-5 flex gap-2">
+        <p className="mt-3 text-right font-mono text-[9px] tracking-wider text-steel/50">BUILD {__APP_BUILD__}</p>
+        <div className="mt-3 flex gap-2">
           {draft.keys[p] && (
             <button
               type="button"

@@ -5,8 +5,14 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // Build relativo: la carpeta /canvas se sirve tal cual desde GitHub Pages
 // (https://usuario.github.io/repo/canvas/) o desde cualquier hosting estático.
+// Sello de build visible en la app (modal de IA y marca) para verificar qué versión corre.
+const BUILD = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+
 export default defineConfig({
   base: './',
+  define: {
+    __APP_BUILD__: JSON.stringify(BUILD),
+  },
   build: {
     outDir: '../canvas',
     emptyOutDir: true,
@@ -16,6 +22,8 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // El registro se hace en main.tsx para poder recargar sola la app cuando hay versión nueva.
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'canvas-apple-touch-icon.png'],
       manifest: {
         name: 'JP Tactical Canvas',
@@ -38,6 +46,9 @@ export default defineConfig({
         ],
       },
       workbox: {
+        clientsClaim: true,
+        skipWaiting: true,
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff,woff2}'],
       },
     }),

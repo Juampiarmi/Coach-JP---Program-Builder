@@ -24,15 +24,18 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
   ],
   gemini: [
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · rápido y recomendado' },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro · máxima capacidad analítica' },
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash · fallback' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash · alternativa' },
+    { id: 'gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash (latest) · legado' },
   ],
 }
 
 /** Modelo de Gemini por defecto y de reintento automático ante un 404. */
 export const GEMINI_DEFAULT_MODEL = 'gemini-2.5-flash'
-/** Modelos que Google ya retiró: se migran solos al default. */
-export const isRetiredGemini = (model: string) => /^gemini-(1\.0|1\.5|pro$|pro-vision)/.test(model.trim())
+/** Reintento si el default también falla. */
+export const GEMINI_FALLBACK_MODEL = 'gemini-2.0-flash'
+/** Nombres que Google ya retiró (sin sufijo -latest): se migran solos al default. */
+export const isRetiredGemini = (model: string) =>
+  /^(gemini-1\.0-.*|gemini-1\.5-(flash|pro)(-\d{3})?|gemini-pro|gemini-pro-vision)$/.test(model.trim())
 
 export const PROVIDER_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' }
 export const KEY_PLACEHOLDER: Record<AiProvider, string> = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIzaSy...' }
@@ -188,7 +191,8 @@ class HttpError extends Error {
 }
 
 async function requestGemini(key: string, model: string, prompt: string, signal?: AbortSignal) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`
+  const apiKey = key
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
   const res = await fetch(url, {
     method: 'POST',
     signal,
@@ -213,9 +217,11 @@ async function callGemini(key: string, model: string, user: string, signal?: Abo
   try {
     return await requestGemini(key, selected, prompt, signal)
   } catch (err) {
-    // Modelo inexistente o retirado → reintento automático con el modelo vigente.
-    if (err instanceof HttpError && err.status === 404 && selected !== GEMINI_DEFAULT_MODEL) {
-      return await requestGemini(key, GEMINI_DEFAULT_MODEL, prompt, signal)
+    // Modelo no encontrado → un único reintento automático con un modelo vigente.
+    if (err instanceof HttpError && err.status === 404) {
+      const retry = selected === GEMINI_DEFAULT_MODEL ? GEMINI_FALLBACK_MODEL : GEMINI_DEFAULT_MODEL
+      console.warn(`[Gemini] ${selected} no disponible (404). Reintentando con ${retry}.`)
+      return await requestGemini(key, retry, prompt, signal)
     }
     throw err
   }

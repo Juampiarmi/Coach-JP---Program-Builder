@@ -8,7 +8,7 @@ export function BrandBar() {
         <p className="font-display text-[15px] font-bold tracking-wide whitespace-nowrap sm:text-[17px]">
           JP TACTICAL <span className="text-fire">CANVAS</span>
         </p>
-        <p className="mt-1 hidden font-mono text-[9px] tracking-[0.2em] text-steel sm:block">COACH JP · GENERADOR DE PLACAS</p>
+        <p className="mt-1 hidden font-mono text-[9px] tracking-[0.2em] text-steel sm:block">COACH JP · GENERADOR DE PLACAS · <span title={`Build ${__APP_BUILD__}`}>{__APP_BUILD__.slice(5, 16)}</span></p>
       </div>
     </div>
   )
