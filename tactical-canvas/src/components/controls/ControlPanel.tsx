@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
 import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
-import type { Accent, CanvasState, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
+import type { Accent, CanvasState, ContentAlign, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
@@ -12,6 +12,8 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'statement', n: '04', label: 'Sentencia' },
   { id: 'manifesto', n: '05', label: 'Manifiesto' },
 ]
+
+const ALIGN_LABEL: Record<ContentAlign, string> = { auto: 'AUTO', top: 'ARRIBA', center: 'CENTRO', bottom: 'ABAJO' }
 
 const CARD_ACCENTS: Accent[] = ['cyan', 'orange', 'gold', 'gray', 'white']
 
@@ -322,6 +324,33 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               <Range value={state.bgOverlay} onChange={(bgOverlay) => update({ bgOverlay })} min={30} max={90} suffix="%" />
             </Field>
             <Toggle label="Placa sólida flotante" checked={state.floatingPlate} onChange={(floatingPlate) => update({ floatingPlate })} />
+            <div className="space-y-2 rounded-lg border border-line bg-surface-2/60 p-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] tracking-[0.12em] text-steel uppercase">Encuadre de la foto</span>
+                <button
+                  type="button"
+                  onClick={() => update({ bgZoom: 100, bgX: 0, bgY: 0 })}
+                  disabled={state.bgZoom === 100 && state.bgX === 0 && state.bgY === 0}
+                  className="rounded border border-line px-1.5 py-0.5 font-mono text-[9px] tracking-wider text-steel transition hover:border-cyan/50 hover:text-cyan disabled:opacity-40"
+                >
+                  ⌖ CENTRAR / RESET FONDO
+                </button>
+              </div>
+              <Field label="Zoom / escala">
+                <Range value={state.bgZoom} onChange={(bgZoom) => update({ bgZoom })} min={100} max={160} suffix="%" />
+              </Field>
+              <Field label="Posición vertical (Y)" hint="+ baja la foto">
+                <Range value={state.bgY} onChange={(bgY) => update({ bgY })} min={-50} max={50} suffix="%" />
+              </Field>
+              <Field label="Posición horizontal (X)" hint="+ la corre a la derecha">
+                <Range value={state.bgX} onChange={(bgX) => update({ bgX })} min={-50} max={50} suffix="%" />
+              </Field>
+              {state.bgZoom === 100 && (
+                <p className="font-mono text-[9px] leading-relaxed text-steel/60">
+                  Con zoom 100 % sólo se puede desplazar sobre el lado que sobra de la foto. Subí el zoom para ganar recorrido.
+                </p>
+              )}
+            </div>
             {!bgPersisted && (
               <p className="font-mono text-[10px] text-gold/80">La foto es muy pesada para guardarse: se usa en esta sesión.</p>
             )}
@@ -338,10 +367,21 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
 
       <Section
         index="05"
-        title="Estilo"
-        summary={`${HEADLINE_FONTS[state.headlineFont].label} · ${state.headlineScale}%`}
+        title="Estilo · Layout"
+        summary={`${HEADLINE_FONTS[state.headlineFont].label} · ${state.headlineScale}% · ${ALIGN_LABEL[state.contentAlign]} · aire ${state.contentGap}%`}
         defaultOpen={false}
       >
+        <Field label="Alineación vertical del cuerpo" plain>
+          <Segmented<ContentAlign>
+            value={state.contentAlign}
+            onChange={(contentAlign) => update({ contentAlign })}
+            options={(['auto', 'top', 'center', 'bottom'] as ContentAlign[]).map((a) => ({ value: a, label: `[ ${ALIGN_LABEL[a]} ]` }))}
+            size="sm"
+          />
+        </Field>
+        <Field label="Separación titular ↔ bloque" hint={state.contentGap === 100 ? 'base' : undefined}>
+          <Range value={state.contentGap} onChange={(contentGap) => update({ contentGap })} min={30} max={250} step={5} suffix="%" />
+        </Field>
         <Segmented<HeadlineFont>
           value={state.headlineFont}
           onChange={(headlineFont) => update({ headlineFont })}

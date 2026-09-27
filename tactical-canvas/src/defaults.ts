@@ -40,6 +40,11 @@ export const DEFAULT_STATE: CanvasState = {
   manifestoStyle: 'bar',
   bgOverlay: 65,
   floatingPlate: false,
+  bgZoom: 100,
+  bgX: 0,
+  bgY: 0,
+  contentAlign: 'auto',
+  contentGap: 100,
 }
 
 /** Contenido de ejemplo por plantilla (tomado de las placas de referencia). */

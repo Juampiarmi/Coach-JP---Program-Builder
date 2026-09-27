@@ -20,7 +20,18 @@ import type { AspectId, CanvasState } from './types'
 const STORAGE_KEY = 'jp-tactical-canvas:v3'
 
 /** Ajustes de estilo que comparten todos los slides de una secuencia. */
-const GLOBAL_KEYS = ['aspect', 'headlineFont', 'headlineScale', 'bgOverlay', 'floatingPlate'] as const
+const GLOBAL_KEYS = [
+  'aspect',
+  'headlineFont',
+  'headlineScale',
+  'bgOverlay',
+  'floatingPlate',
+  'bgZoom',
+  'bgX',
+  'bgY',
+  'contentAlign',
+  'contentGap',
+] as const
 
 interface Deck {
   slides: CanvasState[]

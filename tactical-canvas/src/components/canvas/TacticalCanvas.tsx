@@ -78,6 +78,28 @@ function useAutoFit(deps: unknown) {
  * Placa en resolución nativa (1080 px de ancho). La vista previa la escala con un
  * transform en el contenedor padre; la exportación captura este nodo sin escala.
  */
+/**
+ * Encuadre de la foto en píxeles del lienzo (sin transforms): la caja se agranda con el
+ * zoom y se desplaza dentro del sobrante; object-position recorre el recorte del cover.
+ * Al ser geometría explícita, html-to-image la reproduce idéntica en el PNG 3x.
+ */
+function bgGeometry(state: CanvasState, w: number, h: number) {
+  const z = Math.min(1.6, Math.max(1, state.bgZoom / 100))
+  // +X mueve la foto a la derecha, +Y la baja: se ve más del borde opuesto.
+  const px = Math.min(1, Math.max(0, (50 - state.bgX) / 100))
+  const py = Math.min(1, Math.max(0, (50 - state.bgY) / 100))
+  const bw = w * z
+  const bh = h * z
+  return {
+    left: -(bw - w) * px,
+    top: -(bh - h) * py,
+    width: bw,
+    height: bh,
+    objectFit: 'cover' as const,
+    objectPosition: `${px * 100}% ${py * 100}%`,
+  }
+}
+
 interface Props {
   state: CanvasState
   /** Foto de fondo (data URL). Va aparte del estado para no inflar el autosave. */
@@ -108,6 +130,19 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   )
 
   const tag = state.tag.trim()
+  const bgGeo = bgGeometry(state, w, h)
+  const gap = Math.min(2.5, Math.max(0.3, state.contentGap / 100))
+  // Alineación del bloque central dentro de la zona segura (auto = criterio por plantilla).
+  const justify =
+    state.contentAlign === 'top'
+      ? 'flex-start'
+      : state.contentAlign === 'center'
+        ? 'center'
+        : state.contentAlign === 'bottom'
+          ? 'flex-end'
+          : centered || isStory
+            ? 'center'
+            : 'flex-start'
 
   // Caja que contiene todo el texto. Con placa flotante se agranda hacia afuera y
   // gana relleno interior, así el texto conserva sus márgenes.
@@ -136,7 +171,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
     >
       {hasBg && (
         <>
-          <img src={bgImage!} alt="" style={{ position: 'absolute', inset: 0, width: w, height: h, objectFit: 'cover' }} />
+          <img src={bgImage!} alt="" style={{ position: 'absolute', maxWidth: 'none', ...bgGeo }} />
           <div style={{ position: 'absolute', inset: 0, background: `rgba(11,14,20,${state.bgOverlay / 100})` }} />
         </>
       )}
@@ -165,11 +200,10 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
               alt=""
               style={{
                 position: 'absolute',
-                left: -frame.left - 2,
-                top: -frame.top - 2,
-                width: w,
-                height: h,
-                objectFit: 'cover',
+                maxWidth: 'none',
+                ...bgGeo,
+                left: bgGeo.left - frame.left - 2,
+                top: bgGeo.top - frame.top - 2,
                 filter: 'blur(26px)',
               }}
             />
@@ -199,7 +233,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
               display: 'flex',
               flexDirection: 'column',
               flex: 1,
-              justifyContent: centered || isStory ? 'center' : 'flex-start',
+              justifyContent: justify,
               marginTop: (centered ? 20 : 44) * baseScale,
               minHeight: 0,
               overflow: 'hidden',
@@ -213,6 +247,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                   fontSize={headlineSize}
                   tracking={font.tracking}
                   scale={scale}
+                  gap={gap}
                 />
               ) : (
                 <>
@@ -223,7 +258,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     fontSize={headlineSize}
                     tracking={font.tracking}
                   />
-                  <div style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale }}>
+                  <div style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale * gap }}>
                     {state.template === 'metric' && <MetricTemplate state={state} fontFamily={font.family} scale={scale} />}
                     {state.template === 'compare' && <CompareTemplate state={state} fontFamily={font.family} scale={scale} />}
                     {state.template === 'chart' && (
