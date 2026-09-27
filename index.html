@@ -3233,6 +3233,108 @@ function cfFmtToolbar(bId){
    aparecen en la Pizarra de Sports). Reusa insertarFormatoCF() tal
    cual -- es un helper genérico de "insertar snippet en textarea", no
    tiene nada de específico a CrossFit pese a su nombre histórico. */
+/* ============================================================
+   directiva maestra ("Clonación completa de planificación entre
+   alumnos") -- duplica la planificación COMPLETA (días/bloques/
+   ejercicios/videos/tips/ondulación S1-S4) del alumno activo hacia
+   otro alumno del sistema, con 1 clic. Preserva SIEMPRE la identidad
+   del destino (S.athletes -- id/nombre/apellido/métricas históricas,
+   nunca tocado) y su p.meta propio (branding con el nombre del
+   destino ya insertado -- copiar el meta del origen le pondría el
+   nombre de OTRO alumno en su propia app exportada); sólo se
+   reemplazan p.dias/p.meso/p.estado/p.vigencia*. Deep clone real
+   (structuredClone, con fallback JSON para navegadores sin soporte) --
+   modificar al destino después JAMÁS muta al origen. Funciona
+   idéntico sin importar si el plan (origen o destino) es Sports o
+   CrossFit por dentro (p.meta.mesoDisc) -- clona la estructura cruda
+   tal cual, sin lógica condicionada a disciplina.
+   ============================================================ */
+function clonarEstructuraProfunda(obj){
+  try{ return structuredClone(obj); }
+  catch(e){ return JSON.parse(JSON.stringify(obj)); }
+}
+function cerrarModalCopiarPlan(){
+  const bg = document.getElementById('mCopiarPlanBg');
+  if(bg) bg.remove();
+  document.body.style.overflow = '';
+}
+function abrirModalCopiarPlan(){
+  const athOrigen = active();
+  const pOrigen = plan(S.activeId);
+  if(!athOrigen || !pOrigen){ toast('Selecciona un alumno/a activo primero', 'err'); return; }
+  const otros = S.athletes.filter(a => a.id !== athOrigen.id);
+  if(!otros.length){ toast('No hay otro alumno/a registrado para copiar el plan', 'warn'); return; }
+  cerrarModalCopiarPlan();
+  const nDias = pOrigen.dias.length;
+  const mBloques = pOrigen.dias.reduce((s,d) => s + (d.bloques||[]).length, 0);
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg on';
+  bg.id = 'mCopiarPlanBg';
+  bg.innerHTML =
+    '<div class="modal" style="max-width:440px">' +
+      '<div class="modal-h"><h3>// DUPLICAR PLANIFICACIÓN COMPLETA</h3><div class="spacer"></div><button class="icon-btn" data-cpcancel="1">✕</button></div>' +
+      '<div class="modal-b" id="cpModalBody">' +
+        '<p class="hint" style="margin:0 0 12px">Planificación actual de: <b>' + esc(fullName(athOrigen)) + '</b> (' + nDias + ' días, ' + mBloques + ' bloques)</p>' +
+        '<label class="lb">Alumno/a destino</label>' +
+        '<select id="cpDestino">' +
+          '<option value="">— Elegí un alumno/a —</option>' +
+          otros.map(a => '<option value="' + esc(a.id) + '">' + esc(fullName(a)) + '</option>').join('') +
+        '</select>' +
+        '<div class="alert warn" style="margin-top:14px"><span class="ic">⚠️</span><div><b>La planificación existente en el alumno destino será reemplazada por completo.</b> Esta acción no se puede deshacer.</div></div>' +
+        '<div class="row" style="margin-top:16px;gap:8px">' +
+          '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cancelar</button>' +
+          '<button type="button" class="btn gold" id="cpConfirmar" style="flex:1" disabled>Confirmar y sobreescribir</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(bg);
+  document.body.style.overflow = 'hidden';
+  const sel = bg.querySelector('#cpDestino');
+  const btnConfirmar = bg.querySelector('#cpConfirmar');
+  sel.addEventListener('change', function(){ btnConfirmar.disabled = !sel.value; });
+  bg.addEventListener('click', function(e){
+    if(e.target === bg || e.target.closest('[data-cpcancel]')){ cerrarModalCopiarPlan(); return; }
+    if(e.target.closest('#cpConfirmar')){
+      if(!sel.value) return;
+      ejecutarCopiaPlan(athOrigen.id, sel.value);
+    }
+    if(e.target.closest('[data-cpirdestino]')){
+      const destId = e.target.closest('[data-cpirdestino]').dataset.cpirdestino;
+      cerrarModalCopiarPlan();
+      S.activeId = destId; save(); renderBuilder(); renderAthletes();
+    }
+  });
+}
+function ejecutarCopiaPlan(origenId, destinoId){
+  const pOrigen = plan(origenId);
+  const athDestino = getAth(destinoId);
+  const pDestino = plan(destinoId);
+  if(!pOrigen || !athDestino || !pDestino) return;
+  /* estructura EXACTA del origen (días/bloques/ejercicios/videos
+     manuales/overrides/objetivos/tips/ondulación) -- deep clone real,
+     cero referencias compartidas con el origen. */
+  pDestino.dias = clonarEstructuraProfunda(pOrigen.dias);
+  pDestino.meso = clonarEstructuraProfunda(pOrigen.meso);
+  pDestino.estado = pOrigen.estado;
+  pDestino.vigenciaDesde = pOrigen.vigenciaDesde;
+  pDestino.vigenciaHasta = pOrigen.vigenciaHasta;
+  /* NUNCA se toca: athDestino.id/nombre/apellido/freq/etc (identidad
+     propia, ver S.athletes) ni pDestino.meta (branding con el nombre
+     del destino ya insertado). */
+  save();
+  renderAthletes();
+  const nombreDestino = fullName(athDestino);
+  const body = document.getElementById('cpModalBody');
+  if(body){
+    body.innerHTML =
+      '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + pOrigen.dias.length + ' días, ' + pOrigen.dias.reduce((s,d)=>s+(d.bloques||[]).length,0) + ' bloques.</div></div>' +
+      '<div class="row" style="margin-top:16px;gap:8px">' +
+        '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cerrar</button>' +
+        '<button type="button" class="btn gold" data-cpirdestino="' + esc(destinoId) + '" style="flex:1">Ir al perfil de ' + esc(nombreDestino) + '</button>' +
+      '</div>';
+  }
+  toast('✅ Planificación copiada con éxito a ' + nombreDestino);
+}
 function sbFmtToolbar(bId){
   const btns = [
     { k:'biset',   lb:'+ BISET' },
@@ -4036,6 +4138,10 @@ function renderBuilder(){
       '<input type="date" id="planVigDesde" value="' + esc(p.vigenciaDesde||'') + '" style="width:auto">' +
       '<span class="hint" style="margin:0">al</span>' +
       '<input type="date" id="planVigHasta" value="' + esc(p.vigenciaHasta||'') + '" style="width:auto">' +
+      /* directiva maestra ("Clonación completa de planificación entre
+         alumnos") -- disparador del modal de copia, estilo celeste
+         táctico pedido explícitamente. */
+      '<button type="button" class="btn sm" id="btnCopiarPlan" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 Copiar plan a otro alumno</button>' +
     '</div>';
 
   /* ---------- Mesociclo (WEEKS_META) ---------- */
@@ -5482,6 +5588,7 @@ function bindBuilder(){
      delega sobre el propio nodo #bHead (no sobre sus hijos) para que el
      listener sobreviva a cada innerHTML nuevo. */
   $('#bHead').addEventListener('click', e => {
+    if(e.target.closest('#btnCopiarPlan')){ abrirModalCopiarPlan(); return; }
     if(!e.target.closest('#btnPlanEstado')) return;
     const ath = active();
     const p = plan(S.activeId); if(!p) return;
