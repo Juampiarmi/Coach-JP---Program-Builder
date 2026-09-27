@@ -23,19 +23,17 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 · máxima calidad' },
   ],
   gemini: [
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · rápido y recomendado' },
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash · alternativa' },
-    { id: 'gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash (latest) · legado' },
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · rápido, última generación recomendada' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash · estable' },
   ],
 }
 
-/** Modelo de Gemini por defecto y de reintento automático ante un 404. */
-export const GEMINI_DEFAULT_MODEL = 'gemini-2.5-flash'
-/** Reintento si el default también falla. */
-export const GEMINI_FALLBACK_MODEL = 'gemini-2.0-flash'
-/** Nombres que Google ya retiró (sin sufijo -latest): se migran solos al default. */
-export const isRetiredGemini = (model: string) =>
-  /^(gemini-1\.0-.*|gemini-1\.5-(flash|pro)(-\d{3})?|gemini-pro|gemini-pro-vision)$/.test(model.trim())
+/** Modelo de Gemini por defecto. */
+export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash'
+/** Único reintento si falla el default. */
+export const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash'
+/** Generaciones que Google ya dio de baja (1.x, 2.0 y los alias sin versión): se migran solas al default. */
+export const isRetiredGemini = (model: string) => /^gemini-(1\.\d|2\.0)(-|$)|^gemini-pro(-vision)?$/.test(model.trim())
 
 export const PROVIDER_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' }
 export const KEY_PLACEHOLDER: Record<AiProvider, string> = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIzaSy...' }
@@ -217,10 +215,14 @@ async function callGemini(key: string, model: string, user: string, signal?: Abo
   try {
     return await requestGemini(key, selected, prompt, signal)
   } catch (err) {
-    // Modelo no encontrado → un único reintento automático con un modelo vigente.
-    if (err instanceof HttpError && err.status === 404) {
+    // Modelo no encontrado o dado de baja → un único reintento automático:
+    // si falla 3.8-flash se prueba sólo 2.5-flash; si falla otro modelo, se vuelve al default.
+    const unavailable =
+      err instanceof HttpError &&
+      (err.status === 404 || err.status === 410 || /not found|no longer available|not supported|deprecated/i.test(err.message))
+    if (unavailable) {
       const retry = selected === GEMINI_DEFAULT_MODEL ? GEMINI_FALLBACK_MODEL : GEMINI_DEFAULT_MODEL
-      console.warn(`[Gemini] ${selected} no disponible (404). Reintentando con ${retry}.`)
+      console.warn(`[Gemini] ${selected} no disponible. Reintentando con ${retry}.`)
       return await requestGemini(key, retry, prompt, signal)
     }
     throw err
