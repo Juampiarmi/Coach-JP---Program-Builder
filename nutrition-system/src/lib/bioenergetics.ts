@@ -1,4 +1,4 @@
-import type { AthletePlan, DayMode, Macros, Meal, Phase, Profile } from './types';
+import type { AthletePlan, DayMode, Macros, Meal, Phase, Profile, Sex, SkinfoldSite, Skinfolds } from './types';
 
 export const LEUCINE_THRESHOLD = 2.7;
 
@@ -21,7 +21,77 @@ export const RANGES = {
 } as const;
 
 export function ffm(p: Profile) {
+  if (p.precisionMode === 'isak' && p.measuredFfmKg > 0) return Math.min(p.measuredFfmKg, p.weightKg);
   return p.weightKg * (1 - p.bodyFatPct / 100);
+}
+
+// ---------- MODO ESTIMACIÓN RÁPIDA ----------
+
+export interface BodyFatBand {
+  id: string;
+  label: string;
+  range: string;
+  hint: string;
+  pct: number;
+}
+
+/** Bandas visuales de % graso: el coach elige una tarjeta en lugar de medir. */
+export const BODY_FAT_BANDS: Record<Sex, BodyFatBand[]> = {
+  M: [
+    { id: 'lean', label: 'Bajo / Definido', range: '~10–12 %', hint: 'Abdominales visibles, venas marcadas', pct: 11 },
+    { id: 'athletic', label: 'Atlético / Medio', range: '~14–17 %', hint: 'Contorno abdominal, sin pliegues', pct: 15.5 },
+    { id: 'average', label: 'Promedio', range: '~18–22 %', hint: 'Abdomen liso, algo de cintura', pct: 20 },
+    { id: 'over', label: 'Sobrepeso', range: '~25 %+', hint: 'Grasa abdominal evidente', pct: 27 },
+  ],
+  F: [
+    { id: 'lean', label: 'Baja / Definida', range: '~17–20 %', hint: 'Abdomen marcado, hombros definidos', pct: 18.5 },
+    { id: 'athletic', label: 'Atlética / Media', range: '~21–24 %', hint: 'Silueta firme, poca grasa abdominal', pct: 22.5 },
+    { id: 'average', label: 'Promedio', range: '~25–30 %', hint: 'Curvas suaves, cintura definida', pct: 27.5 },
+    { id: 'over', label: 'Sobrepeso', range: '~32 %+', hint: 'Grasa abdominal y de cadera evidente', pct: 34 },
+  ],
+};
+
+export const ACTIVITY_PRESETS = [
+  { id: 'desk', label: 'Oficina / sentado', hint: '< 6.000 pasos', factor: 1.3 },
+  { id: 'active', label: 'Activo', hint: '6.000–10.000 pasos', factor: 1.45 },
+  { id: 'manual', label: 'Muy activo', hint: 'Trabajo físico / +12.000 pasos', factor: 1.6 },
+] as const;
+
+/** Gasto neto típico de la sesión según el tipo de entrenamiento (Kliszczewicz 2016). */
+export const SESSION_PRESETS = [
+  { id: 'strength', label: 'Fuerza / Hipertrofia', hint: '60–75 min de pesas', kcal: 350 },
+  { id: 'crossfit', label: 'CrossFit / WOD', hint: '60 min alta intensidad', kcal: 600 },
+  { id: 'hyrox', label: 'Hyrox / Híbrido largo', hint: '75–90 min carrera + estaciones', kcal: 750 },
+] as const;
+
+// ---------- MODO PRECISIÓN ISAK ----------
+
+export const SKINFOLD_SITES: { id: SkinfoldSite; label: string }[] = [
+  { id: 'triceps', label: 'Tríceps' },
+  { id: 'subscapular', label: 'Subescapular' },
+  { id: 'chest', label: 'Pectoral' },
+  { id: 'midaxillary', label: 'Axilar medio' },
+  { id: 'suprailiac', label: 'Suprailíaco' },
+  { id: 'abdominal', label: 'Abdominal' },
+  { id: 'thigh', label: 'Muslo' },
+];
+
+export const EMPTY_SKINFOLDS: Skinfolds = { triceps: 0, subscapular: 0, chest: 0, midaxillary: 0, suprailiac: 0, abdominal: 0, thigh: 0 };
+
+export function skinfoldSum(sk: Skinfolds) {
+  return SKINFOLD_SITES.reduce((a, s) => a + (sk[s.id] || 0), 0);
+}
+
+/** % graso por Jackson-Pollock 7 pliegues + ecuación de Siri. Null si falta algún pliegue. */
+export function jp7BodyFat(sex: Sex, age: number, sk: Skinfolds): number | null {
+  if (SKINFOLD_SITES.some((s) => !(sk[s.id] > 0))) return null;
+  const S = skinfoldSum(sk);
+  const bd =
+    sex === 'M'
+      ? 1.112 - 0.00043499 * S + 0.00000055 * S * S - 0.00028826 * age
+      : 1.097 - 0.00046971 * S + 0.00000056 * S * S - 0.00012828 * age;
+  const pct = 495 / bd - 450;
+  return Math.round(Math.min(60, Math.max(3, pct)) * 10) / 10;
 }
 
 export function bmrKatch(p: Profile) {

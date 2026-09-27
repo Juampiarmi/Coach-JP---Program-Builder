@@ -33,8 +33,10 @@ function DayColumn({ day }: { day: DayMode }) {
     >
       <div className="flex items-end justify-between gap-3">
         <div>
-          <div className={cx('font-display text-5xl font-bold leading-none', isOn ? 'text-cyan-hud' : 'text-gold')}>{fmt0(kcal)}</div>
-          <div className="mt-1 font-mono text-[10px] tracking-[0.16em] text-steel">KCAL OBJETIVO</div>
+          <div className="font-display text-5xl font-bold leading-none text-ink">{fmt0(kcal)}</div>
+          <div className="mt-1.5 flex items-center gap-2 font-mono text-[10px] tracking-[0.16em] text-steel">
+            <span className={cx('h-1.5 w-1.5 rounded-full', isOn ? 'bg-cyan-hud' : 'bg-gold')} /> KCAL OBJETIVO
+          </div>
         </div>
         <div className="text-right">
           <div className={cx('font-display text-xl font-bold', delta < -0.25 * tdee ? 'text-fire' : delta < 0 ? 'text-ink' : 'text-gold')}>

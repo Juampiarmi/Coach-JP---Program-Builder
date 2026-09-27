@@ -1,4 +1,4 @@
-import runtime from '@/pwa/athlete.raw.js';
+import runtime from '@/pwa/athleteRuntime';
 import styles from '@/pwa/athleteStyles';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL } from './bioenergetics';
 import { BRAND, shieldSvg } from './brand';
@@ -134,6 +134,29 @@ ${opts.icons ? `<link rel="icon" type="image/png" sizes="192x192" href="${opts.i
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${FONTS}">
 <style>${styles}</style>
+<script>
+/* Guardián de arranque: cualquier error de script se muestra como tarjeta visible (nunca pantalla negra). */
+(function () {
+  var shown = false;
+  window.__cjpFail = function (err) {
+    var msg = (err && (err.message || err)) + '';
+    try { parent !== window && parent.postMessage({ type: 'coachjp:error', message: msg }, '*'); } catch (e) {}
+    if (shown) return;
+    shown = true;
+    var paint = function () {
+      var app = document.getElementById('app') || document.body;
+      app.innerHTML = '<section style="margin:24px 0;padding:18px;border:1px solid rgba(249,115,22,.45);border-radius:14px;background:#121820;color:#F3F4F6;font-family:system-ui,sans-serif">'
+        + '<div style="font:600 11px ui-monospace,monospace;letter-spacing:.2em;color:#F97316">[ ERROR DE RENDER · PWA ]</div>'
+        + '<p style="margin-top:8px;font-size:14px;line-height:1.45">La app no pudo cargarse. Recargá la página; si persiste, avisale a tu coach.</p>'
+        + '<pre style="margin-top:10px;white-space:pre-wrap;font:11px ui-monospace,monospace;color:#8A99AD"></pre></section>';
+      var pre = app.querySelector('pre');
+      if (pre) pre.textContent = msg;
+    };
+    document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', paint) : paint();
+  };
+  window.addEventListener('error', function (e) { window.__cjpFail(e.error || e.message); });
+})();
+</script>
 </head>
 <body>
 <main id="app"></main>

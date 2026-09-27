@@ -86,8 +86,8 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
   ctx.fillStyle = halo;
   ctx.fillRect(0, 0, STORY_W, STORY_H);
   const halo2 = ctx.createRadialGradient(0, STORY_H, 0, 0, STORY_H, 900);
-  halo2.addColorStop(0, 'rgba(255,107,0,.12)');
-  halo2.addColorStop(1, 'rgba(255,107,0,0)');
+  halo2.addColorStop(0, 'rgba(249,115,22,.12)');
+  halo2.addColorStop(1, 'rgba(249,115,22,0)');
   ctx.fillStyle = halo2;
   ctx.fillRect(0, 0, STORY_W, STORY_H);
 
@@ -131,7 +131,7 @@ export function drawStoryCard(canvas: HTMLCanvasElement, plan: AthletePlan) {
   y += 250;
   ctx.fillStyle = C.fire;
   ctx.font = `700 300px ${DISPLAY}`;
-  ctx.shadowColor = 'rgba(255,107,0,.35)';
+  ctx.shadowColor = 'rgba(249,115,22,.35)';
   ctx.shadowBlur = 40;
   ctx.fillText(n0(t.kcalOn), X - 8, y);
   ctx.shadowBlur = 0;

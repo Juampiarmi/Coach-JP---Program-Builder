@@ -1,4 +1,4 @@
-import { PHASE_PRESETS } from './bioenergetics';
+import { EMPTY_SKINFOLDS, PHASE_PRESETS } from './bioenergetics';
 import { aisGroupA } from './evidence';
 import { FOOD_BY_ID, macrosFor } from './foods';
 import type { AthletePlan, FoodItem, Meal, MealDay, MealRole } from './types';
@@ -27,6 +27,10 @@ export function seedPlan(): AthletePlan {
       heightCm: 178,
       weightKg,
       bodyFatPct: 15,
+      precisionMode: 'quick',
+      bodyFatBand: 'athletic',
+      skinfolds: { ...EMPTY_SKINFOLDS },
+      measuredFfmKg: 0,
       discipline: 'hybrid',
       phase: 'recomp',
       bmrFormula: 'katch',

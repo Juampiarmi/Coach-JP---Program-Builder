@@ -1,3 +1,7 @@
+// Runtime vanilla JS de la PWA del atleta. Se embebe como texto inline en el index.html exportado.
+// Es un string (no un módulo importado) para que ningún bundler le inyecte código de HMR o helpers.
+// Regla: sin backticks ni ${ } dentro del runtime.
+const runtime = String.raw`
 (function () {
   'use strict';
   var D = JSON.parse(document.getElementById('cjp-data').textContent);
@@ -61,17 +65,19 @@
       });
   }
 
-  function unitHint(it) {
-    var ref = it.foodId && D.foods[it.foodId];
+  function unitHint(it) { return unitHintFor(it.foodId, it.grams); }
+
+  function unitHintFor(foodId, grams) {
+    var ref = foodId && D.foods[foodId];
     if (!ref || !ref.unit) return '';
-    var q = it.grams / ref.unit.grams;
+    var q = grams / ref.unit.grams;
     if (q < 0.5) return '';
     return '≈ ' + n1(Math.round(q * 2) / 2) + ' ' + esc(ref.unit.label);
   }
 
   function ring(pct, color) {
     var r = 46, c = 2 * Math.PI * r, off = c * (1 - Math.min(1, pct));
-    return '<svg width="108" height="108" viewBox="0 0 108 108"><circle cx="54" cy="54" r="' + r + '" fill="none" stroke="#1A222D" stroke-width="8"/><circle cx="54" cy="54" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="8" stroke-linecap="round" stroke-dasharray="' + c + '" stroke-dashoffset="' + off + '" style="transition:stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1);filter:drop-shadow(0 0 6px ' + color + ')"/></svg>';
+    return '<svg width="108" height="108" viewBox="0 0 108 108"><circle cx="54" cy="54" r="' + r + '" fill="none" stroke="#1A222D" stroke-width="6"/><circle cx="54" cy="54" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + c + '" stroke-dashoffset="' + off + '" style="transition:stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1)"/></svg>';
   }
 
   function bar(cls, label, cur, tgt) {
@@ -80,6 +86,15 @@
   }
 
   function render() {
+    try {
+      renderUnsafe();
+      if (D.preview) parent.postMessage({ type: 'coachjp:ready' }, '*');
+    } catch (err) {
+      window.__cjpFail && window.__cjpFail(err);
+    }
+  }
+
+  function renderUnsafe() {
     var mode = S.mode;
     var tgt = D.targets[mode];
     var list = mealsFor(mode);
@@ -88,51 +103,50 @@
       return { p: a.p + x.t.p, c: a.c + x.t.c, f: a.f + x.t.f, k: a.k + x.kcal };
     }, { p: 0, c: 0, f: 0, k: 0 });
     var doneCount = list.filter(function (x) { return S.checks[x.m.id]; }).length;
-    var color = mode === 'on' ? '#00E5FF' : '#FFD600';
+    var color = mode === 'on' ? 'rgba(0,229,255,.8)' : 'rgba(255,214,0,.85)';
     var h = '';
 
     h += '<header class="top">' + D.shield + '<div><div class="brand">COACH <b>JP</b></div><div class="handle">' + esc(D.handle) + '</div></div><div class="phase">' + esc(D.athlete.phase) + '</div></header>';
-    h += '<div class="tag">[ DIRECTIVA NUTRICIONAL · ' + esc(D.athlete.discipline) + ' ]</div>';
+    h += '<div class="tag">[ PLAN NUTRICIONAL · ' + esc(D.athlete.discipline) + ' ]</div>';
     h += '<h1>' + esc(D.athlete.name) + '</h1>';
     if (D.coachNote) h += '<p class="note">' + esc(D.coachNote) + '</p>';
 
-    h += '<div class="switch ' + mode + '"><span class="knob"></span><button data-mode="on" class="' + (mode === 'on' ? 'on' : '') + '">MODO DÍA ON</button><button data-mode="off" class="' + (mode === 'off' ? 'on' : '') + '">MODO DÍA OFF</button></div>';
+    h += '<div class="switch ' + mode + '"><span class="knob"></span><button data-mode="on" class="' + (mode === 'on' ? 'on' : '') + '">DÍA DE ENTRENO</button><button data-mode="off" class="' + (mode === 'off' ? 'on' : '') + '">DÍA DE DESCANSO</button></div>';
 
-    h += '<section class="card"><div class="tag" style="margin-bottom:10px">[ TELEMETRÍA · ' + (mode === 'on' ? 'ALTA DEMANDA GLUCOLÍTICA' : 'RECUPERACIÓN · GRASAS HORMONALES') + ' ]</div>';
-    h += '<div class="hero"><div class="ring">' + ring(tgt.kcal ? eaten.k / tgt.kcal : 0, color) + '<div class="v"><b>' + Math.round(tgt.kcal ? (eaten.k / tgt.kcal) * 100 : 0) + '%</b><span>CARGADO</span></div></div>';
-    h += '<div><div class="kcal ' + (mode === 'on' ? 'on-c' : 'off-c') + '">' + n0(tgt.kcal) + '<small>KCAL</small></div><div class="prog" style="margin-top:8px">' + n0(eaten.k) + ' KCAL INGERIDAS · ' + doneCount + '/' + list.length + ' BLOQUES</div></div></div>';
-    h += '<div class="bars">' + bar('p', 'PROTEÍNA', eaten.p, tgt.p) + bar('c', 'CARBOHIDRATOS', eaten.c, tgt.c) + bar('f', 'GRASAS', eaten.f, tgt.f) + '</div>';
-    h += '<div class="grid3"><div class="stat"><b>' + n1(tgt.p / D.athlete.weightKg) + '</b><span>P G/KG</span></div><div class="stat"><b>' + n1(tgt.c / D.athlete.weightKg) + '</b><span>C G/KG</span></div><div class="stat"><b>' + n1(tgt.f / D.athlete.weightKg) + '</b><span>F G/KG</span></div></div>';
+    h += '<section class="card"><div class="tag" style="margin-bottom:10px">[ OBJETIVO DE HOY · ' + (mode === 'on' ? 'DÍA ON · ENTRENO' : 'DÍA OFF · DESCANSO') + ' ]</div>';
+    h += '<div class="hero"><div class="ring">' + ring(tgt.kcal ? eaten.k / tgt.kcal : 0, color) + '<div class="v"><b>' + Math.round(tgt.kcal ? (eaten.k / tgt.kcal) * 100 : 0) + '%</b><span>DEL DÍA</span></div></div>';
+    h += '<div><div class="kcal">' + n0(tgt.kcal) + '<small>KCAL</small></div><div class="prog" style="margin-top:8px">' + n0(eaten.k) + ' kcal comidas · ' + doneCount + ' de ' + list.length + ' comidas</div></div></div>';
+    h += '<div class="bars">' + bar('p', 'Proteína', eaten.p, tgt.p) + bar('c', 'Carbohidratos', eaten.c, tgt.c) + bar('f', 'Grasas', eaten.f, tgt.f) + '</div>';
     h += '</section>';
 
     D.protocols.forEach(function (p) {
       h += '<section class="card alert"><div class="tag" style="margin-bottom:6px">[ ' + esc(p.tag) + ' ]</div><div style="font-family:Chakra Petch,sans-serif;font-weight:700;font-size:17px;text-transform:uppercase">' + esc(p.title) + '</div><p class="muted" style="font-size:13px;margin-top:4px">' + esc(p.body) + '</p></section>';
     });
 
-    h += '<div class="sec"><span class="tag">[ BLOQUES DE INGESTA · MPS / LEUCINA ]</span><span class="prog">TOCÁ UN ALIMENTO → SWAP</span></div>';
+    h += '<div class="sec"><span class="tag">[ COMIDAS DEL DÍA ]</span><span class="prog">Tocá un alimento para cambiarlo</span></div>';
     list.forEach(function (x) {
       var m = x.m;
       var done = !!S.checks[m.id];
       h += '<section class="card meal' + (done ? ' done' : '') + '">';
-      h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(m.name) + '</div><div class="mm">' + n0(x.kcal) + ' KCAL · P ' + n0(x.t.p) + ' · C ' + n0(x.t.c) + ' · F ' + n0(x.t.f) + '</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar bloque">' + CHECK + '</button></div>';
+      h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(m.name) + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar bloque">' + CHECK + '</button></div>';
       h += '<div class="items">';
       x.items.forEach(function (it) {
         var canSwap = it.foodId && D.foods[it.foodId] && D.swapGroups[D.foods[it.foodId].group] > 1 || it.swappedFrom;
         var hint = unitHint(it);
-        h += '<button class="item" ' + (canSwap ? 'data-swap="' + m.id + '|' + it.id + '"' : 'disabled') + '><span class="g">' + n0(it.grams) + ' g' + (hint ? '<em>' + hint + '</em>' : '') + '</span><span class="fd">' + esc(it.food) + (it.swappedFrom ? '<s>SWAP · ORIGINAL: ' + esc(it.swappedFrom) + '</s>' : '') + '</span>' + (canSwap ? '<span class="sw">SWAP</span>' : '') + '</button>';
+        h += '<button class="item" ' + (canSwap ? 'data-swap="' + m.id + '|' + it.id + '"' : 'disabled') + '><span class="g">' + n0(it.grams) + ' g' + (hint ? '<em>' + hint + '</em>' : '') + '</span><span class="fd">' + esc(it.food) + (it.swappedFrom ? '<s>Reemplaza a: ' + esc(it.swappedFrom) + '</s>' : '') + '</span>' + (canSwap ? '<span class="sw">Cambiar</span>' : '') + '</button>';
       });
       h += '</div>';
-      if (!m.mps) h += '<div class="leu na"><span class="dot"></span>BLOQUE GLUCOLÍTICO · LEUCINA ' + n1(x.t.l) + ' G · N/A</div>';
-      else if (x.t.l >= D.threshold) h += '<div class="leu ok"><span class="dot"></span>LEUCINA ' + n1(x.t.l) + ' G · UMBRAL mTOR/MPS ALCANZADO</div>';
-      else h += '<div class="leu low"><span class="dot"></span>LEUCINA ' + n1(x.t.l) + ' G · SUB-UMBRAL (&lt; ' + n1(D.threshold) + ' G)</div>';
+      if (!m.mps) h += '<div class="leu na"><span class="dot"></span>Energía para entrenar · carbohidratos de rápida absorción</div>';
+      else if (x.t.l >= D.threshold) h += '<div class="leu ok"><span class="dot"></span>Proteína suficiente para estimular el músculo · leucina ' + n1(x.t.l) + ' g</div>';
+      else h += '<div class="leu low"><span class="dot"></span>Falta proteína en esta comida · leucina ' + n1(x.t.l) + ' de ' + n1(D.threshold) + ' g</div>';
       h += '</section>';
     });
 
     if (D.supplements.length) {
-      h += '<div class="sec"><span class="tag">[ SUPLEMENTACIÓN · AIS GRUPO A ]</span></div><section class="card">';
+      h += '<div class="sec"><span class="tag">[ SUPLEMENTOS ]</span></div><section class="card">';
       D.supplements.forEach(function (s) {
         var done = !!S.checks['sup:' + s.id];
-        h += '<button class="sup' + (done ? ' done' : '') + '" data-check="sup:' + esc(s.id) + '"><span class="chk">' + CHECK + '</span><span style="flex:1"><b>' + esc(s.name) + '</b><span class="ds">' + esc(s.dose) + '</span><div class="tm">' + esc(s.timing) + '</div>' + (s.doi ? '<a href="https://doi.org/' + esc(s.doi) + '" target="_blank" rel="noopener">[ ' + esc(s.evidence) + ' · DOI ' + esc(s.doi) + ' ]</a>' : '') + '</span></button>';
+        h += '<button class="sup' + (done ? ' done' : '') + '" data-check="sup:' + esc(s.id) + '"><span class="chk">' + CHECK + '</span><span style="flex:1"><b>' + esc(s.name) + '</b><div class="ds"><em>Cuánto</em>' + esc(s.dose) + '</div><div class="tm"><em>Cuándo</em>' + esc(s.timing) + '</div>' + (s.doi ? '<a href="https://doi.org/' + esc(s.doi) + '" target="_blank" rel="noopener">[ ' + esc(s.evidence) + ' ]</a>' : '') + '</span></button>';
       });
       h += '</section>';
     }
@@ -157,15 +171,15 @@
     var from = D.foods[orig.foodId];
     var anchor = D.anchors[from.group];
     var cur = S.swaps[orig.id] || orig.foodId;
-    var label = { p: 'PROTEÍNA', c: 'CARBOHIDRATOS', f: 'GRASAS' }[anchor];
-    var h = '<div class="grab"></div><div class="tag">[ SMART SWAP · ' + esc(D.groupLabels[from.group]) + ' ]</div>';
-    h += '<p class="muted" style="font-size:13px;margin:6px 0 4px">Equivalencia por ' + label.toLowerCase() + ': ' + n1(from[anchor] * orig.grams / 100) + ' g del macro ancla.</p>';
+    var label = { p: 'proteína', c: 'carbohidratos', f: 'grasas' }[anchor];
+    var h = '<div class="grab"></div><div class="tag">[ CAMBIAR ALIMENTO · ' + esc(D.groupLabels[from.group]) + ' ]</div>';
+    h += '<p class="muted" style="font-size:13px;margin:6px 0 4px">Cualquiera de estas opciones aporta lo mismo en ' + label + ' (' + n0(from[anchor] * orig.grams / 100) + ' g).</p>';
     Object.keys(D.foods).forEach(function (id) {
       var f = D.foods[id];
       if (f.group !== from.group || !(f[anchor] > 0)) return;
       var g = id === orig.foodId ? orig.grams : Math.round((from[anchor] * orig.grams) / f[anchor] / 5) * 5;
       var k = g / 100;
-      h += '<button class="opt' + (id === cur ? ' cur' : '') + '" data-pick="' + id + '"><span class="g">' + n0(g) + ' g</span><span class="fd">' + esc(f.name) + (id === orig.foodId ? ' · ORIGINAL' : '') + '<span>P ' + n1(f.p * k) + ' · C ' + n1(f.c * k) + ' · F ' + n1(f.f * k) + ' · LEU ' + n1(f.leucine * k) + '</span></span></button>';
+      h += '<button class="opt' + (id === cur ? ' cur' : '') + '" data-pick="' + id + '"><span class="g">' + n0(g) + ' g</span><span class="fd">' + esc(f.name) + (id === orig.foodId ? ' · original' : '') + '<span>' + (unitHintFor(id, g) ? unitHintFor(id, g) + ' · ' : '') + n0(f.p * k) + ' g proteína · ' + n0(f.c * k) + ' g carbos · ' + n0(f.f * k) + ' g grasas</span></span></button>';
     });
     sh.innerHTML = h;
     bg.className = 'sheet-bg open';
@@ -211,7 +225,7 @@
       S.sheet = null;
       haptic();
       render();
-      toast('SWAP APLICADO · MACROS RECALCULADOS');
+      toast('Alimento cambiado · porciones recalculadas');
     } else if (el.id === 'sheet-bg') {
       S.sheet = null;
       renderSheet();
@@ -221,7 +235,7 @@
       S.checks = {};
       store.set('checks:' + today, S.checks);
       render();
-      toast('CHECKLIST DEL DÍA REINICIADO');
+      toast('Checklist del día reiniciado');
     }
   });
 
@@ -277,3 +291,6 @@
 
   render();
 })();
+`;
+
+export default runtime;
