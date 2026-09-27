@@ -3239,8 +3239,24 @@ function sbFmtToolbar(bId){
     { k:'dropset', lb:'+ DROPSET' },
     { k:'myoreps', lb:'+ MYO-REPS' }
   ];
+  /* directiva maestra ("Ergonomía de Prescripción Rápida: Quick-Insert
+     Toolbelt") -- píldoras de RIR/Rest, mismo mecanismo genérico
+     insertarFormatoCF()/data-fmtins que ya usan biset/dropset/myoreps,
+     sin lógica nueva de inserción: inyectan " | RIR N" / " | Rest Ns" en
+     la posición del cursor, listo para pegarse al final de una línea de
+     dosis ya escrita. */
+  const rirBtns = [
+    { k:'rir3', lb:'RIR 3' }, { k:'rir2', lb:'RIR 2' }, { k:'rir1', lb:'RIR 1' }, { k:'rir0', lb:'RIR 0' }
+  ];
+  const restBtns = [
+    { k:'rest60', lb:'Rest 60s' }, { k:'rest90', lb:'Rest 90s' }, { k:'rest120', lb:'Rest 120s' }
+  ];
   return '<div class="cf-fmt-tools">' +
     btns.map(b => '<button type="button" class="cf-fmt-btn cf-fmt-tec" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
+  '</div>' +
+  '<div class="cf-fmt-tools sb-quick-pills">' +
+    rirBtns.map(b => '<button type="button" class="cf-fmt-btn sb-pill-rir" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
+    restBtns.map(b => '<button type="button" class="cf-fmt-btn sb-pill-rest" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
   '</div>';
 }
 /* inserta el snippet en la posición del cursor del textarea (o envuelve la
@@ -3300,6 +3316,10 @@ function insertarFormatoCF(ta, kind){
     const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
     ph = '10';
     ins = nl + '+ 1 set MYO-REPS (' + ph + ' reps activación + 3x3 miniseries 10s rest)';
+  } else if(/^rir[0-3]$/.test(kind)){
+    ph = kind.slice(3); ins = ' | RIR ' + ph;
+  } else if(/^rest(?:60|90|120)$/.test(kind)){
+    ph = kind.slice(4); ins = ' | Rest ' + ph + 's';
   } else return;
   const selFrom = start + ins.indexOf(ph);
   const selTo = selFrom + ph.length;
@@ -5797,7 +5817,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
        consuma sin ambigüedad ni colisión con la paleta legada. */
     --jp-bg-deep: #0b0e14;
     --jp-card-bg: rgba(15, 20, 29, 0.85);
-    --jp-cyan-tactical: #00e5ff;
+    --jp-cyan-tactical: #38bdf8;
     --jp-orange-tactical: #ff6b00;
     --jp-gold-tactical: #ffd600;
     --jp-border-subtle: rgba(255, 255, 255, 0.08);
@@ -6204,34 +6224,33 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .day-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted); margin-top: 3px; transition: background 0.2s ease, box-shadow 0.2s ease; }
   .day-tab.active .day-dot { background: var(--red); box-shadow: 0 0 6px rgba(124,197,232,0.5); }
   .progress-bar-wrap { max-width: 1140px; margin: 0 auto; padding: 0.8rem 1.25rem 0; }
-  .progress-row { display: flex; align-items: center; gap: 10px; margin-bottom: 1rem; }
-  /* directiva ("Elevación estética de lujo táctico: micro-barra de
-     progreso") -- línea delgada de 2px (antes 4px) con el gradiente
-     táctico oficial cian->naranja en vez del teal/azul heredado; el
-     ancho reactivo (updateProgress(), ver más abajo) no se toca, sólo el
-     acabado visual. */
-  .progress-track { flex: 1; height: 2px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
-  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--jp-cyan-tactical), var(--jp-orange-tactical)); border-radius: 2px; box-shadow: 0 0 10px rgba(0,229,255,0.4); transition: width 0.45s cubic-bezier(0.4,0,0.2,1); }
-  .progress-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-  .progress-count { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
-  /* directiva maestra ("HUD de telemetría en vivo: tonelaje acumulado de
-     sesión") -- monospace tabular (las cifras nunca desalinean el
-     ancho), oro táctico sólo en el número (protagonista), titanio en la
-     etiqueta. jpTonelajeFlash: destello tenue de 300ms al sumar/restar,
-     mismo lenguaje "táctico" que el resto de la app. */
-  .jp-tonelaje-hud{
-    display:flex; align-items:baseline; gap:6px; margin-top:6px;
+  /* directiva maestra ("Fusión HUD de Misión") -- tonelaje (izquierda,
+     oro táctico) + barra de progreso lineal (derecha) en un único
+     renglón de telemetría; antes dos filas separadas (.progress-row +
+     .jp-tonelaje-hud). jpTonelajeFlash sigue destellando el número al
+     sumar/restar, mismo mecanismo de siempre (ver actualizarTonelajeHUD()). */
+  .jp-mission-hud{
+    display:flex; align-items:center; gap:12px; margin-bottom:1rem;
     font-family:'JetBrains Mono',ui-monospace,monospace;
   }
-  .jp-tonelaje-lb{ font-size:11px; letter-spacing:.04em; color:#94a3b8; text-transform:uppercase; }
+  .jp-mission-tonelaje{ display:flex; align-items:baseline; gap:5px; flex:0 0 auto; white-space:nowrap; }
+  .jp-mission-bolt{ font-size:12px; }
   .jp-tonelaje-val{
     font-size:15px; font-weight:800; color:#ffd600; font-variant-numeric:tabular-nums;
     transition:color .3s ease, transform .3s ease;
   }
   .jp-tonelaje-un{ font-size:11px; font-weight:700; color:#ffd600; letter-spacing:.03em; }
-  .jp-tonelaje-hud.jp-tonelaje-flash .jp-tonelaje-val{
+  .jp-mission-hud.jp-tonelaje-flash .jp-tonelaje-val{
     color:#fff9e0; transform:scale(1.14); text-shadow:0 0 14px rgba(255,214,0,.75);
   }
+  .jp-mission-progress{ display:flex; align-items:center; gap:8px; flex:1 1 auto; min-width:0; }
+  /* directiva ("Elevación estética de lujo táctico: micro-barra de
+     progreso") -- línea delgada de 2px con el gradiente táctico oficial
+     celeste->naranja; el ancho reactivo (updateProgress(), ver más abajo)
+     no se toca, sólo el acabado visual. */
+  .progress-track { flex: 1; height: 2px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--jp-cyan-tactical), var(--jp-orange-tactical)); border-radius: 2px; box-shadow: 0 0 10px rgba(56,189,248,0.4); transition: width 0.45s cubic-bezier(0.4,0,0.2,1); }
+  .progress-count { font-size: 12px; color: var(--text-secondary); font-weight: 600; white-space: nowrap; flex:0 0 auto; }
   .main { max-width: 1140px; margin: 0 auto; padding: 0 1.25rem 4rem; }
   .day-view { display: none; }
   .day-view.active { display: block; animation: dayFadeIn 0.4s cubic-bezier(0.16,1,0.3,1); }
@@ -7457,6 +7476,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
      a llamarlas -- ya no se pintan visibles. -->
 <div class="week-selector-wrap">
   <div class="week-selector" id="weekSelector"></div>
+  <div class="week-phase-sub" id="weekPhaseSub"></div>
 </div>
 <div class="week-tabs-wrap">
   <div class="week-tabs" id="week-tabs"></div>
@@ -7476,23 +7496,23 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   </div>
 </div>
 <div class="progress-bar-wrap">
-  <div class="progress-row">
-    <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
-    <span class="progress-count" id="progress-count">0%</span>
-    <span class="progress-label">completado</span>
-  </div>
-  <!-- directiva maestra ("HUD de telemetría en vivo: tonelaje acumulado
-       de sesión") -- contador reactivo de kg*reps de toda serie tildada
-       en el día/semana activos (calcularTonelajeSesion()/actualizarTonelajeHUD(),
-       más abajo en el script). Arranca en "0" y se recalcula al entrar a
-       cada día (renderMain()) y en cada check/edición de kg-reps
-       (setLoadField()) -- sin scoping por disciplina: state.loads es la
-       misma fuente compartida que ya usa CrossFit para sus propios
-       bloques de fuerza/skill, el tonelaje es un dato útil para ambas. -->
-  <div class="jp-tonelaje-hud" id="jpTonelajeHud">
-    <span class="jp-tonelaje-lb">TONELAJE DE SESIÓN:</span>
-    <span class="jp-tonelaje-val" id="jpTonelajeVal">0</span>
-    <span class="jp-tonelaje-un">KG</span>
+  <!-- directiva maestra ("Fusión HUD de Misión") -- tonelaje + barra de
+       progreso en un único renglón compacto de telemetría (antes dos
+       filas separadas): izquierda el tonelaje en oro táctico, derecha
+       la barra lineal + %. IDs (jpTonelajeHud/jpTonelajeVal/progress-fill/
+       progress-count) se conservan intactos -- actualizarTonelajeHUD()/
+       updateProgress() siguen funcionando sin cambios, sólo cambia el
+       layout que los envuelve. -->
+  <div class="jp-mission-hud" id="jpTonelajeHud">
+    <span class="jp-mission-tonelaje">
+      <span class="jp-mission-bolt" aria-hidden="true">⚡</span>
+      <span class="jp-tonelaje-val" id="jpTonelajeVal">0</span>
+      <span class="jp-tonelaje-un">KG TOTAL</span>
+    </span>
+    <div class="jp-mission-progress">
+      <div class="progress-track"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+      <span class="progress-count" id="progress-count">0%</span>
+    </div>
   </div>
   <!-- anillo de progreso: solo visible en escritorio (rail lateral, ver
        CSS/JS "MEJORA DE ESCRITORIO 27/08" más abajo). En mobile no se
@@ -9298,22 +9318,23 @@ function renderWeekSelector(){
         '</div>';
     }).join('');
   } else {
-    /* DIRECTIVA UX/UI integral (13/09), parte 1: se retira el botón ℹ️
-       flotante -- el chip activo (.wpc-current) ya abre el mismo modal al
-       tocarlo (ver el addEventListener de abajo), así que el ícono aparte
-       era pura redundancia colgando junto a la pastilla. */
+    /* directiva maestra ("Compactación y Jerarquía del Header") -- las 4
+       píldoras S1-S4 ahora son idénticas en tamaño (sólo el nombre corto,
+       sin ícono ni fase inline): la fase de la semana activa se muestra
+       aparte, en #weekPhaseSub, una sola línea monospace debajo de toda
+       la fila (ver más abajo). Elimina el emoji 🎯/etc de w.icon acá. */
     weekSelectorEl.innerHTML = WEEKS_META.map(function(w,i){
-      if(i === state.currentWeek){
-        return '<div class="week-pill active wpc-current" data-week="' + i + '" ' +
-            'title="Ver explicación de la semana" aria-label="Ver explicación de la semana">' +
-            '<span class="week-pill-name">' + w.icon + ' ' + w.short + '</span>' +
-            '<span class="week-pill-phase">' + w.phase + '</span>' +
-          '</div>';
-      }
-      return '<div class="week-pill wpc-mini" data-week="' + i + '">' +
-        '<span class="week-pill-name">' + w.short + '</span>' +
-      '</div>';
+      const activa = i === state.currentWeek;
+      return '<div class="week-pill wpc-mini' + (activa ? ' active wpc-current' : '') + '" data-week="' + i + '"' +
+          (activa ? ' title="Ver explicación de la semana" aria-label="Ver explicación de la semana"' : '') + '>' +
+          '<span class="week-pill-name">' + w.short + '</span>' +
+        '</div>';
     }).join('');
+    const subEl = document.getElementById('weekPhaseSub');
+    if(subEl){
+      const wActiva = WEEKS_META[state.currentWeek] || {};
+      subEl.textContent = wActiva.phase || '';
+    }
   }
   weekSelectorEl.querySelectorAll('.week-pill').forEach(function(p){
     p.addEventListener('click', function(){
@@ -10943,11 +10964,11 @@ body.focus-mode .tv-nav{display:flex}
 .rh-kgadjust-lb{font-size:.62rem;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);text-align:center}
 .rh-kgadjust-row{display:flex;align-items:center;gap:5px}
 .rh-kgadjust-row button{
-  flex:1;padding:6px 0;border-radius:8px;border:1px solid rgba(0,229,255,.3);
-  background:rgba(0,229,255,.08);color:#00e5ff;font-size:.74rem;font-weight:800;cursor:pointer;
+  flex:1;padding:6px 0;border-radius:8px;border:1px solid rgba(56,189,248,.3);
+  background:rgba(56,189,248,.08);color:#38bdf8;font-size:.74rem;font-weight:800;cursor:pointer;
   font-family:'JetBrains Mono',ui-monospace,monospace;
 }
-.rh-kgadjust-row button:active{background:rgba(0,229,255,.2);transform:scale(.96)}
+.rh-kgadjust-row button:active{background:rgba(56,189,248,.2);transform:scale(.96)}
 .rh-kgadjust-val{
   flex:0 0 auto; min-width:52px; text-align:center; font-weight:800; font-size:.85rem;
   color:#ffd600; font-family:'JetBrains Mono',ui-monospace,monospace;
@@ -12475,6 +12496,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var restM = linea.match(RX_REST_SB); if(restM) actual.restSeconds = parseInt(restM[1], 10);
         return;
       }
+      /* directiva maestra ("Refactoring Visual y Optimización de Espacio")
+         -- una línea que es SOLO una duración suelta ("6 minutos:", "10
+         min:") nunca es un ejercicio -- antes caía al catch-all 'simple'
+         y se pintaba como una fila más de la lista, con su propia flecha
+         ▸, como si fuera algo que el alumno tiene que "hacer". Se separa
+         a su propio tipo para que el render la monte como chip de
+         cabecera del bloque (⏱ TIEMPO ESTIMADO), nunca como fila. */
+      var mDuracion = linea.match(/^(\\d+)\\s*(?:minutos?|mins?)\\s*:?\\s*$/i);
+      if(mDuracion){
+        entries.push({ tipo:'duracion', minutos: parseInt(mDuracion[1], 10) });
+        return;
+      }
       /* directiva ("Parser avanzado de metodologías") -- separador
          táctico de fase: nunca se vuelve "actual" (la próxima línea real
          sigue arrancando su propio ejercicio nuevo con normalidad, sin
@@ -12789,12 +12822,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     });
     return out;
   }
+  /* directiva maestra ("Rediseño de Pautas Técnicas, Tips y Videos del
+     Bloque") -- tarjetas tácticas horizontales (nunca el grid cuadrado
+     con nombres truncados de antes): thumbnail 16:9 con micro-marco
+     celeste + botón play centrado, nombre COMPLETO sin cortes, subtítulo
+     "[ TAP PARA VER TÉCNICA ]" en titanio tenue. */
   function chipsVideoSB(lista){
     if(!lista.length) return '';
-    return '<div class="jp-sb-vid-title">🎬 Videos del bloque</div>' +
-      '<div class="jp-sb-vid-chips">' + lista.map(function(v){
-        return '<button type="button" class="jp-sb-vid-chip has-thumb" style="background-image:url(https://img.youtube.com/vi/' + v.ytid + '/mqdefault.jpg)" data-yt="' + v.ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(v.nombre).replace(/"/g,'') + '">' +
-          '<span class="jp-sb-vid-chip-label">🎬 Ver: ' + escSB(v.nombre) + '</span>' +
+    return '<div class="jp-sb-vid-title">// VIDEOS T\\u00c9CNICOS DEL BLOQUE</div>' +
+      '<div class="jp-sb-vid-cards">' + lista.map(function(v){
+        return '<button type="button" class="jp-sb-vid-card" data-yt="' + v.ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(v.nombre).replace(/"/g,'') + '">' +
+          '<span class="jp-sb-vid-thumb" style="background-image:url(https://img.youtube.com/vi/' + v.ytid + '/mqdefault.jpg)">' +
+            '<span class="jp-sb-vid-play">\\u25b6</span>' +
+          '</span>' +
+          '<span class="jp-sb-vid-info">' +
+            '<span class="jp-sb-vid-nombre">' + escSB(v.nombre) + '</span>' +
+            '<span class="jp-sb-vid-tap">[ TAP PARA VER T\\u00c9CNICA ]</span>' +
+          '</span>' +
         '</button>';
       }).join('') + '</div>';
   }
@@ -12946,7 +12990,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        un bloque de calentamiento (ahí no hay ancla, es activación). */
     let anclaUsada = false;
     let filas = '';
+    let duracionEstimada = 0;
     entries.forEach(function(entry, idx){
+      if(entry.tipo === 'duracion'){
+        if(!duracionEstimada) duracionEstimada = entry.minutos;
+        return;
+      }
       if(entry.tipo === 'fase'){
         filas += '<div class="jp-sb-fase">' + escSB(entry.titulo) + '</div>';
         return;
@@ -13076,12 +13125,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<div class="jp-sb-tag">[ SPORTS &middot; ' + (esCalentamiento ? '🔥 ACTIVACI\\u00d3N' : '💪 BLOQUE') + ' ]</div>' +
         '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>' +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
+        (duracionEstimada ? '<div class="jp-sb-duracion">\\u23f1 TIEMPO ESTIMADO: ' + duracionEstimada + ' MINUTOS</div>' : '') +
         filas +
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS, TIPS &amp; VIDEOS DEL BLOQUE</summary>' +
             '<div class="jp-details-content">' +
-              (block.objective ? '<div class="jp-sb-objective">🎯 ' + block.objective + '</div>' : '') +
-              (block.tips ? '<div class="jp-sb-tips">💡 ' + block.tips + '</div>' : '') +
+              (block.objective ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">// OBJETIVO FISIOL\\u00d3GICO</div><div class="jp-sb-pauta-txt">' + block.objective + '</div></div>' : '') +
+              (block.tips ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">// DIRECTIVA BIOMEC\\u00c1NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + block.tips + '</div></div>' : '') +
               chipsVideoSB(videosBloque) +
             '</div>' +
           '</details>' : '') +
@@ -14016,7 +14066,7 @@ textarea,input,.wb-line,.tab-label,.week-pill-phase{
    casillero de Kg ya hace el trabajo de sugerir el número. */
 .set-ref-badge{
   display:inline-flex; align-items:center; padding:3px 9px; border-radius:20px;
-  background:rgba(0,229,255,.08); border:1px solid rgba(0,229,255,.3); color:#00e5ff;
+  background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.3); color:#38bdf8;
   font-family:'Inter',sans-serif; font-size:.7rem; font-weight:600;
 }
 /* =========================================================
@@ -14489,12 +14539,12 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
 .week-pill:active{transform:scale(.97)}
 .week-pill:hover{border-color:rgba(210,121,63,.35) !important}
 .week-pill.active{
-  border-bottom:3px solid #00e5ff !important;
-  background:linear-gradient(180deg,rgba(0,229,255,.14),rgba(0,229,255,.03)) !important;
+  border-bottom:3px solid #38bdf8 !important;
+  background:linear-gradient(180deg,rgba(56,189,248,.14),rgba(56,189,248,.03)) !important;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -1px 0 rgba(0,0,0,.5),
-             0 6px 20px rgba(0,229,255,.16) !important;
+             0 6px 20px rgba(56,189,248,.16) !important;
 }
-.week-pill.active .week-pill-name{color:#00e5ff !important;text-shadow:0 0 12px rgba(0,229,255,.4)}
+.week-pill.active .week-pill-name{color:#38bdf8 !important;text-shadow:0 0 12px rgba(56,189,248,.4)}
 /* directiva crítica ("Reingeniería cromática del encabezado de sesión") --
    S3 (Pico de Exigencia, ícono 🔥) heredaba el mismo glow celeste que
    cualquier otra semana activa -- desentonaba con el propio ícono de
@@ -14517,34 +14567,39 @@ header.masthead.hd-top::before,header.masthead.hd-top::after{display:none !impor
    El detalle completo (nota metodológica) vive en #weekInfoModal, atrás del
    chip activo -- nunca empuja el resto hacia abajo. */
 .week-selector{align-items:center}
-.week-pill.wpc-current{padding:8px 14px !important;gap:0}
-.week-pill.wpc-mini{padding:6px 12px !important;min-width:0 !important}
-.week-pill.wpc-mini .week-pill-name{font-size:.8rem !important;opacity:.7}
-/* FASE 2.1 -- compactación definitiva: la pastilla activa (.wpc-current)
-   pasaba nombre+fase en dos líneas (.week-pill{flex-direction:column},
-   línea ~4869) y terminaba en ~87px de alto. "[ 🎯 S1: CARGA BASE ]" pide
-   una sola línea de ≤36px -- se fuerza fila (row) sólo en la pastilla
-   activa, con la fase truncada con elipsis si el coach escribió un
-   nombre largo (nunca se acorta el dato real, sólo su despliegue). */
+/* directiva maestra ("Compactación y Jerarquía del Header") -- la
+   píldora activa ya no lleva fase inline (nombre+fase en dos líneas de
+   ~87px de alto) -- una sola línea corta, igual de ancha que el resto
+   (ver .week-pill.wpc-current,.week-pill.wpc-mini más abajo). */
 .week-pill.wpc-current{
   flex-direction:row !important;align-items:center !important;gap:5px !important;
-  padding:7px 12px !important;max-height:36px;min-height:0 !important;
+  min-height:0 !important;
 }
 .week-pill.wpc-current .week-pill-name{white-space:nowrap;flex:0 0 auto}
-.week-pill.wpc-current .week-pill-phase::before{content:': '}
-.week-pill.wpc-current .week-pill-phase{
-  max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  text-transform:uppercase;font-size:.68rem !important;letter-spacing:.03em;
-}
-.week-pill.wpc-mini{max-height:36px}
 /* UX/UI integral (13/09): se retiró el botón ℹ️ aparte (redundante con el
    propio chip activo, que ya abre el modal al tocarlo -- ver
-   renderWeekSelector()). Se deja un puntito sutil como única pista visual
-   de que el chip es tocable, sin volver a ocupar el espacio de un botón. */
+   renderWeekSelector()). directiva maestra ("Compactación y Jerarquía
+   del Header") -- el puntito naranja ::after que marcaba "esto es
+   tocable" quedaba como una mota residual flotante sin motivo visual
+   claro (las 4 píldoras ya son obviamente tocables) -- se retira. */
 .week-pill.wpc-current{cursor:pointer;position:relative}
-.week-pill.wpc-current::after{
-  content:'';position:absolute;top:6px;right:7px;width:5px;height:5px;border-radius:50%;
-  background:#D2793F;opacity:.75;
+/* directiva maestra ("Compactación y Jerarquía del Header") -- las 4
+   píldoras S1-S4 quedan de igual ancho: la activa ya NO lleva ícono+fase
+   inline (eso se mudó a .week-phase-sub, debajo de la fila), así que
+   wpc-current/wpc-mini comparten exactamente el mismo padding/tamaño. */
+.week-pill.wpc-current,.week-pill.wpc-mini{
+  padding:7px 12px !important; min-width:52px !important; max-height:36px;
+  justify-content:center;
+}
+.week-pill.wpc-mini .week-pill-name{opacity:1}
+/* directiva maestra ("Compactación y Jerarquía del Header") -- subtítulo
+   de fase de la semana ACTIVA, en su propia línea monospace titanio
+   debajo de las 4 píldoras (ver renderWeekSelector()) -- reemplaza el
+   texto que antes vivía DENTRO de la píldora activa (.week-pill-phase),
+   lo que hacía que esa píldora sola fuera más ancha que el resto. */
+.week-phase-sub{
+  margin:6px 2px 0; font-family:'JetBrains Mono',ui-monospace,monospace;
+  font-size:.66rem; letter-spacing:.06em; color:#94a3b8; text-transform:uppercase;
 }
 /* FIX QUIRÚRGICO ("Habilitar selector de semanas en CrossFit") --
    variante compacta y oscura propia (.wpc-cf), separada de la pastilla
@@ -24278,7 +24333,7 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
    dorado): resplandor INTERIOR (inset), no un anillo exterior. */
 .set-input:focus{
   border-color:var(--jp-cyan-tactical) !important;
-  box-shadow:inset 0 0 8px rgba(0,229,255,.25) !important; outline:none !important;
+  box-shadow:inset 0 0 8px rgba(56,189,248,.25) !important; outline:none !important;
 }
 .set-input::placeholder{color:#5A5A61 !important;font-weight:500}
 /* --- botones de cierre de ronda / bloque --- */
@@ -27986,6 +28041,10 @@ input[type="checkbox"]:active{
   border:1px solid #1E222B; background:#12151B;
   color:#E5C378; border-radius:50%; font-size:15px; line-height:1; cursor:pointer;
   transition:transform .12s ease, border-color .15s ease, background .15s ease;
+  /* directiva maestra ("Compactación y Jerarquía del Header") -- margen
+     de accesibilidad: sin esto el botón queda pegado contra el borde
+     decorativo táctico superior derecho (┓) en pantallas angostas. */
+  margin-right:8px;
 }
 .hdc-info:active{ transform:scale(.95); border-color:rgba(229,195,120,.5); background:#171B22; }
 .hdc-info .lbl{display:none}
@@ -28430,7 +28489,7 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:none !important; }
     float:left; clear:left; width:300px; margin:16px 0 0;
     position:sticky; top:calc(16px + var(--hdc-h,156px) + 16px);
   }
-  .progress-row{ display:none; }
+  .jp-mission-hud{ display:none; }
   .progress-ring-wrap{
     display:flex; align-items:center; gap:14px;
     background:linear-gradient(160deg,#111318,#15181f);
@@ -29362,7 +29421,7 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:none !important; }
     float:none !important; clear:none !important; width:auto !important; margin:0 auto !important;
     position:relative !important; top:auto !important; max-width:1140px;
   }
-  .progress-row{ display:flex !important; }
+  .jp-mission-hud{ display:flex !important; }
   .progress-ring-wrap{ display:none !important; }
   .hd-dock{
     position:fixed !important; left:0 !important; right:0 !important; bottom:0 !important;
@@ -29951,10 +30010,10 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
    (ej. "Thruster") con su 1RM, sin salir del modal. */
 .jp-prs-addbtn{
   width:100%; margin-top:10px; padding:12px 14px; border-radius:10px;
-  border:1px dashed rgba(0,229,255,.35); background:transparent; color:#00e5ff;
+  border:1px dashed rgba(56,189,248,.35); background:transparent; color:#38bdf8;
   font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12.5px; text-align:center;
 }
-.jp-prs-addbtn:active{ background:rgba(0,229,255,.08); }
+.jp-prs-addbtn:active{ background:rgba(56,189,248,.08); }
 .jp-prs-addform{
   display:flex; gap:8px; margin-top:10px; align-items:center;
 }
@@ -30266,10 +30325,23 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-size:.85rem; color:#ff6b00; font-weight:700; letter-spacing:.04em;
   margin:-4px 0 10px; text-transform:uppercase;
 }
-.jp-sb-objective, .jp-sb-tips{
-  font-size:.86rem; line-height:1.5; color:rgba(237,239,242,.82);
-  background:rgba(56,189,248,.06); border:1px solid var(--line); border-radius:10px;
-  padding:8px 11px; margin:8px 0;
+/* directiva maestra ("Rediseño de Pautas Técnicas, Tips y Videos del
+   Bloque") -- título estructurado ("// OBJETIVO FISIOLÓGICO" / "//
+   DIRECTIVA BIOMECÁNICA & TIPS") en vez del emoji 🎯/💡 pegado al texto,
+   tipografía condensada táctica de la marca; cuerpo en monospace/técnica
+   blanco titanio con interlineado holgado para lectura continua. */
+.jp-sb-pauta{
+  background:rgba(56,189,248,.05); border:1px solid var(--line); border-radius:10px;
+  padding:10px 12px; margin:8px 0;
+}
+.jp-sb-pauta-lb{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
+  font-size:.66rem; letter-spacing:.08em; text-transform:uppercase; color:#38bdf8;
+  margin-bottom:5px;
+}
+.jp-sb-pauta-txt{
+  font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.82rem; line-height:1.55;
+  color:#e2e8f0;
 }
 .jp-sb-ex{
   background:rgba(255,255,255,.02); border:1px solid var(--line); border-radius:12px;
@@ -30320,7 +30392,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   display:inline-block; margin-top:6px; padding:3px 9px; border-radius:6px;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
   font-size:.66rem; letter-spacing:.05em; text-transform:uppercase;
-  background:rgba(0,229,255,.1); color:#00e5ff; border:1px solid rgba(0,229,255,.35);
+  background:rgba(56,189,248,.1); color:#38bdf8; border:1px solid rgba(56,189,248,.35);
 }
 .jp-sb-badge{
   /* directiva ("Jerarquía Cromática" / "Homogeneización Cromática
@@ -30340,7 +30412,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
   font-size:.85rem; letter-spacing:.03em; color:#EDEFF2; text-transform:uppercase; margin-bottom:8px;
 }
-.jp-sb-bracket{ border-left:2px solid #00e5ff; padding-left:12px; }
+.jp-sb-bracket{ border-left:2px solid #38bdf8; padding-left:12px; }
 /* directiva ("Unificación Total de Core") -- contador táctico de rondas
    al pie del circuito/biset/triset. Cyan táctico (control interactivo,
    igual que los inputs/check nativos), compacto, una sola línea. */
@@ -30358,20 +30430,20 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 }
 .jp-ronda-btn{
   flex-shrink:0; flex-grow:0; width:28px; height:28px; border-radius:50%; box-sizing:border-box;
-  background:transparent; border:1px solid #00e5ff; color:#00e5ff;
+  background:transparent; border:1px solid #38bdf8; color:#38bdf8;
   font-size:1rem; font-weight:800; line-height:1; display:flex; align-items:center; justify-content:center;
   cursor:pointer; padding:0;
 }
-.jp-ronda-btn:active{ background:rgba(0,229,255,.16); }
+.jp-ronda-btn:active{ background:rgba(56,189,248,.16); }
 .jp-ronda-txt{
   flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:center;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
   font-size:.82rem; letter-spacing:.03em; text-transform:uppercase; color:#f8fafc;
 }
-.jp-ronda-txt b{ color:#00e5ff; font-size:1rem; }
+.jp-ronda-txt b{ color:#38bdf8; font-size:1rem; }
 .jp-ronda-ok{
   flex-shrink:0; flex-grow:0; box-sizing:border-box; padding:6px 12px; border-radius:20px;
-  background:#00e5ff; color:#0b0e14; border:1px solid #00e5ff;
+  background:#38bdf8; color:#0b0e14; border:1px solid #38bdf8;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
   font-size:.68rem; letter-spacing:.03em; text-transform:uppercase; white-space:nowrap; cursor:pointer;
 }
@@ -30382,12 +30454,12 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .jp-sb-subex:last-child{ margin-bottom:0; }
 .jp-sb-subex-head{ display:flex; align-items:center; gap:8px; }
 .jp-sb-letra{
-  /* directiva ("Homogeneización Cromática Exacta"): cyan táctico #00e5ff
+  /* directiva ("Homogeneización Cromática Exacta"): cyan táctico #38bdf8
      exacto para el prefijo A1/A2 -- antes var(--cyan), un tono cercano
      (#38BDF8) pero no idéntico al pinneado por la directiva. */
   display:inline-flex; align-items:center; justify-content:center;
-  width:22px; height:22px; border-radius:6px; background:rgba(0,229,255,.16);
-  color:#00e5ff; font-weight:800; font-size:.75rem;
+  width:22px; height:22px; border-radius:6px; background:rgba(56,189,248,.16);
+  color:#38bdf8; font-weight:800; font-size:.75rem;
 }
 .jp-sb-subex-nombre{
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700;
@@ -30397,26 +30469,33 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
    prescrita) -- mismo espíritu que .jp-cf-row de CrossFit (pastilla de
    dosis + nombre), namespaced bajo .jp-sb-* porque .jp-cf-row vive
    scopeado a .jp-cfboard (nunca se mezclan selectores entre disciplinas). */
+/* directiva maestra ("Refactoring Visual y Optimización de Espacio")
+   -- align-items:flex-start (antes center) para que la flecha ▸ quede
+   clavada contra la PRIMERA línea del nombre en vez de centrarse contra
+   todo el bloque cuando el texto envuelve a una segunda línea. */
 .jp-sb-plain{
-  display:flex; align-items:center; flex-wrap:wrap; gap:9px;
+  display:flex; align-items:flex-start; flex-wrap:wrap; gap:8px;
   padding:9px 2px; border-top:1px solid var(--line);
 }
 .jp-sb-ex:first-child + .jp-sb-plain, .jp-sb-board .jp-sb-plain:first-of-type{ border-top:none; }
 .jp-sb-plain-pill{
-  /* directiva ("Homogeneización Cromática Exacta"): cyan #00e5ff exacto. */
+  /* directiva ("Homogeneización Cromática Exacta"): cyan #38bdf8 exacto. */
   display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
   min-width:48px; padding:3px 9px; border-radius:6px;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
   font-size:.72rem; letter-spacing:.03em; text-transform:uppercase;
-  background:rgba(0,229,255,.12); color:#00e5ff; border:1px solid rgba(0,229,255,.35);
+  background:rgba(56,189,248,.12); color:#38bdf8; border:1px solid rgba(56,189,248,.35);
 }
-.jp-sb-plain-nombre{ font-size:.9rem; color:#f8fafc; letter-spacing:.01em; }
+.jp-sb-plain-nombre{ font-size:.9rem; color:#f8fafc; letter-spacing:.01em; padding-top:1px; }
 /* directiva maestra ("Estilización de Listados de Activación") -- glifo
-   táctico cian en vez del guión común "-", con sangría uniforme, para
-   bloques de movilidad/entrada en calor. */
+   táctico celeste en vez del guión común "-", con sangría uniforme, para
+   bloques de movilidad/entrada en calor. margin-top:2px (directiva
+   maestra "Refactoring Visual") clava la flecha contra la primera línea
+   de texto en vez de quedar centrada/desfasada. */
 .jp-sb-plain-warmup{ padding-left:4px; }
 .jp-sb-plain-warmup::before{
-  content:'\\25b8'; color:#00e5ff; font-weight:800; font-size:.9rem; flex-shrink:0; line-height:1;
+  content:'\\25b8'; color:#38bdf8; font-weight:800; font-size:.9rem; flex-shrink:0; line-height:1;
+  margin-top:2px;
 }
 /* directiva ("Refactor visual: tabla táctica de series"): recolorea SÓLO
    dentro del tablero de Pizarra Sports la fila "expandida" (ver
@@ -30458,7 +30537,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .jp-sb-board .set-tracker .set-row.set-row-active,
 .jp-sb-board .set-tracker .set-row.set-row-expanded{
   background:#161b22 !important;
-  border-color:rgba(0,229,255,.35) !important;
+  border-color:rgba(56,189,248,.35) !important;
   border-radius:8px !important;
   display:flex !important; flex-direction:row !important; align-items:center !important;
   flex-wrap:nowrap !important; gap:5px !important; padding:5px 6px !important;
@@ -30476,10 +30555,10 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .block .jp-sb-board .set-tracker .set-row.set-row-active.set-activa,
 .block .jp-sb-board .set-tracker .set-row.set-row-expanded.set-activa{
   background:#161b22 !important;
-  border-color:rgba(0,229,255,.35) !important;
+  border-color:rgba(56,189,248,.35) !important;
 }
 .block .jp-sb-board .set-tracker .set-row.set-activa .set-row-label{
-  background:rgba(0,229,255,.16) !important; color:#00e5ff !important;
+  background:rgba(56,189,248,.16) !important; color:#38bdf8 !important;
 }
 .jp-sb-board .set-tracker .set-row.set-row-active .set-row-toggle,
 .jp-sb-board .set-tracker .set-row.set-row-expanded .set-row-toggle{
@@ -30511,7 +30590,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 }
 .jp-sb-board .set-ref-badge{ font-size:.6rem !important; padding:2px 6px !important; white-space:nowrap !important; }
 .jp-sb-board .set-check{
-  accent-color:#00e5ff !important; flex:0 0 auto !important; width:20px !important; height:20px !important;
+  accent-color:#38bdf8 !important; flex:0 0 auto !important; width:20px !important; height:20px !important;
 }
 /* directiva ("Refactoring integral: reconstrucción total del tracker de
    series en Sports") -- fila de registro NATIVA, desde cero, exclusiva
@@ -30534,8 +30613,8 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .jp-set-pill{
   flex:0 0 auto;
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
-  font-size:.68rem; letter-spacing:.04em; text-transform:uppercase; color:#00e5ff;
-  background:rgba(0,229,255,.1); border:1px solid rgba(0,229,255,.3); border-radius:5px;
+  font-size:.68rem; letter-spacing:.04em; text-transform:uppercase; color:#38bdf8;
+  background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.3); border-radius:5px;
   padding:3px 7px; white-space:nowrap;
 }
 /* directiva maestra ("Ghost Load & Target Pacing: carga fantasma de la
@@ -30559,7 +30638,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 /* directiva ("Elevación estética de lujo táctico: instrumentación en
    filas de registro") -- mismo resplandor interior cian EXACTO que el
    resto de los inputs de kg/reps de la app (.set-input:focus). */
-.jp-input-native:focus{ outline:none; border-color:var(--jp-cyan-tactical); box-shadow:inset 0 0 8px rgba(0,229,255,.25); }
+.jp-input-native:focus{ outline:none; border-color:var(--jp-cyan-tactical); box-shadow:inset 0 0 8px rgba(56,189,248,.25); }
 .jp-input-native{ font-variant-numeric:tabular-nums; }
 /* directiva ("Refactoring maestro UI/UX Sports: formato de inputs de carga
    y reps") -- el kg cargado por el alumno es SIEMPRE oro táctico (mismo
@@ -30568,27 +30647,38 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
    de .jp-input-native, acá sólo se agrega peso 800 para que el número
    pese visualmente igual que el resto de los badges tácticos. */
 .jp-input-native.jp-val-primary{ color:#ffd600; font-weight:800; }
-.jp-input-native.jp-val-secondary{ color:#00e5ff; font-weight:800; }
+.jp-input-native.jp-val-secondary{ color:#38bdf8; font-weight:800; }
 .jp-unit{
   flex:0 0 auto; font-size:.62rem; color:rgba(237,239,242,.55); text-transform:lowercase; white-space:nowrap;
 }
 .jp-sep{ flex:0 0 auto; font-size:.75rem; color:rgba(237,239,242,.4); }
 .jp-btn-check-native{
   flex:0 0 auto; width:26px; height:26px; border-radius:50%; box-sizing:border-box;
-  background:transparent; border:1px solid #00e5ff; color:#00e5ff;
+  background:transparent; border:1px solid #38bdf8; color:#38bdf8;
   font-size:.8rem; line-height:1; display:flex; align-items:center; justify-content:center;
   cursor:pointer; padding:0;
 }
-.jp-btn-check-native.completed{ background:#00e5ff; color:#000000; border-color:#00e5ff; }
+.jp-btn-check-native.completed{ background:#38bdf8; color:#000000; border-color:#38bdf8; }
 /* directiva ("Refactoring definitivo: unificación de tips/videos, parser
    de metodologías y pulido visual premium") */
 /* 1 · separador táctico de fase ("ANCLA DE FUERZA", "VOLUMEN EFECTIVO"...) */
 .jp-sb-fase{
-  margin:14px 0 6px; padding-top:10px; border-top:1px dashed rgba(0,229,255,.25);
+  margin:14px 0 6px; padding-top:10px; border-top:1px dashed rgba(56,189,248,.25);
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
-  font-size:.72rem; letter-spacing:.08em; color:rgba(0,229,255,.75); text-transform:uppercase;
+  font-size:.72rem; letter-spacing:.08em; color:rgba(56,189,248,.75); text-transform:uppercase;
 }
 .jp-sb-fase:first-child{ margin-top:0; border-top:none; padding-top:0; }
+/* directiva maestra ("Refactoring Visual y Optimización de Espacio") --
+   micro-chip de cabecera para una duración suelta ("6 minutos:") que el
+   parser ya no deja colarse como fila de ejercicio (ver tipo:'duracion'
+   en parsearPizarraSB) -- fondo carbón, borde sutil, nunca compite con
+   el título del bloque. */
+.jp-sb-duracion{
+  display:inline-flex; align-items:center; gap:6px; margin:2px 0 8px; padding:4px 10px;
+  border-radius:7px; background:rgba(255,255,255,.03); border:1px solid var(--line);
+  font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.68rem; letter-spacing:.04em;
+  color:#94a3b8; text-transform:uppercase; width:fit-content;
+}
 /* 2 · badge de técnica de intensidad, junto al SET puntual (no más en la
    cabecera del ejercicio) -- naranja táctico, per directiva de paleta. */
 .jp-sb-set-badge{
@@ -30622,7 +30712,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 /* 3 · acordeón ÚNICO por bloque (jp-block-details), naranja táctico en
    el disparador -- mismo esqueleto visual que .cf-acc, namespaced para
    no heredar nada de CrossFit. */
-.jp-block-details{ margin-top:12px; padding-top:10px; border-top:1px dashed var(--line); }
+.jp-block-details{ margin-top:12px; padding-top:10px; padding-bottom:28px; border-top:1px dashed var(--line); height:auto; }
 .jp-summary-btn{
   /* directiva ("Homogeneización Cromática Exacta"): naranja táctico
      #ff6b00 exacto, mismo tono que .jp-sb-tag. */
@@ -30632,27 +30722,40 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 }
 .jp-summary-btn::-webkit-details-marker{ display:none; }
 .jp-block-details[open] .jp-summary-btn{ margin-bottom:8px; }
-.jp-details-content{ display:flex; flex-direction:column; gap:8px; }
-/* 4 · chips de video del bloque, dentro del acordeón único */
+.jp-details-content{ display:flex; flex-direction:column; gap:8px; height:auto; overflow:visible; }
+/* 4 · galería de video del bloque, dentro del acordeón único --
+   directiva maestra ("Rediseño de Pautas Técnicas, Tips y Videos del
+   Bloque"): tarjetas horizontales con nombre completo, nunca el grid
+   cuadrado con nombres truncados de antes. */
 .jp-sb-vid-title{
   font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800;
-  font-size:.68rem; letter-spacing:.04em; color:rgba(237,239,242,.6); text-transform:uppercase;
+  font-size:.66rem; letter-spacing:.08em; color:#38bdf8; text-transform:uppercase;
   margin-top:4px;
 }
-.jp-sb-vid-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
-.jp-sb-vid-chip{
-  position:relative; width:64px; height:40px; border-radius:6px; overflow:hidden;
-  background-size:cover; background-position:center; border:1px solid rgba(0,229,255,.3);
-  cursor:pointer; padding:0;
+.jp-sb-vid-cards{ display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+.jp-sb-vid-card{
+  display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:6px; border-radius:10px; background:rgba(255,255,255,.02);
+  border:1px solid var(--line); cursor:pointer;
 }
-.jp-sb-vid-chip::after{
-  content:'\\25b6'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-  background:rgba(0,0,0,.35); color:#fff; font-size:.7rem;
+.jp-sb-vid-card:active{ background:rgba(56,189,248,.08); border-color:rgba(56,189,248,.4); }
+.jp-sb-vid-thumb{
+  position:relative; flex:0 0 auto; width:96px; aspect-ratio:16/9; border-radius:7px; overflow:hidden;
+  background-size:cover; background-position:center; background-color:#111620;
+  border:1px solid rgba(56,189,248,.4);
 }
-.jp-sb-vid-chip-label{
-  position:absolute; left:0; right:0; bottom:0; padding:2px 4px;
-  background:rgba(0,0,0,.65); color:#fff; font-size:.5rem; line-height:1.2;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+.jp-sb-vid-play{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.32); color:#fff; font-size:.9rem;
+}
+.jp-sb-vid-info{ display:flex; flex-direction:column; gap:3px; min-width:0; flex:1 1 auto; }
+.jp-sb-vid-nombre{
+  font-family:'Inter',sans-serif; font-weight:700; font-size:.82rem; color:#f8fafc;
+  line-height:1.3; white-space:normal;
+}
+.jp-sb-vid-tap{
+  font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.62rem; letter-spacing:.04em;
+  color:rgba(148,163,184,.75); text-transform:uppercase;
 }
 /* 5 · paleta ámbar/oro para acentos de PR y ancla, sutil -- reservado para
    .jp-sb-anchor si algún bloque llega a marcarse como ancla principal. */
@@ -47668,6 +47771,14 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.4);color:#7CC5E8;
 }
 .cf-fmt-emom:hover{background:rgba(56,189,248,.18);border-color:#38BDF8;color:#38BDF8}
+/* directiva maestra ("Ergonomía de Prescripción Rápida: Quick-Insert
+   Toolbelt") -- píldoras de RIR (ámbar, esfuerzo) y Rest (celeste,
+   tiempo/estructura), mismo idioma cromático que el resto del Builder. */
+.sb-quick-pills{ margin-top:0; }
+.sb-pill-rir{ background:rgba(210,121,63,.08); border-color:rgba(210,121,63,.35); color:#D2793F; }
+.sb-pill-rir:hover{ background:rgba(210,121,63,.16); border-color:#D2793F; color:#E8965E; }
+.sb-pill-rest{ background:rgba(56,189,248,.08); border-color:rgba(56,189,248,.35); color:#38BDF8; }
+.sb-pill-rest:hover{ background:rgba(56,189,248,.16); border-color:#38BDF8; color:#7CC5E8; }
 /* directiva ("Botones Rápidos de Inyección Metodológica") -- técnicas
    de intensidad (biset/dropset/myo-reps), mismo trato "acción propia"
    que EMOM/AMRAP pero en el tono naranja de marca en vez de cyan, para
