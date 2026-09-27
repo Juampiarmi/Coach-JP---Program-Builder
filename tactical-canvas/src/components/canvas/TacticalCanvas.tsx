@@ -6,6 +6,7 @@ import { Headline } from './Headline'
 import { ChartTemplate } from './templates/ChartTemplate'
 import { CompareTemplate } from './templates/CompareTemplate'
 import { MetricTemplate } from './templates/MetricTemplate'
+import { ManifestoTemplate } from './templates/ManifestoTemplate'
 import { StatementTemplate } from './templates/StatementTemplate'
 
 const SIDE = 88
@@ -94,10 +95,16 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const pad = PAD[state.aspect]
   const font = HEADLINE_FONTS[state.headlineFont]
   const isStatement = state.template === 'statement'
+  const isManifesto = state.template === 'manifesto'
+  const centered = isStatement || isManifesto
   const contentWidth = w - SIDE * 2
 
   const headlineSize = Math.round(
-    (isStory ? 86 : 78) * FONT_SIZE_FACTOR[state.headlineFont] * (state.headlineScale / 100) * (isStatement ? 1.3 : 1) * fit,
+    (isStory ? 86 : 78) *
+      FONT_SIZE_FACTOR[state.headlineFont] *
+      (state.headlineScale / 100) *
+      (isManifesto ? 1.45 : isStatement ? 1.3 : 1) *
+      fit,
   )
 
   const tag = state.tag.trim()
@@ -192,32 +199,44 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
               display: 'flex',
               flexDirection: 'column',
               flex: 1,
-              justifyContent: isStatement || isStory ? 'center' : 'flex-start',
-              marginTop: (isStatement ? 20 : 44) * baseScale,
+              justifyContent: centered || isStory ? 'center' : 'flex-start',
+              marginTop: (centered ? 20 : 44) * baseScale,
               minHeight: 0,
               overflow: 'hidden',
             }}
           >
             <div ref={contentRef} style={{ flexShrink: 0 }}>
-              <Headline
-                partA={state.headlineA}
-                partB={state.headlineB}
-                fontFamily={font.family}
-                fontSize={headlineSize}
-                tracking={font.tracking}
-              />
-              <div style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale }}>
-                {state.template === 'metric' && <MetricTemplate state={state} fontFamily={font.family} scale={scale} />}
-                {state.template === 'compare' && <CompareTemplate state={state} fontFamily={font.family} scale={scale} />}
-                {state.template === 'chart' && (
-                  <ChartTemplate state={state} contentWidth={contentWidth} fontFamily={font.family} scale={scale} />
-                )}
-                {isStatement && <StatementTemplate state={state} scale={scale} />}
-              </div>
+              {isManifesto ? (
+                <ManifestoTemplate
+                  state={state}
+                  fontFamily={font.family}
+                  fontSize={headlineSize}
+                  tracking={font.tracking}
+                  scale={scale}
+                />
+              ) : (
+                <>
+                  <Headline
+                    partA={state.headlineA}
+                    partB={state.headlineB}
+                    fontFamily={font.family}
+                    fontSize={headlineSize}
+                    tracking={font.tracking}
+                  />
+                  <div style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale }}>
+                    {state.template === 'metric' && <MetricTemplate state={state} fontFamily={font.family} scale={scale} />}
+                    {state.template === 'compare' && <CompareTemplate state={state} fontFamily={font.family} scale={scale} />}
+                    {state.template === 'chart' && (
+                      <ChartTemplate state={state} contentWidth={contentWidth} fontFamily={font.family} scale={scale} />
+                    )}
+                    {isStatement && <StatementTemplate state={state} scale={scale} />}
+                  </div>
+                </>
+              )}
             </div>
           </main>
 
-          <Footer citeMain={state.citeMain} citeSub={state.citeSub} scale={baseScale} />
+          <Footer citeMain={isManifesto ? '' : state.citeMain} citeSub={isManifesto ? '' : state.citeSub} scale={baseScale} />
         </div>
       </div>
     </div>

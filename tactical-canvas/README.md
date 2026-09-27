@@ -18,7 +18,15 @@ funciona sin conexión.
 
 ## Qué hace
 
-- **4 plantillas**: Métrica Gigante, Comparativa A/B, Gráfico/Telemetría y Sentencia de Texto.
+- **5 plantillas**: Métrica Gigante, Comparativa A/B, Gráfico/Telemetría, Sentencia de Texto y
+  Manifiesto / Cita Táctica (frase gigante con barra naranja o comillas militares, firma
+  opcional y sin cita académica).
+- **Generador con IA (BYOK)**: con tu propia API Key de OpenAI (gpt-4o / gpt-4o-mini) o de
+  Anthropic (Claude), guardada sólo en tu navegador. Escribís el tema, elegís Auto, 1 placa,
+  Historias (3) o Carrusel (4-5) y la IA completa todos los campos. Las secuencias se
+  navegan con `[ SLIDE 1 | SLIDE 2 | … ]` y se exportan todas juntas; en el celular se
+  comparten de una sola vez. El prompt y la validación de la respuesta están en
+  `src/lib/ai.ts`.
 - **Gráfico simplificado**: se define con mínimo, máximo, unidad, etiqueta y zona óptima en
   texto (`70-90`). Tres modos: curva (pico en zona, sube o cae), barras (etiquetas y valores
   separados por coma) y medidor de umbral (valor actual y umbral).
@@ -49,6 +57,7 @@ src/
 ├── types.ts
 ├── lib/
 │   ├── brand.ts                paleta, fuentes, formatos, presets de tags
+│   ├── ai.ts                   prompt de sistema, llamadas a OpenAI/Anthropic, validación del JSON
 │   ├── chart.ts                parseo de series, normalización, curvas suaves
 │   └── exporter.ts             html-to-image 3x, descarga, Web Share
 ├── hooks/                      usePersistentState, useFitScale, useMediaQuery

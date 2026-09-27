@@ -1,4 +1,5 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto'
+export type ManifestoStyle = 'bar' | 'quotes'
 export type AspectId = 'feed' | 'story'
 export type Accent = 'orange' | 'cyan' | 'gold' | 'white' | 'gray'
 export type HeadlineFont = 'chakra' | 'barlow' | 'inter'
@@ -58,6 +59,9 @@ export interface CanvasState {
   chart: ChartConfig
   // Sentencia
   kicker: string
+  // Manifiesto
+  manifestoAuthor: string
+  manifestoStyle: ManifestoStyle
   // Fondo fotográfico
   bgOverlay: number
   floatingPlate: boolean

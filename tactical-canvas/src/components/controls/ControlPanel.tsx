@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
-import { HEADLINE_FONTS, TAG_PRESETS } from '../../lib/brand'
+import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
-import type { Accent, CanvasState, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, TemplateId } from '../../types'
+import type { Accent, CanvasState, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
@@ -10,6 +10,7 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'compare', n: '02', label: 'A/B' },
   { id: 'chart', n: '03', label: 'Gráfico' },
   { id: 'statement', n: '04', label: 'Sentencia' },
+  { id: 'manifesto', n: '05', label: 'Manifiesto' },
 ]
 
 const CARD_ACCENTS: Accent[] = ['cyan', 'orange', 'gold', 'gray', 'white']
@@ -50,7 +51,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
     <div>
       {/* Plantilla: pestañas compactas siempre visibles */}
       <div className="border-b border-line px-4 py-3">
-        <div className="grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+        <div className="grid grid-cols-5 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
           {TEMPLATES.map((t) => {
             const on = state.template === t.id
             return (
@@ -62,7 +63,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                 className={`rounded-md px-1 py-1.5 text-center transition ${on ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'}`}
               >
                 <span className="block font-mono text-[9px] tracking-[0.18em] opacity-70">{t.n}</span>
-                <span className="block text-[12px] leading-tight font-semibold">{t.label}</span>
+                <span className="block truncate text-[11px] leading-tight font-semibold">{t.label}</span>
               </button>
             )
           })}
@@ -92,7 +93,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           <TextInput value={state.tag} onChange={(tag) => update({ tag })} uppercase placeholder="DISCIPLINA · CATEGORÍA" />
         </Field>
         <div className="-mt-1 flex gap-1.5 overflow-x-auto pb-1 tc-scroll">
-          {TAG_PRESETS.map((p) => (
+          {(state.template === 'manifesto' ? MANIFESTO_TAGS : TAG_PRESETS).map((p) => (
             <button
               key={p}
               type="button"
@@ -113,9 +114,13 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
           </Field>
         </div>
-        <Field label="Párrafo" hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
-          <TextArea value={state.body} onChange={(body) => update({ body })} rows={3} />
-        </Field>
+        {state.template === 'manifesto' ? (
+          <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
+        ) : (
+          <Field label="Párrafo" hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
+            <TextArea value={state.body} onChange={(body) => update({ body })} rows={3} />
+          </Field>
+        )}
       </Section>
 
       <Section index="02" title={templateLabel} summary={summaryFor(state)}>
@@ -242,6 +247,39 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           </>
         )}
 
+        {state.template === 'manifesto' && (
+          <>
+            <Field label="Subtítulo / autor" hint="opcional">
+              <div className="flex gap-2">
+                <TextInput value={state.manifestoAuthor} onChange={(manifestoAuthor) => update({ manifestoAuthor })} uppercase placeholder="Vacío = sin firma" />
+                {state.manifestoAuthor !== DEFAULT_AUTHOR && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      update({ manifestoAuthor: DEFAULT_AUTHOR })
+                    }}
+                    className="shrink-0 rounded-md border border-line px-2 font-mono text-[9px] text-steel hover:text-cyan"
+                  >
+                    DEFAULT
+                  </button>
+                )}
+              </div>
+            </Field>
+            <Field label="Estilo" plain>
+              <Segmented<ManifestoStyle>
+                value={state.manifestoStyle}
+                onChange={(manifestoStyle) => update({ manifestoStyle })}
+                options={[
+                  { value: 'bar', label: '▌ BARRA NARANJA' },
+                  { value: 'quotes', label: '« COMILLAS »' },
+                ]}
+                size="sm"
+              />
+            </Field>
+          </>
+        )}
+
         {state.template === 'statement' && (
           <Field label="Remate / sentencia" hint="barra naranja">
             <TextArea value={state.kicker} onChange={(kicker) => update({ kicker })} rows={2} />
@@ -291,10 +329,12 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         )}
       </Section>
 
-      <Section index="04" title="Fuente científica" summary={state.citeMain} defaultOpen={false}>
-        <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
-        <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
-      </Section>
+      {state.template !== 'manifesto' && (
+        <Section index="04" title="Fuente científica" summary={state.citeMain} defaultOpen={false}>
+          <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
+          <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
+        </Section>
+      )}
 
       <Section
         index="05"
@@ -326,5 +366,7 @@ function summaryFor(s: CanvasState) {
       return `${s.chart.mode.toUpperCase()} · ${s.chart.min}–${s.chart.max} ${s.chart.unit} · zona ${s.chart.zone}`
     case 'statement':
       return s.kicker
+    case 'manifesto':
+      return s.manifestoAuthor || 'Sin firma'
   }
 }

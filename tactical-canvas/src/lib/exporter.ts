@@ -76,3 +76,10 @@ export function slugify(s: string) {
       .slice(0, 40) || 'placa'
   )
 }
+
+/** Comparte varias placas juntas (carrusel / historias) desde el celular. */
+export async function shareBlobs(items: { blob: Blob; name: string }[]) {
+  const files = items.map((i) => new File([i.blob], i.name, { type: 'image/png' }))
+  if (!navigator.canShare?.({ files })) throw new Error('No se pueden compartir varios archivos')
+  await navigator.share({ files, title: 'Secuencia táctica · Coach JP' })
+}

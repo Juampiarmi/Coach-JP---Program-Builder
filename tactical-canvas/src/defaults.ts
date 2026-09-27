@@ -1,3 +1,4 @@
+import { DEFAULT_AUTHOR } from './lib/brand'
 import type { CanvasState, ChartConfig, TemplateId } from './types'
 
 const baseChart: ChartConfig = {
@@ -35,6 +36,8 @@ export const DEFAULT_STATE: CanvasState = {
   verdict: 'MISMA GANANCIA. DISTINTO DOLOR.',
   chart: baseChart,
   kicker: 'EL RESULTADO NO SE NEGOCIA. EL MÉTODO, TAMPOCO.',
+  manifestoAuthor: DEFAULT_AUTHOR,
+  manifestoStyle: 'bar',
   bgOverlay: 65,
   floatingPlate: false,
 }
@@ -80,6 +83,13 @@ export const SAMPLES: Record<TemplateId, Partial<CanvasState>> = {
     body: 'HRV en caída sostenida y frecuencia cardíaca en reposo elevada. Bajá el volumen 48 horas y el rendimiento vuelve solo.',
     citeMain: 'KIVINIEMI Y COL., 2007 · EUROPEAN J. OF APPLIED PHYSIOLOGY',
     citeSub: 'HRV como indicador de fatiga acumulada y readiness de entrenamiento',
+  },
+  manifesto: {
+    tag: 'DISCIPLINA Y MÉTODO',
+    headlineA: 'LA MOTIVACIÓN TE HACE EMPEZAR.',
+    headlineB: 'EL SISTEMA TE HACE VOLVER.',
+    manifestoAuthor: DEFAULT_AUTHOR,
+    manifestoStyle: 'bar',
   },
 }
 
