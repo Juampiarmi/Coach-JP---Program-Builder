@@ -1,4 +1,4 @@
-import { ACCENT_HEX, BRAND, FONT_MONO } from '../../../lib/brand'
+import { ACCENT_HEX, BRAND, FONT_MONO, TEXT_SHADOW } from '../../../lib/brand'
 import type { CanvasState } from '../../../types'
 import { Paragraph } from '../Paragraph'
 
@@ -27,7 +27,7 @@ export function MetricTemplate({ state, fontFamily, scale }: Props) {
           color,
           marginLeft: -size * 0.04,
           whiteSpace: 'nowrap',
-          textShadow: `0 0 ${60 * scale}px ${color}33`,
+          textShadow: `${TEXT_SHADOW}, 0 0 ${60 * scale}px ${color}33`,
         }}
       >
         {value}

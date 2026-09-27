@@ -67,6 +67,10 @@ export interface CanvasState {
   bgOverlay: number
   floatingPlate: boolean
   /** Encuadre de la foto: zoom 100–160 %, desplazamiento -50…+50 % */
+  /** Degradé oscuro de contraste sobre la foto */
+  bgGradient: boolean
+  /** Tratamiento táctico B/N de la foto */
+  bgMono: boolean
   bgZoom: number
   bgX: number
   bgY: number
