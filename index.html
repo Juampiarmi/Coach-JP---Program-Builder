@@ -6174,33 +6174,53 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     71%      { opacity: 0.15; }
     86%      { opacity: 0.05; }
   }
-  /* directiva ("Rayos y relámpagos realistas de fondo") -- textura de
-     arcos eléctricos, SOLO CrossFit (oculta por defecto: Sports/
-     Bodybuilding no la ve). Estática (sin animación/JS) para no agregar
-     costo de scroll; opacidad calibrada dentro del rango pedido
-     (0.10-0.16). width/height:100% fuerza al SVG a cubrir el viewport
-     completo del contenedor position:fixed. */
-  .jp-tactical-lightning-bg{ display:none; }
-  /* directiva ("Matriz de semanas independientes y visibilidad de rayos
-     realistas") -- la opacidad .13 anterior era imperceptible contra el
-     fondo negro; sube al rango pedido (.28-.35) y mix-blend-mode:screen
-     hace que los trazos (celeste/naranja, ya con glow propio vía
-     <filter> en el SVG) se ADEN al fondo oscuro en vez de competir con
-     él -- más luz, cero pérdida de contraste de lectura (el texto real
-     vive en capas por encima, z-index más alto). */
+  /* directiva ("Relámpagos fotorrealistas y flash atmosférico cada 7s") --
+     capa fija SOLO CrossFit (oculta por defecto: Sports/Bodybuilding no
+     la ve), pointer-events:none en toda la capa (nunca intercepta tap/
+     scroll), overflow:hidden + inset:0 para cubrir el viewport completo
+     sin importar el largo real del scroll (position:fixed no depende de
+     la altura del documento). Textura + glow 100% CSS/SVG estático (sin
+     canvas/timers JS); el único costo dinámico es UNA animación de
+     opacity vía @keyframes (GPU-friendly, no repintan layout ni fuerzan
+     reflow), cero impacto real en el scroll. */
+  .jp-tactical-lightning-bg,.jp-tactical-lightning-glow{ display:none; }
+  /* z-index:-1 a propósito (ver comentario junto al HTML de estos dos
+     elementos): más negativo que 0/auto para nunca tapar contenido real
+     (#mainContent es "normal flow" y siempre pinta por encima de
+     cualquier z negativo), pero menos negativo que el -6 de
+     .steel-vault-bg -- así queda visible por encima del fondo liso, en
+     vez de atrapado detrás de todo dentro del stacking context de ese
+     contenedor. */
   body.cf-disc .jp-tactical-lightning-bg{
-    display:block; position:fixed; inset:0; width:100%; height:100%;
-    opacity:.32; mix-blend-mode:screen; pointer-events:none; z-index:0;
+    display:block; position:fixed; inset:0; width:100%; height:100%; overflow:hidden;
+    pointer-events:none; z-index:-1; mix-blend-mode:screen;
+    animation: tacticalLightningStrike 7s ease-in-out infinite;
   }
   body.cf-disc .jp-tactical-lightning-glow{
-    display:block; position:fixed; inset:0; pointer-events:none; z-index:0;
-    background:radial-gradient(ellipse 70% 42% at 50% 14%, rgba(56,189,248,.4), transparent 62%);
+    display:block; position:fixed; inset:0; pointer-events:none; z-index:-1;
+    background:radial-gradient(ellipse 70% 42% at 50% 14%, rgba(56,189,248,.55), transparent 62%);
     mix-blend-mode:screen;
+    animation: tacticalLightningStrike 7s ease-in-out infinite;
+  }
+  /* directiva ("Secuencia de destello cada 7 segundos") -- ciclo continuo:
+     reposo casi imperceptible (.04) el 92% del tiempo, dos micro-flashes
+     (previo + descarga principal) y una disipación gradual, simulando
+     una tormenta eléctrica lejana -- nunca encandila ni tapa el texto
+     real (que vive en capas por encima, z-index más alto). */
+  @keyframes tacticalLightningStrike{
+    0%, 92%  { opacity: .04; }
+    93%      { opacity: .6; }
+    94%      { opacity: .15; }
+    95%, 96% { opacity: .85; }
+    97%      { opacity: .25; }
+    98%, 100%{ opacity: .04; }
   }
   @media (prefers-reduced-motion: reduce) {
     .layer-lights { animation: none !important; }
     .layer-storm { display: none; }
     .jp-storm-glow{ animation: none !important; opacity: 0.06; }
+    body.cf-disc .jp-tactical-lightning-bg,
+    body.cf-disc .jp-tactical-lightning-glow{ animation: none !important; opacity: .08; }
   }
   .app-frame { position: fixed; inset: 0; z-index: 500; pointer-events: none; }
   .app-frame-edge {
@@ -7488,42 +7508,57 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   <div class="jp-storm-glow jp-storm-glow-1"></div>
   <div class="jp-storm-glow jp-storm-glow-2"></div>
   <div class="jp-storm-glow jp-storm-glow-3"></div>
-  <!-- directiva ("Rayos y relámpagos realistas de fondo") -- textura
-       procedural sutil, 100% estática (SVG inline, sin canvas/JS/timers,
-       cero costo de scroll): arcos eléctricos ramificados en opacidad
-       calibrada, sólo visibles en CrossFit (ver .jp-tactical-lightning-bg
-       más abajo, oculta por defecto y forzada visible con
-       body.cf-disc). preserveAspectRatio="xMidYMid slice" para que la
-       textura cubra cualquier alto de viewport sin distorsionarse. -->
-  <!-- directiva ("Visibilidad de rayos y relámpagos ultra-realistas") --
-       <filter> de glow (blur + merge) da a cada trazo un núcleo brillante
-       con halo difuso, mismo lenguaje "arco eléctrico" que el resto del
-       branding (ver spBolt/hdcGold más arriba), en vez de una línea
-       plana. Trazos más gruesos y con stroke-opacity alta: combinados
-       con opacity:.32 + mix-blend-mode:screen del contenedor (ver CSS),
-       ahora se distinguen claramente sin tapar el texto real (que vive
-       en capas por encima, z-index más alto). -->
-  <svg class="jp-tactical-lightning-bg" aria-hidden="true" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice">
-    <defs>
-      <filter id="jpBoltGlow" x="-60%" y="-60%" width="220%" height="220%">
-        <feGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="blur"/>
-        <feMerge>
-          <feMergeNode in="blur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
-    </defs>
-    <g filter="url(#jpBoltGlow)">
-      <path d="M70 40 L92 140 L64 150 L110 280 L86 288 L140 430" fill="none" stroke="#38bdf8" stroke-opacity=".9" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="M92 140 L150 172 L128 178 L190 236" fill="none" stroke="#38bdf8" stroke-opacity=".8" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="M330 90 L306 190 L336 198 L296 330 L322 338 L272 470" fill="none" stroke="#ff6b00" stroke-opacity=".85" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="M306 190 L252 214 L276 222 L222 268" fill="none" stroke="#ff6b00" stroke-opacity=".75" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="M60 560 L84 650 L58 658 L96 760" fill="none" stroke="#38bdf8" stroke-opacity=".85" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>
-      <path d="M230 520 L254 590 L228 600 L262 690" fill="none" stroke="#38bdf8" stroke-opacity=".75" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-    </g>
-  </svg>
-  <div class="jp-tactical-lightning-glow" aria-hidden="true"></div>
 </div>
+<!-- directiva ("Relámpagos fotorrealistas y flash atmosférico") --
+     BUG DE STACKING CONTEXT encontrado en vivo (confirmado con un div
+     rojo de diagnóstico): .steel-vault-bg tiene z-index:-6 y por eso
+     ES SU PROPIO stacking context -- ningún z-index de un hijo suyo
+     (por más alto que sea, hasta 999999 probado) puede escapar de ahí
+     y pintarse por encima de contenido normal como #mainContent o
+     .hd-wrap: queda atrapado detrás de TODO, siempre, sin importar la
+     opacidad. Por eso movió a vivir ACÁ, como hermano directo de
+     .steel-vault-bg (fuera de ese contexto atrapado), con z-index:-1 --
+     más negativo que 0 (así nunca tapa contenido real, que pinta en el
+     "normal flow" por encima de cualquier z negativo) pero MENOS
+     negativo que el -6 de .steel-vault-bg (así pinta ENCIMA de ese
+     fondo liso, quedando visible en los huecos/bordes semitransparentes
+     de las tarjetas reales). Reemplaza las líneas de neón planas por
+     arcos principales + ramificaciones finas fractales (tronco jagged +
+     offshoots delgados en los quiebres), en dos capas: un halo celeste
+     ancho y difuso (<g filter="...">, glow real vía feGaussianBlur)
+     detrás, y un núcleo blanco-azulado nítido encima -- profundidad
+     fotográfica sin canvas/JS, sólo SVG estático + la animación de
+     opacity del contenedor (ver @keyframes tacticalLightningStrike en
+     el <style>). preserveAspectRatio="xMidYMid slice" cubre cualquier
+     alto de viewport sin distorsión. -->
+<svg class="jp-tactical-lightning-bg" aria-hidden="true" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <filter id="jpBoltGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#jpBoltGlow)" opacity=".9">
+    <path d="M70 30 L96 135 L66 146 L118 275 L90 285 L150 420" fill="none" stroke="#38bdf8" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M320 70 L292 175 L326 186 L282 320 L312 330 L258 465" fill="none" stroke="#38bdf8" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M55 545 L82 640 L54 650 L94 755" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>
+  <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M70 30 L96 135 L66 146 L118 275 L90 285 L150 420" stroke="#eef8ff" stroke-width="1.8"/>
+    <path d="M96 135 L146 158 L124 164 L172 210" stroke="#cdeeff" stroke-width=".9" stroke-opacity=".7"/>
+    <path d="M118 275 L156 250 L138 296" stroke="#cdeeff" stroke-width=".8" stroke-opacity=".6"/>
+    <path d="M320 70 L292 175 L326 186 L282 320 L312 330 L258 465" stroke="#eef8ff" stroke-width="1.6"/>
+    <path d="M292 175 L246 196 L268 226" stroke="#cdeeff" stroke-width=".8" stroke-opacity=".6"/>
+    <path d="M282 320 L322 300 L306 350" stroke="#cdeeff" stroke-width=".8" stroke-opacity=".6"/>
+    <path d="M55 545 L82 640 L54 650 L94 755" stroke="#eef8ff" stroke-width="1.6"/>
+    <path d="M82 640 L120 618 L104 660" stroke="#cdeeff" stroke-width=".8" stroke-opacity=".6"/>
+  </g>
+</svg>
+<div class="jp-tactical-lightning-glow" aria-hidden="true"></div>
 <div class="app-frame" aria-hidden="true">
   <div class="app-frame-edge top"></div>
   <div class="app-frame-edge bottom"></div>
