@@ -4423,7 +4423,7 @@ function renderDay(){
        que este validador no toca -- nunca se marca un bloque de Pizarra
        como "sin dosis". */
     const sinDosis = !esBloqueCF && bloqueSinDosis(b);
-    h += '<div class="block ' + T.cls + ' ' + (w==='danger'?'bad':'') + '">' +
+    h += '<div class="block ' + T.cls + ' ' + (w==='danger'?'bad':'') + (esBloqueCF ? ' jp-cf-blockcard' : '') + '">' +
       '<div class="block-h">' +
         '<span class="pill ' + (b.tipo==='finisher'?'red':(b.tipo==='hyrox'?'teal':(b.tipo==='superset'?'gold':''))) + '">' + T.ic + ' ' + pillLb + '</span>' +
         '<input class="bt" data-bf="titulo" data-b="' + b.id + '" value="' + esc(b.titulo||'') + '" placeholder="' + (esBloqueCF ? 'Título del bloque (ej. El Cierre, Barbell Cycling)' : 'Título del bloque') + '">' +
@@ -50124,16 +50124,6 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(255,255,255,.015));
   border-bottom:1px solid var(--line-2);
 }
-#dayPanel .block > .block-h .bnum{
-  display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:5px 13px;border-radius:10px;
-  font-family:var(--ffh);font-size:14px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
-  white-space:nowrap;color:#08090B;
-}
-#dayPanel .block > .block-h .bnum.c-warm{background:linear-gradient(135deg,#FF8A3D,#E8965E);box-shadow:0 0 16px rgba(255,138,61,.4)}
-#dayPanel .block > .block-h .bnum.c-str {background:linear-gradient(135deg,#D2793F,#D2793F);box-shadow:0 0 16px rgba(210,121,63,.4)}
-#dayPanel .block > .block-h .bnum.c-met {background:linear-gradient(135deg,#FF2A85,#FF6FB1);box-shadow:0 0 16px rgba(255,42,133,.4);color:#12000A}
-#dayPanel .block > .block-h .bnum.c-acc {background:linear-gradient(135deg,#7CC5E8,#67F8FF);box-shadow:0 0 16px rgba(124,197,232,.35)}
-#dayPanel .block > .block-h .bnum.c-end {background:linear-gradient(135deg,#FF6B57,#FF9A80);box-shadow:0 0 16px rgba(255,107,87,.4)}
 #dayPanel .block > .block-h input.bt{
   flex:1 1 260px;min-width:200px;font-family:var(--ffh);font-size:18px;font-weight:700;
   letter-spacing:.02em;color:var(--txt);background:rgba(9,10,15,.6);
@@ -50149,6 +50139,36 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 #dayPanel .block > .block-h .pill{align-self:center}
 @media(max-width:720px){
   #dayPanel .block > .block-h input.bt{font-size:16px;flex:1 1 100%}
+}
+/* directiva ("Homologación táctica del Builder de CrossFit & Hyrox") --
+   tarjeta oscura sobria (Dark Navy/Slate) + borde celeste sutil,
+   reemplaza el fondo/borde neutro genérico SÓLO para bloques de Pizarra
+   CrossFit reales (.jp-cf-blockcard, ver render de d.bloques.forEach);
+   el acento izquierdo por categoría (--acc) ya lo pone pintarCabeceras(),
+   acá sólo se homologa el color de fondo/borde y la tipografía a
+   'Chakra Petch'. Sports & Bodybuilding no lleva esta clase, cero
+   cambio visual ahí. */
+#dayPanel .block.jp-cf-blockcard{
+  background:#0d131f; border:1px solid rgba(56,189,248,.2); border-radius:12px;
+}
+#dayPanel .block.jp-cf-blockcard > .block-h{
+  background:#0a0f18; border-bottom:1px solid rgba(56,189,248,.18);
+}
+#dayPanel .block.jp-cf-blockcard > .block-h .pill{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800; font-size:.78rem;
+  letter-spacing:.03em; text-transform:uppercase; padding:4px 10px;
+}
+#dayPanel .block.jp-cf-blockcard > .block-h input.bt{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700; color:#f1f5f9;
+  border:none; background:transparent; padding:9px 4px;
+}
+#dayPanel .block.jp-cf-blockcard > .block-h input.bt:focus{
+  border:none; box-shadow:none; background:rgba(56,189,248,.06); border-radius:8px;
+}
+#dayPanel .block.jp-cf-blockcard > .block-h .icon-btn:hover{ border-color:#38bdf8; color:#38bdf8; }
+#dayPanel .block.jp-cf-blockcard > .block-h .icon-btn.danger:hover{ border-color:#e0654a; color:#e0654a; }
+#dayPanel .block.jp-cf-blockcard .blk-ord{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;
 }
 /* ---------- pizarra táctica multilínea ---------- */
 .pz-box{margin-top:4px}
@@ -50738,27 +50758,23 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   /* =========================================================
      2 · MAXI-HEADER DE BLOQUES
   ========================================================= */
-  const COLOR = { warmup:'c-warm', strength:'c-str', metcon:'c-met', accessory:'c-acc', cardio:'c-acc', endurance:'c-end' };
   function maxi(){
     const panel = document.getElementById('dayPanel');
     if(!panel) return;
     const bloques = [...panel.querySelectorAll('.block')];
-    const total = bloques.length;
-    bloques.forEach((bl, i) => {
-      const ref = bl.querySelector('[data-b]');
-      const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+    bloques.forEach((bl) => {
       const h = bl.querySelector('.block-h');
       if(!h) return;
-      const cls = COLOR[(b && b.category) || 'strength'] || 'c-str';
-      let n = h.querySelector('.bnum');
-      if(!n){
-        n = document.createElement('span');
-        n.className = 'bnum ' + cls;
-        h.insertBefore(n, h.firstChild);
-      }
-      const txt = 'BLOQUE ' + (i + 1) + ' DE ' + total;
-      if(n.textContent !== txt) n.textContent = txt;
-      if(n.className !== 'bnum ' + cls) n.className = 'bnum ' + cls;
+      /* directiva ("Limpieza visual integral CrossFit & Hyrox") -- el
+         badge .bnum ("BLOQUE N DE M", gradiente fucsia/cian por
+         categoría) duplicaba exactamente la misma info que .blk-ord
+         (ver pintarCabeceras(), MÓDULO 43 más abajo), ya con la paleta
+         táctica oficial -- dos indicadores de posición compitiendo en la
+         misma fila. Se retira este, más ruidoso; si algún día viejo
+         todavía lo tiene renderizado (DOM no regenerado), se limpia acá
+         en vez de dejarlo huérfano. */
+      const viejo = h.querySelector('.bnum');
+      if(viejo) viejo.remove();
       /* área de toque y tooltips claros */
       const T = { up:'▲ Subir el bloque', down:'▼ Bajar el bloque' };
       h.querySelectorAll('[data-bmove]').forEach(x => { x.title = T[x.dataset.bmove] || x.title; });
@@ -51416,6 +51432,14 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     const bf = document.getElementById('sbFuerza'), bc = document.getElementById('sbCF');
     if(bf) bf.classList.toggle('on', !cf);
     if(bc) bc.classList.toggle('on', cf);
+    /* directiva ("Purga de elementos y módulos en desuso") -- "Plantillas
+       por Deporte" abre el selector multi-deporte heredado, con rutinas
+       base que no siguen la sintaxis canónica de Pizarra; en CrossFit el
+       flujo vigente es el Generador de Bloques de Pizarra Táctica del
+       panel del día, así que el botón se oculta en esa modalidad (Sports
+       & Bodybuilding lo sigue viendo igual que siempre). */
+    const sportTplBtn = document.getElementById('sbSportTpl');
+    if(sportTplBtn) sportTplBtn.style.display = cf ? 'none' : '';
   }
 
   /* =========================================================
@@ -53441,11 +53465,22 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     if(!b) return [];
     var out = [];
     var fam = (window.CoachCat && CoachCat.fam) ? CoachCat.fam(b.category) : '';
+    /* directiva ("Limpieza visual integral CrossFit & Hyrox") -- el conteo
+       de líneas y el badge Carga/Tiempo eran ruido inerte en un bloque de
+       Pizarra CrossFit real (b.tipo==='list', ya con formato/fase propios
+       vía b.cfFmt/b.category): se omiten sólo ahí. Sports Pizarra
+       (b.sportsPizarra) y los tipos legado siguen mostrando su resumen
+       exactamente igual que siempre. */
+    var esPizarraCFReal = b.tipo === 'list' && !b.sportsPizarra && (function(){
+      try{ var p = plan(S.activeId); return !!(p && p.meta && p.meta.mesoDisc === 'crossfit'); }catch(e){ return false; }
+    })();
     if(b.subtitulo) out.push({ t: b.subtitulo, c: '' });
     else if(b.cfFmt) out.push({ t: b.cfFmt, c: '' });
     if(b.tipo === 'list'){
-      var n = (b.items || []).length;
-      out.push({ t: n + (n === 1 ? ' línea' : ' líneas'), c: '' });
+      if(!esPizarraCFReal){
+        var n = (b.items || []).length;
+        out.push({ t: n + (n === 1 ? ' línea' : ' líneas'), c: '' });
+      }
     } else if(b.tipo === 'superset'){
       var e = (b.ejercicios || []).length;
       out.push({ t: e + ' ejercicios · ' + (b.efSets || 3) + ' rondas', c: '' });
@@ -53465,7 +53500,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
                    c: con === ids.length ? 'ok' : 'no' });
       }
     }catch(e){}
-    if(fam) out.push({ t: fam === 'carga' ? 'Carga' : 'Tiempo', c: '', sm: true });
+    if(fam && !esPizarraCFReal) out.push({ t: fam === 'carga' ? 'Carga' : 'Tiempo', c: '', sm: true });
     return out;
   }
 
