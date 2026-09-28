@@ -2960,31 +2960,40 @@ function asegurarBloquesPorSemana(d){
   return d.bloquesPorSemana;
 }
 /* memoria de módulo: qué semana está actualmente "cargada" en d.bloques
-   de todos los días (no persiste, se resetea sola al recargar la
-   página -- la primera sincronización siempre re-carga bien la semana
-   activa real, ver más abajo). */
+   de todos los días, y de QUÉ ALUMNO/A (no persiste, se resetea sola al
+   recargar la página -- la primera sincronización siempre re-carga bien
+   la semana activa real, ver más abajo). */
 let _cfSemanaCargada = null;
-/* Único punto de sincronización entre d.bloques (lo que TODO el resto
-   del archivo ya usa) y d.bloquesPorSemana (donde en verdad viven las 4
-   semanas independientes). Se llama al principio de CADA renderBuilder()
-   -- que ya corre después de absolutamente cualquier mutación en este
-   archivo (patrón save(); renderBuilder(); repetido en cientos de
-   puntos) -- así que por más que algún handler haya REASIGNADO d.bloques
-   entero (borrar con filter(), "vaciar día", un wizard que arma el día
-   de una, importar JSON...) en vez de mutarlo en el lugar, acá se
-   comitea esa reasignación de vuelta a su semana ANTES de, recién
-   después, apuntar d.bloques a la semana que esté activa ahora. */
+let _cfAthCargado = null;
+/* BUG CRÍTICO ("Matriz de semanas independientes -- contaminación entre
+   alumnos/as"): _cfSemanaCargada es memoria de MÓDULO, no por alumno/a.
+   Escenario real: coach mira a Alumna A en Semana 2 (cfWeek=1,
+   _cfSemanaCargada=1), cambia a Alumna B (CrossFit también) -- esta
+   función corre de nuevo, pero _cfSemanaCargada sigue en 1 (de A, no se
+   resetea sola). d.bloques de B, recién cargado del disco, comiteaba
+   ENTONCES sobre porSemana[1] de B (semanaAComitear = _cfSemanaCargada
+   viejo) -- pisando la Semana 2 REAL de B con lo que sea que tuviera
+   guardado en disco (típicamente su Semana 1), sin que el coach tocara
+   nada. Fix: _cfAthCargado guarda a qué alumno/a pertenece el caché: si
+   cambió el alumno/a activo, se salta el paso de "comitear d.bloques de
+   vuelta" (no hay nada que comitear -- ese d.bloques recién llegó del
+   disco y porSemana ya es la fuente de verdad real) y sólo se apunta
+   d.bloques a la semana activa, limpio. */
 function sincronizarBloquesSemana(p){
-  if(!esPlanCFActivo(p)){ _cfSemanaCargada = null; return; }
+  if(!esPlanCFActivo(p)){ _cfSemanaCargada = null; _cfAthCargado = null; return; }
   const wk = activeCfWeek();
+  const cambioDeAlumno = (_cfAthCargado !== S.activeId);
   (p.dias || []).forEach(function(d){
     const porSemana = asegurarBloquesPorSemana(d);
-    const semanaAComitear = (_cfSemanaCargada !== null) ? _cfSemanaCargada : wk;
-    porSemana[semanaAComitear] = Array.isArray(d.bloques) ? d.bloques : (porSemana[semanaAComitear] || []);
+    if(!cambioDeAlumno){
+      const semanaAComitear = (_cfSemanaCargada !== null) ? _cfSemanaCargada : wk;
+      porSemana[semanaAComitear] = Array.isArray(d.bloques) ? d.bloques : (porSemana[semanaAComitear] || []);
+    }
     if(!Array.isArray(porSemana[wk])) porSemana[wk] = [];
     d.bloques = porSemana[wk];
   });
   _cfSemanaCargada = wk;
+  _cfAthCargado = S.activeId;
 }
 /* Reordenar días (pedido de UX): mueve el día en la posición `desde` una
    posición a la izquierda (dir=-1) o derecha (dir=+1) dentro de p.dias.
@@ -6172,9 +6181,21 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
      (0.10-0.16). width/height:100% fuerza al SVG a cubrir el viewport
      completo del contenedor position:fixed. */
   .jp-tactical-lightning-bg{ display:none; }
+  /* directiva ("Matriz de semanas independientes y visibilidad de rayos
+     realistas") -- la opacidad .13 anterior era imperceptible contra el
+     fondo negro; sube al rango pedido (.28-.35) y mix-blend-mode:screen
+     hace que los trazos (celeste/naranja, ya con glow propio vía
+     <filter> en el SVG) se ADEN al fondo oscuro en vez de competir con
+     él -- más luz, cero pérdida de contraste de lectura (el texto real
+     vive en capas por encima, z-index más alto). */
   body.cf-disc .jp-tactical-lightning-bg{
     display:block; position:fixed; inset:0; width:100%; height:100%;
-    opacity:.13; filter:blur(.5px); pointer-events:none; z-index:0;
+    opacity:.32; mix-blend-mode:screen; pointer-events:none; z-index:0;
+  }
+  body.cf-disc .jp-tactical-lightning-glow{
+    display:block; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:radial-gradient(ellipse 70% 42% at 50% 14%, rgba(56,189,248,.4), transparent 62%);
+    mix-blend-mode:screen;
   }
   @media (prefers-reduced-motion: reduce) {
     .layer-lights { animation: none !important; }
@@ -7474,13 +7495,34 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
        más abajo, oculta por defecto y forzada visible con
        body.cf-disc). preserveAspectRatio="xMidYMid slice" para que la
        textura cubra cualquier alto de viewport sin distorsionarse. -->
+  <!-- directiva ("Visibilidad de rayos y relámpagos ultra-realistas") --
+       <filter> de glow (blur + merge) da a cada trazo un núcleo brillante
+       con halo difuso, mismo lenguaje "arco eléctrico" que el resto del
+       branding (ver spBolt/hdcGold más arriba), en vez de una línea
+       plana. Trazos más gruesos y con stroke-opacity alta: combinados
+       con opacity:.32 + mix-blend-mode:screen del contenedor (ver CSS),
+       ahora se distinguen claramente sin tapar el texto real (que vive
+       en capas por encima, z-index más alto). -->
   <svg class="jp-tactical-lightning-bg" aria-hidden="true" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice">
-    <path d="M70 40 L92 140 L64 150 L110 280 L86 288 L140 430" fill="none" stroke="#38bdf8" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
-    <path d="M92 140 L150 172 L128 178 L190 236" fill="none" stroke="#38bdf8" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-    <path d="M330 90 L306 190 L336 198 L296 330 L322 338 L272 470" fill="none" stroke="#ff6b00" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
-    <path d="M306 190 L252 214 L276 222 L222 268" fill="none" stroke="#ff6b00" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-    <path d="M60 560 L84 650 L58 658 L96 760" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+    <defs>
+      <filter id="jpBoltGlow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="3.2" result="blur"/>
+        <feMerge>
+          <feMergeNode in="blur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <g filter="url(#jpBoltGlow)">
+      <path d="M70 40 L92 140 L64 150 L110 280 L86 288 L140 430" fill="none" stroke="#38bdf8" stroke-opacity=".9" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M92 140 L150 172 L128 178 L190 236" fill="none" stroke="#38bdf8" stroke-opacity=".8" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M330 90 L306 190 L336 198 L296 330 L322 338 L272 470" fill="none" stroke="#ff6b00" stroke-opacity=".85" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M306 190 L252 214 L276 222 L222 268" fill="none" stroke="#ff6b00" stroke-opacity=".75" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M60 560 L84 650 L58 658 L96 760" fill="none" stroke="#38bdf8" stroke-opacity=".85" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M230 520 L254 590 L228 600 L262 690" fill="none" stroke="#38bdf8" stroke-opacity=".75" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+    </g>
   </svg>
+  <div class="jp-tactical-lightning-glow" aria-hidden="true"></div>
 </div>
 <div class="app-frame" aria-hidden="true">
   <div class="app-frame-edge top"></div>
