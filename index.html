@@ -6174,53 +6174,26 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     71%      { opacity: 0.15; }
     86%      { opacity: 0.05; }
   }
-  /* directiva ("Relámpagos fotorrealistas y flash atmosférico cada 7s") --
-     capa fija SOLO CrossFit (oculta por defecto: Sports/Bodybuilding no
-     la ve), pointer-events:none en toda la capa (nunca intercepta tap/
-     scroll), overflow:hidden + inset:0 para cubrir el viewport completo
-     sin importar el largo real del scroll (position:fixed no depende de
-     la altura del documento). Textura + glow 100% CSS/SVG estático (sin
-     canvas/timers JS); el único costo dinámico es UNA animación de
-     opacity vía @keyframes (GPU-friendly, no repintan layout ni fuerzan
-     reflow), cero impacto real en el scroll. */
-  .jp-tactical-lightning-bg,.jp-tactical-lightning-glow{ display:none; }
-  /* z-index:-1 a propósito (ver comentario junto al HTML de estos dos
-     elementos): más negativo que 0/auto para nunca tapar contenido real
-     (#mainContent es "normal flow" y siempre pinta por encima de
-     cualquier z negativo), pero menos negativo que el -6 de
-     .steel-vault-bg -- así queda visible por encima del fondo liso, en
-     vez de atrapado detrás de todo dentro del stacking context de ese
-     contenedor. */
-  body.cf-disc .jp-tactical-lightning-bg{
-    display:block; position:fixed; inset:0; width:100%; height:100%; overflow:hidden;
-    pointer-events:none; z-index:-1; mix-blend-mode:screen;
-    animation: tacticalLightningStrike 7s ease-in-out infinite;
-  }
-  body.cf-disc .jp-tactical-lightning-glow{
-    display:block; position:fixed; inset:0; pointer-events:none; z-index:-1;
-    background:radial-gradient(ellipse 70% 42% at 50% 14%, rgba(56,189,248,.55), transparent 62%);
-    mix-blend-mode:screen;
-    animation: tacticalLightningStrike 7s ease-in-out infinite;
-  }
-  /* directiva ("Secuencia de destello cada 7 segundos") -- ciclo continuo:
-     reposo casi imperceptible (.04) el 92% del tiempo, dos micro-flashes
-     (previo + descarga principal) y una disipación gradual, simulando
-     una tormenta eléctrica lejana -- nunca encandila ni tapa el texto
-     real (que vive en capas por encima, z-index más alto). */
-  @keyframes tacticalLightningStrike{
-    0%, 92%  { opacity: .04; }
-    93%      { opacity: .6; }
-    94%      { opacity: .15; }
-    95%, 96% { opacity: .85; }
-    97%      { opacity: .25; }
-    98%, 100%{ opacity: .04; }
+  /* directiva ("Motor procedural de relámpagos fractales y flash
+     realista") -- canvas fijo SOLO CrossFit (oculto por defecto: Sports/
+     Bodybuilding no lo ve), pointer-events:none (nunca intercepta tap/
+     scroll), inset:0 cubre el viewport completo sin depender del largo
+     real del scroll (position:fixed). z-index:-1 por el mismo motivo que
+     el resto de esta capa (ver comentario junto al elemento canvas en el
+     HTML): encima del fondo liso de .steel-vault-bg (-6), siempre detrás
+     de cualquier contenido real. El motor (jpLightningStorm(), ver el
+     script más abajo) sólo dibuja durante la ventana activa del impacto
+     (~280ms cada ~6-8s) -- el resto del tiempo no hay rAF corriendo,
+     cero costo de CPU/GPU en reposo. */
+  .jp-lightning-storm{ display:none; }
+  body.cf-disc .jp-lightning-storm{
+    display:block; position:fixed; inset:0; width:100%; height:100%;
+    pointer-events:none; z-index:-1;
   }
   @media (prefers-reduced-motion: reduce) {
     .layer-lights { animation: none !important; }
     .layer-storm { display: none; }
     .jp-storm-glow{ animation: none !important; opacity: 0.06; }
-    body.cf-disc .jp-tactical-lightning-bg,
-    body.cf-disc .jp-tactical-lightning-glow{ animation: none !important; opacity: .08; }
   }
   .app-frame { position: fixed; inset: 0; z-index: 500; pointer-events: none; }
   .app-frame-edge {
@@ -7509,56 +7482,18 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   <div class="jp-storm-glow jp-storm-glow-2"></div>
   <div class="jp-storm-glow jp-storm-glow-3"></div>
 </div>
-<!-- directiva ("Relámpagos fotorrealistas y flash atmosférico") --
-     BUG DE STACKING CONTEXT encontrado en vivo (confirmado con un div
-     rojo de diagnóstico): .steel-vault-bg tiene z-index:-6 y por eso
-     ES SU PROPIO stacking context -- ningún z-index de un hijo suyo
-     (por más alto que sea, hasta 999999 probado) puede escapar de ahí
-     y pintarse por encima de contenido normal como #mainContent o
-     .hd-wrap: queda atrapado detrás de TODO, siempre, sin importar la
-     opacidad. Por eso movió a vivir ACÁ, como hermano directo de
-     .steel-vault-bg (fuera de ese contexto atrapado), con z-index:-1 --
-     más negativo que 0 (así nunca tapa contenido real, que pinta en el
-     "normal flow" por encima de cualquier z negativo) pero MENOS
-     negativo que el -6 de .steel-vault-bg (así pinta ENCIMA de ese
-     fondo liso, quedando visible en los huecos/bordes semitransparentes
-     de las tarjetas reales). Reemplaza las líneas de neón planas por
-     arcos principales + ramificaciones finas fractales (tronco jagged +
-     offshoots delgados en los quiebres), en dos capas: un halo celeste
-     ancho y difuso (<g filter="...">, glow real vía feGaussianBlur)
-     detrás, y un núcleo blanco-azulado nítido encima -- profundidad
-     fotográfica sin canvas/JS, sólo SVG estático + la animación de
-     opacity del contenedor (ver @keyframes tacticalLightningStrike en
-     el <style>). preserveAspectRatio="xMidYMid slice" cubre cualquier
-     alto de viewport sin distorsión. -->
-<svg class="jp-tactical-lightning-bg" aria-hidden="true" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice">
-  <defs>
-    <filter id="jpBoltGlow" x="-80%" y="-80%" width="260%" height="260%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-  <g filter="url(#jpBoltGlow)" opacity=".9">
-    <path d="M70 30 L96 135 L66 146 L118 275 L90 285 L150 420" fill="none" stroke="#38bdf8" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
-    <path d="M320 70 L292 175 L326 186 L282 320 L312 330 L258 465" fill="none" stroke="#38bdf8" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
-    <path d="M55 545 L82 640 L54 650 L94 755" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
-  </g>
-  <g fill="none" stroke-linejoin="round" stroke-linecap="round">
-    <path d="M70 30 L96 135 L66 146 L118 275 L90 285 L150 420" stroke="#eef8ff" stroke-width="1.8"/>
-    <path d="M96 135 L146 158 L124 164 L172 210" stroke="#cdeeff" stroke-width=".9" stroke-opacity=".7"/>
-    <path d="M118 275 L156 250 L138 296" stroke="#cdeeff" stroke-width=".8" stroke-opacity=".6"/>
-    <path d="M320 70 L292 175 L326 186 L282 320 L312 330 L258 465" stroke="#eef8ff" stroke-width="1.6"/>
-    <path d="M292 175 L246 196 L268 226" stroke="#cdeeff" stroke-width=".8" stroke-opacity=".6"/>
-    <path d="M282 320 L322 300 L306 350" stroke="#cdeeff" stroke-width=".8" stroke-opacity=".6"/>
-    <path d="M55 545 L82 640 L54 650 L94 755" stroke="#eef8ff" stroke-width="1.6"/>
-    <path d="M82 640 L120 618 L104 660" stroke="#cdeeff" stroke-width=".8" stroke-opacity=".6"/>
-  </g>
-</svg>
-<div class="jp-tactical-lightning-glow" aria-hidden="true"></div>
+<!-- directiva ("Motor procedural de relámpagos fractales y flash
+     realista") -- reemplaza el SVG estático (líneas poligonales fijas,
+     "tubos de neón") por un <canvas> con un generador procedural real:
+     cada descarga es una ruta estocástica nueva (segmentos con
+     desviación angular aleatoria + ramas finas que brotan y se
+     desvanecen), dibujada sólo durante la ventana activa del impacto
+     (~280ms) -- el resto del ciclo (~6-8s) el canvas queda 100% inactivo
+     (sin rAF, sin redibujar nada), cero costo de CPU/GPU en reposo. Vive
+     en el mismo lugar (hermano de .steel-vault-bg, fuera de su stacking
+     context atrapado en z:-6 -- ver jpLightningStorm() más abajo para el
+     motor y el z-index:-1 en el <style>). -->
+<canvas class="jp-lightning-storm" id="jp-lightning-canvas" aria-hidden="true"></canvas>
 <div class="app-frame" aria-hidden="true">
   <div class="app-frame-edge top"></div>
   <div class="app-frame-edge bottom"></div>
@@ -11200,6 +11135,180 @@ window.addEventListener('scroll', function(){
     if(document.hidden){
       clearTimeout(flashTimer); clearTimeout(frameTimer);
     } else if(!flashTimer){
+      scheduleNext();
+    }
+  });
+  scheduleNext();
+})();
+/* =========================================================
+   MOTOR PROCEDURAL DE RELÁMPAGOS FRACTALES (directiva "Motor procedural
+   de relámpagos fractales y flash realista")
+   Reemplaza el SVG estático anterior (líneas poligonales fijas) por un
+   <canvas> con un generador procedural real: cada descarga es una ruta
+   estocástica nueva -- tronco con desviación angular aleatoria por
+   segmento + ramas finas que brotan a los costados y se apagan antes de
+   llegar al final, nunca la misma silueta dos veces -- dibujada SOLO
+   durante la ventana activa del impacto (~280ms). El resto del ciclo
+   (~6-8s, 7s ± 1s de variación orgánica) el canvas queda 100% inerte:
+   sin rAF corriendo, sin redibujar nada, cero costo de CPU/GPU en
+   reposo (a diferencia de buildElectricStorm() de arriba, que SÍ
+   flasheaba cada 1.3-3.9s con un timer recursivo indefinido -- por eso
+   quedó apagado). Sólo corre en CrossFit (mismo gate que el resto de
+   esta capa atmosférica). */
+(function jpLightningStorm(){
+  if(window.COACH_DISCIPLINA === 'sports') return;
+  const canvas = document.getElementById('jp-lightning-canvas');
+  if(!canvas) return;
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const ctx = canvas.getContext('2d');
+  if(!ctx) return;
+
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let w = 0, h = 0, resizeTimer = null;
+  function resize(){
+    w = window.innerWidth; h = window.innerHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', function(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 150);
+  }, { passive: true });
+  window.addEventListener('orientationchange', resize, { passive: true });
+
+  /* tronco: segmentos con desviación angular aleatoria acotada (nunca
+     se dobla más de ~49° respecto de la vertical) desde el origen hasta
+     endY. Rama: mismo principio pero más corta, más fina, y con un
+     "shrink" progresivo que la apaga antes de terminar. */
+  function buildTrunk(x0, y0, endY){
+    const pts = [{ x: x0, y: y0 }];
+    let x = x0, y = y0, angle = Math.PI / 2;
+    const segLen = 16 + Math.random() * 8;
+    let guard = 0;
+    while(y < endY && guard++ < 200){
+      angle += (Math.random() - 0.5) * 0.85;
+      angle = Math.max(Math.PI / 2 - 0.85, Math.min(Math.PI / 2 + 0.85, angle));
+      x += Math.cos(angle) * segLen;
+      y += Math.sin(angle) * segLen;
+      pts.push({ x: x, y: y });
+    }
+    return pts;
+  }
+  function buildBranch(x0, y0, angle0, steps){
+    const pts = [{ x: x0, y: y0 }];
+    let x = x0, y = y0, angle = angle0;
+    const segLen = 9 + Math.random() * 6;
+    for(let i = 0; i < steps; i++){
+      angle += (Math.random() - 0.5) * 0.7;
+      const shrink = 1 - (i / steps) * 0.35;
+      x += Math.cos(angle) * segLen * shrink;
+      y += Math.sin(angle) * segLen * shrink;
+      pts.push({ x: x, y: y });
+    }
+    return pts;
+  }
+  function buildBolt(){
+    const x0 = w * (0.08 + Math.random() * 0.84);
+    const endY = h * (0.55 + Math.random() * 0.4);
+    const trunk = buildTrunk(x0, -h * 0.05, endY);
+    const branches = [];
+    for(let i = 2; i < trunk.length - 2; i++){
+      if(Math.random() < 0.16){
+        const p = trunk[i];
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        const angle = Math.PI / 2 + dir * (0.5 + Math.random() * 0.6);
+        branches.push(buildBranch(p.x, p.y, angle, 3 + Math.floor(Math.random() * 4)));
+      }
+    }
+    return { trunk: trunk, branches: branches };
+  }
+  function strokePolyline(pts, opts){
+    if(pts.length < 2) return;
+    ctx.save();
+    ctx.globalAlpha = opts.alpha;
+    ctx.strokeStyle = opts.color;
+    ctx.lineWidth = opts.width;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = opts.glowColor;
+    ctx.shadowBlur = opts.glowBlur;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for(let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+  /* destello ambiental: gradiente radial celeste tenue, centrado arriba
+     (mismo cuadrante de donde "cae" el rayo) -- ilumina la escena sin
+     tapar texto (siempre detrás, z-index:-1 del canvas). */
+  function drawAmbient(alpha){
+    if(alpha <= 0) return;
+    const g = ctx.createRadialGradient(w * 0.5, h * 0.12, 0, w * 0.5, h * 0.65, Math.max(w, h) * 0.75);
+    g.addColorStop(0, 'rgba(56,189,248,' + alpha.toFixed(3) + ')');
+    g.addColorStop(1, 'rgba(56,189,248,0)');
+    ctx.save();
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+  function drawBolt(bolt, boltAlpha, thin){
+    const coreWidth = thin ? 1.4 : (2.5 + Math.random());
+    strokePolyline(bolt.trunk, { alpha: boltAlpha, color: '#ffffff', width: coreWidth, glowColor: 'rgba(56,189,248,.85)', glowBlur: 12 });
+    bolt.branches.forEach(function(b){
+      strokePolyline(b, { alpha: boltAlpha * 0.62, color: '#bfe9ff', width: thin ? 0.8 : (1 + Math.random() * 0.5), glowColor: 'rgba(56,189,248,.6)', glowBlur: 8 });
+    });
+  }
+
+  let raf = null, currentBolt = null, strikeStart = null, scheduleTimer = null;
+  /* directiva ("Secuencia de impacto") -- ventana activa en ms,
+     acumulados: flash ambiental (40) -> rayo principal (+60=100) ->
+     réplica/afterglow (+30=130) -> disipación a negro (+150=280). */
+  var T_FLASH1 = 40, T_MAIN = 100, T_AFTER = 130, T_FADE = 280;
+  function tick(now){
+    const t = now - strikeStart;
+    ctx.clearRect(0, 0, w, h);
+    if(t <= T_FLASH1){
+      drawAmbient(0.15 * (t / T_FLASH1));
+    } else if(t <= T_MAIN){
+      drawAmbient(0.85);
+      drawBolt(currentBolt, 1, false);
+    } else if(t <= T_AFTER){
+      drawAmbient(0.3);
+      drawBolt(currentBolt, 0.55, true);
+    } else if(t <= T_FADE){
+      const f = 1 - (t - T_AFTER) / (T_FADE - T_AFTER);
+      drawAmbient(0.3 * f);
+      drawBolt(currentBolt, 0.55 * f, true);
+    } else {
+      ctx.clearRect(0, 0, w, h);
+      currentBolt = null; raf = null;
+      scheduleNext();
+      return;
+    }
+    raf = requestAnimationFrame(tick);
+  }
+  function runStrike(){
+    scheduleTimer = null;
+    if(document.hidden){ scheduleNext(); return; }
+    resize();
+    currentBolt = buildBolt();
+    strikeStart = performance.now();
+    raf = requestAnimationFrame(tick);
+  }
+  function scheduleNext(){
+    const delay = 6000 + Math.random() * 2000; /* 7s ± 1s -> ciclo de 6-8s */
+    scheduleTimer = setTimeout(runStrike, delay);
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden){
+      clearTimeout(scheduleTimer); scheduleTimer = null;
+      if(raf) cancelAnimationFrame(raf);
+      raf = null; currentBolt = null;
+      ctx.clearRect(0, 0, w, h);
+    } else if(!scheduleTimer && !raf){
       scheduleNext();
     }
   });
