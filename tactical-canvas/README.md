@@ -22,7 +22,7 @@ funciona sin conexión.
   Manifiesto / Cita Táctica (frase gigante con barra naranja o comillas militares, firma
   opcional y sin cita académica).
 - **Generador con IA (BYOK)**: con tu propia API Key de OpenAI (gpt-4o / gpt-4o-mini),
-  Anthropic (Claude) o Google Gemini (gemini-3.8-flash por defecto o gemini-3.8-flash-lite; si 3.8 Flash está saturado reintenta al instante con Flash-Lite y, si sigue saturado, espera 2 s y reintenta hasta 2 veces), guardada sólo en tu navegador. Escribís el tema, podés
+  Anthropic (Claude) o Google Gemini (al guardar la key consulta ListModels y ofrece sólo los modelos habilitados para esa key, eligiendo el Flash más moderno; si Google tiene alta demanda reintenta el mismo modelo a los 2,5 y 4 s), guardada sólo en tu navegador. Escribís el tema, podés
   marcar un enfoque (`SPORTS & BODYBUILDING` prioriza biomecánica e hipertrofia;
   `CROSSFIT & HYROX` prioriza bioenergética y pacing), elegís Auto, 1 placa, Historias (3) o
   Carrusel (4-5) y la IA completa todos los campos y además escribe el caption de Instagram
@@ -67,7 +67,9 @@ src/
 ├── types.ts
 ├── lib/
 │   ├── brand.ts                paleta, fuentes, formatos, presets de tags
-│   ├── ai.ts                   prompt de sistema, llamadas a OpenAI/Anthropic, validación del JSON
+│   ├── ai.ts                   prompt de sistema, llamadas a OpenAI/Anthropic/Gemini, validación del JSON
+│   ├── geminiModels.ts         detección de modelos Gemini habilitados (ListModels)
+│   ├── safeJson.ts             parser resiliente del JSON de la IA (markdown, comillas, comas)
 │   ├── chart.ts                parseo de series, normalización, curvas suaves
 │   └── exporter.ts             html-to-image 3x, descarga, Web Share
 ├── hooks/                      usePersistentState, useFitScale, useMediaQuery

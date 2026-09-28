@@ -1,6 +1,8 @@
 import { DEFAULT_STATE } from '../defaults'
 import type { Accent, CanvasState, ChartMode, CurveShape, TemplateId } from '../types'
 import { DEFAULT_AUTHOR } from './brand'
+import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
+import { JsonRepairError, safeParseJson } from './safeJson'
 
 export type AiProvider = 'openai' | 'anthropic' | 'gemini'
 export type Discipline = 'general' | 'sports' | 'crossfit'
@@ -10,6 +12,9 @@ export interface AiSettings {
   provider: AiProvider
   keys: Record<AiProvider, string>
   models: Record<AiProvider, string>
+  /** Modelos de Gemini detectados con ListModels para la key guardada */
+  geminiModels?: GeminiModel[]
+  geminiCheckedAt?: number
 }
 
 export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> = {
@@ -24,17 +29,11 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
   ],
   gemini: [
     { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · recomendado' },
-    { id: 'gemini-3.8-flash-lite', label: 'Gemini 3.8 Flash-Lite · canal rápido / fallback' },
   ],
 }
 
-/** Modelo de Gemini por defecto. */
+/** Modelo de Gemini por defecto hasta detectar los habilitados para la key (ListModels). */
 export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash'
-/** Canal rápido: entra de inmediato si 3.8 Flash está saturado. */
-export const GEMINI_LITE_MODEL = 'gemini-3.8-flash-lite'
-/** Generaciones que Google ya no habilita para usuarios nuevos (1.x, 2.x y alias sin versión): se migran solas a 3.8. */
-export const isRetiredGemini = (model: string) => /^gemini-(1|2)\.\d/.test(model.trim()) || /^gemini-pro(-vision)?$/.test(model.trim())
-
 export const PROVIDER_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', anthropic: 'Anthropic', gemini: 'Gemini' }
 export const KEY_PLACEHOLDER: Record<AiProvider, string> = { openai: 'sk-...', anthropic: 'sk-ant-...', gemini: 'AIzaSy...' }
 
@@ -90,7 +89,7 @@ REGLAS DE CONTENIDO:
 - citation: estudio REAL y verificable con formato "APELLIDO Y COL., AÑO · REVISTA" en mayúsculas. description: de qué trata ese estudio en una línea. Si no estás seguro de que el estudio exista tal cual, dejá ambos vacíos (""). Nunca inventes citas. Vacíos en manifesto.
 - Los números deben ser coherentes con la literatura. No inventes precisión que no existe.
 
-FORMATO DE SALIDA: respondé ÚNICAMENTE con un objeto JSON válido, sin markdown ni texto alrededor, con esta forma exacta:
+FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloques de código markdown (\`\`\`json), sin saltos de línea sin escapar dentro de strings y sin comillas dobles internas sin escapar (\\"). Dentro de los textos usá comillas angulares « » en lugar de comillas dobles. Nada de texto antes ni después del JSON. Forma exacta:
 {
   "format": "single" | "stories" | "carousel",
   "caption": string,
@@ -121,7 +120,7 @@ Variá las plantillas dentro de una secuencia: no repitas la misma más de dos v
 1. Primera línea: gancho de una oración que frene el scroll (sin repetir literal el titular).
 2. 2 o 3 párrafos cortos (1 a 3 oraciones cada uno) que expliquen el porqué fisiológico, con el mismo tono táctico y autoritario.
 3. Micro-bullets (3 a 5 líneas que empiezan con "▸ ") con los puntos accionables.
-4. Llamado a la acción con PALABRA CLAVE en mayúsculas, por ejemplo: Comentá "RIR" y te mando la guía completa.
+4. Llamado a la acción con PALABRA CLAVE en mayúsculas entre comillas angulares, por ejemplo: Comentá «RIR» y te mando la guía completa.
 5. Cierre con 3 a 5 hashtags de nicho en español en la última línea.
 Separá los bloques con una línea en blanco (usá \n\n dentro del string). Máximo 1800 caracteres. Sin emojis.`
 
@@ -154,6 +153,7 @@ async function callOpenAI(key: string, model: string, user: string, signal?: Abo
     }),
   })
   const json = await res.json().catch(() => ({}))
+  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Rate limit')
   if (!res.ok) throw new Error(json?.error?.message ?? `OpenAI respondió ${res.status}`)
   return String(json?.choices?.[0]?.message?.content ?? '')
 }
@@ -177,6 +177,7 @@ async function callAnthropic(key: string, model: string, user: string, signal?: 
     }),
   })
   const json = await res.json().catch(() => ({}))
+  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Rate limit')
   if (!res.ok) throw new Error(json?.error?.message ?? `Anthropic respondió ${res.status}`)
   const blocks: { type: string; text?: string }[] = json?.content ?? []
   return blocks
@@ -192,6 +193,86 @@ class HttpError extends Error {
   ) {
     super(message)
   }
+}
+
+/** Tipo de límite detrás de un 429. */
+export type QuotaKind = 'minute' | 'daily' | 'zero' | 'unknown'
+
+/** Cuota agotada (429): tipo de límite, modelo y segundos sugeridos de espera. */
+export class RateLimitError extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterSec: number,
+    readonly kind: QuotaKind = 'unknown',
+    readonly model = '',
+  ) {
+    super(message)
+  }
+}
+
+const DEFAULT_RATE_WAIT_SEC = 30
+
+type QuotaDetail = { retryDelay?: string; violations?: { quotaId?: string; quotaMetric?: string; quotaValue?: string }[] }
+
+/**
+ * Segundos de espera que indica el proveedor ante un 429:
+ * RetryInfo.retryDelay ("31s") de Google, "retry in 31.2s" en el mensaje o el header Retry-After.
+ */
+function retryAfterSeconds(res: Response, details: QuotaDetail[], message: string) {
+  const fromDetails = details.map((d) => d?.retryDelay).find(Boolean)
+  const candidates = [
+    fromDetails && parseFloat(fromDetails),
+    parseFloat(message.match(/retry (?:in|after) ([\d.]+)\s*s/i)?.[1] ?? ''),
+    parseFloat(res.headers.get('retry-after') ?? ''),
+  ]
+  const sec = candidates.find((n): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0)
+  return Math.min(600, Math.ceil(sec ?? DEFAULT_RATE_WAIT_SEC))
+}
+
+/**
+ * Clasifica el 429 con QuotaFailure.violations[].quotaId de Google
+ * (…PerMinute… = RPM, …PerDay… = RPD) y, si no viene, con el texto del mensaje.
+ * "limit: 0" = el modelo no tiene cuota gratuita para esta key.
+ */
+function quotaKind(details: QuotaDetail[], message: string): QuotaKind {
+  const violations = details.flatMap((d) => d?.violations ?? [])
+  const ids = violations.map((v) => `${v.quotaId ?? ''} ${v.quotaMetric ?? ''}`).join(' ')
+  const text = `${ids} ${message}`
+  if (/limit:\s*0\b/i.test(message) || violations.some((v) => v.quotaValue === '0')) return 'zero'
+  if (/per ?day|daily|PerDay/i.test(text)) return 'daily'
+  if (/per ?minute|PerMinute|rpm|tpm/i.test(text)) return 'minute'
+  return 'unknown'
+}
+
+function rateLimitError(res: Response, json: unknown, message: string, model = '') {
+  const details = ((json as { error?: { details?: QuotaDetail[] } })?.error?.details ?? []) as QuotaDetail[]
+  return new RateLimitError(message, retryAfterSeconds(res, details, message), quotaKind(details, message), model)
+}
+
+/**
+ * Memoria de la sesión: modelos con cuota agotada. Los diarios / sin cuota se saltean hasta
+ * recargar la página o forzar el reintento; los por-minuto, hasta que vence su espera.
+ */
+const exhausted = new Map<string, { kind: QuotaKind; until: number }>()
+
+function markExhausted(err: RateLimitError) {
+  const long = err.kind === 'daily' || err.kind === 'zero'
+  exhausted.set(err.model, { kind: err.kind, until: long ? Infinity : Date.now() + err.retryAfterSec * 1000 })
+}
+
+function isExhausted(model: string) {
+  const e = exhausted.get(model)
+  if (!e) return false
+  if (e.until <= Date.now()) {
+    exhausted.delete(model)
+    return false
+  }
+  return true
+}
+
+/** REINTENTAR FORZADO: olvida los modelos marcados como agotados. */
+export function resetQuotaMemory() {
+  exhausted.clear()
 }
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -226,6 +307,7 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
     }),
   })
   const json = await res.json().catch(() => ({}))
+  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Quota exceeded', model)
   if (!res.ok) throw new HttpError(json?.error?.message ?? `Gemini respondió ${res.status}`, res.status)
   const cand = json?.candidates?.[0]
   if (!cand?.content) throw new Error(`Gemini no devolvió contenido${cand?.finishReason ? ` (${cand.finishReason})` : ''}.`)
@@ -243,44 +325,100 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
 
 export type StatusFn = (message: string | null) => void
 
-export const OVERLOAD_FINAL_MSG = 'Servidores de Google temporalmente saturados. Aguarda unos segundos y reintenta.'
-const OVERLOAD_RETRIES = 2
-const OVERLOAD_WAIT_MS = 2000
+export const OVERLOAD_FINAL_MSG =
+  'El servidor de Google está recibiendo alto tráfico en este instante. Esperá 15-30 segundos y volvé a presionar Generar.'
+/** Esperas antes de cada reintento con el MISMO modelo (3 intentos en total). */
+const OVERLOAD_WAITS_MS = [2500, 4000]
 
-export const OVERLOAD_LITE_MSG = '[ Servidor de Google saturado · Reintentando con canal rápido (3.8 Flash-Lite)... ]'
+/** Modelo inexistente o no habilitado para esta key. */
+function isModelGone(err: unknown) {
+  if (!(err instanceof HttpError)) return false
+  return err.status === 404 || err.status === 410 || /not found|no longer available|not supported/i.test(err.message)
+}
+
+export type ModelChangeFn = (model: string, detected: GeminiModel[]) => void
 
 /**
  * Llamada a Gemini:
- * - Si gemini-3.8-flash está saturado (503 / "high demand"), reintenta DE INMEDIATO con
- *   gemini-3.8-flash-lite.
- * - Si el canal que queda también está saturado, espera 2 s y lo reintenta hasta 2 veces.
+ * - Saturación (503 / "experiencing high demand"): espera 2,5 s y reintenta el mismo modelo;
+ *   luego espera 4 s y reintenta. Tras 3 intentos, mensaje claro para el usuario.
+ * - Modelo inexistente para esta key: consulta ListModels una vez, elige el Flash más
+ *   moderno disponible, lo guarda y reintenta con él.
  */
-async function callGemini(key: string, model: string, user: string, signal?: AbortSignal, onStatus?: StatusFn) {
+async function callGemini(
+  key: string,
+  model: string,
+  user: string,
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+  onModelChange?: ModelChangeFn,
+  known: GeminiModel[] = [],
+) {
   // Un solo turno con el prompt completo (sistema + pedido), sin espacios redundantes.
   const prompt = `${COMPACT_SYSTEM_PROMPT}\n\n${user}`
-  const selected = !model.trim() || isRetiredGemini(model) ? GEMINI_DEFAULT_MODEL : model.trim()
+  const selected = model.trim() || GEMINI_DEFAULT_MODEL
   let current = selected
-  let waits = 0
+  let retries = 0
+  let redetected = false
+  let switches = 0
+  let candidates = known
+  let lastQuota: RateLimitError | null = null
+
+  /** Siguiente modelo habilitado para la key cuya cuota no esté agotada (cada modelo tiene cuota propia). */
+  const nextModel = async () => {
+    if (!candidates.length) candidates = await listGeminiModels(key, signal).catch(() => [] as GeminiModel[])
+    return candidates.find((m) => m.id !== current && !isExhausted(m.id))?.id ?? null
+  }
+
+  // Si el modelo elegido ya agotó su cuota en esta sesión, se arranca directo con otro.
+  if (isExhausted(current)) {
+    const alt = await nextModel()
+    if (alt) current = alt
+  }
+
   for (;;) {
     try {
       const text = await requestGemini(key, current, prompt, signal)
-      onStatus?.(current !== selected ? `Generado con ${current} (canal rápido).` : null)
+      onStatus?.(current !== selected ? `Generado con ${current} (la cuota de ${selected} está agotada).` : null)
       return text
     } catch (err) {
-      if (isOverloaded(err)) {
-        if (current === GEMINI_DEFAULT_MODEL) {
-          onStatus?.(OVERLOAD_LITE_MSG)
-          current = GEMINI_LITE_MODEL
+      if (err instanceof RateLimitError) {
+        // 429: se marca el modelo y se prueba otro habilitado (hasta 3 cambios). Recién si
+        // todos están agotados se informa al usuario, con el tipo de límite (RPM / RPD).
+        markExhausted(err)
+        lastQuota = err
+        const alt = switches < 3 ? await nextModel() : null
+        if (alt) {
+          switches++
+          onStatus?.(`[ Cuota de ${current} agotada · probando ${alt}... ]`)
+          current = alt
           continue
         }
-        if (waits < OVERLOAD_RETRIES) {
-          waits++
-          onStatus?.(`[ Servidor de Google saturado · Reintentando ${waits}/${OVERLOAD_RETRIES}... ]`)
-          await sleep(OVERLOAD_WAIT_MS, signal)
+        onStatus?.(null)
+        throw lastQuota
+      }
+      if (isOverloaded(err)) {
+        if (retries < OVERLOAD_WAITS_MS.length) {
+          const wait = OVERLOAD_WAITS_MS[retries]
+          retries++
+          onStatus?.(`[ Servidor de Google saturado · Reintento ${retries}/${OVERLOAD_WAITS_MS.length} en ${wait / 1000} s... ]`)
+          await sleep(wait, signal)
           continue
         }
         onStatus?.(null)
         throw new Error(OVERLOAD_FINAL_MSG)
+      }
+      if (isModelGone(err) && !redetected) {
+        redetected = true
+        onStatus?.('[ Modelo no disponible para tu key · Detectando modelos habilitados... ]')
+        const detected = await listGeminiModels(key, signal).catch(() => [] as GeminiModel[])
+        if (detected.length) candidates = detected
+        const next = preferredGeminiModel(detected.filter((m) => !isExhausted(m.id)))
+        if (next && next !== current) {
+          onModelChange?.(next, detected)
+          current = next
+          continue
+        }
       }
       onStatus?.(null)
       throw err
@@ -290,10 +428,12 @@ async function callGemini(key: string, model: string, user: string, signal?: Abo
 
 /** Extrae el primer objeto JSON de la respuesta (tolera ```json ... ``` o texto alrededor). */
 export function extractJson(text: string): unknown {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start === -1 || end <= start) throw new Error('La IA no devolvió JSON.')
-  return JSON.parse(text.slice(start, end + 1))
+  return safeParseJson(text)
+}
+
+/** Pedido de corrección sintáctica: mismo contenido, JSON válido. */
+function repairPrompt(err: JsonRepairError) {
+  return `Tu respuesta anterior no es JSON válido (error: ${err.message}). Devolvé EXACTAMENTE el mismo contenido corregido como un único objeto JSON válido con la misma estructura: escapá las comillas dobles internas como \\" (o reemplazalas por « »), usá \\n para los saltos de línea dentro de strings, sin comas sobrantes y sin markdown.\n\nRespuesta a corregir:\n${err.raw.slice(0, 12000)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -404,16 +544,34 @@ export async function generateContent(
   discipline: Discipline,
   signal?: AbortSignal,
   onStatus?: StatusFn,
+  onModelChange?: ModelChangeFn,
 ): Promise<GenerationResult> {
   const key = (settings.keys[settings.provider] ?? '').trim()
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
   const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
   const user = buildUserPrompt(topic, mode, discipline)
-  const text =
+  const ask = (prompt: string) =>
     settings.provider === 'gemini'
-      ? await callGemini(key, model, user, signal, onStatus)
+      ? callGemini(key, model, prompt, signal, onStatus, onModelChange, settings.geminiModels ?? [])
       : settings.provider === 'anthropic'
-        ? await callAnthropic(key, model, user, signal)
-        : await callOpenAI(key, model, user, signal)
-  return parseGeneration(extractJson(text), mode)
+        ? callAnthropic(key, model, prompt, signal)
+        : callOpenAI(key, model, prompt, signal)
+  const text = await ask(user)
+  try {
+    return parseGeneration(safeParseJson(text), mode)
+  } catch (err) {
+    if (!(err instanceof JsonRepairError)) throw err
+    // Ni la limpieza local lo salvó: un único reintento pidiéndole al modelo la corrección.
+    onStatus?.('[ Respuesta con JSON inválido · Pidiendo corrección sintáctica... ]')
+    const fixed = await ask(repairPrompt(err))
+    try {
+      const result = parseGeneration(safeParseJson(fixed), mode)
+      onStatus?.(null)
+      return result
+    } catch (again) {
+      onStatus?.(null)
+      if (again instanceof JsonRepairError) throw new Error(`La IA devolvió un JSON inválido dos veces (${again.message}). Probá de nuevo.`)
+      throw again
+    }
+  }
 }
