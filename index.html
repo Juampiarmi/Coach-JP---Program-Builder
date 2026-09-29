@@ -51710,17 +51710,51 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
   margin:0;font-family:var(--ffh);font-size:15px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt);
 }
 .tool-drawer .td-b{padding:14px 15px;overflow:auto;flex:1}
-.tool-drawer .td-g{margin-bottom:16px}
-.tool-drawer .td-g > span{
-  display:block;margin-bottom:7px;font-family:var(--ffh);font-size:10.5px;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--muted);
+/* directiva ("Saneamiento del drawer Herramientas y Acciones") -- 4
+   acordeones tácticos en Black Carbon en vez de la lista plana de
+   siempre: cada grupo colapsa/expande con un tap en su rótulo (cerrado
+   por defecto salvo el primero, menos scroll inicial). Los botones que
+   se reparentan acá adentro (ver drawer(), MISMOS ids/handlers de
+   siempre, cero riesgo funcional) llegan con estilos propios de donde
+   vivían antes (.btn.gold/.btn.danger/etc, "25 botones multicolores"
+   reportado) -- se pisan con !important para que TODOS lean como una
+   sola familia visual coherente, sin perder su ÍCONO/EMOJI de texto
+   (ese identifica la acción, nunca se toca). */
+.tool-drawer .td-g{
+  margin-bottom:8px; border:1px solid rgba(255,255,255,.08); border-radius:10px;
+  background:#0b0e15; overflow:hidden;
 }
-.tool-drawer .td-g .td-list{display:flex;flex-direction:column;gap:7px}
+.tool-drawer .td-g > span{
+  display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+  padding:11px 13px; margin-bottom:0; font-family:'Chakra Petch','Barlow Condensed',sans-serif;
+  font-weight:700; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8;
+}
+.tool-drawer .td-g > span::after{
+  content:'›'; margin-left:auto; font-size:15px; line-height:1; transition:transform .2s ease; color:#38bdf8;
+}
+.tool-drawer .td-g.open > span::after{ transform:rotate(90deg); }
+.tool-drawer .td-g .td-list{
+  display:none; flex-direction:column; gap:7px; padding:0 10px 10px;
+}
+.tool-drawer .td-g.open .td-list{ display:flex; }
 .tool-drawer .td-list .btn,
 .tool-drawer .td-list > button{
-  width:100%;justify-content:flex-start;text-align:left;min-height:44px;
-  display:inline-flex;align-items:center;
+  width:100% !important; justify-content:flex-start !important; text-align:left !important; min-height:44px !important;
+  display:inline-flex !important; align-items:center !important;
+  background:#0f1420 !important; border:1px solid rgba(56,189,248,.25) !important; color:#f8fafc !important;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif !important; font-weight:600 !important;
+  font-size:13px !important; letter-spacing:.01em !important; box-shadow:none !important;
 }
+.tool-drawer .td-list .btn:hover,
+.tool-drawer .td-list > button:hover{ border-color:#38bdf8 !important; background:rgba(56,189,248,.08) !important; }
+/* directiva ("Eliminar botones obsoletos de plantillas heredadas en
+   desuso") -- Plantillas BB / Banco Pro / Base 3 meses quedan fuera de
+   la vista (nunca se borra la función/los datos que ya cargaron con
+   ellas, sólo se oculta el disparador -- reversible con sólo borrar
+   esta regla si algún día hace falta de vuelta). "Pasar a Pizarra
+   Táctica" es una acción POR BLOQUE (convertirBloqueAPizarra(), no un
+   botón de esta barra) -- sigue disponible donde vive, no se toca. */
+#btnBB, #btnMem, #btnBancoPro{ display:none !important; }
 .tool-back{
   position:fixed;inset:0;z-index:399;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;
   transition:opacity .25s ease;
@@ -51734,18 +51768,30 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
    COACH JP · MÓDULO 44 — Builder en 3 pasos
 ========================================================= */
 (function(){
-  /* clasificación de las acciones sueltas de la barra */
+  /* directiva ("Saneamiento del drawer Herramientas y Acciones") --
+     reemplaza los 3 baldes genéricos (crear/tools/acc) por los 4
+     acordeones tácticos pedidos, en el mismo orden. Sigue siendo el
+     mismo mecanismo data-driven (reparenta los botones YA existentes
+     de .jp-rail por regex sobre texto/title/id, sin tocar un solo
+     handler ni id de botón -- cero riesgo de romper una acción real);
+     lo que cambia acá es sólo la clasificación y el rótulo de cada
+     grupo. El orden de los regex importa: el primer match gana, así
+     que 'ia'/'video'/'seguridad' se evalúan ANTES que el catch-all de
+     exportación para no perder ningún botón de Asistencia/Control
+     dentro del balde genérico. */
   const GRUPOS = [
-    { k:'crear', lb:'Crear sesión',
-      re:/plantilla|crossfit|bodybuilding|mesociclo|semana|wod|weightlifting|athletic|readapt|estructura|core|pizarra|macro|documento/i },
-    { k:'tools', lb:'Herramientas',
-      re:/precomput|carga|timer|1rm|rpe|calculadora|seguridad|chequeo|auditar|esquema/i },
-    { k:'acc',   lb:'Acciones',
-      re:/exportar|guardar|banco|duplicar|clonar|compartir|enviar|backup|copia/i }
+    { k:'rapidas', lb:'⚡ Acciones Rápidas & Exportación',
+      re:/previsualiz|exportar|pdf|whatsapp|copiar plan|compartir|enviar/i },
+    { k:'ia', lb:'🧠 Asistencia Inteligente & IA',
+      re:/\bia\b|claude|gpt|gemini|generar planific|generar entrada en calor|generar/i },
+    { k:'control', lb:'🛡️ Control & Calidad',
+      re:/seguridad|chequeo|auditar|esquema|cobertura|video/i },
+    { k:'carga', lb:'📦 Carga Avanzada',
+      re:/d[íi]a suelto|adaptar|protocolo de dolor|dolor|precomput|carga|timer|1rm|rpe|calculadora|banco|duplicar|clonar|backup|copia|guardar/i }
   ];
   function grupoDe(txt){
     for(let i = 0; i < GRUPOS.length; i++) if(GRUPOS[i].re.test(txt)) return GRUPOS[i].k;
-    return 'tools';
+    return 'carga';
   }
   function esCF(){
     /* Directiva de habilitación de modalidad (2026-09-16): reemplaza la
@@ -51948,11 +51994,16 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
           '<div class="spacer" style="flex:1"></div>' +
           '<button class="icon-btn" id="tdClose" type="button" title="Cerrar">✕</button></div>' +
         '<div class="td-b">' +
-          GRUPOS.map(g => '<div class="td-g" data-tg="' + g.k + '"><span>' + g.lb + '</span>' +
+          GRUPOS.map((g, i) => '<div class="td-g' + (i === 0 ? ' open' : '') + '" data-tg="' + g.k + '"><span>' + g.lb + '</span>' +
             '<div class="td-list" id="tdList_' + g.k + '"></div></div>').join('') +
         '</div>';
       document.body.appendChild(d);
       document.getElementById('tdClose').addEventListener('click', cerrarDrawer);
+      /* acordeón: un tap en el rótulo abre/cierra SU grupo -- primero
+         abierto por defecto (Acciones Rápidas), el resto colapsado. */
+      d.querySelectorAll('.td-g > span').forEach(sp => {
+        sp.addEventListener('click', () => { sp.parentElement.classList.toggle('open'); });
+      });
     }
     /* mueve los botones sueltos de la barra al cajón, agrupados */
     const rail = document.querySelector('#v-builder .topbar .jp-rail');
