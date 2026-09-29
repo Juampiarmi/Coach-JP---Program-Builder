@@ -1,9 +1,13 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat'
+export type ThemeId = 'dark' | 'paper'
+export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve'
+export type DiagramAccent = 'blue' | 'orange' | 'cyan'
+export type RepeatAccent = 'white' | 'orange' | 'cyan'
 export type ManifestoStyle = 'bar' | 'quotes'
 export type ContentAlign = 'auto' | 'top' | 'center' | 'bottom'
 export type AspectId = 'feed' | 'story'
 export type Accent = 'orange' | 'cyan' | 'gold' | 'white' | 'gray'
-export type HeadlineFont = 'chakra' | 'barlow' | 'inter'
+export type HeadlineFont = 'chakra' | 'barlow' | 'inter' | 'serif'
 
 export interface CompareCard {
   label: string
@@ -74,6 +78,31 @@ export interface CanvasState {
   bgZoom: number
   bgX: number
   bgY: number
+  // Tema visual (Minimal Paper aplica a Diagrama y Repetición)
+  theme: ThemeId
+  // Diagrama visual (plantilla 06)
+  diagramKind: DiagramKind
+  diagramAccent: DiagramAccent
+  /** Radar: ejes y valores 0–100 separados por coma; serie comparativa opcional */
+  radarAxes: string
+  radarValues: string
+  radarCompare: string
+  radarLabelA: string
+  radarLabelB: string
+  /** Círculos: divisiones por círculo ("1, 3, 12") y un texto breve por línea */
+  circleDivisions: string
+  circleCaptions: string
+  /** Dominó */
+  dominoCount: number
+  dominoStart: string
+  dominoEnd: string
+  /** Curva de trayectoria */
+  curveExpected: string
+  curveReal: string
+  curveGoal: string
+  // Repetición matrix (plantilla 07)
+  repeatPhrase: string
+  repeatAccent: RepeatAccent
   // Layout
   contentAlign: ContentAlign
   /** Separación titular → bloque de plantilla, en % del valor base */

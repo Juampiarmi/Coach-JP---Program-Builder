@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
 import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
-import type { Accent, CanvasState, ContentAlign, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
+import type { Accent, CanvasState, ContentAlign, DiagramAccent, DiagramKind, RepeatAccent, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
+import { DIAGRAM_ACCENT_HEX, DIAGRAM_ACCENT_LABEL, PAPER_TEMPLATES, REPEAT_ACCENT_LABEL, THEME_LABEL } from '../../lib/theme'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
@@ -11,6 +12,15 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'chart', n: '03', label: 'Gráfico' },
   { id: 'statement', n: '04', label: 'Sentencia' },
   { id: 'manifesto', n: '05', label: 'Manifiesto' },
+  { id: 'diagram', n: '06', label: 'Diagrama' },
+  { id: 'repeat', n: '07', label: 'Repetición' },
+]
+
+const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
+  { value: 'radar', label: 'RADAR' },
+  { value: 'circles', label: 'CÍRCULOS' },
+  { value: 'domino', label: 'DOMINÓ' },
+  { value: 'curve', label: 'CURVA' },
 ]
 
 const ALIGN_LABEL: Record<ContentAlign, string> = { auto: 'AUTO', top: 'ARRIBA', center: 'CENTRO', bottom: 'ABAJO' }
@@ -53,7 +63,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
     <div>
       {/* Plantilla: pestañas compactas siempre visibles */}
       <div className="border-b border-line px-4 py-3">
-        <div className="grid grid-cols-5 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+        <div className="grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
           {TEMPLATES.map((t) => {
             const on = state.template === t.id
             return (
@@ -108,6 +118,11 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             </button>
           ))}
         </div>
+        {state.template === 'repeat' ? (
+          <p className="font-mono text-[10px] leading-relaxed text-steel/70">
+            En Repetición la frase de la matriz reemplaza al titular y al párrafo: se edita en la sección 02.
+          </p>
+        ) : (
         <div className="grid grid-cols-2 gap-2">
           <Field label="Titular · blanco">
             <TextArea value={state.headlineA} onChange={(headlineA) => update({ headlineA })} rows={2} />
@@ -116,10 +131,11 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
           </Field>
         </div>
-        {state.template === 'manifesto' ? (
+        )}
+        {state.template === 'repeat' ? null : state.template === 'manifesto' ? (
           <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
         ) : (
-          <Field label="Párrafo" hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
+          <Field label={state.template === 'diagram' ? 'Párrafo (opcional)' : 'Párrafo'} hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
             <TextArea value={state.body} onChange={(body) => update({ body })} rows={3} />
           </Field>
         )}
@@ -249,6 +265,105 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           </>
         )}
 
+        {state.template === 'diagram' && (
+          <>
+            <Segmented<DiagramKind> value={state.diagramKind} onChange={(diagramKind) => update({ diagramKind })} options={DIAGRAM_KINDS} size="sm" />
+            <Field label="Color de acento" plain>
+              <div className="flex gap-1.5">
+                {(Object.keys(DIAGRAM_ACCENT_HEX) as DiagramAccent[]).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    onClick={() => update({ diagramAccent: a })}
+                    aria-pressed={state.diagramAccent === a}
+                    className={`flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[10px] tracking-wider uppercase transition ${
+                      state.diagramAccent === a ? 'border-white/60 bg-white/10 text-white' : 'border-line text-steel hover:text-white'
+                    }`}
+                  >
+                    <span className="size-3 rounded-sm" style={{ background: DIAGRAM_ACCENT_HEX[a] }} />
+                    {DIAGRAM_ACCENT_LABEL[a]}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            {state.diagramKind === 'radar' && (
+              <>
+                <Field label="Ejes (3 a 8)" hint="separados por coma">
+                  <TextInput value={state.radarAxes} onChange={(radarAxes) => update({ radarAxes })} />
+                </Field>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Valores 0–100">
+                    <TextInput value={state.radarValues} onChange={(radarValues) => update({ radarValues })} placeholder="45, 70, 85…" />
+                  </Field>
+                  <Field label="Leyenda">
+                    <TextInput value={state.radarLabelA} onChange={(radarLabelA) => update({ radarLabelA })} />
+                  </Field>
+                  <Field label="Comparación" hint="opcional">
+                    <TextInput value={state.radarCompare} onChange={(radarCompare) => update({ radarCompare })} placeholder="80, 80, 75…" />
+                  </Field>
+                  <Field label="Leyenda comparación">
+                    <TextInput value={state.radarLabelB} onChange={(radarLabelB) => update({ radarLabelB })} />
+                  </Field>
+                </div>
+              </>
+            )}
+            {state.diagramKind === 'circles' && (
+              <>
+                <Field label="Divisiones por círculo" hint="el último se repite con 1 parte destacada">
+                  <TextInput value={state.circleDivisions} onChange={(circleDivisions) => update({ circleDivisions })} placeholder="1, 3, 12" />
+                </Field>
+                <Field label="Textos breves" hint="uno por línea">
+                  <TextArea value={state.circleCaptions} onChange={(circleCaptions) => update({ circleCaptions })} rows={4} />
+                </Field>
+              </>
+            )}
+            {state.diagramKind === 'domino' && (
+              <>
+                <Field label="Cantidad de fichas">
+                  <Range value={state.dominoCount} onChange={(dominoCount) => update({ dominoCount })} min={4} max={9} />
+                </Field>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Inicio">
+                    <TextInput value={state.dominoStart} onChange={(dominoStart) => update({ dominoStart })} />
+                  </Field>
+                  <Field label="Final">
+                    <TextInput value={state.dominoEnd} onChange={(dominoEnd) => update({ dominoEnd })} />
+                  </Field>
+                </div>
+              </>
+            )}
+            {state.diagramKind === 'curve' && (
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Recta">
+                  <TextInput value={state.curveExpected} onChange={(curveExpected) => update({ curveExpected })} />
+                </Field>
+                <Field label="Camino real">
+                  <TextInput value={state.curveReal} onChange={(curveReal) => update({ curveReal })} />
+                </Field>
+                <Field label="Bandera">
+                  <TextInput value={state.curveGoal} onChange={(curveGoal) => update({ curveGoal })} />
+                </Field>
+              </div>
+            )}
+          </>
+        )}
+
+        {state.template === 'repeat' && (
+          <>
+            <Field label="Frase" hint={`${state.repeatPhrase.trim().split(/\s+/).filter(Boolean).length} palabras = renglones`}>
+              <TextArea value={state.repeatPhrase} onChange={(repeatPhrase) => update({ repeatPhrase })} rows={3} />
+            </Field>
+            <Field label="Color de la diagonal" plain>
+              <Segmented<RepeatAccent>
+                value={state.repeatAccent}
+                onChange={(repeatAccent) => update({ repeatAccent })}
+                options={(Object.keys(REPEAT_ACCENT_LABEL) as RepeatAccent[]).map((a) => ({ value: a, label: REPEAT_ACCENT_LABEL[a].toUpperCase() }))}
+                size="sm"
+              />
+            </Field>
+          </>
+        )}
+
         {state.template === 'manifesto' && (
           <>
             <Field label="Subtítulo / autor" hint="opcional">
@@ -360,7 +475,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         )}
       </Section>
 
-      {state.template !== 'manifesto' && (
+      {state.template !== 'manifesto' && state.template !== 'repeat' && (
         <Section index="04" title="Fuente científica" summary={state.citeMain} defaultOpen={false}>
           <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
           <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
@@ -370,9 +485,22 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
       <Section
         index="05"
         title="Estilo · Layout"
-        summary={`${HEADLINE_FONTS[state.headlineFont].label} · ${state.headlineScale}% · ${ALIGN_LABEL[state.contentAlign]} · aire ${state.contentGap}%`}
+        summary={`${THEME_LABEL[state.theme]} · ${HEADLINE_FONTS[state.headlineFont].label} · ${state.headlineScale}% · ${ALIGN_LABEL[state.contentAlign]}`}
         defaultOpen={false}
       >
+        <Field label="Tema" plain>
+          <Segmented<ThemeId>
+            value={state.theme}
+            onChange={(theme) => update({ theme })}
+            options={(Object.keys(THEME_LABEL) as ThemeId[]).map((t) => ({ value: t, label: `[ ${THEME_LABEL[t]} ]` }))}
+            size="sm"
+          />
+        </Field>
+        {state.theme === 'paper' && !PAPER_TEMPLATES.includes(state.template) && (
+          <p className="font-mono text-[10px] leading-relaxed text-gold/80">
+            Minimal Paper se aplica a 06 · Diagrama y 07 · Repetición. Las plantillas 01–05 se mantienen en Táctico Dark.
+          </p>
+        )}
         <Field label="Alineación vertical del cuerpo" plain>
           <Segmented<ContentAlign>
             value={state.contentAlign}
@@ -410,5 +538,9 @@ function summaryFor(s: CanvasState) {
       return s.kicker
     case 'manifesto':
       return s.manifestoAuthor || 'Sin firma'
+    case 'diagram':
+      return `${s.diagramKind.toUpperCase()} · ${THEME_LABEL[s.theme]}`
+    case 'repeat':
+      return s.repeatPhrase
   }
 }

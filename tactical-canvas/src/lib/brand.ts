@@ -32,10 +32,12 @@ export const ASPECTS: Record<AspectId, { w: number; h: number; label: string; ra
   story: { w: 1080, h: 1920, label: 'Story', ratio: '9:16' },
 }
 
-export const HEADLINE_FONTS: Record<HeadlineFont, { label: string; family: string; tracking: string }> = {
+export const HEADLINE_FONTS: Record<HeadlineFont, { label: string; family: string; tracking: string; weight?: number }> = {
   chakra: { label: 'Chakra Petch', family: "'Chakra Petch', sans-serif", tracking: '-0.01em' },
   barlow: { label: 'Barlow Cond.', family: "'Barlow Condensed', sans-serif", tracking: '0' },
   inter: { label: 'Inter', family: "'Inter', sans-serif", tracking: '-0.035em' },
+  // Serif editorial para el estilo mental models / Minimal Paper (sólo tiene peso 400).
+  serif: { label: 'DM Serif', family: "'DM Serif Display', Georgia, serif", tracking: '-0.01em', weight: 400 },
 }
 
 export const FONT_MONO = "'IBM Plex Mono', ui-monospace, monospace"
