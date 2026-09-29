@@ -14,21 +14,41 @@ export function effectivePixelRatio(w: number, h: number) {
   return Math.min(EXPORT_PIXEL_RATIO, Math.floor(max * 100) / 100)
 }
 
-let fontCSS: Promise<string> | null = null
+/**
+ * CSS de fuentes embebidas, en caché por combinación de familias usadas: html-to-image sólo
+ * incluye las fuentes presentes en el nodo, así que si cambia la tipografía hay que recalcularlo.
+ */
+const fontCSSCache = new Map<string, Promise<string>>()
+
+function usedFontsKey(node: HTMLElement) {
+  const fams = new Set<string>()
+  const walk = (el: Element) => {
+    fams.add(getComputedStyle(el).fontFamily)
+    for (const child of Array.from(el.children)) walk(child)
+  }
+  walk(node)
+  return [...fams].sort().join('|')
+}
 
 /** Renderiza el nodo a PNG en alta resolución. */
 export async function renderPng(node: HTMLElement, w: number, h: number): Promise<{ blob: Blob; ratio: number }> {
   await document.fonts.ready
-  fontCSS ??= getFontEmbedCSS(node).catch((err) => {
-    fontCSS = null
-    throw err
-  })
+  const key = usedFontsKey(node)
+  let fontCSS = fontCSSCache.get(key)
+  if (!fontCSS) {
+    fontCSS = getFontEmbedCSS(node).catch((err) => {
+      fontCSSCache.delete(key)
+      throw err
+    })
+    fontCSSCache.set(key, fontCSS)
+  }
   const ratio = effectivePixelRatio(w, h)
   const options = {
     width: w,
     height: h,
     pixelRatio: ratio,
-    backgroundColor: BRAND.bg,
+    // El fondo de la propia placa (carbón o marfil de Minimal Paper).
+    backgroundColor: getComputedStyle(node).backgroundColor || BRAND.bg,
     fontEmbedCSS: await fontCSS,
     style: { transform: 'none', margin: '0' },
   }

@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ASPECTS, BRAND, CONTRAST_GRADIENT, FONT_MONO, HEADLINE_FONTS, MONO_FILTER, TEXT_SHADOW } from '../../lib/brand'
+import { ASPECTS, CONTRAST_GRADIENT, FONT_MONO, HEADLINE_FONTS, MONO_FILTER, TEXT_SHADOW } from '../../lib/brand'
 import type { CanvasState } from '../../types'
 import { Footer } from './Footer'
 import { Headline } from './Headline'
@@ -8,6 +8,9 @@ import { CompareTemplate } from './templates/CompareTemplate'
 import { MetricTemplate } from './templates/MetricTemplate'
 import { ManifestoTemplate } from './templates/ManifestoTemplate'
 import { StatementTemplate } from './templates/StatementTemplate'
+import { DiagramTemplate } from './templates/DiagramTemplate'
+import { RepeatTemplate } from './templates/RepeatTemplate'
+import { effectiveTheme, PALETTES } from '../../lib/theme'
 
 const SIDE = 88
 /**
@@ -22,7 +25,7 @@ const PAD = {
 /** Placa flotante: margen exterior y relleno interior (el texto queda alineado igual). */
 const PLATE_INSET = 44
 const PLATE_PAD_Y = 48
-const FONT_SIZE_FACTOR = { chakra: 1, barlow: 1.2, inter: 0.94 } as const
+const FONT_SIZE_FACTOR = { chakra: 1, barlow: 1.2, inter: 0.94, serif: 1.12 } as const
 const MIN_FIT = 0.55
 const FIT_SLACK = 12
 
@@ -118,7 +121,13 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const font = HEADLINE_FONTS[state.headlineFont]
   const isStatement = state.template === 'statement'
   const isManifesto = state.template === 'manifesto'
-  const centered = isStatement || isManifesto
+  const isDiagram = state.template === 'diagram'
+  const isRepeat = state.template === 'repeat'
+  const centered = isStatement || isManifesto || isRepeat
+  // Tema: Minimal Paper sólo en Diagrama / Repetición; 01–05 usan siempre la paleta Táctico Dark.
+  const theme = effectiveTheme(state)
+  const palette = PALETTES[theme]
+  const headlineWeight = font.weight ?? 700
   const contentWidth = w - SIDE * 2
 
   const headlineSize = Math.round(
@@ -163,7 +172,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
       style={{
         width: w,
         height: h,
-        background: BRAND.bg,
+        background: palette.bg,
         overflow: 'hidden',
         position: 'relative',
         WebkitFontSmoothing: 'antialiased',
@@ -176,8 +185,8 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
             alt=""
             style={{ position: 'absolute', maxWidth: 'none', ...bgGeo, filter: state.bgMono ? MONO_FILTER : undefined }}
           />
-          <div style={{ position: 'absolute', inset: 0, background: `rgba(11,14,20,${state.bgOverlay / 100})` }} />
-          {state.bgGradient && <div style={{ position: 'absolute', inset: 0, background: CONTRAST_GRADIENT }} />}
+          <div style={{ position: 'absolute', inset: 0, background: `rgba(${palette.overlayRgb},${state.bgOverlay / 100})` }} />
+          {state.bgGradient && theme === 'dark' && <div style={{ position: 'absolute', inset: 0, background: CONTRAST_GRADIENT }} />}
         </>
       )}
 
@@ -193,14 +202,14 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           flexDirection: 'column',
           overflow: 'hidden',
           borderRadius: plate ? 30 : 0,
-          border: plate ? '2px solid rgba(30,38,56,.95)' : undefined,
+          border: plate ? (theme === 'dark' ? '2px solid rgba(30,38,56,.95)' : `2px solid ${palette.line}`) : undefined,
           boxShadow: plate ? '0 40px 120px -30px rgba(0,0,0,.9)' : undefined,
           // Placa translúcida: en pantalla actúa el backdrop-filter; en el PNG lo reproduce la
           // copia desenfocada de abajo (html-to-image no rasteriza backdrop-filter).
           backdropFilter: plate ? 'blur(12px)' : undefined,
           WebkitBackdropFilter: plate ? 'blur(12px)' : undefined,
           // Sombra de legibilidad heredada por todos los textos (tag, titular, párrafos, citas).
-          textShadow: TEXT_SHADOW,
+          textShadow: theme === 'dark' ? TEXT_SHADOW : 'none',
         }}
       >
         {plate && (
@@ -218,7 +227,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                 filter: `${state.bgMono ? `${MONO_FILTER} ` : ''}blur(12px)`,
               }}
             />
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(11, 14, 20, 0.75)' }} />
+            <div style={{ position: 'absolute', inset: 0, background: `rgba(${palette.overlayRgb}, 0.75)` }} />
           </>
         )}
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -230,7 +239,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                 fontWeight: 600,
                 fontSize: 27 * baseScale,
                 letterSpacing: '0.22em',
-                color: BRAND.cyan,
+                color: palette.tag,
                 textTransform: 'uppercase',
               }}
             >
@@ -251,7 +260,18 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
             }}
           >
             <div ref={contentRef} style={{ flexShrink: 0 }}>
-              {isManifesto ? (
+              {isRepeat ? (
+                <RepeatTemplate
+                  state={state}
+                  palette={palette}
+                  theme={theme}
+                  fontFamily={font.family}
+                  fontWeight={headlineWeight}
+                  contentWidth={contentWidth}
+                  maxHeight={(h - pad.top - pad.bottom) * (isStory ? 0.66 : 0.6)}
+                  scale={scale}
+                />
+              ) : isManifesto ? (
                 <ManifestoTemplate
                   state={state}
                   fontFamily={font.family}
@@ -268,6 +288,9 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     fontFamily={font.family}
                     fontSize={headlineSize}
                     tracking={font.tracking}
+                    ink={palette.ink}
+                    accent={palette.accent}
+                    fontWeight={headlineWeight}
                   />
                   <div style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale * gap }}>
                     {state.template === 'metric' && <MetricTemplate state={state} fontFamily={font.family} scale={scale} />}
@@ -276,13 +299,21 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                       <ChartTemplate state={state} contentWidth={contentWidth} fontFamily={font.family} scale={scale} />
                     )}
                     {isStatement && <StatementTemplate state={state} scale={scale} />}
+                    {isDiagram && <DiagramTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                   </div>
                 </>
               )}
             </div>
           </main>
 
-          <Footer citeMain={isManifesto ? '' : state.citeMain} citeSub={isManifesto ? '' : state.citeSub} scale={baseScale} />
+          <Footer
+            citeMain={isManifesto || isRepeat ? '' : state.citeMain}
+            citeSub={isManifesto || isRepeat ? '' : state.citeSub}
+            scale={baseScale}
+            ink={palette.ink}
+            muted={palette.muted}
+            line={palette.line}
+          />
         </div>
       </div>
     </div>

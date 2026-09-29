@@ -33,6 +33,7 @@ const GLOBAL_KEYS = [
   'bgY',
   'contentAlign',
   'contentGap',
+  'theme',
 ] as const
 
 interface Deck {

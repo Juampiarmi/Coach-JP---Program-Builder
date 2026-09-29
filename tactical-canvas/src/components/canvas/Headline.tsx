@@ -15,6 +15,10 @@ interface Props {
   fontFamily: string
   fontSize: number
   tracking: string
+  /** Tema: por defecto blanco + naranja fuego y peso 700 (Táctico Dark, igual que siempre) */
+  ink?: string
+  accent?: string
+  fontWeight?: number
 }
 
 /** Piso del ajuste por ancho: por debajo de esto se prefiere cortar antes que achicar más. */
@@ -57,7 +61,7 @@ function useWordFit(deps: unknown[]) {
 }
 
 /** Titular: base en blanco + remate en naranja fuego. `*palabra*` invierte el color. */
-export function Headline({ partA, partB, fontFamily, fontSize, tracking }: Props) {
+export function Headline({ partA, partB, fontFamily, fontSize, tracking, ink = BRAND.white, accent = BRAND.orange, fontWeight = /DM Serif/.test(fontFamily) ? 400 : 700 }: Props) {
   const parts = [...segments(partA.trim(), false), { t: ' ', hl: false }, ...segments(partB.trim(), true)]
   const { ref, fit } = useWordFit([partA, partB, fontFamily, fontSize, tracking])
   // Por debajo del piso, último recurso: permitir el corte dentro de la palabra.
@@ -68,11 +72,11 @@ export function Headline({ partA, partB, fontFamily, fontSize, tracking }: Props
       style={{
         fontFamily,
         fontSize: Math.round(fontSize * fit * 10) / 10,
-        fontWeight: 700,
+        fontWeight,
         lineHeight: 1.04,
         letterSpacing: tracking,
         textTransform: 'uppercase',
-        color: BRAND.white,
+        color: ink,
         margin: 0,
         textWrap: 'balance',
         wordBreak: 'keep-all',
@@ -81,7 +85,7 @@ export function Headline({ partA, partB, fontFamily, fontSize, tracking }: Props
       }}
     >
       {parts.map((p, i) => (
-        <Fragment key={i}>{p.hl ? <span style={{ color: BRAND.orange }}>{p.t}</span> : p.t}</Fragment>
+        <Fragment key={i}>{p.hl ? <span style={{ color: accent }}>{p.t}</span> : p.t}</Fragment>
       ))}
     </h1>
   )

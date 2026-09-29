@@ -18,9 +18,13 @@ funciona sin conexión.
 
 ## Qué hace
 
-- **5 plantillas**: Métrica Gigante, Comparativa A/B, Gráfico/Telemetría, Sentencia de Texto y
-  Manifiesto / Cita Táctica (frase gigante con barra naranja o comillas militares, firma
-  opcional y sin cita académica).
+- **7 plantillas**: Métrica Gigante, Comparativa A/B, Gráfico/Telemetría, Sentencia de Texto,
+  Manifiesto / Cita Táctica, **Diagrama** (modelos mentales en SVG paramétrico: radar editable,
+  círculos fraccionados, efecto dominó y curva de trayectoria con bandera) y **Repetición
+  matrix** (la frase repetida una vez por palabra, con la diagonal resaltada).
+- **Temas**: Táctico Dark (el de siempre) y Minimal Paper (marfil + tinta negra + un acento,
+  estilo editorial). Minimal Paper se aplica a Diagrama y Repetición; las plantillas 01–05
+  siguen siempre en Táctico Dark. Tipografía extra para titulares: DM Serif.
 - **Generador con IA (BYOK)**: con tu propia API Key de OpenAI (gpt-4o / gpt-4o-mini),
   Anthropic (Claude) o Google Gemini (al guardar la key consulta ListModels y ofrece sólo los modelos habilitados para esa key, eligiendo el Flash más moderno; si Google tiene alta demanda reintenta el mismo modelo a los 2,5 y 4 s), guardada sólo en tu navegador. Escribís el tema, podés
   marcar un enfoque (`SPORTS & BODYBUILDING` prioriza biomecánica e hipertrofia;

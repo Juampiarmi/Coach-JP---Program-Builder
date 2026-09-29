@@ -1,6 +1,6 @@
 import { BRAND, FONT_BODY } from '../../lib/brand'
 
-export function Paragraph({ text, scale, size = 31 }: { text: string; scale: number; size?: number }) {
+export function Paragraph({ text, scale, size = 31, color = BRAND.gray }: { text: string; scale: number; size?: number; color?: string }) {
   if (!text.trim()) return null
   return (
     <p
@@ -9,7 +9,7 @@ export function Paragraph({ text, scale, size = 31 }: { text: string; scale: num
         fontFamily: FONT_BODY,
         fontSize: size * scale,
         lineHeight: 1.42,
-        color: BRAND.gray,
+        color,
         whiteSpace: 'pre-line',
         textWrap: 'pretty',
       }}
