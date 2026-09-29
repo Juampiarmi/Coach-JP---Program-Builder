@@ -9705,7 +9705,7 @@ function renderDayTabs(){
   weekTabsEl.innerHTML = DAYS.map(function(d){
     const isActive = d.id === state.currentDay;
     const isDone = isDayDone(state.currentWeek, d.id);
-    return '<div class="day-tab' + (isActive?' active':'') + (isDone?' completed-day':'') + (d.optional?' is-optional':'') + '" data-day="' + d.id + '">' +
+    return '<div class="day-tab' + (isActive?' active':'') + (isDone?' completed-day':'') + (d.optional?' is-optional':'') + '" data-day="' + d.id + '" title="' + escHtmlSafe(d.short + (d.label ? ' \\u00b7 ' + d.label : '')) + '">' +
       '<span class="tab-name">' + d.short + '</span>' +
       '<span class="tab-label">' + d.label + '</span>' +
       '<span class="day-dot"></span>' +
@@ -13175,6 +13175,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var secPlaceholder = (secVal === '' && prevSec != null) ? String(prevSec) : '0';
     var notaKey = key + '|nota';
     var notaVal = (state.notes && state.notes[notaKey]) || '';
+    /* directiva ("Tratamiento exclusivo de intensificadores") -- Nivel 2
+       (Protocolo de Descarga/Mini-sets): registro ergonómico de 1 toque
+       en vez de tipear texto libre a mano -- chips de bajada porcentual
+       (sólo Drop Set, tiene sentido de %; Myo-Reps trabaja con la MISMA
+       carga, sólo cuenta mini-series) + contador rápido de reps
+       efectivas + botón "Agregar". El resultado se COMPONE y se anexa
+       al MISMO input .jp-intensity-note de siempre (ver listener de
+       persistencia en state.notes más abajo, CERO cambios ahí) -- los
+       chips son sólo una forma más rápida de escribir la nota, nunca un
+       campo de datos nuevo: texto viejo tipeado a mano sigue
+       leyéndose/editándose igual que siempre. */
+    var esDropset = tecnica === 'dropset';
+    var chipsHtml = esDropset ?
+      '<div class="jp-tecnica-chips">' +
+        ['10', '15', '20', '25'].map(function(p){ return '<button type="button" class="jp-tecnica-chip" data-pct="' + p + '">-' + p + '%</button>'; }).join('') +
+      '</div>' : '';
+    var addLabel = esDropset ? '\\u2795 Agregar bajada' : '\\u2795 Agregar mini-set';
     return '<div class="jp-set-tracker-native jp-set-tracker-tecnica">' +
         '<div class="jp-set-row-native' + (ld.done ? ' completed' : '') + '" data-set-key="' + key + '">' +
           '<span class="jp-set-pill">' + proto.pill + '</span>' +
@@ -13188,6 +13205,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '</div>' +
         '</div>' +
         '<div class="jp-tecnica-protocolo">' + proto.icono + ' ' + proto.texto + '</div>' +
+        '<div class="jp-tecnica-quickreg">' +
+          chipsHtml +
+          '<div class="jp-tecnica-stepper">' +
+            '<button type="button" class="jp-tecnica-step-btn" data-step="-1" aria-label="Menos reps">\\u2212</button>' +
+            '<span class="jp-tecnica-step-val" data-stepval>0</span>' +
+            '<button type="button" class="jp-tecnica-step-btn" data-step="1" aria-label="M\\u00e1s reps">+</button>' +
+            '<span class="jp-tecnica-step-unit">reps</span>' +
+            '<button type="button" class="jp-tecnica-add-btn" data-addbajada="' + notaKey + '">' + addLabel + '</button>' +
+          '</div>' +
+        '</div>' +
         '<input type="text" class="jp-intensity-note" data-notekey="' + notaKey + '" placeholder="Nota opcional (ej. ' + proto.ph + ')" value="' + escSB(notaVal) + '" />' +
       '</div>';
   }
@@ -13843,6 +13870,45 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     state.notes = state.notes || {};
     state.notes[el.dataset.notekey] = el.value;
     saveProgress();
+  });
+  /* directiva ("Tratamiento exclusivo de intensificadores") -- chips de
+     bajada + contador rápido de reps de renderRegistroTecnicaUnicaSB():
+     selección de UN chip a la vez (single-select), stepper nunca baja
+     de 0, "Agregar" compone el fragmento y lo anexa al MISMO input
+     .jp-intensity-note (dispara 'input' real -> reusa el listener de
+     persistencia de arriba tal cual, cero mecanismo de guardado nuevo)
+     y resetea chip+contador para la siguiente bajada/mini-set. */
+  document.addEventListener('click', function(e){
+    var chip = e.target.closest('.jp-tecnica-chip');
+    if(chip){
+      var group = chip.closest('.jp-tecnica-quickreg');
+      var wasActive = chip.classList.contains('active');
+      group.querySelectorAll('.jp-tecnica-chip').forEach(function(c){ c.classList.remove('active'); });
+      if(!wasActive) chip.classList.add('active');
+      return;
+    }
+    var stepBtn = e.target.closest('.jp-tecnica-step-btn');
+    if(stepBtn){
+      var valEl = stepBtn.closest('.jp-tecnica-stepper').querySelector('[data-stepval]');
+      var next = Math.max(0, (parseInt(valEl.textContent, 10) || 0) + (parseInt(stepBtn.dataset.step, 10) || 0));
+      valEl.textContent = String(next);
+      return;
+    }
+    var addBtn = e.target.closest('.jp-tecnica-add-btn');
+    if(addBtn){
+      var quickreg = addBtn.closest('.jp-tecnica-quickreg');
+      var activeChip = quickreg.querySelector('.jp-tecnica-chip.active');
+      var reps = parseInt(quickreg.querySelector('[data-stepval]').textContent, 10) || 0;
+      if(!activeChip && reps === 0) return; /* nada que agregar todavía */
+      var frag = (activeChip ? ('-' + activeChip.dataset.pct + '%: ') : '') + reps + ' reps';
+      var noteInput = quickreg.parentElement.querySelector('.jp-intensity-note');
+      if(noteInput){
+        noteInput.value = noteInput.value ? (noteInput.value + ', ' + frag) : frag;
+        noteInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      quickreg.querySelectorAll('.jp-tecnica-chip').forEach(function(c){ c.classList.remove('active'); });
+      quickreg.querySelector('[data-stepval]').textContent = '0';
+    }
   });
 
   /* directiva ("Motor de 1RM exacto") -- modal táctico CENTRADO: el
@@ -30805,17 +30871,26 @@ body.cf-disc .jp-prs-quickbtn:active{ background:rgba(255,214,0,.14) !important;
 .hdc-days-wrap .day-tab{
   background:#0b111e !important; border:1px solid rgba(56,189,248,.25) !important;
   border-radius:6px !important; box-shadow:none !important; box-sizing:border-box !important;
-  min-width:64px !important; padding:8px 12px !important; display:flex !important;
+  min-width:64px !important; max-width:82px !important; padding:8px 10px !important; display:flex !important;
   flex-direction:column !important; align-items:center !important; justify-content:center !important;
   gap:2px !important;
 }
 .hdc-days-wrap .day-tab .tab-name{
   font-family:'Chakra Petch','Barlow Condensed',sans-serif !important; font-weight:700 !important; color:#A0A8B4 !important;
   font-size:13px !important; line-height:1.15 !important; letter-spacing:.02em !important;
+  max-width:100% !important; overflow:hidden !important; text-overflow:ellipsis !important; white-space:nowrap !important;
 }
+/* directiva ("Fila de Días Táctica") -- en Sports .tab-label lleva el
+   grupo muscular del día (ej. "Cuádriceps & Core"), bastante más largo
+   que las etiquetas cortas de CrossFit ("Sesión 1"); sin tope de ancho
+   la cápsula crecía para acomodar el texto entero, rompiendo la
+   geometría uniforme del riel. Un solo renglón con elipsis controlada
+   (max-width:100% del padre, ya acotado por .day-tab arriba) en vez de
+   texto sobrecargado desbordando. */
 .hdc-days-wrap .day-tab .tab-label{
   font-family:'Chakra Petch','Barlow Condensed',sans-serif !important; color:#5A6577 !important;
   font-size:10px !important; line-height:1.15 !important; letter-spacing:.02em !important;
+  max-width:100% !important; overflow:hidden !important; text-overflow:ellipsis !important; white-space:nowrap !important;
 }
 .hdc-days-wrap .day-tab.active{
   border-color:#ff6b00 !important; background:rgba(255,107,0,.1) !important;
@@ -30950,6 +31025,25 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
    (pizarraSports() sólo corre con COACH_DISCIPLINA === 'sports'), así
    que no hace falta ningún prefijo body.cf-disc acá. */
 .block:has(.jp-sb-board) > .block-body > *:not(.jp-sb-board){ display:none !important; }
+/* directiva ("Fusión de Barras de Bloque") -- el header genérico
+   exterior (ícono + block-label + subtítulo) queda redundante frente a
+   la identidad propia de .jp-sb-board (jp-sb-tag + título limpio +
+   énfasis en su propia línea "// ...", que además es MEJOR que el
+   header exterior: ese no separa el paréntesis de énfasis, lo deja
+   pegado al título -- justo el texto sobrecargado que esta directiva
+   pide evitar, ver tituloBloqueM en pizarraSports()). Se ocultan sólo
+   ícono+texto del header exterior -- el checkbox de "bloque completado"
+   y el chevron de colapso quedan INTACTOS y funcionales (nunca se
+   sacrifican como en CrossFit, donde no hace falta tracking por
+   bloque; acá el checkbox sigue siendo la única forma de marcarlo a
+   mano), reducidos a una franja utilitaria angosta arriba de la
+   tarjeta rica. */
+.block:has(.jp-sb-board) > .block-header{
+  padding:6px 1.1rem !important; border-bottom:none !important; justify-content:space-between !important;
+}
+.block:has(.jp-sb-board) > .block-header .block-icon,
+.block:has(.jp-sb-board) > .block-header .block-header-text{ display:none !important; }
+.block:has(.jp-sb-board) > .block-header .block-check{ margin-right:0 !important; }
 .jp-sb-tag{
   /* directiva ("Homogeneización Cromática Exacta"): naranja táctico
      #ff6b00 exacto -- título de bloque, valor pinneado por la
@@ -31305,9 +31399,17 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   flex-shrink:0 !important; flex-grow:0;
   width:52px !important; min-width:48px !important; max-width:60px !important;
   height:38px !important; box-sizing:border-box;
-  background:#080b11; border:1px solid rgba(56,189,248,.4); border-radius:6px;
-  text-align:center; font-size:1.05rem !important; font-weight:700; font-family:'JetBrains Mono',monospace;
+  background:#0e1424; border:1px solid rgba(56,189,248,.3); border-radius:6px;
+  text-align:center; font-size:1.05rem !important; font-weight:700; font-family:'Chakra Petch','JetBrains Mono',monospace;
 }
+/* directiva ("Ergonomía de carga de series regulares") -- SIN esta
+   regla el placeholder ("0", o la carga de referencia de la semana
+   anterior -- ver kgPlaceholder/secPlaceholder) hereda el gris apagado
+   default del navegador, no el color/peso real del input: hasta que el
+   atleta toca el campo, TODOS los inputs se ven "apagados, como
+   deshabilitados" -- exactamente el reporte. opacity:1 pisa el 0.54
+   default de Firefox, que si no vuelve a apagar este mismo color. */
+.jp-input-native::placeholder{ color:rgba(148,163,184,.65); opacity:1; font-weight:600; }
 .jp-input-native::-webkit-outer-spin-button,
 .jp-input-native::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
 .jp-input-native{ -moz-appearance:textfield; }
@@ -31400,6 +31502,45 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.72rem; line-height:1.5;
   color:rgba(237,239,242,.7); padding:2px 4px 0;
 }
+/* directiva ("Nivel 2: Protocolo de Descarga/Mini-sets") -- caja
+   destacada con micro-borde naranja, separada del protocolo fijo de
+   arriba: chips de bajada (1 tap) + contador rápido de reps efectivas,
+   en vez del área de texto libre genérica como única forma de
+   registrar. El input de texto sigue debajo (ver .jp-intensity-note)
+   como respaldo/edición manual, nunca se retira. */
+.jp-tecnica-quickreg{
+  margin-top:6px; padding:8px 9px; border-radius:8px;
+  border:1px solid rgba(255,107,0,.3); background:rgba(255,107,0,.05);
+  display:flex; flex-direction:column; gap:7px;
+}
+.jp-tecnica-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+.jp-tecnica-chip{
+  flex:0 0 auto; min-height:30px; padding:4px 11px; border-radius:20px;
+  background:rgba(255,107,0,.08); border:1px solid rgba(255,107,0,.35); color:#ff8533;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700; font-size:.78rem;
+  cursor:pointer;
+}
+.jp-tecnica-chip.active{ background:#ff6b00; border-color:#ff6b00; color:#0b0e14; }
+.jp-tecnica-stepper{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.jp-tecnica-step-btn{
+  flex-shrink:0; width:30px; height:30px; border-radius:50%; box-sizing:border-box;
+  background:transparent; border:1px solid #38bdf8; color:#38bdf8;
+  font-size:1.05rem; font-weight:800; line-height:1; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; padding:0;
+}
+.jp-tecnica-step-btn:active{ background:rgba(56,189,248,.16); }
+.jp-tecnica-step-val{
+  flex:0 0 auto; min-width:22px; text-align:center;
+  font-family:'Chakra Petch','JetBrains Mono',monospace; font-weight:800; font-size:1.05rem; color:#38bdf8;
+}
+.jp-tecnica-step-unit{ flex:0 0 auto; font-size:.7rem; color:#94a3b8; text-transform:lowercase; }
+.jp-tecnica-add-btn{
+  flex:1 1 auto; min-height:32px; padding:6px 12px; border-radius:8px;
+  background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.4); color:#38bdf8;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700; font-size:.76rem;
+  letter-spacing:.02em; cursor:pointer; white-space:nowrap;
+}
+.jp-tecnica-add-btn:active{ background:rgba(56,189,248,.22); }
 .jp-intensity-note{
   width:100%; margin-top:2px; padding:7px 9px; border-radius:8px;
   border:1px dashed rgba(255,255,255,.18); background:rgba(255,255,255,.02);
