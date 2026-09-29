@@ -29546,8 +29546,18 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:none !important; }
     if(o.compat) partes.push('<p><span class="hdp-acc-k">🔄 A tener en cuenta</span>' + escAcc(o.compat) + '</p>');
     if((o.tags||[]).length) partes.push('<p><span class="hdp-acc-k">🦴 Antecedentes</span>' + o.tags.map(escAcc).join(' · ') + '</p>');
     if((o.preferidos||[]).length) partes.push('<p><span class="hdp-acc-k">⭐ Priorizamos</span>' + o.preferidos.map(escAcc).join(' · ') + '</p>');
-    box.innerHTML = partes.length ? partes.join('') :
-      '<p class="hdp-acc-empty">Tu coach todavía no cargó objetivos específicos acá — se los podés pedir directamente.</p>';
+    /* directiva ("Regla Zero-Empty") -- sin nada cargado, el acordeón
+       entero desaparece en vez de mostrar un texto de disculpa ("Tu
+       coach todavía no cargó..."); el atleta nunca abre un panel para
+       encontrarse con una excusa, directamente no lo ve. */
+    var acc = q('hdpAccObjetivos');
+    if(partes.length){
+      box.innerHTML = partes.join('');
+      if(acc) acc.style.display = '';
+    } else {
+      box.innerHTML = '';
+      if(acc) acc.style.display = 'none';
+    }
   }
   /* directiva ("Limpieza del Modal de Ficha Técnica / Ajustes") -- en
      CrossFit el texto de RIR/RPE (jerga de hipertrofia de Bodybuilding,
@@ -29562,21 +29572,28 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:none !important; }
     var box = q('hdpMetodoBody'); if(!box) return;
     var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
     var tt = q('hdpMetodoTt');
+    var acc = q('hdpAccMetodo');
     if(cfg.disciplina === 'crossfit' || cfg.modoSemanal){
       if(tt) tt.textContent = 'Estrategia & Enfoque de la Semana';
-      var partesCF = [];
-      partesCF.push('<div class="hdp-acc-k">📋 Estrategia &amp; Enfoque de la Semana</div>');
-      partesCF.push(cfg.cfEstrategia
-        ? '<p>' + escAcc(cfg.cfEstrategia) + '</p>'
-        : '<p class="hdp-acc-empty">Tu coach todavía no cargó la estrategia de esta semana.</p>');
-      var diaAct = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
-      partesCF.push('<div class="hdp-acc-k" style="margin-top:14px">🎯 Briefing Metodológico del Día</div>');
-      partesCF.push((diaAct && diaAct.briefing)
-        ? '<p>' + escAcc(diaAct.briefing) + '</p>'
-        : '<p class="hdp-acc-empty">Sin briefing táctico cargado para la sesión de hoy.</p>');
-      box.innerHTML = partesCF.join('');
+      /* directiva ("Limpieza de Duplicados") -- "Briefing Metodológico
+         del Día" (day.briefing) ya vive en la pantalla principal, ANTES
+         del WOD, como el chip colapsable "⚡ Briefing del Coach"
+         (.tactical-briefing, ver renderMain()) -- repetirlo acá adentro
+         de la credencial era el mismo texto dos veces. Se retira de
+         este acordeón, que ahora sólo muestra la Estrategia de la
+         Semana (cfEstrategia), dato que NO vive en ningún otro lado.
+         Regla "Zero-Empty": sin cfEstrategia cargada, el acordeón entero
+         desaparece en vez de mostrar una disculpa. */
+      if(cfg.cfEstrategia){
+        box.innerHTML = '<p>' + escAcc(cfg.cfEstrategia) + '</p>';
+        if(acc) acc.style.display = '';
+      } else {
+        box.innerHTML = '';
+        if(acc) acc.style.display = 'none';
+      }
       return;
     }
+    if(acc) acc.style.display = '';
     var weeks = cfg.weeks || [];
     var curWeek = (typeof state !== 'undefined' && typeof state.currentWeek === 'number') ? state.currentWeek : 0;
     var html = '';
