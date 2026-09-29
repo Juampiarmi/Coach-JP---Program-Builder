@@ -575,3 +575,72 @@ export async function generateContent(
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Re-generación de una sola placa (usa el mismo prompt de sistema, llamadas y parser).
+
+/** Plantillas de la app → templateId que entiende la IA (06/07 no las genera la IA). */
+const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
+  metric: 'metric',
+  compare: 'ab',
+  chart: 'chart',
+  statement: 'statement',
+  manifesto: 'manifesto',
+}
+
+export interface RegenerateRequest {
+  topic: string
+  discipline: Discipline
+  /** Placa a reformular y su posición en la secuencia */
+  slide: CanvasState
+  index: number
+  /** Titulares del resto de las placas, para mantener la coherencia del carrusel */
+  others: { index: number; title: string }[]
+}
+
+function regeneratePrompt(req: RegenerateRequest) {
+  const base = buildUserPrompt(req.topic, 'single', req.discipline)
+  const current = `${req.slide.headlineA} ${req.slide.headlineB}`.trim()
+  const aiTemplate = AI_TEMPLATE_ID[req.slide.template]
+  const context = req.others.length
+    ? `Es la placa ${req.index + 1} de una secuencia de ${req.others.length + 1}. Las otras placas (no las repitas ni las contradigas):\n${req.others
+        .map((o) => `- Placa ${o.index + 1}: ${o.title}`)
+        .join('\n')}`
+    : 'Es una placa única.'
+  return `${base}
+
+REFORMULÁ ÚNICAMENTE ESTA PLACA. ${context}
+Versión actual de la placa ${req.index + 1}: "${current}".
+Escribí una versión nueva y mejor (otro ángulo, otro dato o una frase más contundente), coherente con el tema principal.${
+    aiTemplate ? ` Mantené templateId "${aiTemplate}".` : ''
+  } Devolvé exactamente 1 slide y "caption": "".`
+}
+
+/** Pide a la IA una versión nueva de la placa activa, sin tocar el resto de la secuencia. */
+export async function regenerateSlide(
+  settings: AiSettings,
+  req: RegenerateRequest,
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<Partial<CanvasState>> {
+  const key = (settings.keys[settings.provider] ?? '').trim()
+  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA.')
+  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
+  const ask = (prompt: string) =>
+    settings.provider === 'gemini'
+      ? callGemini(key, model, prompt, signal, onStatus, undefined, settings.geminiModels ?? [])
+      : settings.provider === 'anthropic'
+        ? callAnthropic(key, model, prompt, signal)
+        : callOpenAI(key, model, prompt, signal)
+  const text = await ask(regeneratePrompt(req))
+  let parsed: unknown
+  try {
+    parsed = safeParseJson(text)
+  } catch (err) {
+    if (!(err instanceof JsonRepairError)) throw err
+    onStatus?.('[ Respuesta con JSON inválido · Pidiendo corrección sintáctica... ]')
+    parsed = safeParseJson(await ask(repairPrompt(err)))
+  }
+  onStatus?.(null)
+  return parseGeneration(parsed, 'single').slides[0]
+}

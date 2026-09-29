@@ -21,7 +21,14 @@ export function RadarDiagram({ axes, values, compare, labelA, labelB, width, hei
   const plotH = height - legendH
   const cx = width / 2
   const cy = plotH / 2
-  const R = Math.min(width * 0.3, plotH * 0.36)
+  // Radar un 25 % más grande que la base (0,30 del ancho / 0,36 del alto), limitado para que
+  // las etiquetas laterales no se salgan del ancho útil.
+  const labelSize = 32 * scale
+  const longest = Math.max(...names.map((s) => s.length))
+  const sideRoom = width / 2 - 30 * scale - longest * labelSize * 0.56
+  // Arriba y abajo hace falta lugar para la etiqueta + su valor (≈ 2 renglones).
+  const vertRoom = plotH / 2 - labelSize * 2.6
+  const R = Math.max(80 * scale, Math.min(width * 0.3 * 1.25, plotH * 0.36 * 1.25, sideRoom, vertRoom))
   const angle = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / n
   const pt = (i: number, v: number) => [cx + Math.cos(angle(i)) * R * (v / 100), cy + Math.sin(angle(i)) * R * (v / 100)]
   const poly = (vs: number[]) => vs.map((v, i) => pt(i, v).join(',')).join(' ')
@@ -49,13 +56,13 @@ export function RadarDiagram({ axes, values, compare, labelA, labelB, width, hei
           const x = cx + cos * (R + 30 * scale)
           const y = cy + sin * (R + 30 * scale)
           const anchor = cos > 0.3 ? 'start' : cos < -0.3 ? 'end' : 'middle'
-          const dy = sin > 0.3 ? 22 * scale : sin < -0.3 ? -30 * scale : -4 * scale
+          const dy = sin > 0.3 ? 28 * scale : sin < -0.3 ? -36 * scale : -4 * scale
           return (
             <g key={name + i}>
-              <text x={x} y={y + dy} textAnchor={anchor} fill={ink} style={{ fontFamily: LABEL_FONT, fontWeight: 600, fontSize: 27 * scale }}>
+              <text x={x} y={y + dy} textAnchor={anchor} fill={ink} style={{ fontFamily: LABEL_FONT, fontWeight: 700, fontSize: labelSize }}>
                 {name}
               </text>
-              <text x={x} y={y + dy + 28 * scale} textAnchor={anchor} fill={muted} style={{ fontFamily: MONO_FONT, fontSize: 20 * scale }}>
+              <text x={x} y={y + dy + 32 * scale} textAnchor={anchor} fill={muted} style={{ fontFamily: MONO_FONT, fontSize: 23 * scale }}>
                 {vals[i]}
               </text>
             </g>

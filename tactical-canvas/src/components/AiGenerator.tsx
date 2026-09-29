@@ -15,7 +15,7 @@ import { usePersistentState } from '../hooks/usePersistentState'
 import { AiSettingsModal } from './AiSettingsModal'
 
 interface Props {
-  onResult: (r: GenerationResult) => void
+  onResult: (r: GenerationResult, meta: { topic: string; discipline: Discipline }) => void
 }
 
 const MODES: GenMode[] = ['auto', 'single', 'stories', 'carousel']
@@ -139,6 +139,7 @@ export function AiGenerator({ onResult }: Props) {
             geminiCheckedAt: Date.now(),
           })),
         ),
+        { topic, discipline: mode.discipline ?? 'general' },
       )
     } catch (err) {
       if (err instanceof RateLimitError) {

@@ -12,6 +12,8 @@ interface Props {
 
 const PAD_X = 14
 const DIM = '#4B5566'
+/** Etiquetas numéricas de los ejes: más claras y grandes para que no se pierdan en el fondo oscuro. */
+const AXIS = '#94A3B8'
 const ZONE_FILL = 'rgba(56,189,248,.09)'
 const ZONE_STROKE = 'rgba(56,189,248,.45)'
 
@@ -54,12 +56,12 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
   const visibleTicks = ticks.filter((tk, i) => tk.hl || ticks.every((o, j) => j === i || !o.hl || Math.abs(o.t - tk.t) > 0.09))
 
   const axis = (
-    <div style={{ position: 'relative', height: 30 * scale, marginTop: 14 * scale }}>
+    <div style={{ position: 'relative', height: 40 * scale, marginTop: 16 * scale }}>
       {visibleTicks.map((tk, i) => (
         <span
           key={i}
           style={{
-            ...mono(19, tk.hl ? BRAND.cyan : BRAND.gray),
+            ...mono(27, tk.hl ? BRAND.cyan : AXIS),
             position: 'absolute',
             left: px(tk.t),
             transform: tk.t === 0 ? 'none' : tk.t === 1 ? 'translateX(-100%)' : 'translateX(-50%)',
@@ -135,7 +137,7 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
           {body}
           <div style={{ display: 'flex', gap, padding: `${12 * scale}px ${PAD_X}px 0`, borderTop: `3px solid ${BRAND.border}` }}>
             {values.map((_, i) => (
-              <span key={i} style={{ ...mono(18), width: barW, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span key={i} style={{ ...mono(25, AXIS), width: barW, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {labels[i] ?? ''}
               </span>
             ))}

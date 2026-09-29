@@ -25,6 +25,21 @@ const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
 
 const ALIGN_LABEL: Record<ContentAlign, string> = { auto: 'AUTO', top: 'ARRIBA', center: 'CENTRO', bottom: 'ABAJO' }
 
+/** Presets de métricas reales de fuerza para el gráfico (sólo completan el rango y la zona). */
+const TRAINING_PRESETS: { label: string; chart: Partial<ChartConfig> }[] = [
+  { label: 'SERIES / SEMANA', chart: { min: 0, max: 30, unit: 'series', zone: '10-18', zoneLabel: 'VENTANA HIPERTROFIA' } },
+  { label: 'RIR / INTENSIDAD', chart: { min: 0, max: 5, unit: 'RIR', zone: '1-2', zoneLabel: 'ESTÍMULO EFECTIVO' } },
+  { label: 'RPE ESFUERZO', chart: { min: 5, max: 10, unit: 'RPE', zone: '7-9', zoneLabel: 'ZONA DE ADAPTACIÓN' } },
+]
+
+/** Citas frecuentes de fisiología y fuerza: un toque completa autor/año y descripción. */
+const CITATION_LIBRARY = [
+  { label: 'SCHOENFELD', main: 'SCHOENFELD Y COL., 2019 · J STRENGTH COND RES', sub: 'Respuesta a la dosis de volumen en hipertrofia muscular' },
+  { label: 'MEEUSEN', main: 'MEEUSEN Y COL., 2013 · MED SCI SPORTS EXERC', sub: 'Consenso sobre diagnóstico y prevención del sobreentrenamiento' },
+  { label: 'MORTON', main: 'MORTON Y COL., 2018 · BR J SPORTS MED', sub: 'Ingesta proteica y respuesta anabólica en entrenamiento de fuerza' },
+  { label: 'HELMS', main: 'HELMS Y COL., 2014 · J INT SOC SPORTS NUTR', sub: 'Recomendaciones basadas en evidencia para atletas de fuerza' },
+]
+
 const CARD_ACCENTS: Accent[] = ['cyan', 'orange', 'gold', 'gray', 'white']
 
 interface Props {
@@ -123,14 +138,27 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             En Repetición la frase de la matriz reemplaza al titular y al párrafo: se edita en la sección 02.
           </p>
         ) : (
+        <>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Titular · blanco">
             <TextArea value={state.headlineA} onChange={(headlineA) => update({ headlineA })} rows={2} />
           </Field>
-          <Field label="Remate · naranja">
+          <div>
+            <div className="mb-1 flex items-baseline justify-between gap-1">
+              <span className="font-mono text-[10px] tracking-[0.12em] text-steel uppercase">Remate · naranja</span>
+              <button
+                type="button"
+                onClick={() => update({ headlineA: state.headlineB, headlineB: state.headlineA })}
+                title="Intercambia el texto del titular (blanco) y del remate (naranja)"
+                className="rounded border border-line bg-surface px-1 py-px font-mono text-[9px] tracking-wider text-steel transition hover:border-cyan/50 hover:text-cyan"
+              >
+                ⇄ INVERTIR
+              </button>
+            </div>
             <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
-          </Field>
+          </div>
         </div>
+        </>
         )}
         {state.template === 'repeat' ? null : state.template === 'manifesto' ? (
           <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
@@ -205,6 +233,18 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <Field label="Etiqueta de la curva">
               <TextInput value={chart.title} onChange={(title) => setChart({ title })} uppercase placeholder="CADENCIA VS. FUERZA" />
             </Field>
+            <div className="flex gap-1.5">
+              {TRAINING_PRESETS.map((t) => (
+                <button
+                  key={t.label}
+                  type="button"
+                  onClick={() => setChart(t.chart)}
+                  className="flex-1 rounded-md border border-fire/40 bg-fire/5 px-1.5 py-1 font-mono text-[9px] font-semibold tracking-wider whitespace-nowrap text-fire transition hover:bg-fire/15"
+                >
+                  [ {t.label} ]
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <Field label="Mínimo">
                 <NumberInput value={chart.min} onChange={(min) => setChart({ min })} />
@@ -477,6 +517,21 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
 
       {state.template !== 'manifesto' && state.template !== 'repeat' && (
         <Section index="04" title="Fuente científica" summary={state.citeMain} defaultOpen={false}>
+          <div className="tc-scroll -mt-1 flex gap-1.5 overflow-x-auto pb-1">
+            {CITATION_LIBRARY.map((c) => (
+              <button
+                key={c.label}
+                type="button"
+                onClick={() => update({ citeMain: c.main, citeSub: c.sub })}
+                title={`${c.main} — ${c.sub}`}
+                className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] tracking-wider whitespace-nowrap transition ${
+                  state.citeMain === c.main ? 'border-cyan/60 bg-cyan/10 text-cyan' : 'border-line text-steel hover:text-white'
+                }`}
+              >
+                [ {c.label} ]
+              </button>
+            ))}
+          </div>
           <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
           <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
         </Section>

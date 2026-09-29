@@ -7,7 +7,7 @@ import { Preview } from './components/Preview'
 import { AiGenerator } from './components/AiGenerator'
 import { SlideBar } from './components/SlideBar'
 import { DEFAULT_STATE } from './defaults'
-import type { GenerationResult } from './lib/ai'
+import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type GenerationResult } from './lib/ai'
 import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
 import { zipFiles } from './lib/zip'
@@ -41,6 +41,9 @@ interface Deck {
   active: number
   /** Copy de Instagram generado por la IA para toda la pieza */
   caption?: string
+  /** Tema y enfoque de la última generación con IA (para re-generar una placa con coherencia) */
+  topic?: string
+  discipline?: Discipline
 }
 
 const DEFAULT_DECK: Deck = { slides: [DEFAULT_STATE], active: 0, caption: '' }
@@ -73,14 +76,20 @@ export default function App() {
   const reset = useCallback(() => setDeck(DEFAULT_DECK), [setDeck])
 
   const applyGeneration = useCallback(
-    (r: GenerationResult) =>
+    (r: GenerationResult, meta?: { topic: string; discipline: Discipline }) =>
       setDeck((d) => {
         const current = { ...DEFAULT_STATE, ...d.slides[Math.min(d.active, d.slides.length - 1)] }
         const globals: Partial<CanvasState> = {}
         for (const k of GLOBAL_KEYS) Object.assign(globals, { [k]: current[k] })
         if (r.format === 'stories') globals.aspect = 'story'
         if (r.format === 'carousel') globals.aspect = 'feed'
-        return { slides: r.slides.map((p) => ({ ...DEFAULT_STATE, ...globals, ...p })), active: 0, caption: r.caption }
+        return {
+          slides: r.slides.map((p) => ({ ...DEFAULT_STATE, ...globals, ...p })),
+          active: 0,
+          caption: r.caption,
+          topic: meta?.topic ?? d.topic,
+          discipline: meta?.discipline ?? d.discipline,
+        }
       }),
     [setDeck],
   )
@@ -140,6 +149,60 @@ export default function App() {
     }
   }
 
+  const [regen, setRegen] = useState<{ busy: boolean; note: string }>({ busy: false, note: '' })
+  const regenAbort = useRef<AbortController | null>(null)
+
+  /** Re-genera sólo la placa activa con IA; el resto de la secuencia queda intacto. */
+  const regenerateActive = async () => {
+    if (regen.busy) {
+      regenAbort.current?.abort()
+      return
+    }
+    let settings: AiSettings = DEFAULT_AI_SETTINGS
+    try {
+      const raw = JSON.parse(localStorage.getItem('jp-tactical-canvas:ai') ?? '{}') as Partial<AiSettings>
+      settings = { ...DEFAULT_AI_SETTINGS, ...raw, keys: { ...DEFAULT_AI_SETTINGS.keys, ...raw.keys }, models: { ...DEFAULT_AI_SETTINGS.models, ...raw.models } }
+    } catch {
+      /* se usan los defaults */
+    }
+    const index = active
+    const slide = slides[index]
+    const topic = deck.topic?.trim() || `${slide.headlineA} ${slide.headlineB}`.replace(/\*/g, '').trim()
+    regenAbort.current = new AbortController()
+    setRegen({ busy: true, note: '' })
+    try {
+      const patch = await regenerateSlide(
+        settings,
+        {
+          topic,
+          discipline: deck.discipline ?? 'general',
+          slide,
+          index,
+          others: slides.map((s, i) => ({ index: i, title: `${s.headlineA} ${s.headlineB}`.trim() })).filter((o) => o.index !== index),
+        },
+        regenAbort.current.signal,
+        (note) => note && setRegen({ busy: true, note }),
+      )
+      // Diagrama / Repetición no los genera la IA: se conserva la plantilla y se toma sólo el texto.
+      const safe: Partial<CanvasState> =
+        slide.template === 'diagram'
+          ? { tag: patch.tag, headlineA: patch.headlineA, headlineB: patch.headlineB, body: patch.body }
+          : slide.template === 'repeat'
+            ? { tag: patch.tag, repeatPhrase: `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim() }
+            : patch
+      for (const k of GLOBAL_KEYS) delete (safe as Record<string, unknown>)[k]
+      setDeck((d) => ({ ...d, slides: d.slides.map((s, i) => (i === index ? { ...DEFAULT_STATE, ...s, ...safe } : s)) }))
+      setRegen({ busy: false, note: `Placa ${index + 1} re-generada ✓` })
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === 'AbortError'
+      const note = aborted ? '' : err instanceof Error ? err.message : 'No se pudo re-generar.'
+      setRegen({ busy: false, note })
+      // En pantallas chicas la nota no entra en la barra: se avisa con un alert.
+      if (note && !isDesktop) window.alert(note)
+    }
+    window.setTimeout(() => setRegen((r) => (r.busy ? r : { busy: false, note: '' })), 9000)
+  }
+
   const slideBar = (
     <SlideBar
       count={slides.length}
@@ -149,6 +212,9 @@ export default function App() {
       onRemove={removeSlide}
       onExportAll={() => runBatch('png')}
       onExportZip={() => runBatch('zip')}
+      onRegenerate={regenerateActive}
+      regenBusy={regen.busy}
+      regenNote={regen.note}
       exporting={exporting}
     />
   )
