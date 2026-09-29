@@ -9630,6 +9630,13 @@ function renderWeekSelector(){
     wrapMeso.style.display = '';
     wrapMeso.classList.toggle('week-selector-wrap-cf', esCF);
   }
+  /* directiva ("Balancear margen derecho de la fila de semanas -- Sports")
+     -- mismo botón estático (.jp-prs-quickbtn), label discipline-aware:
+     CrossFit abre la lista de benchmarks olímpicos ("⚡ PRs / 1RM"),
+     Sports abre la Bóveda de Récords Personales genérica bajo el label
+     "📈 HISTORIAL" (ver el click delegado, más abajo en el archivo). */
+  const quickBtn = document.querySelector('.jp-prs-quickbtn');
+  if(quickBtn) quickBtn.innerHTML = esCF ? '&#9889; PRs / 1RM' : '&#128200; HISTORIAL';
   if(esCF){
     weekSelectorEl.innerHTML = (WEEKS_META || []).map(function(w, i){
       const activa = i === state.currentWeek;
@@ -14070,7 +14077,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   window.jpCfResolverKgLinea = jpCfResolverKgLinea;
   document.addEventListener('click', function(e){
     var quick = e.target.closest('.jp-prs-quickbtn');
-    if(quick){ e.stopPropagation(); jpAbrirListaPRs(); return; }
+    if(quick){
+      e.stopPropagation();
+      /* directiva ("Balancear margen derecho -- Sports") -- Sports no
+         usa la lista de benchmarks olímpicos de CrossFit acá: redirige
+         a la Bóveda de Récords Personales ya existente (CoachHubUI,
+         ver #prHubWrap / abrirHub() más abajo), la misma que hoy se
+         abre desde el drawer de Perfil. */
+      if(window.COACH_DISCIPLINA === 'sports'){
+        if(window.CoachHubUI && typeof window.CoachHubUI.abrir === 'function') window.CoachHubUI.abrir();
+      } else {
+        jpAbrirListaPRs();
+      }
+      return;
+    }
     var row = e.target.closest('.jp-prs-row');
     if(row){ e.stopPropagation(); jpAbrirPct1RM(row.dataset.pctLift || '', row.dataset.pctKey || ''); return; }
     var addCustom = e.target.closest('[data-pct-addcustom]');
@@ -30925,6 +30945,33 @@ body.cf-disc .jp-prs-quickbtn{
   font-weight:700; font-size:.75rem; letter-spacing:.04em; white-space:nowrap;
 }
 body.cf-disc .jp-prs-quickbtn:active{ background:rgba(255,214,0,.14) !important; }
+/* directiva ("Balancear margen derecho de la fila de semanas -- Sports")
+   -- CrossFit ya integra ⚡ PRs/1RM a la derecha de S1-S4 (arriba); Sports
+   tenía el mismo botón horneado en el HTML (ver <button class="jp-prs-
+   quickbtn"> estático) pero oculto por completo (nunca lo ve.). Acá NO
+   abre la lista de benchmarks olímpicos de CrossFit (jpAbrirListaPRs(),
+   ver JS más abajo) -- el label se ajusta a "📈 HISTORIAL" y el click se
+   redirige a window.CoachHubUI.abrir(), la Bóveda de Récords Personales
+   YA existente (🏆 Mis Récords Personales / Epley, ver #prHubWrap) que
+   hoy sólo se llega a través del drawer de Perfil -- mismo dato, ahora
+   con acceso directo desde la fila de semanas, idéntico a CrossFit.
+   .week-phase-sub sigue con contenido real en Sports (a diferencia de
+   CrossFit, que lo deja vacío) así que necesita flex-basis:100% para
+   caer a su propio renglón debajo de semanas + botón, no compartir fila. */
+body:not(.cf-disc) .week-selector-wrap{
+  display:flex !important; flex-wrap:wrap !important; align-items:center !important;
+  justify-content:space-between !important; width:100%; gap:2px 8px; padding:0 4px;
+}
+body:not(.cf-disc) .week-selector-wrap .week-selector{ flex:1; min-width:0; order:1; }
+body:not(.cf-disc) .week-selector-wrap .jp-prs-quickbtn{ order:2; }
+body:not(.cf-disc) .week-selector-wrap .week-phase-sub{ flex-basis:100%; order:3; margin:2px 2px 0; }
+body:not(.cf-disc) .jp-prs-quickbtn{
+  display:inline-flex !important; align-items:center; gap:5px; flex-shrink:0;
+  padding:6px 10px; border-radius:999px; border:1px solid #ffd600 !important;
+  background:#0b111e !important; color:#ffd600 !important; font-family:'Chakra Petch','Barlow Condensed',sans-serif;
+  font-weight:700; font-size:.75rem; letter-spacing:.04em; white-space:nowrap;
+}
+body:not(.cf-disc) .jp-prs-quickbtn:active{ background:rgba(255,214,0,.14) !important; }
 /* directiva (refactor táctico) -- "óvalos deformes con texto montado":
    border-radius:999px sobre una pastilla con DOS líneas de texto (nombre
    corto + label) las convertía en elipses irregulares, cada una con un
@@ -30979,6 +31026,24 @@ body.cf-disc .jp-prs-quickbtn:active{ background:rgba(255,214,0,.14) !important;
   background:#ff6b00 !important; opacity:1; box-shadow:0 0 8px rgba(255,107,0,.6) !important;
 }
 .hdc-days-wrap .day-tab.completed-day .day-dot{ background:#38BDF8 !important; opacity:1; box-shadow:0 0 8px rgba(56,189,248,.5) !important; }
+/* directiva ("Formato rectangular apaisado, sin truncar") -- el tope
+   max-width:82px de arriba (pensado para etiquetas cortas de CrossFit,
+   "Sesión 1") le queda chico al foco muscular real de Sports ("Glúteo e
+   Isquiotibiales", "Tracción - Espalda y Bíceps"): con una sola línea +
+   ellipsis, se leía cortado ("Glúteo e Is...", "Tracción - ..."). Riel
+   ya es horizontalmente scrolleable (can-scroll-l/r arriba), así que
+   ensanchar cada pastilla no rompe el layout -- rectángulo apaisado
+   (más ancho que alto) con 2 líneas de wrap antes de recurrir a
+   ellipsis, en vez de una sola línea angosta. Scopeado a Sports
+   (body:not(.cf-disc)): CrossFit conserva su pastilla compacta de
+   82px/1 línea tal cual. */
+body:not(.cf-disc) .hdc-days-wrap .day-tab{
+  min-width:104px !important; max-width:168px !important; padding:8px 14px !important;
+}
+body:not(.cf-disc) .hdc-days-wrap .day-tab .tab-label{
+  white-space:normal !important; display:-webkit-box !important; -webkit-line-clamp:2 !important;
+  -webkit-box-orient:vertical !important; line-height:1.25 !important;
+}
 /* selector de semanas: barra segmentada minimalista, sin cajas dobles */
 body.cf-disc .week-pill{
   border-radius:999px !important; border:1px solid rgba(255,255,255,.08) !important;
@@ -31129,6 +31194,24 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .block:has(.jp-sb-board) > .block-header .block-icon,
 .block:has(.jp-sb-board) > .block-header .block-header-text{ display:none !important; }
 .block:has(.jp-sb-board) > .block-header .block-check{ margin-right:0 !important; }
+/* directiva ("Eliminar la barra superior redundante de colapso") -- el
+   .block wrapper (borde ámbar + fondo propio + radius, ver .block más
+   arriba) quedaba como un SEGUNDO marco envolviendo tanto la franja de
+   checkbox/chevron de arriba como la tarjeta YA completa de .jp-sb-board
+   (que trae su propio borde + halo cenital) -- caja dentro de caja, el
+   mismo defecto que ya se corrigió en CrossFit (.block:has(.jp-cfboard)
+   más arriba). Acá NO se puede copiar tal cual esa solución: CrossFit
+   oculta .block-header por completo porque nunca colapsa ni trackea
+   bloques a mano, pero Sports sigue necesitando ambos controles (ver
+   comentario "Fusión de Barras de Bloque" arriba) -- se retira sólo el
+   marco exterior (border/background/radius/sombra) y el checkbox +
+   chevron quedan flotando, sin caja propia, justo encima de la tarjeta
+   real -- misma función, cero segundo marco visual. */
+.block:has(.jp-sb-board){
+  border:none !important; background:none !important; border-left:none !important;
+  box-shadow:none !important; border-radius:0 !important; overflow:visible !important;
+}
+.block:has(.jp-sb-board) > .block-body{ padding:0 !important; }
 .jp-sb-tag{
   /* directiva ("Homogeneización Cromática Exacta"): naranja táctico
      #ff6b00 exacto -- título de bloque, valor pinneado por la
