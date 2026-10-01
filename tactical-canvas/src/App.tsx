@@ -7,6 +7,7 @@ import { Preview } from './components/Preview'
 import { AiGenerator } from './components/AiGenerator'
 import { SlideBar } from './components/SlideBar'
 import { DEFAULT_STATE } from './defaults'
+import { harmonizeChart } from './lib/chartPillar'
 import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type GenerationResult } from './lib/ai'
 import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
@@ -47,6 +48,19 @@ interface Deck {
 }
 
 const DEFAULT_DECK: Deck = { slides: [DEFAULT_STATE], active: 0, caption: '' }
+/** Caption de respaldo para el ZIP cuando no hubo generación con IA: gancho, puntos y CTA. */
+function fallbackCaption(slides: CanvasState[]) {
+  const clean = (t: string) => t.replace(/\*/g, '').replace(/\s+/g, ' ').trim()
+  const title = (s: CanvasState) => clean(s.template === 'repeat' ? s.repeatPhrase : `${s.headlineA} ${s.headlineB}`)
+  const [first, ...rest] = slides
+  const lines = [title(first)]
+  if (clean(first.body)) lines.push('', clean(first.body))
+  const points = rest.map((s) => `▸ ${title(s)}`).filter((l) => l.length > 2)
+  if (points.length) lines.push('', ...points)
+  lines.push('', 'Guardá este post y compartilo con quien lo necesite.', '', '@coachjp.training')
+  return lines.join('\n')
+}
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export default function App() {
@@ -83,8 +97,13 @@ export default function App() {
         for (const k of GLOBAL_KEYS) Object.assign(globals, { [k]: current[k] })
         if (r.format === 'stories') globals.aspect = 'story'
         if (r.format === 'carousel') globals.aspect = 'feed'
+        const discipline = meta?.discipline ?? d.discipline ?? 'general'
         return {
-          slides: r.slides.map((p) => ({ ...DEFAULT_STATE, ...globals, ...p })),
+          // Los gráficos de la IA se ponen en caja (rango, zona, barras) antes de mostrarse.
+          slides: r.slides.map((p) => {
+            const s = { ...DEFAULT_STATE, ...globals, ...p }
+            return s.template === 'chart' ? { ...s, chart: harmonizeChart(s.chart, discipline) } : s
+          }),
           active: 0,
           caption: r.caption,
           topic: meta?.topic ?? d.topic,
@@ -93,6 +112,28 @@ export default function App() {
       }),
     [setDeck],
   )
+
+  /** Pilar activo: el chip del generador IA si está marcado; si no, el de la última generación. */
+  const getDiscipline = useCallback((): Discipline => {
+    try {
+      const chip = (JSON.parse(localStorage.getItem('jp-tactical-canvas:ai-mode') ?? '{}') as { discipline?: Discipline }).discipline
+      if (chip && chip !== 'general') return chip
+    } catch {
+      /* sin preferencia guardada */
+    }
+    return deck.discipline ?? 'general'
+  }, [deck.discipline])
+
+  /** Mueve la placa activa una posición (◀ / ▶) y la sigue seleccionando. */
+  const moveSlide = (dir: -1 | 1) =>
+    setDeck((d) => {
+      const i = Math.min(d.active, d.slides.length - 1)
+      const j = i + dir
+      if (j < 0 || j >= d.slides.length) return d
+      const next = [...d.slides]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return { ...d, slides: next, active: j }
+    })
 
   const selectSlide = (i: number) => setDeck((d) => ({ ...d, active: i }))
   const addSlide = () =>
@@ -125,7 +166,8 @@ export default function App() {
       if (kind === 'zip') {
         setExporting('EMPAQUETANDO .ZIP…')
         const first = slides[0]
-        const extras = caption.trim() ? [{ name: 'caption.txt', text: caption }] : []
+        // caption.txt siempre: el de la IA o, si no hay, uno armado con los textos de las placas.
+        const extras = [{ name: 'caption.txt', text: caption.trim() ? caption : fallbackCaption(slides) }]
         const zip = await zipFiles(files, extras)
         downloadBlob(zip, `coachjp_${state.aspect === 'story' ? 'historias' : 'carrusel'}_${slugify(`${first.headlineA} ${first.headlineB}`)}.zip`)
       } else if (!isDesktop && canShareFiles()) {
@@ -191,6 +233,7 @@ export default function App() {
             ? { tag: patch.tag, repeatPhrase: `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim() }
             : patch
       for (const k of GLOBAL_KEYS) delete (safe as Record<string, unknown>)[k]
+      if (safe.chart) safe.chart = harmonizeChart(safe.chart, deck.discipline ?? 'general')
       setDeck((d) => ({ ...d, slides: d.slides.map((s, i) => (i === index ? { ...DEFAULT_STATE, ...s, ...safe } : s)) }))
       setRegen({ busy: false, note: `Placa ${index + 1} re-generada ✓` })
     } catch (err) {
@@ -213,6 +256,7 @@ export default function App() {
       onExportAll={() => runBatch('png')}
       onExportZip={() => runBatch('zip')}
       onRegenerate={regenerateActive}
+      onMove={moveSlide}
       regenBusy={regen.busy}
       regenNote={regen.note}
       exporting={exporting}
@@ -229,6 +273,7 @@ export default function App() {
         bgImage={bg.image}
         setBgImage={bg.setImage}
         bgPersisted={bg.persisted}
+        getDiscipline={getDiscipline}
       />
     </>
   )

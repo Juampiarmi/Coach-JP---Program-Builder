@@ -15,8 +15,8 @@ interface Props {
   scale: number
 }
 
-const LINE_HEIGHT = 1.14
 const DIM: Record<ThemeId, string> = { dark: '#2E3440', paper: '#D8D2C8' }
+const OUTLINE: Record<ThemeId, string> = { dark: '#566072', paper: '#B9B1A4' }
 
 /** Ancho de la frase a 100 px con la fuente real (canvas 2D: mismo resultado en preview y PNG). */
 function useTextWidth(text: string, family: string, weight: number) {
@@ -40,20 +40,31 @@ function useTextWidth(text: string, family: string, weight: number) {
 }
 
 /**
- * Plantilla 07 · Repetición matrix: la frase se repite una vez por palabra; todo en gris
- * apagado y en el renglón i se resalta la palabra i, formando una diagonal que se lee de
- * arriba hacia abajo.
+ * Plantilla 07 · Repetición matrix.
+ * - Diagonal: la frase se repite una vez por palabra y en el renglón i se resalta la palabra i.
+ * - Eco vertical: la frase (1-2 palabras clave) se repite N veces en outline apagado y la del
+ *   medio va encendida.
+ * El tamaño llena el ancho exacto (escalable) y el interlineado se ajusta solo para que el
+ * bloque aproveche el alto disponible.
  */
 export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, contentWidth, maxHeight, scale }: Props) {
   const phrase = state.repeatPhrase.trim().toUpperCase() || 'ESCRIBÍ TU FRASE'
   const words = phrase.split(/\s+/)
-  const rows = words.length
+  const echo = state.repeatMode === 'echo'
+  const rows = echo ? Math.min(11, Math.max(3, Math.round(state.repeatCount))) : words.length
   const width100 = useTextWidth(phrase, fontFamily, fontWeight)
-  // El tamaño llena el ancho exacto y, si hay muchos renglones, se limita por el alto.
+  const availH = maxHeight * scale
+  const userScale = Math.min(1, Math.max(0.4, state.repeatScale / 100))
+  // Tamaño: llena el ancho (y nunca más alto que lo que entra a interlineado 1,0) × escala elegida.
   const byWidth = (contentWidth / width100) * 100 * 0.985
-  const byHeight = (maxHeight * scale) / (rows * LINE_HEIGHT)
-  const fontSize = Math.max(8, Math.min(byWidth, byHeight))
+  const byHeight = availH / (rows * (echo ? 1.0 : 1.08))
+  const fontSize = Math.max(8, Math.min(byWidth, byHeight) * userScale)
+  // Interlineado automático para ocupar el alto disponible, modulado por el slider.
+  const fill = availH / (rows * fontSize)
+  const auto = Math.min(echo ? 1.6 : 2.4, Math.max(echo ? 0.98 : 1.08, fill * 0.92))
+  const lineHeight = Math.min(fill, Math.max(0.9, auto * (state.repeatLeading / 100)))
   const hi = state.repeatAccent === 'orange' ? BRAND.orange : state.repeatAccent === 'cyan' ? BRAND.cyan : palette.ink
+  const mid = Math.floor(rows / 2)
 
   return (
     <div
@@ -61,23 +72,45 @@ export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, 
         fontFamily,
         fontWeight,
         fontSize,
-        lineHeight: LINE_HEIGHT,
+        lineHeight,
         letterSpacing: 0,
         textTransform: 'uppercase',
         color: DIM[theme],
         textShadow: 'none',
+        textAlign: echo ? 'center' : 'left',
       }}
     >
-      {words.map((_, row) => (
-        <div key={row} style={{ whiteSpace: 'nowrap' }}>
-          {words.map((w, i) => (
-            <span key={i} style={i === row ? { color: hi } : undefined}>
-              {w}
-              {i < words.length - 1 ? ' ' : ''}
-            </span>
+      {echo
+        ? Array.from({ length: rows }, (_, row) => {
+            const d = Math.abs(row - mid)
+            return (
+              <div
+                key={row}
+                style={
+                  row === mid
+                    ? { whiteSpace: 'nowrap', color: hi }
+                    : {
+                        whiteSpace: 'nowrap',
+                        color: 'transparent',
+                        WebkitTextStroke: `${Math.max(1.5, fontSize * 0.02)}px ${OUTLINE[theme]}`,
+                        opacity: Math.max(0.18, 1 - d * 0.2),
+                      }
+                }
+              >
+                {phrase}
+              </div>
+            )
+          })
+        : words.map((_, row) => (
+            <div key={row} style={{ whiteSpace: 'nowrap' }}>
+              {words.map((w, i) => (
+                <span key={i} style={i === row ? { color: hi } : undefined}>
+                  {w}
+                  {i < words.length - 1 ? ' ' : ''}
+                </span>
+              ))}
+            </div>
           ))}
-        </div>
-      ))}
     </div>
   )
 }

@@ -58,9 +58,9 @@ export const DISCIPLINE_LABEL: Record<Exclude<Discipline, 'general'>, string> = 
 const DISCIPLINE_RULE: Record<Discipline, string> = {
   general: '',
   sports:
-    'Disciplina: SPORTS & BODYBUILDING. Priorizá biomecánica, hipertrofia, fuerza, técnica de ejecución, RIR/RPE, volumen efectivo, rango de movimiento, tensión mecánica y recuperación muscular. Los ejemplos van en ejercicios de gimnasio (sentadilla, press, peso muerto, remo, aislamiento). Tags sugeridos: BIOMECÁNICA APLICADA, FUERZA · HIPERTROFIA.',
+    'Disciplina: SPORTS & BODYBUILDING. Priorizá biomecánica, hipertrofia, fuerza, técnica de ejecución, RIR/RPE, volumen efectivo, rango de movimiento, tensión mecánica y recuperación muscular. Los ejemplos van en ejercicios de gimnasio (sentadilla, press, peso muerto, remo, aislamiento). En gráficos usá series/semana, RIR, RPE, %1RM o kg. Tags sugeridos: BIOMECÁNICA APLICADA, FUERZA · HIPERTROFIA.',
   crossfit:
-    'Disciplina: CROSSFIT & HYROX. Priorizá bioenergética, pacing, umbrales de lactato, VO2máx, economía de movimiento bajo fatiga, transiciones, estrategia de carrera en Hyrox (running + estaciones), densidad de trabajo y recuperación entre WODs. Tags sugeridos: BIOENERGÉTICA · PACING, RESISTENCIA · UMBRAL DE LACTATO.',
+    'Disciplina: CROSSFIT & HYROX. Priorizá bioenergética, pacing, umbrales de lactato, VO2máx, economía de movimiento bajo fatiga, transiciones, estrategia de carrera en Hyrox (running + estaciones), densidad de trabajo y recuperación entre WODs. En gráficos usá W, min/km, mmol/L, lpm o % VO2máx. Tags sugeridos: BIOENERGÉTICA · PACING, RESISTENCIA · UMBRAL DE LACTATO.',
 }
 
 const MODE_RULE: Record<GenMode, string> = {
@@ -115,6 +115,11 @@ FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloqu
 - manifesto: { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) }
 
 Variá las plantillas dentro de una secuencia: no repitas la misma más de dos veces seguidas.
+
+DATOS NUMÉRICOS CONGRUENTES CON CADA PLANTILLA:
+- chart: los ejes y la unidad salen del tema y del pilar. Sports & Bodybuilding: series/semana, RIR, RPE, %1RM, kg o repeticiones. CrossFit & Hyrox: W, min/km, mmol/L de lactato, lpm o % VO2máx. No uses cadencia (rpm) salvo que el tema sea ciclismo. "min" < "max"; la "zone" desde-hasta va dentro de [min, max]; en bars, barLabels y barValues tienen la misma cantidad y los valores están dentro de [min, max]; en gauge, gaugeValue y gaugeThreshold están dentro de [min, max]. El "title" nombra los ejes reales (ej: "SERIES SEMANALES VS. HIPERTROFIA").
+- metric: "value" es el número del argumento y "label" dice qué mide y en qué unidad.
+- ab: los dos "value" se comparan en la misma unidad o dimensión.
 
 "caption": el COPY COMPLETO para el pie de foto de Instagram de toda la pieza (placa, historias o carrusel). Estructura:
 1. Primera línea: gancho de una oración que frene el scroll (sin repetir literal el titular).

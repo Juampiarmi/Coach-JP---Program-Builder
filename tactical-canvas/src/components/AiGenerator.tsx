@@ -161,11 +161,11 @@ export function AiGenerator({ onResult }: Props) {
   return (
     <div className="border-b border-line bg-gradient-to-b from-cyan/[.06] to-transparent px-4 py-3">
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-mono text-[11px] font-semibold tracking-[0.18em] text-cyan">[ 00 · GENERADOR IA ]</h2>
+        <h2 className="shrink-0 font-mono text-[11px] font-semibold tracking-[0.18em] whitespace-nowrap text-cyan">[ 00 · GENERADOR IA ]</h2>
         <button
           type="button"
           onClick={() => setModal(true)}
-          className={`flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[9px] tracking-wider transition ${
+          className={`flex max-w-[58%] min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[9px] tracking-wider transition ${
             hasKey ? 'border-line text-steel hover:text-white' : 'border-gold/50 text-gold'
           }`}
           title="Configurar API Key"
@@ -174,7 +174,7 @@ export function AiGenerator({ onResult }: Props) {
             <circle cx="8" cy="15" r="4" />
             <path d="m10.8 12.2 8.2-8.2M17 6l2 2M14 9l2 2" />
           </svg>
-          {hasKey ? `${settings.provider.toUpperCase()} · ${settings.models[settings.provider]}` : 'CARGAR API KEY'}
+          <span className="truncate">{hasKey ? `${settings.provider.toUpperCase()} · ${settings.models[settings.provider]}` : 'CARGAR API KEY'}</span>
         </button>
       </div>
       <textarea

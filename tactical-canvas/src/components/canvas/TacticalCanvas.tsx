@@ -269,7 +269,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                   fontFamily={font.family}
                   fontWeight={headlineWeight}
                   contentWidth={contentWidth}
-                  maxHeight={(h - pad.top - pad.bottom) * (isStory ? 0.66 : 0.6)}
+                  maxHeight={(h - pad.top - pad.bottom) * (isStory ? 0.76 : 0.72)}
                   scale={scale}
                 />
               ) : isManifesto ? (
