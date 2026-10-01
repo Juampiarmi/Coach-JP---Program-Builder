@@ -109,7 +109,7 @@ FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloqu
 
 "data" según templateId:
 - metric: { "value": string (corto, máx 5 caracteres), "label": string (MAYÚSCULAS, qué mide), "accent": "orange" | "cyan" | "gold" }
-- ab: { "a": { "label": string, "value": string (máx 14 caracteres), "caption": string }, "b": { ...igual }, "verdict": string (MAYÚSCULAS, 2 frases muy cortas) }
+- ab: { "cardA_label": string (MAYÚSCULAS), "cardA_value": string (máx 14 caracteres), "cardA_desc": string, "cardB_label": string (MAYÚSCULAS), "cardB_value": string (máx 14 caracteres), "cardB_desc": string, "verdict": string (MAYÚSCULAS, 2 frases muy cortas) }. Si el slide usa plantilla A/B, debés incluir obligatoriamente los campos cardA_label, cardA_value, cardA_desc, cardB_label, cardB_value y cardB_desc con contenido técnico relevante al tema. Nunca los dejes vacíos.
 - chart: { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string, "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" (solo curve), "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
 - statement: { "kicker": string (remate en MAYÚSCULAS, máx 14 palabras) }
 - manifesto: { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) }
@@ -489,13 +489,35 @@ export function slideToPatch(raw: unknown): Partial<CanvasState> {
     patch.metricLabel = upper(d.label)
     patch.metricAccent = oneOf(d.accent, ACCENTS, 'orange')
   } else if (template === 'compare') {
-    const card = (c: unknown, accent: Accent) => {
-      const o = obj(c)
-      return { label: upper(o.label), value: str(o.value), caption: str(o.caption), accent }
+    // Mapeo tolerante: Gemini a veces usa otros nombres o pone las tarjetas fuera de "data".
+    const sources = [d, s]
+    const pick = (paths: string[], fallback: string) => {
+      for (const src of sources) {
+        for (const path of paths) {
+          const v = path.split('.').reduce<unknown>((acc, k) => obj(acc)[k], src)
+          const text = str(v)
+          if (text) return text
+        }
+      }
+      return fallback
     }
-    patch.cardA = card(d.a, 'gray')
-    patch.cardB = card(d.b, 'cyan')
-    patch.verdict = upper(d.verdict)
+    const card = (side: 'A' | 'B', accent: Accent, fbLabel: string, fbValue: string) => {
+      const l = side.toLowerCase()
+      const groups = [`card${side}`, `option${side}`, `tarjeta${side}`, side, l, `card_${l}`, `opcion${side}`]
+      const keys = (fields: string[]) => [
+        ...fields.map((f) => `card${side}_${f}`),
+        ...groups.flatMap((g) => fields.map((f) => `${g}.${f}`)),
+      ]
+      return {
+        label: pick(keys(['label', 'etiqueta', 'title', 'titulo', 'name', 'nombre']), fbLabel).toUpperCase(),
+        value: pick(keys(['value', 'valor', 'metric', 'metrica', 'dato']), fbValue),
+        caption: pick(keys(['desc', 'description', 'descripcion', 'caption', 'detail', 'detalle', 'subtitle']), ''),
+        accent,
+      }
+    }
+    patch.cardA = card('A', 'gray', 'PROTOCOLO A', 'ESTÁTICO')
+    patch.cardB = card('B', 'cyan', 'PROTOCOLO B', 'DINÁMICO')
+    patch.verdict = pick(['verdict', 'veredicto', 'conclusion', 'conclusión'], '').toUpperCase()
   } else if (template === 'chart') {
     const c = base.chart
     const list = (v: unknown, fb: string) => (Array.isArray(v) ? v.join(', ') : str(v, fb))
