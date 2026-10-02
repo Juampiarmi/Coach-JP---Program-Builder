@@ -17,7 +17,7 @@ interface Props {
 /** Plantilla 06 · Diagrama visual / conceptual (estilo mental models). */
 export function DiagramTemplate({ state, palette, contentWidth, scale }: Props) {
   const isStory = state.aspect === 'story'
-  const baseH = { radar: isStory ? 700 : 560, circles: isStory ? 460 : 360, domino: isStory ? 620 : 470, curve: isStory ? 660 : 480 }[
+  const baseH = { radar: isStory ? 860 : 700, circles: isStory ? 460 : 360, domino: isStory ? 620 : 470, curve: isStory ? 660 : 480 }[
     state.diagramKind
   ]
   const style = {

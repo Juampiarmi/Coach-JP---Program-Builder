@@ -2,8 +2,11 @@ import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
 import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
-import type { Accent, CanvasState, ContentAlign, DiagramAccent, DiagramKind, RepeatAccent, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
+import type { Accent, CanvasState, ContentAlign, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
 import { DIAGRAM_ACCENT_HEX, DIAGRAM_ACCENT_LABEL, PAPER_TEMPLATES, REPEAT_ACCENT_LABEL, THEME_LABEL } from '../../lib/theme'
+import { RadarEditor } from './RadarEditor'
+import { CHART_BY_DISCIPLINE, isCadenceSample } from '../../lib/chartPillar'
+import type { Discipline } from '../../lib/ai'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
@@ -25,6 +28,21 @@ const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
 
 const ALIGN_LABEL: Record<ContentAlign, string> = { auto: 'AUTO', top: 'ARRIBA', center: 'CENTRO', bottom: 'ABAJO' }
 
+/** Presets de métricas reales de fuerza para el gráfico (sólo completan el rango y la zona). */
+const TRAINING_PRESETS: { label: string; chart: Partial<ChartConfig> }[] = [
+  { label: 'SERIES / SEMANA', chart: { min: 0, max: 30, unit: 'series', zone: '10-18', zoneLabel: 'VENTANA HIPERTROFIA' } },
+  { label: 'RIR / INTENSIDAD', chart: { min: 0, max: 5, unit: 'RIR', zone: '1-2', zoneLabel: 'ESTÍMULO EFECTIVO' } },
+  { label: 'RPE ESFUERZO', chart: { min: 5, max: 10, unit: 'RPE', zone: '7-9', zoneLabel: 'ZONA DE ADAPTACIÓN' } },
+]
+
+/** Citas frecuentes de fisiología y fuerza: un toque completa autor/año y descripción. */
+const CITATION_LIBRARY = [
+  { label: 'SCHOENFELD', main: 'SCHOENFELD Y COL., 2019 · J STRENGTH COND RES', sub: 'Respuesta a la dosis de volumen en hipertrofia muscular' },
+  { label: 'MEEUSEN', main: 'MEEUSEN Y COL., 2013 · MED SCI SPORTS EXERC', sub: 'Consenso sobre diagnóstico y prevención del sobreentrenamiento' },
+  { label: 'MORTON', main: 'MORTON Y COL., 2018 · BR J SPORTS MED', sub: 'Ingesta proteica y respuesta anabólica en entrenamiento de fuerza' },
+  { label: 'HELMS', main: 'HELMS Y COL., 2014 · J INT SOC SPORTS NUTR', sub: 'Recomendaciones basadas en evidencia para atletas de fuerza' },
+]
+
 const CARD_ACCENTS: Accent[] = ['cyan', 'orange', 'gold', 'gray', 'white']
 
 interface Props {
@@ -34,9 +52,11 @@ interface Props {
   bgImage: string | null
   setBgImage: (img: string | null) => void
   bgPersisted: boolean
+  /** Pilar activo al momento del clic (chip del generador IA o el de la última generación) */
+  getDiscipline: () => Discipline
 }
 
-export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted }: Props) {
+export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline }: Props) {
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
   const fileRef = useRef<HTMLInputElement>(null)
@@ -70,7 +90,15 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               <button
                 key={t.id}
                 type="button"
-                onClick={() => update({ template: t.id })}
+                onClick={() => {
+                  const discipline = getDiscipline()
+                  // Al pasar a Gráfico, si todavía tiene la cadencia de ejemplo, se adapta al pilar activo.
+                  update(
+                    t.id === 'chart' && isCadenceSample(state.chart)
+                      ? { template: t.id, chart: { ...state.chart, ...CHART_BY_DISCIPLINE[discipline] } }
+                      : { template: t.id },
+                  )
+                }}
                 aria-pressed={on}
                 className={`rounded-md px-1 py-1.5 text-center transition ${on ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'}`}
               >
@@ -83,7 +111,13 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         <div className="mt-2 flex gap-2">
           <button
             type="button"
-            onClick={() => update(SAMPLES[state.template])}
+            onClick={() =>
+              update(
+                state.template === 'chart' && getDiscipline() === 'crossfit'
+                  ? { ...SAMPLES.chart, chart: { ...state.chart, ...CHART_BY_DISCIPLINE.crossfit } }
+                  : SAMPLES[state.template],
+              )
+            }
             className="flex-1 rounded-md border border-dashed border-line py-1.5 font-mono text-[10px] tracking-[0.12em] text-steel uppercase transition hover:border-cyan/50 hover:text-cyan"
           >
             Cargar ejemplo
@@ -123,14 +157,27 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             En Repetición la frase de la matriz reemplaza al titular y al párrafo: se edita en la sección 02.
           </p>
         ) : (
+        <>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Titular · blanco">
             <TextArea value={state.headlineA} onChange={(headlineA) => update({ headlineA })} rows={2} />
           </Field>
-          <Field label="Remate · naranja">
+          <div>
+            <div className="mb-1 flex items-baseline justify-between gap-1">
+              <span className="truncate font-mono text-[10px] tracking-[0.12em] whitespace-nowrap text-steel uppercase">Remate · naranja</span>
+              <button
+                type="button"
+                onClick={() => update({ headlineA: state.headlineB, headlineB: state.headlineA })}
+                title="Intercambia el texto del titular (blanco) y del remate (naranja)"
+                className="shrink-0 rounded border border-line bg-surface px-1 py-px font-mono text-[9px] tracking-wider whitespace-nowrap text-steel transition hover:border-cyan/50 hover:text-cyan"
+              >
+                ⇄ INVERTIR
+              </button>
+            </div>
             <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
-          </Field>
+          </div>
         </div>
+        </>
         )}
         {state.template === 'repeat' ? null : state.template === 'manifesto' ? (
           <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
@@ -205,6 +252,18 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <Field label="Etiqueta de la curva">
               <TextInput value={chart.title} onChange={(title) => setChart({ title })} uppercase placeholder="CADENCIA VS. FUERZA" />
             </Field>
+            <div className="flex gap-1.5">
+              {TRAINING_PRESETS.map((t) => (
+                <button
+                  key={t.label}
+                  type="button"
+                  onClick={() => setChart(t.chart)}
+                  className="flex-1 rounded-md border border-fire/40 bg-fire/5 px-1.5 py-1 font-mono text-[9px] font-semibold tracking-wider whitespace-nowrap text-fire transition hover:bg-fire/15"
+                >
+                  [ {t.label} ]
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <Field label="Mínimo">
                 <NumberInput value={chart.min} onChange={(min) => setChart({ min })} />
@@ -288,22 +347,16 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             </Field>
             {state.diagramKind === 'radar' && (
               <>
-                <Field label="Ejes (3 a 8)" hint="separados por coma">
-                  <TextInput value={state.radarAxes} onChange={(radarAxes) => update({ radarAxes })} />
-                </Field>
+                <RadarEditor state={state} update={update} />
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Valores 0–100">
-                    <TextInput value={state.radarValues} onChange={(radarValues) => update({ radarValues })} placeholder="45, 70, 85…" />
-                  </Field>
                   <Field label="Leyenda">
                     <TextInput value={state.radarLabelA} onChange={(radarLabelA) => update({ radarLabelA })} />
                   </Field>
-                  <Field label="Comparación" hint="opcional">
-                    <TextInput value={state.radarCompare} onChange={(radarCompare) => update({ radarCompare })} placeholder="80, 80, 75…" />
-                  </Field>
-                  <Field label="Leyenda comparación">
-                    <TextInput value={state.radarLabelB} onChange={(radarLabelB) => update({ radarLabelB })} />
-                  </Field>
+                  {state.radarCompare.trim() && (
+                    <Field label="Leyenda comparación">
+                      <TextInput value={state.radarLabelB} onChange={(radarLabelB) => update({ radarLabelB })} />
+                    </Field>
+                  )}
                 </div>
               </>
             )}
@@ -312,9 +365,22 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                 <Field label="Divisiones por círculo" hint="el último se repite con 1 parte destacada">
                   <TextInput value={state.circleDivisions} onChange={(circleDivisions) => update({ circleDivisions })} placeholder="1, 3, 12" />
                 </Field>
-                <Field label="Textos breves" hint="uno por línea">
-                  <TextArea value={state.circleCaptions} onChange={(circleCaptions) => update({ circleCaptions })} rows={4} />
-                </Field>
+                <div className="grid grid-cols-2 gap-2">
+                  {[0, 1, 2, 3].map((i) => {
+                    const caps = state.circleCaptions.split('\n')
+                    return (
+                      <Field key={i} label={`Círculo ${i + 1}${i === 3 ? ' · destacado' : ''}`}>
+                        <TextInput
+                          value={caps[i] ?? ''}
+                          onChange={(v) => {
+                            const next = [0, 1, 2, 3].map((j) => (j === i ? v : (caps[j] ?? '')))
+                            update({ circleCaptions: next.join('\n') })
+                          }}
+                        />
+                      </Field>
+                    )
+                  })}
+                </div>
               </>
             )}
             {state.diagramKind === 'domino' && (
@@ -334,13 +400,13 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             )}
             {state.diagramKind === 'curve' && (
               <div className="grid grid-cols-3 gap-2">
-                <Field label="Recta">
+                <Field label="Antes · lo esperado">
                   <TextInput value={state.curveExpected} onChange={(curveExpected) => update({ curveExpected })} />
                 </Field>
-                <Field label="Camino real">
+                <Field label="Después · real">
                   <TextInput value={state.curveReal} onChange={(curveReal) => update({ curveReal })} />
                 </Field>
-                <Field label="Bandera">
+                <Field label="Meta (bandera)">
                   <TextInput value={state.curveGoal} onChange={(curveGoal) => update({ curveGoal })} />
                 </Field>
               </div>
@@ -350,10 +416,35 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
 
         {state.template === 'repeat' && (
           <>
-            <Field label="Frase" hint={`${state.repeatPhrase.trim().split(/\s+/).filter(Boolean).length} palabras = renglones`}>
+            <Segmented<RepeatMode>
+              value={state.repeatMode}
+              onChange={(repeatMode) => update({ repeatMode })}
+              options={[
+                { value: 'diagonal', label: '[ DIAGONAL ]' },
+                { value: 'echo', label: '[ ECO VERTICAL ]' },
+              ]}
+              size="sm"
+            />
+            <Field
+              label={state.repeatMode === 'echo' ? 'Frase (ideal 1-2 palabras clave)' : 'Frase'}
+              hint={state.repeatMode === 'echo' ? undefined : `${state.repeatPhrase.trim().split(/\s+/).filter(Boolean).length} palabras = renglones`}
+            >
               <TextArea value={state.repeatPhrase} onChange={(repeatPhrase) => update({ repeatPhrase })} rows={3} />
             </Field>
-            <Field label="Color de la diagonal" plain>
+            {state.repeatMode === 'echo' && (
+              <Field label="Repeticiones">
+                <Range value={state.repeatCount} onChange={(repeatCount) => update({ repeatCount })} min={3} max={9} step={2} />
+              </Field>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Escala del texto">
+                <Range value={state.repeatScale} onChange={(repeatScale) => update({ repeatScale })} min={40} max={100} step={5} suffix="%" />
+              </Field>
+              <Field label="Interlineado" hint={state.repeatLeading === 100 ? 'auto' : undefined}>
+                <Range value={state.repeatLeading} onChange={(repeatLeading) => update({ repeatLeading })} min={60} max={140} step={5} suffix="%" />
+              </Field>
+            </div>
+            <Field label={state.repeatMode === 'echo' ? 'Color de la frase encendida' : 'Color de la diagonal'} plain>
               <Segmented<RepeatAccent>
                 value={state.repeatAccent}
                 onChange={(repeatAccent) => update({ repeatAccent })}
@@ -477,6 +568,21 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
 
       {state.template !== 'manifesto' && state.template !== 'repeat' && (
         <Section index="04" title="Fuente científica" summary={state.citeMain} defaultOpen={false}>
+          <div className="tc-scroll -mt-1 flex gap-1.5 overflow-x-auto pb-1">
+            {CITATION_LIBRARY.map((c) => (
+              <button
+                key={c.label}
+                type="button"
+                onClick={() => update({ citeMain: c.main, citeSub: c.sub })}
+                title={`${c.main} — ${c.sub}`}
+                className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9px] tracking-wider whitespace-nowrap transition ${
+                  state.citeMain === c.main ? 'border-cyan/60 bg-cyan/10 text-cyan' : 'border-line text-steel hover:text-white'
+                }`}
+              >
+                [ {c.label} ]
+              </button>
+            ))}
+          </div>
           <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
           <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
         </Section>

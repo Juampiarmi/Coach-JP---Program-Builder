@@ -3,6 +3,7 @@ export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
 export type RepeatAccent = 'white' | 'orange' | 'cyan'
+export type RepeatMode = 'diagonal' | 'echo'
 export type ManifestoStyle = 'bar' | 'quotes'
 export type ContentAlign = 'auto' | 'top' | 'center' | 'bottom'
 export type AspectId = 'feed' | 'story'
@@ -103,6 +104,13 @@ export interface CanvasState {
   // Repetición matrix (plantilla 07)
   repeatPhrase: string
   repeatAccent: RepeatAccent
+  /** Diagonal (palabra i en el renglón i) o Eco vertical (frase repetida, la del medio encendida) */
+  repeatMode: RepeatMode
+  /** Escala del texto (% del máximo que entra en el ancho) e interlineado (% del relleno automático) */
+  repeatScale: number
+  repeatLeading: number
+  /** Eco vertical: cantidad de repeticiones */
+  repeatCount: number
   // Layout
   contentAlign: ContentAlign
   /** Separación titular → bloque de plantilla, en % del valor base */

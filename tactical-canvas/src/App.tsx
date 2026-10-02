@@ -7,7 +7,8 @@ import { Preview } from './components/Preview'
 import { AiGenerator } from './components/AiGenerator'
 import { SlideBar } from './components/SlideBar'
 import { DEFAULT_STATE } from './defaults'
-import type { GenerationResult } from './lib/ai'
+import { harmonizeChart } from './lib/chartPillar'
+import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type GenerationResult } from './lib/ai'
 import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
 import { zipFiles } from './lib/zip'
@@ -41,9 +42,25 @@ interface Deck {
   active: number
   /** Copy de Instagram generado por la IA para toda la pieza */
   caption?: string
+  /** Tema y enfoque de la última generación con IA (para re-generar una placa con coherencia) */
+  topic?: string
+  discipline?: Discipline
 }
 
 const DEFAULT_DECK: Deck = { slides: [DEFAULT_STATE], active: 0, caption: '' }
+/** Caption de respaldo para el ZIP cuando no hubo generación con IA: gancho, puntos y CTA. */
+function fallbackCaption(slides: CanvasState[]) {
+  const clean = (t: string) => t.replace(/\*/g, '').replace(/\s+/g, ' ').trim()
+  const title = (s: CanvasState) => clean(s.template === 'repeat' ? s.repeatPhrase : `${s.headlineA} ${s.headlineB}`)
+  const [first, ...rest] = slides
+  const lines = [title(first)]
+  if (clean(first.body)) lines.push('', clean(first.body))
+  const points = rest.map((s) => `▸ ${title(s)}`).filter((l) => l.length > 2)
+  if (points.length) lines.push('', ...points)
+  lines.push('', 'Guardá este post y compartilo con quien lo necesite.', '', '@coachjp.training')
+  return lines.join('\n')
+}
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export default function App() {
@@ -73,17 +90,50 @@ export default function App() {
   const reset = useCallback(() => setDeck(DEFAULT_DECK), [setDeck])
 
   const applyGeneration = useCallback(
-    (r: GenerationResult) =>
+    (r: GenerationResult, meta?: { topic: string; discipline: Discipline }) =>
       setDeck((d) => {
         const current = { ...DEFAULT_STATE, ...d.slides[Math.min(d.active, d.slides.length - 1)] }
         const globals: Partial<CanvasState> = {}
         for (const k of GLOBAL_KEYS) Object.assign(globals, { [k]: current[k] })
         if (r.format === 'stories') globals.aspect = 'story'
         if (r.format === 'carousel') globals.aspect = 'feed'
-        return { slides: r.slides.map((p) => ({ ...DEFAULT_STATE, ...globals, ...p })), active: 0, caption: r.caption }
+        const discipline = meta?.discipline ?? d.discipline ?? 'general'
+        return {
+          // Los gráficos de la IA se ponen en caja (rango, zona, barras) antes de mostrarse.
+          slides: r.slides.map((p) => {
+            const s = { ...DEFAULT_STATE, ...globals, ...p }
+            return s.template === 'chart' ? { ...s, chart: harmonizeChart(s.chart, discipline) } : s
+          }),
+          active: 0,
+          caption: r.caption,
+          topic: meta?.topic ?? d.topic,
+          discipline: meta?.discipline ?? d.discipline,
+        }
       }),
     [setDeck],
   )
+
+  /** Pilar activo: el chip del generador IA si está marcado; si no, el de la última generación. */
+  const getDiscipline = useCallback((): Discipline => {
+    try {
+      const chip = (JSON.parse(localStorage.getItem('jp-tactical-canvas:ai-mode') ?? '{}') as { discipline?: Discipline }).discipline
+      if (chip && chip !== 'general') return chip
+    } catch {
+      /* sin preferencia guardada */
+    }
+    return deck.discipline ?? 'general'
+  }, [deck.discipline])
+
+  /** Mueve la placa activa una posición (◀ / ▶) y la sigue seleccionando. */
+  const moveSlide = (dir: -1 | 1) =>
+    setDeck((d) => {
+      const i = Math.min(d.active, d.slides.length - 1)
+      const j = i + dir
+      if (j < 0 || j >= d.slides.length) return d
+      const next = [...d.slides]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return { ...d, slides: next, active: j }
+    })
 
   const selectSlide = (i: number) => setDeck((d) => ({ ...d, active: i }))
   const addSlide = () =>
@@ -116,7 +166,8 @@ export default function App() {
       if (kind === 'zip') {
         setExporting('EMPAQUETANDO .ZIP…')
         const first = slides[0]
-        const extras = caption.trim() ? [{ name: 'caption.txt', text: caption }] : []
+        // caption.txt siempre: el de la IA o, si no hay, uno armado con los textos de las placas.
+        const extras = [{ name: 'caption.txt', text: caption.trim() ? caption : fallbackCaption(slides) }]
         const zip = await zipFiles(files, extras)
         downloadBlob(zip, `coachjp_${state.aspect === 'story' ? 'historias' : 'carrusel'}_${slugify(`${first.headlineA} ${first.headlineB}`)}.zip`)
       } else if (!isDesktop && canShareFiles()) {
@@ -140,6 +191,61 @@ export default function App() {
     }
   }
 
+  const [regen, setRegen] = useState<{ busy: boolean; note: string }>({ busy: false, note: '' })
+  const regenAbort = useRef<AbortController | null>(null)
+
+  /** Re-genera sólo la placa activa con IA; el resto de la secuencia queda intacto. */
+  const regenerateActive = async () => {
+    if (regen.busy) {
+      regenAbort.current?.abort()
+      return
+    }
+    let settings: AiSettings = DEFAULT_AI_SETTINGS
+    try {
+      const raw = JSON.parse(localStorage.getItem('jp-tactical-canvas:ai') ?? '{}') as Partial<AiSettings>
+      settings = { ...DEFAULT_AI_SETTINGS, ...raw, keys: { ...DEFAULT_AI_SETTINGS.keys, ...raw.keys }, models: { ...DEFAULT_AI_SETTINGS.models, ...raw.models } }
+    } catch {
+      /* se usan los defaults */
+    }
+    const index = active
+    const slide = slides[index]
+    const topic = deck.topic?.trim() || `${slide.headlineA} ${slide.headlineB}`.replace(/\*/g, '').trim()
+    regenAbort.current = new AbortController()
+    setRegen({ busy: true, note: '' })
+    try {
+      const patch = await regenerateSlide(
+        settings,
+        {
+          topic,
+          discipline: deck.discipline ?? 'general',
+          slide,
+          index,
+          others: slides.map((s, i) => ({ index: i, title: `${s.headlineA} ${s.headlineB}`.trim() })).filter((o) => o.index !== index),
+        },
+        regenAbort.current.signal,
+        (note) => note && setRegen({ busy: true, note }),
+      )
+      // Diagrama / Repetición no los genera la IA: se conserva la plantilla y se toma sólo el texto.
+      const safe: Partial<CanvasState> =
+        slide.template === 'diagram'
+          ? { tag: patch.tag, headlineA: patch.headlineA, headlineB: patch.headlineB, body: patch.body }
+          : slide.template === 'repeat'
+            ? { tag: patch.tag, repeatPhrase: `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim() }
+            : patch
+      for (const k of GLOBAL_KEYS) delete (safe as Record<string, unknown>)[k]
+      if (safe.chart) safe.chart = harmonizeChart(safe.chart, deck.discipline ?? 'general')
+      setDeck((d) => ({ ...d, slides: d.slides.map((s, i) => (i === index ? { ...DEFAULT_STATE, ...s, ...safe } : s)) }))
+      setRegen({ busy: false, note: `Placa ${index + 1} re-generada ✓` })
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === 'AbortError'
+      const note = aborted ? '' : err instanceof Error ? err.message : 'No se pudo re-generar.'
+      setRegen({ busy: false, note })
+      // En pantallas chicas la nota no entra en la barra: se avisa con un alert.
+      if (note && !isDesktop) window.alert(note)
+    }
+    window.setTimeout(() => setRegen((r) => (r.busy ? r : { busy: false, note: '' })), 9000)
+  }
+
   const slideBar = (
     <SlideBar
       count={slides.length}
@@ -149,6 +255,10 @@ export default function App() {
       onRemove={removeSlide}
       onExportAll={() => runBatch('png')}
       onExportZip={() => runBatch('zip')}
+      onRegenerate={regenerateActive}
+      onMove={moveSlide}
+      regenBusy={regen.busy}
+      regenNote={regen.note}
       exporting={exporting}
     />
   )
@@ -163,6 +273,7 @@ export default function App() {
         bgImage={bg.image}
         setBgImage={bg.setImage}
         bgPersisted={bg.persisted}
+        getDiscipline={getDiscipline}
       />
     </>
   )

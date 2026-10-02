@@ -1,7 +1,25 @@
 import { DEFAULT_AUTHOR } from './lib/brand'
 import type { CanvasState, ChartConfig, TemplateId } from './types'
 
+/** Gráfico de ejemplo: volumen semanal vs. hipertrofia (pilar fuerza). */
 const baseChart: ChartConfig = {
+  mode: 'curve',
+  title: 'SERIES SEMANALES VS. ESTÍMULO DE HIPERTROFIA',
+  min: 0,
+  max: 30,
+  unit: 'series',
+  zone: '10-18',
+  zoneLabel: 'VENTANA HIPERTROFIA (10–18 series por músculo)',
+  shape: 'bell',
+  barLabels: '4, 8, 12, 16, 20, 24',
+  barValues: '38, 60, 84, 92, 80, 62',
+  gaugeValue: 14,
+  gaugeThreshold: 22,
+  gaugeLabel: 'Series semanales',
+}
+
+/** Cadencia ciclista: queda sólo como preset para posts de ciclismo. */
+const cadenceChart: ChartConfig = {
   mode: 'curve',
   title: 'CADENCIA (RPM) VS. EFICIENCIA NEUROMUSCULAR',
   min: 40,
@@ -56,6 +74,10 @@ export const DEFAULT_STATE: CanvasState = {
   curveGoal: 'Meta',
   repeatPhrase: 'SI TODO ESTÁ EN TU CONTRA, AVANZÁ EN CONTRA DE TODO',
   repeatAccent: 'white',
+  repeatMode: 'diagonal',
+  repeatScale: 100,
+  repeatLeading: 100,
+  repeatCount: 7,
   bgOverlay: 75,
   bgGradient: true,
   bgMono: false,
@@ -92,13 +114,13 @@ export const SAMPLES: Record<TemplateId, Partial<CanvasState>> = {
     citeSub: 'DOMS como marcador no confiable de daño muscular y adaptación',
   },
   chart: {
-    tag: 'BIOMECÁNICA APLICADA',
-    headlineA: 'CADENCIA ALTA Y BAJA FUERZA.',
-    headlineB: 'ESE ES EL ERROR.',
+    tag: 'FUERZA · HIPERTROFIA',
+    headlineA: 'MÁS SERIES NO ES',
+    headlineB: 'MÁS MÚSCULO.',
     chart: baseChart,
-    body: 'Mashing fatiga tu fuerza rápido. Spinning excesivo satura tu sistema cardiovascular sin aprovechar la fuerza que ya tenés.',
-    citeMain: 'LUCÍA Y COL., 2004 · JOURNAL OF APPLIED PHYSIOLOGY',
-    citeSub: 'Economía de pedaleo y selección de cadencia en ciclistas entrenados',
+    body: 'El estímulo crece con el volumen hasta un punto. Pasada la ventana, sumás fatiga que no se recupera y el progreso se frena.',
+    citeMain: 'SCHOENFELD Y COL., 2017 · J SPORTS SCI',
+    citeSub: 'Dosis-respuesta entre volumen semanal de entrenamiento e hipertrofia muscular',
   },
   statement: {
     tag: 'NOTA TÁCTICA · FATIGA',
@@ -133,7 +155,8 @@ export const SAMPLES: Record<TemplateId, Partial<CanvasState>> = {
 
 /** Presets rápidos del gráfico. */
 export const CHART_PRESETS: { label: string; chart: Partial<ChartConfig> }[] = [
-  { label: 'Curva · cadencia', chart: { ...baseChart } },
+  { label: 'Curva · volumen', chart: { ...baseChart } },
+  { label: 'Curva · cadencia', chart: { ...cadenceChart } },
   {
     label: 'Curva · lactato',
     chart: {
@@ -148,8 +171,8 @@ export const CHART_PRESETS: { label: string; chart: Partial<ChartConfig> }[] = [
     },
   },
   {
-    label: 'Barras · cadencia',
-    chart: { ...baseChart, mode: 'bars', title: 'EFICIENCIA (%) POR CADENCIA (RPM)', min: 0, max: 100, unit: '%' },
+    label: 'Barras · volumen',
+    chart: { ...baseChart, mode: 'bars', title: 'ESTÍMULO (%) POR SERIES SEMANALES', min: 0, max: 100, unit: '%', zone: '10-18' },
   },
   {
     label: 'Medidor · HRV',

@@ -21,7 +21,9 @@ funciona sin conexión.
 - **7 plantillas**: Métrica Gigante, Comparativa A/B, Gráfico/Telemetría, Sentencia de Texto,
   Manifiesto / Cita Táctica, **Diagrama** (modelos mentales en SVG paramétrico: radar editable,
   círculos fraccionados, efecto dominó y curva de trayectoria con bandera) y **Repetición
-  matrix** (la frase repetida una vez por palabra, con la diagonal resaltada).
+  matrix** (modo Diagonal: la frase repetida una vez por palabra con la diagonal resaltada;
+  modo Eco vertical: 1-2 palabras clave repetidas en outline con la del medio encendida;
+  escala e interlineado ajustables).
 - **Temas**: Táctico Dark (el de siempre) y Minimal Paper (marfil + tinta negra + un acento,
   estilo editorial). Minimal Paper se aplica a Diagrama y Repetición; las plantillas 01–05
   siguen siempre en Táctico Dark. Tipografía extra para titulares: DM Serif.
@@ -31,7 +33,7 @@ funciona sin conexión.
   `CROSSFIT & HYROX` prioriza bioenergética y pacing), elegís Auto, 1 placa, Historias (3) o
   Carrusel (4-5) y la IA completa todos los campos y además escribe el caption de Instagram
   (botón `[ COPIAR CAPTION ]`, que también se puede ver y editar).
-- **Secuencias**: se navegan con `[ PLACA 1 | PLACA 2 | … ]`. `[ DESCARGAR TODAS (.ZIP) ]`
+- **Secuencias**: se navegan con `[ PLACA 1 | PLACA 2 | … ]` y se reordenan con ◀ ▶. `[ DESCARGAR TODAS (.ZIP) ]`
   baja las láminas numeradas junto con `caption.txt` en un solo archivo; el botón `N PNG`
   las baja por separado (en el celular, las comparte todas de una vez). El prompt y la validación de la respuesta están en
   `src/lib/ai.ts`.

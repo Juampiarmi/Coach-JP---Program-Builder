@@ -142,8 +142,9 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const bgGeo = bgGeometry(state, w, h)
   const gap = Math.min(2.5, Math.max(0.3, state.contentGap / 100))
   // Alineación del bloque central dentro de la zona segura (auto = criterio por plantilla).
-  const justify =
-    state.contentAlign === 'top'
+  const justify = isRepeat
+    ? 'center' // 07 · Repetición: la matriz siempre centrada verticalmente
+    : state.contentAlign === 'top'
       ? 'flex-start'
       : state.contentAlign === 'center'
         ? 'center'
@@ -268,7 +269,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                   fontFamily={font.family}
                   fontWeight={headlineWeight}
                   contentWidth={contentWidth}
-                  maxHeight={(h - pad.top - pad.bottom) * (isStory ? 0.66 : 0.6)}
+                  maxHeight={(h - pad.top - pad.bottom) * (isStory ? 0.76 : 0.72)}
                   scale={scale}
                 />
               ) : isManifesto ? (

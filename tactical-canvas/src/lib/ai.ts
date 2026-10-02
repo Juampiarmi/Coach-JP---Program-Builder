@@ -58,9 +58,9 @@ export const DISCIPLINE_LABEL: Record<Exclude<Discipline, 'general'>, string> = 
 const DISCIPLINE_RULE: Record<Discipline, string> = {
   general: '',
   sports:
-    'Disciplina: SPORTS & BODYBUILDING. Priorizá biomecánica, hipertrofia, fuerza, técnica de ejecución, RIR/RPE, volumen efectivo, rango de movimiento, tensión mecánica y recuperación muscular. Los ejemplos van en ejercicios de gimnasio (sentadilla, press, peso muerto, remo, aislamiento). Tags sugeridos: BIOMECÁNICA APLICADA, FUERZA · HIPERTROFIA.',
+    'Disciplina: SPORTS & BODYBUILDING. Priorizá biomecánica, hipertrofia, fuerza, técnica de ejecución, RIR/RPE, volumen efectivo, rango de movimiento, tensión mecánica y recuperación muscular. Los ejemplos van en ejercicios de gimnasio (sentadilla, press, peso muerto, remo, aislamiento). En gráficos usá series/semana, RIR, RPE, %1RM o kg. Tags sugeridos: BIOMECÁNICA APLICADA, FUERZA · HIPERTROFIA.',
   crossfit:
-    'Disciplina: CROSSFIT & HYROX. Priorizá bioenergética, pacing, umbrales de lactato, VO2máx, economía de movimiento bajo fatiga, transiciones, estrategia de carrera en Hyrox (running + estaciones), densidad de trabajo y recuperación entre WODs. Tags sugeridos: BIOENERGÉTICA · PACING, RESISTENCIA · UMBRAL DE LACTATO.',
+    'Disciplina: CROSSFIT & HYROX. Priorizá bioenergética, pacing, umbrales de lactato, VO2máx, economía de movimiento bajo fatiga, transiciones, estrategia de carrera en Hyrox (running + estaciones), densidad de trabajo y recuperación entre WODs. En gráficos usá W, min/km, mmol/L, lpm o % VO2máx. Tags sugeridos: BIOENERGÉTICA · PACING, RESISTENCIA · UMBRAL DE LACTATO.',
 }
 
 const MODE_RULE: Record<GenMode, string> = {
@@ -109,12 +109,17 @@ FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloqu
 
 "data" según templateId:
 - metric: { "value": string (corto, máx 5 caracteres), "label": string (MAYÚSCULAS, qué mide), "accent": "orange" | "cyan" | "gold" }
-- ab: { "a": { "label": string, "value": string (máx 14 caracteres), "caption": string }, "b": { ...igual }, "verdict": string (MAYÚSCULAS, 2 frases muy cortas) }
+- ab: { "cardA_label": string (MAYÚSCULAS), "cardA_value": string (máx 14 caracteres), "cardA_desc": string, "cardB_label": string (MAYÚSCULAS), "cardB_value": string (máx 14 caracteres), "cardB_desc": string, "verdict": string (MAYÚSCULAS, 2 frases muy cortas) }. Si el slide usa plantilla A/B, debés incluir obligatoriamente los campos cardA_label, cardA_value, cardA_desc, cardB_label, cardB_value y cardB_desc con contenido técnico relevante al tema. Nunca los dejes vacíos.
 - chart: { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string, "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" (solo curve), "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
 - statement: { "kicker": string (remate en MAYÚSCULAS, máx 14 palabras) }
 - manifesto: { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) }
 
 Variá las plantillas dentro de una secuencia: no repitas la misma más de dos veces seguidas.
+
+DATOS NUMÉRICOS CONGRUENTES CON CADA PLANTILLA:
+- chart: los ejes y la unidad salen del tema y del pilar. Sports & Bodybuilding: series/semana, RIR, RPE, %1RM, kg o repeticiones. CrossFit & Hyrox: W, min/km, mmol/L de lactato, lpm o % VO2máx. No uses cadencia (rpm) salvo que el tema sea ciclismo. "min" < "max"; la "zone" desde-hasta va dentro de [min, max]; en bars, barLabels y barValues tienen la misma cantidad y los valores están dentro de [min, max]; en gauge, gaugeValue y gaugeThreshold están dentro de [min, max]. El "title" nombra los ejes reales (ej: "SERIES SEMANALES VS. HIPERTROFIA").
+- metric: "value" es el número del argumento y "label" dice qué mide y en qué unidad.
+- ab: los dos "value" se comparan en la misma unidad o dimensión.
 
 "caption": el COPY COMPLETO para el pie de foto de Instagram de toda la pieza (placa, historias o carrusel). Estructura:
 1. Primera línea: gancho de una oración que frene el scroll (sin repetir literal el titular).
@@ -484,13 +489,35 @@ export function slideToPatch(raw: unknown): Partial<CanvasState> {
     patch.metricLabel = upper(d.label)
     patch.metricAccent = oneOf(d.accent, ACCENTS, 'orange')
   } else if (template === 'compare') {
-    const card = (c: unknown, accent: Accent) => {
-      const o = obj(c)
-      return { label: upper(o.label), value: str(o.value), caption: str(o.caption), accent }
+    // Mapeo tolerante: Gemini a veces usa otros nombres o pone las tarjetas fuera de "data".
+    const sources = [d, s]
+    const pick = (paths: string[], fallback: string) => {
+      for (const src of sources) {
+        for (const path of paths) {
+          const v = path.split('.').reduce<unknown>((acc, k) => obj(acc)[k], src)
+          const text = str(v)
+          if (text) return text
+        }
+      }
+      return fallback
     }
-    patch.cardA = card(d.a, 'gray')
-    patch.cardB = card(d.b, 'cyan')
-    patch.verdict = upper(d.verdict)
+    const card = (side: 'A' | 'B', accent: Accent, fbLabel: string, fbValue: string) => {
+      const l = side.toLowerCase()
+      const groups = [`card${side}`, `option${side}`, `tarjeta${side}`, side, l, `card_${l}`, `opcion${side}`]
+      const keys = (fields: string[]) => [
+        ...fields.map((f) => `card${side}_${f}`),
+        ...groups.flatMap((g) => fields.map((f) => `${g}.${f}`)),
+      ]
+      return {
+        label: pick(keys(['label', 'etiqueta', 'title', 'titulo', 'name', 'nombre']), fbLabel).toUpperCase(),
+        value: pick(keys(['value', 'valor', 'metric', 'metrica', 'dato']), fbValue),
+        caption: pick(keys(['desc', 'description', 'descripcion', 'caption', 'detail', 'detalle', 'subtitle']), ''),
+        accent,
+      }
+    }
+    patch.cardA = card('A', 'gray', 'PROTOCOLO A', 'ESTÁTICO')
+    patch.cardB = card('B', 'cyan', 'PROTOCOLO B', 'DINÁMICO')
+    patch.verdict = pick(['verdict', 'veredicto', 'conclusion', 'conclusión'], '').toUpperCase()
   } else if (template === 'chart') {
     const c = base.chart
     const list = (v: unknown, fb: string) => (Array.isArray(v) ? v.join(', ') : str(v, fb))
@@ -574,4 +601,73 @@ export async function generateContent(
       throw again
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Re-generación de una sola placa (usa el mismo prompt de sistema, llamadas y parser).
+
+/** Plantillas de la app → templateId que entiende la IA (06/07 no las genera la IA). */
+const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
+  metric: 'metric',
+  compare: 'ab',
+  chart: 'chart',
+  statement: 'statement',
+  manifesto: 'manifesto',
+}
+
+export interface RegenerateRequest {
+  topic: string
+  discipline: Discipline
+  /** Placa a reformular y su posición en la secuencia */
+  slide: CanvasState
+  index: number
+  /** Titulares del resto de las placas, para mantener la coherencia del carrusel */
+  others: { index: number; title: string }[]
+}
+
+function regeneratePrompt(req: RegenerateRequest) {
+  const base = buildUserPrompt(req.topic, 'single', req.discipline)
+  const current = `${req.slide.headlineA} ${req.slide.headlineB}`.trim()
+  const aiTemplate = AI_TEMPLATE_ID[req.slide.template]
+  const context = req.others.length
+    ? `Es la placa ${req.index + 1} de una secuencia de ${req.others.length + 1}. Las otras placas (no las repitas ni las contradigas):\n${req.others
+        .map((o) => `- Placa ${o.index + 1}: ${o.title}`)
+        .join('\n')}`
+    : 'Es una placa única.'
+  return `${base}
+
+REFORMULÁ ÚNICAMENTE ESTA PLACA. ${context}
+Versión actual de la placa ${req.index + 1}: "${current}".
+Escribí una versión nueva y mejor (otro ángulo, otro dato o una frase más contundente), coherente con el tema principal.${
+    aiTemplate ? ` Mantené templateId "${aiTemplate}".` : ''
+  } Devolvé exactamente 1 slide y "caption": "".`
+}
+
+/** Pide a la IA una versión nueva de la placa activa, sin tocar el resto de la secuencia. */
+export async function regenerateSlide(
+  settings: AiSettings,
+  req: RegenerateRequest,
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<Partial<CanvasState>> {
+  const key = (settings.keys[settings.provider] ?? '').trim()
+  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA.')
+  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
+  const ask = (prompt: string) =>
+    settings.provider === 'gemini'
+      ? callGemini(key, model, prompt, signal, onStatus, undefined, settings.geminiModels ?? [])
+      : settings.provider === 'anthropic'
+        ? callAnthropic(key, model, prompt, signal)
+        : callOpenAI(key, model, prompt, signal)
+  const text = await ask(regeneratePrompt(req))
+  let parsed: unknown
+  try {
+    parsed = safeParseJson(text)
+  } catch (err) {
+    if (!(err instanceof JsonRepairError)) throw err
+    onStatus?.('[ Respuesta con JSON inválido · Pidiendo corrección sintáctica... ]')
+    parsed = safeParseJson(await ask(repairPrompt(err)))
+  }
+  onStatus?.(null)
+  return parseGeneration(parsed, 'single').slides[0]
 }
