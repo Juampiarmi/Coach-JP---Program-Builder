@@ -577,6 +577,9 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <div class="sub">Multi-Athlete System · perfiles, reglas biomecánicas y restricciones</div>
         </div>
         <div class="spacer"></div>
+        <span class="pill" data-lsbadge style="display:none" title="Espacio usado del almacenamiento local de este navegador (límite aprox. 5 MB)"></span>
+        <button class="btn" data-backup-export title="Descarga un archivo coach_jp_backup_AAAA-MM-DD.json con todos los alumnos, la biblioteca y los planes">💾 EXPORTAR BACKUP JSON</button>
+        <button class="btn" data-backup-restore title="Carga un backup .json previo y reemplaza los datos actuales (pide confirmación)">📥 RESTAURAR BACKUP</button>
         <button class="btn gold" id="btnNewAth">➕ Registrar Nuevo Alumno/a</button>
       </div>
 
@@ -651,6 +654,9 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <div class="sub">Mesociclo · bloques · motor de reglas biomecánicas en tiempo real</div>
         </div>
         <div class="spacer"></div>
+        <span class="pill" data-lsbadge style="display:none" title="Espacio usado del almacenamiento local de este navegador (límite aprox. 5 MB)"></span>
+        <button class="btn" data-backup-export title="Descarga un archivo coach_jp_backup_AAAA-MM-DD.json con todos los alumnos, la biblioteca y los planes">💾 EXPORTAR BACKUP JSON</button>
+        <button class="btn" data-backup-restore title="Carga un backup .json previo y reemplaza los datos actuales (pide confirmación)">📥 RESTAURAR BACKUP</button>
         <button class="btn" id="btnAuditEx" title="Escanea todos los planes en busca de ejercicios sin nombre o desvinculados del catálogo">🔍 Auditar Atletas &amp; Ejercicios</button>
         <button class="btn" id="btnCheckAll">🛡️ Chequeo de seguridad</button>
         <button class="btn" id="btnExportPdf" title="Vista de impresión limpia en A4 de la sesión del día">🖨️ Exportar PDF</button>
@@ -1818,6 +1824,7 @@ function save(){
            (compartida) y PLANS_KEY (propia de esta rama). */
         localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
         localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
+        try{ pintarBadgeAlmacen(); }catch(eB){}
       }
       catch(e){ toast('No se pudo guardar (almacenamiento lleno)', 'err'); }
     };
@@ -1825,6 +1832,98 @@ function save(){
     else setTimeout(writeNow, 0);
   }, 1100);
 }
+/* =========================================================
+   SALVAGUARDA: BACKUP MANUAL + AVISO PREVENTIVO DE CUPO
+   (directiva "Sprint 1") -- no cambia el esquema de persistencia ni cómo
+   se guarda nada: sólo lee S/localStorage para descargar una copia
+   completa y puede reponerla, previa confirmación. El backup lleva el
+   estado en memoria de S (alumnos, biblioteca, planes de esta rama) más
+   los planes de la OTRA rama guardados en localStorage; NUNCA incluye las
+   claves de IA (coachjp_ai_cfg_v2). El formato es el mismo objeto S de
+   siempre con un bloque _meta aditivo, así que los backups viejos
+   (descargados desde Backup / Datos) siguen restaurando igual.
+========================================================= */
+const BACKUP_APP = 'coach_jp_backup';
+const LS_LIMITE_BYTES = 5 * 1024 * 1024;
+const PLANES_KEYS_RAMAS = ['coachjp_plans_sports_v1', 'coachjp_plans_crossfit_v1'];
+function armarBackup(){
+  const otras = {};
+  PLANES_KEYS_RAMAS.forEach(k => {
+    if(k === PLANS_KEY) return;
+    try{ const raw = localStorage.getItem(k); if(raw) otras[k] = JSON.parse(raw); }catch(e){}
+  });
+  return Object.assign(
+    { _meta: { app: BACKUP_APP, version: 1, fecha: new Date().toISOString(), disciplina: window.COACH_DISCIPLINA,
+               atletas: (S.athletes || []).length, planes: Object.keys(S.plans || {}).length } },
+    S, { otrasRamas: otras });
+}
+function exportarBackup(sufijo){
+  const nombre = 'coach_jp_backup_' + new Date().toISOString().slice(0, 10) + (sufijo ? '_' + sufijo : '') + '.json';
+  download(nombre, JSON.stringify(armarBackup(), null, 2), 'application/json');
+  toast('💾 Backup descargado: ' + nombre);
+}
+function validarBackup(d){
+  if(!d || typeof d !== 'object' || Array.isArray(d)) return 'el archivo no es un backup de Coach JP';
+  if(!Array.isArray(d.athletes) || !Array.isArray(d.exercises)) return 'faltan las listas de alumnos y ejercicios';
+  if(d.athletes.some(a => !a || typeof a.id !== 'string')) return 'hay alumnos sin identificador';
+  if(d.plans != null && (typeof d.plans !== 'object' || Array.isArray(d.plans))) return 'el bloque de planes está dañado';
+  return '';
+}
+function restaurarBackupDesdeTexto(txt){
+  let d;
+  try{ d = JSON.parse(txt); }catch(e){ toast('Archivo inválido: no es un JSON legible', 'err'); return; }
+  const err = validarBackup(d);
+  if(err){ toast('Backup inválido: ' + err, 'err'); return; }
+  const fechaBk = d._meta && d._meta.fecha ? ' del ' + String(d._meta.fecha).slice(0, 10) : '';
+  if(!confirm('Restaurar backup' + fechaBk + ':\n• ' + d.athletes.length + ' alumno(s)\n• ' + d.exercises.length + ' ejercicio(s)\n• ' +
+              Object.keys(d.plans || {}).length + ' plan(es)\n\nEsto REEMPLAZA todos los datos actuales de este navegador. ' +
+              'Antes se descarga una copia del estado actual como seguro. ¿Continuar?')) return;
+  try{ exportarBackup('previo'); }catch(e){}
+  const nuevo = Object.assign({ athletes: [], exercises: [], plans: {}, activeId: null, ui: { day: 0, view: 'alumnos' } }, d);
+  const otras = nuevo.otrasRamas;
+  delete nuevo._meta; delete nuevo.otrasRamas;
+  S = nuevo;
+  try{
+    localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
+    localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
+    if(otras && typeof otras === 'object'){
+      Object.keys(otras).forEach(k => { if(k !== PLANS_KEY && PLANES_KEYS_RAMAS.indexOf(k) >= 0) localStorage.setItem(k, JSON.stringify(otras[k])); });
+    }
+  }catch(e){ toast('No se pudo escribir el backup en el almacenamiento (¿lleno?)', 'err'); return; }
+  toast('📥 Backup restaurado ✔ — recargando…');
+  setTimeout(() => location.reload(), 700);
+}
+function usoAlmacenBytes(){
+  let chars = 0;
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      chars += k.length + (localStorage.getItem(k) || '').length;
+    }
+  }catch(e){}
+  return chars * 2; /* localStorage guarda UTF-16: 2 bytes por carácter */
+}
+let _avisoCupoMostrado = false;
+function pintarBadgeAlmacen(){
+  const bytes = usoAlmacenBytes(), pct = bytes / LS_LIMITE_BYTES * 100;
+  const txt = '💾 ' + (bytes / 1048576).toFixed(2) + ' / 5 MB';
+  document.querySelectorAll('[data-lsbadge]').forEach(el => {
+    el.textContent = txt;
+    el.style.display = '';
+    el.style.color = pct >= 90 ? '#FF6B57' : (pct >= 70 ? '#FFB703' : '');
+    el.style.borderColor = pct >= 90 ? 'rgba(255,107,87,.6)' : (pct >= 70 ? 'rgba(255,183,3,.6)' : '');
+    el.title = pct >= 70 ? 'Almacenamiento al ' + Math.round(pct) + '%: descargá un backup (💾 EXPORTAR BACKUP JSON)'
+                         : 'Espacio usado del almacenamiento local de este navegador (límite aprox. 5 MB)';
+  });
+  if(pct >= 80 && !_avisoCupoMostrado){
+    _avisoCupoMostrado = true;
+    toast('⚠️ Almacenamiento al ' + Math.round(pct) + '% del límite: descargá un backup con 💾 EXPORTAR BACKUP JSON', 'warn');
+  }
+}
+document.addEventListener('click', e => {
+  if(e.target.closest('[data-backup-export]')){ exportarBackup(); return; }
+  if(e.target.closest('[data-backup-restore]')){ const f = document.getElementById('fileRestore'); if(f) f.click(); }
+});
 /* sincronización en vivo entre ramas: si la OTRA pestaña (Sports o CrossFit,
    mismo navegador/origen) guarda una edición a la biblioteca compartida,
    este evento la refleja acá sin esperar a un F5. No dispara en la misma
@@ -12241,6 +12340,60 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const m = ((block.subtitle||'') + ' ' + lineas.join(' ')).match(/(\\d{1,2})\\s*(?:min|minuto|')/i);
     return m ? parseInt(m[1], 10) : 0;
   }
+  /* directiva ("Sprint 1: Timer contextual de WOD") -- traduce el formato
+     que el parser de la Pizarra YA detecta (block.boardFmt / formatoDe(),
+     más minutos/cap/intervalo del texto o de block.cfParam) en la
+     configuración que entiende el HUD Timer (CoachWodTimer.configurar).
+     Devuelve null si el bloque no declara un formato cronometrable (el
+     botón entonces no se pinta): nunca inventa un timer para un bloque de
+     fuerza sin formato. Sólo lee datos ya compilados, no toca el parser. */
+  function jpWodTimerCfg(block, lineas, f){
+    var kFmt = String(block.boardFmt || '').toLowerCase().replace(/[^a-z]/g, '');
+    var lb = f ? String(f.lb || '') : '';
+    var txt = lineas.join(' ') + ' ' + (block.title || '') + ' ' + (block.subtitle || '');
+    var param = String(block.cfParam || '').trim();
+    function seg(s){
+      var m = String(s || '').match(/(\\d+)\\s*:\\s*(\\d+)/);
+      if(m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      var n = String(s || '').match(/(\\d+)/);
+      return n ? parseInt(n[1], 10) * 60 : 0;
+    }
+    var modo = '';
+    if(kFmt === 'amrap' || /AMRAP/.test(lb)) modo = 'amrap';
+    else if(kFmt === 'emom' || /EMOM|EVERY/.test(lb)) modo = 'emom';
+    else if(kFmt === 'tabata' || /TABATA/.test(lb)) modo = 'tabata';
+    else if(kFmt === 'fortime' || kFmt === 'chipper' || /FOR TIME|CHIPPER/.test(lb)) modo = 'fortime';
+    else if(/INTERVALOS/.test(lb)) modo = 'intervalos';
+    if(!modo) return null;
+    var c = { modo: modo };
+    if(modo === 'amrap'){
+      var mA = txt.match(/amrap\\s*(?:de\\s*)?(\\d+)/i) || txt.match(/(\\d+)\\s*(?:min|minutos|')\\s*amrap/i);
+      c.total = mA ? parseInt(mA[1], 10) : (param ? Math.round(seg(param) / 60) : minutosDe(block, lineas));
+      if(!(c.total > 0)) c.total = 12;
+    } else if(modo === 'emom'){
+      var mE = txt.match(/every\\s*(\\d+)\\s*:\\s*(\\d+)/i);
+      var inter = mE ? parseInt(mE[1], 10) * 60 + parseInt(mE[2], 10) : 0;
+      if(!inter){ var mE2 = txt.match(/every\\s*(\\d+(?:\\.\\d+)?)\\s*(?:min|minutos|')/i); if(mE2) inter = Math.round(parseFloat(mE2[1]) * 60); }
+      if(!inter && param) inter = seg(param);
+      if(!(inter >= 5)) inter = 60;
+      var mR = txt.match(/\\bx\\s*(\\d+)/i) || txt.match(/(\\d+)\\s*(?:sets?|rounds?|rondas?)\\b/i);
+      var mTot = txt.match(/emom\\s*(?:de\\s*)?(\\d+)/i);
+      c.intervalo = inter;
+      c.rondas = mR ? parseInt(mR[1], 10)
+        : Math.max(1, Math.round(((mTot ? parseInt(mTot[1], 10) : (minutosDe(block, lineas) || 12)) * 60) / inter));
+    } else if(modo === 'fortime'){
+      var mC = txt.match(/cap\\s*(?:de\\s*)?(\\d+)(?:\\s*:\\s*(\\d+))?/i);
+      c.cap = mC ? parseInt(mC[1], 10) : (param ? Math.round(seg(param) / 60) : 0);
+    } else {
+      var mW = txt.match(/(\\d+)\\s*s?\\s*(?:on|work|trabajo)\\b/i), mRs = txt.match(/(\\d+)\\s*s?\\s*(?:off|rest|descanso)\\b/i);
+      var mRd = txt.match(/(\\d+)\\s*(?:rounds?|rondas?|sets?)\\b/i);
+      c.work = mW ? parseInt(mW[1], 10) : 20;
+      c.rest = mRs ? parseInt(mRs[1], 10) : 10;
+      c.rondas = mRd ? parseInt(mRd[1], 10) : 8;
+    }
+    return c;
+  }
+  window.jpWodTimerCfg = jpWodTimerCfg;
   function esMetcon(block, weekIdx){
     /* además del título/categoría estáticos, se testea la etiqueta YA
        resuelta para la semana actual -- así un bloque cuya categoría
@@ -12863,6 +13016,34 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            usándose más abajo para el placeholder del casillero de
            score), sólo se retira este render puntual. */
         '<div class="jp-cf-rows">' + filas + '</div>' +
+        /* directiva ("Sprint 1: Timer contextual de WOD") -- botón táctico
+           discreto que abre el HUD Timer ya configurado con el formato y
+           los minutos/intervalos detectados (ver jpWodTimerCfg()), sin
+           pasar por las 3 pantallas de selección manual. El acceso manual
+           del dock inferior queda aparte, intacto. */
+        (function(){
+          var tcfg = lineas.length ? jpWodTimerCfg(block, lineas, f) : null;
+          return tcfg ? '<button type="button" class="jp-cf-wodtimer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">&#9654; INICIAR TIMER DE ESTE WOD</button>' : '';
+        })() +
+        /* directiva ("Sprint 1: descanso rápido en series") -- los bloques de
+           Skill/Strength y Accessory de CrossFit no tienen tilde por serie
+           (se leen como texto), así que el alumno no tenía cómo arrancar un
+           descanso sin abrir el cronómetro. Chip de 1 toque que dispara la
+           barra flotante de descanso (CoachTV.rest, el MISMO motor que ya
+           usa Bodybuilding al tildar una serie), con el descanso prescrito
+           ("Rest 90s" en cualquier línea del bloque) o, si no hay, 90s en
+           fuerza / 60s en accesorio. Si el bloque ya trae su propio botón
+           "INICIAR REST" in-situ (línea de descanso explícita), no se
+           duplica. WODs/metcon quedan afuera: ahí manda el reloj del WOD. */
+        (function(){
+          if(!lineas.length || (block.category !== 'strength' && block.category !== 'accessory')) return '';
+          if(filas.indexOf('jp-cf-rest') >= 0) return '';
+          var segQ = 0;
+          for(var qi = 0; qi < lineas.length && !segQ; qi++){ segQ = jpCfParsearDescanso(lineas[qi]) || 0; }
+          if(!(segQ > 0)) segQ = block.category === 'accessory' ? 60 : 90;
+          var lbQ = 'Descanso \\u00b7 ' + String(block.title || 'Bloque').replace(/[<>"&]/g, '').slice(0, 28);
+          return '<button type="button" class="jp-cf-quickrest" data-rest-sec="' + segQ + '" data-rest-lb="' + lbQ + '">&#9201;&#65039; DESCANSO R&Aacute;PIDO ' + jpCfRestMMSS(segQ) + '</button>';
+        })() +
         /* directiva ("Unificación de Acordeones al Pie del Bloque") --
            UN SOLO <details> táctico agrupa el foco del bloque, el
            objetivo/tips/pacing/escalado y los chips de video (antes
@@ -14235,6 +14416,25 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      no duplicar la lógica de 1RM/lematización en otro lado. */
   window.jpCfResolverKgLinea = jpCfResolverKgLinea;
   document.addEventListener('click', function(e){
+    var quickRestBtn = e.target.closest('.jp-cf-quickrest');
+    if(quickRestBtn){
+      e.stopPropagation();
+      var qSeg = parseInt(quickRestBtn.dataset.restSec, 10);
+      if(qSeg > 0 && window.CoachTV && typeof window.CoachTV.rest === 'function'){
+        window.CoachTV.rest(qSeg, quickRestBtn.dataset.restLb || 'Descanso');
+        try{ if(navigator.vibrate) navigator.vibrate(20); }catch(errQr){}
+      }
+      return;
+    }
+    var wodTimerBtn = e.target.closest('.jp-cf-wodtimer');
+    if(wodTimerBtn){
+      e.stopPropagation();
+      try{
+        var wcfg = JSON.parse(decodeURIComponent(wodTimerBtn.dataset.wodcfg || ''));
+        if(window.CoachWodTimer && typeof window.CoachWodTimer.configurar === 'function') window.CoachWodTimer.configurar(wcfg);
+      }catch(errWt){}
+      return;
+    }
     var quick = e.target.closest('.jp-prs-quickbtn');
     if(quick){
       e.stopPropagation();
@@ -18094,6 +18294,10 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     /* directiva ("Modo Mini-HUD Flotante Persistente") -- espejo aditivo,
        ver pintarMini() más abajo; no-op si la barra no está visible. */
     pintarMini();
+    /* gancho de la pantalla completa: espeja y arranca/detiene su lazo de
+       220 ms según el cronómetro corra o no (ver módulo "Pantalla
+       completa LED"). No-op si la pantalla completa está cerrada. */
+    if(window.__cwtOnPintar) window.__cwtOnPintar();
   }
   function avisar(seg){
     if(seg === ultimoBeep) return;
@@ -18258,6 +18462,36 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     mostrarPantalla('modo');
     pintarCampos();
   }
+  /* directiva ("Sprint 1: Timer contextual de WOD") -- abre el HUD ya
+     configurado con la modalidad/tiempos detectados en la Pizarra
+     ({modo, total|cap|intervalo+rondas|work+rest+rondas}), directo a la
+     pantalla "run" lista para ▶ Empezar -- sin pasar por Selección de
+     Modalidad ni Configuración. Sólo escribe los MISMOS inputs que ya lee
+     cfg() y reusa pintarCampos()/reset(); no toca paso()/arrancar()/
+     estadoInicial(). Si ya hay un WOD corriendo (minimizado), NO se pisa:
+     sólo se vuelve a mostrar el HUD en carrera. */
+  function configurar(c){
+    var w = document.getElementById('cwtWrap');
+    if(!w || !c || !CAMPOS[c.modo]) return;
+    if(corriendo){
+      w.classList.add('on'); restaurarDesdeMinimizado(); mostrarPantalla('run');
+      return;
+    }
+    var set = function(id, v){ var e = document.getElementById(id); if(e && v != null && v !== '') e.value = v; };
+    var mmssTxt = function(s){ s = Math.max(1, Math.round(s)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); };
+    modo = c.modo;
+    if(c.modo === 'amrap') set('cwtTotal', c.total);
+    else if(c.modo === 'fortime') set('cwtCap', c.cap || 0);
+    else if(c.modo === 'emom'){ set('cwtInt', mmssTxt(c.intervalo || 60)); set('cwtEmomRondas', c.rondas); }
+    else { set('cwtWork', c.work); set('cwtRest', c.rest); set('cwtRounds', c.rondas); }
+    document.querySelectorAll('.cwt-mode, .cwt-mode-extra').forEach(function(x){ x.classList.toggle('on', x.dataset.cwt === modo); });
+    document.querySelectorAll('[data-cwtcapval]').forEach(function(x){ x.classList.toggle('on', c.modo === 'fortime' && parseInt(x.dataset.cwtcapval, 10) === (c.cap || 0)); });
+    w.classList.add('on'); w.classList.remove('cwt-minimized');
+    ocultarMini();
+    pintarCampos();
+    mostrarPantalla('run');
+    vibrar([12]);
+  }
   function cerrarTimer(){
     var w = document.getElementById('cwtWrap');
     if(w){ w.classList.remove('on'); w.classList.remove('cwt-minimized'); }
@@ -18380,7 +18614,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     window.addEventListener('pageshow', sincronizarWodActivo);
     window.addEventListener('focus', sincronizarWodActivo);
   }
-  window.CoachWodTimer = { abrir: abrirTimer, cerrar: cerrarTimer, modo: function(m){ modo = m; pintarCampos(); },
+  window.CoachWodTimer = { abrir: abrirTimer, cerrar: cerrarTimer, configurar: configurar, modo: function(m){ modo = m; pintarCampos(); },
                            prep: function(){ return fase === 'prep'; },
                            estado: function(){ return { modo: modo, corriendo: corriendo, restante: restante,
                                                         transcurrido: transcurrido, ronda: ronda, rondas: rondas, fase: fase }; },
@@ -25428,6 +25662,10 @@ body.cf-modo .block .ex-tip{display:none}
     b.addEventListener('click', entrar);
     acts.parentNode.insertBefore(b, acts.nextSibling);
   }
+  var espejoT = null;
+  function arrancarEspejo(){ if(!espejoT) espejoT = setInterval(espejo, 220); }
+  function pararEspejo(){ if(espejoT){ clearInterval(espejoT); espejoT = null; } }
+  window.__cwtEspejoActivo = function(){ return espejoT !== null; };
   function entrar(){
     armarFull();
     var f = document.getElementById('cwtFull');
@@ -25437,8 +25675,10 @@ body.cf-modo .block .ex-tip{display:none}
     try{ if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function(){}); }catch(e){}
     vib([20]);
     espejo();
+    if(window.__cwtOnPintar) window.__cwtOnPintar();
   }
   function salir(){
+    pararEspejo();
     var f = document.getElementById('cwtFull');
     if(f) f.classList.remove('on');
     document.body.classList.remove('cwt-fs-on');
@@ -25500,7 +25740,21 @@ body.cf-modo .block .ex-tip{display:none}
   function mount(){
     repintar();
     [500, 1400, 2600].forEach(function(ms){ setTimeout(repintar, ms); });
-    setInterval(espejo, 220);
+    /* directiva ("Optimización energética del timer") -- ya NO hay un
+       setInterval(espejo, 220) permanente corriendo desde el arranque de
+       la app (despertaba el hilo principal 4-5 veces por segundo aunque
+       el timer estuviera cerrado). Ahora el lazo vive sólo mientras la
+       pantalla completa está abierta Y el cronómetro está corriendo (ver
+       arrancarEspejo()/pararEspejo() y el gancho __cwtOnPintar que el
+       motor llama desde pintar()): cerrado, en pausa o terminado, no
+       queda ningún intervalo activo. */
+    window.__cwtOnPintar = function(){
+      var f = document.getElementById('cwtFull');
+      if(!f || !f.classList.contains('on')){ pararEspejo(); return; }
+      espejo();
+      var e = T() ? T().estado() : null;
+      if(e && e.corriendo) arrancarEspejo(); else pararEspejo();
+    };
     var cfg = document.getElementById('cwtCfg');
     if(cfg) cfg.addEventListener('input', etiqueta);
     document.addEventListener('click', function(e){
@@ -31414,6 +31668,22 @@ body.cf-disc .wod-board.jp-cfboard.jp-cf-fase-endurance{
   padding:2px 7px; white-space:nowrap;
 }
 /* directiva ("Erradicar Bordes Punteados"): separador sólido sutil. */
+/* [ ▶ INICIAR TIMER DE ESTE WOD ] -- botón táctico discreto bajo las filas
+   del WOD (ver jpWodTimerCfg()/CoachWodTimer.configurar()). */
+.jp-cfboard .jp-cf-wodtimer{
+  display:flex; align-items:center; justify-content:center; gap:8px; width:100%; box-sizing:border-box;
+  margin:10px 0 4px; min-height:44px; padding:0 12px; border-radius:10px; cursor:pointer;
+  background:rgba(255,107,0,.08); border:1px solid rgba(255,107,0,.45); color:#ff8a3d;
+  font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.74rem; letter-spacing:.08em; text-transform:uppercase;
+}
+.jp-cfboard .jp-cf-wodtimer:active{ background:rgba(255,107,0,.22); }
+.jp-cfboard .jp-cf-quickrest{
+  display:flex; align-items:center; justify-content:center; gap:8px; width:100%; box-sizing:border-box;
+  margin:10px 0 4px; min-height:44px; padding:0 12px; border-radius:10px; cursor:pointer;
+  background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.45); color:#38bdf8;
+  font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.74rem; letter-spacing:.08em; text-transform:uppercase;
+}
+.jp-cfboard .jp-cf-quickrest:active{ background:rgba(56,189,248,.22); }
 .jp-cfboard details.jp-cf-acc{ margin-top:2px; padding-top:10px; border-top:1px solid rgba(255,255,255,.08); }
 .jp-cfboard details.jp-cf-acc summary{
   /* directiva ("Homogeneización Cromática" CF): naranja táctico exacto,
@@ -33500,23 +33770,16 @@ function init(){
   });
 
   /* ---- datos ---- */
-  $('#btnBackup').addEventListener('click', () => {
-    download('coachjp-backup-' + new Date().toISOString().slice(0,10) + '.json', JSON.stringify(S, null, 2), 'application/json');
-    toast('Backup descargado ✔');
-  });
+  /* mismo flujo que los botones de la barra superior (ver exportarBackup()/
+     restaurarBackupDesdeTexto(), arriba junto a save()): un solo camino de
+     backup/restore para toda la consola. */
+  $('#btnBackup').addEventListener('click', () => exportarBackup());
   $('#btnRestore').addEventListener('click', () => $('#fileRestore').click());
   $('#fileRestore').addEventListener('change', e => {
     const f = e.target.files[0]; if(!f) return;
     const r = new FileReader();
-    r.onload = () => {
-      try{
-        const d = JSON.parse(r.result);
-        if(!d.athletes || !d.exercises) throw new Error('formato');
-        if(!confirm('Esto reemplazará todos los datos actuales. ¿Continuar?')) return;
-        S = Object.assign({athletes:[],exercises:[],plans:{},activeId:null,ui:{day:0,view:'alumnos'}}, d);
-        save(); go('alumnos'); renderAthletes(); toast('Backup restaurado ✔');
-      }catch(err){ toast('Archivo inválido', 'err'); }
-    };
+    r.onload = () => restaurarBackupDesdeTexto(String(r.result || ''));
+    r.onerror = () => toast('No se pudo leer el archivo', 'err');
     r.readAsText(f);
     e.target.value = '';
   });
@@ -33547,6 +33810,7 @@ function init(){
   /* ---- arranque ---- */
   go(S.ui.view || 'alumnos');
   renderAthletes(); renderLibrary();
+  try{ pintarBadgeAlmacen(); }catch(e){}
   save();
 }
 
@@ -52518,7 +52782,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
      dentro del balde genérico. */
   const GRUPOS = [
     { k:'rapidas', lb:'⚡ Acciones Rápidas & Exportación',
-      re:/previsualiz|exportar|pdf|whatsapp|copiar plan|compartir|enviar/i },
+      re:/previsualiz|exportar|pdf|whatsapp|copiar plan|compartir|enviar|backup/i },
     { k:'ia', lb:'🧠 Asistencia Inteligente & IA',
       re:/\bia\b|claude|gpt|gemini|generar planific|generar entrada en calor|generar/i },
     { k:'control', lb:'🛡️ Control & Calidad',
