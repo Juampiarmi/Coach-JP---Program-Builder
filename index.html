@@ -996,6 +996,19 @@ Curl concentrado"></textarea>
   </div>
 </div>
 
+<div class="modal-bg" id="mDelDay">
+  <div class="modal sm">
+    <div class="modal-h"><h3>Eliminar día</h3><div class="spacer"></div><button class="icon-btn" data-close="mDelDay">✕</button></div>
+    <div class="modal-b">
+      <div class="alert danger"><span class="ic">🗑️</span><div><b id="delDayName">Día</b>¿Eliminar permanentemente este día y todos sus bloques?</div></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn ghost" data-close="mDelDay">Cancelar</button>
+      <button class="btn red" id="btnDoDelDay">Sí, eliminar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="mCopy">
   <div class="modal sm">
     <div class="modal-h"><h3>Copiar día</h3><div class="spacer"></div><button class="icon-btn" data-close="mCopy">✕</button></div>
@@ -3014,6 +3027,48 @@ function moverDia(desde, dir){
   save();
   return hasta;
 }
+/* directiva maestra ("Gestor de días en el Builder") -- agregar y eliminar
+   días del mesociclo. El id interno de cada día (d.id) es la clave estable
+   de getLoadKey() -- el historial de cargas guardado del alumno cuelga de
+   ahí --, así que NUNCA se renumera ni se reutiliza: un día nuevo toma el
+   primer 'diaN' libre, y al eliminar sólo se reindexan los rótulos
+   visibles que todavía son el default ("DÍA 3" -> "DÍA 2"), jamás un
+   nombre que el coach haya escrito a mano. */
+const MAX_DIAS = 7;
+const BTN_ELIMINAR_DIA = '<button type="button" class="btn ghost sm" style="margin-top:12px;border-color:rgba(255,107,87,.4);color:#FF6B57" data-eliminardia="1">🗑️ ELIMINAR DÍA ACTIVO</button>';
+function agregarDia(){
+  const p = plan(S.activeId); if(!p) return;
+  if(p.dias.length >= MAX_DIAS){ toast('Máximo ' + MAX_DIAS + ' días por mesociclo', 'err'); return; }
+  const i = p.dias.length;
+  const d = newDay(i);
+  const usados = new Set(p.dias.map(x => x.id));
+  let k = i + 1; while(usados.has('dia' + k)) k++;
+  d.id = 'dia' + k;
+  p.dias.push(d);
+  S.ui.day = i;
+  save(); renderBuilder();
+  toast('➕ ' + d.short + ' agregado (' + p.dias.length + '/' + MAX_DIAS + ')');
+}
+function pedirEliminarDia(){
+  const p = plan(S.activeId), d = curDay(); if(!p || !d) return;
+  if(p.dias.length <= 1){ toast('El mesociclo necesita al menos un día', 'err'); return; }
+  $('#delDayName').textContent = d.short + (d.title ? ' · ' + d.title : '');
+  openModal('mDelDay');
+}
+function eliminarDiaActivo(){
+  const p = plan(S.activeId); if(!p) return;
+  const idx = S.ui.day;
+  if(p.dias.length <= 1 || idx < 0 || idx >= p.dias.length) return;
+  p.dias.splice(idx, 1);
+  p.dias.forEach((d, i) => {
+    if(/^D[IÍ]A\s*\d+$/i.test(d.short || '')) d.short = 'DÍA ' + (i + 1);
+    if(/^Sesi[oó]n\s*\d+$/i.test(d.label || '')) d.label = 'Sesión ' + (i + 1);
+    if(/^D[IÍ]A\s*\d+$/i.test(d.title || '')) d.title = 'Día ' + (i + 1);
+  });
+  S.ui.day = Math.min(idx, p.dias.length - 1);
+  save(); closeModal('mDelDay'); renderBuilder();
+  toast('🗑️ Día eliminado — quedan ' + p.dias.length, 'warn');
+}
 function findBlock(bid){
   const d = curDay(); if(!d) return null;
   return d.bloques.find(b => b.id === bid) || null;
@@ -4228,7 +4283,9 @@ function renderBuilder(){
       '</span>' +
       (textoTab ? '<span class="tab-label">' + esc(textoTab) + '</span>' : '') +
     '</button>';
-  }).join('');
+  }).join('') + (p.dias.length < MAX_DIAS
+    ? '<button type="button" class="tab tab-add" data-addday="1" title="Agregar un día al mesociclo (máx. ' + MAX_DIAS + ')" style="border-style:dashed;color:var(--gold,#FFD600)"><span class="tab-short">+ DÍA</span></button>'
+    : '');
   const btnML = $('#btnMoveDayL'), btnMR = $('#btnMoveDayR');
   if(btnML) btnML.disabled = S.ui.day <= 0;
   if(btnMR) btnMR.disabled = S.ui.day >= p.dias.length - 1;
@@ -4316,6 +4373,7 @@ function renderDay(){
         '<div class="hint" style="margin-top:4px">Se muestra como banner destacado arriba de todo en la app del alumno.</div>' +
       '</div>' +
       ('' + prsBarCF(ath)) +
+      BTN_ELIMINAR_DIA +
     '</div>' +
     '<details class="card" style="margin-bottom:14px">' +
       '<summary class="lb" style="cursor:pointer">📋 Pegar Día Completo (auto-split por bloque)</summary>' +
@@ -4364,6 +4422,7 @@ function renderDay(){
         '<div style="margin-top:10px"><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Estiramiento de dorsal — 2x30s">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
         '<div style="margin-top:10px"><label class="lb">Resumen de la sesión</label><textarea data-df="summary">' + esc(d.summary||'') + '</textarea></div>' +
       '</details>' +
+      BTN_ELIMINAR_DIA +
     '</div>';
     /* REFACTOR DEFINITIVO: mismo botón único de alta que ya usa CrossFit
        (data-addcfblock/addBlockCF), acá su equivalente Sports
@@ -5512,7 +5571,9 @@ function bindBuilder(){
   wg.addEventListener('change', e => { if(e.target.type === 'checkbox') e.target.dispatchEvent(new Event('input', {bubbles:true})); });
 
   /* tabs */
+  $('#btnDoDelDay').addEventListener('click', eliminarDiaActivo);
   $('#dayTabs').addEventListener('click', e => {
+    if(e.target.closest('[data-addday]')){ agregarDia(); return; }
     const b = e.target.closest('[data-day]'); if(!b) return;
     S.ui.day = parseInt(b.dataset.day,10); save(); renderBuilder();
   });
@@ -5895,6 +5956,7 @@ function bindBuilder(){
     if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
     if(t.dataset.btipssports){ generarTipsSports(t.dataset.btipssports, t); return; }
     if(t.dataset.vaciardia){ vaciarDiaCompleto(); return; }
+    if(t.dataset.eliminardia){ pedirEliminarDia(); return; }
     if(t.dataset.ondularmeso){ ondularMesocicloAutomatico(); return; }
     if(t.dataset.migrarpizarra){ migrarBloqueAPizarra(t.dataset.migrarpizarra); return; }
     if(t.dataset.fmtins){
@@ -6019,7 +6081,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 <\/script>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@600;700;800;900&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@600;700;800;900&display=swap" rel="stylesheet" />
 <style>
   :root {
     --gold: #D2793F;
@@ -6578,6 +6640,14 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
     letter-spacing:0.08em; color:#00e5ff; margin-bottom:0.35rem; text-transform:uppercase;
   }
   .jp-session-main{ color:#f8fafc !important; font-weight:800; line-height:1.1; }
+  /* directiva maestra ("Título de sesión compacto") -- máximo 2 líneas,
+     tamaño fluido acotado: un título largo ("FULLBODY: POTENCIA
+     UNILATERAL...") ya no tapa el inicio de la rutina. Más específico que
+     .hero h1,.day-title !important del bloque de accesibilidad. */
+  .day-title.jp-session-main{
+    font-size:clamp(1.1rem,3.5vw,1.35rem) !important; line-height:1.15 !important;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere;
+  }
   .jp-session-emphasis{
     font-size:0.95rem; color:#ff6b00; font-weight:700; letter-spacing:0.04em; margin-top:4px;
     font-family:var(--font-head,'Chakra Petch','Barlow Condensed',sans-serif); text-transform:uppercase;
@@ -7162,6 +7232,28 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   .guide-table th { font-family:'Chakra Petch','Barlow Condensed',sans-serif; color: #94a3b8; font-weight: 700; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.08em; border-bottom-color:rgba(56,189,248,.25); }
   .guide-table td { color: #cbd5e1; line-height:1.55; vertical-align:top; }
   .guide-table td.gt-strong { font-family:'Chakra Petch','Barlow Condensed',sans-serif; color: var(--gold); font-weight: 800; white-space:nowrap; font-size:.85rem; }
+  /* tarjetas tácticas nativas que reemplazan a .guide-table (ver
+     guiaTablasATarjetas() en el JS): flex/grid responsive, sin scroll
+     horizontal, sin partir palabras en micro-columnas. */
+  #guideModal .modal, #guideModal .guide-section{ overflow-x:hidden; }
+  .guide-cards{ display:flex; flex-direction:column; gap:8px; max-width:100%; overflow-x:hidden; }
+  .gc-card{ background:#0b0e15; border:1px solid #1F2937; border-radius:10px; padding:10px 12px; box-sizing:border-box; max-width:100%; }
+  .gc-title{ font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800; font-size:.85rem; letter-spacing:.04em; color:var(--gold); margin-bottom:6px; overflow-wrap:anywhere; }
+  .gc-badges{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px; }
+  .gc-badge{ display:inline-flex; gap:5px; align-items:baseline; padding:3px 8px; border-radius:6px; border:1px solid rgba(56,189,248,.35); background:rgba(56,189,248,.08); color:#7dd3fc; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.7rem; letter-spacing:.03em; overflow-wrap:anywhere; }
+  .gc-badge i{ font-style:normal; color:#8A99AD; font-size:.58rem; letter-spacing:.1em; text-transform:uppercase; }
+  .gc-p{ margin:0 !important; font-size:.82rem !important; line-height:1.5 !important; color:#cbd5e1 !important; overflow-wrap:anywhere; }
+  .gc-list{ gap:6px; }
+  .gc-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; background:#0b0e15; border:1px solid #1F2937; border-radius:10px; padding:9px 12px; box-sizing:border-box; }
+  .gc-row-main{ display:flex; flex-direction:column; min-width:0; }
+  .gc-row-main b{ font-family:'Chakra Petch',sans-serif; font-size:.8rem; color:var(--gold); }
+  .gc-row-main span{ font-size:.78rem; color:#cbd5e1; line-height:1.4; overflow-wrap:anywhere; }
+  .gc-badge-rpe{ flex:0 0 auto; border-color:rgba(255,107,0,.5); background:rgba(255,107,0,.1); color:#ff9a4d; }
+  .gc-tempo{ display:flex; flex-direction:column; gap:9px; }
+  .gc-trow{ display:flex; gap:10px; align-items:flex-start; }
+  .gc-trow > div{ min-width:0; }
+  .gc-pill{ flex:0 0 auto; min-width:64px; text-align:center; padding:3px 6px; border-radius:6px; background:rgba(255,214,0,.1); border:1px solid rgba(255,214,0,.4); color:#ffd600; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.68rem; }
+  .gc-trow b{ font-family:'Chakra Petch',sans-serif; font-size:.8rem; color:#f8fafc; }
   /* scrollbar fino y discreto (directiva) -- reemplaza el turquesa
      estridente del scroll nativo del modal por uno translúcido sutil. */
   #guideModal .modal,#painModal .modal{ scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.15) transparent; }
@@ -10375,6 +10467,16 @@ function renderMain(){
      prefijo "// ". CrossFit nunca ve esto (.day-header sigue oculto por
      completo vía body.cf-disc .day-header{display:none}, sin tocar). */
   const partesTitulo = splitTituloSesionSports(day.title, day.dayNum);
+  /* directiva maestra ("Homologación estricta Bodybuilding = CrossFit") --
+     la barra táctica colapsable [ ⚡ BRIEFING DEL COACH ▾ ] ya no es sólo
+     de CrossFit: queda unificada para ambas disciplinas, justo debajo de
+     la fila de semanas (antes del título de la sesión). Sólo aparece si
+     el coach cargó texto en day.briefing. */
+  if(window.COACH_DISCIPLINA !== 'crossfit' && day.briefing){
+    html += '<details class="tactical-briefing"><summary class="tb-summary">' +
+      '<span class="tb-ic">⚡</span><span class="tb-label">Briefing del Coach</span><span class="tb-chev">▾</span>' +
+      '</summary><div class="tb-body">' + day.briefing + '</div></details>';
+  }
   html += '<div class="day-header">';
   html += '<div><div class="jp-session-pretag">[ ' + day.short + ' · SEMANA ' + (weekIdx + 1) + ' ]</div>';
   html += '<div class="day-title jp-session-main">' + partesTitulo.principal + '</div>';
@@ -10921,6 +11023,63 @@ function closeModal(el){ el.classList.remove('open'); }
       '<p>La forma más simple y sostenible de progresar: dentro de un mismo rango de reps (ej. 8-12), primero sumás <b style="color:#00e5ff">repeticiones</b> semana a semana manteniendo el mismo peso -- recién cuando llegás cómodo al TOPE del rango en todas las series, subís el <span class="gd-load">peso en kg</span> y volvés al piso del rango. Nunca subas peso y bajes de rango al mismo tiempo sin ese paso intermedio -- es la forma más confiable de progresar sin estancarte ni forzar la técnica.</p>' +
     '</div>'
   );
+})();
+/* directiva maestra ("Erradicación de tablas <table> en la Guía del
+   Entrenamiento") -- las tablas HTML rígidas (4 columnas de Zonas FC,
+   Formato/Puntuación/Pacing, Glosario...) partían las palabras en
+   micro-columnas y metían scrollbar horizontal. Se reemplazan, una sola
+   vez al cargar (todo el contenido de la Guía ya está pintado a esta
+   altura), por Tarjetas Tácticas nativas: tarjeta por fila con badges de
+   los campos cortos y el texto largo a ancho completo; Tempo en UNA
+   tarjeta vertical de 4 micro-filas; Progresión del Mesociclo como lista
+   vertical con el badge de RPE alineado a la derecha. */
+(function guiaTablasATarjetas(){
+  function convertir(tabla){
+    var heads = [], datos = [];
+    Array.prototype.slice.call(tabla.querySelectorAll('tr')).forEach(function(tr){
+      var ths = tr.querySelectorAll('th');
+      if(ths.length){ heads = Array.prototype.map.call(ths, function(t){ return t.textContent.trim(); }); return; }
+      var tds = Array.prototype.slice.call(tr.querySelectorAll('td'));
+      if(tds.length) datos.push(tds);
+    });
+    var cont = document.createElement('div');
+    var h0 = (heads[0] || '').toLowerCase(), h1 = (heads[1] || '').toLowerCase();
+    var html = '';
+    if(h0 === 'semana'){
+      cont.className = 'guide-cards gc-list';
+      html = datos.map(function(c){
+        var ult = c[c.length - 1];
+        var numerica = /^[0-9]+$/.test(c[0].textContent.trim());
+        return '<div class="gc-row"><div class="gc-row-main"><b>' + (numerica ? 'Semana ' : '') + c[0].innerHTML + '</b>' +
+          (c.length > 2 ? '<span>' + c[1].innerHTML + '</span>' : '') + '</div>' +
+          '<span class="gc-badge gc-badge-rpe">' + ult.textContent.trim() + '</span></div>';
+      }).join('');
+    } else if(h0.indexOf('posici') === 0 && h1 === 'fase'){
+      cont.className = 'guide-cards';
+      html = '<div class="gc-card gc-tempo">' + datos.map(function(c){
+        return '<div class="gc-trow"><span class="gc-pill">' + c[0].textContent.trim() + '</span>' +
+          '<div><b>' + c[1].innerHTML + '</b><p class="gc-p">' + c[2].innerHTML + '</p></div></div>';
+      }).join('') + '</div>';
+    } else {
+      cont.className = 'guide-cards';
+      html = datos.map(function(c){
+        var n = c.length, out = '<div class="gc-card"><div class="gc-title">' + c[0].innerHTML + '</div>';
+        if(n === 2){
+          out += '<p class="gc-p">' + c[1].innerHTML + '</p>';
+        } else if(n > 2){
+          out += '<div class="gc-badges">';
+          for(var i = 1; i < n - 1; i++){
+            out += '<span class="gc-badge"><i>' + (heads[i] || '') + '</i>' + c[i].innerHTML + '</span>';
+          }
+          out += '</div><p class="gc-p">' + c[n - 1].innerHTML + '</p>';
+        }
+        return out + '</div>';
+      }).join('');
+    }
+    cont.innerHTML = html;
+    if(tabla.parentNode) tabla.parentNode.replaceChild(cont, tabla);
+  }
+  Array.prototype.slice.call(document.querySelectorAll('.guide-table')).forEach(convertir);
 })();
 guideBtnEl.addEventListener('click', function(){ openModal(guideModalEl); });
 guideCloseEl.addEventListener('click', function(){ closeModal(guideModalEl); });
@@ -14349,7 +14508,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        a 1-240 min para no mostrar un número sin sentido). */
     const iniSesion = (state.session && state.session.inicio) || 0;
     const minSesion = iniSesion ? Math.round((Date.now() - iniSesion) / 60000) : 0;
-    const minSesionOk = (minSesion >= 1 && minSesion <= 240) ? minSesion : 0;
+    const minSesionOk = (minSesion >= 1 && minSesion <= 150) ? minSesion : 0;
     const statsHtml = esCF
       ? ('<div class="sc-stat"><div class="v">' + (minSesionOk || '—') + '</div><div class="k">min de sesión</div></div>' +
          '<div class="sc-stat"><div class="v">' + ids.length + '</div><div class="k">bloques completados</div></div>' +
@@ -15630,8 +15789,15 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       redondear(g, 90, prY, barW, prH, 28); g.stroke();
       g.fillStyle = '#E5C378'; g.font = '700 40px "Chakra Petch", sans-serif';
       g.fillText('🔥 NUEVA MARCA PERSONAL', 130, prY + 48);
-      g.fillStyle = '#FFFFFF'; g.font = '500 30px Inter, sans-serif';
-      g.fillText(d.prs.slice(0, 2).join('  ·  ').slice(0, 46), 130, prY + 92);
+      g.fillStyle = '#FFFFFF';
+      /* blindaje de desborde: el texto del PR achica hasta entrar dentro
+         del marco dorado (barW menos el padding lateral de 40px por lado)
+         y, si ni así entra, se recorta con elipsis -- nunca pasa el borde. */
+      var txtPr = d.prs.slice(0, 2).join('  ·  '), fsPr = 30, maxPr = barW - 80;
+      g.font = '500 ' + fsPr + 'px Inter, sans-serif';
+      while(g.measureText(txtPr).width > maxPr && fsPr > 20){ fsPr -= 2; g.font = '500 ' + fsPr + 'px Inter, sans-serif'; }
+      while(txtPr.length > 1 && g.measureText(txtPr).width > maxPr){ txtPr = txtPr.slice(0, -2) + '…'; }
+      g.fillText(txtPr, 130, prY + 92);
     }
 
     /* el pie lo escribe el módulo de métricas: racha, top lift y firma */
@@ -16109,7 +16275,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        no es creíble o no hay registro real, se cae a una estimación
        coherente en base a las series completadas (20-180 min, 60 por
        defecto si no hay series). */
-    const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 180) ? elapsedMin : (r.series > 0 ? Math.min(180, Math.max(20, r.series * 3)) : 60);
+    const minsCrudo = (elapsedMin >= 1 && elapsedMin <= 150) ? elapsedMin : (r.series > 0 ? Math.min(150, Math.max(20, r.series * 3)) : 60);
     const tiempoFmt = fmtDuracionStory(minsCrudo);
     const f = new Date();
     /* directiva (aislamiento de PRs por día) -- mismo criterio que
@@ -16498,7 +16664,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 .rir-note-btn.on{background:rgba(210,121,63,.22);border-color:rgba(210,121,63,.55);color:#F2C89A}
 .block-notes.bn-collapsed{display:none}
 /* ---------- PR HUB ---------- */
-.prhub-wrap{position:fixed;inset:0;z-index:220;background:rgba(5,6,10,.86);
+.prhub-wrap{position:fixed;inset:0;z-index:600;background:rgba(5,6,10,.86);
   backdrop-filter:blur(8px);display:none;align-items:flex-start;justify-content:center;padding:24px 14px;overflow-y:auto}
 .prhub-wrap.on{display:flex}
 .prhub{
@@ -16538,6 +16704,27 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 .ph-sync{margin-top:11px;font-size:.76rem;color:#A0A8B4;display:flex;align-items:center;gap:7px}
 .ph-sync .dot{width:8px;height:8px;border-radius:50%;background:#7CC5E8}
 .ph-sync.off .dot{background:#FF8A00}
+/* directiva maestra ("Rediseño del Modal de Historial en Bodybuilding") --
+   layout vertical limpio idéntico a CrossFit: tarjetas Black Carbon
+   (#0b0e15), ejercicio a la izquierda y mejor marca editable a la
+   derecha; sin pestañas circulares; formulario de alta contenido en el
+   ancho del modal (el botón GUARDAR ya no se corta por la derecha). */
+.prhub{box-sizing:border-box;max-width:100%;overflow-x:hidden}
+.ph-cats{display:none !important}
+.ph-row{
+  grid-template-columns:minmax(0,1fr) auto;background:#0b0e15;border:1px solid #1F2937;border-radius:10px;
+  box-sizing:border-box;max-width:100%;
+}
+.ph-row.record{border-color:rgba(255,214,0,.5);background:#0b0e15}
+.ph-row .ex{font-family:'Chakra Petch',sans-serif;font-weight:700;overflow-wrap:anywhere}
+.ph-row .mt{font-family:'Chakra Petch',sans-serif;letter-spacing:.02em}
+.ph-mark{display:flex;align-items:center;gap:6px;margin:0}
+.ph-mark span{font-family:'Chakra Petch',sans-serif;font-size:.62rem;font-weight:700;letter-spacing:.12em;color:#8A99AD}
+.ph-edit{width:84px;min-width:0;box-sizing:border-box;font-family:'Chakra Petch',sans-serif;font-weight:700;background:#05070A}
+.ph-add{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)}
+.ph-add #phEx{grid-column:1/-1}
+.ph-add input,.ph-add button{min-width:0;box-sizing:border-box;width:100%}
+.ph-add button{padding:0 8px;background:linear-gradient(135deg,#ff6b00,#e65c00);color:#f4f8ff}
 /* ---------- estilos de Story Card ---------- */
 .sc-styles{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:0 0 10px}
 .sc-style{
@@ -16818,20 +17005,10 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   var catActiva = 'todos';
   function pintarHub(){
     var g = document.getElementById('phGrid'); if(!g) return;
-    var cats = document.getElementById('phCats');
-    if(cats && !cats.dataset.listo){
-      cats.dataset.listo = '1';
-      var lista = [['todos','Todos'],['1','1RM'],['3','3RM'],['5','5RM'],['10','10RM']];
-      cats.innerHTML = lista.map(function(c){
-        return '<button type="button" class="ph-cat' + (c[0] === catActiva ? ' on' : '') + '" data-cat="' + c[0] + '">' + c[1] + '</button>';
-      }).join('');
-      cats.addEventListener('click', function(e){
-        var b = e.target.closest('[data-cat]'); if(!b) return;
-        catActiva = b.dataset.cat;
-        cats.querySelectorAll('.ph-cat').forEach(function(x){ x.classList.toggle('on', x === b); });
-        vib(PAT.tap); pintarHub();
-      });
-    }
+    /* directiva maestra ("Rediseño del Modal de Historial") -- se eliminan
+       las pestañas circulares [1RM][3RM][5RM][10RM]: lista vertical única
+       (catActiva queda fija en 'todos'), cada rango de repeticiones se
+       lee en la línea de detalle de su propia tarjeta. */
     var o = hub(), exs = Object.keys(o.marcas).sort();
     var filas = [];
     exs.forEach(function(ex){
@@ -16843,17 +17020,16 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     });
     if(!filas.length){
       g.innerHTML = '<div class="ph-sub" style="padding:14px;border:1px dashed rgba(255,255,255,.16);border-radius:12px">' +
-        'Todavía no cargaste marcas en este rango. Anotá tu mejor levantamiento abajo y el sistema calcula tu 1RM estimado.</div>';
+        'Todavía no cargaste marcas. Anotá tu mejor levantamiento abajo y el sistema calcula tu 1RM estimado.</div>';
       return;
     }
     g.innerHTML = filas.map(function(f){
       var top = f.est >= mejor1RM(f.ex) - 0.01;
       return '<div class="ph-row' + (top ? ' record' : '') + '" data-ex="' + escAttr(f.ex) + '" data-r="' + f.r + '">' +
         '<div><div class="ex">' + escTxt(f.ex) + '</div>' +
-        '<div class="mt">' + f.r + 'RM · ' + f.kg + ' kg · ' + f.fecha +
+        '<div class="mt">' + f.r + 'RM · 1RM est. ' + f.est + ' kg · ' + f.fecha +
         (f.origen === 'coach' ? ' · cargado por Coach JP' : '') + '</div></div>' +
-        '<input class="ph-edit" type="number" step="0.5" min="0" inputmode="decimal" value="' + f.kg + '" />' +
-        '<div class="kg">' + f.est + '<small>1RM EST.</small></div>' +
+        '<label class="ph-mark"><input class="ph-edit" type="number" step="0.5" min="0" inputmode="decimal" value="' + f.kg + '" /><span>KG</span></label>' +
       '</div>';
     }).join('');
     var sy = document.getElementById('phSync');
@@ -17284,10 +17460,18 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     g.strokeStyle = 'rgba(229,195,120,.6)'; g.lineWidth = 3;
     rr(g, 100, 640, W - 200, 470, 30); g.stroke();
 
-    g.fillStyle = '#E5C378'; g.font = '700 74px "Chakra Petch", sans-serif';
+    /* directiva maestra ("Blindaje de márgenes y desbordes en la StoryCard")
+       -- el nombre del PR sólo bajaba de 74 a 54px y, si seguía sin
+       entrar, se salía del borde dorado. Ahora achica hasta 44px y, si
+       aun así no entra, salta a 2 líneas (con elipsis) dentro del marco. */
     var nm = nombre.toUpperCase();
-    if(g.measureText(nm).width > W - 260) g.font = '700 54px "Chakra Petch", sans-serif';
-    g.fillText(nm, W / 2, 740);
+    ajustar(g, nm, W - 260, 74, 44);
+    g.fillStyle = '#E5C378';
+    if(g.measureText(nm).width > W - 260){
+      envolverTexto(g, nm, W - 260, 2).forEach(function(ln, i){ g.fillText(ln, W / 2, 706 + i * 56); });
+    } else {
+      g.fillText(nm, W / 2, 740);
+    }
     if(kilos){
       g.fillStyle = '#FFFFFF'; g.font = '700 150px "Chakra Petch", sans-serif';
       g.fillText(kilos, W / 2, 890);
@@ -17320,7 +17504,10 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     g.fillStyle = '#FFFFFF';
     g.fillText((d.atleta || '').toUpperCase(), W / 2, 1418);
     g.fillStyle = '#A0A8B4'; g.font = '400 28px Inter, sans-serif';
-    g.fillText((d.sesion || '') + '  ·  ' + (d.fecha || ''), W / 2, 1472);
+    /* subtítulo (sesión + fecha/grupos): wrap limpio con margen lateral de
+       seguridad en vez de una sola línea que podía pasar el marco. */
+    envolverTexto(g, (d.sesion || '') + '  ·  ' + (d.fecha || ''), W - 260, 2)
+      .forEach(function(ln, i){ g.fillText(ln, W / 2, 1472 + i * 38); });
 
     /* racha, top lift y firma los agrega el módulo de métricas */
     return c;
@@ -17617,7 +17804,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         <button type="button" class="cwt-mode" data-cwt="fortime">FOR TIME</button>
         <button type="button" class="cwt-mode" data-cwt="emom">EMOM</button>
         <button type="button" class="cwt-mode" data-cwt="tabata">TABATA</button>
-        <button type="button" class="cwt-mode-extra" data-cwt="intervalos">Intervalos / Hyrox</button>
+        <button type="button" class="cwt-mode-extra" data-cwt="intervalos">⚡ INTERVALOS / HYROX</button>
       </div>
     </div>
 
@@ -17826,6 +18013,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(fin) fin.style.display = modo === 'fortime' ? '' : 'none';
     var titEl = document.getElementById('cwtCfgTitle');
     if(titEl) titEl.textContent = MODO_LABEL[modo] || String(modo).toUpperCase();
+    var wrapModo = document.getElementById('cwtWrap');
+    if(wrapModo) wrapModo.dataset.modo = modo;
     if(modo === 'emom') sincronizarEmomTotal();
     reset();
   }
@@ -18283,13 +18472,23 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   function minutosActivos(){
     var s = ses(), m = (s.marcasTiempo || []).slice();
     if(!m.length) return 0;
+    /* directiva maestra ("Reparación del generador de StoryCard -- bug de
+       tiempo anómalo, '16h 11m'") -- marcasTiempo se acumula entre días
+       (hasta 900 marcas, nunca se resetea por sesión): sumar TODOS los
+       tramos activos de toda la historia daba horas irreales aunque cada
+       tramo fuera <= 15 min. Sólo cuenta la ÚLTIMA sesión (un hueco > 4 h
+       entre marcas arranca una sesión nueva) y, como límite de cordura, si
+       aun así supera 150 min se usa un promedio creíble de 60 min. */
+    var HUECO_SESION = 4 * 60 * 60000, desde = 0;
+    for(var j = 1; j < m.length; j++){ if(m[j] - m[j - 1] > HUECO_SESION) desde = j; }
     var total = 0;
-    for(var i = 1; i < m.length; i++){
+    for(var i = desde + 1; i < m.length; i++){
       var d = m[i] - m[i - 1];
       if(d > 0 && d <= LIM_INACTIVO) total += d;
     }
     total += (s.tiempoPausado || 0) * 0;   /* lo pausado nunca se suma */
-    return Math.max(1, Math.round(total / 60000));
+    var mins = Math.max(1, Math.round(total / 60000));
+    return mins > 150 ? 60 : mins;
   }
   window.CoachTiempoActivo = minutosActivos;
 
@@ -19603,8 +19802,8 @@ body.cf-modo .block .directive-chip{display:none !important}
     var cf = esCrossFit();
     document.body.classList.toggle('cf-modo', cf);
     if(!cf) return;
-    /* directiva ("Eliminación de chip residual") -- el badge "Sesión
-       CrossFit · formato pizarra" (#cfFlag, insertado como primer hijo
+    /* directiva ("Eliminación de chip residual") -- el badge de sesión
+       CrossFit (#cfFlag, insertado como primer hijo
        de #mainContent) quedaba como texto residual encima de la Pizarra
        Táctica moderna (.jp-cfboard/pizarraSports()): el bloque debe pasar
        directo de la fila S1-S4 al acordeón de Briefing del Coach, sin
@@ -26544,7 +26743,14 @@ body{font-size:var(--fz-body) !important}
 ========================================================= */
 .cwt-time,.cwt-full .cf-time{
   color:var(--jp-bone) !important;text-shadow:none !important;
-  font-family:'JetBrains Mono',ui-monospace,monospace !important;font-weight:700 !important;
+  /* directiva ("Fix crítico de tipografía, fullscreen") -- este !important
+     (más el de la sección "2B" más abajo, misma regla) forzaba JetBrains
+     Mono sobre los dígitos del timer, pisando la tipografía base
+     ('Chakra Petch', ver .cwt-full .cf-time más arriba) tanto en el modal
+     chico como en pantalla completa. Chakra Petch vuelve a ser la
+     tipografía real de los dígitos; monospace queda sólo como fallback. */
+  font-family:'Chakra Petch',monospace !important;font-weight:700 !important;
+  font-variant-numeric:tabular-nums !important;
 }
 .cwt-time.alerta,.cwt-full .cf-time.alerta{color:var(--jp-bone) !important;text-shadow:none !important}
 /* etiqueta de estado */
@@ -26607,12 +26813,39 @@ body{font-size:var(--fz-body) !important}
 .cwt-time.jp-led,.cwt-full .cf-time.jp-led{ color:#EDEFF2 !important; text-shadow:none !important; }
 .cwt-time.jp-led::before,.cwt-full .cf-time.jp-led::before{ content:none !important; }
 .cwt-time,.cwt-full .cf-time{
-  font-family:'JetBrains Mono',ui-monospace,monospace !important; letter-spacing:.03em !important;
+  font-family:'Chakra Petch',monospace !important; letter-spacing:.03em !important;
+  font-variant-numeric:tabular-nums !important;
 }
 /* grid de modos: de 4 fijas a auto-fit -- acomoda las 5 pestañas
    (Tabata/EMOM/AMRAP/For Time/Intervalos-Hyrox) sin dejar una quinta
    celda huérfana en una fila propia. */
-.cwt-modes{grid-template-columns:repeat(auto-fit,minmax(92px,1fr)) !important}
+.cwt-modes{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+/* directiva maestra ("Reingeniería visual y tipográfica del Timer Táctico")
+   -- el auto-fit de arriba (3 columnas a 300px de ancho) dejaba TABATA
+   huérfano en una segunda fila: grid 2x2 parejo fijo + INTERVALOS/HYROX
+   apaisado a todo el ancho (.cwt-mode-extra ya trae grid-column:1/-1). */
+/* Chakra Petch obligatoria en TODO número/contador del timer (modal,
+   pantalla completa, mini-HUD, rondas, parciales, inputs de config);
+   monospace sólo como fallback, tabular-nums para que los dígitos no
+   salten al correr el segundero. */
+.cwt-time,.cwt-full .cf-time,.cwt-round,.cwt-round b,.cwt-full .cf-round,.cwt-full .cf-phase,
+.cwt-mini-time,.cwt-mini-round,.cwt-laps div,.cwt-laps b,.cwt-central-input,.cwt-emom-row input,
+.cwt-tabata-field input,.cwt-cfg input,.cwt-cfg select,.cwt-steps button,.cwt-steps .cwt-sl{
+  font-family:'Chakra Petch',monospace !important;font-variant-numeric:tabular-nums;
+}
+/* [ EMPEZAR ] / [ PAUSAR ]: Naranja Táctico Coach JP en vez del marrón
+   apagado, texto blanco titanio + micro-glow. */
+.cwt-start,.cwt-go,.cwt-full .cf-acts .cf-go{
+  background:linear-gradient(135deg,#ff6b00,#e65c00) !important;color:#f4f8ff !important;
+  box-shadow:0 0 18px rgba(255,107,0,.35) !important;border:none !important;
+}
+/* un solo control de ajuste por modalidad: AMRAP y FOR TIME ya traen sus
+   chips directos (+1m/+5m, time cap), la barra "Ajuste rápido" queda
+   sólo en TABATA/EMOM/INTERVALOS (donde es el único ajuste). */
+#cwtWrap[data-modo="amrap"] #cwtSteps,#cwtWrap[data-modo="fortime"] #cwtSteps{display:none !important}
+/* el módulo LED (.jp-led) agrega 'Orbitron' en su pila: los dígitos del
+   timer quedan en Chakra Petch + monospace exactos, sin fuentes extra. */
+.cwt-time.jp-led,.cwt-full .cf-time.jp-led{font-family:'Chakra Petch',monospace !important}
 
 /* =========================================================
    3 · IDENTIDAD EN DORADO, INTERFAZ EN NARANJA
@@ -27422,11 +27655,11 @@ body:not(.cf-disc) .block .set-row.set-row-done{
        de 4h+, un dato viejo guardado ANTES de este fix puede seguir
        teniendo s.ini de hace días -- se sanea acá también antes de
        mostrarlo. CrossFit sigue con el cálculo de siempre. */
-    if(window.COACH_DISCIPLINA === 'sports' && min > 180){
+    if(window.COACH_DISCIPLINA === 'sports' && min > 150){
       var dia = DAYS.find(function(d){ return d.id === state.currentDay; });
       var r = (dia && window.CoachTV && typeof window.CoachTV.resumen === 'function')
         ? window.CoachTV.resumen(state.currentWeek || 0, dia) : null;
-      min = (r && r.series > 0) ? Math.min(180, Math.max(20, r.series * 3)) : 60;
+      min = (r && r.series > 0) ? Math.min(150, Math.max(20, r.series * 3)) : 60;
     }
     if(min < 60) return min + ' min';
     return Math.floor(min / 60) + ' h ' + (min % 60) + ' min';
@@ -29468,7 +29701,11 @@ body.focus-mode .hd-dock{display:none}
    flotante. Scopeado a Sports (body:not(.cf-disc)): CrossFit tiene su
    propio .day-dot con semántica y color propios (body.cf-disc .day-tab
    .day-dot, más abajo en el archivo) y no se toca. */
-body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:none !important; }
+/* directiva maestra ("Homologación estricta Bodybuilding = CrossFit") --
+   el punto de estado de la pestaña vuelve a mostrarse en Sports (indicador
+   de día activo/completado idéntico a CrossFit, ver .day-dot en
+   .hdc-days-wrap .day-tab más abajo). */
+body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:block; }
 .hdc-days-wrap .day-tab.active{ background:rgba(255,107,0,.12) !important; border-color:#ff6b00 !important; }
 .hdc-days-wrap .day-tab.active .tab-name{ color:#F2C89A !important; }
 .hdc-days-wrap .day-tab.active::after{ display:none; }
@@ -31384,13 +31621,15 @@ body:not(.cf-disc) .jp-prs-quickbtn:active{ background:rgba(255,214,0,.14) !impo
    ellipsis, en vez de una sola línea angosta. Scopeado a Sports
    (body:not(.cf-disc)): CrossFit conserva su pastilla compacta de
    82px/1 línea tal cual. */
-body:not(.cf-disc) .hdc-days-wrap .day-tab{
-  min-width:104px !important; max-width:168px !important; padding:8px 14px !important;
-}
-body:not(.cf-disc) .hdc-days-wrap .day-tab .tab-label{
-  white-space:normal !important; display:-webkit-box !important; -webkit-line-clamp:2 !important;
-  -webkit-box-orient:vertical !important; line-height:1.25 !important;
-}
+/* directiva maestra ("Homologación estricta: Bodybuilding idéntico a
+   CrossFit") -- el ensanche de arriba (104-168px con subtítulo de 2
+   líneas) generaba cajas sobredimensionadas que cortaban "DÍA 3" fuera
+   de la fila. Se revierte a la pastilla compacta simétrica de CrossFit
+   ("DÍA 1", "DÍA 2"... + indicador de estado): el foco muscular largo
+   ya no se pinta en la pestaña (sigue disponible en el title/tooltip y
+   dentro del propio día), así no hay nada que truncar. */
+body:not(.cf-disc) .hdc-days-wrap .day-tab .tab-label{ display:none !important; }
+body:not(.cf-disc) .hdc-days-wrap .day-tab{ min-width:64px !important; max-width:82px !important; padding:8px 10px !important; }
 /* selector de semanas: barra segmentada minimalista, sin cajas dobles */
 body.cf-disc .week-pill{
   border-radius:999px !important; border:1px solid rgba(255,255,255,.08) !important;
