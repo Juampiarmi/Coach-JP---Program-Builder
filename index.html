@@ -4035,6 +4035,184 @@ function parsearDiaCompletoCF(texto){
   });
 }
 /* ============================================================
+   directiva técnica ("Parser masivo de día / semana completa") --
+   IMPORTADOR RÁPIDO DE SESIÓN/SEMANA. Parser 100% determinista (regex,
+   sin IA ni API keys) que convierte texto pegado en días + bloques de
+   Pizarra, con la MISMA estructura que arma a mano "Agregar bloque de
+   pizarra" (newBlock('list') + cfPizarra / sportsPizarra, fase en
+   b.category, prescripción en b.items) -- nada de formatos nuevos, así que
+   video chips, alertas, duración y volumen se resuelven solos al
+   re-renderizar. Sintaxis:
+     === DÍA 1: Título ===      (o  ### DÍA 1: Título)
+     FOCO: texto  /  BRIEFING: texto   (continúa en las líneas siguientes)
+     [WARM-UP] | [CALENTAMIENTO]            -> fase WARM-UP
+     [SKILL / STRENGTH] Título opcional     -> fase SKILL/STRENGTH
+     [WOD / METCON] Título opcional         -> fase WOD/METCON
+     [ACCESSORY / COOLDOWN] Título opcional -> fase ACCESSORY/COOLDOWN
+   (también [HYROX], [ENDURANCE] y el viejo "BLOQUE N: Título"). Un
+   corchete que no es una fase conocida se deja como texto del bloque y
+   se avisa -- nunca se descarta una línea en silencio.
+   ============================================================ */
+const IMP_FASES = [
+  { rx:/^(warm\s*-?\s*up|calentamiento|entrada\s+en\s+calor)$/i,                          fase:'warmup',    lb:'WARM-UP' },
+  { rx:/^(skill\s*\/\s*strength|skill|strength|fuerza)$/i,                                   fase:'strength',  lb:'SKILL / STRENGTH' },
+  { rx:/^(wod\s*\/\s*metcon|wod|met\s*-?\s*con)$/i,                                          fase:'metcon',    lb:'WOD / METCON' },
+  { rx:/^(accessory\s*\/\s*cool\s*-?\s*down|accessory|accesorios?|cool\s*-?\s*down|enfriamiento)$/i, fase:'accessory', lb:'ACCESSORY / COOLDOWN' },
+  { rx:/^(hyrox(\s*\/\s*stations?)?|hyrox\s+stations?)$/i,                                    fase:'cardio',    lb:'HYROX STATIONS' },
+  { rx:/^(endurance|2\s*[ºo°]?\s*turno.*)$/i,                                                 fase:'endurance', lb:'2º TURNO · ENDURANCE' }
+];
+const IMP_RX_DIA   = /^\s*(?:={2,}|#{2,})\s*d[ií]a\s*(\d+)?\s*[:\-–.]?\s*(.*?)\s*(?:={2,}|#{2,})?\s*$/i;
+const IMP_RX_FOCO  = /^\s*(?:foco(?:\s+t[aá]ctico)?|briefing|stimulus(?:\s+briefing)?)\s*:\s*(.*)$/i;
+const IMP_RX_CORCH = /^\s*\[\s*([^\]]+?)\s*\]\s*(.*)$/;
+const IMP_RX_BLOQUE_VIEJO = /^\s*bloque\s*\d*\s*[:\-–]\s*(.*)$/i;
+function parsearImportacion(texto){
+  const avisos = [], dias = [];
+  let dia = null, bloque = null, enFoco = false;
+  const nuevoDia = (num, titulo) => { dia = { num: num, titulo: titulo || '', foco: '', bloques: [] }; dias.push(dia); bloque = null; enFoco = false; return dia; };
+  String(texto || '').split(/\r?\n/).forEach((raw, i) => {
+    const l = raw.replace(/\s+$/, '');
+    const t = l.trim();
+    if(!t) return;
+    let m = t.match(IMP_RX_DIA);
+    if(m){ nuevoDia(m[1] ? parseInt(m[1], 10) : null, (m[2] || '').trim()); return; }
+    if(!dia) nuevoDia(null, '');
+    m = t.match(IMP_RX_FOCO);
+    if(m){ dia.foco = (dia.foco ? dia.foco + '\n' : '') + (m[1] || '').trim(); enFoco = true; return; }
+    m = t.match(IMP_RX_CORCH);
+    if(m){
+      const tag = m[1].replace(/\s+/g, ' ').trim();
+      const f = IMP_FASES.find(x => x.rx.test(tag));
+      if(f){ bloque = { fase: f.fase, titulo: (m[2] || '').trim(), items: [] }; dia.bloques.push(bloque); enFoco = false; return; }
+      avisos.push('Línea ' + (i + 1) + ': "[' + tag + ']" no es una fase conocida -- se dejó como texto del bloque');
+    } else {
+      m = t.match(IMP_RX_BLOQUE_VIEJO);
+      if(m){
+        const tit = (m[1] || '').trim();
+        bloque = { fase: inferirFaseCF(tit), titulo: tit, items: [] }; dia.bloques.push(bloque); enFoco = false; return;
+      }
+    }
+    if(enFoco && !bloque){ dia.foco += '\n' + t; return; }
+    if(!bloque){
+      bloque = { fase: 'metcon', titulo: '', items: [] }; dia.bloques.push(bloque);
+      avisos.push('Línea ' + (i + 1) + ': hay texto antes del primer delimitador de bloque -- se agrupó en un bloque WOD/METCON sin título');
+    }
+    bloque.items.push(t);
+  });
+  /* un bloque sin cuerpo es casi seguro un error de tipeo del delimitador */
+  dias.forEach(d => d.bloques.forEach(b => { if(!b.items.length) avisos.push((d.num ? 'Día ' + d.num : 'Día') + ': el bloque "' + (b.titulo || b.fase) + '" no tiene prescripción'); }));
+  return { dias: dias, avisos: avisos };
+}
+let _impModo = 'dia', _impTexto = '';
+const IMP_PLACEHOLDER = '=== DÍA 1: Oly Cycling, Press Den y Metcon ===\nFOCO: Velocidad de barra, salí agresivo los primeros 2 minutos.\n[WARM-UP]\n2 min Bike suave\n10 Air Squats\n[SKILL / STRENGTH] Power Snatch\n5x2 Power Snatch @ 60kg\nRest 90s\n[WOD / METCON] Cindy\nAMRAP 12 min:\n5 Pull-ups\n10 Push-ups\n15 Air Squats\n[ACCESSORY / COOLDOWN]\n3x12 DB Row @ 20kg\n\n=== DÍA 2: ... ===';
+function htmlImportadorRapido(){
+  return '<details class="card" id="impBox" style="margin-bottom:14px">' +
+    '<summary class="lb" style="cursor:pointer">📋 Pegar Día Completo (auto-split por bloque) · Importador rápido</summary>' +
+    '<div style="margin-top:10px">' +
+      '<div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap">' +
+        '<button type="button" class="btn sm ' + (_impModo === 'dia' ? 'gold' : 'ghost') + '" data-impmodo="dia">⚡ IMPORTAR DÍA ACTIVO</button>' +
+        '<button type="button" class="btn sm ' + (_impModo === 'semana' ? 'gold' : 'ghost') + '" data-impmodo="semana">📅 IMPORTAR SEMANA COMPLETA (S1..S4)</button>' +
+      '</div>' +
+      '<textarea id="cfPegarTxt" style="min-height:240px" placeholder="' + esc(IMP_PLACEHOLDER) + '">' + esc(_impTexto) + '</textarea>' +
+      '<div id="impPreview" class="hint" style="margin-top:6px"></div>' +
+      '<button type="button" class="btn gold sm" style="margin-top:8px" data-impgo="1">⚡ PROCESAR E IMPORTAR</button>' +
+      '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> o <b>### DÍA X: Título</b> · <b>FOCO:</b> / <b>BRIEFING:</b> · delimitadores <b>[WARM-UP]</b> <b>[SKILL / STRENGTH]</b> <b>[WOD / METCON]</b> <b>[ACCESSORY / COOLDOWN]</b> + título opcional. ' +
+        '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su día correlativo' +
+        (esPlanCFActivo(plan(S.activeId)) ? ' de la semana que estás editando.' : ' (la progresión S2-S4 se genera con "Ondular mesociclo").') + '</div>' +
+    '</div>' +
+  '</details>';
+}
+function previewImportacion(){
+  const box = document.getElementById('impPreview'), ta = document.getElementById('cfPegarTxt');
+  if(!box || !ta) return;
+  _impTexto = ta.value;
+  if(!ta.value.trim()){ box.innerHTML = ''; return; }
+  const r = parsearImportacion(ta.value);
+  const nB = r.dias.reduce((s, d) => s + d.bloques.length, 0);
+  const det = r.dias.map(d => (d.num ? 'Día ' + d.num : 'Día') + (d.titulo ? ' «' + esc(d.titulo.slice(0, 30)) + '»' : '') + ': ' +
+    (d.bloques.map(b => (IMP_FASES.find(f => f.fase === b.fase) || {}).lb).join(' · ') || 'sin bloques')).join('<br>');
+  box.innerHTML = '<b style="color:var(--txt-2)">Detectado: ' + r.dias.length + ' día' + (r.dias.length === 1 ? '' : 's') + ', ' + nB + ' bloque' + (nB === 1 ? '' : 's') + '</b><br>' + det +
+    (r.avisos.length ? '<div style="color:#FFB703;margin-top:4px">⚠ ' + r.avisos.slice(0, 4).map(esc).join('<br>⚠ ') + (r.avisos.length > 4 ? '<br>…y ' + (r.avisos.length - 4) + ' aviso(s) más' : '') + '</div>' : '');
+}
+function crearBloqueImportado(b, cf){
+  const nb = newBlock('list');
+  nb.category = b.fase;
+  nb.titulo = b.titulo || '';
+  nb.items = b.items.slice();
+  if(cf){
+    nb.cfPizarra = true;
+    const det = detectarFormatoCF(b.items.join('\n'));
+    if(det){ nb.cfFmt = det.fmt; if(!nb.cfScore) nb.cfScore = det.score; }
+  } else {
+    nb.sportsPizarra = true;
+  }
+  return nb;
+}
+function ejecutarImportacion(texto, modo){
+  const p = plan(S.activeId), ath = active();
+  if(!p || !ath){ toast('Seleccioná un alumno/a primero', 'err'); return false; }
+  const r = parsearImportacion(texto);
+  if(!r.dias.length || !r.dias.some(d => d.bloques.length || d.titulo || d.foco)){
+    toast('No se detectó nada para importar: usá "=== DÍA 1: Título ===" y delimitadores como [WARM-UP]', 'warn'); return false;
+  }
+  const cf = esPlanCFActivo(p);
+  const asign = [];
+  if(modo === 'dia'){
+    const act = S.ui.day;
+    asign.push({ idx: act, dia: r.dias.find(d => d.num === act + 1) || r.dias[0] });
+  } else {
+    const usados = new Set(); let sig = 0;
+    r.dias.forEach(dia => {
+      let idx = (dia.num && dia.num >= 1 && !usados.has(dia.num - 1)) ? dia.num - 1 : -1;
+      if(idx < 0){ idx = sig; while(usados.has(idx)) idx++; }
+      usados.add(idx); sig = idx + 1;
+      asign.push({ idx: idx, dia: dia });
+    });
+    if(asign.some(a => a.idx >= MAX_DIAS)){ toast('El texto trae días fuera del rango (máximo ' + MAX_DIAS + ' días por mesociclo)', 'err'); return false; }
+  }
+  let pisados = 0, nuevos = 0;
+  asign.forEach(a => { const d = p.dias[a.idx]; if(d) pisados += (d.bloques || []).length; else nuevos++; });
+  if(pisados && !confirm('Importar va a REEMPLAZAR ' + pisados + ' bloque' + (pisados === 1 ? '' : 's') + ' existente' + (pisados === 1 ? '' : 's') +
+                         ' en ' + asign.length + ' día' + (asign.length === 1 ? '' : 's') + (nuevos ? ' y crear ' + nuevos + ' día(s) nuevo(s)' : '') +
+                         ' de ' + fullName(ath) + '.\n\n(Podés deshacer con Ctrl+Z.) ¿Continuar?')) return false;
+  if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Importar ' + (modo === 'dia' ? 'día' : 'semana'));
+  /* días que faltan (semana completa con más días que el plan): id único,
+     mismo criterio que agregarDia() -- el id nunca se reutiliza. */
+  asign.forEach(a => {
+    while(p.dias.length <= a.idx){
+      const i = p.dias.length, nd = newDay(i);
+      const ids = new Set(p.dias.map(x => x.id));
+      let k = i + 1; while(ids.has('dia' + k)) k++;
+      nd.id = 'dia' + k;
+      p.dias.push(nd);
+    }
+  });
+  const creados = [];
+  asign.forEach(a => {
+    const d = p.dias[a.idx], dia = a.dia;
+    if(dia.titulo) d.title = dia.titulo;
+    if(dia.foco){ if(cf) d.briefing = dia.foco; else d.focusText = dia.foco; }
+    const porSemana = cf ? asegurarBloquesPorSemana(d) : null;   /* antes de pisar d.bloques: las otras semanas conservan su contenido */
+    const bs = dia.bloques.map(b => crearBloqueImportado(b, cf));
+    d.bloques = bs;
+    if(porSemana) porSemana[activeCfWeek()] = bs;
+    bs.forEach(b => creados.push(b.id));
+  });
+  guardarAhora();
+  renderBuilder();
+  /* el escaneo de videos/alertas/formato reacciona al evento 'input' del
+     textarea de cada bloque (mismo camino que tipear a mano) */
+  creados.forEach(id => {
+    const ta = document.querySelector('textarea[data-bf="items"][data-b="' + id + '"]');
+    if(ta) ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  _impTexto = '';
+  const nB = creados.length;
+  toast('⚡ Importado: ' + asign.length + ' día' + (asign.length === 1 ? '' : 's') + ', ' + nB + ' bloque' + (nB === 1 ? '' : 's') +
+        (r.avisos.length ? ' · ' + r.avisos.length + ' aviso(s)' : ''), r.avisos.length ? 'warn' : '');
+  return true;
+}
+document.addEventListener('input', e => { if(e.target && e.target.id === 'cfPegarTxt') previewImportacion(); });
+/* ============================================================
    MODO PIZARRA LIBRE (Sports & Bodybuilding) -- directiva
    "Pizarra Libre & Parser Táctico": redactar la sesión en texto
    libre estructurado y parsearla a bloques REALES (newBlock('block')/
@@ -4653,14 +4831,7 @@ function renderDay(){
       ('' + prsBarCF(ath)) +
       BTN_ELIMINAR_DIA +
     '</div>' +
-    '<details class="card" style="margin-bottom:14px">' +
-      '<summary class="lb" style="cursor:pointer">📋 Pegar Día Completo (auto-split por bloque)</summary>' +
-      '<div style="margin-top:10px">' +
-        '<textarea id="cfPegarTxt" style="min-height:130px" placeholder="BLOQUE 1: WARM-UP\n2 min Bike suave\n10 Air squats\n\nBLOQUE 2: SKILL\n5 Back squat @ 60kg\n\nBLOQUE 3: WOD\n21-15-9\nThrusters — 42.5/30kg"></textarea>' +
-        '<button type="button" class="btn gold sm" style="margin-top:8px" data-cfsplit="1">⚡ Dividir en Bloques</button>' +
-        '<div class="hint" style="margin-top:6px">Escribí "BLOQUE 1: Warm-up", "BLOQUE 2: Skill", etc. -- la fase de cada uno se infiere del título (Warm-up/Skill-Strength/WOD-Metcon/Hyrox/Accessory) y el resto de cada sección se carga como prescripción.</div>' +
-      '</div>' +
-    '</details>' +
+    htmlImportadorRapido() +
     '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-bottom:14px" data-addcfblock="1">➕ AGREGAR BLOQUE DE PIZARRA</button>';
   } else {
     /* fix definitivo (directiva): "Ficha del día" tenía 8 campos sueltos
@@ -4708,6 +4879,7 @@ function renderDay(){
        tipo:'list' con b.sportsPizarra=true, editado con la MISMA pizarra
        de redacción libre + detección reactiva de ejercicios que ya usa
        CrossFit (ver más abajo, rama esBloqueSportsPizarra). */
+    h += htmlImportadorRapido();
     h += '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-bottom:14px" data-addsportsblock="1">➕ AGREGAR BLOQUE DE PIZARRA</button>';
     /* directiva ("Motor de Ondulación S1 -> S4"): proyecta automáticamente
        el texto crudo de Semana 1 de CADA bloque de Pizarra del día a S2/S3/
@@ -6230,6 +6402,16 @@ function bindBuilder(){
       });
       save(); renderBuilder();
       toast('✅ ' + parsed.length + ' bloque(s) creado(s) desde el texto pegado');
+      return;
+    }
+    if(t.dataset.impmodo){
+      _impModo = t.dataset.impmodo;
+      panel.querySelectorAll('[data-impmodo]').forEach(b => { const on = b.dataset.impmodo === _impModo; b.classList.toggle('gold', on); b.classList.toggle('ghost', !on); });
+      return;
+    }
+    if(t.dataset.impgo){
+      const ta = document.getElementById('cfPegarTxt');
+      ejecutarImportacion(ta ? ta.value : _impTexto, _impModo);
       return;
     }
     if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
