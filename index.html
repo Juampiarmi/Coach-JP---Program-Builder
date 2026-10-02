@@ -4062,9 +4062,27 @@ const IMP_FASES = [
   { rx:/^(endurance|2\s*[ºo°]?\s*turno.*)$/i,                                                 fase:'endurance', lb:'2º TURNO · ENDURANCE' }
 ];
 const IMP_RX_DIA   = /^\s*(?:={2,}|#{2,})\s*d[ií]a\s*(\d+)?\s*[:\-–.]?\s*(.*?)\s*(?:={2,}|#{2,})?\s*$/i;
-const IMP_RX_FOCO  = /^\s*(?:foco(?:\s+t[aá]ctico)?|briefing|stimulus(?:\s+briefing)?)\s*:\s*(.*)$/i;
-const IMP_RX_CORCH = /^\s*\[\s*([^\]]+?)\s*\]\s*(.*)$/;
+const IMP_RX_FOCO  = /^[\s*_>\-–•·]*(?:foco(?:\s+t[aá]ctico)?|briefing|stimulus(?:\s+briefing)?)\s*[*_]*\s*:\s*[*_]*\s*(.*?)[*_]*\s*$/i;
+/* delimitador tolerante: admite decoración delante (viñetas, ###, **, emoji,
+   "1.") y detrás del corchete (**, ":", "-", "|") -- texto pegado desde un
+   chat/markdown rara vez llega "limpio". El título es lo que sigue. */
+const IMP_RX_CORCH = /^[^\[\]A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]*(?:\d+[.)]\s*)?\[\s*([^\]]+?)\s*\][\s*_:.\-–—|]*(.*?)[\s*_]*$/;
 const IMP_RX_BLOQUE_VIEJO = /^\s*bloque\s*\d*\s*[:\-–]\s*(.*)$/i;
+/* "A) Every 2:00 x 7 sets" / "B) 5 Sets..." -- marcador de bloque del estilo
+   "sesión bruta": el resto de la línea es la primera línea de prescripción */
+const IMP_RX_LETRA = /^\s*([A-F])\s*\)\s*(.*)$/;
+const AVISO_LETRAS = 'Bloques "A) / B) / C)": la fase se infirió del texto -- revisá el selector de Fase de cada bloque';
+/* si el tag no es EXACTAMENTE una fase conocida pero la contiene
+   ("[WARM-UP · 8 MIN]", "[SKILL / STRENGTH: Snatch]"), la fase se infiere
+   por palabra clave */
+const IMP_FASES_SOFT = [
+  { rx:/warm|calent/i,                                        fase:'warmup' },
+  { rx:/skill|strength|fuerza|weightlifting|halterofilia/i,  fase:'strength' },
+  { rx:/wod|met\s*-?\s*con|amrap|emom|for\s*time|chipper|tabata/i, fase:'metcon' },
+  { rx:/access|accesor|cool\s*-?\s*down|enfriamiento|movilidad/i, fase:'accessory' },
+  { rx:/hyrox|station/i,                                      fase:'cardio' },
+  { rx:/endurance|turno|running/i,                            fase:'endurance' }
+];
 function parsearImportacion(texto){
   const avisos = [], dias = [];
   let dia = null, bloque = null, enFoco = false;
@@ -4072,7 +4090,10 @@ function parsearImportacion(texto){
   String(texto || '').split(/\r?\n/).forEach((raw, i) => {
     const l = raw.replace(/\s+$/, '');
     const t = l.trim();
-    if(!t) return;
+    /* una línea en blanco corta la continuación del FOCO: antes, todo el
+       texto posterior (incluidos bloques cuyo delimitador no se reconocía)
+       quedaba tragado dentro del foco y el día se importaba sin bloques */
+    if(!t){ enFoco = false; return; }
     let m = t.match(IMP_RX_DIA);
     if(m){ nuevoDia(m[1] ? parseInt(m[1], 10) : null, (m[2] || '').trim()); return; }
     if(!dia) nuevoDia(null, '');
@@ -4081,14 +4102,27 @@ function parsearImportacion(texto){
     m = t.match(IMP_RX_CORCH);
     if(m){
       const tag = m[1].replace(/\s+/g, ' ').trim();
-      const f = IMP_FASES.find(x => x.rx.test(tag));
-      if(f){ bloque = { fase: f.fase, titulo: (m[2] || '').trim(), items: [] }; dia.bloques.push(bloque); enFoco = false; return; }
+      let f = IMP_FASES.find(x => x.rx.test(tag));
+      let fase = f ? f.fase : '';
+      if(!fase){ const s = IMP_FASES_SOFT.find(x => x.rx.test(tag)); if(s) fase = s.fase; }
+      if(fase){
+        bloque = { fase: fase, titulo: (m[2] || '').trim(), items: [] }; dia.bloques.push(bloque); enFoco = false; return;
+      }
       avisos.push('Línea ' + (i + 1) + ': "[' + tag + ']" no es una fase conocida -- se dejó como texto del bloque');
+      enFoco = false;
     } else {
       m = t.match(IMP_RX_BLOQUE_VIEJO);
       if(m){
         const tit = (m[1] || '').trim();
         bloque = { fase: inferirFaseCF(tit), titulo: tit, items: [] }; dia.bloques.push(bloque); enFoco = false; return;
+      }
+      m = t.match(IMP_RX_LETRA);
+      if(m){
+        const resto = (m[2] || '').trim();
+        const fase = /warm|calent/i.test(resto) ? 'warmup' : (detectarFormatoCF(resto) ? 'metcon' : inferirFaseCF(resto));
+        bloque = { fase: fase, titulo: '', items: resto ? [resto] : [] }; dia.bloques.push(bloque); enFoco = false;
+        if(avisos.indexOf(AVISO_LETRAS) < 0) avisos.push(AVISO_LETRAS);
+        return;
       }
     }
     if(enFoco && !bloque){ dia.foco += '\n' + t; return; }
@@ -4106,7 +4140,7 @@ let _impModo = 'dia', _impTexto = '';
 const IMP_PLACEHOLDER = '=== DÍA 1: Oly Cycling, Press Den y Metcon ===\nFOCO: Velocidad de barra, salí agresivo los primeros 2 minutos.\n[WARM-UP]\n2 min Bike suave\n10 Air Squats\n[SKILL / STRENGTH] Power Snatch\n5x2 Power Snatch @ 60kg\nRest 90s\n[WOD / METCON] Cindy\nAMRAP 12 min:\n5 Pull-ups\n10 Push-ups\n15 Air Squats\n[ACCESSORY / COOLDOWN]\n3x12 DB Row @ 20kg\n\n=== DÍA 2: ... ===';
 function htmlImportadorRapido(){
   return '<details class="card" id="impBox" style="margin-bottom:14px">' +
-    '<summary class="lb" style="cursor:pointer">📋 Pegar Día Completo (auto-split por bloque) · Importador rápido</summary>' +
+    '<summary class="lb" style="cursor:pointer">📋 Importador rápido de sesión · Pegar día completo (auto-split por bloque)</summary>' +
     '<div style="margin-top:10px">' +
       '<div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap">' +
         '<button type="button" class="btn sm ' + (_impModo === 'dia' ? 'gold' : 'ghost') + '" data-impmodo="dia">⚡ IMPORTAR DÍA ACTIVO</button>' +
@@ -4115,7 +4149,7 @@ function htmlImportadorRapido(){
       '<textarea id="cfPegarTxt" style="min-height:240px" placeholder="' + esc(IMP_PLACEHOLDER) + '">' + esc(_impTexto) + '</textarea>' +
       '<div id="impPreview" class="hint" style="margin-top:6px"></div>' +
       '<button type="button" class="btn gold sm" style="margin-top:8px" data-impgo="1">⚡ PROCESAR E IMPORTAR</button>' +
-      '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> o <b>### DÍA X: Título</b> · <b>FOCO:</b> / <b>BRIEFING:</b> · delimitadores <b>[WARM-UP]</b> <b>[SKILL / STRENGTH]</b> <b>[WOD / METCON]</b> <b>[ACCESSORY / COOLDOWN]</b> + título opcional. ' +
+      '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> o <b>### DÍA X: Título</b> · <b>FOCO:</b> / <b>BRIEFING:</b> · delimitadores <b>[WARM-UP]</b> <b>[SKILL / STRENGTH]</b> <b>[WOD / METCON]</b> <b>[ACCESSORY / COOLDOWN]</b> + título opcional (también <b>A) …</b> / <b>B) …</b> para sesiones en bruto, con la fase inferida). ' +
         '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su día correlativo' +
         (esPlanCFActivo(plan(S.activeId)) ? ' de la semana que estás editando.' : ' (la progresión S2-S4 se genera con "Ondular mesociclo").') + '</div>' +
     '</div>' +
@@ -4133,26 +4167,25 @@ function previewImportacion(){
   box.innerHTML = '<b style="color:var(--txt-2)">Detectado: ' + r.dias.length + ' día' + (r.dias.length === 1 ? '' : 's') + ', ' + nB + ' bloque' + (nB === 1 ? '' : 's') + '</b><br>' + det +
     (r.avisos.length ? '<div style="color:#FFB703;margin-top:4px">⚠ ' + r.avisos.slice(0, 4).map(esc).join('<br>⚠ ') + (r.avisos.length > 4 ? '<br>…y ' + (r.avisos.length - 4) + ' aviso(s) más' : '') + '</div>' : '');
 }
+/* cada bloque parseado se instancia con la MISMA fábrica que el botón
+   "+ AGREGAR BLOQUE DE PIZARRA" (ver nuevoBloquePizarra()) */
 function crearBloqueImportado(b, cf){
-  const nb = newBlock('list');
-  nb.category = b.fase;
-  nb.titulo = b.titulo || '';
-  nb.items = b.items.slice();
-  if(cf){
-    nb.cfPizarra = true;
-    const det = detectarFormatoCF(b.items.join('\n'));
-    if(det){ nb.cfFmt = det.fmt; if(!nb.cfScore) nb.cfScore = det.score; }
-  } else {
-    nb.sportsPizarra = true;
-  }
-  return nb;
+  return nuevoBloquePizarra(cf, b.fase, b.titulo, b.items);
 }
 function ejecutarImportacion(texto, modo){
   const p = plan(S.activeId), ath = active();
   if(!p || !ath){ toast('Seleccioná un alumno/a primero', 'err'); return false; }
   const r = parsearImportacion(texto);
+  const totalBloques = r.dias.reduce((s, d) => s + d.bloques.length, 0);
   if(!r.dias.length || !r.dias.some(d => d.bloques.length || d.titulo || d.foco)){
     toast('No se detectó nada para importar: usá "=== DÍA 1: Título ===" y delimitadores como [WARM-UP]', 'warn'); return false;
+  }
+  /* si el texto no trae NI UN bloque no se toca nada (antes se importaban
+     título y foco y el día quedaba vacío: "DÍA VACÍO"): se avisa y se deja
+     la vista previa con el detalle para corregir los delimitadores */
+  if(!totalBloques){
+    toast('No se detectó ningún bloque: revisá los delimitadores ([WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN]). No se cambió nada.', 'err');
+    return false;
   }
   const cf = esPlanCFActivo(p);
   const asign = [];
@@ -4187,18 +4220,40 @@ function ejecutarImportacion(texto, modo){
     }
   });
   const creados = [];
-  asign.forEach(a => {
-    const d = p.dias[a.idx], dia = a.dia;
-    if(dia.titulo) d.title = dia.titulo;
-    if(dia.foco){ if(cf) d.briefing = dia.foco; else d.focusText = dia.foco; }
-    const porSemana = cf ? asegurarBloquesPorSemana(d) : null;   /* antes de pisar d.bloques: las otras semanas conservan su contenido */
-    const bs = dia.bloques.map(b => crearBloqueImportado(b, cf));
-    d.bloques = bs;
-    if(porSemana) porSemana[activeCfWeek()] = bs;
-    bs.forEach(b => creados.push(b.id));
-  });
+  try{
+    /* primero se instancian TODOS los bloques (sin tocar el plan): si algo
+       falla, el plan queda intacto en vez de a medias (título/foco sí,
+       bloques no) */
+    const lotes = asign.map(a => ({ a: a, bs: a.dia.bloques.map(b => crearBloqueImportado(b, cf)) }));
+    lotes.forEach(({ a, bs }) => {
+      const d = p.dias[a.idx], dia = a.dia;
+      const porSemana = cf ? asegurarBloquesPorSemana(d) : null;   /* antes de pisar d.bloques: las otras semanas conservan su contenido */
+      if(dia.titulo) d.title = dia.titulo;
+      if(dia.foco){ if(cf) d.briefing = dia.foco; else d.focusText = dia.foco; }
+      if(bs.length){      /* un día del texto sin bloques conserva los que ya tenía */
+        d.bloques = bs;
+        if(porSemana) porSemana[activeCfWeek()] = bs;
+        bs.forEach(b => creados.push(b.id));
+      }
+    });
+  }catch(err){
+    console.error('importador', err);
+    toast('No se pudo importar: ' + (err && err.message ? err.message : err), 'err');
+    return false;
+  }
+  /* se abre el primer día importado: en "semana completa" el día activo
+     podía ser otro y mostraba su "DÍA VACÍO" aunque la importación hubiera
+     funcionado */
+  const primero = asign.find(a => a.dia.bloques.length);
+  if(primero) S.ui.day = primero.idx;
   guardarAhora();
   renderBuilder();
+  /* verificación: los bloques tienen que estar pintados en el panel del día;
+     si no, se fuerza un segundo repintado y, si aun así no aparecen, se
+     avisa en vez de dejar el cartel de día vacío en silencio */
+  const pintado = () => creados.length === 0 || !!document.querySelector('textarea[data-bf="items"][data-b="' + creados[0] + '"]');
+  if(!pintado()){ try{ renderBuilder(); }catch(e){} }
+  if(!pintado()) toast('Los bloques se guardaron pero no se pudieron pintar: recargá el Builder', 'err');
   /* el escaneo de videos/alertas/formato reacciona al evento 'input' del
      textarea de cada bloque (mismo camino que tipear a mano) */
   creados.forEach(id => {
@@ -4415,10 +4470,7 @@ function extraerTecnicaSports(texto){
    criterio que ya documenta el resto del archivo para jpCfSplit/etc). */
 function addBlockSportsPizarra(){
   const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
-  const b = newBlock('list');
-  b.category = 'strength';
-  b.sportsPizarra = true;
-  b.titulo = '';
+  const b = nuevoBloquePizarra(false, 'strength', '');
   d.bloques.push(b); save(); renderBuilder();
   toast('🧩 Bloque de pizarra agregado');
 }
@@ -5629,12 +5681,28 @@ function addBlock(tipo){
 /* generador único de bloques en modalidad CrossFit & Hyrox: siempre crea
    un bloque de pizarra (tipo 'list'), con WOD/Metcon como fase por defecto
    -- el coach la cambia con el selector de Fase de la propia tarjeta. */
+/* única fábrica de bloques de Pizarra (CrossFit y Sports): la usan los
+   botones "+ AGREGAR BLOQUE DE PIZARRA" (addBlockCF/addBlockSportsPizarra) y
+   el Importador rápido -- así un bloque importado es EXACTAMENTE un bloque
+   creado a mano con el botón (fase en category, título, items, y en
+   CrossFit el formato nativo autodetectado igual que al tipear). */
+function nuevoBloquePizarra(cf, fase, titulo, items){
+  const b = newBlock('list');
+  b.category = fase || (cf ? 'metcon' : 'strength');
+  b.titulo = titulo || '';
+  if(cf) b.cfPizarra = true; else b.sportsPizarra = true;
+  if(Array.isArray(items) && items.length){
+    b.items = items.slice();
+    if(cf){
+      const det = detectarFormatoCF(items.join('\n'));
+      if(det){ b.cfFmt = det.fmt; if(!b.cfScore) b.cfScore = det.score; }
+    }
+  }
+  return b;
+}
 function addBlockCF(){
   const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
-  const b = newBlock('list');
-  b.category = 'metcon';
-  b.cfPizarra = true;
-  b.titulo = '';
+  const b = nuevoBloquePizarra(true, 'metcon', '');
   d.bloques.push(b); save(); renderBuilder();
   toast('🧩 Bloque de pizarra agregado');
 }
@@ -53287,6 +53355,15 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       else vista.insertBefore(caja, vista.firstChild);
     }
     caja.classList.toggle('cf', cf);
+    /* directiva ("Unificación de herramientas de pegado") -- en CrossFit la
+       caja "2 · Pegar sesión bruta de CrossFit (opcional)" queda fusionada
+       con el Importador rápido del panel del día (único componente
+       colapsable de pegado): además era un botón muerto -- "Estructurar
+       con IA" llamaba a window.jpEstructurarCF()/#cfxRun, que no existen
+       en ningún lado del archivo, así que nunca hacía nada. Se oculta por
+       completo; Fuerza conserva "Plantillas profesionales" como siempre. */
+    if(cf) caja.style.setProperty('display', 'none', 'important'); else caja.style.removeProperty('display');
+    if(cf){ caja.dataset.modo = 'cf'; caja.innerHTML = ''; return; }
     /* limpieza del Builder CrossFit (2026-09-16): el pegado de sesión bruta
        con IA pasa a ser una herramienta secundaria colapsada por defecto
        -- el protagonista de esta modalidad es el Generador de Bloques de
@@ -53437,7 +53514,10 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     try{
       paso1(); paso2(); drawer();
       const b = document.getElementById('stepBar'); if(b) b.style.display = '';
-      const s = document.getElementById('step2'); if(s) s.style.display = '';
+      /* en CrossFit la caja "2" está fusionada con el Importador rápido del
+         panel del día (ver paso2()): sigue oculta tras cada repintado. */
+      const s = document.getElementById('step2');
+      if(s){ if(esCF()) s.style.setProperty('display', 'none', 'important'); else s.style.removeProperty('display'); }
     }catch(e){}
   }
   function mount(){
