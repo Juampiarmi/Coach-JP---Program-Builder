@@ -145,6 +145,17 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .btn.cf-primary{background:linear-gradient(135deg,#ff6b00,#ff8533);color:#08090B;border:none;box-shadow:0 8px 20px rgba(255,107,0,.25)}
 .btn.cf-primary:hover{filter:brightness(1.08)}
 .btn.red{background:linear-gradient(135deg,var(--red),#8E0D17);color:#fff;border:none}
+/* modal táctico "Copiar día a otro alumno" (Black Carbon) */
+.cd-modal{background:#0b0e15 !important;border:1px solid #1F2937 !important;border-radius:12px !important;max-width:480px !important}
+.cd-modal .modal-h h3{font-family:'Chakra Petch',sans-serif;letter-spacing:.08em;font-size:.88rem;color:#38bdf8}
+.cd-origen{background:#05070A;border:1px solid #1F2937;border-left:3px solid #38bdf8;border-radius:8px;padding:10px 12px;margin-bottom:14px}
+.cd-origen .k{font-size:.62rem;letter-spacing:.14em;color:#8A99AD;text-transform:uppercase;font-weight:700}
+.cd-origen .v{display:block;font-family:'Chakra Petch',sans-serif;font-weight:700;color:#f1f5f9;margin-top:2px;overflow-wrap:anywhere}
+.cd-origen .s{display:block;font-size:.8rem;color:#cbd5e1;margin-top:2px;overflow-wrap:anywhere}
+.cd-modal select,.cd-modal input[type=text]{background:#05070A !important;border:1px solid #1F2937 !important;width:100%;box-sizing:border-box}
+.cd-modal .lb{font-size:.62rem !important;letter-spacing:.14em;text-transform:uppercase;color:#8A99AD}
+.cd-modal .cd-f{margin-bottom:12px}
+.cd-modal .alert{margin:0 0 10px;padding:9px 12px}
 .btn.ghost{background:transparent}
 .btn.sm{padding:6px 11px;font-size:12px;border-radius:9px}
 .btn.xs{padding:3px 8px;font-size:11px;border-radius:8px;font-weight:700}
@@ -1832,6 +1843,17 @@ function save(){
     else setTimeout(writeNow, 0);
   }, 1100);
 }
+/* escritura inmediata (sin esperar el debounce de save()): misma pareja de
+   claves de siempre, sólo se salta la espera de 1.1 s -- para acciones que
+   transfieren datos entre alumnos (ver ejecutarCopiaDia()). */
+function guardarAhora(){
+  clearTimeout(saveT);
+  try{
+    localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
+    localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
+    try{ pintarBadgeAlmacen(); }catch(e){}
+  }catch(e){ toast('No se pudo guardar (almacenamiento lleno)', 'err'); }
+}
 /* =========================================================
    SALVAGUARDA: BACKUP MANUAL + AVISO PREVENTIVO DE CUPO
    (directiva "Sprint 1") -- no cambia el esquema de persistencia ni cómo
@@ -3134,7 +3156,10 @@ function moverDia(desde, dir){
    visibles que todavía son el default ("DÍA 3" -> "DÍA 2"), jamás un
    nombre que el coach haya escrito a mano. */
 const MAX_DIAS = 7;
-const BTN_ELIMINAR_DIA = '<button type="button" class="btn ghost sm" style="margin-top:12px;border-color:rgba(255,107,87,.4);color:#FF6B57" data-eliminardia="1">🗑️ ELIMINAR DÍA ACTIVO</button>';
+const BTN_ELIMINAR_DIA = '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">' +
+  '<button type="button" class="btn ghost sm" style="border-color:rgba(56,189,248,.4);color:#38bdf8" data-copiardia="1">📋 COPIAR DÍA A OTRO ALUMNO</button>' +
+  '<button type="button" class="btn ghost sm" style="border-color:rgba(255,107,87,.4);color:#FF6B57" data-eliminardia="1">🗑️ ELIMINAR DÍA ACTIVO</button>' +
+  '</div>';
 function agregarDia(){
   const p = plan(S.activeId); if(!p) return;
   if(p.dias.length >= MAX_DIAS){ toast('Máximo ' + MAX_DIAS + ' días por mesociclo', 'err'); return; }
@@ -3497,6 +3522,157 @@ function ejecutarCopiaPlan(origenId, destinoId){
       '</div>';
   }
   toast('✅ Planificación copiada con éxito a ' + nombreDestino);
+}
+/* ============================================================
+   directiva maestra ("Copiar día completo entre alumnos") -- transfiere
+   UNA sesión (ficha, foco/tips/briefing, cool-down, todos los bloques y,
+   en CrossFit, las 4 semanas independientes) del alumno activo hacia un
+   día existente o un día nuevo de otro alumno, sin clonar el plan entero.
+   Deep clone real (structuredClone con fallback JSON): modificar el
+   destino después JAMÁS muta al origen. Reglas de identidad:
+   - d.id es la clave estable del historial de cargas del alumno
+     (getLoadKey): el día receptor CONSERVA su id y su rótulo posicional
+     (short); un día nuevo toma el primer 'diaN' libre.
+   - cada bloque recibe un id nuevo (así no se pisan marcas/scores entre
+     alumnos), con un mapa único para que el mismo bloque conserve id
+     idéntico en las 4 semanas CrossFit.
+   - los rótulos por defecto ("Sesión N" / "Día N") se re-numeran a la
+     posición del destino; un nombre escrito a mano se respeta tal cual.
+   - la identidad del alumno receptor (S.athletes, p.meta) no se toca.
+   ============================================================ */
+function cerrarModalCopiarDia(){
+  const bg = document.getElementById('mCopiarDiaBg');
+  if(bg) bg.remove();
+  document.body.style.overflow = '';
+}
+function etiquetaDiaCopia(d){
+  return (d.short || 'DÍA') + ': ' + (d.title || d.label || 'Sin título');
+}
+function abrirModalCopiarDia(){
+  const athO = active(), pO = plan(S.activeId), dO = curDay();
+  if(!athO || !pO || !dO){ toast('Seleccioná un alumno/a y un día primero', 'err'); return; }
+  const otros = S.athletes.filter(a => a.id !== athO.id)
+    .sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'));
+  if(!otros.length){ toast('No hay otro alumno/a registrado para copiar el día', 'warn'); return; }
+  cerrarModalCopiarDia();
+  const diaIdx = S.ui.day;
+  const nBl = (dO.bloques || []).length;
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg on'; bg.id = 'mCopiarDiaBg';
+  bg.innerHTML =
+    '<div class="modal cd-modal">' +
+      '<div class="modal-h"><h3>// COPIAR DÍA A OTRO ALUMNO</h3><div class="spacer"></div><button class="icon-btn" data-cdcancel="1">✕</button></div>' +
+      '<div class="modal-b">' +
+        '<div class="cd-origen"><span class="k">Origen · solo lectura</span>' +
+          '<span class="v">' + esc(fullName(athO)) + '</span>' +
+          '<span class="s">' + esc(etiquetaDiaCopia(dO)) + ' · ' + nBl + ' bloque' + (nBl === 1 ? '' : 's') + '</span></div>' +
+        '<div class="cd-f"><label class="lb">Alumno/a destino</label>' +
+          '<input type="text" id="cdBuscar" placeholder="Buscar alumno/a…" autocomplete="off" style="margin-bottom:6px">' +
+          '<select id="cdAlumno"></select></div>' +
+        '<div class="cd-f"><label class="lb">Día destino</label><select id="cdDia" disabled></select></div>' +
+        '<div id="cdInfo"></div>' +
+        '<div class="row" style="margin-top:14px;gap:8px">' +
+          '<button type="button" class="btn ghost" data-cdcancel="1" style="flex:1">Cancelar</button>' +
+          '<button type="button" class="btn gold" id="cdConfirmar" style="flex:1" disabled>📋 COPIAR DÍA</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(bg);
+  document.body.style.overflow = 'hidden';
+  const selA = bg.querySelector('#cdAlumno'), selD = bg.querySelector('#cdDia');
+  const info = bg.querySelector('#cdInfo'), btn = bg.querySelector('#cdConfirmar'), buscar = bg.querySelector('#cdBuscar');
+
+  function pintarAlumnos(){
+    const q = norm(buscar.value);
+    const lista = otros.filter(a => !q || norm(fullName(a)).indexOf(q) >= 0);
+    const prev = selA.value;
+    selA.innerHTML = '<option value="">— Elegí un alumno/a (' + lista.length + ') —</option>' +
+      lista.map(a => '<option value="' + esc(a.id) + '"' + (a.id === prev ? ' selected' : '') + '>' + esc(fullName(a)) + '</option>').join('');
+    pintarDias();
+  }
+  function pintarDias(){
+    const id = selA.value;
+    if(!id){ selD.innerHTML = '<option value="">— Primero elegí un alumno/a —</option>'; selD.disabled = true; info.innerHTML = ''; btn.disabled = true; return; }
+    const pD = plan(id);
+    const lleno = pD.dias.length >= MAX_DIAS;
+    selD.innerHTML = '<option value="">— Elegí el día destino —</option>' +
+      pD.dias.map((d, i) => '<option value="' + i + '">' + esc(etiquetaDiaCopia(d)) + ' (' + (d.bloques || []).length + ((d.bloques || []).length === 1 ? ' bloque' : ' bloques') + ')</option>').join('') +
+      '<option value="__new"' + (lleno ? ' disabled' : '') + '>[ + Crear como nuevo día en el alumno receptor ]' + (lleno ? ' — límite de ' + MAX_DIAS + ' días' : '') + '</option>';
+    selD.disabled = false; btn.disabled = true; info.innerHTML = '';
+  }
+  function pintarInfo(){
+    const id = selA.value, v = selD.value;
+    btn.disabled = !(id && v !== '');
+    if(!id || v === ''){ info.innerHTML = ''; return; }
+    const pD = plan(id), pO2 = plan(S.activeId);
+    let h = '';
+    if(v !== '__new'){
+      const dd = pD.dias[parseInt(v, 10)], n = dd ? (dd.bloques || []).length : 0;
+      if(n) h += '<div class="alert warn"><span class="ic">⚠️</span><div><b>El día receptor ya tiene ' + n + ' bloque' + (n === 1 ? '' : 's') + '.</b> Se reemplazará por completo y se pedirá confirmación.</div></div>';
+    }
+    if(esPlanCFActivo(pO2) !== esPlanCFActivo(pD)){
+      h += '<div class="alert info"><span class="ic">ℹ️</span><div><b>Distinta disciplina.</b> Origen ' + (esPlanCFActivo(pO2) ? 'CrossFit' : 'Fuerza/Hipertrofia') + ' → destino ' + (esPlanCFActivo(pD) ? 'CrossFit' : 'Fuerza/Hipertrofia') + ': los bloques se copian tal cual y pueden verse distinto.</div></div>';
+    }
+    info.innerHTML = h;
+  }
+  buscar.addEventListener('input', pintarAlumnos);
+  selA.addEventListener('change', pintarDias);
+  selD.addEventListener('change', pintarInfo);
+  bg.addEventListener('click', e => {
+    if(e.target === bg || e.target.closest('[data-cdcancel]')){ cerrarModalCopiarDia(); return; }
+    if(e.target.closest('#cdConfirmar') && !btn.disabled){
+      if(ejecutarCopiaDia(athO.id, diaIdx, selA.value, selD.value)) cerrarModalCopiarDia();
+    }
+  });
+  pintarAlumnos();
+}
+function ejecutarCopiaDia(origenId, diaIdx, destId, destSel){
+  const pO = plan(origenId), dO = pO && pO.dias[diaIdx];
+  const athD = getAth(destId), pD = plan(destId);
+  if(!pO || !dO || !athD || !pD){ toast('No se pudo copiar: faltan datos del origen o del destino', 'err'); return false; }
+  /* en CrossFit d.bloques es un puntero a la semana activa: se asegura que
+     todas las semanas estén al día en el origen antes de clonar. */
+  if(origenId === S.activeId && esPlanCFActivo(pO)){ try{ sincronizarBloquesSemana(pO); }catch(e){} }
+  const nuevo = destSel === '__new';
+  if(nuevo && pD.dias.length >= MAX_DIAS){ toast('El alumno receptor ya tiene el máximo de ' + MAX_DIAS + ' días', 'err'); return false; }
+  const idx = nuevo ? pD.dias.length : parseInt(destSel, 10);
+  const dDest = nuevo ? null : pD.dias[idx];
+  if(!nuevo && !dDest){ toast('Elegí un día destino válido', 'err'); return false; }
+  const nPrev = dDest ? (dDest.bloques || []).length : 0;
+  if(nPrev && !confirm('El día receptor (' + etiquetaDiaCopia(dDest) + ' de ' + fullName(athD) + ') ya contiene ' + nPrev +
+                       ' bloque' + (nPrev === 1 ? '' : 's') + '.\n\n¿Reemplazarlo por completo con el día clonado?')) return false;
+
+  const copia = clonarEstructuraProfunda(dO);
+  /* ids de bloque nuevos, un solo mapa para que un mismo bloque CrossFit
+     conserve id idéntico en sus 4 semanas */
+  const mapa = {}, vistos = new Set();
+  [copia.bloques].concat(Array.isArray(copia.bloquesPorSemana) ? copia.bloquesPorSemana : []).forEach(arr => {
+    (Array.isArray(arr) ? arr : []).forEach(b => {
+      if(!b || typeof b !== 'object' || vistos.has(b)) return;
+      vistos.add(b);
+      const viejo = b.id;
+      if(viejo == null || !mapa[viejo]){ const nid = uid('b'); if(viejo != null) mapa[viejo] = nid; b.id = nid; }
+      else b.id = mapa[viejo];
+    });
+  });
+  if(nuevo){
+    const usados = new Set(pD.dias.map(x => x.id));
+    let k = idx + 1; while(usados.has('dia' + k)) k++;
+    copia.id = 'dia' + k;
+    copia.short = 'DÍA ' + (idx + 1);
+  } else {
+    copia.id = dDest.id;
+    copia.short = dDest.short;
+  }
+  if(/^Sesi[oó]n\s*\d+$/i.test(copia.label || '')) copia.label = 'Sesión ' + (idx + 1);
+  if(/^D[IÍ]A\s*\d+$/i.test(copia.title || '')) copia.title = 'Día ' + (idx + 1);
+  if(!esPlanCFActivo(pD)) delete copia.bloquesPorSemana;   /* sólo CrossFit usa semanas independientes */
+
+  if(nuevo) pD.dias.push(copia); else pD.dias[idx] = copia;
+  guardarAhora();
+  renderAthletes();
+  toast('✓ DÍA CLONADO EXITOSAMENTE A ' + fullName(athD).toUpperCase());
+  return true;
 }
 function sbFmtToolbar(bId){
   const btns = [
@@ -4305,6 +4481,9 @@ function renderBuilder(){
          alumnos") -- disparador del modal de copia, estilo celeste
          táctico pedido explícitamente. */
       '<button type="button" class="btn sm" id="btnCopiarPlan" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 Copiar plan a otro alumno</button>' +
+      /* directiva maestra ("Copiar día completo entre alumnos") -- mismo
+         estilo celeste táctico, junto al botón de copiar el plan entero. */
+      '<button type="button" class="btn sm" id="btnCopiarDia" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR DÍA A OTRO ALUMNO</button>' +
     '</div>';
 
   /* ---------- Mesociclo (WEEKS_META) ---------- */
@@ -5758,6 +5937,7 @@ function bindBuilder(){
      listener sobreviva a cada innerHTML nuevo. */
   $('#bHead').addEventListener('click', e => {
     if(e.target.closest('#btnCopiarPlan')){ abrirModalCopiarPlan(); return; }
+    if(e.target.closest('#btnCopiarDia')){ abrirModalCopiarDia(); return; }
     if(!e.target.closest('#btnPlanEstado')) return;
     const ath = active();
     const p = plan(S.activeId); if(!p) return;
@@ -6056,6 +6236,7 @@ function bindBuilder(){
     if(t.dataset.btipssports){ generarTipsSports(t.dataset.btipssports, t); return; }
     if(t.dataset.vaciardia){ vaciarDiaCompleto(); return; }
     if(t.dataset.eliminardia){ pedirEliminarDia(); return; }
+    if(t.dataset.copiardia){ abrirModalCopiarDia(); return; }
     if(t.dataset.ondularmeso){ ondularMesocicloAutomatico(); return; }
     if(t.dataset.migrarpizarra){ migrarBloqueAPizarra(t.dataset.migrarpizarra); return; }
     if(t.dataset.fmtins){
