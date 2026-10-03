@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_PRESETS } from '@/lib/bioenergetics';
 import { MAX_OIL_PER_MEAL_G, migrateModel } from '@/lib/ai';
+import { balancePlan } from '@/lib/balance';
 import { aisGroupA } from '@/lib/evidence';
 import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
 import { itemFromFood, seedPlan, uid } from '@/lib/seed';
@@ -62,6 +63,8 @@ interface PlanState {
   setItemGrams: (mealId: string, itemId: string, grams: number) => void;
   swapItem: (mealId: string, itemId: string, foodId: string) => void;
   removeItem: (mealId: string, itemId: string) => void;
+  /** Escala carbos y grasas para que cada día cierre al 100 % ± 3 % de sus metas. */
+  balanceMeals: () => void;
 
   toggleSupplement: (id: string) => void;
   updateSupplement: (id: string, patch: Partial<Supplement>) => void;
@@ -264,6 +267,8 @@ export const usePlanStore = create<PlanState>()(
             ),
           })),
         })),
+
+      balanceMeals: () => set((s) => ({ plan: balancePlan(s.plan).plan })),
 
       removeItem: (mealId, itemId) =>
         set((s) => ({

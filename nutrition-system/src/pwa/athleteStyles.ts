@@ -203,6 +203,12 @@ body.standalone{padding-bottom:calc(var(--safe-bot) + 112px)}
 .scan-tot .ok{color:var(--cyan)}.scan-tot .lo{color:var(--fire)}
 .tips{margin:8px 0 0 16px;font-size:12px;color:var(--text)}
 .add-meal{display:block;width:100%;margin-top:10px;padding:11px;border-radius:10px;background:var(--fire);color:#fff;font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:700;letter-spacing:.08em}
+.gv.done .glabel{padding:0 16%;color:#38BDF8;font-weight:700;letter-spacing:.05em;font-size:9px;line-height:1.35;text-shadow:0 0 12px rgba(56,189,248,.55)}
+.gv.done .gnum{color:#38BDF8;font-size:clamp(30px,10vw,42px);letter-spacing:.02em;text-shadow:0 0 22px rgba(56,189,248,.45)}
+.gauge .glow{filter:drop-shadow(0 0 6px rgba(56,189,248,.65))}
+.mini.done{border-color:rgba(56,189,248,.55);background:rgba(56,189,248,.07);box-shadow:0 0 14px -6px rgba(56,189,248,.7)}
+.mini.done svg path:last-child{filter:drop-shadow(0 0 3px rgba(56,189,248,.8))}
+.mini.done span{color:#38BDF8}
 `;
 
 export default styles;

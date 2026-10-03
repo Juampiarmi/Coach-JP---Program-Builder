@@ -8,6 +8,7 @@ import { alternativesFor, equivalentGrams, FOOD_BY_ID, FOODS, freeEquivalents, f
 import type { DayMode, FoodItem, Meal, MealDay, MealRole } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
+import { BalanceBanner } from './BalanceBanner';
 import { CustomFoodsBar } from './CustomFoods';
 import { FoodScanner } from './FoodScanner';
 
@@ -319,6 +320,7 @@ export function MealsTab() {
           <DayCompare day="on" />
           <DayCompare day="off" />
         </div>
+        <BalanceBanner />
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <div className="w-72">
             <Segmented

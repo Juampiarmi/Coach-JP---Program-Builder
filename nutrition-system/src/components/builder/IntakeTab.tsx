@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Cpu, Eye, EyeOff, KeyRound, Loader2, Radio, ShieldAlert, Trash2, Zap } from 'lucide-react';
 import { compileWithAi, MODEL_OPTIONS, pingProvider, planFromAi, SYSTEM_PROMPT, SYSTEM_PROMPT_EXTENSION, type PingResult } from '@/lib/ai';
+import { balancePlan } from '@/lib/balance';
+import { fmt0 } from '@/lib/bioenergetics';
 import { COMPILE_STEPS, validateCompiled, type CompileCheck } from '@/lib/compileChecks';
 import type { AiProvider } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
@@ -133,9 +135,20 @@ export function IntakeTab() {
       });
       current = 'json';
       mark('json', { status: 'running' });
-      const next = planFromAi(json, usePlanStore.getState().plan);
+      const parsed = planFromAi(json, usePlanStore.getState().plan);
       await sleep(150);
-      mark('json', { status: 'ok', detail: `${next.meals.length} comidas · ${next.supplements.length} suplementos` });
+      mark('json', { status: 'ok', detail: `${parsed.meals.length} comidas · ${parsed.supplements.length} suplementos` });
+      // La IA no siempre cierra la suma de sus comidas: se escalan carbos y grasas hasta el 100 % ± 3 % de cada día.
+      current = 'balance';
+      mark('balance', { status: 'running' });
+      const { plan: next, report } = balancePlan(parsed);
+      await sleep(180);
+      mark('balance', {
+        status: 'ok',
+        detail: report
+          .map((r) => `${r.day.toUpperCase()} ${fmt0(r.before.kcal)}→${fmt0(r.after.kcal)}/${fmt0(r.target.kcal)} kcal${r.changed ? ` (${r.changed} ajustes)` : ''}`)
+          .join(' · '),
+      });
       const v = validateCompiled(json, next);
       for (const id of ['bmr', 'split', 'leu'] as const) {
         current = id;
