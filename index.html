@@ -4366,6 +4366,11 @@ function previewImportacion(){
   if(!ta.value.trim()){ box.innerHTML = ''; return; }
   const sp = impEsSports();
   const r = parsearImportacion(ta.value, sp);
+  /* varios "=== DÍA X" pegados: el modo pasa solo a "Semana completa" */
+  if(r.dias.length > 1 && _impModo === 'dia'){
+    _impModo = 'semana';
+    document.querySelectorAll('[data-impmodo]').forEach(b => { const on = b.dataset.impmodo === _impModo; b.classList.toggle('gold', on); b.classList.toggle('ghost', !on); });
+  }
   const nB = r.dias.reduce((s, d) => s + d.bloques.length, 0);
   const nT = r.dias.reduce((s, d) => s + d.bloques.reduce((x, b) => x + Object.keys(b.cierre || {}).length, 0), 0);
   const lbBloque = b => (sp ? (b.lb || '') + (' ' + esc((b.items[0] || b.titulo || '').slice(0, 24))) : ((IMP_FASES.find(f => f.fase === b.fase) || {}).lb)) || (IMP_FASES.find(f => f.fase === b.fase) || {}).lb;
@@ -4388,6 +4393,13 @@ function ejecutarImportacion(texto, modo){
   const p = plan(S.activeId), ath = active();
   if(!p || !ath){ toast('Seleccioná un alumno/a primero', 'err'); return false; }
   const r = parsearImportacion(texto, !esPlanCFActivo(p));
+  /* causa real del "sólo carga el Día 1": el modo por defecto es "Día activo",
+     que toma UN solo día del texto aunque se pegue la semana entera. Si el
+     texto trae varios encabezados DÍA, se importan todos (modo semana). */
+  if(modo === 'dia' && r.dias.length > 1){
+    modo = 'semana'; _impModo = 'semana';
+    toast('Se detectaron ' + r.dias.length + ' días en el texto: se importa la semana completa', 'warn');
+  }
   const totalBloques = r.dias.reduce((s, d) => s + d.bloques.length, 0);
   if(!r.dias.length || !r.dias.some(d => d.bloques.length || d.titulo || d.foco)){
     toast('No se detectó nada para importar: usá "=== DÍA 1: Título ===" y delimitadores como ' + (esPlanCFActivo(p) ? '[WARM-UP]' : '[BLOQUE 1] / [FUERZA]'), 'warn'); return false;
@@ -9995,10 +10007,147 @@ function playBeep(freq, dur, peakGain, delay, type){
     osc.start(start); osc.stop(start + dur + 0.03);
   }catch(e){ console.warn('playBeep falló:', e); }
 }
-function beepCountdown(){ playBeep(1046, 0.1, 0.55, 0, 'triangle'); }
-function beepGo(){ playBeep(1568, 0.11, 0.7, 0, 'triangle'); playBeep(2093, 0.28, 0.65, 0.1, 'triangle'); }
-function beepStop(){ playBeep(392, 0.16, 0.55, 0, 'sine'); playBeep(330, 0.4, 0.55, 0.16, 'sine'); }
-function beepFinish(){ playBeep(1046, 0.13, 0.6, 0, 'triangle'); playBeep(1318, 0.13, 0.6, 0.16, 'triangle'); playBeep(1568, 0.13, 0.6, 0.32, 'triangle'); playBeep(2093, 0.4, 0.7, 0.48, 'triangle'); }
+/* =========================================================
+   MOTOR ACÚSTICO DE BOX (directiva maestra "Sonido de Box / Rogue") --
+   todo lo que suena en un cronómetro/descanso pasa por acá. Web Audio
+   sintetizado (sin archivos externos: no falla por CORS ni offline):
+   tonos SECOS de onda cuadrada entre 800 y 1200 Hz, tipo chicharra de
+   reloj de pared Rogue/Gymboss -- cero pitidos finos o "tiernos". Reusa
+   el AudioContext único (ensureAudioCtx/resumeAudioCtx) y el mismo gate
+   de mute (isAudioMuted) que el resto de la app.
+     cuenta()    beep seco corto (segundos 3-2-1)
+     aviso10()   un tono corto de advertencia (10 s restantes)
+     mitad()     doble beep distintivo (50% del tiempo objetivo)
+     inicio()    beep seco de arranque
+     chicharra() buzzer largo y contundente (segundo 0 / cambio de
+                 intervalo / fin) -- con antirrebote para que el aviso de
+                 "segundo 0" y la transición de fase no suenen dos veces */
+var jpBox = (function(){
+  var ultimaChicharra = 0;
+  function seco(freq, dur, vol, delay){
+    if(isAudioMuted()) return;
+    try{
+      var ctx = ensureAudioCtx(); resumeAudioCtx();
+      var t0 = ctx.currentTime + (delay || 0);
+      var osc = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      osc.type = 'square'; osc.frequency.setValueAtTime(freq, t0);
+      lp.type = 'lowpass'; lp.frequency.setValueAtTime(3400, t0);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.004);
+      g.gain.setValueAtTime(vol, t0 + Math.max(dur - 0.025, 0.006));
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(lp); lp.connect(g); g.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + dur + 0.03);
+    }catch(e){ console.warn('jpBox.seco falló:', e); }
+  }
+  function buzzer(dur){
+    if(isAudioMuted()) return;
+    try{
+      var ctx = ensureAudioCtx(); resumeAudioCtx();
+      var t0 = ctx.currentTime;
+      var o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), lfo = ctx.createOscillator();
+      var lp = ctx.createBiquadFilter(), am = ctx.createGain(), lfoG = ctx.createGain(), env = ctx.createGain();
+      o1.type = 'square';   o1.frequency.setValueAtTime(900, t0);
+      o2.type = 'sawtooth'; o2.frequency.setValueAtTime(1010, t0);
+      lfo.type = 'square';  lfo.frequency.setValueAtTime(34, t0);      /* trémolo áspero de chicharra */
+      lp.type = 'lowpass';  lp.frequency.setValueAtTime(3000, t0);
+      am.gain.setValueAtTime(0.7, t0); lfoG.gain.setValueAtTime(0.3, t0);
+      env.gain.setValueAtTime(0.0001, t0);
+      env.gain.exponentialRampToValueAtTime(0.42, t0 + 0.006);
+      env.gain.setValueAtTime(0.42, t0 + Math.max(dur - 0.09, 0.01));
+      env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      lfo.connect(lfoG); lfoG.connect(am.gain);
+      o1.connect(lp); o2.connect(lp); lp.connect(am); am.connect(env); env.connect(ctx.destination);
+      o1.start(t0); o2.start(t0); lfo.start(t0);
+      o1.stop(t0 + dur + 0.04); o2.stop(t0 + dur + 0.04); lfo.stop(t0 + dur + 0.04);
+    }catch(e){ console.warn('jpBox.buzzer falló:', e); }
+  }
+  return {
+    cuenta:   function(){ seco(1000, 0.09, 0.34); },
+    aviso10:  function(){ seco(1200, 0.22, 0.36); },
+    mitad:    function(){ seco(900, 0.11, 0.36); seco(900, 0.11, 0.36, 0.2); },
+    inicio:   function(){ seco(1000, 0.14, 0.34); },
+    chicharra:function(dur){
+      var ahora = Date.now();
+      if(ahora - ultimaChicharra < 1400) return;
+      ultimaChicharra = ahora; buzzer(dur || 1.1);
+    }
+  };
+})();
+window.jpBox = jpBox;
+/* el AudioContext de iOS Safari / Chrome móvil sólo arranca dentro de un
+   gesto del usuario: el primer toque/click de cualquier tipo (antes de
+   empezar un timer) lo desbloquea con un buffer silencioso. */
+(function(){
+  var evs = ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown'];
+  function una(){
+    evs.forEach(function(ev){ document.removeEventListener(ev, una, true); });
+    try{ unlockAudio(); }catch(e){}
+  }
+  evs.forEach(function(ev){ document.addEventListener(ev, una, { capture: true, passive: true }); });
+})();
+function beepCountdown(){ jpBox.cuenta(); }
+function beepGo(){ jpBox.inicio(); }
+function beepStop(){ jpBox.aviso10(); }
+function beepFinish(){ jpBox.chicharra(); }
+/* =========================================================
+   BACKGROUND TIMER · NOTIFICACIÓN LOCAL (directiva maestra) --
+   jpBgTimer.programar(finTs) agenda el aviso "tiempo cumplido" en el
+   Service Worker para el instante absoluto de fin (timestampFin = Date.now()
+   + duración), de modo que suene aunque el alumno esté en otra app o con la
+   pantalla apagada y el JS de la página suspendido (el SW lo muestra sólo si
+   NINGUNA ventana de la app está visible). jpBgTimer.finalizado() cubre el
+   caso "JS vivo pero app en segundo plano". Ambos usan la MISMA etiqueta de
+   notificación, así que nunca se duplican. Cada llamada va protegida: sin
+   permiso, sin SW o sin soporte la app sigue exactamente igual. */
+var jpBgTimer = (function(){
+  var TAG = 'coachjp-timer';
+  var TXT = '\\u23f1\\ufe0f \\u00a1Tiempo cumplido! Tu descanso/bloque ha finalizado.';
+  var KEY = 'jp_timer_fin';
+  var pedido = false;
+  function reg(){
+    try{
+      if(!('serviceWorker' in navigator)) return Promise.resolve(null);
+      return navigator.serviceWorker.getRegistration().catch(function(){ return null; });
+    }catch(e){ return Promise.resolve(null); }
+  }
+  function aSW(msg){
+    reg().then(function(r){
+      var w = r && (r.active || r.waiting || r.installing);
+      if(w) try{ w.postMessage(msg); }catch(e){}
+    });
+  }
+  return {
+    /* se pide en el primer gesto real (tocar ▶ de un timer), nunca al cargar */
+    pedirPermiso: function(){
+      if(pedido) return; pedido = true;
+      try{ if('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(function(){}); }catch(e){}
+    },
+    programar: function(finTs){
+      try{ localStorage.setItem(KEY, String(finTs)); }catch(e){}
+      aSW({ tipo:'jp-timer', accion:'programar', at: finTs, titulo:'Coach JP', cuerpo: TXT });
+    },
+    cancelar: function(){
+      try{ localStorage.removeItem(KEY); }catch(e){}
+      aSW({ tipo:'jp-timer', accion:'cancelar' });
+    },
+    finalizado: function(){
+      try{ localStorage.removeItem(KEY); }catch(e){}
+      aSW({ tipo:'jp-timer', accion:'cancelar' });
+      if(!document.hidden) return;                     /* en primer plano ya sonó/vibró el propio timer */
+      try{ if(!isAudioMuted() && navigator.vibrate) navigator.vibrate([200, 100, 200]); }catch(e){}
+      try{
+        if(!('Notification' in window) || Notification.permission !== 'granted') return;
+        reg().then(function(r){
+          var opts = { body: TXT, vibrate: [200, 100, 200], tag: TAG, renotify: true };
+          if(r && r.showNotification){ r.showNotification('Coach JP', opts).catch(function(){}); }
+          else { try{ new Notification('Coach JP', opts); }catch(e){} }
+        });
+      }catch(e){}
+    }
+  };
+})();
+window.jpBgTimer = jpBgTimer;
 /* click discreto al tildar una serie — mismo gate de mute que el resto (isAudioMuted) */
 function beepSetCheck(on){ playBeep(on ? 1318 : 660, 0.055, 0.32, 0, 'triangle'); }
 /* =========================================================
@@ -10018,16 +10167,14 @@ var jpAudioTactical = {
     playBeep(520, 0.045, 0.26, 0, 'triangle');
     playBeep(780, 0.08, 0.3, 0.045, 'triangle');
   },
-  soundTimerTick: function(){ playBeep(800, 0.03, 0.2, 0, 'square'); },
-  soundTimerEnd: function(){
-    playBeep(880, 0.16, 0.5, 0, 'triangle');
-    playBeep(880, 0.16, 0.46, 0.2, 'triangle');
-  },
-  soundPrRecord: function(){
-    playBeep(660, 0.1, 0.48, 0, 'triangle');
-    playBeep(880, 0.1, 0.52, 0.1, 'triangle');
-    playBeep(1108, 0.24, 0.58, 0.2, 'triangle');
-  },
+  /* directiva maestra ("Sonido de Box"): el tick de cuenta regresiva y el
+     fin de descanso/timer usan el motor acústico seco de box (jpBox) */
+  soundTimerTick: function(){ jpBox.cuenta(); },
+  soundTimerEnd: function(){ jpBox.chicharra(); },
+  /* directiva maestra ("Silenciado de guardado"): registrar un PR/1RM es
+     SILENCIOSO -- se retira el arpegio agudo; queda sólo la vibración
+     háptica (vibratePrRecord) y el feedback visual. */
+  soundPrRecord: function(){},
   /* el switch "🔔 Sonido & Haptic" apaga los DOS a la vez -- misma
      lectura de isAudioMuted() que ya gatea playBeep() más arriba. */
   /* directiva maestra ("Feedback háptico y cierre mecánico de serie
@@ -12684,6 +12831,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      el permiso para siempre. ========================================= */
   let notifPermPedido = false;
   function pedirPermisoNotifDescanso(){
+    try{ jpBgTimer.pedirPermiso(); }catch(e){}
     if(notifPermPedido) return;
     notifPermPedido = true;
     try{
@@ -12692,21 +12840,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
     }catch(e){}
   }
+  /* directiva maestra ("Background timer"): aviso unificado en jpBgTimer
+     ("⏱️ ¡Tiempo cumplido! Tu descanso/bloque ha finalizado." + vibración
+     [200,100,200]); sólo actúa con la app en segundo plano. */
   function mostrarNotifDescanso(){
-    try{
-      if(!('Notification' in window) || Notification.permission !== 'granted') return;
-      if(!document.hidden) return; /* app en primer plano: el HUD ya avisó */
-      if(!('serviceWorker' in navigator)) return;
-      navigator.serviceWorker.getRegistration().then(function(reg){
-        if(!reg || !reg.showNotification) return;
-        reg.showNotification('Descanso completado · Coach JP', {
-          body: '¡Tiempo cumplido! Dale a la siguiente serie 🔥',
-          vibrate: [200, 100, 200, 100, 400],
-          tag: 'coachjp-descanso',
-          renotify: true
-        }).catch(function(){});
-      }).catch(function(){});
-    }catch(e){}
+    try{ jpBgTimer.finalizado(); }catch(e){}
   }
 
   function pintarRest(){
@@ -12718,13 +12856,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       b.classList.toggle('on', parseInt(b.dataset.rest,10) === state.restSec));
     if(onRestTick) try{ onRestTick(estadoRest()); }catch(e){}
   }
+  var _restAv = -1;
   function tick(){
     if(!restRun) return;
     restLeft = Math.max(0, Math.round((restTargetEnd - Date.now()) / 1000));
-    if(restLeft <= 3 && restLeft > 0){
-      /* directiva ("Motor de Retroalimentación Háptica y Sonido Táctico")
-         -- micro-pulso 800Hz nuevo para la cuenta regresiva de los
-         últimos segundos del descanso. */
+    /* directiva maestra ("Sonido de Box"): 10 s restantes = un tono corto de
+       advertencia (sólo en descansos de más de 20 s) y segundos 3-2-1 =
+       beeps secos; _restAv evita repetir el mismo segundo entre ticks. */
+    if(restLeft === 10 && restTotal > 20 && _restAv !== 10){
+      _restAv = 10; try{ jpBox.aviso10(); }catch(e){}
+    }
+    if(restLeft <= 3 && restLeft > 0 && _restAv !== restLeft){
+      _restAv = restLeft;
       try{ jpAudioTactical.soundTimerTick(); }catch(e){}
       CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     }
@@ -12796,8 +12939,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     pintarRest();
     mostrarAjusteKgRest();
     guardarRestTimer();
+    /* timestampFin absoluto: aviso en segundo plano aunque se bloquee la pantalla */
+    _restAv = -1;
+    try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
   }
-  function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); guardarRestTimer(); }
+  function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); guardarRestTimer(); try{ jpBgTimer.cancelar(); }catch(e){} }
   /* pausa/reanuda el descanso activo sin cerrarlo -- misma lógica que ya
      tenía el toggle ▶/⏸ de la barra flotante, ahora nombrada aparte para
      que el widget in-situ de CrossFit (jpCfRestOnTick) pueda dispararla
@@ -12807,8 +12953,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(restRun){
       restTargetEnd = Date.now() + restLeft * 1000;
       if(!restInt) restInt = setInterval(tick, 1000);
+      try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
     }else{
       clearInterval(restInt); restInt = null;
+      try{ jpBgTimer.cancelar(); }catch(e){}
     }
     pintarRest();
     guardarRestTimer();
@@ -12843,6 +12991,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
     pintarRest();
     guardarRestTimer();
+    try{ if(restRun) jpBgTimer.programar(restTargetEnd); }catch(e){}
   }
   document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(30); });
   document.getElementById('rhToggle').addEventListener('click', toggleRest);
@@ -12895,6 +13044,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       hud.classList.add('on'); restRun = true;
       clearInterval(restInt); restInt = setInterval(tick, 1000);
       tick();
+      if(restRun) try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
     }catch(e){}
   })();
 
@@ -13427,6 +13577,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function jpCfRestBadge(l){
     const seg = jpCfParsearDescanso(l);
     if(seg == null || seg <= 0) return null;
+    /* directiva maestra ("Umbral de descansos cortos"): menos de 30 s NO lleva
+       botón de timer (desbloquear el teléfono cuesta más que la pausa):
+       sólo una indicación textual inline. */
+    if(seg < 30) return '<div class="jp-cf-row jp-cf-micro-row"><span class="jp-micro-pausa">&#9201;&#65039; ' + seg + 's micro-pausa</span></div>';
     return '<div class="jp-cf-row jp-cf-rest-row"><div class="jp-cf-rest" data-rest-sec="' + seg + '" data-rest-lb="' + String(l).replace(/"/g, '') + '">' +
       '<button type="button" class="jp-cf-rest-main">&#9201;&#65039; INICIAR REST ' + jpCfRestMMSS(seg) + '</button></div></div>';
   }
@@ -13558,6 +13712,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          mismo tratamiento visual que .jp-cf-time del split de "@ ... @
          ..." de arriba -- nunca texto plano gris sin jerarquía. */
       valHtml = '<span class="jp-cf-time">\\u23f1\\ufe0f ' + jpMdBold(partes.val) + '</span>';
+    } else if(partes.val && partes.val.length <= 48 && /^\\[.*\\]$|^[~(]|\\d/.test(partes.val)){
+      /* nota auxiliar corta ("[ 5cm déficit ]", "~30% Back Squat"): píldora de
+         carbón sólido con texto ámbar técnico, nunca un borde de alerta */
+      valHtml = '<span class="jp-cf-nota-chip">' + jpMdBold(partes.val) + '</span>';
     }
     return '<div class="jp-cf-row">' +
         '<span class="jp-cf-rn">' + jpCfHighlightNum(partes.nm) + '</span>' +
@@ -13757,8 +13915,25 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            pasar por las 3 pantallas de selección manual. El acceso manual
            del dock inferior queda aparte, intacto. */
         (function(){
+          /* directiva maestra ("Botonera simétrica al cierre del bloque"):
+             [ INICIAR TIMER DE ESTE WOD ] y [ DESCANSO RÁPIDO ] comparten UNA
+             fila de dos columnas iguales (grid 1fr 1fr, gap 8px) en vez de
+             apilarse como dos rectángulos masivos; con un solo botón ocupa
+             el ancho completo. */
           var tcfg = lineas.length ? jpWodTimerCfg(block, lineas, f) : null;
-          return tcfg ? '<button type="button" class="jp-cf-wodtimer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">&#9654; INICIAR TIMER DE ESTE WOD</button>' : '';
+          var btnWod = tcfg ? '<button type="button" class="jp-cf-wodtimer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">&#9654; INICIAR TIMER DE ESTE WOD</button>' : '';
+          var btnRest = '';
+          if(lineas.length && (block.category === 'strength' || block.category === 'accessory') && filas.indexOf('jp-cf-rest') < 0){
+            var segQ = 0;
+            for(var qi = 0; qi < lineas.length && !segQ; qi++){ segQ = jpCfParsearDescanso(lineas[qi]) || 0; }
+            if(!(segQ > 0)) segQ = block.category === 'accessory' ? 60 : 90;
+            /* descanso prescrito < 30 s = micro-pausa: sin botón */
+            if(segQ >= 30){
+              var lbQ = 'Descanso \\u00b7 ' + String(block.title || 'Bloque').replace(/[<>"&]/g, '').slice(0, 28);
+              btnRest = '<button type="button" class="jp-cf-quickrest" data-rest-sec="' + segQ + '" data-rest-lb="' + lbQ + '">&#9201;&#65039; DESCANSO R&Aacute;PIDO ' + jpCfRestMMSS(segQ) + '</button>';
+            }
+          }
+          return (btnWod || btnRest) ? '<div class="jp-cf-btnrow">' + btnWod + btnRest + '</div>' : '';
         })() +
         /* directiva ("Sprint 1: descanso rápido en series") -- los bloques de
            Skill/Strength y Accessory de CrossFit no tienen tilde por serie
@@ -13770,15 +13945,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            fuerza / 60s en accesorio. Si el bloque ya trae su propio botón
            "INICIAR REST" in-situ (línea de descanso explícita), no se
            duplica. WODs/metcon quedan afuera: ahí manda el reloj del WOD. */
-        (function(){
-          if(!lineas.length || (block.category !== 'strength' && block.category !== 'accessory')) return '';
-          if(filas.indexOf('jp-cf-rest') >= 0) return '';
-          var segQ = 0;
-          for(var qi = 0; qi < lineas.length && !segQ; qi++){ segQ = jpCfParsearDescanso(lineas[qi]) || 0; }
-          if(!(segQ > 0)) segQ = block.category === 'accessory' ? 60 : 90;
-          var lbQ = 'Descanso \\u00b7 ' + String(block.title || 'Bloque').replace(/[<>"&]/g, '').slice(0, 28);
-          return '<button type="button" class="jp-cf-quickrest" data-rest-sec="' + segQ + '" data-rest-lb="' + lbQ + '">&#9201;&#65039; DESCANSO R&Aacute;PIDO ' + jpCfRestMMSS(segQ) + '</button>';
-        })() +
+
         /* directiva ("Unificación de Acordeones al Pie del Bloque") --
            UN SOLO <details> táctico agrupa el foco del bloque, el
            objetivo/tips/pacing/escalado y los chips de video (antes
@@ -14620,7 +14787,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const tier = tierRirSB(rir);
       badges.push('<span class="jp-badge-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
     }
-    if(restSeconds) badges.push('<span class="jp-badge-rest">REST ' + restSeconds + 'S</span>');
+    if(restSeconds && restSeconds < 30) badges.push('<span class="jp-badge-rest jp-micro-pausa">&#9201;&#65039; ' + restSeconds + 's micro-pausa</span>');
+    else if(restSeconds) badges.push('<span class="jp-badge-rest">REST ' + restSeconds + 'S</span>');
     return badges.length ? '<div class="jp-dose-banner">' + badges.join('') + '</div>' : '';
   }
   /* directiva maestra ("Parser universal y tolerante para Sports &
@@ -15072,8 +15240,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        -- CrossFit no usa el tracker clásico de sets (chequearPR arriba
        en el archivo): acá es donde el atleta de CF de verdad guarda un
        PR/1RM, mismo feedback nuevo que en Sports. */
-    try{ jpAudioTactical.soundPrRecord(); }catch(e){}
+    /* directiva maestra ("Bóveda de PRs · UX continua y mute"): guardar una
+       marca es SILENCIOSO (sólo vibración háptica) y, si se la editó desde la
+       Bóveda, se vuelve a la lista actualizada con la fila en destello -- la
+       Bóveda sólo se cierra cuando el alumno toca [ Cerrar ] o el fondo. */
     try{ jpAudioTactical.vibratePrRecord(); }catch(e){}
+    if(window.__jpPrsDesdeLista) jpAbrirListaPRs(key);
     if(typeof renderMain === 'function') renderMain();
   }
   /* directiva ("rediseño header CrossFit") -- chip de acceso rápido
@@ -15117,8 +15289,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     saveProgress();
     return true;
   }
-  function jpAbrirListaPRs(){
+  function jpAbrirListaPRs(flashKey){
     jpCerrarPct1RM();
+    window.__jpPrsDesdeLista = false;
     var overlay = document.createElement('div');
     overlay.className = 'jp-pct-overlay';
     var filas = JP_BENCHMARKS_LISTA.map(jpBenchmarkFila).join('') +
@@ -15136,6 +15309,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<div class="jp-pct-pop-actions"><button type="button" class="jp-pct-pop-x" data-pctcancel="1">Cerrar</button></div>' +
       '</div>';
     document.body.appendChild(overlay);
+    /* micro-feedback de éxito: la fila recién guardada destella verde/dorado */
+    if(flashKey){
+      var rowsL = overlay.querySelectorAll('.jp-prs-row');
+      for(var fi = 0; fi < rowsL.length; fi++){
+        if(rowsL[fi].dataset.pctKey === flashKey){ rowsL[fi].classList.add('jp-flash-ok'); rowsL[fi].scrollIntoView({ block:'nearest' }); break; }
+      }
+    }
     overlay.addEventListener('click', function(ev){ if(ev.target === overlay) jpCerrarPct1RM(); });
   }
   /* directiva ("Bóveda de PRs Benchmark") -- el drawer de Perfil/Info
@@ -15186,7 +15366,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return;
     }
     var row = e.target.closest('.jp-prs-row');
-    if(row){ e.stopPropagation(); jpAbrirPct1RM(row.dataset.pctLift || '', row.dataset.pctKey || ''); return; }
+    if(row){ e.stopPropagation(); jpAbrirPct1RM(row.dataset.pctLift || '', row.dataset.pctKey || ''); window.__jpPrsDesdeLista = true; return; }
     var addCustom = e.target.closest('[data-pct-addcustom]');
     if(addCustom){
       e.stopPropagation();
@@ -15199,15 +15379,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       e.stopPropagation();
       var nmEl = document.getElementById('jpPrsAddName'), kgEl = document.getElementById('jpPrsAddKg');
       var ok = jpAgregarBenchmarkPersonalizado(nmEl ? nmEl.value : '', kgEl ? parseFloat(kgEl.value) : 0);
-      if(ok) jpAbrirListaPRs();
+      if(ok) jpAbrirListaPRs(nmEl ? nrmHist(nmEl.value) : '');
       return;
     }
     var btn = e.target.closest('.jp-cf-pct');
-    if(btn){ e.stopPropagation(); jpAbrirPct1RM(btn.dataset.pctLift || '', btn.dataset.pctKey || ''); return; }
+    if(btn){ e.stopPropagation(); jpAbrirPct1RM(btn.dataset.pctLift || '', btn.dataset.pctKey || ''); window.__jpPrsDesdeLista = false; return; }
     var save = e.target.closest('[data-pctsave]');
     if(save){ e.stopPropagation(); jpGuardarPct1RM(save); return; }
     var cancel = e.target.closest('[data-pctcancel]');
-    if(cancel){ e.stopPropagation(); jpCerrarPct1RM(); return; }
+    if(cancel){
+      e.stopPropagation();
+      var esListaCerrar = !!cancel.closest('.jp-prs-pop');
+      jpCerrarPct1RM();
+      /* [ Cancelar ] de una marca individual vuelve a la Bóveda; [ Cerrar ] de la Bóveda la cierra */
+      if(esListaCerrar) window.__jpPrsDesdeLista = false;
+      else if(window.__jpPrsDesdeLista) jpAbrirListaPRs();
+      return;
+    }
     var restMain = e.target.closest('.jp-cf-rest-main');
     if(restMain){
       e.stopPropagation();
@@ -17398,6 +17586,20 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
           "for(const c of list){if('focus' in c)return c.focus();}" +
           "if(self.clients.openWindow)return self.clients.openWindow('./');" +
         "}));" +
+      "});" +
+      /* directiva maestra ("Background timer"): aviso agendado por la página
+         con el timestampFin absoluto del descanso/timer (ver jpBgTimer). Se
+         muestra SÓLO si ninguna ventana de la app está visible; best effort
+         (el SO puede dormir el SW). Mismo código que sw.js. */
+      "let jpT=null,jpRes=null;" +
+      "self.addEventListener('message',e=>{const d=e.data||{};if(d.tipo!=='jp-timer')return;" +
+        "if(jpT){clearTimeout(jpT);jpT=null;}if(jpRes){jpRes();jpRes=null;}" +
+        "if(d.accion!=='programar')return;const ms=d.at-Date.now();if(!(ms>0)||ms>600000)return;" +
+        "e.waitUntil(new Promise(res=>{jpRes=res;jpT=setTimeout(()=>{jpT=null;jpRes=null;" +
+          "self.clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{" +
+            "if(list.some(c=>c.visibilityState==='visible'))return;" +
+            "return self.registration.showNotification(d.titulo||'Coach JP',{body:d.cuerpo||'',vibrate:[200,100,200],tag:'coachjp-timer',renotify:true});" +
+          "}).then(res,res);},ms);}));" +
       "});";
     navigator.serviceWorker.register('./sw.js').catch(function(){
       try{
@@ -17990,11 +18192,23 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       if(!ex || !(kg > 0)){ alert('Escribí el ejercicio y los kilos.'); return; }
       var r = anotarMarca(ex, kg, rp, 'manual');
       if(!r) alert('Ya tenés una marca igual o mejor en ese rango de repeticiones.');
-      else vib(PAT.pr);
+      else vib(PAT.pr);                 /* sólo háptica: guardar una marca es silencioso */
       document.getElementById('phEx').value = '';
       document.getElementById('phKg').value = '';
       document.getElementById('phRp').value = '';
       pintarHub();
+      /* el modal NO se cierra: se limpian los inputs, la lista ya se repintó y
+         la fila guardada (más la barra de carga) destella verde/dorado */
+      if(r){
+        var rangoGuardado = rangoDe(rp), filasHub = document.querySelectorAll('#phGrid .ph-row');
+        for(var hi = 0; hi < filasHub.length; hi++){
+          if(filasHub[hi].dataset.ex === ex && filasHub[hi].dataset.r === rangoGuardado){
+            filasHub[hi].classList.add('flash-ok'); filasHub[hi].scrollIntoView({ block:'nearest' }); break;
+          }
+        }
+        var barraAdd = document.querySelector('.prhub .ph-add');
+        if(barraAdd){ barraAdd.classList.remove('flash-ok'); void barraAdd.offsetWidth; barraAdd.classList.add('flash-ok'); setTimeout(function(){ barraAdd.classList.remove('flash-ok'); }, 1300); }
+      }
     });
     document.getElementById('phGrid').addEventListener('change', function(e){
       var i = e.target.closest('.ph-edit'); if(!i) return;
@@ -18843,6 +19057,10 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   var restante = 0, ronda = 1, rondas = 8, fase = 'work', transcurrido = 0, vueltas = [];
   var pendiente = null, wl = null;
   var ultimoBeep = -1;
+  /* directiva maestra ("Sonido de Box"): hito de mitad del trabajo -- se
+     avisa UNA vez cuando el tiempo transcurrido llega al 50% del objetivo
+     total del entrenamiento (ver duracionTotal()). */
+  var mitadAvisada = false;
   /* directiva10 -- arquitectura de tiempo absoluto: este es el ÚNICO
      cronómetro que queda realmente activo en la app del alumno hoy (el
      descanso automático al tildar una serie se retiró, ver comentario en
@@ -18955,7 +19173,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function estadoInicial(){
     var c = cfg();
-    vueltas = []; ronda = 1; transcurrido = 0; ultimoBeep = -1;
+    vueltas = []; ronda = 1; transcurrido = 0; ultimoBeep = -1; mitadAvisada = false;
     if(modo === 'tabata' || modo === 'intervalos'){ fase = 'work'; restante = c.work; rondas = c.rounds; }
     else if(modo === 'emom'){ fase = 'work'; restante = c.intervalo; rondas = Math.max(1, Math.round(c.total * 60 / c.intervalo)); }
     else if(modo === 'amrap'){ fase = 'amrap'; restante = c.total * 60; rondas = 1; }
@@ -19034,13 +19252,41 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        completa LED"). No-op si la pantalla completa está cerrada. */
     if(window.__cwtOnPintar) window.__cwtOnPintar();
   }
+  /* duración (s) de la fase de cuenta regresiva actual: el aviso de 10 s
+     restantes sólo tiene sentido en fases de más de 20 s (en un tabata de
+     20/10 sonaría sin parar). */
+  function duracionFase(c){
+    if(fase === 'prep') return c.prep;
+    if(modo === 'tabata' || modo === 'intervalos') return fase === 'work' ? c.work : c.rest;
+    if(modo === 'emom') return c.intervalo;
+    if(modo === 'amrap') return c.total * 60;
+    return 0;
+  }
+  /* objetivo total del entrenamiento en segundos (0 = sin objetivo, p. ej.
+     FOR TIME sin time cap): base del hito de "mitad del trabajo" y del fin
+     que se agenda para la notificación en segundo plano. */
+  function duracionTotal(c){
+    if(modo === 'tabata' || modo === 'intervalos') return c.rounds * (c.work + c.rest);
+    if(modo === 'emom') return Math.max(1, Math.round(c.total * 60 / c.intervalo)) * c.intervalo;
+    if(modo === 'amrap') return c.total * 60;
+    return c.cap ? c.cap * 60 : 0;
+  }
+  /* instante absoluto (epoch ms) del fin del entrenamiento completo */
+  function finTotalMs(){
+    var c = cfg(), tot = duracionTotal(c);
+    if(!tot) return 0;
+    if(fase === 'prep') return faseTargetEnd + tot * 1000;
+    return transcurridoStart + (tot - transcurridoBase) * 1000;
+  }
   function avisar(seg){
     if(seg === ultimoBeep) return;
     ultimoBeep = seg;
-    if(seg === 3 || seg === 2 || seg === 1){
-      beep(760, 110); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
+    if(seg === 10){
+      if(duracionFase(cfg()) > 20 && fase !== 'prep') jpBox.aviso10();
+    } else if(seg === 3 || seg === 2 || seg === 1){
+      jpBox.cuenta(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
-      beep(1180, 260, .2); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+      jpBox.chicharra(); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
   }
   function paso(){
@@ -19070,33 +19316,43 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         /* la fase real recién arranca ahora -- el cuenta-arriba tampoco debe
            contar el tiempo que duró la preparación. */
         transcurridoBase = 0; transcurridoStart = now; transcurrido = 0;
-        beep(1080, 240, .2); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+        jpBox.chicharra(); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
         continue;
       }
       transcurrido = transcurridoBase + Math.round((now - transcurridoStart) / 1000);
+      /* hito de mitad: doble beep al cumplirse el 50% del tiempo objetivo */
+      if(!mitadAvisada){
+        var totObj = duracionTotal(c);
+        if(totObj >= 30 && transcurrido >= totObj / 2){
+          mitadAvisada = true;
+          if(transcurrido < totObj / 2 + 10){ jpBox.mitad(); vibrar([60, 40, 60]); }
+        }
+      }
       if(modo === 'fortime'){
-        if(c.cap && transcurrido >= c.cap * 60){ transcurrido = c.cap * 60; finalizar('Time cap'); return; }
+        if(c.cap && transcurrido >= c.cap * 60){ var overCap = (transcurrido - c.cap * 60) * 1000; transcurrido = c.cap * 60; finalizar('Time cap', overCap > 8000); return; }
         pintar(); return;
       }
       var falta = faseTargetEnd - now;
       if(falta > 0){ restante = Math.round(falta / 1000); avisar(restante); pintar(); return; }
       var over = -falta;
-      if(modo === 'amrap'){ finalizar('AMRAP completo'); return; }
+      if(modo === 'amrap'){ finalizar('AMRAP completo', over > 8000); return; }
       if(modo === 'tabata' || modo === 'intervalos'){
         if(fase === 'work' && c.rest > 0){
           fase = 'rest'; restante = c.rest; faseTargetEnd = now + c.rest * 1000 - over; ultimoBeep = -1;
+          if(over < 8000) jpBox.chicharra();
           continue;
         }
         vueltas.push(c.work + (fase === 'rest' ? c.rest : 0));
-        if(ronda >= rondas){ finalizar((modo === 'intervalos' ? 'Intervalos' : 'Tabata') + ' completo'); return; }
+        if(ronda >= rondas){ finalizar((modo === 'intervalos' ? 'Intervalos' : 'Tabata') + ' completo', over > 8000); return; }
         ronda++; fase = 'work'; restante = c.work; faseTargetEnd = now + c.work * 1000 - over; ultimoBeep = -1;
+        if(over < 8000) jpBox.chicharra();
         continue;
       }
       /* EMOM */
       vueltas.push(c.intervalo);
-      if(ronda >= rondas){ finalizar('EMOM completo'); return; }
+      if(ronda >= rondas){ finalizar('EMOM completo', over > 8000); return; }
       ronda++; restante = c.intervalo; faseTargetEnd = now + c.intervalo * 1000 - over; ultimoBeep = -1;
-      beep(980, 180, .18); vibrar([100, 50, 100]);
+      if(over < 8000){ jpBox.chicharra(); vibrar([100, 50, 100]); }
       continue;
     }
   }
@@ -19114,10 +19370,16 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     transcurridoBase = transcurrido;
     transcurridoStart = now;
     document.getElementById('cwtGo').textContent = '⏸ Pausar';
-    beep(620, 120); vibrar([30]);
+    /* primer toque real del alumno: acá se desbloquea el AudioContext
+       (iOS/Chrome móvil) y se pide, una sola vez, el permiso de notificaciones */
+    jpBox.inicio(); vibrar([30]);
+    try{ jpBgTimer.pedirPermiso(); }catch(e){}
     tick = setInterval(paso, 1000);
     despierto(true);
     pintar();
+    /* timestampFin absoluto del entrenamiento completo -> aviso en segundo plano */
+    var finMs = finTotalMs();
+    try{ if(finMs > now) jpBgTimer.programar(finMs); else jpBgTimer.cancelar(); }catch(e){}
   }
   function despierto(on){
     try{
@@ -19138,6 +19400,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     corriendo = false;
     clearInterval(tick); tick = null;
     despierto(false);
+    try{ jpBgTimer.cancelar(); }catch(e){}
     document.getElementById('cwtGo').textContent = '▶ Continuar';
     pintar();
   }
@@ -19153,15 +19416,20 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   function reset(){
     corriendo = false; clearInterval(tick); tick = null;
     despierto(false);
+    try{ jpBgTimer.cancelar(); }catch(e){}
     estadoInicial();
     var g = document.getElementById('cwtGo');
     if(g) g.textContent = '▶ Empezar';
     pintar();
   }
-  function finalizar(motivo){
+  function finalizar(motivo, silencioso){
     corriendo = false; clearInterval(tick); tick = null;
     despierto(false);
-    beep(1240, 420, .22); vibrar([100, 50, 100, 50, 220]);
+    /* chicharra larga de fin de round. Si el fin ocurrió hace rato (el
+       celular estuvo bloqueado), ya avisó la notificación: no se hace sonar
+       el buzzer "viejo" al volver a la app. */
+    if(!silencioso){ jpBox.chicharra(1.2); vibrar([100, 50, 100, 50, 220]); }
+    try{ jpBgTimer.finalizado(); }catch(e){}
     var f = document.getElementById('cwtPhase');
     if(f){ f.textContent = '🏁 ' + (motivo || 'Terminado') + ' · ' + mmss(transcurrido); f.className = 'cwt-phase work'; }
     var g = document.getElementById('cwtGo');
@@ -24670,6 +24938,8 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     if(agrupado(bl)) return;
     var lb = 'Descanso · ' + nombreDe(bl);
     var seg = (segOverride && segOverride > 0) ? segOverride : descansoDe(bl);
+    /* micro-pausa (< 30 s): no se abre la barra de descanso, el alumno sigue */
+    if(seg < 30) return;
     setTimeout(function(){ arrancar(seg, lb); }, 90);
   };
 
@@ -33367,6 +33637,50 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
 .jp-set-row-native.pr{ border-color:#ffd600 !important; box-shadow:0 0 0 1px rgba(255,214,0,.25); }
 /* biset/superset: título en naranja táctico, per directiva de paleta */
 .jp-sb-biset-title{ color:#ff6b00 !important; }
+/* =========================================================
+   DIRECTIVA MAESTRA · ergonomía en el box, Bóveda de PRs y pulido visual
+   (bloque al final del bundle: gana por orden de cascada)
+========================================================= */
+/* 3.1 · micro-pausa (< 30 s): indicación textual inline, nunca un botón */
+.jp-micro-pausa{
+  display:inline-flex; align-items:center; gap:5px; width:fit-content;
+  font-family:'Chakra Petch','JetBrains Mono',monospace; font-weight:700; font-size:.7rem;
+  letter-spacing:.05em; text-transform:uppercase; color:#94a3b8;
+}
+.jp-cfboard .jp-cf-row.jp-cf-micro-row{ display:block; width:100%; padding:7px 12px; }
+.jp-badge-rest.jp-micro-pausa{ background:#161b22; border:none; border-radius:5px; padding:3px 8px; color:#94a3b8; }
+/* 3.2 · [ INICIAR TIMER DE ESTE WOD ] + [ DESCANSO RÁPIDO ]: una fila, dos columnas simétricas */
+.jp-cfboard .jp-cf-btnrow{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:10px 0 4px; }
+.jp-cfboard .jp-cf-btnrow > :only-child{ grid-column:1 / -1; }
+.jp-cfboard .jp-cf-btnrow .jp-cf-wodtimer,
+.jp-cfboard .jp-cf-btnrow .jp-cf-quickrest{
+  margin:0; min-width:0; width:100%; padding:6px 8px; min-height:44px;
+  white-space:normal; line-height:1.15; text-align:center; font-size:.68rem;
+}
+/* 4 · Bóveda de PRs: destello verde/dorado al guardar (el modal sigue abierto) */
+@keyframes jpFlashOk{
+  0%{ background:rgba(72,213,151,.38); box-shadow:0 0 0 2px rgba(72,213,151,.9); }
+  60%{ background:rgba(255,214,0,.16); box-shadow:0 0 0 2px rgba(255,214,0,.55); }
+  100%{ box-shadow:0 0 0 0 rgba(255,214,0,0); }
+}
+.jp-prs-row.jp-flash-ok, .prhub .ph-row.flash-ok, .prhub .ph-add.flash-ok{ animation:jpFlashOk 1.2s ease-out; }
+/* 5.1 · adiós a las cajas naranjas toscas: acento lateral táctico */
+.cf-format-badge{
+  border:none !important; border-left:3px solid #ff6b00 !important; border-radius:0 4px 4px 0 !important;
+  background:rgba(255,107,0,.05) !important; padding:4px 10px !important; color:#ff8533 !important;
+}
+.jp-cfboard .jp-cf-row.jp-cf-scheme{
+  border:none; border-radius:4px; background:rgba(255,107,0,.1); padding:4px 9px; color:#ff8533;
+}
+/* 5.2 · píldoras de carga y notas: carbón sólido + ámbar técnico, sin bordes de alerta */
+.jp-cf-nota-chip,
+.jp-cfboard .jp-cf-pct, .jp-cfboard .jp-cf-load, .jp-cfboard .jp-cf-refload{
+  display:inline-block; background:#161b22 !important; border:none !important; border-radius:6px;
+  padding:3px 9px; color:#f0b429; font-family:'Chakra Petch','JetBrains Mono',monospace; font-weight:700;
+}
+.jp-cfboard .jp-cf-pct:hover, .jp-cfboard .jp-cf-pct:focus-visible{ background:#1c232d !important; }
+.jp-cfboard .jp-cf-refload.jp-cf-refload-empty{ color:#94a3b8; }
+.jp-cfboard .jp-cf-time{ background:#161b22; border:none; }
 </style>
 
 </body>
