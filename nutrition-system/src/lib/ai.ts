@@ -27,8 +27,9 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
   gemini: [
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+    // gemini-2.5-* ya no está disponible para claves nuevas (404 "no longer available to new users").
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · recomendado' },
+    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)' },
   ],
   openai: [
     { id: 'gpt-4.1', label: 'GPT-4.1' },
@@ -312,4 +313,17 @@ export async function pingProvider(ai: AiSettings): Promise<PingResult> {
   } catch (e) {
     return { ok: false, kind: 'network', message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** Modelos retirados por proveedor → reemplazo vigente (migra configuraciones guardadas en localStorage). */
+export const RETIRED_MODELS: Record<string, string> = {
+  'gemini-2.5-pro': 'gemini-3.1-pro-preview',
+  'gemini-2.5-flash': 'gemini-3.8-flash',
+  'gemini-2.5-flash-lite': 'gemini-3.8-flash',
+};
+
+export function migrateModel(provider: AiProvider, model: string): string {
+  if (RETIRED_MODELS[model]) return RETIRED_MODELS[model];
+  if (provider === 'gemini' && /^gemini-(1\.|2\.)/.test(model)) return MODEL_OPTIONS.gemini[0].id;
+  return model;
 }

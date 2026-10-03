@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_PRESETS } from '@/lib/bioenergetics';
+import { migrateModel } from '@/lib/ai';
 import { aisGroupA } from '@/lib/evidence';
 import { equivalentGrams, FOOD_BY_ID, macrosFor, round1, round2 } from '@/lib/foods';
 import { itemFromFood, seedPlan, uid } from '@/lib/seed';
@@ -318,6 +319,8 @@ export const usePlanStore = create<PlanState>()(
             .map((p) => [p.id, p]),
         );
         merged.ai = { ...current.ai, ...(saved.ai ?? {}) };
+        // Un modelo retirado guardado (p. ej. gemini-2.5-pro) se reemplaza por el vigente al hidratar.
+        merged.ai.model = migrateModel(merged.ai.provider, merged.ai.model);
         return merged;
       },
       partialize: (s) => ({
