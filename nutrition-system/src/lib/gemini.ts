@@ -4,7 +4,7 @@ import type { AiSettings } from './types';
  * Cadena de respaldo de Gemini ante saturación (503 "high demand") o cuota (429).
  * Se recorre a continuación del modelo activo, sin repetirlo.
  */
-export const GEMINI_FALLBACKS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.0-flash'];
+export const GEMINI_FALLBACKS = ['gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.1-flash-lite'];
 
 /** Endpoint v1beta de generateContent para el modelo activo. */
 export const geminiEndpoint = (modelId: string, apiKey: string) =>

@@ -28,12 +28,11 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
   gemini: [
-    // Modelos vigentes de Google AI Studio. El primero es el default; ante 503 / 429 el conector
-    // conmuta solo a la cadena de respaldo (ver GEMINI_FALLBACKS en gemini.ts).
-    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite · Rápido / Free Tier' },
-    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · Alta Capacidad' },
-    { id: 'gemini-3.0-flash', label: 'Gemini 3.0 Flash' },
-    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+    // Sólo generación Gemini 3. El primero es el default; ante 503 / 429 el conector conmuta solo
+    // a la cadena de respaldo (ver GEMINI_FALLBACKS en gemini.ts).
+    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite · Rápido / Estable' },
+    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash · Alta Capacidad' },
+    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite' },
   ],
   openai: [
     { id: 'gpt-4.1', label: 'GPT-4.1' },
