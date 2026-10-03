@@ -1,7 +1,10 @@
 # Publica en GitHub Pages el sitio estático completo:
 #   /                → app de entrenamiento existente (index.html, dashboard.html, showroom…)
 #   /nutrition/      → Nutrition Command Builder (Next.js export estático de nutrition-system/)
-# Requisito único: Settings → Pages → Source: "GitHub Actions".
+# Requisito: Settings → Pages → Source: "GitHub Actions".
+# Si la fuente quedó en "Deploy from a branch", GitHub corre además su build automático (Jekyll)
+# sobre main, que NO contiene /nutrition/ y pisa este deploy si termina después (→ 404).
+# El job deploy espera a que ese build termine, publica último y verifica la URL en vivo.
 name: Deploy GitHub Pages
 
 on:
@@ -11,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -73,5 +77,31 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Esperar al build automático de Pages (fuente "Deploy from a branch")
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          for i in $(seq 1 60); do
+            pending=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&per_page=50" \
+              --jq '[.workflow_runs[] | select(.name == "pages build and deployment" and .status != "completed")] | length' || echo 0)
+            if [ "$pending" = "0" ]; then echo "Sin builds automáticos pendientes: este deploy publica último."; break; fi
+            echo "::notice::pages-build-deployment (Jekyll sobre main) sigue corriendo; espero para no ser pisado ($i/60)"
+            sleep 10
+          done
+
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Verificar Builder en vivo
+        env:
+          URL: ${{ steps.deployment.outputs.page_url }}nutrition/
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /tmp/page.html -w '%{http_code}' "$URL" || echo 000)
+            if [ "$code" = "200" ] && grep -q '/nutrition/_next/static/' /tmp/page.html; then echo "OK · $URL responde 200 con el Builder"; exit 0; fi
+            echo "Intento $i: $URL → HTTP $code"; sleep 10
+          done
+          echo "::error::$URL no sirve el Builder. Revisá Settings → Pages → Source: debe ser \"GitHub Actions\" (con \"Deploy from a branch\" el build de Jekyll sobre main pisa este deploy)."
+          exit 1
