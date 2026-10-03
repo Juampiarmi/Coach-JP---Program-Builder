@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { geminiGenerate, type GeminiNotice, type GeminiResult } from './gemini';
 import { aisGroupA } from './evidence';
 import { macrosFor, matchFood, round1, round2 } from './foods';
 import { uid } from './seed';
@@ -30,6 +31,7 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     // gemini-2.5-* ya no está disponible para claves nuevas (404 "no longer available to new users").
     { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · recomendado' },
     { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)' },
+    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite · cuota amplia' },
   ],
   openai: [
     { id: 'gpt-4.1', label: 'GPT-4.1' },
@@ -99,20 +101,16 @@ async function callClaude(ai: AiSettings, user: string): Promise<string> {
   return message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
 }
 
-async function callGemini(ai: AiSettings, user: string): Promise<string> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ai.model)}:generateContent`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': ai.apiKey },
-    body: JSON.stringify({
+async function callGemini(ai: AiSettings, user: string, onNotice?: (n: GeminiNotice) => void): Promise<GeminiResult> {
+  return geminiGenerate(
+    ai,
+    {
       systemInstruction: { parts: [{ text: `${SYSTEM_PROMPT}\n${SYSTEM_PROMPT_EXTENSION}` }] },
       contents: [{ role: 'user', parts: [{ text: user }] }],
       generationConfig: { responseMimeType: 'application/json', temperature: 0.3 },
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `Gemini respondió ${res.status}`);
-  return (data?.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? '').join('');
+    },
+    onNotice,
+  );
 }
 
 async function callOpenAI(ai: AiSettings, user: string): Promise<string> {
@@ -146,17 +144,17 @@ export function extractJson(text: string): AiPlanJson {
   }
 }
 
-export async function compileWithAi(ai: AiSettings, notes: string): Promise<AiPlanJson> {
+/** Compila el plan. `onNotice` informa reintentos / cambios de modelo (Gemini 503) a la terminal. */
+export async function compileWithAi(ai: AiSettings, notes: string, onNotice?: (n: GeminiNotice) => void): Promise<AiPlanJson & { _model?: string }> {
   if (!ai.apiKey.trim()) throw new Error('Cargá una API key para compilar con IA.');
   if (!notes.trim()) throw new Error('Volcá las notas del atleta antes de compilar.');
   const user = `NOTAS BRUTAS DEL ATLETA:\n${notes.trim()}`;
-  const raw =
-    ai.provider === 'claude'
-      ? await callClaude(ai, user)
-      : ai.provider === 'gemini'
-        ? await callGemini(ai, user)
-        : await callOpenAI(ai, user);
-  return extractJson(raw);
+  if (ai.provider === 'gemini') {
+    const r = await callGemini(ai, user, onNotice);
+    return { ...extractJson(r.text), _model: r.model };
+  }
+  const raw = ai.provider === 'claude' ? await callClaude(ai, user) : await callOpenAI(ai, user);
+  return { ...extractJson(raw), _model: ai.model };
 }
 
 const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback);

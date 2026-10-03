@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { extractJson } from './ai';
+import { geminiGenerate, type GeminiNotice } from './gemini';
 import { fmt0, kcalOf, LEUCINE_THRESHOLD } from './bioenergetics';
 import { FOOD_BY_ID, macrosFor, matchFood, round1, round2 } from './foods';
 import { uid } from './seed';
@@ -83,19 +84,17 @@ async function visionClaude(ai: AiSettings, data: string, mediaType: 'image/jpeg
   return message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
 }
 
-async function visionGemini(ai: AiSettings, data: string, mediaType: string): Promise<string> {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ai.model)}:generateContent`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': ai.apiKey },
-    body: JSON.stringify({
+async function visionGemini(ai: AiSettings, data: string, mediaType: string, onNotice?: (n: GeminiNotice) => void): Promise<string> {
+  const r = await geminiGenerate(
+    ai,
+    {
       systemInstruction: { parts: [{ text: SCAN_PROMPT }] },
       contents: [{ role: 'user', parts: [{ inline_data: { mime_type: mediaType, data } }, { text: 'Analizá este plato y devolvé el JSON.' }] }],
       generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
-    }),
-  });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body?.error?.message || `Gemini respondió ${res.status}`);
-  return (body?.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? '').join('');
+    },
+    onNotice,
+  );
+  return r.text;
 }
 
 async function visionOpenAI(ai: AiSettings, data: string, mediaType: string): Promise<string> {
@@ -143,10 +142,10 @@ export function tacticalScore(items: FoodItem[]) {
   return Math.round(Math.max(0, Math.min(100, score)));
 }
 
-export async function scanMeal(ai: AiSettings, data: string, mediaType: 'image/jpeg'): Promise<ScanResult> {
+export async function scanMeal(ai: AiSettings, data: string, mediaType: 'image/jpeg', onNotice?: (n: GeminiNotice) => void): Promise<ScanResult> {
   if (!ai.apiKey.trim()) throw new Error('Cargá una API key en IA Prompt Engine para escanear platos.');
   const raw =
-    ai.provider === 'claude' ? await visionClaude(ai, data, mediaType) : ai.provider === 'gemini' ? await visionGemini(ai, data, mediaType) : await visionOpenAI(ai, data, mediaType);
+    ai.provider === 'claude' ? await visionClaude(ai, data, mediaType) : ai.provider === 'gemini' ? await visionGemini(ai, data, mediaType, onNotice) : await visionOpenAI(ai, data, mediaType);
   const json = extractJson(raw) as unknown as ScanJson;
   return scanFromJson(json);
 }

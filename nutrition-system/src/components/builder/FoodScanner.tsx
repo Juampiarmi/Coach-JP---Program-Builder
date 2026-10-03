@@ -38,6 +38,7 @@ export function FoodScanner() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [target, setTarget] = useState('new-on');
   const [injected, setInjected] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function onFile(file: File | undefined) {
     if (!file) return;
@@ -48,7 +49,8 @@ export function FoodScanner() {
     try {
       const img = await imageToBase64(file);
       setPreview(img.preview);
-      setResult(await scanMeal(ai, img.data, img.mediaType));
+      setNotice(null);
+      setResult(await scanMeal(ai, img.data, img.mediaType, (n) => setNotice(n.message)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -173,6 +175,7 @@ export function FoodScanner() {
           )}
         </div>
       )}
+      {notice && busy && <div className="mt-3 animate-pulse rounded-lg border border-fire/40 bg-fire/10 p-3 font-mono text-[11px] text-fire">{notice}</div>}
       {error && <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 p-3 font-mono text-[11px] text-danger">⚠ {error}</div>}
     </Panel>
   );

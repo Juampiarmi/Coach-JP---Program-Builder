@@ -2,7 +2,7 @@ import type { AiPlanJson } from './ai';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from './bioenergetics';
 import type { AthletePlan } from './types';
 
-export type CheckStatus = 'pending' | 'running' | 'ok' | 'warn' | 'fail';
+export type CheckStatus = 'pending' | 'running' | 'retry' | 'ok' | 'warn' | 'fail';
 
 export interface CompileCheck {
   id: string;
