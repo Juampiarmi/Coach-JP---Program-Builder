@@ -10313,6 +10313,21 @@ var jpBox = (function(){
       osc.start(t0); osc.stop(t0 + dur + 0.03);
     }catch(e){ console.warn('jpBox.seco falló:', e); }
   }
+  /* tono limpio senoidal con decaimiento exponencial (HUD militar) */
+  function suave(freq, dur, vol, ataque){
+    if(isAudioMuted()) return;
+    try{
+      var ctx = ensureAudioCtx(); resumeAudioCtx();
+      var t0 = ctx.currentTime;
+      var osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(freq, t0);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(vol, t0 + (ataque || 0.004));
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(g); g.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + dur + 0.03);
+    }catch(e){ console.warn('jpBox.suave falló:', e); }
+  }
   /* bocina industrial Rogue: fundamental de 650 Hz (diente de sierra) + armónicos
      (2.º y 3.º, cuadradas) -- seca y potente, sin trémolo; 500 ms por defecto */
   function buzzer(dur){
@@ -10337,10 +10352,11 @@ var jpBox = (function(){
   }
   return {
     /* 3-2-1: los tres avisos idénticos -- cuadrada 800 Hz, 120 ms, misma envolvente */
-    cuenta:   function(){ seco(800, 0.12, 0.36); },
+    cuenta:   function(){ suave(880, 0.08, 0.4, 0.004); },
+    go:       function(){ suave(1760, 0.30, 0.5, 0.006); },
     aviso10:  function(){ seco(1200, 0.22, 0.36); },
     mitad:    function(){ seco(900, 0.11, 0.36); seco(900, 0.11, 0.36, 0.2); },
-    inicio:   function(){ seco(800, 0.12, 0.36); },
+    inicio:   function(){ suave(1760, 0.30, 0.5, 0.006); },
     chicharra:function(dur){
       var ahora = Date.now();
       if(ahora - ultimaChicharra < 1400) return;
@@ -14782,6 +14798,36 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     return { lineas: cuerpo, objective: obj.join('\\n'), tips: tips.join('\\n') };
   }
+  /* la técnica suelta (Myo-Reps / Drop Set) pertenece a la estación que nombra; si no nombra ninguna, a la última escrita */
+  function subPorNombreSB(entry, linea){
+    var n = normTitSB(linea);
+    for(var i = 0; i < entry.subs.length; i++){
+      var p = normTitSB(entry.subs[i].nombre).split(' ').filter(function(w){ return w.length > 3; }).slice(0, 2);
+      if(p.length && p.every(function(w){ return n.indexOf(w) >= 0; })) return entry.subs[i];
+    }
+    return null;
+  }
+  function destinoTecnicaSB(entry, linea){
+    var n = normTitSB(linea);
+    for(var i = 0; i < entry.subs.length; i++){
+      var p = normTitSB(entry.subs[i].nombre).split(' ').filter(function(w){ return w.length > 3; }).slice(0, 2);
+      if(p.length && p.every(function(w){ return n.indexOf(w) >= 0; })) return entry.subs[i];
+    }
+    return entry.subs[entry.subs.length - 1];
+  }
+  /* "ESTRATEGIA BIOMECÁNICA & TIPS": una fase pedagógica por renglón, etiqueta en negrita dorada */
+  function formatTipsSB(texto){
+    var t = String(texto || '').trim();
+    if(!t) return '';
+    t = t.replace(/(\\S)\\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\\n]{0,70}:)/g, '$1\\n');
+    return t.split(/\\n+/).map(function(l){
+      l = l.trim();
+      if(!l) return '';
+      var m = l.match(/^([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 &\\/\\-–().,]{2,90}?):\\s*(.*)$/);
+      if(m) return '<div class="jp-tip-fase"><b class="jp-tip-lb">' + escSB(m[1]) + ':</b> ' + escSB(m[2]) + '</div>';
+      return '<div class="jp-tip-fase">' + escSB(l) + '</div>';
+    }).join('');
+  }
   function metaHtmlSB(t){ return escSB(t).replace(/\\n/g, '<br>'); }
   function normTitSB(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
   /* estación de biset/superserie con el nombre en su propio renglón ("A1) Goblet Squat", "B2. Remo", "1. Press"):
@@ -14892,8 +14938,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           return;
         }
         /* "+ 3 set myo-reps (...)" / "[DROPSET] ..." sueltos: son de la ESTACIÓN que los prescribe (la anterior) */
-        if(actual.subs.length && !/^[^:\\[\\n]{3,}:\\s*\\S/.test(linea)){
-          var lastB = actual.subs[actual.subs.length - 1];
+        var porNombreB = actual.subs.length ? subPorNombreSB(actual, linea) : null;
+        if(actual.subs.length && (porNombreB || !/^[^:\\[\\n]{3,}:\\s*\\S/.test(linea))){
+          var lastB = porNombreB || destinoTecnicaSB(actual, linea);
           var myoB = linea.match(RX_MYO_CLAUSE_SB);
           var resTB = extraerTecnicaSB(linea.replace(/^\\*\\s*/, ''));
           if(myoB){ lastB.tecnica = 'myoreps'; lastB.myoInfo = extraerMyoInfoSB(myoB[1] || ''); return; }
@@ -15047,6 +15094,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         myoInfo: resTecLinea.tecnica === 'myoreps' ? extraerMyoInfoSB(resTecLinea.texto) : null,
         notas:[], unidad:'reps' };
       entries.push(actual);
+    });
+    /* una estación sin prescripción propia hereda la de la estación más cercana que sí la trae (nunca una caja con sólo "3 SERIES") */
+    entries.forEach(function(en){
+      if(en.tipo !== 'biserie' || en.subs.length < 2) return;
+      en.subs.forEach(function(s, i){
+        if(s.reps) return;
+        var fuente = null, j, k;
+        for(j = i + 1; j < en.subs.length && !fuente; j++) if(en.subs[j].reps) fuente = en.subs[j];
+        for(k = i - 1; k >= 0 && !fuente; k--) if(en.subs[k].reps) fuente = en.subs[k];
+        if(!fuente) return;
+        s.reps = fuente.reps; s.sets = s.sets || fuente.sets; s.unidad = fuente.unidad;
+        if(!s.tempo) s.tempo = fuente.tempo;
+        if(!s.rir) s.rir = fuente.rir;
+      });
     });
     entries.forEach(function(en){
       if(en.tipo !== 'biserie' || !en.base) return;
@@ -15459,7 +15520,6 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds){
     const badges = [];
     if(sets && reps) badges.push('<span class="jp-badge-sets">' + sets + ' SERIES</span><span class="jp-badge-reps">' + escSB(reps) + ' ' + escSB(String(unidad || 'reps').toUpperCase()) + '</span>');
-    else if(sets && !reps) badges.push('<span class="jp-badge-sets">' + sets + ' SERIES</span>');
     else if(reps) badges.push('<span class="jp-badge-reps">' + escSB(reps) + ' ' + escSB(String(unidad || 'reps').toUpperCase()) + '</span>');
     if(tempo) badges.push('<span class="jp-badge-tempo">TEMPO ' + escSB(tempo) + '</span>');
     if(rir){
@@ -15622,7 +15682,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           const restSub = sub.restSeconds ? sub.restSeconds : (si < entry.subs.length - 1 ? '0' : '');
           return '<div class="jp-sb-subex" data-rest-sec="' + restSub + '">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
-                '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span>' + miniVideoSB(sub.nombre, block) + '</div>' +
+                '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span></div>' +
               dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds) +
               chipUnilateralSB(sub.unilateral) +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
@@ -15732,7 +15792,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return String(propio).indexOf(ex) >= 0 ? propio : propio + '<br>' + ex;
     };
     const objetivoHtml = unirMetaSB(block.objective, sepMeta.objective);
-    const tipsHtml = unirMetaSB(block.tips, sepMeta.tips);
+    const tipsHtml = /<[a-z][^>]*>/i.test(String(block.tips || ''))
+      ? unirMetaSB(block.tips, sepMeta.tips)
+      : formatTipsSB([block.tips, (block.tips && String(block.tips).indexOf(sepMeta.tips) >= 0) ? '' : sepMeta.tips].filter(Boolean).join('\\n'));
     const tieneObjTips = objetivoHtml || tipsHtml;
     const tieneAcc = tieneObjTips || videosBloque.length;
     /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
@@ -18302,24 +18364,47 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   /* =========================================================
      PWA DEL ALUMNO · manifiesto, service worker e instalación
   ========================================================= */
-  function iconoPNG(size){
+  /* iconos diferenciados por app (misma silueta de escudo facetado):
+       bb  Bodybuilding -> escudo titanio con filo cobre + mancuerna angular
+       cf  CrossFit     -> escudo mate con acento cian/verde neón + cronómetro */
+  function iconoPNG(size, variante){
+    const v = variante || (window.COACH_DISCIPLINA === 'crossfit' ? 'cf' : 'bb');
     const c = document.createElement('canvas');
     c.width = c.height = size;
     const g = c.getContext('2d');
-    g.fillStyle = '#08090B'; g.fillRect(0, 0, size, size);
+    g.fillStyle = v === 'cf' ? '#080D10' : '#08090B'; g.fillRect(0, 0, size, size);
     const s = size / 74, ox = (size - 64 * s) / 2;
     g.save(); g.translate(ox, size * 0.03); g.scale(s * 0.94, s * 0.94);
     const grad = g.createLinearGradient(0, 0, 64, 74);
-    grad.addColorStop(0, '#FFE873'); grad.addColorStop(.38, '#FFD600');
-    grad.addColorStop(.72, '#C9A100'); grad.addColorStop(1, '#8A6B00');
+    if(v === 'cf'){ grad.addColorStop(0, '#2C363E'); grad.addColorStop(1, '#10161B'); }
+    else { grad.addColorStop(0, '#F2F4F7'); grad.addColorStop(.45, '#B3BAC5'); grad.addColorStop(1, '#7B5B45'); }
     g.fillStyle = grad;
     g.beginPath(); g.moveTo(32,2); g.lineTo(60,12); g.lineTo(60,36);
     g.bezierCurveTo(60,54,47,66,32,72); g.bezierCurveTo(17,66,4,54,4,36);
     g.lineTo(4,12); g.closePath(); g.fill();
-    g.strokeStyle = '#FFF0A8'; g.lineWidth = 1.6; g.stroke();
-    g.fillStyle = '#07080A';
-    g.beginPath(); g.moveTo(36,18); g.lineTo(21,40); g.lineTo(30,40);
-    g.lineTo(27,58); g.lineTo(43,34); g.lineTo(33,34); g.closePath(); g.fill();
+    g.strokeStyle = v === 'cf' ? '#22D3EE' : '#D2793F'; g.lineWidth = v === 'cf' ? 2.4 : 2; g.stroke();
+    const poli = function(pts, espejo){
+      g.beginPath();
+      pts.forEach(function(p, i){ const x = espejo ? 64 - p[0] : p[0]; if(i) g.lineTo(x, p[1]); else g.moveTo(x, p[1]); });
+      g.closePath(); g.fill();
+    };
+    if(v === 'cf'){
+      /* cronómetro: aro cian, corona y aguja verde neón */
+      g.strokeStyle = '#22D3EE'; g.lineWidth = 3.6;
+      g.beginPath(); g.arc(32, 42, 13, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#22D3EE'; g.fillRect(28.5, 23.5, 7, 4); g.fillRect(31, 27, 2, 3);
+      g.strokeStyle = '#39FF88'; g.lineWidth = 3; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(32, 42); g.lineTo(32, 33); g.moveTo(32, 42); g.lineTo(38, 46); g.stroke();
+      g.fillStyle = '#39FF88'; g.beginPath(); g.arc(32, 42, 2, 0, Math.PI * 2); g.fill();
+    } else {
+      /* mancuerna angular: barra + discos con aristas cortadas */
+      g.fillStyle = '#17110C';
+      g.fillRect(17, 36, 30, 4);
+      [false, true].forEach(function(e){
+        poli([[21,28],[26,28],[26,48],[21,48],[19,46],[19,30]], e);
+        poli([[12,31],[17,31],[17,45],[12,45],[10,43],[10,33]], e);
+      });
+    }
     g.restore();
     return c.toDataURL('image/png');
   }
@@ -18334,15 +18419,16 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     add('meta[name="apple-mobile-web-app-capable"]', { name:'apple-mobile-web-app-capable', content:'yes' });
     add('meta[name="apple-mobile-web-app-status-bar-style"]',
         { name:'apple-mobile-web-app-status-bar-style', content:'black-translucent' });
-    add('meta[name="apple-mobile-web-app-title"]', { name:'apple-mobile-web-app-title', content:'Coach JP Program' });
+    const nombreApp = window.COACH_DISCIPLINA === 'crossfit' ? 'Coach JP Crossfit' : 'Coach JP Bodybuilding';
+    add('meta[name="apple-mobile-web-app-title"]', { name:'apple-mobile-web-app-title', content:nombreApp });
     add('meta[name="theme-color"]', { name:'theme-color', content:'#08090B' });
     const m = {
-      name: 'Coach JP \\u2022 Performance Program',
-      short_name: 'Coach JP Program',
+      name: nombreApp + ' \\u2022 Performance Program',
+      short_name: nombreApp,
       description: 'Planificación personalizada de ' + nombre + ' — Coach JP Performance System',
       start_url: location.href,
       scope: location.href.replace(/[^/]*$/, ''),
-      id: 'coachjp-athlete',
+      id: window.COACH_DISCIPLINA === 'crossfit' ? 'coachjp-athlete-cf' : 'coachjp-athlete-bb',
       display: 'standalone',
       background_color: '#08090B',
       theme_color: '#08090B',
@@ -18469,6 +18555,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
      No reemplaza el botón manual pwaBoton() de arriba: éste queda intacto
      para que el alumno pueda reabrir la instalación cuando quiera. */
   function mostrarGuiaPWAInstalacion(){
+    /* directiva ("Refactor final"): el cartel emergente de "Entendido" se retira por completo;
+       la instalación sigue disponible en el botón manual (pwaBoton) */
+    return;
     if(document.querySelector('.jp-pwaguide-overlay')) return;
     const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
     if(standalone){
@@ -18699,17 +18788,17 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 
 <div class="prhub-wrap" id="prHubWrap">
   <div class="prhub">
-    <div class="ph-head"><h3>📈 Historial</h3><button class="ph-x" id="phClose" type="button">✕ Cerrar</button></div>
+    <div class="ph-head"><h3>📈 Historial</h3><button class="ph-x" id="phClose" type="button" aria-label="Cerrar">✕</button></div>
     <div class="ph-tabs">
-      <button type="button" class="ph-tab on" data-phtab="prog">📈 PROGRESIÓN DE CARGAS</button>
-      <button type="button" class="ph-tab" data-phtab="prs">🏆 MIS RÉCORDS / PRs</button>
+      <button type="button" class="ph-tab on" data-phtab="prog">📈 PROGRESIÓN</button>
+      <button type="button" class="ph-tab" data-phtab="prs">🏆 RÉCORDS (PRs)</button>
     </div>
     <div class="ph-pane" id="phPaneProg">
       <select id="phProgSel" class="ph-sel" aria-label="Ejercicio de tu rutina"></select>
       <div id="phProgOut"></div>
     </div>
     <div class="ph-pane" id="phPanePrs" style="display:none">
-      <p class="ph-sub">Tus marcas máximas estimadas (Epley y Brzycki) se calculan solas con lo que cargás entrenando: cuando superás un récord, se actualiza.</p>
+      <p class="ph-sub">Tus 1RM máximos se calculan solos con la fórmula de Epley a partir de las series que cargás entrenando.</p>
       <div class="ph-cats" id="phCats"></div>
       <div class="ph-grid" id="phGrid"></div>
       <details class="ph-manual"><summary>➕ Agregar una marca a mano</summary>
@@ -18991,7 +19080,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       var top = f.est >= mejor1RM(f.ex) - 0.01;
       return '<div class="ph-row' + (top ? ' record' : '') + '" data-ex="' + escAttr(f.ex) + '" data-r="' + f.r + '">' +
         '<div><div class="ex">' + escTxt(f.ex) + '</div>' +
-        '<div class="mt">' + f.r + 'RM · 1RM est. ' + f.est + ' kg (Epley) · ' + (Math.round(f.kg * 36 / (37 - (+f.r)) * 10) / 10) + ' kg (Brzycki) · ' + f.fecha +
+        '<div class="mt">' + f.r + 'RM · 1RM est. (Epley) ' + f.est + ' kg · ' + f.fecha +
         (f.origen === 'coach' ? ' · cargado por Coach JP' : '') + '</div></div>' +
         '<label class="ph-mark"><input class="ph-edit" type="number" step="0.5" min="0" inputmode="decimal" value="' + f.kg + '" /><span>KG</span></label>' +
       '</div>';
@@ -20206,7 +20295,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     } else if(seg === 3 || seg === 2 || seg === 1){
       jpBox.cuenta(); jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
-      jpBox.chicharra(); if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+      /* GO tras la cuenta 3-2-1: tono agudo y enérgico (1760 Hz); el resto de las transiciones conserva la bocina */
+      if(fase === 'prep') jpBox.go(); else jpBox.chicharra();
+      if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
   }
   function paso(){
@@ -22400,7 +22491,8 @@ body.cf-modo .block .directive-chip{display:none !important}
     try{
       visto = localStorage.getItem('has_seen_onboarding') || localStorage.getItem('coachjp_manual_visto');
     }catch(e){ visto = '1'; }
-    if(!visto) setTimeout(function(){
+    /* directiva ("Refactor final"): el cartel de bienvenida con "Entendido" se retira (el Manual sigue en Herramientas) */
+    if(false && !visto) setTimeout(function(){
       var tt = document.getElementById('jpToast');
       if(tt) tt.dataset.jpOnb = '1';
       aviso('ok', '📖', (typeof generoTxt === 'function' ? generoTxt('¡Bienvenido!', '¡Bienvenida!') : 'Primera vez por acá'),
@@ -35073,6 +35165,25 @@ body.jp-mission .day-view > details.jp-foco-acc{ display:none !important; }
 .jp-dir-box h4{ margin:0 0 4px; font-family:'JetBrains Mono',monospace; font-size:.7rem; letter-spacing:.1em; color:#38bdf8; }
 .jp-dir-box h3{ margin:0 0 10px; font-family:'Chakra Petch',sans-serif; font-size:1.05rem; color:#EDEFF2; }
 .jp-dir-box p{ margin:0 0 14px; line-height:1.6; font-size:.9rem; color:#cbd5e1; white-space:pre-line; }
+.jp-tip-fase{ margin-bottom:8px; line-height:1.55; }
+.jp-tip-fase:last-child{ margin-bottom:0; }
+.jp-tip-lb{ color:#F5B642; font-weight:800; letter-spacing:.02em; }
+.site-footer{ padding-bottom:calc(110px + env(safe-area-inset-bottom)) !important; }
+body.jp-mission .hdc-id{ display:grid !important; grid-template-columns:minmax(0,auto) 1fr; grid-template-areas:"brand brand" "name chip"; column-gap:8px; row-gap:1px; align-items:center; }
+body.jp-mission .hdc-brand{ display:block !important; grid-area:brand; line-height:1; }
+body.jp-mission .hdc-brand-sub{ display:none !important; }
+body.jp-mission .hdc-brand-mark, body.jp-mission .hdc-brand-mark em{ font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-size:11px !important; font-weight:600; letter-spacing:.22em; color:#94A3B8 !important; font-style:normal; text-shadow:none !important; }
+body.jp-mission .hdc-name{ grid-area:name; font-size:14px !important; font-weight:800 !important; color:#FFFFFF !important; min-width:0; }
+body.jp-mission .hdc-name::after{ content:none !important; }
+body.jp-mission .hdc-chip-row{ grid-area:chip; min-width:0; }
+body.jp-mission .hdc-pay-chip{ display:inline-flex; }
+body.jp-mission .hdc-pay-chip:empty{ display:none; }
+body.jp-mission .hdc-chip-row .jp-status-pill{ font-size:10px !important; line-height:1; padding:3px 7px !important; border-radius:999px; font-weight:800; letter-spacing:.05em; white-space:nowrap; }
+body.jp-mission .hdc-chip-row .jp-status-active{ color:#34F5A0 !important; background:rgba(52,245,160,.1) !important; border:1px solid rgba(52,245,160,.45) !important; text-shadow:0 0 8px rgba(52,245,160,.55); }
+body.jp-mission .hdc-info span{ font-size:1.05rem; line-height:1; }
+body.jp-mission .day-header{ position:relative; }
+body.jp-mission .day-header > div:first-child{ padding-right:112px; }
+body.jp-mission .jp-brief-dir{ position:absolute; top:12px; right:12px; margin:0 !important; padding:6px 10px !important; }
 .jp-dir-box button{ width:100%; padding:11px; border-radius:10px; cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,.22); color:#EDEFF2; font-weight:800; letter-spacing:.06em; text-transform:uppercase; font-size:.76rem; }
 </style>
 
@@ -35094,6 +35205,11 @@ body.jp-mission .day-view > details.jp-foco-acc{ display:none !important; }
       q.style.display = '';
       if(q.innerHTML.indexOf('HISTORIAL') < 0) q.innerHTML = '&#128200; HISTORIAL';
     }
+    var inf = $('#hdcInfoBtn');
+    if(inf && inf.getAttribute('data-jp') !== '1'){ inf.setAttribute('data-jp', '1'); inf.innerHTML = '<span aria-hidden="true">&#128450;&#65039;</span>'; inf.setAttribute('aria-label', 'Perfil e info'); }
+    [].forEach.call(document.querySelectorAll('.hdc-pay-chip .jp-status-pill'), function(p){
+      if(/ACTIVO/i.test(p.textContent) && p.textContent.indexOf('●') < 0) p.textContent = '● ACTIVO';
+    });
   }
   function semana(){
     var row = $('.hdc-days-row'); if(!row) return;
@@ -35151,7 +35267,7 @@ body.jp-mission .day-view > details.jp-foco-acc{ display:none !important; }
       b = document.createElement('button'); b.type = 'button'; b.className = 'jp-brief-dir';
       b.innerHTML = '&#128065;&#65039; VER DIRECTIVA T&Aacute;CTICA';
       b.addEventListener('click', abrirDirectiva);
-      dh.appendChild(b);
+      dh.insertBefore(b, dh.firstChild);
     } else if(!txt && b){ b.remove(); }
   }
   function abrirDirectiva(){
