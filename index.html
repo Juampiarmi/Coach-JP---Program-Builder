@@ -4234,6 +4234,9 @@ function impDosisCanonicaSB(d){
 /* una línea del cuerpo de un bloque de Sports: dosis (se acumula en el grupo
    actual de ese ejercicio), nombre+dosis (se separan) o texto libre intacto */
 function impPushLineaSports(bloque, t, avisos){
+  /* un calentamiento/activación es una LISTA de ejercicios: sus líneas se conservan tal cual
+     (con sus guiones, viñetas o comas), nunca se convierten en dosis con tracker */
+  if(bloque.fase === 'warmup'){ bloque.items.push(t); return; }
   const x = impDosisSB(t);
   if(!x.soloDosis && !x.nombre){ bloque.items.push(t); return; }
   if(x.nombre){ bloque.items.push(x.nombre); bloque._g = null; }
@@ -4285,9 +4288,9 @@ function impCerrarBloqueSports(b){
      nombre en el delimitador pero su primera línea es un nombre (y hay un único
      ejercicio), esa línea pasa a ser el título */
   const nGrupos = b.items.filter(l => /^\d+x/.test(l)).length;
-  if(!b.titulo && b.items.length && nGrupos <= 1){
+  if(!b.titulo && b.items.length && (nGrupos === 1 || (nGrupos === 0 && b.items.length === 1))){
     const p = b.items[0];
-    if(!/^\d+x|^A\d+[.)]|^\[|^(?:rest|tempo|rir)\b/i.test(p) && p.length <= 60 && !lineaSoloDosisSB(p)){ b.titulo = p; b.items.shift(); }
+    if(!/^\d+x|^A\d+[.)]|^\[|^[-•*·]|^(?:rest|tempo|rir)\b/i.test(p) && p.length <= 60 && !lineaSoloDosisSB(p)){ b.titulo = p; b.items.shift(); }
   }
   if(!b.titulo && b.tag) b.titulo = impTituloDeTag(b.tag);
   b.modalidad = impModalidadSB(b, tagOriginal);
@@ -4988,6 +4991,15 @@ const RX_TITULO_GENERICO = /^(?:bloque\s*\d*|fuerza|hipertrofia|accesorio|pir[a�
 function tituloEsNombreEj(t){
   t = String(t || '').trim();
   return !!t && !RX_TITULO_GENERICO.test(t) && !!nombreEjercicioSB(t);
+}
+/* modalidad (Fuerza / Hipertrofia / Core / Activación / Cardio) de un bloque de Pizarra: la
+   elegida a mano o importada; si no hay, se infiere de la categoría / título / reps */
+function modalidadBloqueSB(b){
+  if(b.modalidad) return b.modalidad;
+  if(b.category === 'warmup') return 'calentamiento';
+  if(b.category === 'accessory') return 'core';
+  if(b.category === 'metcon' || b.category === 'cardio') return 'metcon';
+  return impModalidadSB({ titulo: b.titulo, items: Array.isArray(b.items) ? b.items : [] }, '');
 }
 function itemsConNombreSB(titulo, items){
   const arr = Array.isArray(items) ? items : [];
@@ -15234,7 +15246,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      función más abajo en el archivo). */
   var RX_CALENTAMIENTO_SB = /calentamiento|warm.?up|movilidad/i;
   function esBloqueCalentamientoSB(block){
-    return RX_CALENTAMIENTO_SB.test(String((block && block.title) || ''));
+    /* por título, o porque el bloque se eligió/importó como "Entrada en calor" (modalidad / categoría) */
+    return RX_CALENTAMIENTO_SB.test(String((block && block.title) || '')) ||
+           !!(block && (block.modalidad === 'calentamiento' || block.category === 'warmup'));
   }
   /* directiva ("Jerarquía de RIR vs Sets"): el RIR mezclado en cian con
      los pills [SET 1]/[SET 2] del tracker nativo confundía al alumno
@@ -15290,6 +15304,28 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      comunica el bullet visualmente -- un guión común "-" que el coach
      tipeó a mano al redactar la línea ("- Movilidad de cadera: ...")
      nunca debe quedar duplicado/colgando al inicio del nombre. */
+  /* directiva ("Badge de categoría"): el tag superior de la card muestra la categoría real del
+     bloque ([ SPORTS · 🎯 FUERZA ], [ SPORTS · 💪 HIPERTROFIA ]...), nunca "BLOQUE" genérico */
+  function tagCategoriaSB(block, esCalent){
+    var m = block.modalidad || '';
+    if(esCalent || m === 'calentamiento') return '🔥 ACTIVACI&Oacute;N';
+    if(m === 'fuerza') return '🎯 FUERZA';
+    if(m === 'hipertrofia') return '💪 HIPERTROFIA';
+    if(m === 'core') return '🧩 CORE';
+    if(m === 'metcon') return '⏱️ CARDIO';
+    return '💪 BLOQUE';
+  }
+  /* una línea de activación redactada como lista continua ("Gato-camello, plancha lateral,
+     dead bug", "• a • b", "a - b - c") se parte en un renglón por ejercicio */
+  function partirListaActivacionSB(txt){
+    var t = String(txt || '').trim();
+    var porMarcas = t.split(/\\s*[•·]\\s*|\\s+-\\s+/).map(function(s){ return s.trim(); }).filter(Boolean);
+    if(porMarcas.length > 1) return porMarcas;
+    var cs = t.split(/\\s*[,;]\\s+/).map(function(s){ return s.trim(); }).filter(Boolean);
+    var sinDosis = cs.every(function(s){ return (/[a-záéíóúñ]/i.test(s) || /^\\d+\\s*\\/\\s*\\d+$/.test(s)) && !/^\\d+\\s*(?:reps?|seg|s|min|m)\\b/i.test(s); });
+    if(cs.length > 1 && sinDosis && (cs.length >= 3 || t.length > 50)) return cs;
+    return [t];
+  }
   function limpiarGuionActivacionSB(nombre){
     return String(nombre || '').replace(/^[\\s\\-–—•*]+/, '').trim();
   }
@@ -15440,6 +15476,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          Warm-up", una directiva anterior) -- el coach SÍ vincula videos
          de movilidad/activación y nunca llegaban al alumno. */
       if(!entry.sets || esCalentamiento){
+        /* activación redactada como lista continua: un renglón limpio con viñeta cian por ejercicio */
+        if(esCalentamiento && !entry.sets){
+          const itemsLista = partirListaActivacionSB(entry.titulo);
+          if(itemsLista.length > 1){
+            filas += itemsLista.map(function(it){
+              return '<div class="jp-sb-plain jp-sb-plain-warmup"><span class="jp-sb-plain-nombre">' + escSB(limpiarGuionActivacionSB(it)) + '</span></div>';
+            }).join('') + (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '');
+            return;
+          }
+        }
         const partesPlain = jpCfSplit(entry.titulo);
         const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
         const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm;
@@ -15486,7 +15532,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const tituloBloquePrincipal = tituloBloqueM ? (tituloBloqueM[1].trim() || block.title) : (block.title || '');
     const tituloBloqueEnfasis = tituloBloqueM ? tituloBloqueM[2].trim() : '';
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
-        '<div class="jp-sb-tag">[ SPORTS &middot; ' + (esCalentamiento ? '🔥 ACTIVACI\\u00d3N' : '💪 BLOQUE') + ' ]</div>' +
+        '<div class="jp-sb-tag">[ SPORTS &middot; ' + tagCategoriaSB(block, esCalentamiento) + ' ]</div>' +
         (block.ocultaTituloTablero ? '' : '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>') +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         (duracionEstimada ? '<div class="jp-sb-duracion">\\u23f1 TIEMPO ESTIMADO: ' + duracionEstimada + ' MINUTOS</div>' : '') +
@@ -33805,7 +33851,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
   font-size:.72rem; letter-spacing:.03em; text-transform:uppercase;
   background:rgba(56,189,248,.12); color:#38bdf8; border:1px solid rgba(56,189,248,.35);
 }
-.jp-sb-plain-nombre{ font-size:.9rem; color:#f8fafc; letter-spacing:.01em; padding-top:1px; }
+.jp-sb-plain-nombre{ font-size:.9rem; color:#f8fafc; letter-spacing:.01em; padding-top:1px; flex:1 1 0; min-width:0; overflow-wrap:anywhere; text-align:left; }
 /* directiva maestra ("Estilización de Listados de Activación") -- glifo
    táctico celeste en vez del guión común "-", con sangría uniforme, para
    bloques de movilidad/entrada en calor. margin-top:2px (directiva
@@ -33813,8 +33859,8 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
    de texto en vez de quedar centrada/desfasada. */
 .jp-sb-plain-warmup{ padding-left:4px; }
 .jp-sb-plain-warmup::before{
-  content:'\\25b8'; color:#38bdf8; font-weight:800; font-size:.9rem; flex-shrink:0; line-height:1;
-  margin-top:2px;
+  content:'•'; color:#38bdf8; font-weight:900; font-size:1.1rem; flex-shrink:0; line-height:1;
+  margin-top:1px;
 }
 /* directiva ("Refactor visual: tabla táctica de series"): recolorea SÓLO
    dentro del tablero de Pizarra Sports la fila "expandida" (ver
@@ -35062,7 +35108,7 @@ function buildProgramConfig(ath){
       if(b.coreBlock) out.coreBlock = true;
       if(b.coreModo) out.coreMode = b.coreModo;
       if(b.cfPizarra) out.pizarra = true;
-      if(b.sportsPizarra) out.sportsPizarra = true;
+      if(b.sportsPizarra){ out.sportsPizarra = true; out.modalidad = modalidadBloqueSB(b); }
       /* directiva ("Motor de Ondulación S1 -> S4"): itemsDeSemana() del
          lado del alumno lee block.weekItems[weekIdx] para S2/S3/S4 -- sin
          copiarlo acá al objeto compilado, la proyección generada en el
