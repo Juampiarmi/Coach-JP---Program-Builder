@@ -333,6 +333,9 @@ details[open] > .meso-summary::before, details[open] > .tpl-summary::before{ tra
 .block-h input.bt{background:transparent;border:1px dashed transparent;font-weight:800;font-size:14px;padding:4px 7px;width:auto;flex:1;min-width:120px}
 .block-h input.bt:hover{border-color:var(--line-2)}
 .block-body{padding:11px 13px}
+.block.b-col .block-body{display:none}
+.block.b-col .block-h{border-bottom:none}
+.block-h .blk-col{flex:0 0 auto;min-width:30px}
 
 .item{border:1px solid var(--line);border-radius:var(--r-sm);padding:11px;margin-bottom:9px;background:var(--panel-2)}
 .item.bad{border-color:rgba(168,68,44,.6);background:linear-gradient(180deg,rgba(168,68,44,.09),var(--panel-2))}
@@ -4247,10 +4250,29 @@ function impTituloDeTag(tag){
   const et = String(tag || '').replace(/^(?:carga|estabilidad)\s*[-–]\s*/i, '').toLowerCase().trim();
   return et ? et.charAt(0).toUpperCase() + et.slice(1) : '';
 }
+/* categoría de carga automática (selector del bloque): etiqueta explícita primero; si no, por
+   palabras clave y por reps (<=6 -> fuerza) */
+function impModalidadSB(b, tag){
+  const tg = String(tag || '').toLowerCase();
+  if(/hipertrof/.test(tg)) return 'hipertrofia';
+  if(/fuerza|pir[aá]mide/.test(tg)) return 'fuerza';
+  if(/accesor|core|estabilidad/.test(tg)) return 'core';
+  if(/calent|warm|activaci/.test(tg)) return 'calentamiento';
+  const txt = (tg + ' ' + String(b.titulo || '') + ' ' + b.items.join(' ')).toLowerCase();
+  if(/fuerza/.test(txt)) return 'fuerza';
+  if(/hipertrof|bi-?set|drop-?set|myo/.test(txt)) return 'hipertrofia';
+  if(/accesorio|core|plancha/.test(txt)) return 'core';
+  if(/cardio|cinta|finisher/.test(txt)) return 'metcon';
+  const mr = b.items.join(' ').match(/(?:^|\s)\d+x(\d+)/);
+  if(mr && parseInt(mr[1], 10) <= 6) return 'fuerza';
+  return 'hipertrofia';
+}
+const IMP_CAT_DE_MODALIDAD = { fuerza:'strength', hipertrofia:'strength', core:'accessory', calentamiento:'warmup', metcon:'metcon' };
 function impCerrarBloqueSports(b){
   if(!b || b._cerrado) return;
   b._cerrado = true;
   const restos = [];
+  const tagOriginal = b.tag;
   b.items = b.items.map(it => {
     if(typeof it === 'string') return it;
     if(it.d.rest) restos.push(it.d.rest);
@@ -4258,14 +4280,17 @@ function impCerrarBloqueSports(b){
   }).filter(Boolean);
   /* el título es el nombre del ejercicio: si el cuerpo arranca directo con la
      dosis, el nombre pasa a ser su primera línea (es lo que escanea el video) */
-  if(b.titulo && (!b.items.length || /^\d+x/.test(b.items[0])) && !/^(warm|calent|cardio)/i.test(b.titulo)){
-    b.items.unshift(b.titulo);
-    /* el encabezado pasa a ser la etiqueta del delimitador ("Bloque 1",
-       "Fuerza", "Accesorio"): el alumno ve "BLOQUE 1 · PRESS BANCA" en vez del
-       nombre duplicado (y el auditor del Builder no lo rellena con "Bloque") */
-    b.titulo = impTituloDeTag(b.tag);
+  /* el NOMBRE del ejercicio es el título del bloque (nunca "Bloque N" si hay un nombre
+     identificable) y el textarea queda sólo con la prescripción: si el bloque no trae
+     nombre en el delimitador pero su primera línea es un nombre (y hay un único
+     ejercicio), esa línea pasa a ser el título */
+  const nGrupos = b.items.filter(l => /^\d+x/.test(l)).length;
+  if(!b.titulo && b.items.length && nGrupos <= 1){
+    const p = b.items[0];
+    if(!/^\d+x|^A\d+[.)]|^\[|^(?:rest|tempo|rir)\b/i.test(p) && p.length <= 60 && !lineaSoloDosisSB(p)){ b.titulo = p; b.items.shift(); }
   }
   if(!b.titulo && b.tag) b.titulo = impTituloDeTag(b.tag);
+  b.modalidad = impModalidadSB(b, tagOriginal);
   if(restos.length) b.rest = restos[0];
   delete b._g;
 }
@@ -4468,6 +4493,7 @@ function crearBloqueImportado(b, cf){
   /* Sports: el descanso del bloque (Rest M:SS) también queda como dato del
      bloque; el que lee el alumno es el "Rest Ns" de la línea de dosis */
   if(!cf && b.rest) bl.restSeconds = b.rest;
+  if(!cf && b.modalidad){ bl.modalidad = b.modalidad; bl.category = IMP_CAT_DE_MODALIDAD[b.modalidad] || bl.category; }
   return bl;
 }
 /* primera línea que impidió el parseo (ni cabecera de día, ni FOCO, ni etiqueta) */
@@ -4570,6 +4596,9 @@ function ejecutarImportacion(texto, modo){
      volvía a dibujar con el texto viejo) y el modo vuelve a "Día activo" para
      que el cambio automático a semana no quede pegado en la próxima importación */
   _impTexto = ''; _impModo = 'dia';
+  /* lista compacta: los bloques recién importados quedan colapsados (sólo la tira con los títulos reales) */
+  window.__colBloques = window.__colBloques || {};
+  creados.forEach(id => { window.__colBloques[id] = true; });
   guardarAhora();
   renderBuilder();
   /* verificación: los bloques tienen que estar pintados en el panel del día;
@@ -4950,6 +4979,23 @@ function nombreEjercicioSB(linea){
   if(!t || RX_NOEJ_METRICA.test(t) || !/[a-záéíóúñ]/i.test(t)) return '';
   return t;
 }
+/* directiva ("Extracción del título de bloque"): en un bloque de Pizarra Sports el
+   NOMBRE del ejercicio vive en el título del bloque y el textarea sólo lleva la
+   prescripción (series, reps, tempo, RIR, descanso). Para el escaneo de videos, el
+   volumen y la app del alumno el nombre se antepone virtualmente a las líneas
+   (itemsConNombreSB) cuando el textarea no trae uno propio. */
+const RX_TITULO_GENERICO = /^(?:bloque\s*\d*|fuerza|hipertrofia|accesorio|pir[aá]mide|core|cardio|warm[\s-]*up|activaci[oó]n|estabilidad.*|carga.*|tiempo.*)$/i;
+function tituloEsNombreEj(t){
+  t = String(t || '').trim();
+  return !!t && !RX_TITULO_GENERICO.test(t) && !!nombreEjercicioSB(t);
+}
+function itemsConNombreSB(titulo, items){
+  const arr = Array.isArray(items) ? items : [];
+  if(!tituloEsNombreEj(titulo)) return arr;
+  const primera = String(arr.find(function(l){ return String(l || '').trim(); }) || '').trim();
+  if(primera && !lineaSoloDosisSB(primera)) return arr;        /* ya trae su propio nombre */
+  return [String(titulo).trim()].concat(arr);
+}
 function detectarEjerciciosSports(texto){
   const lineas = String(texto || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
   const vistos = {}, out = [];
@@ -5020,7 +5066,7 @@ function resolverVideosBloqueSports(b){
   const vistos = {};
   const out = [];
   const dismissed = b.videosDismissed || [];
-  const texto = (b.items || []).join('\n');
+  const texto = itemsConNombreSB(b.titulo, b.items || []).join('\n');
   detectarEjerciciosSports(texto).forEach(function(d){
     const k = nrmChip(d.nombre);
     if(!k || vistos[k] || dismissed.indexOf(k) >= 0 || dismissed.indexOf(stemNombreEj(d.nombre)) >= 0) return;
@@ -5055,7 +5101,7 @@ function alertasChipsSports(bl, b){
   const ta = bl.querySelector('textarea[data-bf="items"]');
   if(!ta) return;
   const ath = active();
-  const detectados = detectarEjerciciosSports(ta.value);
+  const detectados = detectarEjerciciosSports(itemsConNombreSB(b.titulo, String(ta.value || '').split('\n')).join('\n'));
   let caja = bl.querySelector('.sb-alerts');
   const conAlerta = detectados.map(function(d){
     if(!d.ex) return { d: d, alertas: [] };
@@ -5366,6 +5412,11 @@ function renderDay(){
     '</p></div></div>';
   }
 
+  if(d.bloques.length > 1){
+    h += '<div class="row" style="gap:6px;margin:0 0 10px;justify-content:flex-end">' +
+      '<button type="button" class="btn ghost xs" data-bcolall="1">▸ Contraer todo</button>' +
+      '<button type="button" class="btn ghost xs" data-bcolall="0">▾ Expandir todo</button></div>';
+  }
   d.bloques.forEach((b, bi) => {
     const T = TIPOS[b.tipo] || TIPOS.block;
     const al = blockAlerts(ath, b);
@@ -5401,10 +5452,12 @@ function renderDay(){
        que este validador no toca -- nunca se marca un bloque de Pizarra
        como "sin dosis". */
     const sinDosis = !esBloqueCF && bloqueSinDosis(b);
-    h += '<div class="block ' + T.cls + ' ' + (w==='danger'?'bad':'') + (esBloqueCF ? ' jp-cf-blockcard' : '') + '">' +
+    const bloqueColapsado = !!(window.__colBloques && window.__colBloques[b.id]);
+    h += '<div class="block ' + T.cls + ' ' + (w==='danger'?'bad':'') + (esBloqueCF ? ' jp-cf-blockcard' : '') + (bloqueColapsado ? ' b-col' : '') + '">' +
       '<div class="block-h">' +
+        '<button type="button" class="icon-btn blk-col" data-bcol="' + b.id + '" title="Contraer / expandir este bloque" aria-label="Contraer o expandir bloque">' + (bloqueColapsado ? '▸' : '▾') + '</button>' +
         '<span class="pill ' + (b.tipo==='finisher'?'red':(b.tipo==='hyrox'?'teal':(b.tipo==='superset'?'gold':''))) + '">' + T.ic + ' ' + pillLb + '</span>' +
-        '<input class="bt" data-bf="titulo" data-b="' + b.id + '" value="' + esc(b.titulo||'') + '" placeholder="' + (esBloqueCF ? 'Título del bloque (ej. El Cierre, Barbell Cycling)' : 'Título del bloque') + '">' +
+        '<input class="bt" data-bf="titulo" data-b="' + b.id + '" value="' + esc(b.titulo||'') + '" placeholder="' + (esBloqueCF ? 'Título del bloque (ej. El Cierre, Barbell Cycling)' : (esBloqueSportsPizarra ? 'Nombre del ejercicio (ej. Press banca)' : 'Título del bloque')) + '">' +
         '<button class="icon-btn ai" data-bai="' + b.id + '" title="Nombrar con IA">🪄</button>' +
         '<div class="spacer"></div>' +
         '<button class="icon-btn" data-bmove="up" data-b="' + b.id + '" title="Subir">▲</button>' +
@@ -6352,7 +6405,7 @@ function calcularVolumenSemanal(p, weekIdx){
 function seriesPizarraPorEjercicio(b){
   const res = [];
   let ultimoNombre = '';
-  (b.items || []).forEach(raw => {
+  itemsConNombreSB(b.titulo, b.items || []).forEach(raw => {
     const linea = String(raw || '').trim();
     if(!linea) return;
     const dosis = parsearDosisSports(linea);
@@ -6905,6 +6958,19 @@ function bindBuilder(){
       save(); renderBuilder();
       toast('✅ ' + parsed.length + ' bloque(s) creado(s) desde el texto pegado');
       return;
+    }
+    if(t.dataset.bcol){
+      const blq = t.closest('.block'); if(!blq) return;
+      const col = !blq.classList.contains('b-col');
+      blq.classList.toggle('b-col', col); t.textContent = col ? '▸' : '▾';
+      (window.__colBloques = window.__colBloques || {})[t.dataset.bcol] = col;
+      return;
+    }
+    if(t.dataset.bcolall !== undefined){
+      const dAct = curDay(); if(!dAct) return;
+      window.__colBloques = window.__colBloques || {};
+      dAct.bloques.forEach(x => { window.__colBloques[x.id] = t.dataset.bcolall === '1'; });
+      renderBuilder(); return;
     }
     if(t.dataset.impmodo){
       _impModo = t.dataset.impmodo;
@@ -15421,7 +15487,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const tituloBloqueEnfasis = tituloBloqueM ? tituloBloqueM[2].trim() : '';
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
         '<div class="jp-sb-tag">[ SPORTS &middot; ' + (esCalentamiento ? '🔥 ACTIVACI\\u00d3N' : '💪 BLOQUE') + ' ]</div>' +
-        '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>' +
+        (block.ocultaTituloTablero ? '' : '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>') +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         (duracionEstimada ? '<div class="jp-sb-duracion">\\u23f1 TIEMPO ESTIMADO: ' + duracionEstimada + ' MINUTOS</div>' : '') +
         filas +
@@ -34934,6 +35000,10 @@ function buildProgramConfig(ath){
            viajan al alumno para que la Pizarra CrossFit tampoco los muestre */
         if(bloqueCF && Array.isArray(b.videosDismissed) && b.videosDismissed.length) out.videosDismissed = b.videosDismissed.slice();
         out.items = (b.items||[]).slice();
+        if(!bloqueCF && b.sportsPizarra){
+          const conNombre = itemsConNombreSB(b.titulo, out.items);
+          if(conNombre.length !== out.items.length){ out.items = conNombre; out.ocultaTituloTablero = true; }
+        }
         /* en CrossFit el video sólo aparece si el coach pegó el link en la línea
            -- salvo Accessory, que ya auto-matchea arriba como Bodybuilding */
         if(bloqueCF && !accesorioConVideo){
@@ -34997,7 +35067,7 @@ function buildProgramConfig(ath){
          lado del alumno lee block.weekItems[weekIdx] para S2/S3/S4 -- sin
          copiarlo acá al objeto compilado, la proyección generada en el
          Builder (ondularMesocicloAutomatico()) nunca llegaría al teléfono. */
-      if(Array.isArray(b.weekItems)) out.weekItems = b.weekItems.map(arr => Array.isArray(arr) ? arr.slice() : arr);
+      if(Array.isArray(b.weekItems)) out.weekItems = b.weekItems.map(arr => Array.isArray(arr) ? (out.ocultaTituloTablero ? itemsConNombreSB(b.titulo, arr).slice() : arr.slice()) : arr);
       if(b.cfFmt) out.boardFmt = b.cfFmt;
       if(b.cfParam) out.cfParam = b.cfParam;
       if(b.cfId) out.blockId = b.cfId;
@@ -53793,7 +53863,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       const vistos = {};
       lista = [];
       const dismissed = b.videosDismissed || [];
-      detectarEjerciciosSports(ta.value).forEach(function(d){
+      detectarEjerciciosSports(itemsConNombreSB(b.titulo, String(ta.value || '').split('\n')).join('\n')).forEach(function(d){
         const k = nrm(d.nombre);
         if(!k || vistos[k] || dismissed.indexOf(k) >= 0 || dismissed.indexOf(stemNombreEj(d.nombre)) >= 0) return;
         vistos[k] = 1;
@@ -54290,7 +54360,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   /* recálculo en vivo de los chips mientras el coach escribe */
   let pend = null;
   document.addEventListener('input', e => {
-    const ta = e.target.closest('textarea[data-bf="items"], textarea[data-bf="movements"]');
+    const ta = e.target.closest('textarea[data-bf="items"], textarea[data-bf="movements"], input[data-bf="titulo"]');
     if(!ta) return;
     const bl = ta.closest('.block');
     if(!bl) return;
