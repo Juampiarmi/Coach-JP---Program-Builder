@@ -4098,12 +4098,28 @@ const IMP_FASES = [
   { rx:/^(warm\s*-?\s*up|calentamiento|entrada\s+en\s+calor)$/i,                          fase:'warmup',    lb:'WARM-UP' },
   { rx:/^(skill\s*\/\s*strength|skill|strength|fuerza)$/i,                                   fase:'strength',  lb:'SKILL / STRENGTH' },
   { rx:/^(hipertrofia|hypertrophy)$/i,                                                        fase:'strength',  lb:'HIPERTROFIA' },
+  { rx:/^(pir[aá]mide|pyramid)$/i,                                                            fase:'strength',  lb:'PIRÁMIDE' },
   { rx:/^(wod\s*\/\s*metcon|wod|met\s*-?\s*con)$/i,                                          fase:'metcon',    lb:'WOD / METCON' },
   { rx:/^(accessory\s*\/\s*cool\s*-?\s*down|accessory|accesorios?|cool\s*-?\s*down|enfriamiento)$/i, fase:'accessory', lb:'ACCESSORY / COOLDOWN' },
   { rx:/^(hyrox(\s*\/\s*stations?)?|hyrox\s+stations?)$/i,                                    fase:'cardio',    lb:'HYROX STATIONS' },
   { rx:/^(endurance|2\s*[ºo°]?\s*turno.*)$/i,                                                 fase:'endurance', lb:'2º TURNO · ENDURANCE' }
 ];
-const IMP_RX_DIA   = /^\s*(?:={2,}|#{2,})\s*d[ií]a\s*(\d+)?\s*[:\-–.]?\s*(.*?)\s*(?:={2,}|#{2,})?\s*$/i;
+/* cabeceras de día admitidas (cualquier combinación de marcadores):
+     "=== DÍA 1: Título ===", "--- DÍA 1: Título ---", "DÍA 1: Título",
+     "# DÍA 1:", "### Día 1 - Título", "**DÍA 1**", "DIA 2"
+   Con número no hace falta decoración (pero tras el número sólo puede venir
+   ":", "-" o el final: "Día 3 de la semana..." NO es una cabecera); sin
+   número se exige decoración de al menos 2 marcadores ("=== DÍA ===") */
+const IMP_RX_DIA_NUM = /^\s*(?:[-=#*_~]+\s*)?d[ií]a\s*(\d+)\s*(?:[:.\-–—]\s*(.*?))?\s*(?:[-=#*_~]+)?\s*$/i;
+const IMP_RX_DIA_SIN = /^\s*[-=#*_~]{2,}\s*d[ií]a\b\s*[:.\-–—]?\s*(.*?)\s*(?:[-=#*_~]+)?\s*$/i;
+function impMatchDia(t){
+  const limpiar = s => String(s || '').replace(/^[\s\-=#*_~:]+|[\s\-=#*_~]+$/g, '').trim();
+  let m = String(t || '').match(IMP_RX_DIA_NUM);
+  if(m) return { num: parseInt(m[1], 10), titulo: limpiar(m[2]) };
+  m = String(t || '').match(IMP_RX_DIA_SIN);
+  if(m) return { num: null, titulo: limpiar(m[1]) };
+  return null;
+}
 const IMP_RX_FOCO  = /^[\s*_>\-–•·]*(?:foco(?:\s+t[aá]ctico)?|briefing|stimulus(?:\s+briefing)?)\s*[*_]*\s*:\s*[*_]*\s*(.*?)[*_]*\s*$/i;
 /* delimitador tolerante: admite decoración delante (viñetas, ###, **, emoji,
    "1.") y detrás del corchete (**, ":", "-", "|") -- texto pegado desde un
@@ -4134,7 +4150,7 @@ const AVISO_LETRAS = 'Bloques "A) / B) / C)": la fase se infirió del texto -- r
    por palabra clave */
 const IMP_FASES_SOFT = [
   { rx:/warm|calent/i,                                        fase:'warmup' },
-  { rx:/skill|strength|fuerza|hipertrofia|hypertrophy|weightlifting|halterofilia/i,  fase:'strength' },
+  { rx:/skill|strength|fuerza|hipertrofia|hypertrophy|pir[aá]mide|pyramid|weightlifting|halterofilia/i,  fase:'strength' },
   { rx:/wod|met\s*-?\s*con|amrap|emom|for\s*time|chipper|tabata/i, fase:'metcon' },
   { rx:/access|accesor|cool\s*-?\s*down|enfriamiento|movilidad/i, fase:'accessory' },
   { rx:/hyrox|station/i,                                      fase:'cardio' },
@@ -4256,15 +4272,17 @@ function parsearImportacion(texto, sports){
   let dia = null, bloque = null, enFoco = false, campoAct = '';
   const cerrar = () => { if(sports && bloque) impCerrarBloqueSports(bloque); };
   const nuevoDia = (num, titulo) => { cerrar(); dia = { num: num, titulo: titulo || '', foco: '', bloques: [] }; dias.push(dia); bloque = null; enFoco = false; campoAct = ''; return dia; };
-  String(texto || '').split(/\r?\n/).forEach((raw, i) => {
+  const arr = String(texto || '').split(/\r?\n/);
+  arr.forEach((raw, i) => {
     const l = raw.replace(/\s+$/, '');
     const t = l.trim();
     /* una línea en blanco corta la continuación del FOCO: antes, todo el
        texto posterior (incluidos bloques cuyo delimitador no se reconocía)
        quedaba tragado dentro del foco y el día se importaba sin bloques */
     if(!t){ enFoco = false; campoAct = ''; return; }
-    let m = t.match(IMP_RX_DIA);
-    if(m){ nuevoDia(m[1] ? parseInt(m[1], 10) : null, (m[2] || '').trim()); return; }
+    const dm = impMatchDia(t);
+    if(dm){ nuevoDia(dm.num, dm.titulo); return; }
+    let m;
     if(!dia) nuevoDia(null, '');
     m = t.match(IMP_RX_FOCO);
     if(m){ dia.foco = (dia.foco ? dia.foco + '\n' : '') + (m[1] || '').trim(); enFoco = true; campoAct = ''; return; }
@@ -4297,7 +4315,7 @@ function parsearImportacion(texto, sports){
       if(!fase && /^bloque\s*\d*$/i.test(tag)){ const tt = (m[2] || '').trim(); fase = sports ? inferirFaseSports(tt) : inferirFaseCF(tt); f = null; }
       if(fase){
         cerrar();
-        bloque = { fase: fase, titulo: (m[2] || '').trim(), items: [], tag: tag, lb: (f && !sports) ? f.lb : tag.toUpperCase() }; dia.bloques.push(bloque); enFoco = false;
+        bloque = { fase: fase, titulo: (m[2] || '').trim().replace(/^\[\s*|\s*\]$/g, '').trim(), items: [], tag: tag, lb: (f && !sports) ? f.lb : tag.toUpperCase() }; dia.bloques.push(bloque); enFoco = false;
         /* "[BLOQUE 1] Press banca 4x8 @ RIR 2 Rest 2:00": nombre y dosis en el mismo renglón */
         if(sports && bloque.titulo && impDosisSB(bloque.titulo).nombre){ const raw = bloque.titulo; bloque.titulo = ''; impPushLineaSports(bloque, raw, avisos); }
         return;
@@ -4322,10 +4340,31 @@ function parsearImportacion(texto, sports){
         return;
       }
     }
+    /* Sports: una línea "Nombre 4x8" / "Nombre" + línea de dosis abre un bloque
+       nuevo aunque no haya corchetes (cuando el bloque actual ya tiene la dosis
+       de su ejercicio, o todavía no hay bloque) */
+    if(sports && !/^[\[(]/.test(t) && !/^[A-F]\d+[.)]/i.test(t)){
+      const xi = impDosisSB(t);
+      const sigL = (arr[i + 1] || '').trim();
+      const nombreSolo = !xi.tieneDosis && t.length <= 60 && !/^[\-–•*#]/.test(t) && !!sigL && impDosisSB(sigL).soloDosis;
+      if((xi.nombre || nombreSolo) && (!bloque || (bloque._g && bloque._g.d.sets))){
+        cerrar();
+        const nB = dia.bloques.length + 1;
+        bloque = { fase: 'strength', titulo: '', items: [], tag: 'BLOQUE ' + nB, lb: 'BLOQUE ' + nB };
+        dia.bloques.push(bloque); enFoco = false; campoAct = '';
+      }
+    }
     if(enFoco && !bloque){ dia.foco += '\n' + t; return; }
     if(!bloque){
-      bloque = { fase: sports ? 'strength' : 'metcon', titulo: '', items: [] }; dia.bloques.push(bloque);
-      avisos.push('Línea ' + (i + 1) + ': hay texto antes del primer delimitador de bloque -- se agrupó en un bloque ' + (sports ? 'FUERZA' : 'WOD/METCON') + ' sin título');
+      /* Sports: texto suelto sin estructura NO se convierte en un bloque fantasma
+         (antes importaba "Hoy toca pecho..." como bloque y parecía que todo andaba
+         bien): se avisa con el número de línea y se ignora */
+      if(sports){
+        avisos.push('Línea ' + (i + 1) + ': «' + t.slice(0, 40) + (t.length > 40 ? '…' : '') + '» no pertenece a ningún bloque ([BLOQUE 1], [FUERZA]…) -- se ignoró');
+        return;
+      }
+      bloque = { fase: 'metcon', titulo: '', items: [] }; dia.bloques.push(bloque);
+      avisos.push('Línea ' + (i + 1) + ': hay texto antes del primer delimitador de bloque -- se agrupó en un bloque WOD/METCON sin título');
     }
     if(sports) impPushLineaSports(bloque, t, avisos); else bloque.items.push(t);
   });
@@ -4391,6 +4430,21 @@ function crearBloqueImportado(b, cf){
   if(!cf && b.rest) bl.restSeconds = b.rest;
   return bl;
 }
+/* primera línea que impidió el parseo (ni cabecera de día, ni FOCO, ni etiqueta) */
+function impMensajeSinBloques(texto, cf){
+  const ls = String(texto || '').split(/\r?\n/);
+  let prob = null;
+  for(let i = 0; i < ls.length; i++){
+    const t = ls[i].trim();
+    if(!t) continue;
+    if(impMatchDia(t) || IMP_RX_FOCO.test(t) || IMP_RX_ETIQ.test(t)) continue;
+    prob = { n: i + 1, t: t }; break;
+  }
+  const ej = cf ? '[WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN]' : '[BLOQUE 1], [FUERZA], [HIPERTROFIA], [ACCESORIO], [PIRÁMIDE]';
+  return '⚠ No se detectó ningún bloque. ' +
+    (prob ? 'La línea ' + prob.n + ' («' + prob.t.slice(0, 48) + (prob.t.length > 48 ? '…' : '') + '») no es un delimitador de bloque válido. ' : '') +
+    'Usá ' + ej + ' + nombre, o "Nombre" seguido de "4 Sets: 8-10 reps". No se cambió nada.';
+}
 function ejecutarImportacion(texto, modo){
   const p = plan(S.activeId), ath = active();
   if(!p || !ath){ toast('Seleccioná un alumno/a primero', 'err'); return false; }
@@ -4404,13 +4458,13 @@ function ejecutarImportacion(texto, modo){
   }
   const totalBloques = r.dias.reduce((s, d) => s + d.bloques.length, 0);
   if(!r.dias.length || !r.dias.some(d => d.bloques.length || d.titulo || d.foco)){
-    toast('No se detectó nada para importar: usá "=== DÍA 1: Título ===" y delimitadores como ' + (esPlanCFActivo(p) ? '[WARM-UP]' : '[BLOQUE 1] / [FUERZA]'), 'warn'); return false;
+    toast(impMensajeSinBloques(texto, esPlanCFActivo(p)), 'err'); return false;
   }
   /* si el texto no trae NI UN bloque no se toca nada (antes se importaban
      título y foco y el día quedaba vacío: "DÍA VACÍO"): se avisa y se deja
      la vista previa con el detalle para corregir los delimitadores */
   if(!totalBloques){
-    toast('No se detectó ningún bloque: revisá los delimitadores (' + (esPlanCFActivo(p) ? '[WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN]' : '[BLOQUE 1], [FUERZA], [HIPERTROFIA], [ACCESORIO]') + '). No se cambió nada.', 'err');
+    toast(impMensajeSinBloques(texto, esPlanCFActivo(p)), 'err');
     return false;
   }
   const cf = esPlanCFActivo(p);
@@ -4472,6 +4526,10 @@ function ejecutarImportacion(texto, modo){
      funcionado */
   const primero = asign.find(a => a.dia.bloques.length);
   if(primero) S.ui.day = primero.idx;
+  /* éxito: el textarea se vacía ANTES de repintar (si no, el importador se
+     volvía a dibujar con el texto viejo) y el modo vuelve a "Día activo" para
+     que el cambio automático a semana no quede pegado en la próxima importación */
+  _impTexto = ''; _impModo = 'dia';
   guardarAhora();
   renderBuilder();
   /* verificación: los bloques tienen que estar pintados en el panel del día;
