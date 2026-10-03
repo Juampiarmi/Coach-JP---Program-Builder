@@ -4,6 +4,7 @@ import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL } from './b
 import { BRAND, nutritionSvg, shieldSvg } from './brand';
 import { CITES } from './evidence';
 import { FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
+import { SCAN_PROMPT } from './scanner';
 import type { AthletePlan, DayMode } from './types';
 
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
@@ -111,6 +112,8 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     categories: SHOP_CATEGORY,
     categoryOrder: SHOP_ORDER,
     manifest: { ...manifest, icons: [] },
+    // Prompt del análisis de foto en el celular del atleta (la API key la carga el atleta en su dispositivo; nunca viaja en el plan).
+    scanPrompt: `${SCAN_PROMPT}\nAgregá a cada item "leucine" (g estimados de leucina para esa porción).`,
   };
 }
 

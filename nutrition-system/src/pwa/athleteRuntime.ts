@@ -1,6 +1,6 @@
 // Runtime vanilla JS de la PWA del atleta. Se embebe como texto inline en el index.html exportado.
 // Es un string (no un módulo importado) para que ningún bundler le inyecte código de HMR o helpers.
-// Regla: sin backticks ni ${ } dentro del runtime.
+// Regla: sin backticks ni interpolaciones de template dentro del runtime.
 const runtime = String.raw`
 (function () {
   'use strict';
@@ -40,7 +40,24 @@ const runtime = String.raw`
     panel: null,
     itab: 'ios',
     photo: null,
+    dialOpen: store.get('dialOpen', false),
+    extras: store.get('extras:' + today, {}),
+    aiCfg: false,
+    scan: null,
+    scanBusy: false,
+    scanErr: null,
+    phMeal: '',
+    phNote: '',
   };
+
+  // Clave de IA propia del atleta: vive SOLO en el localStorage de este dispositivo (nunca en el plan exportado).
+  var AI_KEY = 'coachjp-pwa:gemini-key';
+  function getKey() { try { return localStorage.getItem(AI_KEY) || ''; } catch (e) { return mem[AI_KEY] || ''; } }
+  function setKey(v) { mem[AI_KEY] = v; try { v ? localStorage.setItem(AI_KEY, v) : localStorage.removeItem(AI_KEY); } catch (e) {} }
+
+  function isStandalone() {
+    try { return !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches); } catch (e) { return false; }
+  }
 
   var $ = function (s) { return document.querySelector(s); };
   var esc = function (s) {
@@ -54,24 +71,60 @@ const runtime = String.raw`
   var CHECK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
   // ---------- Datos del día ----------
+  var MACRO_GROUPS = { p: ['lean-protein', 'dairy-protein', 'eggs'], c: ['cereal', 'starch', 'fruit', 'sport-carb'], f: ['fat'] };
+  var ANCHOR_LABEL = { p: 'proteína', c: 'carbohidratos', f: 'grasas' };
+  function kcal100(f) { return f.p * 4 + f.c * 4 + f.f * 9; }
+
+  // Origen de un swap (valores por 100 g): alimento de la base o alimento libre (IA) por macro principal.
+  function srcOf(it) {
+    if (it.foodId && D.foods[it.foodId]) {
+      var f = D.foods[it.foodId], an = D.anchors[f.group];
+      return { name: f.name, group: f.group, anchor: an, p: f.p, c: f.c, f: f.f, groups: [f.group] };
+    }
+    if (!(it.grams > 0)) return null;
+    var k = 100 / it.grams, p = it.p * k, c = it.c * k, fa = it.f * k;
+    if (p + c + fa <= 0) return null;
+    var mp = it.macroPrincipal;
+    var a = mp === 'protein' ? 'p' : mp === 'carbs' ? 'c' : mp === 'fat' ? 'f' : (p * 4 >= c * 4 && p * 4 >= fa * 9 ? 'p' : c * 4 >= fa * 9 ? 'c' : 'f');
+    return { name: it.food, group: null, anchor: a, p: p, c: c, f: fa, groups: MACRO_GROUPS[a] };
+  }
+
+  function eqGrams(src, grams, to) {
+    var a = src.anchor;
+    return to[a] > 0 ? Math.max(5, Math.round((src[a] * grams) / to[a] / 5) * 5) : grams;
+  }
+
+  // Equivalencias calculadas: mismo aporte del macro ancla, ordenadas por densidad calórica más parecida.
+  function swapOptions(orig) {
+    var src = orig && srcOf(orig);
+    if (!src) return [];
+    var dens = kcal100(src);
+    return Object.keys(D.foods)
+      .filter(function (id) { var f = D.foods[id]; return id !== orig.foodId && src.groups.indexOf(f.group) >= 0 && f[src.anchor] > 0; })
+      .map(function (id) { var f = D.foods[id]; return { id: id, f: f, g: eqGrams(src, orig.grams, f), d: Math.abs(kcal100(f) - dens) }; })
+      .sort(function (a, b) { return a.d - b.d; })
+      .slice(0, 6);
+  }
+
   function resolveItem(it) {
     var sw = S.swaps[it.id];
-    if (!sw || !D.foods[sw] || !it.foodId || !D.foods[it.foodId]) return it;
-    var from = D.foods[it.foodId];
+    if (!sw || !D.foods[sw]) return it;
+    var src = srcOf(it);
+    if (!src) return it;
     var to = D.foods[sw];
-    var anchor = D.anchors[from.group];
-    var base = from[anchor] * it.grams;
-    var grams = to[anchor] > 0 ? Math.round(base / to[anchor] / 5) * 5 : it.grams;
+    var grams = eqGrams(src, it.grams, to);
     var k = grams / 100;
-    return { id: it.id, foodId: sw, food: to.name, grams: grams, p: to.p * k, c: to.c * k, f: to.f * k, leucine: to.leucine * k, swappedFrom: from.name };
+    return { id: it.id, foodId: sw, food: to.name, grams: grams, p: to.p * k, c: to.c * k, f: to.f * k, leucine: to.leucine * k, swappedFrom: src.name };
   }
 
   function mealsFor(mode) {
-    return D.meals
-      .filter(function (m) { return m.day === 'both' || m.day === mode; })
+    var base = D.meals.filter(function (m) { return m.day === 'both' || m.day === mode; });
+    var out = S.extras.__out;
+    if (out && out.length) base = base.concat([{ id: '__out', name: 'Fuera del plan · análisis IA', time: out[0].at || '12:00', day: mode, role: 'snack', mps: false, items: [] }]);
+    return base
       .sort(function (a, b) { return a.time.localeCompare(b.time); })
       .map(function (m) {
-        var items = m.items.map(resolveItem);
+        var items = m.items.map(resolveItem).concat(S.extras[m.id] || []);
         var t = items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
         return { m: m, items: items, t: t, kcal: t.p * 4 + t.c * 4 + t.f * 9 };
       });
@@ -83,7 +136,7 @@ const runtime = String.raw`
     var q = grams / ref.unit.grams;
     if (q < 0.5) return '';
     var qq = Math.round(q * 2) / 2, lab = ref.unit.label;
-    return '≈ ' + n1(qq) + ' ' + esc(qq > 1 && lab.length > 3 ? lab + 's' : lab);
+    return '≈ ' + n1(qq) + ' ' + esc(qq > 1 && lab.length > 3 ? (/ón$/.test(lab) ? lab.slice(0, -2) + 'ones' : lab + 's') : lab);
   }
 
   function leuTip(need) {
@@ -142,33 +195,55 @@ const runtime = String.raw`
 
   function dial(mode, list) {
     var start = toMin(D.training.time), end = start + D.training.minutes, nowMin = now.getHours() * 60 + now.getMinutes();
+    var inWindow = mode === 'on' && nowMin >= start - 90 && nowMin <= end + 60;
+    var next = null;
+    list.forEach(function (x) { var t = toMin(x.m.time); if (!S.checks[x.m.id] && t >= nowMin && (!next || t < toMin(next.m.time))) next = x; });
+    var info = next
+      ? '<b>' + esc(next.m.name) + '</b><span>' + esc(next.m.time) + ' · en ' + fmtDur(toMin(next.m.time) - nowMin) + '</span>'
+      : '<b>Sin comidas pendientes</b><span>Plan del día al día</span>';
+    var rel = '';
+    if (mode === 'on') {
+      if (nowMin < start) rel = 'Sesión ' + esc(D.training.time) + ' · en ' + fmtDur(start - nowMin);
+      else if (nowMin <= end) rel = 'SESIÓN EN CURSO · quedan ' + fmtDur(end - nowMin);
+      else rel = 'Sesión terminada hace ' + fmtDur(nowMin - end);
+    }
+    var sess = mode === 'on'
+      ? '<em class="' + (inWindow ? 'hot' : '') + '">' + (inWindow ? 'VENTANA PERI-ENTRENO ACTIVA · ' : '') + rel + '</em>'
+      : '<em>DÍA OFF · sin sesión</em>';
+    var nowLbl = (now.getHours() < 10 ? '0' : '') + now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+
+    var h = '<section class="card dialcard"><button class="dial-hd" data-dial="1" aria-expanded="' + (S.dialOpen ? 'true' : 'false') + '"><span class="tag">[ DIAL PERI-ENTRENO · 24 H ]</span>';
+    h += '<span class="dial-peek">' + (S.dialOpen ? '' : (next ? esc(next.m.time) + ' · ' + esc(next.m.name) : 'Día completo')) + '</span><span class="chev' + (S.dialOpen ? ' up' : '') + '"></span></button>';
+    if (!S.dialOpen) return h + '</section>';
+
+    var hand = inWindow ? '#F97316' : '#38BDF8';
     var s = '<svg viewBox="0 0 220 220" aria-hidden="true"><circle cx="110" cy="110" r="86" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="10"/>';
     if (mode === 'on') {
       s += '<path d="' + arc(86, (start - 90 + 1440) % 1440, (end + 60) % 1440) + '" fill="none" stroke="rgba(56,189,248,.22)" stroke-width="16"/>';
       s += '<path d="' + arc(86, start, end % 1440) + '" fill="none" stroke="#F97316" stroke-width="10" stroke-linecap="round"/>';
     }
     for (var hr = 0; hr < 24; hr++) {
-      var a = polar(hr % 6 ? 74 : 70, hr * 60), b = polar(78, hr * 60);
-      s += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="rgba(148,163,184,' + (hr % 6 ? '.25' : '.6') + ')" stroke-width="1.2"/>';
-      if (hr % 6 === 0) { var t = polar(58, hr * 60); s += '<text x="' + t[0].toFixed(1) + '" y="' + (t[1] + 3.5).toFixed(1) + '" text-anchor="middle" class="dl">' + (hr < 10 ? '0' : '') + hr + '</text>'; }
+      var a = polar(hr % 6 ? 74 : 69, hr * 60), b = polar(78, hr * 60);
+      s += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="rgba(148,163,184,' + (hr % 6 ? '.25' : '.7') + ')" stroke-width="' + (hr % 6 ? 1.2 : 1.8) + '"/>';
     }
+    [[0, '24:00'], [6, '06:00'], [12, '12:00'], [18, '18:00']].forEach(function (q) {
+      var t = polar(q[0] % 12 ? 50 : 56, q[0] * 60);
+      s += '<text x="' + t[0].toFixed(1) + '" y="' + (t[1] + 3.5).toFixed(1) + '" text-anchor="middle" class="dl">' + q[1] + '</text>';
+    });
     list.forEach(function (x) {
       var p = polar(86, toMin(x.m.time)), done = !!S.checks[x.m.id], peri = x.m.role === 'peri' || x.m.role === 'post';
       s += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="5.5" fill="' + (done ? '#38BDF8' : '#131B2A') + '" stroke="' + (peri ? '#F97316' : '#38BDF8') + '" stroke-width="2"/>';
     });
-    var hand = polar(48, nowMin);
-    s += '<line x1="110" y1="110" x2="' + hand[0].toFixed(1) + '" y2="' + hand[1].toFixed(1) + '" stroke="rgba(255,255,255,.75)" stroke-width="1.6" stroke-linecap="round"/><circle cx="110" cy="110" r="3" fill="#FFFFFF"/></svg>';
+    // Aguja de la hora actual: llega al anillo, con halo y color de la ventana (naranja = peri-entreno activo).
+    var tip = polar(86, nowMin);
+    s += '<line x1="110" y1="110" x2="' + tip[0].toFixed(1) + '" y2="' + tip[1].toFixed(1) + '" stroke="' + hand + '" stroke-width="2.4" stroke-linecap="round"/>';
+    s += '<circle cx="' + tip[0].toFixed(1) + '" cy="' + tip[1].toFixed(1) + '" r="9" fill="' + hand + '" opacity=".25"><animate attributeName="r" values="7;11;7" dur="2s" repeatCount="indefinite"/></circle>';
+    s += '<circle cx="' + tip[0].toFixed(1) + '" cy="' + tip[1].toFixed(1) + '" r="4.5" fill="' + hand + '" stroke="#0B0F17" stroke-width="1.5"/>';
+    s += '<circle cx="110" cy="110" r="3.5" fill="#FFFFFF"/>';
+    s += '<text x="110" y="132" text-anchor="middle" class="dnow" fill="' + hand + '">AHORA ' + nowLbl + '</text></svg>';
 
-    var next = null;
-    list.forEach(function (x) { var t = toMin(x.m.time); if (!S.checks[x.m.id] && t >= nowMin && (!next || t < toMin(next.m.time))) next = x; });
-    var info = next
-      ? '<b>' + esc(next.m.name) + '</b><span>' + esc(next.m.time) + ' · en ' + fmtDur(toMin(next.m.time) - nowMin) + '</span>'
-      : '<b>Sin comidas pendientes</b><span>Plan del día al día</span>';
-    var sess = mode === 'on'
-      ? (nowMin >= start - 90 && nowMin <= end + 60 ? '<em class="hot">VENTANA PERI-ENTRENO ACTIVA</em>' : '<em>Sesión ' + esc(D.training.time) + ' · ' + D.training.minutes + ' min</em>')
-      : '<em>DÍA OFF · sin sesión</em>';
-    var h = '<section class="card"><span class="tag">[ DIAL PERI-ENTRENO · 24 H ]</span><div class="dial">' + s + '<div class="dinfo"><small>PRÓXIMA INGESTA</small>' + info + sess + '</div></div>';
-    h += '<div class="legend"><span><i class="lg-s"></i>Sesión</span><span><i class="lg-w"></i>Ventana peri</span><span><i class="lg-m"></i>Comida</span><span><i class="lg-p"></i>Peri / post</span></div></section>';
+    h += '<div class="dial">' + s + '<div class="dinfo"><small>PRÓXIMA INGESTA</small>' + info + sess + '</div></div>';
+    h += '<div class="legend"><span><i class="lg-s"></i>Sesión</span><span><i class="lg-w"></i>Ventana peri</span><span><i class="lg-m"></i>Comida</span><span><i class="lg-p"></i>Peri / post</span><span><i class="lg-n"></i>Ahora</span></div></section>';
     return h;
   }
 
@@ -248,15 +323,50 @@ const runtime = String.raw`
       return open(bg, sh, h3);
     }
     if (S.panel === 'photo') {
-      var meals = mealsFor(S.mode);
-      var h4 = '<div class="tag">[ REVISIÓN DE COMIDA · FOTO → COACH ]</div><h3>Mandale tu plato al coach</h3>';
-      h4 += '<p class="muted" style="font-size:12.5px">Tu app no guarda claves de IA: la foto viaja a tu coach, que la analiza con el escáner de su consola y te ajusta el plan.</p>';
+      var meals = mealsFor(S.mode).filter(function (x) { return x.m.id !== '__out'; });
+      var key = getKey();
+      var h4 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ REVISIÓN DE COMIDA · FOTO ]</div><h3>' + (key ? 'Analizá tu plato con IA' : 'Mandale tu plato al coach') + '</h3>';
+      h4 += '<p class="muted" style="font-size:12.5px">' + (key
+        ? 'El análisis corre directo en tu celular con tu propia clave de Gemini. También podés mandarle la foto a tu coach.'
+        : 'La foto viaja a tu coach por WhatsApp. Si cargás tu propia clave de Gemini, la app analiza el plato acá mismo.') + '</p>';
       if (S.photo) h4 += '<img class="ph" src="' + S.photo.url + '" alt="Foto del plato">';
-      h4 += '<label class="lbl">¿Qué comida es?</label><select id="ph-meal" class="inp">' + meals.map(function (x) { return '<option>' + esc(x.m.time + ' · ' + x.m.name) + '</option>'; }).join('') + '<option>Fuera del plan</option></select>';
-      h4 += '<label class="lbl">Nota (opcional)</label><textarea id="ph-note" class="inp" rows="2" placeholder="Ej: comí afuera, cambié el arroz por papas"></textarea>';
-      h4 += '<div class="wbtns" style="margin-top:12px"><button data-photo="retake" class="ghost">Otra foto</button><button data-photo="send" class="cta">Enviar al coach</button></div>';
+      h4 += '<label class="lbl">¿Qué comida es?</label><select id="ph-meal" class="inp">' + meals.map(function (x) {
+        return '<option value="' + esc(x.m.id) + '"' + (S.phMeal === x.m.id ? ' selected' : '') + '>' + esc(x.m.time + ' · ' + x.m.name) + '</option>';
+      }).join('') + '<option value="__out"' + (S.phMeal === '__out' ? ' selected' : '') + '>Fuera del plan</option></select>';
+      h4 += '<label class="lbl">Nota (opcional)</label><textarea id="ph-note" class="inp" rows="2" placeholder="Ej: comí afuera, cambié el arroz por papas">' + esc(S.phNote) + '</textarea>';
+
+      if (S.scanBusy) h4 += '<div class="scan-busy"><span class="spin"></span>' + esc(S.scanBusy) + '</div>';
+      if (S.scanErr) h4 += '<div class="scan-err">⚠ ' + esc(S.scanErr) + '</div>';
+      if (S.scan) h4 += scanCard(S.scan);
+
+      h4 += '<div class="wbtns" style="margin-top:12px"><button data-photo="retake" class="ghost">Otra foto</button>';
+      if (key) h4 += '<button data-photo="ai" class="cta"' + (S.scanBusy ? ' disabled' : '') + '>[ ANALIZAR PLATO CON IA ]</button></div><div class="wbtns"><button data-photo="send" class="ghost">Enviar foto por WhatsApp al coach</button></div>';
+      else h4 += '<button data-photo="send" class="cta">Enviar foto por WhatsApp al coach</button></div>';
+
+      h4 += '<button class="cfg-link" data-aicfg="toggle">[ ⚙ CONFIGURAR MOTOR IA ]' + (key ? ' · CLAVE ACTIVA' : '') + '</button>';
+      if (S.aiCfg) {
+        h4 += '<div class="cfg"><label class="lbl" style="margin-top:0">API Key de Google Gemini</label><input id="ai-key" class="inp" type="password" autocomplete="off" spellcheck="false" placeholder="AIza..." value="' + esc(key) + '">';
+        h4 += '<p class="muted" style="font-size:11.5px;margin-top:6px">Se guarda solo en este dispositivo (localStorage), nunca se envía a tu coach ni queda en el plan. Modelo: gemini-3.5-flash-lite con respaldo gemini-3.5-flash. Creá tu clave gratis en aistudio.google.com.</p>';
+        h4 += '<div class="wbtns"><button data-aicfg="save">Guardar clave</button>' + (key ? '<button data-aicfg="clear" class="ghost">Borrar clave</button>' : '') + '</div></div>';
+      }
       return open(bg, sh, h4);
     }
+  }
+
+  function scanCard(r) {
+    var color = r.score >= 70 ? '#38BDF8' : r.score >= 40 ? '#F97316' : '#EF4444';
+    var h = '<div class="scan"><div class="row"><div style="min-width:0"><div class="tag">[ DESGLOSE DEL PLATO ]</div><b class="scan-nm">' + esc(r.dishName) + '</b></div>';
+    h += '<div class="score" style="border-color:' + color + ';color:' + color + '"><b>' + r.score + '</b><span>SCORE TÁCTICO</span></div></div>';
+    if (r.reason) h += '<p class="muted" style="font-size:12px;margin-top:4px">' + esc(r.reason) + '</p>';
+    h += '<div class="scan-items">';
+    r.items.forEach(function (i) {
+      h += '<div class="scan-it"><span class="g">' + n0(i.grams) + ' g</span><span class="fd">' + esc(i.food) + '</span><span class="mc">P' + n0(i.p) + ' C' + n0(i.c) + ' G' + n0(i.f) + '</span></div>';
+    });
+    var t = r.items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
+    h += '</div><div class="scan-tot"><b>' + n0(t.p * 4 + t.c * 4 + t.f * 9) + ' kcal</b><span>P ' + n0(t.p) + ' g</span><span>C ' + n0(t.c) + ' g</span><span>G ' + n0(t.f) + ' g</span><span class="' + (t.l >= D.threshold ? 'ok' : 'lo') + '">LEU ' + n1(t.l) + ' g</span></div>';
+    if (r.tips && r.tips.length) h += '<ul class="tips">' + r.tips.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
+    h += '<button class="add-meal" data-photo="add">[ + AGREGAR A LA COMIDA SELECCIONADA ]</button></div>';
+    return h;
   }
 
   function renderSheet() {
@@ -266,18 +376,18 @@ const runtime = String.raw`
     var meal = D.meals.filter(function (m) { return m.id === S.sheet.meal; })[0];
     var orig = meal && meal.items.filter(function (i) { return i.id === S.sheet.item; })[0];
     if (!orig) { S.sheet = null; return renderSheet(); }
-    var from = D.foods[orig.foodId];
-    var anchor = D.anchors[from.group];
-    var cur = S.swaps[orig.id] || orig.foodId;
-    var label = { p: 'proteína', c: 'carbohidratos', f: 'grasas' }[anchor];
-    var h = '<div class="tag">[ SMART SWAP · ' + esc(D.groupLabels[from.group]) + ' ]</div>';
-    h += '<p class="muted" style="font-size:13px;margin:6px 0 4px">Cualquiera de estas opciones aporta lo mismo en ' + label + ' (' + n0(from[anchor] * orig.grams / 100) + ' g).</p>';
-    Object.keys(D.foods).forEach(function (id) {
-      var f = D.foods[id];
-      if (f.group !== from.group || !(f[anchor] > 0)) return;
-      var g = id === orig.foodId ? orig.grams : Math.round((from[anchor] * orig.grams) / f[anchor] / 5) * 5;
-      var k = g / 100;
-      h += '<button class="opt' + (id === cur ? ' cur' : '') + '" data-pick="' + id + '"><span class="g">' + n0(g) + ' g</span><span class="fd">' + esc(f.name) + (id === orig.foodId ? ' · original' : '') + '<span>' + (unitHintFor(id, g) ? unitHintFor(id, g) + ' · ' : '') + n0(f.p * k) + ' g proteína · ' + n0(f.c * k) + ' g carbos · ' + n0(f.f * k) + ' g grasas</span></span></button>';
+    var src = srcOf(orig);
+    if (!src) { S.sheet = null; return renderSheet(); }
+    var cur = S.swaps[orig.id];
+    var opts = swapOptions(orig);
+    var ok = function (f, g) { var k = g / 100; return n0(f.p * k) + ' P · ' + n0(f.c * k) + ' C · ' + n0(f.f * k) + ' G'; };
+    var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ SMART SWAP · ' + esc(src.group ? D.groupLabels[src.group] : 'EQUIVALENCIA POR ' + ANCHOR_LABEL[src.anchor].toUpperCase()) + ' ]</div>';
+    h += '<h3>' + esc(src.name) + ' → equivalencias</h3>';
+    h += '<p class="muted" style="font-size:13px;margin:2px 0 4px">Todas aportan lo mismo en ' + ANCHOR_LABEL[src.anchor] + ' (' + n0(src[src.anchor] * orig.grams / 100) + ' g). Tocá una para reemplazar.</p>';
+    h += '<button class="opt' + (!cur ? ' cur' : '') + '" data-pick="__orig"><span class="g">' + n0(orig.grams) + ' g</span><span class="fd">' + esc(orig.food) + ' · original<span>' + n0(orig.p) + ' P · ' + n0(orig.c) + ' C · ' + n0(orig.f) + ' G</span></span></button>';
+    opts.forEach(function (o) {
+      var hint = unitHintFor(o.id, o.g);
+      h += '<button class="opt' + (o.id === cur ? ' cur' : '') + '" data-pick="' + esc(o.id) + '"><span class="g">' + n0(o.g) + ' g</span><span class="fd">' + esc(o.f.name) + '<span>' + (hint ? hint + ' · ' : '') + ok(o.f, o.g) + '</span></span><span class="go">›</span></button>';
     });
     open(bg, sh, h);
   }
@@ -295,6 +405,7 @@ const runtime = String.raw`
   function renderUnsafe() {
     var mode = S.mode;
     var tgt = D.targets[mode];
+    syncInstall();
     var list = mealsFor(mode);
     var eaten = list.reduce(function (a, x) {
       if (!S.checks[x.m.id]) return a;
@@ -312,7 +423,7 @@ const runtime = String.raw`
 
     h += '<section class="card"><div class="row"><span class="tag">[ TELEMETRÍA · ' + (mode === 'on' ? 'DÍA ON · ENTRENO' : 'DÍA OFF · DESCANSO') + ' ]</span><span class="hv">' + doneCount + '/' + list.length + ' COMIDAS</span></div>' + gauge(tgt, eaten) + '</section>';
 
-    h += '<div class="actions"><button data-panel="shop">[ LISTA DE COMPRAS ]</button><button data-panel="out">[ COMER FUERA ]</button><button data-photo="pick">[ FOTO → COACH ]</button></div>';
+    h += '<div class="actions"><button data-panel="shop">[ LISTA DE COMPRAS ]</button><button data-panel="out">[ COMER FUERA ]</button><button data-photo="pick">' + (getKey() ? '[ FOTO · IA ]' : '[ FOTO → COACH ]') + '</button></div>';
 
     h += hydration(mode);
     h += dial(mode, list);
@@ -328,9 +439,13 @@ const runtime = String.raw`
       h += '<section class="card meal' + (done ? ' done' : '') + '">';
       h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(m.name) + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar comida">' + CHECK + '</button></div>';
       h += '<div class="items">';
-      x.items.forEach(function (it) {
-        var canSwap = (it.foodId && D.foods[it.foodId] && D.swapGroups[D.foods[it.foodId].group] > 1) || it.swappedFrom;
+      x.items.forEach(function (it, idx) {
         var hint = unitHintFor(it.foodId, it.grams);
+        if (it.extra) {
+          h += '<div class="item extra"><span class="g">' + n0(it.grams) + ' g</span><span class="fd">' + esc(it.food) + '<s class="ia">Agregado por análisis IA · ' + n0(it.p) + ' P · ' + n0(it.c) + ' C · ' + n0(it.f) + ' G</s></span><button class="rm" data-rmextra="' + esc(m.id) + '|' + esc(it.id) + '" aria-label="Quitar">✕</button></div>';
+          return;
+        }
+        var canSwap = !!it.swappedFrom || swapOptions(m.items[idx]).length > 0;
         h += '<button class="item" ' + (canSwap ? 'data-swap="' + m.id + '|' + it.id + '"' : 'disabled') + '><span class="g">' + n0(it.grams) + ' g' + (hint ? '<em>' + hint + '</em>' : '') + '</span><span class="fd">' + esc(it.food) + (it.swappedFrom ? '<s>Reemplaza a: ' + esc(it.swappedFrom) + '</s>' : '') + '</span>' + (canSwap ? '<span class="sw">SWAP</span>' : '') + '</button>';
       });
       h += '</div>';
@@ -394,6 +509,7 @@ const runtime = String.raw`
       c.toBlob(function (blob) {
         if (S.photo) URL.revokeObjectURL(S.photo.url);
         S.photo = { blob: blob, url: URL.createObjectURL(blob) };
+        S.scan = null; S.scanErr = null; S.scanBusy = false;
         S.sheet = null; S.panel = 'photo'; renderSheet();
       }, 'image/jpeg', 0.82);
     };
@@ -402,8 +518,101 @@ const runtime = String.raw`
     photoInput.value = '';
   });
 
+  function mealLabel(id) {
+    if (id === '__out') return 'Fuera del plan';
+    var m = D.meals.filter(function (x) { return x.id === id; })[0];
+    return m ? m.time + ' · ' + m.name : '';
+  }
+
+  // ---------- Análisis de foto con IA en el dispositivo (Gemini, clave propia del atleta) ----------
+  var GEMINI_CHAIN = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+
+  function blobToB64(blob) {
+    return new Promise(function (res, rej) {
+      var r = new FileReader();
+      r.onload = function () { res(String(r.result).split(',')[1]); };
+      r.onerror = function () { rej(new Error('No se pudo leer la foto')); };
+      r.readAsDataURL(blob);
+    });
+  }
+
+  function callGemini(key, body, i) {
+    var model = GEMINI_CHAIN[i];
+    S.scanBusy = i === 0 ? 'ANALIZANDO PLATO · ' + model : '[ ! ] CAMBIANDO A MODELO DE RESPALDO (' + model + ')...';
+    renderSheet();
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (res.ok) {
+          var parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+          var text = parts.map(function (p) { return p.text || ''; }).join('');
+          if (!text) throw new Error(model + ' no devolvió contenido');
+          return text;
+        }
+        var msg = (data.error && data.error.message) || ('Gemini respondió ' + res.status);
+        var retry = res.status === 503 || res.status === 429 || res.status === 404 || res.status >= 500 || /UNAVAILABLE|high demand|overloaded|RESOURCE_EXHAUSTED|quota|no longer available|not found/i.test(msg);
+        if (retry && i + 1 < GEMINI_CHAIN.length) return callGemini(key, body, i + 1);
+        if (res.status === 400 && /api key|API_KEY/i.test(msg)) msg = 'La API Key no es válida. Revisala en [ ⚙ CONFIGURAR MOTOR IA ].';
+        throw new Error(msg);
+      });
+    });
+  }
+
+  function num(v, fb) { var n = typeof v === 'number' ? v : parseFloat(v); return isFinite(n) ? n : fb; }
+
+  function localScore(items) {
+    var t = items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
+    var kc = t.p * 4 + t.c * 4 + t.f * 9 || 1, ps = (t.p * 4) / kc, fs = (t.f * 9) / kc;
+    var veg = items.some(function (i) { return /ensalada|verdura|vegetal|tomate|lechuga|brocoli|zanahoria|zapallo|fruta|manzana|banana/i.test(i.food); });
+    var sc = Math.min(1, ps / 0.3) * 35 + Math.min(1, t.l / D.threshold) * 25 + (veg ? 20 : 0) + (fs <= 0.35 ? 20 : Math.max(0, 20 - (fs - 0.35) * 80));
+    return Math.round(Math.max(0, Math.min(100, sc)));
+  }
+
+  function analyzePhoto() {
+    var key = getKey();
+    if (!key || !S.photo || S.scanBusy) return;
+    S.scan = null; S.scanErr = null;
+    blobToB64(S.photo.blob)
+      .then(function (b64) {
+        return callGemini(key, {
+          contents: [{ role: 'user', parts: [{ text: D.scanPrompt }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }],
+          generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+        }, 0);
+      })
+      .then(function (text) {
+        var a = text.indexOf('{'), b = text.lastIndexOf('}');
+        var json = JSON.parse(a >= 0 ? text.slice(a, b + 1) : text);
+        var items = (json.items || []).filter(function (i) { return i && i.food && num(i.grams, 0) > 0; }).map(function (i) {
+          var p = Math.max(0, num(i.p, 0));
+          return { food: String(i.food), grams: Math.round(num(i.grams, 0)), p: p, c: Math.max(0, num(i.c, 0)), f: Math.max(0, num(i.f, 0)), leucine: Math.max(0, num(i.leucine, p * 0.08)) };
+        });
+        if (!items.length) throw new Error('No se reconocieron alimentos en la foto. Probá con otra toma, más cerca y con buena luz.');
+        var sc = num(json.score, NaN);
+        S.scan = { dishName: String(json.dishName || 'Plato analizado'), items: items, score: isFinite(sc) ? Math.round(Math.max(0, Math.min(100, sc))) : localScore(items), reason: json.scoreReason || '', tips: (json.tips || []).slice(0, 3) };
+      })
+      .catch(function (err) { S.scanErr = (err && err.message) || String(err); })
+      .then(function () { S.scanBusy = false; renderSheet(); });
+  }
+
+  function addScanToMeal() {
+    if (!S.scan) return;
+    var id = S.phMeal || (($('#ph-meal') || {}).value) || '__out';
+    var at = (now.getHours() < 10 ? '0' : '') + now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+    var stamp = Date.now().toString(36);
+    var add = S.scan.items.map(function (i, k) { return { id: 'ia-' + stamp + '-' + k, food: i.food, grams: i.grams, p: i.p, c: i.c, f: i.f, leucine: i.leucine, extra: true, at: at }; });
+    S.extras[id] = (S.extras[id] || []).concat(add);
+    store.set('extras:' + today, S.extras);
+    S.scan = null; S.panel = null;
+    haptic();
+    render();
+    toast(add.length + ' alimentos agregados a ' + mealLabel(id));
+  }
+
   function sendPhoto() {
-    var meal = ($('#ph-meal') || {}).value || '', note = ($('#ph-note') || {}).value || '';
+    var meal = mealLabel(S.phMeal || (($('#ph-meal') || {}).value) || ''), note = ($('#ph-note') || {}).value || '';
     var text = 'Revisión de comida · ' + D.athlete.name + '\nDía ' + S.mode.toUpperCase() + ' · ' + meal + (note ? '\nNota: ' + note : '') + '\n' + D.handle;
     var file = new File([S.photo.blob], 'plato-' + today + '.jpg', { type: 'image/jpeg' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -418,9 +627,27 @@ const runtime = String.raw`
 
   // ---------- Eventos ----------
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-dial],[data-close],[data-rmextra],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
+    if (ds.close) return closeSheet();
+    if (ds.dial) { S.dialOpen = !S.dialOpen; store.set('dialOpen', S.dialOpen); haptic(); return render(); }
+    if (ds.rmextra) {
+      var q = ds.rmextra.split('|');
+      S.extras[q[0]] = (S.extras[q[0]] || []).filter(function (x) { return x.id !== q[1]; });
+      if (!S.extras[q[0]].length) delete S.extras[q[0]];
+      store.set('extras:' + today, S.extras);
+      return render();
+    }
+    if (ds.aicfg === 'toggle') { S.aiCfg = !S.aiCfg; return renderSheet(); }
+    if (ds.aicfg === 'save') {
+      var kv = (($('#ai-key') || {}).value || '').trim();
+      if (!kv) return toast('Pegá tu API Key de Gemini');
+      setKey(kv); S.aiCfg = false; S.scanErr = null; toast('Motor IA activado en este dispositivo'); render(); return;
+    }
+    if (ds.aicfg === 'clear') { setKey(''); S.aiCfg = false; S.scan = null; toast('Clave borrada de este dispositivo'); render(); return; }
+    if (ds.photo === 'ai') return analyzePhoto();
+    if (ds.photo === 'add') return addScanToMeal();
     if (ds.itab) { S.itab = ds.itab; return renderSheet(); }
     if (ds.panel) { S.sheet = null; S.panel = ds.panel; return renderSheet(); }
     if (ds.cup !== undefined) {
@@ -452,13 +679,13 @@ const runtime = String.raw`
     } else if (ds.pick) {
       var meal = D.meals.filter(function (m) { return m.id === S.sheet.meal; })[0];
       var orig = meal.items.filter(function (it) { return it.id === S.sheet.item; })[0];
-      if (ds.pick === orig.foodId) delete S.swaps[orig.id];
+      if (ds.pick === '__orig' || ds.pick === orig.foodId) delete S.swaps[orig.id];
       else S.swaps[orig.id] = ds.pick;
       store.set('swaps', S.swaps);
       S.sheet = null;
       haptic();
       render();
-      toast('Alimento cambiado · porciones recalculadas');
+      toast(ds.pick === '__orig' ? 'Volviste al alimento original' : 'Alimento cambiado · porciones recalculadas');
     } else if (el.id === 'sheet-bg') {
       closeSheet();
     } else if (el.id === 'install') {
@@ -471,13 +698,27 @@ const runtime = String.raw`
     }
   });
 
+  document.addEventListener('input', function (e) {
+    if (e.target.id === 'ph-note') S.phNote = e.target.value;
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target.id === 'ph-meal') S.phMeal = e.target.value;
+  });
+
   // ---------- Instalación PWA (prompt nativo o guía iOS / Android) ----------
+  // Instalada (pantalla de inicio): el botón [ INSTALAR APP ] desaparece por completo.
+  function syncInstall() {
+    var btn = document.getElementById('install');
+    var solo = isStandalone();
+    document.body.classList.toggle('standalone', solo);
+    if (btn) btn.hidden = solo;
+  }
+  try { window.matchMedia('(display-mode: standalone)').addEventListener('change', syncInstall); } catch (e) {}
   var deferred = null;
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; });
-  window.addEventListener('appinstalled', function () { deferred = null; toast('App instalada · ya la tenés en tu inicio'); });
+  window.addEventListener('appinstalled', function () { deferred = null; syncInstall(); toast('App instalada · ya la tenés en tu inicio'); });
   function install() {
-    var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-    if (standalone) return toast('YA ESTÁ INSTALADA EN TU PANTALLA DE INICIO');
+    if (isStandalone()) return toast('YA ESTÁ INSTALADA EN TU PANTALLA DE INICIO');
     if (deferred) {
       deferred.prompt();
       deferred.userChoice.then(function () { deferred = null; });
