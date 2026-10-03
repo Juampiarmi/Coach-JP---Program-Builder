@@ -24,8 +24,19 @@ export function StoryTab() {
     if (canvas.current) drawStoryCard(canvas.current, plan);
   }, [plan, ready]);
 
-  const save = () => {
+  // Si una fuente termina de cargar más tarde (red lenta), se vuelve a dibujar.
+  useEffect(() => {
+    if (!document.fonts) return;
+    const redraw = () => canvas.current && drawStoryCard(canvas.current, usePlanStore.getState().plan);
+    document.fonts.addEventListener('loadingdone', redraw);
+    return () => document.fonts.removeEventListener('loadingdone', redraw);
+  }, []);
+
+  const save = async () => {
     if (!canvas.current) return;
+    // Re-render con las fuentes garantizadas justo antes de exportar el PNG 1080x1920.
+    await ensureFonts();
+    drawStoryCard(canvas.current, usePlanStore.getState().plan);
     const a = document.createElement('a');
     a.href = canvas.current.toDataURL('image/png');
     a.download = `coachjp-story-${slugify(plan.profile.name)}.png`;
@@ -33,13 +44,13 @@ export function StoryTab() {
   };
 
   return (
-    <Panel title="STORY CARD 9:16 · 1080×1920" tone="gold" right={<ImageIcon className="h-4 w-4 text-gold" />}>
+    <Panel title="STORY CARD 9:16 · 1080×1920" tone="fire" right={<ImageIcon className="h-4 w-4 text-fire" />}>
       <div className="flex flex-col items-center gap-4">
-        <canvas ref={canvas} className="w-full max-w-[340px] rounded-xl border border-line2 shadow-hud" style={{ aspectRatio: '9 / 16' }} />
+        <canvas ref={canvas} className="w-full max-w-[340px] rounded-xl border border-line" style={{ aspectRatio: '9 / 16' }} />
         <HudButton onClick={save} className="w-full max-w-[340px]">
           <Download className="h-4 w-4" /> Descargar PNG para Instagram
         </HudButton>
-        <p className="text-center font-mono text-[9.5px] tracking-[0.08em] text-steel">DIRECTIVA NUTRICIONAL · TONELAJE CALÓRICO ON/OFF · SELLO @COACHJP.TRAINING</p>
+        <p className="text-center font-mono text-[9.5px] tracking-[0.08em] text-mute">DIRECTIVA NUTRICIONAL · TONELAJE CALÓRICO ON/OFF · SELLO @COACHJP.TRAINING</p>
       </div>
     </Panel>
   );

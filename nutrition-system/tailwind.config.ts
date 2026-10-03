@@ -25,6 +25,7 @@ const config: Config = {
       },
       fontFamily: {
         display: ['Inter', '"Geist Sans"', 'system-ui', 'sans-serif'],
+        chakra: ['"Chakra Petch"', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
         sans: ['Inter', '"Geist Sans"', 'system-ui', 'sans-serif'],
       },

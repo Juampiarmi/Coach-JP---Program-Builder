@@ -1,4 +1,14 @@
 import type { Metadata, Viewport } from 'next';
+// Fuentes auto-alojadas (mismo origen): disponibles offline en la PWA y garantizadas para el canvas de la Story Card.
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
+import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource/jetbrains-mono/500.css';
+import '@fontsource/jetbrains-mono/700.css';
+import '@fontsource/chakra-petch/500.css';
+import '@fontsource/chakra-petch/700.css';
 import './globals.css';
 
 // Rutas de assets estáticos: next/metadata no antepone basePath, así que se arma acá (GitHub Pages → /<repo>/nutrition).
@@ -34,13 +44,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es-AR">
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
-        />
       </head>
       <body className="min-h-screen font-sans antialiased">{children}</body>
     </html>
