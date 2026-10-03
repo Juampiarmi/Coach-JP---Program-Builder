@@ -10,6 +10,17 @@ export type AspectId = 'feed' | 'story'
 export type Accent = 'orange' | 'cyan' | 'gold' | 'white' | 'gray'
 export type HeadlineFont = 'chakra' | 'barlow' | 'inter' | 'serif'
 
+/** Datos dinámicos de la plantilla 06 · Diagrama (por placa). */
+export interface DiagramData {
+  /** Ejes y valores 0–100 separados por coma; serie comparativa opcional ("" = sin comparación) */
+  radar: { axes: string; values: string; compare: string; labelA: string; labelB: string }
+  domino: { count: number; start: string; end: string }
+  /** Divisiones por círculo ("1, 3, 12") y un texto por línea (4 círculos) */
+  circles: { divisions: string; captions: string }
+  /** Trayectoria «ruido vs claridad» */
+  trajectory: { noise: string; clarity: string; goal: string }
+}
+
 export interface CompareCard {
   label: string
   value: string
@@ -84,23 +95,8 @@ export interface CanvasState {
   // Diagrama visual (plantilla 06)
   diagramKind: DiagramKind
   diagramAccent: DiagramAccent
-  /** Radar: ejes y valores 0–100 separados por coma; serie comparativa opcional */
-  radarAxes: string
-  radarValues: string
-  radarCompare: string
-  radarLabelA: string
-  radarLabelB: string
-  /** Círculos: divisiones por círculo ("1, 3, 12") y un texto breve por línea */
-  circleDivisions: string
-  circleCaptions: string
-  /** Dominó */
-  dominoCount: number
-  dominoStart: string
-  dominoEnd: string
-  /** Curva de trayectoria */
-  curveExpected: string
-  curveReal: string
-  curveGoal: string
+  /** Datos de los 4 subtipos (de la IA o editados). null = todavía no se cargaron: se usan los del pilar del tema. */
+  diagramData: DiagramData | null
   // Repetición matrix (plantilla 07)
   repeatPhrase: string
   repeatAccent: RepeatAccent

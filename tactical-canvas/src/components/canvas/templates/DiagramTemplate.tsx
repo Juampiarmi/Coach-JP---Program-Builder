@@ -1,5 +1,6 @@
 import type { CanvasPalette } from '../../../lib/theme'
 import { DIAGRAM_ACCENT_HEX } from '../../../lib/theme'
+import { resolveDiagramData } from '../../../lib/diagramPillar'
 import type { CanvasState } from '../../../types'
 import { CirclesDiagram } from '../diagrams/CirclesDiagram'
 import { CurveDiagram } from '../diagrams/CurveDiagram'
@@ -20,6 +21,8 @@ export function DiagramTemplate({ state, palette, contentWidth, scale }: Props) 
   const baseH = { radar: isStory ? 860 : 700, circles: isStory ? 460 : 360, domino: isStory ? 620 : 470, curve: isStory ? 660 : 480 }[
     state.diagramKind
   ]
+  // Sólo datos de la placa (IA o editados); si nunca se cargaron, los del pilar del tema.
+  const data = resolveDiagramData(state)
   const style = {
     width: contentWidth,
     height: Math.round(baseH * scale),
@@ -33,11 +36,11 @@ export function DiagramTemplate({ state, palette, contentWidth, scale }: Props) 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       {state.diagramKind === 'radar' && (
-        <RadarDiagram {...style} axes={state.radarAxes} values={state.radarValues} compare={state.radarCompare} labelA={state.radarLabelA} labelB={state.radarLabelB} />
+        <RadarDiagram {...style} axes={data.radar.axes} values={data.radar.values} compare={data.radar.compare} labelA={data.radar.labelA} labelB={data.radar.labelB} />
       )}
-      {state.diagramKind === 'circles' && <CirclesDiagram {...style} divisions={state.circleDivisions} captions={state.circleCaptions} />}
-      {state.diagramKind === 'domino' && <DominoDiagram {...style} count={state.dominoCount} start={state.dominoStart} end={state.dominoEnd} />}
-      {state.diagramKind === 'curve' && <CurveDiagram {...style} expected={state.curveExpected} real={state.curveReal} goal={state.curveGoal} />}
+      {state.diagramKind === 'circles' && <CirclesDiagram {...style} divisions={data.circles.divisions} captions={data.circles.captions} />}
+      {state.diagramKind === 'domino' && <DominoDiagram {...style} count={data.domino.count} start={data.domino.start} end={data.domino.end} />}
+      {state.diagramKind === 'curve' && <CurveDiagram {...style} expected={data.trajectory.noise} real={data.trajectory.clarity} goal={data.trajectory.goal} />}
       {state.body.trim() && (
         <div style={{ marginTop: 40 * scale }}>
           <Paragraph text={state.body} scale={scale} color={palette.muted} />

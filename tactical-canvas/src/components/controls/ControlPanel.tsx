@@ -2,11 +2,12 @@ import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
 import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
-import type { Accent, CanvasState, ContentAlign, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
+import type { Accent, CanvasState, ContentAlign, DiagramData, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
 import { DIAGRAM_ACCENT_HEX, DIAGRAM_ACCENT_LABEL, PAPER_TEMPLATES, REPEAT_ACCENT_LABEL, THEME_LABEL } from '../../lib/theme'
 import { RadarEditor } from './RadarEditor'
 import { CHART_BY_DISCIPLINE, isCadenceSample } from '../../lib/chartPillar'
 import type { Discipline } from '../../lib/ai'
+import { diagramDefaults, inferPillar, resolveDiagramData, slideText } from '../../lib/diagramPillar'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
@@ -66,6 +67,10 @@ interface Props {
 export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline }: Props) {
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
+  // Diagrama: lo que se ve es lo que se edita (datos de la placa o, si no hay, los del pilar del tema).
+  const diagram = resolveDiagramData(state)
+  const setDiagram = <K extends keyof DiagramData>(kind: K, patch: Partial<DiagramData[K]>) =>
+    update({ diagramData: { ...diagram, [kind]: { ...diagram[kind], ...patch } } })
   const fileRef = useRef<HTMLInputElement>(null)
   const [loadingImg, setLoadingImg] = useState(false)
 
@@ -103,7 +108,10 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                   update(
                     t.id === 'chart' && isCadenceSample(state.chart)
                       ? { template: t.id, chart: { ...state.chart, ...CHART_BY_DISCIPLINE[discipline] } }
-                      : { template: t.id },
+                      : t.id === 'diagram' && !state.diagramData
+                        ? // Al pasar a Diagrama sin datos propios, se cargan los del pilar activo y el tema de la placa.
+                          { template: t.id, diagramData: diagramDefaults(inferPillar(discipline, ...slideText(state))) }
+                        : { template: t.id },
                   )
                 }}
                 aria-pressed={on}
@@ -122,7 +130,9 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               update(
                 state.template === 'chart' && getDiscipline() === 'crossfit'
                   ? { ...SAMPLES.chart, chart: { ...state.chart, ...CHART_BY_DISCIPLINE.crossfit } }
-                  : SAMPLES[state.template],
+                  : state.template === 'diagram'
+                    ? { ...SAMPLES.diagram, diagramData: diagramDefaults(inferPillar(getDiscipline(), ...slideText({ ...state, ...SAMPLES.diagram }))) }
+                    : SAMPLES[state.template],
               )
             }
             className="flex-1 rounded-md border border-dashed border-line py-1.5 font-mono text-[10px] tracking-[0.12em] text-steel uppercase transition hover:border-cyan/50 hover:text-cyan"
@@ -354,14 +364,14 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             </Field>
             {state.diagramKind === 'radar' && (
               <>
-                <RadarEditor state={state} update={update} />
+                <RadarEditor radar={diagram.radar} onChange={(p) => setDiagram('radar', p)} />
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Leyenda">
-                    <TextInput value={state.radarLabelA} onChange={(radarLabelA) => update({ radarLabelA })} />
+                    <TextInput value={diagram.radar.labelA} onChange={(labelA) => setDiagram('radar', { labelA })} />
                   </Field>
-                  {state.radarCompare.trim() && (
+                  {diagram.radar.compare.trim() && (
                     <Field label="Leyenda comparación">
-                      <TextInput value={state.radarLabelB} onChange={(radarLabelB) => update({ radarLabelB })} />
+                      <TextInput value={diagram.radar.labelB} onChange={(labelB) => setDiagram('radar', { labelB })} />
                     </Field>
                   )}
                 </div>
@@ -370,18 +380,18 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             {state.diagramKind === 'circles' && (
               <>
                 <Field label="Divisiones por círculo" hint="el último se repite con 1 parte destacada">
-                  <TextInput value={state.circleDivisions} onChange={(circleDivisions) => update({ circleDivisions })} placeholder="1, 3, 12" />
+                  <TextInput value={diagram.circles.divisions} onChange={(divisions) => setDiagram('circles', { divisions })} placeholder="1, 3, 12" />
                 </Field>
                 <div className="grid grid-cols-2 gap-2">
                   {[0, 1, 2, 3].map((i) => {
-                    const caps = state.circleCaptions.split('\n')
+                    const caps = diagram.circles.captions.split('\n')
                     return (
                       <Field key={i} label={`Círculo ${i + 1}${i === 3 ? ' · destacado' : ''}`}>
                         <TextInput
                           value={caps[i] ?? ''}
                           onChange={(v) => {
                             const next = [0, 1, 2, 3].map((j) => (j === i ? v : (caps[j] ?? '')))
-                            update({ circleCaptions: next.join('\n') })
+                            setDiagram('circles', { captions: next.join('\n') })
                           }}
                         />
                       </Field>
@@ -393,14 +403,14 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             {state.diagramKind === 'domino' && (
               <>
                 <Field label="Cantidad de fichas">
-                  <Range value={state.dominoCount} onChange={(dominoCount) => update({ dominoCount })} min={4} max={9} />
+                  <Range value={diagram.domino.count} onChange={(count) => setDiagram('domino', { count })} min={4} max={9} />
                 </Field>
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Inicio">
-                    <TextInput value={state.dominoStart} onChange={(dominoStart) => update({ dominoStart })} />
+                    <TextInput value={diagram.domino.start} onChange={(start) => setDiagram('domino', { start })} />
                   </Field>
                   <Field label="Final">
-                    <TextInput value={state.dominoEnd} onChange={(dominoEnd) => update({ dominoEnd })} />
+                    <TextInput value={diagram.domino.end} onChange={(end) => setDiagram('domino', { end })} />
                   </Field>
                 </div>
               </>
@@ -408,13 +418,13 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             {state.diagramKind === 'curve' && (
               <div className="grid grid-cols-3 gap-2">
                 <Field label="Tramo caótico · ruido">
-                  <TextInput value={state.curveExpected} onChange={(curveExpected) => update({ curveExpected })} />
+                  <TextInput value={diagram.trajectory.noise} onChange={(noise) => setDiagram('trajectory', { noise })} />
                 </Field>
                 <Field label="Tramo limpio · claridad">
-                  <TextInput value={state.curveReal} onChange={(curveReal) => update({ curveReal })} />
+                  <TextInput value={diagram.trajectory.clarity} onChange={(clarity) => setDiagram('trajectory', { clarity })} />
                 </Field>
                 <Field label="Meta (bandera)">
-                  <TextInput value={state.curveGoal} onChange={(curveGoal) => update({ curveGoal })} />
+                  <TextInput value={diagram.trajectory.goal} onChange={(goal) => setDiagram('trajectory', { goal })} />
                 </Field>
               </div>
             )}

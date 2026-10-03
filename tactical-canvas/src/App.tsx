@@ -8,6 +8,7 @@ import { AiGenerator } from './components/AiGenerator'
 import { SlideBar } from './components/SlideBar'
 import { DEFAULT_STATE } from './defaults'
 import { harmonizeChart } from './lib/chartPillar'
+import { migrateDiagram } from './lib/diagramPillar'
 import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type GenerationResult } from './lib/ai'
 import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
@@ -65,7 +66,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export default function App() {
   const [deck, setDeck] = usePersistentState<Deck>(STORAGE_KEY, DEFAULT_DECK)
-  const slides = deck.slides.length ? deck.slides.map((s) => ({ ...DEFAULT_STATE, ...s })) : [DEFAULT_STATE]
+  const slides = deck.slides.length ? deck.slides.map((s) => ({ ...DEFAULT_STATE, ...migrateDiagram(s) }) as CanvasState) : [DEFAULT_STATE]
   const active = Math.min(deck.active, slides.length - 1)
   const state = slides[active]
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -225,15 +226,9 @@ export default function App() {
         regenAbort.current.signal,
         (note) => note && setRegen({ busy: true, note }),
       )
-      // Si la IA cambió de plantilla en Diagrama / Repetición, se conserva la placa y se toma sólo el texto.
-      const safe: Partial<CanvasState> =
-        patch.template === slide.template
-          ? patch
-          : slide.template === 'diagram'
-          ? { tag: patch.tag, headlineA: patch.headlineA, headlineB: patch.headlineB, body: patch.body }
-          : slide.template === 'repeat'
-            ? { tag: patch.tag, repeatPhrase: `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim() }
-            : patch
+      // El payload trae datos de todas las plantillas: se aplican todos, pero la placa conserva su
+      // plantilla, el subtipo de diagrama y el modo de repetición que eligió el usuario.
+      const safe: Partial<CanvasState> = { ...patch, template: slide.template, diagramKind: slide.diagramKind, repeatMode: slide.repeatMode }
       for (const k of GLOBAL_KEYS) delete (safe as Record<string, unknown>)[k]
       if (safe.chart) safe.chart = harmonizeChart(safe.chart, deck.discipline ?? 'general')
       setDeck((d) => ({ ...d, slides: d.slides.map((s, i) => (i === index ? { ...DEFAULT_STATE, ...s, ...safe } : s)) }))

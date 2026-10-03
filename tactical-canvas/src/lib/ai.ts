@@ -1,5 +1,6 @@
 import { DEFAULT_STATE } from '../defaults'
-import type { Accent, CanvasState, ChartMode, CurveShape, DiagramKind, RepeatMode, TemplateId } from '../types'
+import type { Accent, CanvasState, ChartMode, CurveShape, DiagramData, DiagramKind, RepeatMode, TemplateId } from '../types'
+import { diagramDefaults, inferPillar } from './diagramPillar'
 import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 import { JsonRepairError, safeParseJson } from './safeJson'
@@ -86,57 +87,68 @@ PLANTILLAS DISPONIBLES (templateId):
 
 MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al azar):
 - Dualidad o contraste entre dos estados («Ego vs Progreso», «Estático vs Dinámico», «Volumen vs Intensidad»): "ab", o "chart" con curva y zona umbral.
-- Progresión o acumulación en el tiempo («Persistencia», «Constancia», «Sobrecarga progresiva», «Hábitos»): "diagram" con kind "domino", o "repeat".
-- Equilibrio o fenómeno multifactorial («Obsesión», «Fatiga», «Recuperación», «Rendimiento global»): "diagram" con kind "radar".
-- Foco o dirección («Ruido vs Foco», «Claridad», «Prioridades», «Plan vs Improvisación»): "diagram" con kind "trajectory" o "circles".
+- Progresión o acumulación en el tiempo («Persistencia», «Constancia», «Sobrecarga progresiva», «Hábitos»): "diagram" con recommendedType "domino", o "repeat".
+- Equilibrio o fenómeno multifactorial («Obsesión», «Fatiga», «Recuperación», «Rendimiento global»): "diagram" con recommendedType "radar".
+- Foco o dirección («Ruido vs Foco», «Claridad», «Prioridades», «Plan vs Improvisación»): "diagram" con recommendedType "trayectoria" o "circulos".
 - Frase de mentalidad corta y memorable: "repeat" o "manifesto".
 
 REGLAS DE CONTENIDO:
-- tag: MAYÚSCULAS, formato "DISCIPLINA · CATEGORÍA" o una sola categoría (ej: "BIOMECÁNICA APLICADA", "FISIOLOGÍA · ELECTROLITOS"). Para manifesto usá "FILOSOFÍA TÁCTICA", "ESTÁNDAR OPERATIVO" o "DISCIPLINA Y MÉTODO". Sin corchetes.
-- titleWhite + titleAccent: el titular en MAYÚSCULAS, entre 5 y 12 palabras en total. titleWhite es la base (blanco) y titleAccent el remate (naranja). Podés envolver UNA palabra de titleWhite en *asteriscos* para resaltarla.
-- paragraph: 1 a 2 oraciones, máximo 200 caracteres. Vacío ("") en manifesto y repeat.
+- text.tagSuperior: MAYÚSCULAS, formato "DISCIPLINA · CATEGORÍA" o una sola categoría (ej: "BIOMECÁNICA APLICADA", "FISIOLOGÍA · ELECTROLITOS"). Para manifesto usá "FILOSOFÍA TÁCTICA", "ESTÁNDAR OPERATIVO" o "DISCIPLINA Y MÉTODO". Sin corchetes.
+- text.titleWhite + text.titleAccent: el titular en MAYÚSCULAS, entre 5 y 12 palabras en total. titleWhite es la base (blanco) y titleAccent el remate (naranja). Podés envolver UNA palabra de titleWhite en *asteriscos* para resaltarla.
+- text.parrafo: 1 a 2 oraciones, máximo 200 caracteres (se oculta solo en manifesto y repeat, pero escribilo igual).
 - citation: estudio REAL y verificable con formato "APELLIDO Y COL., AÑO · REVISTA" en mayúsculas. description: de qué trata ese estudio en una línea. Si no estás seguro de que el estudio exista tal cual, dejá ambos vacíos (""). Nunca inventes citas. Vacíos en manifesto.
 - Los números deben ser coherentes con la literatura. No inventes precisión que no existe.
 
-FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloques de código markdown (\`\`\`json), sin saltos de línea sin escapar dentro de strings y sin comillas dobles internas sin escapar (\\"). Dentro de los textos usá comillas angulares « » en lugar de comillas dobles. Nada de texto antes ni después del JSON. Forma exacta:
+FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloques de código markdown (\`\`\`json), sin saltos de línea sin escapar dentro de strings y sin comillas dobles internas sin escapar (\\"). Dentro de los textos usá comillas angulares « » en lugar de comillas dobles. Nada de texto antes ni después del JSON.
+
+PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escritos sobre el tema pedido, aunque templateId elija una sola. Así, si el usuario cambia de plantilla, ve contenido del mismo tema y nunca datos de otra sesión. Forma exacta:
 {
   "format": "single" | "stories" | "carousel",
   "caption": string,
   "slides": [
     {
       "templateId": "metric" | "ab" | "chart" | "statement" | "manifesto" | "diagram" | "repeat",
-      "tag": string,
-      "titleWhite": string,
-      "titleAccent": string,
-      "paragraph": string,
+      "theme": string (el tema de este slide en 2-4 palabras),
+      "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
       "description": string,
-      "data": { ...según templateId }
+      "sentencia": { "highlight": string (remate en MAYÚSCULAS, máx 14 palabras) },
+      "metrica": { "value": string (corto, máx 5 caracteres), "label": string (MAYÚSCULAS, qué mide), "unidad": string, "accent": "orange" | "cyan" | "gold" },
+      "ab": {
+        "cardA": { "label": string (MAYÚSCULAS), "value": string (máx 14 caracteres), "desc": string },
+        "cardB": { "label": string (MAYÚSCULAS), "value": string (máx 14 caracteres), "desc": string },
+        "verdict": string (MAYÚSCULAS, 2 frases muy cortas)
+      },
+      "diagram": {
+        "recommendedType": "radar" | "domino" | "circulos" | "trayectoria",
+        "domino": { "inicio": string (la causa o acción mínima), "final": string (la consecuencia acumulada) },
+        "circulos": { "c1": string (el todo), "c2": string, "c3": string, "c4": string (la parte de hoy) },
+        "trayectoria": { "caotico": string (rótulo del tramo caótico), "limpio": string (rótulo del tramo limpio), "meta": string (meta en la bandera) },
+        "radar": { "axes": [6 strings cortos], "values": [6 números 0-100, estado actual], "compare": [6 números 0-100, estado ideal], "labelA": string, "labelB": string }
+      },
+      "repeticion": { "phrase": string (MAYÚSCULAS, 1-2 palabras clave), "phraseLarga": string (MAYÚSCULAS, 4-10 palabras), "mode": "diagonal" | "echo" | "kinetic" | "justified" },
+      "manifiesto": { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) },
+      "chart": { ... } (OBLIGATORIO sólo si templateId es "chart"; en los demás omitilo)
     }
   ]
 }
 
-"data" según templateId:
-- metric: { "value": string (corto, máx 5 caracteres), "label": string (MAYÚSCULAS, qué mide), "accent": "orange" | "cyan" | "gold" }
-- ab: { "cardA_label": string (MAYÚSCULAS), "cardA_value": string (máx 14 caracteres), "cardA_desc": string, "cardB_label": string (MAYÚSCULAS), "cardB_value": string (máx 14 caracteres), "cardB_desc": string, "verdict": string (MAYÚSCULAS, 2 frases muy cortas) }. Si el slide usa plantilla A/B, debés incluir obligatoriamente los campos cardA_label, cardA_value, cardA_desc, cardB_label, cardB_value y cardB_desc con contenido técnico relevante al tema. Nunca los dejes vacíos.
-- chart: { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string, "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" (solo curve), "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
-- statement: { "kicker": string (remate en MAYÚSCULAS, máx 14 palabras) }
-- manifesto: { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) }
-- diagram: { "kind": "radar" | "domino" | "circles" | "trajectory", y según kind:
-  radar: "axes": [6 strings cortos], "values": [6 números 0-100, estado actual], "compare": [6 números 0-100, estado ideal], "labelA": string, "labelB": string;
-  domino: "count": número 5-8, "start": string (acción mínima), "end": string (resultado masivo);
-  circles: "divisions": [3 enteros crecientes, ej 1, 3, 12], "captions": [4 strings cortos, del todo a la parte de hoy];
-  trajectory: "noise": string (rótulo del tramo caótico), "clarity": string (rótulo del tramo limpio), "goal": string (meta en la bandera) }
-- repeat: { "phrase": string (MAYÚSCULAS; 1-2 palabras para "echo"/"kinetic", 4-10 palabras para "diagonal"/"justified"), "mode": "diagonal" | "echo" | "kinetic" | "justified" }
+"chart" (sólo con templateId "chart"): { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string, "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" (solo curve), "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
 
-CAMPOS OBLIGATORIOS: completá SIEMPRE todos los campos de "data" de la plantilla elegida con contenido real del tema. Nunca devuelvas arrays vacíos ([]), strings vacíos ("") ni null dentro de "data". Los rótulos de diagram son de 1 a 3 palabras.
+CONGRUENCIA TEMÁTICA DEL DIAGRAMA: los 4 subtipos de "diagram" hablan del tema del slide, nunca de productividad genérica ni autoayuda (prohibido «Hábito mínimo», «Resultado masivo», «Ruido», «Claridad», «El objetivo», «Los bloques» o «Hoy» como rótulos). Ejemplos:
+- Nutrición deportiva: radar con ejes Glucógeno, Hidratación, Proteína, Electrolitos, Timing, Digestión; dominó «Déficit calórico crónico» → «Pérdida de fuerza y masa»; trayectoria «Hipoglucemia / Fatiga» → «Glucógeno estable» → meta «Rendimiento óptimo»; círculos Calorías base, Proteína (2g/kg), Carbohidratos intra, Timing y digestión.
+- Fuerza e hipertrofia: radar con ejes Tensión mecánica, RIR / Esfuerzo, Volumen efectivo, Recuperación, Frecuencia, Técnica; dominó «Sobrecarga progresiva» → «Adaptación miofibrilar».
+- Cualquier otro tema (ej: automatización): rótulos con el vocabulario técnico de ese tema.
+
+CAMPOS OBLIGATORIOS: completá SIEMPRE todos los bloques (text, sentencia, metrica, ab, diagram con sus 4 subtipos, repeticion, manifiesto) con contenido real del tema. Nunca devuelvas arrays vacíos ([]), strings vacíos ("") ni null dentro de esos bloques. Los rótulos de diagram son de 1 a 4 palabras. "citation" y "description" son la única excepción: van vacíos si no tenés un estudio real.
 
 Variá las plantillas dentro de una secuencia: no repitas la misma más de dos veces seguidas.
 
 DATOS NUMÉRICOS CONGRUENTES CON CADA PLANTILLA:
 - chart: los ejes y la unidad salen del tema y del pilar. Sports & Bodybuilding: series/semana, RIR, RPE, %1RM, kg o repeticiones. CrossFit & Hyrox: W, min/km, mmol/L de lactato, lpm o % VO2máx. No uses cadencia (rpm) salvo que el tema sea ciclismo. "min" < "max"; la "zone" desde-hasta va dentro de [min, max]; en bars, barLabels y barValues tienen la misma cantidad y los valores están dentro de [min, max]; en gauge, gaugeValue y gaugeThreshold están dentro de [min, max]. El "title" nombra los ejes reales (ej: "SERIES SEMANALES VS. HIPERTROFIA").
-- metric: "value" es el número del argumento y "label" dice qué mide y en qué unidad.
+- metrica: "value" es el número del argumento, "label" dice qué mide y "unidad" en qué se mide.
 - ab: los dos "value" se comparan en la misma unidad o dimensión.
+- diagram.radar: "axes", "values" y "compare" tienen exactamente 6 elementos.
 
 "caption": el COPY COMPLETO para el pie de foto de Instagram de toda la pieza (placa, historias o carrusel). Estructura:
 1. Primera línea: gancho de una oración que frene el scroll (sin repetir literal el titular).
@@ -193,7 +205,7 @@ async function callAnthropic(key: string, model: string, user: string, signal?: 
     },
     body: JSON.stringify({
       model,
-      max_tokens: 6000,
+      max_tokens: 8000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: user }],
     }),
@@ -324,7 +336,7 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
       },
     }),
   })
@@ -505,127 +517,184 @@ const DIAGRAM_KIND_MAP: Record<string, DiagramKind> = {
   curve: 'curve',
 }
 
-/** Datos del diagrama de la IA → campos de la plantilla 06, completando lo que falte. */
-function diagramPatch(d: Record<string, unknown>): Partial<CanvasState> {
-  const base = DEFAULT_STATE
-  const kind = DIAGRAM_KIND_MAP[str(d.kind ?? d.type).toLowerCase()] ?? 'radar'
-  const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x)).filter(Boolean) : str(v).split(/[,\n;]+/).map((x) => x.trim()).filter(Boolean))
-  const nums = (v: unknown) => list(v).map((x) => Number(x.replace(',', '.'))).filter((n) => Number.isFinite(n)).map((n) => Math.min(100, Math.max(0, Math.round(n))))
-  const out: Partial<CanvasState> = { diagramKind: kind }
-  if (kind === 'radar') {
-    const axes = list(d.axes ?? d.ejes)
-    const useAxes = axes.length >= 3 ? axes.slice(0, 8) : list(base.radarAxes)
-    const fit = (vals: number[], fb: string) => {
-      const src = vals.length ? vals : nums(fb)
-      return useAxes.map((_, i) => src[i] ?? 50).join(', ')
-    }
-    out.radarAxes = useAxes.join(', ')
-    out.radarValues = fit(nums(d.values ?? d.valores), base.radarValues)
-    const cmp = nums(d.compare ?? d.ideal)
-    out.radarCompare = cmp.length ? fit(cmp, base.radarCompare) : ''
-    out.radarLabelA = str(d.labelA, base.radarLabelA)
-    out.radarLabelB = str(d.labelB, base.radarLabelB)
-  } else if (kind === 'domino') {
-    out.dominoCount = Math.min(9, Math.max(4, Math.round(num(d.count, base.dominoCount))))
-    out.dominoStart = str(d.start ?? d.inicio, base.dominoStart)
-    out.dominoEnd = str(d.end ?? d.final, base.dominoEnd)
-  } else if (kind === 'circles') {
-    const div = list(d.divisions).map((x) => Math.round(Number(x))).filter((n) => Number.isFinite(n) && n > 0)
-    out.circleDivisions = div.length ? div.slice(0, 3).join(', ') : base.circleDivisions
-    const caps = list(d.captions)
-    const fb = base.circleCaptions.split('\n')
-    out.circleCaptions = [0, 1, 2, 3].map((i) => caps[i] ?? fb[i]).join('\n')
-  } else {
-    out.curveExpected = str(d.noise ?? d.ruido ?? d.expected, base.curveExpected)
-    out.curveReal = str(d.clarity ?? d.claridad ?? d.real, base.curveReal)
-    out.curveGoal = str(d.goal ?? d.meta, base.curveGoal)
+/** Primer texto no vacío de la lista. */
+const first = (...vals: unknown[]) => {
+  for (const v of vals) {
+    const t = str(v)
+    if (t) return t
   }
-  return out
+  return ''
+}
+const list = (v: unknown) =>
+  Array.isArray(v)
+    ? v.map((x) => str(x)).filter(Boolean)
+    : str(v)
+        .split(/[,\n;]+/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+const scores = (v: unknown) =>
+  list(v)
+    .map((x) => Number(x.replace(',', '.')))
+    .filter((n) => Number.isFinite(n))
+    .map((n) => Math.min(100, Math.max(0, Math.round(n))))
+
+/**
+ * Bloque "diagram" de la IA → datos de los 4 subtipos. Acepta el payload multiformato
+ * (domino.inicio, circulos.c1, trayectoria.caotico, radar.axes) y el formato plano anterior
+ * (kind + axes/start/captions/noise). Lo que falte sale del pilar del tema, nunca de otra sesión.
+ */
+function diagramFromAi(b: Record<string, unknown>, fb: DiagramData): DiagramData {
+  const radar = obj(b.radar)
+  const domino = obj(b.domino ?? b.dominó)
+  const circles = obj(b.circulos ?? b.circles)
+  const tray = obj(b.trayectoria ?? b.trajectory)
+  const axes = list(radar.axes ?? radar.ejes ?? b.axes)
+  const useAxes = axes.length >= 3 ? axes.slice(0, 8) : list(fb.radar.axes)
+  const fit = (vals: number[], fallback: string) => {
+    const src = vals.length ? vals : scores(fallback)
+    return useAxes.map((_, i) => src[i] ?? 50).join(', ')
+  }
+  const cmp = scores(radar.compare ?? radar.ideal ?? b.compare)
+  const capList = list(b.captions)
+  const caps = [1, 2, 3, 4].map((i, j) => first(circles[`c${i}`], obj(circles.captions)[`c${i}`], list(circles.captions)[j], capList[j], fb.circles.captions.split('\n')[j]))
+  const div = list(circles.divisions ?? b.divisions)
+    .map((x) => Math.round(Number(x)))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  return {
+    radar: {
+      axes: useAxes.join(', '),
+      values: fit(scores(radar.values ?? radar.valores ?? b.values), fb.radar.values),
+      compare: cmp.length ? fit(cmp, fb.radar.compare) : axes.length >= 3 ? '' : fb.radar.compare,
+      // Con ejes propios de la IA, las leyendas de respaldo son neutras (no las del pilar).
+      labelA: first(radar.labelA, b.labelA, axes.length >= 3 ? 'Estado actual' : fb.radar.labelA),
+      labelB: first(radar.labelB, b.labelB, axes.length >= 3 ? 'Estado ideal' : fb.radar.labelB),
+    },
+    domino: {
+      count: Math.min(9, Math.max(4, Math.round(first(domino.count, b.count) ? num(domino.count ?? b.count, fb.domino.count) : fb.domino.count))),
+      start: first(domino.inicio, domino.start, b.start, b.inicio, fb.domino.start),
+      end: first(domino.final, domino.end, b.end, b.final, fb.domino.end),
+    },
+    circles: { divisions: div.length ? div.slice(0, 3).join(', ') : fb.circles.divisions, captions: caps.join('\n') },
+    trajectory: {
+      noise: first(tray.caotico, tray.caótico, tray.noise, b.noise, b.ruido, fb.trajectory.noise),
+      clarity: first(tray.limpio, tray.clarity, b.clarity, b.claridad, fb.trajectory.clarity),
+      goal: first(tray.meta, tray.goal, b.goal, b.meta, fb.trajectory.goal),
+    },
+  }
 }
 
-/** Convierte un slide de la IA en un parche del estado de la app. */
-export function slideToPatch(raw: unknown): Partial<CanvasState> {
+/** Contexto de la generación: el pilar y el tema deciden los datos de respaldo del diagrama. */
+export interface SlideContext {
+  discipline?: Discipline
+  topic?: string
+}
+
+/**
+ * Convierte un slide de la IA en un parche del estado de la app. Llena los datos de TODAS las
+ * plantillas (no sólo la elegida) para que al cambiar de pestaña no aparezcan datos de otra sesión.
+ */
+export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<CanvasState> {
   const s = obj(raw)
   const d = obj(s.data)
+  const t = obj(s.text ?? s.texto)
   const template = TEMPLATE_MAP[str(s.templateId).toLowerCase()] ?? 'statement'
   const base = DEFAULT_STATE
+  const headlineA = upper(first(t.titleWhite, s.titleWhite))
+  const headlineB = upper(first(t.titleAccent, s.titleAccent))
   const patch: Partial<CanvasState> = {
     template,
-    tag: stripBrackets(upper(s.tag, base.tag)),
-    headlineA: upper(s.titleWhite),
-    headlineB: upper(s.titleAccent),
-    body: template === 'manifesto' ? '' : str(s.paragraph),
-    citeMain: template === 'manifesto' ? '' : stripBrackets(upper(s.citation)),
-    citeSub: template === 'manifesto' ? '' : str(s.description),
+    tag: stripBrackets(upper(first(t.tagSuperior, t.tag, s.tag, base.tag))),
+    headlineA,
+    headlineB,
+    body: first(t.parrafo, t.paragraph, s.paragraph),
+    citeMain: stripBrackets(upper(s.citation)),
+    citeSub: str(s.description),
+  }
+  const headline = `${headlineA} ${headlineB}`.replace(/\*/g, '').trim()
+
+  // 01 · Métrica
+  const m = obj(s.metrica ?? s.metric)
+  const md = template === 'metric' ? d : {}
+  const metricValue = first(m.value, m.valor, md.value)
+  if (metricValue) {
+    const label = upper(first(m.label, m.etiqueta, md.label))
+    const unit = upper(first(m.unidad, m.unit))
+    patch.metricValue = metricValue
+    patch.metricLabel = unit && !label.includes(unit) ? `${label} · ${unit}` : label
+    patch.metricAccent = oneOf(m.accent ?? md.accent, ACCENTS, 'orange')
   }
 
-  if (template === 'metric') {
-    patch.metricValue = str(d.value, base.metricValue)
-    patch.metricLabel = upper(d.label)
-    patch.metricAccent = oneOf(d.accent, ACCENTS, 'orange')
-  } else if (template === 'compare') {
-    // Mapeo tolerante: Gemini a veces usa otros nombres o pone las tarjetas fuera de "data".
-    const sources = [d, s]
-    const pick = (paths: string[], fallback: string) => {
-      for (const src of sources) {
-        for (const path of paths) {
-          const v = path.split('.').reduce<unknown>((acc, k) => obj(acc)[k], src)
-          const text = str(v)
-          if (text) return text
-        }
-      }
-      return fallback
-    }
-    const card = (side: 'A' | 'B', accent: Accent, fbLabel: string, fbValue: string) => {
-      const l = side.toLowerCase()
-      const groups = [`card${side}`, `option${side}`, `tarjeta${side}`, side, l, `card_${l}`, `opcion${side}`]
-      const keys = (fields: string[]) => [
-        ...fields.map((f) => `card${side}_${f}`),
-        ...groups.flatMap((g) => fields.map((f) => `${g}.${f}`)),
-      ]
-      return {
-        label: pick(keys(['label', 'etiqueta', 'title', 'titulo', 'name', 'nombre']), fbLabel).toUpperCase(),
-        value: pick(keys(['value', 'valor', 'metric', 'metrica', 'dato']), fbValue),
-        caption: pick(keys(['desc', 'description', 'descripcion', 'caption', 'detail', 'detalle', 'subtitle']), ''),
-        accent,
+  // 02 · A/B (mapeo tolerante: Gemini a veces usa otros nombres o pone las tarjetas fuera de "data")
+  const sources = [obj(s.ab), d, s]
+  const pick = (paths: string[], fallback: string) => {
+    for (const src of sources) {
+      for (const path of paths) {
+        const text = str(path.split('.').reduce<unknown>((acc, k) => obj(acc)[k], src))
+        if (text) return text
       }
     }
-    patch.cardA = card('A', 'gray', 'PARÁMETRO A', 'VALOR')
-    patch.cardB = card('B', 'cyan', 'PARÁMETRO B', 'VALOR')
-    patch.verdict = pick(['verdict', 'veredicto', 'conclusion', 'conclusión'], '').toUpperCase()
-  } else if (template === 'chart') {
+    return fallback
+  }
+  const card = (side: 'A' | 'B', accent: Accent, fbLabel: string, fbValue: string) => {
+    const l = side.toLowerCase()
+    const groups = [`card${side}`, `option${side}`, `tarjeta${side}`, side, l, `card_${l}`, `opcion${side}`]
+    const keys = (fields: string[]) => [...fields.map((f) => `card${side}_${f}`), ...groups.flatMap((g) => fields.map((f) => `${g}.${f}`))]
+    return {
+      label: pick(keys(['label', 'etiqueta', 'title', 'titulo', 'name', 'nombre']), fbLabel).toUpperCase(),
+      value: pick(keys(['value', 'valor', 'metric', 'metrica', 'dato']), fbValue),
+      caption: pick(keys(['desc', 'description', 'descripcion', 'caption', 'detail', 'detalle', 'subtitle']), ''),
+      accent,
+    }
+  }
+  patch.cardA = card('A', 'gray', 'PARÁMETRO A', 'VALOR')
+  patch.cardB = card('B', 'cyan', 'PARÁMETRO B', 'VALOR')
+  patch.verdict = pick(['verdict', 'veredicto', 'conclusion', 'conclusión'], '').toUpperCase()
+
+  // 03 · Gráfico (sólo cuando es la plantilla elegida)
+  if (template === 'chart') {
     const c = base.chart
-    const list = (v: unknown, fb: string) => (Array.isArray(v) ? v.join(', ') : str(v, fb))
+    const cd = Object.keys(obj(s.chart)).length ? obj(s.chart) : d
+    const csv = (v: unknown, fb: string) => (Array.isArray(v) ? v.join(', ') : first(v, fb))
     patch.chart = {
       ...c,
-      mode: oneOf(d.mode, CHART_MODES, 'curve'),
-      title: upper(d.title, c.title),
-      min: num(d.min, c.min),
-      max: num(d.max, c.max),
-      unit: str(d.unit),
-      zone: str(d.zone, c.zone),
-      zoneLabel: str(d.zoneLabel),
-      shape: oneOf(d.shape, SHAPES, 'bell'),
-      barLabels: list(d.barLabels, c.barLabels),
-      barValues: list(d.barValues, c.barValues),
-      gaugeValue: num(d.gaugeValue, c.gaugeValue),
-      gaugeThreshold: num(d.gaugeThreshold, c.gaugeThreshold),
-      gaugeLabel: str(d.gaugeLabel),
+      mode: oneOf(cd.mode, CHART_MODES, 'curve'),
+      title: upper(first(cd.title, c.title)),
+      min: num(cd.min, c.min),
+      max: num(cd.max, c.max),
+      unit: str(cd.unit),
+      zone: first(cd.zone, c.zone),
+      zoneLabel: str(cd.zoneLabel),
+      shape: oneOf(cd.shape, SHAPES, 'bell'),
+      barLabels: csv(cd.barLabels, c.barLabels),
+      barValues: csv(cd.barValues, c.barValues),
+      gaugeValue: num(cd.gaugeValue, c.gaugeValue),
+      gaugeThreshold: num(cd.gaugeThreshold, c.gaugeThreshold),
+      gaugeLabel: str(cd.gaugeLabel),
     }
-  } else if (template === 'statement') {
-    patch.kicker = upper(d.kicker)
-  } else if (template === 'diagram') {
-    Object.assign(patch, diagramPatch(d))
-  } else if (template === 'repeat') {
-    const phrase = upper(d.phrase ?? d.frase) || `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim()
-    patch.repeatPhrase = phrase || base.repeatPhrase
-    patch.repeatMode = oneOf(d.mode, REPEAT_MODES, phrase.split(/\s+/).length <= 2 ? 'echo' : 'diagonal')
-    patch.body = ''
-    patch.citeMain = ''
-    patch.citeSub = ''
-  } else {
-    patch.manifestoAuthor = upper(d.author, DEFAULT_AUTHOR)
   }
+
+  // 04 · Sentencia
+  patch.kicker = upper(first(obj(s.sentencia).highlight, obj(s.statement).kicker, template === 'statement' ? d.kicker : '', s.kicker))
+
+  // 05 · Manifiesto
+  patch.manifestoAuthor = upper(first(obj(s.manifiesto ?? s.manifesto).author, template === 'manifesto' ? d.author : '', DEFAULT_AUTHOR))
+
+  // 06 · Diagrama: siempre con datos propios del tema (IA o pilar), nunca los de otra placa.
+  const db = obj(s.diagram ?? s.diagrama ?? (template === 'diagram' ? d : undefined))
+  const pillar = inferPillar(ctx.discipline ?? 'general', `${ctx.topic ?? ''} ${str(s.theme)}`, `${patch.tag} ${headline}`, patch.body ?? '')
+  patch.diagramData = diagramFromAi(db, diagramDefaults(pillar))
+  const kind = DIAGRAM_KIND_MAP[first(db.recommendedType, db.kind, db.type).toLowerCase()]
+  if (kind) patch.diagramKind = kind
+
+  // 07 · Repetición
+  const r = obj(s.repeticion ?? s.repeat ?? (template === 'repeat' ? d : undefined))
+  const short = upper(first(r.phrase, r.frase))
+  const long = upper(first(r.phraseLarga, r.phraseLong))
+  const aiMode = REPEAT_MODES.find((x) => x === str(r.mode))
+  const mode: RepeatMode = aiMode ?? (template === 'repeat' && short && short.split(/\s+/).length <= 2 ? 'echo' : 'diagonal')
+  const wantsShort = mode === 'echo' || mode === 'kinetic'
+  patch.repeatPhrase = (wantsShort ? first(short, long) : first(long, short)) || headline || base.repeatPhrase
+  if (template === 'repeat' || aiMode) patch.repeatMode = mode
   return patch
 }
 
@@ -635,10 +704,10 @@ export interface GenerationResult {
   caption: string
 }
 
-export function parseGeneration(payload: unknown, mode: GenMode): GenerationResult {
+export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideContext = {}): GenerationResult {
   const root = obj(payload)
   const rawSlides = Array.isArray(root.slides) ? root.slides : Array.isArray(payload) ? payload : [payload]
-  let slides = rawSlides.map(slideToPatch).filter((p) => p.headlineA || p.headlineB)
+  let slides = rawSlides.map((raw) => slideToPatch(raw, ctx)).filter((p) => p.headlineA || p.headlineB)
   if (!slides.length) throw new Error('La IA no devolvió slides utilizables.')
   const limit = mode === 'single' ? 1 : mode === 'stories' ? 3 : mode === 'carousel' ? 5 : 5
   slides = slides.slice(0, limit)
@@ -669,14 +738,14 @@ export async function generateContent(
         : callOpenAI(key, model, prompt, signal)
   const text = await ask(user)
   try {
-    return parseGeneration(safeParseJson(text), mode)
+    return parseGeneration(safeParseJson(text), mode, { discipline, topic })
   } catch (err) {
     if (!(err instanceof JsonRepairError)) throw err
     // Ni la limpieza local lo salvó: un único reintento pidiéndole al modelo la corrección.
     onStatus?.('[ Respuesta con JSON inválido · Pidiendo corrección sintáctica... ]')
     const fixed = await ask(repairPrompt(err))
     try {
-      const result = parseGeneration(safeParseJson(fixed), mode)
+      const result = parseGeneration(safeParseJson(fixed), mode, { discipline, topic })
       onStatus?.(null)
       return result
     } catch (again) {
@@ -728,9 +797,9 @@ Escribí una versión nueva y mejor (otro ángulo, otro dato o una frase más co
     aiTemplate
       ? ` Mantené templateId "${aiTemplate}"${
           req.slide.template === 'diagram'
-            ? ` con kind "${req.slide.diagramKind === 'curve' ? 'trajectory' : req.slide.diagramKind}"`
+            ? ` con diagram.recommendedType "${({ radar: 'radar', domino: 'domino', circles: 'circulos', curve: 'trayectoria' } as const)[req.slide.diagramKind]}"`
             : req.slide.template === 'repeat'
-              ? ` con mode "${req.slide.repeatMode}"`
+              ? ` con repeticion.mode "${req.slide.repeatMode}"`
               : ''
         }.`
       : ''
@@ -763,5 +832,5 @@ export async function regenerateSlide(
     parsed = safeParseJson(await ask(repairPrompt(err)))
   }
   onStatus?.(null)
-  return parseGeneration(parsed, 'single').slides[0]
+  return parseGeneration(parsed, 'single', { discipline: req.discipline, topic: req.topic }).slides[0]
 }

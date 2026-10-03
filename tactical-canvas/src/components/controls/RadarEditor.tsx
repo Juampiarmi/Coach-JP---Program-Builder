@@ -1,26 +1,28 @@
-import type { CanvasState } from '../../types'
+import type { DiagramData } from '../../types'
+
+type Radar = DiagramData['radar']
 
 interface Props {
-  state: CanvasState
-  update: (patch: Partial<CanvasState>) => void
+  radar: Radar
+  onChange: (patch: Partial<Radar>) => void
 }
 
 const split = (raw: string) => raw.split(/[,;\n]+/).map((s) => s.trim())
 const clamp = (n: number) => Math.min(100, Math.max(0, Math.round(n)))
 
 /** Editor del radar: una fila por eje (etiqueta + valor 0–100 + comparación opcional). */
-export function RadarEditor({ state, update }: Props) {
-  const axes = split(state.radarAxes).filter(Boolean)
-  const values = split(state.radarValues)
-  const compare = split(state.radarCompare)
-  const hasCompare = state.radarCompare.trim() !== ''
+export function RadarEditor({ radar, onChange }: Props) {
+  const axes = split(radar.axes).filter(Boolean)
+  const values = split(radar.values)
+  const compare = split(radar.compare)
+  const hasCompare = radar.compare.trim() !== ''
   const rows = axes.map((label, i) => ({ label, value: values[i] ?? '0', cmp: compare[i] ?? '' }))
 
   const commit = (next: typeof rows, withCompare = hasCompare) =>
-    update({
-      radarAxes: next.map((r) => r.label.replace(/,/g, ' ')).join(', '),
-      radarValues: next.map((r) => clamp(Number(r.value) || 0)).join(', '),
-      radarCompare: withCompare ? next.map((r) => clamp(Number(r.cmp) || 0)).join(', ') : '',
+    onChange({
+      axes: next.map((r) => r.label.replace(/,/g, ' ')).join(', '),
+      values: next.map((r) => clamp(Number(r.value) || 0)).join(', '),
+      compare: withCompare ? next.map((r) => clamp(Number(r.cmp) || 0)).join(', ') : '',
     })
   const set = (i: number, patch: Partial<(typeof rows)[number]>) => commit(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
 
