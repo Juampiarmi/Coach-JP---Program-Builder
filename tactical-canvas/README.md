@@ -22,7 +22,7 @@ funciona sin conexión.
   Manifiesto / Cita Táctica, **Diagrama** (modelos mentales en SVG paramétrico: radar editable,
   círculos fraccionados, efecto dominó y curva de trayectoria con bandera) y **Repetición
   matrix** (modo Diagonal: la frase repetida una vez por palabra con la diagonal resaltada;
-  modo Eco vertical: 1-2 palabras clave repetidas en outline con la del medio encendida;
+  modo Eco: 1-2 palabras clave repetidas en outline con la del medio encendida; modo Kinetic: una palabra a escala masiva con versiones outline corridas arriba y abajo;
   escala e interlineado ajustables).
 - **Temas**: Táctico Dark (el de siempre) y Minimal Paper (marfil + tinta negra + un acento,
   estilo editorial). Minimal Paper se aplica a Diagrama y Repetición; las plantillas 01–05

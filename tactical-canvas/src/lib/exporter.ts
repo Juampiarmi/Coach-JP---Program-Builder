@@ -33,6 +33,8 @@ function usedFontsKey(node: HTMLElement) {
 /** Renderiza el nodo a PNG en alta resolución. */
 export async function renderPng(node: HTMLElement, w: number, h: number): Promise<{ blob: Blob; ratio: number }> {
   await document.fonts.ready
+  // Dos cuadros de animación: el layout final (fuentes, SVG, auto-ajuste) ya está pintado.
+  await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
   const key = usedFontsKey(node)
   let fontCSS = fontCSSCache.get(key)
   if (!fontCSS) {

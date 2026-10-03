@@ -421,13 +421,14 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               onChange={(repeatMode) => update({ repeatMode })}
               options={[
                 { value: 'diagonal', label: '[ DIAGONAL ]' },
-                { value: 'echo', label: '[ ECO VERTICAL ]' },
+                { value: 'echo', label: '[ ECO ]' },
+                { value: 'kinetic', label: '[ KINETIC ]' },
               ]}
               size="sm"
             />
             <Field
-              label={state.repeatMode === 'echo' ? 'Frase (ideal 1-2 palabras clave)' : 'Frase'}
-              hint={state.repeatMode === 'echo' ? undefined : `${state.repeatPhrase.trim().split(/\s+/).filter(Boolean).length} palabras = renglones`}
+              label={state.repeatMode === 'diagonal' ? 'Frase' : state.repeatMode === 'kinetic' ? 'Palabra o frase corta' : 'Frase (ideal 1-2 palabras clave)'}
+              hint={state.repeatMode !== 'diagonal' ? undefined : `${state.repeatPhrase.trim().split(/\s+/).filter(Boolean).length} palabras = renglones`}
             >
               <TextArea value={state.repeatPhrase} onChange={(repeatPhrase) => update({ repeatPhrase })} rows={3} />
             </Field>
@@ -444,7 +445,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                 <Range value={state.repeatLeading} onChange={(repeatLeading) => update({ repeatLeading })} min={60} max={140} step={5} suffix="%" />
               </Field>
             </div>
-            <Field label={state.repeatMode === 'echo' ? 'Color de la frase encendida' : 'Color de la diagonal'} plain>
+            <Field label={state.repeatMode === 'diagonal' ? 'Color de la diagonal' : 'Color de la frase encendida'} plain>
               <Segmented<RepeatAccent>
                 value={state.repeatAccent}
                 onChange={(repeatAccent) => update({ repeatAccent })}
