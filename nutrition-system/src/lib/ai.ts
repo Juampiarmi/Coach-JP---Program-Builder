@@ -28,12 +28,12 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
   gemini: [
-    // Modelos accesibles en Free Tier. El primero es el default; ante 503 / 429 el conector
+    // Modelos vigentes de Google AI Studio. El primero es el default; ante 503 / 429 el conector
     // conmuta solo a la cadena de respaldo (ver GEMINI_FALLBACKS en gemini.ts).
-    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (Recomendado / Ultra Rápido)' },
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Estable Free Tier)' },
-    { id: 'gemini-3.0-flash', label: 'Gemini 3.0 Flash (Alta Capacidad)' },
-    { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Legacy Estable)' },
+    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite · Rápido / Free Tier' },
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · Alta Capacidad' },
+    { id: 'gemini-3.0-flash', label: 'Gemini 3.0 Flash' },
+    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
   ],
   openai: [
     { id: 'gpt-4.1', label: 'GPT-4.1' },
@@ -305,7 +305,7 @@ export async function pingProvider(ai: AiSettings): Promise<PingResult> {
     }
     const res =
       ai.provider === 'gemini'
-        ? await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ai.model)}`, { headers: { 'x-goog-api-key': ai.apiKey } })
+        ? await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ai.model)}?key=${encodeURIComponent(ai.apiKey)}`)
         : await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(ai.model)}`, { headers: { Authorization: `Bearer ${ai.apiKey}` } });
     if (res.ok) return done();
     const body = await res.json().catch(() => ({}));
@@ -315,17 +315,11 @@ export async function pingProvider(ai: AiSettings): Promise<PingResult> {
   }
 }
 
-/** Modelos retirados por proveedor → reemplazo vigente (migra configuraciones guardadas en localStorage). */
-export const RETIRED_MODELS: Record<string, string> = {
-  // Google: "models/gemini-2.5-pro is no longer available to new users".
-  'gemini-2.5-pro': 'gemini-2.5-flash-lite',
-  // Defaults anteriores, fuera del selector Free Tier (3.1 Pro da 429 sin facturación).
-  'gemini-3.8-flash': 'gemini-2.5-flash-lite',
-  'gemini-3.1-flash-lite': 'gemini-2.5-flash-lite',
-  'gemini-3.1-pro-preview': 'gemini-2.5-flash-lite',
-};
-
+/**
+ * Migra la configuración guardada en localStorage: un modelo de Gemini que ya no está en la lista
+ * vigente (Google lo retiró → "is no longer available") pasa al default actual.
+ */
 export function migrateModel(provider: AiProvider, model: string): string {
-  if (RETIRED_MODELS[model]) return RETIRED_MODELS[model];
+  if (provider === 'gemini' && !MODEL_OPTIONS.gemini.some((m) => m.id === model)) return MODEL_OPTIONS.gemini[0].id;
   return model;
 }

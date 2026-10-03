@@ -319,7 +319,7 @@ export const usePlanStore = create<PlanState>()(
             .map((p) => [p.id, p]),
         );
         merged.ai = { ...current.ai, ...(saved.ai ?? {}) };
-        // Un modelo retirado guardado (p. ej. gemini-2.5-pro) se reemplaza por el vigente al hidratar.
+        // Un modelo de Gemini retirado que quedó guardado se reemplaza por el default vigente al hidratar.
         merged.ai.model = migrateModel(merged.ai.provider, merged.ai.model);
         return merged;
       },

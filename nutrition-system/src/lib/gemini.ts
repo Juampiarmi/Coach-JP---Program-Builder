@@ -1,10 +1,14 @@
 import type { AiSettings } from './types';
 
 /**
- * Cadena de respaldo de Gemini (Free Tier) ante saturación (503 "high demand") o cuota (429).
+ * Cadena de respaldo de Gemini ante saturación (503 "high demand") o cuota (429).
  * Se recorre a continuación del modelo activo, sin repetirlo.
  */
-export const GEMINI_FALLBACKS = ['gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+export const GEMINI_FALLBACKS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.0-flash'];
+
+/** Endpoint v1beta de generateContent para el modelo activo. */
+export const geminiEndpoint = (modelId: string, apiKey: string) =>
+  `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
 /** Espera antes de reintentar el modelo principal. */
 export const GEMINI_RETRY_DELAY_MS = 1500;
@@ -73,9 +77,9 @@ export async function geminiGenerate(ai: AiSettings, body: unknown, onNotice?: (
     const model = chain[i];
     const attempts = i === 0 ? 2 : 1;
     for (let a = 0; a < attempts; a++) {
-      const res = await fetchFn(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+      const res = await fetchFn(geminiEndpoint(model, ai.apiKey), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': ai.apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
