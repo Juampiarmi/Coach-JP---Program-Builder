@@ -4097,6 +4097,7 @@ function parsearDiaCompletoCF(texto){
 const IMP_FASES = [
   { rx:/^(warm\s*-?\s*up|calentamiento|entrada\s+en\s+calor)$/i,                          fase:'warmup',    lb:'WARM-UP' },
   { rx:/^(skill\s*\/\s*strength|skill|strength|fuerza)$/i,                                   fase:'strength',  lb:'SKILL / STRENGTH' },
+  { rx:/^(hipertrofia|hypertrophy)$/i,                                                        fase:'strength',  lb:'HIPERTROFIA' },
   { rx:/^(wod\s*\/\s*metcon|wod|met\s*-?\s*con)$/i,                                          fase:'metcon',    lb:'WOD / METCON' },
   { rx:/^(accessory\s*\/\s*cool\s*-?\s*down|accessory|accesorios?|cool\s*-?\s*down|enfriamiento)$/i, fase:'accessory', lb:'ACCESSORY / COOLDOWN' },
   { rx:/^(hyrox(\s*\/\s*stations?)?|hyrox\s+stations?)$/i,                                    fase:'cardio',    lb:'HYROX STATIONS' },
@@ -4133,16 +4134,128 @@ const AVISO_LETRAS = 'Bloques "A) / B) / C)": la fase se infirió del texto -- r
    por palabra clave */
 const IMP_FASES_SOFT = [
   { rx:/warm|calent/i,                                        fase:'warmup' },
-  { rx:/skill|strength|fuerza|weightlifting|halterofilia/i,  fase:'strength' },
+  { rx:/skill|strength|fuerza|hipertrofia|hypertrophy|weightlifting|halterofilia/i,  fase:'strength' },
   { rx:/wod|met\s*-?\s*con|amrap|emom|for\s*time|chipper|tabata/i, fase:'metcon' },
   { rx:/access|accesor|cool\s*-?\s*down|enfriamiento|movilidad/i, fase:'accessory' },
   { rx:/hyrox|station/i,                                      fase:'cardio' },
   { rx:/endurance|turno|running/i,                            fase:'endurance' }
 ];
-function parsearImportacion(texto){
+/* ============================================================
+   directiva ("Extensión del Importador rápido a Sports & Bodybuilding") --
+   misma herramienta, vocabulario de hipertrofia/fuerza:
+     [BLOQUE 1] Press banca  |  [FUERZA] / [HIPERTROFIA] / [ACCESORIO] Nombre
+     4 Sets: 8-10 reps @ RIR 1-2   |   4x8-10 | Tempo 3010 | RIR 2
+     Rest 2:00  (o 90s / 2 min)
+   La prescripción se NORMALIZA al formato canónico que ya leen el escaneo
+   de videos, el panel de volumen, el motor de ondulación y la app del
+   alumno ("4x8-10 | Tempo 3010 | RIR 1-2 | Rest 120s"), todo en UNA línea
+   de dosis por ejercicio. OBJETIVO:/TIPS: siguen yendo a sus campos
+   (parsearImportacion, IMP_RX_ETIQ). RPE se convierte a RIR (RIR = 10 − RPE).
+   ============================================================ */
+const IMP_RX_REST_SB = /\b(?:rest|descanso|pausa)\b\s*[:=\-–]?\s*(?:(\d{1,2})\s*:\s*(\d{2})|(\d+(?:[.,]\d+)?)\s*(min(?:utos?)?|m|'|seg(?:undos?)?|segs?|sec|s|")?(?![a-záéíóú]))/i;
+function impDosisSB(texto){
+  let r = String(texto || ''), m;
+  const d = {};
+  const rango = s => s.replace(/\s+/g, '').replace(/[–a]/g, '-');
+  let corte = -1;
+  m = r.match(/(\d+)\s*(?:sets?|series?|rondas?)\b\s*(?:x|×|de|:|-|–)?\s*(\d+(?:\s*(?:-|–|a)\s*\d+)?)(?:\s*(?:reps?|repeticiones)\b)?/i);
+  let unidad = '';
+  if(!m){
+    m = r.match(/(\d+)\s*[x×]\s*(\d+(?:\s*(?:-|–|a)\s*\d+)?)(s|seg|min|mts?|cal|m)?(?![a-záéíóú0-9])(?:\s*(?:reps?|repeticiones)\b)?/i);
+    if(m) unidad = m[3] || '';
+  }
+  if(m){ d.sets = parseInt(m[1], 10); d.reps = rango(m[2]) + unidad; corte = m.index; r = r.slice(0, m.index) + ' ' + r.slice(m.index + m[0].length); }
+  /* tempo con X ("30X0" = concéntrica explosiva): la app del alumno sólo lee
+     dígitos, así que la X pasa a 1 (1 segundo) */
+  if((m = r.match(/tempo\s*[:=]?\s*([\dXx]{3,4}|\d-[\dXx]-[\dXx](?:-[\dXx])?)/i))){
+    d.tempo = m[1].replace(/-/g, '').replace(/x/gi, '1'); if(/x/i.test(m[1])) d.tempoX = true;
+    r = r.replace(m[0], ' ');
+  }
+  if((m = r.match(/(?:@\s*)?\brir\s*[:=]?\s*(\d+(?:\s*[-–]\s*\d+)?)/i))){ d.rir = m[1].replace(/\s+/g, '').replace('–', '-'); r = r.replace(m[0], ' '); }
+  if((m = r.match(/(?:@\s*)?\brpe\s*[:=]?\s*(\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)/i))){
+    r = r.replace(m[0], ' ');
+    if(!d.rir){
+      const rp = m[1].replace(/\s+/g, '').replace('–', '-').replace(/,/g, '.').split('-').map(Number).filter(n => !isNaN(n));
+      if(rp.length){ const rr = rp.map(n => Math.max(0, Math.round((10 - n) * 2) / 2)).sort((a, b) => a - b); d.rir = rr.length > 1 && rr[0] !== rr[1] ? rr[0] + '-' + rr[1] : String(rr[0]); d.rpeConv = true; }
+    }
+  }
+  if((m = r.match(IMP_RX_REST_SB))){
+    let seg;
+    if(m[1] !== undefined && m[1] !== '') seg = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    else {
+      const n = parseFloat(String(m[3]).replace(',', '.')), u = (m[4] || '').toLowerCase();
+      seg = /^(min|m|')/.test(u) ? Math.round(n * 60) : (u ? Math.round(n) : (n <= 10 ? Math.round(n * 60) : Math.round(n)));
+    }
+    if(seg > 0){ d.rest = seg; r = r.replace(m[0], ' '); }
+  }
+  const tieneDosis = !!(d.sets || d.tempo || d.rir || d.rest);
+  const letras = r.replace(/[^A-Za-zÀ-ÿ]/g, '');
+  /* "Press banca 4x8-10 @ RIR 2": nombre y dosis en la misma línea -> el
+     nombre se separa y la dosis se normaliza aparte */
+  let nombre = '';
+  if(tieneDosis && letras.length >= 4 && d.sets && corte > 0){
+    const pref = String(texto).slice(0, corte).replace(/[\s:|\-–@]+$/, '').replace(/^[\s\-•*]+/, '').trim();
+    if(pref.length >= 3 && pref.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= letras.length - 3) nombre = pref;
+  }
+  return { d: d, soloDosis: tieneDosis && letras.length < 4, nombre: nombre, tieneDosis: tieneDosis };
+}
+function impDosisCanonicaSB(d){
+  const p = [];
+  if(d.sets) p.push(d.sets + 'x' + (d.reps || ''));
+  if(d.tempo) p.push('Tempo ' + d.tempo);
+  if(d.rir) p.push('RIR ' + d.rir);
+  if(d.rest) p.push('Rest ' + d.rest + 's');
+  return p.join(' | ');
+}
+/* una línea del cuerpo de un bloque de Sports: dosis (se acumula en el grupo
+   actual de ese ejercicio), nombre+dosis (se separan) o texto libre intacto */
+function impPushLineaSports(bloque, t, avisos){
+  const x = impDosisSB(t);
+  if(!x.soloDosis && !x.nombre){ bloque.items.push(t); return; }
+  if(x.nombre){ bloque.items.push(x.nombre); bloque._g = null; }
+  let g = bloque._g;
+  if(!g || (x.d.sets && g.d.sets)){ g = bloque._g = { d: {} }; bloque.items.push(g); }
+  Object.keys(x.d).forEach(k => { if(k !== 'rpeConv' && k !== 'tempoX' && g.d[k] === undefined) g.d[k] = x.d[k]; });
+  if(x.d.rpeConv && avisos.indexOf(AVISO_RPE) < 0) avisos.push(AVISO_RPE);
+  if(x.d.tempoX && avisos.indexOf(AVISO_TEMPO_X) < 0) avisos.push(AVISO_TEMPO_X);
+}
+const AVISO_RPE = 'RPE convertido a RIR (RIR = 10 − RPE) para que el alumno vea la dosis completa';
+const AVISO_TEMPO_X = 'Tempo con "X" (explosivo) convertido a 1 segundo: la app del alumno sólo lee dígitos';
+function impCerrarBloqueSports(b){
+  if(!b || b._cerrado) return;
+  b._cerrado = true;
+  const restos = [];
+  b.items = b.items.map(it => {
+    if(typeof it === 'string') return it;
+    if(it.d.rest) restos.push(it.d.rest);
+    return impDosisCanonicaSB(it.d);
+  }).filter(Boolean);
+  /* el título es el nombre del ejercicio: si el cuerpo arranca directo con la
+     dosis, el nombre pasa a ser su primera línea (es lo que escanea el video) */
+  if(b.titulo && (!b.items.length || /^\d+x/.test(b.items[0])) && !/^(warm|calent|cardio)/i.test(b.titulo)){
+    b.items.unshift(b.titulo);
+    /* el encabezado pasa a ser la etiqueta del delimitador ("Bloque 1",
+       "Fuerza", "Accesorio"): el alumno ve "BLOQUE 1 · PRESS BANCA" en vez del
+       nombre duplicado (y el auditor del Builder no lo rellena con "Bloque") */
+    const et = String(b.tag || '').toLowerCase();
+    b.titulo = et ? et.charAt(0).toUpperCase() + et.slice(1) : '';
+  }
+  if(!b.titulo && b.tag){ const et = String(b.tag).toLowerCase(); b.titulo = et.charAt(0).toUpperCase() + et.slice(1); }
+  if(restos.length) b.rest = restos[0];
+  delete b._g;
+}
+function inferirFaseSports(titulo){
+  const t = String(titulo || '').toLowerCase();
+  if(/warm.?up|calent|activaci/.test(t)) return 'warmup';
+  if(/access|accesor|core|cool.?down|enfriamiento|aislamiento/.test(t)) return 'accessory';
+  if(/cardio|zona\s*2|z2/.test(t)) return 'cardio';
+  return 'strength';
+}
+function parsearImportacion(texto, sports){
   const avisos = [], dias = [];
   let dia = null, bloque = null, enFoco = false, campoAct = '';
-  const nuevoDia = (num, titulo) => { dia = { num: num, titulo: titulo || '', foco: '', bloques: [] }; dias.push(dia); bloque = null; enFoco = false; campoAct = ''; return dia; };
+  const cerrar = () => { if(sports && bloque) impCerrarBloqueSports(bloque); };
+  const nuevoDia = (num, titulo) => { cerrar(); dia = { num: num, titulo: titulo || '', foco: '', bloques: [] }; dias.push(dia); bloque = null; enFoco = false; campoAct = ''; return dia; };
   String(texto || '').split(/\r?\n/).forEach((raw, i) => {
     const l = raw.replace(/\s+$/, '');
     const t = l.trim();
@@ -4180,8 +4293,14 @@ function parsearImportacion(texto){
       let f = IMP_FASES.find(x => x.rx.test(tag));
       let fase = f ? f.fase : '';
       if(!fase){ const s = IMP_FASES_SOFT.find(x => x.rx.test(tag)); if(s) fase = s.fase; }
+      /* "[BLOQUE 3] Nombre": delimitador genérico, la fase sale del nombre */
+      if(!fase && /^bloque\s*\d*$/i.test(tag)){ const tt = (m[2] || '').trim(); fase = sports ? inferirFaseSports(tt) : inferirFaseCF(tt); f = null; }
       if(fase){
-        bloque = { fase: fase, titulo: (m[2] || '').trim(), items: [] }; dia.bloques.push(bloque); enFoco = false; return;
+        cerrar();
+        bloque = { fase: fase, titulo: (m[2] || '').trim(), items: [], tag: tag, lb: (f && !sports) ? f.lb : tag.toUpperCase() }; dia.bloques.push(bloque); enFoco = false;
+        /* "[BLOQUE 1] Press banca 4x8 @ RIR 2 Rest 2:00": nombre y dosis en el mismo renglón */
+        if(sports && bloque.titulo && impDosisSB(bloque.titulo).nombre){ const raw = bloque.titulo; bloque.titulo = ''; impPushLineaSports(bloque, raw, avisos); }
+        return;
       }
       avisos.push('Línea ' + (i + 1) + ': "[' + tag + ']" no es una fase conocida -- se dejó como texto del bloque');
       enFoco = false;
@@ -4189,44 +4308,54 @@ function parsearImportacion(texto){
       m = t.match(IMP_RX_BLOQUE_VIEJO);
       if(m){
         const tit = (m[1] || '').trim();
-        bloque = { fase: inferirFaseCF(tit), titulo: tit, items: [] }; dia.bloques.push(bloque); enFoco = false; return;
+        cerrar();
+        bloque = { fase: sports ? inferirFaseSports(tit) : inferirFaseCF(tit), titulo: tit, items: [] }; dia.bloques.push(bloque); enFoco = false; return;
       }
       m = t.match(IMP_RX_LETRA);
       if(m){
         const resto = (m[2] || '').trim();
-        const fase = /warm|calent/i.test(resto) ? 'warmup' : (detectarFormatoCF(resto) ? 'metcon' : inferirFaseCF(resto));
-        bloque = { fase: fase, titulo: '', items: resto ? [resto] : [] }; dia.bloques.push(bloque); enFoco = false;
+        const fase = sports ? inferirFaseSports(resto) : (/warm|calent/i.test(resto) ? 'warmup' : (detectarFormatoCF(resto) ? 'metcon' : inferirFaseCF(resto)));
+        cerrar();
+        bloque = { fase: fase, titulo: '', items: [] }; dia.bloques.push(bloque); enFoco = false;
+        if(resto){ if(sports) impPushLineaSports(bloque, resto, avisos); else bloque.items.push(resto); }
         if(avisos.indexOf(AVISO_LETRAS) < 0) avisos.push(AVISO_LETRAS);
         return;
       }
     }
     if(enFoco && !bloque){ dia.foco += '\n' + t; return; }
     if(!bloque){
-      bloque = { fase: 'metcon', titulo: '', items: [] }; dia.bloques.push(bloque);
-      avisos.push('Línea ' + (i + 1) + ': hay texto antes del primer delimitador de bloque -- se agrupó en un bloque WOD/METCON sin título');
+      bloque = { fase: sports ? 'strength' : 'metcon', titulo: '', items: [] }; dia.bloques.push(bloque);
+      avisos.push('Línea ' + (i + 1) + ': hay texto antes del primer delimitador de bloque -- se agrupó en un bloque ' + (sports ? 'FUERZA' : 'WOD/METCON') + ' sin título');
     }
-    bloque.items.push(t);
+    if(sports) impPushLineaSports(bloque, t, avisos); else bloque.items.push(t);
   });
+  cerrar();
   /* un bloque sin cuerpo es casi seguro un error de tipeo del delimitador */
   dias.forEach(d => d.bloques.forEach(b => { if(!b.items.length) avisos.push((d.num ? 'Día ' + d.num : 'Día') + ': el bloque "' + (b.titulo || b.fase) + '" no tiene prescripción'); }));
   return { dias: dias, avisos: avisos };
 }
 let _impModo = 'dia', _impTexto = '';
 const IMP_PLACEHOLDER = '=== DÍA 1: Oly Cycling, Press Den y Metcon ===\nFOCO: Velocidad de barra, salí agresivo los primeros 2 minutos.\n[WARM-UP]\n2 min Bike suave\n10 Air Squats\n[SKILL / STRENGTH] Power Snatch\n5x2 Power Snatch @ 60kg\nRest 90s\n[WOD / METCON] Cindy\nAMRAP 12 min:\n5 Pull-ups\n10 Push-ups\n15 Air Squats\n[ACCESSORY / COOLDOWN]\n3x12 DB Row @ 20kg\n\n=== DÍA 2: ... ===';
+const IMP_PLACEHOLDER_SB = '=== DÍA 1: Empuje · Pecho, Hombro y Tríceps ===\nFOCO: Tensión mecánica en pecho; controlá la fase excéntrica.\n[BLOQUE 1] Press banca plano con barra\n4 Sets: 8-10 reps @ RIR 1-2\nRest 2:00\nOBJETIVO: Máxima tensión mecánica en el rango medio\nTIPS: Escápulas retraídas, bajada de 3 segundos.\n[HIPERTROFIA] Press militar con mancuernas\n3x10-12 | Tempo 3010 | RIR 2 | Rest 90s\n[ACCESORIO] Elevaciones laterales\n3 Sets: 12-15 reps @ RIR 1\nRest 1:00\n\n=== DÍA 2: ... ===';
+/* sports: true -> modalidad Sports & Bodybuilding (vocabulario de hipertrofia) */
+function impEsSports(){ const p = plan(S.activeId); return !(p && esPlanCFActivo(p)); }
 function htmlImportadorRapido(){
+  const sp = impEsSports();
   return '<details class="card" id="impBox" style="margin-bottom:14px">' +
     '<summary class="lb" style="cursor:pointer">📋 Importador rápido de sesión · Pegar día completo (auto-split por bloque)</summary>' +
     '<div style="margin-top:10px">' +
       '<div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap">' +
         '<button type="button" class="btn sm ' + (_impModo === 'dia' ? 'gold' : 'ghost') + '" data-impmodo="dia">⚡ IMPORTAR DÍA ACTIVO</button>' +
-        '<button type="button" class="btn sm ' + (_impModo === 'semana' ? 'gold' : 'ghost') + '" data-impmodo="semana">📅 IMPORTAR SEMANA COMPLETA (S1..S4)</button>' +
+        '<button type="button" class="btn sm ' + (_impModo === 'semana' ? 'gold' : 'ghost') + '" data-impmodo="semana">📅 IMPORTAR SEMANA COMPLETA (' + (sp ? 'DÍA 1..N' : 'S1..S4') + ')</button>' +
       '</div>' +
-      '<textarea id="cfPegarTxt" style="min-height:240px" placeholder="' + esc(IMP_PLACEHOLDER) + '">' + esc(_impTexto) + '</textarea>' +
+      '<textarea id="cfPegarTxt" style="min-height:240px" placeholder="' + esc(sp ? IMP_PLACEHOLDER_SB : IMP_PLACEHOLDER) + '">' + esc(_impTexto) + '</textarea>' +
       '<div id="impPreview" class="hint" style="margin-top:6px"></div>' +
       '<button type="button" class="btn gold sm" style="margin-top:8px" data-impgo="1">⚡ PROCESAR E IMPORTAR</button>' +
-      '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> o <b>### DÍA X: Título</b> · <b>FOCO:</b> / <b>BRIEFING:</b> · delimitadores <b>[WARM-UP]</b> <b>[SKILL / STRENGTH]</b> <b>[WOD / METCON]</b> <b>[ACCESSORY / COOLDOWN]</b> + título opcional (también <b>A) …</b> / <b>B) …</b> para sesiones en bruto, con la fase inferida). ' +
-        '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su día correlativo' +
-        (esPlanCFActivo(plan(S.activeId)) ? ' de la semana que estás editando.' : ' (la progresión S2-S4 se genera con "Ondular mesociclo").') + '</div>' +
+      (sp
+        ? '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> · <b>FOCO:</b> (foco del coach) · cada ejercicio con <b>[BLOQUE X] Nombre</b>, <b>[FUERZA]</b>, <b>[HIPERTROFIA]</b> o <b>[ACCESORIO]</b> + nombre · prescripción <b>4 Sets: 8-10 reps @ RIR 1-2</b> o <b>4x8-10 | Tempo 3010 | RIR 2</b> · descanso <b>Rest 2:00</b> / <b>Rest 90s</b> · <b>OBJETIVO:</b> y <b>TIPS:</b> van a sus propios campos. ' +
+          '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su pestaña correlativa (la progresión S2-S4 se genera con "Ondular mesociclo").</div>'
+        : '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> o <b>### DÍA X: Título</b> · <b>FOCO:</b> / <b>BRIEFING:</b> · delimitadores <b>[WARM-UP]</b> <b>[SKILL / STRENGTH]</b> <b>[WOD / METCON]</b> <b>[ACCESSORY / COOLDOWN]</b> + título opcional (también <b>A) …</b> / <b>B) …</b> para sesiones en bruto, con la fase inferida). ' +
+          '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su día correlativo de la semana que estás editando.</div>') +
     '</div>' +
   '</details>';
 }
@@ -4235,11 +4364,13 @@ function previewImportacion(){
   if(!box || !ta) return;
   _impTexto = ta.value;
   if(!ta.value.trim()){ box.innerHTML = ''; return; }
-  const r = parsearImportacion(ta.value);
+  const sp = impEsSports();
+  const r = parsearImportacion(ta.value, sp);
   const nB = r.dias.reduce((s, d) => s + d.bloques.length, 0);
   const nT = r.dias.reduce((s, d) => s + d.bloques.reduce((x, b) => x + Object.keys(b.cierre || {}).length, 0), 0);
+  const lbBloque = b => (sp ? (b.lb || '') + (' ' + esc((b.items[0] || b.titulo || '').slice(0, 24))) : ((IMP_FASES.find(f => f.fase === b.fase) || {}).lb)) || (IMP_FASES.find(f => f.fase === b.fase) || {}).lb;
   const det = r.dias.map(d => (d.num ? 'Día ' + d.num : 'Día') + (d.titulo ? ' «' + esc(d.titulo.slice(0, 30)) + '»' : '') + ': ' +
-    (d.bloques.map(b => (IMP_FASES.find(f => f.fase === b.fase) || {}).lb).join(' · ') || 'sin bloques')).join('<br>');
+    (d.bloques.map(lbBloque).join(' · ') || 'sin bloques')).join('<br>');
   box.innerHTML = '<b style="color:var(--txt-2)">Detectado: ' + r.dias.length + ' día' + (r.dias.length === 1 ? '' : 's') + ', ' + nB + ' bloque' + (nB === 1 ? '' : 's') +
     (nT ? ' · ' + nT + ' campo' + (nT === 1 ? '' : 's') + ' de coaching (objetivo/tips/pacing/escalado)' : '') + '</b><br>' + det +
     (r.avisos.length ? '<div style="color:#FFB703;margin-top:4px">⚠ ' + r.avisos.slice(0, 4).map(esc).join('<br>⚠ ') + (r.avisos.length > 4 ? '<br>…y ' + (r.avisos.length - 4) + ' aviso(s) más' : '') + '</div>' : '');
@@ -4247,21 +4378,25 @@ function previewImportacion(){
 /* cada bloque parseado se instancia con la MISMA fábrica que el botón
    "+ AGREGAR BLOQUE DE PIZARRA" (ver nuevoBloquePizarra()) */
 function crearBloqueImportado(b, cf){
-  return nuevoBloquePizarra(cf, b.fase, b.titulo, b.items, b.cierre);
+  const bl = nuevoBloquePizarra(cf, b.fase, b.titulo, b.items, b.cierre);
+  /* Sports: el descanso del bloque (Rest M:SS) también queda como dato del
+     bloque; el que lee el alumno es el "Rest Ns" de la línea de dosis */
+  if(!cf && b.rest) bl.restSeconds = b.rest;
+  return bl;
 }
 function ejecutarImportacion(texto, modo){
   const p = plan(S.activeId), ath = active();
   if(!p || !ath){ toast('Seleccioná un alumno/a primero', 'err'); return false; }
-  const r = parsearImportacion(texto);
+  const r = parsearImportacion(texto, !esPlanCFActivo(p));
   const totalBloques = r.dias.reduce((s, d) => s + d.bloques.length, 0);
   if(!r.dias.length || !r.dias.some(d => d.bloques.length || d.titulo || d.foco)){
-    toast('No se detectó nada para importar: usá "=== DÍA 1: Título ===" y delimitadores como [WARM-UP]', 'warn'); return false;
+    toast('No se detectó nada para importar: usá "=== DÍA 1: Título ===" y delimitadores como ' + (esPlanCFActivo(p) ? '[WARM-UP]' : '[BLOQUE 1] / [FUERZA]'), 'warn'); return false;
   }
   /* si el texto no trae NI UN bloque no se toca nada (antes se importaban
      título y foco y el día quedaba vacío: "DÍA VACÍO"): se avisa y se deja
      la vista previa con el detalle para corregir los delimitadores */
   if(!totalBloques){
-    toast('No se detectó ningún bloque: revisá los delimitadores ([WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN]). No se cambió nada.', 'err');
+    toast('No se detectó ningún bloque: revisá los delimitadores (' + (esPlanCFActivo(p) ? '[WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN]' : '[BLOQUE 1], [FUERZA], [HIPERTROFIA], [ACCESORIO]') + '). No se cambió nada.', 'err');
     return false;
   }
   const cf = esPlanCFActivo(p);
@@ -4397,7 +4532,20 @@ function resolverExSports(nombreCrudo){
   if(porStem) return porStem;
   const candidatos = S.exercises.filter(function(e){ return matchNombre(e.es, nombre) || (e.en && matchNombre(e.en, nombre)); });
   if(!candidatos.length) return null;
-  candidatos.sort(function(a, b){ return normSports(a.es).length - normSports(b.es).length; });
+  /* ranking por coincidencia real de palabras (antes ganaba el nombre más
+     corto: "Press banca" caía en "Press JM" por compartir sólo "press").
+     Más palabras del coach en común suma; palabras de más y variantes que el
+     coach no pidió (pausa, bandas, agarre, inclinado...) restan; el más corto
+     desempata. */
+  const qw = normSports(nombre).split(' ').filter(function(w){ return w.length > 3; });
+  const RX_VARIANTE = /^(pausa|bandas?|agarre|spoto|floor|declinado|inclinado|inclinada|soporte|unilateral|parada|cerrado|ancho|isometrico|isometrica)$/;
+  function puntaje(e){
+    const ew = normSports(e.es).split(' ').filter(function(w){ return w.length > 3; });
+    const comun = qw.filter(function(w){ return ew.indexOf(w) >= 0; }).length;
+    const penal = ew.filter(function(w){ return RX_VARIANTE.test(w) && qw.indexOf(w) < 0; }).length;
+    return comun * 10 - penal * 4 - (ew.length - comun);
+  }
+  candidatos.sort(function(a, b){ return puntaje(b) - puntaje(a) || normSports(a.es).length - normSports(b.es).length; });
   return candidatos[0];
 }
 /* extrae {sets, reps, tempo, rir, restSeconds} de una línea de dosis
@@ -6034,27 +6182,38 @@ function calcularVolumenSemanal(p, weekIdx){
           if(ex && out[ex.grupo] !== undefined) out[ex.grupo] += 3;
         });
       } else if(b.tipo === 'list'){
-        let ultimoNombre = '';
-        (b.items || []).forEach(raw => {
-          const linea = String(raw || '').trim();
-          if(!linea) return;
-          const dosis = parsearDosisSports(linea);
-          if(dosis.sets){
-            const m = linea.match(RX_DOSIS_SPORTS);
-            const prefijo = m ? linea.slice(0, m.index).replace(/^A\d+[.)]\s*/i, '').replace(/:\s*$/, '').trim() : '';
-            const nombre = prefijo || ultimoNombre;
-            if(nombre){
-              const ex = resolverExSports(nombre);
-              if(ex && out[ex.grupo] !== undefined) out[ex.grupo] += dosis.sets;
-            }
-          } else if(!/^\d+\s*rondas?\b/i.test(linea) && !/^\[?(dropset|rest-pause|myo)/i.test(linea) && !/:$/.test(linea)){
-            ultimoNombre = linea.replace(/^A\d+[.)]\s*/i, '').trim();
-          }
-        });
+        seriesPizarraPorEjercicio(b).forEach(s => { if(out[s.ex.grupo] !== undefined) out[s.ex.grupo] += s.sets; });
       }
     });
   });
   return out;
+}
+/* series de un bloque de Pizarra (texto libre) resueltas contra la
+   biblioteca: [{ex, sets}] -- una línea de dosis toma el nombre de su propia
+   línea ("Prensa: 3x10") o, si va sola ("4x8-10 | RIR 2"), el de la línea de
+   nombre anterior. Una línea sin match real nunca suma. La comparten el
+   Balance de Volumen (calcularVolumenSemanal) y el panel "Volumen semanal de
+   series efectivas" (calcVolumen), también para lo que arma el Importador. */
+function seriesPizarraPorEjercicio(b){
+  const res = [];
+  let ultimoNombre = '';
+  (b.items || []).forEach(raw => {
+    const linea = String(raw || '').trim();
+    if(!linea) return;
+    const dosis = parsearDosisSports(linea);
+    if(dosis.sets){
+      const m = linea.match(RX_DOSIS_SPORTS);
+      const prefijo = m ? linea.slice(0, m.index).replace(/^A\d+[.)]\s*/i, '').replace(/:\s*$/, '').trim() : '';
+      const nombre = prefijo || ultimoNombre;
+      if(nombre){
+        const ex = resolverExSports(nombre);
+        if(ex) res.push({ ex: ex, sets: dosis.sets });
+      }
+    } else if(!/^\d+\s*rondas?\b/i.test(linea) && !/^\[?(dropset|rest-pause|myo)/i.test(linea) && !/:$/.test(linea) && !/^(rest|descanso|nota|rir)\b/i.test(linea)){
+      ultimoNombre = linea.replace(/^A\d+[.)]\s*/i, '').trim();
+    }
+  });
+  return res;
 }
 (function(){
   'use strict';
@@ -38440,6 +38599,11 @@ document.addEventListener('DOMContentLoaded', init);
         else if(b.tipo === 'finisher'){
           const r = parseInt((b.roundsByWeek || [])[0], 10) || 2;
           (b.fin || []).forEach(e => { const ex = getEx(e.exId); if(ex) add(volGroup(ex), r); });
+        }
+        else if(b.tipo === 'list' && b.sportsPizarra){
+          /* bloques de Pizarra Sports (incluye los del Importador rápido):
+             series leídas del texto y asignadas por ejercicio resuelto */
+          seriesPizarraPorEjercicio(b).forEach(s => add(volGroup(s.ex), s.sets));
         }
       });
       porDia.push(dia);
