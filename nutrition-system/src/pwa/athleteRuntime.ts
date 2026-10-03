@@ -30,6 +30,7 @@ const runtime = String.raw`
     checks: store.get('checks:' + today, {}),
     swaps: store.get('swaps', {}),
     sheet: null,
+    install: null,
   };
 
   var $ = function (s) { return document.querySelector(s); };
@@ -75,9 +76,18 @@ const runtime = String.raw`
     return '≈ ' + n1(Math.round(q * 2) / 2) + ' ' + esc(ref.unit.label);
   }
 
+  /** Sugerencia concreta para llegar al umbral de leucina (huevo de 50 g o whey). */
+  function leuTip(need) {
+    var egg = D.foods.huevo ? D.foods.huevo.leucine * 0.5 : 0.55;
+    var whey = D.foods.whey ? D.foods.whey.leucine / 100 : 0.085;
+    var eggs = Math.max(1, Math.ceil(need / egg));
+    var g = Math.max(5, Math.ceil(need / whey / 5) * 5);
+    return 'Sumá ' + eggs + ' huevo' + (eggs > 1 ? 's' : '') + ' o ' + g + ' g de whey';
+  }
+
   function ring(pct, color) {
     var r = 46, c = 2 * Math.PI * r, off = c * (1 - Math.min(1, pct));
-    return '<svg width="108" height="108" viewBox="0 0 108 108"><circle cx="54" cy="54" r="' + r + '" fill="none" stroke="#1A222D" stroke-width="6"/><circle cx="54" cy="54" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + c + '" stroke-dashoffset="' + off + '" style="transition:stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1)"/></svg>';
+    return '<svg width="108" height="108" viewBox="0 0 108 108"><circle cx="54" cy="54" r="' + r + '" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="6"/><circle cx="54" cy="54" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + c + '" stroke-dashoffset="' + off + '" style="transition:stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1)"/></svg>';
   }
 
   function bar(cls, label, cur, tgt) {
@@ -103,15 +113,15 @@ const runtime = String.raw`
       return { p: a.p + x.t.p, c: a.c + x.t.c, f: a.f + x.t.f, k: a.k + x.kcal };
     }, { p: 0, c: 0, f: 0, k: 0 });
     var doneCount = list.filter(function (x) { return S.checks[x.m.id]; }).length;
-    var color = mode === 'on' ? 'rgba(0,229,255,.8)' : 'rgba(255,214,0,.85)';
+    var color = '#38BDF8';
     var h = '';
 
-    h += '<header class="top">' + D.shield + '<div><div class="brand">COACH <b>JP</b></div><div class="handle">' + esc(D.handle) + '</div></div><div class="phase">' + esc(D.athlete.phase) + '</div></header>';
+    h += '<header class="top">' + D.mark + '<div><div class="brand">Coach JP <b>Nutrition</b></div><div class="handle">' + esc(D.handle) + '</div></div><div class="phase">' + esc(D.athlete.phase) + '</div></header>';
     h += '<div class="tag">[ PLAN NUTRICIONAL · ' + esc(D.athlete.discipline) + ' ]</div>';
     h += '<h1>' + esc(D.athlete.name) + '</h1>';
     if (D.coachNote) h += '<p class="note">' + esc(D.coachNote) + '</p>';
 
-    h += '<div class="switch ' + mode + '"><span class="knob"></span><button data-mode="on" class="' + (mode === 'on' ? 'on' : '') + '">DÍA DE ENTRENO</button><button data-mode="off" class="' + (mode === 'off' ? 'on' : '') + '">DÍA DE DESCANSO</button></div>';
+    h += '<div class="switch ' + mode + '"><span class="knob"></span><button data-mode="on" class="' + (mode === 'on' ? 'on' : '') + '">MODO DÍA ON</button><button data-mode="off" class="' + (mode === 'off' ? 'on' : '') + '">MODO DÍA OFF</button></div>';
 
     h += '<section class="card"><div class="tag" style="margin-bottom:10px">[ OBJETIVO DE HOY · ' + (mode === 'on' ? 'DÍA ON · ENTRENO' : 'DÍA OFF · DESCANSO') + ' ]</div>';
     h += '<div class="hero"><div class="ring">' + ring(tgt.kcal ? eaten.k / tgt.kcal : 0, color) + '<div class="v"><b>' + Math.round(tgt.kcal ? (eaten.k / tgt.kcal) * 100 : 0) + '%</b><span>DEL DÍA</span></div></div>';
@@ -120,7 +130,7 @@ const runtime = String.raw`
     h += '</section>';
 
     D.protocols.forEach(function (p) {
-      h += '<section class="card alert"><div class="tag" style="margin-bottom:6px">[ ' + esc(p.tag) + ' ]</div><div style="font-family:Chakra Petch,sans-serif;font-weight:700;font-size:17px;text-transform:uppercase">' + esc(p.title) + '</div><p class="muted" style="font-size:13px;margin-top:4px">' + esc(p.body) + '</p></section>';
+      h += '<section class="card alert"><div class="tag" style="margin-bottom:6px">[ ' + esc(p.tag) + ' ]</div><div style="font-weight:700;font-size:16px;color:#FFFFFF">' + esc(p.title) + '</div><p class="muted" style="font-size:13px;margin-top:4px">' + esc(p.body) + '</p></section>';
     });
 
     h += '<div class="sec"><span class="tag">[ COMIDAS DEL DÍA ]</span><span class="prog">Tocá un alimento para cambiarlo</span></div>';
@@ -137,8 +147,8 @@ const runtime = String.raw`
       });
       h += '</div>';
       if (!m.mps) h += '<div class="leu na"><span class="dot"></span>Energía para entrenar · carbohidratos de rápida absorción</div>';
-      else if (x.t.l >= D.threshold) h += '<div class="leu ok"><span class="dot"></span>Proteína suficiente para estimular el músculo · leucina ' + n1(x.t.l) + ' g</div>';
-      else h += '<div class="leu low"><span class="dot"></span>Falta proteína en esta comida · leucina ' + n1(x.t.l) + ' de ' + n1(D.threshold) + ' g</div>';
+      else if (x.t.l >= D.threshold) h += '<div class="leu ok"><span class="dot"></span>[ mTOR / MPS: ACTIVADO • ' + n1(x.t.l) + ' g LEUCINA ]</div>';
+      else h += '<div class="leu low"><span class="dot"></span>[ SUB-UMBRAL mTOR • ' + n1(x.t.l) + ' g LEUCINA ] · ' + leuTip(D.threshold - x.t.l) + '</div>';
       h += '</section>';
     });
 
@@ -164,6 +174,7 @@ const runtime = String.raw`
 
   function renderSheet() {
     var bg = $('#sheet-bg'), sh = $('#sheet');
+    if (S.install) return renderInstall(bg, sh);
     if (!S.sheet) { bg.className = 'sheet-bg'; sh.className = 'sheet'; return; }
     var meal = D.meals.filter(function (m) { return m.id === S.sheet.meal; })[0];
     var orig = meal && meal.items.filter(function (i) { return i.id === S.sheet.item; })[0];
@@ -186,6 +197,24 @@ const runtime = String.raw`
     sh.className = 'sheet open';
   }
 
+  function isIOS() {
+    return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  }
+
+  /** Guía táctica de instalación paso a paso (cuando no hay prompt nativo). */
+  function renderInstall(bg, sh) {
+    var tab = S.install;
+    var steps = tab === 'ios'
+      ? ['Abrí este link en <b>Safari</b> (en Chrome de iPhone no aparece la opción).', 'Tocá <b>Compartir</b> (cuadrado con flecha hacia arriba ⬆).', 'Deslizá y elegí <b>«Agregar a inicio»</b>.', 'Tocá <b>Agregar</b>: el ícono Nutrition queda en tu pantalla.']
+      : ['Abrí este link en <b>Chrome</b>.', 'Tocá el menú <b>⋮</b> (arriba a la derecha).', 'Elegí <b>«Instalar app»</b> o «Agregar a la pantalla principal».', 'Confirmá <b>Instalar</b>: la app abre a pantalla completa y funciona sin señal.'];
+    var h = '<div class="grab"></div>' + D.markSm + '<div class="tag" style="margin-top:10px">[ INSTALAR APP · GUÍA PASO A PASO ]</div><h3>Llevá tu plan en el celular</h3>';
+    h += '<div class="tabs"><button data-itab="ios" class="' + (tab === 'ios' ? 'on' : '') + '">IPHONE</button><button data-itab="android" class="' + (tab === 'android' ? 'on' : '') + '">ANDROID</button></div>';
+    h += '<ol class="steps">' + steps.map(function (t, i) { return '<li><span class="n">' + (i + 1) + '</span><span>' + t + '</span></li>'; }).join('') + '</ol>';
+    sh.innerHTML = h;
+    bg.className = 'sheet-bg open';
+    sh.className = 'sheet open';
+  }
+
   var tt;
   function toast(msg) {
     var t = $('#toast');
@@ -198,8 +227,12 @@ const runtime = String.raw`
   function haptic() { try { navigator.vibrate && navigator.vibrate(12); } catch (e) {} }
 
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],#sheet-bg,#install,#reset');
     if (!el) return;
+    if (el.dataset.itab) {
+      S.install = el.dataset.itab;
+      return renderSheet();
+    }
     if (el.dataset.mode) {
       S.mode = el.dataset.mode;
       store.set('mode', S.mode);
@@ -214,6 +247,7 @@ const runtime = String.raw`
       render();
     } else if (el.dataset.swap) {
       var p = el.dataset.swap.split('|');
+      S.install = null;
       S.sheet = { meal: p[0], item: p[1] };
       renderSheet();
     } else if (el.dataset.pick) {
@@ -228,6 +262,7 @@ const runtime = String.raw`
       toast('Alimento cambiado · porciones recalculadas');
     } else if (el.id === 'sheet-bg') {
       S.sheet = null;
+      S.install = null;
       renderSheet();
     } else if (el.id === 'install') {
       install();
@@ -242,16 +277,17 @@ const runtime = String.raw`
   // ---- Instalación PWA (Chrome/Android: prompt nativo · iOS: Compartir → Agregar a inicio)
   var deferred = null;
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; });
+  window.addEventListener('appinstalled', function () { deferred = null; toast('App instalada · ya la tenés en tu inicio'); });
   function install() {
     var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
     if (standalone) return toast('YA ESTÁ INSTALADA EN TU PANTALLA DE INICIO');
     if (deferred) {
       deferred.prompt();
       deferred.userChoice.then(function () { deferred = null; });
-    } else if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-      toast('SAFARI → COMPARTIR ⬆ → «AGREGAR A INICIO»');
     } else {
-      toast('MENÚ ⋮ DEL NAVEGADOR → «INSTALAR APP»');
+      S.sheet = null;
+      S.install = isIOS() ? 'ios' : 'android';
+      renderSheet();
     }
   }
 
