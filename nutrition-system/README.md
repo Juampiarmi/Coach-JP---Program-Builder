@@ -51,6 +51,23 @@ guía paso a paso. La PWA exportada del atleta trae lo mismo: manifest embebido 
 - **Tipografía:** Inter para UI y titulares; JetBrains Mono con `tabular-nums` para cifras y corchetes.
 - **Inputs numéricos:** sin spinners; se escriben y borran libremente (coma o punto) y recalculan en vivo.
 
+## Funciones de la consola del coach
+
+- **Base local de atletas:** varios atletas en `localStorage` con selector rápido en el header (alta, cambio, borrado).
+- **Terminal de compilación IA:** checklist en vivo (enlace, inferencia, JSON, BMR vs motor local, partición ON/OFF,
+  leucina por comida, sincronización).
+- **Escáner de platos con IA:** cámara o galería → foto reducida a ≤1024 px en Base64 → modelo multimodal configurado
+  (Claude Vision / Gemini / OpenAI) → desglose por ingrediente con la canasta argentina, Puntuación Nutricional Táctica
+  0-100 (IA + verificación del motor local) e inyección directa en una comida ON/OFF.
+- **[ COPIAR PARA WHATSAPP ]:** resumen formateado del plan + link de la PWA del atleta (pestaña PWA Deploy).
+
+## PWA del atleta
+
+Gauge semi-arco de kcal restantes con arcos de P/C/G, tracker de hidratación (meta ON/OFF editable en Perfil),
+dial peri-entreno de 24 h, lista de compras semanal por categoría (respeta los Smart Swaps), guía «Comer fuera de casa»
+y **Foto → Coach**: el atleta saca la foto y la comparte con el coach (Web Share / WhatsApp). La app del atleta nunca
+lleva claves de IA; el análisis se hace en la consola del coach con el escáner.
+
 ## Desarrollo local (opcional)
 
 ```bash

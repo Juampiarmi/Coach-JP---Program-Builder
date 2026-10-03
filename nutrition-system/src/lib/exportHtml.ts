@@ -3,10 +3,25 @@ import styles from '@/pwa/athleteStyles';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL } from './bioenergetics';
 import { BRAND, nutritionSvg, shieldSvg } from './brand';
 import { CITES } from './evidence';
-import { FOODS, GROUP_ANCHOR, GROUP_LABEL } from './foods';
+import { FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
 import type { AthletePlan, DayMode } from './types';
 
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
+
+/** Categorías de la lista de compras semanal de la PWA del atleta. */
+const SHOP_CATEGORY: Record<SwapGroup, string> = {
+  'lean-protein': 'Carnes y pescados',
+  eggs: 'Huevos y lácteos',
+  'dairy-protein': 'Huevos y lácteos',
+  starch: 'Almidones y cereales',
+  cereal: 'Almidones y cereales',
+  'sport-carb': 'Carbos de entreno',
+  fruit: 'Frutas y vegetales',
+  veg: 'Frutas y vegetales',
+  fat: 'Grasas saludables',
+  whey: 'Suplementos',
+};
+const SHOP_ORDER = ['Carnes y pescados', 'Huevos y lácteos', 'Almidones y cereales', 'Carbos de entreno', 'Frutas y vegetales', 'Grasas saludables', 'Suplementos', 'Otros'];
 
 export function slugify(s: string) {
   return (
@@ -90,6 +105,11 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     protocols,
     citations: [CITES.morton, CITES.aragon, CITES.leucine, CITES.carbs, CITES.ea],
     generatedLabel: d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    hydration: plan.hydration,
+    training: { time: pr.trainingTime, minutes: pr.sessionMinutes },
+    trainingDays: pr.trainingDaysPerWeek,
+    categories: SHOP_CATEGORY,
+    categoryOrder: SHOP_ORDER,
     manifest: { ...manifest, icons: [] },
   };
 }
@@ -164,6 +184,7 @@ ${opts.icons ? `<link rel="icon" type="image/png" sizes="192x192" href="${opts.i
 <div id="sheet-bg" class="sheet-bg"></div>
 <div id="sheet" class="sheet"></div>
 <div id="toast" class="toast"></div>
+<input id="photo" type="file" accept="image/*" capture="environment" hidden>
 <script id="cjp-data" type="application/json">${safeJson(payload)}</script>
 <script>${runtime}</script>
 </body>

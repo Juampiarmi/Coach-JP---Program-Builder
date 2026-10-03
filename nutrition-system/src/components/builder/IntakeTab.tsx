@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Cpu, Eye, EyeOff, KeyRound, Loader2, Radio, ShieldAlert, Trash2, Zap } from 'lucide-react';
 import { compileWithAi, MODEL_OPTIONS, pingProvider, planFromAi, SYSTEM_PROMPT, SYSTEM_PROMPT_EXTENSION, type PingResult } from '@/lib/ai';
-import { computeTelemetry, fmt0 } from '@/lib/bioenergetics';
+import { COMPILE_STEPS, validateCompiled, type CompileCheck } from '@/lib/compileChecks';
 import type { AiProvider } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { cx, HudButton, Label, Panel, Segmented, Select, Tag } from '../hud/primitives';
@@ -12,7 +12,7 @@ import { cx, HudButton, Label, Panel, Segmented, Select, Tag } from '../hud/prim
 const TEMPLATES: { id: string; label: string; text: string }[] = [
   {
     id: 'hyrox',
-    label: 'Atleta Hyrox / Doble Turno',
+    label: 'Hyrox / Doble Turno',
     text: `Nombre: Franco, 31 años, masculino.
 Medidas: 176 cm · 79 kg · 14 % graso (bioimpedancia).
 Deporte: Hyrox Pro + CrossFit. DOBLE TURNO: 07:00 h carrera/ergómetros (60 min) y 19:00 h fuerza + estaciones Hyrox (75 min). Lunes a viernes; sábado fondo largo 90 min; domingo descanso.
@@ -25,7 +25,7 @@ Suplementos actuales: whey. Nunca usó creatina.`,
   },
   {
     id: 'bb',
-    label: 'Musculación / Recomposición',
+    label: 'Musculación',
     text: `Nombre: Lucía, 27 años, femenino.
 Medidas: 165 cm · 63 kg · 24 % graso (estimado visual).
 Deporte: musculación 5 días (torso/pierna), sesiones de 70 min a las 18:30 h. Caminatas 8.000 pasos/día.
@@ -38,7 +38,7 @@ Suplementos actuales: ninguno.`,
   },
   {
     id: 'cf',
-    label: 'CrossFit / Mantenimiento',
+    label: 'CrossFit',
     text: `Nombre: Martín, 35 años, masculino.
 Medidas: 180 cm · 86 kg · 16 % graso.
 Deporte: CrossFit RX, 4 WODs por semana (60 min, 07:00 h) + 1 sesión de halterofilia.
@@ -72,7 +72,7 @@ export function IntakeTab() {
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [log, setLog] = useState<string[]>([]);
+  const [checks, setChecks] = useState<CompileCheck[]>([]);
   const [ping, setPing] = useState<PingResult | 'testing' | null>(null);
   const [saved, setSaved] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -106,33 +106,53 @@ export function IntakeTab() {
     setPing(await pingProvider(usePlanStore.getState().ai));
   }
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const mark = (id: string, patch: Partial<CompileCheck>) => setChecks((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+
   async function compile() {
     setBusy(true);
     setError(null);
-    setLog([]);
     setElapsed(0);
+    setChecks(COMPILE_STEPS.map((s) => ({ ...s, status: 'pending' })));
     const t0 = Date.now();
     timer.current = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 250);
+    let current = 'link';
     try {
+      mark('link', { status: 'running' });
+      if (!ai.apiKey.trim()) throw new Error('Cargá una API key para compilar con IA.');
+      await sleep(180);
+      mark('link', { status: 'ok', detail: `${ai.provider.toUpperCase()} · ${ai.model}` });
+      current = 'infer';
+      mark('infer', { status: 'running' });
       const json = await compileWithAi(ai, notes);
+      mark('infer', { status: 'ok', detail: `${Math.round((Date.now() - t0) / 1000)} s` });
+      current = 'json';
+      mark('json', { status: 'running' });
       const next = planFromAi(json, usePlanStore.getState().plan);
+      await sleep(150);
+      mark('json', { status: 'ok', detail: `${next.meals.length} comidas · ${next.supplements.length} suplementos` });
+      const v = validateCompiled(json, next);
+      for (const id of ['bmr', 'split', 'leu'] as const) {
+        current = id;
+        mark(id, { status: 'running' });
+        await sleep(220);
+        mark(id, v[id]);
+      }
+      current = 'sync';
+      mark('sync', { status: 'running' });
       loadPlan(next);
-      const t = computeTelemetry(next);
-      setLog([
-        `ATLETA ............ ${next.profile.name.toUpperCase()}`,
-        `BMR (IA) .......... ${json.bmr ? fmt0(json.bmr) : '—'} kcal · MOTOR LOCAL ${fmt0(t.bmr)} kcal`,
-        `DÍA ON ............ ${fmt0(t.kcalOn)} kcal · P${t.gramsOn.p} C${t.gramsOn.c} F${t.gramsOn.f}`,
-        `DÍA OFF ........... ${fmt0(t.kcalOff)} kcal · P${t.gramsOff.p} C${t.gramsOff.c} F${t.gramsOff.f}`,
-        `BLOQUES ........... ${next.meals.length} · SUPLEMENTOS ${next.supplements.length}`,
-        'ESTADO ............ BUILDER SINCRONIZADO ✓',
-      ]);
+      await sleep(150);
+      mark('sync', { status: 'ok', detail: `${next.profile.name.toUpperCase()} · BUILDER Y SIMULADOR ACTUALIZADOS` });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      mark(current, { status: 'fail', detail: msg.slice(0, 160) });
+      setError(msg);
     } finally {
       if (timer.current) clearInterval(timer.current);
       setBusy(false);
     }
   }
+
 
   return (
     <div className="space-y-4">
@@ -239,19 +259,41 @@ export function IntakeTab() {
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
           {busy ? `COMPILANDO BIOENERGÉTICA · ${elapsed}s` : 'COMPILAR PLAN CON IA'}
         </HudButton>
-        {error && <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 p-3 font-mono text-[11px] text-danger">⚠ FALLO DE COMPILACIÓN · {error}</div>}
-        {log.length > 0 && (
+        {checks.length > 0 && (
           <div className="mt-3 rounded-lg border border-cyan-hud/20 bg-carbon p-3">
-            <Tag className="mb-2">TELEMETRÍA DE COMPILACIÓN</Tag>
-            <pre className="tnum whitespace-pre-wrap font-mono text-[11px] leading-6 text-ink">{log.join('\n')}</pre>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <HudButton tone="cyan" variant="ghost" onClick={() => setBuilderTab('profile')}>
-                Revisar perfil
-              </HudButton>
-              <HudButton tone="cyan" variant="ghost" onClick={() => setBuilderTab('meals')}>
-                Revisar ingestas
-              </HudButton>
-            </div>
+            <Tag className="mb-2">TERMINAL DE COMPILACIÓN · {elapsed}s</Tag>
+            <ol className="space-y-1.5 font-mono text-[11px]">
+              {checks.map((c) => (
+                <li key={c.id} className="tnum flex gap-2">
+                  <span
+                    className={cx(
+                      'w-12 flex-none',
+                      c.status === 'ok' && 'text-cyan-hud',
+                      c.status === 'warn' && 'text-fire',
+                      c.status === 'fail' && 'text-danger',
+                      c.status === 'running' && 'animate-pulse text-ink',
+                      c.status === 'pending' && 'text-mute/60',
+                    )}
+                  >
+                    {{ ok: '[ OK ]', warn: '[ !! ]', fail: '[ XX ]', running: '[ .. ]', pending: '[    ]' }[c.status]}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={c.status === 'pending' ? 'text-mute/60' : 'text-ink'}>{c.label}</span>
+                    {c.detail && <span className={cx('block text-[10px]', c.status === 'fail' ? 'text-danger' : c.status === 'warn' ? 'text-fire' : 'text-steel')}>↳ {c.detail}</span>}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {!busy && checks.every((c) => c.status === 'ok' || c.status === 'warn') && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <HudButton tone="cyan" variant="ghost" onClick={() => setBuilderTab('profile')}>
+                  Revisar perfil
+                </HudButton>
+                <HudButton tone="cyan" variant="ghost" onClick={() => setBuilderTab('meals')}>
+                  Revisar ingestas
+                </HudButton>
+              </div>
+            )}
           </div>
         )}
       </Panel>

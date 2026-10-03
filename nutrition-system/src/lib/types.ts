@@ -38,6 +38,9 @@ export interface Profile {
   /** Gasto energético neto de la sesión de entrenamiento (kcal) en día ON. */
   sessionKcal: number;
   trainingDaysPerWeek: number;
+  /** Hora de inicio de la sesión (HH:MM) para el dial peri-entreno de 24 h. */
+  trainingTime: string;
+  sessionMinutes: number;
   notes: string;
 }
 
@@ -82,6 +85,12 @@ export interface Supplement {
 
 export interface AthletePlan {
   version: 1;
+  /** Id estable del atleta en la base local (roster). */
+  id: string;
+  /** URL pública de su PWA (GitHub Pages) para compartir por WhatsApp. */
+  publicUrl: string;
+  /** Metas de hidratación diarias en ml. */
+  hydration: { onMl: number; offMl: number };
   profile: Profile;
   periodization: Periodization;
   meals: Meal[];

@@ -238,3 +238,10 @@ export function clamp(n: number, a: number, b: number) {
 export const fmt0 = (n: number) => Math.round(n).toLocaleString('es-AR');
 export const fmt1 = (n: number) => (Math.round(n * 10) / 10).toLocaleString('es-AR');
 export const signed = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '±') + fmt0(Math.abs(n));
+
+/** Hidratación base 35 ml/kg (redondeo a 250 ml) + ~750 ml por hora de sesión en día ON. */
+export function hydrationDefaults(weightKg: number, sessionMinutes: number) {
+  const r = (ml: number) => Math.round(ml / 250) * 250;
+  const offMl = r(35 * weightKg);
+  return { offMl, onMl: offMl + r((sessionMinutes / 60) * 750) };
+}

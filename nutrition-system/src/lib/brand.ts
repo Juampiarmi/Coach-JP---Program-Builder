@@ -25,29 +25,33 @@ export const BRAND = {
   },
 };
 
-// ---------- ISOTIPO NUTRITION (distinto del rayo de Training) ----------
-// Hexágono táctico #0B0F17 con borde de precisión cian y llama metabólica naranja. viewBox 0 0 100 100.
+// ---------- ISOTIPO NUTRITION · "PRISMA BIOENERGÉTICO" (distinto del rayo de Training) ----------
+// Hexágono #0B0F17 con doble filete cian (80 % exterior / 30 % interior), llama geométrica facetada
+// naranja y monograma "JP" integrado en la base. viewBox 0 0 100 100.
 export const HEX_OUTER = 'M50 4 L89.8 27 L89.8 73 L50 96 L10.2 73 L10.2 27 Z';
-export const HEX_INNER = 'M50 12 L82.9 31 L82.9 69 L50 88 L17.1 69 L17.1 31 Z';
-export const FLAME_OUTER =
-  'M50 22 C54 32 65 39 65 53 C65 65 58 74 50 76 C42 74 35 65 35 54 C35 46 39.5 41 43 36 C43.5 42 45.5 46 48.5 47.5 C47 39 46.5 30 50 22 Z';
-export const FLAME_CORE = 'M50.5 49 C55 54 57.5 58 57.5 63 C57.5 68 54.5 71 50.5 71 C46.5 71 43.5 68 43.5 63.5 C43.5 59 47 55.5 50.5 49 Z';
-/** Nodos moleculares en los vértices del hexágono interior. */
-export const HEX_NODES: [number, number][] = [
-  [50, 12],
-  [82.9, 31],
-  [82.9, 69],
-  [50, 88],
-  [17.1, 69],
-  [17.1, 31],
+export const HEX_INNER = 'M50 10.5 L84.2 30.25 L84.2 69.75 L50 89.5 L15.8 69.75 L15.8 30.25 Z';
+
+/** Facetas de la llama alrededor del núcleo (50,54): de claro (luz arriba) a oscuro (base). */
+const FC: [number, number] = [50, 54];
+const RIM: [number, number][] = [
+  [50, 17], [60.5, 33], [66.5, 47.5], [64.5, 62], [57, 72.5], [43, 72.5], [35.5, 62], [33.5, 49.5], [40, 39.5], [44, 46], [46, 31],
 ];
+const FACET_FILLS = ['#FB923C', '#F97316', '#EA580C', '#C2410C', '#9A3412', '#C2410C', '#EA580C', '#F97316', '#FB923C', '#FDBA74', '#FDBA74'];
+export const FLAME_FACETS: { pts: [number, number][]; fill: string }[] = RIM.map((a, i) => ({
+  pts: [a, RIM[(i + 1) % RIM.length], FC],
+  fill: FACET_FILLS[i],
+}));
+/** Núcleo metabólico (rombo de alta temperatura). */
+export const FLAME_CORE: [number, number][] = [[50, 43], [54.5, 54], [50, 63], [45.5, 54]];
+
+const pts = (p: [number, number][]) => p.map(([x, y]) => `${x},${y}`).join(' ');
 
 export function nutritionSvg(size = 40, idSuffix = 'n') {
-  const nodes = HEX_NODES.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.1" fill="#38BDF8"/>`).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100"><defs><linearGradient id="fl-${idSuffix}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF5E1E"/><stop offset="1" stop-color="#F97316"/></linearGradient></defs><path d="${HEX_OUTER}" fill="#0B0F17" stroke="#38BDF8" stroke-width="3" stroke-linejoin="round"/><path d="${HEX_INNER}" fill="none" stroke="#38BDF8" stroke-opacity=".28" stroke-width="1.2"/>${nodes}<path d="${FLAME_OUTER}" fill="url(#fl-${idSuffix})"/><path d="${FLAME_CORE}" fill="#FDBA74"/></svg>`;
+  const facets = FLAME_FACETS.map((f) => `<polygon points="${pts(f.pts)}" fill="${f.fill}" stroke="${f.fill}" stroke-width=".4" stroke-linejoin="round"/>`).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100" data-id="${idSuffix}"><path d="${HEX_OUTER}" fill="#0B0F17" stroke="#38BDF8" stroke-opacity=".8" stroke-width="2.6" stroke-linejoin="round"/><path d="${HEX_INNER}" fill="none" stroke="#38BDF8" stroke-opacity=".3" stroke-width="1.4" stroke-linejoin="round"/>${facets}<polygon points="${pts(FLAME_CORE)}" fill="#FFEDD5" fill-opacity=".92"/><text x="50" y="71" text-anchor="middle" font-family="JetBrains Mono,ui-monospace,monospace" font-weight="800" font-size="6.4" letter-spacing=".6" fill="#0B0F17" fill-opacity=".72">JP</text></svg>`;
 }
 
-/** Dibuja el isotipo Nutrition en un canvas cuadrado (iconos PWA). */
+/** Dibuja el isotipo Nutrition en un canvas cuadrado (iconos PWA embebidos en el index.html del atleta). */
 export function drawNutritionIcon(ctx: CanvasRenderingContext2D, size: number, maskable: boolean) {
   ctx.clearRect(0, 0, size, size);
   if (maskable) {
@@ -63,26 +67,31 @@ export function drawNutritionIcon(ctx: CanvasRenderingContext2D, size: number, m
   ctx.lineJoin = 'round';
   ctx.fillStyle = '#0B0F17';
   ctx.fill(new Path2D(HEX_OUTER));
-  ctx.strokeStyle = '#38BDF8';
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(56,189,248,.8)';
+  ctx.lineWidth = 2.6;
   ctx.stroke(new Path2D(HEX_OUTER));
-  ctx.globalAlpha = 0.28;
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(56,189,248,.3)';
+  ctx.lineWidth = 1.4;
   ctx.stroke(new Path2D(HEX_INNER));
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = '#38BDF8';
-  for (const [x, y] of HEX_NODES) {
+  const poly = (p: [number, number][]) => {
     ctx.beginPath();
-    ctx.arc(x, y, 2.1, 0, Math.PI * 2);
+    p.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+  };
+  ctx.lineWidth = 0.4;
+  for (const f of FLAME_FACETS) {
+    poly(f.pts);
+    ctx.fillStyle = ctx.strokeStyle = f.fill;
     ctx.fill();
+    ctx.stroke();
   }
-  const g = ctx.createLinearGradient(0, 22, 0, 76);
-  g.addColorStop(0, '#FF5E1E');
-  g.addColorStop(1, '#F97316');
-  ctx.fillStyle = g;
-  ctx.fill(new Path2D(FLAME_OUTER));
-  ctx.fillStyle = '#FDBA74';
-  ctx.fill(new Path2D(FLAME_CORE));
+  poly(FLAME_CORE);
+  ctx.fillStyle = 'rgba(255,237,213,.92)';
+  ctx.fill();
+  ctx.fillStyle = 'rgba(11,15,23,.72)';
+  ctx.font = '800 6.4px "JetBrains Mono", ui-monospace, monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('JP', 50, 71);
   ctx.restore();
 }
 

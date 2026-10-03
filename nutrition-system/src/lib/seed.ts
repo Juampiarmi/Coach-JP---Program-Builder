@@ -1,4 +1,4 @@
-import { EMPTY_SKINFOLDS, PHASE_PRESETS } from './bioenergetics';
+import { EMPTY_SKINFOLDS, hydrationDefaults, PHASE_PRESETS } from './bioenergetics';
 import { aisGroupA } from './evidence';
 import { FOOD_BY_ID, macrosFor } from './foods';
 import type { AthletePlan, FoodItem, Meal, MealDay, MealRole } from './types';
@@ -20,6 +20,9 @@ export function seedPlan(): AthletePlan {
   const weightKg = 82;
   return {
     version: 1,
+    id: uid(),
+    publicUrl: '',
+    hydration: hydrationDefaults(weightKg, 75),
     profile: {
       name: 'Atleta Hyrox',
       sex: 'M',
@@ -37,6 +40,8 @@ export function seedPlan(): AthletePlan {
       activityFactor: 1.45,
       sessionKcal: 600,
       trainingDaysPerWeek: 5,
+      trainingTime: '18:00',
+      sessionMinutes: 75,
       notes:
         'Hyrox Pro. Entrena 18:00 h (5x/sem). Oficina 9-17 h. Rechaza hígado y pescados grasos. Sin intolerancias. Presupuesto medio.',
     },

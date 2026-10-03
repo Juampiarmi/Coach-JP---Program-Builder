@@ -121,7 +121,8 @@ export function householdHint(foodId: string | undefined, grams: number) {
   if (!ref?.unit) return '';
   const q = Math.round((grams / ref.unit.grams) * 2) / 2;
   if (q < 0.5) return '';
-  return `≈ ${String(q).replace('.', ',')} ${ref.unit.label}`;
+  const label = q > 1 && ref.unit.label.length > 3 ? `${ref.unit.label}s` : ref.unit.label;
+  return `≈ ${String(q).replace('.', ',')} ${label}`;
 }
 
 /** Busca un alimento de la base por nombre aproximado (para mapear la respuesta de la IA). */
