@@ -23,8 +23,15 @@ const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
   { value: 'radar', label: 'RADAR' },
   { value: 'circles', label: 'CÍRCULOS' },
   { value: 'domino', label: 'DOMINÓ' },
-  { value: 'curve', label: 'CURVA' },
+  { value: 'curve', label: 'TRAYECTORIA' },
 ]
+
+const REPEAT_MODE_HINT: Record<RepeatMode, string> = {
+  diagonal: 'Diagonal escalonada · una palabra encendida por renglón',
+  echo: 'Eco con jerarquía · central grande en acento',
+  kinetic: 'Kinetic brutalist · 1-2 palabras + contornos finos',
+  justified: 'Bloque justificado · póster tipográfico',
+}
 
 const ALIGN_LABEL: Record<ContentAlign, string> = { auto: 'AUTO', top: 'ARRIBA', center: 'CENTRO', bottom: 'ABAJO' }
 
@@ -400,10 +407,10 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             )}
             {state.diagramKind === 'curve' && (
               <div className="grid grid-cols-3 gap-2">
-                <Field label="Antes · lo esperado">
+                <Field label="Tramo caótico · ruido">
                   <TextInput value={state.curveExpected} onChange={(curveExpected) => update({ curveExpected })} />
                 </Field>
-                <Field label="Después · real">
+                <Field label="Tramo limpio · claridad">
                   <TextInput value={state.curveReal} onChange={(curveReal) => update({ curveReal })} />
                 </Field>
                 <Field label="Meta (bandera)">
@@ -420,22 +427,38 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               value={state.repeatMode}
               onChange={(repeatMode) => update({ repeatMode })}
               options={[
-                { value: 'diagonal', label: '[ DIAGONAL ]' },
-                { value: 'echo', label: '[ ECO ]' },
-                { value: 'kinetic', label: '[ KINETIC ]' },
+                { value: 'diagonal', label: 'DIAGONAL' },
+                { value: 'echo', label: 'ECO' },
+                { value: 'kinetic', label: 'KINETIC' },
+                { value: 'justified', label: 'BLOQUE' },
               ]}
               size="sm"
             />
+            <p className="-mt-1 font-mono text-[10px] tracking-[0.12em] text-steel/70 uppercase">{REPEAT_MODE_HINT[state.repeatMode]}</p>
             <Field
-              label={state.repeatMode === 'diagonal' ? 'Frase' : state.repeatMode === 'kinetic' ? 'Palabra o frase corta' : 'Frase (ideal 1-2 palabras clave)'}
+              label={
+                state.repeatMode === 'diagonal' || state.repeatMode === 'justified'
+                  ? 'Frase'
+                  : state.repeatMode === 'kinetic'
+                    ? 'Palabra o frase corta (1-2 palabras)'
+                    : 'Frase (ideal 1-2 palabras clave)'
+              }
               hint={state.repeatMode !== 'diagonal' ? undefined : `${state.repeatPhrase.trim().split(/\s+/).filter(Boolean).length} palabras = renglones`}
             >
               <TextArea value={state.repeatPhrase} onChange={(repeatPhrase) => update({ repeatPhrase })} rows={3} />
             </Field>
             {state.repeatMode === 'echo' && (
-              <Field label="Repeticiones">
-                <Range value={state.repeatCount} onChange={(repeatCount) => update({ repeatCount })} min={3} max={9} step={2} />
-              </Field>
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <Field label="Repeticiones">
+                    <Range value={state.repeatCount} onChange={(repeatCount) => update({ repeatCount })} min={3} max={9} step={2} />
+                  </Field>
+                  <Field label="Frase central">
+                    <Range value={state.repeatCenterScale} onChange={(repeatCenterScale) => update({ repeatCenterScale })} min={100} max={180} step={5} suffix="%" />
+                  </Field>
+                </div>
+                <Toggle label="Banda oscura detrás de la central" checked={state.repeatBand} onChange={(repeatBand) => update({ repeatBand })} />
+              </>
             )}
             <div className="grid grid-cols-2 gap-2">
               <Field label="Escala del texto">

@@ -1,17 +1,22 @@
 import { getFontEmbedCSS, toBlob } from 'html-to-image'
 import { BRAND } from './brand'
 
-export const EXPORT_PIXEL_RATIO = 3
+/** Multiplicador fijo de render (independiente del viewport y del devicePixelRatio). */
+export const EXPORT_PIXEL_RATIO = 4
+/** Piso de nitidez: nunca por debajo de 3x salvo que el navegador no lo soporte (iOS). */
+const MIN_PIXEL_RATIO = 3
+/** Tope de área segura para canvas en navegadores de escritorio / Android (~40 MP). */
+const MAX_CANVAS_AREA = 40_000_000
 
 const isIOS = () =>
   /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 const isSafari = () => /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent)
 
-/** iOS Safari limita los canvas a ~16,7 MP: se ajusta el ratio sólo si hace falta. */
+/** 4x por defecto (Feed 4320×5400, Story 4320×7680); iOS Safari limita los canvas a ~16,7 MP. */
 export function effectivePixelRatio(w: number, h: number) {
-  if (!isIOS()) return EXPORT_PIXEL_RATIO
-  const max = Math.sqrt(16_777_216 / (w * h))
-  return Math.min(EXPORT_PIXEL_RATIO, Math.floor(max * 100) / 100)
+  const area = isIOS() ? 16_777_216 : MAX_CANVAS_AREA
+  const max = Math.floor(Math.sqrt(area / (w * h)) * 100) / 100
+  return isIOS() ? Math.min(EXPORT_PIXEL_RATIO, max) : Math.max(MIN_PIXEL_RATIO, Math.min(EXPORT_PIXEL_RATIO, max))
 }
 
 /**

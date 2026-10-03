@@ -52,7 +52,7 @@ function Card({ card, fontFamily, scale }: { card: CompareCard; fontFamily: stri
         background: BRAND.surface,
         border: `2px solid ${BRAND.border}`,
         borderRadius: 26 * scale,
-        padding: `${34 * scale}px ${32 * scale}px`,
+        padding: `${46 * scale}px ${32 * scale}px`,
         boxShadow: '0 24px 60px -24px rgba(0,0,0,.8)',
       }}
     >
@@ -85,7 +85,7 @@ function Card({ card, fontFamily, scale }: { card: CompareCard; fontFamily: stri
       >
         {card.value}
       </p>
-      <p style={{ margin: 0, fontFamily: FONT_BODY, fontSize: 22 * scale, lineHeight: 1.35, color: BRAND.gray }}>
+      <p style={{ margin: 0, fontFamily: FONT_BODY, fontSize: 26 * scale, lineHeight: 1.4, color: BRAND.gray }}>
         {card.caption}
       </p>
     </div>

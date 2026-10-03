@@ -6,6 +6,16 @@ interface Props extends DiagramStyle {
   end: string
 }
 
+/** Flecha descendente (inicio: esfuerzo chico) o ascendente (final: resultado masivo). */
+function Arrow({ dir, size, color }: { dir: 'up' | 'down'; size: number; color: string }) {
+  const d = dir === 'up' ? 'M4 20 L20 4 M9 4 H20 V15' : 'M4 4 L20 20 M20 9 V20 H9'
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ display: 'block', flexShrink: 0 }} aria-hidden>
+      <path d={d} fill="none" stroke={color} strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 const GROWTH = 1.5 // cada ficha puede voltear a otra ~50 % más grande
 
 /** Efecto dominó: fichas que crecen en escala, las primeras ya cayendo, de hábito mínimo a resultado masivo. */
@@ -52,9 +62,15 @@ export function DominoDiagram({ count, start, end, width, height, ink, muted, ac
           <polyline points={`${last.x + last.w - 16 * scale},${arrowY - 10 * scale} ${last.x + last.w},${arrowY} ${last.x + last.w - 16 * scale},${arrowY + 10 * scale}`} />
         </g>
       </svg>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginLeft: first.x, marginRight: width - (last.x + last.w), marginTop: 10 * scale, fontFamily: LABEL_FONT, fontWeight: 600, fontSize: 25 * scale, color: ink }}>
-        <span>{start}</span>
-        <span style={{ color: accent }}>{end}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 * scale, whiteSpace: 'nowrap', marginLeft: Math.min(first.x, width * 0.08), marginRight: Math.min(width - (last.x + last.w), width * 0.08), marginTop: 10 * scale, fontFamily: LABEL_FONT, fontWeight: 600, fontSize: 25 * scale, color: ink }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 * scale }}>
+          <Arrow dir="down" size={26 * scale} color={muted} />
+          {start}
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 * scale, color: accent }}>
+          {end}
+          <Arrow dir="up" size={26 * scale} color={accent} />
+        </span>
       </div>
     </div>
   )

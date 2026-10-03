@@ -3,7 +3,7 @@ export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
 export type RepeatAccent = 'white' | 'orange' | 'cyan'
-export type RepeatMode = 'diagonal' | 'echo' | 'kinetic'
+export type RepeatMode = 'diagonal' | 'echo' | 'kinetic' | 'justified'
 export type ManifestoStyle = 'bar' | 'quotes'
 export type ContentAlign = 'auto' | 'top' | 'center' | 'bottom'
 export type AspectId = 'feed' | 'story'
@@ -111,6 +111,9 @@ export interface CanvasState {
   repeatLeading: number
   /** Eco vertical: cantidad de repeticiones */
   repeatCount: number
+  /** Eco con jerarquía: tamaño de la frase central (% de las demás) y banda oscura detrás */
+  repeatCenterScale: number
+  repeatBand: boolean
   // Layout
   contentAlign: ContentAlign
   /** Separación titular → bloque de plantilla, en % del valor base */

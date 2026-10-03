@@ -84,7 +84,7 @@ function useAutoFit(deps: unknown) {
 /**
  * Encuadre de la foto en píxeles del lienzo (sin transforms): la caja se agranda con el
  * zoom y se desplaza dentro del sobrante; object-position recorre el recorte del cover.
- * Al ser geometría explícita, html-to-image la reproduce idéntica en el PNG 3x.
+ * Al ser geometría explícita, html-to-image la reproduce idéntica en el PNG 4x.
  */
 function bgGeometry(state: CanvasState, w: number, h: number) {
   const z = Math.min(1.6, Math.max(1, state.bgZoom / 100))
@@ -177,10 +177,13 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
         overflow: 'hidden',
         position: 'relative',
         WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
+        textRendering: 'geometricPrecision',
       }}
     >
       {hasBg && (
-        <>
+        // Foto, velo y degradé en su propio contexto de apilado (z 0): ningún filtro alcanza al texto.
+        <div style={{ position: 'absolute', inset: 0, zIndex: 0, isolation: 'isolate', overflow: 'hidden', pointerEvents: 'none' }}>
           <img
             src={bgImage!}
             alt=""
@@ -188,12 +191,13 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           />
           <div style={{ position: 'absolute', inset: 0, background: `rgba(${palette.overlayRgb},${state.bgOverlay / 100})` }} />
           {state.bgGradient && theme === 'dark' && <div style={{ position: 'absolute', inset: 0, background: CONTRAST_GRADIENT }} />}
-        </>
+        </div>
       )}
 
       <div
         style={{
           position: 'absolute',
+          zIndex: 1,
           left: frame.left,
           right: frame.right,
           top: frame.top,

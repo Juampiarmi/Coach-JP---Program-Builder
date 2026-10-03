@@ -143,7 +143,7 @@ export default function App() {
   const setCaption = (caption: string) => setDeck((d) => ({ ...d, caption }))
   const caption = deck.caption ?? ''
 
-  /** Recorre la secuencia y renderiza cada placa a 3x con nombre numerado. */
+  /** Recorre la secuencia y renderiza cada placa a 4x con nombre numerado. */
   const renderAll = async () => {
     const { w, h } = ASPECTS[state.aspect]
     const files: { blob: Blob; name: string }[] = []
@@ -225,9 +225,11 @@ export default function App() {
         regenAbort.current.signal,
         (note) => note && setRegen({ busy: true, note }),
       )
-      // Diagrama / Repetición no los genera la IA: se conserva la plantilla y se toma sólo el texto.
+      // Si la IA cambió de plantilla en Diagrama / Repetición, se conserva la placa y se toma sólo el texto.
       const safe: Partial<CanvasState> =
-        slide.template === 'diagram'
+        patch.template === slide.template
+          ? patch
+          : slide.template === 'diagram'
           ? { tag: patch.tag, headlineA: patch.headlineA, headlineB: patch.headlineB, body: patch.body }
           : slide.template === 'repeat'
             ? { tag: patch.tag, repeatPhrase: `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim() }

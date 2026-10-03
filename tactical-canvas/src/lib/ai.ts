@@ -1,5 +1,5 @@
 import { DEFAULT_STATE } from '../defaults'
-import type { Accent, CanvasState, ChartMode, CurveShape, TemplateId } from '../types'
+import type { Accent, CanvasState, ChartMode, CurveShape, DiagramKind, RepeatMode, TemplateId } from '../types'
 import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 import { JsonRepairError, safeParseJson } from './safeJson'
@@ -81,11 +81,20 @@ PLANTILLAS DISPONIBLES (templateId):
 - "chart": un gráfico simple (curva, barras o medidor de umbral) con zona óptima.
 - "statement": titular de impacto + remate argumental + párrafo corto, sin números.
 - "manifesto": frase de mentalidad o estándar de disciplina. Sin párrafo ni paper.
+- "diagram": modelo mental visual (radar de 6 factores, dominó de progresión, círculos fraccionados o trayectoria «ruido vs claridad»).
+- "repeat": póster tipográfico que repite una frase corta (diagonal, eco, kinetic o bloque justificado). Sin párrafo ni paper.
+
+MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al azar):
+- Dualidad o contraste entre dos estados («Ego vs Progreso», «Estático vs Dinámico», «Volumen vs Intensidad»): "ab", o "chart" con curva y zona umbral.
+- Progresión o acumulación en el tiempo («Persistencia», «Constancia», «Sobrecarga progresiva», «Hábitos»): "diagram" con kind "domino", o "repeat".
+- Equilibrio o fenómeno multifactorial («Obsesión», «Fatiga», «Recuperación», «Rendimiento global»): "diagram" con kind "radar".
+- Foco o dirección («Ruido vs Foco», «Claridad», «Prioridades», «Plan vs Improvisación»): "diagram" con kind "trajectory" o "circles".
+- Frase de mentalidad corta y memorable: "repeat" o "manifesto".
 
 REGLAS DE CONTENIDO:
 - tag: MAYÚSCULAS, formato "DISCIPLINA · CATEGORÍA" o una sola categoría (ej: "BIOMECÁNICA APLICADA", "FISIOLOGÍA · ELECTROLITOS"). Para manifesto usá "FILOSOFÍA TÁCTICA", "ESTÁNDAR OPERATIVO" o "DISCIPLINA Y MÉTODO". Sin corchetes.
 - titleWhite + titleAccent: el titular en MAYÚSCULAS, entre 5 y 12 palabras en total. titleWhite es la base (blanco) y titleAccent el remate (naranja). Podés envolver UNA palabra de titleWhite en *asteriscos* para resaltarla.
-- paragraph: 1 a 2 oraciones, máximo 200 caracteres. Vacío ("") en manifesto.
+- paragraph: 1 a 2 oraciones, máximo 200 caracteres. Vacío ("") en manifesto y repeat.
 - citation: estudio REAL y verificable con formato "APELLIDO Y COL., AÑO · REVISTA" en mayúsculas. description: de qué trata ese estudio en una línea. Si no estás seguro de que el estudio exista tal cual, dejá ambos vacíos (""). Nunca inventes citas. Vacíos en manifesto.
 - Los números deben ser coherentes con la literatura. No inventes precisión que no existe.
 
@@ -95,7 +104,7 @@ FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloqu
   "caption": string,
   "slides": [
     {
-      "templateId": "metric" | "ab" | "chart" | "statement" | "manifesto",
+      "templateId": "metric" | "ab" | "chart" | "statement" | "manifesto" | "diagram" | "repeat",
       "tag": string,
       "titleWhite": string,
       "titleAccent": string,
@@ -113,6 +122,14 @@ FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloqu
 - chart: { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string, "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" (solo curve), "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
 - statement: { "kicker": string (remate en MAYÚSCULAS, máx 14 palabras) }
 - manifesto: { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) }
+- diagram: { "kind": "radar" | "domino" | "circles" | "trajectory", y según kind:
+  radar: "axes": [6 strings cortos], "values": [6 números 0-100, estado actual], "compare": [6 números 0-100, estado ideal], "labelA": string, "labelB": string;
+  domino: "count": número 5-8, "start": string (acción mínima), "end": string (resultado masivo);
+  circles: "divisions": [3 enteros crecientes, ej 1, 3, 12], "captions": [4 strings cortos, del todo a la parte de hoy];
+  trajectory: "noise": string (rótulo del tramo caótico), "clarity": string (rótulo del tramo limpio), "goal": string (meta en la bandera) }
+- repeat: { "phrase": string (MAYÚSCULAS; 1-2 palabras para "echo"/"kinetic", 4-10 palabras para "diagonal"/"justified"), "mode": "diagonal" | "echo" | "kinetic" | "justified" }
+
+CAMPOS OBLIGATORIOS: completá SIEMPRE todos los campos de "data" de la plantilla elegida con contenido real del tema. Nunca devuelvas arrays vacíos ([]), strings vacíos ("") ni null dentro de "data". Los rótulos de diagram son de 1 a 3 palabras.
 
 Variá las plantillas dentro de una secuencia: no repitas la misma más de dos veces seguidas.
 
@@ -463,10 +480,68 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   chart: 'chart',
   statement: 'statement',
   manifesto: 'manifesto',
+  diagram: 'diagram',
+  diagrama: 'diagram',
+  repeat: 'repeat',
+  repetition: 'repeat',
+  repeticion: 'repeat',
 }
 const ACCENTS: Accent[] = ['orange', 'cyan', 'gold', 'white', 'gray']
 const CHART_MODES: ChartMode[] = ['curve', 'bars', 'gauge']
 const SHAPES: CurveShape[] = ['bell', 'rise', 'fall']
+
+const REPEAT_MODES: RepeatMode[] = ['diagonal', 'echo', 'kinetic', 'justified']
+const DIAGRAM_KIND_MAP: Record<string, DiagramKind> = {
+  radar: 'radar',
+  domino: 'domino',
+  dominó: 'domino',
+  progression: 'domino',
+  progresion: 'domino',
+  circles: 'circles',
+  circulos: 'circles',
+  círculos: 'circles',
+  trajectory: 'curve',
+  trayectoria: 'curve',
+  curve: 'curve',
+}
+
+/** Datos del diagrama de la IA → campos de la plantilla 06, completando lo que falte. */
+function diagramPatch(d: Record<string, unknown>): Partial<CanvasState> {
+  const base = DEFAULT_STATE
+  const kind = DIAGRAM_KIND_MAP[str(d.kind ?? d.type).toLowerCase()] ?? 'radar'
+  const list = (v: unknown) => (Array.isArray(v) ? v.map((x) => str(x)).filter(Boolean) : str(v).split(/[,\n;]+/).map((x) => x.trim()).filter(Boolean))
+  const nums = (v: unknown) => list(v).map((x) => Number(x.replace(',', '.'))).filter((n) => Number.isFinite(n)).map((n) => Math.min(100, Math.max(0, Math.round(n))))
+  const out: Partial<CanvasState> = { diagramKind: kind }
+  if (kind === 'radar') {
+    const axes = list(d.axes ?? d.ejes)
+    const useAxes = axes.length >= 3 ? axes.slice(0, 8) : list(base.radarAxes)
+    const fit = (vals: number[], fb: string) => {
+      const src = vals.length ? vals : nums(fb)
+      return useAxes.map((_, i) => src[i] ?? 50).join(', ')
+    }
+    out.radarAxes = useAxes.join(', ')
+    out.radarValues = fit(nums(d.values ?? d.valores), base.radarValues)
+    const cmp = nums(d.compare ?? d.ideal)
+    out.radarCompare = cmp.length ? fit(cmp, base.radarCompare) : ''
+    out.radarLabelA = str(d.labelA, base.radarLabelA)
+    out.radarLabelB = str(d.labelB, base.radarLabelB)
+  } else if (kind === 'domino') {
+    out.dominoCount = Math.min(9, Math.max(4, Math.round(num(d.count, base.dominoCount))))
+    out.dominoStart = str(d.start ?? d.inicio, base.dominoStart)
+    out.dominoEnd = str(d.end ?? d.final, base.dominoEnd)
+  } else if (kind === 'circles') {
+    const div = list(d.divisions).map((x) => Math.round(Number(x))).filter((n) => Number.isFinite(n) && n > 0)
+    out.circleDivisions = div.length ? div.slice(0, 3).join(', ') : base.circleDivisions
+    const caps = list(d.captions)
+    const fb = base.circleCaptions.split('\n')
+    out.circleCaptions = [0, 1, 2, 3].map((i) => caps[i] ?? fb[i]).join('\n')
+  } else {
+    out.curveExpected = str(d.noise ?? d.ruido ?? d.expected, base.curveExpected)
+    out.curveReal = str(d.clarity ?? d.claridad ?? d.real, base.curveReal)
+    out.curveGoal = str(d.goal ?? d.meta, base.curveGoal)
+  }
+  return out
+}
 
 /** Convierte un slide de la IA en un parche del estado de la app. */
 export function slideToPatch(raw: unknown): Partial<CanvasState> {
@@ -515,8 +590,8 @@ export function slideToPatch(raw: unknown): Partial<CanvasState> {
         accent,
       }
     }
-    patch.cardA = card('A', 'gray', 'PROTOCOLO A', 'ESTÁTICO')
-    patch.cardB = card('B', 'cyan', 'PROTOCOLO B', 'DINÁMICO')
+    patch.cardA = card('A', 'gray', 'PARÁMETRO A', 'VALOR')
+    patch.cardB = card('B', 'cyan', 'PARÁMETRO B', 'VALOR')
     patch.verdict = pick(['verdict', 'veredicto', 'conclusion', 'conclusión'], '').toUpperCase()
   } else if (template === 'chart') {
     const c = base.chart
@@ -539,6 +614,15 @@ export function slideToPatch(raw: unknown): Partial<CanvasState> {
     }
   } else if (template === 'statement') {
     patch.kicker = upper(d.kicker)
+  } else if (template === 'diagram') {
+    Object.assign(patch, diagramPatch(d))
+  } else if (template === 'repeat') {
+    const phrase = upper(d.phrase ?? d.frase) || `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim()
+    patch.repeatPhrase = phrase || base.repeatPhrase
+    patch.repeatMode = oneOf(d.mode, REPEAT_MODES, phrase.split(/\s+/).length <= 2 ? 'echo' : 'diagonal')
+    patch.body = ''
+    patch.citeMain = ''
+    patch.citeSub = ''
   } else {
     patch.manifestoAuthor = upper(d.author, DEFAULT_AUTHOR)
   }
@@ -606,13 +690,15 @@ export async function generateContent(
 // ---------------------------------------------------------------------------
 // Re-generación de una sola placa (usa el mismo prompt de sistema, llamadas y parser).
 
-/** Plantillas de la app → templateId que entiende la IA (06/07 no las genera la IA). */
+/** Plantillas de la app → templateId que entiende la IA. */
 const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   metric: 'metric',
   compare: 'ab',
   chart: 'chart',
   statement: 'statement',
   manifesto: 'manifesto',
+  diagram: 'diagram',
+  repeat: 'repeat',
 }
 
 export interface RegenerateRequest {
@@ -639,7 +725,15 @@ function regeneratePrompt(req: RegenerateRequest) {
 REFORMULÁ ÚNICAMENTE ESTA PLACA. ${context}
 Versión actual de la placa ${req.index + 1}: "${current}".
 Escribí una versión nueva y mejor (otro ángulo, otro dato o una frase más contundente), coherente con el tema principal.${
-    aiTemplate ? ` Mantené templateId "${aiTemplate}".` : ''
+    aiTemplate
+      ? ` Mantené templateId "${aiTemplate}"${
+          req.slide.template === 'diagram'
+            ? ` con kind "${req.slide.diagramKind === 'curve' ? 'trajectory' : req.slide.diagramKind}"`
+            : req.slide.template === 'repeat'
+              ? ` con mode "${req.slide.repeatMode}"`
+              : ''
+        }.`
+      : ''
   } Devolvé exactamente 1 slide y "caption": "".`
 }
 

@@ -42,7 +42,7 @@ export function ExportButtons({ target, state, compact }: Props) {
   }
 
   const label =
-    status === 'busy' ? 'RENDERIZANDO 3X…' : status === 'done' ? 'PLACA DESCARGADA ✓' : 'DESCARGAR PLACA TÁCTICA [PNG 4K]'
+    status === 'busy' ? 'RENDERIZANDO 4X…' : status === 'done' ? 'PLACA DESCARGADA ✓' : 'DESCARGAR PLACA TÁCTICA [PNG 4K]'
 
   return (
     <div className="flex w-full flex-col gap-1.5">
