@@ -8,14 +8,14 @@ export const STORY_W = 1080;
 export const STORY_H = 1920;
 
 const C = BRAND.colors;
-const DISPLAY = '"Chakra Petch", Inter, sans-serif';
+const DISPLAY = 'Inter, "Geist Sans", sans-serif';
 const MONO = '"JetBrains Mono", ui-monospace, monospace';
 const SANS = 'Inter, system-ui, sans-serif';
 
 export async function ensureFonts() {
   if (typeof document === 'undefined' || !document.fonts) return;
   await Promise.all(
-    ['700 100px "Chakra Petch"', '500 40px "JetBrains Mono"', '700 40px "JetBrains Mono"', '400 40px Inter', '600 40px Inter'].map((f) =>
+    ['700 100px Inter', '500 40px "JetBrains Mono"', '700 40px "JetBrains Mono"', '400 40px Inter', '600 40px Inter'].map((f) =>
       document.fonts.load(f).catch(() => null),
     ),
   );

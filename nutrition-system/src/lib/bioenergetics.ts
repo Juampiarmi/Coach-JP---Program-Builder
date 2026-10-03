@@ -116,8 +116,9 @@ export function gramsFromGkg(gkg: Macros, weightKg: number): Macros {
 
 export type EaStatus = 'optimal' | 'reduced' | 'low';
 
+/** Semáforo EA: >45 óptima · 30–45 reducida · <30 baja (alerta RED-S). */
 export function eaStatus(ea: number): EaStatus {
-  if (ea >= 45) return 'optimal';
+  if (ea > 45) return 'optimal';
   if (ea >= 30) return 'reduced';
   return 'low';
 }
@@ -139,6 +140,10 @@ export interface Telemetry {
   deltaWeeklyPct: number;
   /** kg/semana proyectados (negativo = pérdida). */
   weeklyKgProjection: number;
+  /** Kcal ingeridas planificadas (suma de comidas del día; si no hay comidas, el objetivo). */
+  intakeOn: number;
+  intakeOff: number;
+  /** EA ON = (ingesta ON − gasto de la sesión) / FFM · EA OFF = (ingesta OFF − 0) / FFM. */
   eaOn: number;
   eaOff: number;
   refeedGrams: Macros | null;
@@ -163,6 +168,11 @@ export function computeTelemetry(plan: AthletePlan): Telemetry {
   const kcalOff = kcalOf(gramsOff);
   const kcalWeekly = (kcalOn * onDays + kcalOff * (7 - onDays)) / 7;
 
+  const mealsOn = mealsForDay(plan.meals, 'on');
+  const mealsOff = mealsForDay(plan.meals, 'off');
+  const intakeOn = mealsOn.length ? dayTotals(plan.meals, 'on').kcal : kcalOn;
+  const intakeOff = mealsOff.length ? dayTotals(plan.meals, 'off').kcal : kcalOff;
+
   const refeedGrams = per.refeed.enabled
     ? { p: gramsOn.p, c: Math.round(per.refeed.carbsGkg * pr.weightKg), f: Math.round(0.6 * pr.weightKg) }
     : null;
@@ -183,8 +193,10 @@ export function computeTelemetry(plan: AthletePlan): Telemetry {
     deltaOff: kcalOff - tdeeOff,
     deltaWeeklyPct: ((kcalWeekly - tdeeWeekly) / tdeeWeekly) * 100,
     weeklyKgProjection: ((kcalWeekly - tdeeWeekly) * 7) / 7700,
-    eaOn: (kcalOn - pr.sessionKcal) / lean,
-    eaOff: kcalOff / lean,
+    intakeOn,
+    intakeOff,
+    eaOn: (intakeOn - pr.sessionKcal) / lean,
+    eaOff: intakeOff / lean,
     refeedGrams,
     refeedKcal: refeedGrams ? kcalOf(refeedGrams) : null,
   };

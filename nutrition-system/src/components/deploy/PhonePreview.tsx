@@ -77,21 +77,21 @@ export function PhonePreview() {
         <Segmented
           value={mode}
           onChange={setMode}
-          tone={mode === 'on' ? 'cyan' : 'gold'}
+          tone="cyan"
           size="sm"
           options={[
-            { value: 'on', label: 'Día ON · entreno' },
-            { value: 'off', label: 'Día OFF · descanso' },
+            { value: 'on', label: 'Modo día ON' },
+            { value: 'off', label: 'Modo día OFF' },
           ]}
         />
       </div>
-      <div className="relative rounded-[46px] border border-line2 bg-gradient-to-b from-[#19202B] to-[#0D1118] p-[10px] shadow-[0_0_0_1px_#000,0_40px_80px_-40px_rgba(0,0,0,.9),inset_0_0_0_1px_rgba(255,255,255,.04)]">
-        <span className="absolute -left-[3px] top-28 h-10 w-[3px] rounded-l bg-line2" />
-        <span className="absolute -left-[3px] top-44 h-16 w-[3px] rounded-l bg-line2" />
-        <span className="absolute -right-[3px] top-36 h-20 w-[3px] rounded-r bg-line2" />
+      <div className="relative rounded-[46px] border border-line bg-gradient-to-b from-[#1A2333] to-[#0E1420] p-[10px] shadow-[0_0_0_1px_#05080D,0_40px_80px_-40px_rgba(5,8,13,.9),inset_0_0_0_1px_rgba(255,255,255,.05)]">
+        <span className="absolute -left-[3px] top-28 h-10 w-[3px] rounded-l bg-white/10" />
+        <span className="absolute -left-[3px] top-44 h-16 w-[3px] rounded-l bg-white/10" />
+        <span className="absolute -right-[3px] top-36 h-20 w-[3px] rounded-r bg-white/10" />
         <div className="relative h-[680px] w-[330px] overflow-hidden rounded-[37px] bg-carbon">
-          <div className="pointer-events-none absolute left-1/2 top-2.5 z-20 flex h-[28px] w-[108px] -translate-x-1/2 items-center justify-end rounded-full bg-black pr-3">
-            <span className="h-2 w-2 rounded-full bg-[#0c1a24] ring-1 ring-cyan-hud/20" />
+          <div className="pointer-events-none absolute left-1/2 top-2.5 z-20 flex h-[28px] w-[108px] -translate-x-1/2 items-center justify-end rounded-full bg-[#05080D] pr-3">
+            <span className="h-2 w-2 rounded-full bg-[#0c1a24] ring-1 ring-cyan-hud/30" />
           </div>
           <iframe
             key={reloadKey}
@@ -126,7 +126,7 @@ export function PhonePreview() {
           <div className="pointer-events-none absolute bottom-2 left-1/2 z-20 h-1 w-28 -translate-x-1/2 rounded-full bg-white/40" />
         </div>
       </div>
-      <p className="max-w-[330px] text-center font-mono text-[9.5px] leading-4 tracking-[0.08em] text-steel">
+      <p className="max-w-[330px] text-center font-mono text-[9.5px] leading-4 tracking-[0.08em] text-mute">
         RENDER EXACTO DEL INDEX.HTML EXPORTADO · SE ACTUALIZA AL INSTANTE CON CADA CAMBIO
       </p>
     </div>
@@ -135,5 +135,5 @@ export function PhonePreview() {
 
 function errorDoc(message: string) {
   const esc = message.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  return `<!doctype html><html><body style="margin:0;background:#0B0E14;color:#F3F4F6;font-family:system-ui;padding:48px 18px"><div style="border:1px solid rgba(249,115,22,.45);border-radius:14px;background:#121820;padding:16px"><div style="font:600 10px ui-monospace,monospace;letter-spacing:.2em;color:#F97316">[ ERROR GENERANDO EL HTML ]</div><pre style="white-space:pre-wrap;font:11px ui-monospace,monospace;color:#8A99AD;margin-top:8px">${esc}</pre></div><script>parent.postMessage({type:'coachjp:error',message:${JSON.stringify(message).replace(/</g, '\\u003c')}},'*')</script></body></html>`;
+  return `<!doctype html><html><body style="margin:0;background:#0B0F17;color:#FFFFFF;font-family:system-ui;padding:48px 18px"><div style="border:1px solid rgba(249,115,22,.45);border-radius:14px;background:#131B2A;padding:16px"><div style="font:600 10px ui-monospace,monospace;letter-spacing:.2em;color:#F97316">[ ERROR GENERANDO EL HTML ]</div><pre style="white-space:pre-wrap;font:11px ui-monospace,monospace;color:#94A3B8;margin-top:8px">${esc}</pre></div><script>parent.postMessage({type:'coachjp:error',message:${JSON.stringify(message).replace(/</g, '\\u003c')}},'*')</script></body></html>`;
 }

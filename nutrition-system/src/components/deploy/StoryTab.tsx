@@ -36,7 +36,7 @@ export function StoryTab() {
     <Panel title="STORY CARD 9:16 · 1080×1920" tone="gold" right={<ImageIcon className="h-4 w-4 text-gold" />}>
       <div className="flex flex-col items-center gap-4">
         <canvas ref={canvas} className="w-full max-w-[340px] rounded-xl border border-line2 shadow-hud" style={{ aspectRatio: '9 / 16' }} />
-        <HudButton tone="gold" onClick={save} className="w-full max-w-[340px]">
+        <HudButton onClick={save} className="w-full max-w-[340px]">
           <Download className="h-4 w-4" /> Descargar PNG para Instagram
         </HudButton>
         <p className="text-center font-mono text-[9.5px] tracking-[0.08em] text-steel">DIRECTIVA NUTRICIONAL · TONELAJE CALÓRICO ON/OFF · SELLO @COACHJP.TRAINING</p>

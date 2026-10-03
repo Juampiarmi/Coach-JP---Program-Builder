@@ -1,7 +1,7 @@
 import runtime from '@/pwa/athleteRuntime';
 import styles from '@/pwa/athleteStyles';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL } from './bioenergetics';
-import { BRAND, shieldSvg } from './brand';
+import { BRAND, nutritionSvg, shieldSvg } from './brand';
 import { CITES } from './evidence';
 import { FOODS, GROUP_ANCHOR, GROUP_LABEL } from './foods';
 import type { AthletePlan, DayMode } from './types';
@@ -49,9 +49,9 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
   const usedGroups: Record<string, number> = {};
   FOODS.forEach((f) => (usedGroups[f.group] = (usedGroups[f.group] ?? 0) + 1));
   const manifest = {
-    name: `Coach JP · ${pr.name}`,
-    short_name: pr.name.split(' ')[0].slice(0, 12) || 'Coach JP',
-    description: 'Directiva nutricional personalizada · Coach JP High Performance System',
+    name: `Coach JP Nutrition · ${pr.name}`,
+    short_name: pr.name.split(' ')[0].slice(0, 12) || 'JP Nutrition',
+    description: 'Plan nutricional personalizado · Coach JP Nutrition · High Performance System',
     start_url: './',
     scope: './',
     display: 'standalone',
@@ -66,7 +66,8 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     preview: opts.preview,
     initialMode: opts.mode,
     handle: BRAND.handle,
-    shield: shieldSvg(34),
+    mark: nutritionSvg(40, 'hd'),
+    markSm: nutritionSvg(34, 'sh'),
     shieldSm: shieldSvg(26),
     athlete: {
       name: pr.name,
@@ -99,8 +100,7 @@ const safeJson = (v: unknown) =>
     .replace(new RegExp(String.fromCharCode(0x2028), 'g'), '\\u2028')
     .replace(new RegExp(String.fromCharCode(0x2029), 'g'), '\\u2029');
 
-const FONTS =
-  'https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap';
+const FONTS = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap';
 
 export function buildAthleteHtml(plan: AthletePlan, opts: { preview?: boolean; mode?: DayMode; icons?: ExportIcons } = {}) {
   const payload = buildPayload(plan, { preview: !!opts.preview, mode: opts.mode ?? 'on', icons: opts.icons });
@@ -145,10 +145,10 @@ ${opts.icons ? `<link rel="icon" type="image/png" sizes="192x192" href="${opts.i
     shown = true;
     var paint = function () {
       var app = document.getElementById('app') || document.body;
-      app.innerHTML = '<section style="margin:24px 0;padding:18px;border:1px solid rgba(249,115,22,.45);border-radius:14px;background:#121820;color:#F3F4F6;font-family:system-ui,sans-serif">'
+      app.innerHTML = '<section style="margin:24px 0;padding:18px;border:1px solid rgba(249,115,22,.45);border-radius:14px;background:#131B2A;color:#FFFFFF;font-family:system-ui,sans-serif">'
         + '<div style="font:600 11px ui-monospace,monospace;letter-spacing:.2em;color:#F97316">[ ERROR DE RENDER · PWA ]</div>'
         + '<p style="margin-top:8px;font-size:14px;line-height:1.45">La app no pudo cargarse. Recargá la página; si persiste, avisale a tu coach.</p>'
-        + '<pre style="margin-top:10px;white-space:pre-wrap;font:11px ui-monospace,monospace;color:#8A99AD"></pre></section>';
+        + '<pre style="margin-top:10px;white-space:pre-wrap;font:11px ui-monospace,monospace;color:#94A3B8"></pre></section>';
       var pre = app.querySelector('pre');
       if (pre) pre.textContent = msg;
     };

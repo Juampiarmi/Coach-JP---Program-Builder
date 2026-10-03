@@ -9,8 +9,9 @@ import { ProfileTab } from '@/components/builder/ProfileTab';
 import { ExportTab } from '@/components/deploy/ExportTab';
 import { PhonePreview } from '@/components/deploy/PhonePreview';
 import { StoryTab } from '@/components/deploy/StoryTab';
-import { cx, Shield } from '@/components/hud/primitives';
-import { computeTelemetry, fmt0, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
+import { cx, NutritionMark } from '@/components/hud/primitives';
+import { InstallButton } from '@/components/pwa/InstallButton';
+import { computeTelemetry, eaStatus, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
 import { usePlanStore, type BuilderTab, type DeployTab } from '@/store/usePlanStore';
 
 const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain }[] = [
@@ -26,6 +27,8 @@ const DEPLOY_TABS: { id: DeployTab; label: string; icon: typeof Brain }[] = [
   { id: 'story', label: 'Story 9:16', icon: ImageIcon },
 ];
 
+const EA_TEXT = { optimal: 'text-cyan-hud', reduced: 'text-fire', low: 'text-danger' } as const;
+
 function StatusBar() {
   const plan = usePlanStore((s) => s.plan);
   const t = computeTelemetry(plan);
@@ -33,17 +36,18 @@ function StatusBar() {
   const low = mps.filter((m) => mealTotals(m).leucine < LEUCINE_THRESHOLD).length;
   const items: [string, string, string][] = [
     ['ATLETA', plan.profile.name.toUpperCase(), 'text-ink'],
-    ['FASE', PHASE_LABEL[plan.profile.phase].toUpperCase(), 'text-gold'],
-    ['ON', `${fmt0(t.kcalOn)} KCAL`, 'text-cyan-hud'],
-    ['OFF', `${fmt0(t.kcalOff)} KCAL`, 'text-gold'],
-    ['EA ON', t.eaOn.toFixed(1).replace('.', ','), t.eaOn < 30 ? 'text-fire' : 'text-ink'],
-    ['LEUCINA', low ? `${low} SUB-UMBRAL` : 'MPS OK', low ? 'text-fire' : 'text-cyan-hud'],
+    ['FASE', PHASE_LABEL[plan.profile.phase].toUpperCase(), 'text-fire'],
+    ['ON', `${fmt0(t.kcalOn)} KCAL`, 'text-ink'],
+    ['OFF', `${fmt0(t.kcalOff)} KCAL`, 'text-ink'],
+    ['EA ON', fmt1(t.eaOn), EA_TEXT[eaStatus(t.eaOn)]],
+    ['EA OFF', fmt1(t.eaOff), EA_TEXT[eaStatus(t.eaOff)]],
+    ['LEUCINA', low ? `${low} SUB-UMBRAL` : 'mTOR OK', low ? 'text-fire' : 'text-cyan-hud'],
   ];
   return (
-    <div className="scroll-thin flex gap-5 overflow-x-auto border-t border-line bg-panel2/80 px-4 py-2 sm:px-6">
+    <div className="scroll-thin flex gap-5 overflow-x-auto border-t border-line bg-panel2 px-4 py-2 sm:px-6">
       {items.map(([k, v, c]) => (
         <div key={k} className="flex flex-none items-baseline gap-2 font-mono text-[10px] tracking-[0.14em]">
-          <span className="text-steel">{k}</span>
+          <span className="text-mute">{k}</span>
           <span className={cx('font-bold', c)}>{v}</span>
         </div>
       ))}
@@ -65,7 +69,7 @@ export default function Home() {
     return (
       <div className="grid min-h-screen place-items-center">
         <div className="flex flex-col items-center gap-4">
-          <Shield size={56} />
+          <NutritionMark size={56} />
           <span className="font-mono text-[11px] tracking-[0.3em] text-cyan-hud">[ INICIALIZANDO SISTEMA ]</span>
         </div>
       </div>
@@ -74,22 +78,23 @@ export default function Home() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-line bg-carbon/85 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-line bg-carbon/90 backdrop-blur-md">
         <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
-          <Shield size={34} />
+          <NutritionMark size={36} />
           <div className="min-w-0">
-            <div className="font-display text-lg font-bold leading-none tracking-wide">
-              COACH <span className="text-gold">JP</span> <span className="hidden text-steel sm:inline">· HIGH PERFORMANCE SYSTEM</span>
+            <div className="text-[17px] font-bold leading-none tracking-tight text-ink">
+              Coach JP <span className="text-fire">Nutrition</span> <span className="hidden font-medium text-steel sm:inline">· Command Builder</span>
             </div>
-            <div className="mt-1 font-mono text-[10px] tracking-[0.14em] text-steel">@coachjp.training · TACTICAL COMMAND BUILDER</div>
+            <div className="mt-1.5 font-mono text-[10px] tracking-[0.14em] text-mute">@coachjp.training · HIGH PERFORMANCE SYSTEM</div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden items-center gap-2 rounded-md border border-cyan-hud/30 bg-cyan-hud/5 px-2.5 py-1.5 font-mono text-[10px] tracking-[0.14em] text-cyan-hud md:flex">
+            <span className="hidden items-center gap-2 rounded-md border border-cyan-hud/20 bg-cyan-hud/10 px-2.5 py-1.5 font-mono text-[10px] tracking-[0.14em] text-cyan-hud md:flex">
               <Crosshair className="h-3.5 w-3.5" /> SISTEMA OPERATIVO
             </span>
+            <InstallButton />
             <button
               onClick={() => confirm('¿Restaurar el atleta de demostración? Se reemplaza el plan actual.') && resetDemo()}
-              className="flex items-center gap-1.5 rounded-md border border-line2 px-2.5 py-1.5 font-mono text-[10px] tracking-[0.12em] text-steel hover:border-fire/60 hover:text-fire"
+              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 font-mono text-[10px] tracking-[0.12em] text-mute hover:border-white/20 hover:text-ink"
             >
               <RotateCcw className="h-3.5 w-3.5" /> DEMO
             </button>
@@ -100,7 +105,7 @@ export default function Home() {
 
       <main className="grid gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]">
         <section className="min-w-0">
-          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-steel">PANEL IZQUIERDO · TACTICAL COMMAND BUILDER</div>
+          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">PANEL IZQUIERDO · TACTICAL COMMAND BUILDER</div>
           <nav className="scroll-thin mb-4 flex gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1">
             {BUILDER_TABS.map(({ id, label, icon: Icon }) => (
               <button
@@ -109,10 +114,8 @@ export default function Home() {
                 className={cx(
                   'flex flex-none items-center gap-2 rounded-lg px-3.5 py-2.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.12em] transition',
                   builderTab === id
-                    ? id === 'intake'
-                      ? 'bg-fire/10 text-[#FDBA74] ring-1 ring-inset ring-fire/40'
-                      : 'bg-cyan-hud/10 text-ink ring-1 ring-inset ring-cyan-hud/35'
-                    : 'text-steel hover:bg-panel2 hover:text-ink',
+                    ? 'bg-cyan-hud/[0.08] text-ink ring-1 ring-inset ring-cyan-hud/60'
+                    : 'text-mute hover:bg-white/[0.03] hover:text-steel',
                 )}
               >
                 <Icon className="h-3.5 w-3.5" /> {label}
@@ -126,7 +129,7 @@ export default function Home() {
         </section>
 
         <aside className="min-w-0 lg:sticky lg:top-[112px] lg:max-h-[calc(100vh-128px)] lg:self-start lg:overflow-y-auto scroll-thin">
-          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-steel">PANEL DERECHO · SIMULADOR & MOTOR DE DEPLOY</div>
+          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">PANEL DERECHO · SIMULADOR & MOTOR DE DEPLOY</div>
           <nav className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-line bg-panel p-1">
             {DEPLOY_TABS.map(({ id, label, icon: Icon }) => (
               <button
@@ -134,7 +137,7 @@ export default function Home() {
                 onClick={() => setDeployTab(id)}
                 className={cx(
                   'flex items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition',
-                  deployTab === id ? 'bg-gold/10 text-gold ring-1 ring-inset ring-gold/35' : 'text-steel hover:bg-panel2 hover:text-ink',
+                  deployTab === id ? 'bg-fire/[0.08] text-fire ring-1 ring-inset ring-fire/60' : 'text-mute hover:bg-white/[0.03] hover:text-steel',
                 )}
               >
                 <Icon className="h-3.5 w-3.5" /> {label}
@@ -149,8 +152,8 @@ export default function Home() {
         </aside>
       </main>
 
-      <footer className="border-t border-line px-6 py-5 font-mono text-[10px] tracking-[0.12em] text-steel">
-        COACH JP · HIGH PERFORMANCE SYSTEM · BIOENERGÉTICA APLICADA · [ ISSN · MORTON ET AL., 2018 · BR J SPORTS MED ]
+      <footer className="border-t border-line px-6 py-5 font-mono text-[10px] tracking-[0.12em] text-mute">
+        COACH JP NUTRITION · HIGH PERFORMANCE SYSTEM · BIOENERGÉTICA APLICADA · [ ISSN · MORTON ET AL., 2018 · BR J SPORTS MED ]
       </footer>
     </div>
   );

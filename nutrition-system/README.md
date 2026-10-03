@@ -28,6 +28,29 @@ https://<usuario>.github.io/<repo>/nutrition/
 | GitHub Actions | `/<repo>/nutrition` (o `/nutrition` en un repo `<usuario>.github.io`) |
 | Local (`npm run dev`, `npx serve out`) | vacío |
 
+## Instalar el Command Builder como app (PWA)
+
+El Builder trae `manifest.webmanifest` (standalone, `#0B0F17`), iconos propios de Nutrition y un Service Worker
+(`public/sw.js`) que cachea el app shell para abrir sin señal. Se registra sólo en el build estático.
+
+- **iPhone / iPad:** Safari → Compartir → «Agregar a inicio».
+- **Android:** Chrome → menú ⋮ → «Instalar app».
+- **Desktop:** Chrome / Edge → ícono de instalar en la barra de direcciones → «Instalar Coach JP Nutrition Builder».
+
+El botón **INSTALAR APP** del header dispara el prompt nativo cuando el navegador lo ofrece; si no (iOS), abre la
+guía paso a paso. La PWA exportada del atleta trae lo mismo: manifest embebido (data URI), iconos PNG embebidos,
+`sw.js` opcional para modo offline y su propio botón **INSTALAR APP** con guía iPhone / Android.
+
+## Identidad y design system
+
+- **Isotipo Nutrition** (distinto del rayo de Training): hexágono táctico `#0B0F17` con borde cian `#38BDF8`,
+  nodos moleculares y llama metabólica naranja `#F97316`. Paths en `src/lib/brand.ts`; PNG en `public/icons/`.
+- **Tokens** (`tailwind.config.ts` + `globals.css`): base `#0B0F17 → #0E1420`, superficies `#131B2A`, bordes
+  `rgba(255,255,255,.08)`, CTA naranja `#F97316` (hover `#FF5E1E`), datos/evidencia cian `#38BDF8`, alerta
+  `#EF4444`, títulos `#FFFFFF`, lectura `#94A3B8`, micro-etiquetas `#64748B`, grid de fondo al 3,5 %.
+- **Tipografía:** Inter para UI y titulares; JetBrains Mono con `tabular-nums` para cifras y corchetes.
+- **Inputs numéricos:** sin spinners; se escriben y borran libremente (coma o punto) y recalculan en vivo.
+
 ## Desarrollo local (opcional)
 
 ```bash

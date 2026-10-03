@@ -265,3 +265,51 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan): AthletePlan {
     coachNote: json.coachNote?.trim() || base.coachNote,
   };
 }
+
+// ---------- PRUEBA DE CONEXIÓN ----------
+
+export type PingResult =
+  | { ok: true; latencyMs: number; model: string }
+  | { ok: false; kind: 'auth' | 'quota' | 'model' | 'network' | 'other'; message: string };
+
+function classify(status: number, message: string): PingResult {
+  if (status === 401 || status === 403 || /api[_ ]?key|invalid.*key|unauthori[sz]ed/i.test(message)) return { ok: false, kind: 'auth', message };
+  if (status === 429 || /quota|rate/i.test(message)) return { ok: false, kind: 'quota', message };
+  if (status === 404) return { ok: false, kind: 'model', message };
+  return { ok: false, kind: 'other', message };
+}
+
+/**
+ * Ping mínimo sin consumir tokens: consulta la ficha del modelo seleccionado.
+ * Valida la API key, el acceso al modelo y mide la latencia ida y vuelta.
+ */
+export async function pingProvider(ai: AiSettings): Promise<PingResult> {
+  if (!ai.apiKey.trim()) return { ok: false, kind: 'auth', message: 'Falta la API key.' };
+  const t0 = performance.now();
+  const done = (): PingResult => ({ ok: true, latencyMs: Math.round(performance.now() - t0), model: ai.model });
+  try {
+    if (ai.provider === 'claude') {
+      const client = new Anthropic({ apiKey: ai.apiKey, dangerouslyAllowBrowser: true, maxRetries: 0, timeout: 15000 });
+      try {
+        await client.models.retrieve(ai.model);
+        return done();
+      } catch (e) {
+        if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) return { ok: false, kind: 'auth', message: e.message };
+        if (e instanceof Anthropic.RateLimitError) return { ok: false, kind: 'quota', message: e.message };
+        if (e instanceof Anthropic.NotFoundError) return { ok: false, kind: 'model', message: e.message };
+        if (e instanceof Anthropic.APIConnectionError) return { ok: false, kind: 'network', message: e.message };
+        if (e instanceof Anthropic.APIError) return classify(e.status ?? 0, e.message);
+        throw e;
+      }
+    }
+    const res =
+      ai.provider === 'gemini'
+        ? await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(ai.model)}`, { headers: { 'x-goog-api-key': ai.apiKey } })
+        : await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(ai.model)}`, { headers: { Authorization: `Bearer ${ai.apiKey}` } });
+    if (res.ok) return done();
+    const body = await res.json().catch(() => ({}));
+    return classify(res.status, body?.error?.message || `HTTP ${res.status}`);
+  } catch (e) {
+    return { ok: false, kind: 'network', message: e instanceof Error ? e.message : String(e) };
+  }
+}

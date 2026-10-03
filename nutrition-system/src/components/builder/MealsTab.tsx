@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { Copy, ExternalLink, Pill, Plus, Trash2, Utensils, X } from 'lucide-react';
+import { CopyPlus, ExternalLink, Pill, Plus, Trash2, Utensils, X } from 'lucide-react';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
 import { equivalentGrams, FOOD_BY_ID, FOODS, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
 import type { DayMode, FoodItem, Meal, MealDay, MealRole } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
-import { Cite, cx, HudButton, Label, Panel, Segmented, Toggle } from '../hud/primitives';
+import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
 
 const ROLE_LABEL: Record<MealRole, string> = {
   breakfast: 'Desayuno',
@@ -22,7 +22,11 @@ const DAY_ORDER: Record<MealDay, number> = { both: 0, on: 1, off: 2 };
 
 const GROUPS = Object.keys(GROUP_LABEL) as SwapGroup[];
 
-const smallSelect = 'rounded-md border border-line2 bg-panel2 px-2 py-1 text-xs text-steel outline-none focus:border-cyan-hud/50';
+const smallSelect = 'rounded-md border border-line bg-carbon px-2 py-1 text-xs text-steel outline-none focus:border-cyan-hud/50';
+
+// Leucina aportada por 1 huevo (50 g) y por gramo de whey (base de alimentos).
+const LEU_PER_EGG = (FOOD_BY_ID.huevo.leucine * 50) / 100;
+const LEU_PER_G_WHEY = FOOD_BY_ID.whey.leucine / 100;
 
 function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
   return (
@@ -47,19 +51,29 @@ function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
 
 function ProteinSensor({ meal }: { meal: Meal }) {
   const t = mealTotals(meal);
-  if (!isMpsMeal(meal)) return <span className="text-xs text-steel">Bloque de energía para entrenar · la proteína no es prioridad acá</span>;
+  if (!isMpsMeal(meal))
+    return (
+      <span className="inline-flex items-center rounded-md border border-line bg-white/[0.03] px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] text-mute">
+        [ BLOQUE GLUCOLÍTICO · LEUCINA NO PRIORITARIA ]
+      </span>
+    );
   const ok = t.leucine >= LEUCINE_THRESHOLD;
+  if (ok)
+    return (
+      <span className="tnum inline-flex items-center gap-2 rounded-md border border-cyan-hud/30 bg-cyan-hud/10 px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] text-cyan-hud">
+        <span className="h-1.5 w-1.5 rounded-full bg-cyan-hud" />[ mTOR / MPS: ACTIVADO • {fmt1(t.leucine)} g LEUCINA ]
+      </span>
+    );
+  const need = LEUCINE_THRESHOLD - t.leucine;
+  const eggs = Math.max(1, Math.ceil(need / LEU_PER_EGG));
+  const whey = Math.max(5, Math.ceil(need / LEU_PER_G_WHEY / 5) * 5);
   return (
-    <span
-      className={cx(
-        'inline-flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-1 text-xs',
-        ok ? 'border-cyan-hud/25 bg-cyan-hud/[0.05] text-ink/90' : 'border-fire/40 bg-fire/[0.08] text-[#FDBA74]',
-      )}
-    >
-      <span className={cx('h-1.5 w-1.5 rounded-full', ok ? 'bg-cyan-hud' : 'animate-pulse bg-fire')} />
-      {ok ? 'Proteína suficiente para estimular músculo' : 'Falta proteína en esta comida'}
-      <span className="font-mono text-[10px] text-steel">
-        leucina {fmt1(t.leucine)} / {fmt1(LEUCINE_THRESHOLD)} g
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="tnum inline-flex items-center gap-2 rounded-md border border-fire/60 bg-fire/10 px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] text-fire">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fire" />[ SUB-UMBRAL mTOR • {fmt1(t.leucine)} g LEUCINA ]
+      </span>
+      <span className="text-xs text-steel">
+        Sugerencia: +{eggs} huevo{eggs > 1 ? 's' : ''} o +{whey} g whey
       </span>
     </span>
   );
@@ -100,7 +114,7 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
   const hint = householdHint(item.foodId, item.grams);
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 border-t border-line/70 py-3 sm:grid-cols-[minmax(0,1.3fr)_150px_minmax(0,1.4fr)_auto] sm:items-center">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 border-t border-line py-3 sm:grid-cols-[minmax(0,1.3fr)_150px_minmax(0,1.4fr)_auto] sm:items-center">
       <div className="min-w-0">
         {ref ? (
           <select
@@ -125,15 +139,16 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
       </button>
       <div className="flex items-center gap-2">
         <div className="relative w-[84px]">
-          <input
-            type="number"
+          <NumInput
             value={item.grams}
             min={0}
-            step={5}
-            onChange={(e) => setItemGrams(meal.id, item.id, parseFloat(e.target.value) || 0)}
-            className="w-full rounded-md border border-line2 bg-panel2 py-1.5 pl-2 pr-6 text-right font-mono text-sm text-ink outline-none focus:border-cyan-hud/50"
+            max={3000}
+            decimals={false}
+            ariaLabel={`Gramos de ${item.food}`}
+            onChange={(g) => setItemGrams(meal.id, item.id, g)}
+            className="py-1.5 pl-2 pr-6 text-right"
           />
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-steel">g</span>
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-mute">g</span>
         </div>
         {hint && <span className="whitespace-nowrap text-[11px] text-steel">{hint}</span>}
       </div>
@@ -170,11 +185,17 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         <input
           value={meal.name}
           onChange={(e) => updateMeal(meal.id, { name: e.target.value })}
-          className="min-w-0 flex-1 bg-transparent font-display text-lg font-bold uppercase tracking-wide text-ink outline-none"
+          className="min-w-0 flex-1 bg-transparent text-lg font-bold tracking-tight text-ink outline-none"
         />
-        <button onClick={() => duplicateMeal(meal.id)} title="Duplicar al día opuesto" className="rounded-md p-1.5 text-steel hover:bg-line hover:text-ink">
-          <Copy className="h-3.5 w-3.5" />
-        </button>
+        {meal.day !== 'both' && (
+          <button
+            onClick={() => duplicateMeal(meal.id)}
+            title={`Clonar esta comida en el día ${meal.day === 'on' ? 'OFF' : 'ON'}`}
+            className="flex items-center gap-1.5 rounded-md border border-cyan-hud/25 px-2 py-1 font-mono text-[9.5px] font-bold tracking-[0.1em] text-cyan-hud transition hover:border-cyan-hud/60 hover:bg-cyan-hud/10"
+          >
+            <CopyPlus className="h-3.5 w-3.5" /> [ + DUPLICAR AL DÍA {meal.day === 'on' ? 'OFF' : 'ON'} ]
+          </button>
+        )}
         <button onClick={() => removeMeal(meal.id)} title="Eliminar comida" className="rounded-md p-1.5 text-steel hover:bg-fire/10 hover:text-fire">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -209,7 +230,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         <ItemRow key={it.id} meal={meal} item={it} technical={technical} />
       ))}
 
-      <div className="mt-2 border-t border-line/70 pt-3">
+      <div className="mt-2 border-t border-line pt-3">
         <ProteinSensor meal={meal} />
       </div>
       <div className="mt-3">
@@ -224,29 +245,32 @@ function DayCompare({ day }: { day: DayMode }) {
   const t = computeTelemetry(plan);
   const target = day === 'on' ? { ...t.gramsOn, kcal: t.kcalOn } : { ...t.gramsOff, kcal: t.kcalOff };
   const got = dayTotals(plan.meals, day);
-  const rows: [string, number, number, string][] = [
-    ['Kcal', got.kcal, target.kcal, '#D1D5DB'],
-    ['Proteína', got.p, target.p, 'rgba(0,229,255,.7)'],
-    ['Carbos', got.c, target.c, 'rgba(255,214,0,.75)'],
-    ['Grasas', got.f, target.f, '#F97316'],
+  const rows: [string, number, number][] = [
+    ['Kcal', got.kcal, target.kcal],
+    ['Proteína', got.p, target.p],
+    ['Carbos', got.c, target.c],
+    ['Grasas', got.f, target.f],
   ];
   return (
-    <div className="rounded-lg border border-line bg-panel2 p-3">
-      <div className="mb-2 flex items-center gap-2 font-mono text-[10px] font-bold tracking-[0.16em] text-steel">
-        <span className={cx('h-1.5 w-1.5 rounded-full', day === 'on' ? 'bg-cyan-hud' : 'bg-gold')} />
-        {day === 'on' ? 'DÍA ON' : 'DÍA OFF'} · COMIDAS vs OBJETIVO
-      </div>
+    <div className="rounded-lg border border-line bg-carbon p-3">
+      <div className="mb-2.5 font-mono text-[10px] font-bold tracking-[0.16em] text-mute">{day === 'on' ? 'DÍA ON' : 'DÍA OFF'} · COMIDAS vs OBJETIVO</div>
       <div className="space-y-2">
-        {rows.map(([l, g, tg, c]) => {
+        {rows.map(([l, g, tg]) => {
           const diff = tg ? (g / tg - 1) * 100 : 0;
+          const abs = Math.abs(diff);
+          // Tolerancia táctica: ±10 % se considera calibrado; sólo desvíos mayores se marcan en naranja.
+          const off = abs > 10;
           return (
-            <div key={l} className="grid grid-cols-[64px_1fr_104px] items-center gap-2 text-[11.5px]">
+            <div key={l} className="grid grid-cols-[56px_1fr_84px_112px] items-center gap-2 text-[11.5px]">
               <span className="text-steel">{l}</span>
-              <div className="h-1.5 overflow-hidden rounded bg-line">
-                <div className="h-full rounded" style={{ width: `${Math.min(100, (g / (tg || 1)) * 100)}%`, background: c }} />
+              <div className="h-1.5 overflow-hidden rounded bg-white/[0.06]">
+                <div className={cx('h-full rounded transition-all', off ? 'bg-fire' : 'bg-cyan-hud')} style={{ width: `${Math.min(100, (g / (tg || 1)) * 100)}%` }} />
               </div>
-              <span className={cx('text-right font-mono', Math.abs(diff) > 7 ? 'text-fire' : 'text-ink')}>
-                {fmt0(g)}/{fmt0(tg)} {Math.abs(diff) > 7 && `(${diff > 0 ? '+' : ''}${fmt0(diff)}%)`}
+              <span className="tnum text-right font-mono text-ink">
+                {fmt0(g)}/{fmt0(tg)}
+              </span>
+              <span className={cx('tnum whitespace-nowrap text-right font-mono text-[9px] tracking-[0.04em]', off ? 'text-fire' : 'text-cyan-hud')}>
+                {off ? `DESVÍO ${diff > 0 ? '+' : ''}${fmt0(diff)}%` : abs <= 5 ? 'CALIBRADO (±5%)' : 'TOLERANCIA (±10%)'}
               </span>
             </div>
           );
@@ -319,14 +343,14 @@ export function MealsTab() {
         <div className="divide-y divide-line">
           {plan.supplements.map((s) => (
             <div key={s.id} className="py-3">
-              <Toggle checked={s.enabled} onChange={() => toggleSupplement(s.id)} label={<b className="text-[15px] font-semibold text-ink">{s.name}</b>} />
-              <div className={cx('mt-3 grid gap-3 pl-14 sm:grid-cols-2', !s.enabled && 'opacity-40')}>
+              <Toggle tone="cyan" checked={s.enabled} onChange={() => toggleSupplement(s.id)} label={<b className="text-[15px] font-semibold text-ink">{s.name}</b>} />
+              <div className={cx('mt-3 grid gap-3 sm:pl-14', !s.enabled && 'opacity-40')}>
                 <label className="block">
                   <Label>Cuánto</Label>
                   <input
                     value={s.dose}
                     onChange={(e) => updateSupplement(s.id, { dose: e.target.value })}
-                    className="w-full rounded-md border border-line2 bg-panel2 px-2.5 py-1.5 text-sm text-ink outline-none focus:border-cyan-hud/50"
+                    className="w-full rounded-md border border-line bg-carbon px-2.5 py-2 text-sm text-ink outline-none focus:border-cyan-hud/60"
                   />
                 </label>
                 <label className="block">
@@ -334,11 +358,11 @@ export function MealsTab() {
                   <input
                     value={s.timing}
                     onChange={(e) => updateSupplement(s.id, { timing: e.target.value })}
-                    className="w-full rounded-md border border-line2 bg-panel2 px-2.5 py-1.5 text-sm text-ink outline-none focus:border-cyan-hud/50"
+                    className="w-full rounded-md border border-line bg-carbon px-2.5 py-2 text-sm text-ink outline-none focus:border-cyan-hud/60"
                   />
                 </label>
                 {s.doi && (
-                  <a href={doiUrl(s.doi)} target="_blank" rel="noreferrer" className="flex items-center gap-1 font-mono text-[9.5px] tracking-[0.06em] text-steel/80 hover:text-ink sm:col-span-2">
+                  <a href={doiUrl(s.doi)} target="_blank" rel="noreferrer" className="flex items-center gap-1 font-mono text-[9.5px] tracking-[0.06em] text-mute hover:text-cyan-hud">
                     [ {s.evidence} ] <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
