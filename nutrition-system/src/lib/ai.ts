@@ -14,12 +14,17 @@ REGLAS DE CÁLCULO Y FORMATO (obligatorias):
 - BMR por Katch-McArdle (370 + 21,6 × masa libre de grasa) cuando haya % graso; si no, Mifflin-St Jeor.
 - Periodización ON/OFF: DÍA ON carbos 4-7 g/kg, proteína 2,0-2,4 g/kg, grasas 0,6-0,8 g/kg. DÍA OFF carbos bajos, proteína constante, grasas 0,9-1,2 g/kg.
 - macrosOn / macrosOff en GRAMOS totales diarios. Gramos de alimentos en peso neto (cocido para carnes, arroz, fideos, papa, batata).
-- Cada item de "meals" lleva p, c, f y leucine en gramos para la porción indicada.
+- Cada item de "meals" lleva p, c, f y leucine en gramos para la porción indicada, más "macroPrincipal": "protein" | "carbs" | "fat" (el macro que define su equivalencia).
+- Grasas de cocción y condimento (aceite de oliva, girasol, manteca): porción REALISTA de 10-15 g (1 cda) por comida, NUNCA más de 15 g por comida. Para cubrir grasas usá palta, frutos secos, huevo o pasta de maní, no más aceite.
+- Cereales / carbos rápidos argentinos válidos: avena, avena instantánea, tutucas de maíz (30-60 g), copos de maíz sin azúcar, galletas o tostadas de arroz, pan integral.
 - Agregá a cada meal: "day": "ON" | "OFF" | "AMBOS" y "role": "breakfast" | "lunch" | "peri" | "post" | "snack" | "dinner". La suma de las comidas de cada día debe aproximar sus macros objetivo (±5 %).
 - Agregá el objeto opcional "profile": { sex: "M"|"F", age, heightCm, weightKg, bodyFatPct, phase: "recomp"|"maintenance"|"surplus", trainingDaysPerWeek, sessionKcal, activityFactor } con lo que se desprenda de las notas.
 - Agregá "coachNote": una directiva táctica breve (máx. 2 frases) para el atleta.
 - Suplementos: sólo AIS Grupo A (creatina 0,04 g/kg, cafeína 3-6 mg/kg, beta-alanina, bicarbonato, nitrato) con DOI real.
 - Respondé SOLO con el objeto JSON, sin texto antes ni después y sin bloques de código.`;
+
+/** Porción máxima de aceite por comida (1 cda ≈ 13-15 g). */
+export const MAX_OIL_PER_MEAL_G = 15;
 
 export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> = {
   claude: [
@@ -60,7 +65,7 @@ export interface AiPlanJson {
     time?: string;
     day?: string;
     role?: string;
-    items?: { food?: string; grams?: number; p?: number; c?: number; f?: number; leucine?: number }[];
+    items?: { food?: string; grams?: number; p?: number; c?: number; f?: number; leucine?: number; macroPrincipal?: string }[];
     leucineTotal?: number;
     mpsAchieved?: boolean;
   }[];
@@ -197,9 +202,12 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan): AthletePlan {
     const items: FoodItem[] = (m.items ?? [])
       .filter((i) => i.food && num(i.grams, 0) > 0)
       .map((i) => {
-        const grams = Math.round(num(i.grams, 100));
+        let grams = Math.round(num(i.grams, 100));
         const ref = matchFood(i.food!);
+        // Aceite de cocción / condimento: tope realista de 15 g (1 cda) por comida, aunque la IA proponga más.
+        if (ref?.id === 'oliva' && grams > MAX_OIL_PER_MEAL_G) grams = MAX_OIL_PER_MEAL_G;
         if (ref) return { id: uid(), foodId: ref.id, food: ref.name, grams, ...macrosFor(ref.id, grams)! };
+        const mp = i.macroPrincipal;
         return {
           id: uid(),
           food: i.food!,
@@ -208,6 +216,7 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan): AthletePlan {
           c: round1(num(i.c, 0)),
           f: round1(num(i.f, 0)),
           leucine: round2(num(i.leucine, 0)),
+          ...(mp === 'protein' || mp === 'carbs' || mp === 'fat' ? { macroPrincipal: mp } : {}),
         };
       });
     return { id: uid(), name, time: /^\d{1,2}:\d{2}$/.test(m.time ?? '') ? m.time!.padStart(5, '0') : '12:00', day: inferDay(m.day, role), role, items };

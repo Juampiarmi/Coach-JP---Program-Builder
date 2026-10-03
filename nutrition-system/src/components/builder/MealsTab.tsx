@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { CopyPlus, ExternalLink, Pill, Plus, Trash2, Utensils, X } from 'lucide-react';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
-import { equivalentGrams, FOOD_BY_ID, FOODS, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
+import { alternativesFor, equivalentGrams, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
 import type { DayMode, FoodItem, Meal, MealDay, MealRole } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
+import { CustomFoodsBar } from './CustomFoods';
 import { FoodScanner } from './FoodScanner';
 
 const ROLE_LABEL: Record<MealRole, string> = {
@@ -30,6 +31,7 @@ const LEU_PER_EGG = (FOOD_BY_ID.huevo.leucine * 50) / 100;
 const LEU_PER_G_WHEY = FOOD_BY_ID.whey.leucine / 100;
 
 function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
+  const custom = usePlanStore((s) => s.customFoods);
   return (
     <select
       value=""
@@ -37,9 +39,18 @@ function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
       className="w-full cursor-pointer rounded-lg border border-dashed border-line2 bg-transparent px-3 py-2 text-xs text-steel outline-none hover:border-steel/60 hover:text-ink"
     >
       <option value="">+ Agregar alimento…</option>
+      {custom.length > 0 && (
+        <optgroup label="★ Mis alimentos / marcas">
+          {custom.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
       {GROUPS.map((g) => (
         <optgroup key={g} label={GROUP_LABEL[g]}>
-          {FOODS.filter((f) => f.group === g).map((f) => (
+          {FOODS.filter((f) => f.group === g && !f.custom).map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}
             </option>
@@ -80,29 +91,28 @@ function ProteinSensor({ meal }: { meal: Meal }) {
   );
 }
 
-/** Alternativas del mismo grupo que aportan lo mismo del macro que importa (clic = reemplazar). */
+const chipCls = 'rounded-md border border-line2 bg-panel2 px-2 py-0.5 text-[11.5px] text-steel transition hover:border-cyan-hud/35 hover:text-ink';
+const shortName = (n: string) => n.replace(/ \(.*\)$/, '');
+
+/**
+ * Alternativas que aportan lo mismo del macro que importa (clic = reemplazar).
+ * Alimentos de la base: equivalencias preferidas + mismo grupo por densidad calórica.
+ * Alimentos libres de la IA: se asocian por macro principal a los grupos de la base.
+ */
 function Equivalences({ mealId, item }: { mealId: string; item: FoodItem }) {
   const swapItem = usePlanStore((s) => s.swapItem);
   const ref = item.foodId ? FOOD_BY_ID[item.foodId] : undefined;
-  if (!ref) return <span className="text-xs text-steel/70">Alimento cargado por IA · sin equivalencias</span>;
-  const alts = FOODS.filter((f) => f.group === ref.group && f.id !== ref.id).slice(0, 2);
-  if (!alts.length) return <span className="text-xs text-steel/70">Única opción de su grupo</span>;
+  const alts = ref
+    ? alternativesFor(ref).map((f) => ({ food: f, grams: equivalentGrams(ref.id, item.grams, f.id) }))
+    : freeEquivalents(item);
+  if (!alts.length) return <span className="text-xs text-steel/70">{ref ? 'Única opción de su grupo' : 'Sin macros para equivaler'}</span>;
   return (
     <div className="flex flex-wrap gap-1.5">
-      {alts.map((f) => {
-        const g = equivalentGrams(ref.id, item.grams, f.id);
-        return (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => swapItem(mealId, item.id, f.id)}
-            title="Reemplazar por esta opción"
-            className="rounded-md border border-line2 bg-panel2 px-2 py-0.5 text-[11.5px] text-steel transition hover:border-cyan-hud/35 hover:text-ink"
-          >
-            o <b className="font-semibold text-ink/90">{g} g</b> {f.name.replace(/ \(.*\)$/, '')}
-          </button>
-        );
-      })}
+      {alts.map(({ food, grams }) => (
+        <button key={food.id} type="button" onClick={() => swapItem(mealId, item.id, food.id)} title="Reemplazar por esta opción" className={chipCls}>
+          o <b className="font-semibold text-ink/90">{grams} g</b> {shortName(food.name)}
+        </button>
+      ))}
     </div>
   );
 }
@@ -133,7 +143,12 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
         ) : (
           <span className="text-[15px] font-medium text-ink">{item.food}</span>
         )}
-        <div className="text-[11px] text-steel">{ref ? GROUP_LABEL[ref.group] : 'Alimento libre'}</div>
+        <div className="text-[11px] text-steel">
+          {ref ? `${GROUP_LABEL[ref.group]}${ref.custom ? ' · mi marca' : ''}` : (() => {
+            const g = freeGroup(item);
+            return g ? `Cargado por IA · equivale como ${GROUP_LABEL[g].split(' / ')[0].toLowerCase()}` : 'Alimento libre';
+          })()}
+        </div>
       </div>
       <button onClick={() => removeItem(meal.id, item.id)} title="Quitar" className="self-start p-1 text-steel hover:text-fire sm:order-last sm:self-center">
         <X className="h-4 w-4" />
@@ -283,6 +298,8 @@ function DayCompare({ day }: { day: DayMode }) {
 
 export function MealsTab() {
   const plan = usePlanStore((s) => s.plan);
+  // Re-render al crear / borrar marcas propias (la base viva FOODS se actualiza en el store).
+  usePlanStore((s) => s.customFoods);
   const addMeal = usePlanStore((s) => s.addMeal);
   const toggleSupplement = usePlanStore((s) => s.toggleSupplement);
   const updateSupplement = usePlanStore((s) => s.updateSupplement);
@@ -322,6 +339,7 @@ export function MealsTab() {
             {lowCount ? `${lowCount} comida(s) con poca proteína` : '✓ Todas las comidas principales tienen proteína suficiente'}
           </span>
         </div>
+        <CustomFoodsBar />
         <div className="mt-2 flex flex-col gap-1">
           <Cite c={CITES.leucine} />
           <Cite c={CITES.aragon} />

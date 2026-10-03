@@ -3,9 +3,9 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_PRESETS } from '@/lib/bioenergetics';
-import { migrateModel } from '@/lib/ai';
+import { MAX_OIL_PER_MEAL_G, migrateModel } from '@/lib/ai';
 import { aisGroupA } from '@/lib/evidence';
-import { equivalentGrams, FOOD_BY_ID, macrosFor, round1, round2 } from '@/lib/foods';
+import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
 import { itemFromFood, seedPlan, uid } from '@/lib/seed';
 import type {
   AiSettings,
@@ -33,6 +33,11 @@ interface PlanState {
   deployTab: DeployTab;
   previewMode: DayMode;
   intakeNotes: string;
+  /** Alimentos / marcas creados por el coach (persistidos en localStorage). */
+  customFoods: FoodRef[];
+
+  addCustomFood: (food: Omit<FoodRef, 'id' | 'custom'>) => string;
+  removeCustomFood: (id: string) => void;
 
   setBuilderTab: (t: BuilderTab) => void;
   setDeployTab: (t: DeployTab) => void;
@@ -84,6 +89,12 @@ function mapMeal(plan: AthletePlan, mealId: string, fn: (m: Meal) => Meal): Athl
   return touch({ ...plan, meals: plan.meals.map((m) => (m.id === mealId ? fn(m) : m)) });
 }
 
+/** Gramos equivalentes al reemplazar: por grupo si el origen está en la base, por macro principal si es libre. */
+function swapGrams(item: FoodItem, toId: string) {
+  if (item.foodId && FOOD_BY_ID[item.foodId]) return equivalentGrams(item.foodId, item.grams, toId);
+  return freeEquivalents(item, 99).find((e) => e.food.id === toId)?.grams ?? item.grams;
+}
+
 function rescaleItem(item: FoodItem, grams: number): FoodItem {
   if (item.foodId && FOOD_BY_ID[item.foodId]) return { ...item, grams, ...macrosFor(item.foodId, grams)! };
   // Alimento libre (provisto por la IA): escala proporcional.
@@ -100,7 +111,7 @@ function rescaleItem(item: FoodItem, grams: number): FoodItem {
 
 export const usePlanStore = create<PlanState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       plan: seedPlan(),
       roster: {},
       ai: { provider: 'claude', model: 'claude-opus-5', apiKey: '' },
@@ -108,6 +119,20 @@ export const usePlanStore = create<PlanState>()(
       deployTab: 'preview',
       previewMode: 'on',
       intakeNotes: '',
+      customFoods: [],
+
+      addCustomFood: (food) => {
+        const id = `custom-${uid()}`;
+        const customFoods = [...get().customFoods, { ...food, id, custom: true }];
+        registerCustomFoods(customFoods);
+        set({ customFoods });
+        return id;
+      },
+      removeCustomFood: (id) => {
+        const customFoods = get().customFoods.filter((f) => f.id !== id);
+        registerCustomFoods(customFoods);
+        set({ customFoods });
+      },
 
       setBuilderTab: (builderTab) => set({ builderTab }),
       setDeployTab: (deployTab) => set({ deployTab }),
@@ -235,7 +260,7 @@ export const usePlanStore = create<PlanState>()(
           plan: mapMeal(s.plan, mealId, (m) => ({
             ...m,
             items: m.items.map((i) =>
-              i.id === itemId ? { ...itemFromFood(foodId, i.foodId ? equivalentGrams(i.foodId, i.grams, foodId) : i.grams), id: i.id } : i,
+              i.id === itemId ? { ...itemFromFood(foodId, swapGrams(i, foodId)), id: i.id } : i,
             ),
           })),
         })),
@@ -311,6 +336,9 @@ export const usePlanStore = create<PlanState>()(
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<PlanState>;
         const merged = { ...current, ...saved } as PlanState;
+        // Las marcas propias se registran antes de sanear los planes que las referencian.
+        merged.customFoods = Array.isArray(saved.customFoods) ? saved.customFoods.filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string') : [];
+        registerCustomFoods(merged.customFoods);
         merged.plan = sanitizePlan(saved.plan) ?? current.plan;
         merged.roster = Object.fromEntries(
           Object.values(saved.roster ?? {})
@@ -331,10 +359,20 @@ export const usePlanStore = create<PlanState>()(
         deployTab: s.deployTab,
         previewMode: s.previewMode,
         intakeNotes: s.intakeNotes,
+        customFoods: s.customFoods,
       }),
     },
   ),
 );
+
+/**
+ * Corrige planes generados antes del tope de aceite: una porción de aceite > 2 cdas (ej. 150 g) en una comida
+ * es un error de la IA y dispara las grasas; se lleva a 1 cda realista (15 g).
+ */
+function capCookingOil(m: Meal): Meal {
+  if (!m.items.some((i) => i.foodId === 'oliva' && i.grams > 2 * MAX_OIL_PER_MEAL_G)) return m;
+  return { ...m, items: m.items.map((i) => (i.foodId === 'oliva' && i.grams > 2 * MAX_OIL_PER_MEAL_G ? rescaleItem(i, MAX_OIL_PER_MEAL_G) : i)) };
+}
 
 /** Valida la forma mínima del plan persistido y completa los campos agregados en versiones nuevas. */
 function sanitizePlan(raw: unknown): AthletePlan | null {
@@ -362,6 +400,6 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
       sessionMinutes: okNum(pr.sessionMinutes) ? pr.sessionMinutes : 75,
     },
     periodization: { ...seed.periodization, ...p.periodization },
-    meals: p.meals.filter((m) => m && Array.isArray(m.items)),
+    meals: p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil),
   };
 }

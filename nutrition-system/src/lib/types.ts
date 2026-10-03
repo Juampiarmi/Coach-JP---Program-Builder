@@ -62,6 +62,8 @@ export interface FoodItem {
   c: number;
   f: number;
   leucine: number;
+  /** Macro que define la equivalencia de un alimento libre (lo declara la IA o se infiere). */
+  macroPrincipal?: 'protein' | 'carbs' | 'fat';
 }
 
 export interface Meal {

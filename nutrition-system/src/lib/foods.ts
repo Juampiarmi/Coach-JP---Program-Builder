@@ -24,7 +24,15 @@ export interface FoodRef {
   c: number;
   f: number;
   leucine: number;
+  /** Equivalencias preferidas (ids) que se muestran primero en «Equivale a». */
+  equiv?: string[];
+  /** Marca comercial (alimentos personalizados). */
+  brand?: string;
+  /** true = cargado por el coach desde «Crear alimento / marca» (persistido en localStorage). */
+  custom?: boolean;
 }
+
+export type MacroPrincipal = 'protein' | 'carbs' | 'fat';
 
 export const FOODS: FoodRef[] = [
   { id: 'pollo', name: 'Pechuga de pollo (cocida)', group: 'lean-protein', p: 31, c: 0, f: 3.6, leucine: 2.5 },
@@ -44,7 +52,31 @@ export const FOODS: FoodRef[] = [
   { id: 'whey', name: 'Whey protein (concentrado)', group: 'whey', unit: { label: 'scoop', grams: 30 }, p: 78, c: 7, f: 6, leucine: 8.5 },
   { id: 'avena', name: 'Avena arrollada', group: 'cereal', p: 13, c: 60, f: 7, leucine: 1.0 },
   { id: 'pan', name: 'Pan integral', group: 'cereal', unit: { label: 'rebanada', grams: 30 }, p: 9, c: 45, f: 3.5, leucine: 0.65 },
-  { id: 'galletas-arroz', name: 'Galletas de arroz', group: 'cereal', unit: { label: 'u', grams: 9 }, p: 8, c: 80, f: 3, leucine: 0.6 },
+  { id: 'galletas-arroz', name: 'Galletas de arroz inflado', group: 'cereal', unit: { label: 'u', grams: 9 }, p: 8, c: 80, f: 3, leucine: 0.6, equiv: ['tutucas', 'tostadas-arroz'] },
+  {
+    id: 'tutucas',
+    name: 'Tutucas de maíz',
+    group: 'cereal',
+    unit: { label: 'porción', grams: 30 },
+    p: 7.5,
+    c: 84,
+    f: 1.5,
+    leucine: 0.9,
+    equiv: ['copos-maiz', 'galletas-arroz', 'avena-instantanea', 'tostadas-arroz'],
+  },
+  {
+    id: 'copos-maiz',
+    name: 'Copos de maíz sin azúcar',
+    group: 'cereal',
+    unit: { label: 'porción', grams: 30 },
+    p: 7,
+    c: 84,
+    f: 0.9,
+    leucine: 0.85,
+    equiv: ['tutucas', 'galletas-arroz', 'avena-instantanea'],
+  },
+  { id: 'avena-instantanea', name: 'Avena instantánea', group: 'cereal', p: 12, c: 66, f: 6.5, leucine: 0.95, equiv: ['avena', 'tutucas', 'copos-maiz'] },
+  { id: 'tostadas-arroz', name: 'Tostadas de arroz', group: 'cereal', unit: { label: 'u', grams: 8 }, p: 7.5, c: 81, f: 2.8, leucine: 0.6, equiv: ['galletas-arroz', 'tutucas'] },
   { id: 'arroz', name: 'Arroz blanco (cocido)', group: 'starch', p: 2.7, c: 28, f: 0.3, leucine: 0.22 },
   { id: 'yamani', name: 'Arroz yamaní (cocido)', group: 'starch', p: 2.6, c: 23, f: 0.9, leucine: 0.21 },
   { id: 'fideos', name: 'Fideos (cocidos)', group: 'starch', p: 5.8, c: 31, f: 0.9, leucine: 0.45 },
@@ -72,7 +104,7 @@ export const GROUP_LABEL: Record<SwapGroup, string> = {
   eggs: 'Huevo',
   whey: 'Suplemento proteico',
   starch: 'Almidón',
-  cereal: 'Cereal',
+  cereal: 'Almidón / Carbos rápidos / Cereales',
   fruit: 'Fruta',
   fat: 'Grasa',
   veg: 'Vegetal',
@@ -92,6 +124,76 @@ export const GROUP_ANCHOR: Record<SwapGroup, 'p' | 'c' | 'f'> = {
   veg: 'c',
   'sport-carb': 'c',
 };
+
+/** Kcal por 100 g (Atwater 4/4/9). */
+export const kcalPer100 = (f: Pick<FoodRef, 'p' | 'c' | 'f'>) => f.p * 4 + f.c * 4 + f.f * 9;
+
+const BUILTIN_IDS = new Set(FOODS.map((f) => f.id));
+
+/**
+ * Registra los alimentos / marcas personalizados del coach en la base viva (FOODS + FOOD_BY_ID),
+ * así quedan disponibles en el selector, los Smart Swaps, el motor de macros y la PWA exportada.
+ */
+export function registerCustomFoods(list: FoodRef[]) {
+  for (let i = FOODS.length - 1; i >= 0; i--) if (FOODS[i].custom) FOODS.splice(i, 1);
+  for (const id of Object.keys(FOOD_BY_ID)) if (FOOD_BY_ID[id].custom) delete FOOD_BY_ID[id];
+  for (const f of list) {
+    if (!f?.id || BUILTIN_IDS.has(f.id)) continue;
+    const ref = { ...f, custom: true };
+    FOODS.push(ref);
+    FOOD_BY_ID[ref.id] = ref;
+  }
+}
+
+const MACRO_GROUP: Record<MacroPrincipal, SwapGroup> = { protein: 'lean-protein', carbs: 'cereal', fat: 'fat' };
+const ANCHOR_OF: Record<MacroPrincipal, 'p' | 'c' | 'f'> = { protein: 'p', carbs: 'c', fat: 'f' };
+
+/** Macro principal de un alimento libre: el declarado por la IA o el que más kcal aporta. */
+export function inferMacroPrincipal(item: { p: number; c: number; f: number; macroPrincipal?: string }): MacroPrincipal | null {
+  if (item.macroPrincipal === 'protein' || item.macroPrincipal === 'carbs' || item.macroPrincipal === 'fat') return item.macroPrincipal;
+  const kp = item.p * 4;
+  const kc = item.c * 4;
+  const kf = item.f * 9;
+  if (kp + kc + kf <= 0) return null;
+  if (kp >= kc && kp >= kf) return 'protein';
+  return kc >= kf ? 'carbs' : 'fat';
+}
+
+/**
+ * Equivalencias para un alimento libre (cargado por IA): se asocia por macro principal a los grupos de la
+ * base y se eligen los alimentos de densidad calórica más parecida. Gramos = mismo aporte del macro ancla.
+ */
+export function freeEquivalents(item: { grams: number; p: number; c: number; f: number; macroPrincipal?: string }, n = 2) {
+  const macro = inferMacroPrincipal(item);
+  if (!macro || item.grams <= 0) return [];
+  const anchor = ANCHOR_OF[macro];
+  const amount = item[anchor];
+  if (!(amount > 0)) return [];
+  const density = ((item.p * 4 + item.c * 4 + item.f * 9) / item.grams) * 100;
+  const groups: SwapGroup[] =
+    macro === 'protein' ? ['lean-protein', 'dairy-protein', 'eggs'] : macro === 'fat' ? ['fat'] : ['cereal', 'starch', 'fruit', 'sport-carb'];
+  return FOODS.filter((f) => groups.includes(f.group) && f[anchor] > 0)
+    .map((f) => ({ food: f, diff: Math.abs(kcalPer100(f) - density) }))
+    .sort((a, b) => a.diff - b.diff)
+    .slice(0, n)
+    .map(({ food }) => ({ food, grams: Math.max(5, Math.round((amount / food[anchor]) * 100 / 5) * 5) }));
+}
+
+/** Grupo de referencia de un alimento libre (etiqueta y destino de swaps). */
+export const freeGroup = (item: { p: number; c: number; f: number; macroPrincipal?: string }) => {
+  const m = inferMacroPrincipal(item);
+  return m ? MACRO_GROUP[m] : null;
+};
+
+/** Alternativas para «Equivale a»: primero las preferidas del alimento, luego las de densidad calórica más cercana del grupo. */
+export function alternativesFor(ref: FoodRef, n = 2) {
+  const pool = FOODS.filter((f) => f.group === ref.group && f.id !== ref.id);
+  const preferred = (ref.equiv ?? []).map((id) => FOOD_BY_ID[id]).filter((f): f is FoodRef => !!f && f.id !== ref.id);
+  const rest = pool
+    .filter((f) => !preferred.includes(f))
+    .sort((a, b) => Math.abs(kcalPer100(a) - kcalPer100(ref)) - Math.abs(kcalPer100(b) - kcalPer100(ref)));
+  return [...preferred, ...rest].slice(0, n);
+}
 
 export function macrosFor(foodId: string, grams: number) {
   const ref = FOOD_BY_ID[foodId];
@@ -121,13 +223,21 @@ export function householdHint(foodId: string | undefined, grams: number) {
   if (!ref?.unit) return '';
   const q = Math.round((grams / ref.unit.grams) * 2) / 2;
   if (q < 0.5) return '';
-  const label = q > 1 && ref.unit.label.length > 3 ? `${ref.unit.label}s` : ref.unit.label;
+  const u = ref.unit.label;
+  const label = q > 1 && u.length > 3 ? (u.endsWith('ón') ? `${u.slice(0, -2)}ones` : `${u}s`) : u;
   return `≈ ${String(q).replace('.', ',')} ${label}`;
 }
 
 /** Busca un alimento de la base por nombre aproximado (para mapear la respuesta de la IA). */
 export function matchFood(name: string): FoodRef | undefined {
   const n = normalize(name);
+  // Primero las marcas / alimentos personalizados del coach (coincidencia por nombre).
+  const custom = FOODS.find((f) => {
+    if (!f.custom || n.length < 4) return false;
+    const base = normalize(f.name.split(' · ')[0]);
+    return n.includes(base) || base.includes(n);
+  });
+  if (custom) return custom;
   const aliases: [RegExp, string][] = [
     [/pechuga|pollo/, 'pollo'],
     [/cuadril/, 'cuadril'],
@@ -144,8 +254,12 @@ export function matchFood(name: string): FoodRef | undefined {
     [/untable|queso crema/, 'untable'],
     [/leche/, 'leche'],
     [/whey|proteina en polvo|suero/, 'whey'],
-    [/avena/, 'avena'],
     [/pan/, 'pan'],
+    [/tutuca|pochoclo|maiz inflado/, 'tutucas'],
+    [/copos? de maiz|corn ?flakes|cereal de maiz/, 'copos-maiz'],
+    [/avena (instantanea|rapida|quick)/, 'avena-instantanea'],
+    [/tostada.*arroz/, 'tostadas-arroz'],
+    [/avena/, 'avena'],
     [/galleta.*arroz|arroz inflado/, 'galletas-arroz'],
     [/yamani|integral.*arroz|arroz.*integral/, 'yamani'],
     [/arroz/, 'arroz'],
