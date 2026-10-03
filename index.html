@@ -4383,7 +4383,9 @@ function previewImportacion(){
 /* cada bloque parseado se instancia con la MISMA fábrica que el botón
    "+ AGREGAR BLOQUE DE PIZARRA" (ver nuevoBloquePizarra()) */
 function crearBloqueImportado(b, cf){
-  const bl = nuevoBloquePizarra(cf, b.fase, b.titulo, b.items, b.cierre);
+  /* sin título explícito, el bloque lleva el nombre real de su fase (no "Bloque") */
+  const flb = cf ? ((CF_FASES.find(f => f.v === b.fase) || {}).lb || '') : '';
+  const bl = nuevoBloquePizarra(cf, b.fase, b.titulo || flb, b.items, b.cierre);
   /* Sports: el descanso del bloque (Rest M:SS) también queda como dato del
      bloque; el que lee el alumno es el "Rest Ns" de la línea de dosis */
   if(!cf && b.rest) bl.restSeconds = b.rest;
@@ -8509,8 +8511,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 
     <!-- A · Tarjeta de Identidad & Estado -->
     <section class="hdp-card hdp-athlete">
-      <div class="hdp-card-lb">Atleta</div>
-      <div class="hdp-athlete-name">{{ATHLETE_NAME}}</div>
+      <div class="hdp-card-lb">Programa activo</div>
       <div class="hdp-badge" id="hdcProgramBadge">{{HERO_EYEBROW}}</div>
       <div class="hdp-meso-curve" id="hdpMesoCurve"></div>
       <div class="hdp-sync" id="hdpSync"><span class="dot"></span><span class="tx">Verificando…</span></div>
@@ -8820,7 +8821,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
           <tr><th>Término</th><th>Significado</th></tr>
           <tr><td class="gt-strong">Aprox.</td><td>Serie de Aproximación — calienta la articulación y ajusta la carga, sin fatigarte.</td></tr>
           <tr><td class="gt-strong">Ef.</td><td>Serie Efectiva — la serie que realmente cuenta como estímulo de entrenamiento.</td></tr>
-          <tr><td class="gt-strong">RPE</td><td>Percepción del Esfuerzo, escala 1-10 (ver pestaña Técnica).</td></tr>
+          <tr><td class="gt-strong">RPE</td><td><b style="color:var(--text-primary)">RPE (Escala de Esfuerzo Percibido):</b> es el velocímetro de autorregulación de tu entrenamiento. Indica a qué nivel de exigencia real tenés que llegar en cada serie según tu estado diario, medido en RIR (Repeticiones en Recámara):<br>• <b>RPE 10 (RIR 0):</b> esfuerzo máximo absoluto. Velocidad al límite, no entraba ni media repetición más.<br>• <b>RPE 9 (RIR 1):</b> esfuerzo casi máximo. Quedaba exactamente 1 repetición en el tanque antes de fallar.<br>• <b>RPE 8 (RIR 2):</b> carga pesada y desafiante. Te guardaste 2 repeticiones. Estándar de oro para acumular volumen efectivo sin agotar el SNC.<br>• <b>RPE 7 (RIR 3):</b> carga moderada-alta. Movimiento veloz, sobran 3 repeticiones.<br>• <b>RPE 6 (RIR 4+):</b> velocidad, técnica pura o descarga activa.<br><b style="color:var(--text-primary)">Regla de oro Coach JP:</b> si el bloque pide 5 reps @ RPE 8, elegí una carga para 7 repeticiones sólidas y frená en 5. La técnica nunca se negocia por un número.</td></tr>
           <tr><td class="gt-strong">RIR</td><td>Repeticiones en Recámara — cuántas reps más podrías hacer antes de fallar.</td></tr>
           <tr><td class="gt-strong">1RM</td><td>Repetición Máxima — el peso más alto que podés levantar una sola vez con buena técnica. Se estima con la fórmula de Epley a partir de una serie con más reps.</td></tr>
           <tr><td class="gt-strong">Tempo</td><td>4 números en segundos: bajada / pausa abajo / subida / pausa arriba. Ej: <b style="color:var(--text-primary)">3010</b> = 3s de bajada, 0s de pausa abajo, 1s de subida, sin pausa arriba.</td></tr>
@@ -10040,37 +10041,38 @@ var jpBox = (function(){
       osc.start(t0); osc.stop(t0 + dur + 0.03);
     }catch(e){ console.warn('jpBox.seco falló:', e); }
   }
+  /* bocina industrial: fundamental de 680 Hz (diente de sierra) + armónicos
+     (2.º y 3.º, cuadradas) -- seca y potente, sin trémolo; 500 ms por defecto */
   function buzzer(dur){
     if(isAudioMuted()) return;
     try{
       var ctx = ensureAudioCtx(); resumeAudioCtx();
       var t0 = ctx.currentTime;
-      var o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), lfo = ctx.createOscillator();
-      var lp = ctx.createBiquadFilter(), am = ctx.createGain(), lfoG = ctx.createGain(), env = ctx.createGain();
-      o1.type = 'square';   o1.frequency.setValueAtTime(900, t0);
-      o2.type = 'sawtooth'; o2.frequency.setValueAtTime(1010, t0);
-      lfo.type = 'square';  lfo.frequency.setValueAtTime(34, t0);      /* trémolo áspero de chicharra */
-      lp.type = 'lowpass';  lp.frequency.setValueAtTime(3000, t0);
-      am.gain.setValueAtTime(0.7, t0); lfoG.gain.setValueAtTime(0.3, t0);
+      var lp = ctx.createBiquadFilter(), env = ctx.createGain();
+      lp.type = 'lowpass'; lp.frequency.setValueAtTime(3600, t0);
       env.gain.setValueAtTime(0.0001, t0);
-      env.gain.exponentialRampToValueAtTime(0.42, t0 + 0.006);
-      env.gain.setValueAtTime(0.42, t0 + Math.max(dur - 0.09, 0.01));
+      env.gain.exponentialRampToValueAtTime(0.46, t0 + 0.005);
+      env.gain.setValueAtTime(0.46, t0 + Math.max(dur - 0.08, 0.01));
       env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      lfo.connect(lfoG); lfoG.connect(am.gain);
-      o1.connect(lp); o2.connect(lp); lp.connect(am); am.connect(env); env.connect(ctx.destination);
-      o1.start(t0); o2.start(t0); lfo.start(t0);
-      o1.stop(t0 + dur + 0.04); o2.stop(t0 + dur + 0.04); lfo.stop(t0 + dur + 0.04);
+      lp.connect(env); env.connect(ctx.destination);
+      [[680, 'sawtooth', 1], [1360, 'square', .38], [2040, 'square', .16]].forEach(function(h){
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = h[1]; o.frequency.setValueAtTime(h[0], t0); g.gain.setValueAtTime(h[2], t0);
+        o.connect(g); g.connect(lp);
+        o.start(t0); o.stop(t0 + dur + 0.04);
+      });
     }catch(e){ console.warn('jpBox.buzzer falló:', e); }
   }
   return {
-    cuenta:   function(){ seco(1000, 0.09, 0.34); },
+    /* 3-2-1: los tres avisos idénticos -- cuadrada 800 Hz, 120 ms, misma envolvente */
+    cuenta:   function(){ seco(800, 0.12, 0.36); },
     aviso10:  function(){ seco(1200, 0.22, 0.36); },
     mitad:    function(){ seco(900, 0.11, 0.36); seco(900, 0.11, 0.36, 0.2); },
-    inicio:   function(){ seco(1000, 0.14, 0.34); },
+    inicio:   function(){ seco(800, 0.12, 0.36); },
     chicharra:function(dur){
       var ahora = Date.now();
       if(ahora - ultimaChicharra < 1400) return;
-      ultimaChicharra = ahora; buzzer(dur || 1.1);
+      ultimaChicharra = ahora; buzzer(dur || 0.5);
     }
   };
 })();
@@ -11262,7 +11264,7 @@ function datosStoryCF(weekIdx, day){
     if(tieneOlimpico && tieneBasico) skillTitulo = 'OLYMPIC LIFTING & STRENGTH';
     else if(tieneOlimpico) skillTitulo = 'OLYMPIC WEIGHTLIFTING';
     else skillTitulo = 'STRENGTH & TONNAGE';
-    skillChips = strengthBlocks.map(limpiarTituloBloque).filter(Boolean).join(' · ');
+    skillChips = strengthBlocks.map(limpiarTituloBloque).filter(function(t){ return t && !/^bloque\\s*\\d*$/i.test(t); }).join(' · ');
     if(topLiftKg <= 0){
       outer: for(const b of strengthBlocks){
         for(const l of (b.items || [])){
@@ -11278,9 +11280,21 @@ function datosStoryCF(weekIdx, day){
        una palabra de formato reconocible (EMOM/AMRAP/TABATA/FOR TIME/
        EVERY X:XX x N SETS), esa línea va primero -- es lo que el atleta
        reconoce de un vistazo, antes que el esquema de reps. */
-    const formatoTxt = (wod.items.map(x => String(x).trim())
-      .find(l => /^(emom|e2mom|e3mom|amrap|tabata|for\\s*time|ft|every\\s*\\d)/i.test(l)) || '')
-      .replace(/:\\s*$/, '') || undefined;
+    const formatoCrudo = (wod.items.map(x => String(x).trim())
+      .find(l => /^(emom|e\\d*mom|amrap|tabata|for\\s*time|ft|every\\s*\\d)/i.test(l)) || '')
+      .replace(/:\\s*$/, '');
+    /* directiva maestra ("Story Card táctica"): el formato se muestra en notación
+       compacta ("20:00 AMRAP", "EMOM 20:00", "EVERY 4:00 × 5") */
+    let formatoTxt;
+    (function(){
+      let mm;
+      if((mm = formatoCrudo.match(/amrap\\s*(\\d+)/i)) || (mm = formatoCrudo.match(/(\\d+)\\s*(?:min(?:utos?)?)?\\s*amrap/i))) formatoTxt = String(mm[1]).padStart(2, '0') + ':00 AMRAP';
+      else if((mm = formatoCrudo.match(/^e(?:\\d*)mom\\s*(\\d+)?/i)) && /emom/i.test(formatoCrudo)) formatoTxt = 'EMOM' + (mm[1] ? ' ' + String(mm[1]).padStart(2, '0') + ':00' : '');
+      else if((mm = formatoCrudo.match(/every\\s*(\\d+:\\d{2}|\\d+)(?:\\s*(?:x|×)\\s*(\\d+))?/i))) formatoTxt = 'EVERY ' + mm[1] + (mm[2] ? ' × ' + mm[2] : '');
+      else if(/tabata/i.test(formatoCrudo)) formatoTxt = 'TABATA';
+      else if(/for\\s*time|^ft/i.test(formatoCrudo)) formatoTxt = 'FOR TIME';
+      else formatoTxt = formatoCrudo.length && formatoCrudo.length <= 26 ? formatoCrudo : undefined;
+    })();
     const esquema = wod.items.map(x => String(x).trim()).find(l => /^\\d+(-\\d+){1,}$/.test(l));
     /* directiva ("Movimientos condensados COMPLETOS") -- antes se
        cortaba a los primeros 2 movimientos (".slice(0,2)"), la causa del
@@ -11289,11 +11303,19 @@ function datosStoryCF(weekIdx, day){
        Thrusters"). Sin tope: heroCard() ya autoajusta el tamaño de
        fuente y envuelve a 2 líneas, así que una lista más larga se ve
        más chica en vez de perder movimientos reales. */
+    /* movimientos clave: sólo nombres cortos -- las notas largas (esquemas de
+       carga, opciones, escalados, tips) nunca entran a la tarjeta; sin reps ni
+       cargas; máximo 4 */
     const movs = wod.items
       .map(x => String(x).trim())
-      .filter(l => l && !/^\\d+(-\\d+){1,}$/.test(l) && !/^(cap|rest|descanso|nota|amrap|emom|for\\s*time)\\b/i.test(l) && !/:\\s*$/.test(l))
-      .map(l => l.split(' — ')[0].split('@')[0].trim());
-    estructura = [formatoTxt, esquema, movs.join(' · ')].filter(Boolean).join(' · ').toUpperCase();
+      .filter(l => l && l.length <= 56 && !/^\\d+(?:\\s*[-–\\/]\\s*\\d+){1,}$/.test(l) && !/^(cap|rest|descanso|nota|note|amrap|emom|e\\d*mom|tabata|every|for\\s*time|esquema|opci[oó]n|escal|scaled|rx|intermedi|tip)\\b/i.test(l) && !/:\\s*$/.test(l) && !/^[(\\[]/.test(l))
+      .map(l => l.split(' — ')[0].split('@')[0]
+        .replace(/\\([^)]*\\)/g, ' ')
+        .replace(/^\\d+(?:[.,]\\d+)?(?:\\s*[-–\\/]\\s*\\d+(?:[.,]\\d+)?)*\\s*(?:cals?|calories|reps?|mts?|m|km|kg)?\\s+/i, '')
+        .replace(/\\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    estructura = [formatoTxt, movs.join(' · ')].filter(Boolean).join(' · ').toUpperCase();
   }
   if(!estructura && wod) estructura = (wod.title || '').toUpperCase();
   let score = '';
@@ -11316,6 +11338,7 @@ function datosStoryCF(weekIdx, day){
     modo: 'crossfit',
     atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
     tituloWod: (wod && wod.title) || day.title || day.short || 'WOD',
+    wodTitulo: (wod && wod.title && !/^\\s*bloque\\s*\\d*\\s*$/i.test(wod.title)) ? String(wod.title).replace(/^\\s*(?:bloque|block)\\s*\\d+\\s*:\\s*/i, '').trim() : '',
     volumenTotal: volumenTotal,
     topLiftKg: topLiftKg,
     esPR: esPR,
@@ -13654,7 +13677,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function jpCfEsNotaCont(l){
     var t = String(l || '').trim();
     if(!t) return false;
-    if(RX_CF_NOTA_INI.test(t)) return false;
+    if(RX_CF_NOTA_INI.test(t) || RX_CF_OR.test(t)) return false;
     return /^(?:[-•*]|\\(|rounds?\\b|rondas?\\b|r\\d\\b|round\\s*\\d|\\d+\\s*[-–]\\s*\\d+\\s*:)/i.test(t) ||
            /^[a-záéíóúñ]/.test(t) || (/@/.test(t) && !/^\\d/.test(t));
   }
@@ -13700,6 +13723,44 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     return null;
   }
+  var RX_CF_OR = /^[\\s\\-–—*_]*(?:or|o|ó|o\\s+bien)[\\s\\-–—*_]*$/i;
+  /* tarjeta de nota táctica: las plecas "|" se desglosan en una lista con
+     sangría (Rounds 1–2 / 3–4 / 5+), la directiva final lleva flecha sutil (↳)
+     y las opciones intermedias/escaladas van con borde cian tenue (jerarquía
+     secundaria, distinta del borde ámbar del esquema RX) */
+  function jpCfNotaHtml(grupo){
+    var alt = /^\\s*(?:[-•*]\\s*)?(?:opci[oó]n|escalad|scaled?|scaling|intermedi)/i.test(String(grupo[0]).replace(/\\*\\*/g, ''));
+    var toks = [];
+    grupo.forEach(function(l){ String(l).split('|').forEach(function(p){ p = p.trim(); if(p) toks.push(p); }); });
+    if(!toks.length) return '';
+    var titulo = '';
+    var m0 = toks[0].match(/^(.*?)\\s*\\(\\s*(.*)$/);
+    if(m0 && m0[1]){ titulo = m0[1]; toks[0] = m0[2]; }
+    else {
+      var mc = toks[0].match(/^([^:]{2,40}):\\s*(.+)$/);
+      if(mc && !/^(?:rounds?|rondas?|r\\d)/i.test(toks[0])){ titulo = mc[1]; toks[0] = mc[2]; }
+    }
+    toks[toks.length - 1] = toks[toks.length - 1].replace(/\\)\\s*$/, '');
+    toks = toks.filter(Boolean);
+    var fmt = function(t){
+      return jpMdBold(String(t)
+        .replace(/(rounds?|rondas?)\\s*(\\d+)\\s*-\\s*(\\d+)/ig, '$1 $2–$3')
+        .replace(/(\\d)(kg|lbs?)\\b/ig, '$1 $2'));
+    };
+    var esRound = function(t){ return /^(?:rounds?|rondas?|r\\d)/i.test(t); };
+    var lead = [], items = [], notas = [];
+    toks.forEach(function(t){
+      if(esRound(t)) items.push(t);
+      else if(items.length) notas.push(t);
+      else lead.push(t);
+    });
+    return '<div class="jp-cf-notecard' + (alt ? ' alt' : '') + '">' +
+      (titulo ? '<div class="jp-cf-nt">' + jpMdBold(titulo) + '</div>' : '') +
+      lead.map(function(t){ return '<div class="jp-cf-nlead">' + fmt(t) + '</div>'; }).join('') +
+      (items.length ? '<ul class="jp-cf-nl">' + items.map(function(t){ return '<li>' + fmt(t) + '</li>'; }).join('') + '</ul>' : '') +
+      notas.map(function(t){ return '<div class="jp-cf-nstrat">&#8627; ' + fmt(t) + '</div>'; }).join('') +
+    '</div>';
+  }
   function jpCfRenderLineas(lineas, dayId){
     var L = lineas.map(function(x){ return String(x == null ? '' : x).trim(); });
     var out = [], i = 0;
@@ -13713,7 +13774,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           prof += (cur.match(/\\(/g) || []).length - (cur.match(/\\)/g) || []).length;
           j++;
         } while(j < L.length && grupo.length < 8 && (prof > 0 || jpCfEsNotaCont(L[j])));
-        out.push('<div class="jp-cf-notecard">' + grupo.map(jpMdBold).join('<br>') + '</div>');
+        out.push(jpCfNotaHtml(grupo));
         i = j; continue;
       }
       /* 2) escaleras y pirámides */
@@ -13733,7 +13794,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var t = String(l || '').replace(/\\*\\*/g, '').trim();
     var esRest = /^\\s*(?:rest|descanso)\\b/i.test(t);
     var seg = jpCfParsearDescanso(l);
-    if(esRest && (seg == null || jpCfIntervaloCtx)) return '<div class="jp-cf-row jp-cf-closing">' + jpMdBold(l) + '</div>';
+    if(esRest && (seg == null || jpCfIntervaloCtx)){
+      /* micro-barra técnica con icono, gris acero: "⏱️ Rest: tiempo restante hasta completar el intervalo" */
+      var resto = t.replace(/^\\s*(?:rest|descanso)\\b\\s*:?\\s*/i, '').trim();
+      var txt = (!resto || /tiempo\\s+restante|remaining|time\\s+left/i.test(resto))
+        ? 'Rest: tiempo restante hasta completar el intervalo'
+        : 'Rest: ' + resto;
+      return '<div class="jp-cf-row jp-cf-closing jp-cf-restbar"><span class="rb-ic">&#9201;&#65039;</span><span>' + jpMdBold(txt) + '</span></div>';
+    }
     return jpCfRestBadge(l);
   }
   /* "20s on / 40s off" (y variantes work/rest): estructura de intervalos en un
@@ -13749,6 +13817,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        siempre la sangría/alineación uniforme que ya da .jp-cf-row (flex),
        nunca el carácter crudo del coach. */
     let l = String(raw || '').trim().replace(/^[\\u2726\\u2022\\u2023\\u25aa\\u00b7\\u2043]\\s*/, '');
+    if(RX_CF_OR.test(l)){
+      return '<div class="jp-cf-or"><span>&mdash; O BIEN &mdash;</span></div>';
+    }
     if(jpCfEsTransicion(l)){
       return '<div class="jp-cf-divider"><span>' + l.replace(/:\\s*$/, '').toUpperCase() + '</span></div>';
     }
@@ -13898,7 +13969,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       else valHtml = (partes.val ? valHtml + ' ' : '') + '<span class="jp-cf-time">&#9201;&#65039; ' + micro + 's rest</span>';
     }
     const esComplex = partes.nm.indexOf(' + ') >= 0 && partes.nm.length > 26;
-    return '<div class="jp-cf-row">' +
+    return '<div class="jp-cf-row' + ((micro || /jp-cf-time/.test(valHtml)) ? ' jp-cf-row-chip' : '') + '">' +
         '<span class="jp-cf-rn' + (esComplex ? ' jp-cf-rn-complex' : '') + '">' + jpCfHighlightNum(partes.nm) +
           (lado ? '&nbsp;<span class="jp-cf-side">(' + lado + ')</span>' : '') + '</span>' +
         ((partes.val || micro) ? '<span class="jp-cf-rv">' + valHtml + '</span>' : '') +
@@ -14083,7 +14154,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const html =
       '<div class="wod-board jp-cfboard ' + faseCls + '" data-wodb="' + block.id + '">' +
         '<div class="jp-cf-tag">[ CROSSFIT &middot; ' + (CF_FASE_ICON[block.category] || '') + ' ' + fase + ' ]</div>' +
-        '<div class="jp-cf-title">' + jpCfTituloHtml(block.title) + '</div>' +
+        '<div class="jp-cf-title">' + jpCfTituloHtml((!block.title || /^\\s*bloque\\s*\\d*\\s*$/i.test(block.title)) ? fase : block.title) + '</div>' +
         /* directiva (ergonomía integral): se retira el badge de formato
            ("TABATA"/"EMOM"/etc, .jp-cf-fmtbar) -- redundante con la
            bajada de texto del propio bloque ("Every 2:30 x 6 Sets:"),
@@ -16835,11 +16906,11 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   <div class="story-box">
     <canvas id="storyCanvas" width="1080" height="1920"></canvas>
     <div class="story-actions">
-      <button class="sa-foto" id="storyFotoBtn" type="button">📷 Subir Foto de la Sesión</button>
+      <button class="sa-dl" id="storyDl" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg><span class="sa-tx">DESCARGAR HISTORIA</span></button>
       <input type="file" id="storyFotoInput" accept="image/*" style="display:none">
-      <button class="sa-dl" id="storyDl" type="button">⬇ Descargar</button>
-      <button class="sa-cp" id="storyCp" type="button">📋 Copiar imagen</button>
-      <button id="storyX" type="button">✕ Cerrar</button>
+      <button class="sa-foto" id="storyFotoBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span class="sa-tx">Subir foto</span></button>
+      <button class="sa-cp" id="storyCp" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><span class="sa-tx">Copiar</span></button>
+      <button id="storyX" class="sa-x" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><span class="sa-tx">Cerrar</span></button>
     </div>
     <button class="sa-fotox" id="storyFotoQuitar" type="button">✕ Quitar foto (volver al fondo táctico)</button>
     <div class="story-hint">Formato 1080×1920, listo para tu historia de Instagram.</div>
@@ -17150,8 +17221,11 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 
     /* marco táctico -- esquinas tipo bracket, mismo lenguaje visual que
        los "[ ]" de la Pizarra */
-    g.strokeStyle = 'rgba(224,109,45,.4)'; g.lineWidth = 3;
-    const m = 48, bl = 60;
+    /* directiva maestra ("Story Card táctica"): esquinas ⌈ ⌉ ⌊ ⌋ en ámbar/dorado definido */
+    g.save();
+    g.strokeStyle = '#F5C518'; g.lineWidth = 6; g.lineCap = 'square';
+    g.shadowColor = 'rgba(245,197,24,.55)'; g.shadowBlur = 14;
+    const m = 44, bl = 86;
     [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]].forEach(function(p){
       g.beginPath();
       g.moveTo(p[0], p[1] + bl * p[3]);
@@ -17159,6 +17233,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       g.lineTo(p[0] + bl * p[2], p[1]);
       g.stroke();
     });
+    g.restore();
 
     /* escudo superior con destello eléctrico cyan */
     let glow = g.createRadialGradient(W / 2, 150, 10, W / 2, 150, 220);
@@ -17205,8 +17280,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     var yTrasNombre = 352 + nombreLineas.lineas.length * (nombreLineas.tam + 8) + 14;
 
     g.textAlign = 'center';
-    g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '600 28px "Inter", sans-serif';
-    g.fillText(String(d.fecha || '').toUpperCase(), W / 2, yTrasNombre);
+    /* fecha en estilo militar compacto: "// 03.OCT.2026 · SESSION COMPLETED" */
+    var fechaMil = (function(){
+      var MES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'], hoyD = new Date();
+      return '// ' + ('0' + hoyD.getDate()).slice(-2) + '.' + MES[hoyD.getMonth()] + '.' + hoyD.getFullYear() + ' · SESSION COMPLETED';
+    })();
+    g.fillStyle = 'rgba(245,197,24,.9)'; g.font = '700 27px "JetBrains Mono", ui-monospace, monospace';
+    g.fillText(fechaMil, W / 2, yTrasNombre);
 
     g.fillStyle = '#E06D2D'; g.fillRect(W / 2 - 75, yTrasNombre + 30, 150, 6);
     var y = yTrasNombre + 30 + 6 + 54;
@@ -17366,16 +17446,16 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       var hMaxSkill = Math.round(bodyH * .42);
       var hSkill = heroCard(90, y, wCard, hMaxSkill, 'FUERZA / SKILL', '#E06D2D', d.skillTitulo, d.skillChips, skillCaption, skillMetrica, skillBadge, true);
       var hMaxWod = bodyH - hSkill - gap;
-      var hWod = heroCard(90, y + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.estructura, '', d.score ? 'SCORE FINAL' : '', d.score || '', '', true);
+      var hWod = heroCard(90, y + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.wodTitulo || d.estructura, d.wodTitulo ? d.estructura : '', d.score ? 'SCORE FINAL' : '', d.score || '', '', true);
       var sobra = Math.max(0, bodyH - hSkill - gap - hWod);
       var yStart = y + Math.round(sobra / 2);
       heroCard(90, yStart, wCard, hMaxSkill, 'FUERZA / SKILL', '#E06D2D', d.skillTitulo, d.skillChips, skillCaption, skillMetrica, skillBadge, false);
-      heroCard(90, yStart + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.estructura, '', d.score ? 'SCORE FINAL' : '', d.score || '', '', false);
+      heroCard(90, yStart + hSkill + gap, wCard, hMaxWod, 'METCON / WOD', '#38BDF8', d.wodTitulo || d.estructura, d.wodTitulo ? d.estructura : '', d.score ? 'SCORE FINAL' : '', d.score || '', '', false);
     } else if(tieneSkill || tieneWod){
       var soloLabel = tieneSkill ? 'FUERZA / SKILL' : 'METCON / WOD';
       var soloColor = tieneSkill ? '#E06D2D' : '#38BDF8';
-      var soloTitulo = tieneSkill ? d.skillTitulo : d.estructura;
-      var soloSubtitulo = tieneSkill ? d.skillChips : '';
+      var soloTitulo = tieneSkill ? d.skillTitulo : (d.wodTitulo || d.estructura);
+      var soloSubtitulo = tieneSkill ? d.skillChips : (d.wodTitulo ? d.estructura : '');
       var soloCaption = tieneSkill ? skillCaption : (d.score ? 'SCORE FINAL' : '');
       var soloMetrica = tieneSkill ? skillMetrica : (d.score || '');
       var soloBadge = tieneSkill ? skillBadge : '';
@@ -17391,10 +17471,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     /* FOOTER: sello Coach JP + badge Session Completed (directiva) --
        zona reservada fija (footerReserve), el cuerpo nunca dibuja acá. */
     g.textAlign = 'center';
-    g.fillStyle = 'rgba(72,213,151,.14)'; redondear(g, W / 2 - 210, H - footerReserve + 30, 420, 60, 30); g.fill();
-    g.strokeStyle = 'rgba(72,213,151,.5)'; g.lineWidth = 2; redondear(g, W / 2 - 210, H - footerReserve + 30, 420, 60, 30); g.stroke();
-    g.fillStyle = '#7CFFB2'; g.font = '800 26px "JetBrains Mono", monospace';
-    g.fillText('✓ SESSION COMPLETED', W / 2, H - footerReserve + 68);
+    /* (el "SESSION COMPLETED" ya vive en la línea de fecha del encabezado) */
 
     /* directiva ("Actualización del footer de marca") -- frase
        institucional exacta pedida: "COACH JP · DISCIPLINE EQUALS
@@ -17448,6 +17525,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
      también fallara en algún WebKit raro, el último respaldo abre la
      imagen en una pestaña nueva con la instrucción de mantener
      presionado para guardarla a mano -- nunca falla en silencio. */
+  /* texto de un botón de la Story: el <span class="sa-tx"> (el icono SVG no se pisa) */
+  function sTx(btn){ return btn.querySelector('.sa-tx') || btn; }
   function storyDescargaFallback(blob, nombreArchivo, btn, textoOriginal, restaurar){
     try{
       const url = URL.createObjectURL(blob);
@@ -17458,36 +17537,36 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       a.click();
       a.remove();
       setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
-      btn.textContent = '✅ Descargada';
+      sTx(btn).textContent = 'Descargada ✓';
       restaurar(textoOriginal, 2200);
     }catch(e){
       try{
         const url2 = URL.createObjectURL(blob);
         window.open(url2, '_blank');
-        btn.textContent = '📲 Mantené presionado para guardar';
-      }catch(e2){ btn.textContent = '⚠️ Usá Copiar imagen'; }
+        sTx(btn).textContent = 'Mantené presionado para guardar';
+      }catch(e2){ sTx(btn).textContent = 'Usá Copiar'; }
       restaurar(textoOriginal, 3600);
     }
   }
   document.getElementById('storyDl').addEventListener('click', function(){
     const btn = this;
-    const textoOriginal = btn.textContent;
-    const restaurar = function(txt, delay){ setTimeout(function(){ btn.textContent = txt; }, delay); };
+    const textoOriginal = sTx(btn).textContent;
+    const restaurar = function(txt, delay){ setTimeout(function(){ sTx(btn).textContent = txt; }, delay); };
     const c = document.getElementById('storyCanvas');
     btn.disabled = true;
     c.toBlob(function(blob){
       btn.disabled = false;
-      if(!blob){ btn.textContent = '⚠️ No se pudo generar'; restaurar(textoOriginal, 2200); return; }
+      if(!blob){ sTx(btn).textContent = 'No se pudo generar'; restaurar(textoOriginal, 2200); return; }
       const nombreArchivo = 'coach-jp-story.png';
       let file = null;
       try{ file = new File([blob], nombreArchivo, { type: 'image/png' }); }catch(e){}
       if(file && navigator.canShare && navigator.canShare({ files: [file] })){
         navigator.share({ files: [file], title: 'Story Coach JP' })
-          .then(function(){ btn.textContent = '✅ Compartida'; restaurar(textoOriginal, 2200); })
+          .then(function(){ sTx(btn).textContent = 'Compartida ✓'; restaurar(textoOriginal, 2200); })
           .catch(function(err){
             /* el alumno cerró el Action Sheet sin elegir nada -- no es un
                error real, se restaura el botón en silencio */
-            if(err && err.name === 'AbortError'){ btn.textContent = textoOriginal; return; }
+            if(err && err.name === 'AbortError'){ sTx(btn).textContent = textoOriginal; return; }
             storyDescargaFallback(blob, nombreArchivo, btn, textoOriginal, restaurar);
           });
         return;
@@ -17497,14 +17576,15 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   });
   document.getElementById('storyCp').addEventListener('click', function(){
     const b = this, c = document.getElementById('storyCanvas');
+    const fallo = function(){ sTx(b).textContent = 'Usá Descargar'; setTimeout(function(){ sTx(b).textContent = 'Copiar'; }, 2600); };
     try{
       c.toBlob(function(blob){
-        if(!blob || !navigator.clipboard || !window.ClipboardItem){ b.textContent = '⚠️ Usá Descargar'; return; }
+        if(!blob || !navigator.clipboard || !window.ClipboardItem){ fallo(); return; }
         navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-          .then(function(){ b.textContent = '✅ Copiada'; setTimeout(function(){ b.textContent = '📋 Copiar imagen'; }, 2200); })
-          .catch(function(){ b.textContent = '⚠️ Usá Descargar'; });
+          .then(function(){ sTx(b).textContent = 'Copiada ✓'; setTimeout(function(){ sTx(b).textContent = 'Copiar'; }, 2200); })
+          .catch(fallo);
       }, 'image/png');
-    }catch(e){ b.textContent = '⚠️ Usá Descargar'; }
+    }catch(e){ fallo(); }
   });
 
   /* ---------- foto de fondo personalizada (directiva) ----------
@@ -19125,9 +19205,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         <span class="cwt-hud-brand"><svg viewBox="0 0 64 74" aria-hidden="true"><path d="M32 2 L60 12 V36 C60 54 47 66 32 72 C17 66 4 54 4 36 V12 Z" fill="#FFD600" stroke="#FFF0A8" stroke-width="2"/><path d="M36 18 L21 40 H30 L27 58 L43 34 H33 Z" fill="#07080A"/></svg>HUD TIMER TÁCTICO</span>
         <span class="cwt-hud-sub">COACH JP · HIGH PERFORMANCE SYSTEM</span>
       </div>
+      <button type="button" class="cwt-mute" id="cwtMute" title="Silenciar sonidos">🔊 SONIDO ON</button>
       <button type="button" class="cwt-hud-min" id="cwtMin">⤓ MINIMIZAR</button>
     </div>
-    <button type="button" class="cwt-mute" id="cwtMute" title="Silenciar sonidos">🔊</button>
 
     <!-- directiva ("Pantalla de Selección de Modalidad") -- 4 botones
          tácticos + Intervalos/Hyrox (modo ya soportado por el motor,
@@ -19135,11 +19215,11 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     <div class="cwt-pantalla on" data-pantalla="modo">
       <p class="cwt-sub" style="text-align:center">Elegí la modalidad del timer.</p>
       <div class="cwt-modes">
-        <button type="button" class="cwt-mode" data-cwt="amrap"><i class="cwt-mi">🔁</i><b>AMRAP</b><small>Máximas rondas en tiempo fijo</small></button>
-        <button type="button" class="cwt-mode" data-cwt="fortime"><i class="cwt-mi">⏱️</i><b>FOR TIME</b><small>Terminá lo antes posible · time cap</small></button>
-        <button type="button" class="cwt-mode" data-cwt="emom"><i class="cwt-mi">⏰</i><b>EMOM</b><small>Una tarea al inicio de cada intervalo</small></button>
-        <button type="button" class="cwt-mode" data-cwt="tabata"><i class="cwt-mi">🔥</i><b>TABATA</b><small>Trabajo / descanso · 20s ON · 10s OFF</small></button>
-        <button type="button" class="cwt-mode-extra" data-cwt="intervalos"><i class="cwt-mi">⚡</i><span><b>INTERVALOS / HYROX</b><small>Trabajo y descanso a medida · estaciones</small></span></button>
+        <button type="button" class="cwt-mode" data-cwt="amrap"><i class="cwt-mi c"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></i><b>AMRAP</b><small>Máximas rondas en tiempo fijo</small></button>
+        <button type="button" class="cwt-mode" data-cwt="fortime"><i class="cwt-mi c"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/><path d="M12 2v3"/></svg></i><b>FOR TIME</b><small>Terminá lo antes posible · time cap</small></button>
+        <button type="button" class="cwt-mode" data-cwt="emom"><i class="cwt-mi c"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></i><b>EMOM</b><small>Una tarea al inicio de cada intervalo</small></button>
+        <button type="button" class="cwt-mode" data-cwt="tabata"><i class="cwt-mi a"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22c4.4 0 7-2.9 7-6.6 0-3.1-2-5.2-3.4-6.9-.3 1.5-1.2 2.5-2.3 3C13.5 8.4 12.6 5.4 10 2c-.3 3.2-2.3 4.7-3.8 6.6C4.9 10.2 5 12.7 5 15.4 5 19.1 7.6 22 12 22z"/></svg></i><b>TABATA</b><small>Trabajo / descanso · 20s ON · 10s OFF</small></button>
+        <button type="button" class="cwt-mode-extra" data-cwt="intervalos"><i class="cwt-mi a"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></i><span><b>INTERVALOS / HYROX</b><small>Trabajo y descanso a medida · estaciones</small></span></button>
       </div>
     </div>
 
@@ -19282,7 +19362,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function pintarMute(){
     var b = document.getElementById('cwtMute'); if(!b) return;
-    b.textContent = muted ? '🔇' : '🔊';
+    b.textContent = muted ? '🔇 MUTE' : '🔊 SONIDO ON';
     b.classList.toggle('off', muted);
     b.title = muted ? 'Sonido silenciado — tocá para activar' : 'Silenciar sonidos';
   }
@@ -19464,15 +19544,25 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(fase === 'prep') return faseTargetEnd + tot * 1000;
     return transcurridoStart + (tot - transcurridoBase) * 1000;
   }
+  /* ¿viene otro intervalo/ronda después de esta fase? (los rayos sólo se
+     disparan en la cuenta 3-2-1 -> GO y al arrancar un nuevo intervalo) */
+  function hayProximo(){
+    var c = cfg();
+    if(fase === 'prep') return true;
+    if(modo === 'amrap' || modo === 'fortime') return false;
+    if(modo === 'emom') return ronda < rondas;
+    if(fase === 'work' && c.rest > 0) return true;
+    return ronda < rondas;
+  }
   function avisar(seg){
     if(seg === ultimoBeep) return;
     ultimoBeep = seg;
     if(seg === 10){
       if(duracionFase(cfg()) > 20 && fase !== 'prep') jpBox.aviso10();
     } else if(seg === 3 || seg === 2 || seg === 1){
-      jpBox.cuenta(); jpRayo('cyan'); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
+      jpBox.cuenta(); if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
-      jpBox.chicharra(); jpRayo('gold'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+      jpBox.chicharra(); if(hayProximo()) jpRayo('gold'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
   }
   function paso(){
@@ -19638,6 +19728,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   function abrirTimer(){
     var w = document.getElementById('cwtWrap');
     if(!w) return;
+    /* el interruptor de Ajustes puede haber cambiado jp_audio_muted desde la última vez */
+    try{ muted = localStorage.getItem(CWT_MUTE_KEY) === '1'; pintarMute(); }catch(e){}
     /* si ya estaba abierto y minimizado (motor corriendo en background,
        ver minimizar() más abajo), sólo se restaura la vista completa --
        nunca se resetea un WOD en curso por re-abrir el timer. */
@@ -26826,7 +26918,7 @@ body.cf-modo .block .ex-tip{display:none}
     f.className = 'cwt-full'; f.id = 'cwtFull';
     f.innerHTML =
       '<button type="button" class="cf-x" id="cfX" title="Salir de pantalla completa">✕</button>' +
-      '<div class="cf-brand">' + JP_ESCUDO_SVG + '<span>COACH JP &middot; HIGH PERFORMANCE SYSTEM</span></div>' +
+      '<div class="cf-brand">' + JP_ESCUDO_SVG + '</div>' +
       '<div class="cf-phase" id="cfPhase">Listo para arrancar</div>' +
       '<div class="cf-time" id="cfTime">00:00</div>' +
       '<div class="cf-round" id="cfRound">RONDA 1 / 8</div>' +
@@ -26834,7 +26926,8 @@ body.cf-modo .block .ex-tip{display:none}
       '<div class="cf-acts">' +
         '<button type="button" class="cf-go" id="cfGo">▶ Empezar</button>' +
         '<button type="button" id="cfReset">↺ Reiniciar</button>' +
-      '</div>';
+      '</div>' +
+      '<div class="cf-sign"><b>COACH <em>JP</em></b><span>HIGH PERFORMANCE SYSTEM</span></div>';
     document.body.appendChild(f);
     document.getElementById('cfX').addEventListener('click', salir);
     document.getElementById('cfGo').addEventListener('click', function(){
@@ -27689,8 +27782,8 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
    que la diferencia se note de un vistazo real (números y nombres de
    ejercicio legibles sin acercar el teléfono), manteniendo un salto
    claro entre grande y extra grande. */
-html[data-fz="g"]{--fzs:1.22}
-html[data-fz="x"]{--fzs:1.45}
+html[data-fz="g"]{--fzs:1.2}
+html[data-fz="x"]{--fzs:1.4}
 body{font-size:var(--fz-body) !important}
 
 /* --- 1 · TÍTULO DEL BLOQUE: rótulo sobrio, el ejercicio manda (ver --fz-ex) --- */
@@ -27874,8 +27967,8 @@ body{font-size:var(--fz-body) !important}
      usado. */
   var OPC = [
     { k:'n', a:'A',   b:'Normal' },
-    { k:'g', a:'A+',  b:'Grande' },
-    { k:'x', a:'A++', b:'Extra Grande' }
+    { k:'g', a:'A+',  b:'Medio +20%' },
+    { k:'x', a:'A++', b:'Grande +40%' }
   ];
   function actual(){
     var v = document.documentElement.getAttribute('data-fz');
@@ -31480,6 +31573,12 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:block; }
     var guideSlot = q('hdpGuideSlot');
     var guideBtn = document.getElementById('guideBtn');
     if(guideSlot && guideBtn && guideBtn.parentNode !== guideSlot){ guideSlot.appendChild(guideBtn); }
+    /* directiva maestra ("Perfil"): la Guía pasa a ser una tarjeta completa interactiva */
+    if(guideBtn && !guideBtn.dataset.cardOk){
+      guideBtn.dataset.cardOk = '1';
+      guideBtn.classList.add('gd-card-btn');
+      guideBtn.innerHTML = '<span class="gcb-ic">📖</span><span class="gcb-tx"><b>MANUAL &amp; GUÍA DE ENTRENAMIENTO</b><small>(RPE/RIR, Zonas FC y Glosario)</small></span><span class="gcb-chev">›</span>';
+    }
 
     var notaSlot = q('hdpNotaSlot');
     var notaPill = document.getElementById('notaMesoPill');
@@ -33963,6 +34062,177 @@ html, body{ background-color:#0b0e15 !important; min-height:100vh; }
 }
 .cwt .cwt-mode-extra > span{ display:flex; flex-direction:column; gap:2px; }
 .cwt .cwt-mode-extra b{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.88rem; letter-spacing:.07em; }
+/* =========================================================
+   DIRECTIVA DEFINITIVA · fondo limpio, escalado aA, notas, timer, story, guía
+========================================================= */
+/* 1.1 · fondo carbón sólido (sin puntillismo ni micro-dot matrix ni marca de agua) */
+html, body, body.cf-disc{
+  background:#0b0e15 !important; background-color:#0b0e15 !important; background-image:none !important;
+  min-height:100vh; margin-top:0; margin-bottom:0;
+}
+body::before, body::after{ display:none !important; }
+/* 2.3 · tarjeta de notas: esquema de cargas (borde ámbar RX) y opciones (cian tenue) */
+.jp-cfboard .jp-cf-notecard .jp-cf-nt{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800; font-size:calc(.72rem * var(--fzs,1));
+  letter-spacing:.08em; text-transform:uppercase; color:#f59e0b; margin-bottom:6px;
+}
+.jp-cfboard .jp-cf-notecard.alt{ border-left-color:rgba(56,189,248,.55); background:#0e131c; }
+.jp-cfboard .jp-cf-notecard.alt .jp-cf-nt{ color:#7CC5E8; }
+.jp-cfboard .jp-cf-nl{ list-style:none; margin:4px 0 4px 6px; padding:0 0 0 10px; border-left:1px solid rgba(255,255,255,.1); }
+.jp-cfboard .jp-cf-nl li{ position:relative; padding:3px 0 3px 14px; line-height:1.5; }
+.jp-cfboard .jp-cf-nl li::before{ content:'›'; position:absolute; left:0; color:#f59e0b; font-weight:800; }
+.jp-cfboard .jp-cf-notecard.alt .jp-cf-nl li::before{ color:#7CC5E8; }
+.jp-cfboard .jp-cf-nlead{ margin-bottom:4px; }
+.jp-cfboard .jp-cf-nstrat{ margin:6px 0 0 18px; color:#94a3b8; font-style:italic; }
+/* 2.4 · "Rest tiempo restante" / "Rest 1:1": micro-barra técnica gris acero */
+.jp-cfboard .jp-cf-row.jp-cf-closing.jp-cf-restbar{
+  display:flex; align-items:center; gap:8px; width:auto; margin:6px 12px; padding:7px 10px; border-radius:6px; border-bottom:none;
+  background:rgba(148,163,184,.08); color:#94a3b8; font-style:normal; font-weight:600; font-size:calc(.78rem * var(--fzs,1));
+}
+/* 2.6 · divisor "— O BIEN —" (nada clickeable) */
+.jp-cf-or{ display:flex; justify-content:center; padding:8px 12px; pointer-events:none; user-select:none; }
+.jp-cf-or span{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:calc(.68rem * var(--fzs,1)); letter-spacing:.16em; color:#64748b; text-transform:uppercase; }
+/* 2.4 · chips de tiempo/pausa siempre a la derecha, sin caer a un segundo renglón */
+.jp-cfboard .jp-cf-row.jp-cf-row-chip{ flex-wrap:nowrap; align-items:center; }
+.jp-cfboard .jp-cf-row.jp-cf-row-chip .jp-cf-rn{ flex:1 1 0; min-width:0; }
+.jp-cfboard .jp-cf-row.jp-cf-row-chip .jp-cf-rv{ flex:0 0 auto; margin-left:auto; white-space:nowrap; }
+/* 5.1 · pantalla completa: escudo centrado con resplandor, marca de agua tenue, firma al pie */
+.cwt-full::before{ opacity:.08 !important; }
+.cwt-full .cf-brand{ left:50%; transform:translateX(-50%); max-width:none; }
+.cwt-full .cf-brand svg{ width:34px; height:40px; filter:drop-shadow(0 0 12px rgba(245,158,11,.35)); }
+.cwt-full .cf-sign{ display:flex; flex-direction:column; align-items:center; gap:3px; margin-top:8px; }
+.cwt-full .cf-sign b{ font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800; font-size:.82rem; letter-spacing:.24em; color:#fff; }
+.cwt-full .cf-sign b em{ color:#FFD600; font-style:normal; }
+.cwt-full .cf-sign span{ font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:700; font-size:.56rem; letter-spacing:.26em; color:#64748b; }
+.cwt-full .cf-x{
+  border-radius:50% !important; width:46px; height:46px; padding:0;
+  background:rgba(255,255,255,.04) !important; border:1px solid rgba(255,255,255,.15) !important; color:#EDEFF2 !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12), 0 0 0 3px rgba(0,0,0,.35);
+}
+.cwt-full .cf-acts #cfReset{ border:1px solid #334155 !important; }
+.cwt-full .cf-bar{ height:4px !important; }
+.cwt-full .cf-bar i{ box-shadow:0 0 10px rgba(255,107,0,.55); }
+/* 5.2 · rayos: destello perimetral tenue (cian / ámbar) */
+#jpRayo{ box-shadow:inset 0 0 40px var(--rc2,rgba(56,189,248,.35)) !important; }
+#jpRayo.cyan{ --rc2:rgba(56,189,248,.35); }
+#jpRayo.gold{ --rc2:rgba(245,158,11,.35); }
+/* 5.3 · selector HUD: fondo translúcido desenfocado, sonido como toggle en la barra superior, iconos SVG */
+.cwt-wrap{ background:rgba(0,0,0,.65) !important; backdrop-filter:blur(8px) !important; -webkit-backdrop-filter:blur(8px) !important; }
+.cwt .cwt-hud-head{ flex-wrap:wrap; row-gap:6px; }
+.cwt .cwt-hud-head .cwt-hud-close{ order:1; }
+.cwt .cwt-hud-head .cwt-mute{
+  order:2; margin:0 0 0 auto !important; width:auto !important; height:auto !important; padding:8px 10px; border-radius:8px;
+  display:inline-flex; align-items:center; gap:6px; white-space:nowrap; cursor:pointer;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800; font-size:10.5px; letter-spacing:.05em;
+  color:#38bdf8; background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.35);
+}
+.cwt .cwt-hud-head .cwt-mute.off{ color:#f87171; background:rgba(248,113,113,.1); border-color:rgba(248,113,113,.4); }
+.cwt .cwt-hud-head .cwt-hud-min{ order:3; }
+.cwt .cwt-hud-head .cwt-hud-title{ order:4; flex:1 0 100%; }
+.cwt .cwt-mi svg{ width:22px; height:22px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.cwt .cwt-mi.c{ color:#38bdf8; }
+.cwt .cwt-mi.a{ color:#f59e0b; }
+/* 6.3 · botonera de la Story: dorado sólido + contorno grafito, iconos SVG */
+.story-actions{ flex-direction:row !important; flex-wrap:wrap; }
+.story-actions button{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px; width:auto; flex:1 1 30%;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800; letter-spacing:.06em; text-transform:uppercase; font-size:.76rem;
+}
+.story-actions button svg{ width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; flex:0 0 auto; }
+.story-actions .sa-dl{ flex:1 1 100%; order:-1; background:#F5C518 !important; color:#0A0F13 !important; border:none !important; box-shadow:0 0 18px rgba(245,197,24,.28); }
+.story-actions .sa-foto, .story-actions .sa-cp, .story-actions .sa-x{ background:transparent !important; color:#cbd5e1 !important; border:1px solid #3a4150 !important; }
+/* 7.1 / 7.2 · Guía: tarjeta completa en el Perfil y pestañas fijas en el modal */
+#hdpGuideSlot .gd-card-btn{
+  display:flex !important; align-items:center; gap:12px; width:100%; text-align:left; padding:14px; border-radius:12px; cursor:pointer;
+  background:#111620 !important; border:1px solid rgba(56,189,248,.35) !important; color:#EDEFF2 !important; height:auto !important;
+}
+.gd-card-btn .gcb-ic{ font-size:1.5rem; }
+.gd-card-btn .gcb-tx{ display:flex; flex-direction:column; gap:3px; flex:1; min-width:0; }
+.gd-card-btn .gcb-tx b{ font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-size:.8rem; letter-spacing:.06em; line-height:1.25; }
+.gd-card-btn .gcb-tx small{ color:#8B93A1; font-size:.72rem; text-transform:none; letter-spacing:0; font-weight:500; }
+.gd-card-btn .gcb-chev{ color:#38bdf8; font-size:1.4rem; }
+#guideModal .gd-tabs{ position:sticky; top:0; z-index:10; background:#0b0e15; padding:6px 0 8px; margin-top:0; }
+/* escalado real de fuente (aA): cada tamaño fijo de la Pizarra/Sports multiplicado por --fzs (1 / 1.2 / 1.4) */
+.wod-score label{ font-size:calc(0.78rem * var(--fzs,1)) !important; }
+.wod-score input{ font-size:calc(0.95rem * var(--fzs,1)) !important; }
+.wod-score .ws-ok{ font-size:calc(0.8rem * var(--fzs,1)) !important; }
+.jp-badge{ font-size:calc(10px * var(--fzs,1)) !important; }
+.jp-badge .sp{ font-size:calc(12px * var(--fzs,1)) !important; }
+.jp-tecnica-badge{ font-size:calc(.72rem * var(--fzs,1)) !important; }
+.board-volt .wod-score label{ font-size:calc(0.76rem * var(--fzs,1)) !important; }
+.board-volt .wod-score input{ font-size:calc(0.9rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-tag{ font-size:calc(11px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-title{ font-size:calc(1.35rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-fmtbar{ font-size:calc(13px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-row.jp-cf-header{ font-size:calc(14.5px * var(--fzs,1)) !important; }
+.cf-format-badge{ font-size:calc(.75rem * var(--fzs,1)) !important; }
+.jp-cf-divider span{ font-size:calc(.7rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-row.jp-cf-badge{ font-size:calc(10.5px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-row.jp-cf-scheme{ font-size:calc(11px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-rn{ font-size:calc(14.5px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-rv{ font-size:calc(13.5px * var(--fzs,1)) !important; }
+.jp-cf-rest-main{ font-size:calc(12.5px * var(--fzs,1)) !important; }
+.jp-cf-rest-plus{ font-size:calc(11px * var(--fzs,1)) !important; }
+.jp-cf-rest-x{ font-size:calc(11px * var(--fzs,1)) !important; }
+.jp-cf-rest-listo{ font-size:calc(12.5px * var(--fzs,1)) !important; }
+.jp-cf-clips-lb{ font-size:calc(11px * var(--fzs,1)) !important; }
+.jp-cf-vid-play{ font-size:calc(.9rem * var(--fzs,1)) !important; }
+.jp-cf-vid-nombre{ font-size:calc(.85rem * var(--fzs,1)) !important; }
+.jp-cf-vid-tap{ font-size:calc(.62rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-num{ font-size:calc(1.15rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-set-pill{ font-size:calc(.68rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-wodtimer{ font-size:calc(.74rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-quickrest{ font-size:calc(.74rem * var(--fzs,1)) !important; }
+.jp-cfboard details.jp-cf-acc summary{ font-size:calc(11px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-accrow .lb{ font-size:calc(10px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-accrow p{ font-size:calc(13px * var(--fzs,1)) !important; }
+.jp-cfboard .wod-score label{ font-size:calc(10.5px * var(--fzs,1)) !important; }
+.jp-cfboard .wod-score input{ font-size:calc(14px * var(--fzs,1)) !important; }
+.jp-cfboard .ws-ok{ font-size:calc(11px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-notas label{ font-size:calc(10.5px * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-notas input{ font-size:calc(13px * var(--fzs,1)) !important; }
+.jp-sb-tag{ font-size:calc(.72rem * var(--fzs,1)) !important; }
+.jp-sb-title{ font-size:calc(1.15rem * var(--fzs,1)) !important; }
+.jp-block-emphasis{ font-size:calc(.85rem * var(--fzs,1)) !important; }
+.jp-sb-pauta-lb{ font-size:calc(.66rem * var(--fzs,1)) !important; }
+.jp-sb-pauta-txt{ font-size:calc(.82rem * var(--fzs,1)) !important; }
+.jp-sb-ex-nombre{ font-size:calc(1rem * var(--fzs,1)) !important; }
+.jp-dose-banner > span{ font-size:calc(.66rem * var(--fzs,1)) !important; }
+.jp-sb-nota{ font-size:calc(.8rem * var(--fzs,1)) !important; }
+.jp-sb-unilateral{ font-size:calc(.66rem * var(--fzs,1)) !important; }
+.jp-sb-badge{ font-size:calc(.68rem * var(--fzs,1)) !important; }
+.jp-sb-biset-title{ font-size:calc(.85rem * var(--fzs,1)) !important; }
+.jp-sb-letra{ font-size:calc(.75rem * var(--fzs,1)) !important; }
+.jp-sb-subex-nombre{ font-size:calc(.92rem * var(--fzs,1)) !important; }
+.jp-sb-plain-pill{ font-size:calc(.72rem * var(--fzs,1)) !important; }
+.jp-sb-plain-nombre{ font-size:calc(.9rem * var(--fzs,1)) !important; }
+.jp-sb-board .set-tracker .set-row .set-row-label{ font-size:calc(9.5px * var(--fzs,1)) !important; }
+.jp-sb-board .set-tracker .set-row .set-kg{ font-size:calc(.82rem * var(--fzs,1)) !important; }
+.jp-sb-board .set-tracker .set-row .set-reps{ font-size:calc(.82rem * var(--fzs,1)) !important; }
+.jp-sb-board .set-tracker .set-row .set-x{ font-size:calc(.8rem * var(--fzs,1)) !important; }
+.jp-sb-board .set-ref-badge{ font-size:calc(.6rem * var(--fzs,1)) !important; }
+.jp-sb-fase{ font-size:calc(.72rem * var(--fzs,1)) !important; }
+.jp-sb-duracion{ font-size:calc(.68rem * var(--fzs,1)) !important; }
+.jp-sb-set-badge{ font-size:calc(.6rem * var(--fzs,1)) !important; }
+.jp-tecnica-protocolo{ font-size:calc(.72rem * var(--fzs,1)) !important; }
+.jp-tecnica-chip{ font-size:calc(.78rem * var(--fzs,1)) !important; }
+.jp-tecnica-step-btn{ font-size:calc(1.05rem * var(--fzs,1)) !important; }
+.jp-tecnica-step-val{ font-size:calc(1.05rem * var(--fzs,1)) !important; }
+.jp-tecnica-step-unit{ font-size:calc(.7rem * var(--fzs,1)) !important; }
+.jp-tecnica-add-btn{ font-size:calc(.76rem * var(--fzs,1)) !important; }
+.jp-intensity-note{ font-size:calc(.72rem * var(--fzs,1)) !important; }
+.jp-summary-btn{ font-size:calc(.72rem * var(--fzs,1)) !important; }
+.jp-sb-vid-title{ font-size:calc(.66rem * var(--fzs,1)) !important; }
+.jp-sb-vid-play{ font-size:calc(.9rem * var(--fzs,1)) !important; }
+.jp-sb-vid-nombre{ font-size:calc(.82rem * var(--fzs,1)) !important; }
+.jp-sb-vid-tap{ font-size:calc(.62rem * var(--fzs,1)) !important; }
+.jp-sb-anchor-badge{ font-size:calc(.6rem * var(--fzs,1)) !important; }
+.jp-micro-pausa{ font-size:calc(.7rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-btnrow .jp-cf-wodtimer{ font-size:calc(.68rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-btnrow .jp-cf-quickrest{ font-size:calc(.68rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-notecard{ font-size:calc(.85rem * var(--fzs,1)) !important; }
+.jp-cfboard .jp-cf-row.jp-cf-closing{ font-size:calc(.78rem * var(--fzs,1)) !important; }
+
 </style>
 
 </body>
@@ -53856,7 +54126,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        incluidas, para quien de verdad quiera ese barrido completo de una. */
     p.dias.forEach(d => {
       (d.bloques || []).forEach(b => {
-        if(!b.titulo){ b.titulo = 'Bloque'; n++; }
+        if(!b.titulo){
+          /* título real de la fase (WARM-UP, SKILL / STRENGTH...) en vez del rótulo plano "Bloque" */
+          const flb = (typeof CF_FASES !== 'undefined') ? (CF_FASES.find(f => f.v === b.category) || {}).lb : '';
+          b.titulo = (cf && b.tipo === 'list' && flb) ? flb : 'Bloque'; n++;
+        }
         if(!b.category){ b.category = 'strength'; n++; }
         if(!b.icon){ b.icon = '💪'; n++; }
         if(b.tipo === 'block'){
