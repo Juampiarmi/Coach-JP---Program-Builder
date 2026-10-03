@@ -4627,6 +4627,15 @@ function ejecutarImportacion(texto, modo){
   creados.forEach(id => {
     const ta = document.querySelector('textarea[data-bf="items"][data-b="' + id + '"]');
     if(ta) ta.dispatchEvent(new Event('input', { bubbles: true }));
+    /* Objetivo Fisiológico y Coaching Tips: el valor importado se vuelca también directo en los
+       textareas del acordeón (al abrirlo nunca se ven en blanco) */
+    const bImp = findBlock(id);
+    if(bImp){
+      const tObj = document.querySelector('textarea[data-bf="objective"][data-b="' + id + '"]');
+      if(tObj && bImp.objective != null) tObj.value = bImp.objective;
+      const tTips = document.querySelector('textarea[data-bf="tips"][data-b="' + id + '"]');
+      if(tTips && bImp.tips != null) tTips.value = bImp.tips;
+    }
   });
   _impTexto = '';
   const nB = creados.length;
@@ -5742,8 +5751,8 @@ function renderDay(){
                b.videoOverrides/b.videosDismissed ni los tips de otros
                bloques o de la ficha del día). */
             '<button type="button" class="btn sm gold" style="margin-top:10px" data-btipssports="' + b.id + '">✨ Generar Tips de este Bloque con IA</button>' +
-            '<div style="margin-top:10px"><label class="lb">🎯 Objetivo Fisiológico</label><textarea data-bf="objective" data-b="' + b.id + '" style="min-height:40px" placeholder="Máxima tensión mecánica en el rango medio">' + esc(b.objective||'') + '</textarea></div>' +
-            '<div style="margin-top:8px"><label class="lb">💡 Coaching Tips &amp; Estrategia Biomecánica</label><textarea data-bf="tips" data-b="' + b.id + '" style="min-height:48px" placeholder="Controlar el descenso, no rebotar en el pecho">' + esc(b.tips||'') + '</textarea></div>' +
+            '<div style="margin-top:10px"><label class="lb">🎯 Objetivo Fisiológico</label><textarea name="block_objective" data-field="objective" class="block-objective-input" data-bf="objective" data-b="' + b.id + '" style="min-height:40px" placeholder="Máxima tensión mecánica en el rango medio">' + esc(b.objective||'') + '</textarea></div>' +
+            '<div style="margin-top:8px"><label class="lb">💡 Coaching Tips &amp; Estrategia Biomecánica</label><textarea name="block_coaching_tips" data-field="coachingTips" class="block-tips-input" data-bf="tips" data-b="' + b.id + '" style="min-height:48px" placeholder="Controlar el descenso, no rebotar en el pecho">' + esc(b.tips||'') + '</textarea></div>' +
           '</details>';
       } else {
         h += '<div style="margin-top:10px;max-width:260px"><label class="lb">Timer Zona 2 (min · opcional)</label><input type="number" data-bf="cardioMinutes" data-b="' + b.id + '" value="' + esc(b.cardioMinutes||'') + '"></div>';
@@ -48068,7 +48077,7 @@ body.man-mode .gs-fab{right:318px}
     { id:'hipertrofia',   ic:'💪', lb:'Carga · Hipertrofia',       color:'#ff6b00', category:'strength' },
     { id:'core',          ic:'🧩', lb:'Estabilidad · Core',         color:'#ff6b00', category:'accessory' },
     { id:'calentamiento', ic:'🔥', lb:'Tiempo · Entrada en calor', color:'#ffd600', category:'warmup' },
-    { id:'metcon',        ic:'⏱️', lb:'Cardio · MetCon',           color:'#00e5ff', category:'metcon' }
+    { id:'metcon',        ic:'⏱️', lb:'Tiempo · Cardio / Finisher', color:'#00e5ff', category:'metcon' }
   ];
   /* inferencia de arranque para un bloque que todavía no tiene
      b.modalidad guardado (todo bloque real cargado antes de esta
@@ -51952,7 +51961,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     panel.querySelectorAll('.block').forEach(bl => {
       const ref = bl.querySelector('[data-b]');
       const b = ref ? findBlock(ref.dataset.b) : null;
-      if(cfWodActiva && b && b.tipo === 'list'){
+      /* directiva ("Prevención de vista MetCon en Musculación"): fuera de CrossFit NINGÚN bloque (ni
+         cardio, ni core, ni calentamiento, ni aunque se elija "MetCon") recibe la botonera de
+         adaptaciones RX/Advanced/Scaled/Intro ni el badge de formato WOD: conservan siempre sus
+         campos nativos de Objetivo Fisiológico y Coaching Tips */
+      if(!cfWodActiva || (b && b.tipo === 'list')){
         const oldBar = bl.querySelector('.blk-wodbar'); if(oldBar) oldBar.remove();
         const oldSc = bl.querySelector('.sc-notes'); if(oldSc) oldSc.remove();
         return;
