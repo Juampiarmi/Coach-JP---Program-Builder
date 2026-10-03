@@ -4276,6 +4276,13 @@ function inferirFaseSports(titulo){
   if(/cardio|zona\s*2|z2/.test(t)) return 'cardio';
   return 'strength';
 }
+function impFaseDeTag(tag){
+  const t = String(tag || '').replace(/\s+/g, ' ').trim();
+  const f = IMP_FASES.find(x => x.rx.test(t));
+  if(f) return f.fase;
+  const s = IMP_FASES_SOFT.find(x => x.rx.test(t));
+  return s ? s.fase : '';
+}
 function parsearImportacion(texto, sports){
   const avisos = [], dias = [];
   let dia = null, bloque = null, enFoco = false, campoAct = '', esperaTituloDia = false;
@@ -4289,6 +4296,8 @@ function parsearImportacion(texto, sports){
        texto posterior (incluidos bloques cuyo delimitador no se reconocía)
        quedaba tragado dentro del foco y el día se importaba sin bloques */
     if(!t){ enFoco = false; campoAct = ''; return; }
+    /* línea divisoria pura ("---", "====", "###"): se descarta, no es texto de ningún bloque */
+    if(/^[\s\-=_*~#]{3,}$/.test(t)){ enFoco = false; campoAct = ''; return; }
     const dm = impMatchDia(t);
     if(dm){ nuevoDia(dm.num, dm.titulo); return; }
     let m;
@@ -4328,8 +4337,23 @@ function parsearImportacion(texto, sports){
       /* "[BLOQUE 3] Nombre": delimitador genérico, la fase sale del nombre */
       if(!fase && /^bloque\s*\d*$/i.test(tag)){ const tt = (m[2] || '').trim(); fase = sports ? inferirFaseSports(tt) : inferirFaseCF(tt); f = null; }
       if(fase){
-        cerrar();
-        bloque = { fase: fase, titulo: (m[2] || '').trim().replace(/^\[\s*|\s*\]$/g, '').trim(), items: [], tag: tag, lb: (f && !sports) ? f.lb : tag.toUpperCase() }; dia.bloques.push(bloque); enFoco = false;
+        let tagB = tag, faseB = fase, tituloB = (m[2] || '').trim();
+        /* "[BLOQUE 1] [FUERZA] Press banca": la categoría anidada fija la fase y se
+           quita del nombre del ejercicio */
+        if(sports){
+          const mn = tituloB.match(/^\[\s*([^\]]+?)\s*\]\s*(.*)$/);
+          if(mn){ const fn = impFaseDeTag(mn[1]); if(fn){ faseB = fn; tituloB = mn[2].trim(); if(!/^bloque\s*\d*$/i.test(mn[1].trim())) tagB = mn[1].replace(/\s+/g, ' ').trim(); } }
+        }
+        tituloB = tituloB.replace(/^\[\s*|\s*\]$/g, '').trim();
+        /* "[BLOQUE 1]" seguido (línea siguiente) de "[ACCESORIO] Entrada en calor": el bloque
+           vacío recién abierto se REUTILIZA -- una etiqueta de categoría no genera otro bloque */
+        const reutiliza = sports && bloque && !bloque.items.length && !bloque.titulo && !bloque.cierre && /^bloque\s*\d*$/i.test(bloque.tag || '') && !/^bloque\s*\d*$/i.test(tagB);
+        if(reutiliza){
+          bloque.fase = faseB; bloque.titulo = tituloB; bloque.tag = tagB; bloque.lb = tagB.toUpperCase(); enFoco = false;
+        } else {
+          cerrar();
+          bloque = { fase: faseB, titulo: tituloB, items: [], tag: tagB, lb: (f && !sports) ? f.lb : tagB.toUpperCase() }; dia.bloques.push(bloque); enFoco = false;
+        }
         /* "[BLOQUE 1] Press banca 4x8 @ RIR 2 Rest 2:00": nombre y dosis en el mismo renglón */
         if(sports && bloque.titulo && impDosisSB(bloque.titulo).nombre){ const raw = bloque.titulo; bloque.titulo = ''; impPushLineaSports(bloque, raw, avisos); }
         return;
@@ -4383,6 +4407,8 @@ function parsearImportacion(texto, sports){
     if(sports) impPushLineaSports(bloque, t, avisos); else bloque.items.push(t);
   });
   cerrar();
+  /* Sports: purga de bloques espurios generados durante la ingesta (sin ninguna línea) */
+  if(sports) dias.forEach(d => { d.bloques = d.bloques.filter(b => b.items.length > 0); });
   /* un bloque sin cuerpo es casi seguro un error de tipeo del delimitador */
   dias.forEach(d => d.bloques.forEach(b => { if(!b.items.length) avisos.push((d.num ? 'Día ' + d.num : 'Día') + ': el bloque "' + (b.titulo || b.fase) + '" no tiene prescripción'); }));
   return { dias: dias, avisos: avisos };
