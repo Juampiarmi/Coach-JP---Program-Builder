@@ -32,17 +32,35 @@ jobs:
 
       - name: Build Nutrition Command Builder
         working-directory: nutrition-system
+        env:
+          # basePath/assetPrefix explícitos: el Builder vive en https://<usuario>.github.io/<repo>/nutrition/
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}/nutrition
         run: |
           npm ci
           npm run build
-        # next.config.mjs deriva basePath=/<repo>/nutrition de GITHUB_REPOSITORY.
 
       - name: Assemble site
         run: |
           mkdir -p _site
           rsync -a --exclude '.git' --exclude '.github' --exclude 'nutrition-system' --exclude '_site' ./ _site/
+          # El export de Next va SIEMPRE a _site/nutrition (sin anidar out/ si la carpeta ya existiera).
+          rm -rf _site/nutrition
           cp -r nutrition-system/out _site/nutrition
+          # 404 de Pages en la raíz (sólo si la app principal no trae uno propio).
+          [ -f _site/404.html ] || cp nutrition-system/gh-pages/404.html _site/404.html
           touch _site/.nojekyll
+
+      - name: Verify artifact
+        run: |
+          BASE="/${{ github.event.repository.name }}/nutrition"
+          test -f _site/index.html || { echo "::error::Falta la app principal (_site/index.html)"; exit 1; }
+          test -f _site/nutrition/index.html || { echo "::error::Falta _site/nutrition/index.html"; exit 1; }
+          test -f _site/nutrition/manifest.webmanifest || { echo "::error::Falta el manifest del Builder"; exit 1; }
+          grep -q "$BASE/_next/static/" _site/nutrition/index.html || { echo "::error::index.html no referencia $BASE/_next/static/ (basePath incorrecto)"; exit 1; }
+          JS=$(grep -o "$BASE/_next/static/[^\"]*\.js" _site/nutrition/index.html | head -1)
+          test -f "_site/${JS#/${{ github.event.repository.name }}/}" || { echo "::error::No existe el chunk $JS en el artifact"; exit 1; }
+          echo "OK · Builder en $BASE/ · chunk verificado: $JS"
+          ls _site _site/nutrition
 
       - uses: actions/upload-pages-artifact@v3
         with:
