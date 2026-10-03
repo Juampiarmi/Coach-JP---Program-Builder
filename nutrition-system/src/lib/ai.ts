@@ -28,10 +28,12 @@ export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> 
     { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
   ],
   gemini: [
-    // gemini-2.5-* ya no está disponible para claves nuevas (404 "no longer available to new users").
-    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash · recomendado' },
-    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (preview)' },
-    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite · cuota amplia' },
+    // Modelos accesibles en Free Tier. El primero es el default; ante 503 / 429 el conector
+    // conmuta solo a la cadena de respaldo (ver GEMINI_FALLBACKS en gemini.ts).
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (Recomendado / Ultra Rápido)' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Estable Free Tier)' },
+    { id: 'gemini-3.0-flash', label: 'Gemini 3.0 Flash (Alta Capacidad)' },
+    { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Legacy Estable)' },
   ],
   openai: [
     { id: 'gpt-4.1', label: 'GPT-4.1' },
@@ -315,13 +317,15 @@ export async function pingProvider(ai: AiSettings): Promise<PingResult> {
 
 /** Modelos retirados por proveedor → reemplazo vigente (migra configuraciones guardadas en localStorage). */
 export const RETIRED_MODELS: Record<string, string> = {
-  'gemini-2.5-pro': 'gemini-3.1-pro-preview',
-  'gemini-2.5-flash': 'gemini-3.8-flash',
-  'gemini-2.5-flash-lite': 'gemini-3.8-flash',
+  // Google: "models/gemini-2.5-pro is no longer available to new users".
+  'gemini-2.5-pro': 'gemini-2.5-flash-lite',
+  // Defaults anteriores, fuera del selector Free Tier (3.1 Pro da 429 sin facturación).
+  'gemini-3.8-flash': 'gemini-2.5-flash-lite',
+  'gemini-3.1-flash-lite': 'gemini-2.5-flash-lite',
+  'gemini-3.1-pro-preview': 'gemini-2.5-flash-lite',
 };
 
 export function migrateModel(provider: AiProvider, model: string): string {
   if (RETIRED_MODELS[model]) return RETIRED_MODELS[model];
-  if (provider === 'gemini' && /^gemini-(1\.|2\.)/.test(model)) return MODEL_OPTIONS.gemini[0].id;
   return model;
 }

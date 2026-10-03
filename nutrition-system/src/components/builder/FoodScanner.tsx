@@ -175,7 +175,7 @@ export function FoodScanner() {
           )}
         </div>
       )}
-      {notice && busy && <div className="mt-3 animate-pulse rounded-lg border border-fire/40 bg-fire/10 p-3 font-mono text-[11px] text-fire">{notice}</div>}
+      {notice && busy && <div className="mt-3 animate-pulse rounded-lg border border-cyan-hud/30 bg-cyan-hud/10 p-3 font-mono text-[11px] text-cyan-hud">{notice}</div>}
       {error && <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 p-3 font-mono text-[11px] text-danger">⚠ {error}</div>}
     </Panel>
   );

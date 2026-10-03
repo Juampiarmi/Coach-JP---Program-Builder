@@ -124,12 +124,12 @@ export function IntakeTab() {
       mark('link', { status: 'ok', detail: `${ai.provider.toUpperCase()} · ${ai.model}` });
       current = 'infer';
       mark('infer', { status: 'running' });
-      // Gemini 503 / alta demanda: la terminal pasa a ámbar y muestra el switch de modelo en vez de fallar.
+      // Gemini 503 / 429: la terminal muestra en cian el cambio a modelo de respaldo en vez de abortar en rojo.
       const json = await compileWithAi(ai, notes, (n) => mark('infer', { status: 'retry', detail: n.message }));
       const usedModel = json._model ?? ai.model;
       mark('infer', {
         status: 'ok',
-        detail: `${Math.round((Date.now() - t0) / 1000)} s · ${usedModel}${usedModel !== ai.model ? ` (BACKUP · ${ai.model} saturado)` : ''}`,
+        detail: `${Math.round((Date.now() - t0) / 1000)} s · ${usedModel}${usedModel !== ai.model ? ` (RESPALDO · ${ai.model} saturado o sin cuota)` : ''}`,
       });
       current = 'json';
       mark('json', { status: 'running' });
@@ -277,15 +277,15 @@ export function IntakeTab() {
                       c.status === 'warn' && 'text-fire',
                       c.status === 'fail' && 'text-danger',
                       c.status === 'running' && 'animate-pulse text-ink',
-                      c.status === 'retry' && 'animate-pulse text-fire',
+                      c.status === 'retry' && 'animate-pulse text-cyan-hud',
                       c.status === 'pending' && 'text-mute/60',
                     )}
                   >
-                    {{ ok: '[ OK ]', warn: '[ !! ]', fail: '[ XX ]', running: '[ .. ]', retry: '[ ~~ ]', pending: '[    ]' }[c.status]}
+                    {{ ok: '[ OK ]', warn: '[ !! ]', fail: '[ XX ]', running: '[ .. ]', retry: '[ ! ]', pending: '[    ]' }[c.status]}
                   </span>
                   <span className="min-w-0">
                     <span className={c.status === 'pending' ? 'text-mute/60' : 'text-ink'}>{c.label}</span>
-                    {c.detail && <span className={cx('block text-[10px]', c.status === 'fail' ? 'text-danger' : c.status === 'warn' || c.status === 'retry' ? 'text-fire' : 'text-steel')}>↳ {c.detail}</span>}
+                    {c.detail && <span className={cx('block text-[10px]', c.status === 'fail' ? 'text-danger' : c.status === 'warn' ? 'text-fire' : c.status === 'retry' ? 'text-cyan-hud' : 'text-steel')}>↳ {c.detail}</span>}
                   </span>
                 </li>
               ))}

@@ -1,15 +1,16 @@
 import type { AiSettings } from './types';
 
 /**
- * Cadena de respaldo de Gemini ante saturación (HTTP 503 "high demand").
- * Sólo modelos vigentes: la familia 2.5 y 1.5 ya devuelven "no longer available" / 404.
+ * Cadena de respaldo de Gemini (Free Tier) ante saturación (503 "high demand") o cuota (429).
+ * Se recorre a continuación del modelo activo, sin repetirlo.
  */
-export const GEMINI_FALLBACKS = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview'];
+export const GEMINI_FALLBACKS = ['gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
 /** Espera antes de reintentar el modelo principal. */
 export const GEMINI_RETRY_DELAY_MS = 1500;
 
-export const HIGH_DEMAND_NOTICE = '[ REINTENTANDO POR ALTA DEMANDA GLOBAL (SWITCH A MODELO BACKUP)... ]';
+/** Mensaje de la terminal al conmutar de modelo. */
+export const switchNotice = (model: string) => `[ ! ] CAMBIANDO A MODELO DE RESPALDO (${model})...`;
 
 export interface GeminiNotice {
   kind: 'retry' | 'switch';
@@ -35,6 +36,11 @@ export function isHighDemand(status: number, message: string) {
   return status === 503 || /UNAVAILABLE|high demand|overloaded|try again later/i.test(message);
 }
 
+/** 429 / RESOURCE_EXHAUSTED / "quota exceeded": la cuota es por modelo, otro modelo puede responder. */
+export function isQuotaExceeded(status: number, message: string) {
+  return status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(message);
+}
+
 /** El modelo no existe o ya no está habilitado para esta clave: se salta al siguiente sin reintentar. */
 export function isModelUnavailable(status: number, message: string) {
   return status === 404 || /no longer available|is not found|not supported for generateContent/i.test(message);
@@ -54,7 +60,8 @@ interface Deps {
 
 /**
  * generateContent resiliente: modelo activo → 1 reintento a los 1,5 s si hay 503 → modelos de respaldo.
- * Los errores de autenticación, cuota o de request se propagan de inmediato (cambiar de modelo no los arregla).
+ * 429 de cuota y modelos retirados (404) conmutan directo al siguiente. Autenticación y errores de
+ * request se propagan de inmediato (cambiar de modelo no los arregla).
  */
 export async function geminiGenerate(ai: AiSettings, body: unknown, onNotice?: (n: GeminiNotice) => void, deps: Deps = {}): Promise<GeminiResult> {
   const fetchFn = deps.fetchFn ?? fetch;
@@ -82,19 +89,23 @@ export async function geminiGenerate(ai: AiSettings, body: unknown, onNotice?: (
       const next = chain[i + 1];
       if (isHighDemand(res.status, message)) {
         if (a < attempts - 1) {
-          onNotice?.({ kind: 'retry', model, from: model, message: `${HIGH_DEMAND_NOTICE} · reintento de ${model} en ${GEMINI_RETRY_DELAY_MS / 1000} s` });
+          onNotice?.({ kind: 'retry', model, from: model, message: `[ ! ] ALTA DEMANDA EN ${model} · REINTENTANDO EN ${GEMINI_RETRY_DELAY_MS / 1000} s...` });
           await sleep(GEMINI_RETRY_DELAY_MS);
           continue;
         }
-        if (next) onNotice?.({ kind: 'switch', model: next, from: model, message: `${HIGH_DEMAND_NOTICE} · ${model} → ${next}` });
+        if (next) onNotice?.({ kind: 'switch', model: next, from: model, message: `${switchNotice(next)} · ${model} saturado (503)` });
+        break;
+      }
+      if (isQuotaExceeded(res.status, message)) {
+        if (next) onNotice?.({ kind: 'switch', model: next, from: model, message: `${switchNotice(next)} · ${model} sin cuota (429)` });
         break;
       }
       if (isModelUnavailable(res.status, message)) {
-        if (next) onNotice?.({ kind: 'switch', model: next, from: model, message: `[ ${model} NO DISPONIBLE · SWITCH A MODELO BACKUP ] · ${model} → ${next}` });
+        if (next) onNotice?.({ kind: 'switch', model: next, from: model, message: `${switchNotice(next)} · ${model} no disponible (404)` });
         break;
       }
       throw new GeminiError(message, res.status);
     }
   }
-  throw new GeminiError(`Todos los modelos de Gemini están saturados o no disponibles. Reintentá en unos minutos. Último error → ${lastError}`, 503);
+  throw new GeminiError(`Todos los modelos de Gemini están saturados, sin cuota o no disponibles. Reintentá en unos minutos. Último error → ${lastError}`, 503);
 }
