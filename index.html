@@ -10041,7 +10041,7 @@ var jpBox = (function(){
       osc.start(t0); osc.stop(t0 + dur + 0.03);
     }catch(e){ console.warn('jpBox.seco falló:', e); }
   }
-  /* bocina industrial: fundamental de 680 Hz (diente de sierra) + armónicos
+  /* bocina industrial Rogue: fundamental de 650 Hz (diente de sierra) + armónicos
      (2.º y 3.º, cuadradas) -- seca y potente, sin trémolo; 500 ms por defecto */
   function buzzer(dur){
     if(isAudioMuted()) return;
@@ -10055,7 +10055,7 @@ var jpBox = (function(){
       env.gain.setValueAtTime(0.46, t0 + Math.max(dur - 0.08, 0.01));
       env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
       lp.connect(env); env.connect(ctx.destination);
-      [[680, 'sawtooth', 1], [1360, 'square', .38], [2040, 'square', .16]].forEach(function(h){
+      [[650, 'sawtooth', 1], [1300, 'square', .38], [1950, 'square', .16]].forEach(function(h){
         var o = ctx.createOscillator(), g = ctx.createGain();
         o.type = h[1]; o.frequency.setValueAtTime(h[0], t0); g.gain.setValueAtTime(h[2], t0);
         o.connect(g); g.connect(lp);
@@ -10180,6 +10180,30 @@ function jpRayo(color){
   }catch(e){}
 }
 window.jpRayo = jpRayo;
+/* pulso del escudo central de la pantalla completa en los 3 segundos finales:
+   el contorno sube a 0.6 de opacidad y emite resplandor ámbar (250-300 ms,
+   Web Animations / filter: corre en el compositor, no bloquea JS) */
+function jpEscudoPulso(){
+  try{
+    var f = document.getElementById('cwtFull');
+    if(!f || !f.classList.contains('on')) return;
+    var sh = f.querySelector('.cf-shield');
+    if(!sh || !sh.animate) return;
+    sh.animate([
+      { filter: 'drop-shadow(0 0 0 rgba(245,158,11,0))' },
+      { filter: 'drop-shadow(0 0 16px rgba(245,158,11,.5))', offset: .3 },
+      { filter: 'drop-shadow(0 0 0 rgba(245,158,11,0))' }
+    ], { duration: 280, easing: 'ease-out' });
+    sh.querySelectorAll('path').forEach(function(p){
+      if(p.animate) p.animate([{ stroke: 'rgba(245,158,11,.15)' }, { stroke: 'rgba(245,158,11,.6)', offset: .3 }, { stroke: 'rgba(245,158,11,.15)' }], { duration: 280, easing: 'ease-out' });
+    });
+  }catch(e){}
+}
+window.jpEscudoPulso = jpEscudoPulso;
+/* iconos vectoriales monocromáticos (sin emojis nativos) para pausa/play/cronómetro */
+var JP_IC_PAUSA = '<svg class="jp-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>';
+var JP_IC_PLAY = '<svg class="jp-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5l12 7.5-12 7.5z"/></svg>';
+var JP_IC_CRONO = '<svg class="jp-ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg>';
 var JP_ESCUDO_SVG = '<svg viewBox="0 0 64 74" aria-hidden="true"><path d="M32 2 L60 12 V36 C60 54 47 66 32 72 C17 66 4 54 4 36 V12 Z" fill="#FFD600" stroke="#FFF0A8" stroke-width="2"/><path d="M36 18 L21 40 H30 L27 58 L43 34 H33 Z" fill="#07080A"/></svg>';
 /* click discreto al tildar una serie — mismo gate de mute que el resto (isAudioMuted) */
 function beepSetCheck(on){ playBeep(on ? 1318 : 660, 0.055, 0.32, 0, 'triangle'); }
@@ -12780,7 +12804,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     </div>
   </div>
   <div class="rh-ctl">
-    <button type="button" id="rhToggle">⏸</button>
+    <button type="button" id="rhToggle"><svg class="jp-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
     <button type="button" id="rhPlus">+30s</button>
     <button type="button" id="rhSkip">Saltar</button>
   </div>
@@ -12905,7 +12929,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     hudTime.textContent = mmss(restLeft);
     hud.style.setProperty('--p', restTotal > 0 ? Math.max(0, Math.min(1, restLeft / restTotal)) : 0);
     hud.classList.toggle('warn', restLeft <= 10 && restLeft > 0);
-    document.getElementById('rhToggle').textContent = restRun ? '⏸' : '▶';
+    document.getElementById('rhToggle').innerHTML = restRun ? JP_IC_PAUSA : JP_IC_PLAY;
     hud.querySelectorAll('[data-rest]').forEach(b =>
       b.classList.toggle('on', parseInt(b.dataset.rest,10) === state.restSec));
     if(onRestTick) try{ onRestTick(estadoRest()); }catch(e){}
@@ -13611,14 +13635,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   function jpCfRestPintarIdle(wrap){
     wrap.classList.remove('running', 'listo');
-    wrap.innerHTML = '<button type="button" class="jp-cf-rest-main">&#9201;&#65039; INICIAR REST ' + jpCfRestMMSS(parseInt(wrap.dataset.restSec, 10)) + '</button>';
+    wrap.innerHTML = '<button type="button" class="jp-cf-rest-main">' + JP_IC_CRONO + ' INICIAR REST ' + jpCfRestMMSS(parseInt(wrap.dataset.restSec, 10)) + '</button>';
   }
   function jpCfRestPintarRunning(wrap, st){
     wrap.classList.add('running'); wrap.classList.remove('listo');
     const pct = st.total > 0 ? Math.max(0, Math.min(1, st.left / st.total)) : 0;
     wrap.style.setProperty('--rp', (pct * 100).toFixed(1) + '%');
     wrap.innerHTML =
-      '<button type="button" class="jp-cf-rest-main">' + (st.running ? '&#9208;' : '&#9654;&#65039;') + ' ' + jpCfRestMMSS(st.left) + '</button>' +
+      '<button type="button" class="jp-cf-rest-main">' + (st.running ? JP_IC_PAUSA : JP_IC_PLAY) + ' ' + jpCfRestMMSS(st.left) + '</button>' +
       '<button type="button" class="jp-cf-rest-plus">+30s</button>' +
       '<button type="button" class="jp-cf-rest-x">&#10005;</button>';
   }
@@ -13654,7 +13678,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        sólo una indicación textual inline. */
     if(seg < 30) return '<div class="jp-cf-row jp-cf-micro-row"><span class="jp-micro-pausa">&#9201;&#65039; ' + seg + 's micro-pausa</span></div>';
     return '<div class="jp-cf-row jp-cf-rest-row"><div class="jp-cf-rest" data-rest-sec="' + seg + '" data-rest-lb="' + String(l).replace(/"/g, '') + '">' +
-      '<button type="button" class="jp-cf-rest-main">&#9201;&#65039; INICIAR REST ' + jpCfRestMMSS(seg) + '</button></div></div>';
+      '<button type="button" class="jp-cf-rest-main">' + JP_IC_CRONO + ' INICIAR REST ' + jpCfRestMMSS(seg) + '</button></div></div>';
   }
   /* =========================================================
      directiva maestra ("Parser de notación de box"): pre-proceso de las
@@ -17045,6 +17069,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     g.textAlign = 'right'; g.textBaseline = 'alphabetic';
     g.fillText('JP', W - 40, H - 40);
     g.restore();
+    jpEsquinasAmbar(g, W, H);
 
     /* header -- reubicado arriba de todo, 3 líneas (directiva de fix
        integral): [ DÍA X · SEMANA Y ] chico y táctico, el título real de
@@ -17062,6 +17087,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
     g.fillStyle = 'rgba(255,255,255,.5)'; g.font = '500 26px Inter, sans-serif';
     g.fillText((d.atleta || '').toUpperCase(), 90, 128);
+    g.textAlign = 'right'; g.fillStyle = 'rgba(245,197,24,.9)'; g.font = '700 24px "JetBrains Mono", ui-monospace, monospace';
+    g.fillText(jpFechaMil(), W - 90, 128);
+    g.textAlign = 'left';
 
     /* línea 1 -- [ DÍA X · SEMANA Y ], rótulo táctico monoespaciado */
     g.fillStyle = '#38BDF8'; g.font = '700 32px "JetBrains Mono", ui-monospace, monospace';
@@ -17183,6 +17211,22 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 
   /* directiva9 -- formatea minutos de sesión en "XX min" (<60) o "Xh YYm"
      (>=60), para el contador del Story Card. */
+  /* fecha en estilo militar compacto ("// 03.OCT.2026 · SESSION COMPLETED") y
+     esquinas ⌈ ⌉ ⌊ ⌋ ámbar -- compartidas por la Story de Sports y la de CrossFit */
+  window.jpFechaMil = function(){
+    var MES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'], h = new Date();
+    return '// ' + ('0' + h.getDate()).slice(-2) + '.' + MES[h.getMonth()] + '.' + h.getFullYear() + ' · SESSION COMPLETED';
+  };
+  window.jpEsquinasAmbar = function(g, Wc, Hc){
+    g.save();
+    g.strokeStyle = '#F5C518'; g.lineWidth = 6; g.lineCap = 'square';
+    g.shadowColor = 'rgba(245,197,24,.55)'; g.shadowBlur = 14;
+    var m = 44, bl = 86;
+    [[m, m, 1, 1], [Wc - m, m, -1, 1], [m, Hc - m, 1, -1], [Wc - m, Hc - m, -1, -1]].forEach(function(p){
+      g.beginPath(); g.moveTo(p[0], p[1] + bl * p[3]); g.lineTo(p[0], p[1]); g.lineTo(p[0] + bl * p[2], p[1]); g.stroke();
+    });
+    g.restore();
+  };
   function fmtDuracionStory(mins){
     var m = Math.max(1, Math.round(mins || 0));
     if(m < 60) return m + ' min';
@@ -18917,7 +18961,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     g.fillStyle = '#A0A8B4'; g.font = '400 28px Inter, sans-serif';
     /* subtítulo (sesión + fecha/grupos): wrap limpio con margen lateral de
        seguridad en vez de una sola línea que podía pasar el marco. */
-    envolverTexto(g, (d.sesion || '') + '  ·  ' + (d.fecha || ''), W - 260, 2)
+    envolverTexto(g, (d.sesion || '') + '  ·  ' + (window.jpFechaMil ? window.jpFechaMil() : (d.fecha || '')), W - 260, 2)
       .forEach(function(ln, i){ g.fillText(ln, W / 2, 1472 + i * 38); });
 
     /* racha, top lift y firma los agrega el módulo de métricas */
@@ -19196,24 +19240,20 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 @media(max-width:520px){ .cwt-modes{grid-template-columns:repeat(2,1fr)} }
 </style>
 
-<div class="cwt-wrap" id="cwtWrap">
+<div class="cwt-wrap" id="cwtWrap" data-pantalla="modo">
   <div class="cwt">
     <div class="cwt-grip" aria-hidden="true"></div>
     <div class="cwt-hud-head">
-      <button type="button" class="cwt-hud-close" id="cwtX">✕ CERRAR</button>
-      <div class="cwt-hud-title">
-        <span class="cwt-hud-brand"><svg viewBox="0 0 64 74" aria-hidden="true"><path d="M32 2 L60 12 V36 C60 54 47 66 32 72 C17 66 4 54 4 36 V12 Z" fill="#FFD600" stroke="#FFF0A8" stroke-width="2"/><path d="M36 18 L21 40 H30 L27 58 L43 34 H33 Z" fill="#07080A"/></svg>HUD TIMER TÁCTICO</span>
-        <span class="cwt-hud-sub">COACH JP · HIGH PERFORMANCE SYSTEM</span>
-      </div>
+      <div class="cwt-hud-title"><span>&#9889; HUD TIMER T&Aacute;CTICO</span><span class="cwt-hud-co">COACH JP</span></div>
+      <button type="button" class="cwt-hud-close" id="cwtX" aria-label="Cerrar">&#10005;</button>
+      <button type="button" class="cwt-hud-min" id="cwtMin">&#10515; MINIMIZAR</button>
       <button type="button" class="cwt-mute" id="cwtMute" title="Silenciar sonidos">🔊 SONIDO ON</button>
-      <button type="button" class="cwt-hud-min" id="cwtMin">⤓ MINIMIZAR</button>
     </div>
 
     <!-- directiva ("Pantalla de Selección de Modalidad") -- 4 botones
          tácticos + Intervalos/Hyrox (modo ya soportado por el motor,
          se conserva como 5ta opción para no perder esa funcionalidad). -->
     <div class="cwt-pantalla on" data-pantalla="modo">
-      <p class="cwt-sub" style="text-align:center">Elegí la modalidad del timer.</p>
       <div class="cwt-modes">
         <button type="button" class="cwt-mode" data-cwt="amrap"><i class="cwt-mi c"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></i><b>AMRAP</b><small>Máximas rondas en tiempo fijo</small></button>
         <button type="button" class="cwt-mode" data-cwt="fortime"><i class="cwt-mi c"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/><path d="M12 2v3"/></svg></i><b>FOR TIME</b><small>Terminá lo antes posible · time cap</small></button>
@@ -19560,9 +19600,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(seg === 10){
       if(duracionFase(cfg()) > 20 && fase !== 'prep') jpBox.aviso10();
     } else if(seg === 3 || seg === 2 || seg === 1){
-      jpBox.cuenta(); if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
+      jpBox.cuenta(); jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
-      jpBox.chicharra(); if(hayProximo()) jpRayo('gold'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
+      jpBox.chicharra(); if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
   }
   function paso(){
@@ -19721,6 +19761,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   var pantalla = 'modo';
   function mostrarPantalla(p){
     pantalla = p;
+    /* el botón MINIMIZAR sólo existe con el temporizador en carrera (ver CSS data-pantalla) */
+    var wPan = document.getElementById('cwtWrap'); if(wPan) wPan.dataset.pantalla = p;
     document.querySelectorAll('.cwt-pantalla').forEach(function(el){
       el.classList.toggle('on', el.dataset.pantalla === p);
     });
@@ -19810,7 +19852,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     var mg = document.getElementById('cwtMiniGo');
     if(mt && t) mt.textContent = t.textContent;
     if(mr && r) mr.textContent = r.textContent.replace(/\\s+/g, ' ');
-    if(mg) mg.textContent = corriendo ? '⏸' : '▶';
+    if(mg) mg.innerHTML = corriendo ? JP_IC_PAUSA : JP_IC_PLAY;
   }
   function montarTimer(){
     var w = document.getElementById('cwtWrap'); if(!w || w.dataset.listo) return;
@@ -26918,7 +26960,10 @@ body.cf-modo .block .ex-tip{display:none}
     f.className = 'cwt-full'; f.id = 'cwtFull';
     f.innerHTML =
       '<button type="button" class="cf-x" id="cfX" title="Salir de pantalla completa">✕</button>' +
-      '<div class="cf-brand">' + JP_ESCUDO_SVG + '</div>' +
+      '<svg class="cf-shield" viewBox="0 0 64 74" aria-hidden="true">' +
+        '<path d="M32 2 L60 12 V36 C60 54 47 66 32 72 C17 66 4 54 4 36 V12 Z" fill="none" stroke="rgba(245,158,11,.15)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>' +
+        '<path d="M36 18 L21 40 H30 L27 58 L43 34 H33 Z" fill="none" stroke="rgba(245,158,11,.15)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>' +
+      '</svg>' +
       '<div class="cf-phase" id="cfPhase">Listo para arrancar</div>' +
       '<div class="cf-time" id="cfTime">00:00</div>' +
       '<div class="cf-round" id="cfRound">RONDA 1 / 8</div>' +
@@ -34151,6 +34196,54 @@ body::before, body::after{ display:none !important; }
 .gd-card-btn .gcb-tx b{ font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-size:.8rem; letter-spacing:.06em; line-height:1.25; }
 .gd-card-btn .gcb-tx small{ color:#8B93A1; font-size:.72rem; text-transform:none; letter-spacing:0; font-weight:500; }
 .gd-card-btn .gcb-chev{ color:#38bdf8; font-size:1.4rem; }
+/* ===== paridad CrossFit + Bodybuilding: HUD del timer, pantalla completa, descansos ===== */
+/* selector HUD: fondo translúcido desenfocado (se intuye el entrenamiento detrás), tap afuera cierra */
+.cwt-wrap{ background:rgba(8,10,15,.75) !important; backdrop-filter:blur(12px) !important; -webkit-backdrop-filter:blur(12px) !important; }
+/* cabecera: título centrado; a la derecha cierre circular; sonido como toggle; MINIMIZAR sólo con el timer en carrera */
+.cwt .cwt-hud-head{
+  display:grid !important; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"title close" "left mute";
+  align-items:center; row-gap:6px; column-gap:8px;
+}
+.cwt .cwt-hud-head .cwt-hud-title{
+  grid-area:title; order:0; flex:none; padding-left:42px; display:flex; flex-wrap:wrap; justify-content:center; gap:0 6px;
+  font-size:.7rem; letter-spacing:.06em; color:#38bdf8;
+}
+.cwt-hud-co::before{ content:'·'; margin-right:6px; color:#64748b; }
+.cwt-hud-co{ color:#f59e0b; }
+.cwt .cwt-hud-head .cwt-hud-close{
+  grid-area:close; order:0; width:34px; height:34px; min-width:34px !important; padding:0; border-radius:50%; font-size:14px;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15); color:#EDEFF2;
+}
+.cwt .cwt-hud-head .cwt-hud-min{ grid-area:left; order:0; justify-self:start; }
+.cwt .cwt-hud-head .cwt-mute{ grid-area:mute; order:0; justify-self:end; margin:0 !important; }
+.cwt-wrap:not([data-pantalla="run"]) .cwt-hud-min{ display:none !important; }
+/* pantalla completa: sin escudo chico arriba; escudo gigante de fondo (75-80% del ancho) con trazo fino */
+.cwt-full::before{ content:none !important; }
+.cwt-full .cf-brand{ display:none !important; }
+.cwt-full .cf-shield{
+  position:absolute !important; left:50%; top:50%; width:78vw; max-width:640px; height:auto;
+  transform:translate(-50%,-50%); pointer-events:none; z-index:0 !important; will-change:filter;
+}
+.cwt-full .cf-x{ background:rgba(255,255,255,.08) !important; }
+.cwt-full .cf-sign b{ font-size:1.1rem; letter-spacing:.25em; font-weight:800; color:#F4F1EA; }
+.cwt-full .cf-sign b em{ color:#f59e0b; }
+.cwt-full .cf-sign span{ font-size:.65rem; letter-spacing:.3em; color:#64748b; }
+/* descansos: renglón técnico 0.85rem */
+.jp-cfboard .jp-cf-row.jp-cf-closing.jp-cf-restbar{ font-size:calc(.85rem * var(--fzs,1)); }
+/* iconos vectoriales (pausa / play / cronómetro) en lugar de emojis nativos */
+.jp-ic{ width:1.05em; height:1.05em; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-.15em; flex:0 0 auto; }
+.jp-cf-rest-main, .cwt-mini-ctrls button, .rest-hud .rh-ctl button{ display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+/* selector de descansos entre series: tarjeta táctica (grafito + bisel), sin emojis */
+.rest-hud{
+  background:#111620 !important; border:1px solid rgba(56,189,248,.28) !important; border-radius:4px 16px 4px 16px !important;
+  box-shadow:0 10px 30px rgba(0,0,0,.55), inset 0 2px 0 rgba(245,158,11,.7) !important;
+}
+.rest-hud .rh-set button{
+  border-radius:4px 10px 4px 10px; background:#161c28; border:1px solid rgba(255,255,255,.12); color:#cbd5e1;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-weight:800; letter-spacing:.04em;
+}
+.rest-hud .rh-set button.on{ border-color:#f59e0b; color:#f59e0b; background:rgba(245,158,11,.1); }
 #guideModal .gd-tabs{ position:sticky; top:0; z-index:10; background:#0b0e15; padding:6px 0 8px; margin-top:0; }
 /* escalado real de fuente (aA): cada tamaño fijo de la Pizarra/Sports multiplicado por --fzs (1 / 1.2 / 1.4) */
 .wod-score label{ font-size:calc(0.78rem * var(--fzs,1)) !important; }
