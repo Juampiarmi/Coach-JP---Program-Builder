@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, ClipboardCopy, Download, FileCode2, FolderGit2, Rocket, WifiOff } from 'lucide-react';
+import { Check, ClipboardCopy, Download, FileCode2, FolderGit2, MessageCircle, Rocket, WifiOff } from 'lucide-react';
 import { renderIconPng } from '@/lib/brand';
 import { buildAthleteHtml, buildServiceWorker, slugify, type ExportIcons } from '@/lib/exportHtml';
 import { usePlanStore } from '@/store/usePlanStore';
-import { HudButton, Panel, Tag } from '../hud/primitives';
+import { suggestedUrl, whatsappSummary } from '@/lib/share';
+import { HudButton, inputCls, Label, Panel, Tag } from '../hud/primitives';
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -27,6 +28,55 @@ function icons(): ExportIcons {
   return iconCache;
 }
 
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+}
+
+/** Resumen + link del atleta listo para pegar en WhatsApp. */
+function WhatsAppPanel() {
+  const plan = usePlanStore((s) => s.plan);
+  const setPlanMeta = usePlanStore((s) => s.setPlanMeta);
+  const [copied, setCopied] = useState(false);
+  const text = whatsappSummary(plan);
+  return (
+    <Panel title="COMPARTIR CON EL ATLETA" right={<MessageCircle className="h-4 w-4 text-cyan-hud" />}>
+      <label className="block">
+        <Label>Link público de su app (GitHub Pages)</Label>
+        <input value={plan.publicUrl} placeholder={suggestedUrl(plan)} onChange={(e) => setPlanMeta({ publicUrl: e.target.value.trim() })} className={inputCls + ' font-mono text-xs'} />
+      </label>
+      <pre className="scroll-thin mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-carbon p-3 font-mono text-[11px] leading-5 text-steel">{text}</pre>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <HudButton
+          onClick={async () => {
+            await copyText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2200);
+          }}
+        >
+          {copied ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />} {copied ? 'Copiado' : '[ Copiar para WhatsApp ]'}
+        </HudButton>
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(text)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-cyan-hud/40 bg-cyan-hud/10 px-4 py-2.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-cyan-hud transition hover:border-cyan-hud"
+        >
+          <MessageCircle className="h-4 w-4" /> Abrir WhatsApp
+        </a>
+      </div>
+    </Panel>
+  );
+}
+
 export function ExportTab() {
   const plan = usePlanStore((s) => s.plan);
   const [copied, setCopied] = useState(false);
@@ -41,17 +91,7 @@ export function ExportTab() {
   };
 
   const copy = async () => {
-    const html = generate();
-    try {
-      await navigator.clipboard.writeText(html);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = html;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    }
+    await copyText(generate());
     setCopied(true);
     setTimeout(() => setCopied(false), 2200);
   };
@@ -93,6 +133,8 @@ export function ExportTab() {
           sw.js es opcional: habilita modo offline total. Sin él, la app se instala igual (Chrome/Android y Safari/iOS) y las fuentes caen a system-ui si no hay señal.
         </p>
       </Panel>
+
+      <WhatsAppPanel />
 
       <Panel title="DEPLOY EN 60 SEGUNDOS" right={<Rocket className="h-4 w-4 text-cyan-hud" />}>
         <ol className="space-y-3">

@@ -8,6 +8,7 @@ import { equivalentGrams, FOOD_BY_ID, FOODS, GROUP_LABEL, householdHint, type Sw
 import type { DayMode, FoodItem, Meal, MealDay, MealRole } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
+import { FoodScanner } from './FoodScanner';
 
 const ROLE_LABEL: Record<MealRole, string> = {
   breakfast: 'Desayuno',
@@ -193,7 +194,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
             title={`Clonar esta comida en el día ${meal.day === 'on' ? 'OFF' : 'ON'}`}
             className="flex items-center gap-1.5 rounded-md border border-cyan-hud/25 px-2 py-1 font-mono text-[9.5px] font-bold tracking-[0.1em] text-cyan-hud transition hover:border-cyan-hud/60 hover:bg-cyan-hud/10"
           >
-            <CopyPlus className="h-3.5 w-3.5" /> [ + DUPLICAR AL DÍA {meal.day === 'on' ? 'OFF' : 'ON'} ]
+            <CopyPlus className="h-3.5 w-3.5" /> [ + DUPLICAR AL OTRO DÍA ]
           </button>
         )}
         <button onClick={() => removeMeal(meal.id)} title="Eliminar comida" className="rounded-md p-1.5 text-steel hover:bg-fire/10 hover:text-fire">
@@ -289,8 +290,9 @@ export function MealsTab() {
   const [technical, setTechnical] = useState(false);
 
   const meals = [...plan.meals]
-    .filter((m) => filter === 'all' || m.day === 'both' || m.day === filter)
+    .filter((m) => filter === 'all' || m.day === filter)
     .sort((a, b) => (a.day === b.day ? a.time.localeCompare(b.time) : DAY_ORDER[a.day] - DAY_ORDER[b.day]));
+  const shared = plan.meals.filter((m) => m.day === 'both').length;
   const lowCount = plan.meals.filter((m) => isMpsMeal(m) && mealTotals(m).leucine < LEUCINE_THRESHOLD).length;
 
   return (
@@ -326,6 +328,17 @@ export function MealsTab() {
         </div>
       </Panel>
 
+      <FoodScanner />
+
+      {filter !== 'all' && shared > 0 && (
+        <div className="rounded-lg border border-line bg-panel px-4 py-2.5 font-mono text-[10.5px] tracking-[0.04em] text-mute">
+          Filtro estricto DÍA {filter.toUpperCase()}: {shared} comida{shared > 1 ? 's' : ''} compartida{shared > 1 ? 's' : ''} (ON + OFF) se ve{shared > 1 ? 'n' : ''} en «Todas» y
+          sigue{shared > 1 ? 'n' : ''} sumando en las barras de arriba.
+        </div>
+      )}
+      {meals.length === 0 && (
+        <div className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-sm text-mute">Sin comidas exclusivas del día {filter === 'all' ? '' : filter.toUpperCase()}.</div>
+      )}
       {meals.map((m) => (
         <MealCard key={m.id} meal={m} technical={technical} />
       ))}

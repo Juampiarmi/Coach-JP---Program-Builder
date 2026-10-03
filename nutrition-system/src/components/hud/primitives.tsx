@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { FLAME_CORE, FLAME_OUTER, HEX_INNER, HEX_NODES, HEX_OUTER, SHIELD_BOLT, SHIELD_INNER, SHIELD_OUTER } from '@/lib/brand';
+import { nutritionSvg, SHIELD_BOLT, SHIELD_INNER, SHIELD_OUTER } from '@/lib/brand';
 import { doiUrl, type Citation } from '@/lib/evidence';
 
 export function cx(...c: (string | false | null | undefined)[]) {
@@ -10,25 +10,9 @@ export function cx(...c: (string | false | null | undefined)[]) {
 
 type Tone = 'cyan' | 'fire' | 'gold' | 'steel' | 'danger';
 
-/** Isotipo Nutrition: hexágono táctico + llama metabólica. */
+/** Isotipo Nutrition · Prisma Bioenergético (misma fuente SVG que los iconos y la PWA). */
 export function NutritionMark({ size = 36, className }: { size?: number; className?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" className={className} aria-hidden>
-      <defs>
-        <linearGradient id="nm-flame" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#FF5E1E" />
-          <stop offset="1" stopColor="#F97316" />
-        </linearGradient>
-      </defs>
-      <path d={HEX_OUTER} fill="#0B0F17" stroke="#38BDF8" strokeWidth="3" strokeLinejoin="round" />
-      <path d={HEX_INNER} fill="none" stroke="#38BDF8" strokeOpacity=".28" strokeWidth="1.2" />
-      {HEX_NODES.map(([x, y]) => (
-        <circle key={`${x}-${y}`} cx={x} cy={y} r="2.1" fill="#38BDF8" />
-      ))}
-      <path d={FLAME_OUTER} fill="url(#nm-flame)" />
-      <path d={FLAME_CORE} fill="#FDBA74" />
-    </svg>
-  );
+  return <span aria-hidden className={cx('inline-block flex-none leading-none', className)} style={{ width: size, height: size }} dangerouslySetInnerHTML={{ __html: nutritionSvg(size, `nm${size}`) }} />;
 }
 
 /** Escudo Coach JP (firma de marca). */

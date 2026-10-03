@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, jp7BodyFat, PHASE_PRESETS } from '@/lib/bioenergetics';
+import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_PRESETS } from '@/lib/bioenergetics';
 import { aisGroupA } from '@/lib/evidence';
 import { equivalentGrams, FOOD_BY_ID, macrosFor, round1, round2 } from '@/lib/foods';
 import { itemFromFood, seedPlan, uid } from '@/lib/seed';
@@ -25,6 +25,8 @@ export type DeployTab = 'preview' | 'export' | 'story';
 
 interface PlanState {
   plan: AthletePlan;
+  /** Base local de atletas (snapshots). El activo vive en `plan` y pisa su entrada al listar. */
+  roster: Record<string, AthletePlan>;
   ai: AiSettings;
   builderTab: BuilderTab;
   deployTab: DeployTab;
@@ -60,6 +62,19 @@ interface PlanState {
 
   loadPlan: (plan: AthletePlan) => void;
   resetDemo: () => void;
+
+  setPlanMeta: (patch: Partial<Pick<AthletePlan, 'publicUrl' | 'hydration'>>) => void;
+  /** Inyecta alimentos (p. ej. del escáner de platos) en una comida existente o en una nueva. */
+  injectItems: (target: { mealId: string } | { newMeal: { name: string; day: 'on' | 'off'; time: string } }, items: FoodItem[]) => void;
+
+  newAthlete: () => void;
+  switchAthlete: (id: string) => void;
+  deleteAthlete: (id: string) => void;
+}
+
+/** Lista de atletas de la base local con el activo actualizado. */
+export function listAthletes(s: Pick<PlanState, 'plan' | 'roster'>) {
+  return Object.values({ ...s.roster, [s.plan.id]: s.plan }).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 const touch = (plan: AthletePlan): AthletePlan => ({ ...plan, updatedAt: Date.now() });
@@ -86,6 +101,7 @@ export const usePlanStore = create<PlanState>()(
   persist(
     (set) => ({
       plan: seedPlan(),
+      roster: {},
       ai: { provider: 'claude', model: 'claude-opus-5', apiKey: '' },
       builderTab: 'profile',
       deployTab: 'preview',
@@ -110,7 +126,13 @@ export const usePlanStore = create<PlanState>()(
             const fresh = Object.fromEntries(aisGroupA(p.weightKg).map((x) => [x.id, x]));
             supplements = supplements.map((x) => (fresh[x.id] ? { ...x, dose: fresh[x.id].dose } : x));
           }
-          return { plan: touch({ ...s.plan, profile, supplements }) };
+          // Si la hidratación seguía en los valores por defecto, se recalcula con el nuevo peso / duración.
+          const prevDef = hydrationDefaults(s.plan.profile.weightKg, s.plan.profile.sessionMinutes);
+          const hydration =
+            s.plan.hydration.onMl === prevDef.onMl && s.plan.hydration.offMl === prevDef.offMl
+              ? hydrationDefaults(profile.weightKg, profile.sessionMinutes)
+              : s.plan.hydration;
+          return { plan: touch({ ...s.plan, profile, supplements, hydration }) };
         }),
 
       selectBodyFatBand: (bandId) =>
@@ -239,7 +261,46 @@ export const usePlanStore = create<PlanState>()(
         })),
 
       loadPlan: (plan) => set({ plan: touch(plan) }),
-      resetDemo: () => set({ plan: seedPlan() }),
+      resetDemo: () => set((s) => ({ plan: { ...seedPlan(), id: s.plan.id } })),
+
+      setPlanMeta: (patch) => set((s) => ({ plan: touch({ ...s.plan, ...patch }) })),
+
+      injectItems: (target, items) =>
+        set((s) => {
+          const fresh = items.map((i) => ({ ...i, id: uid() }));
+          if ('mealId' in target) return { plan: mapMeal(s.plan, target.mealId, (m) => ({ ...m, items: [...m.items, ...fresh] })) };
+          const meal: Meal = { id: uid(), name: target.newMeal.name, time: target.newMeal.time, day: target.newMeal.day, role: 'lunch', items: fresh };
+          return { plan: touch({ ...s.plan, meals: [...s.plan.meals, meal] }) };
+        }),
+
+      newAthlete: () =>
+        set((s) => {
+          const fresh = seedPlan();
+          fresh.profile = { ...fresh.profile, name: `Atleta ${listAthletes(s).length + 1}` };
+          return { roster: { ...s.roster, [s.plan.id]: s.plan }, plan: fresh, builderTab: 'intake' };
+        }),
+
+      switchAthlete: (id) =>
+        set((s) => {
+          if (id === s.plan.id || !s.roster[id]) return {};
+          const roster = { ...s.roster, [s.plan.id]: s.plan };
+          const plan = roster[id];
+          delete roster[id];
+          return { roster, plan };
+        }),
+
+      deleteAthlete: (id) =>
+        set((s) => {
+          if (id !== s.plan.id) {
+            const roster = { ...s.roster };
+            delete roster[id];
+            return { roster };
+          }
+          // Borrar el activo: pasa al siguiente guardado o arranca un demo nuevo.
+          const [next, ...rest] = Object.values(s.roster).sort((a, b) => b.updatedAt - a.updatedAt);
+          if (!next) return { plan: seedPlan(), roster: {} };
+          return { plan: next, roster: Object.fromEntries(rest.map((p) => [p.id, p])) };
+        }),
     }),
     {
       name: 'coachjp-hps-builder',
@@ -250,11 +311,18 @@ export const usePlanStore = create<PlanState>()(
         const saved = (persisted ?? {}) as Partial<PlanState>;
         const merged = { ...current, ...saved } as PlanState;
         merged.plan = sanitizePlan(saved.plan) ?? current.plan;
+        merged.roster = Object.fromEntries(
+          Object.values(saved.roster ?? {})
+            .map((p) => sanitizePlan(p))
+            .filter((p): p is AthletePlan => !!p && p.id !== merged.plan.id)
+            .map((p) => [p.id, p]),
+        );
         merged.ai = { ...current.ai, ...(saved.ai ?? {}) };
         return merged;
       },
       partialize: (s) => ({
         plan: s.plan,
+        roster: s.roster,
         ai: s.ai,
         builderTab: s.builderTab,
         deployTab: s.deployTab,
@@ -277,6 +345,9 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
   return {
     ...seed,
     ...p,
+    id: typeof p.id === 'string' && p.id ? p.id : uid(),
+    publicUrl: typeof p.publicUrl === 'string' ? p.publicUrl : '',
+    hydration: p.hydration?.onMl > 0 && p.hydration?.offMl > 0 ? p.hydration : hydrationDefaults(pr.weightKg, pr.sessionMinutes ?? 75),
     profile: {
       ...seed.profile,
       ...pr,
@@ -284,6 +355,8 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
       bodyFatBand: pr.bodyFatBand ?? null,
       skinfolds: { ...EMPTY_SKINFOLDS, ...(pr.skinfolds ?? {}) },
       measuredFfmKg: okNum(pr.measuredFfmKg) ? pr.measuredFfmKg : 0,
+      trainingTime: /^\d{2}:\d{2}$/.test(pr.trainingTime ?? '') ? pr.trainingTime : '18:00',
+      sessionMinutes: okNum(pr.sessionMinutes) ? pr.sessionMinutes : 75,
     },
     periodization: { ...seed.periodization, ...p.periodization },
     meals: p.meals.filter((m) => m && Array.isArray(m.items)),
