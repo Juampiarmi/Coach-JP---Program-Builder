@@ -5050,8 +5050,19 @@ function itemsConNombreSB(titulo, items){
   if(primera && !lineaSoloDosisSB(primera)) return arr;        /* ya trae su propio nombre */
   return [String(titulo).trim()].concat(arr);
 }
-function detectarEjerciciosSports(texto){
-  const lineas = String(texto || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+/* bloque "Tiempo · Entrada en calor" (modalidad / categoría / título): para el escaneo de videos sólo cuentan las
+   líneas de ejercicio con viñeta ("- ") o número ("1."), y se ignora toda línea descriptiva
+   (Activación, Preparación, Movilidad, Calentamiento, funcional, glenohumeral, lumbopélvica) */
+const RX_WARM_CTX = /activaci[oó]n|preparaci[oó]n|movilidad|calentamiento|funcional|glenohumeral|lumbop[eé]lvica/i;
+const RX_WARM_EJ = /^\s*(?:[-–•*·]\s+|\d+[.)]\s+)/;
+function esBloqueEntradaCalorSB(b){
+  if(!b) return false;
+  return modalidadBloqueSB(b) === 'calentamiento' || b.category === 'warmup' ||
+    /warm[\s-]*up|activaci[oó]n|entrada\s+en\s+calor|calentamiento|movilidad/i.test(String(b.titulo || ''));
+}
+function detectarEjerciciosSports(texto, opts){
+  let lineas = String(texto || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
+  if(opts && opts.warmup) lineas = lineas.filter(function(l){ return RX_WARM_EJ.test(l) && !RX_WARM_CTX.test(l); });
   const vistos = {}, out = [];
   /* tras una etiqueta de metadatos ("[OBJETIVO FISIOLÓGICO]", "TIPS:"...) el texto que
      sigue es objetivo/tips, no ejercicios -- hasta la próxima etiqueta de categoría o
@@ -5120,8 +5131,9 @@ function resolverVideosBloqueSports(b){
   const vistos = {};
   const out = [];
   const dismissed = b.videosDismissed || [];
-  const texto = itemsConNombreSB(b.titulo, b.items || []).join('\n');
-  detectarEjerciciosSports(texto).forEach(function(d){
+  const warm = esBloqueEntradaCalorSB(b);
+  const texto = (warm ? (b.items || []) : itemsConNombreSB(b.titulo, b.items || [])).join('\n');
+  detectarEjerciciosSports(texto, { warmup: warm }).forEach(function(d){
     const k = nrmChip(d.nombre);
     if(!k || vistos[k] || dismissed.indexOf(k) >= 0 || dismissed.indexOf(stemNombreEj(d.nombre)) >= 0) return;
     vistos[k] = 1;
@@ -54002,7 +54014,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       const vistos = {};
       lista = [];
       const dismissed = b.videosDismissed || [];
-      detectarEjerciciosSports(itemsConNombreSB(b.titulo, String(ta.value || '').split('\n')).join('\n')).forEach(function(d){
+      const warmCh = esBloqueEntradaCalorSB(b);
+      const lineasCh = String(ta.value || '').split('\n');
+      detectarEjerciciosSports((warmCh ? lineasCh : itemsConNombreSB(b.titulo, lineasCh)).join('\n'), { warmup: warmCh }).forEach(function(d){
         const k = nrm(d.nombre);
         if(!k || vistos[k] || dismissed.indexOf(k) >= 0 || dismissed.indexOf(stemNombreEj(d.nombre)) >= 0) return;
         vistos[k] = 1;
