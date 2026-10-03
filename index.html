@@ -4130,6 +4130,11 @@ const IMP_RX_BLOQUE_VIEJO = /^\s*bloque\s*\d*\s*[:\-–]\s*(.*)$/i;
    de un bloque: OBJETIVO (DEL ESTÍMULO) / COACHING TIPS|TIPS / PACING
    (SUGERIDO) / ESCALADO (/ RX ALTERNATIVO). Su texto se recorta y va a su
    propio campo; NUNCA queda en la prescripción de ejercicios. */
+/* mismas etiquetas pero entre corchetes y sin ":" -- "[OBJETIVO FISIOLÓGICO]" /
+   "[COACHING TIPS & ESTRATEGIA]" (contenido en la misma línea o en las siguientes) */
+const IMP_RX_ETIQ_COR = /^[\s*_>\-–•·]*\[\s*(objetivo(?:\s+fisiol[oó]gico|\s+del\s+est[ií]mulo)?|coaching\s*tips?(?:\s*(?:&|y)\s*estrategia(?:\s+biomec[aá]nica)?)?|tips?|estrategia(?:\s+biomec[aá]nica)?|directiva\s+biomec[aá]nica(?:\s*(?:&|y)\s*tips)?|pacing|escalado(?:\s*\/\s*rx\s+alternativo)?)\s*\]\s*:?\s*(.*?)[*_]*\s*$/i;
+const IMP_RX_FOCO_COR = /^[\s*_>\-–•·]*\[\s*foco(?:\s+del\s+coach|\s+t[aá]ctico)?\s*\]\s*:?\s*(.*?)[*_]*\s*$/i;
+const IMP_RX_DIA_COR = /^[\s*_>\-–•·]*\[\s*nombre\s+del\s+d[ií]a\s*\]\s*:?\s*(.*?)[*_]*\s*$/i;
 const IMP_RX_ETIQ = /^[\s*_>\-–•·]*(objetivo(?:\s+del\s+est[ií]mulo)?|coaching\s+tips?|tips?|pacing(?:\s+sugerido)?|escalado(?:\s*\/\s*rx\s+alternativo)?|rx\s+alternativo)\s*[*_]*\s*:\s*[*_]*\s*(.*?)[*_]*\s*$/i;
 function impCampoDeEtiqueta(et){
   const e = String(et).toLowerCase();
@@ -4152,7 +4157,7 @@ const IMP_FASES_SOFT = [
   { rx:/warm|calent/i,                                        fase:'warmup' },
   { rx:/skill|strength|fuerza|hipertrofia|hypertrophy|pir[aá]mide|pyramid|weightlifting|halterofilia/i,  fase:'strength' },
   { rx:/wod|met\s*-?\s*con|amrap|emom|for\s*time|chipper|tabata/i, fase:'metcon' },
-  { rx:/access|accesor|cool\s*-?\s*down|enfriamiento|movilidad/i, fase:'accessory' },
+  { rx:/access|accesor|core|estabilidad|abdominal|cool\s*-?\s*down|enfriamiento|movilidad/i, fase:'accessory' },
   { rx:/hyrox|station/i,                                      fase:'cardio' },
   { rx:/endurance|turno|running/i,                            fase:'endurance' }
 ];
@@ -4237,6 +4242,11 @@ function impPushLineaSports(bloque, t, avisos){
 }
 const AVISO_RPE = 'RPE convertido a RIR (RIR = 10 − RPE) para que el alumno vea la dosis completa';
 const AVISO_TEMPO_X = 'Tempo con "X" (explosivo) convertido a 1 segundo: la app del alumno sólo lee dígitos';
+/* "[CARGA - FUERZA]" -> "Fuerza", "[ESTABILIDAD - CORE]" -> "Core", "[BLOQUE 1]" -> "Bloque 1" */
+function impTituloDeTag(tag){
+  const et = String(tag || '').replace(/^(?:carga|estabilidad)\s*[-–]\s*/i, '').toLowerCase().trim();
+  return et ? et.charAt(0).toUpperCase() + et.slice(1) : '';
+}
 function impCerrarBloqueSports(b){
   if(!b || b._cerrado) return;
   b._cerrado = true;
@@ -4253,10 +4263,9 @@ function impCerrarBloqueSports(b){
     /* el encabezado pasa a ser la etiqueta del delimitador ("Bloque 1",
        "Fuerza", "Accesorio"): el alumno ve "BLOQUE 1 · PRESS BANCA" en vez del
        nombre duplicado (y el auditor del Builder no lo rellena con "Bloque") */
-    const et = String(b.tag || '').toLowerCase();
-    b.titulo = et ? et.charAt(0).toUpperCase() + et.slice(1) : '';
+    b.titulo = impTituloDeTag(b.tag);
   }
-  if(!b.titulo && b.tag){ const et = String(b.tag).toLowerCase(); b.titulo = et.charAt(0).toUpperCase() + et.slice(1); }
+  if(!b.titulo && b.tag) b.titulo = impTituloDeTag(b.tag);
   if(restos.length) b.rest = restos[0];
   delete b._g;
 }
@@ -4269,7 +4278,7 @@ function inferirFaseSports(titulo){
 }
 function parsearImportacion(texto, sports){
   const avisos = [], dias = [];
-  let dia = null, bloque = null, enFoco = false, campoAct = '';
+  let dia = null, bloque = null, enFoco = false, campoAct = '', esperaTituloDia = false;
   const cerrar = () => { if(sports && bloque) impCerrarBloqueSports(bloque); };
   const nuevoDia = (num, titulo) => { cerrar(); dia = { num: num, titulo: titulo || '', foco: '', bloques: [] }; dias.push(dia); bloque = null; enFoco = false; campoAct = ''; return dia; };
   const arr = String(texto || '').split(/\r?\n/);
@@ -4284,16 +4293,21 @@ function parsearImportacion(texto, sports){
     if(dm){ nuevoDia(dm.num, dm.titulo); return; }
     let m;
     if(!dia) nuevoDia(null, '');
-    m = t.match(IMP_RX_FOCO);
-    if(m){ dia.foco = (dia.foco ? dia.foco + '\n' : '') + (m[1] || '').trim(); enFoco = true; campoAct = ''; return; }
+    /* "[NOMBRE DEL DÍA] Empuje" -> título del día (el título también puede venir en la línea siguiente) */
+    if(esperaTituloDia && !m){ esperaTituloDia = false; if(!dia.titulo) dia.titulo = t; return; }
+    m = t.match(IMP_RX_DIA_COR);
+    if(m){ if((m[1] || '').trim()) dia.titulo = m[1].trim(); else esperaTituloDia = true; return; }
+    m = t.match(IMP_RX_FOCO) || t.match(IMP_RX_FOCO_COR);
+    if(m){ dia.foco = (m[1] || '').trim() ? (dia.foco ? dia.foco + '\n' : '') + m[1].trim() : dia.foco; enFoco = true; campoAct = ''; return; }
     /* etiquetas de coaching: dentro de un bloque van a su campo; antes del
        primer bloque se conservan como parte del foco del día */
-    m = t.match(IMP_RX_ETIQ);
+    m = t.match(IMP_RX_ETIQ) || t.match(IMP_RX_ETIQ_COR);
     if(m){
       if(bloque){
         const campo = impCampoDeEtiqueta(m[1]);
         bloque.cierre = bloque.cierre || {};
-        bloque.cierre[campo] = (bloque.cierre[campo] ? bloque.cierre[campo] + '\n' : '') + (m[2] || '').trim();
+        const contenido = (m[2] || '').trim();
+        bloque.cierre[campo] = contenido ? (bloque.cierre[campo] ? bloque.cierre[campo] + '\n' : '') + contenido : (bloque.cierre[campo] || '');
         campoAct = campo;
       } else {
         dia.foco = (dia.foco ? dia.foco + '\n' : '') + t; enFoco = true;
@@ -4301,7 +4315,7 @@ function parsearImportacion(texto, sports){
       return;
     }
     if(campoAct && bloque && !IMP_RX_PARECE_EJERCICIO.test(t) && !t.match(IMP_RX_CORCH) && !t.match(IMP_RX_BLOQUE_VIEJO) && !t.match(IMP_RX_LETRA)){
-      bloque.cierre[campoAct] += '\n' + t;      /* continuación multilínea del tip */
+      bloque.cierre[campoAct] = bloque.cierre[campoAct] ? bloque.cierre[campoAct] + '\n' + t : t;      /* continuación multilínea del tip */
       return;
     }
     campoAct = '';
@@ -4354,7 +4368,7 @@ function parsearImportacion(texto, sports){
         dia.bloques.push(bloque); enFoco = false; campoAct = '';
       }
     }
-    if(enFoco && !bloque){ dia.foco += '\n' + t; return; }
+    if(enFoco && !bloque){ dia.foco = dia.foco ? dia.foco + '\n' + t : t; return; }
     if(!bloque){
       /* Sports: texto suelto sin estructura NO se convierte en un bloque fantasma
          (antes importaba "Hoy toca pecho..." como bloque y parecía que todo andaba
@@ -4437,7 +4451,7 @@ function impMensajeSinBloques(texto, cf){
   for(let i = 0; i < ls.length; i++){
     const t = ls[i].trim();
     if(!t) continue;
-    if(impMatchDia(t) || IMP_RX_FOCO.test(t) || IMP_RX_ETIQ.test(t)) continue;
+    if(impMatchDia(t) || IMP_RX_FOCO.test(t) || IMP_RX_ETIQ.test(t) || IMP_RX_ETIQ_COR.test(t) || IMP_RX_FOCO_COR.test(t) || IMP_RX_DIA_COR.test(t)) continue;
     prob = { n: i + 1, t: t }; break;
   }
   const ej = cf ? '[WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN]' : '[BLOQUE 1], [FUERZA], [HIPERTROFIA], [ACCESORIO], [PIRÁMIDE]';
@@ -4875,13 +4889,59 @@ function migrarBloqueAPizarra(bid){
    reales (zona de riesgo/lesión), algo que el mecanismo de CrossFit no
    hace hoy para bloques de texto libre (sólo detecta "prohibido"/"tag"
    por substring, ver checkFreeText() más arriba). */
+/* =========================================================
+   directiva ("FIX CRÍTICO: sanitización del motor de búsqueda de videos")
+   LISTA NEGRA ESTRICTA: el escáner de videos NUNCA debe tratar como ejercicio
+   (ni disparar un "+ Vincular") etiquetas de cabecera/metadatos, días,
+   métricas ni etiquetas de categoría. La búsqueda se hace SÓLO sobre el
+   nombre del ejercicio, ya sin corchetes ni prefijos (nombreEjercicioSB).
+   ========================================================= */
+/* etiquetas de cabecera/metadatos -- con o sin contenido, entre corchetes o con ":" */
+const RX_NOEJ_META = /^[\s*_>\-–•·]*\[?\s*(?:nombre\s+del\s+d[ií]a|foco(?:\s+del\s+coach|\s+t[aá]ctico)?|objetivo(?:\s+fisiol[oó]gico|\s+del\s+est[ií]mulo)?|coaching\s*tips?(?:\s*(?:&|y)\s*estrategia(?:\s+biomec[aá]nica)?)?|tips?|estrategia(?:\s+biomec[aá]nica)?|directiva\s+biomec[aá]nica(?:\s*(?:&|y)\s*tips)?|pacing|escalado)\s*(?:\]|:|$)/i;
+/* "DÍA 3", "=== DÍA 1 ===", días de la semana */
+const RX_NOEJ_DIA = /^[\s*_>\-–•·=#\[]*(?:d[ií]a\s*\d+\b|lunes\b|martes\b|mi[eé]rcoles\b|jueves\b|viernes\b|s[aá]bado\b|domingo\b)/i;
+/* etiqueta de categoría al inicio ("[BLOQUE 1]", "[CARGA - FUERZA]", "[ESTABILIDAD - CORE]", "[FUERZA]"...) */
+const RX_NOEJ_CAT = /^\s*\[\s*(?:bloque\s*\d+|carga\s*[-–][^\]]*|estabilidad\s*[-–][^\]]*|fuerza|hipertrofia|accesorio|pir[aá]mide|warm[\s-]*up|core|cardio)[^\]]*\]/i;
+/* lo que queda es una métrica/prescripción suelta ("8 minutos", "3 sets", "RIR 2", "Rest 2:00", "Tempo 3010") */
+const RX_NOEJ_METRICA = /^(?:\d+(?:\s*[-–/]\s*\d+)?\s*(?:sets?|series?|reps?|repeticiones|rondas?|min(?:utos?)?|seg(?:undos?)?|s)\b.*|rir\s*\d.*|rest\b.*|descanso\b.*|tempo\b.*)$/i;
+function lineaSoloDosisSB(linea){
+  const dosis = parsearDosisSports(linea);
+  return !!((dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir) &&
+    String(linea).replace(/[0-9x×|.:\-–\/]/gi, '').replace(/tempo|rir|rest|sets?|series|rondas?|reps?|fallo\s*t[eé]cnico/gi, '').trim().length < 4);
+}
+/* nombre limpio del ejercicio de una línea ('' = no es un ejercicio) */
+function nombreEjercicioSB(linea){
+  let t = String(linea || '').trim();
+  if(!t || RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return '';
+  t = t.replace(/^[\s\-•*]+/, '');
+  t = t.replace(/^(?:\[[^\]]*\]\s*)+/, '').trim();            /* corchetes/prefijos de categoría */
+  t = t.replace(/^A\d+[.)]\s*/i, '').replace(/^[\s\-•*]+/, '');
+  t = t.split(/\s*[:|]\s*|\s+[-–—]\s+/)[0];
+  t = t.replace(/\s*(?:\d+\s*)?[x×]\s*\d[\w.\/-]*.*$/i, '');
+  /* corta en la primera métrica pegada al nombre ("Press banca 4 Sets", "Remo Rest 90") */
+  t = t.replace(/\s+(?:\d+\s*(?:sets?|series?|reps?|repeticiones|rondas?|min(?:utos?)?|seg(?:undos?)?)\b|rir\s*\d|rest\b|descanso\b|tempo\b).*$/i, '');
+  t = t.replace(/[\[\]]/g, '').trim();
+  if(!t || RX_NOEJ_METRICA.test(t) || !/[a-záéíóúñ]/i.test(t)) return '';
+  return t;
+}
 function detectarEjerciciosSports(texto){
   const lineas = String(texto || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
   const vistos = {}, out = [];
-  lineas.forEach(function(linea){
+  /* tras una etiqueta de metadatos ("[OBJETIVO FISIOLÓGICO]", "TIPS:"...) el texto que
+     sigue es objetivo/tips, no ejercicios -- hasta la próxima etiqueta de categoría o
+     hasta una línea que sea claramente un ejercicio (lleva dosis o la siguiente es una dosis) */
+  let enMeta = false;
+  lineas.forEach(function(linea, ix){
+    if(RX_NOEJ_META.test(linea)){ enMeta = true; return; }
+    if(RX_NOEJ_DIA.test(linea)){ enMeta = false; return; }
+    if(RX_NOEJ_CAT.test(linea)) enMeta = false;
+    if(enMeta){
+      const sigL = lineas[ix + 1] || '';
+      if(!(parsearDosisSports(linea).sets || lineaSoloDosisSB(sigL))) return;
+      enMeta = false;
+    }
     const dosis = parsearDosisSports(linea);
-    const soloEsDosis = (dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir) &&
-      linea.replace(/[0-9x×|.:\-–\/]/gi, '').replace(/tempo|rir|rest|sets?|series|rondas?|reps?|fallo\s*t[eé]cnico/gi, '').trim().length < 4;
+    const soloEsDosis = lineaSoloDosisSB(linea);
     if(soloEsDosis) return;
     if(esLineaDirectivaSports(linea)) return;
     if(esLineaProsaEj(linea)) return;      /* instrucción/tip largo sin dosis: no es un ejercicio */
@@ -4901,10 +4961,7 @@ function detectarEjerciciosSports(texto){
        nunca el paréntesis (ese SÍ es parte del nombre en Sports, ej. el
        alias "(Scapular Pull-ups)" -- a diferencia de CrossFit, acá nunca
        se descarta). */
-    const nombreLimpio = linea.replace(/^A\d+[.)]\s*/i, '').replace(/^[\s\-•*]+/, '')
-      .split(/\s*[:|]\s*|\s+[-–]\s+/)[0]
-      .replace(/\s*[x×]\s*\d[\w.\/]*.*$/i, '')
-      .trim();
+    const nombreLimpio = nombreEjercicioSB(linea);
     if(!nombreLimpio || nombreLimpio.length < 3 || nombreLimpio.length > MAX_NOMBRE_EJ) return;
     const k = normSports(nombreLimpio);
     if(vistos[k]) return;
@@ -34486,6 +34543,7 @@ const CAND_PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*
 const CAND_PREFIJO_ESTACION = /^[A-Za-z]\d*[.)]\s*/;
 function candidatosTexto(txt, sinY){
   let t = String(txt || '').replace(/^[\s\-•*]+/, '');
+  if(RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return [];      /* cabeceras/metadatos/días: nunca ejercicios */
   if(esLineaProsaEj(t)) return [];      /* instrucción/tip largo sin dosis: no es un ejercicio */
   t = t.replace(CAND_PREFIJO_ESTACION, '');
   t = t.replace(CAND_PREFIJO_ORDEN, '');
@@ -53597,6 +53655,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   const PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|lift\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
   function candidatos(linea){
     let t = String(linea || '').replace(/^[\s\-•*]+/, '');
+    if(RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return [];    /* cabeceras/metadatos/días: nunca ejercicios */
     /* directiva ("Sanitización de biblioteca de videos") -- una línea larga
        sin dosis (sin dígitos, ":", "|", "@" ni "+") es una instrucción o un
        tip, nunca un ejercicio: ni se intenta buscar */
