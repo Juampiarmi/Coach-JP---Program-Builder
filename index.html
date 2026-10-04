@@ -4732,12 +4732,39 @@ function esLineaProsaEj(l){
    matchNombre() (mismo criterio de substring/palabras en común que ya
    usa suggestAlts()/checkExercise() más arriba en este archivo) --
    nunca se inventa un exId sin al menos una coincidencia real. */
+/* calificadores que no cambian el ejercicio ("Bird-dog con pausa isométrica", "Glute Bridge en suelo") */
+const RX_CALIF_SB = /\b(?:con rotacion axial|con pausa isometrica|con pausa|en colchoneta|en el suelo|en suelo|dinamic[oa]s?|estatic[oa]s?|isometric[oa]s?)\b/g;
+function normFuzzySB(s){ return normSports(s).replace(RX_CALIF_SB, ' ').replace(/\s+/g, ' ').trim(); }
+function resolverExFuzzySB(nombre){
+  const q = normFuzzySB(nombre);
+  if(q.length < 4) return null;
+  const qp = ' ' + q + ' ', qPal = q.split(' ').length;
+  let mejor = null, mejorPts = 0;
+  S.exercises.forEach(function(e){
+    [e.es, e.en].forEach(function(nm){
+      if(!nm) return;
+      const n = normFuzzySB(nm);
+      if(!n) return;
+      const nPal = n.split(' ').length;
+      if(nPal < 2 && n.length < 6) return;           /* un nombre de una palabra corta ("press") matchearía cualquier cosa */
+      let pts = 0;
+      if(n === q) pts = 1000 + n.length;
+      else if(qp.indexOf(' ' + n + ' ') >= 0) pts = n.length;                          /* el texto incluye el nombre del video */
+      else if(qPal >= 2 && (' ' + n + ' ').indexOf(qp) >= 0) pts = n.length - 40;        /* el nombre del video incluye el texto */
+      if(pts > mejorPts){ mejor = e; mejorPts = pts; }
+    });
+  });
+  return mejor;
+}
 function resolverExSports(nombreCrudo){
   const crudo = String(nombreCrudo || '').trim();
   const sinParen = crudo.replace(/\s*\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const conCalif = RX_CALIF_SB.test(normSports(crudo)); RX_CALIF_SB.lastIndex = 0;
+  if(conCalif){ const f0 = resolverExFuzzySB(sinParen || crudo); if(f0) return f0; }
   const r1 = crudo ? resolverExSportsBase(crudo) : null;
-  if(r1 || !sinParen || sinParen === crudo) return r1;
-  return resolverExSportsBase(sinParen);
+  if(r1) return r1;
+  const r2 = (sinParen && sinParen !== crudo) ? resolverExSportsBase(sinParen) : null;
+  return r2 || resolverExFuzzySB(sinParen || crudo);
 }
 function resolverExSportsBase(nombreCrudo){
   const nombre = String(nombreCrudo || '').trim();
@@ -5097,6 +5124,7 @@ function itemsConNombreSB(titulo, items){
    (Activación, Preparación, Movilidad, Calentamiento, funcional, glenohumeral, lumbopélvica) */
 const RX_WARM_CTX = /activaci[oó]n|preparaci[oó]n|movilidad|calentamiento|funcional|glenohumeral|lumbop[eé]lvica/i;
 const RX_WARM_EJ = /^\s*(?:[-–•*·]\s+|\d+[.)]\s+)/;
+const RX_REPS_LINEA = /(?:^|\s)[x×]\s*\d|\d\s*[x×]\s*\d/i;
 function esBloqueEntradaCalorSB(b){
   if(!b) return false;
   return modalidadBloqueSB(b) === 'calentamiento' || b.category === 'warmup' ||
@@ -5104,7 +5132,7 @@ function esBloqueEntradaCalorSB(b){
 }
 function detectarEjerciciosSports(texto, opts){
   let lineas = String(texto || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
-  if(opts && opts.warmup) lineas = lineas.filter(function(l){ return RX_WARM_EJ.test(l) && !RX_WARM_CTX.test(l); });
+  if(opts && opts.warmup) lineas = lineas.filter(function(l){ return (RX_WARM_EJ.test(l) || RX_REPS_LINEA.test(l)) && !RX_WARM_CTX.test(l); });
   const vistos = {}, out = [];
   /* tras una etiqueta de metadatos ("[OBJETIVO FISIOLÓGICO]", "TIPS:"...) el texto que
      sigue es objetivo/tips, no ejercicios -- hasta la próxima etiqueta de categoría o
