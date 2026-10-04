@@ -4272,6 +4272,14 @@ function impTituloDeTag(tag){
 }
 /* categoría de carga automática (selector del bloque): etiqueta explícita primero; si no, por
    palabras clave y por reps (<=6 -> fuerza) */
+/* ejercicios de fuerza/tracción/empuje/piernas: NUNCA son Core, aunque sus tips hablen de core, abdomen o lumbar
+   (excepción: Pallof / Plancha, que sí son de zona media aunque lleven "press") */
+const RX_NO_CORE = /(?:^|[^a-záéíóúñ])(?:remo|row|jal[oó]n|pull|press|sentadilla|squat|peso\s+muerto|deadlift)/i;
+const RX_CORE_EXCEPCION = /pallof|plancha|plank/i;
+function esCoreExplicitoSB(texto){
+  const t = String(texto || '').toLowerCase();
+  return RX_CORE_ESTRICTO.test(t) && (!RX_NO_CORE.test(t) || RX_CORE_EXCEPCION.test(t));
+}
 const RX_CORE_ESTRICTO = /(?:^|[^a-záéíóúñ])(?:plancha|plank|abdominal(?:es)?|abdomen|core|crunch(?:es)?|hanging|knee\s+raises?|rueda\s+abdominal|ab\s*wheel|pallof|dead\s*bug|bird\s*dog|hollow|russian\s+twist|sit-?ups?|elevaci[oó]n(?:es)?\s+de\s+piernas|antirrotaci[oó]n|anti-?rotation|v-?ups?|mountain\s+climbers?)(?![a-záéíóúñ])/i;
 function impModalidadSB(b, tag){
   const tg = String(tag || '').toLowerCase();
@@ -4285,7 +4293,7 @@ function impModalidadSB(b, tag){
      Sentadilla nunca caen en Core porque sus tips mencionen "core" o "lumbar" */
   const primeraLinea = String(b.items.find(function(l){ const q = String(l || '').trim(); return q && q.length <= 70 && !lineaSoloDosisSB(q) && !IMP_RX_TIPHEAD.test(q) && !/^(?:rest|descanso|nota)\b/i.test(q); }) || '');
   const principal = (tit + ' ' + primeraLinea).toLowerCase();
-  const esCoreEj = RX_CORE_ESTRICTO.test(principal);
+  const esCoreEj = esCoreExplicitoSB(principal);
   if(/core|estabilidad/.test(tg)) return 'core';
   if(/accesor/.test(tg)) return esCoreEj ? 'core' : 'hipertrofia';
   if(/calent|warm|activaci/.test(tg)) return 'calentamiento';
@@ -5054,6 +5062,14 @@ function tituloEsNombreEj(t){
 /* modalidad (Fuerza / Hipertrofia / Core / Activación / Cardio) de un bloque de Pizarra: la
    elegida a mano o importada; si no hay, se infiere de la categoría / título / reps */
 function modalidadBloqueSB(b){
+  if(b.modalidad === 'core'){
+    /* un Remo / Tracción / Press / Sentadilla / Peso Muerto guardado antes como Core se corrige acá */
+    const items0 = Array.isArray(b.items) ? b.items : [];
+    const primera0 = String(items0.find(function(l){ const q = String(l || '').trim(); return q && q.length <= 70 && !lineaSoloDosisSB(q); }) || '');
+    const prin0 = (String(b.titulo || '') + ' ' + primera0).toLowerCase();
+    if(RX_NO_CORE.test(prin0) && !RX_CORE_EXCEPCION.test(prin0)) return impModalidadSB({ titulo: b.titulo, items: items0 }, '');
+    return 'core';
+  }
   if(b.modalidad) return b.modalidad;
   if(b.category === 'warmup') return 'calentamiento';
   if(b.category === 'accessory') return 'core';
@@ -14819,7 +14835,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function formatTipsSB(texto){
     var t = String(texto || '').trim();
     if(!t) return '';
+    t = t.replace(/(TRANSICI[OÓ]N R[AÁ]PIDA)\\s*,?\\s*\\n?\\s*SET-?UP(?: Y ANCLAJE)?\\s*:/gi, '$1 & SET-UP:');
+    t = t.replace(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ &\\/-]{3,60}),\\s*\\n+(?=[A-ZÁÉÍÓÚÑ][^:\\n]{2,70}:)/gm, '$1 & ');
     t = t.replace(/(\\S)\\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\\n]{0,70}:)/g, '$1\\n');
+    t = t.replace(/ &\\n/g, ' & ');
     return t.split(/\\n+/).map(function(l){
       l = l.trim();
       if(!l) return '';
@@ -15229,8 +15248,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<input type="text" class="jp-intensity-note" data-notekey="' + notaKey + '" placeholder="Nota opcional (ej. ' + proto.ph + ')" value="' + escSB(notaVal) + '" />' +
       '</div>';
   }
-  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo, rirAnterior){
+  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo, rirAnterior, nombreEj){
     unidadSec = unidadSec || 'reps';
+    var modoEj = modoInputSB(nombreEj);          /* 'bw' (peso corporal) | 'tiempo' (isométrico) | '' */
     var numSetsInt = parseInt(numSets, 10) || 1;
     /* directiva ("Parser avanzado de metodologías") -- [DROPSET]/[MYO-
        REPS]/[REST-PAUSE]/[AL FALLO]/[PARCIALES] son técnicas que
@@ -15288,17 +15308,28 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var pctSufijo = (setTecnica.tecnica === 'dropset' && setTecnica.pct != null) ? ' (' + setTecnica.pct + '%)' : '';
         badgeHtml = '<span class="jp-sb-set-badge jp-sb-badge-' + setTecnica.tecnica + '">' + TECNICAS_BADGE_SB[setTecnica.tecnica] + pctSufijo + '</span>';
       }
-      html += '<div class="jp-set-row-native' + doneCls + '" data-set-key="' + key + '">' +
-          '<span class="jp-set-pill">SET ' + i + '</span>' +
+      var esActMyo = esMyo && i === numSetsInt;
+      var pillTxt = esActMyo ? 'SET ' + i + ' (ACTIVACI\\u00d3N MYO-REPS)' : 'SET ' + i;
+      var kgInputHtml = '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />';
+      var secInputHtml = '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />';
+      var checkHtml = '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\\u2713</button>';
+      var inputsInner;
+      if(modoEj === 'tiempo'){
+        /* isométrico (Plancha, Hold): un único input de tiempo [ 30 ] seg */
+        inputsInner = kgInputHtml + secInputHtml + '<span class="jp-unit">seg</span>' + checkHtml;
+      } else if(modoEj === 'bw'){
+        /* peso corporal: chip BW fijo; el kg sólo aparece si se agrega lastre */
+        inputsInner = '<span class="jp-bw-chip">BW</span>' + kgInputHtml + '<span class="jp-unit jp-unit-kg">kg</span>' +
+          '<button type="button" class="jp-lastre-btn">+ Lastre</button>' +
+          '<span class="jp-sep">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
+      } else {
+        inputsInner = kgInputHtml + '<span class="jp-unit">kg</span>' + '<span class="jp-sep">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
+      }
+      var modoCls = modoEj ? ' jp-modo-' + modoEj + ((modoEj === 'bw' && parseFloat(kgVal) > 0) ? ' jp-lastre-on' : '') : '';
+      html += '<div class="jp-set-row-native' + doneCls + modoCls + '" data-set-key="' + key + '">' +
+          '<span class="jp-set-pill' + (esActMyo ? ' jp-pill-myo' : '') + '">' + pillTxt + '</span>' +
           refHtml + badgeHtml +
-          '<div class="jp-set-inputs-group">' +
-            '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
-            '<span class="jp-unit">kg</span>' +
-            '<span class="jp-sep">\\u00d7</span>' +
-            '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />' +
-            '<span class="jp-unit">' + unidadSec + '</span>' +
-            '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\\u2713</button>' +
-          '</div>' +
+          '<div class="jp-set-inputs-group">' + inputsInner + '</div>' +
         '</div>';
     }
     /* directiva ("Compilación estructurada de Myo-Reps") -- serie de
@@ -15307,38 +15338,27 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        nuevo de persistencia: cuenta para el volumen real de la sesión
        igual que cualquier otra serie tildada) + microseries en una
        sub-fila compacta debajo, cada una con su propio input chico. */
+    /* Myo-Reps (directiva "Rediseño y anclaje"): el SET de activación es la ÚLTIMA serie de la estación
+       ("SET n (ACTIVACIÓN MYO-REPS)") y el protocolo vive inmediatamente debajo, dentro de la misma tarjeta:
+       chips de mini-sets (+4, +4, +3...) y botón para agregar hasta 5 */
     if(esMyo){
       var myo = setTecnica.myo || {};
-      var activIdx = numSetsInt + 1;
-      var activKey = getLoadKey(weekIdx, dayId, blockId, exIdx, activIdx);
-      var activLd = getLoad(activKey);
-      var activKgVal = activLd.kg != null ? activLd.kg : '';
-      var activRepsVal = activLd.reps != null ? activLd.reps : '';
-      var activRepsPh = myo.activacion ? String(myo.activacion) : '0';
-      html += '<div class="jp-set-row-native' + (activLd.done ? ' completed' : '') + '" data-set-key="' + activKey + '">' +
-          '<span class="jp-set-pill">SET ' + activIdx + '</span>' +
-          '<span class="jp-sb-set-badge jp-sb-badge-myoreps">\\ud83d\\udd25 MYO-ACTIVACI\\u00d3N</span>' +
-          '<div class="jp-set-inputs-group">' +
-            '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="0" value="' + escSB(activKgVal) + '" />' +
-            '<span class="jp-unit">kg</span>' +
-            '<span class="jp-sep">\\u00d7</span>' +
-            '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="' + activRepsPh + '" value="' + escSB(activRepsVal) + '" />' +
-            '<span class="jp-unit">' + unidadSec + '</span>' +
-            '<button type="button" class="jp-btn-check-native' + (activLd.done ? ' completed' : '') + '" aria-label="Marcar serie ' + activIdx + ' completada">\\u2713</button>' +
-          '</div>' +
-        '</div>';
-      var microCount = myo.microCount > 0 ? myo.microCount : 3;
       var microReps = myo.microReps > 0 ? myo.microReps : 4;
-      var restSeg = myo.restSeg > 0 ? myo.restSeg : 10;
-      var microInputs = '';
-      for(var mi = 1; mi <= microCount; mi++){
-        var microKey = getLoadKey(weekIdx, dayId, blockId, exIdx, 'm' + mi);
-        var microVal = getLoad(microKey).reps;
-        microInputs += '<input type="number" step="1" inputmode="numeric" class="jp-myo-mini" data-micro-key="' + microKey + '" placeholder="+' + microReps + '" value="' + (microVal != null ? escSB(microVal) : '') + '" />';
+      var microBase = myo.microCount > 0 ? myo.microCount : 3;
+      var microMax = 5, microVis = Math.min(microMax, Math.max(3, microBase)), microInputs = '';
+      for(var mi = 1; mi <= microMax; mi++){
+        var microKey0 = getLoadKey(weekIdx, dayId, blockId, exIdx, 'm' + mi);
+        var microVal0 = getLoad(microKey0).reps;
+        if(microVal0 != null && microVal0 !== '' && mi > microVis) microVis = mi;
       }
-      html += '<div class="jp-myo-micro-row">' +
-          '<span class="jp-myo-micro-lb">\\u26a1 MICROSERIES (' + restSeg + 's rest):</span>' +
-          '<div class="jp-myo-micro-inputs">' + microInputs + '</div>' +
+      for(var mj = 1; mj <= microMax; mj++){
+        var mKey = getLoadKey(weekIdx, dayId, blockId, exIdx, 'm' + mj);
+        var mVal = getLoad(mKey).reps;
+        microInputs += '<input type="number" step="1" inputmode="numeric" class="jp-myo-mini' + (mVal ? ' hecho' : '') + '" data-micro-key="' + mKey + '" placeholder="+' + microReps + '" value="' + (mVal != null ? escSB(mVal) : '') + '"' + (mj > microVis ? ' hidden' : '') + ' />';
+      }
+      html += '<div class="jp-myo-mod">' +
+          '<div class="jp-myo-lb">\\u26a1 PROTOCOLO MYO-REPS (3 a 5 mini-sets @ RIR 0 con 5 respiraciones de pausa)</div>' +
+          '<div class="jp-myo-chips">' + microInputs + '<button type="button" class="jp-myo-add"' + (microVis >= microMax ? ' hidden' : '') + '>\\u2795 Agregar mini-set</button></div>' +
         '</div>';
     }
     html += '</div>';
@@ -15582,6 +15602,35 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(!ytid) return '';
     return '<button type="button" class="jp-sb-vid-mini" data-yt="' + ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(nombre).replace(/"/g, '') + '" title="Ver t\\u00e9cnica">&#9654;</button>';
   }
+  /* autocarga y calistenia: sin input de kg por defecto (chip BW + "+ Lastre"); isométricos: un único input de tiempo */
+  var RX_BW_SB = /(?:hanging|colgad|dominad|pull ?ups?|chin ?ups?|fondos?|dips?|flexion(?:es)?|push ?ups?|knee raises?|leg raises?|elevacion(?:es)? de (?:rodillas|piernas)|muscle ?ups?|burpees?|abdominales|crunch(?:es)?|sit ?ups?|v ?ups?|remo invertido|inverted row|australian)/;
+  var RX_NOBW_SB = /(?:lastre|weighted|con peso|chaleco|maquina|polea|asistid|smith)/;
+  var RX_TIEMPO_SB = /(?:plancha|plank|isometric|isometrico|hold|wall ?sit|dead ?hang|colgado pasivo|hollow|suspension)/;
+  function modoInputSB(nombre){
+    var n = normTitSB(nombre);
+    if(!n) return '';
+    if(RX_TIEMPO_SB.test(n)) return 'tiempo';
+    if(RX_BW_SB.test(n) && !RX_NOBW_SB.test(n)) return 'bw';
+    return '';
+  }
+  document.addEventListener('click', function(e){
+    var lb = e.target.closest && e.target.closest('.jp-lastre-btn');
+    if(lb){
+      var rw = lb.closest('.jp-set-row-native');
+      if(rw){ rw.classList.add('jp-lastre-on'); var ki = rw.querySelector('.jp-val-primary'); if(ki) ki.focus(); }
+      return;
+    }
+    var ad = e.target.closest && e.target.closest('.jp-myo-add');
+    if(ad){
+      var box = ad.parentElement, oc = box.querySelector('.jp-myo-mini[hidden]');
+      if(oc){ oc.hidden = false; oc.focus(); }
+      if(!box.querySelector('.jp-myo-mini[hidden]')) ad.hidden = true;
+    }
+  });
+  document.addEventListener('input', function(e){
+    var el = e.target;
+    if(el && el.classList && el.classList.contains('jp-myo-mini')) el.classList.toggle('hecho', !!el.value);
+  });
   function restAttrSB(e){ return e.restCero ? '0' : (e.restSeconds || ''); }
   function limpiarGuionActivacionSB(nombre){
     return String(nombre || '').replace(/^[\\s\\-–—•*]+/, '').trim();
@@ -15686,7 +15735,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds) +
               chipUnilateralSB(sub.unilateral) +
               (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
-              renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si)) +
+              renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre) +
             '</div>';
         }).join('');
         /* directiva maestra ("Erradicación del contador de rondas en
@@ -15770,7 +15819,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
-          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null)) +
+          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null), entry.titulo) +
         '</div>';
     });
     if(!filas) return;
@@ -15789,12 +15838,24 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const ex = metaHtmlSB(extra);
       if(!ex) return propio || '';
       if(!propio) return ex;
-      return String(propio).indexOf(ex) >= 0 ? propio : propio + '<br>' + ex;
+      /* mismo contenido escrito dos veces (campo propio + prescripción libre): se conserva sólo el más completo */
+      const np = normTitSB(String(propio).replace(/<[^>]*>/g, ' ')), ne = normTitSB(String(extra));
+      if(np.indexOf(ne) >= 0) return propio;
+      if(ne.indexOf(np) >= 0) return ex;
+      return propio + '<br>' + ex;
     };
     const objetivoHtml = unirMetaSB(block.objective, sepMeta.objective);
     const tipsHtml = /<[a-z][^>]*>/i.test(String(block.tips || ''))
       ? unirMetaSB(block.tips, sepMeta.tips)
-      : formatTipsSB([block.tips, (block.tips && String(block.tips).indexOf(sepMeta.tips) >= 0) ? '' : sepMeta.tips].filter(Boolean).join('\\n'));
+      : formatTipsSB((function(){
+          var p = String(block.tips || ''), x = String(sepMeta.tips || '');
+          if(!x) return p;
+          if(!p) return x;
+          var np = normTitSB(p), nx = normTitSB(x);
+          if(np.indexOf(nx) >= 0) return p;
+          if(nx.indexOf(np) >= 0) return x;
+          return p + '\\n' + x;
+        })());
     const tieneObjTips = objetivoHtml || tipsHtml;
     const tieneAcc = tieneObjTips || videosBloque.length;
     /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
@@ -18376,8 +18437,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     const s = size / 74, ox = (size - 64 * s) / 2;
     g.save(); g.translate(ox, size * 0.03); g.scale(s * 0.94, s * 0.94);
     const grad = g.createLinearGradient(0, 0, 64, 74);
-    if(v === 'cf'){ grad.addColorStop(0, '#2C363E'); grad.addColorStop(1, '#10161B'); }
-    else { grad.addColorStop(0, '#F2F4F7'); grad.addColorStop(.45, '#B3BAC5'); grad.addColorStop(1, '#7B5B45'); }
+    if(v === 'cf'){ grad.addColorStop(0, '#171D22'); grad.addColorStop(1, '#06080A'); }
+    else { grad.addColorStop(0, '#5A6270'); grad.addColorStop(.5, '#2F353F'); grad.addColorStop(1, '#171B21'); }
     g.fillStyle = grad;
     g.beginPath(); g.moveTo(32,2); g.lineTo(60,12); g.lineTo(60,36);
     g.bezierCurveTo(60,54,47,66,32,72); g.bezierCurveTo(17,66,4,54,4,36);
@@ -18398,7 +18459,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       g.fillStyle = '#39FF88'; g.beginPath(); g.arc(32, 42, 2, 0, Math.PI * 2); g.fill();
     } else {
       /* mancuerna angular: barra + discos con aristas cortadas */
-      g.fillStyle = '#17110C';
+      g.fillStyle = '#E8EBF0';
       g.fillRect(17, 36, 30, 4);
       [false, true].forEach(function(e){
         poli([[21,28],[26,28],[26,48],[21,48],[19,46],[19,30]], e);
@@ -18794,7 +18855,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       <button type="button" class="ph-tab" data-phtab="prs">🏆 RÉCORDS (PRs)</button>
     </div>
     <div class="ph-pane" id="phPaneProg">
-      <select id="phProgSel" class="ph-sel" aria-label="Ejercicio de tu rutina"></select>
+      <div class="ph-days" id="phDays"></div>
+      <select id="phProgSel" class="ph-sel" aria-label="Ejercicio del día"></select>
       <div id="phProgOut"></div>
     </div>
     <div class="ph-pane" id="phPanePrs" style="display:none">
@@ -19145,6 +19207,11 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     });
     var selP = document.getElementById('phProgSel');
     if(selP) selP.addEventListener('change', pintarProg);
+    var daysP = document.getElementById('phDays');
+    if(daysP) daysP.addEventListener('click', function(e){
+      var b = e.target.closest('[data-phday]'); if(!b) return;
+      phDia = b.getAttribute('data-phday'); if(selP) selP.dataset.firma = ''; pintarProg();
+    });
     var shB = document.getElementById('phShare');
     if(shB) shB.addEventListener('click', function(){
       var o = hub(), lin = ['🏆 Mis récords · Coach JP'];
@@ -19165,6 +19232,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(t === 'prog') pintarProg(); else pintarHub();
   }
   /* ejercicios de la rutina activa que llevan series (simples y estaciones de bisets) */
+  /* sólo nombres reales de ejercicio: nunca "DÍA 1 · 3 Sets" ni líneas de dosis */
+  function nombreEjValido(n){
+    n = String(n || '').trim();
+    if(!n || /^(?:d[ií]a|day)\\s*\\d+/i.test(n) || /^\\d+\\s*(?:sets?|series?|rondas?|x|\\u00d7)/i.test(n)) return false;
+    if(/^(?:rest|tempo|rir|nota)\\b/i.test(n)) return false;
+    return n.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= 4;
+  }
   function progEjercicios(){
     var out = [];
     try{
@@ -19174,7 +19248,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
           var lin = itemsDeSemana(b, 0).filter(function(l){ return l != null && String(l).trim(); });
           window.parsearPizarraSB(lin, { titulo: b.title }).forEach(function(en, idx){
             var add = function(nombre, exIdx){
-              if(nombre) out.push({ id: day.id + '|' + b.id + '|' + exIdx, dayId: day.id, blockId: b.id, exIdx: exIdx, nombre: nombre, dia: day.short || '' });
+              if(nombreEjValido(nombre)) out.push({ id: day.id + '|' + b.id + '|' + exIdx, dayId: day.id, diaN: DAYS.indexOf(day) + 1, blockId: b.id, exIdx: exIdx, nombre: nombre, dia: day.short || '' });
             };
             if(en.tipo === 'simple' && en.sets) add(en.titulo, 'e' + idx);
             else if(en.tipo === 'biserie') en.subs.forEach(function(s, si){ add(s.nombre, 'b' + idx + 's' + si); });
@@ -19184,20 +19258,26 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     }catch(e){}
     return out;
   }
+  var phDia = null;
   function pintarProg(){
-    var sel = document.getElementById('phProgSel'), out = document.getElementById('phProgOut');
+    var daysEl = document.getElementById('phDays'), sel = document.getElementById('phProgSel'), out = document.getElementById('phProgOut');
     if(!sel || !out) return;
     var lista = progEjercicios();
-    if(!lista.length){ sel.innerHTML = ''; out.innerHTML = '<div class="ph-sub ph-empty">Todavía no hay ejercicios con series en tu rutina.</div>'; return; }
-    if(sel.dataset.n !== String(lista.length)){
-      var prev = sel.value;
-      sel.innerHTML = lista.map(function(x){ return '<option value="' + escAttr(x.id) + '">' + escTxt((x.dia ? x.dia + ' · ' : '') + x.nombre) + '</option>'; }).join('');
-      sel.dataset.n = String(lista.length);
-      if(prev) sel.value = prev;
+    if(!lista.length){ if(daysEl) daysEl.innerHTML = ''; sel.innerHTML = ''; out.innerHTML = '<div class="ph-sub ph-empty">Todavía no hay ejercicios con series en tu rutina.</div>'; return; }
+    var dias = [];
+    lista.forEach(function(x){ if(!dias.some(function(d){ return d.id === x.dayId; })) dias.push({ id: x.dayId, lb: 'D' + x.diaN }); });
+    if(!phDia || !dias.some(function(d){ return d.id === phDia; })) phDia = dias.some(function(d){ return d.id === state.currentDay; }) ? state.currentDay : dias[0].id;
+    if(daysEl) daysEl.innerHTML = dias.map(function(d){ return '<button type="button" class="ph-day' + (d.id === phDia ? ' on' : '') + '" data-phday="' + escAttr(d.id) + '">' + d.lb + '</button>'; }).join('');
+    var delDia = lista.filter(function(x){ return x.dayId === phDia; });
+    var firma = delDia.map(function(x){ return x.id; }).join(',');
+    if(sel.dataset.firma !== firma){
+      sel.innerHTML = delDia.map(function(x){ return '<option value="' + escAttr(x.id) + '">' + escTxt(x.nombre) + '</option>'; }).join('');
+      sel.dataset.firma = firma;
     }
-    var ex = lista.filter(function(x){ return x.id === sel.value; })[0] || lista[0];
+    var ex = delDia.filter(function(x){ return x.id === sel.value; })[0] || delDia[0];
+    sel.value = ex.id;
     var semanas = (typeof WEEKS_META !== 'undefined' && WEEKS_META.length) ? WEEKS_META.length : 4;
-    var filas = '', volTotal = 0, hayDatos = false;
+    var filas = '', volTotal = 0, hayDatos = false, volPrev = 0;
     for(var w = 0; w < semanas; w++){
       var sets = [], vol = 0;
       for(var si = 1; si <= 12; si++){
@@ -19205,12 +19285,16 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         if(!l) continue;
         var kg = parseFloat(l.kg), rp = parseFloat(l.reps);
         if(!(kg > 0) && !(rp > 0)) continue;
-        sets.push((kg > 0 ? kg : '–') + '×' + (rp > 0 ? rp : '–'));
-        if(kg > 0 && rp > 0) vol += kg * rp;
+        sets.push((kg > 0 ? kg : 'BW') + '\\u00d7' + (rp > 0 ? rp : '–'));
+        vol += (kg > 0 ? kg : 0) * (rp > 0 ? rp : 0);
       }
       if(sets.length) hayDatos = true;
       volTotal += vol;
-      filas += '<div class="ph-prow' + (sets.length ? '' : ' vacio') + '"><b>S' + (w + 1) + '</b><span>' + (sets.length ? sets.join(' · ') : 'sin registro') + '</span><em>' + (vol ? Math.round(vol).toLocaleString('es-AR') + ' kg' : '') + '</em></div>';
+      var delta = '';
+      if(vol > 0 && volPrev > 0){ var pc = Math.round((vol - volPrev) / volPrev * 100); delta = '<i class="ph-delta ' + (pc >= 0 ? 'up' : 'down') + '">' + (pc > 0 ? '+' : '') + pc + '%</i>'; }
+      else if(vol > 0) delta = '<i class="ph-delta">base</i>';
+      if(vol > 0) volPrev = vol;
+      filas += '<div class="ph-prow' + (sets.length ? '' : ' vacio') + '"><b>S' + (w + 1) + '</b><span>' + (sets.length ? sets.join(' · ') : 'sin registro') + '</span><em>' + (vol ? Math.round(vol).toLocaleString('es-AR') + ' kg' : '') + '</em>' + (delta || '<i class="ph-delta"></i>') + '</div>';
     }
     out.innerHTML = '<div class="ph-pmat">' + filas + '</div>' +
       '<div class="ph-ptot">Volumen total acumulado <b>' + Math.round(volTotal).toLocaleString('es-AR') + ' kg</b></div>' +
@@ -20293,7 +20377,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(seg === 10){
       if(duracionFase(cfg()) > 20 && fase !== 'prep') jpBox.aviso10();
     } else if(seg === 3 || seg === 2 || seg === 1){
-      jpBox.cuenta(); jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
+      if(seg === 1) jpBox.go(); else jpBox.cuenta();
+      jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
       /* GO tras la cuenta 3-2-1: tono agudo y enérgico (1760 Hz); el resto de las transiciones conserva la bocina */
       if(fase === 'prep') jpBox.go(); else jpBox.chicharra();
@@ -35126,8 +35211,8 @@ body.jp-mission .hdc-name::after{ content:' // ATLETA PRO'; color:#E5C378; font-
 body.jp-mission .hdc-chip-row{ display:flex; gap:6px; min-height:0; }
 body.jp-mission .hdc-fz, body.jp-mission .hdc-info{ width:32px !important; height:32px !important; min-width:32px !important; flex:0 0 32px; }
 body.jp-mission .hdc-fz-tx{ font-size:.8rem !important; }
-body.jp-mission .jp-hist-btn{ display:inline-flex !important; align-items:center; gap:4px; flex:0 0 auto; height:32px; padding:0 10px !important; margin:0 !important; border-radius:9px;
-  font-size:.64rem !important; letter-spacing:.05em; white-space:nowrap; order:0; }
+body.jp-mission .jp-hist-btn{ display:inline-flex !important; align-items:center; gap:4px; flex:0 0 auto; height:32px; padding:4px 8px !important; margin:0 !important; border-radius:9px;
+  font-size:11px !important; letter-spacing:.05em; white-space:nowrap; order:0; }
 body.jp-mission .hdc-days-row{ display:flex !important; align-items:center; gap:8px; position:relative; height:auto !important; min-height:52px; padding:6px 12px 8px !important; }
 body.jp-mission .hdc-days-wrap{ flex:1 1 auto; min-width:0; padding:0 !important; height:auto !important; }
 body.jp-mission .hdc-days-wrap .week-tabs-wrap{ background:none !important; border:none !important; padding:0 !important; position:static !important; overflow:visible !important; box-shadow:none !important; }
@@ -35165,11 +35250,19 @@ body.jp-mission .day-view > details.jp-foco-acc{ display:none !important; }
 .jp-dir-box h4{ margin:0 0 4px; font-family:'JetBrains Mono',monospace; font-size:.7rem; letter-spacing:.1em; color:#38bdf8; }
 .jp-dir-box h3{ margin:0 0 10px; font-family:'Chakra Petch',sans-serif; font-size:1.05rem; color:#EDEFF2; }
 .jp-dir-box p{ margin:0 0 14px; line-height:1.6; font-size:.9rem; color:#cbd5e1; white-space:pre-line; }
+/* tipografía: Chakra Petch en marca, chips, encabezados, carruseles y métricas; Inter en los párrafos pedagógicos */
+.hdc-brand-mark, .hdc-brand-mark em, .hd-wordmark, .masthead-wordmark{ font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; letter-spacing:.08em !important; text-transform:uppercase; }
+.jp-sb-tag, .jp-session-pretag, .jp-sb-title, .jp-sb-ex-nombre, .jp-sb-subex-nombre, .jp-sb-plain-nombre, .jp-sb-plain-pill, .jp-sb-letra,
+.day-tab, .day-tab .tab-name, .week-pill, .week-pill-name, .jp-wk-btn, .jp-wk-pop button,
+.jp-dose-banner > span, .jp-set-pill, .jp-input-native, .jp-unit, .jp-sep, .jp-myo-mini, .jp-bw-chip, .jp-lastre-btn,
+.jp-brief-hud span, .jp-tonelaje-val, .jp-tonelaje-un, .progress-count, .cwt-time, .cwt-full .cf-time, .cwt-phase, .cwt-full .cf-phase, .cwt-full .cf-round,
+.prhub .ph-prow, .prhub .ph-day, .prhub .ph-delta, .jp-hist-btn, .hdc-name, .hdc-fz-tx{ font-family:'Chakra Petch','Barlow Condensed',sans-serif !important; }
+.jp-sb-pauta-txt, .jp-tip-fase, .jp-dir-box p, .jp-sb-nota{ font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif !important; }
 .jp-tip-fase{ margin-bottom:8px; line-height:1.55; }
 .jp-tip-fase:last-child{ margin-bottom:0; }
 .jp-tip-lb{ color:#F5B642; font-weight:800; letter-spacing:.02em; }
 .site-footer{ padding-bottom:calc(110px + env(safe-area-inset-bottom)) !important; }
-body.jp-mission .hdc-id{ display:grid !important; grid-template-columns:minmax(0,auto) 1fr; grid-template-areas:"brand brand" "name chip"; column-gap:8px; row-gap:1px; align-items:center; }
+body.jp-mission .hdc-id{ display:grid !important; grid-template-columns:auto minmax(0,1fr); grid-template-areas:"brand chip" "name name"; column-gap:6px; row-gap:2px; align-items:center; max-width:55vw; overflow:hidden; }
 body.jp-mission .hdc-brand{ display:block !important; grid-area:brand; line-height:1; }
 body.jp-mission .hdc-brand-sub{ display:none !important; }
 body.jp-mission .hdc-brand-mark, body.jp-mission .hdc-brand-mark em{ font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-size:11px !important; font-weight:600; letter-spacing:.22em; color:#94A3B8 !important; font-style:normal; text-shadow:none !important; }
@@ -35178,12 +35271,42 @@ body.jp-mission .hdc-name::after{ content:none !important; }
 body.jp-mission .hdc-chip-row{ grid-area:chip; min-width:0; }
 body.jp-mission .hdc-pay-chip{ display:inline-flex; }
 body.jp-mission .hdc-pay-chip:empty{ display:none; }
-body.jp-mission .hdc-chip-row .jp-status-pill{ font-size:10px !important; line-height:1; padding:3px 7px !important; border-radius:999px; font-weight:800; letter-spacing:.05em; white-space:nowrap; }
+body.jp-mission .hdc-chip-row .jp-status-pill{ font-size:9px !important; line-height:1; padding:1px 5px !important; border-radius:999px; font-weight:800; letter-spacing:.05em; white-space:nowrap; }
 body.jp-mission .hdc-chip-row .jp-status-active{ color:#34F5A0 !important; background:rgba(52,245,160,.1) !important; border:1px solid rgba(52,245,160,.45) !important; text-shadow:0 0 8px rgba(52,245,160,.55); }
 body.jp-mission .hdc-info span{ font-size:1.05rem; line-height:1; }
 body.jp-mission .day-header{ position:relative; }
 body.jp-mission .day-header > div:first-child{ padding-right:112px; }
 body.jp-mission .jp-brief-dir{ position:absolute; top:12px; right:12px; margin:0 !important; padding:6px 10px !important; }
+/* Perfil & Ajustes: modal independiente sobre toda la vista; una sola selección de unidades */
+.hd-full-drawer{ top:0 !important; bottom:0; height:100vh; height:100dvh; max-height:none !important; z-index:960 !important; padding-top:env(safe-area-inset-top); overflow-y:auto; }
+.hd-full-drawer .hdp-panel{ padding-bottom:calc(32px + env(safe-area-inset-bottom)); }
+#hdpQtSlot #uniSwitch{ display:none !important; }
+/* escudo del cronómetro: 85vw (máx 380px), centrado detrás del contador, trazo fino ámbar */
+.cwt-full .cf-shield{ width:85vw !important; max-width:380px !important; opacity:.14; left:50% !important; top:50% !important; transform:translate(-50%,-50%) !important; }
+.cwt-full .cf-shield path{ stroke:#F5B642 !important; stroke-width:1.2 !important; }
+/* Myo-Reps anclado a su estación */
+.jp-set-pill.jp-pill-myo{ white-space:normal; line-height:1.15; font-size:.62rem; }
+.jp-myo-mod{ margin-top:8px; padding:10px; border-radius:10px; background:rgba(255,107,0,.07); border:1px solid rgba(255,107,0,.35); }
+.jp-myo-lb{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.68rem; letter-spacing:.03em; color:#ff8533; margin-bottom:8px; line-height:1.35; }
+.jp-myo-chips{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.jp-myo-chips .jp-myo-mini{ width:54px; min-height:38px; text-align:center; border-radius:999px; background:#0b0e14; border:1px solid #2a3344; color:#EDEFF2; font-size:.85rem; }
+.jp-myo-chips .jp-myo-mini.hecho{ border-color:#ff6b00; color:#ff8533; background:rgba(255,107,0,.12); }
+.jp-myo-chips .jp-myo-mini[hidden], .jp-myo-chips .jp-myo-add[hidden]{ display:none !important; }
+.jp-myo-add{ min-height:38px; padding:0 12px; border-radius:999px; cursor:pointer; background:transparent; border:1px dashed #ff6b00; color:#ff8533; font-weight:700; font-size:.72rem; }
+/* peso corporal (BW) e isométricos de tiempo */
+.jp-bw-chip{ padding:4px 9px; border-radius:6px; background:rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.45); color:#38bdf8; font-weight:800; font-size:.72rem; letter-spacing:.06em; }
+.jp-lastre-btn{ padding:4px 8px; border-radius:6px; cursor:pointer; background:transparent; border:1px dashed #475569; color:#94A3B8; font-size:.66rem; }
+.jp-modo-tiempo .jp-val-primary{ display:none !important; }
+.jp-modo-bw:not(.jp-lastre-on) .jp-val-primary, .jp-modo-bw:not(.jp-lastre-on) .jp-unit-kg{ display:none !important; }
+.jp-modo-bw.jp-lastre-on .jp-lastre-btn{ display:none; }
+/* historial: días y deltas */
+.prhub .ph-days{ display:flex; gap:6px; margin-bottom:10px; overflow-x:auto; scrollbar-width:none; }
+.prhub .ph-day{ flex:0 0 auto; min-width:44px; padding:7px 10px; border-radius:9px; cursor:pointer; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.14); color:#A0A8B4; font-weight:800; font-size:.78rem; }
+.prhub .ph-day.on{ background:linear-gradient(135deg,#ffb347,#d2793f); border-color:#ffb347; color:#1a1204; }
+.prhub .ph-prow{ grid-template-columns:34px minmax(0,1fr) auto 52px !important; }
+.prhub .ph-delta{ font-style:normal; font-size:.72rem; font-weight:800; text-align:right; color:#8B93A1; }
+.prhub .ph-delta.up{ color:#34F5A0; }
+.prhub .ph-delta.down{ color:#ff6b57; }
 .jp-dir-box button{ width:100%; padding:11px; border-radius:10px; cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,.22); color:#EDEFF2; font-weight:800; letter-spacing:.06em; text-transform:uppercase; font-size:.76rem; }
 </style>
 
@@ -48686,7 +48809,7 @@ body.man-mode .gs-fab{right:318px}
     const t = String(b.titulo || '');
     if(/calentamiento|warm.?up|movilidad|activaci[oó]n|entrada\s+en\s+calor/i.test(t)) return 'calentamiento';
     if(/finisher|cardio|cinta/i.test(t)) return 'metcon';
-    if(typeof RX_CORE_ESTRICTO !== 'undefined' && (RX_CORE_ESTRICTO.test(t) || /estabilidad/i.test(t))) return 'core';
+    if(typeof esCoreExplicitoSB === 'function' && (esCoreExplicitoSB(t) || (/estabilidad/i.test(t) && !RX_NO_CORE.test(t)))) return 'core';
     if(/metcon|amrap|emom|for\s*time|\bwod\b/i.test(t)) return 'metcon';
     return 'fuerza';
   }
