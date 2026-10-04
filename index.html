@@ -4488,7 +4488,10 @@ function parsearImportacion(texto, sports){
   if(sports) dias.forEach(d => { d.bloques = d.bloques.filter(b => b.items.length > 0); });
   /* un bloque sin cuerpo es casi seguro un error de tipeo del delimitador */
   dias.forEach(d => d.bloques.forEach(b => { if(!b.items.length) avisos.push((d.num ? 'Día ' + d.num : 'Día') + ': el bloque "' + (b.titulo || b.fase) + '" no tiene prescripción'); }));
-  return { dias: dias, avisos: avisos };
+  /* causa real de "el Día 1 queda vacío": una línea suelta antes del primer encabezado (título del plan, "SEMANA 1"...)
+     abre un día SIN número y SIN bloques; ese día fantasma ocupaba el índice 0 y corría todo el contenido un lugar
+     (el DÍA 1 caía en el Día 2, etc.). Se descartan los días que no traen bloques, número ni título. */
+  return { dias: dias.filter(d => d.bloques.length || d.num || d.titulo), avisos: avisos };
 }
 let _impModo = 'dia', _impTexto = '';
 const IMP_PLACEHOLDER = '=== DÍA 1: Oly Cycling, Press Den y Metcon ===\nFOCO: Velocidad de barra, salí agresivo los primeros 2 minutos.\n[WARM-UP]\n2 min Bike suave\n10 Air Squats\n[SKILL / STRENGTH] Power Snatch\n5x2 Power Snatch @ 60kg\nRest 90s\n[WOD / METCON] Cindy\nAMRAP 12 min:\n5 Pull-ups\n10 Push-ups\n15 Air Squats\n[ACCESSORY / COOLDOWN]\n3x12 DB Row @ 20kg\n\n=== DÍA 2: ... ===';
@@ -4570,7 +4573,7 @@ function ejecutarImportacion(texto, modo){
   /* causa real del "sólo carga el Día 1": el modo por defecto es "Día activo",
      que toma UN solo día del texto aunque se pegue la semana entera. Si el
      texto trae varios encabezados DÍA, se importan todos (modo semana). */
-  if(modo === 'dia' && r.dias.length > 1){
+  if(modo === 'dia' && r.dias.filter(d => d.bloques.length).length > 1){
     modo = 'semana'; _impModo = 'semana';
     toast('Se detectaron ' + r.dias.length + ' días en el texto: se importa la semana completa', 'warn');
   }
@@ -4589,15 +4592,21 @@ function ejecutarImportacion(texto, modo){
   const asign = [];
   if(modo === 'dia'){
     const act = S.ui.day;
-    asign.push({ idx: act, dia: r.dias.find(d => d.num === act + 1) || r.dias[0] });
+    asign.push({ idx: act, dia: r.dias.find(d => d.num === act + 1 && d.bloques.length) || r.dias.find(d => d.bloques.length) || r.dias[0] });
   } else {
-    const usados = new Set(); let sig = 0;
+    /* 1.ª pasada: cada día con número explícito va a SU índice (DÍA 1 = 0, DÍA 2 = 1...); 2.ª pasada: los que no traen número
+       (o lo repiten) ocupan el primer índice libre, en orden de aparición. Se mapea por índice, nunca con push sobre un día 1 ya existente. */
+    const usados = new Set();
     r.dias.forEach(dia => {
-      let idx = (dia.num && dia.num >= 1 && !usados.has(dia.num - 1)) ? dia.num - 1 : -1;
-      if(idx < 0){ idx = sig; while(usados.has(idx)) idx++; }
-      usados.add(idx); sig = idx + 1;
-      asign.push({ idx: idx, dia: dia });
+      if(dia.num >= 1 && !usados.has(dia.num - 1)){ usados.add(dia.num - 1); asign.push({ idx: dia.num - 1, dia: dia }); }
     });
+    let sig = 0;
+    r.dias.forEach(dia => {
+      if(asign.some(a => a.dia === dia)) return;
+      while(usados.has(sig)) sig++;
+      usados.add(sig); asign.push({ idx: sig, dia: dia });
+    });
+    asign.sort((x, y) => x.idx - y.idx);
     if(asign.some(a => a.idx >= MAX_DIAS)){ toast('El texto trae días fuera del rango (máximo ' + MAX_DIAS + ' días por mesociclo)', 'err'); return false; }
   }
   let pisados = 0, nuevos = 0;
@@ -4642,8 +4651,8 @@ function ejecutarImportacion(texto, modo){
   /* se abre el primer día importado: en "semana completa" el día activo
      podía ser otro y mostraba su "DÍA VACÍO" aunque la importación hubiera
      funcionado */
-  const primero = asign.find(a => a.dia.bloques.length);
-  if(primero) S.ui.day = primero.idx;
+  const conBloques = asign.filter(a => a.dia.bloques.length);
+  if(conBloques.length) S.ui.day = Math.min.apply(null, conBloques.map(a => a.idx));
   /* éxito: el textarea se vacía ANTES de repintar (si no, el importador se
      volvía a dibujar con el texto viejo) y el modo vuelve a "Día activo" para
      que el cambio automático a semana no quede pegado en la próxima importación */
