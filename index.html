@@ -16,7 +16,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230A0A0B'/%3E%3Cpath d='M13 4L6.5 13.5 12 13l-1 6.5 6.5-9.5-5.5.5z' fill='%2338BDF8' stroke='%23000' stroke-width='0.8' stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
 <script>
 /* ---- blindaje de consola: algunos visores embebidos recortan console.* ---- */
 (function(){
@@ -591,23 +591,25 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <div class="sub">Multi-Athlete System · perfiles, reglas biomecánicas y restricciones</div>
         </div>
         <div class="spacer"></div>
-        <span class="pill" data-lsbadge style="display:none" title="Espacio usado del almacenamiento local de este navegador (límite aprox. 5 MB)"></span>
-        <button class="btn" data-backup-export title="Descarga un archivo coach_jp_backup_AAAA-MM-DD.json con todos los alumnos, la biblioteca y los planes">💾 EXPORTAR BACKUP JSON</button>
-        <button class="btn" data-backup-restore title="Carga un backup .json previo y reemplaza los datos actuales (pide confirmación)">📥 RESTAURAR BACKUP</button>
-        <button class="btn gold" id="btnNewAth">➕ Registrar Nuevo Alumno/a</button>
+        <details class="jp-dd" id="ddBackup">
+          <summary class="btn">💾 Backup / Datos <span class="jp-dd-ch">▾</span></summary>
+          <div class="jp-dd-menu">
+            <span class="pill" data-lsbadge style="display:none" title="Espacio usado del almacenamiento local de este navegador (límite aprox. 5 MB)"></span>
+            <button class="btn" data-backup-export title="Descarga un archivo coach_jp_backup_AAAA-MM-DD.json con todos los alumnos, la biblioteca y los planes">💾 EXPORTAR BACKUP JSON</button>
+            <button class="btn" data-backup-restore title="Carga un backup .json previo y reemplaza los datos actuales (pide confirmación)">📥 RESTAURAR BACKUP</button>
+          </div>
+        </details>
+        <button class="btn gold" id="btnNewAth">➕ REGISTRAR ALUMNO</button>
       </div>
 
-      <div class="card" style="margin-bottom:16px">
-        <div class="row">
-          <div style="flex:1;min-width:230px">
-            <label class="lb">Alumno/a activo/a en el builder</label>
-            <select id="selActive"></select>
-          </div>
-          <div style="flex:2;min-width:230px">
-            <label class="lb">Buscar alumno/a</label>
-            <input id="athSearch" placeholder="Nombre, apellido, objetivo…">
-          </div>
+      <div class="card jp-activebar" style="margin-bottom:16px">
+        <div class="jp-activepill" id="jpActivePill"></div>
+        <div class="jp-searchwrap">
+          <span class="jp-search-ic">🔍</span>
+          <input id="athSearch" placeholder="Buscar alumno/a: nombre, apellido, objetivo…">
+          <kbd>Ctrl + K</kbd>
         </div>
+        <select id="selActive" style="display:none"></select>
       </div>
 
       <div class="ath-grid" id="athGrid"></div>
@@ -627,9 +629,9 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
 
       <div class="card" style="margin-bottom:16px">
         <div class="grid g4">
-          <div>
+          <div class="jp-exsearch">
             <label class="lb">Buscar (tiempo real)</label>
-            <input id="exSearch" placeholder="Ej: hip thrust, remo, press…">
+            <div class="jp-searchwrap"><span class="jp-search-ic">🔍</span><input id="exSearch" placeholder="Ej: hip thrust, remo, press…"><kbd>Ctrl + K</kbd></div>
           </div>
           <div>
             <label class="lb">Grupo muscular</label>
@@ -649,8 +651,9 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           </div>
         </div>
         <div class="row" style="margin-top:12px">
-          <span class="pill" id="exCount">0 ejercicios</span>
+          <div class="jp-statusbar"><span class="pill" id="exCount">0 ejercicios</span>
           <span class="pill teal" id="exVidCount">0 con video</span>
+          <span class="pill amber" id="exPendCount">0 pendientes</span></div>
           <div class="spacer"></div>
           <button class="btn sm ghost" id="btnFiltroComplejo" title="Filtrar por Multiarticular / Complejo Atlético en un clic">🎯 Complejo Atlético</button>
           <button class="btn sm ghost" id="btnClearFilters">Limpiar filtros</button>
@@ -2722,8 +2725,8 @@ function renderAthletes(){
         (a.foco ? '<div class="mini"><b>Foco:</b> ' + esc(a.foco) + '</div>' : '') +
         (a.deportes ? '<div class="mini"><b>Extra:</b> ' + esc(a.deportes) + '</div>' : '') +
         '<div class="tagwrap">' +
-          (a.tags||[]).slice(0,3).map(t => '<span class="pill orange">🦴 ' + esc(t) + '</span>').join('') +
-          ((a.tags||[]).length > 3 ? '<span class="pill">+' + ((a.tags||[]).length-3) + '</span>' : '') +
+          ((a.tags||[]).length ? '<button type="button" class="pill orange jp-restr" data-restr="1" title="' + esc((a.tags||[]).join(' · ')) + '">⚠ RESTRICCIÓN CLÍNICA</button>' +
+            '<div class="jp-restr-det" hidden>' + esc((a.tags||[]).join(' · ')) + '</div>' : '') +
           ((a.prohibidos||[]).length ? '<span class="pill red">⛔ ' + a.prohibidos.length + ' prohibido(s)</span>' : '') +
           ((a.preferidos||[]).length ? '<span class="pill teal">⭐ ' + a.preferidos.length + ' preferido(s)</span>' : '') +
         '</div>' +
@@ -2744,6 +2747,7 @@ function renderAthletes(){
   $('#expAth').innerHTML   = opts; $('#expAth').value   = S.activeId || '';
   $('#badgeAth').textContent = S.athletes.length;
   $('#sideActive').textContent = active() ? fullName(active()) : '— ninguno —';
+  if(typeof pintarActivePill === 'function') pintarActivePill();
   $('#dlEx').innerHTML = S.exercises.map(e => '<option value="' + esc(e.es) + '">').join('');
   actualizarDiscEyebrow();
 }
@@ -4495,7 +4499,7 @@ function parsearImportacion(texto, sports){
 }
 let _impModo = 'dia', _impTexto = '';
 const IMP_PLACEHOLDER = '=== DÍA 1: Oly Cycling, Press Den y Metcon ===\nFOCO: Velocidad de barra, salí agresivo los primeros 2 minutos.\n[WARM-UP]\n2 min Bike suave\n10 Air Squats\n[SKILL / STRENGTH] Power Snatch\n5x2 Power Snatch @ 60kg\nRest 90s\n[WOD / METCON] Cindy\nAMRAP 12 min:\n5 Pull-ups\n10 Push-ups\n15 Air Squats\n[ACCESSORY / COOLDOWN]\n3x12 DB Row @ 20kg\n\n=== DÍA 2: ... ===';
-const IMP_PLACEHOLDER_SB = '=== DÍA 1: Empuje · Pecho, Hombro y Tríceps ===\nFOCO: Tensión mecánica en pecho; controlá la fase excéntrica.\n[BLOQUE 1] Press banca plano con barra\n4 Sets: 8-10 reps @ RIR 1-2\nRest 2:00\nOBJETIVO: Máxima tensión mecánica en el rango medio\nTIPS: Escápulas retraídas, bajada de 3 segundos.\n[HIPERTROFIA] Press militar con mancuernas\n3x10-12 | Tempo 3010 | RIR 2 | Rest 90s\n[ACCESORIO] Elevaciones laterales\n3 Sets: 12-15 reps @ RIR 1\nRest 1:00\n\n=== DÍA 2: ... ===';
+const IMP_PLACEHOLDER_SB = '=== DÍA 1: Empuje · Pecho y Hombro ===\n[NOMBRE DEL DÍA] Empuje\n[FOCO DEL COACH] Tensión mecánica en pecho; controlá la fase excéntrica.\n[BLOQUE 1] Entrada en calor de hombro\n- Rotaciones externas con banda x 12\n- Cat cow lento x 10\n[BLOQUE 2] Press banca plano con barra\n4x8-10 | Tempo 3010 | RIR 2\nRest 120s\n[OBJETIVO FISIOLÓGICO]\nMáxima tensión mecánica en el rango medio.\n[COACHING TIPS & ESTRATEGIA]\nSET-UP & ESTABILIDAD INICIAL: escápulas retraídas.\nCONTROL DE LA FASE EXCÉNTRICA: bajada de 3 segundos.\n[BLOQUE 3] Biset: Hombro & Tríceps\nA1. Elevaciones laterales\n3x12-15 | Tempo 2011 | RIR 0-1\nA2. Extensión de tríceps en polea\n3x12-15 | Tempo 2011 | RIR 0-1\nRest 90s\n\n=== DÍA 2: ... ===';
 /* sports: true -> modalidad Sports & Bodybuilding (vocabulario de hipertrofia) */
 function impEsSports(){ const p = plan(S.activeId); return !(p && esPlanCFActivo(p)); }
 function htmlImportadorRapido(){
@@ -4503,16 +4507,16 @@ function htmlImportadorRapido(){
   return '<details class="card" id="impBox" style="margin-bottom:14px">' +
     '<summary class="lb" style="cursor:pointer">📋 Importador rápido de sesión · Pegar día completo (auto-split por bloque)</summary>' +
     '<div style="margin-top:10px">' +
-      '<div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap">' +
-        '<button type="button" class="btn sm ' + (_impModo === 'dia' ? 'gold' : 'ghost') + '" data-impmodo="dia">⚡ IMPORTAR DÍA ACTIVO</button>' +
-        '<button type="button" class="btn sm ' + (_impModo === 'semana' ? 'gold' : 'ghost') + '" data-impmodo="semana">📅 IMPORTAR SEMANA COMPLETA (' + (sp ? 'DÍA 1..N' : 'S1..S4') + ')</button>' +
-      '</div>' +
       '<textarea id="cfPegarTxt" style="min-height:240px" placeholder="' + esc(sp ? IMP_PLACEHOLDER_SB : IMP_PLACEHOLDER) + '">' + esc(_impTexto) + '</textarea>' +
       '<div id="impPreview" class="hint" style="margin-top:6px"></div>' +
-      '<button type="button" class="btn gold sm" style="margin-top:8px" data-impgo="1">⚡ PROCESAR E IMPORTAR</button>' +
+      '<div class="imp-actions">' +
+        '<button type="button" class="btn gold sm" data-impgo="dia">IMPORTAR DÍA ACTIVO</button>' +
+        '<span class="imp-sep"></span>' +
+        '<button type="button" class="btn sm imp-semana" data-impgo="semana">IMPORTAR SEMANA COMPLETA (' + (sp ? 'DÍA 1..N' : 'S1..S4') + ')</button>' +
+      '</div>' +
       (sp
-        ? '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> · <b>FOCO:</b> (foco del coach) · cada ejercicio con <b>[BLOQUE X] Nombre</b>, <b>[FUERZA]</b>, <b>[HIPERTROFIA]</b> o <b>[ACCESORIO]</b> + nombre · prescripción <b>4 Sets: 8-10 reps @ RIR 1-2</b> o <b>4x8-10 | Tempo 3010 | RIR 2</b> · descanso <b>Rest 2:00</b> / <b>Rest 90s</b> · <b>OBJETIVO:</b> y <b>TIPS:</b> van a sus propios campos. ' +
-          '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su pestaña correlativa (la progresión S2-S4 se genera con "Ondular mesociclo").</div>'
+        ? '<div class="hint" style="margin-top:6px">Sintaxis esperada: cada día empieza con <b>=== DÍA X: Título ===</b> (opcional <b>[NOMBRE DEL DÍA]</b> y <b>[FOCO DEL COACH]</b>) · cada ejercicio con <b>[BLOQUE X] Nombre</b> (o <b>[FUERZA]</b>, <b>[HIPERTROFIA]</b>, <b>[ACCESORIO]</b> + nombre) · prescripción <b>4x8-10 | Tempo 3010 | RIR 2</b> y descanso <b>Rest 120s</b> · bisets con <b>A1.</b> / <b>A2.</b> · listas de calentamiento con <b>- Ejercicio x 12</b> · <b>[OBJETIVO FISIOLÓGICO]</b> y <b>[COACHING TIPS &amp; ESTRATEGIA]</b> van a sus propios campos. ' +
+          '<b>Importar día activo</b> reemplaza los bloques del día abierto; <b>Importar semana completa</b> carga cada <i>DÍA X</i> en su pestaña correlativa y pide confirmación antes de sobrescribir.</div>'
         : '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> o <b>### DÍA X: Título</b> · <b>FOCO:</b> / <b>BRIEFING:</b> · delimitadores <b>[WARM-UP]</b> <b>[SKILL / STRENGTH]</b> <b>[WOD / METCON]</b> <b>[ACCESSORY / COOLDOWN]</b> + título opcional (también <b>A) …</b> / <b>B) …</b> para sesiones en bruto, con la fase inferida). ' +
           '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su día correlativo de la semana que estás editando.</div>') +
     '</div>' +
@@ -4611,9 +4615,13 @@ function ejecutarImportacion(texto, modo){
   }
   let pisados = 0, nuevos = 0;
   asign.forEach(a => { const d = p.dias[a.idx]; if(d) pisados += (d.bloques || []).length; else nuevos++; });
-  if(pisados && !confirm('Importar va a REEMPLAZAR ' + pisados + ' bloque' + (pisados === 1 ? '' : 's') + ' existente' + (pisados === 1 ? '' : 's') +
-                         ' en ' + asign.length + ' día' + (asign.length === 1 ? '' : 's') + (nuevos ? ' y crear ' + nuevos + ' día(s) nuevo(s)' : '') +
-                         ' de ' + fullName(ath) + '.\n\n(Podés deshacer con Ctrl+Z.) ¿Continuar?')) return false;
+  if(modo === 'semana' || pisados){
+    const msgImp = (modo === 'semana' ? 'IMPORTAR SEMANA COMPLETA\n\nSe van a cargar ' + asign.length + ' día' + (asign.length === 1 ? '' : 's') + ' (' + totalBloques + ' bloque' + (totalBloques === 1 ? '' : 's') + ') en ' + fullName(ath) + '.\n'
+                                         : 'Importar va a cargar ' + totalBloques + ' bloque' + (totalBloques === 1 ? '' : 's') + ' en el día activo de ' + fullName(ath) + '.\n') +
+      (pisados ? 'Se REEMPLAZAN ' + pisados + ' bloque' + (pisados === 1 ? '' : 's') + ' existente' + (pisados === 1 ? '' : 's') + (nuevos ? ' y se crean ' + nuevos + ' día(s) nuevo(s)' : '') + '.\n' : '') +
+      '\n(Podés deshacer con Ctrl+Z.) ¿Continuar?';
+    if(!confirm(msgImp)) return false;
+  }
   if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Importar ' + (modo === 'dia' ? 'día' : 'semana'));
   /* días que faltan (semana completa con más días que el plan): id único,
      mismo criterio que agregarDia() -- el id nunca se reutiliza. */
@@ -6233,8 +6241,9 @@ async function generarTipsSports(bid, btn){
   const sistema = 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. Dado un bloque de fuerza/hipertrofia, ' +
     'escribís en español rioplatense, corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del bloque" (1 frase, ' +
     'qué busca lograr fisiológicamente este ejercicio/biset -- ej. "Máxima tensión mecánica en el rango medio, sin perder tempo excéntrico") ' +
-    'y "coaching tips" (2-4 frases separadas por salto de línea, consejos técnicos de ejecución/postura/respiración puntuales por ejercicio, ' +
-    'citando el nombre real de los ejercicios listados). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre frases si hay más de una).';
+    'y "coaching tips" en CUATRO líneas separadas por salto de línea, cada una con su etiqueta en mayúsculas: ' +
+    '"SET-UP & ESTABILIDAD INICIAL: ...", "CONTROL DE LA FASE EXCÉNTRICA: ...", "INTENCIÓN NEUROMUSCULAR CONCÉNTRICA: ...", "ERROR COMÚN A EVITAR: ..." ' +
+    '(consejos técnicos puntuales de postura, ejecución y respiración, citando el nombre real de los ejercicios listados). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre las cuatro líneas).';
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
     'Generá objetivo y coaching tips en JSON para este bloque.\nEjercicios incluidos:\n' + lineas;
 
@@ -6254,7 +6263,7 @@ async function generarTipsSports(bid, btn){
     }
     if(!objetivo && !tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
     if(objetivo) b.objective = objetivo;
-    if(tips) b.tips = tips;
+    if(tips) b.tips = tips.replace(/\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N)[^:\n]{0,70}:)/g, '\n').replace(/^\n+/, '').replace(/\n{2,}/g, '\n');
     save(); renderBuilder();
     toast('Tips y objetivo generados con IA ⚡');
   }catch(e){
@@ -7098,7 +7107,7 @@ function bindBuilder(){
     }
     if(t.dataset.impgo){
       const ta = document.getElementById('cfPegarTxt');
-      ejecutarImportacion(ta ? ta.value : _impTexto, _impModo);
+      ejecutarImportacion(ta ? ta.value : _impTexto, t.dataset.impgo === 'semana' ? 'semana' : 'dia');
       return;
     }
     if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
@@ -16677,7 +16686,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          ficha de identidad) -- sin número configurado, degrada solo al
          comportamiento de siempre (wa.me/?text=, el alumno elige a
          quién mandárselo), cero regresión para planes ya exportados. */
-      const coachPhone = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '';
+      const coachPhone = window.COACH_WHATSAPP_PHONE || (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '';
       const url = 'https://wa.me/' + coachPhone + '?text=' + encodeURIComponent(txt);
       window.open(url, '_blank', 'noopener');
     });
@@ -16715,7 +16724,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(prsHoy.length) txt += '\\n🔥 *PRs de hoy:* ' + prsHoy.map(function(p){ return p.ex + ' ' + p.kg + 'kg × ' + p.reps; }).join(', ');
     if(rpeHoy) txt += '\\n💪 *Esfuerzo percibido (RPE):* ' + rpeHoy + '/10';
     if(notaHoy) txt += '\\n📝 *Comentarios del Alumno/a:* ' + notaHoy;
-    var tel = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '';
+    var tel = window.COACH_WHATSAPP_PHONE || (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '';
     try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
     window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(txt), '_blank', 'noopener');
   }
@@ -36311,6 +36320,12 @@ function painRestrictionsHtml(ath){
   return h;
 }
 
+/* Rol / especialidad: siempre texto plano (sin etiquetas crudas tipo <span class="role-dot">) y con el valor oficial por defecto */
+const ROL_COACH_DEFECTO = 'Especialista en Biomecánica, desarrollo de fuerza y Alto Rendimiento Deportivo';
+function rolPlano(r){
+  const t = String(r || '').replace(/<span class="role-dot">\s*·\s*<\/span>/gi, '·').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  return t || ROL_COACH_DEFECTO;
+}
 function compile(ath){
   const p = plan(ath.id);
   const cfg = buildProgramConfig(ath);
@@ -36336,7 +36351,7 @@ function compile(ath){
        el <span class="role-dot"> crudo baked como default) se
        autocura: se desenvuelve a "·" plano antes de escapar, así nunca
        se ve la etiqueta como texto literal. */
-    COACH_ROLE: esc(String(M.coachRole || '').replace(/<span class="role-dot">\s*·\s*<\/span>/gi, '·').replace(/<[^>]+>/g, ''))
+    COACH_ROLE: esc(rolPlano(M.coachRole))
       .replace(/·/g, '<span class="role-dot">·</span>'),
     ATHLETE_NAME: nombre,
     HERO_EYEBROW: (M.mesoName || '') + ' — ' + (cfg.weeks[0] ? cfg.weeks[0].name : 'Semana 1'),
@@ -36354,6 +36369,9 @@ function compile(ath){
   Object.keys(vals).forEach(k => {
     out = out.replace(new RegExp('\\{\\{' + k + '\\}\\}', 'g'), () => vals[k]);
   });
+  /* WhatsApp del coach: variable global del bundle autónomo (GitHub Pages) que lee el botón de reporte del alumno */
+  const telCoach = String(M.coachPhone || '').replace(/\D/g, '');
+  out = out.replace('</head>', () => '<script>window.COACH_WHATSAPP_PHONE = ' + JSON.stringify(telCoach) + ';<\/script></head>');
   return out;
 }
 
@@ -36379,19 +36397,14 @@ function renderExport(){
       '<div><label class="lb">Nombre del mesociclo</label><input data-mf="mesoName" value="' + esc(M.mesoName||'') + '"></div>' +
       '<div><label class="lb">Coach (firma)</label><input data-mf="coachName" value="' + esc(M.coachName||'') + '"></div>' +
     '</div>' +
-    '<div style="margin-top:12px"><label class="lb">Rol / especialidad</label><input data-mf="coachRole" value="' + esc(M.coachRole||'') + '" placeholder="Ej: Especialista en Biomecánica · Alto Rendimiento"></div>' +
+    '<div style="margin-top:12px"><label class="lb">Rol / especialidad</label><input data-mf="coachRole" value="' + esc(rolPlano(M.coachRole)) + '" placeholder="' + esc(ROL_COACH_DEFECTO) + '"></div>' +
     /* directiva maestra ("Reporte táctico de sesión a WhatsApp") -- número
        que usa "Enviar resumen al coach" del lado del alumno (wa.me/<numero>).
        Placeholder deja explícito el formato esperado (sólo dígitos, código
        de país primero, sin "+"/espacios/guiones) para que el coach no
        cargue un valor que wa.me no sepa interpretar. */
     '<div style="margin-top:12px"><label class="lb">WhatsApp del coach (para "Enviar resumen de sesión")</label><input data-mf="coachPhone" value="' + esc(M.coachPhone||'') + '" placeholder="Ej: 5491122334455 (sólo dígitos, con código de país)"></div>' +
-    '<div class="grid g2" style="margin-top:12px">' +
-      '<div><label class="lb">Titular (parte blanca)</label><input data-mf="heroTitle" value="' + esc(M.heroTitle||'') + '"></div>' +
-      '<div><label class="lb">Titular (parte roja)</label><input data-mf="heroEm" value="' + esc(M.heroEm||'') + '"></div>' +
-    '</div>' +
-    '<div style="margin-top:12px"><label class="lb">Bajada del titular</label><textarea data-mf="heroSub" style="min-height:60px">' + esc(M.heroSub||'') + '</textarea></div>' +
-    '<div style="margin-top:12px"><label class="lb">Segunda línea del pie de página</label><input data-mf="footer2" value="' + esc(M.footer2||'') + '"></div>';
+    '';
 
   /* directiva ("Fix de contador real de videos") -- blockExIds() sólo
      cubre bloques CLÁSICOS (tipo 'block'/'superset'/'finisher'), nunca
@@ -36454,6 +36467,10 @@ function pizarraHealthCheck(p){
         const lineas = blockFreeText(b).filter(l => String(l || '').trim());
         if(!lineas.length){ issues.push(etiqueta + ': bloque vacío, sin ejercicios cargados'); return; }
         if(RX_HC_WARMCOOL.test(b.titulo || '')) return;
+        /* "Tiempo · Entrada en calor", Movilidad y Cardio / Finisher no llevan RIR (ni por título, ni por modalidad/categoría) */
+        if(/finisher|cardio|cinta|activaci|entrada\s+en\s+calor/i.test(b.titulo || '')) return;
+        try{ if(['calentamiento', 'metcon'].indexOf(modalidadBloqueSB(b)) >= 0) return; }catch(e){}
+        if(['warmup', 'cardio'].indexOf(b.category) >= 0) return;
         const textoCompleto = lineas.join(' ');
         const tieneDosis = lineas.some(l => RX_HC_DOSIS.test(l));
         if(tieneDosis && !/rir\s*\d/i.test(textoCompleto)) issues.push(etiqueta + ': ejercicio(s) sin RIR');
@@ -41576,7 +41593,7 @@ body{overflow-x:hidden}
         '<div class="ex-thumb" data-vid="' + e.id + '">' +
           (e.videoId
             ? '<img loading="lazy" src="' + ytThumb(e.videoId) + '" alt="">' +
-              '<div class="play">▶</div>'
+              '<div class="play jp-play-mini">▶</div>'
             : '<div class="novid">🎬<br>SIN VIDEO<br><span style="font-size:10px;opacity:.7">Click para buscar</span></div>') +
         '</div>' +
         '<div class="ex-body">' +
@@ -41592,10 +41609,10 @@ body{overflow-x:hidden}
           (w === 'danger' ? '<div class="alert danger" style="padding:7px 9px;font-size:11.5px"><span class="ic">⛔</span><div>Prohibido / con antecedente para ' + esc(fullName(ath)) + '</div></div>' : '') +
           (w === 'warn'   ? '<div class="alert warn" style="padding:7px 9px;font-size:11.5px"><span class="ic">⚠️</span><div>Riesgo para ' + esc(fullName(ath)) + '</div></div>' : '') +
           (w === 'good'   ? '<div class="alert good" style="padding:7px 9px;font-size:11.5px"><span class="ic">⭐</span><div>Prioritario para ' + esc(fullName(ath)) + '</div></div>' : '') +
-          '<div class="ex-foot">' +
-            '<button class="btn xs" data-exedit="' + e.id + '">✏️ Editar</button>' +
-            (e.videoId ? '<button class="btn xs" data-vid="' + e.id + '">▶ Ver</button>'
-                       : '<a class="btn xs" href="' + ytSearch(e.es) + '" target="_blank" rel="noopener">🔎 YouTube</a>') +
+          '<div class="ex-foot jp-exbar">' +
+            (e.videoId ? '<button class="btn xs" data-vid="' + e.id + '">▶ VER</button>'
+                       : '<a class="btn xs" href="' + ytSearch(e.es) + '" target="_blank" rel="noopener">🔎 YOUTUBE</a>') +
+            '<button class="btn xs" data-exedit="' + e.id + '">✏️ EDITAR</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -41604,6 +41621,7 @@ body{overflow-x:hidden}
 
     $('#exCount').textContent = list.length + ' ejercicios';
     $('#exVidCount').textContent = S.exercises.filter(e => e.videoId).length + ' con video';
+    const pendEl = $('#exPendCount'); if(pendEl) pendEl.textContent = S.exercises.filter(e => !e.videoId).length + ' pendientes';
     $('#badgeEx').textContent = S.exercises.length;
   };
 
@@ -42194,9 +42212,12 @@ body{overflow-x:hidden}
               '<div class="ag-sub">' + esc(a.freq) + ' días/sem · ' + esc(a.nivel||'Intermedio') +
               (a.sede ? ' · ' + esc(sedeDe(a.sede).ic + ' ' + sedeDe(a.sede).lb) : '') + '</div>' +
               '<div class="mini-prog"><i style="width:' + pct + '%"></i></div></td>' +
-          '<td class="ag-date"><input type="date" data-agstart="' + a.id + '" value="' + esc(ag.start || '') + '"></td>' +
+          '<td class="ag-date">' +
+            (ag.start ? '<button type="button" class="ag-dlab" data-agpick="' + a.id + '" title="Cambiar la fecha de inicio">' + fmt(ag.start) + '</button>'
+                      : '<button type="button" class="ag-assign" data-agassign="' + a.id + '">+ Asignar Fecha</button>') +
+            '<input type="date" class="ag-dhidden" data-agstart="' + a.id + '" value="' + esc(ag.start || '') + '" tabindex="-1" aria-hidden="true"></td>' +
           '<td><div class="wk-row">' + wk.map((w,i) =>
-                '<button class="wk ' + (sem === i+1 ? 'on' : '') + (w.deload ? ' dl' : '') + '" data-agwk="' + a.id + '" data-n="' + (i+1) + '" title="' + esc(w.phase) + '">' + esc(w.short) + '</button>'
+                '<button class="wk ' + (((auto >= 1 && auto <= 4 && ag.start) || ag.semanaManual) && sem === i+1 ? 'on' : '') + ((auto >= 1 && auto <= 4 && ag.start) || ag.semanaManual ? '' : ' dim') + (w.deload ? ' dl' : '') + '" data-agwk="' + a.id + '" data-n="' + (i+1) + '" title="' + esc(w.phase) + '">' + esc(w.short) + '</button>'
               ).join('') + '</div></td>' +
           '<td>' + (vence ? fmt(vence) : '—') + '</td>' +
           '<td>' + est + '</td>' +
@@ -42325,7 +42346,19 @@ body{overflow-x:hidden}
       });
       t.addEventListener('click', e => {
         const w = e.target.closest('[data-agwk]');
-        if(w){ const ag = agendaDe(w.dataset.agwk); ag.semana = parseInt(w.dataset.n,10); save(); renderAgenda(); return; }
+        const asg = e.target.closest('[data-agassign]');
+        if(asg){
+          const inp = t.querySelector('input[data-agstart="' + asg.dataset.agassign + '"]');
+          if(inp){ inp.value = hoyISO(); inp.dispatchEvent(new Event('change', { bubbles: true })); }
+          return;
+        }
+        const pkr = e.target.closest('[data-agpick]');
+        if(pkr){
+          const inp = t.querySelector('input[data-agstart="' + pkr.dataset.agpick + '"]');
+          if(inp){ try{ inp.showPicker(); }catch(err){ inp.focus(); inp.click(); } }
+          return;
+        }
+        if(w){ const ag = agendaDe(w.dataset.agwk); ag.semana = parseInt(w.dataset.n,10); ag.semanaManual = true; save(); renderAgenda(); return; }
         const b = e.target.closest('[data-agact]');
         if(!b) return;
         S.activeId = b.dataset.id; save();
@@ -42460,8 +42493,7 @@ body{overflow-x:hidden}
         <div><label class="lb">Tono del mensaje</label>
           <select id="waTono"><option value="pro">Profesional y detallado</option><option value="corto">Corto y directo</option><option value="motiv">Motivacional</option></select></div>
       </div>
-      <div><label class="lb">Vista previa (editable)</label><textarea id="waTxt" style="min-height:210px;font-size:12.5px"></textarea></div>
-      <div class="wa-prev" id="waPrev"></div>
+      <div><label class="lb">Mensaje (editable)</label><textarea id="waTxt" style="min-height:340px;font-size:12.5px;font-family:'JetBrains Mono',ui-monospace,monospace;line-height:1.6"></textarea></div>
     </div>
     <div class="modal-f">
       <button class="btn ghost" data-close="mWa">Cerrar</button>
@@ -42883,7 +42915,6 @@ body{overflow-x:hidden}
   function pintarWA(){
     const t = armarWA();
     $('#waTxt').value = t;
-    $('#waPrev').textContent = t;
   }
   function openWA(){
     const ath = active(); if(!ath){ toast('Elegí un alumno/a activo/a', 'err'); return; }
@@ -43072,7 +43103,6 @@ body{overflow-x:hidden}
       const a = active(); if(a && s === '#waLink'){ a.link = $('#waLink').value.trim(); save(); }
       pintarWA();
     }));
-    $('#waTxt').addEventListener('input', () => { $('#waPrev').textContent = $('#waTxt').value; });
     $('#waCopy').addEventListener('click', () => {
       const t = $('#waTxt').value;
       if(navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast('📋 Mensaje copiado'), () => toast('No se pudo copiar','err'));
@@ -43985,6 +44015,7 @@ body{overflow-x:hidden}
     </div>
     <div class="hk"><div class="d" id="homeDate"></div><div class="hs" id="homeVer">Steel Vault Console v3.0</div></div>
   </div>
+  <div class="home-mental" id="homeMental"></div>
   <div class="qa-grid" id="homeQA"></div>
   <div id="homeKpis"></div>
 
@@ -44059,12 +44090,15 @@ body{overflow-x:hidden}
     const st = storageInfo();
     const hoy = new Date();
 
-    $('#homeDate').textContent = hoy.toLocaleDateString('es-AR', { weekday:'long', day:'2-digit', month:'long' });
+    const MESES_HUD = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+    $('#homeDate').textContent = ('0' + hoy.getDate()).slice(-2) + ' ' + MESES_HUD[hoy.getMonth()] + ' ' + hoy.getFullYear() + ' // CONSOLE v3.0';
+    const hv = $('#homeVer'); if(hv) hv.style.display = 'none';
     const h = hoy.getHours();
     $('#homeHi').textContent = h < 6 ? 'Buenas noches, Coach' : h < 13 ? 'Buen día, Coach' : h < 20 ? 'Buenas tardes, Coach' : 'Buenas noches, Coach';
-    $('#homeSub').textContent = n
-      ? n + ' alumno/s en sistema · ' + conPlan + ' con planificación activa · biblioteca de ' + S.exercises.length + ' ejercicios'
+    $('#homeSub').innerHTML = n
+      ? '<span class="mb">[ ' + n + ' ATLETAS ]</span><span class="mb">[ ' + conPlan + ' ACTIVOS ]</span><span class="mb">[ ' + S.exercises.length + ' EJERCICIOS ]</span>'
       : 'Empezá registrando tu primer alumno/a: el resto del sistema se arma solo.';
+    if(typeof pintarMentalHome === 'function') pintarMentalHome();
 
     $('#homeQA').innerHTML = [
       { ic:'➕', t:'Registrar alumno',  d:'Ficha, lesiones y objetivos', a:'newAth' },
@@ -44072,8 +44106,7 @@ body{overflow-x:hidden}
       { ic:'✍️', t:'Armado manual',      d:'Arrastrar y soltar ejercicios', a:'manual' },
       { ic:'🎬', t:'Auditar biblioteca', d: (S.exercises.length - vids) + ' sin video', a:'audit' },
       { ic:'📥', t:'Importar planilla',  d:'Pegá filas del Google Sheets', a:'import' },
-      { ic:'🧠', t:'Programación local', d:'Generar sin usar IA', a:'gen' },
-      { ic:'🔎', t:'Búsqueda global',    d:'Ctrl + K desde cualquier lado', a:'search' }
+      { ic:'🧠', t:'Programación local', d:'Generar sin usar IA', a:'gen' }
     ].map(q => '<button class="qa" data-qa="' + q.a + '"><span class="qi">' + q.ic + '</span>' +
       '<span><span class="qt">' + esc(q.t) + '</span><div class="qd">' + esc(q.d) + '</div></span></button>').join('');
 
@@ -44084,7 +44117,9 @@ body{overflow-x:hidden}
         '<div class="kpi"><div class="k">Atletas activos</div><div class="v">' + conPlan + '<small>/ ' + n + '</small></div><div class="s">' + prom + ' series semanales promedio</div></div>' +
         '<div class="kpi teal"><div class="k">Ejercicios en biblioteca</div><div class="v">' + S.exercises.length + '</div><div class="s">' + S.exercises.filter(e => e.custom).length + ' cargados por vos</div></div>' +
         '<div class="kpi"><div class="k">Videos vinculados</div><div class="v">' + vids + '<small>/ ' + S.exercises.length + '</small></div><div class="s">' + (S.exercises.length - vids) + ' esperando link de YouTube</div></div>' +
-        '<div class="kpi red"><div class="k">Memoria local usada</div><div class="v">' + st.pct + '<small>%</small></div><div class="s">' + kb(st.total) + ' de ~5 MB disponibles</div></div>' +
+        '<div class="kpi red' + (st.pct > 80 ? ' kpi-warn' : '') + '"><div class="k">Memoria local usada</div><div class="v">' + st.pct + '<small>%</small></div>' +
+          '<div class="seg-bar' + (st.pct > 80 ? ' warn' : '') + '" aria-label="Memoria local usada">' + Array.from({ length: 20 }, (_, i) => '<i' + (i < Math.round(st.pct / 5) ? ' class="on"' : '') + '></i>').join('') + '</div>' +
+          '<div class="s">' + kb(st.total) + ' de ~5 MB disponibles</div></div>' +
       '</div>';
 
     /* atletas en alerta: S3 pico y S4 deload */
@@ -44119,6 +44154,52 @@ body{overflow-x:hidden}
         '<button class="btn sm" data-qa="metricas">📊 Métricas</button>' +
       '</div>';
   }
+  /* Protocolo mental / filosofía diaria: una frase por día del año (Kaizen, Estoicismo, Foco, Disciplina) con refresco manual */
+  const FRASES_MENTALES = [
+    ['Kaizen', 'Un uno por ciento mejor cada día: la mejora pequeña y constante le gana a la épica ocasional.'],
+    ['Marco Aurelio', 'Tenés poder sobre tu mente, no sobre los eventos de afuera. Date cuenta de eso y vas a encontrar la fuerza.'],
+    ['Epicteto', 'No son las cosas las que nos perturban, sino la opinión que tenemos de ellas.'],
+    ['Séneca', 'Sufrimos más en la imaginación que en la realidad.'],
+    ['Disciplina', 'La motivación te hace empezar; el hábito hace que continúes.'],
+    ['Foco', 'Una sola cosa bien hecha hoy vale más que diez a medias: elegí la que mueve la aguja.'],
+    ['Kaizen', 'No busques la sesión perfecta. Buscá la sesión de hoy, completa y con técnica limpia.'],
+    ['Marco Aurelio', 'El obstáculo es el camino: lo que se interpone en la acción termina impulsándola.'],
+    ['Epicteto', 'Primero decidí quién querés ser; después hacé lo que tengas que hacer.'],
+    ['Séneca', 'No es que tengamos poco tiempo, es que perdemos mucho. Protegé tu agenda.'],
+    ['Disciplina', 'Hacé lo difícil primero. El resto del día se ordena solo.'],
+    ['Foco', 'Lo que medís mejora, lo que registrás se corrige: anotá cargas, RIR y sensaciones.'],
+    ['Kaizen', 'Cada alumno es un proceso: ajustá un detalle por semana y la progresión se sostiene.'],
+    ['Marco Aurelio', 'Si no es correcto, no lo hagas; si no es verdad, no lo digas.'],
+    ['Epicteto', 'La riqueza no consiste en tener grandes posesiones, sino en tener pocas necesidades.'],
+    ['Séneca', 'La suerte es lo que sucede cuando la preparación se encuentra con la oportunidad.'],
+    ['Disciplina', 'La constancia no se siente heroica: se siente aburrida y se nota en los resultados.'],
+    ['Foco', 'Menos pestañas abiertas, más profundidad: un atleta a la vez, un bloque a la vez.'],
+    ['Kaizen', 'Si algo falla dos veces, no es mala suerte: es un proceso que pide rediseño.'],
+    ['Marco Aurelio', 'Empezá cada día diciéndote: hoy voy a encontrar gente difícil. Y respondé con calma.'],
+    ['Epicteto', 'Nadie es libre si no es dueño de sí mismo.'],
+    ['Séneca', 'Mientras dudamos, la vida pasa. Decidí y ajustá en el camino.'],
+    ['Disciplina', 'Cumplí las promesas chicas que te hacés: ahí se construye la confianza en uno mismo.'],
+    ['Foco', 'Definí el stimulus del día en una frase. Si no entra en una línea, no está claro.'],
+    ['Kaizen', 'Un buen sistema no depende del ánimo: depende de reglas simples que se repiten.'],
+    ['Marco Aurelio', 'La mejor venganza es no parecerse a quien te hizo daño.'],
+    ['Epicteto', 'Si querés progresar, aceptá parecer torpe e ignorante en lo que todavía no dominás.'],
+    ['Séneca', 'Difícil no es lo que no nos atrevemos a hacer; no nos atrevemos porque lo vemos difícil.'],
+    ['Disciplina', 'Entrená cuando tengas ganas y también cuando no: el segundo entrenamiento es el que cambia.'],
+    ['Foco', 'Descansar también es programar: recuperá con la misma seriedad con la que entrenás.']
+  ];
+  let _fraseOffset = 0;
+  function pintarMentalHome(){
+    const host = document.getElementById('homeMental'); if(!host) return;
+    const hoy = new Date();
+    const diaAnio = Math.floor((hoy - new Date(hoy.getFullYear(), 0, 0)) / 86400000);
+    const f = FRASES_MENTALES[(diaAnio + _fraseOffset) % FRASES_MENTALES.length];
+    host.innerHTML = '<span class="hm-tag">[ PROTOCOLO MENTAL // FILOSOFÍA DIARIA ]</span>' +
+      '<span class="hm-txt">“' + esc(f[1]) + '” <b>— ' + esc(f[0]) + '</b></span>' +
+      '<button type="button" class="hm-ref" id="homeMentalRef" title="Otra frase" aria-label="Otra frase">[ ↻ ]</button>';
+    const b = document.getElementById('homeMentalRef');
+    if(b) b.addEventListener('click', () => { _fraseOffset = (_fraseOffset + 1) % FRASES_MENTALES.length; pintarMentalHome(); });
+  }
+  window.pintarMentalHome = pintarMentalHome;
   window.renderHome = renderHome;
 
   function accion(a){
@@ -46829,6 +46910,7 @@ body.man-mode .gs-fab{right:318px}
       <div class="sub">Plantillas generales del coach · guardá, duplicá y asigná sin depender de un alumno</div>
     </div>
     <div class="spacer"></div>
+    <button class="btn" id="bankMigrar" title="Convierte las plantillas con bloques del formato antiguo al esquema táctico actual (títulos de ejercicio, dosis, bisets A1/A2, modalidad)">🔄 ACTUALIZAR PLANTILLAS</button>
     <button class="btn" id="bankNew">➕ Plantilla vacía</button>
     <button class="btn gold" id="bankSave">💾 Guardar rutina activa como plantilla</button>
   </div>
@@ -47110,18 +47192,18 @@ body.man-mode .gs-fab{right:318px}
           '<div style="min-width:0"><h4>' + esc(r.nombre) + '</h4>' +
           '<div class="bm">' + (r.dias || []).length + ' días · ' + nEj + ' ejercicios · guardada el ' + esc(r.creado || '') + '</div></div></div>' +
         '<div class="bank-tags">' +
-          '<span class="bank-tag d">' + esc(discLb(r.disc)) + '</span>' +
-          '<span class="bank-tag n">' + esc(nivLb(r.niv)) + '</span>' +
-          (r.meso && r.meso.length ? '<span class="bank-tag">📌 mesociclo incluido</span>' : '') +
-          (r.usos ? '<span class="bank-tag">🎯 asignada ' + r.usos + ' vez/veces</span>' : '') +
+          '<span class="bank-tag fr">Frecuencia: ' + ((r.freq || (r.dias || []).length) || '—') + ' DÍAS</span>' +
+          '<span class="bank-tag n">Nivel: ' + esc(String(nivLb(r.niv)).toUpperCase()) + '</span>' +
         '</div>' +
         (r.notas ? '<div class="mini" style="font-size:11.5px;color:var(--txt-2);line-height:1.5">' + esc(r.notas) + '</div>' : '') +
         '<div class="bank-days">' + (r.dias || []).map(d => '<div><b>' + esc(d.short) + '</b> ' + esc(d.title || d.label || '') + ' · ' + (d.bloques || []).length + ' bloques</div>').join('') + '</div>' +
-        '<div class="row" style="margin-top:12px">' +
-          '<button class="btn sm gold" data-bkasig="' + r.id + '">🎯 Asignar a alumno</button>' +
-          '<button class="btn sm" data-bkdup="' + r.id + '">📋 Duplicar</button>' +
-          '<button class="btn sm ghost" data-bkedit="' + r.id + '">✏️</button>' +
-          '<button class="btn sm ghost" data-bkdel="' + r.id + '">🗑️</button>' +
+        '<div class="row bank-act" style="margin-top:12px">' +
+          '<button class="btn sm gold" data-bkasig="' + r.id + '">⚡ CLONAR / ASIGNAR</button>' +
+          '<span class="bank-sec">' +
+            '<button class="btn sm ghost" data-bkdup="' + r.id + '" title="Duplicar">📋 Duplicar</button>' +
+            '<button class="btn sm ghost" data-bkedit="' + r.id + '" title="Editar">✏️ Editar</button>' +
+            '<button class="btn sm ghost" data-bkdel="' + r.id + '" title="Borrar">🗑️</button>' +
+          '</span>' +
         '</div></div>';
     }).join('') :
       '<div class="card" style="grid-column:1/-1"><div class="empty"><div class="big">🗂️</div><h4>Todavía no hay plantillas guardadas</h4>' +
@@ -50582,21 +50664,11 @@ body.man-mode .gs-fab{right:318px}
       if(!ok) return;
       visibles++;
       const tags = card.querySelector('.bank-tags');
-      if(tags && !tags.dataset.cp){
-        tags.dataset.cp = '1';
-        const extra = [];
-        if(r.genero) extra.push('<span class="bank-tag g-' + r.genero + '">' + (r.genero === 'f' ? '♀ Femenino' : '♂ Masculino') + '</span>');
-        const fr = r.freq || (r.dias || []).length;
-        if(fr) extra.push('<span class="bank-tag fr">📆 ' + fr + ' días</span>');
-        if(r.tri) extra.push('<span class="bank-tag tri">📚 Trimestre ' + r.tri +
-          (r.semDesde ? ' · S' + r.semDesde + '-S' + r.semHasta : '') + '</span>');
-        const t = TABS.find(x => x.id === tabDe(r));
-        if(t) extra.push('<span class="bank-tag">' + t.ic + ' ' + esc(t.lb.split('&')[0].trim()) + '</span>');
-        if(extra.length) tags.insertAdjacentHTML('beforeend', extra.join(''));
-      }
+      /* tarjeta simplificada: sólo [ Frecuencia ] y [ Nivel ] (ya vienen en la cabecera, ver renderBanco) */
+      if(tags && !tags.dataset.cp){ tags.dataset.cp = '1'; }
       /* el botón de asignar siempre habla el mismo idioma */
       const as = card.querySelector('[data-bkasig]');
-      if(as && as.textContent.trim() !== '📋 Clonar / Asignar a Alumno') as.innerHTML = '📋 Clonar / Asignar a Alumno';
+      if(as && as.textContent.trim() !== 'CLONAR / ASIGNAR') as.innerHTML = '⚡ CLONAR / ASIGNAR';
     });
     const c = document.getElementById('cpCount');
     if(c){
@@ -57938,7 +58010,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
        vía b.cfFmt/b.category): se omiten sólo ahí. Sports Pizarra
        (b.sportsPizarra) y los tipos legado siguen mostrando su resumen
        exactamente igual que siempre. */
-    var esPizarraCFReal = b.tipo === 'list' && !b.sportsPizarra && (function(){
+    var esPizarraCFReal = b.tipo === 'list' && (function(){ if(b.sportsPizarra) return true;
       try{ var p = plan(S.activeId); return !!(p && p.meta && p.meta.mesoDisc === 'crossfit'); }catch(e){ return false; }
     })();
     if(b.subtitulo) out.push({ t: b.subtitulo, c: '' });
@@ -63801,19 +63873,19 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
         var btnCobro = pagoActual
           ? '<button type="button" class="btn sm gold" disabled title="Ya cobrado este período — ' + esc(finFechaLarga(pagoActual.fecha)) + '">✓ Cobrado</button>' +
             '<button type="button" class="btn sm ghost" data-fin-anular="' + a.id + '" style="color:#E0654A" title="Anular el cobro de este período">↺ Anular</button>'
-          : '<button type="button" class="btn sm gold" data-fin-pago="' + a.id + '">✓ Cobrar</button>';
+          : '<button type="button" class="btn sm gold" data-fin-pago="' + a.id + '">✓ COBRAR</button>';
         var acciones = configurado ?
           btnCobro +
-          '<button type="button" class="btn sm ghost" data-fin-hist="' + a.id + '">📋 Historial</button>' +
-          '<button type="button" class="btn sm ghost" data-fin-wa="' + a.id + '">📲 WA</button>' +
-          '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '" title="Editar condición comercial">✏️</button>'
-          : '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '">⚙️ Configurar</button>';
+          '<button type="button" class="btn sm jp-wa" data-fin-wa="' + a.id + '" title="Mensaje de cobranza / check-in por WhatsApp">💬 WA</button>' +
+          '<button type="button" class="btn sm ghost jp-sq" data-fin-hist="' + a.id + '" title="Historial de pagos" aria-label="Historial">📋</button>' +
+          '<button type="button" class="btn sm ghost jp-sq" data-fin-cfg="' + a.id + '" title="Editar condición comercial" aria-label="Editar">✏️</button>'
+          : '<button type="button" class="btn sm ghost" data-fin-cfg="' + a.id + '">⚙️ CONFIGURAR</button>';
         var subTxt = configurado ? esc(finUltimoCobroTxt(f)) : '';
         if(pagoActual) subTxt = '<b style="color:#48D597">🟢 Cobrado este período</b> · ' + subTxt;
         var fila = '<div class="fin-row">' +
           '<span class="fin-nombre">' + esc(fullName(a)) + '</span>' +
-          '<span class="mono fin-arancel">' + (configurado ? esc(finFormatMoneda(f.arancel, f.moneda)) : '—') + '</span>' +
-          '<span class="mono">' + (configurado ? esc(finProximoVencTxt(f)) : '—') + '</span>' +
+          '<span class="mono fin-arancel">' + (configurado ? esc(finFormatMoneda(f.arancel, f.moneda)) : '<span class="jp-sd">[ S/D ]</span>') + '</span>' +
+          '<span class="mono">' + (configurado ? esc(finProximoVencTxt(f)) : '<span class="jp-sd">[ S/D ]</span>') + '</span>' +
           '<span>' + finBadgeHTML(estado) + (configurado ? '<div class="fin-sub">' + subTxt + '</div>' : '') + '</span>' +
           '<span class="fin-acts">' + acciones + '</span>' +
         '</div>';
@@ -65367,5 +65439,440 @@ input[type="radio"]:active{
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
   else mount();
+})();
+</script>
+<style id="jpConsoleHud">
+/* =========================================================
+   CONSOLA DEL COACH · estética HUD táctica (Chakra Petch, iconos SVG, tarjetas y barras)
+========================================================= */
+:root{ --ffh:'Chakra Petch','Barlow Condensed',sans-serif; }
+h1,h2,h3,h4,.topbar h2,.card h3,.brand h1,.navbtn,.btn,.pill,.badge,.kpi .v,.kpi .k,.stat .v,.stat .k,.tab,.tab-short,.fin-row,.qa .qt,
+.ag-name,.bank-card h4,.ex-name,.wk,.cp-tab,.modal-h h3{ font-family:'Chakra Petch','Barlow Condensed',sans-serif !important; }
+.topbar h2{ font-size:24px; letter-spacing:.04em; }
+.main > .view{ padding-top:46px; }
+@media(max-width:1100px){ .main > .view{ padding-top:56px; } }
+
+/* iconos SVG monocromáticos */
+.jp-ic{ display:inline-flex; align-items:center; justify-content:center; width:1.15em; height:1.15em; color:#94A3B8; vertical-align:-.2em; flex:0 0 auto; transition:color .15s ease; }
+.jp-ic svg{ width:100%; height:100%; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.btn:hover .jp-ic, .navbtn:hover .jp-ic, .qa:hover .jp-ic, .tool-fab:hover .jp-ic, a:hover .jp-ic, summary:hover .jp-ic{ color:#F59E0B; }
+.btn.gold .jp-ic, .btn.teal .jp-ic, .btn.red .jp-ic, .btn.danger .jp-ic{ color:currentColor; }
+.navbtn.on .jp-ic{ color:#F59E0B; }
+.jp-restr .jp-ic, .pill .jp-ic{ color:currentColor; }
+.navbtn i{ filter:none !important; }
+
+/* barra lateral */
+.navbtn.on, .navbtn.active{ background:#131C26 !important; color:#FFFFFF !important; border-left:3px solid #F97316 !important; box-shadow:0 0 18px rgba(249,115,22,.16), inset 0 0 0 1px rgba(255,255,255,.04) !important; }
+.navbtn .badge{ font-family:'Chakra Petch',sans-serif !important; font-size:10px; font-weight:700; background:#1E293B; border:1px solid rgba(255,255,255,.1); color:#CBD5E1; padding:1px 8px; border-radius:20px; }
+.side-foot{ position:sticky; bottom:0; margin-top:auto; background:#0A0D11; border-top:1px solid var(--line); padding:12px 4px 14px; z-index:3; }
+
+/* home */
+#homeHi{ font-family:'Chakra Petch',sans-serif !important; font-weight:700; letter-spacing:.05em; text-transform:uppercase; }
+.home-hero .hk .d{ color:#38BDF8; font-family:'Chakra Petch',sans-serif; font-weight:600; letter-spacing:.06em; text-transform:none; }
+#homeSub .mb{ display:inline-block; margin:2px 6px 0 0; padding:2px 8px; border:1px solid rgba(255,255,255,.1); border-radius:6px; background:#0E1520; font-family:'Chakra Petch',sans-serif; font-size:11px; font-weight:600; letter-spacing:.06em; color:#CBD5E1; }
+.home-mental{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 14px; padding:8px 14px; background:#080E17; border-left:2px solid #F59E0B; border-radius:0 8px 8px 0; }
+.hm-tag{ font-family:'Chakra Petch',sans-serif; font-size:10px; font-weight:700; letter-spacing:.1em; color:#F59E0B; background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.35); border-radius:5px; padding:2px 8px; white-space:nowrap; }
+.hm-txt{ flex:1 1 280px; font-size:13px; line-height:1.5; color:#CBD5E1; }
+.hm-txt b{ color:#94A3B8; font-family:'Chakra Petch',sans-serif; font-weight:600; white-space:nowrap; }
+.hm-ref{ cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,.14); color:#94A3B8; border-radius:6px; padding:2px 8px; font-family:'Chakra Petch',sans-serif; font-size:11px; }
+.hm-ref:hover{ color:#F59E0B; border-color:#F59E0B; }
+.qa-grid{ display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; gap:10px; }
+@media(max-width:820px){ .qa-grid{ grid-template-columns:repeat(2,minmax(0,1fr)) !important; } }
+.kpi .v{ font-family:'Chakra Petch',sans-serif !important; font-weight:700; }
+.seg-bar{ display:grid; grid-template-columns:repeat(20,1fr); gap:2px; margin:8px 0 6px; }
+.seg-bar i{ height:7px; background:#1E293B; border-radius:1px; }
+.seg-bar i.on{ background:#38BDF8; }
+.seg-bar.warn i.on{ background:#F59E0B; box-shadow:0 0 6px rgba(245,158,11,.5); }
+.kpi.kpi-warn .v{ color:#F59E0B; }
+
+/* finanzas */
+.fin-kpis .v, .fin-kpis .fk-v{ font-family:'Chakra Petch',sans-serif !important; font-weight:700; }
+.fin-kpis > *:last-child .v, .fin-kpis > *:last-child .fk-v{ color:#F97316 !important; text-shadow:0 0 14px rgba(249,115,22,.35); }
+.fin-table{ max-height:480px; overflow-y:auto; }
+.fin-row.fin-head{ position:sticky; top:0; z-index:10; background:#0E1520; }
+.jp-sd{ display:inline-block; padding:1px 7px; border-radius:5px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.03); color:#64748B; font-family:'Chakra Petch',sans-serif; font-size:10px; font-weight:700; letter-spacing:.06em; }
+.fin-row .fin-acts .btn.gold{ font-family:'Chakra Petch',sans-serif; font-weight:700; letter-spacing:.05em; }
+.btn.jp-wa{ background:#042F2E !important; border:1px solid #10B981 !important; color:#10B981 !important; font-family:'Chakra Petch',sans-serif; font-weight:700; letter-spacing:.05em; }
+.btn.jp-wa:hover{ box-shadow:0 0 12px rgba(16,185,129,.35); }
+.btn.jp-sq{ width:28px; height:28px; min-width:28px; padding:0 !important; display:inline-flex; align-items:center; justify-content:center; }
+
+/* gestión de alumnos */
+.jp-dd{ position:relative; }
+.jp-dd > summary{ list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+.jp-dd > summary::-webkit-details-marker{ display:none; }
+.jp-dd-menu{ position:absolute; right:0; top:calc(100% + 6px); z-index:60; display:flex; flex-direction:column; gap:6px; min-width:240px; padding:10px; background:#0E1520; border:1px solid rgba(255,255,255,.12); border-radius:12px; box-shadow:0 16px 40px rgba(0,0,0,.55); }
+.jp-dd-menu .btn{ justify-content:flex-start; }
+#btnNewAth{ font-family:'Chakra Petch',sans-serif; font-weight:800; letter-spacing:.06em; }
+.jp-activebar{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.jp-activepill{ display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 12px; border-radius:10px; background:#0E1520; border:1px solid rgba(56,189,248,.35); font-family:'Chakra Petch',sans-serif; font-size:12px; color:#CBD5E1; }
+.jp-activepill .jp-ap-k{ color:#38BDF8; font-weight:700; letter-spacing:.06em; }
+.jp-activepill b{ color:#fff; font-weight:700; }
+.jp-ap-h{ color:#64748B; }
+.jp-ap-go{ padding:3px 10px !important; }
+.jp-searchwrap{ flex:1 1 320px; display:flex; align-items:center; gap:8px; padding:0 10px; border:1px solid var(--card-border); border-radius:10px; background:rgba(9,10,15,.6); min-height:42px; }
+.jp-searchwrap input{ flex:1; border:none !important; background:transparent !important; box-shadow:none !important; min-height:40px; }
+.jp-searchwrap kbd{ font-family:'JetBrains Mono',monospace; font-size:10.5px; padding:2px 7px; border-radius:5px; border:1px solid var(--line-2); color:#94A3B8; background:#0E1520; cursor:pointer; white-space:nowrap; }
+.jp-search-ic{ color:#94A3B8; display:inline-flex; }
+.ath-card{ display:flex !important; flex-direction:column; min-height:420px; justify-content:space-between; }
+.ath-card > .row:last-child{ margin-top:auto !important; padding-top:12px; }
+.jp-restr{ cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:700; letter-spacing:.05em; }
+.jp-restr-det{ margin-top:6px; padding:7px 10px; border-radius:8px; background:rgba(210,121,63,.08); border:1px solid rgba(210,121,63,.3); font-size:11.5px; line-height:1.5; color:#E8965E; }
+.jp-restr-det[hidden]{ display:none; }
+
+/* biblioteca */
+.jp-exsearch{ grid-column:span 1; }
+#v-biblioteca .grid.g4{ grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr)); }
+@media(max-width:900px){ #v-biblioteca .grid.g4{ grid-template-columns:1fr 1fr; } }
+#v-biblioteca select{ background:#0E1520 !important; border:1px solid rgba(255,255,255,.12) !important; border-radius:10px; min-height:42px; }
+.jp-statusbar{ display:flex; gap:8px; flex-wrap:wrap; font-family:'Chakra Petch',sans-serif; }
+.pill.amber{ border-color:rgba(245,158,11,.4); color:#F59E0B; background:rgba(245,158,11,.08); }
+.ex-card .ex-thumb{ position:relative; }
+.ex-card .ex-thumb .play, .ex-card .ex-thumb .jp-play-mini{ position:absolute !important; right:8px !important; bottom:8px !important; left:auto !important; top:auto !important; transform:none !important;
+  width:30px !important; height:30px !important; font-size:12px !important; border-radius:8px !important; background:rgba(8,12,18,.72) !important; border:1px solid rgba(255,255,255,.22) !important; color:#fff !important; box-shadow:none !important;
+  display:flex !important; align-items:center; justify-content:center; opacity:.9; transition:opacity .15s ease, background .15s ease; }
+.ex-card .ex-thumb:hover .play, .ex-card .ex-thumb:hover .jp-play-mini{ background:rgba(249,115,22,.85) !important; opacity:1; }
+.ex-card .tagwrap .pill:nth-child(n+3){ opacity:.6; font-size:9px !important; padding:1px 6px !important; background:transparent !important; }
+.ex-card .jp-exbar{ margin-top:auto; display:flex; gap:0; border-top:1px solid var(--line); padding-top:8px; }
+.ex-card .jp-exbar .btn{ flex:1 1 0; border-radius:0; justify-content:center; font-family:'Chakra Petch',sans-serif; font-weight:700; letter-spacing:.06em; }
+.ex-card .jp-exbar .btn:first-child{ border-radius:8px 0 0 8px; }
+.ex-card .jp-exbar .btn:last-child{ border-radius:0 8px 8px 0; }
+
+/* agenda */
+.ag-date{ position:relative; white-space:nowrap; }
+.ag-dlab{ cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,.14); color:#EDEFF2; border-radius:8px; padding:6px 12px; font-family:'Chakra Petch',sans-serif; font-weight:600; letter-spacing:.04em; }
+.ag-dlab:hover{ border-color:#38BDF8; color:#38BDF8; }
+.ag-assign{ cursor:pointer; background:transparent; border:1px dashed #F59E0B; color:#F59E0B; border-radius:8px; padding:6px 12px; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:12px; letter-spacing:.04em; }
+.ag-assign:hover{ background:rgba(245,158,11,.1); }
+.ag-dhidden{ position:absolute; left:0; top:0; width:1px; height:1px; opacity:0; pointer-events:none; }
+.wk.dim{ opacity:.4; filter:grayscale(.6); background:transparent !important; box-shadow:none !important; }
+.wk.dim:hover{ opacity:.8; }
+
+/* banco de rutinas */
+.bank-card .bank-act{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.bank-card .bank-act .btn.gold{ font-family:'Chakra Petch',sans-serif; font-weight:800; letter-spacing:.05em; }
+.bank-card .bank-sec{ display:inline-flex; gap:6px; }
+.bank-tag.fr, .bank-tag.n{ font-family:'Chakra Petch',sans-serif; letter-spacing:.06em; }
+
+/* builder */
+#sedeBar{ display:none !important; }
+#bHead > .avatar, #bHead > div[style*="min-width:180px"], #bHead > .spacer, #bHead > .tagwrap{ display:none !important; }
+.jp-sede-acts{ display:flex; gap:6px; }
+#dayTabs .tab{ height:56px; min-height:56px; max-height:56px; max-width:170px; display:flex; flex-direction:column; justify-content:center; overflow:hidden; font-family:'Chakra Petch',sans-serif; }
+#dayTabs .tab .tab-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px; }
+#dayTabs .tab .tab-short{ font-family:'Chakra Petch',sans-serif; font-weight:700; }
+.block:has(.blk-nl) > .block-h > .pill:not(.blk-nl){ display:none !important; }
+textarea[data-bf="items"]{ font-family:'JetBrains Mono',ui-monospace,Menlo,monospace !important; font-size:13px; line-height:1.65; letter-spacing:0; tab-size:4; }
+.imp-actions{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:10px; }
+.imp-actions .btn{ font-family:'Chakra Petch',sans-serif; font-weight:800; letter-spacing:.05em; }
+.imp-sep{ width:1px; height:26px; background:rgba(255,255,255,.14); }
+.imp-semana{ border:1px solid rgba(56,189,248,.5) !important; color:#38BDF8 !important; background:rgba(56,189,248,.08) !important; }
+/* chips de video: botones secundarios integrados al chip (visibles al pasar el mouse) */
+.vid-chips .vc-group{ display:inline-flex; align-items:center; border-radius:999px; overflow:hidden; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.03); }
+.vid-chips .vc-group .vc{ border:none !important; border-radius:0 !important; background:transparent !important; }
+.vid-chips .vc-group .vc-reasign, .vid-chips .vc-group .vc-remove{ border:none !important; background:transparent !important; color:#94A3B8; width:0; padding:0 !important; min-width:0 !important; opacity:0; overflow:hidden; transition:width .15s ease, opacity .15s ease; }
+.vid-chips .vc-group:hover .vc-reasign, .vid-chips .vc-group:hover .vc-remove, .vid-chips .vc-group:focus-within .vc-reasign, .vid-chips .vc-group:focus-within .vc-remove{ width:28px; opacity:1; padding:0 4px !important; }
+.vid-chips .vc-group .vc-remove:hover{ color:#EF4444; }
+.vid-chips .vc-group .vc-reasign:hover{ color:#F59E0B; }
+.jp-sug{ position:fixed; z-index:980; min-width:260px; max-width:340px; padding:10px; border-radius:12px; background:#0E1520; border:1px solid rgba(245,158,11,.45); box-shadow:0 16px 40px rgba(0,0,0,.6); display:flex; flex-direction:column; gap:6px; }
+.jp-sug-t{ font-family:'Chakra Petch',sans-serif; font-size:10px; font-weight:700; letter-spacing:.08em; color:#F59E0B; margin-bottom:2px; }
+.jp-sug-b{ text-align:left; padding:8px 10px; border-radius:8px; cursor:pointer; background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.3); color:#EDEFF2; font-size:12.5px; }
+.jp-sug-b:hover{ background:rgba(56,189,248,.18); }
+.jp-sug-m{ padding:6px 10px; border-radius:8px; cursor:pointer; background:transparent; border:1px dashed #475569; color:#94A3B8; font-size:11.5px; }
+.jp-sug-h{ font-size:12px; color:#94A3B8; }
+/* tips: vista estructurada bajo el textarea */
+.jp-tips-prev{ margin-top:6px; padding:8px 10px; border-left:2px solid rgba(245,158,11,.5); background:rgba(245,158,11,.04); border-radius:0 8px 8px 0; font-size:12px; line-height:1.55; color:#CBD5E1; }
+.jp-tips-prev div{ margin-bottom:6px; }
+.jp-tips-prev div:last-child{ margin-bottom:0; }
+.jp-tips-prev b{ color:#F59E0B; font-weight:800; }
+
+/* modal de WhatsApp */
+#mWa select, #waTono{ background:#0E1520 !important; border:1px solid rgba(255,255,255,.14) !important; border-radius:10px; color:#EDEFF2; min-height:42px; }
+#waSend{ background:#042F2E !important; border:1px solid #10B981 !important; color:#10B981 !important; font-family:'Chakra Petch',sans-serif; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+#waSend:hover{ box-shadow:0 0 14px rgba(16,185,129,.4); }
+/* fila de bloque: el título conserva ancho útil; los adornos ceden primero */
+html body #dayPanel .block > .block-h > .blk-modalidad{ flex:0 1 150px !important; max-width:150px; min-width:0; text-overflow:ellipsis; }
+html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
+@media(max-width:1280px){ html body #dayPanel .block > .block-h > .ai, html body #dayPanel .block > .block-h > .swap-touch{ display:none !important; } }
+@media(max-width:1000px){ html body #dayPanel .block > .block-h > .blk-modalidad{ flex-basis:110px !important; max-width:110px; } }
+.side-foot{ font-size:10px !important; line-height:1.4 !important; }
+</style>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- 1 · emojis de sistema -> iconos SVG monocromáticos (estilo Lucide) ---------- */
+  var P = {
+    home:'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    clap:'<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
+    wrench:'<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+    folder:'<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+    dumb:'<path d="M6.5 6.5v11"/><path d="M17.5 6.5v11"/><path d="M3.5 9v6"/><path d="M20.5 9v6"/><path d="M6.5 12h11"/>',
+    cal:'<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    bar:'<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+    rocket:'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+    save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+    help:'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    plus:'<path d="M5 12h14"/><path d="M12 5v14"/>',
+    sheet:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
+    cpu:'<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/>',
+    search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    alert:'<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
+    check:'<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>',
+    edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    refresh:'<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>'
+  };
+  var MAPA = {
+    '🏠':'home', '👥':'users', '🎬':'clap', '🏗':'wrench', '📁':'folder', '🗂':'folder', '🏋':'dumb', '📅':'cal', '🗓':'cal',
+    '📊':'bar', '🚀':'rocket', '💾':'save', '❓':'help', '➕':'plus', '📝':'sheet', '📋':'sheet', '🧠':'cpu', '🔍':'search', '🔎':'search',
+    '💊':'alert', '⛔':'alert', '⚠':'alert', '⭐':'check', '🗑':'trash', '✏':'edit', '🔄':'refresh', '⚙':'wrench'
+  };
+  var claves = Object.keys(MAPA);
+  var RXG = new RegExp('(' + claves.join('|') + ')\\uFE0F?', 'gu');
+  var RXT = new RegExp('(' + claves.join('|') + ')', 'u');
+  function svg(n){ return '<span class="jp-ic" data-i="' + n + '" aria-hidden="true"><svg viewBox="0 0 24 24">' + P[n] + '</svg></span>'; }
+  var SKIP = { SCRIPT:1, STYLE:1, TEXTAREA:1, INPUT:1, SELECT:1, OPTION:1, NOSCRIPT:1, TITLE:1, CODE:1 };
+
+  function reemplazar(raiz){
+    if(!raiz || raiz.nodeType === 8) return;
+    var nodos = [];
+    if(raiz.nodeType === 3){ nodos.push(raiz); }
+    else if(raiz.nodeType === 1){
+      if(SKIP[raiz.nodeName] || (raiz.closest && raiz.closest('[contenteditable],.jp-ic,[data-no-ic],svg'))) return;
+      var tw = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, null);
+      var n;
+      while((n = tw.nextNode())){
+        var p = n.parentNode;
+        if(!p || SKIP[p.nodeName]) continue;
+        if(!RXT.test(n.nodeValue)) continue;
+        if(p.closest && p.closest('[contenteditable],.jp-ic,[data-no-ic],svg')) continue;
+        nodos.push(n);
+      }
+    }
+    nodos.forEach(function(n){
+      var p = n.parentNode;
+      if(!p || SKIP[p.nodeName] || !RXT.test(n.nodeValue)) return;
+      var txt = n.nodeValue, html = '', ult = 0, m;
+      RXG.lastIndex = 0;
+      while((m = RXG.exec(txt))){
+        html += esc2(txt.slice(ult, m.index)) + svg(MAPA[m[1]]);
+        ult = m.index + m[0].length;
+      }
+      html += esc2(txt.slice(ult));
+      var tpl = document.createElement('template');
+      tpl.innerHTML = html;
+      p.replaceChild(tpl.content, n);
+    });
+  }
+  function esc2(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  var cola = [], pend = 0, obs = null;
+  function procesar(){
+    pend = 0;
+    if(obs) obs.disconnect();
+    try{
+      var lote = cola; cola = [];
+      lote.forEach(function(x){ if(x && (x.isConnected || x.nodeType === 3)) reemplazar(x); });
+      uiExtra();
+    }catch(e){ console.warn('console HUD', e); }
+    if(obs) obs.observe(document.body, { childList:true, subtree:true, characterData:true });
+  }
+  function programar(){ if(!pend) pend = setTimeout(procesar, 90); }
+
+  /* ---------- 2 · pequeños ajustes de interfaz ---------- */
+  function uiExtra(){
+    unificarBuilder();
+    pintarTipsPrev();
+  }
+  /* el Builder usa la barra de comando superior: se suman las acciones de sede y se oculta la barra repetida */
+  function unificarBuilder(){
+    var bar = document.getElementById('stepBar'); if(!bar) return;
+    if(document.getElementById('sbSedeGo')) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'f'; wrap.style.cssText = 'flex:0 0 auto';
+    wrap.innerHTML = '<label>&nbsp;</label><div class="jp-sede-acts"><button type="button" class="tool-fab" id="sbSedeGo">GESTIONAR SEDES</button><button type="button" class="tool-fab gold" id="sbSedeAdapt">ADAPTAR A SEDE</button></div>';
+    var tools = document.getElementById('sbTools');
+    var ref = tools ? tools.closest('.f') : null;
+    if(ref && ref.parentNode === bar) bar.insertBefore(wrap, ref); else bar.appendChild(wrap);
+  }
+  function formatearTips(txt){
+    var t = String(txt || '').trim();
+    if(!t) return '';
+    t = t.replace(/(\S)\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\n]{0,70}:)/g, '$1\n');
+    return t.split(/\n+/).map(function(l){
+      l = l.trim(); if(!l) return '';
+      var m = l.match(/^([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 &\/\-–().,]{2,90}?):\s*(.*)$/);
+      return m ? '<div><b>' + esc2(m[1]) + ':</b> ' + esc2(m[2]) + '</div>' : '<div>' + esc2(l) + '</div>';
+    }).join('');
+  }
+  function pintarTipsPrev(){
+    var tas = document.querySelectorAll('#dayPanel textarea[data-bf="tips"]');
+    for(var i = 0; i < tas.length; i++){
+      var ta = tas[i], html = formatearTips(ta.value);
+      var prev = ta.nextElementSibling && ta.nextElementSibling.classList.contains('jp-tips-prev') ? ta.nextElementSibling : null;
+      if(!html || !/<b>/.test(html)){ if(prev) prev.remove(); continue; }
+      if(!prev){ prev = document.createElement('div'); prev.className = 'jp-tips-prev'; ta.parentNode.insertBefore(prev, ta.nextSibling); }
+      if(prev.innerHTML !== html) prev.innerHTML = html;
+    }
+  }
+
+  /* ---------- 3 · Alumnos: pill de alumno activo ---------- */
+  window.pintarActivePill = function(){
+    var el = document.getElementById('jpActivePill'); if(!el) return;
+    var a = (typeof active === 'function') ? active() : null;
+    el.innerHTML = a
+      ? '<span class="jp-ap-k">⚡ ACTIVO EN BUILDER:</span> <b>' + esc2(fullName(a)) + '</b> <button type="button" class="btn sm jp-ap-go" id="jpApGo">IR AL BUILDER →</button>'
+      : '<span class="jp-ap-k">⚡ SIN ALUMNO/A ACTIVO/A</span> <span class="jp-ap-h">Elegí uno desde las tarjetas.</span>';
+  };
+
+  /* ---------- 4 · chips de video no vinculados: popover con las 3 sugerencias más cercanas ---------- */
+  function puntaje(nombre, ex){
+    var q = normFuzzySB(nombre).split(' ').filter(function(w){ return w.length > 3 && ['para', 'con', 'sin', 'del', 'los', 'las', 'una', 'por'].indexOf(w) < 0; });
+    var n = ' ' + normFuzzySB((ex.es || '') + ' ' + (ex.en || '')) + ' ';
+    var s = 0;
+    q.forEach(function(w){ if(n.indexOf(' ' + w) >= 0) s += w.length > 4 ? 3 : 2; });
+    return s;
+  }
+  function cerrarSug(){ var p = document.getElementById('jpSug'); if(p) p.remove(); }
+  function abrirSug(btn){
+    cerrarSug();
+    var nombre = btn.getAttribute('data-vcno') || '';
+    var lista = S.exercises.filter(function(e){ return e.videoId; })
+      .map(function(e){ return { e:e, s:puntaje(nombre, e) }; }).filter(function(x){ return x.s > 0; })
+      .sort(function(a, b){ return b.s - a.s || a.e.es.length - b.e.es.length; }).slice(0, 3);
+    var pop = document.createElement('div');
+    pop.className = 'jp-sug'; pop.id = 'jpSug';
+    pop.innerHTML = '<div class="jp-sug-t">SUGERENCIAS PARA «' + esc2(nombre) + '»</div>' +
+      (lista.length ? lista.map(function(x){ return '<button type="button" class="jp-sug-b" data-sugex="' + esc2(x.e.id) + '">▶ ' + esc2(x.e.es) + '</button>'; }).join('')
+                    : '<div class="jp-sug-h">Sin coincidencias cercanas en la videoteca.</div>') +
+      '<button type="button" class="jp-sug-m" data-sugmanual="1">Buscar / pegar link…</button>';
+    document.body.appendChild(pop);
+    var r = btn.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+    pop.style.top = Math.min(r.bottom + 6, window.innerHeight - pop.offsetHeight - 8) + 'px';
+    pop._btn = btn;
+  }
+  function vincularSug(exId){
+    var pop = document.getElementById('jpSug'); if(!pop || !pop._btn) return;
+    var btn = pop._btn, nombre = btn.getAttribute('data-vcno') || '';
+    var bl = btn.closest('.block'), ref = bl && bl.querySelector('[data-b]');
+    var b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
+    cerrarSug();
+    if(!b) return;
+    b.videoOverrides = b.videoOverrides || {};
+    b.videoOverrides[nrmChip(nombre)] = exId;
+    save();
+    toast('Video vinculado ✔');
+    var ta = bl.querySelector('textarea[data-bf="items"]');
+    if(ta) ta.dispatchEvent(new Event('input', { bubbles:true }));
+  }
+
+  /* ---------- 5 · Banco de rutinas: migración de plantillas al esquema táctico ---------- */
+  function migrarBloqueTactico(b){
+    if(!b || (b.tipo === 'list' && b.sportsPizarra)) return false;
+    var lineas = [], titulo = b.titulo || '';
+    if(b.tipo === 'block'){
+      var ex = getEx(b.exId);
+      titulo = ((ex ? ex.es : (b.coreNombre || '')) || '').trim() || titulo || 'Ejercicio';
+      var rest0 = (b.restSeconds !== undefined && b.restSeconds !== '' && !isNaN(parseInt(b.restSeconds, 10))) ? parseInt(b.restSeconds, 10) : undefined;
+      lineas = impLineasDosisSB({ sets: parseInt(b.efSets || b.approxSets, 10) || 0, reps: String(b.reps || ''), tempo: String(b.tempo || '').replace(/\D/g, ''), rir: b.rir ? String(b.rir) : '', rest: rest0 });
+      if(!lineas.length && b.reps) lineas = [String(b.reps)];
+    } else if(b.tipo === 'superset'){
+      var nombres = [];
+      (b.ejercicios || []).forEach(function(e, i){
+        var ex2 = getEx(e.exId);
+        var nm = ((ex2 ? ex2.es : (e.nombre || '')) || '').trim() || ('Ejercicio ' + (i + 1));
+        nombres.push(nm);
+        lineas.push('A' + (i + 1) + '. ' + nm);
+        impLineasDosisSB({ sets: parseInt(b.efSets, 10) || 0, reps: String(e.reps || ''), tempo: String(e.tempo || '').replace(/\D/g, ''), rir: e.rir ? String(e.rir) : '' }).forEach(function(l){ lineas.push(l); });
+      });
+      if(b.restSeconds) lineas.push('Rest ' + parseInt(b.restSeconds, 10) + 's');
+      titulo = (nombres.length > 2 ? 'Triset: ' : 'Biset: ') + nombres.join(' + ');
+    } else if(b.tipo === 'finisher'){
+      var nms = [];
+      (b.fin || []).forEach(function(e){
+        var ex3 = getEx(e.exId);
+        var nm3 = ((ex3 ? ex3.es : (e.nombre || '')) || '').trim() || 'Ejercicio';
+        nms.push(nm3);
+        lineas.push(nm3 + (e.repsRange ? ': ' + e.repsRange : ''));
+      });
+      titulo = 'Finisher' + (nms.length ? ': ' + nms[0] : '');
+    } else if(b.tipo === 'hyrox'){
+      lineas = (b.movements || []).slice();
+    } else { return false; }
+    b.tipo = 'list'; b.sportsPizarra = true; b.titulo = titulo; b.items = lineas;
+    b.modalidad = impModalidadSB({ titulo: b.titulo, items: lineas }, '');
+    b.category = IMP_CAT_DE_MODALIDAD[b.modalidad] || b.category || 'strength';
+    return true;
+  }
+  function migrarPlantillasBanco(){
+    var lista = Array.isArray(S.banco) ? S.banco : [];
+    var n = 0, nb = 0;
+    lista.forEach(function(r){ (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ if(b && !(b.tipo === 'list' && b.sportsPizarra) && ['block', 'superset', 'finisher', 'hyrox'].indexOf(b.tipo) >= 0) nb++; }); }); });
+    if(!nb){ toast('Todas las plantillas ya usan el esquema táctico', 'ok'); return; }
+    if(!confirm('ACTUALIZAR PLANTILLAS\n\nSe van a convertir ' + nb + ' bloque(s) del formato antiguo al esquema táctico (título = ejercicio, dosis en líneas, bisets A1/A2, modalidad automática).\nLos datos originales del bloque no se borran.\n\n¿Continuar?')) return;
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Migrar plantillas');
+    lista.forEach(function(r){ (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ if(migrarBloqueTactico(b)) n++; }); }); });
+    save();
+    if(typeof renderBanco === 'function') renderBanco();
+    toast('Plantillas actualizadas: ' + n + ' bloque(s) convertidos');
+  }
+  window.migrarPlantillasBanco = migrarPlantillasBanco;
+
+  /* ---------- 6 · eventos delegados ---------- */
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if(!t || !t.closest) return;
+    /* chips de video sin vincular -> popover (fase de captura, antes del flujo anterior) */
+    var no = t.closest('[data-vcno]');
+    if(no){
+      if(window.__jpVcBypass){ window.__jpVcBypass = false; }
+      else { e.stopPropagation(); e.preventDefault(); abrirSug(no); return; }
+    }
+    var sb = t.closest('[data-sugex]');
+    if(sb){ e.stopPropagation(); vincularSug(sb.getAttribute('data-sugex')); return; }
+    var sm = t.closest('[data-sugmanual]');
+    if(sm){
+      e.stopPropagation();
+      var pop = document.getElementById('jpSug'), btn = pop && pop._btn;
+      cerrarSug();
+      if(btn){ window.__jpVcBypass = true; btn.click(); }
+      return;
+    }
+    if(!t.closest('#jpSug')) cerrarSug();
+    /* sede: acciones del Builder desde la barra de comando */
+    if(t.closest('#sbSedeGo')){ var g = document.getElementById('sedeGo'); if(g) g.click(); return; }
+    if(t.closest('#sbSedeAdapt')){ var ad = document.getElementById('sedeAdapt'); if(ad) ad.click(); return; }
+    /* alumnos */
+    if(t.closest('#jpApGo')){ go('builder'); return; }
+    var rs = t.closest('.jp-restr');
+    if(rs){ var det = rs.parentNode.querySelector('.jp-restr-det'); if(det) det.hidden = !det.hidden; return; }
+    /* chip Ctrl + K */
+    if(t.closest('.jp-searchwrap kbd')){ document.dispatchEvent(new KeyboardEvent('keydown', { key:'k', ctrlKey:true, bubbles:true })); return; }
+    /* banco */
+    if(t.closest('#bankMigrar')){ migrarPlantillasBanco(); return; }
+    /* menú Backup / Datos: se cierra al elegir una acción o tocar fuera */
+    var dd = document.getElementById('ddBackup');
+    if(dd && dd.open && (!t.closest('#ddBackup') || t.closest('.jp-dd-menu .btn'))) dd.open = false;
+  }, true);
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape') cerrarSug(); });
+  document.addEventListener('input', function(e){ if(e.target && e.target.matches && e.target.matches('textarea[data-bf="tips"]')) setTimeout(pintarTipsPrev, 60); }, true);
+
+  function montar(){
+    obs = new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        if(m.type === 'characterData'){ if(m.target.parentNode) cola.push(m.target.parentNode); }
+        else m.addedNodes.forEach(function(n){ if(n.nodeType === 1 || n.nodeType === 3) cola.push(n); });
+      });
+      programar();
+    });
+    cola.push(document.body);
+    procesar();
+    [400, 1200, 2600].forEach(function(ms){ setTimeout(function(){ cola.push(document.body); programar(); if(window.pintarActivePill) window.pintarActivePill(); if(window.pintarMentalHome) window.pintarMentalHome(); }, ms); });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(montar, 300); });
+  else setTimeout(montar, 300);
 })();
 </script>
