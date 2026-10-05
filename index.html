@@ -4415,7 +4415,7 @@ function parsearImportacion(texto, sports){
           const mn = tituloB.match(/^\[\s*([^\]]+?)\s*\]\s*(.*)$/);
           if(mn){ const fn = impFaseDeTag(mn[1]); if(fn){ faseB = fn; tituloB = mn[2].trim(); if(!/^bloque\s*\d*$/i.test(mn[1].trim())) tagB = mn[1].replace(/\s+/g, ' ').trim(); } }
         }
-        tituloB = tituloB.replace(/^\[\s*|\s*\]$/g, '').trim();
+        if(/^\[/.test(tituloB)) tituloB = tituloB.replace(/^\[\s*|\s*\]$/g, '').trim();
         /* "[BLOQUE 1]" seguido (línea siguiente) de "[ACCESORIO] Entrada en calor": el bloque
            vacío recién abierto se REUTILIZA -- una etiqueta de categoría no genera otro bloque */
         const reutiliza = sports && bloque && !bloque.items.length && !bloque.titulo && !bloque.cierre && /^bloque\s*\d*$/i.test(bloque.tag || '') && !/^bloque\s*\d*$/i.test(tagB);
@@ -4756,17 +4756,17 @@ function resolverExFuzzySB(nombre){
   });
   return mejor;
 }
-function resolverExSports(nombreCrudo){
+function resolverExSports(nombreCrudo, estricto){
   const crudo = String(nombreCrudo || '').trim();
   const sinParen = crudo.replace(/\s*\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const conCalif = RX_CALIF_SB.test(normSports(crudo)); RX_CALIF_SB.lastIndex = 0;
   if(conCalif){ const f0 = resolverExFuzzySB(sinParen || crudo); if(f0) return f0; }
-  const r1 = crudo ? resolverExSportsBase(crudo) : null;
+  const r1 = crudo ? resolverExSportsBase(crudo, estricto) : null;
   if(r1) return r1;
-  const r2 = (sinParen && sinParen !== crudo) ? resolverExSportsBase(sinParen) : null;
+  const r2 = (sinParen && sinParen !== crudo) ? resolverExSportsBase(sinParen, estricto) : null;
   return r2 || resolverExFuzzySB(sinParen || crudo);
 }
-function resolverExSportsBase(nombreCrudo){
+function resolverExSportsBase(nombreCrudo, estricto){
   const nombre = String(nombreCrudo || '').trim();
   if(!nombre || nombre.length > MAX_NOMBRE_EJ) return null;
   const n = normSports(nombre);
@@ -4775,6 +4775,7 @@ function resolverExSportsBase(nombreCrudo){
   const ns = stemNombreEj(nombre);
   const porStem = S.exercises.find(function(e){ return stemNombreEj(e.es) === ns || (e.en && stemNombreEj(e.en) === ns); });
   if(porStem) return porStem;
+  if(estricto) return null;
   const candidatos = S.exercises.filter(function(e){ return matchNombre(e.es, nombre) || (e.en && matchNombre(e.en, nombre)); });
   if(!candidatos.length) return null;
   /* ranking por coincidencia real de palabras (antes ganaba el nombre más
@@ -5173,7 +5174,7 @@ function detectarEjerciciosSports(texto, opts){
     const k = normSports(nombreLimpio);
     if(vistos[k]) return;
     vistos[k] = 1;
-    out.push({ nombre: nombreLimpio, ex: resolverExSports(nombreLimpio) });
+    out.push({ nombre: nombreLimpio, ex: resolverExSports(nombreLimpio, !!(opts && opts.warmup)) });
   });
   return out;
 }
@@ -11971,6 +11972,7 @@ function renderMain(){
     '<span class="dcc-ic">✓</span>' +
     '<span class="dcc-tx">' + (dayDone?'DÍA COMPLETO':'MARCAR DÍA COMPLETO') + '</span>' +
     '</button>';
+  if(esSports) html += '<button type="button" class="jp-wa-report" id="jpWaReportBtn">&#128242; ENVIAR REPORTE AL COACH POR WHATSAPP</button>';
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);
@@ -14945,8 +14947,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           entries.push(actual);
         }
         if(!actual.letra) actual.letra = letraE;
-        var nomE = limpiarPrefijoEstacionSB(nomPuroE);
-        var subE = { nombre: nomE, reps:'', tempo:'', tecnica:'', nota:'', unilateral:'', unidad:'reps', rir:'', restSeconds:0, sets:0 };
+        var resNomE = extraerTecnicaSB(nomPuroE);
+        var nomE = limpiarPrefijoEstacionSB(resNomE.tecnica ? resNomE.texto : nomPuroE);
+        var subE = { nombre: nomE, reps:'', tempo:'', tecnica: resNomE.tecnica || '', nota:'', unilateral:'', unidad:'reps', rir:'', restSeconds:0, sets:0 };
         actual.subs.push(subE);
         if(mDosisE) aplicarDosisSubSB(subE, actual, estM[3].slice(mDosisE.index));
         return;
@@ -14983,6 +14986,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var dBis = parsearDosisSB(linea);
         var esRestBis = /^\\s*(?:rest|descanso)\\b/i.test(linea);
         var arrancaConDosis = !!(dBis.sets && linea.search(RX_DOSIS_SB) === 0);
+        /* "3 sets x 4 reps, 5 respiraciones": detalle del protocolo Myo-Reps de la estación que lo prescribe, no su dosis */
+        if(actual.subs.length && arrancaConDosis && !esRestBis){
+          var subMyo = actual.subs.filter(function(s){ return s.tecnica === 'myoreps'; })[0];
+          if(subMyo && actual.subs[actual.subs.length - 1].reps && dBis.sets){
+            subMyo.myoInfo = Object.assign(subMyo.myoInfo || {}, { microCount: dBis.sets, microReps: parseInt(dBis.reps, 10) || 0 });
+            return;
+          }
+        }
         if(actual.subs.length && (esRestBis || arrancaConDosis || esSoloDosisSB(linea, dBis))){
           aplicarDosisSubSB(actual.subs[actual.subs.length - 1], actual, linea);
           return;
@@ -15037,6 +15048,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var myoClauseM = linea.match(RX_MYO_CLAUSE_SB);
       var lineaParaDosis = myoClauseM ? (linea.slice(0, myoClauseM.index) + linea.slice(myoClauseM.index + myoClauseM[0].length)).replace(/\\s+/g, ' ').trim() : linea;
       var dosis = parsearDosisSB(lineaParaDosis);
+      /* detalle del protocolo Myo-Reps escrito como línea de dosis ("3 sets x 4 reps con 5 respiraciones"): es del ejercicio con la
+         técnica; nunca abre una tarjeta nueva "3 SETS | 4 REPS" */
+      if(actual && actual.tipo === 'simple' && actual.dosisAsignada && actual.tecnica === 'myoreps' && dosis.sets && lineaParaDosis.search(RX_DOSIS_SB) === 0){
+        actual.myoInfo = Object.assign(actual.myoInfo || {}, { microCount: dosis.sets, microReps: parseInt(dosis.reps, 10) || 0 });
+        return;
+      }
       if(actual && actual.tipo === 'simple' && !actual.dosisAsignada && esSoloDosisSB(lineaParaDosis, dosis)){
         actual.sets = dosis.sets || actual.sets;
         actual.reps = dosis.reps || actual.reps;
@@ -15353,11 +15370,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var inputsInner;
       if(modoEj === 'tiempo'){
         /* isométrico (Plancha, Hold): un único input de tiempo [ 30 ] seg */
-        inputsInner = kgInputHtml + secInputHtml + '<span class="jp-unit">seg</span>' + checkHtml;
+        inputsInner = kgInputHtml + '<span class="jp-pad-cell"></span><span class="jp-sep jp-sep-ghost">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">seg</span>' + checkHtml;
       } else if(modoEj === 'bw'){
         /* peso corporal: chip BW fijo; el kg sólo aparece si se agrega lastre */
-        inputsInner = '<span class="jp-bw-chip">BW</span>' + kgInputHtml + '<span class="jp-unit jp-unit-kg">kg</span>' +
-          '<button type="button" class="jp-lastre-btn">+ Lastre</button>' +
+        inputsInner = '<span class="jp-bw-cell"><span class="jp-bw-chip">BW</span><button type="button" class="jp-lastre-btn">+ Lastre</button></span>' +
+          kgInputHtml + '<span class="jp-unit jp-unit-kg">kg</span>' +
           '<span class="jp-sep">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
       } else {
         inputsInner = kgInputHtml + '<span class="jp-unit">kg</span>' + '<span class="jp-sep">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
@@ -15879,7 +15896,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const np = normTitSB(String(propio).replace(/<[^>]*>/g, ' ')), ne = normTitSB(String(extra));
       if(np.indexOf(ne) >= 0) return propio;
       if(ne.indexOf(np) >= 0) return ex;
-      return propio + '<br>' + ex;
+      return propio;      /* dos párrafos distintos: queda un único resumen, el del campo propio */
     };
     const objetivoHtml = unirMetaSB(block.objective, sepMeta.objective);
     const tipsHtml = /<[a-z][^>]*>/i.test(String(block.tips || ''))
@@ -16675,6 +16692,37 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     try{ decorar(); }catch(e){ console.warn('training view', e); }
     return r;
   };
+  /* ENVIAR REPORTE AL COACH POR WHATSAPP: mismo formato del resumen de sesión (tonelaje real, desglose por bloque con las series
+     tildadas, PRs de hoy, RPE y comentarios); abre wa.me/<número del coach> si el Builder lo cargó, o el selector de contacto */
+  function enviarReporteCoachWA(){
+    var day = diaActual(), weekIdx = state.currentWeek;
+    if(!day) return;
+    var nkey = weekIdx + '|' + day.id + '|__sesion';
+    var hoyISO = new Date().toISOString().slice(0, 10);
+    var prsHoy = ((state.session && state.session.prDetalle) || []).filter(function(p){ return p.fecha === hoyISO; });
+    var rpeHoy = (typeof checkoutRpeLeer === 'function') ? checkoutRpeLeer()[nkey] : null;
+    var notaHoy = (state.notes && state.notes[nkey]) || '';
+    var fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
+    var tonelaje = (typeof calcularTonelajeSesion === 'function') ? calcularTonelajeSesion() : 0;
+    var desglose = generarDesgloseBloquesWA(weekIdx, day);
+    var txt = '🏋️ *REPORTE DE SESIÓN · COACH JP*\\n' +
+      '👤 *Atleta:* ' + PROGRAM_CONFIG.athleteName + '\\n' +
+      '📅 *Día:* ' + day.short + ' | *Fase:* ' + WEEKS_META[weekIdx].short + ' | ' + fecha + '\\n' +
+      '⚡ *Tonelaje Total Acumulado:* ' + Number(tonelaje || 0).toLocaleString('es-AR') + ' KG\\n' +
+      '-----------------------------\\n' +
+      (desglose.length ? desglose.join('\\n\\n') : '_Aún no hay series completadas con carga registrada._') +
+      '\\n-----------------------------';
+    if(prsHoy.length) txt += '\\n🔥 *PRs de hoy:* ' + prsHoy.map(function(p){ return p.ex + ' ' + p.kg + 'kg × ' + p.reps; }).join(', ');
+    if(rpeHoy) txt += '\\n💪 *Esfuerzo percibido (RPE):* ' + rpeHoy + '/10';
+    if(notaHoy) txt += '\\n📝 *Comentarios del Alumno/a:* ' + notaHoy;
+    var tel = (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '';
+    try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
+    window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(txt), '_blank', 'noopener');
+  }
+  window.CoachReporteWA = enviarReporteCoachWA;
+  document.addEventListener('click', function(e){
+    if(e.target.closest && e.target.closest('#jpWaReportBtn')) enviarReporteCoachWA();
+  });
   function diaActual(){ return DAYS.find(function(d){ return d.id === state.currentDay; }) || DAYS[0]; }
 
   function decorar(){
@@ -35344,6 +35392,37 @@ body.jp-mission .jp-brief-dir{ position:absolute; top:12px; right:12px; margin:0
 .prhub .ph-delta{ font-style:normal; font-size:.72rem; font-weight:800; text-align:right; color:#8B93A1; }
 .prhub .ph-delta.up{ color:#34F5A0; }
 .prhub .ph-delta.down{ color:#ff6b57; }
+/* botones principales en Chakra Petch */
+.day-complete-cta, .dcc-tx, .story-cta, #storyCtaBtn, .jp-wa-report, .sc-actions button, .sc-share, .sc-save, .sc-story{ font-family:'Chakra Petch','Barlow Condensed',sans-serif !important; }
+.jp-wa-report{ display:flex; align-items:center; justify-content:center; gap:8px; width:100%; min-height:54px; margin-top:12px; padding:0 14px; border-radius:14px; cursor:pointer;
+  background:#0B1A14; border:1px solid rgba(16,185,129,.4); color:#34F5A0; font-weight:800; font-size:.8rem; letter-spacing:.06em; text-transform:uppercase; }
+.jp-wa-report:active{ background:#10281E; }
+/* identidad del header: ancho tope y separación mínima de 10px con la botonera */
+body.jp-mission .hdc-id{ max-width:52vw; margin-right:12px; }
+body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
+/* acento superior táctico: sin barra recta; línea centrada que se desvanece y respeta las esquinas */
+.block:has(.jp-sb-board){ position:relative; }
+.block:has(.jp-sb-board)::before{ content:"" !important; position:absolute !important; top:0 !important; left:12% !important; right:12% !important; height:2px !important; opacity:1 !important; z-index:3;
+  background:linear-gradient(90deg, transparent 0%, #F97316 35%, #F59E0B 65%, transparent 100%) !important; box-shadow:0 1px 8px rgba(249,115,22,.4); }
+.jp-sb-board{ border-top:1px solid rgba(255,255,255,.08) !important; overflow:hidden !important; }
+/* celdas fijas: autocarga (BW) y tiempo quedan alineadas con las series de peso regular */
+.jp-unit{ min-width:26px; text-align:center; }
+.jp-sep{ min-width:14px; text-align:center; }
+.jp-bw-cell{ display:inline-flex; align-items:center; justify-content:center; gap:3px; width:82px; flex:0 0 82px; }
+.jp-bw-chip{ padding:3px 5px !important; font-size:.62rem !important; }
+.jp-lastre-btn{ padding:3px 4px !important; font-size:.58rem !important; white-space:nowrap; }
+.jp-pad-cell{ display:inline-block; width:82px; flex:0 0 82px; }
+.jp-sep-ghost{ visibility:hidden; }
+.jp-modo-bw.jp-lastre-on .jp-bw-cell{ display:none; }
+.jp-modo-bw:not(.jp-lastre-on) .jp-sep{ margin-left:0; }
+/* pautas: separación de 8px y borde izquierdo ámbar sutil */
+.jp-tip-fase{ padding-left:10px; border-left:2px solid rgba(245,158,11,.45); }
+/* récords: la fecha no se corta al final de la tarjeta */
+.prhub .ph-row{ flex-wrap:wrap; gap:6px; }
+.prhub .ph-row > div:first-child{ min-width:0; flex:1 1 150px; }
+.prhub .ph-row .mt{ font-size:11px; white-space:normal; overflow-wrap:anywhere; }
+/* ajustes: se retira el menú flotante de Herramientas (duplicaba marcas y manual) */
+#jpQT{ display:none !important; }
 .jp-dir-box button{ width:100%; padding:11px; border-radius:10px; cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,.22); color:#EDEFF2; font-weight:800; letter-spacing:.06em; text-transform:uppercase; font-size:.76rem; }
 </style>
 
