@@ -4120,6 +4120,14 @@ const IMP_FASES = [
    número se exige decoración de al menos 2 marcadores ("=== DÍA ===") */
 const IMP_RX_DIA_NUM = /^\s*(?:[-=#*_~]+\s*)?d[ií]a\s*(\d+)\s*(?:[:.)|\-–—]\s*(.*?))?\s*(?:[-=#*_~]+)?\s*$/i;
 const IMP_RX_DIA_SIN = /^\s*[-=#*_~]{2,}\s*d[ií]a\b\s*[:.|\-–—]?\s*(.*?)\s*(?:[-=#*_~]+)?\s*$/i;
+/* cabecera ESTRICTA "=== DÍA X: Título ===" (apertura con 2+ signos "="). Cuando el texto trae al menos una,
+   SOLO esas líneas abren un día: un "Día 1 - Empuje" dentro del cuerpo o bajo [NOMBRE DEL DÍA] es contenido, nunca otro día */
+const IMP_RX_DIA_ESTRICTO = /^={2,}\s*d[ií]a\s*(\d+)\b\s*[:.)|\-–—]?\s*(.*?)\s*(?:={2,})?\s*$/i;
+function impMatchDiaEstricto(t){
+  const m = String(t || '').trim().match(IMP_RX_DIA_ESTRICTO);
+  if(!m) return null;
+  return { num: parseInt(m[1], 10), titulo: String(m[2] || '').replace(/^[\s:]+/, '').replace(/\s*(?:[=#*~]+|-{2,}|_{2,})\s*$/, '').trim() };
+}
 function impMatchDia(t){
   /* el título se asigna LITERAL (solo trim): unicamente se retira la decoración de cierre del encabezado ("===", "###", "**", "--") y el
      separador inicial; "&", "/", "-" internos, acentos y conjunciones ("y", "e", "o") no se tocan jamás */
@@ -4356,9 +4364,12 @@ function impFaseDeTag(tag){
 }
 function parsearImportacion(texto, sports){
   const avisos = [], dias = [];
-  let dia = null, bloque = null, enFoco = false, campoAct = '', esperaTituloDia = false;
+  let dia = null, bloque = null, enFoco = false, campoAct = '', esperaTituloDia = false, esperaFoco = false;
+  const arr0 = String(texto || '').split(/\r?\n/);
+  const hayEstrictos = arr0.some(x => impMatchDiaEstricto(x));
+  const matchDia = hayEstrictos ? impMatchDiaEstricto : impMatchDia;
   const cerrar = () => { if(sports && bloque) impCerrarBloqueSports(bloque); };
-  const nuevoDia = (num, titulo) => { cerrar(); dia = { num: num, titulo: titulo || '', foco: '', bloques: [] }; dias.push(dia); bloque = null; enFoco = false; campoAct = ''; return dia; };
+  const nuevoDia = (num, titulo) => { cerrar(); dia = { num: num, titulo: titulo || '', foco: '', bloques: [] }; dias.push(dia); bloque = null; enFoco = false; campoAct = ''; esperaTituloDia = false; esperaFoco = false; return dia; };
   const arr = String(texto || '').split(/\r?\n/);
   arr.forEach((raw, i) => {
     const l = raw.replace(/\s+$/, '');
@@ -4366,17 +4377,27 @@ function parsearImportacion(texto, sports){
     /* una línea en blanco corta la continuación del FOCO: antes, todo el
        texto posterior (incluidos bloques cuyo delimitador no se reconocía)
        quedaba tragado dentro del foco y el día se importaba sin bloques */
-    if(!t){ enFoco = false; campoAct = ''; return; }
+    /* "[FOCO DEL COACH]" / "[NOMBRE DEL DÍA]" con el valor en la línea siguiente: una línea en blanco de por medio no lo corta */
+    if(!t){ if(!esperaFoco && !esperaTituloDia) enFoco = false; campoAct = ''; return; }
     /* línea divisoria pura ("---", "====", "###"): se descarta, no es texto de ningún bloque */
     if(/^[\s\-=_*~#]{3,}$/.test(t)){ enFoco = false; campoAct = ''; return; }
-    const dm = impMatchDia(t);
+    const dm = matchDia(t);
     if(dm){ nuevoDia(dm.num, dm.titulo); return; }
+    const esCorch = /^[^\[\]A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñ]*(?:\d+[.)]\s*)?\[/.test(t);
+    if(esperaFoco){
+      esperaFoco = false;
+      if(dia && !esCorch && !IMP_RX_BLOQUE_VIEJO.test(t)){ dia.foco = t; enFoco = true; return; }
+    }
     let m;
     if(!dia) nuevoDia(null, '');
     /* "[NOMBRE DEL DÍA] Empuje" -> título del día (el título también puede venir en la línea siguiente) */
-    if(esperaTituloDia && !m){ esperaTituloDia = false; if(!dia.titulo) dia.titulo = t; return; }
+    if(esperaTituloDia && !m){
+      esperaTituloDia = false;
+      if(!esCorch && !IMP_RX_BLOQUE_VIEJO.test(t)){ dia.titulo = t; return; }     /* el [NOMBRE DEL DÍA] explícito manda sobre el título del encabezado */
+    }
     m = t.match(IMP_RX_DIA_COR);
     if(m){ if((m[1] || '').trim()) dia.titulo = m[1].trim(); else esperaTituloDia = true; return; }
+    if(t.match(IMP_RX_FOCO_COR) && !(t.match(IMP_RX_FOCO_COR)[1] || '').trim()){ esperaFoco = true; enFoco = true; campoAct = ''; return; }
     m = t.match(IMP_RX_FOCO) || t.match(IMP_RX_FOCO_COR);
     if(m){ dia.foco = (m[1] || '').trim() ? (dia.foco ? dia.foco + '\n' : '') + m[1].trim() : dia.foco; enFoco = true; campoAct = ''; return; }
     /* etiquetas de coaching: dentro de un bloque van a su campo; antes del
@@ -4564,7 +4585,7 @@ function impMensajeSinBloques(texto, cf){
   for(let i = 0; i < ls.length; i++){
     const t = ls[i].trim();
     if(!t) continue;
-    if(impMatchDia(t) || IMP_RX_FOCO.test(t) || IMP_RX_ETIQ.test(t) || IMP_RX_ETIQ_COR.test(t) || IMP_RX_FOCO_COR.test(t) || IMP_RX_DIA_COR.test(t)) continue;
+    if(impMatchDia(t) || impMatchDiaEstricto(t) || IMP_RX_FOCO.test(t) || IMP_RX_ETIQ.test(t) || IMP_RX_ETIQ_COR.test(t) || IMP_RX_FOCO_COR.test(t) || IMP_RX_DIA_COR.test(t)) continue;
     prob = { n: i + 1, t: t }; break;
   }
   const ej = cf ? '[WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN]' : '[BLOQUE 1], [FUERZA], [HIPERTROFIA], [ACCESORIO], [PIRÁMIDE]';
