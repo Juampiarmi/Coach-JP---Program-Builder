@@ -10,6 +10,8 @@ import { ManifestoTemplate } from './templates/ManifestoTemplate'
 import { StatementTemplate } from './templates/StatementTemplate'
 import { DiagramTemplate } from './templates/DiagramTemplate'
 import { RepeatTemplate } from './templates/RepeatTemplate'
+import { StructTemplate } from './templates/StructTemplate'
+import { STRUCT_TEMPLATES } from '../../lib/structPillar'
 import { effectiveTheme, PALETTES } from '../../lib/theme'
 
 const SIDE = 88
@@ -123,6 +125,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const isManifesto = state.template === 'manifesto'
   const isDiagram = state.template === 'diagram'
   const isRepeat = state.template === 'repeat'
+  const isStruct = (STRUCT_TEMPLATES as readonly string[]).includes(state.template)
   const centered = isStatement || isManifesto || isRepeat
   // Tema: Minimal Paper sólo en Diagrama / Repetición; 01–05 usan siempre la paleta Táctico Dark.
   const theme = effectiveTheme(state)
@@ -305,6 +308,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     )}
                     {isStatement && <StatementTemplate state={state} scale={scale} />}
                     {isDiagram && <DiagramTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
+                    {isStruct && <StructTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
                   </div>
                 </>
               )}

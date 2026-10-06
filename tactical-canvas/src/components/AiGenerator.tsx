@@ -47,6 +47,10 @@ const SEQ_LABEL: Record<string, string> = {
   manifesto: 'MANIFIESTO',
   diagram: 'DIAGRAMA',
   repeat: 'REPETICIÓN',
+  matrix: 'MATRIZ 2X2',
+  pipeline: 'PIPELINE',
+  pyramid: 'PIRÁMIDE',
+  checklist: 'CHECKLIST',
 }
 const LEGACY_COOLDOWN_KEY = 'jp-tactical-canvas:ai-cooldown'
 

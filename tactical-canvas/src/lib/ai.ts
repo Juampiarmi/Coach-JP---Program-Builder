@@ -1,6 +1,7 @@
 import { DEFAULT_STATE } from '../defaults'
-import type { Accent, CanvasState, ChartMode, CurveShape, DiagramData, DiagramKind, RepeatMode, TemplateId } from '../types'
+import type { Accent, CanvasState, ChartMode, CurveShape, DiagramData, DiagramKind, RepeatMode, StructData, TemplateId } from '../types'
 import { diagramDefaults, inferPillar } from './diagramPillar'
+import { structDefaults } from './structPillar'
 import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 import { JsonRepairError, safeParseJson } from './safeJson'
@@ -84,6 +85,10 @@ PLANTILLAS DISPONIBLES (templateId):
 - "manifiesto": frase de mentalidad o estándar de disciplina. Sin párrafo ni paper.
 - "diagrama": modelo mental visual (radar de 6 factores, dominó de progresión, círculos fraccionados o trayectoria «ruido vs claridad»).
 - "repeticion": póster tipográfico que repite una frase corta (diagonal, eco, kinetic o bloque justificado). Sin párrafo ni paper.
+- "matriz2x2": cuadrante táctico con dos ejes perpendiculares (X e Y) y 4 cuadrantes con badge y descripción.
+- "pipeline": protocolo secuencial de 3 o 4 pasos numerados conectados por flechas (acción + condición o criterio).
+- "piramide": jerarquía de prioridades en 3 o 4 estratos (base no negociable → cúspide de detalle).
+- "checklist": auditoría operativa de 3 o 4 condiciones binarias ([ ✓ ] pasa / [ ✗ ] falla).
 
 MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al azar):
 - Dualidad o contraste entre dos estados («Ego vs Progreso», «Estático vs Dinámico», «Volumen vs Intensidad»): "ab", o "grafico" con curva y zona umbral.
@@ -91,6 +96,10 @@ MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al az
 - Equilibrio o fenómeno multifactorial («Obsesión», «Fatiga», «Recuperación», «Rendimiento global»): "diagrama" con recommendedType "radar".
 - Foco o dirección («Ruido vs Foco», «Claridad», «Prioridades», «Plan vs Improvisación»): "diagrama" con recommendedType "trayectoria" o "circulos".
 - Frase de mentalidad corta y memorable: "repeticion" o "manifiesto".
+- Clasificación o cruce de dos variables («Fatiga vs Estímulo», «Complejidad vs Transferencia», «Riesgo vs Beneficio»): "matriz2x2".
+- Protocolo paso a paso o condicional («Cómo autorregular la carga», «Pasos de entrada en calor», «Algoritmo de descanso»): "pipeline".
+- Jerarquías, niveles o prioridades de la base al detalle («Prioridades en nutrición», «Pirámide de hipertrofia», «Orden de recuperación»): "piramide".
+- Lista de comprobación o requisitos binarios («Criterios para una serie válida», «Errores antes de tarima», «Señales de sobreentrenamiento»): "checklist".
 
 DIRECTOR EDITORIAL TÁCTICO · PLANNER ESTRATÉGICO: el pedido puede ser un concepto corto o un brief libre (una orden completa, un objetivo de venta, servicios, una idea abierta). Trabajás en dos fases continuas dentro de la misma respuesta:
 FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (va primero en el JSON): detectás la intención del pedido ("objetivo": "venta" | "ciencia" | "mindset"), definís el formato y armás la secuencia de plantillas. Secuencias tipo:
@@ -98,13 +107,14 @@ FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (v
   1) "sentencia": gancho contra el entrenamiento genérico.
   2) "ab": enfoque tradicional (tarjeta A) vs. Sistema Coach JP (tarjeta B).
   3) "diagrama" con recommendedType "circulos" o "radar": desglose de las modalidades o pilares del servicio (cada círculo o eje es una modalidad o pilar real del brief).
+  Para el proceso de trabajo (evaluación → programación → seguimiento) podés usar "pipeline", y "checklist" para «¿para quién es?».
   4) "metrica": dato de autoridad o personalización (ej: «100%» individualizado, seguimiento semanal).
   5) "manifiesto": cierre con llamado a la acción e instrucción de contacto concreta (ej: Enviá «SISTEMA» al MD).
   Usá las modalidades y servicios que nombra el brief. Si no las detalla, usá modalidades típicas de coaching (online 1:1, presencial, programación para competencia) sin inventar precios, cupos ni resultados garantizados.
 - CIENCIA / TÉCNICO (explicar, informar, divulgar un tema): carrusel de divulgación rigurosa de 5 placas.
   1) "sentencia": desmitificadora.
   2) "grafico" de curva o umbral con variables fisiológicas reales.
-  3) "diagrama" con recommendedType "domino" o "trayectoria": el mecanismo biológico paso a paso.
+  3) "diagrama" con recommendedType "domino" o "trayectoria": el mecanismo biológico paso a paso ("pipeline" si es un protocolo de pasos, "piramide" si es un orden de prioridades).
   4) placa de respaldo ("metrica" o "sentencia") con cita científica indexada REAL en "citation" (si no tenés certeza de un paper real, elegí otro argumento: nunca inventes).
   5) "sentencia" o "manifiesto": conclusión práctica aplicable al entrenamiento.
 - MINDSET / TÁCTICO (filosofía, disciplina, frase contundente): "repeticion" (mode "kinetic" o "echo") y "manifiesto"; si es una sola frase, 1 placa.
@@ -127,7 +137,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
   "caption": string,
   "slides": [
     {
-      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
@@ -148,6 +158,10 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       },
       "repeticion": { "phrase": string (MAYÚSCULAS, 1-2 palabras clave), "phraseLarga": string (MAYÚSCULAS, 4-10 palabras), "mode": "diagonal" | "echo" | "kinetic" | "justified" },
       "manifiesto": { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) },
+      "matriz2x2": { "axisX": string (variable horizontal), "axisY": string (variable vertical), "quadrants": [4 objetos { "label": string (badge en MAYÚSCULAS, 1-3 palabras), "tag": string (descripción breve) } en orden: superior izquierdo, superior derecho, inferior izquierdo, inferior derecho], "highlight": número 0-3 (el cuadrante óptimo) },
+      "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
+      "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
+      "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
       "grafico": { ... } (OBLIGATORIO sólo si templateId es "grafico"; en los demás omitilo)
     }
   ]
@@ -160,7 +174,7 @@ CONGRUENCIA TEMÁTICA DEL DIAGRAMA: los 4 subtipos de "diagrama" hablan del tema
 - Fuerza e hipertrofia: radar con ejes Tensión mecánica, RIR / Esfuerzo, Volumen efectivo, Recuperación, Frecuencia, Técnica; dominó «Sobrecarga progresiva» → «Adaptación miofibrilar».
 - Cualquier otro tema (ej: automatización): rótulos con el vocabulario técnico de ese tema.
 
-CAMPOS OBLIGATORIOS: completá SIEMPRE todos los bloques (text, sentencia, metrica, ab, diagram con sus 4 subtipos, repeticion, manifiesto) con contenido real del tema. Nunca devuelvas arrays vacíos ([]), strings vacíos ("") ni null dentro de esos bloques. Los rótulos de diagram son de 1 a 4 palabras. "citation" y "description" son la única excepción: van vacíos si no tenés un estudio real.
+CAMPOS OBLIGATORIOS: completá SIEMPRE todos los bloques (text, sentencia, metrica, ab, diagrama con sus 4 subtipos, repeticion, manifiesto, matriz2x2, pipeline, piramide, checklist) con contenido real del tema. El bloque de la plantilla elegida en templateId va completo y preciso; los demás pueden ser versiones breves pero nunca genéricas ni vacías. Nunca devuelvas arrays vacíos ([]), strings vacíos ("") ni null dentro de esos bloques. Los rótulos de diagram son de 1 a 4 palabras. "citation" y "description" son la única excepción: van vacíos si no tenés un estudio real.
 
 Variá las plantillas dentro de una secuencia: no repitas la misma más de dos veces seguidas.
 
@@ -288,7 +302,7 @@ async function callAnthropic(key: string, model: string, user: string, signal?: 
     },
     body: JSON.stringify({
       model,
-      max_tokens: 8000,
+      max_tokens: 12000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: user }],
     }),
@@ -419,7 +433,7 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 8192,
+        maxOutputTokens: 16384,
       },
     }),
   })
@@ -587,6 +601,15 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   gráfico: 'chart',
   sentencia: 'statement',
   manifiesto: 'manifesto',
+  matriz2x2: 'matrix',
+  matriz: 'matrix',
+  matrix: 'matrix',
+  pipeline: 'pipeline',
+  flowchart: 'pipeline',
+  piramide: 'pyramid',
+  pirámide: 'pyramid',
+  pyramid: 'pyramid',
+  checklist: 'checklist',
 }
 const ACCENTS: Accent[] = ['orange', 'cyan', 'gold', 'white', 'gray']
 const CHART_MODES: ChartMode[] = ['curve', 'bars', 'gauge']
@@ -670,6 +693,48 @@ function diagramFromAi(b: Record<string, unknown>, fb: DiagramData): DiagramData
       clarity: first(tray.limpio, tray.clarity, b.clarity, b.claridad, fb.trajectory.clarity),
       goal: first(tray.meta, tray.goal, b.goal, b.meta, fb.trajectory.goal),
     },
+  }
+}
+
+/** Lista de objetos de la IA (acepta array u objeto indexado). */
+const objList = (v: unknown) => (Array.isArray(v) ? v : Object.values(obj(v))).map(obj).filter((o) => Object.keys(o).length)
+
+/**
+ * Bloques "matriz2x2", "pipeline", "piramide" y "checklist" de la IA → datos de las plantillas
+ * 08–11. Cada uno se toma completo o, si falta o viene vacío, sale del pilar del tema.
+ */
+function structFromAi(s: Record<string, unknown>, fb: StructData): StructData {
+  const m = obj(s.matriz2x2 ?? s.matriz ?? s.matrix)
+  const quads = objList(m.quadrants ?? m.cuadrantes)
+    .map((q) => ({ label: upper(first(q.label, q.badge, q.titulo, q.title)), tag: first(q.tag, q.desc, q.descripcion, q.description) }))
+    .filter((q) => q.label || q.tag)
+  const steps = objList(obj(s.pipeline ?? s.flowchart).steps ?? obj(s.pipeline).pasos)
+    .map((x) => ({ title: first(x.title, x.titulo, x.accion), desc: first(x.desc, x.descripcion, x.condicion, x.criterio) }))
+    .filter((x) => x.title)
+  const levels = objList(obj(s.piramide ?? s.pyramid).levels ?? obj(s.piramide).niveles)
+    .sort((a, b) => num(a.level ?? a.nivel, 0) - num(b.level ?? b.nivel, 0))
+    .map((x) => ({
+      // "BASE: Balance energético" → "Balance energético" (la placa ya marca base y cúspide).
+      name: first(x.name, x.nombre, x.label).replace(/^(base|c[uú]spide|nivel\s*\d+|top)\s*[:·\-–]\s*/i, ''),
+      desc: first(x.desc, x.descripcion, x.description),
+    }))
+    .filter((x) => x.name)
+  const items = objList(obj(s.checklist).items ?? obj(s.checklist).checks)
+    .map((x) => ({
+      status: (/^(err|error|fail|falla|no|x|✗|false)$/i.test(str(x.status ?? x.estado)) ? 'err' : 'ok') as 'ok' | 'err',
+      text: first(x.text, x.texto, x.condicion, x.label),
+      detail: first(x.detail, x.detalle, x.desc),
+    }))
+    .filter((x) => x.text)
+  const fit = <T,>(list: T[], fallback: T[]) => (list.length >= 3 ? list.slice(0, 4) : fallback)
+  return {
+    matrix:
+      quads.length === 4
+        ? { axisX: first(m.axisX, m.ejeX, fb.matrix.axisX), axisY: first(m.axisY, m.ejeY, fb.matrix.axisY), quadrants: quads, highlight: Math.min(3, Math.max(0, Math.round(num(m.highlight, 0)))) }
+        : fb.matrix,
+    pipeline: { steps: fit(steps, fb.pipeline.steps), dir: 'vertical' },
+    pyramid: { levels: fit(levels, fb.pyramid.levels) },
+    checklist: { items: fit(items, fb.checklist.items) },
   }
 }
 
@@ -777,6 +842,9 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const kind = DIAGRAM_KIND_MAP[first(db.recommendedType, db.kind, db.type).toLowerCase()]
   if (kind) patch.diagramKind = kind
 
+  // 08–11 · Estructuras: siempre con datos propios del tema (IA o pilar), nunca los de otra placa.
+  patch.structData = structFromAi(s, structDefaults(pillar))
+
   // 07 · Repetición
   const r = obj(s.repeticion ?? s.repeat ?? (template === 'repeat' ? d : undefined))
   const short = upper(first(r.phrase, r.frase))
@@ -866,6 +934,10 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   manifesto: 'manifiesto',
   diagram: 'diagrama',
   repeat: 'repeticion',
+  matrix: 'matriz2x2',
+  pipeline: 'pipeline',
+  pyramid: 'piramide',
+  checklist: 'checklist',
 }
 
 export interface RegenerateRequest {

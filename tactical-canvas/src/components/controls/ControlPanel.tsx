@@ -8,7 +8,11 @@ import { RadarEditor } from './RadarEditor'
 import { CHART_BY_DISCIPLINE, isCadenceSample } from '../../lib/chartPillar'
 import type { Discipline } from '../../lib/ai'
 import { diagramDefaults, inferPillar, resolveDiagramData, slideText } from '../../lib/diagramPillar'
+import { STRUCT_TEMPLATES, structDefaults } from '../../lib/structPillar'
+import { StructEditor } from './StructEditor'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
+
+const isStruct = (t: TemplateId) => (STRUCT_TEMPLATES as readonly string[]).includes(t)
 
 export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'metric', n: '01', label: 'Métrica' },
@@ -18,6 +22,10 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'manifesto', n: '05', label: 'Manifiesto' },
   { id: 'diagram', n: '06', label: 'Diagrama' },
   { id: 'repeat', n: '07', label: 'Repetición' },
+  { id: 'matrix', n: '08', label: 'Matriz 2x2' },
+  { id: 'pipeline', n: '09', label: 'Pipeline' },
+  { id: 'pyramid', n: '10', label: 'Pirámide' },
+  { id: 'checklist', n: '11', label: 'Checklist' },
 ]
 
 const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
@@ -111,7 +119,9 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                       : t.id === 'diagram' && !state.diagramData
                         ? // Al pasar a Diagrama sin datos propios, se cargan los del pilar activo y el tema de la placa.
                           { template: t.id, diagramData: diagramDefaults(inferPillar(discipline, ...slideText(state))) }
-                        : { template: t.id },
+                        : isStruct(t.id) && !state.structData
+                          ? { template: t.id, structData: structDefaults(inferPillar(discipline, ...slideText(state))) }
+                          : { template: t.id },
                   )
                 }}
                 aria-pressed={on}
@@ -132,7 +142,9 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                   ? { ...SAMPLES.chart, chart: { ...state.chart, ...CHART_BY_DISCIPLINE.crossfit } }
                   : state.template === 'diagram'
                     ? { ...SAMPLES.diagram, diagramData: diagramDefaults(inferPillar(getDiscipline(), ...slideText({ ...state, ...SAMPLES.diagram }))) }
-                    : SAMPLES[state.template],
+                    : isStruct(state.template)
+                      ? { ...SAMPLES[state.template], structData: structDefaults(inferPillar(getDiscipline(), ...slideText({ ...state, ...SAMPLES[state.template] }))) }
+                      : SAMPLES[state.template],
               )
             }
             className="flex-1 rounded-md border border-dashed border-line py-1.5 font-mono text-[10px] tracking-[0.12em] text-steel uppercase transition hover:border-cyan/50 hover:text-cyan"
@@ -431,6 +443,8 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           </>
         )}
 
+        {isStruct(state.template) && <StructEditor state={state} update={update} />}
+
         {state.template === 'repeat' && (
           <>
             <Segmented<RepeatMode>
@@ -682,5 +696,10 @@ function summaryFor(s: CanvasState) {
       return `${s.diagramKind.toUpperCase()} · ${THEME_LABEL[s.theme]}`
     case 'repeat':
       return s.repeatPhrase
+    case 'matrix':
+    case 'pipeline':
+    case 'pyramid':
+    case 'checklist':
+      return `${s.headlineA} ${s.headlineB}`.trim() || 'Estructura táctica'
   }
 }

@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -19,6 +19,24 @@ export interface DiagramData {
   circles: { divisions: string; captions: string }
   /** Trayectoria «ruido vs claridad» */
   trajectory: { noise: string; clarity: string; goal: string }
+}
+
+/** Plantillas 08–11 · estructuras tácticas (por placa). */
+export interface MatrixQuadrant {
+  /** Badge del cuadrante (ej: ÓPTIMO) */
+  label: string
+  /** Descripción breve */
+  tag: string
+}
+export interface StructData {
+  /** 08 · Matriz 2x2: cuadrantes en orden sup-izq, sup-der, inf-izq, inf-der; highlight = cuadrante destacado */
+  matrix: { axisX: string; axisY: string; quadrants: MatrixQuadrant[]; highlight: number }
+  /** 09 · Pipeline: 3 o 4 pasos */
+  pipeline: { steps: { title: string; desc: string }[]; dir: 'vertical' | 'horizontal' }
+  /** 10 · Pirámide: 3 o 4 estratos, el primero es la base */
+  pyramid: { levels: { name: string; desc: string }[] }
+  /** 11 · Checklist: 3 o 4 ítems binarios */
+  checklist: { items: { status: 'ok' | 'err'; text: string; detail: string }[] }
 }
 
 export interface CompareCard {
@@ -97,6 +115,8 @@ export interface CanvasState {
   diagramAccent: DiagramAccent
   /** Datos de los 4 subtipos (de la IA o editados). null = todavía no se cargaron: se usan los del pilar del tema. */
   diagramData: DiagramData | null
+  /** Plantillas 08–11 (IA o editados). null = todavía no se cargaron: se usan los del pilar del tema. */
+  structData: StructData | null
   // Repetición matrix (plantilla 07)
   repeatPhrase: string
   repeatAccent: RepeatAccent
