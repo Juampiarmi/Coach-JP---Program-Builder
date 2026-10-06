@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_AI_SETTINGS,
+  detectGoal,
   DISCIPLINE_LABEL,
   generateContent,
+  GOAL_LABEL,
   MODE_LABEL,
+  resolveFormat,
   type AiSettings,
   type Discipline,
+  type EditorialGoal,
   type GenerationResult,
   type GenMode,
+  type InputMode,
   RateLimitError,
   resetQuotaMemory,
 } from '../lib/ai'
@@ -19,7 +24,30 @@ interface Props {
 }
 
 const MODES: GenMode[] = ['auto', 'single', 'stories', 'carousel']
+const GOALS: EditorialGoal[] = ['auto', 'sales', 'science', 'mindset']
+const FORMAT_LABEL: Record<GenMode, string> = { auto: 'LA IA DECIDE', single: '1 PLACA', stories: 'HISTORIAS (3)', carousel: 'CARRUSEL (4-5)' }
+const PLACEHOLDER: Record<InputMode, string> = {
+  concept: 'Concepto o keywords (ej: Sobrecarga progresiva)',
+  brief:
+    'Brief libre: objetivo, servicio, público e instrucciones.\nEj: Creá un carrusel publicitando las modalidades de mi servicio (online 1:1, presencial y programación para Hyrox) para captar alumnos.',
+}
+
+interface GenPrefs {
+  mode: GenMode
+  discipline: Discipline
+  inputMode?: InputMode
+  goal?: EditorialGoal
+}
 /** Clave vieja: el enfriamiento ya no se persiste (recargar siempre deja el botón activo). */
+const SEQ_LABEL: Record<string, string> = {
+  metric: 'MÉTRICA',
+  compare: 'A/B',
+  chart: 'GRÁFICO',
+  statement: 'SENTENCIA',
+  manifesto: 'MANIFIESTO',
+  diagram: 'DIAGRAMA',
+  repeat: 'REPETICIÓN',
+}
 const LEGACY_COOLDOWN_KEY = 'jp-tactical-canvas:ai-cooldown'
 
 /** Cuenta regresiva en memoria para el límite por minuto (nunca bloquea más allá de la sesión). */
@@ -77,10 +105,16 @@ export function AiGenerator({ onResult }: Props) {
     models: { ...DEFAULT_AI_SETTINGS.models, ...stored.models },
   }
   const [topic, setTopic] = useState('')
-  const [mode, setMode] = usePersistentState<{ mode: GenMode; discipline: Discipline }>('jp-tactical-canvas:ai-mode', {
+  const [mode, setMode] = usePersistentState<GenPrefs>('jp-tactical-canvas:ai-mode', {
     mode: 'auto',
     discipline: 'general',
   })
+  const inputMode: InputMode = mode.inputMode ?? 'concept'
+  const goal: EditorialGoal = mode.goal ?? 'auto'
+  const editorial = { inputMode, goal }
+  // Lo que va a hacer el planner con lo escrito: objetivo (detectado en AUTO) y formato efectivo.
+  const detectedGoal = topic.trim() ? detectGoal(topic, goal) : null
+  const effectiveMode = topic.trim() ? resolveFormat(topic, mode.mode, editorial) : mode.mode
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [status, setStatus] = useState<string | null>(null)
@@ -129,8 +163,17 @@ export function AiGenerator({ onResult }: Props) {
     setStatus(null)
     abort.current = new AbortController()
     try {
-      onResult(
-        await generateContent(settings, topic, mode.mode, mode.discipline ?? 'general', abort.current.signal, setStatus, (model, detected) =>
+      const goalNow = detectGoal(topic, goal)
+      const format = resolveFormat(topic, mode.mode, editorial)
+      setStatus(`[ PLANNER · ${GOAL_LABEL[goalNow].toUpperCase()} · ${FORMAT_LABEL[format]} ]`)
+      const result = await generateContent(
+        settings,
+        topic,
+        format,
+        mode.discipline ?? 'general',
+        abort.current.signal,
+        setStatus,
+        (model, detected) =>
           // El modelo guardado no existe para esta key: se persiste el detectado con ListModels.
           setSettings((s) => ({
             ...s,
@@ -138,9 +181,10 @@ export function AiGenerator({ onResult }: Props) {
             geminiModels: detected,
             geminiCheckedAt: Date.now(),
           })),
-        ),
-        { topic, discipline: mode.discipline ?? 'general' },
+        editorial,
       )
+      onResult(result, { topic, discipline: mode.discipline ?? 'general' })
+      setStatus(`[ ${result.slides.length} ${result.slides.length === 1 ? 'PLACA' : 'PLACAS'} · ${result.slides.map((sl) => SEQ_LABEL[sl.template ?? 'statement']).join(' → ')} ]`)
     } catch (err) {
       if (err instanceof RateLimitError) {
         // Sólo el límite por minuto tiene sentido esperarlo; el diario / límite 0 no se
@@ -177,16 +221,63 @@ export function AiGenerator({ onResult }: Props) {
           <span className="truncate">{hasKey ? `${settings.provider.toUpperCase()} · ${settings.models[settings.provider]}` : 'CARGAR API KEY'}</span>
         </button>
       </div>
-      <textarea
-        className="tc-input resize-none"
-        rows={2}
-        value={topic}
-        placeholder="Tema o concepto a comunicar (ej: Sobrecarga progresiva y RIR)"
-        onChange={(e) => setTopic(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run()
-        }}
-      />
+      <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+        {(['concept', 'brief'] as InputMode[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode({ ...mode, inputMode: m })}
+            aria-pressed={inputMode === m}
+            className={`rounded-md px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
+              inputMode === m ? 'bg-white/10 text-white' : 'text-steel hover:text-white'
+            }`}
+          >
+            {m === 'concept' ? '[ CONCEPTO RÁPIDO ]' : '[ BRIEF LIBRE / ESTRATÉGICO ]'}
+          </button>
+        ))}
+      </div>
+      {inputMode === 'concept' ? (
+        <input
+          className="tc-input"
+          value={topic}
+          placeholder={PLACEHOLDER.concept}
+          aria-label="Concepto"
+          onChange={(e) => setTopic(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') run()
+          }}
+        />
+      ) : (
+        <textarea
+          className="tc-input resize-y"
+          rows={5}
+          value={topic}
+          placeholder={PLACEHOLDER.brief}
+          aria-label="Brief"
+          onChange={(e) => setTopic(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run()
+          }}
+        />
+      )}
+      <div className="mt-2">
+        <p className="mb-1 font-mono text-[9px] tracking-[0.14em] text-steel/70 uppercase">Objetivo editorial</p>
+        <div className="grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+          {GOALS.map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => setMode({ ...mode, goal: g })}
+              aria-pressed={goal === g}
+              className={`rounded-md px-1 py-1.5 font-mono text-[9px] leading-tight tracking-wider transition ${
+                goal === g ? 'bg-fire text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              {GOAL_LABEL[g].toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="mt-2 flex gap-1.5">
         {(Object.keys(DISCIPLINE_LABEL) as Exclude<Discipline, 'general'>[]).map((d) => {
           const on = mode.discipline === d
@@ -225,6 +316,14 @@ export function AiGenerator({ onResult }: Props) {
           </button>
         ))}
       </div>
+      {detectedGoal && (
+        <p className="mt-1.5 font-mono text-[9px] tracking-[0.1em] text-steel/80 uppercase" aria-live="polite">
+          ▸ {goal === 'auto' ? 'Detectado' : 'Objetivo'}: <span className="text-white">{GOAL_LABEL[detectedGoal]}</span> · Formato:{' '}
+          <span className="text-cyan">
+            {mode.mode === 'auto' && effectiveMode !== 'auto' ? `AUTO → ${FORMAT_LABEL[effectiveMode]}` : FORMAT_LABEL[effectiveMode]}
+          </span>
+        </p>
+      )}
       <button
         type="button"
         onClick={() => run()}

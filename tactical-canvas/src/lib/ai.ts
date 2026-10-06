@@ -77,20 +77,39 @@ export const SYSTEM_PROMPT = `Sos el Director Creativo y Copywriter de COACH JP 
 TONO: táctico, autoritario, preciso y basado en evidencia. Frases cortas, contundentes. Cero clichés motivacionales ("no pain no gain", "sin excusas", "sal de tu zona de confort"), cero emojis, cero hashtags, cero signos de exclamación. Desarmás mitos con fisiología y datos.
 
 PLANTILLAS DISPONIBLES (templateId):
-- "metric": un número gigante que resume el argumento (ej: "3X", "~600", "7700", "+14%").
+- "metrica": un número gigante que resume el argumento (ej: "3X", "~600", "7700", "+14%").
 - "ab": comparativa de dos tarjetas lado a lado (A vs B) con un veredicto.
-- "chart": un gráfico simple (curva, barras o medidor de umbral) con zona óptima.
-- "statement": titular de impacto + remate argumental + párrafo corto, sin números.
-- "manifesto": frase de mentalidad o estándar de disciplina. Sin párrafo ni paper.
-- "diagram": modelo mental visual (radar de 6 factores, dominó de progresión, círculos fraccionados o trayectoria «ruido vs claridad»).
-- "repeat": póster tipográfico que repite una frase corta (diagonal, eco, kinetic o bloque justificado). Sin párrafo ni paper.
+- "grafico": un gráfico simple (curva, barras o medidor de umbral) con zona óptima.
+- "sentencia": titular de impacto + remate argumental + párrafo corto, sin números.
+- "manifiesto": frase de mentalidad o estándar de disciplina. Sin párrafo ni paper.
+- "diagrama": modelo mental visual (radar de 6 factores, dominó de progresión, círculos fraccionados o trayectoria «ruido vs claridad»).
+- "repeticion": póster tipográfico que repite una frase corta (diagonal, eco, kinetic o bloque justificado). Sin párrafo ni paper.
 
 MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al azar):
-- Dualidad o contraste entre dos estados («Ego vs Progreso», «Estático vs Dinámico», «Volumen vs Intensidad»): "ab", o "chart" con curva y zona umbral.
-- Progresión o acumulación en el tiempo («Persistencia», «Constancia», «Sobrecarga progresiva», «Hábitos»): "diagram" con recommendedType "domino", o "repeat".
-- Equilibrio o fenómeno multifactorial («Obsesión», «Fatiga», «Recuperación», «Rendimiento global»): "diagram" con recommendedType "radar".
-- Foco o dirección («Ruido vs Foco», «Claridad», «Prioridades», «Plan vs Improvisación»): "diagram" con recommendedType "trayectoria" o "circulos".
-- Frase de mentalidad corta y memorable: "repeat" o "manifesto".
+- Dualidad o contraste entre dos estados («Ego vs Progreso», «Estático vs Dinámico», «Volumen vs Intensidad»): "ab", o "grafico" con curva y zona umbral.
+- Progresión o acumulación en el tiempo («Persistencia», «Constancia», «Sobrecarga progresiva», «Hábitos»): "diagrama" con recommendedType "domino", o "repeticion".
+- Equilibrio o fenómeno multifactorial («Obsesión», «Fatiga», «Recuperación», «Rendimiento global»): "diagrama" con recommendedType "radar".
+- Foco o dirección («Ruido vs Foco», «Claridad», «Prioridades», «Plan vs Improvisación»): "diagrama" con recommendedType "trayectoria" o "circulos".
+- Frase de mentalidad corta y memorable: "repeticion" o "manifiesto".
+
+DIRECTOR EDITORIAL TÁCTICO · PLANNER ESTRATÉGICO: el pedido puede ser un concepto corto o un brief libre (una orden completa, un objetivo de venta, servicios, una idea abierta). Trabajás en dos fases continuas dentro de la misma respuesta:
+FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (va primero en el JSON): detectás la intención del pedido ("objetivo": "venta" | "ciencia" | "mindset"), definís el formato y armás la secuencia de plantillas. Secuencias tipo:
+- VENTA / SERVICIOS (publicitar modalidades, planes, asesorías, captar clientes): carrusel de conversión táctica de 5 placas.
+  1) "sentencia": gancho contra el entrenamiento genérico.
+  2) "ab": enfoque tradicional (tarjeta A) vs. Sistema Coach JP (tarjeta B).
+  3) "diagrama" con recommendedType "circulos" o "radar": desglose de las modalidades o pilares del servicio (cada círculo o eje es una modalidad o pilar real del brief).
+  4) "metrica": dato de autoridad o personalización (ej: «100%» individualizado, seguimiento semanal).
+  5) "manifiesto": cierre con llamado a la acción e instrucción de contacto concreta (ej: Enviá «SISTEMA» al MD).
+  Usá las modalidades y servicios que nombra el brief. Si no las detalla, usá modalidades típicas de coaching (online 1:1, presencial, programación para competencia) sin inventar precios, cupos ni resultados garantizados.
+- CIENCIA / TÉCNICO (explicar, informar, divulgar un tema): carrusel de divulgación rigurosa de 5 placas.
+  1) "sentencia": desmitificadora.
+  2) "grafico" de curva o umbral con variables fisiológicas reales.
+  3) "diagrama" con recommendedType "domino" o "trayectoria": el mecanismo biológico paso a paso.
+  4) placa de respaldo ("metrica" o "sentencia") con cita científica indexada REAL en "citation" (si no tenés certeza de un paper real, elegí otro argumento: nunca inventes).
+  5) "sentencia" o "manifiesto": conclusión práctica aplicable al entrenamiento.
+- MINDSET / TÁCTICO (filosofía, disciplina, frase contundente): "repeticion" (mode "kinetic" o "echo") y "manifiesto"; si es una sola frase, 1 placa.
+Si el usuario indica una cantidad de placas o un formato, respetalo por encima de estas secuencias.
+FASE 2 · REDACCIÓN TÁCTICA: escribís cada placa con el tono militar, científico y quirúrgico de Coach JP, con su templateId preseleccionado y TODOS sus datos completos (tarjetas A/B, subtipo y valores del diagrama, puntos del gráfico, frase de repetición). Las placas forman una sola historia: no repitas titulares ni ideas entre placas.
 
 REGLAS DE CONTENIDO:
 - text.tagSuperior: MAYÚSCULAS, formato "DISCIPLINA · CATEGORÍA" o una sola categoría (ej: "BIOMECÁNICA APLICADA", "FISIOLOGÍA · ELECTROLITOS"). Para manifesto usá "FILOSOFÍA TÁCTICA", "ESTÁNDAR OPERATIVO" o "DISCIPLINA Y MÉTODO". Sin corchetes.
@@ -103,11 +122,12 @@ FORMATO DE SALIDA: respondé estrictamente con un objeto JSON válido, sin bloqu
 
 PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escritos sobre el tema pedido, aunque templateId elija una sola. Así, si el usuario cambia de plantilla, ve contenido del mismo tema y nunca datos de otra sesión. Forma exacta:
 {
+  "plan": { "objetivo": "venta" | "ciencia" | "mindset", "intencion": string (qué tiene que lograr la pieza, 1 oración), "secuencia": [templateId de cada placa, en orden] },
   "format": "single" | "stories" | "carousel",
   "caption": string,
   "slides": [
     {
-      "templateId": "metric" | "ab" | "chart" | "statement" | "manifesto" | "diagram" | "repeat",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
@@ -119,7 +139,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
         "cardB": { "label": string (MAYÚSCULAS), "value": string (máx 14 caracteres), "desc": string },
         "verdict": string (MAYÚSCULAS, 2 frases muy cortas)
       },
-      "diagram": {
+      "diagrama": {
         "recommendedType": "radar" | "domino" | "circulos" | "trayectoria",
         "domino": { "inicio": string (la causa o acción mínima), "final": string (la consecuencia acumulada) },
         "circulos": { "c1": string (el todo), "c2": string, "c3": string, "c4": string (la parte de hoy) },
@@ -128,14 +148,14 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       },
       "repeticion": { "phrase": string (MAYÚSCULAS, 1-2 palabras clave), "phraseLarga": string (MAYÚSCULAS, 4-10 palabras), "mode": "diagonal" | "echo" | "kinetic" | "justified" },
       "manifiesto": { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) },
-      "chart": { ... } (OBLIGATORIO sólo si templateId es "chart"; en los demás omitilo)
+      "grafico": { ... } (OBLIGATORIO sólo si templateId es "grafico"; en los demás omitilo)
     }
   ]
 }
 
-"chart" (sólo con templateId "chart"): { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string, "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" (solo curve), "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
+"grafico" (sólo con templateId "grafico"): { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string, "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" (solo curve), "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
 
-CONGRUENCIA TEMÁTICA DEL DIAGRAMA: los 4 subtipos de "diagram" hablan del tema del slide, nunca de productividad genérica ni autoayuda (prohibido «Hábito mínimo», «Resultado masivo», «Ruido», «Claridad», «El objetivo», «Los bloques» o «Hoy» como rótulos). Ejemplos:
+CONGRUENCIA TEMÁTICA DEL DIAGRAMA: los 4 subtipos de "diagrama" hablan del tema del slide, nunca de productividad genérica ni autoayuda (prohibido «Hábito mínimo», «Resultado masivo», «Ruido», «Claridad», «El objetivo», «Los bloques» o «Hoy» como rótulos). Ejemplos:
 - Nutrición deportiva: radar con ejes Glucógeno, Hidratación, Proteína, Electrolitos, Timing, Digestión; dominó «Déficit calórico crónico» → «Pérdida de fuerza y masa»; trayectoria «Hipoglucemia / Fatiga» → «Glucógeno estable» → meta «Rendimiento óptimo»; círculos Calorías base, Proteína (2g/kg), Carbohidratos intra, Timing y digestión.
 - Fuerza e hipertrofia: radar con ejes Tensión mecánica, RIR / Esfuerzo, Volumen efectivo, Recuperación, Frecuencia, Técnica; dominó «Sobrecarga progresiva» → «Adaptación miofibrilar».
 - Cualquier otro tema (ej: automatización): rótulos con el vocabulario técnico de ese tema.
@@ -150,12 +170,10 @@ DATOS NUMÉRICOS CONGRUENTES CON CADA PLANTILLA:
 - ab: los dos "value" se comparan en la misma unidad o dimensión.
 - diagram.radar: "axes", "values" y "compare" tienen exactamente 6 elementos.
 
-"caption": el COPY COMPLETO para el pie de foto de Instagram de toda la pieza (placa, historias o carrusel). Estructura:
-1. Primera línea: gancho de una oración que frene el scroll (sin repetir literal el titular).
-2. 2 o 3 párrafos cortos (1 a 3 oraciones cada uno) que expliquen el porqué fisiológico, con el mismo tono táctico y autoritario.
-3. Micro-bullets (3 a 5 líneas que empiezan con "▸ ") con los puntos accionables.
-4. Llamado a la acción con PALABRA CLAVE en mayúsculas entre comillas angulares, por ejemplo: Comentá «RIR» y te mando la guía completa.
-5. Cierre con 3 a 5 hashtags de nicho en español en la última línea.
+"caption": el COPY ESTRATÉGICO para el pie de foto de Instagram de toda la pieza (placa, historias o carrusel), sincronizado con el tema y el objetivo del plan. Tres bloques:
+1. GANCHO: una oración que frene el scroll (sin repetir literal el titular) y 1 o 2 oraciones que expliquen el porqué con el mismo tono táctico.
+2. PUNTOS TÉCNICOS: 3 a 5 micro-bullets que empiezan con "▸ " (en venta: qué incluye el sistema y para quién es; en ciencia: el mecanismo y lo accionable).
+3. CTA + HASHTAGS: llamado a la acción con PALABRA CLAVE en mayúsculas entre comillas angulares (ej: Comentá «RIR» y te mando la guía completa; en venta: Enviá «SISTEMA» al MD) y, en la última línea, 3 a 5 hashtags de nicho en español.
 Separá los bloques con una línea en blanco (usá \n\n dentro del string). Máximo 1800 caracteres. Sin emojis.`
 
 /** Mismo prompt sin sangrías ni espacios repetidos: menos tokens por pedido. */
@@ -164,9 +182,74 @@ const COMPACT_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(/[ \t]+/g, ' ')
   .replace(/\n{3,}/g, '\n\n')
   .trim()
 
-export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discipline = 'general') {
+// ---------------------------------------------------------------------------
+// Director editorial: tipo de entrada, objetivo y formato automático.
+
+/** Concepto rápido (keywords) o brief libre (instrucciones completas). */
+export type InputMode = 'concept' | 'brief'
+export type EditorialGoal = 'auto' | 'sales' | 'science' | 'mindset'
+export type ResolvedGoal = Exclude<EditorialGoal, 'auto'>
+
+export interface EditorialOptions {
+  inputMode: InputMode
+  goal: EditorialGoal
+}
+
+export const GOAL_LABEL: Record<EditorialGoal, string> = {
+  auto: 'Auto / Detectar',
+  sales: 'Venta / Servicios',
+  science: 'Ciencia / Técnico',
+  mindset: 'Mindset / Táctico',
+}
+
+const SALES_RX = /servicio|modalidad|asesor[ií]a|coaching|mentor[ií]a|planes|precio|cupo|inscrip|vend|venta|public[ií]c|promocion|promo\b|clientes?\b|oferta|contrat|sum[aá]te|mi (sistema|m[eé]todo|equipo|programa)|1 ?a ?1|presencial/i
+const SCIENCE_RX = /hipertrof|fisiolog|ciencia|cient[ií]fic|evidencia|estudio|paper|mecanismo|explic|informativ|divulg|c[oó]mo funciona|qu[eé] es|por qu[eé]|t[eé]cnic|biomec|metab|gluc[oó]geno|lactato|sobrecarga|volumen|rir\b|rpe\b|nutri/i
+const MINDSET_RX = /mentalidad|mindset|disciplina|motivaci|constancia|filosof|actitud|frase|car[aá]cter|voluntad|\bego\b|enfoque/i
+const PROCESS_RX = /carr?ou?sel|proceso|paso a paso|pasos|explic|modalidades|etapas|fases|gu[ií]a|c[oó]mo (hacer|funciona)/i
+
+/** Objetivo editorial: el elegido o, en AUTO, el que se deduce del texto (venta > mindset puro > ciencia, por defecto). */
+export function detectGoal(text: string, goal: EditorialGoal = 'auto'): ResolvedGoal {
+  if (goal !== 'auto') return goal
+  if (SALES_RX.test(text)) return 'sales'
+  if (MINDSET_RX.test(text) && !SCIENCE_RX.test(text)) return 'mindset'
+  // Sin señales claras, en una app de entrenamiento el contenido es técnico.
+  return 'science'
+}
+
+/**
+ * Formato efectivo. Sólo decide cuando el usuario dejó AUTO: explicar un proceso o publicitar
+ * servicios → carrusel; una frase contundente o sentencia rápida → 1 placa; si no, decide la IA.
+ */
+export function resolveFormat(text: string, mode: GenMode, opts: EditorialOptions): GenMode {
+  if (mode !== 'auto') return mode
+  const goal = detectGoal(text, opts.goal)
+  const words = text.trim().split(/\s+/).filter(Boolean).length
+  if (goal === 'sales' || PROCESS_RX.test(text)) return 'carousel'
+  if (opts.inputMode === 'brief' && goal === 'science') return 'carousel'
+  const quoted = /^[«"“'].+[»"”']$/.test(text.trim())
+  // Frase contundente (3+ palabras de mentalidad) o cita entre comillas: 1 placa. Una keyword suelta decide la IA.
+  if (quoted || (goal === 'mindset' && words >= 3 && words <= 14)) return 'single'
+  return 'auto'
+}
+
+const GOAL_RULE: Record<ResolvedGoal, string> = {
+  sales:
+    'OBJETIVO EDITORIAL: VENTA / SERVICIOS. plan.objetivo = "venta". Usá la secuencia de conversión táctica (sentencia → ab → diagrama de modalidades → metrica de autoridad → manifiesto con CTA de contacto).',
+  science:
+    'OBJETIVO EDITORIAL: CIENCIA / TÉCNICO. plan.objetivo = "ciencia". Usá la secuencia de divulgación rigurosa (sentencia desmitificadora → grafico fisiológico → diagrama del mecanismo → placa con cita real → conclusión práctica).',
+  mindset:
+    'OBJETIVO EDITORIAL: MINDSET / TÁCTICO. plan.objetivo = "mindset". Priorizá "repeticion" (kinetic o echo) y "manifiesto", con frases cortas y contundentes.',
+}
+
+export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discipline = 'general', editorial?: EditorialOptions) {
   const focus = DISCIPLINE_RULE[discipline]
-  return `Tema o concepto a comunicar: "${topic.trim()}"\n\n${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
+  const text = topic.trim()
+  const head =
+    editorial?.inputMode === 'brief'
+      ? `BRIEF DEL USUARIO (instrucciones completas: interpretá la intención, los servicios, el público y el objetivo antes de planificar):\n---\n${text}\n---`
+      : `Tema o concepto a comunicar: "${text}"`
+  const goal = editorial ? `${GOAL_RULE[detectGoal(text, editorial.goal)]}\n\n` : ''
+  return `${head}\n\n${goal}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
 }
 
 // ---------------------------------------------------------------------------
@@ -497,6 +580,13 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   repeat: 'repeat',
   repetition: 'repeat',
   repeticion: 'repeat',
+  repetición: 'repeat',
+  metrica: 'metric',
+  métrica: 'metric',
+  grafico: 'chart',
+  gráfico: 'chart',
+  sentencia: 'statement',
+  manifiesto: 'manifesto',
 }
 const ACCENTS: Accent[] = ['orange', 'cyan', 'gold', 'white', 'gray']
 const CHART_MODES: ChartMode[] = ['curve', 'bars', 'gauge']
@@ -653,7 +743,8 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   // 03 · Gráfico (sólo cuando es la plantilla elegida)
   if (template === 'chart') {
     const c = base.chart
-    const cd = Object.keys(obj(s.chart)).length ? obj(s.chart) : d
+    const chartBlock = obj(s.grafico ?? s.chart)
+    const cd = Object.keys(chartBlock).length ? chartBlock : d
     const csv = (v: unknown, fb: string) => (Array.isArray(v) ? v.join(', ') : first(v, fb))
     patch.chart = {
       ...c,
@@ -702,6 +793,8 @@ export interface GenerationResult {
   format: 'single' | 'stories' | 'carousel'
   slides: Partial<CanvasState>[]
   caption: string
+  /** Fase 1 del planner: objetivo detectado y secuencia de plantillas */
+  plan?: { goal: string; intent: string; sequence: TemplateId[] }
 }
 
 export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideContext = {}): GenerationResult {
@@ -714,7 +807,11 @@ export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideConte
   const declared = oneOf(root.format, ['single', 'stories', 'carousel'] as const, 'single')
   const format = mode === 'auto' ? (slides.length === 1 ? 'single' : declared === 'single' ? 'carousel' : declared) : mode
   const caption = str(root.caption).replace(/\r\n/g, '\n')
-  return { format, slides, caption }
+  const rawPlan = obj(root.plan)
+  const plan = Object.keys(rawPlan).length
+    ? { goal: str(rawPlan.objetivo ?? rawPlan.goal), intent: str(rawPlan.intencion ?? rawPlan.intent), sequence: slides.map((sl) => sl.template ?? 'statement') }
+    : undefined
+  return { format, slides, caption, plan }
 }
 
 export async function generateContent(
@@ -725,11 +822,12 @@ export async function generateContent(
   signal?: AbortSignal,
   onStatus?: StatusFn,
   onModelChange?: ModelChangeFn,
+  editorial?: EditorialOptions,
 ): Promise<GenerationResult> {
   const key = (settings.keys[settings.provider] ?? '').trim()
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
   const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
-  const user = buildUserPrompt(topic, mode, discipline)
+  const user = buildUserPrompt(topic, mode, discipline, editorial)
   const ask = (prompt: string) =>
     settings.provider === 'gemini'
       ? callGemini(key, model, prompt, signal, onStatus, onModelChange, settings.geminiModels ?? [])
@@ -761,13 +859,13 @@ export async function generateContent(
 
 /** Plantillas de la app → templateId que entiende la IA. */
 const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
-  metric: 'metric',
+  metric: 'metrica',
   compare: 'ab',
-  chart: 'chart',
-  statement: 'statement',
-  manifesto: 'manifesto',
-  diagram: 'diagram',
-  repeat: 'repeat',
+  chart: 'grafico',
+  statement: 'sentencia',
+  manifesto: 'manifiesto',
+  diagram: 'diagrama',
+  repeat: 'repeticion',
 }
 
 export interface RegenerateRequest {
@@ -797,7 +895,7 @@ Escribí una versión nueva y mejor (otro ángulo, otro dato o una frase más co
     aiTemplate
       ? ` Mantené templateId "${aiTemplate}"${
           req.slide.template === 'diagram'
-            ? ` con diagram.recommendedType "${({ radar: 'radar', domino: 'domino', circles: 'circulos', curve: 'trayectoria' } as const)[req.slide.diagramKind]}"`
+            ? ` con diagrama.recommendedType "${({ radar: 'radar', domino: 'domino', circles: 'circulos', curve: 'trayectoria' } as const)[req.slide.diagramKind]}"`
             : req.slide.template === 'repeat'
               ? ` con repeticion.mode "${req.slide.repeatMode}"`
               : ''
