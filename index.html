@@ -17,6 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+<style id="jpYFix">/* Chakra Petch dibuja la "y" minúscula casi como una "u" ("Espalda u Bíceps", "Fullbodu"): el texto es literal, el glifo es el que confunde. Solo la "y" (U+0079) sale de una fuente de sistema con la cola clara. */@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:500;unicode-range:U+0079;src:local('Segoe UI'),local('Roboto Medium'),local('Roboto-Medium'),local('Helvetica Neue'),local('Helvetica'),local('Arial'),local('Liberation Sans');}@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:600;unicode-range:U+0079;src:local('Segoe UI Semibold'),local('SegoeUI-Semibold'),local('Roboto Bold'),local('Roboto-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Helvetica-Bold'),local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold');}@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:700;unicode-range:U+0079;src:local('Segoe UI Bold'),local('SegoeUI-Bold'),local('Roboto Bold'),local('Roboto-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Helvetica-Bold'),local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold');}</style>
 <script>
 /* ---- blindaje de consola: algunos visores embebidos recortan console.* ---- */
 (function(){
@@ -6247,10 +6248,13 @@ async function generarTipsSports(bid, btn){
     if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
     return;
   }
+  /* lectura EN VIVO del textarea del bloque (ediciones manuales, bisets A1/A2 recién tipeados): el dato en memoria puede ir un paso atrás */
+  const taVivo = document.querySelector('textarea[data-bf="items"][data-b="' + bid + '"]');
+  if(taVivo && b.tipo === 'list'){ try{ setBlockField(b, 'items', taVivo.value); }catch(e){ b.items = taVivo.value.split(/\r?\n/); } }
   const ctx = contextoBloqueIA(b);
-  if(!ctx.items.length){ toast('Vinculá al menos un ejercicio antes de generar tips con IA', 'warn'); return; }
+  if(!ctx.items.length){ toast('Escribí o vinculá al menos un ejercicio antes de generar tips con IA', 'warn'); return; }
   const ad = contextoAtletaDiaIA();
-  const lineas = ctx.items.slice(0, 8).map(it => '- ' + it.nombre +
+  const lineas = ctx.items.slice(0, 14).map(it => '- ' + it.nombre +
     (it.patron || it.grupo ? ' (' + [it.grupo, it.patron].filter(Boolean).join(' · ') + ')' : '')).join('\n');
   const contextoLineas = [
     ad.disciplina ? 'Mesociclo: ' + ad.disciplina : '',
@@ -6291,7 +6295,7 @@ async function generarTipsSports(bid, btn){
     toast('Tips y objetivo generados con IA ⚡');
   }catch(e){
     console.warn('generarTipsSports', e);
-    toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
+    if(!(e && e.__toast)) toast('Error en API: ' + String((e && e.message) || e).slice(0, 220), 'err');
   }finally{
     if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
   }
@@ -7263,6 +7267,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@600;700;800;900&display=swap" rel="stylesheet" />
+<style id="jpYFix">/* Chakra Petch dibuja la "y" minúscula casi como una "u" ("Espalda u Bíceps", "Fullbodu"): el texto es literal, el glifo es el que confunde. Solo la "y" (U+0079) sale de una fuente de sistema con la cola clara. */@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:400;unicode-range:U+0079;src:local('Segoe UI'),local('Roboto'),local('Helvetica Neue'),local('Helvetica'),local('Arial'),local('Liberation Sans');}@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:500;unicode-range:U+0079;src:local('Segoe UI'),local('Roboto Medium'),local('Roboto-Medium'),local('Helvetica Neue'),local('Helvetica'),local('Arial'),local('Liberation Sans');}@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:600;unicode-range:U+0079;src:local('Segoe UI Semibold'),local('SegoeUI-Semibold'),local('Roboto Bold'),local('Roboto-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Helvetica-Bold'),local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold');}@font-face{font-family:'Chakra Petch';font-style:normal;font-weight:700;unicode-range:U+0079;src:local('Segoe UI Bold'),local('SegoeUI-Bold'),local('Roboto Bold'),local('Roboto-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Helvetica-Bold'),local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold');}</style>
 <style>
   :root {
     --gold: #D2793F;
@@ -37035,8 +37040,10 @@ document.addEventListener('DOMContentLoaded', init);
        El aviso de riesgo en fillCfgForm() se deja igual: esta app puede
        terminar en la máquina de OTRO coach cuya clave no tenga ese acceso, y
        ahí sí seguiría siendo información útil, no bloqueante. */
-    google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.8-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
-      hints:['gemini-3.8-flash','gemini-3.1-pro-preview','gemini-3.7-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite'] }
+    /* 2026-10 (directiva del coach): el default vuelve a "gemini-2.5-flash" (el endpoint flash estable de v1beta). Un modelo guardado que no
+       sea reconocible se reemplaza solo por este valor (ver loadAI()), y un 404 del modelo activo reintenta con el resto de la cadena. */
+    google:    { lb:'Google',    sub:'Gemini', model:'gemini-2.5-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
+      hints:['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-3.7-flash','gemini-3.8-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.1-pro-preview','gemini-3.1-flash-lite'] }
   };
   const ORDEN = ['anthropic','openai','google'];
   let AI = {
@@ -37105,7 +37112,7 @@ document.addEventListener('DOMContentLoaded', init);
          fillCfgForm(), sólo que ya no fuerza un reset silencioso. */
       /* 2026-10 -- Google ya responde "models/gemini-2.5-pro is no longer available to new users":
          la familia 2.5 vuelve a migrarse al default vigente (gemini-3.8-flash). */
-      'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite',
+      'gemini-2.5-pro',
       'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'                            /* OpenAI, familias ya fuera de vigencia */
     ];
     let huboMigracion = false;
@@ -37115,6 +37122,14 @@ document.addEventListener('DOMContentLoaded', init);
         huboMigracion = true;
       }
     });
+    /* Gemini: un string guardado que no se reconoce (o el "gemini-3.8-flash" que el coach reportó como 404/400) vuelve al default vigente */
+    {
+      const gm = String(AI.models.google || '').trim();
+      if(!/^gemini-(?:2\.5|3\.\d)(?:-[a-z0-9]+)+$/.test(gm) || gm === 'gemini-3.8-flash'){
+        AI.models.google = PROV.google.model;
+        huboMigracion = true;
+      }
+    }
     /* gpt-4o/gpt-4o-mini no están retirados TODAVÍA (gpt-4o-2024-05-13 se
        apaga el 23/10/2026), pero conviene migrar proactivamente antes de esa
        fecha en vez de esperar a que un coach se quede sin aviso a mitad de
@@ -37396,6 +37411,19 @@ document.addEventListener('DOMContentLoaded', init);
 
     let { res, raw } = await enviar(body);
 
+    /* Gemini 404 (modelo inexistente / sin acceso para esta clave): se prueba el resto de la cadena vigente antes de rendirse */
+    if(prov === 'google' && res.status === 404 && !(opts && opts.model)){
+      const cadena = ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.8-flash'].filter(m => m !== model);
+      for(const alt of cadena){
+        url = cfg.url + encodeURIComponent(alt) + ':generateContent';
+        ({ res, raw } = await enviar(body));
+        if(res.status !== 404){
+          if(res.ok){ AI.models.google = alt; saveAI(); try{ toast('Gemini: se usó "' + alt + '" (el modelo "' + model + '" no está disponible)', 'warn'); }catch(e){} }
+          break;
+        }
+      }
+    }
+
     /* algunos modelos Gemini (ej. variantes "pro" con razonamiento
        obligatorio) rechazan thinkingConfig.thinkingBudget:0 con un HTTP 400
        -- se reintenta una sola vez sin ese campo antes de darlo por fallido,
@@ -37493,7 +37521,10 @@ document.addEventListener('DOMContentLoaded', init);
       try{
         return await callProvider(prov, system, user, opts);
       }catch(err){
-        if(!err.rate) throw err;
+        if(!err.rate){
+          if(!err.__toast){ err.__toast = true; try{ toast('Error en API: ' + String((err && err.message) || err).slice(0, 220), 'err'); }catch(e){} }
+          throw err;
+        }
         /* espera corta: reintenta el mismo proveedor */
         if(err.secs <= 20){
           log('⏳ ' + PROV[prov].lb + ' pidió esperar ' + err.secs + 's — reintentando…', 'warn');
@@ -40442,46 +40473,46 @@ document.addEventListener('DOMContentLoaded', init);
 <div class="modal-bg" id="mGuide">
   <div class="modal">
     <div class="modal-h">
-      <h3>❓ Guía e Instructivo de Uso</h3>
+      <h3>Guía e Instructivo de Uso</h3>
       <div class="spacer"></div>
       <button class="icon-btn" data-close="mGuide">✕</button>
     </div>
     <div class="modal-b">
       <div class="alert info" style="padding:10px 12px">
-        <span class="ic">🧭</span>
-        <div><b>De cero a la app del alumno en 5 pasos</b>Cada paso se abre y se cierra. Podés volver a esta guía cuando quieras desde el botón ❓ de la barra superior.</div>
+        <span class="ic">//</span>
+        <div><b>De cero a la app del alumno en 5 pasos</b>Cada paso se abre y se cierra. Podés volver a esta guía cuando quieras desde el botón de la barra superior.</div>
       </div>
 
       <details class="guide-step" open>
-        <summary><span class="gn">1</span> Registro de alumnos y perfil biomecánico</summary>
+        <summary><span class="gn">01</span> Registro de alumnos y perfil biomecánico</summary>
         <div class="guide-body">
-          Entrá en <b>Alumnos → ➕ Registrar Nuevo Alumno/a</b> y completá nombre, frecuencia semanal, nivel y foco principal. Lo que hace la diferencia son las tres listas del final:
+          Entrá en <b>Alumnos → Registrar Nuevo Alumno/a</b> y completá nombre, frecuencia semanal, nivel y foco principal. Lo que hace la diferencia son las tres listas del final:
           <ul>
-            <li><b>🦴 Reglas biomecánicas y lesiones:</b> escribís la etiqueta y presionás Enter. El motor detecta la zona sola — hombro, rodilla, lumbar, cadera, muñeca, codo, cuello y tobillo.</li>
-            <li><b>⛔ Ejercicios prohibidos:</b> quedan vetados. Si intentás cargarlos aparece una <b>alerta roja inmediata</b> con variantes seguras del mismo patrón para reemplazar en un clic.</li>
-            <li><b>⭐ Ejercicios preferidos:</b> el motor los prioriza al armar estructuras automáticas y al sugerir alternativas.</li>
+            <li><b>Reglas biomecánicas y lesiones:</b> escribís la etiqueta y presionás Enter. El motor detecta la zona sola — hombro, rodilla, lumbar, cadera, muñeca, codo, cuello y tobillo.</li>
+            <li><b>Ejercicios prohibidos:</b> quedan vetados. Si intentás cargarlos aparece una <b>alerta roja inmediata</b> con variantes seguras del mismo patrón para reemplazar en un clic.</li>
+            <li><b>Ejercicios preferidos:</b> el motor los prioriza al armar estructuras automáticas y al sugerir alternativas.</li>
           </ul>
           <div class="tip">El alumno/a que tengas <b>activo</b> es contra quien se chequea todo el builder. Lo cambiás desde la ficha o el selector de arriba.</div>
         </div>
       </details>
 
       <details class="guide-step">
-        <summary><span class="gn">2</span> Biblioteca de videos y retroalimentación</summary>
+        <summary><span class="gn">02</span> Biblioteca de videos y retroalimentación</summary>
         <div class="guide-body">
           En <b>Biblioteca</b> tenés el buscador en tiempo real y filtros por grupo muscular, equipamiento y estado del video.
           <ul>
-            <li><b>➕ Añadir Ejercicio:</b> pegás el link de YouTube y la app extrae el ID sola — funciona con <code>shorts/</code>, <code>watch?v=</code>, <code>youtu.be/</code>, <code>embed/</code> y <code>live/</code>.</li>
-            <li><b>📥 Importar planilla:</b> copiás las filas de tu Google Sheets y las pegás. Detecta las columnas, suma los que faltan y completa los videos de los que ya tenías, sin duplicar.</li>
-            <li><b>⚠️ Riesgo articular:</b> marcá las zonas comprometidas de cada ejercicio. De ahí sale la alerta cuando choca con la lesión de un alumno/a.</li>
+            <li><b>Añadir Ejercicio:</b> pegás el link de YouTube y la app extrae el ID sola — funciona con <code>shorts/</code>, <code>watch?v=</code>, <code>youtu.be/</code>, <code>embed/</code> y <code>live/</code>.</li>
+            <li><b>Importar planilla:</b> copiás las filas de tu Google Sheets y las pegás. Detecta las columnas, suma los que faltan y completa los videos de los que ya tenías, sin duplicar.</li>
+            <li><b>Riesgo articular:</b> marcá las zonas comprometidas de cada ejercicio. De ahí sale la alerta cuando choca con la lesión de un alumno/a.</li>
           </ul>
           <div class="tip">Todo lo que agregues queda guardado en este navegador y disponible para todos tus alumnos.</div>
         </div>
       </details>
 
       <details class="guide-step">
-        <summary><span class="gn">3</span> Marcas de 1RM y calculadora de porcentajes</summary>
+        <summary><span class="gn">03</span> Marcas de 1RM y calculadora de porcentajes</summary>
         <div class="guide-body">
-          Dentro de la ficha del alumno/a, abajo de todo, está <b>📊 Registro de Marcas y 1RM</b>.
+          Dentro de la ficha del alumno/a, abajo de todo, está <b>Registro de Marcas y 1RM</b>.
           <ul>
             <li>Cargás ejercicio, kilos y repeticiones. La app calcula el <b>1RM estimado por fórmula de Epley</b> automáticamente — si cargás 100 kg × 5, estima 117 kg.</li>
             <li>Elegís una marca y aparece la <b>tabla de porcentajes del 50% al 100%</b>, con redondeo a 1, 2.5 o 5 kg según los discos que tenga el gimnasio.</li>
@@ -40492,24 +40523,24 @@ document.addEventListener('DOMContentLoaded', init);
       </details>
 
       <details class="guide-step">
-        <summary><span class="gn">4</span> Diseñador de rutinas</summary>
+        <summary><span class="gn">04</span> Diseñador de rutinas</summary>
         <div class="guide-body">
           En <b>Builder</b>, con el alumno/a activo, tenés cuatro formas de trabajar — combinalas:
           <ul>
-            <li><b>⚡ Cargar Estructura de Sesión:</b> cuatro esquemas listos que se completan con ejercicios de tu biblioteca, evitando los vetados.</li>
-            <li><b>✨ Generar con IA:</b> arma los días completos desde tu API Key. Todo lo que devuelve pasa por el motor biomecánico antes de cargarse.</li>
+            <li><b>Cargar Estructura de Sesión:</b> cuatro esquemas listos que se completan con ejercicios de tu biblioteca, evitando los vetados.</li>
+            <li><b>Generar con IA:</b> arma los días completos desde tu API Key. Todo lo que devuelve pasa por el motor biomecánico antes de cargarse.</li>
             <li><b>Presets de 1 clic</b> en cada bloque: Fuerza Ancla (6-8 · 2110 · 150s), Hipertrofia (10-12 · 2011 · 90s) y Bombeo (15-20 · 1010 · 45s).</li>
-            <li><b>🔍 Buscar en Biblioteca:</b> grilla visual con miniaturas; las tarjetas restringidas salen marcadas en rojo.</li>
+            <li><b>Buscar en Biblioteca:</b> grilla visual con miniaturas; las tarjetas restringidas salen marcadas en rojo.</li>
           </ul>
           Arriba del día tenés el <b>volumen semanal de series por grupo muscular</b> para no pasarte ni quedarte corto, y la configuración del mesociclo de 4 semanas con RPE, descarga y fallo técnico.
-          <div class="tip">Con <b>📋 Duplicar planificación</b> (en Alumnos) copiás la rutina entera de un alumno a otro y la app te reemplaza los ejercicios que estén vetados para quien la recibe.</div>
+          <div class="tip">Con <b>Duplicar planificación</b> (en Alumnos) copiás la rutina entera de un alumno a otro y la app te reemplaza los ejercicios que estén vetados para quien la recibe.</div>
         </div>
       </details>
 
       <details class="guide-step">
-        <summary><span class="gn">5</span> Exportar y publicar en GitHub Pages</summary>
+        <summary><span class="gn">05</span> Exportar y publicar en GitHub Pages</summary>
         <div class="guide-body">
-          En <b>Exportar</b> elegís al alumno/a, ajustás título, bajada y firma, y tocás <b>🚀 GENERAR Y DESCARGAR INDEX.HTML</b>.
+          En <b>Exportar</b> elegís al alumno/a, ajustás título, bajada y firma, y tocás <b>GENERAR Y DESCARGAR INDEX.HTML</b>.
           <ul>
             <li>Creá un repositorio nuevo en GitHub y subí el archivo con el nombre exacto <code>index.html</code> en la raíz.</li>
             <li>Entrá en <code>Settings → Pages</code>, elegí <code>Deploy from a branch</code>, rama <code>main</code>, carpeta <code>/ (root)</code>.</li>
@@ -40521,7 +40552,7 @@ document.addEventListener('DOMContentLoaded', init);
       </details>
     </div>
     <div class="modal-f">
-      <button class="btn gold" data-close="mGuide">Entendido</button>
+      <button class="btn gold jp-guide-ok" data-close="mGuide">[ ✓ ENTENDIDO ]</button>
     </div>
   </div>
 </div>
@@ -42289,7 +42320,7 @@ body{overflow-x:hidden}
         '<div class="card"><h3>📊 Distribución de niveles</h3>' +
           (n ? ['Inicial','Intermedio','Avanzado'].map((lv,i) => {
             const c = niveles[lv] || 0;
-            return '<div class="bar-row"><span>' + lv + '</span><div class="bar-track"><i class="bar-fill ' + (i===1?'t':(i===2?'r':'')) + '" style="display:block;width:' + Math.round(c/maxN*100) + '%"></i></div><b>' + c + '</b></div>';
+            return '<div class="bar-row"><span>' + lv + '</span><div class="bar-track"><i class="bar-fill ' + (i===1?'lv-int':(i===2?'lv-ava':'lv-ini')) + '" style="display:block;width:' + Math.round(c/maxN*100) + '%"></i></div><b>' + c + '</b></div>';
           }).join('') : '<div class="hint">Sin alumnos cargados.</div>') +
           '<h3 style="margin-top:18px">🏷️ Sedes</h3>' +
           (n ? sedesAll().filter(s => s.id).map(s => {
@@ -42304,12 +42335,13 @@ body{overflow-x:hidden}
               const t = log[a.id];
               return '<tr><td><b>' + esc(fullName(a)) + '</b></td>' +
                 '<td>' + volSemanal(a.id) + ' series</td>' +
-                '<td>' + (t ? '<span class="ag-state ok">' + new Date(t).toLocaleDateString('es-AR') + '</span>' : '<span class="ag-state warn">Nunca</span>') + '</td>' +
-                '<td>' + (a.link ? '<a href="' + esc(a.link) + '" target="_blank" rel="noopener" style="color:var(--teal)">Abrir ↗</a>' : '—') + '</td></tr>';
+                '<td>' + (t ? '<span class="ag-state ok">' + new Date(t).toLocaleDateString('es-AR') + '</span>' : '<span class="jp-st pend">[ PENDIENTE ]</span>') + '</td>' +
+                '<td>' + (a.link ? '<a class="jp-act ver" href="' + esc(a.link) + '" target="_blank" rel="noopener">[ ↗ VER APP ]</a>' : '<button type="button" class="jp-act go" data-mxcomp="' + esc(a.id) + '">[ ⚡ COMPILAR ]</button>') + '</td></tr>';
             }).join('') + '</tbody></table>' : '<div class="hint">Sin alumnos cargados.</div>') +
           '<div class="hint" style="margin-top:11px">' + publicados + ' de ' + n + ' alumnos tienen su link publicado cargado en la ficha.</div>' +
         '</div>' +
       '</div>';
+    box.querySelectorAll('[data-mxcomp]').forEach(b => b.addEventListener('click', () => { S.activeId = b.dataset.mxcomp; save(); go('exportar'); }));
   }
   window.renderMetricas = renderMetricas;
 
@@ -54864,6 +54896,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   /* =========================================================
      1 · CHIPS DE RECONOCIMIENTO DE VIDEO
   ========================================================= */
+  /* Auto-alias persistente: cada vinculación manual (sugerencia, reasignación, video manual) guarda "nombre normalizado -> ejercicio" en
+     localStorage; en las próximas importaciones/bloques ese nombre se vincula solo (chip verde) sin volver a elegirlo */
+  const ALIAS_KEY = 'coachjp_vid_alias_v1';
+  function aliasLeer(){ try{ return JSON.parse(localStorage.getItem(ALIAS_KEY) || '{}') || {}; }catch(e){ return {}; } }
+  function aliasGuardar(k, exId){
+    if(!k || !exId) return;
+    try{ const m = aliasLeer(); m[k] = exId; localStorage.setItem(ALIAS_KEY, JSON.stringify(m)); }catch(e){}
+  }
+  window.jpVideoAlias = { get: k => aliasLeer()[k] || '', set: aliasGuardar };
   function chips(bl, b){
     const ta = bl.querySelector('textarea[data-bf="items"], textarea[data-bf="movements"]');
     if(!ta) return;
@@ -54879,6 +54920,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
          exactos a propósito -- pensados para CrossFit, nunca tocados. */
       const vistos = {};
       lista = [];
+      let aliasNuevo = false;
       const dismissed = b.videosDismissed || [];
       const warmCh = esBloqueEntradaCalorSB(b);
       const lineasCh = String(ta.value || '').split('\n');
@@ -54888,10 +54930,16 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         vistos[k] = 1;
         const manual = (b.videosManual || []).find(function(v){ return nrm(v.nombre) === k; });
         const esOverride = !!(b.videoOverrides && b.videoOverrides[k]);
-        const exId = manual ? manual.exId : (esOverride ? b.videoOverrides[k] : '');
+        let exId = manual ? manual.exId : (esOverride ? b.videoOverrides[k] : '');
+        let porAlias = false;
+        if(!exId){
+          const al = aliasLeer()[k], exAl = al ? getEx(al) : null;
+          if(exAl && exAl.videoId){ exId = al; porAlias = true; b.videoOverrides = b.videoOverrides || {}; b.videoOverrides[k] = al; aliasNuevo = true; }
+        }
         const ex = exId ? getEx(exId) : d.ex;
-        lista.push({ nombre: d.nombre, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: esOverride || !!manual, manual: !!manual });
+        lista.push({ nombre: d.nombre, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: esOverride || !!manual || porAlias, manual: !!manual });
       });
+      if(aliasNuevo){ try{ save(); }catch(e){} }
       /* directiva ("Gestor y agregado manual de videos"): un video
          agregado a mano para un nombre que el texto de la Pizarra no
          trae tal cual (o que detectarEjerciciosSports() no llegó a
@@ -55030,8 +55078,19 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!grupo) return;
     const conVideo = (S.exercises || []).filter(e => e.videoId)
       .slice().sort((a, b) => (a.es || '').localeCompare(b.es || ''));
-    const opts = '<option value="">— Elegir ejercicio de la biblioteca —</option>' +
-      conVideo.map(e => '<option value="' + esc(e.id) + '">' + esc(e.es) + '</option>').join('');
+    /* reemplazo rápido biomecánico: primero las alternativas del MISMO patrón (y grupo) que el video vinculado, luego el resto de la biblioteca */
+    const okBtn = grupo.querySelector('[data-vcok]');
+    const actual = okBtn ? getEx(okBtn.dataset.vcok) : null;
+    const optEx = e => '<option value="' + esc(e.id) + '">' + esc(e.es) + '</option>';
+    let opts = '<option value="">— Elegir ejercicio de la biblioteca —</option>';
+    if(actual && actual.patron){
+      const mismo = conVideo.filter(e => e.id !== actual.id && e.patron === actual.patron);
+      const resto = conVideo.filter(e => e.id !== actual.id && e.patron !== actual.patron);
+      if(mismo.length) opts += '<optgroup label="Mismo patrón · ' + esc(actual.patron) + '">' + mismo.map(optEx).join('') + '</optgroup>';
+      opts += '<optgroup label="Resto de la biblioteca">' + resto.map(optEx).join('') + '</optgroup>';
+    } else {
+      opts += conVideo.map(optEx).join('');
+    }
     const span = document.createElement('span');
     span.className = 'vc-inline vc-reasign-inline';
     span.innerHTML =
@@ -55051,10 +55110,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
     if(!b || !key) return;
     b.videoOverrides = b.videoOverrides || {};
-    if(exId) b.videoOverrides[key] = exId;
+    if(exId){ b.videoOverrides[key] = exId; aliasGuardar(key, exId); }
     else delete b.videoOverrides[key];
     save();
-    toast(exId ? 'Video reasignado ✔' : 'Reasignación quitada');
+    toast(exId ? 'Video reasignado ✔ (alias guardado para próximas importaciones)' : 'Reasignación quitada');
     refrescarChipsDe(span);
   }
 
@@ -55155,6 +55214,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        b.videosManual por sí solo sólo controla el chip del Builder. */
     b.videoOverrides = b.videoOverrides || {};
     b.videoOverrides[k] = exId;
+    aliasGuardar(k, exId);
     if(b.videosDismissed) b.videosDismissed = b.videosDismissed.filter(x => x !== k);
     save();
     if(typeof renderLibrary === 'function') renderLibrary();
@@ -65609,8 +65669,8 @@ textarea[data-bf="items"]{ font-family:'JetBrains Mono',ui-monospace,Menlo,monos
 .jp-tips-prev b{ color:#F59E0B; font-weight:800; }
 
 /* modal de WhatsApp */
-#mWa select, #waTono{ background:#0E1520 !important; border:1px solid rgba(255,255,255,.14) !important; border-radius:10px; color:#EDEFF2; min-height:42px; }
-#waSend{ background:#042F2E !important; border:1px solid #10B981 !important; color:#10B981 !important; font-family:'Chakra Petch',sans-serif; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+#mWa select, #waTono{ background:#0F172A !important; border:1px solid rgba(255,255,255,.14) !important; border-radius:10px; color:#EDEFF2; min-height:42px; }
+#waSend{ background:#10B981 !important; border:1px solid #10B981 !important; color:#042F2E !important; font-family:'Chakra Petch',sans-serif; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
 #waSend:hover{ box-shadow:0 0 14px rgba(16,185,129,.4); }
 /* fila de bloque: el título conserva ancho útil; los adornos ceden primero */
 html body #dayPanel .block > .block-h > .blk-modalidad{ flex:0 1 150px !important; max-width:150px; min-width:0; text-overflow:ellipsis; }
@@ -65618,6 +65678,25 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
 @media(max-width:1280px){ html body #dayPanel .block > .block-h > .ai, html body #dayPanel .block > .block-h > .swap-touch{ display:none !important; } }
 @media(max-width:1000px){ html body #dayPanel .block > .block-h > .blk-modalidad{ flex-basis:110px !important; max-width:110px; } }
 .side-foot{ font-size:10px !important; line-height:1.4 !important; }
+/* Métricas globales */
+#mxBody .kpi .v, #mxBody .kpi .v small{ font-family:'Chakra Petch',sans-serif; font-weight:700; }
+#mxBody .bar-fill.lv-ini{ background:#64748B; }
+#mxBody .bar-fill.lv-int{ background:#38BDF8; }
+#mxBody .bar-fill.lv-ava{ background:#F59E0B; }
+.jp-st{ display:inline-flex; align-items:center; padding:3px 8px; border-radius:6px; font-family:'Chakra Petch',sans-serif; font-weight:600; font-size:10.5px; letter-spacing:.06em; }
+.jp-st.pend{ color:#94A3B8; background:rgba(148,163,184,.08); border:1px solid rgba(148,163,184,.22); }
+.jp-act{ display:inline-flex; align-items:center; padding:4px 9px; border-radius:6px; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:10.5px; letter-spacing:.06em; text-decoration:none; cursor:pointer; background:transparent; }
+.jp-act.ver{ color:#38BDF8; border:1px solid rgba(56,189,248,.45); }
+.jp-act.ver:hover{ background:rgba(56,189,248,.1); }
+.jp-act.go{ color:#F59E0B; border:1px solid rgba(245,158,11,.5); }
+.jp-act.go:hover{ background:rgba(245,158,11,.1); }
+/* Guía */
+.guide-step summary{ font-family:'Chakra Petch',sans-serif; letter-spacing:.03em; }
+.guide-step .gn{ width:auto !important; flex:0 0 auto !important; padding:0 7px; height:22px !important; border-radius:5px !important; background:transparent !important; border:1px solid rgba(245,158,11,.5) !important; color:#F59E0B !important; font-family:'JetBrains Mono',ui-monospace,monospace !important; font-weight:700; font-size:12px; letter-spacing:.04em; }
+.guide-step .guide-body ul{ list-style:none; padding-left:4px; }
+.guide-step .guide-body li{ position:relative; padding-left:16px; margin:5px 0; }
+.guide-step .guide-body li::before{ content:'▸'; position:absolute; left:0; color:#F59E0B; }
+.jp-guide-ok{ font-family:'Chakra Petch',sans-serif !important; font-weight:700; letter-spacing:.08em; }
 </style>
 
 <script>
@@ -65786,8 +65865,9 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
     if(!b) return;
     b.videoOverrides = b.videoOverrides || {};
     b.videoOverrides[nrmChip(nombre)] = exId;
+    if(window.jpVideoAlias) window.jpVideoAlias.set(nrmChip(nombre), exId);
     save();
-    toast('Video vinculado ✔');
+    toast('Video vinculado ✔ (alias guardado)');
     var ta = bl.querySelector('textarea[data-bf="items"]');
     if(ta) ta.dispatchEvent(new Event('input', { bubbles:true }));
   }
