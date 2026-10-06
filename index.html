@@ -5164,6 +5164,9 @@ function esBloqueEntradaCalorSB(b){
   return modalidadBloqueSB(b) === 'calentamiento' || b.category === 'warmup' ||
     /warm[\s-]*up|activaci[oó]n|entrada\s+en\s+calor|calentamiento|movilidad/i.test(String(b.titulo || ''));
 }
+/* frases de prescripción que NO son ejercicios ("Cada uno", "Por lado", "Biset", "Descanso", "30 seg entre sets"...): nunca llegan a la videoteca */
+const RX_RESERVADA_SB = /^(?:(?:rest|descanso|pausa|tempo|rir|rpe|biset|bi set|triset|superserie|superset|super set|circuito|ambos|nota|notas|obs|observacion|observaciones|recuperacion)(?: \d.*)?|(?:cada un[oa]|c u|cada ejercicio|por lado|por pierna|por brazo|por mano|por costado|ambos lados|los dos|entre sets?|entre series|sin descanso|al final)(?: .*)?|\d+ ?(?:seg\w*|s|min\w*)(?: (?:entre|por|de descanso|cada|c u).*)?)$/;
+function esReservadaSB(nombre){ return RX_RESERVADA_SB.test(normSports(nombre)); }
 function detectarEjerciciosSports(texto, opts){
   let lineas = String(texto || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
   if(opts && opts.warmup) lineas = lineas.filter(function(l){ return (RX_WARM_EJ.test(l) || RX_REPS_LINEA.test(l)) && !RX_WARM_CTX.test(l); });
@@ -5205,7 +5208,7 @@ function detectarEjerciciosSports(texto, opts){
     const nombreLimpio = nombreEjercicioSB(linea);
     if(!nombreLimpio || nombreLimpio.length < 3 || nombreLimpio.replace(/\s*\([^)]*\)/g, '').trim().length > MAX_NOMBRE_EJ) return;
     const k = normSports(nombreLimpio);
-    if(vistos[k]) return;
+    if(vistos[k] || esReservadaSB(nombreLimpio)) return;
     vistos[k] = 1;
     out.push({ nombre: nombreLimpio, ex: resolverExSports(nombreLimpio, !!(opts && opts.warmup)) });
   });
@@ -66015,7 +66018,7 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
 
   function norm(s){ return (typeof normSports === 'function') ? normSports(s) : String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
   function stemTok(w){ return w.length > 4 ? w.replace(/(?:es|s)$/, '') : w; }
-  function toks(s){ return norm(s).split(' ').filter(function(w){ return w.length > 1 && STOP.indexOf(w) < 0; }).map(stemTok); }
+  function toks(s){ return norm(s).split(' ').filter(function(w){ return w.length > 0 && STOP.indexOf(w) < 0; }).map(stemTok); }
   function cap1(s){ s = String(s || '').trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
   function rango(s){ return String(s).replace(/\s+/g, '').replace(/[–]|a/gi, '-'); }
 
@@ -66047,7 +66050,7 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
         if(j > pts){ pts = j; mejor = e; }
       });
     });
-    return pts >= 0.6 ? mejor : null;
+    return pts >= 0.75 ? mejor : null;      /* conservador: sin coincidencia clara se respeta lo que escribió el coach (el chip rojo ofrece sugerencias) */
   }
   function nombreCanonico(crudo){
     var base = String(crudo || '').replace(/\s+/g, ' ').replace(/^[\s\-–•*:,.;]+|[\s\-–•*:,.;|]+$/g, '').trim();
@@ -66070,6 +66073,7 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
     }
     if((m = r.match(/(?:@\s*)?\brir\s*[:=]?\s*(\d(?:\s*[-–]\s*\d)?)/i))){ d.rir = m[1].replace(/\s+/g, '').replace('–', '-'); r = r.replace(m[0], ' '); }
     if((m = r.match(/\btempo\s*[:=]?\s*([\dxX]{4}|\d-[\dxX]-[\dxX]-[\dxX])/i))){ d.tempo = m[1].replace(/-/g, '').replace(/x/gi, '1'); r = r.replace(m[0], ' '); }
+    if((m = r.match(/\b(?:cada\s+un[oa]|c\/u|ambos|los\s+dos|cada\s+ejercicio)\b/i))){ d.compartida = true; r = r.replace(m[0], ' '); }
     if((m = r.match(RX_LADO))){ d.lado = 'por ' + (m[1] === 'costado' ? 'lado' : m[1].toLowerCase()); r = r.replace(m[0], ' '); }
     var unidad = function(u){ u = (u || '').toLowerCase(); return /^(min|m$|')/.test(u) ? 'min' : (/^(s|seg)/.test(u) ? 'seg' : ''); };
     /* 3x15 / 4 x 10-12 / 3x30s */
@@ -66135,8 +66139,9 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
     /* herencia entre estaciones: sets del que los trae; reps solo si la estación no trae tiempo/reps propios */
     var conSets = ds.filter(function(d){ return d.sets; })[0], conReps = ds.filter(function(d){ return d.reps && !d.tiempo; })[0];
     ds.forEach(function(d){
-      if(!d.sets && conSets) d.sets = conSets.sets;
+      if(!d.sets && conSets){ d.sets = conSets.sets; if(!d.lado && conSets.lado && !d.tiempo) d.lado = conSets.lado; }
       if(!d.reps && conReps) { d.reps = conReps.reps; }
+      if(!d.tempo){ var ct = ds.filter(function(x){ return x.tempo; })[0]; if(ct && !RX_ISO.test(d.nombre) && !RX_CONT.test(d.nombre)) d.tempo = ct.tempo; }
       if(d.rir === undefined) { var cr = ds.filter(function(x){ return x.rir !== undefined; })[0]; if(cr && ds.length > 1 && !RX_CORE.test(d.nombre) && !RX_ISO.test(d.nombre)) d.rir = cr.rir; }
     });
     var esBiset = ds.length > 1;
@@ -66178,7 +66183,26 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
       var est = t.match(/^(A\d+)[.)]\s*(.*)$/i);
       if(est){
         var pe = parsePart(est[2]);
-        if(pe.nombre && !(pe.sets || pe.reps)){ var ce = nombreCanonico(pe.nombre); out.push(est[1].toUpperCase() + '. ' + ce.nombre); nombrePrevio = ce.nombre; if(ce.nombre !== est[2].trim()) cambios++; continue; }
+        if(pe.nombre && !(pe.sets || pe.reps)){
+          var grupo = [{ l: est[1].toUpperCase(), n: pe.nombre }], j = i + 1;
+          while(j < lineas.length){
+            var mm = lineas[j].trim().match(/^(A\d+)[.)]\s*(.*)$/i); if(!mm) break;
+            var pj = parsePart(mm[2]); if(pj.sets || pj.reps || !pj.nombre) break;
+            grupo.push({ l: mm[1].toUpperCase(), n: pj.nombre }); j++;
+          }
+          var sdl = (lineas[j] || '').trim(), pdd = sdl ? parsePart(sdl) : null;
+          if(grupo.length > 1 && pdd && !pdd.nombre && (pdd.sets || pdd.reps)){
+            var osG = [];
+            grupo.forEach(function(g){
+              var cg = nombreCanonico(g.n), og = defaults(Object.assign({}, pdd), cg.nombre, true);
+              osG.push(og); out.push(g.l + '. ' + cg.nombre); out.push(lineaDosis(og));
+            });
+            var nxt = (lineas[j + 1] || '').trim();
+            if(pdd.rest !== undefined) out.push('Rest ' + pdd.rest + 's');
+            else if(!RX_REST_LINE.test(nxt)) out.push('Rest ' + (osG.every(function(o){ return o.restDef === 45; }) ? 45 : Math.max.apply(null, osG.map(function(o){ return o.restDef; }))) + 's');
+            nombrePrevio = grupo[grupo.length - 1].n; cambios++; i = j; continue;
+          }
+          var ce = nombreCanonico(pe.nombre); out.push(est[1].toUpperCase() + '. ' + ce.nombre); nombrePrevio = ce.nombre; if(ce.nombre !== est[2].trim()) cambios++; continue; }
         if(pe.nombre){ var fe = formatearLinea(est[2], { sinRest: true }); if(fe){ out.push(est[1].toUpperCase() + '. ' + fe[0]); fe.slice(1).forEach(function(x){ out.push(x); }); nombrePrevio = fe[0]; cambios++; continue; } }
         out.push(raw); continue;
       }
@@ -66193,13 +66217,24 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
         }
         continue;
       }
+      if(/\s\+\s|\s\/\s|\b(?:biset|superserie|superset)\b/i.test(t) && !/\d\s*[x×]\s*\d|\bsets?\b|\bseries\b/i.test(t)){
+        var sg2 = (lineas[i + 1] || '').trim();
+        if(sg2 && !/^A\d+[.)]/i.test(sg2) && !RX_REST_LINE.test(sg2)){
+          var pd2 = parsePart(sg2);
+          if(!pd2.nombre && (pd2.sets || pd2.reps || pd2.rir !== undefined || pd2.tempo)){ t = t + ' ' + sg2; i++; }
+        }
+      }
       var pt = parsePart(t);
       /* "rir 2" / "tempo 3010" sueltos en su propia línea: ajustan la dosis anterior */
       if(!pt.nombre && !(pt.sets || pt.reps) && (pt.rir !== undefined || pt.tempo)){
         var li = -1; for(var z = out.length - 1; z >= 0; z--){ if(/Sets?: /.test(out[z])){ li = z; break; } if(out[z] && !/^Rest /.test(out[z])) break; }
         if(li >= 0){
-          if(pt.rir !== undefined) out[li] = out[li].replace(/RIR [\d-]+/, 'RIR ' + pt.rir);
-          if(pt.tempo) out[li] = out[li].replace(/Tempo \S+/, 'Tempo ' + pt.tempo);
+          var objetivos = [li];
+          if(pt.compartida){ objetivos = []; var y = out.length - 1; while(y >= 0 && /^Rest /.test(out[y])) y--; for(; y >= 0 && out[y] && !/^Rest /.test(out[y]); y--){ if(/Sets?: /.test(out[y])) objetivos.push(y); } }
+          objetivos.forEach(function(ix){
+            if(pt.rir !== undefined) out[ix] = out[ix].replace(/RIR [\d-]+/, 'RIR ' + pt.rir);
+            if(pt.tempo) out[ix] = out[ix].replace(/Tempo \S+/, 'Tempo ' + pt.tempo);
+          });
           cambios++; continue;
         }
       }
