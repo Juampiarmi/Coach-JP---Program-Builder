@@ -9,6 +9,7 @@ import { SlideBar } from './components/SlideBar'
 import { DEFAULT_STATE } from './defaults'
 import { harmonizeChart } from './lib/chartPillar'
 import { migrateDiagram } from './lib/diagramPillar'
+import { deriveBookmarkPoints, resolveBookmark } from './lib/bookmark'
 import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type GenerationResult } from './lib/ai'
 import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
@@ -69,10 +70,16 @@ export default function App() {
   const slides = deck.slides.length ? deck.slides.map((s) => ({ ...DEFAULT_STATE, ...migrateDiagram(s) }) as CanvasState) : [DEFAULT_STATE]
   const active = Math.min(deck.active, slides.length - 1)
   const state = slides[active]
+  // Placa de guardado sin viñetas propias: se extraen del resto del carrusel en cada render.
+  const bookmarkAuto = state.template === 'bookmark' ? deriveBookmarkPoints(slides, active) : []
+  const canvasState: CanvasState =
+    state.template === 'bookmark' && !state.bookmarkData ? { ...state, bookmarkData: resolveBookmark(state, slides, active) } : state
   const canvasRef = useRef<HTMLDivElement>(null)
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [exporting, setExporting] = useState<string | null>(null)
+  // Simulador de UI de Instagram (sólo pantalla; nunca entra en el PNG ni en el ZIP).
+  const [overlay, setOverlay] = useState(false)
   const bg = useBackgroundImage()
 
   const update = useCallback(
@@ -271,6 +278,9 @@ export default function App() {
         setBgImage={bg.setImage}
         bgPersisted={bg.persisted}
         getDiscipline={getDiscipline}
+        slideIndex={active}
+        topic={deck.topic?.trim() || `${slides[0].headlineA} ${slides[0].headlineB}`.replace(/\*/g, '').trim()}
+        bookmarkAuto={bookmarkAuto}
       />
     </>
   )
@@ -287,6 +297,20 @@ export default function App() {
     />
   )
 
+  const overlayToggle = (
+    <button
+      type="button"
+      onClick={() => setOverlay((o) => !o)}
+      aria-pressed={overlay}
+      title="Simula la interfaz de Instagram sobre la placa (no se exporta)"
+      className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
+        overlay ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-line text-steel hover:text-white'
+      }`}
+    >
+      {isDesktop ? '[ 👁 OVERLAY INSTAGRAM ]' : '👁 IG'}
+    </button>
+  )
+
   if (isDesktop) {
     return (
       <div className="flex h-dvh overflow-hidden">
@@ -301,10 +325,13 @@ export default function App() {
         <main className="tc-grid-bg flex min-w-0 flex-1 flex-col">
           <div className="flex items-center justify-between gap-4 border-b border-line bg-carbon/80 px-6 py-3 backdrop-blur">
             {slideBar}
-            <div className="w-64 shrink-0">{aspectToggle}</div>
+            <div className="flex shrink-0 items-center gap-2">
+              {overlayToggle}
+              <div className="w-64">{aspectToggle}</div>
+            </div>
           </div>
           <div className="min-h-0 flex-1 p-6">
-            <Preview state={state} bgImage={bg.image} canvasRef={canvasRef} gutter={16} />
+            <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} />
           </div>
           <div className="mx-auto flex w-full max-w-xl flex-col gap-2 px-6 pb-6">
             <CaptionBar caption={caption} onChange={setCaption} />
@@ -319,12 +346,15 @@ export default function App() {
     <div className="flex h-dvh flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
       <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
         <BrandBar />
-        <div className="w-32 shrink-0">{aspectToggle}</div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {overlayToggle}
+          <div className="w-32">{aspectToggle}</div>
+        </div>
       </header>
 
       <div className="border-b border-line px-4 py-2">{slideBar}</div>
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
-        <Preview state={state} bgImage={bg.image} canvasRef={canvasRef} gutter={4} />
+        <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} />
       </main>
 
       <section

@@ -61,6 +61,7 @@ export const DEFAULT_STATE: CanvasState = {
   diagramAccent: 'blue',
   diagramData: null,
   structData: null,
+  bookmarkData: null,
   repeatPhrase: 'SI TODO ESTÁ EN TU CONTRA, AVANZÁ EN CONTRA DE TODO',
   repeatAccent: 'white',
   repeatMode: 'diagonal',
@@ -162,6 +163,15 @@ export const SAMPLES: Record<TemplateId, Partial<CanvasState>> = {
     citeMain: '',
     citeSub: '',
     structData: null,
+  },
+  bookmark: {
+    tag: 'CHEAT SHEET · GUARDÁ ESTO',
+    headlineA: 'LO QUE TENÉS QUE',
+    headlineB: 'RECORDAR.',
+    body: '',
+    citeMain: '',
+    citeSub: '',
+    bookmarkData: null,
   },
   checklist: {
     tag: 'AUDITORÍA · SERIE EFECTIVA',

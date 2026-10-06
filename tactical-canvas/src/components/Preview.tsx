@@ -3,16 +3,21 @@ import { useFitScale } from '../hooks/useFitScale'
 import { ASPECTS } from '../lib/brand'
 import type { CanvasState } from '../types'
 import { STORY_SAFE, TacticalCanvas } from './canvas/TacticalCanvas'
+import { GhostOverlay } from './GhostOverlay'
 
 interface Props {
   state: CanvasState
   bgImage: string | null
   canvasRef: RefObject<HTMLDivElement | null>
   gutter?: number
+  /** Simulador de UI de Instagram (sólo pantalla) */
+  overlay?: boolean
+  slideCount?: number
+  slideIndex?: number
 }
 
 /** Live preview: el lienzo nativo se escala con transform para entrar en el espacio disponible. */
-export function Preview({ state, bgImage, canvasRef, gutter = 24 }: Props) {
+export function Preview({ state, bgImage, canvasRef, gutter = 24, overlay = false, slideCount = 1, slideIndex = 0 }: Props) {
   const { w, h, ratio } = ASPECTS[state.aspect]
   const { ref, scale } = useFitScale(w, h, gutter)
 
@@ -25,7 +30,8 @@ export function Preview({ state, bgImage, canvasRef, gutter = 24 }: Props) {
         >
           <TacticalCanvas ref={canvasRef} state={state} bgImage={bgImage} />
         </div>
-        {state.aspect === 'story' && (
+        {overlay && <GhostOverlay aspect={state.aspect} w={w} h={h} count={slideCount} index={slideIndex} />}
+        {state.aspect === 'story' && !overlay && (
           // Guías de zona segura (sólo en pantalla, no se exportan)
           <>
             {[0, 1].map((i) => (

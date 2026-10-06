@@ -2,6 +2,7 @@ import { DEFAULT_STATE } from '../defaults'
 import type { Accent, CanvasState, ChartMode, CurveShape, DiagramData, DiagramKind, RepeatMode, StructData, TemplateId } from '../types'
 import { diagramDefaults, inferPillar } from './diagramPillar'
 import { structDefaults } from './structPillar'
+import { BOOKMARK_CTA } from './bookmark'
 import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 import { JsonRepairError, safeParseJson } from './safeJson'
@@ -69,7 +70,7 @@ const MODE_RULE: Record<GenMode, string> = {
   auto: 'Elegí vos el formato: 1 placa si el concepto entra en una sola idea; 3 historias si necesita gancho → evidencia → acción; carrusel de 4 a 5 slides si es un tema para desarrollar. Indicá tu elección en "format".',
   single: 'Devolvé exactamente 1 slide. format = "single".',
   stories: 'Devolvé exactamente 3 slides para Historias de Instagram (9:16): 1) gancho que frene el scroll, 2) evidencia o dato, 3) acción concreta o estándar. format = "stories".',
-  carousel: 'Devolvé entre 4 y 5 slides para un carrusel de feed: portada con gancho, desarrollo con datos y evidencia, cierre con conclusión táctica o manifiesto. format = "carousel".',
+  carousel: 'Devolvé entre 4 y 5 slides para un carrusel de feed: portada con gancho, desarrollo con datos y evidencia, y la ÚLTIMA placa es por defecto "guardado" (cheat sheet de retención con las 3 o 4 ideas clave). format = "carousel".',
 }
 
 /** Rol, tono y contrato de salida. Las claves mapean 1:1 con el estado de la app. */
@@ -89,6 +90,8 @@ PLANTILLAS DISPONIBLES (templateId):
 - "pipeline": protocolo secuencial de 3 o 4 pasos numerados conectados por flechas (acción + condición o criterio).
 - "piramide": jerarquía de prioridades en 3 o 4 estratos (base no negociable → cúspide de detalle).
 - "checklist": auditoría operativa de 3 o 4 condiciones binarias ([ ✓ ] pasa / [ ✗ ] falla).
+- "guardado": placa final de retención (cheat sheet / ficha técnica): 3 o 4 viñetas que condensan todo el carrusel + llamado a guardar.
+CIERRE DE RETENCIÓN: en todo carrusel de 4 a 5 placas, la última placa es por defecto "guardado", salvo que el usuario pida otro cierre.
 
 MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al azar):
 - Dualidad o contraste entre dos estados («Ego vs Progreso», «Estático vs Dinámico», «Volumen vs Intensidad»): "ab", o "grafico" con curva y zona umbral.
@@ -109,15 +112,15 @@ FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (v
   3) "diagrama" con recommendedType "circulos" o "radar": desglose de las modalidades o pilares del servicio (cada círculo o eje es una modalidad o pilar real del brief).
   Para el proceso de trabajo (evaluación → programación → seguimiento) podés usar "pipeline", y "checklist" para «¿para quién es?».
   4) "metrica": dato de autoridad o personalización (ej: «100%» individualizado, seguimiento semanal).
-  5) "manifiesto": cierre con llamado a la acción e instrucción de contacto concreta (ej: Enviá «SISTEMA» al MD).
+  5) "guardado": cheat sheet con lo que incluye el sistema y, en "cta", el llamado a la acción con instrucción de contacto concreta (ej: ENVIÁ «SISTEMA» AL MD).
   Usá las modalidades y servicios que nombra el brief. Si no las detalla, usá modalidades típicas de coaching (online 1:1, presencial, programación para competencia) sin inventar precios, cupos ni resultados garantizados.
 - CIENCIA / TÉCNICO (explicar, informar, divulgar un tema): carrusel de divulgación rigurosa de 5 placas.
   1) "sentencia": desmitificadora.
   2) "grafico" de curva o umbral con variables fisiológicas reales.
   3) "diagrama" con recommendedType "domino" o "trayectoria": el mecanismo biológico paso a paso ("pipeline" si es un protocolo de pasos, "piramide" si es un orden de prioridades).
   4) placa de respaldo ("metrica" o "sentencia") con cita científica indexada REAL en "citation" (si no tenés certeza de un paper real, elegí otro argumento: nunca inventes).
-  5) "sentencia" o "manifiesto": conclusión práctica aplicable al entrenamiento.
-- MINDSET / TÁCTICO (filosofía, disciplina, frase contundente): "repeticion" (mode "kinetic" o "echo") y "manifiesto"; si es una sola frase, 1 placa.
+  5) "guardado": cheat sheet con la conclusión práctica aplicable al entrenamiento.
+- MINDSET / TÁCTICO (filosofía, disciplina, frase contundente): "repeticion" (mode "kinetic" o "echo") y "manifiesto"; si es carrusel, cierra con "guardado"; si es una sola frase, 1 placa.
 Si el usuario indica una cantidad de placas o un formato, respetalo por encima de estas secuencias.
 FASE 2 · REDACCIÓN TÁCTICA: escribís cada placa con el tono militar, científico y quirúrgico de Coach JP, con su templateId preseleccionado y TODOS sus datos completos (tarjetas A/B, subtipo y valores del diagrama, puntos del gráfico, frase de repetición). Las placas forman una sola historia: no repitas titulares ni ideas entre placas.
 
@@ -137,7 +140,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
   "caption": string,
   "slides": [
     {
-      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
@@ -162,6 +165,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
       "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
       "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
+      "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
       "grafico": { ... } (OBLIGATORIO sólo si templateId es "grafico"; en los demás omitilo)
     }
   ]
@@ -248,9 +252,9 @@ export function resolveFormat(text: string, mode: GenMode, opts: EditorialOption
 
 const GOAL_RULE: Record<ResolvedGoal, string> = {
   sales:
-    'OBJETIVO EDITORIAL: VENTA / SERVICIOS. plan.objetivo = "venta". Usá la secuencia de conversión táctica (sentencia → ab → diagrama de modalidades → metrica de autoridad → manifiesto con CTA de contacto).',
+    'OBJETIVO EDITORIAL: VENTA / SERVICIOS. plan.objetivo = "venta". Usá la secuencia de conversión táctica (sentencia → ab → diagrama de modalidades → metrica de autoridad → guardado con CTA de contacto).',
   science:
-    'OBJETIVO EDITORIAL: CIENCIA / TÉCNICO. plan.objetivo = "ciencia". Usá la secuencia de divulgación rigurosa (sentencia desmitificadora → grafico fisiológico → diagrama del mecanismo → placa con cita real → conclusión práctica).',
+    'OBJETIVO EDITORIAL: CIENCIA / TÉCNICO. plan.objetivo = "ciencia". Usá la secuencia de divulgación rigurosa (sentencia desmitificadora → grafico fisiológico → diagrama del mecanismo → placa con cita real → guardado con la conclusión práctica).',
   mindset:
     'OBJETIVO EDITORIAL: MINDSET / TÁCTICO. plan.objetivo = "mindset". Priorizá "repeticion" (kinetic o echo) y "manifiesto", con frases cortas y contundentes.',
 }
@@ -268,7 +272,7 @@ export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discip
 
 // ---------------------------------------------------------------------------
 
-async function callOpenAI(key: string, model: string, user: string, signal?: AbortSignal) {
+async function callOpenAI(key: string, model: string, user: string, signal?: AbortSignal, system: string = SYSTEM_PROMPT) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     signal,
@@ -278,7 +282,7 @@ async function callOpenAI(key: string, model: string, user: string, signal?: Abo
       temperature: 0.8,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: system },
         { role: 'user', content: user },
       ],
     }),
@@ -289,7 +293,7 @@ async function callOpenAI(key: string, model: string, user: string, signal?: Abo
   return String(json?.choices?.[0]?.message?.content ?? '')
 }
 
-async function callAnthropic(key: string, model: string, user: string, signal?: AbortSignal) {
+async function callAnthropic(key: string, model: string, user: string, signal?: AbortSignal, system: string = SYSTEM_PROMPT) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     signal,
@@ -303,7 +307,7 @@ async function callAnthropic(key: string, model: string, user: string, signal?: 
     body: JSON.stringify({
       model,
       max_tokens: 12000,
-      system: SYSTEM_PROMPT,
+      system,
       messages: [{ role: 'user', content: user }],
     }),
   })
@@ -484,9 +488,10 @@ async function callGemini(
   onStatus?: StatusFn,
   onModelChange?: ModelChangeFn,
   known: GeminiModel[] = [],
+  system: string = COMPACT_SYSTEM_PROMPT,
 ) {
   // Un solo turno con el prompt completo (sistema + pedido), sin espacios redundantes.
-  const prompt = `${COMPACT_SYSTEM_PROMPT}\n\n${user}`
+  const prompt = `${system}\n\n${user}`
   const selected = model.trim() || GEMINI_DEFAULT_MODEL
   let current = selected
   let retries = 0
@@ -610,6 +615,9 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   pirámide: 'pyramid',
   pyramid: 'pyramid',
   checklist: 'checklist',
+  guardado: 'bookmark',
+  cheatsheet: 'bookmark',
+  bookmark: 'bookmark',
 }
 const ACCENTS: Accent[] = ['orange', 'cyan', 'gold', 'white', 'gray']
 const CHART_MODES: ChartMode[] = ['curve', 'bars', 'gauge']
@@ -845,6 +853,13 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   // 08–11 · Estructuras: siempre con datos propios del tema (IA o pilar), nunca los de otra placa.
   patch.structData = structFromAi(s, structDefaults(pillar))
 
+  // 12 · Guardado: viñetas de la IA; sin ellas, la app las extrae del resto del carrusel.
+  const g = obj(s.guardado ?? s.cheatsheet ?? s.bookmark)
+  const gPoints = list(g.points ?? g.puntos ?? g.items).slice(0, 4)
+  if (template === 'bookmark' && gPoints.length >= 3) {
+    patch.bookmarkData = { points: gPoints, cta: upper(first(g.cta, BOOKMARK_CTA)), accent: 'orange' }
+  }
+
   // 07 · Repetición
   const r = obj(s.repeticion ?? s.repeat ?? (template === 'repeat' ? d : undefined))
   const short = upper(first(r.phrase, r.frase))
@@ -938,6 +953,7 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   pipeline: 'pipeline',
   pyramid: 'piramide',
   checklist: 'checklist',
+  bookmark: 'guardado',
 }
 
 export interface RegenerateRequest {
@@ -1003,4 +1019,104 @@ export async function regenerateSlide(
   }
   onStatus?.(null)
   return parseGeneration(parsed, 'single', { discipline: req.discipline, topic: req.topic }).slides[0]
+}
+
+// ---------------------------------------------------------------------------
+// Herramientas editoriales puntuales (ganchos de portada, cita científica). Usan las mismas
+// llamadas a cada proveedor pero con un prompt de sistema propio y corto.
+
+const TOOL_SYSTEM = `Sos el editor de COACH JP (@coachjp.training), sistema de entrenamiento de alto rendimiento. Español rioplatense (voseo). Tono táctico, militar, científico y quirúrgico: frases cortas, cero clichés de autoayuda, cero emojis, cero signos de exclamación. Respondé estrictamente con un objeto JSON válido con la forma pedida, sin markdown ni texto antes o después. Dentro de los textos usá « » en lugar de comillas dobles.`
+
+/** Settings de IA guardados por el generador (BYOK), con fusión profunda sobre los defaults. */
+export function loadAiSettings(): AiSettings {
+  try {
+    const raw = JSON.parse(localStorage.getItem('jp-tactical-canvas:ai') ?? '{}') as Partial<AiSettings>
+    return { ...DEFAULT_AI_SETTINGS, ...raw, keys: { ...DEFAULT_AI_SETTINGS.keys, ...raw.keys }, models: { ...DEFAULT_AI_SETTINGS.models, ...raw.models } }
+  } catch {
+    return DEFAULT_AI_SETTINGS
+  }
+}
+
+async function askJson(settings: AiSettings, user: string, signal?: AbortSignal, onStatus?: StatusFn): Promise<Record<string, unknown>> {
+  const key = (settings.keys[settings.provider] ?? '').trim()
+  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA.')
+  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
+  const ask = (prompt: string) =>
+    settings.provider === 'gemini'
+      ? callGemini(key, model, prompt, signal, onStatus, undefined, settings.geminiModels ?? [], TOOL_SYSTEM)
+      : settings.provider === 'anthropic'
+        ? callAnthropic(key, model, prompt, signal, TOOL_SYSTEM)
+        : callOpenAI(key, model, prompt, signal, TOOL_SYSTEM)
+  const text = await ask(user)
+  try {
+    return obj(safeParseJson(text))
+  } catch (err) {
+    if (!(err instanceof JsonRepairError)) throw err
+    return obj(safeParseJson(await ask(repairPrompt(err))))
+  } finally {
+    onStatus?.(null)
+  }
+}
+
+export type HookAngle = 'contrarian' | 'military' | 'science'
+export interface HookVariant {
+  angle: HookAngle
+  white: string
+  accent: string
+}
+export const HOOK_ANGLE_LABEL: Record<HookAngle, string> = {
+  contrarian: 'CONTRARIAN',
+  military: 'MILITAR',
+  science: 'CIENTÍFICO',
+}
+
+/** 3 variantes de titular de portada (blanco + remate) con enfoques distintos. */
+export async function generateHooks(
+  settings: AiSettings,
+  ctx: { topic: string; discipline: Discipline; headline: string },
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<HookVariant[]> {
+  const focus = DISCIPLINE_RULE[ctx.discipline]
+  const user = `Tema del carrusel: "${ctx.topic}".
+Titular actual de la portada: "${ctx.headline}".
+${focus ? `${focus}\n` : ''}Escribí 3 titulares alternativos para la PLACA 1 (portada), en MAYÚSCULAS, de 5 a 12 palabras en total cada uno, partidos en "white" (base, en blanco) y "accent" (remate, en naranja). Un enfoque por titular:
+1. "contrarian": desmitificador, rompe un mito común de fuerza o nutrición.
+2. "military": estándar operativo, directivo, directo y riguroso.
+3. "science": curiosidad científica, foco en un mecanismo fisiológico o un dato empírico real (sin inventar cifras).
+Forma exacta: { "hooks": [ { "angle": "contrarian", "white": string, "accent": string }, { "angle": "military", "white": string, "accent": string }, { "angle": "science", "white": string, "accent": string } ] }`
+  const res = await askJson(settings, user, signal, onStatus)
+  const angles: HookAngle[] = ['contrarian', 'military', 'science']
+  const hooks = (Array.isArray(res.hooks) ? res.hooks : []).map(obj)
+  const out = angles
+    .map((angle, i) => {
+      const h = hooks.find((x) => str(x.angle).toLowerCase() === angle) ?? hooks[i] ?? {}
+      return { angle, white: upper(first(h.white, h.titleWhite, h.blanco)), accent: upper(first(h.accent, h.titleAccent, h.remate)) }
+    })
+    .filter((h) => h.white || h.accent)
+  if (!out.length) throw new Error('La IA no devolvió ganchos utilizables. Probá de nuevo.')
+  return out
+}
+
+/** Paper indexado real para la placa: autor y año, journal y hallazgo en una línea. */
+export async function suggestCitation(
+  settings: AiSettings,
+  ctx: { topic: string; discipline: Discipline; slide: string },
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<{ citeMain: string; citeSub: string }> {
+  const focus = DISCIPLINE_RULE[ctx.discipline]
+  const user = `Contenido de la placa: "${ctx.slide}".
+Tema general: "${ctx.topic}".
+${focus ? `${focus}\n` : ''}Sugerí UN estudio científico REAL, publicado en una revista indexada (ej: Journal of Strength and Conditioning Research, Sports Medicine, Medicine & Science in Sports & Exercise, British Journal of Sports Medicine, Journal of the International Society of Sports Nutrition), que respalde directamente ese contenido. Preferí revisiones sistemáticas y metaanálisis muy citados (ej: Schoenfeld y col. sobre volumen e hipertrofia, Morton y col. 2018 sobre proteína, Helms y col. 2014 sobre nutrición de culturismo). Si no tenés certeza de que el estudio exista exactamente con ese autor, año y revista, devolvé "found": false: nunca inventes una cita.
+Forma exacta: { "found": boolean, "author": string (apellido del primer autor + «y col.», ej «Schoenfeld y col.»), "year": number, "journal": string (nombre completo de la revista), "finding": string (hallazgo principal en 1 línea técnica, máx 110 caracteres) }`
+  const res = await askJson(settings, user, signal, onStatus)
+  const author = first(res.author, res.autor)
+  const year = first(res.year, res.anio, res.año)
+  const journal = first(res.journal, res.revista)
+  if (res.found === false || !author || !year || !journal) throw new Error('La IA no encontró un paper con certeza para esta placa. Ajustá el texto o cargalo a mano.')
+  return {
+    citeMain: stripBrackets(`${author}, ${year} · ${journal}`.toUpperCase()),
+    citeSub: first(res.finding, res.hallazgo).slice(0, 140),
+  }
 }

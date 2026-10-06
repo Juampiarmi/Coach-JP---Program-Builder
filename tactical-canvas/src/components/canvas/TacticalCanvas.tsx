@@ -11,6 +11,7 @@ import { StatementTemplate } from './templates/StatementTemplate'
 import { DiagramTemplate } from './templates/DiagramTemplate'
 import { RepeatTemplate } from './templates/RepeatTemplate'
 import { StructTemplate } from './templates/StructTemplate'
+import { BookmarkTemplate } from './templates/BookmarkTemplate'
 import { STRUCT_TEMPLATES } from '../../lib/structPillar'
 import { effectiveTheme, PALETTES } from '../../lib/theme'
 
@@ -31,22 +32,32 @@ const FONT_SIZE_FACTOR = { chakra: 1, barlow: 1.2, inter: 0.94, serif: 1.12 } as
 const MIN_FIT = 0.55
 const FIT_SLACK = 12
 
+/** Story: escala inicial del contenido (se reduce sola si no entra) y tope del aire extra repartido. */
+const STORY_BOOST = 1.16
+const STORY_SPREAD_MAX = 300
+
 /**
  * Auto-ajuste: si el bloque central no entra entre el header y el footer, se reduce
  * su escala en pasos hasta que entre. Así ninguna placa se exporta con texto pisado.
+ * En Story arranca más grande (startFit) y, una vez que entra, reparte la mitad del alto
+ * sobrante entre el titular y el bloque central (spread) para que no quede una isla al medio.
  */
-function useAutoFit(deps: unknown) {
+function useAutoFit(deps: unknown, startFit = 1, spreadOn = false) {
   const mainRef = useRef<HTMLElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
-  const [fit, setFit] = useState(1)
+  const [fit, setFit] = useState(startFit)
+  const [spread, setSpread] = useState(0)
   // Se incrementa cuando cambia el tamaño real del contenido sin que React re-renderice
   // (p. ej. cuando termina de cargar una fuente web) para volver a medir.
   const [tick, setTick] = useState(0)
   const key = JSON.stringify(deps)
+  const startRef = useRef(startFit)
+  startRef.current = startFit
 
   useLayoutEffect(() => {
-    setFit(1)
-  }, [key])
+    setFit(startFit)
+    setSpread(0)
+  }, [key, startFit])
 
   useEffect(() => {
     const box = mainRef.current
@@ -56,7 +67,7 @@ function useAutoFit(deps: unknown) {
     ro.observe(content)
     ro.observe(box)
     const onFonts = () => {
-      setFit(1)
+      setFit(startRef.current)
       setTick((t) => t + 1)
     }
     document.fonts?.addEventListener('loadingdone', onFonts)
@@ -70,13 +81,19 @@ function useAutoFit(deps: unknown) {
     const box = mainRef.current
     const content = contentRef.current
     if (!box || !content) return
+    // Alto natural del contenido, sin el aire repartido (así el reparto nunca fuerza a achicar).
+    const natural = content.offsetHeight - spread
     // Margen de seguridad: el render de exportación puede cortar líneas unos px distinto.
-    if (content.offsetHeight > box.clientHeight - FIT_SLACK && fit > MIN_FIT) {
+    if (natural > box.clientHeight - FIT_SLACK && fit > MIN_FIT) {
       setFit((f) => Math.max(MIN_FIT, Math.round((f - 0.03) * 100) / 100))
+      return
     }
-  }, [fit, key, tick])
+    const slack = box.clientHeight - FIT_SLACK - natural
+    const target = spreadOn && slack > 0 ? Math.round(Math.min(slack * 0.5, STORY_SPREAD_MAX)) : 0
+    if (Math.abs(target - spread) > 3 || (target === 0 && spread !== 0)) setSpread(target)
+  }, [fit, key, tick, spread, spreadOn])
 
-  return { mainRef, contentRef, fit }
+  return { mainRef, contentRef, fit, spread }
 }
 
 /**
@@ -117,7 +134,10 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const baseScale = isStory ? 1.08 : 1
   const hasBg = Boolean(bgImage)
   const plate = hasBg && state.floatingPlate
-  const { mainRef, contentRef, fit } = useAutoFit([state, hasBg])
+  // Story adaptativo: con alineación AUTO el contenido arranca más grande y el aire sobrante se
+  // reparte (tag → titular → bloque → footer) en lugar de quedar compactado al centro.
+  const adaptive = isStory && state.contentAlign === 'auto' && state.template !== 'repeat'
+  const { mainRef, contentRef, fit, spread } = useAutoFit([state, hasBg], adaptive ? STORY_BOOST : 1, adaptive && state.template !== 'manifesto')
   const scale = baseScale * fit
   const pad = PAD[state.aspect]
   const font = HEADLINE_FONTS[state.headlineFont]
@@ -300,7 +320,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     accent={palette.accent}
                     fontWeight={headlineWeight}
                   />
-                  <div style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale * gap }}>
+                  <div style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale * gap + spread }}>
                     {state.template === 'metric' && <MetricTemplate state={state} fontFamily={font.family} scale={scale} />}
                     {state.template === 'compare' && <CompareTemplate state={state} fontFamily={font.family} scale={scale} />}
                     {state.template === 'chart' && (
@@ -309,6 +329,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     {isStatement && <StatementTemplate state={state} scale={scale} />}
                     {isDiagram && <DiagramTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isStruct && <StructTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
+                    {state.template === 'bookmark' && <BookmarkTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
                   </div>
                 </>
               )}

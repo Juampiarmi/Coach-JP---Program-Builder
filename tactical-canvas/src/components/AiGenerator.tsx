@@ -51,6 +51,7 @@ const SEQ_LABEL: Record<string, string> = {
   pipeline: 'PIPELINE',
   pyramid: 'PIRÁMIDE',
   checklist: 'CHECKLIST',
+  bookmark: 'GUARDADO',
 }
 const LEGACY_COOLDOWN_KEY = 'jp-tactical-canvas:ai-cooldown'
 

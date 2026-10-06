@@ -41,7 +41,7 @@ export const PALETTES: Record<ThemeId, CanvasPalette> = {
 export const THEME_LABEL: Record<ThemeId, string> = { dark: 'TÁCTICO DARK', paper: 'MINIMAL PAPER' }
 
 /** Plantillas que admiten Minimal Paper; las 01–05 siguen siempre en Táctico Dark. */
-export const PAPER_TEMPLATES: TemplateId[] = ['diagram', 'repeat', 'matrix', 'pipeline', 'pyramid', 'checklist']
+export const PAPER_TEMPLATES: TemplateId[] = ['diagram', 'repeat', 'matrix', 'pipeline', 'pyramid', 'checklist', 'bookmark']
 
 export function effectiveTheme(state: Pick<CanvasState, 'theme' | 'template'>): ThemeId {
   return state.theme === 'paper' && PAPER_TEMPLATES.includes(state.template) ? 'paper' : 'dark'

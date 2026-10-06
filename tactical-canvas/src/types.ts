@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -37,6 +37,14 @@ export interface StructData {
   pyramid: { levels: { name: string; desc: string }[] }
   /** 11 · Checklist: 3 o 4 ítems binarios */
   checklist: { items: { status: 'ok' | 'err'; text: string; detail: string }[] }
+}
+
+/** 12 · Placa de guardado / cheat sheet */
+export interface BookmarkData {
+  /** 3 o 4 viñetas clave del carrusel */
+  points: string[]
+  cta: string
+  accent: 'orange' | 'cyan'
 }
 
 export interface CompareCard {
@@ -117,6 +125,8 @@ export interface CanvasState {
   diagramData: DiagramData | null
   /** Plantillas 08–11 (IA o editados). null = todavía no se cargaron: se usan los del pilar del tema. */
   structData: StructData | null
+  /** Placa de guardado. null = viñetas extraídas automáticamente del resto del carrusel. */
+  bookmarkData: BookmarkData | null
   // Repetición matrix (plantilla 07)
   repeatPhrase: string
   repeatAccent: RepeatAccent

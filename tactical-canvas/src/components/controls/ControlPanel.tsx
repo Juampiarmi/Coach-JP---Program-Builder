@@ -10,6 +10,8 @@ import type { Discipline } from '../../lib/ai'
 import { diagramDefaults, inferPillar, resolveDiagramData, slideText } from '../../lib/diagramPillar'
 import { STRUCT_TEMPLATES, structDefaults } from '../../lib/structPillar'
 import { StructEditor } from './StructEditor'
+import { BookmarkEditor } from './BookmarkEditor'
+import { CitationSuggester, HookGenerator } from './AiAssist'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 const isStruct = (t: TemplateId) => (STRUCT_TEMPLATES as readonly string[]).includes(t)
@@ -26,6 +28,7 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'pipeline', n: '09', label: 'Pipeline' },
   { id: 'pyramid', n: '10', label: 'Pirámide' },
   { id: 'checklist', n: '11', label: 'Checklist' },
+  { id: 'bookmark', n: '12', label: 'Guardado' },
 ]
 
 const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
@@ -70,9 +73,16 @@ interface Props {
   bgPersisted: boolean
   /** Pilar activo al momento del clic (chip del generador IA o el de la última generación) */
   getDiscipline: () => Discipline
+  /** Posición de la placa activa en la secuencia (0 = portada) */
+  slideIndex: number
+  /** Tema de la secuencia para las herramientas de IA */
+  topic: string
+  /** Viñetas extraídas automáticamente del carrusel para la placa de guardado */
+  bookmarkAuto: string[]
 }
 
-export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline }: Props) {
+export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto }: Props) {
+  const ai = { state, update, topic, discipline: getDiscipline() }
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
   // Diagrama: lo que se ve es lo que se edita (datos de la placa o, si no hay, los del pilar del tema).
@@ -206,6 +216,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
           </div>
         </div>
+        {slideIndex === 0 && <HookGenerator {...ai} />}
         </>
         )}
         {state.template === 'repeat' ? null : state.template === 'manifesto' ? (
@@ -445,6 +456,8 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
 
         {isStruct(state.template) && <StructEditor state={state} update={update} />}
 
+        {state.template === 'bookmark' && <BookmarkEditor state={state} update={update} auto={bookmarkAuto} />}
+
         {state.template === 'repeat' && (
           <>
             <Segmented<RepeatMode>
@@ -633,6 +646,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           </div>
           <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
           <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
+          <CitationSuggester {...ai} />
         </Section>
       )}
 
@@ -701,5 +715,7 @@ function summaryFor(s: CanvasState) {
     case 'pyramid':
     case 'checklist':
       return `${s.headlineA} ${s.headlineB}`.trim() || 'Estructura táctica'
+    case 'bookmark':
+      return s.bookmarkData ? `${s.bookmarkData.points.length} viñetas` : 'Viñetas automáticas del carrusel'
   }
 }
