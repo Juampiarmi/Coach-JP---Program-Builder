@@ -2436,17 +2436,29 @@ function zonasDeTag(tag){
   Object.keys(map).forEach(z => { if(map[z].some(k => t.indexOf(k) >= 0)) out.push(z); });
   return out;
 }
+/* patrón motor principal por nombre: "Remo / Row / Jalón / Dominadas / Tracción" (tirón) NUNCA colisiona con "Press / Fondos / Flexiones" (empuje):
+   compartir solo modificadores ("inclinado", "con mancuernas") no hace que dos ejercicios sean el mismo */
+const RX_PATRON_TIRON = /\b(?:remo|remos|row|rows|jalon|jalones|pulldown|dominadas?|pull ?ups?|chin ?ups?|traccion|tracciones|tiron|face ?pulls?)\b/;
+const RX_PATRON_EMPUJE = /\b(?:press|push|fondos?|dips?|flexiones?|empuje|empujes)\b/;
+function patronMotorNombre(n){
+  const t = RX_PATRON_TIRON.test(n), e = RX_PATRON_EMPUJE.test(n);
+  return t && !e ? 'tiron' : (e && !t ? 'empuje' : '');
+}
+const MODIFICADORES_NOMBRE = ['barra', 'mancuernas', 'mancuerna', 'inclinado', 'inclinada', 'declinado', 'declinada', 'plano', 'plana', 'polea', 'cable', 'maquina', 'agarre', 'neutro', 'supino', 'supina', 'prono', 'prona', 'unilateral', 'banco', 'sentado', 'sentada', 'parado', 'alternado', 'alterno', 'pausa', 'ancho', 'estrecho', 'cerrado', 'frontal', 'posterior', 'anterior', 'mano', 'manos', 'piernas', 'pierna', 'brazo', 'brazos', 'bandas', 'banda', 'multipower', 'smith'];
 function matchNombre(a, b){
   const x = norm(a), y = norm(b);
   if(!x || !y) return false;
   if(x === y) return true;
+  const px = patronMotorNombre(x), py = patronMotorNombre(y);
+  if(px && py && px !== py) return false;
   if(x.length >= 4 && y.indexOf(x) >= 0) return true;
   if(y.length >= 4 && x.indexOf(y) >= 0) return true;
   const wx = x.split(/\s+/).filter(w => w.length > 3);
   const wy = y.split(/\s+/).filter(w => w.length > 3);
   if(!wx.length || !wy.length) return false;
-  const common = wx.filter(w => wy.indexOf(w) >= 0).length;
-  return common >= Math.min(2, Math.min(wx.length, wy.length));
+  const comunes = wx.filter(w => wy.indexOf(w) >= 0);
+  /* al menos una palabra común tiene que ser el "núcleo" del movimiento, no un modificador (inclinado, mancuernas, barra...) */
+  return comunes.length >= Math.min(2, Math.min(wx.length, wy.length)) && comunes.some(w => MODIFICADORES_NOMBRE.indexOf(w) < 0);
 }
 /* Devuelve {level:'danger'|'warn'|'good', title, msg, alts:[]} */
 function checkExercise(ath, ex){
@@ -66023,6 +66035,9 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
   function rango(s){ return String(s).replace(/\s+/g, '').replace(/[–]|a/gi, '-'); }
 
   /* ---------- nombres: diccionario de jerga -> canónico, luego biblioteca ---------- */
+  var GENERICOS = ['bicep', 'tricep', 'pecho', 'espalda', 'pierna', 'brazo', 'ejercicio', 'musculo'];
+  var RX_PLACEHOLDER = /^(?:A\d+[.)]\s*)?(?:ejercicio|exercise|nombre(?:\s+del\s+ejercicio)?)(?:\s*\d+)?\s*$/i;
+  var RX_VARIABLES = /\b[XYZWT]\s*(?:sets?|reps?|series)\b|\|\s*Tempo\s*(?:\||$)|\|\s*RIR\s*$|\b\d+\s*Reps\s*\|\s*Tempo\s*\|\s*RIR\b/;
   var DICC = [
     [/^(?:plancha|plank|plancha frontal|plancha rkc|plank rkc|plancha isometrica)$/, 'Plank RKC'],
     [/^v ?ups?$/, 'V-ups'],
@@ -66031,6 +66046,7 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
     [/^(?:jalon|lat pulldown|polea al pecho) (?:neutro|agarre neutro)$/, 'Lat Pulldown Neutro'],
     [/^face ?pulls?$/, 'Face pull'],
     [/^dips?$/, 'Fondos'],
+    [/^curl (?:de )?(?:biceps )?martillo$|^curl biceps martillo$|^martillo$|^hammer curl$/, 'Curl martillo'],
     [/^pull ?ups?$/, 'Dominadas']
   ];
   function buscarBiblioteca(nombre){
@@ -66047,6 +66063,8 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
         var inter = q.filter(function(w){ return t.indexOf(w) >= 0; }).length;
         var uni = q.length + t.length - inter;
         var j = inter / uni;
+        /* el nombre de la biblioteca está contenido en lo escrito y solo sobra una palabra genérica ("curl de bíceps martillo" -> "Curl martillo") */
+        if(t.length >= 2 && inter === t.length && q.length - inter <= 1 && q.filter(function(w){ return t.indexOf(w) < 0; }).every(function(w){ return GENERICOS.indexOf(w) >= 0; })) j = Math.max(j, 0.9 + t.length / 100);
         if(j > pts){ pts = j; mejor = e; }
       });
     });
@@ -66094,7 +66112,11 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
       d.reps = m[1].replace(',', '.'); d.unit = unidad(m[2]); d.tiempo = true; r = r.replace(m[0], ' ');
     }
     if(!d.reps && (m = r.match(/(?:^|\s)(\d+(?:\s*(?:[-–]|\ba\b)\s*\d+)?)\s*(?:reps?|repeticiones)\b/i))){ d.reps = rango(m[1]); r = r.replace(m[0], ' '); }
+    if(!d.reps && (m = r.match(/(?:^|\s)(\d+\s*(?:[-–]|\ba\b)\s*\d+)(?![\d%a-záéíóú])/i))){ d.reps = rango(m[1]); r = r.replace(m[0], ' '); }
+    if(!d.reps && (m = r.match(/^\s*(\d{1,2})\s+(?=[A-Za-záéíóúñ])(?!(?:reps?|repeticiones|segundos?|segs?|min|series|sets)\b)/i))){ d.reps = m[1]; r = r.replace(m[0], ' '); }
+    else if(!d.reps && (m = r.match(/(?:\bx\s*|\s)(\d{1,2})\s*$/i)) && /[a-záéíóú]{3}/i.test(r.replace(m[0], ''))){ d.reps = m[1]; r = r.replace(m[0], ' '); }
     r = r.replace(/\b(?:entre\s+(?:sets?|series?|rondas?)|al\s+final|de\s+reserva|x\b)/gi, ' ').replace(/\b(?:biset|bi-set|superserie|superset|super\s+set)\b\s*[:\-–]?/gi, ' ');
+    r = r.replace(/\b(?:tempo|rir|rpe|rest|descanso)\b/gi, ' ');      /* etiquetas vacías ("4 Reps | Tempo | RIR"): nunca son parte del nombre */
     d.nombre = r.replace(/[()]/g, ' ').replace(/\s+/g, ' ').replace(/^[\s\-–•*:,.;|@]+|[\s\-–•*:,.;|@]+$/g, '').replace(/^(?:de|con|x)\s+/i, '').replace(/\s+(?:de|con|x|a)$/i, '').trim();
     return d;
   }
@@ -66168,11 +66190,12 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
   /* ---------- texto completo ---------- */
   function procesarTexto(texto){
     var lineas = String(texto || '').split(/\r?\n/);
-    var out = [], ia = [], i, nombrePrevio = '', cambios = 0, restPend = null;
+    var out = [], ia = [], i, nombrePrevio = '', cambios = 0, restPend = null, placeholders = 0;
     var cierraRest = function(){ if(restPend){ out.push('Rest ' + restPend + 's'); restPend = null; } };
     for(i = 0; i < lineas.length; i++){
       var raw = lineas[i], t = raw.trim();
       if(!t){ cierraRest(); out.push(''); continue; }
+      if(RX_PLACEHOLDER.test(t)){ placeholders++; cierraRest(); out.push(raw); continue; }
       if(RX_REST_LINE.test(t)){
         var rr = parsePart(t);
         if(rr.rest !== undefined){ restPend = null; out.push('Rest ' + rr.rest + 's'); cambios += (('Rest ' + rr.rest + 's') !== t ? 1 : 0); }
@@ -66254,7 +66277,7 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
       ia.push({ idx: out.length, texto: t }); out.push(raw);
     }
     cierraRest();
-    return { lineas: out, ia: ia, cambios: cambios };
+    return { lineas: out, ia: ia, cambios: cambios, placeholders: placeholders };
   }
 
   /* ---------- nivel 2: IA ---------- */
@@ -66263,7 +66286,7 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
     s = s.replace(/^```[a-z]*\s*|\s*```$/gi, '').trim();
     if(/^["']/.test(s) && /["']$/.test(s)){ try{ s = JSON.parse(s); }catch(e){} }
     if(/^[\[{]/.test(s)){ try{ var j = JSON.parse(s); s = Array.isArray(j) ? j.join('\n') : Object.keys(j).map(function(k){ return j[k]; }).join('\n'); }catch(e){} }
-    var ls = String(s).split(/\r?\n/).map(function(l){ return l.trim(); }).filter(Boolean);
+    var ls = String(s).split(/\r?\n/).map(function(l){ return l.trim(); }).filter(function(l){ return l && !RX_PLACEHOLDER.test(l) && !RX_VARIABLES.test(l); });
     /* las líneas de dosis que devuelve la IA ("4x10-12 | Tempo 2011 | RIR 2") pasan por el mismo formateador canónico */
     var prev = '';
     return ls.map(function(l){
@@ -66302,6 +66325,11 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
     try{
       await new Promise(function(ok){ setTimeout(ok, 260); });      /* el estado "PROCESANDO" alcanza a verse aunque la conversión local sea instantánea */
       var r = procesarTexto(ta.value);
+      /* plantillas con la palabra literal "Ejercicio" (sin nombre real): no se inventa nada, se pide el nombre y no se toca el bloque */
+      if(r.placeholders){
+        toast('Hay ' + r.placeholders + ' línea(s) "Ejercicio" sin nombre real: escribí el ejercicio (ej. "10-15 curl martillo") y volvé a formatear', 'warn');
+        return false;
+      }
       if(r.ia.length){
         var hayIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
         if(!hayIA){ avisoIA = r.ia.length + ' línea(s) de redacción libre quedaron sin tocar (sin clave de IA)'; }
@@ -66316,12 +66344,17 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
         }
       }
       var nuevo = r.lineas.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
-      if(nuevo === ta.value.replace(/\s+$/, '') && !avisoIA){ toast('El bloque ya estaba en formato canónico'); return true; }
+      if(nuevo === ta.value.replace(/\s+$/, '') && !avisoIA){
+        if(r.placeholders) toast('Hay ' + r.placeholders + ' línea(s) "Ejercicio" sin nombre real: escribí el ejercicio y volvé a formatear', 'warn');
+        else toast('El bloque ya estaba en formato canónico');
+        return true;
+      }
       if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Auto-formato de bloque');
       ta.value = nuevo;
       ta.dispatchEvent(new Event('input', { bubbles: true }));
       ta.dispatchEvent(new Event('change', { bubbles: true }));
       checkVideoMatches(blockId);
+      if(r.placeholders) avisoIA = (avisoIA ? avisoIA + ' · ' : '') + r.placeholders + ' línea(s) "Ejercicio" sin nombre real: escribí el ejercicio';
       toast(avisoIA ? '⚡ Bloque formateado · ' + avisoIA : '⚡ Bloque formateado y sincronizado', avisoIA ? 'warn' : undefined);
       return true;
     }catch(err){
