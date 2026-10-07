@@ -9761,6 +9761,14 @@ function ultimoHistorial(nombreEx){
   return hk ? (state.historialCargas[hk] || null) : null;
 }
 function getLoad(key){ return state.loads[key] || {}; }
+/* "2,5" y "2.5" son el mismo número (nunca "25"); fmtJP los muestra siempre con punto */
+function numJP(v){ var n = parseFloat(String(v == null ? '' : v).replace(',', '.')); return isFinite(n) ? n : 0; }
+function fmtJP(n){ return String(Math.round(n * 100) / 100); }
+/* una serie del reporte: se omite si quedó en 0 reps (no hay trabajo efectivo) */
+function lineaSetWA(i, ld){
+  var kg = numJP(ld.kg), reps = numJP(ld.reps);
+  return '  \\u2022 Set ' + i + ': ' + (kg > 0 ? fmtJP(kg) + ' kg \\u00d7 ' : '') + fmtJP(reps) + ' reps';
+}
 /* directiva maestra ("HUD de telemetría en vivo: tonelaje acumulado de
    sesión") -- suma kg*reps de TODA serie tildada (done===true) en el
    día/semana activos, leyendo directo de state.loads (misma fuente de
@@ -9778,8 +9786,8 @@ function calcularTonelajeSesion(){
     if(k.indexOf(prefix) !== 0) return;
     var ld = state.loads[k];
     if(!ld || !ld.done) return;
-    var kg = parseFloat(ld.kg), reps = parseFloat(ld.reps);
-    if(!isFinite(kg) || !isFinite(reps) || kg <= 0 || reps <= 0) return;
+    var kg = numJP(ld.kg), reps = numJP(ld.reps);
+    if(kg <= 0 || reps <= 0) return;
     total += kg * reps;
   });
   return Math.round(total);
@@ -9830,6 +9838,7 @@ function actualizarTonelajeHUD(){
 }
 function setLoadField(key, field, value){
   state.loads[key] = state.loads[key] || {};
+  if(field === 'kg' || field === 'reps') value = (typeof value === 'string') ? value.replace(/,/g, '.') : value;
   state.loads[key][field] = value;
   /* sello de tiempo: permite mostrarle al alumno cuándo hizo esa serie */
   state.loads[key].ts = Date.now();
@@ -11632,7 +11641,7 @@ function datosStoryCF(weekIdx, day){
       const l = state.loads[k];
       if(!l || !l.done) return;
       huboLoads = true;
-      const kg = parseFloat(l.kg) || 0, rp = parseInt(l.reps, 10) || 0;
+      const kg = numJP(l.kg), rp = Math.round(numJP(l.reps));
       vol += kg * rp;
       if(kg > top) top = kg;
     });
@@ -12329,8 +12338,9 @@ window.addEventListener('resize', function(){
 if(hudEl) hudEl.addEventListener('transitionend', function(){
   if(videoWrapEl && videoWrapEl.classList.contains('open')) ajustarPosicionVideoPopup();
 });
-function openVideoPopup(ytid){
-  videoIframeEl.src = 'https://www.youtube-nocookie.com/embed/' + ytid + '?autoplay=1&rel=0&modestbranding=1&playsinline=1';
+function openVideoPopup(ytid, opts){
+  var loop = !!(opts && opts.loop);
+  videoIframeEl.src = 'https://www.youtube-nocookie.com/embed/' + ytid + '?autoplay=1&rel=0&modestbranding=1&playsinline=1' + (loop ? '&mute=1&loop=1&playlist=' + ytid : '');
   videoFallbackEl.href = 'https://www.youtube.com/watch?v=' + ytid;
   videoWrapEl.classList.add('open');
   ajustarPosicionVideoPopup();
@@ -14389,8 +14399,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       else valHtml = (partes.val ? valHtml + ' ' : '') + '<span class="jp-cf-time">&#9201;&#65039; ' + micro + 's rest</span>';
     }
     const esComplex = partes.nm.indexOf(' + ') >= 0 && partes.nm.length > 26;
-    return '<div class="jp-cf-row' + ((micro || /jp-cf-time/.test(valHtml)) ? ' jp-cf-row-chip' : '') + '">' +
-        '<span class="jp-cf-rn' + (esComplex ? ' jp-cf-rn-complex' : '') + '">' + jpCfHighlightNum(partes.nm) +
+    /* estación de EMOM / intervalos: celda táctil "[ MIN 1 ] Run" */
+    const mMin = partes.nm.match(/^Min(?:uto)?s?\\s*(\\d+)\\s*(?:--|[-\\u2013\\u2014:])\\s*(.+)$/i);
+    const nmHtml = mMin ? '<span class="jp-cf-min">[ MIN ' + mMin[1] + ' ]</span>' + jpCfHighlightNum(mMin[2]) : jpCfHighlightNum(partes.nm);
+    return '<div class="jp-cf-row' + (mMin ? ' jp-cf-cell' : '') + ((micro || /jp-cf-time/.test(valHtml)) ? ' jp-cf-row-chip' : '') + '">' +
+        '<span class="jp-cf-rn' + (esComplex ? ' jp-cf-rn-complex' : '') + '">' + nmHtml +
           (lado ? '&nbsp;<span class="jp-cf-side">(' + lado + ')</span>' : '') + '</span>' +
         ((partes.val || micro) ? '<span class="jp-cf-rv">' + valHtml + '</span>' : '') +
       '</div>';
@@ -14568,6 +14581,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        un mensaje claro en vez del WOD de otra semana. */
     const filas = lineas.length ? (jpCfIntervaloCtx = lineas.some(function(l){ return /^[\\s*#⚡]*(?:every|e\\d*mom|emom)\\b/i.test(String(l)); }), jpCfRenderLineas(lineas, dayId))
       : (weekIdx > 0 ? '<div class="jp-cf-row jp-cf-badge">Todavía no se cargó la prescripción de esta semana. Consultá con tu coach.</div>' : '');
+    /* registro de series: casilleros de carga y repeticiones para Fuerza/Skill y Accesorios (los intervalos EMOM/Every no llevan grilla) */
+    let gridHtml = '';
+    (function(){
+      if(!lineas.length || jpCfIntervaloCtx) return;
+      if(block.category !== 'strength' && block.category !== 'accessory') return;
+      let nSets = 0, lineaSets = '';
+      for(let gi = 0; gi < lineas.length && !nSets; gi++){
+        const lg = String(lineas[gi]);
+        const m1 = lg.match(/(\\d+)\\s*(?:sets?|series?|rondas?)\\b/i) || lg.match(/(?:^|\\s)(\\d+)\\s*[x\\u00d7]\\s*\\d/i);
+        if(m1){ nSets = parseInt(m1[1], 10); lineaSets = lg; }
+      }
+      if(!(nSets > 0 && nSets <= 10)) return;
+      gridHtml = '<div class="jp-cf-setgrid"><div class="jp-cf-setgrid-lb">[ REGISTRO DE SERIES ]</div>' +
+        renderSetRowsNativeSB(weekIdx, dayId, block.id, 'cf0', nSets, 'reps', true, null, '', String(block.title || '') + ' ' + lineaSets) + '</div>';
+    })();
     const clips = jpCfClips(lineas, block.videosDismissed);
 
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
@@ -14581,7 +14609,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            sobrecargaba la vista. f/paramTxt se conservan (siguen
            usándose más abajo para el placeholder del casillero de
            score), sólo se retira este render puntual. */
-        '<div class="jp-cf-rows">' + filas + '</div>' +
+        '<div class="jp-cf-rows">' + filas + '</div>' + gridHtml +
         /* directiva ("Sprint 1: Timer contextual de WOD") -- botón táctico
            discreto que abre el HUD Timer ya configurado con el formato y
            los minutos/intervalos detectados (ver jpWodTimerCfg()), sin
@@ -14931,12 +14959,34 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     t = t.replace(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ &\\/-]{3,60}),\\s*\\n+(?=[A-ZÁÉÍÓÚÑ][^:\\n]{2,70}:)/gm, '$1 & ');
     t = t.replace(/(\\S)\\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\\n]{0,70}:)/g, '$1\\n');
     t = t.replace(/ &\\n/g, ' & ');
-    return t.split(/\\n+/).map(function(l){
-      l = l.trim();
-      if(!l) return '';
-      var m = l.match(/^([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 &\\/\\-–().,]{2,90}?):\\s*(.*)$/);
-      if(m) return '<div class="jp-tip-fase"><b class="jp-tip-lb">' + escSB(m[1]) + ':</b> ' + escSB(m[2]) + '</div>';
-      return '<div class="jp-tip-fase">' + escSB(l) + '</div>';
+    var items = t.split(/\\n+/).map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
+      var m = l.match(/^([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d10-9][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d10-9 &\\/\\-\\u2013().,]{2,90}?):\\s*(.*)$/);
+      return m ? { lb: m[1], tx: m[2] } : { lb: '', tx: l };
+    });
+    var etiquetados = items.filter(function(i){ return i.lb; });
+    function corto(x){
+      x = String(x || '').trim();
+      var p = x.match(/^(.+?[.!?])(\\s|$)/); if(p && p[1].length >= 25) x = p[1];
+      if(x.length > 120){ x = x.slice(0, 118); x = x.slice(0, x.lastIndexOf(' ') > 60 ? x.lastIndexOf(' ') : 118) + '\\u2026'; }
+      return x;
+    }
+    if(etiquetados.length >= 2){
+      var setup = [], accion = [], error = [];
+      etiquetados.forEach(function(i){
+        var k = normTitSB(i.lb);
+        if(/set up|estabilidad|anclaje|postura|posicion/.test(k)) setup.push(i.tx);
+        else if(/error|evitar/.test(k)) error.push(i.tx);
+        else accion.push(i.tx);
+      });
+      var bl = [];
+      if(setup.length) bl.push(['SET-UP', corto(setup.join(' '))]);
+      if(accion.length) bl.push(['ACCI\\u00d3N', corto(accion.join(' '))]);
+      if(error.length) bl.push(['ERROR', corto(error.join(' '))]);
+      return bl.map(function(x){ return '<div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">' + x[0] + ':</b> ' + escSB(x[1]) + '</div>'; }).join('');
+    }
+    return items.map(function(it){
+      if(it.lb) return '<div class="jp-tip-fase"><b class="jp-tip-lb">' + escSB(it.lb) + ':</b> ' + escSB(it.tx) + '</div>';
+      return '<div class="jp-tip-fase">' + escSB(it.tx) + '</div>';
     }).join('');
   }
   function metaHtmlSB(t){ return escSB(t).replace(/\\n/g, '<br>'); }
@@ -15334,10 +15384,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<div class="jp-set-row-native' + (ld.done ? ' completed' : '') + '" data-set-key="' + key + '">' +
           '<span class="jp-set-pill">' + proto.pill + '</span>' +
           '<div class="jp-set-inputs-group">' +
-            '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
+            '<input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
             '<span class="jp-unit">kg</span>' +
             '<span class="jp-sep">\\u00d7</span>' +
-            '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />' +
+            '<input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />' +
             '<span class="jp-unit">' + unidadSec + '</span>' +
             '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie completada">\\u2713</button>' +
           '</div>' +
@@ -15417,9 +15467,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         badgeHtml = '<span class="jp-sb-set-badge jp-sb-badge-' + setTecnica.tecnica + '">' + TECNICAS_BADGE_SB[setTecnica.tecnica] + pctSufijo + '</span>';
       }
       var esActMyo = esMyo && i === numSetsInt;
-      var pillTxt = esActMyo ? 'SET ' + i + ' (ACTIVACI\\u00d3N MYO-REPS)' : 'SET ' + i;
-      var kgInputHtml = '<input type="number" step="any" inputmode="decimal" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />';
-      var secInputHtml = '<input type="number" step="any" inputmode="numeric" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />';
+      var pillTxt = esActMyo ? 'SET ' + i + ' \\u00b7 MYO' : 'SET ' + i;
+      var kgInputHtml = '<input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />';
+      var secInputHtml = '<input type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />';
       var checkHtml = '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\\u2713</button>';
       var inputsInner;
       if(modoEj === 'tiempo'){
@@ -15465,7 +15515,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         microInputs += '<input type="number" step="1" inputmode="numeric" class="jp-myo-mini' + (mVal ? ' hecho' : '') + '" data-micro-key="' + mKey + '" placeholder="+' + microReps + '" value="' + (mVal != null ? escSB(mVal) : '') + '"' + (mj > microVis ? ' hidden' : '') + ' />';
       }
       html += '<div class="jp-myo-mod">' +
-          '<div class="jp-myo-lb">\\u26a1 PROTOCOLO MYO-REPS (3 a 5 mini-sets @ RIR 0 con 5 respiraciones de pausa)</div>' +
+          '<div class="jp-myo-lb">\\u26a1 MYO-REPS \\u00b7 3 a 5 mini-sets \\u00b7 RIR 0</div>' +
           '<div class="jp-myo-chips">' + microInputs + '<button type="button" class="jp-myo-add"' + (microVis >= microMax ? ' hidden' : '') + '>\\u2795 Agregar mini-set</button></div>' +
         '</div>';
     }
@@ -15645,18 +15695,25 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      contraste, tipografía condensada. SETS/REPS/TEMPO/REST comparten un
      estilo neutro "carbón integrado" (nunca cian, ese color es sólo del
      tracker); el RIR es el ÚNICO con color propio, por tier de esfuerzo. */
+  function fmtRestSB(s){
+    s = parseInt(s, 10) || 0;
+    if(s < 60) return s + 's';
+    var m = Math.floor(s / 60), r = s % 60;
+    return r ? m + "'" + (r < 10 ? '0' : '') + r + '"' : m + "'";
+  }
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds){
-    const badges = [];
-    if(sets && reps) badges.push('<span class="jp-badge-sets">' + sets + ' SERIES</span><span class="jp-badge-reps">' + escSB(reps) + ' ' + escSB(String(unidad || 'reps').toUpperCase()) + '</span>');
-    else if(reps) badges.push('<span class="jp-badge-reps">' + escSB(reps) + ' ' + escSB(String(unidad || 'reps').toUpperCase()) + '</span>');
-    if(tempo) badges.push('<span class="jp-badge-tempo">TEMPO ' + escSB(tempo) + '</span>');
+    var seg = [];
+    var u = escSB(String(unidad || 'reps').toUpperCase());
+    if(sets && reps) seg.push('<span class="jp-db-seg jp-db-vol">' + sets + ' SETS \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
+    else if(reps) seg.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
+    if(tempo) seg.push('<span class="jp-db-seg jp-db-tempo">TEMPO ' + escSB(tempo) + '</span>');
+    if(restSeconds) seg.push('<span class="jp-db-seg jp-db-rest">REST ' + fmtRestSB(restSeconds) + '</span>');
     if(rir){
-      const tier = tierRirSB(rir);
-      badges.push('<span class="jp-badge-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
+      var tier = tierRirSB(rir);
+      seg.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
     }
-    if(restSeconds && restSeconds < 30) badges.push('<span class="jp-badge-rest jp-micro-pausa">&#9201;&#65039; ' + restSeconds + 's micro-pausa</span>');
-    else if(restSeconds) badges.push('<span class="jp-badge-rest">REST ' + restSeconds + 'S</span>');
-    return badges.length ? '<div class="jp-dose-banner">' + badges.join('') + '</div>' : '';
+    if(!seg.length) return '';
+    return '<div class="jp-dose-bar"><span class="jp-db-br">[</span>' + seg.join('<span class="jp-db-sep">|</span>') + '<span class="jp-db-br">]</span></div>';
   }
   /* directiva maestra ("Parser universal y tolerante para Sports &
      Bodybuilding") -- micro-chip táctico de soporte para modificadores de
@@ -15709,6 +15766,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(!ytid){ try{ ytid = buscarVideo(limpiarNombreParaVideoSB(nombre)) || ''; }catch(e){ ytid = ''; } }
     if(!ytid) return '';
     return '<button type="button" class="jp-sb-vid-mini" data-yt="' + ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(nombre).replace(/"/g, '') + '" title="Ver t\\u00e9cnica">&#9654;</button>';
+  }
+  /* [ ▶ VER TÉCNICA ]: mismo video del bloque, en modal rápido con loop y sin sonido */
+  function verTecnicaSB(nombre, block){
+    var h = miniVideoSB(nombre, block);
+    if(!h) return '';
+    return h.replace('class="jp-sb-vid-mini"', 'class="jp-sb-vid-mini jp-ver-tec" data-loop="1"').replace('>&#9654;</button>', '>&#9654; VER T\\u00c9CNICA</button>');
   }
   /* autocarga y calistenia: sin input de kg por defecto (chip BW + "+ Lastre"); isométricos: un único input de tiempo */
   var RX_BW_SB = /(?:hanging|colgad|dominad|pull ?ups?|chin ?ups?|fondos?|dips?|flexion(?:es)?|push ?ups?|knee raises?|leg raises?|elevacion(?:es)? de (?:rodillas|piernas)|muscle ?ups?|burpees?|abdominales|crunch(?:es)?|sit ?ups?|v ?ups?|remo invertido|inverted row|australian)/;
@@ -15824,37 +15887,35 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '</div>';
           return;
         }
-        const subsHtml = entry.subs.map(function(sub, si){
+        const rondasN = entry.rondas || 3;
+        const subsInfo = entry.subs.map(function(sub, si){
           const exIdx = 'b' + idx + 's' + si;
-          /* directiva técnica ("Auditoría integral del reloj emergente")
-             -- descansoDe() (motor del timer, más abajo) nunca tenía de
-             dónde leer el "Rest Xs" REAL de ESTE ejercicio puntual dentro
-             de un bloque de Pizarra: caía siempre al fallback genérico
-             (state.restSec, 90s por defecto), ignorando el descanso que
-             el coach prescribió línea por línea. data-rest-sec expone ese
-             valor en el propio contenedor del ejercicio para que el
-             listener de [ ✓ ] lo lea antes de arrancar el reloj. */
-          /* entre estaciones del mismo biset no hay descanso (A1 -> A2 sin pausa): "0" = el reloj no arranca;
-             el descanso real (Rest) corresponde a la última estación, al cerrar la ronda */
+          /* entre estaciones del mismo biset no hay descanso (A1 -> A2 sin pausa): el Rest real corresponde a la ultima estacion */
           const restSub = sub.restSeconds ? sub.restSeconds : (si < entry.subs.length - 1 ? '0' : '');
-          return '<div class="jp-sb-subex" data-rest-sec="' + restSub + '">' +
-              '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + String.fromCharCode(65 + si) + '</span>' +
-                '<span class="jp-sb-subex-nombre">' + escSB(sub.nombre) + '</span></div>' +
-              dosisCompletaSB(entry.rondas, sub.reps, sub.unidad, sub.tempo, sub.rir, sub.restSeconds) +
-              chipUnilateralSB(sub.unilateral) +
-              (sub.nota ? '<div class="jp-sb-nota">' + escSB(sub.nota) + '</div>' : '') +
-              renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.rondas || 3, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre) +
+          const tmp = document.createElement('div');
+          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre);
+          const rows = Array.prototype.map.call(tmp.querySelectorAll('.jp-set-row-native'), function(r){ return r.outerHTML; });
+          const myo = tmp.querySelector('.jp-myo-mod');
+          return { sub: sub, si: si, restSub: restSub, rows: rows, myo: myo ? myo.outerHTML : '' };
+        });
+        const cabeceras = subsInfo.map(function(o){
+          return '<div class="jp-sb-subex-resumen">' +
+              '<div class="jp-sb-subex-head"><span class="jp-sb-letra">A' + (o.si + 1) + '</span>' +
+                '<span class="jp-sb-subex-tit">' + escSB(o.sub.nombre) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' +
+              dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds) +
+              chipUnilateralSB(o.sub.unilateral) +
+              (o.sub.nota ? '<div class="jp-sb-nota">' + escSB(o.sub.nota) + '</div>' : '') +
             '</div>';
         }).join('');
-        /* directiva maestra ("Erradicación del contador de rondas en
-           Sports") -- se retira por completo el widget [-] RONDA X DE N
-           [+] [✓ RONDA COMPLETA]: en Sports el progreso se mide
-           exclusivamente por la completitud de CADA serie individual (ya
-           interactiva vía renderSetRowsNativeSB arriba), nunca por un
-           contador de rondas aparte. contadorRondasSB() queda intacta
-           (sin invocarse) -- es un componente conceptualmente de
-           WOD/AMRAP/For Time, nunca usado por CrossFit de todos modos
-           (pizarraSports() es exclusiva de Sports). */
+        let rondasHtml = '';
+        for(let r = 0; r < rondasN; r++){
+          rondasHtml += '<div class="jp-ronda-card"><div class="jp-ronda-h">RONDA ' + (r + 1) + '</div>' +
+            subsInfo.map(function(o){
+              if(!o.rows[r]) return '';
+              return '<div class="jp-sb-subex jp-ronda-sub" data-rest-sec="' + o.restSub + '"><span class="jp-ronda-lt">A' + (o.si + 1) + '</span><span class="jp-sb-subex-nombre" hidden>' + escSB(o.sub.nombre) + '</span>' + o.rows[r] + '</div>';
+            }).join('') + '</div>';
+        }
+        const subsHtml = cabeceras + rondasHtml + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
         filas += '<div class="jp-sb-biset">' +
             '<div class="jp-sb-biset-title">' + escSB(tituloBiset) + '</div>' +
@@ -15872,7 +15933,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
         const esAnclaTec = !anclaUsada; anclaUsada = true;
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
-            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span></div>' +
+            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' +
             dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
             chipUnilateralSB(entry.unilateral) +
             (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' \\u00b7 ')) + '</div>' : '') +
@@ -15923,7 +15984,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       /* directiva técnica ("Auditoría integral del reloj emergente") --
          mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
-          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span></div>' +
+          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' +
           dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
@@ -15991,7 +16052,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '</div>' +
           '</details>' : '') +
       '</div>';
-    body.insertAdjacentHTML('afterbegin', html);
+    var htmlFinal = html;
+    if(esCalentamiento){
+      var nAct = (filas.match(/jp-sb-plain-nombre/g) || []).length;
+      htmlFinal = '<details class="jp-warm-acc"><summary><span class="jp-warm-ic">\\ud83d\\udd25</span> Activaci\\u00f3n' +
+        (nAct ? ' <span class="jp-warm-n">' + nAct + ' ejercicios</span>' : '') +
+        '<span class="jp-warm-cta"><span class="jp-warm-closed">[ Desplegar \\u25be ]</span><span class="jp-warm-open">[ Cerrar \\u25b4 ]</span></span></summary>' + html + '</details>';
+    }
+    body.insertAdjacentHTML('afterbegin', htmlFinal);
     body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
       if(!el.closest('[data-sportsboard]')) el.style.display = 'none';
     });
@@ -16474,7 +16542,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const l = state.loads[k];
       if(!l || !l.done) return;
       series++;
-      const kg = parseFloat(l.kg) || 0, rp = parseInt(l.reps, 10) || 0;
+      const kg = numJP(l.kg), rp = Math.round(numJP(l.reps));
       reps += rp; vol += kg * rp;
       if(kg > maxKg) maxKg = kg;
     });
@@ -16518,8 +16586,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           var setsTxt = [];
           for(var i = 1; i <= entry.sets; i++){
             var ld = getLoad(getLoadKey(weekIdx, day.id, block.id, 'e' + idx, i));
-            if(ld && ld.done && ld.kg != null && ld.kg !== '' && ld.reps != null && ld.reps !== ''){
-              setsTxt.push('  • Set ' + i + ': ' + ld.kg + ' kg \\u00d7 ' + ld.reps + ' reps');
+            if(ld && ld.done && numJP(ld.reps) > 0){
+              setsTxt.push(lineaSetWA(i, ld));
             }
           }
           if(setsTxt.length) out.push('*' + entry.titulo + '*:\\n' + setsTxt.join('\\n'));
@@ -16529,8 +16597,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             var totalSets = entry.rondas || 3;
             for(var i = 1; i <= totalSets; i++){
               var ld = getLoad(getLoadKey(weekIdx, day.id, block.id, 'b' + idx + 's' + si, i));
-              if(ld && ld.done && ld.kg != null && ld.kg !== '' && ld.reps != null && ld.reps !== ''){
-                setsTxt.push('  • Set ' + i + ': ' + ld.kg + ' kg \\u00d7 ' + ld.reps + ' reps');
+              if(ld && ld.done && numJP(ld.reps) > 0){
+                setsTxt.push(lineaSetWA(i, ld));
               }
             }
             if(setsTxt.length) out.push('*' + sub.nombre + '*:\\n' + setsTxt.join('\\n'));
@@ -16706,7 +16774,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const prLinea = prsHoy.length
         ? '🔥 *PRs de hoy:* ' + prsHoy.map(function(p){
             const deltaTxt = (p.delta != null && p.delta > 0) ? ' (+' + p.delta + 'kg)' : '';
-            return p.ex + ' ' + p.kg + 'kg \\u00d7 ' + p.reps + deltaTxt;
+            return p.ex + ' ' + fmtJP(numJP(p.kg)) + 'kg \\u00d7 ' + p.reps + deltaTxt;
           }).join(', ')
         : '';
       const rpeHoy = checkoutRpeLeer()[nkey];
@@ -16766,7 +16834,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '-----------------------------\\n' +
       (desglose.length ? desglose.join('\\n\\n') : '_Aún no hay series completadas con carga registrada._') +
       '\\n-----------------------------';
-    if(prsHoy.length) txt += '\\n🔥 *PRs de hoy:* ' + prsHoy.map(function(p){ return p.ex + ' ' + p.kg + 'kg × ' + p.reps; }).join(', ');
+    if(prsHoy.length) txt += '\\n🔥 *PRs de hoy:* ' + prsHoy.map(function(p){ return p.ex + ' ' + fmtJP(numJP(p.kg)) + 'kg × ' + p.reps; }).join(', ');
     if(rpeHoy) txt += '\\n💪 *Esfuerzo percibido (RPE):* ' + rpeHoy + '/10';
     if(notaHoy) txt += '\\n📝 *Comentarios del Alumno/a:* ' + notaHoy;
     var tel = window.COACH_WHATSAPP_PHONE || (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '';
@@ -17886,11 +17954,11 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = 2;
     redondear(g, barX, barY, barW, barH, 24); g.stroke();
     const cols = [
-      { icono: '🏋️', v: d.vol.toLocaleString('es-AR') + ' KG', col: '#E5C378' },
-      { icono: '⚡', v: d.series + ' SETS', col: '#38BDF8' },
-      { icono: '⏱️', v: String(d.tiempo).toUpperCase(), col: '#FFFFFF' }
-    ];
-    const colW = barW / 3;
+      { icono: '🏋️', v: d.vol.toLocaleString('es-AR') + ' KG', col: '#E5C378', solo: d.vol > 0 },
+      { icono: '⚡', v: d.series + ' SETS', col: '#38BDF8', solo: true },
+      { icono: '⏱️', v: String(d.tiempo).toUpperCase(), col: '#FFFFFF', solo: true }
+    ].filter(function(cc){ return cc.solo; });      /* sin tonelaje (cardio/WOD) no se dibuja un "0 KG" ficticio */
+    const colW = barW / cols.length;
     g.textAlign = 'center'; g.textBaseline = 'middle';
     cols.forEach((cItem, i) => {
       const cx = barX + colW * i + colW / 2;
@@ -20155,13 +20223,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       <div class="hud-branding">
         <span class="hud-ray">&#9889;</span>
         <div>
-          <div class="hud-title">HUD TIMER T&Aacute;CTICO</div>
+          <div class="hud-title">HUD TIMER</div>
           <div class="hud-sub">COACH JP</div>
         </div>
       </div>
       <div class="hud-actions">
         <button type="button" class="cwt-hud-min" id="cwtMin" title="Minimizar" aria-label="Minimizar">&#10515;</button>
-        <button type="button" class="cwt-mute btn-sound-toggle" id="cwtMute" title="Silenciar sonidos">🔊 ON</button>
+        <button type="button" class="cwt-mute btn-sound-toggle" id="cwtMute" title="Silenciar sonidos">🔊 AUDIO: ON</button>
         <button type="button" class="cwt-hud-close btn-close-circle" id="cwtX" aria-label="Cerrar">&#10005;</button>
       </div>
     </div>
@@ -20318,7 +20386,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function pintarMute(){
     var b = document.getElementById('cwtMute'); if(!b) return;
-    b.textContent = muted ? '🔇 MUTE' : '🔊 ON';
+    b.textContent = muted ? '🔇 AUDIO: OFF' : '🔊 AUDIO: ON';
     b.classList.toggle('off', muted);
     b.title = muted ? 'Sonido silenciado — tocá para activar' : 'Silenciar sonidos';
   }
@@ -21157,7 +21225,8 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
 
     /* firma discreta, siempre al pie */
     g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '700 28px "Chakra Petch", sans-serif';
-    g.fillText('✦ VERIFIED PROGRAMMING • COACH JP', W / 2, HH - 88);
+    g.fillStyle = '#F59E0B'; g.font = '700 26px "JetBrains Mono", ui-monospace, monospace';
+    g.fillText('@COACHJP // HIGH PERFORMANCE COACHING', W / 2, HH - 88);
 
     /* el marco cepillado se redibuja arriba de la franja nueva */
     if(dorado){
@@ -22813,7 +22882,7 @@ body.cf-modo .block .directive-chip{display:none !important}
 /* ---------------------------------------------------------
    5 · UNA SOLA RENDERIZACIÓN DEL WOD
 --------------------------------------------------------- */
-body.cf-modo .block .block-body > *:not(.cf-board):not(.wod-board):not(.coach-note):not(.cf-note):not(.block-insights):not(.block-notes):not(.done-badge):not(.cx-tag):not(.rm-sug):not(.rx-bar){display:none !important}
+body.cf-modo .block .block-body > *:not(.cf-board):not(.wod-board):not(.jp-warm-acc):not(.coach-note):not(.cf-note):not(.block-insights):not(.block-notes):not(.done-badge):not(.cx-tag):not(.rm-sug):not(.rx-bar){display:none !important}
 body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !important}
 /* ---------------------------------------------------------
    6 · SIN "CERO DOLOR"
@@ -27906,7 +27975,7 @@ body.cf-modo .block .ex-tip{display:none}
         '<button type="button" class="cf-go" id="cfGo">▶ Empezar</button>' +
         '<button type="button" id="cfReset">↺ Reiniciar</button>' +
       '</div>' +
-      '<div class="cf-sign"><b>COACH <em>JP</em></b><span>HIGH PERFORMANCE SYSTEM</span></div>';
+      '<div class="cf-sign"><b>COACH <em>JP</em></b><span>HIGH PERFORMANCE COACHING</span></div>';
     document.body.appendChild(f);
     document.getElementById('cfX').addEventListener('click', salir);
     document.getElementById('cfGo').addEventListener('click', function(){
@@ -28313,7 +28382,7 @@ h1,h2,h3,h4,.block-label,.block-title,.ex-name,.week-pill-name,.tab-name,.sc-h h
     if(!id) return;
     e.preventDefault();
     e.stopPropagation();
-    try{ if(typeof openVideoPopup === 'function') openVideoPopup(id); }catch(err){ console.warn('video', err); }
+    try{ if(typeof openVideoPopup === 'function') openVideoPopup(id, { loop: a.hasAttribute && a.hasAttribute('data-loop') }); }catch(err){ console.warn('video', err); }
   }, true);
 
   function esc(s){
@@ -33474,7 +33543,7 @@ body.cf-disc .block.collapsed:has(.jp-cfboard) > .block-body{ display:block !imp
    hermano de la pizarra dentro del mismo .block-body (carga sugerida, notas
    del bloque) se oculta acá -- no depende de body.cf-modo, que sólo se
    activa en días 100% CrossFit y nunca en días híbridos. */
-body.cf-disc .block:has(.jp-cfboard) > .block-body > *:not(.jp-cfboard){ display:none !important; }
+body.cf-disc .block:has(.jp-cfboard) > .block-body > *:not(.jp-cfboard):not(.jp-warm-acc){ display:none !important; }
 /* directiva ("Acabado Élite A -- Bisel de luz cenital") -- reemplaza la
    barra sólida de 2px por un borde superior fino (1px) + un halo
    difuso radial inyectado en el propio background (nunca un div/franja
@@ -34305,7 +34374,7 @@ body:not(.cf-disc) .story-cta:hover{ border-color:rgba(229,195,120,.6); color:#E
    Pizarra) sin ningún cambio. .jp-sb-board nunca existe en CrossFit
    (pizarraSports() sólo corre con COACH_DISCIPLINA === 'sports'), así
    que no hace falta ningún prefijo body.cf-disc acá. */
-.block:has(.jp-sb-board) > .block-body > *:not(.jp-sb-board){ display:none !important; }
+.block:has(.jp-sb-board) > .block-body > *:not(.jp-sb-board):not(.jp-warm-acc){ display:none !important; }
 /* directiva ("Fusión de Barras de Bloque") -- el header genérico
    exterior (ícono + block-label + subtítulo) queda redundante frente a
    la identidad propia de .jp-sb-board (jp-sb-tag + título limpio +
@@ -35486,7 +35555,7 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
 ========================================================= */
 (function(){
   'use strict';
-  if(window.COACH_DISCIPLINA !== 'sports') return;
+  var ES_SPORTS = window.COACH_DISCIPLINA === 'sports';
   var $ = function(s, r){ return (r || document).querySelector(s); };
   var obs = null, pend = 0;
 
@@ -35496,10 +35565,11 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     if(q){
       if(q.parentNode !== top){ top.insertBefore(q, $('#hdcFzBtn') || null); q.classList.add('jp-hist-btn'); }
       q.style.display = '';
-      if(q.innerHTML.indexOf('HISTORIAL') < 0) q.innerHTML = '&#128200; HISTORIAL';
+      if(ES_SPORTS && q.innerHTML.indexOf('HISTORIAL') < 0) q.innerHTML = '&#128200; HISTORIAL';
+      else if(!ES_SPORTS && q.innerHTML.indexOf('PRs') < 0) q.innerHTML = '&#127942; PRs / 1RM';
     }
     var inf = $('#hdcInfoBtn');
-    if(inf && inf.getAttribute('data-jp') !== '1'){ inf.setAttribute('data-jp', '1'); inf.innerHTML = '<span aria-hidden="true">&#128450;&#65039;</span>'; inf.setAttribute('aria-label', 'Perfil e info'); }
+    if(ES_SPORTS && inf && inf.getAttribute('data-jp') !== '1'){ inf.setAttribute('data-jp', '1'); inf.innerHTML = '<span aria-hidden="true">&#128450;&#65039;</span>'; inf.setAttribute('aria-label', 'Perfil e info'); }
     [].forEach.call(document.querySelectorAll('.hdc-pay-chip .jp-status-pill'), function(p){
       if(/ACTIVO/i.test(p.textContent) && p.textContent.indexOf('●') < 0) p.textContent = '● ACTIVO';
     });
@@ -35580,12 +35650,12 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
   function aplicar(){
     pend = 0;
     if(obs) obs.disconnect();
-    try{ idBar(); semana(); dias(); brief(); }catch(e){}
+    try{ idBar(); semana(); dias(); if(ES_SPORTS) brief(); }catch(e){}
     if(obs) obs.observe(document.body, { childList:true, subtree:true, characterData:true });
   }
   function programar(){ if(pend) return; pend = setTimeout(aplicar, 90); }
   function montar(){
-    document.body.classList.add('jp-mission');
+    document.body.classList.add(ES_SPORTS ? 'jp-mission' : 'jp-hdr-cf');
     obs = new MutationObserver(programar);
     aplicar();
     [300, 900, 2000].forEach(function(ms){ setTimeout(aplicar, ms); });
@@ -35593,6 +35663,447 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(montar, 400); });
   else setTimeout(montar, 400);
 })();
+<\/script>
+
+<style id="jpHudTactico">
+/* ===== TACTICAL HUD · homologación de la app del alumno ===== */
+/* barra fija mínima al scrollear */
+#jpMiniBar{ position:fixed; left:0; right:0; top:0; z-index:310; height:46px; display:flex; align-items:center; gap:10px; padding:0 14px;
+  background:rgba(7,10,16,.96); border-bottom:1px solid rgba(245,158,11,.4); box-shadow:0 6px 18px rgba(0,0,0,.45);
+  transform:translateY(-110%); transition:transform .22s ease; font-family:'Chakra Petch',sans-serif; }
+body.jp-scrolled #jpMiniBar{ transform:translateY(0); }
+body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform .22s ease; }
+#jpMiniBar .jmb-d{ color:#F59E0B; font-weight:800; font-size:.9rem; letter-spacing:.06em; }
+#jpMiniBar .jmb-sep{ color:#475569; }
+#jpMiniBar .jmb-t{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f8fafc; font-weight:700; font-size:.9rem; letter-spacing:.04em; text-transform:uppercase; }
+#jpMiniBar .jmb-timer{ flex:0 0 auto; min-height:34px; padding:0 12px; border-radius:6px; cursor:pointer; font-family:inherit; font-weight:700; font-size:.72rem; letter-spacing:.08em;
+  color:#38BDF8; background:rgba(56,189,248,.12); border:1px solid #38BDF8; }
+#mainContent{ padding-bottom:140px !important; }
+
+/* barra táctica compacta de prescripción: [ 4 SETS × 6-8 REPS | TEMPO 3110 | REST 2' | ⚡ RIR 1-2 ] */
+.jp-dose-bar{ display:flex; flex-wrap:nowrap; align-items:center; gap:0; overflow-x:auto; scrollbar-width:none; margin-top:6px; padding:8px 8px; border-radius:8px;
+  background:#0b0e14; border:1px solid #1e2638; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:clamp(.56rem,2.75vw,.72rem); letter-spacing:.02em; white-space:nowrap; text-transform:uppercase; color:#e2e8f0; }
+.jp-dose-bar::-webkit-scrollbar{ display:none; }
+.jp-dose-bar .jp-db-br{ color:#F59E0B; font-weight:800; padding:0 3px; }
+.jp-dose-bar .jp-db-seg{ padding:0 4px; }
+.jp-dose-bar .jp-db-sep{ color:#475569; }
+.jp-dose-bar .jp-db-vol{ color:#f8fafc; }
+.jp-dose-bar .jp-db-tempo{ color:#cbd5e1; }
+.jp-dose-bar .jp-db-rest{ color:#94a3b8; }
+.jp-dose-bar .jp-db-rir.jp-rir-danger{ color:#f87171; }
+.jp-dose-bar .jp-db-rir.jp-rir-alto{ color:#F59E0B; }
+.jp-dose-bar .jp-db-rir.jp-rir-margen{ color:#38BDF8; }
+
+/* fila de series: touch target 44x44 y feedback esmeralda al completar */
+.jp-btn-check-native{ width:44px !important; height:44px !important; min-width:44px !important; }
+.jp-set-row-native.completed{ background:rgba(2,44,34,.28) !important; border-color:rgba(16,185,129,.4) !important; }
+.jp-btn-check-native.completed{ background:#10B981 !important; border-color:#10B981 !important; color:#022C22 !important; }
+.jp-input-native.jp-val-primary::placeholder, .jp-input-native.jp-val-secondary::placeholder{ color:rgba(148,163,184,.5); }
+
+/* biset / superserie: una tarjeta por ronda con A1 y A2 a la vista */
+.jp-sb-subex-resumen{ margin-bottom:8px; }
+.jp-sb-subex-tit{ font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.95rem; color:#ffd600; text-transform:uppercase; letter-spacing:.01em; flex:1 1 auto; min-width:0; }
+.jp-sb-subex-resumen .jp-sb-letra{ width:auto; min-width:26px; padding:0 6px; }
+.jp-ronda-card{ margin:10px 0 0; padding:8px 10px 6px; border-radius:12px; border:1px solid rgba(56,189,248,.28); background:rgba(15,23,42,.55); }
+.jp-ronda-h{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.7rem; letter-spacing:.12em; color:#F59E0B; margin-bottom:6px; }
+.jp-ronda-sub{ display:flex !important; align-items:center; gap:8px; border:0 !important; padding:0 !important; margin:0 0 6px !important; background:none !important; }
+.jp-ronda-lt{ flex:0 0 26px; text-align:center; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.72rem; color:#38BDF8; background:rgba(56,189,248,.14); border-radius:6px; padding:5px 0; }
+.jp-ronda-sub .jp-set-row-native{ flex:1 1 auto; min-width:0; margin:0; padding:6px 6px; }
+.jp-ronda-card .jp-set-pill:not(.jp-pill-myo){ display:none; }
+.jp-ronda-card .jp-input-native{ width:46px !important; min-width:44px !important; }
+.jp-ronda-card .jp-set-ref{ display:none; }
+
+/* video: [ ▶ VER TÉCNICA ] en la cabecera del ejercicio */
+.jp-sb-ex-head, .jp-sb-subex-head{ flex-wrap:wrap; }
+.jp-sb-vid-mini.jp-ver-tec{ width:auto; height:auto; min-height:32px; margin-left:auto; padding:6px 10px; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.66rem; letter-spacing:.06em; white-space:nowrap;
+  color:#38BDF8; background:rgba(56,189,248,.1); border:1px solid rgba(56,189,248,.55); border-radius:6px; }
+
+/* Story Instagram: preview acotado, solo COMPARTIR + AGREGAR FOTO y cruz fija arriba */
+.story-box canvas{ max-height:72vh !important; width:auto !important; max-width:94vw; }
+.story-actions .sa-cp{ display:none !important; }
+.story-actions .sa-x{ position:fixed !important; top:12px; right:12px; z-index:5; flex:0 0 auto !important; width:44px !important; height:44px; min-width:44px; padding:0 !important; border-radius:50% !important; background:rgba(15,23,42,.9) !important; border:1px solid rgba(255,255,255,.25) !important; }
+.story-actions .sa-x .sa-tx{ display:none; }
+.story-actions .sa-dl{ flex:1 1 100% !important; }
+.story-actions .sa-foto{ flex:1 1 100% !important; }
+.story-hint{ display:none; }
+.story-box .sa-fotox{ display:none; }
+/* tips: 3 bullets cortos */
+.jp-tip-bullet{ position:relative; padding-left:14px; margin:4px 0; }
+.jp-tip-bullet::before{ content:'\\25B8'; position:absolute; left:0; color:#F59E0B; }
+
+/* Activación: acordeón táctico de una línea */
+.jp-warm-acc{ margin:2px 0 12px; border:1px solid rgba(245,158,11,.38); border-radius:12px; background:rgba(245,158,11,.05); overflow:hidden; }
+.jp-warm-acc > summary{ list-style:none; display:flex; align-items:center; gap:8px; padding:0 14px; min-height:48px; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.82rem; letter-spacing:.06em; color:#F59E0B; text-transform:uppercase; }
+.jp-warm-acc > summary::-webkit-details-marker{ display:none; }
+.jp-warm-acc .jp-warm-n{ color:#94a3b8; font-weight:600; font-size:.68rem; }
+.jp-warm-acc .jp-warm-cta{ margin-left:auto; color:#38BDF8; font-size:.68rem; letter-spacing:.06em; }
+.jp-warm-acc .jp-warm-open{ display:none; }
+.jp-warm-acc[open] .jp-warm-open{ display:inline; }
+.jp-warm-acc[open] .jp-warm-closed{ display:none; }
+.jp-warm-acc > .jp-sb-board{ margin:0; border:0; border-top:1px dashed rgba(245,158,11,.3); border-radius:0; box-shadow:none; }
+
+
+/* ===== header homologado para CrossFit (mismas reglas que Sports, solo cabecera) ===== */
+body.jp-hdr-cf .hd-compact{ overflow:visible !important; }
+body.jp-hdr-cf .hdc-top{ display:flex !important; align-items:center; gap:8px; height:52px; min-height:52px; padding:0 12px !important; }
+body.jp-hdr-cf .hdc-shield{ flex:0 0 36px; width:36px !important; height:36px !important; display:flex; align-items:center; justify-content:center; }
+body.jp-hdr-cf .hdc-shield svg{ width:26px !important; height:30px !important; }
+body.jp-hdr-cf .hdc-brand{ display:none !important; }
+body.jp-hdr-cf .hdc-id{ flex:1 1 auto; min-width:0; display:flex !important; flex-direction:column; justify-content:center; gap:3px; }
+body.jp-hdr-cf .hdc-name{ font-size:.84rem !important; line-height:1.1 !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+body.jp-hdr-cf .hdc-name::after{ content:' // ATLETA PRO'; color:#E5C378; font-weight:700; letter-spacing:.04em; font-size:.66rem; }
+body.jp-hdr-cf .hdc-chip-row{ display:flex; gap:6px; min-height:0; }
+body.jp-hdr-cf .hdc-fz, body.jp-hdr-cf .hdc-info{ width:32px !important; height:32px !important; min-width:32px !important; flex:0 0 32px; }
+body.jp-hdr-cf .hdc-fz-tx{ font-size:.8rem !important; }
+body.jp-hdr-cf .jp-hist-btn{ display:inline-flex !important; align-items:center; gap:4px; flex:0 0 auto; height:32px; padding:4px 8px !important; margin:0 !important; border-radius:9px;
+  font-size:11px !important; letter-spacing:.05em; white-space:nowrap; order:0; }
+body.jp-hdr-cf .hdc-days-row{ display:flex !important; align-items:center; gap:8px; position:relative; height:auto !important; min-height:52px; padding:6px 12px 8px !important; }
+body.jp-hdr-cf .hdc-days-wrap{ flex:1 1 auto; min-width:0; padding:0 !important; height:auto !important; }
+body.jp-hdr-cf .hdc-days-wrap .week-tabs-wrap{ background:none !important; border:none !important; padding:0 !important; position:static !important; overflow:visible !important; box-shadow:none !important; }
+body.jp-hdr-cf .week-tabs{ display:flex !important; gap:6px; overflow-x:auto; scroll-snap-type:x mandatory; scrollbar-width:none; padding:2px 2px 4px; }
+body.jp-hdr-cf .week-tabs::-webkit-scrollbar{ display:none; }
+body.jp-hdr-cf .day-tab{ flex:0 0 auto; min-width:44px; height:38px; padding:0 12px !important; border-radius:10px !important; scroll-snap-align:start;
+  display:flex !important; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.14) !important; background:rgba(255,255,255,.03); }
+body.jp-hdr-cf .day-tab .tab-label, body.jp-hdr-cf .day-tab .day-dot{ display:none !important; }
+body.jp-hdr-cf .day-tab .tab-name{ font-size:.8rem !important; letter-spacing:.05em; }
+body.jp-hdr-cf .day-tab.active{ background:linear-gradient(135deg,#ffb347,#d2793f) !important; border-color:#ffb347 !important; box-shadow:0 0 14px rgba(255,160,60,.5); }
+body.jp-hdr-cf .day-tab.active .tab-name{ color:#1a1204 !important; }
+body.jp-hdr-cf .day-tab.active::after{ display:none !important; }
+body.jp-hdr-cf .week-selector-wrap, body.jp-hdr-cf .progress-bar-wrap{ display:none !important; }
+body.jp-hdr-cf .hdc-id{ display:grid !important; grid-template-columns:auto minmax(0,1fr); grid-template-areas:"brand chip" "name name"; column-gap:6px; row-gap:2px; align-items:center; max-width:55vw; overflow:hidden; }
+body.jp-hdr-cf .hdc-brand{ display:block !important; grid-area:brand; line-height:1; }
+body.jp-hdr-cf .hdc-brand-sub{ display:none !important; }
+body.jp-hdr-cf .hdc-brand-mark, body.jp-hdr-cf .hdc-brand-mark em{ font-family:'Chakra Petch','Barlow Condensed',sans-serif; font-size:11px !important; font-weight:600; letter-spacing:.22em; color:#94A3B8 !important; font-style:normal; text-shadow:none !important; }
+body.jp-hdr-cf .hdc-name{ grid-area:name; font-size:14px !important; font-weight:800 !important; color:#FFFFFF !important; min-width:0; }
+body.jp-hdr-cf .hdc-name::after{ content:none !important; }
+body.jp-hdr-cf .hdc-chip-row{ grid-area:chip; min-width:0; }
+body.jp-hdr-cf .hdc-pay-chip{ display:inline-flex; }
+body.jp-hdr-cf .hdc-pay-chip:empty{ display:none; }
+body.jp-hdr-cf .hdc-chip-row .jp-status-pill{ font-size:9px !important; line-height:1; padding:1px 5px !important; border-radius:999px; font-weight:800; letter-spacing:.05em; white-space:nowrap; }
+body.jp-hdr-cf .hdc-chip-row .jp-status-active{ color:#34F5A0 !important; background:rgba(52,245,160,.1) !important; border:1px solid rgba(52,245,160,.45) !important; text-shadow:0 0 8px rgba(52,245,160,.55); }
+body.jp-hdr-cf .hdc-info span{ font-size:1.05rem; line-height:1; }
+body.jp-hdr-cf .hdc-id{ max-width:52vw; margin-right:12px; }
+body.jp-hdr-cf .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
+body.jp-hdr-cf .hdc-name::after{ content:none !important; }
+body.jp-hdr-cf .hdc-top{ height:auto; min-height:52px; }
+body.jp-hdr-cf .jp-prs-quickbtn.jp-hist-btn{ color:#F59E0B !important; border-color:rgba(245,158,11,.55) !important; background:rgba(245,158,11,.08) !important; font-family:'Chakra Petch',sans-serif; font-weight:700; }
+
+
+/* ===== TACTICAL HUD · CrossFit / Hyrox ===== */
+.jp-warm-acc > .jp-cfboard{ margin:0; border:0; border-top:1px dashed rgba(245,158,11,.3); border-radius:0; box-shadow:none; }
+/* celdas de EMOM: [ MIN 1 ] Run */
+.jp-cf-cell{ display:flex; align-items:center; gap:10px; background:rgba(15,23,42,.55); border:1px solid rgba(56,189,248,.28) !important; border-radius:10px; padding:8px 10px; margin:6px 0; }
+.jp-cf-min{ flex:0 0 auto; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.7rem; letter-spacing:.08em; color:#F59E0B; background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.45); border-radius:6px; padding:3px 7px; margin-right:6px; white-space:nowrap; }
+/* switch dual de alternativas */
+.jp-cf-alt{ margin:8px 0; padding:8px; border-radius:12px; border:1px solid rgba(245,158,11,.35); background:rgba(245,158,11,.04); }
+.jp-cf-altsw{ display:flex; align-items:stretch; gap:6px; margin-bottom:6px; }
+.jp-cf-altsw button{ flex:1 1 0; min-width:0; min-height:40px; padding:6px 8px; border-radius:8px; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.7rem; letter-spacing:.04em; text-transform:uppercase; color:#94A3B8; background:transparent; border:1px solid rgba(148,163,184,.35); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.jp-cf-altor{ align-self:center; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.66rem; color:#64748B; }
+.jp-cf-alt[data-sel="a"] [data-alt="a"], .jp-cf-alt[data-sel="b"] [data-alt="b"]{ color:#F59E0B; background:rgba(245,158,11,.14); border-color:#F59E0B; box-shadow:0 0 10px rgba(245,158,11,.25); }
+.jp-cf-alt[data-sel="a"] .jp-cf-alt-b, .jp-cf-alt[data-sel="b"] .jp-cf-alt-a{ display:none !important; }
+/* registro de series (Fuerza/Skill y Accesorios) */
+.jp-cf-setgrid{ margin:10px 0 4px; padding:8px 8px 4px; border-radius:12px; border:1px solid rgba(56,189,248,.28); background:rgba(15,23,42,.45); }
+.jp-cf-setgrid-lb{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.68rem; letter-spacing:.12em; color:#F59E0B; margin:0 0 6px 2px; }
+/* score interactivo */
+.jp-sc-ui{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; flex:1 1 100%; }
+.jp-sc-seg{ display:inline-flex; align-items:center; gap:6px; }
+.jp-sc-seg b{ color:#94A3B8; font-family:'Chakra Petch',sans-serif; }
+.jp-sc-ui input{ min-width:0 !important; flex:0 0 auto !important; width:70px; min-height:44px; text-align:center; border-radius:10px !important; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:1rem; color:#38BDF8; background:#0e1424; border:1px solid rgba(56,189,248,.35); }
+.jp-sc-ui input.jp-sc-free{ width:100%; flex:1 1 140px !important; text-align:left; padding:0 12px; }
+.jp-sc-rx{ display:inline-flex; gap:6px; margin-left:auto; }
+.jp-sc-rx button{ min-height:44px; min-width:64px; padding:0 12px; border-radius:8px; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.72rem; letter-spacing:.08em; color:#94A3B8; background:transparent; border:1px solid rgba(148,163,184,.4); }
+.jp-sc-rx button.on{ color:#022C22; background:#10B981; border-color:#10B981; }
+.jp-sc-rx button[data-rx="SCALED"].on{ color:#1a1204; background:#F59E0B; border-color:#F59E0B; }
+/* EMOM por acumulación */
+.jp-er{ margin:8px 0; border:1px solid rgba(56,189,248,.28); border-radius:12px; background:rgba(15,23,42,.45); }
+.jp-er > summary{ list-style:none; display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:44px; padding:0 12px; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.74rem; letter-spacing:.08em; color:#38BDF8; }
+.jp-er > summary::-webkit-details-marker{ display:none; }
+.jp-er-total{ color:#F59E0B; }
+.jp-er-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(72px,1fr)); gap:8px; padding:0 12px 12px; }
+.jp-er-c{ display:flex; flex-direction:column; gap:3px; font-family:'Chakra Petch',sans-serif; font-size:.62rem; letter-spacing:.08em; color:#94A3B8; }
+.jp-er-c input{ min-height:44px; text-align:center; border-radius:8px; background:#0e1424; border:1px solid rgba(56,189,248,.3); color:#FFD600; font-weight:800; font-size:1rem; font-family:'Chakra Petch',sans-serif; }
+/* Perfil & Ajustes: pantalla completa sobre slate-950, sin cortes abajo */
+.hd-full-drawer{ background:#020617 !important; padding-bottom:calc(56px + env(safe-area-inset-bottom)) !important; }
+/* timer: pantalla de conteo en marcha */
+.cwt-full .cf-shield{ opacity:1 !important; }
+.cwt-full .cf-shield path{ stroke:rgba(245,158,11,.25) !important; stroke-width:2px !important; }
+.cwt-full{ background:radial-gradient(circle at 50% 42%, rgba(245,158,11,.10), rgba(2,6,23,0) 62%), #05080d !important; }
+.cwt-full .cf-sign b{ font-size:19px !important; font-weight:800 !important; letter-spacing:.32em !important; color:#fff !important; }
+.cwt-full .cf-sign b em{ color:#FFB020 !important; }
+.cwt-full .cf-sign span{ font-size:10px !important; letter-spacing:.22em !important; color:#94A3B8 !important; }
+.cwt-full .cf-bar{ margin:0 auto !important; align-self:center; }
+.cwt-hud-head .hud-sub{ display:none !important; }
+</style>
+<script id="jpHudTacticoJs">
+/* ===== TACTICAL HUD · comportamiento común de la app del alumno ===== */
+(function(){
+  'use strict';
+  var bar = null, tick = false;
+  function infoDia(){
+    var dv = document.querySelector('.day-view.active'); if(!dv) return null;
+    var pre = (dv.querySelector('.jp-session-pretag') || {}).textContent || '';
+    var m = pre.match(/D[IÍ]A\\s*(\\d+)/i);
+    var t = ((dv.querySelector('.day-title') || {}).textContent || '').trim();
+    return { d: m ? 'D' + m[1] : '', t: t };
+  }
+  function construir(){
+    if(bar) return;
+    bar = document.createElement('div'); bar.id = 'jpMiniBar';
+    bar.innerHTML = '<span class="jmb-d"></span><span class="jmb-sep">|</span><span class="jmb-t"></span>' +
+      '<button type="button" class="jmb-timer" aria-label="Abrir timer">⏱ TIMER</button>';
+    document.body.appendChild(bar);
+    bar.addEventListener('click', function(e){
+      if(e.target.closest('.jmb-timer')){ var b = document.getElementById('hddTimer'); if(b) b.click(); return; }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+  function actualizar(){
+    construir();
+    var i = infoDia();
+    if(i){
+      bar.querySelector('.jmb-d').textContent = i.d || 'D•';
+      bar.querySelector('.jmb-t').textContent = i.t || 'Sesión';
+    }
+    document.body.classList.toggle('jp-scrolled', (window.scrollY || document.documentElement.scrollTop) > 150);
+    ajustarDosis();
+  }
+  /* la barra de prescripcion siempre entra en UNA linea: si no cabe, baja el cuerpo de letra hasta 8px */
+  function ajustarDosis(){
+    var bs = document.querySelectorAll('.jp-dose-bar');
+    for(var i = 0; i < bs.length; i++){
+      var b = bs[i]; if(!b.clientWidth) continue;
+      b.style.fontSize = '';
+      var fs = parseFloat(getComputedStyle(b).fontSize) || 11, n = 0;
+      while(b.scrollWidth > b.clientWidth + 1 && fs > 8 && n < 14){ fs -= 0.4; b.style.fontSize = fs + 'px'; n++; }
+    }
+  }
+  document.addEventListener('toggle', function(){ setTimeout(ajustarDosis, 30); }, true);
+  window.addEventListener('scroll', function(){
+    if(tick) return; tick = true;
+    requestAnimationFrame(function(){ tick = false; actualizar(); });
+  }, { passive: true });
+  var pend = 0;
+  function programar(){ if(pend) return; pend = setTimeout(function(){ pend = 0; actualizar(); }, 250); }
+  function montar(){
+    actualizar();
+    var mc = document.getElementById('mainContent');
+    if(mc) new MutationObserver(programar).observe(mc, { childList: true, subtree: true });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montar); else montar();
+
+  /* Story: etiquetas de los dos botones que quedan */
+  function etiquetasStory(){
+    var dl = document.querySelector('#storyDl .sa-tx'), ft = document.querySelector('#storyFotoBtn .sa-tx');
+    if(dl && dl.textContent === 'DESCARGAR HISTORIA'){
+      dl.textContent = 'COMPARTIR EN INSTAGRAM';
+      var sv = dl.parentNode && dl.parentNode.querySelector('svg');
+      if(sv) sv.innerHTML = '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>';
+    }
+    if(ft && ft.textContent === 'Subir foto') ft.textContent = 'AGREGAR FOTO';
+  }
+  etiquetasStory(); setTimeout(etiquetasStory, 400);
+  /* inputs de carga: coma o punto decimal ("2,5" -> "2.5"), solo números */
+  function limpiarDecimal(v){
+    v = String(v == null ? '' : v).replace(/,/g, '.').replace(/[^0-9.]/g, '');
+    var i = v.indexOf('.');
+    if(i >= 0) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\\./g, '');
+    return v;
+  }
+  window.jpLimpiarDecimal = limpiarDecimal;
+  document.addEventListener('input', function(e){
+    var el = e.target;
+    if(!el || !el.classList || !el.classList.contains('jp-input-native')) return;
+    var nv = limpiarDecimal(el.value);
+    if(nv !== el.value) el.value = nv;
+  }, true);
+  /* la carga del Set 1 se propaga (en tenue) a los sets siguientes que aún estén vacíos */
+  document.addEventListener('input', function(e){
+    var el = e.target;
+    if(!el || !el.classList || !el.classList.contains('jp-val-primary')) return;
+    var row = el.closest('.jp-set-row-native'); if(!row || !el.value) return;
+    var sib = row.nextElementSibling;
+    while(sib && sib.classList && sib.classList.contains('jp-set-row-native')){
+      var k = sib.querySelector('.jp-val-primary');
+      if(k && !k.value) k.placeholder = el.value;
+      sib = sib.nextElementSibling;
+    }
+    /* en un biset por rondas, los mismos sets del mismo ejercicio están en las rondas siguientes */
+    var sub = row.closest('.jp-ronda-sub'), card = sub && sub.closest('.jp-ronda-card');
+    if(sub && card){
+      var pos = Array.prototype.indexOf.call(card.querySelectorAll('.jp-ronda-sub'), sub);
+      var next = card.nextElementSibling;
+      while(next && next.classList.contains('jp-ronda-card')){
+        var s2 = next.querySelectorAll('.jp-ronda-sub')[pos];
+        var k2 = s2 && s2.querySelector('.jp-val-primary');
+        if(k2 && !k2.value) k2.placeholder = el.value;
+        next = next.nextElementSibling;
+      }
+    }
+  });
+})();
+
+
+
+/* ===== TACTICAL HUD · CrossFit / Hyrox: switch de alternativas, Activación colapsada, score interactivo y registro por ronda ===== */
+(function(){
+  'use strict';
+  if(window.COACH_DISCIPLINA === 'sports') return;
+  var KALT = 'coachjp_cf_alt_v1', KRND = 'coachjp_cf_rounds_v1';
+  function leer(k){ try{ return JSON.parse(localStorage.getItem(k) || '{}') || {}; }catch(e){ return {}; } }
+  function guardar(k, o){ try{ localStorage.setItem(k, JSON.stringify(o)); }catch(e){} }
+  function esc(s){ return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  /* 1 · "— O BIEN —": switch táctico dual (la alternativa elegida queda visible; la otra se oculta) */
+  function alternativas(){
+    var ors = document.querySelectorAll('.jp-cfboard .jp-cf-or:not([data-jp])');
+    for(var i = 0; i < ors.length; i++){
+      (function(or){
+        var a = or.previousElementSibling, b = or.nextElementSibling;
+        or.setAttribute('data-jp', '1');
+        if(!a || !b || !a.classList.contains('jp-cf-row') || !b.classList.contains('jp-cf-row')) return;
+        var board = or.closest('.jp-cfboard');
+        var etq = function(r){
+          var rn = r.querySelector('.jp-cf-rn'), rv = r.querySelector('.jp-cf-rv'); var t = ((rn ? rn.textContent : r.textContent) + ' ' + (rv ? rv.textContent : '')).replace(/\\[\\s*MIN\\s*\\d+\\s*\\]/i, '').replace(/\\s+/g, ' ').trim();
+          return t.length > 24 ? t.slice(0, 23) + '…' : t;
+        };
+        var key = (board && board.getAttribute('data-wodb') || '') + '#' + etq(a);
+        var box = document.createElement('div');
+        box.className = 'jp-cf-alt'; box.setAttribute('data-sel', leer(KALT)[key] || 'a');
+        box.innerHTML = '<div class="jp-cf-altsw" role="group" aria-label="Alternativa"><button type="button" data-alt="a">' + esc(etq(a)) + '</button><span class="jp-cf-altor">O</span><button type="button" data-alt="b">' + esc(etq(b)) + '</button></div>';
+        a.parentNode.insertBefore(box, a);
+        a.classList.add('jp-cf-alt-a'); b.classList.add('jp-cf-alt-b');
+        box.appendChild(a); box.appendChild(b); or.remove();
+        box.addEventListener('click', function(e){
+          var t = e.target.closest('[data-alt]'); if(!t) return;
+          var v = t.getAttribute('data-alt'); box.setAttribute('data-sel', v);
+          var o = leer(KALT); o[key] = v; guardar(KALT, o);
+        });
+      })(ors[i]);
+    }
+  }
+
+  /* 2 · Activación (warm-up) colapsada en un acordeón de una línea */
+  function warmCF(){
+    var bds = document.querySelectorAll('.block.cat-warmup .block-body > .jp-cfboard');
+    for(var i = 0; i < bds.length; i++){
+      var bd = bds[i];
+      var n = bd.querySelectorAll('.jp-cf-rows .jp-cf-row').length;
+      var det = document.createElement('details'); det.className = 'jp-warm-acc';
+      det.innerHTML = '<summary><span class="jp-warm-ic">🔥</span> Activación' + (n ? ' <span class="jp-warm-n">' + n + ' ejercicios</span>' : '') +
+        '<span class="jp-warm-cta"><span class="jp-warm-closed">[ Desplegar ▾ ]</span><span class="jp-warm-open">[ Cerrar ▴ ]</span></span></summary>';
+      bd.parentNode.insertBefore(det, bd); det.appendChild(bd);
+    }
+  }
+
+  /* 3 · SCORE: MM:SS o Rondas + Reps, y toggle [ RX ] / [ SCALED ] */
+  var RX_NIVEL = /\\s*\\[(RX|SCALED)\\]\\s*$/i;
+  function score(){
+    var boxes = document.querySelectorAll('.jp-cfboard .wod-score:not([data-jp])');
+    for(var i = 0; i < boxes.length; i++){
+      (function(box){
+        var inp = box.querySelector('.wod-score-in'); if(!inp) return;
+        box.setAttribute('data-jp', '1');
+        var ph = inp.placeholder || '', val = inp.value || '';
+        var mN = val.match(RX_NIVEL), nivel = mN ? mN[1].toUpperCase() : '';
+        var base = val.replace(RX_NIVEL, '');
+        var tipo = /tiempo/i.test(ph) ? 'tiempo' : (/rondas/i.test(ph) ? 'rondas' : 'libre');
+        var ui = document.createElement('div'); ui.className = 'jp-sc-ui';
+        var campos = '';
+        if(tipo === 'tiempo') campos = '<span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="MM" aria-label="Minutos"><b>:</b><input class="jp-sc-b" inputmode="numeric" maxlength="2" placeholder="SS" aria-label="Segundos"></span>';
+        else if(tipo === 'rondas') campos = '<span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="RONDAS" aria-label="Rondas"><b>+</b><input class="jp-sc-b" inputmode="numeric" maxlength="3" placeholder="REPS" aria-label="Repeticiones"></span>';
+        else campos = '<input class="jp-sc-free" type="text" placeholder="' + esc(ph) + '">';
+        ui.innerHTML = campos + '<span class="jp-sc-rx"><button type="button" data-rx="RX">RX</button><button type="button" data-rx="SCALED">SCALED</button></span>';
+        inp.parentNode.insertBefore(ui, inp.nextSibling);
+        inp.style.display = 'none';
+        var A = ui.querySelector('.jp-sc-a'), B = ui.querySelector('.jp-sc-b'), F = ui.querySelector('.jp-sc-free');
+        if(A){
+          var pm = base.match(tipo === 'tiempo' ? /^(\\d+)\\s*:\\s*(\\d+)/ : /^(\\d+)\\s*\\+\\s*(\\d+)/);
+          if(pm){ A.value = pm[1]; B.value = pm[2]; }
+        }
+        if(F) F.value = base;
+        function marcar(){ var bs = ui.querySelectorAll('[data-rx]'); for(var k = 0; k < bs.length; k++) bs[k].classList.toggle('on', bs[k].getAttribute('data-rx') === nivel); }
+        function componer(){
+          var s = '';
+          if(A){
+            var a = (A.value || '').replace(/\\D/g, ''), b = (B.value || '').replace(/\\D/g, '');
+            if(a || b){
+              if(tipo === 'tiempo') s = (a || '0') + ':' + ((b.length === 1 ? '0' + b : b) || '00');
+              else s = (a || '0') + '+' + (b || '0');
+            }
+          } else if(F){ s = (F.value || '').replace(RX_NIVEL, '').trim(); }
+          inp.value = s ? s + (nivel ? ' [' + nivel + ']' : '') : '';
+          inp.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        ui.addEventListener('input', function(e){ if(e.target.matches('.jp-sc-a, .jp-sc-b, .jp-sc-free')) componer(); });
+        ui.addEventListener('click', function(e){
+          var t = e.target.closest('[data-rx]'); if(!t) return;
+          var v = t.getAttribute('data-rx'); nivel = (nivel === v) ? '' : v; marcar(); componer();
+        });
+        marcar();
+        box._jpFree = F;
+      })(boxes[i]);
+    }
+  }
+
+  /* 4 · EMOM por acumulación: registro opcional por ronda con total automático */
+  function emomRondas(){
+    var bds = document.querySelectorAll('.jp-cfboard:not([data-jp-emom])');
+    for(var i = 0; i < bds.length; i++){
+      (function(bd){
+        bd.setAttribute('data-jp-emom', '1');
+        var txt = bd.textContent || '';
+        if(!/\\bEMOM\\b/i.test(txt)) return;
+        var sc = bd.querySelector('.wod-score'); if(!sc) return;
+        var m = txt.match(/\\bEMOM\\s*(\\d+)\\s*min/i);
+        var mins = m ? parseInt(m[1], 10) : 0, mn = 0;
+        var mc = bd.querySelectorAll('.jp-cf-min');
+        for(var j = 0; j < mc.length; j++){ var v = parseInt((mc[j].textContent.match(/\\d+/) || [0])[0], 10); if(v > mn) mn = v; }
+        var rondas = (mins && mn) ? Math.max(1, Math.floor(mins / mn)) : mins;
+        if(!rondas || rondas > 24) return;
+        var key = ((typeof state !== 'undefined' && state && state.currentWeek) || 0) + '|' + (bd.getAttribute('data-wodb') || '');
+        var guardado = leer(KRND)[key] || [];
+        var ins = '';
+        for(var r = 1; r <= rondas; r++) ins += '<label class="jp-er-c"><span>R' + r + '</span><input type="text" inputmode="decimal" data-r="' + (r - 1) + '" value="' + esc(guardado[r - 1] || '') + '" placeholder="0"></label>';
+        var det = document.createElement('details'); det.className = 'jp-er';
+        det.innerHTML = '<summary>[ REGISTRO POR RONDA ] <b class="jp-er-total">TOTAL 0</b></summary><div class="jp-er-grid">' + ins + '</div>';
+        sc.parentNode.insertBefore(det, sc);
+        function total(){
+          var t = 0, vals = [];
+          det.querySelectorAll('input[data-r]').forEach(function(x){
+            var n = parseFloat(String(x.value).replace(',', '.')) || 0; t += n; vals.push(x.value);
+          });
+          t = Math.round(t * 100) / 100;
+          det.querySelector('.jp-er-total').textContent = 'TOTAL ' + t;
+          var o = leer(KRND); o[key] = vals; guardar(KRND, o);
+          return t;
+        }
+        total();
+        det.addEventListener('input', function(e){
+          if(!e.target.matches('input[data-r]')) return;
+          e.target.value = e.target.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+          var t = total();
+          var F = sc._jpFree, inp = sc.querySelector('.wod-score-in');
+          if(F){ F.value = t ? String(t) : ''; F.dispatchEvent(new Event('input', { bubbles: true })); }
+          else if(inp){ inp.value = t ? String(t) : ''; inp.dispatchEvent(new Event('input', { bubbles: true })); }
+        });
+      })(bds[i]);
+    }
+  }
+
+  var tick = 0;
+  function pasada(){
+    tick = 0;
+    try{ alternativas(); warmCF(); score(); emomRondas(); }catch(e){ console.warn('cf hud', e); }
+  }
+  function programar(){ if(!tick) tick = setTimeout(pasada, 120); }
+  function montar(){
+    pasada();
+    var mc = document.getElementById('mainContent');
+    if(mc) new MutationObserver(programar).observe(mc, { childList: true, subtree: true });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(montar, 200); }); else setTimeout(montar, 200);
+})();
+
 <\/script>
 
 </body>
