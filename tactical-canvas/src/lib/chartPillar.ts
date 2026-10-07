@@ -55,6 +55,30 @@ export function isCadenceSample(chart: ChartConfig) {
   return chart.unit === 'rpm' && /CADENCIA/i.test(chart.title)
 }
 
+const AGE_RX = /\bedad\b|\ba[ñn]os\b|d[eé]cada|longevidad|envejec|sarcopenia|vida\b/i
+// «semanas de bloque» sí; «series semanales» o «series por semana» (una tasa) no.
+const WEEK_RX = /(?<!por |\/)\bsemanas?\b/i
+const MONTH_RX = /(?<!por |\/)\bmes(es)?\b/i
+const DAY_RX = /(?<!por |\/)\bd[ií]as?\b/i
+const MASS_UNIT = /^(kg|kgs|kilos?|lb|lbs|g|gr)$/i
+
+/**
+ * Eje temporal o por etapas (edad, décadas, semanas): la unidad nunca es de peso. Devuelve la
+ * unidad correcta («años», «semanas», «meses», «días» o "" si las etiquetas ya se explican
+ * solas, ej. «30, 50, 70, 80+»), o null si el gráfico no es temporal.
+ */
+export function timeUnit(c: ChartConfig): string | null {
+  const text = `${c.title} ${c.zoneLabel}${c.mode === 'gauge' ? ` ${c.gaugeLabel}` : ''}`
+  const unit = c.unit.trim()
+  const kind = AGE_RX.test(text) ? 'años' : WEEK_RX.test(text) ? 'semanas' : MONTH_RX.test(text) ? 'meses' : DAY_RX.test(text) ? 'días' : null
+  if (!kind) return null
+  // Unidad propia y coherente (no de peso): se respeta.
+  if (unit && !MASS_UNIT.test(unit)) return unit
+  // Barras con etiquetas autoexplicativas («30, 50, 70, 80+» o «Sem 1»): sin unidad.
+  if (c.mode === 'bars' && /[+]|sem|año|mes|día/i.test(c.barLabels)) return ''
+  return kind
+}
+
 const nums = (raw: string) =>
   raw
     .split(/[,;\n]+/)
@@ -70,7 +94,9 @@ export function harmonizeChart(chart: ChartConfig, discipline: Discipline): Char
   const c = { ...chart }
   if (c.min > c.max) [c.min, c.max] = [c.max, c.min]
   if (c.min === c.max) c.max = c.min + 1
-  if (!c.unit.trim()) c.unit = CHART_BY_DISCIPLINE[discipline].unit ?? ''
+  const time = timeUnit(c)
+  if (time !== null) c.unit = time
+  else if (!c.unit.trim()) c.unit = CHART_BY_DISCIPLINE[discipline].unit ?? ''
   // "desde-hasta": el guion del medio es separador, sólo el primer número puede ser negativo.
   const m = c.zone.match(/^\s*(-?\d+(?:[.,]\d+)?)\s*[-–]\s*(-?\d+(?:[.,]\d+)?)/)
   if (m) {

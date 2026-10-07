@@ -1,4 +1,4 @@
-import { LABEL_FONT, MONO_FONT, toList, toNumbers, type DiagramStyle } from './shared'
+import { fitLabel, LABEL_FONT, MONO_FONT, toList, toNumbers, type DiagramStyle } from './shared'
 
 interface Props extends DiagramStyle {
   divisions: string
@@ -64,9 +64,16 @@ export function CirclesDiagram({ divisions, captions, width, height, ink, muted,
             <div style={{ fontFamily: MONO_FONT, fontSize: 18 * scale, color: i === c - 1 ? accent : muted, letterSpacing: '0.1em' }}>
               {String(i + 1).padStart(2, '0')}
             </div>
-            <div style={{ fontFamily: LABEL_FONT, fontWeight: 600, fontSize: 24 * scale, lineHeight: 1.25, color: ink, marginTop: 6 * scale }}>
-              {texts[i] ?? ''}
-            </div>
+            {(() => {
+              const fit = fitLabel(texts[i] ?? '', 24 * scale, D + gap * 0.4)
+              return (
+                <div style={{ fontFamily: LABEL_FONT, fontWeight: 600, fontSize: fit.size, lineHeight: 1.2, color: ink, marginTop: 6 * scale, marginInline: -gap * 0.2 }}>
+                  {fit.lines.map((l, k) => (
+                    <div key={k}>{l}</div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         ))}
       </div>

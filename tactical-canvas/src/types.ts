@@ -55,7 +55,7 @@ export interface CompareCard {
 }
 
 export type ChartMode = 'curve' | 'bars' | 'gauge'
-export type CurveShape = 'bell' | 'rise' | 'fall'
+export type CurveShape = 'bell' | 'rise' | 'fall' | 'plateau'
 
 /** Gráfico simplificado: todo se define con pocos inputs. */
 export interface ChartConfig {
@@ -77,6 +77,11 @@ export interface ChartConfig {
   gaugeValue: number
   gaugeThreshold: number
   gaugeLabel: string
+  /** Curva comparativa (doble trazo): la serie principal (sólida, con brillo) contra una de contraste (tenue, roja) */
+  compare?: boolean
+  mainLabel?: string
+  compareLabel?: string
+  compareShape?: CurveShape
 }
 
 export interface CanvasState {

@@ -1,4 +1,4 @@
-import { clamp, LABEL_FONT, type DiagramStyle } from './shared'
+import { clamp, fitLabel, LABEL_FONT, type DiagramStyle } from './shared'
 
 interface Props extends DiagramStyle {
   count: number
@@ -62,16 +62,25 @@ export function DominoDiagram({ count, start, end, width, height, ink, muted, ac
           <polyline points={`${last.x + last.w - 16 * scale},${arrowY - 10 * scale} ${last.x + last.w},${arrowY} ${last.x + last.w - 16 * scale},${arrowY + 10 * scale}`} />
         </g>
       </svg>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 * scale, whiteSpace: 'nowrap', marginLeft: Math.min(first.x, width * 0.08), marginRight: Math.min(width - (last.x + last.w), width * 0.08), marginTop: 10 * scale, fontFamily: LABEL_FONT, fontWeight: 600, fontSize: 25 * scale, color: ink }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 * scale }}>
-          <Arrow dir="down" size={26 * scale} color={muted} />
-          {start}
-        </span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 * scale, color: accent }}>
-          {end}
-          <Arrow dir="up" size={26 * scale} color={accent} />
-        </span>
-      </div>
+      {(() => {
+        // Cada rótulo tiene a lo sumo ~media placa: si es largo, 2 renglones y cuerpo reducido.
+        const half = width * 0.44
+        const a = fitLabel(start, 25 * scale, half)
+        const b = fitLabel(end, 25 * scale, half)
+        const lines = (f: typeof a) => f.lines.map((l, k) => <div key={k}>{l}</div>)
+        return (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 * scale, whiteSpace: 'nowrap', marginLeft: Math.min(first.x, width * 0.08), marginRight: Math.min(width - (last.x + last.w), width * 0.08), marginTop: 10 * scale, fontFamily: LABEL_FONT, fontWeight: 600, lineHeight: 1.2, color: ink }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 * scale, fontSize: a.size }}>
+              <Arrow dir="down" size={26 * scale} color={muted} />
+              <span>{lines(a)}</span>
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 * scale, color: accent, fontSize: b.size, textAlign: 'right' }}>
+              <span>{lines(b)}</span>
+              <Arrow dir="up" size={26 * scale} color={accent} />
+            </span>
+          </div>
+        )
+      })()}
     </div>
   )
 }

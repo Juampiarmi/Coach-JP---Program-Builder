@@ -333,10 +333,51 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                     { value: 'bell', label: '∩ PICO EN ZONA' },
                     { value: 'rise', label: '↗ SUBE' },
                     { value: 'fall', label: '↘ CAE' },
+                    { value: 'plateau', label: '▔ MESETA' },
                   ]}
                   size="sm"
                 />
               </Field>
+            )}
+            {chart.mode === 'curve' && (
+              <>
+                <Toggle
+                  label="Curva comparativa (doble trazo)"
+                  checked={Boolean(chart.compare)}
+                  onChange={(compare) =>
+                    setChart(
+                      compare && !chart.mainLabel
+                        ? { compare, shape: 'plateau', compareShape: 'fall', mainLabel: 'Atleta de fuerza · estímulo continuo', compareLabel: 'Población sedentaria · sin estímulo' }
+                        : { compare },
+                    )
+                  }
+                />
+                {chart.compare && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Trazo principal · cian">
+                        <TextInput value={chart.mainLabel ?? ''} onChange={(mainLabel) => setChart({ mainLabel })} />
+                      </Field>
+                      <Field label="Trazo contraste · rojo">
+                        <TextInput value={chart.compareLabel ?? ''} onChange={(compareLabel) => setChart({ compareLabel })} />
+                      </Field>
+                    </div>
+                    <Field label="Forma del contraste" plain>
+                      <Segmented<CurveShape>
+                        value={chart.compareShape ?? 'fall'}
+                        onChange={(compareShape) => setChart({ compareShape })}
+                        options={[
+                          { value: 'fall', label: '↘ CAE' },
+                          { value: 'bell', label: '∩ PICO' },
+                          { value: 'rise', label: '↗ SUBE' },
+                          { value: 'plateau', label: '▔ MESETA' },
+                        ]}
+                        size="sm"
+                      />
+                    </Field>
+                  </>
+                )}
+              </>
             )}
             {chart.mode === 'bars' && (
               <>

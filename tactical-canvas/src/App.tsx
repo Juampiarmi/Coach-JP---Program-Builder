@@ -110,7 +110,8 @@ export default function App() {
           // Los gráficos de la IA se ponen en caja (rango, zona, barras) antes de mostrarse.
           slides: r.slides.map((p) => {
             const s = { ...DEFAULT_STATE, ...globals, ...p }
-            return s.template === 'chart' ? { ...s, chart: harmonizeChart(s.chart, discipline) } : s
+            // Todas las placas traen su nodo de gráfico (multiformato): se armoniza siempre.
+            return { ...s, chart: harmonizeChart(s.chart, discipline) }
           }),
           active: 0,
           caption: r.caption,

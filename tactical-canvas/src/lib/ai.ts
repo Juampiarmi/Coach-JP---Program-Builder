@@ -3,6 +3,7 @@ import type { Accent, CanvasState, ChartMode, CurveShape, DiagramData, DiagramKi
 import { diagramDefaults, inferPillar } from './diagramPillar'
 import { structDefaults } from './structPillar'
 import { BOOKMARK_CTA } from './bookmark'
+import { CHART_BY_DISCIPLINE } from './chartPillar'
 import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 import { JsonRepairError, safeParseJson } from './safeJson'
@@ -84,7 +85,7 @@ PLANTILLAS DISPONIBLES (templateId):
 - "grafico": un gráfico simple (curva, barras o medidor de umbral) con zona óptima.
 - "sentencia": titular de impacto + remate argumental + párrafo corto, sin números.
 - "manifiesto": frase de mentalidad o estándar de disciplina. Sin párrafo ni paper.
-- "diagrama": modelo mental visual (radar de 6 factores, dominó de progresión, círculos fraccionados o trayectoria «ruido vs claridad»).
+- "diagrama": modelo mental visual (radar de 6 factores, dominó de progresión, círculos fraccionados de UN todo, o trayectoria «ruido vs claridad»).
 - "repeticion": póster tipográfico que repite una frase corta (diagonal, eco, kinetic o bloque justificado). Sin párrafo ni paper.
 - "matriz2x2": cuadrante táctico con dos ejes perpendiculares (X e Y) y 4 cuadrantes con badge y descripción.
 - "pipeline": protocolo secuencial de 3 o 4 pasos numerados conectados por flechas (acción + condición o criterio).
@@ -93,11 +94,18 @@ PLANTILLAS DISPONIBLES (templateId):
 - "guardado": placa final de retención (cheat sheet / ficha técnica): 3 o 4 viñetas que condensan todo el carrusel + llamado a guardar.
 CIERRE DE RETENCIÓN: en todo carrusel de 4 a 5 placas, la última placa es por defecto "guardado", salvo que el usuario pida otro cierre.
 
+COMPATIBILIDAD SEMÁNTICA ESTRICTA (prohibido el «gráfico por hacer»: cada visual tiene que significar algo):
+- "circulos" SÓLO para distribuciones proporcionales o el fraccionamiento de un mismo todo (ej: distribución de la energía diaria, reparto de macronutrientes, la temporada dividida en bloques). PROHIBIDO usarlos para listar servicios, modalidades, pilares o conceptos independientes.
+- Presentación de servicios, modalidades o pilares (ej: «MTB, Hyrox, Recomposición»): OBLIGATORIO "pipeline" (bloques modulares), "checklist" (viñetas de auditoría) o "ab" (tradicional vs. Sistema Coach JP). Nunca "diagrama".
+- Protocolo paso a paso o árbol de decisión: "pipeline".
+- Jerarquías o prioridades acumulativas: "piramide".
+- Rótulos de diagramas y estructuras: cortos (idealmente hasta 14 caracteres por palabra y 3 palabras), para que se lean enteros.
+
 MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al azar):
 - Dualidad o contraste entre dos estados («Ego vs Progreso», «Estático vs Dinámico», «Volumen vs Intensidad»): "ab", o "grafico" con curva y zona umbral.
 - Progresión o acumulación en el tiempo («Persistencia», «Constancia», «Sobrecarga progresiva», «Hábitos»): "diagrama" con recommendedType "domino", o "repeticion".
 - Equilibrio o fenómeno multifactorial («Obsesión», «Fatiga», «Recuperación», «Rendimiento global»): "diagrama" con recommendedType "radar".
-- Foco o dirección («Ruido vs Foco», «Claridad», «Prioridades», «Plan vs Improvisación»): "diagrama" con recommendedType "trayectoria" o "circulos".
+- Foco o dirección («Ruido vs Foco», «Claridad», «Plan vs Improvisación»): "diagrama" con recommendedType "trayectoria".
 - Frase de mentalidad corta y memorable: "repeticion" o "manifiesto".
 - Clasificación o cruce de dos variables («Fatiga vs Estímulo», «Complejidad vs Transferencia», «Riesgo vs Beneficio»): "matriz2x2".
 - Protocolo paso a paso o condicional («Cómo autorregular la carga», «Pasos de entrada en calor», «Algoritmo de descanso»): "pipeline".
@@ -109,7 +117,7 @@ FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (v
 - VENTA / SERVICIOS (publicitar modalidades, planes, asesorías, captar clientes): carrusel de conversión táctica de 5 placas.
   1) "sentencia": gancho contra el entrenamiento genérico.
   2) "ab": enfoque tradicional (tarjeta A) vs. Sistema Coach JP (tarjeta B).
-  3) "diagrama" con recommendedType "circulos" o "radar": desglose de las modalidades o pilares del servicio (cada círculo o eje es una modalidad o pilar real del brief).
+  3) "pipeline" (bloques modulares) o "checklist": las modalidades o pilares reales del servicio, uno por paso o ítem (nunca círculos).
   Para el proceso de trabajo (evaluación → programación → seguimiento) podés usar "pipeline", y "checklist" para «¿para quién es?».
   4) "metrica": dato de autoridad o personalización (ej: «100%» individualizado, seguimiento semanal).
   5) "guardado": cheat sheet con lo que incluye el sistema y, en "cta", el llamado a la acción con instrucción de contacto concreta (ej: ENVIÁ «SISTEMA» AL MD).
@@ -166,23 +174,25 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
       "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
       "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
-      "grafico": { ... } (OBLIGATORIO sólo si templateId es "grafico"; en los demás omitilo)
+      "grafico": { ... } (SIEMPRE: completo y preciso si templateId es "grafico"; en los demás, una versión breve del mismo tema)
     }
   ]
 }
 
-"grafico" (sólo con templateId "grafico"): { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string, "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" (solo curve), "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
+"grafico": { "mode": "curve" | "bars" | "gauge", "title": string (MAYÚSCULAS, qué eje vs qué), "min": number, "max": number, "unit": string (unidad del eje X), "zone": "desde-hasta" (ej "70-90"), "zoneLabel": string, "shape": "bell" | "rise" | "fall" | "plateau" (solo curve; plateau = meseta alta sostenida), "compare": boolean (solo curve: doble trazo), "mainLabel": string (trazo principal), "compareLabel": string (trazo de contraste), "compareShape": "bell" | "rise" | "fall" | "plateau", "barLabels": "a, b, c" (solo bars, 4 a 7 valores), "barValues": "1, 2, 3" (solo bars), "gaugeValue": number (solo gauge), "gaugeThreshold": number (solo gauge), "gaugeLabel": string (solo gauge) }
 
 CONGRUENCIA TEMÁTICA DEL DIAGRAMA: los 4 subtipos de "diagrama" hablan del tema del slide, nunca de productividad genérica ni autoayuda (prohibido «Hábito mínimo», «Resultado masivo», «Ruido», «Claridad», «El objetivo», «Los bloques» o «Hoy» como rótulos). Ejemplos:
 - Nutrición deportiva: radar con ejes Glucógeno, Hidratación, Proteína, Electrolitos, Timing, Digestión; dominó «Déficit calórico crónico» → «Pérdida de fuerza y masa»; trayectoria «Hipoglucemia / Fatiga» → «Glucógeno estable» → meta «Rendimiento óptimo»; círculos Calorías base, Proteína (2g/kg), Carbohidratos intra, Timing y digestión.
 - Fuerza e hipertrofia: radar con ejes Tensión mecánica, RIR / Esfuerzo, Volumen efectivo, Recuperación, Frecuencia, Técnica; dominó «Sobrecarga progresiva» → «Adaptación miofibrilar».
 - Cualquier otro tema (ej: automatización): rótulos con el vocabulario técnico de ese tema.
 
-CAMPOS OBLIGATORIOS: completá SIEMPRE todos los bloques (text, sentencia, metrica, ab, diagrama con sus 4 subtipos, repeticion, manifiesto, matriz2x2, pipeline, piramide, checklist) con contenido real del tema. El bloque de la plantilla elegida en templateId va completo y preciso; los demás pueden ser versiones breves pero nunca genéricas ni vacías. Nunca devuelvas arrays vacíos ([]), strings vacíos ("") ni null dentro de esos bloques. Los rótulos de diagram son de 1 a 4 palabras. "citation" y "description" son la única excepción: van vacíos si no tenés un estudio real.
+CAMPOS OBLIGATORIOS: completá SIEMPRE todos los bloques (text, sentencia, metrica, ab, grafico, diagrama con sus 4 subtipos, repeticion, manifiesto, matriz2x2, pipeline, piramide, checklist), derivados del mismo tema: así cualquier plantilla que elija el usuario muestra datos coherentes y nunca valores de fábrica con contenido real del tema. El bloque de la plantilla elegida en templateId va completo y preciso; los demás pueden ser versiones breves pero nunca genéricas ni vacías. Nunca devuelvas arrays vacíos ([]), strings vacíos ("") ni null dentro de esos bloques. Los rótulos de diagram son de 1 a 4 palabras. "citation" y "description" son la única excepción: van vacíos si no tenés un estudio real.
 
 Variá las plantillas dentro de una secuencia: no repitas la misma más de dos veces seguidas.
 
 DATOS NUMÉRICOS CONGRUENTES CON CADA PLANTILLA:
+- grafico · UNIDADES: si el eje X es edad, décadas o tiempo, "unit" es «años», «semanas», «meses» o «días» (o "" si las etiquetas ya se explican solas, ej: «30, 50, 70, 80+»). Nunca una unidad de peso (kg) en un eje temporal.
+- grafico · CURVA COMPARATIVA: en sarcopenia, longevidad, envejecimiento o adaptaciones al entrenamiento, usá "compare": true con los dos trazos poblados para mostrar el contraste biológico: principal ("shape": "plateau") = «Atleta de fuerza / estímulo continuo» y contraste ("compareShape": "fall") = «Población sedentaria / sin estímulo».
 - chart: los ejes y la unidad salen del tema y del pilar. Sports & Bodybuilding: series/semana, RIR, RPE, %1RM, kg o repeticiones. CrossFit & Hyrox: W, min/km, mmol/L de lactato, lpm o % VO2máx. No uses cadencia (rpm) salvo que el tema sea ciclismo. "min" < "max"; la "zone" desde-hasta va dentro de [min, max]; en bars, barLabels y barValues tienen la misma cantidad y los valores están dentro de [min, max]; en gauge, gaugeValue y gaugeThreshold están dentro de [min, max]. El "title" nombra los ejes reales (ej: "SERIES SEMANALES VS. HIPERTROFIA").
 - metrica: "value" es el número del argumento, "label" dice qué mide y "unidad" en qué se mide.
 - ab: los dos "value" se comparan en la misma unidad o dimensión.
@@ -649,7 +659,7 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
 }
 const ACCENTS: Accent[] = ['orange', 'cyan', 'gold', 'white', 'gray']
 const CHART_MODES: ChartMode[] = ['curve', 'bars', 'gauge']
-const SHAPES: CurveShape[] = ['bell', 'rise', 'fall']
+const SHAPES: CurveShape[] = ['bell', 'rise', 'fall', 'plateau']
 
 const REPEAT_MODES: RepeatMode[] = ['diagonal', 'echo', 'kinetic', 'justified']
 const DIAGRAM_KIND_MAP: Record<string, DiagramKind> = {
@@ -730,6 +740,17 @@ function diagramFromAi(b: Record<string, unknown>, fb: DiagramData): DiagramData
       goal: first(tray.meta, tray.goal, b.goal, b.meta, fb.trajectory.goal),
     },
   }
+}
+
+/**
+ * Árbol de decisión visual: en una pieza de venta / servicios, los círculos (que sólo
+ * representan fracciones de un todo) no pueden listar modalidades: la placa pasa a pipeline.
+ */
+function enforceSemantics(p: Partial<CanvasState>, goal: string): Partial<CanvasState> {
+  if (p.template === 'diagram' && p.diagramKind === 'circles' && /venta|sales|servicio/.test(goal)) {
+    return { ...p, template: 'pipeline' }
+  }
+  return p
 }
 
 /** Lista de objetos de la IA (acepta array u objeto indexado). */
@@ -813,6 +834,12 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
     patch.metricValue = metricValue
     patch.metricLabel = unit && !label.includes(unit) ? `${label} · ${unit}` : label
     patch.metricAccent = oneOf(m.accent ?? md.accent, ACCENTS, 'orange')
+  } else {
+    // Sin bloque de métrica: el número del propio titular o párrafo, nunca el de fábrica (7700).
+    const found = `${headlineA} ${headlineB} ${patch.body}`.match(/[-+~]?\d+(?:[.,]\d+)?\s?(?:%|x\b|kg\b|km\b|min\b|h\b|g\b)?/i)
+    patch.metricValue = found ? found[0].replace(/\s+/g, '') : '—'
+    patch.metricLabel = upper(first(t.tagSuperior, s.tag, `${headlineA} ${headlineB}`))
+    patch.metricAccent = 'orange'
   }
 
   // 02 · A/B (mapeo tolerante: Gemini a veces usa otros nombres o pone las tarjetas fuera de "data")
@@ -842,10 +869,12 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   patch.verdict = pick(['verdict', 'veredicto', 'conclusion', 'conclusión'], '').toUpperCase()
 
   // 03 · Gráfico (sólo cuando es la plantilla elegida)
-  if (template === 'chart') {
-    const c = base.chart
-    const chartBlock = obj(s.grafico ?? s.chart)
+  const chartBlock = obj(s.grafico ?? s.chart)
+  if (template === 'chart' || Object.keys(chartBlock).length) {
+    // Respaldo del pilar (nunca la curva de fábrica de otro tema).
+    const c = { ...base.chart, ...CHART_BY_DISCIPLINE[ctx.discipline ?? 'general'] }
     const cd = Object.keys(chartBlock).length ? chartBlock : d
+    const compare = cd.compare === true || cd.compare === 'true' || Boolean(first(cd.compareLabel))
     const csv = (v: unknown, fb: string) => (Array.isArray(v) ? v.join(', ') : first(v, fb))
     patch.chart = {
       ...c,
@@ -862,7 +891,13 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
       gaugeValue: num(cd.gaugeValue, c.gaugeValue),
       gaugeThreshold: num(cd.gaugeThreshold, c.gaugeThreshold),
       gaugeLabel: str(cd.gaugeLabel),
+      compare,
+      mainLabel: first(cd.mainLabel, cd.labelA),
+      compareLabel: first(cd.compareLabel, cd.labelB),
+      compareShape: oneOf(cd.compareShape, SHAPES, 'fall'),
     }
+  } else {
+    patch.chart = { ...base.chart, ...CHART_BY_DISCIPLINE[ctx.discipline ?? 'general'] }
   }
 
   // 04 · Sentencia
@@ -957,7 +992,8 @@ export interface GenerationResult {
 export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideContext = {}): GenerationResult {
   const root = obj(payload)
   const rawSlides = Array.isArray(root.slides) ? root.slides : Array.isArray(payload) ? payload : [payload]
-  let slides = rawSlides.map((raw) => slideToPatch(raw, ctx)).filter((p) => p.headlineA || p.headlineB)
+  const goal = str(obj(root.plan).objetivo ?? obj(root.plan).goal).toLowerCase()
+  let slides = rawSlides.map((raw) => slideToPatch(raw, ctx)).map((p) => enforceSemantics(p, goal)).filter((p) => p.headlineA || p.headlineB)
   if (!slides.length) throw new Error('La IA no devolvió slides utilizables.')
   const limit = mode === 'single' ? 1 : mode === 'stories' ? 3 : mode === 'carousel' ? 5 : 5
   slides = slides.slice(0, limit)

@@ -16,6 +16,8 @@ const DIM = '#4B5566'
 const AXIS = '#94A3B8'
 const ZONE_FILL = 'rgba(56,189,248,.09)'
 const ZONE_STROKE = 'rgba(56,189,248,.45)'
+/** Trazo de contraste de la curva comparativa (población sin estímulo). */
+const CMP = '#EF4444'
 
 /** Forma de la curva en 0–1 según el preset, anclada a la zona óptima. */
 function curveY(shape: CurveShape, t: number, zone: [number, number]) {
@@ -23,6 +25,12 @@ function curveY(shape: CurveShape, t: number, zone: [number, number]) {
   if (shape === 'bell') {
     const sigma = Math.max(zone[1] - zone[0], 0.14) * 0.85
     return 0.14 + 0.74 * Math.exp(-((t - c) ** 2) / (2 * sigma * sigma))
+  }
+  if (shape === 'plateau') {
+    // Meseta alta sostenida: sube rápido, se mantiene y cae apenas al final.
+    const up = 1 / (1 + Math.exp(-(t - 0.12) * 18))
+    const down = 1 / (1 + Math.exp(-(t - 0.86) * 14))
+    return 0.12 + 0.72 * up - 0.12 * down
   }
   const k = 9
   const s = 1 / (1 + Math.exp(-(t - (shape === 'rise' ? zone[1] : zone[0])) * k))
@@ -79,10 +87,15 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
     const plotH = height - top - 10
     const py = (y: number) => top + plotH - y * plotH
     const z = zone ?? [0.4, 0.6]
-    const pts: Pt[] = Array.from({ length: 33 }, (_, i) => {
-      const t = i / 32
-      return { x: px(t), y: py(curveY(chart.shape, t, z)) }
-    })
+    const curve = (shape: CurveShape): Pt[] =>
+      Array.from({ length: 33 }, (_, i) => {
+        const t = i / 32
+        return { x: px(t), y: py(curveY(shape, t, z)) }
+      })
+    const pts = curve(chart.shape)
+    // Doble trazo: contraste (tenue, rojo) debajo y serie principal (sólida, con brillo) arriba.
+    const dual = Boolean(chart.compare)
+    const cmpPts = dual ? curve(chart.compareShape ?? 'fall') : null
     body = (
       <>
         <svg width={width} height={height} style={{ display: 'block', overflow: 'visible' }}>
@@ -90,9 +103,25 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
             <rect x={px(zone[0])} y={4} width={Math.max(2, px(zone[1]) - px(zone[0]))} height={height - 4} fill={ZONE_FILL} stroke={ZONE_STROKE} strokeWidth={2} rx={6} />
           )}
           <line x1={PAD_X} x2={width - PAD_X} y1={height} y2={height} stroke={BRAND.border} strokeWidth={3} />
+          {cmpPts && (
+            <path d={smoothPath(cmpPts, 0.5)} stroke={CMP} strokeOpacity={0.75} strokeWidth={6 * scale} strokeDasharray={`${16 * scale} ${10 * scale}`} strokeLinecap="round" fill="none" />
+          )}
+          {dual && <path d={smoothPath(pts, 0.5)} stroke={BRAND.cyan} strokeOpacity={0.22} strokeWidth={30 * scale} strokeLinecap="round" fill="none" />}
           <path d={smoothPath(pts, 0.5)} stroke={BRAND.cyan} strokeWidth={12 * scale} strokeLinecap="round" fill="none" />
         </svg>
         {axis}
+        {dual && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: `${10 * scale}px ${36 * scale}px`, marginTop: 18 * scale, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 24 * scale }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 * scale, color: BRAND.white }}>
+              <span style={{ width: 34 * scale, height: 8 * scale, borderRadius: 4, background: BRAND.cyan, boxShadow: `0 0 ${12 * scale}px ${BRAND.cyan}` }} />
+              {chart.mainLabel?.trim() || 'Con estímulo'}
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 * scale, color: AXIS }}>
+              <span style={{ width: 34 * scale, height: 0, borderTop: `${5 * scale}px dashed ${CMP}` }} />
+              {chart.compareLabel?.trim() || 'Sin estímulo'}
+            </span>
+          </div>
+        )}
       </>
     )
   } else if (chart.mode === 'bars') {

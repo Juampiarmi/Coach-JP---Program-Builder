@@ -1,4 +1,4 @@
-import { clamp, LABEL_FONT, MONO_FONT, toList, toNumbers, type DiagramStyle } from './shared'
+import { clamp, fitLabel, LABEL_FONT, MONO_FONT, toList, toNumbers, type DiagramStyle } from './shared'
 
 interface Props extends DiagramStyle {
   axes: string
@@ -24,7 +24,9 @@ export function RadarDiagram({ axes, values, compare, labelA, labelB, width, hei
   // Radar un 25 % más grande que la base (0,30 del ancho / 0,36 del alto), limitado para que
   // las etiquetas laterales no se salgan del ancho útil.
   const labelSize = 32 * scale
-  const longest = Math.max(...names.map((s) => s.length))
+  // Rótulos largos: 2 renglones y cuerpo reducido en lugar de achicar el radar o cortar el texto.
+  const fits = names.map((nm) => fitLabel(nm, labelSize, width * 0.26))
+  const longest = Math.max(...fits.map((f) => (Math.max(...f.lines.map((l) => l.length)) * f.size) / labelSize))
   const sideRoom = width / 2 - 30 * scale - longest * labelSize * 0.56
   // Arriba y abajo hace falta lugar para la etiqueta + su valor (≈ 2 renglones).
   const vertRoom = plotH / 2 - labelSize * 2.6
@@ -59,10 +61,14 @@ export function RadarDiagram({ axes, values, compare, labelA, labelB, width, hei
           const dy = sin > 0.3 ? 28 * scale : sin < -0.3 ? -36 * scale : -4 * scale
           return (
             <g key={name + i}>
-              <text x={x} y={y + dy} textAnchor={anchor} fill={ink} style={{ fontFamily: LABEL_FONT, fontWeight: 700, fontSize: labelSize }}>
-                {name}
+              <text x={x} y={y + dy - (sin < -0.3 ? (fits[i].lines.length - 1) * fits[i].size * 1.1 : 0)} textAnchor={anchor} fill={ink} style={{ fontFamily: LABEL_FONT, fontWeight: 700, fontSize: fits[i].size }}>
+                {fits[i].lines.map((l, k) => (
+                  <tspan key={k} x={x} dy={k ? fits[i].size * 1.1 : 0}>
+                    {l}
+                  </tspan>
+                ))}
               </text>
-              <text x={x} y={y + dy + 32 * scale} textAnchor={anchor} fill={muted} style={{ fontFamily: MONO_FONT, fontSize: 23 * scale }}>
+              <text x={x} y={y + dy + 32 * scale + (sin < -0.3 ? 0 : (fits[i].lines.length - 1) * fits[i].size * 1.1)} textAnchor={anchor} fill={muted} style={{ fontFamily: MONO_FONT, fontSize: 23 * scale }}>
                 {vals[i]}
               </text>
             </g>
