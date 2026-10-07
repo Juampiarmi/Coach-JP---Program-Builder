@@ -10,6 +10,8 @@ import {
   type AiSettings,
   type Discipline,
   type EditorialGoal,
+  type EditorialTone,
+  TONE_LABEL,
   type GenerationResult,
   type GenMode,
   type InputMode,
@@ -37,6 +39,7 @@ interface GenPrefs {
   discipline: Discipline
   inputMode?: InputMode
   goal?: EditorialGoal
+  tone?: EditorialTone
 }
 /** Clave vieja: el enfriamiento ya no se persiste (recargar siempre deja el botón activo). */
 const SEQ_LABEL: Record<string, string> = {
@@ -116,7 +119,8 @@ export function AiGenerator({ onResult }: Props) {
   })
   const inputMode: InputMode = mode.inputMode ?? 'concept'
   const goal: EditorialGoal = mode.goal ?? 'auto'
-  const editorial = { inputMode, goal }
+  const tone: EditorialTone = mode.tone ?? 'viral'
+  const editorial = { inputMode, goal, tone }
   // Lo que va a hacer el planner con lo escrito: objetivo (detectado en AUTO) y formato efectivo.
   const detectedGoal = topic.trim() ? detectGoal(topic, goal) : null
   const effectiveMode = topic.trim() ? resolveFormat(topic, mode.mode, editorial) : mode.mode
@@ -170,7 +174,7 @@ export function AiGenerator({ onResult }: Props) {
     try {
       const goalNow = detectGoal(topic, goal)
       const format = resolveFormat(topic, mode.mode, editorial)
-      setStatus(`[ PLANNER · ${GOAL_LABEL[goalNow].toUpperCase()} · ${FORMAT_LABEL[format]} ]`)
+      setStatus(`[ PLANNER · ${tone === 'viral' ? 'VIRAL' : 'ACADÉMICO'} · ${GOAL_LABEL[goalNow].toUpperCase()} · ${FORMAT_LABEL[format]} ]`)
       const result = await generateContent(
         settings,
         topic,
@@ -265,6 +269,25 @@ export function AiGenerator({ onResult }: Props) {
           }}
         />
       )}
+      <div className="mt-2">
+        <p className="mb-1 font-mono text-[9px] tracking-[0.14em] text-steel/70 uppercase">Tono / enfoque estratégico</p>
+        <div className="grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+          {(['viral', 'academic'] as EditorialTone[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setMode({ ...mode, tone: t })}
+              aria-pressed={tone === t}
+              title={t === 'viral' ? 'Ganchos polarizantes, verdades incómodas y contraste alto para frenar el scroll' : 'Divulgación fisiológica formal con citas indexadas'}
+              className={`rounded-md px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
+                tone === t ? (t === 'viral' ? 'bg-gold text-carbon' : 'bg-cyan text-carbon') : 'text-steel hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              [ {TONE_LABEL[t].toUpperCase()} ]
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="mt-2">
         <p className="mb-1 font-mono text-[9px] tracking-[0.14em] text-steel/70 uppercase">Objetivo editorial</p>
         <div className="grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">

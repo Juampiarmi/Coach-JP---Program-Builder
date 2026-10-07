@@ -10,7 +10,7 @@ import { DEFAULT_STATE } from './defaults'
 import { harmonizeChart } from './lib/chartPillar'
 import { migrateDiagram } from './lib/diagramPillar'
 import { deriveBookmarkPoints, resolveBookmark } from './lib/bookmark'
-import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type GenerationResult } from './lib/ai'
+import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type EditorialTone, type GenerationResult } from './lib/ai'
 import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
 import { zipFiles } from './lib/zip'
@@ -229,6 +229,13 @@ export default function App() {
           slide,
           index,
           others: slides.map((s, i) => ({ index: i, title: `${s.headlineA} ${s.headlineB}`.trim() })).filter((o) => o.index !== index),
+          tone: (() => {
+            try {
+              return (JSON.parse(localStorage.getItem('jp-tactical-canvas:ai-mode') ?? '{}') as { tone?: EditorialTone }).tone ?? 'viral'
+            } catch {
+              return 'viral' as const
+            }
+          })(),
         },
         regenAbort.current.signal,
         (note) => note && setRegen({ busy: true, note }),

@@ -211,7 +211,35 @@ export type ResolvedGoal = Exclude<EditorialGoal, 'auto'>
 export interface EditorialOptions {
   inputMode: InputMode
   goal: EditorialGoal
+  /** Tono / enfoque estratégico (por defecto viral) */
+  tone?: EditorialTone
 }
+
+/** Tono editorial: viral / contrarian (por defecto) o académico / paper. */
+export type EditorialTone = 'viral' | 'academic'
+
+export const TONE_LABEL: Record<EditorialTone, string> = {
+  viral: '⚡ Viral / Contrarian',
+  academic: '🔬 Académico / Paper',
+}
+
+const TONE_RULE: Record<EditorialTone, string> = {
+  viral: `TONO: ⚡ VIRAL / CONTRARIAN. La pieza tiene que frenar el scroll en Instagram: verdades incómodas, contraste alto, storytelling de élite. Cero lenguaje académico o burocrático. Esto manda por sobre cualquier regla de tono anterior.
+1. PORTADA (placa 1): prohibido abrir con frases genéricas o de informe («El mito busca relatos…», «Los números confirman…», «La ciencia dice…», «Es importante…»). El titular es una sentencia contrarian en dos tiempos:
+   - titleWhite: una afirmación chocante que desafía el sentido común (ej: «MESSI CAMINA LA CANCHA.»).
+   - titleAccent: la justificación táctica implacable (ej: «Y ES LO MEJOR QUE HACE.»).
+   - parrafo de la portada: máximo 2 líneas directas, sin relleno ni introducciones.
+2. MÉTRICAS CON IMPACTO: prohibidos los multiplicadores fríos o sin contexto («1.2X») y las cifras de manual repetidas («7700 kcal»). La métrica muestra una anomalía palpable o un récord comprensible, y el label explica por qué impacta:
+   - porcentaje contundente (ej: «82%» → «DEL TIEMPO CAMINANDO A MENOS DE 5 KM/H»),
+   - volumen absoluto (ej: «91» → «GOLES EN UN AÑO: EL LÍMITE DE LA FÍSICA»),
+   - ratio de contraste (ej: «-40%» → «MENOS DESGASTE, 3X MÁS LETALIDAD»).
+   Las cifras tienen que ser reales y conocidas públicamente (estadísticas oficiales, récords, estudios). Si no tenés certeza de un número exacto, usá un rango o un dato verificable distinto: viral no es inventar.
+3. GRÁFICOS Y DIAGRAMAS CONTEXTUALES: nada de curvas genéricas, lineales o vacías (ni una serie de años sin historia). Los ejes confrontan dos variables y muestran la anomalía (ej: «KM RECORRIDOS VS. PARTICIPACIONES EN GOL»: poca fatiga, máxima producción). En A/B, las tarjetas enfrentan esas mismas variables. En círculos, dominó, pipeline o trayectoria, los rótulos son las fases reales del rendimiento o de la toma de decisiones (ej: «Lectura pasiva» → «Aceleración en zona crítica» → «Definición quirúrgica»), nunca etiquetas de autoayuda.
+4. GUARDADO (placa final): 3 «Reglas tácticas» accionables, cada una una oración completa que da ganas de guardar el post (ej: «El volumen de carrera sin propósito es solo fatiga acumulada.», «La visión periférica ahorra glucógeno para el sprint decisivo.», «La longevidad deportiva no premia el agotamiento, premia la precisión.»). Sin números delante: la placa ya los numera.
+5. CAPTION con la misma energía: primera línea = gancho provocador; línea en blanco; exactamente 3 viñetas técnicas que empiezan con «▸ », una por línea; línea en blanco; CTA directo con PALABRA CLAVE entre « »; en la última línea, 3 a 5 hashtags de nicho.`,
+  academic: `TONO: 🔬 ACADÉMICO / PAPER. Divulgación fisiológica formal y precisa: mecanismos, variables medibles y citas indexadas reales en "citation" siempre que existan. Titulares claros y rigurosos; métricas con su unidad y contexto científico; el caption explica el mecanismo con los 3 bloques habituales.`,
+}
+
 
 export const GOAL_LABEL: Record<EditorialGoal, string> = {
   auto: 'Auto / Detectar',
@@ -266,7 +294,7 @@ export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discip
     editorial?.inputMode === 'brief'
       ? `BRIEF DEL USUARIO (instrucciones completas: interpretá la intención, los servicios, el público y el objetivo antes de planificar):\n---\n${text}\n---`
       : `Tema o concepto a comunicar: "${text}"`
-  const goal = editorial ? `${GOAL_RULE[detectGoal(text, editorial.goal)]}\n\n` : ''
+  const goal = editorial ? `${GOAL_RULE[detectGoal(text, editorial.goal)]}\n\n${TONE_RULE[editorial.tone ?? 'viral']}\n\n` : ''
   return `${head}\n\n${goal}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
 }
 
@@ -869,7 +897,53 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const wantsShort = mode === 'echo' || mode === 'kinetic'
   patch.repeatPhrase = (wantsShort ? first(short, long) : first(long, short)) || headline || base.repeatPhrase
   if (template === 'repeat' || aiMode) patch.repeatMode = mode
+  return sanitizePatch(patch)
+}
+
+/** Rótulos que a veces la IA deja delante del texto («Parte 1:», «Remate:», «Titular:»…). */
+const LABEL_PREFIX = /^(parte\s*\d|blanco|remate|acento|titular|t[ií]tulo|gancho|hook|p[aá]rrafo|subt[ií]tulo|label|tag)\s*[:：-]\s*/i
+
+/** Limpia un texto de la IA: markdown en negrita, rótulos, comillas envolventes y espacios. */
+export function cleanText(t: string) {
+  let out = t.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\s+/g, ' ').trim()
+  out = out.replace(LABEL_PREFIX, '')
+  const m = out.match(/^[«"“](.+)[»"”]$/)
+  return (m ? m[1] : out).trim()
+}
+
+/**
+ * Saneamiento final de la placa: cada campo de texto queda limpio y sin residuos antes de
+ * pasar al estado (los *asteriscos* simples del titular se conservan: marcan la palabra destacada).
+ */
+function sanitizePatch(patch: Partial<CanvasState>): Partial<CanvasState> {
+  for (const k of ['tag', 'headlineA', 'headlineB', 'body', 'kicker', 'metricValue', 'metricLabel', 'verdict', 'repeatPhrase', 'citeSub'] as const) {
+    const v = patch[k]
+    if (typeof v === 'string') patch[k] = cleanText(v)
+  }
+  for (const k of ['cardA', 'cardB'] as const) {
+    const c = patch[k]
+    if (c) patch[k] = { ...c, label: cleanText(c.label), value: cleanText(c.value), caption: cleanText(c.caption) }
+  }
+  if (patch.bookmarkData) {
+    // La placa ya numera las reglas: «01. Regla» → «Regla».
+    patch.bookmarkData = { ...patch.bookmarkData, points: patch.bookmarkData.points.map((p) => cleanText(p).replace(/^(regla\s*)?\d{1,2}\s*[.)\-:·]\s*/i, '')).filter(Boolean) }
+  }
   return patch
+}
+
+/**
+ * Caption listo para copiar: saltos de línea normalizados, viñetas unificadas en «▸ », sin
+ * espacios colgando ni más de una línea en blanco seguida.
+ */
+export function cleanCaption(raw: string) {
+  return raw
+    .replace(/\r\n?/g, '\n')
+    .replace(/\\n/g, '\n')
+    .split('\n')
+    .map((l) => l.replace(/\s+$/, '').replace(/^\s*(?:[-•*·▪►▶]|\d+[.)])\s+/, '▸ ').replace(/\*\*(.+?)\*\*/g, '$1'))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 export interface GenerationResult {
@@ -889,7 +963,7 @@ export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideConte
   slides = slides.slice(0, limit)
   const declared = oneOf(root.format, ['single', 'stories', 'carousel'] as const, 'single')
   const format = mode === 'auto' ? (slides.length === 1 ? 'single' : declared === 'single' ? 'carousel' : declared) : mode
-  const caption = str(root.caption).replace(/\r\n/g, '\n')
+  const caption = cleanCaption(str(root.caption))
   const rawPlan = obj(root.plan)
   const plan = Object.keys(rawPlan).length
     ? { goal: str(rawPlan.objetivo ?? rawPlan.goal), intent: str(rawPlan.intencion ?? rawPlan.intent), sequence: slides.map((sl) => sl.template ?? 'statement') }
@@ -964,10 +1038,12 @@ export interface RegenerateRequest {
   index: number
   /** Titulares del resto de las placas, para mantener la coherencia del carrusel */
   others: { index: number; title: string }[]
+  /** Tono editorial elegido en el generador */
+  tone?: EditorialTone
 }
 
 function regeneratePrompt(req: RegenerateRequest) {
-  const base = buildUserPrompt(req.topic, 'single', req.discipline)
+  const base = `${buildUserPrompt(req.topic, 'single', req.discipline)}\n\n${TONE_RULE[req.tone ?? 'viral']}`
   const current = `${req.slide.headlineA} ${req.slide.headlineB}`.trim()
   const aiTemplate = AI_TEMPLATE_ID[req.slide.template]
   const context = req.others.length
