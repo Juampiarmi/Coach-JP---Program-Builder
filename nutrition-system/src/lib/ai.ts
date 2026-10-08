@@ -3,6 +3,7 @@ import { geminiGenerate, type GeminiNotice, type GeminiResult } from './gemini';
 import { aisGroupA } from './evidence';
 import { fixGreeting, OFF_PERI_NAME, parseTrainingWindow, PERI_WORDS, resolveAthleteName } from './anamnesis';
 import { macrosFor, matchFood, round1, round2 } from './foods';
+import { consolidateItems, dayAnchors, retimeMeals } from './schedule';
 import { uid } from './seed';
 import type { AiProvider, AiSettings, AthletePlan, FoodItem, Meal, MealDay, MealRole, Phase, Supplement } from './types';
 
@@ -31,7 +32,8 @@ REGLAS DE CÁLCULO Y FORMATO (obligatorias):
 - Agregá "coachNote": una directiva táctica breve (máx. 2 frases) para el atleta. Sin saludos ni apodos.
 - "athleteName": EXACTAMENTE el nombre que figura en las notas; nunca inventes apodos ni variantes.
 - Horario de entrenamiento: "profile.trainingTime" = hora de INICIO de la sesión ("HH:MM") y "profile.sessionMinutes" = duración. Ej: "entreno de 16 a 18 hs" → trainingTime "16:00", sessionMinutes 120 (nunca 18:00 como inicio).
-- Leucina ≥ 2,7 g SOLO en comidas principales (desayuno, almuerzo, cena, post-entreno). Colaciones y meriendas son ingestas auxiliares: no les agregues huevo ni whey para llegar al umbral.
+- Leucina ≥ 2,7 g SOLO en comidas principales (desayuno, almuerzo, cena). Colaciones, meriendas, pre y post-WOD son ingestas auxiliares: no les agregues huevo ni whey para llegar al umbral.
+- Nunca repitas el mismo alimento dos veces dentro de una comida: sumá los gramos en un único ítem.
 - Día OFF: no hay sesión. Prohibido "Pre-Entreno", "PeriWOD" o "bloque glucolítico"; la merienda del OFF se llama "Merienda Táctica OFF" (modulación glucémica / saciedad). Cafeína en OFF: consumo matutino habitual (café / mate), sin toma pre-workout.
 - Suplementos: sólo AIS Grupo A (creatina 0,04 g/kg, cafeína 3-6 mg/kg, beta-alanina, bicarbonato, nitrato) con DOI real.
 - Respondé SOLO con el objeto JSON, sin texto antes ni después y sin bloques de código.`;
@@ -176,11 +178,9 @@ const hm = (min: number) => `${String(Math.floor((((min % 1440) + 1440) % 1440) 
 export function scheduleHint(notes: string) {
   const w = parseTrainingWindow(notes);
   if (!w) return '';
-  const [h, m] = w.time.split(':').map(Number);
-  const start = h * 60 + m;
-  const end = start + (w.minutes ?? 60);
-  return `\n\nHORARIO DE ENTRENO DETECTADO: ${hm(start)} a ${hm(end)} (inicio ${w.time}, ${end - start} min).
-Estructurá el día ON así: Pre-WOD ${hm(start - 45)} · Post-WOD inmediato ${hm(end)}-${hm(end + 30)} · Cena principal ${hm(end + 180)}.`;
+  const a = dayAnchors({ trainingTime: w.time, sessionMinutes: w.minutes ?? 60 });
+  return `\n\nHORARIO DE ENTRENO DETECTADO: ${hm(a.start)} a ${hm(a.end)} (inicio ${w.time}, ${a.end - a.start} min).
+Estructurá el día ON en este orden y con estas horas: Desayuno ${hm(a.breakfast)} · Almuerzo ${hm(a.lunch)} · Pre-WOD ${hm(a.peri)} · Post-WOD inmediato ${hm(a.post)} · Cena principal ${hm(a.dinner)}.`;
 }
 
 export async function compileWithAi(ai: AiSettings, notes: string, onNotice?: (n: GeminiNotice) => void): Promise<AiPlanJson & { _model?: string }> {
@@ -230,6 +230,10 @@ function fixCulinary(items: FoodItem[]) {
       items[k] = { id: i.id, foodId: 'yogur', food: 'Yogur griego descremado', grams, ...macrosFor('yogur', grams)! };
     }
   });
+  // Palta (ya fusionada si venía repetida): tope de 70 g por comida.
+  items.forEach((i, k) => {
+    if (i.foodId === 'palta' && i.grams > MAX_PALTA_PER_MEAL_G) items[k] = { ...i, grams: MAX_PALTA_PER_MEAL_G, ...macrosFor('palta', MAX_PALTA_PER_MEAL_G)! };
+  });
   if (items.some((i) => i.foodId === 'palta')) {
     items.forEach((i, k) => {
       if (i.foodId === 'oliva' && i.grams > 5) items[k] = { ...i, grams: 5, ...macrosFor('oliva', 5)! };
@@ -273,7 +277,8 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
           ...(mp === 'protein' || mp === 'carbs' || mp === 'fat' ? { macroPrincipal: mp } : {}),
         };
       });
-    fixCulinary(items);
+    const merged = consolidateItems(items);
+    fixCulinary(merged);
     const day = inferDay(m.day, role);
     // Día OFF: sin sesión → nada de "Pre-Entreno PeriWOD" ni "Bloque glucolítico".
     const offPeri = day === 'off' && (role === 'peri' || PERI_WORDS.test(name));
@@ -283,7 +288,7 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
       time: /^\d{1,2}:\d{2}$/.test(m.time ?? '') ? m.time!.padStart(5, '0') : '12:00',
       day,
       role: offPeri ? 'snack' : role,
-      items,
+      items: merged,
     };
   });
 
@@ -293,6 +298,8 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
   const trainingTime = window?.time ?? aiTime ?? base.profile.trainingTime;
   const sessionMinutes = window?.minutes ?? (num(pr.sessionMinutes, 0) >= 20 ? num(pr.sessionMinutes, 0) : base.profile.sessionMinutes);
   const athleteName = resolveAthleteName(json.athleteName, notes, base.profile.name);
+  // Horarios determinísticos desde la franja real de entreno (la IA no decide la hora de la cena ni del post-WOD).
+  const timedMeals = retimeMeals(meals, { trainingTime, sessionMinutes });
 
   const known = Object.fromEntries(aisGroupA(weightKg).map((s) => [s.id, s]));
   const supplements: Supplement[] = (json.supplements ?? []).map((s) => {
@@ -343,7 +350,7 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
       on: toGkg(json.macrosOn, base.periodization.on),
       off: toGkg(json.macrosOff, base.periodization.off),
     },
-    meals: meals.length ? meals : base.meals,
+    meals: timedMeals.length ? timedMeals : base.meals,
     supplements: supplements.length ? supplements : aisGroupA(weightKg),
     coachNote: fixGreeting(json.coachNote?.trim() || base.coachNote, json.athleteName, athleteName),
   };

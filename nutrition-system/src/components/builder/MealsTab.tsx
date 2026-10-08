@@ -9,6 +9,7 @@ import type { DayMode, FoodItem, Meal, MealDay, MealRole } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
 import { BalanceBanner } from './BalanceBanner';
+import { dayAnchors, timeToMinutes } from '@/lib/schedule';
 import { CustomFoodsBar } from './CustomFoods';
 import { FoodScanner } from './FoodScanner';
 
@@ -68,7 +69,9 @@ function ProteinSensor({ meal }: { meal: Meal }) {
   if (!isMpsMeal(meal))
     return (
       <span className="inline-flex items-center rounded-md border border-line bg-white/[0.03] px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] text-mute">
-        {meal.role === 'snack'
+        {meal.role === 'post'
+          ? '[ RECUPERACIÓN POST-WOD · INGESTA AUXILIAR ]'
+          : meal.role === 'snack'
           ? '[ INGESTA AUXILIAR / MODULACIÓN GLUCÉMICA ]'
           : meal.day === 'off'
             ? '[ MODULACIÓN GLUCÉMICA / SACIEDAD ]'
@@ -343,7 +346,7 @@ export function MealsTab() {
 
   const meals = [...plan.meals]
     .filter((m) => filter === 'all' || m.day === filter)
-    .sort((a, b) => (a.day === b.day ? a.time.localeCompare(b.time) : DAY_ORDER[a.day] - DAY_ORDER[b.day]));
+    .sort((a, b) => (a.day === b.day ? timeToMinutes(a.time) - timeToMinutes(b.time) : DAY_ORDER[a.day] - DAY_ORDER[b.day]));
   const shared = plan.meals.filter((m) => m.day === 'both').length;
   const lowCount = plan.meals.filter((m) => isMpsMeal(m) && mealTotals(m).leucine < LEUCINE_THRESHOLD).length;
 
@@ -355,6 +358,7 @@ export function MealsTab() {
           <DayCompare day="off" />
         </div>
         <BalanceBanner />
+        <RetimeBar />
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <div className="w-72">
             <Segmented
@@ -441,3 +445,40 @@ export function MealsTab() {
     </div>
   );
 }
+
+const hhmm = (min: number) => `${String(Math.floor((((min % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}:${String(((min % 60) + 60) % 60).padStart(2, '0')}`;
+
+/** Agenda deportiva derivada de la franja de entreno: muestra la secuencia y la aplica con un toque. */
+function RetimeBar() {
+  const pr = usePlanStore((s) => s.plan.profile);
+  const retime = usePlanStore((s) => s.retimeMeals);
+  const a = dayAnchors(pr);
+  const seq: [string, number][] = [
+    ['Desayuno', a.breakfast],
+    ['Almuerzo', a.lunch],
+    ['Pre-WOD', a.peri],
+    ['Post-WOD', a.post],
+    ['Cena', a.dinner],
+  ];
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-carbon px-3 py-2">
+      <span className="font-mono text-[10px] tracking-[0.12em] text-mute">
+        ENTRENO {hhmm(a.start)}–{hhmm(a.end)} ·
+      </span>
+      <span className="tnum min-w-0 flex-1 font-mono text-[10.5px] text-steel">
+        {seq
+          .sort((x, y) => timeToMinutes(hhmm(x[1])) - timeToMinutes(hhmm(y[1])))
+          .map(([n, t]) => `${n} ${hhmm(t)}`)
+          .join(' → ')}
+      </span>
+      <button
+        type="button"
+        onClick={retime}
+        className="rounded-md border border-cyan-hud/40 px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.1em] text-cyan-hud transition hover:border-cyan-hud hover:bg-cyan-hud/10"
+      >
+        [ ⏱ AJUSTAR HORARIOS AL ENTRENO ]
+      </button>
+    </div>
+  );
+}
+

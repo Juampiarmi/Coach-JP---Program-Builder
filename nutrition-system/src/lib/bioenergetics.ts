@@ -1,3 +1,4 @@
+import { timeToMinutes } from './schedule';
 import type { AthletePlan, DayMode, Macros, Meal, Phase, Profile, Sex, SkinfoldSite, Skinfolds } from './types';
 
 export const LEUCINE_THRESHOLD = 2.7;
@@ -212,7 +213,7 @@ export function mealTotals(meal: Meal) {
 export function mealsForDay(meals: Meal[], mode: DayMode) {
   return meals
     .filter((m) => m.day === 'both' || m.day === mode)
-    .sort((a, b) => a.time.localeCompare(b.time));
+    .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
 }
 
 export function dayTotals(meals: Meal[], mode: DayMode) {
@@ -228,10 +229,10 @@ export function dayTotals(meals: Meal[], mode: DayMode) {
 
 /** Las comidas principales exigen el umbral de leucina; el peri-entreno es un bloque glucolítico. */
 /**
- * Umbral de leucina (≥ 2,7 g · mTOR) sólo en las comidas principales: desayuno, almuerzo, cena y post-entreno.
- * Colaciones, meriendas y bloques peri-entreno son ingestas auxiliares (modulación glucémica).
+ * Umbral de leucina (≥ 2,7 g · mTOR) sólo en las comidas principales: desayuno, almuerzo y cena.
+ * Colaciones, meriendas, pre y post-WOD son ingestas auxiliares: nunca muestran "sub-umbral".
  */
-export const MPS_ROLES: Meal['role'][] = ['breakfast', 'lunch', 'dinner', 'post'];
+export const MPS_ROLES: Meal['role'][] = ['breakfast', 'lunch', 'dinner'];
 export function isMpsMeal(meal: Meal) {
   return MPS_ROLES.includes(meal.role);
 }

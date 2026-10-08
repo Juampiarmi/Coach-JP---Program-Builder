@@ -5,6 +5,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_PRESETS } from '@/lib/bioenergetics';
 import { MAX_OIL_PER_MEAL_G, migrateModel } from '@/lib/ai';
 import { balancePlan } from '@/lib/balance';
+import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
 import { aisGroupA } from '@/lib/evidence';
 import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
 import { itemFromFood, seedPlan, uid } from '@/lib/seed';
@@ -65,6 +66,8 @@ interface PlanState {
   removeItem: (mealId: string, itemId: string) => void;
   /** Escala carbos y grasas para que cada día cierre al 100 % ± 3 % de sus metas. */
   balanceMeals: () => void;
+  /** Reasigna las horas de las comidas a partir de la franja real de entreno (06:30 · 12:30 · pre · post · cena). */
+  retimeMeals: () => void;
 
   toggleSupplement: (id: string) => void;
   updateSupplement: (id: string, patch: Partial<Supplement>) => void;
@@ -250,7 +253,7 @@ export const usePlanStore = create<PlanState>()(
         }),
 
       addFood: (mealId, foodId, grams = 100) =>
-        set((s) => ({ plan: mapMeal(s.plan, mealId, (m) => ({ ...m, items: [...m.items, itemFromFood(foodId, grams)] })) })),
+        set((s) => ({ plan: mapMeal(s.plan, mealId, (m) => ({ ...m, items: consolidateItems([...m.items, itemFromFood(foodId, grams)]) })) })),
 
       setItemGrams: (mealId, itemId, grams) =>
         set((s) => ({
@@ -271,6 +274,7 @@ export const usePlanStore = create<PlanState>()(
         })),
 
       balanceMeals: () => set((s) => ({ plan: balancePlan(s.plan).plan })),
+      retimeMeals: () => set((s) => ({ plan: touch({ ...s.plan, meals: retimeMeals(s.plan.meals, s.plan.profile) }) })),
 
       removeItem: (mealId, itemId) =>
         set((s) => ({
@@ -301,7 +305,7 @@ export const usePlanStore = create<PlanState>()(
       injectItems: (target, items) =>
         set((s) => {
           const fresh = items.map((i) => ({ ...i, id: uid() }));
-          if ('mealId' in target) return { plan: mapMeal(s.plan, target.mealId, (m) => ({ ...m, items: [...m.items, ...fresh] })) };
+          if ('mealId' in target) return { plan: mapMeal(s.plan, target.mealId, (m) => ({ ...m, items: consolidateItems([...m.items, ...fresh]) })) };
           const meal: Meal = { id: uid(), name: target.newMeal.name, time: target.newMeal.time, day: target.newMeal.day, role: 'lunch', items: fresh };
           return { plan: touch({ ...s.plan, meals: [...s.plan.meals, meal] }) };
         }),
@@ -428,6 +432,7 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
       sessionMinutes: okNum(pr.sessionMinutes) ? pr.sessionMinutes : 75,
     },
     periodization: { ...seed.periodization, ...p.periodization },
-    meals: p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil),
+    // Ingredientes repetidos en una comida (ej. palta 70 g + 45 g) se fusionan al cargar.
+    meals: p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil).map(consolidateMeal),
   };
 }

@@ -5,6 +5,7 @@ import { BRAND, nutritionSvg, shieldSvg } from './brand';
 import { CITES } from './evidence';
 import { FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
+import { byTime, consolidateMeal } from './schedule';
 import type { AthletePlan, DayMode } from './types';
 
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
@@ -126,7 +127,8 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
       off: { kcal: Math.round(t.kcalOff), ...t.gramsOff },
     },
     threshold: LEUCINE_THRESHOLD,
-    meals: plan.meals.map((m) => ({ ...m, mps: isMpsMeal(m) })),
+    // Ingredientes repetidos fusionados y orden cronológico estricto antes de exportar.
+    meals: [...plan.meals].sort(byTime).map((m) => ({ ...consolidateMeal(m), mps: isMpsMeal(m) })),
     foods: Object.fromEntries(FOODS.map((f) => [f.id, f])),
     anchors: GROUP_ANCHOR,
     groupLabels: GROUP_LABEL,

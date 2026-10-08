@@ -1,5 +1,6 @@
 import { computeTelemetry, dayTotals, mealTotals } from './bioenergetics';
 import { FOOD_BY_ID, GROUP_ANCHOR, inferMacroPrincipal, macrosFor, round1, round2 } from './foods';
+import { consolidateItems, consolidateMeal } from './schedule';
 import { uid } from './seed';
 import type { AthletePlan, DayMode, FoodItem, Macros, Meal } from './types';
 
@@ -10,9 +11,26 @@ export const KCAL_TOLERANCE = 0.01;
 /** Tope de aceite por comida (1 cda); el resto de la brecha de grasas va a palta / frutos secos. */
 const OIL_CAP_G = 15;
 /** Topes gastronómicos por comida: aceite 1 cda; palta 70 g (acompaña ensalada o tostada, nunca porción masiva). */
-const CAPS: Record<string, number> = { oliva: OIL_CAP_G, palta: 70 };
-const capOf = (i: FoodItem, m: Meal) =>
-  i.foodId === 'oliva' && m.items.some((x) => x.foodId === 'palta') ? 5 : i.foodId ? (CAPS[i.foodId] ?? Infinity) : Infinity;
+const CAPS: Record<string, number> = { oliva: OIL_CAP_G, palta: 70, leche: 500, isotonica: 1000, whey: 60, huevo: 250, claras: 330 };
+/** Porción máxima realista por comida según el grupo (el cierre nunca prescribe 1,6 kg de yogur). */
+const GROUP_MAX: Record<string, number> = {
+  'lean-protein': 300,
+  'dairy-protein': 350,
+  eggs: 250,
+  whey: 60,
+  'protein-snack': 100,
+  starch: 450,
+  cereal: 120,
+  fruit: 300,
+  'sport-carb': 120,
+  fat: 40,
+};
+const foodCap = (foodId: string | undefined) => {
+  if (!foodId) return Infinity;
+  const ref = FOOD_BY_ID[foodId];
+  return CAPS[foodId] ?? (ref ? (GROUP_MAX[ref.group] ?? Infinity) : Infinity);
+};
+const capOf = (i: FoodItem, m: Meal) => (i.foodId === 'oliva' && m.items.some((x) => x.foodId === 'palta') ? 5 : foodCap(i.foodId));
 
 type Anchor = 'p' | 'c' | 'f';
 type DayTotals = Macros & { kcal: number };
@@ -70,15 +88,20 @@ function closeKcal(meals: Meal[], day: DayMode, target: DayTotals): { meals: Mea
   for (let pass = 0; pass < 3; pass++) {
     const gap = targetKcal - dayTotals(meals, day).kcal;
     if (Math.abs(gap) <= targetKcal * KCAL_TOLERANCE * 0.4) break;
+    // Candidatos con lugar bajo su tope realista (con la dirección de la brecha: para restar sirve cualquiera).
     const pick = (macro: Anchor, days: Meal['day'][]) =>
       meals
-        .flatMap((m) => (days.includes(m.day) ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && i.grams > 0 && i.grams < capOf(i, m)) : []))
+        .flatMap((m) =>
+          days.includes(m.day)
+            ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && i.grams > 0 && (gap < 0 || i.grams < capOf(i, m))).map((i) => ({ ...i, cap: capOf(i, m) }))
+            : [],
+        )
         .sort((a, b) => b[macro] - a[macro])[0];
     // Se corrige el macro más desviado en la dirección de la brecha (si sobran kcal, el que más se pasó; si faltan, el que más falta).
     const got = dayTotals(meals, day);
     const dev = (k: Anchor) => (target[k] > 0 ? got[k] / target[k] - 1 : 0);
     const order = (['c', 'f', 'p'] as Anchor[]).sort((a, b) => (gap < 0 ? dev(b) - dev(a) : dev(a) - dev(b)));
-    let host: FoodItem | undefined;
+    let host: (FoodItem & { cap: number }) | undefined;
     for (const k of order) {
       host = pick(k, [day]) ?? pick(k, [day, 'both']);
       if (host) break;
@@ -86,7 +109,7 @@ function closeKcal(meals: Meal[], day: DayMode, target: DayTotals): { meals: Mea
     if (!host) break;
     const kcalPerG = (host.p * 4 + host.c * 4 + host.f * 9) / host.grams;
     if (!(kcalPerG > 0)) break;
-    const grams = Math.max(5, Math.round(host.grams + gap / kcalPerG));
+    const grams = Math.min(host.cap, Math.max(5, Math.round(host.grams + gap / kcalPerG)));
     if (grams === host.grams) break;
     meals = meals.map((m) => ({ ...m, items: m.items.map((i) => (i.id === host.id ? rescale(i, grams) : i)) }));
     changed++;
@@ -117,7 +140,9 @@ function balanceMacro(meals: Meal[], day: DayMode, macro: Anchor, target: number
 
     if (poolSum < 1) {
       if (gap <= 0 || macro === 'p') break;
-      meals = injectSource(meals, day, macro, gap);
+      const next = injectSource(meals, day, macro, gap);
+      if (next === meals) break; // sin lugar realista para sumar: la brecha queda a la vista del coach
+      meals = next;
       changed++;
       continue;
     }
@@ -144,17 +169,26 @@ function injectSource(meals: Meal[], day: DayMode, macro: 'c' | 'f', gap: number
   const own = meals.filter((m) => m.day === day);
   const pool = own.length ? own : meals.filter((m) => m.day === 'both');
   if (!pool.length) return meals;
-  const host = [...pool].sort((a, b) => {
+  const hosts = [...pool].sort((a, b) => {
     const ka = mealTotals(a);
     const kb = mealTotals(b);
     return kb.p * 4 + kb.c * 4 + kb.f * 9 - (ka.p * 4 + ka.c * 4 + ka.f * 9);
-  })[0];
-  const morning = host.role === 'breakfast' || host.role === 'snack';
-  const foodId = macro === 'c' ? (morning ? 'avena' : 'arroz') : morning ? 'nueces' : 'palta';
-  const ref = FOOD_BY_ID[foodId];
-  const grams = snap((gap / ref[macro]) * 100);
-  const item: FoodItem = { id: uid(), foodId, food: ref.name, grams, ...macrosFor(foodId, grams)! };
-  return meals.map((m) => (m.id === host.id ? { ...m, items: [...m.items, item] } : m));
+  });
+  // Primer par comida / alimento con lugar bajo su tope; si el alimento ya está en la comida, se suma al mismo ítem.
+  for (const host of hosts) {
+    const morning = host.role === 'breakfast' || host.role === 'snack' || host.role === 'peri';
+    const options = macro === 'c' ? (morning ? ['avena', 'banana'] : ['arroz', 'papa']) : morning ? ['nueces', 'mani'] : ['palta', 'nueces'];
+    for (const foodId of options) {
+      const ref = FOOD_BY_ID[foodId];
+      const have = host.items.filter((i) => i.foodId === foodId).reduce((a, i) => a + i.grams, 0);
+      const room = foodCap(foodId) - have;
+      const grams = Math.min(room, snap((gap / ref[macro]) * 100));
+      if (grams < 5) continue;
+      const item: FoodItem = { id: uid(), foodId, food: ref.name, grams, ...macrosFor(foodId, grams)! };
+      return meals.map((m) => (m.id === host.id ? { ...m, items: consolidateItems([...m.items, item]) } : m));
+    }
+  }
+  return meals;
 }
 
 /**
@@ -180,5 +214,5 @@ export function balancePlan(plan: AthletePlan): { plan: AthletePlan; report: Day
     meals = k.meals;
     report.push({ day, target, before, after: dayTotals(meals, day), changed: pr.changed + c.changed + f.changed + c2.changed + k.changed });
   }
-  return { plan: { ...plan, meals, updatedAt: Date.now() }, report };
+  return { plan: { ...plan, meals: meals.map(consolidateMeal), updatedAt: Date.now() }, report };
 }

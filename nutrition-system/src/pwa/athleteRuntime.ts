@@ -161,7 +161,8 @@ const runtime = String.raw`
     var out = extras.__out;
     if (out && out.length) base = base.concat([{ id: '__out', name: 'Fuera del plan · análisis IA', time: out[0].at || '12:00', day: mode, role: 'snack', mps: false, items: [] }]);
     return base
-      .sort(function (a, b) { return a.time.localeCompare(b.time); })
+      // Orden cronológico inquebrantable: 00:00-03:59 cuenta como final del día (nunca antes del desayuno).
+      .sort(function (a, b) { return timeToMinutes(a.time) - timeToMinutes(b.time); })
       .map(function (m) {
         var items = free[m.id] ? [freeItem(m, free[m.id])] : m.items.map(resolveItem).concat(extras[m.id] || []);
         var t = items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
@@ -233,6 +234,13 @@ const runtime = String.raw`
     var eggs = Math.max(1, Math.ceil(need / egg));
     var g = Math.max(5, Math.ceil(need / whey / 5) * 5);
     return 'Sumá ' + eggs + ' huevo' + (eggs > 1 ? 's' : '') + ' o ' + g + ' g de whey';
+  }
+
+  function timeToMinutes(hhmm) {
+    var p = /^(\d{1,2}):(\d{2})/.exec(hhmm || '');
+    if (!p) return 720;
+    var t = (+p[1] % 24) * 60 + +p[2];
+    return t < 240 ? t + 1440 : t;
   }
 
   function toMin(hhmm) { var p = String(hhmm || '0:0').split(':'); return (+p[0] || 0) * 60 + (+p[1] || 0); }
@@ -552,8 +560,8 @@ const runtime = String.raw`
     ]],
     ['¿QUÉ ES EL UMBRAL DE LEUCINA (mTOR)?', [
       'La <b>leucina</b> es el aminoácido que «enciende» la síntesis de proteína muscular (la vía mTOR). Hace falta llegar a <b>~2,7 g por comida</b> para activarla al máximo.',
-      'Por eso cuidamos el umbral en las <b>comidas principales</b>: desayuno, almuerzo, cena y post-entreno. Ahí se juega la ganancia y la preservación de músculo.',
-      'Las colaciones, meriendas y snacks son <b>ingestas auxiliares</b>: sirven para controlar el hambre y la glucemia. No necesitan llegar al umbral, no hace falta agregarles huevo ni proteína en polvo.',
+      'Por eso cuidamos el umbral en las <b>comidas principales</b>: desayuno, almuerzo y cena. Ahí se juega la ganancia y la preservación de músculo.',
+      'Las colaciones, meriendas, el pre y el post-WOD son <b>ingestas auxiliares</b>: sirven para controlar el hambre y la glucemia. No necesitan llegar al umbral, no hace falta agregarles huevo ni proteína en polvo.',
     ]],
     ['CÓMO USAR LOS INTERCAMBIOS (SWAP)', [
       'Tocá <b>SWAP</b> al lado de cualquier alimento y elegí otro de la lista: los gramos ya vienen calculados para aportar lo mismo del macro que importa (proteína, carbos o grasas).',
@@ -637,7 +645,7 @@ const runtime = String.raw`
       });
       h += '</div>';
       // Umbral mTOR sólo en comidas principales; el resto son ingestas auxiliares (sin sugerir huevo o whey).
-      if (!m.mps) h += '<div class="leu na"><span class="dot"></span>' + (isOffPeri(m, mode) || (mode === 'off' && m.role !== 'snack') ? '[ MODULACIÓN GLUCÉMICA / SACIEDAD ]' : m.role === 'peri' ? '[ BLOQUE GLUCOLÍTICO · ENERGÍA PARA ENTRENAR ]' : '[ INGESTA AUXILIAR / MODULACIÓN GLUCÉMICA ]') + '</div>';
+      if (!m.mps) h += '<div class="leu na"><span class="dot"></span>' + (isOffPeri(m, mode) || (mode === 'off' && m.role !== 'snack') ? '[ MODULACIÓN GLUCÉMICA / SACIEDAD ]' : m.role === 'peri' ? '[ BLOQUE GLUCOLÍTICO · ENERGÍA PARA ENTRENAR ]' : m.role === 'post' ? '[ RECUPERACIÓN POST-WOD · INGESTA AUXILIAR ]' : '[ INGESTA AUXILIAR / MODULACIÓN GLUCÉMICA ]') + '</div>';
       else if (x.t.l >= D.threshold) h += '<div class="leu ok"><span class="dot"></span>[ mTOR / MPS: ACTIVADO • ' + n1(x.t.l) + ' g LEUCINA ]</div>';
       else h += '<div class="leu low"><span class="dot"></span>[ SUB-UMBRAL mTOR • ' + n1(x.t.l) + ' g LEUCINA ] · ' + leuTip(D.threshold - x.t.l) + '</div>';
       h += '</section>';
