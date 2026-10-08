@@ -3802,6 +3802,7 @@ function sbFmtToolbar(bId){
        botonera de prescripción; abrirExploradorEjercicios() hace TODO el
        trabajo (buscar/filtrar/insertar sin destruir texto existente). */
     '<button type="button" class="cf-fmt-btn sb-explorer-btn" data-explorarej="' + bId + '">📚 Explorar Ejercicios</button>' +
+    '<button type="button" class="cf-fmt-btn jp-vc-rescan" data-vcrescan="' + bId + '" title="Fuerza la sincronizacion de este bloque con la base de videos, sin recargar la pagina">⚡ Re-escanear Videos</button>' +
   '</div>' +
   '<div class="cf-fmt-tools sb-quick-pills">' +
     rirBtns.map(b => '<button type="button" class="cf-fmt-btn sb-pill-rir" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
@@ -55943,6 +55944,24 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 .vid-chips .vc img{width:34px;height:20px;object-fit:cover;border-radius:4px;border:1px solid var(--line-2)}
 .vid-chips .vc b{font-weight:800}
 .vid-chips .vc-none{font-size:11px;color:var(--muted)}
+/* ---------- ajustes UI Builder ---------- */
+.main{padding-bottom:96px !important}
+#dayPanel{padding-bottom:64px}
+#dayPanel textarea[data-bf="tips"], #dayPanel textarea[data-bf="objective"]{
+  min-height:84px !important;resize:none;overflow-y:hidden;line-height:1.6;padding:10px 12px;
+  white-space:pre-wrap;overflow-wrap:anywhere;border-radius:8px;
+}
+.jp-tips-prev{margin-top:8px !important;padding:10px 12px !important;line-height:1.65 !important;font-size:12.5px !important}
+.jp-tips-prev div{margin-bottom:8px !important}
+.jp-tips-prev b{color:#F5B83D !important;letter-spacing:.03em}
+.vid-chips .vc{border-radius:8px}
+.vid-chips .vc.no{white-space:normal;text-align:left;line-height:1.35}
+.cf-fmt-btn{border-radius:8px !important;transition:transform .12s ease, box-shadow .15s ease, background .15s ease}
+.cf-fmt-btn:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(0,0,0,.35)}
+.cf-fmt-btn:active{transform:scale(.95)}
+.cf-fmt-btn.jp-vc-rescan{font-family:'Chakra Petch',sans-serif;font-weight:700;background:rgba(245,158,11,.12);border:1px solid #F59E0B;color:#F59E0B;letter-spacing:.05em}
+.cf-fmt-btn.jp-vc-rescan.vc-scan-anim{animation:vcScan .7s ease}
+@keyframes vcScan{0%{box-shadow:0 0 0 0 rgba(245,158,11,.7)}100%{box-shadow:0 0 0 12px rgba(245,158,11,0)}}
 /* micro-input in-line de "+ Vincular" (directiva): mismo chip amarillo,
    pero con un input de URL + acciones en vez de abrir el modal completo */
 .vc-inline{
@@ -56195,6 +56214,25 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         const ex = getEx(v.exId);
         lista.push({ nombre: v.nombre, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: true, manual: true });
       });
+      /* biset/triset: cada estacion A1/A2/... tiene SIEMPRE su slot (vinculado o con aviso explicito) */
+      const estacionesSB = [];
+      lineasCh.forEach(function(l){
+        const mE = String(l).match(/^\s*([A-F]\d)\s*[.):]\s*(\S.*)$/i);
+        if(mE) estacionesSB.push({ letra: mE[1].toUpperCase(), norm: nrm(mE[2]), crudo: mE[2] });
+      });
+      lista.forEach(function(x){
+        const kk = nrm(x.nombre);
+        const eS = kk ? estacionesSB.find(function(st){ return st.norm.indexOf(kk) >= 0; }) : null;
+        if(eS) x.letra = eS.letra;
+      });
+      estacionesSB.forEach(function(st){
+        if(lista.some(function(x){ return x.letra === st.letra; })) return;
+        const nomE = String(typeof nombreEjercicioSB === 'function' ? nombreEjercicioSB(st.crudo) : String(st.crudo).split(/[|:@]/)[0]).trim();
+        const kE = nrm(nomE);
+        if(!kE || kE.length < 3 || vistos[kE] || dismissed.indexOf(kE) >= 0) return;
+        vistos[kE] = 1;
+        lista.push({ nombre: nomE, key: kE, ex: null, ficha: null, override: false, manual: false, letra: st.letra });
+      });
     } else {
       const lineas = String(ta.value || '').split('\n');
       const idx = indice();
@@ -56231,10 +56269,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       lista.map(x => {
         const principal = x.ex
           ? '<button type="button" class="vc ok' + (x.override ? ' override' : '') + '" data-vcok="' + esc(x.ex.id) + '" title="Ver el video vinculado">' +
-              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.nombre) + '</b> (Video vinculado' + (x.override ? (x.manual ? ', manual' : ', override') : '') + ')</button>'
+              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc((b.sportsPizarra && x.letra ? x.letra + '. ' : '') + x.nombre) + '</b> (Video vinculado' + (x.override ? (x.manual ? ', manual' : ', override') : '') + ')</button>'
           : '<button type="button" class="vc no" data-vcno="' + esc(x.nombre) + '"' +
               (x.ficha ? ' data-vcex="' + esc(x.ficha.id) + '"' : '') +
-              ' title="Vincular un video sin salir del Builder">⚠️ ' + esc(x.nombre) + ' — + Vincular</button>';
+              ' title="Vincular un video sin salir del Builder">' + (b.sportsPizarra
+                ? '[ ⚠ ' + esc((x.letra ? x.letra + '. ' : '') + x.nombre) + ': Sin video vinculado — Vincular manualmente ]'
+                : '⚠️ ' + esc(x.nombre) + ' — + Vincular') + '</button>';
         /* directiva (rediseño de acceso a videos): reasignación manual --
            si la detección automática (o la aproximación de buscarVideo en
            TEMPLATE_HTML) eligió la variante incorrecta, el coach reasigna
@@ -56495,7 +56535,25 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     refrescarChipsDe(grupo || btn);
   }
 
+  function rescanearVideos(btn){
+    const id = btn.dataset.vcrescan || '';
+    const b = id && typeof findBlock === 'function' ? findBlock(id) : null;
+    const bl = btn.closest('.block');
+    if(!b || !bl){ return; }
+    btn.classList.add('vc-scan-anim');
+    setTimeout(() => btn.classList.remove('vc-scan-anim'), 700);
+    /* vinculos que apuntan a un ejercicio que ya no existe: se sueltan para que el motor los vuelva a resolver */
+    if(b.videoOverrides){ Object.keys(b.videoOverrides).forEach(k => { if(!getEx(b.videoOverrides[k])) delete b.videoOverrides[k]; }); }
+    const ta = bl.querySelector('textarea[data-bf="items"], textarea[data-bf="movements"]');
+    if(ta && b.tipo === 'list'){ try{ setBlockField(b, 'items', ta.value); }catch(x){} }
+    chips(bl, b);
+    try{ save(); }catch(x){}
+    const nOk = bl.querySelectorAll('.vid-chips .vc.ok').length, nNo = bl.querySelectorAll('.vid-chips .vc.no').length;
+    toast('⚡ Videos re-escaneados: ' + nOk + ' vinculados · ' + nNo + ' sin video', nNo ? 'warn' : undefined);
+  }
   document.addEventListener('click', e => {
+    const resc = e.target.closest('[data-vcrescan]');
+    if(resc){ rescanearVideos(resc); return; }
     const ok = e.target.closest('[data-vcok]');
     if(ok){ if(typeof openVideo === 'function') openVideo(ok.dataset.vcok); return; }
     const no = e.target.closest('[data-vcno]');
@@ -67046,16 +67104,27 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
   function formatearTips(txt){
     var t = String(txt || '').trim();
     if(!t) return '';
-    t = t.replace(/(\S)\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\n]{0,70}:)/g, function(m, c, off, whole){
+    t = t.replace(/(\S)\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR|FOCO MOTOR|BIOMEC[ÁA]NICA|ACCI[OÓ]N)[^:\n]{0,70}:)/g, function(m, c, off, whole){
       return /\b[A-F]\d\s*·\s*$/.test(whole.slice(0, off + m.length)) ? m : c + '\n';
     });
+    t = t.replace(/\s+(?=[A-F]\d\s*·\s*[A-ZÁÉÍÓÚÑ])/g, '\n');      /* "A1 · ... A1 · ..." en una sola linea: una etiqueta por renglon */
     return t.split(/\n+/).map(function(l){
       l = l.trim(); if(!l) return '';
       var m = l.match(/^([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 &\/\-–·().,]{2,90}?):\s*(.*)$/);
       return m ? '<div><b>' + esc2(m[1]) + ':</b> ' + esc2(m[2]) + '</div>' : '<div>' + esc2(l) + '</div>';
     }).join('');
   }
+  /* los textarea de tips/objetivo crecen con el texto: sin lineas cortadas ni scroll interno */
+  function autoCrecer(){
+    var ts = document.querySelectorAll('#dayPanel textarea[data-bf="tips"], #dayPanel textarea[data-bf="objective"]');
+    for(var j = 0; j < ts.length; j++){
+      var t = ts[j]; if(!t.offsetParent) continue;
+      t.style.height = 'auto'; t.style.height = (t.scrollHeight + 4) + 'px';
+    }
+  }
+  document.addEventListener('toggle', function(){ setTimeout(autoCrecer, 30); }, true);
   function pintarTipsPrev(){
+    autoCrecer();
     var tas = document.querySelectorAll('#dayPanel textarea[data-bf="tips"]');
     for(var i = 0; i < tas.length; i++){
       var ta = tas[i], html = formatearTips(ta.value);
@@ -67207,7 +67276,9 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
     if(dd && dd.open && (!t.closest('#ddBackup') || t.closest('.jp-dd-menu .btn'))) dd.open = false;
   }, true);
   document.addEventListener('keydown', function(e){ if(e.key === 'Escape') cerrarSug(); });
-  document.addEventListener('input', function(e){ if(e.target && e.target.matches && e.target.matches('textarea[data-bf="tips"]')) setTimeout(pintarTipsPrev, 60); }, true);
+  document.addEventListener('input', function(e){
+    if(e.target && e.target.matches && e.target.matches('textarea[data-bf="tips"], textarea[data-bf="objective"]')){ autoCrecer(); setTimeout(pintarTipsPrev, 60); }
+  }, true);
 
   function montar(){
     obs = new MutationObserver(function(muts){
