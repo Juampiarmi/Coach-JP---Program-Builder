@@ -843,6 +843,16 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <select id="aNivel">
             <option>Inicial</option><option selected>Intermedio</option><option>Avanzado</option>
           </select>
+          <div class="hint">Avanzado = Atleta Experimentado / Alta Demanda.</div>
+        </div>
+        <div>
+          <label class="lb">Perfil DUP (periodización ondulada diaria)</label>
+          <select id="aDup">
+            <option value="auto" selected>Automático (se activa con nivel Avanzado)</option>
+            <option value="on">Activo siempre</option>
+            <option value="off">Desactivado</option>
+          </select>
+          <div class="hint">D1 Fuerza neural 31X0 · D2 Hipertrofia en estiramiento 3011 · D3 Densidad metabólica. Lo usan el generador con IA, la programación local y el mesociclo ondulado.</div>
         </div>
         <div>
           <label class="lb">Género</label>
@@ -2814,6 +2824,7 @@ function openAth(id){
   $('#aApellido').value = a ? (a.apellido||'') : '';
   $('#aFreq').value     = a ? String(a.freq||4) : '4';
   $('#aNivel').value    = a ? (a.nivel||'Intermedio') : 'Intermedio';
+  $('#aDup').value      = a ? (a.dup||'auto') : 'auto';
   $('#aGenero').value   = a ? (a.genero||'') : '';
   $('#aColor').value    = a ? (a.color||'') : '';
   const fz = a ? (a.finanzas||null) : null;
@@ -2847,6 +2858,7 @@ function saveAth(){
     apellido: $('#aApellido').value.trim(),
     freq: parseInt($('#aFreq').value,10),
     nivel: $('#aNivel').value,
+    dup: $('#aDup').value,
     genero: $('#aGenero').value,
     color: $('#aColor').value,
     foco: $('#aFoco').value.trim(),
@@ -3133,6 +3145,34 @@ function curDay(){
    CrossFit estas funciones son no-ops totales. */
 function esPlanCFActivo(p){
   return !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
+}
+/* ===== Atleta Avanzado (Experimentado / Alta Demanda): perfil DUP (Periodización Ondulada Diaria) =====
+   Se activa solo con Nivel = Avanzado (o a mano desde la ficha). Lo consumen: el generador con IA, la programación local y el
+   proyector de mesociclo ondulado. Día 1 / 2 / 3 se repiten en ciclo si el plan tiene más días. */
+function esAtletaDUP(ath){ return !!ath && (ath.dup === 'on' || (ath.dup !== 'off' && ath.nivel === 'Avanzado')); }
+const DUP_PERFILES = [
+  { id:'neural', lb:'Día 1 · Tensión Mecánica / Fuerza Neural', corto:'DUP 1 · FUERZA NEURAL',
+    ia:'PERFIL DUP DEL DÍA — TENSIÓN MECÁNICA / FUERZA NEURAL: cargas pesadas (3-6 reps), tempo 31X0 (X = concéntrica explosiva), pausas completas (180-240 s), 4-5 series efectivas en las anclas, RIR 1-2, poco volumen y máxima calidad de ejecución.',
+    cue:'Tempo 31X0 (la X es concéntrica explosiva): bajá en 3 s, sin pausa abajo y subí con máxima intención de velocidad. Pausa completa entre series.',
+    P:{ ancla:{ efSets:5, reps:'3-5', tempo:'3110', rest:210, aprox:3 }, acc:{ efSets:3, reps:'6-8', tempo:'3110', rest:120 } } },
+  { id:'miofibrilar', lb:'Día 2 · Hipertrofia Miofibrilar / Carga en Estiramiento', corto:'DUP 2 · CARGA EN ESTIRAMIENTO',
+    ia:'PERFIL DUP DEL DÍA — HIPERTROFIA MIOFIBRILAR / CARGA EN ESTIRAMIENTO: foco excéntrico (3 s), tempo 3011, RIR 1-2, 8-12 reps, ejercicios que cargan el músculo en posición elongada (ej. press inclinado con mancuernas profundo, peso muerto rumano, cruces en polea baja).',
+    cue:'Foco excéntrico: 3 s de bajada controlada y máxima tensión en la posición elongada. Tempo 3011, RIR 1-2.',
+    P:{ ancla:{ efSets:4, reps:'8-10', tempo:'3011', rest:120, aprox:2 }, acc:{ efSets:3, reps:'10-12', tempo:'3011', rest:90 } } },
+  { id:'densidad', lb:'Día 3 · Densidad & Estrés Metabólico', corto:'DUP 3 · DENSIDAD METABÓLICA',
+    ia:'PERFIL DUP DEL DÍA — DENSIDAD & ESTRÉS METABÓLICO: biseries de músculos antagonistas, dropsets mecánicos (al fallo pasar a una variante más fácil sin pausa) y Myo-Reps reales calculadas (serie de activación + mini-series de ~30% de las reps con 15 s de pausa), descansos de 45-75 s, RIR 0-1 en los cierres.',
+    cue:'Densidad: biseries antagonistas sin pausa, dropset mecánico y Myo-Reps al cierre. Descansos cortos.',
+    P:{ ancla:{ efSets:3, reps:'10-12', tempo:'2011', rest:75, aprox:1 }, acc:{ efSets:3, reps:'12-15', tempo:'2011', rest:45 } } }
+];
+function perfilDUP(i){ return DUP_PERFILES[((parseInt(i, 10) || 0) % 3 + 3) % 3]; }
+const DUP_REGLA_IA = 'REGLA ATLETA AVANZADO (Experimentado / Alta Demanda): cero rutinas genéricas de 3x10. Elegí ejercicios biomecánicamente óptimos de la lista (ej.: cruces en polea alineados con las fibras claviculares, peso muerto rumano en déficit o con banco y micro-pausa isométrica, sentadillas con cuña o talones elevados para dorsiflexión) y justificalo en los tips. Variá series, reps, tempo y RIR entre bloques según el perfil DUP del día.';
+function textoDUPParaIA(i){ return perfilDUP(i).ia + '\n' + DUP_REGLA_IA; }
+/* Myo-Reps "reales": activación = tope del rango de reps (10-20) y mini-series de ~30% con 15 s de pausa */
+function calcMyoReps(reps){
+  const m = String(reps || '').match(/(\d+)\D*(\d+)?\s*$/);
+  const hi = m ? parseInt(m[2] || m[1], 10) : 12;
+  const act = Math.max(10, Math.min(20, hi)), mini = Math.max(3, Math.round(act * 0.3));
+  return act + '+' + mini + '+' + mini + '+' + Math.max(3, mini - 1) + '+' + Math.max(3, mini - 1) + ' / 15s';
 }
 function asegurarBloquesPorSemana(d){
   if(!Array.isArray(d.bloquesPorSemana)){
@@ -4170,7 +4210,21 @@ const IMP_RX_DIA_COR = /^[\s*_>\-–•·]*\[\s*nombre\s+del\s+d[ií]a\s*\]\s*:?
 const IMP_RX_ETIQ = /^[\s*_>\-–•·]*(objetivo(?:\s+del\s+est[ií]mulo)?(?:\s+fisiol[oó]gico)?|coaching(?:\s+tips?)?(?:\s*(?:&|y)\s*estrategia)?|tips?|pacing(?:\s+sugerido)?|escalado(?:\s*\/\s*rx\s+alternativo)?|rx\s+alternativo)\s*[*_]*\s*:\s*[*_]*\s*(.*?)[*_]*\s*$/i;
 /* encabezados de tips sueltos ("SET-UP & ESTABILIDAD INICIAL:", "CONTROL DE LA FASE EXCÉNTRICA:", "INTENCIÓN NEUROMUSCULAR:",
    "CUE MOTOR", "ERROR COMÚN"): son coaching tips del bloque, nunca prescripción */
-const IMP_RX_TIPHEAD = /^[\s*_>\-–•·]*(?:set[\s-]*up|control\s+de\s+la\s+fase|fase\s+exc[eé]ntrica|intenci[oó]n\s+neuromuscular|cue\s+motor|error\s+com[uú]n)\b/i;
+/* cabecera de un cue motor, con o sin emoji delante y con o sin letra de estación (biset): "🎯 SET-UP:", "⚡ ACCIÓN:", "🛑 ERROR:", "• A1 🎯 SET-UP:" */
+const IMP_EMO = '(?:[\\u2190-\\u2BFF\\uFE0F\\u200D]|[\\uD83C-\\uD83F][\\uDC00-\\uDFFF])';
+const IMP_RX_TIPHEAD = new RegExp('^[\\s*_>\\-–•·]*(?:' + IMP_EMO + '{1,4}\\s*)?(?:[A-F]\\d\\s*[·:.)\\-–]*\\s*(?:' + IMP_EMO + '{1,4}\\s*)?)?(?:(?:set[\\s-]*up|control\\s+de\\s+la\\s+fase|fase\\s+exc[eé]ntrica|intenci[oó]n\\s+neuromuscular|cue\\s+motor|error\\s+com[uú]n)\\b|(?:acci[oó]n|error(?:\\s+a\\s+evitar)?)\\s*:)', 'i');
+/* una línea de tips queda sin emoji ni viñeta; la letra de la estación se conserva ("A1 · SET-UP: ...") */
+function impNormTipLinea(t){
+  let s = String(t || '').trim().replace(/^[\s*_>\-–•·]+/, '');
+  const rxEmo = new RegExp('^(?:' + IMP_EMO + ')+\\s*');
+  s = s.replace(rxEmo, '');
+  const m = s.match(/^([A-F]\d)\b\s*[·:.)\-–]*\s*/i);
+  if(m){
+    const resto = s.slice(m[0].length).replace(rxEmo, '');
+    if(/^(?:set[\s-]*up|acci[oó]n|error|control|fase|intenci[oó]n|cue)/i.test(resto)) return m[1].toUpperCase() + ' · ' + resto;
+  }
+  return s;
+}
 function impCampoDeEtiqueta(et){
   const e = String(et).toLowerCase();
   if(e.indexOf('objetivo') === 0) return 'objetivo';
@@ -4431,12 +4485,12 @@ function parsearImportacion(texto, sports){
     }
     if(bloque && IMP_RX_TIPHEAD.test(t)){
       bloque.cierre = bloque.cierre || {};
-      bloque.cierre.tips = bloque.cierre.tips ? bloque.cierre.tips + '\n' + t : t;
+      bloque.cierre.tips = bloque.cierre.tips ? bloque.cierre.tips + '\n' + impNormTipLinea(t) : impNormTipLinea(t);
       campoAct = 'tips';
       return;
     }
     if(campoAct && bloque && !IMP_RX_PARECE_EJERCICIO.test(t) && !t.match(IMP_RX_CORCH) && !t.match(IMP_RX_BLOQUE_VIEJO) && !t.match(IMP_RX_LETRA)){
-      bloque.cierre[campoAct] = bloque.cierre[campoAct] ? bloque.cierre[campoAct] + '\n' + t : t;      /* continuación multilínea del tip */
+      { const tt = campoAct === 'tips' ? impNormTipLinea(t) : t; bloque.cierre[campoAct] = bloque.cierre[campoAct] ? bloque.cierre[campoAct] + '\n' + tt : tt; }      /* continuación multilínea del tip */
       return;
     }
     campoAct = '';
@@ -14957,10 +15011,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(!t) return '';
     t = t.replace(/(TRANSICI[OÓ]N R[AÁ]PIDA)\\s*,?\\s*\\n?\\s*SET-?UP(?: Y ANCLAJE)?\\s*:/gi, '$1 & SET-UP:');
     t = t.replace(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ &\\/-]{3,60}),\\s*\\n+(?=[A-ZÁÉÍÓÚÑ][^:\\n]{2,70}:)/gm, '$1 & ');
-    t = t.replace(/(\\S)\\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\\n]{0,70}:)/g, '$1\\n');
+    t = t.replace(/(\\S)\\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\\n]{0,70}:)/g, function(m, c, off, whole){
+      return /\\b[A-F]\\d\\s*\\u00b7\\s*$/.test(whole.slice(0, off + m.length)) ? m : c + '\\n';
+    });
     t = t.replace(/ &\\n/g, ' & ');
     var items = t.split(/\\n+/).map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
-      var m = l.match(/^([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d10-9][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d10-9 &\\/\\-\\u2013().,]{2,90}?):\\s*(.*)$/);
+      var m = l.match(/^([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d10-9][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d10-9 &\\/\\-\\u2013\\u00b7().,]{2,90}?):\\s*(.*)$/);
       return m ? { lb: m[1], tx: m[2] } : { lb: '', tx: l };
     });
     var etiquetados = items.filter(function(i){ return i.lb; });
@@ -14969,6 +15025,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var p = x.match(/^(.+?[.!?])(\\s|$)/); if(p && p[1].length >= 25) x = p[1];
       if(x.length > 120){ x = x.slice(0, 118); x = x.slice(0, x.lastIndexOf(' ') > 60 ? x.lastIndexOf(' ') : 118) + '\\u2026'; }
       return x;
+    }
+    /* biset: cada estación conserva su letra ("A1 · SET-UP:", "A2 · ERROR:") */
+    if(etiquetados.some(function(i){ return /^[A-F]\\d\\s*\\u00b7/.test(i.lb); })){
+      var grupos = {}, orden = [];
+      etiquetados.forEach(function(i){
+        var mm = i.lb.match(/^([A-F]\\d)\\s*\\u00b7\\s*(.+)$/), letra = mm ? mm[1] : '', k = normTitSB(mm ? mm[2] : i.lb);
+        var cat = /set up|estabilidad|anclaje|postura|posicion/.test(k) ? 'SET-UP' : (/error|evitar/.test(k) ? 'ERROR' : 'ACCI\\u00d3N');
+        var key = letra + '|' + cat;
+        if(!grupos[key]){ grupos[key] = { letra: letra, cat: cat, tx: [] }; orden.push(key); }
+        grupos[key].tx.push(i.tx);
+      });
+      var ORD = { 'SET-UP': 0, 'ACCI\\u00d3N': 1, 'ERROR': 2 };
+      orden.sort(function(a, b){ var A = grupos[a], B = grupos[b]; return A.letra === B.letra ? ORD[A.cat] - ORD[B.cat] : (A.letra < B.letra ? -1 : 1); });
+      return orden.map(function(k){ var g = grupos[k]; return '<div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">' + (g.letra ? g.letra + ' \\u00b7 ' : '') + g.cat + ':</b> ' + escSB(corto(g.tx.join(' '))) + '</div>'; }).join('');
     }
     if(etiquetados.length >= 2){
       var setup = [], accion = [], error = [];
@@ -38179,7 +38249,7 @@ document.addEventListener('DOMContentLoaded', init);
   }
   function athLine(ath){
     const L = [];
-    L.push(fullName(ath) + ' · ' + ath.freq + 'd/sem · ' + (ath.nivel || 'Intermedio'));
+    L.push(fullName(ath) + ' · ' + ath.freq + 'd/sem · ' + (ath.nivel || 'Intermedio') + (esAtletaDUP(ath) ? ' (Atleta Experimentado / Alta Demanda · periodización DUP)' : ''));
     if(ath.foco) L.push('Objetivo: ' + ath.foco);
     if(ath.deportes) L.push('Extra: ' + ath.deportes);
     if(ath.compat) L.push('Compatibilidad: ' + ath.compat);
@@ -38216,7 +38286,8 @@ document.addEventListener('DOMContentLoaded', init);
     const grupos = opts.econ && foco && foco.grupos ? foco.grupos.concat(opts.core ? ['Core'] : [], opts.hyrox ? ['Full Body / Cardio'] : []) : null;
     return 'ALUMNO:\n' + athLine(ath) + '\n\n' +
       'EJERCICIOS (id|nombre|equipo|patrón):\n' + libLines(grupos, ath, opts.econ ? 90 : 200) + '\n\n' +
-      'DÍA ' + (i + 1) + '/' + n + (foco && foco.label ? ' · foco: ' + foco.label : '') + '. Estilo: ' + (ESTILOS[opts.style] || ESTILOS.fuerza) + '\n' +
+      'DÍA ' + (i + 1) + '/' + n + (foco && foco.label ? ' · foco: ' + foco.label : '') + '. Estilo: ' + (esAtletaDUP(ath) ? 'el del PERFIL DUP de abajo (reemplaza al estilo general).' : (ESTILOS[opts.style] || ESTILOS.fuerza)) + '\n' +
+      (esAtletaDUP(ath) ? textoDUPParaIA(i) + '\n' : '') +
       (opts.notes ? 'Extra: ' + opts.notes + '\n' : '') +
       (inc.length ? 'Incluí: ' + inc.join(', ') + '.\n' : '') +
       '4 a 6 bloques. tempo = 4 dígitos. restSeconds entero.\n' +
@@ -38239,6 +38310,7 @@ document.addEventListener('DOMContentLoaded', init);
   function mesoPrompt(ath, opts){
     return 'ALUMNO:\n' + athLine(ath) + '\n\n' +
       'Progresión de mesociclo de 4 semanas. La 4 es descarga; una intermedia puede llevar fallo técnico.\n' +
+      (esAtletaDUP(ath) ? 'Atleta avanzado con DUP: la ondulación semanal conserva el perfil de cada día (D1 fuerza neural 31X0, D2 hipertrofia miofibrilar 3011, D3 densidad metabólica con biseries antagonistas, dropsets mecánicos y Myo-Reps).\n' : '') +
       (opts.notes ? 'Extra: ' + opts.notes + '\n' : '') +
       'JSON: {"meso":[{"short":"S1","name":"Semana 1","phase":"Aclimatación","rpe":"RPE 7-8 (RIR 2-3)","icon":"🎯","deload":false,"fail":false,"amrapMinutes":12,"hyroxNote":"nota","note":"qué buscás"}]}\n' +
       'Exactamente 4 objetos.';
@@ -38299,7 +38371,7 @@ document.addEventListener('DOMContentLoaded', init);
         b.approxSets  = Math.max(0, Math.min(4, int(rb.approxSets, 2)));
         b.efSets      = Math.max(1, Math.min(8, int(rb.efSets, 4)));
         b.reps        = str(rb.reps, '6-8');
-        b.tempo       = str(rb.tempo, '2110');
+        b.tempo       = str(rb.tempo, '2110').replace(/x/gi, '1');      /* 31X0 -> 3110 (la app del alumno lee solo dígitos) */
         b.restSeconds = Math.max(15, Math.min(400, int(rb.restSeconds, 150)));
         b.failCapable = rb.failCapable !== false;
         b.altNote     = str(rb.altNote);
@@ -38307,7 +38379,7 @@ document.addEventListener('DOMContentLoaded', init);
       else if(tipo === 'superset'){
         b.ejercicios = (Array.isArray(rb.ejercicios) ? rb.ejercicios : []).map(e => {
           const id = safeEx(e && e.exId, ath, notes, ctx);
-          return id ? { exId:id, reps:str(e.reps,'10-12'), tempo:str(e.tempo,'2011') } : null;
+          return id ? { exId:id, reps:str(e.reps,'10-12'), tempo:str(e.tempo,'2011').replace(/x/gi, '1') } : null;
         }).filter(Boolean).slice(0, 4);
         if(b.ejercicios.length < 2) return;
         b.efSets      = Math.max(1, Math.min(8, int(rb.efSets, 3)));
@@ -44007,9 +44079,30 @@ body{overflow-x:hidden}
     }
     return { foco: foco, slots: slots };
   }
-  function generarDia(est, focoId, ath, dia, dens, metMode){
+  /* ---------- Atleta Avanzado: perfil DUP del día ---------- */
+  const DUP_PREFER = {
+    empujeH:['Press inclinado con mancuernas','Press plano con mancuernas'], pecAcc:['Cruce de cables en polea baja','Cruce de cables en polea alta'],
+    bisagra:['Peso muerto rumano','Peso muerto con déficit'], rodilla:['Sentadilla con cuña','Sentadilla con talones elevados','Hack squat'],
+    traccH:['Remo con pecho apoyado','Remo sentado en polea','Remo con mancuerna'], traccV:['Jalón con agarre neutro','Jalón al pecho','Dominadas'],
+    unilat:['Búlgara','Step up']
+  };
+  const ANT = new Map([[SP.biceps, SP.triceps], [SP.triceps, SP.biceps], [SP.traccH, SP.empujeH], [SP.empujeH, SP.traccH], [SP.pecAcc, SP.traccH],
+    [SP.hombroAcc, SP.traccV], [SP.cuadAcc, SP.femoral], [SP.femoral, SP.cuadAcc], [SP.gluteoAcc, SP.cuadAcc]]);
+  function dupSpec(sp){
+    const k = Object.keys(SP).find(x => SP[x] === sp);
+    return (k && DUP_PREFER[k]) ? Object.assign({}, sp, { prefer: DUP_PREFER[k].concat(sp.prefer || []) }) : sp;
+  }
+  function generarDia(est, focoId, ath, dia, dens, metMode, dup){
     const cfg = slotsDe(est, focoId, dens);
-    const P = est.P, used = [], avisos = [];
+    const P = dup ? Object.assign({}, est.P, dup.P) : est.P, used = [], avisos = [];
+    let dropHecho = false;
+    if(dup){
+      cfg.slots = cfg.slots.map(sl => {
+        let sp = sl.sp.map(dupSpec);
+        if(dup.id === 'densidad' && sl.t === 'superset' && sl.sp.length === 2){ const ant = ANT.get(sl.sp[0]); if(ant) sp = [dupSpec(sl.sp[0]), dupSpec(ant)]; }
+        return Object.assign({}, sl, { sp: sp });
+      });
+    }
     const bloques = [];
     /* el acondicionamiento no entra por defecto: solo si el estilo lo exige o si lo pedís */
     const modo = metMode || 'auto';
@@ -44017,7 +44110,8 @@ body{overflow-x:hidden}
     let saltados = 0;
 
     cfg.slots.forEach(sl => {
-      if(!conMet && (sl.rol === 'fin' || sl.rol === 'met')){ saltados++; return; }
+      /* en el Día 3 DUP el finisher (Myo-Reps) es parte del perfil: no se omite aunque el metcon no esté pedido */
+      if(!conMet && (sl.rol === 'met' || (sl.rol === 'fin' && !(dup && dup.id === 'densidad')))){ saltados++; return; }
       const par = P[sl.rol === 'tec' ? 'ancla' : (sl.rol === 'met' ? 'acc' : sl.rol)] || P.acc;
       const b = newBlock(sl.t === 'hyrox' ? 'list' : sl.t);
       b.titulo = sl.ti;
@@ -44071,6 +44165,19 @@ body{overflow-x:hidden}
         b.tips = 'Elegí un ritmo que puedas sostener las 3 rondas: la última tiene que verse igual que la primera. Si aparece dolor articular, cortás y avisás.';
         used.push.apply(used, movs);
       }
+      if(dup){
+        if(sl.rol === 'ancla' || sl.rol === 'tec') b.tips = ((b.tips || '') + ' ' + dup.cue).trim();
+        if(dup.id === 'densidad'){
+          if(sl.t === 'finisher'){
+            b.metodologia = 'myoreps'; b.tecParam = calcMyoReps(P.fin.reps);
+            b.tips = ((b.tips || '') + ' Myo-Reps ' + b.tecParam + ': activación al fallo técnico y mini-series con 15 s de pausa.').trim();
+          } else if(!dropHecho && sl.rol === 'acc' && (sl.t === 'block' || (sl.t === 'superset' && b.ejercicios.length))){
+            dropHecho = true;
+            if(sl.t === 'block') b.metodologia = 'dropset'; else b.ejercicios[b.ejercicios.length - 1].metodologia = 'dropset';
+            b.tips = ((b.tips || '') + ' Dropset mecánico: al fallo pasá a la variante más fácil del mismo patrón, sin pausa.').trim();
+          }
+        }
+      }
       bloques.push(b);
     });
 
@@ -44078,8 +44185,9 @@ body{overflow-x:hidden}
     dia.label = cfg.foco.label;
     dia.title = cfg.foco.title;
     dia.metaChips = cfg.foco.chips.slice();
-    dia.summary = est.lb + ' · ' + bloques.length + ' bloques · ' + (est.chips || []).join(' · ');
-    dia.focusText = est.desc;
+    dia.summary = (dup ? dup.lb + ' · ' : est.lb + ' · ') + bloques.length + ' bloques · ' + (dup ? [dup.corto] : (est.chips || [])).join(' · ');
+    dia.focusText = dup ? (dup.cue + ' ' + est.desc) : est.desc;
+    if(dup) dia.metaChips = dia.metaChips.concat(['⚡ ' + dup.corto]).slice(0, 4);
     if(!(dia.cooldown || []).length) dia.cooldown = ['Respiración diafragmática — 2 min', 'Estiramiento suave de los grupos trabajados — 3 min'];
     return { avisos: avisos, n: bloques.length, saltados: saltados };
   }
@@ -44097,10 +44205,11 @@ body{overflow-x:hidden}
     const rot = ROT[Math.max(3, Math.min(6, p.dias.length))] || ROT[4];
     const objetivo = scope === 'day' ? [S.ui.day] : p.dias.map((d,i) => i);
     const log = [];
+    const dupOn = esAtletaDUP(ath) && est.id !== 'lumbar';
 
     objetivo.forEach(i => {
       const d = p.dias[i]; if(!d) return;
-      const r = generarDia(est, rot[i % rot.length], ath, d, dens, metMode);
+      const r = generarDia(est, rot[i % rot.length], ath, d, dens, metMode, dupOn ? perfilDUP(i) : null);
       log.push({ dia: d.short, titulo: d.title, n: r.n, avisos: r.avisos, saltados: r.saltados,
                  detalle: d.bloques.map(b => (b.icon || '') + ' ' + b.titulo).join(' · ') });
     });
@@ -44121,7 +44230,7 @@ body{overflow-x:hidden}
       n + (p.dias[i].bloques || []).reduce((m,b) => m + blockAlerts(ath, b).filter(a => a.level !== 'good').length, 0), 0);
     $('#genLog').innerHTML =
       '<div class="alert ' + (conflictos ? 'warn' : 'good') + '" style="padding:10px 12px"><span class="ic">' + (conflictos ? '⚠️' : '✅') + '</span>' +
-      '<div><b>' + est.ic + ' ' + esc(est.lb) + ' · ' + log.length + ' día(s) generados</b>' +
+      '<div><b>' + est.ic + ' ' + esc(est.lb) + ' · ' + log.length + ' día(s) generados' + (dupOn ? ' · perfil DUP (Atleta Avanzado)' : '') + '</b>' +
       (conflictos ? conflictos + ' advertencia(s) biomecánica(s) para revisar antes de exportar.' : 'Sin conflictos biomecánicos con el perfil de ' + esc(fullName(ath)) + '.') + '</div></div>' +
       (log.some(l => l.saltados) ? '<div class="hint" style="margin-bottom:7px">🔥 Bloques metabólicos omitidos (no van por defecto). Cambiá el selector si querés incluirlos.</div>' : '') +
       log.map(l => '<div class="gen-day"><b>' + esc(l.dia) + ' — ' + esc(l.titulo) + '</b>' +
@@ -65134,7 +65243,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
         rpe:'RPE 8-9 (RIR 2-1)', deload:false, fail:false,
         amrapMinutes: escalarMinutos(s1.amrapMinutes, 0.83),
         hyroxNote: s1.hyroxNote ? 'RPE 8-9 — mismo esfuerzo, algo menos de tiempo.' : '',
-        note:'Intensificación — subís carga (~75-80% de tu referencia) y sumás series accesorias sobre la base de S1.'
+        note:'Intensificación — subís carga (~75-80% de tu referencia) y sumás series accesorias sobre la base de S1.' + (esAtletaDUP(a) ? ' DUP: cada día mantiene su perfil (fuerza neural / estiramiento / densidad).' : '')
       }),
       Object.assign({}, base[2], {
         rpe:'RPE 9-10 (RIR 1-0)', deload:false, fail:true,
@@ -65157,7 +65266,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
        lógica determinística de arriba, que ya corrió y ya se guardó. */
     if(window.CoachAI && CoachAI.hayClave && CoachAI.hayClave() && typeof CoachAI.generarTexto === 'function'){
       CoachAI.generarTexto(
-        'Sos coach de fuerza/hipertrofia. Semana 1 del mesociclo: ' + (s1.note || s1.phase || '') +
+        'Sos coach de fuerza/hipertrofia. ' + (esAtletaDUP(a) ? 'El alumno es un Atleta Experimentado / Alta Demanda con periodización DUP (D1 fuerza neural 31X0 con pausas completas, D2 hipertrofia miofibrilar 3011 RIR 1-2 con carga en estiramiento, D3 densidad metabólica con biseries antagonistas, dropsets mecánicos y Myo-Reps). ' : '') + 'Semana 1 del mesociclo: ' + (s1.note || s1.phase || '') +
         '. Proyecté S2 con RIR 2-1 (~75-80%), S3 con RIR 1-0 (~82-87%, pico) y S4 deload con RIR 4 (~40-50% menos series, ~60% intensidad). ' +
         'Escribí una oración breve, en español rioplatense, confirmando la lógica de la ondulación para este alumno.',
         'Respondés en una sola oración de texto plano, sin listas ni títulos.'
@@ -66336,10 +66445,12 @@ html body #dayPanel .block > .block-h > input.bt{ min-width:90px !important; }
   function formatearTips(txt){
     var t = String(txt || '').trim();
     if(!t) return '';
-    t = t.replace(/(\S)\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\n]{0,70}:)/g, '$1\n');
+    t = t.replace(/(\S)\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\n]{0,70}:)/g, function(m, c, off, whole){
+      return /\b[A-F]\d\s*·\s*$/.test(whole.slice(0, off + m.length)) ? m : c + '\n';
+    });
     return t.split(/\n+/).map(function(l){
       l = l.trim(); if(!l) return '';
-      var m = l.match(/^([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 &\/\-–().,]{2,90}?):\s*(.*)$/);
+      var m = l.match(/^([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 &\/\-–·().,]{2,90}?):\s*(.*)$/);
       return m ? '<div><b>' + esc2(m[1]) + ':</b> ' + esc2(m[2]) + '</div>' : '<div>' + esc2(l) + '</div>';
     }).join('');
   }
