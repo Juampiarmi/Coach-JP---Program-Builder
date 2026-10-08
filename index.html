@@ -4855,8 +4855,27 @@ function resolverExFuzzySB(nombre){
   });
   return mejor;
 }
+/* variantes habituales escritas por el coach que no coinciden letra por letra con la biblioteca
+   ("Incline Dumbbell Bench Press" = "Incline Dumbbell Press"): se prueban DESPUES del match exacto y ANTES del fuzzy,
+   que ahi terminaba eligiendo un movimiento parecido pero distinto */
+const ALIAS_EJ_SB = [
+  [/\bincline\s+(?:dumbbell|db)\s+(?:bench\s+)?press\b/i, 'Incline Dumbbell Press'],
+  [/\b(?:flat\s+)?(?:dumbbell|db)\s+bench\s+press\b/i, 'Flat Dumbbell Press'],
+  [/\b(?:seated\s+)?(?:dumbbell|db)\s+lateral\s+raises?\b/i, 'Dumbbell Lateral Raises'],
+  [/^(?!.*\bcable\b).*\blateral\s+raises?\s+(?:sentad[oa]|seated)\b/i, 'Dumbbell Lateral Raises']
+];
+function aliasEjSB(nombre){
+  const n = String(nombre || '');
+  if(/single|one[\s-]*arm|unilateral|a una mano/i.test(n)) return '';
+  for(let i = 0; i < ALIAS_EJ_SB.length; i++){ if(ALIAS_EJ_SB[i][0].test(n)) return ALIAS_EJ_SB[i][1]; }
+  return '';
+}
 function resolverExSports(nombreCrudo, estricto){
   const crudo = String(nombreCrudo || '').trim();
+  const exacto0 = crudo ? resolverExSportsBase(crudo, true) : null;
+  if(exacto0) return exacto0;
+  const alias0 = aliasEjSB(crudo);
+  if(alias0){ const exAl = resolverExSportsBase(alias0, true); if(exAl) return exAl; }
   const sinParen = crudo.replace(/\s*\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const conCalif = RX_CALIF_SB.test(normSports(crudo)); RX_CALIF_SB.lastIndex = 0;
   if(conCalif){ const f0 = resolverExFuzzySB(sinParen || crudo); if(f0) return f0; }
@@ -15741,8 +15760,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      con nombres truncados de antes): thumbnail 16:9 con micro-marco
      celeste + botón play centrado, nombre COMPLETO sin cortes, subtítulo
      "[ TAP PARA VER TÉCNICA ]" en titanio tenue. */
-  function chipsVideoSB(lista){
-    if(!lista.length) return '';
+  function chipsVideoSB(lista, busquedas){
+    busquedas = busquedas || [];
+    if(!lista.length && !busquedas.length) return '';
     return '<div class="jp-sb-vid-title">&#127916; VIDEOS T&Eacute;CNICOS DEL BLOQUE</div>' +
       '<div class="jp-sb-vid-cards">' + lista.map(function(v){
         return '<button type="button" class="jp-sb-vid-card" data-yt="' + v.ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(v.nombre).replace(/"/g,'') + '">' +
@@ -15752,6 +15772,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '<span class="jp-sb-vid-info">' +
             '<span class="jp-sb-vid-nombre">' + escSB(v.nombre) + '</span>' +
             '<span class="jp-sb-vid-tap">[ TAP PARA REPRODUCIR ]</span>' +
+          '</span>' +
+        '</button>';
+      }).join('') + busquedas.map(function(nm){
+        var q = limpiarNombreParaVideoSB(nm) || nm;
+        return '<button type="button" class="jp-sb-vid-card jp-ver-busca" data-vsearch="' + escSB(q) + '" aria-label="Buscar la t\\u00e9cnica de ' + escSB(nm).replace(/"/g,'') + '">' +
+          '<span class="jp-sb-vid-thumb jp-sb-vid-thumb-na"><span class="jp-sb-vid-play">\\u25b6</span></span>' +
+          '<span class="jp-sb-vid-info">' +
+            '<span class="jp-sb-vid-nombre">' + escSB(nm) + '</span>' +
+            '<span class="jp-sb-vid-tap">[ TAP PARA BUSCAR EN YOUTUBE ]</span>' +
           '</span>' +
         '</button>';
       }).join('') + '</div>';
@@ -16136,6 +16165,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        reusando videoLinkHtml()/buscarVideo() -- mismos datos que ya
        resuelve cada fila, sin duplicar lógica de matching. */
     const videosBloque = recolectarVideosSB(entries, esCalentamiento, block);
+    /* biset: cada estacion necesita su tarjeta; si una no tiene video vinculado se ofrece la busqueda de su tecnica */
+    const busquedasVid = [];
+    (function(){
+      const subsAll = [];
+      entries.forEach(function(en){ if(en && en.tipo === 'biserie') (en.subs || []).forEach(function(sb){ subsAll.push(sb.nombre); }); });
+      let faltan = subsAll.length - videosBloque.length;
+      if(faltan <= 0) return;
+      subsAll.forEach(function(nm){
+        if(faltan > 0 && !miniVideoSB(nm, block)){ busquedasVid.push(nm); faltan--; }
+      });
+    })();
     /* lo escrito en los campos propios + lo que el coach dejó mezclado en la prescripción libre (sin repetir) */
     const unirMetaSB = function(propio, extra){
       const ex = metaHtmlSB(extra);
@@ -16191,7 +16231,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
             '</div>' +
           '</details>' : '') +
-        chipsVideoSB(videosBloque) +
+        chipsVideoSB(videosBloque, busquedasVid) +
       '</div>';
     var htmlFinal = html;
     if(esCalentamiento){
@@ -20018,24 +20058,47 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     g.fillText(window.jpFechaMil ? window.jpFechaMil() : (d.fecha || ''), W / 2, 340);
     g.fillStyle = '#E5C378'; g.fillRect(W / 2 - 75, 400, 150, 6);
 
-    ajustar(g, '🏆 NEW PERSONAL RECORD', W - 200, 92, 46);
-    g.fillStyle = '#FFFFFF';
-    g.fillText('🏆 NEW PERSONAL RECORD', W / 2, 560);
-
     var pr = (d.prDetalle && d.prDetalle[0]) || null;
+    var sinPR = !pr && !(d.prs && d.prs.length);
+    var tituloCh = sinPR ? 'PR CHAMPION // EN PROCESO' : '🏆 NEW PERSONAL RECORD';
+    ajustar(g, tituloCh, W - 200, 92, 46);
+    g.fillStyle = '#FFFFFF';
+    g.fillText(tituloCh, W / 2, sinPR ? 540 : 560);
+    if(sinPR){
+      g.font = '500 32px Inter, sans-serif'; g.fillStyle = '#A0A8B4';
+      envolverTexto(g, 'Sesión de sobrecarga y acumulación completada. Cada repetición construye el próximo récord.', W - 260, 3)
+        .forEach(function(ln, i){ g.fillText(ln, W / 2, 612 + i * 44); });
+    }
     var nombre = pr ? pr.ex : ((d.prs && d.prs[0]) || 'NUEVA MARCA');
     var kilos  = pr ? (pr.kg + ' KG × ' + pr.reps) : '';
     var est    = pr ? pr.e1rm : 0;
 
+    var cy0 = sinPR ? 780 : 640, ch0 = sinPR ? 330 : 470;
     g.fillStyle = 'rgba(229,195,120,.12)';
-    rr(g, 100, 640, W - 200, 470, 30); g.fill();
+    rr(g, 100, cy0, W - 200, ch0, 30); g.fill();
     g.strokeStyle = 'rgba(229,195,120,.6)'; g.lineWidth = 3;
-    rr(g, 100, 640, W - 200, 470, 30); g.stroke();
+    rr(g, 100, cy0, W - 200, ch0, 30); g.stroke();
+    if(sinPR){
+      var vTot = d.vol || 0, mejorSet = (d.topSets && d.topSets[0]) || null;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = '#E5C378'; g.font = '700 36px "Chakra Petch", sans-serif';
+      g.fillText(vTot > 0 ? 'TONELAJE TOTAL MOVIDO' : 'SERIES COMPLETADAS', W / 2, cy0 + 64);
+      var bigTxt = vTot > 0 ? vTot.toLocaleString('es-AR') + ' KG' : String(d.series || 0) + ' SETS';
+      ajustar(g, bigTxt, W - 300, 150, 70);
+      g.fillStyle = '#FFFFFF'; g.fillText(bigTxt, W / 2, cy0 + 185);
+      if(mejorSet){
+        var tm = 'MEJOR LEVANTAMIENTO · ' + String(mejorSet.ex).toUpperCase() + ' ' + mejorSet.kg + ' KG × ' + mejorSet.reps;
+        g.fillStyle = '#A0A8B4'; g.font = '500 30px Inter, sans-serif';
+        while(tm.length > 12 && g.measureText(tm).width > W - 260){ tm = tm.slice(0, -2); }
+        g.fillText(tm, W / 2, cy0 + 285);
+      }
+    }
 
     /* directiva maestra ("Blindaje de márgenes y desbordes en la StoryCard")
        -- el nombre del PR sólo bajaba de 74 a 54px y, si seguía sin
        entrar, se salía del borde dorado. Ahora achica hasta 44px y, si
        aun así no entra, salta a 2 líneas (con elipsis) dentro del marco. */
+    if(!sinPR){
     var nm = nombre.toUpperCase();
     ajustar(g, nm, W - 260, 74, 44);
     g.fillStyle = '#E5C378';
@@ -20051,6 +20114,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(est){
       g.fillStyle = '#A0A8B4'; g.font = '500 34px Inter, sans-serif';
       g.fillText('1RM ESTIMADO · ' + est + ' KG', W / 2, 1020);
+    }
     }
 
     var cajas = [
@@ -20102,7 +20166,6 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function redibujar(){
     if(!ultimo) return;
-    if(estilo === 'champ' && !(ultimo.prs && ultimo.prs.length)) estilo = 'cyber';
     if(estilo === 'champ') champion(ultimo);
     else if(cyber) cyber(ultimo);
   }
@@ -20145,11 +20208,6 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         estilos();
         var s = document.getElementById('scStyles');
         if(s) s.querySelectorAll('.sc-style').forEach(function(x){ x.classList.toggle('on', x.dataset.st === estilo); });
-        var hayPR = !!(d.prs && d.prs.length), cbtn = s && s.querySelector('.champ');
-        if(cbtn){ cbtn.disabled = !hayPR; cbtn.title = hayPR ? '' : 'Sin PR en esta sesión'; }
-        var nota = document.getElementById('scNota');
-        if(!nota && s){ nota = document.createElement('div'); nota.id = 'scNota'; nota.className = 'sc-nota'; nota.textContent = '📈 SESIÓN DE ACUMULACIÓN DE VOLUMEN · SIN PR HOY'; s.parentNode.insertBefore(nota, s.nextSibling); }
-        if(nota) nota.style.display = hayPR ? 'none' : 'block';
         setTimeout(redibujar, 60);
         return r;
       };
@@ -35799,7 +35857,7 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
       b = document.createElement('button'); b.type = 'button'; b.className = 'jp-brief-dir';
       b.innerHTML = '&#128065;&#65039; VER DIRECTIVA T&Aacute;CTICA';
       b.addEventListener('click', abrirDirectiva);
-      dh.insertBefore(b, dh.firstChild);
+      dh.appendChild(b);
     } else if(!txt && b){ b.remove(); }
   }
   function abrirDirectiva(){
@@ -36046,6 +36104,14 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
 /* switch segmentado de alternativas (la fila original queda oculta: el botón ya lleva el texto completo) */
 .jp-cf-alt .jp-cf-alt-a, .jp-cf-alt .jp-cf-alt-b{ display:none !important; }
 .jp-cf-altsw button{ white-space:normal !important; line-height:1.2; text-align:center; }
+
+/* ===== AJUSTES FINALES (Bodybuilding) ===== */
+body.jp-mission .day-header, body.jp-mission .day-header-card, .day-header-card{ position:relative !important; height:auto !important; margin:10px 0 20px !important; }
+body.jp-mission .day-header > div:first-child{ padding-right:0 !important; }
+body.jp-mission .jp-brief-dir{ position:static !important; display:flex !important; width:100%; box-sizing:border-box; justify-content:center; margin:10px 0 0 !important; padding:8px 12px !important; }
+.blocks-stack > .block:first-child{ margin-top:0 !important; }
+.blocks-stack > .block:first-child > .jp-warm-acc, .jp-warm-acc{ margin-top:0 !important; }
+.jp-sb-vid-thumb-na{ background:linear-gradient(135deg,#111620,#1b2433) !important; }
 
 /* ===== REFACTORIZACION DEFINITIVA (Bodybuilding) ===== */
 /* cabecera: solo etiqueta completa en UNA linea + chevron a la derecha */
