@@ -9,6 +9,10 @@ export const BALANCE_TOLERANCE = 0.03;
 export const KCAL_TOLERANCE = 0.01;
 /** Tope de aceite por comida (1 cda); el resto de la brecha de grasas va a palta / frutos secos. */
 const OIL_CAP_G = 15;
+/** Topes gastronómicos por comida: aceite 1 cda; palta 70 g (acompaña ensalada o tostada, nunca porción masiva). */
+const CAPS: Record<string, number> = { oliva: OIL_CAP_G, palta: 70 };
+const capOf = (i: FoodItem, m: Meal) =>
+  i.foodId === 'oliva' && m.items.some((x) => x.foodId === 'palta') ? 5 : i.foodId ? (CAPS[i.foodId] ?? Infinity) : Infinity;
 
 type Anchor = 'p' | 'c' | 'f';
 type DayTotals = Macros & { kcal: number };
@@ -60,16 +64,25 @@ export function isDayBalanced(plan: AthletePlan, day: DayMode) {
  * Ajuste fino de kcal (gramo a gramo) sobre la fuente de almidón más grande del día (arroz / papa / batata…);
  * si no hay almidón, sobre la grasa más grande (sin tocar el aceite).
  */
-function closeKcal(meals: Meal[], day: DayMode, targetKcal: number): { meals: Meal[]; changed: number } {
+function closeKcal(meals: Meal[], day: DayMode, target: DayTotals): { meals: Meal[]; changed: number } {
+  const targetKcal = target.kcal;
   let changed = 0;
   for (let pass = 0; pass < 3; pass++) {
     const gap = targetKcal - dayTotals(meals, day).kcal;
     if (Math.abs(gap) <= targetKcal * KCAL_TOLERANCE * 0.4) break;
     const pick = (macro: Anchor, days: Meal['day'][]) =>
       meals
-        .flatMap((m) => (days.includes(m.day) ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && i.grams > 0) : []))
+        .flatMap((m) => (days.includes(m.day) ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && i.grams > 0 && i.grams < capOf(i, m)) : []))
         .sort((a, b) => b[macro] - a[macro])[0];
-    const host = pick('c', [day]) ?? pick('c', [day, 'both']) ?? pick('f', [day]) ?? pick('f', [day, 'both']);
+    // Se corrige el macro más desviado en la dirección de la brecha (si sobran kcal, el que más se pasó; si faltan, el que más falta).
+    const got = dayTotals(meals, day);
+    const dev = (k: Anchor) => (target[k] > 0 ? got[k] / target[k] - 1 : 0);
+    const order = (['c', 'f', 'p'] as Anchor[]).sort((a, b) => (gap < 0 ? dev(b) - dev(a) : dev(a) - dev(b)));
+    let host: FoodItem | undefined;
+    for (const k of order) {
+      host = pick(k, [day]) ?? pick(k, [day, 'both']);
+      if (host) break;
+    }
     if (!host) break;
     const kcalPerG = (host.p * 4 + host.c * 4 + host.f * 9) / host.grams;
     if (!(kcalPerG > 0)) break;
@@ -87,7 +100,7 @@ function closeKcal(meals: Meal[], day: DayMode, targetKcal: number): { meals: Me
  * comidas exclusivas del día; las compartidas (ON + OFF) sólo si el día no tiene fuentes propias.
  * Si el día no tiene ninguna fuente del macro, se agrega una porción en la comida principal.
  */
-function balanceMacro(meals: Meal[], day: DayMode, macro: 'c' | 'f', target: number): { meals: Meal[]; changed: number } {
+function balanceMacro(meals: Meal[], day: DayMode, macro: Anchor, target: number): { meals: Meal[]; changed: number } {
   let changed = 0;
   for (let pass = 0; pass < 4; pass++) {
     const got = dayTotals(meals, day)[macro];
@@ -96,14 +109,14 @@ function balanceMacro(meals: Meal[], day: DayMode, macro: 'c' | 'f', target: num
 
     const pick = (days: Meal['day'][]) =>
       meals.flatMap((m) =>
-        days.includes(m.day) ? m.items.filter((i) => sourceOf(i) === macro && !(gap > 0 && isOil(i) && i.grams >= OIL_CAP_G)).map((i) => ({ m, i })) : [],
+        days.includes(m.day) ? m.items.filter((i) => sourceOf(i) === macro && !(gap > 0 && i.grams >= capOf(i, m))).map((i) => ({ m, i })) : [],
       );
     let pool = pick([day]);
     if (pool.reduce((a, x) => a + x.i[macro], 0) < 1) pool = pick([day, 'both']);
     const poolSum = pool.reduce((a, x) => a + x.i[macro], 0);
 
     if (poolSum < 1) {
-      if (gap <= 0) break;
+      if (gap <= 0 || macro === 'p') break;
       meals = injectSource(meals, day, macro, gap);
       changed++;
       continue;
@@ -116,7 +129,7 @@ function balanceMacro(meals: Meal[], day: DayMode, macro: 'c' | 'f', target: num
       items: m.items.map((i) => {
         if (!ids.has(i.id)) return i;
         let g = snap(i.grams * k);
-        if (isOil(i)) g = Math.min(OIL_CAP_G, g);
+        g = Math.min(capOf(i, m), g);
         if (g === i.grams) return i;
         changed++;
         return rescale(i, g);
@@ -156,14 +169,16 @@ export function balancePlan(plan: AthletePlan): { plan: AthletePlan; report: Day
     if (!meals.some((m) => m.day === day || m.day === 'both')) continue;
     const target = day === 'on' ? { ...t.gramsOn, kcal: t.kcalOn } : { ...t.gramsOff, kcal: t.kcalOff };
     const before = dayTotals(meals, day);
-    const c = balanceMacro(meals, day, 'c', target.c);
+    // Proteína fuera de ±3 % (la IA o el escalado de carbos la corren): se corrige primero para que el cierre de kcal no castigue a los carbos.
+    const pr = balanceMacro(meals, day, 'p', target.p);
+    const c = balanceMacro(pr.meals, day, 'c', target.c);
     const f = balanceMacro(c.meals, day, 'f', target.f);
     // Las grasas de frutos secos / maní mueven algo de carbos: una pasada final de carbos.
     const c2 = balanceMacro(f.meals, day, 'c', target.c);
     // Cierre calórico estricto (±1 %): la proteína de la IA puede desviar las kcal aunque carbos y grasas cierren.
-    const k = closeKcal(c2.meals, day, target.kcal);
+    const k = closeKcal(c2.meals, day, target);
     meals = k.meals;
-    report.push({ day, target, before, after: dayTotals(meals, day), changed: c.changed + f.changed + c2.changed + k.changed });
+    report.push({ day, target, before, after: dayTotals(meals, day), changed: pr.changed + c.changed + f.changed + c2.changed + k.changed });
   }
   return { plan: { ...plan, meals, updatedAt: Date.now() }, report };
 }

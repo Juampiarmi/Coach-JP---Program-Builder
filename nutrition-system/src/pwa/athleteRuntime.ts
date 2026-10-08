@@ -62,6 +62,9 @@ const runtime = String.raw`
     tlOpen: store.get('tlOpen', false),
     dirOpen: false,
     extras: store.get('extras:' + today, {}),
+    free: store.get('free:' + today, {}),
+    outScene: null,
+    outMeal: '',
     scanTab: 'plate',
     portions: 1,
     aiCfg: false,
@@ -144,15 +147,23 @@ const runtime = String.raw`
   function isOffPeri(m, mode) { return mode === 'off' && (m.role === 'peri' || PERI_RE.test(m.name)); }
   function mealName(m, mode) { return isOffPeri(m, mode) ? 'Merienda Táctica OFF' : m.name; }
 
-  function mealsFor(mode, extras) {
+  // Comida libre controlada (Comer fuera): bloque promedio balanceado que reemplaza la comida en la telemetría.
+  var FREE_MEAL = { p: 40, c: 50, f: 25 };
+  function freeItem(m, sc) {
+    var lbl = (OUT_SCENES.filter(function (o) { return o.id === sc; })[0] || {}).label || 'Salida';
+    return { id: 'free-' + m.id, food: 'Comida libre controlada · ' + lbl, grams: 0, p: FREE_MEAL.p, c: FREE_MEAL.c, f: FREE_MEAL.f, leucine: FREE_MEAL.p * 0.08, free: true };
+  }
+
+  function mealsFor(mode, extras, free) {
     extras = extras || S.extras;
+    free = free || S.free;
     var base = D.meals.filter(function (m) { return m.day === 'both' || m.day === mode; });
     var out = extras.__out;
     if (out && out.length) base = base.concat([{ id: '__out', name: 'Fuera del plan · análisis IA', time: out[0].at || '12:00', day: mode, role: 'snack', mps: false, items: [] }]);
     return base
       .sort(function (a, b) { return a.time.localeCompare(b.time); })
       .map(function (m) {
-        var items = m.items.map(resolveItem).concat(extras[m.id] || []);
+        var items = free[m.id] ? [freeItem(m, free[m.id])] : m.items.map(resolveItem).concat(extras[m.id] || []);
         var t = items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
         return { m: m, items: items, t: t, kcal: t.p * 4 + t.c * 4 + t.f * 9 };
       });
@@ -165,7 +176,7 @@ const runtime = String.raw`
     var cur = iso === S.date;
     var checks = cur ? S.checks : store.get('checks:' + iso, {});
     var mode = cur ? S.mode : modeFor(iso);
-    var list = mealsFor(mode, cur ? S.extras : store.get('extras:' + iso, {}));
+    var list = mealsFor(mode, cur ? S.extras : store.get('extras:' + iso, {}), cur ? S.free : store.get('free:' + iso, {}));
     var tgt = D.targets[mode];
     var done = 0, k = 0;
     list.forEach(function (x) { if (checks[x.m.id]) { done++; k += x.kcal; } });
@@ -203,6 +214,7 @@ const runtime = String.raw`
     S.checks = store.get('checks:' + iso, {});
     S.water = store.get('water:' + iso, 0);
     S.extras = store.get('extras:' + iso, {});
+    S.free = store.get('free:' + iso, {});
     if (!D.preview) S.mode = modeFor(iso);
   }
 
@@ -273,7 +285,7 @@ const runtime = String.raw`
   function hhmm(min) { min = ((min % 1440) + 1440) % 1440; return pad2(Math.floor(min / 60)) + ':' + pad2(min % 60); }
 
   function timeline(mode, list) {
-    var start = toMin(D.training.time), end = start + D.training.minutes, nowMin = now.getHours() * 60 + now.getMinutes();
+    var start = toMin(D.training.time), end = start + Math.max(15, Number(D.training.minutes) || 60), nowMin = now.getHours() * 60 + now.getMinutes();
     var live = S.date === today;
     var next = null;
     if (live) list.forEach(function (x) { var t = toMin(x.m.time); if (!S.checks[x.m.id] && t >= nowMin && (!next || t < toMin(next.m.time))) next = x; });
@@ -281,7 +293,7 @@ const runtime = String.raw`
       ? list.length + ' comidas · ' + (mode === 'on' ? 'entreno ' + hhmm(start) + '–' + hhmm(end) : 'día OFF')
       : next ? 'Próxima: ' + esc(mealName(next.m, mode)) + ' · ' + esc(next.m.time) : 'Sin ingestas pendientes';
 
-    var h = '<section class="card tlcard"><button class="tl-hd" data-tl="1" aria-expanded="' + (S.tlOpen ? 'true' : 'false') + '"><span class="tag">[ TIMELINE PERI-ENTRENO ' + (S.tlOpen ? '▴' : '▾') + ' ]</span><span class="tl-peek">' + peek + '</span></button>';
+    var h = '<section class="card tlcard"><button class="tl-hd" data-tl="1" aria-expanded="' + (S.tlOpen ? 'true' : 'false') + '" aria-label="' + esc(peek.replace(/<[^>]+>/g, '')) + '"><span class="tag">[ TIMELINE PERI-ENTRENO · 24H ]</span><span class="chev' + (S.tlOpen ? ' up' : '') + '"></span></button>';
     if (!S.tlOpen) return h + '</section>';
 
     var track = '';
@@ -326,19 +338,32 @@ const runtime = String.raw`
   // ---------- 4 · Lista de compras semanal ----------
   function shoppingList() {
     var onDays = Math.max(0, Math.min(7, D.trainingDays)), mult = { on: onDays, off: 7 - onDays, both: 7 };
+    var rules = D.shopRules || {};
     var acc = {};
     D.meals.forEach(function (m) {
       m.items.map(resolveItem).forEach(function (it) {
-        var key = it.foodId || 'x:' + it.food;
-        if (!acc[key]) acc[key] = { name: it.food, foodId: it.foodId, grams: 0 };
+        var rule = (it.foodId && rules[it.foodId]) || {};
+        var key = rule.key || it.foodId || 'x:' + it.food;
+        if (!acc[key]) acc[key] = { foodId: it.foodId, name: rule.name || it.food, rule: rule, grams: 0 };
         acc[key].grams += it.grams * mult[m.day];
       });
     });
     var groups = {};
     Object.keys(acc).forEach(function (k) {
-      var it = acc[k], ref = it.foodId && D.foods[it.foodId];
-      var cat = ref ? D.categories[ref.group] || 'Otros' : 'Otros';
-      (groups[cat] = groups[cat] || []).push({ key: k, name: it.name, grams: it.grams, hint: unitHintFor(it.foodId, it.grams) });
+      var it = acc[k], ref = it.foodId && D.foods[it.foodId], r = it.rule;
+      var cat = r.section || (ref ? D.categories[ref.group] : '') || D.shopFallback || 'Otros';
+      var row = { key: k, name: it.name, grams: it.grams, cooked: it.grams, hint: '', note: '' };
+      if (r.factor) {
+        row.grams = it.grams * r.factor;
+        if (r.pack) row.grams = Math.max(r.pack, Math.ceil(row.grams / r.pack) * r.pack);
+        row.note = r.state === 'raw' ? 'equivale a ' + qty(it.grams) + ' cocido' : 'rinde ~' + qty(row.grams * 2.5) + ' cocido';
+        row.raw = r.state === 'raw';
+      } else {
+        row.hint = unitHintFor(it.foodId, it.grams);
+      }
+      if (r.min && row.grams < r.min) { row.grams = r.min; row.label = r.minLabel; row.hint = ''; }
+      if (r.byUnit) { var u = Math.ceil(it.grams / r.byUnit); row.label = u + ' ' + (u > 1 ? r.unitLabel : r.unitLabel.replace(/s$/, '')); row.hint = ''; }
+      (groups[cat] = groups[cat] || []).push(row);
     });
     if (D.supplements.length) groups['Suplementos'] = (groups['Suplementos'] || []).concat(D.supplements.map(function (s) { return { key: 'sup:' + s.id, name: s.name, dose: s.dose }; }));
     return D.categoryOrder.filter(function (c) { return groups[c]; }).map(function (c) {
@@ -346,13 +371,18 @@ const runtime = String.raw`
     });
   }
 
-  function qty(g) { return g >= 1000 ? n1(g / 1000) + ' kg' : n0(Math.round(g / 10) * 10) + ' g'; }
+  function qty(g) { return g >= 1000 ? n1(Math.round(g / 100) / 10) + ' kg' : n0(Math.round(g / 10) * 10) + ' g'; }
+  function shopQty(i) {
+    if (i.dose) return i.dose;
+    if (i.label) return i.label;
+    return (i.raw ? '~' : '') + qty(i.grams);
+  }
 
   function shopText(list) {
-    var t = 'LISTA DE COMPRAS SEMANAL · ' + D.athlete.name + '\n';
+    var t = '🛒 *LISTA DE COMPRAS SEMANAL* · ' + D.athlete.name + '\nSemana del ' + weekKey.split('-').reverse().join('/') + ' · ' + D.trainingDays + ' días ON + ' + (7 - D.trainingDays) + ' OFF\n';
     list.forEach(function (g) {
-      t += '\n' + g.cat.toUpperCase() + '\n';
-      g.items.forEach(function (i) { t += '- ' + i.name + ': ' + (i.dose ? i.dose : qty(i.grams) + (i.hint ? ' (' + i.hint.replace('≈ ', '≈') + ')' : '')) + '\n'; });
+      t += '\n*' + g.cat.toUpperCase() + '*\n';
+      g.items.forEach(function (i) { t += '▢ ' + i.name + ': *' + shopQty(i) + '*' + (i.note ? ' (' + i.note + ')' : i.hint ? ' (' + i.hint.replace('≈ ', '≈') + ')' : '') + '\n'; });
     });
     return t + '\n' + D.handle;
   }
@@ -372,30 +402,40 @@ const runtime = String.raw`
     }
     if (S.panel === 'shop') {
       var list = shoppingList();
-      var h2 = '<div class="tag">[ LISTA DE COMPRAS · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>Totales para 7 días</h3><p class="muted" style="font-size:12.5px">' + D.trainingDays + ' días ON + ' + (7 - D.trainingDays) + ' días OFF · incluye tus cambios de alimentos. Pesos en cocido.</p>';
+      var h2 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ LISTA DE COMPRAS · SEMANA DEL ' + weekKey.split('-').reverse().join('/') + ' ]</div><h3>Totales para 7 días</h3><p class="muted" style="font-size:12.5px">' + D.trainingDays + ' días ON + ' + (7 - D.trainingDays) + ' días OFF · incluye tus cambios. Carnes en peso crudo, arroz y fideos en seco.</p>';
+      h2 += '<button class="wa-btn" data-washop="1">[ 📲 Mandar lista por WhatsApp ]</button>';
       list.forEach(function (g) {
         h2 += '<div class="shop-cat">' + esc(g.cat) + '</div>';
         g.items.forEach(function (i) {
           var on = !!S.shop[i.key];
-          h2 += '<button class="shop-item' + (on ? ' done' : '') + '" data-shopcheck="' + esc(i.key) + '"><span class="chk">' + CHECK + '</span><span class="sn">' + esc(i.name) + '</span><span class="sq">' + (i.dose ? esc(i.dose) : qty(i.grams) + (i.hint ? '<em>' + i.hint + '</em>' : '')) + '</span></button>';
+          h2 += '<button class="shop-item' + (on ? ' done' : '') + '" data-shopcheck="' + esc(i.key) + '"><span class="chk">' + CHECK + '</span><span class="sn">' + esc(i.name) + '</span><span class="sq">' + esc(shopQty(i)) + (i.note ? '<em>' + esc(i.note) + '</em>' : i.hint ? '<em>' + i.hint + '</em>' : '') + '</span></button>';
         });
       });
       h2 += '<div class="wbtns" style="margin-top:14px"><button data-copyshop="1">Copiar lista</button><button data-shopreset="1" class="ghost">Desmarcar todo</button></div>';
       return open(bg, sh, h2);
     }
     if (S.panel === 'out') {
-      var rules = [
-        ['Proteína primero', 'Elegí una proteína del tamaño de tu palma (bife, pollo, pescado a la plancha): ~30-40 g de proteína.'],
-        ['Carbos según el día', 'Día ON: 1 porción de arroz, papa o pasta. Día OFF: cambiala por ensalada o vegetales grillados.'],
-        ['Grasas a la vista', 'Aderezos aparte. Evitá frituras y rebozados: milanesa al horno antes que frita.'],
-        ['Parrilla inteligente', 'Cortes magros (lomo, entraña, vacío desgrasado, pollo). Achuras y chorizo, de a uno y compartido.'],
-        ['Pizza / empanadas', '2-3 porciones + ensalada. Sumá una fuente de proteína en la comida siguiente.'],
-        ['Bebidas', 'Agua o soda. Alcohol: máximo 1-2 copas y nunca en la ventana post-entreno.'],
-        ['Postre', 'Fruta o compartido. Si te pasaste, no compenses salteando comidas: retomá el plan en la próxima.'],
-        ['Si sabés que salís', 'Guardá ~20-30 % de los carbos del día (menos en el almuerzo) y usá ese margen en la salida.'],
-      ];
-      var h3 = '<div class="tag">[ GUÍA TÁCTICA · COMER FUERA DE CASA ]</div><h3>Rescate gastronómico</h3><p class="muted" style="font-size:12.5px">Reglas directas para eventos sociales. Tocá cada regla para expandirla.</p>';
-      rules.forEach(function (r, i) { h3 += '<details class="rule"' + (i === 0 ? ' open' : '') + '><summary><span class="n">' + (i + 1) + '</span>' + esc(r[0]) + '</summary><p>' + esc(r[1]) + '</p></details>'; });
+      var sc = OUT_SCENES.filter(function (o) { return o.id === S.outScene; })[0];
+      var h3 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ COMER FUERA · RESCATE SOCIAL ]</div><h3>¿Dónde comés?</h3>';
+      h3 += '<div class="scenes">' + OUT_SCENES.map(function (o) { return '<button data-scene="' + o.id + '" class="' + (o.id === S.outScene ? 'on' : '') + '">' + o.icon + ' ' + esc(o.label) + '</button>'; }).join('') + '</div>';
+      if (!sc) {
+        h3 += '<p class="muted" style="font-size:12.5px;margin-top:10px">Elegí el escenario y te damos la directiva 3-2-1 al instante: qué pedir, con qué acompañar, qué tomar y qué evitar.</p>';
+        return open(bg, sh, h3);
+      }
+      var mode = S.mode;
+      h3 += '<div class="d321"><div class="tag">[ DIRECTIVA 3-2-1 · ' + esc(sc.label.toUpperCase()) + ' · DÍA ' + mode.toUpperCase() + ' ]</div>';
+      h3 += '<div class="d-row"><span class="n">3</span><div><b>Principal</b><p>' + esc(sc.main) + '</p></div></div>';
+      h3 += '<div class="d-row"><span class="n">2</span><div><b>Acompañamiento</b><p>' + esc(mode === 'on' ? sc.sideOn : sc.sideOff) + '</p></div></div>';
+      h3 += '<div class="d-row"><span class="n">1</span><div><b>Bebida</b><p>' + esc(sc.drink) + '</p></div></div>';
+      h3 += '<div class="d-row avoid"><span class="n">✕</span><div><b>Evitar</b><p>' + esc(sc.avoid) + '</p></div></div></div>';
+      var targets = mealsFor(mode).filter(function (x) { return x.m.id !== '__out' && (x.m.role === 'lunch' || x.m.role === 'dinner'); });
+      if (targets.length) {
+        var nowMin2 = now.getHours() * 60 + now.getMinutes();
+        var def = S.outMeal || (targets.filter(function (x) { return !S.checks[x.m.id] && toMin(x.m.time) >= nowMin2 - 60; })[0] || targets[targets.length - 1]).m.id;
+        h3 += '<label class="lbl">¿Qué comida reemplaza?</label><select id="out-meal" class="inp">' + targets.map(function (x) { return '<option value="' + esc(x.m.id) + '"' + (x.m.id === def ? ' selected' : '') + '>' + esc(x.m.time + ' · ' + x.m.name) + '</option>'; }).join('') + '</select>';
+        h3 += '<button class="add-meal" data-imputar="1">[ ⚡ IMPUTAR COMO COMIDA LIBRE CONTROLADA ]</button>';
+        h3 += '<p class="muted" style="font-size:11.5px;margin-top:6px">Marca la comida como hecha con un bloque promedio de ~' + n0(FREE_MEAL.p * 4 + FREE_MEAL.c * 4 + FREE_MEAL.f * 9) + ' kcal (' + FREE_MEAL.p + ' g P · ' + FREE_MEAL.c + ' g C · ' + FREE_MEAL.f + ' g G) sin desarmar tu telemetría. Se deshace con la ✕ en la comida.</p>';
+      }
       return open(bg, sh, h3);
     }
     if (S.panel === 'guide') {
@@ -422,7 +462,9 @@ const runtime = String.raw`
       h4 += '<label class="lbl">Nota (opcional)</label><textarea id="ph-note" class="inp" rows="2" placeholder="Ej: comí afuera, cambié el arroz por papas">' + esc(S.phNote) + '</textarea>';
 
       if (S.scanBusy) h4 += '<div class="scan-busy"><span class="spin"></span>' + esc(S.scanBusy) + '</div>';
-      if (S.scanErr) h4 += '<div class="scan-err">⚠ ' + esc(S.scanErr) + '</div>';
+      if (S.scanErr && S.scanErrKind === 'plate') h4 += '<div class="scan-info">🍽 ' + esc(S.scanErr) + '<button data-scantab="plate" data-autoscan="1">[ PLATO DE COMIDA ] · ANALIZAR</button></div>';
+      else if (S.scanErr && S.scanErrKind === 'slow') h4 += '<div class="scan-err">⚠ ' + esc(S.scanErr) + '<div class="wbtns"><button data-photo="ai">↻ Reintentar</button><button data-photo="send" class="ghost">WhatsApp al Coach</button></div></div>';
+      else if (S.scanErr) h4 += '<div class="scan-err">⚠ ' + esc(S.scanErr) + '</div>';
       if (S.scan) h4 += S.scan.kind === 'label' ? labelCard(S.scan) : scanCard(S.scan);
 
       h4 += '<div class="wbtns" style="margin-top:12px"><button data-photo="retake" class="ghost">Otra foto</button>';
@@ -491,6 +533,15 @@ const runtime = String.raw`
     });
     open(bg, sh, h);
   }
+
+  // ---------- Comer fuera: escenarios 3-2-1 ----------
+  var OUT_SCENES = [
+    { id: 'parrilla', icon: '🥩', label: 'Parrilla / Asado', main: 'Un corte magro del tamaño de tu mano: vacío desgrasado, entraña, lomo, colita o pollo. Achuras y chorizo: uno, compartido.', sideOn: 'Ensalada completa + 1 papa o batata al rescoldo (o 1 pan).', sideOff: 'Ensalada completa o verduras grilladas. Sin pan ni papas.', drink: 'Agua o soda. Máximo 1 copa de vino o 1 cerveza.', avoid: 'Picadas largas de fiambre, pan con chimichurri en cantidad y repetir carne.' },
+    { id: 'pizza', icon: '🍕', label: 'Pizza / Empanadas', main: '2-3 porciones de pizza (mejor muzza o napolitana) o 3 empanadas de carne / pollo al horno.', sideOn: 'Ensalada de hojas antes de empezar para llegar con menos hambre.', sideOff: 'Ensalada grande primero y quedate en 2 porciones o 2 empanadas.', drink: 'Agua o gaseosa cero. Alcohol: 1 vaso, no más.', avoid: 'Fugazzeta rellena, empanadas fritas y las porciones extra «porque quedaron».' },
+    { id: 'burger', icon: '🍔', label: 'Hamburguesería', main: 'Hamburguesa simple o doble de carne, con lechuga y tomate. Queso: una feta.', sideOn: 'Papas para compartir o media porción.', sideOff: 'Cambiá las papas por ensalada. Si el pan es gigante, dejá la mitad.', drink: 'Agua o gaseosa cero.', avoid: 'Triple con panceta y cheddar extra, papas con cheddar, salsas en cantidad y milkshakes.' },
+    { id: 'sushi', icon: '🍣', label: 'Sushi / Pastas', main: 'Sushi: 12-15 piezas priorizando sashimi y niguiris. Pastas: 1 plato de fideos o ñoquis con salsa roja (filetto, bolognesa).', sideOn: 'Ensalada o sopa miso. Pasta en porción normal, no fuente.', sideOff: 'Más sashimi y menos arroz. Pasta: media porción + ensalada.', drink: 'Agua, soda o té verde.', avoid: 'Rolls tempura / philadelphia en cantidad, salsas cremosas (4 quesos, crema) y pan con manteca.' },
+    { id: 'cafe', icon: '☕', label: 'Café / Brunch', main: 'Tostado de jamón y queso, huevos revueltos con tostadas o yogur con granola y fruta.', sideOn: 'Fruta o jugo exprimido chico.', sideOff: 'Fruta. Una tostada en vez de dos.', drink: 'Café o latte sin azúcar (o con edulcorante).', avoid: 'Medialunas en serie, facturas, alfajores y licuados con helado.' },
+  ];
 
   // ---------- Manual y glosario táctico ----------
   var GUIDE = [
@@ -573,6 +624,10 @@ const runtime = String.raw`
       h += '<div class="items">';
       x.items.forEach(function (it, idx) {
         var hint = unitHintFor(it.foodId, it.grams);
+        if (it.free) {
+          h += '<div class="item extra free"><span class="g">~' + n0(it.p * 4 + it.c * 4 + it.f * 9) + '<em>kcal</em></span><span class="fd">' + esc(it.food) + '<s class="ia">Bloque balanceado · ' + n0(it.p) + ' P · ' + n0(it.c) + ' C · ' + n0(it.f) + ' G</s></span><button class="rm" data-unfree="' + esc(m.id) + '" aria-label="Deshacer comida libre">✕</button></div>';
+          return;
+        }
         if (it.extra) {
           h += '<div class="item extra"><span class="g">' + n0(it.grams) + ' g</span><span class="fd">' + esc(it.food) + '<s class="ia">Agregado por análisis IA · ' + n0(it.p) + ' P · ' + n0(it.c) + ' C · ' + n0(it.f) + ' G</s></span><button class="rm" data-rmextra="' + esc(m.id) + '|' + esc(it.id) + '" aria-label="Quitar">✕</button></div>';
           return;
@@ -636,7 +691,8 @@ const runtime = String.raw`
     if (!file) return;
     var url = URL.createObjectURL(file), img = new Image();
     img.onload = function () {
-      var k = Math.min(1, 1280 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+      // Compresión client-side: máx. 1024 px y JPEG 0,75 → de ~8 MB a < 250 KB (respuesta de Gemini en 2-4 s).
+      var k = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
       c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
       c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
       URL.revokeObjectURL(url);
@@ -645,7 +701,7 @@ const runtime = String.raw`
         S.photo = { blob: blob, url: URL.createObjectURL(blob) };
         S.scan = null; S.scanErr = null; S.scanBusy = false;
         S.sheet = null; S.panel = 'photo'; renderSheet();
-      }, 'image/jpeg', 0.82);
+      }, 'image/jpeg', 0.75);
     };
     img.onerror = function () { toast('No se pudo leer la foto'); };
     img.src = url;
@@ -660,6 +716,8 @@ const runtime = String.raw`
 
   // ---------- Análisis de foto con IA en el dispositivo (Gemini, clave propia del atleta) ----------
   var GEMINI_CHAIN = ['gemini-3.5-flash-lite', 'gemini-3.5-flash'];
+  var SCAN_TIMEOUT_MS = 12000;
+  var SLOW_MSG = 'Conexión lenta. Reintentar o enviar foto al Coach por WhatsApp';
 
   function blobToB64(blob) {
     return new Promise(function (res, rej) {
@@ -674,11 +732,15 @@ const runtime = String.raw`
     var model = GEMINI_CHAIN[i];
     S.scanBusy = i === 0 ? (S.scanTab === 'label' ? 'LEYENDO TABLA NUTRICIONAL · ' : 'ANALIZANDO PLATO · ') + model : '[ ! ] CAMBIANDO A MODELO DE RESPALDO (' + model + ')...';
     renderSheet();
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, SCAN_TIMEOUT_MS);
     return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: ctl ? ctl.signal : undefined,
     }).then(function (res) {
+      clearTimeout(timer);
       return res.json().catch(function () { return {}; }).then(function (data) {
         if (res.ok) {
           var parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
@@ -692,6 +754,10 @@ const runtime = String.raw`
         if (res.status === 400 && /api key|API_KEY/i.test(msg)) msg = 'La API Key no es válida. Revisala en [ ⚙ CONFIGURAR API KEY GEMINI ].';
         throw new Error(msg);
       });
+    }, function (err) {
+      clearTimeout(timer);
+      if (err && err.name === 'AbortError') { var e = new Error(SLOW_MSG); e.slow = true; throw e; }
+      throw err;
     });
   }
 
@@ -708,7 +774,7 @@ const runtime = String.raw`
   function analyzePhoto() {
     var key = getKey();
     if (!key || !S.photo || S.scanBusy) return;
-    S.scan = null; S.scanErr = null;
+    S.scan = null; S.scanErr = null; S.scanErrKind = '';
     var asLabel = S.scanTab === 'label';
     blobToB64(S.photo.blob)
       .then(function (b64) {
@@ -729,12 +795,17 @@ const runtime = String.raw`
         var sc = num(json.score, NaN);
         S.scan = { dishName: String(json.dishName || 'Plato analizado'), items: items, score: isFinite(sc) ? Math.round(Math.max(0, Math.min(100, sc))) : localScore(items), reason: json.scoreReason || '', tips: (json.tips || []).slice(0, 3) };
       })
-      .catch(function (err) { S.scanErr = (err && err.message) || String(err); })
+      .catch(function (err) { S.scanErr = (err && err.message) || String(err); S.scanErrKind = err && err.slow ? 'slow' : err && err.plate ? 'plate' : ''; })
       .then(function () { S.scanBusy = false; renderSheet(); });
   }
 
   // Tabla nutricional → valores por 100 g (de la columna por porción si es lo único legible).
   function readLabel(json) {
+    if (json && (json.isLabel === false || json.looksLike === 'plate')) {
+      var pe = new Error('Detectamos un plato preparado. Cambiá a la pestaña [ PLATO DE COMIDA ] para analizar sus porciones y macros');
+      pe.plate = true;
+      throw pe;
+    }
     var serving = Math.max(1, num(json.servingG, 100));
     var per = json.per100 || {};
     var ps = json.perServing || {};
@@ -780,10 +851,27 @@ const runtime = String.raw`
 
   // ---------- Eventos ----------
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-unfree],[data-washop],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
     if (ds.close) return closeSheet();
+    if (ds.scene) { S.outScene = ds.scene; S.outMeal = ''; haptic(); return renderSheet(); }
+    if (ds.imputar) {
+      var om = (($('#out-meal') || {}).value) || S.outMeal;
+      if (!om) return;
+      S.free[om] = S.outScene || 'salida';
+      S.checks[om] = true;
+      store.set('free:' + S.date, S.free);
+      store.set('checks:' + S.date, S.checks);
+      S.panel = null; haptic(); render();
+      return toast('Comida libre controlada imputada · telemetría actualizada');
+    }
+    if (ds.unfree) {
+      delete S.free[ds.unfree];
+      store.set('free:' + S.date, S.free);
+      return render();
+    }
+    if (ds.washop) return window.open('https://wa.me/?text=' + encodeURIComponent(shopText(shoppingList())), '_blank');
     if (ds.tl) { S.tlOpen = !S.tlOpen; store.set('tlOpen', S.tlOpen); haptic(); return render(); }
     if (ds.dir) { S.dirOpen = !S.dirOpen; return render(); }
     if (ds.day !== undefined) {
@@ -792,7 +880,11 @@ const runtime = String.raw`
       haptic();
       return render();
     }
-    if (ds.scantab) { S.scanTab = ds.scantab; S.scan = null; S.scanErr = null; return renderSheet(); }
+    if (ds.scantab) {
+      S.scanTab = ds.scantab; S.scan = null; S.scanErr = null; S.scanErrKind = '';
+      if (ds.autoscan) return analyzePhoto();
+      return renderSheet();
+    }
     if (ds.portion) { S.portions = Math.max(0.5, Math.min(10, S.portions + +ds.portion)); return renderSheet(); }
     if (ds.rmextra) {
       var q = ds.rmextra.split('|');
@@ -855,7 +947,9 @@ const runtime = String.raw`
     } else if (el.id === 'reset') {
       if (!confirm('¿Reiniciar el checklist y la hidratación de este día?')) return;
       S.checks = {};
+      S.free = {};
       store.set('checks:' + S.date, S.checks);
+      store.set('free:' + S.date, S.free);
       setWater(0);
       toast('Checklist e hidratación del día reiniciados');
     }
@@ -865,6 +959,7 @@ const runtime = String.raw`
     if (e.target.id === 'ph-note') S.phNote = e.target.value;
   });
   document.addEventListener('change', function (e) {
+    if (e.target.id === 'out-meal') S.outMeal = e.target.value;
     if (e.target.id === 'ph-meal') S.phMeal = e.target.value;
   });
 

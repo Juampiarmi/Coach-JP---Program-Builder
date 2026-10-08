@@ -17,6 +17,14 @@ REGLAS DE CÁLCULO Y FORMATO (obligatorias):
 - macrosOn / macrosOff en GRAMOS totales diarios. Gramos de alimentos en peso neto (cocido para carnes, arroz, fideos, papa, batata).
 - Cada item de "meals" lleva p, c, f y leucine en gramos para la porción indicada, más "macroPrincipal": "protein" | "carbs" | "fat" (el macro que define su equivalencia).
 - Grasas de cocción y condimento (aceite de oliva, girasol, manteca): porción REALISTA de 10-15 g (1 cda) por comida, NUNCA más de 15 g por comida. Para cubrir grasas usá palta, frutos secos, huevo o pasta de maní, no más aceite.
+- REGLAS CULINARIAS (platos reales, no combinaciones de planilla):
+  · Prohibido combinar carbos secos / inflados (tutucas, copos, cereales, almohaditas, avena) con queso untable o aderezos salados como colación. Tutucas, cereales y avena van con leche o yogur descremado, o solos como snack seco crujiente.
+  · Palta: sólo en ensaladas o sobre pan / tostadas, máximo 50-70 g por comida. Nunca palta en porción grande junto con aceite de oliva en la misma comida (si hay palta, el aceite es opcional y ≤ 5 g).
+  · Una sola comida pesada de carne por bloque de 3 h: nunca dos "cenas" de carne separadas por menos de 3 h.
+- ESTRUCTURA HORARIA DEPORTIVA (según el horario real de entreno de las notas):
+  · Pre-WOD 45-60 min antes de empezar: bloque glucolítico digestivo y práctico (yogur con fruta y tutucas / granola, o café / mate con tostadas y miel). Poca grasa y poca fibra.
+  · Post-WOD inmediato (0-30 min después de terminar): recuperación rápida y liviana (fruta fresca, proteína rápida tipo whey o yogur, snack liviano).
+  · Cena principal ~3 h después de terminar: comida sólida completa (bife magro, pollo o tarta con arroz / papas, ensalada mixta y aceite de oliva).
 - Cereales / carbos rápidos argentinos válidos: avena, avena instantánea, tutucas de maíz (30-60 g), copos de maíz sin azúcar, galletas o tostadas de arroz, pan integral.
 - Agregá a cada meal: "day": "ON" | "OFF" | "AMBOS" y "role": "breakfast" | "lunch" | "peri" | "post" | "snack" | "dinner". La suma de las comidas de cada día DEBE cerrar EXACTAMENTE el 100 % (±1 %) de su meta calórica (targetKcalOn / targetKcalOff) y el 100 % (±3 %) de proteínas, carbohidratos y grasas de macrosOn / macrosOff: si el atleta tilda todas sus comidas no le puede faltar nada. Antes de responder, sumá p/c/f de todos los items de cada día y, si falta o sobra, ajustá las porciones de carbohidratos (arroz, papa, batata, avena, fideos) y de grasas (palta, frutos secos, huevo; aceite máx. 15 g por comida) hasta cerrar la brecha.
 - Agregá el objeto opcional "profile": { sex: "M"|"F", age, heightCm, weightKg, bodyFatPct, phase: "recomp"|"maintenance"|"surplus", trainingDaysPerWeek, trainingTime: "HH:MM", sessionMinutes, sessionKcal, activityFactor } con lo que se desprenda de las notas.
@@ -30,6 +38,10 @@ REGLAS DE CÁLCULO Y FORMATO (obligatorias):
 
 /** Porción máxima de aceite por comida (1 cda ≈ 13-15 g). */
 export const MAX_OIL_PER_MEAL_G = 15;
+/** Porción máxima de palta por comida (en ensalada o sobre tostadas). */
+export const MAX_PALTA_PER_MEAL_G = 70;
+/** Carbos secos / inflados que no van con queso untable: se acompañan con lácteo. */
+const DRY_CEREALS = ['tutucas', 'copos-maiz', 'avena', 'avena-instantanea'];
 
 export const MODEL_OPTIONS: Record<AiProvider, { id: string; label: string }[]> = {
   claude: [
@@ -158,10 +170,23 @@ export function extractJson(text: string): AiPlanJson {
 }
 
 /** Compila el plan. `onNotice` informa reintentos / cambios de modelo (Gemini 503) a la terminal. */
+const hm = (min: number) => `${String(Math.floor((((min % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}:${String(((min % 60) + 60) % 60).padStart(2, '0')}`;
+
+/** Agenda deportiva derivada del horario real de las notas (ej. CrossFit 16-18 → pre 15:15, post 18:00-18:30, cena 21:00). */
+export function scheduleHint(notes: string) {
+  const w = parseTrainingWindow(notes);
+  if (!w) return '';
+  const [h, m] = w.time.split(':').map(Number);
+  const start = h * 60 + m;
+  const end = start + (w.minutes ?? 60);
+  return `\n\nHORARIO DE ENTRENO DETECTADO: ${hm(start)} a ${hm(end)} (inicio ${w.time}, ${end - start} min).
+Estructurá el día ON así: Pre-WOD ${hm(start - 45)} · Post-WOD inmediato ${hm(end)}-${hm(end + 30)} · Cena principal ${hm(end + 180)}.`;
+}
+
 export async function compileWithAi(ai: AiSettings, notes: string, onNotice?: (n: GeminiNotice) => void): Promise<AiPlanJson & { _model?: string }> {
   if (!ai.apiKey.trim()) throw new Error('Cargá una API key para compilar con IA.');
   if (!notes.trim()) throw new Error('Volcá las notas del atleta antes de compilar.');
-  const user = `NOTAS BRUTAS DEL ATLETA:\n${notes.trim()}`;
+  const user = `NOTAS BRUTAS DEL ATLETA:\n${notes.trim()}${scheduleHint(notes)}`;
   if (ai.provider === 'gemini') {
     const r = await callGemini(ai, user, onNotice);
     return { ...extractJson(r.text), _model: r.model };
@@ -192,6 +217,26 @@ function inferDay(day: string | undefined, role: MealRole): MealDay {
   return role === 'peri' || role === 'post' ? 'on' : 'both';
 }
 
+/**
+ * Guardas culinarias sobre lo que devuelve la IA:
+ *  · cereal seco + queso untable → el untable pasa a yogur descremado con la misma proteína;
+ *  · palta + aceite en la misma comida → el aceite baja a 5 g (la palta ya es la grasa del plato).
+ */
+function fixCulinary(items: FoodItem[]) {
+  const hasCereal = items.some((i) => i.foodId && DRY_CEREALS.includes(i.foodId));
+  items.forEach((i, k) => {
+    if (hasCereal && i.foodId === 'untable') {
+      const grams = Math.max(50, Math.round(((i.p / 10) * 100) / 10) * 10);
+      items[k] = { id: i.id, foodId: 'yogur', food: 'Yogur griego descremado', grams, ...macrosFor('yogur', grams)! };
+    }
+  });
+  if (items.some((i) => i.foodId === 'palta')) {
+    items.forEach((i, k) => {
+      if (i.foodId === 'oliva' && i.grams > 5) items[k] = { ...i, grams: 5, ...macrosFor('oliva', 5)! };
+    });
+  }
+}
+
 /** Convierte la respuesta de la IA en el plan del Builder (todas las pestañas). */
 export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): AthletePlan {
   const pr = json.profile ?? {};
@@ -213,6 +258,8 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
         const ref = matchFood(i.food!);
         // Aceite de cocción / condimento: tope realista de 15 g (1 cda) por comida, aunque la IA proponga más.
         if (ref?.id === 'oliva' && grams > MAX_OIL_PER_MEAL_G) grams = MAX_OIL_PER_MEAL_G;
+        // Palta: acompañamiento de ensalada / tostada, tope 70 g por comida.
+        if (ref?.id === 'palta' && grams > MAX_PALTA_PER_MEAL_G) grams = MAX_PALTA_PER_MEAL_G;
         if (ref) return { id: uid(), foodId: ref.id, food: ref.name, grams, ...macrosFor(ref.id, grams)! };
         const mp = i.macroPrincipal;
         return {
@@ -226,6 +273,7 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
           ...(mp === 'protein' || mp === 'carbs' || mp === 'fat' ? { macroPrincipal: mp } : {}),
         };
       });
+    fixCulinary(items);
     const day = inferDay(m.day, role);
     // Día OFF: sin sesión → nada de "Pre-Entreno PeriWOD" ni "Bloque glucolítico".
     const offPeri = day === 'off' && (role === 'peri' || PERI_WORDS.test(name));

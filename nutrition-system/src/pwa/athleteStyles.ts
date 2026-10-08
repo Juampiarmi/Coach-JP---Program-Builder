@@ -5,7 +5,7 @@ const styles = `
 :root{--bg:#0B0F17;--bg2:#0E1420;--panel:#131B2A;--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.12);--cyan:#38BDF8;--cyan-soft:rgba(56,189,248,.1);--cyan-edge:rgba(56,189,248,.2);--fire:#F97316;--fire-hot:#FF5E1E;--fire-soft:rgba(249,115,22,.1);--danger:#EF4444;--title:#FFFFFF;--text:#94A3B8;--micro:#64748B;--safe-top:env(safe-area-inset-top,0px);--safe-bot:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:var(--bg);color:var(--text);font-family:Inter,"Geist Sans",system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
-body{min-height:100vh;padding:calc(var(--safe-top) + 14px) 16px calc(var(--safe-bot) + 112px);background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(180deg,var(--bg),var(--bg2));background-size:28px 28px,28px 28px,auto;background-attachment:fixed}
+body{min-height:100vh;padding:max(1.25rem,calc(env(safe-area-inset-top) + 10px)) 16px calc(var(--safe-bot) + 112px);background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(180deg,var(--bg),var(--bg2));background-size:28px 28px,28px 28px,auto;background-attachment:fixed}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .mono,.kcal,.prog,.bar .l span,.meal .time,.item .g,.opt .g,.ring .v b{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 .tag{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--cyan)}
@@ -283,6 +283,28 @@ body.standalone .dock{display:none}
 /* ---- Reinicio sutil ---- */
 .reset-row{margin-top:18px;text-align:center}
 .reset-link{font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.06em;color:var(--micro);text-decoration:underline;text-underline-offset:3px;padding:6px}
+/* ---- iOS safe area: la hora / notch / Dynamic Island nunca tapan el contenido al scrollear ---- */
+body::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);background:var(--bg);z-index:9;pointer-events:none}
+.sheet{max-height:calc(100vh - env(safe-area-inset-top,0px) - 24px)}
+/* ---- Escáner: avisos ---- */
+.scan-info{margin-top:12px;padding:10px 12px;border:1px solid var(--cyan-edge);border-radius:10px;background:var(--cyan-soft);font-size:12.5px;color:var(--title);line-height:1.45}
+.scan-info button{display:block;width:100%;margin-top:8px;padding:9px;border-radius:8px;background:var(--cyan);color:#0B0F17;font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:700;letter-spacing:.06em}
+.scan-err .wbtns{margin-top:8px}
+/* ---- Lista de compras ---- */
+.wa-btn{display:block;width:100%;margin:10px 0 2px;padding:11px;border-radius:10px;border:1px solid rgba(37,211,102,.5);background:rgba(37,211,102,.12);color:#4ADE80;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.06em}
+/* ---- Comer fuera: escenarios 3-2-1 ---- */
+.scenes{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.scenes button{padding:11px 8px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:var(--title);font-size:13px;font-weight:600;text-align:left}
+.scenes button.on{border-color:var(--fire);background:var(--fire-soft);color:#FDBA74}
+.scenes button:last-child:nth-child(odd){grid-column:span 2}
+.d321{margin-top:12px;padding:12px;border:1px solid var(--cyan-edge);border-radius:12px;background:var(--bg)}
+.d-row{display:flex;gap:10px;margin-top:10px}
+.d-row .n{flex:none;width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:700;color:var(--cyan);background:var(--cyan-soft);border:1px solid var(--cyan-edge)}
+.d-row b{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--title)}
+.d-row p{font-size:13.5px;color:var(--text);margin-top:2px}
+.d-row.avoid .n{color:var(--fire);background:var(--fire-soft);border-color:rgba(249,115,22,.35)}
+.item.free{border-left-color:var(--fire)}
+.item.free .fd s.ia{color:#FDBA74}
 `;
 
 export default styles;

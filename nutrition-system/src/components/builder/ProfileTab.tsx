@@ -230,7 +230,7 @@ export function ProfileTab() {
       <Panel title="AGENDA DE ENTRENAMIENTO & HIDRATACIÓN">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <label className="block">
-            <Label>Hora de la sesión</Label>
+            <Label>Entreno · inicio</Label>
             <input
               type="time"
               value={pr.trainingTime}
@@ -238,13 +238,26 @@ export function ProfileTab() {
               className="tnum w-full rounded-lg border border-line bg-carbon px-3 py-2 font-mono text-sm text-ink outline-none [color-scheme:dark] focus:border-cyan-hud/60"
             />
           </label>
-          <NumberField label="Duración" unit="min" decimals={false} min={15} max={300} value={pr.sessionMinutes} onChange={(sessionMinutes) => setProfile({ sessionMinutes })} />
+          <label className="block">
+            <Label>Entreno · fin ({pr.sessionMinutes} min)</Label>
+            <input
+              type="time"
+              value={addMinutes(pr.trainingTime, pr.sessionMinutes)}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                // Franja exacta de la anamnesis (ej. 16:00 a 18:00 → 120 min); cruza la medianoche si el fin es menor.
+                const mins = (toMinutes(e.target.value) - toMinutes(pr.trainingTime) + 1440) % 1440;
+                if (mins >= 15 && mins <= 300) setProfile({ sessionMinutes: mins });
+              }}
+              className="tnum w-full rounded-lg border border-line bg-carbon px-3 py-2 font-mono text-sm text-ink outline-none [color-scheme:dark] focus:border-cyan-hud/60"
+            />
+          </label>
           <NumberField label="Agua · día ON" unit="L" min={0.5} max={8} value={plan.hydration.onMl / 1000} onChange={(l) => setPlanMeta({ hydration: { ...plan.hydration, onMl: Math.round(l * 1000) } })} />
           <NumberField label="Agua · día OFF" unit="L" min={0.5} max={8} value={plan.hydration.offMl / 1000} onChange={(l) => setPlanMeta({ hydration: { ...plan.hydration, offMl: Math.round(l * 1000) } })} />
         </div>
         <WeekdayPicker />
         <p className="mt-2 font-mono text-[10px] text-mute">
-          Base 35 ml/kg + ~750 ml por hora de sesión. La hora alimenta el dial peri-entreno de 24 h de la app del atleta.
+          Base 35 ml/kg + ~750 ml por hora de sesión. La franja inicio–fin alimenta el timeline peri-entreno de la app del atleta.
         </p>
       </Panel>
 
@@ -298,6 +311,15 @@ export function ProfileTab() {
     </div>
   );
 }
+
+const toMinutes = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+const addMinutes = (hhmm: string, min: number) => {
+  const t = (((toMinutes(hhmm) + min) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
 
 const WEEKDAYS = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];

@@ -9,21 +9,49 @@ import type { AthletePlan, DayMode } from './types';
 
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
 
-/** Categorías de la lista de compras semanal de la PWA del atleta. */
+/** Secciones de la lista de compras, en el orden del recorrido: verdulería → carnicería → almacén. */
 const SHOP_CATEGORY: Record<SwapGroup, string> = {
-  'lean-protein': 'Carnes y pescados',
-  eggs: 'Huevos y lácteos',
-  'dairy-protein': 'Huevos y lácteos',
-  starch: 'Almidones y cereales',
-  cereal: 'Almidones y cereales',
-  'sport-carb': 'Carbos de entreno',
-  'protein-snack': 'Snacks proteicos',
-  fruit: 'Frutas y vegetales',
-  veg: 'Frutas y vegetales',
-  fat: 'Grasas saludables',
+  fruit: 'Verdulería',
+  veg: 'Verdulería',
+  'lean-protein': 'Carnicería / Pescadería',
+  eggs: 'Almacén · Lácteos y huevos',
+  'dairy-protein': 'Almacén · Lácteos y huevos',
+  starch: 'Almacén',
+  cereal: 'Almacén',
+  'sport-carb': 'Almacén',
+  'protein-snack': 'Almacén',
+  fat: 'Almacén',
   whey: 'Suplementos',
 };
-const SHOP_ORDER = ['Carnes y pescados', 'Huevos y lácteos', 'Snacks proteicos', 'Almidones y cereales', 'Carbos de entreno', 'Frutas y vegetales', 'Grasas saludables', 'Suplementos', 'Otros'];
+const SHOP_ORDER = ['Verdulería', 'Carnicería / Pescadería', 'Almacén', 'Almacén · Lácteos y huevos', 'Suplementos', 'Otros'];
+
+/**
+ * Reglas de compra por alimento (pesos del plan en cocido → peso de compra):
+ *  · carnes ×1,3 (crudo) · arroz / fideos / legumbres ÷2,5 (seco, en paquetes de 500 g);
+ *  · variedades idénticas unificadas (avena) · mínimos comerciales (frutos secos: bolsita de 100 g).
+ */
+const SHOP_RULES: Record<string, { name?: string; key?: string; factor?: number; state?: 'raw' | 'dry'; pack?: number; min?: number; minLabel?: string; section?: string; byUnit?: number; unitLabel?: string }> = {
+  pollo: { name: 'Pechuga de pollo (cruda)', factor: 1.3, state: 'raw' },
+  cuadril: { name: 'Cuadril magro (crudo)', factor: 1.3, state: 'raw' },
+  lomo: { name: 'Lomo vacuno (crudo)', factor: 1.3, state: 'raw' },
+  nalga: { name: 'Nalga / peceto (crudo)', factor: 1.3, state: 'raw' },
+  picada: { name: 'Carne picada especial 5 % (cruda)', factor: 1.3, state: 'raw' },
+  merluza: { name: 'Merluza (filet crudo)', factor: 1.3, state: 'raw' },
+  cerdo: { name: 'Bondiola / carré magro de cerdo (crudo)', factor: 1.3, state: 'raw' },
+  arroz: { name: 'Arroz blanco (paquete)', factor: 1 / 2.5, state: 'dry', pack: 500 },
+  yamani: { name: 'Arroz yamaní (paquete)', factor: 1 / 2.5, state: 'dry', pack: 500 },
+  fideos: { name: 'Fideos secos (paquete)', factor: 1 / 2.5, state: 'dry', pack: 500 },
+  lentejas: { name: 'Lentejas secas (paquete)', factor: 1 / 2.5, state: 'dry', pack: 500 },
+  papa: { section: 'Verdulería', name: 'Papa' },
+  batata: { section: 'Verdulería', name: 'Batata' },
+  isotonica: { name: 'Bebida isotónica (500 ml)', byUnit: 500, unitLabel: 'botellas' },
+  oliva: { name: 'Aceite de oliva extra virgen', min: 500, minLabel: '1 botella (500 ml)' },
+  palta: { section: 'Verdulería' },
+  avena: { key: 'avena', name: 'Avena (entera o instantánea)' },
+  'avena-instantanea': { key: 'avena', name: 'Avena (entera o instantánea)' },
+  nueces: { name: 'Nueces / frutos secos', min: 100, minLabel: '1 bolsita (100 g)' },
+};
+const SHOP_ORDER_FALLBACK = 'Otros';
 
 export function slugify(s: string) {
   return (
@@ -108,11 +136,17 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     citations: [CITES.morton, CITES.aragon, CITES.leucine, CITES.carbs, CITES.ea],
     generatedLabel: d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     hydration: plan.hydration,
-    training: { time: pr.trainingTime, minutes: pr.sessionMinutes },
+    // Franja exacta del entreno (inicio HH:MM + minutos numéricos): el timeline no puede quedar corrido ni infinito.
+    training: {
+      time: /^\d{1,2}:\d{2}$/.test(pr.trainingTime ?? '') ? pr.trainingTime.padStart(5, '0') : '18:00',
+      minutes: Math.min(300, Math.max(15, Math.round(Number(pr.sessionMinutes) || 60))),
+    },
     trainingDays: pr.trainingDaysPerWeek,
     trainingWeekdays: trainingWeekdays(pr),
     categories: SHOP_CATEGORY,
     categoryOrder: SHOP_ORDER,
+    shopRules: SHOP_RULES,
+    shopFallback: SHOP_ORDER_FALLBACK,
     manifest: { ...manifest, icons: [] },
     // Prompt del análisis de foto en el celular del atleta (la API key la carga el atleta en su dispositivo; nunca viaja en el plan).
     scanPrompt: `${SCAN_PROMPT}\nAgregá a cada item "leucine" (g estimados de leucina para esa porción).`,
@@ -134,7 +168,8 @@ Devolvé OBLIGATORIAMENTE sólo un JSON válido, sin texto extra:
 { "productName": string, "brand": string, "servingG": number,
   "per100": { "kcal": number, "p": number, "c": number, "f": number, "sodiumMg": number },
   "perServing": { "kcal": number, "p": number, "c": number, "f": number, "sodiumMg": number } }
-Usá null en lo que no se lea con claridad. Kcal en kcal (no kJ).`;
+Usá null en lo que no se lea con claridad. Kcal en kcal (no kJ).
+Si la foto NO es una tabla nutricional sino un plato de comida servido (sin texto de etiqueta), devolvé sólo: { "isLabel": false, "looksLike": "plate" }.`;
 
 const FONTS = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap';
 
