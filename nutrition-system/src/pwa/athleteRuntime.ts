@@ -25,13 +25,32 @@ const runtime = String.raw`
   };
 
   function isoDay(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+  function addDays(iso, n) { var d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function weekOf(d) { var m = new Date(d); m.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoDay(m); }
   var now = new Date();
   var today = isoDay(now);
-  var monday = new Date(now); monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  var weekKey = isoDay(monday);
+  var weekKey = weekOf(now);
+  var WD = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
+  var MO = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+
+  function dateLabel(iso) {
+    var d = new Date(iso + 'T12:00:00');
+    var rel = iso === today ? 'HOY, ' : iso === addDays(today, -1) ? 'AYER, ' : iso === addDays(today, 1) ? 'MAÑANA, ' : '';
+    return rel + WD[d.getDay()] + ' ' + pad2(d.getDate()) + ' ' + MO[d.getMonth()];
+  }
+
+  // ON / OFF automático según el cronograma semanal del atleta; el switch manual guarda una excepción por fecha.
+  function scheduledMode(iso) {
+    var wd = D.trainingWeekdays;
+    if (!wd || !wd.length) return D.initialMode;
+    return wd.indexOf(new Date(iso + 'T12:00:00').getDay()) >= 0 ? 'on' : 'off';
+  }
+  function modeFor(iso) { return store.get('mode:' + iso, null) || scheduledMode(iso); }
 
   var S = {
-    mode: D.preview ? D.initialMode : store.get('mode', D.initialMode),
+    date: today,
+    mode: D.preview ? D.initialMode : modeFor(today),
     checks: store.get('checks:' + today, {}),
     swaps: store.get('swaps', {}),
     water: store.get('water:' + today, 0),
@@ -40,8 +59,11 @@ const runtime = String.raw`
     panel: null,
     itab: 'ios',
     photo: null,
-    dialOpen: store.get('dialOpen', false),
+    tlOpen: store.get('tlOpen', false),
+    dirOpen: false,
     extras: store.get('extras:' + today, {}),
+    scanTab: 'plate',
+    portions: 1,
     aiCfg: false,
     scan: null,
     scanBusy: false,
@@ -71,7 +93,7 @@ const runtime = String.raw`
   var CHECK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
   // ---------- Datos del día ----------
-  var MACRO_GROUPS = { p: ['lean-protein', 'dairy-protein', 'eggs'], c: ['cereal', 'starch', 'fruit', 'sport-carb'], f: ['fat'] };
+  var MACRO_GROUPS = { p: ['lean-protein', 'dairy-protein', 'eggs', 'protein-snack'], c: ['cereal', 'starch', 'fruit', 'sport-carb'], f: ['fat'] };
   var ANCHOR_LABEL = { p: 'proteína', c: 'carbohidratos', f: 'grasas' };
   function kcal100(f) { return f.p * 4 + f.c * 4 + f.f * 9; }
 
@@ -117,17 +139,71 @@ const runtime = String.raw`
     return { id: it.id, foodId: sw, food: to.name, grams: grams, p: to.p * k, c: to.c * k, f: to.f * k, leucine: to.leucine * k, swappedFrom: src.name };
   }
 
-  function mealsFor(mode) {
+  // Día OFF: no hay sesión → los bloques pre / peri-entreno se muestran como merienda de saciedad.
+  var PERI_RE = /pre.?entreno|pre.?wod|peri.?wod|peri.?entreno|intra|glucol[ií]tico|para entrenar/i;
+  function isOffPeri(m, mode) { return mode === 'off' && (m.role === 'peri' || PERI_RE.test(m.name)); }
+  function mealName(m, mode) { return isOffPeri(m, mode) ? 'Merienda Táctica OFF' : m.name; }
+
+  function mealsFor(mode, extras) {
+    extras = extras || S.extras;
     var base = D.meals.filter(function (m) { return m.day === 'both' || m.day === mode; });
-    var out = S.extras.__out;
+    var out = extras.__out;
     if (out && out.length) base = base.concat([{ id: '__out', name: 'Fuera del plan · análisis IA', time: out[0].at || '12:00', day: mode, role: 'snack', mps: false, items: [] }]);
     return base
       .sort(function (a, b) { return a.time.localeCompare(b.time); })
       .map(function (m) {
-        var items = m.items.map(resolveItem).concat(S.extras[m.id] || []);
+        var items = m.items.map(resolveItem).concat(extras[m.id] || []);
         var t = items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
         return { m: m, items: items, t: t, kcal: t.p * 4 + t.c * 4 + t.f * 9 };
       });
+  }
+
+  // Cumplimiento: todas las comidas tildadas y kcal dentro de ±5 % del plan.
+  var ADHERENCE_TOL = 0.05;
+
+  function daySummary(iso) {
+    var cur = iso === S.date;
+    var checks = cur ? S.checks : store.get('checks:' + iso, {});
+    var mode = cur ? S.mode : modeFor(iso);
+    var list = mealsFor(mode, cur ? S.extras : store.get('extras:' + iso, {}));
+    var tgt = D.targets[mode];
+    var done = 0, k = 0;
+    list.forEach(function (x) { if (checks[x.m.id]) { done++; k += x.kcal; } });
+    var pct = tgt.kcal ? k / tgt.kcal : 0;
+    return { date: iso, mode: mode, done: done, total: list.length, kcal: Math.round(k), target: tgt.kcal, pct: Math.round(pct * 100), adherent: list.length > 0 && done === list.length && Math.abs(pct - 1) <= ADHERENCE_TOL };
+  }
+
+  var H = store.get('history', {});
+  function archive(iso) {
+    if (D.preview || iso > today) return;
+    var sum = daySummary(iso);
+    // Sin registros locales para esa fecha: se conserva lo ya archivado (nunca se pisa con un día vacío).
+    if (!sum.done && (iso === S.date ? !Object.keys(S.checks).length : store.get('checks:' + iso, null) === null)) return;
+    H[iso] = sum;
+    store.set('history', H);
+  }
+
+  // Racha: días consecutivos en adherencia total hasta hoy (hoy cuenta sólo si ya está cumplido).
+  function streak() {
+    var n = daySummary(today).adherent ? 1 : 0;
+    var d = addDays(today, -1);
+    for (var i = 0; i < 400; i++) {
+      var h = H[d];
+      if (!h || !h.adherent) break;
+      n++;
+      d = addDays(d, -1);
+    }
+    return n;
+  }
+
+  // Cambia el día consultado (historial hacia atrás, vista previa del plan hacia adelante).
+  function loadDay(iso) {
+    if (S.date !== iso) archive(S.date);
+    S.date = iso;
+    S.checks = store.get('checks:' + iso, {});
+    S.water = store.get('water:' + iso, 0);
+    S.extras = store.get('extras:' + iso, {});
+    if (!D.preview) S.mode = modeFor(iso);
   }
 
   function unitHintFor(foodId, grams) {
@@ -153,10 +229,7 @@ const runtime = String.raw`
   // ---------- 1 · Gauge semi-arco ----------
   function arcD(cx, cy, r) { return 'M' + (cx - r) + ' ' + cy + ' A' + r + ' ' + r + ' 0 0 1 ' + (cx + r) + ' ' + cy; }
 
-  // Día completado: todas las comidas tildadas y kcal dentro de ±10 % del plan → adherencia total (no "faltan" kcal).
-  var ADHERENCE_TOL = 0.1;
-
-  function gauge(tgt, eaten, complete) {
+  function gauge(tgt, eaten, complete, run) {
     var r = 118, len = Math.PI * r, pct = complete ? 1 : tgt.kcal ? Math.min(1, eaten.k / tgt.kcal) : 0;
     var left = tgt.kcal - eaten.k;
     var ticks = '';
@@ -164,15 +237,16 @@ const runtime = String.raw`
       var a = Math.PI - (i / 20) * Math.PI, r1 = i % 5 ? 132 : 128, r2 = 138;
       ticks += '<line x1="' + (150 + r1 * Math.cos(a)).toFixed(1) + '" y1="' + (146 - r1 * Math.sin(a)).toFixed(1) + '" x2="' + (150 + r2 * Math.cos(a)).toFixed(1) + '" y2="' + (146 - r2 * Math.sin(a)).toFixed(1) + '" stroke="rgba(148,163,184,' + (i % 5 ? '.25' : '.55') + ')" stroke-width="1.2"/>';
     }
-    var h = '<div class="gauge"><svg viewBox="0 0 300 156" aria-hidden="true">' + ticks;
+    var h = '<div class="gauge' + (complete ? ' won' : '') + '"><svg viewBox="0 0 300 156" aria-hidden="true">' + ticks;
     h += '<path d="' + arcD(150, 146, r) + '" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="12" stroke-linecap="round"/>';
     h += '<path d="' + arcD(150, 146, r) + '" fill="none" stroke="' + (!complete && left < 0 ? '#F97316' : '#38BDF8') + '" stroke-width="12" stroke-linecap="round" stroke-dasharray="' + len.toFixed(1) + '" stroke-dashoffset="' + (len * (1 - pct)).toFixed(1) + '" style="transition:stroke-dashoffset .6s cubic-bezier(.2,.8,.2,1)"' + (complete ? ' class="glow"' : '') + '/>';
     if (complete) {
-      h += '</svg><div class="gv done"><div class="glabel">[ DÍA COMPLETADO · ADHERENCIA TOTAL ]</div><div class="gnum">OBJETIVO</div><div class="gsub">' + n0(eaten.k) + ' / ' + n0(tgt.kcal) + ' kcal · ' + n0((eaten.k / tgt.kcal) * 100) + ' % del plan</div></div></div>';
+      h += '</svg><div class="gv done"><div class="glabel">[ PROTOCOLO CUMPLIDO · ADHERENCIA TOTAL ]</div><div class="gnum">100%</div><div class="gsub">' + n0(eaten.k) + ' / ' + n0(tgt.kcal) + ' kcal · OBJETIVO</div></div></div>';
     } else {
       h += '</svg><div class="gv"><div class="glabel">' + (left >= 0 ? 'KCAL RESTANTES' : 'KCAL EXCEDIDAS') + '</div><div class="gnum' + (left < 0 ? ' over' : '') + '">' + n0(Math.abs(left)) + '</div><div class="gsub">' + n0(eaten.k) + ' / ' + n0(tgt.kcal) + ' kcal</div></div></div>';
     }
     h += '<div class="minis">' + mini('PROTEÍNA', eaten.p, tgt.p, '#38BDF8', complete) + mini('CARBOS', eaten.c, tgt.c, '#7DD3FC', complete) + mini('GRASAS', eaten.f, tgt.f, '#F97316', complete) + '</div>';
+    if (run > 0) h += '<div class="streak' + (complete ? ' hot' : '') + '">🔥 ' + run + ' DÍA' + (run > 1 ? 'S' : '') + ' EN ADHERENCIA</div>';
     return h;
   }
 
@@ -193,65 +267,59 @@ const runtime = String.raw`
     return h + '</section>';
   }
 
-  // ---------- 3 · Dial peri-entreno 24 h ----------
-  function polar(r, min) { var a = (min / 1440) * 2 * Math.PI - Math.PI / 2; return [110 + r * Math.cos(a), 110 + r * Math.sin(a)]; }
-  function arc(r, m0, m1) {
-    if (m1 < m0) m1 += 1440;
-    var p0 = polar(r, m0), p1 = polar(r, m1), large = m1 - m0 > 720 ? 1 : 0;
-    return 'M' + p0[0].toFixed(1) + ' ' + p0[1].toFixed(1) + ' A' + r + ' ' + r + ' 0 ' + large + ' 1 ' + p1[0].toFixed(1) + ' ' + p1[1].toFixed(1);
-  }
+  // ---------- 3 · Timeline peri-entreno 06:00 → 23:00 ----------
+  var T0 = 6 * 60, T1 = 23 * 60;
+  function tx(min) { return Math.max(0, Math.min(100, ((min - T0) / (T1 - T0)) * 100)); }
+  function hhmm(min) { min = ((min % 1440) + 1440) % 1440; return pad2(Math.floor(min / 60)) + ':' + pad2(min % 60); }
 
-  function dial(mode, list) {
+  function timeline(mode, list) {
     var start = toMin(D.training.time), end = start + D.training.minutes, nowMin = now.getHours() * 60 + now.getMinutes();
-    var inWindow = mode === 'on' && nowMin >= start - 90 && nowMin <= end + 60;
+    var live = S.date === today;
     var next = null;
-    list.forEach(function (x) { var t = toMin(x.m.time); if (!S.checks[x.m.id] && t >= nowMin && (!next || t < toMin(next.m.time))) next = x; });
-    var info = next
-      ? '<b>' + esc(next.m.name) + '</b><span>' + esc(next.m.time) + ' · en ' + fmtDur(toMin(next.m.time) - nowMin) + '</span>'
-      : '<b>Sin comidas pendientes</b><span>Plan del día al día</span>';
-    var rel = '';
-    if (mode === 'on') {
-      if (nowMin < start) rel = 'Sesión ' + esc(D.training.time) + ' · en ' + fmtDur(start - nowMin);
-      else if (nowMin <= end) rel = 'SESIÓN EN CURSO · quedan ' + fmtDur(end - nowMin);
-      else rel = 'Sesión terminada hace ' + fmtDur(nowMin - end);
-    }
-    var sess = mode === 'on'
-      ? '<em class="' + (inWindow ? 'hot' : '') + '">' + (inWindow ? 'VENTANA PERI-ENTRENO ACTIVA · ' : '') + rel + '</em>'
-      : '<em>DÍA OFF · sin sesión</em>';
-    var nowLbl = (now.getHours() < 10 ? '0' : '') + now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+    if (live) list.forEach(function (x) { var t = toMin(x.m.time); if (!S.checks[x.m.id] && t >= nowMin && (!next || t < toMin(next.m.time))) next = x; });
+    var peek = !live
+      ? list.length + ' comidas · ' + (mode === 'on' ? 'entreno ' + hhmm(start) + '–' + hhmm(end) : 'día OFF')
+      : next ? 'Próxima: ' + esc(mealName(next.m, mode)) + ' · ' + esc(next.m.time) : 'Sin ingestas pendientes';
 
-    var h = '<section class="card dialcard"><button class="dial-hd" data-dial="1" aria-expanded="' + (S.dialOpen ? 'true' : 'false') + '"><span class="tag">[ DIAL PERI-ENTRENO · 24 H ]</span>';
-    h += '<span class="dial-peek">' + (S.dialOpen ? '' : (next ? esc(next.m.time) + ' · ' + esc(next.m.name) : 'Día completo')) + '</span><span class="chev' + (S.dialOpen ? ' up' : '') + '"></span></button>';
-    if (!S.dialOpen) return h + '</section>';
+    var h = '<section class="card tlcard"><button class="tl-hd" data-tl="1" aria-expanded="' + (S.tlOpen ? 'true' : 'false') + '"><span class="tag">[ TIMELINE PERI-ENTRENO ' + (S.tlOpen ? '▴' : '▾') + ' ]</span><span class="tl-peek">' + peek + '</span></button>';
+    if (!S.tlOpen) return h + '</section>';
 
-    var hand = inWindow ? '#F97316' : '#38BDF8';
-    var s = '<svg viewBox="0 0 220 220" aria-hidden="true"><circle cx="110" cy="110" r="86" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="10"/>';
+    var track = '';
     if (mode === 'on') {
-      s += '<path d="' + arc(86, (start - 90 + 1440) % 1440, (end + 60) % 1440) + '" fill="none" stroke="rgba(56,189,248,.22)" stroke-width="16"/>';
-      s += '<path d="' + arc(86, start, end % 1440) + '" fill="none" stroke="#F97316" stroke-width="10" stroke-linecap="round"/>';
+      track += '<div class="tl-win" style="left:' + tx(start - 90).toFixed(2) + '%;width:' + (tx(end + 60) - tx(start - 90)).toFixed(2) + '%"></div>';
+      track += '<div class="tl-train" style="left:' + tx(start).toFixed(2) + '%;width:' + Math.max(1.5, tx(end) - tx(start)).toFixed(2) + '%"></div>';
     }
-    for (var hr = 0; hr < 24; hr++) {
-      var a = polar(hr % 6 ? 74 : 69, hr * 60), b = polar(78, hr * 60);
-      s += '<line x1="' + a[0].toFixed(1) + '" y1="' + a[1].toFixed(1) + '" x2="' + b[0].toFixed(1) + '" y2="' + b[1].toFixed(1) + '" stroke="rgba(148,163,184,' + (hr % 6 ? '.25' : '.7') + ')" stroke-width="' + (hr % 6 ? 1.2 : 1.8) + '"/>';
-    }
-    [[0, '24:00'], [6, '06:00'], [12, '12:00'], [18, '18:00']].forEach(function (q) {
-      var t = polar(q[0] % 12 ? 50 : 56, q[0] * 60);
-      s += '<text x="' + t[0].toFixed(1) + '" y="' + (t[1] + 3.5).toFixed(1) + '" text-anchor="middle" class="dl">' + q[1] + '</text>';
-    });
     list.forEach(function (x) {
-      var p = polar(86, toMin(x.m.time)), done = !!S.checks[x.m.id], peri = x.m.role === 'peri' || x.m.role === 'post';
-      s += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="5.5" fill="' + (done ? '#38BDF8' : '#131B2A') + '" stroke="' + (peri ? '#F97316' : '#38BDF8') + '" stroke-width="2"/>';
+      var t = toMin(x.m.time), done = !!S.checks[x.m.id];
+      track += '<span class="tl-dot' + (done ? ' done' : '') + (next && next.m.id === x.m.id ? ' next' : '') + '" style="left:' + tx(t).toFixed(2) + '%" title="' + esc(x.m.time + ' · ' + mealName(x.m, mode)) + '"></span>';
     });
-    // Aguja de la hora actual: llega al anillo, con halo y color de la ventana (naranja = peri-entreno activo).
-    var tip = polar(86, nowMin);
-    s += '<line x1="110" y1="110" x2="' + tip[0].toFixed(1) + '" y2="' + tip[1].toFixed(1) + '" stroke="' + hand + '" stroke-width="2.4" stroke-linecap="round"/>';
-    s += '<circle cx="' + tip[0].toFixed(1) + '" cy="' + tip[1].toFixed(1) + '" r="9" fill="' + hand + '" opacity=".25"><animate attributeName="r" values="7;11;7" dur="2s" repeatCount="indefinite"/></circle>';
-    s += '<circle cx="' + tip[0].toFixed(1) + '" cy="' + tip[1].toFixed(1) + '" r="4.5" fill="' + hand + '" stroke="#0B0F17" stroke-width="1.5"/>';
-    s += '<circle cx="110" cy="110" r="3.5" fill="#FFFFFF"/>';
-    s += '<text x="110" y="132" text-anchor="middle" class="dnow" fill="' + hand + '">AHORA ' + nowLbl + '</text></svg>';
+    if (live && nowMin >= T0 && nowMin <= T1) track += '<div class="tl-now" style="left:' + tx(nowMin).toFixed(2) + '%"><span>' + hhmm(nowMin) + '</span></div>';
 
-    h += '<div class="dial">' + s + '<div class="dinfo"><small>PRÓXIMA INGESTA</small>' + info + sess + '</div></div>';
-    h += '<div class="legend"><span><i class="lg-s"></i>Sesión</span><span><i class="lg-w"></i>Ventana peri</span><span><i class="lg-m"></i>Comida</span><span><i class="lg-p"></i>Peri / post</span><span><i class="lg-n"></i>Ahora</span></div></section>';
+    var axis = '';
+    var showNow = live && nowMin >= T0 && nowMin <= T1;
+    [6, 9, 12, 15, 18, 23].forEach(function (hr) {
+      // La etiqueta de la hora actual reemplaza a la marca del eje que tendría encima.
+      if (showNow && Math.abs(tx(hr * 60) - tx(nowMin)) < 7) return;
+      axis += '<span style="left:' + tx(hr * 60).toFixed(2) + '%">' + pad2(hr) + ':00</span>';
+    });
+    var labels = '';
+    list.forEach(function (x, i) { labels += '<span class="' + (i % 2 ? 'dn' : 'up') + '" style="left:' + tx(toMin(x.m.time)).toFixed(2) + '%">' + esc(x.m.time) + '</span>'; });
+
+    var info;
+    if (!live) info = '<b>' + (S.date < today ? 'Registro del ' : 'Plan del ') + dateLabel(S.date) + '</b>';
+    else if (next) info = 'Próxima ingesta: <b>' + esc(mealName(next.m, mode)) + '</b> en ' + fmtDur(toMin(next.m.time) - nowMin);
+    else info = '<b>Sin ingestas pendientes</b> · plan del día al día';
+    var rel = '';
+    if (mode === 'on' && live) {
+      if (nowMin < start) rel = 'Entreno ' + hhmm(start) + '–' + hhmm(end) + ' · en ' + fmtDur(start - nowMin);
+      else if (nowMin <= end) rel = '<em class="hot">SESIÓN EN CURSO · quedan ' + fmtDur(end - nowMin) + '</em>';
+      else rel = 'Entreno terminado hace ' + fmtDur(nowMin - end) + ' · ventana de recuperación';
+    } else if (mode === 'on') rel = 'Entreno ' + hhmm(start) + '–' + hhmm(end);
+    else rel = 'DÍA OFF · sin sesión';
+
+    h += '<div class="tl"><div class="tl-labels">' + labels + '</div><div class="tl-track">' + track + '</div><div class="tl-axis">' + axis + '</div></div>';
+    h += '<div class="tl-info"><div>' + info + '</div><span>' + rel + '</span></div>';
+    h += '<div class="legend"><span><i class="lg-s"></i>Entreno</span><span><i class="lg-w"></i>Ventana peri</span><span><i class="lg-m"></i>Comida</span><span><i class="lg-n"></i>Ahora</span></div></section>';
     return h;
   }
 
@@ -330,14 +398,24 @@ const runtime = String.raw`
       rules.forEach(function (r, i) { h3 += '<details class="rule"' + (i === 0 ? ' open' : '') + '><summary><span class="n">' + (i + 1) + '</span>' + esc(r[0]) + '</summary><p>' + esc(r[1]) + '</p></details>'; });
       return open(bg, sh, h3);
     }
+    if (S.panel === 'guide') {
+      var g = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ ? GUÍA · MANUAL TÁCTICO DEL ATLETA ]</div><h3>Cómo funciona tu plan</h3>';
+      g += '<p class="muted" style="font-size:12.5px">Lenguaje directo. Tocá cada tema para abrirlo.</p>';
+      GUIDE.forEach(function (r, i) {
+        g += '<details class="rule"' + (i === 0 ? ' open' : '') + '><summary><span class="n">' + (i + 1) + '</span>' + esc(r[0]) + '</summary>' + r[1].map(function (p) { return '<p>' + p + '</p>'; }).join('') + '</details>';
+      });
+      return open(bg, sh, g);
+    }
     if (S.panel === 'photo') {
       var meals = mealsFor(S.mode).filter(function (x) { return x.m.id !== '__out'; });
       var key = getKey();
-      var h4 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ REVISIÓN DE COMIDA · FOTO ]</div><h3>' + (key ? 'Analizá tu plato con IA' : 'Mandale tu plato al coach') + '</h3>';
-      h4 += '<p class="muted" style="font-size:12.5px">' + (key
-        ? 'El análisis corre directo en tu celular con tu propia clave de Gemini. También podés mandarle la foto a tu coach.'
-        : 'La foto viaja a tu coach por WhatsApp. Si cargás tu propia clave de Gemini, la app analiza el plato acá mismo.') + '</p>';
-      if (S.photo) h4 += '<img class="ph" src="' + S.photo.url + '" alt="Foto del plato">';
+      var lbl = S.scanTab === 'label';
+      var h4 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ FOTO · IA · ESCÁNER DUAL ]</div><h3>' + (key ? (lbl ? 'Escaneá la tabla nutricional' : 'Analizá tu plato con IA') : 'Mandale tu foto al coach') + '</h3>';
+      if (key) h4 += '<div class="tabs scantabs"><button data-scantab="plate" class="' + (!lbl ? 'on' : '') + '">[ PLATO DE COMIDA ]</button><button data-scantab="label" class="' + (lbl ? 'on' : '') + '">[ TABLA NUTRICIONAL ]</button></div>';
+      h4 += '<p class="muted" style="font-size:12.5px;margin-top:8px">' + (key
+        ? (lbl ? 'Sacale foto a la tabla de información nutricional del envase: se extraen porción, kcal, proteínas, carbos, grasas y sodio.' : 'Volumen visual, ingredientes, macros y calorías estimadas, directo en tu celular con tu clave de Gemini.')
+        : 'La foto viaja a tu coach por WhatsApp. Si cargás tu propia API Key de Gemini, la app analiza platos y tablas nutricionales acá mismo.') + '</p>';
+      if (S.photo) h4 += '<img class="ph" src="' + S.photo.url + '" alt="Foto a analizar">';
       h4 += '<label class="lbl">¿Qué comida es?</label><select id="ph-meal" class="inp">' + meals.map(function (x) {
         return '<option value="' + esc(x.m.id) + '"' + (S.phMeal === x.m.id ? ' selected' : '') + '>' + esc(x.m.time + ' · ' + x.m.name) + '</option>';
       }).join('') + '<option value="__out"' + (S.phMeal === '__out' ? ' selected' : '') + '>Fuera del plan</option></select>';
@@ -345,13 +423,13 @@ const runtime = String.raw`
 
       if (S.scanBusy) h4 += '<div class="scan-busy"><span class="spin"></span>' + esc(S.scanBusy) + '</div>';
       if (S.scanErr) h4 += '<div class="scan-err">⚠ ' + esc(S.scanErr) + '</div>';
-      if (S.scan) h4 += scanCard(S.scan);
+      if (S.scan) h4 += S.scan.kind === 'label' ? labelCard(S.scan) : scanCard(S.scan);
 
       h4 += '<div class="wbtns" style="margin-top:12px"><button data-photo="retake" class="ghost">Otra foto</button>';
-      if (key) h4 += '<button data-photo="ai" class="cta"' + (S.scanBusy ? ' disabled' : '') + '>[ ANALIZAR PLATO CON IA ]</button></div><div class="wbtns"><button data-photo="send" class="ghost">Enviar foto por WhatsApp al coach</button></div>';
+      if (key) h4 += '<button data-photo="ai" class="cta"' + (S.scanBusy ? ' disabled' : '') + '>' + (lbl ? '[ LEER TABLA NUTRICIONAL ]' : '[ ANALIZAR PLATO CON IA ]') + '</button></div><div class="wbtns"><button data-photo="send" class="ghost">Enviar foto por WhatsApp al coach</button></div>';
       else h4 += '<button data-photo="send" class="cta">Enviar foto por WhatsApp al coach</button></div>';
 
-      h4 += '<button class="cfg-link" data-aicfg="toggle">[ ⚙ CONFIGURAR MOTOR IA ]' + (key ? ' · CLAVE ACTIVA' : '') + '</button>';
+      h4 += '<button class="cfg-link" data-aicfg="toggle">[ ⚙ CONFIGURAR API KEY GEMINI ]' + (key ? ' · CLAVE ACTIVA' : '') + '</button>';
       if (S.aiCfg) {
         h4 += '<div class="cfg"><label class="lbl" style="margin-top:0">API Key de Google Gemini</label><input id="ai-key" class="inp" type="password" autocomplete="off" spellcheck="false" placeholder="AIza..." value="' + esc(key) + '">';
         h4 += '<p class="muted" style="font-size:11.5px;margin-top:6px">Se guarda solo en este dispositivo (localStorage), nunca se envía a tu coach ni queda en el plan. Modelo: gemini-3.5-flash-lite con respaldo gemini-3.5-flash. Creá tu clave gratis en aistudio.google.com.</p>';
@@ -359,6 +437,20 @@ const runtime = String.raw`
       }
       return open(bg, sh, h4);
     }
+  }
+
+  function labelCard(r) {
+    var k = (r.servingG * S.portions) / 100;
+    var row = function (l, v, u) { return '<div class="lt-row"><span>' + l + '</span><b>' + v + (u ? ' ' + u : '') + '</b></div>'; };
+    var h = '<div class="scan"><div class="tag">[ TABLA NUTRICIONAL · ' + esc(r.brand || 'PRODUCTO') + ' ]</div><b class="scan-nm">' + esc(r.name) + '</b>';
+    h += '<div class="lt"><div class="lt-hd"><span>Por porción (' + n0(r.servingG) + ' g)</span><span>Consumido</span></div>';
+    [['Energía', 'kcal', 'kcal'], ['Proteínas', 'p', 'g'], ['Carbohidratos', 'c', 'g'], ['Grasas', 'f', 'g'], ['Sodio', 'sodium', 'mg']].forEach(function (q) {
+      var per = r.per100[q[1]] * r.servingG / 100;
+      h += '<div class="lt-row"><span>' + q[0] + '</span><i>' + (q[1] === 'sodium' ? n0(per) : n1(per)) + ' ' + q[2] + '</i><b>' + (q[1] === 'sodium' ? n0(r.per100[q[1]] * k) : n1(r.per100[q[1]] * k)) + ' ' + q[2] + '</b></div>';
+    });
+    h += '</div><label class="lbl">Porciones consumidas</label><div class="portions"><button data-portion="-0.5">−</button><b>' + n1(S.portions) + '</b><button data-portion="0.5">+</button><span>= ' + n0(r.servingG * S.portions) + ' g</span></div>';
+    h += '<button class="add-meal" data-photo="add">[ + SUMAR A LA INGESTA SELECCIONADA ]</button></div>';
+    return h;
   }
 
   function scanCard(r) {
@@ -400,6 +492,31 @@ const runtime = String.raw`
     open(bg, sh, h);
   }
 
+  // ---------- Manual y glosario táctico ----------
+  var GUIDE = [
+    ['¿DÍA ON vs DÍA OFF?', [
+      'Los carbohidratos son el combustible del entreno intenso: se guardan como <b>glucógeno</b> en músculo e hígado. Los días que entrenás (<b>ON</b>) el plan sube los carbos para llegar con el tanque lleno y recargar después.',
+      'Los días de descanso (<b>OFF</b>) la demanda de glucógeno baja: se recortan carbos, se suben un poco las grasas y la proteína queda igual. Así sostenés el déficit sin perder rendimiento.',
+      'La app elige ON u OFF sola según tu cronograma semanal. Si cambiás la rutina, usá el switch: queda guardado para ese día.',
+    ]],
+    ['¿QUÉ ES EL UMBRAL DE LEUCINA (mTOR)?', [
+      'La <b>leucina</b> es el aminoácido que «enciende» la síntesis de proteína muscular (la vía mTOR). Hace falta llegar a <b>~2,7 g por comida</b> para activarla al máximo.',
+      'Por eso cuidamos el umbral en las <b>comidas principales</b>: desayuno, almuerzo, cena y post-entreno. Ahí se juega la ganancia y la preservación de músculo.',
+      'Las colaciones, meriendas y snacks son <b>ingestas auxiliares</b>: sirven para controlar el hambre y la glucemia. No necesitan llegar al umbral, no hace falta agregarles huevo ni proteína en polvo.',
+    ]],
+    ['CÓMO USAR LOS INTERCAMBIOS (SWAP)', [
+      'Tocá <b>SWAP</b> al lado de cualquier alimento y elegí otro de la lista: los gramos ya vienen calculados para aportar lo mismo del macro que importa (proteína, carbos o grasas).',
+      'Ejemplo: 180 g de pechuga de pollo equivalen a ~190 g de cuadril magro o ~240 g de merluza. El balance del día se mantiene.',
+      'Para volver al alimento original, abrí el SWAP otra vez y elegí el marcado como «original». Pesá siempre en cocido (carnes, arroz, fideos, papa).',
+    ]],
+    ['PROTOCOLO DE RESCATE SOCIAL', [
+      '<b>Asado / parrilla:</b> priorizá cortes magros (vacío desgrasado, entraña, lomo, pollo). Achuras y chorizo, de a uno y compartido. Ensalada en vez de pan.',
+      '<b>Eventos y salidas:</b> proteína primero, carbos según el día. Aderezos aparte y nada de rebozados. Si sabés que salís, guardá 20-30 % de los carbos del día.',
+      '<b>Alcohol:</b> máximo 1-2 copas y nunca en la ventana post-entreno. Agua o soda en el medio.',
+      '<b>Si te pasaste:</b> no compenses salteando comidas. Retomá el plan en la próxima ingesta y seguí la racha.',
+    ]],
+  ];
+
   // ---------- Render principal ----------
   function render() {
     try {
@@ -423,19 +540,25 @@ const runtime = String.raw`
     var complete = list.length > 0 && doneCount === list.length && tgt.kcal > 0 && Math.abs(eaten.k / tgt.kcal - 1) <= ADHERENCE_TOL;
     var h = '';
 
-    h += '<header class="top">' + D.mark + '<div><div class="brand">COACH JP</div><div class="badge">[ BIOENERGETICS &amp; NUTRITION ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div></header>';
-    h += '<div class="tag">[ PLAN NUTRICIONAL · ' + esc(D.athlete.discipline) + ' ]</div>';
-    h += '<h1>' + esc(D.athlete.name) + '</h1>';
-    if (D.coachNote) h += '<p class="note">' + esc(D.coachNote) + '</p>';
+    // Fila 1 · HUD: logo + marca + fase + guía.
+    h += '<header class="top">' + D.markSm + '<div class="tb"><div class="brand">COACH JP</div><div class="badge">[ BIOENERGETICS &amp; NUTRITION ]</div></div><div class="phase">' + esc(D.athlete.phase) + '</div><button class="guide-btn" data-panel="guide" aria-label="Guía">[ ? GUÍA ]</button></header>';
+    // Fila 2 · atleta + selector de fecha.
+    h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + '</span></div>';
+    h += '<div class="datesel"><button data-day="-1" aria-label="Día anterior">◀</button><span class="dlab' + (S.date === today ? ' now' : '') + '">' + dateLabel(S.date) + '</span><button data-day="1" aria-label="Día siguiente">▶</button></div></div>';
+    if (S.date !== today) h += '<button class="back-today" data-day="0">' + (S.date < today ? '◷ REGISTRO HISTÓRICO' : '◷ VISTA ANTICIPADA DEL PLAN') + ' · VOLVER A HOY</button>';
+    if (D.coachNote) {
+      var head = D.coachNote.split(/[.!?](\s|$)/)[0];
+      h += '<div class="directive' + (S.dirOpen ? ' open' : '') + '"><button data-dir="1"><span class="dh">🎯 <b>Directiva:</b> ' + esc(head.length > 64 ? head.slice(0, 62) + '…' : head) + '</span><span class="dv">[ ' + (S.dirOpen ? 'Ocultar' : 'Ver directiva') + ' ' + (S.dirOpen ? '▴' : '▾') + ' ]</span></button>' + (S.dirOpen ? '<p>' + esc(D.coachNote) + '</p>' : '') + '</div>';
+    }
 
     h += '<div class="switch ' + mode + '"><span class="knob"></span><button data-mode="on" class="' + (mode === 'on' ? 'on' : '') + '">MODO DÍA ON</button><button data-mode="off" class="' + (mode === 'off' ? 'on' : '') + '">MODO DÍA OFF</button></div>';
 
-    h += '<section class="card"><div class="row"><span class="tag">[ TELEMETRÍA · ' + (mode === 'on' ? 'DÍA ON · ENTRENO' : 'DÍA OFF · DESCANSO') + ' ]</span><span class="hv">' + doneCount + '/' + list.length + ' COMIDAS</span></div>' + gauge(tgt, eaten, complete) + '</section>';
+    h += '<section class="card"><div class="row"><span class="tag">[ TELEMETRÍA · ' + (mode === 'on' ? 'DÍA ON · ENTRENO' : 'DÍA OFF · DESCANSO') + ' ]</span><span class="hv">' + doneCount + '/' + list.length + ' COMIDAS</span></div>' + gauge(tgt, eaten, complete, streak()) + '</section>';
 
     h += '<div class="actions"><button data-panel="shop">[ LISTA DE COMPRAS ]</button><button data-panel="out">[ COMER FUERA ]</button><button data-photo="pick">' + (getKey() ? '[ FOTO · IA ]' : '[ FOTO → COACH ]') + '</button></div>';
 
     h += hydration(mode);
-    h += dial(mode, list);
+    h += timeline(mode, list);
 
     D.protocols.forEach(function (p) {
       h += '<section class="card alert"><div class="tag" style="margin-bottom:6px">[ ' + esc(p.tag) + ' ]</div><div style="font-weight:700;font-size:16px;color:#FFFFFF">' + esc(p.title) + '</div><p class="muted" style="font-size:13px;margin-top:4px">' + esc(p.body) + '</p></section>';
@@ -446,7 +569,7 @@ const runtime = String.raw`
       var m = x.m;
       var done = !!S.checks[m.id];
       h += '<section class="card meal' + (done ? ' done' : '') + '">';
-      h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(m.name) + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar comida">' + CHECK + '</button></div>';
+      h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(mealName(m, mode)) + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar comida">' + CHECK + '</button></div>';
       h += '<div class="items">';
       x.items.forEach(function (it, idx) {
         var hint = unitHintFor(it.foodId, it.grams);
@@ -458,7 +581,8 @@ const runtime = String.raw`
         h += '<button class="item" ' + (canSwap ? 'data-swap="' + m.id + '|' + it.id + '"' : 'disabled') + '><span class="g">' + n0(it.grams) + ' g' + (hint ? '<em>' + hint + '</em>' : '') + '</span><span class="fd">' + esc(it.food) + (it.swappedFrom ? '<s>Reemplaza a: ' + esc(it.swappedFrom) + '</s>' : '') + '</span>' + (canSwap ? '<span class="sw">SWAP</span>' : '') + '</button>';
       });
       h += '</div>';
-      if (!m.mps) h += '<div class="leu na"><span class="dot"></span>[ BLOQUE GLUCOLÍTICO · ENERGÍA PARA ENTRENAR ]</div>';
+      // Umbral mTOR sólo en comidas principales; el resto son ingestas auxiliares (sin sugerir huevo o whey).
+      if (!m.mps) h += '<div class="leu na"><span class="dot"></span>' + (isOffPeri(m, mode) || (mode === 'off' && m.role !== 'snack') ? '[ MODULACIÓN GLUCÉMICA / SACIEDAD ]' : m.role === 'peri' ? '[ BLOQUE GLUCOLÍTICO · ENERGÍA PARA ENTRENAR ]' : '[ INGESTA AUXILIAR / MODULACIÓN GLUCÉMICA ]') + '</div>';
       else if (x.t.l >= D.threshold) h += '<div class="leu ok"><span class="dot"></span>[ mTOR / MPS: ACTIVADO • ' + n1(x.t.l) + ' g LEUCINA ]</div>';
       else h += '<div class="leu low"><span class="dot"></span>[ SUB-UMBRAL mTOR • ' + n1(x.t.l) + ' g LEUCINA ] · ' + leuTip(D.threshold - x.t.l) + '</div>';
       h += '</section>';
@@ -468,7 +592,7 @@ const runtime = String.raw`
       h += '<div class="sec"><span class="tag">[ SUPLEMENTOS · AIS GRUPO A ]</span></div><section class="card">';
       D.supplements.forEach(function (s) {
         var done = !!S.checks['sup:' + s.id];
-        h += '<button class="sup' + (done ? ' done' : '') + '" data-check="sup:' + esc(s.id) + '"><span class="chk">' + CHECK + '</span><span style="flex:1"><b>' + esc(s.name) + '</b><div class="ds"><em>Cuánto</em>' + esc(s.dose) + '</div><div class="tm"><em>Cuándo</em>' + esc(s.timing) + '</div>' + (s.doi ? '<a href="https://doi.org/' + esc(s.doi) + '" target="_blank" rel="noopener">[ ' + esc(s.evidence) + ' ]</a>' : '') + '</span></button>';
+        h += '<button class="sup' + (done ? ' done' : '') + '" data-check="sup:' + esc(s.id) + '"><span class="chk">' + CHECK + '</span><span style="flex:1"><b>' + esc(s.name) + '</b><div class="ds"><em>Cuánto</em>' + esc(s.dose) + '</div><div class="tm"><em>Cuándo</em>' + esc(mode === 'off' && /caf/i.test(s.id + ' ' + s.name) ? 'Consumo matutino habitual (café/mate) - Evitar tomas pre-workout' : s.timing) + '</div>' + (s.doi ? '<a href="https://doi.org/' + esc(s.doi) + '" target="_blank" rel="noopener">[ ' + esc(s.evidence) + ' ]</a>' : '') + '</span></button>';
       });
       h += '</section>';
     }
@@ -476,6 +600,7 @@ const runtime = String.raw`
     h += '<div class="cites">' + D.citations.map(function (c) {
       return c.doi ? '<a href="https://doi.org/' + esc(c.doi) + '" target="_blank" rel="noopener">[ ' + esc(c.label) + ' ]</a>' : '[ ' + esc(c.label) + ' ]';
     }).join('<br>') + '</div>';
+    h += '<div class="reset-row"><button id="reset" class="reset-link">↺ Reiniciar checklist e hidratación de este día</button></div>';
     h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div></div></footer>';
 
     var y = window.scrollY;
@@ -501,7 +626,7 @@ const runtime = String.raw`
     fallbackCopy(text); done();
   }
   function fallbackCopy(text) { var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} ta.remove(); }
-  function setWater(ml) { S.water = Math.max(0, Math.min(8000, ml)); store.set('water:' + today, S.water); haptic(); render(); }
+  function setWater(ml) { S.water = Math.max(0, Math.min(8000, ml)); store.set('water:' + S.date, S.water); haptic(); render(); }
   function closeSheet() { S.sheet = null; S.panel = null; renderSheet(); }
 
   // ---------- Foto → coach (sin claves de IA en el dispositivo) ----------
@@ -547,7 +672,7 @@ const runtime = String.raw`
 
   function callGemini(key, body, i) {
     var model = GEMINI_CHAIN[i];
-    S.scanBusy = i === 0 ? 'ANALIZANDO PLATO · ' + model : '[ ! ] CAMBIANDO A MODELO DE RESPALDO (' + model + ')...';
+    S.scanBusy = i === 0 ? (S.scanTab === 'label' ? 'LEYENDO TABLA NUTRICIONAL · ' : 'ANALIZANDO PLATO · ') + model : '[ ! ] CAMBIANDO A MODELO DE RESPALDO (' + model + ')...';
     renderSheet();
     return fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + encodeURIComponent(key), {
       method: 'POST',
@@ -564,7 +689,7 @@ const runtime = String.raw`
         var msg = (data.error && data.error.message) || ('Gemini respondió ' + res.status);
         var retry = res.status === 503 || res.status === 429 || res.status === 404 || res.status >= 500 || /UNAVAILABLE|high demand|overloaded|RESOURCE_EXHAUSTED|quota|no longer available|not found/i.test(msg);
         if (retry && i + 1 < GEMINI_CHAIN.length) return callGemini(key, body, i + 1);
-        if (res.status === 400 && /api key|API_KEY/i.test(msg)) msg = 'La API Key no es válida. Revisala en [ ⚙ CONFIGURAR MOTOR IA ].';
+        if (res.status === 400 && /api key|API_KEY/i.test(msg)) msg = 'La API Key no es válida. Revisala en [ ⚙ CONFIGURAR API KEY GEMINI ].';
         throw new Error(msg);
       });
     });
@@ -584,16 +709,18 @@ const runtime = String.raw`
     var key = getKey();
     if (!key || !S.photo || S.scanBusy) return;
     S.scan = null; S.scanErr = null;
+    var asLabel = S.scanTab === 'label';
     blobToB64(S.photo.blob)
       .then(function (b64) {
         return callGemini(key, {
-          contents: [{ role: 'user', parts: [{ text: D.scanPrompt }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }],
+          contents: [{ role: 'user', parts: [{ text: asLabel ? D.labelPrompt : D.scanPrompt }, { inline_data: { mime_type: 'image/jpeg', data: b64 } }] }],
           generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
         }, 0);
       })
       .then(function (text) {
         var a = text.indexOf('{'), b = text.lastIndexOf('}');
         var json = JSON.parse(a >= 0 ? text.slice(a, b + 1) : text);
+        if (asLabel) return readLabel(json);
         var items = (json.items || []).filter(function (i) { return i && i.food && num(i.grams, 0) > 0; }).map(function (i) {
           var p = Math.max(0, num(i.p, 0));
           return { food: String(i.food), grams: Math.round(num(i.grams, 0)), p: p, c: Math.max(0, num(i.c, 0)), f: Math.max(0, num(i.f, 0)), leucine: Math.max(0, num(i.leucine, p * 0.08)) };
@@ -606,14 +733,31 @@ const runtime = String.raw`
       .then(function () { S.scanBusy = false; renderSheet(); });
   }
 
+  // Tabla nutricional → valores por 100 g (de la columna por porción si es lo único legible).
+  function readLabel(json) {
+    var serving = Math.max(1, num(json.servingG, 100));
+    var per = json.per100 || {};
+    var ps = json.perServing || {};
+    var pick = function (k) { var v = num(per[k], NaN); return isFinite(v) ? v : num(ps[k], 0) * 100 / serving; };
+    var p100 = { kcal: pick('kcal'), p: pick('p'), c: pick('c'), f: pick('f'), sodium: pick('sodiumMg') };
+    if (!(p100.kcal > 0) && p100.p + p100.c + p100.f > 0) p100.kcal = p100.p * 4 + p100.c * 4 + p100.f * 9;
+    if (!(p100.kcal > 0)) throw new Error('No se pudo leer la tabla. Encuadrá solo la tabla, de frente y con buena luz.');
+    S.portions = 1;
+    S.scan = { kind: 'label', name: String(json.productName || 'Producto'), brand: json.brand ? String(json.brand) : '', servingG: serving, per100: p100 };
+  }
+
   function addScanToMeal() {
     if (!S.scan) return;
+    if (S.scan.kind === 'label') {
+      var r = S.scan, g = Math.round(r.servingG * S.portions), kk = g / 100;
+      S.scan = { items: [{ food: r.name + (r.brand ? ' · ' + r.brand : ''), grams: g, p: r.per100.p * kk, c: r.per100.c * kk, f: r.per100.f * kk, leucine: r.per100.p * kk * 0.08 }] };
+    }
     var id = S.phMeal || (($('#ph-meal') || {}).value) || '__out';
     var at = (now.getHours() < 10 ? '0' : '') + now.getHours() + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
     var stamp = Date.now().toString(36);
     var add = S.scan.items.map(function (i, k) { return { id: 'ia-' + stamp + '-' + k, food: i.food, grams: i.grams, p: i.p, c: i.c, f: i.f, leucine: i.leucine, extra: true, at: at }; });
     S.extras[id] = (S.extras[id] || []).concat(add);
-    store.set('extras:' + today, S.extras);
+    store.set('extras:' + S.date, S.extras);
     S.scan = null; S.panel = null;
     haptic();
     render();
@@ -636,16 +780,25 @@ const runtime = String.raw`
 
   // ---------- Eventos ----------
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-dial],[data-close],[data-rmextra],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
     if (ds.close) return closeSheet();
-    if (ds.dial) { S.dialOpen = !S.dialOpen; store.set('dialOpen', S.dialOpen); haptic(); return render(); }
+    if (ds.tl) { S.tlOpen = !S.tlOpen; store.set('tlOpen', S.tlOpen); haptic(); return render(); }
+    if (ds.dir) { S.dirOpen = !S.dirOpen; return render(); }
+    if (ds.day !== undefined) {
+      var dd = +ds.day;
+      loadDay(dd === 0 ? today : addDays(S.date, dd));
+      haptic();
+      return render();
+    }
+    if (ds.scantab) { S.scanTab = ds.scantab; S.scan = null; S.scanErr = null; return renderSheet(); }
+    if (ds.portion) { S.portions = Math.max(0.5, Math.min(10, S.portions + +ds.portion)); return renderSheet(); }
     if (ds.rmextra) {
       var q = ds.rmextra.split('|');
       S.extras[q[0]] = (S.extras[q[0]] || []).filter(function (x) { return x.id !== q[1]; });
       if (!S.extras[q[0]].length) delete S.extras[q[0]];
-      store.set('extras:' + today, S.extras);
+      store.set('extras:' + S.date, S.extras);
       return render();
     }
     if (ds.aicfg === 'toggle') { S.aiCfg = !S.aiCfg; return renderSheet(); }
@@ -671,13 +824,13 @@ const runtime = String.raw`
     if (ds.photo === 'send') { if (S.photo) sendPhoto(); return; }
     if (ds.mode) {
       S.mode = ds.mode;
-      store.set('mode', S.mode);
+      if (!D.preview) store.set('mode:' + S.date, S.mode);
       haptic();
       if (D.preview) parent.postMessage({ type: 'coachjp:mode', mode: S.mode }, '*');
       render();
     } else if (ds.check) {
       S.checks[ds.check] = !S.checks[ds.check];
-      store.set('checks:' + today, S.checks);
+      store.set('checks:' + S.date, S.checks);
       haptic();
       render();
     } else if (ds.swap) {
@@ -700,8 +853,9 @@ const runtime = String.raw`
     } else if (el.id === 'install') {
       install();
     } else if (el.id === 'reset') {
+      if (!confirm('¿Reiniciar el checklist y la hidratación de este día?')) return;
       S.checks = {};
-      store.set('checks:' + today, S.checks);
+      store.set('checks:' + S.date, S.checks);
       setWater(0);
       toast('Checklist e hidratación del día reiniciados');
     }
@@ -757,8 +911,25 @@ const runtime = String.raw`
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       navigator.serviceWorker.register('sw.js').catch(function () {});
     }
-    // El dial y la próxima comida se actualizan solos cada minuto.
-    setInterval(function () { now = new Date(); if (!S.sheet && !S.panel) render(); }, 60000);
+    // Ciclo diario: al abrir en una fecha nueva se archiva la última jornada usada.
+    var last = store.get('lastOpen', null);
+    if (last && last < today) { var keep = S.date; S.date = last; S.checks = store.get('checks:' + last, {}); S.extras = store.get('extras:' + last, {}); S.mode = modeFor(last); archive(last); loadDay(keep); }
+    store.set('lastOpen', today);
+    // A las 00:00 se archiva el día, se arranca la jornada en cero (checks y vasos) y se aplica el ON / OFF del cronograma.
+    setInterval(function () {
+      now = new Date();
+      var t = isoDay(now);
+      if (t !== today) {
+        var wasToday = S.date === today;
+        archive(today);
+        today = t;
+        weekKey = weekOf(now);
+        S.shop = store.get('shop:' + weekKey, {});
+        store.set('lastOpen', today);
+        if (wasToday) { loadDay(today); toast('NUEVA JORNADA · checklist e hidratación en cero'); }
+      }
+      if (!S.sheet && !S.panel) render();
+    }, 30000);
   } else {
     window.addEventListener('message', function (e) {
       var msg = e.data || {};

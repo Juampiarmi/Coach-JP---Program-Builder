@@ -1,7 +1,7 @@
 'use client';
 
 import { Scale } from 'lucide-react';
-import { BALANCE_TOLERANCE, dayDeviation, isDayBalanced } from '@/lib/balance';
+import { BALANCE_TOLERANCE, dayDeviation, isDayBalanced, KCAL_TOLERANCE } from '@/lib/balance';
 import { fmt0 } from '@/lib/bioenergetics';
 import type { DayMode } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
@@ -23,7 +23,7 @@ export function BalanceBanner({ context = 'meals' }: { context?: 'meals' | 'expo
   if (!open.length)
     return (
       <div className="mt-3 font-mono text-[10.5px] tracking-[0.04em] text-cyan-hud">
-        ✓ {days.map((d) => d.toUpperCase()).join(' y ')} cierran al 100 % ± {tol} % de la meta · el atleta llega a 0 kcal restantes al completar el día
+        ✓ {days.map((d) => d.toUpperCase()).join(' y ')} cierran al 100 % ± {fmt0(KCAL_TOLERANCE * 100)} % de las kcal (± {tol} % por macro) · el atleta llega a 0 kcal restantes al completar el día
       </div>
     );
 
@@ -31,7 +31,7 @@ export function BalanceBanner({ context = 'meals' }: { context?: 'meals' | 'expo
     <div className={cx('mt-3 rounded-lg border border-fire/40 bg-fire/[0.07] p-3', context === 'export' && 'mt-0')}>
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="font-mono text-[10px] font-bold tracking-[0.14em] text-fire">[ BRECHA CALÓRICA · LAS COMIDAS NO CIERRAN EL 100 % ± {tol} % ]</div>
+          <div className="font-mono text-[10px] font-bold tracking-[0.14em] text-fire">[ BRECHA CALÓRICA · LAS COMIDAS NO CIERRAN EL 100 % ± {fmt0(KCAL_TOLERANCE * 100)} % ]</div>
           <ul className="mt-1.5 space-y-0.5 font-mono text-[11px] text-steel">
             {open.map((d) => {
               const x = dayDeviation(plan, d);

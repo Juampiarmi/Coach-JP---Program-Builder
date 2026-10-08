@@ -13,6 +13,7 @@ import {
   SESSION_PRESETS,
   SKINFOLD_SITES,
   skinfoldSum,
+  trainingWeekdays,
 } from '@/lib/bioenergetics';
 import { CITES } from '@/lib/evidence';
 import type { Phase, PrecisionMode } from '@/lib/types';
@@ -241,6 +242,7 @@ export function ProfileTab() {
           <NumberField label="Agua · día ON" unit="L" min={0.5} max={8} value={plan.hydration.onMl / 1000} onChange={(l) => setPlanMeta({ hydration: { ...plan.hydration, onMl: Math.round(l * 1000) } })} />
           <NumberField label="Agua · día OFF" unit="L" min={0.5} max={8} value={plan.hydration.offMl / 1000} onChange={(l) => setPlanMeta({ hydration: { ...plan.hydration, offMl: Math.round(l * 1000) } })} />
         </div>
+        <WeekdayPicker />
         <p className="mt-2 font-mono text-[10px] text-mute">
           Base 35 ml/kg + ~750 ml por hora de sesión. La hora alimenta el dial peri-entreno de 24 h de la app del atleta.
         </p>
@@ -293,6 +295,41 @@ export function ProfileTab() {
           <Cite c={CITES.reds} />
         </div>
       </Panel>
+    </div>
+  );
+}
+
+const WEEKDAYS = ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'];
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+/** Cronograma semanal: define qué días la app del atleta arranca sola en DÍA ON (con switch manual igual). */
+function WeekdayPicker() {
+  const pr = usePlanStore((s) => s.plan.profile);
+  const setProfile = usePlanStore((s) => s.setProfile);
+  const days = trainingWeekdays(pr);
+  const toggle = (d: number) => {
+    const next = days.includes(d) ? days.filter((x) => x !== d) : [...days, d];
+    setProfile({ trainingWeekdays: next.sort(), trainingDaysPerWeek: next.length });
+  };
+  return (
+    <div className="mt-3">
+      <Label>Días de entreno (ON automático en la app)</Label>
+      <div className="flex flex-wrap gap-1.5">
+        {WEEK_ORDER.map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => toggle(d)}
+            className={
+              days.includes(d)
+                ? 'rounded-md border border-fire bg-fire/15 px-2.5 py-1.5 font-mono text-[10.5px] font-bold tracking-[0.08em] text-fire'
+                : 'rounded-md border border-line px-2.5 py-1.5 font-mono text-[10.5px] tracking-[0.08em] text-mute hover:text-steel'
+            }
+          >
+            {WEEKDAYS[d]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

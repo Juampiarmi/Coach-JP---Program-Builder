@@ -12,7 +12,8 @@ export type SwapGroup =
   | 'fruit'
   | 'fat'
   | 'veg'
-  | 'sport-carb';
+  | 'sport-carb'
+  | 'protein-snack';
 
 export interface FoodRef {
   id: string;
@@ -93,6 +94,14 @@ export const FOODS: FoodRef[] = [
   { id: 'palta', name: 'Palta', group: 'fat', p: 2, c: 8.5, f: 15, leucine: 0.14 },
   { id: 'oliva', name: 'Aceite de oliva extra virgen', group: 'fat', unit: { label: 'cda', grams: 13 }, p: 0, c: 0, f: 100, leucine: 0 },
   { id: 'nueces', name: 'Nueces', group: 'fat', p: 15, c: 14, f: 65, leucine: 1.17 },
+  // Productos comerciales argentinos (valores promedio de etiqueta; ajustables con «Crear alimento / marca»).
+  { id: 'alfajor-proteico', name: 'Alfajor proteico', group: 'protein-snack', unit: { label: 'u', grams: 50 }, p: 30, c: 42, f: 15, leucine: 2.5, equiv: ['barra-proteica', 'yogur-proteico'] },
+  { id: 'barra-proteica', name: 'Barra proteica', group: 'protein-snack', unit: { label: 'u', grams: 46 }, p: 33, c: 36, f: 13, leucine: 2.7, equiv: ['alfajor-proteico', 'yogur-proteico'] },
+  { id: 'yogur-proteico', name: 'Yogur bebible proteico (alto en proteínas)', group: 'dairy-protein', unit: { label: 'botella', grams: 250 }, p: 6, c: 5.5, f: 0.4, leucine: 0.6, equiv: ['yogur', 'leche'] },
+  { id: 'queso-light', name: 'Queso cremoso light', group: 'dairy-protein', p: 22, c: 2, f: 14, leucine: 2.0, equiv: ['ricota', 'untable'] },
+  { id: 'galletitas-agua', name: 'Galletitas de agua', group: 'cereal', unit: { label: 'u', grams: 6 }, p: 10, c: 70, f: 12, leucine: 0.75, equiv: ['galletas-arroz', 'tostadas-arroz', 'pan'] },
+  { id: 'pan-lactal', name: 'Pan lactal integral', group: 'cereal', unit: { label: 'rebanada', grams: 25 }, p: 10, c: 43, f: 4, leucine: 0.7, equiv: ['pan', 'tostadas-arroz'] },
+  { id: 'barrita-cereal', name: 'Barrita de cereal', group: 'sport-carb', unit: { label: 'u', grams: 23 }, p: 6, c: 70, f: 9, leucine: 0.4, equiv: ['banana', 'dulce-membrillo'] },
   { id: 'vegetales', name: 'Vegetales mixtos / ensalada', group: 'veg', p: 1.5, c: 4, f: 0.2, leucine: 0.08 },
 ];
 
@@ -109,6 +118,7 @@ export const GROUP_LABEL: Record<SwapGroup, string> = {
   fat: 'Grasa',
   veg: 'Vegetal',
   'sport-carb': 'Carbo rápido',
+  'protein-snack': 'Snack proteico comercial',
 };
 
 /** Macro dominante que define la equivalencia del grupo en los Smart Swaps. */
@@ -123,6 +133,7 @@ export const GROUP_ANCHOR: Record<SwapGroup, 'p' | 'c' | 'f'> = {
   fat: 'f',
   veg: 'c',
   'sport-carb': 'c',
+  'protein-snack': 'p',
 };
 
 /** Kcal por 100 g (Atwater 4/4/9). */
@@ -171,7 +182,7 @@ export function freeEquivalents(item: { grams: number; p: number; c: number; f: 
   if (!(amount > 0)) return [];
   const density = ((item.p * 4 + item.c * 4 + item.f * 9) / item.grams) * 100;
   const groups: SwapGroup[] =
-    macro === 'protein' ? ['lean-protein', 'dairy-protein', 'eggs'] : macro === 'fat' ? ['fat'] : ['cereal', 'starch', 'fruit', 'sport-carb'];
+    macro === 'protein' ? ['lean-protein', 'dairy-protein', 'eggs', 'protein-snack'] : macro === 'fat' ? ['fat'] : ['cereal', 'starch', 'fruit', 'sport-carb'];
   return FOODS.filter((f) => groups.includes(f.group) && f[anchor] > 0)
     .map((f) => ({ food: f, diff: Math.abs(kcalPer100(f) - density) }))
     .sort((a, b) => a.diff - b.diff)
@@ -239,6 +250,14 @@ export function matchFood(name: string): FoodRef | undefined {
   });
   if (custom) return custom;
   const aliases: [RegExp, string][] = [
+    // Productos comerciales primero (más específicos que «yogur», «pan», «galleta»).
+    [/alfajor.*prote|prote.*alfajor/, 'alfajor-proteico'],
+    [/barr(a|ita).*prote|prote.*barr(a|ita)|protein bar/, 'barra-proteica'],
+    [/barrita|barra de cereal/, 'barrita-cereal'],
+    [/yogur.*(bebible|proteic|pro\b)|ser pro/, 'yogur-proteico'],
+    [/queso (cremoso|fresco|port salut)/, 'queso-light'],
+    [/galletit.*agua|criollita|crackers?/, 'galletitas-agua'],
+    [/pan lactal|lactal/, 'pan-lactal'],
     [/pechuga|pollo/, 'pollo'],
     [/cuadril/, 'cuadril'],
     [/lomo/, 'lomo'],

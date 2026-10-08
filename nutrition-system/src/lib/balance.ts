@@ -3,8 +3,10 @@ import { FOOD_BY_ID, GROUP_ANCHOR, inferMacroPrincipal, macrosFor, round1, round
 import { uid } from './seed';
 import type { AthletePlan, DayMode, FoodItem, Macros, Meal } from './types';
 
-/** Tolerancia de cierre del día: la suma de las comidas debe quedar en 100 % ± 3 % de cada meta. */
+/** Tolerancia de cierre por macro (carbos / grasas): 100 % ± 3 % de cada meta. */
 export const BALANCE_TOLERANCE = 0.03;
+/** Tolerancia de cierre calórico del día: 100 % ± 1 % (tolerancia cero a "kcal pendientes" con todo tildado). */
+export const KCAL_TOLERANCE = 0.01;
 /** Tope de aceite por comida (1 cda); el resto de la brecha de grasas va a palta / frutos secos. */
 const OIL_CAP_G = 15;
 
@@ -46,12 +48,37 @@ export function dayDeviation(plan: AthletePlan, day: DayMode) {
   return { target, got, kcal: pct(got.kcal, target.kcal), p: pct(got.p, target.p), c: pct(got.c, target.c), f: pct(got.f, target.f) };
 }
 
-/** true si las comidas del día cierran las kcal, carbos y grasas al 100 % ± 3 %. */
+/** true si las comidas del día cierran las kcal al 100 % ± 1 % y carbos / grasas al 100 % ± 3 %. */
 export function isDayBalanced(plan: AthletePlan, day: DayMode) {
   if (!plan.meals.some((m) => m.day === day || m.day === 'both')) return true;
   const d = dayDeviation(plan, day);
   const tol = BALANCE_TOLERANCE * 100;
-  return Math.abs(d.kcal) <= tol && Math.abs(d.c) <= tol && Math.abs(d.f) <= tol;
+  return Math.abs(d.kcal) <= KCAL_TOLERANCE * 100 && Math.abs(d.c) <= tol && Math.abs(d.f) <= tol;
+}
+
+/**
+ * Ajuste fino de kcal (gramo a gramo) sobre la fuente de almidón más grande del día (arroz / papa / batata…);
+ * si no hay almidón, sobre la grasa más grande (sin tocar el aceite).
+ */
+function closeKcal(meals: Meal[], day: DayMode, targetKcal: number): { meals: Meal[]; changed: number } {
+  let changed = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    const gap = targetKcal - dayTotals(meals, day).kcal;
+    if (Math.abs(gap) <= targetKcal * KCAL_TOLERANCE * 0.4) break;
+    const pick = (macro: Anchor, days: Meal['day'][]) =>
+      meals
+        .flatMap((m) => (days.includes(m.day) ? m.items.filter((i) => sourceOf(i) === macro && !isOil(i) && i.grams > 0) : []))
+        .sort((a, b) => b[macro] - a[macro])[0];
+    const host = pick('c', [day]) ?? pick('c', [day, 'both']) ?? pick('f', [day]) ?? pick('f', [day, 'both']);
+    if (!host) break;
+    const kcalPerG = (host.p * 4 + host.c * 4 + host.f * 9) / host.grams;
+    if (!(kcalPerG > 0)) break;
+    const grams = Math.max(5, Math.round(host.grams + gap / kcalPerG));
+    if (grams === host.grams) break;
+    meals = meals.map((m) => ({ ...m, items: m.items.map((i) => (i.id === host.id ? rescale(i, grams) : i)) }));
+    changed++;
+  }
+  return { meals, changed };
 }
 
 /**
@@ -133,8 +160,10 @@ export function balancePlan(plan: AthletePlan): { plan: AthletePlan; report: Day
     const f = balanceMacro(c.meals, day, 'f', target.f);
     // Las grasas de frutos secos / maní mueven algo de carbos: una pasada final de carbos.
     const c2 = balanceMacro(f.meals, day, 'c', target.c);
-    meals = c2.meals;
-    report.push({ day, target, before, after: dayTotals(meals, day), changed: c.changed + f.changed + c2.changed });
+    // Cierre calórico estricto (±1 %): la proteína de la IA puede desviar las kcal aunque carbos y grasas cierren.
+    const k = closeKcal(c2.meals, day, target.kcal);
+    meals = k.meals;
+    report.push({ day, target, before, after: dayTotals(meals, day), changed: c.changed + f.changed + c2.changed + k.changed });
   }
   return { plan: { ...plan, meals, updatedAt: Date.now() }, report };
 }

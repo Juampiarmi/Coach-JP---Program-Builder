@@ -16,8 +16,12 @@ export function whatsappSummary(plan: AthletePlan) {
   const pr = plan.profile;
   const sups = plan.supplements.filter((s) => s.enabled);
   const url = plan.publicUrl.trim() || suggestedUrl(plan);
+  const first = pr.name.trim().split(/\s+/)[0] || 'atleta';
   const lines = [
     `*COACH JP · BIOENERGETICS & NUTRITION* 🔥`,
+    '',
+    `¡Hola *${first}*! Bienvenido/a al sistema de alto rendimiento. Ya tenés tu plan nutricional personalizado listo:`,
+    '',
     `Atleta: *${pr.name}* · Fase: ${PHASE_LABEL[pr.phase]}`,
     '',
     `*DÍA ON (entreno ${pr.trainingTime} h)*: ${fmt0(t.kcalOn)} kcal`,

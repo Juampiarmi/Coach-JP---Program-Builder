@@ -16,7 +16,7 @@ export const COMPILE_STEPS: Pick<CompileCheck, 'id' | 'label'>[] = [
   { id: 'link', label: 'ENLACE CON EL MOTOR IA' },
   { id: 'infer', label: 'INFERENCIA BIOENERGÉTICA' },
   { id: 'json', label: 'PARSEO DEL JSON ESTRUCTURADO' },
-  { id: 'balance', label: 'CIERRE DE MACROS POR DÍA (100 % ± 3 %)' },
+  { id: 'balance', label: 'CIERRE CALÓRICO POR DÍA (100 % ± 1 %)' },
   { id: 'bmr', label: 'VALIDACIÓN BMR · KATCH-McARDLE' },
   { id: 'split', label: 'PARTICIÓN ON / OFF' },
   { id: 'leu', label: 'UMBRAL DE LEUCINA (≥2,7 g) POR COMIDA' },

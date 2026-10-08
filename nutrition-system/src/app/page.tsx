@@ -12,6 +12,7 @@ import { StoryTab } from '@/components/deploy/StoryTab';
 import { cx, NutritionMark } from '@/components/hud/primitives';
 import { InstallButton } from '@/components/pwa/InstallButton';
 import { AthleteSwitcher } from '@/components/builder/AthleteSwitcher';
+import { ProfileBackup } from '@/components/builder/ProfileBackup';
 import { computeTelemetry, eaStatus, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
 import { usePlanStore, type BuilderTab, type DeployTab } from '@/store/usePlanStore';
 
@@ -80,7 +81,7 @@ export default function Home() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-30 border-b border-line bg-carbon/90 backdrop-blur-md">
-        <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
           <NutritionMark size={36} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -95,6 +96,7 @@ export default function Home() {
             <span className="hidden items-center gap-2 rounded-md border border-cyan-hud/20 bg-cyan-hud/10 px-2.5 py-1.5 font-mono text-[10px] tracking-[0.14em] text-cyan-hud xl:flex">
               <Crosshair className="h-3.5 w-3.5" /> SISTEMA OPERATIVO
             </span>
+            <ProfileBackup />
             <AthleteSwitcher />
             <InstallButton />
             <button

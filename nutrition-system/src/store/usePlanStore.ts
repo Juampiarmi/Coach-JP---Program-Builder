@@ -77,6 +77,8 @@ interface PlanState {
   injectItems: (target: { mealId: string } | { newMeal: { name: string; day: 'on' | 'off'; time: string } }, items: FoodItem[]) => void;
 
   newAthlete: () => void;
+  /** Importa un perfil desde un backup JSON como atleta nuevo y activo. Devuelve el nombre o null si el archivo no es válido. */
+  importAthlete: (raw: unknown) => string | null;
   switchAthlete: (id: string) => void;
   deleteAthlete: (id: string) => void;
 }
@@ -303,6 +305,27 @@ export const usePlanStore = create<PlanState>()(
           const meal: Meal = { id: uid(), name: target.newMeal.name, time: target.newMeal.time, day: target.newMeal.day, role: 'lunch', items: fresh };
           return { plan: touch({ ...s.plan, meals: [...s.plan.meals, meal] }) };
         }),
+
+      importAthlete: (raw) => {
+        const data = (raw ?? {}) as { plan?: unknown; customFoods?: FoodRef[] };
+        const imported = sanitizePlan(data.plan ?? raw);
+        if (!imported) return null;
+        const s = get();
+        const taken = imported.id === s.plan.id || !!s.roster[imported.id];
+        const plan: AthletePlan = {
+          ...imported,
+          id: taken ? uid() : imported.id,
+          profile: { ...imported.profile, name: taken ? `${imported.profile.name} (copia)` : imported.profile.name },
+          updatedAt: Date.now(),
+        };
+        // Marcas propias que el perfil usa y este navegador todavía no tiene.
+        const known = new Set(s.customFoods.map((f) => f.id));
+        const extra = (Array.isArray(data.customFoods) ? data.customFoods : []).filter((f) => f && typeof f.id === 'string' && !known.has(f.id));
+        const customFoods = [...s.customFoods, ...extra];
+        registerCustomFoods(customFoods);
+        set({ plan, roster: { ...s.roster, [s.plan.id]: s.plan }, customFoods });
+        return plan.profile.name;
+      },
 
       newAthlete: () =>
         set((s) => {

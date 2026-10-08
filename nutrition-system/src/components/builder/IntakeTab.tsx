@@ -135,7 +135,7 @@ export function IntakeTab() {
       });
       current = 'json';
       mark('json', { status: 'running' });
-      const parsed = planFromAi(json, usePlanStore.getState().plan);
+      const parsed = planFromAi(json, usePlanStore.getState().plan, notes);
       await sleep(150);
       mark('json', { status: 'ok', detail: `${parsed.meals.length} comidas · ${parsed.supplements.length} suplementos` });
       // La IA no siempre cierra la suma de sus comidas: se escalan carbos y grasas hasta el 100 % ± 3 % de cada día.

@@ -1,6 +1,6 @@
 import runtime from '@/pwa/athleteRuntime';
 import styles from '@/pwa/athleteStyles';
-import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL } from './bioenergetics';
+import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL, trainingWeekdays } from './bioenergetics';
 import { BRAND, nutritionSvg, shieldSvg } from './brand';
 import { CITES } from './evidence';
 import { FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
@@ -17,12 +17,13 @@ const SHOP_CATEGORY: Record<SwapGroup, string> = {
   starch: 'Almidones y cereales',
   cereal: 'Almidones y cereales',
   'sport-carb': 'Carbos de entreno',
+  'protein-snack': 'Snacks proteicos',
   fruit: 'Frutas y vegetales',
   veg: 'Frutas y vegetales',
   fat: 'Grasas saludables',
   whey: 'Suplementos',
 };
-const SHOP_ORDER = ['Carnes y pescados', 'Huevos y lácteos', 'Almidones y cereales', 'Carbos de entreno', 'Frutas y vegetales', 'Grasas saludables', 'Suplementos', 'Otros'];
+const SHOP_ORDER = ['Carnes y pescados', 'Huevos y lácteos', 'Snacks proteicos', 'Almidones y cereales', 'Carbos de entreno', 'Frutas y vegetales', 'Grasas saludables', 'Suplementos', 'Otros'];
 
 export function slugify(s: string) {
   return (
@@ -109,11 +110,13 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     hydration: plan.hydration,
     training: { time: pr.trainingTime, minutes: pr.sessionMinutes },
     trainingDays: pr.trainingDaysPerWeek,
+    trainingWeekdays: trainingWeekdays(pr),
     categories: SHOP_CATEGORY,
     categoryOrder: SHOP_ORDER,
     manifest: { ...manifest, icons: [] },
     // Prompt del análisis de foto en el celular del atleta (la API key la carga el atleta en su dispositivo; nunca viaja en el plan).
     scanPrompt: `${SCAN_PROMPT}\nAgregá a cada item "leucine" (g estimados de leucina para esa porción).`,
+    labelPrompt: LABEL_PROMPT,
   };
 }
 
@@ -122,6 +125,16 @@ const safeJson = (v: unknown) =>
     .replace(/</g, '\\u003c')
     .replace(new RegExp(String.fromCharCode(0x2028), 'g'), '\\u2028')
     .replace(new RegExp(String.fromCharCode(0x2029), 'g'), '\\u2029');
+
+/** Lectura de la tabla de información nutricional de un envase (escáner dual de la PWA). */
+const LABEL_PROMPT = `Actúas como lector de etiquetas de Coach JP. Recibís la foto de la TABLA DE INFORMACIÓN NUTRICIONAL de un producto envasado
+(formato argentino / Mercosur: "Porción X g", "Valor energético", "Carbohidratos", "Proteínas", "Grasas totales", "Sodio").
+Leé los valores tal como figuran. Si la tabla trae columna por 100 g, usala; si sólo trae por porción, completá perServing.
+Devolvé OBLIGATORIAMENTE sólo un JSON válido, sin texto extra:
+{ "productName": string, "brand": string, "servingG": number,
+  "per100": { "kcal": number, "p": number, "c": number, "f": number, "sodiumMg": number },
+  "perServing": { "kcal": number, "p": number, "c": number, "f": number, "sodiumMg": number } }
+Usá null en lo que no se lea con claridad. Kcal en kcal (no kJ).`;
 
 const FONTS = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap';
 
@@ -183,7 +196,7 @@ ${opts.icons ? `<link rel="icon" type="image/png" sizes="192x192" href="${opts.i
 </head>
 <body>
 <main id="app"></main>
-<div class="dock"><button class="btn ghost" id="reset">Reiniciar día</button><button class="btn fire" id="install">Instalar app</button></div>
+<div class="dock"><button class="btn fire" id="install">[ Instalar app ]</button></div>
 <div id="sheet-bg" class="sheet-bg"></div>
 <div id="sheet" class="sheet"></div>
 <div id="toast" class="toast"></div>

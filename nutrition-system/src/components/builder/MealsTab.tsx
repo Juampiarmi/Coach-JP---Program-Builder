@@ -64,10 +64,15 @@ function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
 
 function ProteinSensor({ meal }: { meal: Meal }) {
   const t = mealTotals(meal);
+  // Umbral mTOR sólo en comidas principales: colaciones / meriendas son ingestas auxiliares (sin sugerir huevo o whey).
   if (!isMpsMeal(meal))
     return (
       <span className="inline-flex items-center rounded-md border border-line bg-white/[0.03] px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] text-mute">
-        [ BLOQUE GLUCOLÍTICO · LEUCINA NO PRIORITARIA ]
+        {meal.role === 'snack'
+          ? '[ INGESTA AUXILIAR / MODULACIÓN GLUCÉMICA ]'
+          : meal.day === 'off'
+            ? '[ MODULACIÓN GLUCÉMICA / SACIEDAD ]'
+            : '[ BLOQUE GLUCOLÍTICO · LEUCINA NO PRIORITARIA ]'}
       </span>
     );
   const ok = t.leucine >= LEUCINE_THRESHOLD;
@@ -90,6 +95,17 @@ function ProteinSensor({ meal }: { meal: Meal }) {
       </span>
     </span>
   );
+}
+
+const microBtn =
+  'grid h-7 w-7 flex-none place-items-center rounded-md border border-line2 bg-panel2 font-mono text-sm font-bold text-steel transition hover:border-cyan-hud/50 hover:text-cyan-hud active:scale-95';
+
+/** Paso de los micro-ajustadores: la unidad casera chica (huevo, rebanada, scoop) o 5 / 10 g. */
+function gramStep(item: FoodItem) {
+  const ref = item.foodId ? FOOD_BY_ID[item.foodId] : undefined;
+  if (ref?.unit && ref.unit.grams <= 60) return ref.unit.grams;
+  if (ref?.group === 'fat' || item.grams < 60) return 5;
+  return 10;
 }
 
 const chipCls = 'rounded-md border border-line2 bg-panel2 px-2 py-0.5 text-[11.5px] text-steel transition hover:border-cyan-hud/35 hover:text-ink';
@@ -126,7 +142,7 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
   const hint = householdHint(item.foodId, item.grams);
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 border-t border-line py-3 sm:grid-cols-[minmax(0,1.3fr)_150px_minmax(0,1.4fr)_auto] sm:items-center">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1.5 border-t border-line py-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(150px,auto)_minmax(0,1.3fr)_auto] sm:items-center">
       <div className="min-w-0">
         {ref ? (
           <select
@@ -154,8 +170,17 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
       <button onClick={() => removeItem(meal.id, item.id)} title="Quitar" className="self-start p-1 text-steel hover:text-fire sm:order-last sm:self-center">
         <X className="h-4 w-4" />
       </button>
-      <div className="flex items-center gap-2">
-        <div className="relative w-[84px]">
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setItemGrams(meal.id, item.id, Math.max(0, item.grams - gramStep(item)))}
+          aria-label={`Restar ${gramStep(item)} g de ${item.food}`}
+          title={`−${gramStep(item)} g`}
+          className={microBtn}
+        >
+          −
+        </button>
+        <div className="relative w-[76px]">
           <NumInput
             value={item.grams}
             min={0}
@@ -167,6 +192,15 @@ function ItemRow({ meal, item, technical }: { meal: Meal; item: FoodItem; techni
           />
           <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-mute">g</span>
         </div>
+        <button
+          type="button"
+          onClick={() => setItemGrams(meal.id, item.id, Math.min(3000, item.grams + gramStep(item)))}
+          aria-label={`Sumar ${gramStep(item)} g de ${item.food}`}
+          title={`+${gramStep(item)} g`}
+          className={microBtn}
+        >
+          +
+        </button>
         {hint && <span className="whitespace-nowrap text-[11px] text-steel">{hint}</span>}
       </div>
       <div className="col-span-2 sm:col-span-1">
@@ -237,7 +271,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         </span>
       </div>
 
-      <div className="mt-3 hidden grid-cols-[minmax(0,1.3fr)_150px_minmax(0,1.4fr)_auto] gap-x-3 pb-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-steel sm:grid">
+      <div className="mt-3 hidden grid-cols-[minmax(0,1.2fr)_minmax(150px,auto)_minmax(0,1.3fr)_auto] gap-x-3 pb-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-steel sm:grid">
         <span>Alimento</span>
         <span>Porción sugerida</span>
         <span>Equivale a</span>

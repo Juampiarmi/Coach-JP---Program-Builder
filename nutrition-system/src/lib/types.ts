@@ -40,6 +40,8 @@ export interface Profile {
   trainingDaysPerWeek: number;
   /** Hora de inicio de la sesión (HH:MM) para el dial peri-entreno de 24 h. */
   trainingTime: string;
+  /** Días de la semana con sesión (0 = domingo … 6 = sábado). Define el ON / OFF automático de la app. */
+  trainingWeekdays?: number[];
   sessionMinutes: number;
   notes: string;
 }

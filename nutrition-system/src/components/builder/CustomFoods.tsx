@@ -13,6 +13,7 @@ const TYPES: { value: SwapGroup; label: string }[] = [
   { value: 'fruit', label: 'Fruta' },
   { value: 'fat', label: 'Grasa' },
   { value: 'dairy-protein', label: 'Lácteo' },
+  { value: 'protein-snack', label: 'Snack proteico' },
 ];
 
 // Leucina estimada por gramo de proteína según la matriz (lácteos ≈ 10 %, carnes ≈ 8 %, vegetales ≈ 7 %).

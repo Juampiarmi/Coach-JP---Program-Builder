@@ -227,8 +227,31 @@ export function dayTotals(meals: Meal[], mode: DayMode) {
 }
 
 /** Las comidas principales exigen el umbral de leucina; el peri-entreno es un bloque glucolítico. */
+/**
+ * Umbral de leucina (≥ 2,7 g · mTOR) sólo en las comidas principales: desayuno, almuerzo, cena y post-entreno.
+ * Colaciones, meriendas y bloques peri-entreno son ingestas auxiliares (modulación glucémica).
+ */
+export const MPS_ROLES: Meal['role'][] = ['breakfast', 'lunch', 'dinner', 'post'];
 export function isMpsMeal(meal: Meal) {
-  return meal.role !== 'peri';
+  return MPS_ROLES.includes(meal.role);
+}
+
+/** Cronograma semanal por defecto según la cantidad de días de entreno (lun-vie primero). */
+const DEFAULT_WEEKDAYS: Record<number, number[]> = {
+  0: [],
+  1: [3],
+  2: [2, 4],
+  3: [1, 3, 5],
+  4: [1, 2, 4, 5],
+  5: [1, 2, 3, 4, 5],
+  6: [1, 2, 3, 4, 5, 6],
+  7: [0, 1, 2, 3, 4, 5, 6],
+};
+
+/** Días ON de la semana (0 = domingo): los marcados por el coach o el cronograma por defecto. */
+export function trainingWeekdays(pr: Pick<AthletePlan['profile'], 'trainingDaysPerWeek' | 'trainingWeekdays'>) {
+  if (Array.isArray(pr.trainingWeekdays) && pr.trainingWeekdays.length === pr.trainingDaysPerWeek) return [...pr.trainingWeekdays].sort();
+  return DEFAULT_WEEKDAYS[clamp(Math.round(pr.trainingDaysPerWeek), 0, 7)];
 }
 
 export function clamp(n: number, a: number, b: number) {

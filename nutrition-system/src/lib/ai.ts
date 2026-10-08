@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { geminiGenerate, type GeminiNotice, type GeminiResult } from './gemini';
 import { aisGroupA } from './evidence';
+import { fixGreeting, OFF_PERI_NAME, parseTrainingWindow, PERI_WORDS, resolveAthleteName } from './anamnesis';
 import { macrosFor, matchFood, round1, round2 } from './foods';
 import { uid } from './seed';
 import type { AiProvider, AiSettings, AthletePlan, FoodItem, Meal, MealDay, MealRole, Phase, Supplement } from './types';
@@ -17,9 +18,13 @@ REGLAS DE CÁLCULO Y FORMATO (obligatorias):
 - Cada item de "meals" lleva p, c, f y leucine en gramos para la porción indicada, más "macroPrincipal": "protein" | "carbs" | "fat" (el macro que define su equivalencia).
 - Grasas de cocción y condimento (aceite de oliva, girasol, manteca): porción REALISTA de 10-15 g (1 cda) por comida, NUNCA más de 15 g por comida. Para cubrir grasas usá palta, frutos secos, huevo o pasta de maní, no más aceite.
 - Cereales / carbos rápidos argentinos válidos: avena, avena instantánea, tutucas de maíz (30-60 g), copos de maíz sin azúcar, galletas o tostadas de arroz, pan integral.
-- Agregá a cada meal: "day": "ON" | "OFF" | "AMBOS" y "role": "breakfast" | "lunch" | "peri" | "post" | "snack" | "dinner". La suma de las comidas de cada día DEBE cerrar el 100 % (±3 %) de sus metas: kcal (targetKcalOn / targetKcalOff), proteínas, carbohidratos y grasas de macrosOn / macrosOff. Antes de responder, sumá p/c/f de todos los items de cada día y, si falta o sobra, ajustá las porciones de carbohidratos (arroz, papa, batata, avena, fideos) y de grasas (palta, frutos secos, huevo; aceite máx. 15 g por comida) hasta cerrar la brecha.
-- Agregá el objeto opcional "profile": { sex: "M"|"F", age, heightCm, weightKg, bodyFatPct, phase: "recomp"|"maintenance"|"surplus", trainingDaysPerWeek, sessionKcal, activityFactor } con lo que se desprenda de las notas.
-- Agregá "coachNote": una directiva táctica breve (máx. 2 frases) para el atleta.
+- Agregá a cada meal: "day": "ON" | "OFF" | "AMBOS" y "role": "breakfast" | "lunch" | "peri" | "post" | "snack" | "dinner". La suma de las comidas de cada día DEBE cerrar EXACTAMENTE el 100 % (±1 %) de su meta calórica (targetKcalOn / targetKcalOff) y el 100 % (±3 %) de proteínas, carbohidratos y grasas de macrosOn / macrosOff: si el atleta tilda todas sus comidas no le puede faltar nada. Antes de responder, sumá p/c/f de todos los items de cada día y, si falta o sobra, ajustá las porciones de carbohidratos (arroz, papa, batata, avena, fideos) y de grasas (palta, frutos secos, huevo; aceite máx. 15 g por comida) hasta cerrar la brecha.
+- Agregá el objeto opcional "profile": { sex: "M"|"F", age, heightCm, weightKg, bodyFatPct, phase: "recomp"|"maintenance"|"surplus", trainingDaysPerWeek, trainingTime: "HH:MM", sessionMinutes, sessionKcal, activityFactor } con lo que se desprenda de las notas.
+- Agregá "coachNote": una directiva táctica breve (máx. 2 frases) para el atleta. Sin saludos ni apodos.
+- "athleteName": EXACTAMENTE el nombre que figura en las notas; nunca inventes apodos ni variantes.
+- Horario de entrenamiento: "profile.trainingTime" = hora de INICIO de la sesión ("HH:MM") y "profile.sessionMinutes" = duración. Ej: "entreno de 16 a 18 hs" → trainingTime "16:00", sessionMinutes 120 (nunca 18:00 como inicio).
+- Leucina ≥ 2,7 g SOLO en comidas principales (desayuno, almuerzo, cena, post-entreno). Colaciones y meriendas son ingestas auxiliares: no les agregues huevo ni whey para llegar al umbral.
+- Día OFF: no hay sesión. Prohibido "Pre-Entreno", "PeriWOD" o "bloque glucolítico"; la merienda del OFF se llama "Merienda Táctica OFF" (modulación glucémica / saciedad). Cafeína en OFF: consumo matutino habitual (café / mate), sin toma pre-workout.
 - Suplementos: sólo AIS Grupo A (creatina 0,04 g/kg, cafeína 3-6 mg/kg, beta-alanina, bicarbonato, nitrato) con DOI real.
 - Respondé SOLO con el objeto JSON, sin texto antes ni después y sin bloques de código.`;
 
@@ -78,6 +83,8 @@ export interface AiPlanJson {
     bodyFatPct: number;
     phase: string;
     trainingDaysPerWeek: number;
+    trainingTime: string;
+    sessionMinutes: number;
     sessionKcal: number;
     activityFactor: number;
   }>;
@@ -186,7 +193,7 @@ function inferDay(day: string | undefined, role: MealRole): MealDay {
 }
 
 /** Convierte la respuesta de la IA en el plan del Builder (todas las pestañas). */
-export function planFromAi(json: AiPlanJson, base: AthletePlan): AthletePlan {
+export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): AthletePlan {
   const pr = json.profile ?? {};
   const weightKg = num(pr.weightKg, base.profile.weightKg);
   const phases: Phase[] = ['recomp', 'maintenance', 'surplus'];
@@ -219,8 +226,25 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan): AthletePlan {
           ...(mp === 'protein' || mp === 'carbs' || mp === 'fat' ? { macroPrincipal: mp } : {}),
         };
       });
-    return { id: uid(), name, time: /^\d{1,2}:\d{2}$/.test(m.time ?? '') ? m.time!.padStart(5, '0') : '12:00', day: inferDay(m.day, role), role, items };
+    const day = inferDay(m.day, role);
+    // Día OFF: sin sesión → nada de "Pre-Entreno PeriWOD" ni "Bloque glucolítico".
+    const offPeri = day === 'off' && (role === 'peri' || PERI_WORDS.test(name));
+    return {
+      id: uid(),
+      name: offPeri ? OFF_PERI_NAME : name,
+      time: /^\d{1,2}:\d{2}$/.test(m.time ?? '') ? m.time!.padStart(5, '0') : '12:00',
+      day,
+      role: offPeri ? 'snack' : role,
+      items,
+    };
   });
+
+  // Horario real de la anamnesis (ej. "entreno de 16 a 18 hs" → inicio 16:00, 120 min), por encima de la IA.
+  const window = parseTrainingWindow(notes);
+  const aiTime = /^\d{1,2}:\d{2}$/.test(pr.trainingTime ?? '') ? pr.trainingTime!.padStart(5, '0') : undefined;
+  const trainingTime = window?.time ?? aiTime ?? base.profile.trainingTime;
+  const sessionMinutes = window?.minutes ?? (num(pr.sessionMinutes, 0) >= 20 ? num(pr.sessionMinutes, 0) : base.profile.sessionMinutes);
+  const athleteName = resolveAthleteName(json.athleteName, notes, base.profile.name);
 
   const known = Object.fromEntries(aisGroupA(weightKg).map((s) => [s.id, s]));
   const supplements: Supplement[] = (json.supplements ?? []).map((s) => {
@@ -252,7 +276,9 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan): AthletePlan {
     ...base,
     profile: {
       ...base.profile,
-      name: json.athleteName?.trim() || base.profile.name,
+      name: athleteName,
+      trainingTime,
+      sessionMinutes,
       discipline: /cross|hyrox|h[ií]brid|funcional|wod/i.test(json.sportType ?? '') ? 'hybrid' : json.sportType ? 'bodybuilding' : base.profile.discipline,
       sex: pr.sex === 'F' ? 'F' : pr.sex === 'M' ? 'M' : base.profile.sex,
       age: num(pr.age, base.profile.age),
@@ -271,7 +297,7 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan): AthletePlan {
     },
     meals: meals.length ? meals : base.meals,
     supplements: supplements.length ? supplements : aisGroupA(weightKg),
-    coachNote: json.coachNote?.trim() || base.coachNote,
+    coachNote: fixGreeting(json.coachNote?.trim() || base.coachNote, json.athleteName, athleteName),
   };
 }
 
