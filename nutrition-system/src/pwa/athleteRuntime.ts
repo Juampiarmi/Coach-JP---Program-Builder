@@ -148,7 +148,7 @@ const runtime = String.raw`
   function mealName(m, mode) { return isOffPeri(m, mode) ? 'Merienda Táctica OFF' : m.name; }
 
   // Comida libre controlada (Comer fuera): bloque promedio balanceado que reemplaza la comida en la telemetría.
-  var FREE_MEAL = { p: 40, c: 50, f: 25 };
+  var FREE_MEAL = { p: 45, c: 70, f: 32 };
   function freeItem(m, sc) {
     var lbl = (OUT_SCENES.filter(function (o) { return o.id === sc; })[0] || {}).label || 'Salida';
     return { id: 'free-' + m.id, food: 'Comida libre controlada · ' + lbl, grams: 0, p: FREE_MEAL.p, c: FREE_MEAL.c, f: FREE_MEAL.f, leucine: FREE_MEAL.p * 0.08, free: true };
