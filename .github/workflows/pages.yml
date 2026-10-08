@@ -97,11 +97,13 @@ jobs:
       - name: Verificar Builder en vivo
         env:
           URL: ${{ steps.deployment.outputs.page_url }}nutrition/
+          SHA: ${{ github.sha }}
         run: |
-          for i in $(seq 1 12); do
-            code=$(curl -s -o /tmp/page.html -w '%{http_code}' "$URL" || echo 000)
+          # ?v=<sha> esquiva la caché del CDN de Pages (un 404 servido por el build de Jekyll queda cacheado hasta 10 min).
+          for i in $(seq 1 24); do
+            code=$(curl -s -o /tmp/page.html -w '%{http_code}' "$URL?v=$SHA" || echo 000)
             if [ "$code" = "200" ] && grep -q '/nutrition/_next/static/' /tmp/page.html; then echo "OK · $URL responde 200 con el Builder"; exit 0; fi
-            echo "Intento $i: $URL → HTTP $code"; sleep 10
+            echo "Intento $i: $URL → HTTP $code"; sleep 15
           done
           echo "::error::$URL no sirve el Builder. Revisá Settings → Pages → Source: debe ser \"GitHub Actions\" (con \"Deploy from a branch\" el build de Jekyll sobre main pisa este deploy)."
           exit 1
