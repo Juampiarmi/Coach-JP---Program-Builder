@@ -6335,19 +6335,26 @@ async function generarTipsSports(bid, btn){
     b.tempo ? 'Tempo prescripto: ' + b.tempo : '',
     b.metodologia ? 'Técnica avanzada asignada: ' + b.metodologia : ''
   ].filter(Boolean).join('\n');
-  const sistema = 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. Dado un bloque de fuerza/hipertrofia, ' +
+  const esBiset = (b.items || []).some(l => /^\s*[A-F]\d\s*[.)]/.test(String(l)));
+  const sistemaStd = 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. Dado un bloque de fuerza/hipertrofia, ' +
     'escribís en español rioplatense, corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del bloque" (1 frase, ' +
     'qué busca lograr fisiológicamente este ejercicio/biset -- ej. "Máxima tensión mecánica en el rango medio, sin perder tempo excéntrico") ' +
     'y "coaching tips" en CUATRO líneas separadas por salto de línea, cada una con su etiqueta en mayúsculas: ' +
     '"SET-UP & ESTABILIDAD INICIAL: ...", "CONTROL DE LA FASE EXCÉNTRICA: ...", "INTENCIÓN NEUROMUSCULAR CONCÉNTRICA: ...", "ERROR COMÚN A EVITAR: ..." ' +
     '(consejos técnicos puntuales de postura, ejecución y respiración, citando el nombre real de los ejercicios listados). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre las cuatro líneas).';
+  const sistema = esBiset
+    ? 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. El bloque es un BISET/SUPERSET: los ejercicios listados son las estaciones A1, A2 (y A3) en ese orden. ' +
+      'Escribís en español rioplatense, corto y directo (sin emojis, sin relleno): un "objetivo del bloque" (1 frase fisiológica) y "tips" con UNA línea por estación y por etapa, separadas por salto de línea, ' +
+      'cada una empezando con la letra de la estación: "A1 · SET-UP: ...", "A1 · ACCIÓN: ...", "A1 · ERROR: ...", "A2 · SET-UP: ...", "A2 · ACCIÓN: ...", "A2 · ERROR: ..." ' +
+      '(postura, ejecución y error común puntuales de CADA ejercicio, citando su nombre real; nunca mezcles los dos ejercicios en la misma línea). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).'
+    : sistemaStd;
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
     'Generá objetivo y coaching tips en JSON para este bloque.\nEjercicios incluidos:\n' + lineas;
 
   const originalHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
   try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 320 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: esBiset ? 560 : 320 });
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
@@ -6360,7 +6367,10 @@ async function generarTipsSports(bid, btn){
     }
     if(!objetivo && !tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
     if(objetivo) b.objective = objetivo;
-    if(tips) b.tips = tips.replace(/\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N)[^:\n]{0,70}:)/g, '\n').replace(/^\n+/, '').replace(/\n{2,}/g, '\n');
+    if(tips) b.tips = tips
+      .replace(/\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N)[^:\n]{0,70}:)/g, (m, off, whole) => /\b[A-F]\d\s*·\s*$/.test(whole.slice(0, off + m.length)) ? m : '\n')
+      .replace(/\s*(?=\b[A-F]\d\s*·\s*(?:SET-?UP|ACCI[OÓ]N|ERROR)[^:\n]{0,40}:)/g, '\n')
+      .replace(/^\n+/, '').replace(/\n{2,}/g, '\n');
     save(); renderBuilder();
     toast('Tips y objetivo generados con IA ⚡');
   }catch(e){
@@ -14701,7 +14711,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(!exs.length) return;
       gridHtml = '<div class="jp-cf-setgrid"><div class="jp-cf-setgrid-lb">[ REGISTRO DE SERIES ]</div>' +
         exs.map(function(ex, k){
-          return (exs.length > 1 ? '<div class="jp-cf-setgrid-ex">' + escSB(ex.nombre) + ' <small>[kg]</small></div>' : '') +
+          return (exs.length > 1 ? '<div class="jp-cf-setgrid-ex">' + escSB(ex.nombre) + ' <small>' + (modoInputSB(ex.nombre) ? '[\\u2713]' : '[kg]') + '</small></div>' : '') +
             renderSetRowsNativeSB(weekIdx, dayId, block.id, 'cf' + k, ex.sets, 'reps', true, null, '', ex.nombre + ' ' + String(block.title || ''));
         }).join('') + '</div>';
     })();
@@ -15061,7 +15071,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return entry.subs[entry.subs.length - 1];
   }
   /* "ESTRATEGIA BIOMECÁNICA & TIPS": una fase pedagógica por renglón, etiqueta en negrita dorada */
-  function formatTipsSB(texto){
+  function formatTipsSB(texto, nombres){
     var t = String(texto || '').trim();
     if(!t) return '';
     t = t.replace(/(TRANSICI[OÓ]N R[AÁ]PIDA)\\s*,?\\s*\\n?\\s*SET-?UP(?: Y ANCLAJE)?\\s*:/gi, '$1 & SET-UP:');
@@ -15088,7 +15098,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       });
       var ORD = { 'SET-UP': 0, 'ACCI\\u00d3N': 1, 'ERROR': 2 };
       orden.sort(function(a, b){ var A = grupos[a], B = grupos[b]; return A.letra === B.letra ? ORD[A.cat] - ORD[B.cat] : (A.letra < B.letra ? -1 : 1); });
-      return orden.map(function(k){ var g = grupos[k]; return '<div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">' + (g.letra ? g.letra + ' \\u00b7 ' : '') + g.cat + ':</b> ' + escSB(corto(g.tx.join(' '))) + '</div>'; }).join('');
+      var porLetra = {}, ordL = [], nom = nombres || {};
+      orden.forEach(function(k){ var g = grupos[k]; if(!porLetra[g.letra]){ porLetra[g.letra] = []; ordL.push(g.letra); } porLetra[g.letra].push(g); });
+      return ordL.map(function(L){
+        var info = nom[L] || null;
+        var cab = L ? '<div class="jp-tip-exh"><span class="jp-tip-exn">&#127947;&#65039; ' + L + (info && info.nombre ? ': ' + escSB(String(info.nombre).toUpperCase()) : '') + '</span>' + ((info && info.btn) || '') + '</div>' : '';
+        return '<div class="jp-tip-ex">' + cab + porLetra[L].map(function(g){ return '<div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">' + g.cat + ':</b> ' + escSB(corto(g.tx.join(' '))) + '</div>'; }).join('') + '</div>';
+      }).join('');
     }
     if(etiquetados.length >= 2){
       var setup = [], accion = [], error = [];
@@ -15890,11 +15906,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   /* [ ▶ VER TÉCNICA ]: mismo video del bloque, en modal rápido con loop y sin sonido */
   function verTecnicaSB(nombre, block){
     var h = miniVideoSB(nombre, block);
-    if(!h) return '';
+    if(!h){
+      var busq = limpiarNombreParaVideoSB(nombre);
+      return busq ? '<button type="button" class="jp-sb-vid-mini jp-ver-tec jp-ver-busca" data-vsearch="' + escSB(busq) + '" title="Buscar la t\\u00e9cnica en YouTube">&#9654; VER T\\u00c9CNICA</button>' : '';
+    }
     return h.replace('class="jp-sb-vid-mini"', 'class="jp-sb-vid-mini jp-ver-tec" data-loop="1"').replace('>&#9654;</button>', '>&#9654; VER T\\u00c9CNICA</button>');
   }
   /* autocarga y calistenia: sin input de kg por defecto (chip BW + "+ Lastre"); isométricos: un único input de tiempo */
-  var RX_BW_SB = /(?:hanging|colgad|dominad|pull ?ups?|chin ?ups?|fondos?|dips?|flexion(?:es)?|push ?ups?|knee raises?|leg raises?|elevacion(?:es)? de (?:rodillas|piernas)|muscle ?ups?|burpees?|abdominales|crunch(?:es)?|sit ?ups?|v ?ups?|remo invertido|inverted row|australian)/;
+  var RX_BW_SB = /(?:hanging|colgad|dominad|pull ?ups?|chin ?ups?|fondos?|dips?|flexion(?:es)?|push ?ups?|knee raises?|leg raises?|elevacion(?:es)? de (?:rodillas|piernas)|muscle ?ups?|burpees?|abdominales|crunch(?:es)?|sit ?ups?|v ?ups?|remo invertido|inverted row|australian|banda|banded)/;
   var RX_NOBW_SB = /(?:lastre|weighted|con peso|chaleco|maquina|polea|asistid|smith)/;
   var RX_TIEMPO_SB = /(?:plancha|plank|isometric|isometrico|hold|wall ?sit|dead ?hang|colgado pasivo|hollow|suspension)/;
   function modoInputSB(nombre){
@@ -16134,6 +16153,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return propio;      /* dos párrafos distintos: queda un único resumen, el del campo propio */
     };
     const objetivoHtml = unirMetaSB(block.objective, sepMeta.objective);
+    const nombresTips = {};
+    entries.forEach(function(en){
+      if(en && en.tipo === 'biserie' && en.subs){
+        const L0 = String(en.letra || 'A').toUpperCase();
+        en.subs.forEach(function(sb, ix){ nombresTips[L0 + (ix + 1)] = { nombre: sb.nombre, btn: verTecnicaSB(sb.nombre, block) }; });
+      }
+    });
     const tipsHtml = /<[a-z][^>]*>/i.test(String(block.tips || ''))
       ? unirMetaSB(block.tips, sepMeta.tips)
       : formatTipsSB((function(){
@@ -16144,7 +16170,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           if(np.indexOf(nx) >= 0) return p;
           if(nx.indexOf(np) >= 0) return x;
           return p + '\\n' + x;
-        })());
+        })(), nombresTips);
     const tieneObjTips = objetivoHtml || tipsHtml;
     const tieneAcc = tieneObjTips;      /* el video vive solo en el boton [ VER TECNICA ] de la cabecera */
     /* directiva maestra ("Limpieza de indicadores y títulos secundarios")
@@ -16174,9 +16200,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var htmlFinal = html;
     if(esCalentamiento){
       var nAct = (filas.match(/jp-sb-plain-nombre/g) || []).length;
-      htmlFinal = '<details class="jp-warm-acc"><summary><span class="jp-warm-ic">\\ud83d\\udd25</span> Activaci\\u00f3n' +
-        (nAct ? ' <span class="jp-warm-n">' + nAct + ' ejercicios</span>' : '') +
-        '<span class="jp-warm-cta"><span class="jp-warm-closed">[ Desplegar \\u25be ]</span><span class="jp-warm-open">[ Cerrar \\u25b4 ]</span></span></summary>' + html + '</details>';
+      htmlFinal = '<details class="jp-warm-acc"><summary><span class="jp-warm-lb">\\ud83d\\udd25 ACTIVACI\\u00d3N' + (nAct ? ' \\u00b7 ' + nAct + ' EJERCICIOS' : '') + '</span><span class="jp-warm-chev">\\u25bc</span></summary>' + html + '</details>';
     }
     body.insertAdjacentHTML('afterbegin', htmlFinal);
     body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
@@ -17948,7 +17972,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       g.drawImage(img, sx, sy, sw, sh, 0, 0, Wp, Hp);
       /* overlay oscuro -- garantiza legibilidad del texto sobre CUALQUIER
          foto, sea clara u oscura (directiva pide 0.60-0.75 de opacidad) */
-      g.fillStyle = 'rgba(6,7,10,.68)';
+      const ov = g.createLinearGradient(0, Hp, 0, 0);
+      ov.addColorStop(0, 'rgba(0,0,0,0.85)'); ov.addColorStop(1, 'rgba(0,0,0,0.3)');
+      g.fillStyle = ov;
       g.fillRect(0, 0, Wp, Hp);
       return true;
     }
@@ -18003,15 +18029,20 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     /* atleta, chico, arriba de todo -- se conserva para no perder la
        personalización, pero ya no compite con el título de la sesión */
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
-    g.fillStyle = 'rgba(255,255,255,.5)'; g.font = '500 26px Inter, sans-serif';
-    g.fillText((d.atleta || '').toUpperCase(), 90, 128);
-    g.textAlign = 'right'; g.fillStyle = 'rgba(245,197,24,.9)'; g.font = '700 24px "JetBrains Mono", ui-monospace, monospace';
-    g.fillText(jpFechaMil(), W - 90, 128);
-    g.textAlign = 'left';
+    var nomAt = (d.atleta || 'ATLETA').toUpperCase(), tamAt = 64;
+    g.font = '800 ' + tamAt + 'px "Chakra Petch", sans-serif';
+    while(g.measureText(nomAt).width > W - 180 && tamAt > 34){ tamAt -= 2; g.font = '800 ' + tamAt + 'px "Chakra Petch", sans-serif'; }
+    g.fillStyle = '#FFFFFF'; g.fillText(nomAt, 90, 138);
 
-    /* línea 1 -- [ DÍA X · SEMANA Y ], rótulo táctico monoespaciado */
-    g.fillStyle = '#38BDF8'; g.font = '700 32px "JetBrains Mono", ui-monospace, monospace';
-    g.fillText('[ ' + diaCorto.toUpperCase() + (semanaN ? ' · SEMANA ' + semanaN : '') + ' ]', 90, 186);
+    /* línea 1 -- [ DÍA X · SEMANA Y ] a la izquierda, fecha a la derecha */
+    var rotulo = '[ ' + diaCorto.toUpperCase() + (semanaN ? ' · SEMANA ' + semanaN : '') + ' ]';
+    g.fillStyle = '#38BDF8'; g.font = '700 28px "JetBrains Mono", ui-monospace, monospace';
+    g.fillText(rotulo, 90, 190);
+    var wRot = g.measureText(rotulo).width, fechaH = jpFechaMil();
+    g.font = '700 22px "JetBrains Mono", ui-monospace, monospace';
+    if(g.measureText(fechaH).width > W - 180 - wRot - 24) fechaH = fechaH.replace(' · SESSION COMPLETED', '');
+    g.textAlign = 'right'; g.fillStyle = 'rgba(245,197,24,.9)'; g.fillText(fechaH, W - 90, 190);
+    g.textAlign = 'left';
 
     /* línea 2 -- título de la sesión, tipografía de alto impacto,
        envuelto hasta 2 líneas si hace falta (mismo helper que ya usaba
@@ -18032,28 +18063,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     })();
     var yTrasTitulo = 268 + tituloLineas.lineas.length * (tituloLineas.tam + 14) + 26;
 
-    /* línea 3 -- COACH JP · HIGH PERFORMANCE SYSTEM, con isotipo, al pie
-       del bloque de encabezado */
-    /* directiva ("Pulido visual de la Story Card: logo alineado y con
-       presencia") -- escudoMini(g,cx,cy,alto) traslada el origen a cy y
-       dibuja el path del escudo (viewBox 64x74) hacia ABAJO desde ahí --
-       el centro real del isotipo queda en cy + alto/2, nunca en cy. El
-       texto de al lado usa textBaseline='middle' con ese mismo cy como su
-       centro real, así que el isotipo quedaba ~23px por debajo del centro
-       del texto (sin presencia, desalineado del wordmark). Se compensa el
-       cy que recibe el escudo para que su centro real coincida con el del
-       texto -- mismo patrón que ya usa escudoCanvas() en el estilo PR
-       Champion, sin tocar escudoMini() (la otra llamada, línea ~14005,
-       la usa como ancla superior a propósito). */
-    var yLogoLinea = yTrasTitulo + 26;
-    escudoMini(g, 116, yLogoLinea - 23, 46);
-    g.textAlign = 'left'; g.textBaseline = 'middle';
-    g.fillStyle = '#E5C378'; g.font = '700 28px "Chakra Petch", sans-serif';
-    g.fillText('COACH JP · HIGH PERFORMANCE SYSTEM', 150, yLogoLinea);
-    g.textBaseline = 'alphabetic';
-
     /* línea volt */
-    var yAccent = yTrasTitulo + 76;
+    var yAccent = yTrasTitulo + 20;
     g.fillStyle = '#E5C378'; g.fillRect(90, yAccent, 150, 6);
 
     /* directiva ("Cálculo real y rediseño de Story Card") -- las 3 cajas
@@ -18137,9 +18148,22 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       var rowH = 112, y0 = yTop + 104, pie = d.rpe ? 84 : 28;
       var maxRows = Math.max(0, Math.floor((ph - 104 - pie) / rowH));
       if(!lista.length){
-        g.textAlign = 'center'; g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '500 32px Inter, sans-serif';
-        g.fillText('Tus mejores sets del día aparecen acá', W / 2, yTop + ph / 2 - 10);
-        g.fillText('cuando tildás tus series.', W / 2, yTop + ph / 2 + 36);
+        var hechosL = d.listaEj || [], tH = 'DÍA COMPLETADO // 100% FOCUS', tamH = 52;
+        g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+        g.font = '800 ' + tamH + 'px "Chakra Petch", sans-serif';
+        while(g.measureText(tH).width > pw - 88 && tamH > 30){ tamH -= 2; g.font = '800 ' + tamH + 'px "Chakra Petch", sans-serif'; }
+        var yT = y0 + 24;
+        g.fillStyle = '#E5C378'; g.fillText(tH, W / 2, yT);
+        var cupo = Math.max(0, Math.floor((ph - 104 - pie - 90) / 52)), mostrar = hechosL.slice(0, cupo);
+        g.textAlign = 'left'; g.font = '600 32px Inter, sans-serif'; g.fillStyle = 'rgba(255,255,255,.88)';
+        mostrar.forEach(function(nm, i){
+          var tt = '✓  ' + String(nm).toUpperCase();
+          while(tt.length > 4 && g.measureText(tt).width > pw - 88){ tt = tt.slice(0, -2); }
+          g.fillText(tt, px + 44, yT + 74 + i * 52);
+        });
+        if(hechosL.length > mostrar.length && mostrar.length){
+          g.fillStyle = 'rgba(255,255,255,.5)'; g.fillText('+ ' + (hechosL.length - mostrar.length) + ' más', px + 44, yT + 74 + mostrar.length * 52);
+        }
       }
       lista.slice(0, maxRows).forEach(function(it, i){
         var yy = y0 + i * rowH;
@@ -18243,18 +18267,14 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     let glow = g.createRadialGradient(W / 2, 150, 10, W / 2, 150, 220);
     glow.addColorStop(0, 'rgba(56,189,248,.35)'); glow.addColorStop(1, 'rgba(56,189,248,0)');
     g.fillStyle = glow; g.fillRect(0, 0, W, 320);
-    escudoMini(g, W / 2, 70, 110);
 
     /* directiva ("Rediseño Story Card 9:16") -- línea de marca chica
        arriba del badge táctico: "COACH JP · HIGH PERFORMANCE SYSTEM",
        mismo texto institucional que ya usa dibujar() (estilo Bodybuilding)
        en su propio encabezado, ahora también en la versión CrossFit. */
     g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-    g.fillStyle = 'rgba(255,255,255,.65)'; g.font = '700 22px "JetBrains Mono", ui-monospace, monospace';
-    g.fillText('COACH JP · HIGH PERFORMANCE SYSTEM', W / 2, 216);
-
     g.fillStyle = '#38BDF8'; g.font = '700 30px "JetBrains Mono", ui-monospace, monospace';
-    g.fillText('[ CROSSFIT & HYROX TACTICAL ]', W / 2, 258);
+    g.fillText('[ CROSSFIT & HYROX TACTICAL ]', W / 2, 200);
 
     /* directiva (rediseño total Story Card 9:16, ultra profesional) --
        el header ahora manda con el NOMBRE DEL ATLETA en tipografía
@@ -18279,9 +18299,9 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       } while(tam > 48);
       nombreLineas = { lineas: lineas, tam: tam };
       g.textAlign = 'center'; g.fillStyle = '#FFFFFF';
-      lineas.forEach(function(ln, i){ g.fillText(ln, W / 2, 352 + i * (tam + 8)); });
+      lineas.forEach(function(ln, i){ g.fillText(ln, W / 2, 296 + i * (tam + 8)); });
     })();
-    var yTrasNombre = 352 + nombreLineas.lineas.length * (nombreLineas.tam + 8) + 14;
+    var yTrasNombre = 296 + nombreLineas.lineas.length * (nombreLineas.tam + 8) + 14;
 
     g.textAlign = 'center';
     /* fecha en estilo militar compacto: "// 03.OCT.2026 · SESSION COMPLETED" */
@@ -18483,7 +18503,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        así que la píldora se dimensiona a partir del ancho real medido
        (mismo patrón que el badge de heroCard) en vez de un ancho fijo
        que la hubiera cortado. */
-    var footerFrase = 'COACH JP · DISCIPLINE EQUALS FREEDOM';
+    var footerFrase = '⚡ PROGRAMMED BY @COACHJP';
     g.font = '700 22px "JetBrains Mono", monospace';
     var footerW = g.measureText(footerFrase).width + 64;
     g.fillStyle = 'rgba(245,197,24,.14)'; redondear(g, W / 2 - footerW / 2, H - 106, footerW, 58, 29); g.fill();
@@ -19994,10 +20014,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     g.strokeStyle = 'rgba(255,255,255,.10)'; g.lineWidth = 2;
     rr(g, 64, 64, W - 128, HH - 128, 26); g.stroke();
 
-    escudoCanvas(g, W / 2, 150, 210);
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = '#E5C378'; g.font = '700 40px "Chakra Petch", sans-serif';
-    g.fillText('COACH JP • PERFORMANCE SYSTEM', W / 2, 430);
+    ajustar(g, (d.atleta || 'ATLETA').toUpperCase(), W - 200, 96, 46);
+    g.fillStyle = '#FFFFFF';
+    g.fillText((d.atleta || 'ATLETA').toUpperCase(), W / 2, 260);
+    g.fillStyle = 'rgba(245,197,24,.9)'; g.font = '700 28px "JetBrains Mono", ui-monospace, monospace';
+    g.fillText(window.jpFechaMil ? window.jpFechaMil() : (d.fecha || ''), W / 2, 340);
+    g.fillStyle = '#E5C378'; g.fillRect(W / 2 - 75, 400, 150, 6);
 
     ajustar(g, '🏆 NEW PERSONAL RECORD', W - 200, 92, 46);
     g.fillStyle = '#FFFFFF';
@@ -20053,14 +20076,12 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       g.fillText(b.u, bx + ancho / 2, 1328);
     });
 
-    ajustar(g, (d.atleta || '').toUpperCase(), W - 220, 72, 40);
-    g.fillStyle = '#FFFFFF';
-    g.fillText((d.atleta || '').toUpperCase(), W / 2, 1418);
-    g.fillStyle = '#A0A8B4'; g.font = '400 28px Inter, sans-serif';
-    /* subtítulo (sesión + fecha/grupos): wrap limpio con margen lateral de
-       seguridad en vez de una sola línea que podía pasar el marco. */
-    envolverTexto(g, (d.sesion || '') + '  ·  ' + (window.jpFechaMil ? window.jpFechaMil() : (d.fecha || '')), W - 260, 2)
-      .forEach(function(ln, i){ g.fillText(ln, W / 2, 1472 + i * 38); });
+    var tituloPie = String(d.tituloSesion || d.sesion || '').toUpperCase();
+    if(tituloPie){
+      ajustar(g, tituloPie, W - 220, 52, 28);
+      g.fillStyle = '#FFFFFF';
+      g.fillText(tituloPie, W / 2, 1440);
+    }
 
     /* racha, top lift y firma los agrega el módulo de métricas */
     return c;
@@ -20085,6 +20106,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function redibujar(){
     if(!ultimo) return;
+    if(estilo === 'champ' && !(ultimo.prs && ultimo.prs.length)) estilo = 'cyber';
     if(estilo === 'champ') champion(ultimo);
     else if(cyber) cyber(ultimo);
   }
@@ -20127,6 +20149,11 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         estilos();
         var s = document.getElementById('scStyles');
         if(s) s.querySelectorAll('.sc-style').forEach(function(x){ x.classList.toggle('on', x.dataset.st === estilo); });
+        var hayPR = !!(d.prs && d.prs.length), cbtn = s && s.querySelector('.champ');
+        if(cbtn){ cbtn.disabled = !hayPR; cbtn.title = hayPR ? '' : 'Sin PR en esta sesión'; }
+        var nota = document.getElementById('scNota');
+        if(!nota && s){ nota = document.createElement('div'); nota.id = 'scNota'; nota.className = 'sc-nota'; nota.textContent = '📈 SESIÓN DE ACUMULACIÓN DE VOLUMEN · SIN PR HOY'; s.parentNode.insertBefore(nota, s.nextSibling); }
+        if(nota) nota.style.display = hayPR ? 'none' : 'block';
         setTimeout(redibujar, 60);
         return r;
       };
@@ -21229,8 +21256,8 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     return mejor;
   }
   /* mejores sets del día (por ejercicio): nombre real sacado de la rutina, mejor kg×reps y volumen */
-  function topSetsDia(){
-    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = {}, mapa = {};
+  function nombresEjDia(){
+    var nombres = {};
     try{
       var day = DAYS.filter(function(x){ return x.id === state.currentDay; })[0];
       ((day && day.blocks) || []).forEach(function(b){
@@ -21242,6 +21269,23 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
         });
       });
     }catch(e){}
+    return nombres;
+  }
+  /* ejercicios con al menos una serie tildada hoy (aunque no lleven kg) */
+  function ejerciciosHechosDia(){
+    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), vistos = {}, out = [];
+    Object.keys(state.loads || {}).forEach(function(k){
+      if(k.indexOf(pref) !== 0) return;
+      var l = state.loads[k] || {}, p = k.split('|');
+      if(!l.done) return;
+      var nm = nombres[p[2] + '|' + p[3]] || l.__ex || '';
+      if(!nm || vistos[nm]) return;
+      vistos[nm] = 1; out.push(nm);
+    });
+    return out;
+  }
+  function topSetsDia(){
+    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), mapa = {};
     Object.keys(state.loads || {}).forEach(function(k){
       if(k.indexOf(pref) !== 0) return;
       var l = state.loads[k] || {}, p = k.split('|');
@@ -21347,7 +21391,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     /* firma discreta, siempre al pie */
     g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '700 28px "Chakra Petch", sans-serif';
     g.fillStyle = '#F59E0B'; g.font = '700 26px "JetBrains Mono", ui-monospace, monospace';
-    g.fillText('@COACHJP // HIGH PERFORMANCE COACHING', W / 2, HH - 88);
+    g.fillText('⚡ PROGRAMMED BY @COACHJP', W / 2, HH - 88);
 
     /* el marco cepillado se redibuja arriba de la franja nueva */
     if(dorado){
@@ -21367,6 +21411,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     d.topKg = t.kg; d.topEx = t.ex;
     d.rpe = rpePromedio();
     d.topSets = topSetsDia();
+    d.listaEj = ejerciciosHechosDia();
     return d;
   }
   window.CoachStoryDatos = enriquecer;
@@ -35741,7 +35786,8 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     var kg = (($('#jpTonelajeVal') || {}).textContent || '0').trim();
     var rir = 'RIR OBJ';
     try{ var m = /RIR\\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
-    var h = '<span>&#127947;&#65039; ' + kg + ' KG CARGA BASE</span><span>&#9201;&#65039; ' + nB + ' BLOQUES</span><span>&#127919; ' + rir + '</span>';
+    var ton = (kg === '0' || kg === '') ? '&mdash;' : kg + ' KG';
+    var h = '<span>&#127947;&#65039; ' + ton + ' TONELAJE</span><span>&#9201;&#65039; ' + nB + ' BLOQUES</span><span>&#127919; ' + rir + '</span>';
     var hud = $('.jp-brief-hud', dh);
     if(!hud){ hud = document.createElement('div'); hud.className = 'jp-brief-hud'; dh.appendChild(hud); }
     if(hud.innerHTML !== h) hud.innerHTML = h;
@@ -35987,9 +36033,9 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
 .modal-overlay.open{ z-index:1000 !important; }
 
 /* carga y rondas en intervalos */
-.jp-ic{ margin:8px 0; border:1px solid rgba(245,158,11,.35); border-radius:12px; background:rgba(245,158,11,.05); }
-.jp-ic > summary{ list-style:none; display:flex; align-items:center; justify-content:space-between; min-height:44px; padding:0 12px; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.74rem; letter-spacing:.08em; color:#F59E0B; }
-.jp-ic > summary::-webkit-details-marker{ display:none; }
+.jp-icr{ margin:8px 0; border:1px solid rgba(245,158,11,.35); border-radius:12px; background:rgba(245,158,11,.05); }
+.jp-icr > summary{ list-style:none; display:flex; align-items:center; justify-content:space-between; min-height:44px; padding:0 12px; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.74rem; letter-spacing:.08em; color:#F59E0B; }
+.jp-icr > summary::-webkit-details-marker{ display:none; }
 .jp-ic-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 12px 12px; }
 .jp-ic-grid label{ display:flex; flex-direction:column; gap:3px; font-family:'Chakra Petch',sans-serif; font-size:.62rem; letter-spacing:.08em; color:#94A3B8; }
 .jp-ic-grid input{ min-height:44px; text-align:center; border-radius:8px; background:#0e1424; border:1px solid rgba(245,158,11,.4); color:#FFD600; font-weight:800; font-size:1rem; font-family:'Chakra Petch',sans-serif; }
@@ -35998,6 +36044,36 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
 /* switch segmentado de alternativas (la fila original queda oculta: el botón ya lleva el texto completo) */
 .jp-cf-alt .jp-cf-alt-a, .jp-cf-alt .jp-cf-alt-b{ display:none !important; }
 .jp-cf-altsw button{ white-space:normal !important; line-height:1.2; text-align:center; }
+
+/* ===== REFACTORIZACION FINAL ===== */
+/* la barra flotante siempre debajo de cualquier modal / timer / drawer */
+.hd-dock{ z-index:230 !important; }
+/* cabecera de Activacion: una sola linea */
+.jp-warm-acc > summary{ flex-wrap:nowrap !important; justify-content:space-between; gap:8px; padding:0 12px !important; white-space:nowrap; }
+.jp-warm-lb{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.76rem; letter-spacing:.05em; }
+.jp-warm-chev{ flex:0 0 auto; font-size:.8rem; color:#F59E0B; transition:transform .2s; }
+.jp-warm-acc[open] .jp-warm-chev{ transform:rotate(180deg); }
+.jp-warm-acc > summary .jp-done-btn{ margin:0 !important; }
+/* pill compacto de bloque completado + chevron unico */
+.jp-done-btn{ min-height:0 !important; padding:4px 10px !important; font-size:.62rem !important; border-radius:999px !important; line-height:1.3; }
+.jp-tag-row{ flex-wrap:nowrap !important; cursor:pointer; }
+.jp-tag-lb{ flex:1 1 auto; min-width:0; line-height:1.25; }
+.jp-tag-act{ display:inline-flex; align-items:center; gap:10px; margin-left:auto; flex:0 0 auto; }
+.jp-chev{ color:#94A3B8; font-size:.85rem; line-height:1; padding:6px 2px; }
+/* plegado manual de la cabecera: queda la etiqueta y el titulo */
+.block.jp-fold .jp-sb-board > *:not(.jp-sb-tag):not(.jp-sb-title):not(.jp-block-emphasis){ display:none !important; }
+.block.jp-fold .jp-cfboard > *:not(.jp-cf-tag):not(.jp-cf-title){ display:none !important; }
+/* serie activa con borde iluminado tenue + check esmeralda solido */
+.jp-set-row-native.jp-set-activa:not(.completed){ border-color:rgba(16,185,129,.6) !important; box-shadow:0 0 0 1px rgba(16,185,129,.22), 0 0 14px rgba(16,185,129,.16); }
+.jp-btn-check-native.completed{ background:#10B981 !important; border-color:#10B981 !important; color:#FFFFFF !important; }
+/* tips de biset: un bloque por ejercicio */
+.jp-tip-ex{ margin:10px 0 0; padding:10px 12px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.02); }
+.jp-tip-exh{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+.jp-tip-exn{ min-width:0; overflow-wrap:anywhere; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.78rem; letter-spacing:.05em; color:#FFD600; }
+.jp-tip-exh .jp-sb-vid-mini.jp-ver-tec{ margin-left:auto; flex:0 0 auto; }
+/* story: PR Champion sin PR */
+.sc-style:disabled{ opacity:.35; pointer-events:none; filter:grayscale(1); }
+.sc-nota{ text-align:center; margin:-2px 0 10px; font-family:'JetBrains Mono',monospace; font-size:.62rem; letter-spacing:.08em; color:#94A3B8; }
 </style>
 <script id="jpHudTacticoJs">
 /* ===== TACTICAL HUD · comportamiento común de la app del alumno ===== */
@@ -36056,6 +36132,12 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montar); else montar();
 
+  /* [ VER TECNICA ] sin video vinculado: abre la busqueda de la tecnica */
+  document.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('.jp-ver-busca'); if(!b) return;
+    e.preventDefault(); e.stopPropagation();
+    window.open('https://www.youtube.com/results?search_query=' + encodeURIComponent(b.getAttribute('data-vsearch') + ' t\\u00e9cnica ejercicio'), '_blank', 'noopener');
+  }, true);
   /* Story: etiquetas de los dos botones que quedan */
   function etiquetasStory(){
     var dl = document.querySelector('#storyDl .sa-tx'), ft = document.querySelector('#storyFotoBtn .sa-tx');
@@ -36122,6 +36204,12 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
   function iconoAlt(t){
     return /bike|assault|echo|air\\s*bike|bici/i.test(t) ? '\\ud83d\\udeb4' : (/\\brow\\b|remo|ski/i.test(t) ? '\\ud83d\\udea3' : (/run|corr|trote|carrera/i.test(t) ? '\\ud83c\\udfc3' : (/swim|nado/i.test(t) ? '\\ud83c\\udfca' : '\\u21c4')));
   }
+  /* "Assault Bike x 5:00 @ easy pace" -> "BIKE 5:00"; "Row x 5:00 @ easy pace" -> "ROW 5:00" */
+  function compactoAlt(t){
+    var tiempo = (t.match(/\\d+:\\d{2}/) || t.match(/\\d+\\s*(?:min|cal|km|mts?|m)\\b/i) || [''])[0].replace(/\\s+/g, ' ');
+    var nom = /assault|echo|air\\s*bike|bike|bici/i.test(t) ? 'BIKE' : (/\\brow(?:er|ing)?\\b|remo/i.test(t) ? 'ROW' : (/ski/i.test(t) ? 'SKI' : (/\\brun\\b|corr|trote/i.test(t) ? 'RUN' : '')));
+    return nom ? (nom + (tiempo ? ' ' + tiempo : '')) : t;
+  }
   function alternativas(){
     var ors = document.querySelectorAll('.jp-cfboard .jp-cf-or:not([data-jp])');
     for(var i = 0; i < ors.length; i++){
@@ -36135,7 +36223,7 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
           var t = ((rn ? rn.textContent : r.textContent) + ' ' + (rv ? rv.textContent : '')).replace(/\\[\\s*MIN\\s*\\d+\\s*\\]/i, '').replace(/\\s+/g, ' ').trim();
           return t;
         };
-        var ta = etq(a), tb = etq(b);
+        var ta = compactoAlt(etq(a)), tb = compactoAlt(etq(b));
         var key = (board && board.getAttribute('data-wodb') || '') + '#' + ta;
         var box = document.createElement('div');
         box.className = 'jp-cf-alt'; box.setAttribute('data-sel', leer(KALT)[key] || 'a');
@@ -36159,8 +36247,7 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
       var bd = bds[i];
       var n = bd.querySelectorAll('.jp-cf-rows .jp-cf-row').length;
       var det = document.createElement('details'); det.className = 'jp-warm-acc';
-      det.innerHTML = '<summary><span class="jp-warm-ic">🔥</span> Activación' + (n ? ' <span class="jp-warm-n">' + n + ' ejercicios</span>' : '') +
-        '<span class="jp-warm-cta"><span class="jp-warm-closed">[ Desplegar ▾ ]</span><span class="jp-warm-open">[ Cerrar ▴ ]</span></span></summary>';
+      det.innerHTML = '<summary><span class="jp-warm-lb">\\ud83d\\udd25 ACTIVACI\\u00d3N' + (n ? ' \\u00b7 ' + n + ' EJERCICIOS' : '') + '</span><span class="jp-warm-chev">\\u25bc</span></summary>';
       bd.parentNode.insertBefore(det, bd); det.appendChild(bd);
     }
   }
@@ -36181,7 +36268,7 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
         var campos = '';
         if(tipo === 'tiempo') campos = '<span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="MM" aria-label="Minutos"><b>:</b><input class="jp-sc-b" inputmode="numeric" maxlength="2" placeholder="SS" aria-label="Segundos"></span>';
         else if(tipo === 'rondas') campos = '<span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="RONDAS" aria-label="Rondas"><b>+</b><input class="jp-sc-b" inputmode="numeric" maxlength="3" placeholder="REPS" aria-label="Repeticiones"></span>';
-        else campos = '<input class="jp-sc-free" type="text" placeholder="' + esc(ph) + '">';
+        else campos = '<input class="jp-sc-free" type="text" placeholder="Ej: 42 reps">';
         ui.innerHTML = campos + '<span class="jp-sc-rx"><button type="button" data-rx="RX">RX</button><button type="button" data-rx="SCALED">SCALED</button></span>';
         inp.parentNode.insertBefore(ui, inp.nextSibling);
         inp.style.display = 'none';
@@ -36269,9 +36356,11 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
         bd.setAttribute('data-jp-ic', '1');
         var txt = bd.textContent || '';
         if(!(bd.querySelector('.jp-cf-interval, .jp-cf-cell') || /\\b(?:every|emom|intervalos?)\\b/i.test(txt))) return;
+        var pesado = !!bd.querySelector('.jp-cf-load, .jp-cf-pct, .jp-cf-refload') || /@\\s*\\d+(?:[.,]\\d+)?\\s*(?:kg|lbs?)\\b|\\b\\d+\\s*(?:kg|lbs?)\\b/i.test(txt) || /\\b(?:deadlift|clean|snatch|thruster|lunges?|carry|carries|barbell|kettlebell|dumbbell|sled)\\b/i.test(txt);
+        if(!pesado) return;      /* WOD sin barras pesadas: solo [ SCORE ] */
         var key = ((typeof state !== 'undefined' && state && state.currentWeek) || 0) + '|' + (bd.getAttribute('data-wodb') || '');
         var g = leer(KCAR)[key] || {};
-        var det = document.createElement('details'); det.className = 'jp-ic';
+        var det = document.createElement('details'); det.className = 'jp-icr';
         det.innerHTML = '<summary>[ CARGA / RONDAS ]<span>opcional</span></summary><div class="jp-ic-grid">' +
           '<label>CARGA (kg)<input type="text" inputmode="decimal" data-k="kg" value="' + esc(g.kg || '') + '" placeholder="\\u2014"></label>' +
           '<label>RONDAS COMPLETADAS<input type="text" inputmode="numeric" data-k="rondas" value="' + esc(g.rondas || '') + '" placeholder="\\u2014"></label></div>';
@@ -36334,14 +36423,23 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
       if(!btn){
         btn = document.createElement('button'); btn.type = 'button'; btn.className = 'jp-done-btn'; btn.textContent = '[ ✓ BLOQUE COMPLETADO ]';
         var sum = q('.jp-warm-acc > summary', bl);
-        if(sum){ sum.insertBefore(btn, q('.jp-warm-cta', sum)); }
+        if(sum){ sum.insertBefore(btn, q('.jp-warm-chev', sum)); }
         else {
           var tag = q('.jp-sb-tag, .jp-cf-tag', board);
-          if(tag){ tag.classList.add('jp-tag-row'); tag.appendChild(btn); } else board.insertBefore(btn, board.firstChild);
+          if(tag){
+            tag.classList.add('jp-tag-row');
+            var tlb = document.createElement('span'); tlb.className = 'jp-tag-lb';
+            while(tag.firstChild) tlb.appendChild(tag.firstChild);
+            tag.appendChild(tlb);
+            var act = document.createElement('span'); act.className = 'jp-tag-act'; act.appendChild(btn);
+            var chv = document.createElement('span'); chv.className = 'jp-chev'; chv.textContent = '\\u25b2'; act.appendChild(chv);
+            tag.appendChild(act);
+          } else board.insertBefore(btn, board.firstChild);
         }
       }
       btn.classList.toggle('on', !!cb.checked);
       btn.setAttribute('aria-pressed', cb.checked ? 'true' : 'false');
+      var chv2 = q('.jp-chev', bl); if(chv2) chv2.textContent = bl.classList.contains('jp-fold') ? '\\u25bc' : '\\u25b2';
       if(cb.checked){
         bl.classList.add('block-done');
         if(!reabiertos[id]) bl.classList.add('collapsed');
@@ -36364,6 +36462,15 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
       armarBloques();
       return;
     }
+    var cab = e.target.closest && e.target.closest('.jp-tag-row, .jp-sb-title, .jp-cf-title');
+    if(cab && !e.target.closest('.jp-done-btn') && !cab.closest('.jp-warm-acc')){
+      var bf = cab.closest('.block');
+      if(bf && !bf.classList.contains('collapsed')){
+        bf.classList.toggle('jp-fold');
+        var cv = q('.jp-chev', bf); if(cv) cv.textContent = bf.classList.contains('jp-fold') ? '\\u25bc' : '\\u25b2';
+      }
+      return;
+    }
     var line = e.target.closest && e.target.closest('.jp-done-line');
     if(line){
       var b2 = line.closest('.block'); if(!b2) return;
@@ -36374,8 +36481,21 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
   document.addEventListener('keydown', function(e){
     if((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('jp-done-line')){ e.preventDefault(); e.target.click(); }
   });
+  /* la serie activa de cada ejercicio (la primera sin tildar) lleva borde iluminado */
+  function marcarActivas(){
+    var rows = document.querySelectorAll('#mainContent .jp-set-row-native'), grupos = {}, ks = [];
+    for(var i = 0; i < rows.length; i++){
+      var g = (rows[i].getAttribute('data-set-key') || '').replace(/\\|[^|]*$/, '');
+      if(!grupos[g]){ grupos[g] = []; ks.push(g); }
+      grupos[g].push(rows[i]); rows[i].classList.remove('jp-set-activa');
+    }
+    ks.forEach(function(g){ var r = grupos[g].filter(function(x){ return !x.classList.contains('completed'); })[0]; if(r) r.classList.add('jp-set-activa'); });
+  }
+  document.addEventListener('click', function(e){
+    if(e.target.closest && e.target.closest('.jp-btn-check-native')) setTimeout(marcarActivas, 60);
+  }, true);
   var tickB = 0;
-  function progB(){ if(!tickB) tickB = setTimeout(function(){ tickB = 0; try{ armarBloques(); }catch(e){ console.warn('bloques', e); } }, 150); }
+  function progB(){ if(!tickB) tickB = setTimeout(function(){ tickB = 0; try{ armarBloques(); marcarActivas(); }catch(e){ console.warn('bloques', e); } }, 150); }
   function montarB(){
     armarBloques();
     var mc = document.getElementById('mainContent');
