@@ -11125,24 +11125,21 @@ hudInfoEl.addEventListener('click', function(){
    aparecen, sin tener que tocar arrancarRest()/showHudFor() desde acá. */
 (function(){
   function reposicionarHuds(){
+    /* la barra que hay que esquivar: la mini barra (46px) cuando se scrolleo, si no la cabecera completa.
+       Se usa offsetHeight (no getBoundingClientRect): la cabecera se anima fuera de pantalla con transform. */
+    const hdc = document.querySelector('.hd-compact');
+    const altoBarra = document.body.classList.contains('jp-scrolled') ? 46 : (hdc ? hdc.offsetHeight : 0);
+    const topPill = Math.max(72, Math.round(altoBarra + 8));
+    document.documentElement.style.setProperty('--rest-top', topPill + 'px');
     if(window.innerWidth > 600) return;
-    /* .hd-compact (cabecera mobile) es fixed con z-index:300 -- más alto
-       que .week-selector-wrap/.week-tabs-wrap (sticky, z-index 69-72) --
-       así que es LA que hay que esquivar: al ser fixed (no sticky), su
-       altura es constante sin importar el scroll. Se mide igual en vez de
-       asumirla fija, por si algún día cambia de alto (ej. banner encima). */
-    const wrap = document.querySelector('.hd-compact') || document.querySelector('.week-selector-wrap');
-    let top = 8;
-    if(wrap){
-      const r = wrap.getBoundingClientRect();
-      if(r.bottom > 0) top = Math.max(8, Math.round(r.bottom + 8));
-    }
-    const px = top + 'px';
+    const px = topPill + 'px';
     const rh = document.getElementById('restHud');
     if(rh && rh.classList.contains('on')) rh.style.top = px;
     if(hudEl.classList.contains('show')) hudEl.style.top = px;
   }
   ['scroll','resize'].forEach(function(ev){ window.addEventListener(ev, reposicionarHuds, { passive: true }); });
+  new MutationObserver(reposicionarHuds).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  reposicionarHuds();
   new MutationObserver(reposicionarHuds).observe(hudEl, { attributes: true, attributeFilter: ['class'] });
   /* #restHud (el <div> del descanso) todavía no existe en el DOM en este
      punto del parseo -- se declara más abajo en el HTML, después de este
@@ -13300,7 +13297,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   </div>
   <div class="rh-ctl">
     <button type="button" id="rhToggle"><svg class="jp-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
-    <button type="button" id="rhPlus">+30s</button>
+    <button type="button" id="rhPlus">+15s</button>
     <button type="button" id="rhSkip">Saltar</button>
   </div>
 </div>
@@ -13566,7 +13563,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     guardarRestTimer();
     try{ if(restRun) jpBgTimer.programar(restTargetEnd); }catch(e){}
   }
-  document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(30); });
+  document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(15); });
   document.getElementById('rhToggle').addEventListener('click', toggleRest);
   /* directiva maestra ("Botonera rápida de ajuste en descanso") -- ajusta
      directo el input de kg de la PRÓXIMA serie (window.__jpRestKgInput,
@@ -17955,7 +17952,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       m.addEventListener('click', () => { if(window.CoachTV && window.CoachTV.sumar) window.CoachTV.sumar(-15); });
     }
     const plus = document.getElementById('rhPlus');
-    if(plus) plus.textContent = '+30s';
+    if(plus) plus.textContent = '+15s';
   }
 
   /* ---------- STORY CARD 9:16 ---------- */
@@ -36104,6 +36101,26 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
 /* switch segmentado de alternativas (la fila original queda oculta: el botón ya lleva el texto completo) */
 .jp-cf-alt .jp-cf-alt-a, .jp-cf-alt .jp-cf-alt-b{ display:none !important; }
 .jp-cf-altsw button{ white-space:normal !important; line-height:1.2; text-align:center; }
+
+/* ===== TIMER DE DESCANSO: pildora flotante centrada, siempre por encima de la barra fija ===== */
+#restHud.on{
+  position:fixed !important; left:50% !important; right:auto !important; bottom:auto !important;
+  transform:translateX(-50%) !important; top:var(--rest-top,72px) !important; z-index:350 !important;
+  width:auto !important; max-width:calc(100vw - 24px) !important; box-sizing:border-box;
+  background:rgba(10,15,25,.95) !important; border:1px solid rgba(245,158,11,.5) !important;
+  box-shadow:0 4px 20px rgba(0,0,0,.6) !important; padding:6px 16px !important;
+}
+#restHud.on:not(.expanded){ border-radius:9999px !important; flex-wrap:nowrap; gap:8px; }
+#restHud.on.expanded{ border-radius:18px !important; min-width:220px; }
+#restHud.on:not(.expanded) .rh-time{ font-size:1.55rem !important; line-height:1; white-space:nowrap; }
+#restHud.on:not(.expanded) .rh-ring .rh-time{ font-size:1.55rem !important; }
+#restHud.on:not(.expanded) .rh-time::before{ content:'REST '; position:static !important; display:inline !important; inset:auto !important; transform:none !important; width:auto !important; height:auto !important; background:none !important; color:#F59E0B; font-size:.62em; letter-spacing:.12em; font-weight:800; margin-right:6px; vertical-align:middle; }
+#restHud.on:not(.expanded) .rh-time{ display:flex !important; align-items:center; justify-content:center; width:auto !important; }
+#restHud.on:not(.expanded) .rh-ring{ width:auto !important; min-width:0 !important; }
+#restHud.on:not(.expanded) .rh-ctl button{ min-height:34px !important; min-width:0 !important; padding:4px 12px !important; }
+#restHud.on .rh-x, #restHud.on .rh-expand{ color:#E2E8F0; min-width:32px; min-height:32px; display:inline-flex; align-items:center; justify-content:center; }
+#restHud.on .rh-x{ font-size:1.4rem; }
+.timer-hud{ z-index:350 !important; }
 
 /* ===== AJUSTES FINALES (Bodybuilding) ===== */
 body.jp-mission .day-header, body.jp-mission .day-header-card, .day-header-card{ position:relative !important; height:auto !important; margin:10px 0 20px !important; }
