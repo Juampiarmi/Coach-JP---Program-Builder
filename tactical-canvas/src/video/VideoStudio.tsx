@@ -260,20 +260,8 @@ export default function VideoStudio({ active, header }: Props) {
       </aside>
 
       {/* Visor + timeline */}
-      <main className="tc-grid-bg order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 lg:order-2 lg:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-mono text-[10px] tracking-[0.18em] text-steel">9:16 · 1080×1920 · REELS / SHORTS / STORIES</span>
-          <button
-            type="button"
-            onClick={() => setProject((p) => ({ ...p, safeZone: !p.safeZone }))}
-            aria-pressed={project.safeZone}
-            className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] transition ${
-              project.safeZone ? 'border-fire/70 bg-fire/15 text-fire' : 'border-line text-steel hover:text-white'
-            }`}
-          >
-            [ 👁 REELS SAFE ZONE ]
-          </button>
-        </div>
+      {/* En escritorio el visor se lleva todo el alto libre: sin barra superior y con márgenes mínimos. */}
+      <main className="tc-grid-bg order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 lg:order-2 lg:gap-2 lg:px-5 lg:py-3">
         <div className="flex h-[64dvh] min-h-0 items-center justify-center lg:h-auto lg:flex-1">
           <div
             onDragOver={(e) => {
@@ -316,14 +304,14 @@ export default function VideoStudio({ active, header }: Props) {
           </div>
         </div>
         {/* Transporte */}
-        <div className="flex items-center gap-3 rounded-xl border border-line bg-carbon/90 px-3 py-2">
+        <div className="flex shrink-0 items-center gap-3 rounded-xl border border-line bg-carbon/90 px-3 py-1.5">
           <button
             type="button"
             onClick={togglePlay}
             disabled={!clip}
             aria-label={playing ? 'Pausa' : 'Reproducir'}
             title="Espaciadora"
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-cyan text-carbon disabled:opacity-40"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-cyan text-carbon disabled:opacity-40"
           >
             {playing ? (
               <svg viewBox="0 0 24 24" className="size-4" fill="currentColor">
@@ -349,6 +337,17 @@ export default function VideoStudio({ active, header }: Props) {
             aria-label="Scrubber"
             className="h-1.5 min-w-0 flex-1 cursor-pointer accent-fire"
           />
+          <button
+            type="button"
+            onClick={() => setProject((p) => ({ ...p, safeZone: !p.safeZone }))}
+            aria-pressed={project.safeZone}
+            title="Zonas tapadas por la interfaz de Instagram Reels"
+            className={`shrink-0 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
+              project.safeZone ? 'border-fire/70 bg-fire/15 text-fire' : 'border-line text-steel hover:text-white'
+            }`}
+          >
+            [ 👁 <span className="hidden sm:inline">REELS </span>SAFE ZONE ]
+          </button>
         </div>
         <Timeline
           tracks={project.tracks}

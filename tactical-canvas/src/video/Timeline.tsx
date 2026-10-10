@@ -16,10 +16,19 @@ interface Props {
 }
 
 const LABEL_W = 132
-const ROW_H = 56
+const ROW_H = 46
 const MIN_LEN = 0.3
 
-const KIND_LABEL: Record<OverlayItem['overlay']['kind'], string> = { badge: 'MÉTRICA', headline: 'PLACA', watermark: 'FIRMA' }
+const KIND_LABEL: Record<OverlayItem['overlay']['kind'], string> = { badge: 'MÉTRICA', headline: 'PLACA', timer: 'TIMER', checklist: 'CHECK', watermark: 'FIRMA' }
+
+/** Texto corto del bloque en la pista. */
+function itemText(o: OverlayItem['overlay']) {
+  if (o.kind === 'badge') return o.value
+  if (o.kind === 'headline') return o.headlineA
+  if (o.kind === 'timer') return o.timerLabel ?? 'TIEMPO'
+  if (o.kind === 'checklist') return `${(o.checks ?? []).filter((c) => c.text.trim()).length} ítems`
+  return 'COACH JP'
+}
 
 /** Arrastre horizontal en segundos: devuelve el delta de tiempo desde el pointerdown. */
 function useDrag(pps: number) {
@@ -108,7 +117,7 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
       >
         {editable && <span onPointerDown={(e) => move(e, 'start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
         <span className="truncate px-3">
-          {item.type === 'overlay' ? `${KIND_LABEL[item.overlay.kind]} · ${item.overlay.kind === 'badge' ? item.overlay.value : item.overlay.kind === 'headline' ? item.overlay.headlineA : 'COACH JP'}` : track.label}
+          {item.type === 'overlay' ? `${KIND_LABEL[item.overlay.kind]} · ${itemText(item.overlay)}` : track.label}
         </span>
         {editable && <span onPointerDown={(e) => move(e, 'end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
       </div>
@@ -163,7 +172,7 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
 
   const ticks = Array.from({ length: Math.floor(d / step) + 1 }, (_, i) => i * step)
   return (
-    <div className="rounded-xl border border-line bg-carbon/90 p-3">
+    <div className="shrink-0 rounded-xl border border-line bg-carbon/90 px-3 py-2">
       <div className="flex">
         <div style={{ width: LABEL_W }} className="shrink-0 font-mono text-[9px] tracking-[0.16em] text-steel">
           <div className="flex h-6 items-center">{timecode(time)}</div>

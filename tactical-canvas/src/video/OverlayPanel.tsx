@@ -1,6 +1,6 @@
 import { Field, Range, Segmented, TextInput } from '../components/controls/primitives'
 import { timecode } from './render'
-import type { OverlayConfig, OverlayEntrance, OverlayItem, OverlayKind, OverlayPosition } from './types'
+import type { CheckItem, OverlayAlign, OverlayConfig, OverlayEntrance, OverlayExit, OverlayItem, OverlayKind, OverlayPosition, OverlaySize, OverlayStyle } from './types'
 
 interface Props {
   items: OverlayItem[]
@@ -14,6 +14,8 @@ interface Props {
 const KINDS: { value: OverlayKind; label: string }[] = [
   { value: 'badge', label: 'MÉTRICA' },
   { value: 'headline', label: 'PLACA' },
+  { value: 'timer', label: 'TIMER' },
+  { value: 'checklist', label: 'CHECK' },
   { value: 'watermark', label: 'FIRMA' },
 ]
 
@@ -71,9 +73,67 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
               </div>
             </>
           )}
+          {selected.overlay.kind === 'timer' && (
+            <>
+              <Field label="Rótulo del cronómetro">
+                <TextInput value={selected.overlay.timerLabel} onChange={(timerLabel) => onChange({ timerLabel })} uppercase placeholder="TUT EXCÉNTRICO" />
+              </Field>
+              <Field label="Sentido · corre durante el bloque de V2" plain>
+                <Segmented<'up' | 'down'>
+                  value={selected.overlay.timerDown ? 'down' : 'up'}
+                  onChange={(v) => onChange({ timerDown: v === 'down' })}
+                  options={[
+                    { value: 'up', label: '▲ PROGRESIVO' },
+                    { value: 'down', label: '▼ REGRESIVO' },
+                  ]}
+                  size="sm"
+                />
+              </Field>
+            </>
+          )}
+          {selected.overlay.kind === 'checklist' && (
+            <ChecklistEditor checks={selected.overlay.checks} title={selected.overlay.tag} onChange={onChange} />
+          )}
           {selected.overlay.kind === 'watermark' && (
             <p className="font-mono text-[10px] leading-relaxed text-steel/70">Firma Coach JP fija en la esquina inferior izquierda, por encima del pie de Reels.</p>
           )}
+          <Field label="Estilo de fondo" plain>
+            <Segmented<OverlayStyle>
+              value={selected.overlay.style}
+              onChange={(style) => onChange({ style })}
+              options={[
+                { value: 'box', label: 'CAJA TÁCTICA' },
+                { value: 'clean', label: 'TEXTO PURO · HUD' },
+              ]}
+              size="sm"
+            />
+          </Field>
+          <div className="grid grid-cols-[1.6fr_1fr] gap-2">
+            <Field label="Alineación horizontal" plain>
+              <Segmented<OverlayAlign>
+                value={selected.overlay.align}
+                onChange={(align) => onChange({ align })}
+                options={[
+                  { value: 'left', label: 'IZQ' },
+                  { value: 'center', label: 'CENTRO' },
+                  { value: 'right', label: 'DER' },
+                ]}
+                size="sm"
+              />
+            </Field>
+            <Field label="Tamaño" plain>
+              <Segmented<OverlaySize>
+                value={selected.overlay.size}
+                onChange={(size) => onChange({ size })}
+                options={[
+                  { value: 'S', label: 'S' },
+                  { value: 'M', label: 'M' },
+                  { value: 'L', label: 'L' },
+                ]}
+                size="sm"
+              />
+            </Field>
+          </div>
           <Field label="Opacidad">
             <Range value={selected.overlay.opacity} onChange={(opacity) => onChange({ opacity })} min={0} max={100} step={5} suffix="%" />
           </Field>
@@ -91,17 +151,31 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
               />
             </Field>
           )}
-          <Field label="Entrada animada · 0,3 s" plain>
-            <Segmented<OverlayEntrance>
-              value={selected.overlay.entrance}
-              onChange={(entrance) => onChange({ entrance })}
-              options={[
-                { value: 'fade', label: 'FADE' },
-                { value: 'slide', label: 'SLIDE ↑' },
-              ]}
-              size="sm"
-            />
-          </Field>
+          <div className="grid grid-cols-[1fr_1.5fr] gap-2">
+            <Field label="Entrada · 0,3 s" plain>
+              <Segmented<OverlayEntrance>
+                value={selected.overlay.entrance}
+                onChange={(entrance) => onChange({ entrance })}
+                options={[
+                  { value: 'fade', label: 'FADE' },
+                  { value: 'slide', label: 'SLIDE ↑' },
+                ]}
+                size="sm"
+              />
+            </Field>
+            <Field label="Salida · 0,3 s" plain>
+              <Segmented<OverlayExit>
+                value={selected.overlay.exit}
+                onChange={(exit) => onChange({ exit })}
+                options={[
+                  { value: 'none', label: 'INMEDIATO' },
+                  { value: 'fade', label: 'FADE' },
+                  { value: 'slide', label: 'SLIDE ↓' },
+                ]}
+                size="sm"
+              />
+            </Field>
+          </div>
           <div className="flex items-center justify-between font-mono text-[10px] text-steel">
             <span>
               {timecode(selected.start)} → {timecode(selected.end)}
@@ -113,5 +187,48 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
         </>
       )}
     </div>
+  )
+}
+
+/** Checklist rápido: título opcional y 2 o 3 ítems con marcador [ ✓ ] / [ ✗ ]. */
+function ChecklistEditor({ checks, title, onChange }: { checks: CheckItem[]; title: string; onChange: (patch: Partial<OverlayConfig>) => void }) {
+  const list = checks.slice(0, 3)
+  const set = (next: CheckItem[]) => onChange({ checks: next })
+  return (
+    <>
+      <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+        <Field label="Título (opcional)">
+          <TextInput value={title} onChange={(tag) => onChange({ tag })} uppercase placeholder="SERIE VÁLIDA" />
+        </Field>
+        <Field label="Ítems" plain>
+          <Segmented<string>
+            value={String(list.length)}
+            onChange={(v) => set(Number(v) === 2 ? list.slice(0, 2) : [...list, { text: 'NUEVO ÍTEM', ok: true }].slice(0, 3))}
+            options={[
+              { value: '2', label: '2' },
+              { value: '3', label: '3' },
+            ]}
+            size="sm"
+          />
+        </Field>
+      </div>
+      {list.map((c, i) => (
+        <div key={i} className="flex items-end gap-1.5">
+          <button
+            type="button"
+            onClick={() => set(list.map((x, j) => (j === i ? { ...x, ok: !x.ok } : x)))}
+            title="Cambiar marcador"
+            className={`mb-px h-9 shrink-0 rounded-md border px-2 font-mono text-[11px] font-bold ${c.ok ? 'border-cyan/60 text-cyan' : 'border-fire/60 text-fire'}`}
+          >
+            {c.ok ? '[ ✓ ]' : '[ ✗ ]'}
+          </button>
+          <div className="min-w-0 flex-1">
+            <Field label={`Ítem ${i + 1}`}>
+              <TextInput value={c.text} onChange={(text) => set(list.map((x, j) => (j === i ? { ...x, text } : x)))} uppercase />
+            </Field>
+          </div>
+        </div>
+      ))}
+    </>
   )
 }

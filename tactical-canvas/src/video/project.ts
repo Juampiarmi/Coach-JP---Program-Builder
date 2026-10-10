@@ -9,9 +9,20 @@ export const DEFAULT_OVERLAY: OverlayConfig = {
   tag: 'ANÁLISIS TÁCTICO',
   headlineA: 'NO CORRE MÁS.',
   headlineB: 'CORRE MEJOR.',
+  timerLabel: 'TUT EXCÉNTRICO',
+  timerDown: false,
+  checks: [
+    { text: 'RIR 1 REAL', ok: true },
+    { text: 'RANGO COMPLETO', ok: true },
+    { text: 'TEMPO 3-1-1', ok: true },
+  ],
   opacity: 100,
   position: 'center',
+  align: 'center',
+  size: 'M',
+  style: 'box',
   entrance: 'slide',
+  exit: 'fade',
 }
 
 export function newOverlayItem(start = 0, end = 3, overlay: Partial<OverlayConfig> = {}): OverlayItem {
@@ -33,9 +44,16 @@ export function defaultProject(): VideoProject {
   }
 }
 
-/** Todos los overlays de todas las pistas de overlay (en orden de pista: la última queda arriba). */
+/**
+ * Todos los overlays de todas las pistas de overlay (en orden de pista: la última queda arriba).
+ * Se completan con los defaults: proyectos guardados con versiones anteriores no traen los
+ * campos nuevos (estilo, alineación, escala, salida…).
+ */
 export function overlayItems(p: VideoProject): OverlayItem[] {
-  return p.tracks.filter((t) => t.kind === 'overlay' && !t.muted).flatMap((t) => t.items.filter((i): i is OverlayItem => i.type === 'overlay'))
+  return p.tracks
+    .filter((t) => t.kind === 'overlay' && !t.muted)
+    .flatMap((t) => t.items.filter((i): i is OverlayItem => i.type === 'overlay'))
+    .map((i) => ({ ...i, overlay: { ...DEFAULT_OVERLAY, ...i.overlay } }))
 }
 
 export function findItem(p: VideoProject, id: string | null): OverlayItem | null {
@@ -46,7 +64,10 @@ export function findItem(p: VideoProject, id: string | null): OverlayItem | null
 export function patchItem(p: VideoProject, id: string, fn: (i: OverlayItem) => OverlayItem): VideoProject {
   return {
     ...p,
-    tracks: p.tracks.map((t): Track => ({ ...t, items: t.items.map((i) => (i.id === id && i.type === 'overlay' ? fn(i) : i)) })),
+    tracks: p.tracks.map((t): Track => ({
+      ...t,
+      items: t.items.map((i) => (i.id === id && i.type === 'overlay' ? fn({ ...i, overlay: { ...DEFAULT_OVERLAY, ...i.overlay } }) : i)),
+    })),
   }
 }
 

@@ -104,9 +104,14 @@ export async function exportVideo({ url, project, onProgress, signal }: Options)
   signal?.addEventListener('abort', finish)
   video.onended = finish
 
-  recorder.start(250)
   if (audioCtx?.state === 'suspended') await audioCtx.resume().catch(() => undefined)
+  // La grabación arranca cuando el video ya está corriendo: así el archivo no abre con un
+  // tramo congelado (play() tarda unos cientos de ms en entregar el primer frame).
+  const playing = new Promise<void>((r) => video.addEventListener('playing', () => r(), { once: true }))
   await video.play()
+  await playing
+  frame()
+  recorder.start(250)
 
   // Bucle de composición: requestVideoFrameCallback (un dibujo por frame real) o rAF.
   await new Promise<void>((resolve) => {

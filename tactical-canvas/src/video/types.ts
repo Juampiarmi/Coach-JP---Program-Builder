@@ -15,9 +15,19 @@ export interface TimeRange {
   end: number
 }
 
-export type OverlayKind = 'badge' | 'headline' | 'watermark'
+export type OverlayKind = 'badge' | 'headline' | 'timer' | 'checklist' | 'watermark'
 export type OverlayPosition = 'top' | 'center' | 'bottom'
 export type OverlayEntrance = 'fade' | 'slide'
+export type OverlayExit = 'none' | 'fade' | 'slide'
+/** Caja táctica (esquinas recortadas + borde) o texto puro con sombra de alto contraste */
+export type OverlayStyle = 'box' | 'clean'
+export type OverlayAlign = 'left' | 'center' | 'right'
+export type OverlaySize = 'S' | 'M' | 'L'
+
+export interface CheckItem {
+  text: string
+  ok: boolean
+}
 
 /** Contenido y estilo de una capa gráfica táctica. */
 export interface OverlayConfig {
@@ -29,10 +39,19 @@ export interface OverlayConfig {
   tag: string
   headlineA: string
   headlineB: string
+  /** Cronómetro: rótulo y sentido (progresivo o cuenta regresiva sobre la duración del bloque) */
+  timerLabel: string
+  timerDown: boolean
+  /** Checklist rápido: 2 o 3 ítems */
+  checks: CheckItem[]
   /** 0–100 */
   opacity: number
   position: OverlayPosition
+  align: OverlayAlign
+  size: OverlaySize
+  style: OverlayStyle
   entrance: OverlayEntrance
+  exit: OverlayExit
 }
 
 export interface OverlayItem extends TimeRange {
