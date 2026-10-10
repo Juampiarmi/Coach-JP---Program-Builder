@@ -1,0 +1,70 @@
+import type { OverlayConfig, OverlayItem, Track, VideoProject } from './types'
+
+export const uid = () => Math.random().toString(36).slice(2, 10)
+
+export const DEFAULT_OVERLAY: OverlayConfig = {
+  kind: 'badge',
+  value: '82%',
+  label: 'DEL TIEMPO CAMINANDO',
+  tag: 'ANÁLISIS TÁCTICO',
+  headlineA: 'NO CORRE MÁS.',
+  headlineB: 'CORRE MEJOR.',
+  opacity: 100,
+  position: 'center',
+  entrance: 'slide',
+}
+
+export function newOverlayItem(start = 0, end = 3, overlay: Partial<OverlayConfig> = {}): OverlayItem {
+  return { id: uid(), type: 'overlay', start, end, overlay: { ...DEFAULT_OVERLAY, ...overlay } }
+}
+
+export function defaultProject(): VideoProject {
+  const first = newOverlayItem(0.5, 3.5)
+  return {
+    version: 1,
+    clip: null,
+    tracks: [
+      { id: 'v1', kind: 'video', label: 'V1 · VIDEO BASE', items: [] },
+      { id: 'v2', kind: 'overlay', label: 'V2 · OVERLAY TÁCTICO', items: [first] },
+      // Fase 2: { id: 'a1', kind: 'audio', label: 'A1 · MÚSICA', items: [] } y subtítulos.
+    ],
+    selectedId: first.id,
+    safeZone: true,
+  }
+}
+
+/** Todos los overlays de todas las pistas de overlay (en orden de pista: la última queda arriba). */
+export function overlayItems(p: VideoProject): OverlayItem[] {
+  return p.tracks.filter((t) => t.kind === 'overlay' && !t.muted).flatMap((t) => t.items.filter((i): i is OverlayItem => i.type === 'overlay'))
+}
+
+export function findItem(p: VideoProject, id: string | null): OverlayItem | null {
+  return overlayItems(p).find((i) => i.id === id) ?? null
+}
+
+/** Actualiza un ítem por id en cualquier pista. */
+export function patchItem(p: VideoProject, id: string, fn: (i: OverlayItem) => OverlayItem): VideoProject {
+  return {
+    ...p,
+    tracks: p.tracks.map((t): Track => ({ ...t, items: t.items.map((i) => (i.id === id && i.type === 'overlay' ? fn(i) : i)) })),
+  }
+}
+
+/** Duración visible del timeline (clip cargado o 10 s de referencia sin clip). */
+export const timelineDuration = (p: VideoProject) => p.clip?.duration ?? 10
+
+/** Clampea los rangos de los ítems a la duración del clip. */
+export function fitToClip(p: VideoProject): VideoProject {
+  const d = timelineDuration(p)
+  return {
+    ...p,
+    tracks: p.tracks.map((t) => ({
+      ...t,
+      items: t.items.map((i) => {
+        const len = Math.min(i.end - i.start, d)
+        const start = Math.min(Math.max(0, i.start), d - len)
+        return { ...i, start, end: start + len }
+      }),
+    })),
+  }
+}

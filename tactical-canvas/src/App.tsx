@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useRef, useState } from 'react'
 import { BrandBar } from './components/BrandBar'
+import { ModeSwitch, type WorkMode } from './components/ModeSwitch'
 import { ControlPanel } from './components/controls/ControlPanel'
 import { Segmented } from './components/controls/primitives'
 import { ExportButtons } from './components/ExportButtons'
@@ -21,6 +22,9 @@ import { usePersistentState } from './hooks/usePersistentState'
 import type { AspectId, CanvasState } from './types'
 
 const STORAGE_KEY = 'jp-tactical-canvas:v3'
+
+// Video Studio en un chunk aparte: el editor de placas no carga su código hasta que se usa.
+const VideoStudio = lazy(() => import('./video/VideoStudio'))
 
 /** Ajustes de estilo que comparten todos los slides de una secuencia. */
 const GLOBAL_KEYS = [
@@ -78,6 +82,14 @@ export default function App() {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [exporting, setExporting] = useState<string | null>(null)
+  // Modo de trabajo: placas o video. Cada uno conserva su estado al alternar.
+  const [modeState, setModeState] = usePersistentState<{ mode: WorkMode }>('jp-tactical-canvas:mode', { mode: 'canvas' })
+  const mode = modeState.mode
+  const [videoVisited, setVideoVisited] = useState(mode === 'video')
+  const setMode = (m: WorkMode) => {
+    if (m === 'video') setVideoVisited(true)
+    setModeState({ mode: m })
+  }
   // Simulador de UI de Instagram (sólo pantalla; nunca entra en el PNG ni en el ZIP).
   const [overlay, setOverlay] = useState(false)
   const bg = useBackgroundImage()
@@ -319,12 +331,12 @@ export default function App() {
     </button>
   )
 
-  if (isDesktop) {
-    return (
+  const canvasUI = isDesktop ? (
       <div className="flex h-dvh overflow-hidden">
         <aside className="flex w-[420px] shrink-0 flex-col border-r border-line bg-surface/40">
-          <div className="border-b border-line px-5 py-4">
+          <div className="space-y-3 border-b border-line px-5 py-4">
             <BrandBar />
+            <ModeSwitch mode={mode} onChange={setMode} />
           </div>
           <div className="tc-scroll flex-1 overflow-y-auto">
             {panel}
@@ -347,19 +359,19 @@ export default function App() {
           </div>
         </main>
       </div>
-    )
-  }
-
-  return (
+  ) : (
     <div className="flex h-dvh flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
       <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
         <BrandBar />
-        <div className="flex shrink-0 items-center gap-1.5">
-          {overlayToggle}
-          <div className="w-32">{aspectToggle}</div>
-        </div>
+        <div className="w-32 shrink-0">{aspectToggle}</div>
       </header>
 
+      <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+        <div className="min-w-0 flex-1">
+          <ModeSwitch mode={mode} onChange={setMode} compact />
+        </div>
+        {overlayToggle}
+      </div>
       <div className="border-b border-line px-4 py-2">{slideBar}</div>
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
         <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} />
@@ -400,5 +412,27 @@ export default function App() {
         </div>
       </section>
     </div>
+  )
+
+  return (
+    <>
+      {mode === 'canvas' && canvasUI}
+      {/* El estudio queda montado tras la primera visita: alternar de modo no pierde el clip ni el timeline. */}
+      {videoVisited && (
+        <div hidden={mode !== 'video'}>
+          <Suspense fallback={<div className="flex h-dvh items-center justify-center font-mono text-[11px] tracking-[0.18em] text-steel">CARGANDO VIDEO STUDIO…</div>}>
+            <VideoStudio
+              active={mode === 'video'}
+              header={
+                <>
+                  <BrandBar />
+                  <ModeSwitch mode={mode} onChange={setMode} compact={!isDesktop} />
+                </>
+              }
+            />
+          </Suspense>
+        </div>
+      )}
+    </>
   )
 }
