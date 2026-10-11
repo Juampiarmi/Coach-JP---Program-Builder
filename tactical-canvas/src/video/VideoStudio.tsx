@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { downloadBlob } from '../lib/exporter'
 import { exportVideo, extractThumbs, pickMime } from './exporter'
 import { OverlayPanel } from './OverlayPanel'
 import { defaultProject, findItem, fitToClip, newOverlayItem, overlayItems, patchItem, timelineDuration } from './project'
 import { ReelsSafeZone } from './ReelsSafeZone'
-import { drawOverlays, loadOverlayFonts, timecode } from './render'
+import { pressDrag } from './drag'
+import { drawOverlays, loadOverlayFonts, timecode, type OverlayRect } from './render'
+import { Scrubber } from './Scrubber'
 import { Timeline } from './Timeline'
 import type { OverlayConfig, VideoProject } from './types'
 import { OUT_H, OUT_W } from './types'
@@ -145,12 +147,64 @@ export default function VideoStudio({ active, header }: Props) {
   useEffect(() => {
     loadOverlayFonts().then(() => setFontsReady(true))
   }, [])
+  const [rects, setRects] = useState<OverlayRect[]>([])
   useEffect(() => {
     const ctx = canvasRef.current?.getContext('2d')
     if (!ctx) return
     ctx.clearRect(0, 0, OUT_W, OUT_H)
-    drawOverlays(ctx, items, time)
+    const next = drawOverlays(ctx, items, time)
+    setRects((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
   }, [items, time, fontsReady, active])
+
+  // ── Arrastre libre en el visor (posición en % del marco, con imán al centro) ──
+  const layerRef = useRef<HTMLDivElement>(null)
+  const [guides, setGuides] = useState<{ v: boolean; h: boolean } | null>(null)
+  const [hoverMove, setHoverMove] = useState(false)
+  const toFrame = (clientX: number, clientY: number) => {
+    const r = layerRef.current!.getBoundingClientRect()
+    return { px: ((clientX - r.left) / r.width) * OUT_W, py: ((clientY - r.top) / r.height) * OUT_H }
+  }
+  const hitTest = (px: number, py: number) => [...rects].reverse().find((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) ?? null
+  const onLayerDown = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return
+    const { px, py } = toFrame(e.clientX, e.clientY)
+    const hit = hitTest(px, py)
+    if (!hit) {
+      if (!url) fileRef.current?.click()
+      return
+    }
+    setProject((p) => ({ ...p, selectedId: hit.id }))
+    const offX = px - (hit.x + hit.w / 2)
+    const offY = py - (hit.y + hit.h / 2)
+    const SNAP = 18
+    setGuides({ v: false, h: false })
+    pressDrag(
+      e,
+      (ev) => {
+        const pt = toFrame(ev.clientX, ev.clientY)
+        let cx = pt.px - offX
+        let cy = pt.py - offY
+        const v = Math.abs(cx - OUT_W / 2) < SNAP
+        const h = Math.abs(cy - OUT_H / 2) < SNAP
+        if (v) cx = OUT_W / 2
+        if (h) cy = OUT_H / 2
+        // Límite: el bloque entero queda dentro del marco.
+        cx = Math.min(OUT_W - 16 - hit.w / 2, Math.max(16 + hit.w / 2, cx))
+        cy = Math.min(OUT_H - 16 - hit.h / 2, Math.max(16 + hit.h / 2, cy))
+        setGuides({ v, h })
+        setProject((p) => patchItem(p, hit.id, (i) => ({ ...i, overlay: { ...i.overlay, x: (cx / OUT_W) * 100, y: (cy / OUT_H) * 100 } })))
+      },
+      () => setGuides(null),
+    )
+  }
+  const onLayerHover = (e: ReactPointerEvent) => {
+    // Sólo cambia el cursor: el hover nunca mueve nada.
+    if (e.buttons) return
+    const { px, py } = toFrame(e.clientX, e.clientY)
+    const over = Boolean(hitTest(px, py))
+    if (over !== hoverMove) setHoverMove(over)
+  }
+  const selRect = rects.find((r) => r.id === project.selectedId)
 
   // ── Edición ───────────────────────────────────────────────────────────────────
   const setOverlay = (patch: Partial<OverlayConfig>) => {
@@ -300,6 +354,28 @@ export default function VideoStudio({ active, header }: Props) {
               </button>
             )}
             <canvas ref={canvasRef} width={OUT_W} height={OUT_H} className="pointer-events-none absolute inset-0 h-full w-full" />
+            {/* Capa de interacción: tomar y arrastrar overlays (sin clip, un click abre el selector de archivo). */}
+            <div
+              ref={layerRef}
+              onPointerDown={onLayerDown}
+              onPointerMove={onLayerHover}
+              onPointerLeave={() => setHoverMove(false)}
+              className="absolute inset-0"
+              style={{ cursor: guides ? 'grabbing' : hoverMove ? 'grab' : url ? 'default' : 'pointer', touchAction: 'none' }}
+            >
+              {selRect && (
+                <div
+                  className="pointer-events-none absolute border border-dashed border-cyan/80"
+                  style={{ left: `${(selRect.x / OUT_W) * 100}%`, top: `${(selRect.y / OUT_H) * 100}%`, width: `${(selRect.w / OUT_W) * 100}%`, height: `${(selRect.h / OUT_H) * 100}%` }}
+                />
+              )}
+              {guides && (
+                <>
+                  <div className={`pointer-events-none absolute inset-y-0 left-1/2 w-px ${guides.v ? 'bg-cyan' : 'bg-cyan/25'}`} />
+                  <div className={`pointer-events-none absolute inset-x-0 top-1/2 h-px ${guides.h ? 'bg-cyan' : 'bg-cyan/25'}`} />
+                </>
+              )}
+            </div>
             {project.safeZone && <ReelsSafeZone />}
           </div>
         </div>
@@ -327,16 +403,7 @@ export default function VideoStudio({ active, header }: Props) {
           <span className="shrink-0 font-mono text-[12px] tracking-wider text-white tabular-nums">
             {timecode(time)} <span className="text-steel">/ {timecode(duration)}</span>
           </span>
-          <input
-            type="range"
-            min={0}
-            max={duration}
-            step={0.01}
-            value={Math.min(time, duration)}
-            onChange={(e) => seek(Number(e.target.value))}
-            aria-label="Scrubber"
-            className="h-1.5 min-w-0 flex-1 cursor-pointer accent-fire"
-          />
+          <Scrubber time={Math.min(time, duration)} duration={duration} trim={clip} onSeek={seek} />
           <button
             type="button"
             onClick={() => setProject((p) => ({ ...p, safeZone: !p.safeZone }))}

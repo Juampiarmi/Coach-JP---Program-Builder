@@ -1,6 +1,6 @@
 import { Field, Range, Segmented, TextInput } from '../components/controls/primitives'
 import { timecode } from './render'
-import type { CheckItem, OverlayAlign, OverlayConfig, OverlayEntrance, OverlayExit, OverlayItem, OverlayKind, OverlayPosition, OverlaySize, OverlayStyle } from './types'
+import type { CheckItem, OverlayConfig, OverlayEntrance, OverlayExit, OverlayItem, OverlayKind, OverlaySize, OverlayStyle } from './types'
 
 interface Props {
   items: OverlayItem[]
@@ -108,49 +108,32 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
               size="sm"
             />
           </Field>
-          <div className="grid grid-cols-[1.6fr_1fr] gap-2">
-            <Field label="Alineación horizontal" plain>
-              <Segmented<OverlayAlign>
-                value={selected.overlay.align}
-                onChange={(align) => onChange({ align })}
-                options={[
-                  { value: 'left', label: 'IZQ' },
-                  { value: 'center', label: 'CENTRO' },
-                  { value: 'right', label: 'DER' },
-                ]}
-                size="sm"
-              />
-            </Field>
+          <div className="grid grid-cols-[1fr_auto] items-end gap-2">
             <Field label="Tamaño" plain>
               <Segmented<OverlaySize>
                 value={selected.overlay.size}
                 onChange={(size) => onChange({ size })}
                 options={[
-                  { value: 'S', label: 'S' },
+                  { value: 'S', label: 'S · COMPACTO' },
                   { value: 'M', label: 'M' },
-                  { value: 'L', label: 'L' },
+                  { value: 'L', label: 'L · IMPACTO' },
                 ]}
                 size="sm"
               />
             </Field>
+            <button
+              type="button"
+              onClick={() => onChange(selected.overlay.kind === 'watermark' ? { x: 28, y: 74 } : { x: 50, y: 45 })}
+              title="Arrastrá el overlay en el visor para ubicarlo; esto lo devuelve al centro"
+              className="mb-px h-9 rounded-md border border-line px-2.5 font-mono text-[10px] font-semibold tracking-wider whitespace-nowrap text-steel transition hover:border-cyan/50 hover:text-cyan"
+            >
+              [ ⌖ RECENTRAR OVERLAY ]
+            </button>
           </div>
+          <p className="-mt-1 font-mono text-[9px] leading-relaxed text-steel/60">Arrastrá el overlay directamente en el visor para ubicarlo.</p>
           <Field label="Opacidad">
             <Range value={selected.overlay.opacity} onChange={(opacity) => onChange({ opacity })} min={0} max={100} step={5} suffix="%" />
           </Field>
-          {selected.overlay.kind !== 'watermark' && (
-            <Field label="Posición vertical" plain>
-              <Segmented<OverlayPosition>
-                value={selected.overlay.position}
-                onChange={(position) => onChange({ position })}
-                options={[
-                  { value: 'top', label: 'SUPERIOR' },
-                  { value: 'center', label: 'CENTRO' },
-                  { value: 'bottom', label: 'INFERIOR' },
-                ]}
-                size="sm"
-              />
-            </Field>
-          )}
           <div className="grid grid-cols-[1fr_1.5fr] gap-2">
             <Field label="Entrada · 0,3 s" plain>
               <Segmented<OverlayEntrance>

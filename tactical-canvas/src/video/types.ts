@@ -46,8 +46,12 @@ export interface OverlayConfig {
   checks: CheckItem[]
   /** 0–100 */
   opacity: number
-  position: OverlayPosition
-  align: OverlayAlign
+  /** Centro del bloque en % del marco 9:16 (0–100): idéntico en vista previa y en 1080×1920 */
+  x: number
+  y: number
+  /** Legado (versiones anteriores): sólo se usan para migrar a x / y */
+  position?: OverlayPosition
+  align?: OverlayAlign
   size: OverlaySize
   style: OverlayStyle
   entrance: OverlayEntrance

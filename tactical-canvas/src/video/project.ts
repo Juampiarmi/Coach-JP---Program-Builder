@@ -17,8 +17,8 @@ export const DEFAULT_OVERLAY: OverlayConfig = {
     { text: 'TEMPO 3-1-1', ok: true },
   ],
   opacity: 100,
-  position: 'center',
-  align: 'center',
+  x: 50,
+  y: 45,
   size: 'M',
   style: 'box',
   entrance: 'slide',
@@ -44,6 +44,21 @@ export function defaultProject(): VideoProject {
   }
 }
 
+/** Posición de proyectos guardados antes del arrastre libre (botones de posición / alineación). */
+function migratePosition(o: Partial<OverlayConfig>): Pick<OverlayConfig, 'x' | 'y'> {
+  if (typeof o.x === 'number' && typeof o.y === 'number') return { x: o.x, y: o.y }
+  if (o.kind === 'watermark') return { x: o.align === 'right' ? 66 : 28, y: 74 }
+  return {
+    x: o.align === 'left' ? 30 : o.align === 'right' ? 64 : 50,
+    y: o.position === 'top' ? 22 : o.position === 'bottom' ? 68 : 45,
+  }
+}
+
+/** Overlay completo: defaults para campos nuevos + migración de la posición. */
+export function normalizeOverlay(o: Partial<OverlayConfig>): OverlayConfig {
+  return { ...DEFAULT_OVERLAY, ...o, ...migratePosition(o) }
+}
+
 /**
  * Todos los overlays de todas las pistas de overlay (en orden de pista: la última queda arriba).
  * Se completan con los defaults: proyectos guardados con versiones anteriores no traen los
@@ -53,7 +68,7 @@ export function overlayItems(p: VideoProject): OverlayItem[] {
   return p.tracks
     .filter((t) => t.kind === 'overlay' && !t.muted)
     .flatMap((t) => t.items.filter((i): i is OverlayItem => i.type === 'overlay'))
-    .map((i) => ({ ...i, overlay: { ...DEFAULT_OVERLAY, ...i.overlay } }))
+    .map((i) => ({ ...i, overlay: normalizeOverlay(i.overlay) }))
 }
 
 export function findItem(p: VideoProject, id: string | null): OverlayItem | null {
@@ -66,7 +81,7 @@ export function patchItem(p: VideoProject, id: string, fn: (i: OverlayItem) => O
     ...p,
     tracks: p.tracks.map((t): Track => ({
       ...t,
-      items: t.items.map((i) => (i.id === id && i.type === 'overlay' ? fn({ ...i, overlay: { ...DEFAULT_OVERLAY, ...i.overlay } }) : i)),
+      items: t.items.map((i) => (i.id === id && i.type === 'overlay' ? fn({ ...i, overlay: normalizeOverlay(i.overlay) }) : i)),
     })),
   }
 }

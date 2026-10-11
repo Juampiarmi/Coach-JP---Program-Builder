@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
+import { pressDrag } from './drag'
 import { timecode } from './render'
 import type { ClipInfo, OverlayItem, Track, TrackItem } from './types'
 
@@ -30,23 +31,11 @@ function itemText(o: OverlayItem['overlay']) {
   return 'COACH JP'
 }
 
-/** Arrastre horizontal en segundos: devuelve el delta de tiempo desde el pointerdown. */
+/** Arrastre horizontal en segundos (estricto: sólo con el botón presionado). */
 function useDrag(pps: number) {
   return (e: RPointerEvent, onMove: (dt: number) => void) => {
-    e.preventDefault()
-    e.stopPropagation()
     const x0 = e.clientX
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-    const move = (ev: PointerEvent) => onMove((ev.clientX - x0) / pps)
-    const up = () => {
-      target.removeEventListener('pointermove', move)
-      target.removeEventListener('pointerup', up)
-      target.removeEventListener('pointercancel', up)
-    }
-    target.addEventListener('pointermove', move)
-    target.addEventListener('pointerup', up)
-    target.addEventListener('pointercancel', up)
+    pressDrag(e, (ev) => onMove((ev.clientX - x0) / pps))
   }
 }
 
@@ -73,19 +62,13 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
   const step = d > 60 ? 10 : d > 20 ? 5 : d > 8 ? 1 : 0.5
 
   // Scrub: click o arrastre sobre la regla mueve el cabezal.
+  // Scrub: el cabezal se mueve sólo con click directo o arrastre con el botón presionado.
   const scrub = (e: RPointerEvent) => {
+    if (e.button !== 0) return
     const rect = areaRef.current!.getBoundingClientRect()
     const at = (x: number) => onSeek(clamp((x - rect.left) / pps, 0, d))
     at(e.clientX)
-    const target = e.currentTarget as HTMLElement
-    target.setPointerCapture(e.pointerId)
-    const move = (ev: PointerEvent) => at(ev.clientX)
-    const up = () => {
-      target.removeEventListener('pointermove', move)
-      target.removeEventListener('pointerup', up)
-    }
-    target.addEventListener('pointermove', move)
-    target.addEventListener('pointerup', up)
+    pressDrag(e, (ev) => at(ev.clientX))
   }
 
   const renderItem = (track: Track, item: TrackItem) => {

@@ -70,6 +70,44 @@ function text(ctx: Ctx, str: string, x: number, y: number, clean: boolean, size:
   ctx.restore()
 }
 
+/**
+ * Subtítulo en Clean HUD: pastilla táctica oscura con borde fino detrás del texto, para que
+ * no se pierda contra el fondo (gimnasio, luces). En caja táctica se dibuja como texto normal.
+ */
+function subtitle(ctx: Ctx, str: string, x: number, y: number, clean: boolean, size: number) {
+  if (!clean) {
+    ctx.fillText(str, x, y)
+    return
+  }
+  const w = ctx.measureText(str).width
+  const align = ctx.textAlign
+  const left = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x
+  const padX = size * 0.45
+  const padY = size * 0.32
+  ctx.save()
+  roundRect(ctx, left - padX, y - size * 0.86 - padY, w + padX * 2, size * 1.1 + padY * 2, size * 0.28)
+  ctx.fillStyle = 'rgba(8,10,14,0.82)'
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'
+  ctx.shadowBlur = size * 0.5
+  ctx.fill()
+  ctx.shadowColor = 'transparent'
+  ctx.lineWidth = Math.max(1.5, size * 0.05)
+  ctx.strokeStyle = 'rgba(255,255,255,0.24)'
+  ctx.stroke()
+  ctx.restore()
+  ctx.fillText(str, x, y)
+}
+
+function roundRect(ctx: Ctx, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+}
+
 /** Caja táctica: esquinas recortadas (chaflán), borde sutil y marcas de acento. */
 function tacticalBox(ctx: Ctx, w: number, h: number) {
   const cut = 28
@@ -111,9 +149,9 @@ function badgeBlock(ctx: Ctx, o: OverlayConfig, clean: boolean): Block {
   font(ctx, 600, 36, FONT_MONO, 5)
   const lines = label ? wrap(ctx, label, 760) : []
   const labelW = Math.max(0, ...lines.map((l) => ctx.measureText(l).width))
-  const pad = clean ? 12 : 56
+  const pad = clean ? 30 : 56
   const w = Math.max(clean ? 0 : 380, valueW, labelW) + pad * 2
-  const h = 60 + 170 + (lines.length ? 30 + lines.length * 50 : 0) + (clean ? 10 : 50)
+  const h = 60 + 170 + (lines.length ? 30 + lines.length * (clean ? 62 : 50) : 0) + (clean ? 24 : 50)
   return {
     w,
     h,
@@ -123,7 +161,7 @@ function badgeBlock(ctx: Ctx, o: OverlayConfig, clean: boolean): Block {
       text(c, value, ax(pad), 60 + 160, cl, 190, 'rgba(234,88,12,0.5)')
       font(c, 600, 36, FONT_MONO, 5)
       c.fillStyle = BRAND.white
-      lines.forEach((l, i) => text(c, l, ax(pad), 60 + 170 + 30 + 38 + i * 50, cl, 36))
+      lines.forEach((l, i) => subtitle(c, l, ax(pad), 60 + 170 + 30 + 38 + i * (cl ? 62 : 50), cl, 36))
     },
   }
 }
@@ -136,8 +174,8 @@ function headlineBlock(ctx: Ctx, o: OverlayConfig, clean: boolean): Block {
   const widths = [...a, ...b].map((l) => ctx.measureText(l).width)
   font(ctx, 600, 30, FONT_MONO, 7)
   const tagW = tag ? ctx.measureText(`[ ${tag} ]`).width : 0
-  const pad = clean ? 12 : 52
-  const tagH = tag ? 64 : 0
+  const pad = clean ? 26 : 52
+  const tagH = tag ? (clean ? 76 : 64) : 0
   const w = Math.max(tagW, ...widths, clean ? 0 : 300) + pad * 2
   const h = pad * 2 + tagH + (a.length + b.length) * 100
   return {
@@ -148,7 +186,7 @@ function headlineBlock(ctx: Ctx, o: OverlayConfig, clean: boolean): Block {
       if (tag) {
         font(c, 600, 30, FONT_MONO, 7)
         c.fillStyle = BRAND.cyan
-        text(c, `[ ${tag} ]`, ax(pad), cy + 30, cl, 30)
+        subtitle(c, `[ ${tag} ]`, ax(pad), cy + 30, cl, 30)
         cy += tagH
       }
       font(c, 700, 96, DISPLAY, -1)
@@ -184,9 +222,9 @@ function timerBlock(ctx: Ctx, o: OverlayConfig, item: OverlayItem, time: number,
   const digitsW = ctx.measureText('00:00.000').width
   font(ctx, 600, 32, FONT_MONO, 5)
   const labelW = label ? ctx.measureText(`● ${label}`).width : 0
-  const pad = clean ? 12 : 50
+  const pad = clean ? 26 : 50
   const w = Math.max(digitsW, labelW) + pad * 2
-  const h = pad + (label ? 52 : 0) + 140 + pad
+  const h = pad + (label ? (clean ? 64 : 52) : 0) + 140 + pad
   const blink = Math.floor(time * 2) % 2 === 0
   return {
     w,
@@ -196,8 +234,8 @@ function timerBlock(ctx: Ctx, o: OverlayConfig, item: OverlayItem, time: number,
       if (label) {
         font(c, 600, 32, FONT_MONO, 5)
         c.fillStyle = BRAND.orange
-        text(c, `${blink ? '●' : '○'} ${label}`, ax(pad), cy + 30, cl, 32)
-        cy += 52
+        subtitle(c, `${blink ? '●' : '○'} ${label}`, ax(pad), cy + 30, cl, 32)
+        cy += cl ? 64 : 52
       }
       font(c, 700, 150, FONT_MONO, 0)
       c.fillStyle = BRAND.white
@@ -215,10 +253,10 @@ function checklistBlock(ctx: Ctx, o: OverlayConfig, item: OverlayItem, time: num
   const textW = Math.max(0, ...items.map((x) => ctx.measureText(x.text.toUpperCase()).width))
   font(ctx, 600, 30, FONT_MONO, 7)
   const titleW = title ? ctx.measureText(`[ ${title} ]`).width : 0
-  const pad = clean ? 12 : 48
+  const pad = clean ? 26 : 48
   const gap = 26
   const rowH = 88
-  const titleH = title ? 60 : 0
+  const titleH = title ? (clean ? 74 : 60) : 0
   const w = Math.max(titleW, markW + gap + textW) + pad * 2
   const h = pad * 2 + titleH + items.length * rowH - 10
   return {
@@ -231,7 +269,7 @@ function checklistBlock(ctx: Ctx, o: OverlayConfig, item: OverlayItem, time: num
       if (title) {
         font(c, 600, 30, FONT_MONO, 7)
         c.fillStyle = BRAND.cyan
-        text(c, `[ ${title} ]`, pad, cy + 30, cl, 30)
+        subtitle(c, `[ ${title} ]`, pad, cy + 30, cl, 30)
         cy += titleH
       }
       items.forEach((x, i) => {
@@ -257,10 +295,10 @@ const BOLT = new Path2D('M36 18 L21 40 L30 40 L27 58 L43 34 L33 34 Z')
 
 /** Firma Coach JP (siempre abajo, sobre el pie de Reels). */
 function watermarkBlock(clean: boolean): Block {
-  const pad = clean ? 8 : 22
+  const pad = clean ? 14 : 22
   return {
     w: 440 + pad * 2,
-    h: 84 + pad * 2,
+    h: (clean ? 96 : 84) + pad * 2,
     draw: (c, cl) => {
       c.save()
       c.translate(pad, pad)
@@ -288,60 +326,87 @@ function watermarkBlock(clean: boolean): Block {
       text(c, 'JP', pad + 96 + w, pad + 46, cl, 46)
       font(c, 400, 26, FONT_MONO, 2)
       c.fillStyle = cl ? BRAND.white : BRAND.gray
-      text(c, '@coachjp.training', pad + 96, pad + 82, cl, 26)
+      subtitle(c, '@coachjp.training', pad + 96 + (cl ? 10 : 0), pad + 84, cl, 24)
     },
   }
 }
 
-/** Ancla vertical del bloque según la posición elegida, siempre dentro de la zona segura. */
-function anchorY(position: OverlayConfig['position'], h: number) {
-  if (position === 'top') return SAFE.top + 40
-  if (position === 'bottom') return SAFE.bottom - 40 - h
-  return (SAFE.top + SAFE.bottom) / 2 - h / 2
+/** Rectángulo dibujado de cada overlay (coordenadas 1080×1920), para tomarlo con el mouse. */
+export interface OverlayRect {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
-function anchorX(align: OverlayAlign, w: number) {
-  const x = align === 'left' ? SAFE.left : align === 'right' ? SAFE.right - w : (OUT_W - w) / 2
-  return Math.min(OUT_W - 24 - w, Math.max(24, x))
+/** Ancho máximo de cualquier overlay: 85 % del marco (nunca pisa la columna de Reels entera). */
+const MAX_W = OUT_W * 0.85
+/** Margen mínimo contra los bordes del marco. */
+const EDGE = 16
+
+/** Tamaño final del bloque en el marco (escala S/M/L y tope del 85 % de ancho). */
+function blockScale(o: OverlayConfig, w: number) {
+  return Math.min(SIZE_K[o.size] ?? 1, MAX_W / w)
 }
 
-/** Dibuja los overlays activos en el instante `time` (segundos del clip base). */
-export function drawOverlays(ctx: Ctx, items: OverlayItem[], time: number) {
+/** Esquina superior izquierda a partir del centro en % (x, y), sin salirse del marco. */
+export function placeBlock(o: OverlayConfig, w: number, h: number) {
+  const cx = (o.x / 100) * OUT_W
+  const cy = (o.y / 100) * OUT_H
+  return {
+    x: Math.min(OUT_W - EDGE - w, Math.max(EDGE, cx - w / 2)),
+    y: Math.min(OUT_H - EDGE - h, Math.max(EDGE, cy - h / 2)),
+  }
+}
+
+/** Alineación del texto dentro del bloque según en qué tercio horizontal está. */
+function textAlignFor(o: OverlayConfig): OverlayAlign {
+  return o.x < 38 ? 'left' : o.x > 62 ? 'right' : 'center'
+}
+
+function buildBlock(ctx: Ctx, item: OverlayItem, time: number, clean: boolean): Block {
+  const o = item.overlay
+  return o.kind === 'badge'
+    ? badgeBlock(ctx, o, clean)
+    : o.kind === 'headline'
+      ? headlineBlock(ctx, o, clean)
+      : o.kind === 'timer'
+        ? timerBlock(ctx, o, item, time, clean)
+        : o.kind === 'checklist'
+          ? checklistBlock(ctx, o, item, time, clean)
+          : watermarkBlock(clean)
+}
+
+/** Dibuja los overlays activos en el instante `time` y devuelve dónde quedó cada uno. */
+export function drawOverlays(ctx: Ctx, items: OverlayItem[], time: number): OverlayRect[] {
+  const rects: OverlayRect[] = []
   for (const item of items) {
     if (time < item.start || time > item.end) continue
     const o = item.overlay
     const { alpha, dy } = animation(item, time)
     if (alpha <= 0.001) continue
     const clean = o.style === 'clean'
-    const block =
-      o.kind === 'badge'
-        ? badgeBlock(ctx, o, clean)
-        : o.kind === 'headline'
-          ? headlineBlock(ctx, o, clean)
-          : o.kind === 'timer'
-            ? timerBlock(ctx, o, item, time, clean)
-            : o.kind === 'checklist'
-              ? checklistBlock(ctx, o, item, time, clean)
-              : watermarkBlock(clean)
-    const k = SIZE_K[o.size] ?? 1
-    // Nunca más ancho que la zona útil: si no entra, se achica.
-    const fit = Math.min(k, (OUT_W - 48) / block.w)
+    const block = buildBlock(ctx, item, time, clean)
+    const fit = blockScale(o, block.w)
     const w = block.w * fit
     const h = block.h * fit
-    const x = anchorX(o.align, w)
-    const y = anchorY(o.kind === 'watermark' ? 'bottom' : o.position, h)
+    const { x, y } = placeBlock(o, w, h)
+    const align = textAlignFor(o)
+    rects.push({ id: item.id, x, y, w, h })
     ctx.save()
     ctx.globalAlpha = alpha
     ctx.translate(x, y + dy)
     ctx.scale(fit, fit)
     if (!clean) tacticalBox(ctx, block.w, block.h)
     ctx.textBaseline = 'alphabetic'
-    ctx.textAlign = o.align === 'center' ? 'center' : o.align === 'right' ? 'right' : 'left'
+    ctx.textAlign = align
     // Ancla horizontal del texto dentro del bloque según la alineación.
-    const ax = (pad: number) => (o.align === 'center' ? block.w / 2 : o.align === 'right' ? block.w - pad : pad)
+    const ax = (pad: number) => (align === 'center' ? block.w / 2 : align === 'right' ? block.w - pad : pad)
     block.draw(ctx, clean, ax)
     ctx.restore()
   }
+  return rects
 }
 
 /** Frame del video con encuadre "cover" en 1080×1920 (recorta los lados de un clip horizontal). */
