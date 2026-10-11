@@ -111,6 +111,8 @@ export interface CanvasState {
   headlineScale: number
   /** El remate arranca siempre en un renglón nuevo (evita que su primera palabra cuelgue del titular) */
   remateNewLine: boolean
+  /** Aire entre titular y remate cuando va en renglón nuevo (% del cuerpo, 0–60) */
+  remateGap?: number
   typePreset: TypePreset
   /** Intercambia naranja ⇄ cian en toda la placa */
   accentSwap: boolean

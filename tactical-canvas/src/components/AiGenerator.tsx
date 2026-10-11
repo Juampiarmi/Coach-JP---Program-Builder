@@ -17,13 +17,21 @@ import {
   type InputMode,
   RateLimitError,
   resetQuotaMemory,
+  detectStructuredCopy,
+  generateMindsetBursts,
+  mapCopy,
+  type MindsetBurst,
 } from '../lib/ai'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { AiSettingsModal } from './AiSettingsModal'
 
 interface Props {
   onResult: (r: GenerationResult, meta: { topic: string; discipline: Discipline }) => void
+  /** Ráfaga elegida: se inyecta en el titular y el remate de la placa activa */
+  onBurst?: (b: MindsetBurst) => void
 }
+
+const BURST_COUNTS = [1, 3, 5, 7] as const
 
 const MODES: GenMode[] = ['auto', 'single', 'stories', 'carousel']
 const GOALS: EditorialGoal[] = ['auto', 'sales', 'science', 'mindset']
@@ -38,6 +46,8 @@ interface GenPrefs {
   mode: GenMode
   discipline: Discipline
   inputMode?: InputMode
+  /** Ráfagas de mindset: cantidad de variantes (1, 3, 5 o 7) */
+  bursts?: number
   goal?: EditorialGoal
   tone?: EditorialTone
 }
@@ -104,7 +114,7 @@ function quotaMessage(err: RateLimitError, provider: string) {
 }
 
 /** Barra de generación táctica con IA (BYOK). */
-export function AiGenerator({ onResult }: Props) {
+export function AiGenerator({ onResult, onBurst }: Props) {
   const [stored, setSettings] = usePersistentState<AiSettings>('jp-tactical-canvas:ai', DEFAULT_AI_SETTINGS)
   // Fusión profunda: settings guardados antes de sumar un proveedor no traen su key/modelo.
   const settings: AiSettings = {
@@ -150,12 +160,67 @@ export function AiGenerator({ onResult }: Props) {
     }
   }, [cooldown.remaining, quotaError])
   const hasKey = Boolean(settings.keys[settings.provider])
+  // MODO 1 · copy ya escrito (Placa 1… / lista / párrafos): se maqueta fiel, sin inventar nada.
+  const blocks = topic.trim() ? detectStructuredCopy(topic) : null
+
+  // MODO 2 · ráfagas de mindset táctico
+  const burstCount = mode.bursts ?? 3
+  const setBurstCount = (bursts: number) => setMode({ ...mode, bursts })
+  const [bursts, setBursts] = useState<MindsetBurst[]>([])
+  const [burstBusy, setBurstBusy] = useState(false)
+  const [burstError, setBurstError] = useState('')
+  const [picked, setPicked] = useState<number | null>(null)
+  const runBursts = async () => {
+    if (burstBusy || inFlight.current) return
+    if (!hasKey) {
+      setModal(true)
+      return
+    }
+    setBurstBusy(true)
+    setBurstError('')
+    setPicked(null)
+    abort.current = new AbortController()
+    try {
+      setBursts(await generateMindsetBursts(settings, { topic: blocks ? '' : topic, count: burstCount, discipline: mode.discipline ?? 'general' }, abort.current.signal, setStatus))
+    } catch (err) {
+      if (err instanceof RateLimitError) {
+        if (err.kind === 'minute' || err.kind === 'unknown') cooldown.start(err.retryAfterSec)
+        setBurstError(quotaMessage(err, settings.provider))
+      } else if (!(err instanceof DOMException && err.name === 'AbortError')) setBurstError(err instanceof Error ? err.message : 'Error desconocido')
+    } finally {
+      setBurstBusy(false)
+    }
+  }
 
   const run = async (force = false) => {
     if (inFlight.current || busy || (!force && cooldown.remaining > 0)) return
     if (force) {
       resetQuotaMemory()
       cooldown.clear()
+    }
+    if (blocks) {
+      // Mapeo fiel: misma cantidad de placas y mismo texto (sin API Key se maqueta localmente).
+      inFlight.current = true
+      setBusy(true)
+      setError('')
+      setStatus(`[ MAPEO FIEL · ${blocks.length} PLACAS · CERO INVENCIONES ]`)
+      abort.current = new AbortController()
+      try {
+        const result = await mapCopy(settings, topic, blocks, mode.discipline ?? 'general', abort.current.signal, setStatus)
+        onResult(result, { topic, discipline: mode.discipline ?? 'general' })
+        setStatus(`[ ${result.slides.length} PLACAS MAPEADAS${result.local ? ' · LOCAL' : ''} · ${result.slides.map((sl) => SEQ_LABEL[sl.template ?? 'statement']).join(' → ')} ]`)
+      } catch (err) {
+        if (err instanceof RateLimitError) {
+          if (err.kind === 'minute' || err.kind === 'unknown') cooldown.start(err.retryAfterSec)
+          setQuotaError(err)
+          setError(quotaMessage(err, settings.provider))
+        } else if (!(err instanceof DOMException && err.name === 'AbortError')) setError(err instanceof Error ? err.message : 'Error desconocido')
+        setStatus(null)
+      } finally {
+        inFlight.current = false
+        setBusy(false)
+      }
+      return
     }
     if (!hasKey) {
       setModal(true)
@@ -269,6 +334,11 @@ export function AiGenerator({ onResult }: Props) {
           }}
         />
       )}
+      {blocks && (
+        <p className="mt-1.5 rounded-md border border-gold/40 bg-gold/5 px-2 py-1.5 font-mono text-[9px] leading-relaxed tracking-[0.08em] text-gold" aria-live="polite">
+          ▸ COPY ESTRUCTURADO DETECTADO · {blocks.length} PLACAS → MAPEO FIEL: se respeta tu texto y la cantidad exacta de placas, sin citas ni gráficos inventados.
+        </p>
+      )}
       <div className="mt-2">
         <p className="mb-1 font-mono text-[9px] tracking-[0.14em] text-steel/70 uppercase">Tono / enfoque estratégico</p>
         <div className="grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
@@ -372,7 +442,9 @@ export function AiGenerator({ onResult }: Props) {
             ? '[ GENERANDO... ]'
             : cooldown.remaining > 0
               ? `[ ESPERÁ ${cooldown.remaining}s · CUOTA RESETEANDO ]`
-              : '[ ✨ GENERAR PLACAS ]'}
+              : blocks
+                ? `[ ⇢ MAPEAR ${blocks.length} PLACAS ]`
+                : '[ ✨ GENERAR PLACAS ]'}
         </span>
       </button>
       {busy && (
@@ -416,6 +488,57 @@ export function AiGenerator({ onResult }: Props) {
           )}
         </div>
       )}
+      {/* MODO 2 · Ráfagas de Mindset Táctico */}
+      <div className="mt-3 space-y-2 rounded-lg border border-fire/30 bg-fire/[.04] p-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-mono text-[9px] font-semibold tracking-[0.14em] text-fire uppercase">⚡ Ráfagas de mindset táctico</p>
+          <div className="flex gap-1" role="group" aria-label="Cantidad de variantes">
+            {BURST_COUNTS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setBurstCount(n)}
+                aria-pressed={burstCount === n}
+                className={`size-6 rounded border font-mono text-[10px] font-bold transition ${burstCount === n ? 'border-fire bg-fire text-carbon' : 'border-line text-steel hover:text-white'}`}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={runBursts}
+          disabled={burstBusy || busy || cooldown.remaining > 0}
+          className="w-full rounded-md border border-fire/60 py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] text-fire transition hover:bg-fire/10 disabled:opacity-50"
+        >
+          {burstBusy ? '[ GENERANDO RÁFAGA... ]' : `[ ⚡ GENERAR ${burstCount} ${burstCount === 1 ? 'VARIANTE' : 'VARIANTES'} ]`}
+        </button>
+        <p className="font-mono text-[8px] leading-relaxed tracking-wider text-steel/60">
+          Brutalista y fisiológico: disciplina vs motivación, fatiga del SNC, estándares medidos. Cero clichés de autoayuda. Tocá una tarjeta para aplicarla a la placa activa.
+        </p>
+        {burstError && <p className="font-mono text-[10px] leading-relaxed text-fire">{burstError}</p>}
+        {bursts.length > 0 && (
+          <div className="space-y-1.5">
+            {bursts.map((b, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  onBurst?.(b)
+                  setPicked(i)
+                }}
+                className={`block w-full rounded-md border px-2 py-1.5 text-left font-display text-[12px] leading-tight font-bold tracking-[0.01em] uppercase transition ${
+                  picked === i ? 'border-fire bg-fire/10' : 'border-line bg-surface-2 hover:border-fire/50'
+                }`}
+              >
+                <span className="text-white">{b.white}</span> <span className="text-fire">{b.accent}</span>
+                {picked === i && <span className="ml-1 font-mono text-[8px] tracking-wider text-fire/80">✓ APLICADA</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       {modal && <AiSettingsModal settings={settings} onSave={setSettings} onClose={() => setModal(false)} />}
     </div>
   )

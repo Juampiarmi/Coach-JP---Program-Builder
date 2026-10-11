@@ -32,8 +32,30 @@ interface Props {
   fontWeight?: number
   /** Interlineado (presets tipográficos); por defecto 1.04 */
   lineHeight?: number
-  /** Remate en renglón nuevo: su primera palabra nunca queda colgada al final del renglón blanco */
+  /** Remate en renglón nuevo: titular y remate son dos bloques independientes (nunca comparten renglón) */
   newLine?: boolean
+  /** Aire entre titular y remate en modo renglón nuevo (fracción del cuerpo, 0–0,6) */
+  remateGap?: number
+}
+
+/** Palabras funcionales que no pueden cerrar el titular cuando el remate va aparte («EL», «NO», «DE»…). */
+const DANGLING = new Set(['EL', 'LA', 'LOS', 'LAS', 'UN', 'UNA', 'UNOS', 'UNAS', 'LO', 'AL', 'DEL', 'DE', 'A', 'Y', 'E', 'O', 'U', 'NI', 'NO', 'QUE', 'EN', 'CON', 'SIN', 'POR', 'PARA', 'SE', 'TU', 'TUS', 'SU', 'SUS', 'MI', 'MIS', 'ES', 'SON', 'MÁS', 'MAS', 'PERO', 'SI', 'YA'])
+const bare = (w: string) => w.replace(/\*/g, '').replace(/[^\p{L}\p{N}]/gu, '').toUpperCase()
+
+/**
+ * Con el remate aparte, las palabras funcionales que quedaron al final del titular pasan al
+ * comienzo del remate (ej: «… NO FALLÓ EL» + «ENTRENO.» → «… NO FALLÓ» + «EL ENTRENO.»).
+ * Un *resaltado* abierto nunca se parte, y el titular conserva al menos una palabra.
+ */
+export function isolateRemate(a: string, b: string): [string, string] {
+  if (!b.trim()) return [a, b]
+  const lines = a.split('\n')
+  const last = lines[lines.length - 1].trim().split(/\s+/).filter(Boolean)
+  const moved: string[] = []
+  while (last.length > 1 && DANGLING.has(bare(last[last.length - 1])) && !/^\*[^*]*$|^[^*]*\*$/.test(last[last.length - 1])) moved.unshift(last.pop()!)
+  if (!moved.length) return [a, b]
+  lines[lines.length - 1] = last.join(' ')
+  return [lines.join('\n'), `${moved.join(' ')} ${b.trim()}`]
 }
 
 /** Piso del ajuste por ancho: por debajo de esto se prefiere cortar antes que achicar más. */
@@ -76,12 +98,12 @@ function useWordFit(deps: unknown[]) {
 }
 
 /** Titular: base en blanco + remate en naranja fuego. `*palabra*` invierte el color. */
-export function Headline({ partA, partB, fontFamily, fontSize, tracking, ink = BRAND.white, accent = BRAND.orange, fontWeight = /DM Serif/.test(fontFamily) ? 400 : 700, lineHeight = 1.04, newLine = false }: Props) {
-  const a = partA.trim()
-  const b = partB.trim()
-  // Con remate en renglón nuevo el separador es un salto (si ambas partes tienen texto).
-  const parts = [...segments(a, false), { t: newLine && a && b ? '\n' : ' ', hl: false }, ...segments(b, true)]
-  const { ref, fit } = useWordFit([partA, partB, fontFamily, fontSize, tracking, lineHeight, newLine])
+export function Headline({ partA, partB, fontFamily, fontSize, tracking, ink = BRAND.white, accent = BRAND.orange, fontWeight = /DM Serif/.test(fontFamily) ? 400 : 700, lineHeight = 1.04, newLine = false, remateGap = 0 }: Props) {
+  const [a, b] = newLine ? isolateRemate(partA.trim(), partB.trim()) : [partA.trim(), partB.trim()]
+  const parts = [...segments(a, false), { t: ' ', hl: false }, ...segments(b, true)]
+  const { ref, fit } = useWordFit([partA, partB, fontFamily, fontSize, tracking, lineHeight, newLine, remateGap])
+  const render = (list: { t: string; hl: boolean }[]) =>
+    list.map((p, i) => <Fragment key={i}>{p.hl ? <span style={{ color: accent }}>{lines(p.t)}</span> : lines(p.t)}</Fragment>)
   // Por debajo del piso, último recurso: permitir el corte dentro de la palabra.
   const allowBreak = fit <= MIN_WORD_FIT
   return (
@@ -102,9 +124,20 @@ export function Headline({ partA, partB, fontFamily, fontSize, tracking, ink = B
         hyphens: 'none',
       }}
     >
-      {parts.map((p, i) => (
-        <Fragment key={i}>{p.hl ? <span style={{ color: accent }}>{lines(p.t)}</span> : lines(p.t)}</Fragment>
-      ))}
+      {newLine && a && b ? (
+        // Dos contenedores independientes: cada uno balancea sus propios renglones y el remate
+        // arranca siempre debajo del titular (nunca comparten línea ni nodo de texto).
+        <>
+          <span data-part="titular" style={{ display: 'block', textWrap: 'balance' }}>
+            {render(segments(a, false))}
+          </span>
+          <span data-part="remate" style={{ display: 'block', textWrap: 'balance', marginTop: `${Math.min(0.6, Math.max(0, remateGap))}em` }}>
+            {render(segments(b, true))}
+          </span>
+        </>
+      ) : (
+        render(parts)
+      )}
     </h1>
   )
 }

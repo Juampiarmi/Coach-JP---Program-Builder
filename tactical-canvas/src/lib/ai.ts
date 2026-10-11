@@ -1,4 +1,5 @@
 import { DEFAULT_STATE } from '../defaults'
+import { detectStructuredCopy, guardMapped, isAnaphora, mapLocally, MAX_MAPPED_SLIDES, type MappedBlock } from './copyMapping'
 import type { Accent, CanvasState, ChartMode, CurveShape, DiagramData, DiagramKind, RepeatMode, StructData, TemplateId } from '../types'
 import { diagramDefaults, inferPillar } from './diagramPillar'
 import { structDefaults } from './structPillar'
@@ -998,7 +999,8 @@ export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideConte
   const goal = str(obj(root.plan).objetivo ?? obj(root.plan).goal).toLowerCase()
   let slides = rawSlides.map((raw) => slideToPatch(raw, ctx)).map((p) => enforceSemantics(p, goal)).filter((p) => p.headlineA || p.headlineB)
   if (!slides.length) throw new Error('La IA no devolvió slides utilizables.')
-  const limit = mode === 'single' ? 1 : mode === 'stories' ? 3 : mode === 'carousel' ? 5 : 5
+  // Sin tope fijo de 5: el carrusel admite todas las placas que devuelva la IA (máx. de Instagram).
+  const limit = mode === 'single' ? 1 : mode === 'stories' ? 3 : MAX_MAPPED_SLIDES
   slides = slides.slice(0, limit)
   const declared = oneOf(root.format, ['single', 'stories', 'carousel'] as const, 'single')
   const format = mode === 'auto' ? (slides.length === 1 ? 'single' : declared === 'single' ? 'carousel' : declared) : mode
@@ -1048,6 +1050,119 @@ export async function generateContent(
       throw again
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// MODO 1 · Mapeo fiel de copy existente (sin inventar nada).
+
+export { detectStructuredCopy, mapLocally }
+
+const MAPPING_SYSTEM = `Sos un MAQUETADOR de placas para Instagram de COACH JP. NO sos redactor: tu único trabajo es ubicar el texto que pega el usuario en la estructura de cada placa.
+REGLAS INQUEBRANTABLES:
+1. CERO INVENCIONES: prohibido inventar papers, autores, años, estudios, cifras, datos o frases. "citation" y "description" van SIEMPRE vacíos ("") salvo que el texto del usuario traiga esa cita literal.
+2. TEXTO LITERAL: copiá las palabras del usuario tal cual (podés pasar a MAYÚSCULAS y quitar el rótulo «Placa N:»). Prohibido resumir, parafrasear, traducir o «mejorar» el copy.
+3. MISMA CANTIDAD Y ORDEN: devolvés exactamente una placa por bloque, en el mismo orden. Nunca fusiones, recortes ni agregues placas.
+4. SIN GRÁFICOS NO PEDIDOS: templateId es "sentencia", "manifiesto" o "repeticion" (o "metrica" si el bloque ya trae un número protagonista). Nunca "grafico", "diagrama", "ab", "matriz2x2", "pipeline", "piramide", "checklist" ni "guardado" salvo que el bloque lo pida explícitamente.
+5. Si los bloques forman una anáfora rítmica (arrancan igual), usá la MISMA plantilla ("manifiesto") en todas para que el set sea coherente.
+Respondé estrictamente con un objeto JSON válido, sin markdown ni texto antes o después. Dentro de los textos usá « » en lugar de comillas dobles.`
+
+function mappingPrompt(blocks: MappedBlock[], discipline: Discipline) {
+  const focus = DISCIPLINE_RULE[discipline]
+  return `El usuario pegó un copy YA ESCRITO de ${blocks.length} placas. Maquetalo sin cambiar el texto.
+${isAnaphora(blocks) ? 'DETECTADO: anáfora rítmica → templateId "manifiesto" en TODAS las placas.\n' : ''}${focus ? `Contexto del pilar (sólo para el tag superior, nunca para agregar contenido): ${focus}\n` : ''}
+Para cada bloque extraé:
+- "tagSuperior": el tag que trae el bloque; si no trae, un tag táctico corto (2-4 palabras en MAYÚSCULAS) coherente con el texto.
+- "titleWhite": la premisa / tensión inicial, LITERAL.
+- "titleAccent": el golpe de impacto / remate, LITERAL (la parte final o la frase de cierre del bloque).
+- "parrafo": el subtítulo o cierre restante del bloque, LITERAL ("" si no queda texto).
+
+BLOQUES:
+${blocks.map((b, i) => `[${i + 1}] ${b.text.replace(/\n/g, ' / ')}`).join('\n')}
+
+Forma exacta: { "caption": string (pie de foto corto armado SOLO con ideas del copy, sin datos nuevos), "slides": [ ${blocks.length} objetos { "templateId": string, "text": { "tagSuperior": string, "titleWhite": string, "titleAccent": string, "parrafo": string }, "citation": "", "description": "" } ] }`
+}
+
+/**
+ * Mapeo fiel: la IA sólo reparte el texto del usuario en tag / titular / remate / cierre; las
+ * guardas locales (guardMapped) vuelven a validar fidelidad, citas y plantillas. Sin API Key o si
+ * la IA falla, el mapeo se hace 100 % local con el mismo resultado estructural.
+ */
+export async function mapCopy(
+  settings: AiSettings,
+  text: string,
+  blocks: MappedBlock[],
+  discipline: Discipline,
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+  onModelChange?: ModelChangeFn,
+): Promise<GenerationResult & { local: boolean }> {
+  const key = (settings.keys[settings.provider] ?? '').trim()
+  const done = (slides: Partial<CanvasState>[], caption: string, local: boolean) => ({
+    format: (slides.length === 1 ? 'single' : 'carousel') as GenerationResult['format'],
+    slides: slides.map((sl) => sanitizePatch({ ...sl })),
+    caption,
+    plan: { goal: 'mapeo', intent: 'Maquetar el copy del usuario sin cambios', sequence: slides.map((sl) => sl.template ?? 'statement') },
+    local,
+  })
+  if (!key) return done(mapLocally(blocks), '', true)
+  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
+  const prompt = mappingPrompt(blocks, discipline)
+  try {
+    const raw =
+      settings.provider === 'gemini'
+        ? await callGemini(key, model, prompt, signal, onStatus, onModelChange, settings.geminiModels ?? [], MAPPING_SYSTEM)
+        : settings.provider === 'anthropic'
+          ? await callAnthropic(key, model, prompt, signal, MAPPING_SYSTEM)
+          : await callOpenAI(key, model, prompt, signal, MAPPING_SYSTEM)
+    const root = obj(safeParseJson(raw))
+    const aiSlides = (Array.isArray(root.slides) ? root.slides : []).map((r) => slideToPatch(r, { discipline, topic: text }))
+    return done(guardMapped(blocks, aiSlides, text), cleanCaption(str(root.caption)), false)
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    if (err instanceof RateLimitError) throw err
+    // Cualquier otro problema (JSON roto, modelo caído): el copy igual se maqueta localmente.
+    onStatus?.(null)
+    return done(mapLocally(blocks), '', true)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// MODO 2 · Ráfagas de Mindset Táctico (1 a 7 variantes de titular + remate).
+
+export interface MindsetBurst {
+  white: string
+  accent: string
+}
+
+/** Clichés de autoayuda prohibidos: si la IA igual los usa, la tarjeta se descarta. */
+const CLICHES = /mejor versi[oó]n|romp[eé]\w* (tus|los) l[ií]mites|hasta que el cuerpo diga basta|el dolor es temporal|no pain|sal de tu zona de confort|cree en ti|cre[eé] en vos|nunca te rindas|todo es posible|tu [uú]nico l[ií]mite|sue[nñ]a en grande|el [eé]xito es|actitud positiva/i
+
+export async function generateMindsetBursts(
+  settings: AiSettings,
+  ctx: { topic: string; count: number; discipline: Discipline },
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<MindsetBurst[]> {
+  const n = Math.min(7, Math.max(1, Math.round(ctx.count)))
+  const focus = DISCIPLINE_RULE[ctx.discipline]
+  const user = `COACH JP · HIGH PERFORMANCE SYSTEM · RÁFAGA DE MINDSET TÁCTICO.
+${ctx.topic.trim() ? `Eje del usuario: «${ctx.topic.trim()}».` : 'Eje: disciplina operativa en el entrenamiento.'}
+${focus ? `${focus}
+` : ''}Escribí ${n} titulares para una placa, en MAYÚSCULAS, cada uno partido en:
+- "white": premisa o tensión inicial (3 a 9 palabras).
+- "accent": la verdad incómoda o el principio inquebrantable que remata (2 a 8 palabras).
+TONO: brutalista, implacable, frío y operativo. Fundamentado en fisiología, sistemas, neurobiología y medición: fricción biológica, fatiga del SNC, disciplina contra motivación volátil, consistencia operativa, estándares diarios, carga medida.
+PROHIBIDO: autoayuda barata y clichés («sé tu mejor versión», «rompé tus límites», «entrená hasta que el cuerpo diga basta», «el dolor es temporal», «salí de tu zona de confort», «creé en vos»), emojis, signos de exclamación y cifras inventadas.
+Cada variante con un ángulo distinto (no repitas estructura ni palabras clave).
+Forma exacta: { "bursts": [ ${n} objetos { "white": string, "accent": string } ] }`
+  const res = await askJson(settings, user, signal, onStatus)
+  const list = (Array.isArray(res.bursts) ? res.bursts : Array.isArray(res.hooks) ? res.hooks : []).map(obj)
+  const out = list
+    .map((b) => ({ white: cleanText(upper(first(b.white, b.titleWhite, b.blanco, b.titular))), accent: cleanText(upper(first(b.accent, b.titleAccent, b.remate))) }))
+    .filter((b) => (b.white || b.accent) && !CLICHES.test(`${b.white} ${b.accent}`))
+    .slice(0, n)
+  if (!out.length) throw new Error('La IA no devolvió ráfagas utilizables (o sólo clichés descartados). Probá de nuevo.')
+  return out
 }
 
 // ---------------------------------------------------------------------------

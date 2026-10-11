@@ -224,6 +224,11 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         </div>
         <p className="-mt-1 font-mono text-[9px] tracking-wider text-steel/60">↵ Enter = salto de línea forzado · *palabra* invierte color</p>
         <Toggle label="↵ Remate en renglón nuevo" checked={state.remateNewLine !== false} onChange={(remateNewLine) => update({ remateNewLine })} />
+        {state.remateNewLine !== false && (
+          <Field label="Separación titular → remate" hint={(state.remateGap ?? 0) === 0 ? 'interlineado' : undefined}>
+            <Range value={state.remateGap ?? 0} onChange={(remateGap) => update({ remateGap })} min={0} max={60} step={2} suffix="%" />
+          </Field>
+        )}
         {slideIndex === 0 && <HookGenerator {...ai} />}
         </>
         )}

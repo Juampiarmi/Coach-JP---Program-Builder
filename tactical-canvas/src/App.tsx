@@ -334,7 +334,7 @@ export default function App() {
 
   const panel = (
     <>
-      <AiGenerator onResult={applyGeneration} />
+      <AiGenerator onResult={applyGeneration} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />
       <ControlPanel
         state={state}
         update={update}
@@ -365,6 +365,18 @@ export default function App() {
   )
 
   const overlayToggle = (
+    <>
+    <button
+      type="button"
+      onClick={() => update({ accentSwap: !state.accentSwap })}
+      aria-pressed={Boolean(state.accentSwap)}
+      title="Alterna naranja ⇄ cian en toda la placa"
+      className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
+        state.accentSwap ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-fire/60 bg-fire/10 text-fire'
+      }`}
+    >
+      {isDesktop ? '[ ⚡ SWAP ACCENT ]' : '⚡'}
+    </button>
     <button
       type="button"
       onClick={() => setOverlay((o) => !o)}
@@ -376,6 +388,7 @@ export default function App() {
     >
       {isDesktop ? '[ 👁 OVERLAY INSTAGRAM ]' : '👁 IG'}
     </button>
+    </>
   )
 
   const canvasUI = isDesktop ? (

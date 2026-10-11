@@ -350,6 +350,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                       fontWeight={headlineWeight}
                       lineHeight={font.lineHeight}
                       newLine={state.remateNewLine !== false}
+                      remateGap={(state.remateGap ?? 0) / 100}
                     />
                   </div>
                   <div data-nudge="block" style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale * gap * font.gapFactor + spread, ...nudge('block') }}>
