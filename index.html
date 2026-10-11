@@ -4213,7 +4213,7 @@ const IMP_RX_ETIQ = /^[\s*_>\-–•·]*(objetivo(?:\s+del\s+est[ií]mulo)?(?:\s
    "CUE MOTOR", "ERROR COMÚN"): son coaching tips del bloque, nunca prescripción */
 /* cabecera de un cue motor, con o sin emoji delante y con o sin letra de estación (biset): "🎯 SET-UP:", "⚡ ACCIÓN:", "🛑 ERROR:", "• A1 🎯 SET-UP:" */
 const IMP_EMO = '(?:[\\u2190-\\u2BFF\\uFE0F\\u200D]|[\\uD83C-\\uD83F][\\uDC00-\\uDFFF])';
-const IMP_RX_TIPHEAD = new RegExp('^[\\s*_>\\-–•·]*(?:' + IMP_EMO + '{1,4}\\s*)?(?:[A-F]\\d\\s*[·:.)\\-–]*\\s*(?:' + IMP_EMO + '{1,4}\\s*)?)?(?:(?:set[\\s-]*up|control\\s+de\\s+la\\s+fase|fase\\s+exc[eé]ntrica|intenci[oó]n\\s+neuromuscular|cue\\s+motor|error\\s+com[uú]n)\\b|(?:acci[oó]n|clave|cuidado|foco(?:\\s+motor)?|error(?:\\s+a\\s+evitar)?)\\s*:)', 'i');
+const IMP_RX_TIPHEAD = new RegExp('^[\\s*_>\\-–•·]*(?:' + IMP_EMO + '{1,4}\\s*)?(?:[A-F]\\d\\s*[·:.)\\-–]*\\s*(?:' + IMP_EMO + '{1,4}\\s*)?)?(?:(?:set[\\s-]*up|control\\s+de\\s+la\\s+fase|fase\\s+exc[eé]ntrica|intenci[oó]n\\s+neuromuscular|cue\\s+motor|error\\s+com[uú]n)\\b|(?:acci[oó]n|clave|cuidado|transici[oó]n|foco(?:\\s+motor)?|error(?:\\s+a\\s+evitar)?)\\s*:)', 'i');
 /* una línea de tips queda sin emoji ni viñeta; la letra de la estación se conserva ("A1 · SET-UP: ...") */
 function impNormTipLinea(t){
   let s = String(t || '').trim().replace(/^[\s*_>\-–•·]+/, '');
@@ -4849,12 +4849,25 @@ function esLineaProsaEj(l){
 /* calificadores que no cambian el ejercicio ("Bird-dog con pausa isométrica", "Glute Bridge en suelo") */
 const RX_CALIF_SB = /\b(?:con rotacion axial|con pausa isometrica|con pausa|en colchoneta|en el suelo|en suelo|dinamic[oa]s?|estatic[oa]s?|isometric[oa]s?)\b/g;
 function normFuzzySB(s){ return normSports(s).replace(RX_CALIF_SB, ' ').replace(/\s+/g, ' ').trim(); }
+/* coherencia anatomica: en un dia de Tren Superior se descartan ejercicios de pierna aunque compartan una palabra clave ("curl") */
+function trenDelDiaSB(){
+  let t = '';
+  try{ t = String(window.__jpDiaTitulo != null ? window.__jpDiaTitulo : ((typeof curDay === 'function' && curDay()) || {}).title || ''); }catch(e){}
+  t = t.toLowerCase();
+  if(/tren\s+superior|upper|empuje|tracci[oó]n|\bpush\b|\bpull\b|pecho|espalda|hombro|brazo/.test(t) && !/inferior|lower|pierna|\bleg/.test(t)) return 'superior';
+  return '';
+}
+function exIncoherenteSB(ex){
+  if(!ex || trenDelDiaSB() !== 'superior') return false;
+  return /pierna|cu[aá]dricep|isquio|gl[uú]teo|gemelo|pantorrilla|aductor|abductor|femoral/i.test(String(ex.grupo || '') + ' ' + String(ex.es || ''));
+}
 function resolverExFuzzySB(nombre){
   const q = normFuzzySB(nombre);
   if(q.length < 4) return null;
   const qp = ' ' + q + ' ', qPal = q.split(' ').length;
   let mejor = null, mejorPts = 0;
   S.exercises.forEach(function(e){
+    if(exIncoherenteSB(e)) return;
     [e.es, e.en].forEach(function(nm){
       if(!nm) return;
       const n = normFuzzySB(nm);
@@ -4927,7 +4940,7 @@ function resolverExSportsBase(nombreCrudo, estricto){
   const porStem = S.exercises.find(function(e){ return stemNombreEj(e.es) === ns || (e.en && stemNombreEj(e.en) === ns); });
   if(porStem) return porStem;
   if(estricto) return null;
-  const candidatos = S.exercises.filter(function(e){ return matchNombre(e.es, nombre) || (e.en && matchNombre(e.en, nombre)); });
+  const candidatos = S.exercises.filter(function(e){ return !exIncoherenteSB(e) && (matchNombre(e.es, nombre) || (e.en && matchNombre(e.en, nombre))); });
   if(!candidatos.length) return null;
   /* ranking por coincidencia real de palabras (antes ganaba el nombre más
      corto: "Press banca" caía en "Press JM" por compartir sólo "press").
@@ -6398,7 +6411,7 @@ async function generarTipsSports(bid, btn){
     ? 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. El bloque es un BISET/SUPERSET: los ejercicios listados son las estaciones A1, A2 (y A3) en ese orden. ' +
       'Escribís en español rioplatense, corto y directo (sin emojis, sin relleno): un "objetivo del bloque" (1 frase fisiológica) y "tips" con UNA línea por estación y por etapa, separadas por salto de línea, ' +
       'cada una empezando con la letra de la estación: "A1 · SET-UP: ...", "A1 · CLAVE: ...", "A1 · CUIDADO: ...", "A2 · SET-UP: ...", "A2 · CLAVE: ...", "A2 · CUIDADO: ..." ' +
-      '(15 a 20 palabras como máximo por línea; postura, tempo/intención y compensación crítica puntuales de CADA ejercicio; nunca mezcles los dos ejercicios en la misma línea). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).'
+      '(15 a 20 palabras como máximo por línea; postura, tempo/intención y compensación crítica puntuales de CADA ejercicio; nunca mezcles los dos ejercicios en la misma línea). Cerrá con una última línea "TRANSICIÓN: ..." con la regla de cambio entre estaciones y el descanso final. Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).'
     : sistemaStd;
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
     'Generá objetivo y coaching tips en JSON para este bloque.\nEjercicios incluidos:\n' + lineas;
@@ -10592,7 +10605,47 @@ var jpBox = (function(){
       });
     }catch(e){ console.warn('jpBox.buzzer falló:', e); }
   }
+  /* pre-aviso (3-2-1): tick seco y amortiguado de ~450 Hz, decay de 80 ms */
+  function tickSeco(){
+    try{ if(navigator.vibrate) navigator.vibrate([30]); }catch(e){}
+    if(isAudioMuted()) return;
+    try{
+      var ctx = ensureAudioCtx();
+      if(ctx.state === 'suspended'){ ctx.resume().catch(function(){}); }
+      var t0 = ctx.currentTime;
+      var osc = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(450, t0);
+      lp.type = 'lowpass'; lp.frequency.setValueAtTime(1100, t0);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.38, t0 + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.08);
+      osc.connect(lp); lp.connect(g); g.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + 0.11);
+    }catch(e){ console.warn('jpBox.tickSeco falló:', e); }
+  }
+  /* fin del descanso: campana tactica, 800 Hz descendiendo a 440 Hz en 800 ms, sin distorsion */
+  function gong(){
+    if(isAudioMuted()) return;
+    try{
+      var ctx = ensureAudioCtx();
+      if(ctx.state === 'suspended'){ ctx.resume().then(gong).catch(function(){}); return; }
+      var t0 = ctx.currentTime, lp = ctx.createBiquadFilter(), env = ctx.createGain();
+      lp.type = 'lowpass'; lp.frequency.setValueAtTime(2600, t0);
+      env.gain.setValueAtTime(0.0001, t0);
+      env.gain.exponentialRampToValueAtTime(0.42, t0 + 0.006);
+      env.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8);
+      lp.connect(env); env.connect(ctx.destination);
+      [[800, 440, 1], [1200, 660, 0.28]].forEach(function(p){
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.setValueAtTime(p[0], t0); o.frequency.exponentialRampToValueAtTime(p[1], t0 + 0.8);
+        g.gain.setValueAtTime(p[2], t0); o.connect(g); g.connect(lp);
+        o.start(t0); o.stop(t0 + 0.85);
+      });
+    }catch(e){ console.warn('jpBox.gong falló:', e); }
+  }
   return {
+    tickSeco: tickSeco,
+    gong:     gong,
     /* 3-2-1: los tres avisos idénticos -- cuadrada 800 Hz, 120 ms, misma envolvente */
     cuenta:   function(){ suave(880, 0.08, 0.4, 0.004); },
     go:       function(){ suave(1760, 0.30, 0.5, 0.006); },
@@ -10757,8 +10810,8 @@ var jpAudioTactical = {
   },
   /* directiva maestra ("Sonido de Box"): el tick de cuenta regresiva y el
      fin de descanso/timer usan el motor acústico seco de box (jpBox) */
-  soundTimerTick: function(){ jpBox.cuenta(); },
-  soundTimerEnd: function(){ jpBox.chicharra(); },
+  soundTimerTick: function(){ jpBox.tickSeco(); },
+  soundTimerEnd: function(){ jpBox.gong(); },
   /* directiva maestra ("Silenciado de guardado"): registrar un PR/1RM es
      SILENCIOSO -- se retira el arpegio agudo; queda sólo la vibración
      háptica (vibratePrRecord) y el feedback visual. */
@@ -10769,7 +10822,7 @@ var jpAudioTactical = {
      'Lock-In'") -- 35ms exactos pedidos (antes 25ms); if(navigator.vibrate)
      ya blinda contra dispositivos sin soporte, sin arrojar warnings. */
   vibrateCheckSet: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate(35); }catch(e){} },
-  vibrateTimerEnd: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate([50, 40, 80]); }catch(e){} },
+  vibrateTimerEnd: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate([120, 80, 160]); }catch(e){} },
   vibratePrRecord: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate([40, 30, 40, 30, 120]); }catch(e){} }
 };
 window.jpAudioTactical = jpAudioTactical;
@@ -15146,9 +15199,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var ICO_TIP = { 'SET-UP': '&#127919; ', 'CLAVE': '&#9889; ', 'CUIDADO': '&#128721; ' };
     /* biset: cada estación conserva su letra ("A1 · SET-UP:", "A2 · ERROR:") */
     if(etiquetados.some(function(i){ return /^[A-F]\\d\\s*\\u00b7/.test(i.lb); })){
-      var grupos = {}, orden = [];
+      var grupos = {}, orden = [], trans = [];
       etiquetados.forEach(function(i){
         var mm = i.lb.match(/^([A-F]\\d)\\s*\\u00b7\\s*(.+)$/), letra = mm ? mm[1] : '', k = normTitSB(mm ? mm[2] : i.lb);
+        if(/^transici/.test(k)){ trans.push(i.tx); return; }
         var cat = /set up|estabilidad|anclaje|postura|posicion/.test(k) ? 'SET-UP' : (/error|evitar|cuidado/.test(k) ? 'CUIDADO' : 'CLAVE');
         var key = letra + '|' + cat;
         if(!grupos[key]){ grupos[key] = { letra: letra, cat: cat, tx: [] }; orden.push(key); }
@@ -15160,9 +15214,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       orden.forEach(function(k){ var g = grupos[k]; if(!porLetra[g.letra]){ porLetra[g.letra] = []; ordL.push(g.letra); } porLetra[g.letra].push(g); });
       return ordL.map(function(L){
         var info = nom[L] || null;
-        var cab = L ? '<div class="jp-tip-exh"><span class="jp-tip-exn">&#127947;&#65039; ' + L + (info && info.nombre ? ': ' + escSB(String(info.nombre).toUpperCase()) : '') + '</span>' + ((info && info.btn) || '') + '</div>' : '';
+        var cab = L ? '<div class="jp-tip-exh"><span class="jp-tip-exn">' + L + (info && info.nombre ? ' \\u00b7 ' + escSB(String(info.nombre).toUpperCase()) : '') + '</span>' + ((info && info.btn) || '') + '</div>' : '';
         return '<div class="jp-tip-ex">' + cab + porLetra[L].map(function(g){ return '<div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">' + ICO_TIP[g.cat] + g.cat + ':</b> ' + escSB(corto(g.tx.join(' '))) + '</div>'; }).join('') + '</div>';
-      }).join('');
+      }).join('') + (trans.length ? '<div class="jp-tip-ex jp-tip-trans"><div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">&#9201; TRANSICI&Oacute;N:</b> ' + escSB(corto(trans.join(' '))) + '</div></div>' : '');
     }
     if(etiquetados.length >= 2){
       var setup = [], accion = [], error = [];
@@ -15892,7 +15946,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(min <= 2) return 'alto';
     return 'margen';
   }
-  var ICONO_RIR_SB = { danger:'\\ud83d\\udd25', alto:'\\u26a1', margen:'\\ud83d\\udcaa' };
+  var ICONO_RIR_SB = { danger:'\\ud83d\\udd25', alto:'\\ud83d\\udd25', margen:'\\ud83d\\udd25' };
   /* directiva ("Prescripción Táctica Ilustrativa de la Dosis"): banner de
      micro-badges tácticos (series/reps/tempo/RIR/rest) en vez del texto
      plano gris de antes -- cada campo es su propio pill de alto
@@ -15901,9 +15955,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      tracker); el RIR es el ÚNICO con color propio, por tier de esfuerzo. */
   function fmtRestSB(s){
     s = parseInt(s, 10) || 0;
-    if(s < 60) return s + 's';
-    var m = Math.floor(s / 60), r = s % 60;
-    return r ? m + "'" + (r < 10 ? '0' : '') + r + '"' : m + "'";
+    return s + 's';
   }
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds){
     var seg = [];
@@ -15979,11 +16031,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   /* autocarga y calistenia: sin input de kg por defecto (chip BW + "+ Lastre"); isométricos: un único input de tiempo */
   var RX_BW_SB = /(?:hanging|colgad|dominad|pull ?ups?|chin ?ups?|fondos?|dips?|flexion(?:es)?|push ?ups?|knee raises?|leg raises?|elevacion(?:es)? de (?:rodillas|piernas)|muscle ?ups?|burpees?|abdominales|crunch(?:es)?|sit ?ups?|v ?ups?|remo invertido|inverted row|australian|banda|banded)/;
   var RX_NOBW_SB = /(?:lastre|weighted|con peso|chaleco|maquina|polea|asistid|smith)/;
+  var RX_PLANK_DIN_SB = /(?:pull ?through|\\brow\\b|remo|reach|\\btaps?\\b|walk ?outs?|up ?down|jacks?|mountain|climb|\\bsaw\\b|drag|tuck|rotaci|rotation|toque|pasos)/;
   var RX_TIEMPO_SB = /(?:plancha|plank|isometric|isometrico|hold|wall ?sit|dead ?hang|colgado pasivo|hollow|suspension)/;
   function modoInputSB(nombre){
     var n = normTitSB(nombre);
     if(!n) return '';
-    if(RX_TIEMPO_SB.test(n)) return 'tiempo';
+    if(RX_TIEMPO_SB.test(n) && !RX_PLANK_DIN_SB.test(n)) return 'tiempo';      /* plancha con movimiento = reps, no segundos */
     if(RX_BW_SB.test(n) && !RX_NOBW_SB.test(n)) return 'bw';
     return '';
   }
@@ -16263,7 +16316,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (block.ocultaTituloTablero ? '' : '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>') +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         (duracionEstimada ? '<div class="jp-sb-duracion">\\u23f1 TIEMPO ESTIMADO: ' + duracionEstimada + ' MINUTOS</div>' : '') +
-        filas +
+        filas + chipsVideoSB(videosBloque, busquedasVid) +
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS &amp; TIPS DEL BLOQUE</summary>' +
             '<div class="jp-details-content">' +
@@ -16271,11 +16324,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
             '</div>' +
           '</details>' : '') +
-        chipsVideoSB(videosBloque, busquedasVid) +
       '</div>';
     var htmlFinal = html;
     if(esCalentamiento){
-      var nAct = (filas.match(/jp-sb-plain-nombre/g) || []).length;
+      /* solo ejercicios reales: se excluye la prescripcion general ("1 Set: 6 min continuo", "3 rondas") */
+      var RX_PRESC_GEN_SB = /^\\s*(?:\\d+\\s*(?:sets?|series?|rondas?|rounds?)\\b\\s*[:\\-\\u2013]|\\d+\\s*(?:min|minutos)\\b.*\\b(?:continu\\w*|total|de trabajo)|(?:circuito|rondas?|tiempo total|total)\\b)/i;
+      var nAct = 0;
+      filas.split('jp-sb-plain-nombre">').slice(1).forEach(function(p){ if(!RX_PRESC_GEN_SB.test(p.split('<')[0])) nAct++; });
       htmlFinal = '<details class="jp-warm-acc"><summary><span class="jp-warm-lb">\\ud83d\\udd25 ACTIVACI\\u00d3N' + (nAct ? ' \\u00b7 ' + nAct + ' EJERCICIOS' : '') + '</span><span class="jp-warm-chev">\\u25bc</span></summary>' + html + '</details>';
     }
     body.insertAdjacentHTML('afterbegin', htmlFinal);
@@ -21506,7 +21561,8 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   function enriquecer(d){
     d = d || {};
     var r = rachaMesociclo(), t = topLift();
-    d.tiempo = (typeof window.CoachFmtDuracion === 'function') ? window.CoachFmtDuracion(minutosActivos()) : String(minutosActivos());
+    var minsT = (typeof window.jpMinutosSesion === 'function') ? window.jpMinutosSesion(minutosActivos()) : minutosActivos();
+    d.tiempo = (typeof window.CoachFmtDuracion === 'function') ? window.CoachFmtDuracion(minsT) : String(minsT);
     d.sesionN = r.actual; d.sesionTotal = r.total;
     d.topKg = t.kg; d.topEx = t.ex;
     d.rpe = rpePromedio();
@@ -36167,6 +36223,25 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
 
 /* ===== AJUSTES FINALES (Bodybuilding) ===== */
 .jp-tip-fase .jp-tip-lb{ white-space:nowrap !important; }
+.jp-tip-trans{ border-style:dashed; }
+.jp-dose-bar .jp-db-seg{ text-transform:none !important; }
+.block.block-done.collapsed > .jp-cierre{ display:none !important; }
+/* un solo contenedor por bloque: sin el marco cuadrado fantasma detras de la tarjeta redondeada */
+.blocks-stack > .block:has(.jp-sb-board)::after, .jp-sb-board::after{ display:none !important; }
+.jp-sb-board{ border-radius:16px !important; overflow:hidden; }
+/* bloque completado: una sola barra compacta */
+.block > .jp-done-line{ min-height:44px !important; padding:0 12px !important; justify-content:space-between; gap:10px; border-radius:12px !important; }
+.jp-done-line .jp-dl-ck{ flex:0 0 auto; color:#34D399; font-weight:900; font-size:1rem; }
+.jp-done-line .jp-dl-t{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:rgba(148,163,184,.9); font-weight:600; }
+.jp-done-line .jp-dl-re{ flex:0 0 auto; font-size:.64rem; letter-spacing:.08em; text-transform:uppercase; color:#94A3B8; border:1px solid rgba(148,163,184,.3); border-radius:999px; padding:3px 10px; }
+/* confirmacion de cierre con bloques pendientes */
+#jpConfirmDia{ position:fixed; inset:0; z-index:1100; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(4,5,8,.82); backdrop-filter:blur(6px); }
+#jpConfirmDia .jp-cd-box{ width:100%; max-width:340px; padding:20px; border-radius:16px; background:#0e1424; border:1px solid rgba(245,158,11,.4); box-shadow:0 12px 40px rgba(0,0,0,.6); }
+#jpConfirmDia h4{ margin:0 0 8px; color:#F59E0B; font-family:'Chakra Petch',sans-serif; font-size:1rem; letter-spacing:.06em; text-transform:uppercase; }
+#jpConfirmDia p{ margin:0 0 16px; color:#CBD5E1; font-size:.9rem; line-height:1.45; }
+#jpConfirmDia .jp-cd-acts{ display:flex; gap:10px; }
+#jpConfirmDia button{ flex:1; min-height:44px; border-radius:10px; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:.78rem; letter-spacing:.05em; text-transform:uppercase; border:1px solid rgba(148,163,184,.4); background:transparent; color:#CBD5E1; }
+#jpConfirmDia button[data-cd="si"]{ background:rgba(245,158,11,.18); border-color:#F59E0B; color:#FDE68A; }
 body.jp-mission .day-header, body.jp-mission .day-header-card, .day-header-card{ position:relative !important; height:auto !important; margin:10px 0 20px !important; }
 body.jp-mission .day-header > div:first-child{ padding-right:0 !important; }
 body.jp-mission .jp-brief-dir{ position:static !important; display:flex !important; width:100%; box-sizing:border-box; justify-content:center; margin:10px 0 0 !important; padding:8px 12px !important; }
@@ -36574,8 +36649,12 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
         line = document.createElement('div'); line.className = 'jp-done-line'; line.setAttribute('role', 'button'); line.setAttribute('tabindex', '0');
         bl.insertBefore(line, bl.firstChild);
       }
-      var txt = '[ ✓ COMPLETADO ] Bloque ' + (i + 1) + ': ' + tituloBloque(bl);
-      if(line.getAttribute('data-t') !== txt){ line.setAttribute('data-t', txt); line.textContent = txt; }
+      var txt = tituloBloque(bl);
+      if(line.getAttribute('data-t') !== txt){
+        line.setAttribute('data-t', txt);
+        line.innerHTML = '<span class="jp-dl-ck">\\u2713</span><span class="jp-dl-t"></span><span class="jp-dl-re">Reabrir</span>';
+        line.querySelector('.jp-dl-t').textContent = txt;
+      }
       var sports = board.classList.contains('jp-sb-board');
       var btn = q('.jp-done-btn', bl);
       if(!btn){
@@ -36634,7 +36713,17 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
       }
       armarBloques();
       if(btn.classList.contains('jp-done-foot') && cb.checked){
-        setTimeout(function(){ try{ window.scrollTo({ top: Math.max(0, bl.getBoundingClientRect().top + window.scrollY - 120), behavior: 'smooth' }); }catch(err){} }, 80);
+        /* abre el bloque siguiente y lleva la vista hacia él */
+        var sig = bl.nextElementSibling;
+        while(sig && !(sig.classList && sig.classList.contains('block'))) sig = sig.nextElementSibling;
+        if(sig){
+          var idS = sig.getAttribute('data-block-id') || '';
+          if(sig.classList.contains('collapsed')){ reabiertos[idS] = 1; sig.classList.remove('collapsed'); }
+          sig.classList.remove('jp-fold');
+          var waS = sig.querySelector('.jp-warm-acc'); if(waS) waS.open = true;
+        }
+        var meta = sig || bl;
+        setTimeout(function(){ try{ window.scrollTo({ top: Math.max(0, meta.getBoundingClientRect().top + window.scrollY - 120), behavior: 'smooth' }); }catch(err){} }, 120);
       }
       return;
     }
@@ -36667,8 +36756,82 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
     }
     ks.forEach(function(g){ var r = grupos[g].filter(function(x){ return !x.classList.contains('completed'); })[0]; if(r) r.classList.add('jp-set-activa'); });
   }
+  /* al tildar una serie el foco pasa al primer input de la serie siguiente sin completar */
+  function enfocarSiguiente(btn){
+    var row = btn.closest('.jp-set-row-native'); if(!row || !row.classList.contains('completed')) return;
+    var rows = [].slice.call(document.querySelectorAll('#mainContent .jp-set-row-native'));
+    var sig = null;
+    for(var k = rows.indexOf(row) + 1; k < rows.length; k++){ if(!rows[k].classList.contains('completed')){ sig = rows[k]; break; } }
+    if(!sig) return;
+    var inp = sig.querySelector('.jp-val-primary');
+    if(!inp || inp.offsetParent === null) inp = sig.querySelector('.jp-val-secondary');
+    if(inp){
+      try{ inp.focus({ preventScroll: true }); }catch(err){ inp.focus(); }
+      try{ sig.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(err){}
+    }
+  }
   document.addEventListener('click', function(e){
-    if(e.target.closest && e.target.closest('.jp-btn-check-native')) setTimeout(marcarActivas, 60);
+    var ck = e.target.closest && e.target.closest('.jp-btn-check-native');
+    if(!ck) return;
+    setTimeout(marcarActivas, 60);
+    setTimeout(function(){ enfocarSiguiente(ck); }, 90);
+  }, true);
+
+  /* duracion proyectada de la sesion: series x (tiempo bajo tension + descanso prescripto) */
+  window.jpMinutosPrescriptos = function(){
+    var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null; if(!day) return 0;
+    var tut = function(reps){ var n = parseInt(String(reps), 10) || 10; return Math.min(90, Math.max(30, n * 4)) / 60; };
+    var tot = 0;
+    (day.blocks || []).forEach(function(block){
+      var lineas = (typeof itemsDeSemana === 'function') ? itemsDeSemana(block, state.currentWeek) : (block.items || []);
+      if(!lineas.length || typeof window.parsearPizarraSB !== 'function') return;
+      var entries; try{ entries = window.parsearPizarraSB(lineas, { titulo: block.title }); }catch(err){ return; }
+      entries.forEach(function(en){
+        if(en.tipo === 'simple' && en.sets){ tot += en.sets * (tut(en.reps) + (en.restSeconds || 90) / 60); }
+        else if(en.tipo === 'biserie' && en.subs && en.subs.length){
+          var w = 0; en.subs.forEach(function(sb){ w += tut(sb.reps); });
+          tot += (en.rondas || 3) * (w + (en.restSeconds || 90) / 60);
+        } else if(!en.sets){ tot += 1; }
+      });
+    });
+    return tot > 0 ? Math.round(tot + 5) : 0;
+  };
+  /* tiempo de la story: diferencia real entre la primera y la ultima marca de la sesion; si no es creible, la proyeccion prescripta */
+  window.jpMinutosSesion = function(activos){
+    var proy = 0; try{ proy = window.jpMinutosPrescriptos(); }catch(err){}
+    var m = ((state.session && state.session.marcasTiempo) || []).slice(), real = 0;
+    if(m.length > 1){
+      var desde = 0;
+      for(var j = 1; j < m.length; j++){ if(m[j] - m[j - 1] > 4 * 3600000) desde = j; }
+      real = Math.round((m[m.length - 1] - m[desde]) / 60000);
+    }
+    if(real >= 5 && real <= 240 && (!proy || real >= proy * 0.5)) return real;
+    if(proy > 0) return proy;
+    return activos;
+  };
+  /* cierre del dia con bloques pendientes: confirmacion antes de marcarlo */
+  function mostrarConfirmDia(hechos, total, ok){
+    var viejo = document.getElementById('jpConfirmDia'); if(viejo) viejo.remove();
+    var m = document.createElement('div'); m.id = 'jpConfirmDia';
+    m.innerHTML = '<div class="jp-cd-box"><h4>Quedan bloques pendientes</h4><p></p><div class="jp-cd-acts"><button type="button" data-cd="no">Seguir entrenando</button><button type="button" data-cd="si">Marcar igual</button></div></div>';
+    m.querySelector('p').textContent = 'Completaste ' + hechos + ' de ' + total + ' bloques. ¿Querés marcar el día como finalizado de todas formas?';
+    document.body.appendChild(m);
+    m.addEventListener('click', function(e){
+      var b = e.target.closest('[data-cd]');
+      if(!b && e.target !== m) return;
+      m.remove();
+      if(b && b.getAttribute('data-cd') === 'si') ok();
+    });
+  }
+  document.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('#dayCompleteBtn'); if(!b) return;
+    if(window.__jpForzarDia){ window.__jpForzarDia = false; return; }
+    if(b.classList.contains('done')) return;
+    var bls = [].slice.call(document.querySelectorAll('#mainContent .blocks-stack > .block'));
+    var pend = bls.filter(function(x){ var c = x.querySelector('.block-done-cb'); return c && !c.checked; }).length;
+    if(!pend) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    mostrarConfirmDia(bls.length - pend, bls.length, function(){ window.__jpForzarDia = true; b.click(); });
   }, true);
   var tickB = 0;
   function progB(){ if(!tickB) tickB = setTimeout(function(){ tickB = 0; try{ armarBloques(); marcarActivas(); }catch(e){ console.warn('bloques', e); } }, 150); }
@@ -37064,6 +37227,7 @@ function buildProgramConfig(ath){
     function mapearBloques(bloquesDelDia){
       return bloquesDelDia.map(b => {
       bloqueCF = esBloqueCF(b);
+      window.__jpDiaTitulo = d.title || '';      /* coherencia anatomica de los videos de este dia */
       const out = {
         id: b.id, category: b.category || 'strength', icon: b.icon || '💪',
         title: b.titulo || '', subtitle: b.subtitulo || '', optional: !!b.optional,
@@ -56262,6 +56426,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   }
   window.jpVideoAlias = { get: k => aliasLeer()[k] || '', set: aliasGuardar };
   function chips(bl, b){
+    window.__jpDiaTitulo = null;      /* contexto de la interfaz: el dia lo da curDay() */
     const ta = bl.querySelector('textarea[data-bf="items"], textarea[data-bf="movements"]');
     if(!ta) return;
     let lista;
@@ -67256,7 +67421,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   function formatearTips(txt){
     var t = String(txt || '').trim();
     if(!t) return '';
-    t = t.replace(/(\S)\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR|FOCO MOTOR|BIOMEC[ÁA]NICA|ACCI[OÓ]N|CLAVE|CUIDADO|FOCO)[^:\n]{0,70}:)/g, function(m, c, off, whole){
+    t = t.replace(/(\S)\s*(?=(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR|FOCO MOTOR|BIOMEC[ÁA]NICA|ACCI[OÓ]N|CLAVE|CUIDADO|TRANSICI[OÓ]N|FOCO)[^:\n]{0,70}:)/g, function(m, c, off, whole){
       return /\b[A-F]\d\s*·\s*$/.test(whole.slice(0, off + m.length)) ? m : c + '\n';
     });
     t = t.replace(/\s+(?=[A-F]\d\s*·\s*[A-ZÁÉÍÓÚÑ])/g, '\n');      /* "A1 · ... A1 · ..." en una sola linea: una etiqueta por renglon */
@@ -67312,6 +67477,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   /* el sustantivo central del movimiento ("face pull") pesa mas que los adjetivos de equipo/pose ("banded", "sentado") */
   var MOD_SUG = { banded:1, band:1, bands:1, banda:1, bandas:1, elastica:1, elastic:1, con:1, sin:1, de:1, en:1, sobre:1, del:1, las:1, los:1, una:1, para:1, por:1, sentado:1, sentada:1, seated:1, standing:1, pausa:1, paused:1, isometrica:1, isometric:1, lento:1, unilateral:1, single:1, arm:1, assisted:1, asistido:1, weighted:1, lastrado:1 };
   function puntaje(nombre, ex){
+    if(exIncoherenteSB(ex)) return 0;
     var todas = normFuzzySB(nombre).split(' ').filter(function(w){ return w.length > 2; });
     var nuc = todas.filter(function(w){ return !MOD_SUG[w]; });
     var mods = todas.filter(function(w){ return MOD_SUG[w] && w.length > 3; });
