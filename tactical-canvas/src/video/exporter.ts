@@ -1,4 +1,5 @@
 import { drawOverlays, drawSubtitles, drawVideoCover, loadOverlayFonts } from './render'
+import { applyZoom, punchAt, shakeAt, shakeOverscan } from './vfx'
 import { duckGain, groupWords, speechSegments, withOffset } from './subtitles'
 import { drawBiomech } from './biomech'
 import { playFx } from './fx'
@@ -115,10 +116,19 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
   const span = Math.max(0.1, clip.out - clip.in)
   const frame = () => {
     const t = video.currentTime
+    // VFX: sacudida de todo el cuadro y punch-in del video + HUD biomecánico (los gráficos no escalan).
+    const shake = shakeAt(project.fx, t)
+    ctx.save()
+    ctx.translate(shake.x, shake.y)
+    const zoom = punchAt(project.biomech, items, t) * shakeOverscan(shake)
+    ctx.save()
+    applyZoom(ctx, zoom)
     drawVideoCover(ctx, video)
-    drawBiomech(ctx, project.biomech, t)
+    ctx.restore()
+    drawBiomech(ctx, project.biomech, t, null, false, zoom)
     drawOverlays(ctx, items, t)
     drawSubtitles(ctx, subs, groups, t)
+    ctx.restore()
     // A2 sigue al video (la música arranca en el In) y aplica volumen × ducking.
     if (music && musicGain && audioCtx && musicCfg) {
       const want = t - clip.in

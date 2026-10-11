@@ -44,7 +44,7 @@ export function defaultProject(): VideoProject {
     subtitles: { words: [], style: 'outline', accent: 'orange', enabled: true, offset: 0 },
     music: null,
     biomech: { path: { points: [], thick: false, showVertical: true }, angles: [] },
-    fx: { hits: [], volume: 80 },
+    fx: { hits: [], volume: 80, shake: true },
   }
 }
 

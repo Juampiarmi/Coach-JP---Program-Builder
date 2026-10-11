@@ -18,6 +18,14 @@ const PATH_HOLD = 1.5
 
 export const px = (p: FramePoint) => ({ x: (p.x / 100) * OUT_W, y: (p.y / 100) * OUT_H })
 
+/** Zoom del cuadro (punch-in) con el que se dibuja el HUD en este momento. */
+let zoom = 1
+/** Punto en pantalla: la geometría sigue al zoom del video; rótulos y pastillas se ubican sobre esto, sin escalar. */
+const sp = (p: FramePoint) => {
+  const q = px(p)
+  return zoom === 1 ? q : { x: OUT_W / 2 + (q.x - OUT_W / 2) * zoom, y: OUT_H / 2 + (q.y - OUT_H / 2) * zoom }
+}
+
 /** Ángulo interior en el vértice b (0–180°). */
 export function jointAngle(g: Pick<Goniometer, 'a' | 'b' | 'c'>) {
   const a = px(g.a)
@@ -74,14 +82,14 @@ function pill(ctx: Ctx, text: string, x: number, y: number, color: string) {
 function drawPath(ctx: Ctx, bio: Biomech, time: number) {
   const pts = bio.path.points
   if (pts.length < 1 || time < pts[0].t || time > pts[pts.length - 1].t + PATH_HOLD) return
-  const done = pts.filter((p) => p.t <= time).map(px)
+  const done = pts.filter((p) => p.t <= time).map(sp)
   const cur = pathPointAt(pts, time)
-  if (cur) done.push(px(cur))
+  if (cur) done.push(sp(cur))
   const core = bio.path.thick ? 11 : 6
-  const start = px(pts[0])
+  const start = sp(pts[0])
   // Eje de gravedad: vertical pura desde el primer punto.
   if (bio.path.showVertical) {
-    const ys = pts.map((p) => px(p).y)
+    const ys = pts.map((p) => sp(p).y)
     ctx.save()
     ctx.setLineDash([18, 14])
     ctx.lineWidth = 3
@@ -101,14 +109,20 @@ function drawPath(ctx: Ctx, bio: Biomech, time: number) {
       done.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
       ctx.stroke()
     }
-    // Estela: halo ancho translúcido + núcleo con glow.
+    // Estela neón: halo ancho translúcido + núcleo con glow (shadowBlur 14) en dos pasadas.
     ctx.strokeStyle = 'rgba(0,229,255,0.22)'
     ctx.lineWidth = core * 3.2
     line()
     ctx.shadowColor = CYAN
-    ctx.shadowBlur = 18
+    ctx.shadowBlur = 14
     ctx.strokeStyle = CYAN
     ctx.lineWidth = core
+    line()
+    line()
+    // Brillo blanco en el centro del trazo.
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)'
+    ctx.lineWidth = Math.max(2, core * 0.3)
     line()
     ctx.restore()
   }
@@ -151,9 +165,9 @@ function drawPath(ctx: Ctx, bio: Biomech, time: number) {
 }
 
 function drawAngle(ctx: Ctx, g: Goniometer, selected: boolean) {
-  const a = px(g.a)
-  const b = px(g.b)
-  const c = px(g.c)
+  const a = sp(g.a)
+  const b = sp(g.b)
+  const c = sp(g.c)
   const color = g.color === 'orange' ? ORANGE : '#FFFFFF'
   const deg = jointAngle(g)
   ctx.save()
@@ -279,7 +293,27 @@ function placePill(a: FramePoint, b: FramePoint, c: FramePoint, w: number, h: nu
 }
 
 /** Dibuja el Bar Path y los goniómetros activos en `time`. */
-export function drawBiomech(ctx: Ctx, bio: Biomech, time: number, selectedAngle: string | null = null) {
+export function drawBiomech(ctx: Ctx, bio: Biomech, time: number, selectedAngle: string | null = null, capture = false, scale = 1) {
+  zoom = scale
+  // Modo captura (sólo vista previa): todos los puntos registrados, numerados.
+  if (capture) {
+    ctx.save()
+    ctx.font = `700 20px ${FONT_MONO}`
+    ctx.textBaseline = 'middle'
+    bio.path.points.forEach((q, i) => {
+      const p = sp(q)
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2)
+      ctx.fillStyle = CYAN
+      ctx.fill()
+      ctx.lineWidth = 2
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'
+      ctx.fillText(String(i + 1), p.x + 14, p.y)
+    })
+    ctx.restore()
+  }
   drawPath(ctx, bio, time)
   for (const g of activeAngles(bio, time)) drawAngle(ctx, g, g.id === selectedAngle)
 }

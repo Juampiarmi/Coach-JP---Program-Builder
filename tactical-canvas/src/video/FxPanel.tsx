@@ -1,4 +1,4 @@
-import { Field, Range } from '../components/controls/primitives'
+import { Field, Range, Toggle } from '../components/controls/primitives'
 import { FX_META } from './fx'
 import { timecode } from './render'
 import type { FxKind, SoundFx } from './types'
@@ -22,13 +22,15 @@ export function FxPanel({ fx, time, onAdd, onChange, onRemove }: Props) {
             key={k}
             type="button"
             onClick={() => onAdd(k)}
-            className="rounded-lg border border-line px-2 py-2 text-left font-mono text-[10px] font-semibold tracking-[0.06em] text-steel transition hover:border-cyan/50 hover:bg-cyan/5 hover:text-cyan"
+            title={k === 'shake' ? 'Micro-efecto visual sin sonido: sacude el cuadro ±6 px durante 4 cuadros' : undefined}
+            className={`${k === 'shake' ? 'col-span-2 text-center' : 'text-left'} rounded-lg border border-line px-2 py-2 font-mono text-[10px] font-semibold tracking-[0.06em] text-steel transition hover:border-cyan/50 hover:bg-cyan/5 hover:text-cyan`}
           >
             <span className="mr-1">{FX_META[k].icon}</span>
             {FX_META[k].label}
           </button>
         ))}
       </div>
+      <Toggle label="Screen shake automático en cada 💥 IMPACT" checked={fx.shake !== false} onChange={(shake) => onChange({ shake })} />
       <Field label="Volumen maestro Sound FX">
         <Range value={fx.volume} onChange={(volume) => onChange({ volume })} min={0} max={100} step={1} suffix="%" />
       </Field>

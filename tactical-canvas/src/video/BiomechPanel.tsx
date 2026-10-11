@@ -9,6 +9,7 @@ interface Props {
   selectedAngle: string | null
   canEdit: boolean
   onToggleTrace: () => void
+  onRegister: () => void
   onUndo: () => void
   onFinish: () => void
   onChange: (patch: Partial<Biomech>) => void
@@ -18,10 +19,12 @@ interface Props {
   onRemoveAngle: (id: string) => void
 }
 
+const GON_TIP = 'Análisis en punto crítico: pausa en el fondo del levantamiento y ajusta los 3 puntos sobre las articulaciones'
+
 const LABELS = ['PROFUNDIDAD VÁLIDA', 'SIN PARALELO', 'BLOQUEO', 'VALGO']
 
 /** Panel B1: Bar Path y goniómetro articular. */
-export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTrace, onUndo, onFinish, onChange, onAddAngle, onSelectAngle, onAngle, onRemoveAngle }: Props) {
+export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTrace, onRegister, onUndo, onFinish, onChange, onAddAngle, onSelectAngle, onAngle, onRemoveAngle }: Props) {
   const path = bio.path
   const sel = bio.angles.find((g) => g.id === selectedAngle) ?? null
   return (
@@ -38,27 +41,31 @@ export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTra
             tracing ? 'animate-pulse border-cyan bg-cyan/15 text-cyan' : 'border-cyan/50 text-cyan hover:bg-cyan/10'
           }`}
         >
-          {tracing ? `[ ● TRAZANDO PASO A PASO · ${path.points.length} PTS ]` : '[ 📍 TRAZAR BAR PATH ]'}
+          {tracing ? `[ ● MODO CAPTURA · ${path.points.length} PTS · SALIR ]` : '[ 📍 TRAZAR BAR PATH ]'}
         </button>
         {tracing && (
-          <>
-            <p className="font-mono text-[9px] leading-relaxed text-cyan/80">
-              Click en el centro del disco: se registra el punto y el video avanza +0,15 s solo. Repetí hasta completar la repetición (o reproducí y mantené presionado para trazar en continuo).
+          <div className="space-y-1.5 rounded-md border border-cyan/40 bg-cyan/5 p-2">
+            <p className="font-mono text-[9px] leading-relaxed text-cyan/85">
+              Modo asistido cuadro a cuadro: apuntá la retícula al centro del disco y hacé click. Se registra el punto y el video avanza +0,15 s solo.
             </p>
+            <button type="button" onClick={onRegister} className="w-full rounded-lg border border-cyan bg-cyan/15 py-1.5 font-mono text-[10px] font-bold tracking-[0.08em] text-cyan transition hover:bg-cyan/25">
+              [ ➔ REGISTRAR Y AVANZAR FRAME ]
+            </button>
             <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={onUndo}
                 disabled={!path.points.length}
-                className="rounded-lg border border-line py-1.5 font-mono text-[10px] font-semibold tracking-[0.08em] text-steel transition hover:border-cyan/50 hover:text-cyan disabled:opacity-30"
+                className="rounded-lg border border-line py-1.5 font-mono text-[9px] font-semibold tracking-[0.06em] text-steel transition hover:border-cyan/50 hover:text-cyan disabled:opacity-30"
               >
-                [ ⟵ DESHACER PUNTO ]
+                [ ⟵ DESHACER ÚLTIMO PUNTO ]
               </button>
-              <button type="button" onClick={onFinish} className="rounded-lg border border-cyan bg-cyan py-1.5 font-mono text-[10px] font-bold tracking-[0.08em] text-carbon transition hover:brightness-110">
-                [ ✓ FINALIZAR ]
+              <button type="button" onClick={onFinish} className="rounded-lg border border-cyan bg-cyan py-1.5 font-mono text-[9px] font-bold tracking-[0.06em] text-carbon transition hover:brightness-110">
+                [ ✓ FINALIZAR TRAZADO ]
               </button>
             </div>
-          </>
+            <p className="font-mono text-[8px] tracking-[0.1em] text-steel/80">➔ REGISTRAR · ← DESHACER · ENTER FINALIZAR · ESPACIO PLAY</p>
+          </div>
         )}
         <div className="flex items-center justify-between font-mono text-[10px] text-steel">
           <span>
@@ -94,10 +101,15 @@ export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTra
           type="button"
           onClick={onAddAngle}
           disabled={!canEdit}
+          title={GON_TIP}
           className="w-full rounded-lg border border-fire/50 py-2 font-mono text-[10px] font-semibold tracking-[0.1em] text-fire transition hover:bg-fire/10 disabled:cursor-not-allowed disabled:opacity-40"
         >
           [ ∠ MEDIR ÁNGULO ARTICULAR ]
         </button>
+        <p className="flex gap-1.5 rounded-md border border-fire/30 bg-fire/5 px-2 py-1.5 font-mono text-[9px] leading-relaxed text-fire/90" role="note">
+          <span aria-hidden>ⓘ</span>
+          <span>{GON_TIP}. Bloque fijo de 1,8 s (se mueve, no se estira).</span>
+        </p>
         {bio.angles.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {bio.angles.map((g, i) => (
@@ -125,6 +137,7 @@ export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTra
                 </button>
               ))}
             </div>
+            <Toggle label="Punch-in 1.15x durante el bloque (zoom de énfasis)" checked={Boolean(sel.punch)} onChange={(punch) => onAngle(sel.id, { punch })} />
             <div className="grid grid-cols-[1fr_auto] items-end gap-2">
               <Field label="Color de la pastilla" plain>
                 <Segmented<'orange' | 'white'>

@@ -1,4 +1,4 @@
-import { Field, Range, Segmented, TextInput } from '../components/controls/primitives'
+import { Field, Range, Segmented, TextInput, Toggle } from '../components/controls/primitives'
 import { timecode } from './render'
 import type { CheckItem, OverlayConfig, OverlayEntrance, OverlayExit, OverlayItem, OverlayKind, OverlaySize, OverlayStyle } from './types'
 
@@ -134,6 +134,7 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
           <Field label="Opacidad">
             <Range value={selected.overlay.opacity} onChange={(opacity) => onChange({ opacity })} min={0} max={100} step={5} suffix="%" />
           </Field>
+          <Toggle label="Punch-in 1.15x del video (zoom de énfasis)" checked={Boolean(selected.overlay.punch)} onChange={(punch) => onChange({ punch })} />
           <div className="grid grid-cols-[1fr_1.5fr] gap-2">
             <Field label="Entrada · 0,3 s" plain>
               <Segmented<OverlayEntrance>

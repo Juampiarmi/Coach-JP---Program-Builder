@@ -21,6 +21,7 @@ import { Scrubber } from './Scrubber'
 import { Timeline } from './Timeline'
 import type { Biomech, FxKind, Goniometer, MusicTrack, OverlayConfig, SoundFx, SubtitleTrack, Track, VideoProject } from './types'
 import { OUT_H, OUT_W } from './types'
+import { punchAt, shakeAt, shakeOverscan, unzoom } from './vfx'
 
 interface Props {
   /** Visible: el estudio queda montado al cambiar de modo para no perder el clip cargado. */
@@ -51,6 +52,10 @@ function resolveDuration(v: HTMLVideoElement): Promise<number> {
 
 /** Avance del cabezal por cada click del asistente de Bar Path (modo paso a paso). */
 const PATH_STEP = 0.15
+/** Duración fija del goniómetro: captura analítica de un punto crítico (no se estira). */
+const GON_DUR = 1.8
+/** Un cuadro a 30 fps (atajos ← / → fuera del modo captura). */
+const FRAME = 1 / 30
 
 const isVideoFile = (f: File) => f.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(f.name)
 
@@ -235,15 +240,20 @@ export default function VideoStudio({ active, header }: Props) {
     loadOverlayFonts().then(() => setFontsReady(true))
   }, [])
   const [rects, setRects] = useState<OverlayRect[]>([])
+  // VFX en vivo: sacudida (CSS sobre video + canvas) y punch-in (video por CSS, HUD en canvas).
+  const shake = shakeAt(fx, time)
+  const zoom = punchAt(bio, items, time) * shakeOverscan(shake)
+  const shakeCss = shake.x || shake.y ? `translate(${(shake.x / OUT_W) * 100}%, ${(shake.y / OUT_H) * 100}%)` : ''
   useEffect(() => {
     const ctx = canvasRef.current?.getContext('2d')
     if (!ctx) return
     ctx.clearRect(0, 0, OUT_W, OUT_H)
-    drawBiomech(ctx, bio, time, selectedAngle)
+    // El HUD biomecánico acompaña el punch-in del video; overlays y subtítulos no escalan.
+    drawBiomech(ctx, bio, time, selectedAngle, tracing, zoom)
     const next = drawOverlays(ctx, items, time)
     drawSubtitles(ctx, subs, groups, time)
     setRects((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-  }, [items, time, fontsReady, active, subs, groups, bio, selectedAngle])
+  }, [items, time, fontsReady, active, subs, groups, bio, selectedAngle, tracing, zoom])
 
   // ── Arrastre libre en el visor (posición en % del marco, con imán al centro) ──
   const layerRef = useRef<HTMLDivElement>(null)
@@ -264,12 +274,98 @@ export default function VideoStudio({ active, header }: Props) {
     }
     return null
   }
+  const unzoomFrame = (clientX: number, clientY: number) => {
+    const f = toFrame(clientX, clientY)
+    return unzoom(f.px, f.py, zoom)
+  }
+  // ── B1 · Asistente de Bar Path cuadro a cuadro ────────────────────────────────
+  /** Retícula de captura (px de pantalla del cuadro 1080×1920): sigue al puntero sobre el visor. */
+  const [aim, setAimState] = useState<{ px: number; py: number } | null>(null)
+  // Copia sincrónica: los atajos leen la última posición aunque React todavía no haya renderizado el pointermove.
+  const aimRef = useRef(aim)
+  const setAim = (a: { px: number; py: number } | null) => {
+    aimRef.current = a
+    setAimState(a)
+  }
+  const startTrace = () => {
+    videoRef.current?.pause()
+    const last = bio.path.points[bio.path.points.length - 1]
+    setAim(last ? { px: (last.x / 100) * OUT_W, py: (last.y / 100) * OUT_H } : { px: OUT_W / 2, py: OUT_H / 2 })
+    setTlSel(null)
+    setTracing(true)
+  }
+  /** Registra el punto (x, y) en el instante actual y avanza +0,15 s con el video en pausa. */
+  const registerAndAdvance = (px: number, py: number) => {
+    const v = videoRef.current
+    v?.pause()
+    const z = unzoom(px, py, zoom)
+    addPathPoint(z.px, z.py)
+    setAim({ px, py })
+    const t = v?.currentTime ?? time
+    seek(Math.min(t + PATH_STEP, clip ? clip.out : duration))
+  }
+  /** Cierra el trazado: el bloque del timeline va del primer al último punto registrado. */
+  const finishTrace = () => {
+    setTracing(false)
+    setAim(null)
+    const pts = bio.path.points
+    if (pts.length > 1) {
+      setTlSel('barpath')
+      seek(pts[0].t)
+    }
+  }
+  // ── Atajos de teclado ──────────────────────────────────────────────────────────
+  // Modo captura: ➔ registra y avanza · ← o Ctrl+Z deshace · Enter / Esc finaliza.
+  // Fuera de él: ← / ➔ cuadro a cuadro (Shift = ±1 s) · B traza Bar Path · G mide ángulo.
+  const keys = useRef({ tracing, time, register: registerAndAdvance, undo: () => {}, finish: finishTrace, start: startTrace, angle: () => {}, seek })
+  useEffect(() => {
+    if (!active) return
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if (/INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable || e.altKey) return
+      const k = keys.current
+      const handled = () => {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+      if (k.tracing) {
+        const a = aimRef.current
+        if (e.key === 'ArrowRight' && a) {
+          handled()
+          k.register(a.px, a.py)
+        } else if (e.key === 'ArrowLeft' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) {
+          handled()
+          k.undo()
+        } else if (e.key === 'Enter' || e.key === 'Escape') {
+          handled()
+          k.finish()
+        }
+        return
+      }
+      if (e.ctrlKey || e.metaKey) return
+      if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && el.getAttribute('role') !== 'slider') {
+        handled()
+        videoRef.current?.pause()
+        k.seek(k.time + (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 1 : FRAME))
+      } else if (e.key.toLowerCase() === 'b' && clipRef.current) {
+        handled()
+        k.start()
+      } else if (e.key.toLowerCase() === 'g' && clipRef.current) {
+        handled()
+        k.angle()
+      }
+    }
+    // Fase de captura: en modo captura las flechas ganan aunque el foco esté en el scrubber.
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [active])
   /** Quita el último punto del Bar Path y vuelve el cabezal a ese instante. */
   const undoPathPoint = () => {
     const pts = bio.path.points
     if (!pts.length) return
     const last = pts[pts.length - 1]
     setBio({ path: { ...bio.path, points: pts.slice(0, -1) } })
+    setAim({ px: (last.x / 100) * OUT_W, py: (last.y / 100) * OUT_H })
     seek(last.t)
   }
   /** Agrega o reemplaza el punto del Bar Path en el instante actual del video. */
@@ -284,29 +380,19 @@ export default function VideoStudio({ active, header }: Props) {
   const onLayerDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return
     const { px, py } = toFrame(e.clientX, e.clientY)
-    // Bar Path: en pausa, paso a paso (cada click registra el disco y avanza +0,15 s);
-    // reproduciendo, mantener presionado traza en continuo.
+    // Bar Path asistido: cada click registra el centro del disco y avanza el cuadro.
     if (tracing) {
-      addPathPoint(px, py)
-      const v = videoRef.current
-      if (!v || v.paused) {
-        const t = v?.currentTime ?? time
-        seek(Math.min(t + PATH_STEP, clip ? clip.out : duration))
-        return
-      }
-      pressDrag(e, (ev) => {
-        const pt = toFrame(ev.clientX, ev.clientY)
-        addPathPoint(pt.px, pt.py)
-      })
+      registerAndAdvance(px, py)
       return
     }
-    // Goniómetro: arrastrar cada articulación.
-    const handle = handleAt(px, py)
+    // Goniómetro: arrastrar cada articulación (coordenadas del cuadro sin el punch-in).
+    const z = unzoom(px, py, zoom)
+    const handle = handleAt(z.px, z.py)
     if (handle) {
       setSelectedAngle(handle.id)
       setSections((st) => ({ ...st, b1: true }))
       pressDrag(e, (ev) => {
-        const pt = toFrame(ev.clientX, ev.clientY)
+        const pt = unzoomFrame(ev.clientX, ev.clientY)
         const pos = { x: Math.min(100, Math.max(0, (pt.px / OUT_W) * 100)), y: Math.min(100, Math.max(0, (pt.py / OUT_H) * 100)) }
         setProject((p) => ({ ...p, biomech: { ...p.biomech, angles: p.biomech.angles.map((g) => (g.id === handle.id ? { ...g, [handle.k]: pos } : g)) } }))
       })
@@ -344,7 +430,12 @@ export default function VideoStudio({ active, header }: Props) {
     // Sólo cambia el cursor: el hover nunca mueve nada.
     if (e.buttons) return
     const { px, py } = toFrame(e.clientX, e.clientY)
-    const over = Boolean(hitTest(px, py) || handleAt(px, py))
+    if (tracing) {
+      setAim({ px, py })
+      return
+    }
+    const z = unzoom(px, py, zoom)
+    const over = Boolean(hitTest(px, py) || handleAt(z.px, z.py))
     if (over !== hoverMove) setHoverMove(over)
   }
   const selRect = rects.find((r) => r.id === project.selectedId)
@@ -463,7 +554,7 @@ export default function VideoStudio({ active, header }: Props) {
     const g: Goniometer = {
       id: `gon:${uid()}`,
       start,
-      end: Math.min(duration, start + 1.5),
+      end: Math.min(duration, start + GON_DUR),
       a: { x: 44, y: 46 },
       b: { x: 58, y: 57 },
       c: { x: 50, y: 70 },
@@ -509,6 +600,10 @@ export default function VideoStudio({ active, header }: Props) {
     playFx(eng.ctx, kind, eng.ctx.currentTime, eng.bus) // escucha inmediata
   }
 
+  keys.current = { tracing, time, register: registerAndAdvance, undo: undoPathPoint, finish: finishTrace, start: startTrace, angle: addAngle, seek }
+  const clipRef = useRef(clip)
+  clipRef.current = clip
+
   // Pistas que muestra el timeline: V1 + V2 del proyecto y S1 / A2 derivadas.
   const timelineTracks: Track[] = [
     ...project.tracks,
@@ -531,7 +626,7 @@ export default function VideoStudio({ active, header }: Props) {
         ...(bio.path.points.length > 1
           ? [{ id: 'barpath', type: 'bio' as const, start: bio.path.points[0].t, end: bio.path.points[bio.path.points.length - 1].t, deletable: true, data: { text: `📍 BAR PATH · ${bio.path.points.length}`, tone: 'cyan' } }]
           : []),
-        ...bio.angles.map((g) => ({ id: g.id, type: 'bio' as const, start: g.start, end: g.end, editable: 'range' as const, deletable: true, data: { text: `∠ ${Math.round(jointAngle(g))}° · ${g.label || 'ÁNGULO'}`, tone: 'fire' } })),
+        ...bio.angles.map((g) => ({ id: g.id, type: 'bio' as const, start: g.start, end: g.end, editable: 'move' as const, deletable: true, data: { text: `∠ ${Math.round(jointAngle(g))}° · ${g.label || 'ÁNGULO'}`, tone: 'fire' } })),
       ],
     },
     {
@@ -663,12 +758,10 @@ export default function VideoStudio({ active, header }: Props) {
               tracing={tracing}
               selectedAngle={selectedAngle}
               canEdit={Boolean(clip)}
-              onToggleTrace={() => {
-                setTracing((v) => !v)
-                videoRef.current?.pause()
-              }}
+              onToggleTrace={() => (tracing ? finishTrace() : startTrace())}
+              onRegister={() => aimRef.current && registerAndAdvance(aimRef.current.px, aimRef.current.py)}
               onUndo={undoPathPoint}
-              onFinish={() => setTracing(false)}
+              onFinish={finishTrace}
               onChange={setBio}
               onAddAngle={addAngle}
               onSelectAngle={setSelectedAngle}
@@ -740,6 +833,7 @@ export default function VideoStudio({ active, header }: Props) {
                 ref={videoRef}
                 src={url}
                 className="absolute inset-0 h-full w-full object-cover"
+                style={{ transform: `${shakeCss} scale(${zoom})`.trim() }}
                 playsInline
                 preload="auto"
                 onLoadedMetadata={onMeta}
@@ -761,7 +855,7 @@ export default function VideoStudio({ active, header }: Props) {
                 <span className="text-[9px] text-steel/60">.MP4 · .MOV · .WEBM</span>
               </button>
             )}
-            <canvas ref={canvasRef} width={OUT_W} height={OUT_H} className="pointer-events-none absolute inset-0 h-full w-full" />
+            <canvas ref={canvasRef} width={OUT_W} height={OUT_H} className="pointer-events-none absolute inset-0 h-full w-full" style={shakeCss ? { transform: shakeCss } : undefined} />
             {/* Capa de interacción: tomar y arrastrar overlays (sin clip, un click abre el selector de archivo). */}
             <div
               ref={layerRef}
@@ -776,6 +870,23 @@ export default function VideoStudio({ active, header }: Props) {
                   className="pointer-events-none absolute border border-dashed border-cyan/80"
                   style={{ left: `${(selRect.x / OUT_W) * 100}%`, top: `${(selRect.y / OUT_H) * 100}%`, width: `${(selRect.w / OUT_W) * 100}%`, height: `${(selRect.h / OUT_H) * 100}%` }}
                 />
+              )}
+              {tracing && aim && (
+                <div className="pointer-events-none absolute inset-0" aria-hidden>
+                  <div className="absolute inset-y-0 w-px bg-cyan/45" style={{ left: `${(aim.px / OUT_W) * 100}%` }} />
+                  <div className="absolute inset-x-0 h-px bg-cyan/45" style={{ top: `${(aim.py / OUT_H) * 100}%` }} />
+                  <div
+                    className="absolute size-9 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cyan shadow-[0_0_12px_rgba(0,229,255,.9)]"
+                    style={{ left: `${(aim.px / OUT_W) * 100}%`, top: `${(aim.py / OUT_H) * 100}%` }}
+                  >
+                    <span className="absolute top-1/2 left-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan" />
+                  </div>
+                  <div className="absolute inset-x-2 top-2 rounded-md border border-cyan/50 bg-black/75 px-2 py-1.5 text-center font-mono text-[9px] leading-relaxed font-semibold tracking-[0.12em] text-cyan">
+                    ● MODO CAPTURA · {timecode(time)} · {bio.path.points.length} PTS
+                    <br />
+                    <span className="text-white/70">CLICK EN EL CENTRO DEL DISCO · ➔ REGISTRAR · ← DESHACER · ENTER FINALIZAR</span>
+                  </div>
+                </div>
               )}
               {guides && (
                 <>

@@ -56,6 +56,8 @@ export interface OverlayConfig {
   style: OverlayStyle
   entrance: OverlayEntrance
   exit: OverlayExit
+  /** Punch-in digital 1.15x del video mientras se ve el bloque */
+  punch?: boolean
 }
 
 export interface OverlayItem extends TimeRange {
@@ -156,6 +158,8 @@ export interface Goniometer extends TimeRange {
   c: FramePoint
   label: string
   color: 'orange' | 'white'
+  /** Punch-in digital 1.15x mientras dura el bloque */
+  punch?: boolean
 }
 
 /** Pista B1 · HUD biomecánico. */
@@ -164,7 +168,8 @@ export interface Biomech {
   angles: Goniometer[]
 }
 
-export type FxKind = 'impact' | 'whoosh' | 'beep' | 'bell'
+/** 'shake' es un micro-efecto visual sin sonido (sacudida de pantalla). */
+export type FxKind = 'impact' | 'whoosh' | 'beep' | 'bell' | 'shake'
 
 export interface FxHit {
   id: string
@@ -178,6 +183,8 @@ export interface SoundFx {
   hits: FxHit[]
   /** 0–100 */
   volume: number
+  /** Screen shake automático en cada IMPACT · SUB (por defecto activo) */
+  shake?: boolean
 }
 
 export interface VideoProject {

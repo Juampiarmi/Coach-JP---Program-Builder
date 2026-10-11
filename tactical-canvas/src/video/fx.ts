@@ -11,6 +11,7 @@ export const FX_META: Record<FxKind, { label: string; icon: string; duration: nu
   whoosh: { label: 'RECARGA · WHOOSH', icon: '⚙️', duration: 0.8 },
   beep: { label: 'TERMINAL BEEP', icon: '📟', duration: 0.2 },
   bell: { label: 'BELL · GONG', icon: '🔔', duration: 1.8 },
+  shake: { label: 'SHAKE · VFX', icon: '📳', duration: 0.12 },
 }
 
 const noiseCache = new WeakMap<BaseAudioContext, AudioBuffer>()
@@ -59,6 +60,7 @@ function burst(ctx: BaseAudioContext, out: AudioNode, at: number, peak: number, 
 
 /** Agenda un efecto en `at` (segundos del reloj del AudioContext) hacia `out`. */
 export function playFx(ctx: BaseAudioContext, kind: FxKind, at: number, out: AudioNode) {
+  if (kind === 'shake') return // sólo visual
   const t = Math.max(at, ctx.currentTime)
   if (kind === 'impact') {
     // Golpe sub-grave con caída de tono + transiente seco.
@@ -78,7 +80,7 @@ export function playFx(ctx: BaseAudioContext, kind: FxKind, at: number, out: Aud
     // Interfaz técnica: dos pulsos cortos ascendentes.
     tone(ctx, out, 'square', 1700, t, 0.22, 0.003, 0.06)
     tone(ctx, out, 'square', 2550, t + 0.07, 0.2, 0.003, 0.08)
-  } else {
+  } else if (kind === 'bell') {
     // Campana / gong: parciales inarmónicos con caídas largas.
     for (const [ratio, g, d] of [
       [1, 0.5, 1.7],
