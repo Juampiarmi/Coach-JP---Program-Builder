@@ -465,7 +465,7 @@ function isOverloaded(err: unknown) {
   return /high demand|spikes in demand|overloaded/i.test(err.message)
 }
 
-async function requestGemini(key: string, model: string, prompt: string, signal?: AbortSignal) {
+async function requestGemini(key: string, model: string, prompt: string, signal?: AbortSignal, schema?: object) {
   const apiKey = key
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
   const res = await fetch(url, {
@@ -477,6 +477,8 @@ async function requestGemini(key: string, model: string, prompt: string, signal?
       generationConfig: {
         responseMimeType: 'application/json',
         maxOutputTokens: 16384,
+        // Structured Outputs: Gemini valida la respuesta contra el esquema (OpenAPI subset).
+        ...(schema ? { responseSchema: schema } : {}),
       },
     }),
   })
@@ -528,6 +530,7 @@ async function callGemini(
   onModelChange?: ModelChangeFn,
   known: GeminiModel[] = [],
   system: string = COMPACT_SYSTEM_PROMPT,
+  schema?: object,
 ) {
   // Un solo turno con el prompt completo (sistema + pedido), sin espacios redundantes.
   const prompt = `${system}\n\n${user}`
@@ -553,7 +556,7 @@ async function callGemini(
 
   for (;;) {
     try {
-      const text = await requestGemini(key, current, prompt, signal)
+      const text = await requestGemini(key, current, prompt, signal, schema)
       onStatus?.(current !== selected ? `Generado con ${current} (la cuota de ${selected} está agotada).` : null)
       return text
     } catch (err) {
@@ -1279,6 +1282,40 @@ async function askJson(settings: AiSettings, user: string, signal?: AbortSignal,
       : settings.provider === 'anthropic'
         ? callAnthropic(key, model, prompt, signal, TOOL_SYSTEM)
         : callOpenAI(key, model, prompt, signal, TOOL_SYSTEM)
+  const text = await ask(user)
+  try {
+    return obj(safeParseJson(text))
+  } catch (err) {
+    if (!(err instanceof JsonRepairError)) throw err
+    return obj(safeParseJson(await ask(repairPrompt(err))))
+  } finally {
+    onStatus?.(null)
+  }
+}
+
+/**
+ * Pedido con Structured Outputs: en Gemini la respuesta se valida contra `schema`
+ * (responseMimeType + responseSchema); en OpenAI / Anthropic el esquema va en el prompt.
+ * Usa la misma cadena de modelos, reintentos y cuota que el generador de placas.
+ */
+export async function askStructured(
+  settings: AiSettings,
+  system: string,
+  user: string,
+  schema: object,
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<Record<string, unknown>> {
+  const key = (settings.keys[settings.provider] ?? '').trim()
+  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA (modo placas).')
+  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
+  const withSchema = `${user}\n\nRespondé con un objeto JSON que cumpla exactamente este esquema (OpenAPI):\n${JSON.stringify(schema)}`
+  const ask = (prompt: string) =>
+    settings.provider === 'gemini'
+      ? callGemini(key, model, prompt, signal, onStatus, undefined, settings.geminiModels ?? [], system, schema)
+      : settings.provider === 'anthropic'
+        ? callAnthropic(key, model, withSchema, signal, system)
+        : callOpenAI(key, model, withSchema, signal, system)
   const text = await ask(user)
   try {
     return obj(safeParseJson(text))

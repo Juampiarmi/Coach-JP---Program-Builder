@@ -50,6 +50,29 @@ export function punchAt(bio: Biomech, overlays: OverlayItem[], t: number): numbe
   return best
 }
 
+/** Destello de impacto (V2): opacidad 0–1 que cae en 0,18 s desde cada disparo 'flash'. */
+export function flashAt(fx: SoundFx, t: number): number {
+  let a = 0
+  for (const h of fx.hits) {
+    if (h.kind !== 'flash') continue
+    const dt = t - h.t
+    if (dt >= 0 && dt < FX_META.flash.duration) a = Math.max(a, (1 - dt / FX_META.flash.duration) ** 1.6)
+  }
+  return a
+}
+
+/** Pinta el destello sobre el cuadro: blanco caliente con borde naranja. */
+export function drawFlash(ctx: CanvasRenderingContext2D, alpha: number) {
+  if (alpha <= 0) return
+  ctx.save()
+  const g = ctx.createRadialGradient(OUT_W / 2, OUT_H * 0.45, OUT_W * 0.1, OUT_W / 2, OUT_H * 0.45, OUT_H * 0.75)
+  g.addColorStop(0, `rgba(255,248,235,${(0.85 * alpha).toFixed(3)})`)
+  g.addColorStop(1, `rgba(234,88,12,${(0.6 * alpha).toFixed(3)})`)
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, OUT_W, OUT_H)
+  ctx.restore()
+}
+
 /** Escala extra mientras sacude, para que no se vean bordes negros. */
 export const shakeOverscan = (s: { x: number; y: number }) => (s.x || s.y ? 1 + (2 * SHAKE_PX) / OUT_W + 0.004 : 1)
 

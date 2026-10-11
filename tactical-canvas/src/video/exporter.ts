@@ -1,5 +1,5 @@
 import { drawOverlays, drawSubtitles, drawVideoCover, loadOverlayFonts } from './render'
-import { applyZoom, punchAt, shakeAt, shakeOverscan } from './vfx'
+import { applyZoom, drawFlash, flashAt, punchAt, shakeAt, shakeOverscan } from './vfx'
 import { duckGain, groupWords, speechSegments, withOffset } from './subtitles'
 import { drawBiomech } from './biomech'
 import { playFx } from './fx'
@@ -132,12 +132,13 @@ export async function exportVideo({ url, musicUrl, project, takes = new Map(), o
     drawBiomech(ctx, project.biomech, t, null, false, zoom)
     drawOverlays(ctx, items, t)
     drawSubtitles(ctx, subs, groups, t)
+    drawFlash(ctx, flashAt(project.fx, t))
     ctx.restore()
     // A2 sigue al video (la música arranca en el In) y aplica volumen × ducking.
     if (music && musicGain && audioCtx && musicCfg) {
       const want = t - clip.in
       if (want < music.duration && Math.abs(music.currentTime - want) > 0.15) music.currentTime = Math.max(0, want)
-      const level = (musicCfg.volume / 100) * (musicCfg.ducking ? duckGain(segments, t) : 1)
+      const level = (musicCfg.volume / 100) * (musicCfg.ducking ? duckGain(segments, t, musicCfg.duckLevel) : 1)
       musicGain.gain.setTargetAtTime(level, audioCtx.currentTime, 0.015)
     }
   }

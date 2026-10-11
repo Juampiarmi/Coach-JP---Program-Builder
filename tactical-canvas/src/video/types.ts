@@ -1,3 +1,5 @@
+import type { TacticalDirectorOutput } from '../types/timelineDirector'
+
 /**
  * Tactical Video Studio · modelo de datos.
  *
@@ -108,6 +110,8 @@ export interface SubtitleWord {
   end: number
   /** Inicio de bloque forzado (subtítulo cargado a mano): nunca se agrupa con la palabra anterior */
   br?: boolean
+  /** Palabra clave del remate: va siempre en este color (Director IA) */
+  color?: 'orange' | 'cyan'
 }
 
 export type SubtitleStyle = 'outline' | 'pill'
@@ -130,6 +134,8 @@ export interface MusicTrack {
   /** 0–100 */
   volume: number
   ducking: boolean
+  /** Nivel de la música durante el habla (0–1); por defecto 0,15 (−18 dB) */
+  duckLevel?: number
 }
 
 /** Punto en el marco 9:16 en % (0–100). */
@@ -169,7 +175,7 @@ export interface Biomech {
 }
 
 /** 'shake' es un micro-efecto visual sin sonido (sacudida de pantalla). */
-export type FxKind = 'impact' | 'whoosh' | 'beep' | 'bell' | 'shake'
+export type FxKind = 'impact' | 'whoosh' | 'beep' | 'bell' | 'shake' | 'flash'
 
 export interface FxHit {
   id: string
@@ -203,6 +209,14 @@ export interface VoiceClip {
   gain: number
 }
 
+/** Montaje del Director IA inyectado en el proyecto. `offset` = In del clip al inyectar. */
+export interface DirectorState {
+  output: TacticalDirectorOutput
+  idea: string
+  offset: number
+  createdAt: number
+}
+
 export interface VideoProject {
   version: 1
   clip: ClipInfo | null
@@ -213,6 +227,8 @@ export interface VideoProject {
   fx: SoundFx
   /** A1 · voz en off */
   voice: VoiceClip[]
+  /** Último montaje del Director IA (guion para el teleprompter, sugerencias de bar path) */
+  director?: DirectorState
   /** Overlay seleccionado en el panel lateral */
   selectedId: string | null
   safeZone: boolean

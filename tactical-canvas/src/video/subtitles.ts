@@ -159,12 +159,12 @@ const DUCK_FADE = 0.2
  * Ganancia de la música (0–1) en `time` con auto-ducking: 15 % durante el habla y vuelta al
  * 100 % con una rampa de 0,2 s a cada lado de cada tramo hablado.
  */
-export function duckGain(segments: [number, number][], time: number): number {
+export function duckGain(segments: [number, number][], time: number, level = DUCK_LEVEL): number {
   let d = Infinity
   for (const [a, b] of segments) {
-    if (time >= a && time <= b) return DUCK_LEVEL
+    if (time >= a && time <= b) return level
     d = Math.min(d, time < a ? a - time : time - b)
   }
   if (d >= DUCK_FADE) return 1
-  return DUCK_LEVEL + (1 - DUCK_LEVEL) * (d / DUCK_FADE)
+  return level + (1 - level) * (d / DUCK_FADE)
 }

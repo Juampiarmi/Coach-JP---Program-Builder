@@ -12,6 +12,7 @@ export const FX_META: Record<FxKind, { label: string; icon: string; duration: nu
   beep: { label: 'TERMINAL BEEP', icon: '📟', duration: 0.2 },
   bell: { label: 'BELL · GONG', icon: '🔔', duration: 1.8 },
   shake: { label: 'SHAKE · VFX', icon: '📳', duration: 0.12 },
+  flash: { label: 'FLASH · VFX', icon: '⚡', duration: 0.18 },
 }
 
 const noiseCache = new WeakMap<BaseAudioContext, AudioBuffer>()
@@ -60,7 +61,7 @@ function burst(ctx: BaseAudioContext, out: AudioNode, at: number, peak: number, 
 
 /** Agenda un efecto en `at` (segundos del reloj del AudioContext) hacia `out`. */
 export function playFx(ctx: BaseAudioContext, kind: FxKind, at: number, out: AudioNode) {
-  if (kind === 'shake') return // sólo visual
+  if (kind === 'shake' || kind === 'flash') return // sólo visual
   const t = Math.max(at, ctx.currentTime)
   if (kind === 'impact') {
     // Golpe sub-grave con caída de tono + transiente seco.

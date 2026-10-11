@@ -5,6 +5,12 @@ import { loadAiSettings, RateLimitError, transcribeAudio } from '../lib/ai'
 import { bufferToWavBase64, clipToWavBase64 } from './audio'
 import { analyzeTake, clipPeaks, scheduleVoice, startRecording, voiceSegments, type Recording, type VoiceTake } from './voice'
 import { VoicePanel } from './VoicePanel'
+import { DirectorPanel } from './director/DirectorPanel'
+import { Teleprompter } from './director/Teleprompter'
+import { injectDirector } from './director/inject'
+import { recordStockClip, synthMusic } from './director/stock'
+import { runDirector } from './director/videoDirector'
+import type { DirectorPace, TacticalDirectorOutput } from '../types/timelineDirector'
 import { MusicPanel } from './MusicPanel'
 import { SubtitlePanel } from './SubtitlePanel'
 import { activeGroup, duckGain, editGroupText, groupWords, insertManual, parseSubtitleFile, removeGroup, retimeGroup, speechSegments, withOffset, type SubtitleGroup } from './subtitles'
@@ -23,7 +29,7 @@ import { Scrubber } from './Scrubber'
 import { Timeline } from './Timeline'
 import type { Biomech, FxKind, Goniometer, MusicTrack, OverlayConfig, SoundFx, SubtitleTrack, Track, VideoProject, VoiceClip } from './types'
 import { OUT_H, OUT_W } from './types'
-import { punchAt, shakeAt, shakeOverscan, unzoom } from './vfx'
+import { drawFlash, flashAt, punchAt, shakeAt, shakeOverscan, unzoom } from './vfx'
 
 interface Props {
   /** Visible: el estudio queda montado al cambiar de modo para no perder el clip cargado. */
@@ -96,7 +102,7 @@ export default function VideoStudio({ active, header }: Props) {
   const [musicUrl, setMusicUrl] = useState<string | null>(null)
   const music = musicUrl ? project.music : null
   const musicRef = useRef<HTMLAudioElement>(null)
-  const musicLevel = useCallback((t: number) => (music ? (music.volume / 100) * (music.ducking ? duckGain(segments, t) : 1) : 0), [music, segments])
+  const musicLevel = useCallback((t: number) => (music ? (music.volume / 100) * (music.ducking ? duckGain(segments, t, music.duckLevel) : 1) : 0), [music, segments])
   /** La música arranca en el In del clip y sigue al video; corrige desvíos de más de 0,12 s. */
   const syncMusic = useCallback(
     (t: number, play: boolean) => {
@@ -142,6 +148,9 @@ export default function VideoStudio({ active, header }: Props) {
   const fxRef = useRef(fx)
   fxRef.current = fx
 
+  /** Montaje del Director que espera a que el fondo de stock termine de cargar. */
+  const pendingDirector = useRef<{ out: TacticalDirectorOutput; idea: string } | null>(null)
+
   // ── Carga del clip ────────────────────────────────────────────────────────────
   const loadFile = (file: File | undefined) => {
     if (!file) return
@@ -162,7 +171,17 @@ export default function VideoStudio({ active, header }: Props) {
     const v = videoRef.current
     if (!v || !url) return
     const d = await resolveDuration(v)
-    setProject((p) => fitToClip({ ...p, clip: { name: p.clip?.name ?? 'clip', duration: d, width: v.videoWidth, height: v.videoHeight, in: 0, out: d } }))
+    // Montaje del Director pendiente (fondo de stock recién generado): se inyecta con el clip ya medido.
+    const pending = pendingDirector.current
+    pendingDirector.current = null
+    setProject((p) => {
+      const next = fitToClip({ ...p, clip: { name: p.clip?.name ?? 'clip', duration: d, width: v.videoWidth, height: v.videoHeight, in: 0, out: d } })
+      return pending ? injectDirector(next, pending.out, pending.idea, 0, d) : next
+    })
+    if (pending) {
+      v.currentTime = 0
+      setTime(0)
+    }
     extractThumbs(url, d, 12).then(setThumbs, () => setThumbs([]))
   }
   useEffect(() => () => {
@@ -273,8 +292,9 @@ export default function VideoStudio({ active, header }: Props) {
     drawBiomech(ctx, bio, time, selectedAngle, tracing, zoom)
     const next = drawOverlays(ctx, items, time)
     drawSubtitles(ctx, subs, groups, time)
+    drawFlash(ctx, flashAt(fx, time))
     setRects((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-  }, [items, time, fontsReady, active, subs, groups, bio, selectedAngle, tracing, zoom])
+  }, [items, time, fontsReady, active, subs, groups, bio, selectedAngle, tracing, zoom, fx])
 
   // ── Arrastre libre en el visor (posición en % del marco, con imán al centro) ──
   const layerRef = useRef<HTMLDivElement>(null)
@@ -503,7 +523,7 @@ export default function VideoStudio({ active, header }: Props) {
   }
 
   // ── Panel en acordeones (V2 abierto por defecto cuando hay clip) ─────────────
-  const [sections, setSections] = useState({ v2: false, a1: false, s1: false, a2: false, b1: false, a3: false })
+  const [sections, setSections] = useState({ dir: true, v2: false, a1: false, s1: false, a2: false, b1: false, a3: false })
   const toggle = (k: keyof typeof sections) => setSections((st) => ({ ...st, [k]: !st[k] }))
   useEffect(() => {
     if (url) setSections((st) => ({ ...st, v2: true }))
@@ -543,7 +563,7 @@ export default function VideoStudio({ active, header }: Props) {
   const [voiceNote, setVoiceNote] = useState('')
   const recRef = useRef<{ r: Recording; startAt: number; t0: number; raf: number } | null>(null)
   const setVoice = (id: string, patch: Partial<VoiceClip>) => setProject((p) => ({ ...p, voice: (p.voice ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)) }))
-  const startVoice = async () => {
+  const startVoice = async (forcePlay = false) => {
     if (recRef.current || !clip) return
     setVoiceNote('')
     const eng = fxEngine()
@@ -555,7 +575,7 @@ export default function VideoStudio({ active, header }: Props) {
       return
     }
     const v = videoRef.current
-    if (v && playWhileRec) {
+    if (v && (playWhileRec || forcePlay)) {
       if (v.currentTime < clip.in || v.currentTime >= clip.out - 0.05) v.currentTime = clip.in
       await v.play().catch(() => undefined)
     }
@@ -652,7 +672,7 @@ export default function VideoStudio({ active, header }: Props) {
   const activeIndex = current ? groups.indexOf(current) : -1
 
   // ── A2 · Música ───────────────────────────────────────────────────────────────
-  const uploadMusic = (file: File) => {
+  const uploadMusic = (file: File, cfg?: Partial<MusicTrack>) => {
     if (!file.type.startsWith('audio/') && !/\.(mp3|wav|m4a|ogg|aac)$/i.test(file.name)) {
       setTr((s) => ({ ...s, note: 'El archivo de música no es de audio (.mp3 / .wav).' }))
       return
@@ -662,7 +682,7 @@ export default function VideoStudio({ active, header }: Props) {
     const probe = new Audio(next)
     probe.onloadedmetadata = () => {
       setMusicUrl(next)
-      setProject((p) => ({ ...p, music: { name: file.name, duration: probe.duration, volume: p.music?.volume ?? 20, ducking: p.music?.ducking ?? true } }))
+      setProject((p) => ({ ...p, music: { name: file.name, duration: probe.duration, volume: p.music?.volume ?? 20, ducking: p.music?.ducking ?? true, ...cfg } }))
     }
   }
   const setMusic = (patch: Partial<MusicTrack>) => setProject((p) => (p.music ? { ...p, music: { ...p.music, ...patch } } : p))
@@ -730,6 +750,53 @@ export default function VideoStudio({ active, header }: Props) {
   const clipRef = useRef(clip)
   clipRef.current = clip
 
+  // ── 🎬 Director IA · Auto-timeline ─────────────────────────────────────────────
+  const [dirIdea, setDirIdea] = useState('')
+  const [dirPace, setDirPace] = useState<DirectorPace>('fast_kinetic')
+  const [dir, setDir] = useState<{ busy: boolean; stage: string; progress: number | null; error: string }>({ busy: false, stage: '', progress: null, error: '' })
+  const dirAbort = useRef<AbortController | null>(null)
+  const [teleOpen, setTeleOpen] = useState(false)
+  const director = stored.director ?? null
+  const runMontage = async () => {
+    if (dir.busy) {
+      dirAbort.current?.abort()
+      return
+    }
+    const hasContent = items.length > 0 || subtitles.words.length > 0 || bio.angles.length > 0 || fx.hits.length > 0
+    if (hasContent && !director && !confirm('El montaje reemplaza los overlays, subtítulos, goniómetros, FX y la música actuales. ¿Continuar?')) return
+    dirAbort.current = new AbortController()
+    const signal = dirAbort.current.signal
+    setDir({ busy: true, stage: '[ DIRECTOR IA · GEMINI STRUCTURED OUTPUTS · PLANIFICANDO MONTAJE… ]', progress: null, error: '' })
+    try {
+      const clipLen = clip ? clip.out - clip.in : undefined
+      const out = await runDirector(loadAiSettings(), { idea: dirIdea, pace: dirPace, clipDuration: clipLen }, signal, (m) => m && setDir((d) => ({ ...d, stage: m })))
+      // A2: beat sintetizado según el mood, con el volumen y el ducking del Director.
+      setDir((d) => ({ ...d, stage: `[ A2 · SINTETIZANDO ${out.a2_music.genreMood.replace(/_/g, ' ').toUpperCase()}… ]` }))
+      const beat = await synthMusic(out.a2_music.genreMood, out.durationSeconds)
+      uploadMusic(beat, { volume: out.a2_music.baseVolume, ducking: out.a2_music.duckingActive, duckLevel: out.a2_music.duckingVolume / Math.max(1, out.a2_music.baseVolume) })
+      if (clip && url) {
+        setProject((p) => injectDirector(p, out, dirIdea, clip.in, clip.out))
+        seek(clip.in)
+      } else {
+        // V1 sin clip: fondo táctico de stock en tiempo real (el montaje se inyecta al cargarlo).
+        setDir((d) => ({ ...d, stage: `[ V1 · RENDERIZANDO FONDO TÁCTICO · ${out.v1_video.fallbackStockType.replace(/_/g, ' ').toUpperCase()} ]`, progress: 0 }))
+        const stock = await recordStockClip(out.v1_video.fallbackStockType, out.durationSeconds, out.v1_video.playbackRate, (r) => setDir((d) => ({ ...d, progress: r })), signal)
+        pendingDirector.current = { out, idea: dirIdea }
+        loadFile(stock)
+      }
+      setSections((st) => ({ ...st, v2: false, s1: true }))
+      setDir({ busy: false, stage: '', progress: null, error: '' })
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === 'AbortError'
+      setDir({ busy: false, stage: '', progress: null, error: aborted ? 'Montaje cancelado.' : err instanceof RateLimitError ? 'Cuota de Gemini alcanzada. Esperá un momento o cambiá de key.' : err instanceof Error ? err.message : 'No se pudo generar el montaje.' })
+    }
+  }
+  const teleRecord = () => {
+    if (!clip) return
+    seek(clip.in)
+    startVoice(true)
+  }
+
   // Pistas que muestra el timeline: V1 + V2 del proyecto y S1 / A2 derivadas.
   const timelineTracks: Track[] = [
     ...project.tracks,
@@ -738,7 +805,20 @@ export default function VideoStudio({ active, header }: Props) {
       kind: 'audio',
       label: 'A1 · VOZ EN OFF',
       stack: true,
-      items: voices.map((c, i) => ({
+      items: [
+        // Guion del Director (referencia para grabar con teleprompter).
+        ...(director && !voices.length
+          ? [
+              {
+                id: 'script',
+                type: 'audio' as const,
+                start: director.offset + (director.output.s1_subtitles[0]?.start ?? 0),
+                end: Math.min(duration, director.offset + (director.output.s1_subtitles[0]?.start ?? 0) + director.output.a1_voiceover.estimatedDuration),
+                data: { text: '📜 GUION A1 · GRABÁ CON TELEPROMPTER', tone: 'fire' },
+              },
+            ]
+          : []),
+        ...voices.map((c, i) => ({
         id: c.id,
         type: 'audio' as const,
         start: c.start,
@@ -747,6 +827,7 @@ export default function VideoStudio({ active, header }: Props) {
         deletable: true,
         data: { text: `🎙 VOZ ${String(i + 1).padStart(2, '0')}${c.enhance ? ' · ✨' : ''} · ${c.gain}%`, tone: 'fire', wave: clipPeaks(c, takes.get(c.id)!) },
       })),
+      ],
     },
     { id: 's1', kind: 'subtitle', label: 'S1 · SUBTÍTULOS', items: groups.map((g, i) => ({ id: `s1-${i}`, type: 'subtitle', start: g.start, end: g.end, data: { text: g.text } })) },
     {
@@ -871,6 +952,24 @@ export default function VideoStudio({ active, header }: Props) {
               </p>
             )}
           </div>
+          <Accordion title="🎬 DIRECTOR IA · AUTO-TIMELINE" badge={dir.busy ? '● MONTANDO' : director ? `${director.output.durationSeconds.toFixed(0)} s` : 'NUEVO'} open={sections.dir || dir.busy} onToggle={() => toggle('dir')}>
+            <DirectorPanel
+              idea={dirIdea}
+              pace={dirPace}
+              busy={dir.busy}
+              stage={dir.stage}
+              progress={dir.progress}
+              error={dir.error}
+              director={director}
+              hasClip={Boolean(clip)}
+              onIdea={setDirIdea}
+              onPace={setDirPace}
+              onGenerate={runMontage}
+              onCancel={() => dirAbort.current?.abort()}
+              onSeek={seek}
+              onTeleprompter={() => setTeleOpen(true)}
+            />
+          </Accordion>
           <Accordion title="V2 · OVERLAYS TÁCTICOS" badge={`${items.length} ${items.length === 1 ? 'BLOQUE' : 'BLOQUES'}`} open={sections.v2} onToggle={() => toggle('v2')}>
             <OverlayPanel items={items} selected={selected} onSelect={(id) => setProject((p) => ({ ...p, selectedId: id }))} onChange={setOverlay} onAdd={addItem} onRemove={removeItem} onDuplicate={duplicateItem} />
           </Accordion>
@@ -884,7 +983,7 @@ export default function VideoStudio({ active, header }: Props) {
               busy={tr.busy}
               note={voiceNote}
               onPlayWhileRec={setPlayWhileRec}
-              onRecord={startVoice}
+              onRecord={() => startVoice()}
               onStop={stopVoice}
               onSelect={(id) => {
                 setSelectedVoice(id)
@@ -986,7 +1085,7 @@ export default function VideoStudio({ active, header }: Props) {
 
       {/* Visor + timeline */}
       {/* En escritorio el visor se lleva todo el alto libre: sin barra superior y con márgenes mínimos. */}
-      <main className="tc-grid-bg order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 lg:order-2 lg:gap-2 lg:px-5 lg:py-3">
+      <main className="tc-grid-bg relative order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4 lg:order-2 lg:gap-2 lg:px-5 lg:py-3">
         <div className="flex h-[64dvh] min-h-0 items-center justify-center lg:h-auto lg:flex-1">
           <div
             onDragOver={(e) => {
@@ -1106,6 +1205,7 @@ export default function VideoStudio({ active, header }: Props) {
           </button>
         </div>
         {musicUrl && <audio ref={musicRef} src={musicUrl} preload="auto" hidden />}
+        {teleOpen && director && <Teleprompter director={director} time={time} recording={rec} onRecord={teleRecord} onStop={stopVoice} onClose={() => setTeleOpen(false)} />}
         <Timeline
           tracks={timelineTracks}
           placeholders={placeholders}

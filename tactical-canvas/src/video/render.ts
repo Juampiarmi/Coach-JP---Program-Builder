@@ -497,7 +497,8 @@ export function drawSubtitles(ctx: Ctx, track: SubtitleTrack, groups: SubtitleGr
         ctx.strokeText(upperWords[i], 0, 0)
         ctx.shadowColor = 'transparent'
       }
-      ctx.fillStyle = active ? SUB_ACCENT[track.accent] : '#FFFFFF'
+      // Activa = acento de la pista; palabra clave del remate (Director IA) = su color fijo.
+      ctx.fillStyle = active ? SUB_ACCENT[track.accent] : w.color ? SUB_ACCENT[w.color] : '#FFFFFF'
       ctx.fillText(upperWords[i], 0, 0)
       ctx.restore()
       x += widths[i] + space
