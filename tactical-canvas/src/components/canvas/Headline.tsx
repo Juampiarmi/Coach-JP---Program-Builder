@@ -9,6 +9,17 @@ function segments(text: string, highlight: boolean) {
     .map((s) => (s.startsWith('*') && s.endsWith('*') ? { t: s.slice(1, -1), hl: !highlight } : { t: s, hl: highlight }))
 }
 
+/** Saltos de línea explícitos (Enter en el titular o el remate) → <br />. Cada renglón se balancea aparte. */
+function lines(text: string) {
+  if (!text.includes('\n')) return text
+  return text.split('\n').map((l, i) => (
+    <Fragment key={i}>
+      {i > 0 && <br />}
+      {l}
+    </Fragment>
+  ))
+}
+
 interface Props {
   partA: string
   partB: string
@@ -19,6 +30,10 @@ interface Props {
   ink?: string
   accent?: string
   fontWeight?: number
+  /** Interlineado (presets tipográficos); por defecto 1.04 */
+  lineHeight?: number
+  /** Remate en renglón nuevo: su primera palabra nunca queda colgada al final del renglón blanco */
+  newLine?: boolean
 }
 
 /** Piso del ajuste por ancho: por debajo de esto se prefiere cortar antes que achicar más. */
@@ -61,9 +76,12 @@ function useWordFit(deps: unknown[]) {
 }
 
 /** Titular: base en blanco + remate en naranja fuego. `*palabra*` invierte el color. */
-export function Headline({ partA, partB, fontFamily, fontSize, tracking, ink = BRAND.white, accent = BRAND.orange, fontWeight = /DM Serif/.test(fontFamily) ? 400 : 700 }: Props) {
-  const parts = [...segments(partA.trim(), false), { t: ' ', hl: false }, ...segments(partB.trim(), true)]
-  const { ref, fit } = useWordFit([partA, partB, fontFamily, fontSize, tracking])
+export function Headline({ partA, partB, fontFamily, fontSize, tracking, ink = BRAND.white, accent = BRAND.orange, fontWeight = /DM Serif/.test(fontFamily) ? 400 : 700, lineHeight = 1.04, newLine = false }: Props) {
+  const a = partA.trim()
+  const b = partB.trim()
+  // Con remate en renglón nuevo el separador es un salto (si ambas partes tienen texto).
+  const parts = [...segments(a, false), { t: newLine && a && b ? '\n' : ' ', hl: false }, ...segments(b, true)]
+  const { ref, fit } = useWordFit([partA, partB, fontFamily, fontSize, tracking, lineHeight, newLine])
   // Por debajo del piso, último recurso: permitir el corte dentro de la palabra.
   const allowBreak = fit <= MIN_WORD_FIT
   return (
@@ -73,7 +91,7 @@ export function Headline({ partA, partB, fontFamily, fontSize, tracking, ink = B
         fontFamily,
         fontSize: Math.round(fontSize * fit * 10) / 10,
         fontWeight,
-        lineHeight: 1.04,
+        lineHeight,
         letterSpacing: tracking,
         textTransform: 'uppercase',
         color: ink,
@@ -85,7 +103,7 @@ export function Headline({ partA, partB, fontFamily, fontSize, tracking, ink = B
       }}
     >
       {parts.map((p, i) => (
-        <Fragment key={i}>{p.hl ? <span style={{ color: accent }}>{p.t}</span> : p.t}</Fragment>
+        <Fragment key={i}>{p.hl ? <span style={{ color: accent }}>{lines(p.t)}</span> : lines(p.t)}</Fragment>
       ))}
     </h1>
   )

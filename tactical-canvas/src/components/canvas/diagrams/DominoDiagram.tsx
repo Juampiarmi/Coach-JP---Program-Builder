@@ -4,6 +4,8 @@ interface Props extends DiagramStyle {
   count: number
   start: string
   end: string
+  /** Un rótulo opcional por ficha (uno por línea) */
+  labels?: string
 }
 
 /** Flecha descendente (inicio: esfuerzo chico) o ascendente (final: resultado masivo). */
@@ -19,14 +21,17 @@ function Arrow({ dir, size, color }: { dir: 'up' | 'down'; size: number; color: 
 const GROWTH = 1.5 // cada ficha puede voltear a otra ~50 % más grande
 
 /** Efecto dominó: fichas que crecen en escala, las primeras ya cayendo, de hábito mínimo a resultado masivo. */
-export function DominoDiagram({ count, start, end, width, height, ink, muted, accent, bg, scale }: Props) {
+export function DominoDiagram({ count, start, end, labels = '', width, height, ink, muted, accent, bg, scale }: Props) {
   const n = clamp(Math.round(count), 4, 9)
-  const labelH = 70 * scale
+  const tileLabels = labels.split('\n').map((l) => l.trim())
+  const hasTileLabels = tileLabels.some(Boolean)
+  const labelH = 70 * scale + (hasTileLabels ? 64 * scale : 0)
   const base = height - labelH - 30 * scale
   const hMax = base * 0.92
   let hs = Array.from({ length: n }, (_, i) => hMax / GROWTH ** (n - 1 - i))
   let ws = hs.map((h) => Math.max(10, h * 0.34))
-  let gaps = ws.map((w) => w * 0.6)
+  // Aire suficiente para que cada ficha inclinada apoye sobre la siguiente (cascada real).
+  let gaps = ws.map((w) => w * 0.9)
   const totalW = ws.reduce((a, b) => a + b, 0) + gaps.slice(0, -1).reduce((a, b) => a + b, 0)
   const k = Math.min(1, (width * 0.96) / totalW)
   hs = hs.map((h) => h * k)
@@ -35,18 +40,19 @@ export function DominoDiagram({ count, start, end, width, height, ink, muted, ac
   const used = ws.reduce((a, b) => a + b, 0) + gaps.slice(0, -1).reduce((a, b) => a + b, 0)
   let x = (width - used) / 2
   const tiles = hs.map((h, i) => {
-    const t = { x, w: ws[i], h, tilt: i === 0 ? 34 : i === 1 ? 14 : 0 }
+    // Cascada: la primera ya cayó, las intermedias inclinadas 20° y la última todavía en pie.
+    const t = { x, w: ws[i], h, tilt: i === 0 ? 34 : i < n - 1 ? 20 : 0 }
     x += ws[i] + gaps[i]
     return t
   })
   const first = tiles[0]
   const last = tiles[n - 1]
-  const arrowY = base + 26 * scale
+  const arrowY = base + 26 * scale + (hasTileLabels ? 64 * scale : 0)
   const stroke = 4 * scale
 
   return (
     <div style={{ position: 'relative' }}>
-      <svg width={width} height={base + 50 * scale} viewBox={`0 0 ${width} ${base + 50 * scale}`} style={{ display: 'block', overflow: 'visible' }}>
+      <svg width={width} height={arrowY + 24 * scale} viewBox={`0 0 ${width} ${arrowY + 24 * scale}`} style={{ display: 'block', overflow: 'visible' }}>
         <line x1={0} x2={width} y1={base} y2={base} stroke={muted} strokeOpacity={0.5} strokeWidth={2} />
         {tiles.map((t, i) => {
           const isLast = i === n - 1
@@ -57,6 +63,19 @@ export function DominoDiagram({ count, start, end, width, height, ink, muted, ac
             </g>
           )
         })}
+        {hasTileLabels &&
+          tiles.map((t, i) => {
+            const txt = tileLabels[i]
+            if (!txt) return null
+            // Rótulo directo bajo cada ficha, alternando dos alturas para que no se pisen.
+            const fit = fitLabel(txt, 21 * scale, Math.max(90 * scale, (t.w + (gaps[i] ?? 0)) * 1.8))
+            const y = base + (i % 2 ? 50 : 24) * scale
+            return (
+              <text key={`l${i}`} x={t.x + t.w / 2} y={y} textAnchor="middle" fill={i === n - 1 ? accent : ink} style={{ fontFamily: LABEL_FONT, fontWeight: 700, fontSize: Math.min(fit.size, 21 * scale) }}>
+                {fit.lines.join(' ')}
+              </text>
+            )
+          })}
         <g stroke={ink} strokeWidth={3 * scale} fill="none" strokeLinecap="round">
           <line x1={first.x} y1={arrowY} x2={last.x + last.w} y2={arrowY} />
           <polyline points={`${last.x + last.w - 16 * scale},${arrowY - 10 * scale} ${last.x + last.w},${arrowY} ${last.x + last.w - 16 * scale},${arrowY + 10 * scale}`} />

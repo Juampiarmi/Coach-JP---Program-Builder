@@ -1,4 +1,5 @@
 import { ACCENT_HEX, BRAND, FONT_MONO, TEXT_SHADOW } from '../../../lib/brand'
+import { useAccent } from '../../../lib/accent'
 import type { CanvasState } from '../../../types'
 import { Paragraph } from '../Paragraph'
 
@@ -10,11 +11,12 @@ interface Props {
 
 /** Número masivo + subtítulo técnico + párrafo. */
 export function MetricTemplate({ state, fontFamily, scale }: Props) {
+  const A = useAccent()
   const value = state.metricValue.trim() || '—'
   const len = [...value].length
   // El número ocupa todo el ancho útil (904 px) sin desbordar.
   const size = Math.round(Math.min(340, Math.max(150, 1450 / Math.max(len, 3.6))) * scale)
-  const color = ACCENT_HEX[state.metricAccent]
+  const color = A.hex(ACCENT_HEX[state.metricAccent])
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <div

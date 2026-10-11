@@ -1,4 +1,5 @@
 import { BRAND, FONT_MONO } from '../../../lib/brand'
+import { useAccent } from '../../../lib/accent'
 import type { CanvasState } from '../../../types'
 import { Headline } from '../Headline'
 
@@ -13,6 +14,7 @@ interface Props {
 
 /** Manifiesto / cita táctica: la frase es la pieza. Barra naranja o comillas militares. */
 export function ManifestoTemplate({ state, fontFamily, fontSize, tracking, scale, gap = 1 }: Props) {
+  const A = useAccent()
   const author = state.manifestoAuthor.trim()
   const quotes = state.manifestoStyle === 'quotes'
   const phrase = (
@@ -31,7 +33,7 @@ export function ManifestoTemplate({ state, fontFamily, fontSize, tracking, scale
               fontSize: 190 * scale,
               lineHeight: 0.62,
               height: 104 * scale,
-              color: BRAND.orange,
+              color: A.orange,
               letterSpacing: '-0.08em',
             }}
           >
@@ -47,7 +49,7 @@ export function ManifestoTemplate({ state, fontFamily, fontSize, tracking, scale
               lineHeight: 0.62,
               height: 104 * scale,
               marginTop: 26 * scale,
-              color: BRAND.orange,
+              color: A.orange,
               textAlign: 'right',
               letterSpacing: '-0.08em',
             }}
@@ -61,9 +63,9 @@ export function ManifestoTemplate({ state, fontFamily, fontSize, tracking, scale
             style={{
               width: 12 * scale,
               flex: '0 0 auto',
-              background: BRAND.orange,
+              background: A.orange,
               borderRadius: 2,
-              boxShadow: `0 0 ${36 * scale}px rgba(234,88,12,.35)`,
+              boxShadow: `0 0 ${36 * scale}px rgba(${A.orangeRgb},.35)`,
             }}
           />
           <div style={{ minWidth: 0, flex: 1 }}>{phrase}</div>

@@ -46,7 +46,8 @@ export function RadarDiagram({ axes, values, compare, labelA, labelB, width, hei
           return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke={line} strokeWidth={2} />
         })}
         {cmp && <polygon points={poly(cmp)} fill="none" stroke={muted} strokeWidth={4 * scale} strokeDasharray={`${14 * scale} ${10 * scale}`} />}
-        <polygon points={poly(vals)} fill={accent} fillOpacity={0.16} stroke={accent} strokeWidth={6 * scale} strokeLinejoin="round" />
+        {/* Área de cobertura: relleno semitransparente del acento (20 %). */}
+        <polygon points={poly(vals)} fill={accent} fillOpacity={0.2} stroke={accent} strokeWidth={6 * scale} strokeLinejoin="round" />
         {vals.map((v, i) => {
           const [x, y] = pt(i, v)
           return <circle key={i} cx={x} cy={y} r={9 * scale} fill={accent} stroke={bg} strokeWidth={3 * scale} />
@@ -61,14 +62,14 @@ export function RadarDiagram({ axes, values, compare, labelA, labelB, width, hei
           const dy = sin > 0.3 ? 28 * scale : sin < -0.3 ? -36 * scale : -4 * scale
           return (
             <g key={name + i}>
-              <text x={x} y={y + dy - (sin < -0.3 ? (fits[i].lines.length - 1) * fits[i].size * 1.1 : 0)} textAnchor={anchor} fill={ink} style={{ fontFamily: LABEL_FONT, fontWeight: 700, fontSize: fits[i].size }}>
+              <text x={x} y={y + dy - (sin < -0.3 ? (fits[i].lines.length - 1) * fits[i].size * 1.1 : 0)} textAnchor={anchor} fill={ink} style={{ fontFamily: LABEL_FONT, fontWeight: 800, fontSize: fits[i].size }}>
                 {fits[i].lines.map((l, k) => (
                   <tspan key={k} x={x} dy={k ? fits[i].size * 1.1 : 0}>
                     {l}
                   </tspan>
                 ))}
               </text>
-              <text x={x} y={y + dy + 32 * scale + (sin < -0.3 ? 0 : (fits[i].lines.length - 1) * fits[i].size * 1.1)} textAnchor={anchor} fill={muted} style={{ fontFamily: MONO_FONT, fontSize: 23 * scale }}>
+              <text x={x} y={y + dy + 32 * scale + (sin < -0.3 ? 0 : (fits[i].lines.length - 1) * fits[i].size * 1.1)} textAnchor={anchor} fill={accent} style={{ fontFamily: MONO_FONT, fontWeight: 700, fontSize: 25 * scale }}>
                 {vals[i]}
               </text>
             </g>

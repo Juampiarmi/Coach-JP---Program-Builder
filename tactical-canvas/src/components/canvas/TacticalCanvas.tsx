@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ASPECTS, CONTRAST_GRADIENT, FONT_MONO, HEADLINE_FONTS, MONO_FILTER, TEXT_SHADOW } from '../../lib/brand'
-import type { CanvasState } from '../../types'
+import { ASPECTS, CONTRAST_GRADIENT, FONT_MONO, MONO_FILTER, TEXT_SHADOW } from '../../lib/brand'
+import { headlineType } from '../../lib/typography'
+import type { CanvasState, NudgeTarget } from '../../types'
 import { Footer } from './Footer'
 import { Headline } from './Headline'
 import { ChartTemplate } from './templates/ChartTemplate'
@@ -14,6 +15,7 @@ import { StructTemplate } from './templates/StructTemplate'
 import { BookmarkTemplate } from './templates/BookmarkTemplate'
 import { STRUCT_TEMPLATES } from '../../lib/structPillar'
 import { effectiveTheme, PALETTES } from '../../lib/theme'
+import { AccentSwapContext, swapHex } from '../../lib/accent'
 
 const SIDE = 88
 /**
@@ -28,7 +30,6 @@ const PAD = {
 /** Placa flotante: margen exterior y relleno interior (el texto queda alineado igual). */
 const PLATE_INSET = 44
 const PLATE_PAD_Y = 48
-const FONT_SIZE_FACTOR = { chakra: 1, barlow: 1.2, inter: 0.94, serif: 1.12 } as const
 const MIN_FIT = 0.55
 const FIT_SLACK = 12
 
@@ -140,7 +141,8 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const { mainRef, contentRef, fit, spread } = useAutoFit([state, hasBg], adaptive ? STORY_BOOST : 1, adaptive && state.template !== 'manifesto')
   const scale = baseScale * fit
   const pad = PAD[state.aspect]
-  const font = HEADLINE_FONTS[state.headlineFont]
+  // Tipografía del titular (fuente elegida o preset BRUTALIST / TACTICAL CLEAN / EDITORIAL).
+  const font = headlineType(state)
   const isStatement = state.template === 'statement'
   const isManifesto = state.template === 'manifesto'
   const isDiagram = state.template === 'diagram'
@@ -149,17 +151,28 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const centered = isStatement || isManifesto || isRepeat
   // Tema: Minimal Paper sólo en Diagrama / Repetición; 01–05 usan siempre la paleta Táctico Dark.
   const theme = effectiveTheme(state)
-  const palette = PALETTES[theme]
-  const headlineWeight = font.weight ?? 700
+  const swap = Boolean(state.accentSwap)
+  const basePalette = PALETTES[theme]
+  // SWAP ACCENT: naranja ⇄ cian en toda la placa (titular, tag, plantillas vía contexto).
+  const palette = swap ? { ...basePalette, accent: swapHex(basePalette.accent, true), tag: swapHex(basePalette.tag, true) } : basePalette
+  const headlineWeight = font.weight
   const contentWidth = w - SIDE * 2
 
   const headlineSize = Math.round(
     (isStory ? 86 : 78) *
-      FONT_SIZE_FACTOR[state.headlineFont] *
+      font.sizeFactor *
       (state.headlineScale / 100) *
       (isManifesto ? 1.45 : isStatement ? 1.3 : 1) *
       fit,
   )
+
+  /** Ajuste fino en el lienzo (arrastre / escala desde la vista previa). Sin ajuste no hay transform. */
+  const nudge = (t: NudgeTarget): React.CSSProperties => {
+    const n = state.nudge?.[t]
+    if (!n || (!n.x && !n.y && n.s === 1)) return {}
+    return { transform: `translate(${n.x}px, ${n.y}px) scale(${n.s})`, transformOrigin: 'center top' }
+  }
+  const vignette = Math.min(100, Math.max(0, state.bgVignette ?? 0)) / 100
 
   const tag = state.tag.trim()
   const bgGeo = bgGeometry(state, w, h)
@@ -191,6 +204,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
     : { left: SIDE, right: SIDE, top: pad.top, bottom: pad.bottom, padX: 0, padY: 0 }
 
   return (
+    <AccentSwapContext.Provider value={swap}>
     <div
       ref={ref}
       style={{
@@ -214,6 +228,16 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           />
           <div style={{ position: 'absolute', inset: 0, background: `rgba(${palette.overlayRgb},${state.bgOverlay / 100})` }} />
           {state.bgGradient && theme === 'dark' && <div style={{ position: 'absolute', inset: 0, background: CONTRAST_GRADIENT }} />}
+          {vignette > 0 && (
+            // Gradiente inferior + viñeta: oscurece la base (texto y firma) y los bordes.
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: `linear-gradient(180deg, rgba(${palette.overlayRgb},0) 30%, rgba(${palette.overlayRgb},${(0.96 * vignette).toFixed(3)}) 100%), radial-gradient(ellipse 85% 75% at 50% 42%, rgba(0,0,0,0) 55%, rgba(0,0,0,${(0.7 * vignette).toFixed(3)}) 100%)`,
+              }}
+            />
+          )}
         </div>
       )}
 
@@ -289,6 +313,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           >
             <div ref={contentRef} style={{ flexShrink: 0 }}>
               {isRepeat ? (
+                <div data-nudge="block" style={nudge('block')}>
                 <RepeatTemplate
                   state={state}
                   palette={palette}
@@ -299,7 +324,9 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                   maxHeight={(h - pad.top - pad.bottom) * (isStory ? 0.76 : 0.72)}
                   scale={scale}
                 />
+                </div>
               ) : isManifesto ? (
+                <div data-nudge="block" style={nudge('block')}>
                 <ManifestoTemplate
                   state={state}
                   fontFamily={font.family}
@@ -308,19 +335,24 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                   scale={scale}
                   gap={gap}
                 />
+                </div>
               ) : (
                 <>
-                  <Headline
-                    partA={state.headlineA}
-                    partB={state.headlineB}
-                    fontFamily={font.family}
-                    fontSize={headlineSize}
-                    tracking={font.tracking}
-                    ink={palette.ink}
-                    accent={palette.accent}
-                    fontWeight={headlineWeight}
-                  />
-                  <div style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale * gap + spread }}>
+                  <div data-nudge="headline" style={nudge('headline')}>
+                    <Headline
+                      partA={state.headlineA}
+                      partB={state.headlineB}
+                      fontFamily={font.family}
+                      fontSize={headlineSize}
+                      tracking={font.tracking}
+                      ink={palette.ink}
+                      accent={palette.accent}
+                      fontWeight={headlineWeight}
+                      lineHeight={font.lineHeight}
+                      newLine={state.remateNewLine !== false}
+                    />
+                  </div>
+                  <div data-nudge="block" style={{ marginTop: (isStatement ? 56 : isStory ? 80 : 54) * scale * gap * font.gapFactor + spread, ...nudge('block') }}>
                     {state.template === 'metric' && <MetricTemplate state={state} fontFamily={font.family} scale={scale} />}
                     {state.template === 'compare' && <CompareTemplate state={state} fontFamily={font.family} scale={scale} />}
                     {state.template === 'chart' && (
@@ -347,5 +379,6 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
         </div>
       </div>
     </div>
+    </AccentSwapContext.Provider>
   )
 })

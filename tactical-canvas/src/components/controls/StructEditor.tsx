@@ -47,25 +47,44 @@ export function StructEditor({ state, update }: Props) {
             <TextInput value={m.axisY} onChange={(axisY) => set('matrix', { ...m, axisY })} />
           </Field>
         </div>
-        {quads.map((q, i) => (
-          <div key={i} className="grid grid-cols-[1fr_1.6fr_auto] items-end gap-1.5">
-            <Field label={QUADRANT_LABEL[i]}>
-              <TextInput value={q.label} onChange={(label) => setQuad(i, { label })} uppercase />
-            </Field>
-            <Field label="Descripción">
-              <TextInput value={q.tag} onChange={(tag) => setQuad(i, { tag })} />
-            </Field>
-            <button
-              type="button"
-              onClick={() => set('matrix', { ...m, highlight: i })}
-              aria-pressed={m.highlight === i}
-              title="Cuadrante destacado"
-              className={`mb-px h-9 w-9 rounded-md border font-mono text-[12px] ${m.highlight === i ? 'border-fire bg-fire/15 text-fire' : 'border-line text-steel hover:text-white'}`}
-            >
-              ★
-            </button>
-          </div>
-        ))}
+        <Field label="Acento del cuadrante destacado" plain>
+          <Segmented<'orange' | 'cyan'>
+            value={m.highlightAccent ?? 'orange'}
+            onChange={(highlightAccent) => set('matrix', { ...m, highlightAccent })}
+            options={[
+              { value: 'orange', label: '🟧 NARANJA' },
+              { value: 'cyan', label: '🟦 CIAN' },
+            ]}
+            size="sm"
+          />
+        </Field>
+        {quads.map((q, i) => {
+          const on = m.highlight === i
+          return (
+            <div key={i} className={`space-y-1.5 rounded-md border p-2 ${on ? (m.highlightAccent === 'cyan' ? 'border-cyan/60 bg-cyan/5' : 'border-fire/60 bg-fire/5') : 'border-line'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[10px] tracking-[0.12em] text-steel uppercase">{QUADRANT_LABEL[i]}</span>
+                <button
+                  type="button"
+                  onClick={() => set('matrix', { ...m, highlight: i })}
+                  aria-pressed={on}
+                  className={`rounded-md border px-2 py-0.5 font-mono text-[9px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
+                    on ? (m.highlightAccent === 'cyan' ? 'border-cyan bg-cyan text-carbon' : 'border-fire bg-fire text-carbon') : 'border-line text-steel hover:text-white'
+                  }`}
+                >
+                  {on ? '★ DESTACADO' : '[ DESTACAR CUADRANTE ]'}
+                </button>
+              </div>
+              {/* Inputs a todo el ancho: "INVERSIÓN CLAVE" o "PLACEBO BARATO" se leen completos. */}
+              <Field label="Badge">
+                <TextInput value={q.label} onChange={(label) => setQuad(i, { label })} uppercase />
+              </Field>
+              <Field label="Descripción">
+                <TextInput value={q.tag} onChange={(tag) => setQuad(i, { tag })} />
+              </Field>
+            </div>
+          )
+        })}
       </>
     )
   }

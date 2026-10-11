@@ -1,4 +1,5 @@
 import { BRAND } from '../../../lib/brand'
+import { useAccent } from '../../../lib/accent'
 import { BOOKMARK_CTA } from '../../../lib/bookmark'
 import type { CanvasPalette } from '../../../lib/theme'
 import type { CanvasState, ThemeId } from '../../../types'
@@ -26,8 +27,9 @@ function BookmarkIcon({ w, h, color, bg }: { w: number; h: number; color: string
 
 /** Plantilla 12 · Placa de guardado / cheat sheet: ficha técnica de campo para la última placa. */
 export function BookmarkTemplate({ state, palette, theme, contentWidth, scale: s }: Props) {
+  const A = useAccent()
   const data = state.bookmarkData ?? { points: [], cta: BOOKMARK_CTA, accent: 'orange' as const }
-  const accent = data.accent === 'cyan' ? (theme === 'paper' ? '#0E7490' : BRAND.cyan) : palette.accent
+  const accent = data.accent === 'cyan' ? (theme === 'paper' ? A.hex('#0E7490') : A.cyan) : palette.accent
   const points = data.points.filter((p) => p.trim()).slice(0, 4)
   const isStory = state.aspect === 'story'
   const border = Math.max(1.5, 2 * s)

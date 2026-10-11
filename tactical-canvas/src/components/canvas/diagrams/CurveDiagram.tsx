@@ -38,7 +38,7 @@ export function CurveDiagram({ expected, real, goal, width, height, ink, muted, 
   const pole = 110 * scale
   const flagW = 62 * scale
   const text = (props: { x: number; y: number; anchor?: 'start' | 'middle' | 'end'; color: string; children: string; weight?: number }) => (
-    <text x={props.x} y={props.y} textAnchor={props.anchor ?? 'start'} fill={props.color} style={{ fontFamily: LABEL_FONT, fontWeight: props.weight ?? 600, fontSize: 26 * scale }}>
+    <text x={props.x} y={props.y} textAnchor={props.anchor ?? 'start'} fill={props.color} style={{ fontFamily: LABEL_FONT, fontWeight: props.weight ?? 700, fontSize: 34 * scale }}>
       {props.children}
     </text>
   )
@@ -47,15 +47,24 @@ export function CurveDiagram({ expected, real, goal, width, height, ink, muted, 
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ display: 'block', overflow: 'visible' }}>
-      <path d={smoothPath(chaos, 0.35)} fill="none" stroke={muted} strokeWidth={4 * scale} strokeLinecap="round" strokeLinejoin="round" />
-      <line x1={pivot.x} y1={pivot.y} x2={b.x} y2={b.y} stroke={accent} strokeWidth={8 * scale} strokeLinecap="round" />
+      <defs>
+        <filter id="traj-glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation={6 * scale} />
+        </filter>
+      </defs>
+      {/* Tramo caótico más visible (3 px) y recta limpia en acento con glow (4 px de núcleo). */}
+      <path d={smoothPath(chaos, 0.35)} fill="none" stroke={muted} strokeWidth={Math.max(3, 5 * scale)} strokeLinecap="round" strokeLinejoin="round" />
+      <line x1={pivot.x} y1={pivot.y} x2={b.x} y2={b.y} stroke={accent} strokeWidth={18 * scale} strokeLinecap="round" opacity={0.55} filter="url(#traj-glow)" />
+      <line x1={pivot.x} y1={pivot.y} x2={b.x} y2={b.y} stroke={accent} strokeWidth={Math.max(4, 9 * scale)} strokeLinecap="round" />
       <circle cx={a.x} cy={a.y} r={11 * scale} fill={muted} />
       <circle cx={pivot.x} cy={pivot.y} r={12 * scale} fill={accent} />
       <line x1={b.x} y1={b.y} x2={b.x} y2={b.y - pole} stroke={ink} strokeWidth={5 * scale} strokeLinecap="round" />
       <path d={`M${b.x},${b.y - pole} L${b.x + flagW},${b.y - pole + flagW * 0.32} L${b.x},${b.y - pole + flagW * 0.64} Z`} fill={accent} />
-      <circle cx={b.x} cy={b.y} r={9 * scale} fill={ink} />
+      {/* Nodo final destacado: anillo en acento alrededor de la meta. */}
+      <circle cx={b.x} cy={b.y} r={24 * scale} fill="none" stroke={accent} strokeWidth={4 * scale} />
+      <circle cx={b.x} cy={b.y} r={12 * scale} fill={accent} />
       {goal.trim() && text({ x: b.x - 16 * scale, y: b.y - pole + flagW * 0.42, anchor: 'end', color: ink, children: goal.trim(), weight: 700 })}
-      {expected.trim() && text({ x: (a.x + pivot.x) / 2, y: Math.max(26 * scale, top - 22 * scale), anchor: 'middle', color: muted, children: expected.trim() })}
+      {expected.trim() && text({ x: (a.x + pivot.x) / 2, y: Math.max(34 * scale, top - 24 * scale), anchor: 'middle', color: ink, children: expected.trim() })}
       {real.trim() && text({ x: midClean.x + 22 * scale, y: midClean.y + 46 * scale, color: accent, children: real.trim(), weight: 700 })}
     </svg>
   )

@@ -1,4 +1,5 @@
 import { BRAND, FONT_BODY, FONT_MONO } from '../../lib/brand'
+import { useAccent } from '../../lib/accent'
 import { ShieldLogo } from '../ShieldLogo'
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 
 /** Cita bibliográfica + firma de marca. */
 export function Footer({ citeMain, citeSub, scale, ink = BRAND.white, muted = BRAND.gray, line = BRAND.border }: Props) {
+  const A = useAccent()
   const main = citeMain.trim()
   const sub = citeSub.trim()
   return (
@@ -55,7 +57,7 @@ export function Footer({ citeMain, citeSub, scale, ink = BRAND.white, muted = BR
               lineHeight: 1.1,
             }}
           >
-            COACH <span style={{ color: BRAND.orange }}>JP</span>
+            COACH <span style={{ color: A.orange }}>JP</span>
           </p>
           <p style={{ margin: `${6 * scale}px 0 0`, fontFamily: FONT_MONO, fontSize: 19 * scale, color: muted }}>
             @coachjp.training

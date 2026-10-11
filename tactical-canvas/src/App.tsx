@@ -19,7 +19,7 @@ import { CaptionBar } from './components/CaptionBar'
 import { useBackgroundImage } from './hooks/useBackgroundImage'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { usePersistentState } from './hooks/usePersistentState'
-import type { AspectId, CanvasState } from './types'
+import type { AspectId, CanvasState, Nudge, NudgeTarget } from './types'
 
 const STORAGE_KEY = 'jp-tactical-canvas:v3'
 
@@ -41,6 +41,22 @@ const GLOBAL_KEYS = [
   'contentAlign',
   'contentGap',
   'theme',
+] as const
+
+/** Lo que replica [ 📋 COPIAR ESTILO ]: tipografía, viñeta / contraste de la foto y paleta de acentos. */
+const STYLE_KEYS = [
+  'headlineFont',
+  'headlineScale',
+  'typePreset',
+  'remateNewLine',
+  'bgVignette',
+  'bgOverlay',
+  'bgGradient',
+  'bgMono',
+  'accentSwap',
+  'metricAccent',
+  'diagramAccent',
+  'repeatAccent',
 ] as const
 
 interface Deck {
@@ -108,6 +124,35 @@ export default function App() {
     [setDeck],
   )
   const reset = useCallback(() => setDeck(DEFAULT_DECK), [setDeck])
+  /** [ 📋 COPIAR ESTILO A TODAS LAS PLACAS ]: tipografía, viñeta y paleta de acentos de la placa activa. */
+  const copyStyle = useCallback(
+    () =>
+      setDeck((d) => {
+        const src = { ...DEFAULT_STATE, ...d.slides[Math.min(d.active, d.slides.length - 1)] }
+        const style: Partial<CanvasState> = {}
+        for (const k of STYLE_KEYS) Object.assign(style, { [k]: src[k] })
+        return { ...d, slides: d.slides.map((s) => ({ ...s, ...style })) }
+      }),
+    [setDeck],
+  )
+  /** Ajuste fino desde el lienzo (null = volver a la posición y escala original). */
+  const nudge = useCallback(
+    (target: NudgeTarget, n: Nudge | null) =>
+      setDeck((d) => {
+        const i = Math.min(d.active, d.slides.length - 1)
+        return {
+          ...d,
+          slides: d.slides.map((s, j) => {
+            if (j !== i) return s
+            const next = { ...s.nudge }
+            if (n) next[target] = n
+            else delete next[target]
+            return { ...s, nudge: Object.keys(next).length ? next : undefined }
+          }),
+        }
+      }),
+    [setDeck],
+  )
 
   const applyGeneration = useCallback(
     (r: GenerationResult, meta?: { topic: string; discipline: Discipline }) =>
@@ -301,6 +346,8 @@ export default function App() {
         slideIndex={active}
         topic={deck.topic?.trim() || `${slides[0].headlineA} ${slides[0].headlineB}`.replace(/\*/g, '').trim()}
         bookmarkAuto={bookmarkAuto}
+        onCopyStyle={copyStyle}
+        slideCount={slides.length}
       />
     </>
   )
@@ -351,7 +398,7 @@ export default function App() {
             </div>
           </div>
           <div className="min-h-0 flex-1 p-6">
-            <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} />
+            <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
           </div>
           <div className="mx-auto flex w-full max-w-xl flex-col gap-2 px-6 pb-6">
             <CaptionBar caption={caption} onChange={setCaption} />
@@ -374,7 +421,7 @@ export default function App() {
       </div>
       <div className="border-b border-line px-4 py-2">{slideBar}</div>
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
-        <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} />
+        <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
       </main>
 
       <section

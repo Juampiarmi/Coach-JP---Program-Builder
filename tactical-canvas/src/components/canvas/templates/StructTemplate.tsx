@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import { useAccent } from '../../../lib/accent'
 import { BRAND } from '../../../lib/brand'
 import { resolveStructData } from '../../../lib/structPillar'
 import type { CanvasPalette } from '../../../lib/theme'
@@ -56,96 +57,94 @@ function Badge({ children, color, solid, look }: { children: ReactNode; color: s
 /** 08 · Matriz 2x2: dos ejes perpendiculares y cuatro cuadrantes con badge y descripción. */
 function Matrix({ data, look }: { data: StructData['matrix']; look: Look }) {
   const { palette, scale: s } = look
-  const gutter = 58 * s
+  // Eje Y con rótulos horizontales (sin rotar): ▲ ALTO + nombre arriba, BAJO ▼ abajo.
+  const header = 46 * s
+  const gutter = 34 * s
   const gridW = look.width - gutter
-  const gridH = (look.story ? 820 : 560) * s
+  const gridH = (look.story ? 800 : 540) * s
   const gap = 12 * s
   const qW = (gridW - gap) / 2
   const qH = (gridH - gap) / 2
   const axis = palette.muted
   const stroke = Math.max(2, 3 * s)
   const head = 14 * s
-  const small = { fontFamily: MONO_FONT, fontSize: 17 * s, letterSpacing: '0.16em', color: palette.muted, fontWeight: 600 } as const
-  const axisName = { fontFamily: MONO_FONT, fontSize: 21 * s, letterSpacing: '0.14em', color: palette.ink, fontWeight: 700, textTransform: 'uppercase' } as const
+  const ax = gutter - 14 * s
+  const small = { fontFamily: MONO_FONT, fontSize: 20 * s, letterSpacing: '0.14em', color: palette.ink, fontWeight: 700, whiteSpace: 'nowrap' } as const
+  const axisName = { fontFamily: MONO_FONT, fontSize: 22 * s, letterSpacing: '0.12em', color: palette.ink, fontWeight: 700, textTransform: 'uppercase', whiteSpace: 'nowrap' } as const
   const quads = [0, 1, 2, 3].map((i) => data.quadrants[i] ?? { label: '', tag: '' })
+  const hiColor = data.highlightAccent === 'cyan' ? look.ok : palette.accent
+  const padX = 24 * s
 
   return (
-    <div style={{ position: 'relative', width: look.width, height: gridH + gutter }}>
-      {/* Eje Y (izquierda, hacia arriba) y eje X (abajo, hacia la derecha) */}
-      <svg width={look.width} height={gridH + gutter} style={{ position: 'absolute', inset: 0, overflow: 'visible' }} aria-hidden>
+    <div style={{ position: 'relative', width: look.width, height: header + gridH + gutter + 30 * s }}>
+      <svg width={look.width} height={header + gridH + gutter} style={{ position: 'absolute', inset: 0, overflow: 'visible' }} aria-hidden>
         <g stroke={axis} strokeWidth={stroke} fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <line x1={gutter - 14 * s} y1={gridH + 14 * s} x2={gutter - 14 * s} y2={0} />
-          <polyline points={`${gutter - 14 * s - head * 0.7},${head} ${gutter - 14 * s},0 ${gutter - 14 * s + head * 0.7},${head}`} />
-          <line x1={gutter - 14 * s} y1={gridH + 14 * s} x2={look.width} y2={gridH + 14 * s} />
-          <polyline points={`${look.width - head},${gridH + 14 * s - head * 0.7} ${look.width},${gridH + 14 * s} ${look.width - head},${gridH + 14 * s + head * 0.7}`} />
+          <line x1={ax} y1={header + gridH + 14 * s} x2={ax} y2={header} />
+          <polyline points={`${ax - head * 0.7},${header + head} ${ax},${header} ${ax + head * 0.7},${header + head}`} />
+          <line x1={ax} y1={header + gridH + 14 * s} x2={look.width} y2={header + gridH + 14 * s} />
+          <polyline points={`${look.width - head},${header + gridH + 14 * s - head * 0.7} ${look.width},${header + gridH + 14 * s} ${look.width - head},${header + gridH + 14 * s + head * 0.7}`} />
         </g>
       </svg>
-      {/* Nombre del eje Y (vertical) con extremos BAJO / ALTO */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          width: gridH,
-          height: gutter - 22 * s,
-          transform: `translateY(${gridH}px) rotate(-90deg)`,
-          transformOrigin: 'top left',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: `0 ${26 * s}px`,
-          boxSizing: 'border-box',
-        }}
-      >
-        <span style={small}>BAJO</span>
+      {/* Eje Y: nombre y extremo ALTO arriba, en horizontal */}
+      <div style={{ position: 'absolute', left: 0, top: 0, height: header - 10 * s, display: 'flex', alignItems: 'center', gap: 14 * s }}>
+        <span style={{ ...small, color: hiColor }}>▲ ALTO</span>
         <span style={axisName}>{data.axisY}</span>
-        <span style={small}>ALTO</span>
       </div>
-      {/* Nombre del eje X con extremos BAJO / ALTO */}
-      <div
-        style={{
-          position: 'absolute',
-          left: gutter,
-          right: 0,
-          top: gridH + 26 * s,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingRight: 24 * s,
-        }}
-      >
-        <span style={small}>BAJO</span>
+      {/* Eje X con extremos BAJO ▼ / ALTO ▶ */}
+      <div style={{ position: 'absolute', left: 0, right: 0, top: header + gridH + 26 * s, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 * s }}>
+        <span style={small}>BAJO ▼</span>
         <span style={axisName}>{data.axisX}</span>
-        <span style={small}>ALTO</span>
+        <span style={{ ...small, color: hiColor }}>ALTO ▶</span>
       </div>
       {quads.map((q, i) => {
         const on = i === data.highlight
+        // Pastilla con auto-fit: el cuerpo se ajusta al ancho del cuadrante (nunca comprimida ni cortada).
+        const label = q.label.trim().toUpperCase()
+        const badgeSize = Math.min(26 * s, (qW - padX * 2 - 28 * s) / Math.max(4, label.length * 0.7))
         return (
           <div
             key={i}
             style={{
               position: 'absolute',
               left: gutter + (i % 2) * (qW + gap),
-              top: Math.floor(i / 2) * (qH + gap),
+              top: header + Math.floor(i / 2) * (qH + gap),
               width: qW,
               height: qH,
               boxSizing: 'border-box',
-              background: look.fill,
-              border: `${Math.max(1.5, 2 * s)}px solid ${on ? palette.accent : palette.line}`,
+              background: on ? `${hiColor}1A` : look.fill,
+              border: `${Math.max(2, (on ? 3 : 2) * s)}px solid ${on ? hiColor : palette.line}`,
               borderRadius: 14 * s,
-              padding: `${26 * s}px ${24 * s}px`,
+              padding: `${24 * s}px ${padX}px`,
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'space-between',
               gap: 12 * s,
+              boxShadow: on ? `0 0 ${36 * s}px ${hiColor}33` : undefined,
             }}
           >
             <div>
-              <Badge color={on ? palette.accent : palette.ink} solid={on} look={look}>
-                {q.label}
-              </Badge>
+              <span
+                style={{
+                  display: 'inline-block',
+                  maxWidth: '100%',
+                  fontFamily: MONO_FONT,
+                  fontWeight: 700,
+                  fontSize: badgeSize,
+                  letterSpacing: '0.06em',
+                  lineHeight: 1.15,
+                  padding: `${7 * s}px ${14 * s}px`,
+                  borderRadius: 999,
+                  border: `${Math.max(1.5, 2 * s)}px solid ${on ? hiColor : palette.ink}`,
+                  background: on ? hiColor : 'transparent',
+                  color: on ? palette.bg : palette.ink,
+                  whiteSpace: 'nowrap',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {label}
+              </span>
             </div>
-            <p style={{ margin: 0, fontFamily: LABEL_FONT, fontWeight: 600, fontSize: 27 * s, lineHeight: 1.28, color: on ? palette.ink : palette.muted, textWrap: 'pretty' }}>
+            <p style={{ margin: 0, fontFamily: LABEL_FONT, fontWeight: 600, fontSize: 31 * s, lineHeight: 1.25, color: on ? palette.ink : palette.muted, textWrap: 'pretty' }}>
               {q.tag}
             </p>
           </div>
@@ -327,8 +326,9 @@ function Checklist({ data, look }: { data: StructData['checklist']; look: Look }
 
 /** Plantillas 08–11 · estructuras tácticas. Sólo dibujan los datos de la placa (IA o editados). */
 export function StructTemplate({ state, palette, theme, contentWidth, scale }: Props) {
+  const A = useAccent()
   const data = resolveStructData(state)
-  const look: Look = { palette, fill: FILL[theme], ok: OK[theme], err: palette.accent, width: contentWidth, scale, story: state.aspect === 'story' }
+  const look: Look = { palette, fill: FILL[theme], ok: A.hex(OK[theme]), err: palette.accent, width: contentWidth, scale, story: state.aspect === 'story' }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', textShadow: 'none' }}>
       {state.template === 'matrix' && <Matrix data={data.matrix} look={look} />}

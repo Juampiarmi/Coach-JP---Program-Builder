@@ -1,6 +1,6 @@
 export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark'
 export type ThemeId = 'dark' | 'paper'
-export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve'
+export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve' | 'funnel' | 'versus'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
 export type RepeatAccent = 'white' | 'orange' | 'cyan'
 export type RepeatMode = 'diagonal' | 'echo' | 'kinetic' | 'justified'
@@ -9,16 +9,35 @@ export type ContentAlign = 'auto' | 'top' | 'center' | 'bottom'
 export type AspectId = 'feed' | 'story'
 export type Accent = 'orange' | 'cyan' | 'gold' | 'white' | 'gray'
 export type HeadlineFont = 'chakra' | 'barlow' | 'inter' | 'serif'
+/** Presets tipográficos rápidos (none = la fuente y medidas elegidas a mano) */
+export type TypePreset = 'none' | 'brutalist' | 'tactical' | 'editorial'
+/** Diagonal de la plantilla 07: ↘ arranca arriba a la izquierda, ↗ abajo a la izquierda */
+export type RepeatDirection = 'down' | 'up'
+
+/** Ajuste fino sobre el lienzo (arrastre / escala con la caja de selección). */
+export interface Nudge {
+  /** Desplazamiento en px del lienzo nativo (1080 de ancho) */
+  x: number
+  y: number
+  /** Escala 0.6–1.6 */
+  s: number
+}
+export type NudgeTarget = 'headline' | 'block'
 
 /** Datos dinámicos de la plantilla 06 · Diagrama (por placa). */
 export interface DiagramData {
   /** Ejes y valores 0–100 separados por coma; serie comparativa opcional ("" = sin comparación) */
   radar: { axes: string; values: string; compare: string; labelA: string; labelB: string }
-  domino: { count: number; start: string; end: string }
+  /** labels: un rótulo opcional por ficha (uno por línea) */
+  domino: { count: number; start: string; end: string; labels?: string }
   /** Divisiones por círculo ("1, 3, 12") y un texto por línea (4 círculos) */
   circles: { divisions: string; captions: string }
   /** Trayectoria «ruido vs claridad» */
   trajectory: { noise: string; clarity: string; goal: string }
+  /** Embudo táctico: 3–4 niveles (uno por línea), de lo general a lo seleccionado */
+  funnel?: { levels: string }
+  /** VS binario: dos columnas enfrentadas con ítems (uno por línea) */
+  versus?: { leftTitle: string; rightTitle: string; left: string; right: string }
 }
 
 /** Plantillas 08–11 · estructuras tácticas (por placa). */
@@ -30,7 +49,7 @@ export interface MatrixQuadrant {
 }
 export interface StructData {
   /** 08 · Matriz 2x2: cuadrantes en orden sup-izq, sup-der, inf-izq, inf-der; highlight = cuadrante destacado */
-  matrix: { axisX: string; axisY: string; quadrants: MatrixQuadrant[]; highlight: number }
+  matrix: { axisX: string; axisY: string; quadrants: MatrixQuadrant[]; highlight: number; highlightAccent?: 'orange' | 'cyan' }
   /** 09 · Pipeline: 3 o 4 pasos */
   pipeline: { steps: { title: string; desc: string }[]; dir: 'vertical' | 'horizontal' }
   /** 10 · Pirámide: 3 o 4 estratos, el primero es la base */
@@ -55,7 +74,8 @@ export interface CompareCard {
 }
 
 export type ChartMode = 'curve' | 'bars' | 'gauge'
-export type CurveShape = 'bell' | 'rise' | 'fall' | 'plateau'
+/** returns: rendimientos decrecientes (asintótica) — retorno de inversión / evidencia */
+export type CurveShape = 'bell' | 'rise' | 'fall' | 'plateau' | 'returns'
 
 /** Gráfico simplificado: todo se define con pocos inputs. */
 export interface ChartConfig {
@@ -89,6 +109,13 @@ export interface CanvasState {
   aspect: AspectId
   headlineFont: HeadlineFont
   headlineScale: number
+  /** El remate arranca siempre en un renglón nuevo (evita que su primera palabra cuelgue del titular) */
+  remateNewLine: boolean
+  typePreset: TypePreset
+  /** Intercambia naranja ⇄ cian en toda la placa */
+  accentSwap: boolean
+  /** Ajuste fino en el lienzo del titular y del bloque central */
+  nudge?: Partial<Record<NudgeTarget, Nudge>>
   tag: string
   headlineA: string
   headlineB: string
@@ -116,6 +143,8 @@ export interface CanvasState {
   /** Encuadre de la foto: zoom 100–160 %, desplazamiento -50…+50 % */
   /** Degradé oscuro de contraste sobre la foto */
   bgGradient: boolean
+  /** Gradiente inferior / viñeta sobre la foto (0–100) */
+  bgVignette: number
   /** Tratamiento táctico B/N de la foto */
   bgMono: boolean
   bgZoom: number
@@ -145,6 +174,13 @@ export interface CanvasState {
   /** Eco con jerarquía: tamaño de la frase central (% de las demás) y banda oscura detrás */
   repeatCenterScale: number
   repeatBand: boolean
+  repeatDirection: RepeatDirection
+  /** Giro del bloque completo (−30° a +30°) */
+  repeatTilt: number
+  /** Eco: palabra clave de la frase central que va en acento */
+  repeatKeyword: string
+  /** Kinetic: desplazamiento escalonado −10 % / 0 / +10 % */
+  repeatStagger: boolean
   // Layout
   contentAlign: ContentAlign
   /** Separación titular → bloque de plantilla, en % del valor base */

@@ -16,6 +16,8 @@ const SETS: Record<DiagramPillar, DiagramData> = {
     domino: { count: 7, start: 'Déficit calórico crónico', end: 'Pérdida de fuerza y masa' },
     circles: { divisions: '1, 3, 12', captions: 'Calorías base\nProteína (2g/kg)\nCarbohidratos intra\nTiming y digestión' },
     trajectory: { noise: 'Hipoglucemia / Fatiga', clarity: 'Glucógeno estable', goal: 'Rendimiento óptimo' },
+    funnel: { levels: 'Suplementos en el mercado\nCon estudios en humanos\nMetaanálisis consistentes\nCreatina · Cafeína' },
+    versus: { leftTitle: 'MARKETING', rightTitle: 'EVIDENCIA', left: 'Quemadores de grasa\nDetox de 3 días\nBCAA con proteína suficiente', right: 'Déficit sostenido\nProteína 1,6–2,2 g/kg\nCreatina 3–5 g/día' },
   },
   strength: {
     radar: {
@@ -28,6 +30,8 @@ const SETS: Record<DiagramPillar, DiagramData> = {
     domino: { count: 7, start: 'Sobrecarga progresiva', end: 'Adaptación miofibrilar' },
     circles: { divisions: '1, 3, 12', captions: 'Macrociclo\nMesociclos\nMicrociclos\nEsta sesión' },
     trajectory: { noise: 'Rutinas al azar', clarity: 'Progresión planificada', goal: 'Nuevo 1RM' },
+    funnel: { levels: 'Ejercicios posibles\nEstímulo alto / fatiga baja\nProgresables en carga\nTus 4 básicos' },
+    versus: { leftTitle: 'MITO', rightTitle: 'REALIDAD', left: 'Hay que llegar al fallo siempre\nMás series = más músculo\nSin dolor no hay ganancia', right: 'RIR 1–2 alcanza\nVentana de 10–18 series\nEl DOMS no mide el estímulo' },
   },
   crossfit: {
     radar: {
@@ -40,6 +44,8 @@ const SETS: Record<DiagramPillar, DiagramData> = {
     domino: { count: 7, start: 'Pacing sostenible', end: 'Mejor split final' },
     circles: { divisions: '1, 8, 16', captions: 'La carrera\nLos 8 tramos\nLas estaciones\nEste split' },
     trajectory: { noise: 'Salida a fondo / Lactato', clarity: 'Pacing sostenido', goal: 'Mejor tiempo' },
+    funnel: { levels: 'Estaciones del circuito\nLimitantes reales\nTransiciones lentas\nTu prioridad del bloque' },
+    versus: { leftTitle: 'MITO', rightTitle: 'REALIDAD', left: 'Salir a fondo y aguantar\nEntrenar siempre al máximo\nMás volumen = mejor tiempo', right: 'Pacing negativo\n80 % del volumen en Z2\nTransiciones entrenadas' },
   },
 }
 
@@ -66,7 +72,7 @@ export function inferPillar(discipline: Discipline, ...texts: string[]): Diagram
 /** Copia nueva de los datos por defecto de un pilar (cada placa edita la suya). */
 export function diagramDefaults(pillar: DiagramPillar): DiagramData {
   const s = SETS[pillar]
-  return { radar: { ...s.radar }, domino: { ...s.domino }, circles: { ...s.circles }, trajectory: { ...s.trajectory } }
+  return { radar: { ...s.radar }, domino: { ...s.domino }, circles: { ...s.circles }, trajectory: { ...s.trajectory }, funnel: { ...s.funnel! }, versus: { ...s.versus! } }
 }
 
 /** Textos de la placa que sirven para deducir el tema, de mayor a menor peso. */
@@ -74,7 +80,13 @@ export const slideText = (s: Pick<CanvasState, 'tag' | 'headlineA' | 'headlineB'
 
 /** Datos que dibuja el diagrama: los de la placa o, si nunca se cargaron, los del pilar del tema. */
 export function resolveDiagramData(state: CanvasState, discipline: Discipline = 'general'): DiagramData {
-  return state.diagramData ?? diagramDefaults(inferPillar(discipline, ...slideText(state)))
+  const fb = () => diagramDefaults(inferPillar(discipline, ...slideText(state)))
+  const d = state.diagramData
+  if (!d) return fb()
+  // Placas guardadas antes del embudo / VS binario: esas variantes toman los datos del pilar.
+  if (d.funnel && d.versus) return d
+  const f = fb()
+  return { ...d, funnel: d.funnel ?? f.funnel, versus: d.versus ?? f.versus }
 }
 
 // ---------------------------------------------------------------------------

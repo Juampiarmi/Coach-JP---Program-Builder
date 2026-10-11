@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
 import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
-import type { Accent, CanvasState, ContentAlign, DiagramData, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
+import type { Accent, RepeatDirection, TypePreset, CanvasState, ContentAlign, DiagramData, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
 import { DIAGRAM_ACCENT_HEX, DIAGRAM_ACCENT_LABEL, PAPER_TEMPLATES, REPEAT_ACCENT_LABEL, THEME_LABEL } from '../../lib/theme'
 import { RadarEditor } from './RadarEditor'
 import { CHART_BY_DISCIPLINE, isCadenceSample } from '../../lib/chartPillar'
@@ -12,6 +12,7 @@ import { STRUCT_TEMPLATES, structDefaults } from '../../lib/structPillar'
 import { StructEditor } from './StructEditor'
 import { BookmarkEditor } from './BookmarkEditor'
 import { CitationSuggester, HookGenerator } from './AiAssist'
+import { TYPE_PRESETS } from '../../lib/typography'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 const isStruct = (t: TemplateId) => (STRUCT_TEMPLATES as readonly string[]).includes(t)
@@ -36,6 +37,8 @@ const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
   { value: 'circles', label: 'CÍRCULOS' },
   { value: 'domino', label: 'DOMINÓ' },
   { value: 'curve', label: 'TRAYECTORIA' },
+  { value: 'funnel', label: 'EMBUDO' },
+  { value: 'versus', label: 'VS BINARIO' },
 ]
 
 const REPEAT_MODE_HINT: Record<RepeatMode, string> = {
@@ -79,9 +82,12 @@ interface Props {
   topic: string
   /** Viñetas extraídas automáticamente del carrusel para la placa de guardado */
   bookmarkAuto: string[]
+  /** Copia tipografía, viñeta y acentos de esta placa a todas las del set */
+  onCopyStyle?: () => void
+  slideCount?: number
 }
 
-export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto }: Props) {
+export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1 }: Props) {
   const ai = { state, update, topic, discipline: getDiscipline() }
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
@@ -216,9 +222,41 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
           </div>
         </div>
+        <p className="-mt-1 font-mono text-[9px] tracking-wider text-steel/60">↵ Enter = salto de línea forzado · *palabra* invierte color</p>
+        <Toggle label="↵ Remate en renglón nuevo" checked={state.remateNewLine !== false} onChange={(remateNewLine) => update({ remateNewLine })} />
         {slideIndex === 0 && <HookGenerator {...ai} />}
         </>
         )}
+        <Field label="Preset tipográfico" plain>
+          <div className="grid grid-cols-3 gap-1.5">
+            {TYPE_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                title={p.hint}
+                onClick={() => update({ typePreset: state.typePreset === p.id ? 'none' : (p.id as TypePreset) })}
+                aria-pressed={state.typePreset === p.id}
+                className={`rounded-md border px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider whitespace-nowrap transition ${
+                  state.typePreset === p.id ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-line text-steel hover:text-white'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <button
+          type="button"
+          onClick={() => update({ accentSwap: !state.accentSwap })}
+          aria-pressed={Boolean(state.accentSwap)}
+          title="Alterna naranja ⇄ cian en toda la placa"
+          className={`flex w-full items-center justify-center gap-2 rounded-md border py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] transition ${
+            state.accentSwap ? 'border-cyan/70 bg-cyan/10 text-cyan' : 'border-fire/60 bg-fire/10 text-fire'
+          }`}
+        >
+          <span className="size-3 rounded-sm" style={{ background: state.accentSwap ? '#38BDF8' : '#EA580C' }} />
+          [ ⚡ SWAP ACCENT · {state.accentSwap ? 'CIAN' : 'NARANJA'} ]
+        </button>
         {state.template === 'repeat' ? null : state.template === 'manifesto' ? (
           <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
         ) : (
@@ -334,6 +372,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                     { value: 'rise', label: '↗ SUBE' },
                     { value: 'fall', label: '↘ CAE' },
                     { value: 'plateau', label: '▔ MESETA' },
+                    { value: 'returns', label: '⌒ RETORNO' },
                   ]}
                   size="sm"
                 />
@@ -477,7 +516,31 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                     <TextInput value={diagram.domino.end} onChange={(end) => setDiagram('domino', { end })} />
                   </Field>
                 </div>
+                <Field label="Rótulo por ficha" hint="uno por línea · opcional">
+                  <TextArea value={diagram.domino.labels ?? ''} onChange={(labels) => setDiagram('domino', { labels })} rows={3} />
+                </Field>
               </>
+            )}
+            {state.diagramKind === 'funnel' && diagram.funnel && (
+              <Field label="Niveles del embudo" hint="3 o 4 · uno por línea, de lo general a lo seleccionado">
+                <TextArea value={diagram.funnel.levels} onChange={(levels) => setDiagram('funnel', { levels })} rows={4} />
+              </Field>
+            )}
+            {state.diagramKind === 'versus' && diagram.versus && (
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Columna izquierda · ✗">
+                  <TextInput value={diagram.versus.leftTitle} onChange={(leftTitle) => setDiagram('versus', { leftTitle })} uppercase placeholder="MITO" />
+                </Field>
+                <Field label="Columna derecha · ✓">
+                  <TextInput value={diagram.versus.rightTitle} onChange={(rightTitle) => setDiagram('versus', { rightTitle })} uppercase placeholder="REALIDAD" />
+                </Field>
+                <Field label="Ítems ✗" hint="uno por línea">
+                  <TextArea value={diagram.versus.left} onChange={(left) => setDiagram('versus', { left })} rows={4} />
+                </Field>
+                <Field label="Ítems ✓" hint="uno por línea">
+                  <TextArea value={diagram.versus.right} onChange={(right) => setDiagram('versus', { right })} rows={4} />
+                </Field>
+              </div>
             )}
             {state.diagramKind === 'curve' && (
               <div className="grid grid-cols-3 gap-2">
@@ -525,8 +588,32 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             >
               <TextArea value={state.repeatPhrase} onChange={(repeatPhrase) => update({ repeatPhrase })} rows={3} />
             </Field>
+            {state.repeatMode === 'diagonal' && (
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Orientación" plain>
+                  <Segmented<RepeatDirection>
+                    value={state.repeatDirection ?? 'down'}
+                    onChange={(repeatDirection) => update({ repeatDirection })}
+                    options={[
+                      { value: 'up', label: '↗ ASCENDENTE' },
+                      { value: 'down', label: '↘ DESCENDENTE' },
+                    ]}
+                    size="sm"
+                  />
+                </Field>
+                <Field label="Giro del bloque">
+                  <Range value={state.repeatTilt ?? 0} onChange={(repeatTilt) => update({ repeatTilt })} min={-30} max={30} step={1} suffix="°" />
+                </Field>
+              </div>
+            )}
+            {state.repeatMode === 'kinetic' && (
+              <Toggle label="Desplazamiento escalonado (−10 % / 0 / +10 %)" checked={state.repeatStagger !== false} onChange={(repeatStagger) => update({ repeatStagger })} />
+            )}
             {state.repeatMode === 'echo' && (
               <>
+                <Field label="Palabra clave en acento" hint="de la frase central · opcional">
+                  <TextInput value={state.repeatKeyword ?? ''} onChange={(repeatKeyword) => update({ repeatKeyword })} uppercase placeholder="EJ: CONTRA" />
+                </Field>
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Repeticiones">
                     <Range value={state.repeatCount} onChange={(repeatCount) => update({ repeatCount })} min={3} max={9} step={2} />
@@ -633,6 +720,9 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             </Field>
             <Toggle label="[ Tratamiento táctico B/N ]" checked={state.bgMono} onChange={(bgMono) => update({ bgMono })} />
             <Toggle label="Gradiente de contraste" checked={state.bgGradient} onChange={(bgGradient) => update({ bgGradient })} />
+            <Field label="🌑 Gradiente inferior / viñeta">
+              <Range value={state.bgVignette ?? 0} onChange={(bgVignette) => update({ bgVignette })} min={0} max={100} step={5} suffix="%" />
+            </Field>
             <Toggle label="Placa sólida flotante" checked={state.floatingPlate} onChange={(floatingPlate) => update({ floatingPlate })} />
             <div className="space-y-2 rounded-lg border border-line bg-surface-2/60 p-2.5">
               <div className="flex items-center justify-between">
@@ -723,13 +813,28 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         </Field>
         <Segmented<HeadlineFont>
           value={state.headlineFont}
-          onChange={(headlineFont) => update({ headlineFont })}
+          onChange={(headlineFont) => update({ headlineFont, typePreset: 'none' })}
           options={(Object.keys(HEADLINE_FONTS) as HeadlineFont[]).map((k) => ({ value: k, label: HEADLINE_FONTS[k].label }))}
           size="sm"
         />
         <Field label="Escala del titular">
           <Range value={state.headlineScale} onChange={(headlineScale) => update({ headlineScale })} min={60} max={140} step={2} suffix="%" />
         </Field>
+        {state.nudge && Object.keys(state.nudge).length > 0 && (
+          <button type="button" onClick={() => update({ nudge: undefined })} className="w-full rounded-md border border-line py-1.5 font-mono text-[10px] tracking-[0.12em] text-steel transition hover:border-cyan/50 hover:text-cyan">
+            [ ⟲ RESTABLECER AJUSTES DEL LIENZO ]
+          </button>
+        )}
+        {onCopyStyle && slideCount > 1 && (
+          <button
+            type="button"
+            onClick={onCopyStyle}
+            title="Replica tipografía, viñeta y paleta de acentos de esta placa en todas las del set"
+            className="w-full rounded-md border border-cyan/50 bg-cyan/5 py-2 font-mono text-[10px] font-semibold tracking-[0.12em] text-cyan transition hover:bg-cyan/10"
+          >
+            [ 📋 COPIAR ESTILO A TODAS LAS PLACAS ]
+          </button>
+        )}
       </Section>
     </div>
   )

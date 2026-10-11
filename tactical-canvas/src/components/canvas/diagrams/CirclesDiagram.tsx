@@ -14,7 +14,7 @@ function wedge(cx: number, cy: number, r: number, a0: number, a1: number) {
  * Círculos fraccionados: el objetivo entero, luego dividido en partes cada vez más chicas
  * y, al final, una sola fracción destacada ("lo de hoy").
  */
-export function CirclesDiagram({ divisions, captions, width, height, ink, muted, accent, scale }: Props) {
+export function CirclesDiagram({ divisions, captions, width, height, ink, muted, accent, bg, scale }: Props) {
   const divs = toNumbers(divisions)
     .map((d) => Math.max(1, Math.min(48, Math.round(d))))
     .slice(0, 4)
@@ -22,8 +22,9 @@ export function CirclesDiagram({ divisions, captions, width, height, ink, muted,
   const circles = [...divs, divs[divs.length - 1]] // el último se repite con una fracción resaltada
   const texts = toList(captions.replace(/\n/g, ';'))
   const c = circles.length
-  const gap = 58 * scale
-  const captionH = 90 * scale
+  const gap = 30 * scale
+  const captionH = 110 * scale
+  // Círculos más grandes: menos aire entre ellos (el ancho útil es el límite).
   const D = Math.min((width - gap * (c - 1)) / c, height - captionH - 20 * scale)
   const total = c * D + (c - 1) * gap
   const x0 = (width - total) / 2
@@ -60,17 +61,35 @@ export function CirclesDiagram({ divisions, captions, width, height, ink, muted,
       </svg>
       <div style={{ display: 'flex', gap, marginLeft: x0, marginTop: 22 * scale }}>
         {circles.map((_, i) => (
-          <div key={i} style={{ width: D, textAlign: 'center' }}>
-            <div style={{ fontFamily: MONO_FONT, fontSize: 18 * scale, color: i === c - 1 ? accent : muted, letterSpacing: '0.1em' }}>
-              {String(i + 1).padStart(2, '0')}
-            </div>
+          <div key={i} style={{ width: D, textAlign: 'center', display: 'flex', justifyContent: 'center' }}>
+            {/* Chip táctico: número + rótulo legible en un contenedor (el último en acento). */}
             {(() => {
-              const fit = fitLabel(texts[i] ?? '', 24 * scale, D + gap * 0.4)
+              const last = i === c - 1
+              const fit = fitLabel(texts[i] ?? '', 27 * scale, D + gap * 0.8 - 24 * scale)
               return (
-                <div style={{ fontFamily: LABEL_FONT, fontWeight: 600, fontSize: fit.size, lineHeight: 1.2, color: ink, marginTop: 6 * scale, marginInline: -gap * 0.2 }}>
-                  {fit.lines.map((l, k) => (
-                    <div key={k}>{l}</div>
-                  ))}
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4 * scale,
+                    padding: `${8 * scale}px ${10 * scale}px`,
+                    maxWidth: D + gap * 0.8,
+                    boxSizing: 'border-box',
+                    borderRadius: 10 * scale,
+                    border: `${Math.max(1.5, 2 * scale)}px solid ${last ? accent : muted}`,
+                    background: last ? accent : 'transparent',
+                    color: last ? bg : ink,
+                  }}
+                >
+                  <span style={{ fontFamily: MONO_FONT, fontWeight: 700, fontSize: 19 * scale, letterSpacing: '0.12em', color: last ? bg : accent }}>{String(i + 1).padStart(2, '0')}</span>
+                  {texts[i] && (
+                    <span style={{ fontFamily: LABEL_FONT, fontWeight: 700, fontSize: fit.size, lineHeight: 1.18 }}>
+                      {fit.lines.map((l, k) => (
+                        <div key={k}>{l}</div>
+                      ))}
+                    </span>
+                  )}
                 </div>
               )
             })()}

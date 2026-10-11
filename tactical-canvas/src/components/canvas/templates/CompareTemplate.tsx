@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import { useAccent } from '../../../lib/accent'
 import { ACCENT_HEX, BRAND, FONT_BODY, FONT_MONO } from '../../../lib/brand'
 import type { CanvasState, CompareCard } from '../../../types'
 import { Paragraph } from '../Paragraph'
@@ -40,6 +41,7 @@ function useFitWidth(deps: unknown[]) {
 }
 
 function Card({ card, fontFamily, scale }: { card: CompareCard; fontFamily: string; scale: number }) {
+  const A = useAccent()
   const len = [...card.value.trim()].length
   const baseSize = Math.round((len > 14 ? 46 : len > 10 ? 54 : 66) * scale)
   const { ref: valueRef, fit } = useFitWidth([card.value, fontFamily, baseSize])
@@ -77,7 +79,7 @@ function Card({ card, fontFamily, scale }: { card: CompareCard; fontFamily: stri
           fontSize: valueSize,
           lineHeight: 1.02,
           letterSpacing: '-0.015em',
-          color: ACCENT_HEX[card.accent],
+          color: A.hex(ACCENT_HEX[card.accent]),
           whiteSpace: 'nowrap',
           wordBreak: 'keep-all',
           overflowWrap: 'normal',

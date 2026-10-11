@@ -1,3 +1,4 @@
+import { useAccent } from '../../../lib/accent'
 import { BRAND, FONT_BODY, FONT_MONO } from '../../../lib/brand'
 import { fmt, parseList, parseNumbers, parseRange, ratio, smoothPath, type Pt } from '../../../lib/chart'
 import type { ChartConfig, CurveShape } from '../../../types'
@@ -14,8 +15,8 @@ const PAD_X = 14
 const DIM = '#4B5566'
 /** Etiquetas numéricas de los ejes: más claras y grandes para que no se pierdan en el fondo oscuro. */
 const AXIS = '#94A3B8'
-const ZONE_FILL = 'rgba(56,189,248,.09)'
-const ZONE_STROKE = 'rgba(56,189,248,.45)'
+/** Rótulos de categoría y números: blanco puro / cian muy claro (nunca grises oscuros). */
+const LABEL = '#E6F4FF'
 /** Trazo de contraste de la curva comparativa (población sin estímulo). */
 const CMP = '#EF4444'
 
@@ -32,6 +33,12 @@ function curveY(shape: CurveShape, t: number, zone: [number, number]) {
     const down = 1 / (1 + Math.exp(-(t - 0.86) * 14))
     return 0.12 + 0.72 * up - 0.12 * down
   }
+  if (shape === 'returns') {
+    // Rendimientos decrecientes (asintótica): sube fuerte al principio y se aplana; la zona
+    // efectiva cae donde la curva todavía rinde antes de la meseta.
+    const k = 2.2 / Math.max(0.2, zone[1])
+    return 0.08 + 0.74 * (1 - Math.exp(-k * t))
+  }
   const k = 9
   const s = 1 / (1 + Math.exp(-(t - (shape === 'rise' ? zone[1] : zone[0])) * k))
   return shape === 'rise' ? 0.1 + 0.8 * s : 0.9 - 0.75 * s
@@ -39,6 +46,9 @@ function curveY(shape: CurveShape, t: number, zone: [number, number]) {
 
 /** Gráfico simple en SVG: curva, barras o medidor de umbral. */
 export function TelemetryChart({ chart, width, height, fontFamily, scale }: Props) {
+  const A = useAccent()
+  const ZONE_FILL = `rgba(${A.cyanRgb},.09)`
+  const ZONE_STROKE = `rgba(${A.cyanRgb},.45)`
   const min = Math.min(chart.min, chart.max)
   const max = Math.max(chart.min, chart.max)
   const range = parseRange(chart.zone)
@@ -69,7 +79,7 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
         <span
           key={i}
           style={{
-            ...mono(27, tk.hl ? BRAND.cyan : AXIS),
+            ...mono(27, tk.hl ? A.cyan : AXIS),
             position: 'absolute',
             left: px(tk.t),
             transform: tk.t === 0 ? 'none' : tk.t === 1 ? 'translateX(-100%)' : 'translateX(-50%)',
@@ -86,6 +96,9 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
     const top = 20
     const plotH = height - top - 10
     const py = (y: number) => top + plotH - y * plotH
+    // Eje Y explícito: rejilla táctica punteada cada 25 % (10 % de opacidad) con rótulos de nivel.
+    const yTicks = [0, 0.25, 0.5, 0.75, 1]
+    const yAxisX = PAD_X
     const z = zone ?? [0.4, 0.6]
     const curve = (shape: CurveShape): Pt[] =>
       Array.from({ length: 33 }, (_, i) => {
@@ -97,23 +110,56 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
     const dual = Boolean(chart.compare)
     const cmpPts = dual ? curve(chart.compareShape ?? 'fall') : null
     body = (
-      <>
+      <div style={{ position: 'relative' }}>
         <svg width={width} height={height} style={{ display: 'block', overflow: 'visible' }}>
+          <defs>
+            {/* Zona óptima rayada en diagonal (hatching táctico) */}
+            <pattern id="tc-hatch" width={16 * scale} height={16 * scale} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1={0} y1={0} x2={0} y2={16 * scale} stroke={A.cyan} strokeOpacity={0.32} strokeWidth={5 * scale} />
+            </pattern>
+          </defs>
+          {yTicks.map((y) => (
+            <line key={y} x1={yAxisX} x2={width - PAD_X} y1={py(y)} y2={py(y)} stroke="#FFFFFF" strokeOpacity={0.1} strokeWidth={2} strokeDasharray={`${6 * scale} ${10 * scale}`} />
+          ))}
+          <line x1={yAxisX} x2={yAxisX} y1={top - 8} y2={height} stroke={AXIS} strokeOpacity={0.6} strokeWidth={3} />
           {zone && (
-            <rect x={px(zone[0])} y={4} width={Math.max(2, px(zone[1]) - px(zone[0]))} height={height - 4} fill={ZONE_FILL} stroke={ZONE_STROKE} strokeWidth={2} rx={6} />
+            <>
+              <rect x={px(zone[0])} y={4} width={Math.max(2, px(zone[1]) - px(zone[0]))} height={height - 4} fill={ZONE_FILL} />
+              <rect x={px(zone[0])} y={4} width={Math.max(2, px(zone[1]) - px(zone[0]))} height={height - 4} fill="url(#tc-hatch)" stroke={ZONE_STROKE} strokeWidth={2} rx={6} />
+            </>
           )}
           <line x1={PAD_X} x2={width - PAD_X} y1={height} y2={height} stroke={BRAND.border} strokeWidth={3} />
           {cmpPts && (
             <path d={smoothPath(cmpPts, 0.5)} stroke={CMP} strokeOpacity={0.75} strokeWidth={6 * scale} strokeDasharray={`${16 * scale} ${10 * scale}`} strokeLinecap="round" fill="none" />
           )}
-          {dual && <path d={smoothPath(pts, 0.5)} stroke={BRAND.cyan} strokeOpacity={0.22} strokeWidth={30 * scale} strokeLinecap="round" fill="none" />}
-          <path d={smoothPath(pts, 0.5)} stroke={BRAND.cyan} strokeWidth={12 * scale} strokeLinecap="round" fill="none" />
+          {dual && <path d={smoothPath(pts, 0.5)} stroke={A.cyan} strokeOpacity={0.22} strokeWidth={30 * scale} strokeLinecap="round" fill="none" />}
+          <path d={smoothPath(pts, 0.5)} stroke={A.cyan} strokeWidth={12 * scale} strokeLinecap="round" fill="none" />
         </svg>
+        {zone && (
+          <span
+            style={{
+              ...mono(20, BRAND.bg),
+              position: 'absolute',
+              top: 14 * scale,
+              left: px((zone[0] + zone[1]) / 2),
+              transform: 'translateX(-50%)',
+              fontWeight: 700,
+              background: A.cyan,
+              padding: `${4 * scale}px ${10 * scale}px`,
+              borderRadius: 4 * scale,
+              letterSpacing: '0.12em',
+              textShadow: 'none',
+            }}
+          >
+            [ ZONA EFECTIVA ]
+          </span>
+        )}
+        <span style={{ ...mono(18, AXIS), position: 'absolute', left: yAxisX + 10 * scale, top: py(1) - 30 * scale }}>▲ RESPUESTA</span>
         {axis}
         {dual && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: `${10 * scale}px ${36 * scale}px`, marginTop: 18 * scale, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 24 * scale }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 * scale, color: BRAND.white }}>
-              <span style={{ width: 34 * scale, height: 8 * scale, borderRadius: 4, background: BRAND.cyan, boxShadow: `0 0 ${12 * scale}px ${BRAND.cyan}` }} />
+              <span style={{ width: 34 * scale, height: 8 * scale, borderRadius: 4, background: A.cyan, boxShadow: `0 0 ${12 * scale}px ${A.cyan}` }} />
               {chart.mainLabel?.trim() || 'Con estímulo'}
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 * scale, color: AXIS }}>
@@ -122,7 +168,7 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
             </span>
           </div>
         )}
-      </>
+      </div>
     )
   } else if (chart.mode === 'bars') {
     const values = parseNumbers(chart.barValues)
@@ -143,7 +189,7 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
           const h = Math.max(6, ratio(v, Math.min(min, 0), max) * height)
           return (
             <div key={i} style={{ width: barW, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <span style={{ fontFamily, fontWeight: 700, fontSize: 30 * scale, color: hl ? BRAND.cyan : BRAND.gray, marginBottom: 8 * scale }}>
+              <span style={{ fontFamily, fontWeight: 700, fontSize: 34 * scale, color: hl ? A.cyan : BRAND.white, marginBottom: 8 * scale, textShadow: hl ? `0 0 ${14 * scale}px ${A.cyan}` : undefined }}>
                 {fmt(v)}
               </span>
               <div
@@ -151,8 +197,9 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
                   width: '100%',
                   height: h,
                   borderRadius: '8px 8px 2px 2px',
-                  background: hl ? BRAND.cyan : DIM,
-                  opacity: hl ? 0.92 : 0.6,
+                  background: hl ? A.cyan : DIM,
+                  opacity: hl ? 1 : 0.75,
+                  boxShadow: hl ? `0 0 ${26 * scale}px ${A.cyan}66` : undefined,
                 }}
               />
             </div>
@@ -166,7 +213,7 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
           {body}
           <div style={{ display: 'flex', gap, padding: `${12 * scale}px ${PAD_X}px 0`, borderTop: `3px solid ${BRAND.border}` }}>
             {values.map((_, i) => (
-              <span key={i} style={{ ...mono(25, AXIS), width: barW, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span key={i} style={{ ...mono(30, inZone(i) ? A.cyan : LABEL), fontWeight: 700, width: barW, textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {labels[i] ?? ''}
               </span>
             ))}
@@ -178,57 +225,82 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
     const v = ratio(chart.gaugeValue, min, max)
     const th = ratio(chart.gaugeThreshold, min, max)
     const within = range ? chart.gaugeValue >= range[0] && chart.gaugeValue <= range[1] : chart.gaugeValue <= chart.gaugeThreshold
-    const color = within ? BRAND.cyan : BRAND.orange
-    const trackH = 64 * scale
+    const color = within ? A.cyan : A.orange
+    // Instrumental militar: 10 bloques de 10 en 10 %, encendidos hasta el valor actual.
+    const SEG = 10
+    const segGap = 8 * scale
+    const segW = (innerW - segGap * (SEG - 1)) / SEG
+    const trackH = 70 * scale
+    const lit = Math.round(v * SEG * 10) / 10
     body = (
       <>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 18 * scale, marginBottom: 34 * scale }}>
-          <span style={{ fontFamily, fontWeight: 700, fontSize: 120 * scale, lineHeight: 0.9, color, letterSpacing: '-0.02em' }}>
-            {fmt(chart.gaugeValue)}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24 * scale, marginBottom: 46 * scale }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 * scale, paddingBottom: 10 * scale }}>
+            {chart.gaugeLabel.trim() && <span style={{ ...mono(24, LABEL), fontWeight: 700, textTransform: 'uppercase' }}>{chart.gaugeLabel}</span>}
+            <span style={{ ...mono(20, within ? A.cyan : A.orange), fontWeight: 700, letterSpacing: '0.14em' }}>{within ? '■ EN RANGO' : '■ FUERA DE RANGO'}</span>
+          </div>
+          {/* Valor masivo a la derecha */}
+          <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 10 * scale }}>
+            <span style={{ fontFamily, fontWeight: 700, fontSize: 168 * scale, lineHeight: 0.82, color, letterSpacing: '-0.03em', textShadow: `0 0 ${36 * scale}px ${color}55` }}>{fmt(chart.gaugeValue)}</span>
+            {unit && <span style={{ ...mono(36, BRAND.white), fontWeight: 700 }}>{unit}</span>}
           </span>
-          {unit && <span style={{ ...mono(30, BRAND.white), fontWeight: 600 }}>{unit}</span>}
-          {chart.gaugeLabel.trim() && <span style={{ ...mono(21), marginLeft: 'auto', textTransform: 'uppercase' }}>{chart.gaugeLabel}</span>}
         </div>
         <div style={{ position: 'relative', height: trackH, margin: `0 ${PAD_X}px` }}>
-          <div style={{ position: 'absolute', inset: 0, borderRadius: trackH / 2, background: BRAND.surface, border: `2px solid ${BRAND.border}` }} />
           {zone && (
             <div
               style={{
                 position: 'absolute',
-                top: -10,
-                bottom: -10,
-                left: zone[0] * innerW,
-                width: Math.max(4, (zone[1] - zone[0]) * innerW),
+                top: -12 * scale,
+                bottom: -12 * scale,
+                left: zone[0] * innerW - 4 * scale,
+                width: Math.max(4, (zone[1] - zone[0]) * innerW) + 8 * scale,
                 background: ZONE_FILL,
-                border: `2px solid ${ZONE_STROKE}`,
-                borderRadius: 10,
+                border: `2px dashed ${ZONE_STROKE}`,
+                borderRadius: 8 * scale,
               }}
             />
           )}
-          <div
-            style={{
-              position: 'absolute',
-              top: 10 * scale,
-              bottom: 10 * scale,
-              left: 10 * scale,
-              width: Math.max(0, v * innerW - 20 * scale),
-              borderRadius: trackH,
-              background: color,
-              boxShadow: `0 0 ${30 * scale}px ${color}55`,
-            }}
-          />
-          <div style={{ position: 'absolute', left: th * innerW - 3, top: -24 * scale, bottom: -24 * scale, width: 6 * scale, background: BRAND.gold, borderRadius: 3 }} />
+          {Array.from({ length: SEG }, (_, i) => {
+            const fill = Math.min(1, Math.max(0, lit - i))
+            return (
+              <div
+                key={i}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  bottom: 0,
+                  left: i * (segW + segGap),
+                  width: segW,
+                  borderRadius: 4 * scale,
+                  background: BRAND.surface,
+                  border: `2px solid ${fill > 0 ? color : BRAND.border}`,
+                  overflow: 'hidden',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {fill > 0 && <div style={{ position: 'absolute', inset: 0, right: `${(1 - fill) * 100}%`, background: color, boxShadow: `0 0 ${18 * scale}px ${color}88` }} />}
+                <span style={{ ...mono(15, fill > 0.5 ? BRAND.bg : AXIS), position: 'absolute', bottom: 4 * scale, left: 6 * scale, fontWeight: 700, textShadow: 'none' }}>{(i + 1) * 10}</span>
+              </div>
+            )
+          })}
+          {/* Umbral: línea de delimitación clara + etiqueta en contraste */}
+          <div style={{ position: 'absolute', left: th * innerW - 3 * scale, top: -30 * scale, bottom: -30 * scale, width: 6 * scale, background: BRAND.gold, borderRadius: 3, boxShadow: `0 0 ${12 * scale}px ${BRAND.gold}` }} />
           <span
             style={{
-              ...mono(18, BRAND.gold),
+              ...mono(20, BRAND.bg),
               position: 'absolute',
-              bottom: `calc(100% + ${30 * scale}px)`,
+              bottom: `calc(100% + ${32 * scale}px)`,
               left: th * innerW,
-              transform: th > 0.85 ? 'translateX(-100%)' : 'translateX(-50%)',
+              transform: th > 0.85 ? 'translateX(-100%)' : th < 0.15 ? 'none' : 'translateX(-50%)',
               textTransform: 'uppercase',
+              fontWeight: 700,
+              background: BRAND.gold,
+              padding: `${4 * scale}px ${10 * scale}px`,
+              borderRadius: 4 * scale,
+              textShadow: 'none',
             }}
           >
-            UMBRAL {fmt(chart.gaugeThreshold)}
+            ▼ UMBRAL {fmt(chart.gaugeThreshold)}
           </span>
         </div>
         <div style={{ height: 14 * scale }} />
@@ -246,9 +318,27 @@ export function TelemetryChart({ chart, width, height, fontFamily, scale }: Prop
       )}
       {body}
       {zone && chart.zoneLabel.trim() && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 * scale, marginTop: 30 * scale, fontFamily: FONT_BODY, fontSize: 23 * scale, color: BRAND.white }}>
-          <span style={{ width: 24 * scale, height: 24 * scale, borderRadius: 3, background: 'rgba(56,189,248,.2)', border: `2px solid ${BRAND.cyan}`, boxSizing: 'border-box', flex: '0 0 auto' }} />
-          {chart.zoneLabel.trim()}
+        // Leyenda como chip sólido: [ ■ Creatina: Grado A ]
+        <div style={{ marginTop: 30 * scale }}>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 12 * scale,
+              padding: `${10 * scale}px ${18 * scale}px`,
+              borderRadius: 8 * scale,
+              background: '#0F1A24',
+              border: `2px solid ${A.cyan}`,
+              fontFamily: FONT_BODY,
+              fontWeight: 700,
+              fontSize: 25 * scale,
+              color: BRAND.white,
+              textShadow: 'none',
+            }}
+          >
+            <span style={{ width: 18 * scale, height: 18 * scale, background: A.cyan, borderRadius: 2, flex: '0 0 auto' }} />
+            {chart.zoneLabel.trim()}
+          </span>
         </div>
       )}
     </div>

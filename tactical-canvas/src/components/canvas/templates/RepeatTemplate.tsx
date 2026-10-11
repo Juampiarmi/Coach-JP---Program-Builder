@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BRAND } from '../../../lib/brand'
+import { useAccent } from '../../../lib/accent'
 import type { CanvasPalette } from '../../../lib/theme'
 import type { CanvasState, ThemeId } from '../../../types'
 
@@ -32,6 +32,8 @@ interface OutlineRowProps {
   /** Grosor del contorno (fracción del cuerpo) y opacidad relativa del relleno */
   strokeRatio?: number
   fillRatio?: number
+  /** Grosor mínimo absoluto del contorno (px del lienzo) */
+  minStroke?: number
 }
 
 /**
@@ -39,18 +41,18 @@ interface OutlineRowProps {
  * -webkit-text-stroke ni opacity, que algunos motores descartan al rasterizar el PNG.
  * Si el contorno no se pintara, el relleno igual queda visible.
  */
-function OutlineRow({ text, width, fontSize, lineHeight, fontFamily, fontWeight, rgb, alpha, shift = 0, strokeRatio = 0.018, fillRatio = 0.32 }: OutlineRowProps) {
+function OutlineRow({ text, width, fontSize, lineHeight, fontFamily, fontWeight, rgb, alpha, shift = 0, strokeRatio = 0.018, fillRatio = 0.32, minStroke = 1.2 }: OutlineRowProps) {
   const h = fontSize * lineHeight
-  const a = Math.max(0.2, Math.min(1, alpha))
+  const a = Math.max(0.03, Math.min(1, alpha))
   return (
     <svg width={width} height={h} viewBox={`0 0 ${width} ${h}`} style={{ display: 'block', overflow: 'visible' }} aria-hidden>
       <text
         x={width / 2 + shift}
         y={h / 2 + fontSize * 0.36}
         textAnchor="middle"
-        fill={`rgba(${rgb},${Math.max(0.06, a * fillRatio).toFixed(3)})`}
+        fill={`rgba(${rgb},${Math.max(0.015, a * fillRatio).toFixed(3)})`}
         stroke={`rgba(${rgb},${a.toFixed(3)})`}
-        strokeWidth={Math.max(1.2, fontSize * strokeRatio)}
+        strokeWidth={Math.max(minStroke, fontSize * strokeRatio)}
         strokeLinejoin="round"
         style={{ fontFamily, fontWeight, fontSize, letterSpacing: 0 }}
       >
@@ -114,6 +116,7 @@ function justifyLines(words: string[]) {
  * El bloque siempre queda centrado verticalmente y se ajusta al alto disponible.
  */
 export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, contentWidth, maxHeight, scale }: Props) {
+  const A = useAccent()
   const phrase = state.repeatPhrase.trim().toUpperCase() || 'ESCRIBÍ TU FRASE'
   const words = phrase.split(/\s+/)
   const mode = state.repeatMode
@@ -126,7 +129,7 @@ export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, 
   const availH = maxHeight * scale
   const userScale = Math.min(1, Math.max(0.4, state.repeatScale / 100))
   const leading = state.repeatLeading / 100
-  const hi = state.repeatAccent === 'orange' ? BRAND.orange : state.repeatAccent === 'cyan' ? BRAND.cyan : palette.ink
+  const hi = state.repeatAccent === 'orange' ? A.orange : state.repeatAccent === 'cyan' ? A.cyan : palette.ink
   const rgb = OUTLINE_RGB[theme]
   const base = { fontFamily, fontWeight, letterSpacing: 0, textTransform: 'uppercase' as const, textShadow: 'none' }
 
@@ -134,14 +137,17 @@ export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, 
     const rule = Math.round(6 * scale)
     const inner = Math.round(22 * scale)
     const lh = Math.max(0.74, 0.9 * leading)
-    let sizes = widths.map((w) => (contentWidth / w) * 100 * 0.995 * userScale)
-    const total = sizes.reduce((a, f) => a + f * lh, 0)
+    // Boxed auto-fit: cada renglón escala su cuerpo para medir exactamente el ancho de las barras.
+    // Si el bloque no entra en alto, se angosta todo el bloque (barras incluidas), nunca un renglón solo.
+    let blockW = contentWidth * userScale
+    const heightAt = (bw: number) => widths.reduce((a, w) => a + (bw / w) * 100 * lh, 0)
     const room = availH - 2 * (rule + inner)
-    if (total > room) sizes = sizes.map((f) => (f * room) / total)
+    if (heightAt(blockW) > room) blockW *= room / heightAt(blockW)
+    const sizes = widths.map((w) => (blockW / w) * 100)
     const biggest = sizes.indexOf(Math.max(...sizes))
-    const ruleColor = hi === palette.ink ? BRAND.orange : hi
+    const ruleColor = hi === palette.ink ? A.orange : hi
     return (
-      <div style={{ ...base, textAlign: 'center', borderTop: `${rule}px solid ${ruleColor}`, borderBottom: `${rule}px solid ${ruleColor}`, padding: `${inner}px 0` }}>
+      <div style={{ ...base, width: blockW, margin: '0 auto', textAlign: 'center', borderTop: `${rule}px solid ${ruleColor}`, borderBottom: `${rule}px solid ${ruleColor}`, padding: `${inner}px 0` }}>
         {lines.map((line, i) => (
           <div key={i} style={{ whiteSpace: 'nowrap', fontSize: sizes[i], lineHeight: lh, color: i === biggest ? hi : palette.ink }}>
             {line}
@@ -157,15 +163,36 @@ export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, 
     // Eco: la frase central mide repeatCenterScale % del resto y tiene que entrar en el ancho.
     const center = kinetic ? 1 : Math.min(1.8, Math.max(1, state.repeatCenterScale / 100))
     const band = echo && state.repeatBand
-    const widthUse = kinetic ? 0.9 : band ? 0.9 : 0.985
+    // Kinetic: la palabra ocupa ~80 % del ancho (75–85 %); Eco: casi todo el ancho.
+    const widthUse = kinetic ? 0.8 : band ? 0.9 : 0.985
     const byWidth = ((contentWidth * widthUse) / width100) * 100 / center
     const units = rows - 1 + center
     const byHeight = availH / (units * (kinetic ? 0.9 : 1.0))
     const fontSize = Math.max(8, Math.min(byWidth, byHeight) * userScale)
     const fill = availH / (units * fontSize)
-    const auto = kinetic ? 0.92 : Math.min(1.6, Math.max(0.98, fill * 0.92))
+    // Eco: interlineado compacto por defecto (−8 %).
+    const auto = kinetic ? 0.92 : Math.min(1.6, Math.max(0.98, fill * 0.92)) * 0.92
     const lineHeight = Math.min(fill, Math.max(0.8, auto * leading))
     const centerColor = band && theme === 'paper' && hi === palette.ink ? palette.bg : hi
+    // Eco: palabra(s) clave de la frase central en acento (el resto en tinta).
+    const keys = echo
+      ? state.repeatKeyword
+          .toUpperCase()
+          .split(/[,\s]+/)
+          .map((k) => k.replace(/[^\p{L}\p{N}]/gu, ''))
+          .filter(Boolean)
+      : []
+    const keyColor = hi === palette.ink ? A.orange : hi
+    const isKey = (w: string) => keys.includes(w.replace(/[^\p{L}\p{N}]/gu, ''))
+    const centerText = keys.length
+      ? words.map((w, i) => (
+          <span key={i} style={isKey(w) ? { color: keyColor } : { color: band && theme === 'paper' ? palette.bg : palette.ink }}>
+            {w}
+            {i < words.length - 1 ? ' ' : ''}
+          </span>
+        ))
+      : phrase
+    const stagger = kinetic && state.repeatStagger !== false ? contentWidth * 0.1 : 0
     return (
       <div style={{ ...base, fontSize, lineHeight, color: DIM[theme], textAlign: 'center' }}>
         {Array.from({ length: rows }, (_, row) => {
@@ -200,7 +227,7 @@ export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, 
                     textShadow: theme === 'dark' && !band ? '0 4px 24px rgba(0,0,0,0.85), 0 0 3px rgba(0,0,0,0.9)' : 'none',
                   }}
                 >
-                  {phrase}
+                  {centerText}
                 </div>
               </div>
             )
@@ -215,12 +242,13 @@ export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, 
               fontFamily={fontFamily}
               fontWeight={fontWeight}
               rgb={rgb}
-              // Eco: las secundarias se apagan con la distancia; Kinetic: contorno fino parejo.
-              alpha={kinetic ? 0.8 : Math.max(0.25, 0.85 - d * 0.15)}
-              strokeRatio={kinetic ? 0.008 : 0.016}
-              fillRatio={kinetic ? 0.1 : 0.22}
-              // Kinetic brutalist: las versiones outline se corren hacia los lados.
-              shift={kinetic ? (row < mid ? -1 : 1) * contentWidth * 0.045 : 0}
+              // Eco: degradé de opacidad 35 % → 15 % → 5 % hacia los extremos; Kinetic: contorno parejo.
+              alpha={kinetic ? 0.8 : d === 1 ? 0.35 : d === 2 ? 0.15 : 0.05}
+              strokeRatio={kinetic ? 0.011 : 0.016}
+              minStroke={kinetic ? 2.5 : 1.2}
+              fillRatio={kinetic ? 0.1 : 0.5}
+              // Kinetic: escalonado −10 % arriba / +10 % abajo (opcional).
+              shift={kinetic ? (row < mid ? -1 : 1) * stagger : 0}
             />
           )
         })}
@@ -236,12 +264,31 @@ export function RepeatTemplate({ state, palette, theme, fontFamily, fontWeight, 
   const fill = availH / (rows * fontSize)
   const auto = Math.min(2.4, Math.max(1.08, fill * 0.92))
   const lineHeight = Math.min(fill, Math.max(0.8, auto * leading))
+  // ↘ descendente: la palabra i se enciende en el renglón i (arranca arriba a la izquierda).
+  // ↗ ascendente: arranca abajo a la izquierda y sube hacia la derecha.
+  const up = state.repeatDirection === 'up'
+  const active = (row: number) => (up ? rows - 1 - row : row)
+  // Giro del bloque completo: se achica lo justo para que la caja rotada entre en el espacio.
+  const tilt = Math.max(-30, Math.min(30, state.repeatTilt ?? 0))
+  const rad = (Math.abs(tilt) * Math.PI) / 180
+  const blockW = (width100 / 100) * fontSize
+  const blockH = rows * fontSize * lineHeight
+  const fitK = tilt ? Math.min(1, contentWidth / (blockW * Math.cos(rad) + blockH * Math.sin(rad)), availH / (blockW * Math.sin(rad) + blockH * Math.cos(rad))) : 1
   return (
-    <div style={{ ...base, fontSize, lineHeight, color: DIM[theme], textAlign: 'left' }}>
+    <div
+      style={{
+        ...base,
+        fontSize,
+        lineHeight,
+        color: DIM[theme],
+        textAlign: 'left',
+        ...(tilt ? { transform: `rotate(${-tilt}deg) scale(${fitK.toFixed(4)})`, transformOrigin: '50% 50%' } : {}),
+      }}
+    >
       {words.map((_, row) => (
         <div key={row} style={{ whiteSpace: 'nowrap' }}>
           {words.map((w, i) => (
-            <span key={i} style={i === row ? { color: hi } : undefined}>
+            <span key={i} style={i === active(row) ? { color: hi, textShadow: `0 0 10px ${hi}` } : undefined}>
               {w}
               {i < words.length - 1 ? ' ' : ''}
             </span>

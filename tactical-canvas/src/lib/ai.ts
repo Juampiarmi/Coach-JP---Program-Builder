@@ -662,6 +662,9 @@ const CHART_MODES: ChartMode[] = ['curve', 'bars', 'gauge']
 const SHAPES: CurveShape[] = ['bell', 'rise', 'fall', 'plateau']
 
 const REPEAT_MODES: RepeatMode[] = ['diagonal', 'echo', 'kinetic', 'justified']
+/** Tipo de diagrama que entiende la IA (las variantes manuales no figuran). */
+const AI_DIAGRAM_TYPE = { radar: 'radar', domino: 'domino', circles: 'circulos', curve: 'trayectoria' } as const
+
 const DIAGRAM_KIND_MAP: Record<string, DiagramKind> = {
   radar: 'radar',
   domino: 'domino',
@@ -1094,8 +1097,9 @@ Versión actual de la placa ${req.index + 1}: "${current}".
 Escribí una versión nueva y mejor (otro ángulo, otro dato o una frase más contundente), coherente con el tema principal.${
     aiTemplate
       ? ` Mantené templateId "${aiTemplate}"${
-          req.slide.template === 'diagram'
-            ? ` con diagrama.recommendedType "${({ radar: 'radar', domino: 'domino', circles: 'circulos', curve: 'trayectoria' } as const)[req.slide.diagramKind]}"`
+          // Embudo y VS binario son variantes manuales: la IA no los genera, así que no se fija el tipo.
+          req.slide.template === 'diagram' && req.slide.diagramKind in AI_DIAGRAM_TYPE
+            ? ` con diagrama.recommendedType "${AI_DIAGRAM_TYPE[req.slide.diagramKind as keyof typeof AI_DIAGRAM_TYPE]}"`
             : req.slide.template === 'repeat'
               ? ` con repeticion.mode "${req.slide.repeatMode}"`
               : ''
@@ -1103,6 +1107,7 @@ Escribí una versión nueva y mejor (otro ángulo, otro dato o una frase más co
       : ''
   } Devolvé exactamente 1 slide y "caption": "".`
 }
+
 
 /** Pide a la IA una versión nueva de la placa activa, sin tocar el resto de la secuencia. */
 export async function regenerateSlide(
