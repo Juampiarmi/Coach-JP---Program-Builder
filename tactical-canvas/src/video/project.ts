@@ -41,6 +41,8 @@ export function defaultProject(): VideoProject {
     ],
     selectedId: first.id,
     safeZone: true,
+    subtitles: { words: [], style: 'outline', accent: 'orange', enabled: true },
+    music: null,
   }
 }
 

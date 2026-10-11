@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { pressDrag } from './drag'
 import { timecode } from './render'
-import type { ClipInfo, OverlayItem, Track, TrackItem } from './types'
+import type { ClipInfo, GenericItem, OverlayItem, Track, TrackItem } from './types'
 
 interface Props {
   tracks: Track[]
@@ -21,6 +21,27 @@ const ROW_H = 46
 const MIN_LEN = 0.3
 
 const KIND_LABEL: Record<OverlayItem['overlay']['kind'], string> = { badge: 'MÉTRICA', headline: 'PLACA', timer: 'TIMER', checklist: 'CHECK', watermark: 'FIRMA' }
+
+/**
+ * Nivel de la pista A2: relleno proporcional al volumen, con los tramos de auto-ducking
+ * (habla en S1) marcados más bajos.
+ */
+function AudioLevel({ item }: { item: GenericItem }) {
+  const volume = Number(item.data?.volume ?? 0)
+  const segments = (item.data?.segments ?? []) as [number, number][]
+  const span = Math.max(0.01, item.end - item.start)
+  return (
+    <span className="pointer-events-none absolute inset-0">
+      <span className="absolute inset-x-0 bottom-0 bg-cyan/25" style={{ height: `${Math.max(6, volume)}%` }} />
+      {segments.map(([a, b], i) => {
+        const left = Math.max(0, (a - item.start) / span)
+        const right = Math.min(1, (b - item.start) / span)
+        if (right <= 0 || left >= 1) return null
+        return <span key={i} className="absolute top-0 bottom-0 bg-black/45" style={{ left: `${left * 100}%`, width: `${(right - left) * 100}%` }} title="Auto-ducking" />
+      })}
+    </span>
+  )
+}
 
 /** Texto corto del bloque en la pista. */
 function itemText(o: OverlayItem['overlay']) {
@@ -91,7 +112,7 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
     return (
       <div
         key={item.id}
-        onPointerDown={editable ? (e) => move(e, 'move') : undefined}
+        onPointerDown={editable ? (e) => move(e, 'move') : (e) => e.button === 0 && onSeek(item.start)}
         className={`absolute top-1.5 bottom-1.5 flex items-center overflow-hidden rounded-md border font-mono text-[10px] font-semibold tracking-wider select-none ${
           on ? 'border-fire bg-fire/25 text-white' : 'border-cyan/50 bg-cyan/15 text-cyan'
         } ${editable ? 'cursor-grab active:cursor-grabbing' : ''}`}
@@ -99,8 +120,9 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
         title={`${timecode(item.start)} → ${timecode(item.end)}`}
       >
         {editable && <span onPointerDown={(e) => move(e, 'start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
-        <span className="truncate px-3">
-          {item.type === 'overlay' ? `${KIND_LABEL[item.overlay.kind]} · ${itemText(item.overlay)}` : track.label}
+        {item.type === 'audio' && <AudioLevel item={item} />}
+        <span className="relative truncate px-3">
+          {item.type === 'overlay' ? `${KIND_LABEL[item.overlay.kind]} · ${itemText(item.overlay)}` : String(item.data?.text ?? track.label)}
         </span>
         {editable && <span onPointerDown={(e) => move(e, 'end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
       </div>

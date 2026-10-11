@@ -1,4 +1,5 @@
-import { drawOverlays, drawVideoCover, loadOverlayFonts } from './render'
+import { drawOverlays, drawSubtitles, drawVideoCover, loadOverlayFonts } from './render'
+import { duckGain, groupWords, speechSegments } from './subtitles'
 import { overlayItems } from './project'
 import type { VideoProject } from './types'
 import { OUT_H, OUT_W } from './types'
@@ -31,6 +32,8 @@ export interface ExportResult {
 
 interface Options {
   url: string
+  /** Pista A2 (beat) en memoria, si se subió */
+  musicUrl?: string | null
   project: VideoProject
   onProgress: (ratio: number) => void
   signal?: AbortSignal
@@ -43,7 +46,7 @@ type FrameVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => vo
  * frame se compone (video "cover" + overlays) en un canvas 1080×1920 y MediaRecorder graba
  * canvas.captureStream() junto con el audio original del clip.
  */
-export async function exportVideo({ url, project, onProgress, signal }: Options): Promise<ExportResult> {
+export async function exportVideo({ url, musicUrl, project, onProgress, signal }: Options): Promise<ExportResult> {
   const clip = project.clip
   if (!clip) throw new Error('Primero subí un clip.')
   const mime = pickMime()
@@ -65,13 +68,27 @@ export async function exportVideo({ url, project, onProgress, signal }: Options)
   const ctx = canvas.getContext('2d')!
   const stream = canvas.captureStream(30)
 
-  // Audio original: el elemento se enruta a un destino de grabación (no suena por los parlantes).
+  // Mezcla de audio en un único destino de grabación (no suena por los parlantes):
+  // V1 (audio original) + A2 (música) con su volumen y el auto-ducking.
   let audioCtx: AudioContext | null = null
+  let music: HTMLAudioElement | null = null
+  let musicGain: GainNode | null = null
+  const musicCfg = project.music
   try {
     audioCtx = new AudioContext()
-    const source = audioCtx.createMediaElementSource(video)
     const dest = audioCtx.createMediaStreamDestination()
-    source.connect(dest)
+    audioCtx.createMediaElementSource(video).connect(dest)
+    if (musicUrl && musicCfg) {
+      music = new Audio(musicUrl)
+      music.preload = 'auto'
+      await new Promise<void>((resolve) => {
+        music!.onloadedmetadata = () => resolve()
+        music!.onerror = () => resolve()
+      })
+      musicGain = audioCtx.createGain()
+      musicGain.gain.value = 0
+      audioCtx.createMediaElementSource(music).connect(musicGain).connect(dest)
+    }
     dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
   } catch {
     audioCtx = null // sin audio: se exporta sólo la imagen
@@ -83,10 +100,21 @@ export async function exportVideo({ url, project, onProgress, signal }: Options)
   const stopped = new Promise<void>((r) => (recorder.onstop = () => r()))
 
   const items = overlayItems(project)
+  const groups = groupWords(project.subtitles.words)
+  const segments = speechSegments(project.subtitles.words)
   const span = Math.max(0.1, clip.out - clip.in)
   const frame = () => {
+    const t = video.currentTime
     drawVideoCover(ctx, video)
-    drawOverlays(ctx, items, video.currentTime)
+    drawOverlays(ctx, items, t)
+    drawSubtitles(ctx, project.subtitles, groups, t)
+    // A2 sigue al video (la música arranca en el In) y aplica volumen × ducking.
+    if (music && musicGain && audioCtx && musicCfg) {
+      const want = t - clip.in
+      if (want < music.duration && Math.abs(music.currentTime - want) > 0.15) music.currentTime = Math.max(0, want)
+      const level = (musicCfg.volume / 100) * (musicCfg.ducking ? duckGain(segments, t) : 1)
+      musicGain.gain.setTargetAtTime(level, audioCtx.currentTime, 0.015)
+    }
   }
 
   video.currentTime = clip.in
@@ -98,6 +126,7 @@ export async function exportVideo({ url, project, onProgress, signal }: Options)
     if (done) return
     done = true
     video.pause()
+    music?.pause()
     frame()
     if (recorder.state !== 'inactive') recorder.stop()
   }
@@ -110,6 +139,10 @@ export async function exportVideo({ url, project, onProgress, signal }: Options)
   const playing = new Promise<void>((r) => video.addEventListener('playing', () => r(), { once: true }))
   await video.play()
   await playing
+  if (music) {
+    music.currentTime = 0
+    await music.play().catch(() => undefined)
+  }
   frame()
   recorder.start(250)
 
@@ -142,6 +175,7 @@ export async function exportVideo({ url, project, onProgress, signal }: Options)
   await audioCtx?.close().catch(() => undefined)
   video.removeAttribute('src')
   video.load()
+  music?.removeAttribute('src')
   if (signal?.aborted) throw new DOMException('Exportación cancelada', 'AbortError')
   onProgress(1)
   const type = mime.split(';')[0]

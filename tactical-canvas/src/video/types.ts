@@ -93,10 +93,39 @@ export interface ClipInfo {
   out: number
 }
 
+/** Palabra de subtítulo con tiempos en segundos del clip base. */
+export interface SubtitleWord {
+  word: string
+  start: number
+  end: number
+}
+
+export type SubtitleStyle = 'outline' | 'pill'
+export type SubtitleAccent = 'orange' | 'cyan'
+
+/** Pista S1 · subtítulos cinéticos (karaoke). */
+export interface SubtitleTrack {
+  words: SubtitleWord[]
+  style: SubtitleStyle
+  accent: SubtitleAccent
+  enabled: boolean
+}
+
+/** Pista A2 · música de fondo. El archivo vive en memoria; esto es lo que se guarda. */
+export interface MusicTrack {
+  name: string
+  duration: number
+  /** 0–100 */
+  volume: number
+  ducking: boolean
+}
+
 export interface VideoProject {
   version: 1
   clip: ClipInfo | null
   tracks: Track[]
+  subtitles: SubtitleTrack
+  music: MusicTrack | null
   /** Overlay seleccionado en el panel lateral */
   selectedId: string | null
   safeZone: boolean

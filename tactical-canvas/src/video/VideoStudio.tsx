@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { downloadBlob } from '../lib/exporter'
+import { loadAiSettings, RateLimitError, transcribeAudio } from '../lib/ai'
+import { clipToWavBase64 } from './audio'
+import { MusicPanel } from './MusicPanel'
+import { SubtitlePanel } from './SubtitlePanel'
+import { activeGroup, duckGain, editGroupText, groupWords, parseSubtitleFile, removeGroup, retimeGroup, speechSegments } from './subtitles'
 import { exportVideo, extractThumbs, pickMime } from './exporter'
 import { OverlayPanel } from './OverlayPanel'
 import { defaultProject, findItem, fitToClip, newOverlayItem, overlayItems, patchItem, timelineDuration } from './project'
 import { ReelsSafeZone } from './ReelsSafeZone'
 import { pressDrag } from './drag'
-import { drawOverlays, loadOverlayFonts, timecode, type OverlayRect } from './render'
+import { drawOverlays, drawSubtitles, loadOverlayFonts, timecode, type OverlayRect } from './render'
 import { Scrubber } from './Scrubber'
 import { Timeline } from './Timeline'
-import type { OverlayConfig, VideoProject } from './types'
+import type { MusicTrack, OverlayConfig, SubtitleTrack, Track, VideoProject } from './types'
 import { OUT_H, OUT_W } from './types'
 
 interface Props {
@@ -41,7 +46,7 @@ function resolveDuration(v: HTMLVideoElement): Promise<number> {
 
 const isVideoFile = (f: File) => f.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(f.name)
 
-/** Tactical Video Studio · Fase 1: reproductor 9:16, timeline V1/V2, overlays y exportación. */
+/** Tactical Video Studio: reproductor 9:16, timeline V1/V2/S1/A2, overlays, subtítulos karaoke, música y exportación. */
 export default function VideoStudio({ active, header }: Props) {
   const [stored, setProject] = usePersistentState<VideoProject>(STORAGE_KEY, defaultProject())
   // El archivo no se guarda: tras recargar se conserva el diseño pero hay que volver a subir el clip.
@@ -60,6 +65,31 @@ export default function VideoStudio({ active, header }: Props) {
   const clip = project.clip
   const items = overlayItems(project)
   const selected = findItem(project, project.selectedId)
+  // S1 · subtítulos y A2 · música (el archivo de audio vive en memoria, como el clip).
+  const subtitles = project.subtitles
+  const groups = useMemo(() => groupWords(subtitles.words), [subtitles.words])
+  const segments = useMemo(() => speechSegments(subtitles.words), [subtitles.words])
+  const [musicUrl, setMusicUrl] = useState<string | null>(null)
+  const music = musicUrl ? project.music : null
+  const musicRef = useRef<HTMLAudioElement>(null)
+  const musicLevel = useCallback((t: number) => (music ? (music.volume / 100) * (music.ducking ? duckGain(segments, t) : 1) : 0), [music, segments])
+  /** La música arranca en el In del clip y sigue al video; corrige desvíos de más de 0,12 s. */
+  const syncMusic = useCallback(
+    (t: number, play: boolean) => {
+      const a = musicRef.current
+      if (!a || !music || !clip) return
+      const want = t - clip.in
+      if (want < 0 || want >= (a.duration || music.duration)) {
+        if (!a.paused) a.pause()
+        return
+      }
+      if (Math.abs(a.currentTime - want) > 0.12) a.currentTime = want
+      a.volume = Math.min(1, Math.max(0, musicLevel(t)))
+      if (play && a.paused) a.play().catch(() => undefined)
+      if (!play && !a.paused) a.pause()
+    },
+    [music, clip, musicLevel],
+  )
 
   // ── Carga del clip ────────────────────────────────────────────────────────────
   const loadFile = (file: File | undefined) => {
@@ -95,8 +125,9 @@ export default function VideoStudio({ active, header }: Props) {
       const next = Math.min(Math.max(0, t), duration)
       if (v && url) v.currentTime = next
       setTime(next)
+      syncMusic(next, false)
     },
-    [duration, url],
+    [duration, url, syncMusic],
   )
   const togglePlay = useCallback(() => {
     const v = videoRef.current
@@ -122,12 +153,16 @@ export default function VideoStudio({ active, header }: Props) {
           v.currentTime = clip.out
         }
         setTime(v.currentTime)
+        syncMusic(v.currentTime, !v.paused)
       }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [playing, clip])
+    return () => {
+      cancelAnimationFrame(raf)
+      musicRef.current?.pause()
+    }
+  }, [playing, clip, syncMusic])
 
   // Espaciadora = play / pausa (salvo escribiendo en un campo).
   useEffect(() => {
@@ -153,8 +188,9 @@ export default function VideoStudio({ active, header }: Props) {
     if (!ctx) return
     ctx.clearRect(0, 0, OUT_W, OUT_H)
     const next = drawOverlays(ctx, items, time)
+    drawSubtitles(ctx, subtitles, groups, time)
     setRects((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-  }, [items, time, fontsReady, active])
+  }, [items, time, fontsReady, active, subtitles, groups])
 
   // ── Arrastre libre en el visor (posición en % del marco, con imán al centro) ──
   const layerRef = useRef<HTMLDivElement>(null)
@@ -229,6 +265,80 @@ export default function VideoStudio({ active, header }: Props) {
     })
   }
 
+  // ── S1 · Subtítulos ───────────────────────────────────────────────────────────
+  const [tr, setTr] = useState<{ busy: boolean; note: string }>({ busy: false, note: '' })
+  const trAbort = useRef<AbortController | null>(null)
+  const setSubs = (patch: Partial<SubtitleTrack>) => setProject((p) => ({ ...p, subtitles: { ...p.subtitles, ...patch } }))
+  const runTranscribe = async () => {
+    if (tr.busy) {
+      trAbort.current?.abort()
+      return
+    }
+    if (!url || !clip) return
+    trAbort.current = new AbortController()
+    setTr({ busy: true, note: '[ Extrayendo audio del tramo recortado… ]' })
+    try {
+      const { base64, duration: span } = await clipToWavBase64(url, clip.in, clip.out)
+      const words = await transcribeAudio(loadAiSettings(), base64, span, trAbort.current.signal, (note) => note && setTr({ busy: true, note }))
+      // Los tiempos vuelven relativos al audio recortado: se pasan al tiempo del clip.
+      setSubs({ words: words.map((w) => ({ ...w, start: w.start + clip.in, end: w.end + clip.in })), enabled: true })
+      setTr({ busy: false, note: words.length ? `${words.length} palabras transcriptas. Revisá los términos técnicos en la lista.` : 'No se detectó habla en el tramo recortado.' })
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === 'AbortError'
+      setTr({
+        busy: false,
+        note: aborted ? 'Transcripción cancelada.' : err instanceof RateLimitError ? 'Cuota de Gemini alcanzada. Esperá un momento o cambiá de key.' : err instanceof Error ? err.message : 'No se pudo transcribir.',
+      })
+    }
+  }
+  const importSubs = async (file: File) => {
+    const words = parseSubtitleFile(await file.text())
+    if (!words.length) {
+      setTr({ busy: false, note: 'El archivo no tiene subtítulos con tiempos válidos (.srt / .vtt).' })
+      return
+    }
+    setSubs({ words, enabled: true })
+    setTr({ busy: false, note: `${file.name}: ${words.length} palabras importadas.` })
+  }
+  const current = activeGroup(groups, time)
+  const activeIndex = current ? groups.indexOf(current) : -1
+
+  // ── A2 · Música ───────────────────────────────────────────────────────────────
+  const uploadMusic = (file: File) => {
+    if (!file.type.startsWith('audio/') && !/\.(mp3|wav|m4a|ogg|aac)$/i.test(file.name)) {
+      setTr((s) => ({ ...s, note: 'El archivo de música no es de audio (.mp3 / .wav).' }))
+      return
+    }
+    if (musicUrl) URL.revokeObjectURL(musicUrl)
+    const next = URL.createObjectURL(file)
+    const probe = new Audio(next)
+    probe.onloadedmetadata = () => {
+      setMusicUrl(next)
+      setProject((p) => ({ ...p, music: { name: file.name, duration: probe.duration, volume: p.music?.volume ?? 20, ducking: p.music?.ducking ?? true } }))
+    }
+  }
+  const setMusic = (patch: Partial<MusicTrack>) => setProject((p) => (p.music ? { ...p, music: { ...p.music, ...patch } } : p))
+  const removeMusic = () => {
+    if (musicUrl) URL.revokeObjectURL(musicUrl)
+    setMusicUrl(null)
+    setProject((p) => ({ ...p, music: null }))
+  }
+
+  // Pistas que muestra el timeline: V1 + V2 del proyecto y S1 / A2 derivadas.
+  const timelineTracks: Track[] = [
+    ...project.tracks,
+    { id: 's1', kind: 'subtitle', label: 'S1 · SUBTÍTULOS', items: groups.map((g, i) => ({ id: `s1-${i}`, type: 'subtitle', start: g.start, end: g.end, data: { text: g.text } })) },
+    {
+      id: 'a2',
+      kind: 'audio',
+      label: 'A2 · MÚSICA',
+      items:
+        music && clip
+          ? [{ id: 'a2', type: 'audio', start: clip.in, end: Math.min(duration, clip.in + music.duration), data: { text: `${music.name} · ${music.volume}%`, volume: music.volume, segments: music.ducking ? segments : [] } }]
+          : [],
+    },
+  ]
+
   // ── Exportación ───────────────────────────────────────────────────────────────
   const runExport = async () => {
     if (exp.busy) {
@@ -243,7 +353,7 @@ export default function VideoStudio({ active, header }: Props) {
     abortRef.current = new AbortController()
     setExp({ busy: true, progress: 0, note: '' })
     try {
-      const res = await exportVideo({ url, project, signal: abortRef.current.signal, onProgress: (progress) => setExp((s) => ({ ...s, progress })) })
+      const res = await exportVideo({ url, musicUrl, project, signal: abortRef.current.signal, onProgress: (progress) => setExp((s) => ({ ...s, progress })) })
       const base = clip.name.replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '-').toLowerCase() || 'clip'
       downloadBlob(res.blob, `coachjp_video_${base}.${res.ext}`)
       setExp({ busy: false, progress: 1, note: `Exportado · ${res.ext.toUpperCase()} · ${(res.blob.size / 1024 / 1024).toFixed(1)} MB` })
@@ -286,6 +396,26 @@ export default function VideoStudio({ active, header }: Props) {
             )}
           </div>
           <OverlayPanel items={items} selected={selected} onSelect={(id) => setProject((p) => ({ ...p, selectedId: id }))} onChange={setOverlay} onAdd={addItem} onRemove={removeItem} />
+          <div className="border-t border-line pt-4">
+            <SubtitlePanel
+              track={subtitles}
+              groups={groups}
+              activeIndex={activeIndex}
+              busy={tr.busy}
+              note={tr.note}
+              canTranscribe={Boolean(clip)}
+              onChange={setSubs}
+              onTranscribe={runTranscribe}
+              onImport={importSubs}
+              onSeek={seek}
+              onEditText={(g, text) => setSubs({ words: editGroupText(subtitles.words, g, text) })}
+              onRetime={(g, a, b) => setSubs({ words: retimeGroup(subtitles.words, g, Math.max(0, a), Math.max(0, b)) })}
+              onRemove={(g) => setSubs({ words: removeGroup(subtitles.words, g) })}
+            />
+          </div>
+          <div className="border-t border-line pt-4">
+            <MusicPanel music={music} hasSpeech={segments.length > 0} onUpload={uploadMusic} onChange={setMusic} onRemove={removeMusic} />
+          </div>
           <div className="space-y-2 border-t border-line pt-4">
             <button
               type="button"
@@ -416,8 +546,9 @@ export default function VideoStudio({ active, header }: Props) {
             [ 👁 <span className="hidden sm:inline">REELS </span>SAFE ZONE ]
           </button>
         </div>
+        {musicUrl && <audio ref={musicRef} src={musicUrl} preload="auto" hidden />}
         <Timeline
-          tracks={project.tracks}
+          tracks={timelineTracks}
           clip={clip}
           duration={duration}
           time={time}

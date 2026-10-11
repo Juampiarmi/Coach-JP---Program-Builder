@@ -1,5 +1,6 @@
 import { BRAND, FONT_MONO } from '../lib/brand'
-import type { OverlayAlign, OverlayConfig, OverlayItem, OverlaySize } from './types'
+import { activeGroup, type SubtitleGroup } from './subtitles'
+import type { OverlayAlign, OverlayConfig, OverlayItem, OverlaySize, SubtitleTrack } from './types'
 import { OUT_H, OUT_W } from './types'
 
 /**
@@ -407,6 +408,89 @@ export function drawOverlays(ctx: Ctx, items: OverlayItem[], time: number): Over
     ctx.restore()
   }
   return rects
+}
+
+/** Colores de acento de la palabra activa. */
+const SUB_ACCENT: Record<SubtitleTrack['accent'], string> = { orange: '#FF5500', cyan: '#00E5FF' }
+const SUB_SIZE = 86
+const SUB_MAX_W = OUT_W * 0.85
+/** Centro vertical del bloque: tercio inferior, por encima del pie de Reels (descripción y audio). */
+const SUB_Y = SAFE.bottom - 150
+
+/**
+ * Subtítulos cinéticos estilo karaoke: el bloque activo (2 a 4 palabras) centrado en el tercio
+ * inferior; la palabra que se está diciendo va en acento y un 8 % más grande.
+ */
+export function drawSubtitles(ctx: Ctx, track: SubtitleTrack, groups: SubtitleGroup[], time: number) {
+  if (!track.enabled || !groups.length) return
+  const g = activeGroup(groups, time)
+  if (!g) return
+  const words = track.words.slice(g.from, g.to)
+  const pill = track.style === 'pill'
+  font(ctx, 700, SUB_SIZE, DISPLAY, 0)
+  const upperWords = words.map((w) => w.word.toUpperCase())
+  // El espacio de Chakra Petch es muy angosto: se abre para que cada palabra se lea suelta.
+  const space = ctx.measureText(' ').width * 1.7
+  const widths = upperWords.map((w) => ctx.measureText(w).width)
+  // Una o dos líneas: se parte cuando el bloque supera el 85 % del ancho.
+  const lines: number[][] = [[]]
+  let lineW = 0
+  widths.forEach((w, i) => {
+    const add = (lines[lines.length - 1].length ? space : 0) + w
+    if (lines[lines.length - 1].length && lineW + add > SUB_MAX_W) {
+      lines.push([i])
+      lineW = w
+    } else {
+      lines[lines.length - 1].push(i)
+      lineW += add
+    }
+  })
+  const fit = Math.min(1, SUB_MAX_W / Math.max(...lines.map((l) => l.reduce((n, i, k) => n + widths[i] + (k ? space : 0), 0))))
+  const lineH = SUB_SIZE * 1.12
+  const blockH = lines.length * lineH
+  // Entrada del bloque: 0,1 s de fade + leve escala.
+  const enter = ease((time - g.start) / 0.1)
+  ctx.save()
+  ctx.globalAlpha = enter
+  ctx.translate(OUT_W / 2, SUB_Y)
+  ctx.scale(fit * (0.94 + 0.06 * enter), fit * (0.94 + 0.06 * enter))
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'left'
+  lines.forEach((line, li) => {
+    const total = line.reduce((n, i, k) => n + widths[i] + (k ? space : 0), 0)
+    const y = -blockH / 2 + lineH * (li + 0.5)
+    if (pill) {
+      roundRect(ctx, -total / 2 - 30, y - lineH / 2 + 2, total + 60, lineH - 4, 18)
+      ctx.fillStyle = 'rgba(11,14,20,0.66)'
+      ctx.fill()
+    }
+    let x = -total / 2
+    line.forEach((i) => {
+      const w = words[i]
+      const active = time >= w.start && time < w.end + 0.05
+      const cx = x + widths[i] / 2
+      ctx.save()
+      ctx.translate(cx, y)
+      if (active) ctx.scale(1.08, 1.08)
+      font(ctx, 700, SUB_SIZE, DISPLAY, 0)
+      ctx.textAlign = 'center'
+      if (!pill) {
+        ctx.lineJoin = 'round'
+        ctx.lineWidth = SUB_SIZE * 0.13
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)'
+        ctx.shadowColor = 'rgba(0,0,0,0.75)'
+        ctx.shadowBlur = SUB_SIZE * 0.25
+        ctx.shadowOffsetY = 4
+        ctx.strokeText(upperWords[i], 0, 0)
+        ctx.shadowColor = 'transparent'
+      }
+      ctx.fillStyle = active ? SUB_ACCENT[track.accent] : '#FFFFFF'
+      ctx.fillText(upperWords[i], 0, 0)
+      ctx.restore()
+      x += widths[i] + space
+    })
+  })
+  ctx.restore()
 }
 
 /** Frame del video con encuadre "cover" en 1080×1920 (recorta los lados de un clip horizontal). */

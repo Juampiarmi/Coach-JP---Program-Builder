@@ -108,7 +108,7 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
               size="sm"
             />
           </Field>
-          <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+          <div className="space-y-2">
             <Field label="Tamaño" plain>
               <Segmented<OverlaySize>
                 value={selected.overlay.size}
@@ -125,7 +125,7 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
               type="button"
               onClick={() => onChange(selected.overlay.kind === 'watermark' ? { x: 28, y: 74 } : { x: 50, y: 45 })}
               title="Arrastrá el overlay en el visor para ubicarlo; esto lo devuelve al centro"
-              className="mb-px h-9 rounded-md border border-line px-2.5 font-mono text-[10px] font-semibold tracking-wider whitespace-nowrap text-steel transition hover:border-cyan/50 hover:text-cyan"
+              className="w-full rounded-md border py-1.5 border-line px-2.5 font-mono text-[10px] font-semibold tracking-wider whitespace-nowrap text-steel transition hover:border-cyan/50 hover:text-cyan"
             >
               [ ⌖ RECENTRAR OVERLAY ]
             </button>

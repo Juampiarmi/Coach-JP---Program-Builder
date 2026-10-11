@@ -1232,3 +1232,89 @@ Forma exacta: { "found": boolean, "author": string (apellido del primer autor + 
     citeSub: first(res.finding, res.hallazgo).slice(0, 140),
   }
 }
+
+// ---------------------------------------------------------------------------
+// Video Studio · transcripción de audio con Gemini (multimodal: audio WAV en línea + prompt).
+
+export interface TranscribedWord {
+  word: string
+  start: number
+  end: number
+}
+
+const TRANSCRIBE_PROMPT = (duration: number) => `Transcribí el habla de este audio (español rioplatense) con marcas de tiempo a nivel PALABRA.
+El audio dura ${duration.toFixed(2)} segundos. Los tiempos van en segundos con 2 decimales, relativos al inicio del audio, en orden y sin superponerse.
+Es contenido de entrenamiento: respetá exactamente términos técnicos como RIR, RPE, 1RM, mTOR, excéntrico, concéntrico, isométrico, hipertrofia, sobrecarga progresiva, Hyrox, CrossFit, WOD, VO2máx, glucógeno.
+Escribí cada palabra con su puntuación pegada (coma, punto, signos de pregunta). No inventes texto: si no hay habla, devolvé "words": [].
+Respondé SOLO con JSON: { "words": [ { "word": string, "start": number, "end": number } ] }`
+
+async function requestGeminiAudio(key: string, model: string, wavBase64: string, duration: number, signal?: AbortSignal) {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ inline_data: { mime_type: 'audio/wav', data: wavBase64 } }, { text: TRANSCRIBE_PROMPT(duration) }] }],
+      generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 16384, temperature: 0 },
+    }),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Quota exceeded', model)
+  if (!res.ok) throw new HttpError(json?.error?.message ?? `Gemini respondió ${res.status}`, res.status)
+  const cand = json?.candidates?.[0]
+  if (!cand?.content) throw new Error(`Gemini no devolvió la transcripción${cand?.finishReason ? ` (${cand.finishReason})` : ''}.`)
+  return ((cand.content.parts ?? []) as { text?: string }[]).map((p) => p.text ?? '').join('')
+}
+
+/**
+ * Transcribe el audio (WAV mono en base64) y devuelve palabras con tiempos relativos al inicio
+ * del audio, ordenadas, dentro de la duración y sin superposiciones. Usa la key de Gemini
+ * guardada; si el modelo elegido no existe o agotó la cuota, prueba con los detectados.
+ */
+export async function transcribeAudio(
+  settings: AiSettings,
+  wavBase64: string,
+  duration: number,
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<TranscribedWord[]> {
+  const key = (settings.keys.gemini ?? '').trim()
+  if (!key) throw new Error('La transcripción usa Gemini: cargá tu API Key de Gemini en el Generador IA (modo placas).')
+  const preferred = (settings.models.gemini ?? '').trim() || GEMINI_DEFAULT_MODEL
+  const models = [preferred, ...(settings.geminiModels ?? []).map((m) => m.id).filter((id) => id !== preferred)].slice(0, 4)
+  let lastErr: unknown = null
+  for (const model of models) {
+    if (isExhausted(model)) continue
+    try {
+      onStatus?.(`[ Transcribiendo con ${model}… ]`)
+      const text = await requestGeminiAudio(key, model, wavBase64, duration, signal)
+      const raw = obj(safeParseJson(text))
+      const list = (Array.isArray(raw.words) ? raw.words : Array.isArray(raw) ? (raw as unknown[]) : []).map(obj)
+      const words: TranscribedWord[] = []
+      for (const w of list) {
+        const word = str(w.word ?? w.text).trim()
+        let start = num(w.start, NaN)
+        let end = num(w.end, NaN)
+        if (!word || !Number.isFinite(start)) continue
+        start = Math.min(duration, Math.max(0, start))
+        end = Math.min(duration, Math.max(start + 0.05, Number.isFinite(end) ? end : start + 0.3))
+        words.push({ word, start, end })
+      }
+      words.sort((a, b) => a.start - b.start)
+      for (let i = 0; i < words.length - 1; i++) if (words[i].end > words[i + 1].start) words[i].end = Math.max(words[i].start + 0.05, words[i + 1].start)
+      onStatus?.(null)
+      return words
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      lastErr = err
+      if (err instanceof RateLimitError) {
+        markExhausted(err)
+        continue
+      }
+      if (err instanceof HttpError && (err.status === 404 || err.status === 400)) continue
+      throw err
+    }
+  }
+  onStatus?.(null)
+  throw lastErr instanceof Error ? lastErr : new Error('No se pudo transcribir el audio con los modelos disponibles.')
+}
