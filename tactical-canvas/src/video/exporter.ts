@@ -129,7 +129,7 @@ export async function exportVideo({ url, musicUrl, project, takes = new Map(), o
     applyZoom(ctx, zoom)
     drawVideoCover(ctx, video)
     ctx.restore()
-    drawBiomech(ctx, project.biomech, t, null, false, zoom)
+    drawBiomech(ctx, project.biomech, t, null, false, zoom, true)
     drawOverlays(ctx, items, t)
     drawSubtitles(ctx, subs, groups, t)
     drawFlash(ctx, flashAt(project.fx, t))

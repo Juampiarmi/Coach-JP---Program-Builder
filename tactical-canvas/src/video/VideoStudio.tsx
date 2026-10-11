@@ -7,7 +7,7 @@ import { analyzeTake, clipPeaks, scheduleVoice, startRecording, voiceSegments, t
 import { VoicePanel } from './VoicePanel'
 import { DirectorPanel } from './director/DirectorPanel'
 import { Teleprompter } from './director/Teleprompter'
-import { injectDirector } from './director/inject'
+import { injectDirector, unplacedAngles } from './director/inject'
 import { recordStockClip, synthMusic } from './director/stock'
 import { runDirector } from './director/videoDirector'
 import type { DirectorPace, TacticalDirectorOutput } from '../types/timelineDirector'
@@ -16,7 +16,7 @@ import { SubtitlePanel } from './SubtitlePanel'
 import { activeGroup, duckGain, editGroupText, groupWords, insertManual, parseSubtitleFile, removeGroup, retimeGroup, speechSegments, withOffset, type SubtitleGroup } from './subtitles'
 import { exportVideo, extractThumbs, pickMime } from './exporter'
 import { Accordion } from './Accordion'
-import { activeAngles, drawBiomech, jointAngle, px as toPx } from './biomech'
+import { activeAngles, drawBiomech, jointAngle, px as toPx, type AnglePillRect } from './biomech'
 import { BiomechPanel } from './BiomechPanel'
 import { FxPanel } from './FxPanel'
 import { FX_META, playFx } from './fx'
@@ -280,6 +280,8 @@ export default function VideoStudio({ active, header }: Props) {
     loadOverlayFonts().then(() => setFontsReady(true))
   }, [])
   const [rects, setRects] = useState<OverlayRect[]>([])
+  /** Pastillas de grados visibles: tomarlas arrastra el goniómetro entero. */
+  const [pillRects, setPillRects] = useState<AnglePillRect[]>([])
   // VFX en vivo: sacudida (CSS sobre video + canvas) y punch-in (video por CSS, HUD en canvas).
   const shake = shakeAt(fx, time)
   const zoom = punchAt(bio, items, time) * shakeOverscan(shake)
@@ -289,7 +291,8 @@ export default function VideoStudio({ active, header }: Props) {
     if (!ctx) return
     ctx.clearRect(0, 0, OUT_W, OUT_H)
     // El HUD biomecánico acompaña el punch-in del video; overlays y subtítulos no escalan.
-    drawBiomech(ctx, bio, time, selectedAngle, tracing, zoom)
+    const pills = drawBiomech(ctx, bio, time, selectedAngle, tracing, zoom)
+    setPillRects((prev) => (JSON.stringify(prev) === JSON.stringify(pills) ? prev : pills))
     const next = drawOverlays(ctx, items, time)
     drawSubtitles(ctx, subs, groups, time)
     drawFlash(ctx, flashAt(fx, time))
@@ -306,11 +309,11 @@ export default function VideoStudio({ active, header }: Props) {
   }
   const hitTest = (px: number, py: number) => [...rects].reverse().find((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) ?? null
   /** Manija de goniómetro (articulación) bajo el puntero, si hay uno visible ahora. */
-  const handleAt = (px: number, py: number) => {
+  const handleAt = (px: number, py: number, radius = 44) => {
     for (const g of [...activeAngles(bio, time)].reverse()) {
       for (const k of ['b', 'a', 'c'] as const) {
         const p = toPx(g[k])
-        if (Math.hypot(p.x - px, p.y - py) < 44) return { id: g.id, k }
+        if (Math.hypot(p.x - px, p.y - py) < radius) return { id: g.id, k }
       }
     }
     return null
@@ -428,14 +431,38 @@ export default function VideoStudio({ active, header }: Props) {
     }
     // Goniómetro: arrastrar cada articulación (coordenadas del cuadro sin el punch-in).
     const z = unzoom(px, py, zoom)
-    const handle = handleAt(z.px, z.py)
+    // Prioridad: articulación justo debajo del puntero → pastilla (mueve todo) → articulación cercana.
+    const pillHit = pillRects.some((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
+    const handle = handleAt(z.px, z.py, 26) ?? (pillHit ? null : handleAt(z.px, z.py))
     if (handle) {
       setSelectedAngle(handle.id)
       setSections((st) => ({ ...st, b1: true }))
       pressDrag(e, (ev) => {
         const pt = unzoomFrame(ev.clientX, ev.clientY)
         const pos = { x: Math.min(100, Math.max(0, (pt.px / OUT_W) * 100)), y: Math.min(100, Math.max(0, (pt.py / OUT_H) * 100)) }
-        setProject((p) => ({ ...p, biomech: { ...p.biomech, angles: p.biomech.angles.map((g) => (g.id === handle.id ? { ...g, [handle.k]: pos } : g)) } }))
+        setProject((p) => ({ ...p, biomech: { ...p.biomech, angles: p.biomech.angles.map((g) => (g.id === handle.id ? { ...g, [handle.k]: pos, placed: true } : g)) } }))
+      })
+      return
+    }
+    // Pastilla de grados: arrastra el goniómetro completo (los 3 puntos juntos).
+    const pill = [...pillRects].reverse().find((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
+    const pillAngle = pill && bio.angles.find((g) => g.id === pill.id)
+    if (pill && pillAngle) {
+      setSelectedAngle(pill.id)
+      setSections((st) => ({ ...st, b1: true }))
+      const start = unzoomFrame(e.clientX, e.clientY)
+      const base = { a: pillAngle.a, b: pillAngle.b, c: pillAngle.c }
+      pressDrag(e, (ev) => {
+        const pt = unzoomFrame(ev.clientX, ev.clientY)
+        let dx = ((pt.px - start.px) / OUT_W) * 100
+        let dy = ((pt.py - start.py) / OUT_H) * 100
+        // Los 3 puntos se mueven juntos sin salirse del cuadro.
+        const xs = [base.a.x, base.b.x, base.c.x]
+        const ys = [base.a.y, base.b.y, base.c.y]
+        dx = Math.min(100 - Math.max(...xs), Math.max(-Math.min(...xs), dx))
+        dy = Math.min(100 - Math.max(...ys), Math.max(-Math.min(...ys), dy))
+        const mv = (q: { x: number; y: number }) => ({ x: q.x + dx, y: q.y + dy })
+        setProject((p) => ({ ...p, biomech: { ...p.biomech, angles: p.biomech.angles.map((g) => (g.id === pill.id ? { ...g, a: mv(base.a), b: mv(base.b), c: mv(base.c), placed: true } : g)) } }))
       })
       return
     }
@@ -476,7 +503,8 @@ export default function VideoStudio({ active, header }: Props) {
       return
     }
     const z = unzoom(px, py, zoom)
-    const over = Boolean(hitTest(px, py) || handleAt(z.px, z.py))
+    const overPill = pillRects.some((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
+    const over = Boolean(hitTest(px, py) || handleAt(z.px, z.py) || overPill)
     if (over !== hoverMove) setHoverMove(over)
   }
   const selRect = rects.find((r) => r.id === project.selectedId)
@@ -968,6 +996,12 @@ export default function VideoStudio({ active, header }: Props) {
               onCancel={() => dirAbort.current?.abort()}
               onSeek={seek}
               onTeleprompter={() => setTeleOpen(true)}
+              unplaced={unplacedAngles(project)}
+              onPlace={(t) => {
+                seek(t)
+                const g = bio.angles.find((x) => x.placed === false)
+                if (g) setSelectedAngle(g.id)
+              }}
             />
           </Accordion>
           <Accordion title="V2 · OVERLAYS TÁCTICOS" badge={`${items.length} ${items.length === 1 ? 'BLOQUE' : 'BLOQUES'}`} open={sections.v2} onToggle={() => toggle('v2')}>

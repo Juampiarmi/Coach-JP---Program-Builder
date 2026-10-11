@@ -9,6 +9,11 @@ export interface DirectorCue {
   label: string
 }
 
+/** Goniómetros del Director que todavía hay que ubicar sobre el atleta. */
+export function unplacedAngles(p: VideoProject): DirectorCue[] {
+  return p.biomech.angles.filter((g) => g.placed === false).map((g) => ({ t: g.start + 0.05, label: g.label }))
+}
+
 export function barPathCues(out: TacticalDirectorOutput, offset: number): DirectorCue[] {
   return out.v2_overlays.filter((o) => o.type === 'bar_path').map((o) => ({ t: offset + o.startTime, label: o.label || 'TRAZAR BAR PATH' }))
 }
@@ -31,8 +36,11 @@ export function injectDirector(p: VideoProject, out: TacticalDirectorOutput, ide
         kind: 'badge',
         value: value.slice(0, 8),
         label: o.config.targetValue !== undefined ? (o.label ?? '') : (o.label ?? '').split(/\s+/).slice(1).join(' '),
-        x: o.config.position?.x ?? 50,
-        y: o.config.position?.y ?? 30,
+        // Chip compacto (≤ 15 % del ancho) en la esquina superior izquierda segura: nunca sobre el
+        // cuerpo del atleta ni sobre la banda de subtítulos. El usuario lo puede arrastrar.
+        size: 'XS',
+        x: 14,
+        y: 17,
         style: 'box',
         entrance: 'slide',
         exit: 'fade',
@@ -43,7 +51,8 @@ export function injectDirector(p: VideoProject, out: TacticalDirectorOutput, ide
   const angles: Goniometer[] = out.v2_overlays
     .filter((o) => o.type === 'goniometer')
     .map((o) => {
-      const b = { x: o.config.position?.x ?? 58, y: o.config.position?.y ?? 57 }
+      // Posición provisoria siempre en la zona de piernas (rodilla), nunca en el techo ni en la cara.
+      const b = { x: Math.min(65, Math.max(35, o.config.position?.x ?? 55)), y: Math.min(72, Math.max(55, o.config.position?.y ?? 62)) }
       // Geometría inicial que ya mide el ángulo objetivo (si viene en grados): el segmento a
       // (cadera) sale hacia arriba-izquierda y c (tobillo) se abre exactamente ese ángulo.
       const target = Number(String(o.config.targetValue ?? '').replace(',', '.').match(/\d+(\.\d+)?/)?.[0])
@@ -64,6 +73,8 @@ export function injectDirector(p: VideoProject, out: TacticalDirectorOutput, ide
         label: o.label || (Number.isFinite(target) ? `OBJETIVO ${o.config.targetValue}` : String(o.config.targetValue ?? '')) || 'PUNTO CRÍTICO',
         color: o.config.color === 'white' ? 'white' : 'orange',
         punch: technical,
+        // Posición provisoria: no se exporta hasta que el usuario lo ubica sobre la articulación.
+        placed: false,
       }
     })
 

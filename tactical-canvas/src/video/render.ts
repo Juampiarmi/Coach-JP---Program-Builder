@@ -14,7 +14,9 @@ const EXIT = 0.3
 /** Márgenes de la zona segura de Reels (UI de Instagram arriba, columna derecha y pie). */
 export const SAFE = { top: 250, bottom: 1480, left: 72, right: 1080 - 180 }
 /** Escala de cada tamaño: S compacto, M estándar, L impacto. */
-const SIZE_K: Record<OverlaySize, number> = { S: 0.7, M: 1, L: 1.3 }
+const SIZE_K: Record<OverlaySize, number> = { XS: 1, S: 0.7, M: 1, L: 1.3 }
+/** Chip XS: nunca más del 15 % del ancho del cuadro. */
+const CHIP_MAX_W = OUT_W * 0.15
 
 type Ctx = CanvasRenderingContext2D
 
@@ -140,6 +142,45 @@ interface Block {
   w: number
   h: number
   draw: (ctx: Ctx, clean: boolean, ax: (pad: number) => number) => void
+}
+
+/** Chip táctico XS: valor + rótulo corto en un bloque mínimo para una esquina segura. */
+function chipBlock(ctx: Ctx, o: OverlayConfig): Block {
+  const value = o.value.trim()
+  const label = o.label.trim().toUpperCase()
+  font(ctx, 700, 64, DISPLAY, -1)
+  const valueW = value ? ctx.measureText(value).width : 0
+  font(ctx, 600, 22, FONT_MONO, 2)
+  const labelW = label ? ctx.measureText(label).width : 0
+  const pad = 16
+  const w = Math.max(valueW, labelW) + pad * 2
+  const h = pad + (value ? 60 : 0) + (label ? (value ? 8 : 0) + 26 : 0) + pad
+  return {
+    w,
+    h,
+    draw: (c, cl, ax) => {
+      let y = pad
+      if (value) {
+        font(c, 700, 64, DISPLAY, -1)
+        c.fillStyle = BRAND.orange
+        text(c, value, ax(pad), y + 54, cl, 64)
+        y += 60 + 8
+      }
+      if (label) {
+        font(c, 600, 22, FONT_MONO, 2)
+        c.fillStyle = BRAND.white
+        text(c, label, ax(pad), y + 20, cl, 22)
+      }
+    },
+  }
+}
+
+/** Overlay sin contenido visible: no se dibuja ni deja una caja vacía en el cuadro. */
+function isEmptyOverlay(o: OverlayConfig) {
+  if (o.kind === 'badge') return !o.value.trim() && !o.label.trim()
+  if (o.kind === 'headline') return !o.tag.trim() && !o.headlineA.trim() && !o.headlineB.trim()
+  if (o.kind === 'checklist') return !o.checks.some((c) => c.text.trim())
+  return false
 }
 
 function badgeBlock(ctx: Ctx, o: OverlayConfig, clean: boolean): Block {
@@ -354,7 +395,7 @@ const RIGHT_LIMIT = SAFE.right
 
 /** Tamaño final del bloque en el marco (escala S/M/L y tope del 85 % de ancho). */
 function blockScale(o: OverlayConfig, w: number) {
-  return Math.min(SIZE_K[o.size] ?? 1, MAX_W / w)
+  return Math.min(SIZE_K[o.size] ?? 1, (o.size === 'XS' ? CHIP_MAX_W : MAX_W) / w)
 }
 
 /** Esquina superior izquierda a partir del centro en % (x, y), sin salirse del marco. */
@@ -382,7 +423,9 @@ function textAlignFor(o: OverlayConfig): OverlayAlign {
 function buildBlock(ctx: Ctx, item: OverlayItem, time: number, clean: boolean): Block {
   const o = item.overlay
   return o.kind === 'badge'
-    ? badgeBlock(ctx, o, clean)
+    ? o.size === 'XS'
+      ? chipBlock(ctx, o)
+      : badgeBlock(ctx, o, clean)
     : o.kind === 'headline'
       ? headlineBlock(ctx, o, clean)
       : o.kind === 'timer'
@@ -398,6 +441,7 @@ export function drawOverlays(ctx: Ctx, items: OverlayItem[], time: number): Over
   for (const item of items) {
     if (time < item.start || time > item.end) continue
     const o = item.overlay
+    if (isEmptyOverlay(o)) continue
     const { alpha, dy } = animation(item, time)
     if (alpha <= 0.001) continue
     const clean = o.style === 'clean'

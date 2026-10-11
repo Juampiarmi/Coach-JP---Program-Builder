@@ -24,7 +24,8 @@ export type OverlayExit = 'none' | 'fade' | 'slide'
 /** Caja táctica (esquinas recortadas + borde) o texto puro con sombra de alto contraste */
 export type OverlayStyle = 'box' | 'clean'
 export type OverlayAlign = 'left' | 'center' | 'right'
-export type OverlaySize = 'S' | 'M' | 'L'
+/** XS = chip táctico compacto (≤ 15 % del ancho), para esquinas seguras */
+export type OverlaySize = 'XS' | 'S' | 'M' | 'L'
 
 export interface CheckItem {
   text: string
@@ -166,6 +167,9 @@ export interface Goniometer extends TimeRange {
   color: 'orange' | 'white'
   /** Punch-in digital 1.15x mientras dura el bloque */
   punch?: boolean
+  /** false = colocado por el Director en una posición provisoria: no se exporta hasta que el
+   *  usuario arrastra los 3 puntos sobre la articulación real */
+  placed?: boolean
 }
 
 /** Pista B1 · HUD biomecánico. */

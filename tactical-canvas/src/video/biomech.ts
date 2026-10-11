@@ -57,6 +57,15 @@ export function pathPointAt(points: PathPoint[], time: number): FramePoint | nul
 /** Goniómetros visibles en `time`. */
 export const activeAngles = (bio: Biomech, time: number) => bio.angles.filter((g) => time >= g.start && time <= g.end)
 
+/** Caja de la pastilla de grados en el cuadro (para arrastrar el goniómetro entero). */
+export interface AnglePillRect {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 function pill(ctx: Ctx, text: string, x: number, y: number, color: string) {
   ctx.font = `700 38px ${DISPLAY}`
   const w = ctx.measureText(text).width + 40
@@ -164,7 +173,7 @@ function drawPath(ctx: Ctx, bio: Biomech, time: number) {
   ctx.restore()
 }
 
-function drawAngle(ctx: Ctx, g: Goniometer, selected: boolean) {
+function drawAngle(ctx: Ctx, g: Goniometer, selected: boolean): AnglePillRect {
   const a = sp(g.a)
   const b = sp(g.b)
   const c = sp(g.c)
@@ -233,8 +242,27 @@ function drawAngle(ctx: Ctx, g: Goniometer, selected: boolean) {
   ctx.font = `700 38px ${DISPLAY}`
   const { x: lx, y: ly } = placePill(a, b, c, ctx.measureText(text).width + 40, 60, from + delta / 2)
   pill(ctx, text, lx, ly, color)
+  const pw = ctx.measureText(text).width + 40
+  const rect = { id: g.id, x: lx - pw / 2, y: ly - 30, w: pw, h: 60 }
+  // Colocado por el Director: aviso para ubicarlo sobre la articulación real (sólo vista previa).
+  if (g.placed === false) {
+    ctx.save()
+    ctx.font = `700 24px ${FONT_MONO}`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const msg = '⇲ ARRASTRÁ CADERA · RODILLA · TOBILLO SOBRE EL ATLETA'
+    const mw = ctx.measureText(msg).width + 36
+    const my = Math.max(60, Math.min(...[a.y, b.y, c.y]) - 80)
+    ctx.fillStyle = 'rgba(0,229,255,0.92)'
+    ctx.beginPath()
+    ctx.roundRect(OUT_W / 2 - mw / 2, my - 24, mw, 48, 10)
+    ctx.fill()
+    ctx.fillStyle = '#05070A'
+    ctx.fillText(msg, OUT_W / 2, my + 1)
+    ctx.restore()
+  }
   // Nombres de las articulaciones mientras se edita (sólo vista previa).
-  if (selected) {
+  if (selected || g.placed === false) {
     ctx.save()
     ctx.font = `700 22px ${FONT_MONO}`
     ctx.textBaseline = 'middle'
@@ -255,6 +283,7 @@ function drawAngle(ctx: Ctx, g: Goniometer, selected: boolean) {
     }
     ctx.restore()
   }
+  return rect
 }
 
 /**
@@ -275,7 +304,7 @@ function placePill(a: FramePoint, b: FramePoint, c: FramePoint, w: number, h: nu
   }
   let best = { x: b.x + outSide * (GAP + w / 2), y: b.y, score: Infinity }
   for (const side of [outSide, -outSide]) {
-    for (const dy of [0, -110, 110, -220, 220, -330, 330]) {
+    for (const dy of [0, -110, 110, -220, 220, -330, 330, -440, -550]) {
       let x = b.x + side * (GAP + w / 2)
       const y = Math.min(OUT_H - 50 - h / 2, Math.max(50 + h / 2, b.y + dy))
       x = Math.min(OUT_W - 20 - w / 2, Math.max(20 + w / 2, x))
@@ -283,6 +312,11 @@ function placePill(a: FramePoint, b: FramePoint, c: FramePoint, w: number, h: nu
       const inside = (p: FramePoint, r = 0) => Math.abs(p.x - x) < w / 2 + pad + r && Math.abs(p.y - y) < h / 2 + pad + r
       let score = Math.abs(dy) / 110 + (side === outSide ? 0 : 0.5)
       if (x + w / 2 > SAFE.right) score += 2.5 // mejor fuera de la columna de acciones de Reels
+      // Nunca sobre la banda de subtítulos (S1, centrada en SAFE.bottom − 150) ni sobre el pie de Reels.
+      const top = y - h / 2
+      const bottom = y + h / 2
+      if (bottom > SAFE.bottom - 150 - 110 && top < SAFE.bottom - 150 + 110) score += 400
+      if (bottom > SAFE.bottom) score += 300
       if (inside(b, 50)) score += 1000 // nunca sobre la rodilla
       for (const p of [a, c]) if (inside(p, 20)) score += 200
       for (const p of samples) if (inside(p)) score += 8
@@ -293,7 +327,7 @@ function placePill(a: FramePoint, b: FramePoint, c: FramePoint, w: number, h: nu
 }
 
 /** Dibuja el Bar Path y los goniómetros activos en `time`. */
-export function drawBiomech(ctx: Ctx, bio: Biomech, time: number, selectedAngle: string | null = null, capture = false, scale = 1) {
+export function drawBiomech(ctx: Ctx, bio: Biomech, time: number, selectedAngle: string | null = null, capture = false, scale = 1, exporting = false): AnglePillRect[] {
   zoom = scale
   // Modo captura (sólo vista previa): todos los puntos registrados, numerados.
   if (capture) {
@@ -315,5 +349,8 @@ export function drawBiomech(ctx: Ctx, bio: Biomech, time: number, selectedAngle:
     ctx.restore()
   }
   drawPath(ctx, bio, time)
-  for (const g of activeAngles(bio, time)) drawAngle(ctx, g, g.id === selectedAngle)
+  // En la exportación no salen los goniómetros que nadie ubicó sobre el atleta.
+  return activeAngles(bio, time)
+    .filter((g) => !exporting || g.placed !== false)
+    .map((g) => drawAngle(ctx, g, g.id === selectedAngle))
 }

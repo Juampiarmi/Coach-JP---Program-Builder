@@ -21,6 +21,9 @@ interface Props {
   onCancel: () => void
   onSeek: (t: number) => void
   onTeleprompter: () => void
+  /** Goniómetros del Director pendientes de ubicar sobre el atleta */
+  unplaced: { t: number; label: string }[]
+  onPlace: (t: number) => void
 }
 
 const PACES: { id: DirectorPace; label: string; hint: string }[] = [
@@ -29,7 +32,7 @@ const PACES: { id: DirectorPace; label: string; hint: string }[] = [
 ]
 
 /** Panel del Director de Montaje IA: idea → montaje completo en V1, V2, S1, A1 y A2. */
-export function DirectorPanel({ idea, pace, busy, stage, progress, error, director, hasClip, onIdea, onPace, onGenerate, onCancel, onSeek, onTeleprompter }: Props) {
+export function DirectorPanel({ idea, pace, busy, stage, progress, error, director, hasClip, onIdea, onPace, onGenerate, onCancel, onSeek, onTeleprompter, unplaced, onPlace }: Props) {
   const out = director?.output
   const cues = director && out ? barPathCues(out, director.offset) : []
   return (
@@ -59,6 +62,7 @@ export function DirectorPanel({ idea, pace, busy, stage, progress, error, direct
         ))}
       </div>
       <p className="font-mono text-[9px] leading-relaxed text-steel/70">
+        {pace === 'fast_kinetic' ? 'Brutalist: video limpio + subtítulos cinéticos + flash en el hook + beat con ducking (sin overlays biomecánicos). ' : 'Desglose: como máximo 1 evento técnico con etiqueta, que ubicás vos sobre el atleta. '}
         {hasClip ? 'Se monta sobre tu clip (la duración se ajusta al tramo recortado).' : 'Sin clip: se genera un fondo táctico de stock en tiempo real (después podés subir tu clip y regenerar).'} El montaje reemplaza V2, S1, B1, A3 y la música actual.
       </p>
       <button
@@ -98,6 +102,20 @@ export function DirectorPanel({ idea, pace, busy, stage, progress, error, direct
           </div>
           {out.v1_video.playbackRate !== 1 && hasClip && (
             <p className="font-mono text-[9px] leading-relaxed text-gold/80">Velocidad sugerida para tu clip: {out.v1_video.playbackRate}x (el estudio lo reproduce a velocidad real; aplicala al grabar el clip).</p>
+          )}
+          {unplaced.length > 0 && (
+            <div className="space-y-1 rounded-md border border-cyan/40 bg-cyan/5 p-2">
+              <p className="font-mono text-[9px] leading-relaxed tracking-[0.08em] text-cyan">
+                ∠ El Director no ve al atleta: ubicá el goniómetro arrastrando cadera, rodilla y tobillo sobre el video. Hasta entonces no sale en la exportación.
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {unplaced.map((c, i) => (
+                  <button key={i} type="button" onClick={() => onPlace(c.t)} className="rounded border border-cyan/60 px-1.5 py-0.5 font-mono text-[9px] tracking-wider text-cyan hover:bg-cyan/10">
+                    ∠ {timecode(c.t).slice(0, 5)} · {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {cues.length > 0 && (
             <div className="space-y-1">

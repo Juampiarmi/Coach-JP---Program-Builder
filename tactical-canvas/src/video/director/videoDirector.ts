@@ -90,11 +90,20 @@ export const DIRECTOR_SYSTEM = `Sos el DIRECTOR DE MONTAJE Y RITMO de COACH JP (
 REGLAS DE MONTAJE:
 1. HOOK DE RETENCIÓN: los primeros 2,0 s tienen una sentencia contundente en S1 (empieza antes de 0,5 s) y un "flash_impact" en V2 (antes de 1,0 s).
 2. SUBTÍTULOS CINÉTICOS (S1): máximo 4 a 6 palabras por segmento, segmentos consecutivos sin solaparse y sincronizados con el guion de A1 al ritmo de targetWpm. En cada remate destacá UNA palabra clave ("highlightWord") con accentColor "orange" o "cyan"; el resto de los segmentos van en "white".
-3. OVERLAYS TÁCTICOS (V2): anclá goniómetros ("goniometer", con el ángulo en targetValue) y métricas ("badge_metric") en los puntos de máxima tensión mecánica o sticking points (fondo de la sentadilla, despegue del peso muerto, bloqueo). "bar_path" marca dónde conviene trazar la trayectoria. Posiciones en % del cuadro dentro de la zona segura (x 10–80, y 15–75).
-4. RITMO: "fast_kinetic" = cortes enérgicos, un evento de V2 cada 2–3 s; "technical_breakdown" = ritmo analítico con pausas de 1,5–3 s sobre cada goniómetro y playbackRate 0,6–0,85 para el desglose.
+3. OVERLAYS (V2) · NO INTERPRETÁS EL VIDEO: no ves al atleta, así que nunca inventes goniómetros, vectores ni métricas biomecánicas sobre el cuerpo.
+   - "fast_kinetic" o premisa de mindset / disciplina / cargas: V2 tiene SOLO "flash_impact" (el del hook y, como mucho, uno en el remate final). Prohibido "goniometer", "bar_path" y "badge_metric".
+   - "technical_breakdown": como máximo UN evento contextual ("goniometer" en el punto de flexión, o una "badge_metric"), siempre con "label" descriptivo (ej: «FLEXIÓN RODILLA», «RIR 1 REAL»). El usuario lo ubica a mano sobre la articulación real.
+4. RITMO: "fast_kinetic" = cortes enérgicos que sostienen los subtítulos y el beat; "technical_breakdown" = ritmo analítico con una pausa de 1,5–3 s sobre el evento técnico y playbackRate 0,6–0,85 para el desglose.
 5. FILOSOFÍA: cero clichés de autoayuda («sé tu mejor versión», «rompé tus límites», «el dolor es temporal»). Lenguaje de fisiología aplicada, biomecánica y estándares innegociables. Cero emojis, cero signos de exclamación, cero cifras inventadas: si no hay certeza, usá un criterio técnico (RIR, rango, ángulo) en vez de un número falso.
 6. MÚSICA (A2): ducking activo cuando hay voz en off; duckingVolume claramente menor que baseVolume.
 Todos los tiempos en segundos, dentro de [0, durationSeconds].`
+
+/** Premisa de mindset / disciplina / cargas: el montaje no lleva overlays biomecánicos. */
+const MINDSET_RX = /mindset|mentalidad|disciplina|motivaci|constancia|est[aá]ndar(es)? diario|car[aá]cter|voluntad|h[aá]bito|cargas?\b|consistencia|filosof/i
+export const isMindsetPremise = (idea: string) => MINDSET_RX.test(idea)
+
+/** Etiqueta descriptiva por defecto de cada evento técnico. */
+const DEFAULT_LABEL: Partial<Record<TacticalOverlayEvent['type'], string>> = { goniometer: 'FLEXIÓN RODILLA', badge_metric: 'MÉTRICA CLAVE', bar_path: 'TRAYECTORIA DE LA BARRA' }
 
 export const PACE_RANGE: Record<DirectorPace, [number, number]> = { fast_kinetic: [15, 20], technical_breakdown: [30, 45] }
 
@@ -184,6 +193,18 @@ export function normalizeDirector(raw: unknown, req: DirectorRequest): TacticalD
       }
     })
     .sort((a, b) => a.startTime - b.startTime)
+  // Separación estricta de modos: el Director no ve al atleta, así que no inventa biomecánica.
+  // Brutalist / mindset → sólo destellos (hook + remate final). Desglose → como máximo UN
+  // evento contextual (goniómetro preferido), siempre con etiqueta descriptiva.
+  const flashes = overlays.filter((o) => o.type === 'flash_impact')
+  const kept: TacticalOverlayEvent[] = flashes.filter((o, i) => o.startTime < 1 || i === flashes.length - 1).slice(0, 2)
+  const mindset = req.pace === 'fast_kinetic' || isMindsetPremise(req.idea)
+  if (!mindset) {
+    const tech = overlays.find((o) => o.type === 'goniometer') ?? overlays.find((o) => o.type === 'badge_metric')
+    if (tech) kept.push({ ...tech, label: tech.label || DEFAULT_LABEL[tech.type] })
+  }
+  overlays.length = 0
+  overlays.push(...kept.sort((a, b) => a.startTime - b.startTime))
   // Hook visual: flash antes de 1 s.
   if (!overlays.some((o) => o.type === 'flash_impact' && o.startTime < 1)) overlays.unshift({ type: 'flash_impact', startTime: 0.15, duration: 0.2, config: { color: 'orange' } })
 

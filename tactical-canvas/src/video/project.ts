@@ -40,7 +40,7 @@ export function defaultProject(): VideoProject {
       // Fase 2: { id: 'a1', kind: 'audio', label: 'A1 · MÚSICA', items: [] } y subtítulos.
     ],
     selectedId: first.id,
-    safeZone: true,
+    safeZone: false,
     subtitles: { words: [], style: 'outline', accent: 'orange', enabled: true, offset: 0 },
     music: null,
     biomech: { path: { points: [], thick: false, showVertical: true }, angles: [] },

@@ -114,6 +114,7 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
                 value={selected.overlay.size}
                 onChange={(size) => onChange({ size })}
                 options={[
+                  { value: 'XS', label: 'XS · CHIP' },
                   { value: 'S', label: 'S · COMPACTO' },
                   { value: 'M', label: 'M' },
                   { value: 'L', label: 'L · IMPACTO' },
