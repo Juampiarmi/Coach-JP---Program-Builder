@@ -6333,16 +6333,18 @@ async function generarTipsPacingIA(bid, btn){
   ].filter(Boolean).join('\n');
   const sistema = 'Sos un coach de CrossFit & Hyrox de alto rendimiento. Dado un WOD/bloque, escribís en español rioplatense, ' +
     'corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del estímulo" (1 frase, qué busca lograr fisiológicamente ' +
-    'esta sesión -- ej. "Salir rápido y sostener, el score se define en el último tercio") y "coaching tips" (2-4 frases separadas por salto ' +
-    'de línea, consejos técnicos/de pacing puntuales por movimiento o por el WOD en general, citando el nombre real de los movimientos listados). ' +
-    'Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre frases si hay más de una).';
+    'esta sesión -- ej. "Salir rápido y sostener, el score se define en el último tercio") y "coaching tips" segmentados POR MOVIMIENTO, nunca en un solo párrafo. ' +
+    'Para CADA movimiento listado escribís: una línea con su nombre entre corchetes, "[Toes to Bar]", y debajo tres líneas -- ' +
+    '"SET-UP & AGARRE: ..." (o "SET-UP & POSTURA"), "EFICIENCIA & PACING: ..." (estrategia de quiebre de series, ritmo y transición) y "CUIDADO: ..." (la compensación crítica) -- ' +
+    'de 15 a 20 palabras como máximo por línea. Cerrá con una última línea "ESTRATEGIA GENERAL DEL WOD: ..." con ritmo objetivo, target time proyectado, time cap y ventana de pacing. ' +
+    'Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).';
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
     'Generá objetivo y coaching tips en JSON para este bloque.\nMovimientos incluidos:\n' + lineas;
 
   const originalHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
   try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 320 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 800 });
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
@@ -9655,6 +9657,7 @@ function jpVideoFallbackBenchmark(nombre){
   for(var corte = 1; corte < palabras.length; corte++){
     var candidato = palabras.slice(corte).join(' ');
     if(candidato.length < 3) break;
+    if(/^(?:press|curl|row|raise|raises|fly|flye|extension|pull|push)$/i.test(candidato)) continue;      /* "Push Press" no se reduce a "Press" (banca plana) */
     var ytid = buscarVideo(candidato, true);
     if(ytid) return ytid;
   }
@@ -10647,16 +10650,16 @@ var jpBox = (function(){
     tickSeco: tickSeco,
     gong:     gong,
     /* 3-2-1: los tres avisos idénticos -- cuadrada 800 Hz, 120 ms, misma envolvente */
-    cuenta:   function(){ suave(880, 0.08, 0.4, 0.004); },
-    go:       function(){ suave(1760, 0.30, 0.5, 0.006); },
+    cuenta:   function(){ tickSeco(); },
+    go:       function(){ gong(); try{ if(navigator.vibrate) navigator.vibrate([120, 80, 160]); }catch(e){} },
     aviso10:  function(){ seco(1200, 0.22, 0.36); },
     mitad:    function(){ seco(900, 0.11, 0.36); seco(900, 0.11, 0.36, 0.2); },
-    inicio:   function(){ suave(1760, 0.30, 0.5, 0.006); },
+    inicio:   function(){ gong(); try{ if(navigator.vibrate) navigator.vibrate([120, 80, 160]); }catch(e){} },
     chicharra:function(dur){
       var ahora = Date.now();
       if(ahora - ultimaChicharra < 1400) return;
-      ultimaChicharra = ahora; buzzer(dur || 0.5);
-      try{ if('vibrate' in navigator) navigator.vibrate([200, 100, 200]); }catch(e){}
+      ultimaChicharra = ahora; gong();
+      try{ if('vibrate' in navigator) navigator.vibrate([120, 80, 160]); }catch(e){}
     }
   };
 })();
@@ -14119,6 +14122,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      sólo con coincidencias directas/exactas (nunca por aproximación,
      ver buscarVideo(nombre, true)). */
   /* lista de ejercicios de un bloque de Fuerza/Skill/Accesorios con sus series: A1 + A2 o triserie reciben un registro por ejercicio */
+  /* unidad natural del movimiento: ergs = cal, traslados = mts, isometricos = seg; el resto reps */
+  function unidadMatrizCF(nm){
+    var n = String(nm || '').toLowerCase();
+    if(/\\b(?:row|rower|rowing|echo|assault|air bike|bike ?erg|ski ?erg)\\b/.test(n)) return 'cal';
+    if(/\\b(?:carry|carries|lunges?|zancadas?|shuttle|handstand walk|hs walk|bear crawl|run|sled|yoke)\\b/.test(n)) return 'mts';
+    if(/\\b(?:plank|plancha|l-?sit|hang|wall ?sit|hollow hold)\\b/.test(n)) return 'seg';
+    return '';
+  }
   function jpCfListaEjercicios(lineas){
     var L = (lineas || []).map(function(x){ return String(x == null ? '' : x).trim(); }).filter(Boolean);
     var global = 0;
@@ -14133,8 +14144,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         .replace(/\\b\\d+(?:\\s*[-\\u2013]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b/ig, ' ')
         .replace(/(?:^|\\s)\\d+\\s*[x\\u00d7]\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?/ig, ' ')
         .replace(/\\s*\\(.*$/, '').replace(/^[\\s:\\u00b7\\-\\u2013\\u2014]+|[\\s:\\u00b7\\-\\u2013\\u2014]+$/g, '').replace(/\\s{2,}/g, ' ').trim();
+      var um = l.match(/(?:\\d+\\s*[x\\u00d7]\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?|\\d+)\\s*(seg(?:undos?)?|min|mts?|metros?|cal(?:or[i\\u00ed]as?)?|s|m)\\b/i), und = '';
+      if(um){ var uu = um[1].toLowerCase(); und = /^s/.test(uu) ? 'seg' : (/^min/.test(uu) ? 'min' : (/^cal/.test(uu) ? 'cal' : 'mts')); }
+      nm = nm.replace(/^(?:seg(?:undos?)?|min|mts?|metros?|cal(?:or[i\\u00ed]as?)?)\\b\\s*/i, '').trim();
+      if(!und && !/\\breps?\\b/i.test(l)) und = unidadMatrizCF(nm);
       if(!nm || nm.length > 48 || !(sets > 0 && sets <= 10)) return;
-      exs.push({ nombre: nm, sets: sets });
+      exs.push({ nombre: nm, sets: sets, unidad: und || 'reps' });
     });
     return exs.slice(0, 6);
   }
@@ -14739,6 +14754,29 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      "Videos Técnicos" y "Objetivo del estímulo & Coaching Tips" vivan
      en UN SOLO acordeón (ver pizarra() más abajo, arma el <details>
      único combinando esto con objetivo/tips/pacing/escalado). */
+  /* tips de WOD combinado: "[MOVIMIENTO]" + SET-UP / EFICIENCIA / CUIDADO por movimiento y una estrategia general al final */
+  function formatTipsCF(h){
+    var lineas = String(h || '').split(/<br\\s*\\/?>|\\r?\\n/i).map(function(x){ return x.trim(); }).filter(Boolean);
+    var secs = [], cur = null, gen = null, ultimo = null;
+    lineas.forEach(function(l){
+      var t0 = l.replace(/^[^A-Za-z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1\\[*]+/, '');
+      var mh = t0.match(/^\\[([^\\]]{2,60})\\]$/);
+      if(mh){ cur = { nombre: mh[1], items: [] }; secs.push(cur); gen = null; ultimo = null; return; }
+      var ml = t0.match(/^([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1 &\\/\\-]{2,42}):\\s*(.*)$/);
+      if(ml){
+        if(/ESTRATEGIA GENERAL/.test(ml[1])){ gen = { txt: ml[2] ? [ml[2]] : [] }; cur = null; ultimo = null; return; }
+        if(cur){ ultimo = { lb: ml[1], tx: ml[2] }; cur.items.push(ultimo); return; }
+      }
+      if(gen){ gen.txt.push(l); return; }
+      if(ultimo){ ultimo.tx += ' ' + l; }
+    });
+    if(!secs.length) return '';
+    var ico = function(lb){ return /SET-?UP|AGARRE|POSTURA/.test(lb) ? '&#127919; ' : (/CUIDADO|ERROR/.test(lb) ? '&#128721; ' : '&#9889; '); };
+    return secs.map(function(sc){
+      return '<div class="jp-cf-mov"><div class="jp-cf-movh">[' + sc.nombre + ']</div>' +
+        sc.items.map(function(it){ return '<div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">' + ico(it.lb) + it.lb + ':</b> ' + it.tx + '</div>'; }).join('') + '</div>';
+    }).join('') + (gen ? '<div class="jp-cf-mov jp-cf-gen"><div class="jp-cf-movh">&#9201; ESTRATEGIA GENERAL DEL WOD</div><div class="jp-tip-fase">' + gen.txt.join(' ') + '</div></div>' : '');
+  }
   function jpCfClipsRowHtml(clips){
     if(!clips.length) return '';
     return '<div class="jp-cf-vid-cards">' +
@@ -14821,7 +14859,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       gridHtml = '<div class="jp-cf-setgrid"><div class="jp-cf-setgrid-lb">[ REGISTRO DE SERIES ]</div>' +
         exs.map(function(ex, k){
           return (exs.length > 1 ? '<div class="jp-cf-setgrid-ex">' + escSB(ex.nombre) + ' <small>' + (modoInputSB(ex.nombre) ? '[\\u2713]' : '[kg]') + '</small></div>' : '') +
-            renderSetRowsNativeSB(weekIdx, dayId, block.id, 'cf' + k, ex.sets, 'reps', true, null, '', ex.nombre + ' ' + String(block.title || ''));
+            renderSetRowsNativeSB(weekIdx, dayId, block.id, 'cf' + k, ex.sets, ex.unidad || 'reps', true, null, '', ex.nombre + ' ' + String(block.title || ''));
         }).join('') + '</div>';
     })();
     const clips = jpCfClips(lineas, block.videosDismissed);
@@ -14837,7 +14875,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            sobrecargaba la vista. f/paramTxt se conservan (siguen
            usándose más abajo para el placeholder del casillero de
            score), sólo se retira este render puntual. */
-        '<div class="jp-cf-rows">' + filas + '</div>' + gridHtml +
+        '<div class="jp-cf-rows">' + filas + '</div>' +
         /* directiva ("Sprint 1: Timer contextual de WOD") -- botón táctico
            discreto que abre el HUD Timer ya configurado con el formato y
            los minutos/intervalos detectados (ver jpWodTimerCfg()), sin
@@ -14863,7 +14901,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             }
           }
           return (btnWod || btnRest) ? '<div class="jp-cf-btnrow">' + btnWod + btnRest + '</div>' : '';
-        })() +
+        })() + gridHtml +
         /* directiva ("Sprint 1: descanso rápido en series") -- los bloques de
            Skill/Strength y Accessory de CrossFit no tienen tilde por serie
            (se leen como texto), así que el alumno no tenía cómo arrancar un
@@ -14888,20 +14926,21 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '<input class="wod-score-in" data-skey="' + skey + '" placeholder="' + ph + '" value="' + (guardado || '') + '" />' +
             '<span class="ws-ok" data-sok="' + skey + '">' + (guardado ? '✓ guardado' : '') + '</span>' +
           '</div>' : '') +
-        ((tieneCierre || clips.length || subtituloVisible) ?
-          '<details class="jp-cf-acc"><summary>&#9656; PAUTAS T\\u00c9CNICAS, TIPS &amp; VIDEOS' + (clips.length ? ' (' + clips.length + ')' : '') + '</summary>' +
-            (subtituloVisible ? '<div class="jp-cf-accrow"><span class="lb">&#128270; FOCO DEL BLOQUE</span><p>' + subtituloVisible + '</p></div>' : '') +
-            (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; OBJETIVO</span><p>' + c.objetivo + '</p></div>' : '') +
-            (c.tips ? '<div class="jp-cf-accrow"><span class="lb">&#128161; ESTRATEGIA &amp; COACHING TIPS</span><p>' + c.tips + '</p></div>' : '') +
-            (c.pacing ? '<div class="jp-cf-accrow"><span class="lb">&#9201;&#65039; PACING</span><p>' + c.pacing + '</p></div>' : '') +
-            (c.escalado ? '<div class="jp-cf-accrow"><span class="lb">&#9878;&#65039; ESCALADO Y ADAPTACIONES</span><p>' + c.escalado + '</p></div>' : '') +
-            (clips.length ? '<div class="jp-cf-accrow"><span class="lb">&#127916; VIDEOS T&Eacute;CNICOS DEL BLOQUE</span>' + jpCfClipsRowHtml(clips) + '</div>' : '') +
-          '</details>' : '') +
         (notasVisible ?
           '<div class="jp-cf-notas">' +
             '<label>[ NOTAS ]</label>' +
             '<input class="jp-cf-notas-in" data-nkey="' + notaKey + '" placeholder="Ej: Usé KB de 24kg y banda roja" value="' + String(notaGuardada).replace(/"/g, '&quot;') + '" />' +
           '</div>' : '') +
+        /* videos en miniatura compacta y, al final, el acordeon de estrategia */
+        (clips.length ? '<div class="jp-cf-vids"><div class="jp-sb-vid-title">&#127916; VIDEOS T&Eacute;CNICOS</div>' + jpCfClipsRowHtml(clips) + '</div>' : '') +
+        ((tieneCierre || subtituloVisible) ?
+          '<details class="jp-cf-acc"><summary>&#9656; ESTRATEGIA T&Aacute;CTICA &amp; PACING</summary>' +
+            (subtituloVisible ? '<div class="jp-cf-accrow"><span class="lb">&#128270; FOCO DEL BLOQUE</span><p>' + subtituloVisible + '</p></div>' : '') +
+            (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; OBJETIVO</span><p>' + c.objetivo + '</p></div>' : '') +
+            (c.tips ? '<div class="jp-cf-accrow"><span class="lb">&#128161; ESTRATEGIA &amp; COACHING TIPS</span>' + (formatTipsCF(c.tips) || '<p>' + c.tips + '</p>') + '</div>' : '') +
+            (c.pacing ? '<div class="jp-cf-accrow"><span class="lb">&#9201;&#65039; PACING</span><p>' + c.pacing + '</p></div>' : '') +
+            (c.escalado ? '<div class="jp-cf-accrow"><span class="lb">&#9878;&#65039; ESCALADO Y ADAPTACIONES</span><p>' + c.escalado + '</p></div>' : '') +
+          '</details>' : '') +
       '</div>';
     const body = blockEl.querySelector('.block-body');
     if(body && !body.querySelector('[data-wodb]')) body.insertAdjacentHTML('afterbegin', html);
@@ -15720,9 +15759,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var secInputHtml = '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />';
       var checkHtml = '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\\u2713</button>';
       var inputsInner;
-      if(modoEj === 'tiempo'){
+      if(modoEj === 'tiempo' || modoEj === 'solo'){
         /* isométrico (Plancha, Hold): un único input de tiempo [ 30 ] seg */
-        inputsInner = kgInputHtml + '<span class="jp-pad-cell"></span><span class="jp-sep jp-sep-ghost">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">seg</span>' + checkHtml;
+        inputsInner = kgInputHtml + '<span class="jp-pad-cell"></span><span class="jp-sep jp-sep-ghost">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + ((modoEj === 'solo' || unidadSec !== 'reps') ? unidadSec : 'seg') + '</span>' + checkHtml;
       } else if(modoEj === 'bw'){
         /* peso corporal: chip BW fijo; el kg sólo aparece si se agrega lastre */
         inputsInner = '<span class="jp-bw-cell"><span class="jp-bw-chip">BW</span><button type="button" class="jp-lastre-btn">+ Lastre</button></span>' +
@@ -16031,11 +16070,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   /* autocarga y calistenia: sin input de kg por defecto (chip BW + "+ Lastre"); isométricos: un único input de tiempo */
   var RX_BW_SB = /(?:hanging|colgad|dominad|pull ?ups?|chin ?ups?|fondos?|dips?|flexion(?:es)?|push ?ups?|knee raises?|leg raises?|elevacion(?:es)? de (?:rodillas|piernas)|muscle ?ups?|burpees?|abdominales|crunch(?:es)?|sit ?ups?|v ?ups?|remo invertido|inverted row|australian|banda|banded)/;
   var RX_NOBW_SB = /(?:lastre|weighted|con peso|chaleco|maquina|polea|asistid|smith)/;
+  var RX_CF_SOLO_SB = /(?:^|\\s)(?:row|rower|rowing|echo bike|assault bike|air bike|bike ?erg|ski ?erg|shuttle run|handstand walk|hs walk|bear crawl|run|toes to bar|t2b|ttb|box jumps?|double unders?|rope climbs?|handstand push ?ups?|hspu)(?=\\s|$)/;
   var RX_PLANK_DIN_SB = /(?:pull ?through|\\brow\\b|remo|reach|\\btaps?\\b|walk ?outs?|up ?down|jacks?|mountain|climb|\\bsaw\\b|drag|tuck|rotaci|rotation|toque|pasos)/;
   var RX_TIEMPO_SB = /(?:plancha|plank|isometric|isometrico|hold|wall ?sit|dead ?hang|colgado pasivo|hollow|suspension)/;
   function modoInputSB(nombre){
     var n = normTitSB(nombre);
     if(!n) return '';
+    if(window.COACH_DISCIPLINA !== 'sports' && RX_CF_SOLO_SB.test(n)) return 'solo';      /* CrossFit: un solo input (cal / mts / reps), sin kg */
     if(RX_TIEMPO_SB.test(n) && !RX_PLANK_DIN_SB.test(n)) return 'tiempo';      /* plancha con movimiento = reps, no segundos */
     if(RX_BW_SB.test(n) && !RX_NOBW_SB.test(n)) return 'bw';
     return '';
@@ -36226,6 +36267,23 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
 .jp-tip-trans{ border-style:dashed; }
 .jp-dose-bar .jp-db-seg{ text-transform:none !important; }
 .block.block-done.collapsed > .jp-cierre{ display:none !important; }
+/* CrossFit: un solo contenedor por bloque con acento por categoria */
+.blocks-stack > .block:has(.jp-cfboard)::after, .jp-cfboard::after{ display:none !important; }
+.jp-cfboard{ border-radius:16px !important; overflow:hidden; border:1px solid rgba(255,255,255,.1); }
+.jp-cfboard.jp-cf-fase-strength{ border-color:rgba(6,182,212,.3) !important; }
+.jp-cfboard.jp-cf-fase-metcon, .jp-cfboard.jp-cf-fase-endurance, .jp-cfboard.jp-cf-fase-cardio{ border-color:rgba(249,115,22,.4) !important; }
+.jp-cfboard.jp-cf-fase-accessory, .jp-cfboard.jp-cf-fase-warmup{ border-color:rgba(16,185,129,.3) !important; }
+.jp-warm-acc > .jp-cfboard{ border:0 !important; }
+.jp-modo-solo .jp-val-primary{ display:none !important; }
+.jp-cfboard .jp-tag-row{ display:flex !important; flex-wrap:nowrap !important; align-items:center; justify-content:space-between; gap:8px; }
+.jp-cfboard .jp-tag-row .jp-tag-lb{ flex:0 0 auto; white-space:nowrap; }
+.jp-cfboard .jp-tag-row .jp-chev{ flex:0 0 auto; margin-left:auto; padding:6px 4px; }
+.jp-cf-vids{ margin-top:10px; }
+.jp-tag-lb .jp-ic, .jp-cf-tag .jp-ic, .jp-sb-tag .jp-ic{ display:inline-flex !important; width:1.1em !important; height:1.1em !important; vertical-align:-0.18em; }
+.jp-tag-lb .jp-ic svg, .jp-cf-tag .jp-ic svg, .jp-sb-tag .jp-ic svg{ width:100% !important; height:100% !important; }
+.jp-cf-mov{ margin:8px 0; padding:10px 12px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(255,255,255,.02); }
+.jp-cf-movh{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.78rem; letter-spacing:.05em; color:#F59E0B; margin-bottom:6px; overflow-wrap:anywhere; }
+.jp-cf-gen{ border-color:rgba(245,158,11,.35); }
 /* un solo contenedor por bloque: sin el marco cuadrado fantasma detras de la tarjeta redondeada */
 .blocks-stack > .block:has(.jp-sb-board)::after, .jp-sb-board::after{ display:none !important; }
 .jp-sb-board{ border-radius:16px !important; overflow:hidden; }
@@ -36655,17 +36713,17 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
         line.innerHTML = '<span class="jp-dl-ck">\\u2713</span><span class="jp-dl-t"></span><span class="jp-dl-re">Reabrir</span>';
         line.querySelector('.jp-dl-t').textContent = txt;
       }
-      var sports = board.classList.contains('jp-sb-board');
+      var sports = true;      /* Sports y CrossFit: cabecera solo con etiqueta + chevron, boton de cierre al pie */
       var btn = q('.jp-done-btn', bl);
       if(!btn){
         btn = document.createElement('button'); btn.type = 'button';
         btn.className = 'jp-done-btn' + (sports ? ' jp-done-foot' : '');
-        btn.textContent = sports ? '[ ✓ MARCAR BLOQUE COMPLETADO ]' : '[ ✓ BLOQUE COMPLETADO ]';
+        btn.textContent = board.classList.contains('jp-cfboard') ? '[ ✓ COMPLETAR WOD / BLOQUE ]' : '[ ✓ MARCAR BLOQUE COMPLETADO ]';
         var sum = q('.jp-warm-acc > summary', bl);
         if(sports){
           /* Sports: la cabecera lleva solo etiqueta + chevron; el boton va al final del bloque */
           board.appendChild(btn);
-          var tagS = q('.jp-sb-tag', board);
+          var tagS = q('.jp-sb-tag, .jp-cf-tag', board);
           if(tagS && !sum && !q('.jp-chev', tagS)){
             tagS.classList.add('jp-tag-row');
             var tlbS = document.createElement('span'); tlbS.className = 'jp-tag-lb';
@@ -36780,6 +36838,25 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
   /* duracion proyectada de la sesion: series x (tiempo bajo tension + descanso prescripto) */
   window.jpMinutosPrescriptos = function(){
     var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null; if(!day) return 0;
+    if(window.COACH_DISCIPLINA !== 'sports'){
+      /* CrossFit: calentamiento ~8 min, fuerza = series x (trabajo + descanso), WODs por su duracion / cap */
+      var totCF = 0;
+      (day.blocks || []).forEach(function(block){
+        var lin = (typeof itemsDeSemana === 'function') ? (itemsDeSemana(block, state.currentWeek) || []) : (block.items || []);
+        var txtCF = lin.join(' '), cat = block.category;
+        if(cat === 'warmup'){ totCF += 8; return; }
+        if(cat === 'strength' || cat === 'accessory'){
+          var exs = (typeof window.jpCfListaEjercicios === 'function') ? window.jpCfListaEjercicios(lin) : [];
+          var rm = txtCF.match(/rest\\s*(\\d+):(\\d{2})/i), rs2 = txtCF.match(/rest\\s*(\\d+)\\s*s/i);
+          var restS = rm ? (parseInt(rm[1], 10) * 60 + parseInt(rm[2], 10)) : (rs2 ? parseInt(rs2[1], 10) : 90);
+          exs.forEach(function(ex){ totCF += ex.sets * (0.75 + restS / 60); });
+          return;
+        }
+        var mm = txtCF.match(/(?:amrap|emom|cap)\\s*(\\d{1,2})\\s*(?:min|')?/i) || txtCF.match(/(\\d{1,2})\\s*min/i);
+        totCF += (mm ? parseInt(mm[1], 10) : 12) + 3;
+      });
+      return totCF > 0 ? Math.round(totCF + 5) : 0;
+    }
     var tut = function(reps){ var n = parseInt(String(reps), 10) || 10; return Math.min(90, Math.max(30, n * 4)) / 60; };
     var tot = 0;
     (day.blocks || []).forEach(function(block){
@@ -36869,13 +36946,13 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
     }
     return arr;
   }
-  function lineaSet(s, pref, top){
-    return '  - ' + (pref || '') + 'Set ' + s.i + ': ' + (s.kg > 0 ? fJP(s.kg) + ' kg' : '') + (s.kg > 0 && s.reps > 0 ? ' × ' : '') + (s.reps > 0 ? fJP(s.reps) + ' reps' : '') + (top ? ' [Top Set]' : '');
+  function lineaSet(s, pref, top, un){
+    return '  - ' + (pref || '') + 'Set ' + s.i + ': ' + (s.kg > 0 ? fJP(s.kg) + ' kg' : '') + (s.kg > 0 && s.reps > 0 ? ' × ' : '') + (s.reps > 0 ? fJP(s.reps) + ' ' + (un || 'reps') : '') + (top ? ' [Top Set]' : '');
   }
-  function lineasSets(arr){
+  function lineasSets(arr, un){
     var kgs = arr.map(function(s){ return s.kg; }), mx = Math.max.apply(null, kgs.concat([0])), mn = Math.min.apply(null, kgs);
     var top = (arr.length > 1 && mx > mn) ? kgs.indexOf(mx) : -1;
-    return arr.map(function(s, ix){ return lineaSet(s, '', ix === top); });
+    return arr.map(function(s, ix){ return lineaSet(s, '', ix === top, un); });
   }
   function myoLinea(week, dayId, blockId, exIdx, pref){
     var m = [];
@@ -36889,7 +36966,7 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
     entries.forEach(function(en, idx){
       if(en.tipo === 'simple' && en.sets){
         var arr = setsDe(week, day.id, block.id, 'e' + idx, en.sets), myo = myoLinea(week, day.id, block.id, 'e' + idx);
-        if(arr.length || myo){ out.push('• ' + en.titulo + ':'); lineasSets(arr).forEach(function(l){ out.push(l); }); if(myo) out.push(myo); }
+        if(arr.length || myo){ out.push('• ' + en.titulo + ':'); lineasSets(arr, en.unidad).forEach(function(l){ out.push(l); }); if(myo) out.push(myo); }
       } else if(en.tipo === 'biserie' && en.subs && en.subs.length){
         var l2 = [], rondas = Math.max(en.rondas || 3, 12);
         for(var r = 1; r <= rondas; r++){
@@ -36920,7 +36997,7 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
       exs.forEach(function(ex, k){
         var arr = setsDe(week, day.id, block.id, 'cf' + k, 10); if(!arr.length) return;
         if(exs.length > 1) l2.push('  - ' + ex.nombre + ':');
-        lineasSets(arr).forEach(function(l){ l2.push(exs.length > 1 ? '  ' + l : l); });
+        lineasSets(arr, ex.unidad).forEach(function(l){ l2.push(exs.length > 1 ? '  ' + l : l); });
       });
       if(l2.length){ out.push('• ' + titulo + ':'); l2.forEach(function(l){ out.push(l); }); }
     } else if(cat === 'metcon' || cat === 'cardio' || cat === 'endurance'){
@@ -36930,11 +37007,27 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
       var carga = leerLS('coachjp_cf_carga_v1')[week + '|' + block.id] || {};
       var l3 = [];
       if(score || rondas.length || nJP(carga.kg) > 0 || nJP(carga.rondas) > 0){
-        if(mod) l3.push('  - Modalidad: ' + mod);
+        var nivelM = score.match(/\\[(RX|SCALED)\\]\\s*$/i), nivelT = nivelM ? (/rx/i.test(nivelM[1]) ? 'Rx' : 'Scaled') : '';
+        var sc = score.replace(/\\s*\\[(?:RX|SCALED)\\]\\s*$/i, '').trim();
+        var capM = txt.match(/(?:time\\s*cap|cap)\\s*[:\\-]?\\s*(\\d{1,2})(?::(\\d{2}))?/i), cap = capM ? (capM[1] + ':' + (capM[2] || '00')) : '';
+        var cargaTxt = nJP(carga.kg) > 0 ? ' | Carga: ' + fJP(nJP(carga.kg)) + ' kg' : '';
+        if(mod === 'FOR TIME'){
+          if(sc) l3.push('  ⏱ Tiempo final: ' + sc + (cap ? ' [Cap ' + cap + ']' : '') + (nivelT ? ' | ' + nivelT : ''));
+        } else if(mod === 'AMRAP'){
+          var ra = sc.match(/(\\d+)\\s*\\+\\s*(\\d+)/);
+          if(sc) l3.push('  🔄 Score: ' + (ra ? ra[1] + ' Rondas + ' + ra[2] + ' Reps' : sc) + cargaTxt + (nivelT ? ' | ' + nivelT : ''));
+          else if(cargaTxt) l3.push('  🔄 Score: —' + cargaTxt);
+        } else if(mod === 'EMOM'){
+          var totM = txt.match(/emom\\s*(\\d{1,2})/i) || txt.match(/(?:x|por)\\s*(\\d{1,2})\\s*(?:sets?|rondas?|min)?/i);
+          l3.push('  ⏱ Intervalos completados: ' + rondas.length + (totM ? '/' + totM[1] : '') + (nivelT ? ' | ' + nivelT : ''));
+          if(sc) l3.push('  - Score: ' + sc);
+        } else {
+          if(mod) l3.push('  - Modalidad: ' + mod);
+          if(sc) l3.push('  - Score: ' + sc + (nivelT ? ' | ' + nivelT : ''));
+        }
         if(rondas.length) l3.push('  - Registro por ronda: ' + rondas.map(function(x, i){ return 'R' + (i + 1) + ' ' + fJP(nJP(x)); }).join(' · '));
-        if(nJP(carga.kg) > 0) l3.push('  - Carga: ' + fJP(nJP(carga.kg)) + ' kg');
+        if(nJP(carga.kg) > 0 && mod !== 'AMRAP') l3.push('  - Carga: ' + fJP(nJP(carga.kg)) + ' kg');
         if(nJP(carga.rondas) > 0) l3.push('  - Rondas completadas: ' + fJP(nJP(carga.rondas)));
-        if(score) l3.push('  - Score: ' + score);
         out.push('• ' + (cat === 'metcon' ? 'WOD / METCON' : titulo) + (block.title && cat === 'metcon' ? ' · ' + block.title : '') + ':');
         l3.forEach(function(l){ out.push(l); });
       }
@@ -36966,7 +37059,8 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
   /* tiempo registrado; sin cronometro, la duracion estimada (real creible, o proyectada de la prescripcion, o de las series cargadas) */
   function duracion(){
     var ini = (state.session && state.session.inicio) || 0, m = ini ? Math.round((Date.now() - ini) / 60000) : 0;
-    if(m >= 1 && m <= 240) return m < 60 ? m + ' min' : Math.floor(m / 60) + 'h ' + ('0' + (m % 60)).slice(-2) + 'm';
+    var proy0 = 0; try{ proy0 = window.jpMinutosPrescriptos ? window.jpMinutosPrescriptos() : 0; }catch(e){}
+    if(m >= 1 && m <= 240 && (!proy0 || m >= proy0 * 0.5)) return m < 60 ? m + ' min' : Math.floor(m / 60) + 'h ' + ('0' + (m % 60)).slice(-2) + 'm';
     var est = 0;
     try{ est = window.jpMinutosSesion ? window.jpMinutosSesion(0) : 0; }catch(e){}
     if(!(est > 0)) est = Math.max(20, Object.keys(usadas).length * 3);
