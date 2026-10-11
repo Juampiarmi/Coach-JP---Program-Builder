@@ -35,8 +35,8 @@ export function MusicPanel({ music, hasSpeech, onPick, onChange, onRemove }: Pro
           <p className="font-mono text-[9px] leading-relaxed text-steel/70">
             {music.ducking
               ? hasSpeech
-                ? 'Mientras hay palabras en S1 la música baja a −18 dB (15 %) y vuelve con una rampa de 0,2 s.'
-                : 'El ducking usa los tiempos de S1: transcribí o importá subtítulos para activarlo.'
+                ? 'Mientras hay voz en off (A1) o palabras en S1 la música baja a −18 dB (15 %) y vuelve con una rampa de 0,2 s.'
+                : 'El ducking se activa con la voz en off de A1 o con los tiempos de S1 (grabá, transcribí o importá subtítulos).'
               : 'La música suena al volumen elegido durante todo el video.'}
           </p>
         </>

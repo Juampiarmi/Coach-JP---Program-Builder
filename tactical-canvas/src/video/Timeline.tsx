@@ -78,6 +78,17 @@ function AudioLevel({ item }: { item: GenericItem }) {
   )
 }
 
+/** Forma de onda de una toma de voz (picos del tramo recortado). */
+function Wave({ peaks }: { peaks: number[] }) {
+  return (
+    <span className="pointer-events-none absolute inset-0 flex items-center gap-px px-1 opacity-45">
+      {peaks.map((p, i) => (
+        <span key={i} className="min-w-0 flex-1 rounded-full bg-current" style={{ height: `${Math.max(8, p * 90)}%` }} />
+      ))}
+    </span>
+  )
+}
+
 /** Texto corto del bloque en la pista. */
 function itemText(o: OverlayItem['overlay']) {
   if (o.kind === 'badge') return o.value
@@ -176,12 +187,12 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedIds, on
         style={{ left, width: w, ...pos, touchAction: 'none' }}
         title={`${timecode(item.start)}${badge ? '' : ` → ${timecode(item.end)}`}`}
       >
-        {editable === 'range' && <span onPointerDown={(e) => move(e, 'start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
-        {item.type === 'audio' && <AudioLevel item={item} />}
-        <span className={`relative truncate ${badge ? '' : 'px-3'}`}>
+        {editable === 'range' && <span onPointerDown={(e) => move(e, 'start')} className="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
+        {item.type === 'audio' && (Array.isArray(item.data?.wave) ? <Wave peaks={item.data.wave as number[]} /> : <AudioLevel item={item} />)}
+        <span className={`relative truncate ${badge ? '' : item.type !== 'overlay' && item.data?.wave ? 'mx-2.5 rounded bg-black/70 px-1.5 text-white' : 'px-3'}`}>
           {item.type === 'overlay' ? `${KIND_LABEL[item.overlay.kind]} · ${itemText(item.overlay)}` : String(item.data?.text ?? track.label)}
         </span>
-        {editable === 'range' && <span onPointerDown={(e) => move(e, 'end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
+        {editable === 'range' && <span onPointerDown={(e) => move(e, 'end')} className="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
       </div>,
       // Borrado en un click: ✕ flotante en la esquina del ítem seleccionado.
       on && item.type !== 'overlay' && item.deletable && onDelete ? (

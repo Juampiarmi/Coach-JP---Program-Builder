@@ -45,6 +45,7 @@ export function defaultProject(): VideoProject {
     music: null,
     biomech: { path: { points: [], thick: false, showVertical: true }, angles: [] },
     fx: { hits: [], volume: 80, shake: true },
+    voice: [],
   }
 }
 

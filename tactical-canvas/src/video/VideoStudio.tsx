@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { usePersistentState } from '../hooks/usePersistentState'
 import { downloadBlob } from '../lib/exporter'
 import { loadAiSettings, RateLimitError, transcribeAudio } from '../lib/ai'
-import { clipToWavBase64 } from './audio'
+import { bufferToWavBase64, clipToWavBase64 } from './audio'
+import { analyzeTake, clipPeaks, scheduleVoice, startRecording, voiceSegments, type Recording, type VoiceTake } from './voice'
+import { VoicePanel } from './VoicePanel'
 import { MusicPanel } from './MusicPanel'
 import { SubtitlePanel } from './SubtitlePanel'
 import { activeGroup, duckGain, editGroupText, groupWords, insertManual, parseSubtitleFile, removeGroup, retimeGroup, speechSegments, withOffset, type SubtitleGroup } from './subtitles'
@@ -19,7 +21,7 @@ import { pressDrag } from './drag'
 import { clampCenter, drawOverlays, drawSubtitles, loadOverlayFonts, timecode, type OverlayRect } from './render'
 import { Scrubber } from './Scrubber'
 import { Timeline } from './Timeline'
-import type { Biomech, FxKind, Goniometer, MusicTrack, OverlayConfig, SoundFx, SubtitleTrack, Track, VideoProject } from './types'
+import type { Biomech, FxKind, Goniometer, MusicTrack, OverlayConfig, SoundFx, SubtitleTrack, Track, VideoProject, VoiceClip } from './types'
 import { OUT_H, OUT_W } from './types'
 import { punchAt, shakeAt, shakeOverscan, unzoom } from './vfx'
 
@@ -84,7 +86,11 @@ export default function VideoStudio({ active, header }: Props) {
   const subOffset = (subtitles.offset ?? 0) / 1000
   const subs = useMemo(() => withOffset(subtitles), [subtitles])
   const groups = useMemo(() => groupWords(subs.words), [subs.words])
-  const segments = useMemo(() => speechSegments(subs.words), [subs.words])
+  // A1 · voz en off: el audio de cada toma vive en memoria (se pierde al recargar, como el clip).
+  const [takes, setTakes] = useState<Map<string, VoiceTake>>(() => new Map())
+  const voices = useMemo(() => (stored.voice ?? []).filter((c) => takes.has(c.id)), [stored.voice, takes])
+  // Ducking de A2: palabras de S1 + tramos con habla de A1.
+  const segments = useMemo(() => [...speechSegments(subs.words), ...voiceSegments(voices, takes)], [subs.words, voices, takes])
   /** Bloque en tiempos guardados (sin desfase), para editarlo. */
   const rawGroup = (g: SubtitleGroup): SubtitleGroup => ({ ...g, start: g.start - subOffset, end: g.end - subOffset })
   const [musicUrl, setMusicUrl] = useState<string | null>(null)
@@ -164,6 +170,8 @@ export default function VideoStudio({ active, header }: Props) {
   }, [url])
 
   // ── Transporte ────────────────────────────────────────────────────────────────
+  /** Cambia en cada seek: con el video corriendo, las tomas de A1 se vuelven a agendar desde el nuevo punto. */
+  const [voiceEpoch, setVoiceEpoch] = useState(0)
   const seek = useCallback(
     (t: number) => {
       const v = videoRef.current
@@ -172,6 +180,7 @@ export default function VideoStudio({ active, header }: Props) {
       setTime(next)
       syncMusic(next, false)
       fxPrev.current = next
+      setVoiceEpoch((n) => n + 1)
     },
     [duration, url, syncMusic],
   )
@@ -220,6 +229,18 @@ export default function VideoStudio({ active, header }: Props) {
       musicRef.current?.pause()
     }
   }, [playing, clip, syncMusic])
+
+  // A1 en la vista previa: con el video corriendo, cada toma se agenda en el reloj del
+  // AudioContext alineada con el cabezal (misma cadena que en la exportación).
+  useEffect(() => {
+    const v = videoRef.current
+    if (!playing || !v || !voices.length) return
+    const eng = fxEngine()
+    const now = eng.ctx.currentTime + 0.03
+    const srcs = voices.map((c) => scheduleVoice(eng.ctx, c, takes.get(c.id)!, v.currentTime + 0.03, now, eng.ctx.destination)).filter((x): x is AudioBufferSourceNode => Boolean(x))
+    return () => srcs.forEach((src) => src.stop())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, voices, takes, voiceEpoch])
 
   // Espaciadora = play / pausa (salvo escribiendo en un campo).
   useEffect(() => {
@@ -482,7 +503,7 @@ export default function VideoStudio({ active, header }: Props) {
   }
 
   // ── Panel en acordeones (V2 abierto por defecto cuando hay clip) ─────────────
-  const [sections, setSections] = useState({ v2: false, s1: false, a2: false, b1: false, a3: false })
+  const [sections, setSections] = useState({ v2: false, a1: false, s1: false, a2: false, b1: false, a3: false })
   const toggle = (k: keyof typeof sections) => setSections((st) => ({ ...st, [k]: !st[k] }))
   useEffect(() => {
     if (url) setSections((st) => ({ ...st, v2: true }))
@@ -515,6 +536,109 @@ export default function VideoStudio({ active, header }: Props) {
       })
     }
   }
+  // ── A1 · Voz en off ───────────────────────────────────────────────────────────
+  const [selectedVoice, setSelectedVoice] = useState<string | null>(null)
+  const [playWhileRec, setPlayWhileRec] = useState(true)
+  const [rec, setRec] = useState<{ elapsed: number; level: number } | null>(null)
+  const [voiceNote, setVoiceNote] = useState('')
+  const recRef = useRef<{ r: Recording; startAt: number; t0: number; raf: number } | null>(null)
+  const setVoice = (id: string, patch: Partial<VoiceClip>) => setProject((p) => ({ ...p, voice: (p.voice ?? []).map((c) => (c.id === id ? { ...c, ...patch } : c)) }))
+  const startVoice = async () => {
+    if (recRef.current || !clip) return
+    setVoiceNote('')
+    const eng = fxEngine()
+    let r: Recording
+    try {
+      r = await startRecording(eng.ctx)
+    } catch (err) {
+      setVoiceNote(err instanceof Error ? err.message : 'No se pudo abrir el micrófono.')
+      return
+    }
+    const v = videoRef.current
+    if (v && playWhileRec) {
+      if (v.currentTime < clip.in || v.currentTime >= clip.out - 0.05) v.currentTime = clip.in
+      await v.play().catch(() => undefined)
+    }
+    const startAt = v?.currentTime ?? time
+    const t0 = performance.now()
+    const tick = () => {
+      const cur = recRef.current
+      if (!cur) return
+      setRec({ elapsed: (performance.now() - t0) / 1000, level: cur.r.level() })
+      cur.raf = requestAnimationFrame(tick)
+    }
+    recRef.current = { r, startAt, t0, raf: requestAnimationFrame(tick) }
+    setRec({ elapsed: 0, level: 0 })
+  }
+  const stopVoice = async () => {
+    const cur = recRef.current
+    if (!cur) return
+    recRef.current = null
+    cancelAnimationFrame(cur.raf)
+    videoRef.current?.pause()
+    setRec(null)
+    setVoiceNote('[ Procesando la toma… ]')
+    try {
+      const blob = await cur.r.stop()
+      const buffer = await fxEngine().ctx.decodeAudioData(await blob.arrayBuffer())
+      const take = analyzeTake(buffer)
+      const id = `vo:${uid()}`
+      const c: VoiceClip = { id, start: cur.startAt, offset: 0, duration: Math.max(0.1, Math.min(buffer.duration, duration - cur.startAt)), total: buffer.duration, enhance: true, gain: 100 }
+      setTakes((m) => new Map(m).set(id, take))
+      setProject((p) => ({ ...p, voice: [...(p.voice ?? []), c] }))
+      setSelectedVoice(id)
+      setTlSel(id)
+      setVoiceNote(`Toma guardada en A1 · ${timecode(c.start)} · ${buffer.duration.toFixed(1)} s${take.activity.length ? '' : ' (no se detectó voz: revisá el micrófono)'}`)
+    } catch {
+      setVoiceNote('No se pudo leer la grabación.')
+    }
+  }
+  useEffect(() => () => recRef.current?.r.cancel(), [])
+  /** Envía la toma (tramo recortado) a Gemini y reemplaza las palabras de S1 en ese tramo. */
+  const transcribeVoice = async (id: string) => {
+    const c = voices.find((x) => x.id === id)
+    const take = takes.get(id)
+    if (!c || !take || tr.busy) return
+    trAbort.current = new AbortController()
+    setSections((st) => ({ ...st, s1: true }))
+    setTr({ busy: true, note: '[ Preparando la voz en off… ]' })
+    setVoiceNote('[ Transcribiendo esta voz con Gemini… ]')
+    try {
+      const { base64, duration: span } = await bufferToWavBase64(take.buffer, c.offset, c.duration)
+      const words = await transcribeAudio(loadAiSettings(), base64, span, trAbort.current.signal, (note) => note && setTr({ busy: true, note }))
+      const placed = words.map((w, i) => ({ ...w, start: w.start + c.start, end: w.end + c.start, ...(i === 0 ? { br: true } : {}) }))
+      const from = c.start
+      const to = c.start + c.duration
+      setProject((p) => ({
+        ...p,
+        subtitles: { ...p.subtitles, enabled: true, words: [...p.subtitles.words.filter((w) => w.start < from || w.start >= to), ...placed].sort((a, b) => a.start - b.start) },
+      }))
+      const msg = words.length ? `${words.length} palabras de la voz en off sincronizadas en S1.` : 'No se detectó habla en la toma.'
+      setTr({ busy: false, note: msg })
+      setVoiceNote(msg)
+    } catch (err) {
+      const aborted = err instanceof DOMException && err.name === 'AbortError'
+      const msg = aborted ? 'Transcripción cancelada.' : err instanceof RateLimitError ? 'Cuota de Gemini alcanzada. Esperá un momento o cambiá de key.' : err instanceof Error ? err.message : 'No se pudo transcribir.'
+      setTr({ busy: false, note: msg })
+      setVoiceNote(msg)
+    }
+  }
+  /** Mover / recortar una toma desde el timeline: borde izquierdo = recorte de entrada, derecho = de salida. */
+  const editVoice = (id: string, start: number, end: number) =>
+    setProject((p) => ({
+      ...p,
+      voice: (p.voice ?? []).map((c) => {
+        if (c.id !== id) return c
+        const curEnd = c.start + c.duration
+        if (Math.abs(start - c.start) < 1e-9) return { ...c, duration: Math.min(c.total - c.offset, Math.max(0.2, end - start)) }
+        if (Math.abs(end - curEnd) < 1e-9) {
+          const offset = Math.min(c.offset + c.duration - 0.2, Math.max(0, c.offset + (start - c.start)))
+          return { ...c, offset, start: c.start + (offset - c.offset), duration: c.duration - (offset - c.offset) }
+        }
+        return { ...c, start }
+      }),
+    }))
+
   const importSubs = async (file: File) => {
     const words = parseSubtitleFile(await file.text())
     if (!words.length) {
@@ -574,9 +698,11 @@ export default function VideoStudio({ active, header }: Props) {
         if (id.startsWith('fx:')) return { ...p, fx: { ...p.fx, hits: p.fx.hits.filter((h) => h.id !== id) } }
         if (id.startsWith('gon:')) return { ...p, biomech: { ...p.biomech, angles: p.biomech.angles.filter((g) => g.id !== id) } }
         if (id === 'barpath') return { ...p, biomech: { ...p.biomech, path: { ...p.biomech.path, points: [] } } }
+        if (id.startsWith('vo:')) return { ...p, voice: (p.voice ?? []).filter((c) => c.id !== id) }
         return p
       })
       setTlSel(null)
+      setSelectedVoice((v) => (v === id ? null : v))
       setSelectedAngle((a) => (a === id ? null : a))
     },
     [setProject],
@@ -607,6 +733,21 @@ export default function VideoStudio({ active, header }: Props) {
   // Pistas que muestra el timeline: V1 + V2 del proyecto y S1 / A2 derivadas.
   const timelineTracks: Track[] = [
     ...project.tracks,
+    {
+      id: 'a1',
+      kind: 'audio',
+      label: 'A1 · VOZ EN OFF',
+      stack: true,
+      items: voices.map((c, i) => ({
+        id: c.id,
+        type: 'audio' as const,
+        start: c.start,
+        end: c.start + c.duration,
+        editable: 'range' as const,
+        deletable: true,
+        data: { text: `🎙 VOZ ${String(i + 1).padStart(2, '0')}${c.enhance ? ' · ✨' : ''} · ${c.gain}%`, tone: 'fire', wave: clipPeaks(c, takes.get(c.id)!) },
+      })),
+    },
     { id: 's1', kind: 'subtitle', label: 'S1 · SUBTÍTULOS', items: groups.map((g, i) => ({ id: `s1-${i}`, type: 'subtitle', start: g.start, end: g.end, data: { text: g.text } })) },
     {
       id: 'a2',
@@ -641,6 +782,14 @@ export default function VideoStudio({ active, header }: Props) {
 
   // Estados vacíos del timeline: abren su acordeón y disparan la acción.
   const placeholders = {
+    a1: {
+      label: clip ? '+ GRABAR VOZ EN OFF' : '+ SUBÍ UN CLIP PARA GRABAR VOZ',
+      onClick: () => {
+        setSections((st) => ({ ...st, a1: true }))
+        if (clip) startVoice()
+        else fileRef.current?.click()
+      },
+    },
     s1: {
       label: clip ? '+ TRANSCRIBIR AUDIO' : '+ SUBÍ UN CLIP PARA TRANSCRIBIR',
       onClick: () => {
@@ -680,7 +829,7 @@ export default function VideoStudio({ active, header }: Props) {
     abortRef.current = new AbortController()
     setExp({ busy: true, progress: 0, note: '' })
     try {
-      const res = await exportVideo({ url, musicUrl, project, signal: abortRef.current.signal, onProgress: (progress) => setExp((s) => ({ ...s, progress })) })
+      const res = await exportVideo({ url, musicUrl, project: { ...project, voice: voices }, takes, signal: abortRef.current.signal, onProgress: (progress) => setExp((s) => ({ ...s, progress })) })
       const base = clip.name.replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '-').toLowerCase() || 'clip'
       downloadBlob(res.blob, `coachjp_video_${base}.${res.ext}`)
       setExp({ busy: false, progress: 1, note: `Exportado · ${res.ext.toUpperCase()} · ${(res.blob.size / 1024 / 1024).toFixed(1)} MB` })
@@ -724,6 +873,27 @@ export default function VideoStudio({ active, header }: Props) {
           </div>
           <Accordion title="V2 · OVERLAYS TÁCTICOS" badge={`${items.length} ${items.length === 1 ? 'BLOQUE' : 'BLOQUES'}`} open={sections.v2} onToggle={() => toggle('v2')}>
             <OverlayPanel items={items} selected={selected} onSelect={(id) => setProject((p) => ({ ...p, selectedId: id }))} onChange={setOverlay} onAdd={addItem} onRemove={removeItem} onDuplicate={duplicateItem} />
+          </Accordion>
+          <Accordion title="A1 · VOZ EN OFF" badge={rec ? '● REC' : voices.length ? `${voices.length} ${voices.length === 1 ? 'TOMA' : 'TOMAS'}` : 'VACÍO'} open={sections.a1 || Boolean(rec)} onToggle={() => toggle('a1')}>
+            <VoicePanel
+              clips={voices}
+              selected={voices.find((c) => c.id === selectedVoice) ?? null}
+              recording={rec}
+              playWhileRec={playWhileRec}
+              canRecord={Boolean(clip)}
+              busy={tr.busy}
+              note={voiceNote}
+              onPlayWhileRec={setPlayWhileRec}
+              onRecord={startVoice}
+              onStop={stopVoice}
+              onSelect={(id) => {
+                setSelectedVoice(id)
+                setTlSel(id)
+              }}
+              onChange={setVoice}
+              onTranscribe={transcribeVoice}
+              onRemove={deleteItem}
+            />
           </Accordion>
           <Accordion title="S1 · SUBTÍTULOS CINÉTICOS" badge={groups.length ? `${groups.length} BLOQUES` : 'VACÍO'} open={sections.s1} onToggle={() => toggle('s1')}>
             <SubtitlePanel
@@ -953,11 +1123,15 @@ export default function VideoStudio({ active, header }: Props) {
           onItem={(id, start, end) => {
             if (id.startsWith('gon:')) setProject((p) => ({ ...p, biomech: { ...p.biomech, angles: p.biomech.angles.map((g) => (g.id === id ? { ...g, start, end } : g)) } }))
             else if (id.startsWith('fx:')) setProject((p) => ({ ...p, fx: { ...p.fx, hits: p.fx.hits.map((h) => (h.id === id ? { ...h, t: start } : h)) } }))
+            else if (id.startsWith('vo:')) editVoice(id, start, end)
             else setProject((p) => patchItem(p, id, (it) => ({ ...it, start, end })))
           }}
           onSelect={(id) => {
-            setTlSel(id.startsWith('fx:') || id.startsWith('gon:') || id === 'barpath' ? id : null)
-            if (id.startsWith('gon:')) {
+            setTlSel(id.startsWith('fx:') || id.startsWith('gon:') || id.startsWith('vo:') || id === 'barpath' ? id : null)
+            if (id.startsWith('vo:')) {
+              setSelectedVoice(id)
+              setSections((st) => ({ ...st, a1: true }))
+            } else if (id.startsWith('gon:')) {
               setSelectedAngle(id)
               setSections((st) => ({ ...st, b1: true }))
             } else if (!id.startsWith('fx:')) setProject((p) => ({ ...p, selectedId: id }))

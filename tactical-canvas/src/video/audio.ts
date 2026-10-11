@@ -28,6 +28,19 @@ export async function clipToWavBase64(url: string, start: number, end: number): 
   return { base64: wavBase64(pcm, rate), duration }
 }
 
+/** Tramo [from, from + duration] de un AudioBuffer (ej. una toma de voz) → WAV mono 16 kHz en base64. */
+export async function bufferToWavBase64(buffer: AudioBuffer, from: number, duration: number): Promise<{ base64: string; duration: number }> {
+  const span = Math.max(0.1, Math.min(duration, MAX_TRANSCRIBE_SEC, buffer.duration - from))
+  const rate = 16000
+  const offline = new OfflineAudioContext(1, Math.ceil(span * rate), rate)
+  const src = offline.createBufferSource()
+  src.buffer = buffer
+  src.connect(offline.destination)
+  src.start(0, from, span)
+  const pcm = (await offline.startRendering()).getChannelData(0)
+  return { base64: wavBase64(pcm, rate), duration: span }
+}
+
 function wavBase64(samples: Float32Array, rate: number) {
   const bytes = new Uint8Array(44 + samples.length * 2)
   const v = new DataView(bytes.buffer)

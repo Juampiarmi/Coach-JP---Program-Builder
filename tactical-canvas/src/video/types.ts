@@ -187,6 +187,22 @@ export interface SoundFx {
   shake?: boolean
 }
 
+/**
+ * Toma de voz en off (pista A1). El audio grabado vive en memoria (como el clip); esto es lo que
+ * se guarda. `offset` / `duration` recortan la grabación (`total`) y `start` la ubica en el clip.
+ */
+export interface VoiceClip {
+  id: string
+  start: number
+  offset: number
+  duration: number
+  total: number
+  /** Cadena "Studio Clean": highpass 85 Hz + presencia 3,2 kHz + compresor */
+  enhance: boolean
+  /** 0–150 */
+  gain: number
+}
+
 export interface VideoProject {
   version: 1
   clip: ClipInfo | null
@@ -195,6 +211,8 @@ export interface VideoProject {
   music: MusicTrack | null
   biomech: Biomech
   fx: SoundFx
+  /** A1 · voz en off */
+  voice: VoiceClip[]
   /** Overlay seleccionado en el panel lateral */
   selectedId: string | null
   safeZone: boolean

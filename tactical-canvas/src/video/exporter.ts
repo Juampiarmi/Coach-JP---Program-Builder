@@ -5,6 +5,7 @@ import { drawBiomech } from './biomech'
 import { playFx } from './fx'
 import { overlayItems } from './project'
 import type { VideoProject } from './types'
+import { scheduleVoice, voiceSegments, type VoiceTake } from './voice'
 import { OUT_H, OUT_W } from './types'
 
 /**
@@ -38,6 +39,8 @@ interface Options {
   /** Pista A2 (beat) en memoria, si se subió */
   musicUrl?: string | null
   project: VideoProject
+  /** A1 · tomas de voz en off (audio en memoria) */
+  takes?: Map<string, VoiceTake>
   onProgress: (ratio: number) => void
   signal?: AbortSignal
 }
@@ -49,7 +52,7 @@ type FrameVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => vo
  * frame se compone (video "cover" + overlays) en un canvas 1080×1920 y MediaRecorder graba
  * canvas.captureStream() junto con el audio original del clip.
  */
-export async function exportVideo({ url, musicUrl, project, onProgress, signal }: Options): Promise<ExportResult> {
+export async function exportVideo({ url, musicUrl, project, takes = new Map(), onProgress, signal }: Options): Promise<ExportResult> {
   const clip = project.clip
   if (!clip) throw new Error('Primero subí un clip.')
   const mime = pickMime()
@@ -72,7 +75,7 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
   const stream = canvas.captureStream(30)
 
   // Mezcla de audio en un único destino de grabación (no suena por los parlantes):
-  // V1 (audio original) + A2 (música) con su volumen y el auto-ducking.
+  // V1 (audio original) + A1 (voz en off) + A2 (música) con su volumen y el auto-ducking + A3 (FX).
   let audioCtx: AudioContext | null = null
   let music: HTMLAudioElement | null = null
   let musicGain: GainNode | null = null
@@ -112,7 +115,8 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
   // S1 con el desfase global ya aplicado (igual que en la vista previa).
   const subs = withOffset(project.subtitles)
   const groups = groupWords(subs.words)
-  const segments = speechSegments(subs.words)
+  // Ducking de A2: habla de S1 + tramos con voz de A1.
+  const segments = [...speechSegments(subs.words), ...voiceSegments(project.voice ?? [], takes)]
   const span = Math.max(0.1, clip.out - clip.in)
   const frame = () => {
     const t = video.currentTime
@@ -172,6 +176,11 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
     for (const hit of project.fx.hits) {
       if (hit.t < t0 || hit.t > clip.out) continue
       playFx(audioCtx, hit.kind, now + (hit.t - t0), fxGain)
+    }
+    // A1 · voz en off con su cadena (Studio Clean si está activa) y ganancia.
+    for (const c of project.voice ?? []) {
+      const take = takes.get(c.id)
+      if (take && c.start < clip.out) scheduleVoice(audioCtx, c, take, t0, now, dest!)
     }
   }
   frame()
