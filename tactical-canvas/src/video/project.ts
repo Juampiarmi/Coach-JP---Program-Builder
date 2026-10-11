@@ -43,6 +43,8 @@ export function defaultProject(): VideoProject {
     safeZone: true,
     subtitles: { words: [], style: 'outline', accent: 'orange', enabled: true },
     music: null,
+    biomech: { path: { points: [], thick: false, showVertical: true }, angles: [] },
+    fx: { hits: [], volume: 80 },
   }
 }
 

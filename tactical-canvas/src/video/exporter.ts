@@ -1,5 +1,7 @@
 import { drawOverlays, drawSubtitles, drawVideoCover, loadOverlayFonts } from './render'
 import { duckGain, groupWords, speechSegments } from './subtitles'
+import { drawBiomech } from './biomech'
+import { playFx } from './fx'
 import { overlayItems } from './project'
 import type { VideoProject } from './types'
 import { OUT_H, OUT_W } from './types'
@@ -73,11 +75,17 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
   let audioCtx: AudioContext | null = null
   let music: HTMLAudioElement | null = null
   let musicGain: GainNode | null = null
+  let fxGain: GainNode | null = null
+  let dest: MediaStreamAudioDestinationNode | null = null
   const musicCfg = project.music
   try {
     audioCtx = new AudioContext()
-    const dest = audioCtx.createMediaStreamDestination()
+    dest = audioCtx.createMediaStreamDestination()
     audioCtx.createMediaElementSource(video).connect(dest)
+    // A3 · Sound FX: bus propio con el volumen maestro.
+    fxGain = audioCtx.createGain()
+    fxGain.gain.value = project.fx.volume / 100
+    fxGain.connect(dest)
     if (musicUrl && musicCfg) {
       music = new Audio(musicUrl)
       music.preload = 'auto'
@@ -87,9 +95,9 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
       })
       musicGain = audioCtx.createGain()
       musicGain.gain.value = 0
-      audioCtx.createMediaElementSource(music).connect(musicGain).connect(dest)
+      audioCtx.createMediaElementSource(music).connect(musicGain).connect(dest!)
     }
-    dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
+    dest!.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
   } catch {
     audioCtx = null // sin audio: se exporta sólo la imagen
   }
@@ -106,6 +114,7 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
   const frame = () => {
     const t = video.currentTime
     drawVideoCover(ctx, video)
+    drawBiomech(ctx, project.biomech, t)
     drawOverlays(ctx, items, t)
     drawSubtitles(ctx, project.subtitles, groups, t)
     // A2 sigue al video (la música arranca en el In) y aplica volumen × ducking.
@@ -142,6 +151,16 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
   if (music) {
     music.currentTime = 0
     await music.play().catch(() => undefined)
+  }
+  // Los disparos de A3 se agendan una sola vez con el reloj del AudioContext: quedan clavados
+  // a su timestamp sin depender de la cadencia de frames.
+  if (audioCtx && fxGain) {
+    const now = audioCtx.currentTime
+    const t0 = video.currentTime
+    for (const hit of project.fx.hits) {
+      if (hit.t < t0 || hit.t > clip.out) continue
+      playFx(audioCtx, hit.kind, now + (hit.t - t0), fxGain)
+    }
   }
   frame()
   recorder.start(250)

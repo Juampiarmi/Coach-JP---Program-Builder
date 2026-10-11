@@ -8,14 +8,18 @@ import { SubtitlePanel } from './SubtitlePanel'
 import { activeGroup, duckGain, editGroupText, groupWords, parseSubtitleFile, removeGroup, retimeGroup, speechSegments } from './subtitles'
 import { exportVideo, extractThumbs, pickMime } from './exporter'
 import { Accordion } from './Accordion'
+import { activeAngles, drawBiomech, px as toPx } from './biomech'
+import { BiomechPanel } from './BiomechPanel'
+import { FxPanel } from './FxPanel'
+import { FX_META, playFx } from './fx'
 import { OverlayPanel } from './OverlayPanel'
-import { defaultProject, findItem, fitToClip, newOverlayItem, overlayItems, patchItem, timelineDuration } from './project'
+import { defaultProject, findItem, fitToClip, newOverlayItem, overlayItems, patchItem, timelineDuration, uid } from './project'
 import { ReelsSafeZone } from './ReelsSafeZone'
 import { pressDrag } from './drag'
 import { clampCenter, drawOverlays, drawSubtitles, loadOverlayFonts, timecode, type OverlayRect } from './render'
 import { Scrubber } from './Scrubber'
 import { Timeline } from './Timeline'
-import type { MusicTrack, OverlayConfig, SubtitleTrack, Track, VideoProject } from './types'
+import type { Biomech, FxKind, Goniometer, MusicTrack, OverlayConfig, SoundFx, SubtitleTrack, Track, VideoProject } from './types'
 import { OUT_H, OUT_W } from './types'
 
 interface Props {
@@ -92,6 +96,31 @@ export default function VideoStudio({ active, header }: Props) {
     [music, clip, musicLevel],
   )
 
+  // B1 · HUD biomecánico y A3 · Sound FX
+  const bio = project.biomech
+  const fx = project.fx
+  const [tracing, setTracing] = useState(false)
+  const [selectedAngle, setSelectedAngle] = useState<string | null>(null)
+  const setBio = (patch: Partial<Biomech>) => setProject((p) => ({ ...p, biomech: { ...p.biomech, ...patch } }))
+  const setFx = (patch: Partial<SoundFx>) => setProject((p) => ({ ...p, fx: { ...p.fx, ...patch } }))
+  // Motor de vista previa de los Sound FX (AudioContext propio, creado con el primer gesto).
+  const fxCtx = useRef<{ ctx: AudioContext; bus: GainNode } | null>(null)
+  const fxEngine = () => {
+    if (!fxCtx.current) {
+      const ctx = new AudioContext()
+      const bus = ctx.createGain()
+      bus.connect(ctx.destination)
+      fxCtx.current = { ctx, bus }
+    }
+    const eng = fxCtx.current
+    if (eng.ctx.state === 'suspended') eng.ctx.resume().catch(() => undefined)
+    eng.bus.gain.value = fxRef.current.volume / 100
+    return eng
+  }
+  const fxPrev = useRef(0)
+  const fxRef = useRef(fx)
+  fxRef.current = fx
+
   // ── Carga del clip ────────────────────────────────────────────────────────────
   const loadFile = (file: File | undefined) => {
     if (!file) return
@@ -127,6 +156,7 @@ export default function VideoStudio({ active, header }: Props) {
       if (v && url) v.currentTime = next
       setTime(next)
       syncMusic(next, false)
+      fxPrev.current = next
     },
     [duration, url, syncMusic],
   )
@@ -155,6 +185,17 @@ export default function VideoStudio({ active, header }: Props) {
         }
         setTime(v.currentTime)
         syncMusic(v.currentTime, !v.paused)
+        // A3: dispara los efectos cuyo instante cruzó el cabezal desde el frame anterior.
+        const prev = fxPrev.current
+        const now = v.currentTime
+        if (now > prev && now - prev < 0.5) {
+          const due = fxRef.current.hits.filter((h) => h.t > prev && h.t <= now)
+          if (due.length) {
+            const eng = fxEngine()
+            due.forEach((h) => playFx(eng.ctx, h.kind, eng.ctx.currentTime, eng.bus))
+          }
+        }
+        fxPrev.current = now
       }
       raf = requestAnimationFrame(tick)
     }
@@ -188,10 +229,11 @@ export default function VideoStudio({ active, header }: Props) {
     const ctx = canvasRef.current?.getContext('2d')
     if (!ctx) return
     ctx.clearRect(0, 0, OUT_W, OUT_H)
+    drawBiomech(ctx, bio, time, selectedAngle)
     const next = drawOverlays(ctx, items, time)
     drawSubtitles(ctx, subtitles, groups, time)
     setRects((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-  }, [items, time, fontsReady, active, subtitles, groups])
+  }, [items, time, fontsReady, active, subtitles, groups, bio, selectedAngle])
 
   // ── Arrastre libre en el visor (posición en % del marco, con imán al centro) ──
   const layerRef = useRef<HTMLDivElement>(null)
@@ -202,9 +244,49 @@ export default function VideoStudio({ active, header }: Props) {
     return { px: ((clientX - r.left) / r.width) * OUT_W, py: ((clientY - r.top) / r.height) * OUT_H }
   }
   const hitTest = (px: number, py: number) => [...rects].reverse().find((r) => px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) ?? null
+  /** Manija de goniómetro (articulación) bajo el puntero, si hay uno visible ahora. */
+  const handleAt = (px: number, py: number) => {
+    for (const g of [...activeAngles(bio, time)].reverse()) {
+      for (const k of ['b', 'a', 'c'] as const) {
+        const p = toPx(g[k])
+        if (Math.hypot(p.x - px, p.y - py) < 44) return { id: g.id, k }
+      }
+    }
+    return null
+  }
+  /** Agrega o reemplaza el punto del Bar Path en el instante actual del video. */
+  const addPathPoint = (px: number, py: number) => {
+    const t = videoRef.current?.currentTime ?? time
+    const pt = { t, x: Math.min(100, Math.max(0, (px / OUT_W) * 100)), y: Math.min(100, Math.max(0, (py / OUT_H) * 100)) }
+    setProject((p) => {
+      const pts = p.biomech.path.points.filter((q) => Math.abs(q.t - t) > 1 / 60)
+      return { ...p, biomech: { ...p.biomech, path: { ...p.biomech.path, points: [...pts, pt].sort((a, b) => a.t - b.t) } } }
+    })
+  }
   const onLayerDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return
     const { px, py } = toFrame(e.clientX, e.clientY)
+    // Bar Path: click = un punto; mantener presionado mientras reproduce = trazo continuo.
+    if (tracing) {
+      addPathPoint(px, py)
+      pressDrag(e, (ev) => {
+        const pt = toFrame(ev.clientX, ev.clientY)
+        addPathPoint(pt.px, pt.py)
+      })
+      return
+    }
+    // Goniómetro: arrastrar cada articulación.
+    const handle = handleAt(px, py)
+    if (handle) {
+      setSelectedAngle(handle.id)
+      setSections((st) => ({ ...st, b1: true }))
+      pressDrag(e, (ev) => {
+        const pt = toFrame(ev.clientX, ev.clientY)
+        const pos = { x: Math.min(100, Math.max(0, (pt.px / OUT_W) * 100)), y: Math.min(100, Math.max(0, (pt.py / OUT_H) * 100)) }
+        setProject((p) => ({ ...p, biomech: { ...p.biomech, angles: p.biomech.angles.map((g) => (g.id === handle.id ? { ...g, [handle.k]: pos } : g)) } }))
+      })
+      return
+    }
     const hit = hitTest(px, py)
     if (!hit) {
       if (!url) fileRef.current?.click()
@@ -237,7 +319,7 @@ export default function VideoStudio({ active, header }: Props) {
     // Sólo cambia el cursor: el hover nunca mueve nada.
     if (e.buttons) return
     const { px, py } = toFrame(e.clientX, e.clientY)
-    const over = Boolean(hitTest(px, py))
+    const over = Boolean(hitTest(px, py) || handleAt(px, py))
     if (over !== hoverMove) setHoverMove(over)
   }
   const selRect = rects.find((r) => r.id === project.selectedId)
@@ -284,7 +366,7 @@ export default function VideoStudio({ active, header }: Props) {
   }
 
   // ── Panel en acordeones (V2 abierto por defecto cuando hay clip) ─────────────
-  const [sections, setSections] = useState({ v2: false, s1: false, a2: false })
+  const [sections, setSections] = useState({ v2: false, s1: false, a2: false, b1: false, a3: false })
   const toggle = (k: keyof typeof sections) => setSections((st) => ({ ...st, [k]: !st[k] }))
   useEffect(() => {
     if (url) setSections((st) => ({ ...st, v2: true }))
@@ -350,6 +432,32 @@ export default function VideoStudio({ active, header }: Props) {
     setProject((p) => ({ ...p, music: null }))
   }
 
+  // ── B1 · Goniómetros ──────────────────────────────────────────────────────────
+  const addAngle = () => {
+    const start = Math.min(time, Math.max(0, duration - 0.5))
+    const g: Goniometer = {
+      id: `gon:${uid()}`,
+      start,
+      end: Math.min(duration, start + 2.5),
+      a: { x: 44, y: 46 },
+      b: { x: 58, y: 57 },
+      c: { x: 50, y: 70 },
+      label: 'PROFUNDIDAD VÁLIDA',
+      color: 'orange',
+    }
+    setTracing(false)
+    setSelectedAngle(g.id)
+    setBio({ angles: [...bio.angles, g] })
+  }
+  const setAngle = (id: string, patch: Partial<Goniometer>) => setBio({ angles: bio.angles.map((g) => (g.id === id ? { ...g, ...patch } : g)) })
+
+  // ── A3 · Sound FX ─────────────────────────────────────────────────────────────
+  const addFx = (kind: FxKind) => {
+    setFx({ hits: [...fx.hits, { id: `fx:${uid()}`, kind, t: Math.min(time, Math.max(0, duration - 0.05)) }] })
+    const eng = fxEngine()
+    playFx(eng.ctx, kind, eng.ctx.currentTime, eng.bus) // escucha inmediata
+  }
+
   // Pistas que muestra el timeline: V1 + V2 del proyecto y S1 / A2 derivadas.
   const timelineTracks: Track[] = [
     ...project.tracks,
@@ -363,6 +471,23 @@ export default function VideoStudio({ active, header }: Props) {
           ? [{ id: 'a2', type: 'audio', start: clip.in, end: Math.min(duration, clip.in + music.duration), data: { text: `${music.name} · ${music.volume}%`, volume: music.volume, segments: music.ducking ? segments : [] } }]
           : [],
     },
+    {
+      id: 'b1',
+      kind: 'bio',
+      label: 'B1 · HUD BIOMECÁNICO',
+      items: [
+        ...(bio.path.points.length > 1
+          ? [{ id: 'barpath', type: 'bio' as const, start: bio.path.points[0].t, end: bio.path.points[bio.path.points.length - 1].t, data: { text: `BAR PATH · ${bio.path.points.length} pts` } }]
+          : []),
+        ...bio.angles.map((g) => ({ id: g.id, type: 'bio' as const, start: g.start, end: g.end, editable: 'range' as const, data: { text: `∠ ${g.label || 'ÁNGULO'}` } })),
+      ],
+    },
+    {
+      id: 'a3',
+      kind: 'audio',
+      label: 'A3 · SOUND FX',
+      items: fx.hits.map((h) => ({ id: h.id, type: 'audio' as const, start: h.t, end: Math.min(duration, h.t + FX_META[h.kind].duration), editable: 'move' as const, data: { text: FX_META[h.kind].icon } })),
+    },
   ]
 
   // Estados vacíos del timeline: abren su acordeón y disparan la acción.
@@ -374,6 +499,14 @@ export default function VideoStudio({ active, header }: Props) {
         if (clip) runTranscribe()
         else fileRef.current?.click()
       },
+    },
+    b1: {
+      label: '+ TRAZAR BAR PATH / MEDIR ÁNGULO',
+      onClick: () => setSections((st) => ({ ...st, b1: true })),
+    },
+    a3: {
+      label: '+ AGREGAR SOUND FX',
+      onClick: () => setSections((st) => ({ ...st, a3: true })),
     },
     a2: {
       label: '+ CARGAR BEAT',
@@ -463,6 +596,31 @@ export default function VideoStudio({ active, header }: Props) {
           <Accordion title="A2 · MÚSICA & BEAT" badge={music ? `${music.volume}%${music.ducking ? ' · DUCKING' : ''}` : 'VACÍO'} open={sections.a2} onToggle={() => toggle('a2')}>
             <MusicPanel music={music} hasSpeech={segments.length > 0} onPick={() => musicInputRef.current?.click()} onChange={setMusic} onRemove={removeMusic} />
           </Accordion>
+          <Accordion
+            title="B1 · BIOMECÁNICA HUD"
+            badge={[bio.path.points.length ? `${bio.path.points.length} PTS` : '', bio.angles.length ? `${bio.angles.length} ∠` : ''].filter(Boolean).join(' · ') || 'VACÍO'}
+            open={sections.b1}
+            onToggle={() => toggle('b1')}
+          >
+            <BiomechPanel
+              bio={bio}
+              tracing={tracing}
+              selectedAngle={selectedAngle}
+              canEdit={Boolean(clip)}
+              onToggleTrace={() => setTracing((v) => !v)}
+              onChange={setBio}
+              onAddAngle={addAngle}
+              onSelectAngle={setSelectedAngle}
+              onAngle={setAngle}
+              onRemoveAngle={(id) => {
+                setBio({ angles: bio.angles.filter((g) => g.id !== id) })
+                setSelectedAngle(null)
+              }}
+            />
+          </Accordion>
+          <Accordion title="A3 · SOUND FX TÁCTICOS" badge={fx.hits.length ? `${fx.hits.length} FX · ${fx.volume}%` : 'VACÍO'} open={sections.a3} onToggle={() => toggle('a3')}>
+            <FxPanel fx={fx} time={time} onAdd={addFx} onChange={setFx} onRemove={(id) => setFx({ hits: fx.hits.filter((h) => h.id !== id) })} />
+          </Accordion>
           <input
             ref={musicInputRef}
             type="file"
@@ -550,7 +708,7 @@ export default function VideoStudio({ active, header }: Props) {
               onPointerMove={onLayerHover}
               onPointerLeave={() => setHoverMove(false)}
               className="absolute inset-0"
-              style={{ cursor: guides ? 'grabbing' : hoverMove ? 'grab' : url ? 'default' : 'pointer', touchAction: 'none' }}
+              style={{ cursor: tracing ? 'crosshair' : guides ? 'grabbing' : hoverMove ? 'grab' : url ? 'default' : 'pointer', touchAction: 'none' }}
             >
               {selRect && (
                 <div
@@ -620,8 +778,17 @@ export default function VideoStudio({ active, header }: Props) {
             if (clip) seek(i !== clip.in ? i : o)
             setProject((p) => (p.clip ? { ...p, clip: { ...p.clip, in: i, out: o } } : p))
           }}
-          onItem={(id, start, end) => setProject((p) => patchItem(p, id, (it) => ({ ...it, start, end })))}
-          onSelect={(id) => setProject((p) => ({ ...p, selectedId: id }))}
+          onItem={(id, start, end) => {
+            if (id.startsWith('gon:')) setProject((p) => ({ ...p, biomech: { ...p.biomech, angles: p.biomech.angles.map((g) => (g.id === id ? { ...g, start, end } : g)) } }))
+            else if (id.startsWith('fx:')) setProject((p) => ({ ...p, fx: { ...p.fx, hits: p.fx.hits.map((h) => (h.id === id ? { ...h, t: start } : h)) } }))
+            else setProject((p) => patchItem(p, id, (it) => ({ ...it, start, end })))
+          }}
+          onSelect={(id) => {
+            if (id.startsWith('gon:')) {
+              setSelectedAngle(id)
+              setSections((st) => ({ ...st, b1: true }))
+            } else if (!id.startsWith('fx:')) setProject((p) => ({ ...p, selectedId: id }))
+          }}
         />
       </main>
     </div>

@@ -7,7 +7,7 @@
  * pista genéricamente y el render consulta sólo las que sabe componer.
  */
 
-export type TrackKind = 'video' | 'overlay' | 'audio' | 'subtitle'
+export type TrackKind = 'video' | 'overlay' | 'audio' | 'subtitle' | 'bio'
 
 /** Rango de tiempo en segundos, medido sobre el clip base (sin recorte). */
 export interface TimeRange {
@@ -64,11 +64,13 @@ export interface OverlayItem extends TimeRange {
   overlay: OverlayConfig
 }
 
-/** Ítem genérico de pistas futuras (audio, subtítulos): el núcleo sólo necesita su rango. */
+/** Ítem genérico (audio, subtítulos, biomecánica): el núcleo sólo necesita su rango. */
 export interface GenericItem extends TimeRange {
   id: string
   type: Exclude<TrackKind, 'overlay' | 'video'>
   data?: Record<string, unknown>
+  /** Edición en el timeline: mover y estirar ('range') o sólo mover ('move'). Sin valor, es de sólo lectura. */
+  editable?: 'range' | 'move'
 }
 
 export type TrackItem = OverlayItem | GenericItem
@@ -120,12 +122,64 @@ export interface MusicTrack {
   ducking: boolean
 }
 
+/** Punto en el marco 9:16 en % (0–100). */
+export interface FramePoint {
+  x: number
+  y: number
+}
+
+/** Punto del Bar Path con su instante (segundos del clip base). */
+export interface PathPoint extends FramePoint {
+  t: number
+}
+
+export interface BarPath {
+  points: PathPoint[]
+  thick: boolean
+  /** Línea vertical de referencia (eje de gravedad) desde el primer punto */
+  showVertical: boolean
+}
+
+/** Goniómetro articular: 3 puntos (a → vértice b → c) visibles en un rango de B1. */
+export interface Goniometer extends TimeRange {
+  id: string
+  a: FramePoint
+  b: FramePoint
+  c: FramePoint
+  label: string
+  color: 'orange' | 'white'
+}
+
+/** Pista B1 · HUD biomecánico. */
+export interface Biomech {
+  path: BarPath
+  angles: Goniometer[]
+}
+
+export type FxKind = 'impact' | 'whoosh' | 'beep' | 'bell'
+
+export interface FxHit {
+  id: string
+  kind: FxKind
+  /** Instante del disparo (segundos del clip base) */
+  t: number
+}
+
+/** Pista A3 · Sound FX sintetizados. */
+export interface SoundFx {
+  hits: FxHit[]
+  /** 0–100 */
+  volume: number
+}
+
 export interface VideoProject {
   version: 1
   clip: ClipInfo | null
   tracks: Track[]
   subtitles: SubtitleTrack
   music: MusicTrack | null
+  biomech: Biomech
+  fx: SoundFx
   /** Overlay seleccionado en el panel lateral */
   selectedId: string | null
   safeZone: boolean

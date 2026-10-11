@@ -19,7 +19,7 @@ interface Props {
 }
 
 const LABEL_W = 132
-const ROW_H = 46
+const ROW_H = 38
 const MIN_LEN = 0.3
 
 const KIND_LABEL: Record<OverlayItem['overlay']['kind'], string> = { badge: 'MÉTRICA', headline: 'PLACA', timer: 'TIMER', checklist: 'CHECK', watermark: 'FIRMA' }
@@ -97,7 +97,8 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
   const renderItem = (track: Track, item: TrackItem) => {
     const left = item.start * pps
     const w = Math.max(6, (item.end - item.start) * pps)
-    const editable = item.type === 'overlay'
+    // Overlays: mover y estirar. Ítems genéricos: según su `editable` (goniómetros, disparos de FX).
+    const editable = item.type === 'overlay' ? 'range' : item.editable
     const on = item.id === selectedId
     const move = (e: RPointerEvent, mode: 'move' | 'start' | 'end') => {
       onSelect(item.id)
@@ -121,12 +122,12 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
         style={{ left, width: w, touchAction: 'none' }}
         title={`${timecode(item.start)} → ${timecode(item.end)}`}
       >
-        {editable && <span onPointerDown={(e) => move(e, 'start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
+        {editable === 'range' && <span onPointerDown={(e) => move(e, 'start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
         {item.type === 'audio' && <AudioLevel item={item} />}
         <span className="relative truncate px-3">
           {item.type === 'overlay' ? `${KIND_LABEL[item.overlay.kind]} · ${itemText(item.overlay)}` : String(item.data?.text ?? track.label)}
         </span>
-        {editable && <span onPointerDown={(e) => move(e, 'end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
+        {editable === 'range' && <span onPointerDown={(e) => move(e, 'end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
       </div>
     )
   }
