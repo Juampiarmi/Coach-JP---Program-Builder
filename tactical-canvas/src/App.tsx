@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useRef, useState, type ReactNode } from 'react'
 import { BrandBar } from './components/BrandBar'
 import { ModeSwitch, type WorkMode } from './components/ModeSwitch'
 import { ControlPanel } from './components/controls/ControlPanel'
@@ -315,8 +315,9 @@ export default function App() {
     window.setTimeout(() => setRegen((r) => (r.busy ? r : { busy: false, note: '' })), 9000)
   }
 
-  const slideBar = (
+  const slideBar = (trailing?: ReactNode) => (
     <SlideBar
+      trailing={trailing}
       count={slides.length}
       active={active}
       onSelect={selectSlide}
@@ -403,12 +404,14 @@ export default function App() {
           </div>
         </aside>
         <main className="tc-grid-bg flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center justify-between gap-4 border-b border-line bg-carbon/80 px-6 py-3 backdrop-blur">
-            {slideBar}
-            <div className="flex shrink-0 items-center gap-2">
-              {overlayToggle}
-              <div className="w-64">{aspectToggle}</div>
-            </div>
+          {/* Barra superior: pestañas (flex-1, scroll horizontal) + utilidades fijas a la derecha. */}
+          <div className="border-b border-line bg-carbon/80 px-6 py-3 backdrop-blur">
+            {slideBar(
+              <>
+                {overlayToggle}
+                <div className="w-56 shrink-0">{aspectToggle}</div>
+              </>,
+            )}
           </div>
           <div className="min-h-0 flex-1 p-6">
             <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
@@ -432,7 +435,7 @@ export default function App() {
         </div>
         {overlayToggle}
       </div>
-      <div className="border-b border-line px-4 py-2">{slideBar}</div>
+      <div className="border-b border-line px-4 py-2">{slideBar()}</div>
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
         <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
       </main>

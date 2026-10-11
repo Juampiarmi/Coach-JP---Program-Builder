@@ -1,3 +1,5 @@
+import { useEffect, useRef, type ReactNode } from 'react'
+
 interface Props {
   count: number
   active: number
@@ -11,27 +13,50 @@ interface Props {
   regenBusy: boolean
   regenNote: string
   exporting: string | null
+  /** Utilidades extra al final de la zona derecha (swap, overlay, formato) */
+  trailing?: ReactNode
 }
 
 /** Paginación de la secuencia: [ PLACA 1 | PLACA 2 | ... ] + exportar todas (PNG sueltos o .zip). */
-export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll, onExportZip, exporting, onRegenerate, onMove, regenBusy, regenNote }: Props) {
+/**
+ * Barra superior en dos zonas: a la izquierda las pestañas de placas (ocupan todo el espacio
+ * libre, nunca se encogen: si no entran, scroll horizontal) y a la derecha las utilidades fijas.
+ * Si la fila no alcanza, las utilidades bajan a una segunda línea en vez de aplastar las pestañas.
+ */
+export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll, onExportZip, exporting, onRegenerate, onMove, regenBusy, regenNote, trailing }: Props) {
+  const tabsRef = useRef<HTMLDivElement>(null)
+  // La pestaña activa siempre queda a la vista dentro del scroll.
+  useEffect(() => {
+    tabsRef.current?.querySelector<HTMLElement>('[aria-current="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+  }, [active, count])
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <div className="tc-scroll flex min-w-0 items-center gap-1 overflow-x-auto rounded-lg border border-line bg-surface-2 p-0.5">
-        <span className="shrink-0 px-1.5 font-mono text-[10px] text-steel">[</span>
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+      {/* Zona izquierda: las pestañas scrollean; ◀ ▶ + − quedan fijos a la derecha (siempre visibles). */}
+      <div className="flex min-w-[min(100%,480px)] flex-1 items-center rounded-lg border border-line bg-surface-2">
+      <div
+        ref={tabsRef}
+        role="tablist"
+        aria-label="Placas del carrusel"
+        className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto scroll-smooth px-1 py-1"
+      >
+        <span className="shrink-0 px-1 font-mono text-xs text-steel">[</span>
         {Array.from({ length: count }, (_, i) => (
           <button
             key={i}
             type="button"
+            role="tab"
             onClick={() => onSelect(i)}
             aria-current={i === active}
-            className={`shrink-0 rounded-md px-2 py-1 font-mono text-[10px] tracking-wider transition ${
+            aria-selected={i === active}
+            className={`shrink-0 rounded-md px-3 py-1.5 font-mono text-xs tracking-wider whitespace-nowrap transition ${
               i === active ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
             }`}
           >
             {count > 1 ? `PLACA ${i + 1}` : 'PLACA'}
           </button>
         ))}
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5 border-l border-line px-1 py-1">
         {count > 1 && (
           <>
             <button
@@ -54,16 +79,19 @@ export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll
             </button>
           </>
         )}
-        <button type="button" onClick={onAdd} title="Duplicar slide actual" className="shrink-0 rounded-md px-2 py-1 font-mono text-[11px] text-steel hover:text-cyan">
+        <button type="button" onClick={onAdd} title="Duplicar slide actual" className="shrink-0 rounded-md px-3 py-1.5 font-mono text-xs text-steel hover:text-cyan">
           +
         </button>
         {count > 1 && (
-          <button type="button" onClick={onRemove} title="Eliminar slide actual" className="shrink-0 rounded-md px-2 py-1 font-mono text-[11px] text-steel hover:text-fire">
+          <button type="button" onClick={onRemove} title="Eliminar slide actual" className="shrink-0 rounded-md px-3 py-1.5 font-mono text-xs text-steel hover:text-fire">
             −
           </button>
         )}
-        <span className="shrink-0 px-1.5 font-mono text-[10px] text-steel">]</span>
+        <span className="shrink-0 px-1 font-mono text-xs text-steel">]</span>
       </div>
+      </div>
+      {/* Zona derecha: utilidades fijas (nunca le quitan ancho a las pestañas: si no entran, bajan). */}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
       <button
         type="button"
         onClick={onRegenerate}
@@ -106,6 +134,8 @@ export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll
             </button>
           </>
         ))}
+      {trailing}
+      </div>
     </div>
   )
 }
