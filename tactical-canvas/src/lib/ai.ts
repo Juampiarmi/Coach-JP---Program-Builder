@@ -946,8 +946,15 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
 const LABEL_PREFIX = /^(parte\s*\d|blanco|remate|acento|titular|t[ií]tulo|gancho|hook|p[aá]rrafo|subt[ií]tulo|label|tag)\s*[:：-]\s*/i
 
 /** Limpia un texto de la IA: markdown en negrita, rótulos, comillas envolventes y espacios. */
-export function cleanText(t: string) {
-  let out = t.replace(/\*\*(.+?)\*\*/g, '$1').replace(/\s+/g, ' ').trim()
+export function cleanText(t: string, keepBreaks = false) {
+  let out = t.replace(/\*\*(.+?)\*\*/g, '$1')
+  out = keepBreaks
+    ? out
+        .split('\n')
+        .map((l) => l.replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .join('\n')
+    : out.replace(/\s+/g, ' ').trim()
   out = out.replace(LABEL_PREFIX, '')
   const m = out.match(/^[«"“](.+)[»"”]$/)
   return (m ? m[1] : out).trim()
@@ -957,10 +964,11 @@ export function cleanText(t: string) {
  * Saneamiento final de la placa: cada campo de texto queda limpio y sin residuos antes de
  * pasar al estado (los *asteriscos* simples del titular se conservan: marcan la palabra destacada).
  */
-function sanitizePatch(patch: Partial<CanvasState>): Partial<CanvasState> {
+function sanitizePatch(patch: Partial<CanvasState>, keepBreaks = false): Partial<CanvasState> {
   for (const k of ['tag', 'headlineA', 'headlineB', 'body', 'kicker', 'metricValue', 'metricLabel', 'verdict', 'repeatPhrase', 'citeSub'] as const) {
     const v = patch[k]
-    if (typeof v === 'string') patch[k] = cleanText(v)
+    // En el mapeo de copy, el titular y el párrafo conservan los saltos forzados (premisa \n puente).
+    if (typeof v === 'string') patch[k] = cleanText(v, keepBreaks && (k === 'headlineA' || k === 'body'))
   }
   for (const k of ['cardA', 'cardB'] as const) {
     const c = patch[k]
@@ -1078,6 +1086,7 @@ Para cada bloque extraé:
 - "titleWhite": la premisa / tensión inicial, LITERAL.
 - "titleAccent": el golpe de impacto / remate, LITERAL (la parte final o la frase de cierre del bloque).
 - "parrafo": el subtítulo o cierre restante del bloque, LITERAL ("" si no queda texto).
+ESTRUCTURA TRIPARTITA (PREMISA / PUENTE / REMATE): si el bloque tiene 3 partes, "titleWhite" lleva la premisa Y el puente completos (ej: «NORMALIZAMOS TANTO LA DEBILIDAD QUE ENTRENAR LA FUERZA») y "titleAccent" la última parte. Nunca descartes ni recortes una parte; nunca cortes una frase en los dos puntos sin incluir lo que sigue. Una firma («COACH JP · …») va en "tagSuperior", nunca en el titular.
 
 BLOQUES:
 ${blocks.map((b, i) => `[${i + 1}] ${b.text.replace(/\n/g, ' / ')}`).join('\n')}
@@ -1102,7 +1111,7 @@ export async function mapCopy(
   const key = (settings.keys[settings.provider] ?? '').trim()
   const done = (slides: Partial<CanvasState>[], caption: string, local: boolean) => ({
     format: (slides.length === 1 ? 'single' : 'carousel') as GenerationResult['format'],
-    slides: slides.map((sl) => sanitizePatch({ ...sl })),
+    slides: slides.map((sl) => sanitizePatch({ ...sl }, true)),
     caption,
     plan: { goal: 'mapeo', intent: 'Maquetar el copy del usuario sin cambios', sequence: slides.map((sl) => sl.template ?? 'statement') },
     local,

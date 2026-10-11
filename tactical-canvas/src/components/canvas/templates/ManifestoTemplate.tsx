@@ -18,7 +18,10 @@ export function ManifestoTemplate({ state, fontFamily, fontSize, tracking, scale
   const author = state.manifestoAuthor.trim()
   const quotes = state.manifestoStyle === 'quotes'
   const phrase = (
-    <Headline partA={state.headlineA} partB={state.headlineB} fontFamily={fontFamily} fontSize={fontSize} tracking={tracking} />
+    <Headline partA={state.headlineA} partB={state.headlineB} fontFamily={fontFamily} fontSize={fontSize} tracking={tracking}
+      newLine={state.remateNewLine !== false}
+      remateGap={(state.remateGap ?? 0) / 100}
+    />
   )
 
   return (

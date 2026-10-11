@@ -97,7 +97,36 @@ function cleanValue(v: string) {
   return t.replace(/^[«"“]|[»"”]$/gu, '').trim()
 }
 
-/** Corte local de un bloque: respeta rótulos explícitos (aun en una sola línea), renglones y oraciones; nunca reescribe. */
+/** Firma / sello de cierre («COACH JP · HIGH PERFORMANCE SYSTEM», «[MANIFIESTO]»): va al tag, nunca al titular. */
+function isSignature(line: string) {
+  const t = line.trim()
+  if (/^\[[^\]]{2,48}\]$/.test(t)) return true
+  if (/[.!?…:]$/.test(t) || t.split(/\s+/).length > 10) return false
+  return /\s[·•|]\s/.test(t) || /^coach\s+jp\b/i.test(t)
+}
+
+const isUpperWord = (w: string) => /\p{L}/u.test(w) && w === w.toUpperCase()
+
+/**
+ * Un renglón con mayúsculas y minúsculas alternadas («NORMALIZAMOS TANTO LA DEBILIDAD que entrenar
+ * la fuerza PARECE COSA DE CULTURISTAS.»): cada tramo es una parte (premisa / puente / remate).
+ */
+function caseRuns(line: string): string[] | null {
+  const runs: { up: boolean; w: string[] }[] = []
+  for (const w of line.split(/\s+/).filter(Boolean)) {
+    const up = /\p{L}/u.test(w) ? isUpperWord(w) : (runs[runs.length - 1]?.up ?? true)
+    if (runs.length && runs[runs.length - 1].up === up) runs[runs.length - 1].w.push(w)
+    else runs.push({ up, w: [w] })
+  }
+  if (runs.length < 3 || !runs[0].up || !runs[runs.length - 1].up) return null
+  return runs.map((r) => r.w.join(' '))
+}
+
+/**
+ * Corte local de un bloque: respeta rótulos explícitos (aun en una sola línea), renglones y oraciones; nunca reescribe.
+ * Estructura tripartita (PREMISA / PUENTE / REMATE): el titular blanco lleva premisa + puente con salto
+ * forzado y el remate naranja la última parte. Ninguna línea se descarta.
+ */
 export function splitBlock(block: string): Partial<CanvasState> {
   const out: Partial<CanvasState> = {}
   const src = block.replace(/\*\*|__/g, '')
@@ -116,18 +145,37 @@ export function splitBlock(block: string): Partial<CanvasState> {
     })
     if (pre && out.headlineA === undefined) out.headlineA = pre
   } else {
-    const rest = src
+    let rest = src
       .split('\n')
       .map((l) => cleanValue(l))
       .filter(Boolean)
+    // «PREMISA / PUENTE / GOLPE» en un renglón: la barra separa las partes igual que un salto.
+    if (rest.length === 1) {
+      const slash = rest[0].split(/\s+\/\s+/).map(cleanValue).filter(Boolean)
+      if (slash.length >= 2) rest = slash
+    }
+    // Firma suelta (en su propio renglón o al final del bloque) → tag.
+    const sigAt = rest.length >= 2 ? rest.findIndex(isSignature) : -1
+    if (sigAt >= 0) out.tag = rest.splice(sigAt, 1)[0].replace(/^\[\s*|\s*\]$/g, '').toUpperCase()
+    else if (rest.length === 1) {
+      const tail = rest[0].match(/^(.*[.!?…])\s+((?:[\p{Lu}\p{N}&]+\s+){0,3}[\p{Lu}\p{N}&]+\s*[·|]\s*(?:[\p{Lu}\p{N}&]+\s*){1,5})$/u)
+      if (tail) {
+        rest[0] = tail[1].trim()
+        out.tag = tail[2].trim().toUpperCase()
+      }
+    }
     if (rest.length >= 2) {
-      out.headlineA = rest[0]
-      out.headlineB = rest[1]
-      if (rest.length > 2) out.body = rest.slice(2).join('\n')
+      let parts = rest
+      // Un último renglón largo es párrafo de cierre, no remate.
+      if (rest.length >= 3 && rest[rest.length - 1].split(/\s+/).length > 22) {
+        out.body = rest[rest.length - 1]
+        parts = rest.slice(0, -1)
+      }
+      out.headlineA = parts.slice(0, -1).join('\n')
+      out.headlineB = parts[parts.length - 1]
     } else if (rest.length === 1) {
-      // «PREMISA / GOLPE» en un renglón: la barra separa titular y remate.
-      const slash = rest[0].split(/\s+\/\s+/)
-      const [a, b] = slash.length === 2 ? slash.map(cleanValue) : splitSentence(rest[0])
+      const runs = caseRuns(rest[0])
+      const [a, b] = runs ? [runs.slice(0, -1).join('\n'), runs[runs.length - 1]] : splitSentence(rest[0])
       out.headlineA = a
       out.headlineB = b
     }
@@ -152,7 +200,16 @@ function splitSentence(s: string): [string, string] {
     from = end
   }
   if (from < t.length) sentences.push(t.slice(from).trim())
-  if (sentences.length >= 2) return [sentences[0], sentences.slice(1).join(' ')]
+  if (sentences.length >= 2) {
+    // «… RESISTIR. NO ES QUE ENTRENAR SEA EXIGENTE: ES QUE …»: los dos puntos de la última oración
+    // abren el remate; todo lo anterior (completo) queda en el titular.
+    const last = sentences[sentences.length - 1]
+    const colon = last.search(/[:;]\s/)
+    if (colon > 0 && colon < last.length - 3) return [[...sentences.slice(0, -1), last.slice(0, colon + 1)].join('\n'), last.slice(colon + 1).trim()]
+    // Staccato «CRITERIO. FISIOLOGÍA. ALTO RENDIMIENTO. QUE SEA COMÚN…»: las oraciones cortas son el titular.
+    if (sentences.length >= 3 && sentences.slice(0, -1).every((x) => x.split(/\s+/).length <= 3)) return [sentences.slice(0, -1).join(' '), last]
+    return [sentences[0], sentences.slice(1).join(' ')]
+  }
   const cut = Math.max(t.lastIndexOf(','), t.lastIndexOf(':'), t.lastIndexOf(';'), t.lastIndexOf(' — '))
   if (cut > t.length * 0.25 && cut < t.length - 3) return [t.slice(0, cut + 1).trim(), t.slice(cut + 1).trim()]
   const w = t.split(/\s+/)
@@ -167,6 +224,14 @@ export function fidelity(patch: Partial<CanvasState>, block: string): number {
   const used = words(`${patch.headlineA ?? ''} ${patch.headlineB ?? ''} ${patch.body ?? ''}`)
   if (!used.length) return 0
   return used.filter((w) => src.has(w)).length / used.length
+}
+
+/** Proporción de palabras del bloque (sin rótulos) que llegan visibles a la placa: tag, titular y remate. */
+export function coverage(patch: Partial<CanvasState>, block: string): number {
+  const src = words(block.replace(LABEL_ALL, ' '))
+  if (!src.length) return 1
+  const used = new Set(words(`${patch.tag ?? ''} ${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`))
+  return src.filter((w) => used.has(w)).length / src.length
 }
 
 /** Plantillas permitidas al mapear: sólo de texto (más métrica si el bloque trae un número). */
@@ -185,7 +250,12 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
   return blocks.map((block, i) => {
     const local = splitBlock(block.text)
     const ai = aiSlides[i]
-    let p: Partial<CanvasState> = ai && fidelity(ai, block.text) >= 0.75 ? { ...ai } : { ...(ai ?? {}), ...local }
+    // La IA sólo gana en bloques de un renglón sin rótulos, y sólo si no inventa (fidelidad) NI
+    // omite (cobertura): un puente o una conclusión descartados la invalidan. Con renglones, el
+    // corte local es exacto y manda siempre.
+    const oneLine = !/\n/.test(block.text.trim()) && !LABEL_ANY.test(block.text)
+    const aiOk = ai && oneLine && fidelity(ai, block.text) >= 0.75 && coverage(ai, block.text) >= 0.9
+    let p: Partial<CanvasState> = aiOk ? { ...ai } : { ...(ai ?? {}), ...local, body: local.body ?? '' }
     // Rótulos explícitos del usuario («Tag:», «Titular:», «Remate:») siempre ganan.
     if (/(?<![\p{L}])tag(?: superior)?\s*[:：]/iu.test(block.text) && local.tag) p.tag = local.tag
     if (/(?<![\p{L}])(titular|t[ií]tulo|premisa)\s*[:：]/iu.test(block.text)) p.headlineA = local.headlineA
@@ -203,7 +273,7 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
     if (!p.tag) p.tag = anaphora ? 'MANIFIESTO TÁCTICO' : 'DISCIPLINA Y MÉTODO'
     // Campos que el copy no trae van vacíos de forma explícita: nunca se cuela el texto de
     // ejemplo de fábrica (cita, párrafo o sentencia de la placa por defecto).
-    return { ...p, citeMain: p.citeMain ?? '', citeSub: p.citeSub ?? '', body: p.body ?? '', kicker: p.kicker && fidelity({ body: p.kicker }, block.text) >= 0.75 ? p.kicker : '' }
+    return { ...p, remateNewLine: true, citeMain: p.citeMain ?? '', citeSub: p.citeSub ?? '', body: p.body ?? '', kicker: p.kicker && fidelity({ body: p.kicker }, block.text) >= 0.75 ? p.kicker : '' }
   })
 }
 
