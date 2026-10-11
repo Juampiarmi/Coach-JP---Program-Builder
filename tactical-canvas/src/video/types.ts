@@ -150,7 +150,28 @@ export interface PathPoint extends FramePoint {
   t: number
 }
 
+/**
+ * Bar Path paramétrico (una repetición): ancla calibrada sobre el disco, TOPE SUPERIOR y
+ * PROFUNDIDAD MÁXIMA arrastrables, inflexión opcional para el drift, y los 3 instantes de la rep.
+ */
+export interface BarRep {
+  /** Punto exacto del extremo de la barra / disco marcado en el frame inicial */
+  anchor: FramePoint
+  top: FramePoint
+  bottom: FramePoint
+  /** Punto de inflexión intermedio (desplazamiento horizontal real) */
+  mid?: FramePoint
+  /** Inicio del excéntrico, fondo y bloqueo de la extensión (segundos del clip) */
+  start: number
+  bottomT: number
+  end: number
+  /** Recorrido real en cm (opcional): las marcas pasan de % a cm */
+  romCm?: number
+}
+
 export interface BarPath {
+  rep?: BarRep
+  /** Legado (trazado punto a punto): se convierte a `rep` al leer */
   points: PathPoint[]
   thick: boolean
   /** Línea vertical de referencia (eje de gravedad) desde el primer punto */

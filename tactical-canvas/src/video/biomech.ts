@@ -1,5 +1,5 @@
 import { FONT_MONO } from '../lib/brand'
-import type { Biomech, FramePoint, Goniometer, PathPoint } from './types'
+import type { BarRep, Biomech, FramePoint, Goniometer, PathPoint } from './types'
 import { SAFE } from './render'
 import { OUT_H, OUT_W } from './types'
 
@@ -13,8 +13,6 @@ type Ctx = CanvasRenderingContext2D
 const CYAN = '#00E5FF'
 const ORANGE = '#FF5500'
 const DISPLAY = "'Chakra Petch', sans-serif"
-/** El trazado queda visible 1,5 s después del último punto. */
-const PATH_HOLD = 1.5
 
 export const px = (p: FramePoint) => ({ x: (p.x / 100) * OUT_W, y: (p.y / 100) * OUT_H })
 
@@ -88,88 +86,184 @@ function pill(ctx: Ctx, text: string, x: number, y: number, color: string) {
   ctx.restore()
 }
 
-function drawPath(ctx: Ctx, bio: Biomech, time: number) {
-  const pts = bio.path.points
-  if (pts.length < 1 || time < pts[0].t || time > pts[pts.length - 1].t + PATH_HOLD) return
-  const done = pts.filter((p) => p.t <= time).map(sp)
-  const cur = pathPointAt(pts, time)
-  if (cur) done.push(sp(cur))
-  const core = bio.path.thick ? 11 : 6
-  const start = sp(pts[0])
-  // Eje de gravedad: vertical pura desde el primer punto.
-  if (bio.path.showVertical) {
-    const ys = pts.map((p) => sp(p).y)
-    ctx.save()
-    ctx.setLineDash([18, 14])
-    ctx.lineWidth = 3
-    ctx.strokeStyle = 'rgba(200,210,220,0.55)'
+// ── Bar Path paramétrico ─────────────────────────────────────────────────────────
+
+/** Desvanecimiento al terminar la repetición (no queda flotando mientras el atleta camina). */
+export const REP_FADE = 0.35
+
+/**
+ * La repetición del Bar Path: la calibrada o, en proyectos viejos con puntos sueltos, una
+ * derivada de ellos (tope = primer punto, fondo = punto más bajo, bloqueo = último punto).
+ */
+export function resolveRep(path: Biomech['path']): BarRep | null {
+  if (path.rep) return path.rep
+  const pts = path.points
+  if (pts.length < 2) return null
+  const low = pts.reduce((m, q) => (q.y > m.y ? q : m), pts[0])
+  const first = pts[0]
+  const last = pts[pts.length - 1]
+  return { anchor: first, top: first, bottom: low, start: first.t, bottomT: Math.min(Math.max(low.t, first.t + 0.1), last.t - 0.1), end: last.t }
+}
+
+const smooth = (u: number) => {
+  const x = Math.min(1, Math.max(0, u))
+  return x * x * (3 - 2 * x)
+}
+
+/** Punto de la trayectoria (px) en el parámetro s ∈ [0, 1] (0 = tope, 1 = fondo); pasa por la inflexión. */
+function repPoint(r: BarRep, s: number) {
+  const A = sp(r.top)
+  const B = sp(r.bottom)
+  const M = r.mid ? sp(r.mid) : { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }
+  // Control cuadrático para que la curva pase exactamente por la inflexión en s = 0,5.
+  const C = { x: 2 * M.x - (A.x + B.x) / 2, y: 2 * M.y - (A.y + B.y) / 2 }
+  const k = 1 - s
+  return { x: k * k * A.x + 2 * s * k * C.x + s * s * B.x, y: k * k * A.y + 2 * s * k * C.y + s * s * B.y }
+}
+
+/** Profundidad actual (0 tope → 1 fondo) según la curva temporal de la repetición, o null fuera de ella. */
+export function repDepthAt(r: BarRep, t: number): { s: number; phase: 'down' | 'up' | 'done'; alpha: number } | null {
+  if (t < r.start || t > r.end + REP_FADE) return null
+  const fadeIn = Math.min(1, (t - r.start) / 0.12)
+  if (t > r.end) return { s: 0, phase: 'done', alpha: 1 - (t - r.end) / REP_FADE }
+  if (t <= r.bottomT) return { s: smooth((t - r.start) / Math.max(0.05, r.bottomT - r.start)), phase: 'down', alpha: fadeIn }
+  return { s: 1 - smooth((t - r.bottomT) / Math.max(0.05, r.end - r.bottomT)), phase: 'up', alpha: 1 }
+}
+
+/** Manijas editables del Bar Path (sólo vista previa). */
+export const repHandles = (r: BarRep) =>
+  [
+    { k: 'top' as const, p: r.top, label: 'TOPE SUPERIOR' },
+    { k: 'bottom' as const, p: r.bottom, label: 'PROFUNDIDAD MÁXIMA' },
+    ...(r.mid ? [{ k: 'mid' as const, p: r.mid, label: 'INFLEXIÓN' }] : []),
+  ]
+
+/**
+ * Trazador paramétrico limpio: trayectoria cian #00E5FF de 2,5 px (tope → inflexión → fondo),
+ * regla táctica con marcas de % o cm, marcador sincronizado con el cabezal y lectura ΔY / ΔX.
+ * Sólo existe entre el inicio del excéntrico y el bloqueo (+ fade de 0,35 s).
+ */
+function drawPath(ctx: Ctx, bio: Biomech, time: number, editing: boolean) {
+  const r = resolveRep(bio.path)
+  if (!r) return
+  const st = repDepthAt(r, time)
+  if (!st) return
+  const A = sp(r.top)
+  const B = sp(r.bottom)
+  const N = 40
+  const curve = Array.from({ length: N + 1 }, (_, i) => repPoint(r, i / N))
+  const line = (pts: { x: number; y: number }[]) => {
     ctx.beginPath()
-    ctx.moveTo(start.x, Math.max(0, Math.min(...ys) - 120))
-    ctx.lineTo(start.x, Math.min(OUT_H, Math.max(...ys) + 120))
+    pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
     ctx.stroke()
-    ctx.restore()
   }
-  if (done.length > 1) {
-    ctx.save()
-    ctx.lineJoin = 'round'
-    ctx.lineCap = 'round'
-    const line = () => {
-      ctx.beginPath()
-      done.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
-      ctx.stroke()
-    }
-    // Estela neón: halo ancho translúcido + núcleo con glow (shadowBlur 14) en dos pasadas.
-    ctx.strokeStyle = 'rgba(0,229,255,0.22)'
-    ctx.lineWidth = core * 3.2
-    line()
-    ctx.shadowColor = CYAN
-    ctx.shadowBlur = 14
-    ctx.strokeStyle = CYAN
-    ctx.lineWidth = core
-    line()
-    line()
-    // Brillo blanco en el centro del trazo.
-    ctx.shadowBlur = 0
-    ctx.strokeStyle = 'rgba(255,255,255,0.65)'
-    ctx.lineWidth = Math.max(2, core * 0.3)
-    line()
-    ctx.restore()
-  }
-  // Punto de inicio y mira en la posición actual con desvío horizontal respecto del inicio.
+  const reached = st.phase === 'down' ? st.s : 1
   ctx.save()
+  ctx.globalAlpha = Math.max(0, Math.min(1, st.alpha))
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  // Eje de gravedad: vertical pura desde el tope.
+  if (bio.path.showVertical) {
+    ctx.setLineDash([16, 12])
+    ctx.lineWidth = 2
+    ctx.strokeStyle = 'rgba(200,210,220,0.5)'
+    ctx.beginPath()
+    ctx.moveTo(A.x, A.y - 40)
+    ctx.lineTo(A.x, Math.max(A.y, B.y) + 50)
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+  // Recorrido completo tenue + tramo ya recorrido brillante (2,5 px con glow).
+  ctx.strokeStyle = 'rgba(0,229,255,0.28)'
+  ctx.lineWidth = 2.5
+  line(curve)
+  const done = curve.slice(0, Math.max(1, Math.round(reached * N)) + 1)
+  ctx.strokeStyle = 'rgba(0,229,255,0.35)'
+  ctx.lineWidth = 9
+  line(done)
+  ctx.shadowColor = CYAN
+  ctx.shadowBlur = 12
+  ctx.strokeStyle = CYAN
+  ctx.lineWidth = 2.5
+  line(done)
+  ctx.shadowBlur = 0
+  // Regla táctica a la izquierda: marcas cada 10 % del recorrido vertical (o cm si hay ROM real).
+  const rx = Math.max(40, Math.min(A.x, B.x) - 70)
+  const y0 = A.y
+  const y1 = B.y
+  ctx.strokeStyle = 'rgba(0,229,255,0.75)'
+  ctx.fillStyle = 'rgba(230,244,255,0.9)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(rx, y0)
+  ctx.lineTo(rx, y1)
+  ctx.stroke()
+  ctx.font = `600 20px ${FONT_MONO}`
+  ctx.textAlign = 'right'
+  ctx.textBaseline = 'middle'
+  for (let i = 0; i <= 10; i++) {
+    const y = y0 + ((y1 - y0) * i) / 10
+    const major = i % 5 === 0
+    ctx.beginPath()
+    ctx.moveTo(rx - (major ? 16 : 9), y)
+    ctx.lineTo(rx, y)
+    ctx.stroke()
+    if (major || (i % 25 === 0)) ctx.fillText(r.romCm ? `${Math.round((r.romCm * i) / 10)} cm` : `${i * 10}%`, rx - 22, y)
+  }
+  // Marcador activo sobre la trayectoria y su reflejo en la regla.
+  const P = repPoint(r, st.s)
+  const cy = y0 + (y1 - y0) * st.s
   ctx.fillStyle = CYAN
   ctx.beginPath()
-  ctx.arc(start.x, start.y, 8, 0, Math.PI * 2)
+  ctx.moveTo(rx + 4, cy)
+  ctx.lineTo(rx + 18, cy - 9)
+  ctx.lineTo(rx + 18, cy + 9)
   ctx.fill()
-  const p = done[done.length - 1]
   ctx.strokeStyle = CYAN
   ctx.lineWidth = 3
   ctx.beginPath()
-  ctx.arc(p.x, p.y, 26, 0, Math.PI * 2)
-  for (const [dx, dy] of [
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ]) {
-    ctx.moveTo(p.x + dx * 14, p.y + dy * 14)
-    ctx.lineTo(p.x + dx * 42, p.y + dy * 42)
-  }
+  ctx.arc(P.x, P.y, 16, 0, Math.PI * 2)
   ctx.stroke()
-  const dxPct = ((p.x - start.x) / OUT_W) * 100
-  const dyPct = ((start.y - p.y) / OUT_H) * 100
-  ctx.font = `600 26px ${FONT_MONO}`
-  ctx.textBaseline = 'middle'
-  const label = `ΔX ${dxPct >= 0 ? '+' : ''}${dxPct.toFixed(1)}% · ΔY ${dyPct >= 0 ? '+' : ''}${dyPct.toFixed(1)}%`
-  const tw = ctx.measureText(label).width
-  const lx = p.x + 56 + tw > OUT_W - 20 ? p.x - 56 - tw : p.x + 56
-  ctx.fillStyle = 'rgba(8,10,14,0.75)'
   ctx.beginPath()
-  ctx.roundRect(lx - 12, p.y - 22, tw + 24, 44, 10)
+  ctx.arc(P.x, P.y, 6, 0, Math.PI * 2)
+  ctx.fill()
+  // Lectura ΔY (profundidad) · ΔX (drift horizontal respecto del tope).
+  const travel = Math.max(1, Math.abs(y1 - y0))
+  const dyTxt = r.romCm ? `${(st.s * r.romCm).toFixed(0)} cm` : `${Math.round(st.s * 100)}%`
+  const dxPx = P.x - A.x
+  const dxTxt = r.romCm ? `${dxPx >= 0 ? '+' : ''}${((dxPx / travel) * r.romCm).toFixed(1)} cm` : `${dxPx >= 0 ? '+' : ''}${((dxPx / OUT_W) * 100).toFixed(1)}%`
+  const label = `ΔY ${dyTxt} · ΔX ${dxTxt}`
+  ctx.font = `600 24px ${FONT_MONO}`
+  const tw = ctx.measureText(label).width
+  const lx = P.x + 34 + tw > OUT_W - 20 ? P.x - 34 - tw : P.x + 34
+  ctx.fillStyle = 'rgba(8,10,14,0.8)'
+  ctx.beginPath()
+  ctx.roundRect(lx - 10, P.y - 20, tw + 20, 40, 8)
   ctx.fill()
   ctx.fillStyle = CYAN
   ctx.textAlign = 'left'
-  ctx.fillText(label, lx, p.y + 1)
+  ctx.fillText(label, lx, P.y + 1)
+  // Manijas editables (vista previa): tope, fondo e inflexión.
+  if (editing) {
+    ctx.font = `700 18px ${FONT_MONO}`
+    for (const h of repHandles(r)) {
+      const q = sp(h.p)
+      ctx.fillStyle = 'rgba(5,7,10,0.85)'
+      ctx.strokeStyle = CYAN
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.rect(q.x - 12, q.y - 12, 24, 24)
+      ctx.fill()
+      ctx.stroke()
+      ctx.textAlign = q.x > OUT_W - 260 ? 'right' : 'left'
+      const tx = q.x + (q.x > OUT_W - 260 ? -22 : 22)
+      ctx.lineWidth = 5
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)'
+      ctx.strokeText(`[ ${h.label} ]`, tx, q.y - 22)
+      ctx.fillStyle = CYAN
+      ctx.fillText(`[ ${h.label} ]`, tx, q.y - 22)
+    }
+  }
   ctx.restore()
 }
 
@@ -327,28 +421,9 @@ function placePill(a: FramePoint, b: FramePoint, c: FramePoint, w: number, h: nu
 }
 
 /** Dibuja el Bar Path y los goniómetros activos en `time`. */
-export function drawBiomech(ctx: Ctx, bio: Biomech, time: number, selectedAngle: string | null = null, capture = false, scale = 1, exporting = false): AnglePillRect[] {
+export function drawBiomech(ctx: Ctx, bio: Biomech, time: number, selectedAngle: string | null = null, _calibrating = false, scale = 1, exporting = false): AnglePillRect[] {
   zoom = scale
-  // Modo captura (sólo vista previa): todos los puntos registrados, numerados.
-  if (capture) {
-    ctx.save()
-    ctx.font = `700 20px ${FONT_MONO}`
-    ctx.textBaseline = 'middle'
-    bio.path.points.forEach((q, i) => {
-      const p = sp(q)
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2)
-      ctx.fillStyle = CYAN
-      ctx.fill()
-      ctx.lineWidth = 2
-      ctx.strokeStyle = 'rgba(0,0,0,0.7)'
-      ctx.stroke()
-      ctx.fillStyle = 'rgba(255,255,255,0.85)'
-      ctx.fillText(String(i + 1), p.x + 14, p.y)
-    })
-    ctx.restore()
-  }
-  drawPath(ctx, bio, time)
+  drawPath(ctx, bio, time, !exporting)
   // En la exportación no salen los goniómetros que nadie ubicó sobre el atleta.
   return activeAngles(bio, time)
     .filter((g) => !exporting || g.placed !== false)

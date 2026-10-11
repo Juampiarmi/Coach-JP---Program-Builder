@@ -1,17 +1,20 @@
 import { Field, Segmented, TextInput, Toggle } from '../components/controls/primitives'
 import { jointAngle } from './biomech'
 import { timecode } from './render'
-import type { Biomech, Goniometer } from './types'
+import type { BarRep, Biomech, Goniometer } from './types'
 
 interface Props {
   bio: Biomech
-  tracing: boolean
+  calibrating: boolean
+  rep: BarRep | null
+  time: number
   selectedAngle: string | null
   canEdit: boolean
-  onToggleTrace: () => void
-  onRegister: () => void
-  onUndo: () => void
-  onFinish: () => void
+  onCalibrate: () => void
+  onRepTime: (k: 'start' | 'bottomT' | 'end') => void
+  onRep: (patch: Partial<BarRep>) => void
+  onToggleInflection: () => void
+  onSeek: (t: number) => void
   onChange: (patch: Partial<Biomech>) => void
   onAddAngle: () => void
   onSelectAngle: (id: string) => void
@@ -23,10 +26,20 @@ const GON_TIP = 'Análisis en punto crítico: pausa en el fondo del levantamient
 
 const LABELS = ['PROFUNDIDAD VÁLIDA', 'SIN PARALELO', 'BLOQUEO', 'VALGO']
 
-/** Panel B1: Bar Path y goniómetro articular. */
-export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTrace, onRegister, onUndo, onFinish, onChange, onAddAngle, onSelectAngle, onAngle, onRemoveAngle }: Props) {
+/** Panel B1: Bar Path calibrado (paramétrico) y goniómetro articular. */
+export function BiomechPanel({ bio, calibrating, rep, time, selectedAngle, canEdit, onCalibrate, onRepTime, onRep, onToggleInflection, onSeek, onChange, onAddAngle, onSelectAngle, onAngle, onRemoveAngle }: Props) {
   const path = bio.path
   const sel = bio.angles.find((g) => g.id === selectedAngle) ?? null
+  const timeBtn = (k: 'start' | 'bottomT' | 'end', label: string, t: number) => (
+    <div className="space-y-1">
+      <button type="button" onClick={() => onSeek(t)} title="Ir a este instante" className="w-full rounded border border-line py-1 font-mono text-[10px] tracking-wider text-white tabular-nums hover:border-cyan/50">
+        {timecode(t)}
+      </button>
+      <button type="button" onClick={() => onRepTime(k)} title="Fijar en la posición del cabezal" className="w-full rounded border border-cyan/40 py-1 font-mono text-[8px] font-semibold tracking-[0.06em] text-cyan hover:bg-cyan/10">
+        {label} = {timecode(time).slice(3)}
+      </button>
+    </div>
+  )
   return (
     <div className="space-y-4">
       {/* Bar Path */}
@@ -34,63 +47,59 @@ export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTra
         <p className="font-mono text-[9px] tracking-[0.16em] text-steel uppercase">Bar Path · trayectoria de la barra</p>
         <button
           type="button"
-          onClick={onToggleTrace}
+          onClick={onCalibrate}
           disabled={!canEdit}
-          aria-pressed={tracing}
+          aria-pressed={calibrating}
           className={`w-full rounded-lg border py-2 font-mono text-[10px] font-semibold tracking-[0.1em] transition disabled:cursor-not-allowed disabled:opacity-40 ${
-            tracing ? 'animate-pulse border-cyan bg-cyan/15 text-cyan' : 'border-cyan/50 text-cyan hover:bg-cyan/10'
+            calibrating ? 'animate-pulse border-cyan bg-cyan/15 text-cyan' : 'border-cyan/50 text-cyan hover:bg-cyan/10'
           }`}
         >
-          {tracing ? `[ ● MODO CAPTURA · ${path.points.length} PTS · SALIR ]` : '[ 📍 TRAZAR BAR PATH ]'}
+          {calibrating ? '[ ◎ CLICK SOBRE EL DISCO · CANCELAR ]' : rep ? '[ 📍 RECALIBRAR BAR PATH ]' : '[ 📍 BAR PATH ]'}
         </button>
-        {tracing && (
-          <div className="space-y-1.5 rounded-md border border-cyan/40 bg-cyan/5 p-2">
-            <p className="font-mono text-[9px] leading-relaxed text-cyan/85">
-              Modo asistido cuadro a cuadro: apuntá la retícula al centro del disco y hacé click. Se registra el punto y el video avanza +0,15 s solo.
+        {calibrating && (
+          <p className="font-mono text-[9px] leading-relaxed text-cyan/85">
+            Pausá en el frame inicial de la repetición y hacé clic sobre el extremo de la barra / disco: ese punto queda como ancla y tope superior.
+          </p>
+        )}
+        {rep && !calibrating && (
+          <div className="space-y-2 rounded-md border border-cyan/30 bg-cyan/[.04] p-2">
+            <p className="font-mono text-[9px] leading-relaxed text-steel/80">
+              Arrastrá <span className="text-cyan">[ TOPE SUPERIOR ]</span> y <span className="text-cyan">[ PROFUNDIDAD MÁXIMA ]</span> sobre el disco en el visor. La línea sólo existe entre el inicio del excéntrico y el bloqueo.
             </p>
-            <button type="button" onClick={onRegister} className="w-full rounded-lg border border-cyan bg-cyan/15 py-1.5 font-mono text-[10px] font-bold tracking-[0.08em] text-cyan transition hover:bg-cyan/25">
-              [ ➔ REGISTRAR Y AVANZAR FRAME ]
-            </button>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              {timeBtn('start', 'INICIO', rep.start)}
+              {timeBtn('bottomT', 'FONDO', rep.bottomT)}
+              {timeBtn('end', 'BLOQUEO', rep.end)}
+            </div>
+            <div className="grid grid-cols-[1fr_auto] items-end gap-2">
+              <Field label="Recorrido real (cm)" hint="opcional · marcas en cm">
+                <input
+                  className="tc-input text-[12px]"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={rep.romCm ?? ''}
+                  placeholder="% del recorrido"
+                  onChange={(e) => onRep({ romCm: e.target.value ? Math.max(1, Number(e.target.value)) : undefined })}
+                  aria-label="Recorrido real en centímetros"
+                />
+              </Field>
               <button
                 type="button"
-                onClick={onUndo}
-                disabled={!path.points.length}
-                className="rounded-lg border border-line py-1.5 font-mono text-[9px] font-semibold tracking-[0.06em] text-steel transition hover:border-cyan/50 hover:text-cyan disabled:opacity-30"
+                onClick={onToggleInflection}
+                className={`mb-px h-9 rounded border px-2 font-mono text-[9px] tracking-wider transition ${rep.mid ? 'border-cyan/60 text-cyan' : 'border-line text-steel hover:text-white'}`}
+                title="Punto intermedio para registrar el drift horizontal real"
               >
-                [ ⟵ DESHACER ÚLTIMO PUNTO ]
-              </button>
-              <button type="button" onClick={onFinish} className="rounded-lg border border-cyan bg-cyan py-1.5 font-mono text-[9px] font-bold tracking-[0.06em] text-carbon transition hover:brightness-110">
-                [ ✓ FINALIZAR TRAZADO ]
+                {rep.mid ? '✕ INFLEXIÓN' : '+ INFLEXIÓN'}
               </button>
             </div>
-            <p className="font-mono text-[8px] tracking-[0.1em] text-steel/80">➔ REGISTRAR · ← DESHACER · ENTER FINALIZAR · ESPACIO PLAY</p>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => onChange({ path: { ...path, points: [], rep: undefined } })} className="rounded border border-line px-2 py-0.5 font-mono text-[10px] tracking-wider text-steel hover:border-fire/60 hover:text-fire">
+                LIMPIAR BAR PATH
+              </button>
+            </div>
           </div>
         )}
-        <div className="flex items-center justify-between font-mono text-[10px] text-steel">
-          <span>
-            {path.points.length} puntos{path.points.length > 1 ? ` · ${timecode(path.points[0].t)} → ${timecode(path.points[path.points.length - 1].t)}` : ''}
-          </span>
-          <button
-            type="button"
-            onClick={() => onChange({ path: { ...path, points: [] } })}
-            disabled={!path.points.length}
-            className="rounded border border-line px-2 py-0.5 tracking-wider hover:border-fire/60 hover:text-fire disabled:opacity-30"
-          >
-            LIMPIAR TRAZADO
-          </button>
-        </div>
-        <Field label="Grosor del trazo" plain>
-          <Segmented<'fino' | 'grueso'>
-            value={path.thick ? 'grueso' : 'fino'}
-            onChange={(v) => onChange({ path: { ...path, thick: v === 'grueso' } })}
-            options={[
-              { value: 'fino', label: 'FINO' },
-              { value: 'grueso', label: 'GRUESO' },
-            ]}
-            size="sm"
-          />
-        </Field>
         <Toggle label="Línea vertical de referencia (eje gravedad)" checked={path.showVertical} onChange={(showVertical) => onChange({ path: { ...path, showVertical } })} />
       </div>
 
