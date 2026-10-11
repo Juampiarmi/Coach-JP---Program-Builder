@@ -27,20 +27,19 @@ export function SubtitlePanel({ track, groups, activeIndex, busy, note, canTrans
   const fileRef = useRef<HTMLInputElement>(null)
   return (
     <div className="space-y-3">
-      <h3 className="font-mono text-[11px] font-semibold tracking-[0.18em] text-cyan">[ S1 · SUBTÍTULOS ]</h3>
-      <div className="grid grid-cols-[1.4fr_1fr] gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
         <button
           type="button"
           onClick={onTranscribe}
           disabled={!canTranscribe && !busy}
-          className={`rounded-lg border py-2 font-mono text-[10px] font-semibold tracking-[0.08em] transition disabled:cursor-not-allowed disabled:opacity-40 ${
+          className={`rounded-lg border py-2 font-mono text-[10px] font-semibold tracking-[0.06em] whitespace-nowrap transition disabled:cursor-not-allowed disabled:opacity-40 ${
             busy ? 'border-gold/60 bg-gold/10 text-gold' : 'border-cyan/50 text-cyan hover:bg-cyan/10'
           }`}
         >
-          {busy ? '[ TRANSCRIBIENDO… · CANCELAR ]' : '[ 🎙 TRANSCRIBIR AUDIO CON IA ]'}
+          {busy ? '[ ✕ CANCELAR ]' : '[ 🎙 TRANSCRIBIR IA ]'}
         </button>
-        <button type="button" onClick={() => fileRef.current?.click()} className="rounded-lg border border-line py-2 font-mono text-[10px] font-semibold tracking-[0.08em] text-steel transition hover:border-cyan/50 hover:text-cyan">
-          [ 📄 IMPORTAR .SRT / .VTT ]
+        <button type="button" onClick={() => fileRef.current?.click()} title="Importar subtítulos .SRT o .VTT" className="rounded-lg border border-line py-2 font-mono text-[10px] font-semibold tracking-[0.06em] whitespace-nowrap text-steel transition hover:border-cyan/50 hover:text-cyan">
+          [ 📄 IMPORTAR .SRT ]
         </button>
         <input
           ref={fileRef}

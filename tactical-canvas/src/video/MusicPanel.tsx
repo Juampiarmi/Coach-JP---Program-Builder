@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import { Field, Range, Toggle } from '../components/controls/primitives'
 import { timecode } from './render'
 import type { MusicTrack } from './types'
@@ -6,31 +5,19 @@ import type { MusicTrack } from './types'
 interface Props {
   music: MusicTrack | null
   hasSpeech: boolean
-  onUpload: (file: File) => void
+  /** Abre el selector de archivo (el input vive en el estudio para poder dispararlo desde el timeline) */
+  onPick: () => void
   onChange: (patch: Partial<MusicTrack>) => void
   onRemove: () => void
 }
 
 /** Panel A2: beat / música de fondo con volumen y auto-ducking. */
-export function MusicPanel({ music, hasSpeech, onUpload, onChange, onRemove }: Props) {
-  const fileRef = useRef<HTMLInputElement>(null)
+export function MusicPanel({ music, hasSpeech, onPick, onChange, onRemove }: Props) {
   return (
     <div className="space-y-3">
-      <h3 className="font-mono text-[11px] font-semibold tracking-[0.18em] text-cyan">[ A2 · MÚSICA DE FONDO ]</h3>
-      <button type="button" onClick={() => fileRef.current?.click()} className="w-full rounded-lg border border-dashed border-cyan/50 py-2 font-mono text-[10px] font-semibold tracking-[0.1em] text-cyan transition hover:bg-cyan/10">
+      <button type="button" onClick={onPick} className="w-full rounded-lg border border-dashed border-cyan/50 py-2 font-mono text-[10px] font-semibold tracking-[0.1em] text-cyan transition hover:bg-cyan/10">
         [ 🎵 SUBIR AUDIO / BEAT (.MP3 / .WAV) ]
       </button>
-      <input
-        ref={fileRef}
-        type="file"
-        accept="audio/*,.mp3,.wav,.m4a,.ogg"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0]
-          if (f) onUpload(f)
-          e.target.value = ''
-        }}
-      />
       {music && (
         <>
           <div className="flex items-center justify-between font-mono text-[10px] text-steel">

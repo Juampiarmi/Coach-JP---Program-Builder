@@ -14,6 +14,8 @@ interface Props {
   onTrim: (inPoint: number, outPoint: number) => void
   onItem: (id: string, start: number, end: number) => void
   onSelect: (id: string) => void
+  /** Estado vacío interactivo por pista (ej. S1 / A2 sin contenido) */
+  placeholders?: Partial<Record<string, { label: string; onClick: () => void }>>
 }
 
 const LABEL_W = 132
@@ -65,7 +67,7 @@ function useDrag(pps: number) {
  * en próximas fases, A1/A2 audio y subtítulos); sólo V1 (trim) y overlay (mover / estirar)
  * tienen edición en la fase 1.
  */
-export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onSeek, onTrim, onItem, onSelect }: Props) {
+export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onSeek, onTrim, onItem, onSelect, placeholders = {} }: Props) {
   const areaRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(600)
   useEffect(() => {
@@ -198,7 +200,19 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
           </div>
           {tracks.map((t) => (
             <div key={t.id} className="relative py-1" style={{ height: ROW_H }}>
-              {t.kind === 'video' ? videoRow(t) : <div className="relative h-full rounded-md border border-dashed border-line/70">{t.items.map((i) => renderItem(t, i))}</div>}
+              {t.kind === 'video' ? (
+                videoRow(t)
+              ) : !t.items.length && placeholders[t.id] ? (
+                <button
+                  type="button"
+                  onClick={placeholders[t.id]!.onClick}
+                  className="flex h-full w-full items-center justify-center rounded-md border border-dashed border-line/70 font-mono text-[10px] font-semibold tracking-[0.16em] text-steel/50 transition hover:border-cyan/50 hover:bg-cyan/5 hover:text-cyan"
+                >
+                  {placeholders[t.id]!.label}
+                </button>
+              ) : (
+                <div className="relative h-full rounded-md border border-dashed border-line/70">{t.items.map((i) => renderItem(t, i))}</div>
+              )}
             </div>
           ))}
           {/* Cabezal de reproducción */}

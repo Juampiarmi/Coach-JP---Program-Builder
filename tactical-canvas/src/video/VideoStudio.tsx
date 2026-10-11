@@ -7,11 +7,12 @@ import { MusicPanel } from './MusicPanel'
 import { SubtitlePanel } from './SubtitlePanel'
 import { activeGroup, duckGain, editGroupText, groupWords, parseSubtitleFile, removeGroup, retimeGroup, speechSegments } from './subtitles'
 import { exportVideo, extractThumbs, pickMime } from './exporter'
+import { Accordion } from './Accordion'
 import { OverlayPanel } from './OverlayPanel'
 import { defaultProject, findItem, fitToClip, newOverlayItem, overlayItems, patchItem, timelineDuration } from './project'
 import { ReelsSafeZone } from './ReelsSafeZone'
 import { pressDrag } from './drag'
-import { drawOverlays, drawSubtitles, loadOverlayFonts, timecode, type OverlayRect } from './render'
+import { clampCenter, drawOverlays, drawSubtitles, loadOverlayFonts, timecode, type OverlayRect } from './render'
 import { Scrubber } from './Scrubber'
 import { Timeline } from './Timeline'
 import type { MusicTrack, OverlayConfig, SubtitleTrack, Track, VideoProject } from './types'
@@ -224,9 +225,8 @@ export default function VideoStudio({ active, header }: Props) {
         const h = Math.abs(cy - OUT_H / 2) < SNAP
         if (v) cx = OUT_W / 2
         if (h) cy = OUT_H / 2
-        // Límite: el bloque entero queda dentro del marco.
-        cx = Math.min(OUT_W - 16 - hit.w / 2, Math.max(16 + hit.w / 2, cx))
-        cy = Math.min(OUT_H - 16 - hit.h / 2, Math.max(16 + hit.h / 2, cy))
+        // Límite: el bloque entero queda en el marco y nunca pisa la columna de acciones de Reels.
+        ;({ cx, cy } = clampCenter(cx, cy, hit.w, hit.h))
         setGuides({ v, h })
         setProject((p) => patchItem(p, hit.id, (i) => ({ ...i, overlay: { ...i.overlay, x: (cx / OUT_W) * 100, y: (cy / OUT_H) * 100 } })))
       },
@@ -256,6 +256,24 @@ export default function VideoStudio({ active, header }: Props) {
       tracks: p.tracks.map((t) => (t.kind === 'overlay' ? { ...t, items: [...t.items, item] } : t)),
     }))
   }
+  /** Clona el bloque activo (tipo, estilo, tamaño, opacidad, animaciones y posición) y lo pone justo después. */
+  const duplicateItem = () => {
+    if (!selected) return
+    const len = selected.end - selected.start
+    // Inmediatamente después; si no entra antes del final, 1 s después del inicio del original.
+    let start = selected.end
+    if (start + len > duration) start = Math.min(selected.start + 1, Math.max(0, duration - len))
+    const item = newOverlayItem(start, Math.min(duration, start + len), { ...selected.overlay, checks: selected.overlay.checks.map((c) => ({ ...c })) })
+    setProject((p) => ({
+      ...p,
+      selectedId: item.id,
+      tracks: p.tracks.map((t) => {
+        if (t.kind !== 'overlay') return t
+        const i = t.items.findIndex((x) => x.id === selected.id)
+        return { ...t, items: i < 0 ? [...t.items, item] : [...t.items.slice(0, i + 1), item, ...t.items.slice(i + 1)] }
+      }),
+    }))
+  }
   const removeItem = () => {
     if (!selected) return
     setProject((p) => {
@@ -264,6 +282,14 @@ export default function VideoStudio({ active, header }: Props) {
       return { ...p, tracks, selectedId: left[0]?.id ?? null }
     })
   }
+
+  // ── Panel en acordeones (V2 abierto por defecto cuando hay clip) ─────────────
+  const [sections, setSections] = useState({ v2: false, s1: false, a2: false })
+  const toggle = (k: keyof typeof sections) => setSections((st) => ({ ...st, [k]: !st[k] }))
+  useEffect(() => {
+    if (url) setSections((st) => ({ ...st, v2: true }))
+  }, [url])
+  const musicInputRef = useRef<HTMLInputElement>(null)
 
   // ── S1 · Subtítulos ───────────────────────────────────────────────────────────
   const [tr, setTr] = useState<{ busy: boolean; note: string }>({ busy: false, note: '' })
@@ -339,6 +365,25 @@ export default function VideoStudio({ active, header }: Props) {
     },
   ]
 
+  // Estados vacíos del timeline: abren su acordeón y disparan la acción.
+  const placeholders = {
+    s1: {
+      label: clip ? '+ TRANSCRIBIR AUDIO' : '+ SUBÍ UN CLIP PARA TRANSCRIBIR',
+      onClick: () => {
+        setSections((st) => ({ ...st, s1: true }))
+        if (clip) runTranscribe()
+        else fileRef.current?.click()
+      },
+    },
+    a2: {
+      label: '+ CARGAR BEAT',
+      onClick: () => {
+        setSections((st) => ({ ...st, a2: true }))
+        musicInputRef.current?.click()
+      },
+    },
+  }
+
   // ── Exportación ───────────────────────────────────────────────────────────────
   const runExport = async () => {
     if (exp.busy) {
@@ -376,9 +421,9 @@ export default function VideoStudio({ active, header }: Props) {
       {/* En celular: header arriba, después visor + timeline y el panel al final (con scroll de página). */}
       <div className="space-y-3 border-b border-line px-4 py-3 lg:hidden">{header}</div>
       {/* Panel lateral */}
-      <aside className="order-2 flex shrink-0 flex-col border-t border-line bg-surface/40 lg:order-1 lg:w-[380px] lg:border-t-0 lg:border-r">
+      <aside className="order-2 flex shrink-0 flex-col border-t border-line bg-surface/40 lg:order-1 lg:min-h-0 lg:w-[380px] lg:border-t-0 lg:border-r">
         <div className="hidden space-y-3 border-b border-line px-5 py-4 lg:block">{header}</div>
-        <div className="tc-scroll flex-1 space-y-5 px-5 py-4 lg:overflow-y-auto">
+        <div className="tc-scroll flex-1 space-y-3 px-5 py-4 lg:min-h-0 lg:overflow-y-auto">
           <div className="space-y-2">
             <h3 className="font-mono text-[11px] font-semibold tracking-[0.18em] text-cyan">[ V1 · VIDEO BASE ]</h3>
             <button
@@ -395,8 +440,10 @@ export default function VideoStudio({ active, header }: Props) {
               </p>
             )}
           </div>
-          <OverlayPanel items={items} selected={selected} onSelect={(id) => setProject((p) => ({ ...p, selectedId: id }))} onChange={setOverlay} onAdd={addItem} onRemove={removeItem} />
-          <div className="border-t border-line pt-4">
+          <Accordion title="V2 · OVERLAYS TÁCTICOS" badge={`${items.length} ${items.length === 1 ? 'BLOQUE' : 'BLOQUES'}`} open={sections.v2} onToggle={() => toggle('v2')}>
+            <OverlayPanel items={items} selected={selected} onSelect={(id) => setProject((p) => ({ ...p, selectedId: id }))} onChange={setOverlay} onAdd={addItem} onRemove={removeItem} onDuplicate={duplicateItem} />
+          </Accordion>
+          <Accordion title="S1 · SUBTÍTULOS CINÉTICOS" badge={groups.length ? `${groups.length} BLOQUES` : 'VACÍO'} open={sections.s1} onToggle={() => toggle('s1')}>
             <SubtitlePanel
               track={subtitles}
               groups={groups}
@@ -412,11 +459,24 @@ export default function VideoStudio({ active, header }: Props) {
               onRetime={(g, a, b) => setSubs({ words: retimeGroup(subtitles.words, g, Math.max(0, a), Math.max(0, b)) })}
               onRemove={(g) => setSubs({ words: removeGroup(subtitles.words, g) })}
             />
-          </div>
-          <div className="border-t border-line pt-4">
-            <MusicPanel music={music} hasSpeech={segments.length > 0} onUpload={uploadMusic} onChange={setMusic} onRemove={removeMusic} />
-          </div>
-          <div className="space-y-2 border-t border-line pt-4">
+          </Accordion>
+          <Accordion title="A2 · MÚSICA & BEAT" badge={music ? `${music.volume}%${music.ducking ? ' · DUCKING' : ''}` : 'VACÍO'} open={sections.a2} onToggle={() => toggle('a2')}>
+            <MusicPanel music={music} hasSpeech={segments.length > 0} onPick={() => musicInputRef.current?.click()} onChange={setMusic} onRemove={removeMusic} />
+          </Accordion>
+          <input
+            ref={musicInputRef}
+            type="file"
+            accept="audio/*,.mp3,.wav,.m4a,.ogg"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) uploadMusic(f)
+              e.target.value = ''
+            }}
+          />
+        </div>
+        {/* Exportar siempre a la vista: pie fijo del panel. */}
+        <div className="sticky bottom-0 z-10 space-y-2 border-t border-line bg-carbon/95 px-5 py-3 backdrop-blur">
             <button
               type="button"
               onClick={runExport}
@@ -439,7 +499,6 @@ export default function VideoStudio({ active, header }: Props) {
                   ? `Salida 1080×1920 · ${format}. El render es en tiempo real: dejá esta pestaña visible hasta que termine.`
                   : 'Este navegador no permite grabar video.')}
             </p>
-          </div>
         </div>
       </aside>
 
@@ -549,6 +608,7 @@ export default function VideoStudio({ active, header }: Props) {
         {musicUrl && <audio ref={musicRef} src={musicUrl} preload="auto" hidden />}
         <Timeline
           tracks={timelineTracks}
+          placeholders={placeholders}
           clip={clip}
           duration={duration}
           time={time}

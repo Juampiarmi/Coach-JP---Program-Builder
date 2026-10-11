@@ -9,6 +9,7 @@ interface Props {
   onChange: (patch: Partial<OverlayConfig>) => void
   onAdd: () => void
   onRemove: () => void
+  onDuplicate: () => void
 }
 
 const KINDS: { value: OverlayKind; label: string }[] = [
@@ -20,11 +21,10 @@ const KINDS: { value: OverlayKind; label: string }[] = [
 ]
 
 /** Panel de la capa V2: qué componente táctico se superpone y cómo entra. */
-export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRemove }: Props) {
+export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRemove, onDuplicate }: Props) {
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="font-mono text-[11px] font-semibold tracking-[0.18em] text-cyan">[ V2 · OVERLAY TÁCTICO ]</h3>
+      <div className="flex items-center justify-end">
         <button type="button" onClick={onAdd} className="rounded-md border border-line px-2 py-1 font-mono text-[9px] tracking-wider text-steel hover:border-cyan/50 hover:text-cyan">
           + AGREGAR BLOQUE
         </button>
@@ -163,9 +163,14 @@ export function OverlayPanel({ items, selected, onSelect, onChange, onAdd, onRem
             <span>
               {timecode(selected.start)} → {timecode(selected.end)}
             </span>
-            <button type="button" onClick={onRemove} className="rounded border border-line px-2 py-0.5 tracking-wider hover:border-fire/60 hover:text-fire">
-              ELIMINAR BLOQUE
-            </button>
+            <span className="flex gap-1.5">
+              <button type="button" onClick={onDuplicate} title="Clona el bloque y lo pone justo después en V2" className="rounded border border-line px-2 py-0.5 tracking-wider hover:border-cyan/60 hover:text-cyan">
+                ⧉ DUPLICAR
+              </button>
+              <button type="button" onClick={onRemove} className="rounded border border-line px-2 py-0.5 tracking-wider hover:border-fire/60 hover:text-fire">
+                ELIMINAR
+              </button>
+            </span>
           </div>
         </>
       )}

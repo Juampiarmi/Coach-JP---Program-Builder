@@ -152,7 +152,7 @@ function badgeBlock(ctx: Ctx, o: OverlayConfig, clean: boolean): Block {
   const labelW = Math.max(0, ...lines.map((l) => ctx.measureText(l).width))
   const pad = clean ? 30 : 56
   const w = Math.max(clean ? 0 : 380, valueW, labelW) + pad * 2
-  const h = 60 + 170 + (lines.length ? 30 + lines.length * (clean ? 62 : 50) : 0) + (clean ? 24 : 50)
+  const h = 60 + 170 + (lines.length ? 30 + (clean ? 10 : 0) + lines.length * (clean ? 62 : 50) : 0) + (clean ? 24 : 50)
   return {
     w,
     h,
@@ -162,7 +162,8 @@ function badgeBlock(ctx: Ctx, o: OverlayConfig, clean: boolean): Block {
       text(c, value, ax(pad), 60 + 160, cl, 190, 'rgba(234,88,12,0.5)')
       font(c, 600, 36, FONT_MONO, 5)
       c.fillStyle = BRAND.white
-      lines.forEach((l, i) => subtitle(c, l, ax(pad), 60 + 170 + 30 + 38 + i * (cl ? 62 : 50), cl, 36))
+      // En HUD la pastilla del subtítulo baja 10 px más para separarse del valor.
+      lines.forEach((l, i) => subtitle(c, l, ax(pad), 60 + 170 + 30 + 38 + (cl ? 10 : 0) + i * (cl ? 62 : 50), cl, 36))
     },
   }
 }
@@ -341,10 +342,15 @@ export interface OverlayRect {
   h: number
 }
 
-/** Ancho máximo de cualquier overlay: 85 % del marco (nunca pisa la columna de Reels entera). */
-const MAX_W = OUT_W * 0.85
+/**
+ * Ancho máximo de cualquier overlay: 78 % del marco. Si el bloque (caja o texto) es más ancho,
+ * se reduce proporcionalmente (auto-fit) en lugar de cortarse.
+ */
+const MAX_W = OUT_W * 0.78
 /** Margen mínimo contra los bordes del marco. */
 const EDGE = 16
+/** Borde derecho permitido: nunca pisa la columna de acciones de Reels (like, comentarios, compartir). */
+const RIGHT_LIMIT = SAFE.right
 
 /** Tamaño final del bloque en el marco (escala S/M/L y tope del 85 % de ancho). */
 function blockScale(o: OverlayConfig, w: number) {
@@ -353,11 +359,18 @@ function blockScale(o: OverlayConfig, w: number) {
 
 /** Esquina superior izquierda a partir del centro en % (x, y), sin salirse del marco. */
 export function placeBlock(o: OverlayConfig, w: number, h: number) {
-  const cx = (o.x / 100) * OUT_W
-  const cy = (o.y / 100) * OUT_H
+  const c = clampCenter((o.x / 100) * OUT_W, (o.y / 100) * OUT_H, w, h)
+  return { x: c.cx - w / 2, y: c.cy - h / 2 }
+}
+
+/**
+ * Centro permitido para un bloque de w × h: dentro del marco y con el borde derecho antes de la
+ * columna de acciones de Reels. Lo usan el render, la exportación y el arrastre en el visor.
+ */
+export function clampCenter(cx: number, cy: number, w: number, h: number) {
   return {
-    x: Math.min(OUT_W - EDGE - w, Math.max(EDGE, cx - w / 2)),
-    y: Math.min(OUT_H - EDGE - h, Math.max(EDGE, cy - h / 2)),
+    cx: Math.min(RIGHT_LIMIT - w / 2, Math.max(EDGE + w / 2, cx)),
+    cy: Math.min(OUT_H - EDGE - h / 2, Math.max(EDGE + h / 2, cy)),
   }
 }
 
