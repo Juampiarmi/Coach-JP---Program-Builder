@@ -71,6 +71,8 @@ export interface GenericItem extends TimeRange {
   data?: Record<string, unknown>
   /** Edición en el timeline: mover y estirar ('range') o sólo mover ('move'). Sin valor, es de sólo lectura. */
   editable?: 'range' | 'move'
+  /** Muestra el botón ✕ al seleccionarlo en el timeline */
+  deletable?: boolean
 }
 
 export type TrackItem = OverlayItem | GenericItem
@@ -82,6 +84,8 @@ export interface Track {
   label: string
   items: TrackItem[]
   muted?: boolean
+  /** Apila en carriles los ítems que se pisan (B1, A3) en vez de superponerlos */
+  stack?: boolean
 }
 
 /** Clip base de la pista V1. El archivo vive sólo en memoria (object URL), nunca en el autosave. */
@@ -100,6 +104,8 @@ export interface SubtitleWord {
   word: string
   start: number
   end: number
+  /** Inicio de bloque forzado (subtítulo cargado a mano): nunca se agrupa con la palabra anterior */
+  br?: boolean
 }
 
 export type SubtitleStyle = 'outline' | 'pill'
@@ -111,6 +117,8 @@ export interface SubtitleTrack {
   style: SubtitleStyle
   accent: SubtitleAccent
   enabled: boolean
+  /** Desfase global en ms (±500): adelanta o atrasa todos los tiempos de S1 en bloque */
+  offset?: number
 }
 
 /** Pista A2 · música de fondo. El archivo vive en memoria; esto es lo que se guarda. */

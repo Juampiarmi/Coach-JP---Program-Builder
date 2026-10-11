@@ -9,18 +9,51 @@ interface Props {
   duration: number
   time: number
   thumbs: string[]
-  selectedId: string | null
+  /** Ítems seleccionados (overlay, goniómetro, disparo de FX) */
+  selectedIds: (string | null)[]
   onSeek: (t: number) => void
   onTrim: (inPoint: number, outPoint: number) => void
   onItem: (id: string, start: number, end: number) => void
   onSelect: (id: string) => void
+  /** Borra un ítem `deletable` (botón ✕ flotante) */
+  onDelete?: (id: string) => void
   /** Estado vacío interactivo por pista (ej. S1 / A2 sin contenido) */
   placeholders?: Partial<Record<string, { label: string; onClick: () => void }>>
 }
 
 const LABEL_W = 132
 const ROW_H = 38
+/** Alto extra por cada carril adicional en pistas apiladas */
+const LANE_H = 20
 const MIN_LEN = 0.3
+/** Ancho fijo del badge de un disparo (A3) */
+const BADGE_W = 30
+const TONE: Record<string, [string, string]> = {
+  cyan: ['border-cyan/60 bg-cyan/15 text-cyan', 'border-white bg-cyan/30 text-white'],
+  fire: ['border-fire/60 bg-fire/15 text-fire', 'border-white bg-fire/35 text-white'],
+}
+
+/** Ancho en px de un ítem en la pista. */
+const itemWidth = (item: TrackItem, pps: number) => {
+  if (item.type === 'overlay') return Math.max(6, (item.end - item.start) * pps)
+  if (item.data?.badge) return BADGE_W
+  // Badges con color (B1): ancho mínimo para que el rótulo se lea.
+  return Math.max(item.data?.tone ? 120 : 6, (item.end - item.start) * pps)
+}
+
+/** Carril de cada ítem (empaquetado greedy por píxeles, con 4 px de aire): los que se pisan bajan de carril. */
+function packLanes(items: TrackItem[], pps: number): { lane: Map<string, number>; count: number } {
+  const ends: number[] = []
+  const lane = new Map<string, number>()
+  for (const it of [...items].sort((a, b) => a.start - b.start)) {
+    const x = it.start * pps
+    let k = ends.findIndex((e) => e <= x)
+    if (k < 0) k = ends.length
+    ends[k] = x + itemWidth(it, pps) + 4
+    lane.set(it.id, k)
+  }
+  return { lane, count: Math.max(1, ends.length) }
+}
 
 const KIND_LABEL: Record<OverlayItem['overlay']['kind'], string> = { badge: 'MÉTRICA', headline: 'PLACA', timer: 'TIMER', checklist: 'CHECK', watermark: 'FIRMA' }
 
@@ -67,7 +100,7 @@ function useDrag(pps: number) {
  * en próximas fases, A1/A2 audio y subtítulos); sólo V1 (trim) y overlay (mover / estirar)
  * tienen edición en la fase 1.
  */
-export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onSeek, onTrim, onItem, onSelect, placeholders = {} }: Props) {
+export function Timeline({ tracks, clip, duration, time, thumbs, selectedIds, onSeek, onTrim, onItem, onSelect, onDelete, placeholders = {} }: Props) {
   const areaRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(600)
   useEffect(() => {
@@ -94,12 +127,23 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
     pressDrag(e, (ev) => at(ev.clientX))
   }
 
+  // Carriles por pista apilada y alto de cada fila.
+  const lanes = new Map(tracks.filter((t) => t.stack).map((t) => [t.id, packLanes(t.items, pps)]))
+  const rowH = (t: Track) => ROW_H + ((lanes.get(t.id)?.count ?? 1) - 1) * LANE_H
+
   const renderItem = (track: Track, item: TrackItem) => {
     const left = item.start * pps
-    const w = Math.max(6, (item.end - item.start) * pps)
+    const w = itemWidth(item, pps)
     // Overlays: mover y estirar. Ítems genéricos: según su `editable` (goniómetros, disparos de FX).
     const editable = item.type === 'overlay' ? 'range' : item.editable
-    const on = item.id === selectedId
+    const on = selectedIds.includes(item.id)
+    const pack = lanes.get(track.id)
+    const k = pack?.lane.get(item.id) ?? 0
+    const n = pack?.count ?? 1
+    // En pistas apiladas cada carril ocupa su franja; si no, el ítem llena la fila.
+    const pos = pack ? { top: `calc(${(k / n) * 100}% + 3px)`, height: `calc(${100 / n}% - 6px)` } : { top: 6, bottom: 6 }
+    const tone = item.type !== 'overlay' && typeof item.data?.tone === 'string' ? TONE[item.data.tone] : null
+    const badge = item.type !== 'overlay' && Boolean(item.data?.badge)
     const move = (e: RPointerEvent, mode: 'move' | 'start' | 'end') => {
       onSelect(item.id)
       const { start, end } = item
@@ -112,24 +156,49 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
         else onItem(item.id, start, clamp(end + dt, start + MIN_LEN, d))
       })
     }
-    return (
+    const cls = tone ? tone[on ? 1 : 0] : on ? 'border-fire bg-fire/25 text-white' : 'border-cyan/50 bg-cyan/15 text-cyan'
+    return [
       <div
         key={item.id}
-        onPointerDown={editable ? (e) => move(e, 'move') : (e) => e.button === 0 && onSeek(item.start)}
-        className={`absolute top-1.5 bottom-1.5 flex items-center overflow-hidden rounded-md border font-mono text-[10px] font-semibold tracking-wider select-none ${
-          on ? 'border-fire bg-fire/25 text-white' : 'border-cyan/50 bg-cyan/15 text-cyan'
+        data-item={item.id}
+        onPointerDown={
+          editable
+            ? (e) => move(e, 'move')
+            : (e) => {
+                if (e.button !== 0) return
+                if (item.type !== 'overlay' && item.deletable) onSelect(item.id)
+                onSeek(item.start)
+              }
+        }
+        className={`absolute flex items-center overflow-hidden border font-mono text-[10px] font-semibold tracking-wider select-none ${badge ? 'justify-center rounded-full' : 'rounded-md'} ${cls} ${
+          on && tone ? 'ring-1 ring-fire' : ''
         } ${editable ? 'cursor-grab active:cursor-grabbing' : ''}`}
-        style={{ left, width: w, touchAction: 'none' }}
-        title={`${timecode(item.start)} → ${timecode(item.end)}`}
+        style={{ left, width: w, ...pos, touchAction: 'none' }}
+        title={`${timecode(item.start)}${badge ? '' : ` → ${timecode(item.end)}`}`}
       >
         {editable === 'range' && <span onPointerDown={(e) => move(e, 'start')} className="absolute inset-y-0 left-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
         {item.type === 'audio' && <AudioLevel item={item} />}
-        <span className="relative truncate px-3">
+        <span className={`relative truncate ${badge ? '' : 'px-3'}`}>
           {item.type === 'overlay' ? `${KIND_LABEL[item.overlay.kind]} · ${itemText(item.overlay)}` : String(item.data?.text ?? track.label)}
         </span>
         {editable === 'range' && <span onPointerDown={(e) => move(e, 'end')} className="absolute inset-y-0 right-0 w-2 cursor-ew-resize bg-white/30 hover:bg-white/60" />}
-      </div>
-    )
+      </div>,
+      // Borrado en un click: ✕ flotante en la esquina del ítem seleccionado.
+      on && item.type !== 'overlay' && item.deletable && onDelete ? (
+        <button
+          key={`${item.id}-x`}
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => onDelete(item.id)}
+          aria-label="Eliminar"
+          title="Eliminar (Supr)"
+          className="absolute z-10 flex size-4 items-center justify-center rounded-full border border-white bg-fire font-mono text-[9px] leading-none font-bold text-white shadow-[0_0_6px_rgba(0,0,0,.8)] hover:brightness-125"
+          style={{ left: left + w - 8, top: pack ? `calc(${(k / n) * 100}% - 4px)` : -2 }}
+        >
+          ✕
+        </button>
+      ) : null,
+    ]
   }
 
   const videoRow = (track: Track) => {
@@ -185,7 +254,7 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
         <div style={{ width: LABEL_W }} className="shrink-0 font-mono text-[9px] tracking-[0.16em] text-steel">
           <div className="flex h-6 items-center">{timecode(time)}</div>
           {tracks.map((t) => (
-            <div key={t.id} className="flex items-center pr-2 font-semibold" style={{ height: ROW_H }}>
+            <div key={t.id} className="flex items-center pr-2 font-semibold" style={{ height: rowH(t) }}>
               {t.label}
             </div>
           ))}
@@ -200,7 +269,7 @@ export function Timeline({ tracks, clip, duration, time, thumbs, selectedId, onS
             ))}
           </div>
           {tracks.map((t) => (
-            <div key={t.id} className="relative py-1" style={{ height: ROW_H }}>
+            <div key={t.id} className="relative py-1" style={{ height: rowH(t) }}>
               {t.kind === 'video' ? (
                 videoRow(t)
               ) : !t.items.length && placeholders[t.id] ? (

@@ -5,10 +5,10 @@ import { loadAiSettings, RateLimitError, transcribeAudio } from '../lib/ai'
 import { clipToWavBase64 } from './audio'
 import { MusicPanel } from './MusicPanel'
 import { SubtitlePanel } from './SubtitlePanel'
-import { activeGroup, duckGain, editGroupText, groupWords, parseSubtitleFile, removeGroup, retimeGroup, speechSegments } from './subtitles'
+import { activeGroup, duckGain, editGroupText, groupWords, insertManual, parseSubtitleFile, removeGroup, retimeGroup, speechSegments, withOffset, type SubtitleGroup } from './subtitles'
 import { exportVideo, extractThumbs, pickMime } from './exporter'
 import { Accordion } from './Accordion'
-import { activeAngles, drawBiomech, px as toPx } from './biomech'
+import { activeAngles, drawBiomech, jointAngle, px as toPx } from './biomech'
 import { BiomechPanel } from './BiomechPanel'
 import { FxPanel } from './FxPanel'
 import { FX_META, playFx } from './fx'
@@ -49,6 +49,9 @@ function resolveDuration(v: HTMLVideoElement): Promise<number> {
   })
 }
 
+/** Avance del cabezal por cada click del asistente de Bar Path (modo paso a paso). */
+const PATH_STEP = 0.15
+
 const isVideoFile = (f: File) => f.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(f.name)
 
 /** Tactical Video Studio: reproductor 9:16, timeline V1/V2/S1/A2, overlays, subtítulos karaoke, música y exportación. */
@@ -72,8 +75,13 @@ export default function VideoStudio({ active, header }: Props) {
   const selected = findItem(project, project.selectedId)
   // S1 · subtítulos y A2 · música (el archivo de audio vive en memoria, como el clip).
   const subtitles = project.subtitles
-  const groups = useMemo(() => groupWords(subtitles.words), [subtitles.words])
-  const segments = useMemo(() => speechSegments(subtitles.words), [subtitles.words])
+  // Todo lo que se ve / oye usa los tiempos con el desfase global aplicado.
+  const subOffset = (subtitles.offset ?? 0) / 1000
+  const subs = useMemo(() => withOffset(subtitles), [subtitles])
+  const groups = useMemo(() => groupWords(subs.words), [subs.words])
+  const segments = useMemo(() => speechSegments(subs.words), [subs.words])
+  /** Bloque en tiempos guardados (sin desfase), para editarlo. */
+  const rawGroup = (g: SubtitleGroup): SubtitleGroup => ({ ...g, start: g.start - subOffset, end: g.end - subOffset })
   const [musicUrl, setMusicUrl] = useState<string | null>(null)
   const music = musicUrl ? project.music : null
   const musicRef = useRef<HTMLAudioElement>(null)
@@ -101,6 +109,8 @@ export default function VideoStudio({ active, header }: Props) {
   const fx = project.fx
   const [tracing, setTracing] = useState(false)
   const [selectedAngle, setSelectedAngle] = useState<string | null>(null)
+  /** Ítem B1 / A3 elegido en el timeline: Supr / Backspace o el ✕ flotante lo borran. */
+  const [tlSel, setTlSel] = useState<string | null>(null)
   const setBio = (patch: Partial<Biomech>) => setProject((p) => ({ ...p, biomech: { ...p.biomech, ...patch } }))
   const setFx = (patch: Partial<SoundFx>) => setProject((p) => ({ ...p, fx: { ...p.fx, ...patch } }))
   // Motor de vista previa de los Sound FX (AudioContext propio, creado con el primer gesto).
@@ -231,9 +241,9 @@ export default function VideoStudio({ active, header }: Props) {
     ctx.clearRect(0, 0, OUT_W, OUT_H)
     drawBiomech(ctx, bio, time, selectedAngle)
     const next = drawOverlays(ctx, items, time)
-    drawSubtitles(ctx, subtitles, groups, time)
+    drawSubtitles(ctx, subs, groups, time)
     setRects((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
-  }, [items, time, fontsReady, active, subtitles, groups, bio, selectedAngle])
+  }, [items, time, fontsReady, active, subs, groups, bio, selectedAngle])
 
   // ── Arrastre libre en el visor (posición en % del marco, con imán al centro) ──
   const layerRef = useRef<HTMLDivElement>(null)
@@ -254,6 +264,14 @@ export default function VideoStudio({ active, header }: Props) {
     }
     return null
   }
+  /** Quita el último punto del Bar Path y vuelve el cabezal a ese instante. */
+  const undoPathPoint = () => {
+    const pts = bio.path.points
+    if (!pts.length) return
+    const last = pts[pts.length - 1]
+    setBio({ path: { ...bio.path, points: pts.slice(0, -1) } })
+    seek(last.t)
+  }
   /** Agrega o reemplaza el punto del Bar Path en el instante actual del video. */
   const addPathPoint = (px: number, py: number) => {
     const t = videoRef.current?.currentTime ?? time
@@ -266,9 +284,16 @@ export default function VideoStudio({ active, header }: Props) {
   const onLayerDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return
     const { px, py } = toFrame(e.clientX, e.clientY)
-    // Bar Path: click = un punto; mantener presionado mientras reproduce = trazo continuo.
+    // Bar Path: en pausa, paso a paso (cada click registra el disco y avanza +0,15 s);
+    // reproduciendo, mantener presionado traza en continuo.
     if (tracing) {
       addPathPoint(px, py)
+      const v = videoRef.current
+      if (!v || v.paused) {
+        const t = v?.currentTime ?? time
+        seek(Math.min(t + PATH_STEP, clip ? clip.out : duration))
+        return
+      }
       pressDrag(e, (ev) => {
         const pt = toFrame(ev.clientX, ev.clientY)
         addPathPoint(pt.px, pt.py)
@@ -438,7 +463,7 @@ export default function VideoStudio({ active, header }: Props) {
     const g: Goniometer = {
       id: `gon:${uid()}`,
       start,
-      end: Math.min(duration, start + 2.5),
+      end: Math.min(duration, start + 1.5),
       a: { x: 44, y: 46 },
       b: { x: 58, y: 57 },
       c: { x: 50, y: 70 },
@@ -450,6 +475,32 @@ export default function VideoStudio({ active, header }: Props) {
     setBio({ angles: [...bio.angles, g] })
   }
   const setAngle = (id: string, patch: Partial<Goniometer>) => setBio({ angles: bio.angles.map((g) => (g.id === id ? { ...g, ...patch } : g)) })
+
+  /** Borra un ítem de B1 / A3 por id (disparo, goniómetro o el Bar Path completo). */
+  const deleteItem = useCallback(
+    (id: string) => {
+      setProject((p) => {
+        if (id.startsWith('fx:')) return { ...p, fx: { ...p.fx, hits: p.fx.hits.filter((h) => h.id !== id) } }
+        if (id.startsWith('gon:')) return { ...p, biomech: { ...p.biomech, angles: p.biomech.angles.filter((g) => g.id !== id) } }
+        if (id === 'barpath') return { ...p, biomech: { ...p.biomech, path: { ...p.biomech.path, points: [] } } }
+        return p
+      })
+      setTlSel(null)
+      setSelectedAngle((a) => (a === id ? null : a))
+    },
+    [setProject],
+  )
+  useEffect(() => {
+    if (!active || !tlSel) return
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement
+      if ((e.key !== 'Delete' && e.key !== 'Backspace') || /INPUT|TEXTAREA|SELECT/.test(el.tagName) || el.isContentEditable) return
+      e.preventDefault()
+      deleteItem(tlSel)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [active, tlSel, deleteItem])
 
   // ── A3 · Sound FX ─────────────────────────────────────────────────────────────
   const addFx = (kind: FxKind) => {
@@ -475,18 +526,21 @@ export default function VideoStudio({ active, header }: Props) {
       id: 'b1',
       kind: 'bio',
       label: 'B1 · HUD BIOMECÁNICO',
+      stack: true,
       items: [
         ...(bio.path.points.length > 1
-          ? [{ id: 'barpath', type: 'bio' as const, start: bio.path.points[0].t, end: bio.path.points[bio.path.points.length - 1].t, data: { text: `BAR PATH · ${bio.path.points.length} pts` } }]
+          ? [{ id: 'barpath', type: 'bio' as const, start: bio.path.points[0].t, end: bio.path.points[bio.path.points.length - 1].t, deletable: true, data: { text: `📍 BAR PATH · ${bio.path.points.length}`, tone: 'cyan' } }]
           : []),
-        ...bio.angles.map((g) => ({ id: g.id, type: 'bio' as const, start: g.start, end: g.end, editable: 'range' as const, data: { text: `∠ ${g.label || 'ÁNGULO'}` } })),
+        ...bio.angles.map((g) => ({ id: g.id, type: 'bio' as const, start: g.start, end: g.end, editable: 'range' as const, deletable: true, data: { text: `∠ ${Math.round(jointAngle(g))}° · ${g.label || 'ÁNGULO'}`, tone: 'fire' } })),
       ],
     },
     {
       id: 'a3',
       kind: 'audio',
       label: 'A3 · SOUND FX',
-      items: fx.hits.map((h) => ({ id: h.id, type: 'audio' as const, start: h.t, end: Math.min(duration, h.t + FX_META[h.kind].duration), editable: 'move' as const, data: { text: FX_META[h.kind].icon } })),
+      stack: true,
+      // Badge fijo en el instante del disparo; los que coinciden se apilan en carriles.
+      items: fx.hits.map((h) => ({ id: h.id, type: 'audio' as const, start: h.t, end: Math.min(duration, h.t + 0.05), editable: 'move' as const, deletable: true, data: { text: FX_META[h.kind].icon, badge: true } })),
     },
   ]
 
@@ -584,12 +638,14 @@ export default function VideoStudio({ active, header }: Props) {
               busy={tr.busy}
               note={tr.note}
               canTranscribe={Boolean(clip)}
+              time={time}
+              onManual={(text) => setSubs({ words: insertManual(subtitles.words, text, Math.max(0, time - subOffset), duration - subOffset), enabled: true })}
               onChange={setSubs}
               onTranscribe={runTranscribe}
               onImport={importSubs}
               onSeek={seek}
-              onEditText={(g, text) => setSubs({ words: editGroupText(subtitles.words, g, text) })}
-              onRetime={(g, a, b) => setSubs({ words: retimeGroup(subtitles.words, g, Math.max(0, a), Math.max(0, b)) })}
+              onEditText={(g, text) => setSubs({ words: editGroupText(subtitles.words, rawGroup(g), text) })}
+              onRetime={(g, a, b) => setSubs({ words: retimeGroup(subtitles.words, rawGroup(g), Math.max(0, a) - subOffset, Math.max(0, b) - subOffset) })}
               onRemove={(g) => setSubs({ words: removeGroup(subtitles.words, g) })}
             />
           </Accordion>
@@ -607,7 +663,12 @@ export default function VideoStudio({ active, header }: Props) {
               tracing={tracing}
               selectedAngle={selectedAngle}
               canEdit={Boolean(clip)}
-              onToggleTrace={() => setTracing((v) => !v)}
+              onToggleTrace={() => {
+                setTracing((v) => !v)
+                videoRef.current?.pause()
+              }}
+              onUndo={undoPathPoint}
+              onFinish={() => setTracing(false)}
               onChange={setBio}
               onAddAngle={addAngle}
               onSelectAngle={setSelectedAngle}
@@ -771,7 +832,7 @@ export default function VideoStudio({ active, header }: Props) {
           duration={duration}
           time={time}
           thumbs={thumbs}
-          selectedId={project.selectedId}
+          selectedIds={[project.selectedId, selectedAngle, tlSel]}
           onSeek={seek}
           onTrim={(i, o) => {
             // El visor muestra el frame del corte que se está moviendo.
@@ -784,11 +845,13 @@ export default function VideoStudio({ active, header }: Props) {
             else setProject((p) => patchItem(p, id, (it) => ({ ...it, start, end })))
           }}
           onSelect={(id) => {
+            setTlSel(id.startsWith('fx:') || id.startsWith('gon:') || id === 'barpath' ? id : null)
             if (id.startsWith('gon:')) {
               setSelectedAngle(id)
               setSections((st) => ({ ...st, b1: true }))
             } else if (!id.startsWith('fx:')) setProject((p) => ({ ...p, selectedId: id }))
           }}
+          onDelete={deleteItem}
         />
       </main>
     </div>

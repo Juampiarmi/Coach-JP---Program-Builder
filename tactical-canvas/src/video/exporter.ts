@@ -1,5 +1,5 @@
 import { drawOverlays, drawSubtitles, drawVideoCover, loadOverlayFonts } from './render'
-import { duckGain, groupWords, speechSegments } from './subtitles'
+import { duckGain, groupWords, speechSegments, withOffset } from './subtitles'
 import { drawBiomech } from './biomech'
 import { playFx } from './fx'
 import { overlayItems } from './project'
@@ -108,15 +108,17 @@ export async function exportVideo({ url, musicUrl, project, onProgress, signal }
   const stopped = new Promise<void>((r) => (recorder.onstop = () => r()))
 
   const items = overlayItems(project)
-  const groups = groupWords(project.subtitles.words)
-  const segments = speechSegments(project.subtitles.words)
+  // S1 con el desfase global ya aplicado (igual que en la vista previa).
+  const subs = withOffset(project.subtitles)
+  const groups = groupWords(subs.words)
+  const segments = speechSegments(subs.words)
   const span = Math.max(0.1, clip.out - clip.in)
   const frame = () => {
     const t = video.currentTime
     drawVideoCover(ctx, video)
     drawBiomech(ctx, project.biomech, t)
     drawOverlays(ctx, items, t)
-    drawSubtitles(ctx, project.subtitles, groups, t)
+    drawSubtitles(ctx, subs, groups, t)
     // A2 sigue al video (la música arranca en el In) y aplica volumen × ducking.
     if (music && musicGain && audioCtx && musicCfg) {
       const want = t - clip.in

@@ -9,6 +9,8 @@ interface Props {
   selectedAngle: string | null
   canEdit: boolean
   onToggleTrace: () => void
+  onUndo: () => void
+  onFinish: () => void
   onChange: (patch: Partial<Biomech>) => void
   onAddAngle: () => void
   onSelectAngle: (id: string) => void
@@ -19,7 +21,7 @@ interface Props {
 const LABELS = ['PROFUNDIDAD VÁLIDA', 'SIN PARALELO', 'BLOQUEO', 'VALGO']
 
 /** Panel B1: Bar Path y goniómetro articular. */
-export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTrace, onChange, onAddAngle, onSelectAngle, onAngle, onRemoveAngle }: Props) {
+export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTrace, onUndo, onFinish, onChange, onAddAngle, onSelectAngle, onAngle, onRemoveAngle }: Props) {
   const path = bio.path
   const sel = bio.angles.find((g) => g.id === selectedAngle) ?? null
   return (
@@ -36,12 +38,27 @@ export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTra
             tracing ? 'animate-pulse border-cyan bg-cyan/15 text-cyan' : 'border-cyan/50 text-cyan hover:bg-cyan/10'
           }`}
         >
-          {tracing ? '[ ● TRAZANDO · CLICK PARA TERMINAR ]' : '[ 📍 TRAZAR BAR PATH ]'}
+          {tracing ? `[ ● TRAZANDO PASO A PASO · ${path.points.length} PTS ]` : '[ 📍 TRAZAR BAR PATH ]'}
         </button>
         {tracing && (
-          <p className="font-mono text-[9px] leading-relaxed text-cyan/80">
-            Hacé click sobre el extremo del disco en cada momento clave (mové el cabezal entre clicks), o reproducí y mantené presionado siguiendo la barra.
-          </p>
+          <>
+            <p className="font-mono text-[9px] leading-relaxed text-cyan/80">
+              Click en el centro del disco: se registra el punto y el video avanza +0,15 s solo. Repetí hasta completar la repetición (o reproducí y mantené presionado para trazar en continuo).
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={onUndo}
+                disabled={!path.points.length}
+                className="rounded-lg border border-line py-1.5 font-mono text-[10px] font-semibold tracking-[0.08em] text-steel transition hover:border-cyan/50 hover:text-cyan disabled:opacity-30"
+              >
+                [ ⟵ DESHACER PUNTO ]
+              </button>
+              <button type="button" onClick={onFinish} className="rounded-lg border border-cyan bg-cyan py-1.5 font-mono text-[10px] font-bold tracking-[0.08em] text-carbon transition hover:brightness-110">
+                [ ✓ FINALIZAR ]
+              </button>
+            </div>
+          </>
         )}
         <div className="flex items-center justify-between font-mono text-[10px] text-steel">
           <span>
@@ -97,7 +114,7 @@ export function BiomechPanel({ bio, tracing, selectedAngle, canEdit, onToggleTra
         )}
         {sel && (
           <>
-            <p className="font-mono text-[9px] leading-relaxed text-steel/70">Arrastrá los 3 puntos sobre las articulaciones en el visor (el del medio es el vértice).</p>
+            <p className="font-mono text-[9px] leading-relaxed text-steel/70">Arrastrá los 3 puntos en el visor: CADERA → RODILLA (vértice) → TOBILLO. El ángulo se recalcula en vivo.</p>
             <Field label="Rótulo">
               <TextInput value={sel.label} onChange={(label) => onAngle(sel.id, { label })} uppercase placeholder="PROFUNDIDAD VÁLIDA" />
             </Field>

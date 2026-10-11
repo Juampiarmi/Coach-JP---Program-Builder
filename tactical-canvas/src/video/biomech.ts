@@ -1,5 +1,6 @@
 import { FONT_MONO } from '../lib/brand'
 import type { Biomech, FramePoint, Goniometer, PathPoint } from './types'
+import { SAFE } from './render'
 import { OUT_H, OUT_W } from './types'
 
 /**
@@ -213,16 +214,68 @@ function drawAngle(ctx: Ctx, g: Goniometer, selected: boolean) {
     }
   }
   ctx.restore()
-  // Pastilla con los grados, del lado de afuera del ángulo.
-  const mid = from + delta / 2
-  const out = r + 90
-  let lx = b.x - Math.cos(mid) * out
-  const ly = Math.min(OUT_H - 60, Math.max(60, b.y - Math.sin(mid) * out))
+  // Pastilla con los grados: al costado, nunca sobre la rodilla ni sobre los segmentos.
   const text = `${Math.round(deg)}°${g.label.trim() ? ` · ${g.label.trim().toUpperCase()}` : ''}`
   ctx.font = `700 38px ${DISPLAY}`
-  const half = (ctx.measureText(text).width + 40) / 2
-  lx = Math.min(OUT_W - 20 - half, Math.max(20 + half, lx))
+  const { x: lx, y: ly } = placePill(a, b, c, ctx.measureText(text).width + 40, 60, from + delta / 2)
   pill(ctx, text, lx, ly, color)
+  // Nombres de las articulaciones mientras se edita (sólo vista previa).
+  if (selected) {
+    ctx.save()
+    ctx.font = `700 22px ${FONT_MONO}`
+    ctx.textBaseline = 'middle'
+    ctx.lineWidth = 5
+    ctx.strokeStyle = 'rgba(0,0,0,0.75)'
+    ctx.fillStyle = CYAN
+    for (const [p, name] of [
+      [a, 'CADERA'],
+      [b, 'RODILLA'],
+      [c, 'TOBILLO'],
+    ] as const) {
+      // La rodilla rotula del lado contrario a la pastilla; el resto, hacia adentro del marco.
+      const left = p === b ? lx > b.x : p.x > OUT_W - 200
+      ctx.textAlign = left ? 'right' : 'left'
+      const tx = p.x + (left ? -40 : 40)
+      ctx.strokeText(name, tx, p.y - 30)
+      ctx.fillText(name, tx, p.y - 30)
+    }
+    ctx.restore()
+  }
+}
+
+/**
+ * Centro de la pastilla de grados. Prueba posiciones a los costados del vértice (separadas al
+ * menos 70 px en horizontal) y a distintas alturas; se queda con la que no pisa la rodilla,
+ * los segmentos ni las otras articulaciones y entra en el marco. Prefiere el lado de afuera
+ * del ángulo y la altura de la rodilla.
+ */
+function placePill(a: FramePoint, b: FramePoint, c: FramePoint, w: number, h: number, mid: number) {
+  const outSide = Math.cos(mid) > 0 ? -1 : 1 // lado opuesto a la apertura del ángulo
+  const GAP = 70
+  const samples: FramePoint[] = []
+  for (const [p, q] of [
+    [b, a],
+    [b, c],
+  ] as const) {
+    for (let i = 0; i <= 24; i++) samples.push({ x: p.x + ((q.x - p.x) * i) / 24, y: p.y + ((q.y - p.y) * i) / 24 })
+  }
+  let best = { x: b.x + outSide * (GAP + w / 2), y: b.y, score: Infinity }
+  for (const side of [outSide, -outSide]) {
+    for (const dy of [0, -110, 110, -220, 220, -330, 330]) {
+      let x = b.x + side * (GAP + w / 2)
+      const y = Math.min(OUT_H - 50 - h / 2, Math.max(50 + h / 2, b.y + dy))
+      x = Math.min(OUT_W - 20 - w / 2, Math.max(20 + w / 2, x))
+      const pad = 14
+      const inside = (p: FramePoint, r = 0) => Math.abs(p.x - x) < w / 2 + pad + r && Math.abs(p.y - y) < h / 2 + pad + r
+      let score = Math.abs(dy) / 110 + (side === outSide ? 0 : 0.5)
+      if (x + w / 2 > SAFE.right) score += 2.5 // mejor fuera de la columna de acciones de Reels
+      if (inside(b, 50)) score += 1000 // nunca sobre la rodilla
+      for (const p of [a, c]) if (inside(p, 20)) score += 200
+      for (const p of samples) if (inside(p)) score += 8
+      if (score < best.score) best = { x, y, score }
+    }
+  }
+  return best
 }
 
 /** Dibuja el Bar Path y los goniómetros activos en `time`. */

@@ -41,7 +41,7 @@ export function defaultProject(): VideoProject {
     ],
     selectedId: first.id,
     safeZone: true,
-    subtitles: { words: [], style: 'outline', accent: 'orange', enabled: true },
+    subtitles: { words: [], style: 'outline', accent: 'orange', enabled: true, offset: 0 },
     music: null,
     biomech: { path: { points: [], thick: false, showVertical: true }, angles: [] },
     fx: { hits: [], volume: 80 },

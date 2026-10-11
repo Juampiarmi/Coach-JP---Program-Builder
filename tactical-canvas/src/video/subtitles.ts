@@ -1,4 +1,4 @@
-import type { SubtitleWord } from './types'
+import type { SubtitleTrack, SubtitleWord } from './types'
 
 /** Bloque de impacto: 2 a 4 palabras que se muestran juntas. */
 export interface SubtitleGroup {
@@ -32,11 +32,35 @@ export function groupWords(words: SubtitleWord[]): SubtitleGroup[] {
     if (size > 0) {
       const prev = words[i - 1]
       const chars = words.slice(from, i + 1).reduce((n, w) => n + w.word.length + 1, 0)
-      if (size >= MAX_WORDS || words[i].start - prev.end > GAP || (size >= 2 && /[.,;:!?…]$/.test(prev.word)) || (size >= 2 && chars > MAX_CHARS)) close(i)
+      if (words[i].br || size >= MAX_WORDS || words[i].start - prev.end > GAP || (size >= 2 && /[.,;:!?…]$/.test(prev.word)) || (size >= 2 && chars > MAX_CHARS)) close(i)
     }
   }
   close(words.length)
   return groups
+}
+
+/** Pista con el desfase global aplicado: lo que se ve, se oye (ducking) y se exporta. */
+export function withOffset(track: SubtitleTrack): SubtitleTrack {
+  const off = (track.offset ?? 0) / 1000
+  if (!off) return track
+  return { ...track, words: track.words.map((w) => ({ ...w, start: Math.max(0, w.start + off), end: Math.max(0.05, w.end + off) })) }
+}
+
+/** Subtítulo manual: el texto repartido desde `start` (unos 0,32 s por palabra, mínimo 1,2 s), como bloque propio. */
+export function insertManual(words: SubtitleWord[], text: string, start: number, limit: number): SubtitleWord[] {
+  const texts = text.trim().split(/\s+/).filter(Boolean)
+  if (!texts.length) return words
+  // Si el cabezal cae dentro de un bloque, ese bloque se comprime hasta `start` (no se pierde texto).
+  const inside = groupWords(words).find((g) => g.start < start && g.end > start)
+  let base = inside ? retimeGroup(words, inside, inside.start, Math.max(inside.start + 0.05 * (inside.to - inside.from), start)) : words
+  base = base.map((w) => (w.start < start && w.end > start ? { ...w, end: start } : w))
+  // Termina antes del bloque siguiente, que arranca su propio bloque.
+  const next = base.find((w) => w.start >= start)
+  const target = Math.min(limit, start + Math.max(1.2, texts.length * 0.32))
+  const end = Math.max(start + 0.1 * texts.length, next ? Math.min(target, next.start) : target)
+  const added = distribute(texts, start, end)
+  added[0] = { ...added[0], br: true }
+  return [...base.map((w) => (w === next ? { ...w, br: true } : w)), ...added].sort((x, y) => x.start - y.start)
 }
 
 /** Bloque visible en `time`: desde su inicio hasta el inicio del siguiente (máx. 0,35 s después de su final). */
@@ -68,6 +92,7 @@ export function editGroupText(words: SubtitleWord[], g: SubtitleGroup, text: str
   const texts = text.trim().split(/\s+/).filter(Boolean)
   const old = words.slice(g.from, g.to)
   const next = texts.length === old.length ? old.map((w, i) => ({ ...w, word: texts[i] })) : distribute(texts, g.start, g.end)
+  if (old[0]?.br && next[0]) next[0] = { ...next[0], br: true }
   return [...words.slice(0, g.from), ...next, ...words.slice(g.to)]
 }
 
