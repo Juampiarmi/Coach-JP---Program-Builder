@@ -317,6 +317,16 @@ export function AiGenerator({ onResult, onBurst }: Props) {
           placeholder={PLACEHOLDER.concept}
           aria-label="Concepto"
           onChange={(e) => setTopic(e.target.value)}
+          onPaste={(e) => {
+            // Un guion de varias líneas o con «Placa N» no entra en un campo de una línea (perdería
+            // los saltos): se pasa al modo BRIEF LIBRE con el texto exacto.
+            const pasted = e.clipboardData.getData('text')
+            if (/\n/.test(pasted.trim()) || detectStructuredCopy(pasted)) {
+              e.preventDefault()
+              setTopic(pasted.trim())
+              setMode({ ...mode, inputMode: 'brief' })
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') run()
           }}

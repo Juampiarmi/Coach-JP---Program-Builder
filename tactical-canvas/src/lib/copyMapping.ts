@@ -11,7 +11,12 @@ import type { CanvasState, TemplateId } from '../types'
 /** Tope de seguridad (Instagram admite hasta 20 placas por carrusel). */
 export const MAX_MAPPED_SLIDES = 20
 
-const MARKER = /^\s*(?:#+\s*)?(?:placa|slide|diapositiva|l[aá]mina|tarjeta|card|post)\s*(?:n[°ºo.]?\s*)?(\d{1,2})\s*(?:[:.\-–—)|]\s*|\s+|$)/i
+/**
+ * Marcador de placa EN CUALQUIER POSICIÓN (no sólo a principio de renglón): «Placa 1:», «PLACA 2 —»,
+ * «**Placa 3:**», «📍 Placa 4 (portada):», «[PLACA 5]», «Slide 6.». Así un guion pegado en una sola
+ * línea (el campo de concepto borra los saltos) igual se parte en sus N placas.
+ */
+const MARKER_ANY = /(?<![\p{L}\p{N}])(?:placa|slide|diapositiva|l[aá]mina|tarjeta|card)\s*(?:n[°ºo.]?\s*)?(\d{1,2})(?![\p{N}])(?:\s*\/\s*\d{1,2})?(?:\s*\([^)\n]{0,40}\))?\s*\]?\s*\**\s*(?:[:.\-–—)|]+\s*)?/giu
 const NUMBERED = /^\s*(\d{1,2})\s*[.)\-–—:]\s+/
 const BULLET = /^\s*(?:[-•▸►▪●*]|—)\s+/
 
@@ -24,6 +29,15 @@ export interface MappedBlock {
 export function detectStructuredCopy(raw: string): MappedBlock[] | null {
   const text = raw.replace(/\r/g, '').trim()
   if (!text) return null
+  // 1) Marcadores «Placa N» en cualquier lugar: cada uno abre una placa (el texto previo es un título y se descarta).
+  const marks = [...text.matchAll(MARKER_ANY)]
+  if (marks.length >= 2) {
+    const blocks = marks
+      .map((m, i) => text.slice((m.index ?? 0) + m[0].length, i + 1 < marks.length ? marks[i + 1].index : text.length))
+      .map((t) => t.replace(/[\s*_#>\[\-–—📍•|]+$/u, '').trim())
+      .filter(Boolean)
+    if (blocks.length >= 2) return blocks.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
+  }
   const lines = text.split('\n')
   const splitBy = (rx: RegExp) => {
     const blocks: string[][] = []
@@ -36,9 +50,8 @@ export function detectStructuredCopy(raw: string): MappedBlock[] | null {
   }
   const count = (rx: RegExp) => lines.filter((l) => rx.test(l)).length
   let blocks: string[] | null = null
-  if (count(MARKER) >= 2) blocks = splitBy(MARKER)
-  else if (count(NUMBERED) >= 2) blocks = splitBy(NUMBERED)
-  else if (count(BULLET) >= 2) blocks = splitBy(BULLET)
+  if (count(NUMBERED) >= 2) blocks = splitBy(NUMBERED)
+  else if (count(BULLET) >= 2 && !lines.some((l) => LABEL_ANY.test(l))) blocks = splitBy(BULLET)
   else {
     const paras = text.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean)
     // Párrafos separados: sólo cuenta como estructura si cada uno es corto (copy de placas, no un brief).
@@ -60,42 +73,64 @@ const words = (s: string) =>
 /** Anáfora rítmica: 3+ bloques que arrancan con la(s) misma(s) palabra(s) («NO ES…», «NO ES…»). */
 export function isAnaphora(blocks: MappedBlock[]): boolean {
   if (blocks.length < 3) return false
-  const heads = blocks.map((b) => words(b.text).slice(0, 2).join(' '))
-  const firsts = blocks.map((b) => words(b.text)[0] ?? '')
+  // Se mira el titular de cada placa (sin rótulos «Titular:»), no el texto crudo del bloque.
+  const heads0 = blocks.map((b) => splitBlock(b.text).headlineA || b.text)
+  const heads = heads0.map((h) => words(h).slice(0, 2).join(' '))
+  const firsts = heads0.map((h) => words(h)[0] ?? '')
   const most = (list: string[]) => Math.max(...list.map((h) => list.filter((x) => x === h).length))
   return most(heads) >= Math.ceil(blocks.length * 0.6) || most(firsts) >= Math.ceil(blocks.length * 0.7)
 }
 
-const LABELED = /^\s*(tag|etiqueta|titular|t[ií]tulo|premisa|blanco|remate|golpe|acento|naranja|subt[ií]tulo|cierre|p[aá]rrafo|cuerpo)\s*[:：]\s*(.+)$/i
+/** Rótulos del copy («Titular:», «Remate:», «Tag:», «Subtítulo:»…), en cualquier posición del bloque. */
+const LABEL_ANY = /(?<![\p{L}])(tag(?: superior)?|etiqueta|titular|t[ií]tulo|premisa|blanco|remate|golpe(?: de impacto)?|acento|naranja|subt[ií]tulo|cierre|p[aá]rrafo|cuerpo)\s*[:：]/iu
+const LABEL_ALL = new RegExp(LABEL_ANY.source, 'giu')
 
-/** Corte local de un bloque: respeta rótulos explícitos, renglones y oraciones; nunca reescribe. */
+/** Limpia un valor: markdown, viñetas, separadores « / » sueltos y comillas envolventes. */
+function cleanValue(v: string) {
+  let t = v
+    .replace(/\*\*|__/g, '')
+    .replace(/^[\s\-•▸►▪●|/]+/u, '')
+    .replace(/[\s|/\-–—]+$/u, '')
+    .trim()
+  const q = t.match(/^[«"“'‘](.*)[»"”'’]$/su)
+  if (q) t = q[1].trim()
+  return t.replace(/^[«"“]|[»"”]$/gu, '').trim()
+}
+
+/** Corte local de un bloque: respeta rótulos explícitos (aun en una sola línea), renglones y oraciones; nunca reescribe. */
 export function splitBlock(block: string): Partial<CanvasState> {
   const out: Partial<CanvasState> = {}
-  const rest: string[] = []
-  for (const line of block.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    const m = line.match(LABELED)
-    if (!m) {
-      rest.push(line)
-      continue
+  const src = block.replace(/\*\*|__/g, '')
+  const labels = [...src.matchAll(LABEL_ALL)]
+  if (labels.length) {
+    // Texto antes del primer rótulo (si lo hay) cuenta como titular cuando no hay «Titular:».
+    const pre = cleanValue(src.slice(0, labels[0].index))
+    labels.forEach((m, i) => {
+      const value = cleanValue(src.slice((m.index ?? 0) + m[0].length, i + 1 < labels.length ? labels[i + 1].index : src.length))
+      const k = m[1].toLowerCase()
+      if (!value) return
+      if (/tag|etiqueta/.test(k)) out.tag = value.replace(/^\[\s*|\s*\]$/g, '').toUpperCase()
+      else if (/titular|t[ií]tulo|premisa|blanco/.test(k)) out.headlineA = [out.headlineA, value].filter(Boolean).join(' ')
+      else if (/remate|golpe|acento|naranja/.test(k)) out.headlineB = [out.headlineB, value].filter(Boolean).join(' ')
+      else out.body = [out.body, value].filter(Boolean).join('\n')
+    })
+    if (pre && out.headlineA === undefined) out.headlineA = pre
+  } else {
+    const rest = src
+      .split('\n')
+      .map((l) => cleanValue(l))
+      .filter(Boolean)
+    if (rest.length >= 2) {
+      out.headlineA = rest[0]
+      out.headlineB = rest[1]
+      if (rest.length > 2) out.body = rest.slice(2).join('\n')
+    } else if (rest.length === 1) {
+      // «PREMISA / GOLPE» en un renglón: la barra separa titular y remate.
+      const slash = rest[0].split(/\s+\/\s+/)
+      const [a, b] = slash.length === 2 ? slash.map(cleanValue) : splitSentence(rest[0])
+      out.headlineA = a
+      out.headlineB = b
     }
-    const k = m[1].toLowerCase()
-    if (/tag|etiqueta/.test(k)) out.tag = m[2].replace(/^\[\s*|\s*\]$/g, '').toUpperCase()
-    else if (/titular|t[ií]tulo|premisa|blanco/.test(k)) out.headlineA = m[2]
-    else if (/remate|golpe|acento|naranja/.test(k)) out.headlineB = m[2]
-    else out.body = [out.body, m[2]].filter(Boolean).join('\n')
-  }
-  if (rest.length) {
-    if (out.headlineA === undefined && out.headlineB === undefined) {
-      if (rest.length >= 2) {
-        out.headlineA = rest[0]
-        out.headlineB = rest[1]
-        if (rest.length > 2) out.body = [out.body, ...rest.slice(2)].filter(Boolean).join('\n')
-      } else {
-        const [a, b] = splitSentence(rest[0])
-        out.headlineA = a
-        out.headlineB = b
-      }
-    } else out.body = [out.body, ...rest].filter(Boolean).join('\n')
   }
   out.headlineA = (out.headlineA ?? '').toUpperCase()
   out.headlineB = (out.headlineB ?? '').toUpperCase()
@@ -152,9 +187,9 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
     const ai = aiSlides[i]
     let p: Partial<CanvasState> = ai && fidelity(ai, block.text) >= 0.75 ? { ...ai } : { ...(ai ?? {}), ...local }
     // Rótulos explícitos del usuario («Tag:», «Titular:», «Remate:») siempre ganan.
-    if (/^\s*tag\s*:/im.test(block.text) && local.tag) p.tag = local.tag
-    if (/^\s*(titular|t[ií]tulo|premisa)\s*:/im.test(block.text)) p.headlineA = local.headlineA
-    if (/^\s*(remate|golpe)\s*:/im.test(block.text)) p.headlineB = local.headlineB
+    if (/(?<![\p{L}])tag(?: superior)?\s*[:：]/iu.test(block.text) && local.tag) p.tag = local.tag
+    if (/(?<![\p{L}])(titular|t[ií]tulo|premisa)\s*[:：]/iu.test(block.text)) p.headlineA = local.headlineA
+    if (/(?<![\p{L}])(remate|golpe(?: de impacto)?)\s*[:：]/iu.test(block.text) && local.headlineB) p.headlineB = local.headlineB
     // Cero citas inventadas: sólo se conserva una cita que aparece literalmente en el copy.
     if (p.citeMain && !src.includes(norm(p.citeMain))) p.citeMain = ''
     if (p.citeSub && !src.includes(norm(p.citeSub))) p.citeSub = ''
