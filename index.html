@@ -1689,6 +1689,88 @@ const norm = s => (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀
 const esc = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const clone = o => JSON.parse(JSON.stringify(o));
 
+/* ============================================================
+   MODELO BILINGUE DE EJERCICIO
+   id      : identificador interno que referencian los planes (exId) -- no cambia nunca
+   slug    : id canonico legible e inmutable ("barbell_back_squat"); se calcula UNA vez desde en/es
+   es      : nombre principal que ve el alumno (name_es)
+   en      : nombre en ingles (name_en)
+   aliases : variantes frecuentes en ES/EN; solo se agregan, nunca se borran las del coach
+   ============================================================ */
+const exSlugBase = t => norm(t).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+/* grupos de sinonimos ES<->EN (los usa el buscador, el resolver de nombres y el mapper de sesiones viejas) */
+const EX_SINONIMOS = [
+  ['sentadilla hack', 'hack', 'hack squat', 'sentadilla hack en maquina', 'machine hack squat'],
+  ['prensa', 'prensa inclinada', 'prensa 45', 'prensa de piernas', 'leg press', '45 leg press', '45 degree leg press', 'prensa 45 grados'],
+  ['sillon de cuadriceps', 'extension de cuadriceps', 'extensiones de cuadriceps', 'extension de piernas', 'leg extension', 'leg extensions'],
+  ['curl femoral acostado', 'camilla femoral', 'curl femoral tumbado', 'lying leg curl', 'prone leg curl'],
+  ['elevaciones laterales', 'elevacion lateral', 'lateral raises', 'lateral raise', 'dumbbell lateral raise'],
+  ['empuje de cadera', 'hip thrust', 'hip thrusts', 'puente de gluteo con barra', 'hip thrust con barra', 'barbell hip thrust'],
+  ['sentadilla con barra tras nuca', 'sentadilla trasera', 'sentadilla con barra', 'back squat', 'barbell back squat', 'barbell squat'],
+  ['peso muerto', 'peso muerto convencional', 'deadlift', 'conventional deadlift', 'barbell deadlift'],
+  ['peso muerto rumano', 'romanian deadlift', 'rdl'],
+  ['press banca', 'press de banca', 'press plano', 'bench press', 'barbell bench press'],
+  ['dominadas', 'dominada', 'pull up', 'pull ups', 'pullup', 'pullups'],
+  ['remo con barra', 'barbell row', 'bent over row', 'bent over barbell row'],
+  ['press militar', 'press de hombros', 'overhead press', 'shoulder press', 'military press']
+];
+const exNormTxt = t => String(t == null ? '' : t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+/* completa slug/aliases en cada ejercicio (idempotente, aditivo: no toca id, es, en, video ni nada del coach) */
+function ensureExerciseModel(){
+  let cambios = 0;
+  const usados = {};
+  (S.exercises || []).forEach(e => { if(e && e.slug) usados[e.slug] = 1; });
+  (S.exercises || []).forEach(e => {
+    if(!e) return;
+    if(!e.slug){
+      let base = exSlugBase(e.en || e.es) || exSlugBase(e.id), sl = base, k = 2;
+      while(usados[sl]){ sl = base + '_' + k++; }
+      e.slug = sl; usados[sl] = 1; cambios++;
+    }
+    if(!Array.isArray(e.aliases)){ e.aliases = []; cambios++; }
+    const nombres = [exNormTxt(e.es), exNormTxt(e.en)].filter(Boolean);
+    const vistos = {}; e.aliases.forEach(a => { vistos[exNormTxt(a)] = 1; });
+    EX_SINONIMOS.forEach(g => {
+      if(!g.some(t => nombres.indexOf(t) >= 0)) return;
+      g.forEach(t => { if(nombres.indexOf(t) < 0 && !vistos[t]){ e.aliases.push(t); vistos[t] = 1; cambios++; } });
+    });
+  });
+  return cambios;
+}
+/* texto sobre el que busca el Builder: es + en + aliases + slug (+ extras), sin tildes ni mayusculas */
+function exHaystack(e, extra){
+  return norm([e.es, e.en, (e.aliases || []).join(' '), (e.slug || '').replace(/_/g, ' '), extra || ''].join(' '));
+}
+function exMatchQ(e, q, extra){
+  const n = norm(q);
+  if(!n) return true;
+  const h = exHaystack(e, extra);
+  return n.split(/\s+/).every(w => h.indexOf(w) >= 0);
+}
+/* ejercicio por texto exacto en cualquier idioma: es, en, alias o slug (null si no hay coincidencia) */
+function exPorNombre(texto){
+  const n = exNormTxt(texto);
+  if(!n) return null;
+  const ex = S.exercises || [];
+  return ex.find(e => exNormTxt(e.es) === n)
+      || ex.find(e => exNormTxt(e.en) === n)
+      || ex.find(e => (e.aliases || []).some(a => exNormTxt(a) === n))
+      || ex.find(e => e.slug && e.slug.replace(/_/g, ' ') === n)
+      || null;
+}
+/* mapper hacia atras: una linea guardada con nombre en ingles/alias se muestra en español, conservando
+   prefijo de estacion, series, repeticiones y cargas. Solo traduce con coincidencia exacta (nunca difusa). */
+function exLineaAEspanol(linea){
+  const t = String(linea == null ? '' : linea);
+  const m = t.match(/^(\s*(?:[A-Za-z]\d+\s*[.:)\-–—·]\s*|\d+\s*[.)]\s+)?)([^:|(]*?)(\s*(?:[:|(].*)?)$/);
+  if(!m || !m[2].trim()) return t;
+  const ex = exPorNombre(m[2]);
+  if(!ex || !ex.es) return t;
+  if(exNormTxt(ex.es) === exNormTxt(m[2])) return t;
+  const lead = m[2].match(/^\s*/)[0], trail = m[2].match(/\s*$/)[0];
+  return m[1] + lead + ex.es + trail + m[3];
+}
+
 function ytId(url){
   if(!url) return '';
   url = String(url).trim();
@@ -1830,6 +1912,7 @@ function load(){
     const nuevos = syncLibrary();
     if(nuevos) setTimeout(() => toast(nuevos + ' ejercicios oficiales incorporados a la biblioteca ✔'), 900);
   }
+  try{ ensureExerciseModel(); }catch(e){ console.warn('ensureExerciseModel', e); }
 }
 let saveT;
 function save(){
@@ -2771,7 +2854,7 @@ function renderAthletes(){
   $('#badgeAth').textContent = S.athletes.length;
   $('#sideActive').textContent = active() ? fullName(active()) : '— ninguno —';
   if(typeof pintarActivePill === 'function') pintarActivePill();
-  $('#dlEx').innerHTML = S.exercises.map(e => '<option value="' + esc(e.es) + '">').join('');
+  $('#dlEx').innerHTML = S.exercises.map(e => '<option value="' + esc(e.es) + '" label="' + esc([e.en].concat(e.aliases || []).filter(Boolean).join(' · ')) + '">').join('');
   actualizarDiscEyebrow();
 }
 /* directiva ("Contexto dinámico de disciplina en cabecera") -- el
@@ -2906,7 +2989,7 @@ function renderLibrary(){
     if(eq && e.equipo !== eq) return false;
     if(vf === 'si' && !e.videoId) return false;
     if(vf === 'no' && e.videoId) return false;
-    if(q && norm(e.es + ' ' + e.en + ' ' + e.grupo + ' ' + e.patron + ' ' + e.equipo).indexOf(q) < 0) return false;
+    if(q && !exMatchQ(e, q, e.grupo + ' ' + e.patron + ' ' + e.equipo)) return false;
     return true;
   }).sort((a,b) => a.es.localeCompare(b.es,'es'));
 
@@ -2997,6 +3080,7 @@ function saveEx(){
   };
   if(editExId) { Object.assign(getEx(editExId), data); toast('Ejercicio actualizado ✔'); }
   else { S.exercises.push(Object.assign({ id: uid('ex'), custom: true }, data)); toast('Ejercicio añadido a la biblioteca ✔'); }
+  ensureExerciseModel();
   save(); closeModal('mEx'); renderLibrary();
   if(S.ui.view === 'builder') renderBuilder();
 }
@@ -3937,7 +4021,7 @@ function abrirExploradorEjercicios(ta){
     const filtrados = (S.exercises||[]).filter(function(e){
       if(grupoActivo !== 'Todos' && e.grupo !== grupoActivo) return false;
       if(equipoActivo !== 'Todos' && e.equipo !== equipoActivo) return false;
-      if(q && norm(e.es || '').indexOf(q) < 0 && norm(e.en || '').indexOf(q) < 0) return false;
+      if(q && !exMatchQ(e, q)) return false;
       return true;
     }).sort(function(a,b){ return (a.es||'').localeCompare(b.es||''); }).slice(0, 80);
     if(!filtrados.length){ list.innerHTML = '<div class="sb-ex-empty">Sin resultados para este filtro.</div>'; return; }
@@ -4072,6 +4156,7 @@ function insertarEjercicioEnBloque(ta, cursor, exId, blockId){
       var ne = norm(e.es);
       if(ne.indexOf(n) === 0) starts.push(e);
       else if(ne.indexOf(n) > 0 && contains.length < 8) contains.push(e);
+      else if(exMatchQ(e, q) && contains.length < 8) contains.push(e);
     });
     return starts.concat(contains).slice(0, 8);
   }
@@ -5014,6 +5099,8 @@ function resolverExSportsBase(nombreCrudo, estricto){
   const n = normSports(nombre);
   const exacto = S.exercises.find(function(e){ return normSports(e.es) === n || normSports(e.en || '') === n; });
   if(exacto) return exacto;
+  const porAlias = exPorNombre(nombre);
+  if(porAlias) return porAlias;
   const ns = stemNombreEj(nombre);
   const porStem = S.exercises.find(function(e){ return stemNombreEj(e.es) === ns || (e.en && stemNombreEj(e.en) === ns); });
   if(porStem) return porStem;
@@ -37218,6 +37305,7 @@ function resolveByText(txt){
   const corto = limpiarNombreEx(name);
   const busca = n => S.exercises.find(e => norm(exDisplayName(e)) === norm(n)) ||
                      S.exercises.find(e => norm(e.es) === norm(n)) ||
+                     exPorNombre(n) ||
                      S.exercises.find(e => e.videoId && (matchNombre(e.es, n) || (e.en && matchNombre(e.en, n)))) ||
                      S.exercises.find(e => e.videoId && norm(e.es).indexOf(norm(n)) >= 0 && norm(n).length > 5);
   const hit = busca(name) || (corto !== name ? busca(corto) : null);
@@ -37619,7 +37707,7 @@ function buildProgramConfig(ath){
         /* [✕] del Builder: los clips que el coach descartó en ESTE bloque
            viajan al alumno para que la Pizarra CrossFit tampoco los muestre */
         if(bloqueCF && Array.isArray(b.videosDismissed) && b.videosDismissed.length) out.videosDismissed = b.videosDismissed.slice();
-        out.items = (b.items||[]).map(l => (!bloqueCF && b.sportsPizarra) ? canonEstacionSB(l) : l);
+        out.items = (b.items||[]).map(l => (!bloqueCF && b.sportsPizarra) ? exLineaAEspanol(canonEstacionSB(l)) : l);
         if(!bloqueCF && b.sportsPizarra){
           const conNombre = itemsConNombreSB(b.titulo, out.items);
           if(conNombre.length !== out.items.length){ out.items = conNombre; out.ocultaTituloTablero = true; }
@@ -43250,7 +43338,7 @@ body{overflow-x:hidden}
       if(eq && e.equipo !== eq) return false;
       if(vf === 'si' && !e.videoId) return false;
       if(vf === 'no' && e.videoId) return false;
-      if(q && norm(e.es + ' ' + e.en + ' ' + e.grupo + ' ' + e.patron + ' ' + e.equipo).indexOf(q) < 0) return false;
+      if(q && !exMatchQ(e, q, e.grupo + ' ' + e.patron + ' ' + e.equipo)) return false;
       /* filtros externos (disciplina y estado de video) */
       if(typeof window.libDiscFiltro === 'function' && !window.libDiscFiltro(e)) return false;
       if(typeof window.libVideoFiltro === 'function' && !window.libVideoFiltro(e)) return false;
@@ -47034,7 +47122,7 @@ body.man-mode .gs-fab{right:318px}
     return S.exercises.filter(e => {
       if(g && e.grupo !== g) return false;
       if(eq && e.equipo !== eq) return false;
-      if(q && norm(e.es + ' ' + (e.en||'') + ' ' + e.patron).indexOf(q) < 0) return false;
+      if(q && !exMatchQ(e, q, e.patron)) return false;
       if(soloSede && a && G().sedeOk && !G().sedeOk(a, e)) return false;
       return true;
     }).sort((x,y) => x.es.localeCompare(y.es, 'es'));
