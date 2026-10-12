@@ -67663,6 +67663,19 @@ textarea[data-bf="items"]{ font-family:'JetBrains Mono',ui-monospace,Menlo,monos
 .jp-tips-tabs button{ padding:4px 12px; border-radius:8px; border:0; background:transparent; color:#94A3B8; font-size:11.5px; font-weight:700; cursor:pointer; white-space:nowrap; transition:background .15s ease, color .15s ease; }
 .jp-tips-tabs button.on{ background:rgba(245,158,11,.16); color:#F59E0B; }
 .jp-tips-vacio{ color:#64748B; font-style:italic; }
+/* tips: encabezado de estacion, pautas con guia vertical, divisor entre estaciones y tarjeta de transicion */
+.jp-tips-prev .jp-tp-est{ display:block; margin:0; }
+.jp-tips-prev .jp-tp-est + .jp-tp-est{ margin-top:16px !important; padding-top:16px; border-top:1px solid rgba(38,38,38,.6); }
+.jp-tips-prev .jp-tp-h{ display:inline-flex; align-items:center; gap:8px; margin:0; padding:6px 12px; border-radius:8px; background:rgba(23,23,23,.9); border:1px solid #262626; color:#fff; font-size:14px; font-weight:700; letter-spacing:.025em; text-transform:uppercase; line-height:1.3; max-width:100%; }
+.jp-tips-prev .jp-tp-id{ flex:0 0 auto; padding:1px 7px; border-radius:6px; background:rgba(251,191,36,.14); border:1px solid rgba(251,191,36,.4); color:#fbbf24; font-size:12px; font-weight:800; }
+.jp-tips-prev .jp-tp-nm{ min-width:0; overflow-wrap:anywhere; }
+.jp-tips-prev .jp-tp-body{ display:block; position:relative; padding-left:12px; margin:8px 0 8px 4px; border-left:1px solid #262626; }
+.jp-tips-prev .jp-tp-body div{ margin-bottom:6px !important; color:#d4d4d4; font-size:12.5px; }
+.jp-tips-prev .jp-tp-body div:last-child{ margin-bottom:0 !important; }
+.jp-tips-prev .jp-tp-body b{ color:#fbbf24 !important; font-weight:600; }
+.jp-tips-prev .jp-tp-trans{ display:block; margin-top:12px; padding:10px; border-radius:8px; background:rgba(67,20,7,.25); border:1px solid rgba(249,115,22,.3); line-height:1.55; }
+.jp-tips-prev .jp-tp-tl{ color:#fb923c; font-weight:800; letter-spacing:.03em; }
+.jp-tips-prev .jp-tp-tt{ color:rgba(255,255,255,.88); }
 .jp-sug .jp-sug-in{ width:100%; box-sizing:border-box; margin-top:6px; padding:7px 10px; border-radius:8px; border:1px solid #475569; background:rgba(9,10,15,.7); color:#EDEFF2; font-size:12px; }
 .jp-sug .jp-sug-in:focus{ outline:none; border-color:#38BDF8; }
 .jp-sug-b.sel{ background:rgba(56,189,248,.16); border-color:#38BDF8; }
@@ -67812,12 +67825,45 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       return (/\b[A-F]\d\s*·\s*$/.test(antes) || /\b(?:ESTRATEGIA|REGLA|PAUTA|PLAN)\s+DE\s*$/i.test(antes)) ? m : c + '\n';
     });
     t = t.replace(/\s+(?=[A-F]\d\s*·\s*[A-ZÁÉÍÓÚÑ])/g, '\n');      /* "A1 · ... A1 · ..." en una sola linea: una etiqueta por renglon */
-    return t.split(/\n+/).map(function(l){
-      l = l.trim(); if(!l) return '';
+    var RX_PAUTA = /^(?:SET-?UP|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR|FOCO MOTOR|BIOMEC[ÁA]NICA|ACCI[OÓ]N|CLAVE|CUIDADO|FOCO|RESPIRACI[OÓ]N|TEMPO|T[EÉ]CNICA)\b/i;
+    function fila(l){
       var m = l.match(/^([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 &\/\-–·().,]{2,90}?):\s*(.*)$/);
-      var lbF = m ? (/TRANSICI[OÓ]N/i.test(m[1]) ? (/DESCANSO/i.test(m[1]) ? '⏱ TRANSICIÓN & DESCANSO' : '⏱ TRANSICIÓN') : m[1]) : '';
-      return m ? '<div><b>' + esc2(lbF) + ':</b> ' + esc2(m[2]) + '</div>' : '<div>' + esc2(l) + '</div>';
-    }).join('');
+      return m ? '<div><b>' + esc2(m[1]) + ':</b> ' + esc2(m[2]) + '</div>' : '<div>' + esc2(l) + '</div>';
+    }
+    var intro = [], estaciones = [], trans = [], cur = null, enTrans = false;
+    t.split(/\n+/).forEach(function(l){
+      l = l.trim(); if(!l) return;
+      var mt = l.match(/^([^:]{0,50}?TRANSICI[OÓ]N[^:]{0,40}):\s*(.*)$/i);
+      if(mt){
+        trans.push({ lb: /DESCANSO/i.test(mt[1]) ? 'TRANSICIÓN & DESCANSO' : 'TRANSICIÓN', tx: mt[2] });
+        enTrans = true; return;
+      }
+      var est = null, mh = l.match(/^([A-F]\d)\s*(?:[·.:)\-–—]\s*)(.*)$/);
+      if(mh){
+        var pp = mh[2].match(/^([^:]{1,90}?):\s*(.*)$/);
+        est = pp ? { id: mh[1], nombre: pp[1], extra: pp[2] } : { id: mh[1], nombre: mh[2], extra: '' };
+      } else {
+        var mn = l.match(/^([^:]{2,70}?):\s*$/);
+        if(mn && !RX_PAUTA.test(mn[1].trim()) && mn[1].trim().split(/\s+/).length <= 9) est = { id: '', nombre: mn[1], extra: '' };
+      }
+      if(est){
+        enTrans = false;
+        cur = { id: est.id, nombre: est.nombre.trim(), items: est.extra ? [fila(est.extra)] : [] };
+        estaciones.push(cur); return;
+      }
+      if(enTrans && trans.length){ trans[trans.length - 1].tx += ' ' + l; return; }
+      (cur ? cur.items : intro).push(fila(l));
+    });
+    var out = intro.join('');
+    estaciones.forEach(function(e){
+      out += '<section class="jp-tp-est"><h4 class="jp-tp-h">' + (e.id ? '<span class="jp-tp-id">' + esc2(e.id) + '</span>' : '') +
+             '<span class="jp-tp-nm">' + esc2(e.nombre) + '</span></h4>' +
+             (e.items.length ? '<section class="jp-tp-body">' + e.items.join('') + '</section>' : '') + '</section>';
+    });
+    trans.forEach(function(x){
+      out += '<aside class="jp-tp-trans"><span class="jp-tp-tl">⏱ ' + esc2(x.lb) + ':</span> <span class="jp-tp-tt">' + esc2(x.tx) + '</span></aside>';
+    });
+    return out;
   }
   /* los textarea de tips/objetivo crecen con el texto: sin lineas cortadas ni scroll interno */
   function autoCrecer(){
