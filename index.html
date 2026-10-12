@@ -14203,7 +14203,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var mR = txt.match(/\\bx\\s*(\\d+)/i) || txt.match(/(\\d+)\\s*(?:sets?|rounds?|rondas?)\\b/i);
       var mTot = txt.match(/emom\\s*(?:de\\s*)?(\\d+)/i);
       c.intervalo = inter;
-      c.rondas = mR ? parseInt(mR[1], 10)
+      var hayEvery = /\\bevery\\b/i.test(txt);
+      c.rondas = (!hayEvery && mTot) ? parseInt(mTot[1], 10) : mR ? parseInt(mR[1], 10)
         : Math.max(1, Math.round(((mTot ? parseInt(mTot[1], 10) : (minutosDe(block, lineas) || 12)) * 60) / inter));
     } else if(modo === 'fortime'){
       var mC = txt.match(/cap\\s*(?:de\\s*)?(\\d+)(?:\\s*:\\s*(\\d+))?/i);
@@ -14218,6 +14219,116 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return c;
   }
   window.jpWodTimerCfg = jpWodTimerCfg;
+  /* ============================================================
+     FORMATOS CONTINUOS (EMOM / AMRAP / FOR TIME / min continuo)
+     Una linea que trae varios "Min N:" (o "/" entre estaciones) NUNCA se parte con split por "/" ni por comas: se corta
+     solo donde empieza cada "Min N:" y cada estacion se muestra COMPLETA en su propio renglon. La pildora superior lleva
+     solo la estructura clave: [ EMOM 14 MIN | 4 INTERVALOS | REST PLANIFICADO ].
+     ============================================================ */
+  var RX_CONT_SB = /\\b(?:emom|e\\d+mom|amrap|for\\s*time|min(?:ute|uto)?s?\\s*continu\\w*)\\b/i;
+  var RX_MIN_LINEA_SB = /^\\s*[-\\u2022*]?\\s*min(?:ute|uto)?s?\\s*\\d+/i;
+  var RX_MARCA_MIN_SB = /(?:^|[\\s\\/;.,])(?=min(?:ute|uto)?s?\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?\\s*[:.\\-\\u2013\\u2014)])/gi;
+  function jpExplotarContinuo(lineas){
+    var out = [];
+    (lineas || []).forEach(function(l){
+      var t = String(l == null ? '' : l), cortes = [], m;
+      RX_MARCA_MIN_SB.lastIndex = 0;
+      while((m = RX_MARCA_MIN_SB.exec(t))){
+        var c = m.index + m[0].length;
+        if(c > 0 && cortes.indexOf(c) < 0) cortes.push(c);
+        if(m[0] === '') RX_MARCA_MIN_SB.lastIndex++;
+      }
+      var piezas = [], ult = 0;
+      cortes.forEach(function(c){ piezas.push(t.slice(ult, c)); ult = c; });
+      piezas.push(t.slice(ult));
+      piezas.forEach(function(p){
+        p.split(/\\.\\s+(?=repet\\w*\\b|repite\\b)/i).forEach(function(q){
+          q = q.replace(/[\\s\\/;,]+$/, '').trim();
+          if(q) out.push(q);
+        });
+      });
+    });
+    return out;
+  }
+  function jpContinuoInfo(block, lineas, relajado){
+    var ex = jpExplotarContinuo(lineas);
+    var minL = ex.filter(function(l){ return RX_MIN_LINEA_SB.test(l); });
+    /* relajado (Sports): un bloque de Metcon/cardio con AMRAP/EMOM/FOR TIME y SIN lineas de series "NxM" tambien es continuo aunque no traiga "Min N:" */
+    var contSinMin = !!relajado && /^(?:metcon|cardio|endurance)$/.test(String(block.category || '')) && !ex.some(function(l){ return /\\d+\\s*x\\s*\\d/i.test(l); });
+    if(minL.length < 2 && !contSinMin) return null;
+    var iCab = -1;
+    for(var i = 0; i < ex.length; i++){ if(RX_CONT_SB.test(ex[i]) && !RX_MIN_LINEA_SB.test(ex[i])){ iCab = i; break; } }
+    var cabTxt = iCab >= 0 ? ex[iCab] : '';
+    var cab = cabTxt + ' ' + (block.title || '') + ' ' + (block.boardFmt || '');
+    var mF = cab.match(RX_CONT_SB);
+    if(!mF) return null;
+    var fmt = mF[0].toUpperCase().replace(/\\s+/g, ' ');
+    if(/CONTINU/.test(fmt)) fmt = 'MIN CONTINUO';
+    var mins = 0, mM = cabTxt.match(/(?:emom|e\\d+mom|amrap)\\s*(?:de\\s*)?(\\d+)/i) || cabTxt.match(/(\\d+)\\s*(?:min\\w*|')/i);
+    if(mM && !/FOR TIME/.test(fmt)) mins = parseInt(mM[1], 10);
+    var cap = 0, mC = cab.match(/cap\\s*(?:de\\s*)?(\\d+)/i);
+    if(mC) cap = parseInt(mC[1], 10);
+    var maxMin = 0;
+    minL.forEach(function(l){ var n = parseInt((l.match(/\\d+/) || [0])[0], 10); if(n > maxMin) maxMin = n; });
+    var mI = cab.match(/(\\d+)\\s*intervalos?/i);
+    var inter = mI ? parseInt(mI[1], 10) : maxMin;
+    var rest = /descanso|\\brest\\b/i.test(ex.join(' '));
+    var detalle = ex.filter(function(l, k){ return k !== iCab; });
+    var resto = cabTxt.replace(RX_CONT_SB, ' ').replace(/\\d+\\s*(?:min\\w*|')/ig, ' ').replace(/\\(?\\s*\\d+\\s*intervalos?\\s*\\)?/ig, ' ').replace(/[:()\\-\\u2013\\u2014]/g, ' ').replace(/\\s+/g, ' ').trim();
+    if(resto.length >= 6) detalle.unshift(resto);
+    return { lineas: ex, fmt: fmt, mins: mins, cap: cap, inter: inter, rest: rest, detalle: detalle, etiqueta: fmt + (mins ? ' ' + mins + ' MIN' : '') };
+  }
+  function jpCfgContinuo(c){
+    if(!c) return null;
+    if(/^E?\\d*MOM$|EMOM/.test(c.fmt)) return { modo: 'emom', intervalo: 60, rondas: c.mins || c.inter || 12 };
+    if(/AMRAP/.test(c.fmt)) return { modo: 'amrap', total: c.mins || 12 };
+    if(/FOR TIME/.test(c.fmt)) return { modo: 'fortime', cap: c.cap || 0 };
+    return null;
+  }
+  function jpContinuoPillHtml(c){
+    var seg = ['<span class="jp-db-seg jp-db-vol">\\u23f1 ' + escSB(c.etiqueta) + '</span>'];
+    if(c.inter) seg.push('<span class="jp-db-seg jp-db-tempo">' + c.inter + ' INTERVALOS</span>');
+    if(c.rest) seg.push('<span class="jp-db-seg jp-db-rest">REST PLANIFICADO</span>');
+    return '<div class="jp-dose-bar jp-cont-pill"><span class="jp-db-br">[</span>' + seg.join('<span class="jp-db-sep">|</span>') + '<span class="jp-db-br">]</span></div>';
+  }
+  function jpContinuoListaHtml(c){
+    return '<ul class="jp-cont-lista">' + c.detalle.map(function(l){
+      var m = String(l).match(/^\\s*[-\\u2022*]?\\s*(min(?:ute|uto)?s?\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*[:.\\-\\u2013\\u2014)]*\\s*(.*)$/i);
+      return '<li>' + (m ? '<b>' + escSB(m[1].charAt(0).toUpperCase() + m[1].slice(1)) + ':</b> ' + escSB(m[2]) : escSB(l)) + '</li>';
+    }).join('\\n') + '</ul>';
+  }
+  /* Sports: pildora + detalle completo + boton de timer + tarjeta de registro (carga usada, score/rondas, notas) */
+  function jpContinuoSportsHtml(c, block, weekIdx, dayId){
+    var skey = weekIdx + '|' + dayId + '|' + block.id;
+    var nk = function(k){ return skey + '|__cont_' + k; };
+    var val = function(k){ return escSB((state.notes && state.notes[nk(k)]) || ''); };
+    var nivel = (state.notes && state.notes[nk('nivel')]) || '';
+    var tcfg = jpCfgContinuo(c);
+    return jpContinuoPillHtml(c) + jpContinuoListaHtml(c) +
+      (tcfg ? '<button type="button" class="jp-cf-wodtimer jp-cont-timer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">\\u23f1 INICIAR TIMER ' + escSB(c.etiqueta) + '</button>' : '') +
+      '<div class="jp-cont-reg"><div class="jp-cont-reg-lb">[ REGISTRO DEL WOD ]</div>' +
+        '<label class="jp-cont-f"><span>CARGA UTILIZADA</span><input type="text" class="jp-cont-in" data-nkey="' + nk('carga') + '" placeholder="Ej: KB 16 kg / 20 kg" value="' + val('carga') + '"></label>' +
+        '<label class="jp-cont-f"><span>SCORE / RONDAS</span><input type="text" class="jp-cont-in" data-nkey="' + nk('score') + '" placeholder="Ej: 4 rondas + 6 reps" value="' + val('score') + '"></label>' +
+        '<div class="jp-cont-rx"><button type="button" data-contrx="RX" data-nkey="' + nk('nivel') + '" class="' + (nivel === 'RX' ? 'on' : '') + '">COMPLETADO RX</button><button type="button" data-contrx="SCALED" data-nkey="' + nk('nivel') + '" class="' + (nivel === 'SCALED' ? 'on' : '') + '">SCALED</button></div>' +
+        '<label class="jp-cont-f"><span>NOTAS DEL WOD</span><input type="text" class="jp-cont-in" data-nkey="' + nk('notas') + '" placeholder="Sensaciones, escalados, pausas..." value="' + val('notas') + '"></label>' +
+      '</div>';
+  }
+  document.addEventListener('input', function(e){
+    var i = e.target && e.target.closest ? e.target.closest('.jp-cont-in') : null;
+    if(!i) return;
+    state.notes = state.notes || {};
+    state.notes[i.dataset.nkey] = i.value;
+    saveProgress();
+  });
+  document.addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-contrx]') : null;
+    if(!b) return;
+    var v = b.getAttribute('data-contrx'), k = b.dataset.nkey;
+    state.notes = state.notes || {};
+    state.notes[k] = state.notes[k] === v ? '' : v;
+    Array.prototype.forEach.call(b.parentNode.querySelectorAll('[data-contrx]'), function(x){ x.classList.toggle('on', x.getAttribute('data-contrx') === state.notes[k]); });
+    saveProgress();
+  });
   function esMetcon(block, weekIdx){
     /* además del título/categoría estáticos, se testea la etiqueta YA
        resuelta para la semana actual -- así un bloque cuya categoría
@@ -14337,7 +14448,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        "Run" + "160-200m"): antes el regex arrancaba en mitad del rango y
        partía "Run 160-" de un badge "200m". Exige un espacio antes del número. */
     const m2 = l.match(/^(.*?)\\s+((?:\\d[\\d.,]*(?:\\s*[-–\\/]\\s*\\d[\\d.,]*)*)\\s*(?:kg|kgs|lb|lbs|cm|cms|m|km|kms|mts?|cal|cals)\\b.*)$/i);
-    if(m2 && m2[1].trim()) return { nm: m2[1].trim(), val: m2[2].trim() };
+    if(m2 && m2[1].trim() && !/\\s\\/\\s|\\bmin(?:ute|uto)?s?\\s*\\d+\\s*[:.\\-]/i.test(m2[2])) return { nm: m2[1].trim(), val: m2[2].trim() };
     return { nm: l, val: '' };
   }
   /* directiva ("normalización lingüística del motor de 1RM") --
@@ -15007,9 +15118,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       return w;
     }).join(' ');
   }
-  function jpCfClips(lineas, descartados){
+  function jpCfClips(lineas, descartados, bloque){
     const vistos = new Set();
     const out = [];
+    const propiosIds = (bloque && Array.isArray(bloque.videosBloqueIds)) ? bloque.videosBloqueIds : null;
+    const ajenosIds = {};
+    if(propiosIds){
+      try{
+        const diaC = typeof getCurrentDay === 'function' ? getCurrentDay() : null;
+        ((diaC && diaC.blocks) || []).forEach(function(b2){
+          if(!b2 || b2.id === bloque.id || !Array.isArray(b2.videosBloqueIds)) return;
+          b2.videosBloqueIds.forEach(function(y){ ajenosIds[y] = 1; });
+        });
+      }catch(errAj){}
+    }
     const dis = Array.isArray(descartados) ? descartados : [];
     lineas.forEach(function(raw){
       const l = String(raw || '').trim();
@@ -15041,6 +15163,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            omitir el clip por completo -- ver jpVideoFallbackBenchmark(). */
         const ytid = buscarVideo(seg, true) || jpVideoFallbackBenchmark(seg);
         if(!ytid || vistos.has(ytid)) return;
+        if(propiosIds && ajenosIds[ytid] && propiosIds.indexOf(ytid) < 0) return;      /* el video de otro bloque nunca se arrastra a este */
         vistos.add(ytid);
         out.push({ nombre: jpCfClipNombre(seg) || seg, ytid: ytid });
       });
@@ -15111,6 +15234,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const lineas = metaTxt.lineas;
     const f = formatoEstructurado(block) || formatoDe(block, lineas, weekIdx);
     const min = minutosDe(block, lineas);
+    /* CrossFit: solo cuando una linea larga trae varias estaciones juntas (el caso que se amputaba); el formato multilinea ya tiene su pizarra propia */
+    const cont0 = lineas.length ? jpContinuoInfo(block, lineas) : null;
+    const cont = (cont0 && cont0.lineas.length > lineas.length) ? cont0 : null;
     const skey = weekIdx + '|' + dayId + '|' + block.id;
     const guardado = state.scores[skey] || '';
     const ph = (block.scoreType && CF_SCORE_PH[block.scoreType]) ||
@@ -15137,7 +15263,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        de notas de carga/sensaciones, al pie del bloque -- reutiliza
        state.notes (mismo store que las notas de sesión) con una key
        propia (sufijo __accnotas) para no pisar ningún otro uso. */
-    const notasVisible = block.category === 'accessory';
+    const notasVisible = block.category === 'accessory' || (!!CF_SCORE_FASES[block.category] && block.scoreType !== 'ninguno');
     const notaKey = skey + '|__accnotas';
     const notaGuardada = (state.notes && state.notes[notaKey]) || '';
 
@@ -15145,7 +15271,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        todavía no tiene prescripción propia (lineas vacío por semana > 1),
        nunca se deja el tablero con las filas en blanco sin explicación:
        un mensaje claro en vez del WOD de otra semana. */
-    const filas = lineas.length ? (jpCfIntervaloCtx = lineas.some(function(l){ return /^[\\s*#⚡]*(?:every|e\\d*mom|emom)\\b/i.test(String(l)); }), jpCfRenderLineas(lineas, dayId))
+    const filas = cont ? (jpCfIntervaloCtx = true, jpContinuoPillHtml(cont) + jpContinuoListaHtml(cont)) : lineas.length ? (jpCfIntervaloCtx = lineas.some(function(l){ return /^[\\s*#⚡]*(?:every|e\\d*mom|emom)\\b/i.test(String(l)); }), jpCfRenderLineas(lineas, dayId))
       : (weekIdx > 0 ? '<div class="jp-cf-row jp-cf-badge">Todavía no se cargó la prescripción de esta semana. Consultá con tu coach.</div>' : '');
     /* registro de series: un casillero IDENTIFICADO por ejercicio (A1 / A2 / triserie), nunca uno generico */
     let gridHtml = '';
@@ -15160,7 +15286,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             renderSetRowsNativeSB(weekIdx, dayId, block.id, 'cf' + k, ex.sets, ex.unidad || 'reps', true, null, '', ex.nombre + ' ' + String(block.title || ''));
         }).join('') + '</div>';
     })();
-    const clips = jpCfClips(lineas, block.videosDismissed);
+    const clips = jpCfClips(lineas, block.videosDismissed, block);
 
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const html =
@@ -15185,8 +15311,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
              fila de dos columnas iguales (grid 1fr 1fr, gap 8px) en vez de
              apilarse como dos rectángulos masivos; con un solo botón ocupa
              el ancho completo. */
-          var tcfg = lineas.length ? jpWodTimerCfg(block, lineas, f) : null;
-          var btnWod = tcfg ? '<button type="button" class="jp-cf-wodtimer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">&#9654; INICIAR TIMER DE ESTE WOD</button>' : '';
+          var tcfg = lineas.length ? (jpWodTimerCfg(block, cont ? cont.lineas : lineas, f) || (cont ? jpCfgContinuo(cont) : null)) : null;
+          var btnWod = tcfg ? '<button type="button" class="jp-cf-wodtimer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">' + (cont ? '&#9201; INICIAR TIMER ' + escSB(cont.etiqueta) : '&#9654; INICIAR TIMER DE ESTE WOD') + '</button>' : '';
           var btnRest = '';
           if(lineas.length && (block.category === 'strength' || block.category === 'accessory') && filas.indexOf('jp-cf-rest') < 0){
             var segQ = 0;
@@ -15227,7 +15353,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (notasVisible ?
           '<div class="jp-cf-notas">' +
             '<label>[ NOTAS ]</label>' +
-            '<input class="jp-cf-notas-in" data-nkey="' + notaKey + '" placeholder="Ej: Usé KB de 24kg y banda roja" value="' + String(notaGuardada).replace(/"/g, '&quot;') + '" />' +
+            '<input class="jp-cf-notas-in" data-nkey="' + notaKey + '" placeholder="' + (block.category === 'accessory' ? 'Ej: Usé KB de 24kg y banda roja' : 'Notas del WOD (carga usada, escalados, sensaciones)') + '" value="' + String(notaGuardada).replace(/"/g, '&quot;') + '" />' +
           '</div>' : '') +
         /* videos en miniatura compacta y, al final, el acordeon de estrategia */
         (clips.length ? '<div class="jp-cf-vids"><div class="jp-sb-vid-title">&#127916; VIDEOS T&Eacute;CNICOS</div>' + jpCfClipsRowHtml(clips) + '</div>' : '') +
@@ -16472,6 +16598,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const entries = parsearPizarraSB(lineas, { titulo: block.title });
     if(!entries.length) return;
     const esCalentamiento = esBloqueCalentamientoSB(block);
+    const contS = esCalentamiento ? null : jpContinuoInfo(block, lineas, true);
     /* directiva ("Jerarquía Cromática Coach JP"): el PRIMER ejercicio con
        dosis real de cada bloque es el "ancla" (el movimiento pesado
        principal) -- se destaca en amarillo oro (ver .jp-sb-ex-ancla en
@@ -16479,9 +16606,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        un bloque de calentamiento (ahí no hay ancla, es activación). */
     let anclaUsada = false;
     let nIndiv = 0;                  /* badge [ E1 ] [ E2 ]... de los ejercicios individuales del bloque */
-    let filas = '';
+    let filas = contS ? jpContinuoSportsHtml(contS, block, weekIdx, dayId) : '';
     let duracionEstimada = 0;
-    entries.forEach(function(entry, idx){
+    (contS ? [] : entries).forEach(function(entry, idx){
       if(entry.tipo === 'duracion'){
         if(!duracionEstimada) duracionEstimada = entry.minutos;
         return;
@@ -36399,6 +36526,20 @@ body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform 
 .jp-ronda-card{ margin:10px 0 0; padding:8px 10px 6px; border-radius:12px; border:1px solid rgba(56,189,248,.28); background:rgba(15,23,42,.55); }
 .jp-ronda-h{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.7rem; letter-spacing:.12em; color:#F59E0B; margin-bottom:6px; }
 .jp-ronda-sub{ display:flex !important; align-items:center; gap:8px; border:0 !important; padding:0 !important; margin:0 0 6px !important; background:none !important; }
+.jp-cont-pill{ margin:6px 0 8px; }
+.jp-cont-lista{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
+.jp-cont-lista li{ position:relative; padding:8px 10px 8px 24px; border-radius:8px; background:rgba(15,23,42,.55); border:1px solid rgba(148,163,184,.16); font-size:.85rem; line-height:1.4; color:#e2e8f0; overflow-wrap:anywhere; }
+.jp-cont-lista li::before{ content:'\\2022'; position:absolute; left:10px; top:8px; color:#38BDF8; font-weight:800; }
+.jp-cont-lista li b{ color:#fbbf24; font-family:'Chakra Petch',sans-serif; letter-spacing:.03em; }
+.jp-cont-timer{ display:block; width:100%; margin:4px 0 10px; padding:12px 10px; border-radius:10px; cursor:pointer; background:rgba(255,107,0,.12); border:1px solid rgba(255,107,0,.55); color:#FF6B00; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.8rem; letter-spacing:.06em; }
+.jp-cont-timer:active{ background:rgba(255,107,0,.24); }
+.jp-cont-reg{ display:flex; flex-direction:column; gap:8px; margin:6px 0 4px; padding:10px; border-radius:12px; border:1px solid rgba(56,189,248,.28); background:rgba(15,23,42,.55); }
+.jp-cont-reg-lb{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.7rem; letter-spacing:.12em; color:#F59E0B; }
+.jp-cont-f{ display:flex; flex-direction:column; gap:3px; font-size:.62rem; font-weight:700; letter-spacing:.08em; color:#94A3B8; }
+.jp-cont-f input{ width:100%; box-sizing:border-box; padding:9px 10px; border-radius:8px; border:1px solid rgba(148,163,184,.25); background:rgba(2,6,23,.6); color:#f8fafc; font-size:.9rem; }
+.jp-cont-rx{ display:flex; gap:8px; }
+.jp-cont-rx button{ flex:1; padding:9px 6px; border-radius:8px; cursor:pointer; background:transparent; border:1px solid rgba(148,163,184,.3); color:#94A3B8; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.7rem; letter-spacing:.05em; }
+.jp-cont-rx button.on{ background:rgba(56,189,248,.16); border-color:#38BDF8; color:#38BDF8; }
 .jp-ronda-sub{ flex-wrap:wrap !important; }
 .jp-ronda-subh{ flex:0 0 100%; display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; min-width:0; margin-bottom:2px; }
 .jp-ronda-nm{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; white-space:normal; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.8rem; letter-spacing:.04em; text-transform:uppercase; color:#f8fafc; }
@@ -36991,13 +37132,13 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
         var g = leer(KCAR)[key] || {};
         var det = document.createElement('details'); det.className = 'jp-icr';
         det.innerHTML = '<summary>[ CARGA / RONDAS ]<span>opcional</span></summary><div class="jp-ic-grid">' +
-          '<label>CARGA (kg)<input type="text" inputmode="decimal" data-k="kg" value="' + esc(g.kg || '') + '" placeholder="\\u2014"></label>' +
+          '<label>CARGA UTILIZADA<input type="text" data-k="kg" value="' + esc(g.kg || '') + '" placeholder="\\u2014"></label>' +
           '<label>RONDAS COMPLETADAS<input type="text" inputmode="numeric" data-k="rondas" value="' + esc(g.rondas || '') + '" placeholder="\\u2014"></label></div>';
         var ref = bd.querySelector('.jp-er') || bd.querySelector('.wod-score') || null;
         if(ref) ref.parentNode.insertBefore(det, ref); else bd.appendChild(det);
         det.addEventListener('input', function(e){
           var t = e.target; if(!t.matches('input[data-k]')) return;
-          t.value = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+          if(t.getAttribute('data-k') !== 'kg') t.value = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
           var o = leer(KCAR), v = o[key] || {}; v[t.getAttribute('data-k')] = t.value; o[key] = v; guardar(KCAR, o);
         });
       })(bds[i]);
@@ -37847,6 +37988,7 @@ function buildProgramConfig(ath){
            sin cambios de comportamiento. */
         const videosBloqueVistos = {};
         const videosBloque = [];
+        const videosBloqueCF = [];
         if(!bloqueCF && b.sportsPizarra){
           resolverVideosBloqueSports(b).forEach(function(d){
             addVideo(exDisplayName(d.ex), d.ex); addVideo(d.nombre, d.ex);
@@ -37862,6 +38004,7 @@ function buildProgramConfig(ath){
             if(r.ex){
               addVideo(exDisplayName(r.ex), r.ex); addVideo(r.name, r.ex);
               if(bloqueCF && r.ex.videoId) vaultAuto.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, videoId: r.ex.videoId });
+              if(bloqueCF){ const vidCF = resolverVideoId(r.ex); if(vidCF && videosBloqueCF.indexOf(vidCF) < 0) videosBloqueCF.push(vidCF); }
               if(!bloqueCF){
                 const vid = resolverVideoId(r.ex);
                 if(vid && !videosBloqueVistos[vid]){
@@ -37872,6 +38015,7 @@ function buildProgramConfig(ath){
             }
           });
         }
+        if(bloqueCF) out.videosBloqueIds = videosBloqueCF.concat((Array.isArray(b.videosManual) ? b.videosManual : []).map(function(v){ const e2 = getEx(v.exId); return e2 ? resolverVideoId(e2) : (v.ytid || ''); }).filter(Boolean));
         if(!bloqueCF) out.videosBloque = videosBloque;      /* siempre, aunque este vacio: el alumno nunca completa con busquedas aproximadas */
         /* [✕] del Builder: los clips que el coach descartó en ESTE bloque
            viajan al alumno para que la Pizarra CrossFit tampoco los muestre */
