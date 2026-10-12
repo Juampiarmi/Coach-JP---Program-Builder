@@ -4466,7 +4466,7 @@ function parsearImportacion(texto, sports){
   const matchDia = hayEstrictos ? impMatchDiaEstricto : impMatchDia;
   const cerrar = () => { if(sports && bloque) impCerrarBloqueSports(bloque); };
   const nuevoDia = (num, titulo) => { cerrar(); dia = { num: num, titulo: titulo || '', foco: '', bloques: [] }; dias.push(dia); bloque = null; enFoco = false; campoAct = ''; esperaTituloDia = false; esperaFoco = false; return dia; };
-  const arr = String(texto || '').split(/\r?\n/);
+  const arr = String(texto || '').split(/\r?\n/).map(l => sports ? canonEstacionSB(l) : l);      /* "A1:" "A1 -" "A1 Nombre" -> "A1. Nombre": el biset se agrupa igual */
   arr.forEach((raw, i) => {
     const l = raw.replace(/\s+$/, '');
     const t = l.trim();
@@ -4912,8 +4912,25 @@ function aliasEjSB(nombre){
   return '';
 }
 /* "A1." / "B2)" / "C:" delante del nombre (la letra sola exige "." ")" ":" para no comerse "T-bar row" ni "V-ups") */
-const RX_PREFIJO_ORDINAL_SB = /^(?:[A-Z]\d+[.:\-)]|[A-Z][.:)])\s*/i;
-function limpiarPrefijoOrdinalSB(t){ return String(t || '').replace(RX_PREFIJO_ORDINAL_SB, '').trim(); }
+/* letra+numero con cualquier separador ("A1." "A1:" "A1 -" "A1 ·" "A1 Nombre"), numero solo ("1." "2)") o letra sola ("A." "B)"); "T-bar row", "T2B" y "1.5 kg" quedan intactos */
+const RX_PREFIJO_ORDINAL_SB = /^(?:[A-Za-z]\d+\s*[.:)\-–—·]+\s*|[A-Za-z]\d+\s+(?=\S)|\d+\s*[.):]\s+|[A-Za-z]\s*[.:)]\s+|[A-Za-z]\d*[.)]\s*)/;
+function limpiarPrefijoOrdinalSB(t){
+  let x = String(t || '').replace(/^[\s•*]+/, '').trim(), guard = 0;
+  while(RX_PREFIJO_ORDINAL_SB.test(x) && guard < 4){ x = x.replace(RX_PREFIJO_ORDINAL_SB, '').trim(); guard++; }
+  return x;
+}
+/* nombre listo para consultar la biblioteca: sin identificador de estacion y sin dosis ("Sentadilla Hack : 3x10" -> "Sentadilla Hack") */
+function cleanExerciseNameForMatching(rawText){
+  if(!rawText) return '';
+  return limpiarPrefijoOrdinalSB(rawText).split(/\s*[:|]\s*/)[0].trim();
+}
+window.cleanExerciseNameForMatching = cleanExerciseNameForMatching;
+/* "A1: Nombre", "A1 - Nombre", "A1 Nombre" -> "A1. Nombre" (forma canonica que lee el parser del alumno) */
+function canonEstacionSB(l){
+  const t = String(l == null ? '' : l);
+  const m = t.match(/^(\s*[A-Fa-f]\d+)\s*(?:[:\-–—·]\s*|\s+(?=[A-Za-zÁÉÍÓÚÑáéíóúñ]))(\S.*)$/);
+  return m ? m[1].trim() + '. ' + m[2] : t;
+}
 /* titulo canonico sin complementos de equipo / pausas ("Deficit Push-ups sobre mancuernas" -> "Deficit Push-ups",
    "Scapular Pull-ups con pausa isometrica arriba" -> "Scapular Pull-ups"); del mas largo al mas corto */
 function variantesCanonicasSB(nombre){
@@ -5254,7 +5271,7 @@ function nombreEjercicioSB(linea){
   if(!t || RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return '';
   t = t.replace(/^[\s\-•*]+/, '');
   t = t.replace(/^(?:\[[^\]]*\]\s*)+/, '').trim();            /* corchetes/prefijos de categoría */
-  t = t.replace(/^(?:[A-Za-z]\d+[.)]\s*|\d+[.)]\s+)/, '').replace(/^[\s\-•*]+/, '');
+  t = limpiarPrefijoOrdinalSB(t).replace(/^[\s\-•*]+/, '');
   t = t.split(/\s*[:|]\s*|\s+[-–—]\s+/)[0];
   t = t.replace(/\s*(?:\d+\s*)?[x×]\s*\d[\w.\/-]*.*$/i, '');
   /* corta en la primera métrica pegada al nombre ("Press banca 4 Sets", "Remo Rest 90") */
@@ -15177,7 +15194,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      reportado ("A3. A2. PRESS PALLOF" con una pastilla "C" montada
      encima). Se limpia CUALQUIER prefijo de estación sobrante (uno o
      varios, "A1.", "B2)", etc.) del nombre antes de asignarlo. */
-  var RX_PREFIJO_ESTACION_SB = /^[A-Za-z]\\d*[.)]\\s*/;
+  var RX_PREFIJO_ESTACION_SB = /^(?:[A-Za-z]\\d+\\s*[.:)\\-\\u2013\\u2014\\u00b7]+\\s*|[A-Za-z]\\d+\\s+(?=\\S)|[A-Za-z]\\d*[.)]\\s*|[A-Za-z]\\s*:\\s+)/;
   function limpiarPrefijoEstacionSB(nombre){
     var t = String(nombre || '').trim();
     var guard = 0;
@@ -37191,7 +37208,7 @@ function candidatosTexto(txt, sinY){
   let t = String(txt || '').replace(/^[\s\-•*]+/, '');
   if(RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return [];      /* cabeceras/metadatos/días: nunca ejercicios */
   if(esLineaProsaEj(t)) return [];      /* instrucción/tip largo sin dosis: no es un ejercicio */
-  t = t.replace(CAND_PREFIJO_ESTACION, '');
+  t = limpiarPrefijoOrdinalSB(t).replace(CAND_PREFIJO_ESTACION, '');
   t = t.replace(CAND_PREFIJO_ORDEN, '');
   /* directiva ("Lista Negra de Palabras de Estructura"): suma Super Sets/
      Warm Up/Buy-in/Cash-out/Then/Sets sueltos a la lista de líneas que
@@ -37554,7 +37571,7 @@ function buildProgramConfig(ath){
         /* [✕] del Builder: los clips que el coach descartó en ESTE bloque
            viajan al alumno para que la Pizarra CrossFit tampoco los muestre */
         if(bloqueCF && Array.isArray(b.videosDismissed) && b.videosDismissed.length) out.videosDismissed = b.videosDismissed.slice();
-        out.items = (b.items||[]).slice();
+        out.items = (b.items||[]).map(l => (!bloqueCF && b.sportsPizarra) ? canonEstacionSB(l) : l);
         if(!bloqueCF && b.sportsPizarra){
           const conNombre = itemsConNombreSB(b.titulo, out.items);
           if(conNombre.length !== out.items.length){ out.items = conNombre; out.ocultaTituloTablero = true; }
