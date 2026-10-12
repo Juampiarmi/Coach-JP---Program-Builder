@@ -5603,27 +5603,86 @@ function nrmChip(s){
    idéntico, un chip visible en el Builder podía no viajar al alumno (o
    viceversa) por una divergencia de normalización entre dos funciones
    que en los hechos hacían "lo mismo" con datos ligeramente distintos. */
+/* directiva ("Prohibido truncar o resetear videos ya vinculados"): un vinculo manual se guarda con el nombre del ejercicio,
+   el id de la biblioteca Y una copia del videoId (ytid). Si el coach corrige el texto ("Sentadila" -> "Sentadilla", un
+   adjetivo, una nota), el vinculo huerfano se re-ancla al ejercicio editado que quedo "Sin video vinculado" -- jamas se
+   vacia, y los que ya estan en verde no se tocan. Si el ejercicio de la biblioteca desaparece, la copia ytid sostiene el video. */
+function tokensVidSB(s){ return nrmChip(s).split(' ').filter(function(w){ return w.length > 2; }); }
+function simNombreVidSB(a, c){
+  const A = tokensVidSB(a), B = tokensVidSB(c);
+  if(!A.length || !B.length) return 0;
+  let com = 0;
+  A.forEach(function(x){ if(B.some(function(y){ return y === x || (x.length >= 4 && y.length >= 4 && (x.indexOf(y) === 0 || y.indexOf(x) === 0)); })) com++; });
+  return (2 * com) / (A.length + B.length);
+}
+function exDeVinculoSB(v){
+  if(!v) return null;
+  const ex = getEx(v.exId);
+  if(ex) return ex;
+  return v.ytid ? { id: v.exId || '', es: v.nombre || '', en: '', videoId: v.ytid, video: 'https://youtu.be/' + v.ytid, custom: true } : null;
+}
+function reanclarVideosBloqueSB(b, detectados){
+  const man = b.videosManual || [];
+  let cambio = false;
+  man.forEach(function(v){
+    const ex = getEx(v.exId);
+    if(ex && ex.videoId && v.ytid !== ex.videoId){ v.ytid = ex.videoId; cambio = true; }
+  });
+  if(man.length){
+    const claves = {}, manKeys = {};
+    detectados.forEach(function(d){ claves[nrmChip(d.nombre)] = 1; });
+    man.forEach(function(v){ manKeys[nrmChip(v.nombre)] = 1; });
+    const libres = detectados.filter(function(d){
+      const k = nrmChip(d.nombre);
+      return k && !d.ex && !manKeys[k] && !(b.videoOverrides && b.videoOverrides[k]);
+    });
+    const usados = {};
+    man.forEach(function(v){
+      const k = nrmChip(v.nombre);
+      if(!k || claves[k]) return;
+      let mejor = null, pts = 0;
+      libres.forEach(function(d){
+        const kk = nrmChip(d.nombre);
+        if(usados[kk]) return;
+        const p = simNombreVidSB(v.nombre, d.nombre);
+        if(p > pts){ pts = p; mejor = d; }
+      });
+      if(!mejor || pts < 0.4) return;
+      const kn = nrmChip(mejor.nombre);
+      usados[kn] = 1;
+      b.videoOverrides = b.videoOverrides || {};
+      b.videoOverrides[kn] = v.exId;
+      delete b.videoOverrides[k];
+      v.nombre = mejor.nombre;
+      cambio = true;
+    });
+  }
+  if(cambio){ try{ save(); }catch(e){} }
+  return cambio;
+}
 function resolverVideosBloqueSports(b){
   const vistos = {};
   const out = [];
   const dismissed = b.videosDismissed || [];
   const warm = esBloqueEntradaCalorSB(b);
   const texto = (warm ? (b.items || []) : itemsConNombreSB(b.titulo, b.items || [])).join('\n');
-  detectarEjerciciosSports(texto, { warmup: warm }).forEach(function(d){
+  const detectadosR = detectarEjerciciosSports(texto, { warmup: warm });
+  reanclarVideosBloqueSB(b, detectadosR);
+  detectadosR.forEach(function(d){
     const k = nrmChip(d.nombre);
     if(!k || vistos[k] || dismissed.indexOf(k) >= 0 || dismissed.indexOf(stemNombreEj(d.nombre)) >= 0) return;
     vistos[k] = 1;
     const manual = (b.videosManual || []).find(function(v){ return nrmChip(v.nombre) === k; });
     const esOverride = !!(b.videoOverrides && b.videoOverrides[k]);
-    const exId = manual ? manual.exId : (esOverride ? b.videoOverrides[k] : '');
-    const ex = exId ? getEx(exId) : d.ex;
+    let ex = manual ? exDeVinculoSB(manual) : (esOverride ? getEx(b.videoOverrides[k]) : null);
+    if(!ex) ex = d.ex;
     if(ex) out.push({ nombre: d.nombre, ex: ex });
   });
   (b.videosManual || []).forEach(function(v){
     const k = nrmChip(v.nombre);
     if(!k || vistos[k] || dismissed.indexOf(k) >= 0) return;
     vistos[k] = 1;
-    const ex = getEx(v.exId);
+    const ex = exDeVinculoSB(v);
     if(ex) out.push({ nombre: v.nombre, ex: ex });
   });
   return out;
@@ -15300,11 +15359,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      casilleros). "sets?/series?/rondas?" con su conector x/de opcional
      cubren la prosa humana real sin dejar de matchear "4x6-8" (la
      primera alternativa sigue siendo "x" pelado). */
-  var RX_DOSIS_SB = /(\\d+)\\s*(?:x|×|sets?\\s*(?:x|de|:)?|series?\\s*(?:x|de|:)?|rondas?\\s*(?:x|de|:)?)\\s*(\\d+(?:\\s*-\\s*\\d+)*)/i;
+  var RX_DOSIS_SB = /(\\d+)\\s*(?:x|×|sets?\\s*(?:x|de|:)?|series?\\s*(?:x|de|:)?|rondas?\\s*(?:x|de|:)?)\\s*(\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)*)/i;
+  /* volumen escrito sin patron "NxM": "8-10 reps", "10 repeticiones", "3 series" */
+  var RX_REPS_SUELTAS_SB = /(\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?)\\s*(?:reps?|repeticiones)\\b/i;
+  var RX_SETS_SUELTOS_SB = /(\\d+)\\s*(?:sets?|series?|rondas?)\\b/i;
+  /* donde empieza la prescripcion dentro de "Nombre 8-10 reps | Tempo 2110 | Rest 15s" */
+  var RX_CORTE_DOSIS_SB = /\\s*(?:\\||\\b(?:tempo|rir|rest|descanso)\\b|\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b)/i;
   function parsearDosisSB(txt){
     var t = String(txt || ''), out = {}, m;
     if((m = t.match(RX_DOSIS_SB))){
-      out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+/g, '');
+      out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+/g, '').replace(/[\\u2013\\u2014]/g, '-');
       /* directiva ("Reconstrucción total del tracker de series") --
          detecta la unidad de la magnitud secundaria mirando SÓLO el
          tramo de texto justo después del rango de reps (hasta el
@@ -15318,6 +15382,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var tras = pipeIdx >= 0 ? t.slice(tras0, pipeIdx) : t.slice(tras0, tras0 + 12);
       out.unidad = detectarUnidadSecundariaSB(tras);
     }
+    /* el volumen NUNCA se pierde: sin patron "NxM", se toman las reps ("8-10 reps") y los sets ("3 series") por separado */
+    if(!out.reps && (m = t.match(RX_REPS_SUELTAS_SB))){ out.reps = m[1].replace(/\\s+/g, '').replace(/[\\u2013\\u2014]/g, '-'); out.unidad = 'reps'; }
+    if(!out.sets && (m = t.match(RX_SETS_SUELTOS_SB))) out.sets = parseInt(m[1], 10);
     if((m = t.match(/tempo\\s*(\\d{3,4})/i))) out.tempo = m[1];
     /* directiva ("Impresión completa de dosis en el header") -- antes
        sólo capturaba UN dígito ("RIR 2-1" perdía el "-1"): el header del
@@ -15335,10 +15402,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        el ÚLTIMO número mencionado ahí como el descanso real del
        temporizador -- es siempre el que separa una serie/ronda completa
        de la siguiente, sin importar cuántas aclaraciones vengan antes. */
-    var restM = t.match(/rest\\s*([^|]+)/i);
+    var restM = t.match(/(?:rest|descanso)\\s*(?:de\\s*)?([^|;)]+)/i);
     if(restM){
-      var restNums = restM[1].match(/\\d+/g);
-      if(restNums) out.restSeconds = parseInt(restNums[restNums.length - 1], 10);
+      var clausulaRest = restM[1].replace(/\\b(?:rir|tempo)\\b.*$/i, '');
+      var restMin = clausulaRest.match(/(\\d+)\\s*:\\s*(\\d{2})/);
+      var restNums = clausulaRest.match(/\\d+/g);
+      if(restMin) out.restSeconds = parseInt(restMin[1], 10) * 60 + parseInt(restMin[2], 10);
+      else if(restNums) out.restSeconds = parseInt(restNums[restNums.length - 1], 10);
+    } else {
+      var restPre = t.match(/(\\d+)\\s*(?:"|\\u2033|\\u201d|seg(?:undos)?\\b|s\\b)\\s*(?:de\\s+)?(?:rest|descanso)\\b/i);
+      if(restPre) out.restSeconds = parseInt(restPre[1], 10);
     }
     /* especificación secundaria ("por pierna"/"por lado"/"c/u"/"cada
        lado"/"isométrico"): nunca debe romper el reconocimiento de la
@@ -15367,9 +15440,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        "ejercicio nuevo" fantasma. Se suma "isométrico" a las
        especificaciones secundarias en prosa que nunca son parte del
        nombre. */
-    var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|de|:)?|series?\\s*(?:x|de|:)?|rondas?\\s*(?:x|de|:)?)\\s*\\d+(?:\\s*-\\s*\\d+)*(?:\\s*reps?\\b)?/gi, '')
+    var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|de|:)?|series?\\s*(?:x|de|:)?|rondas?\\s*(?:x|de|:)?)\\s*\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)*(?:\\s*reps?\\b)?/gi, '')
+      .replace(/\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b/gi, '').replace(/\\d+\\s*(?:sets?|series?|rondas?)\\b/gi, '')
       .replace(/tempo\\s*(?:\\d{3,4}|isom[eé]tric[oa]|continuo)/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '')
-      .replace(/rest\\s*[^|]+/gi, '')
+      .replace(/(?:rest|descanso)\\s*[^|]+/gi, '')
       .replace(/\\bpor\\s*pierna\\b|\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b|\\bisom[eé]tric[oa]\\b/gi, '')
       .replace(/[|.:,\\-–\\/]/g, '').trim();
     return resto.length < 4;
@@ -15525,7 +15599,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function aplicarDosisSubSB(sub, entry, txt){
     var res = extraerTecnicaSB(txt);
     var d = parsearDosisSB(res.texto);
-    if(d.sets){ sub.sets = d.sets; sub.reps = d.reps || sub.reps; sub.unidad = d.unidad || sub.unidad; }
+    if(d.sets || d.reps){ if(d.sets) sub.sets = d.sets; if(d.reps){ sub.reps = d.reps; sub.unidad = d.unidad || sub.unidad; } }
     if(d.tempo && !sub.tempo) sub.tempo = d.tempo;
     if(d.rir && !sub.rir) sub.rir = d.rir;
     if(d.restSeconds !== undefined) sub.restSeconds = d.restSeconds;
@@ -15569,7 +15643,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          con los renglones siguientes. Un "A1" cuando el biset abierto ya empezó en 1, o un cambio de letra, abre otro biset. */
       var estM = !subM ? linea.match(RX_ESTACION_SB) : null;
       var mDosisE = estM ? estM[3].match(RX_DOSIS_SB) : null;
-      var nomPuroE = estM ? (mDosisE ? estM[3].slice(0, mDosisE.index) : estM[3]).replace(/[\\s:|\\-–]+$/, '').trim() : '';
+      var corteE = (estM && !mDosisE) ? estM[3].search(RX_CORTE_DOSIS_SB) : -1;
+      var idxDosisE = mDosisE ? mDosisE.index : (corteE > 0 ? corteE : -1);
+      var nomPuroE = estM ? (idxDosisE >= 0 ? estM[3].slice(0, idxDosisE) : estM[3]).replace(/[\\s:|\\-\\u2013\\u2014]+$/, '').trim() : '';
       if(estM && nomPuroE && (estM[1] || titBiset || (actual && actual.tipo === 'biserie'))){
         var letraE = estM[1].toUpperCase();
         if(!actual || actual.tipo !== 'biserie' || (letraE && actual.letra && actual.letra !== letraE) || (estM[2] === '1' && actual.subs.length)){
@@ -15581,7 +15657,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var nomE = limpiarPrefijoEstacionSB(resNomE.tecnica ? resNomE.texto : nomPuroE);
         var subE = { nombre: nomE, reps:'', tempo:'', tecnica: resNomE.tecnica || '', nota:'', unilateral:'', unidad:'reps', rir:'', restSeconds:0, sets:0 };
         actual.subs.push(subE);
-        if(mDosisE) aplicarDosisSubSB(subE, actual, estM[3].slice(mDosisE.index));
+        if(idxDosisE >= 0) aplicarDosisSubSB(subE, actual, estM[3].slice(idxDosisE));
         return;
       }
       if(subM){
@@ -15768,10 +15844,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          (nunca con un "Nota: ..."/"Objetivo: ..." suelto, que no trae
          NxM adentro). */
       var mNombreDosis = linea.match(/^([^:]+):\\s*(.+)$/);
-      if(mNombreDosis && RX_DOSIS_SB.test(mNombreDosis[2])){
+      var dosisPrevND = mNombreDosis ? parsearDosisSB(mNombreDosis[2]) : null;
+      var repsConPrescSB = !!(dosisPrevND && dosisPrevND.reps && (dosisPrevND.tempo || dosisPrevND.rir || dosisPrevND.restSeconds !== undefined));
+      if(mNombreDosis && (RX_DOSIS_SB.test(mNombreDosis[2]) || repsConPrescSB)){
         var resND = extraerTecnicaSB(mNombreDosis[2]);
         var dosisND = parsearDosisSB(resND.texto);
-        actual = { tipo:'simple', titulo: limpiarPrefijoEstacionSB(mNombreDosis[1]), sets: dosisND.sets || 0, reps: dosisND.reps || '', tempo: dosisND.tempo || '', restSeconds: dosisND.restSeconds || 0, rir: dosisND.rir || '', dosisAsignada:true, tecnica: resND.tecnica || '', tecnicaPct: resND.tecnica === 'dropset' ? extraerPctSB(resND.texto) : null, myoInfo:null, notas:[], unidad: dosisND.unidad || 'reps' };
+        actual = { tipo:'simple', titulo: limpiarPrefijoEstacionSB(mNombreDosis[1]), sets: dosisND.sets || (dosisND.reps ? 1 : 0), reps: dosisND.reps || '', tempo: dosisND.tempo || '', restSeconds: dosisND.restSeconds || 0, rir: dosisND.rir || '', dosisAsignada:true, tecnica: resND.tecnica || '', tecnicaPct: resND.tecnica === 'dropset' ? extraerPctSB(resND.texto) : null, myoInfo:null, notas:[], unidad: dosisND.unidad || 'reps' };
         if(dosisND.notaSecundaria){
           if(dosisND.notaSecundaria === 'Por pierna' || dosisND.notaSecundaria === 'Por lado') actual.unilateral = dosisND.notaSecundaria;
           else actual.notas.push(dosisND.notaSecundaria);
@@ -15933,7 +16011,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<input type="text" class="jp-intensity-note" data-notekey="' + notaKey + '" placeholder="Nota opcional (ej. ' + proto.ph + ')" value="' + escSB(notaVal) + '" />' +
       '</div>';
   }
-  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo, rirAnterior, nombreEj){
+  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo, rirAnterior, nombreEj, metaReps){
     unidadSec = unidadSec || 'reps';
     var modoEj = modoInputSB(nombreEj);          /* 'bw' (peso corporal) | 'tiempo' (isométrico) | '' */
     var numSetsInt = parseInt(numSets, 10) || 1;
@@ -15983,7 +16061,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          listener de .jp-btn-check-native más abajo) no tenía de dónde
          tomar una reps sugerida cuando era la primera serie de la
          semana. Mismo criterio que kgPlaceholder, ahora simétrico. */
-      var secPlaceholder = (secVal === '' && prevSec != null) ? String(prevSec) : '—';
+      var secPlaceholder = (secVal === '' && prevSec != null) ? String(prevSec) : (secVal === '' && metaReps ? String(metaReps) : '—');
       var doneCls = ld.done ? ' completed' : '';
       var badgeHtml = '';
       if(setTecnica && !esMyo && i === setTecnicaIdx && TECNICAS_BADGE_SB[setTecnica.tecnica]){
@@ -16236,11 +16314,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     s = parseInt(s, 10) || 0;
     return s + 's';
   }
+  /* meta tenue a la derecha del encabezado de cada fila de ronda: "Target: 8-10 reps @ RIR 0-1" */
+  function metaRondaSB(sub){
+    if(!sub || (!sub.reps && !sub.rir)) return '';
+    var t = (sub.reps ? sub.reps + ' ' + (sub.unidad || 'reps') : '') + (sub.rir ? (sub.reps ? ' @ ' : '') + 'RIR ' + sub.rir : '');
+    return '<span class="jp-ronda-tg">Target: ' + escSB(t) + '</span>';
+  }
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds){
     var seg = [];
     var u = escSB(String(unidad || 'reps').toUpperCase());
-    if(sets && reps) seg.push('<span class="jp-db-seg jp-db-vol">' + sets + ' SETS \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
+    if(!sets && !reps) return '';
+    var rotSets = sets == 1 ? ' SET' : ' SETS';
+    if(sets && reps) seg.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
     else if(reps) seg.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
+    else seg.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
     if(tempo) seg.push('<span class="jp-db-seg jp-db-tempo">TEMPO ' + escSB(tempo) + '</span>');
     if(restSeconds) seg.push('<span class="jp-db-seg jp-db-rest">REST ' + fmtRestSB(restSeconds) + '</span>');
     if(rir){
@@ -16391,6 +16478,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        CSS), el resto queda en blanco/cyan como accesorio. Nunca aplica a
        un bloque de calentamiento (ahí no hay ancla, es activación). */
     let anclaUsada = false;
+    let nIndiv = 0;                  /* badge [ E1 ] [ E2 ]... de los ejercicios individuales del bloque */
     let filas = '';
     let duracionEstimada = 0;
     entries.forEach(function(entry, idx){
@@ -16430,7 +16518,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           /* entre estaciones del mismo biset no hay descanso (A1 -> A2 sin pausa): el Rest real corresponde a la ultima estacion */
           const restSub = sub.restSeconds ? sub.restSeconds : (si < entry.subs.length - 1 ? '0' : '');
           const tmp = document.createElement('div');
-          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre);
+          tmp.innerHTML = renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, rondasN, sub.unidad, true, sub.tecnica ? { tecnica: sub.tecnica, pct: sub.tecnicaPct, myo: sub.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, si), sub.nombre, sub.unidad === 'reps' || !sub.unidad ? sub.reps : '');
           const rows = Array.prototype.map.call(tmp.querySelectorAll('.jp-set-row-native'), function(r){ return r.outerHTML; });
           const myo = tmp.querySelector('.jp-myo-mod');
           return { sub: sub, si: si, restSub: restSub, rows: rows, myo: myo ? myo.outerHTML : '' };
@@ -16449,7 +16537,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           rondasHtml += '<div class="jp-ronda-card"><div class="jp-ronda-h">RONDA ' + (r + 1) + '</div>' +
             subsInfo.map(function(o){
               if(!o.rows[r]) return '';
-              return '<div class="jp-sb-subex jp-ronda-sub" data-rest-sec="' + o.restSub + '"><span class="jp-ronda-lt">A' + (o.si + 1) + '</span><span class="jp-sb-subex-nombre" hidden>' + escSB(o.sub.nombre) + '</span>' + o.rows[r] + '</div>';
+              return '<div class="jp-sb-subex jp-ronda-sub" data-rest-sec="' + o.restSub + '"><div class="jp-ronda-subh"><span class="jp-ronda-lt">A' + (o.si + 1) + '</span><span class="jp-ronda-nm">' + escSB(o.sub.nombre) + '</span>' + metaRondaSB(o.sub) + '</div><span class="jp-sb-subex-nombre" hidden>' + escSB(o.sub.nombre) + '</span>' + o.rows[r] + '</div>';
             }).join('') + '</div>';
         }
         const subsHtml = cabeceras + rondasHtml + subsInfo.map(function(o){ return o.myo; }).join('');
@@ -16470,7 +16558,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
         const esAnclaTec = !anclaUsada; anclaUsada = true;
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
-            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' +
+            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' +
             dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
             chipUnilateralSB(entry.unilateral) +
             ''+
@@ -16521,11 +16609,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       /* directiva técnica ("Auditoría integral del reloj emergente") --
          mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
-          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' +
+          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' +
           dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
-          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null), entry.titulo) +
+          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null), entry.titulo, entry.unidad === 'reps' || !entry.unidad ? entry.reps : '') +
         '</div>';
     });
     if(!filas) return;
@@ -16693,7 +16781,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       if(repsInput && !repsInput.value){
         const autoReps = (prevRepsInput && prevRepsInput.value) ? prevRepsInput.value
-          : (/^\\d/.test(repsInput.placeholder) && repsInput.placeholder !== '0' ? repsInput.placeholder : '');
+          : (/^\\d+(?:[.,]\\d+)?$/.test(repsInput.placeholder) && repsInput.placeholder !== '0' ? repsInput.placeholder : '');
         if(autoReps){ repsInput.value = autoReps; setLoadField(key, 'reps', autoReps); }
       }
     }
@@ -36311,6 +36399,14 @@ body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform 
 .jp-ronda-card{ margin:10px 0 0; padding:8px 10px 6px; border-radius:12px; border:1px solid rgba(56,189,248,.28); background:rgba(15,23,42,.55); }
 .jp-ronda-h{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.7rem; letter-spacing:.12em; color:#F59E0B; margin-bottom:6px; }
 .jp-ronda-sub{ display:flex !important; align-items:center; gap:8px; border:0 !important; padding:0 !important; margin:0 0 6px !important; background:none !important; }
+.jp-ronda-sub{ flex-wrap:wrap !important; }
+.jp-ronda-subh{ flex:0 0 100%; display:flex; flex-wrap:wrap; align-items:center; gap:2px 6px; min-width:0; margin-bottom:2px; }
+.jp-ronda-nm{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; white-space:normal; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.8rem; letter-spacing:.04em; text-transform:uppercase; color:#f8fafc; }
+.jp-ronda-nm::before{ content:'\\00b7  '; color:#64748b; }
+.jp-ronda-tg{ flex:0 1 auto; margin-left:auto; text-align:right; font-size:.66rem; font-weight:600; letter-spacing:.02em; color:rgba(148,163,184,.8); }
+.jp-ronda-sub .jp-set-row-native{ flex:1 1 100% !important; }
+.jp-sb-ex-id{ flex:0 0 auto; padding:2px 8px; border-radius:6px; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.72rem; letter-spacing:.06em; color:#38BDF8; background:rgba(56,189,248,.14); border:1px solid rgba(56,189,248,.4); }
+.jp-sb-ex .jp-sb-ex-nombre, .jp-sb-ex-ancla .jp-sb-ex-nombre{ color:#fbbf24 !important; font-weight:800 !important; letter-spacing:.04em !important; text-transform:uppercase; }
 .jp-ronda-lt{ flex:0 0 26px; text-align:center; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.72rem; color:#38BDF8; background:rgba(56,189,248,.14); border-radius:6px; padding:5px 0; }
 .jp-ronda-sub .jp-set-row-native{ flex:1 1 auto; min-width:0; margin:0; padding:6px 6px; }
 .jp-ronda-card .jp-set-pill:not(.jp-pill-myo){ display:none; }
@@ -56827,7 +56923,9 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       const dismissed = b.videosDismissed || [];
       const warmCh = esBloqueEntradaCalorSB(b);
       const lineasCh = String(ta.value || '').split('\n');
-      detectarEjerciciosSports((warmCh ? lineasCh : itemsConNombreSB(b.titulo, lineasCh)).join('\n'), { warmup: warmCh }).forEach(function(d){
+      const detectadosCh = detectarEjerciciosSports((warmCh ? lineasCh : itemsConNombreSB(b.titulo, lineasCh)).join('\n'), { warmup: warmCh });
+      reanclarVideosBloqueSB(b, detectadosCh);
+      detectadosCh.forEach(function(d){
         const k = nrm(d.nombre);
         if(!k || vistos[k] || dismissed.indexOf(k) >= 0 || dismissed.indexOf(stemNombreEj(d.nombre)) >= 0) return;
         vistos[k] = 1;
@@ -56839,7 +56937,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
           const al = aliasLeer()[k], exAl = al ? getEx(al) : null;
           if(exAl && exAl.videoId){ exId = al; porAlias = true; b.videoOverrides = b.videoOverrides || {}; b.videoOverrides[k] = al; aliasNuevo = true; }
         }
-        const ex = exId ? getEx(exId) : d.ex;
+        let ex = manual ? exDeVinculoSB(manual) : (exId ? getEx(exId) : null);
+        if(!ex) ex = d.ex;
         lista.push({ nombre: d.nombre, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: esOverride || !!manual || porAlias, manual: !!manual });
       });
       if(aliasNuevo){ try{ save(); }catch(e){} }
@@ -56851,7 +56950,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
         const k = nrm(v.nombre);
         if(!k || vistos[k] || dismissed.indexOf(k) >= 0) return;
         vistos[k] = 1;
-        const ex = getEx(v.exId);
+        const ex = exDeVinculoSB(v);
         lista.push({ nombre: v.nombre, key: k, ex: ex && ex.videoId ? ex : null, ficha: ex || null, override: true, manual: true });
       });
       /* biset/triset: cada estacion A1/A2/... tiene SIEMPRE su slot (vinculado o con aviso explicito) */
@@ -57192,8 +57291,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!b || !bl){ return; }
     btn.classList.add('vc-scan-anim');
     setTimeout(() => btn.classList.remove('vc-scan-anim'), 700);
-    /* vinculos que apuntan a un ejercicio que ya no existe: se sueltan para que el motor los vuelva a resolver */
-    if(b.videoOverrides){ Object.keys(b.videoOverrides).forEach(k => { if(!getEx(b.videoOverrides[k])) delete b.videoOverrides[k]; }); }
+    /* los vinculos existentes (verdes) quedan intactos: el re-escaneo solo intenta vincular los que figuran "Sin video vinculado" */
     const ta = bl.querySelector('textarea[data-bf="items"], textarea[data-bf="movements"]');
     if(ta && b.tipo === 'list'){ try{ setBlockField(b, 'items', ta.value); }catch(x){} }
     chips(bl, b);
