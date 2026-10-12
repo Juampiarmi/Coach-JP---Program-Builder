@@ -4944,6 +4944,52 @@ function variantesCanonicasSB(nombre){
   cortes.sort(function(a, b){ return b.length - a.length; }).forEach(function(c){ if(c.length >= 4 && out.indexOf(c) < 0 && c !== base) out.push(c); });
   return out;
 }
+const normAliasSB = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const ALIAS_GRUPOS_SB = [
+  ['sentadilla hack', 'hack', 'hack squat', 'sentadilla hack en maquina', 'machine hack squat'],
+  ['prensa', 'prensa inclinada', 'prensa 45', 'prensa de piernas', 'leg press', '45 leg press', '45 degree leg press', 'prensa 45 grados'],
+  ['sillon de cuadriceps', 'extension de cuadriceps', 'extensiones de cuadriceps', 'extension de piernas', 'leg extension', 'leg extensions'],
+  ['curl femoral acostado', 'camilla femoral', 'curl femoral tumbado', 'lying leg curl', 'prone leg curl'],
+  ['elevaciones laterales', 'elevacion lateral', 'elevaciones laterales con mancuernas', 'lateral raises', 'lateral raise', 'dumbbell lateral raise', 'dumbbell lateral raises'],
+  ['empuje de cadera', 'hip thrust', 'hip thrusts', 'puente de gluteo con barra']
+];
+/* mismo concepto en los dos idiomas: "sentadilla hack" y "hack squat" comparten el token distintivo "hack" */
+const TOK_ES_EN_SB = { sentadilla:'squat', sentadillas:'squat', remo:'row', elevacion:'raise', elevaciones:'raise', laterales:'lateral', cadera:'hip', empuje:'thrust', femoral:'hamstring', cuadriceps:'quadriceps', extensiones:'extension', maquina:'machine', mancuernas:'dumbbell', mancuerna:'dumbbell', polea:'cable', barra:'barbell', prensa:'press', inclinado:'incline', inclinada:'incline', biceps:'biceps', triceps:'triceps' };
+const TOK_GENERICOS_SB = new Set(['squat', 'press', 'curl', 'row', 'machine', 'raise', 'raises', 'de', 'del', 'la', 'el', 'en', 'con', 'the', 'of', 'on', 'for', 'sentadilla']);
+function tokensConceptoSB(s){
+  return normAliasSB(s).split(' ').filter(w => w.length > 2).map(w => TOK_ES_EN_SB[w] || w.replace(/(?:es|s)$/, ''));
+}
+function resolverExAliasGrupoSB(nombre){
+  const k = normAliasSB(limpiarPrefijoOrdinalSB(nombre));
+  const grupo = ALIAS_GRUPOS_SB.find(g => g.indexOf(k) >= 0);
+  if(!grupo) return null;
+  let mejor = null, pts = -1;
+  S.exercises.forEach(e => {
+    if(exIncoherenteSB(e)) return;
+    const nms = [normAliasSB(e.es), normAliasSB(e.en)];
+    if(!grupo.some(t => nms.indexOf(t) >= 0)) return;
+    const p = (e.videoId ? 10 : 0) - String(e.es || '').length / 100;
+    if(p > pts){ mejor = e; pts = p; }
+  });
+  return mejor;
+}
+/* coincidencia parcial por tokens (tras limpiar el prefijo): todos los tokens distintivos del texto estan en el nombre es o en del ejercicio */
+function resolverExTokensSB(nombre){
+  const q = tokensConceptoSB(limpiarPrefijoOrdinalSB(nombre));
+  const dist = q.filter(w => !TOK_GENERICOS_SB.has(w));
+  if(!dist.length) return null;
+  let mejor = null, pts = -1;
+  S.exercises.forEach(e => {
+    if(exIncoherenteSB(e)) return;
+    [e.es, e.en].filter(Boolean).forEach(nm => {
+      const toks = tokensConceptoSB(nm);
+      if(!dist.every(w => toks.indexOf(w) >= 0)) return;
+      const p = 100 - Math.abs(toks.length - q.length) * 3 + (e.videoId ? 20 : 0) + q.filter(w => toks.indexOf(w) >= 0).length * 5;
+      if(p > pts){ mejor = e; pts = p; }
+    });
+  });
+  return mejor;
+}
 function resolverExSports(nombreCrudo, estricto){
   const crudo = limpiarPrefijoOrdinalSB(String(nombreCrudo || '').trim());
   const exacto0 = crudo ? resolverExSportsBase(crudo, true) : null;
@@ -4952,6 +4998,8 @@ function resolverExSports(nombreCrudo, estricto){
   if(alias0){ const exAl = resolverExSportsBase(alias0, true); if(exAl) return exAl; }
   const vcanon = variantesCanonicasSB(crudo);
   for(let vi = 0; vi < vcanon.length; vi++){ const exV = resolverExSportsBase(vcanon[vi], true); if(exV) return exV; }
+  const exAg = resolverExAliasGrupoSB(crudo); if(exAg) return exAg;
+  const exTk = resolverExTokensSB(crudo); if(exTk) return exTk;
   const sinParen = crudo.replace(/\s*\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
   const conCalif = RX_CALIF_SB.test(normSports(crudo)); RX_CALIF_SB.lastIndex = 0;
   if(conCalif){ const f0 = resolverExFuzzySB(sinParen || crudo); if(f0) return f0; }
@@ -56707,7 +56755,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       lista.map(x => {
         const principal = x.ex
           ? '<button type="button" class="vc ok' + (x.override ? ' override' : '') + '" data-vcok="' + esc(x.ex.id) + '" title="Ver el video vinculado">' +
-              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.nombre) + '</b> (Video vinculado' + (x.override ? (x.manual ? ', manual' : ', override') : '') + ')</button>'
+              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.override && x.ex && x.ex.es ? x.ex.es : x.nombre) + '</b> (Video vinculado' + (x.override ? (x.manual ? ', manual' : ', override') : '') + ')</button>'
           : '<button type="button" class="vc no" data-vcno="' + esc(x.nombre) + '"' +
               (x.ficha ? ' data-vcex="' + esc(x.ficha.id) + '"' : '') +
               ' title="Vincular un video sin salir del Builder">' + (b.sportsPizarra
@@ -56832,8 +56880,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const b = ref && typeof findBlock === 'function' ? findBlock(ref.dataset.b) : null;
     if(!b || !key) return;
     b.videoOverrides = b.videoOverrides || {};
-    if(exId){ b.videoOverrides[key] = exId; aliasGuardar(key, exId); }
-    else delete b.videoOverrides[key];
+    b.videosManual = (b.videosManual || []).filter(v => nrm(v.nombre) !== key);
+    if(exId){
+      b.videoOverrides[key] = exId; aliasGuardar(key, exId);
+      b.videosManual.push({ nombre: btn.dataset.vcswapname || span.querySelector('.vc-inline-name').textContent.replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/, '') || key, exId: exId });
+    } else delete b.videoOverrides[key];
     save();
     toast(exId ? 'Video reasignado ✔ (alias guardado para próximas importaciones)' : 'Reasignación quitada');
     refrescarChipsDe(span);
@@ -67654,6 +67705,11 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   var MOD_SUG = { banded:1, band:1, bands:1, banda:1, bandas:1, elastica:1, elastic:1, con:1, sin:1, de:1, en:1, sobre:1, del:1, las:1, los:1, una:1, para:1, por:1, sentado:1, sentada:1, seated:1, standing:1, pausa:1, paused:1, isometrica:1, isometric:1, lento:1, unilateral:1, single:1, arm:1, assisted:1, asistido:1, weighted:1, lastrado:1 };
   function puntaje(nombre, ex){
     if(exIncoherenteSB(ex)) return 0;
+    var qc = tokensConceptoSB(nombre), dc = qc.filter(function(w){ return !TOK_GENERICOS_SB.has(w); });
+    if(dc.length){
+      var nt = tokensConceptoSB((ex.es || '') + ' ' + (ex.en || ''));
+      if(dc.every(function(w){ return nt.indexOf(w) >= 0; })) return 20 + dc.length * 4;
+    }
     var todas = normFuzzySB(nombre).split(' ').filter(function(w){ return w.length > 2; });
     var nuc = todas.filter(function(w){ return !MOD_SUG[w]; });
     var mods = todas.filter(function(w){ return MOD_SUG[w] && w.length > 3; });
@@ -67697,6 +67753,8 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     }
     b.videoOverrides = b.videoOverrides || {};
     b.videoOverrides[nrmChip(nombre)] = ex.id;
+    b.videosManual = (b.videosManual || []).filter(v => nrmChip(v.nombre) !== nrmChip(nombre));
+    b.videosManual.push({ nombre: nombre, exId: ex.id });
     if(window.jpVideoAlias) window.jpVideoAlias.set(nrmChip(nombre), ex.id);
     save();
     toast('Video vinculado ✔');
@@ -67745,6 +67803,8 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     if(!b) return;
     b.videoOverrides = b.videoOverrides || {};
     b.videoOverrides[nrmChip(nombre)] = exId;
+    b.videosManual = (b.videosManual || []).filter(v => nrmChip(v.nombre) !== nrmChip(nombre));
+    b.videosManual.push({ nombre: nombre, exId: exId });
     if(window.jpVideoAlias) window.jpVideoAlias.set(nrmChip(nombre), exId);
     save();
     toast('Video vinculado ✔ (alias guardado)');
