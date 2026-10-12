@@ -3193,6 +3193,19 @@ function asegurarBloquesPorSemana(d){
       });
     });
   }
+  /* defensa: ningun array ni objeto de bloque puede estar compartido entre dos semanas (cada una es una copia propia) */
+  const clon = x => (typeof structuredClone === 'function' ? structuredClone(x) : JSON.parse(JSON.stringify(x)));
+  const vistosArr = new Set(), vistosBl = new Set();
+  d.bloquesPorSemana.forEach(function(arr, wi){
+    if(!Array.isArray(arr)){ d.bloquesPorSemana[wi] = []; return; }
+    if(vistosArr.has(arr)){ arr = d.bloquesPorSemana[wi] = clon(arr); }
+    vistosArr.add(arr);
+    arr.forEach(function(b, bi){
+      if(!b || typeof b !== 'object') return;
+      if(vistosBl.has(b)){ arr[bi] = clon(b); b = arr[bi]; }
+      vistosBl.add(b);
+    });
+  });
   return d.bloquesPorSemana;
 }
 /* memoria de módulo: qué semana está actualmente "cargada" en d.bloques
@@ -9634,7 +9647,8 @@ function buscarVideo(name, soloDirecto){
     for(var k = 0; k < idx.claves.length; k++){
       var c = idx.claves[k];
       if(c.length < 4) break;
-      if(t === c || t.indexOf(c) >= 0 || (c.indexOf(t) >= 0 && t.length >= 5)) return idx.exacto[c];
+      /* contencion por palabras completas: "arm" ya no engancha "warm up" ni "arm bar" */
+      if(t === c || (' ' + t + ' ').indexOf(' ' + c + ' ') >= 0 || ((' ' + c + ' ').indexOf(' ' + t + ' ') >= 0 && t.length >= 5)) return idx.exacto[c];
     }
   }
   return null;
@@ -15870,7 +15884,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      para exports viejos (compilados antes de esta directiva, sin el
      campo nuevo) -- nunca se ejecutan los dos a la vez. */
   function recolectarVideosSB(entries, esCalentamiento, block){
-    if(block && Array.isArray(block.videosBloque) && block.videosBloque.length){
+    if(block && Array.isArray(block.videosBloque)){      /* export nuevo: la lista del bloque manda, aunque este vacia */
       return block.videosBloque;
     }
     var vistos = {}, out = [];
@@ -16060,7 +16074,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var v = norm(lista[i].nombre);
       if(v && (v === n || v.indexOf(n) >= 0 || n.indexOf(v) >= 0)) ytid = lista[i].ytid;
     }
-    if(!ytid){ try{ ytid = buscarVideo(limpiarNombreParaVideoSB(nombre)) || ''; }catch(e){ ytid = ''; } }
+    if(!ytid && !(block && Array.isArray(block.videosBloque))){ try{ ytid = buscarVideo(limpiarNombreParaVideoSB(nombre)) || ''; }catch(e){ ytid = ''; } }
     if(!ytid) return '';
     return '<button type="button" class="jp-sb-vid-mini" data-yt="' + ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(nombre).replace(/"/g, '') + '" title="Ver t\\u00e9cnica">&#9654;</button>';
   }
@@ -36292,7 +36306,7 @@ body.cf-disc .block.block-done.collapsed:has(.jp-cfboard) > .block-body{ display
 .blocks-stack > .block:has(.jp-sb-board)::after, .jp-sb-board::after{ display:none !important; }
 .jp-sb-board{ border-radius:16px !important; overflow:hidden; }
 /* bloque completado: una sola barra compacta */
-.block > .jp-done-line{ min-height:44px !important; padding:0 12px !important; justify-content:space-between; gap:10px; border-radius:12px !important; }
+.block > .jp-done-line{ margin:0 !important; min-height:44px !important; padding:0 12px !important; justify-content:space-between; gap:10px; border-radius:12px !important; }
 .jp-done-line .jp-dl-ck{ flex:0 0 auto; color:#34D399; font-weight:900; font-size:1rem; }
 .jp-done-line .jp-dl-t{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:rgba(148,163,184,.9); font-weight:600; }
 .jp-done-line .jp-dl-re{ flex:0 0 auto; font-size:.64rem; letter-spacing:.08em; text-transform:uppercase; color:#94A3B8; border:1px solid rgba(148,163,184,.3); border-radius:999px; padding:3px 10px; }
@@ -36518,7 +36532,7 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
           return t;
         };
         var ta = compactoAlt(etq(a)), tb = compactoAlt(etq(b));
-        var key = (board && board.getAttribute('data-wodb') || '') + '#' + ta;
+        var key = ((typeof state !== 'undefined' && state && state.currentWeek) || 0) + '|' + (board && board.getAttribute('data-wodb') || '') + '#' + ta;
         var box = document.createElement('div');
         box.className = 'jp-cf-alt'; box.setAttribute('data-sel', leer(KALT)[key] || 'a');
         box.innerHTML = '<div class="jp-cf-altsw" role="group" aria-label="Alternativa"><button type="button" data-alt="a">' + iconoAlt(ta) + ' ' + esc(ta) + '</button><span class="jp-cf-altor">|</span><button type="button" data-alt="b">' + iconoAlt(tb) + ' ' + esc(tb) + '</button></div>';
@@ -36688,6 +36702,7 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
 (function(){
   'use strict';
   var reabiertos = {};
+  function claveRe(id){ return ((typeof state !== 'undefined' && state && state.currentWeek) || 0) + '|' + id; }
   function q(s, r){ return (r || document).querySelector(s); }
   function nJP(v){ return (typeof numJP === 'function') ? numJP(v) : (parseFloat(String(v == null ? '' : v).replace(',', '.')) || 0); }
   function fJP(n){ return (typeof fmtJP === 'function') ? fmtJP(n) : String(Math.round(n * 100) / 100); }
@@ -36756,7 +36771,7 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
       var chv2 = q('.jp-chev', bl); if(chv2) chv2.textContent = bl.classList.contains('jp-fold') ? '\\u25bc' : '\\u25b2';
       if(cb.checked){
         bl.classList.add('block-done');
-        if(!reabiertos[id]) bl.classList.add('collapsed');
+        if(!reabiertos[claveRe(id)]) bl.classList.add('collapsed');
       }
     }
   }
@@ -36767,7 +36782,7 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
       var bl = btn.closest('.block'), cb = bl && q('.block-done-cb', bl); if(!cb) return;
       var id = bl.getAttribute('data-block-id') || '';
       if(!cb.checked){
-        cb.click(); delete reabiertos[id];
+        cb.click(); delete reabiertos[claveRe(id)];
         bl.classList.add('block-done', 'collapsed');
         try{ if('vibrate' in navigator) navigator.vibrate(20); }catch(err){}
       } else {
@@ -36780,7 +36795,7 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
         while(sig && !(sig.classList && sig.classList.contains('block'))) sig = sig.nextElementSibling;
         if(sig){
           var idS = sig.getAttribute('data-block-id') || '';
-          if(sig.classList.contains('collapsed')){ reabiertos[idS] = 1; sig.classList.remove('collapsed'); }
+          if(sig.classList.contains('collapsed')){ reabiertos[claveRe(idS)] = 1; sig.classList.remove('collapsed'); }
           sig.classList.remove('jp-fold');
           var waS = sig.querySelector('.jp-warm-acc'); if(waS) waS.open = true;
         }
@@ -36801,7 +36816,7 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
     var line = e.target.closest && e.target.closest('.jp-done-line');
     if(line){
       var b2 = line.closest('.block'); if(!b2) return;
-      reabiertos[b2.getAttribute('data-block-id') || ''] = 1;
+      reabiertos[claveRe(b2.getAttribute('data-block-id') || '')] = 1;
       b2.classList.remove('collapsed');
     }
   }, true);
@@ -37535,7 +37550,7 @@ function buildProgramConfig(ath){
             }
           });
         }
-        if(!bloqueCF && videosBloque.length) out.videosBloque = videosBloque;
+        if(!bloqueCF) out.videosBloque = videosBloque;      /* siempre, aunque este vacio: el alumno nunca completa con busquedas aproximadas */
         /* [✕] del Builder: los clips que el coach descartó en ESTE bloque
            viajan al alumno para que la Pizarra CrossFit tampoco los muestre */
         if(bloqueCF && Array.isArray(b.videosDismissed) && b.videosDismissed.length) out.videosDismissed = b.videosDismissed.slice();
