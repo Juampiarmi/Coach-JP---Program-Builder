@@ -139,7 +139,9 @@ export interface CanvasState {
   // Manifiesto
   manifestoAuthor: string
   manifestoStyle: ManifestoStyle
-  // Fondo fotográfico
+  // Fondo fotográfico (propio de cada placa: foto, capa, encuadre y tratamiento)
+  /** Foto de fondo de ESTA placa (id en IndexedDB, ver lib/imageStore). null = carbón sólido */
+  bgImageId: string | null
   bgOverlay: number
   floatingPlate: boolean
   /** Encuadre de la foto: zoom 100–160 %, desplazamiento -50…+50 % */

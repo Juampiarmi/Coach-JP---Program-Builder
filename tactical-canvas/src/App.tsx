@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandBar } from './components/BrandBar'
 import { ModeSwitch, type WorkMode } from './components/ModeSwitch'
 import { ControlPanel } from './components/controls/ControlPanel'
@@ -16,7 +16,7 @@ import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
 import { zipFiles } from './lib/zip'
 import { CaptionBar } from './components/CaptionBar'
-import { useBackgroundImage } from './hooks/useBackgroundImage'
+import { dropLegacyBackground, pruneBackgrounds, readLegacyBackground, useBackgroundImages } from './hooks/useBackgroundImage'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { usePersistentState } from './hooks/usePersistentState'
 import type { AspectId, CanvasState, Nudge, NudgeTarget } from './types'
@@ -31,17 +31,14 @@ const GLOBAL_KEYS = [
   'aspect',
   'headlineFont',
   'headlineScale',
-  'bgOverlay',
   'floatingPlate',
-  'bgGradient',
-  'bgMono',
-  'bgZoom',
-  'bgX',
-  'bgY',
   'contentAlign',
   'contentGap',
   'theme',
 ] as const
+
+/** Fondo de cada placa: foto, capa, encuadre y tratamiento. Nunca se propaga a las demás al editar. */
+const BG_KEYS = ['bgImageId', 'bgOverlay', 'bgGradient', 'bgVignette', 'bgMono', 'bgZoom', 'bgX', 'bgY'] as const
 
 /** Lo que replica [ 📋 COPIAR ESTILO ]: tipografía, viñeta / contraste de la foto y paleta de acentos. */
 const STYLE_KEYS = [
@@ -108,7 +105,28 @@ export default function App() {
   }
   // Simulador de UI de Instagram (sólo pantalla; nunca entra en el PNG ni en el ZIP).
   const [overlay, setOverlay] = useState(false)
-  const bg = useBackgroundImage()
+  const bg = useBackgroundImages(slides.map((s) => s.bgImageId).filter((id): id is string => Boolean(id)))
+  const bgImage = bg.get(state.bgImageId)
+  // Una sola vez: la foto global de versiones anteriores pasa a ser la foto propia de cada placa
+  // existente (se ven igual que antes, pero desde ahora cada una se cambia por separado).
+  const migrated = useRef(false)
+  useEffect(() => {
+    if (migrated.current) return
+    migrated.current = true
+    const legacy = readLegacyBackground()
+    const ids = deck.slides.map((s) => s.bgImageId).filter((id): id is string => Boolean(id))
+    if (!legacy) {
+      void pruneBackgrounds(ids)
+      return
+    }
+    const { id, saved } = bg.add(legacy)
+    setDeck((d) => ({ ...d, slides: d.slides.map((s) => (s.bgImageId ? s : { ...s, bgImageId: id })) }))
+    void saved.then((ok) => {
+      if (!ok) return
+      dropLegacyBackground()
+      void pruneBackgrounds([...ids, id])
+    })
+  }, [bg, deck.slides, setDeck])
 
   const update = useCallback(
     (patch: Partial<CanvasState>) =>
@@ -124,6 +142,14 @@ export default function App() {
     [setDeck],
   )
   const reset = useCallback(() => setDeck(DEFAULT_DECK), [setDeck])
+  /** Foto nueva SÓLO para la placa activa (null = quitarla de esta placa). */
+  const setBgImage = useCallback(
+    (img: string | null) => {
+      if (!img) return update({ bgImageId: null })
+      update({ bgImageId: bg.add(img).id })
+    },
+    [bg, update],
+  )
   /** [ 📋 COPIAR ESTILO A TODAS LAS PLACAS ]: tipografía, viñeta y paleta de acentos de la placa activa. */
   const copyStyle = useCallback(
     () =>
@@ -160,6 +186,8 @@ export default function App() {
         const current = { ...DEFAULT_STATE, ...d.slides[Math.min(d.active, d.slides.length - 1)] }
         const globals: Partial<CanvasState> = {}
         for (const k of GLOBAL_KEYS) Object.assign(globals, { [k]: current[k] })
+        // El set nuevo arranca con el fondo de la placa activa (luego cada placa se edita por separado).
+        for (const k of BG_KEYS) Object.assign(globals, { [k]: current[k] })
         if (r.format === 'stories') globals.aspect = 'story'
         if (r.format === 'carousel') globals.aspect = 'feed'
         const discipline = meta?.discipline ?? d.discipline ?? 'general'
@@ -218,6 +246,8 @@ export default function App() {
       selectSlide(i)
       await wait(450) // deja que React pinte y el auto-ajuste converja
       if (!canvasRef.current) continue
+      // Cada placa tiene su propia foto: se espera a que esté decodificada antes de rasterizar.
+      await Promise.all([...canvasRef.current.querySelectorAll('img')].map((img) => img.decode().catch(() => undefined)))
       const { blob } = await renderPng(canvasRef.current, w, h)
       const s = slides[i]
       files.push({ blob, name: `coachjp_${String(i + 1).padStart(2, '0')}_${s.template}_${slugify(`${s.headlineA} ${s.headlineB}`)}.png` })
@@ -301,7 +331,7 @@ export default function App() {
       // El payload trae datos de todas las plantillas: se aplican todos, pero la placa conserva su
       // plantilla, el subtipo de diagrama y el modo de repetición que eligió el usuario.
       const safe: Partial<CanvasState> = { ...patch, template: slide.template, diagramKind: slide.diagramKind, repeatMode: slide.repeatMode }
-      for (const k of GLOBAL_KEYS) delete (safe as Record<string, unknown>)[k]
+      for (const k of [...GLOBAL_KEYS, ...BG_KEYS]) delete (safe as Record<string, unknown>)[k]
       if (safe.chart) safe.chart = harmonizeChart(safe.chart, deck.discipline ?? 'general')
       setDeck((d) => ({ ...d, slides: d.slides.map((s, i) => (i === index ? { ...DEFAULT_STATE, ...s, ...safe } : s)) }))
       setRegen({ busy: false, note: `Placa ${index + 1} re-generada ✓` })
@@ -340,8 +370,8 @@ export default function App() {
         state={state}
         update={update}
         onReset={reset}
-        bgImage={bg.image}
-        setBgImage={bg.setImage}
+        bgImage={bgImage}
+        setBgImage={setBgImage}
         bgPersisted={bg.persisted}
         getDiscipline={getDiscipline}
         slideIndex={active}
@@ -414,7 +444,7 @@ export default function App() {
             )}
           </div>
           <div className="min-h-0 flex-1 p-6">
-            <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
+            <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
           </div>
           <div className="mx-auto flex w-full max-w-xl flex-col gap-2 px-6 pb-6">
             <CaptionBar caption={caption} onChange={setCaption} />
@@ -437,7 +467,7 @@ export default function App() {
       </div>
       <div className="border-b border-line px-4 py-2">{slideBar()}</div>
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
-        <Preview state={canvasState} bgImage={bg.image} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
+        <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
       </main>
 
       <section

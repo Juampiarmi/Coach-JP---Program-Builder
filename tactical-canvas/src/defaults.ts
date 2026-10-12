@@ -77,6 +77,7 @@ export const DEFAULT_STATE: CanvasState = {
   repeatTilt: 0,
   repeatKeyword: '',
   repeatStagger: true,
+  bgImageId: null,
   bgOverlay: 75,
   bgGradient: true,
   bgVignette: 0,
