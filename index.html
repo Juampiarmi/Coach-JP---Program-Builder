@@ -1715,6 +1715,65 @@ const EX_SINONIMOS = [
   ['press militar', 'press de hombros', 'overhead press', 'shoulder press', 'military press']
 ];
 const exNormTxt = t => String(t == null ? '' : t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+/* DICCIONARIO CANONICO: la clave y "en" son el nombre oficial (el termino tecnico en ingles, el que usa la base de videos);
+   es_display es como lo lee el alumno; aliases son TODAS las formas en que el coach o el formateador pueden escribirlo.
+   El matching de videos pasa siempre por esta clave: "Perro de caza con co-contraccion abdominal", "Bird dog" y "bird_dog" son lo mismo. */
+const EXERCISE_CANONICAL_MAP = {
+  bird_dog: {
+    en: 'Bird Dog',
+    es_display: 'Extensión cruzada en cuadrupedia',
+    aliases: ['perro de caza', 'bird dog', 'bird dog con co-contracción', 'perro de caza con co-contracción abdominal']
+  },
+  clamshell: {
+    en: 'Banded Clamshells',
+    es_display: 'Apertura de cadera con banda',
+    aliases: ['almejas', 'almejas con banda', 'clamshell', 'clamshells', 'banded clamshells', 'almejas con banda en rodillas']
+  },
+  hack_squat: {
+    en: 'Hack Squat',
+    es_display: 'Sentadilla Hack',
+    aliases: ['sentadilla hack', 'hack squat', 'hack']
+  },
+  bulgarian_split_squat: {
+    en: 'Bulgarian Split Squat',
+    es_display: 'Sentadilla Búlgara',
+    aliases: ['sentadilla bulgara', 'sentadilla búlgara', 'sentadilla bulgara con mancuernas', 'bulgarian split squat']
+  },
+  seated_hip_abduction: {
+    en: 'Seated Hip Abduction Machine',
+    es_display: 'Abductores en máquina sentado',
+    aliases: ['abductores en maquina', 'abduccion de cadera', 'seated hip abduction machine', 'seated hip abduction']
+  },
+  standing_leg_curl: {
+    en: 'Standing Leg Curl Machine',
+    es_display: 'Femoral de pie en máquina',
+    aliases: ['femoral de pie', 'standing leg curl', 'standing leg curl machine']
+  }
+};
+let _exCanonIdx = null;
+function exCanonIndice(){
+  if(_exCanonIdx) return _exCanonIdx;
+  const idx = {};
+  Object.keys(EXERCISE_CANONICAL_MAP).forEach(k => {
+    const c = EXERCISE_CANONICAL_MAP[k];
+    [k.replace(/_/g, ' '), c.en, c.es_display].concat(c.aliases || []).forEach(t => { const n = exNormTxt(t); if(n && !idx[n]) idx[n] = k; });
+  });
+  return (_exCanonIdx = idx);
+}
+/* clave canonica de un texto ("A1. Almejas con banda : 3x15" -> 'clamshell'), o '' si no esta en el diccionario */
+function exCanonClave(texto){
+  const t = typeof cleanExerciseNameForMatching === 'function' ? cleanExerciseNameForMatching(texto) : String(texto || '');
+  return exCanonIndice()[exNormTxt(t)] || exCanonIndice()[exNormTxt(texto)] || '';
+}
+/* ejercicio de la biblioteca que corresponde a una clave canonica; entre varios prefiere el que tiene video */
+function exPorClaveCanon(clave){
+  if(!clave) return null;
+  const c = EXERCISE_CANONICAL_MAP[clave];
+  const lista = (S.exercises || []).filter(e => e.canonKey === clave);
+  if(!lista.length) return null;
+  const enN = exNormTxt(c.en);
+  return lista.slice().sort((a, b) => ((b.videoId ? 10 : 0) + (exNormTxt(b.en) === enN ? 1 : 0)) - ((a.videoId ? 10 : 0) + (exNormTxt(a.en) === enN ? 1 : 0)))[0];
+}
 /* completa slug/aliases en cada ejercicio (idempotente, aditivo: no toca id, es, en, video ni nada del coach) */
 function ensureExerciseModel(){
   let cambios = 0;
@@ -1730,6 +1789,16 @@ function ensureExerciseModel(){
     if(!Array.isArray(e.aliases)){ e.aliases = []; cambios++; }
     const nombres = [exNormTxt(e.es), exNormTxt(e.en)].filter(Boolean);
     const vistos = {}; e.aliases.forEach(a => { vistos[exNormTxt(a)] = 1; });
+    const idxC = exCanonIndice();
+    const claveC = idxC[nombres[0]] || idxC[nombres[1]] || '';
+    if(claveC && e.canonKey !== claveC){ e.canonKey = claveC; cambios++; }
+    if(claveC){
+      const cc = EXERCISE_CANONICAL_MAP[claveC];
+      [cc.en, cc.es_display].concat(cc.aliases || []).forEach(t => {
+        const n = exNormTxt(t);
+        if(n && nombres.indexOf(n) < 0 && !vistos[n]){ e.aliases.push(t); vistos[n] = 1; cambios++; }
+      });
+    }
     EX_SINONIMOS.forEach(g => {
       if(!g.some(t => nombres.indexOf(t) >= 0)) return;
       g.forEach(t => { if(nombres.indexOf(t) < 0 && !vistos[t]){ e.aliases.push(t); vistos[t] = 1; cambios++; } });
@@ -5077,6 +5146,10 @@ function resolverExTokensSB(nombre){
 }
 function resolverExSports(nombreCrudo, estricto){
   const crudo = limpiarPrefijoOrdinalSB(String(nombreCrudo || '').trim());
+  const claveCanon = exCanonClave(crudo);
+  const exCanon = exPorClaveCanon(claveCanon);
+  if(exCanon) return exCanon;
+  if(claveCanon) return null;      /* ejercicio canonico que aun no esta en la biblioteca: sin video antes que un video de otro movimiento */
   const exacto0 = crudo ? resolverExSportsBase(crudo, true) : null;
   if(exacto0) return exacto0;
   const alias0 = aliasEjSB(crudo);
@@ -67793,6 +67866,8 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   var MOD_SUG = { banded:1, band:1, bands:1, banda:1, bandas:1, elastica:1, elastic:1, con:1, sin:1, de:1, en:1, sobre:1, del:1, las:1, los:1, una:1, para:1, por:1, sentado:1, sentada:1, seated:1, standing:1, pausa:1, paused:1, isometrica:1, isometric:1, lento:1, unilateral:1, single:1, arm:1, assisted:1, asistido:1, weighted:1, lastrado:1 };
   function puntaje(nombre, ex){
     if(exIncoherenteSB(ex)) return 0;
+    var kc = exCanonClave(nombre);
+    if(kc && ex.canonKey === kc) return 30;
     var qc = tokensConceptoSB(nombre), dc = qc.filter(function(w){ return !TOK_GENERICOS_SB.has(w); });
     if(dc.length){
       var nt = tokensConceptoSB((ex.es || '') + ' ' + (ex.en || ''));
