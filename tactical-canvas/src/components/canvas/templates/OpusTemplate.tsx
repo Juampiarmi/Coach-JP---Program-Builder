@@ -14,7 +14,8 @@ interface Props {
 export function opusLabel(num: string, i: number) {
   const n = num.trim().replace(/[:.\s]+$/, '')
   if (!n) return String(i + 1).padStart(5, '0')
-  return /^\d+$/.test(n) ? n.padStart(5, '0') : n.toUpperCase()
+  // «1» → «00001»; un rótulo ya acolchado («01», «00001») se respeta tal cual.
+  return /^[1-9]\d{0,3}$/.test(n) ? n.padStart(5, '0') : n.toUpperCase()
 }
 
 /**
@@ -28,7 +29,11 @@ export function OpusTemplate({ state, palette, contentWidth, scale: s }: Props) 
   if (!blocks.length) return null
   const isStory = state.aspect === 'story'
   // Con más bloques, el texto baja un poco para que la columna no empuje el título fuera de foco.
-  const textSize = (blocks.length > 4 ? 34 : 38) * s
+  // En el lienzo de 1080 px (≈0,55 en la vista previa): rótulo 27 px ≈ 15 px · texto 35 px ≈ 19 px.
+  const textSize = (blocks.length > 4 ? 32 : 35) * s
+  // Rótulo cian #38BDF8 (respeta el SWAP ACCENT) · texto gris claro #E2E8F0.
+  const labelColor = A.cyan
+  const textColor = palette.ink.toUpperCase() === '#FFFFFF' ? '#E2E8F0' : palette.ink
   return (
     <div
       data-part="opus-blocks"
@@ -47,10 +52,10 @@ export function OpusTemplate({ state, palette, contentWidth, scale: s }: Props) 
             style={{
               fontFamily: FONT_MONO,
               fontWeight: 500,
-              fontSize: 25 * s,
+              fontSize: 27 * s,
               letterSpacing: '0.16em',
-              color: A.cyan,
-              opacity: 0.72,
+              color: labelColor,
+              opacity: 0.85,
             }}
           >
             {opusLabel(b.num, i)}:
@@ -61,8 +66,7 @@ export function OpusTemplate({ state, palette, contentWidth, scale: s }: Props) 
               fontWeight: 500,
               fontSize: textSize,
               lineHeight: 1.32,
-              color: palette.ink,
-              opacity: 0.88,
+              color: textColor,
               textWrap: 'pretty',
             }}
           >

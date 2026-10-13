@@ -204,7 +204,7 @@ export function AiGenerator({ onResult, onBurst }: Props) {
       inFlight.current = true
       setBusy(true)
       setError('')
-      setStatus(`[ MAPEO FIEL · ${blocks.length} PLACAS · CERO INVENCIONES ]`)
+      setStatus(`[ MAPEO FIEL · ${blocks.length} ${blocks.length === 1 ? 'PLACA' : 'PLACAS'} · CERO INVENCIONES ]`)
       abort.current = new AbortController()
       try {
         const result = await mapCopy(settings, topic, blocks, mode.discipline ?? 'general', abort.current.signal, setStatus)
@@ -347,7 +347,7 @@ export function AiGenerator({ onResult, onBurst }: Props) {
       )}
       {blocks && (
         <p className="mt-1.5 rounded-md border border-gold/40 bg-gold/5 px-2 py-1.5 font-mono text-[9px] leading-relaxed tracking-[0.08em] text-gold" aria-live="polite">
-          ▸ COPY ESTRUCTURADO DETECTADO · {blocks.length} PLACAS → MAPEO FIEL: se respeta tu texto y la cantidad exacta de placas, sin citas ni gráficos inventados.
+          ▸ COPY ESTRUCTURADO DETECTADO · {blocks.length} {blocks.length === 1 ? 'PLACA' : 'PLACAS'} → MAPEO FIEL: se respeta tu texto y la cantidad exacta de placas, sin citas ni gráficos inventados.
         </p>
       )}
       <div className="mt-2">
@@ -458,7 +458,7 @@ export function AiGenerator({ onResult, onBurst }: Props) {
             : cooldown.remaining > 0
               ? `[ ESPERÁ ${cooldown.remaining}s · CUOTA RESETEANDO ]`
               : blocks
-                ? `[ ⇢ MAPEAR ${blocks.length} PLACAS ]`
+                ? `[ ⇢ MAPEAR ${blocks.length} ${blocks.length === 1 ? 'PLACA' : 'PLACAS'} ]`
                 : '[ ✨ GENERAR PLACAS ]'}
         </span>
       </button>

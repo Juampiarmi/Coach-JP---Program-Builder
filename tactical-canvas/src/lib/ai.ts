@@ -1,5 +1,6 @@
 import { DEFAULT_STATE } from '../defaults'
 import { coreToPatch, CORE_SLIDE_PROMPT, readCoreSlide } from './slideSchema'
+import { extractNumberedBlocks } from './copyMapping'
 import { detectStructuredCopy, guardMapped, isAnaphora, mapLocally, MAX_MAPPED_SLIDES, type MappedBlock } from './copyMapping'
 import type { Accent, CanvasState, ChartMode, CurveShape, DiagramData, DiagramKind, RepeatMode, StructData, TemplateId } from '../types'
 import { diagramDefaults, inferPillar } from './diagramPillar'
@@ -889,6 +890,27 @@ export interface SlideContext {
  * Convierte un slide de la IA en un parche del estado de la app. Llena los datos de TODAS las
  * plantillas (no sólo la elegida) para que al cambiar de pestaña no aparezcan datos de otra sesión.
  */
+/**
+ * Si la IA dejó bloques «00001: …» dentro del titular, el remate o el párrafo, se sacan de ahí:
+ * pasan a bloques numerados y la placa cambia al layout Mindset / Opus. El título queda limpio.
+ */
+function liftNumberedBlocks(patch: Partial<CanvasState>) {
+  const found: { num: string; text: string }[] = []
+  for (const k of ['headlineA', 'headlineB', 'body'] as const) {
+    const v = patch[k]
+    if (!v) continue
+    const { rest, blocks } = extractNumberedBlocks(v)
+    if (blocks.length >= 2 || (blocks.length && found.length)) {
+      found.push(...blocks)
+      patch[k] = rest
+    }
+  }
+  if (found.length < 2) return
+  const fromAi = (patch.opusBlocks ?? []).filter((b) => b.text.trim())
+  patch.opusBlocks = (fromAi.length ? fromAi : found).slice(0, 6)
+  patch.template = 'opus'
+}
+
 export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<CanvasState> {
   const s = obj(raw)
   const d = obj(s.data)
@@ -1051,6 +1073,7 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
     Object.assign(patch, coreToPatch(core, patch.template))
     if (patch.template === 'repeat') patch.repeatPhrase = `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim() || patch.repeatPhrase
   }
+  liftNumberedBlocks(patch)
   return sanitizePatch(patch)
 }
 

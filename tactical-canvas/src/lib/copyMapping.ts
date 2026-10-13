@@ -38,6 +38,13 @@ export function detectStructuredCopy(raw: string): MappedBlock[] | null {
       .filter(Boolean)
     if (blocks.length >= 2) return blocks.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
   }
+  // Título + bloques «00001: / 01:» sin marcadores de placa: es UNA placa Mindset / Opus (o una por
+  // párrafo si cada párrafo trae sus propios bloques), nunca una placa por renglón numerado.
+  if (hasPaddedBlocks(text)) {
+    const paras = text.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean)
+    const blocks = paras.length >= 2 && paras.every((p) => hasPaddedBlocks(p)) ? paras : [text]
+    return blocks.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
+  }
   const lines = text.split('\n')
   const splitBy = (rx: RegExp) => {
     const blocks: string[][] = []
@@ -188,16 +195,58 @@ export function splitBlock(block: string): Partial<CanvasState> {
   return out
 }
 
-const OPUS_LINE = /^\s*[[(]?(\d{1,6})[\])]?\s*[:.)\-–—]\s+(.+)$/
+/** Renglón de bloque numerado: «00001: texto», «01: texto», «- 00001: texto», «[00002] texto», «3. texto». */
+const OPUS_LINE = /^\s*(?:[-•▸►▪*]\s*)?[[(]?(\d{1,6})[\])]?\s*[:.)\-–—]?\s+(.+)$/
+/** Rótulo de bloque «de terminal»: con ceros a la izquierda (01, 00001) o de 3+ dígitos. Nunca «1.» de lista común. */
+const PADDED = /^(?:0\d{1,5}|\d{3,6})$/
+/** Bloques numerados dentro de un mismo renglón: «… 00001: texto 00002: texto». */
+const INLINE_BLOCK = /(?:^|\s)(?:[-•▸►▪*]\s*)?[[(]?(0\d{1,5}|\d{3,6})[\])]?\s*:\s+/g
 
-/** Bloque con 2+ renglones numerados y al menos un renglón de título → plantilla 13 · Mindset / Opus. */
+export interface NumberedSplit {
+  /** Lo que no es bloque (título / cabecera), sin ningún rótulo «00001:» */
+  rest: string
+  blocks: { num: string; text: string }[]
+}
+
+/**
+ * Separa los bloques numerados del resto del texto. Por renglón acepta cualquier número con
+ * separador («1.», «01:», «00001:»); en línea corrida sólo rótulos acolchados con dos puntos, para no
+ * confundir cifras («8.000 PASOS», «3 SERIES») con bloques.
+ */
+export function extractNumberedBlocks(text: string): NumberedSplit {
+  const src = text.replace(/\*\*|__/g, '').replace(/\r/g, '')
+  const lines = src.split('\n').map((l) => l.trim()).filter(Boolean)
+  const hits = lines.map((l) => {
+    const m = l.match(OPUS_LINE)
+    // Sin separador explícito sólo vale un rótulo acolchado («00001 texto»).
+    return m && (/[:.)\-–—]/.test(l.slice(0, l.indexOf(m[2]))) || PADDED.test(m[1])) ? m : null
+  })
+  const byLine = hits.filter((m): m is RegExpMatchArray => Boolean(m)).map((m) => ({ num: m[1], text: cleanValue(m[2]) }))
+  if (byLine.length >= 2) return { rest: lines.filter((_, i) => !hits[i]).join('\n'), blocks: byLine }
+  const marks = [...src.matchAll(INLINE_BLOCK)]
+  if (marks.length >= 2) {
+    const blocks = marks.map((m, i) => ({
+      num: m[1],
+      text: cleanValue(src.slice((m.index ?? 0) + m[0].length, i + 1 < marks.length ? marks[i + 1].index : src.length).replace(/\s+/g, ' ')),
+    }))
+    return { rest: src.slice(0, marks[0].index).trim(), blocks: blocks.filter((b) => b.text) }
+  }
+  return { rest: src.trim(), blocks: [] }
+}
+
+/** ¿El texto trae 2+ bloques con rótulo de terminal («00001:», «01:»)? Decide el layout Mindset / Opus. */
+export function hasPaddedBlocks(text: string) {
+  const { blocks } = extractNumberedBlocks(text)
+  return blocks.length >= 2 && blocks.every((b) => PADDED.test(b.num))
+}
+
+/** Bloque con 2+ bloques numerados → plantilla 13 · Mindset / Opus. El título nunca lleva «00001:». */
 function splitOpus(block: string): Partial<CanvasState> | null {
-  const lines = block.replace(/\*\*|__/g, '').split('\n').map((l) => l.trim()).filter(Boolean)
-  const numbered = lines.map((l) => l.match(OPUS_LINE))
-  const blocks = numbered.filter((m): m is RegExpMatchArray => Boolean(m)).map((m) => ({ num: m[1], text: cleanValue(m[2]) }))
-  const title = lines.filter((_, i) => !numbered[i])
-  if (blocks.length < 2 || !title.length) return null
-  const head = splitBlock(title.join('\n'))
+  const { rest, blocks } = extractNumberedBlocks(block)
+  if (blocks.length < 2) return null
+  // Lista común «1. … 2. …» sin título ni rótulos acolchados: no es Opus (queda como estaba).
+  if (!rest && !blocks.every((b) => PADDED.test(b.num))) return null
+  const head = rest ? splitBlock(rest) : { headlineA: '', headlineB: '' }
   return { ...head, template: 'opus', opusBlocks: blocks.slice(0, 6) }
 }
 

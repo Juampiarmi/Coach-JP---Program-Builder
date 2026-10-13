@@ -39,7 +39,7 @@ export const CORE_SLIDE_SCHEMA = {
 
 export const CORE_SLIDE_PROMPT = `CONTRATO ESTRUCTURADO OBLIGATORIO: además de los campos de plantilla, CADA objeto de "slides" incluye SIEMPRE estos 7 campos, que el frontend inyecta tal cual en la placa (no los dejes afuera aunque estén vacíos):
 - "slide_number": número de placa empezando en 1, en orden.
-- "layout": "cover" (portada / gancho) | "mindset_opus" (título + bloques numerados) | "academic" (placa técnica: gráfico, métrica, diagrama, estructura) | "cta" (cierre con llamado a la acción).
+- "layout": "cover" (portada / gancho) | "mindset_opus" o "block_list" (título + bloques numerados) | "academic" (placa técnica: gráfico, métrica, diagrama, estructura) | "cta" (cierre con llamado a la acción).
 - "header_tag": la etiqueta superior entre corchetes, ej: "[ FUERZA · RFD ]".
 - "titulo_principal": el título completo en MAYÚSCULAS, exactamente como se lee (sin rótulos tipo «Título:»).
 - "accent_words": array con las palabras LITERALES del final de titulo_principal que van en naranja (el remate, 2 a 6 palabras). Ej: titulo_principal «LOS DÍAS QUE NO QUERÉS SON LOS QUE CUENTAN.» → accent_words ["SON", "LOS", "QUE", "CUENTAN."].
@@ -57,7 +57,9 @@ export function readCoreSlide(raw: unknown): CoreSlide | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
   const titulo = clean(r.titulo_principal)
-  const layout = SLIDE_LAYOUTS.find((l) => l === str(r.layout).toLowerCase())
+  const rawLayout = str(r.layout).toLowerCase()
+  // «block_list» es alias de mindset_opus (título + bloques numerados).
+  const layout = rawLayout === 'block_list' ? 'mindset_opus' : SLIDE_LAYOUTS.find((l) => l === rawLayout)
   if (!titulo || !layout) return null
   const n = Number(r.slide_number)
   return {
