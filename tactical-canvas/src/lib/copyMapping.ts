@@ -158,6 +158,9 @@ function caseRuns(line: string): string[] | null {
  * forzado y el remate naranja la última parte. Ninguna línea se descarta.
  */
 export function splitBlock(block: string): Partial<CanvasState> {
+  // Cita célebre: «frase» / "frase" + renglón «— Nombre, rol».
+  const quote = splitQuote(block)
+  if (quote) return quote
   // Mindset / Opus: renglones «00001: texto» son bloques numerados aparte; el resto es el título.
   const opus = splitOpus(block)
   if (opus) return opus
@@ -275,6 +278,14 @@ function splitOpus(block: string): Partial<CanvasState> | null {
   return { ...head, template: 'opus', opusBlocks: blocks.slice(0, 6) }
 }
 
+/** «"La frase." — Nombre Apellido, rol» (en uno o dos renglones) → plantilla 14 · Cita célebre. */
+const QUOTE_RX = /^\s*(?:cita\s*[:：]\s*)?[«"“]([^«»"“”]{8,320})[»"”]\s*(?:\n\s*)?(?:[—–-]|autor\s*[:：])\s*([^\n,·|(]{3,60})(?:\s*[,·|(]\s*([^\n)]{2,80})\)?)?\s*$/iu
+function splitQuote(block: string): Partial<CanvasState> | null {
+  const m = block.replace(/\*\*|__/g, '').trim().match(QUOTE_RX)
+  if (!m) return null
+  return { template: 'quote', quoteText: m[1].trim(), quoteAuthor: m[2].trim(), quoteRole: (m[3] ?? '').trim(), quoteSource: '', headlineA: '', headlineB: '' }
+}
+
 /** Una sola frase → premisa + golpe: 2ª oración, o tras la última coma / dos puntos, o el último ~40 %. */
 function splitSentence(s: string): [string, string] {
   const t = s.trim()
@@ -357,7 +368,7 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
     // Nada de gráficos / diagramas que el usuario no pidió.
     const wantsVisual = ASKS_VISUAL.test(block.text)
     const hasNumber = /\d/.test(block.text)
-    if (local.template === 'opus') p = { ...p, ...local, template: 'opus' }
+    if (local.template === 'opus' || local.template === 'quote') p = { ...p, ...local, template: local.template }
     else if (anaphora) p = { ...p, template: 'manifesto' }
     else if (!p.template || (!TEXT_TEMPLATES.includes(p.template) && !wantsVisual && !(p.template === 'metric' && hasNumber))) p = { ...p, template: 'statement' }
     if (p.template === 'repeat') p = { ...p, repeatPhrase: `${p.headlineA ?? ''} ${p.headlineB ?? ''}`.trim(), repeatMode: 'justified' }

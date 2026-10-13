@@ -12,6 +12,7 @@ import { STRUCT_TEMPLATES, structDefaults } from '../../lib/structPillar'
 import { StructEditor } from './StructEditor'
 import { BookmarkEditor } from './BookmarkEditor'
 import { OpusEditor } from './OpusEditor'
+import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator } from './AiAssist'
 import { TYPE_PRESETS } from '../../lib/typography'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
@@ -32,6 +33,7 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'checklist', n: '11', label: 'Checklist' },
   { id: 'bookmark', n: '12', label: 'Guardado' },
   { id: 'opus', n: '13', label: 'Mindset / Opus' },
+  { id: 'quote', n: '14', label: 'Cita célebre' },
 ]
 
 const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
@@ -203,6 +205,8 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           <p className="font-mono text-[10px] leading-relaxed text-steel/70">
             En Repetición la frase de la matriz reemplaza al titular y al párrafo: se edita en la sección 02.
           </p>
+        ) : state.template === 'quote' ? (
+          <QuoteEditor state={state} update={update} discipline={getDiscipline()} topic={topic ?? ''} />
         ) : (
         <>
         <div className="grid grid-cols-2 gap-2">
@@ -264,7 +268,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           <span className="size-3 rounded-sm" style={{ background: state.accentSwap ? '#38BDF8' : '#EA580C' }} />
           [ ⚡ SWAP ACCENT · {state.accentSwap ? 'CIAN' : 'NARANJA'} ]
         </button>
-        {state.template === 'repeat' ? null : state.template === 'manifesto' ? (
+        {state.template === 'repeat' || state.template === 'quote' ? null : state.template === 'manifesto' ? (
           <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
         ) : (
           <Field label={state.template === 'diagram' ? 'Párrafo (opcional)' : 'Párrafo'} hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
@@ -873,5 +877,7 @@ function summaryFor(s: CanvasState) {
       return s.bookmarkData ? `${s.bookmarkData.points.length} viñetas` : 'Viñetas automáticas del carrusel'
     case 'opus':
       return `${(s.opusBlocks ?? []).filter((b) => b.text.trim()).length} bloques numerados`
+    case 'quote':
+      return s.quoteAuthor ? `— ${s.quoteAuthor}` : 'Cita sin autor'
   }
 }

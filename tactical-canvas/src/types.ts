@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve' | 'funnel' | 'versus'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -174,6 +174,12 @@ export interface CanvasState {
   bookmarkData: BookmarkData | null
   /** Mindset / Opus (plantilla 13): bloques numerados debajo del título principal */
   opusBlocks: OpusBlock[]
+  /** Cita célebre (plantilla 14): frase, autor y rol (ej: «Bicampeón olímpico de maratón») */
+  quoteText: string
+  quoteAuthor: string
+  quoteRole: string
+  /** Fuente de la cita (entrevista, libro, discurso). Sólo para verificar en el panel: no se dibuja. */
+  quoteSource: string
   // Repetición matrix (plantilla 07)
   repeatPhrase: string
   repeatAccent: RepeatAccent

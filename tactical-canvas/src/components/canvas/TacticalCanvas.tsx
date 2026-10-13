@@ -9,6 +9,7 @@ import { CompareTemplate } from './templates/CompareTemplate'
 import { MetricTemplate } from './templates/MetricTemplate'
 import { ManifestoTemplate } from './templates/ManifestoTemplate'
 import { OpusTemplate } from './templates/OpusTemplate'
+import { QuoteTemplate } from './templates/QuoteTemplate'
 import { StatementTemplate } from './templates/StatementTemplate'
 import { DiagramTemplate } from './templates/DiagramTemplate'
 import { RepeatTemplate } from './templates/RepeatTemplate'
@@ -149,8 +150,9 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const isDiagram = state.template === 'diagram'
   const isRepeat = state.template === 'repeat'
   const isOpus = state.template === 'opus'
+  const isQuote = state.template === 'quote'
   const isStruct = (STRUCT_TEMPLATES as readonly string[]).includes(state.template)
-  const centered = isStatement || isManifesto || isRepeat || isOpus
+  const centered = isStatement || isManifesto || isRepeat || isOpus || isQuote
   // Tema: Minimal Paper sólo en Diagrama / Repetición; 01–05 usan siempre la paleta Táctico Dark.
   const theme = effectiveTheme(state)
   const swap = Boolean(state.accentSwap)
@@ -328,6 +330,10 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                   scale={scale}
                 />
                 </div>
+              ) : isQuote ? (
+                <div data-nudge="block" style={nudge('block')}>
+                  <QuoteTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />
+                </div>
               ) : isManifesto ? (
                 <div data-nudge="block" style={nudge('block')}>
                 <ManifestoTemplate
@@ -374,8 +380,8 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           </main>
 
           <Footer
-            citeMain={isManifesto || isRepeat ? '' : state.citeMain}
-            citeSub={isManifesto || isRepeat ? '' : state.citeSub}
+            citeMain={isManifesto || isRepeat || isQuote ? '' : state.citeMain}
+            citeSub={isManifesto || isRepeat || isQuote ? '' : state.citeSub}
             scale={baseScale}
             ink={palette.ink}
             muted={palette.muted}

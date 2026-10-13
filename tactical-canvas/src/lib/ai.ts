@@ -109,6 +109,7 @@ PLANTILLAS DISPONIBLES (templateId):
 - "piramide": jerarquía de prioridades en 3 o 4 estratos (base no negociable → cúspide de detalle).
 - "checklist": auditoría operativa de 3 o 4 condiciones binarias ([ ✓ ] pasa / [ ✗ ] falla).
 - "guardado": placa final de retención (cheat sheet / ficha técnica): 3 o 4 viñetas que condensan todo el carrusel + llamado a guardar.
+- "cita": cita célebre estilo «Forbes Quotes» (frase real de un deportista o persona de éxito + nombre + rol). SÓLO con una frase que esa persona dijo de verdad y de fuente conocida; si no tenés certeza absoluta, no uses esta plantilla.
 - "opus": placa de mentalidad con jerarquía: título principal (titleWhite + titleAccent corto) y debajo 2 a 6 bloques numerados («00001:» + una frase de criterio u hábito operativo). Ideal para estándares, reglas o hábitos de mindset en una placa.
 CIERRE DE RETENCIÓN: en todo carrusel de 4 a 5 placas, la última placa es por defecto "guardado", salvo que el usuario pida otro cierre.
 
@@ -167,7 +168,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
   "caption": string,
   "slides": [
     {
-      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
@@ -192,6 +193,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
       "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
       "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
+      "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
       "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
       "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
       "grafico": { ... } (SIEMPRE: completo y preciso si templateId es "grafico"; en los demás, una versión breve del mismo tema)
@@ -733,6 +735,9 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   checklist: 'checklist',
   guardado: 'bookmark',
   opus: 'opus',
+  cita: 'quote',
+  quote: 'quote',
+  frase: 'quote',
   mindset_opus: 'opus',
   'mindset / opus': 'opus',
   bloques: 'opus',
@@ -1031,6 +1036,16 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   if (template === 'bookmark' && gPoints.length >= 3) {
     patch.bookmarkData = { points: gPoints, cta: upper(first(g.cta, BOOKMARK_CTA)), accent: 'orange' }
   }
+
+  // 14 · Cita célebre: sin fuente concreta no se acepta (defensa contra frases apócrifas).
+  const ci = obj(s.cita ?? s.quote)
+  const quoteText = first(ci.quote, ci.frase, ci.cita).replace(/^[«"“\s]+|[»"”\s]+$/gu, '')
+  const quoteAuthor = first(ci.author, ci.autor)
+  const quoteSource = first(ci.source, ci.fuente)
+  if (quoteText && quoteAuthor) {
+    Object.assign(patch, { quoteText, quoteAuthor, quoteRole: first(ci.role, ci.rol), quoteSource })
+  }
+  if (template === 'quote' && !(quoteText && quoteAuthor && quoteSource.length >= 6)) patch.template = 'statement'
 
   // 13 · Mindset / Opus: bloques numerados separados del título (nunca un único párrafo).
   const rawBlocks = Array.isArray(op.bloques ?? op.items ?? op.blocks ?? s.bloques ?? s.items)
@@ -1378,6 +1393,7 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   checklist: 'checklist',
   bookmark: 'guardado',
   opus: 'opus',
+  quote: 'cita',
 }
 
 export interface RegenerateRequest {
@@ -1559,6 +1575,58 @@ Forma exacta: { "hooks": [ { "angle": "contrarian", "white": string, "accent": s
     })
     .filter((h) => h.white || h.accent)
   if (!out.length) throw new Error('La IA no devolvió ganchos utilizables. Probá de nuevo.')
+  return out
+}
+
+export interface FamousQuote {
+  /** Frase en español (traducción fiel si el original es en otro idioma) */
+  quote: string
+  /** Texto original, si no estaba en español */
+  original: string
+  author: string
+  /** Rol corto: «Bicampeón olímpico de maratón», «Fundador de Apple» */
+  role: string
+  /** Dónde lo dijo: entrevista, libro, discurso, comercial, con año */
+  source: string
+}
+
+/**
+ * Citas célebres REALES de deportistas y personas de éxito, con su fuente verificable. Las frases
+ * apócrifas o mal atribuidas (muy comunes en las «frases de famosos») se descartan: sin fuente
+ * concreta, no hay cita.
+ */
+export async function suggestQuotes(
+  settings: AiSettings,
+  ctx: { theme: string; person?: string; discipline: Discipline },
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<FamousQuote[]> {
+  const focus = DISCIPLINE_RULE[ctx.discipline]
+  const user = `Buscá 3 citas célebres REALES para una placa estilo «Forbes Quotes» de COACH JP (alto rendimiento).
+Tema: «${ctx.theme.trim() || 'disciplina, constancia y alto rendimiento'}».${ctx.person?.trim() ? `
+Persona pedida: «${ctx.person.trim()}» (sólo citas de esa persona).` : '\nAutores: deportistas de élite, entrenadores, empresarios o personas de éxito reconocidas (variá el perfil).'}
+${focus ? `${focus}
+` : ''}REGLAS INQUEBRANTABLES:
+- Sólo frases que la persona DIJO O ESCRIBIÓ de verdad, con una fuente concreta y verificable (entrevista, libro, discurso, documental, comercial) y su año.
+- Prohibidas las frases apócrifas o de atribución dudosa (muchas «frases famosas» circulan con el autor equivocado). Ante la mínima duda, no la incluyas.
+- Si el original no está en español, "quote" es una traducción fiel al español rioplatense neutro (sin adornos) y "original" el texto exacto en su idioma.
+- Frases cortas a medianas (máx 220 caracteres). Nada de autoayuda vacía.
+- Si no tenés certeza de ninguna, devolvé "quotes": [].
+Forma exacta: { "quotes": [ { "quote": string, "original": string, "author": string (nombre y apellido), "role": string (rol corto en español, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo) } ] }`
+  const res = await askJson(settings, user, signal, onStatus)
+  const list = (Array.isArray(res.quotes) ? res.quotes : []).map(obj)
+  const out = list
+    .map((q) => ({
+      quote: str(first(q.quote, q.cita)).replace(/^[«"“\s]+|[»"”\s]+$/gu, ''),
+      original: str(first(q.original)),
+      author: str(first(q.author, q.autor)),
+      role: str(first(q.role, q.rol)),
+      source: str(first(q.source, q.fuente)),
+    }))
+    // Sin autor o sin fuente concreta no se ofrece: es la defensa contra las citas inventadas.
+    .filter((q) => q.quote && q.author && q.source.length >= 6)
+    .slice(0, 3)
+  if (!out.length) throw new Error('La IA no encontró citas con fuente verificable para ese tema. Probá con otro tema o con una persona concreta.')
   return out
 }
 
