@@ -14433,6 +14433,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var p = regProgreso(cfg);
     return '[ \\ud83d\\udcdd REGISTRAR CARGAS Y SERIES ]<small>' + p.hechos + ' / ' + p.total + ' sets registrados</small>';
   }
+  function rxIntervaloSB(en){
+    var nombres = String(en.titulo || '').split(/\\s*\\+\\s*/), reps = String(en.reps || '').split('+');
+    var txt = (en.reps && reps.length === nombres.length)
+      ? nombres.map(function(n, i){ return reps[i] + ' ' + n; }).join(' + ')
+      : ((en.reps ? en.reps + ' ' : '') + en.titulo);
+    return txt + (en.carga ? ' @ ' + en.carga : '');
+  }
   function jpRegBotonHtml(cfg){
     return '<button type="button" class="jp-reg-open" data-regcfg="' + encodeURIComponent(JSON.stringify(cfg)) + '">' + regBotonInner(cfg) + '</button>';
   }
@@ -14442,7 +14449,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function regPintar(){
     var bg = document.getElementById('jpRegSheet'); if(!bg || !regEst) return;
     var c = regEst.cfg, e = c.ex[regEst.ex], ld = getLoad(regKey());
-    regQ('.jp-reg-t').textContent = String(c.t || 'Registro').toUpperCase();
+    regQ('.jp-reg-t').textContent = 'REGISTRO DE TRABAJO // ' + e.sets + ' SETS';
     regQ('.jp-reg-exs').innerHTML = c.ex.length > 1
       ? c.ex.map(function(x, i){ return '<button type="button" class="jp-reg-ex' + (i === regEst.ex ? ' on' : '') + '" data-regex="' + i + '">' + escSB(x.nombre) + '</button>'; }).join('')
       : '<div class="jp-reg-exn">' + escSB(e.nombre) + '</div>';
@@ -14483,7 +14490,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<div class="jp-reg-sets"></div>' +
         '<div class="jp-reg-pres"></div>' +
         '<div class="jp-reg-fila"><label><span>KG</span><input type="text" inputmode="decimal" class="jp-reg-kg" autocomplete="off" placeholder="\\u2014"></label>' +
-          '<b>\\u00d7</b><label><span>REPS</span><input type="text" inputmode="decimal" class="jp-reg-reps" autocomplete="off" placeholder="\\u2014"></label></div>' +
+          '<b>\\u00d7</b><label><span>REPS</span><input type="text" inputmode="decimal" class="jp-reg-reps" autocomplete="off" placeholder="\\u2014"></label>' +
+          '<button type="button" class="jp-reg-chk" aria-label="Confirmar set">\\u2713</button></div>' +
         '<button type="button" class="jp-reg-ok">[ CONFIRMAR REGISTRO ]</button>' +
       '</div>';
     document.body.appendChild(bg);
@@ -14519,7 +14527,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(ex){ regEst.ex = parseInt(ex.getAttribute('data-regex'), 10) || 0; var c = regEst.cfg, e0 = c.ex[regEst.ex], s0 = 1; for(var i = 1; i <= e0.sets; i++){ if(!getLoad(getLoadKey(c.w, c.d, c.b, e0.idx, i)).done){ s0 = i; break; } } regEst.set = s0; regPintar(); return; }
     var st = t.closest('[data-regset]');
     if(st){ regEst.set = parseInt(st.getAttribute('data-regset'), 10) || 1; regPintar(); return; }
-    if(t.closest('.jp-reg-ok')){ regConfirmar(); return; }
+    if(t.closest('.jp-reg-ok') || t.closest('.jp-reg-chk')){ regConfirmar(); return; }
   });
   document.addEventListener('input', function(e){
     var t = e.target; if(!regEst || !t || !t.classList) return;
@@ -16950,6 +16958,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     let anclaUsada = false;
     let nIndiv = 0;                  /* badge [ E1 ] [ E2 ]... de los ejercicios individuales del bloque */
     const regCfg = [];               /* ejercicios de intervalo: se registran desde el bottom sheet, sin casilleros en la tarjeta */
+    const gruposInt = {};            /* cuantos ejercicios cuelgan de cada encabezado de intervalo (para el rotulo [ E1 ] / [ E1–E2 ]) */
+    entries.forEach(function(en){
+      if(en && en.tipo === 'simple' && en.int && !esCalentamiento){ const hi = entries.indexOf(en.int); if(hi >= 0) gruposInt[hi] = (gruposInt[hi] || 0) + 1; }
+    });
     let filas = contS ? jpContinuoSportsHtml(contS, block, weekIdx, dayId) : '';
     let duracionEstimada = 0;
     (contS ? [] : entries).forEach(function(entry, idx){
@@ -17020,13 +17032,23 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       if(entry.tipo === 'intervalo'){
-        filas += '<div class="jp-dose-bar jp-int-pill"><span class="jp-db-br">[</span><span class="jp-db-seg jp-db-vol">\\u23f1 CADA ' + fmtIntervaloSB(entry.seg) + '</span>' +
-          (entry.sets ? '<span class="jp-db-sep">|</span><span class="jp-db-seg jp-db-tempo">' + entry.sets + ' SETS</span>' : '') + '<span class="jp-db-br">]</span></div>';
+        const nGrupo = gruposInt[idx] || 0, e0 = nIndiv + 1;
+        const rotE = nGrupo ? (nGrupo > 1 ? 'E' + e0 + '\\u2013E' + (e0 + nGrupo - 1) : 'E' + e0) : '';
+        const hhmm = ('0' + Math.floor(entry.seg / 60)).slice(-2) + ':' + ('0' + (entry.seg % 60)).slice(-2);
+        filas += '<div class="jp-int-head">' + (rotE ? '<span class="jp-int-e">[ ' + rotE + ' ]</span>' : '') +
+          '<span class="jp-int-t">EVERY ' + hhmm + (entry.sets ? ' \\u00d7 ' + entry.sets + ' SETS' : '') + '</span></div>';
         return;
       }
       if(entry.tipo !== 'simple') return;
       const exIdx = 'e' + idx;
-      if((entry.int || entry.sets > 6) && !esCalentamiento && !entry.tecnica){
+      if(entry.int && !esCalentamiento && !entry.tecnica){
+        nIndiv++;
+        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '' });
+        filas += '<div class="jp-int-rx" data-rest-sec="0"><div class="jp-int-txt">' + escSB(rxIntervaloSB(entry)) + '</div>' +
+          ((entry.tempo || entry.rir) ? '<div class="jp-int-meta">' + [entry.tempo ? 'TEMPO ' + escSB(entry.tempo) : '', entry.rir ? 'RIR ' + escSB(entry.rir) : ''].filter(Boolean).join(' \\u00b7 ') + '</div>' : '') + '</div>';
+        return;
+      }
+      if(entry.sets > 6 && !esCalentamiento && !entry.tecnica){
         nIndiv++;
         regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '' });
         filas += '<div class="jp-sb-ex jp-sb-ex-int" data-rest-sec="0">' +
@@ -17106,7 +17128,6 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null), entry.titulo, entry.unidad === 'reps' || !entry.unidad ? entry.reps : '') +
         '</div>';
     });
-    if(regCfg.length) filas += jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg });
     if(!filas) return;
     /* directiva ("Unificación de tips/videos"): UN SOLO acordeón por
        bloque -- absorbe lo que antes se veía triplicado (este mismo
@@ -17176,8 +17197,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (block.ocultaTituloTablero ? '' : '<div class="jp-sb-title">' + escSB(tituloBloquePrincipal) + '</div>') +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         (duracionEstimada ? '<div class="jp-sb-duracion">\\u23f1 TIEMPO ESTIMADO: ' + duracionEstimada + ' MINUTOS</div>' : '') +
-        filas + chipsVideoSB(videosBloque, busquedasVid) +
-        (tieneAcc ?
+        filas + (regCfg.length && tieneAcc ?
+          '<div class="jp-int-pautas">' +
+            (objetivoHtml ? '<div class="jp-int-pl">&#127919; OBJETIVO</div><div class="jp-int-pt">' + objetivoHtml + '</div>' : '') +
+            (tipsHtml ? '<div class="jp-int-pl">&#128161; NOTAS DE PROGRESI&Oacute;N &amp; TIPS</div><div class="jp-int-pt">' + tipsHtml + '</div>' : '') +
+          '</div>' : '') + chipsVideoSB(videosBloque, busquedasVid) +
+        (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg }) : '') +
+        (tieneAcc && !regCfg.length ?
           '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS &amp; TIPS DEL BLOQUE</summary>' +
             '<div class="jp-details-content">' +
               (objetivoHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">&#127919; OBJETIVO FISIOL&Oacute;GICO</div><div class="jp-sb-pauta-txt">' + objetivoHtml + '</div></div>' : '') +
@@ -36948,6 +36974,29 @@ body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform 
 .jp-reg-fila input::placeholder{ color:rgba(148,163,184,.45); }
 .jp-reg-fila b{ padding-bottom:16px; color:#64748b; font-size:1.2rem; }
 .jp-reg-ok{ display:block; width:100%; padding:16px 10px; border-radius:12px; cursor:pointer; background:linear-gradient(135deg,#38BDF8,#1E7AA8); border:0; color:#021214; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.9rem; letter-spacing:.08em; }
+.jp-int-head{ display:inline-flex; align-items:center; gap:10px; max-width:100%; margin:6px 0 10px; padding:7px 14px; border-radius:12px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.1); }
+.jp-int-e{ flex:0 0 auto; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.9rem; color:#E5B04A; }
+.jp-int-t{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.95rem; letter-spacing:.03em; color:#fff; text-transform:uppercase; overflow-wrap:anywhere; }
+.jp-int-rx{ margin:0 0 10px; }
+.jp-int-txt{ font-size:.98rem; line-height:1.4; color:#e5e7eb; overflow-wrap:anywhere; }
+.jp-int-meta{ margin-top:2px; font-size:.72rem; font-weight:700; letter-spacing:.05em; color:rgba(148,163,184,.85); }
+.jp-int-pautas{ margin:6px 0 12px; }
+.jp-int-pl{ margin:8px 0 3px; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.72rem; letter-spacing:.1em; color:rgba(148,163,184,.9); }
+.jp-int-pt{ font-size:.88rem; line-height:1.5; color:#F59E0B; overflow-wrap:anywhere; }
+.jp-int-pt *{ color:inherit !important; }
+.jp-reg-open{ background:linear-gradient(135deg,#E8B54E,#C9922B) !important; border:0 !important; color:#1a1205 !important; font-size:1rem !important; padding:18px 12px !important; border-radius:16px !important; box-shadow:0 8px 22px rgba(201,146,43,.3); }
+.jp-reg-open small{ color:rgba(26,18,5,.7) !important; font-weight:700 !important; }
+.jp-reg-open:active{ filter:brightness(.92); }
+.jp-reg-bg{ background:rgba(0,0,0,.55) !important; }
+.jp-reg-sheet{ background:rgba(23,23,23,.95) !important; -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border-radius:18px 18px 0 0 !important; border:0 !important; border-top:1px solid #262626 !important; padding:10px 16px calc(20px + env(safe-area-inset-bottom)) !important; }
+.jp-reg-t{ font-size:.95rem !important; color:#fff !important; letter-spacing:.04em !important; }
+.jp-reg-set{ background:rgba(255,255,255,.06) !important; border:1px solid rgba(255,255,255,.12) !important; color:#d4d4d4 !important; }
+.jp-reg-set.done{ color:#34D399 !important; border-color:rgba(16,185,129,.55) !important; }
+.jp-reg-set.on{ background:rgba(2,6,23,.9) !important; border:2px solid #fff !important; color:#fff !important; box-shadow:0 0 14px rgba(56,189,248,.55); }
+.jp-reg-fila input{ background:rgba(0,0,0,.45) !important; border:1px solid rgba(255,255,255,.12) !important; }
+.jp-reg-chk{ flex:0 0 auto; width:48px; height:48px; margin-bottom:0; border-radius:50%; cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,.3); color:#fff; font-size:1.2rem; }
+.jp-reg-chk:active{ background:rgba(255,255,255,.14); }
+.jp-reg-ok{ background:linear-gradient(135deg,#E8B54E,#C9922B) !important; color:#1a1205 !important; border-radius:14px !important; }
 .jp-es-sub{ margin:-2px 0 8px 2px; font-size:.78rem; line-height:1.3; color:rgba(148,163,184,.78); font-family:'Inter',sans-serif; text-transform:none; letter-spacing:0; }
 .jp-cont-pill{ margin:6px 0 8px; }
 .jp-cont-lista{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
