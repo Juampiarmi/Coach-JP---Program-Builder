@@ -70,7 +70,7 @@ const DISCIPLINE_RULE: Record<Discipline, string> = {
 
 const MODE_RULE: Record<GenMode, string> = {
   auto: 'Elegí vos el formato: 1 placa si el concepto entra en una sola idea; 3 historias si necesita gancho → evidencia → acción; carrusel de 4 a 5 slides si es un tema para desarrollar. Indicá tu elección en "format".',
-  single: 'Devolvé exactamente 1 slide. format = "single".',
+  single: 'Devolvé exactamente 1 slide con titleWhite + titleAccent + parrafo completos (nunca "repeticion" como única placa). format = "single".',
   stories: 'Devolvé exactamente 3 slides para Historias de Instagram (9:16): 1) gancho que frene el scroll, 2) evidencia o dato, 3) acción concreta o estándar. format = "stories".',
   carousel: 'Devolvé entre 4 y 5 slides para un carrusel de feed: portada con gancho, desarrollo con datos y evidencia, y la ÚLTIMA placa es por defecto "guardado" (cheat sheet de retención con las 3 o 4 ideas clave). format = "carousel".',
 }
@@ -142,7 +142,7 @@ FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (v
   3) PROTOCOLO DE CAMPO · "pipeline" (o "checklist"): aplicación 100 % práctica con NÚMEROS REALES en cada paso (% 1RM o carga, series × repeticiones, RIR / RPE, descansos en minutos o segundos, pérdida de velocidad, frecuencia semanal). Cero abstracciones: prohibido «entrená con intensidad», «descansá lo suficiente», «escuchá a tu cuerpo».
   4) EVIDENCIA · "metrica": dato porcentual o métrica concreta con su unidad y contexto, respaldada en "citation" por un estudio indexado REAL (si no tenés certeza de un paper real con ese dato, elegí otro dato y otro paper que sí conozcas: nunca inventes).
   5) CIERRE TÁCTICO + CTA · "guardado": la REGLA DE ORO resumida en los points (accionables, con los números del protocolo) y en "cta" una llamada a la acción clara que pide enviar UNA PALABRA CLAVE al DM, ligada al tema (ej: ENVIÁ «RFD» AL MD Y TE PASO EL PROTOCOLO).
-- MINDSET / TÁCTICO (filosofía, disciplina, frase contundente): "repeticion" (mode "kinetic" o "echo") y "manifiesto"; si es carrusel, cierra con "guardado"; si es una sola frase, 1 placa.
+- MINDSET / TÁCTICO (filosofía, disciplina, frase contundente): "sentencia" y "manifiesto" con titular + remate + bajada, y como mucho una "repeticion" de apoyo con frase de 3+ palabras; si es carrusel, cierra con "guardado"; si es una sola frase, 1 placa "sentencia". Nunca una palabra repetida como mensaje.
 Si el usuario indica una cantidad de placas o un formato, respetalo por encima de estas secuencias.
 FASE 2 · REDACCIÓN TÁCTICA: escribís cada placa con el tono militar, científico y quirúrgico de Coach JP, con su templateId preseleccionado y TODOS sus datos completos (tarjetas A/B, subtipo y valores del diagrama, puntos del gráfico, frase de repetición). Las placas forman una sola historia: no repitas titulares ni ideas entre placas.
 
@@ -181,7 +181,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
         "trayectoria": { "caotico": string (rótulo del tramo caótico), "limpio": string (rótulo del tramo limpio), "meta": string (meta en la bandera) },
         "radar": { "axes": [6 strings cortos], "values": [6 números 0-100, estado actual], "compare": [6 números 0-100, estado ideal], "labelA": string, "labelB": string }
       },
-      "repeticion": { "phrase": string (MAYÚSCULAS, 1-2 palabras clave), "phraseLarga": string (MAYÚSCULAS, 4-10 palabras), "mode": "diagonal" | "echo" | "kinetic" | "justified" },
+      "repeticion": { "phrase": string (MAYÚSCULAS, frase de 3 a 6 palabras con sentido propio; nunca una palabra suelta ni repetida), "phraseLarga": string (MAYÚSCULAS, 4-10 palabras), "mode": "diagonal" | "echo" | "kinetic" | "justified" },
       "manifiesto": { "author": string (usá "${DEFAULT_AUTHOR}" salvo que la frase sea de un autor real conocido) },
       "matriz2x2": { "axisX": string (variable horizontal), "axisY": string (variable vertical), "quadrants": [4 objetos { "label": string (badge en MAYÚSCULAS, 1-3 palabras), "tag": string (descripción breve) } en orden: superior izquierdo, superior derecho, inferior izquierdo, inferior derecho], "highlight": número 0-3 (el cuadrante óptimo) },
       "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
@@ -296,11 +296,19 @@ export function detectGoal(text: string, goal: EditorialGoal = 'auto'): Resolved
   return 'science'
 }
 
+/** Académico o Ciencia elegidos a mano convierten AUTO y 1 PLACA en carrusel. */
+export function formatForcedToCarousel(mode: GenMode, opts: EditorialOptions) {
+  return (mode === 'auto' || mode === 'single') && (opts.tone === 'academic' || opts.goal === 'science')
+}
+
 /**
  * Formato efectivo. Sólo decide cuando el usuario dejó AUTO: explicar un proceso o publicitar
  * servicios → carrusel; una frase contundente o sentencia rápida → 1 placa; si no, decide la IA.
  */
 export function resolveFormat(text: string, mode: GenMode, opts: EditorialOptions): GenMode {
+  // Académico / Paper o Ciencia / Técnico elegidos a mano: el desglose de evidencia no entra en
+  // 1 placa, se fuerza carrusel (4-5). Las 3 historias se respetan.
+  if (formatForcedToCarousel(mode, opts)) return 'carousel'
   if (mode !== 'auto') return mode
   const goal = detectGoal(text, opts.goal)
   const words = text.trim().split(/\s+/).filter(Boolean).length
@@ -318,7 +326,25 @@ const GOAL_RULE: Record<ResolvedGoal, string> = {
   science:
     'OBJETIVO EDITORIAL: CIENCIA / TÉCNICO. plan.objetivo = "ciencia". Usá la arquitectura técnica de 5 placas: portada con el error operativo (sentencia) → fisiología / mecanismo (grafico o diagrama) → protocolo de campo con números reales (pipeline o checklist) → evidencia con métrica y cita real (metrica) → regla de oro + CTA con palabra clave al DM (guardado).',
   mindset:
-    'OBJETIVO EDITORIAL: MINDSET / TÁCTICO. plan.objetivo = "mindset". Priorizá "repeticion" (kinetic o echo) y "manifiesto", con frases cortas y contundentes.',
+    'OBJETIVO EDITORIAL: MINDSET / TÁCTICO. plan.objetivo = "mindset". Frases cortas y contundentes, pero con sustancia: cada placa es una idea completa (titleWhite + titleAccent + parrafo). En 1 placa usá "sentencia"; en carrusel combiná "sentencia", "manifiesto" y, como mucho, una "repeticion" de apoyo.',
+}
+
+/**
+ * ANTI-CLICHÉ Y ANTI-TEXTO VACÍO (mindset, 1 placa y repetición): nada de una palabra repetida
+ * como «frase», y cada placa con titular + remate táctico + bajada que explique el porqué.
+ */
+const SUBSTANCE_RULE = `ANTI-CLICHÉ Y ANTI-TEXTO VACÍO (inquebrantable):
+- PROHIBIDO cualquier frase compuesta por una sola palabra repetida o por una palabra suelta (ej: «EJECUTAR EJECUTAR EJECUTAR», «DISCIPLINA DISCIPLINA», «ENFOQUE.»). Ni en titleWhite, ni en titleAccent, ni en repeticion.phrase / phraseLarga.
+- Cada placa, incluso en formato 1 placa, lleva un mensaje con sustancia y estructura completa: titleWhite (premisa en blanco), titleAccent (remate táctico en naranja que da vuelta o completa la premisa) y parrafo (bajada explicativa de 1 a 2 oraciones con el porqué operativo).
+- "repeticion" sólo con una frase de 3 a 8 palabras con sentido propio (ej: «EL PROTOCOLO NO NEGOCIA CON TU ÁNIMO»), nunca una palabra clave suelta; y nunca como única placa de la pieza.`
+
+/** Inputs de mindset muy breves (menos de 10 palabras): se expande la premisa antes de enviarla. */
+export const BRIEF_EXPAND_WORDS = 10
+
+export function expandBriefInput(text: string, goal: ResolvedGoal) {
+  const t = text.trim()
+  if (goal !== 'mindset' || !t || t.split(/\s+/).filter(Boolean).length >= BRIEF_EXPAND_WORDS) return null
+  return `Desarrolla el concepto: '${t}' desde la perspectiva de la disciplina operativa frente a la fluctuación emocional. Explica por qué el rendimiento se basa en cumplir protocolos fijos cuando el SNC no quiere entrenar.`
 }
 
 export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discipline = 'general', editorial?: EditorialOptions) {
@@ -328,8 +354,12 @@ export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discip
     editorial?.inputMode === 'brief'
       ? `BRIEF DEL USUARIO (instrucciones completas: interpretá la intención, los servicios, el público y el objetivo antes de planificar):\n---\n${text}\n---`
       : `Tema o concepto a comunicar: "${text}"`
-  const goal = editorial ? `${GOAL_RULE[detectGoal(text, editorial.goal)]}\n\n${TONE_RULE[editorial.tone ?? 'viral']}\n\n` : ''
-  return `${head}\n\n${goal}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
+  const resolved = detectGoal(text, editorial?.goal)
+  const expanded = expandBriefInput(text, resolved)
+  const goal = editorial ? `${GOAL_RULE[resolved]}\n\n${TONE_RULE[editorial.tone ?? 'viral']}\n\n` : ''
+  // Mindset, 1 placa o repetición: sustancia obligatoria (titular + remate + bajada).
+  const substance = resolved === 'mindset' || mode === 'single' ? `${SUBSTANCE_RULE}\n\n` : ''
+  return `${head}\n\n${expanded ? `PREMISA EXPANDIDA (el input es breve): ${expanded}\n\n` : ''}${goal}${substance}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,6 +1057,33 @@ export interface GenerationResult {
   plan?: { goal: string; intent: string; sequence: TemplateId[] }
 }
 
+/** «EJECUTAR EJECUTAR EJECUTAR» → «EJECUTAR»: una palabra repetida en fila nunca es una frase. */
+export function collapseRepeats(t: string) {
+  return t.replace(/(?<![\p{L}\p{N}])([\p{L}\p{N}*]+)(?:[\s,.·—-]+\1(?![\p{L}\p{N}]))+/giu, '$1')
+}
+
+const distinctWords = (t: string) => new Set(t.toUpperCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean)).size
+
+/**
+ * Guarda anti-texto vacío: colapsa palabras repetidas, la repetición nunca usa una frase de menos de
+ * 3 palabras distintas (pasa a titular + remate) y en 1 placa la repetición pasa a sentencia para
+ * mostrar titular, remate y bajada.
+ */
+export function enforceSubstance(p: Partial<CanvasState>, single: boolean): Partial<CanvasState> {
+  const out = { ...p }
+  if (out.headlineA) out.headlineA = collapseRepeats(out.headlineA)
+  if (out.headlineB) out.headlineB = collapseRepeats(out.headlineB)
+  if (out.repeatPhrase !== undefined && distinctWords(collapseRepeats(out.repeatPhrase)) < 3) {
+    const full = collapseRepeats(`${out.headlineA ?? ''} ${out.headlineB ?? ''}`.replace(/\*/g, '').trim())
+    if (distinctWords(full) >= 3) {
+      out.repeatPhrase = full
+      if (out.repeatMode === 'echo' || out.repeatMode === 'kinetic') out.repeatMode = 'justified'
+    }
+  }
+  if (single && out.template === 'repeat') out.template = 'statement'
+  return out
+}
+
 export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideContext = {}): GenerationResult {
   const root = obj(payload)
   const rawSlides = Array.isArray(root.slides) ? root.slides : Array.isArray(payload) ? payload : [payload]
@@ -1038,6 +1095,7 @@ export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideConte
   slides = slides.slice(0, limit)
   const declared = oneOf(root.format, ['single', 'stories', 'carousel'] as const, 'single')
   const format = mode === 'auto' ? (slides.length === 1 ? 'single' : declared === 'single' ? 'carousel' : declared) : mode
+  slides = slides.map((p) => enforceSubstance(p, format === 'single'))
   const caption = cleanCaption(str(root.caption))
   const rawPlan = obj(root.plan)
   const plan = Object.keys(rawPlan).length

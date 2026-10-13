@@ -7,6 +7,7 @@ import {
   GOAL_LABEL,
   MODE_LABEL,
   resolveFormat,
+  formatForcedToCarousel,
   type AiSettings,
   type Discipline,
   type EditorialGoal,
@@ -428,7 +429,11 @@ export function AiGenerator({ onResult, onBurst }: Props) {
         <p className="mt-1.5 font-mono text-[9px] tracking-[0.1em] text-steel/80 uppercase" aria-live="polite">
           ▸ {goal === 'auto' ? 'Detectado' : 'Objetivo'}: <span className="text-white">{GOAL_LABEL[detectedGoal]}</span> · Formato:{' '}
           <span className="text-cyan">
-            {mode.mode === 'auto' && effectiveMode !== 'auto' ? `AUTO → ${FORMAT_LABEL[effectiveMode]}` : FORMAT_LABEL[effectiveMode]}
+            {formatForcedToCarousel(mode.mode, editorial)
+              ? `${FORMAT_LABEL[effectiveMode]} (FORZADO: ${tone === 'academic' ? 'ACADÉMICO' : 'CIENCIA'})`
+              : mode.mode === 'auto' && effectiveMode !== 'auto'
+                ? `AUTO → ${FORMAT_LABEL[effectiveMode]}`
+                : FORMAT_LABEL[effectiveMode]}
           </span>
         </p>
       )}
