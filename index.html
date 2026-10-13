@@ -5660,15 +5660,32 @@ function reanclarVideosBloqueSB(b, detectados){
   if(cambio){ try{ save(); }catch(e){} }
   return cambio;
 }
-function resolverVideosBloqueSports(b){
+/* items de cada semana de un bloque de Pizarra Sports: S1 en b.items, S2..S4 en b.weekItems[wk] (null = sin prescripcion propia) */
+function itemsPorSemanaSB(b){
+  const w = Array.isArray(b.weekItems) ? b.weekItems : [];
+  return [b.items || [], Array.isArray(w[1]) ? w[1] : null, Array.isArray(w[2]) ? w[2] : null, Array.isArray(w[3]) ? w[3] : null];
+}
+function detectadosDeItemsSB(b, arr){
+  const warm = esBloqueEntradaCalorSB(b);
+  const texto = (warm ? arr : itemsConNombreSB(b.titulo, arr)).join('\n');
+  return detectarEjerciciosSports(texto, { warmup: warm });
+}
+/* videos del bloque para UNA semana (0..3). Los vinculos manuales se reancla contra la union de las 4 semanas: un ejercicio que aparece solo
+   en S2-S4 exporta su video, y el vinculo de una semana nunca se "roba" por un ejercicio parecido de otra */
+function resolverVideosBloqueSports(b, semana){
+  const arrs = itemsPorSemanaSB(b);
+  const detPorSemana = arrs.map(function(a){ return a ? detectadosDeItemsSB(b, a) : null; });
+  const union = [];
+  detPorSemana.forEach(function(d){ if(d) Array.prototype.push.apply(union, d); });
+  reanclarVideosBloqueSB(b, union);
+  const claveUnion = {};
+  union.forEach(function(d){ claveUnion[nrmChip(d.nombre)] = 1; });
+  const wk = semana || 0;
+  const det = detPorSemana[wk] || [];
   const vistos = {};
   const out = [];
   const dismissed = b.videosDismissed || [];
-  const warm = esBloqueEntradaCalorSB(b);
-  const texto = (warm ? (b.items || []) : itemsConNombreSB(b.titulo, b.items || [])).join('\n');
-  const detectadosR = detectarEjerciciosSports(texto, { warmup: warm });
-  reanclarVideosBloqueSB(b, detectadosR);
-  detectadosR.forEach(function(d){
+  det.forEach(function(d){
     const k = nrmChip(d.nombre);
     if(!k || vistos[k] || dismissed.indexOf(k) >= 0 || dismissed.indexOf(stemNombreEj(d.nombre)) >= 0) return;
     vistos[k] = 1;
@@ -5680,12 +5697,32 @@ function resolverVideosBloqueSports(b){
   });
   (b.videosManual || []).forEach(function(v){
     const k = nrmChip(v.nombre);
-    if(!k || vistos[k] || dismissed.indexOf(k) >= 0) return;
+    if(!k || vistos[k] || claveUnion[k] || dismissed.indexOf(k) >= 0) return;      /* el que pertenece al texto de otra semana no entra aca */
     vistos[k] = 1;
     const ex = exDeVinculoSB(v);
     if(ex) out.push({ nombre: v.nombre, ex: ex });
   });
   return out;
+}
+/* nombre tecnico en ingles (+ descripcion en español) de cada ejercicio reconocido del bloque, para el titulo de la app del alumno */
+function nombresExBloqueSB(b){
+  const arrs = itemsPorSemanaSB(b), res = {};
+  const poner = function(clave, ex){
+    if(!clave || !ex || !ex.en) return;
+    const cc = ex.canonKey && EXERCISE_CANONICAL_MAP[ex.canonKey];
+    res[clave] = { en: ex.en, es: (cc && cc.es_display) || ex.es || '' };
+  };
+  arrs.forEach(function(a){
+    if(!a) return;
+    detectadosDeItemsSB(b, a).forEach(function(d){
+      const k = nrmChip(d.nombre);
+      const manual = (b.videosManual || []).find(function(v){ return nrmChip(v.nombre) === k; });
+      const ex = manual ? exDeVinculoSB(manual) : ((b.videoOverrides && b.videoOverrides[k]) ? getEx(b.videoOverrides[k]) : d.ex);
+      poner(k, ex);
+      if(ex){ poner(nrmChip(ex.es), ex); poner(nrmChip(ex.en), ex); }
+    });
+  });
+  return res;
 }
 /* directiva ("Fuzzy Matching Inteligente de Videos") -- descarte de
    tokens de control: una línea que MENCIONA biset/triset/circuito/
@@ -9812,6 +9849,7 @@ const CATEGORY_META = {
 };
 function limpiarNombre(n){
   let t = String(n||'').trim();
+  t = t.replace(/^\\s*(?:[A-Za-z]\\d+\\s*[.:)\\-\\u2013\\u2014\\u00b7]+\\s*|\\d+\\s*[.)]\\s+)/, '');      /* "A1. " / "B2) " / "1. " */
   /* saca prefijos tipo "Fase 1 · " o "Block A: " para encontrar mejor el video */
   const p1 = t.split(' · ');
   if(p1.length > 1 && p1[0].length <= 26) t = p1.slice(1).join(' · ');
@@ -15485,7 +15523,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      casilleros). "sets?/series?/rondas?" con su conector x/de opcional
      cubren la prosa humana real sin dejar de matchear "4x6-8" (la
      primera alternativa sigue siendo "x" pelado). */
-  var RX_DOSIS_SB = /(\\d+)\\s*(?:x|×|sets?\\s*(?:x|de|:)?|series?\\s*(?:x|de|:)?|rondas?\\s*(?:x|de|:)?)\\s*(\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)*)/i;
+  var RX_DOSIS_SB = /(\\d+)\\s*(?:x|×|sets?\\s*(?:x|de|:)?|series?\\s*(?:x|de|:)?|rondas?\\s*(?:x|de|:)?)\\s*(\\d+(?:(?:\\s*[-\\u2013\\u2014]\\s*|\\s+a\\s+)\\d+)*)/i;
   /* volumen escrito sin patron "NxM": "8-10 reps", "10 repeticiones", "3 series" */
   var RX_REPS_SUELTAS_SB = /(\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?)\\s*(?:reps?|repeticiones)\\b/i;
   var RX_SETS_SUELTOS_SB = /(\\d+)\\s*(?:sets?|series?|rondas?)\\b/i;
@@ -15494,7 +15532,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function parsearDosisSB(txt){
     var t = String(txt || ''), out = {}, m;
     if((m = t.match(RX_DOSIS_SB))){
-      out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+/g, '').replace(/[\\u2013\\u2014]/g, '-');
+      out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+a\\s+/g, '-').replace(/\\s+/g, '').replace(/[\\u2013\\u2014]/g, '-');
       /* directiva ("Reconstrucción total del tracker de series") --
          detecta la unidad de la magnitud secundaria mirando SÓLO el
          tramo de texto justo después del rango de reps (hasta el
@@ -15533,7 +15571,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var clausulaRest = restM[1].replace(/\\b(?:rir|tempo)\\b.*$/i, '');
       var restMin = clausulaRest.match(/(\\d+)\\s*:\\s*(\\d{2})/);
       var restNums = clausulaRest.match(/\\d+/g);
+      var restMn = clausulaRest.match(/(\\d+(?:[.,]\\d+)?)\\s*(?:min\\b|minutos?\\b|')/i);
       if(restMin) out.restSeconds = parseInt(restMin[1], 10) * 60 + parseInt(restMin[2], 10);
+      else if(restMn) out.restSeconds = Math.round(parseFloat(restMn[1].replace(',', '.')) * 60);
       else if(restNums) out.restSeconds = parseInt(restNums[restNums.length - 1], 10);
     } else {
       var restPre = t.match(/(\\d+)\\s*(?:"|\\u2033|\\u201d|seg(?:undos)?\\b|s\\b)\\s*(?:de\\s+)?(?:rest|descanso)\\b/i);
@@ -15566,7 +15606,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        "ejercicio nuevo" fantasma. Se suma "isométrico" a las
        especificaciones secundarias en prosa que nunca son parte del
        nombre. */
-    var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|de|:)?|series?\\s*(?:x|de|:)?|rondas?\\s*(?:x|de|:)?)\\s*\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)*(?:\\s*reps?\\b)?/gi, '')
+    var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|de|:)?|series?\\s*(?:x|de|:)?|rondas?\\s*(?:x|de|:)?)\\s*\\d+(?:(?:\\s*[-\\u2013\\u2014]\\s*|\\s+a\\s+)\\d+)*(?:\\s*(?:reps?|repeticiones)\\b)?/gi, '')
       .replace(/\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b/gi, '').replace(/\\d+\\s*(?:sets?|series?|rondas?)\\b/gi, '')
       .replace(/tempo\\s*(?:\\d{3,4}|isom[eé]tric[oa]|continuo)/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '')
       .replace(/(?:rest|descanso)\\s*[^|]+/gi, '')
@@ -15754,6 +15794,36 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   /* clasifica línea por línea (sin depender de blancos, ver nota de
      arriba) y reconstruye ejercicios simples y biseries/trisets. */
+  /* "Nombre 4x6-8", "Nombre — 4 sets x 6-8 reps | Tempo...", "Nombre (4x6-8) Tempo...", "3x10 Nombre @ 20kg",
+     "Nombre 4 series de 6 a 8 repeticiones": el titulo se corta limpio donde empieza la dosis (sin patron NxM, solo con reps +
+     tempo/RIR/descanso tambien cuenta). Devuelve null si la linea no trae dosis o lo que queda no parece un nombre de ejercicio. */
+  function cortarNombreDosisSB(linea){
+    var t = String(linea || '').trim().replace(/^\\d+\\s*[.)]\\s+/, '');
+    if(!t) return null;
+    var m = t.match(RX_DOSIS_SB), idx = -1, fin = 0;
+    if(m){ idx = m.index; fin = m.index + m[0].length; }
+    else {
+      var mr = t.match(RX_REPS_SUELTAS_SB), dp = parsearDosisSB(t);
+      if(mr && (dp.tempo || dp.rir || dp.restSeconds !== undefined)){ idx = mr.index; fin = mr.index + mr[0].length; }
+    }
+    if(idx < 0) return null;
+    var nombre;
+    if(idx > 0) nombre = t.slice(0, idx).replace(/[\\s:|\\-\\u2013\\u2014(\\[]+$/, '');
+    else nombre = t.slice(fin).replace(/^[\\s:|\\-\\u2013\\u2014,]+/, '').replace(/^(?:reps?|repeticiones)\\b\\s*(?:de\\s+)?/i, '').split(/\\s*(?:@|\\||\\(|,)/)[0];
+    nombre = String(nombre).trim();
+    if(nombre.length < 3 || nombre.length > 70 || !/[A-Za-z\\u00c0-\\u00ff]{3}/.test(nombre)) return null;
+    if(esLineaDirectiva(nombre) || /^(?:rest|descanso|tempo|rir|realizar|hacer|completar|repetir|luego|despu[e\\u00e9]s|total|en total|aprox\\w*|aplicar|mantener|usar|buscar)\\b/i.test(nombre)) return null;
+    return { nombre: nombre, dosis: t, dosisPrimero: idx === 0 };
+  }
+  /* un ejercicio sin dosis escrita que NO es cardio/calentamiento/nota se registra igual: 1 set interactivo por defecto */
+  function esEjercicioIndividualSB(entry, block){
+    var t = String(entry.titulo || '').trim();
+    if(!t || t.length > 60 || t.split(/\\s+/).length > 8 || /[.!?]\\s*$/.test(t)) return false;
+    if(/^(?:nota|tip|obj|objetivo|pauta|recuerd|importante|descanso|rest|cap|amrap|emom|every|realizar|hacer|completar|repetir|luego|despu[e\\u00e9]s|total|aplicar|mantener|usar|buscar|controlar|evitar|priorizar|enfocar|cuidar|recordar|respirar|\\*)/i.test(t)) return false;
+    if(/^(?:metcon|cardio|endurance|warmup)$/.test(String(block.category || ''))) return false;
+    if(/\\b\\d+\\s*(?:min|minutos|km|cal|mts?|metros)\\b/i.test(t) || /\\b(?:cardio|bici|bike|cinta|trote|trotar|correr|caminata|el[ií]ptico|assault|skierg|remo suave)\\b/i.test(t)) return false;
+    return true;
+  }
   function parsearPizarraSB(lineas, opts){
     var entries = [], actual = null;
     lineas = separarMetaPizarraSB(lineas).lineas;
@@ -15983,6 +16053,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         entries.push(actual);
         return;
       }
+      /* "Bench Press 4x6-8" / "Bench Press — 4 sets x 6-8 reps | Tempo..." / "1. Bench Press 4x6-8" / "3x10 DB Row @ 20kg": el titulo se corta donde empieza la dosis */
+      var corteND = cortarNombreDosisSB(lineaParaDosis);
+      if(corteND){
+        var resCN = extraerTecnicaSB(corteND.dosis);
+        var dosisCN = parsearDosisSB(resCN.texto);
+        actual = { tipo:'simple', titulo: limpiarPrefijoEstacionSB(corteND.nombre), tituloOriginal: linea, sets: dosisCN.sets || (dosisCN.reps ? 1 : 0), reps: dosisCN.reps || '', tempo: dosisCN.tempo || '', restSeconds: dosisCN.restSeconds || 0, rir: dosisCN.rir || '', dosisAsignada:true, tecnica: resCN.tecnica || '', tecnicaPct: resCN.tecnica === 'dropset' ? extraerPctSB(resCN.texto) : null, myoInfo:null, notas:[], unidad: dosisCN.unidad || 'reps' };
+        if(dosisCN.notaSecundaria){
+          if(dosisCN.notaSecundaria === 'Por pierna' || dosisCN.notaSecundaria === 'Por lado') actual.unilateral = dosisCN.notaSecundaria;
+          else actual.notas.push(dosisCN.notaSecundaria);
+        }
+        var mCarga = corteND.dosisPrimero ? corteND.dosis.match(/@\\s*([\\d.,]+\\s*(?:kg|lbs?))/i) : null;
+        if(mCarga) actual.notas.push('@ ' + mCarga[1]);
+        if(actual.sets){ entries.push(actual); return; }
+      }
       /* directiva maestra ("Registro ágil de 1 toque para Drop Sets y
          Myo-Reps") -- BUG REAL: el catch-all final (línea sin dosis
          reconocible, típico de "Nombre: 15 reps activación [MYO-REPS]"
@@ -15994,7 +16078,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          resTecLinea ya calculado arriba (cero llamada duplicada) --
          nunca se le suma al título/nombre visible, que sigue siendo la
          línea original menos el corchete de técnica si lo traía. */
-      var tituloSinTecnica = resTecLinea.tecnica ? resTecLinea.texto : linea;
+      var tituloSinTecnica = (resTecLinea.tecnica ? resTecLinea.texto : linea).replace(/^\\d+\\s*[.)]\\s+/, '');
       actual = { tipo:'simple', titulo: tituloSinTecnica, sets:0, reps:'', tempo:'', restSeconds:0, rir:'', dosisAsignada:false,
         tecnica: resTecLinea.tecnica || '',
         tecnicaPct: resTecLinea.tecnica === 'dropset' ? extraerPctSB(resTecLinea.texto) : null,
@@ -16312,9 +16396,32 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      parsearPizarraSB()/buscarVideo() de abajo queda SOLO como fallback
      para exports viejos (compilados antes de esta directiva, sin el
      campo nuevo) -- nunca se ejecutan los dos a la vez. */
+  /* lista de videos del bloque para la semana activa (export nuevo: videosBloqueSemana; exports viejos: videosBloque) */
+  function videosDeSemanaSB(block){
+    if(!block) return null;
+    var w = (typeof state !== 'undefined' && state && state.currentWeek) || 0;
+    if(Array.isArray(block.videosBloqueSemana) && Array.isArray(block.videosBloqueSemana[w])) return block.videosBloqueSemana[w];
+    return Array.isArray(block.videosBloque) ? block.videosBloque : null;
+  }
+  /* titulo con el termino tecnico en ingles y, debajo y tenue, la descripcion en español (solo si el ejercicio esta en la biblioteca) */
+  function claveNomSB(x){ return String(x || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[.,;:!?"']+/g, ' ').replace(/\\s+/g, ' ').trim(); }
+  function infoNombreSB(titulo, block){
+    var m = block && block.nombresEx;
+    return (m && m[claveNomSB(titulo)]) || null;
+  }
+  function nombrePrincipalSB(titulo, block){
+    var i = infoNombreSB(titulo, block);
+    return (i && i.en) ? i.en : titulo;
+  }
+  function subEsSB(titulo, block){
+    var i = infoNombreSB(titulo, block);
+    if(!i || !i.en || !i.es || claveNomSB(i.es) === claveNomSB(i.en)) return '';
+    return '<div class="jp-es-sub">' + escSB(i.es) + '</div>';
+  }
   function recolectarVideosSB(entries, esCalentamiento, block){
-    if(block && Array.isArray(block.videosBloque)){      /* export nuevo: la lista del bloque manda, aunque este vacia */
-      return block.videosBloque;
+    var listaSem = videosDeSemanaSB(block);
+    if(listaSem){      /* export nuevo: la lista del bloque manda, aunque este vacia */
+      return listaSem;
     }
     var vistos = {}, out = [];
     entries.forEach(function(entry){
@@ -16507,12 +16614,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var norm = function(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\\s+/g, ' ').trim(); };
     var n = norm(limpiarNombreParaVideoSB(nombre)), ytid = '';
     if(!n) return '';
-    var lista = (block && Array.isArray(block.videosBloque)) ? block.videosBloque : [];
+    var lista = videosDeSemanaSB(block) || [];
     for(var i = 0; i < lista.length && !ytid; i++){
       var v = norm(lista[i].nombre);
       if(v && (v === n || v.indexOf(n) >= 0 || n.indexOf(v) >= 0)) ytid = lista[i].ytid;
     }
-    if(!ytid && !(block && Array.isArray(block.videosBloque))){ try{ ytid = buscarVideo(limpiarNombreParaVideoSB(nombre)) || ''; }catch(e){ ytid = ''; } }
+    if(!ytid && !videosDeSemanaSB(block)){ try{ ytid = buscarVideo(limpiarNombreParaVideoSB(nombre)) || ''; }catch(e){ ytid = ''; } }
     if(!ytid) return '';
     return '<button type="button" class="jp-sb-vid-mini" data-yt="' + ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(nombre).replace(/"/g, '') + '" title="Ver t\\u00e9cnica">&#9654;</button>';
   }
@@ -16653,7 +16760,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         const cabeceras = subsInfo.map(function(o){
           return '<div class="jp-sb-subex-resumen">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">A' + (o.si + 1) + '</span>' +
-                '<span class="jp-sb-subex-tit">' + escSB(o.sub.nombre) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' +
+                '<span class="jp-sb-subex-tit">' + escSB(nombrePrincipalSB(o.sub.nombre, block)) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
               dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds) +
               chipUnilateralSB(o.sub.unilateral) +
               (o.sub.nota && !o.sub.tecnica ? '<div class="jp-sb-nota">' + escSB(o.sub.nota) + '</div>' : '') +
@@ -16664,7 +16771,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           rondasHtml += '<div class="jp-ronda-card"><div class="jp-ronda-h">RONDA ' + (r + 1) + '</div>' +
             subsInfo.map(function(o){
               if(!o.rows[r]) return '';
-              return '<div class="jp-sb-subex jp-ronda-sub" data-rest-sec="' + o.restSub + '"><div class="jp-ronda-subh"><span class="jp-ronda-lt">A' + (o.si + 1) + '</span><span class="jp-ronda-nm">' + escSB(o.sub.nombre) + '</span>' + metaRondaSB(o.sub) + '</div><span class="jp-sb-subex-nombre" hidden>' + escSB(o.sub.nombre) + '</span>' + o.rows[r] + '</div>';
+              return '<div class="jp-sb-subex jp-ronda-sub" data-rest-sec="' + o.restSub + '"><div class="jp-ronda-subh"><span class="jp-ronda-lt">A' + (o.si + 1) + '</span><span class="jp-ronda-nm">' + escSB(nombrePrincipalSB(o.sub.nombre, block)) + '</span>' + metaRondaSB(o.sub) + '</div><span class="jp-sb-subex-nombre" hidden>' + escSB(o.sub.nombre) + '</span>' + o.rows[r] + '</div>';
             }).join('') + '</div>';
         }
         const subsHtml = cabeceras + rondasHtml + subsInfo.map(function(o){ return o.myo; }).join('');
@@ -16685,7 +16792,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
         const esAnclaTec = !anclaUsada; anclaUsada = true;
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
-            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' +
+            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(nombrePrincipalSB(entry.titulo, block)) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
             chipUnilateralSB(entry.unilateral) +
             ''+
@@ -16710,6 +16817,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          videoLinkHtml() para calentamiento ("Desvinculación del
          Warm-up", una directiva anterior) -- el coach SÍ vincula videos
          de movilidad/activación y nunca llegaban al alumno. */
+      if(esCalentamiento && entry.tipo === 'simple' && entry.tituloOriginal){
+        /* el calentamiento mantiene su render de lista/viñetas: se restituye la linea original */
+        entry.titulo = entry.tituloOriginal; entry.sets = 0; entry.reps = ''; entry.tempo = ''; entry.restSeconds = 0; entry.rir = ''; entry.dosisAsignada = false; entry.notas = [];
+      }
+      if(!esCalentamiento && !entry.sets && esEjercicioIndividualSB(entry, block)){ entry.sets = 1; entry.setsDef = true; }
       if(!entry.sets || esCalentamiento){
         /* activación redactada como lista continua: un renglón limpio con viñeta cian por ejercicio */
         if(esCalentamiento && !entry.sets){
@@ -16736,8 +16848,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       /* directiva técnica ("Auditoría integral del reloj emergente") --
          mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
-          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(entry.titulo) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' +
-          dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
+          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(nombrePrincipalSB(entry.titulo, block)) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
+          dosisCompletaSB(entry.setsDef ? 0 : entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null), entry.titulo, entry.unidad === 'reps' || !entry.unidad ? entry.reps : '') +
@@ -18772,7 +18884,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       g.textAlign = 'left'; g.textBaseline = 'alphabetic';
       g.fillStyle = '#38BDF8'; g.font = '700 30px "JetBrains Mono", ui-monospace, monospace';
       g.fillText('[ RESUMEN TÁCTICO DEL DÍA ]', px + 44, yTop + 64);
-      var rowH = 112, y0 = yTop + 104, pie = d.rpe ? 84 : 28;
+      var rowH = 112, y0 = yTop + 104, pie = (d.rpe ? 84 : 28) + (d.bloquesExtra > 0 ? 48 : 0);
       var maxRows = Math.max(0, Math.floor((ph - 104 - pie) / rowH));
       if(!lista.length){
         var hechosL = d.listaEj || [], tH = 'DÍA COMPLETADO // 100% FOCUS', tamH = 52;
@@ -18808,6 +18920,10 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.5)'; g.font = '600 26px "JetBrains Mono", ui-monospace, monospace';
         g.fillText('VOL ' + it.vol.toLocaleString('es-AR') + ' KG', px + 44, yy + 58);
       });
+      if(d.bloquesExtra > 0 && lista.length){
+        g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.45)'; g.font = '600 28px Inter, sans-serif';
+        g.fillText('+ ' + d.bloquesExtra + (d.bloquesExtra === 1 ? ' bloque m\\u00e1s completado' : ' bloques m\\u00e1s completados'), px + 44, yTop + ph - (d.rpe ? 82 : 34));
+      }
       if(d.rpe){
         g.textAlign = 'left'; g.fillStyle = '#38BDF8'; g.font = '700 32px "JetBrains Mono", ui-monospace, monospace';
         g.fillText('🎯 RPE REGISTRADO: ' + d.rpe, px + 44, yTop + ph - 34);
@@ -21944,12 +22060,29 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       if(!l.done || !(kg > 0)) return;
       var nm = nombres[p[2] + '|' + p[3]] || l.__ex || '';
       if(!nm) return;
-      var r = rp > 0 ? rp : 1, m = mapa[nm] || (mapa[nm] = { ex: nm, kg: 0, reps: 0, vol: 0 });
+      var r = rp > 0 ? rp : 1, m = mapa[nm] || (mapa[nm] = { ex: nm, kg: 0, reps: 0, vol: 0, blk: {} });
+      m.blk[p[2]] = 1;
       m.vol += kg * r;
       if(kg > m.kg || (kg === m.kg && r > m.reps)){ m.kg = kg; m.reps = r; }
     });
     return Object.keys(mapa).map(function(k){ mapa[k].vol = Math.round(mapa[k].vol); return mapa[k]; })
-      .sort(function(a, b){ return b.vol - a.vol; }).slice(0, 6);
+      .sort(function(a, b){ return (b.kg * (1 + b.reps / 30)) - (a.kg * (1 + a.reps / 30)); }).slice(0, 3);      /* los 3 MEJORES top sets con carga (por 1RM estimado del mejor set) */
+  }
+  /* bloques completados hoy que no estan representados en los 3 top sets (peso corporal, cardio, accesorios, calentamiento...) */
+  function bloquesExtraDia(top){
+    var w = state.currentWeek, dayId = state.currentDay, pref = w + '|' + dayId + '|', ids = {};
+    var comp = ((state.completed || {})[w] || {})[dayId] || {};
+    Object.keys(comp).forEach(function(k){ if(k !== '__dayDone' && comp[k]) ids[k] = 1; });
+    Object.keys(state.loads || {}).forEach(function(k){
+      if(k.indexOf(pref) !== 0) return;
+      var l = state.loads[k] || {};
+      if(l.done) ids[k.split('|')[2]] = 1;
+    });
+    (top || []).forEach(function(t){ Object.keys(t.blk || {}).forEach(function(bk){ delete ids[bk]; }); });
+    /* solo bloques que existen hoy en la rutina del dia (sin restos de bloques viejos guardados en el progreso) */
+    var diaAct = DAYS.filter(function(x){ return x.id === dayId; })[0], validos = {};
+    ((diaAct && diaAct.blocks) || []).forEach(function(b){ validos[b.id] = 1; });
+    return Object.keys(ids).filter(function(k){ return validos[k]; }).length;
   }
   function rachaMesociclo(){
     var total = 0, hechas = 0;
@@ -22063,6 +22196,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     d.topKg = t.kg; d.topEx = t.ex;
     d.rpe = rpePromedio();
     d.topSets = topSetsDia();
+    d.bloquesExtra = bloquesExtraDia(d.topSets);
     d.listaEj = ejerciciosHechosDia();
     return d;
   }
@@ -36526,6 +36660,7 @@ body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform 
 .jp-ronda-card{ margin:10px 0 0; padding:8px 10px 6px; border-radius:12px; border:1px solid rgba(56,189,248,.28); background:rgba(15,23,42,.55); }
 .jp-ronda-h{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.7rem; letter-spacing:.12em; color:#F59E0B; margin-bottom:6px; }
 .jp-ronda-sub{ display:flex !important; align-items:center; gap:8px; border:0 !important; padding:0 !important; margin:0 0 6px !important; background:none !important; }
+.jp-es-sub{ margin:-2px 0 8px 2px; font-size:.78rem; line-height:1.3; color:rgba(148,163,184,.78); font-family:'Inter',sans-serif; text-transform:none; letter-spacing:0; }
 .jp-cont-pill{ margin:6px 0 8px; }
 .jp-cont-lista{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
 .jp-cont-lista li{ position:relative; padding:8px 10px 8px 24px; border-radius:8px; background:rgba(15,23,42,.55); border:1px solid rgba(148,163,184,.16); font-size:.85rem; line-height:1.4; color:#e2e8f0; overflow-wrap:anywhere; }
@@ -37728,6 +37863,14 @@ function resolveExacto(txt, overrides, sinY, descartados){
         if(exOv) return { name: cands[i], ex: exOv };
       }
     }
+    /* mapa canonico (EN oficial + alias ES): "Perro de caza", "Almejas con banda", "A1. Sentadilla Hack" resuelven al mismo ejercicio;
+       si el ejercicio canonico aun no esta en la biblioteca, queda sin video antes que enlazar uno de otro movimiento */
+    const kcCanon = exCanonClave(cands[i]);
+    if(kcCanon){
+      const exCanon = exPorClaveCanon(kcCanon);
+      if(exCanon) return { name: cands[i], ex: exCanon };
+      continue;
+    }
     const c = norm(cands[i]);
     let ex = S.exercises.find(e => norm(exDisplayName(e)) === c || norm(e.es) === c ||
                                      (e.en && norm(e.en) === c));
@@ -37989,15 +38132,22 @@ function buildProgramConfig(ath){
         const videosBloqueVistos = {};
         const videosBloque = [];
         const videosBloqueCF = [];
+        let videosSemanaSB = null;
         if(!bloqueCF && b.sportsPizarra){
-          resolverVideosBloqueSports(b).forEach(function(d){
-            addVideo(exDisplayName(d.ex), d.ex); addVideo(d.nombre, d.ex);
-            const vid = resolverVideoId(d.ex);
-            if(vid && !videosBloqueVistos[vid]){
-              videosBloqueVistos[vid] = 1;
-              videosBloque.push({ nombre: exNombreCorto(d.ex) || d.ex.es || d.nombre, ytid: vid });
-            }
-          });
+          videosSemanaSB = [];
+          for(let wkV = 0; wkV < 4; wkV++){
+            const listaW = [], vistosW = {};
+            resolverVideosBloqueSports(b, wkV).forEach(function(d){
+              addVideo(exDisplayName(d.ex), d.ex); addVideo(d.nombre, d.ex);
+              const vid = resolverVideoId(d.ex);
+              if(vid && !vistosW[vid]){
+                vistosW[vid] = 1;
+                listaW.push({ nombre: exNombreCorto(d.ex) || d.ex.es || d.nombre, ytid: vid });
+              }
+            });
+            videosSemanaSB.push(listaW);
+            if(wkV === 0) listaW.forEach(function(x){ videosBloqueVistos[x.ytid] = 1; videosBloque.push(x); });
+          }
         } else {
           (b.items||[]).forEach(it => {
             const r = resolveExacto(it, b.videoOverrides, !bloqueCF, b.videosDismissed);
@@ -38016,6 +38166,7 @@ function buildProgramConfig(ath){
           });
         }
         if(bloqueCF) out.videosBloqueIds = videosBloqueCF.concat((Array.isArray(b.videosManual) ? b.videosManual : []).map(function(v){ const e2 = getEx(v.exId); return e2 ? resolverVideoId(e2) : (v.ytid || ''); }).filter(Boolean));
+        if(videosSemanaSB){ out.videosBloqueSemana = videosSemanaSB; out.nombresEx = nombresExBloqueSB(b); }
         if(!bloqueCF) out.videosBloque = videosBloque;      /* siempre, aunque este vacio: el alumno nunca completa con busquedas aproximadas */
         /* [✕] del Builder: los clips que el coach descartó en ESTE bloque
            viajan al alumno para que la Pizarra CrossFit tampoco los muestre */
