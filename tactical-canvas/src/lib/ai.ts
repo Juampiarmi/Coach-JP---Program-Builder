@@ -1078,7 +1078,7 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
 }
 
 /** Rótulos que a veces la IA deja delante del texto («Parte 1:», «Remate:», «Titular:»…). */
-const LABEL_PREFIX = /^(parte\s*\d|blanco|remate|acento|titular|t[ií]tulo|gancho|hook|p[aá]rrafo|subt[ií]tulo|label|tag)\s*[:：-]\s*/i
+const LABEL_PREFIX = /^(parte\s*\d|header(?:_tag)?|blanco|remate|acento|t[ií]tulo principal|titular|t[ií]tulo|gancho|hook|p[aá]rrafo|subt[ií]tulo(?:\s*\(\s*naranja\s*\))?|bullets?|vi[ñn]etas?|texto (?:inferior|central)|footer|bajada|label|tag)\s*[:：-]\s*/i
 
 /** Limpia un texto de la IA: markdown en negrita, rótulos, comillas envolventes y espacios. */
 export function cleanText(t: string, keepBreaks = false) {

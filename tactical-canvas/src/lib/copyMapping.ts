@@ -25,19 +25,42 @@ export interface MappedBlock {
   text: string
 }
 
+/** Renglón separador de placas: «---», «***», «___» o «Placa» / «Slide» sin número. */
+const SEPARATOR_LINE = /^[ \t]*(?:-{3,}|\*{3,}|_{3,}|(?:placa|slide)[ \t]*[:.]?)[ \t]*$/gimu
+const trimBlock = (t: string) => t.replace(/[\s*_#>\[\-–—📍•|]+$/u, '').replace(/^[\s\-–—*_]+$/u, '').trim()
+
+/**
+ * Corte del texto en placas (equivale a /(?:^|\n)(?:Placa\s*\d+|Slide\s*\d+|---|\bPlaca\b)/i, pero
+ * aceptando también marcadores en medio de un renglón y con rótulos «(portada)», «**»…).
+ * El texto antes del primer marcador «Placa N» se descarta (suele ser el título del guion).
+ */
+export function splitSlides(text: string): string[] {
+  const parts = text.split(SEPARATOR_LINE)
+  const marked = parts.map((p) => [...p.matchAll(MARKER_ANY)])
+  const first = marked.findIndex((m) => m.length > 0)
+  const out: string[] = []
+  parts.forEach((part, pi) => {
+    const marks = marked[pi]
+    if (!marks.length) {
+      // Tramo sin «Placa N»: es una placa si está separado por «---»; el preámbulo antes de la Placa 1 no.
+      if (first === -1 || pi > first) out.push(trimBlock(part))
+      return
+    }
+    const pre = part.slice(0, marks[0].index)
+    if (pi > first && pre.trim()) out.push(trimBlock(pre))
+    marks.forEach((m, i) => out.push(trimBlock(part.slice((m.index ?? 0) + m[0].length, i + 1 < marks.length ? marks[i + 1].index : part.length))))
+  })
+  return out.filter(Boolean)
+}
+
 /** Bloques de un copy estructurado, o null si el texto no tiene estructura de placas. */
 export function detectStructuredCopy(raw: string): MappedBlock[] | null {
   const text = raw.replace(/\r/g, '').trim()
   if (!text) return null
-  // 1) Marcadores «Placa N» en cualquier lugar: cada uno abre una placa (el texto previo es un título y se descarta).
-  const marks = [...text.matchAll(MARKER_ANY)]
-  if (marks.length >= 2) {
-    const blocks = marks
-      .map((m, i) => text.slice((m.index ?? 0) + m[0].length, i + 1 < marks.length ? marks[i + 1].index : text.length))
-      .map((t) => t.replace(/[\s*_#>\[\-–—📍•|]+$/u, '').trim())
-      .filter(Boolean)
-    if (blocks.length >= 2) return blocks.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
-  }
+  // 1) Delimitadores de placa: «Placa N» / «Slide N» en cualquier lugar, y renglones separadores
+  //    («---», «***», «Placa» suelto). Cada tramo es una placa independiente.
+  const split = splitSlides(text)
+  if (split.length >= 2) return split.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
   // Título + bloques «00001: / 01:» sin marcadores de placa: es UNA placa Mindset / Opus (o una por
   // párrafo si cada párrafo trae sus propios bloques), nunca una placa por renglón numerado.
   if (hasPaddedBlocks(text)) {
@@ -89,7 +112,7 @@ export function isAnaphora(blocks: MappedBlock[]): boolean {
 }
 
 /** Rótulos del copy («Titular:», «Remate:», «Tag:», «Subtítulo:»…), en cualquier posición del bloque. */
-const LABEL_ANY = /(?<![\p{L}])(tag(?: superior)?|etiqueta|titular|t[ií]tulo|premisa|blanco|remate|golpe(?: de impacto)?|acento|naranja|subt[ií]tulo|cierre|p[aá]rrafo|cuerpo)\s*[:：]/iu
+const LABEL_ANY = /(?<![\p{L}])(header(?:_tag)?|tag(?: superior)?|etiqueta|t[ií]tulo principal|titular|t[ií]tulo|premisa|blanco|remate|golpe(?: de impacto)?|acento|subt[ií]tulo\s*\(\s*naranja\s*\)|naranja|subt[ií]tulo|bullets?|vi[ñn]etas?|texto inferior|texto central|footer|bajada|cierre|p[aá]rrafo|cuerpo)\s*[:：]/iu
 const LABEL_ALL = new RegExp(LABEL_ANY.source, 'giu')
 
 /** Limpia un valor: markdown, viñetas, separadores « / » sueltos y comillas envolventes. */
@@ -148,9 +171,11 @@ export function splitBlock(block: string): Partial<CanvasState> {
       const value = cleanValue(src.slice((m.index ?? 0) + m[0].length, i + 1 < labels.length ? labels[i + 1].index : src.length))
       const k = m[1].toLowerCase()
       if (!value) return
-      if (/tag|etiqueta/.test(k)) out.tag = value.replace(/^\[\s*|\s*\]$/g, '').toUpperCase()
-      else if (/titular|t[ií]tulo|premisa|blanco/.test(k)) out.headlineA = [out.headlineA, value].filter(Boolean).join(' ')
-      else if (/remate|golpe|acento|naranja/.test(k)) out.headlineB = [out.headlineB, value].filter(Boolean).join(' ')
+      // Los rótulos nunca llegan al texto: «Header:» → tag, «Título:» → titular, «Subtítulo (Naranja):»
+      // → remate, «Subtítulo: / Texto inferior: / Footer: / Bullets:» → bajada.
+      if (/header|tag|etiqueta/.test(k)) out.tag = value.replace(/^\[\s*|\s*\]$/g, '').toUpperCase()
+      else if (/naranja|remate|golpe|acento/.test(k)) out.headlineB = [out.headlineB, value].filter(Boolean).join(' ')
+      else if (/titular|t[ií]tulo|premisa|blanco/.test(k) && !/subt/.test(k)) out.headlineA = [out.headlineA, value].filter(Boolean).join(' ')
       else out.body = [out.body, value].filter(Boolean).join('\n')
     })
     if (pre && out.headlineA === undefined) out.headlineA = pre

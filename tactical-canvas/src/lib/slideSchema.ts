@@ -49,7 +49,7 @@ Prohibido meter prefijos de texto («Header:», «Bullets:», «Subtítulo:», �
 JSON Schema de cada placa: ${JSON.stringify(CORE_SLIDE_SCHEMA)}`
 
 const str = (v: unknown) => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '').trim()
-const LABEL = /^(header|header_tag|tag|bullets?|t[ií]tulo(?: principal)?|subt[ií]tulo(?: \(naranja\))?|cta|bloque \d+)\s*[:：]\s*/i
+const LABEL = /^(header|header_tag|tag|bullets?|vi[ñn]etas?|titular|t[ií]tulo(?: principal)?|subt[ií]tulo(?:\s*\(\s*naranja\s*\))?|texto (?:inferior|central)|footer|bajada|cta|bloque \d+)\s*[:：]\s*/i
 const clean = (v: unknown) => str(v).replace(LABEL, '').replace(/\s+/g, ' ').trim()
 
 /** Valida y normaliza el contrato; null si la placa no lo trae (respuesta en el formato anterior). */
