@@ -5765,6 +5765,8 @@ function detectadosDeItemsSB(b, arr){
 }
 /* videos del bloque para UNA semana (0..3). Los vinculos manuales se reancla contra la union de las 4 semanas: un ejercicio que aparece solo
    en S2-S4 exporta su video, y el vinculo de una semana nunca se "roba" por un ejercicio parecido de otra */
+/* nombre que ve el alumno en la miniatura del video: el termino canonico en ingles (en); sin en, el nombre corto en español */
+function nombreVideoSB(ex){ return (ex && ex.en && String(ex.en).trim()) || (ex && exNombreCorto(ex)) || (ex && ex.es) || ''; }
 function resolverVideosBloqueSports(b, semana){
   const arrs = itemsPorSemanaSB(b);
   const detPorSemana = arrs.map(function(a){ return a ? detectadosDeItemsSB(b, a) : null; });
@@ -16106,6 +16108,31 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     en.dosisAsignada = true; en.complex = nombres.length > 1; en.setsDef = false;
     if(!en.restSeconds) en.restSeconds = hdr.seg || 0;
   }
+  /* notas tacticas ("⏱ PAUTA DE DESCANSO: ...", "ESTRATEGIA DE PROGRESIÓN: ...", "⚡ Foco ..."): jamas un ejercicio; se muestran como micro-banner */
+  var RX_NOTA_EMOJI_SB = /^\\s*(?:\\u26a1|\\u23f1|\\u23f0|\\u26a0|\\ud83c\\udfaf|\\ud83d\\udca1|\\ud83d\\uded1|\\ud83d\\udccc|\\ud83d\\udcdd)/;
+  var RX_NOTA_TACTICA_SB = /^\\s*(?:estrategia|pauta|notas?|coaching|progresi[o\\u00f3]n|recomendaci[o\\u00f3]n|criterio)\\b[^:\\n]{0,45}:\\s*\\S/i;
+  function crearNotaSB(linea){
+    var t = String(linea || '').trim(), mE = t.match(/^\\s*(\\u26a1|\\u23f1|\\u23f0|\\u26a0|\\ud83c\\udfaf|\\ud83d\\udca1|\\ud83d\\uded1|\\ud83d\\udccc|\\ud83d\\udcdd)\\s*/);
+    var icono = mE ? mE[1] : '', cuerpo = mE ? t.slice(mE[0].length) : t, label = '', texto = cuerpo;
+    var mC = cuerpo.match(/^([^:]{2,60}):\\s*(.*)$/);
+    if(mC){ label = mC[1].trim(); texto = mC[2].trim(); }
+    if(!label) label = /descanso|rest/i.test(cuerpo) ? 'PAUTA DE DESCANSO' : (/progres|estrateg/i.test(cuerpo) ? 'ESTRATEGIA DE PROGRESI\\u00d3N' : 'NOTA');
+    if(!icono) icono = /descanso|rest/i.test(label) ? '\\u23f1' : (/progres|estrateg/i.test(label) ? '\\ud83c\\udfaf' : '\\ud83d\\udca1');
+    return { tipo: 'nota', icono: icono, titulo: label, texto: texto };
+  }
+  /* "12 High & Wide Leg Press" suelto dentro de una triserie: es otra estacion del mismo grupo, nunca un renglon aparte */
+  function nombreHuerfanoSB(linea){
+    var t = String(linea || '').trim();
+    if(!t || t.length > 70 || /[:@|]/.test(t) || /[.!?]\\s*$/.test(t)) return null;
+    if(esLineaDirectiva(t) || RX_NOTA_TACTICA_SB.test(t) || RX_NOTA_EMOJI_SB.test(t)) return null;
+    var cn = cortarNombreDosisSB(t);
+    if(cn) return { nombre: limpiarPrefijoEstacionSB(cn.nombre), dosis: cn.dosis };
+    var m = t.match(/^(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:x|\\u00d7|reps?)?\\s+(\\S.*)$/i);
+    var nom = (m ? m[2] : t).trim(), reps = m ? m[1].replace(/\\s+/g, '') : '';
+    if(nom.length < 3 || nom.split(/\\s+/).length > 8 || !/[A-Za-z\\u00c0-\\u00ff]{3}/.test(nom)) return null;
+    if(/^(?:rest|descanso|descansar|tempo|rir|realizar|hacer|completar|repetir|luego|despu[e\\u00e9]s|total|mantener|usar|rondas?|rounds?)\\b/i.test(nom)) return null;
+    return { nombre: nom, reps: reps };
+  }
   function parsearPizarraSB(lineas, opts){
     var entries = [], actual = null;
     lineas = separarMetaPizarraSB(lineas).lineas;
@@ -16125,6 +16152,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(esLineaMetaSB(linea)) return;
       var hdrInt = parseIntervaloSB(linea);
       if(hdrInt){ actual = null; entries.push({ tipo: 'intervalo', seg: hdrInt.seg, sets: hdrInt.sets, texto: hdrInt.texto }); return; }
+      if(RX_NOTA_EMOJI_SB.test(linea) || RX_NOTA_TACTICA_SB.test(linea)){ entries.push(crearNotaSB(linea)); return; }
       var mSetR = linea.match(/^\\s*(?:sets?|series?)\\s*(\\d+)(?:\\s*[-\\u2013]\\s*(\\d+))?\\s*[:.\\-\\u2013\\u2014]\\s*(\\S.*)$/i);
       if(mSetR){
         var restoSR = mSetR[3], cargaSR = '', mCSR = restoSR.match(/@\\s*(.+)$/);
@@ -16220,6 +16248,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           var ult = actual.subs[actual.subs.length - 1];
           var txtN = linea.replace(/^\\*\\s*/, '');
           ult.nota = ult.nota ? ult.nota + ' · ' + txtN : txtN;
+          return;
+        }
+        /* ejercicio suelto dentro del grupo (sin "A3."): pasa a ser la estacion siguiente */
+        var huer = actual.subs.length ? nombreHuerfanoSB(linea) : null;
+        if(huer){
+          var subH = { nombre: huer.nombre, reps: huer.reps || '', tempo: '', tecnica: '', nota: '', unilateral: '', unidad: 'reps', rir: '', restSeconds: 0, sets: 0 };
+          actual.subs.push(subH);
+          if(huer.dosis) aplicarDosisSubSB(subH, actual, huer.dosis);
           return;
         }
       }
@@ -17079,7 +17115,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         });
         const cabeceras = subsInfo.map(function(o){
           return '<div class="jp-sb-subex-resumen">' +
-              '<div class="jp-sb-subex-head"><span class="jp-sb-letra">A' + (o.si + 1) + '</span>' +
+              '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + (entry.letra || 'A') + (o.si + 1) + '</span>' +
                 '<span class="jp-sb-subex-tit">' + escSB(nombrePrincipalSB(o.sub.nombre, block)) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
               dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds) +
               chipUnilateralSB(o.sub.unilateral) +
@@ -17095,6 +17131,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '<div class="jp-sb-biset-title">' + escSB(tituloBiset) + '</div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
           '</div>';
+        return;
+      }
+      if(entry.tipo === 'nota'){
+        filas += '<div class="jp-nota-t"><div class="jp-nota-tt">' + entry.icono + ' ' + escSB(String(entry.titulo).toUpperCase()) + '</div>' + (entry.texto ? '<div class="jp-nota-tx">' + escSB(entry.texto) + '</div>' : '') + '</div>';
         return;
       }
       if(entry.tipo === 'intervalo'){
@@ -17176,6 +17216,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
         const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm;
         filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
+            (!esCalentamiento ? '<span class="jp-sb-ex-id">E' + (++nIndiv) + '</span>' : '') +
             (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
             '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
@@ -37117,6 +37158,12 @@ html body .info-card.jp-resumen-ses p{ margin:0 !important; text-align:center; f
 .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup) .jp-sb-plain-pill{ font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; font-size:calc(.85rem * var(--fzs,1)) !important; }
 .jp-dose-bar{ flex-wrap:wrap; }
 .jp-dose-bar .jp-db-seg{ font-size:.74rem !important; font-weight:700 !important; }
+/* ===== cada ejercicio en su tarjeta + micro-banners de notas ===== */
+.jp-sb-board .jp-sb-ex, .jp-sb-board .jp-sb-subex-resumen, .jp-sb-board .jp-int-rx, .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup){ background:rgba(23,23,23,.6); padding:12px; border-radius:12px; border:1px solid #262626; margin:8px 0 !important; }
+.jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup){ display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.jp-nota-t{ margin:8px 0; padding:8px 10px; border-radius:8px; background:rgba(23,23,23,.4); border-left:2px solid rgba(245,158,11,.5); }
+.jp-nota-tt{ font-size:.75rem; font-weight:600; letter-spacing:.04em; color:#fbbf24; text-transform:uppercase; }
+.jp-nota-tx{ margin-top:3px; font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif; font-size:.75rem; font-weight:400; line-height:1.5; color:#d4d4d4; text-transform:none; letter-spacing:0; overflow-wrap:anywhere; }
 .jp-es-sub{ margin:-2px 0 8px 2px; font-size:.78rem; line-height:1.3; color:rgba(148,163,184,.78); font-family:'Inter',sans-serif; text-transform:none; letter-spacing:0; }
 .jp-cont-pill{ margin:6px 0 8px; }
 .jp-cont-lista{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
@@ -38600,7 +38647,7 @@ function buildProgramConfig(ath){
               const vid = resolverVideoId(d.ex);
               if(vid && !vistosW[vid]){
                 vistosW[vid] = 1;
-                listaW.push({ nombre: exNombreCorto(d.ex) || d.ex.es || d.nombre, ytid: vid });
+                listaW.push({ nombre: nombreVideoSB(d.ex) || d.nombre, ytid: vid });
               }
             });
             videosSemanaSB.push(listaW);
@@ -38617,7 +38664,7 @@ function buildProgramConfig(ath){
                 const vid = resolverVideoId(r.ex);
                 if(vid && !videosBloqueVistos[vid]){
                   videosBloqueVistos[vid] = 1;
-                  videosBloque.push({ nombre: exNombreCorto(r.ex) || r.ex.es || r.name, ytid: vid });
+                  videosBloque.push({ nombre: nombreVideoSB(r.ex) || r.name, ytid: vid });
                 }
               }
             }
