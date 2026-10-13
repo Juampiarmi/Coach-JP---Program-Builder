@@ -1,4 +1,5 @@
 import { DEFAULT_STATE } from '../defaults'
+import { coreToPatch, CORE_SLIDE_PROMPT, readCoreSlide } from './slideSchema'
 import { detectStructuredCopy, guardMapped, isAnaphora, mapLocally, MAX_MAPPED_SLIDES, type MappedBlock } from './copyMapping'
 import type { Accent, CanvasState, ChartMode, CurveShape, DiagramData, DiagramKind, RepeatMode, StructData, TemplateId } from '../types'
 import { diagramDefaults, inferPillar } from './diagramPillar'
@@ -146,6 +147,8 @@ FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (v
 - MINDSET / TÁCTICO (filosofía, disciplina, frase contundente): "sentencia" y "manifiesto" con titular + remate + bajada, y como mucho una "repeticion" de apoyo con frase de 3+ palabras; si es carrusel, cierra con "guardado"; si es una sola frase, 1 placa "sentencia". Nunca una palabra repetida como mensaje.
 Si el usuario indica una cantidad de placas o un formato, respetalo por encima de estas secuencias.
 FASE 2 · REDACCIÓN TÁCTICA: escribís cada placa con el tono militar, científico y quirúrgico de Coach JP, con su templateId preseleccionado y TODOS sus datos completos (tarjetas A/B, subtipo y valores del diagrama, puntos del gráfico, frase de repetición). Las placas forman una sola historia: no repitas titulares ni ideas entre placas.
+
+${CORE_SLIDE_PROMPT}
 
 REGLAS DE CONTENIDO:
 - text.tagSuperior: MAYÚSCULAS, formato "DISCIPLINA · CATEGORÍA" o una sola categoría (ej: "BIOMECÁNICA APLICADA", "FISIOLOGÍA · ELECTROLITOS"). Para manifesto usá "FILOSOFÍA TÁCTICA", "ESTÁNDAR OPERATIVO" o "DISCIPLINA Y MÉTODO". Sin corchetes.
@@ -1040,6 +1043,14 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const wantsShort = mode === 'echo' || mode === 'kinetic'
   patch.repeatPhrase = (wantsShort ? first(short, long) : first(long, short)) || headline || base.repeatPhrase
   if (template === 'repeat' || aiMode) patch.repeatMode = mode
+
+  // Contrato estructurado (slide_number, layout, header_tag, titulo_principal, accent_words, bloques,
+  // cta): si viene, sus campos se inyectan directo en la placa y mandan sobre el formato anterior.
+  const core = readCoreSlide(s)
+  if (core) {
+    Object.assign(patch, coreToPatch(core, patch.template))
+    if (patch.template === 'repeat') patch.repeatPhrase = `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim() || patch.repeatPhrase
+  }
   return sanitizePatch(patch)
 }
 
@@ -1134,7 +1145,12 @@ export function enforceSubstance(p: Partial<CanvasState>, single: boolean): Part
 
 export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideContext = {}): GenerationResult {
   const root = obj(payload)
-  const rawSlides = Array.isArray(root.slides) ? root.slides : Array.isArray(payload) ? payload : [payload]
+  const rawSlides0 = Array.isArray(root.slides) ? root.slides : Array.isArray(payload) ? payload : [payload]
+  // Orden por slide_number cuando todas las placas lo traen (contrato estructurado); si no, el del array.
+  const nums = rawSlides0.map((r) => Number(obj(r).slide_number))
+  const rawSlides = nums.every((n) => Number.isFinite(n) && n > 0) && new Set(nums).size === nums.length
+    ? rawSlides0.map((r, i) => ({ r, n: nums[i] })).sort((a, b) => a.n - b.n).map((x) => x.r)
+    : rawSlides0
   const goal = str(obj(root.plan).objetivo ?? obj(root.plan).goal).toLowerCase()
   let slides = rawSlides.map((raw) => slideToPatch(raw, ctx)).map((p) => enforceSemantics(p, goal)).filter((p) => p.headlineA || p.headlineB)
   if (!slides.length) throw new Error('La IA no devolvió slides utilizables.')
