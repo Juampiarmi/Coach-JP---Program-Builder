@@ -5536,6 +5536,47 @@ function esBloqueEntradaCalorSB(b){
 /* frases de prescripción que NO son ejercicios ("Cada uno", "Por lado", "Biset", "Descanso", "30 seg entre sets"...): nunca llegan a la videoteca */
 const RX_RESERVADA_SB = /^(?:(?:rest|descanso|pausa|tempo|rir|rpe|biset|bi set|triset|superserie|superset|super set|circuito|ambos|nota|notas|obs|observacion|observaciones|recuperacion)(?: \d.*)?|(?:cada un[oa]|c u|cada ejercicio|por lado|por pierna|por brazo|por mano|por costado|ambos lados|los dos|entre sets?|entre series|sin descanso|al final)(?: .*)?|\d+ ?(?:seg\w*|s|min\w*)(?: (?:entre|por|de descanso|cada|c u).*)?)$/;
 function esReservadaSB(nombre){ return RX_RESERVADA_SB.test(normSports(nombre)); }
+/* directiva ("Filtrado de estructuras y parseo de complexes"): el escaner de videos NUNCA toma como ejercicio la pauta del temporizador
+   ("Every 1:30 x 6 sets", EMOM, AMRAP, For Time, Tabata, Rest, Rounds, Sets) ni una nota tactica ("🎯 ESTRATEGIA DE PROGRESIÓN: ...",
+   COACHING, TIPS, OBJETIVO, CUE, ERROR, NOTA, o una linea que arranca con 🎯 ⚡ 🛑 ⏱). */
+const RX_ESTRUCTURA_SB = /^[^A-Za-z0-9\u00c0-\u00ff]*(?:every|e\d*mom|emom|amrap|for\s*time|time\s*cap|tabata|rest|rounds?|rondas?|sets?(?![\w-])|descanso|cap)\b/i;
+const RX_EMOJI_TACTICO_SB = /^\s*(?:\u{1F3AF}|\u26A1|\u{1F6D1}|\u23F1|\u23F0|\u{1F4A1}|\u26A0|\u{1F4CC}|\u{1F4DD})/u;
+const RX_NOTA_PALABRA_SB = /\b(?:estrategia|coaching|tips?|objetivo|notas?|errores?|cues?|progresi[o\u00f3]n)\b/i;
+function esEstructuraONotaSB(linea){
+  const l = String(linea || '').trim();
+  if(!l) return false;
+  if(RX_EMOJI_TACTICO_SB.test(l) || RX_ESTRUCTURA_SB.test(l)) return true;
+  /* una nota con la palabra clave en cualquier posicion, siempre que la linea no lleve dosis ni sea un complex "+" */
+  if(RX_NOTA_PALABRA_SB.test(l) && !/\+/.test(l)){
+    const d = parsearDosisSports(l);
+    if(!(d.sets || d.reps)) return true;
+  }
+  return false;
+}
+/* complex "1 Snatch balance + 1 Overhead squat @ 60-70% 1RM Snatch" -> ['Snatch balance', 'Overhead squat']
+   (descarta la carga, separa por "+", limpia las reps iniciales; null si la linea no es un complex) */
+function partesComplexSB(linea){
+  let t = String(linea || '').trim().replace(/^[\s\-•*]+/, '');
+  t = limpiarPrefijoOrdinalSB(t);
+  t = t.replace(/\s*@.*$/, '');
+  const mc = t.match(/^[^:+]*:\s*(.*\+.*)$/);
+  if(mc) t = mc[1];
+  if(t.indexOf('+') < 0) return null;
+  const partes = t.split(/\s*\+\s*/);
+  if(partes.length < 2) return null;
+  const out = [];
+  for(let i = 0; i < partes.length; i++){
+    let n = partes[i].trim()
+      .replace(/^\d+(?:\s*[-–]\s*\d+)?\s*(?:x|×|reps?)?\s+(?=[A-Za-z\u00c0-\u00ff])/, '')
+      .replace(/\s*\([^)]*\)\s*$/, '')
+      .replace(/\s+\d+\s*(?:x|×)\s*\d.*$/i, '')
+      .replace(/[\s,;.]+$/, '').trim();
+    if(n.length < 3 || !/[A-Za-z\u00c0-\u00ff]{3}/.test(n)) return null;
+    if(/^(?:\d+\s*)?(?:sets?|series?|myo|drop|rondas?|min|seg|reps?|rest|descanso)\b/i.test(n) || esReservadaSB(n) || RX_NOEJ_JERGA.test(n)) return null;
+    out.push(n);
+  }
+  return out.length >= 2 ? out : null;
+}
 function detectarEjerciciosSports(texto, opts){
   let lineas = String(texto || '').split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
   if(opts && opts.warmup) lineas = lineas.filter(function(l){ return (RX_WARM_EJ.test(l) || RX_REPS_LINEA.test(l)) && !RX_WARM_CTX.test(l); });
@@ -5557,6 +5598,17 @@ function detectarEjerciciosSports(texto, opts){
     const soloEsDosis = lineaSoloDosisSB(linea);
     if(soloEsDosis) return;
     if(esLineaDirectivaSports(linea)) return;
+    if(esEstructuraONotaSB(linea)) return;      /* Every / EMOM / AMRAP / Rest / Sets... y notas tacticas: nunca son ejercicios */
+    const complexSB = partesComplexSB(linea);
+    if(complexSB){
+      complexSB.forEach(function(nm){
+        const kc = normSports(nm);
+        if(vistos[kc] || esReservadaSB(nm)) return;
+        vistos[kc] = 1;
+        out.push({ nombre: nm, ex: resolverExSports(nm, !!(opts && opts.warmup)) });
+      });
+      return;
+    }
     if(esLineaProsaEj(linea)) return;      /* instrucción/tip largo sin dosis: no es un ejercicio */
     /* directiva ("Fuzzy Matching Inteligente de Videos") -- sanitización:
        prefijo de estación (A1./A2.), viñetas sueltas, y TODO lo que sigue
@@ -37789,6 +37841,7 @@ function candidatosTexto(txt, sinY){
   let t = String(txt || '').replace(/^[\s\-•*]+/, '');
   if(RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return [];      /* cabeceras/metadatos/días: nunca ejercicios */
   if(esLineaProsaEj(t)) return [];      /* instrucción/tip largo sin dosis: no es un ejercicio */
+  if(esEstructuraONotaSB(t) && !/\+/.test(t)) return [];      /* Every/EMOM/Rest/Sets y notas tácticas (🎯 ⚡ 🛑 ⏱, ESTRATEGIA, TIPS...) */
   t = limpiarPrefijoOrdinalSB(t).replace(CAND_PREFIJO_ESTACION, '');
   t = t.replace(CAND_PREFIJO_ORDEN, '');
   /* directiva ("Lista Negra de Palabras de Estructura"): suma Super Sets/
@@ -57098,6 +57151,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        sin dosis (sin dígitos, ":", "|", "@" ni "+") es una instrucción o un
        tip, nunca un ejercicio: ni se intenta buscar */
     if(esLineaProsaEj(t)) return [];
+    if(esEstructuraONotaSB(t) && !/\+/.test(t)) return [];      /* Every/EMOM/Rest/Sets/Rounds y notas tácticas (🎯 ⚡ 🛑 ⏱, ESTRATEGIA, TIPS...): nunca ejercicios */
     /* directiva (fix parser de video, punto 7) -- "3. Activación
        neuromuscular", "2) Movilidad de cadera": encabezado de FASE
        numerado con estilo de outline ("N. Texto"), nunca un ejercicio en
@@ -57109,6 +57163,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        numeran así, van directo "Ejercicio — dosis", así que este filtro
        no le pisa ningún ejercicio numerado legítimo. */
     if(/^\s*\d+\.\s/.test(t)) return [];
+    t = t.replace(/^[A-Fa-f]\d+\s*[.:)\-–—·]+\s*/, '');      /* estación "A1. " / "B2) " delante del nombre */
     /* directiva -- "Round N of M" / "Ronda N de M" es un anuncio de
        progreso, nunca un ejercicio: se rechaza ANTES de PREFIJO_ORDEN
        (que sólo pisa "Round N" y dejaba "of 3" suelto como candidato
@@ -57310,7 +57365,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       lista.map(x => {
         const principal = x.ex
           ? '<button type="button" class="vc ok' + (x.override ? ' override' : '') + '" data-vcok="' + esc(x.ex.id) + '" title="Ver el video vinculado">' +
-              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.override && x.ex && x.ex.es ? x.ex.es : x.nombre) + '</b> (Video vinculado' + (x.override ? (x.manual ? ', manual' : ', override') : '') + ')</button>'
+              '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.ex && x.ex.es && (x.override || nrm(x.ex.es) === nrm(x.nombre) || nrm(x.ex.en) === nrm(x.nombre)) ? x.ex.es : x.nombre) + '</b> (Video vinculado' + (x.override ? (x.manual ? ', manual' : ', override') : '') + ')</button>'
           : '<button type="button" class="vc no" data-vcno="' + esc(x.nombre) + '"' +
               (x.ficha ? ' data-vcex="' + esc(x.ficha.id) + '"' : '') +
               ' title="Vincular un video sin salir del Builder">' + (b.sportsPizarra
