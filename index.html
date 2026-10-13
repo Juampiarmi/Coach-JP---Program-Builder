@@ -1832,7 +1832,7 @@ function exPorNombre(texto){
 function exLineaAEspanol(linea){
   const t = String(linea == null ? '' : linea);
   const m = t.match(/^(\s*(?:[A-Za-z]\d+\s*[.:)\-–—·]\s*|\d+\s*[.)]\s+)?)([^:|(]*?)(\s*(?:[:|(].*)?)$/);
-  if(!m || !m[2].trim()) return t;
+  if(!m || !m[2].trim() || !/[A-Za-zÀ-ÿ]{3}/.test(m[2])) return t;      /* "1:30 x 6 sets" / "10x30s": sin nombre, nunca se traduce */
   const ex = exPorNombre(m[2]);
   if(!ex || !ex.es) return t;
   if(exNormTxt(ex.es) === exNormTxt(m[2])) return t;
@@ -5519,7 +5519,7 @@ function itemsConNombreSB(titulo, items){
   const arr = Array.isArray(items) ? items : [];
   if(!tituloEsNombreEj(titulo)) return arr;
   const primera = String(arr.find(function(l){ return String(l || '').trim(); }) || '').trim();
-  if(primera && !lineaSoloDosisSB(primera)) return arr;        /* ya trae su propio nombre */
+  if(primera && (!lineaSoloDosisSB(primera) || /^\s*\d+:\d{2}\s*(?:min\w*)?\s*[x×]\s*\d/i.test(primera))) return arr;        /* ya trae su propio nombre */
   return [String(titulo).trim()].concat(arr);
 }
 /* bloque "Tiempo · Entrada en calor" (modalidad / categoría / título): para el escaneo de videos sólo cuentan las
@@ -14452,7 +14452,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       sets += '<button type="button" class="jp-reg-set' + (i === regEst.set ? ' on' : '') + (l2.done ? ' done' : '') + '" data-regset="' + i + '">Set ' + i + (l2.done ? ' \\u2713' : '') + '</button>';
     }
     regQ('.jp-reg-sets').innerHTML = sets;
-    regQ('.jp-reg-pres').textContent = [e.reps ? e.reps + ' reps' : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' \\u00b7 ');
+    regQ('.jp-reg-pres').textContent = [e.reps ? e.reps + ' ' + (e.u || 'reps') : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' \\u00b7 ');
     var kg = regQ('.jp-reg-kg'), rp = regQ('.jp-reg-reps');
     kg.value = ld.kg != null ? ld.kg : ''; rp.value = ld.reps != null ? ld.reps : '';
     var pk = '';
@@ -15471,7 +15471,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        todavía no tiene prescripción propia (lineas vacío por semana > 1),
        nunca se deja el tablero con las filas en blanco sin explicación:
        un mensaje claro en vez del WOD de otra semana. */
-    const filas = cont ? (jpCfIntervaloCtx = true, jpContinuoPillHtml(cont) + jpContinuoListaHtml(cont)) : lineas.length ? (jpCfIntervaloCtx = lineas.some(function(l){ return /^[\\s*#⚡]*(?:every|e\\d*mom|emom)\\b/i.test(String(l)); }), jpCfRenderLineas(lineas, dayId))
+    const filas = cont ? (jpCfIntervaloCtx = true, jpContinuoPillHtml(cont) + jpContinuoListaHtml(cont)) : lineas.length ? (jpCfIntervaloCtx = lineas.some(function(l){ return /^[^A-Za-z0-9]*(?:every|e\\d*mom|emom|cada)\\b|^\\s*\\d+:\\d{2}\\s*(?:min\\w*)?\\s*(?:x|×)\\s*\\d/i.test(String(l)); }), jpCfRenderLineas(lineas, dayId))
       : (weekIdx > 0 ? '<div class="jp-cf-row jp-cf-badge">Todavía no se cargó la prescripción de esta semana. Consultá con tu coach.</div>' : '');
     /* registro de series: un casillero IDENTIFICADO por ejercicio (A1 / A2 / triserie), nunca uno generico */
     let gridHtml = '';
@@ -15990,23 +15990,31 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   /* "Every 1:30 x 6 sets", "Every 2 min x 5", "EMOM 10 min", "E2MOM 12 min": encabezado de intervalo, NUNCA un ejercicio
      (antes "1:30 x 6" se leia como 30 series x 6 reps = 30 casilleros). Solo si no trae nombre de ejercicio en la misma linea. */
   function parseIntervaloSB(linea){
-    var l = String(linea || '').replace(/^[\\s#*\\u26a1]+/, '').trim(), m, seg = 0, sets = 0;
-    if((m = l.match(/^(?:every|each|cada)\\s+(\\d+)(?::(\\d{2}))?\\s*(min(?:ute|uto)?s?|seg(?:undos?)?|secs?|s)?\\b\\s*(.*)$/i))){
+    var l = String(linea || '').replace(/^[^A-Za-z0-9]+/, '').replace(/[*\\s]+$/, '').trim(), m, seg = 0, sets = 0, resto = '';
+    if((m = l.match(/^(?:every|each|cada)\\s+(\\d+)(?::(\\d{2}))?\\s*(?:(min(?:ute|uto)?s?|seg(?:undos?)?|secs?|s)\\b)?(.*)$/i))){
       if(m[2] !== undefined) seg = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
       else if(m[3] && /^s/i.test(m[3])) seg = parseInt(m[1], 10);
       else seg = parseInt(m[1], 10) * 60;
-      var resto = m[4] || '', mS = resto.match(/(?:x|por)\\s*(\\d+)/i) || resto.match(/(\\d+)\\s*(?:sets?|rondas?|rounds?|series)/i);
-      if(mS) sets = parseInt(mS[1], 10);
-      var sobra = resto.replace(/(?:x|por)?\\s*\\d+\\s*(?:sets?|rondas?|rounds?|series)?/gi, '').replace(/[:,.;]/g, '').trim();
-      if(sobra) return null;
-      return { seg: seg, sets: sets, texto: l };
-    }
-    if((m = l.match(/^(?:emom|e(\\d+)mom)\\s*(?:de\\s*)?(\\d+)?\\s*(?:min\\w*)?\\s*:?\\s*$/i)) && m[2]){
+      resto = m[4] || '';
+    } else if((m = l.match(/^(\\d+):(\\d{2})\\s*(?:min\\w*)?\\s*(?:x|\\u00d7)\\s*(\\d+)(.*)$/i))){
+      seg = parseInt(m[1], 10) * 60 + parseInt(m[2], 10); sets = parseInt(m[3], 10); resto = m[4] || '';
+    } else if((m = l.match(/^(?:emom|e(\\d+)mom)\\s*(?:de\\s*)?(\\d+)\\s*(?:min\\w*)?(.*)$/i))){
       seg = m[1] ? parseInt(m[1], 10) * 60 : 60;
       sets = m[1] ? Math.floor(parseInt(m[2], 10) / parseInt(m[1], 10)) : parseInt(m[2], 10);
-      return { seg: seg, sets: sets, texto: l };
-    }
-    return null;
+      resto = m[3] || '';
+    } else return null;
+    if(!(seg > 0)) return null;
+    var mS = null;
+    if(!sets){
+      var r0 = resto.replace(/^[\\s,;]*(?:min(?:ute|uto)?s?\\b)?/i, '');
+      mS = r0.match(/^\\s*(?:x|\\u00d7|\\u00b7|por|for)\\s*(\\d+)\\s*(?:sets?|rondas?|rounds?|series|vueltas)?/i) || r0.match(/^\\s*(\\d+)\\s*(?:sets?|rondas?|rounds?|series|vueltas)\\b/i);
+      if(mS){ sets = parseInt(mS[1], 10); resto = r0.slice(mS[0].length); }
+    } else resto = resto.replace(/^\\s*(?:sets?|rondas?|rounds?|series|vueltas)\\b/i, '');
+    var guard = 0, ant;
+    do{ ant = resto; resto = resto.replace(/^[\\s:,.;\\-\\u2013\\u2014\\u00b7*]+/, '').replace(/^\\([^)]*\\)/, ''); guard++; } while(resto !== ant && guard < 6);
+    resto = resto.trim();
+    if(resto && !/[A-Za-z\\u00c0-\\u00ff0-9]/.test(resto)) resto = '';
+    return { seg: seg, sets: sets, resto: resto, texto: 'Every ' + fmtIntervaloSB(seg) + (sets ? ' x ' + sets + ' sets' : '') };
   }
   function fmtIntervaloSB(seg){ return Math.floor(seg / 60) + ':' + ('0' + (seg % 60)).slice(-2); }
   var RX_NOTA_INT_SB = /^\\s*(?:\\u26a1|\\u23f1|\\u26a0|[\\ud83c-\\ud83d][\\udc00-\\udfff])|\\b(?:estrategia|coaching|tips?|objetivo|notas?|errores?|cues?|progresi[o\\u00f3]n)\\b/i;
@@ -16038,6 +16046,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function parsearPizarraSB(lineas, opts){
     var entries = [], actual = null;
     lineas = separarMetaPizarraSB(lineas).lineas;
+    var hayIntSB = false;
+    lineas = lineas.reduce(function(a, l){
+      var h = parseIntervaloSB(l);
+      if(h){ hayIntSB = true; a.push(h.texto); if(h.resto) a.push(h.resto); return a; }
+      a.push(hayIntSB ? String(l).replace(/^\\s*[A-Fa-f]\\d+\\s*[.:)\\-\\u2013\\u2014]\\s*/, '') : l);
+      return a;
+    }, []);
     /* el título del bloque ("Superserie", "Biset: ...") habilita las estaciones sólo-número ("1." / "2.") */
     var titBiset = !!(opts && opts.titulo && RX_BISET_HEAD_SB.test(String(opts.titulo)));
     var titSuper = !!(opts && opts.titulo && /super/i.test(String(opts.titulo)));
@@ -17011,9 +17026,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       if(entry.tipo !== 'simple') return;
       const exIdx = 'e' + idx;
-      if(entry.int && !esCalentamiento && !entry.tecnica){
+      if((entry.int || entry.sets > 6) && !esCalentamiento && !entry.tecnica){
         nIndiv++;
-        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '' });
+        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '' });
         filas += '<div class="jp-sb-ex jp-sb-ex-int" data-rest-sec="0">' +
             '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + nIndiv + '</span><span class="jp-sb-ex-nombre">' + escSB(nombrePrincipalSB(entry.titulo, block)) + '</span></div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets || 1, entry.reps, entry.unidad, entry.tempo, entry.rir, 0, entry.carga ? '@ ' + entry.carga : '') +
