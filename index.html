@@ -14419,6 +14419,116 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     Array.prototype.forEach.call(b.parentNode.querySelectorAll('[data-contrx]'), function(x){ x.classList.toggle('on', x.getAttribute('data-contrx') === state.notes[k]); });
     saveProgress();
   });
+  /* ============================================================
+     REGISTRO DE CARGAS EN BOTTOM SHEET (bloques de intervalo: "Every 1:30 x 6 sets", EMOM de fuerza, complexes)
+     La tarjeta muestra prescripcion + un boton; el sheet tiene selector horizontal de sets, kg x reps y [ CONFIRMAR REGISTRO ].
+     Escribe en state.loads con la MISMA clave que las filas nativas (getLoadKey), asi tonelaje, reporte y Story lo leen igual.
+     ============================================================ */
+  function regProgreso(cfg){
+    var hechos = 0, total = 0;
+    cfg.ex.forEach(function(e){ for(var i = 1; i <= e.sets; i++){ total++; if(getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, e.idx, i)).done) hechos++; } });
+    return { hechos: hechos, total: total };
+  }
+  function regBotonInner(cfg){
+    var p = regProgreso(cfg);
+    return '[ \\ud83d\\udcdd REGISTRAR CARGAS Y SERIES ]<small>' + p.hechos + ' / ' + p.total + ' sets registrados</small>';
+  }
+  function jpRegBotonHtml(cfg){
+    return '<button type="button" class="jp-reg-open" data-regcfg="' + encodeURIComponent(JSON.stringify(cfg)) + '">' + regBotonInner(cfg) + '</button>';
+  }
+  var regEst = null;
+  function regQ(sel){ var bg = document.getElementById('jpRegSheet'); return bg ? bg.querySelector(sel) : null; }
+  function regKey(){ var c = regEst.cfg, e = c.ex[regEst.ex]; return getLoadKey(c.w, c.d, c.b, e.idx, regEst.set); }
+  function regPintar(){
+    var bg = document.getElementById('jpRegSheet'); if(!bg || !regEst) return;
+    var c = regEst.cfg, e = c.ex[regEst.ex], ld = getLoad(regKey());
+    regQ('.jp-reg-t').textContent = String(c.t || 'Registro').toUpperCase();
+    regQ('.jp-reg-exs').innerHTML = c.ex.length > 1
+      ? c.ex.map(function(x, i){ return '<button type="button" class="jp-reg-ex' + (i === regEst.ex ? ' on' : '') + '" data-regex="' + i + '">' + escSB(x.nombre) + '</button>'; }).join('')
+      : '<div class="jp-reg-exn">' + escSB(e.nombre) + '</div>';
+    var sets = '';
+    for(var i = 1; i <= e.sets; i++){
+      var l2 = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, i));
+      sets += '<button type="button" class="jp-reg-set' + (i === regEst.set ? ' on' : '') + (l2.done ? ' done' : '') + '" data-regset="' + i + '">Set ' + i + (l2.done ? ' \\u2713' : '') + '</button>';
+    }
+    regQ('.jp-reg-sets').innerHTML = sets;
+    regQ('.jp-reg-pres').textContent = [e.reps ? e.reps + ' reps' : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' \\u00b7 ');
+    var kg = regQ('.jp-reg-kg'), rp = regQ('.jp-reg-reps');
+    kg.value = ld.kg != null ? ld.kg : ''; rp.value = ld.reps != null ? ld.reps : '';
+    var pk = '';
+    if(regEst.set > 1){ var lp = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, regEst.set - 1)); if(lp.kg != null && lp.kg !== '') pk = String(lp.kg); }
+    if(!pk && c.w > 0){ var lw = getLoad(getLoadKey(c.w - 1, c.d, c.b, e.idx, regEst.set)); if(lw.kg != null && lw.kg !== '') pk = String(lw.kg); }
+    kg.placeholder = pk || '\\u2014';
+    var nr = String(e.reps || '').match(/^\\d+/);
+    rp.placeholder = nr ? nr[0] : '\\u2014';
+    var actual = regQ('.jp-reg-set.on'); if(actual && actual.scrollIntoView){ try{ actual.scrollIntoView({ inline: 'center', block: 'nearest' }); }catch(err){} }
+  }
+  function regSiguientePendiente(cfg){
+    for(var ei = 0; ei < cfg.ex.length; ei++){
+      for(var i = 1; i <= cfg.ex[ei].sets; i++){ if(!getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, cfg.ex[ei].idx, i)).done) return { ex: ei, set: i }; }
+    }
+    return { ex: 0, set: 1 };
+  }
+  function regAbrir(btn){
+    var cfg = null;
+    try{ cfg = JSON.parse(decodeURIComponent(btn.dataset.regcfg || '')); }catch(err){}
+    if(!cfg || !cfg.ex || !cfg.ex.length) return;
+    var p = regSiguientePendiente(cfg);
+    regEst = { cfg: cfg, ex: p.ex, set: p.set, btn: btn };
+    var bg = document.createElement('div'); bg.className = 'jp-reg-bg'; bg.id = 'jpRegSheet';
+    bg.innerHTML = '<div class="jp-reg-sheet" role="dialog" aria-modal="true">' +
+        '<div class="jp-reg-grip"></div>' +
+        '<div class="jp-reg-h"><span class="jp-reg-t"></span><button type="button" class="jp-reg-x" aria-label="Cerrar">\\u2715</button></div>' +
+        '<div class="jp-reg-exs"></div>' +
+        '<div class="jp-reg-sets"></div>' +
+        '<div class="jp-reg-pres"></div>' +
+        '<div class="jp-reg-fila"><label><span>KG</span><input type="text" inputmode="decimal" class="jp-reg-kg" autocomplete="off" placeholder="\\u2014"></label>' +
+          '<b>\\u00d7</b><label><span>REPS</span><input type="text" inputmode="decimal" class="jp-reg-reps" autocomplete="off" placeholder="\\u2014"></label></div>' +
+        '<button type="button" class="jp-reg-ok">[ CONFIRMAR REGISTRO ]</button>' +
+      '</div>';
+    document.body.appendChild(bg);
+    document.body.style.overflow = 'hidden';
+    regPintar();
+  }
+  function regCerrar(){
+    var bg = document.getElementById('jpRegSheet'); if(bg) bg.remove();
+    document.body.style.overflow = '';
+    if(regEst && regEst.btn){ regEst.btn.innerHTML = regBotonInner(regEst.cfg); }
+    regEst = null;
+  }
+  function regConfirmar(){
+    if(!regEst) return;
+    var kg = regQ('.jp-reg-kg'), rp = regQ('.jp-reg-reps'), key = regKey();
+    var kv = kg.value || (/^\\d/.test(kg.placeholder) ? kg.placeholder : '');
+    var rv = rp.value || (/^\\d/.test(rp.placeholder) ? rp.placeholder : '');
+    if(!kv && !rv){ var fila = regQ('.jp-reg-fila'); fila.classList.add('jp-reg-falta'); setTimeout(function(){ fila.classList.remove('jp-reg-falta'); }, 600); return; }
+    if(kv) setLoadField(key, 'kg', kv);
+    if(rv) setLoadField(key, 'reps', rv);
+    setLoadField(key, 'done', true);
+    try{ jpAudioTactical.soundCheckSet(); }catch(err){}
+    try{ jpAudioTactical.vibrateCheckSet(); }catch(err){}
+    regCerrar();
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    var ab = t.closest('.jp-reg-open');
+    if(ab){ e.preventDefault(); e.stopPropagation(); regAbrir(ab); return; }
+    if(!regEst) return;
+    if(t.closest('.jp-reg-x') || t.classList.contains('jp-reg-bg')){ regCerrar(); return; }
+    var ex = t.closest('[data-regex]');
+    if(ex){ regEst.ex = parseInt(ex.getAttribute('data-regex'), 10) || 0; var c = regEst.cfg, e0 = c.ex[regEst.ex], s0 = 1; for(var i = 1; i <= e0.sets; i++){ if(!getLoad(getLoadKey(c.w, c.d, c.b, e0.idx, i)).done){ s0 = i; break; } } regEst.set = s0; regPintar(); return; }
+    var st = t.closest('[data-regset]');
+    if(st){ regEst.set = parseInt(st.getAttribute('data-regset'), 10) || 1; regPintar(); return; }
+    if(t.closest('.jp-reg-ok')){ regConfirmar(); return; }
+  });
+  document.addEventListener('input', function(e){
+    var t = e.target; if(!regEst || !t || !t.classList) return;
+    var campo = t.classList.contains('jp-reg-kg') ? 'kg' : (t.classList.contains('jp-reg-reps') ? 'reps' : '');
+    if(!campo) return;
+    var v = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '').replace(/(\\..*)\\./g, '$1');
+    if(v !== t.value) t.value = v;
+    setLoadField(regKey(), campo, v);
+  });
   function esMetcon(block, weekIdx){
     /* además del título/categoría estáticos, se testea la etiqueta YA
        resuelta para la semana actual -- así un bloque cuya categoría
@@ -15873,8 +15983,57 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(!t || t.length > 60 || t.split(/\\s+/).length > 8 || /[.!?]\\s*$/.test(t)) return false;
     if(/^(?:nota|tip|obj|objetivo|pauta|recuerd|importante|descanso|rest|cap|amrap|emom|every|realizar|hacer|completar|repetir|luego|despu[e\\u00e9]s|total|aplicar|mantener|usar|buscar|controlar|evitar|priorizar|enfocar|cuidar|recordar|respirar|\\*)/i.test(t)) return false;
     if(/^(?:metcon|cardio|endurance|warmup)$/.test(String(block.category || ''))) return false;
+    if(/^\\s*(?:\\u26a1|\\u23f1|\\u26a0|[\\ud83c-\\ud83d][\\udc00-\\udfff])/.test(t) || /\\b(?:estrategia|coaching|tips?|objetivo|notas?|errores?|cues?|progresi[o\\u00f3]n)\\b/i.test(t)) return false;
     if(/\\b\\d+\\s*(?:min|minutos|km|cal|mts?|metros)\\b/i.test(t) || /\\b(?:cardio|bici|bike|cinta|trote|trotar|correr|caminata|el[ií]ptico|assault|skierg|remo suave)\\b/i.test(t)) return false;
     return true;
+  }
+  /* "Every 1:30 x 6 sets", "Every 2 min x 5", "EMOM 10 min", "E2MOM 12 min": encabezado de intervalo, NUNCA un ejercicio
+     (antes "1:30 x 6" se leia como 30 series x 6 reps = 30 casilleros). Solo si no trae nombre de ejercicio en la misma linea. */
+  function parseIntervaloSB(linea){
+    var l = String(linea || '').replace(/^[\\s#*\\u26a1]+/, '').trim(), m, seg = 0, sets = 0;
+    if((m = l.match(/^(?:every|each|cada)\\s+(\\d+)(?::(\\d{2}))?\\s*(min(?:ute|uto)?s?|seg(?:undos?)?|secs?|s)?\\b\\s*(.*)$/i))){
+      if(m[2] !== undefined) seg = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      else if(m[3] && /^s/i.test(m[3])) seg = parseInt(m[1], 10);
+      else seg = parseInt(m[1], 10) * 60;
+      var resto = m[4] || '', mS = resto.match(/(?:x|por)\\s*(\\d+)/i) || resto.match(/(\\d+)\\s*(?:sets?|rondas?|rounds?|series)/i);
+      if(mS) sets = parseInt(mS[1], 10);
+      var sobra = resto.replace(/(?:x|por)?\\s*\\d+\\s*(?:sets?|rondas?|rounds?|series)?/gi, '').replace(/[:,.;]/g, '').trim();
+      if(sobra) return null;
+      return { seg: seg, sets: sets, texto: l };
+    }
+    if((m = l.match(/^(?:emom|e(\\d+)mom)\\s*(?:de\\s*)?(\\d+)?\\s*(?:min\\w*)?\\s*:?\\s*$/i)) && m[2]){
+      seg = m[1] ? parseInt(m[1], 10) * 60 : 60;
+      sets = m[1] ? Math.floor(parseInt(m[2], 10) / parseInt(m[1], 10)) : parseInt(m[2], 10);
+      return { seg: seg, sets: sets, texto: l };
+    }
+    return null;
+  }
+  function fmtIntervaloSB(seg){ return Math.floor(seg / 60) + ':' + ('0' + (seg % 60)).slice(-2); }
+  var RX_NOTA_INT_SB = /^\\s*(?:\\u26a1|\\u23f1|\\u26a0|[\\ud83c-\\ud83d][\\udc00-\\udfff])|\\b(?:estrategia|coaching|tips?|objetivo|notas?|errores?|cues?|progresi[o\\u00f3]n)\\b/i;
+  /* ejercicio dentro de un grupo de intervalo: "1 Snatch balance + 1 Overhead squat @ 60-70% 1RM" -> nombre "Snatch balance + Overhead squat",
+     reps "1+1", carga "60-70% 1RM", sets del encabezado */
+  function aplicarIntervaloSB(en, hdr){
+    var titulo = String(en.titulo || '');
+    if(RX_NOTA_INT_SB.test(titulo) && !/@/.test(titulo)) return;
+    en.int = hdr;
+    var mC = titulo.match(/@\\s*(.+)$/);
+    if(mC){ en.carga = mC[1].trim(); titulo = titulo.replace(/\\s*@.*$/, ''); }
+    if(titulo.indexOf('|') >= 0){
+      var dP = parsearDosisSB(titulo);
+      if(dP.tempo && !en.tempo) en.tempo = dP.tempo;
+      if(dP.rir && !en.rir) en.rir = dP.rir;
+      titulo = titulo.split('|')[0];
+    }
+    var partes = titulo.trim().split(/\\s*\\+\\s*/), reps = [], nombres = [];
+    partes.forEach(function(p){
+      var m = p.match(/^(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:x|reps?)?\\s+(\\S.*)$/i);
+      if(m){ reps.push(m[1].replace(/\\s+/g, '')); nombres.push(m[2].trim()); } else nombres.push(p.trim());
+    });
+    en.titulo = nombres.join(' + ');
+    if(!en.reps) en.reps = reps.length === nombres.length ? reps.join('+') : (reps[0] || '');
+    if(!en.sets) en.sets = hdr.sets || 1;
+    en.dosisAsignada = true; en.complex = nombres.length > 1; en.setsDef = false;
+    if(!en.restSeconds) en.restSeconds = hdr.seg || 0;
   }
   function parsearPizarraSB(lineas, opts){
     var entries = [], actual = null;
@@ -15886,6 +16045,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var linea = String(raw || '').trim();
       if(!linea) return;
       if(esLineaMetaSB(linea)) return;
+      var hdrInt = parseIntervaloSB(linea);
+      if(hdrInt){ actual = null; entries.push({ tipo: 'intervalo', seg: hdrInt.seg, sets: hdrInt.sets, texto: hdrInt.texto }); return; }
       var subM = linea.match(RX_SUBEJ_SB);
       /* "A1) Nombre" sin dosis (o "B2. Nombre 3x12" sin dos puntos): nueva estación del biset; la dosis se acumula
          con los renglones siguientes. Un "A1" cuando el biset abierto ya empezó en 1, o un cambio de letra, abre otro biset. */
@@ -16162,6 +16323,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         if(!s.restSeconds) s.restSeconds = en.base.restSeconds;
         if(s.unidad === 'reps' && en.base.unidad) s.unidad = en.base.unidad;
       });
+    });
+    /* los ejercicios que siguen a un encabezado de intervalo heredan sus sets y su cadencia (hasta una fase nueva u otro encabezado) */
+    var hdrAct = null;
+    entries.forEach(function(en){
+      if(en.tipo === 'intervalo'){ hdrAct = en; return; }
+      if(en.tipo === 'fase'){ hdrAct = null; return; }
+      if(hdrAct && en.tipo === 'simple') aplicarIntervaloSB(en, hdrAct);
     });
     return entries;
   }
@@ -16605,7 +16773,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var t = (sub.reps ? sub.reps + ' ' + (sub.unidad || 'reps') : '') + (sub.rir ? (sub.reps ? ' @ ' : '') + 'RIR ' + sub.rir : '');
     return '<span class="jp-ronda-tg">Target: ' + escSB(t) + '</span>';
   }
-  function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds){
+  function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra){
     var seg = [];
     var u = escSB(String(unidad || 'reps').toUpperCase());
     if(!sets && !reps) return '';
@@ -16613,6 +16781,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(sets && reps) seg.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
     else if(reps) seg.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
     else seg.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
+    if(extra) seg.push('<span class="jp-db-seg jp-db-tempo">' + escSB(extra) + '</span>');
     if(tempo) seg.push('<span class="jp-db-seg jp-db-tempo">TEMPO ' + escSB(tempo) + '</span>');
     if(restSeconds) seg.push('<span class="jp-db-seg jp-db-rest">REST ' + fmtRestSB(restSeconds) + '</span>');
     if(rir){
@@ -16765,6 +16934,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        un bloque de calentamiento (ahí no hay ancla, es activación). */
     let anclaUsada = false;
     let nIndiv = 0;                  /* badge [ E1 ] [ E2 ]... de los ejercicios individuales del bloque */
+    const regCfg = [];               /* ejercicios de intervalo: se registran desde el bottom sheet, sin casilleros en la tarjeta */
     let filas = contS ? jpContinuoSportsHtml(contS, block, weekIdx, dayId) : '';
     let duracionEstimada = 0;
     (contS ? [] : entries).forEach(function(entry, idx){
@@ -16834,8 +17004,22 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '</div>';
         return;
       }
+      if(entry.tipo === 'intervalo'){
+        filas += '<div class="jp-dose-bar jp-int-pill"><span class="jp-db-br">[</span><span class="jp-db-seg jp-db-vol">\\u23f1 CADA ' + fmtIntervaloSB(entry.seg) + '</span>' +
+          (entry.sets ? '<span class="jp-db-sep">|</span><span class="jp-db-seg jp-db-tempo">' + entry.sets + ' SETS</span>' : '') + '<span class="jp-db-br">]</span></div>';
+        return;
+      }
       if(entry.tipo !== 'simple') return;
       const exIdx = 'e' + idx;
+      if(entry.int && !esCalentamiento && !entry.tecnica){
+        nIndiv++;
+        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '' });
+        filas += '<div class="jp-sb-ex jp-sb-ex-int" data-rest-sec="0">' +
+            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + nIndiv + '</span><span class="jp-sb-ex-nombre">' + escSB(nombrePrincipalSB(entry.titulo, block)) + '</span></div>' + subEsSB(entry.titulo, block) +
+            dosisCompletaSB(entry.sets || 1, entry.reps, entry.unidad, entry.tempo, entry.rir, 0, entry.carga ? '@ ' + entry.carga : '') +
+          '</div>';
+        return;
+      }
       /* directiva maestra ("Registro ágil de 1 toque para Drop Sets y
          Myo-Reps") -- toma prioridad ANTES del chequeo de "sin dosis"
          de abajo: un MYO-REPS/DROP SET se registra igual con la fila
@@ -16907,6 +17091,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null), entry.titulo, entry.unidad === 'reps' || !entry.unidad ? entry.reps : '') +
         '</div>';
     });
+    if(regCfg.length) filas += jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg });
     if(!filas) return;
     /* directiva ("Unificación de tips/videos"): UN SOLO acordeón por
        bloque -- absorbe lo que antes se veía triplicado (este mismo
@@ -18889,16 +19074,23 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         g.strokeStyle = 'rgba(255,255,255,.14)'; g.lineWidth = 2;
         g.beginPath(); g.moveTo(barX + colW * i, barY + 26); g.lineTo(barX + colW * i, barY + barH - 26); g.stroke();
       }
-      let fsCyber = 42;
-      const txt = cItem.icono + ' ' + cItem.v;
-      g.font = '700 ' + fsCyber + 'px "Chakra Petch", sans-serif';
-      const maxColW = colW - 32;
-      while(g.measureText(txt).width > maxColW && fsCyber > 22){
-        fsCyber -= 2;
-        g.font = '700 ' + fsCyber + 'px "Chakra Petch", sans-serif';
-      }
-      g.fillStyle = cItem.col;
-      g.fillText(txt, cx, barY + barH / 2);
+      /* icono y valor se miden y se dibujan por separado, con 12px de separacion (gap-3): nunca se montan uno sobre otro */
+      let fsCyber = 42, icoW = 0, txtW = 0, conIco = true;
+      const GAP_IC = 12, icoTxt = cItem.icono, valTxt = cItem.v, maxColW = colW - 32;
+      const fontIco = function(){ return '400 ' + Math.round(fsCyber * 0.95) + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; };
+      const fontVal = function(){ return '700 ' + fsCyber + 'px "Chakra Petch", sans-serif'; };
+      const medir = function(){
+        g.font = fontVal(); txtW = g.measureText(valTxt).width;
+        g.font = fontIco(); icoW = conIco ? g.measureText(icoTxt).width : 0;
+        return txtW + (conIco ? GAP_IC + icoW : 0);
+      };
+      while(medir() > maxColW && fsCyber > 22){ fsCyber -= 2; }
+      if(medir() > maxColW){ conIco = false; medir(); }
+      const grupoW = txtW + (conIco ? GAP_IC + icoW : 0), x0c = cx - grupoW / 2, yy0 = barY + barH / 2;
+      g.textAlign = 'left'; g.textBaseline = 'middle';
+      if(conIco){ g.font = fontIco(); g.fillStyle = '#FFFFFF'; g.fillText(icoTxt, x0c, yy0); }
+      g.font = fontVal(); g.fillStyle = cItem.col;
+      g.fillText(valTxt, x0c + (conIco ? icoW + GAP_IC : 0), yy0);
     });
     g.textAlign = 'left'; g.textBaseline = 'alphabetic';
 
@@ -36712,6 +36904,35 @@ body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform 
 .jp-ronda-card{ margin:10px 0 0; padding:8px 10px 6px; border-radius:12px; border:1px solid rgba(56,189,248,.28); background:rgba(15,23,42,.55); }
 .jp-ronda-h{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.7rem; letter-spacing:.12em; color:#F59E0B; margin-bottom:6px; }
 .jp-ronda-sub{ display:flex !important; align-items:center; gap:8px; border:0 !important; padding:0 !important; margin:0 0 6px !important; background:none !important; }
+.jp-int-pill{ margin:6px 0 8px; }
+.jp-sb-ex-int{ margin-bottom:10px; }
+.jp-reg-open{ display:flex; flex-direction:column; align-items:center; gap:2px; width:100%; margin:6px 0 10px; padding:14px 10px; border-radius:12px; cursor:pointer; background:rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.6); color:#38BDF8; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.82rem; letter-spacing:.06em; }
+.jp-reg-open small{ font-size:.66rem; font-weight:600; letter-spacing:.04em; color:rgba(148,163,184,.9); }
+.jp-reg-open:active{ background:rgba(56,189,248,.24); }
+.jp-reg-bg{ position:fixed; inset:0; z-index:100000; display:flex; align-items:flex-end; justify-content:center; background:rgba(2,6,23,.66); }
+.jp-reg-sheet{ width:100%; max-width:520px; max-height:82vh; overflow-y:auto; box-sizing:border-box; padding:10px 16px calc(20px + env(safe-area-inset-bottom)); border-radius:22px 22px 0 0; background:#0b1220; border:1px solid rgba(56,189,248,.35); border-bottom:0; box-shadow:0 -18px 50px rgba(0,0,0,.6); animation:jpRegUp .22s ease-out; }
+@keyframes jpRegUp{ from{ transform:translateY(40px); opacity:.4; } to{ transform:none; opacity:1; } }
+.jp-reg-grip{ width:44px; height:5px; margin:0 auto 10px; border-radius:3px; background:rgba(148,163,184,.4); }
+.jp-reg-h{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.jp-reg-t{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.8rem; letter-spacing:.1em; color:#F59E0B; min-width:0; overflow-wrap:anywhere; }
+.jp-reg-x{ flex:0 0 auto; width:36px; height:36px; border-radius:50%; cursor:pointer; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); color:#e2e8f0; font-size:1rem; }
+.jp-reg-exs{ display:flex; gap:8px; overflow-x:auto; margin-bottom:10px; padding-bottom:2px; }
+.jp-reg-ex{ flex:0 0 auto; padding:8px 12px; border-radius:999px; cursor:pointer; background:transparent; border:1px solid rgba(148,163,184,.3); color:#94A3B8; font-size:.78rem; font-weight:700; white-space:nowrap; }
+.jp-reg-ex.on{ background:rgba(245,158,11,.14); border-color:#F59E0B; color:#F59E0B; }
+.jp-reg-exn{ margin-bottom:10px; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:1rem; letter-spacing:.03em; color:#fbbf24; text-transform:uppercase; overflow-wrap:anywhere; }
+.jp-reg-sets{ display:flex; gap:8px; overflow-x:auto; padding:2px 0 10px; scrollbar-width:none; }
+.jp-reg-sets::-webkit-scrollbar{ display:none; }
+.jp-reg-set{ flex:0 0 auto; min-width:76px; padding:12px 10px; border-radius:10px; cursor:pointer; background:rgba(15,23,42,.8); border:1px solid rgba(148,163,184,.3); color:#cbd5e1; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.8rem; letter-spacing:.04em; white-space:nowrap; }
+.jp-reg-set.done{ border-color:rgba(16,185,129,.6); color:#34D399; }
+.jp-reg-set.on{ background:rgba(56,189,248,.18); border-color:#38BDF8; color:#38BDF8; }
+.jp-reg-pres{ min-height:1.2em; margin-bottom:12px; font-size:.78rem; font-weight:600; letter-spacing:.03em; color:rgba(148,163,184,.9); }
+.jp-reg-fila{ display:flex; align-items:flex-end; justify-content:center; gap:12px; margin-bottom:14px; }
+.jp-reg-fila.jp-reg-falta input{ border-color:#ef4444; }
+.jp-reg-fila label{ display:flex; flex-direction:column; gap:4px; flex:1 1 0; font-size:.62rem; font-weight:700; letter-spacing:.1em; color:#94A3B8; }
+.jp-reg-fila input{ width:100%; box-sizing:border-box; padding:14px 10px; text-align:center; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(2,6,23,.7); color:#f8fafc; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:1.4rem; }
+.jp-reg-fila input::placeholder{ color:rgba(148,163,184,.45); }
+.jp-reg-fila b{ padding-bottom:16px; color:#64748b; font-size:1.2rem; }
+.jp-reg-ok{ display:block; width:100%; padding:16px 10px; border-radius:12px; cursor:pointer; background:linear-gradient(135deg,#38BDF8,#1E7AA8); border:0; color:#021214; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.9rem; letter-spacing:.08em; }
 .jp-es-sub{ margin:-2px 0 8px 2px; font-size:.78rem; line-height:1.3; color:rgba(148,163,184,.78); font-family:'Inter',sans-serif; text-transform:none; letter-spacing:0; }
 .jp-cont-pill{ margin:6px 0 8px; }
 .jp-cont-lista{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
