@@ -129,14 +129,13 @@ MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al az
 
 DIRECTOR EDITORIAL TÁCTICO · PLANNER ESTRATÉGICO: el pedido puede ser un concepto corto o un brief libre (una orden completa, un objetivo de venta, servicios, una idea abierta). Trabajás en dos fases continuas dentro de la misma respuesta:
 FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (va primero en el JSON): detectás la intención del pedido ("objetivo": "venta" | "ciencia" | "mindset"), definís el formato y armás la secuencia de plantillas. Secuencias tipo:
-- VENTA / SERVICIOS (publicitar modalidades, planes, asesorías, captar clientes): carrusel de conversión táctica de 5 placas.
-  1) "sentencia": gancho contra el entrenamiento genérico.
-  2) "ab": enfoque tradicional (tarjeta A) vs. Sistema Coach JP (tarjeta B).
-  3) "pipeline" (bloques modulares) o "checklist": las modalidades o pilares reales del servicio, uno por paso o ítem (nunca círculos).
-  Para el proceso de trabajo (evaluación → programación → seguimiento) podés usar "pipeline", y "checklist" para «¿para quién es?».
-  4) "metrica": dato de autoridad o personalización (ej: «100%» individualizado, seguimiento semanal).
-  5) "guardado": cheat sheet con lo que incluye el sistema y, en "cta", el llamado a la acción con instrucción de contacto concreta (ej: ENVIÁ «SISTEMA» AL MD).
-  Usá las modalidades y servicios que nombra el brief. Si no las detalla, usá modalidades típicas de coaching (online 1:1, presencial, programación para competencia) sin inventar precios, cupos ni resultados garantizados.
+- VENTA / SERVICIOS (publicitar modalidades, planes, asesorías, captar clientes): PITCH DIRECTO DE SERVICIO en 5 placas. PROHIBIDO el carrusel educativo abstracto: no se explica fisiología ni se enseña un concepto; se vende el High Performance System de Coach JP.
+  1) PROPUESTA DE VALOR + FILTRO · "sentencia": titleWhite provocador que nombra el servicio / sistema y a quién le habla (filtro de alumno ideal); titleAccent = remate directo sobre lo que el sistema resuelve. parrafo = la promesa operativa sin humo.
+  2) DIAGNÓSTICO · "ab": el problema que resuelve el servicio. Tarjeta A = entrenar improvisando (sin plan, sin registro, cargas al azar → estancamiento); tarjeta B = High Performance System (programación, medición, ajuste). verdict = por qué la improvisación te tiene estancado y cómo el sistema lo arregla.
+  3) ENTREGABLES / PILARES · "pipeline" (o "checklist" con todos los ítems "ok"): lo que recibe el alumno, un entregable por paso: programación a medida, análisis biomecánico en video, auditoría de cargas, seguimiento 1:1 (más las modalidades que nombre el brief). Nunca círculos.
+  4) CRITERIOS DE ADMISIÓN · "checklist": perfil del cliente. Ítems "ok" = para quién SÍ es (ej: «Cumplís el plan aunque no tengas ganas»); ítems "err" = para quién NO es (ej: «Buscás resultados en 30 días sin registrar nada»). Mezclá ambos.
+  5) CIERRE + CTA · "guardado": points = lo que incluye el sistema en 3 o 4 líneas; "cta" = llamado directo a DM con UNA palabra clave para aplicar (ej: MANDAME «SISTEMA» POR PRIVADO PARA APLICAR, o «COACHING»). El caption cierra con la misma palabra clave.
+  Usá las modalidades y servicios que nombra el brief. Si no las detalla, usá los pilares del High Performance System. Nunca inventes precios, cupos, testimonios ni resultados garantizados.
 - CIENCIA / TÉCNICO (explicar, informar, divulgar un tema): carrusel técnico de 5 placas con ARQUITECTURA OBLIGATORIA (error → mecanismo → protocolo → evidencia → regla + CTA):
   1) PORTADA · "sentencia": hook de impacto que señala un ERROR OPERATIVO COMÚN en el gimnasio o en el campo (titleWhite = el error, titleAccent = el remate letal que muestra su costo).
   2) FISIOLOGÍA / MECANISMO · "grafico" (curva de activación, fatiga, velocidad o umbral con variables fisiológicas reales) o "diagrama" ("domino" / "trayectoria") si el mecanismo es una cadena causal: el principio biológico que explica por qué ese error falla.
@@ -283,7 +282,7 @@ export const GOAL_LABEL: Record<EditorialGoal, string> = {
   mindset: 'Mindset / Táctico',
 }
 
-const SALES_RX = /servicio|modalidad|asesor[ií]a|coaching|mentor[ií]a|planes|precio|cupo|inscrip|vend|venta|public[ií]c|promocion|promo\b|clientes?\b|oferta|contrat|sum[aá]te|mi (sistema|m[eé]todo|equipo|programa)|1 ?a ?1|presencial/i
+const SALES_RX = /contact[aá]me|siguiente nivel|servicio|modalidad|asesor[ií]a|coaching|mentor[ií]a|planes|precio|cupo|inscrip|vend|venta|public[ií]c|promocion|promo\b|clientes?\b|oferta|contrat|sum[aá]te|mi (sistema|m[eé]todo|equipo|programa)|1 ?a ?1|presencial/i
 const SCIENCE_RX = /hipertrof|fisiolog|ciencia|cient[ií]fic|evidencia|estudio|paper|mecanismo|explic|informativ|divulg|c[oó]mo funciona|qu[eé] es|por qu[eé]|t[eé]cnic|biomec|metab|gluc[oó]geno|lactato|sobrecarga|volumen|rir\b|rpe\b|nutri/i
 const MINDSET_RX = /mentalidad|mindset|disciplina|motivaci|constancia|filosof|actitud|frase|car[aá]cter|voluntad|\bego\b|enfoque/i
 const PROCESS_RX = /carr?ou?sel|proceso|paso a paso|pasos|explic|modalidades|etapas|fases|gu[ií]a|c[oó]mo (hacer|funciona)/i
@@ -323,7 +322,7 @@ export function resolveFormat(text: string, mode: GenMode, opts: EditorialOption
 
 const GOAL_RULE: Record<ResolvedGoal, string> = {
   sales:
-    'OBJETIVO EDITORIAL: VENTA / SERVICIOS. plan.objetivo = "venta". Usá la secuencia de conversión táctica (sentencia → ab → diagrama de modalidades → metrica de autoridad → guardado con CTA de contacto).',
+    'OBJETIVO EDITORIAL: VENTA / SERVICIOS. plan.objetivo = "venta". Pitch directo del servicio, NO un carrusel educativo: propuesta de valor + filtro de alumno ideal (sentencia) → diagnóstico improvisación vs. High Performance System (ab) → entregables y pilares (pipeline) → criterios de admisión, para quién SÍ y para quién NO (checklist) → cierre con CTA a DM con palabra clave para aplicar (guardado). Esta secuencia manda por sobre las reglas de portada, métricas y guardado del bloque de TONO: el tono sólo cambia la voz, no la estructura del pitch.',
   science:
     'OBJETIVO EDITORIAL: CIENCIA / TÉCNICO. plan.objetivo = "ciencia". Usá la arquitectura técnica de 5 placas: portada con el error operativo (sentencia) → fisiología / mecanismo (grafico o diagrama) → protocolo de campo con números reales (pipeline o checklist) → evidencia con métrica y cita real (metrica) → regla de oro + CTA con palabra clave al DM (guardado).',
   mindset:
@@ -338,6 +337,20 @@ const SUBSTANCE_RULE = `ANTI-CLICHÉ Y ANTI-TEXTO VACÍO (inquebrantable):
 - PROHIBIDO cualquier frase compuesta por una sola palabra repetida o por una palabra suelta (ej: «EJECUTAR EJECUTAR EJECUTAR», «DISCIPLINA DISCIPLINA», «ENFOQUE.»). Ni en titleWhite, ni en titleAccent, ni en repeticion.phrase / phraseLarga.
 - Cada placa, incluso en formato 1 placa, lleva un mensaje con sustancia y estructura completa: titleWhite (premisa en blanco), titleAccent (remate táctico en naranja que da vuelta o completa la premisa) y parrafo (bajada explicativa de 1 a 2 oraciones con el porqué operativo).
 - "repeticion" sólo con una frase de 3 a 8 palabras con sentido propio (ej: «EL PROTOCOLO NO NEGOCIA CON TU ÁNIMO»), nunca una palabra clave suelta; y nunca como única placa de la pieza.`
+
+/** Señales de un brief de venta: se inyectan los beneficios tangibles del sistema. */
+const SALES_BRIEF_RX = /contact[aá]me|servicio|asesor[ií]a|coaching|siguiente nivel|\bplan(es)?\b/i
+
+const HPS_BENEFITS = `BENEFICIOS TANGIBLES DEL HIGH PERFORMANCE SYSTEM DE COACH JP (usalos como contenido del pitch; no inventes otros datos):
+- Programación a medida según objetivo, nivel, calendario y material disponible (nada de plantillas genéricas).
+- Análisis biomecánico en video de los ejercicios clave, con correcciones concretas.
+- Auditoría de cargas: registro de series, repeticiones, RIR / RPE y progresión semana a semana.
+- Seguimiento 1:1 con ajustes del plan según el rendimiento real (no según el ánimo).
+- Un estándar operativo claro: qué hacer cada sesión, cuánto cargar y cuándo progresar.`
+
+export function salesEnrichment(text: string, goal: ResolvedGoal) {
+  return goal === 'sales' || SALES_BRIEF_RX.test(text) ? HPS_BENEFITS : null
+}
 
 /** Inputs de mindset muy breves (menos de 10 palabras): se expande la premisa antes de enviarla. */
 export const BRIEF_EXPAND_WORDS = 10
@@ -357,10 +370,11 @@ export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discip
       : `Tema o concepto a comunicar: "${text}"`
   const resolved = detectGoal(text, editorial?.goal)
   const expanded = expandBriefInput(text, resolved)
+  const benefits = editorial ? salesEnrichment(text, resolved) : null
   const goal = editorial ? `${GOAL_RULE[resolved]}\n\n${TONE_RULE[editorial.tone ?? 'viral']}\n\n` : ''
   // Mindset, 1 placa o repetición: sustancia obligatoria (titular + remate + bajada).
   const substance = resolved === 'mindset' || mode === 'single' ? `${SUBSTANCE_RULE}\n\n` : ''
-  return `${head}\n\n${expanded ? `PREMISA EXPANDIDA (el input es breve): ${expanded}\n\n` : ''}${goal}${substance}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
+  return `${head}\n\n${expanded ? `PREMISA EXPANDIDA (el input es breve): ${expanded}\n\n` : ''}${goal}${benefits ? `${benefits}\n\n` : ''}${substance}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
 }
 
 // ---------------------------------------------------------------------------
