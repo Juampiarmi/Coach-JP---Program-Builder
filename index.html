@@ -14515,12 +14515,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var kv = kg.value || (/^\\d/.test(kg.placeholder) ? kg.placeholder : '');
     var rv = rp.value || (/^\\d/.test(rp.placeholder) ? rp.placeholder : '');
     if(!kv && !rv){ var fila = regQ('.jp-reg-fila'); fila.classList.add('jp-reg-falta'); setTimeout(function(){ fila.classList.remove('jp-reg-falta'); }, 600); return; }
+    var btnRef = regEst.btn, rDesc = regEst.cfg.ex[regEst.ex].r;
     if(kv) setLoadField(key, 'kg', kv);
     if(rv) setLoadField(key, 'reps', rv);
     setLoadField(key, 'done', true);
     try{ jpAudioTactical.soundCheckSet(); }catch(err){}
     try{ jpAudioTactical.vibrateCheckSet(); }catch(err){}
     regCerrar();
+    var blq = btnRef && btnRef.closest ? btnRef.closest('.block') : null;
+    if(blq && typeof window.jpArrancarDescansoSetNative === 'function'){ try{ window.jpArrancarDescansoSetNative(blq, rDesc === undefined ? 0 : rDesc); }catch(errR){} }
   }
   document.addEventListener('click', function(e){
     var t = e.target; if(!t || !t.closest) return;
@@ -15493,11 +15496,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(block.category !== 'strength' && block.category !== 'accessory') return;
       const exs = jpCfListaEjercicios(lineas);
       if(!exs.length) return;
-      gridHtml = '<div class="jp-cf-setgrid"><div class="jp-cf-setgrid-lb">[ REGISTRO DE SERIES ]</div>' +
-        exs.map(function(ex, k){
-          return (exs.length > 1 ? '<div class="jp-cf-setgrid-ex">' + escSB(ex.nombre) + ' <small>' + (modoInputSB(ex.nombre) ? '[\\u2713]' : '[kg]') + '</small></div>' : '') +
-            renderSetRowsNativeSB(weekIdx, dayId, block.id, 'cf' + k, ex.sets, ex.unidad || 'reps', true, null, '', ex.nombre + ' ' + String(block.title || ''));
-        }).join('') + '</div>';
+      gridHtml = jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: exs.map(function(ex, k){
+        return { idx: 'cf' + k, nombre: ex.nombre, sets: ex.sets, reps: '', carga: '', u: ex.unidad && ex.unidad !== 'reps' ? ex.unidad : '', r: 0 };
+      }) });
     })();
     const clips = jpCfClips(lineas, block.videosDismissed, block);
 
@@ -17020,15 +17021,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               (o.sub.nota && !o.sub.tecnica ? '<div class="jp-sb-nota">' + escSB(o.sub.nota) + '</div>' : '') +
             '</div>';
         }).join('');
-        let rondasHtml = '';
-        for(let r = 0; r < rondasN; r++){
-          rondasHtml += '<div class="jp-ronda-card"><div class="jp-ronda-h">RONDA ' + (r + 1) + '</div>' +
-            subsInfo.map(function(o){
-              if(!o.rows[r]) return '';
-              return '<div class="jp-sb-subex jp-ronda-sub" data-rest-sec="' + o.restSub + '"><div class="jp-ronda-subh"><span class="jp-ronda-lt">A' + (o.si + 1) + '</span><span class="jp-ronda-nm">' + escSB(nombrePrincipalSB(o.sub.nombre, block)) + '</span>' + metaRondaSB(o.sub) + '</div><span class="jp-sb-subex-nombre" hidden>' + escSB(o.sub.nombre) + '</span>' + o.rows[r] + '</div>';
-            }).join('') + '</div>';
-        }
-        const subsHtml = cabeceras + rondasHtml + subsInfo.map(function(o){ return o.myo; }).join('');
+        subsInfo.forEach(function(o){
+          regCfg.push({ idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0) });
+        });
+        const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
         filas += '<div class="jp-sb-biset">' +
             '<div class="jp-sb-biset-title">' + escSB(tituloBiset) + '</div>' +
@@ -17048,7 +17044,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const exIdx = 'e' + idx;
       if(entry.int && !esCalentamiento && !entry.tecnica){
         nIndiv++;
-        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '' });
+        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', r: -1 });
         filas += '<div class="jp-int-rx" data-rest-sec="0"><div class="jp-int-txt">' + escSB(rxIntervaloSB(entry)) + '</div>' +
           ((entry.tempo || entry.rir) ? '<div class="jp-int-meta">' + [entry.tempo ? 'TEMPO ' + escSB(entry.tempo) : '', entry.rir ? 'RIR ' + escSB(entry.rir) : ''].filter(Boolean).join(' \\u00b7 ') + '</div>' : '') + '</div>';
         return;
@@ -17123,6 +17119,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
+      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0) });
       /* directiva técnica ("Auditoría integral del reloj emergente") --
          mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
@@ -17130,7 +17127,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           dosisCompletaSB(entry.setsDef ? 0 : entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
           chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
-          renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, entry.sets || 1, entry.unidad, true, entry.tecnica ? { tecnica: entry.tecnica, pct: entry.tecnicaPct, myo: entry.myoInfo } : null, rirSemanaAnteriorSB(block, weekIdx, idx, null), entry.titulo, entry.unidad === 'reps' || !entry.unidad ? entry.reps : '') +
+          (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
         '</div>';
     });
     if(!filas) return;
@@ -17202,19 +17199,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (block.ocultaTituloTablero ? '' : tituloBloqueHtmlSB(tituloBloquePrincipal)) +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         (duracionEstimada ? '<div class="jp-sb-duracion">\\u23f1 TIEMPO ESTIMADO: ' + duracionEstimada + ' MINUTOS</div>' : '') +
-        filas + (regCfg.length && tieneAcc ?
-          '<div class="jp-int-pautas">' +
-            (objetivoHtml ? '<div class="jp-int-pl">&#127919; OBJETIVO</div><div class="jp-int-pt">' + objetivoHtml + '</div>' : '') +
-            (tipsHtml ? '<div class="jp-int-pl">&#128161; NOTAS DE PROGRESI&Oacute;N &amp; TIPS</div><div class="jp-int-pt">' + tipsHtml + '</div>' : '') +
-          '</div>' : '') + chipsVideoSB(videosBloque, busquedasVid) +
-        (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg }) : '') +
-        (tieneAcc && !regCfg.length ?
-          '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b8 PAUTAS T\\u00c9CNICAS &amp; TIPS DEL BLOQUE</summary>' +
+        filas + chipsVideoSB(videosBloque, busquedasVid) +
+        (tieneAcc ?
+          '<details class="jp-block-details"><summary class="jp-summary-btn">\\u25b6 PAUTAS T\\u00c9CNICAS &amp; TIPS DEL BLOQUE</summary>' +
             '<div class="jp-details-content">' +
               (objetivoHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">&#127919; OBJETIVO FISIOL&Oacute;GICO</div><div class="jp-sb-pauta-txt">' + objetivoHtml + '</div></div>' : '') +
               (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
             '</div>' +
           '</details>' : '') +
+        (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg }) : '') +
       '</div>';
     var htmlFinal = html;
     if(esCalentamiento){
@@ -37033,6 +37026,15 @@ body .jp-done-btn.jp-done-foot.on{ color:#34D399 !important; background:rgba(16,
 .jp-reg-ok{ background:rgba(23,23,23,.9) !important; border:1px solid rgba(201,146,43,.55) !important; color:#f5f5f4 !important; }
 .jp-reg-exn{ color:#f5f5f4 !important; }
 .jp-reg-ex.on{ background:rgba(34,150,190,.14) !important; border-color:rgba(34,150,190,.6) !important; color:#9fd0e0 !important; }
+/* ===== estandarizacion: Chakra Petch + ejercicios dominantes + acordeon ===== */
+.jp-sb-board, .jp-sb-board button, .jp-sb-board input, .jp-reg-sheet, .jp-reg-sheet button, .jp-reg-sheet input{ font-family:'Chakra Petch',sans-serif; }
+.jp-sb-board .jp-sb-ex .jp-sb-ex-nombre, .jp-sb-board .jp-sb-ex-ancla .jp-sb-ex-nombre, .jp-sb-board .jp-sb-subex-tit{ color:#fff !important; font-family:'Chakra Petch',sans-serif !important; font-weight:800 !important; letter-spacing:.05em !important; text-transform:uppercase !important; font-size:calc(1rem * var(--fzs,1)) !important; }
+@media (min-width:640px){ .jp-sb-board .jp-sb-ex .jp-sb-ex-nombre, .jp-sb-board .jp-sb-ex-ancla .jp-sb-ex-nombre, .jp-sb-board .jp-sb-subex-tit{ font-size:calc(1.125rem * var(--fzs,1)) !important; } }
+.jp-sb-title-main{ font-family:'Chakra Petch',sans-serif !important; }
+.jp-int-txt{ font-family:'Chakra Petch',sans-serif; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#fff; font-size:1.05rem; line-height:1.4; }
+.jp-sb-board .jp-block-details{ margin:10px 0 !important; padding:0 !important; border:1px solid rgba(38,38,38,.8) !important; border-radius:10px; background:rgba(23,23,23,.3); }
+.jp-sb-board .jp-summary-btn{ display:flex; align-items:center; gap:8px; padding:8px 12px !important; margin:0 !important; font-size:.75rem !important; font-weight:600 !important; color:#a3a3a3 !important; cursor:pointer; list-style:none; background:transparent !important; border:0 !important; }
+.jp-sb-board .jp-details-content{ padding:12px !important; border-top:1px solid rgba(38,38,38,.6); font-size:.75rem; color:#d4d4d4; gap:8px; }
 .jp-es-sub{ margin:-2px 0 8px 2px; font-size:.78rem; line-height:1.3; color:rgba(148,163,184,.78); font-family:'Inter',sans-serif; text-transform:none; letter-spacing:0; }
 .jp-cont-pill{ margin:6px 0 8px; }
 .jp-cont-lista{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
