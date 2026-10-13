@@ -65,6 +65,11 @@ export const DEFAULT_STATE: CanvasState = {
   diagramData: null,
   structData: null,
   bookmarkData: null,
+  opusBlocks: [
+    { num: '00001', text: 'Entrenás aunque el día no acompañe.' },
+    { num: '00002', text: 'Registrás la carga, no la sensación.' },
+    { num: '00003', text: 'Repetís el protocolo hasta que sea tu estándar.' },
+  ],
   repeatPhrase: 'SI TODO ESTÁ EN TU CONTRA, AVANZÁ EN CONTRA DE TODO',
   repeatAccent: 'white',
   repeatMode: 'diagonal',
@@ -190,6 +195,19 @@ export const SAMPLES: Record<TemplateId, Partial<CanvasState>> = {
     citeMain: '',
     citeSub: '',
     structData: null,
+  },
+  opus: {
+    tag: 'MINDSET · ESTÁNDAR OPERATIVO',
+    headlineA: 'LOS DÍAS QUE NO QUERÉS',
+    headlineB: 'SON LOS QUE CUENTAN.',
+    body: '',
+    citeMain: '',
+    citeSub: '',
+    opusBlocks: [
+      { num: '00001', text: 'Entrenás aunque el día no acompañe.' },
+      { num: '00002', text: 'Registrás la carga, no la sensación.' },
+      { num: '00003', text: 'Repetís el protocolo hasta que sea tu estándar.' },
+    ],
   },
   manifesto: {
     tag: 'DISCIPLINA Y MÉTODO',

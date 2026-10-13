@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve' | 'funnel' | 'versus'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -59,6 +59,13 @@ export interface StructData {
 }
 
 /** 12 · Placa de guardado / cheat sheet */
+/** Plantilla 13 · Mindset / Opus: un bloque numerado («00001:» + texto). */
+export interface OpusBlock {
+  /** Rótulo del bloque tal cual se muestra (ej: «00001»). Vacío = se numera solo. */
+  num: string
+  text: string
+}
+
 export interface BookmarkData {
   /** 3 o 4 viñetas clave del carrusel */
   points: string[]
@@ -165,6 +172,8 @@ export interface CanvasState {
   structData: StructData | null
   /** Placa de guardado. null = viñetas extraídas automáticamente del resto del carrusel. */
   bookmarkData: BookmarkData | null
+  /** Mindset / Opus (plantilla 13): bloques numerados debajo del título principal */
+  opusBlocks: OpusBlock[]
   // Repetición matrix (plantilla 07)
   repeatPhrase: string
   repeatAccent: RepeatAccent

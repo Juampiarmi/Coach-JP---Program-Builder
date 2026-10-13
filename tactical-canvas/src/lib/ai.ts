@@ -107,6 +107,7 @@ PLANTILLAS DISPONIBLES (templateId):
 - "piramide": jerarquía de prioridades en 3 o 4 estratos (base no negociable → cúspide de detalle).
 - "checklist": auditoría operativa de 3 o 4 condiciones binarias ([ ✓ ] pasa / [ ✗ ] falla).
 - "guardado": placa final de retención (cheat sheet / ficha técnica): 3 o 4 viñetas que condensan todo el carrusel + llamado a guardar.
+- "opus": placa de mentalidad con jerarquía: título principal (titleWhite + titleAccent corto) y debajo 2 a 6 bloques numerados («00001:» + una frase de criterio u hábito operativo). Ideal para estándares, reglas o hábitos de mindset en una placa.
 CIERRE DE RETENCIÓN: en todo carrusel de 4 a 5 placas, la última placa es por defecto "guardado", salvo que el usuario pida otro cierre.
 
 COMPATIBILIDAD SEMÁNTICA ESTRICTA (prohibido el «gráfico por hacer»: cada visual tiene que significar algo):
@@ -162,7 +163,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
   "caption": string,
   "slides": [
     {
-      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
@@ -187,6 +188,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
       "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
       "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
+      "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
       "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
       "grafico": { ... } (SIEMPRE: completo y preciso si templateId es "grafico"; en los demás, una versión breve del mismo tema)
     }
@@ -726,6 +728,10 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   pyramid: 'pyramid',
   checklist: 'checklist',
   guardado: 'bookmark',
+  opus: 'opus',
+  mindset_opus: 'opus',
+  'mindset / opus': 'opus',
+  bloques: 'opus',
   cheatsheet: 'bookmark',
   bookmark: 'bookmark',
 }
@@ -886,7 +892,10 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const t = obj(s.text ?? s.texto)
   const template = TEMPLATE_MAP[str(s.templateId).toLowerCase()] ?? 'statement'
   const base = DEFAULT_STATE
-  const headlineA = upper(first(t.titleWhite, s.titleWhite))
+  const op = obj(s.opus ?? s.mindset ?? s.mindsetOpus)
+  const titulo = upper(first(op.titulo_principal, op.titulo, s.titulo_principal, t.titulo_principal))
+  // Sin titleWhite/titleAccent, el título principal de Opus hace de titular (nunca queda vacío).
+  const headlineA = upper(first(t.titleWhite, s.titleWhite)) || titulo
   const headlineB = upper(first(t.titleAccent, s.titleAccent))
   const patch: Partial<CanvasState> = {
     template,
@@ -996,6 +1005,30 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const gPoints = list(g.points ?? g.puntos ?? g.items).slice(0, 4)
   if (template === 'bookmark' && gPoints.length >= 3) {
     patch.bookmarkData = { points: gPoints, cta: upper(first(g.cta, BOOKMARK_CTA)), accent: 'orange' }
+  }
+
+  // 13 · Mindset / Opus: bloques numerados separados del título (nunca un único párrafo).
+  const rawBlocks = Array.isArray(op.bloques ?? op.items ?? op.blocks ?? s.bloques ?? s.items)
+    ? ((op.bloques ?? op.items ?? op.blocks ?? s.bloques ?? s.items) as unknown[])
+    : []
+  const opusBlocks = rawBlocks
+    .map((b, i) => {
+      if (typeof b === 'string') {
+        const m = b.match(/^\s*(\d{1,6})\s*[:.)\-–—]\s*(.+)$/)
+        return { num: m ? m[1] : String(i + 1).padStart(5, '0'), text: (m ? m[2] : b).trim() }
+      }
+      const o = obj(b)
+      return { num: str(first(o.numero, o.num, o.n, o.id)), text: cleanText(first(o.texto, o.text, o.desc)) }
+    })
+    .map((b, i) => ({ num: b.num || String(i + 1).padStart(5, '0'), text: b.text }))
+    .filter((b) => b.text)
+    .slice(0, 6)
+  if (opusBlocks.length) patch.opusBlocks = opusBlocks
+  else if (template === 'opus') {
+    // Opus sin bloques: las oraciones del párrafo pasan a bloques; nunca el ejemplo de fábrica.
+    const sentences = (patch.body ?? '').split(/(?<=[.!?])\s+/).map((x) => x.trim()).filter(Boolean).slice(0, 6)
+    patch.opusBlocks = sentences.length >= 2 ? sentences.map((text, i) => ({ num: String(i + 1).padStart(5, '0'), text })) : []
+    if (sentences.length >= 2) patch.body = ''
   }
 
   // 07 · Repetición
@@ -1305,6 +1338,7 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   pyramid: 'piramide',
   checklist: 'checklist',
   bookmark: 'guardado',
+  opus: 'opus',
 }
 
 export interface RegenerateRequest {

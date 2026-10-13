@@ -11,6 +11,7 @@ import { diagramDefaults, inferPillar, resolveDiagramData, slideText } from '../
 import { STRUCT_TEMPLATES, structDefaults } from '../../lib/structPillar'
 import { StructEditor } from './StructEditor'
 import { BookmarkEditor } from './BookmarkEditor'
+import { OpusEditor } from './OpusEditor'
 import { CitationSuggester, HookGenerator } from './AiAssist'
 import { TYPE_PRESETS } from '../../lib/typography'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
@@ -30,6 +31,7 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'pyramid', n: '10', label: 'Pirámide' },
   { id: 'checklist', n: '11', label: 'Checklist' },
   { id: 'bookmark', n: '12', label: 'Guardado' },
+  { id: 'opus', n: '13', label: 'Mindset / Opus' },
 ]
 
 const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
@@ -565,6 +567,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
 
         {isStruct(state.template) && <StructEditor state={state} update={update} />}
 
+        {state.template === 'opus' && <OpusEditor state={state} update={update} />}
         {state.template === 'bookmark' && <BookmarkEditor state={state} update={update} auto={bookmarkAuto} />}
 
         {state.template === 'repeat' && (
@@ -868,5 +871,7 @@ function summaryFor(s: CanvasState) {
       return `${s.headlineA} ${s.headlineB}`.trim() || 'Estructura táctica'
     case 'bookmark':
       return s.bookmarkData ? `${s.bookmarkData.points.length} viñetas` : 'Viñetas automáticas del carrusel'
+    case 'opus':
+      return `${(s.opusBlocks ?? []).filter((b) => b.text.trim()).length} bloques numerados`
   }
 }

@@ -128,6 +128,9 @@ function caseRuns(line: string): string[] | null {
  * forzado y el remate naranja la última parte. Ninguna línea se descarta.
  */
 export function splitBlock(block: string): Partial<CanvasState> {
+  // Mindset / Opus: renglones «00001: texto» son bloques numerados aparte; el resto es el título.
+  const opus = splitOpus(block)
+  if (opus) return opus
   const out: Partial<CanvasState> = {}
   const src = block.replace(/\*\*|__/g, '')
   const labels = [...src.matchAll(LABEL_ALL)]
@@ -183,6 +186,19 @@ export function splitBlock(block: string): Partial<CanvasState> {
   out.headlineA = (out.headlineA ?? '').toUpperCase()
   out.headlineB = (out.headlineB ?? '').toUpperCase()
   return out
+}
+
+const OPUS_LINE = /^\s*[[(]?(\d{1,6})[\])]?\s*[:.)\-–—]\s+(.+)$/
+
+/** Bloque con 2+ renglones numerados y al menos un renglón de título → plantilla 13 · Mindset / Opus. */
+function splitOpus(block: string): Partial<CanvasState> | null {
+  const lines = block.replace(/\*\*|__/g, '').split('\n').map((l) => l.trim()).filter(Boolean)
+  const numbered = lines.map((l) => l.match(OPUS_LINE))
+  const blocks = numbered.filter((m): m is RegExpMatchArray => Boolean(m)).map((m) => ({ num: m[1], text: cleanValue(m[2]) }))
+  const title = lines.filter((_, i) => !numbered[i])
+  if (blocks.length < 2 || !title.length) return null
+  const head = splitBlock(title.join('\n'))
+  return { ...head, template: 'opus', opusBlocks: blocks.slice(0, 6) }
 }
 
 /** Una sola frase → premisa + golpe: 2ª oración, o tras la última coma / dos puntos, o el último ~40 %. */
@@ -267,7 +283,8 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
     // Nada de gráficos / diagramas que el usuario no pidió.
     const wantsVisual = ASKS_VISUAL.test(block.text)
     const hasNumber = /\d/.test(block.text)
-    if (anaphora) p = { ...p, template: 'manifesto' }
+    if (local.template === 'opus') p = { ...p, ...local, template: 'opus' }
+    else if (anaphora) p = { ...p, template: 'manifesto' }
     else if (!p.template || (!TEXT_TEMPLATES.includes(p.template) && !wantsVisual && !(p.template === 'metric' && hasNumber))) p = { ...p, template: 'statement' }
     if (p.template === 'repeat') p = { ...p, repeatPhrase: `${p.headlineA ?? ''} ${p.headlineB ?? ''}`.trim(), repeatMode: 'justified' }
     if (!p.tag) p.tag = anaphora ? 'MANIFIESTO TÁCTICO' : 'DISCIPLINA Y MÉTODO'
