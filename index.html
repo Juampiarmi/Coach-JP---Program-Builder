@@ -1817,7 +1817,7 @@ function exMatchQ(e, q, extra){
   return n.split(/\s+/).every(w => h.indexOf(w) >= 0);
 }
 /* ejercicio por texto exacto en cualquier idioma: es, en, alias o slug (null si no hay coincidencia) */
-function exPorNombre(texto){
+function exPorNombreBilingue(texto){
   const n = exNormTxt(texto);
   if(!n) return null;
   const ex = S.exercises || [];
@@ -1833,7 +1833,7 @@ function exLineaAEspanol(linea){
   const t = String(linea == null ? '' : linea);
   const m = t.match(/^(\s*(?:[A-Za-z]\d+\s*[.:)\-–—·]\s*|\d+\s*[.)]\s+)?)([^:|(]*?)(\s*(?:[:|(].*)?)$/);
   if(!m || !m[2].trim() || !/[A-Za-zÀ-ÿ]{3}/.test(m[2])) return t;      /* "1:30 x 6 sets" / "10x30s": sin nombre, nunca se traduce */
-  const ex = exPorNombre(m[2]);
+  const ex = exPorNombreBilingue(m[2]);
   if(!ex || !ex.es) return t;
   if(exNormTxt(ex.es) === exNormTxt(m[2])) return t;
   const lead = m[2].match(/^\s*/)[0], trail = m[2].match(/\s*$/)[0];
@@ -5068,6 +5068,41 @@ function aliasEjSB(nombre){
 /* "A1." / "B2)" / "C:" delante del nombre (la letra sola exige "." ")" ":" para no comerse "T-bar row" ni "V-ups") */
 /* letra+numero con cualquier separador ("A1." "A1:" "A1 -" "A1 ·" "A1 Nombre"), numero solo ("1." "2)") o letra sola ("A." "B)"); "T-bar row", "T2B" y "1.5 kg" quedan intactos */
 const RX_PREFIJO_ORDINAL_SB = /^(?:[A-Za-z]\d+\s*[.:)\-–—·]+\s*|[A-Za-z]\d+\s+(?=\S)|\d+\s*[.):]\s+|[A-Za-z]\s*[.:)]\s+|[A-Za-z]\d*[.)]\s*)/;
+/* limpieza profunda de una linea antes de buscarla en la biblioteca: prefijo de estacion (A1. / E1 ·), "SET 1-2:", "1-2:", reps iniciales
+   ("5 BACK SQUATS", "5x"), y todo lo que sigue a @ / 1RM / RPE / RIR / Tempo / Rest / "|" */
+function limpiarNombreMatchSB(raw){
+  let t = String(raw || '').replace(/^[\s\-•*]+/, '').trim();
+  t = limpiarPrefijoOrdinalSB(t);
+  t = t.replace(/^\s*(?:sets?|series?|rondas?|rounds?)\s*\d+(?:\s*[-–]\s*\d+)?\s*[:.\-–—)]*\s*/i, '');
+  t = t.replace(/^\d+(?:\s*[-–]\s*\d+)?\s*[:.)]\s+/, '');
+  t = t.replace(/^\d+(?:\s*[-–]\s*\d+)?\s*(?:x|×|reps?)?\s+(?=[A-Za-z\u00c0-\u00ff])/i, '');
+  t = t.replace(/\s*(?:@|\b1\s*RM\b|\bRPE\b|\bRIR\b|\btempo\b|\brest\b|\|).*$/i, '');
+  return t.replace(/[\s,;:\-–—]+$/, '').trim();
+}
+/* certeza del match (0..1): coeficiente de Dice entre las palabras del texto y las del ejercicio (es, en y alias), en singular y sin
+   conectores. Menos de 0.8 = no se adivina: queda "Sin video vinculado" */
+const STOP_CONF_SB = ['de','del','la','el','con','en','a','y','the','of','with','and','un','una','uno','al','para','las','los'];
+const ES_EN_CONF_SB = { pierna:'leg', piernas:'leg', gluteo:'glute', gluteos:'glute', puente:'bridge', cuerda:'rope', hombro:'shoulder', hombros:'shoulder', espalda:'back', pecho:'chest', brazo:'arm', brazos:'arm', mano:'hand', unilateral:'single', elevacion:'raise', elevaciones:'raise', apertura:'fly', aperturas:'fly', zancada:'lunge', zancadas:'lunge', trasera:'back', frontal:'front', plano:'flat', inclinado:'incline', inclinada:'incline', tumbado:'lying', acostado:'lying', sentado:'seated', sentada:'seated', pesado:'', pesados:'', pesada:'', pesadas:'' };
+function tokConfSB(x){
+  return normSports(x).split(' ').map(function(w){ return ES_EN_CONF_SB.hasOwnProperty(w) ? ES_EN_CONF_SB[w] : (TOK_ES_EN_SB[w] || w); })
+    .filter(function(w){ return w && STOP_CONF_SB.indexOf(w) < 0; })
+    .map(function(w){ return w.length > 3 ? w.replace(/(?:es|s)$/, '') : w; });
+}
+function confianzaNombreSB(nombre, ex){
+  const q = new Set(tokConfSB(nombre));
+  if(!q.size || !ex) return 0;
+  let mejor = 0;
+  [ex.es, ex.en].concat(ex.aliases || []).forEach(function(n){
+    if(!n) return;
+    const t = new Set(tokConfSB(n));
+    if(!t.size) return;
+    let com = 0; q.forEach(function(w){ if(t.has(w)) com++; });
+    const d = (2 * com) / (q.size + t.size);
+    if(d > mejor) mejor = d;
+  });
+  return mejor;
+}
+function soloConfiableSB(nombre, ex){ return (ex && confianzaNombreSB(nombre, ex) >= 0.8) ? ex : null; }
 function limpiarPrefijoOrdinalSB(t){
   let x = String(t || '').replace(/^[\s•*]+/, '').trim(), guard = 0;
   while(RX_PREFIJO_ORDINAL_SB.test(x) && guard < 4){ x = x.replace(RX_PREFIJO_ORDINAL_SB, '').trim(); guard++; }
@@ -5145,7 +5180,7 @@ function resolverExTokensSB(nombre){
   return mejor;
 }
 function resolverExSports(nombreCrudo, estricto){
-  const crudo = limpiarPrefijoOrdinalSB(String(nombreCrudo || '').trim());
+  const crudo = limpiarNombreMatchSB(nombreCrudo);
   const claveCanon = exCanonClave(crudo);
   const exCanon = exPorClaveCanon(claveCanon);
   if(exCanon) return exCanon;
@@ -5156,15 +5191,20 @@ function resolverExSports(nombreCrudo, estricto){
   if(alias0){ const exAl = resolverExSportsBase(alias0, true); if(exAl) return exAl; }
   const vcanon = variantesCanonicasSB(crudo);
   for(let vi = 0; vi < vcanon.length; vi++){ const exV = resolverExSportsBase(vcanon[vi], true); if(exV) return exV; }
+  /* "HIGH & WIDE LEG PRESS (PRENSA 45°)": el parentesis es un nombre alternativo, se prueba exacto antes que cualquier aproximacion */
+  const parenM = crudo.match(/\(([^)]{3,40})\)/);
+  if(parenM){ const exPar = resolverExSportsBase(parenM[1].trim(), true); if(exPar) return exPar; }
   const exAg = resolverExAliasGrupoSB(crudo); if(exAg) return exAg;
-  const exTk = resolverExTokensSB(crudo); if(exTk) return exTk;
+  const exTk = soloConfiableSB(crudo, resolverExTokensSB(crudo)); if(exTk) return exTk;
   const sinParen = crudo.replace(/\s*\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  const baseM = sinParen || crudo;
+  /* stricto primero: exacto/plural contra es y en; lo aproximado solo se acepta con certeza >= 80% (nunca por una palabra suelta) */
   const conCalif = RX_CALIF_SB.test(normSports(crudo)); RX_CALIF_SB.lastIndex = 0;
-  if(conCalif){ const f0 = resolverExFuzzySB(sinParen || crudo); if(f0) return f0; }
-  const r1 = crudo ? resolverExSportsBase(crudo, estricto) : null;
+  if(conCalif){ const f0 = soloConfiableSB(baseM, resolverExFuzzySB(baseM)); if(f0) return f0; }
+  const r1 = crudo ? soloConfiableSB(baseM, resolverExSportsBase(crudo, estricto)) : null;
   if(r1) return r1;
-  const r2 = (sinParen && sinParen !== crudo) ? resolverExSportsBase(sinParen, estricto) : null;
-  return r2 || resolverExFuzzySB(sinParen || crudo);
+  const r2 = (sinParen && sinParen !== crudo) ? soloConfiableSB(baseM, resolverExSportsBase(sinParen, estricto)) : null;
+  return r2 || soloConfiableSB(baseM, resolverExFuzzySB(baseM));
 }
 function resolverExSportsBase(nombreCrudo, estricto){
   const nombre = String(nombreCrudo || '').trim();
@@ -5172,7 +5212,7 @@ function resolverExSportsBase(nombreCrudo, estricto){
   const n = normSports(nombre);
   const exacto = S.exercises.find(function(e){ return normSports(e.es) === n || normSports(e.en || '') === n; });
   if(exacto) return exacto;
-  const porAlias = exPorNombre(nombre);
+  const porAlias = exPorNombreBilingue(nombre);
   if(porAlias) return porAlias;
   const ns = stemNombreEj(nombre);
   const porStem = S.exercises.find(function(e){ return stemNombreEj(e.es) === ns || (e.en && stemNombreEj(e.en) === ns); });
@@ -5479,7 +5519,7 @@ function nombreEjercicioSB(linea){
   if(!t || RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return '';
   t = t.replace(/^[\s\-•*]+/, '');
   t = t.replace(/^(?:\[[^\]]*\]\s*)+/, '').trim();            /* corchetes/prefijos de categoría */
-  t = limpiarPrefijoOrdinalSB(t).replace(/^[\s\-•*]+/, '');
+  t = limpiarNombreMatchSB(t).replace(/^[\s\-•*]+/, '');
   t = t.split(/\s*[:|]\s*|\s+[-–—]\s+/)[0];
   t = t.replace(/\s*(?:\d+\s*)?[x×]\s*\d[\w.\/-]*.*$/i, '');
   /* corta en la primera métrica pegada al nombre ("Press banca 4 Sets", "Remo Rest 90") */
@@ -5545,6 +5585,7 @@ const RX_NOTA_PALABRA_SB = /\b(?:estrategia|coaching|tips?|objetivo|notas?|error
 function esEstructuraONotaSB(linea){
   const l = String(linea || '').trim();
   if(!l) return false;
+  if(/^\s*sets?\s*\d+/i.test(l) && /[A-Za-z\u00c0-\u00ff]{3}/.test(l.replace(/^\s*sets?\s*\d+(?:\s*[-–]\s*\d+)?\s*[:.\-–—]?/i, ''))) return false;      /* "SET 1-2: 5 BACK SQUATS @ 75%": lleva ejercicio */
   if(RX_EMOJI_TACTICO_SB.test(l) || RX_ESTRUCTURA_SB.test(l)) return true;
   /* una nota con la palabra clave en cualquier posicion, siempre que la linea no lleve dosis ni sea un complex "+" */
   if(RX_NOTA_PALABRA_SB.test(l) && !/\+/.test(l)){
@@ -12534,9 +12575,9 @@ function renderMain(){
   if(window.COACH_DISCIPLINA === 'sports'){
     if(blocks.length){
       const doneCount = blocks.filter(function(b){ return isBlockDone(weekIdx, day.id, b.id); }).length;
-      html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + doneCount + ' / ' + blocks.length + ' bloques completados</p></div>';
+      html += '<div class="info-card jp-resumen-ses"><div class="info-card-title">Resumen de la Sesión</div><p>' + doneCount + ' / ' + blocks.length + ' bloques completados</p></div>';
     }
-  } else if(day.summary){ html += '<div class="info-card"><div class="info-card-title">Resumen de la Sesión</div><p>' + day.summary + '</p></div>'; }
+  } else if(day.summary){ html += '<div class="info-card jp-resumen-ses"><div class="info-card-title">Resumen de la Sesión</div><p>' + day.summary + '</p></div>'; }
   /* directiva ("Refactor urgente de interfaz Athlete", requerimiento 2):
      day.cooldown puede quedar poblado con un relleno GENÉRICO que varias
      herramientas de generación de día (Generador de Día por Estilo,
@@ -12590,8 +12631,7 @@ function renderMain(){
      ahora elige abrirCF()/datosStoryCF() o abrir()/datosSports() según
      window.COACH_DISCIPLINA, cero cambio para CrossFit. */
   const esSports = window.COACH_DISCIPLINA === 'sports';
-  html += '<button type="button" class="story-cta" id="storyCtaBtn">📸 ' +
-    (esSports ? 'GENERAR STORY PARA REDES' : 'Generar Story Card') + '</button>';
+  html += '<button type="button" class="story-cta" id="storyCtaBtn">[ 📸 GENERAR STORY ]</button>';
   /* directiva (reubicación de cierre): "Marcar Día Completo" era una
      acción de cierre viviendo arriba, apretando el inicio del
      entrenamiento -- baja al final absoluto de la rutina, debajo del
@@ -12602,7 +12642,8 @@ function renderMain(){
     '<span class="dcc-ic">✓</span>' +
     '<span class="dcc-tx">' + (dayDone?'DÍA COMPLETO':'MARCAR DÍA COMPLETO') + '</span>' +
     '</button>';
-  if(esSports) html += '<button type="button" class="jp-wa-report" id="jpWaReportBtn">&#128242; ENVIAR REPORTE AL COACH POR WHATSAPP</button>';
+  if(esSports) html += '<button type="button" class="jp-wa-report" id="jpWaReportBtn">&#128242; ENVIAR REPORTE AL COACH POR WHATSAPP</button>' +
+    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '[ \\u2714 D\\u00cdA CONCLUIDO \\u00b7 ENVIAR REPORTE ]' : '[ \\u2714 CONCLUIR D\\u00cdA / ENVIAR REPORTE ]') + '</button>';
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);
@@ -14545,6 +14586,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(v !== t.value) t.value = v;
     setLoadField(regKey(), campo, v);
   });
+  document.addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('#jpCerrarDiaBtn') : null;
+    if(!b) return;
+    e.preventDefault();
+    var dc = document.getElementById('dayCompleteBtn'), wa = document.getElementById('jpWaReportBtn');
+    if(dc && !dc.classList.contains('done')) dc.click();      /* completa el dia (con su aviso de bloques pendientes) y abre el reporte */
+    else if(wa) wa.click();                                    /* dia ya concluido: solo reenvia el reporte */
+  });
   function esMetcon(block, weekIdx){
     /* además del título/categoría estáticos, se testea la etiqueta YA
        resuelta para la semana actual -- así un bloque cuya categoría
@@ -15379,7 +15428,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            omitir el clip por completo -- ver jpVideoFallbackBenchmark(). */
         const ytid = buscarVideo(seg, true) || jpVideoFallbackBenchmark(seg);
         if(!ytid || vistos.has(ytid)) return;
-        if(propiosIds && ajenosIds[ytid] && propiosIds.indexOf(ytid) < 0) return;      /* el video de otro bloque nunca se arrastra a este */
+        if(propiosIds && propiosIds.indexOf(ytid) < 0) return;      /* solo los videos de ESTE bloque: nunca se arrastra el de otro */
         vistos.add(ytid);
         out.push({ nombre: jpCfClipNombre(seg) || seg, ytid: ytid });
       });
@@ -16076,6 +16125,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(esLineaMetaSB(linea)) return;
       var hdrInt = parseIntervaloSB(linea);
       if(hdrInt){ actual = null; entries.push({ tipo: 'intervalo', seg: hdrInt.seg, sets: hdrInt.sets, texto: hdrInt.texto }); return; }
+      var mSetR = linea.match(/^\\s*(?:sets?|series?)\\s*(\\d+)(?:\\s*[-\\u2013]\\s*(\\d+))?\\s*[:.\\-\\u2013\\u2014]\\s*(\\S.*)$/i);
+      if(mSetR){
+        var restoSR = mSetR[3], cargaSR = '', mCSR = restoSR.match(/@\\s*(.+)$/);
+        if(mCSR){ cargaSR = mCSR[1].trim(); restoSR = restoSR.replace(/\\s*@.*$/, ''); }
+        var mRSR = restoSR.match(/^(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:x|\\u00d7|reps?)?\\s+(\\S.*)$/i);
+        var nSetsSR = mSetR[2] ? Math.max(1, parseInt(mSetR[2], 10) - parseInt(mSetR[1], 10) + 1) : 1;
+        actual = { tipo:'simple', titulo: (mRSR ? mRSR[2] : restoSR).trim(), tituloOriginal: linea, sets: nSetsSR, reps: mRSR ? mRSR[1].replace(/\\s+/g, '').replace(/\\u2013/g, '-') : '', carga: cargaSR, tempo:'', restSeconds:0, rir:'', dosisAsignada:true, tecnica:'', tecnicaPct:null, myoInfo:null, notas:[], unidad:'reps' };
+        entries.push(actual);
+        return;
+      }
       var subM = linea.match(RX_SUBEJ_SB);
       /* "A1) Nombre" sin dosis (o "B2. Nombre 3x12" sin dos puntos): nueva estación del biset; la dosis se acumula
          con los renglones siguientes. Un "A1" cuando el biset abierto ya empezó en 1, o un cambio de letra, abre otro biset. */
@@ -16654,9 +16713,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   /* titulo con el termino tecnico en ingles y, debajo y tenue, la descripcion en español (solo si el ejercicio esta en la biblioteca) */
   function claveNomSB(x){ return String(x || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[.,;:!?"']+/g, ' ').replace(/\\s+/g, ' ').trim(); }
+  function singNomSB(x){ return claveNomSB(x).split(' ').map(function(w){ return w.length > 3 ? w.replace(/(?:es|s)$/, '') : w; }).join(' '); }
   function infoNombreSB(titulo, block){
     var m = block && block.nombresEx;
-    return (m && m[claveNomSB(titulo)]) || null;
+    if(!m) return null;
+    var k = claveNomSB(titulo);
+    if(m[k]) return m[k];
+    var ks = singNomSB(titulo), claves = Object.keys(m);
+    for(var i = 0; i < claves.length; i++){ if(singNomSB(claves[i]) === ks) return m[claves[i]]; }
+    return null;
   }
   function nombrePrincipalSB(titulo, block){
     var i = infoNombreSB(titulo, block);
@@ -17124,7 +17189,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(nombrePrincipalSB(entry.titulo, block)) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
-          dosisCompletaSB(entry.setsDef ? 0 : entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
+          dosisCompletaSB(entry.setsDef ? 0 : entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '') +
           chipUnilateralSB(entry.unilateral) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
@@ -37035,6 +37100,23 @@ body .jp-done-btn.jp-done-foot.on{ color:#34D399 !important; background:rgba(16,
 .jp-sb-board .jp-block-details{ margin:10px 0 !important; padding:0 !important; border:1px solid rgba(38,38,38,.8) !important; border-radius:10px; background:rgba(23,23,23,.3); }
 .jp-sb-board .jp-summary-btn{ display:flex; align-items:center; gap:8px; padding:8px 12px !important; margin:0 !important; font-size:.75rem !important; font-weight:600 !important; color:#a3a3a3 !important; cursor:pointer; list-style:none; background:transparent !important; border:0 !important; }
 .jp-sb-board .jp-details-content{ padding:12px !important; border-top:1px solid rgba(38,38,38,.6); font-size:.75rem; color:#d4d4d4; gap:8px; }
+/* ===== pie de la sesion ===== */
+body:not(.cf-disc) #dayCompleteBtn, body:not(.cf-disc) #jpWaReportBtn{ display:none !important; }
+html body #storyCtaBtn.story-cta, html body .jp-close-cta, html body .day-complete-cta.day-complete-cta.day-complete-cta{ display:flex !important; align-items:center; justify-content:center; width:100%; height:42px !important; min-height:42px !important; margin:8px 0 0 !important; padding:0 14px !important; border-radius:12px !important; font-family:'Chakra Petch',sans-serif !important; font-weight:800; font-size:.78rem !important; letter-spacing:.08em !important; text-transform:uppercase; box-shadow:none !important; cursor:pointer; }
+html body #storyCtaBtn.story-cta{ background:rgba(23,23,23,.85) !important; border:1px solid rgba(34,150,190,.55) !important; color:#d1b06a !important; }
+html body .jp-close-cta, html body .day-complete-cta.day-complete-cta.day-complete-cta{ background:rgba(23,23,23,.7) !important; border:1px solid rgba(255,255,255,.14) !important; color:#e5e7eb !important; }
+html body .jp-close-cta.done, html body .day-complete-cta.day-complete-cta.day-complete-cta.done{ border-color:rgba(16,185,129,.4) !important; color:#34D399 !important; background:rgba(16,185,129,.07) !important; }
+html body .day-complete-cta .dcc-ic{ display:none !important; }
+html body .day-complete-cta .dcc-tx{ font-size:inherit !important; letter-spacing:inherit !important; }
+html body .info-card.jp-resumen-ses{ max-width:360px; margin:16px auto 8px !important; padding:10px 16px !important; text-align:center; }
+html body .info-card.jp-resumen-ses .info-card-title{ margin:0 0 4px !important; text-align:center; font-size:.8rem !important; letter-spacing:.12em; }
+html body .info-card.jp-resumen-ses p{ margin:0 !important; text-align:center; font-size:.85rem; }
+/* ===== nombres y prescripciones: Chakra Petch 700 en mayusculas tambien en CrossFit y en filas planas ===== */
+.jp-cfboard .jp-cf-row .jp-cf-rn{ font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; text-transform:uppercase; letter-spacing:.03em; font-size:calc(1rem * var(--fzs,1)) !important; }
+.jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup) .jp-sb-plain-nombre{ font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; text-transform:uppercase; letter-spacing:.03em; font-size:calc(1rem * var(--fzs,1)) !important; color:#fff !important; }
+.jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup) .jp-sb-plain-pill{ font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; font-size:calc(.85rem * var(--fzs,1)) !important; }
+.jp-dose-bar{ flex-wrap:wrap; }
+.jp-dose-bar .jp-db-seg{ font-size:.74rem !important; font-weight:700 !important; }
 .jp-es-sub{ margin:-2px 0 8px 2px; font-size:.78rem; line-height:1.3; color:rgba(148,163,184,.78); font-family:'Inter',sans-serif; text-transform:none; letter-spacing:0; }
 .jp-cont-pill{ margin:6px 0 8px; }
 .jp-cont-lista{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
@@ -38125,7 +38207,7 @@ function resolveByText(txt){
   const corto = limpiarNombreEx(name);
   const busca = n => S.exercises.find(e => norm(exDisplayName(e)) === norm(n)) ||
                      S.exercises.find(e => norm(e.es) === norm(n)) ||
-                     exPorNombre(n) ||
+                     exPorNombreBilingue(n) ||
                      S.exercises.find(e => e.videoId && (matchNombre(e.es, n) || (e.en && matchNombre(e.en, n)))) ||
                      S.exercises.find(e => e.videoId && norm(e.es).indexOf(norm(n)) >= 0 && norm(n).length > 5);
   const hit = busca(name) || (corto !== name ? busca(corto) : null);
@@ -38149,7 +38231,7 @@ const CAND_RUIDO = new RegExp('^(?:\\d+' + CAND_RANGO + '\\s*(?:sets?|series?|ro
    "Lift N:" (EMOMs de técnica con 2-3 levantamientos por vuelta,
    "Lift 1: 1 Power snatch") -- mismo criterio, nunca se busca "Lift 1"
    como si fuera un ejercicio. */
-const CAND_PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|lift\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
+const CAND_PREFIJO_ORDEN = /^(?:set\s*\d+(?:\s*[-–]\s*\d+)?[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|lift\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
 /* directiva maestra ("Compilación universal de videos en desplegable
    inferior") -- BUG REAL encontrado auditando Bloque 3 (Biset): una
    estación de biset/triset ("A1. Press banca Floor Press: 3x8") nunca
@@ -38203,7 +38285,7 @@ function candidatosTexto(txt, sinY){
       .replace(new RegExp('^\\s*\\d+' + CAND_RANGO + '\\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\\b)?\\s*', 'i'), '')
       .replace(/[—–]\s*.*$/, '')
       .replace(/\b\d+\s*(?:kg|lbs?|cal|m|s|seg|min|%)\b.*$/i, '')
-      .replace(/\bx\s*\d+.*$/i, '')
+      .replace(/\s+\d+\s*[x×]\s*\d.*$/i, '').replace(/\bx\s*\d+.*$/i, '')
       .replace(/\s{2,}/g, ' ').trim())
     .filter(s => s.length > 2 && s.length <= MAX_NOMBRE_EJ && /[a-záéíóúñ]/i.test(s));
 }
@@ -57466,7 +57548,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   /* directiva ("Lista Negra de Palabras de Estructura"): suma "Lift N:"
      (EMOMs de técnica, "Lift 1: 1 Power snatch") al mismo criterio de
      Set/Ronda/Round/Min -- nunca se busca "Lift 1" como ejercicio. */
-  const PREFIJO_ORDEN = /^(?:set\s*\d+[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|lift\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
+  const PREFIJO_ORDEN = /^(?:set\s*\d+(?:\s*[-–]\s*\d+)?[\s:.\-]*|ronda\s*\d+[\s:.\-]*|round\s*\d+[\s:.\-]*|min\s*\d+[\s:.\-]*|lift\s*\d+[\s:.\-]*|\d+[.):]\s*)/i;
   function candidatos(linea){
     let t = String(linea || '').replace(/^[\s\-•*]+/, '');
     if(RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return [];    /* cabeceras/metadatos/días: nunca ejercicios */
@@ -57539,7 +57621,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
                .replace(new RegExp('^\\s*\\d+' + RANGO + '\\s*(?:(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)\\b)?\\s*', 'i'), '')
                .replace(/[—–]\s*.*$/, '')
                .replace(/\b\d+\s*(?:kg|lbs?|cal|m|s|seg|min|%)\b.*$/i, '')
-               .replace(/\bx\s*\d+.*$/i, '')
+               .replace(/\s+\d+\s*[x×]\s*\d.*$/i, '').replace(/\bx\s*\d+.*$/i, '')
                .replace(/\s{2,}/g, ' ').trim();
       return s;
     }).filter(s => s.length > 2 && s.length <= MAX_NOMBRE_EJ && /[a-záéíóúñ]/i.test(s));
