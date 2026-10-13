@@ -83,6 +83,7 @@ const MODE_RULE: Record<GenMode, string> = {
 const SCIENTIFIC_RIGOR = `RIGOR FISIOLÓGICO Y BIOQUÍMICO (inquebrantable, aplica a titulares, párrafos, métricas, gráficos, diagramas y caption):
 - Terminología exacta. La fosfocreatina NO se «oxida»: se hidroliza (PCr → Cr + Pi, vía creatina quinasa) y se resintetiza en la pausa por vía oxidativa. Sólo se oxidan sustratos como glucosa, ácidos grasos o lactato en la mitocondria.
 - Prohibidas las hipérboles sensacionalistas sobre el sistema nervioso («destruye / quema / fríe el sistema nervioso», «SNC frito»). Usá términos operativos y medibles: «disminuye la tasa de desarrollo de fuerza (RFD)», «fatiga neuromuscular aguda», «menor reclutamiento de unidades motoras», «caída de la velocidad de ejecución», «menor frecuencia de disparo».
+- Prohibido el lenguaje inflado o pseudocientífico: «fricción cortical», «tasa de dopamina disponible», «destrucción del SNC», «neuroplasticidad» como muletilla, «cortisol tóxico», «cerebro reptiliano».
 - La inhibición recíproca describe SÓLO la relación agonista / antagonista de una articulación (ej: cuádriceps / isquiosurales). Nunca la apliques a curvas de progresión de series, volumen semanal, fatiga acumulada ni a metáforas de rendimiento.
 - Cada mecanismo nombra la variable real que cambia (RFD, velocidad media propulsiva, RIR / RPE, % 1RM, lactato, FC, tensión mecánica, volumen semanal en series efectivas) y en qué dirección. Nada de «activa», «despierta», «tóxico», «quema» o «acelera el metabolismo» sin el mecanismo concreto.
 - Si no tenés certeza de un mecanismo, de una cifra o de un paper, elegí otro argumento: el rigor manda por sobre el impacto.`
@@ -1227,6 +1228,18 @@ export interface MindsetBurst {
   accent: string
 }
 
+/** Pseudociencia inflada prohibida en las ráfagas: si la IA igual la usa, la tarjeta se descarta. */
+const PSEUDO = /fricci[oó]n cortical|dopamin|destrucci[oó]n del (snc|sistema nervioso)|destru\w* (el|tu|tus) (snc|sistema nervioso)|colapso del snc|snc (frito|destruido|quemado)|neuroplastic|cortisol t[oó]xico|cerebro reptil|qu[ií]mica cerebral|neuroqu[ií]mic/i
+
+/** Remate naranja: 6 palabras como máximo. Lo que sobra al principio pasa al titular blanco (no se pierde texto). */
+export const ACCENT_MAX_WORDS = 6
+export function balanceBurst(b: MindsetBurst): MindsetBurst {
+  const acc = b.accent.split(/\s+/).filter(Boolean)
+  if (acc.length <= ACCENT_MAX_WORDS) return b
+  const moved = acc.slice(0, acc.length - ACCENT_MAX_WORDS)
+  return { white: [b.white, ...moved].filter(Boolean).join(' '), accent: acc.slice(-ACCENT_MAX_WORDS).join(' ') }
+}
+
 /** Clichés de autoayuda prohibidos: si la IA igual los usa, la tarjeta se descarta. */
 const CLICHES = /mejor versi[oó]n|romp[eé]\w* (tus|los) l[ií]mites|hasta que el cuerpo diga basta|el dolor es temporal|no pain|sal de tu zona de confort|cree en ti|cre[eé] en vos|nunca te rindas|todo es posible|tu [uú]nico l[ií]mite|sue[nñ]a en grande|el [eé]xito es|actitud positiva/i
 
@@ -1242,9 +1255,11 @@ export async function generateMindsetBursts(
 ${ctx.topic.trim() ? `Eje del usuario: «${ctx.topic.trim()}».` : 'Eje: disciplina operativa en el entrenamiento.'}
 ${focus ? `${focus}
 ` : ''}Escribí ${n} titulares para una placa, en MAYÚSCULAS, cada uno partido en:
-- "white": premisa o tensión inicial (3 a 9 palabras).
-- "accent": la verdad incómoda o el principio inquebrantable que remata (2 a 8 palabras).
-TONO: brutalista, implacable, frío y operativo. Fundamentado en fisiología, sistemas, neurobiología y medición: fricción biológica, fatiga del SNC, disciplina contra motivación volátil, consistencia operativa, estándares diarios, carga medida.
+- "white": la FRASE PRINCIPAL de contexto, legible por sí sola (5 a 12 palabras). Lleva la idea completa.
+- "accent": el remate corto que golpea (2 a 6 palabras, NUNCA más de 6). Contrasta o cierra la idea, no la explica.
+  Ej: white «LAS GANAS APARECEN DESPUÉS DE CUMPLIR EL PROTOCOLO» · accent «NUNCA ANTES.»
+TONO: brutalista, implacable, frío y operativo, en el terreno del alto rendimiento real. Vocabulario: protocolo, estándar operativo, consistencia, sistemas de carga, disciplina de ejecución, registro, progresión, sesión cumplida, carga medida.
+PROHIBIDO el lenguaje pseudocientífico o inflado: «fricción cortical», «tasa de dopamina disponible», cualquier «dopamina», «destrucción / colapso del SNC», «SNC frito», «neuroplasticidad», «cortisol tóxico», «cerebro reptiliano», «química cerebral». Si no es una variable que un entrenador mide en la sala, no va.
 PROHIBIDO: autoayuda barata y clichés («sé tu mejor versión», «rompé tus límites», «entrená hasta que el cuerpo diga basta», «el dolor es temporal», «salí de tu zona de confort», «creé en vos»), emojis, signos de exclamación y cifras inventadas.
 Cada variante con un ángulo distinto (no repitas estructura ni palabras clave).
 Forma exacta: { "bursts": [ ${n} objetos { "white": string, "accent": string } ] }`
@@ -1252,9 +1267,10 @@ Forma exacta: { "bursts": [ ${n} objetos { "white": string, "accent": string } ]
   const list = (Array.isArray(res.bursts) ? res.bursts : Array.isArray(res.hooks) ? res.hooks : []).map(obj)
   const out = list
     .map((b) => ({ white: cleanText(upper(first(b.white, b.titleWhite, b.blanco, b.titular))), accent: cleanText(upper(first(b.accent, b.titleAccent, b.remate))) }))
-    .filter((b) => (b.white || b.accent) && !CLICHES.test(`${b.white} ${b.accent}`))
+    .filter((b) => (b.white || b.accent) && !CLICHES.test(`${b.white} ${b.accent}`) && !PSEUDO.test(`${b.white} ${b.accent}`))
+    .map(balanceBurst)
     .slice(0, n)
-  if (!out.length) throw new Error('La IA no devolvió ráfagas utilizables (o sólo clichés descartados). Probá de nuevo.')
+  if (!out.length) throw new Error('La IA no devolvió ráfagas utilizables (o sólo clichés / pseudociencia descartados). Probá de nuevo.')
   return out
 }
 
