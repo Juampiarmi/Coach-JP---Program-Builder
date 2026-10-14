@@ -7820,9 +7820,22 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
 /* COACH JP v3.0 · resguardo de arranque: la interfaz nunca queda bloqueada */
 (function(){
   var D = document.documentElement;
+  /* arranque sin parpadeo: la interfaz queda en opacity 0 (y el splash visible) hasta que los módulos terminan de montar;
+     techo duro de 1.1s para que nunca quede oculta */
+  D.classList.add('jp-hold');
+  window.__jpHold = true;
+  window.__jpSoltarHold = function(){
+    if(!window.__jpHold) return;
+    window.__jpHold = false;
+    D.classList.add('jp-reveal');
+    D.classList.remove('jp-hold');
+    setTimeout(function(){ D.classList.remove('jp-reveal'); }, 400);
+  };
+  setTimeout(window.__jpSoltarHold, 1100);
   /* preferencia de tamaño de texto: se aplica antes del primer pintado */
   try{ var _fz = localStorage.getItem('coachjp_fz'); if(_fz) D.setAttribute('data-fz', _fz); }catch(e){}
   function liberar(){
+    if(window.__jpHold){ setTimeout(liberar, 60); return; }
     try{
       D.classList.remove('jp-cargando');
       D.style.visibility = 'visible';
@@ -7847,6 +7860,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   window.addEventListener('unhandledrejection', function(){ setTimeout(liberar, 40); });
 })();
 <\/script>
+<style id="jpHoldCss">html.jp-hold body > *:not(#jpSplash){ opacity:0 !important; } html.jp-reveal body > *:not(#jpSplash){ transition:opacity .2s ease-in-out; }</style>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;900&family=Chakra+Petch:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700;800&family=Plus+Jakarta+Sans:wght@600;700;800;900&display=swap" rel="stylesheet" />
@@ -14490,7 +14504,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return txt + (en.carga ? ' @ ' + en.carga : '');
   }
   function jpRegBotonHtml(cfg){
-    return '<button type="button" class="jp-reg-open" data-regcfg="' + encodeURIComponent(JSON.stringify(cfg)) + '">' + regBotonInner(cfg) + '</button>';
+    return '<button type="button" class="jp-reg-open' + (regProgreso(cfg).hechos > 0 ? ' jp-reg-on' : '') + '" data-regcfg="' + encodeURIComponent(JSON.stringify(cfg)) + '">' + regBotonInner(cfg) + '</button>';
   }
   var regEst = null;
   function regQ(sel){ var bg = document.getElementById('jpRegSheet'); return bg ? bg.querySelector(sel) : null; }
@@ -14551,7 +14565,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function regCerrar(){
     var bg = document.getElementById('jpRegSheet'); if(bg) bg.remove();
     document.body.style.overflow = '';
-    if(regEst && regEst.btn){ regEst.btn.innerHTML = regBotonInner(regEst.cfg); }
+    if(regEst && regEst.btn){ regEst.btn.innerHTML = regBotonInner(regEst.cfg); regEst.btn.classList.toggle('jp-reg-on', regProgreso(regEst.cfg).hechos > 0); }
     regEst = null;
   }
   function regConfirmar(){
@@ -16703,11 +16717,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       for(var mj = 1; mj <= microMax; mj++){
         var mKey = getLoadKey(weekIdx, dayId, blockId, exIdx, 'm' + mj);
         var mVal = getLoad(mKey).reps;
-        microInputs += '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" class="jp-myo-mini' + (mVal ? ' hecho' : '') + '" data-micro-key="' + mKey + '" placeholder="+' + microReps + '" value="' + (mVal != null ? escSB(mVal) : '') + '"' + (mj > microVis ? ' hidden' : '') + ' />';
+        microInputs += '<button type="button" class="jp-myo-mini' + (mVal ? ' hecho' : '') + '" data-micro-key="' + mKey + '" data-micro-target="' + microReps + '" aria-pressed="' + (mVal ? 'true' : 'false') + '"' + (mj > microVis ? ' hidden' : '') + '>+' + (mVal ? escSB(mVal) : microReps) + '</button>';
       }
       html += '<div class="jp-myo-mod">' +
           '<div class="jp-myo-lb">\\u26a1 MYO-REPS \\u00b7 3 a 5 mini-sets \\u00b7 RIR 0</div>' +
-          '<div class="jp-myo-chips">' + microInputs + '<button type="button" class="jp-myo-add"' + (microVis >= microMax ? ' hidden' : '') + '>\\u2795 Agregar mini-set</button></div>' +
+          '<div class="jp-myo-chips">' + microInputs + '<button type="button" class="jp-myo-add"' + (microVis >= microMax ? ' hidden' : '') + '>[ + AGREGAR MINI-SET ]</button></div>' +
         '</div>';
     }
     html += '</div>';
@@ -17045,13 +17059,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var ad = e.target.closest && e.target.closest('.jp-myo-add');
     if(ad){
       var box = ad.parentElement, oc = box.querySelector('.jp-myo-mini[hidden]');
-      if(oc){ oc.hidden = false; oc.focus(); }
+      if(oc){ oc.hidden = false; }
       if(!box.querySelector('.jp-myo-mini[hidden]')) ad.hidden = true;
     }
   });
   document.addEventListener('input', function(e){
     var el = e.target;
-    if(el && el.classList && el.classList.contains('jp-myo-mini')) el.classList.toggle('hecho', !!el.value);
+    if(el && el.classList && el.classList.contains('jp-myo-mini') && el.tagName === 'INPUT') el.classList.toggle('hecho', !!el.value);
   });
   function restAttrSB(e){ return e.restCero ? '0' : (e.restSeconds || ''); }
   function limpiarGuionActivacionSB(nombre){
@@ -19038,7 +19052,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
 
 <div class="story-wrap" id="storyWrap">
   <div class="story-box">
-    <canvas id="storyCanvas" width="1080" height="1920"></canvas>
+    <div class="jp-story-frame"><canvas id="storyCanvas" width="1080" height="1920"></canvas><i class="jp-sf-c tl"></i><i class="jp-sf-c tr"></i><i class="jp-sf-c bl"></i><i class="jp-sf-c br"></i></div>
     <div class="story-actions">
       <button class="sa-dl" id="storyDl" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M4 20h16"/></svg><span class="sa-tx">DESCARGAR HISTORIA</span></button>
       <input type="file" id="storyFotoInput" accept="image/*" style="display:none">
@@ -24283,6 +24297,7 @@ body.cf-modo .block .wod-board,body.cf-modo .block .cf-board{display:block !impo
   'use strict';
   var SPL_T0 = Date.now(), SPL_MIN = 300;
   function ocultarSplash(){
+    if(window.__jpHold){ setTimeout(ocultarSplash, 60); return; }
     var falta = SPL_MIN - (Date.now() - SPL_T0);
     if(falta > 0){ setTimeout(ocultarSplash, falta); return; }
     var s = document.getElementById('jpSplash');
@@ -36999,12 +37014,13 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
         if(p && !p.classList.contains('active')) p.click();
       });
     }
-    var lbl = (act.textContent || '').trim();
+    var etqSem = function(t){ var m = /(\\d+)/.exec(t || ''); return m ? 'SEM ' + m[1] : String(t || '').trim(); };
+    var lbl = etqSem((act.textContent || '').trim());
     var h = '<b>' + lbl + '</b><i>&#9662;</i>';
     if(btn.innerHTML !== h) btn.innerHTML = h;
     var hp = pills.map(function(p, i){
       var meta = (typeof WEEKS_META !== 'undefined' && WEEKS_META[i]) || {};
-      return '<button type="button" data-wk="' + i + '" class="' + (p === act ? 'on' : '') + '"><b>' + (p.textContent || '').trim() + '</b><small>' + String(meta.phase || '').replace(/</g, '&lt;') + '</small></button>';
+      return '<button type="button" data-wk="' + i + '" class="' + (p === act ? 'on' : '') + '"><b>' + etqSem((p.textContent || '').trim()) + '</b><small>' + String(meta.phase || '').replace(/</g, '&lt;') + '</small></button>';
     }).join('');
     if(pop.innerHTML !== hp) pop.innerHTML = hp;
   }
@@ -37012,7 +37028,7 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     var cambio = false;
     [].forEach.call(document.querySelectorAll('.hdc-days-wrap .day-tab .tab-name'), function(n){
       var m = /(\\d+)/.exec(n.textContent || '');
-      if(m && n.textContent !== 'D' + m[1]){ n.textContent = 'D' + m[1]; cambio = true; }
+      if(m && n.textContent !== 'D\\u00cdA ' + m[1]){ n.textContent = 'D\\u00cdA ' + m[1]; cambio = true; }
     });
     var act = $('.hdc-days-wrap .day-tab.active'), wrap = $('.hdc-days-wrap .week-tabs');
     if(act && wrap && wrap.getAttribute('data-act') !== act.getAttribute('data-day')){
@@ -37026,8 +37042,9 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     var kg = (($('#jpTonelajeVal') || {}).textContent || '0').trim();
     var rir = 'RIR OBJ';
     try{ var m = /RIR\\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
-    var ton = (kg === '0' || kg === '') ? '&mdash;' : kg + ' KG';
-    var h = '<span>&#127947;&#65039; ' + ton + ' TONELAJE</span><span>&#9201;&#65039; ' + nB + ' BLOQUES</span><span>&#127919; ' + rir + '</span>';
+    /* sin tonelaje registrado la tarjeta no se muestra (antes quedaba un guion suelto) */
+    var hayTon = parseFloat(String(kg).replace(/[^\\d.,]/g, '').replace(',', '.')) > 0;
+    var h = (hayTon ? '<span>&#127947;&#65039; ' + kg + ' KG TONELAJE</span>' : '') + '<span>&#9201;&#65039; ' + nB + ' BLOQUES</span><span>&#127919; ' + rir + '</span>';
     var hud = $('.jp-brief-hud', dh);
     if(!hud){ hud = document.createElement('div'); hud.className = 'jp-brief-hud'; dh.appendChild(hud); }
     if(hud.innerHTML !== h) hud.innerHTML = h;
@@ -37084,6 +37101,7 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     if(obs) obs.disconnect();
     try{ idBar(); semana(); dias(); if(ES_SPORTS) brief(); }catch(e){}
     try{ emojis(); }catch(e){}
+    try{ if(window.__jpSoltarHold) window.__jpSoltarHold(); }catch(e){}
     if(obs) obs.observe(document.body, { childList:true, subtree:true, characterData:true });
   }
   function programar(){ if(pend) return; pend = setTimeout(aplicar, 90); }
@@ -37439,6 +37457,31 @@ html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-es-sub{ color:#6B7280 !impor
 html body.jp-mission:not(.cf-disc) .hd-full-drawer{ background:#0A0C10 !important; }
 html body.jp-mission:not(.cf-disc) .hd-full-drawer .gd-card-btn, html body.jp-mission:not(.cf-disc) .hd-full-drawer .guide-pill, html body.jp-mission:not(.cf-disc) #hdpGuideSlot .gd-card-btn{ border-color:rgba(255,255,255,.12) !important; }
 html body.jp-mission:not(.cf-disc) .gd-card-btn .gcb-chev{ color:#D2793F !important; }
+/* ===== Stealth Pro · cabecera, registro, myo-reps, story y alineacion de etiquetas ===== */
+html body.jp-mission:not(.cf-disc) .jp-session-emphasis{ display:none !important; }
+html body.jp-mission:not(.cf-disc) .day-tab:not(.active){ background:rgba(255,255,255,.05) !important; border:1px solid rgba(255,255,255,.1) !important; }
+html body.jp-mission:not(.cf-disc) .hdc-days-wrap .day-tab{ min-width:max-content; padding:0 12px !important; }
+html body.jp-mission:not(.cf-disc) .jp-wk-btn b{ white-space:nowrap; }
+html body.jp-mission:not(.cf-disc) .jp-reg-open{ border:1px solid rgba(255,255,255,.1) !important; color:#A0A8B4 !important; }
+html body.jp-mission:not(.cf-disc) .jp-reg-open.jp-reg-on{ border-color:#D2793F !important; color:#D2793F !important; }
+html body.jp-mission:not(.cf-disc) .jp-sb-ex-head, html body.jp-mission:not(.cf-disc) .jp-sb-subex-head{ display:flex !important; flex-wrap:nowrap !important; align-items:baseline !important; gap:8px !important; }
+html body.jp-mission:not(.cf-disc) .jp-sb-ex-id, html body.jp-mission:not(.cf-disc) .jp-sb-letra{ flex:0 0 auto !important; }
+html body.jp-mission:not(.cf-disc) .jp-sb-ex-nombre, html body.jp-mission:not(.cf-disc) .jp-sb-subex-tit, html body.jp-mission:not(.cf-disc) .jp-sb-subex-nombre{ flex:1 1 auto !important; min-width:0 !important; overflow-wrap:anywhere; }
+html body.jp-mission:not(.cf-disc) .jp-myo-chips{ gap:8px !important; }
+html body.jp-mission:not(.cf-disc) .jp-myo-chips .jp-myo-mini{ display:inline-flex !important; align-items:center; justify-content:center; width:44px !important; height:44px !important; min-height:44px !important; padding:0 !important; border-radius:50% !important; font:700 .85rem 'Chakra Petch',sans-serif !important; line-height:1; text-align:center; -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent; touch-action:manipulation; cursor:pointer; -webkit-appearance:none; appearance:none; }
+html body.jp-mission:not(.cf-disc) .jp-myo-chips .jp-myo-mini[hidden], html body.jp-mission:not(.cf-disc) .jp-myo-chips .jp-myo-add[hidden]{ display:none !important; }
+html body.jp-mission:not(.cf-disc) .jp-myo-chips .jp-myo-mini.hecho{ background:rgba(210,121,63,.14) !important; border-color:#D2793F !important; color:#E8A56B !important; }
+html body.jp-mission:not(.cf-disc) .jp-myo-add{ display:inline-flex !important; align-items:center; justify-content:center; min-height:44px !important; padding:0 16px !important; border:1px solid #D2793F !important; border-radius:10px !important; background:rgba(210,121,63,.1) !important; color:#E8A56B !important; font:700 .72rem 'Chakra Petch',sans-serif !important; letter-spacing:.08em; text-transform:uppercase; -webkit-user-select:none; user-select:none; touch-action:manipulation; }
+html body.jp-mission:not(.cf-disc) .jp-myo-add.on{ background:rgba(210,121,63,.1) !important; border:1px solid #D2793F !important; color:#E8A56B !important; }
+html body.jp-mission:not(.cf-disc) .story-actions .sa-dl{ background:#D2793F !important; color:#0A0C10 !important; border:0 !important; box-shadow:none !important; font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; letter-spacing:.08em !important; text-transform:uppercase !important; }
+.jp-story-frame{ position:relative; display:inline-flex; max-width:94vw; margin:6px auto; padding:0; }
+.jp-story-frame canvas{ display:block; border:1px solid rgba(255,255,255,.12) !important; }
+.jp-sf-c{ position:absolute; width:18px; height:18px; border:0 solid #E8A56B; pointer-events:none; }
+.jp-sf-c.tl{ top:-6px; left:-6px; border-top-width:2px; border-left-width:2px; }
+.jp-sf-c.tr{ top:-6px; right:-6px; border-top-width:2px; border-right-width:2px; }
+.jp-sf-c.bl{ bottom:-6px; left:-6px; border-bottom-width:2px; border-left-width:2px; }
+.jp-sf-c.br{ bottom:-6px; right:-6px; border-bottom-width:2px; border-right-width:2px; }
+
 .jp-es-sub{ margin:-2px 0 8px 2px; font-size:.78rem; line-height:1.3; color:rgba(148,163,184,.78); font-family:'Inter',sans-serif; text-transform:none; letter-spacing:0; }
 .jp-cont-pill{ margin:6px 0 8px; }
 .jp-cont-lista{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:6px; }
@@ -38318,12 +38361,14 @@ body:not(.cf-disc) .jp-criterio-dia > summary .cr-cv{ margin-left:auto; }
   document.addEventListener('click', function(e){
     var mi = e.target.closest && e.target.closest('.jp-myo-mini');
     if(mi){
-      if(!mi.value){
-        var n = (mi.placeholder || '').replace(/\\D/g, '');
-        if(n){ mi.value = n; mi.dispatchEvent(new Event('input', { bubbles: true })); }
-      }
-      mi.classList.add('hecho');
-      try{ mi.select(); }catch(err){}
+      /* botón nativo: un toque marca el mini-set con las reps objetivo, otro toque lo desmarca (misma clave 'mN' de state.loads) */
+      var hecho = mi.classList.contains('hecho');
+      var objetivo = String(mi.getAttribute('data-micro-target') || '').replace(/\\D/g, '');
+      var nuevo = hecho ? '' : objetivo;
+      mi.classList.toggle('hecho', !hecho);
+      mi.setAttribute('aria-pressed', hecho ? 'false' : 'true');
+      mi.textContent = '+' + (objetivo || '');
+      if(mi.dataset.microKey){ try{ setLoadField(mi.dataset.microKey, 'reps', nuevo); }catch(err){} }
       return;
     }
     var ad = e.target.closest && e.target.closest('.jp-myo-add');
