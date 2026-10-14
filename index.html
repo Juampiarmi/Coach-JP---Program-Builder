@@ -15772,6 +15772,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   var RX_SETS_SUELTOS_SB = /(\\d+)\\s*(?:sets?|series?|rondas?)\\b/i;
   /* donde empieza la prescripcion dentro de "Nombre 8-10 reps | Tempo 2110 | Rest 15s" */
   var RX_CORTE_DOSIS_SB = /\\s*(?:\\||\\b(?:tempo|rir|rest|descanso)\\b|\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b)/i;
+  /* un descanso de 1 a 9 s no es real ("Rest 3 – 4 minutes", "Rest 4" salian como 4 s): 1-6 se leen como minutos, 7-9 vuelven al estandar de 60 s */
+  function normRestSB(seg){
+    seg = parseInt(seg, 10) || 0;
+    if(seg > 0 && seg < 10) return seg <= 6 ? seg * 60 : 60;
+    return seg;
+  }
   function parsearDosisSB(txt){
     var t = String(txt || ''), out = {}, m;
     if((m = t.match(RX_DOSIS_SB))){
@@ -15814,10 +15820,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var clausulaRest = restM[1].replace(/\\b(?:rir|tempo)\\b.*$/i, '');
       var restMin = clausulaRest.match(/(\\d+)\\s*:\\s*(\\d{2})/);
       var restNums = clausulaRest.match(/\\d+/g);
-      var restMn = clausulaRest.match(/(\\d+(?:[.,]\\d+)?)\\s*(?:min\\b|minutos?\\b|')/i);
+      var restMn = clausulaRest.match(/(\\d+(?:[.,]\\d+)?)\\s*(?:min\\b|minutos?\\b|minutes?\\b|m\\b|')/i);
+      var restMS = clausulaRest.match(/(\\d+)\\s*(?:min(?:utos?|utes?)?|m)\\b\\.?\\s*(\\d{1,2})\\s*(?:s|seg\\w*)?\\b/i);
       if(restMin) out.restSeconds = parseInt(restMin[1], 10) * 60 + parseInt(restMin[2], 10);
+      else if(restMS) out.restSeconds = parseInt(restMS[1], 10) * 60 + parseInt(restMS[2], 10);
       else if(restMn) out.restSeconds = Math.round(parseFloat(restMn[1].replace(',', '.')) * 60);
-      else if(restNums) out.restSeconds = parseInt(restNums[restNums.length - 1], 10);
+      else if(restNums) out.restSeconds = normRestSB(parseInt(restNums[restNums.length - 1], 10));
     } else {
       var restPre = t.match(/(\\d+)\\s*(?:"|\\u2033|\\u201d|seg(?:undos)?\\b|s\\b)\\s*(?:de\\s+)?(?:rest|descanso)\\b/i);
       if(restPre) out.restSeconds = parseInt(restPre[1], 10);
@@ -16957,23 +16965,28 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (t.etq ? '<span class="jp-tr-etq">' + escSB(t.etq) + '</span>' : '') + (meta ? '<span class="jp-tr-meta">' + escSB(meta) + '</span>' : '') + '</div>';
     }).join('') + '</div>';
   }
-  function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra){
-    var seg = [];
+  /* fila 1: volumen y esfuerzo; fila 2: pausa (1 toque = cuenta regresiva), cadencia y modificador tactico.
+     sinPausa marca la estacion intermedia de un biset/triset (A1 -> A2 sin descanso) */
+  function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra, uni, sinPausa){
+    var r1 = [], r2 = [];
     var u = escSB(String(unidad || 'reps').toUpperCase());
     if(!sets && !reps) return '';
     var rotSets = sets == 1 ? ' SET' : ' SETS';
-    if(sets && reps) seg.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
-    else if(reps) seg.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
-    else seg.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
-    if(extra) seg.push('<span class="jp-db-seg jp-db-tempo">' + escSB(extra) + '</span>');
-    if(tempo) seg.push('<span class="jp-db-seg jp-db-tempo">TEMPO ' + escSB(tempo) + '</span>');
-    if(restSeconds) seg.push('<span class="jp-db-seg jp-db-rest">REST ' + fmtRestSB(restSeconds) + '</span>');
+    if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
+    else if(reps) r1.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
+    else r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
     if(rir){
       var tier = tierRirSB(rir);
-      seg.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
+      r1.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
     }
-    if(!seg.length) return '';
-    return '<div class="jp-dose-bar"><span class="jp-db-br">[</span>' + seg.join('<span class="jp-db-sep">|</span>') + '<span class="jp-db-br">]</span></div>';
+    var rs = normRestSB(restSeconds);
+    if(rs > 0) r2.push('<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + rs + '" aria-label="Iniciar descanso de ' + rs + ' segundos">\\u23f1\\ufe0f REST ' + fmtRestSB(rs) + '</button>');
+    else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\\u26a1 SIN PAUSA</span>');
+    if(tempo) r2.push('<span class="jp-db-seg jp-db-tempo">\\ud83d\\udcd0 TEMPO ' + escSB(tempo) + '</span>');
+    if(extra) r2.push('<span class="jp-db-seg jp-db-tempo">' + escSB(extra) + '</span>');
+    if(uni) r2.push(chipUnilateralSB(uni));
+    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1.join('') + '</div>' +
+      (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') + '</div>';
   }
   /* directiva maestra ("Parser universal y tolerante para Sports &
      Bodybuilding") -- micro-chip táctico de soporte para modificadores de
@@ -17066,6 +17079,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   document.addEventListener('input', function(e){
     var el = e.target;
     if(el && el.classList && el.classList.contains('jp-myo-mini') && el.tagName === 'INPUT') el.classList.toggle('hecho', !!el.value);
+  });
+  document.addEventListener('click', function(e){
+    var go = e.target.closest && e.target.closest('.jp-rest-go'); if(!go) return;
+    e.preventDefault();
+    var seg = parseInt(go.getAttribute('data-rest-go'), 10) || 0; if(!seg) return;
+    var card = go.closest('.jp-sb-ex, .jp-sb-subex-resumen'), nm = card && card.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-tit');
+    try{ if(navigator.vibrate) navigator.vibrate(12); }catch(err){}
+    go.classList.add('on'); setTimeout(function(){ go.classList.remove('on'); }, 900);
+    if(typeof window.jpArrancarDescansoManual === 'function') window.jpArrancarDescansoManual(seg, 'Descanso \\u00b7 ' + (nm ? nm.textContent.trim() : 'ejercicio'));
   });
   function restAttrSB(e){ return e.restCero ? '0' : (e.restSeconds || ''); }
   function limpiarGuionActivacionSB(nombre){
@@ -17174,8 +17196,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           return '<div class="jp-sb-subex-resumen">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + (entry.letra || 'A') + (o.si + 1) + '</span>' +
                 '<span class="jp-sb-subex-tit">' + escSB(nombrePrincipalSB(o.sub.nombre, block)) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
-              dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds) +
-              chipUnilateralSB(o.sub.unilateral) +
+              dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), '', o.sub.unilateral, o.si < subsInfo.length - 1) +
               (o.sub.nota && !o.sub.tecnica ? '<div class="jp-sb-nota">' + escSB(o.sub.nota) + '</div>' : '') +
             '</div>';
         }).join('');
@@ -17229,8 +17250,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         const esAnclaTec = !anclaUsada; anclaUsada = true;
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
             '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(nombrePrincipalSB(entry.titulo, block)) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
-            dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds) +
-            chipUnilateralSB(entry.unilateral) +
+            dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, '', entry.unilateral, !!entry.restCero) +
             ''+
             renderRegistroTecnicaUnicaSB(weekIdx, dayId, block.id, exIdx, entry.tecnica, entry.unidad, true) +
           '</div>';
@@ -17291,8 +17311,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + escSB(nombrePrincipalSB(entry.titulo, block)) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
-          (entry.tramos ? dosisCompletaSB(entry.sets, '', entry.unidad, '', '', 0) + tramosHtmlSB(entry) : dosisCompletaSB(entry.setsDef ? 0 : entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '')) +
-          chipUnilateralSB(entry.unilateral) +
+          (entry.tramos ? dosisCompletaSB(entry.sets, '', entry.unidad, '', '', 0) + tramosHtmlSB(entry) : dosisCompletaSB(entry.setsDef ? 0 : entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero)) +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
         '</div>';
@@ -27673,6 +27692,12 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
     if(seg < 30) return;
     setTimeout(function(){ arrancar(seg, lb); }, 90);
   };
+  /* badge de descanso (1 toque): arranca el reloj siempre, sin el filtro de micro-pausa ni el de bloque agrupado */
+  window.jpArrancarDescansoManual = function(seg, lb){
+    if(esCF()) return;
+    seg = parseInt(seg, 10) || 0;
+    if(seg > 0) arrancar(seg, lb || 'Descanso');
+  };
 
   /* al tildar una serie */
   document.addEventListener('change', function(e){
@@ -37481,6 +37506,18 @@ html body.jp-mission:not(.cf-disc) .story-actions .sa-dl{ background:#D2793F !im
 .jp-sf-c.tr{ top:-6px; right:-6px; border-top-width:2px; border-right-width:2px; }
 .jp-sf-c.bl{ bottom:-6px; left:-6px; border-bottom-width:2px; border-left-width:2px; }
 .jp-sf-c.br{ bottom:-6px; right:-6px; border-bottom-width:2px; border-right-width:2px; }
+
+/* ===== Stealth Pro · dosis en 2 filas, descanso claqueable y conector de biset ===== */
+html body.jp-mission:not(.cf-disc) .jp-dose-bar{ display:flex !important; flex-direction:column !important; align-items:flex-start !important; gap:6px !important; padding:6px 0 0 !important; }
+html body.jp-mission:not(.cf-disc) .jp-db-row{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+html body.jp-mission:not(.cf-disc) .jp-dose-bar .jp-db-tempo, html body.jp-mission:not(.cf-disc) .jp-dose-bar .jp-db-rest{ padding:3px 9px !important; border:1px solid rgba(255,255,255,.14) !important; border-radius:6px !important; background:transparent !important; color:#A0A8B4 !important; font-size:.72rem !important; font-weight:600 !important; letter-spacing:.04em !important; }
+html body.jp-mission:not(.cf-disc) .jp-dose-bar .jp-rest-go{ min-height:30px; cursor:pointer; font-family:inherit; border-color:rgba(210,121,63,.45) !important; color:#E8A56B !important; -webkit-tap-highlight-color:transparent; touch-action:manipulation; -webkit-user-select:none; user-select:none; }
+html body.jp-mission:not(.cf-disc) .jp-dose-bar .jp-rest-go.on{ background:rgba(210,121,63,.18) !important; }
+html body.jp-mission:not(.cf-disc) .jp-dose-bar .jp-db-nopause{ border-style:dashed !important; color:#8B94A3 !important; }
+html body.jp-mission:not(.cf-disc) .jp-db-row .jp-sb-unilateral{ margin:0 !important; padding:3px 9px !important; font-size:.72rem !important; }
+html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-bracket{ border:0 !important; border-left:2px solid rgba(255,255,255,.18) !important; padding:0 0 0 10px !important; margin-left:2px !important; }
+html body.jp-mission:not(.cf-disc) .jp-sb-biset-title::after{ content:" · EN CADENA"; opacity:.7; }
+html body.jp-mission:not(.cf-disc) .jp-myo-chips .jp-myo-mini, html body.jp-mission:not(.cf-disc) .jp-myo-add{ pointer-events:auto; }
 
 .jp-es-sub{ margin:-2px 0 8px 2px; font-size:.78rem; line-height:1.3; color:rgba(148,163,184,.78); font-family:'Inter',sans-serif; text-transform:none; letter-spacing:0; }
 .jp-cont-pill{ margin:6px 0 8px; }
