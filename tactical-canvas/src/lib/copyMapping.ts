@@ -17,8 +17,6 @@ export const MAX_MAPPED_SLIDES = 20
  * línea (el campo de concepto borra los saltos) igual se parte en sus N placas.
  */
 const MARKER_ANY = /(?<![\p{L}\p{N}])(?:placa|slide|diapositiva|l[aá]mina|tarjeta|card)\s*(?:n[°ºo.]?\s*)?(\d{1,2})(?![\p{N}])(?:\s*\/\s*\d{1,2})?(?:\s*\([^)\n]{0,40}\))?\s*\]?\s*\**\s*(?:[:.\-–—)|]+\s*)?/giu
-const NUMBERED = /^\s*(\d{1,2})\s*[.)\-–—:]\s+/
-const BULLET = /^\s*(?:[-•▸►▪●*]|—)\s+/
 
 export interface MappedBlock {
   /** Texto del bloque sin el marcador («Placa 3:», «3.», «-») */
@@ -54,41 +52,39 @@ export function splitSlides(text: string): string[] {
 }
 
 /** Bloques de un copy estructurado, o null si el texto no tiene estructura de placas. */
-export function detectStructuredCopy(raw: string): MappedBlock[] | null {
+export interface DetectOptions {
+  /** El usuario eligió [ 1 PLACA ]: todo el texto va a una sola placa, haya o no separadores. */
+  single?: boolean
+}
+
+/** ¿Parece copy de placa (texto ya escrito) y no un brief? Renglones cortos y extensión acotada. */
+function looksLikeCopy(text: string) {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
+  const total = text.split(/\s+/).filter(Boolean).length
+  return lines.length >= 2 && total <= 90 && lines.every((l) => l.split(/\s+/).length <= 32)
+}
+
+/**
+ * Bloques de un copy estructurado, o null si el texto no es copy de placas (ahí decide la IA).
+ * Sólo los separadores EXPLÍCITOS cortan placas: «Placa N» / «Slide N» y renglones «---». Párrafos,
+ * viñetas o listas numeradas sin separador son UNA placa (nunca se reparten en varias por su cuenta).
+ */
+export function detectStructuredCopy(raw: string, opts: DetectOptions = {}): MappedBlock[] | null {
   const text = raw.replace(/\r/g, '').trim()
   if (!text) return null
-  // 1) Delimitadores de placa: «Placa N» / «Slide N» en cualquier lugar, y renglones separadores
-  //    («---», «***», «Placa» suelto). Cada tramo es una placa independiente.
   const split = splitSlides(text)
+  if (opts.single) {
+    // 1 placa forzada: los tramos (sin sus marcadores) se juntan en una sola placa.
+    if (split.length >= 2) return [{ text: split.join('\n') }]
+    if (hasPaddedBlocks(text) || looksLikeCopy(text) || (split.length === 1 && split[0] !== text)) return [{ text: split[0] ?? text }]
+    return null
+  }
   if (split.length >= 2) return split.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
-  // Título + bloques «00001: / 01:» sin marcadores de placa: es UNA placa Mindset / Opus (o una por
-  // párrafo si cada párrafo trae sus propios bloques), nunca una placa por renglón numerado.
-  if (hasPaddedBlocks(text)) {
-    const paras = text.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean)
-    const blocks = paras.length >= 2 && paras.every((p) => hasPaddedBlocks(p)) ? paras : [text]
-    return blocks.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
-  }
-  const lines = text.split('\n')
-  const splitBy = (rx: RegExp) => {
-    const blocks: string[][] = []
-    for (const line of lines) {
-      if (rx.test(line)) blocks.push([line.replace(rx, '')])
-      else if (blocks.length) blocks[blocks.length - 1].push(line)
-      else if (line.trim()) blocks.push([line]) // texto antes del primer marcador = su propio bloque
-    }
-    return blocks.map((b) => b.join('\n').trim()).filter(Boolean)
-  }
-  const count = (rx: RegExp) => lines.filter((l) => rx.test(l)).length
-  let blocks: string[] | null = null
-  if (count(NUMBERED) >= 2) blocks = splitBy(NUMBERED)
-  else if (count(BULLET) >= 2 && !lines.some((l) => LABEL_ANY.test(l))) blocks = splitBy(BULLET)
-  else {
-    const paras = text.split(/\n\s*\n+/).map((p) => p.trim()).filter(Boolean)
-    // Párrafos separados: sólo cuenta como estructura si cada uno es corto (copy de placas, no un brief).
-    if (paras.length >= 2 && paras.every((p) => p.split(/\s+/).length <= 45)) blocks = paras
-  }
-  if (!blocks || blocks.length < 2) return null
-  return blocks.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
+  // Un solo «Placa 1:» explícito también es copy: una placa, sin el marcador.
+  if (split.length === 1 && split[0] !== text) return [{ text: split[0] }]
+  // Sin separadores explícitos: título + bloques «00001:», una cita o renglones de copy → UNA placa.
+  if (hasPaddedBlocks(text) || looksLikeCopy(text)) return [{ text: split[0] ?? text }]
+  return null
 }
 
 const words = (s: string) =>
@@ -209,8 +205,21 @@ export function splitBlock(block: string): Partial<CanvasState> {
         out.body = rest[rest.length - 1]
         parts = rest.slice(0, -1)
       }
-      out.headlineA = parts.slice(0, -1).join('\n')
-      out.headlineB = parts[parts.length - 1]
+      if (parts.length >= 4) {
+        // Copy largo en UNA placa: los dos primeros renglones son titular + remate y el resto, la
+        // bajada (más chica), así todo entra armónico sin repartirse en varias placas.
+        out.headlineA = parts[0]
+        out.headlineB = parts[1]
+        out.body = [parts.slice(2).join('\n'), out.body].filter(Boolean).join('\n')
+      } else if (parts.length === 3 && /\p{Ll}/u.test(parts[2]) && parts[2].split(/\s+/).length >= 8) {
+        // Último renglón en minúsculas y largo: es la bajada explicativa, no un remate de 12 palabras.
+        out.headlineA = parts[0]
+        out.headlineB = parts[1]
+        out.body = [parts[2], out.body].filter(Boolean).join('\n')
+      } else {
+        out.headlineA = parts.slice(0, -1).join('\n')
+        out.headlineB = parts[parts.length - 1]
+      }
     } else if (rest.length === 1) {
       const runs = caseRuns(rest[0])
       const [a, b] = runs ? [runs.slice(0, -1).join('\n'), runs[runs.length - 1]] : splitSentence(rest[0])

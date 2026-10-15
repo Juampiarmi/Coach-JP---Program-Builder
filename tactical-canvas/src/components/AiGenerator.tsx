@@ -162,7 +162,8 @@ export function AiGenerator({ onResult, onBurst }: Props) {
   }, [cooldown.remaining, quotaError])
   const hasKey = Boolean(settings.keys[settings.provider])
   // MODO 1 · copy ya escrito (Placa 1… / lista / párrafos): se maqueta fiel, sin inventar nada.
-  const blocks = topic.trim() ? detectStructuredCopy(topic) : null
+  // [ 1 PLACA ] elegido a mano: el copy va entero a una sola placa (nunca se reparte).
+  const blocks = topic.trim() ? detectStructuredCopy(topic, { single: mode.mode === 'single' }) : null
 
   // MODO 2 · ráfagas de mindset táctico
   const burstCount = mode.bursts ?? 3

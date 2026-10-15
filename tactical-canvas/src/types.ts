@@ -77,7 +77,9 @@ export type AthleticPos = 'auto' | 'center' | 'right' | 'none'
 /** Variante visual de la plantilla 15: Light Editorial (Opus Athletic) o Dark Brutalist (marca Coach JP) */
 export type AthleticTheme = 'light' | 'dark'
 /** Fondo de la plantilla 15: auto alterna anillos / grilla por placa; photo usa la imagen como fondo B/N a sangre */
-export type AthleticBg = 'auto' | 'rings' | 'grid' | 'photo'
+export type AthleticBg = 'auto' | 'rings' | 'grid' | 'photo' | 'concrete' | 'radial'
+/** Tipo de fondo de la placa: foto real (B/N con velo) o fondos tácticos sin foto */
+export type BgStyle = 'photo' | 'concrete' | 'blueprint' | 'radial'
 
 export interface BookmarkData {
   /** 3 o 4 viñetas clave del carrusel */
@@ -162,6 +164,8 @@ export interface CanvasState {
   // Fondo fotográfico (propio de cada placa: foto, capa, encuadre y tratamiento)
   /** Foto de fondo de ESTA placa (id en IndexedDB, ver lib/imageStore). null = carbón sólido */
   bgImageId: string | null
+  /** Tipo de fondo: photo (la imagen de la placa, si hay) o concreto / grilla blueprint / luz radial */
+  bgStyle: BgStyle
   bgOverlay: number
   floatingPlate: boolean
   /** Encuadre de la foto: zoom 100–160 %, desplazamiento -50…+50 % */

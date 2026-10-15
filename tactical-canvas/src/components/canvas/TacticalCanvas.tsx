@@ -10,6 +10,7 @@ import { MetricTemplate } from './templates/MetricTemplate'
 import { ManifestoTemplate } from './templates/ManifestoTemplate'
 import { OpusTemplate } from './templates/OpusTemplate'
 import { QuoteTemplate } from './templates/QuoteTemplate'
+import { TacticalBackdrop } from './TacticalBackdrop'
 import { AthleticLayout } from './templates/AthleticLayout'
 import { athleticPalette, LayoutOpusBrutalist } from './templates/LayoutOpusBrutalist'
 import { StatementTemplate } from './templates/StatementTemplate'
@@ -139,7 +140,10 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const { w, h } = ASPECTS[state.aspect]
   const isStory = state.aspect === 'story'
   const baseScale = isStory ? 1.08 : 1
-  const hasBg = Boolean(bgImage)
+  // Tipo de fondo: con «photo» manda la imagen de la placa; los fondos tácticos la reemplazan.
+  const bgStyle = state.bgStyle ?? 'photo'
+  const bgPhoto = bgStyle === 'photo' ? bgImage : null
+  const hasBg = Boolean(bgPhoto)
   const plate = hasBg && state.floatingPlate
   // Story adaptativo: con alineación AUTO el contenido arranca más grande y el aire sobrante se
   // reparte (tag → titular → bloque → footer) en lugar de quedar compactado al centro.
@@ -242,11 +246,16 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
         textRendering: 'geometricPrecision',
       }}
     >
+      {bgStyle !== 'photo' && theme === 'dark' && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
+          <TacticalBackdrop style={bgStyle} w={w} h={h} accent={palette.accent} />
+        </div>
+      )}
       {hasBg && (
         // Foto, velo y degradé en su propio contexto de apilado (z 0): ningún filtro alcanza al texto.
         <div style={{ position: 'absolute', inset: 0, zIndex: 0, isolation: 'isolate', overflow: 'hidden', pointerEvents: 'none' }}>
           <img
-            src={bgImage!}
+            src={bgPhoto!}
             alt=""
             style={{ position: 'absolute', maxWidth: 'none', ...bgGeo, filter: state.bgMono ? MONO_FILTER : undefined }}
           />
@@ -292,7 +301,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           <>
             {/* Vidrio esmerilado: copia desenfocada de la foto alineada con el fondo (html-to-image no soporta backdrop-filter). */}
             <img
-              src={bgImage!}
+              src={bgPhoto!}
               alt=""
               style={{
                 position: 'absolute',

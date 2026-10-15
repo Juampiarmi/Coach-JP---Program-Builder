@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { FONT_BODY, FONT_BRAND, FONT_MONO } from '../../../lib/brand'
 import { ShieldLogo } from '../../ShieldLogo'
+import { TacticalBackdrop } from '../TacticalBackdrop'
 import type { AthleticPos, AthleticRow, CanvasState } from '../../../types'
 
 /** Paleta de la plantilla 15. Light Editorial (Opus Athletic) y Dark Brutalist (marca Coach JP) comparten estructura. */
@@ -203,7 +204,7 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
   // Fondo: foto real B/N a sangre (con velo), o patrón de la familia (auto alterna anillos / grilla por placa).
   const bgMode = state.athleticBg ?? 'auto'
   const photoBg = bgMode === 'photo' && Boolean(cutout)
-  const pattern = bgMode === 'grid' || (bgMode === 'auto' && slideIndex % 2 === 1) ? 'grid' : 'rings'
+  const pattern = bgMode === 'concrete' || bgMode === 'radial' ? bgMode : bgMode === 'grid' || (bgMode === 'auto' && slideIndex % 2 === 1) ? 'grid' : 'rings'
   const showCut = Boolean(cutout) && pos !== 'none' && !photoBg
   const side = showCut && pos === 'right'
   const padX = 84 * s
@@ -255,6 +256,10 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
           <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(0deg, rgba(${P.veil},0.92) 0%, rgba(${P.veil},0) 32%)` }} />
         </>
       )}
+      {!photoBg && (pattern === 'concrete' || pattern === 'radial') && (
+        <TacticalBackdrop style={pattern} w={w} h={h} accent={accent} tone={state.athleticTheme === 'dark' ? 'dark' : 'light'} />
+      )}
+      {!photoBg && pattern === 'concrete' && showCut && <Rings cx={ring.cx} cy={ring.cy} w={w} h={h} accent={accent} ring={P.ring} s={s} cross={showCut} />}
       {!photoBg && pattern === 'grid' && <Grid w={w} h={h} line={P.ring} accent={accent} s={s} />}
       {!photoBg && pattern === 'rings' && <Rings cx={ring.cx} cy={ring.cy} w={w} h={h} accent={accent} ring={P.ring} s={s} cross={showCut} />}
       {P.grain > 0 && <Grain w={w} h={h} opacity={P.grain} />}

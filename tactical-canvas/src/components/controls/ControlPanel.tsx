@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
 import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
-import type { Accent, RepeatDirection, TypePreset, CanvasState, ContentAlign, DiagramData, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
+import type { Accent, BgStyle, RepeatDirection, TypePreset, CanvasState, ContentAlign, DiagramData, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
 import { DIAGRAM_ACCENT_HEX, DIAGRAM_ACCENT_LABEL, PAPER_TEMPLATES, REPEAT_ACCENT_LABEL, THEME_LABEL } from '../../lib/theme'
 import { RadarEditor } from './RadarEditor'
 import { CHART_BY_DISCIPLINE, isCadenceSample } from '../../lib/chartPillar'
@@ -19,6 +19,13 @@ import { TYPE_PRESETS } from '../../lib/typography'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
 const isStruct = (t: TemplateId) => (STRUCT_TEMPLATES as readonly string[]).includes(t)
+
+const BG_STYLE_LABEL: Record<BgStyle, string> = {
+  photo: 'B/N ATLETA',
+  concrete: 'CEMENTO',
+  blueprint: 'GRILLA',
+  radial: 'LUZ RADIAL',
+}
 
 export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'metric', n: '01', label: 'Métrica' },
@@ -699,7 +706,28 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         )}
       </Section>
 
-      <Section index="03" title="Fondo" summary={bgImage ? `Foto · capa ${state.bgOverlay}%` : 'Carbón sólido'} defaultOpen={Boolean(bgImage)}>
+      <Section
+        index="03"
+        title="Fondo"
+        summary={(state.bgStyle ?? 'photo') !== 'photo' ? BG_STYLE_LABEL[state.bgStyle] : bgImage ? `Foto · capa ${state.bgOverlay}%` : 'Carbón sólido'}
+        defaultOpen={Boolean(bgImage) || (state.bgStyle ?? 'photo') !== 'photo'}
+      >
+        {state.template !== 'athletic' && (
+          <Field label="Tipo de fondo" plain>
+            <Segmented<BgStyle>
+              value={state.bgStyle ?? 'photo'}
+              // B/N Atleta: la foto pasa a blanco y negro de alto contraste con velo oscuro.
+              onChange={(bgStyle) => update(bgStyle === 'photo' ? { bgStyle, bgMono: true } : { bgStyle })}
+              options={(Object.keys(BG_STYLE_LABEL) as BgStyle[]).map((value) => ({ value, label: BG_STYLE_LABEL[value] }))}
+              size="sm"
+            />
+          </Field>
+        )}
+        {state.template !== 'athletic' && (state.bgStyle ?? 'photo') !== 'photo' && (
+          <p className="-mt-1 font-mono text-[9px] leading-relaxed text-steel/60">
+            Fondo táctico sin foto. La imagen subida se conserva y vuelve al elegir B/N ATLETA.
+          </p>
+        )}
         <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onFile(e.target.files?.[0])} />
         <div className="flex gap-2">
           <button
@@ -728,7 +756,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             </button>
           )}
         </div>
-        {bgImage && (
+        {bgImage && (state.bgStyle ?? 'photo') === 'photo' && (
           <>
             <Field label="Opacidad de capa táctica">
               <Range value={state.bgOverlay} onChange={(bgOverlay) => update({ bgOverlay })} min={30} max={90} suffix="%" />

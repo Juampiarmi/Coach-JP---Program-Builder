@@ -39,6 +39,8 @@ export function AthleticEditor({ state, update }: Props) {
             { value: 'auto', label: 'AUTO' },
             { value: 'rings', label: 'ANILLOS' },
             { value: 'grid', label: 'GRILLA' },
+            { value: 'concrete', label: 'CEMENTO' },
+            { value: 'radial', label: 'LUZ' },
             { value: 'photo', label: 'FOTO B/N' },
           ]}
           size="sm"

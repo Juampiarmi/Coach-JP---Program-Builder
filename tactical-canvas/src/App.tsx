@@ -38,7 +38,7 @@ const GLOBAL_KEYS = [
 ] as const
 
 /** Fondo de cada placa: foto, capa, encuadre y tratamiento. Nunca se propaga a las demás al editar. */
-const BG_KEYS = ['bgImageId', 'bgOverlay', 'bgGradient', 'bgVignette', 'bgMono', 'bgZoom', 'bgX', 'bgY'] as const
+const BG_KEYS = ['bgImageId', 'bgStyle', 'bgOverlay', 'bgGradient', 'bgVignette', 'bgMono', 'bgZoom', 'bgX', 'bgY'] as const
 
 /** Lo que replica [ 📋 COPIAR ESTILO ]: tipografía, viñeta / contraste de la foto y paleta de acentos. */
 const STYLE_KEYS = [
@@ -188,6 +188,9 @@ export default function App() {
         for (const k of GLOBAL_KEYS) Object.assign(globals, { [k]: current[k] })
         // El set nuevo arranca con el fondo de la placa activa (luego cada placa se edita por separado).
         for (const k of BG_KEYS) Object.assign(globals, { [k]: current[k] })
+        // Identidad de marca: todo set nuevo arranca con titulares en Chakra Petch (se puede cambiar a mano).
+        globals.headlineFont = 'chakra'
+        globals.typePreset = 'none'
         if (r.format === 'stories') globals.aspect = 'story'
         if (r.format === 'carousel') globals.aspect = 'feed'
         const discipline = meta?.discipline ?? d.discipline ?? 'general'

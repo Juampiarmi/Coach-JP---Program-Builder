@@ -99,6 +99,7 @@ export const DEFAULT_STATE: CanvasState = {
   repeatKeyword: '',
   repeatStagger: true,
   bgImageId: null,
+  bgStyle: 'photo',
   bgOverlay: 75,
   bgGradient: true,
   bgVignette: 0,

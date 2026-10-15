@@ -321,9 +321,12 @@ export function detectGoal(text: string, goal: EditorialGoal = 'auto'): Resolved
   return 'science'
 }
 
-/** Académico o Ciencia elegidos a mano convierten AUTO y 1 PLACA en carrusel. */
+/**
+ * Académico o Ciencia convierten AUTO en carrusel. Un formato elegido a mano ([ 1 PLACA ],
+ * historias o carrusel) se respeta siempre: el conteo del usuario manda.
+ */
 export function formatForcedToCarousel(mode: GenMode, opts: EditorialOptions) {
-  return (mode === 'auto' || mode === 'single') && (opts.tone === 'academic' || opts.goal === 'science')
+  return mode === 'auto' && (opts.tone === 'academic' || opts.goal === 'science')
 }
 
 /**
@@ -331,8 +334,7 @@ export function formatForcedToCarousel(mode: GenMode, opts: EditorialOptions) {
  * servicios → carrusel; una frase contundente o sentencia rápida → 1 placa; si no, decide la IA.
  */
 export function resolveFormat(text: string, mode: GenMode, opts: EditorialOptions): GenMode {
-  // Académico / Paper o Ciencia / Técnico elegidos a mano: el desglose de evidencia no entra en
-  // 1 placa, se fuerza carrusel (4-5). Las 3 historias se respetan.
+  // Académico / Paper o Ciencia / Técnico con formato AUTO: el desglose de evidencia pide carrusel (4-5).
   if (formatForcedToCarousel(mode, opts)) return 'carousel'
   if (mode !== 'auto') return mode
   const goal = detectGoal(text, opts.goal)
