@@ -14,6 +14,8 @@ export interface AthleticPalette {
   ring: string
   orange: string
   cyan: string
+  /** Cian de marca para el texto del tag y encabezados de tabla (legible sobre este fondo) */
+  tag: string
   /** Grano de textura sobre el fondo (0 = sin grano) */
   grain: number
   /** Sombra de contacto bajo el atleta */
@@ -30,6 +32,7 @@ export const ATHLETIC: AthleticPalette = {
   ring: 'rgba(0,0,0,0.08)',
   orange: '#F97316',
   cyan: '#0EA5E9',
+  tag: '#0E7490',
   grain: 0,
   shadow: 'rgba(0,0,0,0.30)',
 }
@@ -66,7 +69,7 @@ export function KeyValueList({ rows, s, width, palette: P = ATHLETIC }: { rows: 
 }
 
 /** Tabla de 2 columnas (ej: Intensidad | Reps × series): encabezado mono, filas bold / regular. */
-export function KeyValueTable({ head, rows, s, width, palette: P = ATHLETIC }: { head: [string, string]; rows: AthleticRow[]; s: number; width: number; palette?: AthleticPalette }) {
+export function KeyValueTable({ head, rows, s, width, palette: P = ATHLETIC, headColor }: { head: [string, string]; rows: AthleticRow[]; s: number; width: number; palette?: AthleticPalette; headColor?: string }) {
   const cell = (bold: boolean): React.CSSProperties => ({
     padding: `${20 * s}px ${16 * s}px ${20 * s}px 0`,
     fontFamily: bold ? FONT_BRAND : FONT_BODY,
@@ -85,7 +88,7 @@ export function KeyValueTable({ head, rows, s, width, palette: P = ATHLETIC }: {
             {head.map((h, i) => (
               <th
                 key={i}
-                style={{ textAlign: 'left', padding: `0 ${16 * s}px ${14 * s}px 0`, fontFamily: FONT_MONO, fontWeight: 500, fontSize: 21 * s, letterSpacing: '0.16em', textTransform: 'uppercase', color: P.gray, width: i === 0 ? '46%' : undefined }}
+                style={{ textAlign: 'left', padding: `0 ${16 * s}px ${14 * s}px 0`, fontFamily: FONT_MONO, fontWeight: 500, fontSize: 21 * s, letterSpacing: '0.16em', textTransform: 'uppercase', color: headColor ?? P.tag, width: i === 0 ? '46%' : undefined }}
               >
                 {h}
               </th>
@@ -137,6 +140,28 @@ function Grain({ w, h, opacity }: { w: number; h: number; opacity: number }) {
   )
 }
 
+/**
+ * Título con identidad de marca: blanco / negro + remate en naranja. Con remate explícito, el remate va
+ * en acento; con *palabra* marcada, esa palabra; sin ninguno de los dos, la última palabra clave.
+ */
+export function splitAthleticTitle(a: string, b: string): { parts: { t: string; hl: boolean }[]; remate: string } {
+  const A = a.trim()
+  const B = b.replace(/\*/g, '').trim()
+  if (B) return { parts: segmentsOf(A), remate: B }
+  if (/\*[^*]+\*/.test(A)) return { parts: segmentsOf(A), remate: '' }
+  const words = A.split(/\s+/).filter(Boolean)
+  if (words.length < 2) return { parts: [{ t: A, hl: false }], remate: '' }
+  // Sin marca: la última palabra (la palabra clave, con sus signos) pasa al acento.
+  const k = words.length - 1
+  return { parts: [{ t: `${words.slice(0, k).join(' ')} `, hl: false }, { t: words.slice(k).join(' '), hl: true }], remate: '' }
+}
+function segmentsOf(t: string) {
+  return t
+    .split(/(\*[^*]+\*)/g)
+    .filter(Boolean)
+    .map((x) => (x.startsWith('*') && x.endsWith('*') ? { t: x.slice(1, -1), hl: true } : { t: x, hl: false }))
+}
+
 /** «[ GUÍA DE RENDIMIENTO // COACH JP ]» → el texto sin corchetes (los dibuja la placa en acento). */
 const unbracket = (t: string) => t.trim().replace(/^\[\s*|\s*\]$/g, '')
 
@@ -158,8 +183,9 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
   // Con el atleta a la derecha, el texto ocupa el 60 % izquierdo.
   const textW = side ? contentW * 0.6 : contentW
   const rows = (state.athleticRows ?? []).filter((r) => r.k.trim() || r.v.trim()).slice(0, 6)
-  const title = state.headlineA.replace(/\*/g, '').trim()
-  const sub = state.headlineB.replace(/\*/g, '').trim()
+  const titled = splitAthleticTitle(state.headlineA, state.headlineB)
+  // Segundo color de marca: cian en el tag y encabezados (con SWAP ACCENT, se invierten).
+  const accent2 = state.accentSwap ? P.orange : P.tag
   const body = state.body.trim()
   const cta = (state.athleticCta ?? '').trim()
   const nr = (state.athleticNr ?? '').trim()
@@ -232,7 +258,7 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
       >
         <p data-part="athletic-header" style={{ margin: 0, fontFamily: FONT_BRAND, fontWeight: 600, fontSize: 25 * s, letterSpacing: '0.12em', textTransform: 'uppercase', color: P.ink }}>
           {nr ? <span style={{ color: accent, textTransform: 'none' }}>[Nr. {nr}]</span> : <span style={{ color: accent }}>[</span>}
-          {tag ? <span>&nbsp;&nbsp;{tag}</span> : null}
+          {tag ? <span style={{ color: accent2 }}>&nbsp;&nbsp;{tag}</span> : null}
           {!nr && <span style={{ color: accent }}>&nbsp;&nbsp;]</span>}
         </p>
         <span aria-hidden style={{ display: 'block', width: 72 * s, height: Math.max(2, 3 * s), background: accent, margin: `${26 * s}px 0 ${40 * s}px` }} />
@@ -251,8 +277,12 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
             textWrap: 'balance',
           }}
         >
-          {title}
-          {sub && <span style={{ display: 'block', color: P.gray, marginTop: 10 * s }}>{sub}</span>}
+          {titled.parts.map((p, i) => (
+            <span key={i} style={p.hl ? { color: accent } : undefined}>
+              {p.t}
+            </span>
+          ))}
+          {titled.remate && <span data-part="athletic-remate" style={{ display: 'block', color: accent, marginTop: 6 * s }}>{titled.remate}</span>}
         </h1>
         {body && (
           <p data-part="athletic-body" style={{ margin: `${30 * s}px 0 0`, width: textW, fontFamily: FONT_BODY, fontSize: 30 * s, lineHeight: 1.42, color: P.gray }}>
@@ -262,7 +292,7 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
         {rows.length > 0 && (
           <div style={{ marginTop: (isStory ? 70 : 52) * s }}>
             {state.athleticMode === 'table' ? (
-              <KeyValueTable head={state.athleticHead ?? ['', '']} rows={rows} s={s} width={textW} palette={P} />
+              <KeyValueTable head={state.athleticHead ?? ['', '']} rows={rows} s={s} width={textW} palette={P} headColor={accent2} />
             ) : (
               <KeyValueList rows={rows} s={s} width={textW} palette={P} />
             )}

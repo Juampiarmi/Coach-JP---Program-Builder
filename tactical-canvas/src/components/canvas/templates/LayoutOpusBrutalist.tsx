@@ -16,6 +16,7 @@ export const BRUTALIST: AthleticPalette = {
   ring: 'rgba(255,255,255,0.05)',
   orange: '#F97316',
   cyan: '#38BDF8',
+  tag: '#38BDF8',
   grain: 0.07,
   shadow: 'rgba(0,0,0,0.65)',
 }
