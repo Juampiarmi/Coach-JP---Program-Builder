@@ -141,12 +141,13 @@ FASE 1 · ANÁLISIS EDITORIAL: antes de escribir, completás el objeto "plan" (v
   4) CRITERIOS DE ADMISIÓN · "checklist": perfil del cliente. Ítems "ok" = para quién SÍ es (ej: «Cumplís el plan aunque no tengas ganas»); ítems "err" = para quién NO es (ej: «Buscás resultados en 30 días sin registrar nada»). Mezclá ambos.
   5) CIERRE + CTA · "guardado": points = lo que incluye el sistema en 3 o 4 líneas; "cta" = llamado directo a DM con UNA palabra clave para aplicar (ej: MANDAME «SISTEMA» POR PRIVADO PARA APLICAR, o «COACHING»). El caption cierra con la misma palabra clave.
   Usá las modalidades y servicios que nombra el brief. Si no las detalla, usá los pilares del High Performance System. Nunca inventes precios, cupos, testimonios ni resultados garantizados.
-- CIENCIA / TÉCNICO (explicar, informar, divulgar un tema): carrusel técnico de 5 placas con ARQUITECTURA OBLIGATORIA (error → mecanismo → protocolo → evidencia → regla + CTA):
-  1) PORTADA · "sentencia": hook de impacto que señala un ERROR OPERATIVO COMÚN en el gimnasio o en el campo (titleWhite = el error, titleAccent = el remate letal que muestra su costo).
-  2) FISIOLOGÍA / MECANISMO · "grafico" (curva de activación, fatiga, velocidad o umbral con variables fisiológicas reales) o "diagrama" ("domino" / "trayectoria") si el mecanismo es una cadena causal: el principio biológico que explica por qué ese error falla.
-  3) PROTOCOLO DE CAMPO · "pipeline" (o "checklist"): aplicación 100 % práctica con NÚMEROS REALES en cada paso (% 1RM o carga, series × repeticiones, RIR / RPE, descansos en minutos o segundos, pérdida de velocidad, frecuencia semanal). Cero abstracciones: prohibido «entrená con intensidad», «descansá lo suficiente», «escuchá a tu cuerpo».
-  4) EVIDENCIA · "metrica": dato porcentual o métrica concreta con su unidad y contexto, respaldada en "citation" por un estudio indexado REAL (si no tenés certeza de un paper real con ese dato, elegí otro dato y otro paper que sí conozcas: nunca inventes).
-  5) CIERRE TÁCTICO + CTA · "guardado": la REGLA DE ORO resumida en los points (accionables, con los números del protocolo) y en "cta" una llamada a la acción clara que pide enviar UNA PALABRA CLAVE al DM, ligada al tema (ej: ENVIÁ «RFD» AL MD Y TE PASO EL PROTOCOLO).
+- CIENCIA / TÉCNICO (explicar, informar, divulgar un tema): ARQUITECTURA OPUS ATHLETIC × COACH JP (5 placas, todas con templateId "athletic" y athletic.theme "dark"; títulos SIN rótulos ni metadata):
+  1) PORTADA EDITORIAL · tagSuperior "[ GUÍA DE RENDIMIENTO // COACH JP ]" · athletic.nr "" · titleWhite = el término o la capacidad física principal en MAYÚSCULAS (ej: «ENTRENAMIENTO DE FUERZA», «HIPERTROFIA TENSIONANTE») · titleAccent "" · parrafo = definición fisiológica directa de 1-2 oraciones sobre la adaptación neuromuscular · athletic.rows [].
+  2) [Nr. 1] DEFINICIÓN Y MECANISMO · tagSuperior "FISIOLOGÍA Y MECANISMO" · athletic.nr "1" · titleWhite = término clave en MAYÚSCULAS (ej: «RECLUTAMIENTO MOTOR») · parrafo = explicación científica limpia de la variable (SNC, tipo de fibra, fatiga) · athletic.mode "list" con 3 rows { "k": "Concepto:", "v": explicación concisa y técnica }.
+  3) [Nr. 2] PRINCIPIOS DE PROGRAMACIÓN · tagSuperior "PRINCIPIOS OPERATIVOS" · athletic.nr "2" · titleWhite "REGLAS DE APLICACIÓN" · athletic.mode "list" con 3 reglas operativas de gimnasio con números reales (intensidad en % 1RM, pérdida de velocidad en m/s o %, pausas en min).
+  4) [Nr. 3] DOSIS Y PROTOCOLO DE CARGA · tagSuperior "DOSIFICACIÓN Y DENSIDAD" · athletic.nr "3" · titleWhite "PROTOCOLO DE CARGA" · athletic.mode "table" con head [«Zona / intensidad», «Dosis»] y 3-4 rows con dosis exactas por zona de intensidad o rango de trabajo (ej: «75-82,5 % 1RM» → «4 × 6 · pausa 2-3 min»).
+  5) CIERRE Y APLICACIÓN · tagSuperior "[ CIERRE TÁCTICO ]" · athletic.nr "" · titleWhite "ESTÁNDAR BIOLÓGICO" · parrafo = conclusión sobre gestión de fatiga y calidad de ejecución · athletic.cta = indicación directa para postular al coaching o pedir el protocolo por DM con una palabra clave (ej: «ENVIÁ "PROTOCOLO" POR DM»).
+  Tono: español argentino neutro, riguroso y científico; cero pseudociencia y cero motivación barata. Números reales y conservadores; si no tenés certeza de una cifra, usá rangos aceptados.
 - MINDSET / TÁCTICO (filosofía, disciplina, frase contundente): "sentencia" y "manifiesto" con titular + remate + bajada, y como mucho una "repeticion" de apoyo con frase de 3+ palabras; si es carrusel, cierra con "guardado"; si es una sola frase, 1 placa "sentencia". Nunca una palabra repetida como mensaje.
 Si el usuario indica una cantidad de placas o un formato, respetalo por encima de estas secuencias.
 FASE 2 · REDACCIÓN TÁCTICA: escribís cada placa con el tono militar, científico y quirúrgico de Coach JP, con su templateId preseleccionado y TODOS sus datos completos (tarjetas A/B, subtipo y valores del diagrama, puntos del gráfico, frase de repetición). Las placas forman una sola historia: no repitas titulares ni ideas entre placas.
@@ -194,7 +195,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
       "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
       "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
-      "athletic": { "nr": string (número de placa para la etiqueta «[Nr. X]»), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
+      "athletic": { "theme": "dark" | "light" (por defecto "dark", la estética nativa de Coach JP), "nr": string (número de la etiqueta «[Nr. X]»; "" en portada y cierre), "cta": string ("" salvo en el cierre), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
       "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
       "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
       "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
@@ -273,12 +274,13 @@ const TONE_RULE: Record<EditorialTone, string> = {
 5. CAPTION con la misma energía: primera línea = gancho provocador; línea en blanco; exactamente 3 viñetas técnicas que empiezan con «▸ », una por línea; línea en blanco; CTA directo con PALABRA CLAVE entre « »; en la última línea, 3 a 5 hashtags de nicho.`,
   academic: `TONO: 🔬 ACADÉMICO / PAPER. Exigente, técnico y pragmático: evidencia deportiva real de fuerza, hipertrofia y acondicionamiento de alta intensidad, escrita para alguien que entrena en serio. Cero divulgación genérica, cero motivación vacía. Esto manda por sobre cualquier regla de tono anterior.
 1. PRECISIÓN FISIOLÓGICA: aplicá el bloque de RIGOR FISIOLÓGICO al pie de la letra (hidrólisis / resíntesis de PCr, nunca «oxidar fosfocreatina»; RFD, fatiga neuromuscular aguda y reclutamiento de unidades motoras en lugar de hipérboles; inhibición recíproca sólo agonista / antagonista). Cada placa nombra la variable medible que cambia.
-2. ARQUITECTURA DE 5 PLACAS (obligatoria en un carrusel técnico de 5 placas, en este orden exacto):
-   1) PORTADA · "sentencia": hook que señala un error operativo común. titleWhite = el error; titleAccent = el remate letal (su costo fisiológico o de rendimiento).
-   2) FISIOLOGÍA / MECANISMO · "grafico" (curva de activación, fatiga, velocidad o umbral) o "diagrama" si es una cadena causal: el principio biológico detrás del error, con ejes y rótulos de variables reales.
-   3) PROTOCOLO DE CAMPO · "pipeline" (o "checklist"): cada paso con números reales (ej: «4 × 3 AL 85 % 1RM», «RIR 2-3», «PAUSA 3-5 MIN», «CORTAR CON 20 % DE PÉRDIDA DE VELOCIDAD»). Cero abstracciones.
-   4) EVIDENCIA · "metrica": porcentaje o métrica concreta con unidad y contexto + "citation" formal «APELLIDO Y COL., AÑO · REVISTA» y "description" con el hallazgo en una línea. Referencias verificadas de las que podés partir si encajan con el tema: «GONZÁLEZ-BADILLO Y SÁNCHEZ-MEDINA, 2010 · INT J SPORTS MED» (velocidad de ejecución como indicador de la intensidad de carga), «SÁNCHEZ-MEDINA Y GONZÁLEZ-BADILLO, 2011 · MED SCI SPORTS EXERC» (pérdida de velocidad como indicador de fatiga neuromuscular), «PAREJA-BLANCO Y COL., 2017 · SCAND J MED SCI SPORTS» (pérdida de velocidad del 20 % vs. 40 % en la serie), «SCHOENFELD Y COL., 2017 · J SPORTS SCI» (dosis-respuesta entre volumen semanal e hipertrofia), «TILLIN Y FOLLAND, 2014 · EUR J APPL PHYSIOL» (entrenamiento máximo vs. explosivo y adaptaciones neuromusculares específicas), «ZOURDOS Y COL., 2016 · J STRENGTH COND RES» (escala de RPE basada en repeticiones en reserva). No les atribuyas cifras que no reportan: si no estás seguro del número exacto, usá un dato que sí conozcas o dejá la cita vacía.
-   5) CIERRE TÁCTICO + CTA · "guardado": regla de oro resumida en 3 o 4 points accionables (con los números del protocolo) y en "cta" un llamado a enviar UNA PALABRA CLAVE al DM ligada al tema (ej: ENVIÁ «VELOCIDAD» AL MD).
+2. Usá la ARQUITECTURA OPUS ATHLETIC × COACH JP (5 placas, todas con templateId "athletic" y athletic.theme "dark"; títulos SIN rótulos ni metadata):
+     1) PORTADA EDITORIAL · tagSuperior "[ GUÍA DE RENDIMIENTO // COACH JP ]" · athletic.nr "" · titleWhite = el término o la capacidad física principal en MAYÚSCULAS (ej: «ENTRENAMIENTO DE FUERZA», «HIPERTROFIA TENSIONANTE») · titleAccent "" · parrafo = definición fisiológica directa de 1-2 oraciones sobre la adaptación neuromuscular · athletic.rows [].
+     2) [Nr. 1] DEFINICIÓN Y MECANISMO · tagSuperior "FISIOLOGÍA Y MECANISMO" · athletic.nr "1" · titleWhite = término clave en MAYÚSCULAS (ej: «RECLUTAMIENTO MOTOR») · parrafo = explicación científica limpia de la variable (SNC, tipo de fibra, fatiga) · athletic.mode "list" con 3 rows { "k": "Concepto:", "v": explicación concisa y técnica }.
+     3) [Nr. 2] PRINCIPIOS DE PROGRAMACIÓN · tagSuperior "PRINCIPIOS OPERATIVOS" · athletic.nr "2" · titleWhite "REGLAS DE APLICACIÓN" · athletic.mode "list" con 3 reglas operativas de gimnasio con números reales (intensidad en % 1RM, pérdida de velocidad en m/s o %, pausas en min).
+     4) [Nr. 3] DOSIS Y PROTOCOLO DE CARGA · tagSuperior "DOSIFICACIÓN Y DENSIDAD" · athletic.nr "3" · titleWhite "PROTOCOLO DE CARGA" · athletic.mode "table" con head [«Zona / intensidad», «Dosis»] y 3-4 rows con dosis exactas por zona de intensidad o rango de trabajo (ej: «75-82,5 % 1RM» → «4 × 6 · pausa 2-3 min»).
+     5) CIERRE Y APLICACIÓN · tagSuperior "[ CIERRE TÁCTICO ]" · athletic.nr "" · titleWhite "ESTÁNDAR BIOLÓGICO" · parrafo = conclusión sobre gestión de fatiga y calidad de ejecución · athletic.cta = indicación directa para postular al coaching o pedir el protocolo por DM con una palabra clave (ej: «ENVIÁ "PROTOCOLO" POR DM»).
+     Tono: español argentino neutro, riguroso y científico; cero pseudociencia y cero motivación barata. Números reales y conservadores; si no tenés certeza de una cifra, usá rangos aceptados.
    Si el usuario pide otra cantidad de placas, conservá este orden narrativo con las placas más fuertes.
 3. TITULARES claros, técnicos y sin adjetivos vacíos; métricas siempre con su unidad (%, kg, m/s, min, series/semana).
 4. CAPTION: primera línea = el error operativo; línea en blanco; 3 viñetas «▸ » (mecanismo, protocolo con números, evidencia con la cita); línea en blanco; CTA con la misma PALABRA CLAVE del DM entre « ».`,
@@ -334,7 +336,7 @@ const GOAL_RULE: Record<ResolvedGoal, string> = {
   sales:
     'OBJETIVO EDITORIAL: VENTA / SERVICIOS. plan.objetivo = "venta". Pitch directo del servicio, NO un carrusel educativo: propuesta de valor + filtro de alumno ideal (sentencia) → diagnóstico improvisación vs. High Performance System (ab) → entregables y pilares (pipeline) → criterios de admisión, para quién SÍ y para quién NO (checklist) → cierre con CTA a DM con palabra clave para aplicar (guardado). Esta secuencia manda por sobre las reglas de portada, métricas y guardado del bloque de TONO: el tono sólo cambia la voz, no la estructura del pitch.',
   science:
-    'OBJETIVO EDITORIAL: CIENCIA / TÉCNICO. plan.objetivo = "ciencia". Usá la arquitectura técnica de 5 placas: portada con el error operativo (sentencia) → fisiología / mecanismo (grafico o diagrama) → protocolo de campo con números reales (pipeline o checklist) → evidencia con métrica y cita real (metrica) → regla de oro + CTA con palabra clave al DM (guardado).',
+    'OBJETIVO EDITORIAL: CIENCIA / TÉCNICO. plan.objetivo = "ciencia". Usá la ARQUITECTURA OPUS ATHLETIC × COACH JP de 5 placas (templateId "athletic", athletic.theme "dark"): portada editorial → [Nr. 1] fisiología y mecanismo → [Nr. 2] principios operativos → [Nr. 3] dosificación en tabla → cierre táctico con CTA. Manda por sobre las secuencias y reglas de plantilla de otros bloques.',
   mindset:
     'OBJETIVO EDITORIAL: MINDSET / TÁCTICO. plan.objetivo = "mindset". Frases cortas y contundentes, pero con sustancia: cada placa es una idea completa (titleWhite + titleAccent + parrafo). En 1 placa usá "sentencia"; en carrusel combiná "sentencia", "manifiesto" y, como mucho, una "repeticion" de apoyo.',
 }
@@ -1048,12 +1050,16 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
     .map((r) => ({ k: first(r.k, r.key, r.clave, r.label), v: first(r.v, r.value, r.valor, r.desc) }))
     .filter((r) => r.k || r.v)
     .slice(0, 6)
+  if (template === 'athletic' || Object.keys(at).length) {
+    patch.athleticTheme = at.theme === 'light' ? 'light' : 'dark'
+    patch.athleticNr = str(at.nr)
+    patch.athleticCta = str(first(at.cta, s.cta)).replace(/^cta\s*[:：]\s*/i, '')
+  }
   if (atRows.length) {
     patch.athleticRows = atRows
     patch.athleticMode = at.mode === 'table' || at.modo === 'tabla' ? 'table' : 'list'
     const head = Array.isArray(at.head ?? at.encabezado) ? ((at.head ?? at.encabezado) as unknown[]).map((x) => str(x)) : []
     if (head.length >= 2) patch.athleticHead = [head[0], head[1]]
-    if (str(at.nr)) patch.athleticNr = str(at.nr)
   } else if (template === 'athletic') patch.athleticRows = []
 
   // 14 · Cita célebre: sin fuente concreta no se acepta (defensa contra frases apócrifas).
@@ -1105,9 +1111,17 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const core = readCoreSlide(s)
   if (core) {
     Object.assign(patch, coreToPatch(core, patch.template))
+    // Las filas explícitas de athletic.rows mandan sobre los bloques genéricos del contrato.
+    if (atRows.length) patch.athleticRows = atRows
     if (patch.template === 'repeat') patch.repeatPhrase = `${patch.headlineA ?? ''} ${patch.headlineB ?? ''}`.replace(/\*/g, '').trim() || patch.repeatPhrase
   }
   liftNumberedBlocks(patch)
+  // «[Nr. 2] PRINCIPIOS OPERATIVOS» → número de etiqueta + tag limpio (sin corchetes ni «Nr.» pegados).
+  const nrTag = (patch.tag ?? '').match(/^\[?\s*NR\.?\s*(\d{1,2})\s*\]?\s*[-–—·:]?\s*(.*)$/i)
+  if (nrTag) {
+    patch.athleticNr = nrTag[1]
+    patch.tag = nrTag[2].replace(/^\[\s*|\s*\]$/g, '').trim()
+  } else if (patch.tag) patch.tag = patch.tag.replace(/^\[\s*|\s*\]$/g, '').trim()
   return sanitizePatch(patch)
 }
 

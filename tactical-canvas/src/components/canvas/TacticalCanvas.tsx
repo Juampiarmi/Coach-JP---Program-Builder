@@ -11,6 +11,7 @@ import { ManifestoTemplate } from './templates/ManifestoTemplate'
 import { OpusTemplate } from './templates/OpusTemplate'
 import { QuoteTemplate } from './templates/QuoteTemplate'
 import { AthleticLayout } from './templates/AthleticLayout'
+import { athleticPalette, LayoutOpusBrutalist } from './templates/LayoutOpusBrutalist'
 import { StatementTemplate } from './templates/StatementTemplate'
 import { DiagramTemplate } from './templates/DiagramTemplate'
 import { RepeatTemplate } from './templates/RepeatTemplate'
@@ -215,8 +216,12 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   if (state.template === 'athletic') {
     return (
       <AccentSwapContext.Provider value={swap}>
-        <div ref={ref} style={{ width: w, height: h, overflow: 'hidden', position: 'relative', background: '#EFEFEF' }}>
-          <AthleticLayout state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} />
+        <div ref={ref} style={{ width: w, height: h, overflow: 'hidden', position: 'relative', background: athleticPalette(state).base }}>
+          {state.athleticTheme === 'dark' ? (
+            <LayoutOpusBrutalist state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} />
+          ) : (
+            <AthleticLayout state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} />
+          )}
         </div>
       </AccentSwapContext.Provider>
     )

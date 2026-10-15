@@ -74,6 +74,8 @@ export interface AthleticRow {
 export type AthleticMode = 'list' | 'table'
 /** Posición del recorte del atleta: auto = placa 1 centrado abajo, el resto a la derecha (40 %). */
 export type AthleticPos = 'auto' | 'center' | 'right' | 'none'
+/** Variante visual de la plantilla 15: Light Editorial (Opus Athletic) o Dark Brutalist (marca Coach JP) */
+export type AthleticTheme = 'light' | 'dark'
 
 export interface BookmarkData {
   /** 3 o 4 viñetas clave del carrusel */
@@ -196,6 +198,9 @@ export interface CanvasState {
   athleticMode: AthleticMode
   athleticHead: [string, string]
   athleticPos: AthleticPos
+  athleticTheme: AthleticTheme
+  /** Llamado a la acción de la placa de cierre (caja de acento al pie del bloque de texto) */
+  athleticCta: string
   // Repetición matrix (plantilla 07)
   repeatPhrase: string
   repeatAccent: RepeatAccent

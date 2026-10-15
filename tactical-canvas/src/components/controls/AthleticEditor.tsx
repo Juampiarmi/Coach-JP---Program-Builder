@@ -1,4 +1,4 @@
-import type { AthleticMode, AthleticPos, AthleticRow, CanvasState } from '../../types'
+import type { AthleticMode, AthleticPos, AthleticRow, AthleticTheme, CanvasState } from '../../types'
 import { Field, Segmented, TextInput } from './primitives'
 
 interface Props {
@@ -18,8 +18,19 @@ export function AthleticEditor({ state, update }: Props) {
   return (
     <>
       <p className="font-mono text-[10px] leading-relaxed tracking-[0.06em] text-steel/80">
-        Light Editorial: el titular va en negro y el remate en gris. Para el atleta, subí un PNG recortado (fondo transparente) en 03 · Fondo: se pasa a B/N de alto contraste.
+        Nr. vacío = encabezado sin número («[ GUÍA DE RENDIMIENTO // COACH JP ]»). Para el atleta, subí un PNG recortado (fondo transparente) en 03 · Fondo: se pasa a B/N de alto contraste.
       </p>
+      <Field label="Estética" plain>
+        <Segmented<AthleticTheme>
+          value={state.athleticTheme ?? 'light'}
+          onChange={(athleticTheme) => update({ athleticTheme })}
+          options={[
+            { value: 'light', label: 'LIGHT EDITORIAL' },
+            { value: 'dark', label: 'DARK BRUTALIST' },
+          ]}
+          size="sm"
+        />
+      </Field>
       <div className="grid grid-cols-[5rem_1fr] gap-2">
         <Field label="Nr.">
           <TextInput value={state.athleticNr ?? ''} onChange={(athleticNr) => update({ athleticNr })} placeholder="1" />
@@ -64,6 +75,9 @@ export function AthleticEditor({ state, update }: Props) {
           </Field>
         </div>
       ))}
+      <Field label="CTA (placa de cierre)" hint="vacío = sin caja">
+        <TextInput value={state.athleticCta ?? ''} onChange={(athleticCta) => update({ athleticCta })} placeholder="Enviá «PROTOCOLO» por DM" />
+      </Field>
       <Field label="Recorte del atleta" plain>
         <Segmented<AthleticPos>
           value={state.athleticPos ?? 'auto'}

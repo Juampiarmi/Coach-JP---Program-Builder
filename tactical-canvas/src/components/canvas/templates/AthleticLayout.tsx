@@ -2,17 +2,37 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { FONT_BODY, FONT_MONO } from '../../../lib/brand'
 import type { AthleticPos, AthleticRow, CanvasState } from '../../../types'
 
-/** Paleta Light Editorial (Opus Athletic): papel claro, tinta negra, gris táctico y un solo acento. */
-export const ATHLETIC = {
-  paper: '#EFEFEF',
-  paperEdge: '#DCDCDC',
+/** Paleta de la plantilla 15. Light Editorial (Opus Athletic) y Dark Brutalist (marca Coach JP) comparten estructura. */
+export interface AthleticPalette {
+  /** Fondo CSS completo (con su viñeta) */
+  background: string
+  /** Color de respaldo del contenedor */
+  base: string
+  ink: string
+  gray: string
+  hair: string
+  ring: string
+  orange: string
+  cyan: string
+  /** Grano de textura sobre el fondo (0 = sin grano) */
+  grain: number
+  /** Sombra de contacto bajo el atleta */
+  shadow: string
+}
+
+/** Light Editorial (Opus Athletic): papel claro, tinta negra, gris táctico y un solo acento. */
+export const ATHLETIC: AthleticPalette = {
+  background: 'radial-gradient(ellipse 85% 75% at 50% 45%, #F6F6F6 0%, #EFEFEF 55%, #DCDCDC 100%)',
+  base: '#EFEFEF',
   ink: '#0F0F0F',
   gray: '#525252',
   hair: 'rgba(15,15,15,0.14)',
   ring: 'rgba(0,0,0,0.08)',
   orange: '#F97316',
   cyan: '#0EA5E9',
-} as const
+  grain: 0,
+  shadow: 'rgba(0,0,0,0.30)',
+}
 
 interface Props {
   state: CanvasState
@@ -22,6 +42,7 @@ interface Props {
   cutout?: string | null
   /** Posición de la placa en el carrusel: decide el encuadre automático del recorte */
   slideIndex: number
+  palette?: AthleticPalette
 }
 
 /** auto → Placa 1 con el atleta al centro / tercio inferior; desde la Placa 2, a la derecha (40 %). */
@@ -30,14 +51,14 @@ export function resolveAthleticPos(pos: AthleticPos | undefined, slideIndex: num
   return slideIndex === 0 ? 'center' : 'right'
 }
 
-/** Filas clave → valor: la etiqueta en negro bold, la descripción en gris oscuro regular. */
-export function KeyValueList({ rows, s, width }: { rows: AthleticRow[]; s: number; width: number }) {
+/** Filas clave → valor: la etiqueta en tinta bold, la descripción en gris regular. */
+export function KeyValueList({ rows, s, width, palette: P = ATHLETIC }: { rows: AthleticRow[]; s: number; width: number; palette?: AthleticPalette }) {
   return (
     <div data-part="kv-list" style={{ width, display: 'flex', flexDirection: 'column' }}>
       {rows.map((r, i) => (
-        <div key={i} style={{ padding: `${22 * s}px 0`, borderTop: `${Math.max(1, 1.5 * s)}px solid ${ATHLETIC.hair}`, fontFamily: FONT_BODY, fontSize: 31 * s, lineHeight: 1.34 }}>
-          <span style={{ fontWeight: 800, color: ATHLETIC.ink, letterSpacing: '-0.01em', textTransform: 'uppercase', marginRight: 12 * s }}>{r.k.trim()}</span>
-          <span style={{ fontWeight: 400, color: ATHLETIC.gray }}>{r.v.trim()}</span>
+        <div key={i} style={{ padding: `${22 * s}px 0`, borderTop: `${Math.max(1, 1.5 * s)}px solid ${P.hair}`, fontFamily: FONT_BODY, fontSize: 31 * s, lineHeight: 1.34 }}>
+          <span style={{ fontWeight: 800, color: P.ink, letterSpacing: '-0.01em', textTransform: 'uppercase', marginRight: 12 * s }}>{r.k.trim()}</span>
+          <span style={{ fontWeight: 400, color: P.gray }}>{r.v.trim()}</span>
         </div>
       ))}
     </div>
@@ -45,35 +66,37 @@ export function KeyValueList({ rows, s, width }: { rows: AthleticRow[]; s: numbe
 }
 
 /** Tabla de 2 columnas (ej: Intensidad | Reps × series): encabezado mono, filas bold / regular. */
-export function KeyValueTable({ head, rows, s, width }: { head: [string, string]; rows: AthleticRow[]; s: number; width: number }) {
+export function KeyValueTable({ head, rows, s, width, palette: P = ATHLETIC }: { head: [string, string]; rows: AthleticRow[]; s: number; width: number; palette?: AthleticPalette }) {
   const cell = (bold: boolean): React.CSSProperties => ({
     padding: `${20 * s}px ${16 * s}px ${20 * s}px 0`,
     fontFamily: FONT_BODY,
     fontSize: 31 * s,
     lineHeight: 1.25,
     fontWeight: bold ? 800 : 400,
-    color: bold ? ATHLETIC.ink : ATHLETIC.gray,
-    borderTop: `${Math.max(1, 1.5 * s)}px solid ${ATHLETIC.hair}`,
+    color: bold ? P.ink : P.gray,
+    borderTop: `${Math.max(1, 1.5 * s)}px solid ${P.hair}`,
     verticalAlign: 'top',
   })
   return (
     <table data-part="kv-table" style={{ width, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-      <thead>
-        <tr>
-          {head.map((h, i) => (
-            <th
-              key={i}
-              style={{ textAlign: 'left', padding: `0 ${16 * s}px ${14 * s}px 0`, fontFamily: FONT_MONO, fontWeight: 500, fontSize: 21 * s, letterSpacing: '0.16em', textTransform: 'uppercase', color: ATHLETIC.gray, width: i === 0 ? '46%' : undefined }}
-            >
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
+      {(head[0] || head[1]) && (
+        <thead>
+          <tr>
+            {head.map((h, i) => (
+              <th
+                key={i}
+                style={{ textAlign: 'left', padding: `0 ${16 * s}px ${14 * s}px 0`, fontFamily: FONT_MONO, fontWeight: 500, fontSize: 21 * s, letterSpacing: '0.16em', textTransform: 'uppercase', color: P.gray, width: i === 0 ? '46%' : undefined }}
+              >
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+      )}
       <tbody>
         {rows.map((r, i) => (
           <tr key={i}>
-            <td style={cell(true)}>{r.k.trim()}</td>
+            <td style={{ ...cell(true), width: '46%' }}>{r.k.trim()}</td>
             <td style={cell(false)}>{r.v.trim()}</td>
           </tr>
         ))}
@@ -83,29 +106,49 @@ export function KeyValueTable({ head, rows, s, width }: { head: [string, string]
 }
 
 /** Círculos concéntricos de trazo ultrafino, centrados detrás del atleta. */
-function Rings({ cx, cy, w, h, accent, s }: { cx: number; cy: number; w: number; h: number; accent: string; s: number }) {
+function Rings({ cx, cy, w, h, accent, ring, s, cross }: { cx: number; cy: number; w: number; h: number; accent: string; ring: string; s: number; cross: boolean }) {
   const radii = Array.from({ length: 9 }, (_, i) => (140 + i * 82) * s)
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ position: 'absolute', inset: 0 }} aria-hidden>
       {radii.map((r) => (
-        <circle key={r} cx={cx} cy={cy} r={r} fill="none" stroke={ATHLETIC.ring} strokeWidth={Math.max(1, 1.5 * s)} />
+        <circle key={r} cx={cx} cy={cy} r={r} fill="none" stroke={ring} strokeWidth={Math.max(1, 1.5 * s)} />
       ))}
-      {/* Líneas guía en acento: cruz fina en el centro de los anillos */}
-      <line x1={cx - 46 * s} y1={cy} x2={cx + 46 * s} y2={cy} stroke={accent} strokeWidth={2 * s} opacity={0.9} />
-      <line x1={cx} y1={cy - 46 * s} x2={cx} y2={cy + 46 * s} stroke={accent} strokeWidth={2 * s} opacity={0.9} />
+      {/* Líneas guía en acento: cruz fina en el centro de los anillos (sólo detrás del atleta) */}
+      {cross && (
+        <>
+          <line x1={cx - 46 * s} y1={cy} x2={cx + 46 * s} y2={cy} stroke={accent} strokeWidth={2 * s} opacity={0.9} />
+          <line x1={cx} y1={cy - 46 * s} x2={cx} y2={cy + 46 * s} stroke={accent} strokeWidth={2 * s} opacity={0.9} />
+        </>
+      )}
     </svg>
   )
 }
 
+/** Grano de textura (ruido fractal SVG): da cuerpo al charcoal sin ensuciar el texto. */
+function Grain({ w, h, opacity }: { w: number; h: number; opacity: number }) {
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ position: 'absolute', inset: 0, opacity, pointerEvents: 'none' }} aria-hidden>
+      <filter id="athletic-grain" x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" />
+        <feColorMatrix type="saturate" values="0" />
+      </filter>
+      <rect width={w} height={h} filter="url(#athletic-grain)" />
+    </svg>
+  )
+}
+
+/** «[ GUÍA DE RENDIMIENTO // COACH JP ]» → el texto sin corchetes (los dibuja la placa en acento). */
+const unbracket = (t: string) => t.trim().replace(/^\[\s*|\s*\]$/g, '')
+
 /**
- * Plantilla 15 · Opus Athletic (Light Editorial): composición completa de la placa. Papel claro con
- * viñeta radial suave, anillos concéntricos detrás del recorte del atleta, etiqueta «[Nr. X] TAG»,
- * titular negro alineado a la izquierda y datos en lista clave → valor o tabla de 2 columnas.
+ * Plantilla 15 · Opus Athletic: composición completa de la placa (claro u oscuro según la paleta).
+ * Anillos concéntricos detrás del recorte del atleta, etiqueta «[Nr. X] TAG», titular alineado a la
+ * izquierda, bajada, datos en lista clave → valor o tabla de 2 columnas y CTA opcional.
  */
-export function AthleticLayout({ state, w, h, cutout, slideIndex }: Props) {
+export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = ATHLETIC }: Props) {
   const s = w / 1080
   const isStory = state.aspect === 'story'
-  const accent = state.accentSwap ? ATHLETIC.cyan : ATHLETIC.orange
+  const accent = state.accentSwap ? P.cyan : P.orange
   const pos = resolveAthleticPos(state.athleticPos, slideIndex)
   const showCut = Boolean(cutout) && pos !== 'none'
   const side = showCut && pos === 'right'
@@ -118,19 +161,23 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex }: Props) {
   const title = state.headlineA.replace(/\*/g, '').trim()
   const sub = state.headlineB.replace(/\*/g, '').trim()
   const body = state.body.trim()
+  const cta = (state.athleticCta ?? '').trim()
+  const nr = (state.athleticNr ?? '').trim()
+  const tag = unbracket(state.tag)
   const titleSize = Math.round((side ? 74 : 84) * s * ((state.headlineScale ?? 100) / 100))
-  // Anillos: detrás del atleta (o, sin recorte, en el cuadrante inferior derecho como textura).
+  // Layout defensivo: con 3+ filas de datos el recorte se achica para no competir con el texto.
+  const dense = rows.length >= 3
   const ring = pos === 'center' && showCut ? { cx: w * 0.5, cy: h * (isStory ? 0.7 : 0.72) } : { cx: w * 0.8, cy: h * 0.62 }
   const cut = side
-    ? { right: -w * 0.02, width: w * 0.42, height: h * (isStory ? 0.62 : 0.74), bottom: h * 0.06 }
-    : { left: w * 0.22, width: w * 0.56, height: h * (isStory ? 0.36 : 0.4), bottom: h * 0.06 }
+    ? { right: -w * 0.02, width: w * (dense ? 0.36 : 0.42), height: h * (isStory ? (dense ? 0.52 : 0.62) : dense ? 0.62 : 0.74), bottom: h * 0.06 }
+    : { left: w * (dense ? 0.28 : 0.22), width: w * (dense ? 0.44 : 0.56), height: h * (isStory ? (dense ? 0.28 : 0.36) : dense ? 0.3 : 0.4), bottom: h * 0.06 }
   // El bloque de texto nunca invade al atleta: con el recorte al centro, su alto máximo termina
   // encima de la cabeza; si no entra, se reduce en bloque (sin cortar ni partir palabras).
   const footerZone = (isStory ? 300 : 110) * s
   const maxTextH = showCut && !side ? h - cut.bottom - cut.height - padTop - 36 * s : h - padTop - footerZone
   const textRef = useRef<HTMLDivElement>(null)
   const [fit, setFit] = useState(1)
-  const key = JSON.stringify([state.headlineA, state.headlineB, state.body, state.tag, state.athleticRows, state.athleticMode, state.athleticHead, state.headlineScale, pos, showCut, w, h])
+  const key = JSON.stringify([state.headlineA, state.headlineB, state.body, state.tag, state.athleticRows, state.athleticMode, state.athleticHead, state.athleticCta, state.headlineScale, pos, showCut, w, h])
   useLayoutEffect(() => {
     const el = textRef.current
     if (!el) return
@@ -139,17 +186,9 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex }: Props) {
   }, [key, maxTextH])
 
   return (
-    <div
-      data-template="athletic"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        overflow: 'hidden',
-        background: `radial-gradient(ellipse 85% 75% at 50% 45%, #F6F6F6 0%, ${ATHLETIC.paper} 55%, ${ATHLETIC.paperEdge} 100%)`,
-        color: ATHLETIC.ink,
-      }}
-    >
-      <Rings cx={ring.cx} cy={ring.cy} w={w} h={h} accent={accent} s={s} />
+    <div data-template="athletic" data-theme={state.athleticTheme ?? 'light'} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: P.background, color: P.ink }}>
+      {P.grain > 0 && <Grain w={w} h={h} opacity={P.grain} />}
+      <Rings cx={ring.cx} cy={ring.cy} w={w} h={h} accent={accent} ring={P.ring} s={s} cross={showCut} />
 
       {showCut && (
         <>
@@ -162,9 +201,10 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex }: Props) {
               width: cut.width * 0.64,
               bottom: cut.bottom - 18 * s,
               height: 44 * s,
-              background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.30) 0%, rgba(0,0,0,0.12) 45%, rgba(0,0,0,0) 72%)',
+              background: `radial-gradient(ellipse at center, ${P.shadow} 0%, rgba(0,0,0,0.12) 45%, rgba(0,0,0,0) 72%)`,
             }}
           />
+          {/* Recorte PNG transparente, sin marco ni caja: sólo la silueta sobre el fondo */}
           <img
             src={cutout!}
             alt=""
@@ -177,6 +217,8 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex }: Props) {
               height: cut.height,
               objectFit: 'contain',
               objectPosition: 'bottom center',
+              background: 'transparent',
+              border: 'none',
               filter: 'grayscale(1) contrast(1.15)',
             }}
           />
@@ -188,9 +230,10 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex }: Props) {
         data-part="athletic-text"
         style={{ position: 'absolute', left: padX, top: padTop, width: contentW, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', transform: fit < 1 ? `scale(${fit})` : undefined, transformOrigin: 'top left' }}
       >
-        <p style={{ margin: 0, fontFamily: FONT_MONO, fontWeight: 600, fontSize: 23 * s, letterSpacing: '0.14em', textTransform: 'uppercase', color: ATHLETIC.ink }}>
-          <span style={{ color: accent }}>[Nr. {(state.athleticNr ?? '').trim() || slideIndex + 1}]</span>
-          {state.tag.trim() ? <span>&nbsp;&nbsp;{state.tag.trim()}</span> : null}
+        <p data-part="athletic-header" style={{ margin: 0, fontFamily: FONT_MONO, fontWeight: 600, fontSize: 23 * s, letterSpacing: '0.14em', textTransform: 'uppercase', color: P.ink }}>
+          {nr ? <span style={{ color: accent, textTransform: 'none' }}>[Nr. {nr}]</span> : <span style={{ color: accent }}>[</span>}
+          {tag ? <span>&nbsp;&nbsp;{tag}</span> : null}
+          {!nr && <span style={{ color: accent }}>&nbsp;&nbsp;]</span>}
         </p>
         <span aria-hidden style={{ display: 'block', width: 72 * s, height: Math.max(2, 3 * s), background: accent, margin: `${26 * s}px 0 ${40 * s}px` }} />
         <h1
@@ -204,23 +247,34 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex }: Props) {
             letterSpacing: '-0.035em',
             textAlign: 'left',
             textTransform: 'uppercase',
-            color: ATHLETIC.ink,
+            color: P.ink,
             textWrap: 'balance',
           }}
         >
           {title}
-          {sub && <span style={{ display: 'block', color: ATHLETIC.gray, marginTop: 10 * s }}>{sub}</span>}
+          {sub && <span style={{ display: 'block', color: P.gray, marginTop: 10 * s }}>{sub}</span>}
         </h1>
         {body && (
-          <p style={{ margin: `${30 * s}px 0 0`, width: textW, fontFamily: FONT_BODY, fontSize: 30 * s, lineHeight: 1.4, color: ATHLETIC.gray }}>{body}</p>
+          <p data-part="athletic-body" style={{ margin: `${30 * s}px 0 0`, width: textW, fontFamily: FONT_BODY, fontSize: 30 * s, lineHeight: 1.42, color: P.gray }}>
+            {body}
+          </p>
         )}
         {rows.length > 0 && (
           <div style={{ marginTop: (isStory ? 70 : 52) * s }}>
             {state.athleticMode === 'table' ? (
-              <KeyValueTable head={state.athleticHead ?? ['', '']} rows={rows} s={s} width={textW} />
+              <KeyValueTable head={state.athleticHead ?? ['', '']} rows={rows} s={s} width={textW} palette={P} />
             ) : (
-              <KeyValueList rows={rows} s={s} width={textW} />
+              <KeyValueList rows={rows} s={s} width={textW} palette={P} />
             )}
+          </div>
+        )}
+        {cta && (
+          <div
+            data-part="athletic-cta"
+            style={{ marginTop: 52 * s, width: textW, boxSizing: 'border-box', border: `${Math.max(2, 3 * s)}px solid ${accent}`, padding: `${22 * s}px ${28 * s}px`, fontFamily: FONT_MONO, fontWeight: 600, fontSize: 25 * s, lineHeight: 1.35, letterSpacing: '0.1em', textTransform: 'uppercase', color: P.ink }}
+          >
+            <span style={{ color: accent }}>→ </span>
+            {cta}
           </div>
         )}
       </div>
@@ -236,7 +290,7 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex }: Props) {
           fontSize: 20 * s,
           letterSpacing: '0.18em',
           textTransform: 'uppercase',
-          color: ATHLETIC.gray,
+          color: P.gray,
         }}
       >
         COACH JP <span style={{ color: accent }}>·</span> @coachjp.training

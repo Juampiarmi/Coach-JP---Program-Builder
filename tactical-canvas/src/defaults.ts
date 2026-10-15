@@ -79,6 +79,8 @@ export const DEFAULT_STATE: CanvasState = {
   athleticMode: 'list',
   athleticHead: ['Intensidad', 'Reps × series'],
   athleticPos: 'auto',
+  athleticTheme: 'light',
+  athleticCta: '',
   quoteText: 'Ningún ser humano tiene límites.',
   quoteAuthor: 'Eliud Kipchoge',
   quoteRole: 'Bicampeón olímpico de maratón',

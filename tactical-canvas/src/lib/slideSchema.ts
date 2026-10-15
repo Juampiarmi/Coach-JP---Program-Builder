@@ -110,13 +110,22 @@ export function coreToPatch(core: CoreSlide, current: TemplateId | undefined): P
   const forced = LAYOUT_TEMPLATE[core.layout]
   // academic respeta la plantilla visual elegida (gráfico, métrica…); cover admite cualquier plantilla de texto.
   const template: TemplateId =
-    core.layout === 'academic' ? (current && current !== 'opus' && current !== 'bookmark' ? current : 'statement')
+    current === 'athletic' ? 'athletic'
+    : core.layout === 'academic' ? (current && current !== 'opus' && current !== 'bookmark' ? current : 'statement')
     : core.layout === 'cover' && current && TEXT_TEMPLATES.includes(current) ? current
     : (forced ?? 'statement')
   const patch: Partial<CanvasState> = { template, headlineA, headlineB }
   if (core.header_tag) patch.tag = core.header_tag.replace(/^\[\s*|\s*\]$/g, '').toUpperCase()
   const blocks: OpusBlock[] = core.bloques.map((b) => ({ num: b.id, text: b.text }))
   if (template === 'opus') patch.opusBlocks = blocks
+  if (template === 'athletic') {
+    // Bloques «Concepto: explicación» → filas clave → valor (sólo si la IA no mandó athletic.rows).
+    if (core.bloques.length) patch.athleticRows = core.bloques.map((b) => {
+      const i = b.text.indexOf(':')
+      return i > 0 && i < 60 ? { k: b.text.slice(0, i + 1), v: b.text.slice(i + 1).trim() } : { k: '', v: b.text }
+    })
+    if (core.cta) patch.athleticCta = core.cta
+  }
   if (template === 'bookmark') {
     const points = core.bloques.map((b) => b.text).slice(0, 4)
     // Sin 3+ bloques (null), la app extrae las viñetas del resto del carrusel.
