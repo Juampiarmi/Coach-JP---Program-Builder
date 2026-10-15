@@ -42,6 +42,8 @@ export const HEADLINE_FONTS: Record<HeadlineFont, { label: string; family: strin
 
 export const FONT_MONO = "'IBM Plex Mono', ui-monospace, monospace"
 export const FONT_BODY = "'Inter', system-ui, sans-serif"
+/** Tipografía oficial de marca: titulares, kickers / tags, CTAs y etiquetas en negrita (600 / 700 / 700 itálica). */
+export const FONT_BRAND = "'Chakra Petch', 'Inter', sans-serif"
 
 export const TAG_PRESETS = [
   'BIOMECÁNICA APLICADA',

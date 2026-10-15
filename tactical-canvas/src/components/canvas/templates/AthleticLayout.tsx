@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { FONT_BODY, FONT_MONO } from '../../../lib/brand'
+import { FONT_BODY, FONT_BRAND, FONT_MONO } from '../../../lib/brand'
 import type { AthleticPos, AthleticRow, CanvasState } from '../../../types'
 
 /** Paleta de la plantilla 15. Light Editorial (Opus Athletic) y Dark Brutalist (marca Coach JP) comparten estructura. */
@@ -57,7 +57,7 @@ export function KeyValueList({ rows, s, width, palette: P = ATHLETIC }: { rows: 
     <div data-part="kv-list" style={{ width, display: 'flex', flexDirection: 'column' }}>
       {rows.map((r, i) => (
         <div key={i} style={{ padding: `${22 * s}px 0`, borderTop: `${Math.max(1, 1.5 * s)}px solid ${P.hair}`, fontFamily: FONT_BODY, fontSize: 31 * s, lineHeight: 1.34 }}>
-          <span style={{ fontWeight: 800, color: P.ink, letterSpacing: '-0.01em', textTransform: 'uppercase', marginRight: 12 * s }}>{r.k.trim()}</span>
+          <span style={{ fontFamily: FONT_BRAND, fontWeight: 700, color: P.ink, letterSpacing: '0.01em', textTransform: 'uppercase', marginRight: 12 * s }}>{r.k.trim()}</span>
           <span style={{ fontWeight: 400, color: P.gray }}>{r.v.trim()}</span>
         </div>
       ))}
@@ -69,10 +69,10 @@ export function KeyValueList({ rows, s, width, palette: P = ATHLETIC }: { rows: 
 export function KeyValueTable({ head, rows, s, width, palette: P = ATHLETIC }: { head: [string, string]; rows: AthleticRow[]; s: number; width: number; palette?: AthleticPalette }) {
   const cell = (bold: boolean): React.CSSProperties => ({
     padding: `${20 * s}px ${16 * s}px ${20 * s}px 0`,
-    fontFamily: FONT_BODY,
+    fontFamily: bold ? FONT_BRAND : FONT_BODY,
     fontSize: 31 * s,
     lineHeight: 1.25,
-    fontWeight: bold ? 800 : 400,
+    fontWeight: bold ? 700 : 400,
     color: bold ? P.ink : P.gray,
     borderTop: `${Math.max(1, 1.5 * s)}px solid ${P.hair}`,
     verticalAlign: 'top',
@@ -230,7 +230,7 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
         data-part="athletic-text"
         style={{ position: 'absolute', left: padX, top: padTop, width: contentW, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', transform: fit < 1 ? `scale(${fit})` : undefined, transformOrigin: 'top left' }}
       >
-        <p data-part="athletic-header" style={{ margin: 0, fontFamily: FONT_MONO, fontWeight: 600, fontSize: 23 * s, letterSpacing: '0.14em', textTransform: 'uppercase', color: P.ink }}>
+        <p data-part="athletic-header" style={{ margin: 0, fontFamily: FONT_BRAND, fontWeight: 600, fontSize: 25 * s, letterSpacing: '0.12em', textTransform: 'uppercase', color: P.ink }}>
           {nr ? <span style={{ color: accent, textTransform: 'none' }}>[Nr. {nr}]</span> : <span style={{ color: accent }}>[</span>}
           {tag ? <span>&nbsp;&nbsp;{tag}</span> : null}
           {!nr && <span style={{ color: accent }}>&nbsp;&nbsp;]</span>}
@@ -240,11 +240,11 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
           style={{
             margin: 0,
             width: textW,
-            fontFamily: FONT_BODY,
-            fontWeight: 800,
+            fontFamily: FONT_BRAND,
+            fontWeight: 700,
             fontSize: titleSize,
             lineHeight: 0.98,
-            letterSpacing: '-0.035em',
+            letterSpacing: '-0.01em',
             textAlign: 'left',
             textTransform: 'uppercase',
             color: P.ink,
@@ -271,7 +271,7 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
         {cta && (
           <div
             data-part="athletic-cta"
-            style={{ marginTop: 52 * s, width: textW, boxSizing: 'border-box', border: `${Math.max(2, 3 * s)}px solid ${accent}`, padding: `${22 * s}px ${28 * s}px`, fontFamily: FONT_MONO, fontWeight: 600, fontSize: 25 * s, lineHeight: 1.35, letterSpacing: '0.1em', textTransform: 'uppercase', color: P.ink }}
+            style={{ marginTop: 52 * s, width: textW, boxSizing: 'border-box', border: `${Math.max(2, 3 * s)}px solid ${accent}`, padding: `${22 * s}px ${28 * s}px`, fontFamily: FONT_BRAND, fontWeight: 700, fontSize: 27 * s, lineHeight: 1.35, letterSpacing: '0.1em', textTransform: 'uppercase', color: P.ink }}
           >
             <span style={{ color: accent }}>→ </span>
             {cta}

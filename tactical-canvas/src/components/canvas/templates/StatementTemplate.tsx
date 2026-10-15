@@ -1,4 +1,4 @@
-import { BRAND, FONT_BODY } from '../../../lib/brand'
+import { BRAND, FONT_BRAND } from '../../../lib/brand'
 import { useAccent } from '../../../lib/accent'
 import type { CanvasState } from '../../../types'
 import { Paragraph } from '../Paragraph'
@@ -22,11 +22,11 @@ export function StatementTemplate({ state, scale }: Props) {
             margin: 0,
             paddingLeft: 30 * scale,
             borderLeft: `${7 * scale}px solid ${A.orange}`,
-            fontFamily: FONT_BODY,
+            fontFamily: FONT_BRAND,
             fontWeight: 600,
             fontSize: 40 * scale,
-            lineHeight: 1.28,
-            letterSpacing: '-0.015em',
+            lineHeight: 1.24,
+            letterSpacing: '0',
             color: BRAND.white,
             textWrap: 'balance',
           }}

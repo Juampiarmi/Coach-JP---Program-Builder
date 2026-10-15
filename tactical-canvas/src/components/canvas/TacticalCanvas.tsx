@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ASPECTS, CONTRAST_GRADIENT, FONT_MONO, MONO_FILTER, TEXT_SHADOW } from '../../lib/brand'
+import { ASPECTS, CONTRAST_GRADIENT, FONT_BRAND, MONO_FILTER, TEXT_SHADOW } from '../../lib/brand'
 import { headlineType } from '../../lib/typography'
 import type { CanvasState, NudgeTarget } from '../../types'
 import { Footer } from './Footer'
@@ -311,10 +311,10 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
             <p
               style={{
                 margin: 0,
-                fontFamily: FONT_MONO,
+                fontFamily: FONT_BRAND,
                 fontWeight: 600,
                 fontSize: 27 * baseScale,
-                letterSpacing: '0.22em',
+                letterSpacing: '0.16em',
                 color: palette.tag,
                 textTransform: 'uppercase',
               }}

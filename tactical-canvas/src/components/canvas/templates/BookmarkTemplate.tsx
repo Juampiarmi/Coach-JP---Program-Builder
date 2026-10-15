@@ -1,4 +1,4 @@
-import { BRAND } from '../../../lib/brand'
+import { BRAND, FONT_BRAND } from '../../../lib/brand'
 import { useAccent } from '../../../lib/accent'
 import { BOOKMARK_CTA } from '../../../lib/bookmark'
 import type { CanvasPalette } from '../../../lib/theme'
@@ -57,7 +57,7 @@ export function BookmarkTemplate({ state, palette, theme, contentWidth, scale: s
             padding: `${24 * s}px ${30 * s}px`,
             paddingRight: iconW + 56 * s,
             borderBottom: `${border}px dashed ${palette.line}`,
-            fontFamily: MONO_FONT,
+            fontFamily: FONT_BRAND,
             fontWeight: 700,
             fontSize: 19 * s,
             letterSpacing: '0.18em',
@@ -95,7 +95,7 @@ export function BookmarkTemplate({ state, palette, theme, contentWidth, scale: s
             background: accent,
             color: theme === 'paper' ? '#FFFFFF' : BRAND.bg,
             padding: `${(isStory ? 30 : 22) * s}px ${30 * s}px`,
-            fontFamily: MONO_FONT,
+            fontFamily: FONT_BRAND,
             fontWeight: 700,
             fontSize: 21 * s,
             lineHeight: 1.35,

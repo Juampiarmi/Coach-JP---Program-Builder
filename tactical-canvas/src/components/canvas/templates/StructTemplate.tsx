@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 import { useAccent } from '../../../lib/accent'
-import { BRAND } from '../../../lib/brand'
+import { BRAND, FONT_BRAND } from '../../../lib/brand'
 import { resolveStructData } from '../../../lib/structPillar'
 import type { CanvasPalette } from '../../../lib/theme'
 import type { CanvasState, StructData, ThemeId } from '../../../types'
@@ -195,7 +195,7 @@ function Pipeline({ data, look }: { data: StructData['pipeline']; look: Look }) 
         {String(i + 1).padStart(2, '0')}
       </span>
       <div style={{ minWidth: 0 }}>
-        <p style={{ margin: 0, fontFamily: LABEL_FONT, fontWeight: 700, fontSize: (horizontal ? 26 : 34) * s, lineHeight: 1.18, color: palette.ink, textWrap: 'pretty' }}>
+        <p style={{ margin: 0, fontFamily: FONT_BRAND, fontWeight: 700, fontSize: (horizontal ? 26 : 34) * s, lineHeight: 1.18, color: palette.ink, textWrap: 'pretty' }}>
           {st.title}
         </p>
         {st.desc && (
@@ -279,7 +279,7 @@ function Pyramid({ data, look }: { data: StructData['pyramid']; look: Look }) {
               {st.i === 0 ? 'BASE · NO NEGOCIABLE' : 'CÚSPIDE · DETALLE'}
             </p>
           )}
-          <p style={{ margin: 0, fontFamily: LABEL_FONT, fontWeight: 800, fontSize: 31 * s, lineHeight: 1.15, color: palette.accent, textTransform: 'uppercase' }}>{st.name}</p>
+          <p style={{ margin: 0, fontFamily: FONT_BRAND, fontWeight: 700, fontSize: 31 * s, lineHeight: 1.15, color: palette.accent, textTransform: 'uppercase' }}>{st.name}</p>
           {st.desc && <p style={{ margin: `${4 * s}px 0 0`, fontFamily: LABEL_FONT, fontWeight: 500, fontSize: 24 * s, lineHeight: 1.3, color: palette.muted, textWrap: 'pretty' }}>{st.desc}</p>}
         </div>
       ))}
@@ -309,7 +309,7 @@ function Checklist({ data, look }: { data: StructData['checklist']; look: Look }
           >
             <span style={{ fontFamily: MONO_FONT, fontWeight: 700, fontSize: 35 * s, lineHeight: 1.1, color, whiteSpace: 'pre', flexShrink: 0 }}>{ok ? '[ ✓ ]' : '[ ✗ ]'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontFamily: LABEL_FONT, fontWeight: 700, fontSize: 35 * s, lineHeight: 1.22, color: palette.ink, textWrap: 'pretty' }}>{it.text}</p>
+              <p style={{ margin: 0, fontFamily: FONT_BRAND, fontWeight: 700, fontSize: 35 * s, lineHeight: 1.2, color: palette.ink, textWrap: 'pretty' }}>{it.text}</p>
               {it.detail && <p style={{ margin: `${6 * s}px 0 0`, fontFamily: LABEL_FONT, fontWeight: 500, fontSize: 26 * s, lineHeight: 1.3, color: palette.muted }}>{it.detail}</p>}
             </div>
             <div style={{ paddingTop: 4 * s, flexShrink: 0 }}>

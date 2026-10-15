@@ -1,4 +1,4 @@
-import { FONT_BODY, FONT_MONO } from '../../../lib/brand'
+import { FONT_BRAND, FONT_MONO } from '../../../lib/brand'
 import type { CanvasPalette } from '../../../lib/theme'
 import type { CanvasState } from '../../../types'
 
@@ -72,7 +72,7 @@ export function QuoteTemplate({ state, palette, contentWidth, scale: s }: Props)
             {author && (
               <span
                 data-part="quote-author"
-                style={{ fontFamily: FONT_BODY, fontWeight: 800, fontSize: 36 * s, letterSpacing: '0.08em', textTransform: 'uppercase', color: palette.ink }}
+                style={{ fontFamily: FONT_BRAND, fontWeight: 700, fontSize: 38 * s, letterSpacing: '0.06em', textTransform: 'uppercase', color: palette.ink }}
               >
                 {author}
               </span>
