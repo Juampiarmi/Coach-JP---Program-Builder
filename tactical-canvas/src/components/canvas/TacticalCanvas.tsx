@@ -10,6 +10,7 @@ import { MetricTemplate } from './templates/MetricTemplate'
 import { ManifestoTemplate } from './templates/ManifestoTemplate'
 import { OpusTemplate } from './templates/OpusTemplate'
 import { QuoteTemplate } from './templates/QuoteTemplate'
+import { AthleticLayout } from './templates/AthleticLayout'
 import { StatementTemplate } from './templates/StatementTemplate'
 import { DiagramTemplate } from './templates/DiagramTemplate'
 import { RepeatTemplate } from './templates/RepeatTemplate'
@@ -129,9 +130,11 @@ interface Props {
   state: CanvasState
   /** Foto de fondo (data URL). Va aparte del estado para no inflar el autosave. */
   bgImage?: string | null
+  /** Posición de la placa en el carrusel (encuadre automático de Opus Athletic) */
+  slideIndex?: number
 }
 
-export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function TacticalCanvas({ state, bgImage }, ref) {
+export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function TacticalCanvas({ state, bgImage, slideIndex = 0 }, ref) {
   const { w, h } = ASPECTS[state.aspect]
   const isStory = state.aspect === 'story'
   const baseScale = isStory ? 1.08 : 1
@@ -207,6 +210,17 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
         padY: PLATE_PAD_Y,
       }
     : { left: SIDE, right: SIDE, top: pad.top, bottom: pad.bottom, padX: 0, padY: 0 }
+
+  // 15 · Opus Athletic: composición Light Editorial propia (papel claro, anillos y recorte del atleta).
+  if (state.template === 'athletic') {
+    return (
+      <AccentSwapContext.Provider value={swap}>
+        <div ref={ref} style={{ width: w, height: h, overflow: 'hidden', position: 'relative', background: '#EFEFEF' }}>
+          <AthleticLayout state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} />
+        </div>
+      </AccentSwapContext.Provider>
+    )
+  }
 
   return (
     <AccentSwapContext.Provider value={swap}>

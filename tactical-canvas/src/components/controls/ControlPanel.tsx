@@ -12,6 +12,7 @@ import { STRUCT_TEMPLATES, structDefaults } from '../../lib/structPillar'
 import { StructEditor } from './StructEditor'
 import { BookmarkEditor } from './BookmarkEditor'
 import { OpusEditor } from './OpusEditor'
+import { AthleticEditor } from './AthleticEditor'
 import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator } from './AiAssist'
 import { TYPE_PRESETS } from '../../lib/typography'
@@ -34,6 +35,7 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'bookmark', n: '12', label: 'Guardado' },
   { id: 'opus', n: '13', label: 'Mindset / Opus' },
   { id: 'quote', n: '14', label: 'Cita célebre' },
+  { id: 'athletic', n: '15', label: 'Opus Athletic' },
 ]
 
 const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
@@ -572,6 +574,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         {isStruct(state.template) && <StructEditor state={state} update={update} />}
 
         {state.template === 'opus' && <OpusEditor state={state} update={update} />}
+        {state.template === 'athletic' && <AthleticEditor state={state} update={update} />}
         {state.template === 'bookmark' && <BookmarkEditor state={state} update={update} auto={bookmarkAuto} />}
 
         {state.template === 'repeat' && (
@@ -879,5 +882,7 @@ function summaryFor(s: CanvasState) {
       return `${(s.opusBlocks ?? []).filter((b) => b.text.trim()).length} bloques numerados`
     case 'quote':
       return s.quoteAuthor ? `— ${s.quoteAuthor}` : 'Cita sin autor'
+    case 'athletic':
+      return `Nr. ${s.athleticNr || '—'} · ${(s.athleticRows ?? []).length} filas · ${s.athleticMode === 'table' ? 'tabla' : 'lista'}`
   }
 }

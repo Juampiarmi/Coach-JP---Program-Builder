@@ -31,7 +31,7 @@ export function Preview({ state, bgImage, canvasRef, gutter = 24, overlay = fals
           className="absolute top-0 left-0 origin-top-left shadow-[0_30px_80px_-20px_rgba(0,0,0,.9)] ring-1 ring-line"
           style={{ transform: `scale(${scale})` }}
         >
-          <TacticalCanvas ref={canvasRef} state={state} bgImage={bgImage} />
+          <TacticalCanvas ref={canvasRef} state={state} bgImage={bgImage} slideIndex={slideIndex} />
         </div>
         {onNudge && !overlay && <CanvasGizmo state={state} canvasRef={canvasRef} scale={scale} onNudge={onNudge} />}
         {overlay && <GhostOverlay aspect={state.aspect} w={w} h={h} count={slideCount} index={slideIndex} />}

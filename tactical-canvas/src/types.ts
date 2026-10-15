@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve' | 'funnel' | 'versus'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -65,6 +65,15 @@ export interface OpusBlock {
   num: string
   text: string
 }
+
+/** Plantilla 15 · Opus Athletic: una fila clave → valor («CARGAS PESADAS:» → «3-5 reps al 85 %»). */
+export interface AthleticRow {
+  k: string
+  v: string
+}
+export type AthleticMode = 'list' | 'table'
+/** Posición del recorte del atleta: auto = placa 1 centrado abajo, el resto a la derecha (40 %). */
+export type AthleticPos = 'auto' | 'center' | 'right' | 'none'
 
 export interface BookmarkData {
   /** 3 o 4 viñetas clave del carrusel */
@@ -180,6 +189,13 @@ export interface CanvasState {
   quoteRole: string
   /** Fuente de la cita (entrevista, libro, discurso). Sólo para verificar en el panel: no se dibuja. */
   quoteSource: string
+  /** Opus Athletic (plantilla 15): número de la etiqueta «[Nr. X]» */
+  athleticNr: string
+  athleticRows: AthleticRow[]
+  /** Lista clave → valor o tabla de 2 columnas con encabezado */
+  athleticMode: AthleticMode
+  athleticHead: [string, string]
+  athleticPos: AthleticPos
   // Repetición matrix (plantilla 07)
   repeatPhrase: string
   repeatAccent: RepeatAccent

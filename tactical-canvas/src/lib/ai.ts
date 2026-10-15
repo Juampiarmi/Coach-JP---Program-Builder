@@ -109,6 +109,7 @@ PLANTILLAS DISPONIBLES (templateId):
 - "piramide": jerarquía de prioridades en 3 o 4 estratos (base no negociable → cúspide de detalle).
 - "checklist": auditoría operativa de 3 o 4 condiciones binarias ([ ✓ ] pasa / [ ✗ ] falla).
 - "guardado": placa final de retención (cheat sheet / ficha técnica): 3 o 4 viñetas que condensan todo el carrusel + llamado a guardar.
+- "athletic": placa editorial clara estilo Opus Athletic (papel claro, titular negro) con datos en filas clave → valor («CARGAS PESADAS:» → «3-5 reps al 85-90 % 1RM») o tabla de 2 columnas (Intensidad | Reps × series). Ideal para protocolos con números reales.
 - "cita": cita célebre estilo «Forbes Quotes» (frase real de un deportista o persona de éxito + nombre + rol). SÓLO con una frase que esa persona dijo de verdad y de fuente conocida; si no tenés certeza absoluta, no uses esta plantilla.
 - "opus": placa de mentalidad con jerarquía: título principal (titleWhite + titleAccent corto) y debajo 2 a 6 bloques numerados («00001:» + una frase de criterio u hábito operativo). Ideal para estándares, reglas o hábitos de mindset en una placa.
 CIERRE DE RETENCIÓN: en todo carrusel de 4 a 5 placas, la última placa es por defecto "guardado", salvo que el usuario pida otro cierre.
@@ -168,7 +169,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
   "caption": string,
   "slides": [
     {
-      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita" | "athletic",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
@@ -193,6 +194,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
       "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
       "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
+      "athletic": { "nr": string (número de placa para la etiqueta «[Nr. X]»), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
       "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
       "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
       "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
@@ -737,6 +739,9 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   opus: 'opus',
   cita: 'quote',
   quote: 'quote',
+  athletic: 'athletic',
+  opus_athletic: 'athletic',
+  editorial: 'athletic',
   frase: 'quote',
   mindset_opus: 'opus',
   'mindset / opus': 'opus',
@@ -1036,6 +1041,20 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   if (template === 'bookmark' && gPoints.length >= 3) {
     patch.bookmarkData = { points: gPoints, cta: upper(first(g.cta, BOOKMARK_CTA)), accent: 'orange' }
   }
+
+  // 15 · Opus Athletic: filas clave → valor o tabla de 2 columnas.
+  const at = obj(s.athletic ?? s.opusAthletic)
+  const atRows = objList(at.rows ?? at.filas)
+    .map((r) => ({ k: first(r.k, r.key, r.clave, r.label), v: first(r.v, r.value, r.valor, r.desc) }))
+    .filter((r) => r.k || r.v)
+    .slice(0, 6)
+  if (atRows.length) {
+    patch.athleticRows = atRows
+    patch.athleticMode = at.mode === 'table' || at.modo === 'tabla' ? 'table' : 'list'
+    const head = Array.isArray(at.head ?? at.encabezado) ? ((at.head ?? at.encabezado) as unknown[]).map((x) => str(x)) : []
+    if (head.length >= 2) patch.athleticHead = [head[0], head[1]]
+    if (str(at.nr)) patch.athleticNr = str(at.nr)
+  } else if (template === 'athletic') patch.athleticRows = []
 
   // 14 · Cita célebre: sin fuente concreta no se acepta (defensa contra frases apócrifas).
   const ci = obj(s.cita ?? s.quote)
@@ -1394,6 +1413,7 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   bookmark: 'guardado',
   opus: 'opus',
   quote: 'cita',
+  athletic: 'athletic',
 }
 
 export interface RegenerateRequest {
