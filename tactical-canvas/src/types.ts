@@ -76,6 +76,8 @@ export type AthleticMode = 'list' | 'table'
 export type AthleticPos = 'auto' | 'center' | 'right' | 'none'
 /** Variante visual de la plantilla 15: Light Editorial (Opus Athletic) o Dark Brutalist (marca Coach JP) */
 export type AthleticTheme = 'light' | 'dark'
+/** Fondo de la plantilla 15: auto alterna anillos / grilla por placa; photo usa la imagen como fondo B/N a sangre */
+export type AthleticBg = 'auto' | 'rings' | 'grid' | 'photo'
 
 export interface BookmarkData {
   /** 3 o 4 viñetas clave del carrusel */
@@ -199,6 +201,7 @@ export interface CanvasState {
   athleticHead: [string, string]
   athleticPos: AthleticPos
   athleticTheme: AthleticTheme
+  athleticBg: AthleticBg
   /** Llamado a la acción de la placa de cierre (caja de acento al pie del bloque de texto) */
   athleticCta: string
   // Repetición matrix (plantilla 07)

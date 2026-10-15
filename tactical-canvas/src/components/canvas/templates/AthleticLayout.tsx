@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { FONT_BODY, FONT_BRAND, FONT_MONO } from '../../../lib/brand'
+import { ShieldLogo } from '../../ShieldLogo'
 import type { AthleticPos, AthleticRow, CanvasState } from '../../../types'
 
 /** Paleta de la plantilla 15. Light Editorial (Opus Athletic) y Dark Brutalist (marca Coach JP) comparten estructura. */
@@ -16,6 +17,8 @@ export interface AthleticPalette {
   cyan: string
   /** Cian de marca para el texto del tag y encabezados de tabla (legible sobre este fondo) */
   tag: string
+  /** RGB del velo sobre la foto de fondo (mismo tono que el papel / charcoal) */
+  veil: string
   /** Grano de textura sobre el fondo (0 = sin grano) */
   grain: number
   /** Sombra de contacto bajo el atleta */
@@ -33,6 +36,7 @@ export const ATHLETIC: AthleticPalette = {
   orange: '#F97316',
   cyan: '#0EA5E9',
   tag: '#0E7490',
+  veil: '239,239,239',
   grain: 0,
   shadow: 'rgba(0,0,0,0.30)',
 }
@@ -127,6 +131,27 @@ function Rings({ cx, cy, w, h, accent, ring, s, cross }: { cx: number; cy: numbe
   )
 }
 
+/** Grilla táctica: retícula fina + una cruz de acento en una intersección (misma familia que los anillos). */
+function Grid({ w, h, line, accent, s }: { w: number; h: number; line: string; accent: string; s: number }) {
+  const step = 90 * s
+  const xs = Array.from({ length: Math.ceil(w / step) + 1 }, (_, i) => i * step)
+  const ys = Array.from({ length: Math.ceil(h / step) + 1 }, (_, i) => i * step)
+  const cx = xs[Math.max(1, xs.length - 3)]
+  const cy = ys[Math.max(1, ys.length - 4)]
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ position: 'absolute', inset: 0 }} aria-hidden>
+      {xs.map((x) => (
+        <line key={`x${x}`} x1={x} y1={0} x2={x} y2={h} stroke={line} strokeWidth={Math.max(1, 1.2 * s)} />
+      ))}
+      {ys.map((y) => (
+        <line key={`y${y}`} x1={0} y1={y} x2={w} y2={y} stroke={line} strokeWidth={Math.max(1, 1.2 * s)} />
+      ))}
+      <line x1={cx - 22 * s} y1={cy} x2={cx + 22 * s} y2={cy} stroke={accent} strokeWidth={2 * s} />
+      <line x1={cx} y1={cy - 22 * s} x2={cx} y2={cy + 22 * s} stroke={accent} strokeWidth={2 * s} />
+    </svg>
+  )
+}
+
 /** Grano de textura (ruido fractal SVG): da cuerpo al charcoal sin ensuciar el texto. */
 function Grain({ w, h, opacity }: { w: number; h: number; opacity: number }) {
   return (
@@ -175,13 +200,17 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
   const isStory = state.aspect === 'story'
   const accent = state.accentSwap ? P.cyan : P.orange
   const pos = resolveAthleticPos(state.athleticPos, slideIndex)
-  const showCut = Boolean(cutout) && pos !== 'none'
+  // Fondo: foto real B/N a sangre (con velo), o patrón de la familia (auto alterna anillos / grilla por placa).
+  const bgMode = state.athleticBg ?? 'auto'
+  const photoBg = bgMode === 'photo' && Boolean(cutout)
+  const pattern = bgMode === 'grid' || (bgMode === 'auto' && slideIndex % 2 === 1) ? 'grid' : 'rings'
+  const showCut = Boolean(cutout) && pos !== 'none' && !photoBg
   const side = showCut && pos === 'right'
   const padX = 84 * s
   const padTop = (isStory ? 250 : 92) * s
   const contentW = w - padX * 2
   // Con el atleta a la derecha, el texto ocupa el 60 % izquierdo.
-  const textW = side ? contentW * 0.6 : contentW
+  const textW = side ? contentW * 0.6 : photoBg ? contentW * 0.78 : contentW
   const rows = (state.athleticRows ?? []).filter((r) => r.k.trim() || r.v.trim()).slice(0, 6)
   const titled = splitAthleticTitle(state.headlineA, state.headlineB)
   // Segundo color de marca: cian en el tag y encabezados (con SWAP ACCENT, se invierten).
@@ -199,11 +228,11 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
     : { left: w * (dense ? 0.28 : 0.22), width: w * (dense ? 0.44 : 0.56), height: h * (isStory ? (dense ? 0.28 : 0.36) : dense ? 0.3 : 0.4), bottom: h * 0.06 }
   // El bloque de texto nunca invade al atleta: con el recorte al centro, su alto máximo termina
   // encima de la cabeza; si no entra, se reduce en bloque (sin cortar ni partir palabras).
-  const footerZone = (isStory ? 300 : 110) * s
+  const footerZone = (isStory ? 330 : 150) * s
   const maxTextH = showCut && !side ? h - cut.bottom - cut.height - padTop - 36 * s : h - padTop - footerZone
   const textRef = useRef<HTMLDivElement>(null)
   const [fit, setFit] = useState(1)
-  const key = JSON.stringify([state.headlineA, state.headlineB, state.body, state.tag, state.athleticRows, state.athleticMode, state.athleticHead, state.athleticCta, state.headlineScale, pos, showCut, w, h])
+  const key = JSON.stringify([state.headlineA, state.headlineB, state.body, state.tag, state.athleticRows, state.athleticMode, state.athleticHead, state.athleticCta, state.headlineScale, pos, showCut, photoBg, w, h])
   useLayoutEffect(() => {
     const el = textRef.current
     if (!el) return
@@ -213,8 +242,22 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
 
   return (
     <div data-template="athletic" data-theme={state.athleticTheme ?? 'light'} style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: P.background, color: P.ink }}>
+      {photoBg && (
+        <>
+          <img
+            src={cutout!}
+            alt=""
+            data-part="athletic-photo"
+            style={{ position: 'absolute', inset: 0, width: w, height: h, objectFit: 'cover', objectPosition: '70% 30%', filter: 'grayscale(1) contrast(1.12) brightness(0.92)' }}
+          />
+          {/* Velo: denso del lado del texto, abierto hacia la foto; base oscura para el logo */}
+          <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(90deg, rgba(${P.veil},0.94) 0%, rgba(${P.veil},0.82) 48%, rgba(${P.veil},0.42) 100%)` }} />
+          <div aria-hidden style={{ position: 'absolute', inset: 0, background: `linear-gradient(0deg, rgba(${P.veil},0.92) 0%, rgba(${P.veil},0) 32%)` }} />
+        </>
+      )}
+      {!photoBg && pattern === 'grid' && <Grid w={w} h={h} line={P.ring} accent={accent} s={s} />}
+      {!photoBg && pattern === 'rings' && <Rings cx={ring.cx} cy={ring.cy} w={w} h={h} accent={accent} ring={P.ring} s={s} cross={showCut} />}
       {P.grain > 0 && <Grain w={w} h={h} opacity={P.grain} />}
-      <Rings cx={ring.cx} cy={ring.cy} w={w} h={h} accent={accent} ring={P.ring} s={s} cross={showCut} />
 
       {showCut && (
         <>
@@ -309,22 +352,16 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
         )}
       </div>
 
-      <p
-        style={{
-          position: 'absolute',
-          left: padX,
-          bottom: (isStory ? 240 : 54) * s,
-          margin: 0,
-          fontFamily: FONT_MONO,
-          fontWeight: 600,
-          fontSize: 20 * s,
-          letterSpacing: '0.18em',
-          textTransform: 'uppercase',
-          color: P.gray,
-        }}
-      >
-        COACH JP <span style={{ color: accent }}>·</span> @coachjp.training
-      </p>
+      {/* Firma de marca: el mismo escudo + COACH JP de las placas nativas */}
+      <div data-part="athletic-logo" style={{ position: 'absolute', left: padX, bottom: (isStory ? 236 : 50) * s, display: 'flex', alignItems: 'center', gap: 18 * s }}>
+        <ShieldLogo size={54 * s} />
+        <div>
+          <p style={{ margin: 0, fontFamily: FONT_BODY, fontWeight: 800, fontSize: 27 * s, letterSpacing: '-0.01em', color: P.ink, lineHeight: 1.1 }}>
+            COACH <span style={{ color: P.orange }}>JP</span>
+          </p>
+          <p style={{ margin: `${5 * s}px 0 0`, fontFamily: FONT_MONO, fontSize: 17 * s, color: P.gray }}>@coachjp.training</p>
+        </div>
+      </div>
     </div>
   )
 }

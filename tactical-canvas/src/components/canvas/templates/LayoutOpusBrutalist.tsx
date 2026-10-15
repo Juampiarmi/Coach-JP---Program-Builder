@@ -17,6 +17,7 @@ export const BRUTALIST: AthleticPalette = {
   orange: '#F97316',
   cyan: '#38BDF8',
   tag: '#38BDF8',
+  veil: '11,14,20',
   grain: 0.07,
   shadow: 'rgba(0,0,0,0.65)',
 }

@@ -1,4 +1,4 @@
-import type { AthleticMode, AthleticPos, AthleticRow, AthleticTheme, CanvasState } from '../../types'
+import type { AthleticBg, AthleticMode, AthleticPos, AthleticRow, AthleticTheme, CanvasState } from '../../types'
 import { Field, Segmented, TextInput } from './primitives'
 
 interface Props {
@@ -31,6 +31,20 @@ export function AthleticEditor({ state, update }: Props) {
           size="sm"
         />
       </Field>
+      <Field label="Fondo" plain>
+        <Segmented<AthleticBg>
+          value={state.athleticBg ?? 'auto'}
+          onChange={(athleticBg) => update({ athleticBg })}
+          options={[
+            { value: 'auto', label: 'AUTO' },
+            { value: 'rings', label: 'ANILLOS' },
+            { value: 'grid', label: 'GRILLA' },
+            { value: 'photo', label: 'FOTO B/N' },
+          ]}
+          size="sm"
+        />
+      </Field>
+      <p className="-mt-1 font-mono text-[9px] leading-relaxed text-steel/60">AUTO alterna anillos y grilla por placa. FOTO B/N usa la imagen de 03 · Fondo a sangre con velo (en lugar de recorte).</p>
       <div className="grid grid-cols-[5rem_1fr] gap-2">
         <Field label="Nr.">
           <TextInput value={state.athleticNr ?? ''} onChange={(athleticNr) => update({ athleticNr })} placeholder="1" />
