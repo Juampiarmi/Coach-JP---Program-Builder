@@ -80,6 +80,7 @@ export const DEFAULT_STATE: CanvasState = {
   athleticHead: ['Intensidad', 'Reps × series'],
   athleticPos: 'auto',
   athleticTheme: 'light',
+  essayParas: [],
   athleticBg: 'auto',
   athleticCta: '',
   quoteText: 'Ningún ser humano tiene límites.',
@@ -212,6 +213,20 @@ export const SAMPLES: Record<TemplateId, Partial<CanvasState>> = {
     citeMain: '',
     citeSub: '',
     structData: null,
+  },
+  essay: {
+    tag: 'REFLEXIÓN · DISCIPLINA',
+    headlineA: 'NADIE TE VA A',
+    headlineB: 'VENIR A BUSCAR.',
+    body: '',
+    citeMain: '',
+    citeSub: '',
+    essayParas: [
+      'Hay días en los que entrenar es fácil: dormiste bien, tenés energía y la música suena justa. Esos días no construyen nada que no tengas.',
+      'Los que cuentan son los otros. Los que llegás cansado, con la cabeza en otro lado y sin ganas. Ahí se decide si tenés un sistema o una racha.',
+      'Una racha depende de cómo te levantás. Un sistema depende de lo que decidiste antes de levantarte.',
+      'CUMPLÍ EL PROTOCOLO. EL ÁNIMO LLEGA DESPUÉS.',
+    ],
   },
   athletic: {
     tag: 'PROTOCOLO DE FUERZA',

@@ -205,7 +205,9 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
   const bgMode = state.athleticBg ?? 'auto'
   const photoBg = bgMode === 'photo' && Boolean(cutout)
   const pattern = bgMode === 'concrete' || bgMode === 'radial' ? bgMode : bgMode === 'grid' || (bgMode === 'auto' && slideIndex % 2 === 1) ? 'grid' : 'rings'
-  const showCut = Boolean(cutout) && pos !== 'none' && !photoBg
+  // Texto muy largo (más de 90 palabras): el recorte se oculta para que nada se superponga.
+  const allWords = [state.headlineA, state.headlineB, state.body, ...(state.athleticRows ?? []).map((r) => `${r.k} ${r.v}`)].join(' ').split(/\s+/).filter(Boolean).length
+  const showCut = Boolean(cutout) && pos !== 'none' && !photoBg && allWords <= 90
   const side = showCut && pos === 'right'
   const padX = 84 * s
   const padTop = (isStory ? 250 : 92) * s
@@ -222,7 +224,7 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
   const tag = unbracket(state.tag)
   const titleSize = Math.round((side ? 74 : 84) * s * ((state.headlineScale ?? 100) / 100))
   // Layout defensivo: con 3+ filas de datos el recorte se achica para no competir con el texto.
-  const dense = rows.length >= 3
+  const dense = rows.length >= 3 || allWords > 40
   const ring = pos === 'center' && showCut ? { cx: w * 0.5, cy: h * (isStory ? 0.7 : 0.72) } : { cx: w * 0.8, cy: h * 0.62 }
   const cut = side
     ? { right: -w * 0.02, width: w * (dense ? 0.36 : 0.42), height: h * (isStory ? (dense ? 0.52 : 0.62) : dense ? 0.62 : 0.74), bottom: h * 0.06 }

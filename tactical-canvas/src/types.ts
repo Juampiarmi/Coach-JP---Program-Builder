@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve' | 'funnel' | 'versus'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -205,6 +205,8 @@ export interface CanvasState {
   athleticHead: [string, string]
   athleticPos: AthleticPos
   athleticTheme: AthleticTheme
+  /** Manifiesto texto (plantilla 16): párrafos de texto continuo, en orden */
+  essayParas: string[]
   athleticBg: AthleticBg
   /** Llamado a la acción de la placa de cierre (caja de acento al pie del bloque de texto) */
   athleticCta: string

@@ -11,6 +11,7 @@ import { ManifestoTemplate } from './templates/ManifestoTemplate'
 import { OpusTemplate } from './templates/OpusTemplate'
 import { QuoteTemplate } from './templates/QuoteTemplate'
 import { TacticalBackdrop } from './TacticalBackdrop'
+import { EssayTemplate } from './templates/EssayTemplate'
 import { AthleticLayout } from './templates/AthleticLayout'
 import { athleticPalette, LayoutOpusBrutalist } from './templates/LayoutOpusBrutalist'
 import { StatementTemplate } from './templates/StatementTemplate'
@@ -141,7 +142,8 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const isStory = state.aspect === 'story'
   const baseScale = isStory ? 1.08 : 1
   // Tipo de fondo: con «photo» manda la imagen de la placa; los fondos tácticos la reemplazan.
-  const bgStyle = state.bgStyle ?? 'photo'
+  // Manifiesto texto sin foto: arranca con la luz radial texturada (nunca un plano vacío).
+  const bgStyle = state.template === 'essay' && (state.bgStyle ?? 'photo') === 'photo' && !bgImage ? 'radial' : (state.bgStyle ?? 'photo')
   const bgPhoto = bgStyle === 'photo' ? bgImage : null
   const hasBg = Boolean(bgPhoto)
   const plate = hasBg && state.floatingPlate
@@ -159,8 +161,9 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const isRepeat = state.template === 'repeat'
   const isOpus = state.template === 'opus'
   const isQuote = state.template === 'quote'
+  const isEssay = state.template === 'essay'
   const isStruct = (STRUCT_TEMPLATES as readonly string[]).includes(state.template)
-  const centered = isStatement || isManifesto || isRepeat || isOpus || isQuote
+  const centered = isStatement || isManifesto || isRepeat || isOpus || isQuote || isEssay
   // Tema: Minimal Paper sólo en Diagrama / Repetición; 01–05 usan siempre la paleta Táctico Dark.
   const theme = effectiveTheme(state)
   const swap = Boolean(state.accentSwap)
@@ -175,7 +178,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
       font.sizeFactor *
       (state.headlineScale / 100) *
       // Opus: título protagonista pero contenido (nunca 80 % de la placa): deja aire para los bloques.
-      (isManifesto ? 1.45 : isStatement ? 1.3 : isOpus ? 1.12 : 1) *
+      (isManifesto ? 1.45 : isStatement ? 1.3 : isOpus ? 1.12 : isEssay ? 0.92 : 1) *
       fit,
   )
 
@@ -399,6 +402,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     {isStatement && <StatementTemplate state={state} scale={scale} />}
                     {isDiagram && <DiagramTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isStruct && <StructTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
+                    {isEssay && <EssayTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isOpus && <OpusTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {state.template === 'bookmark' && <BookmarkTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
                   </div>

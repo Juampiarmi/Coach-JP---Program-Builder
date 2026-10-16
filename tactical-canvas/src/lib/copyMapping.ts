@@ -57,6 +57,18 @@ export interface DetectOptions {
   single?: boolean
 }
 
+/**
+ * ¿Es un manifiesto / reflexión de texto continuo? 2+ párrafos separados por línea en blanco, sin
+ * etiquetas «[Nr. X]» ni bloques «00001:», ni rótulos «Titular:», y de extensión de placa (≤ 260 palabras).
+ */
+export function isEssayText(text: string) {
+  const paras = text.split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean)
+  if (paras.length < 2) return false
+  if (/\[\s*nr\.?\s*\d/i.test(text) || hasPaddedBlocks(text) || LABEL_ANY.test(text)) return false
+  if (paras.every((p) => QUOTE_RX.test(p))) return false
+  return text.split(/\s+/).filter(Boolean).length <= 260
+}
+
 /** ¿Parece copy de placa (texto ya escrito) y no un brief? Renglones cortos y extensión acotada. */
 function looksLikeCopy(text: string) {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
@@ -76,10 +88,15 @@ export function detectStructuredCopy(raw: string, opts: DetectOptions = {}): Map
   if (opts.single) {
     // 1 placa forzada: los tramos (sin sus marcadores) se juntan en una sola placa.
     if (split.length >= 2) return [{ text: split.join('\n') }]
-    if (hasPaddedBlocks(text) || looksLikeCopy(text) || (split.length === 1 && split[0] !== text)) return [{ text: split[0] ?? text }]
+    if (hasPaddedBlocks(text) || looksLikeCopy(text) || isEssayText(text) || (split.length === 1 && split[0] !== text)) return [{ text: split[0] ?? text }]
     return null
   }
   if (split.length >= 2) return split.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
+  // Varias citas «"…" — Autor» separadas por línea en blanco: una placa por cita.
+  const paras = text.split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean)
+  if (paras.length >= 2 && paras.every((p) => QUOTE_RX.test(p))) return paras.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
+  // Manifiesto / reflexión de texto continuo: párrafos sin «[Nr.]» ni «00001:» → UNA placa de texto.
+  if (isEssayText(text)) return [{ text: split[0] ?? text }]
   // Un solo «Placa 1:» explícito también es copy: una placa, sin el marcador.
   if (split.length === 1 && split[0] !== text) return [{ text: split[0] }]
   // Sin separadores explícitos: título + bloques «00001:», una cita o renglones de copy → UNA placa.
@@ -157,6 +174,9 @@ export function splitBlock(block: string): Partial<CanvasState> {
   // Cita célebre: «frase» / "frase" + renglón «— Nombre, rol».
   const quote = splitQuote(block)
   if (quote) return quote
+  // Manifiesto texto: párrafos continuos (línea en blanco entre ellos) → plantilla 16.
+  const essay = splitEssay(block)
+  if (essay) return essay
   // Mindset / Opus: renglones «00001: texto» son bloques numerados aparte; el resto es el título.
   const opus = splitOpus(block)
   if (opus) return opus
@@ -287,6 +307,19 @@ function splitOpus(block: string): Partial<CanvasState> | null {
   return { ...head, template: 'opus', opusBlocks: blocks.slice(0, 6) }
 }
 
+/**
+ * Párrafos de texto continuo → plantilla 16 · Manifiesto texto. Un primer párrafo corto en MAYÚSCULAS
+ * es el título (titular + remate); el resto queda en párrafos, en su orden y sin reescribir.
+ */
+function splitEssay(block: string): Partial<CanvasState> | null {
+  if (!isEssayText(block.trim())) return null
+  const paras = block.trim().split(/\n[ \t]*\n+/).map((p) => p.replace(/\s*\n\s*/g, ' ').replace(/\*\*|__/g, '').trim()).filter(Boolean)
+  const first = paras[0]
+  const titled = first.split(/\s+/).length <= 12 && /\p{L}/u.test(first) && first === first.toUpperCase()
+  const head = titled ? splitBlock(first.replace(/\s+/g, ' ')) : { headlineA: '', headlineB: '' }
+  return { headlineA: head.headlineA ?? '', headlineB: head.headlineB ?? '', template: 'essay', essayParas: titled ? paras.slice(1) : paras, body: '' }
+}
+
 /** «"La frase." — Nombre Apellido, rol» (en uno o dos renglones) → plantilla 14 · Cita célebre. */
 const QUOTE_RX = /^\s*(?:cita\s*[:：]\s*)?[«"“]([^«»"“”]{8,320})[»"”]\s*(?:\n\s*)?(?:[—–-]|autor\s*[:：])\s*([^\n,·|(]{3,60})(?:\s*[,·|(]\s*([^\n)]{2,80})\)?)?\s*$/iu
 function splitQuote(block: string): Partial<CanvasState> | null {
@@ -377,7 +410,7 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
     // Nada de gráficos / diagramas que el usuario no pidió.
     const wantsVisual = ASKS_VISUAL.test(block.text)
     const hasNumber = /\d/.test(block.text)
-    if (local.template === 'opus' || local.template === 'quote') p = { ...p, ...local, template: local.template }
+    if (local.template === 'opus' || local.template === 'quote' || local.template === 'essay') p = { ...p, ...local, template: local.template }
     else if (anaphora) p = { ...p, template: 'manifesto' }
     else if (!p.template || (!TEXT_TEMPLATES.includes(p.template) && !wantsVisual && !(p.template === 'metric' && hasNumber))) p = { ...p, template: 'statement' }
     if (p.template === 'repeat') p = { ...p, repeatPhrase: `${p.headlineA ?? ''} ${p.headlineB ?? ''}`.trim(), repeatMode: 'justified' }
