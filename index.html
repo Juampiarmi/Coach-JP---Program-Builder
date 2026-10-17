@@ -3497,7 +3497,7 @@ function moverDia(desde, dir){
    visibles que todavía son el default ("DÍA 3" -> "DÍA 2"), jamás un
    nombre que el coach haya escrito a mano. */
 const MAX_DIAS = 7;
-const BTN_ELIMINAR_DIA = '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">' +
+const BTN_ELIMINAR_DIA = '<div class="row jp-day-tools" style="margin-top:12px;gap:8px;flex-wrap:wrap">' +
   '<button type="button" class="btn ghost sm" style="border-color:rgba(56,189,248,.4);color:#38bdf8" data-copiardia="1">📋 COPIAR DÍA A OTRO ALUMNO</button>' +
   '<button type="button" class="btn ghost sm" style="border-color:rgba(255,107,87,.4);color:#FF6B57" data-eliminardia="1">🗑️ ELIMINAR DÍA ACTIVO</button>' +
   '</div>';
@@ -5684,9 +5684,24 @@ function addBlockSportsPizarra(){
    vacío = 0, sin nada extra que recalcular acá). Mismo respaldo de
    deshacer (Ctrl+Z) que ya usa clonarSemanaAnteriorCF() para una acción
    igual de destructiva. */
+/* confirmación breve EN EL LUGAR (1 clic): el botón destructivo se reemplaza por "¿Seguro? [Sí] [Cancelar]" y vuelve solo a los 6 s o con Esc */
+function jpConfirmarBreve(btn, pregunta, lbSi, fn){
+  if(!btn || btn.parentNode == null) return;
+  const prev = btn.style.display;
+  const wrap = document.createElement('span'); wrap.className = 'jp-cb';
+  wrap.innerHTML = '<span class="jp-cb-q">' + esc(pregunta) + '</span><button type="button" class="jp-cb-si">' + esc(lbSi) + '</button><button type="button" class="jp-cb-no">Cancelar</button>';
+  btn.style.display = 'none';
+  btn.insertAdjacentElement('afterend', wrap);
+  let t = null;
+  const cerrar = () => { clearTimeout(t); wrap.remove(); btn.style.display = prev; };
+  t = setTimeout(cerrar, 6000);
+  wrap.querySelector('.jp-cb-si').addEventListener('click', e => { e.stopPropagation(); cerrar(); fn(); });
+  wrap.querySelector('.jp-cb-no').addEventListener('click', e => { e.stopPropagation(); cerrar(); });
+  wrap.addEventListener('keydown', e => { if(e.key === 'Escape'){ e.stopPropagation(); cerrar(); } });
+  wrap.querySelector('.jp-cb-no').focus();
+}
 function vaciarDiaCompleto(){
   const d = curDay(); if(!d || !d.bloques.length) return;
-  if(!confirm('¿Seguro que querés vaciar todos los bloques de este día?')) return;
   if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Vaciar ' + d.short);
   d.bloques = [];
   save(); renderBuilder();
@@ -7990,8 +8005,13 @@ function bindBuilder(){
     }
     if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
     if(t.dataset.btipssports){ generarTipsSports(t.dataset.btipssports, t); return; }
-    if(t.dataset.vaciardia){ vaciarDiaCompleto(); return; }
-    if(t.dataset.eliminardia){ pedirEliminarDia(); return; }
+    if(t.dataset.vaciardia){ jpConfirmarBreve(t, '¿Vaciar todos los bloques de este día?', 'Sí, vaciar', vaciarDiaCompleto); return; }
+    if(t.dataset.eliminardia){
+      const pe = plan(S.activeId), de = curDay(); if(!pe || !de) return;
+      if(pe.dias.length <= 1){ toast('El mesociclo necesita al menos un día', 'err'); return; }
+      jpConfirmarBreve(t, '¿Eliminar ' + de.short + ' y todos sus bloques?', 'Sí, eliminar', eliminarDiaActivo);
+      return;
+    }
     if(t.dataset.copiardia){ abrirModalCopiarDia(); return; }
     if(t.dataset.ondularmeso){ ondularMesocicloAutomatico(); return; }
     if(t.dataset.migrarpizarra){ migrarBloqueAPizarra(t.dataset.migrarpizarra); return; }
@@ -58598,9 +58618,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
               '<img src="' + ytThumb(x.ex.videoId) + '" alt="">▶ <b>' + esc(x.ex && x.ex.es && (x.override || nrm(x.ex.es) === nrm(x.nombre) || nrm(x.ex.en) === nrm(x.nombre)) ? x.ex.es : x.nombre) + '</b> (Video vinculado' + (x.override ? (x.manual ? ', manual' : ', override') : '') + ')</button>'
           : '<button type="button" class="vc no" data-vcno="' + esc(x.nombre) + '"' +
               (x.ficha ? ' data-vcex="' + esc(x.ficha.id) + '"' : '') +
-              ' title="Vincular un video sin salir del Builder">' + (b.sportsPizarra
-                ? '[ ⚠ ' + esc((x.letra ? x.letra + '. ' : '') + x.nombre) + ': Sin video vinculado — Vincular manualmente ]'
-                : '⚠️ ' + esc(x.nombre) + ' — + Vincular') + '</button>';
+              ' title="' + esc('Vincular un video a ' + (x.letra ? x.letra + '. ' : '') + x.nombre + ' sin salir del Builder') + '">[ ⚠️ VINCULAR VIDEO MANUALMENTE ]' +
+                '<small class="vc-n">' + esc((x.letra ? x.letra + ' · ' : '') + x.nombre) + '</small></button>';
         /* directiva (rediseño de acceso a videos): reasignación manual --
            si la detección automática (o la aproximación de buscarVideo en
            TEMPLATE_HTML) eligió la variante incorrecta, el coach reasigna
@@ -70608,6 +70627,27 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 #dayPanel .block .cf-fmt-btn.jp-vc-rescan:hover, #dayPanel .block .sb-pill-rir:hover, #dayPanel .block .sb-pill-rest:hover{ border-color:var(--gold,#D2793F); color:var(--orange,#E8965E); }
 #dayPanel .block-body > label.lb[data-jp-corto]{ cursor:help; }
 #dayPanel .block textarea[data-bf="items"]{ min-height:112px; resize:vertical; }
+/* acciones destructivas: aparte de las comunes, en rojo tenue; la confirmación aparece en el lugar */
+.jp-dayactions > [data-vaciardia]{ flex:0 0 auto !important; margin-left:auto; padding:0 14px !important; position:relative; background:rgba(224,101,74,.06) !important; border:1px solid rgba(224,101,74,.28) !important; color:#E0856F !important; font-weight:600; }
+.jp-dayactions > [data-vaciardia]::before{ content:''; position:absolute; left:-9px; top:20%; height:60%; width:1px; background:var(--line-2,#2a2f3a); }
+.jp-day-tools{ border-top:1px solid var(--line,#1f242d); padding-top:12px; }
+.jp-day-tools > [data-eliminardia]{ margin-left:auto; background:rgba(224,101,74,.06) !important; border:1px solid rgba(224,101,74,.28) !important; color:#E0856F !important; font-weight:600; }
+.jp-cb{ display:inline-flex; align-items:center; gap:8px; margin-left:auto; padding:5px 6px 5px 12px; border:1px solid rgba(224,101,74,.5); border-radius:10px; background:rgba(224,101,74,.1); font-size:12.5px; }
+.jp-cb-q{ color:#f0a08c; font-weight:700; }
+.jp-cb-si{ background:#b9402f; color:#fff; border:0; border-radius:7px; padding:7px 12px; font-weight:800; cursor:pointer; min-height:34px; }
+.jp-cb-no{ background:transparent; border:1px solid var(--line-2,#2a2f3a); color:var(--muted,#8b94a3); border-radius:7px; padding:7px 10px; cursor:pointer; min-height:34px; }
+/* chip único de "sin video vinculado" */
+.vid-chips .vc-group:has(> .vc.no){ border-radius:6px; border:1px solid rgba(245,158,11,.40); background:rgba(69,26,3,.30); }
+.vid-chips .vc-group:has(> .vc.no):hover{ border-color:rgba(245,158,11,.6); background:rgba(69,26,3,.5); }
+.vid-chips .vc-group > .vc.no{ color:#fcd34d; font-size:12px; padding:4px 10px; display:inline-flex; align-items:center; gap:8px; letter-spacing:.02em; }
+.vid-chips .vc.no .vc-n{ color:rgba(252,211,77,.62); font-weight:500; max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-transform:none; letter-spacing:0; }
+/* warm-up integrado al bloque de Activación */
+#wuCard.jp-wu-int{ display:none !important; }
+#dayPanel .jp-wu-acts{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 8px; padding:6px 10px; border:1px dashed rgba(56,189,248,.3); border-radius:9px; background:rgba(56,189,248,.04); font-size:12px; color:var(--muted,#8b94a3); }
+#dayPanel .jp-wu-acts .jp-wu-t{ margin-right:auto; }
+#dayPanel .jp-wu-acts button{ background:transparent; border:1px solid var(--line-2,#2a2f3a); color:var(--txt-2,#c3c9d3); border-radius:7px; padding:4px 10px; font-size:12px; cursor:pointer; }
+#dayPanel .jp-wu-acts button[data-wuact="del"]{ color:#E0856F; border-color:rgba(224,101,74,.3); }
+#dayPanel .jp-wu-acts button:disabled{ opacity:.6; cursor:progress; }
 </style>
 <script>
 (function(){
@@ -70642,8 +70682,37 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(lb && !lb.dataset.jpCorto && /^\s*redacci[oó]n libre del bloque/i.test(lb.textContent)){ lb.title = lb.textContent.trim(); lb.textContent = 'Redacción libre'; lb.dataset.jpCorto = '1'; }
       ajustarTextarea(bl.querySelector('textarea[data-bf="items"]'));
     });
+    integrarWarmup();
     agruparEstado();
   }
+  /* la tarjeta "Warm-up específico del día" y el bloque de Activación eran dos secciones para lo mismo: con un warm-up ya armado, la tarjeta
+     se oculta y sus acciones (regenerar / quitar) pasan a una franja dentro del propio bloque */
+  function integrarWarmup(){
+    var panel = document.getElementById('dayPanel'), card = document.getElementById('wuCard');
+    if(!panel || !card) return;
+    var wb = null;
+    panel.querySelectorAll('.block').forEach(function(bl){
+      if(wb) return;
+      var ref = bl.querySelector('[data-b]'), b = (ref && typeof findBlock === 'function') ? findBlock(ref.getAttribute('data-b')) : null;
+      if(b && (b.autoWu === true || b.category === 'warmup' || /entrada en calor|warm.?up/i.test(b.titulo || ''))) wb = bl;
+    });
+    card.classList.toggle('jp-wu-int', !!wb);
+    panel.querySelectorAll('.jp-wu-acts').forEach(function(x){ if(!wb || !wb.contains(x)) x.remove(); });
+    if(!wb || wb.querySelector('.jp-wu-acts')) return;
+    var body = wb.querySelector('.block-body'); if(!body) return;
+    var motor = document.getElementById('wuMotor'), row = document.createElement('div');
+    row.className = 'jp-wu-acts';
+    row.innerHTML = '<span class="jp-wu-t">🔥 Warm-up del día · <b>' + (motor ? motor.textContent : 'Motor local') + '</b></span>' +
+      '<button type="button" data-wuact="run">✨ Regenerar</button><button type="button" data-wuact="del">Quitar</button>';
+    body.insertBefore(row, body.firstChild);
+  }
+  document.addEventListener('click', function(e){
+    var bt = e.target.closest && e.target.closest('[data-wuact]'); if(!bt) return;
+    var run = bt.getAttribute('data-wuact') === 'run', orig = document.getElementById(run ? 'wuRun' : 'wuClear');
+    if(!orig) return;
+    if(run){ bt.textContent = 'Generando…'; bt.disabled = true; orig.click(); }
+    else jpConfirmarBreve(bt, '¿Quitar el warm-up de este día?', 'Sí, quitar', function(){ orig.click(); });
+  });
   var t = null;
   function programar(){ clearTimeout(t); t = setTimeout(retocar, 120); }
   document.addEventListener('input', function(e){
