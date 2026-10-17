@@ -3620,7 +3620,7 @@ const TEC_PARAM_META = {
   restpause: { lb: 'Esquema (reps encadenadas + pausa)', ph: 'Ej: 10+4+3 / 15s' },
   myoreps:   { lb: 'Esquema (reps encadenadas + pausa)', ph: 'Ej: 12+5+5+4 / 15s' },
   topset:    { lb: 'Back-off (% de bajada, separados por coma)', ph: 'Ej: 10,15,20' },
-  intervalo: { lb: 'Trabajo / Descanso / Sets (seg)', ph: 'Ej: 40/20/4' }
+  intervalo: { lb: 'Trabajo / Descanso / Series (seg)', ph: 'Ej: 40/20/4' }
 };
 function tecParamFieldHtml(source, blockId, dataAttr, i){
   const meta = TEC_PARAM_META[source.metodologia || ''];
@@ -4542,24 +4542,34 @@ function jpDosisCanon(texto){
     return res;
   };
   var vol = [], hasta = -1, desde = -1;
-  var rxSets = /(\d+)\s*(?:sets?|series?|rondas?)\b\s*(?:x|×|de|:|-|–)?\s*(\d+(?:\s*(?:-|–|a)\s*\d+)*)(?:\s*(?:reps?|repeticiones)\b)?(?:\s*(seg(?:undos?)?|segs?|s|min(?:utos?)?|mins?|mts?|cal)\b)?/i;
-  var rxN = /(\d+)\s*[x×]\s*(\d+(?:\s*(?:-|–|a)\s*\d+)*)(s|seg|min|mts?|cal|m)?(?![A-Za-zÀ-ÿ0-9])(?:\s*(?:reps?|repeticiones)\b)?(?:\s*\(([^)]*)\))?/i;
-  m = r.match(rxSets);
+  var rxSets = /(\d+)\s*(?:sets?|series?|rondas?)\b\s*(?:x|\u00d7|de|:|-|\u2013)?\s*(\d+(?:\s*(?:-|\u2013|a)\s*\d+)*)(?:\s*(?:reps?|repeticiones)\b)?(?:\s*(seg(?:undos?)?|segs?|s|min(?:utos?)?|mins?|mts?|cal)\b)?(?:\s*\(([^)]*)\))?/i;
+  var rxN = /(\d+)\s*[x\u00d7]\s*(\d+(?:\s*(?:-|\u2013|a)\s*\d+)*)(s|seg|min|mts?|cal|m)?(?![A-Za-z\u00c0-\u00ff0-9])(?:\s*(?:reps?|repeticiones)\b)?(?:\s*\(([^)]*)\))?/i;
   var unidadDe = function(u){ u = String(u || '').toLowerCase(); return !u ? '' : /^(?:s|seg)/.test(u) ? 's' : /^min/.test(u) ? 'min' : /^mt/.test(u) ? 'm' : u; };
-  if(m){
-    vol.push(mk(m[1], m[2], unidadDe(m[3]), ''));
-    desde = m.index; hasta = m.index + m[0].length;
-  } else if((m = r.match(rxN))){
-    vol.push(mk(m[1], m[2], unidadDe(m[3]), m[4]));
-    desde = m.index; hasta = m.index + m[0].length;
-    /* esquemas encadenados con "+": 1x3 (..) + 1x6 (..) + 2x8 (..) */
+  var tramo1 = function(frag){
+    var a1 = frag.match(rxSets);
+    if(a1 && a1.index === 0) return { t: mk(a1[1], a1[2], unidadDe(a1[3]), a1[4]), len: a1[0].length };
+    var b1 = frag.match(rxN);
+    if(b1 && b1.index === 0) return { t: mk(b1[1], b1[2], unidadDe(b1[3]), b1[4]), len: b1[0].length };
+    return null;
+  };
+  var primero = null;
+  m = r.match(rxSets);
+  if(m) primero = { t: mk(m[1], m[2], unidadDe(m[3]), m[4]), idx: m.index, len: m[0].length, src: m[0] };
+  else if((m = r.match(rxN))) primero = { t: mk(m[1], m[2], unidadDe(m[3]), m[4]), idx: m.index, len: m[0].length, src: m[0] };
+  if(primero){
+    vol.push(primero.t); desde = primero.idx; hasta = primero.idx + primero.len;
+    /* esquemas encadenados con "+": "1x3 (..) + 1x6 (..) + 2x8 (..)" o en prosa "1 SERIES × 3 (..) + 1 SERIES × 5 (..) + 4 SERIES × 6-8 (..)" */
     for(;;){
-      var cola = r.slice(hasta), mp = cola.match(/^\s*\+\s*/);
+      var mp = r.slice(hasta).match(/^\s*\+\s*/);
       if(!mp) break;
-      var sig = r.slice(hasta + mp[0].length).match(rxN);
-      if(!sig || sig.index !== 0) break;
-      vol.push(mk(sig[1], sig[2], unidadDe(sig[3]), sig[4]));
-      hasta = hasta + mp[0].length + sig[0].length;
+      var sig = tramo1(r.slice(hasta + mp[0].length));
+      if(!sig) break;
+      vol.push(sig.t); hasta += mp[0].length + sig.len;
+    }
+    /* un solo tramo: el paréntesis que sigue ("por lado", "RPE 8") no es parte de la dosis */
+    if(vol.length === 1){
+      var cutLab = primero.src.search(/\s*\([^)]*\)$/);
+      if(cutLab >= 0){ hasta = primero.idx + cutLab; vol[0].etq = ''; }
     }
   }
   if(desde >= 0) tapar(desde, hasta - desde);
@@ -4579,6 +4589,9 @@ function jpDosisCanon(texto){
   }
   /* 4 · descanso: "Rest 120s", "Rest 2:00", "Rest 3-4 min", "Rest 3 – 4 minutes", "Rest 2 min 30", "Rest 2'" */
   var rxRest = /\b(?:rest|descanso|pausa)\b\s*[:=\-–]?\s*/i;
+  /* "SIN DESCANSO" / "sin pausa" = descanso 0 (un Rest explícito posterior manda) */
+  var msd = r.match(/\bsin\s+(?:descanso|pausa)\b|\bno\s+rest\b/i);
+  if(msd){ out.rest = 0; tapar(msd.index, msd[0].length); }
   var mr = r.match(rxRest);
   if(mr){
     var ini = mr.index + mr[0].length;
@@ -4672,9 +4685,23 @@ function impLineasDosisSB(d){
   if(d.rest !== undefined) out.push('Rest ' + (d.restLabel || (d.rest + 's')));
   return out;
 }
+/* ejercicios reales de un bloque de Pizarra (no renglones de texto): estaciones A1/A2..., líneas con dosis y, en listas, cada ítem */
+function contarEjerciciosSB(items){
+  const ls = (items || []).map(l => String(l == null ? '' : l).trim()).filter(Boolean);
+  let est = 0, dosis = 0, otras = 0;
+  ls.forEach(l => {
+    if(/^(?:rest|descanso|pausa|tempo|rir|nota|obs)\b/i.test(l)) return;
+    const esEst = /^[A-F]\d+\s*[.):]/i.test(l);
+    if(esEst) est++;
+    const c = (typeof jpDosisCanon === 'function') ? jpDosisCanon(l) : null;
+    if(c && c.sets) dosis++; else if(!esEst) otras++;
+  });
+  return dosis > 0 ? Math.max(est, dosis) : (est + otras);
+}
 /* una línea del cuerpo de un bloque de Sports: dosis (se acumula en el grupo
    actual de ese ejercicio), nombre+dosis (se separan) o texto libre intacto */
 function impPushLineaSports(bloque, t, avisos){
+  t = String(t == null ? '' : t).replace(/\s*\u00d7\s*$/, '').replace(/\s+x\s*$/i, '');      /* "NOMBRE (EN) ×" con la dosis en la línea siguiente: la × huérfana sobra */
   /* un calentamiento/activación es una LISTA de ejercicios: sus líneas se conservan tal cual
      (con sus guiones, viñetas o comas), nunca se convierten en dosis con tracker */
   if(bloque.fase === 'warmup'){
@@ -5072,7 +5099,7 @@ function impMensajeSinBloques(texto, cf){
   const ej = cf ? '[WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN]' : '[BLOQUE 1], [FUERZA], [HIPERTROFIA], [ACCESORIO], [PIRÁMIDE]';
   return '⚠ No se detectó ningún bloque. ' +
     (prob ? 'La línea ' + prob.n + ' («' + prob.t.slice(0, 48) + (prob.t.length > 48 ? '…' : '') + '») no es un delimitador de bloque válido. ' : '') +
-    'Usá ' + ej + ' + nombre, o "Nombre" seguido de "4 Sets: 8-10 reps". No se cambió nada.';
+    'Usá ' + ej + ' + nombre, o "Nombre" seguido de "4 Series: 8-10 reps". No se cambió nada.';
 }
 function ejecutarImportacion(texto, modo){
   const p = plan(S.activeId), ath = active();
@@ -5752,6 +5779,10 @@ function lineaSoloDosisSB(linea){
 /* encabezados de técnica/jerga del coach: nunca son un ejercicio (evita badges amarillos falsos) */
 const RX_NOEJ_JERGA = /^(?:set[\s-]*up|fase\s+(?:exc[eé]ntrica|conc[eé]ntrica|isom[eé]trica)|intenci[oó]n|error(?:es)?\s+com[uú]n(?:es)?|errores?|transici[oó]n|rir|rest|descanso|tempo|pacing|cue|cues|ojo|nota)\b/i;
 function nombreEjercicioSB(linea){
+  const nombre = nombreEjercicioSBBase(linea);
+  return nombre ? jpLimpiarNombreEj(nombre) : nombre;       /* sin "×" ni guiones sueltos: el chip de video lleva el nombre limpio */
+}
+function nombreEjercicioSBBase(linea){
   let t = String(linea || '').trim();
   if(!t || RX_NOEJ_META.test(t) || RX_NOEJ_DIA.test(t)) return '';
   t = t.replace(/^[\s\-•*]+/, '');
@@ -6421,7 +6452,7 @@ function renderDay(){
     h += '<div class="block ' + T.cls + ' ' + (w==='danger'?'bad':'') + (esBloqueCF ? ' jp-cf-blockcard' : '') + '">' +
       '<div class="block-h">' +
         '<span class="pill ' + (b.tipo==='finisher'?'red':(b.tipo==='hyrox'?'teal':(b.tipo==='superset'?'gold':''))) + '">' + T.ic + ' ' + pillLb + '</span>' +
-        (esBloqueSportsPizarra ? '<span class="pill blk-nl" title="Líneas de trabajo (prescripción) del bloque">' + (b.items || []).filter(l => String(l || '').trim()).length + ' líneas</span>' : '') +
+        (esBloqueSportsPizarra ? '<span class="pill blk-nl" title="Ejercicios del bloque">' + contarEjerciciosSB(b.items) + (contarEjerciciosSB(b.items) === 1 ? ' ejercicio' : ' ejercicios') + '</span>' : '') +
         '<input class="bt" data-bf="titulo" data-b="' + b.id + '" value="' + esc(b.titulo||'') + '" placeholder="' + (esBloqueCF ? 'Título del bloque (ej. El Cierre, Barbell Cycling)' : (esBloqueSportsPizarra ? 'Nombre del ejercicio (ej. Press banca)' : 'Título del bloque')) + '">' +
         '<button class="icon-btn ai" data-bai="' + b.id + '" title="Nombrar con IA">🪄</button>' +
         '<div class="spacer"></div>' +
@@ -59044,7 +59075,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!bl) return;
     if(ta.tagName === 'TEXTAREA'){
       const nlEl = bl.querySelector('.blk-nl');
-      if(nlEl) nlEl.textContent = String(ta.value || '').split('\n').filter(l => l.trim()).length + ' líneas';
+      if(nlEl){ const nEj = contarEjerciciosSB(String(ta.value || '').split('\n')); nlEl.textContent = nEj + (nEj === 1 ? ' ejercicio' : ' ejercicios'); }
     }
     clearTimeout(pend);
     pend = setTimeout(() => {
@@ -69790,7 +69821,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
 /* ============================================================
    AUTO-FORMATO INTELIGENTE POR BLOQUE (Sports & Bodybuilding)
    Nivel 1: heurística local (0 ms). Nivel 2: IA (Gemini u otro proveedor activo) solo para redacción libre que el local no captura.
-   Salida canónica:  "Nombre" / "N Sets: Y reps | Tempo Z | RIR W" / "Rest Ts"   (bisets: A1./A2. y un Rest final)
+   Salida canónica:  "Nombre" / "N Series: Y reps | Tempo Z | RIR W" / "Rest Ts"   (bisets: A1./A2. y un Rest final)
    ============================================================ */
 (function(){
   'use strict';
@@ -69859,8 +69890,21 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
 
   /* ---------- una parte de prescripción -> campos ---------- */
   function parsePart(texto){
-    var r = ' ' + String(texto || '').replace(/^\s*(?:[-•*]|\d+[.)])\s+/, '') + ' ', m, d = {};
+    var __cn = (typeof jpDosisCanon === 'function') ? jpDosisCanon(' ' + String(texto || '').replace(/^\s*(?:[-*]|\d+[.)])\s+/, '') + ' ') : null;    var r = ' ' + String(texto || '').replace(/^\s*(?:[-•*]|\d+[.)])\s+/, '') + ' ', m, d = {};
     /* descanso: solo con palabra clave (los "30 segundos de plancha" son tiempo bajo tensión, no descanso) */
+    if(__cn){
+      /* el parser canónico (el mismo del Builder y de la app del alumno) resuelve dosis, tramos, tempo con X, RIR y descansos ("sin descanso" = 0) */
+      if(__cn.rest !== undefined){ d.rest = __cn.rest; if(__cn.restLabel) d.restLabel = __cn.restLabel; }
+      if(__cn.rir) d.rir = __cn.rir;
+      if(__cn.tempo) d.tempo = __cn.tempo;
+      if(__cn.sets){
+        d.sets = __cn.sets; d.reps = __cn.reps;
+        if(__cn.tramos.length > 1) d.tramos = __cn.tramos;
+        var __mu = /^(\d+(?:-\d+)*)(s|min|m)$/.exec(String(__cn.reps));
+        if(__mu){ d.reps = __mu[1]; d.unit = __mu[2] === 's' ? 'seg' : 'min'; }
+      }
+      r = ' ' + __cn.resto + ' ';
+    }
     if((m = r.match(/\b(?:rest|pausa|descansos?|descansa(?:ndo)?|recuperaci[oó]n)\s*(?:de|:)?\s*(\d+(?:[.,]\d+)?)\s*(min(?:utos?)?|m|'|seg(?:undos?)?|segs?|s|"|″)?(?![a-záéíóú])/i))){
       var nn = parseFloat(m[1].replace(',', '.')), u = (m[2] || '').toLowerCase();
       d.rest = /^(min|m|')/.test(u) ? Math.round(nn * 60) : (u ? Math.round(nn) : (nn <= 10 ? Math.round(nn * 60) : Math.round(nn)));
@@ -69894,7 +69938,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     else if(!d.reps && (m = r.match(/(?:\bx\s*|\s)(\d{1,2})\s*$/i)) && /[a-záéíóú]{3}/i.test(r.replace(m[0], ''))){ d.reps = m[1]; r = r.replace(m[0], ' '); }
     r = r.replace(/\b(?:entre\s+(?:sets?|series?|rondas?)|al\s+final|de\s+reserva|x\b)/gi, ' ').replace(/\b(?:biset|bi-set|superserie|superset|super\s+set)\b\s*[:\-–]?/gi, ' ');
     r = r.replace(/\b(?:tempo|rir|rpe|rest|descanso)\b/gi, ' ');      /* etiquetas vacías ("4 Reps | Tempo | RIR"): nunca son parte del nombre */
-    d.nombre = r.replace(/[()]/g, ' ').replace(/\s+/g, ' ').replace(/^[\s\-–•*:,.;|@]+|[\s\-–•*:,.;|@]+$/g, '').replace(/^(?:de|con|x)\s+/i, '').replace(/\s+(?:de|con|x|a)$/i, '').trim();
+    d.nombre = r.replace(/\([^)]*\)/g, ' ').replace(/[()]/g, ' ').replace(/\s*\u00d7\s*$/, '').replace(/\s+/g, ' ').replace(/^[\s\-–•*:,.;|@]+|[\s\-–•*:,.;|@]+$/g, '').replace(/^(?:de|con|x)\s+/i, '').replace(/\s+(?:de|con|x|a)$/i, '').trim();
     return d;
   }
 
@@ -69914,13 +69958,31 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   }
   function lineaDosis(o){
     var reps = o.reps + (o.unit ? ' ' + o.unit : (o.esTiempo ? '' : ' reps')) + (o.lado ? ' ' + o.lado : '');
-    return o.sets + ' ' + (o.sets === 1 ? 'Set' : 'Sets') + ': ' + reps + ' | Tempo ' + o.tempo + ' | RIR ' + o.rir;
+    return o.sets + ' ' + (o.sets === 1 ? 'Serie' : 'Series') + ': ' + reps + ' | Tempo ' + o.tempo + ' | RIR ' + o.rir;
+  }
+  /* esquema multi-tramo / pirámide: "1x3 (Aclimatación) + 1x6 (Top Set) + 2x8 (Back-off) | Tempo 3010 | RIR 1" -- solo lo que escribió el coach */
+  function lineaTramos(tramos, tempo, rir){
+    var l = tramos.map(function(x){ return x.sets + 'x' + x.reps + (x.etq ? ' (' + x.etq + ')' : ''); }).join(' + ');
+    if(tempo) l += ' | Tempo ' + tempo;
+    if(rir) l += ' | RIR ' + rir;
+    return l;
   }
 
   /* ---------- una línea natural -> líneas canónicas (o null si hace falta IA) ---------- */
   function formatearLinea(linea, opts){
     opts = opts || {};
     var t = String(linea || '').trim();
+    var __pre = '', __mpre = t.match(/^(A\d+)[.)]\s*(.*)$/i);
+    if(__mpre){ __pre = __mpre[1].toUpperCase() + '. '; t = __mpre[2]; }
+    var cnT = (typeof jpDosisCanon === 'function') ? jpDosisCanon(t) : null;
+    if(cnT && cnT.tramos.length > 1 && cnT.corte > 0){
+      var nomT = (typeof jpLimpiarNombreEj === 'function') ? jpLimpiarNombreEj(t.slice(0, cnT.corte)).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim() : t.slice(0, cnT.corte).trim();
+      if(nomT.length >= 3){
+        var outT = [__pre + nombreCanonico(nomT).nombre, lineaTramos(cnT.tramos, cnT.tempo, cnT.rir)];
+        if(cnT.rest !== undefined && !opts.sinRest) outT.push('Rest ' + (cnT.restLabel || (cnT.rest + 's')));
+        return outT;
+      }
+    }
     var biKw = /\b(?:biset|bi-set|superserie|superset|super\s+set|triset)\b/i.test(t);
     var partes;
     if(biKw){
@@ -69946,13 +70008,15 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     var esBiset = ds.length > 1;
     var os = ds.map(function(d){ var c = nombreCanonico(d.nombre); return defaults(d, c.nombre, esBiset); });
     var restExp = ds.map(function(d){ return d.rest; }).filter(function(x){ return x !== undefined; })[0];
+    var restLbl = ds.map(function(d){ return d.restLabel; }).filter(Boolean)[0];
     var rest = restExp !== undefined ? restExp : (esBiset ? (os.every(function(o){ return o.restDef === 45; }) ? 45 : Math.max.apply(null, os.map(function(o){ return o.restDef; }))) : os[0].restDef);
     var out = [];
     os.forEach(function(o, i){
       out.push(esBiset ? 'A' + (i + 1) + '. ' + o.nombre : o.nombre);
       out.push(lineaDosis(o));
     });
-    if(!opts.sinRest) out.push('Rest ' + rest + 's');
+    if(!opts.sinRest) out.push('Rest ' + ((restExp !== undefined && restLbl) ? restLbl : (rest + 's')));
+    if(__pre && out.length && !/^A\d+\. /.test(out[0])) out[0] = __pre + out[0];
     return out;
   }
 
@@ -69961,7 +70025,8 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     var d = parsePart(linea);
     if(d.nombre || !(d.sets || d.reps)) return null;
     var o = defaults(d, nombrePrevio || '', false);
-    return { dosis: lineaDosis(o), rest: d.rest, restDef: o.restDef };
+    if(d.tramos) return { dosis: lineaTramos(d.tramos, d.tempo, d.rir), rest: d.rest, restLabel: d.restLabel, restDef: o.restDef };
+    return { dosis: lineaDosis(o), rest: d.rest, restLabel: d.restLabel, restDef: o.restDef };
   }
 
   /* ---------- texto completo ---------- */
@@ -69975,7 +70040,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       if(RX_PLACEHOLDER.test(t)){ placeholders++; cierraRest(); out.push(raw); continue; }
       if(RX_REST_LINE.test(t)){
         var rr = parsePart(t);
-        if(rr.rest !== undefined){ restPend = null; out.push('Rest ' + rr.rest + 's'); cambios += (('Rest ' + rr.rest + 's') !== t ? 1 : 0); }
+        if(rr.rest !== undefined){ restPend = null; var __rt = 'Rest ' + (rr.restLabel || (rr.rest + 's')); out.push(__rt); cambios += (__rt !== t ? 1 : 0); }
         else out.push(raw);
         continue;
       }
@@ -70010,7 +70075,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       var solo = formatearDosisSola(t, nombrePrevio);
       if(solo){
         out.push(solo.dosis); cambios += (solo.dosis !== t ? 1 : 0);
-        if(solo.rest !== undefined) out.push('Rest ' + solo.rest + 's');
+        if(solo.rest !== undefined) out.push('Rest ' + (solo.restLabel || (solo.rest + 's')));
         else {
           var sig = (lineas[i + 1] || '').trim();
           if(!RX_REST_LINE.test(sig) && !/^A\d+[.)]/i.test(sig)) restPend = solo.restDef;
@@ -70027,10 +70092,10 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       var pt = parsePart(t);
       /* "rir 2" / "tempo 3010" sueltos en su propia línea: ajustan la dosis anterior */
       if(!pt.nombre && !(pt.sets || pt.reps) && (pt.rir !== undefined || pt.tempo)){
-        var li = -1; for(var z = out.length - 1; z >= 0; z--){ if(/Sets?: /.test(out[z])){ li = z; break; } if(out[z] && !/^Rest /.test(out[z])) break; }
+        var li = -1; for(var z = out.length - 1; z >= 0; z--){ if(/(?:Sets?|Series?): /.test(out[z])){ li = z; break; } if(out[z] && !/^Rest /.test(out[z])) break; }
         if(li >= 0){
           var objetivos = [li];
-          if(pt.compartida){ objetivos = []; var y = out.length - 1; while(y >= 0 && /^Rest /.test(out[y])) y--; for(; y >= 0 && out[y] && !/^Rest /.test(out[y]); y--){ if(/Sets?: /.test(out[y])) objetivos.push(y); } }
+          if(pt.compartida){ objetivos = []; var y = out.length - 1; while(y >= 0 && /^Rest /.test(out[y])) y--; for(; y >= 0 && out[y] && !/^Rest /.test(out[y]); y--){ if(/(?:Sets?|Series?): /.test(out[y])) objetivos.push(y); } }
           objetivos.forEach(function(ix){
             if(pt.rir !== undefined) out[ix] = out[ix].replace(/RIR [\d-]+/, 'RIR ' + pt.rir);
             if(pt.tempo) out[ix] = out[ix].replace(/Tempo \S+/, 'Tempo ' + pt.tempo);
@@ -70082,9 +70147,9 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       '- Usar la nomenclatura exacta de ejercicios de fitness/fuerza en inglés o español formal (ej. Lat Pulldown Neutro, Bulgarian Split Squat, Plank RKC).\n' +
       '- Estructura obligatoria:\n' +
       '  Línea 1: Nombre (o "A1. Nombre" si es biset)\n' +
-      '  Línea 2: Sets x Reps | Tempo | RIR\n' +
+      '  Línea 2: Series x Reps | Tempo | RIR\n' +
       '  Línea 3: (Si hay A2) "A2. Nombre"\n' +
-      '  Línea 4: Sets x Reps | Tempo | RIR\n' +
+      '  Línea 4: Series x Reps | Tempo | RIR\n' +
       '  Línea Final: Rest Xs\n' +
       '- Devolvé EXCLUSIVAMENTE las líneas estructuradas, sin código Markdown, sin explicaciones ni saludos.';
     var out = await window.CoachAI.generarTexto(prompt, 'Sos un formateador estricto de prescripciones de entrenamiento. Respondés únicamente con las líneas pedidas, en texto plano.', { maxTokens: 400, plain: true });
@@ -70506,5 +70571,101 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   /* cupo real: se mide una vez, en reposo, poco después de abrir (la sonda escribe y borra una clave temporal) */
   function medir(){ try{ jpMedirCupo(); pintarBadgeAlmacen(); }catch(e){} }
   setTimeout(function(){ if(typeof requestIdleCallback === 'function') requestIdleCallback(medir, { timeout: 4000 }); else medir(); }, 2500);
+})();
+</script>
+<style id="jpLayoutCss">
+/* ============================================================
+   BUILDER · SIN SUPERPOSICIONES Y CABECERA DE BLOQUE LEGIBLE (Paso 2 · B)
+   ============================================================ */
+/* barra superior (Telegram / Actividad / Guía / Configuración): ya no flota sobre el contenido -- se desplaza con la página, en una sola fila */
+.cfg-fab{ position:absolute !important; max-width:none !important; flex-wrap:nowrap !important; }
+.main .topbar{ --fab-safe:min(var(--fabw,190px),560px) !important; }
+@media(max-width:1500px){ .cfg-fab #btnGuide .lbl, .cfg-fab #btnCfg .lbl{ display:none; } }
+/* las dos cápsulas de estado (nube / memoria) eran puntos sueltos sin texto: ahora forman un grupo con rótulo */
+.cfg-status{ display:inline-flex; align-items:center; gap:2px; padding:2px 8px 2px 10px; border:1px solid var(--line-2,#2a2f3a); border-radius:11px; background:linear-gradient(180deg,#111519,#0D0F11); box-shadow:0 10px 24px rgba(0,0,0,.45); }
+.cfg-status::before{ content:'SYNC'; font:700 10px/1 var(--font-mono,ui-monospace,monospace); letter-spacing:.12em; color:var(--muted,#8b94a3); margin-right:4px; }
+.cfg-status .cloud-pill, .cfg-status .sync-pill{ border:0 !important; background:transparent !important; box-shadow:none !important; padding:6px 6px !important; }
+/* botón Buscar (Ctrl K): compacto y se retira al bajar, para no tapar el borde derecho del contenido */
+.gs-fab{ bottom:22px !important; padding:10px 12px !important; opacity:.9; transition:opacity .2s ease, transform .2s ease !important; }
+.gs-fab .lbl, .gs-fab kbd{ display:none; }
+.gs-fab:hover .lbl, .gs-fab:focus-visible .lbl, .gs-fab:hover kbd, .gs-fab:focus-visible kbd{ display:inline; }
+.gs-fab.gs-away{ opacity:0; transform:translateY(14px); pointer-events:none; }
+/* cabecera de bloque: controles arriba, título COMPLETO en su propia fila (los títulos largos ya no se cortan) */
+html body #dayPanel#dayPanel .block:not(.jp-col) > .block-h{ flex-wrap:wrap !important; overflow:visible; row-gap:6px; }
+html body #dayPanel#dayPanel .block:not(.jp-col) > .block-h > input.bt{ order:20 !important; flex:1 1 100% !important; min-width:100% !important; font-size:1.05rem; }
+html body #dayPanel#dayPanel .block:not(.jp-col) > .block-h > .spacer{ display:block !important; flex:1 1 0 !important; width:auto !important; min-width:0; order:1; }
+html body #dayPanel#dayPanel .block:not(.jp-col) > .block-h > .swap-touch,
+html body #dayPanel#dayPanel .block:not(.jp-col) > .block-h > .icon-btn,
+html body #dayPanel#dayPanel .block:not(.jp-col) > .block-h > .jp-cv{ order:2; }
+html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px !important; width:auto; }
+/* barra de herramientas del bloque: siempre visibles las acciones principales; el resto aparece al enfocar el bloque */
+#dayPanel .block .cf-fmt-tools{ margin:4px 0 6px; }
+#dayPanel .block .cf-fmt-tools:not(.sb-quick-pills) .cf-fmt-tec,
+#dayPanel .block .sb-quick-pills{ display:none; }
+#dayPanel .block:focus-within .cf-fmt-tools:not(.sb-quick-pills) .cf-fmt-tec{ display:inline-flex; }
+#dayPanel .block:focus-within .sb-quick-pills{ display:flex; }
+#dayPanel .block .cf-fmt-btn.jp-vc-rescan, #dayPanel .block .sb-pill-rir, #dayPanel .block .sb-pill-rest{ background:rgba(255,255,255,.03); border-color:var(--line-2,#2a2f3a); color:var(--muted,#8b94a3); }
+#dayPanel .block .cf-fmt-btn.jp-vc-rescan:hover, #dayPanel .block .sb-pill-rir:hover, #dayPanel .block .sb-pill-rest:hover{ border-color:var(--gold,#D2793F); color:var(--orange,#E8965E); }
+#dayPanel .block-body > label.lb[data-jp-corto]{ cursor:help; }
+#dayPanel .block textarea[data-bf="items"]{ min-height:112px; resize:vertical; }
+</style>
+<script>
+(function(){
+  'use strict';
+  function ajustarTextarea(ta){
+    if(!ta || !ta.offsetParent) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.max(112, Math.min(ta.scrollHeight + 2, 640)) + 'px';
+  }
+  /* títulos largos: se achica la letra hasta que entren completos (si ni así entran, el tooltip muestra el texto entero) */
+  function ajustarTitulo(bt){
+    if(!bt || !bt.offsetParent) return;
+    bt.style.fontSize = '';
+    var tam = [1.05, 0.98, 0.92, 0.86, 0.8];
+    for(var i = 1; i < tam.length && bt.scrollWidth > bt.clientWidth + 1; i++) bt.style.fontSize = tam[i] + 'rem';
+  }
+  function agruparEstado(){
+    var fab = document.querySelector('.cfg-fab'); if(!fab) return;
+    var cloud = document.getElementById('cloudPill'), sync = fab.querySelector('.sync-pill');
+    if(!cloud && !sync) return;
+    var g = fab.querySelector('.cfg-status');
+    if(!g){ g = document.createElement('span'); g.className = 'cfg-status'; g.title = 'Estado de guardado y sincronización (pasá el mouse por cada punto)'; var ref = cloud || sync; ref.parentNode.insertBefore(g, ref); }
+    [cloud, sync].forEach(function(p){ if(p && p.parentNode !== g) g.appendChild(p); });
+  }
+  function retocar(){
+    var panel = document.getElementById('dayPanel');
+    if(panel) panel.querySelectorAll('.block').forEach(function(bl){
+      var bt = bl.querySelector('.block-h input.bt');
+      if(bt && bt.title !== bt.value) bt.title = bt.value;
+      ajustarTitulo(bt);
+      var lb = bl.querySelector('.block-body > label.lb');
+      if(lb && !lb.dataset.jpCorto && /^\s*redacci[oó]n libre del bloque/i.test(lb.textContent)){ lb.title = lb.textContent.trim(); lb.textContent = 'Redacción libre'; lb.dataset.jpCorto = '1'; }
+      ajustarTextarea(bl.querySelector('textarea[data-bf="items"]'));
+    });
+    agruparEstado();
+  }
+  var t = null;
+  function programar(){ clearTimeout(t); t = setTimeout(retocar, 120); }
+  document.addEventListener('input', function(e){
+    var el = e.target; if(!el || !el.matches) return;
+    if(el.matches('textarea[data-bf="items"]')) ajustarTextarea(el);
+    else if(el.matches('input.bt')){ el.title = el.value; ajustarTitulo(el); }
+  });
+  function montar(){
+    retocar();
+    new MutationObserver(programar).observe(document.body, { childList: true, subtree: true });
+    [500, 1500, 3500].forEach(function(ms){ setTimeout(retocar, ms); });
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montar); else montar();
+  /* "Buscar Ctrl K" se retira al bajar y vuelve al subir */
+  var yPrev = window.pageYOffset || 0, acum = 0;
+  window.addEventListener('scroll', function(){
+    var fab = document.getElementById('gsFab'); if(!fab) return;
+    var y = window.pageYOffset || 0, dy = y - yPrev; yPrev = y;
+    if((dy > 0) !== (acum > 0)) acum = 0;
+    acum += dy;
+    if(y < 80 || acum < -24) fab.classList.remove('gs-away');
+    else if(acum > 40) fab.classList.add('gs-away');
+  }, { passive: true });
 })();
 </script>
