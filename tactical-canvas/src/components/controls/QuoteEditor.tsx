@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { loadAiSettings, RateLimitError, suggestQuotes, type Discipline, type FamousQuote } from '../../lib/ai'
 import type { CanvasState } from '../../types'
 import { cleanQuote } from '../canvas/templates/QuoteTemplate'
+import { autoEmphasis } from '../../lib/quoteIntent'
 import { Field, TextArea, TextInput } from './primitives'
 
 interface Props {
@@ -58,9 +59,21 @@ export function QuoteEditor({ state, update, discipline, topic }: Props) {
           <TextInput value={state.quoteRole ?? ''} onChange={(quoteRole) => update({ quoteRole })} placeholder="Bicampeón olímpico" />
         </Field>
       </div>
+      <Field label="Remate en naranja" hint={state.quoteEmphasis ? undefined : `auto: «${autoEmphasis(cleanQuote(state.quoteText ?? ''))}»`}>
+        <TextInput value={state.quoteEmphasis ?? ''} onChange={(quoteEmphasis) => update({ quoteEmphasis })} placeholder="palabras finales de la frase" />
+      </Field>
+      {state.quoteEmphasis && !cleanQuote(state.quoteText ?? '').toLowerCase().includes(state.quoteEmphasis.trim().toLowerCase()) && (
+        <p className="font-mono text-[9px] text-gold/80">El remate tiene que ser texto literal de la cita para pintarse.</p>
+      )}
+      <Field label="Contexto Coach JP (máx. 2 líneas)" hint={`${(state.body ?? '').trim().split(/\s+/).filter(Boolean).length} / 24 palabras`}>
+        <TextArea value={state.body ?? ''} onChange={(body) => update({ body })} rows={2} />
+      </Field>
       <Field label="Fuente (no se dibuja)" hint="para verificar antes de publicar">
         <TextInput value={state.quoteSource ?? ''} onChange={(quoteSource) => update({ quoteSource })} placeholder="Entrevista, libro, discurso · año" />
       </Field>
+      {!(state.quoteSource ?? '').trim() && (
+        <p className="font-mono text-[9px] leading-relaxed text-gold/80">⚠ Cita sin fuente: verificá que la frase sea real y del autor antes de publicar.</p>
+      )}
 
       <div className="space-y-2 rounded-lg border border-line bg-surface-2/60 p-2.5">
         <p className="font-mono text-[10px] tracking-[0.12em] text-steel uppercase">✦ Buscar cita real con IA</p>
@@ -83,7 +96,7 @@ export function QuoteEditor({ state, update, discipline, topic }: Props) {
             <button
               key={i}
               type="button"
-              onClick={() => update({ quoteText: q.quote, quoteAuthor: q.author, quoteRole: q.role, quoteSource: q.original ? `${q.source} · Original: «${q.original}»` : q.source })}
+              onClick={() => update({ quoteText: q.quote, quoteEmphasis: '', quoteAuthor: q.author, quoteRole: q.role, quoteSource: q.original ? `${q.source} · Original: «${q.original}»` : q.source })}
               aria-pressed={on}
               className={`block w-full rounded-lg border px-3 py-2 text-left transition ${on ? 'border-fire/70 bg-fire/10' : 'border-line hover:border-cyan/50'}`}
             >

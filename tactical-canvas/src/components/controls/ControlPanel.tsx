@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { CHART_PRESETS, SAMPLES } from '../../defaults'
+import { CHART_PRESETS, DEFAULT_STATE, SAMPLES } from '../../defaults'
+import { detectQuoteIntent } from '../../lib/quoteIntent'
 import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
 import type { Accent, BgStyle, RepeatDirection, TypePreset, CanvasState, ContentAlign, DiagramData, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, StickerKind, TemplateId } from '../../types'
@@ -110,6 +111,19 @@ interface Props {
   slideCount?: number
 }
 
+/**
+ * Pasar a mano a 14 · Cita táctica: si la placa todavía tiene la cita de ejemplo, su propio titular
+ * pasa a ser la frase (remate = el naranja del titular) y el autor se toma del texto si nombra a una
+ * figura icónica. Una cita ya cargada se respeta tal cual.
+ */
+function seedQuote(state: CanvasState): Partial<CanvasState> {
+  const own = `${state.headlineA} ${state.headlineB}`.replace(/\*/g, '').replace(/\s+/g, ' ').trim()
+  const isSample = state.quoteText === DEFAULT_STATE.quoteText || !(state.quoteText ?? '').trim()
+  if (!isSample || !own || own === `${DEFAULT_STATE.headlineA} ${DEFAULT_STATE.headlineB}`) return {}
+  const author = detectQuoteIntent(`${own} ${state.body} ${state.tag}`)?.author ?? ''
+  return { quoteText: own, quoteEmphasis: state.headlineB.replace(/\*/g, '').trim(), quoteAuthor: author, quoteRole: '', quoteSource: '' }
+}
+
 export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1, addImage, resolveImage }: Props) {
   const ai = { state, update, topic, discipline: getDiscipline() }
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
@@ -160,7 +174,9 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                           { template: t.id, diagramData: diagramDefaults(inferPillar(discipline, ...slideText(state))) }
                         : isStruct(t.id) && !state.structData
                           ? { template: t.id, structData: structDefaults(inferPillar(discipline, ...slideText(state))) }
-                          : { template: t.id },
+                          : t.id === 'quote'
+                            ? { template: t.id, ...seedQuote(state) }
+                            : { template: t.id },
                   )
                 }}
                 aria-pressed={on}

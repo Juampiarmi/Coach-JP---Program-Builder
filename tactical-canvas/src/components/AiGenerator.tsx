@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   DEFAULT_AI_SETTINGS,
   detectGoal,
+  enforceQuote,
   DISCIPLINE_LABEL,
   generateContent,
   GOAL_LABEL,
@@ -24,6 +25,7 @@ import {
   type MindsetBurst,
 } from '../lib/ai'
 import { ContentCalendar } from './ContentCalendar'
+import { detectQuoteIntent } from '../lib/quoteIntent'
 import { PILLARS, type PillarId } from '../lib/pillars'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { AiSettingsModal } from './AiSettingsModal'
@@ -55,6 +57,8 @@ interface GenPrefs {
   tone?: EditorialTone
   /** Pilar del calendario (LUN ciencia · MIÉ rutina · VIE mindset) */
   pillar?: PillarId
+  /** [ ❝ CITA CÉLEBRE ]: fuerza la plantilla 14 · Cita táctica aunque el texto no nombre a nadie */
+  quote?: boolean
 }
 /** Clave vieja: el enfriamiento ya no se persiste (recargar siempre deja el botón activo). */
 const SEQ_LABEL: Record<string, string> = {
@@ -135,7 +139,10 @@ export function AiGenerator({ onResult, onBurst }: Props) {
   const inputMode: InputMode = mode.inputMode ?? 'concept'
   const goal: EditorialGoal = mode.goal ?? 'auto'
   const tone: EditorialTone = mode.tone ?? 'viral'
-  const editorial = { inputMode, goal, tone, pillar: mode.pillar }
+  // Cita célebre: forzada con el chip o detectada (figura icónica / pedido explícito) → plantilla 14.
+  const detectedQuote = topic.trim() ? detectQuoteIntent(topic) : null
+  const quoteIntent = mode.quote ? (detectedQuote ?? { author: '', reason: 'explicit' as const }) : detectedQuote
+  const editorial = { inputMode, goal, tone, pillar: mode.pillar, quote: quoteIntent }
   // Lo que va a hacer el planner con lo escrito: objetivo (detectado en AUTO) y formato efectivo.
   const detectedGoal = topic.trim() ? detectGoal(topic, goal) : null
   const effectiveMode = topic.trim() ? resolveFormat(topic, mode.mode, editorial) : mode.mode
@@ -212,7 +219,9 @@ export function AiGenerator({ onResult, onBurst }: Props) {
       setStatus(`[ MAPEO FIEL · ${blocks.length} ${blocks.length === 1 ? 'PLACA' : 'PLACAS'} · CERO INVENCIONES ]`)
       abort.current = new AbortController()
       try {
-        const result = await mapCopy(settings, topic, blocks, mode.discipline ?? 'general', abort.current.signal, setStatus)
+        const mapped = await mapCopy(settings, topic, blocks, mode.discipline ?? 'general', abort.current.signal, setStatus)
+        // Con el chip CITA CÉLEBRE activo, la placa protagonista va sí o sí a la plantilla 14.
+        const result = mode.quote && quoteIntent ? { ...mapped, slides: enforceQuote(mapped.slides, quoteIntent) } : mapped
         onResult(result, { topic, discipline: mode.discipline ?? 'general' })
         setStatus(`[ ${result.slides.length} PLACAS MAPEADAS${result.local ? ' · LOCAL' : ''} · ${result.slides.map((sl) => SEQ_LABEL[sl.template ?? 'statement']).join(' → ')} ]`)
       } catch (err) {
@@ -446,6 +455,22 @@ export function AiGenerator({ onResult, onBurst }: Props) {
           </button>
         ))}
       </div>
+      <button
+        type="button"
+        onClick={() => setMode({ ...mode, quote: !mode.quote })}
+        aria-pressed={Boolean(mode.quote)}
+        title="Fuerza la plantilla 14 · Cita táctica: frase real de una figura icónica + autor + contexto Coach JP"
+        className={`mt-2 w-full rounded-lg border py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] transition ${
+          mode.quote ? 'border-fire/70 bg-fire/15 text-fire' : quoteIntent ? 'border-fire/40 text-fire/90' : 'border-line text-steel hover:text-white'
+        }`}
+      >
+        {mode.quote ? '[ ❝ CITA CÉLEBRE · FORZADA ]' : quoteIntent ? `[ ❝ CITA DETECTADA${quoteIntent.author ? ` · ${quoteIntent.author.toUpperCase()}` : ''} ]` : '[ ❝ CITA CÉLEBRE ]'}
+      </button>
+      {quoteIntent && (
+        <p className="mt-1.5 font-mono text-[9px] tracking-[0.1em] text-fire/90 uppercase" aria-live="polite">
+          ▸ Plantilla 14 · Cita táctica{quoteIntent.author ? ` · ${quoteIntent.author}` : ''} · nunca Manifiesto
+        </p>
+      )}
       {detectedGoal && (
         <p className="mt-1.5 font-mono text-[9px] tracking-[0.1em] text-steel/80 uppercase" aria-live="polite">
           ▸ {goal === 'auto' ? 'Detectado' : 'Objetivo'}: <span className="text-white">{GOAL_LABEL[detectedGoal]}</span> · Formato:{' '}

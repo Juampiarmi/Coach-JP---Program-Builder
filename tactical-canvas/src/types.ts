@@ -208,6 +208,8 @@ export interface CanvasState {
   quoteRole: string
   /** Fuente de la cita (entrevista, libro, discurso). Sólo para verificar en el panel: no se dibuja. */
   quoteSource: string
+  /** Remate de la cita que va en naranja (palabras literales de la frase; '' = automático: la última cláusula) */
+  quoteEmphasis: string
   /** Opus Athletic (plantilla 15): número de la etiqueta «[Nr. X]» */
   athleticNr: string
   athleticRows: AthleticRow[]

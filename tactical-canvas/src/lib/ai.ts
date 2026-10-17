@@ -10,6 +10,7 @@ import { CHART_BY_DISCIPLINE } from './chartPillar'
 import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 import { JsonRepairError, safeParseJson } from './safeJson'
+import type { QuoteIntent } from './quoteIntent'
 
 export type AiProvider = 'openai' | 'anthropic' | 'gemini'
 export type Discipline = 'general' | 'sports' | 'crossfit'
@@ -214,7 +215,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "error_correccion": { "wrong": { "label": string (ej «INCORRECTO»), "text": string (la falla, máx 16 palabras) }, "right": { "label": string (ej «CORRECCIÓN TÁCTICA»), "text": string (la solución concreta, máx 16 palabras) } } (OBLIGATORIO sólo si templateId es "error_correccion"; en los demás omitilo),
       "rutina": { "rows": [2 a 8 objetos { "code": "A1", "name": string (ejercicio), "scheme": string (ej «4 × 5»), "intensity": string (ej «RIR 2», «80 % 1RM»), "rest": string (ej «3:00») }], "note": string (progresión o criterio, 1 oración) } (OBLIGATORIO sólo si templateId es "rutina"; en los demás omitilo),
       "athletic": { "theme": "dark" | "light" (por defecto "dark", la estética nativa de Coach JP), "nr": string (número de la etiqueta «[Nr. X]»; "" en portada y cierre), "cta": string ("" salvo en el cierre), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
-      "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
+      "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo), "enfasis": string (2 a 6 palabras finales literales de quote, van en naranja) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
       "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
       "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
       "grafico": { ... } (SIEMPRE: completo y preciso si templateId es "grafico"; en los demás, una versión breve del mismo tema)
@@ -268,6 +269,19 @@ export interface EditorialOptions {
   tone?: EditorialTone
   /** Pilar del calendario de contenido (LUN ciencia · MIÉ rutina · VIE mindset): fija plantilla y formato */
   pillar?: 'science' | 'workout' | 'mindset'
+  /** Cita célebre detectada (figura icónica nombrada) o forzada con [ ❝ CITA CÉLEBRE ]: plantilla 14 obligatoria */
+  quote?: QuoteIntent | null
+}
+
+/** Cita célebre: manda por sobre objetivo, pilar, tono y secuencias (nunca Manifiesto ni Sentencia). */
+function quoteRule(q: QuoteIntent, single: boolean) {
+  const who = q.author ? `de ${q.author.toUpperCase()}` : 'de una figura del alto rendimiento (deporte, entrenamiento o estoicismo) pertinente al tema'
+  return `CITA CÉLEBRE DETECTADA (manda por sobre el OBJETIVO EDITORIAL, el pilar, la arquitectura de placas y cualquier secuencia de otros bloques):
+- ${single ? 'Devolvé EXACTAMENTE 1 placa' : 'La placa 1'} con templateId "cita" (PROHIBIDO "manifiesto", "manifiesto_texto" o "sentencia" para la cita).
+- "cita.quote": UNA frase REAL y verificable ${who}, traducida fiel al español rioplatense neutro si el original es en otro idioma. Corta y contundente (ideal ≤ 22 palabras). Si no tenés certeza de una frase real de esa persona, elegí la más conocida y documentada; nunca inventes.
+- "cita.author": nombre y apellido. "cita.role": rol corto en español (ej «6 veces campeón de la NBA»). "cita.source": dónde y cuándo lo dijo (libro, entrevista, discurso).
+- "cita.enfasis": el remate de la frase (2 a 6 palabras finales, LITERALES de cita.quote) que va en naranja.
+- "text.parrafo": bajada de contexto de MÁXIMO 2 líneas (≤ 24 palabras) que traduce la lección al sistema de entrenamiento de Coach JP (registro de cargas, protocolo, progresión). "text.titleWhite" / "text.titleAccent": repetí la frase partida en premisa / remate (respaldo).${single ? '' : '\n- El resto de las placas desarrolla la lección aplicada al entrenamiento con las plantillas que correspondan.'}`
 }
 
 /** Regla de plantilla por pilar: manda sobre las secuencias tipo. */
@@ -344,7 +358,7 @@ export function detectGoal(text: string, goal: EditorialGoal = 'auto'): Resolved
  * historias o carrusel) se respeta siempre: el conteo del usuario manda.
  */
 export function formatForcedToCarousel(mode: GenMode, opts: EditorialOptions) {
-  return mode === 'auto' && (opts.tone === 'academic' || opts.goal === 'science')
+  return !opts.quote && mode === 'auto' && (opts.tone === 'academic' || opts.goal === 'science')
 }
 
 /**
@@ -352,6 +366,8 @@ export function formatForcedToCarousel(mode: GenMode, opts: EditorialOptions) {
  * servicios → carrusel; una frase contundente o sentencia rápida → 1 placa; si no, decide la IA.
  */
 export function resolveFormat(text: string, mode: GenMode, opts: EditorialOptions): GenMode {
+  // Cita célebre en AUTO: 1 placa protagonista (la cita no se reparte ni se convierte en carrusel académico).
+  if (opts.quote && mode === 'auto') return 'single'
   // Académico / Paper o Ciencia / Técnico con formato AUTO: el desglose de evidencia pide carrusel (4-5).
   if (formatForcedToCarousel(mode, opts)) return 'carousel'
   if (mode !== 'auto') return mode
@@ -416,10 +432,12 @@ export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discip
   const resolved = detectGoal(text, editorial?.goal)
   const expanded = expandBriefInput(text, resolved)
   const benefits = editorial ? salesEnrichment(text, resolved) : null
-  const goal = editorial ? `${GOAL_RULE[resolved]}\n\n${TONE_RULE[editorial.tone ?? 'viral']}\n\n` : ''
+  const quote = editorial?.quote ? `${quoteRule(editorial.quote, mode === 'single')}\n\n` : ''
+  // Con cita, el objetivo editorial y el tono (arquitecturas de 5 placas) no aplican: manda la regla de cita.
+  const goal = editorial ? (quote || `${GOAL_RULE[resolved]}\n\n${TONE_RULE[editorial.tone ?? 'viral']}\n\n`) : ''
   // Mindset, 1 placa o repetición: sustancia obligatoria (titular + remate + bajada).
   const substance = resolved === 'mindset' || mode === 'single' ? `${SUBSTANCE_RULE}\n\n` : ''
-  const pillar = editorial?.pillar ? `${PILLAR_RULE[editorial.pillar]}\n\n` : ''
+  const pillar = editorial?.pillar && !editorial.quote ? `${PILLAR_RULE[editorial.pillar]}\n\n` : ''
   return `${head}\n\n${expanded ? `PREMISA EXPANDIDA (el input es breve): ${expanded}\n\n` : ''}${goal}${pillar}${benefits ? `${benefits}\n\n` : ''}${substance}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
 }
 
@@ -939,6 +957,8 @@ function structFromAi(s: Record<string, unknown>, fb: StructData): StructData {
 export interface SlideContext {
   discipline?: Discipline
   topic?: string
+  /** Cita célebre pedida: la plantilla 14 se respeta aunque la IA no traiga la fuente */
+  quote?: QuoteIntent | null
 }
 
 /**
@@ -1092,7 +1112,8 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const paras = list(es.paragraphs ?? es.parrafos).slice(0, 6)
   if (paras.length >= 2) {
     patch.essayParas = paras
-    patch.body = ''
+    // Con cita pedida, el párrafo de la IA es la bajada de contexto de la Cita táctica: no se borra.
+    if (!ctx.quote) patch.body = ''
   } else if (template === 'essay') patch.template = 'statement'
 
   // 18 · Error vs Corrección
@@ -1142,9 +1163,12 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const quoteAuthor = first(ci.author, ci.autor)
   const quoteSource = first(ci.source, ci.fuente)
   if (quoteText && quoteAuthor) {
-    Object.assign(patch, { quoteText, quoteAuthor, quoteRole: first(ci.role, ci.rol), quoteSource })
+    const emph = first(ci.enfasis, ci.emphasis, ci.remate).replace(/^[«"“\s]+|[»"”\s.]+$/gu, '')
+    Object.assign(patch, { quoteText, quoteAuthor, quoteRole: first(ci.role, ci.rol), quoteSource, quoteEmphasis: emph && quoteText.toLowerCase().includes(emph.toLowerCase()) ? emph : '' })
   }
-  if (template === 'quote' && !(quoteText && quoteAuthor && quoteSource.length >= 6)) patch.template = 'statement'
+  // Sin una cita pedida, una frase sin fuente concreta no se acepta (defensa contra apócrifas). Con la
+  // cita pedida, la plantilla se respeta: el panel avisa que falta verificar la fuente.
+  if (template === 'quote' && !(quoteText && quoteAuthor && (quoteSource.length >= 6 || ctx.quote))) patch.template = 'statement'
 
   // 13 · Mindset / Opus: bloques numerados separados del título (nunca un único párrafo).
   const rawBlocks = Array.isArray(op.bloques ?? op.items ?? op.blocks ?? s.bloques ?? s.items)
@@ -1288,6 +1312,29 @@ export function enforceSubstance(p: Partial<CanvasState>, single: boolean): Part
   return out
 }
 
+/**
+ * Cita célebre pedida: la placa protagonista (la 1, o la que ya traiga la cita) va SIEMPRE en la
+ * plantilla 14. Si la IA eligió otra (manifiesto, sentencia…), se convierte: la cita que trajo o, en
+ * último caso, su titular como frase (sin fuente: el panel lo marca para verificar).
+ */
+export function enforceQuote(slides: Partial<CanvasState>[], q: QuoteIntent): Partial<CanvasState>[] {
+  if (slides.some((p) => p.template === 'quote' && p.quoteText)) return slides
+  const i = Math.max(0, slides.findIndex((p) => p.quoteText && p.quoteAuthor))
+  const p = slides[i]
+  const fromHead = `${p.headlineA ?? ''} ${p.headlineB ?? ''}`.replace(/\*/g, '').replace(/\s+/g, ' ').trim()
+  const quoteText = p.quoteText || fromHead
+  const fixed: Partial<CanvasState> = {
+    ...p,
+    template: 'quote',
+    quoteText,
+    quoteAuthor: p.quoteAuthor || q.author,
+    quoteRole: p.quoteRole ?? '',
+    quoteSource: p.quoteText ? (p.quoteSource ?? '') : '',
+    quoteEmphasis: p.quoteText ? (p.quoteEmphasis ?? '') : (p.headlineB ?? '').replace(/\*/g, '').trim(),
+  }
+  return slides.map((x, j) => (j === i ? fixed : x))
+}
+
 export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideContext = {}): GenerationResult {
   const root = obj(payload)
   const rawSlides0 = Array.isArray(root.slides) ? root.slides : Array.isArray(payload) ? payload : [payload]
@@ -1297,7 +1344,7 @@ export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideConte
     ? rawSlides0.map((r, i) => ({ r, n: nums[i] })).sort((a, b) => a.n - b.n).map((x) => x.r)
     : rawSlides0
   const goal = str(obj(root.plan).objetivo ?? obj(root.plan).goal).toLowerCase()
-  let slides = rawSlides.map((raw) => slideToPatch(raw, ctx)).map((p) => enforceSemantics(p, goal)).filter((p) => p.headlineA || p.headlineB)
+  let slides = rawSlides.map((raw) => slideToPatch(raw, ctx)).map((p) => enforceSemantics(p, goal)).filter((p) => p.headlineA || p.headlineB || (p.template === 'quote' && p.quoteText))
   if (!slides.length) throw new Error('La IA no devolvió slides utilizables.')
   // Sin tope fijo de 5: el carrusel admite todas las placas que devuelva la IA (máx. de Instagram).
   const limit = mode === 'single' ? 1 : mode === 'stories' ? 3 : MAX_MAPPED_SLIDES
@@ -1305,6 +1352,7 @@ export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideConte
   const declared = oneOf(root.format, ['single', 'stories', 'carousel'] as const, 'single')
   const format = mode === 'auto' ? (slides.length === 1 ? 'single' : declared === 'single' ? 'carousel' : declared) : mode
   slides = slides.map((p) => enforceSubstance(p, format === 'single'))
+  if (ctx.quote) slides = enforceQuote(slides, ctx.quote)
   const caption = cleanCaption(str(root.caption))
   const rawPlan = obj(root.plan)
   const plan = Object.keys(rawPlan).length
@@ -1327,6 +1375,7 @@ export async function generateContent(
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
   const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
   const user = buildUserPrompt(topic, mode, discipline, editorial)
+  const ctx: SlideContext = { discipline, topic, quote: editorial?.quote ?? null }
   const ask = (prompt: string) =>
     settings.provider === 'gemini'
       ? callGemini(key, model, prompt, signal, onStatus, onModelChange, settings.geminiModels ?? [])
@@ -1335,14 +1384,14 @@ export async function generateContent(
         : callOpenAI(key, model, prompt, signal)
   const text = await ask(user)
   try {
-    return parseGeneration(safeParseJson(text), mode, { discipline, topic })
+    return parseGeneration(safeParseJson(text), mode, ctx)
   } catch (err) {
     if (!(err instanceof JsonRepairError)) throw err
     // Ni la limpieza local lo salvó: un único reintento pidiéndole al modelo la corrección.
     onStatus?.('[ Respuesta con JSON inválido · Pidiendo corrección sintáctica... ]')
     const fixed = await ask(repairPrompt(err))
     try {
-      const result = parseGeneration(safeParseJson(fixed), mode, { discipline, topic })
+      const result = parseGeneration(safeParseJson(fixed), mode, ctx)
       onStatus?.(null)
       return result
     } catch (again) {

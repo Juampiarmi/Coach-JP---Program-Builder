@@ -1,4 +1,5 @@
 import type { CanvasState, TemplateId } from '../types'
+import { detectQuoteIntent } from './quoteIntent'
 
 /**
  * MODO 1 · Mapeo fiel de copy existente.
@@ -64,6 +65,8 @@ export interface DetectOptions {
 export function isEssayText(text: string) {
   const paras = text.split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean)
   if (paras.length < 2) return false
+  // Una cita célebre (figura icónica + frase) nunca es manifiesto de párrafos: va a la plantilla 14.
+  if (splitQuoteLoose(text)) return false
   if (/\[\s*nr\.?\s*\d/i.test(text) || hasPaddedBlocks(text) || LABEL_ANY.test(text)) return false
   if (paras.every((p) => QUOTE_RX.test(p))) return false
   return text.split(/\s+/).filter(Boolean).length <= 260
@@ -92,6 +95,8 @@ export function detectStructuredCopy(raw: string, opts: DetectOptions = {}): Map
     return null
   }
   if (split.length >= 2) return split.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
+  // Una cita ya escrita («"…" — Autor», o firma + frase de una figura icónica): una placa de Cita táctica.
+  if (QUOTE_RX.test(text) || splitQuoteLoose(text)) return [{ text }]
   // Varias citas «"…" — Autor» separadas por línea en blanco: una placa por cita.
   const paras = text.split(/\n[ \t]*\n+/).map((p) => p.trim()).filter(Boolean)
   if (paras.length >= 2 && paras.every((p) => QUOTE_RX.test(p))) return paras.slice(0, MAX_MAPPED_SLIDES).map((t) => ({ text: t }))
@@ -391,8 +396,66 @@ function splitEssay(block: string): Partial<CanvasState> | null {
 const QUOTE_RX = /^\s*(?:cita\s*[:：]\s*)?[«"“]([^«»"“”]{8,320})[»"”]\s*(?:\n\s*)?(?:[—–-]|autor\s*[:：])\s*([^\n,·|(]{3,60})(?:\s*[,·|(]\s*([^\n)]{2,80})\)?)?\s*$/iu
 function splitQuote(block: string): Partial<CanvasState> | null {
   const m = block.replace(/\*\*|__/g, '').trim().match(QUOTE_RX)
-  if (!m) return null
-  return { template: 'quote', quoteText: m[1].trim(), quoteAuthor: m[2].trim(), quoteRole: (m[3] ?? '').trim(), quoteSource: '', headlineA: '', headlineB: '' }
+  if (!m) return splitQuoteLoose(block)
+  return { template: 'quote', quoteText: m[1].trim(), quoteAuthor: m[2].trim(), quoteRole: (m[3] ?? '').trim(), quoteSource: '', quoteEmphasis: '', headlineA: '', headlineB: '', body: '' }
+}
+
+/** Renglón que es sólo la firma: «Michael Jordan», «— Kobe Bryant, 5 veces campeón», «Autor: Séneca». */
+const AUTHOR_LINE_RX = /^\s*(?:[—–-]\s*|autor\s*[:：]\s*|cita\s*[:：]\s*)?([\p{Lu}][\p{L}'’.-]+(?:\s+(?:de\s+)?[\p{Lu}][\p{L}'’.-]+){0,3})\s*(?:[,·|(]\s*([^\n)]{2,80})\)?)?\s*[:：]?\s*$/u
+/** Frase entre comillas en cualquier parte del bloque */
+const QUOTED_RX = /[«"“]([^«»"“”]{8,320})[»"”]/u
+
+/**
+ * Cita sin el formato clásico, cuando el bloque nombra a una figura icónica o pide una cita:
+ * - un renglón con la firma (nombre ± rol) y la frase en los demás renglones;
+ * - o una frase entre comillas en cualquier parte («Como dijo Kobe: "…"») y el resto como contexto.
+ * Nunca Manifiesto / párrafos: la cita va a la plantilla 14 y lo que sobra es la bajada de contexto.
+ */
+function splitQuoteLoose(block: string): Partial<CanvasState> | null {
+  const src = block.replace(/\*\*|__/g, '').trim()
+  const intent = detectQuoteIntent(src)
+  if (!intent) return null
+  const lines = src.split('\n').map((l) => l.trim()).filter(Boolean)
+  const out = (quoteText: string, author: string, role: string, body: string): Partial<CanvasState> => ({
+    template: 'quote',
+    quoteText: quoteText.replace(/^[«"“\s]+|[»"”\s]+$/gu, '').trim(),
+    quoteAuthor: author,
+    quoteRole: role,
+    quoteSource: '',
+    quoteEmphasis: '',
+    headlineA: '',
+    headlineB: '',
+    body,
+  })
+  const quoted = src.match(QUOTED_RX)
+  if (quoted) {
+    // Contexto: el texto fuera de las comillas, sin la atribución («Como dijo Kobe:», «— Kobe Bryant»).
+    const rest = src
+      .replace(quoted[0], ' ')
+      .split('\n')
+      .map((l) => l.trim())
+      // Fuera: la firma y los renglones cortos de atribución («Como dijo Kobe:», «— Kobe Bryant»).
+      .filter((l) => l && !AUTHOR_LINE_RX.test(l) && !(l.split(/\s+/).length <= 6 && detectQuoteIntent(l)))
+      .map((l) => l.replace(/^[—–\-:\s]+|[:\s]+$/g, ''))
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const sign = lines.map((l) => l.match(AUTHOR_LINE_RX)).find((m) => m && detectQuoteIntent(m[1]))
+    return out(quoted[1], intent.author || sign?.[1] || '', (sign?.[2] ?? '').trim(), rest)
+  }
+  // Firma en su propio renglón (primero o último) + la frase en los demás.
+  if (lines.length >= 2) {
+    for (const idx of [lines.length - 1, 0]) {
+      const m = lines[idx].match(AUTHOR_LINE_RX)
+      if (!m || !detectQuoteIntent(m[1])) continue
+      const others = lines.filter((_, j) => j !== idx)
+      // Primer renglón (o párrafo) = la frase; si hay más, el último es el contexto de Coach JP.
+      const [phrase, ...ctx] = others
+      return out(phrase, intent.author || m[1], (m[2] ?? '').trim(), ctx.join(' '))
+    }
+  }
+  return null
 }
 
 /** Una sola frase → premisa + golpe: 2ª oración, o tras la última coma / dos puntos, o el último ~40 %. */
@@ -481,7 +544,7 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
     else if (anaphora) p = { ...p, template: 'manifesto' }
     else if (!p.template || (!TEXT_TEMPLATES.includes(p.template) && !wantsVisual && !(p.template === 'metric' && hasNumber))) p = { ...p, template: 'statement' }
     if (p.template === 'repeat') p = { ...p, repeatPhrase: `${p.headlineA ?? ''} ${p.headlineB ?? ''}`.trim(), repeatMode: 'justified' }
-    if (!p.tag) p.tag = anaphora ? 'MANIFIESTO TÁCTICO' : 'DISCIPLINA Y MÉTODO'
+    if (!p.tag) p.tag = p.template === 'quote' ? 'CITA TÁCTICA' : anaphora ? 'MANIFIESTO TÁCTICO' : 'DISCIPLINA Y MÉTODO'
     // Campos que el copy no trae van vacíos de forma explícita: nunca se cuela el texto de
     // ejemplo de fábrica (cita, párrafo o sentencia de la placa por defecto).
     return { ...p, remateNewLine: true, citeMain: p.citeMain ?? '', citeSub: p.citeSub ?? '', body: p.body ?? '', kicker: p.kicker && fidelity({ body: p.kicker }, block.text) >= 0.75 ? p.kicker : '' }
