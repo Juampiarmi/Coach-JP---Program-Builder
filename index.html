@@ -11583,10 +11583,11 @@ function playBeep(freq, dur, peakGain, delay, type){
 var jpPerfilSonido = (function(){
   var DEF = 'gong';
   var LISTA = [
-    { id: 'tactico',   lb: 'TÁCTICO / HUD BEEP',    desc: 'Doble beep fino y seco, tipo interfaz cibernética. Nada estruendoso.' },
+    { id: 'tactico',   lb: 'TÁCTICO / HUD BEEP',    desc: 'Doble beep seco 800→1200 Hz, tipo timer C4. Cuenta 3-2-1 grave y pulso metálico final.' },
+    { id: 'comando',   lb: 'COMMAND VOICE / MILITAR', desc: 'Conteo por voz táctica "3, 2, 1… GO!" y "REST!" estilo comando militar.' },
     { id: 'gong',      lb: 'GONG / RING SUAVE',     desc: 'Tono grave y resonante; relajado para marcar el fin del descanso.' },
     { id: 'campana',   lb: 'BOX CHIME / CAMPANA',   desc: 'Campana limpia de box, atenuada a un volumen agradable.' },
-    { id: 'silbato',   lb: 'WHISTLE / SILBATO',     desc: 'Silbato corto y seco, ideal para alta intensidad.' },
+    { id: 'silbato',   lb: 'WHISTLE / SILBATO',     desc: 'Silbato metálico tipo Fox 40 de juez de competencia, doble frecuencia.' },
     { id: 'vibracion', lb: 'VIBRACIÓN ÚNICAMENTE',  desc: 'Solo háptica del dispositivo, sin sonido.' },
     { id: 'silencio',  lb: 'SILENCIOSO',            desc: 'Sin sonido ni vibración en las alertas del timer.' }
   ];
@@ -11620,22 +11621,27 @@ var jpPerfilSonido = (function(){
   }
   /* silbato: tono senoidal con vibrato rápido + ruido filtrado (aire) */
   function silbido(ctx, t, d, v){
-    var t0 = ctx.currentTime + (t || 0), osc = ctx.createOscillator(), lfo = ctx.createOscillator(), lg = ctx.createGain(), g = ctx.createGain();
-    osc.type = 'sine'; osc.frequency.setValueAtTime(2700, t0); osc.frequency.linearRampToValueAtTime(2900, t0 + d);
-    lfo.frequency.value = 36; lg.gain.value = 120; lfo.connect(lg); lg.connect(osc.frequency);
+    var t0 = ctx.currentTime + (t || 0), osc = ctx.createOscillator(), osc2 = ctx.createOscillator(), lfo = ctx.createOscillator(), lg = ctx.createGain(), g = ctx.createGain();
+    var lfoA = ctx.createOscillator(), lgA = ctx.createGain(), tr = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(2800, t0);
+    osc2.type = 'sine'; osc2.frequency.setValueAtTime(3000, t0);
+    lfo.frequency.value = 42; lg.gain.value = 95; lfo.connect(lg); lg.connect(osc.frequency); lg.connect(osc2.frequency);
+    /* la bolita del silbato: tremolo rapido de amplitud entre los dos tonos */
+    tr.gain.value = 0.72; lfoA.frequency.value = 27; lgA.gain.value = 0.28; lfoA.connect(lgA); lgA.connect(tr.gain);
+    osc.connect(tr); osc2.connect(tr);
     var len = Math.floor(ctx.sampleRate * (d + 0.06)), buf = ctx.createBuffer(1, len, ctx.sampleRate), ch = buf.getChannelData(0);
     for(var i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
     var n = ctx.createBufferSource(); n.buffer = buf;
     var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3100; bp.Q.value = 2.4;
     var ng = ctx.createGain(); ng.gain.value = 0.35;
-    n.connect(bp); bp.connect(ng); ng.connect(g); osc.connect(g);
+    n.connect(bp); bp.connect(ng); ng.connect(g); tr.connect(g);
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.exponentialRampToValueAtTime(v, t0 + 0.014);
     g.gain.setValueAtTime(v, t0 + Math.max(d - 0.05, 0.02));
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
     g.connect(salida(ctx));
-    osc.start(t0); lfo.start(t0); n.start(t0);
-    osc.stop(t0 + d + 0.05); lfo.stop(t0 + d + 0.05); n.stop(t0 + d + 0.05);
+    osc.start(t0); osc2.start(t0); lfo.start(t0); lfoA.start(t0); n.start(t0);
+    osc.stop(t0 + d + 0.05); osc2.stop(t0 + d + 0.05); lfo.stop(t0 + d + 0.05); lfoA.stop(t0 + d + 0.05); n.stop(t0 + d + 0.05);
   }
   /* gong grave: fundamental + parciales con decaimiento largo */
   function gong(ctx, d, v, t){
@@ -11649,13 +11655,54 @@ var jpPerfilSonido = (function(){
       tono(ctx, { f: f0 * p[0], d: d * (p[0] > 2 ? .55 : 1), v: v * p[1], atk: .003, t: t || 0 });
     });
   }
+  /* doble beep seco 800 -> 1200 Hz (clic de radio tactica / timer C4) y pulso metalico final de 1760 Hz */
+  function c4(c, t){
+    tono(c, { f: 800, d: .035, v: .13, tipo: 'square', lp: 4200, atk: .002, t: t || 0 });
+    tono(c, { f: 1200, d: .04, v: .13, tipo: 'square', lp: 4600, atk: .002, t: (t || 0) + .06 });
+  }
+  function metal(c){
+    tono(c, { f: 1760, d: .38, v: .16, tipo: 'square', lp: 6000, atk: .002 });
+    tono(c, { f: 2373, d: .3, v: .07, atk: .002 });
+    tono(c, { f: 3520, d: .18, v: .05, tipo: 'triangle', atk: .002 });
+  }
+  /* voz de comando (Web Speech API): grave, firme, 1.1x, en el idioma del sistema; si el equipo no la tiene, cae a los beeps tacticos */
+  var PAL = {
+    en: { n: ['', 'one', 'two', 'three'], go: 'GO!', rest: 'REST!', done: 'TIME!', lang: 'en-US' },
+    es: { n: ['', 'uno', 'dos', 'tres'], go: '¡YA!', rest: '¡DESCANSO!', done: '¡TIEMPO!', lang: 'es-ES' }
+  };
+  function idioma(){ var l = ''; try{ l = String(navigator.language || 'es').toLowerCase(); }catch(e){} return /^en/.test(l) ? 'en' : 'es'; }
+  function elegirVoz(lang){
+    try{
+      var vs = (window.speechSynthesis.getVoices() || []).filter(function(v){ return v.lang && v.lang.toLowerCase().indexOf(lang.slice(0, 2)) === 0; });
+      var grave = vs.filter(function(v){ return /male|daniel|jorge|diego|alex|fred|david|mark|pablo|juan|carlos|google (uk|us|espa)/i.test(v.name) && !/female|samantha|karen|monica|paulina/i.test(v.name); });
+      return grave[0] || vs[0] || null;
+    }catch(e){ return null; }
+  }
+  function hablar(txt){
+    try{
+      if(!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return false;
+      var p = PAL[idioma()], u = new SpeechSynthesisUtterance(txt), v = elegirVoz(p.lang);
+      u.lang = p.lang; u.pitch = .4; u.rate = 1.1; u.volume = 1; if(v) u.voice = v;
+      window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+      return true;
+    }catch(e){ return false; }
+  }
+  var hintFase = '';
   var VOCES = {
     tactico: {
-      tick:   function(c){ tono(c, { f: 2000, d: .05, v: .10 }); },
-      aviso:  function(c){ tono(c, { f: 2300, d: .05, v: .11, tipo: 'triangle' }); tono(c, { f: 2300, d: .05, v: .11, tipo: 'triangle', t: .1 }); },
-      mitad:  function(c){ tono(c, { f: 1800, d: .06, v: .11, tipo: 'triangle' }); tono(c, { f: 2400, d: .06, v: .11, tipo: 'triangle', t: .1 }); },
-      fin:    function(c){ tono(c, { f: 2600, d: .07, v: .14, tipo: 'square', lp: 5200, atk: .003 }); tono(c, { f: 2600, d: .07, v: .14, tipo: 'square', lp: 5200, atk: .003, t: .14 }); },
-      inicio: function(c){ tono(c, { f: 2000, d: .08, v: .12, tipo: 'triangle' }); tono(c, { f: 2600, d: .08, v: .12, tipo: 'triangle', t: .1 }); }
+      tick:   function(c){ tono(c, { f: 440, d: .07, v: .17, tipo: 'square', lp: 1700, atk: .003 }); },
+      aviso:  function(c){ c4(c, 0); },
+      mitad:  function(c){ c4(c, 0); c4(c, .2); },
+      fin:    function(c){ metal(c); },
+      inicio: function(c){ metal(c); }
+    },
+    comando: {
+      tick:   function(c, n){ var p = PAL[idioma()], k = (n >= 1 && n <= 3) ? 4 - n : 3; if(!hablar(p.n[k])) VOCES.tactico.tick(c); },
+      aviso:  function(c){ tono(c, { f: 440, d: .09, v: .15, tipo: 'square', lp: 1700, atk: .003 }); },
+      mitad:  function(c){ tono(c, { f: 440, d: .09, v: .15, tipo: 'square', lp: 1700, atk: .003 }); tono(c, { f: 440, d: .09, v: .15, tipo: 'square', lp: 1700, atk: .003, t: .16 }); },
+      fin:    function(c){ var p = PAL[idioma()], h = hintFase; hintFase = ''; if(!hablar(h === 'rest' ? p.rest : (h === 'done' ? p.done : p.go))) metal(c); },
+      inicio: function(c){ if(!hablar(PAL[idioma()].go)) metal(c); },
+      descanso: function(c){ if(!hablar(PAL[idioma()].rest)) c4(c, 0); }
     },
     gong: {
       tick:   function(c){ tono(c, { f: 330, d: .09, v: .16 }); },
@@ -11686,15 +11733,39 @@ var jpPerfilSonido = (function(){
     if(actual !== 'vibracion' && (ev === 'aviso' || ev === 'mitad')) return;
     try{ if(navigator.vibrate) navigator.vibrate(VIB[ev]); }catch(e){}
   }
+  /* cuenta regresiva: los avisos 'tick' llegan de a uno por segundo (el HUD manda el 3er numero como 'inicio'); se numeran para
+     que el perfil tactico/voz distinga "3, 2, 1" del GO final */
+  var seqN = 0, seqT = 0;
+  function secuencia(ev){
+    var ahora = Date.now(), n = 0;
+    if(ev === 'tick'){ if(ahora - seqT > 2200) seqN = 0; seqN++; seqT = ahora; n = seqN; }
+    else if(ev === 'inicio' && seqN === 2 && ahora - seqT < 1700){ seqN = 3; seqT = ahora; ev = 'tick'; n = 3; }
+    else if(ev === 'inicio' || ev === 'fin'){ seqN = 0; }
+    return { ev: ev, n: n };
+  }
+  function emitir(id, ev, n){
+    try{
+      var ctx = ensureAudioCtx(), voz = VOCES[id] || VOCES[DEF];
+      if(!voz[ev]) return;
+      if(ctx.state === 'suspended'){ ctx.resume().then(function(){ voz[ev](ctx, n); }).catch(function(){}); return; }
+      voz[ev](ctx, n);
+    }catch(e){ console.warn('perfil de sonido', e); }
+  }
   function reproducir(ev, sinVib){
     vibrar(ev, sinVib);
     if(actual === 'vibracion' || actual === 'silencio') return;
     if(isAudioMuted()) return;
-    try{
-      var ctx = ensureAudioCtx(), voz = VOCES[actual] || VOCES[DEF];
-      if(ctx.state === 'suspended'){ ctx.resume().then(function(){ voz[ev](ctx); }).catch(function(){}); return; }
-      voz[ev](ctx);
-    }catch(e){ console.warn('perfil de sonido', e); }
+    var r = (actual === 'tactico' || actual === 'comando') ? secuencia(ev) : { ev: ev, n: 0 };
+    emitir(actual, r.ev, r.n);
+  }
+  var demoT = [];
+  function demo(id){
+    demoT.forEach(clearTimeout); demoT = [];
+    try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
+    hintFase = '';
+    [['tick', 1, 0], ['tick', 2, 900], ['tick', 3, 1800], ['fin', 0, 2700]].concat(id === 'comando' ? [['descanso', 0, 4000]] : []).forEach(function(p){
+      demoT.push(setTimeout(function(){ emitir(id, p[0], p[1]); }, p[2]));
+    });
   }
   function fijar(id){
     if(!valido(id)) return;
@@ -11748,7 +11819,8 @@ var jpPerfilSonido = (function(){
         else aviso('Este dispositivo no permite vibrar desde la web (iPhone). En ese caso conviene un perfil con sonido.');
       } else {
         if(isAudioMuted()) aviso('El sonido está en OFF (botón AUDIO del timer). Activalo para escuchar.');
-        else { aviso(''); reproducir('fin', true); }
+        else if(id === 'tactico' || id === 'comando'){ aviso(id === 'comando' ? 'Probando: 3, 2, 1, GO y REST.' : ''); demo(id); }
+        else { aviso(''); emitir(id, 'fin'); }
       }
     }finally{ actual = prev; }
   }
@@ -11780,6 +11852,7 @@ var jpPerfilSonido = (function(){
     actual: function(){ return actual; },
     fijar: fijar,
     reproducir: reproducir,
+    hint: function(v){ hintFase = v || ''; },
     probar: probar,
     abrir: abrir,
     silencio: function(){ return actual === 'silencio'; },
@@ -14907,6 +14980,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     /* timestampFin absoluto: aviso en segundo plano aunque se bloquee la pantalla */
     _restAv = -1;
     try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
+    try{ jpPerfilSonido.reproducir('descanso', true); }catch(e){}
   }
   function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); guardarRestTimer(); try{ jpBgTimer.cancelar(); }catch(e){} }
   /* pausa/reanuda el descanso activo sin cerrarlo -- misma lógica que ya
@@ -15226,8 +15300,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return String(h || '').replace(/(^|<br\\s*\\/?>)\\s*(?:[^A-Za-z0-9\\u00c0-\\u00ff<]{0,6}\\s*pacing(?:\\s+(?:general|sugerido))?\\s*:\\s*)+/gi, '$1').trim();
   }
   function jpCfSubLabels(h){
-    return String(h || '').replace(/(^|<br\\s*\\/?>|\\s)([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1 \\/\\-]{3,38}):\\s+/g, function(m, pre, lb){
-      return (pre && pre.indexOf('<') === 0 ? pre : '') + '<span class="jp-cf-sub">' + lb.replace(/\\s+$/, '') + ':</span>';
+    return String(h || '').replace(/(^|<br\\s*\\/?>|\\s)((?:[-\\u2022*](?:\\s|<br\\s*\\/?>)*)?(?:[^A-Za-z0-9\\u00c0-\\u00ff<\\s\\-\\u2022*:]{1,6}(?:\\s|<br\\s*\\/?>)*)?)([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1 \\/\\-]{3,38}):\\s+/g, function(m, pre, ico, lb){
+      var ic = String(ico || '').replace(/<br\\s*\\/?>/gi, ' ').replace(/^[-\\u2022*]\\s*/, '').replace(/\\s+$/, '');
+      return '<span class="jp-cf-sub">' + (ic ? ic + ' ' : '') + lb.replace(/\\s+$/, '') + ':</span>';
     }).replace(/^<span class="jp-cf-sub">/, '<span class="jp-cf-sub jp-cf-sub0">');
   }
   function jpCfPlano(h){ return String(h || '').replace(/<br\\s*\\/?>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim(); }
@@ -23400,6 +23475,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
       /* GO tras la cuenta 3-2-1: tono agudo y enérgico (1760 Hz); el resto de las transiciones conserva la bocina */
+      try{ jpPerfilSonido.hint(!hayProximo() ? 'done' : ((fase === 'work' && cfg().rest > 0) ? 'rest' : 'work')); }catch(e){}
       if(fase === 'prep') jpBox.go(); else jpBox.chicharra();
       if(hayProximo()) jpRayo('cyan'); window.CoachVibra && CoachVibra.fin(); window.pulsoVisual && pulsoVisual(true);
     }
@@ -41977,6 +42053,17 @@ html body.cf-disc .jp-cfboard .jp-cf-accrow .jp-tip-fase{ margin-top:10px; line-
 html body.cf-disc .jp-cfboard .jp-cf-accrow .jp-tip-lb{ color:#FFFFFF !important; font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; }
 html body.cf-disc .jp-done-btn.jp-done-foot:not(.on){ height:48px !important; min-height:48px !important; background:rgba(255,85,0,.08) !important; border:1px solid rgba(255,85,0,.42) !important; color:#FFD2B8 !important; box-shadow:0 0 18px rgba(255,85,0,.14), inset 0 0 12px rgba(255,85,0,.05) !important; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
 html body.cf-disc .jp-done-btn.jp-done-foot:not(.on):active{ background:rgba(255,85,0,.16) !important; }
+/* CF · estacion: [E1 ·] nombre en una linea, carga debajo alineada con el nombre */
+html body.cf-disc .jp-cfboard .jp-cf-rows > .jp-cf-row[data-est]{ display:grid !important; grid-template-columns:max-content minmax(0,1fr); column-gap:12px; row-gap:0; align-items:baseline; }
+html body.cf-disc .jp-cfboard .jp-cf-rows > .jp-cf-row[data-est]::before{ content:attr(data-est) ' \\00b7'; grid-column:1; grid-row:1; align-self:baseline; margin:0 !important; min-width:0; }
+html body.cf-disc .jp-cfboard .jp-cf-rows > .jp-cf-row[data-est] > .jp-cf-rn{ grid-column:2; grid-row:1; min-width:0; }
+html body.cf-disc .jp-cfboard .jp-cf-rows > .jp-cf-row[data-est] > .jp-cf-rv{ grid-column:2; grid-row:2; justify-self:start; text-align:left !important; margin:6px 0 0 !important; line-height:1.4; max-width:100%; }
+/* CF · verde tactico vidriado: descanso en curso, bloque completado y dia concluido */
+html body.cf-disc .jp-cfboard .jp-cf-rest.running{ background:rgba(2,44,34,.4) !important; border:1px solid rgba(16,185,129,.6) !important; box-shadow:0 0 12px rgba(16,185,129,.25) !important; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
+html body.cf-disc .jp-cfboard .jp-cf-rest.running::before{ background:rgba(16,185,129,.14) !important; }
+html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-main{ color:#34D399 !important; font-weight:800 !important; }
+html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-plus, html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-x{ background:rgba(6,78,59,.35) !important; border:1px solid rgba(16,185,129,.35) !important; color:#6EE7B7 !important; }
+html body.cf-disc .jp-done-btn.jp-done-foot.on, html body.cf-disc .jp-close-cta.done{ background:rgba(2,44,34,.4) !important; border:1px solid rgba(16,185,129,.6) !important; color:#34D399 !important; font-weight:700 !important; box-shadow:0 0 12px rgba(16,185,129,.25) !important; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
 /* BRANDPASS_CF:END */
 </style>
 <script id="jpHudTacticoJs">
