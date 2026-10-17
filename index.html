@@ -10859,6 +10859,7 @@ function setLoadField(key, field, value){
   state.loads[key][field] = value;
   /* sello de tiempo: permite mostrarle al alumno cuándo hizo esa serie */
   state.loads[key].ts = Date.now();
+  if(field === 'done'){ if(value){ if(!state.loads[key].tsDone) state.loads[key].tsDone = state.loads[key].ts; } else { delete state.loads[key].tsDone; } }
   saveProgress();
   /* directiva maestra ("HUD de telemetría en vivo") -- recalcula SIEMPRE
      que kg/reps/done cambian (tildar, destildar o corregir un valor ya
@@ -14559,7 +14560,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     guardarRestTimer();
     try{ if(restRun) jpBgTimer.programar(restTargetEnd); }catch(e){}
   }
-  document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(15); });
+  document.getElementById('rhPlus').addEventListener('click', function(){ sumarRest(window.COACH_DISCIPLINA === 'sports' ? 10 : 15); });
   document.getElementById('rhToggle').addEventListener('click', toggleRest);
   /* directiva maestra ("Botonera rápida de ajuste en descanso") -- ajusta
      directo el input de kg de la PRÓXIMA serie (window.__jpRestKgInput,
@@ -19746,12 +19747,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     const ctl = hud.querySelector('.rh-ctl');
     if(ctl && !document.getElementById('rhMinus')){
       const m = document.createElement('button');
-      m.type = 'button'; m.id = 'rhMinus'; m.textContent = '−15s';
+      var paso = (window.COACH_DISCIPLINA === 'sports') ? 10 : 15;
+      m.type = 'button'; m.id = 'rhMinus'; m.textContent = '−' + paso + 's';
       ctl.insertBefore(m, ctl.firstChild);
-      m.addEventListener('click', () => { if(window.CoachTV && window.CoachTV.sumar) window.CoachTV.sumar(-15); });
+      m.addEventListener('click', () => { if(window.CoachTV && window.CoachTV.sumar) window.CoachTV.sumar(window.COACH_DISCIPLINA === 'sports' ? -10 : -15); });
     }
     const plus = document.getElementById('rhPlus');
-    if(plus) plus.textContent = '+15s';
+    if(plus) plus.textContent = (window.COACH_DISCIPLINA === 'sports') ? '+10s' : '+15s';
   }
 
   /* ---------- STORY CARD 9:16 ---------- */
@@ -20358,10 +20360,11 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
 
   function abrirStory(d){
+    var pintar = function(){ if(typeof window.CoachStoryMarca === 'function' && window.COACH_DISCIPLINA === 'sports') window.CoachStoryMarca(d); else dibujar(d); };
     if(document.fonts && document.fonts.ready){
-      document.fonts.ready.then(function(){ dibujar(d); }).catch(function(){ dibujar(d); });
+      document.fonts.ready.then(pintar).catch(pintar);
     }
-    dibujar(d);
+    pintar();
     document.getElementById('storyWrap').classList.add('on');
     try{ if(navigator.vibrate) navigator.vibrate([40, 40, 80]); }catch(e){}
   }
@@ -22016,6 +22019,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function redibujar(){
     if(!ultimo) return;
+    if(typeof window.CoachStoryMarca === 'function' && window.COACH_DISCIPLINA === 'sports'){ window.CoachStoryMarca(ultimo); return; }
     if(estilo === 'champ') champion(ultimo);
     else if(cyber) cyber(ultimo);
   }
@@ -22394,7 +22398,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
           <div class="cwt-tabata-field"><span>Descanso</span><input type="text" id="cwtRest" value="10" inputmode="numeric" autocomplete="off"></div>
         </div>
       </div>
-      <button type="button" class="cwt-start" id="cwtStart">▶ EMPEZAR</button>
+      <button type="button" class="cwt-start" id="cwtStart">▶︎ EMPEZAR</button>
       <button type="button" class="cwt-back" id="cwtBack">◂ Cambiar modalidad</button>
     </div>
 
@@ -22408,9 +22412,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         <div class="cwt-bar"><i id="cwtBar"></i></div>
       </div>
       <div class="cwt-acts" id="cwtActs">
-        <button type="button" class="cwt-go" id="cwtGo">▶ Empezar</button>
+        <button type="button" class="cwt-go" id="cwtGo">▶︎ Empezar</button>
         <button type="button" class="cwt-stop" id="cwtReset">↺ Reiniciar</button>
         <button type="button" class="cwt-fin" id="cwtFin" style="display:none">🏁 FINALIZAR</button>
+      </div>
+      <div class="cwt-acts cwt-acts2" id="cwtActs2">
+        <button type="button" class="cwt-plus2" id="cwtPlus">+10s</button>
+        <button type="button" class="cwt-skip2" id="cwtSkip">Saltar fase ▸︎</button>
       </div>
       <div class="cwt-laps" id="cwtLaps"></div>
       <button type="button" class="cwt-back" id="cwtBackRun">◂ Cambiar modalidad</button>
@@ -22623,11 +22631,11 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        que la regla de warn de la hoja de estilos vuelva a mandar. */
     var enWarn = cuentaAtras && restante <= 10;
     if(f){
-      if(corriendo && !enWarn) f.style.setProperty('color', fase === 'rest' ? '#00e5ff' : '#f59e0b', 'important');
+      if(corriendo && !enWarn) f.style.setProperty('color', fase === 'rest' ? '#00e5ff' : (window.COACH_DISCIPLINA === 'sports' ? '#FF5500' : '#f59e0b'), 'important');
       else f.style.removeProperty('color');
     }
     if(b){
-      if(corriendo && !enWarn) b.style.setProperty('background', fase === 'rest' ? '#00e5ff' : '#f59e0b', 'important');
+      if(corriendo && !enWarn) b.style.setProperty('background', fase === 'rest' ? '#00e5ff' : (window.COACH_DISCIPLINA === 'sports' ? '#FF5500' : '#f59e0b'), 'important');
       else b.style.removeProperty('background');
     }
     if(l) l.innerHTML = vueltas.map(function(v, i){
@@ -22635,11 +22643,31 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     }).join('');
     /* directiva ("Modo Mini-HUD Flotante Persistente") -- espejo aditivo,
        ver pintarMini() más abajo; no-op si la barra no está visible. */
+    try{
+      var bPl = document.getElementById('cwtPlus'), bSk = document.getElementById('cwtSkip');
+      if(bPl) bPl.style.display = (modo === 'fortime') ? 'none' : '';
+      if(bSk) bSk.style.display = (modo === 'tabata' || modo === 'intervalos' || modo === 'emom') ? '' : 'none';
+    }catch(e){}
     pintarMini();
     /* gancho de la pantalla completa: espeja y arranca/detiene su lazo de
        220 ms según el cronómetro corra o no (ver módulo "Pantalla
        completa LED"). No-op si la pantalla completa está cerrada. */
     if(window.__cwtOnPintar) window.__cwtOnPintar();
+  }
+  /* +10 s a la fase en curso (corriendo o en pausa) sin tocar el resto del entrenamiento */
+  function masDiezFase(){
+    if(modo === 'fortime') return;
+    restante = Math.max(0, restante + 10);
+    if(corriendo) faseTargetEnd = Date.now() + restante * 1000;
+    try{ vibrar([20]); }catch(e){}
+    pintar();
+  }
+  /* salta la fase actual (trabajo/descanso/minuto) y pasa a la siguiente al instante; en AMRAP/FOR TIME no aplica */
+  function saltarFase(){
+    if(!corriendo || modo === 'fortime' || modo === 'amrap') return;
+    faseTargetEnd = Date.now();
+    try{ vibrar([30]); }catch(e){}
+    paso();
   }
   /* duración (s) de la fase de cuenta regresiva actual: el aviso de 10 s
      restantes sólo tiene sentido en fases de más de 20 s (en un tabata de
@@ -22772,7 +22800,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     faseTargetEnd = now + restante * 1000;
     transcurridoBase = transcurrido;
     transcurridoStart = now;
-    document.getElementById('cwtGo').textContent = '⏸ Pausar';
+    document.getElementById('cwtGo').textContent = '⏸︎ Pausar';
     /* primer toque real del alumno: acá se desbloquea el AudioContext
        (iOS/Chrome móvil) y se pide, una sola vez, el permiso de notificaciones */
     jpBox.inicio(); vibrar([30]);
@@ -22822,7 +22850,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     try{ jpBgTimer.cancelar(); }catch(e){}
     estadoInicial();
     var g = document.getElementById('cwtGo');
-    if(g) g.textContent = '▶ Empezar';
+    if(g) g.textContent = '▶︎ Empezar';
     pintar();
   }
   function finalizar(motivo, silencioso){
@@ -22836,7 +22864,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     var f = document.getElementById('cwtPhase');
     if(f){ f.textContent = '🏁 ' + (motivo || 'Terminado') + ' · ' + mmss(transcurrido); f.className = 'cwt-phase work'; }
     var g = document.getElementById('cwtGo');
-    if(g) g.textContent = '▶ Empezar';
+    if(g) g.textContent = '▶︎ Empezar';
     var t = document.getElementById('cwtTime');
     if(t && modo !== 'fortime') t.textContent = '00:00';
     restante = 0;
@@ -22948,6 +22976,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     document.getElementById('cwtX').addEventListener('click', cerrarTimer);
     document.getElementById('cwtGo').addEventListener('click', arrancar);
     document.getElementById('cwtReset').addEventListener('click', reset);
+    (function(){ var bP = document.getElementById('cwtPlus'), bS = document.getElementById('cwtSkip'); if(bP) bP.addEventListener('click', masDiezFase); if(bS) bS.addEventListener('click', saltarFase); })();
     document.getElementById('cwtFin').addEventListener('click', function(){ finalizar('Terminado'); });
     /* directiva ("Pantalla de Selección de Modalidad") -- .cwt-mode-extra
        (Intervalos/Hyrox) comparte data-cwt/delegación con .cwt-mode, sólo
@@ -23307,6 +23336,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
   }
   function pieYMetricas(d, estilo){
+    if(typeof window.CoachStoryMarca === 'function' && window.COACH_DISCIPLINA === 'sports') return;   /* el diseno de marca ya dibuja el pie */
     var c = document.getElementById('storyCanvas'); if(!c) return;
     var g = c.getContext('2d');
     var dorado = estilo === 'champ';
@@ -23429,6 +23459,251 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(mount, 60); });
   else setTimeout(mount, 60);
+})();
+<\/script>
+
+<script>
+/* =========================================================
+   STORYCARD · MARCA "EDITORIAL INSTAGRAM" (solo Sports & Bodybuilding)
+   Un solo diseno oficial: blanco + naranja #FF5500 + etiqueta cian sobre negro neutro, esquinas de camara,
+   barra vertical naranja y anillos concentricos como en el feed. Datos reales de la sesion:
+   tonelaje, series, duracion (primera a ultima serie registrada), RPE, top sets, PR y racha del mesociclo.
+   Reemplaza a Cyber-Grit / PR Champion (que quedan sin uso). Respeta la foto de fondo del alumno.
+========================================================= */
+(function(){
+  'use strict';
+  var W = 1080, H = 1920, OR = '#FF5500', CY = '#38BDF8', INK = '#07080A';
+  var MESES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+  var CHAKRA = '"Chakra Petch", "Barlow Condensed", sans-serif';
+  var MONO = '"JetBrains Mono", ui-monospace, monospace';
+  var fuenteLista = false;
+
+  function fmtNum(n){ n = Math.round(n * 10) / 10; return n.toLocaleString('es-AR'); }
+  function fechaTxt(){ var f = new Date(); return ('0' + f.getDate()).slice(-2) + ' ' + MESES[f.getMonth()] + ' ' + f.getFullYear(); }
+  function fuente(g, peso, px, fam){ g.font = peso + ' ' + px + 'px ' + (fam || CHAKRA); }
+  /* achica la fuente hasta que el texto entre en maxW (nunca pasa de base ni baja de min) */
+  function ajustar(g, txt, maxW, base, min, peso, fam){
+    var px = base; fuente(g, peso, px, fam);
+    while(g.measureText(txt).width > maxW && px > min){ px -= 2; fuente(g, peso, px, fam); }
+    return px;
+  }
+  function envolver(g, txt, maxW, maxLin){
+    var pal = String(txt || '').split(' '), lin = [], act = '';
+    pal.forEach(function(p){
+      var t = act ? act + ' ' + p : p;
+      if(g.measureText(t).width <= maxW || !act){ act = t; } else { lin.push(act); act = p; }
+    });
+    if(act) lin.push(act);
+    if(lin.length > maxLin){
+      lin = lin.slice(0, maxLin);
+      var u = lin[maxLin - 1];
+      while(u.length > 1 && g.measureText(u + '…').width > maxW) u = u.slice(0, -1);
+      lin[maxLin - 1] = u.replace(/[ ,.;:-]+$/, '') + '…';
+    }
+    return lin;
+  }
+
+  /* duracion REAL: de la primera a la ultima serie registrada del dia (sin botones manuales) */
+  function minutosPrimerUltimoSet(){
+    try{
+      var pref = state.currentWeek + '|' + state.currentDay + '|', ts = [];
+      Object.keys(state.loads || {}).forEach(function(k){
+        if(k.indexOf(pref) !== 0) return;
+        var l = state.loads[k] || {};
+        if(!l.done) return;
+        var t = l.tsDone || l.ts;
+        if(t > 0) ts.push(t);
+      });
+      if(ts.length < 2) return null;
+      var m = Math.round((Math.max.apply(null, ts) - Math.min.apply(null, ts)) / 60000);
+      return Math.max(1, Math.min(360, m));
+    }catch(e){ return null; }
+  }
+  window.CoachMinutosSets = minutosPrimerUltimoSet;
+
+  function esquinas(g){
+    var m = 64, L = 104;
+    g.save(); g.strokeStyle = OR; g.lineWidth = 7; g.lineCap = 'butt';
+    [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]].forEach(function(c){
+      g.beginPath(); g.moveTo(c[0], c[1] + c[3] * L); g.lineTo(c[0], c[1]); g.lineTo(c[0] + c[2] * L, c[1]); g.stroke();
+    });
+    g.restore();
+  }
+  function escudo(g, x, y, s){
+    g.save(); g.translate(x, y); g.scale(s, s);
+    g.fillStyle = OR;
+    g.beginPath(); g.moveTo(32, 2); g.lineTo(60, 12); g.lineTo(60, 36);
+    g.bezierCurveTo(60, 54, 47, 66, 32, 72); g.bezierCurveTo(17, 66, 4, 54, 4, 36);
+    g.lineTo(4, 12); g.closePath(); g.fill();
+    g.fillStyle = INK;
+    g.beginPath(); g.moveTo(36, 18); g.lineTo(21, 40); g.lineTo(30, 40);
+    g.lineTo(27, 58); g.lineTo(43, 34); g.lineTo(33, 34); g.closePath(); g.fill();
+    g.restore();
+  }
+  function check(g, x, y, s, col){
+    g.save(); g.strokeStyle = col; g.lineWidth = 6; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + s * .38, y + s * .38); g.lineTo(x + s, y - s * .42); g.stroke(); g.restore();
+  }
+
+  function prDeHoy(d){
+    try{
+      var hoy = new Date().toISOString().slice(0, 10), det = d.prDetalle || (state.session && state.session.prDetalle) || [];
+      var nombres = (d.prs || []).map(function(n){ return String(n).toLowerCase(); });
+      var hit = det.filter(function(p){ return p.fecha === hoy && nombres.indexOf(String(p.ex).toLowerCase()) >= 0; });
+      if(hit.length) return { ex: hit[0].ex, kg: parseFloat(hit[0].kg) || 0, n: nombres.length };
+      if(nombres.length) return { ex: d.prs[0], kg: 0, n: nombres.length };
+    }catch(e){}
+    return null;
+  }
+
+  function dibujarMarca(d){
+    var c = document.getElementById('storyCanvas'); if(!c) return;
+    d = d || {};
+    if(typeof window.CoachStoryDatos === 'function' && d.sesionN == null){ try{ d = window.CoachStoryDatos(d); }catch(e){} }
+    var g = c.getContext('2d');
+    window.__storyLast = { tipo: 'cyber', d: d };
+    g.clearRect(0, 0, W, H);
+    g.textBaseline = 'alphabetic';
+
+    /* ---------- fondo: negro neutro + anillos concentricos (o la foto del alumno con su overlay) ---------- */
+    window.storyFondoFoto(g, W, H, function(){
+      g.fillStyle = INK; g.fillRect(0, 0, W, H);
+      var gl = g.createRadialGradient(W * .94, -80, 30, W * .94, -80, 980);
+      gl.addColorStop(0, 'rgba(255,85,0,.13)'); gl.addColorStop(1, 'rgba(255,85,0,0)');
+      g.fillStyle = gl; g.fillRect(0, 0, W, H);
+      g.save(); g.strokeStyle = 'rgba(255,255,255,.04)'; g.lineWidth = 2;
+      for(var r = 160; r <= 1300; r += 150){ g.beginPath(); g.arc(W * .84, H * .64, r, 0, Math.PI * 2); g.stroke(); }
+      g.restore();
+    });
+    esquinas(g);
+
+    var X = 112, XT = 156, MW = W - X * 2;
+
+    /* ---------- encabezado: etiqueta cian, fecha, filete naranja ---------- */
+    var dia = String(d.diaCorto || String(d.sesion || '').split(' · ')[0] || 'DÍA').toUpperCase();
+    var tag = '[ ' + dia + (d.semanaN ? ' · SEMANA ' + d.semanaN : '') + ' ]';
+    g.textAlign = 'left'; g.fillStyle = CY; fuente(g, 600, 30, MONO); g.fillText(tag, X, 300);
+    g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.55)'; fuente(g, 500, 28, MONO); g.fillText(fechaTxt(), W - X, 300);
+    g.fillStyle = OR; g.fillRect(X, 328, 128, 7);
+
+    /* ---------- nombre: nombre en blanco, apellido en naranja, con barra vertical ---------- */
+    var partes = String(d.atleta || 'ATLETA').toUpperCase().split(' ').filter(Boolean);
+    var l1 = partes[0] || 'ATLETA', l2 = partes.slice(1).join(' ');
+    var maxN = W - XT - X;
+    var s1 = ajustar(g, l1, maxN, 108, 56, 700), s2 = l2 ? ajustar(g, l2, maxN, 108, 56, 700) : 0;
+    var tamN = Math.min(s1, s2 || s1);
+    g.textAlign = 'left';
+    fuente(g, 700, tamN); g.fillStyle = '#FFFFFF'; g.fillText(l1, XT, 462);
+    var yN = 462;
+    if(l2){ fuente(g, 700, tamN); g.fillStyle = OR; yN = 462 + tamN + 4; g.fillText(l2, XT, yN); }
+    var tit = String(d.tituloSesion || '').toUpperCase();
+    var yTitFin = yN;
+    if(tit){
+      fuente(g, 600, 32); g.fillStyle = 'rgba(255,255,255,.62)';
+      var lt = envolver(g, tit, maxN, 2);
+      lt.forEach(function(ln, i){ g.fillText(ln, XT, yN + 58 + i * 44); });
+      yTitFin = yN + 58 + (lt.length - 1) * 44;
+    }
+    g.fillStyle = OR; g.fillRect(X, 392, 8, yTitFin - 392 + 14);
+
+    /* ---------- hero: tonelaje total ---------- */
+    var vol = Math.round(parseFloat(d.vol) || 0);
+    var yH = Math.max(yTitFin + 120, 790);
+    g.fillStyle = 'rgba(255,255,255,.55)'; fuente(g, 600, 28, MONO); g.fillText('[ TONELAJE TOTAL MOVIDO ]', X, yH);
+    var vTxt = vol > 0 ? fmtNum(vol) : '—';
+    var base = 250;
+    var wKg = 0;
+    do {
+      fuente(g, 700, base); var wv = g.measureText(vTxt).width;
+      fuente(g, 700, Math.round(base * .42)); wKg = g.measureText(' KG').width;
+      if(wv + wKg <= MW || base <= 120) break;
+      base -= 8;
+    } while(true);
+    fuente(g, 700, base); g.fillStyle = '#FFFFFF'; g.fillText(vTxt, X, yH + base * .86);
+    var wVal = g.measureText(vTxt).width;
+    if(vol > 0){ fuente(g, 700, Math.round(base * .42)); g.fillStyle = OR; g.fillText(' KG', X + wVal, yH + base * .86); }
+    var yS = yH + base * .86 + 62;
+    g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X, yS - 30, MW, 2);
+
+    /* ---------- fila de datos: series, duracion real, RPE (o ejercicios) ---------- */
+    var mins = minutosPrimerUltimoSet();
+    var durTxt = mins ? (typeof window.CoachFmtDuracion === 'function' ? String(window.CoachFmtDuracion(mins)) : mins + ' MIN') : '—';
+    var tercera = (d.rpe > 0) ? { v: String(d.rpe).replace('.', ','), l: 'RPE PROMEDIO' } : { v: String((d.listaEj || []).length || '—'), l: 'EJERCICIOS' };
+    var cols = [
+      { v: String(parseInt(d.series, 10) || 0), l: 'SERIES EFECTIVAS' },
+      { v: durTxt.toUpperCase(), l: 'DURACIÓN REAL' },
+      tercera
+    ];
+    var cw = MW / 3;
+    cols.forEach(function(k, i){
+      var cx = X + cw * i + (i ? 34 : 0);
+      var mw = cw - (i ? 44 : 34);
+      g.textAlign = 'left'; g.fillStyle = '#FFFFFF';
+      var px = ajustar(g, k.v, mw, 84, 44, 700); g.fillText(k.v, cx, yS + 70);
+      g.fillStyle = 'rgba(255,255,255,.5)'; fuente(g, 500, 22, MONO); g.fillText(k.l, cx, yS + 112);
+      if(i){ g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X + cw * i, yS + 8, 2, 120); }
+    });
+    var yR = yS + 190;
+    g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X, yR - 40, MW, 2);
+
+    /* ---------- resumen tactico: top lifts / mejores sets del dia ---------- */
+    g.textAlign = 'left'; g.fillStyle = CY; fuente(g, 600, 28, MONO); g.fillText('[ RESUMEN TÁCTICO ]', X, yR + 4);
+    var pr = prDeHoy(d);
+    if(pr){
+      var ptxt = 'NUEVO PR' + (pr.kg > 0 ? ' · ' + fmtNum(pr.kg) + ' KG' : '');
+      fuente(g, 700, 26, MONO);
+      var pw = g.measureText(ptxt).width + 44;
+      g.fillStyle = OR; rr(g, W - X - pw, yR - 30, pw, 46, 23); g.fill();
+      g.fillStyle = INK; g.textAlign = 'center'; g.fillText(ptxt, W - X - pw / 2, yR + 4); g.textAlign = 'left';
+    }
+    var filas = [];
+    (d.topSets || []).slice(0, 3).forEach(function(t){ filas.push({ n: t.ex, r: fmtNum(t.kg) + ' KG × ' + t.reps }); });
+    if(!filas.length && (d.listaEj || []).length){ (d.listaEj || []).slice(0, 3).forEach(function(n){ filas.push({ n: n, ok: true }); }); }
+    if(!filas.length) filas.push({ n: 'SESIÓN COMPLETADA', ok: true });
+    var yF = yR + 72;
+    filas.forEach(function(f, i){
+      var yy = yF + i * 82;
+      g.textAlign = 'left'; g.fillStyle = '#FFFFFF';
+      var maxNom = f.r ? MW - 330 : MW - 70;
+      ajustar(g, String(f.n).toUpperCase(), maxNom, 44, 28, 700); g.fillText(String(f.n).toUpperCase(), X, yy);
+      if(f.r){ g.textAlign = 'right'; g.fillStyle = OR; fuente(g, 700, 44); g.fillText(f.r, W - X, yy); }
+      else if(f.ok){ check(g, W - X - 44, yy - 12, 40, OR); }
+      g.fillStyle = 'rgba(255,255,255,.1)'; g.fillRect(X, yy + 24, MW, 2);
+    });
+
+    /* ---------- racha y consistencia ---------- */
+    var yK = Math.max(yF + filas.length * 82 + 36, 1500);
+    var N = parseInt(d.sesionN, 10) || 1, T = Math.max(N, parseInt(d.sesionTotal, 10) || N);
+    g.textAlign = 'left'; g.fillStyle = '#FFFFFF'; fuente(g, 700, 46); g.fillText('SESIÓN ' + N + '/' + T, X, yK + 40);
+    g.textAlign = 'right'; g.fillStyle = 'rgba(255,255,255,.5)'; fuente(g, 500, 22, MONO); g.fillText('RACHA DEL MESOCICLO · ' + Math.round(N / T * 100) + '%', W - X, yK + 38);
+    g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(X, yK + 64, MW, 10);
+    g.fillStyle = OR; g.fillRect(X, yK + 64, Math.max(14, MW * N / T), 10);
+
+    /* ---------- firma ---------- */
+    var yP = Math.min(yK + 150, H - 190);
+    escudo(g, X, yP, .95);
+    g.textAlign = 'left'; fuente(g, 700, 34); g.fillStyle = '#FFFFFF'; g.fillText('COACH', X + 84, yP + 30);
+    var wc = g.measureText('COACH ').width; g.fillStyle = OR; g.fillText('JP', X + 84 + wc, yP + 30);
+    g.fillStyle = 'rgba(255,255,255,.5)'; fuente(g, 500, 22, MONO); g.fillText('@coachjp.training', X + 84, yP + 62);
+    g.textAlign = 'right'; g.fillStyle = OR; fuente(g, 600, 22, MONO); g.fillText('// SESIÓN COMPLETADA', W - X, yP + 46);
+
+    /* las tipografias de marca se cargan de forma diferida: se repinta una vez cuando estan listas */
+    if(!fuenteLista && document.fonts && document.fonts.load){
+      fuenteLista = true;
+      Promise.all([document.fonts.load('700 60px "Chakra Petch"'), document.fonts.load('500 24px "JetBrains Mono"')])
+        .then(function(){ try{ dibujarMarca(d); }catch(e){} }).catch(function(){});
+    }
+    return c;
+  }
+  function rr(g, x, y, w, h, r){
+    g.beginPath(); g.moveTo(x + r, y);
+    g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+    g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+  }
+  window.CoachStoryMarca = function(d){
+    if(window.COACH_DISCIPLINA !== 'sports') return null;
+    return dibujarMarca(d);
+  };
 })();
 <\/script>
 
@@ -39520,6 +39795,45 @@ html body.jp-mission:not(.cf-disc) .jp-sb-vid-thumb .jp-sb-vid-play{ inset:50% a
 html body.jp-mission:not(.cf-disc) .jp-sb-vid-card:active .jp-sb-vid-play{ background:#FF5500 !important; color:#0A0A0A !important; }
 html body.jp-mission:not(.cf-disc) .jp-close-cta{ display:block !important; text-align:center; white-space:nowrap; font-size:clamp(.7rem, 3.4vw, .86rem) !important; letter-spacing:.05em !important; padding:17px 8px !important; line-height:1.2; }
 html body.jp-mission:not(.cf-disc) .jp-close-cta .jp-emo{ display:inline-block; vertical-align:-2px; line-height:1; margin:0 .6em 0 .3em; }
+html body.jp-mission:not(.cf-disc) #scStyles{ display:none !important; }
+/* ===== TIMER DE DESCANSO · panel inferior con controles grandes (solo Sports) ===== */
+html body.jp-mission:not(.cf-disc) #restHud.on{ position:fixed !important; left:12px !important; right:12px !important; top:auto !important; bottom:calc(12px + env(safe-area-inset-bottom,0px)) !important; transform:none !important; width:auto !important; max-width:none !important; min-width:0 !important; z-index:400 !important; border-radius:22px !important; padding:12px 14px 18px !important; background:rgba(10,10,10,.98) !important; border:1px solid rgba(255,85,0,.45) !important; box-shadow:0 -14px 44px rgba(0,0,0,.72) !important; display:grid !important; grid-template-columns:minmax(0,1fr); grid-template-areas:"top" "time" "ctl" "set" "kg"; align-items:center; column-gap:12px; row-gap:6px; overflow:hidden; flex-wrap:nowrap !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on::after{ content:""; position:absolute; left:0; bottom:0; height:5px; width:calc(var(--p,1) * 100%); background:#FF5500; transition:width 1s linear; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-top{ grid-area:top; order:0 !important; display:flex !important; align-items:center; justify-content:space-between; gap:6px; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-lb{ display:block !important; flex:1 1 auto; min-width:0; font-family:"JetBrains Mono",ui-monospace,monospace !important; font-weight:600 !important; font-size:.7rem !important; letter-spacing:.14em; text-transform:uppercase; color:#A3A3A3 !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-x, html body.jp-mission:not(.cf-disc) #restHud.on .rh-expand{ min-width:44px !important; min-height:44px !important; color:#E5E5E5 !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-ring{ grid-area:time; order:0 !important; width:auto !important; height:auto !important; margin:0 !important; background:none !important; justify-content:center !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-ring::after{ content:none !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-time, html body.jp-mission:not(.cf-disc) #restHud.on .rh-ring .rh-time{ display:block !important; width:auto !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; font-size:4.4rem !important; line-height:1 !important; letter-spacing:.02em; text-align:center; color:#FFFFFF !important; font-variant-numeric:tabular-nums; text-shadow:none !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-time::before, html body.jp-mission:not(.cf-disc) #restHud.on .rh-time::after{ content:none !important; display:none !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on.warn .rh-time, html body.jp-mission:not(.cf-disc) #restHud.on.warn .rh-ring .rh-time{ color:#FF5500 !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-ctl{ grid-area:ctl; order:0 !important; display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.8fr); gap:10px; margin-top:4px; width:100%; }
+html body.jp-mission:not(.cf-disc) #restHud.on > *{ min-width:0 !important; max-width:100%; box-sizing:border-box; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-ctl button{ display:inline-flex !important; align-items:center; justify-content:center; min-height:60px !important; min-width:0 !important; padding:0 10px !important; border-radius:16px !important; border:1px solid rgba(255,255,255,.2) !important; background:rgba(255,255,255,.07) !important; color:#FFFFFF !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; font-size:1rem !important; letter-spacing:.04em; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-ctl button:active{ transform:scale(.95); }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-ctl #rhMinus{ display:none !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-ctl #rhToggle svg{ width:26px; height:26px; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-ctl #rhSkip{ background:#FF5500 !important; border:0 !important; color:#0A0A0A !important; text-transform:uppercase; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-set{ grid-area:set; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-kgadjust{ grid-area:kg; }
+html body.jp-mission:not(.cf-disc) #restHud.on:not(.expanded) .rh-set, html body.jp-mission:not(.cf-disc) #restHud.on:not(.expanded) .rh-kgadjust{ display:none !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on.expanded .rh-set{ display:flex !important; margin-top:6px; }
+html body.jp-mission:not(.cf-disc):has(#restHud.on) #hddFab, html body.jp-mission:not(.cf-disc):has(#restHud.on) #hdDock{ display:none !important; }
+/* ===== HUD TIMER (intervalos / EMOM / AMRAP): primario naranja solido con texto negro, secundarios neutros ===== */
+html body.jp-mission:not(.cf-disc) .cwt-go, html body.jp-mission:not(.cf-disc) .cwt-start{ background:#FF5500 !important; border:0 !important; color:#0A0A0A !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; letter-spacing:.08em; text-transform:uppercase; min-height:60px; box-shadow:0 10px 26px -12px rgba(255,85,0,.7) !important; }
+html body.jp-mission:not(.cf-disc) .cwt-stop, html body.jp-mission:not(.cf-disc) .cwt-plus2, html body.jp-mission:not(.cf-disc) .cwt-skip2{ background:rgba(255,255,255,.06) !important; border:1px solid rgba(255,255,255,.18) !important; color:#FFFFFF !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; letter-spacing:.06em; text-transform:uppercase; min-height:56px; border-radius:14px; }
+html body.jp-mission:not(.cf-disc) .cwt-skip2{ border-color:rgba(255,85,0,.55) !important; color:#FF5500 !important; }
+html body.jp-mission:not(.cf-disc) .cwt-acts2{ display:flex; gap:10px; margin-top:10px; }
+html body.jp-mission:not(.cf-disc) .cwt-acts2 button{ flex:1; cursor:pointer; font-size:.9rem; }
+html body.jp-mission:not(.cf-disc) .cwt-pantalla .cwt-back, html body.jp-mission:not(.cf-disc) .cwt-back{ color:#A3A3A3 !important; }
+
+/* ===== HUD Timer en pantalla completa: marca (sin dorado ni ambar) ===== */
+html body.jp-mission:not(.cf-disc) #cwtFull .cf-go{ background:#FF5500 !important; border:0 !important; color:#0A0A0A !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; letter-spacing:.08em; text-transform:uppercase; box-shadow:0 10px 26px -12px rgba(255,85,0,.7) !important; }
+html body.jp-mission:not(.cf-disc) #cwtFull .cf-reset, html body.jp-mission:not(.cf-disc) #cwtFull #cfReset{ background:rgba(255,255,255,.07) !important; border:1px solid rgba(255,255,255,.18) !important; color:#FFFFFF !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; letter-spacing:.06em; text-transform:uppercase; }
+html body.jp-mission:not(.cf-disc) #cwtFull .cf-round{ background:rgba(255,255,255,.05) !important; border:1px solid rgba(255,85,0,.55) !important; color:#FFFFFF !important; }
+html body.jp-mission:not(.cf-disc) #cwtFull .cf-brand em, html body.jp-mission:not(.cf-disc) #cwtFull em{ color:#FF5500 !important; font-style:normal; }
+html body.jp-mission:not(.cf-disc) #cwtFull .cf-shield path{ stroke:rgba(255,85,0,.22) !important; }
+html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i, html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar > *{ background:#FF5500 !important; }
 /* BRANDPASS:END */
 </style>
 <script id="jpHudTacticoJs">
