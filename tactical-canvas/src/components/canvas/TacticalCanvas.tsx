@@ -15,6 +15,7 @@ import { EssayTemplate } from './templates/EssayTemplate'
 import { WorkoutTemplate } from './templates/WorkoutTemplate'
 import { FixTemplate } from './templates/FixTemplate'
 import { SlideCounter } from './SlideCounter'
+import { PanoramaLayer, ThreadLayer } from './SeamlessLayer'
 import { AthleticLayout } from './templates/AthleticLayout'
 import { athleticPalette, LayoutOpusBrutalist } from './templates/LayoutOpusBrutalist'
 import { StatementTemplate } from './templates/StatementTemplate'
@@ -151,7 +152,9 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   // Tipo de fondo: con «photo» manda la imagen de la placa; los fondos tácticos la reemplazan.
   // Manifiesto texto sin foto: arranca con la luz radial texturada (nunca un plano vacío).
   const bgStyle = state.template === 'essay' && (state.bgStyle ?? 'photo') === 'photo' && !bgImage ? 'radial' : (state.bgStyle ?? 'photo')
-  const bgPhoto = bgStyle === 'photo' ? bgImage : null
+  // Carrusel continuo: la panorámica (una foto para todo el set) manda sobre el fondo de cada placa.
+  const panorama = state.panoramaImageId ? (resolveImage?.(state.panoramaImageId) ?? null) : null
+  const bgPhoto = panorama ? null : bgStyle === 'photo' ? bgImage : null
   const hasBg = Boolean(bgPhoto)
   const plate = hasBg && state.floatingPlate
   // Story adaptativo: con alineación AUTO el contenido arranca más grande y el aire sobrante se
@@ -228,15 +231,19 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
       }
     : { left: SIDE, right: SIDE, top: pad.top, bottom: pad.bottom, padX: 0, padY: 0 }
 
+  // Hilo del carrusel continuo en Opus Athletic: entre su fondo propio y el texto.
+  const athleticThread = state.seamlessThread ? (
+    <ThreadLayer w={w} h={h} index={slideIndex} count={slideCount} accent={state.accentSwap ? '#0EA5E9' : '#F97316'} side={84 * (w / 1080)} scale={w / 1080} />
+  ) : null
   // 15 · Opus Athletic: composición Light Editorial propia (papel claro, anillos y recorte del atleta).
   if (state.template === 'athletic') {
     return (
       <AccentSwapContext.Provider value={swap}>
         <div ref={ref} style={{ width: w, height: h, overflow: 'hidden', position: 'relative', background: athleticPalette(state).base }}>
           {state.athleticTheme === 'dark' ? (
-            <LayoutOpusBrutalist state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} />
+            <LayoutOpusBrutalist state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} under={athleticThread} />
           ) : (
-            <AthleticLayout state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} />
+            <AthleticLayout state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} under={athleticThread} />
           )}
           {state.slideCounter && (
             <SlideCounter
@@ -270,7 +277,11 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
         textRendering: 'geometricPrecision',
       }}
     >
-      {bgStyle !== 'photo' && theme === 'dark' && (
+      {panorama && (
+        <PanoramaLayer src={panorama} w={w} h={h} index={slideIndex} count={slideCount} overlay={state.bgOverlay / 100} overlayRgb={palette.overlayRgb} mono={state.bgMono} />
+      )}
+      {state.seamlessThread && <ThreadLayer w={w} h={h} index={slideIndex} count={slideCount} accent={palette.accent} side={SIDE} scale={baseScale} />}
+      {!panorama && bgStyle !== 'photo' && theme === 'dark' && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
           <TacticalBackdrop style={bgStyle} w={w} h={h} accent={palette.accent} />
         </div>

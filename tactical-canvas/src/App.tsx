@@ -37,6 +37,8 @@ const GLOBAL_KEYS = [
   'contentGap',
   'theme',
   'slideCounter',
+  'seamlessThread',
+  'panoramaImageId',
 ] as const
 
 /** Fondo de cada placa: foto, capa, encuadre y tratamiento. Nunca se propaga a las demás al editar. */
@@ -110,7 +112,7 @@ export default function App() {
   // Guía de recorte de la grilla del perfil (sólo pantalla; nunca entra en el PNG).
   const [gridGuide, setGridGuide] = useState(false)
   // Fotos de todas las placas: fondo y las imágenes propias de Error vs Corrección.
-  const bg = useBackgroundImages(slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId]).filter((id): id is string => Boolean(id)))
+  const bg = useBackgroundImages(slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId, s.panoramaImageId]).filter((id): id is string => Boolean(id)))
   const bgImage = bg.get(state.bgImageId)
   // Una sola vez: la foto global de versiones anteriores pasa a ser la foto propia de cada placa
   // existente (se ven igual que antes, pero desde ahora cada una se cambia por separado).
@@ -120,7 +122,7 @@ export default function App() {
     migrated.current = true
     const legacy = readLegacyBackground()
     // Todas las fotos referenciadas (fondo + Error vs Corrección): ninguna se borra en la limpieza.
-    const ids = deck.slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId]).filter((id): id is string => Boolean(id))
+    const ids = deck.slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId, s.panoramaImageId]).filter((id): id is string => Boolean(id))
     if (!legacy) {
       void pruneBackgrounds(ids)
       return

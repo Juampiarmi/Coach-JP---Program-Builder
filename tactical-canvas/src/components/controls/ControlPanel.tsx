@@ -15,6 +15,7 @@ import { OpusEditor } from './OpusEditor'
 import { AthleticEditor } from './AthleticEditor'
 import { WorkoutEditor } from './WorkoutEditor'
 import { FixEditor } from './FixEditor'
+import { SeamlessControls } from './SeamlessControls'
 import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator, HookScorer } from './AiAssist'
 import { TYPE_PRESETS } from '../../lib/typography'
@@ -815,6 +816,10 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             )}
           </>
         )}
+      </Section>
+
+      <Section index="05" title="Carrusel continuo" summary={[state.seamlessThread && 'Hilo', state.panoramaImageId && 'Panorámica'].filter(Boolean).join(' · ') || 'Placas sueltas'} defaultOpen={Boolean(state.seamlessThread || state.panoramaImageId)}>
+        <SeamlessControls state={state} update={update} addImage={addImage} resolveImage={resolveImage} slideCount={slideCount} />
       </Section>
 
       {state.template !== 'manifesto' && state.template !== 'repeat' && (

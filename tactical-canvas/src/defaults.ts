@@ -89,6 +89,8 @@ export const DEFAULT_STATE: CanvasState = {
   ],
   workoutNote: 'Progresión: cuando completes todas las series con RIR 3, subí 2,5 kg.',
   slideCounter: false,
+  seamlessThread: false,
+  panoramaImageId: null,
   fixWrongLabel: 'INCORRECTO',
   fixWrongText: 'Rodillas hacia adentro al subir: el valgo carga el ligamento y pierde fuerza.',
   fixWrongImageId: null,

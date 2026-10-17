@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { FONT_BODY, FONT_BRAND, FONT_MONO } from '../../../lib/brand'
 import { ShieldLogo } from '../../ShieldLogo'
 import { TacticalBackdrop } from '../TacticalBackdrop'
@@ -51,6 +51,8 @@ interface Props {
   /** Posición de la placa en el carrusel: decide el encuadre automático del recorte */
   slideIndex: number
   palette?: AthleticPalette
+  /** Capa entre el fondo y el contenido (ej: hilo del carrusel continuo) */
+  under?: ReactNode
 }
 
 /** auto → Placa 1 con el atleta al centro / tercio inferior; desde la Placa 2, a la derecha (40 %). */
@@ -196,7 +198,7 @@ const unbracket = (t: string) => t.trim().replace(/^\[\s*|\s*\]$/g, '')
  * Anillos concéntricos detrás del recorte del atleta, etiqueta «[Nr. X] TAG», titular alineado a la
  * izquierda, bajada, datos en lista clave → valor o tabla de 2 columnas y CTA opcional.
  */
-export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = ATHLETIC }: Props) {
+export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = ATHLETIC, under }: Props) {
   const s = w / 1080
   const isStory = state.aspect === 'story'
   const accent = state.accentSwap ? P.cyan : P.orange
@@ -265,6 +267,7 @@ export function AthleticLayout({ state, w, h, cutout, slideIndex, palette: P = A
       {!photoBg && pattern === 'grid' && <Grid w={w} h={h} line={P.ring} accent={accent} s={s} />}
       {!photoBg && pattern === 'rings' && <Rings cx={ring.cx} cy={ring.cy} w={w} h={h} accent={accent} ring={P.ring} s={s} cross={showCut} />}
       {P.grain > 0 && <Grain w={w} h={h} opacity={P.grain} />}
+      {under}
 
       {showCut && (
         <>

@@ -28,6 +28,7 @@ interface Props {
   h: number
   cutout?: string | null
   slideIndex: number
+  under?: React.ReactNode
 }
 
 export function LayoutOpusBrutalist(props: Props) {

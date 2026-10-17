@@ -230,6 +230,10 @@ export interface CanvasState {
   fixAccent: 'green' | 'brand'
   /** Lado a lado (split) o uno arriba del otro (stack) */
   fixLayout: 'split' | 'stack'
+  /** Carrusel continuo: hilo de marca que cruza de placa en placa */
+  seamlessThread: boolean
+  /** Carrusel continuo: foto panorámica repartida entre todas las placas (id en IndexedDB) */
+  panoramaImageId: string | null
   /** Contador «01 / 05» + «DESLIZÁ →» en las placas del carrusel (se exporta) */
   slideCounter: boolean
   athleticBg: AthleticBg
