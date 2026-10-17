@@ -44863,7 +44863,10 @@ document.addEventListener('DOMContentLoaded', init);
         const m = raw.match(/retry(?:Delay|-after)"?[:\s"]+(\d+)/i);
         secs = m ? parseInt(m[1], 10) : 0;
       }
-      if(!secs) secs = res.status === 429 ? 3600 : 60;
+      if(!secs){
+        /* 429 sin Retry-After: un limite por MINUTO (RPM/TPM) se resuelve en ~1 min; solo la cuota DIARIA justifica una espera larga */
+        secs = (res.status === 429 && /per\s*day|PerDay|daily|\bRPD\b/i.test(raw)) ? 3600 : 60;
+      }
       throw RateErr(prov, secs, 'HTTP ' + res.status + ' · cuota agotada en ' + PROV[prov].lb);
     }
     if(!res.ok){
@@ -44916,9 +44919,22 @@ document.addEventListener('DOMContentLoaded', init);
   }
 
   /* llamada con cooldown + fallback entre proveedores */
+  function cooldownAllErr(secs){
+    const e = new Error('Todos los proveedores con clave están en cooldown. Cargá otra API Key o esperá ' + coolTxt(secs) + '.');
+    e.rate = true; e.cooldownAll = true; e.secs = secs;
+    return e;
+  }
+  /* segundos que faltan para que se libere el primer proveedor con clave (0 si alguno esta disponible o no hay claves) */
+  function esperaCooldown(){
+    const conClave = ORDEN.filter(hasKey);
+    if(!conClave.length || conClave.some(p => !isCool(p))) return 0;
+    return Math.min.apply(null, conClave.map(coolLeft));
+  }
   async function callAI(system, user, onLog, opts){
     const log = onLog || function(){};
     const intentados = [];
+    const espera0 = esperaCooldown();
+    if(espera0 > 0) throw cooldownAllErr(espera0);
     let prov = nextProvider(null) || AI.provider;
 
     for(let vuelta = 0; vuelta < 4; vuelta++){
@@ -44942,7 +44958,7 @@ document.addEventListener('DOMContentLoaded', init);
         if(AI.fallback === false) throw err;
         const alt = nextProvider(prov);
         if(!alt || intentados.indexOf(alt) >= 0){
-          throw new Error('Todos los proveedores con clave están en cooldown. Cargá otra API Key o esperá ' + coolTxt(Math.min.apply(null, ORDEN.filter(hasKey).map(coolLeft).concat([err.secs]))) + '.');
+          throw cooldownAllErr(Math.max(1, Math.min.apply(null, ORDEN.filter(hasKey).map(coolLeft).filter(x => x > 0).concat([err.secs]))));
         }
         log('🔀 Continuando con ' + PROV[alt].lb + '…', 'ok');
         switchProvider(alt, true);
@@ -45343,6 +45359,7 @@ document.addEventListener('DOMContentLoaded', init);
       if(err.rate || /cooldown|429|503|quota/i.test(err.message || '')){
         log('Cuota agotada. Tres salidas: 1) cambiá de proveedor con los botones de arriba — cada uno tiene su cuota propia; ' +
             '2) generá de a un día en vez de la semana completa; 3) armá el bloque a mano y usá 🪄 Autocompletar Parámetros, que trabaja local y sin API.', 'warn');
+        log('<button type="button" class="btn sm gold" data-aikey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>', 'warn');
       } else if(/Failed to fetch|NetworkError/i.test(err.message || '')){
         log('Verificá la conexión y la validez de la API Key.', 'warn');
       }
@@ -45401,6 +45418,7 @@ document.addEventListener('DOMContentLoaded', init);
       }
     });
     $('#aiCfgLink').addEventListener('click', () => { closeModal('mAI'); openCfg(); });
+    document.addEventListener('click', e => { if(e.target.closest && e.target.closest('[data-aikey]')){ closeModal('mAI'); openCfg(); } });
 
     $$('#mCfg [data-close], #mAI [data-close]').forEach(b => b.addEventListener('click', () => closeModal(b.dataset.close)));
     ['mCfg','mAI'].forEach(id => {
@@ -45420,6 +45438,10 @@ document.addEventListener('DOMContentLoaded', init);
       /* llamada genérica de texto (la usa la biblioteca para tips y objetivos) */
       generarTexto: (user, system, opts) => callAI(system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user, undefined, opts),
       hayClave: () => ['anthropic','openai','google'].some(p => hasKey(p)),
+      /* segundos hasta que se libere un proveedor (0 = hay uno disponible) y cuantas claves hay cargadas: los usan los generadores para el reintento con cuenta regresiva */
+      esperaCooldown: esperaCooldown,
+      clavesCargadas: () => ORDEN.filter(hasKey).length,
+      coolTxt: coolTxt,
       /* directiva crítica (2026-09) -- selector manual de proveedor/modelo y
          fin del bloqueo ciego por cooldown: se exponen los chequeos internos
          (antes sólo de uso privado acá adentro) para que un módulo consumidor
@@ -74895,7 +74917,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 ========================================================= */
 (function(){
   'use strict';
-  var corriendo = false, firma = '';
+  var corriendo = false, firma = '', estadoBtn = '';
   function $q(id){ return document.getElementById(id); }
   function esc2(t){ return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function nz(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
@@ -75043,7 +75065,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '.gs-acts .btn{flex:1 1 220px}' +
       '.gs-go{background:linear-gradient(180deg,#FF6A1F,#E24A00) !important;color:#0A0A0A !important;font-weight:800 !important;letter-spacing:.04em}' +
       '.gs-log{display:none;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.35);border:1px solid var(--line,#1f242d);font-size:12px;line-height:1.6;color:var(--txt-2,#c3c9d3)}' +
-      '.gs-log.on{display:block}.gs-log .e{color:#F0A08C}.gs-log .o{color:#34D399}' +
+      '.gs-log.on{display:block}.gs-log .e{color:#F0A08C}.gs-log .o{color:#34D399}.gs-log .w{color:#FFB703}' +
+      '.gs-log .gs-key{margin-top:8px;border-color:rgba(255,85,0,.55);color:#FFB38A;background:rgba(255,85,0,.08)}' +
+      '.gs-go:disabled{opacity:.72;cursor:wait;filter:saturate(.6)}' +
       '.gs-spin{display:inline-block;width:13px;height:13px;margin-right:7px;border-radius:50%;border:2px solid rgba(255,138,77,.3);border-top-color:#FF5500;animation:gsSp .8s linear infinite;vertical-align:-2px}' +
       '@keyframes gsSp{to{transform:rotate(360deg)}}' +
       '#gsFichaM{position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72)}' +
@@ -75091,7 +75115,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '<textarea id="gsExtra" placeholder="Indicaciones extra (opcional): ej. \'priorizar cadena posterior\', \'sin barra hoy\', \'día de volumen\'">' + esc2(extraPrev) + '</textarea>' +
       '<div class="gs-opts"><span>Se genera el <b>DÍA ' + (di + 1) + '</b>' + (d.title ? ' · ' + esc2(String(d.title).slice(0, 40)) : '') + '</span>' +
       '<label><input type="checkbox" id="gsSemana"' + (semPrev ? ' checked' : '') + '> Toda la semana (' + p.dias.length + ' días)</label></div>' +
-      '<div class="gs-acts"><button type="button" class="btn gs-go" id="gsRun"' + (corriendo ? ' disabled' : '') + '>' + (corriendo ? '<span class="gs-spin"></span> Generando…' : '⚡ GENERAR PLAN COMPLETO CON IA (FICHA TÁCTICA)') + '</button>' +
+      '<div class="gs-acts"><button type="button" class="btn gs-go" id="gsRun"' + (corriendo ? ' disabled' : '') + '>' + (corriendo ? (estadoBtn || '<span class="gs-spin"></span> Generando…') : '⚡ GENERAR PLAN COMPLETO CON IA (FICHA TÁCTICA)') + '</button>' +
       '<button type="button" class="btn" id="gsFicha">📋 Editar Ficha Táctica</button></div>' +
       '<div class="gs-log' + (logOn ? ' on' : '') + '" id="gsLog">' + logPrev + '</div>';
   }
@@ -75116,6 +75140,39 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     });
   }
 
+  /* ---------- reintento ante cuota / cooldown ---------- */
+  var ESPERA_MAX = 90, REINTENTOS = 3;
+  function esCuota(err){ return !!err && (err.cooldownAll || err.rate || /cooldown|429|cuota|quota|rate.?limit|saturad|overloaded/i.test(String(err.message || ''))); }
+  function esClave(err){ return !!err && /API Key|clave|401|403|invalid|permission|no hay api/i.test(String(err.message || '')); }
+  function setBtn(html){
+    estadoBtn = html || '';
+    var b = $q('gsRun'); if(b){ b.disabled = true; b.innerHTML = estadoBtn || '<span class="gs-spin"></span> Generando…'; }
+  }
+  function esperar(seg, etiqueta){
+    return new Promise(function(res){
+      var resto = Math.max(1, Math.round(seg));
+      (function tic(){
+        setBtn('⏳ Reintentando en ' + resto + 's… ' + etiqueta);
+        if(resto <= 0){ setBtn(''); return res(); }
+        resto--; setTimeout(tic, 1000);
+      })();
+    });
+  }
+  async function llamarIA(usuarioTxt, sistemaTxt, opts, dia){
+    for(var intento = 1; ; intento++){
+      try{
+        return await window.CoachAI.generarTexto(usuarioTxt, sistemaTxt, opts);
+      }catch(err){
+        if(!esCuota(err) || intento >= REINTENTOS) throw err;
+        var seg = Math.ceil(err.secs || window.CoachAI.esperaCooldown() || (10 * intento));
+        if(seg > ESPERA_MAX){ err.espera = seg; throw err; }          /* espera larga (cuota diaria): no se queda colgado, avisa con la accion de cambiar de clave */
+        log('⏳ Cuota o cooldown de la API en el DÍA ' + (dia + 1) + ': reintento automático en ' + seg + 's (intento ' + (intento + 1) + '/' + REINTENTOS + ').', 'w');
+        await esperar(seg + 1, '(' + (intento + 1) + '/' + REINTENTOS + ')');
+      }
+    }
+  }
+  function ctaClave(){ return '<br><button type="button" class="btn gs-key" data-gskey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>'; }
+
   /* ---------- generación ---------- */
   async function generar(){
     if(corriendo) return;
@@ -75123,6 +75180,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var p = plan(ath.id); if(!p || esPlanCFActivo(p)){ toast('El generador de sesión es para Sports & Bodybuilding', 'warn'); return; }
     if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
       toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar la sesión', 'err');
+      log('✖ No hay ninguna API Key cargada.' + ctaClave(), 'e');
       if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
       return;
     }
@@ -75134,14 +75192,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     }
     var extra = ($q('gsExtra') ? $q('gsExtra').value.trim() : ''), semana = !!($q('gsSemana') && $q('gsSemana').checked);
     var di0 = Math.min(S.ui.day || 0, p.dias.length - 1), targets = semana ? p.dias.map(function(_, i){ return i; }) : [di0];
-    corriendo = true; pintar();
+    corriendo = true; estadoBtn = ''; pintar();
+    var lg0 = $q('gsLog'); if(lg0){ lg0.innerHTML = ''; lg0.classList.add('on'); }
     var textos = [], titulos = [];
     try{
       log('<b>Alumno/a:</b> ' + esc2(fullName(ath)) + ' · ' + esc2(perfilNivel(ath).split(':')[0]) + ' · ' + targets.length + ' día(s)');
       for(var k = 0; k < targets.length; k++){
         var di = targets[k];
         log('<span class="gs-spin"></span> Diseñando el DÍA ' + (di + 1) + ' (' + (k + 1) + '/' + targets.length + ')…');
-        var out = await window.CoachAI.generarTexto(usuario(ath, p, di, extra, titulos), sistema(ath), { maxTokens: 7000, plain: true });
+        var out = await llamarIA(usuario(ath, p, di, extra, titulos), sistema(ath), { maxTokens: 7000, plain: true }, di);
         var t = limpiar(out, di), r = parsearImportacion(t, true), nB = r.dias.reduce(function(s, x){ return s + x.bloques.filter(function(b){ return !b.sinClasificar && b.items && b.items.length; }).length; }, 0);
         /* una respuesta que no es una sesion (rechazo, charla, formato roto) no se aplica: se deja en el Importador rapido */
         if(nB < 2){
@@ -75159,10 +75218,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       else log('Importación cancelada: el plan no se modificó.', 'e');
     }catch(err){
       console.warn('generador de sesión', err);
-      log('✖ ' + esc2((err && err.message) || String(err)), 'e');
+      log('✖ ' + esc2((err && err.message) || String(err)) + ((esCuota(err) || esClave(err)) ? ctaClave() : ''), 'e');
       if(!(err && err.__toast)) toast('Error al generar la sesión: ' + String((err && err.message) || err).slice(0, 80), 'err');
     }finally{
-      corriendo = false;
+      corriendo = false; estadoBtn = '';
       var lg = $q('gsLog'); if(lg) lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); });
       pintar();
     }
@@ -75171,6 +75230,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   document.addEventListener('click', function(e){
     var t = e.target; if(!t || !t.closest) return;
     if(t.closest('#gsRun')){ e.preventDefault(); generar(); return; }
+    if(t.closest('[data-gskey]')){ e.preventDefault(); if(window.CoachAI && window.CoachAI.config) window.CoachAI.config(); return; }
     if(t.closest('#gsFicha')){ e.preventDefault(); var a = active(); if(a) abrirFicha(a); }
   });
   function ciclo(){ try{ pintar(); }catch(e){} }
