@@ -121,6 +121,7 @@ PLANTILLAS DISPONIBLES (templateId):
 - "piramide": jerarquía de prioridades en 3 o 4 estratos (base no negociable → cúspide de detalle).
 - "checklist": auditoría operativa de 3 o 4 condiciones binarias ([ ✓ ] pasa / [ ✗ ] falla).
 - "guardado": placa final de retención (cheat sheet / ficha técnica): 3 o 4 viñetas que condensan todo el carrusel + llamado a guardar.
+- "rutina": tarjeta de sesión de entrenamiento: ejercicios con código (A1, B1, B2 = superserie), series × reps, intensidad (RIR / RPE / % 1RM) y pausa. Ideal para «la sesión de hoy» o un protocolo aplicable.
 - "athletic": placa editorial clara estilo Opus Athletic (papel claro, titular negro) con datos en filas clave → valor («CARGAS PESADAS:» → «3-5 reps al 85-90 % 1RM») o tabla de 2 columnas (Intensidad | Reps × series). Ideal para protocolos con números reales.
 - "cita": cita célebre estilo «Forbes Quotes» (frase real de un deportista o persona de éxito + nombre + rol). SÓLO con una frase que esa persona dijo de verdad y de fuente conocida; si no tenés certeza absoluta, no uses esta plantilla.
 - "opus": placa de mentalidad con jerarquía: título principal (titleWhite + titleAccent corto) y debajo 2 a 6 bloques numerados («00001:» + una frase de criterio u hábito operativo). Ideal para estándares, reglas o hábitos de mindset en una placa.
@@ -182,7 +183,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
   "caption": string,
   "slides": [
     {
-      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita" | "athletic",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita" | "athletic" | "rutina",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
@@ -207,6 +208,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
       "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
       "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
+"rutina": { "rows": [2 a 8 objetos { "code": "A1", "name": string (ejercicio), "scheme": string (ej «4 × 5»), "intensity": string (ej «RIR 2», «80 % 1RM»), "rest": string (ej «3:00») }], "note": string (progresión o criterio, 1 oración) } (OBLIGATORIO sólo si templateId es "rutina"; en los demás omitilo),
       "athletic": { "theme": "dark" | "light" (por defecto "dark", la estética nativa de Coach JP), "nr": string (número de la etiqueta «[Nr. X]»; "" en portada y cierre), "cta": string ("" salvo en el cierre), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
       "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
       "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
@@ -757,6 +759,10 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   cita: 'quote',
   quote: 'quote',
   athletic: 'athletic',
+  rutina: 'workout',
+  sesion: 'workout',
+  sesión: 'workout',
+  workout: 'workout',
   opus_athletic: 'athletic',
   editorial: 'athletic',
   frase: 'quote',
@@ -1058,6 +1064,17 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   if (template === 'bookmark' && gPoints.length >= 3) {
     patch.bookmarkData = { points: gPoints, cta: upper(first(g.cta, BOOKMARK_CTA)), accent: 'orange' }
   }
+
+  // 17 · Sesión / rutina: ejercicios con prescripción completa.
+  const wk = obj(s.rutina ?? s.workout ?? s.sesion)
+  const wkRows = objList(wk.rows ?? wk.ejercicios)
+    .map((r, i) => ({ code: first(r.code, r.codigo) || `${String.fromCharCode(65 + i)}1`, name: first(r.name, r.ejercicio, r.nombre), scheme: first(r.scheme, r.series), intensity: first(r.intensity, r.intensidad), rest: first(r.rest, r.pausa, r.descanso) }))
+    .filter((r) => r.name)
+    .slice(0, 8)
+  if (wkRows.length) {
+    patch.workoutRows = wkRows
+    patch.workoutNote = first(wk.note, wk.nota)
+  } else if (template === 'workout') patch.template = 'statement'
 
   // 15 · Opus Athletic: filas clave → valor o tabla de 2 columnas.
   const at = obj(s.athletic ?? s.opusAthletic)
@@ -1443,6 +1460,7 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   opus: 'opus',
   quote: 'cita',
   athletic: 'athletic',
+  workout: 'rutina',
 }
 
 export interface RegenerateRequest {

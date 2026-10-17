@@ -13,6 +13,7 @@ import { StructEditor } from './StructEditor'
 import { BookmarkEditor } from './BookmarkEditor'
 import { OpusEditor } from './OpusEditor'
 import { AthleticEditor } from './AthleticEditor'
+import { WorkoutEditor } from './WorkoutEditor'
 import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator } from './AiAssist'
 import { TYPE_PRESETS } from '../../lib/typography'
@@ -44,6 +45,7 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'quote', n: '14', label: 'Cita célebre' },
   { id: 'athletic', n: '15', label: 'Opus Athletic' },
   { id: 'essay', n: '16', label: 'Manifiesto texto' },
+  { id: 'workout', n: '17', label: 'Sesión / Rutina' },
 ]
 
 const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
@@ -278,7 +280,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           <span className="size-3 rounded-sm" style={{ background: state.accentSwap ? '#38BDF8' : '#EA580C' }} />
           [ ⚡ SWAP ACCENT · {state.accentSwap ? 'CIAN' : 'NARANJA'} ]
         </button>
-        {state.template === 'repeat' || state.template === 'quote' || state.template === 'essay' ? null : state.template === 'manifesto' ? (
+        {state.template === 'repeat' || state.template === 'quote' || state.template === 'essay' || state.template === 'workout' ? null : state.template === 'manifesto' ? (
           <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
         ) : (
           <Field label={state.template === 'diagram' ? 'Párrafo (opcional)' : 'Párrafo'} hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
@@ -583,6 +585,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
 
         {state.template === 'opus' && <OpusEditor state={state} update={update} />}
         {state.template === 'athletic' && <AthleticEditor state={state} update={update} />}
+        {state.template === 'workout' && <WorkoutEditor state={state} update={update} />}
         {state.template === 'essay' && (
           <Field label="Párrafos" hint="línea en blanco = párrafo nuevo · MAYÚSCULAS = remate en Chakra">
             <TextArea value={(state.essayParas ?? []).join('\n\n')} onChange={(v) => update({ essayParas: v.split(/\n[ \t]*\n/) })} rows={9} />
@@ -916,6 +919,8 @@ function summaryFor(s: CanvasState) {
       return `${(s.opusBlocks ?? []).filter((b) => b.text.trim()).length} bloques numerados`
     case 'quote':
       return s.quoteAuthor ? `— ${s.quoteAuthor}` : 'Cita sin autor'
+    case 'workout':
+      return `${(s.workoutRows ?? []).filter((r) => r.name.trim()).length} ejercicios`
     case 'essay':
       return `${(s.essayParas ?? []).filter((p) => p.trim()).length} párrafos`
     case 'athletic':

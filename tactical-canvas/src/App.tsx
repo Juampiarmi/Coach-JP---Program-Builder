@@ -35,6 +35,7 @@ const GLOBAL_KEYS = [
   'contentAlign',
   'contentGap',
   'theme',
+  'slideCounter',
 ] as const
 
 /** Fondo de cada placa: foto, capa, encuadre y tratamiento. Nunca se propaga a las demás al editar. */
@@ -105,6 +106,8 @@ export default function App() {
   }
   // Simulador de UI de Instagram (sólo pantalla; nunca entra en el PNG ni en el ZIP).
   const [overlay, setOverlay] = useState(false)
+  // Guía de recorte de la grilla del perfil (sólo pantalla; nunca entra en el PNG).
+  const [gridGuide, setGridGuide] = useState(false)
   const bg = useBackgroundImages(slides.map((s) => s.bgImageId).filter((id): id is string => Boolean(id)))
   const bgImage = bg.get(state.bgImageId)
   // Una sola vez: la foto global de versiones anteriores pasa a ser la foto propia de cada placa
@@ -422,6 +425,28 @@ export default function App() {
     >
       {isDesktop ? '[ 👁 OVERLAY INSTAGRAM ]' : '👁 IG'}
     </button>
+    <button
+      type="button"
+      onClick={() => setGridGuide((g) => !g)}
+      aria-pressed={gridGuide}
+      title="Muestra cómo recorta Instagram la miniatura en la grilla del perfil (no se exporta)"
+      className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
+        gridGuide ? 'border-cyan/70 bg-cyan/15 text-cyan' : 'border-line text-steel hover:text-white'
+      }`}
+    >
+      {isDesktop ? '[ ▦ GRILLA PERFIL ]' : '▦'}
+    </button>
+    <button
+      type="button"
+      onClick={() => update({ slideCounter: !state.slideCounter })}
+      aria-pressed={Boolean(state.slideCounter)}
+      title="Contador «01 / 05» y «DESLIZÁ →» en todas las placas (se exporta)"
+      className={`rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap transition ${
+        state.slideCounter ? 'border-fire/70 bg-fire/15 text-fire' : 'border-line text-steel hover:text-white'
+      }`}
+    >
+      {isDesktop ? '[ 01/05 CONTADOR ]' : '01/05'}
+    </button>
     </>
   )
 
@@ -447,7 +472,7 @@ export default function App() {
             )}
           </div>
           <div className="min-h-0 flex-1 p-6">
-            <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
+            <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
           </div>
           <div className="mx-auto flex w-full max-w-xl flex-col gap-2 px-6 pb-6">
             <CaptionBar caption={caption} onChange={setCaption} />
@@ -470,7 +495,7 @@ export default function App() {
       </div>
       <div className="border-b border-line px-4 py-2">{slideBar()}</div>
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
-        <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
+        <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
       </main>
 
       <section

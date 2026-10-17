@@ -12,6 +12,8 @@ import { OpusTemplate } from './templates/OpusTemplate'
 import { QuoteTemplate } from './templates/QuoteTemplate'
 import { TacticalBackdrop } from './TacticalBackdrop'
 import { EssayTemplate } from './templates/EssayTemplate'
+import { WorkoutTemplate } from './templates/WorkoutTemplate'
+import { SlideCounter } from './SlideCounter'
 import { AthleticLayout } from './templates/AthleticLayout'
 import { athleticPalette, LayoutOpusBrutalist } from './templates/LayoutOpusBrutalist'
 import { StatementTemplate } from './templates/StatementTemplate'
@@ -133,11 +135,13 @@ interface Props {
   state: CanvasState
   /** Foto de fondo (data URL). Va aparte del estado para no inflar el autosave. */
   bgImage?: string | null
-  /** Posición de la placa en el carrusel (encuadre automático de Opus Athletic) */
+  /** Posición de la placa en el carrusel (encuadre automático de Opus Athletic y contador) */
   slideIndex?: number
+  /** Cantidad de placas del carrusel (contador «01 / 05») */
+  slideCount?: number
 }
 
-export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function TacticalCanvas({ state, bgImage, slideIndex = 0 }, ref) {
+export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function TacticalCanvas({ state, bgImage, slideIndex = 0, slideCount = 1 }, ref) {
   const { w, h } = ASPECTS[state.aspect]
   const isStory = state.aspect === 'story'
   const baseScale = isStory ? 1.08 : 1
@@ -162,6 +166,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const isOpus = state.template === 'opus'
   const isQuote = state.template === 'quote'
   const isEssay = state.template === 'essay'
+  const isWorkout = state.template === 'workout'
   const isStruct = (STRUCT_TEMPLATES as readonly string[]).includes(state.template)
   const centered = isStatement || isManifesto || isRepeat || isOpus || isQuote || isEssay
   // Tema: Minimal Paper sólo en Diagrama / Repetición; 01–05 usan siempre la paleta Táctico Dark.
@@ -229,6 +234,18 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           ) : (
             <AthleticLayout state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} />
           )}
+          {state.slideCounter && (
+            <SlideCounter
+              index={slideIndex}
+              count={slideCount}
+              top={(isStory ? 250 : 92) * (w / 1080)}
+              bottom={(isStory ? 250 : 64) * (w / 1080)}
+              side={84 * (w / 1080)}
+              scale={w / 1080}
+              accent={state.accentSwap ? '#0EA5E9' : '#F97316'}
+              muted={state.athleticTheme === 'dark' ? '#94A3B8' : '#525252'}
+            />
+          )}
         </div>
       </AccentSwapContext.Provider>
     )
@@ -253,6 +270,9 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
         <div style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}>
           <TacticalBackdrop style={bgStyle} w={w} h={h} accent={palette.accent} />
         </div>
+      )}
+      {state.slideCounter && (
+        <SlideCounter index={slideIndex} count={slideCount} top={pad.top} bottom={pad.bottom + 20 * baseScale} side={SIDE} scale={baseScale} accent={palette.accent} muted={palette.muted} />
       )}
       {hasBg && (
         // Foto, velo y degradé en su propio contexto de apilado (z 0): ningún filtro alcanza al texto.
@@ -402,6 +422,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     {isStatement && <StatementTemplate state={state} scale={scale} />}
                     {isDiagram && <DiagramTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isStruct && <StructTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
+                    {isWorkout && <WorkoutTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isEssay && <EssayTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isOpus && <OpusTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {state.template === 'bookmark' && <BookmarkTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}

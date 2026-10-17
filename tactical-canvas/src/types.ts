@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay' | 'workout'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve' | 'funnel' | 'versus'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -80,6 +80,15 @@ export type AthleticTheme = 'light' | 'dark'
 export type AthleticBg = 'auto' | 'rings' | 'grid' | 'photo' | 'concrete' | 'radial'
 /** Tipo de fondo de la placa: foto real (B/N con velo) o fondos tácticos sin foto */
 export type BgStyle = 'photo' | 'concrete' | 'blueprint' | 'radial'
+
+/** Plantilla 17 · Sesión: un ejercicio de la rutina («A1 · Sentadilla · 4 × 6 · RIR 2 · 2:30»). */
+export interface WorkoutRow {
+  code: string
+  name: string
+  scheme: string
+  intensity: string
+  rest: string
+}
 
 export interface BookmarkData {
   /** 3 o 4 viñetas clave del carrusel */
@@ -207,6 +216,11 @@ export interface CanvasState {
   athleticTheme: AthleticTheme
   /** Manifiesto texto (plantilla 16): párrafos de texto continuo, en orden */
   essayParas: string[]
+  /** Sesión (plantilla 17): ejercicios en orden y una nota al pie (calentamiento, criterio de progresión) */
+  workoutRows: WorkoutRow[]
+  workoutNote: string
+  /** Contador «01 / 05» + «DESLIZÁ →» en las placas del carrusel (se exporta) */
+  slideCounter: boolean
   athleticBg: AthleticBg
   /** Llamado a la acción de la placa de cierre (caja de acento al pie del bloque de texto) */
   athleticCta: string

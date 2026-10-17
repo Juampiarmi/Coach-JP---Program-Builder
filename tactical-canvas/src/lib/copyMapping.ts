@@ -174,6 +174,9 @@ export function splitBlock(block: string): Partial<CanvasState> {
   // Cita célebre: «frase» / "frase" + renglón «— Nombre, rol».
   const quote = splitQuote(block)
   if (quote) return quote
+  // Rutina: renglones «A1 Sentadilla 4x5 RIR 2 3:00» → plantilla 17 · Sesión.
+  const workout = splitWorkout(block)
+  if (workout) return workout
   // Manifiesto texto: párrafos continuos (línea en blanco entre ellos) → plantilla 16.
   const essay = splitEssay(block)
   if (essay) return essay
@@ -307,6 +310,50 @@ function splitOpus(block: string): Partial<CanvasState> | null {
   return { ...head, template: 'opus', opusBlocks: blocks.slice(0, 6) }
 }
 
+const WORKOUT_LINE = /^\s*(?:[-•▸►*]\s*)?([A-Za-z]\d{1,2})\s*[.):\-–—]?\s+(.+)$/
+const SCHEME_RX = /\d+\s*[x×]\s*\d+(?:[-–]\d+)?(?:\s*(?:s|seg|"|m|c\/p|por lado))?/i
+const INTENSITY_RX = /(?:RIR|RPE)\s*\d+(?:[.,]\d)?(?:\s*[-–]\s*\d+)?|\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?\s*%(?:\s*(?:de\s*)?1RM)?|\d+(?:[.,]\d+)?\s*kg/i
+const REST_RX = /\d+:\d{2}|\d+(?:[.,]\d+)?\s*(?:'|’|min\b|seg\b|s\b)/i
+
+/** Un renglón de rutina → ejercicio: separa prescripción (series × reps), intensidad y pausa del nombre. */
+function parseWorkoutLine(code: string, rest: string) {
+  let t = ` ${rest} `
+  const take = (rx: RegExp) => {
+    const m = t.match(rx)
+    if (!m) return ''
+    t = t.replace(m[0], ' ')
+    return m[0].replace(/\s+/g, ' ').replace(/\s*x\s*/i, ' × ').trim()
+  }
+  const scheme = take(SCHEME_RX)
+  const intensity = take(INTENSITY_RX)
+  const pause = take(REST_RX).replace(/[’']$/, ' min').replace(/\bseg\b/i, 's')
+  const name = t.replace(/(?:pausa|descanso|rest)\s*[:]?/gi, ' ').replace(/[|·—–\-/,@]+/g, ' ').replace(/\s+/g, ' ').trim()
+  return { code: code.toUpperCase(), name, scheme, intensity, rest: pause }
+}
+
+/** 2+ renglones de rutina con código (A1, B2…) → plantilla 17 · Sesión. El resto del bloque es el título. */
+function splitWorkout(block: string): Partial<CanvasState> | null {
+  const lines = block.replace(/\*\*|__/g, '').split('\n').map((l) => l.trim()).filter(Boolean)
+  const hits = lines.map((l) => l.match(WORKOUT_LINE))
+  const rows = hits
+    .map((m) => (m ? parseWorkoutLine(m[1], m[2]) : null))
+    .filter((r): r is NonNullable<typeof r> => Boolean(r && r.name && (r.scheme || r.intensity || r.rest)))
+  if (rows.length < 2) return null
+  const rest = lines.filter((_, i) => !hits[i])
+  const note = rest.find((l) => /^(nota|progresi[oó]n|tip|criterio)\s*[:：]/i.test(l)) ?? ''
+  const titleLines = rest.filter((l) => l !== note)
+  const head = titleLines.length ? splitBlock(titleLines.join('\n')) : { headlineA: 'SESIÓN', headlineB: '' }
+  // Sin remate, la última palabra del título pasa al naranja (identidad de marca).
+  if (!head.headlineB && head.headlineA && head.headlineA.includes(' ') && !head.headlineA.includes('\n')) {
+    const words = head.headlineA.split(' ')
+    // «FUERZA DÍA A» → «FUERZA» + «DÍA A»: una letra suelta nunca es el remate sola.
+    const k = words.length > 2 && words[words.length - 1].replace(/[^\p{L}\p{N}]/gu, '').length <= 2 ? 2 : 1
+    head.headlineB = words.slice(-k).join(' ')
+    head.headlineA = words.slice(0, -k).join(' ')
+  }
+  return { ...head, template: 'workout', workoutRows: rows.slice(0, 8), workoutNote: note.replace(/^(nota|tip)\s*[:：]\s*/i, '') }
+}
+
 /**
  * Párrafos de texto continuo → plantilla 16 · Manifiesto texto. Un primer párrafo corto en MAYÚSCULAS
  * es el título (titular + remate); el resto queda en párrafos, en su orden y sin reescribir.
@@ -410,7 +457,7 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
     // Nada de gráficos / diagramas que el usuario no pidió.
     const wantsVisual = ASKS_VISUAL.test(block.text)
     const hasNumber = /\d/.test(block.text)
-    if (local.template === 'opus' || local.template === 'quote' || local.template === 'essay') p = { ...p, ...local, template: local.template }
+    if (local.template === 'opus' || local.template === 'quote' || local.template === 'essay' || local.template === 'workout') p = { ...p, ...local, template: local.template }
     else if (anaphora) p = { ...p, template: 'manifesto' }
     else if (!p.template || (!TEXT_TEMPLATES.includes(p.template) && !wantsVisual && !(p.template === 'metric' && hasNumber))) p = { ...p, template: 'statement' }
     if (p.template === 'repeat') p = { ...p, repeatPhrase: `${p.headlineA ?? ''} ${p.headlineB ?? ''}`.trim(), repeatMode: 'justified' }
