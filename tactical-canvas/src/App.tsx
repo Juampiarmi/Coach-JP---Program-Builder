@@ -16,6 +16,9 @@ import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
 import { zipFiles } from './lib/zip'
 import { remixToStories } from './lib/remix'
+import { ctaSlide, diagnose, SCORE_COLOR, trimSlide, type DoctorFix } from './lib/retentionDoctor'
+import { RetentionDoctor } from './components/RetentionDoctor'
+import { usePhotoLuma } from './hooks/usePhotoLuma'
 import { CaptionBar } from './components/CaptionBar'
 import { BrandKitBar } from './components/controls/BrandKitBar'
 import { dropLegacyBackground, pruneBackgrounds, readLegacyBackground, useBackgroundImages } from './hooks/useBackgroundImage'
@@ -85,6 +88,33 @@ function fallbackCaption(slides: CanvasState[]) {
   return lines.join('\n')
 }
 
+/** Aplica fixes del Doctor de retención sobre el deck (el CTA va último: agrega una placa al final). */
+function applyFixes(d: Deck, fixes: DoctorFix[]): Deck {
+  let slides = d.slides.map((s) => ({ ...DEFAULT_STATE, ...s }) as CanvasState)
+  const moved: string[] = []
+  let active = d.active
+  for (const f of [...fixes].sort((a, b) => Number(a.kind === 'cta') - Number(b.kind === 'cta'))) {
+    if (f.kind === 'cta') {
+      slides = [...slides, ctaSlide(slides[slides.length - 1])]
+      active = slides.length - 1
+      continue
+    }
+    const i = f.slide
+    if (!slides[i]) continue
+    let patch: Partial<CanvasState> = {}
+    if (f.kind === 'trim') {
+      const t = trimSlide(slides[i], i === 0 && slides.length > 1)
+      patch = t.patch
+      if (t.removed.trim()) moved.push(t.removed.trim())
+    } else if (f.kind === 'swap') patch = { template: f.to }
+    else if (f.kind === 'contrast') patch = { bgOverlay: f.overlay, bgGradient: true }
+    slides = slides.map((s, j) => (j === i ? { ...s, ...patch } : s))
+  }
+  // Lo recortado no se pierde: pasa al caption, donde se lee con calma.
+  const caption = moved.length ? [d.caption?.trim(), ...moved].filter(Boolean).join('\n\n') : d.caption
+  return { ...d, slides, active, caption }
+}
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export default function App() {
@@ -115,6 +145,12 @@ export default function App() {
   // Fotos de todas las placas: fondo y las imágenes propias de Error vs Corrección.
   const bg = useBackgroundImages(slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId, s.panoramaImageId]).filter((id): id is string => Boolean(id)))
   const bgImage = bg.get(state.bgImageId)
+  // Doctor de retención: diagnóstico en vivo del set (la foto de cada placa se mide una vez).
+  const photoId = (s: CanvasState) => s.panoramaImageId ?? ((s.bgStyle ?? 'photo') === 'photo' ? s.bgImageId : null)
+  const luma = usePhotoLuma(slides.map(photoId), bg.get)
+  const report = diagnose(slides, (i) => luma(photoId(slides[i])))
+  const [doctorOpen, setDoctorOpen] = usePersistentState<{ open: boolean }>('jp-tactical-canvas:doctor', { open: true })
+  const doctorRef = useRef<HTMLDivElement>(null)
   // Una sola vez: la foto global de versiones anteriores pasa a ser la foto propia de cada placa
   // existente (se ven igual que antes, pero desde ahora cada una se cambia por separado).
   const migrated = useRef(false)
@@ -413,9 +449,26 @@ export default function App() {
     />
   )
 
+  const fixDoctor = (fixes: DoctorFix[]) => setDeck((d) => applyFixes(d, fixes))
+  const showDoctor = () => {
+    setDoctorOpen({ open: true })
+    setDrawerOpen(true)
+    window.setTimeout(() => doctorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+  }
+
   const panel = (
     <>
       <AiGenerator onResult={applyGeneration} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />
+      <RetentionDoctor
+        ref={doctorRef}
+        report={report}
+        active={active}
+        open={doctorOpen.open}
+        onToggle={() => setDoctorOpen({ open: !doctorOpen.open })}
+        onSelect={selectSlide}
+        onFix={(f) => fixDoctor([f])}
+        onFixAll={() => fixDoctor(report.findings.flatMap((f) => (f.fix ? [f.fix] : [])))}
+      />
       <BrandKitBar state={state} onApply={applyKit} slideCount={slides.length} />
       <ControlPanel
         state={state}
@@ -450,6 +503,17 @@ export default function App() {
 
   const overlayToggle = (
     <>
+    <button
+      type="button"
+      onClick={showDoctor}
+      title={`Doctor de retención: ${report.score}/100 · ${report.findings.length} hallazgo(s). Revisalo antes de exportar.`}
+      className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap text-steel transition hover:text-white"
+    >
+      🩺
+      <span className="rounded px-1 text-[10px] font-bold text-carbon" style={{ background: SCORE_COLOR(report.score) }}>
+        {report.score}
+      </span>
+    </button>
     {state.aspect === 'feed' && (
       <button
         type="button"
