@@ -4945,7 +4945,7 @@ function htmlImportadorRapido(){
         '<button type="button" class="btn sm imp-semana" data-impgo="semana">IMPORTAR SEMANA COMPLETA (' + (sp ? 'DÍA 1..N' : 'S1..S4') + ')</button>' +
       '</div>' +
       (sp
-        ? '<div class="hint" style="margin-top:6px">Sintaxis esperada: cada día empieza con <b>=== DÍA X: Título ===</b> (opcional <b>[NOMBRE DEL DÍA]</b> y <b>[FOCO DEL COACH]</b>) · cada ejercicio con <b>[BLOQUE X] Nombre</b> (o <b>[FUERZA]</b>, <b>[HIPERTROFIA]</b>, <b>[ACCESORIO]</b> + nombre) · prescripción <b>4x8-10 | Tempo 3010 | RIR 2</b> y descanso <b>Rest 120s</b> · bisets con <b>A1.</b> / <b>A2.</b> · listas de calentamiento con <b>- Ejercicio x 12</b> · <b>[OBJETIVO FISIOLÓGICO]</b> y <b>[COACHING TIPS &amp; ESTRATEGIA]</b> van a sus propios campos. ' +
+        ? '<div class="hint" style="margin-top:6px">Sintaxis esperada: cada día empieza con <b>=== DÍA X: Título ===</b> (opcional <b>[NOMBRE DEL DÍA]</b> y <b>[FOCO DEL COACH]</b>) · cada ejercicio con <b>[BLOQUE X] Nombre</b> (o <b>[FUERZA]</b>, <b>[HIPERTROFIA]</b>, <b>[ACCESORIO]</b> + nombre) · prescripción <b>4x8-10 | Tempo 3010 | RIR 2</b> y descanso <b>Rest 120s</b> · bisets con <b>A1.</b> / <b>A2.</b> · listas de calentamiento con <b>- Ejercicio x 12</b> · <b>[OBJETIVO FISIOLÓGICO]</b> y <b>[COACHING TIPS &amp; ESTRATEGIA]</b> van a sus propios campos. <b>Ctrl+Enter</b> importa directo · escribí <b>/biset</b> <b>/triset</b> <b>/piramide</b> <b>/tramos</b> <b>/myo</b> para insertar plantillas · el nombre del ejercicio se autocompleta (Tab). ' +
           '<b>Importar día activo</b> reemplaza los bloques del día abierto; <b>Importar semana completa</b> carga cada <i>DÍA X</i> en su pestaña correlativa y pide confirmación antes de sobrescribir.</div>'
         : '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> o <b>### DÍA X: Título</b> · <b>FOCO:</b> / <b>BRIEFING:</b> · delimitadores <b>[WARM-UP]</b> <b>[SKILL / STRENGTH]</b> <b>[WOD / METCON]</b> <b>[ACCESSORY / COOLDOWN]</b> + título opcional (también <b>A) …</b> / <b>B) …</b> para sesiones en bruto, con la fase inferida). ' +
           '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su día correlativo de la semana que estás editando.</div>') +
@@ -5343,6 +5343,9 @@ function resolverExSports(nombreCrudo, estricto){
   const exCanon = exPorClaveCanon(claveCanon);
   if(exCanon) return exCanon;
   if(claveCanon) return null;      /* ejercicio canonico que aun no esta en la biblioteca: sin video antes que un video de otro movimiento */
+  /* indice normalizado (es / en / slug / alias aprendidos / abreviaturas DB, BB, RDL, OHP... / sin el equipo): coincidencia exacta sin pedir vinculacion */
+  const exIdx = (crudo && typeof window.jpExPorIndice === 'function') ? window.jpExPorIndice(crudo) : null;
+  if(exIdx) return exIdx;
   const exacto0 = crudo ? resolverExSportsBase(crudo, true) : null;
   if(exacto0) return exacto0;
   const alias0 = aliasEjSB(crudo);
@@ -58369,9 +58372,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      localStorage; en las próximas importaciones/bloques ese nombre se vincula solo (chip verde) sin volver a elegirlo */
   const ALIAS_KEY = 'coachjp_vid_alias_v1';
   function aliasLeer(){ try{ return JSON.parse(localStorage.getItem(ALIAS_KEY) || '{}') || {}; }catch(e){ return {}; } }
-  function aliasGuardar(k, exId){
+  function aliasGuardar(k, exId, nombre){
     if(!k || !exId) return;
     try{ const m = aliasLeer(); m[k] = exId; localStorage.setItem(ALIAS_KEY, JSON.stringify(m)); }catch(e){}
+    /* además se guarda en la propia ficha del ejercicio (S.exercises[].aliases, con save()): el resolver y el autocompletado lo usan desde ahí */
+    try{ if(typeof window.jpExAprenderAlias === 'function') window.jpExAprenderAlias(nombre || k, exId); }catch(e){}
   }
   window.jpVideoAlias = { get: k => aliasLeer()[k] || '', set: aliasGuardar };
   function chips(bl, b){
@@ -58556,7 +58561,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const exId = btn.dataset.vcex || '';
     if(exId){
       const ex = getEx(exId);
-      if(ex){ ex.video = url; ex.videoId = id; }
+      if(ex){ ex.video = url; ex.videoId = id; if(nombre) aliasGuardar(nrm(nombre), exId, nombre); }
     } else {
       S.exercises.push({ id: uid('ex'), custom: true, es: nombre, en: '',
         grupo: GRUPOS[0], patron: PATRONES[0], equipo: EQUIPOS[0],
@@ -58613,7 +58618,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     b.videoOverrides = b.videoOverrides || {};
     b.videosManual = (b.videosManual || []).filter(v => nrm(v.nombre) !== key);
     if(exId){
-      b.videoOverrides[key] = exId; aliasGuardar(key, exId);
+      b.videoOverrides[key] = exId; aliasGuardar(key, exId, btn.dataset.vcswapname);
       b.videosManual.push({ nombre: btn.dataset.vcswapname || span.querySelector('.vc-inline-name').textContent.replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/, '') || key, exId: exId });
     } else delete b.videoOverrides[key];
     save();
@@ -58718,7 +58723,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        b.videosManual por sí solo sólo controla el chip del Builder. */
     b.videoOverrides = b.videoOverrides || {};
     b.videoOverrides[k] = exId;
-    aliasGuardar(k, exId);
+    aliasGuardar(k, exId, nombre);
     if(b.videosDismissed) b.videosDismissed = b.videosDismissed.filter(x => x !== k);
     save();
     if(typeof renderLibrary === 'function') renderLibrary();
@@ -70088,5 +70093,242 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     if(b.disabled) return;
     autoFormatBlock(b.getAttribute('data-autofmt'), b);
   }, true);
+})();
+</script>
+<script>
+/* ============================================================
+   PROPUESTA 3 · índice de ejercicios con alias aprendidos + autocompletado + atajos
+   - Índice normalizado (es / en / slug / aliases): búsqueda exacta O(1), con abreviaturas (DB, BB, KB, RDL, SLDL, OHP...)
+     y nombres sin el equipo ("Back Squat" = "Barbell Back Squat"). Lo usa resolverExSports().
+   - Alias aprendidos: cada vinculación manual se guarda en S.exercises[].aliases (campo que ya existía) con save().
+   - Autocompletado de nombres mientras se escribe + plantillas con "/" (biset, triset, pirámide, multi-serie, myo-reps).
+   - Ctrl+Enter en el importador rápido importa directo (Ctrl+D duplica el bloque y Ctrl+S guarda, ya existían).
+   ============================================================ */
+(function(){
+  'use strict';
+  var ABREV = { db:'dumbbell', dbs:'dumbbell', dumbell:'dumbbell', bb:'barbell', kb:'kettlebell', rdl:'romanian deadlift', sldl:'stiff leg deadlift', ohp:'overhead press', bss:'bulgarian split squat', ghr:'glute ham raise', pdm:'peso muerto', manc:'mancuernas', mancs:'mancuernas' };
+  var EQUIPO = /^(?:barbell|dumbbell|cable|machine|smith|ez bar|band|barra|mancuernas?|polea|maquina)\s+/;
+  function norm(t){ return (typeof exNormTxt === 'function') ? exNormTxt(t) : String(t == null ? '' : t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function exs(){ try{ return (typeof S !== 'undefined' && S && S.exercises) || (window.S && window.S.exercises) || []; }catch(e){ return []; } }
+  function expandir(n){ return n.split(' ').map(function(w){ return ABREV[w] || w; }).join(' '); }
+
+  /* ---------- 1 · índice ---------- */
+  var cache = { sig: null, m: null, der: null }, migrado = false;
+  function firma(){
+    var ex = exs(), h = ex.length | 0;
+    for(var i = 0; i < ex.length; i++){
+      var e = ex[i]; if(!e) continue;
+      var s = (e.id || '') + '|' + (e.es || '') + '|' + (e.en || '') + '|' + (e.aliases ? e.aliases.join('~') : '') + '|' + (e.videoId ? 1 : 0);
+      for(var j = 0; j < s.length; j++) h = (h * 31 + s.charCodeAt(j)) | 0;
+    }
+    return h;
+  }
+  function construir(){
+    var m = Object.create(null), der = Object.create(null), amb = Object.create(null);
+    (exs()).forEach(function(e){
+      if(!e) return;
+      [e.es, e.en, (e.slug || '').replace(/_/g, ' ')].concat(e.aliases || []).forEach(function(t){
+        var n = norm(t); if(!n) return;
+        var cur = m[n]; if(!cur || (!cur.videoId && e.videoId)) m[n] = e;
+      });
+      [e.en, e.es].forEach(function(t){
+        var n = norm(t), d = n.replace(EQUIPO, '');
+        if(d && d !== n && d.split(' ').length >= 2){ if(der[d] && der[d] !== e) amb[d] = 1; else der[d] = e; }
+      });
+    });
+    Object.keys(amb).forEach(function(k){ delete der[k]; });
+    return { m: m, der: der };
+  }
+  function indice(){
+    var sig = firma();
+    if(cache.sig !== sig || !cache.m){ var ix = construir(); cache = { sig: sig, m: ix.m, der: ix.der }; }
+    return cache;
+  }
+  /* ejercicio por nombre en cualquier idioma, alias (incluidos los aprendidos), abreviatura o sin el equipo; null si no hay coincidencia exacta */
+  function porIndice(texto){
+    migrarLocal();
+    var n = norm(texto); if(!n) return null;
+    var ix = indice(), hit = ix.m[n];
+    if(hit) return hit;
+    var q = expandir(n);
+    if(q !== n && (hit = ix.m[q])) return hit;
+    var qd = q.replace(EQUIPO, '');
+    if(qd.split(' ').length >= 2){ hit = ix.m[qd] || ix.der[q] || ix.der[qd]; if(hit) return hit; }
+    return null;
+  }
+  window.jpExPorIndice = porIndice;
+
+  /* ---------- 2 · alias aprendidos (S.exercises[].aliases + save()) ---------- */
+  function aprender(nombre, exId, sinGuardar){
+    var lista = exs();
+    var ex = lista.find(function(e){ return e && e.id === exId; });
+    var t = String(nombre == null ? '' : nombre).replace(/^[\s\-–—•*]+/, '').replace(/\s+[x×]\s*$/i, '').trim();
+    var n = norm(t);
+    if(!ex || n.length < 4) return false;
+    if(norm(ex.es) === n || norm(ex.en) === n) return false;
+    if(Array.isArray(ex.aliases) && ex.aliases.some(function(a){ return norm(a) === n; })) return false;
+    var otro = indice().m[n];
+    if(otro && otro.id !== ex.id) return false;           /* ese texto ya es nombre o alias de OTRO ejercicio: no se pisa */
+    if(!Array.isArray(ex.aliases)) ex.aliases = [];
+    ex.aliases.push(t);
+    if(!sinGuardar && typeof save === 'function') save();
+    return true;
+  }
+  window.jpExAprenderAlias = aprender;
+  /* los alias que antes vivían solo en localStorage ("coachjp_vid_alias_v1") pasan una vez a la biblioteca */
+  function migrarLocal(){
+    if(migrado) return; migrado = true;
+    try{
+      var mapa = JSON.parse(localStorage.getItem('coachjp_vid_alias_v1') || '{}') || {}, cambios = 0;
+      Object.keys(mapa).forEach(function(k){ if(aprender(k, mapa[k], true)) cambios++; });
+      if(cambios && typeof save === 'function') save();
+    }catch(e){}
+  }
+
+  /* ---------- 3 · autocompletado ---------- */
+  var PLANTILLAS = [
+    { k: 'biset',    lb: 'Biset · A1 + A2',                  texto: 'A1. \n4x10 | Tempo 3010 | RIR 1\nA2. \n4x10 | Tempo 3010 | RIR 1\nRest 90s', cursor: 4 },
+    { k: 'triset',   lb: 'Triset · A1 + A2 + A3',            texto: 'A1. \n3x12 | RIR 1\nA2. \n3x12 | RIR 1\nA3. \n3x12 | RIR 0\nRest 90s', cursor: 4 },
+    { k: 'piramide', lb: 'Pirámide · 10-8-6-6',              texto: '10-8-6-6 reps | Tempo 3010 | RIR 1\nRest 2 min', cursor: 0 },
+    { k: 'tramos',   lb: 'Multi-serie · 1x3 + 1x6 + 2x8',    texto: '1x3 (Aclimatación) + 1x6 (Top Set) + 2x8 (Back-off) | Tempo 3010\nRest 120-180s', cursor: 0 },
+    { k: 'myo',      lb: 'Myo-reps',                         texto: '3x12 | Tempo 2011 | RIR 0 + 3 set myo-reps (5 respiraciones)\nRest 90s', cursor: 0 }
+  ];
+  var UI = { menu: null, items: [], sel: 0, nav: false, ta: null, ini: 0, fin: 0, modo: 'ej', saltar: false };
+  var SEL_TA = 'textarea[data-bf="items"], textarea[data-bf="movements"], #cfPegarTxt';
+
+  function estilos(){
+    if(document.getElementById('jpAcCss')) return;
+    var st = document.createElement('style'); st.id = 'jpAcCss';
+    st.textContent = '#jpAc{position:fixed;z-index:100000;min-width:240px;max-width:min(420px,92vw);max-height:260px;overflow:auto;background:#12161c;border:1px solid #2c3441;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.55);padding:4px;font-size:13px}' +
+      '#jpAc .ac-i{display:flex;align-items:baseline;gap:8px;padding:7px 9px;border-radius:7px;cursor:pointer;color:#e6e8ec}' +
+      '#jpAc .ac-i.on{background:rgba(232,181,78,.14)}' +
+      '#jpAc .ac-i b{font-weight:600}#jpAc .ac-i small{color:#8b94a3;font-size:11.5px;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}' +
+      '#jpAc .ac-h{padding:4px 9px 6px;color:#6b7280;font-size:11px;letter-spacing:.04em}';
+    document.head.appendChild(st);
+  }
+  function cerrar(){ if(UI.menu){ UI.menu.remove(); UI.menu = null; } UI.items = []; UI.sel = 0; UI.nav = false; }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  /* qué se está escribiendo en la línea del cursor: una plantilla ("/bi") o un nombre de ejercicio (antes de la dosis) */
+  function contexto(ta){
+    var v = ta.value, pos = ta.selectionStart;
+    if(pos !== ta.selectionEnd) return null;
+    var ls = v.lastIndexOf('\n', pos - 1) + 1, linea = v.slice(ls, pos);
+    var ms = linea.match(/^\s*\/([a-záéíóú]*)$/i);
+    if(ms) return { modo: 'tpl', q: ms[1].toLowerCase(), ini: ls + linea.indexOf('/'), fin: pos };
+    var m = linea.match(/^((?:\s*(?:[A-Fa-f]\d+\s*[.):\-–—·]+\s*|\d+\s*[.)]\s+|[-•*·]\s*|\[[^\]]*\]\s*))*)(.*)$/);
+    var pref = m[1].length, resto = m[2];
+    var mr = resto.match(/^(?:\d+\s*[x×]\s*\d+(?:-\d+)?\s*|\d+\s*(?:reps?\s+)?)/i), salto = mr ? mr[0].length : 0;
+    var nom = resto.slice(salto);
+    if(/[|@:]|\d+\s*[x×]\s*\d|\b(?:rest|tempo|rir|descanso)\b/i.test(nom)) return null;     /* ya está en la parte de la dosis */
+    if(!/[A-Za-zÀ-ÿ]{2}/.test(nom)) return null;
+    return { modo: 'ej', q: nom.trim(), ini: ls + pref + salto + (nom.length - nom.replace(/^\s+/, '').length), fin: pos };
+  }
+  function sugerir(q){
+    var qn = expandir(norm(q));
+    if(qn.length < 2) return [];
+    var qt = qn.split(' '), res = [];
+    (exs()).forEach(function(e){
+      if(!e) return;
+      var mejor = 0, via = '';
+      [e.es, e.en].concat(e.aliases || []).forEach(function(t, i){
+        var n = norm(t); if(!n) return;
+        var sc = 0;
+        if(n === qn) sc = 120;
+        else if(n.indexOf(qn) === 0) sc = 100 - Math.min(20, n.length - qn.length);
+        else {
+          var nt = n.split(' ');
+          if(qt.every(function(w){ return nt.some(function(x){ return x.indexOf(w) === 0; }); })) sc = 80 - Math.min(20, nt.length - qt.length);
+          else if(n.indexOf(qn) >= 0) sc = 55;
+        }
+        if(sc > mejor){ mejor = sc; via = i > 1 ? t : ''; }
+      });
+      if(mejor) res.push({ e: e, sc: mejor + (e.videoId ? 3 : 0), via: via });
+    });
+    res.sort(function(a, b){ return b.sc - a.sc || String(a.e.es || '').length - String(b.e.es || '').length; });
+    return res.slice(0, 7);
+  }
+  /* posición (px) del cursor dentro de un textarea: se mide con un espejo oculto */
+  function coordsCursor(ta, pos){
+    var cs = getComputedStyle(ta), d = document.createElement('div');
+    ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'padding', 'borderWidth', 'boxSizing', 'whiteSpace', 'wordWrap', 'tabSize'].forEach(function(p){ d.style[p] = cs[p]; });
+    d.style.cssText += ';position:absolute;visibility:hidden;white-space:pre-wrap;word-wrap:break-word;top:0;left:-9999px;width:' + ta.clientWidth + 'px';
+    d.textContent = ta.value.slice(0, pos);
+    var sp = document.createElement('span'); sp.textContent = '​'; d.appendChild(sp); document.body.appendChild(d);
+    var r = ta.getBoundingClientRect(), x = r.left + sp.offsetLeft - ta.scrollLeft, y = r.top + sp.offsetTop - ta.scrollTop + (parseFloat(cs.lineHeight) || 18);
+    d.remove();
+    return { x: Math.max(8, Math.min(x, window.innerWidth - 260)), y: y };
+  }
+  function pintar(){
+    if(!UI.items.length){ cerrar(); return; }
+    estilos();
+    if(!UI.menu){ UI.menu = document.createElement('div'); UI.menu.id = 'jpAc'; document.body.appendChild(UI.menu); }
+    var h = UI.modo === 'tpl' ? '<div class="ac-h">PLANTILLAS · Enter o Tab para insertar</div>' : '<div class="ac-h">EJERCICIOS · Tab para completar · ↑↓ para elegir</div>';
+    UI.items.forEach(function(it, i){
+      h += UI.modo === 'tpl'
+        ? '<div class="ac-i' + (i === UI.sel ? ' on' : '') + '" data-aci="' + i + '"><b>/' + esc(it.k) + '</b><small>' + esc(it.lb) + '</small></div>'
+        : '<div class="ac-i' + (i === UI.sel ? ' on' : '') + '" data-aci="' + i + '"><b>' + esc(it.e.es || it.e.en) + '</b><small>' + esc((it.via && it.via !== it.e.es ? it.via : it.e.en) || '') + (it.e.videoId ? ' · 🎬' : '') + '</small></div>';
+    });
+    UI.menu.innerHTML = h;
+    var c = coordsCursor(UI.ta, UI.ta.selectionStart);
+    UI.menu.style.left = c.x + 'px';
+    UI.menu.style.top = Math.min(c.y + 4, window.innerHeight - 280) + 'px';
+  }
+  function abrir(ta){
+    var cx = contexto(ta);
+    if(!cx){ cerrar(); return; }
+    UI.ta = ta; UI.modo = cx.modo; UI.ini = cx.ini; UI.fin = cx.fin; UI.sel = 0; UI.nav = false;
+    if(cx.modo === 'tpl') UI.items = PLANTILLAS.filter(function(p){ return !cx.q || p.k.indexOf(cx.q) === 0; });
+    else {
+      UI.items = sugerir(cx.q);
+      var n0 = UI.items[0];
+      if(n0 && UI.items.length === 1 && norm(n0.e.es) === norm(cx.q)) UI.items = [];       /* ya escribió el nombre completo */
+    }
+    pintar();
+  }
+  function aceptar(i){
+    var it = UI.items[i], ta = UI.ta; if(!it || !ta) return;
+    var v = ta.value, txt, cursor;
+    if(UI.modo === 'tpl'){ txt = it.texto; cursor = UI.ini + (it.cursor != null ? it.cursor : txt.length); }
+    else { txt = it.e.es || it.e.en; cursor = UI.ini + txt.length; }
+    ta.value = v.slice(0, UI.ini) + txt + v.slice(UI.fin);
+    ta.selectionStart = ta.selectionEnd = cursor;
+    cerrar();
+    UI.saltar = true;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));       /* los handlers del Builder (guardar, chips de video) corren igual que al tipear */
+    UI.saltar = false;
+    ta.focus();
+  }
+
+  document.addEventListener('input', function(e){
+    var ta = e.target;
+    if(UI.saltar || !ta || !ta.matches || !ta.matches(SEL_TA)){ return; }
+    abrir(ta);
+  });
+  document.addEventListener('keydown', function(e){
+    var ta = e.target;
+    /* Ctrl/Cmd + Enter en el importador rápido: importa directo (el modo pasa solo a "semana" si hay varios días) */
+    if((e.ctrlKey || e.metaKey) && e.key === 'Enter' && ta && ta.id === 'cfPegarTxt'){
+      var go = document.querySelector('[data-impgo="dia"]');
+      if(go){ e.preventDefault(); cerrar(); go.click(); }
+      return;
+    }
+    if(!UI.menu || !ta || ta !== UI.ta) return;
+    if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      e.preventDefault(); UI.nav = true;
+      UI.sel = (UI.sel + (e.key === 'ArrowDown' ? 1 : -1) + UI.items.length) % UI.items.length; pintar();
+    } else if(e.key === 'Tab' || (e.key === 'Enter' && (UI.modo === 'tpl' || UI.nav))){
+      e.preventDefault(); aceptar(UI.sel);
+    } else if(e.key === 'Escape'){ e.preventDefault(); cerrar(); }
+  }, true);
+  document.addEventListener('mousedown', function(e){
+    var it = e.target.closest && e.target.closest('#jpAc [data-aci]');
+    if(it){ e.preventDefault(); aceptar(parseInt(it.getAttribute('data-aci'), 10)); return; }
+    if(UI.menu && !(e.target.closest && e.target.closest('#jpAc'))) cerrar();
+  });
+  document.addEventListener('focusout', function(e){ if(UI.ta && e.target === UI.ta) setTimeout(function(){ if(document.activeElement !== UI.ta) cerrar(); }, 120); });
+  window.addEventListener('resize', cerrar);
+  document.addEventListener('scroll', function(e){ if(UI.menu && !(e.target.closest && e.target.closest('#jpAc'))) cerrar(); }, true);
+  window.jpAutoComp = { sugerir: sugerir, plantillas: PLANTILLAS, indice: indice, porIndice: porIndice, aprender: aprender };
 })();
 </script>
