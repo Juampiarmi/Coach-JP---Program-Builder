@@ -15222,6 +15222,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return c;
   }
   window.jpWodTimerCfg = jpWodTimerCfg;
+  function jpCfLimpiaPacing(h){
+    return String(h || '').replace(/(^|<br\\s*\\/?>)\\s*(?:[^A-Za-z0-9\\u00c0-\\u00ff<]{0,6}\\s*pacing(?:\\s+(?:general|sugerido))?\\s*:\\s*)+/gi, '$1').trim();
+  }
   function jpCfPlano(h){ return String(h || '').replace(/<br\\s*\\/?>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim(); }
   function jpCfParesCarga(txt){
     var re = /(\\d+(?:[.,]\\d+)?)\\s*\\/\\s*(\\d+(?:[.,]\\d+)?)\\s*(kg|lb)/gi, out = [], seen = {}, m;
@@ -15243,7 +15246,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       else fmt = 'FOR TIME';
       if(cfg.cap > 0) cap = '⏱ TIME CAP: ' + cfg.cap + ' MIN';
     } else fmt = 'INTERVALOS';
-    var pac = jpCfPlano(c && c.pacing); if(pac.length > 78) pac = pac.slice(0, 76).replace(/[\\s,.;:-]+$/, '') + '…';
+    var pac = jpCfPlano(c && c.pacing); if(pac.length > 78) pac = '';
     var rx = jpCfParesCarga(lineas.join(' ')), sc = jpCfParesCarga(jpCfPlano(c && c.escalado));
     var chips = (rx.length ? '<span class="jp-cf-chip"><b>Rx</b> ' + escSB(rx.join(' · ')) + '</span>' : '') + (sc.length ? '<span class="jp-cf-chip"><b>Scaled</b> ' + escSB(sc.join(' · ')) + '</span>' : '');
     return '<div class="jp-cf-fmtbadge">[ ' + escSB(fmt) + ' ]</div>' +
@@ -15768,6 +15771,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var e = m[1].toLowerCase();
         campo = /objetivo/.test(e) ? 'objetivo' : (/pacing/.test(e) ? 'pacing' : (/escalado|rx/.test(e) ? 'escalado' : 'tips'));
         if(m[2].trim()) out[campo] += (out[campo] ? '\\n' : '') + m[2].trim();
+        return;
+      }
+      var mi = t.match(/^[\\s*_>\\-\\u2013\\u2022\\u00b7]*(?:[^A-Za-z0-9\\u00c0-\\u00ff\\s\\[]{1,6}\\s*)?(estrategia(?:\\s+de\\s+progresi[o\\u00f3]n)?|progresi[o\\u00f3]n|pacing(?:\\s+(?:general|sugerido))?|coaching(?:\\s+tips?)?|tips?|foco(?:\\s+del\\s+(?:coach|bloque))?|criterio(?:\\s+del\\s+coach)?|objetivo)\\s*:\\s*(\\S.*)$/i);
+      if(mi){
+        var ei = mi[1].toLowerCase(), ci = /objetivo/.test(ei) ? 'objetivo' : (/pacing/.test(ei) ? 'pacing' : 'tips');
+        out[ci] += (out[ci] ? '\\n' : '') + mi[2].trim();
+        campo = '';
         return;
       }
       if(campo){
@@ -16443,7 +16453,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const paramTxt = block.cfParam ? ((CF_PARAM_PREFIX[kFmt] || '') + block.cfParam) : (min ? (min + ' min') : '');
     const c0 = block.cierre || {};
     const unir = function(a, b){ return [a, b ? escSB(b).replace(/\\n/g, '<br>') : ''].filter(Boolean).join('<br>'); };
-    const c = { objetivo: unir(c0.objetivo, metaTxt.objetivo), tips: unir(c0.tips, metaTxt.tips), pacing: unir(c0.pacing, metaTxt.pacing), escalado: unir(c0.escalado, metaTxt.escalado) };
+    const c = { objetivo: unir(c0.objetivo, metaTxt.objetivo), tips: unir(c0.tips, metaTxt.tips), pacing: jpCfLimpiaPacing(unir(c0.pacing, metaTxt.pacing)), escalado: unir(c0.escalado, metaTxt.escalado) };
     const tieneCierre = !!(c.objetivo || c.tips || c.pacing || c.escalado);
     /* directiva ("Rediseño y reubicación del texto colgado de Core") --
        block.subtitle ("Trabajo de core focalizado") ya NO se pinta como
@@ -16554,11 +16564,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         /* videos en miniatura compacta y, al final, el acordeon de estrategia */
         (clips.length ? '<div class="jp-cf-vids"><div class="jp-sb-vid-title">&#127916; VIDEOS T&Eacute;CNICOS</div>' + jpCfClipsRowHtml(clips) + '</div>' : '') +
         ((tieneCierre || subtituloVisible) ?
-          '<details class="jp-cf-acc"><summary>&#9656; ESTRATEGIA T&Aacute;CTICA &amp; PACING</summary>' +
+          '<details class="jp-cf-acc"><summary><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T&Eacute;CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
             (subtituloVisible ? '<div class="jp-cf-accrow"><span class="lb">&#128270; FOCO DEL BLOQUE</span><p>' + subtituloVisible + '</p></div>' : '') +
             (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; OBJETIVO</span><p>' + c.objetivo + '</p></div>' : '') +
             (c.tips ? '<div class="jp-cf-accrow"><span class="lb">&#128161; ESTRATEGIA &amp; COACHING TIPS</span>' + (formatTipsCF(c.tips) || '<p>' + c.tips + '</p>') + '</div>' : '') +
-            (c.pacing ? '<div class="jp-cf-accrow"><span class="lb">&#9201;&#65039; PACING</span><p>' + c.pacing + '</p></div>' : '') +
+            ((c.pacing && !(cabeceraWod && cabeceraWod.indexOf('class="pac"') >= 0 && jpCfPlano(c.pacing).length <= 78)) ? '<div class="jp-cf-accrow"><span class="lb">&#9201;&#65039; PACING</span><p>' + c.pacing + '</p></div>' : '') +
             (c.escalado ? '<div class="jp-cf-accrow"><span class="lb">&#9878;&#65039; ESCALADO Y ADAPTACIONES</span><p>' + c.escalado + '</p></div>' : '') +
           '</details>' : '') +
       '</div>';
@@ -41910,6 +41920,14 @@ html body.cf-disc .jp-ic-grid{ grid-template-columns:repeat(2,minmax(0,1fr)) !im
 html body.cf-disc .jp-ic-grid > label{ min-width:0; }
 html body.cf-disc .jp-ic-grid input{ width:100% !important; min-width:0 !important; box-sizing:border-box; }
 html body.cf-disc .jp-cf-fmtbadge{ background:transparent !important; border:0 !important; box-shadow:none !important; border-radius:0 !important; padding-left:0 !important; padding-right:0 !important; color:#FF5500 !important; text-shadow:none !important; }
+html body.cf-disc .jp-cfboard .jp-cf-btnrow .jp-cf-wodtimer, html body.cf-disc .jp-cfboard .jp-cf-wodtimer{ background:rgba(23,23,23,.8) !important; border:1px solid #404040 !important; color:#E5E5E5 !important; box-shadow:none !important; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+html body.cf-disc .jp-cfboard .jp-cf-wodtimer:active{ background:rgba(38,38,38,.9) !important; }
+html body.cf-disc .jp-cfboard details.jp-cf-acc summary{ display:flex; align-items:center; gap:8px; color:#E5E5E5 !important; font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; letter-spacing:.06em; text-transform:uppercase; }
+html body.cf-disc .jp-cfboard details.jp-cf-acc summary .jp-pauta-ic{ width:16px; height:16px; flex:0 0 auto; fill:none; stroke:#FF5500; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+html body.cf-disc .jp-cfboard .jp-cf-accrow{ background:transparent !important; border:0 !important; border-radius:0 !important; padding:6px 0 !important; }
+html body.cf-disc .jp-cfboard .jp-cf-accrow .lb{ color:#FF5500 !important; font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; }
+html body.cf-disc .tactical-briefing .tb-label, html body.cf-disc .tactical-briefing summary{ color:#E5E5E5 !important; }
+html body.cf-disc .tactical-briefing .tb-chev, html body.cf-disc .gd-card-btn .gcb-chev, html body.cf-disc #hdpGuideSlot .gcb-chev{ color:#FF5500 !important; }
 /* BRANDPASS_CF:END */
 </style>
 <script id="jpHudTacticoJs">
