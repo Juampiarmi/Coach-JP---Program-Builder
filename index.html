@@ -74882,3 +74882,308 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montar); else montar();
 })();
 </script>
+<script>
+/* =========================================================
+   GENERADOR DE SESIÓN CON IA · FICHA TÁCTICA (Builder · Sports & Bodybuilding)
+   Un botón arma TODA la sesión del día activo (o de la semana) leyendo la Ficha Táctica del alumno/a (a.ficha +
+   nivel/días/lesiones/preferidos -> CoachFicha.json), sin salir del Builder. La IA no devuelve JSON: redacta la sesión
+   en la sintaxis del Importador rápido (=== DÍA ===, [NOMBRE DEL DÍA], [FOCO DEL COACH], [WARM-UP]/[FUERZA]/
+   [HIPERTROFIA]/[ACCESORIO]/[CORE], dosis "SxR | Tempo | RIR", "Rest Ns", [OBJETIVO FISIOLÓGICO] y
+   [COACHING TIPS & ESTRATEGIA]) y se aplica con ejecutarImportacion(): los bloques quedan EXACTAMENTE como si se
+   hubieran creado a mano (Redacción libre, vinculación de videos, alertas biomecánicas, Objetivo y Tips del bloque).
+   Exclusivo de Sports: no toca el parser, el importador ni el módulo de CrossFit.
+========================================================= */
+(function(){
+  'use strict';
+  var corriendo = false, firma = '';
+  function $q(id){ return document.getElementById(id); }
+  function esc2(t){ return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function nz(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
+
+  /* ---------- ficha: resumen, faltantes, nivel ---------- */
+  var ROT = { nivel: 'Nivel', dias_por_semana: 'Días/sem', tiempo_max_sesion_min: 'Tiempo máx', objetivo: 'Objetivo', experiencia: 'Experiencia',
+              equipamiento: 'Equipo', split_preferido: 'Split', enfasis_muscular: 'Énfasis', restricciones: 'Molestias' };
+  var REQ = [['tiempo_max_sesion_min', 'tiempo máximo por sesión'], ['objetivo', 'objetivo principal'], ['equipamiento', 'equipamiento'], ['experiencia', 'experiencia entrenando']];
+  function fichaDe(ath){ try{ return (window.CoachFicha && window.CoachFicha.get) ? window.CoachFicha.get(ath) : {}; }catch(e){ return {}; } }
+  function faltantes(ath){ var f = fichaDe(ath); return REQ.filter(function(r){ return !f[r[0]]; }).map(function(r){ return r[1]; }); }
+  function esAvanzado(ath){
+    var f = fichaDe(ath), n = nz(f.nivel || ath.nivel), ex = nz(f.experiencia);
+    return n === 'avanzado' || (n !== 'inicial' && /3 a 5|mas de 5/.test(ex));
+  }
+  function perfilNivel(ath){
+    var n = nz((fichaDe(ath).nivel) || ath.nivel);
+    if(n === 'inicial') return 'PRINCIPIANTE: priorizá ejecución técnica sólida y progresiones simples. Volumen moderado (3-4 ejercicios principales, 2-3 series por ejercicio), RIR 2-4, tempos controlados, ejercicios guiados (máquinas, mancuernas, variantes estables). SIN técnicas avanzadas (nada de drop-sets, myo-reps ni bisets agresivos).';
+    if(esAvanzado(ath)) return 'AVANZADO / ÉLITE: incluí técnicas avanzadas con criterio: bisets agonista/antagonista, myo-reps o rest-pause en aislamientos, drop-sets en el último ejercicio de cada grupo, pausas isométricas en máximo estiramiento y tempos exigentes. Ondulá volumen e intensidad (día pesado = menos reps y más carga; día de volumen = más series y metabolitos). RIR 0-2 en aislamientos, RIR 1-3 en básicos.';
+    return 'INTERMEDIO: doble progresión (reps y carga), RIR 1-3, bisets simples y una técnica de intensidad (myo-reps o drop-set) solo en el ÚLTIMO ejercicio de un grupo; volumen moderado-alto bien distribuido.';
+  }
+
+  /* ---------- biblioteca para el prompt (nombres EXACTOS para vincular videos) ---------- */
+  var EQ_OK = { 'gimnasio completo': null, 'home gym': ['Barra', 'Mancuernas', 'Banda', 'Peso corporal', 'Kettlebell'],
+                'mancuernas y bandas': ['Mancuernas', 'Banda', 'Peso corporal', 'Kettlebell'], 'peso corporal': ['Peso corporal', 'Banda'] };
+  var ENF_GRUPO = { 'gluteo': 'Piernas/Glúteos', 'cuadriceps': 'Piernas/Glúteos', 'isquios': 'Piernas/Glúteos', 'espalda': 'Espalda', 'pecho': 'Pectoral', 'hombros': 'Hombros', 'brazos': 'Brazos', 'core': 'Core' };
+  function bibliotecaIA(ath){
+    var f = fichaDe(ath), permitidos = EQ_OK[nz(f.equipamiento)] || null;
+    var enfG = {}; (f.enfasis_muscular || []).forEach(function(e){ var g = ENF_GRUPO[nz(e)]; if(g) enfG[g] = 1; });
+    var prefs = (ath.preferidos || []).map(nz);
+    var pool = (typeof S !== 'undefined' && S.exercises ? S.exercises : []).filter(function(e){
+      if(!e || !e.es || e.grupo === 'Full Body / Cardio' || e.grupo === 'Multiarticular / Complejo Atlético' || e.equipo === 'Cardio') return false;
+      if(permitidos && permitidos.indexOf(e.equipo) < 0) return false;
+      try{ if(checkExercise(ath, e).some(function(a){ return a.level === 'danger'; })) return false; }catch(er){}
+      return true;
+    });
+    var score = function(e){
+      var s = 0, n = nz(e.es);
+      try{ if(checkExercise(ath, e).some(function(a){ return a.level === 'good'; })) s += 40; }catch(er){}
+      if(prefs.some(function(p){ return p && n.indexOf(p) >= 0; })) s += 60;
+      if(e.videoId) s += 8; if(e.oficial) s += 4; if((e.riesgo || []).length) s -= 2;
+      return s;
+    };
+    var porG = {};
+    pool.sort(function(a, b){ return score(b) - score(a); }).forEach(function(e){ (porG[e.grupo] = porG[e.grupo] || []).push(e); });
+    var out = [];
+    Object.keys(porG).forEach(function(g){
+      porG[g].slice(0, enfG[g] ? 26 : 15).forEach(function(e){
+        out.push(e.es + (e.en ? ' (' + e.en + ')' : '') + ' | ' + g + ' | ' + e.equipo + (e.patron ? ' | ' + e.patron : ''));
+      });
+    });
+    return out.join('\n');
+  }
+
+  /* ---------- prompts ---------- */
+  function sistema(ath){
+    return 'Sos el Head Coach de Coach JP: especialista en ciencias del ejercicio, hipertrofia, fuerza máxima y biomecánica aplicada. ' +
+      'Diseñás UNA sesión de gimnasio COMPLETA, desafiante y ejecutable, con criterio de evidencia científica actual: tensión mecánica y estímulo a longitud muscular larga (estiramiento), ' +
+      'cercanía al fallo (RIR), volumen efectivo y frecuencia por grupo, selección de ejercicios por perfil de resistencia, reclutamiento de unidades motoras de alto umbral, tiempo bajo tensión, ' +
+      'acumulación de metabolitos y descansos suficientes para sostener el rendimiento.\n' +
+      'REGLAS DURAS:\n' +
+      '1) La FICHA TÁCTICA (JSON) es contexto duro: nivel, experiencia, objetivo, equipamiento (SOLO ejercicios posibles con ese equipamiento), tiempo máximo por sesión ' +
+      '(la suma de los "(N MIN)" de los títulos de bloque debe quedar entre tiempo_max_sesion_min menos 5 y tiempo_max_sesion_min), énfasis muscular (más volumen y prioridad al inicio de la sesión), ' +
+      'split preferido, restricciones y lesiones (NUNCA un ejercicio prohibido ni su variante; si hay molestia, regresioná o cambiá de variante y nombrá la compensación a evitar en CUIDADO), ' +
+      'ejercicios preferidos (incluí los pertinentes al foco del día).\n' +
+      '2) Elegí los ejercicios de la BIBLIOTECA con su nombre EXACTO ("Nombre ES (Name EN)") para que se vincule el video. Solo si ninguno sirve, podés usar uno fuera de la lista (nombre estándar en español + inglés entre paréntesis).\n' +
+      '3) Estructura: entre 5 y 7 bloques: [WARM-UP] (6-10 min, específico al foco: movilidad + activación + ramp-up), 1-2 bloques [FUERZA] (el principal con carga alta), ' +
+      '1-3 bloques [HIPERTROFIA] (bisets/trisets o series rectas), y cierre con [ACCESORIO] y/o [CORE]. Ajustalo al tiempo disponible. No repitas el foco principal de los OTROS DÍAS del plan.\n' +
+      '4) Dosis exactas en CADA ejercicio, en una línea propia: "SxR | Tempo ABCD | RIR n" (series x reps o rango; tempo de 4 dígitos excéntrico-pausa-concéntrico-pausa; para tiempo "3x40s"), ' +
+      'y una línea "Rest Ns" por bloque con descanso estructurado (fuerza principal 150-240s, hipertrofia 75-120s, accesorios/core 45-75s, warm-up 30-45s).\n' +
+      '5) NIVEL: ' + perfilNivel(ath) + '\n' +
+      (esAtletaDUP(ath) ? '6) PERIODIZACIÓN: seguí el perfil DUP que se indica en el pedido.\n' : '') +
+      'FORMATO DE SALIDA (texto plano EXACTO; sin markdown, sin JSON, sin asteriscos, sin nada fuera del formato):\n' +
+      '=== DÍA {N}: {título corto} ===\n' +
+      '[NOMBRE DEL DÍA] {foco del día, ej: Fuerza máxima, cadena posterior e hipertrofia}\n' +
+      '[FOCO DEL COACH] {resumen metodológico de 3 a 5 oraciones, en segunda persona rioplatense ("vos"), claro y motivador: explicá la lógica de la sesión y el sentido de cada bloque}\n' +
+      '[WARM-UP] {título del bloque} (N MIN)\n' +
+      'A1. {Nombre ES (Name EN)}\n' +
+      '{SxR | Tempo ABCD | RIR n}\n' +
+      'A2. {Nombre ES (Name EN)}\n' +
+      '{SxR | Tempo ABCD | RIR n}\n' +
+      'Rest {N}s\n' +
+      '[OBJETIVO FISIOLÓGICO]\n' +
+      '{1 o 2 oraciones: el estímulo buscado Y el porqué fisiológico (reclutamiento de unidades motoras, tensión mecánica en longitud muscular estirada, acumulación de metabolitos, perfil de resistencia, etc.)}\n' +
+      '[COACHING TIPS & ESTRATEGIA]\n' +
+      'A1 · SET-UP: {posicionamiento biomecánico exacto}\n' +
+      'A1 · CUE EFICIENTE: {indicación verbal corta y accionable}\n' +
+      'A1 · CUIDADO / ERROR COMÚN: {compensación a evitar, vinculada a las restricciones de la ficha}\n' +
+      'A2 · SET-UP: ... (igual para cada estación)\n' +
+      'TRANSICIÓN: {regla de cambio entre estaciones y descanso}\n' +
+      '[FUERZA] {título} (N MIN)\n' +
+      '{Nombre ES (Name EN)}\n' +
+      '{SxR | Tempo ABCD | RIR n}\n' +
+      'Rest {N}s\n' +
+      '[OBJETIVO FISIOLÓGICO] ... [COACHING TIPS & ESTRATEGIA] (para un bloque de UN solo ejercicio, los tips van SIN prefijo: "SET-UP:", "CUE EFICIENTE:", "CUIDADO / ERROR COMÚN:")\n' +
+      '[HIPERTROFIA] Biset – {título} (N MIN)  (estaciones A1., A2., A3. una debajo de la otra, cada una con su dosis; tips POR ESTACIÓN con prefijo "A1 ·")\n' +
+      '[ACCESORIO] / [CORE] {título} (N MIN)\n' +
+      'Técnicas avanzadas (solo si el nivel lo permite) al final de la dosis, ej: "4x10-12 | Tempo 3110 | RIR 1 | Myo-reps", "| Drop-set", "| Rest-pause", "| Pausa 2s en estiramiento".\n' +
+      'Cada tip: máximo 22 palabras. Cada bloque TIENE que traer [OBJETIVO FISIOLÓGICO] y [COACHING TIPS & ESTRATEGIA]. Respondé SOLO con el formato.';
+  }
+  function usuario(ath, p, di, extra, previos){
+    var n = p.dias.length, f = fichaDe(ath);
+    var otros = p.dias.map(function(d, i){ return i === di ? '' : (d.title || d.label || '') ? ('Día ' + (i + 1) + ': ' + (d.title || d.label)) : ''; }).filter(Boolean)
+      .concat((previos || []).map(function(t, i){ return 'Generado ahora: ' + t; }));
+    var ai = (window.CoachAI && window.CoachAI.athLine) ? window.CoachAI.athLine(ath) : (fullName(ath) + ' · ' + ath.freq + 'd/sem · ' + (ath.nivel || ''));
+    return 'ALUMNO/A Y FICHA TÁCTICA:\n' + ai + '\n\n' +
+      'SESIÓN A DISEÑAR: DÍA ' + (di + 1) + ' de ' + n + ' semanales' + (f.split_preferido ? ' · split preferido: ' + f.split_preferido + (nz(f.split_preferido).indexOf('decida') >= 0 ? ' (elegí vos el reparto óptimo para ' + n + ' días)' : '') : '') + '.\n' +
+      (f.tiempo_max_sesion_min ? 'DURACIÓN: la sesión completa entra en ' + f.tiempo_max_sesion_min + ' min o menos.\n' : '') +
+      (otros.length ? 'OTROS DÍAS DEL PLAN (no repitas su foco principal):\n' + otros.join('\n') + '\n' : '') +
+      (esAtletaDUP(ath) ? 'PERFIL DUP:\n' + textoDUPParaIA(di) + '\n' : '') +
+      (extra ? 'INDICACIONES EXTRA DEL COACH: ' + extra + '\n' : '') +
+      '\nBIBLIOTECA DE EJERCICIOS (Nombre ES (Name EN) | grupo | equipo | patrón) — usá estos nombres exactos:\n' + bibliotecaIA(ath) + '\n\n' +
+      'Escribí ahora la sesión completa en el formato indicado, con "=== DÍA ' + (di + 1) + ': ... ===" como primera línea.';
+  }
+  /* deja UN solo día, con el número correcto y sin vallas de código */
+  function limpiar(t, di){
+    t = String(t || '').replace(/```[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
+    var rx = /^\s*={2,}\s*D[ÍI]A\s*\d*\s*[:.\-–—]?\s*(.*?)\s*={0,}\s*$/mi, m = t.match(rx), titulo = m ? m[1].replace(/=+$/, '').trim() : 'Sesión';
+    var cuerpo;
+    if(m){
+      var i0 = t.indexOf(m[0]), resto = t.slice(i0 + m[0].length), sig = resto.search(/^\s*={2,}\s*D[ÍI]A/mi);
+      cuerpo = sig >= 0 ? resto.slice(0, sig) : resto;
+    } else cuerpo = t;
+    return '=== DÍA ' + (di + 1) + ': ' + (titulo || 'Sesión') + ' ===\n' + cuerpo.trim();
+  }
+
+  /* ---------- UI ---------- */
+  function css(){
+    if($q('gsCss')) return;
+    var st = document.createElement('style'); st.id = 'gsCss';
+    st.textContent =
+      '.gs-card{margin:14px 0;padding:16px;border-radius:16px;background:rgba(13,16,23,.92);border:1px solid var(--line,#1f242d);border-left:5px solid #FF5500;box-shadow:0 10px 30px rgba(0,0,0,.4)}' +
+      '.gs-card h3{display:flex;align-items:center;gap:9px;margin:0 0 4px;font-size:15px;text-transform:uppercase;letter-spacing:.05em}' +
+      '.gs-badge{margin-left:auto;padding:3px 10px;border-radius:20px;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;background:rgba(255,85,0,.14);border:1px solid rgba(255,85,0,.4);color:#FF8A4D}' +
+      '.gs-sub{margin:0 0 10px;font-size:12px;line-height:1.5;color:var(--muted,#8b94a3)}' +
+      '.gs-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}' +
+      '.gs-chip{padding:5px 10px;border-radius:999px;border:1px solid var(--line-2,#2a2f3a);font-size:11.5px;font-weight:600;color:var(--txt-2,#c3c9d3);background:rgba(255,255,255,.03)}' +
+      '.gs-chip b{color:#FF8A4D;font-weight:700;margin-right:5px;text-transform:uppercase;font-size:10px;letter-spacing:.06em}' +
+      '.gs-chip.warn{border-color:rgba(224,101,74,.5);color:#F0A08C}' +
+      '.gs-estado{margin:0 0 10px;font-size:12px;line-height:1.5}' +
+      '.gs-estado.ok{color:#34D399}.gs-estado.falta{color:#FFB703}' +
+      '.gs-card textarea{width:100%;min-height:56px;resize:vertical;padding:10px 12px;border-radius:12px;font-size:13px;line-height:1.5;background:rgba(9,10,15,.7);border:1px solid var(--line-2,#2a2f3a);color:var(--txt-2,#c3c9d3);box-sizing:border-box}' +
+      '.gs-opts{display:flex;flex-wrap:wrap;gap:14px;margin:8px 0 0;font-size:12px;color:var(--muted,#8b94a3)}' +
+      '.gs-opts label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}' +
+      '.gs-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}' +
+      '.gs-acts .btn{flex:1 1 220px}' +
+      '.gs-go{background:linear-gradient(180deg,#FF6A1F,#E24A00) !important;color:#0A0A0A !important;font-weight:800 !important;letter-spacing:.04em}' +
+      '.gs-log{display:none;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.35);border:1px solid var(--line,#1f242d);font-size:12px;line-height:1.6;color:var(--txt-2,#c3c9d3)}' +
+      '.gs-log.on{display:block}.gs-log .e{color:#F0A08C}.gs-log .o{color:#34D399}' +
+      '.gs-spin{display:inline-block;width:13px;height:13px;margin-right:7px;border-radius:50%;border:2px solid rgba(255,138,77,.3);border-top-color:#FF5500;animation:gsSp .8s linear infinite;vertical-align:-2px}' +
+      '@keyframes gsSp{to{transform:rotate(360deg)}}' +
+      '#gsFichaM{position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72)}' +
+      '#gsFichaM .gs-box{width:100%;max-width:440px;padding:18px;border-radius:16px;background:#0E1117;border:1px solid rgba(255,85,0,.45)}' +
+      '#gsFichaM h4{margin:0 0 6px;font-size:15px}#gsFichaM p{margin:0 0 12px;font-size:12.5px;line-height:1.55;color:var(--muted,#8b94a3)}' +
+      '#gsFichaM .gs-acts .btn{flex:1 1 100%}';
+    document.head.appendChild(st);
+  }
+  function esSports(){ var p = (typeof plan === 'function' && S && S.activeId) ? plan(S.activeId) : null; return !!p && !esPlanCFActivo(p); }
+  function chips(ath){
+    var f = fichaDe(ath), h = '';
+    Object.keys(ROT).forEach(function(k){
+      var v = f[k]; if(v == null || v === '' || (Array.isArray(v) && !v.length)) return;
+      var tx = Array.isArray(v) ? v.join(', ') : String(v) + (k === 'tiempo_max_sesion_min' ? ' min' : (k === 'dias_por_semana' ? ' días' : ''));
+      h += '<span class="gs-chip' + (k === 'restricciones' ? ' warn' : '') + '"><b>' + esc2(ROT[k]) + '</b>' + esc2(tx) + '</span>';
+    });
+    return h || '<span class="gs-chip">Sin datos todavía</span>';
+  }
+  function pintar(){
+    var vista = $q('v-builder'); if(!vista) return;
+    var ath = (typeof active === 'function') ? active() : null;
+    var card = $q('gsCard');
+    if(!ath || !esSports()){ if(card) card.style.display = 'none'; return; }
+    css();
+    if(!card){
+      card = document.createElement('div'); card.className = 'gs-card'; card.id = 'gsCard';
+      var ref = $q('ctxCard');
+      if(ref && ref.parentNode) ref.parentNode.insertBefore(card, ref.nextSibling);
+      else { var top = vista.querySelector('.topbar'); if(top && top.parentNode) top.parentNode.insertBefore(card, top.nextSibling); else vista.insertBefore(card, vista.firstChild); }
+    }
+    card.style.display = '';
+    var p = plan(ath.id), di = Math.min(S.ui.day || 0, p.dias.length - 1), d = p.dias[di] || {};
+    var falt = faltantes(ath), hay = !!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave());
+    var sig = [ath.id, JSON.stringify(fichaDe(ath)), di, p.dias.length, hay, corriendo].join('|');
+    if(card.dataset.sig === sig && card.firstChild) return;
+    card.dataset.sig = sig;
+    var logPrev = $q('gsLog') ? $q('gsLog').innerHTML : '', logOn = $q('gsLog') && $q('gsLog').classList.contains('on');
+    var extraPrev = $q('gsExtra') ? $q('gsExtra').value : '', semPrev = $q('gsSemana') ? $q('gsSemana').checked : false;
+    card.innerHTML =
+      '<h3>⚡ Generador de sesión con IA<span class="gs-badge">' + (hay ? 'IA conectada' : 'Sin clave de IA') + '</span></h3>' +
+      '<p class="gs-sub">Lee la Ficha Táctica de ' + esc2(fullName(ath)) + ' y arma <b>todos los bloques</b> del día (warm-up, fuerza, hipertrofia, accesorios y core) con dosis, tempos, descansos, ' +
+      'objetivo fisiológico y coaching tips. Queda editable como cualquier bloque de Redacción libre.</p>' +
+      '<div class="gs-chips" id="gsChips">' + chips(ath) + '</div>' +
+      '<div class="gs-estado ' + (falt.length ? 'falta' : 'ok') + '">' + (falt.length ? '⚠ Ficha incompleta: falta ' + esc2(falt.join(', ')) + '. Cuanto más completa, mejor se ajusta la sesión.' : '✔ Ficha táctica completa: se inyecta sola en el prompt de la IA.') + '</div>' +
+      '<textarea id="gsExtra" placeholder="Indicaciones extra (opcional): ej. \'priorizar cadena posterior\', \'sin barra hoy\', \'día de volumen\'">' + esc2(extraPrev) + '</textarea>' +
+      '<div class="gs-opts"><span>Se genera el <b>DÍA ' + (di + 1) + '</b>' + (d.title ? ' · ' + esc2(String(d.title).slice(0, 40)) : '') + '</span>' +
+      '<label><input type="checkbox" id="gsSemana"' + (semPrev ? ' checked' : '') + '> Toda la semana (' + p.dias.length + ' días)</label></div>' +
+      '<div class="gs-acts"><button type="button" class="btn gs-go" id="gsRun"' + (corriendo ? ' disabled' : '') + '>' + (corriendo ? '<span class="gs-spin"></span> Generando…' : '⚡ GENERAR PLAN COMPLETO CON IA (FICHA TÁCTICA)') + '</button>' +
+      '<button type="button" class="btn" id="gsFicha">📋 Editar Ficha Táctica</button></div>' +
+      '<div class="gs-log' + (logOn ? ' on' : '') + '" id="gsLog">' + logPrev + '</div>';
+  }
+  function log(html, cls){
+    var l = $q('gsLog'); if(!l) return;
+    l.classList.add('on'); l.insertAdjacentHTML('beforeend', '<div' + (cls ? ' class="' + cls + '"' : '') + '>' + html + '</div>');
+  }
+  function abrirFicha(ath){
+    if(typeof openAth !== 'function') return;
+    openAth(ath.id);
+    [250, 700].forEach(function(ms){ setTimeout(function(){ var b = $q('ftBox'); if(b) b.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, ms); });
+  }
+  /* aviso de ficha incompleta sin salir del Builder: editar acá mismo, generar igual o cancelar */
+  function preguntarFicha(falt){
+    return new Promise(function(res){
+      css(); var m = $q('gsFichaM'); if(m) m.remove();
+      m = document.createElement('div'); m.id = 'gsFichaM';
+      m.innerHTML = '<div class="gs-box"><h4>📋 La Ficha Táctica está incompleta</h4><p>Falta: <b>' + esc2(falt.join(', ')) + '</b>. La IA ajusta mejor la sesión con estos datos (tiempo, equipamiento, objetivo y experiencia). Podés completarla ahora sin salir del Builder.</p>' +
+        '<div class="gs-acts"><button type="button" class="btn gold" data-d="editar">📋 Editar Ficha Táctica</button><button type="button" class="btn" data-d="igual">Generar igual con los datos que hay</button><button type="button" class="btn ghost" data-d="no">Cancelar</button></div></div>';
+      document.body.appendChild(m);
+      m.addEventListener('click', function(e){ var b = e.target.closest('[data-d]'); if(!b && e.target !== m) return; m.remove(); res(b ? b.getAttribute('data-d') : 'no'); });
+    });
+  }
+
+  /* ---------- generación ---------- */
+  async function generar(){
+    if(corriendo) return;
+    var ath = active(); if(!ath){ toast('Seleccioná un alumno/a', 'err'); return; }
+    var p = plan(ath.id); if(!p || esPlanCFActivo(p)){ toast('El generador de sesión es para Sports & Bodybuilding', 'warn'); return; }
+    if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
+      toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar la sesión', 'err');
+      if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
+      return;
+    }
+    var falt = faltantes(ath);
+    if(falt.length){
+      var dec = await preguntarFicha(falt);
+      if(dec === 'editar'){ abrirFicha(ath); return; }
+      if(dec !== 'igual') return;
+    }
+    var extra = ($q('gsExtra') ? $q('gsExtra').value.trim() : ''), semana = !!($q('gsSemana') && $q('gsSemana').checked);
+    var di0 = Math.min(S.ui.day || 0, p.dias.length - 1), targets = semana ? p.dias.map(function(_, i){ return i; }) : [di0];
+    corriendo = true; pintar();
+    var textos = [], titulos = [];
+    try{
+      log('<b>Alumno/a:</b> ' + esc2(fullName(ath)) + ' · ' + esc2(perfilNivel(ath).split(':')[0]) + ' · ' + targets.length + ' día(s)');
+      for(var k = 0; k < targets.length; k++){
+        var di = targets[k];
+        log('<span class="gs-spin"></span> Diseñando el DÍA ' + (di + 1) + ' (' + (k + 1) + '/' + targets.length + ')…');
+        var out = await window.CoachAI.generarTexto(usuario(ath, p, di, extra, titulos), sistema(ath), { maxTokens: 7000, plain: true });
+        var t = limpiar(out, di), r = parsearImportacion(t, true), nB = r.dias.reduce(function(s, x){ return s + x.bloques.filter(function(b){ return !b.sinClasificar && b.items && b.items.length; }).length; }, 0);
+        /* una respuesta que no es una sesion (rechazo, charla, formato roto) no se aplica: se deja en el Importador rapido */
+        if(nB < 2){
+          _impTexto = t; renderBuilder();
+          var det = document.getElementById('impBox'); if(det){ det.open = true; det.scrollIntoView({ block: 'center' }); }
+          log('La IA respondió pero no se pudo estructurar en bloques: dejé el texto en el <b>Importador rápido</b> para que lo revises.', 'e');
+          toast('No se pudo estructurar la respuesta: quedó en el Importador rápido', 'warn');
+          return;
+        }
+        textos.push(t); titulos.push((r.dias[0] && r.dias[0].titulo) || ('Día ' + (di + 1)));
+        log('✔ DÍA ' + (di + 1) + ': ' + nB + ' bloques — ' + esc2(titulos[titulos.length - 1]), 'o');
+      }
+      var ok = ejecutarImportacion(textos.join('\n\n'), semana ? 'semana' : 'dia');
+      if(ok) log('Sesión cargada en el Builder. Revisá los bloques y ajustá lo que quieras.', 'o');
+      else log('Importación cancelada: el plan no se modificó.', 'e');
+    }catch(err){
+      console.warn('generador de sesión', err);
+      log('✖ ' + esc2((err && err.message) || String(err)), 'e');
+      if(!(err && err.__toast)) toast('Error al generar la sesión: ' + String((err && err.message) || err).slice(0, 80), 'err');
+    }finally{
+      corriendo = false;
+      var lg = $q('gsLog'); if(lg) lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); });
+      pintar();
+    }
+  }
+
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('#gsRun')){ e.preventDefault(); generar(); return; }
+    if(t.closest('#gsFicha')){ e.preventDefault(); var a = active(); if(a) abrirFicha(a); }
+  });
+  function ciclo(){ try{ pintar(); }catch(e){} }
+  function montar(){
+    ciclo();
+    setInterval(ciclo, 1200);
+    ['go', 'renderBuilder', 'renderDay'].forEach(function(fn){
+      var f = window[fn]; if(typeof f !== 'function') return;
+      window[fn] = function(){ var r = f.apply(this, arguments); setTimeout(ciclo, 90); return r; };
+    });
+  }
+  window.CoachGenSesion = { generar: generar, sistema: sistema, usuario: usuario, limpiar: limpiar, biblioteca: bibliotecaIA, faltantes: faltantes, perfilNivel: perfilNivel };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montar); else montar();
+})();
+</script>
+
