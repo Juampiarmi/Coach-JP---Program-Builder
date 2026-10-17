@@ -11429,6 +11429,220 @@ function playBeep(freq, dur, peakGain, delay, type){
      chicharra() buzzer largo y contundente (segundo 0 / cambio de
                  intervalo / fin) -- con antirrebote para que el aviso de
                  "segundo 0" y la transición de fase no suenen dos veces */
+/* =========================================================
+   PERFILES DE SONIDO DEL TIMER (showroom) -- un solo punto de decisión para TODOS los avisos del reloj de
+   descanso y del HUD Timer de intervalos. Todo sintetizado con Web Audio (sin archivos externos: funciona
+   offline) y pasa por un compresor + limitador común para que ningún perfil sature la salida. La elección se
+   guarda por alumno (clave propia de su STORAGE_KEY) y la leen jpBox / jpAudioTactical / CoachVibra.
+   Eventos: tick (3-2-1), aviso (10 s), mitad (50 %), fin (cambio de fase / fin del descanso), inicio.
+========================================================= */
+var jpPerfilSonido = (function(){
+  var DEF = 'gong';
+  var LISTA = [
+    { id: 'tactico',   lb: 'TÁCTICO / HUD BEEP',    desc: 'Doble beep fino y seco, tipo interfaz cibernética. Nada estruendoso.' },
+    { id: 'gong',      lb: 'GONG / RING SUAVE',     desc: 'Tono grave y resonante; relajado para marcar el fin del descanso.' },
+    { id: 'campana',   lb: 'BOX CHIME / CAMPANA',   desc: 'Campana limpia de box, atenuada a un volumen agradable.' },
+    { id: 'silbato',   lb: 'WHISTLE / SILBATO',     desc: 'Silbato corto y seco, ideal para alta intensidad.' },
+    { id: 'vibracion', lb: 'VIBRACIÓN ÚNICAMENTE',  desc: 'Solo háptica del dispositivo, sin sonido.' },
+    { id: 'silencio',  lb: 'SILENCIOSO',            desc: 'Sin sonido ni vibración en las alertas del timer.' }
+  ];
+  function clave(){ try{ return (typeof STORAGE_KEY !== 'undefined' ? STORAGE_KEY : 'coachjp') + '_sonido'; }catch(e){ return 'coachjp_sonido'; } }
+  function valido(id){ return LISTA.some(function(p){ return p.id === id; }); }
+  var actual = DEF;
+  try{ var v0 = localStorage.getItem(clave()); if(v0 && valido(v0)) actual = v0; }catch(e){}
+
+  /* ---------- salida común: compresor + limitador suave ---------- */
+  var bus = null, busCtx = null;
+  function salida(ctx){
+    if(bus && busCtx === ctx) return bus;
+    var comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 10; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.14;
+    var mg = ctx.createGain(); mg.gain.value = 0.8;
+    comp.connect(mg); mg.connect(ctx.destination);
+    bus = comp; busCtx = ctx; return bus;
+  }
+  /* un tono con envolvente exponencial: f (Hz), d (s), v (volumen), t (retardo), tipo, atk, lp (corte), f2 (glide) */
+  function tono(ctx, o){
+    var t0 = ctx.currentTime + (o.t || 0), osc = ctx.createOscillator(), g = ctx.createGain(), nodo = osc;
+    osc.type = o.tipo || 'sine';
+    osc.frequency.setValueAtTime(o.f, t0);
+    if(o.f2) osc.frequency.exponentialRampToValueAtTime(o.f2, t0 + o.d);
+    if(o.lp){ var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = o.lp; osc.connect(lp); nodo = lp; }
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(o.v, t0 + (o.atk || 0.005));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.d);
+    nodo.connect(g); g.connect(salida(ctx));
+    osc.start(t0); osc.stop(t0 + o.d + 0.05);
+  }
+  /* silbato: tono senoidal con vibrato rápido + ruido filtrado (aire) */
+  function silbido(ctx, t, d, v){
+    var t0 = ctx.currentTime + (t || 0), osc = ctx.createOscillator(), lfo = ctx.createOscillator(), lg = ctx.createGain(), g = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(2700, t0); osc.frequency.linearRampToValueAtTime(2900, t0 + d);
+    lfo.frequency.value = 36; lg.gain.value = 120; lfo.connect(lg); lg.connect(osc.frequency);
+    var len = Math.floor(ctx.sampleRate * (d + 0.06)), buf = ctx.createBuffer(1, len, ctx.sampleRate), ch = buf.getChannelData(0);
+    for(var i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+    var n = ctx.createBufferSource(); n.buffer = buf;
+    var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3100; bp.Q.value = 2.4;
+    var ng = ctx.createGain(); ng.gain.value = 0.35;
+    n.connect(bp); bp.connect(ng); ng.connect(g); osc.connect(g);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(v, t0 + 0.014);
+    g.gain.setValueAtTime(v, t0 + Math.max(d - 0.05, 0.02));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    g.connect(salida(ctx));
+    osc.start(t0); lfo.start(t0); n.start(t0);
+    osc.stop(t0 + d + 0.05); lfo.stop(t0 + d + 0.05); n.stop(t0 + d + 0.05);
+  }
+  /* gong grave: fundamental + parciales con decaimiento largo */
+  function gong(ctx, d, v, t){
+    [[196, 1], [393.5, .42], [588, .2], [784, .1]].forEach(function(p, i){
+      tono(ctx, { f: p[0], d: d * (i > 1 ? .6 : 1), v: v * p[1], atk: .012, t: t || 0 });
+    });
+  }
+  /* campana de box: parciales inarmónicos con decaimiento medio */
+  function campana(ctx, d, v, f0, t){
+    [[1, 1], [1.5, .45], [2.5, .26], [3.5, .13]].forEach(function(p){
+      tono(ctx, { f: f0 * p[0], d: d * (p[0] > 2 ? .55 : 1), v: v * p[1], atk: .003, t: t || 0 });
+    });
+  }
+  var VOCES = {
+    tactico: {
+      tick:   function(c){ tono(c, { f: 2000, d: .05, v: .10 }); },
+      aviso:  function(c){ tono(c, { f: 2300, d: .05, v: .11, tipo: 'triangle' }); tono(c, { f: 2300, d: .05, v: .11, tipo: 'triangle', t: .1 }); },
+      mitad:  function(c){ tono(c, { f: 1800, d: .06, v: .11, tipo: 'triangle' }); tono(c, { f: 2400, d: .06, v: .11, tipo: 'triangle', t: .1 }); },
+      fin:    function(c){ tono(c, { f: 2600, d: .07, v: .14, tipo: 'square', lp: 5200, atk: .003 }); tono(c, { f: 2600, d: .07, v: .14, tipo: 'square', lp: 5200, atk: .003, t: .14 }); },
+      inicio: function(c){ tono(c, { f: 2000, d: .08, v: .12, tipo: 'triangle' }); tono(c, { f: 2600, d: .08, v: .12, tipo: 'triangle', t: .1 }); }
+    },
+    gong: {
+      tick:   function(c){ tono(c, { f: 330, d: .09, v: .16 }); },
+      aviso:  function(c){ tono(c, { f: 262, d: .4, v: .2, atk: .01 }); },
+      mitad:  function(c){ tono(c, { f: 262, d: .3, v: .18, atk: .01 }); tono(c, { f: 262, d: .3, v: .18, atk: .01, t: .24 }); },
+      fin:    function(c){ gong(c, 1.9, .34); },
+      inicio: function(c){ gong(c, 1.0, .26); }
+    },
+    campana: {
+      tick:   function(c){ tono(c, { f: 1320, d: .08, v: .11 }); },
+      aviso:  function(c){ campana(c, .5, .2, 880); },
+      mitad:  function(c){ campana(c, .4, .17, 880); campana(c, .4, .17, 880, .26); },
+      fin:    function(c){ campana(c, 1.3, .26, 880); },
+      inicio: function(c){ campana(c, .8, .2, 988); }
+    },
+    silbato: {
+      tick:   function(c){ tono(c, { f: 3200, d: .04, v: .09, tipo: 'triangle' }); },
+      aviso:  function(c){ silbido(c, 0, .14, .22); },
+      mitad:  function(c){ silbido(c, 0, .1, .2); silbido(c, .17, .1, .2); },
+      fin:    function(c){ silbido(c, 0, .34, .26); },
+      inicio: function(c){ silbido(c, 0, .2, .22); }
+    }
+  };
+  var VIB = { tick: [30], aviso: [60], mitad: [50, 40, 50], fin: [120, 80, 160], inicio: [120, 80, 160] };
+  function vibrar(ev, sinVib){
+    if(actual === 'silencio' || sinVib) return;
+    /* los perfiles con sonido conservan la háptica de siempre (tick / inicio / fin); el aviso de 10 s y la mitad solo vibran sin sonido */
+    if(actual !== 'vibracion' && (ev === 'aviso' || ev === 'mitad')) return;
+    try{ if(navigator.vibrate) navigator.vibrate(VIB[ev]); }catch(e){}
+  }
+  function reproducir(ev, sinVib){
+    vibrar(ev, sinVib);
+    if(actual === 'vibracion' || actual === 'silencio') return;
+    if(isAudioMuted()) return;
+    try{
+      var ctx = ensureAudioCtx(), voz = VOCES[actual] || VOCES[DEF];
+      if(ctx.state === 'suspended'){ ctx.resume().then(function(){ voz[ev](ctx); }).catch(function(){}); return; }
+      voz[ev](ctx);
+    }catch(e){ console.warn('perfil de sonido', e); }
+  }
+  function fijar(id){
+    if(!valido(id)) return;
+    actual = id;
+    try{ localStorage.setItem(clave(), id); }catch(e){}
+  }
+
+  /* ---------- showroom: lista de perfiles con preescucha ---------- */
+  function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function css(){
+    if(document.getElementById('jpSndCss')) return;
+    var st = document.createElement('style'); st.id = 'jpSndCss';
+    st.textContent =
+      '#jpSnd{position:fixed;inset:0;z-index:100000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.72);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}' +
+      '#jpSnd .snd-sheet{width:100%;max-width:520px;max-height:88vh;overflow-y:auto;box-sizing:border-box;padding:14px 16px calc(18px + env(safe-area-inset-bottom,0px));border-radius:22px 22px 0 0;background:#0E0E0F;border:1px solid rgba(255,85,0,.4);border-bottom:0;color:#F2F2F2;font-family:"Chakra Petch",sans-serif}' +
+      '#jpSnd .snd-grip{width:44px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin:0 auto 12px}' +
+      '#jpSnd .snd-top{display:flex;align-items:center;justify-content:space-between;gap:8px}' +
+      '#jpSnd .snd-t{font-weight:700;font-size:1rem;letter-spacing:.12em;text-transform:uppercase}' +
+      '#jpSnd .snd-x{min-width:44px;min-height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#fff;font-size:1.1rem;cursor:pointer}' +
+      '#jpSnd .snd-sub{margin:2px 0 12px;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.68rem;letter-spacing:.06em;color:#A3A3A3;line-height:1.5}' +
+      '#jpSnd .snd-row{display:flex;align-items:center;gap:10px;padding:12px;margin:8px 0;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);cursor:pointer}' +
+      '#jpSnd .snd-row.on{border-color:#FF5500;background:rgba(255,85,0,.08)}' +
+      '#jpSnd .snd-dot{flex:0 0 auto;width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.35);box-sizing:border-box}' +
+      '#jpSnd .snd-row.on .snd-dot{border-color:#FF5500;background:radial-gradient(circle,#FF5500 0 45%,transparent 50%)}' +
+      '#jpSnd .snd-info{flex:1 1 auto;min-width:0}' +
+      '#jpSnd .snd-lb{font-weight:700;font-size:.86rem;letter-spacing:.06em}' +
+      '#jpSnd .snd-ds{margin-top:2px;font-family:Inter,system-ui,sans-serif;font-size:.74rem;line-height:1.35;color:#A3A3A3}' +
+      '#jpSnd .snd-play{flex:0 0 auto;min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,.28);background:transparent;color:#fff;font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:.72rem;letter-spacing:.06em;cursor:pointer;white-space:nowrap}' +
+      '#jpSnd .snd-play:active{background:#FF5500;color:#0A0A0A;border-color:#FF5500}' +
+      '#jpSnd .snd-msg{min-height:1.2em;margin:0 2px 8px;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.68rem;color:#FF5500}' +
+      '#jpSnd .snd-ok{width:100%;margin-top:12px;min-height:54px;border:0;border-radius:14px;background:#FF5500;color:#0A0A0A;font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:.95rem;letter-spacing:.08em;cursor:pointer}' +
+      '.cwt-hud-min.snd-btn,.rh-snd{font-size:1.15rem;line-height:1}' +
+      '.rest-hud:not(.expanded) .rh-snd{display:none}' +
+      '.rh-snd{background:none;border:none;color:var(--text-muted,#A3A3A3);cursor:pointer;min-width:32px;min-height:32px}' +
+      'html body.jp-mission:not(.cf-disc) #restHud.on .rh-snd{display:inline-flex !important;align-items:center;justify-content:center;min-width:44px;min-height:44px;color:#E5E5E5}';
+    document.head.appendChild(st);
+  }
+  function cerrar(){ var m = document.getElementById('jpSnd'); if(m) m.remove(); }
+  function pintar(){
+    var m = document.getElementById('jpSnd'); if(!m) return;
+    m.querySelectorAll('.snd-row').forEach(function(r){ r.classList.toggle('on', r.getAttribute('data-id') === actual); });
+  }
+  function aviso(txt){ var e = document.querySelector('#jpSnd .snd-msg'); if(e) e.textContent = txt || ''; }
+  function probar(id){
+    var prev = actual;
+    actual = id;                       /* preescucha: usa el perfil pedido sin guardarlo */
+    try{
+      if(id === 'silencio'){ aviso('SILENCIOSO: las alertas del timer no emiten sonido ni vibración.'); }
+      else if(id === 'vibracion'){
+        if(navigator.vibrate){ navigator.vibrate(VIB.fin); aviso('Vibración enviada.'); }
+        else aviso('Este dispositivo no permite vibrar desde la web (iPhone). En ese caso conviene un perfil con sonido.');
+      } else {
+        if(isAudioMuted()) aviso('El sonido está en OFF (botón AUDIO del timer). Activalo para escuchar.');
+        else { aviso(''); reproducir('fin', true); }
+      }
+    }finally{ actual = prev; }
+  }
+  function abrir(){
+    css(); cerrar();
+    var h = '<div class="snd-sheet" role="dialog" aria-label="Sonido de alertas"><div class="snd-grip"></div>' +
+      '<div class="snd-top"><div class="snd-t">Sonido de alertas</div><button type="button" class="snd-x" data-snd-x="1" aria-label="Cerrar">&#10005;</button></div>' +
+      '<div class="snd-sub">Elegí cómo avisa el timer de descanso y el de intervalos. Tocá [ PROBAR ] para escucharlo antes de quedarte con uno.</div><div class="snd-msg" aria-live="polite"></div>';
+    LISTA.forEach(function(p){
+      h += '<div class="snd-row' + (p.id === actual ? ' on' : '') + '" data-id="' + p.id + '"><span class="snd-dot"></span>' +
+        '<div class="snd-info"><div class="snd-lb">' + esc(p.lb) + '</div><div class="snd-ds">' + esc(p.desc) + '</div></div>' +
+        '<button type="button" class="snd-play" data-snd-play="' + p.id + '">[ &#128266; PROBAR ]</button></div>';
+    });
+    h += '<button type="button" class="snd-ok" data-snd-x="1">[ GUARDAR Y CERRAR ]</button></div>';
+    var m = document.createElement('div'); m.id = 'jpSnd'; m.innerHTML = h; document.body.appendChild(m);
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('#cwtSnd, #rhSnd')){ e.preventDefault(); abrir(); return; }
+    var m = document.getElementById('jpSnd'); if(!m) return;
+    if(t.closest('[data-snd-x]') || t === m){ cerrar(); return; }
+    var pl = t.closest('[data-snd-play]');
+    if(pl){ e.stopPropagation(); probar(pl.getAttribute('data-snd-play')); return; }
+    var row = t.closest('.snd-row');
+    if(row){ fijar(row.getAttribute('data-id')); pintar(); aviso('Guardado: ' + (LISTA.filter(function(p){ return p.id === actual; })[0] || {}).lb); }
+  }, true);   /* captura: el panel de descanso frena la propagación de sus propios clics */
+  return {
+    lista: LISTA,
+    actual: function(){ return actual; },
+    fijar: fijar,
+    reproducir: reproducir,
+    probar: probar,
+    abrir: abrir,
+    silencio: function(){ return actual === 'silencio'; },
+    sinSonido: function(){ return actual === 'vibracion' || actual === 'silencio'; }
+  };
+})();
+window.jpPerfilSonido = jpPerfilSonido;
 var jpBox = (function(){
   var ultimaChicharra = 0;
   function seco(freq, dur, vol, delay){
@@ -11525,20 +11739,19 @@ var jpBox = (function(){
       });
     }catch(e){ console.warn('jpBox.gong falló:', e); }
   }
+  /* los avisos del timer ya no son un sonido fijo: los resuelve el perfil elegido en el showroom (jpPerfilSonido) */
   return {
-    tickSeco: tickSeco,
-    gong:     gong,
-    /* 3-2-1: los tres avisos idénticos -- cuadrada 800 Hz, 120 ms, misma envolvente */
-    cuenta:   function(){ tickSeco(); },
-    go:       function(){ gong(); try{ if(navigator.vibrate) navigator.vibrate([120, 80, 160]); }catch(e){} },
-    aviso10:  function(){ seco(1200, 0.22, 0.36); },
-    mitad:    function(){ seco(900, 0.11, 0.36); seco(900, 0.11, 0.36, 0.2); },
-    inicio:   function(){ gong(); try{ if(navigator.vibrate) navigator.vibrate([120, 80, 160]); }catch(e){} },
+    tickSeco: function(){ jpPerfilSonido.reproducir('tick'); },
+    gong:     function(){ jpPerfilSonido.reproducir('fin', true); },     /* fin del descanso: la vibración la dispara vibrateTimerEnd */
+    cuenta:   function(){ jpPerfilSonido.reproducir('tick'); },
+    go:       function(){ jpPerfilSonido.reproducir('inicio'); },
+    aviso10:  function(){ jpPerfilSonido.reproducir('aviso'); },
+    mitad:    function(){ jpPerfilSonido.reproducir('mitad', true); },   /* la háptica de la mitad ya la envía el HUD Timer */
+    inicio:   function(){ jpPerfilSonido.reproducir('inicio'); },
     chicharra:function(dur){
       var ahora = Date.now();
       if(ahora - ultimaChicharra < 1400) return;
-      ultimaChicharra = ahora; gong();
-      try{ if('vibrate' in navigator) navigator.vibrate([120, 80, 160]); }catch(e){}
+      ultimaChicharra = ahora; jpPerfilSonido.reproducir('fin');
     }
   };
 })();
@@ -11687,6 +11900,7 @@ function beepSetCheck(on){ playBeep(on ? 1318 : 660, 0.055, 0.32, 0, 'triangle')
    del check de serie y del fin de timer clásico). */
 var jpAudioTactical = {
   soundCheckSet: function(){
+    if(jpPerfilSonido.sinSonido()) return;
     playBeep(520, 0.045, 0.26, 0, 'triangle');
     playBeep(780, 0.08, 0.3, 0.045, 'triangle');
   },
@@ -11704,7 +11918,7 @@ var jpAudioTactical = {
      'Lock-In'") -- 35ms exactos pedidos (antes 25ms); if(navigator.vibrate)
      ya blinda contra dispositivos sin soporte, sin arrojar warnings. */
   vibrateCheckSet: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate(35); }catch(e){} },
-  vibrateTimerEnd: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate([120, 80, 160]); }catch(e){} },
+  vibrateTimerEnd: function(){ if(isAudioMuted() || jpPerfilSonido.silencio()) return; try{ if(navigator.vibrate) navigator.vibrate([120, 80, 160]); }catch(e){} },
   vibratePrRecord: function(){ if(isAudioMuted()) return; try{ if(navigator.vibrate) navigator.vibrate([40, 30, 40, 30, 120]); }catch(e){} }
 };
 window.jpAudioTactical = jpAudioTactical;
@@ -11722,8 +11936,8 @@ var CoachVibra = (function(){
   }
   return {
     soporta: function(){ return soporta; },
-    cuenta:  function(){ return disparar(200); },   /* segundos 3, 2 y 1 */
-    fin:     function(){ return disparar([200, 100, 200, 100, 400]); },   /* final del conteo   */
+    cuenta:  function(){ if(jpPerfilSonido.silencio()) return false; return disparar(200); },   /* segundos 3, 2 y 1 */
+    fin:     function(){ if(jpPerfilSonido.silencio()) return false; return disparar([200, 100, 200, 100, 400]); },   /* final del conteo   */
     toque:   function(){ return disparar(20); },    /* feedback de botón  */
     patron:  function(p){ return disparar(p); }
   };
@@ -14270,7 +14484,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
 </style>
 
 <div class="rest-hud" id="restHud" aria-live="polite">
-  <div class="rh-top"><span class="rh-lb" id="rhLb">Descanso</span><button class="rh-expand" id="rhExpand" type="button" aria-label="Más opciones de descanso" aria-expanded="false">▾</button><button class="rh-x" id="rhX" type="button" aria-label="Cerrar">×</button></div>
+  <div class="rh-top"><span class="rh-lb" id="rhLb">Descanso</span><button class="rh-snd" id="rhSnd" type="button" aria-label="Sonido de alertas" title="Sonido de alertas">&#9834;</button><button class="rh-expand" id="rhExpand" type="button" aria-label="Más opciones de descanso" aria-expanded="false">▾</button><button class="rh-x" id="rhX" type="button" aria-label="Cerrar">×</button></div>
   <div class="rh-time" id="rhTime">01:30</div>
   <div class="rh-set">
     <button type="button" data-rest="60">60s</button>
@@ -22327,6 +22541,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       </div>
       <div class="hud-actions">
         <button type="button" class="cwt-hud-min" id="cwtMin" title="Minimizar" aria-label="Minimizar">&#10515;</button>
+        <button type="button" class="cwt-hud-min snd-btn" id="cwtSnd" title="Sonido de alertas" aria-label="Sonido de alertas">&#9834;</button>
         <button type="button" class="cwt-mute btn-sound-toggle" id="cwtMute" title="Silenciar sonidos">🔊 AUDIO: ON</button>
         <button type="button" class="cwt-hud-close btn-close-circle" id="cwtX" aria-label="Cerrar">&#10005;</button>
       </div>
@@ -22504,6 +22719,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     vibrar([15]);
   }
   function vibrar(p){ try{ if(navigator.vibrate) navigator.vibrate(p); }catch(e){} }
+  function vibAl(p){ try{ if(window.jpPerfilSonido && jpPerfilSonido.silencio()) return; }catch(e){} vibrar(p); }
   function mmss(s){
     s = Math.max(0, Math.round(s));
     var m = Math.floor(s / 60), r = s % 60;
@@ -22755,7 +22971,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
         var totObj = duracionTotal(c);
         if(totObj >= 30 && transcurrido >= totObj / 2){
           mitadAvisada = true;
-          if(transcurrido < totObj / 2 + 10){ jpBox.mitad(); vibrar([60, 40, 60]); }
+          if(transcurrido < totObj / 2 + 10){ jpBox.mitad(); vibAl([60, 40, 60]); }
         }
       }
       if(modo === 'fortime'){
@@ -22782,7 +22998,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       vueltas.push(c.intervalo);
       if(ronda >= rondas){ finalizar('EMOM completo', over > 8000); return; }
       ronda++; restante = c.intervalo; faseTargetEnd = now + c.intervalo * 1000 - over; ultimoBeep = -1;
-      if(over < 8000){ jpBox.chicharra(); jpRayo('gold'); vibrar([100, 50, 100]); }
+      if(over < 8000){ jpBox.chicharra(); jpRayo('gold'); vibAl([100, 50, 100]); }
       continue;
     }
   }
@@ -22859,7 +23075,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     /* chicharra larga de fin de round. Si el fin ocurrió hace rato (el
        celular estuvo bloqueado), ya avisó la notificación: no se hace sonar
        el buzzer "viejo" al volver a la app. */
-    if(!silencioso){ jpBox.chicharra(1.2); vibrar([100, 50, 100, 50, 220]); }
+    if(!silencioso){ jpBox.chicharra(1.2); vibAl([100, 50, 100, 50, 220]); }
     try{ jpBgTimer.finalizado(); }catch(e){}
     var f = document.getElementById('cwtPhase');
     if(f){ f.textContent = '🏁 ' + (motivo || 'Terminado') + ' · ' + mmss(transcurrido); f.className = 'cwt-phase work'; }
@@ -39833,7 +40049,8 @@ html body.jp-mission:not(.cf-disc) #cwtFull .cf-reset, html body.jp-mission:not(
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-round{ background:rgba(255,255,255,.05) !important; border:1px solid rgba(255,85,0,.55) !important; color:#FFFFFF !important; }
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-brand em, html body.jp-mission:not(.cf-disc) #cwtFull em{ color:#FF5500 !important; font-style:normal; }
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-shield path{ stroke:rgba(255,85,0,.22) !important; }
-html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i, html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar > *{ background:#FF5500 !important; }
+html body.jp-mission:not(.cf-disc) #restHud.on .rh-snd{ background:none !important; border:0 !important; box-shadow:none !important; color:#E5E5E5 !important; font-size:1.3rem !important; }
+html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i,html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar > *{ background:#FF5500 !important; }
 /* BRANDPASS:END */
 </style>
 <script id="jpHudTacticoJs">
