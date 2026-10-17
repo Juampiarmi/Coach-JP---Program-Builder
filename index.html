@@ -15151,14 +15151,29 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      La tarjeta muestra prescripcion + un boton; el sheet tiene selector horizontal de sets, kg x reps y [ CONFIRMAR REGISTRO ].
      Escribe en state.loads con la MISMA clave que las filas nativas (getLoadKey), asi tonelaje, reporte y Story lo leen igual.
      ============================================================ */
+  /* una ronda de biset/triset cuenta como UNA unidad (hecha cuando todas sus estaciones estan tildadas), no como una serie por estacion */
+  function etqRondas(n){ return n === 2 ? 'biseries' : (n === 3 ? 'triseries' : 'rondas'); }
   function regProgreso(cfg){
-    var hechos = 0, total = 0;
-    cfg.ex.forEach(function(e){ for(var i = 1; i <= e.sets; i++){ total++; if(getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, e.idx, i)).done) hechos++; } });
-    return { hechos: hechos, total: total };
+    var hechos = 0, total = 0, grupos = {}, claves = [], sueltos = 0;
+    cfg.ex.forEach(function(e){
+      if(e.grp){ if(!grupos[e.grp]){ grupos[e.grp] = []; claves.push(e.grp); } grupos[e.grp].push(e); return; }
+      sueltos++;
+      for(var i = 1; i <= e.sets; i++){ total++; if(getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, e.idx, i)).done) hechos++; }
+    });
+    claves.forEach(function(k){
+      var g = grupos[k];
+      for(var i = 1; i <= g[0].sets; i++){
+        total++;
+        if(g.every(function(e){ return getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, e.idx, i)).done; })) hechos++;
+      }
+    });
+    var etq = 'series';
+    if(claves.length && !sueltos) etq = claves.length === 1 ? etqRondas(grupos[claves[0]].length) : 'rondas';
+    return { hechos: hechos, total: total, etq: etq };
   }
   function regBotonInner(cfg){
     var p = regProgreso(cfg);
-    return '<span class="jp-reg-lbl">\\ud83d\\udcdd REGISTRAR TRABAJO <b>(' + p.hechos + '/' + p.total + ' series)</b></span><span class="jp-reg-dot' + (p.total && p.hechos >= p.total ? ' ok' : (p.hechos ? ' mid' : '')) + '"></span>';
+    return '<span class="jp-reg-lbl">\\ud83d\\udcdd REGISTRAR TRABAJO <b>(' + p.hechos + '/' + p.total + ' ' + p.etq + ')</b></span><span class="jp-reg-dot' + (p.total && p.hechos >= p.total ? ' ok' : (p.hechos ? ' mid' : '')) + '"></span>';
   }
   function tituloBloqueHtmlSB(t){
     var m = String(t || '').match(/^([^:]{3,45}):\\s*(\\S.*)$/);
@@ -15181,14 +15196,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function regPintar(){
     var bg = document.getElementById('jpRegSheet'); if(!bg || !regEst) return;
     var c = regEst.cfg, e = c.ex[regEst.ex], ld = getLoad(regKey());
-    regQ('.jp-reg-t').textContent = 'REGISTRO DE TRABAJO // ' + e.sets + ' SERIES';
+    var nGrp = e.grp ? c.ex.filter(function(x){ return x.grp === e.grp; }).length : 0;
+    regQ('.jp-reg-t').textContent = 'REGISTRO DE TRABAJO // ' + e.sets + ' ' + (nGrp ? etqRondas(nGrp).toUpperCase() : 'SERIES');
     regQ('.jp-reg-exs').innerHTML = c.ex.length > 1
       ? c.ex.map(function(x, i){ return '<button type="button" class="jp-reg-ex' + (i === regEst.ex ? ' on' : '') + '" data-regex="' + i + '">' + escSB(x.nombre) + '</button>'; }).join('')
       : '<div class="jp-reg-exn">' + escSB(e.nombre) + '</div>';
     var sets = '';
     for(var i = 1; i <= e.sets; i++){
       var l2 = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, i));
-      sets += '<button type="button" class="jp-reg-set' + (i === regEst.set ? ' on' : '') + (l2.done ? ' done' : '') + '" data-regset="' + i + '">Serie ' + i + (l2.done ? ' \\u2713' : '') + '</button>';
+      sets += '<button type="button" class="jp-reg-set' + (i === regEst.set ? ' on' : '') + (l2.done ? ' done' : '') + '" data-regset="' + i + '">' + (e.grp ? 'Ronda ' : 'Serie ') + i + (l2.done ? ' \\u2713' : '') + '</button>';
     }
     regQ('.jp-reg-sets').innerHTML = sets;
     var repsSet = (e.rp && e.rp[regEst.set - 1] != null) ? e.rp[regEst.set - 1] : e.reps, etqSet = (e.et && e.et[regEst.set - 1]) || '';
@@ -17936,12 +17952,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0) });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0) });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
         filas += '<div class="jp-sb-biset">' +
-            '<div class="jp-sb-biset-title">' + escSB(tituloBiset) + '</div>' +
+            '<div class="jp-sb-biset-title">[ ' + rondasN + ' ' + (subsInfo.length === 2 ? 'BISERIES' : (subsInfo.length === 3 ? 'TRISERIES' : 'RONDAS')) + ' ]</div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
           '</div>';
         return;
@@ -23720,22 +23736,49 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   }
 
   /* duracion REAL: de la primera a la ultima serie registrada del dia (sin botones manuales) */
-  function minutosPrimerUltimoSet(){
+  /* duracion de la sesion: de la primera a la ultima serie registrada, pero SOLO si la ventana es creible (hasta 3 h y sin huecos de
+     mas de 60 min entre series). Si no (se dejo la app abierta, se cargo todo despues, no hay horas continuas) se estima a partir de las
+     series efectivas: ~4,3 min por serie (15 series = 1 h 05 min), entre 20 y 150 min. Devuelve { min, estimada, series }. */
+  function duracionSesion(){
+    var ts = [], series = 0;
     try{
-      var pref = state.currentWeek + '|' + state.currentDay + '|', ts = [];
+      var pref = state.currentWeek + '|' + state.currentDay + '|';
       Object.keys(state.loads || {}).forEach(function(k){
         if(k.indexOf(pref) !== 0) return;
         var l = state.loads[k] || {};
         if(!l.done) return;
+        series++;
         var t = l.tsDone || l.ts;
         if(t > 0) ts.push(t);
       });
-      if(ts.length < 2) return null;
-      var m = Math.round((Math.max.apply(null, ts) - Math.min.apply(null, ts)) / 60000);
-      return Math.max(1, Math.min(360, m));
-    }catch(e){ return null; }
+    }catch(e){}
+    if(ts.length >= 2){
+      ts.sort(function(a, b){ return a - b; });
+      var span = Math.round((ts[ts.length - 1] - ts[0]) / 60000), hueco = 0;
+      for(var i = 1; i < ts.length; i++) hueco = Math.max(hueco, (ts[i] - ts[i - 1]) / 60000);
+      if(span >= 1 && span <= 180 && hueco <= 60) return { min: span, estimada: false, series: series };
+    }
+    if(series < 1) return { min: 0, estimada: true, series: 0 };
+    var est = Math.round(series * 65 / 15 / 5) * 5;
+    return { min: Math.max(20, Math.min(150, est)), estimada: true, series: series };
   }
+  window.CoachDuracionSesion = duracionSesion;
+  function minutosPrimerUltimoSet(){ var d = duracionSesion(); return d.min || null; }
   window.CoachMinutosSets = minutosPrimerUltimoSet;
+  /* nombres para el resumen tactico: sin prefijo de estacion, sin (traduccion) ni "x" huerfana */
+  function limpiarNombre(n){
+    var t = String(n || '');
+    t = t.replace(/\\s*\\([^)]*\\)\\s*$/, '');
+    t = t.replace(/^\\s*[A-Za-z]\\d{1,2}[.):\\-]\\s*/, '');
+    t = t.replace(/(?:\\s+[xX]|\\s*[×*])\\s*$/, '');
+    return t.replace(/\\s{2,}/g, ' ').trim();
+  }
+  function recortar(g, txt, maxW){
+    var t = String(txt);
+    if(g.measureText(t).width <= maxW) return t;
+    while(t.length > 1 && g.measureText(t + '…').width > maxW) t = t.slice(0, -1);
+    return t.replace(/[ ,.;:-]+$/, '') + '…';
+  }
 
   function esquinas(g){
     var m = 64, L = 104;
@@ -23842,12 +23885,12 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X, yS - 30, MW, 2);
 
     /* ---------- fila de datos: series, duracion real, RPE (o ejercicios) ---------- */
-    var mins = minutosPrimerUltimoSet();
-    var durTxt = mins ? (typeof window.CoachFmtDuracion === 'function' ? String(window.CoachFmtDuracion(mins)) : mins + ' MIN') : '—';
+    var dd = duracionSesion(), mins = dd.min;
+    var durTxt = mins ? (dd.estimada ? '~' : '') + (typeof window.CoachFmtDuracion === 'function' ? String(window.CoachFmtDuracion(mins)) : mins + ' MIN') : '—';
     var tercera = (d.rpe > 0) ? { v: String(d.rpe).replace('.', ','), l: 'RPE PROMEDIO' } : { v: String((d.listaEj || []).length || '—'), l: 'EJERCICIOS' };
     var cols = [
       { v: String(parseInt(d.series, 10) || 0), l: 'SERIES EFECTIVAS' },
-      { v: durTxt.toUpperCase(), l: 'DURACIÓN REAL' },
+      { v: durTxt.toUpperCase(), l: dd.estimada ? 'DURACIÓN ESTIMADA' : 'DURACIÓN REAL' },
       tercera
     ];
     var cw = MW / 3;
@@ -23880,8 +23923,9 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     filas.forEach(function(f, i){
       var yy = yF + i * 82;
       g.textAlign = 'left'; g.fillStyle = '#FFFFFF';
-      var maxNom = f.r ? MW - 330 : MW - 70;
-      ajustar(g, String(f.n).toUpperCase(), maxNom, 44, 28, 700); g.fillText(String(f.n).toUpperCase(), X, yy);
+      var wR = 0; if(f.r){ fuente(g, 700, 44); wR = g.measureText(f.r).width; }
+      var maxNom = f.r ? MW - wR - 40 : MW - 70, nom = limpiarNombre(f.n).toUpperCase() || String(f.n).toUpperCase();
+      ajustar(g, nom, maxNom, 44, 26, 700); nom = recortar(g, nom, maxNom); g.fillText(nom, X, yy);
       if(f.r){ g.textAlign = 'right'; g.fillStyle = OR; fuente(g, 700, 44); g.fillText(f.r, W - X, yy); }
       else if(f.ok){ check(g, W - X - 44, yy - 12, 40, OR); }
       g.fillStyle = 'rgba(255,255,255,.1)'; g.fillRect(X, yy + 24, MW, 2);
@@ -40051,6 +40095,15 @@ html body.jp-mission:not(.cf-disc) #cwtFull .cf-brand em, html body.jp-mission:n
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-shield path{ stroke:rgba(255,85,0,.22) !important; }
 html body.jp-mission:not(.cf-disc) #restHud.on .rh-snd{ background:none !important; border:0 !important; box-shadow:none !important; color:#E5E5E5 !important; font-size:1.3rem !important; }
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i,html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar > *{ background:#FF5500 !important; }
+/* ===== botones principales vidriados (glass tactico) + cian tactico en micro-badges, tiempos y estaciones ===== */
+html body.jp-mission:not(.cf-disc) .jp-close-cta:not(.done), html body.jp-mission:not(.cf-disc) .jp-reg-ok{ background:rgba(10,10,10,.55) !important; -webkit-backdrop-filter:blur(12px) saturate(140%); backdrop-filter:blur(12px) saturate(140%); border:1px solid rgba(255,85,0,.75) !important; color:#FF5500 !important; box-shadow:0 0 22px rgba(255,85,0,.22), inset 0 0 20px rgba(255,85,0,.08) !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; letter-spacing:.08em; text-transform:uppercase; }
+html body.jp-mission:not(.cf-disc) .jp-close-cta:not(.done):active, html body.jp-mission:not(.cf-disc) .jp-reg-ok:active{ background:rgba(255,85,0,.18) !important; transform:scale(.985); }
+html body.jp-mission:not(.cf-disc) .jp-close-cta:not(.done) .jp-emo{ filter:grayscale(1) brightness(1.5); }
+html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-tag-lb, html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-tag{ color:#00E5FF !important; }
+html body.jp-mission:not(.cf-disc) .jp-sb-duracion, html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-duracion{ color:#00E5FF !important; }
+html body.jp-mission:not(.cf-disc) .jp-sb-ex-id, html body.jp-mission:not(.cf-disc) .jp-sb-letra{ color:#00E5FF !important; }
+
+html body.jp-mission:not(.cf-disc) .jp-sb-biset > .jp-sb-biset-title{ display:block !important; margin:0 0 8px; font-family:"JetBrains Mono",ui-monospace,monospace !important; font-size:.68rem !important; font-weight:600 !important; letter-spacing:.16em; color:#00E5FF !important; text-transform:uppercase; }
 /* BRANDPASS:END */
 </style>
 <script id="jpHudTacticoJs">
@@ -40640,6 +40693,59 @@ html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i,html body.jp-mission:not(.
   function lineaSet(s, pref, top, un){
     return '  - ' + (pref || '') + 'Serie ' + s.i + ': ' + (s.kg > 0 ? fJP(s.kg) + ' kg' : '') + (s.kg > 0 && s.reps > 0 ? ' × ' : '') + (s.reps > 0 ? fJP(s.reps) + ' ' + (un || 'reps') : '') + (top ? ' [Top Set]' : '');
   }
+  /* ---- Sports: nombre una sola vez, sin prefijo de estacion ni "x" huerfana, series iguales agrupadas con └─ ---- */
+  function limpiarNombreRep(n){
+    var t = String(n || '');
+    t = t.replace(/\\s*\\([^)]*\\)\\s*$/, '');
+    t = t.replace(/^\\s*[A-Za-z]\\d{1,2}[.):\\-]\\s*/, '');
+    t = t.replace(/(?:\\s+[xX]|\\s*[×*])\\s*$/, '');
+    return t.replace(/\\s{2,}/g, ' ').trim();
+  }
+  function setTxtSB(s, un){ return (s.kg > 0 ? fJP(s.kg) + ' kg' : '') + (s.kg > 0 && s.reps > 0 ? ' × ' : '') + (s.reps > 0 ? fJP(s.reps) + ' ' + (un || 'reps') : ''); }
+  function agruparSB(arr, un, etq){
+    var out = [], kgs = arr.map(function(s){ return s.kg; }), mx = Math.max.apply(null, kgs.concat([0])), mn = Math.min.apply(null, kgs.concat([mx])), i = 0;
+    while(i < arr.length){
+      var s = arr[i], j = i;
+      while(j + 1 < arr.length && arr[j + 1].kg === s.kg && arr[j + 1].reps === s.reps) j++;
+      var n = j - i + 1;
+      out.push('└─ ' + setTxtSB(s, un) + (n > 1 ? ' (' + n + ' ' + etq + ')' : '') + ((arr.length > 1 && mx > mn && s.kg === mx && n === 1) ? ' · Top Set' : ''));
+      i = j + 1;
+    }
+    return out;
+  }
+  function bloqueSportsLimpio(block, week, day){
+    var out = [], lineas = (typeof itemsDeSemana === 'function') ? itemsDeSemana(block, week) : (block.items || []);
+    if(!lineas.length || typeof window.parsearPizarraSB !== 'function') return out;
+    var entries; try{ entries = window.parsearPizarraSB(lineas, { titulo: block.title }); }catch(e){ return out; }
+    entries.forEach(function(en, idx){
+      if(en.tipo === 'simple' && en.sets){
+        var arr = setsDe(week, day.id, block.id, 'e' + idx, en.sets), myo = myoLinea(week, day.id, block.id, 'e' + idx);
+        if(arr.length || myo){
+          out.push('*' + limpiarNombreRep(en.titulo) + '*');
+          agruparSB(arr, en.unidad, 'series').forEach(function(l){ out.push(l); });
+          if(myo) out.push(myo.replace(/^\\s*-\\s*/, '└─ '));
+        }
+      } else if(en.tipo === 'biserie' && en.subs && en.subs.length){
+        var porSub = en.subs.map(function(){ return []; }), rondas = Math.max(en.rondas || 3, 12), hay = false;
+        for(var r = 1; r <= rondas; r++){
+          en.subs.forEach(function(sub, si){
+            var kB = getLoadKey(week, day.id, block.id, 'b' + idx + 's' + si, r), ld = getLoad(kB);
+            if(ld && (nJP(ld.kg) > 0 || nJP(ld.reps) > 0)){ usadas[kB] = 1; hay = true; porSub[si].push({ i: r, kg: nJP(ld.kg), reps: nJP(ld.reps) }); }
+          });
+        }
+        var myos = en.subs.map(function(sub, si){ return myoLinea(week, day.id, block.id, 'b' + idx + 's' + si, 'A' + (si + 1) + ' '); });
+        if(hay || myos.some(Boolean)){
+          var L0 = en.letra || 'A', nSub = en.subs.length, tipo = nSub === 2 ? 'BISET' : (nSub === 3 ? 'TRISET' : 'SUPERSERIE');
+          out.push('*' + tipo + '* · ' + en.subs.map(function(sub, si){ return L0 + (si + 1) + ' ' + limpiarNombreRep(sub.nombre); }).join(' + '));
+          en.subs.forEach(function(sub, si){
+            agruparSB(porSub[si], sub.unidad, 'rondas').forEach(function(l){ out.push(l.replace('└─ ', '└─ ' + L0 + (si + 1) + ' · ')); });
+            if(myos[si]) out.push(myos[si].replace(/^\\s*-\\s*/, '└─ '));
+          });
+        }
+      }
+    });
+    return out;
+  }
   function lineasSets(arr, un){
     var kgs = arr.map(function(s){ return s.kg; }), mx = Math.max.apply(null, kgs.concat([0])), mn = Math.min.apply(null, kgs);
     var top = (arr.length > 1 && mx > mn) ? kgs.indexOf(mx) : -1;
@@ -40742,13 +40848,23 @@ html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i,html body.jp-mission:not(.
     var out = [];
     orden.forEach(function(ex){
       var g = porEj[ex]; g.sets.sort(function(a, b){ return a.i - b.i; });
-      out.push('• ' + (g.nombre || block.exerciseName || block.title || 'Ejercicio') + ':');
-      lineasSets(g.sets).forEach(function(l){ out.push(l); });
+      if(window.COACH_DISCIPLINA === 'sports'){
+        out.push('*' + limpiarNombreRep(g.nombre || block.exerciseName || block.title || 'Ejercicio') + '*');
+        agruparSB(g.sets, '', 'series').forEach(function(l){ out.push(l); });
+      } else {
+        out.push('• ' + (g.nombre || block.exerciseName || block.title || 'Ejercicio') + ':');
+        lineasSets(g.sets).forEach(function(l){ out.push(l); });
+      }
     });
     return out;
   }
   /* tiempo registrado; sin cronometro, la duracion estimada (real creible, o proyectada de la prescripcion, o de las series cargadas) */
+  function fmtMinRep(m){ return m < 60 ? m + ' min' : Math.floor(m / 60) + 'h ' + ('0' + (m % 60)).slice(-2) + 'm'; }
   function duracion(){
+    if(window.COACH_DISCIPLINA === 'sports' && typeof window.CoachDuracionSesion === 'function'){
+      var dd = window.CoachDuracionSesion();
+      if(dd && dd.min > 0) return (dd.estimada ? '~' : '') + fmtMinRep(dd.min);
+    }
     var ini = (state.session && state.session.inicio) || 0, m = ini ? Math.round((Date.now() - ini) / 60000) : 0;
     var proy0 = 0; try{ proy0 = window.jpMinutosPrescriptos ? window.jpMinutosPrescriptos() : 0; }catch(e){}
     if(m >= 1 && m <= 240 && (!proy0 || m >= proy0 * 0.5)) return m < 60 ? m + ' min' : Math.floor(m / 60) + 'h ' + ('0' + (m % 60)).slice(-2) + 'm';
@@ -40767,11 +40883,24 @@ html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i,html body.jp-mission:not(.
       '👤 Atleta: ' + ((typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.athleteName) || ''),
       '📅 ' + (day.short || 'Día') + (tituloDia ? ' - ' + tituloDia : ''),
       LINEA, '🏋️ REGISTRO DE TRABAJO EFECTIVO:'];
+    if(esSports){
+      var rs = { vol: 0, series: 0 };
+      try{ if(window.CoachTV && typeof window.CoachTV.resumen === 'function') rs = window.CoachTV.resumen(week, day) || rs; }catch(e){}
+      var sem = (typeof WEEKS_META !== 'undefined' && WEEKS_META[week] && WEEKS_META[week].short) ? ' · ' + WEEKS_META[week].short : '';
+      L = ['⚡ REPORTE DE SESIÓN // COACH JP',
+        '👤 ' + ((typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.athleteName) || ''),
+        '📅 ' + (day.short || 'Día') + sem + (tituloDia ? ' — ' + tituloDia : ''),
+        LINEA, '📊 MÉTRICAS CLAVE',
+        '• Tonelaje total: ' + Math.round(Number(rs.vol) || 0).toLocaleString('es-AR') + ' kg',
+        '• Series totales: ' + (parseInt(rs.series, 10) || 0),
+        '• Tiempo real: ' + duracion(),
+        LINEA, '🏋️ REGISTRO DE TRABAJO'];
+    }
     var n0 = L.length;
     (day.blocks || []).forEach(function(block){
       var ls = [];
       if(Array.isArray(block.items)){
-        ls = esSports ? (block.sportsPizarra ? bloqueSports(block, week, day) : []) : bloqueCF(block, week, day);
+        ls = esSports ? (block.sportsPizarra ? bloqueSportsLimpio(block, week, day) : []) : bloqueCF(block, week, day);
       }
       ls = ls.concat(bloqueGenerico(block, week, day));
       ls.forEach(function(l){ L.push(l); });
@@ -40791,7 +40920,7 @@ html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i,html body.jp-mission:not(.
       notas.push((bl && (bl.title || bl.exerciseName) ? (bl.title || bl.exerciseName) + ': ' : '') + v);
     });
     if(notas.length) L.push('📝 Feedback / Notas: "' + notas.join(' | ').replace(/\\s*\\n\\s*/g, ' ') + '"');
-    L.push('⏱ Tiempo total de sesión: ' + duracion());
+    if(!esSports) L.push('⏱ Tiempo total de sesión: ' + duracion());
     return L.join('\\n');
   }
   window.jpReporteSesionTexto = reporteTexto;
