@@ -15225,6 +15225,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function jpCfLimpiaPacing(h){
     return String(h || '').replace(/(^|<br\\s*\\/?>)\\s*(?:[^A-Za-z0-9\\u00c0-\\u00ff<]{0,6}\\s*pacing(?:\\s+(?:general|sugerido))?\\s*:\\s*)+/gi, '$1').trim();
   }
+  function jpCfSubLabels(h){
+    return String(h || '').replace(/(^|<br\\s*\\/?>|\\s)([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1 \\/\\-]{3,38}):\\s+/g, function(m, pre, lb){
+      return (pre && pre.indexOf('<') === 0 ? pre : '') + '<span class="jp-cf-sub">' + lb.replace(/\\s+$/, '') + ':</span>';
+    }).replace(/^<span class="jp-cf-sub">/, '<span class="jp-cf-sub jp-cf-sub0">');
+  }
   function jpCfPlano(h){ return String(h || '').replace(/<br\\s*\\/?>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim(); }
   function jpCfParesCarga(txt){
     var re = /(\\d+(?:[.,]\\d+)?)\\s*\\/\\s*(\\d+(?:[.,]\\d+)?)\\s*(kg|lb)/gi, out = [], seen = {}, m;
@@ -16568,14 +16573,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         ((tieneCierre || subtituloVisible) ?
           '<details class="jp-cf-acc"><summary><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T&Eacute;CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
             (subtituloVisible ? '<div class="jp-cf-accrow"><span class="lb">&#128270; FOCO DEL BLOQUE</span><p>' + subtituloVisible + '</p></div>' : '') +
-            (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; OBJETIVO</span><p>' + c.objetivo + '</p></div>' : '') +
-            (c.tips ? '<div class="jp-cf-accrow"><span class="lb">&#128161; ESTRATEGIA &amp; COACHING TIPS</span>' + (formatTipsCF(c.tips) || '<p>' + c.tips + '</p>') + '</div>' : '') +
-            ((c.pacing && !(cabeceraWod && cabeceraWod.indexOf('class="pac"') >= 0 && jpCfPlano(c.pacing).length <= 78)) ? '<div class="jp-cf-accrow"><span class="lb">&#9201;&#65039; PACING</span><p>' + c.pacing + '</p></div>' : '') +
-            (c.escalado ? '<div class="jp-cf-accrow"><span class="lb">&#9878;&#65039; ESCALADO Y ADAPTACIONES</span><p>' + c.escalado + '</p></div>' : '') +
+            (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; OBJETIVO</span><p>' + jpCfSubLabels(c.objetivo) + '</p></div>' : '') +
+            (c.tips ? '<div class="jp-cf-accrow"><span class="lb">&#128161; ESTRATEGIA &amp; COACHING TIPS</span>' + (formatTipsCF(c.tips) || '<p>' + jpCfSubLabels(c.tips) + '</p>') + '</div>' : '') +
+            ((c.pacing && !(cabeceraWod && cabeceraWod.indexOf('class="pac"') >= 0 && jpCfPlano(c.pacing).length <= 78)) ? '<div class="jp-cf-accrow"><span class="lb">&#9201;&#65039; PACING</span><p>' + jpCfSubLabels(c.pacing) + '</p></div>' : '') +
+            (c.escalado ? '<div class="jp-cf-accrow"><span class="lb">&#9878;&#65039; ESCALADO Y ADAPTACIONES</span><p>' + jpCfSubLabels(c.escalado) + '</p></div>' : '') +
           '</details>' : '') +
       '</div>';
     const body = blockEl.querySelector('.block-body');
     if(body && !body.querySelector('[data-wodb]')) body.insertAdjacentHTML('afterbegin', html);
+    if(body && (block.category === 'strength' || block.category === 'accessory')){
+      var rowsEl = body.querySelector('[data-wodb="' + block.id + '"] .jp-cf-rows');
+      if(rowsEl && !rowsEl.querySelector('[data-est]')){
+        var estRows = [].slice.call(rowsEl.children).filter(function(r){ return r.classList.contains('jp-cf-row') && r.querySelector(':scope > .jp-cf-rn'); }), nHdr = 0;
+        estRows.forEach(function(r){
+          var rn = r.querySelector(':scope > .jp-cf-rn'), mE = rn.textContent.trim().match(/^([A-Fa-f]\\d{1,2})\\s*[:.\\-]\\s*\\S/);
+          if(mE){ r.setAttribute('data-est', mE[1].toUpperCase()); nHdr++;
+            var tn = rn.firstChild; if(tn && tn.nodeType === 3) tn.nodeValue = tn.nodeValue.replace(/^\\s*[A-Fa-f]\\d{1,2}\\s*[:.\\-]\\s*/, ''); }
+        });
+        if(!nHdr) estRows.forEach(function(r, i){ r.setAttribute('data-est', 'E' + (i + 1)); });
+      }
+    }
     /* corrección de duplicación: la pizarra táctica reemplaza visualmente la lista de
        viñetas de la que se leyó (no solo en días 100% CrossFit, también en días
        híbridos donde body.cf-modo nunca se activa) — se oculta la fuente, no se borra */
@@ -41934,12 +41951,32 @@ html body.cf-disc .tactical-briefing .tb-chev, html body.cf-disc .gd-card-btn .g
 html body.cf-disc .block:has(.jp-cfboard){ background:radial-gradient(120% 70% at 50% 0%, rgba(255,85,0,.06), rgba(0,0,0,0) 60%), linear-gradient(rgba(23,23,23,.92), rgba(23,23,23,.82), rgba(10,10,10,.92)) !important; border:.8px solid rgba(38,38,38,.9) !important; border-radius:16px !important; box-shadow:none !important; margin-bottom:16px !important; overflow:visible !important; }
 html body.cf-disc .block:has(.jp-cfboard)::before, html body.cf-disc .block:has(.jp-cfboard)::after{ display:none !important; }
 html body.cf-disc .jp-cfboard{ padding:8px 10px 10px !important; margin:0 0 4px !important; }
-html body.cf-disc .jp-cfboard.jp-cf-fase-strength .jp-cf-rows, html body.cf-disc .jp-cfboard.jp-cf-fase-accessory .jp-cf-rows{ counter-reset:cfest; }
-html body.cf-disc .jp-cfboard.jp-cf-fase-strength .jp-cf-rows > .jp-cf-row:has(> .jp-cf-rn)::before, html body.cf-disc .jp-cfboard.jp-cf-fase-accessory .jp-cf-rows > .jp-cf-row:has(> .jp-cf-rn)::before{ counter-increment:cfest; content:'E' counter(cfest); flex:0 0 auto; align-self:flex-start; margin:6px 8px 0 0; color:#FF5500; font:700 12px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; }
+html body.cf-disc .jp-cfboard .jp-cf-rows > .jp-cf-row[data-est]::before{ content:attr(data-est); flex:0 0 auto; align-self:flex-start; margin:6px 12px 0 0; min-width:20px; color:#FF5500; font:700 12px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; }
 html body.cf-disc .jp-cfboard .jp-cf-rn{ flex:1 1 auto; min-width:0; }
 html body.cf-disc, html:has(body.cf-disc){ background:#0A0A0A !important; }
 html body.cf-disc .app-frame, html body.cf-disc .app-frame-edge, html body.cf-disc .app-frame-corner{ display:none !important; border:0 !important; box-shadow:none !important; }
 html body.cf-disc #mainContent, html body.cf-disc .main{ padding-bottom:180px !important; }
+/* CF · pulido: sin lineas fantasma, cronometro interno vidriado neutro, pautas con aire, boton de completar naranja vidriado */
+html body.cf-disc .jp-cfboard .wod-score, html body.cf-disc .jp-cfboard .jp-cf-notas, html body.cf-disc .jp-cfboard .jp-icr, html body.cf-disc .jp-cfboard .jp-er, html body.cf-disc .jp-cfboard .jp-cf-rest, html body.cf-disc .jp-cfboard details.jp-cf-acc{ border-top:0 !important; }
+html body.cf-disc .jp-cfboard .wod-score, html body.cf-disc .jp-cfboard .jp-cf-notas, html body.cf-disc .jp-cfboard .jp-icr, html body.cf-disc .jp-cfboard .jp-er{ margin-top:18px !important; padding-top:0 !important; }
+html body.cf-disc .jp-cfboard details.jp-cf-acc{ margin-top:16px !important; padding-top:0 !important; }
+html body.cf-disc .jp-cfboard .jp-cf-rest.running, html body.cf-disc .jp-cfboard .jp-cf-rest.listo{ background:rgba(23,23,23,.6) !important; border:1px solid #262626 !important; border-radius:14px !important; padding:3px !important; overflow:hidden; box-shadow:none !important; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+html body.cf-disc .jp-cfboard .jp-cf-rest.running::before{ background:rgba(255,255,255,.07) !important; }
+html body.cf-disc .jp-cfboard .jp-cf-rest.listo{ background:rgba(255,85,0,.08) !important; border-color:rgba(255,85,0,.4) !important; }
+html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-main, html body.cf-disc .jp-cfboard .jp-cf-rest.listo .jp-cf-rest-main{ background:transparent !important; border:0 !important; color:#F5F5F5 !important; }
+html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-plus, html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-x, html body.cf-disc .jp-cfboard .jp-cf-rest.listo .jp-cf-rest-plus, html body.cf-disc .jp-cfboard .jp-cf-rest.listo .jp-cf-rest-x{ background:rgba(38,38,38,.6) !important; border:1px solid #333 !important; color:#E5E5E5 !important; }
+html body.cf-disc .jp-cfboard .jp-cf-accrow{ margin-top:18px !important; padding:0 !important; }
+html body.cf-disc .jp-cfboard .jp-cf-accrow .lb{ display:block; margin-bottom:8px !important; font-size:calc(11.5px * var(--fzs,1)) !important; letter-spacing:.08em; }
+html body.cf-disc .jp-cfboard .jp-cf-accrow p{ line-height:1.75 !important; color:#B8B8B8 !important; }
+html body.cf-disc .jp-cfboard .jp-cf-sub{ display:block; margin:12px 0 2px; color:#FFFFFF; font-family:'Chakra Petch',sans-serif; font-weight:700; font-size:calc(12px * var(--fzs,1)); letter-spacing:.06em; }
+html body.cf-disc .jp-cfboard .jp-cf-sub.jp-cf-sub0{ margin-top:0; }
+html body.cf-disc .jp-cfboard .jp-cf-rest{ min-width:0; box-sizing:border-box; }
+html body.cf-disc .jp-cfboard .jp-cf-rest .jp-cf-rest-main{ min-width:0; }
+html body.cf-disc .jp-cfboard .jp-cf-rest .jp-cf-rest-plus, html body.cf-disc .jp-cfboard .jp-cf-rest .jp-cf-rest-x{ flex:0 0 auto; min-width:36px !important; padding:8px !important; }
+html body.cf-disc .jp-cfboard .jp-cf-accrow .jp-tip-fase{ margin-top:10px; line-height:1.7; }
+html body.cf-disc .jp-cfboard .jp-cf-accrow .jp-tip-lb{ color:#FFFFFF !important; font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; }
+html body.cf-disc .jp-done-btn.jp-done-foot:not(.on){ height:48px !important; min-height:48px !important; background:rgba(255,85,0,.08) !important; border:1px solid rgba(255,85,0,.42) !important; color:#FFD2B8 !important; box-shadow:0 0 18px rgba(255,85,0,.14), inset 0 0 12px rgba(255,85,0,.05) !important; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
+html body.cf-disc .jp-done-btn.jp-done-foot:not(.on):active{ background:rgba(255,85,0,.16) !important; }
 /* BRANDPASS_CF:END */
 </style>
 <script id="jpHudTacticoJs">
