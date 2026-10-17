@@ -16,6 +16,7 @@ import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
 import { zipFiles } from './lib/zip'
 import { CaptionBar } from './components/CaptionBar'
+import { BrandKitBar } from './components/controls/BrandKitBar'
 import { dropLegacyBackground, pruneBackgrounds, readLegacyBackground, useBackgroundImages } from './hooks/useBackgroundImage'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { usePersistentState } from './hooks/usePersistentState'
@@ -162,6 +163,11 @@ export default function App() {
         for (const k of STYLE_KEYS) Object.assign(style, { [k]: src[k] })
         return { ...d, slides: d.slides.map((s) => ({ ...s, ...style })) }
       }),
+    [setDeck],
+  )
+  /** [ KIT DE MARCA ]: aplica un preset visual a TODAS las placas (nunca toca contenido ni imágenes). */
+  const applyKit = useCallback(
+    (patch: Partial<CanvasState>) => setDeck((d) => ({ ...d, slides: d.slides.map((s) => ({ ...s, ...patch })) })),
     [setDeck],
   )
   /** Ajuste fino desde el lienzo (null = volver a la posición y escala original). */
@@ -372,6 +378,7 @@ export default function App() {
   const panel = (
     <>
       <AiGenerator onResult={applyGeneration} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />
+      <BrandKitBar state={state} onApply={applyKit} slideCount={slides.length} />
       <ControlPanel
         state={state}
         update={update}
