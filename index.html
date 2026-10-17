@@ -1945,7 +1945,21 @@ function load(){
       S.plans    = pl.plans    || {};
       S.activeId = pl.activeId || null;
       S.ui       = pl.ui       || {day:0, view:'alumnos'};
+      if(Array.isArray(pl.banco)) S.banco = pl.banco;
+      if(Array.isArray(pl.sedes)) S.sedes = pl.sedes;
+      if(pl.exportLog && typeof pl.exportLog === 'object') S.exportLog = pl.exportLog;
     }
+    /* rescate (una sola vez): banco de rutinas, sedes y exportaciones solo estaban en la copia heredada (coachjp_console_v2), que nunca se leía */
+    try{
+      const rawK = localStorage.getItem(KEY);
+      if(rawK){
+        const pl2 = rawPlanes ? JSON.parse(rawPlanes) : {};
+        const kv = JSON.parse(rawK);
+        if(pl2.banco === undefined && Array.isArray(kv.banco)){ S.banco = kv.banco; window.__jpRescate = true; }
+        if(pl2.sedes === undefined && Array.isArray(kv.sedes)){ S.sedes = kv.sedes; window.__jpRescate = true; }
+        if(pl2.exportLog === undefined && kv.exportLog && typeof kv.exportLog === 'object'){ S.exportLog = kv.exportLog; window.__jpRescate = true; }
+      }
+    }catch(eRes){}
     /* directiva ("Prevención de desborde de almacenamiento") -- el blob
        histórico coachjp_console_v2 se guardó a propósito "para siempre"
        en Checkpoint 3 como red de seguridad durante la migración a
@@ -1957,7 +1971,7 @@ function load(){
        cuando ambas claves nuevas existen y parsearon bien, nunca si algo
        falló arriba (try/catch general de load() protege este bloque
        también). */
-    if(rawLib && rawPlanes){
+    if(rawLib && rawPlanes && !window.__jpRescate){
       try{
         if(localStorage.getItem(KEY) != null){
           localStorage.removeItem(KEY);
@@ -1982,6 +1996,62 @@ function load(){
     if(nuevos) setTimeout(() => toast(nuevos + ' ejercicios oficiales incorporados a la biblioteca ✔'), 900);
   }
   try{ ensureExerciseModel(); }catch(e){ console.warn('ensureExerciseModel', e); }
+  if(window.__jpRescate){
+    const rr = jpPersistirEstado();
+    if(rr.ok) setTimeout(() => { try{ toast('🛟 Se recuperaron tu banco de rutinas y tus sedes guardados en la copia heredada'); }catch(e){} }, 1400);
+  }
+}
+/* ESCRITURA TRANSACCIONAL DEL ESTADO (Paso 1 · seguridad de datos)
+   - un solo punto de escritura para save(), guardarAhora(), el guardado blindado y el volcado de salida;
+   - las dos claves (biblioteca + planes) se escriben juntas: si la segunda falla por cupo, la primera vuelve a su valor anterior, así nunca
+     quedan en versiones distintas;
+   - banco de rutinas, sedes y registro de exportaciones (S.banco / S.sedes / S.exportLog) viajan ahora en la clave de planes: antes solo se
+     guardaban en la copia heredada coachjp_console_v2, que load() nunca leía, y se perdían al recargar;
+   - ya no se reescribe la copia completa heredada (duplicaba TODO el estado y ocupaba más de la mitad del cupo);
+   - si el contenido no cambió desde la última escritura se omite (antes se escribía dos veces por cada edición). */
+let _ultLib = null, _ultPlans = null;
+function jpPersistirEstado(){
+  const libStr = JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV });
+  const plObj = { plans: S.plans, activeId: S.activeId, ui: S.ui };
+  if(Array.isArray(S.banco)) plObj.banco = S.banco;
+  if(Array.isArray(S.sedes)) plObj.sedes = S.sedes;
+  if(S.exportLog && typeof S.exportLog === 'object') plObj.exportLog = S.exportLog;
+  const plStr = JSON.stringify(plObj);
+  if(libStr === _ultLib && plStr === _ultPlans) return { ok: true, omitido: true };
+  let prevLib = null;
+  try{ prevLib = localStorage.getItem(LIB_KEY); }catch(e){}
+  try{
+    if(libStr !== _ultLib) localStorage.setItem(LIB_KEY, libStr);
+    if(plStr !== _ultPlans) localStorage.setItem(PLANS_KEY, plStr);
+  }catch(e){
+    try{ if(prevLib != null) localStorage.setItem(LIB_KEY, prevLib); }catch(e2){}
+    return { ok: false, error: e, cuota: /quota|exceed|full/i.test(String(e && (e.name + ' ' + e.message))) };
+  }
+  _ultLib = libStr; _ultPlans = plStr;
+  try{ localStorage.removeItem(KEY); }catch(e){}
+  return { ok: true };
+}
+/* libera lo que seguro sobra (hoy: la copia completa heredada) sin tocar planes ni biblioteca */
+function jpLiberarSeguro(){
+  let liberado = 0;
+  try{ const v = localStorage.getItem(KEY); if(v != null){ liberado += v.length * 2; localStorage.removeItem(KEY); } }catch(e){}
+  return liberado;
+}
+/* cupo REAL de localStorage en este navegador (se mide escribiendo una clave temporal que se borra siempre) */
+let _cupoChars = 0;
+function jpMedirCupo(){
+  const PK = 'coachjp__probe';
+  let usado = 0;
+  try{
+    localStorage.removeItem(PK);
+    for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); usado += k.length + (localStorage.getItem(k) || '').length; }
+  }catch(e){ return 0; }
+  const cabe = n => { try{ localStorage.setItem(PK, 'x'.repeat(n)); return true; }catch(e){ return false; } finally{ try{ localStorage.removeItem(PK); }catch(e3){} } };
+  let lo = 0, n = 1 << 20, hi = 0;
+  while(n <= (8 << 20)){ if(cabe(n)){ lo = n; n *= 2; } else { hi = n; break; } }
+  if(hi){ while(hi - lo > 4096){ const mid = (lo + hi) >> 1; if(cabe(mid)) lo = mid; else hi = mid; } }
+  _cupoChars = usado + lo;
+  return _cupoChars;
 }
 let saveT;
 function save(){
@@ -1998,16 +2068,9 @@ function save(){
   saveT = setTimeout(()=>{
     const writeNow = () => {
       const _cred = (typeof snapshotCredenciales === 'function') ? snapshotCredenciales() : null;
-      try{
-        /* Checkpoint 3: el blob único coachjp_console_v2 se congela como
-           respaldo histórico (nunca se le vuelve a escribir) -- de acá en
-           adelante todo guarda va a las dos claves nuevas: LIB_KEY
-           (compartida) y PLANS_KEY (propia de esta rama). */
-        localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
-        localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
-        try{ pintarBadgeAlmacen(); }catch(eB){}
-      }
-      catch(e){ toast('No se pudo guardar (almacenamiento lleno)', 'err'); }
+      const r = jpPersistirEstado();
+      if(r.ok){ try{ pintarBadgeAlmacen(); }catch(eB){} }
+      else if(!window.jpAlarma) toast('No se pudo guardar (almacenamiento lleno)', 'err');      /* con el módulo de alarma activo, el aviso lo da el guardado blindado */
       try{ if(_cred) reponerCredenciales(_cred); }catch(eC){}
     };
     if(typeof requestIdleCallback === 'function') requestIdleCallback(writeNow, { timeout: 500 });
@@ -2049,11 +2112,9 @@ function reponerCredenciales(snap){
 function guardarAhora(){
   clearTimeout(saveT);
   const credenciales = snapshotCredenciales();
-  try{
-    localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
-    localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
-    try{ pintarBadgeAlmacen(); }catch(e){}
-  }catch(e){ toast('No se pudo guardar (almacenamiento lleno)', 'err'); }
+  const rGa = jpPersistirEstado();
+  if(rGa.ok){ try{ pintarBadgeAlmacen(); }catch(e){} }
+  else toast('No se pudo guardar (almacenamiento lleno)', 'err');
   reponerCredenciales(credenciales);
   /* save() (debounced) además de la escritura inmediata de arriba: es el
      punto donde se engancha la sincronización en la nube (window.save), que
@@ -2115,8 +2176,8 @@ function restaurarBackupDesdeTexto(txt){
   ['ai', 'aiCfg', 'apiKey', 'apiKeys', 'keys', 'credenciales'].forEach(k => { delete nuevo[k]; });
   S = nuevo;
   try{
-    localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
-    localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
+    const rRb = jpPersistirEstado();
+    if(!rRb.ok) throw (rRb.error || new Error('quota'));
     if(otras && typeof otras === 'object'){
       Object.keys(otras).forEach(k => { if(k !== PLANS_KEY && PLANES_KEYS_RAMAS.indexOf(k) >= 0) localStorage.setItem(k, JSON.stringify(otras[k])); });
     }
@@ -2137,19 +2198,21 @@ function usoAlmacenBytes(){
 }
 let _avisoCupoMostrado = false;
 function pintarBadgeAlmacen(){
-  const bytes = usoAlmacenBytes(), pct = bytes / LS_LIMITE_BYTES * 100;
-  const txt = '💾 ' + (bytes / 1048576).toFixed(2) + ' / 5 MB';
+  /* cupo REAL medido en este navegador (jpMedirCupo); hasta medirlo se usa el valor típico de 10 MB y no se dispara ningún aviso */
+  const medido = _cupoChars > 0, bytes = usoAlmacenBytes(), cupoBytes = medido ? Math.max(_cupoChars * 2, bytes) : 10 * 1048576;
+  const pct = bytes / cupoBytes * 100;
+  const txt = '💾 ' + (bytes / 1048576).toFixed(2) + ' / ' + (cupoBytes / 1048576).toFixed(cupoBytes >= 20 * 1048576 ? 0 : 1) + ' MB';
   document.querySelectorAll('[data-lsbadge]').forEach(el => {
     el.textContent = txt;
     el.style.display = '';
     el.style.color = pct >= 90 ? '#FF6B57' : (pct >= 70 ? '#FFB703' : '');
     el.style.borderColor = pct >= 90 ? 'rgba(255,107,87,.6)' : (pct >= 70 ? 'rgba(255,183,3,.6)' : '');
-    el.title = pct >= 70 ? 'Almacenamiento al ' + Math.round(pct) + '%: descargá un backup (💾 EXPORTAR BACKUP JSON)'
-                         : 'Espacio usado del almacenamiento local de este navegador (límite aprox. 5 MB)';
+    el.style.cursor = 'pointer';
+    el.title = (medido ? (pct >= 70 ? 'Almacenamiento al ' + Math.round(pct) + '%. ' : 'Espacio usado del almacenamiento local de este navegador. ') : '') + 'Tocá para ver qué ocupa espacio y liberarlo sin tocar tus planes.';
   });
-  if(pct >= 80 && !_avisoCupoMostrado){
+  if(medido && pct >= 80 && !_avisoCupoMostrado){
     _avisoCupoMostrado = true;
-    toast('⚠️ Almacenamiento al ' + Math.round(pct) + '% del límite: descargá un backup con 💾 EXPORTAR BACKUP JSON', 'warn');
+    toast('⚠️ Almacenamiento al ' + Math.round(pct) + '% del límite: tocá 💾 arriba para liberar espacio y descargá un backup', 'warn');
   }
 }
 document.addEventListener('click', e => {
@@ -2777,6 +2840,15 @@ function blockAlerts(ath, b){
 /* ============================================================
    6. NAVEGACIÓN + BOOT DE UI
    ============================================================ */
+/* el alumno activo se muestra en varios lugares (panel lateral, selectores, píldora, encabezado del Builder): cualquier cambio los sincroniza a todos */
+function sincronizarAlumnoActivo(){
+  try{
+    const a = active();
+    const side = document.getElementById('sideActive'); if(side) side.textContent = a ? fullName(a) : '— ninguno —';
+    ['selActive', 'expAth', 'sbAth'].forEach(id => { const el = document.getElementById(id); if(el && el.value !== (S.activeId || '')) el.value = S.activeId || ''; });
+    if(typeof pintarActivePill === 'function') pintarActivePill();
+  }catch(e){}
+}
 function go(view){
   S.ui.view = view; save();
   $$('.view').forEach(v => v.style.display = 'none');
@@ -2787,6 +2859,7 @@ function go(view){
   if(view === 'builder')    renderBuilder();
   if(view === 'exportar')   renderExport();
   if(view === 'datos')      renderData();
+  sincronizarAlumnoActivo();
   window.scrollTo({top:0, behavior:'smooth'});
 }
 function fillSelect(el, arr, all){
@@ -59499,6 +59572,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
         try{ save(); }catch(x){}
         if(typeof renderBuilder === 'function') renderBuilder();
         if(typeof renderDay === 'function') renderDay();
+        sincronizarAlumnoActivo();
         setTimeout(repintar, 120);
       });
       document.getElementById('sbSede').addEventListener('change', e => {
@@ -61905,14 +61979,12 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     pend = setTimeout(function(){
       var escribir = function(){
         try{
-          /* Checkpoint 3: además de la copia unificada de siempre (KEY,
-             respaldo redundante), este es el guardado REALMENTE activo en
-             tiempo de ejecución (pisa a los wraps anteriores) -- así que
-             tiene que escribir también en las claves nuevas, o el resto del
-             sistema de bifurcación quedaría sin su red de seguridad. */
-          localStorage.setItem(KEY, JSON.stringify(S));
-          localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV }));
-          localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui }));
+          /* escritura transaccional compartida (ver jpPersistirEstado): ya no se duplica todo el estado en la copia heredada; si falla por cupo
+             se libera lo que seguro sobra y se reintenta UNA vez antes de avisar */
+          var rr = jpPersistirEstado();
+          if(!rr.ok && rr.cuota && jpLiberarSeguro() > 0) rr = jpPersistirEstado();
+          if(!rr.ok) throw rr.error || new Error('quota');
+          try{ pintarBadgeAlmacen(); }catch(eB){}
           if(fallando){
             fallando = false;
             try{ toast('Guardado restablecido ✔'); }catch(e){}
@@ -61929,6 +62001,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
             '<b>Backup / Datos</b>. Después liberá espacio borrando alumnos viejos o datos de otros sitios.</p>',
             [ { lb:'⬇ Bajar backup de emergencia', tipo:'go', cierra:false,
                 fn:function(){ if(bajarBackup('EMERGENCIA')) { try{ toast('Backup descargado ✔'); }catch(x){} } } },
+              { lb:'🧹 Optimizar almacenamiento', cierra:false, fn:function(){ if(window.jpAlmacen) window.jpAlmacen.abrir(); } },
               { lb:'Reintentar guardado', fn:function(){ fallando = false; window.save(); } },
               { lb:'Entiendo el riesgo' } ]);
         }
@@ -61953,13 +62026,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
      actúa en el instante de salida. */
   function _volcadoSincrono(){
     clearTimeout(pend);
-    try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){}
-    /* Checkpoint 3: el volcado de emergencia (pagehide/beforeunload) también
-       tiene que cubrir las claves nuevas -- si sólo protegiera KEY, cerrar
-       la pestaña dentro de la ventana de debounce podía perder la última
-       edición de las claves que load() realmente usa. */
-    try{ localStorage.setItem(LIB_KEY, JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV })); }catch(e){}
-    try{ localStorage.setItem(PLANS_KEY, JSON.stringify({ plans: S.plans, activeId: S.activeId, ui: S.ui })); }catch(e){}
+    try{ jpPersistirEstado(); }catch(e){}
   }
   window.addEventListener('pagehide', _volcadoSincrono);
   window.addEventListener('beforeunload', _volcadoSincrono);
@@ -70330,5 +70397,114 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   window.addEventListener('resize', cerrar);
   document.addEventListener('scroll', function(e){ if(UI.menu && !(e.target.closest && e.target.closest('#jpAc'))) cerrar(); }, true);
   window.jpAutoComp = { sugerir: sugerir, plantillas: PLANTILLAS, indice: indice, porIndice: porIndice, aprender: aprender };
+})();
+</script>
+<script>
+/* ============================================================
+   OPTIMIZADOR DE ALMACENAMIENTO (Paso 1 · seguridad de datos)
+   - mide el cupo REAL de este navegador al abrir (en reposo) y repinta el medidor 💾
+   - tocar el medidor abre un panel: qué ocupa espacio (por clave y por parte del estado) y qué se puede liberar
+   - NUNCA ofrece borrar la biblioteca, los alumnos, los planes ni las claves de IA; todo lo que se libera pide confirmación
+   ============================================================ */
+(function(){
+  'use strict';
+  var KB = function(chars){ return (chars * 2 / 1024); };
+  function fmt(chars){ var k = KB(chars); return k >= 1024 ? (k / 1024).toFixed(2) + ' MB' : k.toFixed(0) + ' KB'; }
+  function esc(t){ return String(t == null ? '' : t).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function clasificar(k){
+    if(k === LIB_KEY || k === PLANS_KEY || PLANES_KEYS_RAMAS.indexOf(k) >= 0) return { tipo: 'esencial', lb: 'Tus alumnos, biblioteca y planes' };
+    if(AI_CFG_KEYS.indexOf(k) >= 0) return { tipo: 'esencial', lb: 'Configuración de IA' };
+    if(k === 'coachjp_device') return { tipo: 'esencial', lb: 'Identificador de este dispositivo' };
+    if(k === KEY) return { tipo: 'heredada', lb: 'Copia completa heredada (duplicado)' };
+    if(/^coachjp_.+_progress_v1$/.test(k)) return { tipo: 'preview', lb: 'Progreso de vistas previas de la app del alumno' };
+    return { tipo: 'otro', lb: 'Datos de módulos del Builder' };
+  }
+  function filas(){
+    var out = [];
+    try{ for(var i = 0; i < localStorage.length; i++){ var k = localStorage.key(i); var v = localStorage.getItem(k) || ''; out.push({ k: k, chars: k.length + v.length, c: clasificar(k) }); } }catch(e){}
+    return out.sort(function(a, b){ return b.chars - a.chars; });
+  }
+  function partesEstado(){
+    var p = [];
+    var med = function(lb, o){ try{ p.push({ lb: lb, chars: JSON.stringify(o).length }); }catch(e){} };
+    med('Alumnos', S.athletes); med('Ejercicios (biblioteca)', S.exercises); med('Planes', S.plans); med('Banco de rutinas', S.banco); med('Sedes', S.sedes);
+    return p.sort(function(a, b){ return b.chars - a.chars; });
+  }
+  function planesGrandes(){
+    var r = [];
+    Object.keys(S.plans || {}).forEach(function(id){
+      var a = (S.athletes || []).find(function(x){ return x.id === id; });
+      try{ r.push({ nom: a ? fullName(a) : id, chars: JSON.stringify(S.plans[id]).length }); }catch(e){}
+    });
+    return r.sort(function(a, b){ return b.chars - a.chars; }).slice(0, 5);
+  }
+  function estilos(){
+    if(document.getElementById('jpAlmCss')) return;
+    var st = document.createElement('style'); st.id = 'jpAlmCss';
+    st.textContent = '#jpAlm{position:fixed;inset:0;z-index:100001;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px}' +
+      '#jpAlm .bx{width:min(640px,100%);max-height:90vh;overflow:auto;background:#12161c;border:1px solid #2c3441;border-radius:14px;padding:18px;color:#e6e8ec;font-size:13.5px}' +
+      '#jpAlm h3{margin:0 0 4px;font-size:16px}#jpAlm .sub{color:#8b94a3;margin-bottom:12px}' +
+      '#jpAlm .bar{height:8px;border-radius:99px;background:#232a35;overflow:hidden;margin:6px 0 14px}#jpAlm .bar i{display:block;height:100%;background:#3ecf7a}' +
+      '#jpAlm .bar.w i{background:#FFB703}#jpAlm .bar.r i{background:#ff5d5d}' +
+      '#jpAlm table{width:100%;border-collapse:collapse;margin:6px 0 12px}#jpAlm td{padding:6px 4px;border-top:1px solid #232a35;vertical-align:middle}' +
+      '#jpAlm td.n{text-align:right;white-space:nowrap;color:#aab2bf}#jpAlm .tag{font-size:11px;color:#8b94a3}' +
+      '#jpAlm input[type=checkbox]{display:inline-block;width:auto;margin:0 8px 0 0;vertical-align:middle}' +
+      '#jpAlm .lock{opacity:.6}#jpAlm h4{margin:14px 0 4px;font-size:12px;letter-spacing:.06em;color:#8b94a3;text-transform:uppercase}' +
+      '#jpAlm .acc{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}#jpAlm button{cursor:pointer;border-radius:9px;padding:9px 14px;border:1px solid #2c3441;background:#1a2029;color:#e6e8ec;font-weight:600}' +
+      '#jpAlm button.go{background:#D2793F;border-color:#D2793F;color:#0A0C10}';
+    document.head.appendChild(st);
+  }
+  function cerrar(){ var m = document.getElementById('jpAlm'); if(m) m.remove(); }
+  function abrir(){
+    estilos(); cerrar();
+    var usadoChars = usoAlmacenBytes() / 2;
+    var cupoChars = Math.max(_cupoChars || 0, usadoChars) || (5 * 1048576);
+    var pct = Math.min(100, usadoChars / cupoChars * 100);
+    var fl = filas();
+    var libres = fl.filter(function(r){ return r.c.tipo === 'heredada' || r.c.tipo === 'preview'; });
+    var libresChars = libres.reduce(function(a, r){ return a + r.chars; }, 0);
+    var h = '<div class="bx"><h3>💾 Almacenamiento del Builder</h3>' +
+      '<div class="sub">' + fmt(usadoChars) + ' usados de ' + (_cupoChars ? fmt(cupoChars) + ' (cupo real de este navegador)' : 'aprox. ' + fmt(cupoChars)) + ' · ' + Math.round(pct) + '%</div>' +
+      '<div class="bar ' + (pct >= 90 ? 'r' : pct >= 70 ? 'w' : '') + '"><i style="width:' + pct.toFixed(1) + '%"></i></div>' +
+      '<h4>Qué ocupa espacio</h4><table>' +
+      fl.slice(0, 12).map(function(r){
+        var libre = r.c.tipo === 'heredada' || r.c.tipo === 'preview';
+        return '<tr class="' + (r.c.tipo === 'esencial' ? 'lock' : '') + '"><td>' +
+          (libre ? '<input type="checkbox" data-almk="' + esc(r.k) + '"' + (r.c.tipo === 'heredada' ? ' checked' : '') + '> ' : '🔒 ') +
+          esc(r.c.lb) + '<div class="tag">' + esc(r.k) + '</div></td><td class="n">' + fmt(r.chars) + '</td></tr>';
+      }).join('') + '</table>' +
+      '<h4>Dentro de tus datos</h4><table>' +
+      partesEstado().map(function(p){ return '<tr><td>' + esc(p.lb) + '</td><td class="n">' + fmt(p.chars) + '</td></tr>'; }).join('') + '</table>' +
+      '<h4>Planes más pesados</h4><table>' +
+      planesGrandes().map(function(p){ return '<tr><td>' + esc(p.nom) + '</td><td class="n">' + fmt(p.chars) + '</td></tr>'; }).join('') + '</table>' +
+      '<div class="sub">🔒 = nunca se toca desde acá. Las casillas marcan lo que se puede liberar sin perder planes (' + fmt(libresChars) + ' disponibles). ' +
+      'La copia heredada ya no se vuelve a generar. Para ganar más espacio, descargá un backup y borrá alumnos que ya no uses desde Alumnos.</div>' +
+      '<div class="acc"><button type="button" class="go" data-almgo="1">🧹 Liberar lo seleccionado</button>' +
+      '<button type="button" data-almbk="1">⬇ Bajar backup</button><button type="button" data-almx="1">Cerrar</button></div></div>';
+    var m = document.createElement('div'); m.id = 'jpAlm'; m.innerHTML = h; document.body.appendChild(m);
+  }
+  function liberarSeleccion(){
+    var m = document.getElementById('jpAlm'); if(!m) return;
+    var ks = [].slice.call(m.querySelectorAll('[data-almk]:checked')).map(function(c){ return c.getAttribute('data-almk'); });
+    if(!ks.length){ toast('No hay nada seleccionado para liberar', 'warn'); return; }
+    var total = 0; ks.forEach(function(k){ try{ total += k.length + (localStorage.getItem(k) || '').length; }catch(e){} });
+    if(!confirm('Se van a liberar ' + ks.length + ' elemento(s) (' + fmt(total) + '):\n\n• ' + ks.join('\n• ') + '\n\nNo se toca ningún alumno, biblioteca ni plan. ¿Continuar?')) return;
+    ks.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
+    try{ jpMedirCupo(); pintarBadgeAlmacen(); }catch(e){}
+    toast('🧹 Liberados ' + fmt(total));
+    abrir();
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('[data-lsbadge]')){ e.preventDefault(); abrir(); return; }
+    if(t.closest('[data-almgo]')){ liberarSeleccion(); return; }
+    if(t.closest('[data-almbk]')){ try{ exportarBackup(); }catch(x){} return; }
+    if(t.closest('[data-almx]') || t.id === 'jpAlm'){ cerrar(); }
+  });
+  window.jpAlmacen = { abrir: abrir, cerrar: cerrar, filas: filas };
+  /* cupo real: se mide una vez, en reposo, poco después de abrir (la sonda escribe y borra una clave temporal) */
+  function medir(){ try{ jpMedirCupo(); pintarBadgeAlmacen(); }catch(e){} }
+  setTimeout(function(){ if(typeof requestIdleCallback === 'function') requestIdleCallback(medir, { timeout: 4000 }); else medir(); }, 2500);
 })();
 </script>
