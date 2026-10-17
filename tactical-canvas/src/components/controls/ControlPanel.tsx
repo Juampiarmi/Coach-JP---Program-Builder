@@ -16,7 +16,7 @@ import { AthleticEditor } from './AthleticEditor'
 import { WorkoutEditor } from './WorkoutEditor'
 import { FixEditor } from './FixEditor'
 import { QuoteEditor } from './QuoteEditor'
-import { CitationSuggester, HookGenerator } from './AiAssist'
+import { CitationSuggester, HookGenerator, HookScorer } from './AiAssist'
 import { TYPE_PRESETS } from '../../lib/typography'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
@@ -252,6 +252,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <Range value={state.remateGap ?? 0} onChange={(remateGap) => update({ remateGap })} min={0} max={60} step={2} suffix="%" />
           </Field>
         )}
+        {slideIndex === 0 && <HookScorer {...ai} />}
         {slideIndex === 0 && <HookGenerator {...ai} />}
         </>
         )}

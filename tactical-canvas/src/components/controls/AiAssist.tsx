@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { generateHooks, HOOK_ANGLE_LABEL, loadAiSettings, RateLimitError, suggestCitation, type Discipline, type HookVariant } from '../../lib/ai'
+import { generateHooks, HOOK_ANGLE_LABEL, loadAiSettings, RateLimitError, scoreHook, suggestCitation, type Discipline, type HookScore, type HookVariant } from '../../lib/ai'
 import type { CanvasState } from '../../types'
 
 interface Ctx {
@@ -104,6 +104,78 @@ export function CitationSuggester({ state, update, topic, discipline }: Ctx) {
         <p className={`font-mono text-[10px] leading-relaxed ${busy ? 'animate-pulse text-gold/90' : 'text-fire'}`}>{note}</p>
       ) : (
         <p className="font-mono text-[9px] leading-relaxed text-steel/60">Verificá la cita en PubMed antes de publicar.</p>
+      )}
+    </div>
+  )
+}
+
+const tone = (n: number) => (n >= 8 ? 'text-emerald-400' : n >= 6 ? 'text-gold' : 'text-fire')
+
+/** [ 🎯 PUNTAJE DEL GANCHO ]: evalúa el titular de la portada (1-10) y propone 3 variantes. */
+export function HookScorer({ state, update, topic, discipline }: Ctx) {
+  const { busy, note, run } = useAiTask()
+  const [res, setRes] = useState<HookScore | null>(null)
+  const [scored, setScored] = useState('')
+  const headline = `${state.headlineA} ${state.headlineB}`.replace(/\*/g, '').replace(/\s+/g, ' ').trim()
+  const stale = res && scored !== headline
+  return (
+    <div className="space-y-2 rounded-lg border border-line bg-surface-2/50 p-2.5">
+      <button
+        type="button"
+        disabled={!headline}
+        onClick={() =>
+          run((signal, onStatus) => scoreHook(loadAiSettings(), { topic: topic || headline, discipline, headline }, signal, onStatus), (r) => {
+            setRes(r)
+            setScored(headline)
+          })
+        }
+        className={`${pill} ${busy ? 'border-fire/60 bg-fire/10 text-fire' : 'border-fire/40 text-fire hover:bg-fire/10'}`}
+        aria-busy={busy}
+      >
+        {busy ? '[ EVALUANDO… · CANCELAR ]' : res ? '[ 🎯 RE-EVALUAR GANCHO ]' : '[ 🎯 PUNTAJE DEL GANCHO ]'}
+      </button>
+      {note && <p className={`font-mono text-[10px] leading-relaxed ${busy ? 'animate-pulse text-gold/90' : 'text-fire'}`}>{note}</p>}
+      {res && (
+        <div className={`space-y-2 ${stale ? 'opacity-50' : ''}`}>
+          <div className="flex items-end gap-3">
+            <p className={`font-display text-4xl leading-none font-bold ${tone(res.score)}`}>
+              {res.score}
+              <span className="text-base text-steel">/10</span>
+            </p>
+            <div className="grid flex-1 grid-cols-3 gap-1 font-mono text-[9px] tracking-wider text-steel uppercase">
+              {(
+                [
+                  ['Claridad', res.clarity],
+                  ['Impacto', res.impact],
+                  ['Retención', res.retention],
+                ] as const
+              ).map(([k, v]) => (
+                <span key={k} className="rounded border border-line px-1 py-0.5 text-center">
+                  {k} <b className={tone(v)}>{v}</b>
+                </span>
+              ))}
+            </div>
+          </div>
+          {res.verdict && <p className="text-[11px] leading-snug text-steel">{res.verdict}</p>}
+          {stale && <p className="font-mono text-[9px] text-gold">El titular cambió: re-evaluá para un puntaje actualizado.</p>}
+          {res.variants.map((v, i) => {
+            const on = state.headlineA === v.white && state.headlineB === v.accent
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => update({ headlineA: v.white, headlineB: v.accent })}
+                aria-pressed={on}
+                className={`block w-full rounded-lg border px-3 py-2 text-left transition ${on ? 'border-fire/70 bg-fire/10' : 'border-line hover:border-cyan/50'}`}
+              >
+                <span className="text-[12px] leading-snug font-bold text-white">
+                  {v.white} <span className="text-fire">{v.accent}</span>
+                </span>
+                {v.why && <span className="mt-0.5 block font-mono text-[9px] leading-relaxed text-steel/80">{v.why}</span>}
+              </button>
+            )
+          })}
+        </div>
       )}
     </div>
   )

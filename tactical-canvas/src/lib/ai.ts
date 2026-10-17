@@ -1663,6 +1663,60 @@ Forma exacta: { "hooks": [ { "angle": "contrarian", "white": string, "accent": s
   return out
 }
 
+export interface HookScore {
+  /** Puntaje global 1-10 */
+  score: number
+  /** Subpuntajes 1-10 */
+  clarity: number
+  impact: number
+  retention: number
+  /** Diagnóstico en una oración: qué funciona y qué le falta */
+  verdict: string
+  variants: { white: string; accent: string; why: string }[]
+}
+
+const clamp10 = (v: unknown) => Math.min(10, Math.max(1, Math.round(Number(v) || 0)))
+
+/**
+ * Puntaje del gancho: la IA evalúa el titular de la portada (claridad, impacto, retención) del 1 al 10
+ * y propone 3 variantes más directas en voz Coach JP. Rúbrica explícita para que el número no sea humo.
+ */
+export async function scoreHook(
+  settings: AiSettings,
+  ctx: { topic: string; discipline: Discipline; headline: string },
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<HookScore> {
+  const focus = DISCIPLINE_RULE[ctx.discipline]
+  const user = `Sos editor de contenido de alto rendimiento para Instagram (COACH JP). Evaluá el titular de la PORTADA de un carrusel.
+Titular: «${ctx.headline}».
+Tema del carrusel: «${ctx.topic || ctx.headline}».
+${focus ? `${focus}
+` : ''}RÚBRICA (1 a 10 cada una, sé exigente: un 8+ tiene que frenar el scroll de verdad):
+- clarity: ¿se entiende en 2 segundos, sin contexto? Penalizá jerga, frases largas (más de 12 palabras) y dobles negaciones.
+- impact: ¿choca con una creencia común, promete algo concreto o nombra un error que el lector comete? Penalizá lo genérico («la importancia de…», «tips para…»).
+- retention: ¿abre una pregunta que obliga a deslizar? Penalizá si ya responde todo en la portada.
+- score: promedio ponderado (impact 40 %, retention 35 %, clarity 25 %), redondeado.
+- verdict: una oración en español argentino neutro: qué funciona y qué le falta.
+Después escribí 3 variantes MEJORES en MAYÚSCULAS (5 a 12 palabras cada una), partidas en "white" (base) y "accent" (remate en naranja, máx 6 palabras), con un ángulo distinto cada una (desmitificar, error concreto, curiosidad con dato real). Voz Coach JP: directa, de sala, voseo, sin clickbait vacío, sin emojis ni signos de exclamación, sin cifras inventadas. "why": por qué rinde más, en 1 línea.
+Forma exacta: { "score": number, "clarity": number, "impact": number, "retention": number, "verdict": string, "variants": [ 3 objetos { "white": string, "accent": string, "why": string } ] }`
+  const res = await askJson(settings, user, signal, onStatus)
+  const variants = (Array.isArray(res.variants) ? res.variants : [])
+    .map(obj)
+    .map((v) => ({ white: upper(first(v.white, v.blanco)), accent: upper(first(v.accent, v.remate)), why: str(first(v.why, v.porque)) }))
+    .filter((v) => v.white || v.accent)
+    .slice(0, 3)
+  if (!res.score && !variants.length) throw new Error('La IA no devolvió una evaluación utilizable. Probá de nuevo.')
+  return {
+    score: clamp10(res.score),
+    clarity: clamp10(res.clarity),
+    impact: clamp10(res.impact),
+    retention: clamp10(res.retention),
+    verdict: str(res.verdict),
+    variants,
+  }
+}
+
 export interface FamousQuote {
   /** Frase en español (traducción fiel si el original es en otro idioma) */
   quote: string
