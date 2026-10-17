@@ -89,6 +89,7 @@ export const DEFAULT_STATE: CanvasState = {
   ],
   workoutNote: 'Progresión: cuando completes todas las series con RIR 3, subí 2,5 kg.',
   slideCounter: false,
+  storySticker: 'none',
   seamlessThread: false,
   panoramaImageId: null,
   fixWrongLabel: 'INCORRECTO',

@@ -16,6 +16,8 @@ import { WorkoutTemplate } from './templates/WorkoutTemplate'
 import { FixTemplate } from './templates/FixTemplate'
 import { SlideCounter } from './SlideCounter'
 import { PanoramaLayer, ThreadLayer } from './SeamlessLayer'
+import { StickerZone } from './StickerZone'
+import { stickerReserve } from '../../lib/remix'
 import { AthleticLayout } from './templates/AthleticLayout'
 import { athleticPalette, LayoutOpusBrutalist } from './templates/LayoutOpusBrutalist'
 import { StatementTemplate } from './templates/StatementTemplate'
@@ -162,7 +164,10 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const adaptive = isStory && state.contentAlign === 'auto' && state.template !== 'repeat'
   const { mainRef, contentRef, fit, spread } = useAutoFit([state, hasBg], adaptive ? STORY_BOOST : 1, adaptive && state.template !== 'manifesto')
   const scale = baseScale * fit
-  const pad = PAD[state.aspect]
+  // Remix 9:16: la zona del sticker (encuesta / preguntas / link) se reserva debajo del contenido.
+  const reserve = stickerReserve(state)
+  const pad = reserve ? { ...PAD.story, bottom: PAD.story.bottom + reserve } : PAD[state.aspect]
+  const sticker = reserve ? state.storySticker : 'none'
   // Tipografía del titular (fuente elegida o preset BRUTALIST / TACTICAL CLEAN / EDITORIAL).
   const font = headlineType(state)
   const isStatement = state.template === 'statement'
@@ -245,6 +250,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
           ) : (
             <AthleticLayout state={state} w={w} h={h} cutout={bgImage} slideIndex={slideIndex} under={athleticThread} />
           )}
+          <StickerZone kind={sticker} w={w} bottom={STORY_SAFE} side={84 * (w / 1080)} accent={state.accentSwap ? '#0EA5E9' : '#F97316'} muted={state.athleticTheme === 'dark' ? '#94A3B8' : '#525252'} />
           {state.slideCounter && (
             <SlideCounter
               index={slideIndex}
@@ -289,6 +295,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
       {state.slideCounter && (
         <SlideCounter index={slideIndex} count={slideCount} top={pad.top} bottom={pad.bottom + 20 * baseScale} side={SIDE} scale={baseScale} accent={palette.accent} muted={palette.muted} />
       )}
+      <StickerZone kind={sticker} w={w} bottom={STORY_SAFE} side={SIDE} accent={palette.accent} muted={palette.muted} />
       {hasBg && (
         // Foto, velo y degradé en su propio contexto de apilado (z 0): ningún filtro alcanza al texto.
         <div style={{ position: 'absolute', inset: 0, zIndex: 0, isolation: 'isolate', overflow: 'hidden', pointerEvents: 'none' }}>

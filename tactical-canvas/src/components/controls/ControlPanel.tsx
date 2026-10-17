@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { CHART_PRESETS, SAMPLES } from '../../defaults'
 import { DEFAULT_AUTHOR, HEADLINE_FONTS, MANIFESTO_TAGS, TAG_PRESETS } from '../../lib/brand'
 import { loadBackground } from '../../lib/image'
-import type { Accent, BgStyle, RepeatDirection, TypePreset, CanvasState, ContentAlign, DiagramData, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, TemplateId } from '../../types'
+import type { Accent, BgStyle, RepeatDirection, TypePreset, CanvasState, ContentAlign, DiagramData, DiagramAccent, DiagramKind, RepeatAccent, RepeatMode, ThemeId, ChartConfig, ChartMode, CompareCard, CurveShape, HeadlineFont, ManifestoStyle, StickerKind, TemplateId } from '../../types'
 import { DIAGRAM_ACCENT_HEX, DIAGRAM_ACCENT_LABEL, PAPER_TEMPLATES, REPEAT_ACCENT_LABEL, THEME_LABEL } from '../../lib/theme'
 import { RadarEditor } from './RadarEditor'
 import { CHART_BY_DISCIPLINE, isCadenceSample } from '../../lib/chartPillar'
@@ -16,6 +16,7 @@ import { AthleticEditor } from './AthleticEditor'
 import { WorkoutEditor } from './WorkoutEditor'
 import { FixEditor } from './FixEditor'
 import { SeamlessControls } from './SeamlessControls'
+import { STICKER_OPTIONS, STICKER_SPEC } from '../../lib/remix'
 import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator, HookScorer } from './AiAssist'
 import { TYPE_PRESETS } from '../../lib/typography'
@@ -820,6 +821,20 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
 
       <Section index="05" title="Carrusel continuo" summary={[state.seamlessThread && 'Hilo', state.panoramaImageId && 'Panorámica'].filter(Boolean).join(' · ') || 'Placas sueltas'} defaultOpen={Boolean(state.seamlessThread || state.panoramaImageId)}>
         <SeamlessControls state={state} update={update} addImage={addImage} resolveImage={resolveImage} slideCount={slideCount} />
+      </Section>
+
+      <Section index="06" title="Historias 9:16" summary={state.aspect === 'story' ? `Sticker: ${STICKER_OPTIONS.find((o) => o.value === (state.storySticker ?? 'none'))?.label}` : 'Feed 4:5'} defaultOpen={state.aspect === 'story'}>
+        <p className="font-mono text-[10px] leading-relaxed tracking-[0.06em] text-steel/80">
+          {state.aspect === 'story'
+            ? 'Zona reservada para el sticker de esta historia: el texto se reacomoda por encima y la zona queda marcada para pegarlo en Instagram.'
+            : 'Con [ ⇅ REMIX 9:16 ] el carrusel entero pasa a historias con stickers asignados solos. [ ⬇ FEED + HISTORIAS ] exporta los dos formatos en un ZIP.'}
+        </p>
+        <Field label="Sticker de esta placa" plain>
+          <Segmented<StickerKind> value={state.storySticker ?? 'none'} onChange={(storySticker) => update({ storySticker })} options={STICKER_OPTIONS} size="sm" />
+        </Field>
+        {(state.storySticker ?? 'none') !== 'none' && (
+          <p className="font-mono text-[9px] leading-relaxed text-steel/60">▸ {STICKER_SPEC[state.storySticker as Exclude<StickerKind, 'none'>].hint}</p>
+        )}
       </Section>
 
       {state.template !== 'manifesto' && state.template !== 'repeat' && (

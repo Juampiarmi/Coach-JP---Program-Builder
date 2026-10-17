@@ -7,6 +7,8 @@ export type RepeatMode = 'diagonal' | 'echo' | 'kinetic' | 'justified'
 export type ManifestoStyle = 'bar' | 'quotes'
 export type ContentAlign = 'auto' | 'top' | 'center' | 'bottom'
 export type AspectId = 'feed' | 'story'
+/** Zona de sticker reservada en la historia 9:16 (remix multiformato) */
+export type StickerKind = 'none' | 'poll' | 'question' | 'slider' | 'link'
 export type Accent = 'orange' | 'cyan' | 'gold' | 'white' | 'gray'
 export type HeadlineFont = 'chakra' | 'barlow' | 'inter' | 'serif'
 /** Presets tipográficos rápidos (none = la fuente y medidas elegidas a mano) */
@@ -234,6 +236,8 @@ export interface CanvasState {
   seamlessThread: boolean
   /** Carrusel continuo: foto panorámica repartida entre todas las placas (id en IndexedDB) */
   panoramaImageId: string | null
+  /** Historia 9:16: zona reservada para el sticker de Instagram (el contenido se acomoda por encima) */
+  storySticker: StickerKind
   /** Contador «01 / 05» + «DESLIZÁ →» en las placas del carrusel (se exporta) */
   slideCounter: boolean
   athleticBg: AthleticBg

@@ -15,6 +15,7 @@ import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline,
 import { ASPECTS } from './lib/brand'
 import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
 import { zipFiles } from './lib/zip'
+import { remixToStories } from './lib/remix'
 import { CaptionBar } from './components/CaptionBar'
 import { BrandKitBar } from './components/controls/BrandKitBar'
 import { dropLegacyBackground, pruneBackgrounds, readLegacyBackground, useBackgroundImages } from './hooks/useBackgroundImage'
@@ -253,12 +254,12 @@ export default function App() {
   const setCaption = (caption: string) => setDeck((d) => ({ ...d, caption }))
   const caption = deck.caption ?? ''
 
-  /** Recorre la secuencia y renderiza cada placa a 4x con nombre numerado. */
-  const renderAll = async () => {
-    const { w, h } = ASPECTS[state.aspect]
+  /** Recorre la secuencia y renderiza cada placa a 4x con nombre numerado (prefix = carpeta del ZIP). */
+  const renderAll = async (aspect: AspectId = state.aspect, prefix = '', label = 'RENDER') => {
+    const { w, h } = ASPECTS[aspect]
     const files: { blob: Blob; name: string }[] = []
     for (let i = 0; i < slides.length; i++) {
-      setExporting(`RENDER ${i + 1}/${slides.length}…`)
+      setExporting(`${label} ${i + 1}/${slides.length}…`)
       selectSlide(i)
       await wait(450) // deja que React pinte y el auto-ajuste converja
       if (!canvasRef.current) continue
@@ -266,9 +267,41 @@ export default function App() {
       await Promise.all([...canvasRef.current.querySelectorAll('img')].map((img) => img.decode().catch(() => undefined)))
       const { blob } = await renderPng(canvasRef.current, w, h)
       const s = slides[i]
-      files.push({ blob, name: `coachjp_${String(i + 1).padStart(2, '0')}_${s.template}_${slugify(`${s.headlineA} ${s.headlineB}`)}.png` })
+      files.push({ blob, name: `${prefix}coachjp_${String(i + 1).padStart(2, '0')}_${s.template}_${slugify(`${s.headlineA} ${s.headlineB}`)}.png` })
     }
     return files
+  }
+
+  /** [ ⇅ REMIX 9:16 ]: el set pasa a historias con reacomodo vertical y zonas de sticker. */
+  const remix = () => setDeck((d) => ({ ...d, slides: remixToStories(d.slides.map((s) => ({ ...DEFAULT_STATE, ...s }) as CanvasState)) }))
+
+  /**
+   * ZIP unificado: /feed_4x5/ + /stories_9x16/ + caption.txt. Renderiza el set en los dos formatos
+   * (las historias con sus stickers o, si nunca se remixó, con la asignación automática) y al final
+   * devuelve el deck exactamente como estaba.
+   */
+  const runDual = async () => {
+    const back = active
+    const snapshot = deck.slides
+    const full = snapshot.map((s) => ({ ...DEFAULT_STATE, ...s }) as CanvasState)
+    try {
+      setDeck((d) => ({ ...d, slides: full.map((s) => ({ ...s, aspect: 'feed' })) }))
+      await wait(300)
+      const feed = await renderAll('feed', 'feed_4x5/', 'FEED')
+      setDeck((d) => ({ ...d, slides: remixToStories(full) }))
+      await wait(300)
+      const stories = await renderAll('story', 'stories_9x16/', 'HISTORIA')
+      setExporting('EMPAQUETANDO .ZIP…')
+      const extras = [{ name: 'caption.txt', text: caption.trim() ? caption : fallbackCaption(slides) }]
+      const zip = await zipFiles([...feed, ...stories], extras)
+      downloadBlob(zip, `coachjp_feed+historias_${slugify(`${slides[0].headlineA} ${slides[0].headlineB}`)}.zip`)
+    } catch (err) {
+      console.error(err)
+      alert('Falló la exportación Feed + Historias.')
+    } finally {
+      setDeck((d) => ({ ...d, slides: snapshot, active: back }))
+      setExporting(null)
+    }
   }
 
   const runBatch = async (kind: 'png' | 'zip') => {
@@ -371,6 +404,7 @@ export default function App() {
       onRemove={removeSlide}
       onExportAll={() => runBatch('png')}
       onExportZip={() => runBatch('zip')}
+      onExportDual={runDual}
       onRegenerate={regenerateActive}
       onMove={moveSlide}
       regenBusy={regen.busy}
@@ -416,6 +450,16 @@ export default function App() {
 
   const overlayToggle = (
     <>
+    {state.aspect === 'feed' && (
+      <button
+        type="button"
+        onClick={remix}
+        title="Convierte todo el carrusel 4:5 en historias 9:16: reacomoda el texto en vertical y reserva zonas para stickers (encuesta, preguntas, link)"
+        className="rounded-lg border border-gold/60 bg-gold/10 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap text-gold transition hover:bg-gold/20"
+      >
+        {isDesktop ? '[ ⇅ REMIX 9:16 ]' : '⇅ 9:16'}
+      </button>
+    )}
     <button
       type="button"
       onClick={() => update({ accentSwap: !state.accentSwap })}

@@ -8,6 +8,8 @@ interface Props {
   onRemove: () => void
   onExportAll: () => void
   onExportZip: () => void
+  /** ZIP unificado con /feed_4x5/ y /stories_9x16/ */
+  onExportDual: () => void
   onRegenerate: () => void
   onMove: (dir: -1 | 1) => void
   regenBusy: boolean
@@ -23,7 +25,7 @@ interface Props {
  * libre, nunca se encogen: si no entran, scroll horizontal) y a la derecha las utilidades fijas.
  * Si la fila no alcanza, las utilidades bajan a una segunda línea en vez de aplastar las pestañas.
  */
-export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll, onExportZip, exporting, onRegenerate, onMove, regenBusy, regenNote, trailing }: Props) {
+export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll, onExportZip, onExportDual, exporting, onRegenerate, onMove, regenBusy, regenNote, trailing }: Props) {
   const tabsRef = useRef<HTMLDivElement>(null)
   // La pestaña activa siempre queda a la vista dentro del scroll.
   useEffect(() => {
@@ -108,12 +110,22 @@ export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll
           {regenNote}
         </span>
       )}
-      {count > 1 &&
-        (exporting ? (
-          <span className="shrink-0 rounded-lg border border-fire/40 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-fire">
-            {exporting}
-          </span>
-        ) : (
+      {exporting ? (
+        <span className="shrink-0 rounded-lg border border-fire/40 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-fire">
+          {exporting}
+        </span>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={onExportDual}
+            title="Un solo .zip con /feed_4x5/ y /stories_9x16/ (historias con zonas de sticker) + caption.txt"
+            className="shrink-0 rounded-lg border border-gold/60 px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-wider text-gold transition hover:bg-gold/10"
+          >
+            <span className="hidden sm:inline">[ ⬇ FEED + HISTORIAS ]</span>
+            <span className="sm:hidden">4:5+9:16</span>
+          </button>
+          {count > 1 && (
           <>
             <button
               type="button"
@@ -133,7 +145,9 @@ export function SlideBar({ count, active, onSelect, onAdd, onRemove, onExportAll
               {count} PNG
             </button>
           </>
-        ))}
+          )}
+        </>
+      )}
       {trailing}
       </div>
     </div>
