@@ -15,6 +15,7 @@ interface Props {
   overlay?: boolean
   /** Guía de recorte de la grilla del perfil (sólo pantalla) */
   gridGuide?: boolean
+  resolveImage?: (id: string | null | undefined) => string | null
   slideCount?: number
   slideIndex?: number
   /** Ajuste fino sobre el lienzo (arrastre / escala); sin callback no hay herramientas */
@@ -22,7 +23,7 @@ interface Props {
 }
 
 /** Live preview: el lienzo nativo se escala con transform para entrar en el espacio disponible. */
-export function Preview({ state, bgImage, canvasRef, gutter = 24, overlay = false, gridGuide = false, slideCount = 1, slideIndex = 0, onNudge }: Props) {
+export function Preview({ state, bgImage, canvasRef, gutter = 24, overlay = false, gridGuide = false, slideCount = 1, slideIndex = 0, onNudge, resolveImage }: Props) {
   const { w, h, ratio } = ASPECTS[state.aspect]
   const { ref, scale } = useFitScale(w, h, gutter)
 
@@ -33,7 +34,7 @@ export function Preview({ state, bgImage, canvasRef, gutter = 24, overlay = fals
           className="absolute top-0 left-0 origin-top-left shadow-[0_30px_80px_-20px_rgba(0,0,0,.9)] ring-1 ring-line"
           style={{ transform: `scale(${scale})` }}
         >
-          <TacticalCanvas ref={canvasRef} state={state} bgImage={bgImage} slideIndex={slideIndex} slideCount={slideCount} />
+          <TacticalCanvas ref={canvasRef} state={state} bgImage={bgImage} slideIndex={slideIndex} slideCount={slideCount} resolveImage={resolveImage} />
         </div>
         {onNudge && !overlay && <CanvasGizmo state={state} canvasRef={canvasRef} scale={scale} onNudge={onNudge} />}
         {overlay && <GhostOverlay aspect={state.aspect} w={w} h={h} count={slideCount} index={slideIndex} />}

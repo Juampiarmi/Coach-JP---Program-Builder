@@ -13,6 +13,7 @@ import { QuoteTemplate } from './templates/QuoteTemplate'
 import { TacticalBackdrop } from './TacticalBackdrop'
 import { EssayTemplate } from './templates/EssayTemplate'
 import { WorkoutTemplate } from './templates/WorkoutTemplate'
+import { FixTemplate } from './templates/FixTemplate'
 import { SlideCounter } from './SlideCounter'
 import { AthleticLayout } from './templates/AthleticLayout'
 import { athleticPalette, LayoutOpusBrutalist } from './templates/LayoutOpusBrutalist'
@@ -139,9 +140,11 @@ interface Props {
   slideIndex?: number
   /** Cantidad de placas del carrusel (contador «01 / 05») */
   slideCount?: number
+  /** Imágenes extra de la placa (ej: Error vs Corrección) por id de IndexedDB */
+  resolveImage?: (id: string | null | undefined) => string | null
 }
 
-export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function TacticalCanvas({ state, bgImage, slideIndex = 0, slideCount = 1 }, ref) {
+export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function TacticalCanvas({ state, bgImage, slideIndex = 0, slideCount = 1, resolveImage }, ref) {
   const { w, h } = ASPECTS[state.aspect]
   const isStory = state.aspect === 'story'
   const baseScale = isStory ? 1.08 : 1
@@ -167,6 +170,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
   const isQuote = state.template === 'quote'
   const isEssay = state.template === 'essay'
   const isWorkout = state.template === 'workout'
+  const isFix = state.template === 'fix'
   const isStruct = (STRUCT_TEMPLATES as readonly string[]).includes(state.template)
   const centered = isStatement || isManifesto || isRepeat || isOpus || isQuote || isEssay
   // Tema: Minimal Paper sólo en Diagrama / Repetición; 01–05 usan siempre la paleta Táctico Dark.
@@ -422,6 +426,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     {isStatement && <StatementTemplate state={state} scale={scale} />}
                     {isDiagram && <DiagramTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isStruct && <StructTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
+                    {isFix && <FixTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} resolveImage={resolveImage} />}
                     {isWorkout && <WorkoutTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isEssay && <EssayTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isOpus && <OpusTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}

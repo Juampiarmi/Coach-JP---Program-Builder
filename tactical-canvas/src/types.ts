@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay' | 'workout'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay' | 'workout' | 'fix'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve' | 'funnel' | 'versus'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -219,6 +219,17 @@ export interface CanvasState {
   /** Sesión (plantilla 17): ejercicios en orden y una nota al pie (calentamiento, criterio de progresión) */
   workoutRows: WorkoutRow[]
   workoutNote: string
+  /** Error vs Corrección (plantilla 18): rótulo, texto corto e imagen propia de cada lado */
+  fixWrongLabel: string
+  fixWrongText: string
+  fixWrongImageId: string | null
+  fixRightLabel: string
+  fixRightText: string
+  fixRightImageId: string | null
+  /** Acento del lado correcto: verde semáforo o naranja de marca */
+  fixAccent: 'green' | 'brand'
+  /** Lado a lado (split) o uno arriba del otro (stack) */
+  fixLayout: 'split' | 'stack'
   /** Contador «01 / 05» + «DESLIZÁ →» en las placas del carrusel (se exporta) */
   slideCounter: boolean
   athleticBg: AthleticBg

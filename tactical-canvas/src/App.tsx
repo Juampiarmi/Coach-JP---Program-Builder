@@ -109,7 +109,8 @@ export default function App() {
   const [overlay, setOverlay] = useState(false)
   // Guía de recorte de la grilla del perfil (sólo pantalla; nunca entra en el PNG).
   const [gridGuide, setGridGuide] = useState(false)
-  const bg = useBackgroundImages(slides.map((s) => s.bgImageId).filter((id): id is string => Boolean(id)))
+  // Fotos de todas las placas: fondo y las imágenes propias de Error vs Corrección.
+  const bg = useBackgroundImages(slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId]).filter((id): id is string => Boolean(id)))
   const bgImage = bg.get(state.bgImageId)
   // Una sola vez: la foto global de versiones anteriores pasa a ser la foto propia de cada placa
   // existente (se ven igual que antes, pero desde ahora cada una se cambia por separado).
@@ -118,7 +119,8 @@ export default function App() {
     if (migrated.current) return
     migrated.current = true
     const legacy = readLegacyBackground()
-    const ids = deck.slides.map((s) => s.bgImageId).filter((id): id is string => Boolean(id))
+    // Todas las fotos referenciadas (fondo + Error vs Corrección): ninguna se borra en la limpieza.
+    const ids = deck.slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId]).filter((id): id is string => Boolean(id))
     if (!legacy) {
       void pruneBackgrounds(ids)
       return
@@ -385,6 +387,8 @@ export default function App() {
         onReset={reset}
         bgImage={bgImage}
         setBgImage={setBgImage}
+        addImage={(img) => bg.add(img).id}
+        resolveImage={bg.get}
         bgPersisted={bg.persisted}
         getDiscipline={getDiscipline}
         slideIndex={active}
@@ -479,7 +483,7 @@ export default function App() {
             )}
           </div>
           <div className="min-h-0 flex-1 p-6">
-            <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
+            <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} resolveImage={bg.get} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
           </div>
           <div className="mx-auto flex w-full max-w-xl flex-col gap-2 px-6 pb-6">
             <CaptionBar caption={caption} onChange={setCaption} />
@@ -502,7 +506,7 @@ export default function App() {
       </div>
       <div className="border-b border-line px-4 py-2">{slideBar()}</div>
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
-        <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
+        <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} resolveImage={bg.get} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
       </main>
 
       <section
