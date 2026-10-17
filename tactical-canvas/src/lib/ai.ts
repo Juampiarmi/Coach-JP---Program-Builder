@@ -122,6 +122,7 @@ PLANTILLAS DISPONIBLES (templateId):
 - "checklist": auditoría operativa de 3 o 4 condiciones binarias ([ ✓ ] pasa / [ ✗ ] falla).
 - "guardado": placa final de retención (cheat sheet / ficha técnica): 3 o 4 viñetas que condensan todo el carrusel + llamado a guardar.
 - "error_correccion": técnica / biomecánica: lado ERROR (badge rojo) y lado CORRECCIÓN (badge verde) con un texto corto cada uno (qué falla y cómo se corrige). Ideal para contenido de técnica de ejercicios.
+- "manifiesto_texto": reflexión de texto continuo: título corto + 3 a 4 párrafos + un remate en MAYÚSCULAS. Para mindset con sustancia.
 - "rutina": tarjeta de sesión de entrenamiento: ejercicios con código (A1, B1, B2 = superserie), series × reps, intensidad (RIR / RPE / % 1RM) y pausa. Ideal para «la sesión de hoy» o un protocolo aplicable.
 - "athletic": placa editorial clara estilo Opus Athletic (papel claro, titular negro) con datos en filas clave → valor («CARGAS PESADAS:» → «3-5 reps al 85-90 % 1RM») o tabla de 2 columnas (Intensidad | Reps × series). Ideal para protocolos con números reales.
 - "cita": cita célebre estilo «Forbes Quotes» (frase real de un deportista o persona de éxito + nombre + rol). SÓLO con una frase que esa persona dijo de verdad y de fuente conocida; si no tenés certeza absoluta, no uses esta plantilla.
@@ -184,7 +185,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
   "caption": string,
   "slides": [
     {
-      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita" | "athletic" | "rutina" | "error_correccion",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita" | "athletic" | "rutina" | "error_correccion" | "manifiesto_texto",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
@@ -209,6 +210,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "pipeline": { "steps": [3 o 4 objetos { "step": "01", "title": string (acción táctica, 2-5 palabras), "desc": string (condición o criterio) }] },
       "piramide": { "levels": [3 o 4 objetos { "level": 1, "name": string (1-3 palabras), "desc": string }] } (level 1 = la base no negociable; el último = el detalle menor),
       "checklist": { "items": [3 o 4 objetos { "status": "ok" | "err", "text": string (condición en forma de pregunta o requisito), "detail": string (por qué importa) }] },
+      "manifiesto_texto": { "paragraphs": [3 a 5 strings, el último en MAYÚSCULAS como remate] } (OBLIGATORIO sólo si templateId es "manifiesto_texto"; en los demás omitilo),
       "error_correccion": { "wrong": { "label": string (ej «INCORRECTO»), "text": string (la falla, máx 16 palabras) }, "right": { "label": string (ej «CORRECCIÓN TÁCTICA»), "text": string (la solución concreta, máx 16 palabras) } } (OBLIGATORIO sólo si templateId es "error_correccion"; en los demás omitilo),
       "rutina": { "rows": [2 a 8 objetos { "code": "A1", "name": string (ejercicio), "scheme": string (ej «4 × 5»), "intensity": string (ej «RIR 2», «80 % 1RM»), "rest": string (ej «3:00») }], "note": string (progresión o criterio, 1 oración) } (OBLIGATORIO sólo si templateId es "rutina"; en los demás omitilo),
       "athletic": { "theme": "dark" | "light" (por defecto "dark", la estética nativa de Coach JP), "nr": string (número de la etiqueta «[Nr. X]»; "" en portada y cierre), "cta": string ("" salvo en el cierre), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
@@ -264,6 +266,18 @@ export interface EditorialOptions {
   goal: EditorialGoal
   /** Tono / enfoque estratégico (por defecto viral) */
   tone?: EditorialTone
+  /** Pilar del calendario de contenido (LUN ciencia · MIÉ rutina · VIE mindset): fija plantilla y formato */
+  pillar?: 'science' | 'workout' | 'mindset'
+}
+
+/** Regla de plantilla por pilar: manda sobre las secuencias tipo. */
+const PILLAR_RULE: Record<NonNullable<EditorialOptions['pillar']>, string> = {
+  science:
+    'PILAR DEL DÍA · LUNES · CIENCIA / FISIOLOGÍA: carrusel de 5 placas con la ARQUITECTURA OPUS ATHLETIC × COACH JP (templateId "athletic", theme "dark"). Una sola idea fisiológica bien explicada, con números reales y una referencia indexada real en la placa de evidencia o en el caption.',
+  workout:
+    'PILAR DEL DÍA · MIÉRCOLES · RUTINA / SESIÓN: (manda por sobre el OBJETIVO EDITORIAL, la arquitectura de 5 placas y cualquier secuencia de otros bloques) devolvé EXACTAMENTE 1 placa con templateId "rutina": titular corto (ej «FUERZA» + «DÍA A»), 4 a 6 ejercicios con código (A1, B1, B2 = superserie, C1…), series × reps, intensidad (RIR / RPE / % 1RM) y pausa reales y coherentes con el objetivo, y una nota de progresión concreta. Sin ejercicios de moda ni volúmenes absurdos: programación que un coach serio firmaría.',
+  mindset:
+    'PILAR DEL DÍA · VIERNES · MINDSET / MANIFIESTO: (manda por sobre el OBJETIVO EDITORIAL, la arquitectura de 5 placas y cualquier secuencia de otros bloques) devolvé EXACTAMENTE 1 placa con templateId "manifiesto_texto": un título corto en MAYÚSCULAS (titleWhite + titleAccent) y 3 a 4 párrafos de texto continuo en "manifiesto_texto.paragraphs" (frases cortas, voseo, situaciones reales del entrenamiento), cerrando con UN párrafo-remate en MAYÚSCULAS de máx 10 palabras. Cero clichés de autoayuda.',
 }
 
 /** Tono editorial: viral / contrarian (por defecto) o académico / paper. */
@@ -405,7 +419,8 @@ export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discip
   const goal = editorial ? `${GOAL_RULE[resolved]}\n\n${TONE_RULE[editorial.tone ?? 'viral']}\n\n` : ''
   // Mindset, 1 placa o repetición: sustancia obligatoria (titular + remate + bajada).
   const substance = resolved === 'mindset' || mode === 'single' ? `${SUBSTANCE_RULE}\n\n` : ''
-  return `${head}\n\n${expanded ? `PREMISA EXPANDIDA (el input es breve): ${expanded}\n\n` : ''}${goal}${benefits ? `${benefits}\n\n` : ''}${substance}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
+  const pillar = editorial?.pillar ? `${PILLAR_RULE[editorial.pillar]}\n\n` : ''
+  return `${head}\n\n${expanded ? `PREMISA EXPANDIDA (el input es breve): ${expanded}\n\n` : ''}${goal}${pillar}${benefits ? `${benefits}\n\n` : ''}${substance}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
 }
 
 // ---------------------------------------------------------------------------
@@ -763,6 +778,8 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   athletic: 'athletic',
   rutina: 'workout',
   error_correccion: 'fix',
+  manifiesto_texto: 'essay',
+  essay: 'essay',
   'error vs correccion': 'fix',
   fix: 'fix',
   sesion: 'workout',
@@ -1069,6 +1086,14 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   if (template === 'bookmark' && gPoints.length >= 3) {
     patch.bookmarkData = { points: gPoints, cta: upper(first(g.cta, BOOKMARK_CTA)), accent: 'orange' }
   }
+
+  // 16 · Manifiesto texto: párrafos continuos.
+  const es = obj(s.manifiesto_texto ?? s.essay)
+  const paras = list(es.paragraphs ?? es.parrafos).slice(0, 6)
+  if (paras.length >= 2) {
+    patch.essayParas = paras
+    patch.body = ''
+  } else if (template === 'essay') patch.template = 'statement'
 
   // 18 · Error vs Corrección
   const fx = obj(s.error_correccion ?? s.fix)
@@ -1479,6 +1504,7 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   athletic: 'athletic',
   workout: 'rutina',
   fix: 'error_correccion',
+  essay: 'manifiesto_texto',
 }
 
 export interface RegenerateRequest {
@@ -1661,6 +1687,52 @@ Forma exacta: { "hooks": [ { "angle": "contrarian", "white": string, "accent": s
     .filter((h) => h.white || h.accent)
   if (!out.length) throw new Error('La IA no devolvió ganchos utilizables. Probá de nuevo.')
   return out
+}
+
+export interface TopicIdea {
+  /** Tema concreto, listo para el generador (no una categoría) */
+  title: string
+  /** Ángulo: el error, el mito o la pregunta que lo vuelve publicable */
+  angle: string
+  /** Referencia real y verificable («Apellido y col., año · revista») o "" si no hay certeza */
+  reference: string
+  /** Qué encontró esa evidencia, en una línea */
+  finding: string
+}
+
+const PILLAR_BRIEF: Record<'science' | 'workout' | 'mindset', string> = {
+  science: 'LUNES · CIENCIA / FISIOLOGÍA: un mecanismo o hallazgo de fisiología del ejercicio, fuerza, hipertrofia, resistencia o nutrición deportiva que cambie cómo entrena alguien.',
+  workout: 'MIÉRCOLES · RUTINA / SESIÓN: una sesión de entrenamiento aplicable (objetivo, estructura, método) respaldada por evidencia: ej. series por grupo muscular, pérdida de velocidad, descansos, frecuencia, autorregulación por RIR.',
+  mindset: 'VIERNES · MINDSET / MANIFIESTO: una idea sobre adherencia, hábitos, consistencia o identidad de quien entrena, apoyada en psicología del comportamiento o del deporte (hábitos, intención de implementación, autoeficacia), nunca autoayuda.',
+}
+
+/**
+ * Ideas de temas para el pilar del día: concretas, con ángulo de redes y respaldadas por evidencia real.
+ * La regla anti-genérico y anti-invención va explícita: sin certeza del paper, la referencia queda vacía.
+ */
+export async function suggestTopics(
+  settings: AiSettings,
+  ctx: { pillar: 'science' | 'workout' | 'mindset'; discipline: Discipline; avoid?: string[] },
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<TopicIdea[]> {
+  const focus = DISCIPLINE_RULE[ctx.discipline]
+  const user = `Sos el editor de contenido de COACH JP (alto rendimiento, Instagram, español argentino neutro). Proponé 5 temas para publicar hoy.
+PILAR: ${PILLAR_BRIEF[ctx.pillar]}
+${focus ? `${focus}\n` : ''}${ctx.avoid?.length ? `No repitas estos temas ya propuestos: ${ctx.avoid.map((t) => `«${t}»`).join(', ')}.\n` : ''}REGLAS:
+- Nada genérico ni con olor a IA: prohibidos «la importancia de…», «tips para…», «beneficios de…», «todo lo que tenés que saber». Cada tema es una afirmación o pregunta concreta y específica (ej: «Por qué cortar la serie con 20 % de pérdida de velocidad te da la misma fuerza con la mitad de fatiga»).
+- Cada tema se apoya en evidencia comprobable: "reference" con un estudio REAL y verificable en formato «Apellido y col., año · Revista» y "finding" con lo que encontró en una línea. Si no tenés certeza absoluta de que ese paper exista tal cual, dejá "reference" y "finding" vacíos (""): preferimos sin cita a una cita inventada.
+- "angle": el gancho para redes en 1 línea (el error que comete el lector, el mito que se rompe o la pregunta que abre).
+- Variá los temas (distintos mecanismos, ejercicios o situaciones); aplicables a gente que entrena de verdad.
+Forma exacta: { "ideas": [ 5 objetos { "title": string, "angle": string, "reference": string, "finding": string } ] }`
+  const res = await askJson(settings, user, signal, onStatus)
+  const ideas = (Array.isArray(res.ideas) ? res.ideas : [])
+    .map(obj)
+    .map((i) => ({ title: str(first(i.title, i.tema)), angle: str(first(i.angle, i.angulo)), reference: str(first(i.reference, i.referencia)), finding: str(first(i.finding, i.hallazgo)) }))
+    .filter((i) => i.title && !/^(la importancia|tips para|beneficios de|todo lo que)/i.test(i.title))
+    .slice(0, 5)
+  if (!ideas.length) throw new Error('La IA no devolvió ideas utilizables. Probá de nuevo.')
+  return ideas
 }
 
 export interface HookScore {

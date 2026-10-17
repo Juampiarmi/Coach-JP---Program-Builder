@@ -23,6 +23,8 @@ import {
   mapCopy,
   type MindsetBurst,
 } from '../lib/ai'
+import { ContentCalendar } from './ContentCalendar'
+import { PILLARS, type PillarId } from '../lib/pillars'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { AiSettingsModal } from './AiSettingsModal'
 
@@ -51,6 +53,8 @@ interface GenPrefs {
   bursts?: number
   goal?: EditorialGoal
   tone?: EditorialTone
+  /** Pilar del calendario (LUN ciencia · MIÉ rutina · VIE mindset) */
+  pillar?: PillarId
 }
 /** Clave vieja: el enfriamiento ya no se persiste (recargar siempre deja el botón activo). */
 const SEQ_LABEL: Record<string, string> = {
@@ -131,7 +135,7 @@ export function AiGenerator({ onResult, onBurst }: Props) {
   const inputMode: InputMode = mode.inputMode ?? 'concept'
   const goal: EditorialGoal = mode.goal ?? 'auto'
   const tone: EditorialTone = mode.tone ?? 'viral'
-  const editorial = { inputMode, goal, tone }
+  const editorial = { inputMode, goal, tone, pillar: mode.pillar }
   // Lo que va a hacer el planner con lo escrito: objetivo (detectado en AUTO) y formato efectivo.
   const detectedGoal = topic.trim() ? detectGoal(topic, goal) : null
   const effectiveMode = topic.trim() ? resolveFormat(topic, mode.mode, editorial) : mode.mode
@@ -297,6 +301,22 @@ export function AiGenerator({ onResult, onBurst }: Props) {
           <span className="truncate">{hasKey ? `${settings.provider.toUpperCase()} · ${settings.models[settings.provider]}` : 'CARGAR API KEY'}</span>
         </button>
       </div>
+      <ContentCalendar
+        settings={settings}
+        hasKey={hasKey}
+        discipline={mode.discipline ?? 'general'}
+        pillar={mode.pillar ?? null}
+        onSelect={(id) => {
+          const p = PILLARS.find((x) => x.id === id)
+          // El pilar fija tono, objetivo y formato; «generador libre» sólo suelta el pilar.
+          setMode(p ? { ...mode, pillar: p.id, tone: p.tone, goal: p.goal, mode: p.mode } : { ...mode, pillar: undefined })
+        }}
+        onPick={(t) => {
+          setTopic(t)
+          setMode({ ...mode, inputMode: 'brief' })
+        }}
+        onNeedKey={() => setModal(true)}
+      />
       <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
         {(['concept', 'brief'] as InputMode[]).map((m) => (
           <button
@@ -358,7 +378,7 @@ export function AiGenerator({ onResult, onBurst }: Props) {
             <button
               key={t}
               type="button"
-              onClick={() => setMode({ ...mode, tone: t })}
+              onClick={() => setMode({ ...mode, tone: t, pillar: undefined })}
               aria-pressed={tone === t}
               title={t === 'viral' ? 'Ganchos polarizantes, verdades incómodas y contraste alto para frenar el scroll' : 'Divulgación fisiológica formal con citas indexadas'}
               className={`rounded-md px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
@@ -377,7 +397,7 @@ export function AiGenerator({ onResult, onBurst }: Props) {
             <button
               key={g}
               type="button"
-              onClick={() => setMode({ ...mode, goal: g })}
+              onClick={() => setMode({ ...mode, goal: g, pillar: undefined })}
               aria-pressed={goal === g}
               className={`rounded-md px-1 py-1.5 font-mono text-[9px] leading-tight tracking-wider transition ${
                 goal === g ? 'bg-fire text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
@@ -416,7 +436,7 @@ export function AiGenerator({ onResult, onBurst }: Props) {
           <button
             key={m}
             type="button"
-            onClick={() => setMode({ ...mode, mode: m })}
+            onClick={() => setMode({ ...mode, mode: m, pillar: undefined })}
             aria-pressed={mode.mode === m}
             className={`rounded-md px-1 py-1.5 font-mono text-[9px] leading-tight tracking-wider transition ${
               mode.mode === m ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
