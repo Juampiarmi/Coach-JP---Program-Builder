@@ -4430,51 +4430,156 @@ const IMP_FASES_SOFT = [
    de dosis por ejercicio. OBJETIVO:/TIPS: siguen yendo a sus campos
    (parsearImportacion, IMP_RX_ETIQ). RPE se convierte a RIR (RIR = 10 − RPE).
    ============================================================ */
+/* ===== PARSER CANÓNICO DE DOSIS =====
+   Fuente única: el Builder lo usa directo (importador, panel de volumen) y compile() inyecta el MISMO código en la app
+   del alumno ({{JP_DOSIS_CANON}}). Autocontenido: no depende de nada fuera de su cuerpo.
+   Devuelve { sets, reps, unidad, tramos[], tempo, rir, rpeConv, rest, restLabel, corte, fin, resto }:
+     - tramos: esquemas "1x3 (Aclimatación) + 1x6 (Top Set) + 2x8 (Back-off)" y pirámides "4x10-8-6-6" / "10-8-6-6 reps"
+     - tempo: conserva la X ("31X0")
+     - rest: segundos (tope del rango) y restLabel ("180-240s") si venía en rango; entiende min / minutes / ' / mm:ss / "2 min 30"
+     - corte/fin: posición de la dosis dentro del texto (para separar el nombre); resto: texto sin la dosis (para medir si queda nombre) */
+function jpDosisCanon(texto){
+  var src = String(texto == null ? '' : texto), r = src, m;
+  var out = { tramos: [], corte: -1, fin: -1 };
+  var tapar = function(i, n){ r = r.slice(0, i) + new Array(n + 1).join(' ') + r.slice(i + n); };
+  var LET = '[A-Za-zÀ-ÿ]';
+  /* 1 · tempo (la X se conserva) */
+  if((m = r.match(/tempo\s*[:=]?\s*([\dXx]{3,4}|\d-[\dXx]-[\dXx](?:-[\dXx])?)/i))){
+    out.tempo = m[1].replace(/-/g, '').toUpperCase();
+    tapar(m.index, m[0].length);
+  }
+  /* 2 · volumen */
+  var mk = function(sets, reps, un, etq){
+    reps = String(reps).replace(/\s+/g, '').replace(/[–—a]/g, '-');
+    return { sets: parseInt(sets, 10), reps: reps + (un || ''), unidad: 'reps', etq: String(etq || '').trim() };
+  };
+  var expandir = function(t){
+    /* pirámide: "4x10-8-6-6" (N = cantidad de valores) -> 1x10 + 1x8 + 2x6 */
+    var nums = String(t.reps).match(/^(\d+(?:-\d+){2,})$/);
+    if(!nums) return [t];
+    var v = t.reps.split('-');
+    if(v.length !== t.sets) return [t];
+    var res = [];
+    v.forEach(function(x){
+      var u = res[res.length - 1];
+      if(u && u.reps === x && !u.etq) u.sets++;
+      else res.push({ sets: 1, reps: x, unidad: 'reps', etq: '' });
+    });
+    if(res.length) res[0].etq = t.etq;
+    return res;
+  };
+  var vol = [], hasta = -1, desde = -1;
+  var rxSets = /(\d+)\s*(?:sets?|series?|rondas?)\b\s*(?:x|×|de|:|-|–)?\s*(\d+(?:\s*(?:-|–|a)\s*\d+)*)(?:\s*(?:reps?|repeticiones)\b)?(?:\s*(seg(?:undos?)?|segs?|s|min(?:utos?)?|mins?|mts?|cal)\b)?/i;
+  var rxN = /(\d+)\s*[x×]\s*(\d+(?:\s*(?:-|–|a)\s*\d+)*)(s|seg|min|mts?|cal|m)?(?![A-Za-zÀ-ÿ0-9])(?:\s*(?:reps?|repeticiones)\b)?(?:\s*\(([^)]*)\))?/i;
+  m = r.match(rxSets);
+  var unidadDe = function(u){ u = String(u || '').toLowerCase(); return !u ? '' : /^(?:s|seg)/.test(u) ? 's' : /^min/.test(u) ? 'min' : /^mt/.test(u) ? 'm' : u; };
+  if(m){
+    vol.push(mk(m[1], m[2], unidadDe(m[3]), ''));
+    desde = m.index; hasta = m.index + m[0].length;
+  } else if((m = r.match(rxN))){
+    vol.push(mk(m[1], m[2], unidadDe(m[3]), m[4]));
+    desde = m.index; hasta = m.index + m[0].length;
+    /* esquemas encadenados con "+": 1x3 (..) + 1x6 (..) + 2x8 (..) */
+    for(;;){
+      var cola = r.slice(hasta), mp = cola.match(/^\s*\+\s*/);
+      if(!mp) break;
+      var sig = r.slice(hasta + mp[0].length).match(rxN);
+      if(!sig || sig.index !== 0) break;
+      vol.push(mk(sig[1], sig[2], unidadDe(sig[3]), sig[4]));
+      hasta = hasta + mp[0].length + sig[0].length;
+    }
+  }
+  if(desde >= 0) tapar(desde, hasta - desde);
+  /* 3 · RIR / RPE (RPE -> RIR = 10 - RPE) */
+  if((m = r.match(/(?:@\s*)?\brir\s*[:=]?\s*(\d+(?:\s*[-–]\s*\d+)?)/i))){
+    out.rir = m[1].replace(/\s+/g, '').replace('–', '-'); tapar(m.index, m[0].length);
+  }
+  if((m = r.match(/(?:@\s*)?\brpe\s*[:=]?\s*(\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)/i))){
+    tapar(m.index, m[0].length);
+    if(!out.rir){
+      var rp = m[1].replace(/\s+/g, '').replace('–', '-').replace(/,/g, '.').split('-').map(Number).filter(function(n){ return !isNaN(n); });
+      if(rp.length){
+        var rr = rp.map(function(n){ return Math.max(0, Math.round((10 - n) * 2) / 2); }).sort(function(a, b){ return a - b; });
+        out.rir = rr.length > 1 && rr[0] !== rr[1] ? rr[0] + '-' + rr[1] : String(rr[0]); out.rpeConv = true;
+      }
+    }
+  }
+  /* 4 · descanso: "Rest 120s", "Rest 2:00", "Rest 3-4 min", "Rest 3 – 4 minutes", "Rest 2 min 30", "Rest 2'" */
+  var rxRest = /\b(?:rest|descanso|pausa)\b\s*[:=\-–]?\s*/i;
+  var mr = r.match(rxRest);
+  if(mr){
+    var ini = mr.index + mr[0].length;
+    var cl = r.slice(ini).split(/[|;\n]/)[0];
+    var UN = "(min[A-Za-zÀ-ÿ]*|m\\b|'|’|seg[A-Za-z]*|sec[A-Za-z]*|s\\b|\")";
+    var seg = function(n, un){
+      n = parseFloat(String(n).replace(',', '.')); un = String(un || '').toLowerCase();
+      if(/^(?:min|m$|'|’)/.test(un)) return Math.round(n * 60);
+      if(/^(?:seg|sec|s$|")/.test(un)) return Math.round(n);
+      return n <= 10 ? Math.round(n * 60) : Math.round(n);
+    };
+    var fin = -1, mm;
+    if((mm = cl.match(/(\d{1,2})\s*:\s*(\d{2})/))){
+      out.rest = parseInt(mm[1], 10) * 60 + parseInt(mm[2], 10); fin = mm.index + mm[0].length;
+    } else if((mm = cl.match(new RegExp("(\\d+)\\s*(?:min(?:utos?|utes?)?|mins?|m)\\b\\.?\\s*(\\d{1,2})\\s*(?:s|seg[A-Za-z]*|sec[A-Za-z]*)?(?![A-Za-zÀ-ÿ])", 'i')))){
+      out.rest = parseInt(mm[1], 10) * 60 + parseInt(mm[2], 10); fin = mm.index + mm[0].length;
+    } else if((mm = cl.match(new RegExp("(\\d+(?:[.,]\\d+)?)\\s*" + UN + "?\\s*(?:-|–|—|\\ba\\b|\\bto\\b)\\s*(\\d+(?:[.,]\\d+)?)\\s*" + UN + "?", 'i')))){
+      var un2 = mm[4] || mm[2] || '';
+      var lo = seg(mm[1], un2), hi = seg(mm[3], un2);
+      out.rest = Math.max(lo, hi); fin = mm.index + mm[0].length;
+      if(lo !== hi) out.restLabel = Math.min(lo, hi) + '-' + Math.max(lo, hi) + 's';
+    } else {
+      var rxS = new RegExp("(\\d+(?:[.,]\\d+)?)\\s*" + UN + "?(?![A-Za-zÀ-ÿ0-9])", 'gi'), last = null, x;
+      while((x = rxS.exec(cl))){ last = x; if(x[0].length === 0) rxS.lastIndex++; }
+      if(last){ out.rest = seg(last[1], last[2]); fin = last.index + last[0].length; }
+    }
+    /* un descanso de 1 a 9 s no es real ("Rest 4", "Rest 3 minutes" mal leído): 1-6 se leen como minutos, 7-9 vuelven a 60 s */
+    if(out.rest > 0 && out.rest < 10){ out.rest = out.rest <= 6 ? out.rest * 60 : 60; delete out.restLabel; }
+    if(out.rest !== undefined && fin >= 0) tapar(mr.index, mr[0].length + fin);
+  }
+  /* 5 · pirámide suelta: "10-8-6-6 reps" / "10-8-6-6" como única dosis de la línea */
+  if(!vol.length && (m = r.match(/(?:^|[^\d.,])(\d+(?:\s*[-–]\s*\d+){2,})(?!\d)(\s*(?:reps?|repeticiones)\b)?/i))){
+    var iniP = m.index + m[0].indexOf(m[1]);
+    var sinP = r.slice(0, iniP) + new Array(m[1].length + (m[2] ? m[2].length : 0) + 1).join(' ') + r.slice(iniP + m[1].length + (m[2] ? m[2].length : 0));
+    var hayLetras = sinP.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= 4;
+    if(m[2] || !hayLetras){
+      var vs = m[1].replace(/\s+/g, '').replace(/–/g, '-').split('-');
+      vol.push({ sets: vs.length, reps: vs.join('-'), unidad: 'reps', etq: '' });
+      desde = iniP; hasta = iniP + m[1].length + (m[2] ? m[2].length : 0);
+      tapar(desde, hasta - desde);
+    }
+  }
+  /* 6 · salida */
+  if(vol.length){
+    var tr = [];
+    vol.forEach(function(t){ expandir(t).forEach(function(x){ tr.push(x); }); });
+    var total = 0, mayor = tr[0];
+    tr.forEach(function(t){ total += t.sets; if(t.sets > mayor.sets) mayor = t; });
+    out.sets = total;
+    out.reps = tr.length > 1 ? (vol.length === 1 && vol[0].reps.split('-').length === tr.reduce(function(a, t){ return a + t.sets; }, 0) ? vol[0].reps : mayor.reps) : tr[0].reps;
+    if(tr.length > 1) out.tramos = tr;
+    out.corte = desde; out.fin = hasta;
+  }
+  out.resto = r;
+  return out;
+}
+/* nombre de ejercicio limpio: sin viñeta/guion inicial ni "×" / "x" huérfanos al final */
+function jpLimpiarNombreEj(s){
+  return String(s == null ? '' : s).replace(/^[\s\-–—•*·]+/, '').replace(/\s+[x×]\s*$/i, '').replace(/[×]\s*$/, '').replace(/[\s:|\-–—@(\[]+$/, '').trim();
+}
 const IMP_RX_REST_SB = /\b(?:rest|descanso|pausa)\b\s*[:=\-–]?\s*(?:(\d{1,2})\s*:\s*(\d{2})|(\d+(?:[.,]\d+)?)\s*(min(?:utos?)?|m|'|seg(?:undos?)?|segs?|sec|s|")?(?![a-záéíóú]))/i;
 function impDosisSB(texto){
-  let r = String(texto || ''), m;
-  const d = {};
-  const rango = s => s.replace(/\s+/g, '').replace(/[–a]/g, '-');
-  let corte = -1;
-  m = r.match(/(\d+)\s*(?:sets?|series?|rondas?)\b\s*(?:x|×|de|:|-|–)?\s*(\d+(?:\s*(?:-|–|a)\s*\d+)*)(?:\s*(?:reps?|repeticiones)\b)?(?:\s*(seg(?:undos?)?|segs?|s|min(?:utos?)?|mins?|mts?|cal)\b)?/i);
-  let unidad = '';
-  /* "3 Sets: 30 seg" / "2 Sets x 5 min": la unidad viaja pegada a las reps ("3x30s") para no perderse */
-  if(m && m[3]){ const u = m[3].toLowerCase(); unidad = /^(?:s|seg)/.test(u) ? 's' : /^min/.test(u) ? 'min' : /^mt/.test(u) ? 'm' : u; }
-  if(!m){
-    m = r.match(/(\d+)\s*[x×]\s*(\d+(?:\s*(?:-|–|a)\s*\d+)*)(s|seg|min|mts?|cal|m)?(?![a-záéíóú0-9])(?:\s*(?:reps?|repeticiones)\b)?/i);
-    if(m) unidad = m[3] || '';
-  }
-  if(m){ d.sets = parseInt(m[1], 10); d.reps = rango(m[2]) + unidad; corte = m.index; r = r.slice(0, m.index) + ' ' + r.slice(m.index + m[0].length); }
-  /* tempo con X ("30X0" = concéntrica explosiva): la app del alumno sólo lee
-     dígitos, así que la X pasa a 1 (1 segundo) */
-  if((m = r.match(/tempo\s*[:=]?\s*([\dXx]{3,4}|\d-[\dXx]-[\dXx](?:-[\dXx])?)/i))){
-    d.tempo = m[1].replace(/-/g, '').replace(/x/gi, '1'); if(/x/i.test(m[1])) d.tempoX = true;
-    r = r.replace(m[0], ' ');
-  }
-  if((m = r.match(/(?:@\s*)?\brir\s*[:=]?\s*(\d+(?:\s*[-–]\s*\d+)?)/i))){ d.rir = m[1].replace(/\s+/g, '').replace('–', '-'); r = r.replace(m[0], ' '); }
-  if((m = r.match(/(?:@\s*)?\brpe\s*[:=]?\s*(\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)/i))){
-    r = r.replace(m[0], ' ');
-    if(!d.rir){
-      const rp = m[1].replace(/\s+/g, '').replace('–', '-').replace(/,/g, '.').split('-').map(Number).filter(n => !isNaN(n));
-      if(rp.length){ const rr = rp.map(n => Math.max(0, Math.round((10 - n) * 2) / 2)).sort((a, b) => a - b); d.rir = rr.length > 1 && rr[0] !== rr[1] ? rr[0] + '-' + rr[1] : String(rr[0]); d.rpeConv = true; }
-    }
-  }
-  if((m = r.match(IMP_RX_REST_SB))){
-    let seg;
-    if(m[1] !== undefined && m[1] !== '') seg = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-    else {
-      const n = parseFloat(String(m[3]).replace(',', '.')), u = (m[4] || '').toLowerCase();
-      seg = /^(min|m|')/.test(u) ? Math.round(n * 60) : (u ? Math.round(n) : (n <= 10 ? Math.round(n * 60) : Math.round(n)));
-    }
-    if(seg >= 0){ d.rest = seg; r = r.replace(m[0], ' '); }       /* "Rest 0s" también es un descanso (0) */
-  }
+  const c = jpDosisCanon(texto), d = {};
+  if(c.sets){ d.sets = c.sets; d.reps = c.reps; if(c.tramos.length > 1) d.tramos = c.tramos; }
+  if(c.tempo) d.tempo = c.tempo;                               /* la X se conserva ("31X0"): la app del alumno la lee */
+  if(c.rir) d.rir = c.rir;
+  if(c.rpeConv) d.rpeConv = true;
+  if(c.rest !== undefined){ d.rest = c.rest; if(c.restLabel) d.restLabel = c.restLabel; }      /* "Rest 0s" también es un descanso (0) */
   const tieneDosis = !!(d.sets || d.tempo || d.rir || d.rest !== undefined);
-  const letras = r.replace(/[^A-Za-zÀ-ÿ]/g, '');
-  /* "Press banca 4x8-10 @ RIR 2": nombre y dosis en la misma línea -> el
-     nombre se separa y la dosis se normaliza aparte */
+  const letras = c.resto.replace(/[^A-Za-zÀ-ÿ]/g, '');
+  /* "Press banca 4x8-10 @ RIR 2": nombre y dosis en la misma línea -> el nombre se separa (sin viñeta ni "×" huérfano) */
   let nombre = '';
-  if(tieneDosis && letras.length >= 4 && d.sets && corte > 0){
-    const pref = String(texto).slice(0, corte).replace(/[\s:|\-–@]+$/, '').replace(/^[\s\-•*]+/, '').trim();
+  if(tieneDosis && letras.length >= 4 && d.sets && c.corte > 0){
+    const pref = jpLimpiarNombreEj(String(texto).slice(0, c.corte));
     if(pref.length >= 3 && pref.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= letras.length - 3) nombre = pref;
   }
   return { d: d, soloDosis: tieneDosis && letras.length < 4, nombre: nombre, tieneDosis: tieneDosis };
@@ -4483,11 +4588,15 @@ function impDosisSB(texto){
    aparte, el descanso ("Rest 120s", en segundos: es lo que lee la app del alumno) -- nada se funde ni se pierde */
 function impLineasDosisSB(d){
   const p = [], out = [];
-  if(d.sets) p.push(d.sets + 'x' + (d.reps || ''));
+  if(d.sets){
+    /* multi-tramo / pirámide: "1x3 (Aclimatación) + 1x6 (Top Set) + 2x8 (Back-off)" */
+    if(d.tramos && d.tramos.length > 1) p.push(d.tramos.map(t => t.sets + 'x' + t.reps + (t.etq ? ' (' + t.etq + ')' : '')).join(' + '));
+    else p.push(d.sets + 'x' + (d.reps || ''));
+  }
   if(d.tempo) p.push('Tempo ' + d.tempo);
   if(d.rir) p.push('RIR ' + d.rir);
   if(p.length) out.push(p.join(' | '));
-  if(d.rest !== undefined) out.push('Rest ' + d.rest + 's');
+  if(d.rest !== undefined) out.push('Rest ' + (d.restLabel || (d.rest + 's')));
   return out;
 }
 /* una línea del cuerpo de un bloque de Sports: dosis (se acumula en el grupo
@@ -4589,7 +4698,7 @@ function impCerrarBloqueSports(b){
      nombre en el delimitador pero su primera línea es un nombre (y hay un único
      ejercicio), esa línea pasa a ser el título */
   const nGrupos = b.items.filter(l => /^\d+x/.test(l)).length;
-  if(!b.titulo && b.items.length && (nGrupos === 1 || (nGrupos === 0 && b.items.length === 1))){
+  if(!b.titulo && !b.sinClasificar && b.items.length && (nGrupos === 1 || (nGrupos === 0 && b.items.length === 1))){
     const p = b.items[0];
     if(!/^\d+x|^A\d+[.)]|^\[|^[-•*·]|^(?:rest|tempo|rir)\b/i.test(p) && p.length <= 60 && !lineaSoloDosisSB(p)){ b.titulo = p; b.items.shift(); }
   }
@@ -4605,10 +4714,42 @@ function inferirFaseSports(titulo){
   if(/cardio|zona\s*2|z2/.test(t)) return 'cardio';
   return 'strength';
 }
+/* sinónimos tolerantes de delimitadores "[ ... ]": se comparan sin acentos, en minúsculas y sin duraciones ("[Cardio]", "[ finisher ]", "[Core · 8 min]") */
+const IMP_SINONIMOS = [
+  { rx:/^(?:warm ?up|calentamiento|entrada en calor|activacion|movilidad|prehab\w*|preparacion)$/, fase:'warmup' },
+  { rx:/^(?:fuerza|strength|skill|principal|carga|hipertrofia|hypertrophy|piramide|pyramid|biset|superset|super serie|superserie|triset)$/, fase:'strength' },
+  { rx:/^(?:wod|metcon|met con|amrap|emom|for time|chipper|tabata|finisher|finalizador|cierre)$/, fase:'metcon' },
+  { rx:/^(?:accesorios?|accessory|core|estabilidad|abdominales|abs|aislamiento|cool ?down|enfriamiento|vuelta a la calma|estiramientos?|flexibilidad)$/, fase:'accessory' },
+  { rx:/^(?:cardio|zona 2|z2|running|bici|bike|cinta|hyrox|stations?)$/, fase:'cardio' },
+  { rx:/^(?:endurance|2 ?turno.*)$/, fase:'endurance' }
+];
+function impClaveTag(s){
+  return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/\([^)]*\)/g, ' ').replace(/\b\d+\s*(?:min(?:utos?|utes?)?|mins?|')/g, ' ')
+    .replace(/[^a-z0-9 \/]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+/* "Bloque 2: Press banca" -> { tag:'Bloque 2', titulo:'Press banca' } · "FUERZA - Press banca" -> { tag:'FUERZA', titulo:'Press banca' } · "WARM-UP · 8 MIN" -> { tag:'WARM-UP' } */
+function impSplitTag(tag){
+  const t = String(tag || '').replace(/\s+/g, ' ').trim();
+  const mb = t.match(/^(bloque|block|ejercicio)\s*(\d*)\s*[:·\-–—|]\s*(.+)$/i);
+  if(mb) return { tag: (mb[1] + (mb[2] ? ' ' + mb[2] : '')).trim(), titulo: mb[3].trim() };
+  const ms = t.match(/^(.{2,40}?)\s*(?:[:·|]|\s[-–—]\s)\s*(.+)$/);      /* el guion solo separa si lleva espacios ("FUERZA - Press"), no dentro de "WARM-UP" */
+  if(ms){
+    const izq = impClaveTag(ms[1]);
+    if(IMP_SINONIMOS.some(x => x.rx.test(izq)) || IMP_FASES.some(x => x.rx.test(ms[1].trim()))){
+      const der = ms[2].trim();
+      if(/^\d+\s*(?:min(?:utos?|utes?)?|mins?|')?$/i.test(der)) return { tag: ms[1].trim(), titulo: '' };
+      return { tag: ms[1].trim(), titulo: der };
+    }
+  }
+  return { tag: t, titulo: '' };
+}
 function impFaseDeTag(tag){
   const t = String(tag || '').replace(/\s+/g, ' ').trim();
   const f = IMP_FASES.find(x => x.rx.test(t));
   if(f) return f.fase;
+  const sy = IMP_SINONIMOS.find(x => x.rx.test(impClaveTag(t)));
+  if(sy) return sy.fase;
   const s = IMP_FASES_SOFT.find(x => x.rx.test(t));
   return s ? s.fase : '';
 }
@@ -4639,7 +4780,7 @@ function parsearImportacion(texto, sports){
       if(dia && !esCorch && !IMP_RX_BLOQUE_VIEJO.test(t)){ dia.foco = t; enFoco = true; return; }
     }
     let m;
-    if(!dia) nuevoDia(null, '');
+    if(!dia){ nuevoDia(null, ''); dia._auto = true; }
     /* "[NOMBRE DEL DÍA] Empuje" -> título del día (el título también puede venir en la línea siguiente) */
     if(esperaTituloDia && !m){
       esperaTituloDia = false;
@@ -4678,14 +4819,23 @@ function parsearImportacion(texto, sports){
     campoAct = '';
     m = t.match(IMP_RX_CORCH);
     if(m){
-      const tag = m[1].replace(/\s+/g, ' ').trim();
+      const spTag = impSplitTag(m[1]);
+      const tag = spTag.tag;
+      if(spTag.titulo && !(m[2] || '').trim()) m[2] = spTag.titulo;
       let f = IMP_FASES.find(x => x.rx.test(tag));
-      let fase = f ? f.fase : '';
-      if(!fase){ const s = IMP_FASES_SOFT.find(x => x.rx.test(tag)); if(s) fase = s.fase; }
+      let fase = f ? f.fase : '', nivel = f ? 'ok' : '', desconocida = false;
+      if(!fase){ const sy = IMP_SINONIMOS.find(x => x.rx.test(impClaveTag(tag))); if(sy){ fase = sy.fase; nivel = 'ok'; } }
+      if(!fase){ const s = IMP_FASES_SOFT.find(x => x.rx.test(tag)); if(s){ fase = s.fase; nivel = 'warn'; } }
       /* "[BLOQUE 3] Nombre": delimitador genérico, la fase sale del nombre */
-      if(!fase && /^bloque\s*\d*$/i.test(tag)){ const tt = (m[2] || '').trim(); fase = sports ? inferirFaseSports(tt) : inferirFaseCF(tt); f = null; }
+      if(!fase && /^bloque\s*\d*$/i.test(tag)){ const tt = (m[2] || '').trim(); fase = sports ? inferirFaseSports(tt) : inferirFaseCF(tt); f = null; nivel = 'ok'; }
+      /* regla de oro (Sports): un delimitador desconocido NUNCA descarta el bloque -- se crea igual con fase inferida y semáforo amarillo */
+      if(!fase && sports){
+        fase = inferirFaseSports(tag + ' ' + (m[2] || '')); desconocida = true; nivel = 'warn';
+        avisos.push('Línea ' + (i + 1) + ': "[' + tag + ']" no es una fase conocida -- se creó el bloque igual (fase inferida: ' + fase + '); revisá el nombre y la fase');
+      }
       if(fase){
         let tagB = tag, faseB = fase, tituloB = (m[2] || '').trim();
+        if(desconocida && !tituloB) tituloB = tag;
         /* "[BLOQUE 1] [FUERZA] Press banca": la categoría anidada fija la fase y se
            quita del nombre del ejercicio */
         if(sports){
@@ -4702,6 +4852,7 @@ function parsearImportacion(texto, sports){
           cerrar();
           bloque = { fase: faseB, titulo: tituloB, items: [], tag: tagB, lb: (f && !sports) ? f.lb : tagB.toUpperCase() }; dia.bloques.push(bloque); enFoco = false;
         }
+        bloque.estado = (nivel === 'ok') ? 'ok' : 'warn';      /* semáforo de la vista previa: verde = reconocido al 100% · amarillo = inferido */
         /* "[BLOQUE 1] Press banca 4x8 @ RIR 2 Rest 2:00": nombre y dosis en el mismo renglón */
         if(sports && bloque.titulo && impDosisSB(bloque.titulo).nombre){ const raw = bloque.titulo; bloque.titulo = ''; impPushLineaSports(bloque, raw, avisos); }
         return;
@@ -4752,17 +4903,23 @@ function parsearImportacion(texto, sports){
          (antes importaba "Hoy toca pecho..." como bloque y parecía que todo andaba
          bien): se avisa con el número de línea y se ignora */
       if(sports){
-        avisos.push('Línea ' + (i + 1) + ': «' + t.slice(0, 40) + (t.length > 40 ? '…' : '') + '» no pertenece a ningún bloque ([BLOQUE 1], [FUERZA]…) -- se ignoró');
-        return;
-      }
+        /* texto antes del primer encabezado de día (título del plan, "SEMANA 1"...): se ignora; dentro de un día explícito se conserva */
+        if(dia._auto){
+          avisos.push('Línea ' + (i + 1) + ': «' + t.slice(0, 40) + (t.length > 40 ? '…' : '') + '» está antes del primer día -- se ignoró');
+          return;
+        }
+        bloque = { fase: 'strength', titulo: '', items: [], tag: 'SIN CLASIFICAR', lb: 'SIN CLASIFICAR', estado: 'warn', sinClasificar: true }; dia.bloques.push(bloque);
+        avisos.push('Línea ' + (i + 1) + ': «' + t.slice(0, 40) + (t.length > 40 ? '…' : '') + '» no pertenece a ningún bloque -- se guardó en un bloque "SIN CLASIFICAR" para no perderlo');
+      } else {
       bloque = { fase: 'metcon', titulo: '', items: [] }; dia.bloques.push(bloque);
       avisos.push('Línea ' + (i + 1) + ': hay texto antes del primer delimitador de bloque -- se agrupó en un bloque WOD/METCON sin título');
+      }
     }
     if(sports) impPushLineaSports(bloque, t, avisos); else bloque.items.push(t);
   });
   cerrar();
   /* Sports: purga de bloques espurios generados durante la ingesta (sin ninguna línea) */
-  if(sports) dias.forEach(d => { d.bloques = d.bloques.filter(b => b.items.length > 0); });
+  if(sports) dias.forEach(d => { d.bloques = d.bloques.filter(b => b.items.length > 0 || b.titulo); });
   /* un bloque sin cuerpo es casi seguro un error de tipeo del delimitador */
   dias.forEach(d => d.bloques.forEach(b => { if(!b.items.length) avisos.push((d.num ? 'Día ' + d.num : 'Día') + ': el bloque "' + (b.titulo || b.fase) + '" no tiene prescripción'); }));
   /* causa real de "el Día 1 queda vacío": una línea suelta antes del primer encabezado (título del plan, "SEMANA 1"...)
@@ -4809,7 +4966,8 @@ function previewImportacion(){
   }
   const nB = r.dias.reduce((s, d) => s + d.bloques.length, 0);
   const nT = r.dias.reduce((s, d) => s + d.bloques.reduce((x, b) => x + Object.keys(b.cierre || {}).length, 0), 0);
-  const lbBloque = b => (sp ? (b.lb || '') + (' ' + esc((b.items[0] || b.titulo || '').slice(0, 24))) : ((IMP_FASES.find(f => f.fase === b.fase) || {}).lb)) || (IMP_FASES.find(f => f.fase === b.fase) || {}).lb;
+  const semaforo = b => '<span style="color:' + (!b.items.length ? '#ff5d5d' : (b.estado === 'warn' ? '#FFB703' : '#3ecf7a')) + '" title="' + (!b.items.length ? 'sin prescripción' : (b.estado === 'warn' ? 'inferido: revisá fase y nombre' : 'reconocido')) + '">●</span> ';
+  const lbBloque = b => semaforo(b) + ((sp ? (b.lb || '') + (' ' + esc((b.items[0] || b.titulo || '').slice(0, 24))) : ((IMP_FASES.find(f => f.fase === b.fase) || {}).lb)) || (IMP_FASES.find(f => f.fase === b.fase) || {}).lb);
   const det = r.dias.map(d => (d.num ? 'Día ' + d.num : 'Día') + (d.titulo ? ' «' + esc(d.titulo.slice(0, 30)) + '»' : '') + ': ' +
     (d.bloques.map(lbBloque).join(' · ') || 'sin bloques')).join('<br>');
   box.innerHTML = '<b style="color:var(--txt-2)">Detectado: ' + r.dias.length + ' día' + (r.dias.length === 1 ? '' : 's') + ', ' + nB + ' bloque' + (nB === 1 ? '' : 's') +
@@ -5248,10 +5406,12 @@ function parsearDosisSports(linea){
   const t = String(linea || '');
   const out = {};
   let m;
-  if((m = t.match(RX_DOSIS_SPORTS))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\s+/g, ''); }
-  if((m = t.match(/tempo\s*(\d{3,4})/i))) out.tempo = m[1];
+  const c = jpDosisCanon(t);           /* parser canónico: suma de tramos, pirámides, tempo con X, descansos en min/minutes/rangos */
+  if(c.sets){ out.sets = c.sets; out.reps = c.reps; }
+  else if((m = t.match(RX_DOSIS_SPORTS))){ out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\s+/g, ''); }
+  if(c.tempo) out.tempo = c.tempo;
   if((m = t.match(/rir\s*(\d+)/i))) out.rir = m[1];
-  if((m = t.match(/rest\s*(\d+)\s*s?/i))) out.restSeconds = parseInt(m[1], 10);
+  if(c.rest !== undefined) out.restSeconds = c.rest;
   return out;
 }
 /* MOTOR DE ONDULACIÓN S1 -> S2/S3/S4 (directiva "Ondulación de Cargas";
@@ -5509,7 +5669,8 @@ const RX_NOEJ_METRICA = /^(?:\d+(?:\s*[-–/]\s*\d+)?\s*(?:sets?|series?|reps?|r
 function lineaSoloDosisSB(linea){
   const dosis = parsearDosisSports(linea);
   return !!((dosis.sets || dosis.reps || dosis.tempo || dosis.restSeconds || dosis.rir) &&
-    String(linea).replace(/[0-9x×|.:\-–\/]/gi, '').replace(/tempo|rir|rest|sets?|series|rondas?|reps?|fallo\s*t[eé]cnico/gi, '').trim().length < 4);
+    /* esquemas "1x3 (Aclimatación) + 1x6": el paréntesis y el "+" no cuentan como nombre */
+    String(linea).replace(/\([^)]*\)/g, '').replace(/[0-9x×|.:+\-–\/]/gi, '').replace(/tempo|rir|rest|sets?|series|rondas?|reps?|fallo\s*t[eé]cnico/gi, '').trim().length < 4);
 }
 /* nombre limpio del ejercicio de una línea ('' = no es un ejercicio) */
 /* encabezados de técnica/jerga del coach: nunca son un ejercicio (evita badges amarillos falsos) */
@@ -7860,6 +8021,7 @@ const TEMPLATE_HTML = `<!DOCTYPE html>
   window.addEventListener('unhandledrejection', function(){ setTimeout(liberar, 40); });
 })();
 <\/script>
+<script>{{JP_DOSIS_CANON}}<\/script>
 <style id="jpHoldCss">html.jp-hold body > *:not(#jpSplash){ opacity:0 !important; } html.jp-reveal body > *:not(#jpSplash){ transition:opacity .2s ease-in-out; }</style>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15831,6 +15993,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var restPre = t.match(/(\\d+)\\s*(?:"|\\u2033|\\u201d|seg(?:undos)?\\b|s\\b)\\s*(?:de\\s+)?(?:rest|descanso)\\b/i);
       if(restPre) out.restSeconds = parseInt(restPre[1], 10);
     }
+    /* parser canónico (el mismo que usa el Builder): descansos en min/minutes/rangos y etiqueta del rango ("180-240s") */
+    if(typeof jpDosisCanon === 'function'){
+      var cnR = jpDosisCanon(t);
+      if(cnR.rest !== undefined){ out.restSeconds = cnR.rest; if(cnR.restLabel) out.restLabel = cnR.restLabel; }
+    }
     /* especificación secundaria ("por pierna"/"por lado"/"c/u"/"cada
        lado"/"isométrico"): nunca debe romper el reconocimiento de la
        dosis base ni colarse como nombre de ejercicio nuevo -- se guarda
@@ -16203,12 +16370,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       /* "BARBELL BACK SQUAT × 1x3 (Aclimatación) + 1x6 (Top Set) + 2x8 (Back-off) | TEMPO 3110 | REST 120-180s": un solo ejercicio con tres tramos
          (4 sets en total), nunca solo la primera dosis. Sin nombre en la línea, los tramos pasan al ejercicio recién nombrado. */
-      if(RX_MULTI_TRAMO_SB.test(linea) && !(actual && actual.tipo === 'biserie' && actual.subs.length)){
-        var iTr = linea.search(/\\d+\\s*[x\\u00d7]\\s*\\d+/i);
-        var nomTr = linea.slice(0, iTr).replace(/^[\\s\\-\\u2013\\u2014\\u2022*]+/, '').replace(/\\s+[x\\u00d7]\\s*$/i, '').replace(/[\\s\\u00d7:|\\-\\u2013\\u2014(]+$/, '').trim();
+      var cnT = (typeof jpDosisCanon === 'function') ? jpDosisCanon(linea) : null;
+      if(((cnT && cnT.tramos.length > 1) || (!cnT && RX_MULTI_TRAMO_SB.test(linea))) && !(actual && actual.tipo === 'biserie' && actual.subs.length)){
+        var iTr = cnT ? cnT.corte : linea.search(/\\d+\\s*[x\\u00d7]\\s*\\d+/i);
+        var nomTr = (typeof jpLimpiarNombreEj === 'function') ? jpLimpiarNombreEj(linea.slice(0, iTr)) : linea.slice(0, iTr).replace(/^[\\s\\-\\u2013\\u2014\\u2022*]+/, '').replace(/\\s+[x\\u00d7]\\s*$/i, '').replace(/[\\s\\u00d7:|\\-\\u2013\\u2014(]+$/, '').trim();
         var colaTr = linea.slice(iTr), segTr = colaTr.split('|')[0], tramosTr = [], mTr2;
-        var rxT = /(\\d+)\\s*[x\\u00d7]\\s*(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:\\(([^)]*)\\))?/gi;
-        while((mTr2 = rxT.exec(segTr))) tramosTr.push({ sets: parseInt(mTr2[1], 10), reps: mTr2[2].replace(/\\s+/g, '').replace(/\\u2013/g, '-'), unidad: 'reps', tempo: '', rir: '', rest: 0, etq: mTr2[3] ? mTr2[3].trim() : '' });
+        if(cnT){
+          cnT.tramos.forEach(function(t){ tramosTr.push({ sets: t.sets, reps: t.reps, unidad: 'reps', tempo: '', rir: '', rest: 0, etq: t.etq || '' }); });
+        } else {
+          var rxT = /(\\d+)\\s*[x\\u00d7]\\s*(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:\\(([^)]*)\\))?/gi;
+          while((mTr2 = rxT.exec(segTr))) tramosTr.push({ sets: parseInt(mTr2[1], 10), reps: mTr2[2].replace(/\\s+/g, '').replace(/\\u2013/g, '-'), unidad: 'reps', tempo: '', rir: '', rest: 0, etq: mTr2[3] ? mTr2[3].trim() : '' });
+        }
         var destTr = null;
         if(tramosTr.length > 1){
           if(nomTr){
@@ -16217,13 +16389,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           } else if(actual && actual.tipo === 'simple' && !actual.dosisAsignada) destTr = actual;
         }
         if(destTr){
-          var dTr = parsearDosisSB(colaTr), mRL = colaTr.match(/(?:rest|descanso)\\s*(?:de\\s*)?([^|;)]+)/i), lblRest = mRL ? mRL[1].replace(/\\s+/g, '').replace(/seg\\w*$/i, 's') : '';
-          if(/^\\d+[-\\u2013]\\d+$/.test(lblRest)) lblRest += 's';
+          var dTr = parsearDosisSB(colaTr);
           destTr.tramos = tramosTr;
           destTr.sets = tramosTr.reduce(function(a, t){ return a + t.sets; }, 0);
           destTr.reps = tramosTr.reduce(function(a, t){ return t.sets > a.sets ? t : a; }, tramosTr[0]).reps;
           destTr.tempo = dTr.tempo || ''; destTr.rir = dTr.rir || ''; destTr.restSeconds = dTr.restSeconds || 0;
-          destTr.restLabel = /^\\d+[-\\u2013]\\d+s$/.test(lblRest) ? lblRest : '';
+          destTr.restLabel = dTr.restLabel || '';
           destTr.dosisAsignada = true;
           return;
         }
@@ -16420,6 +16591,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          (la dosis y el descanso se redactan en renglones separados); "Rest 0s" = sin descanso */
       if(actual && actual.tipo === 'simple' && /^\\s*(?:rest|descanso)\\b/i.test(linea) && dosis.restSeconds !== undefined){
         actual.restSeconds = dosis.restSeconds;
+        if(dosis.restLabel) actual.restLabel = dosis.restLabel;
         if(dosis.restSeconds === 0) actual.restCero = true;
         return;
       }
@@ -39565,7 +39737,8 @@ function compile(ath){
     STORAGE_KEY: 'coachjp_' + slug(nombre) + '_progress_v1',
     GUIDE_PROGRESSION_ROWS: guideRows,
     PAIN_RESTRICTIONS: painRestrictionsHtml(ath),
-    PROGRAM_CONFIG_JSON: json
+    PROGRAM_CONFIG_JSON: json,
+    JP_DOSIS_CANON: String(jpDosisCanon) + '\n' + String(jpLimpiarNombreEj)
   };
 
   let out = TEMPLATE_HTML;
