@@ -44485,6 +44485,8 @@ document.addEventListener('DOMContentLoaded', init);
       }
     }catch(e){}
     AI.keys = AI.keys || {}; AI.models = AI.models || {}; AI.cooldown = AI.cooldown || {};
+    /* cooldowns largos guardados por versiones anteriores (de 1 h a 21 h por un 429 de velocidad): se descartan al cargar */
+    Object.keys(AI.cooldown).forEach(p => { if((AI.cooldown[p] || 0) - Date.now() > 30 * 1000) delete AI.cooldown[p]; });
     ORDEN.forEach(p => { if(!AI.models[p]) AI.models[p] = PROV[p].model; });
     /* directiva ("Protección de la API Key") -- si la configuración principal
        perdió una clave (borrado accidental, escritura vacía, reseteo del
@@ -44585,8 +44587,9 @@ document.addEventListener('DOMContentLoaded', init);
     const m = Math.ceil(s / 60);
     return m < 60 ? m + ' min' : Math.ceil(m / 60) + ' h';
   }
+  const COOL_MAX = 15;      /* ningun cooldown automatico dura mas de 15 s */
   function setCooldown(p, secs){
-    AI.cooldown[p] = Date.now() + (secs * 1000);
+    AI.cooldown[p] = Date.now() + (Math.min(secs, COOL_MAX) * 1000);
     saveAI(); paintProviders(); paintDot();
   }
   /* directiva crítica (2026-09) -- fix del cooldown de API: función rápida
@@ -44877,10 +44880,9 @@ document.addEventListener('DOMContentLoaded', init);
         const m = raw.match(/retry(?:Delay|-after)"?[:\s"]+(\d+)/i);
         secs = m ? parseInt(m[1], 10) : 0;
       }
-      if(!secs){
-        /* 429 sin Retry-After: un limite por MINUTO (RPM/TPM) se resuelve en ~1 min; solo la cuota DIARIA justifica una espera larga */
-        secs = (res.status === 429 && /per\s*day|PerDay|daily|\bRPD\b/i.test(raw)) ? 3600 : 60;
-      }
+      /* un 429 / 503 / 529 es un limite temporal de VELOCIDAD (RPM/TPM) o saturacion del proveedor: pausa corta de 10 a 20 s y reintento automatico.
+         Nunca se lo interpreta como agotamiento diario (el texto de la respuesta suele nombrar cuotas diarias aunque lo que se pisó es el minuto). */
+      secs = Math.min(COOL_MAX, Math.max(10, secs || 12));      /* pausa de 10 a 15 s */
       throw RateErr(prov, secs, 'HTTP ' + res.status + ' · cuota agotada en ' + PROV[prov].lb);
     }
     if(!res.ok){
@@ -44962,7 +44964,7 @@ document.addEventListener('DOMContentLoaded', init);
           throw err;
         }
         /* espera corta: reintenta el mismo proveedor */
-        if(err.secs <= 20){
+        if(err.secs <= 20 && !(opts && opts.sinEspera)){      /* sinEspera: el llamador (generador de sesion) maneja la pausa con cuenta regresiva visible */
           log('⏳ ' + PROV[prov].lb + ' pidió esperar ' + err.secs + 's — reintentando…', 'warn');
           await new Promise(r => setTimeout(r, (err.secs + 1) * 1000));
           continue;
@@ -75549,7 +75551,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
 
   /* ---------- ritmo de pedidos, reintento y control del usuario ---------- */
-  var ESPERA_MAX = 90, REINTENTOS = 3, PAUSA_DIAS = 6, PAUSA_EXTRA = 4, PAUSA_TOPE = 20;
+  var ESPERA_MAX = 90, REINTENTOS = 5, PAUSA_DIAS = 9, PAUSA_EXTRA = 3, PAUSA_TOPE = 20, ESPERAS_429 = [12, 15, 15, 15];     /* pausa real de 9 s entre dias; 429 = pausa de 12-15 s y reintento */
   var pausaDias = PAUSA_DIAS;                                  /* pausa entre dias: sube sola si la API ya pidio esperar */
   var ctl = { esperando: false, saltar: false, detener: false };
   function esCuota(err){ return !!err && (err.cooldownAll || err.rate || /cooldown|429|cuota|quota|rate.?limit|saturad|overloaded/i.test(String(err.message || ''))); }
@@ -75560,12 +75562,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   function ctaClave(){ return '<br><button type="button" class="btn gs-key" data-gskey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>'; }
   /* limite diario / cooldown largo: un solo aviso claro, sin reintentos ni lineas repetidas */
-  function limiteDiario(seg){
-    var est = (window.CoachAI.estadoCooldown ? window.CoachAI.estadoCooldown() : []).filter(function(x){ return x.left > 0; });
-    var det = est.length ? est.map(function(x){ return '<b>' + esc2(x.lb) + '</b> (se libera en ~' + window.CoachAI.coolTxt(x.left) + ')'; }).join(', ') : 'el proveedor de IA (~' + window.CoachAI.coolTxt(seg) + ')';
+  function limiteApi(){
     var lg = $q('gsLog'); if(lg){ lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); }); lg.classList.add('on'); }
-    log('⛔ Se alcanzó el <b>' + (seg >= 3600 ? 'límite diario' : 'límite de uso') + '</b> de la API: ' + det + '. No se hacen más reintentos para no gastar cuota. Probá con <b>otra API Key</b> (otro proveedor o una cuenta distinta) o volvé a intentar cuando se libere.' + ctaClave(), 'e');
-    toast('Límite diario de la API alcanzado: cambiá de API Key o esperá', 'warn');
+    log('⏳ El proveedor sigue limitando la <b>frecuencia de pedidos</b> (HTTP 429) después de ' + REINTENTOS + ' intentos con pausas de 12-15 s. Suele resolverse en uno o dos minutos: volvé a generar en un rato (lo ya generado quedó guardado) o probá con <b>otra API Key</b>.' + ctaClave(), 'w');
+    toast('La API está limitando la velocidad: reintentá en un minuto o cambiá de API Key', 'warn');
   }
   /* micro-botones junto al aviso de espera: cambiar de clave, saltear el dia o detener (se conserva lo ya generado) */
   function acciones(saltar){
@@ -75592,10 +75592,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         return await window.CoachAI.generarTexto(usuarioTxt, sistemaTxt, opts);
       }catch(err){
         if(!esCuota(err) || intento >= REINTENTOS) throw err;
-        var seg = Math.ceil(err.secs || window.CoachAI.esperaCooldown() || (10 * intento));
-        if(seg > ESPERA_MAX){ err.espera = seg; throw err; }          /* espera larga (cuota diaria): no se queda colgado, avisa con la accion de cambiar de clave */
-        pausaDias = Math.min(PAUSA_TOPE, pausaDias + PAUSA_EXTRA);      /* la API ya pidio aire: los proximos dias se espacian mas */
-        log('⏳ Cuota o cooldown de la API en el DÍA ' + (dia + 1) + ': reintento automático en ' + seg + 's (intento ' + (intento + 1) + '/' + REINTENTOS + '). ' + acciones(true), 'w');
+        var seg = Math.max(ESPERAS_429[intento - 1] || 15, Math.ceil(err.secs || 0) + 1);      /* bloqueo temporal por alta frecuencia: pausa corta (nunca menos que el cooldown real que falta) */
+        pausaDias = Math.min(PAUSA_TOPE, pausaDias + PAUSA_EXTRA);      /* la API pidio aire: los proximos dias se espacian mas */
+        log('⏳ La API pidió bajar la frecuencia de pedidos (DÍA ' + (dia + 1) + '): pausa de ' + seg + 's y reintento automático (intento ' + (intento + 1) + '/' + REINTENTOS + '). ' + acciones(true), 'w');
         await esperar(seg + 1, 'Reintentando en', '(' + (intento + 1) + '/' + REINTENTOS + ')');
         if(ctl.detener){ var e1 = new Error('detenido'); e1.detenido = true; throw e1; }
         if(ctl.saltar){ var e2 = new Error('salteado'); e2.saltado = true; throw e2; }
@@ -75614,9 +75613,6 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
       return;
     }
-    /* cooldown largo ya conocido: ni se intenta (cada pedido extra solo ensucia la consola y la cuota) */
-    var espera0 = (window.CoachAI.esperaCooldown && window.CoachAI.esperaCooldown()) || 0;
-    if(espera0 > ESPERA_MAX){ var lg00 = $q('gsLog'); if(lg00){ lg00.innerHTML = ''; } limiteDiario(espera0); return; }
     var falt = faltantes(ath);
     if(falt.length){
       var dec = await preguntarFicha(falt);
@@ -75625,9 +75621,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     }
     var extra = ($q('gsExtra') ? $q('gsExtra').value.trim() : ''), semana = !!($q('gsSemana') && $q('gsSemana').checked);
     var di0 = Math.min(S.ui.day || 0, p.dias.length - 1), targets = semana ? p.dias.map(function(_, i){ return i; }) : [di0];
+    if(semana){
+      var aPisar = targets.filter(function(i){ return (p.dias[i].bloques || []).length; }).length;
+      if(aPisar && !confirm('Generar la semana completa va a REEMPLAZAR los bloques de ' + aPisar + ' día(s). Se guarda día por día y se puede deshacer con Ctrl+Z. ¿Continuar?')) return;
+    }
     corriendo = true; estadoBtn = ''; ctl.esperando = false; ctl.saltar = false; ctl.detener = false; pausaDias = PAUSA_DIAS; pintar();
     var lg0 = $q('gsLog'); if(lg0){ lg0.innerHTML = ''; lg0.classList.add('on'); }
-    var textos = [], titulos = [], saltados = [], errFinal = null, sinEstructura = false;
+    var textos = [], titulos = [], saltados = [], errFinal = null, sinEstructura = false, cargados = [];
+    /* semana: cada dia se guarda apenas responde (sin pedir confirmacion de nuevo); el siguiente solo arranca despues de la pausa */
+    function guardarDia(t){ var c0 = window.confirm; window.confirm = function(){ return true; }; try{ return ejecutarImportacion(t, 'semana'); }finally{ window.confirm = c0; } }
     try{
       log('<b>Alumno/a:</b> ' + esc2(fullName(ath)) + ' · ' + esc2(perfilNivel(ath).split(':')[0]) + ' · ' + targets.length + ' día(s)' + (semana ? ' · pausa de ' + PAUSA_DIAS + 's entre días para no saturar la API' : ''));
       for(var k = 0; k < targets.length; k++){
@@ -75644,12 +75646,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         var foco = focoAnatomico(ath, p, di), pr;
         log('🎯 Foco anatómico del DÍA ' + (di + 1) + ': <b>' + esc2(foco.lb || 'libre (coherente con el resto del plan)') + '</b>' + (foco.fuente ? ' <span class="w">· ' + esc2(foco.fuente) + '</span>' : ''));
         try{
-          var out = await llamarIA(usuario(ath, p, di, extra, titulos, foco), sistema(ath, foco), { maxTokens: 7000, plain: true }, di);
+          var out = await llamarIA(usuario(ath, p, di, extra, titulos, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di);
           pr = procesar(out, di, foco);
           /* split blindado: si la IA mezcló grupos fuera del foco, se le pide UNA corrección antes de aplicar nada */
           if(pr.nB >= 2 && pr.viol.length){
             log('↻ La IA incumplió reglas del plan (' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '). Pido la corrección…', 'w');
-            var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true }, di);
+            var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di);
             var pr2 = procesar(out2, di, foco);
             if(pr2.nB >= 2 && pr2.viol.length <= pr.viol.length) pr = pr2;
           }
@@ -75669,11 +75671,17 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         }
         textos.push(t); titulos.push((parsearImportacion(t, true).dias[0] || {}).titulo || ('Día ' + (di + 1)));
         log('✔ DÍA ' + (di + 1) + ': ' + nB + ' bloques — ' + esc2(titulos[titulos.length - 1]), 'o');
+        if(semana){
+          if(guardarDia(t)){ cargados.push(di + 1); log('💾 DÍA ' + (di + 1) + ' guardado en el Builder.', 'o'); }
+          else { log('✖ No se pudo guardar el DÍA ' + (di + 1) + '.', 'e'); errFinal = new Error('No se pudo guardar el día ' + (di + 1)); break; }
+        }
       }
       /* lo ya generado se aplica aunque un dia posterior haya fallado o se haya salteado/detenido */
-      if(textos.length){
-        var ok = ejecutarImportacion(textos.join('\n\n'), semana ? 'semana' : 'dia');
-        if(ok) log('Sesión cargada en el Builder (' + textos.length + ' día' + (textos.length === 1 ? '' : 's') + (saltados.length ? '; sin generar: DÍA ' + saltados.join(', ') : '') + '). Revisá los bloques y ajustá lo que quieras.', 'o');
+      if(textos.length && semana){
+        log('Semana cargada día por día (' + cargados.length + ' día' + (cargados.length === 1 ? '' : 's') + (saltados.length ? '; sin generar: DÍA ' + saltados.join(', ') : '') + '). Revisá los bloques y ajustá lo que quieras.', 'o');
+      } else if(textos.length){
+        var ok = ejecutarImportacion(textos.join('\n\n'), 'dia');
+        if(ok) log('Sesión cargada en el Builder. Revisá los bloques y ajustá lo que quieras.', 'o');
         else log('Importación cancelada: el plan no se modificó.', 'e');
       }
       if(sinEstructura){
@@ -75683,9 +75691,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       }
       if(errFinal) throw errFinal;
     }catch(err){
-      var segL = err ? (err.espera || err.secs || 0) : 0;
-      if(esCuota(err) && segL > ESPERA_MAX){
-        limiteDiario(segL);
+      if(esCuota(err)){
+        limiteApi();
         if(textos.length) log('Los días ya generados se cargaron; podés repetir el resto más tarde.', 'o');
       } else {
         if(!esCuota(err)) console.warn('generador de sesión', err);
