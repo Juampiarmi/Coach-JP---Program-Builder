@@ -75068,6 +75068,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '.gs-log.on{display:block}.gs-log .e{color:#F0A08C}.gs-log .o{color:#34D399}.gs-log .w{color:#FFB703}' +
       '.gs-log .gs-key{margin-top:8px;border-color:rgba(255,85,0,.55);color:#FFB38A;background:rgba(255,85,0,.08)}' +
       '.gs-go:disabled{opacity:.72;cursor:wait;filter:saturate(.6)}' +
+      '.gs-wait-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}' +
+      '.gs-mini{padding:5px 9px;border-radius:8px;border:1px solid rgba(255,85,0,.45);background:rgba(255,85,0,.08);color:#FFB38A;font:700 11px/1.2 inherit;letter-spacing:.03em;cursor:pointer}' +
+      '.gs-mini:hover{background:rgba(255,85,0,.2)}' +
       '.gs-spin{display:inline-block;width:13px;height:13px;margin-right:7px;border-radius:50%;border:2px solid rgba(255,138,77,.3);border-top-color:#FF5500;animation:gsSp .8s linear infinite;vertical-align:-2px}' +
       '@keyframes gsSp{to{transform:rotate(360deg)}}' +
       '#gsFichaM{position:fixed;inset:0;z-index:100001;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72)}' +
@@ -75140,20 +75143,32 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     });
   }
 
-  /* ---------- reintento ante cuota / cooldown ---------- */
-  var ESPERA_MAX = 90, REINTENTOS = 3;
+  /* ---------- ritmo de pedidos, reintento y control del usuario ---------- */
+  var ESPERA_MAX = 90, REINTENTOS = 3, PAUSA_DIAS = 6, PAUSA_EXTRA = 4, PAUSA_TOPE = 20;
+  var pausaDias = PAUSA_DIAS;                                  /* pausa entre dias: sube sola si la API ya pidio esperar */
+  var ctl = { esperando: false, saltar: false, detener: false };
   function esCuota(err){ return !!err && (err.cooldownAll || err.rate || /cooldown|429|cuota|quota|rate.?limit|saturad|overloaded/i.test(String(err.message || ''))); }
   function esClave(err){ return !!err && /API Key|clave|401|403|invalid|permission|no hay api/i.test(String(err.message || '')); }
   function setBtn(html){
     estadoBtn = html || '';
     var b = $q('gsRun'); if(b){ b.disabled = true; b.innerHTML = estadoBtn || '<span class="gs-spin"></span> Generando…'; }
   }
-  function esperar(seg, etiqueta){
+  function ctaClave(){ return '<br><button type="button" class="btn gs-key" data-gskey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>'; }
+  /* micro-botones junto al aviso de espera: cambiar de clave, saltear el dia o detener (se conserva lo ya generado) */
+  function acciones(saltar){
+    return '<span class="gs-wait-acts"><button type="button" class="gs-mini" data-gskey="1">[ 🔑 Cambiar API Key ]</button>' +
+      (saltar ? '<button type="button" class="gs-mini" data-gsskip="1">[ ⏩ Saltear este día ]</button>' : '') +
+      '<button type="button" class="gs-mini" data-gsstop="1">[ ⏹ Detener ]</button></span>';
+  }
+  function quitarAcciones(){ var l = $q('gsLog'); if(l) l.querySelectorAll('.gs-wait-acts').forEach(function(x){ x.remove(); }); }
+  /* cuenta regresiva en el boton; se corta antes si el usuario saltea o detiene */
+  function esperar(seg, prefijo, sufijo){
     return new Promise(function(res){
       var resto = Math.max(1, Math.round(seg));
+      ctl.esperando = true;
       (function tic(){
-        setBtn('⏳ Reintentando en ' + resto + 's… ' + etiqueta);
-        if(resto <= 0){ setBtn(''); return res(); }
+        if(resto <= 0 || ctl.saltar || ctl.detener){ ctl.esperando = false; quitarAcciones(); setBtn(''); return res(); }
+        setBtn('⏳ ' + prefijo + ' ' + resto + 's…' + (sufijo ? ' ' + sufijo : ''));
         resto--; setTimeout(tic, 1000);
       })();
     });
@@ -75166,12 +75181,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         if(!esCuota(err) || intento >= REINTENTOS) throw err;
         var seg = Math.ceil(err.secs || window.CoachAI.esperaCooldown() || (10 * intento));
         if(seg > ESPERA_MAX){ err.espera = seg; throw err; }          /* espera larga (cuota diaria): no se queda colgado, avisa con la accion de cambiar de clave */
-        log('⏳ Cuota o cooldown de la API en el DÍA ' + (dia + 1) + ': reintento automático en ' + seg + 's (intento ' + (intento + 1) + '/' + REINTENTOS + ').', 'w');
-        await esperar(seg + 1, '(' + (intento + 1) + '/' + REINTENTOS + ')');
+        pausaDias = Math.min(PAUSA_TOPE, pausaDias + PAUSA_EXTRA);      /* la API ya pidio aire: los proximos dias se espacian mas */
+        log('⏳ Cuota o cooldown de la API en el DÍA ' + (dia + 1) + ': reintento automático en ' + seg + 's (intento ' + (intento + 1) + '/' + REINTENTOS + '). ' + acciones(true), 'w');
+        await esperar(seg + 1, 'Reintentando en', '(' + (intento + 1) + '/' + REINTENTOS + ')');
+        if(ctl.detener){ var e1 = new Error('detenido'); e1.detenido = true; throw e1; }
+        if(ctl.saltar){ var e2 = new Error('salteado'); e2.saltado = true; throw e2; }
       }
     }
   }
-  function ctaClave(){ return '<br><button type="button" class="btn gs-key" data-gskey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>'; }
 
   /* ---------- generación ---------- */
   async function generar(){
@@ -75192,37 +75209,60 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     }
     var extra = ($q('gsExtra') ? $q('gsExtra').value.trim() : ''), semana = !!($q('gsSemana') && $q('gsSemana').checked);
     var di0 = Math.min(S.ui.day || 0, p.dias.length - 1), targets = semana ? p.dias.map(function(_, i){ return i; }) : [di0];
-    corriendo = true; estadoBtn = ''; pintar();
+    corriendo = true; estadoBtn = ''; ctl.esperando = false; ctl.saltar = false; ctl.detener = false; pausaDias = PAUSA_DIAS; pintar();
     var lg0 = $q('gsLog'); if(lg0){ lg0.innerHTML = ''; lg0.classList.add('on'); }
-    var textos = [], titulos = [];
+    var textos = [], titulos = [], saltados = [], errFinal = null, sinEstructura = false;
     try{
-      log('<b>Alumno/a:</b> ' + esc2(fullName(ath)) + ' · ' + esc2(perfilNivel(ath).split(':')[0]) + ' · ' + targets.length + ' día(s)');
+      log('<b>Alumno/a:</b> ' + esc2(fullName(ath)) + ' · ' + esc2(perfilNivel(ath).split(':')[0]) + ' · ' + targets.length + ' día(s)' + (semana ? ' · pausa de ' + PAUSA_DIAS + 's entre días para no saturar la API' : ''));
       for(var k = 0; k < targets.length; k++){
         var di = targets[k];
+        ctl.saltar = false;
+        if(k > 0){
+          /* pausa controlada entre dias: no se golpea el limite por minuto (RPM/TPM) del proveedor */
+          log('⏸ Pausa de ' + pausaDias + 's antes del DÍA ' + (di + 1) + ' (cuida el límite de la API). ' + acciones(false), 'w');
+          await esperar(pausaDias, 'Pausa entre días:', '');
+          if(ctl.detener){ log('⏹ Generación detenida: se conserva lo ya generado.', 'w'); break; }
+        }
         log('<span class="gs-spin"></span> Diseñando el DÍA ' + (di + 1) + ' (' + (k + 1) + '/' + targets.length + ')…');
-        var out = await llamarIA(usuario(ath, p, di, extra, titulos), sistema(ath), { maxTokens: 7000, plain: true }, di);
+        setBtn('<span class="gs-spin"></span> Generando el DÍA ' + (di + 1) + '…');
+        var out;
+        try{
+          out = await llamarIA(usuario(ath, p, di, extra, titulos), sistema(ath), { maxTokens: 7000, plain: true }, di);
+        }catch(err){
+          if(err && err.saltado){ saltados.push(di + 1); log('⏩ DÍA ' + (di + 1) + ' salteado: queda como estaba.', 'w'); continue; }
+          if(err && err.detenido){ log('⏹ Generación detenida: se conserva lo ya generado.', 'w'); break; }
+          errFinal = err; break;
+        }
         var t = limpiar(out, di), r = parsearImportacion(t, true), nB = r.dias.reduce(function(s, x){ return s + x.bloques.filter(function(b){ return !b.sinClasificar && b.items && b.items.length; }).length; }, 0);
         /* una respuesta que no es una sesion (rechazo, charla, formato roto) no se aplica: se deja en el Importador rapido */
         if(nB < 2){
-          _impTexto = t; renderBuilder();
-          var det = document.getElementById('impBox'); if(det){ det.open = true; det.scrollIntoView({ block: 'center' }); }
-          log('La IA respondió pero no se pudo estructurar en bloques: dejé el texto en el <b>Importador rápido</b> para que lo revises.', 'e');
-          toast('No se pudo estructurar la respuesta: quedó en el Importador rápido', 'warn');
-          return;
+          _impTexto = t; sinEstructura = true; saltados.push(di + 1);
+          log('La IA respondió pero el DÍA ' + (di + 1) + ' no se pudo estructurar en bloques: dejé el texto en el <b>Importador rápido</b> para que lo revises.', 'e');
+          continue;
         }
         textos.push(t); titulos.push((r.dias[0] && r.dias[0].titulo) || ('Día ' + (di + 1)));
         log('✔ DÍA ' + (di + 1) + ': ' + nB + ' bloques — ' + esc2(titulos[titulos.length - 1]), 'o');
       }
-      var ok = ejecutarImportacion(textos.join('\n\n'), semana ? 'semana' : 'dia');
-      if(ok) log('Sesión cargada en el Builder. Revisá los bloques y ajustá lo que quieras.', 'o');
-      else log('Importación cancelada: el plan no se modificó.', 'e');
+      /* lo ya generado se aplica aunque un dia posterior haya fallado o se haya salteado/detenido */
+      if(textos.length){
+        var ok = ejecutarImportacion(textos.join('\n\n'), semana ? 'semana' : 'dia');
+        if(ok) log('Sesión cargada en el Builder (' + textos.length + ' día' + (textos.length === 1 ? '' : 's') + (saltados.length ? '; sin generar: DÍA ' + saltados.join(', ') : '') + '). Revisá los bloques y ajustá lo que quieras.', 'o');
+        else log('Importación cancelada: el plan no se modificó.', 'e');
+      }
+      if(sinEstructura){
+        renderBuilder();
+        var det = document.getElementById('impBox'); if(det){ det.open = true; det.scrollIntoView({ block: 'center' }); }
+        toast('Una respuesta no se pudo estructurar: quedó en el Importador rápido', 'warn');
+      }
+      if(errFinal) throw errFinal;
     }catch(err){
       console.warn('generador de sesión', err);
-      log('✖ ' + esc2((err && err.message) || String(err)) + ((esCuota(err) || esClave(err)) ? ctaClave() : ''), 'e');
+      log('✖ ' + esc2((err && err.message) || String(err)) + ((esCuota(err) || esClave(err)) ? ctaClave() : '') + (textos.length ? '<br>Los días ya generados se cargaron; podés repetir el resto más tarde.' : ''), 'e');
       if(!(err && err.__toast)) toast('Error al generar la sesión: ' + String((err && err.message) || err).slice(0, 80), 'err');
     }finally{
-      corriendo = false; estadoBtn = '';
+      corriendo = false; estadoBtn = ''; ctl.esperando = false;
       var lg = $q('gsLog'); if(lg) lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); });
+      quitarAcciones();
       pintar();
     }
   }
@@ -75231,6 +75271,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var t = e.target; if(!t || !t.closest) return;
     if(t.closest('#gsRun')){ e.preventDefault(); generar(); return; }
     if(t.closest('[data-gskey]')){ e.preventDefault(); if(window.CoachAI && window.CoachAI.config) window.CoachAI.config(); return; }
+    if(t.closest('[data-gsskip]')){ e.preventDefault(); if(corriendo && ctl.esperando) ctl.saltar = true; return; }
+    if(t.closest('[data-gsstop]')){ e.preventDefault(); if(corriendo){ ctl.detener = true; log('⏹ Deteniendo… se conserva lo ya generado.', 'w'); } return; }
     if(t.closest('#gsFicha')){ e.preventDefault(); var a = active(); if(a) abrirFicha(a); }
   });
   function ciclo(){ try{ pintar(); }catch(e){} }
