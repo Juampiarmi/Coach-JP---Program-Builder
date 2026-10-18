@@ -45454,6 +45454,7 @@ document.addEventListener('DOMContentLoaded', init);
       hayClave: () => ['anthropic','openai','google'].some(p => hasKey(p)),
       /* segundos hasta que se libere un proveedor (0 = hay uno disponible) y cuantas claves hay cargadas: los usan los generadores para el reintento con cuenta regresiva */
       esperaCooldown: esperaCooldown,
+      estadoCooldown: () => ORDEN.filter(hasKey).map(p => ({ prov: p, lb: PROV[p].lb, left: coolLeft(p) })),
       clavesCargadas: () => ORDEN.filter(hasKey).length,
       coolTxt: coolTxt,
       /* directiva crítica (2026-09) -- selector manual de proveedor/modelo y
@@ -74745,16 +74746,22 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     { id: 'shoulders', lb: 'Hombros',              sub: 'deltoides y trapecio' }
   ];
   function enfoqueDe(id){ return ENFOQUES.filter(function(o){ return o.id === id; })[0] || null; }
+  /* un dia puede llevar VARIOS enfoques: se guarda como array de ids (los datos viejos, un id suelto, se convierten) */
+  function normEnf(v){ return (Array.isArray(v) ? v : (v ? [v] : [])).filter(function(id, i, a){ return enfoqueDe(id) && a.indexOf(id) === i; }); }
   function enfoquePorDia(arr, freq){
     var n = parseInt(freq, 10) || (arr || []).length, out = [];
-    (arr || []).slice(0, n).forEach(function(id, i){ var o = enfoqueDe(id); if(o) out.push({ dia: i + 1, id: o.id, enfoque: o.lb + ' (' + o.sub + ')' }); });
+    (arr || []).slice(0, n).forEach(function(v, i){
+      var ids = normEnf(v); if(!ids.length) return;
+      var labs = ids.map(function(id){ var o = enfoqueDe(id); return o.lb + ' (' + o.sub + ')'; });
+      out.push({ dia: i + 1, id: ids[0], ids: ids, enfoques: labs, enfoque: labs.join(' + ') });
+    });
     return out;
   }
   /* sugerencia segun la cantidad de dias (y el genero para el dia 5) */
   function sugerirEnfoque(n){
     var g = String((($q('aGenero') || {}).value) || '').toUpperCase(), d5 = g === 'F' ? 'glute' : (g === 'M' ? 'arms' : 'full');
     var m = { 3: ['push', 'pull', 'lower'], 4: ['upper', 'lower', 'upper', 'lower'], 5: ['push', 'quad', 'pull', 'post', d5], 6: ['push', 'pull', 'quad', 'push', 'pull', 'post'] };
-    return (m[n] || []).slice();
+    return (m[n] || []).map(function(x){ return [x]; });
   }
   function $q(id){ return document.getElementById(id); }
   function nz(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
@@ -74841,7 +74848,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         '</div></div>';
     });
     h += '<div class="ft-g"><span class="ft-lb">Enfoque muscular por día de la semana</span>' +
-         '<div class="hint" style="margin:0 0 6px">Opcional. Si lo completás, la IA arma cada día exactamente con ese enfoque (va en el JSON como <b>enfoque_por_dia</b>). Las filas siguen la cantidad de días elegida arriba.</div>' +
+         '<div class="hint" style="margin:0 0 6px">Opcional. Podés marcar <b>varios</b> enfoques por día (ej: Empuje + Brazos y hombros). La IA arma cada día exactamente con eso (va en el JSON como <b>enfoque_por_dia</b>, con todos los enfoques marcados). Las filas siguen la cantidad de días elegida arriba.</div>' +
          '<div id="ftEnfoque"></div></div>';
     h += '<div class="ft-g ft-row"><div><span class="ft-lb">Edad (uso interno)</span><input id="ftEdad" type="number" min="12" max="90" inputmode="numeric" placeholder="Ej: 32"></div>' +
          '<div class="hint" style="margin:0 0 6px">No se muestra en la app del alumno/a: solo ajusta volumen, recuperación y selección de ejercicios.</div></div>' +
@@ -74850,7 +74857,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     g.parentNode.insertBefore(box, g.nextSibling);
     box.addEventListener('click', function(e){
       var fb = e.target.closest('.ft-fchip');
-      if(fb){ var k = parseInt(fb.getAttribute('data-ftd'), 10), id = fb.getAttribute('data-ftf'); draft.enfoque = draft.enfoque || []; draft.enfoque[k] = (draft.enfoque[k] === id) ? '' : id; pintar(); return; }
+      if(fb){
+        var k = parseInt(fb.getAttribute('data-ftd'), 10), id = fb.getAttribute('data-ftf'); draft.enfoque = draft.enfoque || [];
+        var cur = normEnf(draft.enfoque[k]), pos = cur.indexOf(id);                       /* toggle multiple: se pueden marcar varios por dia */
+        if(pos >= 0) cur.splice(pos, 1); else cur.push(id);
+        draft.enfoque[k] = cur; pintar(); return;
+      }
       if(e.target.closest('[data-ftsug]')){ var nn = parseInt(($q('aFreq') || {}).value, 10) || 0; draft.enfoque = sugerirEnfoque(nn); pintar(); return; }
       if(e.target.closest('[data-ftclr]')){ draft.enfoque = []; pintar(); return; }
       var b = e.target.closest('.ft-chip'); if(!b) return;
@@ -74919,7 +74931,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var h = '';
     for(var k = 0; k < n; k++){
       h += '<div class="ft-dia"><b>Día ' + (k + 1) + '</b><div class="ft-chips">' + ENFOQUES.map(function(o){
-        return '<button type="button" class="ft-chip ft-fchip' + (draft.enfoque[k] === o.id ? ' on' : '') + '" data-ftd="' + k + '" data-ftf="' + o.id + '" title="' + esc2(o.sub) + '">' + esc2(o.lb) + '</button>';
+        return '<button type="button" class="ft-chip ft-fchip' + (normEnf(draft.enfoque[k]).indexOf(o.id) >= 0 ? ' on' : '') + '" data-ftd="' + k + '" data-ftf="' + o.id + '" title="' + esc2(o.sub) + '" aria-pressed="' + (normEnf(draft.enfoque[k]).indexOf(o.id) >= 0) + '">' + esc2(o.lb) + '</button>';
       }).join('') + '</div></div>';
     }
     h += '<div class="ft-acts"><button type="button" class="ft-mini" data-ftsug="1">⚡ Sugerir según los ' + n + ' días</button><button type="button" class="ft-mini" data-ftclr="1">Limpiar enfoque</button></div>';
@@ -74932,8 +74944,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if((draft.enfasis || []).length) o.enfasis = draft.enfasis.slice();
     var rz = valorDe(GRUPOS.filter(function(x){ return x.k === 'restricciones'; })[0]);
     if(rz.length) o.restricciones = rz;
-    var nD = parseInt(($q('aFreq') || {}).value, 10) || 0, enf = (draft.enfoque || []).slice(0, nD);
-    if(enf.some(Boolean)) o.enfoque = enf;
+    var nD = parseInt(($q('aFreq') || {}).value, 10) || 0, enf = (draft.enfoque || []).slice(0, nD).map(normEnf);
+    if(enf.some(function(a){ return a.length; })) o.enfoque = enf;
     return o;
   }
   function pintarJson(){
@@ -74951,7 +74963,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var f = (a && a.ficha) || {};
     ['tiempoMax', 'objetivo', 'experiencia', 'equipo', 'split', 'edad'].forEach(function(k){ if(f[k]) draft[k] = f[k]; });
     draft.enfasis = (f.enfasis || []).slice();
-    draft.enfoque = (f.enfoque || []).slice();
+    draft.enfoque = (f.enfoque || []).map(normEnf);
     pintar();
   }
   function guardar(ath){
@@ -75071,6 +75083,25 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   function dia5Id(ath){ var g = String((ath && ath.genero) || '').toUpperCase(); return g === 'F' ? 'glute' : (g === 'M' ? 'arms' : 'full'); }
   function dia5Lb(id){ return id === 'glute' ? 'GLÚTEOS Y CADENA POSTERIOR (énfasis total, perfil femenino)' : (id === 'arms' ? 'BRAZOS Y HOMBROS (énfasis total, perfil masculino)' : 'FULL BODY complementario'); }
   function split5Activo(){ var c = $q('gsSplit5'); return c ? c.checked : true; }
+  /* varios enfoques en un mismo dia: se permite la UNION de los grupos de cada uno; el resto queda vetado */
+  var GRUPOS_BIB = ['Pectoral', 'Espalda', 'Hombros', 'Brazos', 'Piernas/Glúteos', 'Core'];
+  var NOM_GRUPO = { 'Pectoral': 'pecho', 'Espalda': 'espalda', 'Hombros': 'hombros', 'Brazos': 'brazos', 'Piernas/Glúteos': 'todo el tren inferior' };
+  function combinarFocos(ids){
+    ids = (ids || []).filter(function(id){ return FOCOS[id]; });
+    if(!ids.length) return null;
+    if(ids.length === 1){ var u = FOCOS[ids[0]]; return { id: ids[0], lb: u.lb, ok: u.ok, no: u.no, vetados: u.vetados, enfasis: u.enfasis || '', vetNom: u.vetNom || null, kw: u.kw || null }; }
+    if(ids.indexOf('full') >= 0) return { id: ids.join('+'), lb: FOCOS.full.lb, ok: [], no: [], vetados: '', enfasis: '', vetNom: null, kw: null };
+    var ok = [], kws = [], enf = [];
+    ids.forEach(function(id){ var F = FOCOS[id]; F.ok.forEach(function(g){ if(ok.indexOf(g) < 0) ok.push(g); }); if(F.kw) kws.push(F.kw.source); if(F.enfasis) enf.push(F.enfasis.replace(/\s*NADA de [^.]*\./gi, '')); });      /* los "NADA de..." de un enfoque contradirian al otro */
+    var no = GRUPOS_BIB.filter(function(g){ return ok.indexOf(g) < 0; });
+    return {
+      id: ids.join('+'),
+      lb: ids.map(function(id){ return FOCOS[id].lb.replace(/\s*\+\s*core\s*$/i, ''); }).join(' + ') + ' + core',
+      ok: ok, no: no, vetados: no.map(function(g){ return NOM_GRUPO[g]; }).filter(Boolean).join(', '),
+      enfasis: 'Combiná TODOS estos enfoques en una sola sesión, repartiendo el volumen de forma equilibrada: ' + enf.join(' | '),
+      vetNom: null, kw: kws.length ? new RegExp(kws.join('|')) : null
+    };
+  }
   function clasifFoco(txt){
     var t = nz(txt); if(!t) return '';
     if(/full ?body|cuerpo completo|cuerpo entero/.test(t)) return 'full';
@@ -75095,9 +75126,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var d = (p.dias || [])[di] || {}, id = '', fuente = '';
     /* 1) hoja de ruta MANUAL de la ficha tactica (enfoque_por_dia): manda sobre todo lo demas */
     var man = fichaDe(ath).enfoque_por_dia || [], mDia = man.filter(function(x){ return x.dia === di + 1; })[0];
-    if(mDia && FOCOS[mDia.id]){
-      var Fm = FOCOS[mDia.id], semM = (p.dias || []).map(function(dd, i){ var m = man.filter(function(x){ return x.dia === i + 1; })[0]; return 'Día ' + (i + 1) + ': ' + (m ? String(m.enfoque).toUpperCase() : '(libre: coherente con el resto de la semana)'); });
-      return { id: mDia.id, lb: Fm.lb, ok: Fm.ok, no: Fm.no, vetados: Fm.vetados, enfasis: Fm.enfasis || '', vetNom: Fm.vetNom || null, kw: Fm.kw || null, semana: semM,
+    var Fm0 = mDia ? combinarFocos(mDia.ids || [mDia.id]) : null;
+    if(Fm0){
+      var Fm = Fm0, semM = (p.dias || []).map(function(dd, i){ var m = man.filter(function(x){ return x.dia === i + 1; })[0]; return 'Día ' + (i + 1) + ': ' + (m ? String(m.enfoque).toUpperCase() : '(libre: coherente con el resto de la semana)'); });
+      return { id: Fm.id, lb: Fm.lb, ok: Fm.ok, no: Fm.no, vetados: Fm.vetados, enfasis: Fm.enfasis || '', vetNom: Fm.vetNom || null, kw: Fm.kw || null, semana: semM,
                semanaTitulo: 'HOJA DE RUTA DEFINIDA POR EL COACH EN LA FICHA TÁCTICA (obligatoria, sin desviarte)', fuente: 'enfoque manual de la Ficha Táctica (Día ' + (di + 1) + ')' };
     }
     if((p.dias || []).length === 5 && split5Activo() && !man.length){
@@ -75456,7 +75488,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var f = fichaDe(ath), h = '';
     Object.keys(ROT).forEach(function(k){
       var v = f[k]; if(v == null || v === '' || (Array.isArray(v) && !v.length)) return;
-      var tx = k === 'enfoque_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + String(x.enfoque).split(' (')[0]; }).join(' · ') : (Array.isArray(v) ? v.join(', ') : String(v) + (k === 'tiempo_max_sesion_min' ? ' min' : (k === 'dias_por_semana' ? ' días' : '')));
+      var tx = k === 'enfoque_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + (x.enfoques || [x.enfoque]).map(function(e){ return String(e).split(' (')[0]; }).join(' + '); }).join(' · ') : (Array.isArray(v) ? v.join(', ') : String(v) + (k === 'tiempo_max_sesion_min' ? ' min' : (k === 'dias_por_semana' ? ' días' : '')));
       h += '<span class="gs-chip' + (k === 'restricciones' ? ' warn' : '') + '"><b>' + esc2(ROT[k]) + '</b>' + esc2(tx) + '</span>';
     });
     return h || '<span class="gs-chip">Sin datos todavía</span>';
@@ -75527,6 +75559,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var b = $q('gsRun'); if(b){ b.disabled = true; b.innerHTML = estadoBtn || '<span class="gs-spin"></span> Generando…'; }
   }
   function ctaClave(){ return '<br><button type="button" class="btn gs-key" data-gskey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>'; }
+  /* limite diario / cooldown largo: un solo aviso claro, sin reintentos ni lineas repetidas */
+  function limiteDiario(seg){
+    var est = (window.CoachAI.estadoCooldown ? window.CoachAI.estadoCooldown() : []).filter(function(x){ return x.left > 0; });
+    var det = est.length ? est.map(function(x){ return '<b>' + esc2(x.lb) + '</b> (se libera en ~' + window.CoachAI.coolTxt(x.left) + ')'; }).join(', ') : 'el proveedor de IA (~' + window.CoachAI.coolTxt(seg) + ')';
+    var lg = $q('gsLog'); if(lg){ lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); }); lg.classList.add('on'); }
+    log('⛔ Se alcanzó el <b>' + (seg >= 3600 ? 'límite diario' : 'límite de uso') + '</b> de la API: ' + det + '. No se hacen más reintentos para no gastar cuota. Probá con <b>otra API Key</b> (otro proveedor o una cuenta distinta) o volvé a intentar cuando se libere.' + ctaClave(), 'e');
+    toast('Límite diario de la API alcanzado: cambiá de API Key o esperá', 'warn');
+  }
   /* micro-botones junto al aviso de espera: cambiar de clave, saltear el dia o detener (se conserva lo ya generado) */
   function acciones(saltar){
     return '<span class="gs-wait-acts"><button type="button" class="gs-mini" data-gskey="1">[ 🔑 Cambiar API Key ]</button>' +
@@ -75574,6 +75614,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
       return;
     }
+    /* cooldown largo ya conocido: ni se intenta (cada pedido extra solo ensucia la consola y la cuota) */
+    var espera0 = (window.CoachAI.esperaCooldown && window.CoachAI.esperaCooldown()) || 0;
+    if(espera0 > ESPERA_MAX){ var lg00 = $q('gsLog'); if(lg00){ lg00.innerHTML = ''; } limiteDiario(espera0); return; }
     var falt = faltantes(ath);
     if(falt.length){
       var dec = await preguntarFicha(falt);
@@ -75640,9 +75683,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       }
       if(errFinal) throw errFinal;
     }catch(err){
-      console.warn('generador de sesión', err);
-      log('✖ ' + esc2((err && err.message) || String(err)) + ((esCuota(err) || esClave(err)) ? ctaClave() : '') + (textos.length ? '<br>Los días ya generados se cargaron; podés repetir el resto más tarde.' : ''), 'e');
-      if(!(err && err.__toast)) toast('Error al generar la sesión: ' + String((err && err.message) || err).slice(0, 80), 'err');
+      var segL = err ? (err.espera || err.secs || 0) : 0;
+      if(esCuota(err) && segL > ESPERA_MAX){
+        limiteDiario(segL);
+        if(textos.length) log('Los días ya generados se cargaron; podés repetir el resto más tarde.', 'o');
+      } else {
+        if(!esCuota(err)) console.warn('generador de sesión', err);
+        log('✖ ' + esc2((err && err.message) || String(err)) + ((esCuota(err) || esClave(err)) ? ctaClave() : '') + (textos.length ? '<br>Los días ya generados se cargaron; podés repetir el resto más tarde.' : ''), 'e');
+        if(!(err && err.__toast)) toast('Error al generar la sesión: ' + String((err && err.message) || err).slice(0, 80), 'err');
+      }
     }finally{
       corriendo = false; estadoBtn = ''; ctl.esperando = false;
       var lg = $q('gsLog'); if(lg) lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); });
