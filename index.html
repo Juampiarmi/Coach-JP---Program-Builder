@@ -74953,8 +74953,30 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
              vetados: 'pecho (press, aperturas, fondos) y todo el tren inferior (sentadillas, prensas, peso muerto, zancadas, curl femoral, gemelos)' },
     upper: { lb: 'TREN SUPERIOR (pecho, espalda, hombros, brazos) + core', ok: ['Pectoral', 'Espalda', 'Hombros', 'Brazos', 'Core'], no: ['Piernas/Glúteos'],
              vetados: 'todo el tren inferior (sentadillas, prensas, peso muerto, zancadas, hip thrust, curl femoral, gemelos)' },
-    full:  { lb: 'FULL BODY equilibrado (un movimiento principal de cada patrón)', ok: [], no: [], vetados: '' }
+    quad:  { lb: 'TREN INFERIOR · DOMINANTE DE RODILLA (cuádriceps) + core', ok: ['Piernas/Glúteos', 'Core'], no: ['Pectoral', 'Espalda', 'Hombros', 'Brazos'],
+             vetados: 'pecho, espalda (dominadas, remos, jalones, face pull), hombros (press, elevaciones) y brazos (bíceps, tríceps)',
+             enfasis: 'Al menos el 60% del volumen en cuádriceps (sentadilla, prensa, hack, zancadas, extensión); isquios y glúteo solo como apoyo.' },
+    post:  { lb: 'TREN INFERIOR · CADENA POSTERIOR (glúteos e isquiotibiales) + core', ok: ['Piernas/Glúteos', 'Core'], no: ['Pectoral', 'Espalda', 'Hombros', 'Brazos'],
+             vetados: 'pecho, espalda (dominadas, remos, jalones, face pull), hombros (press, elevaciones) y brazos (bíceps, tríceps)',
+             enfasis: 'Al menos el 60% del volumen en glúteos e isquios (peso muerto rumano, hip thrust, curl femoral, puentes, buenos días); cuádriceps solo como apoyo.' },
+    arms:  { lb: 'BRAZOS Y HOMBROS (énfasis total) + core', ok: ['Brazos', 'Hombros', 'Core', 'Pectoral', 'Espalda'], no: ['Piernas/Glúteos'],
+             vetados: 'todo el tren inferior (sentadillas, prensas, peso muerto, zancadas, hip thrust, curl femoral, gemelos)',
+             enfasis: 'Al menos el 70% del volumen en bíceps, tríceps y deltoides (frontal, lateral y posterior); pecho y espalda solo con 1 ejercicio multiarticular complementario.' },
+    glute: { lb: 'GLÚTEOS Y CADENA POSTERIOR (énfasis total) + core', ok: ['Piernas/Glúteos', 'Core'], no: ['Pectoral', 'Espalda', 'Hombros', 'Brazos'],
+             vetados: 'pecho, espalda, hombros y brazos',
+             enfasis: 'Énfasis total en glúteos (hip thrust, puentes, patadas, abducción, sentadilla búlgara, peso muerto rumano) y cadena posterior.' },
+    full:  { lb: 'FULL BODY complementario (un movimiento principal de cada patrón)', ok: [], no: [], vetados: '' }
   };
+  FOCOS.push.enfasis = 'Distribución: pecho (medio y superior) > hombros > tríceps. NADA de bíceps ni de espalda.';
+  FOCOS.push.vetNom = /biceps|martillo|curl de brazo/;
+  FOCOS.pull.enfasis = 'Distribución: espalda (tracción vertical y horizontal) > deltoides posterior > bíceps. NADA de tríceps ni de pecho.';
+  FOCOS.pull.vetNom = /triceps|press frances|fondos|jm press/;
+  /* split científico de 5 días: Empuje / Tren inferior (rodilla) / Tracción / Tren inferior (cadena posterior) / Día 5 según perfil */
+  var SPLIT5 = ['push', 'quad', 'pull', 'post'];
+  var SPLIT5_LB = ['EMPUJE (pecho, hombros y tríceps)', 'TREN INFERIOR · dominante de rodilla (cuádriceps)', 'TRACCIÓN (espalda y bíceps)', 'TREN INFERIOR · cadena posterior (glúteos e isquios)'];
+  function dia5Id(ath){ var g = String((ath && ath.genero) || '').toUpperCase(); return g === 'F' ? 'glute' : (g === 'M' ? 'arms' : 'full'); }
+  function dia5Lb(id){ return id === 'glute' ? 'GLÚTEOS Y CADENA POSTERIOR (énfasis total, perfil femenino)' : (id === 'arms' ? 'BRAZOS Y HOMBROS (énfasis total, perfil masculino)' : 'FULL BODY complementario'); }
+  function split5Activo(){ var c = $q('gsSplit5'); return c ? c.checked : true; }
   function clasifFoco(txt){
     var t = nz(txt); if(!t) return '';
     if(/full ?body|cuerpo completo|cuerpo entero/.test(t)) return 'full';
@@ -74977,12 +74999,17 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   /* el foco sale del titulo/foco que el coach ya le puso al dia; si no hay, del split preferido de la ficha */
   function focoAnatomico(ath, p, di){
     var d = (p.dias || [])[di] || {}, id = '', fuente = '';
+    if((p.dias || []).length === 5 && split5Activo()){
+      id = di < 4 ? SPLIT5[di] : dia5Id(ath);
+      var F5 = FOCOS[id], sem = SPLIT5_LB.map(function(lb, i){ return 'Día ' + (i + 1) + ': ' + lb; }).concat(['Día 5: ' + dia5Lb(dia5Id(ath))]);
+      return { id: id, lb: F5.lb, ok: F5.ok, no: F5.no, vetados: F5.vetados, enfasis: F5.enfasis || '', vetNom: F5.vetNom || null, semana: sem, fuente: 'split científico de 5 días (Día ' + (di + 1) + ')' };
+    }
     var t1 = [d.title, d.label].filter(Boolean).join(' ');
     if((id = clasifFoco(t1))) fuente = 'título del día: «' + String(d.title || d.label).slice(0, 60) + '»';
     else if((id = clasifFoco(String(d.focusText || '').slice(0, 220)))) fuente = 'foco del coach del día';
     else if((id = focoPorSplit(fichaDe(ath).split_preferido, di))) fuente = 'split preferido: ' + fichaDe(ath).split_preferido;
     var F = FOCOS[id];
-    return F ? { id: id, lb: F.lb, ok: F.ok, no: F.no, vetados: F.vetados, fuente: fuente } : { id: '', lb: '', ok: [], no: [], vetados: '', fuente: '' };
+    return F ? { id: id, lb: F.lb, ok: F.ok, no: F.no, vetados: F.vetados, enfasis: F.enfasis || '', vetNom: F.vetNom || null, semana: null, fuente: fuente } : { id: '', lb: '', ok: [], no: [], vetados: '', enfasis: '', vetNom: null, semana: null, fuente: '' };
   }
 
   /* ---------- biblioteca para el prompt (nombres EXACTOS para vincular videos), ya filtrada por el foco ---------- */
@@ -74994,7 +75021,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     _mapaLib = { n: ex.length, m: m }; return m;
   }
   function buscarEj(nombre){
-    var m = mapaLib(), base = String(nombre || '').replace(/^[A-F]\d+\.\s*/, '').trim(), sin = base.replace(/\s*\(.*\)\s*$/, ''), par = (base.match(/\(([^)]+)\)\s*$/) || [])[1];
+    var m = mapaLib(), base = String(nombre || '').replace(/^[-•*·]\s+/, '').replace(/^[A-F]\d+\.\s*/, '').replace(/\s+x\s*\d[\w\s.\/-]*$/i, '').trim(), sin = base.replace(/\s*\(.*\)\s*$/, ''), par = (base.match(/\(([^)]+)\)\s*$/) || [])[1];
     return m[nz(base)] || m[nz(sin)] || (par && m[nz(par)]) || null;
   }
   function bibliotecaIA(ath, foco){
@@ -75030,7 +75057,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   /* ---------- prompts ---------- */
   function sistema(ath, foco){
     var regla0 = foco && foco.id && foco.id !== 'full'
-      ? '0) SPLIT ANATÓMICO — REGLA ABSOLUTA E INNEGOCIABLE: la sesión es EXCLUSIVAMENTE de ' + foco.lb + '. Está PROHIBIDO incluir ejercicios de ' + foco.vetados + ' en CUALQUIER bloque (también en warm-up, accesorios y core). La BIBLIOTECA ya está filtrada a los grupos permitidos: usá solo esos ejercicios. Si un ejercicio no encaja con el foco, no va.\n'
+      ? '0) SPLIT ANATÓMICO — REGLA ABSOLUTA E INNEGOCIABLE: la sesión es EXCLUSIVAMENTE de ' + foco.lb + '. Está PROHIBIDO incluir ejercicios de ' + foco.vetados + ' en CUALQUIER bloque (también en warm-up, accesorios y core). La BIBLIOTECA ya está filtrada a los grupos permitidos: usá solo esos ejercicios. Si un ejercicio no encaja con el foco, no va.' + (foco.enfasis ? ' ' + foco.enfasis : '') + '\n'
       : (foco && foco.id === 'full'
         ? '0) SPLIT ANATÓMICO: la sesión es FULL BODY equilibrada (un patrón principal de tren inferior, empuje y tracción, más core), sin repetir patrones.\n'
         : '0) SPLIT ANATÓMICO: la sesión tiene UN foco anatómico coherente (no mezcles tren superior e inferior sin criterio) y es compatible con el foco de los OTROS DÍAS del plan.\n');
@@ -75046,39 +75073,51 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '2) Elegí los ejercicios de la BIBLIOTECA con su nombre EXACTO ("Nombre ES (Name EN)") para que se vincule el video. Solo si ninguno sirve (por ejemplo en el warm-up), usá "Nombre en español (English name)" con el nombre inglés estándar REAL; NUNCA repitas el mismo nombre dentro y fuera del paréntesis.\n' +
       '3) Estructura: entre 5 y 7 bloques: [WARM-UP] (6-10 min, específico al foco: movilidad + activación + ramp-up), 1-2 bloques [FUERZA] (el principal con carga alta), ' +
       '1-3 bloques [HIPERTROFIA] (bisets/trisets o series rectas), y cierre con [ACCESORIO] y/o [CORE]. Ajustalo al tiempo disponible. No repitas el foco principal de los OTROS DÍAS del plan.\n' +
-      '4) FORMATO DE REDACCIÓN LIBRE ESTRICTO (este texto se renderiza tal cual en la app del alumno): ejercicio suelto = EXACTAMENTE 3 líneas: "Nombre ES (Name EN)" / "SxR | RIR n" / "Rest Ns". ' +
+      '4) FORMATO DE REDACCIÓN LIBRE ESTRICTO (este texto se renderiza tal cual en la app del alumno): entrada en calor = viñetas "- Nombre ES (Name EN) x 12" (o "x 30s"). Ejercicio suelto de fuerza/hipertrofia = EXACTAMENTE 3 líneas: "Nombre ES (Name EN)" / "SxR | RIR n" / "Rest Ns". ' +
       'Biserie o triserie = una línea por estación "A1. Nombre ES (Name EN) | SxR | RIR n", "A2. ... | SxR | RIR n" y debajo UNA línea "Rest Ns". ' +
       'PROHIBIDO escribir explicaciones, notas, tempos o frases sueltas dentro del bloque de ejercicios: solo nombres, dosis y descanso. ' +
       'Series x reps o rango ("4x8-10"); por tiempo "3x40s"; por lado "3x10 por lado". Descansos: fuerza principal 150-240s, hipertrofia 75-120s, accesorios/core 45-75s, warm-up 30-45s.\n' +
-      '5) TEMPO: NUNCA va en la línea de dosis. Va exclusivamente en [COACHING TIPS & ESTRATEGIA]: en bloques de UN ejercicio como línea "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)"; ' +
+      '5) REGLA DE ORO DEL TEMPO: NUNCA va en la línea de dosis ni de ejercicio (ensucia la vista del alumno). Va únicamente en [COACHING TIPS & ESTRATEGIA]: en bloques de UN ejercicio como línea "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)"; ' +
       'en biseries/triseries dentro de la línea de la estación: "A1 · CUE EFICIENTE: Tempo 3011 — ..." (4 dígitos: excéntrica, pausa abajo, concéntrica, pausa arriba; X = explosiva).\n' +
       '6) NIVEL: ' + perfilNivel(ath) + '\n' +
       (esAtletaDUP(ath) ? '7) PERIODIZACIÓN: seguí el perfil DUP que se indica en el pedido.\n' : '') +
       'FORMATO DE SALIDA (texto plano EXACTO; sin markdown, sin JSON, sin asteriscos, sin nada fuera del formato):\n' +
       '=== DÍA {N}: {título corto} ===\n' +
-      '[NOMBRE DEL DÍA] {foco del día, ej: Tren inferior: fuerza máxima y cadena posterior}\n' +
-      '[FOCO DEL COACH] {resumen metodológico de 3 a 5 oraciones, en segunda persona rioplatense ("vos"), claro y motivador: explicá la lógica de la sesión y el sentido de cada bloque}\n' +
-      '[WARM-UP] {título del bloque} (N MIN)\n' +
-      'A1. {Nombre ES (Name EN)} | 2x10 por lado | RIR 4\n' +
-      'A2. {Nombre ES (Name EN)} | 2x30s | RIR 3\n' +
-      'Rest 45s\n' +
-      '[OBJETIVO FISIOLÓGICO]\n' +
-      '{1 o 2 oraciones: el estímulo buscado Y el porqué fisiológico (reclutamiento de unidades motoras, tensión mecánica en longitud muscular estirada, acumulación de metabolitos, perfil de resistencia, etc.)}\n' +
+      '[NOMBRE DEL DÍA] {título descriptivo de la sesión}\n' +
+      '[FOCO DEL COACH] {resumen metodológico y científico de 3 a 5 oraciones, en segunda persona rioplatense ("vos"), claro y motivador: explicá la lógica de la sesión y el sentido de cada bloque}\n' +
+      '[BLOQUE 1] Entrada en calor {zona} (N MIN)\n' +
+      '- {Nombre ES (Name EN)} x 12\n' +
+      '- {Nombre ES (Name EN)} x 10\n' +
+      '[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones basadas en evidencia: el estímulo buscado Y el porqué fisiológico (reclutamiento de unidades motoras, tensión mecánica en longitud muscular estirada, acumulación de metabolitos, perfil de resistencia, etc.)}\n' +
+      '[COACHING TIPS & ESTRATEGIA]\n' +
+      '{para el warm-up: SET-UP / CUE EFICIENTE / CUIDADO sobre el movimiento más importante}\n' +
+      'Los bloques se numeran [BLOQUE 1], [BLOQUE 2], ... y el TÍTULO de cada uno empieza con su categoría: "Entrada en calor …", "Fuerza principal – …", "Hipertrofia – …", "Core – …", "Accesorios – …".\n' +
+      'EJEMPLO DE BLOQUE DE UN EJERCICIO:\n' +
+      '[BLOQUE 2] Fuerza principal – {ejercicio y enfoque} (N MIN)\n' +
+      '{Nombre ES (Name EN)}\n' +
+      '4x8-10 | RIR 2\n' +
+      'Rest 120s\n' +
+      '[OBJETIVO FISIOLÓGICO] {...}\n' +
+      '[COACHING TIPS & ESTRATEGIA]\n' +
+      'SET-UP: ...\n' +
+      'CUE EFICIENTE: ...\n' +
+      'CUIDADO / ERROR COMÚN: ...\n' +
+      'TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)\n' +
+      'EJEMPLO DE BISET / TRISET:\n' +
+      '[BLOQUE 3] Hipertrofia – Biset {enfoque} (N MIN)\n' +
+      'A1. {Nombre ES (Name EN)} | 3x12 | RIR 1\n' +
+      'A2. {Nombre ES (Name EN)} | 3x12 | RIR 1\n' +
+      'Rest 90s\n' +
+      '[OBJETIVO FISIOLÓGICO] {...}\n' +
       '[COACHING TIPS & ESTRATEGIA]\n' +
       'A1 · SET-UP: {posicionamiento biomecánico exacto}\n' +
       'A1 · CUE EFICIENTE: {indicación verbal corta y accionable; en bisets incluí acá el Tempo}\n' +
       'A1 · CUIDADO / ERROR COMÚN: {compensación a evitar, vinculada a las restricciones de la ficha}\n' +
       'A2 · SET-UP: ... (igual para cada estación)\n' +
       'TRANSICIÓN: {regla de cambio entre estaciones y descanso}\n' +
-      '[FUERZA] {título} (N MIN)\n' +
-      '{Nombre ES (Name EN)}\n' +
-      '5x5 | RIR 2\n' +
-      'Rest 180s\n' +
-      '[OBJETIVO FISIOLÓGICO] ... [COACHING TIPS & ESTRATEGIA] (bloque de UN ejercicio: SET-UP:, CUE EFICIENTE:, CUIDADO / ERROR COMÚN: y TEMPO:, sin prefijo de estación)\n' +
-      '[HIPERTROFIA] Biset – {título} (N MIN)  (estaciones A1., A2., A3., cada una en UNA línea con su dosis; tips POR ESTACIÓN con prefijo "A1 ·")\n' +
-      '[ACCESORIO] / [CORE] {título} (N MIN)\n' +
       'Técnicas avanzadas (solo si el nivel lo permite) al final de la dosis, ej: "4x10-12 | RIR 1 | Myo-reps", "| Drop-set", "| Rest-pause", "| Pausa 2s en estiramiento".\n' +
-      'Cada tip: máximo 22 palabras. Cada bloque TIENE que traer [OBJETIVO FISIOLÓGICO] y [COACHING TIPS & ESTRATEGIA]. Respondé SOLO con el formato.';
+      'TIPS: lenguaje claro y simple, entendible para CUALQUIER persona (sin jerga innecesaria), concretos y detallados: hasta 35 palabras por línea; explicá el "cómo" y el "por qué". ' +
+      'Cada bloque TIENE que traer [OBJETIVO FISIOLÓGICO] y [COACHING TIPS & ESTRATEGIA]. Respondé SOLO con el formato.';
   }
   function usuario(ath, p, di, extra, previos, foco){
     var n = p.dias.length, f = fichaDe(ath), dAct = p.dias[di] || {};
@@ -75089,11 +75128,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       'SESIÓN A DISEÑAR: DÍA ' + (di + 1) + ' de ' + n + ' semanales' + (f.split_preferido ? ' · split preferido: ' + f.split_preferido + (nz(f.split_preferido).indexOf('decida') >= 0 ? ' (elegí vos el reparto óptimo para ' + n + ' días)' : '') : '') + '.\n' +
       ((foco && foco.id)
         ? 'FOCO ANATÓMICO OBLIGATORIO DE ESTE DÍA: ' + foco.lb + (foco.fuente ? ' (definido por el ' + foco.fuente + ')' : '') + '.' +
-          (foco.vetados ? ' PROHIBIDO ABSOLUTO incluir ejercicios de: ' + foco.vetados + '.' : '') + '\n'
+          (foco.vetados ? ' PROHIBIDO ABSOLUTO incluir ejercicios de: ' + foco.vetados + '.' : '') + (foco.enfasis ? ' ' + foco.enfasis : '') + '\n'
         : '') +
-      (dAct.title ? 'TÍTULO ACTUAL DEL DÍA EN EL PLAN (respetá su enfoque): ' + dAct.title + '\n' : '') +
+      ((foco && foco.semana) ? 'DISTRIBUCIÓN SEMANAL CIENTÍFICA (5 días, estricta):\n' + foco.semana.join('\n') + '\nEsta sesión es el DÍA ' + (di + 1) + ': respetá su foco al pie de la letra; los títulos viejos del plan NO mandan.\n' : '') +
+      ((!foco || !foco.semana) && dAct.title ? 'TÍTULO ACTUAL DEL DÍA EN EL PLAN (respetá su enfoque): ' + dAct.title + '\n' : '') +
       (f.tiempo_max_sesion_min ? 'DURACIÓN: la sesión completa entra en ' + f.tiempo_max_sesion_min + ' min o menos.\n' : '') +
-      (otros.length ? 'OTROS DÍAS DEL PLAN (no repitas su foco principal):\n' + otros.join('\n') + '\n' : '') +
+      ((otros.length && !(foco && foco.semana)) ? 'OTROS DÍAS DEL PLAN (no repitas su foco principal):\n' + otros.join('\n') + '\n' : '') +
       (esAtletaDUP(ath) ? 'PERFIL DUP:\n' + textoDUPParaIA(di) + '\n' : '') +
       (extra ? 'INDICACIONES EXTRA DEL COACH: ' + extra + '\n' : '') +
       '\nBIBLIOTECA DE EJERCICIOS' + ((foco && foco.ok && foco.ok.length) ? ' (ya filtrada: solo ' + foco.ok.join(' / ') + ')' : '') + ' (Nombre ES (Name EN) | grupo | equipo | patrón) — usá estos nombres exactos:\n' + bibliotecaIA(ath, foco) + '\n\n' +
@@ -75132,6 +75172,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   /* linea de dosis = la que EMPIEZA con la dosis; "A1. Nombre | 3x8 | RIR 1" es una estacion (nombre) con la dosis en la misma linea */
   function esDosis(l){ var h = String(l).split('|')[0].trim(); return /^\d+\s*[x×]\s*\d/i.test(h) || /^\d+\s*series/i.test(h) || /^(?:tempo|rir|rpe)\b/i.test(h); }
+  function categoriaBloque(titulo){
+    var t = nz(titulo);
+    if(/entrada en calor|warm|calent|activaci|movilidad|prehab/.test(t)) return 'WARM-UP';
+    if(/(^|\s)core(\s|$)|abdominal|anti ?(rotacion|extension)|lumbopelv/.test(t)) return 'CORE';
+    if(/fuerza|ancla|principal|pesad/.test(t)) return 'FUERZA';
+    if(/accesori|remate|cierre|gemelo|pantorrilla/.test(t)) return 'ACCESORIO';
+    return 'HIPERTROFIA';
+  }
   function esNota(n){ return n.length > 130 || /[.!?]$/.test(n) || /^(?:nota|note|tip|cue|ojo|importante|obs)\b/i.test(n); }
   function sacarTempo(segs){ var tm = ''; var o = segs.filter(function(sg){ var m = sg.match(/^tempo\s*([0-9Xx]{4})\b/i); if(m){ tm = m[1].toUpperCase(); return false; } return true; }); return { segs: o, tempo: tm }; }
   function limpiarBloque(b){
@@ -75145,11 +75193,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         if(r.segs.length) lineas.push(r.segs.join(' | '));
         return;
       }
+      var bullet = /^[-•*·]\s+/.test(l); if(bullet) l = l.replace(/^[-•*·]\s+/, '');
       var mA = l.match(/^([A-F]\d+)\.\s*(.*)$/), est = mA ? mA[1].toUpperCase() : '', partes = (mA ? mA[2] : l).split('|').map(function(x){ return x.trim(); });
-      var nombre = limpiarNombre(partes[0]);
+      var mx = partes[0].match(/^(.*?)(\s+x\s*\d[\w\s.\/-]*)$/i), cola = mx ? mx[2] : '';            /* viñeta de warm-up: "Nombre (Name) x 12" */
+      var nombre = limpiarNombre(mx ? mx[1] : partes[0]);
       if(!nombre || esNota(nombre)){ desc++; return; }
       ultimo = { est: est, nombre: nombre };
-      lineas.push((est ? est + '. ' : '') + nombre);
+      lineas.push((bullet ? '- ' : '') + (est ? est + '. ' : '') + nombre + cola);
       if(partes.length > 1){
         var r2 = sacarTempo(partes.slice(1).filter(Boolean));
         if(r2.tempo) tempos.push({ est: est, nombre: nombre, tempo: r2.tempo });
@@ -75172,12 +75222,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     return { lineas: lineas, tips: tips, objetivo: String((b.cierre && b.cierre.objetivo) || '').replace(/\n+/g, ' ').trim(), movidos: tempos.length, descartadas: desc };
   }
   function violaciones(bloques, foco){
-    var v = []; if(!foco || !foco.no || !foco.no.length) return v;
+    var v = []; if(!foco || ((!foco.no || !foco.no.length) && !foco.vetNom)) return v;
     bloques.forEach(function(b){
       b.lineas.forEach(function(l){
         if(/^(?:rest|descanso)\b/i.test(l) || esDosis(l)) return;
-        var e = buscarEj(l);
-        if(e && foco.no.indexOf(e.grupo) >= 0) v.push({ bloque: b.titulo, nombre: e.es, grupo: e.grupo });
+        var e = buscarEj(l), limpio = String(l).replace(/^[-•*·]\s+/, '').replace(/^[A-F]\d+\.\s*/, '').replace(/\s+x\s*\d[\w\s.\/-]*$/i, '').replace(/\s*\(.*\)\s*$/, '').trim();
+        var porGrupo = !!(e && foco.no.indexOf(e.grupo) >= 0), porNombre = !!(foco.vetNom && foco.vetNom.test(nz(l)));      /* el veto por nombre rige aunque el ejercicio no este en la biblioteca */
+        if(porGrupo || porNombre) v.push({ bloque: b.titulo, nombre: e ? e.es : limpio, grupo: e ? e.grupo : 'fuera de foco' });
       });
     });
     return v;
@@ -75190,9 +75241,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var tx = ['=== DÍA ' + (di + 1) + ': ' + (dia.titulo || 'Sesión') + ' ==='], limp = [], movidos = 0, descartadas = 0;
     if(dia.titulo) tx.push('[NOMBRE DEL DÍA] ' + dia.titulo);
     if(dia.foco) tx.push('[FOCO DEL COACH] ' + String(dia.foco).replace(/\s*\n+\s*/g, ' '));
-    buenos.forEach(function(b){
+    buenos.forEach(function(b, bi){
       var c = limpiarBloque(b); c.titulo = b.titulo || ''; limp.push(c); movidos += c.movidos; descartadas += c.descartadas;
-      tx.push('[' + (b.tag || 'BLOQUE') + '] ' + (b.titulo || ''));
+      /* "[BLOQUE n] [CATEGORIA] titulo": la categoria sale del titulo (o de la etiqueta explicita), asi el alumno ve FUERZA / HIPERTROFIA / CORE bien rotulado */
+      var tagB = /^bloque\s*\d*$/i.test(b.tag || '') || !b.tag ? categoriaBloque(b.titulo) : String(b.tag).toUpperCase();
+      tx.push('[BLOQUE ' + (bi + 1) + '] [' + tagB + '] ' + (b.titulo || ''));
       c.lineas.forEach(function(l){ tx.push(l); });
       if(c.objetivo){ tx.push('[OBJETIVO FISIOLÓGICO]'); tx.push(c.objetivo); }
       if(c.tips.length){ tx.push('[COACHING TIPS & ESTRATEGIA]'); c.tips.forEach(function(l){ tx.push(l); }); }
@@ -75265,7 +75318,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(card.dataset.sig === sig && card.firstChild) return;
     card.dataset.sig = sig;
     var logPrev = $q('gsLog') ? $q('gsLog').innerHTML : '', logOn = $q('gsLog') && $q('gsLog').classList.contains('on');
-    var extraPrev = $q('gsExtra') ? $q('gsExtra').value : '', semPrev = $q('gsSemana') ? $q('gsSemana').checked : false;
+    var extraPrev = $q('gsExtra') ? $q('gsExtra').value : '', semPrev = $q('gsSemana') ? $q('gsSemana').checked : false, splitPrev = $q('gsSplit5') ? $q('gsSplit5').checked : true;
     card.innerHTML =
       '<h3>⚡ Generador de sesión con IA<span class="gs-badge">' + (hay ? 'IA conectada' : 'Sin clave de IA') + '</span></h3>' +
       '<p class="gs-sub">Lee la Ficha Táctica de ' + esc2(fullName(ath)) + ' y arma <b>todos los bloques</b> del día (warm-up, fuerza, hipertrofia, accesorios y core) con dosis, tempos, descansos, ' +
@@ -75274,7 +75327,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '<div class="gs-estado ' + (falt.length ? 'falta' : 'ok') + '">' + (falt.length ? '⚠ Ficha incompleta: falta ' + esc2(falt.join(', ')) + '. Cuanto más completa, mejor se ajusta la sesión.' : '✔ Ficha táctica completa: se inyecta sola en el prompt de la IA.') + '</div>' +
       '<textarea id="gsExtra" placeholder="Indicaciones extra (opcional): ej. \'priorizar cadena posterior\', \'sin barra hoy\', \'día de volumen\'">' + esc2(extraPrev) + '</textarea>' +
       '<div class="gs-opts"><span>Se genera el <b>DÍA ' + (di + 1) + '</b>' + (d.title ? ' · ' + esc2(String(d.title).slice(0, 40)) : '') + '</span>' +
-      '<label><input type="checkbox" id="gsSemana"' + (semPrev ? ' checked' : '') + '> Toda la semana (' + p.dias.length + ' días)</label></div>' +
+      '<label><input type="checkbox" id="gsSemana"' + (semPrev ? ' checked' : '') + '> Toda la semana (' + p.dias.length + ' días)</label>' +
+      (p.dias.length === 5 ? '<label title="D1 empuje · D2 piernas (rodilla) · D3 tracción · D4 piernas (cadena posterior) · D5 brazos y hombros / glúteos según el perfil"><input type="checkbox" id="gsSplit5"' + (splitPrev ? ' checked' : '') + '> Split científico de 5 días</label>' : '') + '</div>' +
       '<div class="gs-acts"><button type="button" class="btn gs-go" id="gsRun"' + (corriendo ? ' disabled' : '') + '>' + (corriendo ? (estadoBtn || '<span class="gs-spin"></span> Generando…') : '⚡ GENERAR PLAN COMPLETO CON IA (FICHA TÁCTICA)') + '</button>' +
       '<button type="button" class="btn" id="gsFicha">📋 Editar Ficha Táctica</button></div>' +
       '<div class="gs-log' + (logOn ? ' on' : '') + '" id="gsLog">' + logPrev + '</div>';
