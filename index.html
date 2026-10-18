@@ -75551,7 +75551,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
 
   /* ---------- ritmo de pedidos, reintento y control del usuario ---------- */
-  var ESPERA_MAX = 90, REINTENTOS = 5, PAUSA_DIAS = 9, PAUSA_EXTRA = 3, PAUSA_TOPE = 20, ESPERAS_429 = [12, 15, 15, 15];     /* pausa real de 9 s entre dias; 429 = pausa de 12-15 s y reintento */
+  var ESPERA_MAX = 90, REINTENTOS = 5, PAUSA_DIAS = 12, PAUSA_EXTRA = 3, PAUSA_TOPE = 20, ESPERAS_429 = [12, 15, 15, 15];     /* pausa real de 12 s entre dias; 429 = pausa de 12-15 s y reintento */
+  var reanudarDias = [];                                          /* dias (indices) que quedaron sin generar: los retoma el boton "Continuar" */
   var pausaDias = PAUSA_DIAS;                                  /* pausa entre dias: sube sola si la API ya pidio esperar */
   var ctl = { esperando: false, saltar: false, detener: false };
   function esCuota(err){ return !!err && (err.cooldownAll || err.rate || /cooldown|429|cuota|quota|rate.?limit|saturad|overloaded/i.test(String(err.message || ''))); }
@@ -75603,8 +75604,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
 
   /* ---------- generación ---------- */
-  async function generar(){
+  async function generar(opt){
     if(corriendo) return;
+    var retoma = !!(opt && opt.dias && opt.dias.length);
     var ath = active(); if(!ath){ toast('Seleccioná un alumno/a', 'err'); return; }
     var p = plan(ath.id); if(!p || esPlanCFActivo(p)){ toast('El generador de sesión es para Sports & Bodybuilding', 'warn'); return; }
     if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
@@ -75613,24 +75615,26 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
       return;
     }
-    var falt = faltantes(ath);
+    var falt = retoma ? [] : faltantes(ath);
     if(falt.length){
       var dec = await preguntarFicha(falt);
       if(dec === 'editar'){ abrirFicha(ath); return; }
       if(dec !== 'igual') return;
     }
-    var extra = ($q('gsExtra') ? $q('gsExtra').value.trim() : ''), semana = !!($q('gsSemana') && $q('gsSemana').checked);
-    var di0 = Math.min(S.ui.day || 0, p.dias.length - 1), targets = semana ? p.dias.map(function(_, i){ return i; }) : [di0];
-    if(semana){
+    var extra = ($q('gsExtra') ? $q('gsExtra').value.trim() : ''), semana = retoma || !!($q('gsSemana') && $q('gsSemana').checked);
+    var di0 = Math.min(S.ui.day || 0, p.dias.length - 1), targets = retoma ? opt.dias.slice() : (semana ? p.dias.map(function(_, i){ return i; }) : [di0]);
+    if(semana && !retoma){
       var aPisar = targets.filter(function(i){ return (p.dias[i].bloques || []).length; }).length;
       if(aPisar && !confirm('Generar la semana completa va a REEMPLAZAR los bloques de ' + aPisar + ' día(s). Se guarda día por día y se puede deshacer con Ctrl+Z. ¿Continuar?')) return;
     }
     corriendo = true; estadoBtn = ''; ctl.esperando = false; ctl.saltar = false; ctl.detener = false; pausaDias = PAUSA_DIAS; pintar();
     var lg0 = $q('gsLog'); if(lg0){ lg0.innerHTML = ''; lg0.classList.add('on'); }
+    reanudarDias = [];
     var textos = [], titulos = [], saltados = [], errFinal = null, sinEstructura = false, cargados = [];
     /* semana: cada dia se guarda apenas responde (sin pedir confirmacion de nuevo); el siguiente solo arranca despues de la pausa */
     function guardarDia(t){ var c0 = window.confirm; window.confirm = function(){ return true; }; try{ return ejecutarImportacion(t, 'semana'); }finally{ window.confirm = c0; } }
     try{
+      if(retoma) log('▶️ Retomando la semana desde el <b>DÍA ' + (targets[0] + 1) + '</b>: ' + targets.length + ' día(s) pendiente(s).', 'o');
       log('<b>Alumno/a:</b> ' + esc2(fullName(ath)) + ' · ' + esc2(perfilNivel(ath).split(':')[0]) + ' · ' + targets.length + ' día(s)' + (semana ? ' · pausa de ' + PAUSA_DIAS + 's entre días para no saturar la API' : ''));
       for(var k = 0; k < targets.length; k++){
         var di = targets[k];
@@ -75703,6 +75707,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       corriendo = false; estadoBtn = ''; ctl.esperando = false;
       var lg = $q('gsLog'); if(lg) lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); });
       quitarAcciones();
+      if(semana){
+        reanudarDias = targets.filter(function(i){ return cargados.indexOf(i + 1) < 0; });
+        if(reanudarDias.length) log('<button type="button" class="btn gs-key gs-resume" data-gsresume="1">▶️ Continuar generando desde el Día ' + (reanudarDias[0] + 1) + (reanudarDias.length > 1 ? ' (' + reanudarDias.length + ' días pendientes)' : '') + '</button>', 'w');
+      }
       pintar();
     }
   }
@@ -75711,6 +75719,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var t = e.target; if(!t || !t.closest) return;
     if(t.closest('#gsRun')){ e.preventDefault(); generar(); return; }
     if(t.closest('[data-gskey]')){ e.preventDefault(); if(window.CoachAI && window.CoachAI.config) window.CoachAI.config(); return; }
+    if(t.closest('[data-gsresume]')){ e.preventDefault(); if(!corriendo && reanudarDias.length) generar({ dias: reanudarDias.slice() }); return; }
     if(t.closest('[data-gsskip]')){ e.preventDefault(); if(corriendo && ctl.esperando) ctl.saltar = true; return; }
     if(t.closest('[data-gsstop]')){ e.preventDefault(); if(corriendo){ ctl.detener = true; log('⏹ Deteniendo… se conserva lo ya generado.', 'w'); } return; }
     if(t.closest('#gsFicha')){ e.preventDefault(); var a = active(); if(a) abrirFicha(a); }
