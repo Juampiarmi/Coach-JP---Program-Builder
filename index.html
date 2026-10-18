@@ -5265,7 +5265,9 @@ function stemNombreEj(s){
 const MAX_NOMBRE_EJ = 45;
 function esLineaProsaEj(l){
   const t = String(l || '').trim();
-  return t.length > MAX_NOMBRE_EJ && !/[\d:|@+]/.test(t);
+  /* el parentesis con el nombre tecnico en ingles es parte del nombre ("Press de hombros sentado (Seated Dumbbell Shoulder Press)"): no cuenta para el largo */
+  const sinParen = t.replace(/\s*\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  return sinParen.length > MAX_NOMBRE_EJ && !/[\d:|@+]/.test(t);
 }
 /* match exacto por nombre normalizado primero; si no hay, cae a
    matchNombre() (mismo criterio de substring/palabras en común que ya
@@ -5437,7 +5439,124 @@ function resolverExTokensSB(nombre){
   });
   return mejor;
 }
+/* ---- RED DE SEGURIDAD DE VIDEO ----
+   resolverExSportsNucleo() puede devolver el ejercicio correcto pero SIN videoId (la biblioteca suele tener el mismo movimiento duplicado
+   con otro nombre: "Press de banca plano con barra" sin video y "Barbell Bench Press" con video) o no reconocer una variante de escritura
+   ("Zancadas con mancuernas (Dumbbell Lunge)"). resolverExSports() cierra ambos huecos: si el resultado no tiene video busca un EQUIVALENTE
+   con video (mismas palabras en es/en/alias, mismo equipo y misma variante); si no hay resultado, intenta una busqueda difusa mas amplia
+   entre los ejercicios que tienen video. Nunca cruza equipo ni variante (barra != mancuerna, inclinado != plano, cerrado != ancho). */
+const SINON_VID_SB = [
+  [/\bpull[\s-]*ups?\b|\bdominadas?\b/g, ' pullup '], [/\bpush[\s-]*ups?\b|\bflexion(?:es)?(?: de brazos)?\b/g, ' pushup '], [/\bchin[\s-]*ups?\b/g, ' chinup '], [/\bsit[\s-]*ups?\b/g, ' situp '],
+  [/\bpeso muerto\b/g, ' deadlift '], [/\bleg press\b|\bprensa(?: de piernas| 45| inclinada)?\b/g, ' legpress '], [/\bhip thrusts?\b|\bempuje de cadera\b|\bpuente de gluteos?\b/g, ' hipthrust '],
+  [/\bzancadas?\b|\bestocadas?\b|\blunges?\b/g, ' lunge '], [/\bsentadillas?\b|\bsquats?\b/g, ' squat '], [/\bfondos?\b|\bdips?\b/g, ' dip '], [/\bencogimientos?\b|\bshrugs?\b/g, ' shrug '],
+  [/\bflyes\b|\bflies\b|\bflys\b|\baperturas?\b|\bcruces?\b/g, ' fly '], [/\bskull ?crushers?\b|\bpress frances\b|\bfrench press\b/g, ' skullcrusher '],
+  [/\bcurl femoral\b|\bleg curls?\b|\bhamstring curls?\b/g, ' legcurl '], [/\bextensiones? de (?:cuadriceps|piernas)\b|\bleg extensions?\b/g, ' legextension '],
+  [/\bbuenos dias\b|\bgood mornings?\b/g, ' goodmorning '], [/\bpull ?overs?\b/g, ' pullover '], [/\bface pulls?\b/g, ' facepull '], [/\bpress banca\b|\bpress de banca\b|\bbench press\b/g, ' bench press ']
+];
+const MAPA_VID_SB = { elevacion:'raise', elevaciones:'raise', raises:'raise', lateral:'lateral', laterales:'lateral', remo:'row', remos:'row', cadera:'hip', pecho:'chest', espalda:'back', hombro:'shoulder', hombros:'shoulder', brazo:'arm', brazos:'arm',
+  pierna:'leg', piernas:'leg', gluteo:'glute', gluteos:'glute', pantorrilla:'calf', pantorrillas:'calf', gemelo:'calf', gemelos:'calf', banca:'bench', banco:'bench', plano:'flat', plana:'flat', inclinado:'incline', inclinada:'incline', declinado:'decline', declinada:'decline',
+  sentado:'seated', sentada:'seated', pie:'standing', parado:'standing', acostado:'lying', tumbado:'lying', tumbada:'lying', mancuerna:'dumbbell', mancuernas:'dumbbell', dumbbells:'dumbbell', db:'dumbbell', barra:'barbell', barras:'barbell', bb:'barbell',
+  polea:'cable', poleas:'cable', cables:'cable', maquina:'machine', machines:'machine', banda:'band', bandas:'band', elastica:'band', elasticas:'band', cerrado:'close', cerrada:'close', ancho:'wide', ancha:'wide', neutro:'neutral', pronado:'pronated', supino:'supinated',
+  unilateral:'single', unilaterales:'single', una:'', mano:'single', martillo:'hammer', rodilla:'kneeling', rodillas:'kneeling', alta:'high', alto:'high', baja:'low', bajo:'low',  rumano:'romanian', rumana:'romanian', bulgara:'bulgarian', frontal:'front', trasera:'back', inversa:'reverse', inverso:'reverse', overhead:'overhead', militar:'overhead',
+  triceps:'triceps', biceps:'biceps', femoral:'hamstring', cuadriceps:'quad', quadriceps:'quad', pesa:'kettlebell', rusa:'', kettlebells:'kettlebell', agarre:'', grip:'', gripped:'', ejercicio:'', tecnica:'', degree:'', degrees:'', grados:'', sobre:'', hacia:'' };
+const STOP_VID_SB = new Set(['de','del','la','el','con','en','a','y','the','of','with','and','un','al','para','las','los','on','to','in','por','o','or','at']);
+const CRIT_VID_SB = new Set(['barbell','dumbbell','cable','machine','kettlebell','smith','band','landmine','trx','ez','incline','decline','flat','seated','standing','lying','single','reverse','close','wide','neutral','sumo','romanian','bulgarian','hack','walk','walking','jump','front','overhead','hammer','pause','stiff','deficit','hex','trap','floor','pin','spoto','prone','supinated','pronated','goblet','sissy','nordic','assisted','weighted','pec','rear','upright','bent','high','low','half','kneeling','tall','two','handed','alternating','plate','rack','meadow','meadows','zercher','pendlay','cuban','jefferson','eccentric','cluster','offset','tuck','dead','stop']);
+function tokVidSB(txt){
+  let t = String(txt || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ');
+  t = ' ' + t.trim() + ' ';
+  SINON_VID_SB.forEach(function(p){ t = t.replace(p[0], p[1]); });
+  const out = [];
+  t.split(' ').forEach(function(w){
+    if(!w || STOP_VID_SB.has(w) || /^\d+$/.test(w)) return;
+    if(MAPA_VID_SB.hasOwnProperty(w)) w = MAPA_VID_SB[w];
+    if(!w) return;
+    if(w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) w = w.replace(/s$/, '');
+    if(out.indexOf(w) < 0) out.push(w);
+  });
+  return out;
+}
+/* todas las formas de nombrar un texto: completo, sin parentesis y el contenido del parentesis (nombre en ingles) */
+function formasNombreVidSB(txt){
+  const t = String(txt || ''), formas = [t];
+  const sin = t.replace(/\s*\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  if(sin && sin !== t) formas.push(sin);
+  const m = t.match(/\(([^)]{3,60})\)/g);
+  if(m) m.forEach(function(p){ formas.push(p.slice(1, -1)); });
+  return formas;
+}
+let _cacheVidSB = { sig: '', mapa: null };
+function firmasVidSB(){
+  const ex = (typeof S !== 'undefined' && S && S.exercises) ? S.exercises : [];
+  let sig = ex.length + ':';
+  for(let i = 0; i < ex.length; i++){ const e = ex[i]; if(e) sig += (e.id || '') + (e.videoId ? '+' : '-') + (e.es || '').length + (e.en || '').length + ((e.aliases && e.aliases.length) || 0) + ','; }
+  if(_cacheVidSB.mapa && _cacheVidSB.sig === sig) return _cacheVidSB.mapa;
+  const mapa = new Map();
+  ex.forEach(function(e){
+    if(!e) return;
+    const sets = [];
+    [e.es, e.en].concat(e.aliases || []).forEach(function(n){
+      if(!n) return;
+      formasNombreVidSB(n).forEach(function(fn){ const tk = tokVidSB(fn); if(tk.length && !sets.some(function(x){ return x.join(' ') === tk.join(' '); })) sets.push(tk); });
+    });
+    mapa.set(e, sets);
+  });
+  _cacheVidSB = { sig: sig, mapa: mapa };
+  return mapa;
+}
+function diceVidSB(a, b){
+  if(!a.length || !b.length) return 0;
+  let com = 0; a.forEach(function(w){ if(b.indexOf(w) >= 0) com++; });
+  const d = (2 * com) / (a.length + b.length);
+  if(d < 1){
+    /* una palabra distinta del lado critico (equipo o variante) = otro ejercicio */
+    for(let i = 0; i < a.length; i++){ if(CRIT_VID_SB.has(a[i]) && b.indexOf(a[i]) < 0) return 0; }
+    for(let j = 0; j < b.length; j++){ if(CRIT_VID_SB.has(b[j]) && a.indexOf(b[j]) < 0) return 0; }
+  }
+  return d;
+}
+/* mejor ejercicio CON video para estos conjuntos de palabras (umbral 0..1); excluye el id indicado */
+function mejorConVideoVidSB(sets, umbral, excluirId){
+  const mapa = firmasVidSB();
+  let mejor = null, mejorD = 0;
+  mapa.forEach(function(cs, e){
+    if(!e.videoId || e.id === excluirId || exIncoherenteSB(e)) return;
+    let d = 0;
+    sets.forEach(function(a){ if(a.length < 2 && a.every(function(w){ return TOK_GENERICOS_SB.has(w); })) return; cs.forEach(function(b){ const x = diceVidSB(a, b); if(x > d) d = x; }); });
+    if(d >= umbral && d > mejorD){ mejor = e; mejorD = d; }
+  });
+  return mejor;
+}
+function hermanoConVideoSB(ex, nombre){
+  if(!ex) return null;
+  const mapa = firmasVidSB();
+  const sets = (mapa.get(ex) || []).slice();
+  if(nombre) formasNombreVidSB(nombre).forEach(function(fn){ const tk = tokVidSB(fn); if(tk.length) sets.push(tk); });
+  const solo = sets.filter(function(a){ return a.length >= 2 || a.some(function(w){ return !TOK_GENERICOS_SB.has(w); }); });
+  return mejorConVideoVidSB(solo, 0.8, ex.id);
+}
 function resolverExSports(nombreCrudo, estricto){
+  const base = resolverExSportsNucleo(nombreCrudo, estricto);
+  if(base && base.videoId) return base;
+  try{
+    if(base){ const h = hermanoConVideoSB(base, limpiarNombreMatchSB(nombreCrudo)); return h || base; }
+    if(estricto) return null;
+    const crudo = limpiarNombreMatchSB(nombreCrudo);
+    if(!crudo || exCanonClave(crudo)) return null;      /* canonico ausente de la biblioteca: sin video antes que el de otro movimiento */
+    const sets = formasNombreVidSB(crudo).map(tokVidSB).filter(function(a){ return a.length >= 2 || (a.length === 1 && !TOK_GENERICOS_SB.has(a[0]) && a[0].length > 4); });
+    return sets.length ? mejorConVideoVidSB(sets, 0.67, '') : null;
+  }catch(e){ return base || null; }
+}
+/* auditoria de la biblioteca: que ejercicios no tienen video y cuales pueden heredarlo de un equivalente (consola: jpAuditoriaVideosSB()) */
+window.jpAuditoriaVideosSB = function(){
+  const ex = (typeof S !== 'undefined' && S.exercises) || [], rescatables = [], huerfanos = [];
+  ex.forEach(function(e){
+    if(!e || e.videoId) return;
+    const h = hermanoConVideoSB(e, '');
+    if(h) rescatables.push(e.es + '  ->  ' + h.es); else huerfanos.push(e.es);
+  });
+  return { total: ex.length, conVideo: ex.filter(function(e){ return e && e.videoId; }).length, rescatables: rescatables, huerfanos: huerfanos };
+};
+function resolverExSportsNucleo(nombreCrudo, estricto){
   const crudo = limpiarNombreMatchSB(nombreCrudo);
   const claveCanon = exCanonClave(crudo);
   const exCanon = exPorClaveCanon(claveCanon);
@@ -75268,10 +75387,18 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '(b) Orden lógico: multiarticular pesado primero, luego secundarios, al final aislamiento. (c) Variá implementos (barra, mancuernas, poleas, máquinas) y perfiles de resistencia. (d) Entre fuerza e hipertrofia sumá 6 a 8 ejercicios de trabajo (sin contar warm-up ni core). Prohibido armar un día con un solo ejercicio raro o repetir el mismo patrón sin motivo.\n' +
       '3c) CORE: UN bloque corto (6-8 min) de 2 o 3 ejercicios DISTINTOS, duro pero entretenido, que cubra funciones diferentes (anti-extensión, anti-rotación, flexión de tronco o cadera, rotación o cargas asimétricas). NO lo limites a un solo ejercicio ni a Pallof Press, tampoco en atletas avanzados: el alumno tiene que sentir que entrenó bien. Variá: rueda abdominal, elevación de piernas colgado, woodchop en polea, plancha con carga, dead bug con peso, etc.\n' +
       '3d) REGLA DE ORO DE EQUIPAMIENTO EN BISERIES/TRISETS (gestión de congestión en sala, el gimnasio puede estar lleno): PROHIBIDO ABSOLUTO combinar dos máquinas o poleas en la misma biserie/triserie. Combinaciones permitidas, y SOLO estas: Mancuerna + Mancuerna; Mancuerna + Máquina; Mancuerna + Kettlebell; Mancuerna o Kettlebell + estructura (barra de dominadas, paralelas, anillas); Barra + Máquina, Mancuerna o Kettlebell; Peso corporal/cajón/elementos libres + carga externa (mancuerna, kettlebell o barra). En trisets TODAS las parejas deben cumplirlo. Si necesitás dos ejercicios de máquina, ponelos en bloques separados de series rectas. En la BIBLIOTECA cada ejercicio trae entre corchetes su clase de equipamiento.\n' +
+      '3e) AUDITORÍA DE ALTO RENDIMIENTO (obligatoria en atletas intermedios, avanzados y de élite): ' +
+      '(a) WARM-UP ESPECÍFICO: 1 ejercicio de movilidad del foco + 1 o 2 de activación de estabilizadores (escápulas, manguito rotador, core o glúteo medio según el día) y, en los TIPS del primer bloque de fuerza, un RAMP-UP de 2 o 3 series de aproximación progresivas (ej: 50% x 8, 70% x 5, 85% x 2) antes de las series efectivas. ' +
+      '(b) VOLUMEN: cada grupo principal del foco acumula 10 a 16 series efectivas en la sesión (los de apoyo o sinergistas 3 a 6) salvo que la ficha pida otra cosa; nada de ejercicios sueltos de 1-2 series ni de bloques que "no llegan" a estimular. ' +
+      '(c) SIN REDUNDANCIA: cada ejercicio aporta un ángulo, una función o un perfil de resistencia NUEVO; no repitas el mismo movimiento con otro implemento (dos press inclinados, dos curls de bíceps iguales) ni dos patrones idénticos seguidos. ' +
+      '(d) POSICIÓN ESTIRADA: al menos UN ejercicio por grupo grande en longitud larga (cruce o apertura en polea, press inclinado, curl inclinado, extensión de tríceps por encima de la cabeza, peso muerto rumano, curl femoral sentado, etc.). ' +
+      '(e) INTENSIDAD: el RIR baja a lo largo de la sesión (fuerza principal RIR 1-3 sin llegar al fallo; hipertrofia compuesta RIR 1-2; aislamiento RIR 0-1 en la última serie) y variá el tempo entre bloques (excéntrica de 3-4 s en un aislamiento, pausa de 1-2 s en el estiramiento). ' +
+      '(f) ORDEN Y FATIGA: lo más técnico y demandante primero; no fatigues un músculo antes de un ejercicio que lo necesita fresco (no tríceps pesado antes del press, no bíceps antes de las dominadas). ' +
+      '(g) DURACIÓN REAL: el (N MIN) de cada bloque = series x (45 s de trabajo + descanso) / 60 + 2 min de preparación; la suma de todos los bloques respeta el tiempo máximo. Un bloque de fuerza con 3 series o menos solo se justifica como top set pesado.\n' +
       '4) FORMATO DE REDACCIÓN LIBRE ESTRICTO (este texto se renderiza tal cual en la app del alumno): entrada en calor = viñetas "- Nombre ES (Name EN) x 12" (o "x 30s"). Ejercicio suelto de fuerza/hipertrofia = EXACTAMENTE 3 líneas: "Nombre ES (Name EN)" / "SxR | RIR n" / "Rest Ns". ' +
       'Biserie o triserie = una línea por estación "A1. Nombre ES (Name EN) | SxR | RIR n", "A2. ... | SxR | RIR n" y debajo UNA línea "Rest Ns". ' +
       'PROHIBIDO escribir explicaciones, notas, tempos o frases sueltas dentro del bloque de ejercicios: solo nombres, dosis y descanso. ' +
-      'Series x reps o rango ("4x8-10"); por tiempo "3x40s"; por lado "3x10 por lado". Descansos: fuerza principal 150-240s, hipertrofia 75-120s, accesorios/core 45-75s, warm-up 30-45s.\n' +
+      'Series x reps o rango ("4x8-10"); por tiempo "3x40s"; por lado "3x10 por lado". Descansos: fuerza principal 150-240s, hipertrofia compuesta 120-180s, aislamiento 60-90s (en biseries de empuje pesado mínimo 120s), accesorios/core 45-75s, warm-up 30-45s.\n' +
       '5) REGLA DE ORO DEL TEMPO: NUNCA va en la línea de dosis ni de ejercicio (ensucia la vista del alumno). Va únicamente en [COACHING TIPS & ESTRATEGIA]: en bloques de UN ejercicio como línea "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)"; ' +
       'en biseries/triseries dentro de la línea de la estación: "A1 · CUE EFICIENTE: Tempo 3011 — ..." (4 dígitos: excéntrica, pausa abajo, concéntrica, pausa arriba; X = explosiva).\n' +
       '6) NIVEL: ' + perfilNivel(ath) + '\n' +
@@ -75484,6 +75611,33 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(c.tips.length){ tx.push('[COACHING TIPS & ESTRATEGIA]'); c.tips.forEach(function(l){ tx.push(l); }); }
     });
     return { texto: tx.join('\n'), nB: buenos.length, viol: violaciones(limp, foco).concat(violacionesEquipo(limp), violacionesCore(limp)), movidos: movidos, descartadas: descartadas };
+  }
+
+  /* series efectivas por grupo y ejercicios que quedaron sin video (aviso para el coach, no bloquea nada) */
+  function resumenSesion(texto){
+    var vol = {}, ign = false, warm = false, prev = '';
+    String(texto || '').split('\n').forEach(function(raw){
+      var l = raw.trim(); if(!l) return;
+      if(/^\[BLOQUE/i.test(l)){ ign = false; warm = /entrada en calor|warm/i.test(l); prev = ''; return; }
+      if(/^\[(OBJETIVO|COACHING)/i.test(l)){ ign = true; return; }
+      if(ign || warm || /^===|^\[|^rest\b/i.test(l)) return;
+      var d = parsearDosisSports(l), nm = '';
+      if(lineaSoloDosisSB(l)) nm = prev;
+      else if(d.sets) nm = nombreEjercicioSB(l);
+      else { prev = nombreEjercicioSB(l); return; }
+      if(!d.sets || !nm) return;
+      var ex = resolverExSports(nm), g = ex ? String(ex.grupo || '') : '';
+      if(g) vol[g] = (vol[g] || 0) + d.sets;
+    });
+    var sinVideo = [];
+    /* se detecta bloque por bloque, igual que los chips del Builder (los titulos [BLOQUE n] y los tips no son ejercicios) */
+    String(texto || '').split(/^(?=\[BLOQUE)/mi).forEach(function(bt){
+      var ls = bt.split('\n'), cab = ls.shift() || '', w = /entrada en calor|warm/i.test(cab), cuerpo = [], meta = false;
+      if(!/^\[BLOQUE/i.test(cab)) return;
+      ls.forEach(function(l){ if(/^\[(OBJETIVO|COACHING)/i.test(l.trim())) meta = true; if(!meta) cuerpo.push(l); });
+      detectarEjerciciosSports(cuerpo.join('\n'), { warmup: w }).forEach(function(x){ if(!x.ex || !x.ex.videoId){ var n = String(x.nombre).replace(/\s*\([^)]*\)\s*$/, ''); if(sinVideo.indexOf(n) < 0) sinVideo.push(n); } });
+    });
+    return { vol: vol, sinVideo: sinVideo };
   }
 
   /* ---------- UI ---------- */
@@ -75720,6 +75874,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         }
         var t = pr.texto, nB = pr.nB;
         if(pr.viol.length) log('⚠ Quedaron ' + pr.viol.length + ' regla(s) sin cumplir: ' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '. Revisalo en el Builder.', 'w');
+        try{
+          var rs = resumenSesion(pr.texto), gs = Object.keys(rs.vol).sort(function(a, b){ return rs.vol[b] - rs.vol[a]; });
+          if(gs.length) log('📊 Series efectivas del DÍA ' + (di + 1) + ': ' + gs.map(function(g){ return '<b>' + esc2(g) + '</b> ' + rs.vol[g]; }).join(' · '));
+          var bajos = gs.filter(function(g){ return rs.vol[g] < 6 && !/core|cardio|movilidad/i.test(g); });
+          if(bajos.length && bajos.length < gs.length) log('⚠ Volumen bajo (menos de 6 series): ' + bajos.map(function(g){ return esc2(g) + ' ' + rs.vol[g]; }).join(', ') + '. Si es un grupo prioritario, sumá series o un ejercicio.', 'w');
+          if(rs.sinVideo.length) log('🎬 Sin video en la biblioteca: ' + rs.sinVideo.slice(0, 8).map(esc2).join(', ') + (rs.sinVideo.length > 8 ? '…' : '') + '. Vinculalos desde los chips del bloque (➕ / 🔀) y quedan aprendidos para la próxima.', 'w');
+        }catch(e){}
         if(pr.movidos || pr.descartadas) log('🧹 ' + (pr.movidos ? 'Tempo de ' + pr.movidos + ' ejercicio(s) movido a los tips' : '') + (pr.movidos && pr.descartadas ? ' · ' : '') + (pr.descartadas ? pr.descartadas + ' línea(s) de texto suelto fuera de la redacción libre' : '') + '.');
         /* una respuesta que no es una sesion (rechazo, charla, formato roto) no se aplica: se deja en el Importador rapido */
         if(nB < 2){
