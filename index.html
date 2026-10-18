@@ -11581,15 +11581,15 @@ function playBeep(freq, dur, peakGain, delay, type){
    Eventos: tick (3-2-1), aviso (10 s), mitad (50 %), fin (cambio de fase / fin del descanso), inicio.
 ========================================================= */
 var jpPerfilSonido = (function(){
-  var DEF = 'gong';
+  var DEF = 'premium';
   var LISTA = [
     { id: 'tactico',   lb: 'TÁCTICO / HUD BEEP',    desc: 'Doble beep seco 800→1200 Hz, tipo timer C4. Cuenta 3-2-1 grave y pulso metálico final.' },
     { id: 'comando',   lb: 'COMMAND VOICE / MILITAR', desc: 'Conteo por voz táctica "3, 2, 1… GO!" y "REST!" estilo comando militar.' },
-    { id: 'gong',      lb: 'GONG / RING SUAVE',     desc: 'Tono grave y resonante; relajado para marcar el fin del descanso.' },
-    { id: 'campana',   lb: 'BOX CHIME / CAMPANA',   desc: 'Campana limpia de box, atenuada a un volumen agradable.' },
+    { id: 'premium',   lb: 'APP PREMIUM / CHIME',   desc: 'Pulsos suaves y acorde ascendente al arrancar: el sonido de una app de entrenamiento premium.' },
+    { id: 'boxeo',     lb: 'RING DE BOXEO / CAMPANA', desc: 'Campana de bronce de ring: un golpe al arrancar, tres al terminar y clac de varas en el aviso de 10 s.' },
+    { id: 'navette',   lb: 'TEST DE NAVETTE / BEEP', desc: 'Beeps limpios de 1000 Hz como el Course Navette: pip de cuenta, beep largo al arrancar y triple al cambiar de etapa.' },
     { id: 'silbato',   lb: 'WHISTLE / SILBATO',     desc: 'Silbato metálico tipo Fox 40 de juez de competencia, doble frecuencia.' },
-    { id: 'vibracion', lb: 'VIBRACIÓN ÚNICAMENTE',  desc: 'Solo háptica del dispositivo, sin sonido.' },
-    { id: 'silencio',  lb: 'SILENCIOSO',            desc: 'Sin sonido ni vibración en las alertas del timer.' }
+    { id: 'silencio',  lb: 'SILENCIOSO',            desc: 'Sin sonido en las alertas del timer.' }
   ];
   function clave(){ try{ return (typeof STORAGE_KEY !== 'undefined' ? STORAGE_KEY : 'coachjp') + '_sonido'; }catch(e){ return 'coachjp_sonido'; } }
   function valido(id){ return LISTA.some(function(p){ return p.id === id; }); }
@@ -11643,18 +11643,25 @@ var jpPerfilSonido = (function(){
     osc.start(t0); osc2.start(t0); lfo.start(t0); lfoA.start(t0); n.start(t0);
     osc.stop(t0 + d + 0.05); osc2.stop(t0 + d + 0.05); lfo.stop(t0 + d + 0.05); lfoA.stop(t0 + d + 0.05); n.stop(t0 + d + 0.05);
   }
-  /* gong grave: fundamental + parciales con decaimiento largo */
-  function gong(ctx, d, v, t){
-    [[196, 1], [393.5, .42], [588, .2], [784, .1]].forEach(function(p, i){
-      tono(ctx, { f: p[0], d: d * (i > 1 ? .6 : 1), v: v * p[1], atk: .012, t: t || 0 });
+  /* pluck de app premium: nota con ataque inmediato, octava y un parcial brillante que se apaga rapido */
+  function pluck(ctx, f, d, v, t){
+    tono(ctx, { f: f, d: d, v: v, atk: .004, t: t || 0 });
+    tono(ctx, { f: f * 2, d: d * .6, v: v * .28, atk: .004, t: t || 0 });
+    tono(ctx, { f: f * 3.01, d: d * .35, v: v * .1, tipo: 'triangle', atk: .004, t: t || 0 });
+  }
+  /* campana de ring de boxeo: parciales inarmonicos de bronce, golpe duro y cola larga */
+  function ring(ctx, v, t){
+    [[1, 1, 1.7], [2.4, .62, 1.2], [3.9, .42, .85], [5.7, .26, .5], [8.1, .14, .3]].forEach(function(p){
+      tono(ctx, { f: 760 * p[0], d: p[2], v: v * p[1], atk: .002, t: t || 0 });
     });
   }
-  /* campana de box: parciales inarmónicos con decaimiento medio */
-  function campana(ctx, d, v, f0, t){
-    [[1, 1], [1.5, .45], [2.5, .26], [3.5, .13]].forEach(function(p){
-      tono(ctx, { f: f0 * p[0], d: d * (p[0] > 2 ? .55 : 1), v: v * p[1], atk: .003, t: t || 0 });
-    });
+  /* clac de varas de madera (aviso de 10 s del ring) */
+  function clac(ctx, v, t){
+    tono(ctx, { f: 1900, d: .04, v: v, tipo: 'square', lp: 2600, atk: .001, t: t || 0 });
+    tono(ctx, { f: 950, d: .05, v: v * .8, tipo: 'triangle', atk: .001, t: t || 0 });
   }
+  /* pip limpio del Course Navette */
+  function pip(ctx, f, d, v, t){ tono(ctx, { f: f, d: d, v: v, tipo: 'sine', atk: .01, t: t || 0 }); }
   /* doble beep seco 800 -> 1200 Hz (clic de radio tactica / timer C4) y pulso metalico final de 1760 Hz */
   function c4(c, t){
     tono(c, { f: 800, d: .035, v: .13, tipo: 'square', lp: 4200, atk: .002, t: t || 0 });
@@ -11704,19 +11711,26 @@ var jpPerfilSonido = (function(){
       inicio: function(c){ if(!hablar(PAL[idioma()].go)) metal(c); },
       descanso: function(c){ if(!hablar(PAL[idioma()].rest)) c4(c, 0); }
     },
-    gong: {
-      tick:   function(c){ tono(c, { f: 330, d: .09, v: .16 }); },
-      aviso:  function(c){ tono(c, { f: 262, d: .4, v: .2, atk: .01 }); },
-      mitad:  function(c){ tono(c, { f: 262, d: .3, v: .18, atk: .01 }); tono(c, { f: 262, d: .3, v: .18, atk: .01, t: .24 }); },
-      fin:    function(c){ gong(c, 1.9, .34); },
-      inicio: function(c){ gong(c, 1.0, .26); }
+    premium: {
+      tick:   function(c){ pluck(c, 1319, .12, .11); },
+      aviso:  function(c){ pluck(c, 784, .3, .15); pluck(c, 1047, .3, .15, .12); },
+      mitad:  function(c){ pluck(c, 659, .3, .15); pluck(c, 784, .35, .15, .1); },
+      fin:    function(c){ [523, 659, 784, 1047].forEach(function(f, i){ pluck(c, f, 1.1, .15, i * .03); }); },
+      inicio: function(c){ [523, 659, 784, 1047].forEach(function(f, i){ pluck(c, f, i === 3 ? .8 : .5, i === 3 ? .18 : .15, i * .07); }); }
     },
-    campana: {
-      tick:   function(c){ tono(c, { f: 1320, d: .08, v: .11 }); },
-      aviso:  function(c){ campana(c, .5, .2, 880); },
-      mitad:  function(c){ campana(c, .4, .17, 880); campana(c, .4, .17, 880, .26); },
-      fin:    function(c){ campana(c, 1.3, .26, 880); },
-      inicio: function(c){ campana(c, .8, .2, 988); }
+    boxeo: {
+      tick:   function(c){ clac(c, .12); },
+      aviso:  function(c){ clac(c, .16); clac(c, .16, .16); },
+      mitad:  function(c){ ring(c, .1); },
+      fin:    function(c){ ring(c, .2); ring(c, .2, .34); ring(c, .2, .68); },
+      inicio: function(c){ ring(c, .22); }
+    },
+    navette: {
+      tick:   function(c){ pip(c, 1000, .09, .16); },
+      aviso:  function(c){ pip(c, 880, .14, .18); },
+      mitad:  function(c){ pip(c, 1000, .1, .18); pip(c, 1000, .1, .18, .16); },
+      fin:    function(c){ pip(c, 1000, .16, .2); pip(c, 1000, .16, .2, .26); pip(c, 1000, .16, .2, .52); },
+      inicio: function(c){ pip(c, 1000, .55, .2); }
     },
     silbato: {
       tick:   function(c){ tono(c, { f: 3200, d: .04, v: .09, tipo: 'triangle' }); },
@@ -11730,7 +11744,7 @@ var jpPerfilSonido = (function(){
   function vibrar(ev, sinVib){
     if(actual === 'silencio' || sinVib) return;
     /* los perfiles con sonido conservan la háptica de siempre (tick / inicio / fin); el aviso de 10 s y la mitad solo vibran sin sonido */
-    if(actual !== 'vibracion' && (ev === 'aviso' || ev === 'mitad')) return;
+    if(ev === 'aviso' || ev === 'mitad') return;
     try{ if(navigator.vibrate) navigator.vibrate(VIB[ev]); }catch(e){}
   }
   /* cuenta regresiva: los avisos 'tick' llegan de a uno por segundo (el HUD manda el 3er numero como 'inicio'); se numeran para
@@ -11753,7 +11767,7 @@ var jpPerfilSonido = (function(){
   }
   function reproducir(ev, sinVib){
     vibrar(ev, sinVib);
-    if(actual === 'vibracion' || actual === 'silencio') return;
+    if(actual === 'silencio') return;
     if(isAudioMuted()) return;
     var r = (actual === 'tactico' || actual === 'comando') ? secuencia(ev) : { ev: ev, n: 0 };
     emitir(actual, r.ev, r.n);
@@ -11763,7 +11777,8 @@ var jpPerfilSonido = (function(){
     demoT.forEach(clearTimeout); demoT = [];
     try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
     hintFase = '';
-    [['tick', 1, 0], ['tick', 2, 900], ['tick', 3, 1800], ['fin', 0, 2700]].concat(id === 'comando' ? [['descanso', 0, 4000]] : []).forEach(function(p){
+    var sec = (id === 'tactico' || id === 'comando') ? [['tick', 1, 0], ['tick', 2, 900], ['tick', 3, 1800], ['fin', 0, 2700]] : [['tick', 0, 0], ['tick', 0, 900], ['tick', 0, 1800], ['inicio', 0, 2700], ['fin', 0, 4300]];
+    sec.concat(id === 'comando' ? [['descanso', 0, 4000]] : []).forEach(function(p){
       demoT.push(setTimeout(function(){ emitir(id, p[0], p[1]); }, p[2]));
     });
   }
@@ -11813,14 +11828,10 @@ var jpPerfilSonido = (function(){
     var prev = actual;
     actual = id;                       /* preescucha: usa el perfil pedido sin guardarlo */
     try{
-      if(id === 'silencio'){ aviso('SILENCIOSO: las alertas del timer no emiten sonido ni vibración.'); }
-      else if(id === 'vibracion'){
-        if(navigator.vibrate){ navigator.vibrate(VIB.fin); aviso('Vibración enviada.'); }
-        else aviso('Este dispositivo no permite vibrar desde la web (iPhone). En ese caso conviene un perfil con sonido.');
-      } else {
+      if(id === 'silencio'){ aviso('SILENCIOSO: las alertas del timer no emiten sonido.'); }
+      else {
         if(isAudioMuted()) aviso('El sonido está en OFF (botón AUDIO del timer). Activalo para escuchar.');
-        else if(id === 'tactico' || id === 'comando'){ aviso(id === 'comando' ? 'Probando: 3, 2, 1, GO y REST.' : ''); demo(id); }
-        else { aviso(''); emitir(id, 'fin'); }
+        else { aviso(id === 'comando' ? 'Probando: 3, 2, 1, GO y REST.' : 'Probando: cuenta, arranque y final.'); demo(id); }
       }
     }finally{ actual = prev; }
   }
@@ -11856,7 +11867,7 @@ var jpPerfilSonido = (function(){
     probar: probar,
     abrir: abrir,
     silencio: function(){ return actual === 'silencio'; },
-    sinSonido: function(){ return actual === 'vibracion' || actual === 'silencio'; }
+    sinSonido: function(){ return actual === 'silencio'; }
   };
 })();
 window.jpPerfilSonido = jpPerfilSonido;
@@ -42064,6 +42075,9 @@ html body.cf-disc .jp-cfboard .jp-cf-rest.running::before{ background:rgba(16,18
 html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-main{ color:#34D399 !important; font-weight:800 !important; }
 html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-plus, html body.cf-disc .jp-cfboard .jp-cf-rest.running .jp-cf-rest-x{ background:rgba(6,78,59,.35) !important; border:1px solid rgba(16,185,129,.35) !important; color:#6EE7B7 !important; }
 html body.cf-disc .jp-done-btn.jp-done-foot.on, html body.cf-disc .jp-close-cta.done{ background:rgba(2,44,34,.4) !important; border:1px solid rgba(16,185,129,.6) !important; color:#34D399 !important; font-weight:700 !important; box-shadow:0 0 12px rgba(16,185,129,.25) !important; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
+/* celeste tactico atenuado (#00B4D8) en las etiquetas superiores de categoria: [ BIOMECANICA APLICADA · FUERZA ] / [ CROSSFIT · ... ] */
+html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-tag-lb, html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-tag{ color:#00B4D8 !important; }
+html body.cf-disc .jp-cf-tag, html body.cf-disc .jp-cf-tag .jp-tag-lb{ color:#00B4D8 !important; }
 /* BRANDPASS_CF:END */
 </style>
 <script id="jpHudTacticoJs">
@@ -74969,6 +74983,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   };
   FOCOS.push.enfasis = 'Distribución: pecho (medio y superior) > hombros > tríceps. NADA de bíceps ni de espalda.';
   FOCOS.push.vetNom = /biceps|martillo|curl de brazo/;
+  FOCOS.push.kw = /press|apertura|cruce|fondos|elevacion(es)? lateral|triceps|flexion|pec/;
+  FOCOS.pull.kw = /remo|jalon|dominada|pull|face pull|biceps|curl|pajaro/;
+  FOCOS.quad.kw = /sentadilla|prensa|hack|zancada|extension de cuadriceps|bulgara|goblet|step/;
+  FOCOS.post.kw = /peso muerto|hip thrust|curl femoral|puente|buenos dias|extension de cadera|nordic|hiperextension/;
+  FOCOS.arms.kw = /curl|triceps|martillo|elevacion(es)? lateral|press frances|pajaro|predicador|press militar|arnold/;
+  FOCOS.glute.kw = /hip thrust|puente|patada|abduccion|bulgara|peso muerto rumano|hiperextension|sentadilla/;
   FOCOS.pull.enfasis = 'Distribución: espalda (tracción vertical y horizontal) > deltoides posterior > bíceps. NADA de tríceps ni de pecho.';
   FOCOS.pull.vetNom = /triceps|press frances|fondos|jm press/;
   /* split científico de 5 días: Empuje / Tren inferior (rodilla) / Tracción / Tren inferior (cadena posterior) / Día 5 según perfil */
@@ -75002,14 +75022,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if((p.dias || []).length === 5 && split5Activo()){
       id = di < 4 ? SPLIT5[di] : dia5Id(ath);
       var F5 = FOCOS[id], sem = SPLIT5_LB.map(function(lb, i){ return 'Día ' + (i + 1) + ': ' + lb; }).concat(['Día 5: ' + dia5Lb(dia5Id(ath))]);
-      return { id: id, lb: F5.lb, ok: F5.ok, no: F5.no, vetados: F5.vetados, enfasis: F5.enfasis || '', vetNom: F5.vetNom || null, semana: sem, fuente: 'split científico de 5 días (Día ' + (di + 1) + ')' };
+      return { id: id, lb: F5.lb, ok: F5.ok, no: F5.no, vetados: F5.vetados, enfasis: F5.enfasis || '', vetNom: F5.vetNom || null, kw: F5.kw || null, semana: sem, fuente: 'split científico de 5 días (Día ' + (di + 1) + ')' };
     }
     var t1 = [d.title, d.label].filter(Boolean).join(' ');
     if((id = clasifFoco(t1))) fuente = 'título del día: «' + String(d.title || d.label).slice(0, 60) + '»';
     else if((id = clasifFoco(String(d.focusText || '').slice(0, 220)))) fuente = 'foco del coach del día';
     else if((id = focoPorSplit(fichaDe(ath).split_preferido, di))) fuente = 'split preferido: ' + fichaDe(ath).split_preferido;
     var F = FOCOS[id];
-    return F ? { id: id, lb: F.lb, ok: F.ok, no: F.no, vetados: F.vetados, enfasis: F.enfasis || '', vetNom: F.vetNom || null, semana: null, fuente: fuente } : { id: '', lb: '', ok: [], no: [], vetados: '', enfasis: '', vetNom: null, semana: null, fuente: '' };
+    return F ? { id: id, lb: F.lb, ok: F.ok, no: F.no, vetados: F.vetados, enfasis: F.enfasis || '', vetNom: F.vetNom || null, kw: F.kw || null, semana: null, fuente: fuente } : { id: '', lb: '', ok: [], no: [], vetados: '', enfasis: '', vetNom: null, semana: null, fuente: '' };
   }
 
   /* ---------- biblioteca para el prompt (nombres EXACTOS para vincular videos), ya filtrada por el foco ---------- */
@@ -75023,6 +75043,23 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   function buscarEj(nombre){
     var m = mapaLib(), base = String(nombre || '').replace(/^[-•*·]\s+/, '').replace(/^[A-F]\d+\.\s*/, '').replace(/\s+x\s*\d[\w\s.\/-]*$/i, '').trim(), sin = base.replace(/\s*\(.*\)\s*$/, ''), par = (base.match(/\(([^)]+)\)\s*$/) || [])[1];
     return m[nz(base)] || m[nz(sin)] || (par && m[nz(par)]) || null;
+  }
+  /* clase de equipamiento para la regla de biseries: D mancuerna · K kettlebell · B barra · M maquina/polea · E estructura · L libre / peso corporal */
+  var NOM_CL = { D: 'Mancuerna', K: 'Kettlebell', B: 'Barra', M: 'Máquina', E: 'Estructura', L: 'Libre' };
+  function claseEj(l){
+    var e = buscarEj(l), base = nz(e ? e.es : l), eq = e ? e.equipo : '';
+    if(/dominada|pull ?up|chin ?up|fondos|paralelas|anillas|muscle ?up|colgad/.test(base)) return 'E';
+    if(eq === 'Mancuernas') return 'D'; if(eq === 'Kettlebell') return 'K'; if(eq === 'Barra') return 'B';
+    if(eq === 'Máquina' || eq === 'Polea' || eq === 'Multipower') return 'M';
+    if(eq === 'Peso corporal' || eq === 'Banda') return 'L';
+    var t = nz(l);
+    if(/mancuerna|dumbbell/.test(t)) return 'D'; if(/kettlebell|pesa rusa/.test(t)) return 'K'; if(/barra|barbell/.test(t)) return 'B';
+    if(/maquina|machine|polea|cable|prensa|hack|jalon|multipower|smith|pec deck|leg (press|extension|curl)/.test(t)) return 'M';
+    return 'L';
+  }
+  function claseDeEjercicio(e){
+    if(/dominada|pull ?up|chin ?up|fondos|paralelas|anillas|muscle ?up|colgad/.test(nz(e.es))) return 'E';
+    return ({ 'Mancuernas': 'D', 'Kettlebell': 'K', 'Barra': 'B', 'Máquina': 'M', 'Polea': 'M', 'Multipower': 'M' })[e.equipo] || 'L';
   }
   function bibliotecaIA(ath, foco){
     var f = fichaDe(ath), permitidos = EQ_OK[nz(f.equipamiento)] || null;
@@ -75038,8 +75075,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     });
     var score = function(e){
       var s = 0, n = nz(e.es);
-      try{ if(checkExercise(ath, e).some(function(a){ return a.level === 'good'; })) s += 40; }catch(er){}
-      if(prefs.some(function(p){ return p && n.indexOf(p) >= 0; })) s += 60;
+      var enFoco = !(foco && foco.kw) || foco.kw.test(n);
+      try{ if(enFoco && checkExercise(ath, e).some(function(a){ return a.level === 'good'; })) s += 40; }catch(er){}
+      if(foco && foco.kw && foco.kw.test(n)) s += 25;
+      if(enFoco && prefs.some(function(p){ return p && n.indexOf(p) >= 0; })) s += 60;
       if(e.videoId) s += 8; if(e.oficial) s += 4; if((e.riesgo || []).length) s -= 2;
       return s;
     };
@@ -75047,8 +75086,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     pool.sort(function(a, b){ return score(b) - score(a); }).forEach(function(e){ (porG[e.grupo] = porG[e.grupo] || []).push(e); });
     var out = [];
     Object.keys(porG).forEach(function(g){
-      porG[g].slice(0, enfG[g] ? 28 : (grupos ? (g === 'Core' ? 10 : 36) : 15)).forEach(function(e){
-        out.push(e.es + (e.en ? ' (' + e.en + ')' : '') + ' | ' + g + ' | ' + e.equipo + (e.patron ? ' | ' + e.patron : ''));
+      porG[g].slice(0, enfG[g] ? 28 : (grupos ? (g === 'Core' ? 16 : 36) : 15)).forEach(function(e){
+        out.push(e.es + (e.en ? ' (' + e.en + ')' : '') + ' | ' + g + ' | ' + e.equipo + ' [' + NOM_CL[claseDeEjercicio(e)] + ']' + (e.patron ? ' | ' + e.patron : ''));
       });
     });
     return out.join('\n');
@@ -75073,6 +75112,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '2) Elegí los ejercicios de la BIBLIOTECA con su nombre EXACTO ("Nombre ES (Name EN)") para que se vincule el video. Solo si ninguno sirve (por ejemplo en el warm-up), usá "Nombre en español (English name)" con el nombre inglés estándar REAL; NUNCA repitas el mismo nombre dentro y fuera del paréntesis.\n' +
       '3) Estructura: entre 5 y 7 bloques: [WARM-UP] (6-10 min, específico al foco: movilidad + activación + ramp-up), 1-2 bloques [FUERZA] (el principal con carga alta), ' +
       '1-3 bloques [HIPERTROFIA] (bisets/trisets o series rectas), y cierre con [ACCESORIO] y/o [CORE]. Ajustalo al tiempo disponible. No repitas el foco principal de los OTROS DÍAS del plan.\n' +
+      '3b) SELECCIÓN EXPERTA DE EJERCICIOS (nada al azar): pensá como un entrenador de élite con gimnasio real. (a) Cubrí TODOS los grupos y porciones del foco del día con al menos 2 ejercicios distintos por grupo principal, con ángulos y funciones diferentes (ej: pecho = press inclinado con mancuernas para la porción superior + cruce o apertura en polea para trabajar en posición estirada; hombros = press + elevaciones laterales + deltoide posterior; tríceps = cabeza larga por encima de la cabeza + empuje en polea; cuádriceps = sentadilla o prensa + extensión; isquios = peso muerto rumano + curl femoral). ' +
+      '(b) Orden lógico: multiarticular pesado primero, luego secundarios, al final aislamiento. (c) Variá implementos (barra, mancuernas, poleas, máquinas) y perfiles de resistencia. (d) Entre fuerza e hipertrofia sumá 6 a 8 ejercicios de trabajo (sin contar warm-up ni core). Prohibido armar un día con un solo ejercicio raro o repetir el mismo patrón sin motivo.\n' +
+      '3c) CORE: UN bloque corto (6-8 min) de 2 o 3 ejercicios DISTINTOS, duro pero entretenido, que cubra funciones diferentes (anti-extensión, anti-rotación, flexión de tronco o cadera, rotación o cargas asimétricas). NO lo limites a un solo ejercicio ni a Pallof Press, tampoco en atletas avanzados: el alumno tiene que sentir que entrenó bien. Variá: rueda abdominal, elevación de piernas colgado, woodchop en polea, plancha con carga, dead bug con peso, etc.\n' +
+      '3d) REGLA DE ORO DE EQUIPAMIENTO EN BISERIES/TRISETS (gestión de congestión en sala, el gimnasio puede estar lleno): PROHIBIDO ABSOLUTO combinar dos máquinas o poleas en la misma biserie/triserie. Combinaciones permitidas, y SOLO estas: Mancuerna + Mancuerna; Mancuerna + Máquina; Mancuerna + Kettlebell; Mancuerna o Kettlebell + estructura (barra de dominadas, paralelas, anillas); Barra + Máquina, Mancuerna o Kettlebell; Peso corporal/cajón/elementos libres + carga externa (mancuerna, kettlebell o barra). En trisets TODAS las parejas deben cumplirlo. Si necesitás dos ejercicios de máquina, ponelos en bloques separados de series rectas. En la BIBLIOTECA cada ejercicio trae entre corchetes su clase de equipamiento.\n' +
       '4) FORMATO DE REDACCIÓN LIBRE ESTRICTO (este texto se renderiza tal cual en la app del alumno): entrada en calor = viñetas "- Nombre ES (Name EN) x 12" (o "x 30s"). Ejercicio suelto de fuerza/hipertrofia = EXACTAMENTE 3 líneas: "Nombre ES (Name EN)" / "SxR | RIR n" / "Rest Ns". ' +
       'Biserie o triserie = una línea por estación "A1. Nombre ES (Name EN) | SxR | RIR n", "A2. ... | SxR | RIR n" y debajo UNA línea "Rest Ns". ' +
       'PROHIBIDO escribir explicaciones, notas, tempos o frases sueltas dentro del bloque de ejercicios: solo nombres, dosis y descanso. ' +
@@ -75088,7 +75131,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '[BLOQUE 1] Entrada en calor {zona} (N MIN)\n' +
       '- {Nombre ES (Name EN)} x 12\n' +
       '- {Nombre ES (Name EN)} x 10\n' +
-      '[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones basadas en evidencia: el estímulo buscado Y el porqué fisiológico (reclutamiento de unidades motoras, tensión mecánica en longitud muscular estirada, acumulación de metabolitos, perfil de resistencia, etc.)}\n' +
+      '[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones didácticas: qué estás entrenando, POR QUÉ funciona y qué va a sentir el atleta. Mantené el rigor científico (tensión mecánica, reclutamiento de fibras, estiramiento bajo carga, perfil de resistencia, metabolitos) pero explicando cada idea en palabras de todos los días, con una imagen o analogía simple. Ej: "Con cargas pesadas, tu cuerpo recluta las fibras musculares más grandes y fuertes, que son las que más crecen: por eso las primeras series se sienten duras y lentas."}\n' +
       '[COACHING TIPS & ESTRATEGIA]\n' +
       '{para el warm-up: SET-UP / CUE EFICIENTE / CUIDADO sobre el movimiento más importante}\n' +
       'Los bloques se numeran [BLOQUE 1], [BLOQUE 2], ... y el TÍTULO de cada uno empieza con su categoría: "Entrada en calor …", "Fuerza principal – …", "Hipertrofia – …", "Core – …", "Accesorios – …".\n' +
@@ -75116,7 +75159,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       'A2 · SET-UP: ... (igual para cada estación)\n' +
       'TRANSICIÓN: {regla de cambio entre estaciones y descanso}\n' +
       'Técnicas avanzadas (solo si el nivel lo permite) al final de la dosis, ej: "4x10-12 | RIR 1 | Myo-reps", "| Drop-set", "| Rest-pause", "| Pausa 2s en estiramiento".\n' +
-      'TIPS: lenguaje claro y simple, entendible para CUALQUIER persona (sin jerga innecesaria), concretos y detallados: hasta 35 palabras por línea; explicá el "cómo" y el "por qué". ' +
+      'TIPS Y EXPLICACIONES (REGLA DE ORO DE LA DIDÁCTICA): escribí como si le hablaras a alguien que hace el ejercicio por primera vez, en lenguaje simple y directo, sin jerga de manual universitario. Cada término técnico se explica al toque en palabras cotidianas ("tensión mecánica = el peso estira y exige al músculo"). ' +
+      'Cada línea dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (hasta 35 palabras). Rigor científico intacto, explicación accesible. ' +
       'Cada bloque TIENE que traer [OBJETIVO FISIOLÓGICO] y [COACHING TIPS & ESTRATEGIA]. Respondé SOLO con el formato.';
   }
   function usuario(ath, p, di, extra, previos, foco){
@@ -75140,8 +75184,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       'Escribí ahora la sesión completa en el formato indicado, con "=== DÍA ' + (di + 1) + ': ... ===" como primera línea.';
   }
   function correccion(viol, foco){
-    return '\n\nCORRECCIÓN OBLIGATORIA: tu versión anterior incluyó ejercicios que NO corresponden al foco del día (' + viol.map(function(v){ return v.nombre + ' [' + v.grupo + ']'; }).join(', ') + '). ' +
-      'Reescribí la sesión COMPLETA reemplazándolos por ejercicios de ' + (foco.ok.join(' / ') || 'los grupos del foco') + ' tomados de la BIBLIOTECA' + (foco.vetados ? '. Nada de ' + foco.vetados : '') + '.';
+    var fo = viol.filter(function(v){ return v.tipo === 'foco'; }), eq = viol.filter(function(v){ return v.tipo === 'equipo'; }), co = viol.filter(function(v){ return v.tipo === 'core'; });
+    var t = '\n\nCORRECCIÓN OBLIGATORIA: tu versión anterior incumplió reglas.';
+    if(fo.length) t += ' EJERCICIOS FUERA DEL FOCO DEL DÍA (' + fo.map(function(v){ return v.nombre + ' [' + v.grupo + ']'; }).join(', ') + '): reemplazalos por ejercicios de ' + ((foco && foco.ok && foco.ok.join(' / ')) || 'los grupos del foco') + ' tomados de la BIBLIOTECA' + (foco && foco.vetados ? '; nada de ' + foco.vetados : '') + '.';
+    if(eq.length) t += ' EQUIPAMIENTO EN BISERIES/TRISETS (' + eq.map(function(v){ return v.nombre; }).join('; ') + '): está prohibido combinar dos máquinas/poleas y solo valen las parejas permitidas (Mancuerna+Mancuerna, Mancuerna+Máquina, Mancuerna+Kettlebell, Mancuerna/Kettlebell+estructura, Barra+Máquina/Mancuerna/Kettlebell, Libre+carga externa). Reordená las parejas o pasá esos ejercicios a bloques de series rectas.';
+    if(co.length) t += ' CORE: el bloque de core debe tener 2 o 3 ejercicios distintos (duro y entretenido), no uno solo.';
+    return t + ' Reescribí la sesión COMPLETA respetando TODAS las reglas.';
   }
   /* deja UN solo día, con el número correcto y sin vallas de código */
   function limpiar(t, di){
@@ -75228,8 +75276,41 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         if(/^(?:rest|descanso)\b/i.test(l) || esDosis(l)) return;
         var e = buscarEj(l), limpio = String(l).replace(/^[-•*·]\s+/, '').replace(/^[A-F]\d+\.\s*/, '').replace(/\s+x\s*\d[\w\s.\/-]*$/i, '').replace(/\s*\(.*\)\s*$/, '').trim();
         var porGrupo = !!(e && foco.no.indexOf(e.grupo) >= 0), porNombre = !!(foco.vetNom && foco.vetNom.test(nz(l)));      /* el veto por nombre rige aunque el ejercicio no este en la biblioteca */
-        if(porGrupo || porNombre) v.push({ bloque: b.titulo, nombre: e ? e.es : limpio, grupo: e ? e.grupo : 'fuera de foco' });
+        if(porGrupo || porNombre) v.push({ tipo: 'foco', bloque: b.titulo, nombre: e ? e.es : limpio, grupo: e ? e.grupo : 'fuera de foco' });
       });
+    });
+    return v;
+  }
+  /* regla de oro de equipamiento: nunca dos maquinas en una biserie; solo las parejas permitidas (en core/warm-up solo se prohibe maquina + maquina) */
+  var PAR_OK = { BD: 1, BK: 1, BM: 1, DD: 1, DE: 1, DK: 1, DM: 1, EK: 1, BL: 1, DL: 1, KL: 1 };
+  function parOk(a, b){ return !!PAR_OK[[a, b].sort().join('')]; }
+  function violacionesEquipo(limp){
+    var v = [], vistos = {};
+    limp.forEach(function(b){
+      var est = [];
+      b.lineas.forEach(function(l){ var m = l.match(/^([A-F]\d+)\.\s*(.*)$/); if(m) est.push({ id: m[1], clase: claseEj(m[2]) }); });
+      if(est.length < 2) return;
+      var estricto = !(b.cat === 'CORE' || b.cat === 'WARM-UP');
+      for(var i = 0; i < est.length; i++) for(var j = i + 1; j < est.length; j++){
+        var a = est[i], c = est[j], mal = estricto ? !parOk(a.clase, c.clase) : (a.clase === 'M' && c.clase === 'M');
+        var k = b.titulo + a.id + c.id;
+        if(mal && !vistos[k]){ vistos[k] = 1; v.push({ tipo: 'equipo', bloque: b.titulo, nombre: a.id + ' (' + NOM_CL[a.clase] + ') + ' + c.id + ' (' + NOM_CL[c.clase] + ') en «' + b.titulo + '»', grupo: 'equipamiento' }); }
+      }
+    });
+    return v;
+  }
+  /* el core son 2 o 3 ejercicios distintos, no uno solo */
+  function violacionesCore(limp){
+    var v = [];
+    limp.forEach(function(b){
+      if(b.cat !== 'CORE') return;
+      var nombres = {};
+      b.lineas.forEach(function(l){
+        if(/^(?:rest|descanso)\b/i.test(l) || esDosis(l)) return;
+        var n = nz(String(l).replace(/^[-•*·]\s+/, '').replace(/^[A-F]\d+\.\s*/, '').replace(/\s+x\s*\d[\w\s.\/-]*$/i, '').replace(/\s*\(.*\)\s*$/, ''));
+        if(n) nombres[n] = 1;
+      });
+      if(Object.keys(nombres).length < 2) v.push({ tipo: 'core', bloque: b.titulo, nombre: 'core con un solo ejercicio en «' + b.titulo + '»', grupo: 'core' });
     });
     return v;
   }
@@ -75244,13 +75325,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     buenos.forEach(function(b, bi){
       var c = limpiarBloque(b); c.titulo = b.titulo || ''; limp.push(c); movidos += c.movidos; descartadas += c.descartadas;
       /* "[BLOQUE n] [CATEGORIA] titulo": la categoria sale del titulo (o de la etiqueta explicita), asi el alumno ve FUERZA / HIPERTROFIA / CORE bien rotulado */
-      var tagB = /^bloque\s*\d*$/i.test(b.tag || '') || !b.tag ? categoriaBloque(b.titulo) : String(b.tag).toUpperCase();
+      var tagB = /^bloque\s*\d*$/i.test(b.tag || '') || !b.tag ? categoriaBloque(b.titulo) : String(b.tag).toUpperCase(); c.cat = tagB;
       tx.push('[BLOQUE ' + (bi + 1) + '] [' + tagB + '] ' + (b.titulo || ''));
       c.lineas.forEach(function(l){ tx.push(l); });
       if(c.objetivo){ tx.push('[OBJETIVO FISIOLÓGICO]'); tx.push(c.objetivo); }
       if(c.tips.length){ tx.push('[COACHING TIPS & ESTRATEGIA]'); c.tips.forEach(function(l){ tx.push(l); }); }
     });
-    return { texto: tx.join('\n'), nB: buenos.length, viol: violaciones(limp, foco), movidos: movidos, descartadas: descartadas };
+    return { texto: tx.join('\n'), nB: buenos.length, viol: violaciones(limp, foco).concat(violacionesEquipo(limp), violacionesCore(limp)), movidos: movidos, descartadas: descartadas };
   }
 
   /* ---------- UI ---------- */
@@ -75443,7 +75524,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
           pr = procesar(out, di, foco);
           /* split blindado: si la IA mezcló grupos fuera del foco, se le pide UNA corrección antes de aplicar nada */
           if(pr.nB >= 2 && pr.viol.length){
-            log('↻ La IA metió ejercicios fuera del foco (' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '). Pido la corrección…', 'w');
+            log('↻ La IA incumplió reglas del plan (' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '). Pido la corrección…', 'w');
             var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true }, di);
             var pr2 = procesar(out2, di, foco);
             if(pr2.nB >= 2 && pr2.viol.length <= pr.viol.length) pr = pr2;
@@ -75454,7 +75535,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
           errFinal = err; break;
         }
         var t = pr.texto, nB = pr.nB;
-        if(pr.viol.length) log('⚠ Quedaron ' + pr.viol.length + ' ejercicio(s) fuera del foco: ' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '. Reemplazalos en el Builder.', 'w');
+        if(pr.viol.length) log('⚠ Quedaron ' + pr.viol.length + ' regla(s) sin cumplir: ' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '. Revisalo en el Builder.', 'w');
         if(pr.movidos || pr.descartadas) log('🧹 ' + (pr.movidos ? 'Tempo de ' + pr.movidos + ' ejercicio(s) movido a los tips' : '') + (pr.movidos && pr.descartadas ? ' · ' : '') + (pr.descartadas ? pr.descartadas + ' línea(s) de texto suelto fuera de la redacción libre' : '') + '.');
         /* una respuesta que no es una sesion (rechazo, charla, formato roto) no se aplica: se deja en el Importador rapido */
         if(nB < 2){
