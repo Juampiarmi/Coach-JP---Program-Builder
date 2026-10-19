@@ -4885,6 +4885,10 @@ function impFaseDeTag(tag){
 }
 function parsearImportacion(texto, sports){
   const avisos = [], dias = [];
+  /* CrossFit · pegado libre: si el texto no trae delimitadores ([WARM-UP], [WOD / METCON]...), se estandariza antes de parsear */
+  if(!sports && typeof window.jpCfNecesita === 'function' && window.jpCfNecesita(texto)){
+    try{ const est = window.jpCfEstandarizar(texto); if(est && est.bloques) texto = est.texto; }catch(eEst){ console.warn('estandarizar', eEst); }
+  }
   let dia = null, bloque = null, enFoco = false, campoAct = '', esperaTituloDia = false, esperaFoco = false;
   const arr0 = String(texto || '').split(/\r?\n/);
   const hayEstrictos = arr0.some(x => impMatchDiaEstricto(x));
@@ -5074,6 +5078,9 @@ function htmlImportadorRapido(){
         '<span class="imp-sep"></span>' +
         '<button type="button" class="btn sm imp-semana" data-impgo="semana">IMPORTAR SEMANA COMPLETA (' + (sp ? 'DÍA 1..N' : 'S1..S4') + ')</button>' +
       '</div>' +
+      (sp ? '' : '<div class="imp-actions" style="margin-top:6px"><button type="button" class="btn sm" data-impnorm="1" title="Detecta días y bloques del texto pegado y lo deja en el formato exacto de la plataforma, para que lo revises antes de importar">✨ ESTANDARIZAR PLANILLA</button>' +
+        '<button type="button" class="btn sm ghost" data-impnormia="1" title="Usa tu IA para ordenar un texto muy desordenado (después se revisa igual)">🤖 ESTANDARIZAR CON IA</button></div>' +
+        '<div class="hint" style="margin-top:6px">✨ <b>Pegado libre</b>: pegá la planificación como la tengas redactada (WhatsApp, Excel, notas). Se detectan solos los <b>días</b>, los bloques (<b>warm-up, strength / skill, AMRAP / EMOM / For Time / rondas, accesorios, hyrox, endurance</b>) y los campos <b>objetivo / tips / pacing / escalado</b>; los videos de la biblioteca se vinculan a cada bloque al importar.</div>') +
       (sp
         ? '<div class="hint" style="margin-top:6px">Sintaxis esperada: cada día empieza con <b>=== DÍA X: Título ===</b> (opcional <b>[NOMBRE DEL DÍA]</b> y <b>[FOCO DEL COACH]</b>) · cada ejercicio con <b>[BLOQUE X] Nombre</b> (o <b>[FUERZA]</b>, <b>[HIPERTROFIA]</b>, <b>[ACCESORIO]</b> + nombre) · prescripción <b>4x8-10 | Tempo 3010 | RIR 2</b> y descanso <b>Rest 120s</b> · bisets con <b>A1.</b> / <b>A2.</b> · listas de calentamiento con <b>- Ejercicio x 12</b> · <b>[OBJETIVO FISIOLÓGICO]</b> y <b>[COACHING TIPS &amp; ESTRATEGIA]</b> van a sus propios campos. <b>Ctrl+Enter</b> importa directo · escribí <b>/biset</b> <b>/triset</b> <b>/piramide</b> <b>/tramos</b> <b>/myo</b> para insertar plantillas · el nombre del ejercicio se autocompleta (Tab). ' +
           '<b>Importar día activo</b> reemplaza los bloques del día abierto; <b>Importar semana completa</b> carga cada <i>DÍA X</i> en su pestaña correlativa y pide confirmación antes de sobrescribir.</div>'
@@ -37683,7 +37690,7 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:block; }
       if(wrap && wrap.parentNode) wrap.parentNode.insertBefore(box, wrap.nextSibling); else document.body.insertBefore(box, document.body.firstChild);
     }
     box.className = 'jp-pago-cta ' + info.estado;
-    box.innerHTML = '<span class="jp-pago-msg"><i></i>' + (info.estado === 'venc' ? 'CUOTA VENCIDA' : 'CUOTA PR\\u00d3XIMA A VENCER') + ' \\u00b7 ' + escAcc(info.corta) + '</span>' +
+    box.innerHTML = '<span class="jp-pago-msg"><i></i>' + (info.estado === 'venc' ? 'VENCIDA' : 'VENCE') + ' \\u00b7 ' + escAcc(info.corta) + '</span>' +
       '<a class="jp-pago-btn" href="' + escAcc(url) + '" target="_blank" rel="noopener noreferrer">\\ud83d\\udcb3 PAGAR CUOTA' + (monto ? ' \\u00b7 ' + escAcc(monto) : '') + '</a>';
   }
   function pintarPago(){
@@ -42416,12 +42423,12 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
 .jp-reg-exs::-webkit-scrollbar{ display:none; }
 .jp-reg-set{ flex:0 0 auto; min-width:68px; scroll-snap-align:center; }
 /* ---- boton de pago de Mercado Pago (Sports y CrossFit): vidrio oscuro, borde de estado ---- */
-.jp-pago-cta{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin:10px 12px 0; padding:12px 14px; border-radius:14px; background:linear-gradient(180deg, rgba(20,20,20,.94), rgba(10,10,10,.94)); border:1px solid rgba(245,197,24,.45); box-shadow:0 10px 28px rgba(0,0,0,.45), inset 0 0 22px rgba(245,197,24,.05); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
-.jp-pago-cta.venc{ border-color:rgba(224,101,74,.65); box-shadow:0 10px 28px rgba(0,0,0,.45), inset 0 0 22px rgba(224,101,74,.08); }
-.jp-pago-msg{ display:inline-flex; align-items:center; gap:8px; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10.5px; font-weight:600; letter-spacing:.14em; color:#F5C518; }
+.jp-pago-cta{ display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin:6px 12px 0; padding:5px 5px 5px 12px; border-radius:12px; background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(10,10,10,.92)); border:1px solid rgba(245,197,24,.4); box-shadow:0 6px 16px rgba(0,0,0,.4); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
+.jp-pago-cta.venc{ border-color:rgba(224,101,74,.6); }
+.jp-pago-msg{ display:inline-flex; align-items:center; gap:7px; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10px; font-weight:600; letter-spacing:.12em; color:#F5C518; }
 .jp-pago-cta.venc .jp-pago-msg{ color:#F0A08C; }
-.jp-pago-msg i{ width:8px; height:8px; border-radius:50%; background:currentColor; box-shadow:0 0 10px currentColor; }
-.jp-pago-btn{ flex:1 1 220px; display:flex; align-items:center; justify-content:center; min-height:48px; padding:0 18px; border-radius:12px; text-decoration:none; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.86rem; letter-spacing:.08em; color:#0A0A0A; background:linear-gradient(180deg,#FFE066,#F5C518 55%,#D6A500); box-shadow:0 6px 18px rgba(245,197,24,.28); }
+.jp-pago-msg i{ flex:0 0 auto; width:7px; height:7px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; }
+.jp-pago-btn{ flex:0 0 auto; display:flex; align-items:center; justify-content:center; min-height:34px; padding:0 13px; border-radius:9px; text-decoration:none; white-space:nowrap; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.74rem; letter-spacing:.06em; color:#0A0A0A; background:linear-gradient(180deg,#FFE066,#F5C518 55%,#D6A500); box-shadow:0 3px 10px rgba(245,197,24,.25); }
 .jp-pago-btn:active{ transform:translateY(1px); filter:brightness(.95); }
 /* BRANDPASS_CF:END */
 </style>
@@ -75963,6 +75970,218 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     window.finAplicarCondicionComercial = envuelta;
     try{ finAplicarCondicionComercial = envuelta; }catch(e){}
   }
+})();
+</script>
+<script>
+/* =========================================================
+   CROSSFIT · PEGADO LIBRE DE PLANILLAS (estandarizador del Importador rapido)
+   El coach pega la planificacion tal como la tiene redactada (WhatsApp, Excel, PDF, notas) y esto detecta dias y bloques (warm-up, skill / strength,
+   AMRAP / EMOM / For Time / Tabata / rondas, accesorios, hyrox, endurance), separa objetivo / tips / pacing / escalado / foco, ordena las lineas de cada
+   bloque y devuelve el texto en la sintaxis EXACTA del importador ([WARM-UP] / [SKILL / STRENGTH] / [WOD / METCON] / ...). parsearImportacion() lo usa solo
+   cuando el texto pegado no trae delimitadores propios; el boton "Estandarizar planilla" lo aplica a la vista para revisarlo antes de importar. Los videos
+   se vinculan despues, con el mismo escaneo de la biblioteca de cada bloque (reacciona al texto de cada bloque importado).
+========================================================= */
+(function(){
+  'use strict';
+  var EMO = '(?:[\\u2190-\\u2BFF\\uFE0F\\u200D]|[\\uD83C-\\uD83F][\\uDC00-\\uDFFF])';
+  var RX_EMO0 = new RegExp('^(?:' + EMO + ')+\\s*');
+  var RX_TAG_CANON = /^\s*\[\s*(?:warm|skill|strength|fuerza|wod|met\s*-?\s*con|access|hyrox|endur|2\s*[ºo°]|hipertrofia|pir[aá]mide|bloque)/i;
+  var RX_FMT = /^(?:amrap|e\d*mom|emom|for\s*time|tabata|chipper|every\s*\d|\d+\s*(?:rounds?|rondas?)\s*(?:for\s*time|por\s*tiempo)|\d+\s*(?:min(?:utos?)?|')\s*(?:amrap|emom)|rounds?\s*for\s*time)/i;
+  var RX_PRESC = /^\s*(?:[-•*·]\s*)?(?:\d|(?:every|emom|amrap|for\s*time|rest|descanso|then|tabata|rondas?|rounds?|time\s*cap|cap)\b)|@/i;
+  var HDR = [
+    { fase: 'warmup',    tag: 'WARM-UP',              rx: /^(warm[\s-]*up|calentamiento|entrada\s+en\s+calor|activaci[oó]n|movilidad|preparaci[oó]n|prehab)\b\s*(.*)$/i },
+    { fase: 'strength',  tag: 'SKILL / STRENGTH',     rx: /^(skill\s*(?:\/\s*strength)?|strength|fuerza|t[eé]cnica|weightlifting|halterofilia|lifting|oly(?:mpic)?(?:\s+lifting)?|heavy|pir[aá]mide|pyramid|hipertrofia|gymnastics?|gimn[aá]sticos?)\b\s*(.*)$/i },
+    { fase: 'metcon',    tag: 'WOD / METCON',         rx: /^(wod|met[\s-]*con|workout(?:\s+of\s+the\s+day)?|finisher|chipper)\b\s*(.*)$/i },
+    { fase: 'accessory', tag: 'ACCESSORY / COOLDOWN', rx: /^(accessory(?:\s*\/\s*cool\s*-?\s*down)?|accesorios?|core|cash[\s-]*out|cool[\s-]*down|enfriamiento|estiramientos?|vuelta\s+a\s+la\s+calma)\b\s*(.*)$/i },
+    { fase: 'cardio',    tag: 'HYROX STATIONS',       rx: /^(hyrox(?:\s*\/\s*stations?)?|stations?)\b\s*(.*)$/i },
+    { fase: 'endurance', tag: '2º TURNO · ENDURANCE', rx: /^(endurance|2\s*[ºo°]?\s*turno)\b\s*(.*)$/i }
+  ];
+  var TAG_DE_FASE = {}; HDR.forEach(function(h){ TAG_DE_FASE[h.fase] = h.tag; });
+  var RX_DIA = /^(?:d[ií]a|day|sesi[oó]n|session)\s*(\d+)\s*(?:[:.)|\-–—]\s*(.*))?$/i;
+  var RX_DOW = /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b\s*[:.\-–—)]?\s*(.*)$/i;
+  var RX_SEMANA = /^(?:semana|week|mes|mesociclo|microciclo)\s*\d+/i;
+  function lab(alts){ return new RegExp('^(?:' + alts + ')\\s*(?:[:\\-–—]\\s*(.*))?$', 'i'); }
+  var L_FOCO = lab('foco|focus|briefing|objetivo\\s+del\\s+d[ií]a|tema|stimulus');
+  var L_OBJ  = lab('objetivo(?:\\s+del\\s+est[ií]mulo|\\s+fisiol[oó]gico)?|goal|est[ií]mulo|intenci[oó]n|intent');
+  var L_PAC  = lab('pacing(?:\\s+sugerido)?|ritmo|estrategia\\s+de\\s+ritmo');
+  var L_ESC  = lab('escalado(?:\\s*\\/\\s*rx\\s+alternativo)?|scaling|scale|rx\\s+alternativo|adaptaciones?|regresiones?');
+  var L_TIPS = lab('coaching(?:\\s+tips?)?(?:\\s*(?:&|y)\\s*estrategia)?|tips?|cues?|notas?(?:\\s+del\\s+coach)?|observaciones?|strategy|estrategia');
+  function deco(s){ return String(s).replace(/^[\s>#*_~`|=\-–—]+/, '').replace(/[\s*_~`=|]+$/, '').replace(RX_EMO0, '').trim(); }
+  /* linea de ejercicio limpia: sin viñeta / numeracion / emoji inicial */
+  function item(l){
+    var t = String(l).replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\t/g, ' ').replace(/\s+$/, '').trim();
+    t = t.replace(/^(?:[-•*·–—]|\d+[.)])\s+/, '').replace(RX_EMO0, '').trim();
+    return t;
+  }
+  /* "Back Squat 5x5 @ 80%" -> "5x5 Back Squat @ 80%" (la dosis primero, como el resto de la plataforma) */
+  function dosisPrimero(t){
+    var m = t.match(/^([A-Za-zÁ-ÿ][^\d@|:]{2,45}?)\s+(\d+\s*[x×]\s*\d+(?:\s*-\s*\d+)?(?:\s*(?:reps?|rm))?)\s*(@.*)?$/);
+    return m ? (m[2].replace(/\s+/g, '') + ' ' + m[1].trim() + (m[3] ? ' ' + m[3].trim() : '')) : t;
+  }
+  function esHeader(c){
+    var cc = c.replace(/\s*[:：]+\s*$/, '');
+    if(cc.length > 80 || cc.length < 3) return null;
+    for(var i = 0; i < HDR.length; i++){
+      var m = cc.match(HDR[i].rx); if(!m) continue;
+      var rest = (m[2] || '').replace(/^[\s:\-–—·|)(\/]+/, '').replace(/[\s)(]+$/, '');
+      if(/^(?:strength|met\s*-?\s*con|cool\s*-?\s*down|stations?|endurance)$/i.test(rest)) rest = '';      /* segunda mitad de un delimitador compuesto: "WOD / METCON", "SKILL / STRENGTH" */
+      if(/^\d+\s*(?:min(?:utos?)?|mins?|')$/i.test(rest)) rest = HDR[i].tag + ' (' + parseInt(rest, 10) + ' MIN)';      /* "Warm-up (8 min)": la duracion pasa al titulo como (8 MIN) */
+      /* "Core stability 3x10 ..." / frase larga: no es un encabezado de bloque */
+      if(HDR[i].fase === 'accessory' && /^core$/i.test(m[1]) && rest && /\d/.test(rest)) continue;
+      return { fase: HDR[i].fase, tag: HDR[i].tag, titulo: rest };
+    }
+    return null;
+  }
+  function inferirDeTexto(c){
+    if(/warm|calent|activaci|movilidad/i.test(c)) return 'warmup';
+    if(RX_FMT.test(c) || /\bwod\b|met\s*-?\s*con/i.test(c)) return 'metcon';
+    if(/skill|strength|fuerza|snatch|clean|jerk|squat|deadlift|press|oly/i.test(c)) return 'strength';
+    if(/hyrox|station/i.test(c)) return 'cardio';
+    if(/access|core|cool|estir/i.test(c)) return 'accessory';
+    return 'metcon';
+  }
+
+  window.jpCfNecesita = function(texto){
+    return !String(texto || '').split(/\r?\n/).some(function(l){ return RX_TAG_CANON.test(l) || /^\s*[A-F]\)\s*\S/.test(l) || /^\s*bloque\s*\d*\s*[:\-–]/i.test(l); });
+  };
+
+  window.jpCfEstandarizar = function(texto){
+    var lineas = String(texto || '').replace(/\r/g, '').split('\n');
+    var out = [], avisos = [], nDias = 0, nBloques = 0, nCoach = 0;
+    var bloque = null, diaAbierto = false, preambulo = [], campo = '', dowN = 0, hayDia = false;
+    function cerrarBloque(){
+      if(!bloque) return;
+      var its = bloque.items;
+      if(its.length && window.jpAutoFormat && typeof window.jpAutoFormat.formatearWod === 'function'){
+        try{ its = window.jpAutoFormat.formatearWod(its.join('\n')).split('\n').filter(function(x){ return x !== ''; }); }catch(e){}
+      }
+      out.push('[' + bloque.tag + ']' + (bloque.titulo ? ' ' + bloque.titulo : ''));
+      its.forEach(function(x){ out.push(x); });
+      ['objetivo', 'tips', 'pacing', 'escalado'].forEach(function(k){
+        var v = bloque.coach[k]; if(!v || !v.length) return;
+        nCoach++;
+        out.push({ objetivo: 'OBJETIVO: ', tips: 'TIPS: ', pacing: 'PACING: ', escalado: 'ESCALADO: ' }[k] + v[0]);
+        v.slice(1).forEach(function(x){ out.push(x); });
+      });
+      nBloques++; bloque = null; campo = '';
+    }
+    function nuevoBloque(fase, titulo){ cerrarBloque(); volcarPreambulo(); bloque = { fase: fase, tag: TAG_DE_FASE[fase] || 'WOD / METCON', titulo: titulo || '', items: [], coach: {} }; campo = ''; return bloque; }
+    function volcarPreambulo(){
+      if(!preambulo.length) return;
+      preambulo.forEach(function(p, i){ out.push((i === 0 ? 'FOCO: ' : '') + p); });
+      preambulo = [];
+    }
+    function nuevoDia(num, titulo){
+      cerrarBloque(); if(diaAbierto) volcarPreambulo(); nDias++; hayDia = true; diaAbierto = true;
+      if(out.length) out.push('');
+      out.push('=== DÍA ' + num + (titulo ? ': ' + titulo : '') + ' ===');
+    }
+    function agregarCoach(k, txt){
+      if(!bloque){ if(txt) preambulo.push(txt); campo = ''; return; }
+      bloque.coach[k] = bloque.coach[k] || []; if(txt) bloque.coach[k].push(txt); campo = k;
+    }
+    lineas.forEach(function(raw){
+      var t = raw.trim();
+      if(!t){ campo = ''; return; }
+      if(/^[\s\-=_*~#]{3,}$/.test(t)){ campo = ''; return; }
+      var c = deco(t); if(!c) return;
+      /* dias */
+      var md = c.match(RX_DIA), mw = (!md && c.length < 45) ? c.match(RX_DOW) : null;
+      if(md){ nuevoDia(parseInt(md[1], 10), (md[2] || '').trim()); return; }
+      if(mw){ dowN++; nuevoDia(dowN, mw[1].charAt(0).toUpperCase() + mw[1].slice(1).toLowerCase() + ((mw[2] || '').trim() ? ' · ' + mw[2].trim() : '')); return; }
+      if(RX_SEMANA.test(c) && c.length < 40 && !bloque){ avisos.push('Se ignoró el título «' + c.slice(0, 30) + '»'); return; }
+      /* etiquetas de coaching (objetivo / tips / pacing / escalado / foco) */
+      var m;
+      if((m = c.match(L_FOCO)) && !bloque){ if((m[1] || '').trim()) preambulo.push(m[1].trim()); campo = ''; return; }
+      if((m = c.match(L_PAC))){ agregarCoach('pacing', (m[1] || '').trim()); return; }
+      if((m = c.match(L_ESC))){ agregarCoach('escalado', (m[1] || '').trim()); return; }
+      if((m = c.match(L_OBJ))){ agregarCoach('objetivo', (m[1] || '').trim()); return; }
+      if((m = c.match(L_TIPS))){ agregarCoach('tips', (m[1] || '').trim()); return; }
+      /* delimitador canonico ya escrito: "[WOD / METCON] Fran" */
+      var mc = t.match(/^\s*\[\s*([^\]]+?)\s*\]\s*(.*)$/);
+      if(mc){
+        var h0 = esHeader(mc[1]);
+        if(h0){ var b0 = nuevoBloque(h0.fase, ((mc[2] || '').trim() || h0.titulo)); return; }
+      }
+      /* "A) texto" / "B. texto": bloque con la fase inferida del texto */
+      var ml = c.match(/^(?:part(?:e)?\s+)?([A-F])\s*[).:]\s*(.+)$/i);
+      if(ml){
+        var restL = ml[2].trim(), hL = esHeader(restL), faseL = hL ? hL.fase : inferirDeTexto(restL);
+        var bL = nuevoBloque(faseL, hL ? hL.titulo : '');
+        if(!hL) bL.items.push(restL);
+        return;
+      }
+      /* encabezado de bloque por palabra clave: "Warm-up", "Strength: Back Squat", "WOD - Fran" */
+      var h = esHeader(c);
+      if(h){
+        var b = nuevoBloque(h.fase, '');
+        if(h.titulo){
+          if(/^(?:\d+\s*[x×]\s*\d|@|\d+\s*(?:reps?|sets?|series?|rondas?|rounds?))/i.test(h.titulo) || /\d+\s*[x×]\s*\d/.test(h.titulo)) b.items.push(dosisPrimero(h.titulo));
+          else if(RX_FMT.test(h.titulo)) b.items.push(h.titulo);
+          else if(h.titulo.length <= 50) b.titulo = h.titulo;
+          else b.items.push(h.titulo);
+        }
+        return;
+      }
+      /* linea de formato (AMRAP / EMOM / For Time ...): abre un bloque metcon si el actual no lo es o ya trae su formato */
+      if(RX_FMT.test(c)){
+        var genericaRondas = /^\d+\s*(?:rounds?|rondas?)\s*:?\s*$/i.test(c);
+        var ya = bloque && bloque.items.some(function(x){ return RX_FMT.test(deco(x)); });
+        if(!bloque || (bloque.fase !== 'metcon' && !(genericaRondas && (bloque.fase === 'warmup' || bloque.fase === 'accessory'))) || (ya && !/^then\b/i.test(c))){
+          nuevoBloque('metcon', ''); bloque.items.push(item(t)); return;
+        }
+      }
+      /* continuacion de un campo de coaching abierto */
+      if(campo && bloque && !RX_PRESC.test(t) && (t.length >= 28 || /[.!?:]$/.test(t) || /^[-•*·]\s/.test(t))){ bloque.coach[campo].push(t.replace(/^[-•*·]\s+/, '')); return; }
+      campo = '';
+      /* linea de ejercicio */
+      if(!bloque){
+        if(!hayDia && !preambulo.length && !out.length && c.length < 60 && !RX_PRESC.test(t)){ preambulo.push(c); return; }     /* titulo suelto antes de todo: foco del dia */
+        if(RX_PRESC.test(t) || /\d/.test(c)){ nuevoBloque(inferirDeTexto(c), ''); avisos.push('Había texto antes del primer bloque: se agrupó en un bloque ' + (TAG_DE_FASE[bloque.fase] || '') + ' (revisá la fase)'); }
+        else { preambulo.push(c); return; }
+      }
+      var it = item(t);
+      if(bloque.fase === 'strength' || bloque.fase === 'accessory') it = dosisPrimero(it);
+      if(it) bloque.items.push(it);
+    });
+    cerrarBloque(); volcarPreambulo();
+    /* el foco/preambulo que quedo al final de un dia sin bloques */
+    return { texto: out.join('\n').replace(/\n{3,}/g, '\n\n').trim(), dias: nDias, bloques: nBloques, coach: nCoach, avisos: avisos };
+  };
+
+  /* ---------- UI: botones en el Importador rapido de CrossFit ---------- */
+  var SYS_IA = 'Sos un formateador estricto de planificaciones de CrossFit. Convertí el texto del coach (cualquier formato) a EXACTAMENTE esta sintaxis, en texto plano, sin markdown ni explicaciones:\n' +
+    '=== DÍA N: Título ===\nFOCO: frase corta (opcional)\n[WARM-UP]\nuna línea por ejercicio\n[SKILL / STRENGTH] Nombre del trabajo\n5x3 Power Snatch @ 60kg\nRest 90s\n[WOD / METCON] Nombre\nAMRAP 12 min:\n10 Wall Balls (9/6 kg)\n[ACCESSORY / COOLDOWN]\n...\nOBJETIVO: ...\nTIPS: ...\nPACING: ...\nESCALADO: ...\n' +
+    'Reglas: un delimitador por bloque con las fases [WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN], [HYROX STATIONS] o [2º TURNO · ENDURANCE]; OBJETIVO/TIPS/PACING/ESCALADO van DESPUÉS de las líneas del bloque al que pertenecen; no inventes ejercicios, series ni cargas y no agregues RIR, tempo ni descansos que el coach no escribió; conservá cargas, tiempos y formatos (AMRAP, EMOM, For Time, Every, Tabata); un movimiento por línea.';
+  function ta(){ return document.getElementById('cfPegarTxt'); }
+  function resumen(r){ return r.dias + ' día' + (r.dias === 1 ? '' : 's') + ', ' + r.bloques + ' bloque' + (r.bloques === 1 ? '' : 's') + ' y ' + r.coach + ' campo' + (r.coach === 1 ? '' : 's') + ' de coaching'; }
+  function aplicar(r){
+    var t = ta(); if(!t) return;
+    t.value = r.texto; try{ _impTexto = r.texto; }catch(e){}
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    if(typeof previewImportacion === 'function') previewImportacion();
+  }
+  document.addEventListener('click', async function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-impnorm],[data-impnormia]') : null; if(!b) return;
+    e.preventDefault();
+    var t = ta(); if(!t || !t.value.trim()){ toast('Pegá primero la planificación en el cuadro', 'warn'); return; }
+    if(b.hasAttribute('data-impnorm')){
+      var r = window.jpCfEstandarizar(t.value);
+      if(!r.bloques){ toast('No se detectó ningún bloque: probá agregar encabezados como WARM-UP, STRENGTH o WOD', 'warn'); return; }
+      aplicar(r); toast('✨ Planilla estandarizada: ' + resumen(r) + '. Revisala y tocá IMPORTAR');
+      return;
+    }
+    if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){ toast('Configurá una clave de IA para usar esta opción', 'warn'); if(window.CoachAI && window.CoachAI.config) window.CoachAI.config(); return; }
+    var orig = b.innerHTML; b.disabled = true; b.textContent = '⏳ Estandarizando con IA…';
+    try{
+      var out = await window.CoachAI.generarTexto(t.value, SYS_IA, { maxTokens: 6000, plain: true });
+      out = String(out || '').replace(/```[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
+      var r2 = window.jpCfEstandarizar(out);
+      if(!r2.bloques){ toast('La IA no devolvió bloques reconocibles: se dejó el texto como estaba', 'warn'); return; }
+      aplicar(r2); toast('🤖 Estandarizado con IA: ' + resumen(r2) + '. Revisalo antes de importar');
+    }catch(err){ toast('No se pudo estandarizar con IA: ' + String((err && err.message) || err).slice(0, 90), 'err'); }
+    finally{ b.disabled = false; b.innerHTML = orig; }
+  });
 })();
 </script>
 <script>
