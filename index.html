@@ -5317,7 +5317,14 @@ const ALIAS_EJ_SB = [
   [/\bincline\s+(?:dumbbell|db)\s+(?:bench\s+)?press\b/i, 'Incline Dumbbell Press'],
   [/\b(?:flat\s+)?(?:dumbbell|db)\s+bench\s+press\b/i, 'Flat Dumbbell Press'],
   [/\b(?:seated\s+)?(?:dumbbell|db)\s+lateral\s+raises?\b/i, 'Dumbbell Lateral Raises'],
-  [/^(?!.*\bcable\b).*\blateral\s+raises?\s+(?:sentad[oa]|seated)\b/i, 'Dumbbell Lateral Raises']
+  [/^(?!.*\bcable\b).*\blateral\s+raises?\s+(?:sentad[oa]|seated)\b/i, 'Dumbbell Lateral Raises'],
+  /* movimientos de WOD escritos como los escribe el coach */
+  [/^(?:row|rowing|row\s*erg|rowerg|erg|remo\s+(?:en\s+)?(?:erg|ergometro|ergómetro))$/i, 'Row (Ergometer)'],
+  [/^(?:ski\s*erg|skierg)$/i, 'SkiErg'],
+  [/^(?:echo\s*bike|air\s*bike|assault\s*bike|bike)$/i, 'Assault Bike'],
+  [/^(?:du|dus|double\s*unders?|dobles?\s*unders?)$/i, 'Double Unders'],
+  [/^(?:wall\s*balls?|wallballs?)$/i, 'Wall balls'],
+  [/^(?:box\s*jumps?)$/i, 'Box jump']
 ];
 function aliasEjSB(nombre){
   const n = String(nombre || '');
@@ -5334,6 +5341,8 @@ function limpiarNombreMatchSB(raw){
   let t = String(raw || '').replace(/^[\s\-•*]+/, '').trim();
   t = limpiarPrefijoOrdinalSB(t);
   t = t.replace(/^\s*(?:sets?|series?|rondas?|rounds?)\s*\d+(?:\s*[-–]\s*\d+)?\s*[:.\-–—)]*\s*/i, '');
+  t = t.replace(/^\s*(?:min(?:uto)?s?\.?|minute)\s*\d+(?:\s*[-–]\s*\d+)?\s*[:.)\-–—]\s*/i, '');                                                  /* EMOM: "Min 1: 12 Cal Row" */
+  t = t.replace(/^\d+(?:[.,]\d+)?\s*(?:m|mts?|metros?|km|cal(?:or[ií]as)?|kg|lbs?|min(?:utos?)?|seg(?:undos?)?)\b\.?\s+(?=[A-Za-z\u00c0-\u00ff])/i, '');      /* "200 m Run", "12 Cal Row": la medida no es parte del nombre */
   t = t.replace(/^\d+(?:\s*[-–]\s*\d+)?\s*[:.)]\s+/, '');
   t = t.replace(/^\d+(?:\s*[-–]\s*\d+)?\s*(?:x|×|reps?)?\s+(?=[A-Za-z\u00c0-\u00ff])/i, '');
   t = t.replace(/\s*(?:@|\b1\s*RM\b|\bRPE\b|\bRIR\b|\btempo\b|\brest\b|\|).*$/i, '');
@@ -5954,7 +5963,7 @@ function nombreEjercicioSBBase(linea){
   t = t.split(/\s*[:|]\s*|\s+[-–—]\s+/)[0];
   t = t.replace(/\s*(?:\d+\s*)?[x×]\s*\d[\w.\/-]*.*$/i, '');
   /* corta en la primera métrica pegada al nombre ("Press banca 4 Sets", "Remo Rest 90") */
-  t = t.replace(/\s+(?:\d+\s*(?:sets?|series?|reps?|repeticiones|rondas?|min(?:utos?)?|seg(?:undos?)?)\b|rir\s*\d|rest\b|descanso\b|tempo\b).*$/i, '');
+  t = t.replace(/\s+(?:\d+\s*(?:sets?|series?|reps?|repeticiones|rondas?|min(?:utos?)?|seg(?:undos?)?)\b|\d+(?:[.,]\d+)?\s*(?:m|mts?|metros?|km|cal|kg|lbs?)\b|rir\s*\d|rest\b|descanso\b|tempo\b).*$/i, '');
   t = t.replace(/[\[\]]/g, '').trim();
   if(!t || RX_NOEJ_METRICA.test(t) || RX_NOEJ_JERGA.test(t) || !/[a-záéíóúñ]/i.test(t)) return '';
   return t;
@@ -6018,6 +6027,7 @@ function esEstructuraONotaSB(linea){
   if(!l) return false;
   if(/^\s*sets?\s*\d+/i.test(l) && /[A-Za-z\u00c0-\u00ff]{3}/.test(l.replace(/^\s*sets?\s*\d+(?:\s*[-–]\s*\d+)?\s*[:.\-–—]?/i, ''))) return false;      /* "SET 1-2: 5 BACK SQUATS @ 75%": lleva ejercicio */
   if(RX_EMOJI_TACTICO_SB.test(l) || RX_ESTRUCTURA_SB.test(l)) return true;
+  if(/^\s*(?:finisher|wod|met-?con|cierre|cardio)\b/i.test(l) && l.split(/\s+/).length <= 5 && !/\d/.test(l)) return true;      /* "Finisher metabólico", "WOD": titulo de bloque, no un ejercicio */
   /* una nota con la palabra clave en cualquier posicion, siempre que la linea no lleve dosis ni sea un complex "+" */
   if(RX_NOTA_PALABRA_SB.test(l) && !/\+/.test(l)){
     const d = parsearDosisSports(l);
@@ -74340,6 +74350,40 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     return normalizarSalidaIA(out);
   }
 
+  /* ---------- WOD / METCON: el auto-formato de fuerza NO se aplica ----------
+     Un AMRAP, EMOM, For Time, Tabata o circuito por rondas no lleva series x reps | tempo | RIR | rest por movimiento: esa dosis destruye la logica del
+     entrenamiento metabolico. Para esos bloques el auto-formato solo limpia: espacios, mayusculas de las palabras clave, saltos de linea del circuito. */
+  var RX_WOD_KW = /\b(?:amrap|emom|e\d+mom|for\s*time|rft|tabata|chipper|time\s*cap|rondas?|rounds?)\b|\bevery\s*\d/i;
+  function esWodBloque(b, texto){
+    if(b && (b.category === 'metcon' || b.category === 'cardio' || b.tipo === 'hyrox' || b.modalidad === 'metcon')) return true;
+    if(RX_WOD_KW.test(String(texto || '')) || !!(b && RX_WOD_KW.test(String(b.titulo || '')))) return true;
+    /* finisher / WOD / metcon / cardio en el titulo del bloque o como encabezado de su texto */
+    var cab = String(texto || '').split(/\r?\n/).filter(function(l){ return l.trim(); })[0] || '';
+    return !!(b && RX_WOD_TITULO.test(String(b.titulo || ''))) || RX_WOD_TITULO.test(cab);
+  }
+  var RX_WOD_TITULO = /^\s*(?:[^\wÀ-ÿ]*)?(?:finisher|wod|met-?con|cardio|cierre\s+metab)|\b(?:finisher|met-?con|wod)\b/i;
+  var KW_WOD = [[/\bamrap\b/gi, 'AMRAP'], [/\bemom\b/gi, 'EMOM'], [/\btabata\b/gi, 'Tabata'], [/\brft\b/gi, 'RFT'], [/\bfor\s*time\b/gi, 'For Time'], [/\btime\s*cap\b/gi, 'Time Cap']];
+  /* mayuscula inicial del movimiento ("10 wall balls" -> "10 Wall balls", "200 m run" -> "200 m Run"); el resto del texto no se toca */
+  function capMov(t){
+    return t.replace(/^(\d+(?:[.,]\d+)?\s*(?:(?:m|km|cal|kg|min|s)\s+)?)([a-záéíóúñA-ZÁÉÍÓÚÑ])/, function(a, n, c){ return n + c.toUpperCase(); }).replace(/^([a-záéíóúñ])/, function(c){ return c.toUpperCase(); });
+  }
+  function formatearWod(texto){
+    var out = [];
+    String(texto || '').split(/\r?\n/).forEach(function(raw){
+      var t = raw.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\t/g, ' ').replace(/ {2,}/g, ' ').trim();
+      if(!t){ out.push(''); return; }
+      KW_WOD.forEach(function(k){ t = t.replace(k[0], k[1]); });
+      /* "AMRAP 12 min: 10 wall balls + 10 burpees": cabecera y un movimiento por linea (el texto de cada movimiento no se toca) */
+      var m = t.match(/^((?:\d+\s*(?:rondas?|rounds?)\s*(?:de|of)?\s*)?(?:AMRAP|EMOM|Tabata|RFT|For Time|Every\s[^:]*|\d+\s*(?:rondas?|rounds?))[^:]{0,40}):\s*(.+)$/i);
+      if(m && /\+|;|,\s*\d|\s\/\s/.test(m[2])){
+        var partes = m[2].split(/\s*\+\s*|\s*;\s*|,\s*(?=\d)|\s+\/\s+/).map(function(p){ return p.trim(); }).filter(Boolean);
+        if(partes.length >= 2){ out.push(m[1].trim() + ':'); partes.forEach(function(p){ out.push(capMov(p)); }); return; }
+      }
+      out.push(capMov(t));
+    });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
+  }
+
   /* ---------- orquestador ---------- */
   async function autoFormatBlock(blockId, btn){
     var ta = document.querySelector('textarea[data-bf="items"][data-b="' + blockId + '"]');
@@ -74350,6 +74394,18 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     var avisoIA = '';
     try{
       await new Promise(function(ok){ setTimeout(ok, 260); });      /* el estado "PROCESANDO" alcanza a verse aunque la conversión local sea instantánea */
+      var bWod = (typeof findBlock === 'function') ? findBlock(blockId) : null;
+      if(esWodBloque(bWod, ta.value)){
+        var nw = formatearWod(ta.value);
+        if(nw === ta.value.replace(/\s+$/, '')){ toast('⏱ WOD protegido: la estructura ya estaba prolija, no se agregó nada'); return true; }
+        if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Auto-formato de WOD');
+        ta.value = nw;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        ta.dispatchEvent(new Event('change', { bubbles: true }));
+        checkVideoMatches(blockId);
+        toast('⏱ WOD formateado sin tocar su estructura (no se agregan series, tempo, RIR ni descansos)');
+        return true;
+      }
       var r = procesarTexto(ta.value);
       /* plantillas con la palabra literal "Ejercicio" (sin nombre real): no se inventa nada, se pide el nombre y no se toca el bloque */
       if(r.placeholders){
@@ -74400,7 +74456,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   }
   window.autoFormatBlock = autoFormatBlock;
   window.checkVideoMatches = checkVideoMatches;
-  window.jpAutoFormat = { procesarTexto: procesarTexto, formatearLinea: formatearLinea };
+  window.jpAutoFormat = { procesarTexto: procesarTexto, formatearLinea: formatearLinea, formatearWod: formatearWod, esWodBloque: esWodBloque };
 
   document.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('[data-autofmt]');
