@@ -3747,6 +3747,7 @@ function cfFmtToolbar(bId){
     { k:'cap',     lb:'Cap' }
   ];
   return '<div class="cf-fmt-tools">' +
+    '<button type="button" class="cf-fmt-btn jp-autofmt" data-autofmt="' + bId + '" title="Prolija el WOD (espacios, mayúsculas, saltos de línea del circuito) sin agregar series, RIR, tempo ni descansos">⚡ AUTO-FORMATO</button>' +
     btns.map(b => '<button type="button" class="cf-fmt-btn" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
     '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="emom" data-b="' + bId + '">⏱ + Estructura EMOM</button>' +
     '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="amrap" data-b="' + bId + '">⏱ + AMRAP</button>' +
@@ -16745,10 +16746,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const faseCls = 'jp-cf-fase-' + (CF_FASE_LB[block.category] ? block.category : 'metcon');
     const cfgCab = (esMetcon(block, weekIdx) && lineas.length) ? jpWodTimerCfg(block, cont ? cont.lineas : lineas, f) : null;
     const cabeceraWod = cfgCab ? jpCfCabeceraWod(cfgCab, block, lineas, c) : '';
+    /* cabecera limpia: [ CROSSFIT · FASE ] // N MIN. El "(N MIN)" del titulo pasa a la etiqueta; el titulo grande se oculta cuando solo repite la fase
+       (queda en el DOM: lo usan el bloque plegado y "bloque completado"). Un titulo con informacion propia ("Fran", "Back Squat 5x5") se conserva. */
+    const tituloCrudoCF = (!block.title || /^\\s*bloque\\s*\\d*\\s*$/i.test(block.title)) ? fase : block.title;
+    const mMinCF = String(tituloCrudoCF).match(/\\(\\s*(\\d+)\\s*min\\w*\\s*\\)\\s*$/i);
+    const tituloVisCF = mMinCF ? String(tituloCrudoCF).replace(/\\s*\\(\\s*\\d+\\s*min\\w*\\s*\\)\\s*$/i, '') : tituloCrudoCF;
+    const minTagCF = mMinCF ? mMinCF[1] : ((!cabeceraWod && min) ? min : '');
+    const nrmCF = function(x){ return String(x || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); };
+    const faseNrmCF = nrmCF(jpCfFaseLabel(block)), titNrmCF = nrmCF(tituloVisCF);
+    const tituloDupCF = !titNrmCF || titNrmCF === faseNrmCF || titNrmCF === nrmCF(fase) || (titNrmCF.length >= 3 && faseNrmCF.indexOf(titNrmCF) >= 0);
     const html =
       '<div class="wod-board jp-cfboard ' + faseCls + '" data-wodb="' + block.id + '">' +
-        '<div class="jp-cf-tag">[ CROSSFIT &middot; ' + jpCfFaseLabel(block) + ' ]</div>' +
-        '<div class="jp-cf-title">' + jpCfTituloHtml((!block.title || /^\\s*bloque\\s*\\d*\\s*$/i.test(block.title)) ? fase : block.title) + '</div>' +
+        '<div class="jp-cf-tag">[ CROSSFIT &middot; ' + jpCfFaseLabel(block) + ' ]' + (minTagCF ? ' <span class="jp-sb-tmin">// ' + minTagCF + ' MIN</span>' : '') + '</div>' +
+        '<div class="jp-cf-title' + (tituloDupCF ? ' jp-cf-title-dup' : '') + '">' + jpCfTituloHtml(tituloVisCF) + '</div>' +
         /* directiva (ergonomía integral): se retira el badge de formato
            ("TABATA"/"EMOM"/etc, .jp-cf-fmtbar) -- redundante con la
            bajada de texto del propio bloque ("Every 2:30 x 6 Sets:"),
@@ -42311,6 +42321,11 @@ html body .block.jp-fold .jp-sb-board > .jp-sb-title, html body .block.jp-fold .
 /* la etiqueta + el tiempo no se cortan en pantallas angostas: si no entran juntos, el tiempo baja de renglon entero */
 html body .jp-sb-board .jp-tag-row .jp-tag-lb{ white-space:normal !important; flex:1 1 auto !important; min-width:0 !important; overflow:visible !important; }
 html body .jp-sb-board .jp-tag-row{ align-items:flex-start; }
+/* CrossFit: mismo criterio (la etiqueta + el tiempo no se cortan; el titulo que solo repite la fase se oculta salvo con el bloque plegado) */
+html body .jp-cfboard .jp-tag-row .jp-tag-lb{ white-space:normal !important; flex:1 1 auto !important; min-width:0 !important; overflow:visible !important; }
+html body .jp-cfboard .jp-tag-row{ align-items:flex-start; }
+html body .jp-cfboard > .jp-cf-title.jp-cf-title-dup{ display:none !important; }
+html body .block.jp-fold .jp-cfboard > .jp-cf-title.jp-cf-title-dup{ display:block !important; }
 /* ---- drop set: tarjetas secuenciales ---- */
 .jp-drop-tracker{ gap:0 !important; margin-top:10px; }
 .jp-drop-card{ position:relative; }
@@ -62708,6 +62723,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        real detrás -- mismo escape "+" que el resto de esta lista negra. */
     if(/:\s*$/.test(t) && !/\+/.test(t)) return [];
     t = t.replace(RUIDO, '');
+    /* "10 Wall Balls (9/6 kg)", "Box Jumps 24/20 in": el parentesis y los pares de carga NO parten el nombre por el "/" */
+    t = t.replace(/\([^)]*\)/g, ' ').replace(/\b\d+(?:[.,]\d+)?\s*\/\s*\d+(?:[.,]\d+)?\s*(?:kg|lbs?|in|cm|m|cal|%)?/gi, ' ');
     return t.split(/\s*\+\s*|\s*\/\s*|\s+y\s+/i).map(p => {
       let s = p.replace(/\([^)]*\)/g, ' ')
                .replace(/\[[^\]]*\]/g, ' ')
@@ -62726,7 +62743,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
                .replace(/[—–]\s*.*$/, '')
                .replace(/\b\d+\s*(?:kg|lbs?|cal|m|s|seg|min|%)\b.*$/i, '')
                .replace(/\s+\d+\s*[x×]\s*\d.*$/i, '').replace(/\bx\s*\d+.*$/i, '')
-               .replace(/\s{2,}/g, ' ').trim();
+               .replace(/\s{2,}/g, ' ').replace(/\s+\d+$/, '').trim();      /* "Double Unders 50": el conteo final no es parte del nombre */
       return s;
     }).filter(s => s.length > 2 && s.length <= MAX_NOMBRE_EJ && /[a-záéíóúñ]/i.test(s));
   }
@@ -62745,7 +62762,22 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     }
     let e = idx[k];
     if(!e && idx.__stem) e = idx.__stem[stemNombreEj(nombre)];
-    return (e && e.videoId) ? e : (e || null);
+    if(!e) e = cfAliasEj(nombre);
+    /* mismo movimiento cargado dos veces en la biblioteca (uno con video y otro sin): se usa el que tiene video (solo equivalentes, nunca otro movimiento) */
+    if(e && !e.videoId){ try{ const h = hermanoConVideoSB(e, nombre); if(h) return h; }catch(x){} }
+    return e || null;
+  }
+  /* abreviaturas y grafias habituales de CrossFit -> ejercicio de la biblioteca (por nombre exacto) */
+  const CF_ALIAS = { 'hspu': 'Strict Handstand Push-ups', 'handstand push up': 'Strict Handstand Push-ups', 'handstand push ups': 'Strict Handstand Push-ups', 'ttb': 'Toes to bar', 't2b': 'Toes to bar',
+    'c2b': 'Chest to Bar Pull-ups', 'mu': 'Muscle-ups', 'bmu': 'Bar Muscle-ups', 'rmu': 'Ring Muscle-ups', 'du': 'Double Unders', 'dus': 'Double Unders', 'double under': 'Double Unders',
+    'ohs': 'Overhead Squat', 'wall ball': 'Wall balls', 'wall balls': 'Wall balls', 'wall ball shots': 'Wall balls', 'wall ball shot': 'Wall balls', 'wallballs': 'Wall balls',
+    'row': 'Row (Ergometer)', 'rowing': 'Row (Ergometer)', 'row erg': 'Row (Ergometer)', 'rowerg': 'Row (Ergometer)', 'remo ergometro': 'Row (Ergometer)',
+    'bike': 'Assault Bike', 'echo bike': 'Assault Bike', 'air bike': 'Assault Bike', 'ski erg': 'SkiErg', 'skierg': 'SkiErg' };
+  function cfAliasEj(nombre){
+    const k = nrm(nombre).replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+    const v = CF_ALIAS[k];
+    if(v){ const ex = exPorNombreBilingue(v); if(ex) return ex; }
+    return (typeof window.jpExPorIndice === 'function') ? window.jpExPorIndice(nombre) : null;
   }
   window.jpVideoExacto = function(nombre){ return exacto(nombre, indice()); };
   window.jpCandidatos = candidatos;
@@ -74448,10 +74480,19 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     return !!(b && RX_WOD_TITULO.test(String(b.titulo || ''))) || RX_WOD_TITULO.test(cab);
   }
   var RX_WOD_TITULO = /^\s*(?:[^\wÀ-ÿ]*)?(?:finisher|wod|met-?con|cardio|cierre\s+metab)|\b(?:finisher|met-?con|wod)\b/i;
-  var KW_WOD = [[/\bamrap\b/gi, 'AMRAP'], [/\bemom\b/gi, 'EMOM'], [/\btabata\b/gi, 'Tabata'], [/\brft\b/gi, 'RFT'], [/\bfor\s*time\b/gi, 'For Time'], [/\btime\s*cap\b/gi, 'Time Cap']];
+  var KW_WOD = [[/\bamrap\b/gi, 'AMRAP'], [/\be(\d*)mom\b/gi, function(m, n){ return 'E' + n + 'MOM'; }], [/\btabata\b/gi, 'Tabata'], [/\brft\b/gi, 'RFT'], [/\bchipper\b/gi, 'Chipper'], [/\bfor\s*time\b/gi, 'For Time'], [/\btime\s*cap\b/gi, 'Time Cap']];
+  /* ortografia de movimientos de CrossFit / gimnasticos (solo grafias claramente erradas o sin guion: no se cambia el movimiento) */
+  var ORTO_WOD = [
+    [/\bburp(?:ie|y)s\b/gi, 'Burpees'], [/\bburp(?:ie|y)\b/gi, 'Burpee'],
+    [/\bpull[\s-]?ups\b/gi, 'Pull-ups'], [/\bpull[\s-]?up\b/gi, 'Pull-up'], [/\bpush[\s-]?ups\b/gi, 'Push-ups'], [/\bpush[\s-]?up\b/gi, 'Push-up'],
+    [/\bmuscle[\s-]?ups\b/gi, 'Muscle-ups'], [/\bmuscle[\s-]?up\b/gi, 'Muscle-up'], [/\bsit[\s-]?ups\b/gi, 'Sit-ups'], [/\bsit[\s-]?up\b/gi, 'Sit-up'],
+    [/\bwall[\s-]?balls\b/gi, 'Wall Balls'], [/\bwall[\s-]?ball\b/gi, 'Wall Ball'], [/\bdouble[\s-]?unders\b/gi, 'Double Unders'], [/\bdouble[\s-]?under\b/gi, 'Double Under'],
+    [/\btoes?[\s-]?to[\s-]?bar\b/gi, 'Toes to Bar'], [/\bkettleb[ea]l{1,2}s?\b/gi, function(m){ return /s$/i.test(m) ? 'Kettlebells' : 'Kettlebell'; }],
+    [/\bhandstand[\s-]?push[\s-]?ups\b/gi, 'Handstand Push-ups'], [/\bhandstand[\s-]?push[\s-]?up\b/gi, 'Handstand Push-up']
+  ];
   /* mayuscula inicial del movimiento ("10 wall balls" -> "10 Wall balls", "200 m run" -> "200 m Run"); el resto del texto no se toca */
   function capMov(t){
-    return t.replace(/^(\d+(?:[.,]\d+)?\s*(?:(?:m|km|cal|kg|min|s)\s+)?)([a-záéíóúñA-ZÁÉÍÓÚÑ])/, function(a, n, c){ return n + c.toUpperCase(); }).replace(/^([a-záéíóúñ])/, function(c){ return c.toUpperCase(); });
+    return t.replace(/^(\d+(?:[.,]\d+)?\s+(?:(?:m|km|cal|kg|min|s)\s+)?)([a-záéíóúñA-ZÁÉÍÓÚÑ])/, function(a, n, c){ return n + c.toUpperCase(); }).replace(/^([a-záéíóúñ])/, function(c){ return c.toUpperCase(); });
   }
   function formatearWod(texto){
     var out = [];
@@ -74459,8 +74500,9 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       var t = raw.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\t/g, ' ').replace(/ {2,}/g, ' ').trim();
       if(!t){ out.push(''); return; }
       KW_WOD.forEach(function(k){ t = t.replace(k[0], k[1]); });
+      ORTO_WOD.forEach(function(k){ t = t.replace(k[0], k[1]); });
       /* "AMRAP 12 min: 10 wall balls + 10 burpees": cabecera y un movimiento por linea (el texto de cada movimiento no se toca) */
-      var m = t.match(/^((?:\d+\s*(?:rondas?|rounds?)\s*(?:de|of)?\s*)?(?:AMRAP|EMOM|Tabata|RFT|For Time|Every\s[^:]*|\d+\s*(?:rondas?|rounds?))[^:]{0,40}):\s*(.+)$/i);
+      var m = t.match(/^((?:\d+\s*(?:rondas?|rounds?)\s*(?:de|of)?\s*)?(?:AMRAP|EMOM|E\d+MOM|Tabata|RFT|For Time|Every\s[^:]*|\d+\s*(?:rondas?|rounds?))[^:]{0,40}):\s*(.+)$/i);
       if(m && /\+|;|,\s*\d|\s\/\s/.test(m[2])){
         var partes = m[2].split(/\s*\+\s*|\s*;\s*|,\s*(?=\d)|\s+\/\s+/).map(function(p){ return p.trim(); }).filter(Boolean);
         if(partes.length >= 2){ out.push(m[1].trim() + ':'); partes.forEach(function(p){ out.push(capMov(p)); }); return; }
@@ -74472,7 +74514,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
 
   /* ---------- orquestador ---------- */
   async function autoFormatBlock(blockId, btn){
-    var ta = document.querySelector('textarea[data-bf="items"][data-b="' + blockId + '"]');
+    var ta = document.querySelector('textarea[data-bf="items"][data-b="' + blockId + '"], textarea[data-bf="movements"][data-b="' + blockId + '"]');
     if(!ta){ toast('No se encontró el texto del bloque', 'err'); return false; }
     if(!ta.value.trim()){ toast('Escribí la prescripción del bloque primero', 'warn'); return false; }
     var original = btn ? btn.innerHTML : '';
@@ -74481,7 +74523,10 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     try{
       await new Promise(function(ok){ setTimeout(ok, 260); });      /* el estado "PROCESANDO" alcanza a verse aunque la conversión local sea instantánea */
       var bWod = (typeof findBlock === 'function') ? findBlock(blockId) : null;
-      if(esWodBloque(bWod, ta.value)){
+      /* CrossFit: toda la prescripcion es de WOD / skill / strength de CF, nunca series x reps | RIR de culturismo */
+      var esCFAuto = false;
+      try{ esCFAuto = (typeof esPlanCFActivo === 'function') && !!esPlanCFActivo(plan(S.activeId)); }catch(e){}
+      if(esCFAuto || esWodBloque(bWod, ta.value)){
         var nw = formatearWod(ta.value);
         if(nw === ta.value.replace(/\s+$/, '')){ toast('⏱ WOD protegido: la estructura ya estaba prolija, no se agregó nada'); return true; }
         if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Auto-formato de WOD');
@@ -74535,7 +74580,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   }
   /* re-escanea la videoteca para el bloque: el escáner de chips reacciona al evento 'input' del textarea */
   function checkVideoMatches(blockId){
-    var ta = document.querySelector('textarea[data-bf="items"][data-b="' + blockId + '"]');
+    var ta = document.querySelector('textarea[data-bf="items"][data-b="' + blockId + '"], textarea[data-bf="movements"][data-b="' + blockId + '"]');
     if(!ta) return false;
     ta.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
