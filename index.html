@@ -75862,7 +75862,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
           pr = procesar(out, di, foco);
           /* split blindado: si la IA mezcló grupos fuera del foco, se le pide UNA corrección antes de aplicar nada */
           if(pr.nB >= 2 && pr.viol.length){
-            log('↻ La IA incumplió reglas del plan (' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '). Pido la corrección…', 'w');
+            /* la autocorreccion es un pedido mas: antes de mandarlo se respeta una pausa de seguridad de 15-20 s (igual que entre dias), si no el 429 llega al instante */
+            var pausaCorr = Math.min(20, Math.max(15, pausaDias));
+            log('↻ La IA incumplió reglas del plan (' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '). Pausa de seguridad de ' + pausaCorr + 's antes de pedir la corrección (evita el límite de velocidad de la API). ' + acciones(true), 'w');
+            await esperar(pausaCorr, 'Pausa antes de corregir:', '');
+            if(ctl.detener){ var e3 = new Error('detenido'); e3.detenido = true; throw e3; }
+            if(ctl.saltar){ var e4 = new Error('salteado'); e4.saltado = true; throw e4; }
+            log('<span class="gs-spin"></span> Pidiendo la corrección del DÍA ' + (di + 1) + '…');
             var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di);
             var pr2 = procesar(out2, di, foco);
             if(pr2.nB >= 2 && pr2.viol.length <= pr.viol.length) pr = pr2;
