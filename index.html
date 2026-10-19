@@ -75199,6 +75199,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 (function(){
   'use strict';
   var corriendo = false, firma = '', estadoBtn = '';
+  var cancelGen = 0, athPintado = null, impPorGen = false;      /* cancelGen: se incrementa al cambiar de alumno y las generaciones en curso se abandonan; athPintado: alumno al que pertenece la consola */
   function $q(id){ return document.getElementById(id); }
   function esc2(t){ return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function nz(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
@@ -75751,12 +75752,25 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     });
     return h || '<span class="gs-chip">Sin datos todavía</span>';
   }
+  /* cambio de alumno: nada del generador del alumno anterior sobrevive (consola, extra, dias pendientes, texto intermedio) y una generacion en curso se abandona sin guardar en el nuevo */
+  function reiniciarPorAlumno(){
+    cancelGen++;
+    corriendo = false; estadoBtn = ''; reanudarDias = []; pausaDias = PAUSA_DIAS;
+    ctl.esperando = true; ctl.saltar = false; ctl.detener = true;      /* despierta una espera en curso; la proxima generacion lo resetea */
+    setTimeout(function(){ if(!corriendo){ ctl.esperando = false; ctl.detener = false; } }, 1300);
+    cambio = null; SIGS = {};
+    ['gsFichaM', 'gsExM'].forEach(function(id){ var m = $q(id); if(m) m.remove(); });
+    if(impPorGen){ _impTexto = ''; impPorGen = false; var tp = $q('cfPegarTxt'); if(tp) tp.value = ''; }
+  }
   function pintar(){
     var vista = $q('v-builder'); if(!vista) return;
     var ath = (typeof active === 'function') ? active() : null;
     var card = $q('gsCard');
     if(!ath || !esSports()){ if(card) card.style.display = 'none'; return; }
     css();
+    var cambioAth = athPintado !== null && athPintado !== ath.id;
+    athPintado = ath.id;
+    if(cambioAth){ reiniciarPorAlumno(); if(card){ card.dataset.sig = ''; } }
     if(!card){
       card = document.createElement('div'); card.className = 'gs-card'; card.id = 'gsCard';
       var ref = $q('ctxCard');
@@ -75769,8 +75783,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var sig = [ath.id, JSON.stringify(fichaDe(ath)), di, p.dias.length, hay, corriendo].join('|');
     if(card.dataset.sig === sig && card.firstChild) return;
     card.dataset.sig = sig;
-    var logPrev = $q('gsLog') ? $q('gsLog').innerHTML : '', logOn = $q('gsLog') && $q('gsLog').classList.contains('on');
-    var extraPrev = $q('gsExtra') ? $q('gsExtra').value : '', semPrev = $q('gsSemana') ? $q('gsSemana').checked : false, splitPrev = $q('gsSplit5') ? $q('gsSplit5').checked : true;
+    var logPrev = (!cambioAth && $q('gsLog')) ? $q('gsLog').innerHTML : '', logOn = !cambioAth && $q('gsLog') && $q('gsLog').classList.contains('on');
+    var extraPrev = (!cambioAth && $q('gsExtra')) ? $q('gsExtra').value : '', semPrev = (!cambioAth && $q('gsSemana')) ? $q('gsSemana').checked : false, splitPrev = (!cambioAth && $q('gsSplit5')) ? $q('gsSplit5').checked : true;
     card.innerHTML =
       '<h3>⚡ Generador de sesión con IA<span class="gs-badge">' + (hay ? 'IA conectada' : 'Sin clave de IA') + '</span></h3>' +
       '<p class="gs-sub">Lee la Ficha Táctica de ' + esc2(fullName(ath)) + ' y arma <b>todos los bloques</b> del día (warm-up, fuerza, hipertrofia, accesorios y core) con dosis, tempos, descansos, ' +
@@ -75815,7 +75829,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   function esClave(err){ return !!err && /API Key|clave|401|403|invalid|permission|no hay api/i.test(String(err.message || '')); }
   function setBtn(html){
     estadoBtn = html || '';
-    var b = $q('gsRun'); if(b){ b.disabled = true; b.innerHTML = estadoBtn || '<span class="gs-spin"></span> Generando…'; }
+    var b = $q('gsRun'); if(b && corriendo){ b.disabled = true; b.innerHTML = estadoBtn || '<span class="gs-spin"></span> Generando…'; }
   }
   function ctaClave(){ return '<br><button type="button" class="btn gs-key" data-gskey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>'; }
   /* limite diario / cooldown largo: un solo aviso claro, sin reintentos ni lineas repetidas */
@@ -75849,17 +75863,20 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       })();
     });
   }
-  async function llamarIA(usuarioTxt, sistemaTxt, opts, dia){
+  async function llamarIA(usuarioTxt, sistemaTxt, opts, dia, vig){
     for(var intento = 1; ; intento++){
+      if(vig && !vig()){ var eV = new Error('abandonado'); eV.detenido = true; throw eV; }
       try{
         return await window.CoachAI.generarTexto(usuarioTxt, sistemaTxt, opts);
       }catch(err){
+        if(vig && !vig()){ var eV0 = new Error('abandonado'); eV0.detenido = true; throw eV0; }
         if(!esCuota(err) || intento >= REINTENTOS) throw err;
         if(err.fatal || (err.real || 0) > 60) throw err;      /* limite de cuenta (diario / sin saldo) o espera enorme: reintentar solo empeora el bloqueo */
         var seg = Math.max(ESPERAS_429[intento - 1] || 24, Math.ceil(err.secs || 0) + 1, err.real ? Math.ceil(err.real) + 2 : 0);      /* bloqueo temporal por alta frecuencia: pausa corta, nunca menos que la espera que pidio el proveedor */
         pausaDias = Math.min(PAUSA_TOPE, pausaDias + PAUSA_EXTRA);      /* la API pidio aire: los proximos dias se espacian mas */
         log('⏳ La API pidió bajar la frecuencia de pedidos (DÍA ' + (dia + 1) + '): pausa de ' + seg + 's y reintento automático (intento ' + (intento + 1) + '/' + REINTENTOS + ').' + (intento === 1 && err.detalle ? '<br><small>Motivo: «' + esc2(err.detalle) + '»</small> ' : ' ') + acciones(true), 'w');
         await esperar(seg + 1, 'Reintentando en', '(' + (intento + 1) + '/' + REINTENTOS + ')');
+        if(vig && !vig()){ var eV2 = new Error('abandonado'); eV2.detenido = true; throw eV2; }
         if(ctl.detener){ var e1 = new Error('detenido'); e1.detenido = true; throw e1; }
         if(ctl.saltar){ var e2 = new Error('salteado'); e2.saltado = true; throw e2; }
       }
@@ -75871,6 +75888,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(corriendo) return;
     var retoma = !!(opt && opt.dias && opt.dias.length);
     var ath = active(); if(!ath){ toast('Seleccioná un alumno/a', 'err'); return; }
+    var athId = ath.id, miGen = ++cancelGen;
+    function vigente(){ var a = active(); return miGen === cancelGen && !!a && a.id === athId; }
+    var abandonado = false;
     var p = plan(ath.id); if(!p || esPlanCFActivo(p)){ toast('El generador de sesión es para Sports & Bodybuilding', 'warn'); return; }
     if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
       toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar la sesión', 'err');
@@ -75913,7 +75933,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         var foco = focoAnatomico(ath, p, di), pr;
         log('🎯 Foco anatómico del DÍA ' + (di + 1) + ': <b>' + esc2(foco.lb || 'libre (coherente con el resto del plan)') + '</b>' + (foco.fuente ? ' <span class="w">· ' + esc2(foco.fuente) + '</span>' : ''));
         try{
-          var out = await llamarIA(usuario(ath, p, di, extra, titulos, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di);
+          var out = await llamarIA(usuario(ath, p, di, extra, titulos, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di, vigente);
           pr = procesar(out, di, foco);
           /* split blindado: si la IA mezcló grupos fuera del foco, se le pide UNA corrección antes de aplicar nada */
           if(pr.nB >= 2 && pr.viol.length){
@@ -75925,7 +75945,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
             if(ctl.saltar){ var e4 = new Error('salteado'); e4.saltado = true; throw e4; }
             log('<span class="gs-spin"></span> Pidiendo la corrección del DÍA ' + (di + 1) + '…');
             try{
-              var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di);
+              var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di, vigente);
               var pr2 = procesar(out2, di, foco);
               if(pr2.nB >= 2 && pr2.viol.length <= pr.viol.length) pr = pr2;
             }catch(errC){
@@ -75935,10 +75955,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
             }
           }
         }catch(err){
+          if(!vigente()){ abandonado = true; break; }
           if(err && err.saltado){ saltados.push(di + 1); log('⏩ DÍA ' + (di + 1) + ' salteado: queda como estaba.', 'w'); continue; }
           if(err && err.detenido){ log('⏹ Generación detenida: se conserva lo ya generado.', 'w'); break; }
           errFinal = err; break;
         }
+        if(!vigente()){ abandonado = true; break; }      /* se cambio de alumno mientras la IA respondia: no se guarda nada */
         var t = pr.texto, nB = pr.nB;
         if(pr.viol.length) log('⚠ Quedaron ' + pr.viol.length + ' regla(s) sin cumplir: ' + pr.viol.map(function(v){ return esc2(v.nombre) + ' [' + esc2(v.grupo) + ']'; }).join(', ') + '. Revisalo en el Builder.', 'w');
         try{
@@ -75951,7 +75973,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         if(pr.movidos || pr.descartadas) log('🧹 ' + (pr.movidos ? 'Tempo de ' + pr.movidos + ' ejercicio(s) movido a los tips' : '') + (pr.movidos && pr.descartadas ? ' · ' : '') + (pr.descartadas ? pr.descartadas + ' línea(s) de texto suelto fuera de la redacción libre' : '') + '.');
         /* una respuesta que no es una sesion (rechazo, charla, formato roto) no se aplica: se deja en el Importador rapido */
         if(nB < 2){
-          _impTexto = t; sinEstructura = true; saltados.push(di + 1);
+          _impTexto = t; impPorGen = true; sinEstructura = true; saltados.push(di + 1);
           log('La IA respondió pero el DÍA ' + (di + 1) + ' no se pudo estructurar en bloques: dejé el texto en el <b>Importador rápido</b> para que lo revises.', 'e');
           continue;
         }
@@ -75962,6 +75984,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
           else { log('✖ No se pudo guardar el DÍA ' + (di + 1) + '.', 'e'); errFinal = new Error('No se pudo guardar el día ' + (di + 1)); break; }
         }
       }
+      if(!vigente()) abandonado = true;
+      if(abandonado){ textos = []; errFinal = null; sinEstructura = false; }
       /* lo ya generado se aplica aunque un dia posterior haya fallado o se haya salteado/detenido */
       if(textos.length && semana){
         log('Semana cargada día por día (' + cargados.length + ' día' + (cargados.length === 1 ? '' : 's') + (saltados.length ? '; sin generar: DÍA ' + saltados.join(', ') : '') + '). Revisá los bloques y ajustá lo que quieras.', 'o');
@@ -75977,7 +76001,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       }
       if(errFinal) throw errFinal;
     }catch(err){
-      if(esCuota(err)){
+      if(!vigente()){ /* otro alumno en pantalla: el error de esta generacion ya no le corresponde */ }
+      else if(esCuota(err)){
         limiteApi(err);
         if(textos.length) log('Los días ya generados se cargaron; podés repetir el resto más tarde.', 'o');
       } else {
@@ -75986,6 +76011,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         if(!(err && err.__toast)) toast('Error al generar la sesión: ' + String((err && err.message) || err).slice(0, 80), 'err');
       }
     }finally{
+      if(miGen !== cancelGen){ /* generacion abandonada por cambio de alumno: el estado compartido ya lo reinicio el cambio */ return; }
       corriendo = false; estadoBtn = ''; ctl.esperando = false;
       var lg = $q('gsLog'); if(lg) lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); });
       quitarAcciones();
