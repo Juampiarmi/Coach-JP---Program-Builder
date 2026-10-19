@@ -241,6 +241,14 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .modal-h{display:flex;align-items:center;gap:12px;padding:17px 20px;border-bottom:1px solid var(--line)}
 .modal-h h3{font-size:16px;font-weight:800;letter-spacing:-.2px}
 .modal-b{padding:20px;display:grid;gap:15px}
+.fin-mp-tok[hidden],.fin-mp-cfg [hidden],.fin-mp-box [hidden]{display:none !important}
+.fin-mp-cfg{margin:10px 0 4px;border:1px solid rgba(0,158,227,.35);border-radius:12px;background:rgba(0,158,227,.04)}
+.fin-mp-cfg > summary{cursor:pointer;padding:11px 14px;font-weight:700;font-size:13px;list-style:none}
+.fin-mp-cfg > summary::-webkit-details-marker{display:none}
+.fin-mp-cfg-b{padding:0 14px 14px}
+.fin-mp-cfg-b select,.fin-mp-cfg-b input{width:100%;box-sizing:border-box}
+.fin-mp-badge{margin-left:8px;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.06em;border:1px solid rgba(148,163,184,.4);color:#94A3B8}
+.fin-mp-badge.on{border-color:rgba(72,213,151,.6);color:#48D597}
 .fin-mp-box{margin-top:12px;padding:12px;border:1px solid rgba(0,158,227,.35);border-radius:12px;background:rgba(0,158,227,.05)}
 .fin-mp-box input{width:100%;box-sizing:border-box}
 .fin-mp-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
@@ -51964,6 +51972,39 @@ body{overflow-x:hidden}
       <select id="finMesSel" class="fin-mes-sel"></select>
     </div>
     <div class="fin-kpis" id="finKpis"></div>
+    <details class="fin-mp-cfg" id="finMpCfg">
+      <summary>🔗 Cobro online · Mercado Pago (todos los alumnos) <span class="fin-mp-badge" id="finMpGBadge"></span></summary>
+      <div class="fin-mp-cfg-b">
+        <div class="hint">Configurá <b>una sola vez</b> cómo cobran tus alumnos: la tarjeta <b>"Pagar cuota"</b> aparece sola en la app del alumno/a (Sports y CrossFit) cuando su cuota está próxima a vencer o vencida, con el Arancel de cada uno. Un link cargado en la ficha de un alumno/a tiene prioridad sobre esta configuración.</div>
+        <label class="lb">Modo de cobro</label>
+        <select id="finMpGModo">
+          <option value="off">Sin cobro online global</option>
+          <option value="plantilla">Plantilla de link con el monto de cada alumno/a</option>
+          <option value="base">Un mismo link para todos los alumnos/as</option>
+        </select>
+        <div id="finMpGPlantillaWrap" hidden>
+          <label class="lb">Plantilla del link de pago</label>
+          <input id="finMpGPlantilla" type="url" inputmode="url" autocomplete="off" placeholder="https://tu-pasarela.com/pagar?monto={monto}&amp;moneda={moneda}&amp;ref={ref}">
+          <div class="hint">Variables: <b>{monto}</b> (45000.00) · <b>{monto_entero}</b> (45000) · <b>{moneda}</b> · <b>{alumno}</b> · <b>{ref}</b>. Sirve para pasarelas que aceptan el monto en la URL. Los links de pago normales de Mercado Pago tienen monto fijo: para Mercado Pago usá <b>"Generar links individuales"</b> (abajo) o un único link base.</div>
+        </div>
+        <div id="finMpGBaseWrap" hidden>
+          <label class="lb">Link base (mismo para todos)</label>
+          <input id="finMpGBase" type="url" inputmode="url" autocomplete="off" placeholder="https://mpago.la/…">
+          <div class="hint">Cobra el monto fijo con el que lo creaste en Mercado Pago. Si tus alumnos pagan aranceles distintos, usá la plantilla o generá links individuales.</div>
+        </div>
+        <div class="fin-mp-acts">
+          <button type="button" class="btn xs gold" id="finMpGGen" title="Crea un checkout de Mercado Pago por alumno/a con su propio Arancel y Moneda">⚡ Generar links individuales (Arancel de cada alumno/a)</button>
+          <button type="button" class="btn xs ghost" id="finMpGTok">🔑 Access Token</button>
+        </div>
+        <div class="fin-mp-tok" id="finMpGTokBox" hidden>
+          <input id="finMpGTokIn" type="password" autocomplete="off" placeholder="APP_USR-…">
+          <button type="button" class="btn xs gold" id="finMpGTokSave">Guardar</button>
+          <button type="button" class="btn xs ghost" id="finMpGTokClr">Borrar</button>
+          <div class="hint">El token se guarda SOLO en este navegador y nunca viaja a la app del alumno/a. Mercado Pago → Tus integraciones → Credenciales de producción.</div>
+        </div>
+        <div class="hint fin-mp-est" id="finMpGRes"></div>
+      </div>
+    </details>
     <div class="fin-sec"><div class="sh">Atletas</div><div class="fin-athf" id="finAthFilters"></div><div class="fin-table" id="finTabla"></div></div>
     <div class="fin-legal">Módulo interno del coach — los montos, vencimientos e historiales de pago nunca se sincronizan ni se muestran en la app del alumno/a.</div>
   </div>
@@ -75724,12 +75765,40 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   function fmtMonto(n, mon){ var s = (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-AR'); return (mon && mon !== 'ARS') ? mon + ' ' + s : '$ ' + s; }
   /* lo que viaja a la app del alumno (buildProgramConfig): link + monto + moneda */
+  /* configuracion GLOBAL (Control Financiero): un link base o una plantilla con el monto de cada alumno/a; el link de la ficha tiene prioridad */
+  var KCFG = 'coachjp_mp_global_v1';
+  function cfgLeer(){
+    var c = {}; try{ c = JSON.parse(localStorage.getItem(KCFG) || '{}') || {}; }catch(e){}
+    return { modo: /^(base|plantilla)$/.test(c.modo) ? c.modo : 'off', base: String(c.base || ''), plantilla: String(c.plantilla || '') };
+  }
+  function cfgGuardar(c){ try{ localStorage.setItem(KCFG, JSON.stringify(c)); }catch(e){} }
+  /* en la configuracion global el coach elige la pasarela: cualquier https (nunca javascript: ni http) */
+  function httpsValido(u){ u = String(u || '').trim(); if(!/^https:\/\/[^\s]+$/i.test(u)) return ''; try{ new URL(u); return u; }catch(e){ return ''; } }
+  function nombreDe(a){ return (((a && a.nombre) || '') + ' ' + ((a && a.apellido) || '')).trim(); }
+  function rellenar(pl, a, arancel, mon){
+    var m = Math.round(arancel * 100) / 100;
+    return String(pl).replace(/\{monto\}/g, m.toFixed(2)).replace(/\{monto_entero\}/g, String(Math.round(m)))
+      .replace(/\{moneda\}/g, encodeURIComponent(mon)).replace(/\{alumno\}/g, encodeURIComponent(nombreDe(a))).replace(/\{ref\}/g, encodeURIComponent('coachjp-' + ((a && a.id) || '')));
+  }
+  function globalPara(ath){
+    var c = cfgLeer(), f = (ath && ath.finanzas) || {}, arancel = parseFloat(f.arancel) || 0, mon = f.moneda || 'ARS';
+    if(c.modo === 'base'){ var u = httpsValido(c.base); return u ? { url: u, monto: arancel, moneda: mon, fuente: 'global' } : null; }
+    if(c.modo === 'plantilla'){
+      if(!(arancel > 0)) return null;
+      var u2 = httpsValido(rellenar(c.plantilla, ath, arancel, mon));
+      return u2 ? { url: u2, monto: arancel, moneda: mon, fuente: 'global' } : null;
+    }
+    return null;
+  }
   window.jpMpPago = function(ath){
     var f = (ath && ath.finanzas) || {}, url = linkValido(f.mpLink);
-    if(!url) return { url: '', monto: 0, moneda: '' };
-    var g = f.mpGen, monto = (g && g.monto > 0) ? g.monto : (parseFloat(f.arancel) || 0), mon = (g && g.moneda) || f.moneda || 'ARS';
-    return { url: url, monto: monto, moneda: mon };
+    if(url){
+      var g = f.mpGen, monto = (g && g.monto > 0) ? g.monto : (parseFloat(f.arancel) || 0), mon = (g && g.moneda) || f.moneda || 'ARS';
+      return { url: url, monto: monto, moneda: mon, fuente: 'alumno' };
+    }
+    return globalPara(ath) || { url: '', monto: 0, moneda: '', fuente: '' };
   };
+  window.jpMpGlobal = { leer: cfgLeer, guardar: cfgGuardar, para: globalPara };
   window.jpMpValidar = linkValido;
 
   function estado(msg, cls){
@@ -75740,7 +75809,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var inp = $q('aFinMpLink'); if(!inp) return;
     var u = inp.value.trim(), arancel = parseFloat(($q('aFinArancel') || {}).value) || 0, mon = ($q('aFinMoneda') || {}).value || 'ARS', gen = null;
     try{ gen = inp.dataset.gen ? JSON.parse(inp.dataset.gen) : null; }catch(e){}
-    if(!u){ estado('Sin link: el alumno/a no verá botón de pago. Pegá el link de Mercado Pago o generalo con el Arancel.', ''); return; }
+    if(!u){
+      var gl = globalPara({ id: (typeof editAthId !== 'undefined' ? editAthId : '') || 'nuevo', nombre: ($q('aNombre') || {}).value, apellido: ($q('aApellido') || {}).value, finanzas: { arancel: arancel, moneda: mon } });
+      if(gl){ estado('✔ Sin link propio: se usa el <b>link global</b> (Control Financiero)' + (gl.monto > 0 ? ' con ' + fmtMonto(gl.monto, gl.moneda) : '') + '. Si pegás un link acá, tiene prioridad.', 'ok'); return; }
+      estado('Sin link: el alumno/a no verá botón de pago. Pegá el link de Mercado Pago, generalo con el Arancel o configurá el cobro global en Control Financiero.', ''); return;
+    }
     if(!linkValido(u)){ estado('⚠ Ese link no es de Mercado Pago (tiene que empezar con https:// y ser mercadopago / mpago.la): no se mostrará al alumno/a.', 'err'); return; }
     if(gen && (Math.abs(gen.monto - arancel) > 0.005 || gen.moneda !== mon)){
       estado('⚠ El Arancel cambió desde que se generó el link (' + fmtMonto(gen.monto, gen.moneda) + '). Tocá "Generar link" para actualizarlo: el cobro sale por el monto del link.', 'warn'); return;
@@ -75784,6 +75857,83 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     else if(t.id === 'aFinArancel' || t.id === 'aFinMoneda') refrescar();
   });
   document.addEventListener('change', function(e){ if(e.target && e.target.id === 'aFinMoneda') refrescar(); });
+  /* ---------- panel global (Control Financiero) ---------- */
+  function resumenGlobal(){
+    var c = cfgLeer(), n = 0, propio = 0, glob = 0, sin = 0, montos = {};
+    (S.athletes || []).forEach(function(a){
+      var f = a.finanzas || {}; if(!(parseFloat(f.arancel) > 0)) return; n++;
+      montos[f.arancel + (f.moneda || 'ARS')] = 1;
+      var r = window.jpMpPago(a);
+      if(r.fuente === 'alumno') propio++; else if(r.fuente === 'global') glob++; else sin++;
+    });
+    var distintos = Object.keys(montos).length;
+    return { c: c, n: n, propio: propio, glob: glob, sin: sin, distintos: distintos };
+  }
+  function pintarGlobal(){
+    var m = $q('finMpGModo'); if(!m) return;
+    var c = cfgLeer();
+    m.value = c.modo;
+    var pl = $q('finMpGPlantilla'), ba = $q('finMpGBase');
+    if(pl && document.activeElement !== pl) pl.value = c.plantilla;
+    if(ba && document.activeElement !== ba) ba.value = c.base;
+    var wp = $q('finMpGPlantillaWrap'), wb = $q('finMpGBaseWrap'); if(wp) wp.hidden = c.modo !== 'plantilla'; if(wb) wb.hidden = c.modo !== 'base';
+    var r = resumenGlobal(), badge = $q('finMpGBadge'), res = $q('finMpGRes');
+    var activo = c.modo !== 'off' || r.propio > 0;
+    if(badge){ badge.className = 'fin-mp-badge' + (activo ? ' on' : ''); badge.textContent = activo ? ((r.glob + r.propio) + ' de ' + r.n + ' con cobro online') : 'sin configurar'; }
+    if(res){
+      var t = r.n + ' alumno(s) con Arancel · ' + r.glob + ' con el cobro global · ' + r.propio + ' con link propio · ' + r.sin + ' sin cobro online.';
+      if(c.modo === 'base' && r.distintos > 1) t += ' ⚠ Tus alumnos tienen ' + r.distintos + ' aranceles distintos y el link base cobra un único monto: usá la plantilla o links individuales.';
+      if(c.modo === 'base' && c.base && !httpsValido(c.base)) t += ' ⚠ El link base tiene que empezar con https://.';
+      if(c.modo === 'plantilla' && c.plantilla && !httpsValido(rellenar(c.plantilla, { id: 'x', nombre: 'x', apellido: 'x' }, 1000, 'ARS'))) t += ' ⚠ La plantilla no genera un link https:// válido.';
+      res.className = 'hint fin-mp-est' + (/⚠/.test(t) ? ' warn' : (r.glob + r.propio ? ' ok' : '')); res.textContent = t;
+    }
+  }
+  async function generarTodos(btn){
+    var tok = tokenLeer();
+    if(!tok){ var b = $q('finMpGTokBox'); if(b){ b.hidden = false; var i = $q('finMpGTokIn'); if(i) i.focus(); } toast('Pegá tu Access Token de Mercado Pago para generar los links', 'warn'); return; }
+    var lista = (S.athletes || []).filter(function(a){
+      var f = a.finanzas || {}; if(!(parseFloat(f.arancel) > 0)) return false;
+      var g = f.mpGen; return !(linkValido(f.mpLink) && g && Math.abs(g.monto - f.arancel) < 0.005 && g.moneda === (f.moneda || 'ARS')) && !(linkValido(f.mpLink) && !g);      /* los links pegados a mano no se pisan */
+    });
+    if(!lista.length){ toast('Todos los alumnos con Arancel ya tienen su link al día'); return; }
+    if(!confirm('Se van a generar ' + lista.length + ' link(s) de cobro en Mercado Pago, uno por alumno/a con su propio Arancel. ¿Continuar?')) return;
+    var orig = btn.innerHTML, ok = 0, err = 0, res = $q('finMpGRes'); btn.disabled = true;
+    for(var k = 0; k < lista.length; k++){
+      var a = lista[k], f = a.finanzas, mon = f.moneda || 'ARS', arancel = parseFloat(f.arancel);
+      btn.textContent = '⏳ ' + (k + 1) + '/' + lista.length + '…';
+      try{
+        var r = await fetch('https://api.mercadopago.com/checkout/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok },
+          body: JSON.stringify({ items: [{ id: 'cuota-coachjp', title: 'Cuota Coach JP · ' + nombreDe(a), description: 'Cuota mensual de entrenamiento', quantity: 1, currency_id: mon, unit_price: arancel }], external_reference: 'coachjp:' + a.id, statement_descriptor: 'COACH JP' }) });
+        var j = {}; try{ j = await r.json(); }catch(e){}
+        if(r.ok && j.init_point){ f.mpLink = j.init_point; f.mpGen = { monto: arancel, moneda: mon, ts: Date.now(), pref: j.id || '' }; ok++; }
+        else { err++; if(res){ res.className = 'hint fin-mp-est err'; res.textContent = '✖ Mercado Pago respondió ' + r.status + (j && j.message ? ': ' + String(j.message).slice(0, 100) : '') + ' (' + nombreDe(a) + '). Revisá el Access Token de producción y la moneda.'; } if(r.status === 401 || r.status === 403) break; }
+      }catch(e){
+        err++; if(res){ res.className = 'hint fin-mp-est err'; res.textContent = '✖ El navegador no pudo conectar con Mercado Pago (' + String((e && e.message) || e).slice(0, 50) + '): suele ser el bloqueo CORS de la API. Usá un link base, una plantilla o pegá el link de cada ficha.'; } break;
+      }
+      await new Promise(function(ok2){ setTimeout(ok2, 250); });
+    }
+    btn.disabled = false; btn.innerHTML = orig;
+    if(ok) save();
+    toast('🔗 Links generados: ' + ok + (err ? ' · con error: ' + err : ''), err ? 'warn' : undefined);
+    if(!err) pintarGlobal();
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('#finMpGGen')){ e.preventDefault(); generarTodos(t.closest('#finMpGGen')); return; }
+    if(t.closest('#finMpGTok')){ e.preventDefault(); var b = $q('finMpGTokBox'); b.hidden = false; var i = $q('finMpGTokIn'); i.value = ''; i.placeholder = tokenLeer() ? 'Token guardado en este navegador (pegá uno nuevo para reemplazarlo)' : 'APP_USR-…'; i.focus(); return; }
+    if(t.closest('#finMpGTokSave')){ e.preventDefault(); var v = ($q('finMpGTokIn') || {}).value.trim(); if(v){ tokenGuardar(v); toast('🔑 Access Token guardado en este navegador'); } $q('finMpGTokBox').hidden = true; return; }
+    if(t.closest('#finMpGTokClr')){ e.preventDefault(); tokenGuardar(''); $q('finMpGTokBox').hidden = true; toast('Access Token borrado de este navegador'); return; }
+  });
+  function guardarGlobal(){
+    var c = { modo: ($q('finMpGModo') || {}).value || 'off', base: (($q('finMpGBase') || {}).value || '').trim(), plantilla: (($q('finMpGPlantilla') || {}).value || '').trim() };
+    cfgGuardar(c); pintarGlobal();
+  }
+  document.addEventListener('input', function(e){ if(e.target && /^finMpG(Base|Plantilla)$/.test(e.target.id || '')) guardarGlobal(); });
+  document.addEventListener('change', function(e){ if(e.target && e.target.id === 'finMpGModo') guardarGlobal(); });
+  document.addEventListener('toggle', function(e){ if(e.target && e.target.id === 'finMpCfg') pintarGlobal(); }, true);
+  function iniciarGlobal(){ pintarGlobal(); setInterval(function(){ if(document.getElementById('finMpCfg') && document.getElementById('finMpCfg').open) pintarGlobal(); }, 2500); }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciarGlobal); else iniciarGlobal();
+
   /* cargar al abrir la ficha */
   var _open = window.openAth;
   if(typeof _open === 'function') window.openAth = function(id){
