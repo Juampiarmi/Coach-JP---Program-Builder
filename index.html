@@ -75759,7 +75759,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
 
   /* ---------- ritmo de pedidos, reintento y control del usuario ---------- */
-  var ESPERA_MAX = 90, REINTENTOS = 5, PAUSA_DIAS = 18, PAUSA_EXTRA = 2, PAUSA_TOPE = 25, ESPERAS_429 = [12, 15, 15, 15];     /* pausa real de 18 s entre dias desde el primer salto (sube de a 2 s hasta 25 s si la API aun pide aire); 429 = pausa de 12-15 s y reintento */
+  var ESPERA_MAX = 90, REINTENTOS = 3, PAUSA_DIAS = 20, PAUSA_EXTRA = 0, PAUSA_TOPE = 20, ESPERAS_429 = [20, 24];     /* pausa FIJA de 20 s entre dias; ante un 429: 1 pedido + maximo 2 reintentos con pausas de 20-25 s (mas intentos seguidos agravan el bloqueo), despues se detiene limpio y queda el boton Continuar */
   var reanudarDias = [];                                          /* dias (indices) que quedaron sin generar: los retoma el boton "Continuar" */
   var pausaDias = PAUSA_DIAS;                                  /* pausa entre dias: sube sola si la API ya pidio esperar */
   var ctl = { esperando: false, saltar: false, detener: false };
@@ -75773,7 +75773,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   /* limite diario / cooldown largo: un solo aviso claro, sin reintentos ni lineas repetidas */
   function limiteApi(){
     var lg = $q('gsLog'); if(lg){ lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); }); lg.classList.add('on'); }
-    log('⏳ El proveedor sigue limitando la <b>frecuencia de pedidos</b> (HTTP 429) después de ' + REINTENTOS + ' intentos con pausas de 12-15 s. Suele resolverse en uno o dos minutos: volvé a generar en un rato (lo ya generado quedó guardado) o probá con <b>otra API Key</b>.' + ctaClave(), 'w');
+    log('⏳ El proveedor sigue limitando la <b>frecuencia de pedidos</b> (HTTP 429) después de ' + REINTENTOS + ' intentos (2 reintentos con pausas de 20-25 s). Frené la generación para no empeorar el bloqueo: lo ya generado quedó guardado. Suele resolverse en uno o dos minutos: tocá <b>Continuar generando</b> en un rato o probá con <b>otra API Key</b>.' + ctaClave(), 'w');
     toast('La API está limitando la velocidad: reintentá en un minuto o cambiá de API Key', 'warn');
   }
   /* micro-botones junto al aviso de espera: cambiar de clave, saltear el dia o detener (se conserva lo ya generado) */
@@ -75801,7 +75801,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         return await window.CoachAI.generarTexto(usuarioTxt, sistemaTxt, opts);
       }catch(err){
         if(!esCuota(err) || intento >= REINTENTOS) throw err;
-        var seg = Math.max(ESPERAS_429[intento - 1] || 15, Math.ceil(err.secs || 0) + 1);      /* bloqueo temporal por alta frecuencia: pausa corta (nunca menos que el cooldown real que falta) */
+        var seg = Math.max(ESPERAS_429[intento - 1] || 24, Math.ceil(err.secs || 0) + 1);      /* bloqueo temporal por alta frecuencia: pausa corta (nunca menos que el cooldown real que falta) */
         pausaDias = Math.min(PAUSA_TOPE, pausaDias + PAUSA_EXTRA);      /* la API pidio aire: los proximos dias se espacian mas */
         log('⏳ La API pidió bajar la frecuencia de pedidos (DÍA ' + (dia + 1) + '): pausa de ' + seg + 's y reintento automático (intento ' + (intento + 1) + '/' + REINTENTOS + '). ' + acciones(true), 'w');
         await esperar(seg + 1, 'Reintentando en', '(' + (intento + 1) + '/' + REINTENTOS + ')');
@@ -75869,9 +75869,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
             if(ctl.detener){ var e3 = new Error('detenido'); e3.detenido = true; throw e3; }
             if(ctl.saltar){ var e4 = new Error('salteado'); e4.saltado = true; throw e4; }
             log('<span class="gs-spin"></span> Pidiendo la corrección del DÍA ' + (di + 1) + '…');
-            var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di);
-            var pr2 = procesar(out2, di, foco);
-            if(pr2.nB >= 2 && pr2.viol.length <= pr.viol.length) pr = pr2;
+            try{
+              var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di);
+              var pr2 = procesar(out2, di, foco);
+              if(pr2.nB >= 2 && pr2.viol.length <= pr.viol.length) pr = pr2;
+            }catch(errC){
+              /* si la API sigue limitando durante la autocorreccion, no se pierde el dia: se conserva la sesion ya generada y se avisa lo que quedo sin corregir */
+              if(!esCuota(errC)) throw errC;
+              log('⏳ La API siguió limitando durante la corrección: se conserva la sesión generada (con las reglas marcadas abajo).', 'w');
+            }
           }
         }catch(err){
           if(err && err.saltado){ saltados.push(di + 1); log('⏩ DÍA ' + (di + 1) + ' salteado: queda como estaba.', 'w'); continue; }
@@ -76099,8 +76105,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     for(var i = 1; ; i++){
       try{ return await window.CoachAI.generarTexto(user, sistemaTxt, { maxTokens: 1600, plain: true, sinEspera: true }); }
       catch(err){
-        if(!esCuota(err) || i >= 4) throw err;
-        for(var s = (ESPERAS_429[i - 1] || 15); s > 0; s--){ if(btn) btn.innerHTML = '⏳ Reintentando en ' + s + 's…'; await new Promise(function(r){ setTimeout(r, 1000); }); }
+        if(!esCuota(err) || i >= REINTENTOS) throw err;
+        for(var s = (ESPERAS_429[i - 1] || 24); s > 0; s--){ if(btn) btn.innerHTML = '⏳ Reintentando en ' + s + 's…'; await new Promise(function(r){ setTimeout(r, 1000); }); }
       }
     }
   }
