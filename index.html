@@ -44762,18 +44762,21 @@ document.addEventListener('DOMContentLoaded', init);
     /* modelos de OpenAI con chat/completions + max_tokens + JSON mode (gpt-4o y gpt-4.1); las familias que exigen otros parametros (gpt-5, o-series) no se ofrecen */
     openai:    { lb:'OpenAI',    sub:'GPT',    model:'gpt-4o',    url:'https://api.openai.com/v1/chat/completions',
       hints:['gpt-4o','gpt-4o-mini','gpt-4.1','gpt-4.1-mini'] },
-    /* Google: gemini-2.5-flash es el default; un 404 del modelo activo reintenta con el resto de la cadena (ver CADENA_GOOGLE) */
-    google:    { lb:'Google',    sub:'Gemini', model:'gemini-2.5-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
-      hints:['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash'] }
+    /* Google: familia 3.x vigente (gemini-3.8-flash por defecto); un 404 del modelo activo reintenta con el resto de la cadena y, si hace falta, con los modelos que Google lista para esa clave */
+    google:    { lb:'Google',    sub:'Gemini', model:'gemini-3.8-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
+      hints:['gemini-3.8-flash','gemini-3.7-flash'] }
   };
   const ORDEN = ['anthropic','openai','google'];
   /* nombres de modelo aceptados por proveedor: solo familias reales con los parametros que usa esta app */
   const RX_MODELO = {
     anthropic: /^claude-[a-z0-9][a-z0-9.\-]*$/,
     openai:    /^(?:gpt-4o(?:-mini)?|gpt-4\.1(?:-mini|-nano)?)(?:-\d{4}-\d{2}-\d{2})?$/,
-    google:    /^gemini-(?:2\.0|2\.5)-(?:flash|flash-lite)(?:-[a-z0-9\-]+)?$/
+    google:    /^gemini-3\.\d+-(?:flash|flash-lite|pro)(?:-[a-z0-9\-]+)?$/
   };
-  const modeloValido = (p, m) => !!RX_MODELO[p] && RX_MODELO[p].test(String(m || '').trim());
+  /* Google: ademas de la familia 3.x, vale cualquier modelo que la propia API de Google haya listado para la clave del coach (ver descubrirModelosGoogle) */
+  const KMOD_G = 'coachjp_google_models_v1';
+  function modelosVivosGoogle(){ try{ const o = JSON.parse(localStorage.getItem(KMOD_G) || 'null'); return (o && Array.isArray(o.list)) ? o.list : []; }catch(e){ return []; } }
+  const modeloValido = (p, m) => { m = String(m || '').trim(); return !!RX_MODELO[p] && (RX_MODELO[p].test(m) || (p === 'google' && modelosVivosGoogle().indexOf(m) >= 0)); };
   let AI = {
     provider:'anthropic',
     keys:  { anthropic:'', openai:'', google:'' },
@@ -44969,7 +44972,8 @@ document.addEventListener('DOMContentLoaded', init);
         ? '<div class="alert good" style="padding:9px 12px"><span class="ic">🔑</span><div><b>Clave guardada</b>El botón ✨ del builder está operativo con ' + PROV[p].lb + '.</div></div>'
         : '<div class="alert info" style="padding:9px 12px"><span class="ic">ℹ️</span><div><b>Sin clave para ' + PROV[p].lb + '</b>Pegá la API Key para habilitar la generación automática.</div></div>');
     $('#cfgStatus').innerHTML +=
-      '<div class="hint" style="margin-top:8px">Modelos válidos: ' + PROV[p].hints.join(' · ') + '. Si algo falla, tocá <b>🔌 Probar conexión</b>: te muestra el mensaje real del servidor (clave inválida, modelo inexistente, cuota…).</div>';
+      '<div class="hint" style="margin-top:8px">Modelos válidos: ' + PROV[p].hints.join(' · ') + '. Si algo falla, tocá <b>🔌 Probar conexión</b>: te muestra el mensaje real del servidor (clave inválida, modelo inexistente, cuota…).' +
+      (p === 'google' ? '<br><button type="button" class="btn xs" id="cfgBuscarMod" style="margin-top:6px">🔄 Buscar modelos disponibles con mi clave</button>' : '') + '</div>';
     const rst = document.getElementById('cfgReset');
     if(rst) rst.addEventListener('click', () => { resetAICooldown(AI.provider); toast('Cooldown reiniciado'); });
   }
@@ -45016,7 +45020,21 @@ document.addEventListener('DOMContentLoaded', init);
      lo traen TODOS los 429 de Gemini, por eso no se usa. */
   let ultimoLimite = null;
   /* cuota diaria agotada en un modelo de Google: se prueba el siguiente de la cadena y se recuerda (en memoria, 6 h) que ese modelo no tiene cupo */
-  const CADENA_GOOGLE = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+  const CADENA_GOOGLE = ['gemini-3.8-flash', 'gemini-3.7-flash'];
+  function numVersionGemini(n){ const m = String(n).match(/gemini-(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : 0; }
+  /* pregunta a Google que modelos con generateContent tiene disponibles esta clave (endpoint oficial ListModels): evita depender de nombres escritos a mano */
+  async function descubrirModelosGoogle(){
+    const k = keyOf('google'); if(!k) throw new Error('Cargá primero la API Key de Google.');
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': k } });
+    const raw = await r.text();
+    if(!r.ok){ let msg = raw; try{ msg = JSON.parse(raw).error.message; }catch(e){} const e = new Error('HTTP ' + r.status + ' — ' + String(msg).slice(0, 200)); e.status = r.status; throw e; }
+    const list = (JSON.parse(raw).models || []).filter(m => (m.supportedGenerationMethods || []).indexOf('generateContent') >= 0)
+      .map(m => String(m.name || '').replace(/^models\//, ''))
+      .filter(n => /^gemini-\d/.test(n) && !/embedding|image|tts|audio|live|vision|aqa|imagen|veo|robotics|computer-use|exp/.test(n));
+    list.sort((a, b) => numVersionGemini(b) - numVersionGemini(a) || (/lite/.test(a) ? 1 : 0) - (/lite/.test(b) ? 1 : 0) || a.length - b.length);
+    try{ localStorage.setItem(KMOD_G, JSON.stringify({ ts: Date.now(), list: list })); }catch(e){}
+    return list;
+  }
   const modelosAgotados = {};
   const modeloAgotado = m => !!modelosAgotados[m] && (Date.now() - modelosAgotados[m]) < 6 * 3600 * 1000;
   function avisarCambioModelo(prov, de, a){
@@ -45119,14 +45137,25 @@ document.addEventListener('DOMContentLoaded', init);
 
     /* Gemini 404 (modelo inexistente / sin acceso para esta clave): se prueba el resto de la cadena vigente antes de rendirse */
     if(prov === 'google' && res.status === 404 && !(opts && opts.model)){
-      const cadena = CADENA_GOOGLE.filter(m => m !== model);
-      for(const alt of cadena){
-        url = cfg.url + encodeURIComponent(alt) + ':generateContent';
-        ({ res, raw } = await enviar(body));
-        if(res.status !== 404){
-          if(res.ok){ AI.models.google = alt; saveAI(); try{ toast('Gemini: se usó "' + alt + '" (el modelo "' + model + '" no está disponible)', 'warn'); }catch(e){} }
-          break;
+      const probarLista = async (lista) => {
+        for(const alt of lista){
+          url = cfg.url + encodeURIComponent(alt) + ':generateContent';
+          ({ res, raw } = await enviar(body));
+          if(res.status !== 404){
+            if(res.ok){ AI.models.google = alt; modeloAct = alt; saveAI(); try{ toast('Gemini: se usó "' + alt + '" (el modelo "' + model + '" no está disponible para tu clave)', 'warn'); }catch(e){} }
+            return true;
+          }
         }
+        return false;
+      };
+      const cadena = CADENA_GOOGLE.filter(m => m !== model);
+      if(!(await probarLista(cadena))){
+        /* ninguno de los nombres conocidos existe para esta clave: se consulta la lista real de Google */
+        try{
+          const vivos = await descubrirModelosGoogle();
+          const orden = vivos.filter(n => /flash/.test(n) && !/lite/.test(n)).concat(vivos.filter(n => /lite/.test(n)));
+          await probarLista(orden.filter(n => n !== model && cadena.indexOf(n) < 0).slice(0, 4));
+        }catch(eLista){ /* sin lista: queda el 404 original */ }
       }
     }
 
@@ -45215,7 +45244,11 @@ document.addEventListener('DOMContentLoaded', init);
         msgFinal += ' — el modelo "' + model + '" no existe o no está disponible para tu clave en la API de Google. Elegí otro modelo en ⚙️ Configuración de IA (por ejemplo, uno de los sugeridos en la lista).';
       }
       /* pista segun el codigo real que devolvio el servidor */
-      if(res.status === 404 || (res.status === 400 && /model/i.test(String(msg)))) msgFinal += ' — revisá el nombre del modelo en ⚙️ Configuración de IA (modelo actual: ' + modeloAct + ').';
+      if(res.status === 404 || (res.status === 400 && /model/i.test(String(msg)))){
+        msgFinal += ' — revisá el nombre del modelo en ⚙️ Configuración de IA (modelo actual: ' + modeloAct + ').';
+        if(prov === 'google' && modelosVivosGoogle().length) msgFinal += ' Modelos que Google lista para tu clave: ' + modelosVivosGoogle().slice(0, 6).join(', ') + '.';
+        else if(prov === 'google') msgFinal += ' Tocá "🔄 Buscar modelos disponibles" en la configuración para ver cuáles acepta tu clave.';
+      }
       else if(res.status === 401 || res.status === 403) msgFinal += ' — revisá la API Key (inválida, sin permisos o de otro proveedor).';
       const eHttp = new Error('HTTP ' + res.status + ' — ' + msgFinal);
       eHttp.status = res.status; eHttp.prov = prov;
@@ -45750,6 +45783,22 @@ document.addEventListener('DOMContentLoaded', init);
       }finally{
         b.disabled = false; b.innerHTML = '🔌 Probar conexión';
       }
+    });
+    document.addEventListener('click', async e => {
+      const bm = e.target.closest && e.target.closest('#cfgBuscarMod'); if(!bm) return;
+      e.preventDefault();
+      const clave = $('#cfgKey').value.trim(); if(clave && AI.provider === 'google'){ AI.keys.google = clave; }
+      const orig = bm.innerHTML; bm.disabled = true; bm.textContent = '⏳ Consultando a Google…';
+      try{
+        const lista = await descubrirModelosGoogle();
+        if(!lista.length){ toast('Google no devolvió modelos con generateContent para esta clave', 'warn'); return; }
+        $('#dlModels').innerHTML = lista.map(m => '<option value="' + m + '">').join('');
+        const mejor = lista.filter(n => /flash/.test(n) && !/lite/.test(n))[0] || lista[0];
+        if(!lista.includes($('#cfgModel').value.trim())){ $('#cfgModel').value = mejor; }
+        $('#cfgStatus').innerHTML = '<div class="alert good" style="padding:9px 12px"><span class="ic">✅</span><div><b>Modelos disponibles para tu clave</b>' + esc(lista.slice(0, 12).join(' · ')) + '<br>Se eligió <b>' + esc($('#cfgModel').value) + '</b>: tocá Guardar para usarlo.</div></div>';
+      }catch(err){
+        $('#cfgStatus').innerHTML = '<div class="alert danger" style="padding:9px 12px"><span class="ic">⛔</span><div><b>No se pudo consultar a Google</b>' + esc(String((err && err.message) || err).slice(0, 240)) + '</div></div>';
+      }finally{ bm.disabled = false; bm.innerHTML = orig; }
     });
     $('#aiCfgLink').addEventListener('click', () => { closeModal('mAI'); openCfg(); });
     document.addEventListener('click', e => { if(e.target.closest && e.target.closest('[data-aikey]')){ closeModal('mAI'); openCfg(); } });
