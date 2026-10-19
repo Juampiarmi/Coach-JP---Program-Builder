@@ -5728,23 +5728,45 @@ const META_ONDULACION_SEMANA = {
   2: { rpe:'RPE 9-10 (RIR 1-0)', fail:true },
   3: { rpe:'RPE 6-7 (RIR 3-4)', deload:true }
 };
-function ondularMesocicloAutomatico(){
-  const p = plan(S.activeId); if(!p){ toast('Seleccioná un alumno/a', 'err'); return; }
+/* MESOCICLO ESTRUCTURADO (opt-in desde la Ficha Táctica): S1 base/acumulación RIR 2-3 · S2 más densidad o carga RIR 1-2 · S3 intensificación
+   máxima/choque RIR 0-1 · S4 descarga activa RIR 3-4. Reusa ondularLineaSports() (series, RIR, -1 serie en S4) y suma el RIR escrito de menor a mayor
+   y los descansos de S2: 15 s menos en los de hipertrofia/accesorios (60-120 s); los de fuerza pesada (más de 120 s) no se tocan. */
+const META_ESTRUCTURADA = [
+  { phase: 'Base / Acumulación',                    rpe: 'RPE 7-8 (RIR 2-3)',   fail: false, deload: false },
+  { phase: 'Incremento de densidad / carga',        rpe: 'RPE 8-9 (RIR 1-2)',   fail: false, deload: false },
+  { phase: 'Intensificación máxima / Choque',       rpe: 'RPE 9-10 (RIR 0-1)',  fail: true,  deload: false },
+  { phase: 'Descarga activa (Deload)',              rpe: 'RPE 6-7 (RIR 3-4)',   fail: false, deload: true }
+];
+function ondularLineaEstructurada(linea, wk){
+  const t = String(linea || '');
+  const mRest = t.match(/^(\s*)(rest|descanso)(\s*:?\s*)(\d+)(\s*(?:s|seg|segundos?)\b.*)$/i);
+  if(mRest){
+    if(wk !== 1) return t;
+    const n = parseInt(mRest[4], 10);
+    if(n < 60 || n > 120) return t;
+    return mRest[1] + mRest[2] + mRest[3] + Math.max(45, n - 15) + mRest[5];
+  }
+  return ondularLineaSports(linea, wk).replace(/\bRIR 2-1\b/g, 'RIR 1-2').replace(/\bRIR 1-0\b/g, 'RIR 0-1');
+}
+/* opts: { dias: [indices de dia a proyectar], estructurado: true, silencioso: true }; devuelve la cantidad de bloques proyectados */
+function ondularMesocicloAutomatico(opts){
+  const p = plan(S.activeId); if(!p){ if(!(opts && opts.silencioso)) toast('Seleccioná un alumno/a', 'err'); return 0; }
   const dias = p.dias || [];
   let bloquesTocados = 0, diasTocados = 0;
-  dias.forEach(function(d){
+  dias.forEach(function(d, di){
+    if(opts && opts.dias && opts.dias.indexOf(di) < 0) return;
     const bloques = (d.bloques || []).filter(function(b){ return b.tipo === 'list' && b.sportsPizarra && Array.isArray(b.items) && b.items.length; });
     if(!bloques.length) return;
     diasTocados++;
     bloques.forEach(function(b){
       if(!Array.isArray(b.weekItems)) b.weekItems = [];
       [1, 2, 3].forEach(function(wk){
-        b.weekItems[wk] = b.items.map(function(linea){ return ondularLineaSports(linea, wk); });
+        b.weekItems[wk] = b.items.map(function(linea){ return (opts && opts.estructurado) ? ondularLineaEstructurada(linea, wk) : ondularLineaSports(linea, wk); });
       });
       bloquesTocados++;
     });
   });
-  if(!bloquesTocados){ toast('No hay bloques de Pizarra con contenido en Semana 1 en ningún día', 'err'); return; }
+  if(!bloquesTocados){ if(!(opts && opts.silencioso)) toast('No hay bloques de Pizarra con contenido en Semana 1 en ningún día', 'err'); return 0; }
   /* metadata de semana (badge RPE/deload/fail que lee el resto de la app
      vía WEEKS_META, ver defaultWeeks()) -- se fuerza en las 4 semanas del
      mesociclo activo, nunca sólo en la memoria de un plan nuevo. */
@@ -5756,9 +5778,16 @@ function ondularMesocicloAutomatico(){
       if(meta.fail) w.fail = true;
       if(meta.deload) w.deload = true;
     });
+    if(opts && opts.estructurado){
+      META_ESTRUCTURADA.forEach(function(m, wk){
+        const w = p.meso[wk]; if(!w) return;
+        w.phase = m.phase; w.rpe = m.rpe; w.fail = m.fail; w.deload = m.deload;
+      });
+    }
   }
   save(); renderBuilder();
-  toast('🪄 Mesociclo ondulado: S2, S3 y S4 generadas en los ' + diasTocados + ' día(s) con Pizarra (' + bloquesTocados + ' bloques)');
+  if(!(opts && opts.silencioso)) toast('🪄 Mesociclo ondulado: S2, S3 y S4 generadas en los ' + diasTocados + ' día(s) con Pizarra (' + bloquesTocados + ' bloques)');
+  return bloquesTocados;
 }
 /* técnicas avanzadas reconocidas -- acepta tanto la etiqueta entre
    corchetes ("[DROPSET]", que se retira del texto visible porque es
@@ -74896,7 +74925,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     { k: 'split',        lb: 'Split preferido',            opts: ['Full body', 'Torso / Pierna', 'Push / Pull / Legs', 'Por grupo muscular', 'Que decida la IA'] },
     { k: 'estres',       lb: 'Distribución de estrés / RIR del mesociclo (opcional)', opts: ['Acumulación', 'Intensificación', 'Pico / Realización', 'Descarga', 'Ondulante (DUP)'], tips: true },
     { k: 'densidad',     lb: 'Densidad de sesión (opcional)', opts: ['Descansos largos', 'Estándar', 'Alta densidad'], tips: true },
+    { k: 'mesociclo',    lb: 'Mesociclo de 4 semanas · ondulación S1 → S4 (opcional)', opts: ['Estructurado S1 → S4'], tips: true },
     { k: 'enfasis',      lb: 'Énfasis muscular',           opts: ['Glúteo', 'Espalda', 'Pecho', 'Hombros', 'Brazos', 'Cuádriceps', 'Isquios', 'Core'], multi: true },
+    { k: 'deporte',      lb: 'Deporte / actividad complementaria (la IA evita interferencias)', opts: ['Fútbol', 'Pádel / Tenis', 'Running', 'Lucha / Artes marciales', 'Ciclismo', 'Natación', 'Básquet / Vóley', 'Rugby / Hockey'], multi: true, tips: true },
     { k: 'restricciones',lb: 'Restricciones / molestias',  opts: ['Hombro', 'Rodilla', 'Lumbar', 'Cadera', 'Muñeca', 'Codo', 'Cuello', 'Tobillo'], multi: true, warn: true },
     { k: 'preferidos',   lb: 'Ejercicios preferidos (atajos)', opts: ['Sentadilla', 'Peso muerto rumano', 'Hip thrust', 'Press banca', 'Dominadas', 'Remo con barra', 'Press militar', 'Prensa', 'Zancadas', 'Curl de bíceps', 'Elevaciones laterales'], multi: true, star: true }
   ];
@@ -74916,6 +74947,38 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       'Alta densidad': 'DENSIDAD ALTA: sesión compacta con bisets/trisets y descansos de 45-90 s en hipertrofia y accesorios (la fuerza principal mantiene 150 s o más); manda el tiempo total'
     }
   };
+  DESC.mesociclo = { 'Estructurado S1 → S4': 'MESOCICLO ESTRUCTURADO: la sesión generada es la SEMANA 1 (base técnica / acumulación, RIR 2-3) y la app proyecta sola S2 (más densidad o carga, RIR 1-2), S3 (intensificación máxima / choque, RIR 0-1) y S4 (descarga activa, RIR 3-4)' };
+  DESC.deporte = {
+    'Fútbol': 'sprints, cambios de dirección y patadas: proteger isquios, aductores, rodilla y tobillo. Priorizar isquios excéntricos, aductores, estabilidad de tobillo/rodilla, potencia unilateral y core anti-rotación. Evitar piernas al fallo o con mucho daño muscular el día previo a partido o entrenamiento',
+    'Pádel / Tenis': 'gesto de raqueta unilateral con rotación: cuidar hombro, codo, muñeca y lumbar. Priorizar manguito rotador, escápulas, tracción, core anti-rotación y movilidad torácica. Limitar press sobre la cabeza y empuje pesado que sume carga a hombro y codo',
+    'Running': 'impacto repetido y volumen aeróbico: cuidar rodilla, tibial, gemelo y cadera. Priorizar fuerza unilateral, glúteo medio, gemelo/sóleo y core. Evitar excéntricos largos de cuádriceps y piernas al fallo cerca de series o fondos',
+    'Lucha / Artes marciales': 'agarres, tracción y trabajo de cuello, hombros y codos: cuidar hombro, codo, muñeca, cuello y lumbar. Priorizar tracción, agarre, cadena posterior, core rotacional y movilidad de cadera. Evitar sobrecargar bíceps/antebrazo y el press pesado extra',
+    'Ciclismo': 'cuádriceps y flexores de cadera trabajan en flexión sostenida: priorizar cadena posterior, glúteos, movilidad de cadera y espalda alta. Limitar el volumen extra de cuádriceps y prensa',
+    'Natación': 'tracción y empuje repetidos de hombro: priorizar estabilidad escapular y rotación externa. Limitar press sobre la cabeza y el volumen alto de hombro',
+    'Básquet / Vóley': 'saltos y aterrizajes: cuidar tendón rotuliano, rodilla, tobillo y hombro. Priorizar fuerza excéntrica de piernas y frenado. Evitar pliometría y piernas pesadas el mismo día',
+    'Rugby / Hockey': 'contacto y sprint: priorizar cuello, hombros, cadena posterior y potencia; cuidar hombro y rodilla'
+  };
+  /* estructura de bloques preferida: tipos disponibles y plantillas (el warm-up siempre abre la sesion y no cuenta) */
+  var TIPOS = [
+    { k: 'fuerza',     lb: 'Fuerza pura (ejercicio pesado)' },
+    { k: 'hiper',      lb: 'Hipertrofia (series rectas)' },
+    { k: 'biset',      lb: 'Biset (2 ejercicios)' },
+    { k: 'triset',     lb: 'Triset (3 ejercicios)' },
+    { k: 'triset_core', lb: 'Triset o Core' },
+    { k: 'core',       lb: 'Core' },
+    { k: 'accesorio',  lb: 'Accesorio / aislamiento' },
+    { k: 'finisher',   lb: 'Cardio / Finisher' },
+    { k: 'libre',      lb: 'Libre (que decida la IA)' }
+  ];
+  var TIPO_LB = {}; TIPOS.forEach(function(t){ TIPO_LB[t.k] = t.lb; });
+  var PRESETS = [
+    { k: 'clasica',  lb: 'Clásica · Fuerza → Biset → Triset/Core → Finisher', b: ['fuerza', 'biset', 'triset_core', 'finisher'] },
+    { k: 'fuerhip',  lb: 'Fuerza → Hipertrofia → Biset → Core',               b: ['fuerza', 'hiper', 'biset', 'core'] },
+    { k: 'densidad', lb: 'Alta densidad · Fuerza → Biset → Triset → Finisher', b: ['fuerza', 'biset', 'triset', 'finisher'] },
+    { k: 'express',  lb: 'Express · Fuerza → Biset → Core',                   b: ['fuerza', 'biset', 'core'] }
+  ];
+  function normBloques(v){ return (Array.isArray(v) ? v : []).filter(function(k){ return !!TIPO_LB[k]; }).slice(0, 8); }
+  function mismaLista(a, b){ return a.length === b.length && a.every(function(x, i){ return x === b[i]; }); }
   /* el objetivo era un solo texto: ahora es una lista (los guardados viejos se convierten; "Recomposición" pasa a "Recomposición corporal") */
   function normObj(v){
     var op = (GRUPOS.filter(function(g){ return g.k === 'objetivo'; })[0] || { opts: [] }).opts, out = [];
@@ -74992,6 +75055,19 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       split_preferido: f.split,
       distribucion_estres_rir: (DESC.estres[f.estres] || ''),
       densidad_sesion: (DESC.densidad[f.densidad] || ''),
+      estructura_bloques: normBloques(f.bloques).map(function(k, i){ return 'Bloque ' + (i + 1) + ': ' + TIPO_LB[k]; }),
+      estructura_bloques_nota: normBloques(f.bloques).length ? 'Orden OBLIGATORIO. El warm-up abre siempre la sesión y no cuenta como bloque de esta lista' : '',
+      deporte_complementario: (f.deporte || []).filter(function(d){ return DESC.deporte[d]; }),
+      interferencias_deporte: (f.deporte || []).filter(function(d){ return DESC.deporte[d]; }).map(function(d){ return d + ': ' + DESC.deporte[d]; }),
+      detalle_deporte: f.deporteDetalle,
+      mesociclo_4_semanas: DESC.mesociclo[f.mesociclo] ? {
+        modo: 'estructurado',
+        semana_de_referencia: 'S1 = la sesión que se genera ahora',
+        S1: 'Base técnica / acumulación · RIR 2-3 · volumen pleno',
+        S2: 'Incremento de densidad o carga · RIR 1-2 · descansos de hipertrofia 15 s más cortos',
+        S3: 'Intensificación máxima / choque · RIR 0-1 · última serie de los ejercicios principales a fallo técnico',
+        S4: 'Descarga activa (deload) · RIR 3-4 · 1 serie menos por ejercicio'
+      } : '',
       enfasis_muscular: f.enfasis,
       restricciones: f.restricciones,
       lesiones_y_reglas: ath.tags,
@@ -75007,6 +75083,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   window.CoachFicha = {
     get: datos,
     enfoques: ENFOQUES,
+    tiposBloque: TIPOS,
+    estructura: function(ath){ return normBloques(ath && ath.ficha && ath.ficha.bloques); },
     json: function(ath){ try{ var d = datos(ath || {}); return Object.keys(d).length ? JSON.stringify(d) : ''; }catch(e){ return ''; } }
   };
 
@@ -75037,6 +75115,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '.ft-dchip{padding:4px 10px;font-size:12px}' +
       '.ft-dchip.on{background:rgba(52,211,153,.14);border-color:#34D399;color:#6EE7B7}' +
       '.ft-fchip.on{background:rgba(255,85,0,.16);border-color:#FF5500;color:#FFB38A}' +
+      '.ft-brow{display:flex;align-items:center;gap:8px;margin:6px 0}' +
+      '.ft-brow > b{flex:0 0 72px;font-size:12px;letter-spacing:.04em;color:var(--orange,#FF8A4D)}' +
+      '.ft-brow select{flex:1;min-width:0}' +
+      '.ft-brow .ft-mini{padding:6px 9px}' +
+      '.ft-bpre.on{background:rgba(255,85,0,.16);border-color:#FF5500;color:#FFB38A}' +
       '.ft-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}' +
       '.ft-mini{padding:6px 11px;border-radius:9px;border:1px solid rgba(255,85,0,.45);background:rgba(255,85,0,.08);color:#FFB38A;font-size:11.5px;font-weight:700;cursor:pointer}' +
       '.ft-json{margin-top:12px}' +
@@ -75056,7 +75139,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       h += '<div class="ft-g"><span class="ft-lb">' + esc2(gr.lb) + '</span><div class="ft-chips" data-ftg="' + gr.k + '">' +
         gr.opts.map(function(o){ return '<button type="button" class="ft-chip' + (gr.warn ? ' warn' : '') + (gr.star ? ' star' : '') + '" data-ftk="' + gr.k + '" data-ftv="' + esc2(o) + '"' + (gr.tips && DESC[gr.k] && DESC[gr.k][o] ? ' title="' + esc2(DESC[gr.k][o]) + '"' : '') + '>' + esc2(o) + (gr.suf || '') + '</button>'; }).join('') +
         '</div></div>';
+      if(gr.k === 'deporte') h += '<div class="ft-g"><span class="ft-lb">Detalle del deporte (opcional)</span><input id="ftDepDet" type="text" maxlength="140" placeholder="Ej: partido los domingos · entrena martes y jueves a la noche" style="width:100%"></div>';
     });
+    h += '<div class="ft-g"><span class="ft-lb">Estructura de bloques preferida (opcional)</span>' +
+         '<div class="hint" style="margin:0 0 6px">Elegí una plantilla o armá la tuya: la IA respeta <b>exactamente</b> este orden y cantidad de bloques en cada sesión (viaja en el JSON como <b>estructura_bloques</b>). El warm-up siempre abre la sesión y no cuenta.</div>' +
+         '<div class="ft-chips" id="ftBloquesPre"></div><div id="ftBloques"></div></div>';
     h += '<div class="ft-g"><span class="ft-lb">Enfoque muscular por día de la semana</span>' +
          '<div class="hint" style="margin:0 0 6px">Opcional. Podés marcar <b>varios</b> enfoques por día (ej: Empuje + Brazos y hombros) y fijar el <b>tiempo máximo propio</b> de cada día (pisa al tiempo general). La IA arma cada día exactamente con eso (va en el JSON como <b>enfoque_por_dia</b>, con todos los enfoques marcados). Las filas siguen la cantidad de días elegida arriba.</div>' +
          '<div id="ftEnfoque"></div></div>';
@@ -75065,7 +75152,20 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
          '<details class="ft-json"><summary>Ver el JSON que recibe la IA</summary><pre id="ftJson"></pre></details>';
     box.innerHTML = h;
     g.parentNode.insertBefore(box, g.nextSibling);
+    box.addEventListener('change', function(e){
+      var sb = e.target.closest('[data-ftbsel]');
+      if(sb){ draft.bloques = normBloques(draft.bloques); draft.bloques[parseInt(sb.getAttribute('data-ftbsel'), 10)] = sb.value; pintar(); }
+    });
     box.addEventListener('click', function(e){
+      var bp = e.target.closest('[data-ftbpre]');
+      if(bp){ var pr = PRESETS.filter(function(x){ return x.k === bp.getAttribute('data-ftbpre'); })[0]; if(pr) draft.bloques = mismaLista(normBloques(draft.bloques), pr.b) ? [] : pr.b.slice(); pintar(); return; }
+      if(e.target.closest('[data-ftbadd]')){ draft.bloques = normBloques(draft.bloques); if(draft.bloques.length < 8) draft.bloques.push('libre'); pintar(); return; }
+      if(e.target.closest('[data-ftbclr]')){ draft.bloques = []; pintar(); return; }
+      var bd = e.target.closest('[data-ftbdel]');
+      if(bd){ draft.bloques = normBloques(draft.bloques); draft.bloques.splice(parseInt(bd.getAttribute('data-ftbdel'), 10), 1); pintar(); return; }
+      var bm = e.target.closest('[data-ftbmv]');
+      if(bm){ var ix = parseInt(bm.getAttribute('data-ftbi'), 10), dx = parseInt(bm.getAttribute('data-ftbmv'), 10), ar = normBloques(draft.bloques), jx = ix + dx;
+              if(jx >= 0 && jx < ar.length){ var tmp = ar[ix]; ar[ix] = ar[jx]; ar[jx] = tmp; draft.bloques = ar; } pintar(); return; }
       var db = e.target.closest('.ft-dchip');
       if(db){ var kd = parseInt(db.getAttribute('data-ftd'), 10), md = parseInt(db.getAttribute('data-ftm'), 10); draft.duracion = draft.duracion || []; draft.duracion[kd] = (parseInt(draft.duracion[kd], 10) === md) ? '' : md; pintar(); return; }
       if(e.target.closest('[data-ftdurall]')){ var gen = parseInt(draft.tiempoMax, 10) || 0, nd = parseInt(($q('aFreq') || {}).value, 10) || 0; if(!gen){ try{ toast('Elegí primero el tiempo máximo general arriba', 'warn'); }catch(er){} return; } draft.duracion = []; for(var q = 0; q < nd; q++) draft.duracion[q] = gen; pintar(); return; }
@@ -75084,6 +75184,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       alternar(gr, v);
     });
     var ed = $q('ftEdad'); if(ed) ed.addEventListener('input', function(){ draft.edad = ed.value; pintarJson(); });
+    var dd = $q('ftDepDet'); if(dd) dd.addEventListener('input', function(){ draft.deporteDetalle = dd.value; pintarJson(); });
     ['aNivel', 'aFreq'].forEach(function(id){ var el = $q(id); if(el) el.addEventListener('change', function(){ sincronizarDesdeSelects(); pintar(); }); });
   }
   function enArr(a, v){ return (a || []).some(function(x){ return nz(x) === nz(v); }); }
@@ -75135,8 +75236,22 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       });
     });
     var ed = $q('ftEdad'); if(ed && ed.value !== String(draft.edad || '')) ed.value = draft.edad || '';
+    var dd = $q('ftDepDet'); if(dd && dd.value !== String(draft.deporteDetalle || '')) dd.value = draft.deporteDetalle || '';
+    pintarBloques();
     pintarEnfoque();
     pintarJson();
+  }
+  function pintarBloques(){
+    var cont = $q('ftBloques'), pre = $q('ftBloquesPre'); if(!cont || !pre) return;
+    var arr = normBloques(draft.bloques); draft.bloques = arr;
+    pre.innerHTML = PRESETS.map(function(p){ return '<button type="button" class="ft-chip ft-bpre' + (mismaLista(arr, p.b) ? ' on' : '') + '" data-ftbpre="' + p.k + '" title="' + esc2(p.b.map(function(k){ return TIPO_LB[k]; }).join(' → ')) + '">' + esc2(p.lb) + '</button>'; }).join('');
+    cont.innerHTML = arr.map(function(k, i){
+      return '<div class="ft-brow"><b>Bloque ' + (i + 1) + '</b><select data-ftbsel="' + i + '" aria-label="Tipo del bloque ' + (i + 1) + '">' + TIPOS.map(function(t){ return '<option value="' + t.k + '"' + (t.k === k ? ' selected' : '') + '>' + esc2(t.lb) + '</option>'; }).join('') + '</select>' +
+        '<button type="button" class="ft-mini" data-ftbmv="-1" data-ftbi="' + i + '" title="Subir"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+        '<button type="button" class="ft-mini" data-ftbmv="1" data-ftbi="' + i + '" title="Bajar"' + (i === arr.length - 1 ? ' disabled' : '') + '>↓</button>' +
+        '<button type="button" class="ft-mini" data-ftbdel="' + i + '" title="Quitar este bloque">✕</button></div>';
+    }).join('') + '<div class="ft-acts"><button type="button" class="ft-mini" data-ftbadd="1">＋ Agregar bloque</button>' + (arr.length ? '<button type="button" class="ft-mini" data-ftbclr="1">Limpiar estructura</button>' : '') + '</div>' +
+      '<div class="hint" style="margin:6px 0 0">' + (arr.length ? 'Warm-up (siempre primero) + ' + arr.length + ' bloque' + (arr.length === 1 ? '' : 's') + ' en este orden.' : 'Sin estructura fija: la IA decide la cantidad y el orden de los bloques.') + '</div>';
   }
   function durChips(k){
     var cur = parseInt((draft.duracion || [])[k], 10) || 0;
@@ -75160,7 +75275,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   function fichaDeBorrador(){
     var o = {};
-    ['tiempoMax', 'experiencia', 'equipo', 'split', 'estres', 'densidad'].forEach(function(k){ if(draft[k]) o[k] = draft[k]; });
+    ['tiempoMax', 'experiencia', 'equipo', 'split', 'estres', 'densidad', 'mesociclo'].forEach(function(k){ if(draft[k]) o[k] = draft[k]; });
+    if(normBloques(draft.bloques).length) o.bloques = normBloques(draft.bloques);
+    if((draft.deporte || []).length) o.deporte = draft.deporte.slice();
+    if(String(draft.deporteDetalle || '').trim()) o.deporteDetalle = String(draft.deporteDetalle).trim().slice(0, 140);
     if(normObj(draft.objetivo).length) o.objetivo = normObj(draft.objetivo);
     if(draft.edad) o.edad = parseInt(draft.edad, 10) || '';
     if((draft.enfasis || []).length) o.enfasis = draft.enfasis.slice();
@@ -75185,7 +75303,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var a = id ? getAth(id) : null;
     draft = {};
     var f = (a && a.ficha) || {};
-    ['tiempoMax', 'experiencia', 'equipo', 'split', 'edad', 'estres', 'densidad'].forEach(function(k){ if(f[k]) draft[k] = f[k]; });
+    ['tiempoMax', 'experiencia', 'equipo', 'split', 'edad', 'estres', 'densidad', 'mesociclo', 'deporteDetalle'].forEach(function(k){ if(f[k]) draft[k] = f[k]; });
+    draft.bloques = normBloques(f.bloques);
+    draft.deporte = (f.deporte || []).slice();
     draft.objetivo = normObj(f.objetivo);
     draft.enfasis = (f.enfasis || []).slice();
     draft.enfoque = (f.enfoque || []).map(normEnf);
@@ -75333,7 +75453,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 
   /* ---------- ficha: resumen, faltantes, nivel ---------- */
   var ROT = { enfoque_por_dia: 'Enfoque/día', tiempo_por_dia: 'Tiempo/día', nivel: 'Nivel', dias_por_semana: 'Días/sem', tiempo_max_sesion_min: 'Tiempo máx', objetivo: 'Objetivo', experiencia: 'Experiencia',
-              equipamiento: 'Equipo', split_preferido: 'Split', distribucion_estres_rir: 'Estrés/RIR', densidad_sesion: 'Densidad', enfasis_muscular: 'Énfasis', restricciones: 'Molestias' };
+              equipamiento: 'Equipo', split_preferido: 'Split', distribucion_estres_rir: 'Estrés/RIR', densidad_sesion: 'Densidad', mesociclo_4_semanas: 'Mesociclo', estructura_bloques: 'Bloques', deporte_complementario: 'Deporte', enfasis_muscular: 'Énfasis', restricciones: 'Molestias' };
   var REQ = [['tiempo_max_sesion_min', 'tiempo máximo por sesión'], ['objetivo', 'objetivo principal'], ['equipamiento', 'equipamiento'], ['experiencia', 'experiencia entrenando']];
   function fichaDe(ath){ try{ return (window.CoachFicha && window.CoachFicha.get) ? window.CoachFicha.get(ath) : {}; }catch(e){ return {}; } }
   function faltantes(ath){ var f = fichaDe(ath); return REQ.filter(function(r){ return !f[r[0]]; }).map(function(r){ return r[1]; }); }
@@ -75541,6 +75661,42 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
 
   /* ---------- prompts ---------- */
+  function estructuraFicha(ath){ try{ return (window.CoachFicha && window.CoachFicha.estructura) ? window.CoachFicha.estructura(ath) : []; }catch(e){ return []; } }
+  var DESC_TIPO = {
+    fuerza: 'FUERZA PURA: UN solo ejercicio pesado (título "Fuerza principal – …"), series de 3-6 reps',
+    hiper: 'HIPERTROFIA: series rectas de 1 o 2 ejercicios en rangos de 6-15 reps (título "Hipertrofia – …")',
+    biset: 'BISET: exactamente 2 estaciones A1 y A2 (título "Hipertrofia – Biset …")',
+    triset: 'TRISET: exactamente 3 estaciones A1, A2 y A3 (título "Hipertrofia – Triset …")',
+    triset_core: 'TRISET (3 estaciones) o CORE (2 o 3 ejercicios distintos), el que mejor complemente la sesión',
+    core: 'CORE: 2 o 3 ejercicios distintos (título "Core – …")',
+    accesorio: 'ACCESORIO: aislamiento de 1 o 2 ejercicios (título "Accesorios – …")',
+    finisher: 'CARDIO / FINISHER: cierre metabólico corto (el título contiene "Finisher" o "Cardio")',
+    libre: 'LIBRE: lo decide la IA'
+  };
+  function nEstaciones(b){ var ids = {}; b.lineas.forEach(function(l){ var m = String(l).match(/^([A-F]\d+)\./); if(m) ids[m[1]] = 1; }); return Object.keys(ids).length; }
+  function cumpleTipo(k, b){
+    var est = nEstaciones(b), cat = b.cat;
+    if(k === 'fuerza') return cat === 'FUERZA' && est < 2;
+    if(k === 'hiper') return (cat === 'HIPERTROFIA' || cat === 'ACCESORIO') && est < 2;
+    if(k === 'biset') return est === 2;
+    if(k === 'triset') return est >= 3;
+    if(k === 'triset_core') return est >= 3 || cat === 'CORE';
+    if(k === 'core') return cat === 'CORE';
+    if(k === 'accesorio') return cat === 'ACCESORIO' || cat === 'HIPERTROFIA';
+    if(k === 'finisher') return /finisher|cardio|metab|conditioning|hiit|remate|cierre/i.test(b.titulo || '');
+    return true;
+  }
+  /* la estructura pedida en la ficha: cantidad y orden de bloques despues del warm-up */
+  function violacionesEstructura(limp, estr){
+    var v = []; if(!estr || !estr.length) return v;
+    var bl = limp.filter(function(b){ return b.cat !== 'WARM-UP'; });
+    if(bl.length !== estr.length) v.push({ tipo: 'estructura', bloque: '', nombre: 'se pidieron ' + estr.length + ' bloques después del warm-up y hay ' + bl.length, grupo: 'estructura' });
+    estr.forEach(function(k, i){
+      var b = bl[i];
+      if(b && !cumpleTipo(k, b)) v.push({ tipo: 'estructura', bloque: b.titulo, nombre: 'el bloque ' + (i + 1) + ' debía ser «' + (DESC_TIPO[k] || k).split(':')[0].toLowerCase() + '» y es «' + b.titulo + '»', grupo: 'estructura' });
+    });
+    return v;
+  }
   /* objetivos combinados + estres/RIR del mesociclo + densidad de la ficha: reglas duras que pisan los rangos generales */
   function reglasFichaExtra(ath){
     var f = fichaDe(ath), t = '', objs = Array.isArray(f.objetivo) ? f.objetivo : (f.objetivo ? [f.objetivo] : []);
@@ -75548,6 +75704,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     else if(objs.length === 1) t += 'OBJETIVO: ' + objs[0] + ' (ajustá reps, RIR y descansos a ese objetivo). ';
     if(f.distribucion_estres_rir) t += 'DISTRIBUCIÓN DE ESTRÉS / RIR DEL MESOCICLO (la eligió el coach, manda sobre los RIR generales): ' + f.distribucion_estres_rir + '. ';
     if(f.densidad_sesion) t += 'DENSIDAD DE SESIÓN (manda sobre los descansos generales de la regla 4): ' + f.densidad_sesion + '. ';
+    var est = estructuraFicha(ath);
+    if(est.length) t += 'ESTRUCTURA DE BLOQUES OBLIGATORIA (la eligió el coach y pisa la regla 3): después del [WARM-UP], que siempre abre la sesión y no cuenta, escribí EXACTAMENTE ' + est.length + ' bloques y en este orden, sin agregar ni quitar ninguno: ' + est.map(function(k, i){ return (i + 1) + ') ' + (DESC_TIPO[k] || k); }).join(' · ') + '. El tiempo disponible se reparte dentro de esa estructura. ';
+    var dep = f.interferencias_deporte || [];
+    if(dep.length) t += 'DEPORTE COMPLEMENTARIO (' + (f.deporte_complementario || []).join(', ') + (f.detalle_deporte ? ' · ' + f.detalle_deporte : '') + '): adaptá la selección de ejercicios accesorios y evitá interferencias mecánicas y sobrecargas articulares con los patrones de su disciplina. ' + dep.join(' | ') + '. Los ejercicios que repiten la carga articular del deporte van con volumen moderado; prefierí variantes que la descarguen y sumá trabajo preventivo específico. ';
+    else if(f.deportes_extra) t += 'ACTIVIDAD COMPLEMENTARIA DEL ALUMNO: ' + f.deportes_extra + '. Evitá ejercicios que dupliquen su carga articular y no dejes fatiga de piernas o de hombro que le arruine esa actividad. ';
+    if(f.mesociclo_4_semanas) t += 'MESOCICLO ESTRUCTURADO DE 4 SEMANAS (manda sobre la distribución de estrés y los RIR generales): la sesión que escribís es la SEMANA 1, base técnica / acumulación: RIR 2-3 en TODOS los ejercicios de trabajo (fuerza principal RIR 3, hipertrofia RIR 2-3), volumen pleno y técnica impecable, con margen para progresar. NO escribas S2, S3 ni S4: la app las proyecta sola desde esta sesión (S2 = más densidad o carga con RIR 1-2 y descansos de hipertrofia 15 s más cortos; S3 = intensificación máxima / choque con RIR 0-1 y la última serie de los ejercicios principales a fallo técnico; S4 = descarga activa con RIR 3-4 y una serie menos por ejercicio). Por eso el volumen de S1 tiene que ser el pleno de la semana de referencia. ';
     return t ? '6b) AJUSTES DE LA FICHA (obligatorios): ' + t + 'Los RIR y los Rest que escribas tienen que ser coherentes con esto.\n' : '';
   }
   function sistema(ath, foco){
@@ -75648,11 +75810,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       'Escribí ahora la sesión completa en el formato indicado, con "=== DÍA ' + (di + 1) + ': ... ===" como primera línea.';
   }
   function correccion(viol, foco){
-    var fo = viol.filter(function(v){ return v.tipo === 'foco'; }), eq = viol.filter(function(v){ return v.tipo === 'equipo'; }), co = viol.filter(function(v){ return v.tipo === 'core'; });
+    var es = viol.filter(function(v){ return v.tipo === 'estructura'; }), fo = viol.filter(function(v){ return v.tipo === 'foco'; }), eq = viol.filter(function(v){ return v.tipo === 'equipo'; }), co = viol.filter(function(v){ return v.tipo === 'core'; });
     var t = '\n\nCORRECCIÓN OBLIGATORIA: tu versión anterior incumplió reglas.';
     if(fo.length) t += ' EJERCICIOS FUERA DEL FOCO DEL DÍA (' + fo.map(function(v){ return v.nombre + ' [' + v.grupo + ']'; }).join(', ') + '): reemplazalos por ejercicios de ' + ((foco && foco.ok && foco.ok.join(' / ')) || 'los grupos del foco') + ' tomados de la BIBLIOTECA' + (foco && foco.vetados ? '; nada de ' + foco.vetados : '') + '.';
     if(eq.length) t += ' EQUIPAMIENTO EN BISERIES/TRISETS (' + eq.map(function(v){ return v.nombre; }).join('; ') + '): está prohibido combinar dos máquinas/poleas y solo valen las parejas permitidas (Mancuerna+Mancuerna, Mancuerna+Máquina, Mancuerna+Kettlebell, Mancuerna/Kettlebell+estructura, Barra+Máquina/Mancuerna/Kettlebell, Libre+carga externa). Reordená las parejas o pasá esos ejercicios a bloques de series rectas.';
     if(co.length) t += ' CORE: el bloque de core debe tener 2 o 3 ejercicios distintos (duro y entretenido), no uno solo.';
+    if(es.length) t += ' ESTRUCTURA DE BLOQUES (' + es.map(function(v){ return v.nombre; }).join('; ') + '): respetá EXACTAMENTE la estructura de la ficha: después del warm-up, los bloques pedidos, en ese orden y ninguno más.';
     return t + ' Reescribí la sesión COMPLETA respetando TODAS las reglas.';
   }
   /* deja UN solo día, con el número correcto y sin vallas de código */
@@ -75779,7 +75942,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     return v;
   }
   /* respuesta del modelo -> texto canonico para el Importador rapido + diagnostico */
-  function procesar(out, di, foco){
+  function procesar(out, di, foco, estr){
     var t = limpiar(out, di), r = parsearImportacion(t, true), dia = r.dias[0];
     var buenos = (dia ? dia.bloques : []).filter(function(b){ return !b.sinClasificar && b.items && b.items.length; });
     if(!dia || buenos.length < 2) return { texto: t, nB: buenos.length, viol: [], movidos: 0, descartadas: 0 };
@@ -75795,7 +75958,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(c.objetivo){ tx.push('[OBJETIVO FISIOLÓGICO]'); tx.push(c.objetivo); }
       if(c.tips.length){ tx.push('[COACHING TIPS & ESTRATEGIA]'); c.tips.forEach(function(l){ tx.push(l); }); }
     });
-    return { texto: tx.join('\n'), nB: buenos.length, viol: violaciones(limp, foco).concat(violacionesEquipo(limp), violacionesCore(limp)), movidos: movidos, descartadas: descartadas };
+    return { texto: tx.join('\n'), nB: buenos.length, viol: violaciones(limp, foco).concat(violacionesEquipo(limp), violacionesCore(limp), violacionesEstructura(limp, estr)), movidos: movidos, descartadas: descartadas };
   }
 
   /* series efectivas por grupo y ejercicios que quedaron sin video (aviso para el coach, no bloquea nada) */
@@ -75883,7 +76046,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var f = fichaDe(ath), h = '';
     Object.keys(ROT).forEach(function(k){
       var v = f[k]; if(v == null || v === '' || (Array.isArray(v) && !v.length)) return;
-      var tx = (k === 'distribucion_estres_rir' || k === 'densidad_sesion') ? String(v).split(':')[0] : k === 'tiempo_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + x.minutos + ' min'; }).join(' · ') : k === 'enfoque_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + (x.enfoques || [x.enfoque]).map(function(e){ return String(e).split(' (')[0]; }).join(' + '); }).join(' · ') : (Array.isArray(v) ? v.join(', ') : String(v) + (k === 'tiempo_max_sesion_min' ? ' min' : (k === 'dias_por_semana' ? ' días' : '')));
+      var tx = k === 'mesociclo_4_semanas' ? 'S1 → S4 estructurado' : k === 'estructura_bloques' ? v.map(function(x){ return String(x).split(': ')[1] || x; }).join(' → ') : (k === 'distribucion_estres_rir' || k === 'densidad_sesion') ? String(v).split(':')[0] : k === 'tiempo_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + x.minutos + ' min'; }).join(' · ') : k === 'enfoque_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + (x.enfoques || [x.enfoque]).map(function(e){ return String(e).split(' (')[0]; }).join(' + '); }).join(' · ') : (Array.isArray(v) ? v.join(', ') : String(v) + (k === 'tiempo_max_sesion_min' ? ' min' : (k === 'dias_por_semana' ? ' días' : '')));
       h += '<span class="gs-chip' + (k === 'restricciones' ? ' warn' : '') + '"><b>' + esc2(ROT[k]) + '</b>' + esc2(tx) + '</span>';
     });
     return h || '<span class="gs-chip">Sin datos todavía</span>';
@@ -76066,11 +76229,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         }
         log('<span class="gs-spin"></span> Diseñando el DÍA ' + (di + 1) + ' (' + (k + 1) + '/' + targets.length + ')…');
         setBtn('<span class="gs-spin"></span> Generando el DÍA ' + (di + 1) + '…');
-        var foco = focoAnatomico(ath, p, di), pr;
+        var foco = focoAnatomico(ath, p, di), pr, estr = estructuraFicha(ath);
         log('🎯 Foco anatómico del DÍA ' + (di + 1) + ': <b>' + esc2(foco.lb || 'libre (coherente con el resto del plan)') + '</b>' + (foco.fuente ? ' <span class="w">· ' + esc2(foco.fuente) + '</span>' : ''));
         try{
           var out = await llamarIA(usuario(ath, p, di, extra, titulos, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di, vigente);
-          pr = procesar(out, di, foco);
+          pr = procesar(out, di, foco, estr);
           /* split blindado: si la IA mezcló grupos fuera del foco, se le pide UNA corrección antes de aplicar nada */
           if(pr.nB >= 2 && pr.viol.length){
             /* la autocorreccion es un pedido mas: antes de mandarlo se respeta una pausa de seguridad de 15-20 s (igual que entre dias), si no el 429 llega al instante */
@@ -76082,7 +76245,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
             log('<span class="gs-spin"></span> Pidiendo la corrección del DÍA ' + (di + 1) + '…');
             try{
               var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di, vigente);
-              var pr2 = procesar(out2, di, foco);
+              var pr2 = procesar(out2, di, foco, estr);
               if(pr2.nB >= 2 && pr2.viol.length <= pr.viol.length) pr = pr2;
             }catch(errC){
               /* si la API sigue limitando durante la autocorreccion, no se pierde el dia: se conserva la sesion ya generada y se avisa lo que quedo sin corregir */
@@ -76129,6 +76292,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         var ok = ejecutarImportacion(textos.join('\n\n'), 'dia');
         if(ok) log('Sesión cargada en el Builder. Revisá los bloques y ajustá lo que quieras.', 'o');
         else log('Importación cancelada: el plan no se modificó.', 'e');
+      }
+      /* MESOCICLO ESTRUCTURADO: lo generado es la S1; S2, S3 y S4 se proyectan solas (solo los dias recien generados) */
+      if(vigente() && textos.length && fichaDe(ath).mesociclo_4_semanas && (semana ? cargados.length : (typeof ok !== 'undefined' && ok))){
+        var idxs = semana ? cargados.map(function(n){ return n - 1; }) : targets.slice(0, 1);
+        var nbl = (typeof ondularMesocicloAutomatico === 'function') ? ondularMesocicloAutomatico({ dias: idxs, estructurado: true, silencioso: true }) : 0;
+        if(nbl) log('🌊 Mesociclo estructurado: <b>S2, S3 y S4</b> proyectadas desde la S1 en ' + idxs.length + ' día(s) (' + nbl + ' bloques): S2 RIR 1-2 con más densidad, S3 RIR 0-1 choque, S4 RIR 3-4 descarga.', 'o');
       }
       if(sinEstructura){
         renderBuilder();
