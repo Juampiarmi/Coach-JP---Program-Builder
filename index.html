@@ -74890,15 +74890,41 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     { k: 'nivel',        lb: 'Nivel',                      opts: ['Inicial', 'Intermedio', 'Avanzado'] },
     { k: 'dias',         lb: 'Días por semana',            opts: ['3', '4', '5', '6'], suf: ' días' },
     { k: 'tiempoMax',    lb: 'Tiempo máximo por sesión',   opts: ['30', '45', '60', '75', '90'], suf: ' min' },
-    { k: 'objetivo',     lb: 'Objetivo principal',         opts: ['Hipertrofia', 'Fuerza', 'Recomposición', 'Readaptación', 'Rendimiento'] },
+    { k: 'objetivo',     lb: 'Objetivo principal (podés combinar varios)', opts: ['Hipertrofia', 'Fuerza', 'Recomposición corporal', 'Readaptación', 'Rendimiento'], multi: true },
     { k: 'experiencia',  lb: 'Experiencia entrenando',     opts: ['Menos de 1 año', '1 a 3 años', '3 a 5 años', 'Más de 5 años'] },
     { k: 'equipo',       lb: 'Equipamiento',               opts: ['Gimnasio completo', 'Home gym', 'Mancuernas y bandas', 'Peso corporal'] },
     { k: 'split',        lb: 'Split preferido',            opts: ['Full body', 'Torso / Pierna', 'Push / Pull / Legs', 'Por grupo muscular', 'Que decida la IA'] },
+    { k: 'estres',       lb: 'Distribución de estrés / RIR del mesociclo (opcional)', opts: ['Acumulación', 'Intensificación', 'Pico / Realización', 'Descarga', 'Ondulante (DUP)'], tips: true },
+    { k: 'densidad',     lb: 'Densidad de sesión (opcional)', opts: ['Descansos largos', 'Estándar', 'Alta densidad'], tips: true },
     { k: 'enfasis',      lb: 'Énfasis muscular',           opts: ['Glúteo', 'Espalda', 'Pecho', 'Hombros', 'Brazos', 'Cuádriceps', 'Isquios', 'Core'], multi: true },
     { k: 'restricciones',lb: 'Restricciones / molestias',  opts: ['Hombro', 'Rodilla', 'Lumbar', 'Cadera', 'Muñeca', 'Codo', 'Cuello', 'Tobillo'], multi: true, warn: true },
     { k: 'preferidos',   lb: 'Ejercicios preferidos (atajos)', opts: ['Sentadilla', 'Peso muerto rumano', 'Hip thrust', 'Press banca', 'Dominadas', 'Remo con barra', 'Press militar', 'Prensa', 'Zancadas', 'Curl de bíceps', 'Elevaciones laterales'], multi: true, star: true }
   ];
   var draft = {};
+  /* que significa cada opcion para la IA: viaja en el JSON como texto (la IA no adivina que es "Acumulación") y sale de tooltip en el chip */
+  var DESC = {
+    estres: {
+      'Acumulación': 'ACUMULACIÓN: volumen alto, RIR 3-4 en fuerza y 2-3 en hipertrofia, sin llegar al fallo, tempos controlados',
+      'Intensificación': 'INTENSIFICACIÓN: volumen moderado, cargas altas y RIR 1-2 en fuerza e hipertrofia, cerca del fallo técnico en la última serie',
+      'Pico / Realización': 'PICO: volumen bajo, RIR 0-1 en los ejercicios principales, máxima intensidad con descansos completos; accesorios a RIR 1-2',
+      'Descarga': 'DESCARGA: volumen reducido ~40-50%, RIR 4-5, sin técnicas avanzadas, foco en técnica y recuperación',
+      'Ondulante (DUP)': 'ONDULANTE: alterná el estrés entre días (fuerza RIR 2-3, hipertrofia RIR 1-2, densidad RIR 1), nunca dos días seguidos con el mismo estrés'
+    },
+    densidad: {
+      'Descansos largos': 'DENSIDAD BAJA: priorizá calidad por serie; descansos de 150-240 s en fuerza y 120-180 s en hipertrofia, sin bisets de empuje pesado',
+      'Estándar': 'DENSIDAD ESTÁNDAR: descansos de 120-180 s en compuestos y 60-90 s en aislamiento',
+      'Alta densidad': 'DENSIDAD ALTA: sesión compacta con bisets/trisets y descansos de 45-90 s en hipertrofia y accesorios (la fuerza principal mantiene 150 s o más); manda el tiempo total'
+    }
+  };
+  /* el objetivo era un solo texto: ahora es una lista (los guardados viejos se convierten; "Recomposición" pasa a "Recomposición corporal") */
+  function normObj(v){
+    var op = (GRUPOS.filter(function(g){ return g.k === 'objetivo'; })[0] || { opts: [] }).opts, out = [];
+    (Array.isArray(v) ? v : (v ? [v] : [])).forEach(function(x){
+      var h = op.filter(function(o){ return nz(o) === nz(x) || nz(o).indexOf(nz(x)) === 0; })[0];
+      if(h && out.indexOf(h) < 0) out.push(h);
+    });
+    return out;
+  }
   /* enfoque muscular por dia de la semana (ids = claves de FOCOS del generador de sesion) */
   var ENFOQUES = [
     { id: 'push',      lb: 'Empuje',               sub: 'pecho · hombros · tríceps' },
@@ -74960,10 +74986,12 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       edad: f.edad ? parseInt(f.edad, 10) : null,
       dias_por_semana: ath.freq,
       tiempo_max_sesion_min: f.tiempoMax ? parseInt(f.tiempoMax, 10) : null,
-      objetivo: f.objetivo || ath.foco,
+      objetivo: normObj(f.objetivo).length ? normObj(f.objetivo) : ath.foco,
       experiencia: f.experiencia,
       equipamiento: f.equipo,
       split_preferido: f.split,
+      distribucion_estres_rir: (DESC.estres[f.estres] || ''),
+      densidad_sesion: (DESC.densidad[f.densidad] || ''),
       enfasis_muscular: f.enfasis,
       restricciones: f.restricciones,
       lesiones_y_reglas: ath.tags,
@@ -75026,7 +75054,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '<div class="ft-sub">Todo lo que elijas acá viaja solo, como JSON de contexto, a cada rutina que estructure la IA (mesociclo, reparto de días y cada sesión). Cuanto más completa, mejor se ajusta la programación.</div>';
     GRUPOS.forEach(function(gr){
       h += '<div class="ft-g"><span class="ft-lb">' + esc2(gr.lb) + '</span><div class="ft-chips" data-ftg="' + gr.k + '">' +
-        gr.opts.map(function(o){ return '<button type="button" class="ft-chip' + (gr.warn ? ' warn' : '') + (gr.star ? ' star' : '') + '" data-ftk="' + gr.k + '" data-ftv="' + esc2(o) + '">' + esc2(o) + (gr.suf || '') + '</button>'; }).join('') +
+        gr.opts.map(function(o){ return '<button type="button" class="ft-chip' + (gr.warn ? ' warn' : '') + (gr.star ? ' star' : '') + '" data-ftk="' + gr.k + '" data-ftv="' + esc2(o) + '"' + (gr.tips && DESC[gr.k] && DESC[gr.k][o] ? ' title="' + esc2(DESC[gr.k][o]) + '"' : '') + '>' + esc2(o) + (gr.suf || '') + '</button>'; }).join('') +
         '</div></div>';
     });
     h += '<div class="ft-g"><span class="ft-lb">Enfoque muscular por día de la semana</span>' +
@@ -75132,7 +75160,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   function fichaDeBorrador(){
     var o = {};
-    ['tiempoMax', 'objetivo', 'experiencia', 'equipo', 'split'].forEach(function(k){ if(draft[k]) o[k] = draft[k]; });
+    ['tiempoMax', 'experiencia', 'equipo', 'split', 'estres', 'densidad'].forEach(function(k){ if(draft[k]) o[k] = draft[k]; });
+    if(normObj(draft.objetivo).length) o.objetivo = normObj(draft.objetivo);
     if(draft.edad) o.edad = parseInt(draft.edad, 10) || '';
     if((draft.enfasis || []).length) o.enfasis = draft.enfasis.slice();
     var rz = valorDe(GRUPOS.filter(function(x){ return x.k === 'restricciones'; })[0]);
@@ -75156,7 +75185,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var a = id ? getAth(id) : null;
     draft = {};
     var f = (a && a.ficha) || {};
-    ['tiempoMax', 'objetivo', 'experiencia', 'equipo', 'split', 'edad'].forEach(function(k){ if(f[k]) draft[k] = f[k]; });
+    ['tiempoMax', 'experiencia', 'equipo', 'split', 'edad', 'estres', 'densidad'].forEach(function(k){ if(f[k]) draft[k] = f[k]; });
+    draft.objetivo = normObj(f.objetivo);
     draft.enfasis = (f.enfasis || []).slice();
     draft.enfoque = (f.enfoque || []).map(normEnf);
     draft.duracion = (f.duracion || []).slice();
@@ -75187,6 +75217,103 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 </script>
 <script>
 /* =========================================================
+   FICHA DEL ALUMNO/A EN PESTAÑAS (#mAth)
+   El modal tenia 5 bloques apilados (datos, cuota, ficha tactica, marcas, historial) y un scroll enorme. Las pestañas NO mueven ni
+   recrean ningun campo: solo muestran u ocultan los bloques que ya existen (los ids, los guardados y los modulos que se enganchan al
+   modal siguen igual). Los bloques que otros modulos agregan despues (marcas, historial) se clasifican solos.
+========================================================= */
+(function(){
+  'use strict';
+  var TABS = [
+    { k: 'perfil', lb: '👤 Perfil & Datos' },
+    { k: 'ia',     lb: '🤖 IA & Ficha Táctica' },
+    { k: 'fin',    lb: '💰 Cuota & Finanzas' },
+    { k: 'marcas', lb: '📊 Marcas & Historial' }
+  ];
+  var actual = 'perfil', obs = null;
+  function $q(id){ return document.getElementById(id); }
+  function css(){
+    if($q('jpAthTabsCss')) return;
+    var st = document.createElement('style'); st.id = 'jpAthTabsCss';
+    var ocultar = TABS.map(function(t){ return '#mAth[data-jptab="' + t.k + '"] .modal-b > [data-jptab]:not([data-jptab="' + t.k + '"])'; }).join(',');
+    st.textContent =
+      '.jp-atabs{display:flex;gap:6px;padding:10px 20px 0;border-bottom:1px solid var(--line,#1f242d);overflow-x:auto;scrollbar-width:none;background:#111519;position:sticky !important;top:var(--jp-atabs-top,0px) !important;z-index:6}' +
+      '.jp-atabs::-webkit-scrollbar{display:none}' +
+      '.jp-atab{flex:0 0 auto;cursor:pointer;padding:9px 14px;border:1px solid transparent;border-bottom:0;border-radius:10px 10px 0 0;background:transparent;color:var(--muted,#8b94a3);font:700 12.5px/1 inherit;font-family:inherit;letter-spacing:.02em;white-space:nowrap;position:relative;top:1px}' +
+      '.jp-atab:hover{color:var(--txt-2,#c3c9d3);background:rgba(255,255,255,.03)}' +
+      '.jp-atab.on{color:#FF8A4D;background:rgba(255,85,0,.08);border-color:var(--line-2,#2a2f3a);border-bottom:2px solid #FF5500}' +
+      '.jp-atab .jp-atab-dot{display:inline-block;width:7px;height:7px;margin-left:7px;border-radius:50%;background:#FFB703;vertical-align:1px}' +
+      '@media(max-width:640px){.jp-atabs{padding:8px 12px 0;gap:4px}.jp-atab{padding:9px 11px;font-size:12px}}' +
+      ocultar + '{display:none !important}';
+    document.head.appendChild(st);
+  }
+  function tabDe(n){
+    if(n.id === 'ftBox') return 'ia';
+    if(n.id === 'dlEx') return 'ia';
+    if(n.id === 'prWrap' || n.id === 'histWrap' || (n.classList && n.classList.contains('pr-wrap')) || n.querySelector('#prWrap,#histWrap')) return 'marcas';
+    if((n.classList && n.classList.contains('fin-cc-box')) || n.querySelector('[id^="aFin"]')) return 'fin';
+    if(n.querySelector('#aFoco,#aDeportes,#aCompat,#aTagInput,#aBanInput,#aPrefInput')) return 'ia';
+    return 'perfil';
+  }
+  function clasificar(){
+    var body = document.querySelector('#mAth .modal-b'); if(!body) return;
+    Array.prototype.forEach.call(body.children, function(n){ if(!n.getAttribute('data-jptab')) n.setAttribute('data-jptab', tabDe(n)); });
+  }
+  function barra(){
+    var m = document.querySelector('#mAth .modal'); if(!m) return null;
+    var bar = $q('jpAthTabs');
+    if(!bar){
+      bar = document.createElement('div'); bar.id = 'jpAthTabs'; bar.className = 'jp-atabs'; bar.setAttribute('role', 'tablist');
+      bar.innerHTML = TABS.map(function(t){ return '<button type="button" class="jp-atab" role="tab" data-jpt="' + t.k + '">' + t.lb + '</button>'; }).join('');
+      var h = m.querySelector('.modal-h');
+      if(h && h.nextSibling) m.insertBefore(bar, h.nextSibling); else m.insertBefore(bar, m.firstChild);
+      bar.addEventListener('click', function(e){ var b = e.target.closest('[data-jpt]'); if(b) activar(b.getAttribute('data-jpt')); });
+    }
+    var h2 = m.querySelector('.modal-h'); if(h2) bar.style.setProperty('--jp-atabs-top', (getComputedStyle(h2).position === 'sticky' ? h2.offsetHeight : 0) + 'px');
+    return bar;
+  }
+  function activar(k, sinScroll){
+    css(); actual = k; clasificar();
+    var mod = $q('mAth'); if(!mod) return;
+    mod.setAttribute('data-jptab', k);
+    var bar = barra();
+    if(bar) bar.querySelectorAll('.jp-atab').forEach(function(b){ var on = b.getAttribute('data-jpt') === k; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    var bo = bar && bar.querySelector('.jp-atab.on'); if(bo) bar.scrollLeft = bo.offsetLeft - Math.max(0, (bar.clientWidth - bo.offsetWidth) / 2);      /* en el celular la pestaña activa queda a la vista */
+    if(!sinScroll){ var bg = $q('mAth'); if(bg) bg.scrollTop = 0; }
+  }
+  function vigilar(){
+    var body = document.querySelector('#mAth .modal-b'); if(!body || obs) return;
+    obs = new MutationObserver(function(){ clasificar(); });
+    obs.observe(body, { childList: true });
+  }
+  /* ficha incompleta: punto de aviso en la pestaña de IA */
+  function avisoIA(){
+    var bar = $q('jpAthTabs'); if(!bar) return;
+    var b = bar.querySelector('[data-jpt="ia"]'); if(!b) return;
+    var falta = !!document.querySelector('#ftBox') && !document.querySelector('#ftBox .ft-chip.on[data-ftk="objetivo"]');
+    var dot = b.querySelector('.jp-atab-dot');
+    if(falta && !dot){ b.insertAdjacentHTML('beforeend', '<span class="jp-atab-dot" title="Falta elegir el objetivo"></span>'); }
+    else if(!falta && dot) dot.remove();
+  }
+  var _open = window.openAth;
+  if(typeof _open === 'function') window.openAth = function(){
+    var r = _open.apply(this, arguments);
+    try{ css(); vigilar(); activar('perfil'); avisoIA(); }catch(e){ console.warn('pestañas ficha', e); }
+    return r;
+  };
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('#btnSaveAth')){ var n = $q('aNombre'); if(n && !n.value.trim()) activar('perfil', true); }      /* falta el nombre: se vuelve a la pestaña donde esta */
+    if(t.closest('#ftBox')) setTimeout(avisoIA, 0);
+  });
+  document.addEventListener('keydown', function(e){
+    if(!$q('mAth') || !$q('mAth').classList.contains('on')) return;
+    if(e.altKey && /^[1-4]$/.test(e.key)){ e.preventDefault(); activar(TABS[parseInt(e.key, 10) - 1].k); }
+  });
+})();
+</script>
+<script>
+/* =========================================================
    GENERADOR DE SESIÓN CON IA · FICHA TÁCTICA (Builder · Sports & Bodybuilding)
    Un botón arma TODA la sesión del día activo (o de la semana) leyendo la Ficha Táctica del alumno/a (a.ficha +
    nivel/días/lesiones/preferidos -> CoachFicha.json), sin salir del Builder. La IA no devuelve JSON: redacta la sesión
@@ -75206,7 +75333,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 
   /* ---------- ficha: resumen, faltantes, nivel ---------- */
   var ROT = { enfoque_por_dia: 'Enfoque/día', tiempo_por_dia: 'Tiempo/día', nivel: 'Nivel', dias_por_semana: 'Días/sem', tiempo_max_sesion_min: 'Tiempo máx', objetivo: 'Objetivo', experiencia: 'Experiencia',
-              equipamiento: 'Equipo', split_preferido: 'Split', enfasis_muscular: 'Énfasis', restricciones: 'Molestias' };
+              equipamiento: 'Equipo', split_preferido: 'Split', distribucion_estres_rir: 'Estrés/RIR', densidad_sesion: 'Densidad', enfasis_muscular: 'Énfasis', restricciones: 'Molestias' };
   var REQ = [['tiempo_max_sesion_min', 'tiempo máximo por sesión'], ['objetivo', 'objetivo principal'], ['equipamiento', 'equipamiento'], ['experiencia', 'experiencia entrenando']];
   function fichaDe(ath){ try{ return (window.CoachFicha && window.CoachFicha.get) ? window.CoachFicha.get(ath) : {}; }catch(e){ return {}; } }
   function faltantes(ath){ var f = fichaDe(ath); return REQ.filter(function(r){ return !f[r[0]]; }).map(function(r){ return r[1]; }); }
@@ -75414,6 +75541,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
 
   /* ---------- prompts ---------- */
+  /* objetivos combinados + estres/RIR del mesociclo + densidad de la ficha: reglas duras que pisan los rangos generales */
+  function reglasFichaExtra(ath){
+    var f = fichaDe(ath), t = '', objs = Array.isArray(f.objetivo) ? f.objetivo : (f.objetivo ? [f.objetivo] : []);
+    if(objs.length > 1) t += 'OBJETIVOS COMBINADOS (' + objs.join(' + ') + '): repartí el volumen y el enfoque metabólico de forma EQUILIBRADA entre todos, sin sacrificar uno por otro. Fuerza = bloque principal pesado (3-6 reps, RIR 1-3, descansos 150-240 s); hipertrofia = 6-15 reps con RIR 0-2 y tensión a longitud larga; recomposición corporal = densidad y trabajo metabólico en los últimos bloques (bisets, descansos 45-90 s); readaptación = control técnico y RIR altos; rendimiento = calidad de movimiento y potencia sin fatiga residual. ';
+    else if(objs.length === 1) t += 'OBJETIVO: ' + objs[0] + ' (ajustá reps, RIR y descansos a ese objetivo). ';
+    if(f.distribucion_estres_rir) t += 'DISTRIBUCIÓN DE ESTRÉS / RIR DEL MESOCICLO (la eligió el coach, manda sobre los RIR generales): ' + f.distribucion_estres_rir + '. ';
+    if(f.densidad_sesion) t += 'DENSIDAD DE SESIÓN (manda sobre los descansos generales de la regla 4): ' + f.densidad_sesion + '. ';
+    return t ? '6b) AJUSTES DE LA FICHA (obligatorios): ' + t + 'Los RIR y los Rest que escribas tienen que ser coherentes con esto.\n' : '';
+  }
   function sistema(ath, foco){
     var regla0 = foco && foco.id && foco.id !== 'full'
       ? '0) SPLIT ANATÓMICO — REGLA ABSOLUTA E INNEGOCIABLE: la sesión es EXCLUSIVAMENTE de ' + foco.lb + '. Está PROHIBIDO incluir ejercicios de ' + foco.vetados + ' en CUALQUIER bloque (también en warm-up, accesorios y core). La BIBLIOTECA ya está filtrada a los grupos permitidos: usá solo esos ejercicios. Si un ejercicio no encaja con el foco, no va.' + (foco.enfasis ? ' ' + foco.enfasis : '') + '\n'
@@ -75450,7 +75586,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       'Series x reps o rango ("4x8-10"); por tiempo "3x40s"; por lado "3x10 por lado". Descansos: fuerza principal 150-240s, hipertrofia compuesta 120-180s, aislamiento 60-90s (en biseries de empuje pesado mínimo 120s), accesorios/core 45-75s, warm-up 30-45s.\n' +
       '5) REGLA DE ORO DEL TEMPO: NUNCA va en la línea de dosis ni de ejercicio (ensucia la vista del alumno). Va únicamente en [COACHING TIPS & ESTRATEGIA]: en bloques de UN ejercicio como línea "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)"; ' +
       'en biseries/triseries dentro de la línea de la estación: "A1 · CUE EFICIENTE: Tempo 3011 — ..." (4 dígitos: excéntrica, pausa abajo, concéntrica, pausa arriba; X = explosiva).\n' +
-      '6) NIVEL: ' + perfilNivel(ath) + '\n' +
+      '6) NIVEL: ' + perfilNivel(ath) + '\n' + reglasFichaExtra(ath) +
       (esAtletaDUP(ath) ? '7) PERIODIZACIÓN: seguí el perfil DUP que se indica en el pedido.\n' : '') +
       'FORMATO DE SALIDA (texto plano EXACTO; sin markdown, sin JSON, sin asteriscos, sin nada fuera del formato):\n' +
       '=== DÍA {N}: {título corto} ===\n' +
@@ -75747,7 +75883,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var f = fichaDe(ath), h = '';
     Object.keys(ROT).forEach(function(k){
       var v = f[k]; if(v == null || v === '' || (Array.isArray(v) && !v.length)) return;
-      var tx = k === 'tiempo_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + x.minutos + ' min'; }).join(' · ') : k === 'enfoque_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + (x.enfoques || [x.enfoque]).map(function(e){ return String(e).split(' (')[0]; }).join(' + '); }).join(' · ') : (Array.isArray(v) ? v.join(', ') : String(v) + (k === 'tiempo_max_sesion_min' ? ' min' : (k === 'dias_por_semana' ? ' días' : '')));
+      var tx = (k === 'distribucion_estres_rir' || k === 'densidad_sesion') ? String(v).split(':')[0] : k === 'tiempo_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + x.minutos + ' min'; }).join(' · ') : k === 'enfoque_por_dia' ? v.map(function(x){ return 'D' + x.dia + ' ' + (x.enfoques || [x.enfoque]).map(function(e){ return String(e).split(' (')[0]; }).join(' + '); }).join(' · ') : (Array.isArray(v) ? v.join(', ') : String(v) + (k === 'tiempo_max_sesion_min' ? ' min' : (k === 'dias_por_semana' ? ' días' : '')));
       h += '<span class="gs-chip' + (k === 'restricciones' ? ' warn' : '') + '"><b>' + esc2(ROT[k]) + '</b>' + esc2(tx) + '</span>';
     });
     return h || '<span class="gs-chip">Sin datos todavía</span>';
