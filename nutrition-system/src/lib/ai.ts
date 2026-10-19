@@ -183,10 +183,14 @@ export function scheduleHint(notes: string) {
 Estructurá el día ON en este orden y con estas horas: Desayuno ${hm(a.breakfast)} · Almuerzo ${hm(a.lunch)} · Pre-WOD ${hm(a.peri)} · Post-WOD inmediato ${hm(a.post)} · Cena principal ${hm(a.dinner)}.`;
 }
 
-export async function compileWithAi(ai: AiSettings, notes: string, onNotice?: (n: GeminiNotice) => void): Promise<AiPlanJson & { _model?: string }> {
+/**
+ * @param context Anamnesis Pro + reglas clínicas + catálogo de la Food & Brand DB (ver promptBuilder.ts).
+ *   Sin contexto se usa sólo la agenda derivada de las notas.
+ */
+export async function compileWithAi(ai: AiSettings, notes: string, onNotice?: (n: GeminiNotice) => void, context?: string): Promise<AiPlanJson & { _model?: string }> {
   if (!ai.apiKey.trim()) throw new Error('Cargá una API key para compilar con IA.');
   if (!notes.trim()) throw new Error('Volcá las notas del atleta antes de compilar.');
-  const user = `NOTAS BRUTAS DEL ATLETA:\n${notes.trim()}${scheduleHint(notes)}`;
+  const user = `NOTAS BRUTAS DEL ATLETA:\n${notes.trim()}${context ?? scheduleHint(notes)}`;
   if (ai.provider === 'gemini') {
     const r = await callGemini(ai, user, onNotice);
     return { ...extractJson(r.text), _model: r.model };
@@ -299,7 +303,7 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
   const sessionMinutes = window?.minutes ?? (num(pr.sessionMinutes, 0) >= 20 ? num(pr.sessionMinutes, 0) : base.profile.sessionMinutes);
   const athleteName = resolveAthleteName(json.athleteName, notes, base.profile.name);
   // Horarios determinísticos desde la franja real de entreno (la IA no decide la hora de la cena ni del post-WOD).
-  const timedMeals = retimeMeals(meals, { trainingTime, sessionMinutes });
+  const timedMeals = retimeMeals(meals, { trainingTime, sessionMinutes }, base.anamnesis);
 
   const known = Object.fromEntries(aisGroupA(weightKg).map((s) => [s.id, s]));
   const supplements: Supplement[] = (json.supplements ?? []).map((s) => {

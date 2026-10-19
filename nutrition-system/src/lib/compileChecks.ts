@@ -1,5 +1,6 @@
 import type { AiPlanJson } from './ai';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from './bioenergetics';
+import { allergenHits, sanitizeAnamnesis } from './anamnesisPro';
 import type { AthletePlan } from './types';
 
 export type CheckStatus = 'pending' | 'running' | 'retry' | 'ok' | 'warn' | 'fail';
@@ -20,6 +21,7 @@ export const COMPILE_STEPS: Pick<CompileCheck, 'id' | 'label'>[] = [
   { id: 'bmr', label: 'VALIDACIÓN BMR · KATCH-McARDLE' },
   { id: 'split', label: 'PARTICIÓN ON / OFF' },
   { id: 'leu', label: 'UMBRAL DE LEUCINA (≥2,7 g) POR COMIDA' },
+  { id: 'clinic', label: 'RESTRICCIONES CLÍNICAS · ALERGIAS Y AVERSIONES' },
   { id: 'sync', label: 'SINCRONIZACIÓN DEL BUILDER' },
 ];
 
@@ -27,7 +29,7 @@ export const COMPILE_STEPS: Pick<CompileCheck, 'id' | 'label'>[] = [
  * Validaciones post-respuesta: el plan de la IA se contrasta con el motor local.
  * Devuelve el estado y el detalle de los pasos bmr / split / leu.
  */
-export function validateCompiled(json: AiPlanJson, plan: AthletePlan): Record<'bmr' | 'split' | 'leu', Pick<CompileCheck, 'status' | 'detail'>> {
+export function validateCompiled(json: AiPlanJson, plan: AthletePlan): Record<'bmr' | 'split' | 'leu' | 'clinic', Pick<CompileCheck, 'status' | 'detail'>> {
   const t = computeTelemetry(plan);
 
   // BMR: la IA vs el motor local (tolerancia 10 %).
@@ -63,5 +65,25 @@ export function validateCompiled(json: AiPlanJson, plan: AthletePlan): Record<'b
     detail: mps.length === 0 ? 'sin comidas principales' : `${okLeu}/${mps.length} comidas principales activan mTOR / MPS`,
   };
 
-  return { bmr, split, leu };
+  // Alérgenos y aversiones de la Anamnesis Pro contra los alimentos que devolvió la IA.
+  const an = sanitizeAnamnesis(plan.anamnesis);
+  const aversions = an.aversions
+    .toLowerCase()
+    .split(/[,;\n]/)
+    .map((x) => x.trim().replace(/\/.*/, '').trim())
+    .filter((x) => x.length >= 4);
+  const hits: string[] = [];
+  plan.meals.forEach((m) =>
+    m.items.forEach((i) => {
+      const a = allergenHits(i.food, an.allergies);
+      if (a.length) hits.push(`${i.food} (${a.join('/')}) en ${m.name}`);
+      const av = aversions.find((x) => i.food.toLowerCase().includes(x));
+      if (av) hits.push(`${i.food} (aversión) en ${m.name}`);
+    }),
+  );
+  const clinic: Pick<CompileCheck, 'status' | 'detail'> = hits.length
+    ? { status: 'warn', detail: `REVISAR: ${hits.slice(0, 3).join(' · ')}${hits.length > 3 ? ` · +${hits.length - 3}` : ''}` }
+    : { status: 'ok', detail: `${an.allergies.length} alergias · ${an.conditions.filter((c) => c !== 'none').length} condiciones · sin conflictos` };
+
+  return { bmr, split, leu, clinic };
 }

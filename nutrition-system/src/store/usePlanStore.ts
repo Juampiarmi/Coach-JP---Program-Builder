@@ -6,10 +6,12 @@ import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_P
 import { MAX_OIL_PER_MEAL_G, migrateModel } from '@/lib/ai';
 import { balancePlan } from '@/lib/balance';
 import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
+import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { aisGroupA } from '@/lib/evidence';
 import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
 import { itemFromFood, seedPlan, uid } from '@/lib/seed';
 import type {
+  Anamnesis,
   AiSettings,
   AthletePlan,
   DayMode,
@@ -23,7 +25,7 @@ import type {
   Supplement,
 } from '@/lib/types';
 
-export type BuilderTab = 'intake' | 'profile' | 'periodization' | 'meals';
+export type BuilderTab = 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'fooddb';
 export type DeployTab = 'preview' | 'export' | 'story';
 
 interface PlanState {
@@ -68,6 +70,8 @@ interface PlanState {
   balanceMeals: () => void;
   /** Reasigna las horas de las comidas a partir de la franja real de entreno (06:30 · 12:30 · pre · post · cena). */
   retimeMeals: () => void;
+  /** Anamnesis Pro & Lifestyle del atleta activo (se guarda dentro del plan → localStorage y backup JSON). */
+  setAnamnesis: (patch: Partial<Anamnesis>) => void;
 
   toggleSupplement: (id: string) => void;
   updateSupplement: (id: string, patch: Partial<Supplement>) => void;
@@ -274,7 +278,8 @@ export const usePlanStore = create<PlanState>()(
         })),
 
       balanceMeals: () => set((s) => ({ plan: balancePlan(s.plan).plan })),
-      retimeMeals: () => set((s) => ({ plan: touch({ ...s.plan, meals: retimeMeals(s.plan.meals, s.plan.profile) }) })),
+      retimeMeals: () => set((s) => ({ plan: touch({ ...s.plan, meals: retimeMeals(s.plan.meals, s.plan.profile, s.plan.anamnesis) }) })),
+      setAnamnesis: (patch) => set((s) => ({ plan: touch({ ...s.plan, anamnesis: { ...sanitizeAnamnesis(s.plan.anamnesis), ...patch } }) })),
 
       removeItem: (mealId, itemId) =>
         set((s) => ({
@@ -434,5 +439,6 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
     periodization: { ...seed.periodization, ...p.periodization },
     // Ingredientes repetidos en una comida (ej. palta 70 g + 45 g) se fusionan al cargar.
     meals: p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil).map(consolidateMeal),
+    anamnesis: sanitizeAnamnesis(p.anamnesis),
   };
 }

@@ -1,8 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Brain, Crosshair, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, SlidersHorizontal, Utensils } from 'lucide-react';
+import { Brain, ClipboardList, Crosshair, Database, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, SlidersHorizontal, Utensils } from 'lucide-react';
+import { AnamnesisForm } from '@/components/builder/AnamnesisForm';
+import { FoodBrandDatabase } from '@/components/builder/FoodBrandDatabase';
 import { IntakeTab } from '@/components/builder/IntakeTab';
+// Registra la Food & Brand DB en el motor de alimentos apenas carga el Builder.
+import '@/store/useFoodDbStore';
 import { MealsTab } from '@/components/builder/MealsTab';
 import { PeriodizationTab } from '@/components/builder/PeriodizationTab';
 import { ProfileTab } from '@/components/builder/ProfileTab';
@@ -17,10 +21,12 @@ import { computeTelemetry, eaStatus, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, m
 import { usePlanStore, type BuilderTab, type DeployTab } from '@/store/usePlanStore';
 
 const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain }[] = [
+  { id: 'anamnesis', label: '00 · Anamnesis Pro & Lifestyle', icon: ClipboardList },
   { id: 'intake', label: 'IA Prompt Engine', icon: Brain },
   { id: 'profile', label: '01 · Perfil biológico', icon: Dna },
   { id: 'periodization', label: '02 · Matriz ON/OFF', icon: SlidersHorizontal },
   { id: 'meals', label: '03 · Ingestas & leucina', icon: Utensils },
+  { id: 'fooddb', label: '04 · Food & Brand DB', icon: Database },
 ];
 
 const DEPLOY_TABS: { id: DeployTab; label: string; icon: typeof Brain }[] = [
@@ -129,10 +135,12 @@ export default function Home() {
               </button>
             ))}
           </nav>
+          {builderTab === 'anamnesis' && <AnamnesisForm />}
           {builderTab === 'intake' && <IntakeTab />}
           {builderTab === 'profile' && <ProfileTab />}
           {builderTab === 'periodization' && <PeriodizationTab />}
           {builderTab === 'meals' && <MealsTab />}
+          {builderTab === 'fooddb' && <FoodBrandDatabase />}
         </section>
 
         <aside className="min-w-0 lg:sticky lg:top-[112px] lg:max-h-[calc(100vh-128px)] lg:self-start lg:overflow-y-auto scroll-thin">

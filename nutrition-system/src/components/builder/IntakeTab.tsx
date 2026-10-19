@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Cpu, Eye, EyeOff, KeyRound, Loader2, Radio, ShieldAlert, Trash2, Zap } from 'lucide-react';
 import { compileWithAi, MODEL_OPTIONS, pingProvider, planFromAi, SYSTEM_PROMPT, SYSTEM_PROMPT_EXTENSION, type PingResult } from '@/lib/ai';
 import { balancePlan } from '@/lib/balance';
+import { buildPromptContext } from '@/lib/promptBuilder';
+import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { fmt0 } from '@/lib/bioenergetics';
 import { COMPILE_STEPS, validateCompiled, type CompileCheck } from '@/lib/compileChecks';
 import type { AiProvider } from '@/lib/types';
@@ -127,7 +129,9 @@ export function IntakeTab() {
       current = 'infer';
       mark('infer', { status: 'running' });
       // Gemini 503 / 429: la terminal muestra en cian el cambio a modelo de respaldo en vez de abortar en rojo.
-      const json = await compileWithAi(ai, notes, (n) => mark('infer', { status: 'retry', detail: n.message }));
+      // Anamnesis Pro + reglas clínicas + catálogo activo de la Food & Brand DB viajan junto con las notas.
+      const context = buildPromptContext(usePlanStore.getState().plan, useFoodDbStore.getState().items, notes);
+      const json = await compileWithAi(ai, notes, (n) => mark('infer', { status: 'retry', detail: n.message }), context);
       const usedModel = json._model ?? ai.model;
       mark('infer', {
         status: 'ok',
@@ -150,7 +154,7 @@ export function IntakeTab() {
           .join(' · '),
       });
       const v = validateCompiled(json, next);
-      for (const id of ['bmr', 'split', 'leu'] as const) {
+      for (const id of ['bmr', 'split', 'leu', 'clinic'] as const) {
         current = id;
         mark(id, { status: 'running' });
         await sleep(220);

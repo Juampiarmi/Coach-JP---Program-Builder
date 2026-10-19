@@ -29,8 +29,10 @@ export interface FoodRef {
   equiv?: string[];
   /** Marca comercial (alimentos personalizados). */
   brand?: string;
-  /** true = cargado por el coach desde «Crear alimento / marca» (persistido en localStorage). */
+  /** true = cargado por el coach desde «Crear alimento / marca» o la Food & Brand DB (persistido en localStorage). */
   custom?: boolean;
+  /** false = la IA no puede mapear sus platos a este producto (toggle «disponible para IA» de la Food & Brand DB). */
+  ai?: boolean;
 }
 
 export type MacroPrincipal = 'protein' | 'carbs' | 'fat';
@@ -145,10 +147,22 @@ const BUILTIN_IDS = new Set(FOODS.map((f) => f.id));
  * Registra los alimentos / marcas personalizados del coach en la base viva (FOODS + FOOD_BY_ID),
  * así quedan disponibles en el selector, los Smart Swaps, el motor de macros y la PWA exportada.
  */
+const SOURCES: Record<'custom' | 'db', FoodRef[]> = { custom: [], db: [] };
+
+/** Registra una fuente de alimentos propios (marcas creadas a mano o Food & Brand DB) y reconstruye la base viva. */
+export function registerFoodSource(source: 'custom' | 'db', list: FoodRef[]) {
+  SOURCES[source] = list;
+  rebuildCustom();
+}
+
 export function registerCustomFoods(list: FoodRef[]) {
+  registerFoodSource('custom', list);
+}
+
+function rebuildCustom() {
   for (let i = FOODS.length - 1; i >= 0; i--) if (FOODS[i].custom) FOODS.splice(i, 1);
   for (const id of Object.keys(FOOD_BY_ID)) if (FOOD_BY_ID[id].custom) delete FOOD_BY_ID[id];
-  for (const f of list) {
+  for (const f of [...SOURCES.custom, ...SOURCES.db]) {
     if (!f?.id || BUILTIN_IDS.has(f.id)) continue;
     const ref = { ...f, custom: true };
     FOODS.push(ref);
@@ -243,8 +257,11 @@ export function householdHint(foodId: string | undefined, grams: number) {
 export function matchFood(name: string): FoodRef | undefined {
   const n = normalize(name);
   // Primero las marcas / alimentos personalizados del coach (coincidencia por nombre).
+  // Nombre completo con marca primero ("yogur proteico descremado · milkaut pro"), después el nombre base.
+  const exact = FOODS.find((f) => f.custom && f.ai !== false && n.length >= 4 && n.includes(normalize(f.name)));
+  if (exact) return exact;
   const custom = FOODS.find((f) => {
-    if (!f.custom || n.length < 4) return false;
+    if (!f.custom || f.ai === false || n.length < 4) return false;
     const base = normalize(f.name.split(' · ')[0]);
     return n.includes(base) || base.includes(n);
   });

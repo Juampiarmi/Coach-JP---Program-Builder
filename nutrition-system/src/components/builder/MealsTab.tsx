@@ -6,6 +6,7 @@ import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, 
 import { CITES, doiUrl } from '@/lib/evidence';
 import { alternativesFor, equivalentGrams, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
 import type { DayMode, FoodItem, Meal, MealDay, MealRole } from '@/lib/types';
+import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
 import { BalanceBanner } from './BalanceBanner';
@@ -34,6 +35,10 @@ const LEU_PER_G_WHEY = FOOD_BY_ID.whey.leucine / 100;
 
 function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
   const custom = usePlanStore((s) => s.customFoods);
+  // Re-render al editar la Food & Brand DB; sus marcas locales ya viven en FOODS como custom.
+  useFoodDbStore((s) => s.items);
+  const customIds = new Set(custom.map((f) => f.id));
+  const brands = FOODS.filter((f) => f.custom && !customIds.has(f.id));
   return (
     <select
       value=""
@@ -44,6 +49,15 @@ function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
       {custom.length > 0 && (
         <optgroup label="★ Mis alimentos / marcas">
           {custom.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {brands.length > 0 && (
+        <optgroup label="★ Marcas locales · Food & Brand DB">
+          {brands.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}
             </option>

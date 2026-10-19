@@ -87,6 +87,26 @@ export interface Supplement {
   enabled: boolean;
 }
 
+export type MealSlot = 'breakfast' | 'lunch' | 'peri' | 'post' | 'dinner';
+export type Budget = 'low' | 'mid' | 'high';
+export type CookingLevel = 'quick' | 'batch' | 'gourmet';
+
+/** Anamnesis Pro & Lifestyle: perfil 360° del atleta que se inyecta en el Prompt Engine. */
+export interface Anamnesis {
+  wakeTime: string;
+  bedTime: string;
+  /** true = horarios de comida derivados de la franja de entreno; false = horarios cargados por el coach. */
+  mealTimesAuto: boolean;
+  mealTimes: Record<MealSlot, string>;
+  conditions: string[];
+  allergies: string[];
+  favorites: string;
+  aversions: string;
+  snacks: string[];
+  budget: Budget;
+  cooking: CookingLevel;
+}
+
 export interface AthletePlan {
   version: 1;
   /** Id estable del atleta en la base local (roster). */
@@ -100,6 +120,8 @@ export interface AthletePlan {
   meals: Meal[];
   supplements: Supplement[];
   coachNote: string;
+  /** Anamnesis Pro (lifestyle, cronobiología, clínica y gastronomía). */
+  anamnesis?: Anamnesis;
   updatedAt: number;
 }
 

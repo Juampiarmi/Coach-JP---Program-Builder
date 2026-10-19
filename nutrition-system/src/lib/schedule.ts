@@ -1,5 +1,5 @@
 import { macrosFor, round1, round2 } from './foods';
-import type { FoodItem, Meal, Profile } from './types';
+import type { Anamnesis, FoodItem, Meal, MealSlot, Profile } from './types';
 
 /**
  * Minutos desde las 00:00 para ORDENAR comidas. Lo que cae entre 00:00 y 03:59 se trata como el final del día
@@ -48,10 +48,30 @@ export function dayAnchors(pr: Pick<Profile, 'trainingTime' | 'sessionMinutes'>)
   };
 }
 
+const toMin = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
+/** Horarios efectivos de las 5 comidas: los de la anamnesis si el coach los fijó, o los derivados del entreno. */
+export function mealSchedule(pr: Pick<Profile, 'trainingTime' | 'sessionMinutes'>, an?: Pick<Anamnesis, 'mealTimesAuto' | 'mealTimes'>) {
+  const a = dayAnchors(pr);
+  const auto: Record<MealSlot, number> = { breakfast: a.breakfast, lunch: a.lunch, peri: a.peri, post: a.post, dinner: a.dinner };
+  if (!an || an.mealTimesAuto) return { ...a, slots: auto };
+  const slots = { ...auto };
+  (Object.keys(slots) as MealSlot[]).forEach((k) => {
+    if (/^\d{2}:\d{2}$/.test(an.mealTimes?.[k] ?? '')) slots[k] = toMin(an.mealTimes[k]);
+  });
+  return { ...a, slots };
+}
+
+export const fmtHm = (min: number) => hm(min);
+
 const OFF_DEFAULT: Record<Meal['role'], number> = { breakfast: 7 * 60 + 30, lunch: 13 * 60, peri: 17 * 60, post: 17 * 60, snack: 17 * 60, dinner: 21 * 60 };
 
-export function retimeMeals(meals: Meal[], pr: Pick<Profile, 'trainingTime' | 'sessionMinutes'>): Meal[] {
-  const a = dayAnchors(pr);
+export function retimeMeals(meals: Meal[], pr: Pick<Profile, 'trainingTime' | 'sessionMinutes'>, an?: Pick<Anamnesis, 'mealTimesAuto' | 'mealTimes'>): Meal[] {
+  const sch = mealSchedule(pr, an);
+  const a = { ...sch, ...sch.slots };
   return meals
     .map((m) => {
       if (m.day === 'off') return { ...m, time: valid(m.time) ? m.time : hm(OFF_DEFAULT[m.role]) };
