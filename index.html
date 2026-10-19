@@ -241,6 +241,11 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
 .modal-h{display:flex;align-items:center;gap:12px;padding:17px 20px;border-bottom:1px solid var(--line)}
 .modal-h h3{font-size:16px;font-weight:800;letter-spacing:-.2px}
 .modal-b{padding:20px;display:grid;gap:15px}
+.fin-mp-box{margin-top:12px;padding:12px;border:1px solid rgba(0,158,227,.35);border-radius:12px;background:rgba(0,158,227,.05)}
+.fin-mp-box input{width:100%;box-sizing:border-box}
+.fin-mp-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.fin-mp-tok{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}.fin-mp-tok input{flex:1 1 220px;width:auto}.fin-mp-tok .hint{flex:1 1 100%}
+.fin-mp-est{margin-top:8px}.fin-mp-est.ok{color:#48D597}.fin-mp-est.warn{color:#EFB44A}.fin-mp-est.err{color:#E0856F}
 /* el pie queda siempre alcanzable aunque el modal sea más alto que la pantalla */
 .modal-f{display:flex;gap:10px;justify-content:flex-end;padding:15px 20px;border-top:1px solid var(--line);
   background:rgba(9,11,13,.94);backdrop-filter:blur(8px);border-radius:0 0 18px 18px;flex-wrap:wrap;
@@ -893,6 +898,22 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
           <div style="grid-column:span 3;display:flex;align-items:flex-end">
             <button type="button" class="btn xs gold" id="aFinRegistrarHoy" style="width:100%">✅ Registrar pago de hoy</button>
           </div>
+        </div>
+        <div class="fin-mp-box" id="finMpBox">
+          <label class="lb">🔗 Link de cobro de Mercado Pago</label>
+          <input id="aFinMpLink" type="url" inputmode="url" autocomplete="off" placeholder="https://mpago.la/… o https://www.mercadopago.com.ar/checkout/…">
+          <div class="fin-mp-acts">
+            <button type="button" class="btn xs gold" id="finMpGen" title="Crea el checkout de Mercado Pago con el Arancel y la Moneda de arriba">⚡ Generar link con el Arancel</button>
+            <button type="button" class="btn xs ghost" id="finMpTest">↗ Probar link</button>
+            <button type="button" class="btn xs ghost" id="finMpTok">🔑 Access Token</button>
+          </div>
+          <div class="fin-mp-tok" id="finMpTokBox" hidden>
+            <input id="finMpTokIn" type="password" autocomplete="off" placeholder="APP_USR-…">
+            <button type="button" class="btn xs gold" id="finMpTokSave">Guardar</button>
+            <button type="button" class="btn xs ghost" id="finMpTokClr">Borrar</button>
+            <div class="hint">El token se guarda SOLO en este navegador y nunca viaja a la app del alumno/a. Lo ves en Mercado Pago → Tus integraciones → Credenciales de producción.</div>
+          </div>
+          <div class="hint fin-mp-est" id="finMpEstado"></div>
         </div>
         <div class="hint">Fuente única de la cuota: esta fecha es la que ve el alumno/a en su panel (recordatorio discreto) y la que evalúa todos los semáforos del Builder. "Próximo vencimiento" se calcula solo (+28 días desde el último pago) salvo que lo edites a mano acá. El historial completo de pagos se gestiona desde la tarjeta 💳 Control Financiero en el Home.</div>
       </div>
@@ -37638,11 +37659,31 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:block; }
     var estado = diffDias < 0 ? 'venc' : (diffDias <= HDP_PROXIMO_DIAS ? 'proximo' : 'ok');
     return { estado: estado, corta: corta };
   }
+  /* boton de pago de Mercado Pago: aparece cuando la cuota esta vencida o proxima a vencer y el coach cargo/genero el link */
+  function fmtMontoPago(m, mon){
+    var n = Number(m) || 0; if(!(n > 0)) return '';
+    var s = (Math.round(n * 100) / 100).toLocaleString('es-AR');
+    return (mon && mon !== 'ARS') ? (mon + ' ' + s) : ('$ ' + s);
+  }
+  function pintarPagoCta(info, cfg){
+    var url = String(cfg.payUrl || ''), box = q('jpPagoCta');
+    if(!/^https:\\/\\//i.test(url) || !info || info.estado === 'ok'){ if(box) box.remove(); return; }
+    var monto = fmtMontoPago(cfg.payMonto, cfg.payMoneda);
+    if(!box){
+      box = document.createElement('div'); box.id = 'jpPagoCta';
+      var wrap = document.querySelector('.hd-wrap');
+      if(wrap && wrap.parentNode) wrap.parentNode.insertBefore(box, wrap.nextSibling); else document.body.insertBefore(box, document.body.firstChild);
+    }
+    box.className = 'jp-pago-cta ' + info.estado;
+    box.innerHTML = '<span class="jp-pago-msg"><i></i>' + (info.estado === 'venc' ? 'CUOTA VENCIDA' : 'CUOTA PR\\u00d3XIMA A VENCER') + ' \\u00b7 ' + escAcc(info.corta) + '</span>' +
+      '<a class="jp-pago-btn" href="' + escAcc(url) + '" target="_blank" rel="noopener noreferrer">\\ud83d\\udcb3 PAGAR CUOTA' + (monto ? ' \\u00b7 ' + escAcc(monto) : '') + '</a>';
+  }
   function pintarPago(){
     var elDrawer = q('hdpPay'), elChip = q('hdcPayChip');
     if(!elDrawer && !elChip) return;
     var cfg = (typeof PROGRAM_CONFIG !== 'undefined') ? PROGRAM_CONFIG : {};
     var info = estadoAbono(cfg.payDue || '');
+    try{ pintarPagoCta(info, cfg); }catch(errPago){}
     if(!info){
       // directiva14 · sin fecha cargada para ESTE atleta puntual: nada de
       // inventar un vencimiento -- el chip de la cabecera cae a un estado
@@ -42366,6 +42407,14 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
 .jp-reg-sets, .jp-reg-exs{ flex-wrap:nowrap; scroll-snap-type:x proximity; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
 .jp-reg-exs::-webkit-scrollbar{ display:none; }
 .jp-reg-set{ flex:0 0 auto; min-width:68px; scroll-snap-align:center; }
+/* ---- boton de pago de Mercado Pago (Sports y CrossFit): vidrio oscuro, borde de estado ---- */
+.jp-pago-cta{ display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin:10px 12px 0; padding:12px 14px; border-radius:14px; background:linear-gradient(180deg, rgba(20,20,20,.94), rgba(10,10,10,.94)); border:1px solid rgba(245,197,24,.45); box-shadow:0 10px 28px rgba(0,0,0,.45), inset 0 0 22px rgba(245,197,24,.05); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
+.jp-pago-cta.venc{ border-color:rgba(224,101,74,.65); box-shadow:0 10px 28px rgba(0,0,0,.45), inset 0 0 22px rgba(224,101,74,.08); }
+.jp-pago-msg{ display:inline-flex; align-items:center; gap:8px; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10.5px; font-weight:600; letter-spacing:.14em; color:#F5C518; }
+.jp-pago-cta.venc .jp-pago-msg{ color:#F0A08C; }
+.jp-pago-msg i{ width:8px; height:8px; border-radius:50%; background:currentColor; box-shadow:0 0 10px currentColor; }
+.jp-pago-btn{ flex:1 1 220px; display:flex; align-items:center; justify-content:center; min-height:48px; padding:0 18px; border-radius:12px; text-decoration:none; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.86rem; letter-spacing:.08em; color:#0A0A0A; background:linear-gradient(180deg,#FFE066,#F5C518 55%,#D6A500); box-shadow:0 6px 18px rgba(245,197,24,.28); }
+.jp-pago-btn:active{ transform:translateY(1px); filter:brightness(.95); }
 /* BRANDPASS_CF:END */
 </style>
 <script id="jpHudTacticoJs">
@@ -43865,6 +43914,10 @@ function buildProgramConfig(ath){
        alumno/a; el selector explícito es la única fuente de verdad. */
     genero: ath.genero || '',
     payDue: ath.payDue || '',
+    /* Mercado Pago: link de cobro + monto/moneda (solo si el link es valido); la app del alumno muestra "Pagar cuota" al vencer o estar proxima */
+    payUrl: (window.jpMpPago ? window.jpMpPago(ath).url : ''),
+    payMonto: (window.jpMpPago ? window.jpMpPago(ath).monto : 0),
+    payMoneda: (window.jpMpPago ? window.jpMpPago(ath).moneda : ''),
     /* directiva 13: estado de planificación + vigencia del ciclo (p.estado/
        p.vigenciaDesde/p.vigenciaHasta, ver plan()/newPlan()) -- viaja al
        alumno solo para pintar el micro-badge del header, nunca para
@@ -75646,6 +75699,120 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(!$q('mAth') || !$q('mAth').classList.contains('on')) return;
     if(e.altKey && /^[1-4]$/.test(e.key)){ e.preventDefault(); activar(TABS[parseInt(e.key, 10) - 1].k); }
   });
+})();
+</script>
+<script>
+/* =========================================================
+   MERCADO PAGO · LINK DE COBRO DE LA CUOTA (ficha del alumno + boton de pago en la app del alumno, Sports y CrossFit)
+   - El coach pega el link de pago de Mercado Pago de ese alumno o lo GENERA con el Arancel y la Moneda de la ficha (checkout de Mercado Pago con
+     el monto ya cargado). Para generarlo hace falta su Access Token de Mercado Pago: se guarda solo en este navegador (nunca viaja a la app del alumno).
+   - La app del alumno (Sports y CrossFit comparten la misma cabecera) muestra "PAGAR CUOTA · $ monto" cuando la cuota esta vencida o proxima a vencer.
+   - Si el navegador bloquea la conexion con la API de Mercado Pago (CORS) o falta el token, queda el link pegado a mano: nada se rompe.
+========================================================= */
+(function(){
+  'use strict';
+  var KTOK = 'coachjp_mp_token_v1';
+  function $q(id){ return document.getElementById(id); }
+  function tokenLeer(){ try{ return localStorage.getItem(KTOK) || ''; }catch(e){ return ''; } }
+  function tokenGuardar(v){ try{ if(v) localStorage.setItem(KTOK, v); else localStorage.removeItem(KTOK); }catch(e){} }
+  /* solo https y dominios de Mercado Pago: nunca un javascript: ni un sitio ajeno en el boton del alumno */
+  function linkValido(u){
+    u = String(u || '').trim();
+    if(!/^https:\/\//i.test(u)) return '';
+    var h = ''; try{ h = new URL(u).hostname.toLowerCase(); }catch(e){ return ''; }
+    return /(^|\.)(mercadopago\.[a-z.]+|mpago\.(la|li)|mp\.ar|mercadolibre\.[a-z.]+)$/.test(h) ? u : '';
+  }
+  function fmtMonto(n, mon){ var s = (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-AR'); return (mon && mon !== 'ARS') ? mon + ' ' + s : '$ ' + s; }
+  /* lo que viaja a la app del alumno (buildProgramConfig): link + monto + moneda */
+  window.jpMpPago = function(ath){
+    var f = (ath && ath.finanzas) || {}, url = linkValido(f.mpLink);
+    if(!url) return { url: '', monto: 0, moneda: '' };
+    var g = f.mpGen, monto = (g && g.monto > 0) ? g.monto : (parseFloat(f.arancel) || 0), mon = (g && g.moneda) || f.moneda || 'ARS';
+    return { url: url, monto: monto, moneda: mon };
+  };
+  window.jpMpValidar = linkValido;
+
+  function estado(msg, cls){
+    var e = $q('finMpEstado'); if(!e) return;
+    e.className = 'fin-mp-est' + (cls ? ' ' + cls : ''); e.innerHTML = msg || '';
+  }
+  function refrescar(){
+    var inp = $q('aFinMpLink'); if(!inp) return;
+    var u = inp.value.trim(), arancel = parseFloat(($q('aFinArancel') || {}).value) || 0, mon = ($q('aFinMoneda') || {}).value || 'ARS', gen = null;
+    try{ gen = inp.dataset.gen ? JSON.parse(inp.dataset.gen) : null; }catch(e){}
+    if(!u){ estado('Sin link: el alumno/a no verá botón de pago. Pegá el link de Mercado Pago o generalo con el Arancel.', ''); return; }
+    if(!linkValido(u)){ estado('⚠ Ese link no es de Mercado Pago (tiene que empezar con https:// y ser mercadopago / mpago.la): no se mostrará al alumno/a.', 'err'); return; }
+    if(gen && (Math.abs(gen.monto - arancel) > 0.005 || gen.moneda !== mon)){
+      estado('⚠ El Arancel cambió desde que se generó el link (' + fmtMonto(gen.monto, gen.moneda) + '). Tocá "Generar link" para actualizarlo: el cobro sale por el monto del link.', 'warn'); return;
+    }
+    estado('✔ Link válido' + (gen ? ' · generado por ' + fmtMonto(gen.monto, gen.moneda) : ' · cargado a mano (el monto que ve el alumno/a es el Arancel)') + '. Se muestra "Pagar cuota" cuando la cuota vence o está próxima.', 'ok');
+  }
+  async function generar(btn){
+    var arancel = parseFloat(($q('aFinArancel') || {}).value) || 0, mon = ($q('aFinMoneda') || {}).value || 'ARS';
+    if(!(arancel > 0)){ toast('Cargá primero el Arancel de la cuota', 'warn'); return; }
+    var tok = tokenLeer();
+    if(!tok){ abrirToken(); toast('Pegá tu Access Token de Mercado Pago para generar el link', 'warn'); return; }
+    var nombre = (($q('aNombre') || {}).value || '').trim() + ' ' + (($q('aApellido') || {}).value || '').trim();
+    var orig = btn ? btn.innerHTML : ''; if(btn){ btn.disabled = true; btn.textContent = '⏳ Generando…'; }
+    try{
+      var body = { items: [{ id: 'cuota-coachjp', title: 'Cuota Coach JP · ' + nombre.trim(), description: 'Cuota mensual de entrenamiento', quantity: 1, currency_id: mon, unit_price: arancel }],
+                   external_reference: 'coachjp:' + (editAthId || 'nuevo'), statement_descriptor: 'COACH JP' };
+      var r = await fetch('https://api.mercadopago.com/checkout/preferences', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body) });
+      var j = {}; try{ j = await r.json(); }catch(e){}
+      if(!r.ok || !j.init_point){ estado('✖ Mercado Pago respondió ' + r.status + (j && j.message ? ': ' + String(j.message).slice(0, 120) : '') + '. Revisá el Access Token (producción) y la moneda (ARS), o pegá el link a mano.', 'err'); return; }
+      var inp = $q('aFinMpLink'); inp.value = j.init_point; inp.dataset.gen = JSON.stringify({ monto: arancel, moneda: mon, ts: Date.now(), pref: j.id || '' });
+      refrescar(); toast('🔗 Link de cobro generado por ' + fmtMonto(arancel, mon) + ': guardá el alumno/a para publicarlo');
+    }catch(err){
+      estado('✖ El navegador no pudo conectar con Mercado Pago (' + String((err && err.message) || err).slice(0, 60) + '): suele ser el bloqueo CORS de la API. Creá el link en Mercado Pago → Cobrar → Link de pago y pegalo acá.', 'err');
+    }finally{ if(btn){ btn.disabled = false; btn.innerHTML = orig; } }
+  }
+  function abrirToken(){
+    var b = $q('finMpTokBox'); if(!b) return; b.hidden = false;
+    var i = $q('finMpTokIn'); if(i){ i.value = ''; i.placeholder = tokenLeer() ? 'Token guardado en este navegador (pegá uno nuevo para reemplazarlo)' : 'APP_USR-…'; i.focus(); }
+  }
+  document.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('#finMpGen')){ e.preventDefault(); generar(t.closest('#finMpGen')); return; }
+    if(t.closest('#finMpTest')){ e.preventDefault(); var u = linkValido(($q('aFinMpLink') || {}).value); if(!u){ toast('Pegá un link válido de Mercado Pago', 'warn'); return; } window.open(u, '_blank', 'noopener'); return; }
+    if(t.closest('#finMpTok')){ e.preventDefault(); abrirToken(); return; }
+    if(t.closest('#finMpTokSave')){ e.preventDefault(); var v = ($q('finMpTokIn') || {}).value.trim(); if(v){ tokenGuardar(v); toast('🔑 Access Token guardado en este navegador'); } $q('finMpTokBox').hidden = true; return; }
+    if(t.closest('#finMpTokClr')){ e.preventDefault(); tokenGuardar(''); $q('finMpTokBox').hidden = true; toast('Access Token borrado de este navegador'); return; }
+  });
+  document.addEventListener('input', function(e){
+    var t = e.target; if(!t || !t.id) return;
+    if(t.id === 'aFinMpLink'){ delete t.dataset.gen; refrescar(); }      /* editado a mano: deja de ser "generado" */
+    else if(t.id === 'aFinArancel' || t.id === 'aFinMoneda') refrescar();
+  });
+  document.addEventListener('change', function(e){ if(e.target && e.target.id === 'aFinMoneda') refrescar(); });
+  /* cargar al abrir la ficha */
+  var _open = window.openAth;
+  if(typeof _open === 'function') window.openAth = function(id){
+    var r = _open.apply(this, arguments);
+    try{
+      var a = id ? getAth(id) : null, f = (a && a.finanzas) || {}, inp = $q('aFinMpLink');
+      if(inp){ inp.value = f.mpLink || ''; if(f.mpGen) inp.dataset.gen = JSON.stringify(f.mpGen); else delete inp.dataset.gen; }
+      var tb = $q('finMpTokBox'); if(tb) tb.hidden = true;
+      refrescar();
+    }catch(e){ console.warn('mp', e); }
+    return r;
+  };
+  /* guardar junto con la condicion comercial (misma funcion que persiste Arancel / vencimiento) */
+  var _fin = window.finAplicarCondicionComercial;
+  if(typeof _fin === 'function'){
+    var envuelta = function(a){
+      var r = _fin.apply(this, arguments);
+      try{
+        var inp = $q('aFinMpLink'); if(!inp || !a) return r;
+        a.finanzas = a.finanzas || {};
+        var u = linkValido(inp.value), gen = null;
+        try{ gen = inp.dataset.gen ? JSON.parse(inp.dataset.gen) : null; }catch(e){}
+        a.finanzas.mpLink = u; a.finanzas.mpGen = (u && gen) ? gen : null;
+      }catch(e){ console.warn('mp save', e); }
+      return r;
+    };
+    window.finAplicarCondicionComercial = envuelta;
+    try{ finAplicarCondicionComercial = envuelta; }catch(e){}
+  }
 })();
 </script>
 <script>
