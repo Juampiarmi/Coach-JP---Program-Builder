@@ -44757,65 +44757,23 @@ document.addEventListener('DOMContentLoaded', init);
        porque elegirlos hoy garantiza que ese proveedor falle siempre, sin
        importar la clave. claude-sonnet-5/claude-opus-5/claude-haiku-4-5
        siguen vigentes, confirmado contra la doc oficial. */
-    anthropic: { lb:'Anthropic', sub:'Claude', model:'claude-sonnet-5',  url:'https://api.anthropic.com/v1/messages',
-      hints:['claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001'] },
-    /* gpt-4o (snapshot 2024-05-13) tiene retiro anunciado por OpenAI para el
-       23/10/2026 -- a menos de 6 semanas de esta directiva. Se actualiza el
-       default a la familia vigente (GPT-5.6): "terra" balancea inteligencia
-       y costo, el rol más parecido al que cumplía gpt-4o acá. Ver además el
-       aviso de CORS agregado más abajo en callProvider(): la API de OpenAI
-       no habilita CORS para fetch() directo desde el navegador (confirmado,
-       problema de la plataforma, no de este código) -- este proveedor
-       requeriría un proxy propio para funcionar de verdad desde esta PWA. */
-    openai:    { lb:'OpenAI',    sub:'GPT',    model:'gpt-5.6-terra',    url:'https://api.openai.com/v1/chat/completions',
-      hints:['gpt-5.6-terra','gpt-5.6-luna','gpt-5.6-sol','gpt-6-astra'] },
-    /* directiva crítica (2026-09) -- corrección de endpoint Gemini: se
-       verificó contra documentación oficial vigente (ai.google.dev y Google
-       Cloud) que "gemini-3.6-flash" SÍ es un modelo real y activo -- no es
-       la causa del 404 reportado. Lo que sí se confirmó como causa real de
-       404 en la API de Google (foro oficial de desarrolladores,
-       discuss.ai.google.dev) es que la familia "2.5" (incluido el
-       "gemini-2.5-pro" que estaba en los hints) devuelve 404 para
-       cualquier clave/proyecto SIN uso previo de esos modelos -- Google
-       limita el acceso a usuarios que ya los venían usando.
-       directiva crítica (2026-09, seguimiento) -- un coach reportó 429
-       ("cuota agotada") con gemini-3.6-flash y pidió bajar a
-       "gemini-2.5-flash"/"gemini-1.5-flash": se verificó de nuevo contra
-       ai.google.dev y NINGUNO de los dos sirve --  gemini-1.5-flash ya NO
-       figura en el catálogo vigente de modelos (retirado del todo, confirma
-       lo que ya decía MODELOS_RETIRADOS más abajo) y gemini-2.5-flash sigue
-       cargando el mismo riesgo de 404 por acceso restringido de la familia
-       "2.5" para una clave sin uso previo -- bajar a cualquiera de los dos
-       hubiera cambiado un 429 (temporal, la cuota se repone sola) por un
-       404 (permanente hasta cambiar de modelo). En cambio se confirmó el
-       catálogo ESTABLE vigente completo de la familia 3.x (todos "Stable",
-       sin restricciones de acceso publicadas): gemini-3.8-flash es ahora el
-       modelo recomendado por Google (lanzado 02/09/2026, reemplaza a 3.6/
-       3.7 como tope de línea) -- pasa a ser el nuevo default para
-       instalaciones nuevas (no pisa el modelo ya guardado de quien ya tenía
-       3.6-flash configurado, ver loadAI()/MODELOS_RETIRADOS). Se amplían
-       los hints con el catálogo 3.x completo: cada modelo tiene su propia
-       cuota de RPM/RPD independiente en la API de Google, así que un coach
-       con 429 en un modelo puede probar otro de la lista sin esperar a que
-       resetee -- el selector manual del panel de nutrición (directiva
-       anterior) ya permite tipear cualquiera de estos sin tocar código. */
-    /* directiva crítica (2026-09, confirmación explícita del coach) --
-       gemini-2.5-flash pasa a ser el DEFAULT de Google, pisando gemini-3.8-
-       flash. Se le mostró al coach el antecedente documentado más arriba
-       (404 en generateContent para cualquier clave/proyecto SIN uso previo
-       de la familia "2.5") y confirmó igual: su clave puntual sí tiene
-       acceso a "2.5" -- el síntoma real que reportó ("máximos tokens diarios
-       alcanzados") es un 429 genuino de la API (cuota, no acceso), como
-       queda registrado también en el audit de MÓDULO 5/29 sobre fallback.
-       El aviso de riesgo en fillCfgForm() se deja igual: esta app puede
-       terminar en la máquina de OTRO coach cuya clave no tenga ese acceso, y
-       ahí sí seguiría siendo información útil, no bloqueante. */
-    /* 2026-10 (directiva del coach): el default vuelve a "gemini-2.5-flash" (el endpoint flash estable de v1beta). Un modelo guardado que no
-       sea reconocible se reemplaza solo por este valor (ver loadAI()), y un 404 del modelo activo reintenta con el resto de la cadena. */
+    anthropic: { lb:'Anthropic', sub:'Claude', model:'claude-sonnet-5-5',  url:'https://api.anthropic.com/v1/messages',
+      hints:['claude-sonnet-5-5','claude-opus-5-5','claude-haiku-5-5','claude-haiku-4-5-20251001'] },
+    /* modelos de OpenAI con chat/completions + max_tokens + JSON mode (gpt-4o y gpt-4.1); las familias que exigen otros parametros (gpt-5, o-series) no se ofrecen */
+    openai:    { lb:'OpenAI',    sub:'GPT',    model:'gpt-4o',    url:'https://api.openai.com/v1/chat/completions',
+      hints:['gpt-4o','gpt-4o-mini','gpt-4.1','gpt-4.1-mini'] },
+    /* Google: gemini-2.5-flash es el default; un 404 del modelo activo reintenta con el resto de la cadena (ver CADENA_GOOGLE) */
     google:    { lb:'Google',    sub:'Gemini', model:'gemini-2.5-flash', url:'https://generativelanguage.googleapis.com/v1beta/models/',
-      hints:['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-3.7-flash','gemini-3.8-flash','gemini-3.6-flash','gemini-3.5-flash','gemini-3.1-pro-preview','gemini-3.1-flash-lite'] }
+      hints:['gemini-2.5-flash','gemini-2.5-flash-lite','gemini-2.0-flash'] }
   };
   const ORDEN = ['anthropic','openai','google'];
+  /* nombres de modelo aceptados por proveedor: solo familias reales con los parametros que usa esta app */
+  const RX_MODELO = {
+    anthropic: /^claude-[a-z0-9][a-z0-9.\-]*$/,
+    openai:    /^(?:gpt-4o(?:-mini)?|gpt-4\.1(?:-mini|-nano)?)(?:-\d{4}-\d{2}-\d{2})?$/,
+    google:    /^gemini-(?:2\.0|2\.5)-(?:flash|flash-lite)(?:-[a-z0-9\-]+)?$/
+  };
+  const modeloValido = (p, m) => !!RX_MODELO[p] && RX_MODELO[p].test(String(m || '').trim());
   let AI = {
     provider:'anthropic',
     keys:  { anthropic:'', openai:'', google:'' },
@@ -44865,51 +44823,12 @@ document.addEventListener('DOMContentLoaded', init);
       });
       if(rec) setTimeout(() => { try{ saveAI(); toast('🔑 Clave de IA recuperada desde la copia local', 'warn'); }catch(e){} }, 1500);
     }catch(e){}
-    /* directiva crítica (2026-09) -- migración de modelos retirados: si un
-       dispositivo ya tenía guardado (en una config vieja) un modelo que el
-       proveedor discontinuó de verdad, ese proveedor iba a fallar SIEMPRE a
-       partir de ahí, sin importar la clave ni el resto del código -- y sin
-       ningún aviso claro (justo el síntoma de "todos los motores fallaron").
-       Se pisa acá, una sola vez, por el default vigente de cada proveedor. */
-    const MODELOS_RETIRADOS = [
-      'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307',           /* Anthropic, retirados oct-2025/abr-2026 */
-      'gemini-pro', 'gemini-1.0-pro', 'gemini-1.5-pro-preview', 'gemini-1.5-pro', 'gemini-1.5-flash', /* Google, discontinuados */
-      /* directiva crítica (2026-09, seguimiento) -- "gemini-2.5-pro"/"gemini-
-         2.5-flash" estuvieron acá (auto-migración por riesgo de 404 sin uso
-         previo de la familia "2.5") pero gemini-2.5-flash ahora ES el default
-         vigente de Google, confirmado por el coach -- no puede estar al
-         mismo tiempo en "modelo default" y en "modelo a migrar lejos de él"
-         (quedaba pisándose a sí mismo en cada carga). Se sacan de la lista;
-         el aviso de riesgo de 404 para claves sin acceso previo sigue vivo en
-         fillCfgForm(), sólo que ya no fuerza un reset silencioso. */
-      /* 2026-10 -- Google ya responde "models/gemini-2.5-pro is no longer available to new users":
-         la familia 2.5 vuelve a migrarse al default vigente (gemini-3.8-flash). */
-      'gemini-2.5-pro',
-      'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'                            /* OpenAI, familias ya fuera de vigencia */
-    ];
+    /* migracion de modelos: un nombre guardado que no es de un modelo real (inventado, retirado o de otra familia) vuelve al default vigente del proveedor,
+       asi nunca queda un proveedor roto por un modelo que no existe */
     let huboMigracion = false;
     ORDEN.forEach(p => {
-      if(MODELOS_RETIRADOS.indexOf(AI.models[p]) >= 0){
-        AI.models[p] = PROV[p].model;
-        huboMigracion = true;
-      }
+      if(!modeloValido(p, AI.models[p])){ AI.models[p] = PROV[p].model; huboMigracion = true; }
     });
-    /* Gemini: un string guardado que no se reconoce (o el "gemini-3.8-flash" que el coach reportó como 404/400) vuelve al default vigente */
-    {
-      const gm = String(AI.models.google || '').trim();
-      if(!/^gemini-(?:2\.5|3\.\d)(?:-[a-z0-9]+)+$/.test(gm) || gm === 'gemini-3.8-flash'){
-        AI.models.google = PROV.google.model;
-        huboMigracion = true;
-      }
-    }
-    /* gpt-4o/gpt-4o-mini no están retirados TODAVÍA (gpt-4o-2024-05-13 se
-       apaga el 23/10/2026), pero conviene migrar proactivamente antes de esa
-       fecha en vez de esperar a que un coach se quede sin aviso a mitad de
-       temporada -- se migran igual que los ya retirados. */
-    if(AI.models.openai === 'gpt-4o' || AI.models.openai === 'gpt-4o-mini'){
-      AI.models.openai = PROV.openai.model;
-      huboMigracion = true;
-    }
     if(huboMigracion) saveAI();
   }
   /* proveedor cuya clave se está borrando A PROPÓSITO (botón "Borrar clave"):
@@ -45049,29 +44968,8 @@ document.addEventListener('DOMContentLoaded', init);
       : (hasKey(p)
         ? '<div class="alert good" style="padding:9px 12px"><span class="ic">🔑</span><div><b>Clave guardada</b>El botón ✨ del builder está operativo con ' + PROV[p].lb + '.</div></div>'
         : '<div class="alert info" style="padding:9px 12px"><span class="ic">ℹ️</span><div><b>Sin clave para ' + PROV[p].lb + '</b>Pegá la API Key para habilitar la generación automática.</div></div>');
-    /* directiva crítica (2026-09): aviso proactivo, no sólo reactivo al
-       fallar -- la API de OpenAI no admite llamadas directas desde el
-       navegador (CORS), así que un coach que carga su clave acá se va a
-       encontrar con que "nunca anda" pese a que la clave es válida. Mejor
-       avisarlo ANTES de que pierda tiempo, con Anthropic/Google marcados
-       como alternativa que sí funciona sin proxy. */
-    if(p === 'openai'){
-      $('#cfgStatus').innerHTML +=
-        '<div class="alert warn" style="padding:9px 12px;margin-top:8px"><span class="ic">🌐</span>' +
-        '<div><b>OpenAI puede fallar siempre desde acá</b>Su API no habilita llamadas directas desde una página web (CORS) — necesitaría un servidor propio de por medio. Anthropic y Google sí funcionan directo desde esta app.</div></div>';
-    }
-    /* directiva de implementación (2026-09) -- mismo criterio de aviso
-       proactivo que el de OpenAI arriba: gemini-2.5-flash/pro están en la
-       lista de sugerencias a pedido puntual, pero Google devuelve 404 en
-       generateContent para cualquier clave/proyecto sin uso previo de esa
-       familia (confirmado contra el foro oficial de desarrolladores). No se
-       le saca la opción al coach -- se le avisa ANTES de que la pruebe y
-       pierda un intento, igual que con OpenAI/CORS. */
-    if(p === 'google' && /^gemini-2\.5/.test(AI.models[p] || '')){
-      $('#cfgStatus').innerHTML +=
-        '<div class="alert warn" style="padding:9px 12px;margin-top:8px"><span class="ic">⚠️</span>' +
-        '<div><b>gemini-2.5 puede devolver 404 con esta clave</b>Google restringe la familia "2.5" a proyectos que ya la venían usando -- si tu clave es nueva para este modelo, usá "🧪 Test Conexión IA" para confirmarlo antes de generar un plan completo, o probá gemini-3.8-flash (familia 3.x, sin esa restricción) mientras tanto.</div></div>';
-    }
+    $('#cfgStatus').innerHTML +=
+      '<div class="hint" style="margin-top:8px">Modelos válidos: ' + PROV[p].hints.join(' · ') + '. Si algo falla, tocá <b>🔌 Probar conexión</b>: te muestra el mensaje real del servidor (clave inválida, modelo inexistente, cuota…).</div>';
     const rst = document.getElementById('cfgReset');
     if(rst) rst.addEventListener('click', () => { resetAICooldown(AI.provider); toast('Cooldown reiniciado'); });
   }
@@ -45093,7 +44991,15 @@ document.addEventListener('DOMContentLoaded', init);
     /* campo vacío + clave ya guardada = no tocar la clave (ver saveAI()) */
     const claveCampo = $('#cfgKey').value.trim();
     if(claveCampo || !keyOf(p)) AI.keys[p] = claveCampo;
-    AI.models[p] = ($('#cfgModel').value.trim() || PROV[p].model);
+    const modeloPrev = AI.models[p], clavePrev = keyOf(p);
+    let modelo = ($('#cfgModel').value.trim() || PROV[p].model);
+    if(!modeloValido(p, modelo)){
+      toast('«' + modelo.slice(0, 40) + '» no es un modelo reconocido de ' + PROV[p].lb + ': se usó ' + PROV[p].model + '. Válidos: ' + PROV[p].hints.join(', '), 'warn');
+      modelo = PROV[p].model; $('#cfgModel').value = modelo;
+    }
+    AI.models[p] = modelo;
+    /* cambio de modelo o de clave: se levanta la pausa de un limite anterior para probar enseguida con la nueva configuracion */
+    if(AI.cooldown && AI.cooldown[p] && (modelo !== modeloPrev || (claveCampo && claveCampo !== clavePrev))) delete AI.cooldown[p];
     AI.maxTokens = parseInt($('#cfgMaxTokens').value, 10) || 8000;
     AI.econ      = $('#cfgEcon').checked;
     AI.fallback  = $('#cfgFallback').checked;
@@ -45110,7 +45016,7 @@ document.addEventListener('DOMContentLoaded', init);
      lo traen TODOS los 429 de Gemini, por eso no se usa. */
   let ultimoLimite = null;
   /* cuota diaria agotada en un modelo de Google: se prueba el siguiente de la cadena y se recuerda (en memoria, 6 h) que ese modelo no tiene cupo */
-  const CADENA_GOOGLE = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.7-flash', 'gemini-3.8-flash'];
+  const CADENA_GOOGLE = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
   const modelosAgotados = {};
   const modeloAgotado = m => !!modelosAgotados[m] && (Date.now() - modelosAgotados[m]) < 6 * 3600 * 1000;
   function avisarCambioModelo(prov, de, a){
@@ -45204,10 +45110,7 @@ document.addEventListener('DOMContentLoaded', init);
            anthropic-dangerous-direct-browser-access ya usado arriba; Google
            habilita CORS en su API REST) -- por eso el aviso queda sólo para
            OpenAI, no aplica al resto. */
-        if(prov === 'openai'){
-          throw new Error('OpenAI bloqueó la conexión directa desde el navegador (CORS) — es una limitación de la plataforma de OpenAI, no de esta app: su API no admite llamadas directas desde una página web sin un servidor intermedio propio. Usá Anthropic o Google mientras tanto, que sí funcionan directo desde acá.');
-        }
-        throw new Error('No se pudo conectar con ' + PROV[prov].lb + ' (' + (errRed && errRed.message || 'error de red') + '). Revisá tu conexión a internet.');
+        throw new Error('No se pudo conectar con ' + PROV[prov].lb + ' (' + (errRed && errRed.message || 'error de red') + '). Puede ser la conexión a internet, un bloqueo del navegador (extensión, CORS) o el servicio caído: usá "🔌 Probar conexión" en ⚙️ Configuración de IA para ver el detalle.');
       }
       return { res: r, raw: await r.text() };
     }
@@ -45216,7 +45119,7 @@ document.addEventListener('DOMContentLoaded', init);
 
     /* Gemini 404 (modelo inexistente / sin acceso para esta clave): se prueba el resto de la cadena vigente antes de rendirse */
     if(prov === 'google' && res.status === 404 && !(opts && opts.model)){
-      const cadena = ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.8-flash'].filter(m => m !== model);
+      const cadena = CADENA_GOOGLE.filter(m => m !== model);
       for(const alt of cadena){
         url = cfg.url + encodeURIComponent(alt) + ':generateContent';
         ({ res, raw } = await enviar(body));
@@ -45282,7 +45185,9 @@ document.addEventListener('DOMContentLoaded', init);
          Nunca se lo interpreta como agotamiento diario (el texto de la respuesta suele nombrar cuotas diarias aunque lo que se pisó es el minuto). */
       const lim = analizarLimite(raw), realSecs = Math.max(secs || 0, lim.real || 0);
       secs = Math.min(COOL_MAX, Math.max(10, secs || 12));      /* pausa de 10 a 15 s */
-      const eRate = RateErr(prov, secs, 'HTTP ' + res.status + ' · cuota agotada en ' + PROV[prov].lb);
+      const tipoLim = lim.fatal ? 'cuota o saldo de la cuenta agotados (o modelo sin cupo)' : (res.status === 429 ? 'límite de velocidad o de cuota, temporal' : 'servicio saturado, temporal');
+      const eRate = RateErr(prov, secs, 'HTTP ' + res.status + ' · ' + PROV[prov].lb + ': ' + tipoLim + (lim.texto ? ' — «' + lim.texto + '»' : ''));
+      eRate.status = res.status;
       eRate.real = realSecs; eRate.fatal = lim.fatal; eRate.diaria = lim.diaria;
       eRate.detalle = PROV[prov].lb + ' (' + modeloAct + ') · HTTP ' + res.status + (lim.texto ? ': ' + lim.texto : '');
       ultimoLimite = { real: eRate.real, fatal: eRate.fatal, diaria: eRate.diaria, detalle: eRate.detalle };
@@ -45309,7 +45214,12 @@ document.addEventListener('DOMContentLoaded', init);
       if(prov === 'google' && res.status === 404){
         msgFinal += ' — el modelo "' + model + '" no existe o no está disponible para tu clave en la API de Google. Elegí otro modelo en ⚙️ Configuración de IA (por ejemplo, uno de los sugeridos en la lista).';
       }
-      throw new Error('HTTP ' + res.status + ' — ' + msgFinal);
+      /* pista segun el codigo real que devolvio el servidor */
+      if(res.status === 404 || (res.status === 400 && /model/i.test(String(msg)))) msgFinal += ' — revisá el nombre del modelo en ⚙️ Configuración de IA (modelo actual: ' + modeloAct + ').';
+      else if(res.status === 401 || res.status === 403) msgFinal += ' — revisá la API Key (inválida, sin permisos o de otro proveedor).';
+      const eHttp = new Error('HTTP ' + res.status + ' — ' + msgFinal);
+      eHttp.status = res.status; eHttp.prov = prov;
+      throw eHttp;
     }
 
     const j = JSON.parse(raw);
@@ -45339,7 +45249,7 @@ document.addEventListener('DOMContentLoaded', init);
 
   /* llamada con cooldown + fallback entre proveedores */
   function cooldownAllErr(secs){
-    const e = new Error('Todos los proveedores con clave están en cooldown. Cargá otra API Key o esperá ' + coolTxt(secs) + '.');
+    const e = new Error('Todos los proveedores con clave están en pausa por un límite temporal de la API' + (ultimoLimite && ultimoLimite.detalle ? ' (último mensaje: ' + String(ultimoLimite.detalle).slice(0, 160) + ')' : '') + '. Esperá ' + coolTxt(secs) + ' o cargá otra API Key. (Este aviso no consultó al servidor.)');
     e.rate = true; e.cooldownAll = true; e.secs = secs;
     if(ultimoLimite) Object.assign(e, ultimoLimite);      /* el motivo del ultimo 429 real no se pierde detras del "todos en cooldown" */
     return e;
@@ -45776,8 +45686,8 @@ document.addEventListener('DOMContentLoaded', init);
       toast(okCount + ' día(s) generados ✔' + (dang ? ' · revisá las alertas' : ''));
     }catch(err){
       log('✖ ' + esc(err.message || String(err)), 'err');
-      if(err.rate || /cooldown|429|503|quota/i.test(err.message || '')){
-        log('Cuota agotada. Tres salidas: 1) cambiá de proveedor con los botones de arriba — cada uno tiene su cuota propia; ' +
+      if(err.rate){
+        log('La API pidió una pausa o llegó al límite. Tres salidas: 1) cambiá de proveedor con los botones de arriba — cada uno tiene su cuota propia; ' +
             '2) generá de a un día en vez de la semana completa; 3) armá el bloque a mano y usá 🪄 Autocompletar Parámetros, que trabaja local y sin API.', 'warn');
         log('<button type="button" class="btn sm gold" data-aikey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>', 'warn');
       } else if(/Failed to fetch|NetworkError/i.test(err.message || '')){
@@ -45807,7 +45717,9 @@ document.addEventListener('DOMContentLoaded', init);
       i.type = i.type === 'password' ? 'text' : 'password';
     });
     $('#cfgSave').addEventListener('click', () => {
+      const modeloEscrito = $('#cfgModel').value.trim();
       readCfgForm(); saveAI(); paintProviders(); paintDot();
+      if(modeloEscrito && modeloEscrito !== AI.models[AI.provider]){ closeModal('mCfg'); return; }      /* el modelo no era valido: ya se avisó cuál se usó, ese aviso no se pisa */
       toast(hasKey() ? 'Configuración guardada ✔' : 'Guardado (sin clave para ' + PROV[AI.provider].lb + ')', hasKey() ? '' : 'warn');
       closeModal('mCfg');
     });
@@ -45831,8 +45743,10 @@ document.addEventListener('DOMContentLoaded', init);
         toast('Conexión OK ✔');
       }catch(err){
         if(err.rate){ setCooldown(err.prov, err.secs); }
+        const titulo = err.rate ? (err.fatal ? 'Cuota o saldo de la cuenta agotados (HTTP ' + (err.status || 429) + ')' : 'Límite temporal del servidor (HTTP ' + (err.status || 429) + ') · pausa ' + coolTxt(err.secs))
+          : (err.status ? 'Error del servidor (HTTP ' + err.status + ')' : 'No se pudo conectar');
         $('#cfgStatus').innerHTML = '<div class="alert ' + (err.rate ? 'warn' : 'danger') + '" style="padding:9px 12px"><span class="ic">' + (err.rate ? '⏳' : '⛔') + '</span><div><b>' +
-          (err.rate ? 'Cuota agotada · cooldown ' + coolTxt(err.secs) : 'No se pudo conectar') + '</b>' + esc(String(err.message || err).slice(0, 200)) + '</div></div>';
+          esc(titulo) + '</b>' + esc(String(err.message || err).slice(0, 320)) + '</div></div>';
       }finally{
         b.disabled = false; b.innerHTML = '🔌 Probar conexión';
       }
@@ -76882,8 +76796,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   var reanudarDias = [];                                          /* dias (indices) que quedaron sin generar: los retoma el boton "Continuar" */
   var pausaDias = PAUSA_DIAS;                                  /* pausa entre dias: sube sola si la API ya pidio esperar */
   var ctl = { esperando: false, saltar: false, detener: false };
-  function esCuota(err){ return !!err && (err.cooldownAll || err.rate || /cooldown|429|cuota|quota|rate.?limit|saturad|overloaded/i.test(String(err.message || ''))); }
-  function esClave(err){ return !!err && /API Key|clave|401|403|invalid|permission|no hay api/i.test(String(err.message || '')); }
+  function esCuota(err){ return !!err && !!(err.cooldownAll || err.rate); }      /* solo los limites reales (429 / 503 / 529) estructurados por la capa de IA; un texto que mencione "quota" no alcanza */
+  function esClave(err){ return !!err && (err.status === 401 || err.status === 403 || /^No hay API Key/i.test(String(err.message || ''))); }
   function setBtn(html){
     estadoBtn = html || '';
     var b = $q('gsRun'); if(b && corriendo){ b.disabled = true; b.innerHTML = estadoBtn || '<span class="gs-spin"></span> Generando…'; }
