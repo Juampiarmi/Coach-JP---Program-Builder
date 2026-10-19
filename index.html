@@ -17785,8 +17785,66 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     myoreps: { pill: 'SERIE ACTIVACI\\u00d3N', icono: '\\u26a1', texto: 'Protocolo Myo-reps: 3 a 5 mini-sets al fallo t\\u00e9cnico (RIR 0) con 5 respiraciones de pausa.', ph: '4 mini-sets completados' },
     dropset: { pill: 'CARGA INICIAL', icono: '\\ud83d\\udcc9', texto: 'Protocolo Drop Set: Descarga inmediata (-20% a -25%) al fallo sin descanso.', ph: '2 bajadas hasta 20kg' }
   };
+  /* DROP SET: tres tarjetas en secuencia (la serie principal y dos bajadas), cada una con su peso x repeticiones al fallo y su check. Reusa la fila
+     nativa (data-set-key / .jp-input-native / .jp-btn-check-native): mismos listeners, mismo setLoadField(), mismo tonelaje. Claves: slot 1 (la de siempre,
+     los registros viejos se conservan), 'd1' y 'd2'. El peso de cada bajada se sugiere solo (-20% de la tarjeta anterior) como placeholder. */
+  function dropRedondeoSB(v){ return Math.round(v * 0.8 * 2) / 2; }
+  function renderRegistroDropsetSB(weekIdx, dayId, blockId, exIdx, unidadSec, refSemanaAnterior){
+    unidadSec = unidadSec || 'reps';
+    var pasos = [
+      { idx: 1,    n: 1, lb: 'SERIE PRINCIPAL',      sub: 'al fallo' },
+      { idx: 'd1', n: 2, lb: '1\\u00aa BAJADA \\u00b7 DROP 1', sub: '-20% del peso \\u00b7 al fallo' },
+      { idx: 'd2', n: 3, lb: '2\\u00aa BAJADA \\u00b7 DROP 2', sub: '-20% otra vez \\u00b7 al fallo' }
+    ];
+    var base = 0, html = '<div class="jp-set-tracker-native jp-set-tracker-tecnica jp-drop-tracker">';
+    pasos.forEach(function(p, i){
+      var key = getLoadKey(weekIdx, dayId, blockId, exIdx, p.idx);
+      var ld = getLoad(key);
+      var prevKg = null, prevSec = null;
+      if(refSemanaAnterior && weekIdx > 0){
+        var pl = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, p.idx));
+        if(pl.kg != null && pl.kg !== '') prevKg = pl.kg;
+        if(pl.reps != null && pl.reps !== '') prevSec = pl.reps;
+      }
+      var kgVal = ld.kg != null ? ld.kg : '';
+      var secVal = ld.reps != null ? ld.reps : '';
+      var kgPh = '\\u2014';
+      if(kgVal === ''){
+        if(i > 0 && base > 0) kgPh = String(dropRedondeoSB(base));
+        else if(prevKg != null) kgPh = String(prevKg);
+      }
+      var secPh = (secVal === '' && prevSec != null) ? String(prevSec) : '\\u2014';
+      var kgNum = parseFloat(String(kgVal).replace(',', '.'));
+      base = kgNum > 0 ? kgNum : (parseFloat(kgPh) || 0);
+      html += '<div class="jp-drop-card" data-drop-step="' + p.n + '"' + (i === pasos.length - 1 ? ' data-drop-last="1"' : '') + '>' +
+          '<div class="jp-drop-cap"><b>' + p.n + '</b> ' + p.lb + ' <small>' + p.sub + '</small></div>' +
+          '<div class="jp-set-row-native' + (ld.done ? ' completed' : '') + '" data-set-key="' + key + '">' +
+            '<div class="jp-set-inputs-group">' +
+              '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-primary" placeholder="' + kgPh + '" value="' + escSB(kgVal) + '" />' +
+              '<span class="jp-unit">kg</span>' +
+              '<span class="jp-sep">\\u00d7</span>' +
+              '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-secondary" placeholder="' + secPh + '" value="' + escSB(secVal) + '" />' +
+              '<span class="jp-unit">' + unidadSec + '</span>' +
+              '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar ' + p.lb + ' completada">\\u2713</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    });
+    return html + '<div class="jp-drop-nota">Sin descanso entre bajadas: el reloj arranca al marcar la \\u00faltima.</div></div>';
+  }
+  /* al escribir el peso de una tarjeta, la sugerencia de las siguientes se recalcula (-20% de la anterior) */
+  function jpDropSugerirSB(tr){
+    var base = 0;
+    tr.querySelectorAll('.jp-drop-card').forEach(function(c, i){
+      var kg = c.querySelector('.jp-val-primary'); if(!kg) return;
+      var v = parseFloat(String(kg.value).replace(',', '.'));
+      if(i > 0 && !kg.value && base > 0) kg.placeholder = String(dropRedondeoSB(base));
+      base = v > 0 ? v : (parseFloat(kg.placeholder) || 0);
+    });
+  }
   function renderRegistroTecnicaUnicaSB(weekIdx, dayId, blockId, exIdx, tecnica, unidadSec, refSemanaAnterior){
     unidadSec = unidadSec || 'reps';
+    if(tecnica === 'dropset') return renderRegistroDropsetSB(weekIdx, dayId, blockId, exIdx, unidadSec, refSemanaAnterior);
     var proto = PROTOCOLO_TECNICA_SB[tecnica];
     var key = getLoadKey(weekIdx, dayId, blockId, exIdx, 1);
     var ld = getLoad(key);
@@ -18656,11 +18714,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     const tituloBloqueM = String(block.title || '').match(/^(.*?)\\s*\\(([^)]+)\\)\\s*$/);
     const tituloBloquePrincipal = tituloBloqueM ? (tituloBloqueM[1].trim() || block.title) : (block.title || '');
     const tituloBloqueEnfasis = tituloBloqueM ? tituloBloqueM[2].trim() : '';
+    /* cabecera limpia: [ BIOMECANICA APLICADA · FUERZA ] // 22 MIN. El titulo grande repetia la categoria: queda en el DOM (lo usa el bloque plegado y
+       "Bloque completado") pero se oculta con CSS. El tiempo sale del "(22 MIN)" del titulo o de la duracion estimada del bloque. */
+    const mMinT = tituloBloqueEnfasis.match(/^(\\d+)\\s*MIN/i), minutosTag = mMinT ? mMinT[1] : (duracionEstimada || '');
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
-        '<div class="jp-sb-tag">[ BIOMEC&Aacute;NICA APLICADA &middot; ' + tagCategoriaSB(block, esCalentamiento) + ' ]</div>' +
+        '<div class="jp-sb-tag">[ BIOMEC&Aacute;NICA APLICADA &middot; ' + tagCategoriaSB(block, esCalentamiento) + ' ]' + (minutosTag ? ' <span class="jp-sb-tmin">// ' + minutosTag + ' MIN</span>' : '') + '</div>' +
         (block.ocultaTituloTablero ? '' : tituloBloqueHtmlSB(tituloBloquePrincipal)) +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
-        (duracionEstimada ? '<div class="jp-sb-duracion">\\u23f1 TIEMPO ESTIMADO: ' + duracionEstimada + ' MINUTOS</div>' : '') +
         filas + chipsVideoSB(videosBloque, busquedasVid) +
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T\\u00c9CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
@@ -18714,6 +18774,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const row = el.closest('.jp-set-row-native'); if(!row) return;
       const key = row.dataset.setKey; if(!key) return;
       setLoadField(key, esKg ? 'kg' : 'reps', el.value);
+      if(esKg){ const trDrop = row.closest('.jp-drop-tracker'); if(trDrop) jpDropSugerirSB(trDrop); }
       return;
     }
     /* directiva ("Compilación estructurada de Myo-Reps") -- cada input
@@ -18781,6 +18842,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          él, jpArrancarDescansoSetNative()/descansoDe() caían siempre al
          fallback genérico (state.restSec) e ignoraban el "Rest Xs" que el
          coach prescribió línea por línea. */
+      const dropCard = btn.closest('.jp-drop-card');      /* drop set: sin descanso entre bajadas, el reloj arranca con la ultima tarjeta */
       const exWrap = btn.closest('.jp-sb-ex, .jp-sb-subex');
       const restOverride = exWrap ? (exWrap.dataset.restSec === '0' ? -1 : (parseInt(exWrap.dataset.restSec, 10) || 0)) : 0;   /* -1 = "Rest 0s": sin descanso */
       /* directiva maestra ("Botonera rápida de ajuste en descanso") -- la
@@ -18793,7 +18855,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const nextRow = row.nextElementSibling;
       window.__jpRestKgInput = (nextRow && nextRow.classList && nextRow.classList.contains('jp-set-row-native'))
         ? nextRow.querySelector('.jp-val-primary') : null;
-      if(bl && typeof window.jpArrancarDescansoSetNative === 'function') window.jpArrancarDescansoSetNative(bl, restOverride);
+      if(bl && typeof window.jpArrancarDescansoSetNative === 'function' && !(dropCard && dropCard.getAttribute('data-drop-last') !== '1')) window.jpArrancarDescansoSetNative(bl, restOverride);
     } else {
       try{ beepSetCheck(false); }catch(err){}
     }
@@ -19204,13 +19266,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var entries;
       try{ entries = window.parsearPizarraSB(lineasBloque); }catch(e){ return; }
       entries.forEach(function(entry, idx){
-        if(entry.tipo === 'simple' && entry.sets){
+        if(entry.tipo === 'simple' && (entry.sets || entry.tecnica === 'dropset')){
           var setsTxt = [];
-          for(var i = 1; i <= entry.sets; i++){
+          for(var i = 1; i <= (entry.sets || 1); i++){
             var ld = getLoad(getLoadKey(weekIdx, day.id, block.id, 'e' + idx, i));
             if(ld && ld.done && numJP(ld.reps) > 0){
               setsTxt.push(lineaSetWA(i, ld));
             }
+          }
+          if(entry.tecnica === 'dropset'){
+            ['d1', 'd2'].forEach(function(ds, di){
+              var ldd = getLoad(getLoadKey(weekIdx, day.id, block.id, 'e' + idx, ds));
+              if(ldd && ldd.done && numJP(ldd.reps) > 0) setsTxt.push('  \\u2022 Drop ' + (di + 1) + ': ' + (numJP(ldd.kg) > 0 ? fmtJP(numJP(ldd.kg)) + ' kg \\u00d7 ' : '') + fmtJP(numJP(ldd.reps)) + ' reps');
+            });
           }
           if(setsTxt.length) out.push('*' + entry.titulo + '*:\\n' + setsTxt.join('\\n'));
         } else if(entry.tipo === 'biserie'){
@@ -42236,6 +42304,24 @@ html body.cf-disc .jp-done-btn.jp-done-foot.on, html body.cf-disc .jp-close-cta.
 /* celeste tactico atenuado (#00B4D8) en las etiquetas superiores de categoria: [ BIOMECANICA APLICADA · FUERZA ] / [ CROSSFIT · ... ] */
 html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-tag-lb, html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-tag{ color:#00B4D8 !important; }
 html body.cf-disc .jp-cf-tag, html body.cf-disc .jp-cf-tag .jp-tag-lb{ color:#00B4D8 !important; }
+/* ---- cabecera de bloque limpia: etiqueta + tiempo, sin el titulo grande repetido (solo se ve con el bloque plegado) ---- */
+html body .jp-sb-board > .jp-sb-title, html body .jp-sb-board > .jp-block-emphasis{ display:none !important; }
+html body .block.jp-fold .jp-sb-board > .jp-sb-title, html body .block.jp-fold .jp-sb-board > .jp-block-emphasis{ display:block !important; }
+.jp-sb-tmin{ white-space:nowrap; opacity:.85; letter-spacing:.14em; }
+/* la etiqueta + el tiempo no se cortan en pantallas angostas: si no entran juntos, el tiempo baja de renglon entero */
+html body .jp-sb-board .jp-tag-row .jp-tag-lb{ white-space:normal !important; flex:1 1 auto !important; min-width:0 !important; overflow:visible !important; }
+html body .jp-sb-board .jp-tag-row{ align-items:flex-start; }
+/* ---- drop set: tarjetas secuenciales ---- */
+.jp-drop-tracker{ gap:0 !important; margin-top:10px; }
+.jp-drop-card{ position:relative; }
+.jp-drop-card + .jp-drop-card{ margin-top:24px; }
+.jp-drop-card + .jp-drop-card::before{ content:'\\25BC  SIN DESCANSO'; position:absolute; top:-19px; left:0; right:0; text-align:center; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.18em; color:#FF5500; }
+.jp-drop-cap{ display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px; margin:0 0 6px 2px; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10.5px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:#00B4D8; }
+.jp-drop-cap b{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:#FF5500; color:#0F0F0F; font-size:10px; letter-spacing:0; }
+.jp-drop-cap small{ flex:1 0 100%; padding-left:26px; color:#8A8A8A; font-size:9.5px; letter-spacing:.08em; text-transform:none; font-weight:500; margin-top:-2px; }
+.jp-drop-card > .jp-set-row-native{ border-left:3px solid #FF5500; justify-content:center; }
+.jp-drop-card > .jp-set-row-native.completed{ border-left-color:#10B981; }
+.jp-drop-nota{ margin-top:10px; text-align:center; font-size:.68rem; color:#8A8A8A; letter-spacing:.04em; }
 /* BRANDPASS_CF:END */
 </style>
 <script id="jpHudTacticoJs">
