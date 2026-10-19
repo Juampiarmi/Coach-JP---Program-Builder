@@ -44872,6 +44872,14 @@ document.addEventListener('DOMContentLoaded', init);
      (cuota diaria, sin saldo, modelo sin cupo): ahi reintentar no sirve. Solo se usan señales estrictas: el texto "exceeded your current quota"
      lo traen TODOS los 429 de Gemini, por eso no se usa. */
   let ultimoLimite = null;
+  /* cuota diaria agotada en un modelo de Google: se prueba el siguiente de la cadena y se recuerda (en memoria, 6 h) que ese modelo no tiene cupo */
+  const CADENA_GOOGLE = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.7-flash', 'gemini-3.8-flash'];
+  const modelosAgotados = {};
+  const modeloAgotado = m => !!modelosAgotados[m] && (Date.now() - modelosAgotados[m]) < 6 * 3600 * 1000;
+  function avisarCambioModelo(prov, de, a){
+    try{ console.info('[CoachAI] Cuota diaria agotada en ' + de + ': se cambió a ' + a); }catch(e){}
+    try{ document.dispatchEvent(new CustomEvent('coachai:modelo', { detail: { prov: prov, de: de, a: a } })); }catch(e){}
+  }
   function analizarLimite(raw){
     let msg = '', det = '', code = '';
     try{ const j = JSON.parse(raw), er = (j && j.error) || (Array.isArray(j) && j[0] && j[0].error) || {}; msg = String(er.message || er.type || ''); det = JSON.stringify(er.details || ''); code = String(er.code || '') + ' ' + String(er.type || ''); }catch(e){ msg = String(raw || ''); }
@@ -44890,6 +44898,8 @@ document.addEventListener('DOMContentLoaded', init);
        un modelo EXACTO sin tocar la configuración global guardada en
        AI.models[prov] -- opts.model tiene prioridad si viene informado. */
     const model = (opts && opts.model) || AI.models[prov] || cfg.model;
+    let modeloAct = model;
+    if(prov === 'google' && !(opts && opts.model) && modeloAgotado(model)){ const alt0 = CADENA_GOOGLE.find(m => !modeloAgotado(m)); if(alt0) modeloAct = alt0; }
     /* opts.maxTokens permite a un llamador puntual (ej. el plan de nutrición,
        cuyo JSON de respuesta es mucho más largo que el resto) pedir más margen
        que el configurado en el modal de IA, sin tocar ese ajuste global. */
@@ -44905,7 +44915,7 @@ document.addEventListener('DOMContentLoaded', init);
       };
       body = { model: model, max_tokens: maxTok, system: system, messages: [{ role:'user', content: user }] };
     } else if(prov === 'google'){
-      url = cfg.url + encodeURIComponent(model) + ':generateContent';
+      url = cfg.url + encodeURIComponent(modeloAct) + ':generateContent';
       headers = { 'content-type': 'application/json', 'x-goog-api-key': keyOf(prov) };
       body = {
         system_instruction: { parts: [{ text: system }] },
@@ -45001,6 +45011,24 @@ document.addEventListener('DOMContentLoaded', init);
        correctamente acá, pero no limpiaba un cooldown viejo que hubiera
        quedado pegado de un 429 anterior, así que un coach podía corregir
        su modelo/clave y seguir viendo "en cooldown" un buen rato igual. */
+    /* FALLBACK DE MODELO (Google): cuota diaria agotada o "limit: 0" en el modelo elegido -> se reintenta con el siguiente modelo estandar
+       de la cadena (cada modelo tiene su propio cupo). Transparente: el generador deja un registro en su log. Un 429 de VELOCIDAD no cambia de modelo. */
+    if(prov === 'google' && res.status === 429 && !(opts && opts.model) && analizarLimite(raw).fatal){
+      modelosAgotados[modeloAct] = Date.now();
+      for(const alt of CADENA_GOOGLE.filter(m => m !== modeloAct && !modeloAgotado(m))){
+        url = cfg.url + encodeURIComponent(alt) + ':generateContent';
+        ({ res, raw } = await enviar(body));
+        if(res.status === 400 && body.generationConfig && body.generationConfig.thinkingConfig){
+          const sinTh = JSON.parse(JSON.stringify(body)); delete sinTh.generationConfig.thinkingConfig;
+          ({ res, raw } = await enviar(sinTh));
+        }
+        if(res.ok || (res.status !== 404 && !(res.status === 429 && analizarLimite(raw).fatal))){
+          if(res.ok) avisarCambioModelo(prov, modeloAct, alt); modeloAct = alt;      /* aceptado (o limite de velocidad: lo maneja el bloque de abajo con este modelo) */
+          break;
+        }
+        if(res.status === 429) modelosAgotados[alt] = Date.now();      /* tampoco tiene cupo diario: sigue con el proximo */
+      }
+    }
     if(res.status === 429 || res.status === 529 || res.status === 503){
       /* directiva crítica (2026-09) -- payload exacto del error de cuota en
          consola (status + cuerpo crudo de la respuesta), para que el coach o
@@ -45019,7 +45047,7 @@ document.addEventListener('DOMContentLoaded', init);
       secs = Math.min(COOL_MAX, Math.max(10, secs || 12));      /* pausa de 10 a 15 s */
       const eRate = RateErr(prov, secs, 'HTTP ' + res.status + ' · cuota agotada en ' + PROV[prov].lb);
       eRate.real = realSecs; eRate.fatal = lim.fatal; eRate.diaria = lim.diaria;
-      eRate.detalle = PROV[prov].lb + ' (' + model + ') · HTTP ' + res.status + (lim.texto ? ': ' + lim.texto : '');
+      eRate.detalle = PROV[prov].lb + ' (' + modeloAct + ') · HTTP ' + res.status + (lim.texto ? ': ' + lim.texto : '');
       ultimoLimite = { real: eRate.real, fatal: eRate.fatal, diaria: eRate.diaria, detalle: eRate.detalle };
       throw eRate;
     }
@@ -76178,6 +76206,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     new MutationObserver(function(){ clearTimeout(tmObs); tmObs = setTimeout(asegurarBarras, 150); }).observe(document.body, { childList: true, subtree: true });
   }
 
+  document.addEventListener('coachai:modelo', function(e){
+    var d = (e && e.detail) || {};
+    log('🔀 Cuota diaria agotada en <b>' + esc2(d.de) + '</b> (Google AI Studio): se cambió automáticamente al modelo de respaldo <b>' + esc2(d.a) + '</b> y se reintentó el pedido.', 'o');
+  });
   document.addEventListener('click', function(e){
     var t = e.target; if(!t || !t.closest) return;
     if(t.closest('#gsRun')){ e.preventDefault(); generar(); return; }
