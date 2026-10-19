@@ -44868,6 +44868,20 @@ document.addEventListener('DOMContentLoaded', init);
     e.rate = true; e.prov = prov; e.secs = secs;
     return e;
   }
+  /* motivo real de un 429/503/529: texto del proveedor, espera que pidio (reintentar antes es otro 429) y si es un limite de CUENTA
+     (cuota diaria, sin saldo, modelo sin cupo): ahi reintentar no sirve. Solo se usan señales estrictas: el texto "exceeded your current quota"
+     lo traen TODOS los 429 de Gemini, por eso no se usa. */
+  let ultimoLimite = null;
+  function analizarLimite(raw){
+    let msg = '', det = '', code = '';
+    try{ const j = JSON.parse(raw), er = (j && j.error) || (Array.isArray(j) && j[0] && j[0].error) || {}; msg = String(er.message || er.type || ''); det = JSON.stringify(er.details || ''); code = String(er.code || '') + ' ' + String(er.type || ''); }catch(e){ msg = String(raw || ''); }
+    msg = msg.replace(/\s+/g, ' ').trim();
+    let real = 0, m = null;
+    if((m = (msg + ' ' + det).match(/(?:try again in|retry in|retryDelay"?[:\s"]+)\s*([\d.]+)\s*(ms|s|m)?/i))){ real = parseFloat(m[1]) || 0; if(m[2] === 'ms') real = real / 1000; else if(m[2] === 'm') real = real * 60; }
+    const diaria = /PerDay/i.test(det) || /GenerateRequestsPerDay/i.test(msg);
+    const sinCuota = /insufficient_quota/i.test(code + ' ' + msg) || /limit:\s*0\b/.test(msg + ' ' + det) || /credit balance is too low/i.test(msg);
+    return { texto: msg.slice(0, 240), real: Math.ceil(real), fatal: diaria || sinCuota, diaria: diaria };
+  }
   async function callProvider(prov, system, user, opts){
     if(!hasKey(prov)) throw new Error('No hay API Key de ' + PROV[prov].lb + '.');
     const cfg = PROV[prov];
@@ -45001,8 +45015,13 @@ document.addEventListener('DOMContentLoaded', init);
       }
       /* un 429 / 503 / 529 es un limite temporal de VELOCIDAD (RPM/TPM) o saturacion del proveedor: pausa corta de 10 a 20 s y reintento automatico.
          Nunca se lo interpreta como agotamiento diario (el texto de la respuesta suele nombrar cuotas diarias aunque lo que se pisó es el minuto). */
+      const lim = analizarLimite(raw), realSecs = Math.max(secs || 0, lim.real || 0);
       secs = Math.min(COOL_MAX, Math.max(10, secs || 12));      /* pausa de 10 a 15 s */
-      throw RateErr(prov, secs, 'HTTP ' + res.status + ' · cuota agotada en ' + PROV[prov].lb);
+      const eRate = RateErr(prov, secs, 'HTTP ' + res.status + ' · cuota agotada en ' + PROV[prov].lb);
+      eRate.real = realSecs; eRate.fatal = lim.fatal; eRate.diaria = lim.diaria;
+      eRate.detalle = PROV[prov].lb + ' (' + model + ') · HTTP ' + res.status + (lim.texto ? ': ' + lim.texto : '');
+      ultimoLimite = { real: eRate.real, fatal: eRate.fatal, diaria: eRate.diaria, detalle: eRate.detalle };
+      throw eRate;
     }
     if(!res.ok){
       let msg = raw;
@@ -45057,6 +45076,7 @@ document.addEventListener('DOMContentLoaded', init);
   function cooldownAllErr(secs){
     const e = new Error('Todos los proveedores con clave están en cooldown. Cargá otra API Key o esperá ' + coolTxt(secs) + '.');
     e.rate = true; e.cooldownAll = true; e.secs = secs;
+    if(ultimoLimite) Object.assign(e, ultimoLimite);      /* el motivo del ultimo 429 real no se pierde detras del "todos en cooldown" */
     return e;
   }
   /* segundos que faltan para que se libere el primer proveedor con clave (0 si alguno esta disponible o no hay claves) */
@@ -75771,9 +75791,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   function ctaClave(){ return '<br><button type="button" class="btn gs-key" data-gskey="1">🔑 CAMBIAR / CONFIGURAR API KEY</button>'; }
   /* limite diario / cooldown largo: un solo aviso claro, sin reintentos ni lineas repetidas */
-  function limiteApi(){
+  function limiteApi(err){
     var lg = $q('gsLog'); if(lg){ lg.querySelectorAll('.gs-spin').forEach(function(x){ x.remove(); }); lg.classList.add('on'); }
-    log('⏳ El proveedor sigue limitando la <b>frecuencia de pedidos</b> (HTTP 429) después de ' + REINTENTOS + ' intentos (2 reintentos con pausas de 20-25 s). Frené la generación para no empeorar el bloqueo: lo ya generado quedó guardado. Suele resolverse en uno o dos minutos: tocá <b>Continuar generando</b> en un rato o probá con <b>otra API Key</b>.' + ctaClave(), 'w');
+    var motivo = (err && err.detalle) ? '<br><small>Respuesta del proveedor: «' + esc2(err.detalle) + '»</small>' : '';
+    if(err && err.fatal){
+      log('⛔ La API rechazó el pedido por un <b>límite de la cuenta</b> (' + (err.diaria ? 'cuota diaria agotada' : (err.real > 60 ? 'te pide esperar ' + err.real + ' s' : 'sin cuota, saldo o cupo para este modelo')) + '), no por velocidad: reintentar enseguida no sirve. Lo ya generado quedó guardado. Revisá el plan/saldo de tu proveedor, esperá a que se renueve la cuota o usá <b>otra API Key</b>.' + motivo + ctaClave(), 'w');
+      toast('La API rechazó el pedido por límite de cuenta: revisá cuota/saldo o cambiá de API Key', 'warn');
+      return;
+    }
+    log('⏳ El proveedor sigue limitando la <b>frecuencia de pedidos</b> (HTTP 429) después de ' + REINTENTOS + ' intentos (2 reintentos con pausas de 20-25 s). Frené la generación para no empeorar el bloqueo: lo ya generado quedó guardado. Suele resolverse en uno o dos minutos: tocá <b>Continuar generando</b> en un rato o probá con <b>otra API Key</b>.' + motivo + ctaClave(), 'w');
     toast('La API está limitando la velocidad: reintentá en un minuto o cambiá de API Key', 'warn');
   }
   /* micro-botones junto al aviso de espera: cambiar de clave, saltear el dia o detener (se conserva lo ya generado) */
@@ -75801,9 +75827,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         return await window.CoachAI.generarTexto(usuarioTxt, sistemaTxt, opts);
       }catch(err){
         if(!esCuota(err) || intento >= REINTENTOS) throw err;
-        var seg = Math.max(ESPERAS_429[intento - 1] || 24, Math.ceil(err.secs || 0) + 1);      /* bloqueo temporal por alta frecuencia: pausa corta (nunca menos que el cooldown real que falta) */
+        if(err.fatal || (err.real || 0) > 60) throw err;      /* limite de cuenta (diario / sin saldo) o espera enorme: reintentar solo empeora el bloqueo */
+        var seg = Math.max(ESPERAS_429[intento - 1] || 24, Math.ceil(err.secs || 0) + 1, err.real ? Math.ceil(err.real) + 2 : 0);      /* bloqueo temporal por alta frecuencia: pausa corta, nunca menos que la espera que pidio el proveedor */
         pausaDias = Math.min(PAUSA_TOPE, pausaDias + PAUSA_EXTRA);      /* la API pidio aire: los proximos dias se espacian mas */
-        log('⏳ La API pidió bajar la frecuencia de pedidos (DÍA ' + (dia + 1) + '): pausa de ' + seg + 's y reintento automático (intento ' + (intento + 1) + '/' + REINTENTOS + '). ' + acciones(true), 'w');
+        log('⏳ La API pidió bajar la frecuencia de pedidos (DÍA ' + (dia + 1) + '): pausa de ' + seg + 's y reintento automático (intento ' + (intento + 1) + '/' + REINTENTOS + ').' + (intento === 1 && err.detalle ? '<br><small>Motivo: «' + esc2(err.detalle) + '»</small> ' : ' ') + acciones(true), 'w');
         await esperar(seg + 1, 'Reintentando en', '(' + (intento + 1) + '/' + REINTENTOS + ')');
         if(ctl.detener){ var e1 = new Error('detenido'); e1.detenido = true; throw e1; }
         if(ctl.saltar){ var e2 = new Error('salteado'); e2.saltado = true; throw e2; }
@@ -75923,7 +75950,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(errFinal) throw errFinal;
     }catch(err){
       if(esCuota(err)){
-        limiteApi();
+        limiteApi(err);
         if(textos.length) log('Los días ya generados se cargaron; podés repetir el resto más tarde.', 'o');
       } else {
         if(!esCuota(err)) console.warn('generador de sesión', err);
