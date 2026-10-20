@@ -19410,7 +19410,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        a 1-240 min para no mostrar un número sin sentido). */
     const iniSesion = (state.session && state.session.inicio) || 0;
     const minSesion = iniSesion ? Math.round((Date.now() - iniSesion) / 60000) : 0;
-    const minSesionOk = (minSesion >= 1 && minSesion <= 150) ? minSesion : 0;
+    const tSesCF = (typeof window.jpTiempoSesion === 'function') ? window.jpTiempoSesion() : null;
+    const minSesionOk = (tSesCF && tSesCF.min > 0) ? tSesCF.min : ((minSesion >= 1 && minSesion <= 90) ? minSesion : 0);
     const statsHtml = esCF
       ? ('<div class="sc-stat"><div class="v">' + (minSesionOk || '—') + '</div><div class="k">min de sesión</div></div>' +
          '<div class="sc-stat"><div class="v">' + ids.length + '</div><div class="k">bloques completados</div></div>' +
@@ -34648,7 +34649,14 @@ body:not(.cf-disc) .block .set-row.set-row-done{
   function duracion(){
     if(window.COACH_DISCIPLINA === 'sports' && typeof window.CoachDuracionSesion === 'function'){
       var dd = window.CoachDuracionSesion();
-      if(dd && dd.min > 0) return (dd.estimada ? '~' : '') + (dd.min < 60 ? dd.min + ' min' : Math.floor(dd.min / 60) + ' h ' + (dd.min % 60) + ' min');
+      var ddMin = dd ? dd.min : 0;
+      try{ if(window.jpTiempoSesion) ddMin = Math.min(ddMin, window.jpTiempoSesion().tope); }catch(eT){}
+      if(dd && ddMin > 0) return (dd.estimada ? '~' : '') + (ddMin < 60 ? ddMin + ' min' : Math.floor(ddMin / 60) + ' h ' + (ddMin % 60) + ' min');
+    }
+    /* CrossFit: tiempo neto acotado a lo programado (el cronometro s.ini/s.fin medía de la primera a la última marca del día, con horas de por medio) */
+    if(window.COACH_DISCIPLINA !== 'sports' && typeof window.jpTiempoSesion === 'function'){
+      var tc = window.jpTiempoSesion();
+      if(tc && tc.min > 0) return (tc.estimado ? '~' : '') + (tc.min < 60 ? tc.min + ' min' : Math.floor(tc.min / 60) + ' h ' + (tc.min % 60) + ' min');
     }
     var k = claveSesion();
     var s = (state.session || {})[k];
@@ -43001,17 +43009,28 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
     return tot > 0 ? Math.round(tot + 5) : 0;
   };
   /* tiempo de la story: diferencia real entre la primera y la ultima marca de la sesion; si no es creible, la proyeccion prescripta */
-  window.jpMinutosSesion = function(activos){
+  /* TIEMPO NETO DE LA SESION (reporte de WhatsApp, resumen del dia y story): suma solo los tramos entre acciones registradas
+     (un hueco de mas de 30 min es una pausa y no cuenta), toma unicamente la ultima tanda de entrenamiento (un hueco de 2 h o mas
+     separa sesiones) y NUNCA supera lo programado del dia: tope = tiempo estimado por los bloques + 50 % de margen, entre 60 y 120 min.
+     Antes se restaba el primer toque del dia al momento de cerrar (inicio fijo, sin reinicio), asi que una sesion tocada a la manana
+     y cerrada a la noche reportaba 231 min. Devuelve { min, estimado, tope }; estimado = true cuando no hay registro creible y se usa lo programado. */
+  window.jpTiempoSesion = function(){
     var proy = 0; try{ proy = window.jpMinutosPrescriptos(); }catch(err){}
-    var m = ((state.session && state.session.marcasTiempo) || []).slice(), real = 0;
+    var tope = proy > 0 ? Math.min(120, Math.max(60, Math.round(proy * 1.5))) : 90;
+    var m = ((state.session && state.session.marcasTiempo) || []).slice().sort(function(a, b){ return a - b; }), real = 0;
     if(m.length > 1){
-      var desde = 0;
-      for(var j = 1; j < m.length; j++){ if(m[j] - m[j - 1] > 4 * 3600000) desde = j; }
-      real = Math.round((m[m.length - 1] - m[desde]) / 60000);
+      var desde = 0, j;
+      for(j = 1; j < m.length; j++){ if(m[j] - m[j - 1] >= 2 * 3600000) desde = j; }
+      for(j = desde + 1; j < m.length; j++){ var d = m[j] - m[j - 1]; if(d > 0 && d <= 30 * 60000) real += d; }
+      real = Math.round(real / 60000);
     }
-    if(real >= 5 && real <= 240 && (!proy || real >= proy * 0.5)) return real;
-    if(proy > 0) return proy;
-    return activos;
+    if(real >= 5 && (!proy || real >= proy * 0.5)) return { min: Math.min(real, tope), estimado: false, tope: tope };
+    return { min: proy > 0 ? Math.min(proy, tope) : 0, estimado: true, tope: tope };
+  };
+  window.jpMinutosSesion = function(activos){
+    var t = window.jpTiempoSesion();
+    if(t.min > 0) return t.min;
+    return Math.min(Math.max(0, activos || 0), t.tope);
   };
   /* cierre del dia con bloques pendientes: confirmacion antes de marcarlo */
   function mostrarConfirmDia(hechos, total, ok){
@@ -43246,17 +43265,15 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
   /* tiempo registrado; sin cronometro, la duracion estimada (real creible, o proyectada de la prescripcion, o de las series cargadas) */
   function fmtMinRep(m){ return m < 60 ? m + ' min' : Math.floor(m / 60) + 'h ' + ('0' + (m % 60)).slice(-2) + 'm'; }
   function duracion(){
+    var tN = null; try{ tN = window.jpTiempoSesion ? window.jpTiempoSesion() : null; }catch(e){}
+    var tope = tN ? tN.tope : 90;
     if(window.COACH_DISCIPLINA === 'sports' && typeof window.CoachDuracionSesion === 'function'){
       var dd = window.CoachDuracionSesion();
-      if(dd && dd.min > 0) return (dd.estimada ? '~' : '') + fmtMinRep(dd.min);
+      if(dd && dd.min > 0) return (dd.estimada ? '~' : '') + fmtMinRep(Math.min(dd.min, tope));
     }
-    var ini = (state.session && state.session.inicio) || 0, m = ini ? Math.round((Date.now() - ini) / 60000) : 0;
-    var proy0 = 0; try{ proy0 = window.jpMinutosPrescriptos ? window.jpMinutosPrescriptos() : 0; }catch(e){}
-    if(m >= 1 && m <= 240 && (!proy0 || m >= proy0 * 0.5)) return m < 60 ? m + ' min' : Math.floor(m / 60) + 'h ' + ('0' + (m % 60)).slice(-2) + 'm';
-    var est = 0;
-    try{ est = window.jpMinutosSesion ? window.jpMinutosSesion(0) : 0; }catch(e){}
-    if(!(est > 0)) est = Math.max(20, Object.keys(usadas).length * 3);
-    return '~' + est + ' min';
+    /* nunca el tiempo de pared desde el primer toque: tiempo neto entre acciones, acotado a lo programado del dia */
+    if(tN && tN.min > 0) return (tN.estimado ? '~' : '') + fmtMinRep(tN.min);
+    return '~' + Math.min(tope, Math.max(20, Object.keys(usadas).length * 3)) + ' min';
   }
   function reporteTexto(){
     var day = (typeof getCurrentDay === 'function') ? getCurrentDay() : null; if(!day) return '';
