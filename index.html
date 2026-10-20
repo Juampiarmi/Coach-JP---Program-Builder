@@ -37688,9 +37688,54 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:block; }
     var s = (Math.round(n * 100) / 100).toLocaleString('es-AR');
     return (mon && mon !== 'ARS') ? (mon + ' ' + s) : ('$ ' + s);
   }
+  function copiarTextoPago(t, listo){
+    function alt(){
+      try{
+        var ta = document.createElement('textarea'); ta.value = t; ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;font-size:16px';
+        document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, t.length);
+        var ok = document.execCommand('copy'); ta.remove(); listo(!!ok);
+      }catch(e){ listo(false); }
+    }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(function(){ listo(true); }, alt); }
+    else alt();
+  }
+  /* pago por transferencia: tarjeta con el monto exacto de la cuota, el alias de cobro y el titular, con copia al portapapeles en un toque */
+  function abrirPagoAlias(cfg){
+    var viejo = q('jpPagoModal'); if(viejo) viejo.remove();
+    var alias = String(cfg.payAlias || '').trim(); if(!alias) return;
+    var titular = String(cfg.payTitular || '').trim(), monto = fmtMontoPago(cfg.payMonto, cfg.payMoneda);
+    var tel = String(cfg.coachPhone || '').replace(/\\D/g, '');
+    var wa = tel ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent('Hola! Te envío el comprobante de la transferencia de mi cuota' + (monto ? ' (' + monto + ')' : '') + '. ' + (cfg.athleteName || '')) : '';
+    var ov = document.createElement('div'); ov.id = 'jpPagoModal'; ov.className = 'jp-pm';
+    ov.innerHTML = '<div class="jp-pm-card" role="dialog" aria-modal="true" aria-label="Pagar cuota por transferencia">' +
+      '<button type="button" class="jp-pm-x" data-pm="x" aria-label="Cerrar">\\u00d7</button>' +
+      '<div class="jp-pm-k">TRANSFERENCIA BANCARIA</div>' +
+      (monto ? '<div class="jp-pm-monto">' + escAcc(monto) + '</div><div class="jp-pm-sub">Monto exacto de tu cuota</div>'
+             : '<div class="jp-pm-sub">Consultá el monto de tu cuota con tu coach</div>') +
+      '<button type="button" class="jp-pm-alias" data-pm="copy" aria-label="Copiar alias"><span class="jp-pm-lb">ALIAS</span><b>' + escAcc(alias) + '</b></button>' +
+      (titular ? '<div class="jp-pm-tit"><span>TITULAR</span>' + escAcc(titular) + '</div>' : '') +
+      '<button type="button" class="jp-pm-copy" data-pm="copy">COPIAR ALIAS</button>' +
+      '<div class="jp-pm-hint">Copiá el alias, abrí tu app bancaria o billetera, elegí <b>Transferir</b>, pegalo e ingresá el monto. Después enviá el comprobante a tu coach.</div>' +
+      (wa ? '<a class="jp-pm-wa" href="' + escAcc(wa) + '" target="_blank" rel="noopener noreferrer">Enviar comprobante por WhatsApp</a>' : '') +
+      '</div>';
+    document.body.appendChild(ov);
+    var btn = ov.querySelector('.jp-pm-copy'), t0 = null;
+    ov.addEventListener('click', function(e){
+      var a = e.target.closest ? e.target.closest('[data-pm]') : null;
+      if(e.target === ov || (a && a.getAttribute('data-pm') === 'x')){ ov.remove(); return; }
+      if(!a || a.getAttribute('data-pm') !== 'copy') return;
+      copiarTextoPago(alias, function(ok){
+        try{ if(ok && navigator.vibrate) navigator.vibrate(25); }catch(e2){}
+        btn.classList.toggle('ok', ok);
+        btn.textContent = ok ? '\\u2713 ALIAS COPIADO' : 'MANTENÉ APRETADO EL ALIAS PARA COPIARLO';
+        clearTimeout(t0); t0 = setTimeout(function(){ btn.classList.remove('ok'); btn.textContent = 'COPIAR ALIAS'; }, 2400);
+      });
+    });
+  }
   function pintarPagoCta(info, cfg){
-    var url = String(cfg.payUrl || ''), box = q('jpPagoCta');
-    if(!/^https:\\/\\//i.test(url) || !info || info.estado === 'ok'){ if(box) box.remove(); return; }
+    var alias = String(cfg.payAlias || '').trim(), box = q('jpPagoCta');
+    if(!alias || !info || info.estado === 'ok'){ if(box) box.remove(); return; }
     var monto = fmtMontoPago(cfg.payMonto, cfg.payMoneda);
     if(!box){
       box = document.createElement('div'); box.id = 'jpPagoCta';
@@ -37699,7 +37744,8 @@ body:not(.cf-disc) .hdc-days-wrap .day-tab .day-dot{ display:block; }
     }
     box.className = 'jp-pago-cta ' + info.estado;
     box.innerHTML = '<span class="jp-pago-msg"><i></i>' + (info.estado === 'venc' ? 'VENCIDA' : 'VENCE') + ' \\u00b7 ' + escAcc(info.corta) + '</span>' +
-      '<a class="jp-pago-btn" href="' + escAcc(url) + '" target="_blank" rel="noopener noreferrer">\\ud83d\\udcb3 PAGAR CUOTA' + (monto ? ' \\u00b7 ' + escAcc(monto) : '') + '</a>';
+      '<button type="button" class="jp-pago-btn" id="jpPagoBtn">\\ud83d\\udcb3 PAGAR CUOTA' + (monto ? ' \\u00b7 ' + escAcc(monto) : '') + '</button>';
+    var b = q('jpPagoBtn'); if(b) b.onclick = function(){ abrirPagoAlias(cfg); };
   }
   function pintarPago(){
     var elDrawer = q('hdpPay'), elChip = q('hdcPayChip');
@@ -42436,8 +42482,26 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
 .jp-pago-msg{ display:inline-flex; align-items:center; gap:7px; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10px; font-weight:600; letter-spacing:.12em; color:#F5C518; }
 .jp-pago-cta.venc .jp-pago-msg{ color:#F0A08C; }
 .jp-pago-msg i{ flex:0 0 auto; width:7px; height:7px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; }
-.jp-pago-btn{ flex:0 0 auto; display:flex; align-items:center; justify-content:center; min-height:34px; padding:0 13px; border-radius:9px; text-decoration:none; white-space:nowrap; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.74rem; letter-spacing:.06em; color:#0A0A0A; background:linear-gradient(180deg,#FFE066,#F5C518 55%,#D6A500); box-shadow:0 3px 10px rgba(245,197,24,.25); }
+.jp-pago-btn{ border:0; cursor:pointer; -webkit-appearance:none; appearance:none; flex:0 0 auto; display:flex; align-items:center; justify-content:center; min-height:34px; padding:0 13px; border-radius:9px; text-decoration:none; white-space:nowrap; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.74rem; letter-spacing:.06em; color:#0A0A0A; background:linear-gradient(180deg,#FFE066,#F5C518 55%,#D6A500); box-shadow:0 3px 10px rgba(245,197,24,.25); }
 .jp-pago-btn:active{ transform:translateY(1px); filter:brightness(.95); }
+.jp-pm{ position:fixed; inset:0; z-index:100000; display:flex; align-items:flex-end; justify-content:center; padding:16px; background:rgba(0,0,0,.72); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); }
+@media (min-width:560px){ .jp-pm{ align-items:center; } }
+.jp-pm-card{ position:relative; width:100%; max-width:380px; padding:26px 22px 20px; border-radius:20px; text-align:center; background:linear-gradient(180deg,#171717,#0B0B0B); border:1px solid rgba(245,197,24,.38); box-shadow:0 24px 60px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.04) inset; color:#EFEFEF; }
+.jp-pm-x{ position:absolute; top:8px; right:8px; width:40px; height:40px; border:0; border-radius:50%; background:transparent; color:#8C8C8C; font-size:26px; line-height:1; cursor:pointer; }
+.jp-pm-k{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10px; font-weight:600; letter-spacing:.22em; color:#F5C518; }
+.jp-pm-monto{ margin-top:12px; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:2.3rem; letter-spacing:.02em; color:#fff; }
+.jp-pm-sub{ margin-top:2px; font-size:.78rem; color:#9A9A9A; }
+.jp-pm-alias{ display:flex; flex-direction:column; align-items:center; gap:3px; width:100%; margin-top:18px; padding:14px 10px; border-radius:14px; cursor:pointer; background:rgba(245,197,24,.07); border:1px dashed rgba(245,197,24,.55); color:#F5C518; -webkit-appearance:none; appearance:none; }
+.jp-pm-lb{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:9px; letter-spacing:.24em; color:#B8A24A; }
+.jp-pm-alias b{ font-family:'JetBrains Mono',ui-monospace,monospace; font-size:1.55rem; font-weight:700; letter-spacing:.04em; word-break:break-all; user-select:all; -webkit-user-select:all; }
+.jp-pm-tit{ margin-top:12px; font-size:.86rem; color:#DADADA; }
+.jp-pm-tit span{ display:block; margin-bottom:2px; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:9px; letter-spacing:.24em; color:#7E7E7E; }
+.jp-pm-copy{ width:100%; min-height:50px; margin-top:16px; border:0; border-radius:13px; cursor:pointer; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.92rem; letter-spacing:.1em; color:#0A0A0A; background:linear-gradient(180deg,#FFE066,#F5C518 55%,#D6A500); box-shadow:0 6px 18px rgba(245,197,24,.28); }
+.jp-pm-copy:active{ transform:translateY(1px); filter:brightness(.95); }
+.jp-pm-copy.ok{ background:linear-gradient(180deg,#7BE0A0,#3FB56B); box-shadow:0 6px 18px rgba(63,181,107,.3); }
+.jp-pm-hint{ margin-top:14px; font-size:.75rem; line-height:1.5; color:#8C8C8C; }
+.jp-pm-hint b{ color:#CFCFCF; }
+.jp-pm-wa{ display:block; margin-top:12px; padding:11px; border-radius:11px; text-decoration:none; font-size:.78rem; font-weight:700; letter-spacing:.04em; color:#EFEFEF; border:1px solid rgba(255,255,255,.14); }
 /* BRANDPASS_CF:END */
 </style>
 <script id="jpHudTacticoJs">
@@ -43946,10 +44010,12 @@ function buildProgramConfig(ath){
        alumno/a; el selector explícito es la única fuente de verdad. */
     genero: ath.genero || '',
     payDue: ath.payDue || '',
-    /* Mercado Pago: link de cobro + monto/moneda (solo si el link es valido); la app del alumno muestra "Pagar cuota" al vencer o estar proxima */
-    payUrl: (window.jpMpPago ? window.jpMpPago(ath).url : ''),
-    payMonto: (window.jpMpPago ? window.jpMpPago(ath).monto : 0),
-    payMoneda: (window.jpMpPago ? window.jpMpPago(ath).moneda : ''),
+    /* cobro por transferencia: alias + titular (Control Financiero) y la cuota exacta de la ficha (Arancel y Moneda); la app del alumno muestra
+       "Pagar cuota" al vencer o estar proxima, sin salir a ninguna pasarela */
+    payAlias: (window.jpPagoAlias ? window.jpPagoAlias().alias : 'juampiarmi'),
+    payTitular: (window.jpPagoAlias ? window.jpPagoAlias().titular : 'Juan Pablo Armiñana'),
+    payMonto: (parseFloat((ath.finanzas || {}).arancel) || 0),
+    payMoneda: ((ath.finanzas || {}).moneda || 'ARS'),
     /* directiva 13: estado de planificación + vigencia del ciclo (p.estado/
        p.vigenciaDesde/p.vigenciaHasta, ver plan()/newPlan()) -- viaja al
        alumno solo para pintar el micro-badge del header, nunca para
@@ -51959,10 +52025,21 @@ body{overflow-x:hidden}
       <select id="finMesSel" class="fin-mes-sel"></select>
     </div>
     <div class="fin-kpis" id="finKpis"></div>
-    <details class="fin-mp-cfg" id="finMpCfg">
-      <summary>🔗 Cobro online · Mercado Pago (todos los alumnos) <span class="fin-mp-badge" id="finMpGBadge"></span></summary>
+    <details class="fin-mp-cfg" id="finAliasCfg" open>
+      <summary>🏦 Cobro por transferencia · Alias (todos los alumnos) <span class="fin-mp-badge" id="finAliasBadge"></span></summary>
       <div class="fin-mp-cfg-b">
-        <div class="hint">Configurá <b>una sola vez</b> cómo cobran tus alumnos: la tarjeta <b>"Pagar cuota"</b> aparece sola en la app del alumno/a (Sports y CrossFit) cuando su cuota está próxima a vencer o vencida, con el Arancel de cada uno. Un link cargado en la ficha de un alumno/a tiene prioridad sobre esta configuración.</div>
+        <div class="hint">El botón <b>"Pagar cuota"</b> de la app del alumno/a (Sports y CrossFit) abre una tarjeta con este <b>alias</b>, el titular y el <b>Arancel</b> de su ficha, con botón <b>Copiar alias</b>. Aparece solo cuando la cuota está próxima a vencer o vencida. Después de cambiar el alias, reexportá los links de los alumnos.</div>
+        <label class="lb">Alias de cobro</label>
+        <input id="finAliasIn" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="30" placeholder="juampiarmi">
+        <label class="lb">Titular de la cuenta</label>
+        <input id="finAliasTit" type="text" autocomplete="off" maxlength="60" placeholder="Juan Pablo Armiñana">
+        <div class="hint fin-mp-est" id="finAliasRes"></div>
+      </div>
+    </details>
+    <details class="fin-mp-cfg" id="finMpCfg">
+      <summary>🔗 Mercado Pago (en desuso: el alumno/a ahora transfiere al alias) <span class="fin-mp-badge" id="finMpGBadge"></span></summary>
+      <div class="fin-mp-cfg-b">
+        <div class="hint"><b>En desuso:</b> los links de Mercado Pago ya no se muestran en la app del alumno/a, que paga por transferencia al alias de arriba. Esta configuración queda guardada por si se retoma.</div>
         <label class="lb">Modo de cobro</label>
         <select id="finMpGModo">
           <option value="off">Sin cobro online global</option>
@@ -76162,6 +76239,42 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     }catch(err){ toast('No se pudo estandarizar con IA: ' + String((err && err.message) || err).slice(0, 90), 'err'); }
     finally{ b.disabled = false; b.innerHTML = orig; }
   });
+})();
+</script>
+<script>
+/* =========================================================
+   COBRO POR TRANSFERENCIA · ALIAS (Control Financiero)
+   El alias y el titular viajan a la app del alumno en PROGRAM_CONFIG (payAlias / payTitular).
+   ========================================================= */
+(function(){
+  'use strict';
+  var K = 'coachjp_pago_alias_v1', DEF = { alias: 'juampiarmi', titular: 'Juan Pablo Armiñana' };
+  var RX_ALIAS = /^[A-Za-z0-9._-]{6,20}$/;
+  function crudo(){ var c = {}; try{ c = JSON.parse(localStorage.getItem(K) || '{}') || {}; }catch(e){} return c; }
+  function leer(){
+    var c = crudo(), a = String(c.alias || '').trim(), t = String(c.titular == null ? DEF.titular : c.titular).trim();
+    return { alias: RX_ALIAS.test(a) ? a : DEF.alias, titular: t.slice(0, 60) };
+  }
+  window.jpPagoAlias = leer;
+  function guardar(o){ try{ localStorage.setItem(K, JSON.stringify(o)); }catch(e){} }
+  function init(){
+    var ia = document.getElementById('finAliasIn'), it = document.getElementById('finAliasTit'), res = document.getElementById('finAliasRes'), bd = document.getElementById('finAliasBadge');
+    if(!ia || !it || ia.dataset.listo) return; ia.dataset.listo = '1';
+    var cur = leer(); ia.value = cur.alias; it.value = cur.titular;
+    function estado(){
+      var a = ia.value.trim(), ok = RX_ALIAS.test(a);
+      if(bd) bd.textContent = ok ? a : '';
+      if(!res) return;
+      res.className = 'hint fin-mp-est ' + (ok ? 'ok' : 'err');
+      res.innerHTML = ok ? '✔ Los alumnos/as verán el alias <b>' + a.replace(/[<>&"]/g, '') + '</b>' + (it.value.trim() ? ' · titular ' + it.value.trim().replace(/[<>&"]/g, '') : '') + '.'
+                         : '⚠ El alias debe tener de 6 a 20 caracteres (letras, números, punto, guion): hasta que sea válido se usa "' + DEF.alias + '".';
+    }
+    function persistir(){ var a = ia.value.trim(); if(RX_ALIAS.test(a)) guardar({ alias: a, titular: it.value.trim() }); estado(); }
+    ia.addEventListener('input', persistir); it.addEventListener('input', persistir);
+    estado();
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+  setTimeout(init, 800);
 })();
 </script>
 <script>
