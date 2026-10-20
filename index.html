@@ -214,6 +214,20 @@ h2,h3,h4,.topbar h2,.card h3{font-family:var(--ffh)}
   box-shadow:0 0 0 1px var(--gold-active),0 2px 10px rgba(229,195,120,.18);
 }
 #dayTabs .tab.on .tab-label{color:var(--txt-2)}
+/* reordenar días: flechas en la pestaña activa + arrastre; resumen de grupos musculares bajo cada pestaña */
+#dayTabs .tab{position:relative}
+#dayTabs .tab.on{padding-right:66px}
+#dayTabs .tab .tab-mv{position:absolute;top:5px;right:5px;display:flex;gap:4px}
+#dayTabs .tab .tab-mv .mv{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;font-size:10px;line-height:1;cursor:pointer;color:var(--gold-active);background:rgba(229,195,120,.1);border:1px solid rgba(229,195,120,.38);user-select:none;-webkit-user-select:none}
+#dayTabs .tab .tab-mv .mv:hover{background:rgba(229,195,120,.24)}
+#dayTabs .tab .tab-mv .mv:active{transform:translateY(1px)}
+#dayTabs .tab .tab-mv .mv.off{opacity:.22;pointer-events:none}
+#dayTabs .tab.on .tab-label{max-width:84px}
+#dayTabs .tab .tab-grp{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9.5px;font-weight:600;letter-spacing:.02em;color:var(--teal,#4A93B8)}
+#dayTabs .tab.has-grp{height:auto;max-height:none;min-height:56px}
+#dayTabs .tab.dragging{opacity:.35}
+#dayTabs .tab.drop-l{box-shadow:-4px 0 0 0 var(--gold-active)}
+#dayTabs .tab.drop-r{box-shadow:4px 0 0 0 var(--gold-active)}
 
 .alert{display:flex;gap:11px;padding:12px 14px;border-radius:var(--r-sm);font-size:12.8px;line-height:1.5;border:1px solid;align-items:flex-start}
 .alert .ic{font-size:16px;line-height:1.2}
@@ -3507,17 +3521,32 @@ function sincronizarBloquesSemana(p){
    falta reasignar ids ni tocar los bloques. Devuelve el nuevo índice del
    día movido, o null si el movimiento no era válido (ya estaba en el
    borde, o no hay plan/alumno activo). */
-function moverDia(desde, dir){
+/* Numeración automática: tras mover o eliminar un día, los rótulos que siguen siendo el default ("DÍA 3", "Sesión 3", "Día 3") o que empiezan con
+   él ("Día 3 · Piernas") toman el número de su nueva posición. Los nombres escritos a mano sin ese prefijo ("Lunes", "Empuje") no se tocan, y
+   el id interno (d.id) NUNCA cambia: de él cuelga el historial de cargas del alumno. */
+function renumerarDias(p){
+  const RX = /^((?:D[IÍ]A|Sesi[oó]n)\s*)\d+(?=$|[^\d])/i;
+  (p.dias || []).forEach((d, i) => {
+    ['short', 'label', 'title'].forEach(k => {
+      if(typeof d[k] === 'string' && RX.test(d[k].trim())) d[k] = d[k].trim().replace(RX, (m, pre) => pre + (i + 1));
+    });
+  });
+}
+/* mueve el día de la posición "desde" a la posición "hasta" (arrastre o flechas); el día activo sigue siendo el mismo objeto, venga de donde venga */
+function moverDiaA(desde, hasta){
   const p = plan(S.activeId); if(!p) return null;
-  const hasta = desde + dir;
-  if(hasta < 0 || hasta >= p.dias.length || desde < 0 || desde >= p.dias.length) return null;
+  const n = p.dias.length;
+  if(desde < 0 || desde >= n || hasta < 0 || hasta >= n || desde === hasta) return null;
+  const activo = p.dias[S.ui.day];
   const [dia] = p.dias.splice(desde, 1);
   p.dias.splice(hasta, 0, dia);
-  if(S.ui.day === desde) S.ui.day = hasta;
-  else if(S.ui.day === hasta) S.ui.day = desde; /* el día que estaba ahí corrió al lugar que dejó el que se movió */
+  renumerarDias(p);
+  const i = p.dias.indexOf(activo);
+  S.ui.day = i >= 0 ? i : hasta;
   save();
   return hasta;
 }
+function moverDia(desde, dir){ return moverDiaA(desde, desde + dir); }
 /* directiva maestra ("Gestor de días en el Builder") -- agregar y eliminar
    días del mesociclo. El id interno de cada día (d.id) es la clave estable
    de getLoadKey() -- el historial de cargas guardado del alumno cuelga de
@@ -3554,11 +3583,7 @@ function eliminarDiaActivo(){
   const idx = S.ui.day;
   if(p.dias.length <= 1 || idx < 0 || idx >= p.dias.length) return;
   p.dias.splice(idx, 1);
-  p.dias.forEach((d, i) => {
-    if(/^D[IÍ]A\s*\d+$/i.test(d.short || '')) d.short = 'DÍA ' + (i + 1);
-    if(/^Sesi[oó]n\s*\d+$/i.test(d.label || '')) d.label = 'Sesión ' + (i + 1);
-    if(/^D[IÍ]A\s*\d+$/i.test(d.title || '')) d.title = 'Día ' + (i + 1);
-  });
+  renumerarDias(p);
   S.ui.day = Math.min(idx, p.dias.length - 1);
   save(); closeModal('mDelDay'); renderBuilder();
   toast('🗑️ Día eliminado — quedan ' + p.dias.length, 'warn');
@@ -6450,11 +6475,17 @@ function renderBuilder(){
   $('#dayTabs').innerHTML = p.dias.map((d,i) => {
     const labelEsDefault = (d.label || '') === ('Sesión ' + (i+1));
     const textoTab = (labelEsDefault && d.title) ? d.title : (d.label || d.title || '');
-    return '<button class="tab ' + (i === S.ui.day ? 'on' : '') + '" data-day="' + i + '" title="' + esc(d.short + ' · ' + textoTab) + '">' +
+    const flechas = (i === S.ui.day && p.dias.length > 1)
+      ? '<span class="tab-mv">' +
+          '<span class="mv' + (i <= 0 ? ' off' : '') + '" data-movedia="-1" role="button" title="Mover este día a la izquierda" aria-label="Mover este día a la izquierda">◀</span>' +
+          '<span class="mv' + (i >= p.dias.length - 1 ? ' off' : '') + '" data-movedia="1" role="button" title="Mover este día a la derecha" aria-label="Mover este día a la derecha">▶</span>' +
+        '</span>' : '';
+    return '<button class="tab ' + (i === S.ui.day ? 'on' : '') + '" data-day="' + i + '" draggable="' + (p.dias.length > 1 ? 'true' : 'false') + '" title="' + esc(d.short + ' · ' + textoTab) + (p.dias.length > 1 ? ' — arrastrá para reordenar' : '') + '">' +
       '<span class="tab-short">' + esc(d.short) +
         (d.bloques.length ? ' <span style="opacity:.6;font-size:11px;font-weight:600">(' + d.bloques.length + ')</span>' : '') +
       '</span>' +
       (textoTab ? '<span class="tab-label">' + esc(textoTab) + '</span>' : '') +
+      flechas +
     '</button>';
   }).join('') + (p.dias.length < MAX_DIAS
     ? '<button type="button" class="tab tab-add" data-addday="1" title="Agregar un día al mesociclo (máx. ' + MAX_DIAS + ')" style="border-style:dashed;color:var(--gold,#FFD600)"><span class="tab-short">+ DÍA</span></button>'
@@ -7807,10 +7838,52 @@ function bindBuilder(){
   /* tabs */
   $('#btnDoDelDay').addEventListener('click', eliminarDiaActivo);
   $('#dayTabs').addEventListener('click', e => {
+    const mv = e.target.closest('[data-movedia]');
+    if(mv){
+      e.preventDefault(); e.stopPropagation();
+      const nuevo = moverDia(S.ui.day, parseInt(mv.dataset.movedia, 10));
+      if(nuevo === null) return;
+      renderBuilder(); const dm = curDay();
+      toast('↔ ' + (dm ? dm.short : 'Día') + ' pasó a la posición ' + (nuevo + 1) + ' · numeración actualizada');
+      return;
+    }
     if(e.target.closest('[data-addday]')){ agregarDia(); return; }
     const b = e.target.closest('[data-day]'); if(!b) return;
     S.ui.day = parseInt(b.dataset.day,10); save(); renderBuilder();
   });
+  /* arrastrar y soltar pestañas (mouse / trackpad): la línea dorada marca dónde caerá el día */
+  (function(){
+    const cont = $('#dayTabs'); let desde = -1;
+    const limpiar = () => cont.querySelectorAll('.drop-l,.drop-r,.dragging').forEach(t => t.classList.remove('drop-l', 'drop-r', 'dragging'));
+    cont.addEventListener('dragstart', e => {
+      const t = e.target.closest ? e.target.closest('.tab[data-day]') : null; if(!t){ return; }
+      desde = parseInt(t.dataset.day, 10); t.classList.add('dragging');
+      try{ e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'dia:' + desde); }catch(err){}
+    });
+    cont.addEventListener('dragover', e => {
+      if(desde < 0) return;
+      const t = e.target.closest ? e.target.closest('.tab[data-day]') : null; if(!t) return;
+      e.preventDefault(); try{ e.dataTransfer.dropEffect = 'move'; }catch(err){}
+      const r = t.getBoundingClientRect(), antes = e.clientX < r.left + r.width / 2;
+      cont.querySelectorAll('.drop-l,.drop-r').forEach(x => x.classList.remove('drop-l', 'drop-r'));
+      if(parseInt(t.dataset.day, 10) !== desde) t.classList.add(antes ? 'drop-l' : 'drop-r');
+    });
+    cont.addEventListener('drop', e => {
+      if(desde < 0) return;
+      const t = e.target.closest ? e.target.closest('.tab[data-day]') : null;
+      if(!t){ limpiar(); desde = -1; return; }
+      e.preventDefault();
+      const r = t.getBoundingClientRect(), antes = e.clientX < r.left + r.width / 2;
+      let hasta = parseInt(t.dataset.day, 10) + (antes ? 0 : 1);
+      if(desde < hasta) hasta--;
+      const origen = desde; limpiar(); desde = -1;
+      const nuevo = moverDiaA(origen, hasta);
+      if(nuevo === null) return;
+      renderBuilder(); const dm = curDay();
+      toast('↔ ' + (dm ? dm.short : 'Día') + ' pasó a la posición ' + (nuevo + 1) + ' · numeración actualizada');
+    });
+    cont.addEventListener('dragend', () => { limpiar(); desde = -1; });
+  })();
 
   /* toolbar */
   $$('[data-add]').forEach(b => b.addEventListener('click', () => addBlock(b.dataset.add)));
@@ -48735,6 +48808,19 @@ document.addEventListener('DOMContentLoaded', init);
     return '<span class="vchip ' + cls + '" title="' + esc(g) + ': óptimo ' + r[0] + '-' + r[1] + ' series/semana — ' + nota + '">' +
       esc(g) + ' <b>' + n + '</b><span class="vr">/' + r[0] + '-' + r[1] + '</span></span>';
   }
+  /* grupos musculares de cada día bajo su pestaña (los 2 con más series) y detalle en el tooltip */
+  function pintarGruposTabs(p, v){
+    document.querySelectorAll('#dayTabs .tab[data-day]').forEach(t => {
+      const g = v.porDia[parseInt(t.dataset.day, 10)] || {};
+      const ks = Object.keys(g).sort((a, b) => g[b] - g[a]);
+      let el = t.querySelector('.tab-grp');
+      if(!ks.length){ if(el) el.remove(); t.classList.remove('has-grp'); return; }
+      if(!el){ el = document.createElement('span'); el.className = 'tab-grp'; t.appendChild(el); }
+      el.textContent = ks.slice(0, 2).join(' · ');
+      t.classList.add('has-grp');
+      t.title = t.title + ' | ' + ks.slice(0, 5).map(k => k + ' ' + g[k]).join(' · ') + ' series';
+    });
+  }
   function renderVolumen(){
     const wrap = document.getElementById('volCard');
     if(!wrap) return;
@@ -48747,6 +48833,7 @@ document.addEventListener('DOMContentLoaded', init);
        con datos parciales de algún bloque tradicional suelto. */
     if(p.meta && p.meta.mesoDisc === 'crossfit'){ wrap.innerHTML = ''; return; }
     const v = calcVolumen(p);
+    try{ pintarGruposTabs(p, v); }catch(eGt){ console.warn('grupos·tabs', eGt); }
     const keys = Object.keys(v.total).sort((a, b) => v.total[b] - v.total[a]);
     const suma = keys.reduce((s, k) => s + v.total[k], 0);
     const dia = v.porDia[S.ui.day] || {};
