@@ -4709,7 +4709,12 @@ function jpLimpiarNombreEj(s){
 }
 const IMP_RX_REST_SB = /\b(?:rest|descanso|pausa)\b\s*[:=\-–]?\s*(?:(\d{1,2})\s*:\s*(\d{2})|(\d+(?:[.,]\d+)?)\s*(min(?:utos?)?|m|'|seg(?:undos?)?|segs?|sec|s|")?(?![a-záéíóú]))/i;
 function impDosisSB(texto){
+  /* carga prescripta en kilos ("| 80 kg", "@ 80 kg", "Carga: 80 kg"): se separa antes del parser canónico y viaja en d.carga hasta la línea de dosis */
+  let carga = '';
+  const mkg = String(texto == null ? '' : texto).match(/(?:@\s*|\|\s*|\bcarga\s*:?\s*)(\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?)\s*kgs?\b/i);
+  if(mkg){ carga = mkg[1].replace(/\s+/g, '').replace(',', '.') + ' kg'; texto = String(texto).replace(mkg[0], ' '); }
   const c = jpDosisCanon(texto), d = {};
+  if(carga) d.carga = carga;
   if(c.sets){ d.sets = c.sets; d.reps = c.reps; if(c.tramos.length > 1) d.tramos = c.tramos; }
   if(c.tempo) d.tempo = c.tempo;                               /* la X se conserva ("31X0"): la app del alumno la lee */
   if(c.rir) d.rir = c.rir;
@@ -4736,6 +4741,7 @@ function impLineasDosisSB(d){
   }
   if(d.tempo) p.push('Tempo ' + d.tempo);
   if(d.rir) p.push('RIR ' + d.rir);
+  if(d.carga && p.length) p.push(d.carga);
   if(p.length) out.push(p.join(' | '));
   if(d.rest !== undefined) out.push('Rest ' + (d.restLabel || (d.rest + 's')));
   return out;
@@ -15790,6 +15796,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var pk = '';
     if(regEst.set > 1){ var lp = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, regEst.set - 1)); if(lp.kg != null && lp.kg !== '') pk = String(lp.kg); }
     if(!pk && c.w > 0){ var lw = getLoad(getLoadKey(c.w - 1, c.d, c.b, e.idx, regEst.set)); if(lw.kg != null && lw.kg !== '') pk = String(lw.kg); }
+    if(!pk && e.carga){ var mkg = String(e.carga).match(/\\d+(?:\\.\\d+)?/); if(mkg) pk = mkg[0]; }
     kg.placeholder = pk || '\\u2014';
     var nr = String(repsSet || '').match(/^\\d+/);
     rp.placeholder = nr ? nr[0] : '\\u2014';
@@ -17107,6 +17114,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(!out.reps && (m = t.match(RX_REPS_SUELTAS_SB))){ out.reps = m[1].replace(/\\s+/g, '').replace(/[\\u2013\\u2014]/g, '-'); out.unidad = 'reps'; }
     if(!out.sets && (m = t.match(RX_SETS_SUELTOS_SB))) out.sets = parseInt(m[1], 10);
     if((m = t.match(/tempo\\s*([\\d\\u00a7]{3,4})/i))) out.tempo = m[1];
+    /* carga prescripta en kilos: "| 80 kg" o "@ 80 kg" (tambien rango "70-75 kg") */
+    if((m = t.match(/(?:@|\\|)\\s*(?:carga\\s*:?\\s*)?(\\d+(?:[.,]\\d+)?(?:\\s*[-\\u2013]\\s*\\d+(?:[.,]\\d+)?)?)\\s*kgs?\\b/i))) out.carga = m[1].replace(/\\s+/g, '').replace(',', '.') + ' kg';
     /* directiva ("Impresión completa de dosis en el header") -- antes
        sólo capturaba UN dígito ("RIR 2-1" perdía el "-1"): el header del
        alumno necesita el RIR EXACTO que escribió el coach, rango u
@@ -17173,6 +17182,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|×|de|:)?|series?\\s*(?:x|×|de|:)?|rondas?\\s*(?:x|×|de|:)?)\\s*\\d+(?:(?:\\s*[-\\u2013\\u2014]\\s*|\\s+a\\s+)\\d+)*(?:\\s*(?:reps?|repeticiones)\\b)?/gi, '')
       .replace(/\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b/gi, '').replace(/\\d+\\s*(?:sets?|series?|rondas?)\\b/gi, '')
       .replace(/tempo\\s*(?:[\\d\\u00a7]{3,4}|isom[eé]tric[oa]|continuo)/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '')
+      .replace(/(?:@|\\|)\\s*(?:carga\\s*:?\\s*)?\\d+(?:[.,]\\d+)?(?:\\s*[-\\u2013]\\s*\\d+(?:[.,]\\d+)?)?\\s*kgs?\\b/gi, '')
       .replace(/(?:rest|descanso)\\s*[^|]+/gi, '')
       .replace(/\\bpor\\s*pierna\\b|\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b|\\bisom[eé]tric[oa]\\b/gi, '')
       .replace(/[|.:,\\-–\\/]/g, '').trim();
@@ -17332,6 +17342,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(d.sets || d.reps){ if(d.sets) sub.sets = d.sets; if(d.reps){ sub.reps = d.reps; sub.unidad = d.unidad || sub.unidad; } }
     if(d.tempo && !sub.tempo) sub.tempo = d.tempo;
     if(d.rir && !sub.rir) sub.rir = d.rir;
+    if(d.carga) sub.carga = d.carga;
     if(d.restSeconds !== undefined) sub.restSeconds = d.restSeconds;
     if(res.tecnica) sub.tecnica = res.tecnica;
     if(res.tecnica === 'dropset') sub.tecnicaPct = extraerPctSB(res.texto);
@@ -17577,7 +17588,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
            dentro de la nota en cursiva genérica. */
         var esUnilateralSub = dosisSub.notaSecundaria === 'Por pierna' || dosisSub.notaSecundaria === 'Por lado';
         var notaSubCombinada = [parenM ? parenM[1] : '', (!esUnilateralSub && dosisSub.notaSecundaria) || ''].filter(Boolean).join(' · ');
-        actual.subs.push({ nombre: limpiarPrefijoEstacionSB(subM[2]), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: notaSubCombinada, unilateral: esUnilateralSub ? dosisSub.notaSecundaria : '', unidad: dosisSub.unidad || 'reps', rir: dosisSub.rir || '', restSeconds: dosisSub.restSeconds || 0, sets: dosisSub.sets || 0,
+        actual.subs.push({ nombre: limpiarPrefijoEstacionSB(subM[2]), reps: dosisSub.reps || '', tempo: dosisSub.tempo || '', tecnica: resSub.tecnica, nota: notaSubCombinada, unilateral: esUnilateralSub ? dosisSub.notaSecundaria : '', unidad: dosisSub.unidad || 'reps', rir: dosisSub.rir || '', carga: dosisSub.carga || '', restSeconds: dosisSub.restSeconds || 0, sets: dosisSub.sets || 0,
           tecnicaPct: resSub.tecnica === 'dropset' ? extraerPctSB(resSub.texto) : null,
           myoInfo: (subM[3].match(RX_MYO_CLAUSE_SB) ? extraerMyoInfoSB(subM[3].match(RX_MYO_CLAUSE_SB)[1] || '') : null) });
         if(subM[3].match(RX_MYO_CLAUSE_SB)) actual.subs[actual.subs.length - 1].tecnica = 'myoreps';
@@ -17697,6 +17708,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         actual.tempo = dosis.tempo || actual.tempo;
         actual.restSeconds = dosis.restSeconds || actual.restSeconds;
         actual.rir = dosis.rir || actual.rir;
+        if(dosis.carga) actual.carga = dosis.carga;
         actual.unidad = dosis.unidad || actual.unidad;
         actual.dosisAsignada = true;
         if(dosis.notaSecundaria){
@@ -17801,6 +17813,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         }
         var mCarga = corteND.dosisPrimero ? corteND.dosis.match(/@\\s*([\\d.,]+\\s*(?:kg|lbs?))/i) : null;
         if(mCarga) actual.notas.push('@ ' + mCarga[1]);
+        else if(dosisCN.carga) actual.carga = dosisCN.carga;
         if(actual.sets){ entries.push(actual); return; }
       }
       /* directiva maestra ("Registro ágil de 1 toque para Drop Sets y
@@ -18627,12 +18640,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           return '<div class="jp-sb-subex-resumen">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + (entry.letra || 'A') + (o.si + 1) + '</span>' +
                 '<span class="jp-sb-subex-tit">' + nombreHibridoSB(o.sub.nombre, block) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
-              dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), '', o.sub.unilateral, o.si < subsInfo.length - 1) +
+              dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), o.sub.carga ? '@ ' + o.sub.carga : '', o.sub.unilateral, o.si < subsInfo.length - 1) +
               (o.sub.nota && !o.sub.tecnica ? '<div class="jp-sb-nota">' + escSB(o.sub.nota) + '</div>' : '') +
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0) });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0) });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
@@ -18733,7 +18746,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
-      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0) });
+      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0) });
       if(entry.tramos){
         var cfgTr = regCfg[regCfg.length - 1]; cfgTr.rp = []; cfgTr.et = [];
         entry.tramos.forEach(function(t){ for(var k = 0; k < t.sets; k++){ cfgTr.rp.push(t.reps); cfgTr.et.push(t.etq || ''); } });
@@ -45102,8 +45115,13 @@ document.addEventListener('DOMContentLoaded', init);
     paintMini();
   }
   function switchProvider(p, silencioso){
+    /* con la configuración abierta, lo que se escribió (clave, modelo) se guarda en el proveedor que se deja: nunca se pierde ni cruza con el nuevo */
+    try{ if(p !== AI.provider && $('#mCfg') && $('#mCfg').classList.contains('on')) readCfgForm(); }catch(e){}
+    const cambio = p !== AI.provider;
     AI.provider = p; saveAI();
     paintProviders(); paintDot();
+    /* el generador puede estar esperando un límite de la API del proveedor anterior: se le avisa para que reintente ya con el nuevo */
+    if(cambio){ try{ document.dispatchEvent(new CustomEvent('coachai:proveedor', { detail: { prov: p, lb: PROV[p].lb, clave: hasKey(p), pausa: coolLeft(p) } })); }catch(e){} }
     const c = coolLeft(p);
     if($('#mCfg').classList.contains('on')) fillCfgForm();
     if(!silencioso) toast('Proveedor: ' + PROV[p].lb + (c ? ' · en cooldown ' + coolTxt(c) : (hasKey(p) ? '' : ' · falta la clave')), c || !hasKey(p) ? 'warn' : '');
@@ -45584,6 +45602,23 @@ document.addEventListener('DOMContentLoaded', init);
     });
     return out.join('\n');
   }
+  /* marcas de la ficha del alumno (ath.marcas): 1RM estimado por ejercicio y carga exacta para cada cantidad de repeticiones (Epley: carga = 1RM / (1 + reps/30)).
+     La IA los recibe como dato duro para volcar kilos reales en las series. */
+  function fmtKgIA(v){ return (Math.round(v * 2) / 2).toString().replace(/\.0$/, ''); }
+  function marcasTxt(ath){
+    const mejor = {};
+    (ath.marcas || []).forEach(m => {
+      const nombre = String(m.nombre || '').trim(), kg = parseFloat(m.kg), r = parseInt(m.reps, 10);
+      if(!nombre || !(kg > 0) || !(r > 0)) return;
+      const e = kg * (1 + r / 30);
+      if(!mejor[nombre] || e > mejor[nombre].e) mejor[nombre] = { e: e, kg: kg, r: r };
+    });
+    return Object.keys(mejor).map(n => {
+      const o = mejor[n];
+      const tabla = [3, 5, 6, 8, 10, 12, 15, 20].map(rr => rr + ' reps = ' + fmtKgIA(Math.max(2.5, Math.round(o.e / (1 + rr / 30) / 2.5) * 2.5)) + ' kg').join(' · ');
+      return '- ' + n + ': 1RM estimado ' + fmtKgIA(o.e) + ' kg (marca real ' + o.kg + ' kg x ' + o.r + '). Carga máxima para N repeticiones (a fallo): ' + tabla;
+    }).join('\n');
+  }
   function athLine(ath){
     const L = [];
     L.push(fullName(ath) + ' · ' + ath.freq + 'd/sem · ' + (ath.nivel || 'Intermedio') + (esAtletaDUP(ath) ? ' (Atleta Experimentado / Alta Demanda · periodización DUP)' : ''));
@@ -45593,6 +45628,8 @@ document.addEventListener('DOMContentLoaded', init);
     if((ath.tags || []).length) L.push('LESIONES: ' + ath.tags.join('; '));
     if((ath.prohibidos || []).length) L.push('PROHIBIDOS: ' + ath.prohibidos.join('; '));
     if((ath.preferidos || []).length) L.push('PRIORIZAR: ' + ath.preferidos.join('; '));
+    const mt = marcasTxt(ath);
+    if(mt) L.push('MARCAS / 1RM DEL ALUMNO (de su ficha, en kg; son datos reales y obligatorios para asignar las cargas):\n' + mt);
     /* ficha tactica del alumno/a (chips del Builder): JSON de contexto inyectado en TODA estructuracion con IA */
     try{
       const fj = window.CoachFicha && window.CoachFicha.json ? window.CoachFicha.json(ath) : '';
@@ -45972,7 +46009,7 @@ document.addEventListener('DOMContentLoaded', init);
     setInterval(() => { if(ORDEN.some(isCool)) paintProviders(); }, 20000);
 
     window.CoachAI = {
-      cfg: () => AI, run: runAI, open: openAI, config: openCfg, athLine: athLine,
+      cfg: () => AI, run: runAI, open: openAI, config: openCfg, athLine: athLine, marcasTxt: marcasTxt,
       switch: switchProvider, cooldown: setCooldown, resetCooldown: resetAICooldown, providers: PROV,
       /* llamada genérica de texto (la usa la biblioteca para tips y objetivos) */
       generarTexto: (user, system, opts) => callAI(system || 'Sos un asistente experto en entrenamiento de fuerza. Respondés en español rioplatense.', user, undefined, opts),
@@ -74497,6 +74534,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       r = r.replace(m[0], ' ');
     }
     if((m = r.match(/(?:@\s*)?\brir\s*[:=]?\s*(\d(?:\s*[-–]\s*\d)?)/i))){ d.rir = m[1].replace(/\s+/g, '').replace('–', '-'); r = r.replace(m[0], ' '); }
+    if((m = r.match(/(?:@\s*|\|\s*)?(?:carga\s*:?\s*)?(\d+(?:[.,]\d+)?)\s*kgs?\b/i))){ d.carga = m[1].replace(',', '.'); r = r.replace(m[0], ' '); }
     if((m = r.match(/\btempo\s*[:=]?\s*([\dxX]{4}|\d-[\dxX]-[\dxX]-[\dxX])/i))){ d.tempo = m[1].replace(/-/g, '').replace(/x/gi, '1'); r = r.replace(m[0], ' '); }
     if((m = r.match(/\b(?:cada\s+un[oa]|c\/u|ambos|los\s+dos|cada\s+ejercicio)\b/i))){ d.compartida = true; r = r.replace(m[0], ' '); }
     if((m = r.match(RX_LADO))){ d.lado = 'por ' + (m[1] === 'costado' ? 'lado' : m[1].toLowerCase()); r = r.replace(m[0], ' '); }
@@ -74532,7 +74570,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     var iso = RX_ISO.test(nombre) || (d.tiempo && /plan|plank|hollow|iso/i.test(nombre));
     var cont = RX_CONT.test(nombre);
     var core = RX_CORE.test(nombre);
-    var o = { nombre: nombre, sets: d.sets, reps: d.reps, unit: d.unit || '', lado: d.lado || '', tempo: d.tempo, rir: d.rir, rest: d.rest };
+    var o = { nombre: nombre, sets: d.sets, reps: d.reps, unit: d.unit || '', lado: d.lado || '', tempo: d.tempo, rir: d.rir, rest: d.rest, carga: d.carga || '' };
     o.esTiempo = !!(d.tiempo || o.unit);
     if(!o.sets) o.sets = (o.esTiempo && cont) ? 1 : (o.esTiempo ? (esBiset ? 3 : 1) : 3);
     if(!o.reps){ o.reps = o.esTiempo ? '30' : '10-12'; if(o.esTiempo && !o.unit) o.unit = 'seg'; }
@@ -74544,7 +74582,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
   }
   function lineaDosis(o){
     var reps = o.reps + (o.unit ? ' ' + o.unit : (o.esTiempo ? '' : ' reps')) + (o.lado ? ' ' + o.lado : '');
-    return o.sets + ' ' + (o.sets === 1 ? 'Serie' : 'Series') + ': ' + reps + ' | Tempo ' + o.tempo + ' | RIR ' + o.rir;
+    return o.sets + ' ' + (o.sets === 1 ? 'Serie' : 'Series') + ': ' + reps + ' | Tempo ' + o.tempo + ' | RIR ' + o.rir + (o.carga ? ' | ' + o.carga + ' kg' : '');
   }
   /* esquema multi-tramo / pirámide: "1x3 (Aclimatación) + 1x6 (Top Set) + 2x8 (Back-off) | Tempo 3010 | RIR 1" -- solo lo que escribió el coach */
   function lineaTramos(tramos, tempo, rir){
@@ -76644,6 +76682,67 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(f.mesociclo_4_semanas) t += 'MESOCICLO ESTRUCTURADO DE 4 SEMANAS (manda sobre la distribución de estrés y los RIR generales): la sesión que escribís es la SEMANA 1, base técnica / acumulación: RIR 2-3 en TODOS los ejercicios de trabajo (fuerza principal RIR 3, hipertrofia RIR 2-3), volumen pleno y técnica impecable, con margen para progresar. NO escribas S2, S3 ni S4: la app las proyecta sola desde esta sesión (S2 = más densidad o carga con RIR 1-2 y descansos de hipertrofia 15 s más cortos; S3 = intensificación máxima / choque con RIR 0-1 y la última serie de los ejercicios principales a fallo técnico; S4 = descarga activa con RIR 3-4 y una serie menos por ejercicio). Por eso el volumen de S1 tiene que ser el pleno de la semana de referencia. ';
     return t ? '6b) AJUSTES DE LA FICHA (obligatorios): ' + t + 'Los RIR y los Rest que escribas tienen que ser coherentes con esto.\n' : '';
   }
+  /* cargas exactas en kilos a partir de las marcas / 1RM de la ficha */
+  function marcasFicha(ath){ try{ return (window.CoachAI && window.CoachAI.marcasTxt) ? window.CoachAI.marcasTxt(ath) : ''; }catch(e){ return ''; } }
+  function reglaCargasKg(ath){
+    if(!marcasFicha(ath)) return '';
+    return '6c) CARGAS EXACTAS EN KILOS (OBLIGATORIO, usan los datos de "MARCAS / 1RM DEL ALUMNO"): cada ejercicio de fuerza o hipertrofia cuyo movimiento sea una marca del alumno (o una variante directa) lleva su carga de trabajo en kilos como ÚLTIMO segmento de la línea de dosis: "4x8-10 | RIR 2 | 80 kg"; en bisets/trisets va en la línea de dosis de la estación: "A1. Nombre | 3x12 | RIR 1 | 40 kg". ' +
+      'Calculala con la tabla del alumno: carga = 1RM / (1 + (reps + RIR) / 30), con el punto medio del rango de reps, redondeada a 2,5 kg (y a 1 kg en mancuernas livianas). En básicos con top set + back-off escribí la carga de las series de back-off y dejá el top set en los TIPS. ' +
+      'Para variantes sin marca propia estimá con criterio conservador desde el 1RM relacionado (press inclinado 80-85% del press de banca, sentadilla frontal 80-85% de la trasera, peso muerto rumano 60-70% del peso muerto, prensa 150-200% de la sentadilla, remo con barra 65-75% del press de banca). ' +
+      'Si un ejercicio no tiene ninguna marca relacionada, NO inventes la carga: omití ese segmento. Los kilos van siempre como número + " kg" (nunca porcentajes en lugar de kilos).\n';
+  }
+  var CANON_MARCA = [
+    [/back squat|sentadilla trasera|sentadilla con barra|sentadilla libre/g, 'sentadilla'],
+    [/front squat|sentadilla frontal/g, 'sentadillafrontal'],
+    [/bench press|press (?:de )?banca(?: plano| plana)?|press plano/g, 'pressbanca'],
+    [/deadlift|peso muerto(?: convencional| tradicional)?/g, 'pesomuerto'],
+    [/overhead press|press militar|press de hombros? con barra/g, 'pressmilitar'],
+    [/hip thrust|empuje de cadera/g, 'hipthrust'],
+    [/barbell row|remo con barra/g, 'remobarra']
+  ];
+  var STOP_MARCA = { de: 1, del: 1, la: 1, el: 1, con: 1, en: 1, a: 1, y: 1, barra: 1, libre: 1, olimpica: 1, barbell: 1, bar: 1, the: 1, with: 1 };
+  /* núcleo del nombre: sin palabras de relleno ni equipamiento genérico, con sinónimos ES/EN unificados; dos ejercicios con el mismo núcleo son el mismo movimiento */
+  function nucleoEj(t){
+    var x = nz(t).replace(/\([^)]*\)/g, ' ');
+    CANON_MARCA.forEach(function(c){ x = x.replace(c[0], ' ' + c[1] + ' '); });
+    return x.split(/[^a-z0-9]+/).filter(function(w){ return w && !STOP_MARCA[w]; }).sort().join(' ');
+  }
+  /* mejor 1RM estimado de la ficha para ese ejercicio (solo el mismo movimiento: una variante con otro nombre no hereda la marca) */
+  function mejor1RM(ath, nombre){
+    var base = String(nombre || '').replace(/^[-•*·]\s+/, '').replace(/^[A-F]\d+\.\s*/, '').trim();
+    var par = (base.match(/\(([^)]+)\)\s*$/) || [])[1], e = buscarEj(base);
+    var cand = [base, par, e && e.es, e && e.en].filter(Boolean).map(nucleoEj).filter(Boolean), best = 0;
+    if(!cand.length) return 0;
+    (ath.marcas || []).forEach(function(m){
+      var k = nucleoEj(m.nombre), kg = parseFloat(m.kg), r = parseInt(m.reps, 10);
+      if(!k || !(kg > 0) || !(r > 0) || cand.indexOf(k) < 0) return;
+      best = Math.max(best, kg * (1 + r / 30));
+    });
+    return best;
+  }
+  /* si la IA dejó sin kilos un ejercicio que SÍ tiene marca en la ficha, la carga se completa con la misma fórmula (nunca pisa un valor que ya escribió) */
+  function completarCargas(limp, ath){
+    var n = 0;
+    if(!ath || !(ath.marcas || []).length) return 0;
+    limp.forEach(function(b){
+      if(b.cat === 'WARM-UP' || b.cat === 'CORE') return;
+      var nombre = '';
+      b.lineas = b.lineas.map(function(l){
+        if(/^(?:rest|descanso)\b/i.test(l)) return l;
+        if(!esDosis(l)){ nombre = l; return l; }
+        if(!nombre || /\bkg\b/i.test(l)) return l;
+        var mS = l.match(/^(\d+)\s*[x×]\s*(\d+)(?:\s*[-–]\s*(\d+))?/);
+        if(!mS || /^\s*(?:s|seg|min|m|mts|cal)\b/i.test(l.slice(mS[0].length))) return l;
+        var e1 = mejor1RM(ath, nombre); if(!(e1 > 0)) return l;
+        var lo = parseInt(mS[2], 10), hi = mS[3] ? parseInt(mS[3], 10) : lo, mr = l.match(/rir\s*(\d+)(?:\s*[-–]\s*(\d+))?/i);
+        var rir = mr ? (mr[2] ? (parseInt(mr[1], 10) + parseInt(mr[2], 10)) / 2 : parseInt(mr[1], 10)) : 2;
+        var kg = Math.max(2.5, Math.round(e1 / (1 + ((lo + hi) / 2 + rir) / 30) / 2.5) * 2.5);
+        n++;
+        return l + ' | ' + String(kg).replace(/\.0$/, '') + ' kg';
+      });
+    });
+    return n;
+  }
   function sistema(ath, foco){
     var av = esAvanzado(ath);
     var regla0 = foco && foco.id && foco.id !== 'full'
@@ -76686,7 +76785,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       'Series x reps o rango ("4x8-10"); por tiempo "3x40s"; por lado "3x10 por lado". ' + (av ? 'Descansos de atleta avanzado: fuerza principal 180-240s, hipertrofia compuesta 90-150s, aislamiento 45-75s, bisets/trisets 60-90s al terminar cada ronda (la transición entre estaciones va sin descanso), accesorios/core 30-60s, warm-up 30-45s: la densidad también es estímulo, pero no recortes el descanso de un básico pesado.\n' : 'Descansos: fuerza principal 150-240s, hipertrofia compuesta 120-180s, aislamiento 60-90s (en biseries de empuje pesado mínimo 120s), accesorios/core 45-75s, warm-up 30-45s.\n') +
       '5) REGLA DE ORO DEL TEMPO: NUNCA va en la línea de dosis ni de ejercicio (ensucia la vista del alumno). Va únicamente en [COACHING TIPS & ESTRATEGIA]: en bloques de UN ejercicio como línea "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)"; ' +
       'en biseries/triseries dentro de la línea de la estación: "A1 · CUE EFICIENTE: Tempo 3011 — ..." (4 dígitos: excéntrica, pausa abajo, concéntrica, pausa arriba; X = explosiva).\n' +
-      '6) NIVEL: ' + perfilNivel(ath) + '\n' + reglasFichaExtra(ath) +
+      '6) NIVEL: ' + perfilNivel(ath) + '\n' + reglasFichaExtra(ath) + reglaCargasKg(ath) +
       (esAtletaDUP(ath) ? '7) PERIODIZACIÓN: seguí el perfil DUP que se indica en el pedido.\n' : '') +
       'FORMATO DE SALIDA (texto plano EXACTO; sin markdown, sin JSON, sin asteriscos, sin nada fuera del formato):\n' +
       '=== DÍA {N}: {título corto} ===\n' +
@@ -76880,23 +76979,24 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     return v;
   }
   /* respuesta del modelo -> texto canonico para el Importador rapido + diagnostico */
-  function procesar(out, di, foco, estr){
+  function procesar(out, di, foco, estr, ath){
     var t = limpiar(out, di), r = parsearImportacion(t, true), dia = r.dias[0];
     var buenos = (dia ? dia.bloques : []).filter(function(b){ return !b.sinClasificar && b.items && b.items.length; });
     if(!dia || buenos.length < 2) return { texto: t, nB: buenos.length, viol: [], movidos: 0, descartadas: 0 };
-    var tx = ['=== DÍA ' + (di + 1) + ': ' + (dia.titulo || 'Sesión') + ' ==='], limp = [], movidos = 0, descartadas = 0;
+    var tx = ['=== DÍA ' + (di + 1) + ': ' + (dia.titulo || 'Sesión') + ' ==='], limp = [], movidos = 0, descartadas = 0, cargas = 0;
     if(dia.titulo) tx.push('[NOMBRE DEL DÍA] ' + dia.titulo);
     if(dia.foco) tx.push('[FOCO DEL COACH] ' + String(dia.foco).replace(/\s*\n+\s*/g, ' '));
     buenos.forEach(function(b, bi){
       var c = limpiarBloque(b); c.titulo = b.titulo || ''; limp.push(c); movidos += c.movidos; descartadas += c.descartadas;
       /* "[BLOQUE n] [CATEGORIA] titulo": la categoria sale del titulo (o de la etiqueta explicita), asi el alumno ve FUERZA / HIPERTROFIA / CORE bien rotulado */
       var tagB = /^bloque\s*\d*$/i.test(b.tag || '') || !b.tag ? categoriaBloque(b.titulo) : String(b.tag).toUpperCase(); c.cat = tagB;
+      cargas += completarCargas([c], ath);
       tx.push('[BLOQUE ' + (bi + 1) + '] [' + tagB + '] ' + (b.titulo || ''));
       c.lineas.forEach(function(l){ tx.push(l); });
       if(c.objetivo){ tx.push('[OBJETIVO FISIOLÓGICO]'); tx.push(c.objetivo); }
       if(c.tips.length){ tx.push('[COACHING TIPS & ESTRATEGIA]'); c.tips.forEach(function(l){ tx.push(l); }); }
     });
-    return { texto: tx.join('\n'), nB: buenos.length, viol: violaciones(limp, foco).concat(violacionesEquipo(limp), violacionesCore(limp), violacionesEstructura(limp, estr)), movidos: movidos, descartadas: descartadas };
+    return { texto: tx.join('\n'), nB: buenos.length, viol: violaciones(limp, foco).concat(violacionesEquipo(limp), violacionesCore(limp), violacionesEstructura(limp, estr)), movidos: movidos, descartadas: descartadas, cargas: cargas };
   }
 
   /* series efectivas por grupo y ejercicios que quedaron sin video (aviso para el coach, no bloquea nada) */
@@ -76945,6 +77045,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '.gs-opts{display:flex;flex-wrap:wrap;gap:14px;margin:8px 0 0;font-size:12px;color:var(--muted,#8b94a3)}' +
       '.gs-opts label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}' +
       '.gs-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}' +
+      '.gs-newblock{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.gs-newblock .btn{flex:1 1 260px}' +
+      '.gs-sel{flex:0 1 220px;padding:9px 10px;border-radius:10px;border:1px solid var(--line-2,#2a2f3a);background:rgba(9,10,15,.7);color:var(--txt-2,#c3c9d3);font-size:13px}' +
       '.gs-acts .btn{flex:1 1 220px}' +
       '.gs-go{background:linear-gradient(180deg,#FF6A1F,#E24A00) !important;color:#0A0A0A !important;font-weight:800 !important;letter-spacing:.04em}' +
       '.gs-log{display:none;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.35);border:1px solid var(--line,#1f242d);font-size:12px;line-height:1.6;color:var(--txt-2,#c3c9d3)}' +
@@ -77021,6 +77123,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(card.dataset.sig === sig && card.firstChild) return;
     card.dataset.sig = sig;
     var logPrev = (!cambioAth && $q('gsLog')) ? $q('gsLog').innerHTML : '', logOn = !cambioAth && $q('gsLog') && $q('gsLog').classList.contains('on');
+    var tipoPrev = (!cambioAth && $q('gsTipoBloque')) ? $q('gsTipoBloque').value : 'hiper';
     var extraPrev = (!cambioAth && $q('gsExtra')) ? $q('gsExtra').value : '', semPrev = (!cambioAth && $q('gsSemana')) ? $q('gsSemana').checked : false, splitPrev = (!cambioAth && $q('gsSplit5')) ? $q('gsSplit5').checked : true;
     card.innerHTML =
       '<h3>⚡ Generador de sesión con IA<span class="gs-badge">' + (hay ? 'IA conectada' : 'Sin clave de IA') + '</span></h3>' +
@@ -77032,6 +77135,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '<div class="gs-opts"><span>Se genera el <b>DÍA ' + (di + 1) + '</b>' + (d.title ? ' · ' + esc2(String(d.title).slice(0, 40)) : '') + '</span>' +
       '<label><input type="checkbox" id="gsSemana"' + (semPrev ? ' checked' : '') + '> Toda la semana (' + p.dias.length + ' días)</label>' +
       (p.dias.length === 5 ? '<label title="D1 empuje · D2 piernas (rodilla) · D3 tracción · D4 piernas (cadena posterior) · D5 brazos y hombros / glúteos según el perfil"><input type="checkbox" id="gsSplit5"' + (splitPrev ? ' checked' : '') + '> Split científico de 5 días</label>' : '') + '</div>' +
+      '<div class="gs-newblock"><select id="gsTipoBloque" class="gs-sel" title="Tipo de bloque a generar">' + TIPOS_BLOQUE.map(function(t){ return '<option value="' + t[0] + '"' + (t[0] === tipoPrev ? ' selected' : '') + '>' + t[1] + '</option>'; }).join('') + '</select>' +
+        '<button type="button" class="btn" id="gsNuevoBloque" title="Suma al final del día UN bloque nuevo (según el tipo elegido) sin tocar el resto de la sesión">➕ GENERAR UN BLOQUE NUEVO CON IA</button></div>' +
       '<div class="gs-acts"><button type="button" class="btn gs-go" id="gsRun"' + (corriendo ? ' disabled' : '') + '>' + (corriendo ? (estadoBtn || '<span class="gs-spin"></span> Generando…') : '⚡ GENERAR PLAN COMPLETO CON IA (FICHA TÁCTICA)') + '</button>' +
       '<button type="button" class="btn" id="gsFicha">📋 Editar Ficha Táctica</button></div>' +
       '<div class="gs-log' + (logOn ? ' on' : '') + '" id="gsLog">' + logPrev + '</div>';
@@ -77092,9 +77197,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   function esperar(seg, prefijo, sufijo){
     return new Promise(function(res){
       var resto = Math.max(1, Math.round(seg));
-      ctl.esperando = true;
+      ctl.esperando = true; ctl.cambioProv = false;
       (function tic(){
-        if(resto <= 0 || ctl.saltar || ctl.detener){ ctl.esperando = false; quitarAcciones(); setBtn(''); return res(); }
+        if(resto <= 0 || ctl.saltar || ctl.detener || ctl.cambioProv){ if(ctl.cambioProv && resto > 0) log('🔀 Cambiaste de proveedor: se corta la espera y se reintenta ya con el nuevo.', 'o'); ctl.cambioProv = false; ctl.esperando = false; quitarAcciones(); setBtn(''); return res(); }
         setBtn('⏳ ' + prefijo + ' ' + resto + 's…' + (sufijo ? ' ' + sufijo : ''));
         resto--; setTimeout(tic, 1000);
       })();
@@ -77171,7 +77276,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         log('🎯 Foco anatómico del DÍA ' + (di + 1) + ': <b>' + esc2(foco.lb || 'libre (coherente con el resto del plan)') + '</b>' + (foco.fuente ? ' <span class="w">· ' + esc2(foco.fuente) + '</span>' : ''));
         try{
           var out = await llamarIA(usuario(ath, p, di, extra, titulos, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di, vigente);
-          pr = procesar(out, di, foco, estr);
+          pr = procesar(out, di, foco, estr, ath);
           /* split blindado: si la IA mezcló grupos fuera del foco, se le pide UNA corrección antes de aplicar nada */
           if(pr.nB >= 2 && pr.viol.length){
             /* la autocorreccion es un pedido mas: antes de mandarlo se respeta una pausa de seguridad de 15-20 s (igual que entre dias), si no el 429 llega al instante */
@@ -77183,7 +77288,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
             log('<span class="gs-spin"></span> Pidiendo la corrección del DÍA ' + (di + 1) + '…');
             try{
               var out2 = await llamarIA(usuario(ath, p, di, extra, titulos, foco) + correccion(pr.viol, foco), sistema(ath, foco), { maxTokens: 7000, plain: true, sinEspera: true }, di, vigente);
-              var pr2 = procesar(out2, di, foco, estr);
+              var pr2 = procesar(out2, di, foco, estr, ath);
               if(pr2.nB >= 2 && pr2.viol.length <= pr.viol.length) pr = pr2;
             }catch(errC){
               /* si la API sigue limitando durante la autocorreccion, no se pierde el dia: se conserva la sesion ya generada y se avisa lo que quedo sin corregir */
@@ -77208,6 +77313,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
           if(bajos.length && bajos.length < gs.length) log('⚠ Volumen bajo (menos de ' + umbralVol + ' series' + (esAvanzado(ath) ? ' para un atleta avanzado' : '') + '): ' + bajos.map(function(g){ return esc2(g) + ' ' + rs.vol[g]; }).join(', ') + '. Si es un grupo prioritario, sumá series o un ejercicio.', 'w');
           if(rs.sinVideo.length) log('🎬 Sin video en la biblioteca: ' + rs.sinVideo.slice(0, 8).map(esc2).join(', ') + (rs.sinVideo.length > 8 ? '…' : '') + '. Vinculalos desde los chips del bloque (➕ / 🔀) y quedan aprendidos para la próxima.', 'w');
         }catch(e){}
+        if(pr.cargas) log('🏋️ ' + pr.cargas + ' carga(s) en kilos completada(s) desde los 1RM de la ficha (la IA las había dejado sin kilos).');
         if(pr.movidos || pr.descartadas) log('🧹 ' + (pr.movidos ? 'Tempo de ' + pr.movidos + ' ejercicio(s) movido a los tips' : '') + (pr.movidos && pr.descartadas ? ' · ' : '') + (pr.descartadas ? pr.descartadas + ' línea(s) de texto suelto fuera de la redacción libre' : '') + '.');
         /* una respuesta que no es una sesion (rechazo, charla, formato roto) no se aplica: se deja en el Importador rapido */
         if(nB < 2){
@@ -77311,7 +77417,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       css();
       if(SIGS[bid] === undefined) SIGS[bid] = firmaEj(ta.value);
       var bar = document.createElement('div'); bar.className = 'gs-ex-bar'; bar.setAttribute('data-b', bid);
-      bar.innerHTML = '<button type="button" class="gs-ex-btn" data-gsex="cambiar">🔄 Cambiar ejercicio</button><button type="button" class="gs-ex-btn gs-ex-tips" data-gsex="tips">✨ Recalcular tips con IA</button>';
+      bar.innerHTML = '<button type="button" class="gs-ex-btn" data-gsex="cambiar">🔄 Cambiar ejercicio</button><button type="button" class="gs-ex-btn gs-ex-tips" data-gsex="tips">✨ Recalcular tips con IA</button><button type="button" class="gs-ex-btn" data-gsex="regen" title="Reescribe solo este bloque con IA (usa la Ficha Táctica, los 1RM y las indicaciones extra del generador); el resto del día no se toca">🤖 Regenerar bloque con IA</button>';
       ta.parentNode.insertBefore(bar, ta);
       marcarObsoleto(ta);
     });
@@ -77426,9 +77532,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       'Ejercicio suelto: SET-UP: ... / CUE EFICIENTE: ... / CUIDADO / ERROR COMÚN: ... / TEMPO: ...\n' +
       'Biserie o triserie, por estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ..." y al final "TRANSICIÓN: ..." (regla de cambio entre estaciones y descanso).';
   }
-  async function llamarSimple(user, sistemaTxt, btn){
+  async function llamarSimple(user, sistemaTxt, btn, maxTokens){
     for(var i = 1; ; i++){
-      try{ return await window.CoachAI.generarTexto(user, sistemaTxt, { maxTokens: 1600, plain: true, sinEspera: true }); }
+      try{ return await window.CoachAI.generarTexto(user, sistemaTxt, { maxTokens: maxTokens || 1600, plain: true, sinEspera: true }); }
       catch(err){
         if(!esCuota(err) || i >= REINTENTOS) throw err;
         for(var s = (ESPERAS_429[i - 1] || 24); s > 0; s--){ if(btn) btn.innerHTML = '⏳ Reintentando en ' + s + 's…'; await new Promise(function(r){ setTimeout(r, 1000); }); }
@@ -77471,11 +77577,125 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(ta) marcarObsoleto(ta);
     }
   }
+  /* =========== UN SOLO BLOQUE CON IA: generar uno nuevo o regenerar uno existente, sin tocar el resto de la sesión ===========
+     Mismas reglas del generador de sesión (foco anatómico, equipamiento, lesiones, nivel, 1RM de la ficha) pero acotadas a un bloque: la IA recibe los
+     OTROS bloques del día para no repetir ejercicios ni patrones. El resultado pasa por el mismo canonizador (tempo a tips, kilos desde los 1RM, validaciones). */
+  var TIPOS_BLOQUE = [['fuerza', '💪 Fuerza principal'], ['hiper', '🏋️ Hipertrofia'], ['biset', '🔗 Biset'], ['triset', '🔗 Triset'], ['core', '🎯 Core'], ['accesorio', '🧩 Accesorios'], ['finisher', '🔥 Finisher / cierre']];
+  var bloqueBusy = false;
+  function sistemaBloque(ath, foco){
+    var av = esAvanzado(ath);
+    var regla0 = foco && foco.id && foco.id !== 'full'
+      ? '0) SPLIT ANATÓMICO — REGLA ABSOLUTA: el bloque es EXCLUSIVAMENTE de ' + foco.lb + '. PROHIBIDO ejercicios de ' + foco.vetados + '. La BIBLIOTECA ya está filtrada a los grupos permitidos: usá solo esos ejercicios.' + (foco.enfasis ? ' ' + foco.enfasis : '') + '\n'
+      : '0) El bloque es coherente con el foco anatómico del día (no mezcles tren superior e inferior sin criterio).\n';
+    var fichaReglas = reglasFichaExtra(ath).replace(/ESTRUCTURA DE BLOQUES OBLIGATORIA[\s\S]*?dentro de esa estructura\. /, '');
+    return 'Sos el Head Coach de Coach JP: especialista en ciencias del ejercicio, hipertrofia, fuerza máxima y biomecánica. Tenés que escribir UN SOLO bloque de entrenamiento para una sesión que ya está armada; NO escribas ni repitas el resto de la sesión.\n' +
+      'REGLAS DURAS:\n' + regla0 +
+      '1) La FICHA TÁCTICA (JSON) es contexto duro: nivel, equipamiento (SOLO ejercicios posibles con ese equipamiento), lesiones y restricciones (NUNCA un ejercicio prohibido ni su variante; si hay molestia, regresioná o cambiá de variante y nombrá la compensación a evitar en CUIDADO) y ejercicios preferidos.\n' +
+      '2) Elegí los ejercicios de la BIBLIOTECA con su nombre EXACTO ("Nombre ES (Name EN)") para que se vincule el video.\n' +
+      '3) Complementá la sesión: NO repitas ejercicios ni patrones que ya están en los OTROS BLOQUES DEL DÍA. Cada ejercicio aporta un ángulo, una función o un perfil de resistencia nuevo; al menos uno por grupo grande en posición estirada.\n' +
+      '4) INTENSIDAD: ' + (av ? 'atleta avanzado: 3 a 5 series por ejercicio de trabajo a RIR 0-1 (aislamientos a RIR 0), fuerza principal con top set + back-off, al menos una técnica de intensidad en un aislamiento ("| Drop-set", "| Myo-reps" o "| Rest-pause" al final de la dosis).' : 'RIR 1-3 en fuerza principal, 1-2 en hipertrofia compuesta y 0-1 en la última serie del aislamiento; 3 a 4 series por ejercicio.') + ' Un 3x10 genérico sin criterio es un bloque flojo.\n' +
+      '5) DESCANSOS: fuerza principal ' + (av ? '180-240' : '150-240') + 's, hipertrofia compuesta ' + (av ? '90-150' : '120-180') + 's, aislamiento ' + (av ? '45-75' : '60-90') + 's, bisets/trisets 60-90s al terminar cada ronda (la transición entre estaciones va sin descanso), core y accesorios 30-60s.\n' +
+      '6) EQUIPAMIENTO EN BISERIES/TRISETS: PROHIBIDO combinar dos máquinas o poleas. Parejas permitidas: Mancuerna+Mancuerna, Mancuerna+Máquina, Mancuerna+Kettlebell, Mancuerna o Kettlebell + estructura (barra de dominadas, paralelas, anillas), Barra + Máquina, Mancuerna o Kettlebell, Peso corporal + carga externa. En la BIBLIOTECA cada ejercicio trae su clase entre corchetes.\n' +
+      '7) FORMATO DE REDACCIÓN LIBRE ESTRICTO: ejercicio suelto = EXACTAMENTE 3 líneas: "Nombre ES (Name EN)" / "SxR | RIR n" / "Rest Ns". Biserie o triserie = una línea por estación "A1. Nombre ES (Name EN) | SxR | RIR n", "A2. ... | SxR | RIR n" y debajo UNA línea "Rest Ns". Core/accesorios con 2 o 3 ejercicios distintos. PROHIBIDO escribir explicaciones, notas o tempos dentro del bloque de ejercicios: solo nombres, dosis y descanso.\n' +
+      '8) TEMPO: nunca en la dosis. Va solo en [COACHING TIPS & ESTRATEGIA]: "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)" en ejercicio suelto; "A1 · CUE EFICIENTE: Tempo 3011 — ..." en bisets.\n' +
+      '9) NIVEL: ' + perfilNivel(ath) + '\n' + fichaReglas + reglaCargasKg(ath) +
+      'FORMATO DE SALIDA (texto plano EXACTO, sin markdown ni nada fuera del formato; el bloque se numera siempre como 1):\n' +
+      '[BLOQUE 1] {Categoría – título corto} (N MIN)\n' +
+      '{líneas de ejercicios y dosis según la regla 7}\n' +
+      'Rest {N}s\n' +
+      '[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones didácticas: qué se entrena, por qué funciona y qué va a sentir el atleta, en palabras cotidianas y con rigor científico}\n' +
+      '[COACHING TIPS & ESTRATEGIA]\n' +
+      '{ejercicio suelto: SET-UP: ... / CUE EFICIENTE: ... / CUIDADO / ERROR COMÚN: ... / TEMPO: ...; biserie o triserie por estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ..." y al final "TRANSICIÓN: ..."}\n' +
+      'El TÍTULO empieza con su categoría: "Fuerza principal – …", "Hipertrofia – …", "Core – …", "Accesorios – …", "Finisher – …". Cada línea de tip dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (hasta 35 palabras). Respondé SOLO con el bloque.';
+  }
+  function usuarioBloque(ath, p, di, b, tipo, extra, foco){
+    var d = p.dias[di] || {}, otros = [];
+    (d.bloques || []).forEach(function(x){
+      if(x === b) return;
+      var nombres = parseLineasEj((x.items || []).join('\n')).map(function(l){ return l.nombre; });
+      otros.push('- ' + (x.titulo || 'Bloque') + (nombres.length ? ': ' + nombres.join(' · ') : ''));
+    });
+    var ai = (window.CoachAI && window.CoachAI.athLine) ? window.CoachAI.athLine(ath) : fullName(ath);
+    return 'ALUMNO/A Y FICHA TÁCTICA:\n' + ai + '\n\n' +
+      'SESIÓN: DÍA ' + (di + 1) + ' de ' + p.dias.length + (d.title ? ' · ' + d.title : '') + '.\n' +
+      ((foco && foco.id) ? 'FOCO ANATÓMICO OBLIGATORIO DE ESTE DÍA: ' + foco.lb + (foco.vetados ? '. PROHIBIDO incluir ejercicios de: ' + foco.vetados : '') + '.\n' : '') +
+      (otros.length ? 'OTROS BLOQUES DEL DÍA (no repitas sus ejercicios ni patrones):\n' + otros.join('\n') + '\n' : 'El día todavía no tiene otros bloques.\n') +
+      (b ? 'BLOQUE A REESCRIBIR (' + categoriaBloque(b.titulo) + ' · ' + (b.titulo || 'sin título') + '):\n' + (b.items || []).join('\n') + '\nReescribilo completo manteniendo su rol y su duración aproximada, con una selección y una estructura mejores (ejercicios distintos a los actuales salvo que no haya mejor opción).\n'
+         : 'BLOQUE NUEVO A CREAR: ' + (DESC_TIPO[tipo] || DESC_TIPO.libre) + '. Elegí el que mejor complemente al resto de la sesión.\n') +
+      (extra ? 'INDICACIONES EXTRA DEL COACH: ' + extra + '\n' : '') +
+      '\nBIBLIOTECA DE EJERCICIOS' + ((foco && foco.ok && foco.ok.length) ? ' (ya filtrada: solo ' + foco.ok.join(' / ') + ')' : '') + ' (Nombre ES (Name EN) | grupo | equipo | patrón) — usá estos nombres exactos:\n' + bibliotecaIA(ath, foco) + '\n\n' +
+      'Escribí ahora SOLO el bloque, con "[BLOQUE 1] ..." como primera línea.';
+  }
+  /* respuesta de la IA -> un bloque canónico + validaciones (foco, equipamiento, core) y kilos desde los 1RM */
+  function bloqueDeRespuesta(out, di, foco, ath){
+    var t = limpiar(String(out || '').replace(/^[\s\S]*?(?=^\s*\[BLOQUE)/mi, ''), di);
+    var dia = (parsearImportacion(t, true).dias || [])[0];
+    var buenos = (dia ? dia.bloques : []).filter(function(x){ return !x.sinClasificar && x.items && x.items.length; });
+    if(!buenos.length) return null;
+    var b0 = buenos[0], c = limpiarBloque(b0); c.titulo = b0.titulo || '';
+    c.cat = (/^bloque\s*\d*$/i.test(b0.tag || '') || !b0.tag) ? categoriaBloque(b0.titulo) : String(b0.tag).toUpperCase();
+    var cargas = completarCargas([c], ath);
+    return { b0: b0, c: c, cargas: cargas, viol: violaciones([c], foco).concat(violacionesEquipo([c]), violacionesCore([c])) };
+  }
+  function aplicarBloqueIA(modo, d, b, r){
+    var c = r.c, b0 = r.b0;
+    var nuevo = crearBloqueImportado({ fase: b0.fase, titulo: b0.titulo, items: c.lineas, cierre: { objetivo: c.objetivo, tips: c.tips.join('\n') }, rest: b0.rest, modalidad: b0.modalidad }, false);
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar(modo === 'regen' ? 'Regenerar bloque con IA' : 'Nuevo bloque con IA');
+    if(modo === 'regen'){ var i = d.bloques.indexOf(b); if(i >= 0) d.bloques[i] = nuevo; else d.bloques.push(nuevo); }
+    else d.bloques.push(nuevo);
+    window.__colBloques = window.__colBloques || {}; window.__colBloques[nuevo.id] = false;
+    if(typeof guardarAhora === 'function') guardarAhora(); else save();
+    renderBuilder();
+    var ta = document.querySelector('textarea[data-bf="items"][data-b="' + nuevo.id + '"]');
+    if(ta) ta.dispatchEvent(new Event('input', { bubbles: true }));            /* mismo camino que tipear: revincula video, alertas y formato */
+    var tObj = document.querySelector('textarea[data-bf="objective"][data-b="' + nuevo.id + '"]'), tTips = document.querySelector('textarea[data-bf="tips"][data-b="' + nuevo.id + '"]');
+    if(tObj && nuevo.objective != null){ tObj.value = nuevo.objective || ''; tObj.dispatchEvent(new Event('input', { bubbles: true })); }
+    if(tTips && nuevo.tips != null){ tTips.value = nuevo.tips || ''; tTips.dispatchEvent(new Event('input', { bubbles: true })); }
+    return nuevo;
+  }
+  async function generarUnBloque(modo, bid, tipo, btn, opt){
+    opt = opt || {};
+    if(bloqueBusy || corriendo){ toast(corriendo ? 'Esperá a que termine la generación del día' : 'Ya hay un bloque generándose', 'warn'); return false; }
+    var ath = active(); if(!ath) return false;
+    var p = plan(ath.id); if(!p || esPlanCFActivo(p)){ toast('Esta función es para Sports & Bodybuilding', 'warn'); return false; }
+    if(!hayClaveIA()){ toast('Configurá una clave de IA para generar el bloque', 'err'); if(window.CoachAI && window.CoachAI.config) window.CoachAI.config(); return false; }
+    var di = Math.min(S.ui.day || 0, p.dias.length - 1), d = p.dias[di], athId = ath.id, b = null;
+    if(modo === 'regen'){
+      b = findBlock(bid); if(!b) return false;
+      if(!opt.sinConfirmar && !confirm('Se va a REEMPLAZAR el bloque «' + (b.titulo || 'sin título') + '» por una versión nueva de la IA. El resto del día no se toca. (Podés deshacer con Ctrl+Z.) ¿Continuar?')) return false;
+    }
+    var extra = ($q('gsExtra') ? $q('gsExtra').value.trim() : ''), foco = focoAnatomico(ath, p, di);
+    bloqueBusy = true;
+    var original = btn ? btn.innerHTML : '';
+    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="gs-spin"></span> Generando el bloque…'; }
+    try{
+      var out = await llamarSimple(usuarioBloque(ath, p, di, b, tipo, extra, foco), sistemaBloque(ath, foco), btn, 3500);
+      var a2 = active();
+      if(!a2 || a2.id !== athId){ toast('Se cambió de alumno/a mientras la IA respondía: no se aplicó el bloque', 'warn'); return false; }
+      var r = bloqueDeRespuesta(out, di, foco, ath);
+      if(!r){ toast('La IA no devolvió un bloque válido: probá de nuevo', 'err'); return false; }
+      var nuevo = aplicarBloqueIA(modo, d, b, r);
+      toast((modo === 'regen' ? '🤖 Bloque regenerado: ' : '➕ Bloque nuevo: ') + (nuevo.titulo || 'listo') + (r.cargas ? ' · ' + r.cargas + ' carga(s) en kg desde los 1RM' : '') + (r.viol.length ? ' · ⚠ revisá: ' + r.viol.slice(0, 2).map(function(v){ return v.nombre; }).join('; ') : ''), r.viol.length ? 'warn' : '');
+      return true;
+    }catch(err){
+      if(esCuota(err)) toast('La API está limitando la velocidad: reintentá en un minuto o cambiá de proveedor', 'warn');
+      else toast('No se pudo generar el bloque: ' + String((err && err.message) || err).slice(0, 90), 'err');
+      return false;
+    }finally{
+      bloqueBusy = false;
+      if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = original; }
+    }
+  }
   function iniciarBarras(){
     asegurarBarras();
     new MutationObserver(function(){ clearTimeout(tmObs); tmObs = setTimeout(asegurarBarras, 150); }).observe(document.body, { childList: true, subtree: true });
   }
 
+  /* cambiar de proveedor (Anthropic / OpenAI / Google) durante una pausa por límite de la API: la pausa era del proveedor anterior, así que se corta */
+  document.addEventListener('coachai:proveedor', function(e){
+    var d = (e && e.detail) || {};
+    if(corriendo && ctl.esperando && d.clave && !d.pausa) ctl.cambioProv = true;
+  });
   document.addEventListener('coachai:modelo', function(e){
     var d = (e && e.detail) || {};
     log('🔀 Cuota diaria agotada en <b>' + esc2(d.de) + '</b> (Google AI Studio): se cambió automáticamente al modelo de respaldo <b>' + esc2(d.a) + '</b> y se reintentó el pedido.', 'o');
@@ -77484,7 +77704,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var t = e.target; if(!t || !t.closest) return;
     if(t.closest('#gsRun')){ e.preventDefault(); generar(); return; }
     var bx = t.closest('[data-gsex]');
-    if(bx){ e.preventDefault(); var barX = bx.closest('.gs-ex-bar'), bidX = barX ? barX.getAttribute('data-b') : ''; if(bidX){ if(bx.getAttribute('data-gsex') === 'cambiar') abrirCambio(bidX); else recalcularTips(bidX, bx); } return; }
+    if(bx){ e.preventDefault(); var barX = bx.closest('.gs-ex-bar'), bidX = barX ? barX.getAttribute('data-b') : ''; if(bidX){ var accX = bx.getAttribute('data-gsex'); if(accX === 'cambiar') abrirCambio(bidX); else if(accX === 'regen') generarUnBloque('regen', bidX, '', bx); else recalcularTips(bidX, bx); } return; }
+    if(t.closest('#gsNuevoBloque')){ e.preventDefault(); var selT = $q('gsTipoBloque'); generarUnBloque('nuevo', '', selT ? selT.value : 'libre', t.closest('#gsNuevoBloque')); return; }
     if(t.closest('[data-gskey]')){ e.preventDefault(); if(window.CoachAI && window.CoachAI.config) window.CoachAI.config(); return; }
     if(t.closest('[data-gsresume]')){ e.preventDefault(); if(!corriendo && reanudarDias.length) generar({ dias: reanudarDias.slice() }); return; }
     if(t.closest('[data-gsskip]')){ e.preventDefault(); if(corriendo && ctl.esperando) ctl.saltar = true; return; }
@@ -77501,7 +77722,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       window[fn] = function(){ var r = f.apply(this, arguments); setTimeout(ciclo, 90); return r; };
     });
   }
-  window.CoachGenSesion = { generar: generar, sistema: sistema, usuario: usuario, limpiar: limpiar, biblioteca: bibliotecaIA, faltantes: faltantes, perfilNivel: perfilNivel,
+  window.CoachGenSesion = { generarBloque: generarUnBloque, sistemaBloque: sistemaBloque, usuarioBloque: usuarioBloque, generar: generar, sistema: sistema, usuario: usuario, limpiar: limpiar, biblioteca: bibliotecaIA, faltantes: faltantes, perfilNivel: perfilNivel,
                              foco: focoAnatomico, procesar: procesar, clasifFoco: clasifFoco, correccion: correccion,
                              cambiarEjercicio: abrirCambio, aplicarCambio: aplicarCambio, recalcularTips: recalcularTips, reemplazarLinea: reemplazarLinea, parseLineas: parseLineasEj, candidatos: function(bid, i, q){ var b = findBlock(bid), ta = textareaItems(bid); cambio = { bid: bid, ls: parseLineasEj(ta.value), sel: i || 0 }; var r = candidatos(active(), b, cambio.ls[cambio.sel], q || ''); cambio = null; return r; } };
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', montar); else montar();
