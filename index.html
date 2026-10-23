@@ -17198,6 +17198,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       .replace(/\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b/gi, '').replace(/\\d+\\s*(?:sets?|series?|rondas?)\\b/gi, '')
       .replace(/tempo\\s*(?:[\\d\\u00a7]{3,4}|isom[eé]tric[oa]|continuo)/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '')
       .replace(/(?:@|\\|)\\s*(?:carga\\s*:?\\s*)?\\d+(?:[.,]\\d+)?(?:\\s*[-\\u2013]\\s*\\d+(?:[.,]\\d+)?)?\\s*kgs?\\b/gi, '')
+      .replace(/\\bdrop[\\s-]?set\\b|\\brest[\\s-]?pause\\b|\\bmyo[\\s-]?reps?\\b|\\bal\\s+fallo\\b/gi, '')
       .replace(/(?:rest|descanso)\\s*[^|]+/gi, '')
       .replace(/\\bpor\\s*pierna\\b|\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b|\\bisom[eé]tric[oa]\\b/gi, '')
       .replace(/[|.:,\\-–\\/]/g, '').trim();
@@ -17929,21 +17930,41 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      nota opcional (persistida en state.notes, mismo mecanismo ya usado
      por el resto de la app, ver listener .jp-intensity-note más abajo). */
   var PROTOCOLO_TECNICA_SB = {
-    myoreps: { pill: 'SERIE ACTIVACI\\u00d3N', icono: '\\u26a1', texto: 'Protocolo Myo-reps: 3 a 5 mini-sets al fallo t\\u00e9cnico (RIR 0) con 5 respiraciones de pausa.', ph: '4 mini-sets completados' },
+    myoreps: { pill: 'SERIE ACTIVACI\\u00d3N', icono: '\\u26a1', texto: 'Protocolo Myo-reps: despu\\u00e9s de la activaci\\u00f3n, 3 a 5 mini-sets al fallo t\\u00e9cnico (RIR 0) con 5 respiraciones de pausa. Los mini-sets son parte de esta serie: no suman series.', ph: '4 mini-sets completados' },
     dropset: { pill: 'CARGA INICIAL', icono: '\\ud83d\\udcc9', texto: 'Protocolo Drop Set: Descarga inmediata (-20% a -25%) al fallo sin descanso.', ph: '2 bajadas hasta 20kg' }
   };
   /* DROP SET: tres tarjetas en secuencia (la serie principal y dos bajadas), cada una con su peso x repeticiones al fallo y su check. Reusa la fila
      nativa (data-set-key / .jp-input-native / .jp-btn-check-native): mismos listeners, mismo setLoadField(), mismo tonelaje. Claves: slot 1 (la de siempre,
      los registros viejos se conservan), 'd1' y 'd2'. El peso de cada bajada se sugiere solo (-20% de la tarjeta anterior) como placeholder. */
-  function dropRedondeoSB(v){ return Math.round(v * 0.8 * 2) / 2; }
-  function renderRegistroDropsetSB(weekIdx, dayId, blockId, exIdx, unidadSec, refSemanaAnterior){
-    unidadSec = unidadSec || 'reps';
+  function dropRedondeoSB(v, pct){ return Math.round(v * (1 - (pct || 20) / 100) * 2) / 2; }
+  /* ESTRUCTURA DE UNA TÉCNICA DE INTENSIDAD: cuántas series son, cuál lleva la técnica y en qué fases se ejecuta -- el alumno nunca duda de cuántos sets hacer ni en qué orden.
+     o = { tecnica, sets, pct, microReps, ronda } (ronda: la técnica va en un biset / triset, donde la unidad es la ronda) */
+  function estructuraTecnicaSB(o){
+    var tec = o.tecnica, n = parseInt(o.sets, 10) || 1, ronda = !!o.ronda, U = ronda ? 'RONDA' : 'SERIE', u = ronda ? 'ronda' : 'serie';
+    var nom = { dropset: 'DROP-SET', myoreps: 'MYO-REPS', restpause: 'REST-PAUSE' }[tec]; if(!nom) return '';
+    var ic = { dropset: '\\ud83d\\udd25', myoreps: '\\ud83d\\udd01', restpause: '\\u26a1' }[tec], pct = Math.abs(o.pct || 20);
+    var fases = {
+      dropset: ['<span class="jp-tec-fase">1 \\u00b7 carga de trabajo</span> al fallo', '<span class="jp-tec-fase">2 \\u00b7 bajada \\u2212' + pct + '%</span> al fallo', '<span class="jp-tec-fase">3 \\u00b7 bajada \\u2212' + pct + '%</span> al fallo'],
+      myoreps: ['<span class="jp-tec-fase">1 \\u00b7 activaci\\u00f3n</span> a 1-2 reps del fallo', '<span class="jp-tec-fase">2 \\u00b7 mini-sets</span>: 3 a 5 de ' + (o.microReps || 4) + ' reps, con 5 respiraciones de pausa'],
+      restpause: ['<span class="jp-tec-fase">1 \\u00b7 serie al fallo</span> t\\u00e9cnico', '<span class="jp-tec-fase">2 \\u00b7 pausa 15-20 s</span> y +2-4 reps', '<span class="jp-tec-fase">3 \\u00b7 pausa 15-20 s</span> y +2-4 reps']
+    }[tec];
+    var pills = '';
+    for(var i = 1; i <= n; i++) pills += '<span class="jp-tec-p' + (i === n ? ' on' : '') + '">' + (i === n ? ic + ' ' : '') + i + '</span>';
+    var previas = n > 1 ? '<b>' + U + (n > 2 ? 'S 1 a ' + (n - 1) : ' 1') + '</b>: normales, al RIR indicado. ' : '';
+    return '<div class="jp-tec-est"><div class="jp-tec-strip">' + pills + '<span class="jp-tec-tot">' + n + ' ' + (ronda ? (n === 1 ? 'ronda' : 'rondas') : (n === 1 ? 'serie' : 'series')) + ' en total</span></div>' +
+      '<div class="jp-tec-txt">' + previas + '<b>' + U + ' ' + n + ' \\u00b7 ' + nom + '</b> en ' + fases.length + ' fases' + (tec === 'myoreps' ? '' : ' seguidas') + ': ' + fases.join(' \\u2192 ') + '.</div>' +
+      '<div class="jp-tec-nota">Las fases son parte de la ' + u + ' ' + n + ': no suman ' + (ronda ? 'rondas' : 'series') + '.</div></div>';
+  }
+  function renderRegistroDropsetSB(weekIdx, dayId, blockId, exIdx, unidadSec, refSemanaAnterior, ctx){
+    unidadSec = unidadSec || 'reps'; ctx = ctx || {};
+    var pctD = Math.abs(ctx.pct || 20), nS = ctx.n || 1, totS = ctx.tot || nS;
     var pasos = [
-      { idx: 1,    n: 1, lb: 'SERIE PRINCIPAL',      sub: 'al fallo' },
-      { idx: 'd1', n: 2, lb: '1\\u00aa BAJADA \\u00b7 DROP 1', sub: '-20% del peso \\u00b7 al fallo' },
-      { idx: 'd2', n: 3, lb: '2\\u00aa BAJADA \\u00b7 DROP 2', sub: '-20% otra vez \\u00b7 al fallo' }
+      { idx: 1,    n: 1, lb: 'FASE 1 \\u00b7 CARGA DE TRABAJO',      sub: 'al fallo \\u00b7 es la serie ' + nS },
+      { idx: 'd1', n: 2, lb: 'FASE 2 \\u00b7 BAJADA 1', sub: '-' + pctD + '% del peso \\u00b7 al fallo \\u00b7 misma serie ' + nS },
+      { idx: 'd2', n: 3, lb: 'FASE 3 \\u00b7 BAJADA 2', sub: '-' + pctD + '% otra vez \\u00b7 al fallo \\u00b7 misma serie ' + nS }
     ];
-    var base = 0, html = '<div class="jp-set-tracker-native jp-set-tracker-tecnica jp-drop-tracker">';
+    var base = 0, html = '<div class="jp-set-tracker-native jp-set-tracker-tecnica jp-drop-tracker" data-pct="' + pctD + '">' +
+      '<div class="jp-tec-head">SERIE ' + nS + ' DE ' + totS + ' \\u00b7 DROP-SET<small>3 fases seguidas, sin descanso entre fases: cuentan como 1 sola serie</small></div>';
     pasos.forEach(function(p, i){
       var key = getLoadKey(weekIdx, dayId, blockId, exIdx, p.idx);
       var ld = getLoad(key);
@@ -17957,7 +17978,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var secVal = ld.reps != null ? ld.reps : '';
       var kgPh = '\\u2014';
       if(kgVal === ''){
-        if(i > 0 && base > 0) kgPh = String(dropRedondeoSB(base));
+        if(i > 0 && base > 0) kgPh = String(dropRedondeoSB(base, pctD));
         else if(prevKg != null) kgPh = String(prevKg);
       }
       var secPh = (secVal === '' && prevSec != null) ? String(prevSec) : '\\u2014';
@@ -17981,17 +18002,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   /* al escribir el peso de una tarjeta, la sugerencia de las siguientes se recalcula (-20% de la anterior) */
   function jpDropSugerirSB(tr){
-    var base = 0;
+    var base = 0, pctS = parseInt(tr.getAttribute('data-pct'), 10) || 20;
     tr.querySelectorAll('.jp-drop-card').forEach(function(c, i){
       var kg = c.querySelector('.jp-val-primary'); if(!kg) return;
       var v = parseFloat(String(kg.value).replace(',', '.'));
-      if(i > 0 && !kg.value && base > 0) kg.placeholder = String(dropRedondeoSB(base));
+      if(i > 0 && !kg.value && base > 0) kg.placeholder = String(dropRedondeoSB(base, pctS));
       base = v > 0 ? v : (parseFloat(kg.placeholder) || 0);
     });
   }
-  function renderRegistroTecnicaUnicaSB(weekIdx, dayId, blockId, exIdx, tecnica, unidadSec, refSemanaAnterior){
-    unidadSec = unidadSec || 'reps';
-    if(tecnica === 'dropset') return renderRegistroDropsetSB(weekIdx, dayId, blockId, exIdx, unidadSec, refSemanaAnterior);
+  function renderRegistroTecnicaUnicaSB(weekIdx, dayId, blockId, exIdx, tecnica, unidadSec, refSemanaAnterior, ctx){
+    unidadSec = unidadSec || 'reps'; ctx = ctx || {};
+    if(tecnica === 'dropset') return renderRegistroDropsetSB(weekIdx, dayId, blockId, exIdx, unidadSec, refSemanaAnterior, ctx);
     var proto = PROTOCOLO_TECNICA_SB[tecnica];
     var key = getLoadKey(weekIdx, dayId, blockId, exIdx, 1);
     var ld = getLoad(key);
@@ -18024,9 +18045,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         ['10', '15', '20', '25'].map(function(p){ return '<button type="button" class="jp-tecnica-chip" data-pct="' + p + '">-' + p + '%</button>'; }).join('') +
       '</div>' : '';
     var addLabel = esDropset ? '\\u2795 Agregar bajada' : '\\u2795 Agregar mini-set';
+    var nSerie = ctx.n || 1, totSerie = ctx.tot || nSerie;
     return '<div class="jp-set-tracker-native jp-set-tracker-tecnica">' +
+        '<div class="jp-tec-head">SERIE ' + nSerie + ' DE ' + totSerie + ' \\u00b7 MYO-REPS<small>activaci\\u00f3n + 3 a 5 mini-sets: cuentan como 1 sola serie</small></div>' +
         '<div class="jp-set-row-native' + (ld.done ? ' completed' : '') + '" data-set-key="' + key + '">' +
-          '<span class="jp-set-pill">' + proto.pill + '</span>' +
+          '<span class="jp-set-pill">' + 'SERIE ' + nSerie + ' \\u00b7 ACTIVACI\\u00d3N' + '</span>' +
           '<div class="jp-set-inputs-group">' +
             '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
             '<span class="jp-unit">kg</span>' +
@@ -18050,8 +18073,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<input type="text" class="jp-intensity-note" data-notekey="' + notaKey + '" placeholder="Nota opcional (ej. ' + proto.ph + ')" value="' + escSB(notaVal) + '" />' +
       '</div>';
   }
-  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo, rirAnterior, nombreEj, metaReps){
-    unidadSec = unidadSec || 'reps';
+  function renderSetRowsNativeSB(weekIdx, dayId, blockId, exIdx, numSets, unidadSec, refSemanaAnterior, tecnicaInfo, rirAnterior, nombreEj, metaReps, keyOff){
+    unidadSec = unidadSec || 'reps'; keyOff = keyOff || 0;
     var modoEj = modoInputSB(nombreEj);          /* 'bw' (peso corporal) | 'tiempo' (isométrico) | '' */
     var numSetsInt = parseInt(numSets, 10) || 1;
     /* directiva ("Parser avanzado de metodologías") -- [DROPSET]/[MYO-
@@ -18070,11 +18093,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var setTecnicaIdx = (setTecnica && !esMyo) ? (setTecnica.setIndex || numSetsInt) : 0;
     var html = '<div class="jp-set-tracker-native">';
     for(var i = 1; i <= numSetsInt; i++){
-      var key = getLoadKey(weekIdx, dayId, blockId, exIdx, i);
+      var key = getLoadKey(weekIdx, dayId, blockId, exIdx, i + keyOff);
       var ld = getLoad(key);
       var prevKg = null, prevSec = null;
       if(refSemanaAnterior && weekIdx > 0){
-        var prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i));
+        var prevLd = getLoad(getLoadKey(weekIdx - 1, dayId, blockId, exIdx, i + keyOff));
         if(prevLd.kg != null && prevLd.kg !== '') prevKg = prevLd.kg;
         if(prevLd.reps != null && prevLd.reps !== '') prevSec = prevLd.reps;
       }
@@ -18656,6 +18679,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + (entry.letra || 'A') + (o.si + 1) + '</span>' +
                 '<span class="jp-sb-subex-tit">' + nombreHibridoSB(o.sub.nombre, block) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
               dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), o.sub.carga ? '@ ' + o.sub.carga : '', o.sub.unilateral, o.si < subsInfo.length - 1) +
+              (o.sub.tecnica && o.sub.tecnica !== 'fallo' ? estructuraTecnicaSB({ tecnica: o.sub.tecnica, sets: rondasN, ronda: true, pct: o.sub.tecnicaPct, microReps: o.sub.myoInfo && o.sub.myoInfo.microReps }) : '') +
               (o.sub.nota && !o.sub.tecnica ? '<div class="jp-sb-nota">' + escSB(o.sub.nota) + '</div>' : '') +
             '</div>';
         }).join('');
@@ -18709,9 +18733,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         const esAnclaTec = !anclaUsada; anclaUsada = true;
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
             '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
-            dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, '', entry.unilateral, !!entry.restCero) +
-            ''+
-            renderRegistroTecnicaUnicaSB(weekIdx, dayId, block.id, exIdx, entry.tecnica, entry.unidad, true) +
+            dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero) +
+            estructuraTecnicaSB({ tecnica: entry.tecnica, sets: entry.sets, pct: entry.tecnicaPct, microReps: entry.myoInfo && entry.myoInfo.microReps }) +
+            ((parseInt(entry.sets, 10) || 0) > 1 ? renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, (parseInt(entry.sets, 10) || 1) - 1, entry.unidad, true, null, '', entry.titulo, (entry.unidad === 'reps' || !entry.unidad) ? entry.reps : '', 1) : '') +
+            renderRegistroTecnicaUnicaSB(weekIdx, dayId, block.id, exIdx, entry.tecnica, entry.unidad, true, { n: parseInt(entry.sets, 10) || 1, tot: parseInt(entry.sets, 10) || 1, pct: entry.tecnicaPct }) +
           '</div>';
         return;
       }
@@ -18762,6 +18787,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       }
       const esAncla = !anclaUsada; anclaUsada = true;
       regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0) });
+      if(entry.tecnica === 'restpause' && !entry.tramos){
+        var cfgRp = regCfg[regCfg.length - 1]; cfgRp.et = [];
+        for(var kq = 0; kq < cfgRp.sets; kq++) cfgRp.et.push(kq === cfgRp.sets - 1 ? '\\u26a1 REST-PAUSE: al fallo \\u2192 pausa 15-20 s \\u2192 +2-4 reps \\u2192 pausa \\u2192 +2-4 reps (una sola serie)' : '');
+      }
       if(entry.tramos){
         var cfgTr = regCfg[regCfg.length - 1]; cfgTr.rp = []; cfgTr.et = [];
         entry.tramos.forEach(function(t){ for(var k = 0; k < t.sets; k++){ cfgTr.rp.push(t.reps); cfgTr.et.push(t.etq || ''); } });
@@ -18771,6 +18800,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
           '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
           (entry.tramos ? tramosHtmlSB(entry) : dosisCompletaSB(entry.setsDef ? 0 : entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero)) +
+          (entry.tecnica === 'restpause' && !entry.tramos ? estructuraTecnicaSB({ tecnica: 'restpause', sets: entry.sets || 1 }) : '') +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
           (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
         '</div>';
@@ -42544,6 +42574,17 @@ html body .block.jp-fold .jp-cfboard > .jp-cf-title{ display:block !important; }
 .jp-drop-card + .jp-drop-card::before{ content:'\\25BC  SIN DESCANSO'; position:absolute; top:-19px; left:0; right:0; text-align:center; font:600 9.5px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.18em; color:#FF5500; }
 .jp-drop-cap{ display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px; margin:0 0 6px 2px; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:10.5px; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:#00B4D8; }
 .jp-drop-cap b{ display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:#FF5500; color:#0F0F0F; font-size:10px; letter-spacing:0; }
+.jp-tec-est{ margin:10px 0 12px; padding:10px 12px 9px; border-radius:12px; background:rgba(0,180,216,.06); border:1px solid rgba(0,180,216,.28); }
+.jp-tec-strip{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 8px; }
+.jp-tec-p{ min-width:28px; height:28px; padding:0 9px; display:inline-flex; align-items:center; justify-content:center; gap:4px; border-radius:9px; font:700 12px/1 'JetBrains Mono',ui-monospace,monospace; color:#CFCFCF; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.14); }
+.jp-tec-p.on{ color:#FF8A4D; background:rgba(255,85,0,.16); border-color:rgba(255,85,0,.65); }
+.jp-tec-tot{ margin-left:auto; font:600 10px/1 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; text-transform:uppercase; color:#8A8A8A; }
+.jp-tec-txt{ font-size:12.2px; line-height:1.6; color:#CFCFCF; }
+.jp-tec-txt b{ color:#F2F2F2; }
+.jp-tec-fase{ color:#00B4D8; font-weight:700; }
+.jp-tec-nota{ margin-top:6px; font-size:11px; line-height:1.45; color:#8A8A8A; }
+.jp-tec-head{ margin:4px 0 8px; font:700 10.5px/1.3 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; text-transform:uppercase; color:#FF8A4D; }
+.jp-tec-head small{ display:block; margin-top:3px; font-weight:500; letter-spacing:.03em; text-transform:none; color:#8A8A8A; font-size:10.5px; }
 .jp-drop-cap small{ flex:1 0 100%; padding-left:26px; color:#8A8A8A; font-size:9.5px; letter-spacing:.08em; text-transform:none; font-weight:500; margin-top:-2px; }
 .jp-drop-card > .jp-set-row-native{ border-left:3px solid #FF5500; justify-content:center; }
 .jp-drop-card > .jp-set-row-native.completed{ border-left-color:#10B981; }
@@ -76557,7 +76598,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     return KB.gen;
   }
   var TEC = {
-    drop: { lb: 'Drop-set', tip: 'TÉCNICA · DROP-SET: en la última serie, al llegar al fallo técnico bajá 25-30% la carga y seguí sin descanso hasta un nuevo fallo.' },
+    drop: { lb: 'Drop-set', tip: 'TÉCNICA · DROP-SET: en la última serie, al llegar al fallo técnico bajá 20-25% la carga y seguí sin descanso hasta un nuevo fallo.' },
     myo:  { lb: 'Myo-reps', tip: 'TÉCNICA · MYO-REPS: una serie de activación a 1-2 repeticiones del fallo; después 3-4 mini-series de 4-5 repeticiones con 15 segundos de pausa y respiraciones profundas.' },
     rp:   { lb: 'Rest-pause', tip: 'TÉCNICA · REST-PAUSE: serie hasta el fallo técnico, descansá 15-20 segundos y sacá 2-4 repeticiones más; repetí una vez.' }
   };
