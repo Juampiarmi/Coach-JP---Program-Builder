@@ -15813,6 +15813,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(!pk && c.w > 0){ var lw = getLoad(getLoadKey(c.w - 1, c.d, c.b, e.idx, regEst.set)); if(lw.kg != null && lw.kg !== '') pk = String(lw.kg); }
     if(!pk && e.carga){ var mkg = String(e.carga).match(/\\d+(?:\\.\\d+)?/); if(mkg) pk = mkg[0]; }
     kg.placeholder = pk || '\\u2014';
+    /* carga pautada de la semana (la que calculó la periodización desde el 1RM): queda escrita en el casillero para confirmar con un solo toque; solo se guarda al confirmar */
+    kg.classList.remove('jp-reg-pre'); var hintKg = regQ('.jp-reg-hint'); if(hintKg) hintKg.textContent = '';
+    if(!kg.value && e.carga){
+      var pmKg = String(e.carga).match(/^\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:kgs?)?\\s*$/i);
+      if(pmKg){ kg.value = pmKg[1].replace(',', '.'); kg.classList.add('jp-reg-pre'); if(hintKg) hintKg.textContent = 'Carga pautada \\u00b7 toc\\u00e1 \\u2713 para confirmar'; }
+    }
     var nr = String(repsSet || '').match(/^\\d+/);
     rp.placeholder = nr ? nr[0] : '\\u2014';
     var actual = regQ('.jp-reg-set.on'); if(actual && actual.scrollIntoView){ try{ actual.scrollIntoView({ inline: 'center', block: 'nearest' }); }catch(err){} }
@@ -15836,6 +15842,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         '<div class="jp-reg-exs"></div>' +
         '<div class="jp-reg-sets"></div>' +
         '<div class="jp-reg-pres"></div>' +
+        '<div class="jp-reg-hint"></div>' +
         '<div class="jp-reg-fila"><label><span>KG</span><input type="text" inputmode="decimal" class="jp-reg-kg" autocomplete="off" placeholder="\\u2014"></label>' +
           '<b>\\u00d7</b><label><span>REPS</span><input type="text" inputmode="decimal" class="jp-reg-reps" autocomplete="off" placeholder="\\u2014"></label>' +
           '<button type="button" class="jp-reg-chk" aria-label="Confirmar set">\\u2713</button></div>' +
@@ -15883,6 +15890,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var t = e.target; if(!regEst || !t || !t.classList) return;
     var campo = t.classList.contains('jp-reg-kg') ? 'kg' : (t.classList.contains('jp-reg-reps') ? 'reps' : '');
     if(!campo) return;
+    if(campo === 'kg'){ t.classList.remove('jp-reg-pre'); var hk = regQ('.jp-reg-hint'); if(hk) hk.textContent = ''; }
     var v = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '').replace(/(\\..*)\\./g, '$1');
     if(v !== t.value) t.value = v;
     setLoadField(regKey(), campo, v);
@@ -21072,7 +21080,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       g.strokeStyle = 'rgba(56,189,248,.38)'; g.lineWidth = 2; redondear(g, px, yTop, pw, ph, 28); g.stroke();
       g.textAlign = 'left'; g.textBaseline = 'alphabetic';
       g.fillStyle = '#38BDF8'; g.font = '700 30px "JetBrains Mono", ui-monospace, monospace';
-      g.fillText('[ RESUMEN TÁCTICO DEL DÍA ]', px + 44, yTop + 64);
+      g.fillText('[ RESUMEN DE SESIÓN ]', px + 44, yTop + 64);
       var rowH = 112, y0 = yTop + 104, pie = (d.rpe ? 84 : 28) + (d.bloquesExtra > 0 ? 48 : 0);
       var maxRows = Math.max(0, Math.floor((ph - 104 - pie) / rowH));
       if(!lista.length){
@@ -24856,7 +24864,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X, yR - 40, MW, 2);
 
     /* ---------- resumen tactico: top lifts / mejores sets del dia ---------- */
-    g.textAlign = 'left'; g.fillStyle = CY; fuente(g, 600, 28, MONO); g.fillText('[ RESUMEN TÁCTICO ]', X, yR + 4);
+    g.textAlign = 'left'; g.fillStyle = CY; fuente(g, 600, 28, MONO); g.fillText('[ RESUMEN DE SESIÓN ]', X, yR + 4);
     var pr = prDeHoy(d);
     if(pr){
       var ptxt = 'NUEVO PR' + (pr.kg > 0 ? ' · ' + fmtNum(pr.kg) + ' KG' : '');
@@ -41093,7 +41101,8 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     try{ var m = /RIR\\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
     /* sin tonelaje registrado la tarjeta no se muestra (antes quedaba un guion suelto) */
     var hayTon = parseFloat(String(kg).replace(/[^\\d.,]/g, '').replace(',', '.')) > 0;
-    var h = (hayTon ? '<span>&#127947;&#65039; ' + kg + ' KG TONELAJE</span>' : '') + '<span>&#9201;&#65039; ' + nB + ' BLOQUES</span><span>&#127919; ' + rir + '</span>';
+    var pildora = function(v, l){ return '<span><b>' + v + '</b><small>' + l + '</small></span>'; };
+    var h = (hayTon ? pildora(kg, 'KG TONELAJE') : '') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO');
     var hud = $('.jp-brief-hud', dh);
     if(!hud){ hud = document.createElement('div'); hud.className = 'jp-brief-hud'; dh.appendChild(hud); }
     if(hud.innerHTML !== h) hud.innerHTML = h;
@@ -43542,6 +43551,261 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
 })();
 
 <\/script>
+
+<!--UX-FINAL-JP-->
+<style id="jpUxFinalCss">
+/* ACABADO UX FINAL · app del alumno (Sports): header minimalista, jerarquía del día, checklist de activación, videos en línea, pautas colapsables, registro con carga precargada */
+/* 1 · header: Historial / tamaño de letra / perfil viven en un único menú */
+html body.jp-mission:not(.cf-disc) #hdCompact .hdc-top > .jp-hist-btn,
+html body.jp-mission:not(.cf-disc) #hdCompact .hdc-top > .hdc-fz,
+html body.jp-mission:not(.cf-disc) #hdCompact .hdc-top > .hdc-info{ display:none !important; }
+html body.jp-mission:not(.cf-disc) .hdc-top{ gap:10px; }
+html body.jp-mission:not(.cf-disc) .hdc-id{ flex:1 1 auto; min-width:0; }
+.jp-ux-menu-btn{ flex:0 0 auto; width:36px; height:36px; margin-left:auto; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); color:#BDBDBD; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.jp-ux-menu-btn svg{ fill:currentColor; }
+.jp-ux-menu-btn:active, .jp-ux-menu-btn[aria-expanded="true"]{ color:#FF5500; border-color:rgba(255,85,0,.55); background:rgba(255,85,0,.08); }
+.jp-ux-menu-bg{ position:fixed; inset:0; z-index:99990; background:transparent; }
+.jp-ux-menu{ position:fixed; top:54px; right:10px; z-index:99991; min-width:228px; max-width:calc(100vw - 20px); padding:6px; border-radius:14px; background:#141414; border:1px solid rgba(255,255,255,.12); box-shadow:0 18px 40px rgba(0,0,0,.6); }
+.jp-ux-menu button{ display:flex; align-items:center; gap:12px; width:100%; min-height:46px; padding:0 12px; border:0; border-radius:10px; background:transparent; color:#EDEDED; font:600 .86rem 'Chakra Petch',sans-serif; letter-spacing:.02em; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.jp-ux-menu button:active{ background:rgba(255,85,0,.12); }
+.jp-ux-menu button .jp-ux-mi{ flex:0 0 22px; text-align:center; font-size:1rem; }
+.jp-ux-menu button .jp-ux-mv{ margin-left:auto; padding:3px 8px; border-radius:7px; background:rgba(255,85,0,.14); color:#FF5500; font:700 .66rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; }
+/* 2 · pestañas de día: una sola fila fina, scroll horizontal fluido con imán y bordes desvanecidos */
+html body.jp-mission:not(.cf-disc) .hdc-days-row{ min-height:0 !important; padding:2px 12px 8px !important; }
+html body.jp-mission:not(.cf-disc) .hdc-days-wrap{ -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 22px),transparent 100%); mask-image:linear-gradient(90deg,transparent 0,#000 14px,#000 calc(100% - 22px),transparent 100%); }
+html body.jp-mission:not(.cf-disc) .hdc-days-wrap .week-tabs{ scroll-snap-type:x proximity; scroll-behavior:smooth; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; scrollbar-width:none; padding:0 14px; gap:6px; }
+html body.jp-mission:not(.cf-disc) .hdc-days-wrap .week-tabs::-webkit-scrollbar{ display:none; }
+html body.jp-mission:not(.cf-disc) .hdc-days-wrap .day-tab{ flex:0 0 auto; scroll-snap-align:center; height:34px !important; min-height:34px !important; padding:0 15px !important; }
+html body.jp-mission:not(.cf-disc) .hdc-days-wrap .day-tab .tab-label{ display:none !important; }
+/* 3 · encabezado del día: más aire y jerarquía */
+html body.jp-mission:not(.cf-disc) .day-header{ flex-direction:column !important; align-items:stretch !important; gap:0 !important; padding:20px 4px 10px !important; }
+html body.jp-mission:not(.cf-disc) .day-header > div:first-child{ display:block; }
+html body.jp-mission:not(.cf-disc) .day-header .jp-session-pretag{ display:block !important; margin:0 0 8px !important; font:700 .62rem 'JetBrains Mono',ui-monospace,monospace !important; letter-spacing:.2em !important; color:#FF5500 !important; }
+html body.jp-mission:not(.cf-disc) .day-header .day-title{ font-size:1.62rem !important; line-height:1.12 !important; letter-spacing:.015em !important; margin:0 !important; text-wrap:balance; }
+html body.jp-mission:not(.cf-disc) .day-header .jp-brief-hud{ display:grid !important; grid-auto-flow:column; grid-auto-columns:1fr; gap:8px !important; margin:16px 0 0 !important; overflow:visible !important; width:100% !important; flex:0 0 auto; }
+html body.jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span{ display:flex !important; flex-direction:column; align-items:center; justify-content:center; gap:3px; padding:10px 6px !important; border-radius:12px !important; background:rgba(255,255,255,.035) !important; border:1px solid rgba(255,255,255,.09) !important; color:#EDEDED !important; text-align:center; white-space:normal; }
+html body.jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span b{ font:700 1.05rem 'Chakra Petch',sans-serif; letter-spacing:.02em; color:#fff; line-height:1.1; }
+html body.jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span small{ font:600 .6rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; color:#9A9A9A; text-transform:uppercase; }
+html body.jp-mission:not(.cf-disc) .day-header .jp-brief-dir{ align-self:flex-start; margin:14px 0 0 !important; }
+/* 4 · activación: mini-checklist */
+.jp-ux-wu-row{ position:relative; cursor:pointer; -webkit-tap-highlight-color:transparent; align-items:center !important; }
+.jp-ux-wu-row::before{ display:none !important; content:none !important; }
+.jp-ux-ck{ flex:0 0 24px; width:24px; height:24px; border-radius:8px; border:1.5px solid rgba(255,255,255,.28); display:inline-flex; align-items:center; justify-content:center; color:transparent; font-size:.8rem; font-weight:800; transition:background .15s,border-color .15s,color .15s; }
+.jp-ux-wu-row.jp-ux-on .jp-ux-ck{ background:#FF5500; border-color:#FF5500; color:#0A0A0A; }
+.jp-ux-wu-row.jp-ux-on .jp-sb-plain-nombre{ opacity:.45; text-decoration:line-through; text-decoration-color:rgba(255,85,0,.7); }
+.jp-ux-wu-prog{ margin-left:auto; margin-right:8px; padding:2px 8px; border-radius:7px; background:rgba(255,255,255,.07); color:#BDBDBD; font:700 .64rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; }
+.jp-warm-acc.jp-ux-wu-ok .jp-ux-wu-prog{ background:rgba(255,85,0,.16); color:#FF5500; }
+/* 5 · video técnico en línea junto a cada ejercicio */
+.jp-ux-vid{ flex:0 0 auto; align-self:center; margin-left:auto; position:relative; display:inline-flex; align-items:center; justify-content:center; width:44px; height:30px; padding:0; border-radius:8px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05) center/cover no-repeat; color:#fff; overflow:hidden; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.jp-ux-vid .jp-ux-vth{ position:absolute; inset:0; background:center/cover no-repeat; opacity:.55; }
+.jp-ux-vid .jp-ux-vp{ position:relative; font-size:.7rem; line-height:1; text-shadow:0 1px 4px rgba(0,0,0,.8); }
+.jp-ux-vid:active{ border-color:#FF5500; }
+.jp-sb-vid-card.jp-ux-gone, .jp-sb-vid-cards.jp-ux-gone, .jp-sb-vid-title.jp-ux-gone{ display:none !important; }
+/* 6 · pautas y tips: acordeón por sección */
+.jp-sb-pauta.jp-ux-acc > .jp-sb-pauta-lb{ display:flex; align-items:center; gap:8px; cursor:pointer; -webkit-tap-highlight-color:transparent; min-height:34px; }
+.jp-sb-pauta.jp-ux-acc > .jp-sb-pauta-lb .jp-ux-chev{ margin-left:auto; color:#FF5500; font-size:.7rem; transition:transform .18s; }
+.jp-sb-pauta.jp-ux-acc.jp-ux-shut > .jp-sb-pauta-txt{ display:none !important; }
+.jp-sb-pauta.jp-ux-acc.jp-ux-shut > .jp-sb-pauta-lb .jp-ux-chev{ transform:rotate(-90deg); }
+/* 7 · registro: carga precargada */
+.jp-reg-kg.jp-reg-pre{ color:#FF5500 !important; font-weight:700; }
+.jp-reg-hint{ margin:-6px 0 10px; font:600 .6rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; color:#FF5500; text-transform:uppercase; }
+/* 8 · filas de series compactas (una línea por serie) para acortar el scroll */
+html body.jp-mission:not(.cf-disc) .jp-set-tracker-native .jp-set-row-native{ flex-wrap:nowrap !important; gap:6px !important; padding:5px 8px !important; }
+html body.jp-mission:not(.cf-disc) .jp-set-tracker-native .jp-set-inputs-group{ flex:1 1 auto !important; min-width:0 !important; gap:4px !important; justify-content:flex-end !important; }
+html body.jp-mission:not(.cf-disc) .jp-set-tracker-native .jp-input-native{ width:46px !important; }
+html body.jp-mission:not(.cf-disc) .jp-set-tracker-native .jp-btn-check-native{ width:40px !important; height:40px !important; }
+</style>
+<script>
+(function(){
+  'use strict';
+  if(window.__jpUxFinal) return; window.__jpUxFinal = 1;
+  var D = document;
+  function $(s, r){ return (r || D).querySelector(s); }
+  function $$(s, r){ return [].slice.call((r || D).querySelectorAll(s)); }
+  function esSb(){ return !!(D.body && D.body.classList.contains('jp-mission') && !D.body.classList.contains('cf-disc')); }
+  function lsKey(){ try{ return (typeof STORAGE_KEY !== 'undefined' ? STORAGE_KEY : 'coachjp') + '_wu'; }catch(e){ return 'coachjp_wu'; } }
+  function wuLoad(){ try{ return JSON.parse(localStorage.getItem(lsKey()) || '{}') || {}; }catch(e){ return {}; } }
+  function wuSave(m){ try{ localStorage.setItem(lsKey(), JSON.stringify(m)); }catch(e){} }
+
+  /* ---------- 1 · menú del header ---------- */
+  var NIVEL_FZ = { n: 'Normal', g: 'Grande', x: 'Extra' };
+  function cerrarMenu(){
+    var m = $('#jpUxMenu'), bg = $('#jpUxMenuBg'), b = $('#jpUxMenuBtn');
+    if(m) m.remove(); if(bg) bg.remove(); if(b) b.setAttribute('aria-expanded', 'false');
+  }
+  function abrirMenu(){
+    cerrarMenu();
+    var top = $('#hdCompact .hdc-top'); if(!top) return;
+    var hist = $('.jp-hist-btn', top), fz = $('#hdcFzBtn'), info = $('#hdcInfoBtn');
+    var bg = D.createElement('div'); bg.id = 'jpUxMenuBg'; bg.className = 'jp-ux-menu-bg';
+    var m = D.createElement('div'); m.id = 'jpUxMenu'; m.className = 'jp-ux-menu'; m.setAttribute('role', 'menu');
+    var h = '';
+    if(hist) h += '<button type="button" role="menuitem" data-uxm="hist"><span class="jp-ux-mi">&#128200;</span><span>Historial y marcas</span></button>';
+    if(fz) h += '<button type="button" role="menuitem" data-uxm="fz"><span class="jp-ux-mi">Aa</span><span>Tama&ntilde;o de letra</span><span class="jp-ux-mv">' + (NIVEL_FZ[fz.getAttribute('data-fz-lvl')] || 'Normal').toUpperCase() + '</span></button>';
+    if(info) h += '<button type="button" role="menuitem" data-uxm="info"><span class="jp-ux-mi">&#128450;&#65039;</span><span>Perfil, credencial y archivos</span></button>';
+    m.innerHTML = h;
+    D.body.appendChild(bg); D.body.appendChild(m);
+    var b = $('#jpUxMenuBtn'); if(b) b.setAttribute('aria-expanded', 'true');
+  }
+  function montarMenu(){
+    var top = $('#hdCompact .hdc-top'); if(!top || $('#jpUxMenuBtn', top)) return;
+    if(!$('.jp-hist-btn', top) && !$('#hdcFzBtn', top) && !$('#hdcInfoBtn', top)) return;
+    var b = D.createElement('button'); b.type = 'button'; b.id = 'jpUxMenuBtn'; b.className = 'jp-ux-menu-btn';
+    b.setAttribute('aria-label', 'Menú'); b.setAttribute('aria-haspopup', 'true'); b.setAttribute('aria-expanded', 'false');
+    b.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>';
+    top.appendChild(b);
+  }
+  D.addEventListener('click', function(e){
+    var t = e.target; if(!t || !t.closest) return;
+    if(t.closest('#jpUxMenuBtn')){ e.preventDefault(); if($('#jpUxMenu')) cerrarMenu(); else abrirMenu(); return; }
+    if(t.closest('#jpUxMenuBg')){ cerrarMenu(); return; }
+    var it = t.closest('#jpUxMenu [data-uxm]'); if(!it) return;
+    var k = it.getAttribute('data-uxm'), top = $('#hdCompact .hdc-top');
+    if(k === 'fz'){
+      var fz = $('#hdcFzBtn'); if(fz){ fz.click(); var v = it.querySelector('.jp-ux-mv'); if(v) v.textContent = (NIVEL_FZ[fz.getAttribute('data-fz-lvl')] || 'Normal').toUpperCase(); }
+      return;
+    }
+    cerrarMenu();
+    var el = k === 'hist' ? (top && $('.jp-hist-btn', top)) : $('#hdcInfoBtn');
+    if(el) el.click();
+  });
+  D.addEventListener('keydown', function(e){ if(e.key === 'Escape') cerrarMenu(); });
+
+  /* ---------- 2 · activación: mini-checklist ---------- */
+  function bloqueId(el){ var b = el.closest ? el.closest('.block') : null; return b ? (b.getAttribute('data-block-id') || '') : ''; }
+  function wuClave(row){
+    var det = row.closest('.jp-warm-acc'), filas = det ? $$('.jp-sb-plain-warmup', det) : [];
+    return [state.currentWeek, state.currentDay, bloqueId(row), filas.indexOf(row)].join('|');
+  }
+  function wuProgreso(det){
+    var filas = $$('.jp-sb-plain-warmup', det), n = filas.filter(function(f){ return f.classList.contains('jp-ux-on'); }).length;
+    var p = $('.jp-ux-wu-prog', det); if(p) p.textContent = n + '/' + filas.length;
+    det.classList.toggle('jp-ux-wu-ok', filas.length > 0 && n === filas.length);
+    return { n: n, total: filas.length };
+  }
+  function mejorarActivacion(root){
+    $$('.jp-warm-acc', root).forEach(function(det){
+      if(det.getAttribute('data-uxwu')) return;
+      var filas = $$('.jp-sb-plain-warmup', det); if(!filas.length) return;
+      det.setAttribute('data-uxwu', '1');
+      var hecho = wuLoad();
+      var sm = $('summary', det);
+      if(sm && !$('.jp-ux-wu-prog', sm)){ var p = D.createElement('span'); p.className = 'jp-ux-wu-prog'; var ch = $('.jp-warm-chev', sm); if(ch) sm.insertBefore(p, ch); else sm.appendChild(p); }
+      filas.forEach(function(f){
+        f.classList.add('jp-ux-wu-row'); f.setAttribute('role', 'checkbox'); f.setAttribute('tabindex', '0');
+        var ck = D.createElement('span'); ck.className = 'jp-ux-ck'; ck.setAttribute('aria-hidden', 'true'); ck.textContent = '✓';
+        f.insertBefore(ck, f.firstChild);
+        var on = !!hecho[wuClave(f)];
+        f.classList.toggle('jp-ux-on', on); f.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+      wuProgreso(det);
+    });
+  }
+  function alternarActivacion(row){
+    var m = wuLoad(), k = wuClave(row), on = !row.classList.contains('jp-ux-on');
+    row.classList.toggle('jp-ux-on', on); row.setAttribute('aria-checked', on ? 'true' : 'false');
+    if(on) m[k] = 1; else delete m[k];
+    wuSave(m);
+    try{ if('vibrate' in navigator) navigator.vibrate(on ? 12 : 6); }catch(e){}
+    var det = row.closest('.jp-warm-acc'), pr = det ? wuProgreso(det) : null;
+    if(on && pr && pr.n === pr.total && det.open){ setTimeout(function(){ if(det.classList.contains('jp-ux-wu-ok')) det.open = false; }, 650); }
+  }
+  D.addEventListener('click', function(e){
+    var r = e.target && e.target.closest ? e.target.closest('.jp-ux-wu-row') : null; if(!r || e.target.closest('.jp-ux-vid')) return;
+    e.preventDefault(); alternarActivacion(r);
+  });
+  D.addEventListener('keydown', function(e){
+    if(e.key !== ' ' && e.key !== 'Enter') return;
+    var r = e.target && e.target.closest ? e.target.closest('.jp-ux-wu-row') : null; if(!r) return;
+    e.preventDefault(); alternarActivacion(r);
+  });
+
+  /* ---------- 3 · videos en línea junto a cada ejercicio ---------- */
+  var STOP = { de:1, con:1, en:1, la:1, el:1, los:1, las:1, a:1, y:1, al:1, del:1, the:1, with:1, on:1, and:1, of:1, un:1, una:1, por:1 };
+  function toks(s){
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').split(/\\s+/)
+      .filter(function(w){ return w && !STOP[w]; }).map(function(w){ return w.length > 3 ? w.replace(/(?:es|s)$/, '') : w; });
+  }
+  function cobertura(a, b){
+    if(!a.length) return 0; var set = {}; b.forEach(function(w){ set[w] = 1; });
+    var n = 0; a.forEach(function(w){ if(set[w]) n++; }); return n / a.length;
+  }
+  function videosEnLinea(root){
+    $$('.jp-sb-board', root).forEach(function(bd){
+      var cards = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); });
+      if(!cards.length) return;
+      var nombres = $$('.jp-sb-ex-nombre, .jp-sb-subex-tit, .jp-sb-subex-nombre, .jp-sb-plain-nombre', bd).filter(function(n){ return !n.parentNode.querySelector('.jp-ux-vid'); });
+      if(!nombres.length) return;
+      var pares = [];
+      cards.forEach(function(c, ci){
+        var nm = $('.jp-sb-vid-nombre', c), a = toks(nm ? nm.textContent : '');
+        nombres.forEach(function(n, ni){ var s = cobertura(a, toks(n.textContent)); if(s >= 0.6) pares.push({ s: s, ci: ci, ni: ni }); });
+      });
+      pares.sort(function(x, y){ return y.s - x.s; });
+      var usadoC = {}, usadoN = {};
+      pares.forEach(function(p){
+        if(usadoC[p.ci] || usadoN[p.ni]) return; usadoC[p.ci] = 1; usadoN[p.ni] = 1;
+        var c = cards[p.ci], n = nombres[p.ni], head = n.parentNode;
+        var yt = c.getAttribute('data-yt'), q = c.getAttribute('data-vsearch');
+        var nm = $('.jp-sb-vid-nombre', c), etq = nm ? nm.textContent.trim() : 'ejercicio';
+        var bt = D.createElement('button'); bt.type = 'button'; bt.className = 'jp-ux-vid' + (yt ? '' : ' jp-ver-busca');
+        if(yt) bt.setAttribute('data-yt', yt); else bt.setAttribute('data-vsearch', q || etq);
+        bt.setAttribute('aria-label', 'Ver técnica de ' + etq.replace(/"/g, ''));
+        bt.innerHTML = (yt ? '<span class="jp-ux-vth" style="background-image:url(https://img.youtube.com/vi/' + yt + '/mqdefault.jpg)"></span>' : '') + '<span class="jp-ux-vp">&#9654;&#65038;</span>';
+        head.appendChild(bt);
+        c.classList.add('jp-ux-gone');
+      });
+      var quedan = $$('.jp-sb-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
+      if(!quedan){ $$('.jp-sb-vid-cards, .jp-sb-vid-title', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
+    });
+  }
+
+  /* ---------- 4 · pautas y tips: acordeón por sección ---------- */
+  function mejorarPautas(root){
+    $$('.jp-details-content', root).forEach(function(c){
+      if(c.getAttribute('data-uxacc')) return;
+      var ps = $$(':scope > .jp-sb-pauta', c); if(!ps.length) return;
+      c.setAttribute('data-uxacc', '1');
+      if(ps.length < 2) return;
+      ps.forEach(function(p, i){
+        var lb = $(':scope > .jp-sb-pauta-lb', p); if(!lb) return;
+        p.classList.add('jp-ux-acc');
+        var ch = D.createElement('span'); ch.className = 'jp-ux-chev'; ch.textContent = '▾'; lb.appendChild(ch);
+        lb.setAttribute('role', 'button'); lb.setAttribute('tabindex', '0');
+        if(i > 0) p.classList.add('jp-ux-shut');
+      });
+    });
+  }
+  function alternarPauta(lb){
+    var p = lb.closest('.jp-sb-pauta.jp-ux-acc'); if(!p) return;
+    p.classList.toggle('jp-ux-shut');
+  }
+  D.addEventListener('click', function(e){ var lb = e.target && e.target.closest ? e.target.closest('.jp-sb-pauta.jp-ux-acc > .jp-sb-pauta-lb') : null; if(lb){ e.preventDefault(); alternarPauta(lb); } });
+  D.addEventListener('keydown', function(e){
+    if(e.key !== ' ' && e.key !== 'Enter') return;
+    var lb = e.target && e.target.closest ? e.target.closest('.jp-sb-pauta.jp-ux-acc > .jp-sb-pauta-lb') : null; if(lb){ e.preventDefault(); alternarPauta(lb); }
+  });
+
+  /* ---------- orquestación ---------- */
+  var tm = 0;
+  function pasada(){
+    tm = 0;
+    if(!esSb()) return;
+    try{ montarMenu(); }catch(e){ console.warn('ux menu', e); }
+    var raiz = $('#mainContent') || D.body;
+    try{ mejorarActivacion(raiz); }catch(e1){ console.warn('ux activacion', e1); }
+    try{ videosEnLinea(raiz); }catch(e2){ console.warn('ux videos', e2); }
+    try{ mejorarPautas(raiz); }catch(e3){ console.warn('ux pautas', e3); }
+  }
+  function programar(){ if(tm) return; tm = setTimeout(pasada, 90); }
+  function iniciar(){
+    pasada();
+    try{ new MutationObserver(programar).observe(D.body, { childList: true, subtree: true }); }catch(e){}
+  }
+  if(D.readyState === 'loading') D.addEventListener('DOMContentLoaded', iniciar); else iniciar();
+})();
+<\/script>
+<!--/UX-FINAL-JP-->
 
 </body>
 </html>
