@@ -5169,6 +5169,21 @@ function impMensajeSinBloques(texto, cf){
     (prob ? 'La línea ' + prob.n + ' («' + prob.t.slice(0, 48) + (prob.t.length > 48 ? '…' : '') + '») no es un delimitador de bloque válido. ' : '') +
     'Usá ' + ej + ' + nombre, o "Nombre" seguido de "4 Series: 8-10 reps". No se cambió nada.';
 }
+/* PROTECCIÓN DE PLANIFICACIONES CARGADAS: toda función que REEMPLAZA días con contenido (IA, constructores de semana, protocolos, asignación de plantillas)
+   pasa por acá: si hay bloques cargados pide confirmación explícita y deja un punto de restauración (Ctrl+Z) ANTES de tocar nada.
+   indices = días que se van a pisar (null = todos). Devuelve false si el coach cancela. */
+function jpProtegerPlan(p, indices, etiqueta){
+  try{
+    const idx = Array.isArray(indices) ? indices : (p.dias || []).map((_, i) => i);
+    const n = idx.filter(i => p.dias[i] && (p.dias[i].bloques || []).length).length;
+    if(n){
+      const quien = (typeof active === 'function' && active()) ? fullName(active()) : 'el alumno/a';
+      if(!confirm('⚠ ' + etiqueta + ' va a REEMPLAZAR el contenido ya cargado de ' + n + ' día' + (n === 1 ? '' : 's') + ' de ' + quien + '.\n\nNo se toca nada más y podés deshacerlo con Ctrl+Z.\n\n¿Continuar?')) return false;
+    }
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar(etiqueta);
+  }catch(e){ console.warn('proteger plan', e); }
+  return true;
+}
 function ejecutarImportacion(texto, modo){
   const p = plan(S.activeId), ath = active();
   if(!p || !ath){ toast('Seleccioná un alumno/a primero', 'err'); return false; }
@@ -44043,6 +44058,14 @@ function buildProgramConfig(ath){
       finisherIA: finisherDelDia(ath, d),
       nutri: nutriDelDia(ath, d)
     };
+    /* ROTULOS COHERENTES (solo Sports): título, etiqueta, chips y foco se verifican contra los bloques reales; si el rótulo del coach habla de otra cosa
+       ("Piernas" en una sesión de espalda) o no tiene nombre, el alumno ve el que corresponde. La planificación del coach no se modifica. */
+    if(!discCF && typeof window.jpSincronizarDia === 'function'){
+      try{
+        const sy = window.jpSincronizarDia(d);
+        if(sy && sy.corregido){ out.title = sy.title; out.label = sy.label; out.metaChips = sy.metaChips; out.focusText = sy.focusText; out.rotuloAuto = sy.motivo; }
+      }catch(eRot){ console.warn('rotulos', eRot); }
+    }
     /* Independencia real de semanas (CrossFit): además de `blocks` (arriba,
        Semana 1 -- se mantiene por compatibilidad con cualquier lectura
        vieja que no sepa de semanas), se exportan las 4 listas completas
@@ -45860,6 +45883,7 @@ document.addEventListener('DOMContentLoaded', init);
     };
     const scope = $('#aiScope').value;
     const targets = scope === 'day' ? [S.ui.day] : p.dias.map((_, i) => i);
+    if(!jpProtegerPlan(p, targets, 'La generación con IA' + ($('#aiMeso').checked ? ' (y el mesociclo)' : ''))) return;
     const btn = $('#aiRun');
     running = true; btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span> Generando…';
@@ -45897,6 +45921,8 @@ document.addEventListener('DOMContentLoaded', init);
         const txt = await callAI(SYS, dayPrompt(ath, di, p.dias.length, foco, opts), log);
         const day = sanitizeDay(extractJson(txt), ath, di, notes);
         day.id = p.dias[di].id || day.id;
+        /* una respuesta vacía o inválida NUNCA pisa un día cargado */
+        if(!day.bloques || !day.bloques.length){ log('⚠ ' + esc(p.dias[di].short) + ': la IA no devolvió bloques válidos, se conserva el día como estaba.', 'warn'); continue; }
         p.dias[di] = day;
         resumen.push(day.short + ': ' + (day.label || day.title));
         okCount++;
@@ -54355,6 +54381,7 @@ body.man-mode .gs-fab{right:318px}
   function correrSemana(){
     const ath = active(); if(!ath) return;
     const p = plan(ath.id);
+    if(!jpProtegerPlan(p, null, 'Construir la semana')) return;
     const metMode = $('#wkMet').value;
     const conRamp = $('#wkRamp').checked;
     const reMeso = $('#wkMeso').checked;
@@ -54926,6 +54953,7 @@ body.man-mode .gs-fab{right:318px}
 
     if(scope === 'swap'){
       swaps = calcularSwaps(prot, ath, 'day');
+      if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Sustituir ejercicios por el protocolo de ' + prot.lb);
       let n = 0;
       swaps.forEach(s => {
         if(!s.to) return;
@@ -54941,6 +54969,7 @@ body.man-mode .gs-fab{right:318px}
       save(); renderBuilder(); pintarSwaps();
       toast('🩹 ' + n + ' ejercicio(s) sustituidos por el protocolo de ' + prot.lb);
     } else {
+      if(!jpProtegerPlan(p, scope === 'week' ? null : [S.ui.day], 'El protocolo de ' + prot.lb)) return;
       const dias = scope === 'week' ? p.dias : [p.dias[S.ui.day]];
       let total = 0; const notas = [];
       dias.forEach(d => {
@@ -55456,6 +55485,7 @@ body.man-mode .gs-fab{right:318px}
     const ath = getAth($('#asigAth').value); if(!ath) return;
     if(!(r.dias || []).length){ toast('Esa plantilla está vacía', 'warn'); return; }
     const p = plan(ath.id);
+    if(!jpProtegerPlan(p, null, 'Asignar «' + r.nombre + '»')) return;
     if(r.std){ ath.freq = (r.dias || []).length; }
     const need = r.std ? r.dias.length : Math.max(3, Math.min(6, parseInt(ath.freq, 10) || 4));
     const dias = clone(r.dias).slice(0, need);
@@ -74398,6 +74428,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     var lista = Array.isArray(S.banco) ? S.banco : [];
     var n = 0, nb = 0;
     lista.forEach(function(r){ (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ if(b && !(b.tipo === 'list' && b.sportsPizarra) && ['block', 'superset', 'finisher', 'hyrox'].indexOf(b.tipo) >= 0) nb++; }); }); });
+    if(window.CoachBaseJP && typeof window.CoachBaseJP.pendientes === 'function') nb = window.CoachBaseJP.pendientes();
     if(!nb){ toast('Todas las plantillas ya usan el esquema táctico', 'ok'); return; }
     if(!confirm('ACTUALIZAR PLANTILLAS\n\nSe van a convertir ' + nb + ' bloque(s) del formato antiguo al esquema táctico (título = ejercicio, dosis en líneas, bisets A1/A2, modalidad automática).\nLos datos originales del bloque no se borran.\n\n¿Continuar?')) return;
     if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Migrar plantillas');
@@ -77092,12 +77123,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(!Array.isArray(S.banco)) S.banco = [];
     S.ui = S.ui || {};
     var primera = !S.ui.bancoStd26, n = 0;
-    if(primera){
-      /* los cuatro Bodybuilding M/F de 3 y 5 días quedan reemplazados por la matriz nueva (misma estructura, estándar actual, 3-4-5 días y dos niveles) */
-      var antes = S.banco.length;
-      S.banco = S.banco.filter(function(r){ return !(r.tipo === 'base' && !r.std && SUPERADAS.test(r.nombre || '')); });
-      n += antes - S.banco.length;
-    }
+    /* solo se AGREGAN las plantillas del sistema: nada de lo que el coach ya tiene guardado se borra ni se modifica */
     if(primera || forzar){
       var nuevos = [];
       LISTA.forEach(function(t){
@@ -77195,9 +77221,31 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     });
   }
 
+  /* bloques de plantillas guardadas que siguen en un formato anterior (no se tocan solos: se convierten con "Actualizar plantillas") */
+  function pendientes(){
+    var n = 0;
+    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
+      if(!r || r.std || r.disc === 'crossfit' || (r.meta && r.meta.mesoDisc === 'crossfit')) return;
+      (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){
+        if(!b || (b.tipo === 'list' && b.sportsPizarra)) return;
+        if(['block', 'superset', 'finisher', 'hyrox'].indexOf(b.tipo) >= 0) n++;
+        else if(b.tipo === 'list' && !/^(metcon|cardio|endurance)$/.test(b.category || '')) n++;
+      }); });
+      if(!r.genero && /femenin|masculin/i.test(r.nombre || '')) n++;
+    });
+    return n;
+  }
+
   /* ---------- Banco de Rutinas: etiquetas de las plantillas del sistema + botón de restaurar ---------- */
   function pintarStd(){
     var g = document.getElementById('bankGrid'); if(!g) return;
+    var pend = pendientes(), barra = document.getElementById('bankLegacyBar');
+    if(pend && !barra && g.parentNode){
+      barra = document.createElement('div'); barra.id = 'bankLegacyBar'; barra.className = 'alert info'; barra.style.cssText = 'padding:10px 12px;margin:0 0 12px';
+      barra.innerHTML = '<span class="ic">🗂️</span><div><b>' + pend + ' bloque(s) de tus plantillas guardadas están en un formato anterior</b>No se modifican solos: tocá <button type="button" class="btn xs gold" id="bankLegacyGo">🔄 Actualizar plantillas</button> para llevarlas al formato actual (se puede deshacer con Ctrl+Z).</div>';
+      g.parentNode.insertBefore(barra, g);
+      barra.querySelector('#bankLegacyGo').addEventListener('click', function(){ if(typeof window.migrarPlantillasBanco === 'function') window.migrarPlantillasBanco(); setTimeout(function(){ var b = document.getElementById('bankLegacyBar'); if(b && !pendientes()) b.remove(); }, 150); });
+    } else if(!pend && barra){ barra.remove(); }
     (S.banco || []).forEach(function(r){
       if(!r.std) return;
       var card = g.querySelector('[data-bank="' + r.id + '"]'); if(!card) return;
@@ -77210,7 +77258,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       b.title = 'Vuelve a cargar las plantillas Coach JP (3 / 4 / 5 días · Intermedio y Avanzado · Masculino y Femenino) que falten en el banco';
       b.innerHTML = '🔄 Restaurar plantillas Coach JP';
       b.addEventListener('click', function(){
-        var n = sembrarBanco(true); hidratarStd(); modernizarBanco();
+        var n = sembrarBanco(true); hidratarStd();
         if(typeof renderBanco === 'function') renderBanco();
         toast(n ? '🗂️ ' + n + ' plantilla(s) Coach JP restaurada(s)' : 'Todas las plantillas Coach JP ya están en el banco');
         setTimeout(pintarStd, 60);
@@ -77222,15 +77270,16 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   if(typeof _go === 'function'){
     window.go = function(v){
       var r = _go.apply(this, arguments);
-      if(v === 'banco'){ setTimeout(function(){ try{ sembrarBanco(false); hidratarStd(); modernizarBanco(); if(typeof renderBanco === 'function') renderBanco(); pintarStd(); }catch(e){ console.warn('banco std', e); } }, 60); }
+      if(v === 'banco'){ setTimeout(function(){ try{ sembrarBanco(false); hidratarStd(); if(typeof renderBanco === 'function') renderBanco(); pintarStd(); }catch(e){ console.warn('banco std', e); } }, 60); }
       return r;
     };
   }
 
   /* ---------- puertas de entrada viejas: las plantillas BB, "Plantillas profesionales" y el banco base abren la biblioteca unificada ---------- */
-  window.CoachBaseJP = { lista: LISTA, asignar: asignar, posAsignar: posAsignar, sembrar: sembrarBanco, modernizarBanco: modernizarBanco, modernizarBloque: modernizarBloque, modernizarDia: modernizarDia, proyectar: proyectar, auditar: PB.auditar, texto: PB.textoSesion, dias: PB.construirDias };
+  window.CoachBaseJP = { lista: LISTA, asignar: asignar, posAsignar: posAsignar, sembrar: sembrarBanco, modernizarBanco: modernizarBanco, pendientes: pendientes, modernizarBloque: modernizarBloque, modernizarDia: modernizarDia, proyectar: proyectar, auditar: PB.auditar, texto: PB.textoSesion, dias: PB.construirDias };
   window.jpModernizarDia = modernizarDia;
-  function arranque(){ try{ paraModal(); sembrarBanco(false); hidratarStd(); modernizarBanco(); }catch(e){ console.warn('plantillas base', e); } }
+  /* al cargar solo se suman las plantillas del sistema y se regeneran sus días en memoria: la modernización de lo que el coach ya guardó es SOLO a pedido (botón "Actualizar plantillas") */
+  function arranque(){ try{ paraModal(); sembrarBanco(false); hidratarStd(); }catch(e){ console.warn('plantillas base', e); } }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arranque, 1600); });
   else setTimeout(arranque, 1600);
   paraModal();
@@ -77395,6 +77444,165 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }, true);
   document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ var m = document.getElementById('mBankView'); if(m && m.classList.contains('on')) closeModal('mBankView'); } });
   window.CoachBaseJP = window.CoachBaseJP || {}; window.CoachBaseJP.previsualizar = abrir;
+})();
+</script>
+<script>
+/* =========================================================
+   RÓTULOS COHERENTES · título, etiqueta, chips y foco del día leídos de los bloques REALES
+   Una storycard / encabezado nunca dice "Día de piernas" en una sesión de espalda: la app del alumno recibe el rótulo que corresponde a lo que
+   hay cargado (la planificación del coach no se toca sola; el Builder avisa y corrige a pedido).
+   ========================================================= */
+(function(){
+  'use strict';
+  var nz = function(s){ return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); };
+  /* familia de un ejercicio por su nombre (el primero que coincide) */
+  var RX_FAM = [
+    ['core', /plancha|dead bug|pallof|rueda abdominal|elevacion de piernas|elevacion de rodillas|crunch|woodchop|bird dog|hollow|abdominal|russian twist|copenhagen|toes to bar|v-?ups/],
+    ['triceps', /triceps|press frances|press jm|patada de triceps|fondos entre bancos|extension.*tras nuca|agarre cerrado/],
+    ['biceps', /curl(?! femoral| nordico)|biceps/],
+    ['inf', /sentadilla|prensa|zancada|bulgar|split squat|step ?up|step down|rumano|hip thrust|puente de gluteo|patada de gluteo|extension de cadera|pull-?through|abduccion|aduccion|curl femoral|nordico|extension de cuadriceps|hack|gemelo|talones|buenos dias|good morning|monster walk|sissy|peso muerto/],
+    ['espalda', /remo|jalon|dominada|pull-?up|chin-?up|pull-?over en polea|encogimientos|hiperextension|superman|dorsal|australian/],
+    ['dpost', /pajaro|elevaciones posteriores|cruce de cables deltoides|face pull|deltoide posterior|rotacion externa/],
+    ['hombros', /press militar|press de hombros|press arnold|elevaciones laterales|elevacion lateral|elevaciones frontales|push press|remo al menton|press landmine|handstand/],
+    ['pecho', /press de banca|press banca|bench|press plano|press inclinado|press declinado|aperturas|cruce de cables|cruce de poleas|pec deck|contractor de pecho|fondos|flexiones|press de pecho|floor press|pull-?over con mancuerna/]
+  ];
+  function famDe(nombre){
+    var n = nz(nombre);
+    for(var i = 0; i < RX_FAM.length; i++){ if(RX_FAM[i][1].test(n)) return RX_FAM[i][0]; }
+    /* sin coincidencia por nombre: el grupo de la biblioteca */
+    try{
+      var e = window.__jpPB && window.__jpPB.exLib(String(nombre).replace(/\s*\(.*\)\s*$/, ''));
+      if(e){ return { 'Pectoral': 'pecho', 'Espalda': 'espalda', 'Hombros': 'hombros', 'Brazos': 'biceps', 'Piernas/Glúteos': 'inf', 'Core': 'core' }[e.grupo] || ''; }
+    }catch(err){}
+    return '';
+  }
+  var CAD = /rumano|hip thrust|puente|patada|extension de cadera|pull-?through|abduccion|aduccion|curl femoral|nordico|buenos dias|good morning|peso muerto/;
+
+  /* ejercicios reales del día con sus series (sin entrada en calor ni cardio / metcon) */
+  function ejerciciosDe(d){
+    var out = [];
+    (d.bloques || []).forEach(function(b){
+      if(!b || b.optional && /metcon|cardio|endurance/.test(b.category || '')) return;
+      if(/^(warmup|metcon|cardio|endurance)$/.test(b.category || '') || b.modalidad === 'calentamiento' || b.modalidad === 'metcon') return;
+      if(b.tipo === 'list'){
+        var nombre = null;
+        (b.items || []).forEach(function(l){
+          l = String(l).trim(); if(!l || /^(rest|descanso)\b/i.test(l)) return;
+          var m = /^(\d+)\s*x\s*\d/i.exec(l);
+          if(m){ if(nombre){ out.push({ n: nombre, s: parseInt(m[1], 10) || 1 }); nombre = null; } return; }
+          var inline = /^(.*?)\s*[—–-]\s*(\d+)\s*x\s*\d/.exec(l);
+          if(inline){ out.push({ n: inline[1].replace(/^-\s*/, ''), s: parseInt(inline[2], 10) || 1 }); nombre = null; return; }
+          nombre = l.replace(/^A\d+\.\s*/, '').replace(/^-\s*/, '').replace(/\s*\(.*\)\s*$/, '').replace(/\s*[—–]\s*.*$/, '').trim();
+        });
+      } else if(b.tipo === 'block'){
+        var ex = (typeof getEx === 'function') ? getEx(b.exId) : null; if(ex) out.push({ n: ex.es, s: parseInt(b.efSets, 10) || 3 });
+      } else if(b.tipo === 'superset'){
+        (b.ejercicios || []).forEach(function(e){ var x = (typeof getEx === 'function') ? getEx(e.exId) : null; if(x) out.push({ n: x.es, s: parseInt(b.efSets, 10) || 3 }); });
+      } else if(b.tipo === 'finisher'){
+        (b.fin || []).forEach(function(e){ var x = (typeof getEx === 'function') ? getEx(e.exId) : null; if(x) out.push({ n: x.es, s: 2 }); });
+      }
+    });
+    return out;
+  }
+  function perfil(d){
+    var f = { inf: 0, pecho: 0, hombros: 0, triceps: 0, espalda: 0, biceps: 0, dpost: 0, core: 0, cad: 0, otros: 0 }, ej = ejerciciosDe(d), n = 0;
+    ej.forEach(function(e){
+      var fam = famDe(e.n); if(!fam){ f.otros += e.s; return; }
+      f[fam] += e.s; if(fam === 'inf' && CAD.test(nz(e.n))) f.cad += e.s; if(fam !== 'core') n++;
+    });
+    var push = f.pecho + f.hombros + f.triceps, pull = f.espalda + f.biceps + f.dpost, tot = f.inf + push + pull;
+    return { f: f, push: push, pull: pull, tot: tot, ej: n, sh: tot ? { inf: f.inf / tot, push: push / tot, pull: pull / tot } : { inf: 0, push: 0, pull: 0 } };
+  }
+  function lista(a){ return a.length <= 1 ? a.join('') : a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1]; }
+  /* qué es la sesión según sus bloques */
+  function real(p){
+    var sh = p.sh, f = p.f, push = p.push || 1, pull = p.pull || 1, partes = [];
+    if(sh.inf >= 0.6){
+      var inf = f.inf || 1, cad = f.cad / inf;
+      var det = cad >= 0.6 ? 'Cadera, Glúteo e Isquios' : (cad <= 0.3 ? 'Cuádriceps y Rodilla' : 'Pierna Completa');
+      return { tipo: 'inf', label: 'Pierna', titulo: 'Pierna · ' + det, chip: '🦵 Pierna' };
+    }
+    if(sh.inf < 0.15){
+      if(sh.push >= 0.65){
+        if(f.pecho / push >= 0.2) partes.push('Pecho'); if(f.hombros / push >= 0.2) partes.push('Hombros'); if(f.triceps / push >= 0.15) partes.push('Tríceps');
+        return { tipo: 'push', label: 'Empuje', titulo: 'Empuje · ' + lista(partes.length ? partes : ['Pecho', 'Hombros']), chip: '💪 Empuje' };
+      }
+      if(sh.pull >= 0.65){
+        if(f.espalda / pull >= 0.3) partes.push('Espalda'); if(f.dpost / pull >= 0.15) partes.push('Deltoide Posterior'); if(f.biceps / pull >= 0.15) partes.push('Bíceps');
+        return { tipo: 'pull', label: 'Tracción', titulo: 'Tracción · ' + lista(partes.length ? partes : ['Espalda']), chip: '💪 Tracción' };
+      }
+      return { tipo: 'torso', label: 'Torso', titulo: 'Torso · Pecho, Espalda y Hombros', chip: '💪 Torso' };
+    }
+    return { tipo: 'full', label: 'Full Body', titulo: 'Full Body', chip: '⚡ Full body' };
+  }
+  /* qué dice el rótulo que escribió el coach */
+  var DEC = { inf: /pierna|cuadricep|isquio|gluteo|cadera|lower|tren inferior|rodilla|gemelo/, push: /pecho|empuje|push|hombro|triceps|deltoide(?! posterior)/, pull: /espalda|traccion|pull|dorsal|biceps|remo|jalon/, torso: /torso|upper|tren superior/, full: /full ?body|cuerpo completo|cuerpo entero/ };
+  function declarado(d){
+    var t = nz([d.title, d.label, (d.metaChips || []).join(' ')].join(' ')).replace(/empuje de cadera|empuje de gluteo/g, 'cadera'), o = { inf: false, push: false, pull: false, full: false };
+    if(DEC.inf.test(t)) o.inf = true; if(DEC.push.test(t)) o.push = true; if(DEC.pull.test(t)) o.pull = true; if(DEC.full.test(t)) o.full = true;
+    if(DEC.torso.test(t)){ o.push = true; o.pull = true; }
+    return o;
+  }
+  var GENERICO = /^(d[ií]a|sesi[oó]n|session|day)\s*\d*$/i;
+  var NOM = { inf: 'piernas', push: 'empuje (pecho, hombros y tríceps)', pull: 'tracción (espalda y bíceps)' };
+
+  /* devuelve los rótulos corregidos (sin tocar el día) */
+  function sincronizar(d){
+    var res = { corregido: false, motivo: '', title: d.title || '', label: d.label || '', metaChips: (d.metaChips || []).slice(), focusText: d.focusText || '', real: null, declarado: null };
+    var p = perfil(d); res.perfil = p;
+    if(p.ej < 3 || p.tot < 6) return res;
+    var r = real(p), dec = declarado(d); res.real = r; res.declarado = dec;
+    var titulo = String(d.title || '').trim(), label = String(d.label || '').trim();
+    var generico = (!titulo || GENERICO.test(titulo)) && (!label || GENERICO.test(label));
+    var malos = [];
+    if(!dec.full){
+      ['inf', 'push', 'pull'].forEach(function(k){ if(dec[k] && p.sh[k] < 0.10) malos.push(k); });
+      if((dec.inf || dec.push || dec.pull) && !dec.full){
+        var dominante = p.sh.inf >= 0.5 ? 'inf' : (p.sh.push >= 0.5 ? 'push' : (p.sh.pull >= 0.5 ? 'pull' : ''));
+        if(dominante && !dec[dominante] && malos.length === 0) malos.push('falta ' + dominante);
+      }
+    }
+    if(malos.length){
+      res.corregido = true;
+      res.motivo = 'el rótulo habla de ' + ['inf', 'push', 'pull'].filter(function(k){ return dec[k]; }).map(function(k){ return NOM[k]; }).join(' y ') + ' pero los bloques son de ' + r.titulo.toLowerCase();
+      res.title = r.titulo; res.label = r.label;
+      var rxMal = new RegExp(malos.map(function(k){ return (DEC[k] || DEC.inf).source; }).join('|'));
+      res.metaChips = res.metaChips.filter(function(c){ return !rxMal.test(nz(c)); });
+      if(r.chip && !res.metaChips.some(function(c){ return c === r.chip; })) res.metaChips.unshift(r.chip);
+      if(res.focusText && rxMal.test(nz(res.focusText))) res.focusText = 'Sesión de ' + r.titulo.toLowerCase() + ': ' + p.ej + ' ejercicios y ' + p.tot + ' series efectivas.';
+    } else if(generico){
+      res.corregido = true; res.motivo = 'sin nombre propio: se rotula con lo que hay cargado';
+      res.title = r.titulo; res.label = r.label;
+      if(r.chip && !res.metaChips.some(function(c){ return c === r.chip; })) res.metaChips.unshift(r.chip);
+    }
+    return res;
+  }
+  window.jpSincronizarDia = sincronizar;
+  window.jpPerfilDia = perfil;
+
+  /* ---------- Builder: aviso sobre el día abierto + corrección a pedido ---------- */
+  function aviso(){
+    var v = document.getElementById('v-builder'), panel = document.getElementById('dayPanel'), bar = document.getElementById('jpRotuloBar');
+    try{
+      var p = (typeof plan === 'function' && S.activeId) ? plan(S.activeId) : null, d = p && p.dias ? p.dias[S.ui.day] : null;
+      if(!v || !panel || !d || (typeof esPlanCFActivo === 'function' && esPlanCFActivo(p))){ if(bar) bar.remove(); return; }
+      var s = sincronizar(d);
+      if(!s.corregido || /sin nombre propio/.test(s.motivo)){ if(bar) bar.remove(); return; }
+      if(!bar){ bar = document.createElement('div'); bar.id = 'jpRotuloBar'; bar.className = 'alert warn'; bar.style.cssText = 'padding:10px 12px;margin:0 0 12px'; panel.parentNode.insertBefore(bar, panel); }
+      bar.innerHTML = '<span class="ic">🏷️</span><div><b>El rótulo de ' + esc(d.short || 'este día') + ' no coincide con sus bloques</b>' + esc(s.motivo.charAt(0).toUpperCase() + s.motivo.slice(1)) + '. La app del alumno ya muestra «' + esc(s.title) + '». <button type="button" class="btn xs gold" id="jpRotuloFix">Corregir acá también</button></div>';
+      bar.querySelector('#jpRotuloFix').addEventListener('click', function(){
+        if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Corregir rótulo de ' + (d.short || 'día'));
+        d.title = s.title; d.label = s.label; d.metaChips = s.metaChips; d.focusText = s.focusText;
+        save(); renderBuilder(); toast('🏷️ Rótulo corregido: ' + s.title);
+      });
+    }catch(e){ if(bar) bar.remove(); }
+  }
+  ['renderBuilder', 'renderDay', 'go'].forEach(function(fn){
+    var f = window[fn]; if(typeof f !== 'function' || f.__jprot) return;
+    var w = function(){ var r = f.apply(this, arguments); setTimeout(aviso, 140); return r; }; w.__jprot = 1; window[fn] = w;
+  });
+  document.addEventListener('input', function(e){ if(e.target && e.target.matches && e.target.matches('textarea[data-bf="items"]')){ clearTimeout(aviso.t); aviso.t = setTimeout(aviso, 900); } });
+  setTimeout(aviso, 1500);
 })();
 </script>
 <script>
@@ -78521,6 +78729,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   async function aplicarCambio(bid, idx, exId, recalc){
     var ta = textareaItems(bid), ex = (typeof S !== 'undefined' ? S.exercises : []).filter(function(e){ return e.id === exId; })[0]; if(!ta || !ex) return false;
     var nuevo = ex.es + (ex.en ? ' (' + ex.en + ')' : '');
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Cambiar ejercicio');
     ta.value = reemplazarLinea(ta.value, idx, nuevo);
     ta.dispatchEvent(new Event('input', { bubbles: true }));                /* mismo camino que tipear: revincula video, alertas y formato */
     try{ var b = findBlock(bid); if(b && typeof setBlockField === 'function') setBlockField(b, 'items', ta.value); }catch(er){}
@@ -78574,6 +78783,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         if(!hay) tips.push(l);
       });
       var tObj = document.querySelector('textarea[data-bf="objective"][data-b="' + bid + '"]'), tTips = document.querySelector('textarea[data-bf="tips"][data-b="' + bid + '"]');
+      if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Recalcular tips con IA');
       if(obj){ b.objective = obj; if(tObj){ tObj.value = obj; tObj.dispatchEvent(new Event('input', { bubbles: true })); } }
       if(tips.length){ b.tips = tips.join('\n'); if(tTips){ tTips.value = b.tips; tTips.dispatchEvent(new Event('input', { bubbles: true })); } }
       try{ save(); }catch(er){}
