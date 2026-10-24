@@ -2078,7 +2078,7 @@ let _ultLib = null, _ultPlans = null;
 function jpPersistirEstado(){
   const libStr = JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV });
   const plObj = { plans: S.plans, activeId: S.activeId, ui: S.ui };
-  if(Array.isArray(S.banco)) plObj.banco = S.banco.map(r => (r && r.std) ? Object.assign({}, r, { dias: [] }) : r);      /* plantillas del sistema (std): sus dias se regeneran desde el codigo, no se guardan (cada una pesa ~35 KB) */
+  if(Array.isArray(S.banco)) plObj.banco = S.banco.map(r => (r && (r.std || r.cfMesSys)) ? Object.assign({}, r, { dias: [] }) : r);      /* plantillas del sistema (std): sus dias se regeneran desde el codigo, no se guardan (cada una pesa ~35 KB) */
   if(Array.isArray(S.sedes)) plObj.sedes = S.sedes;
   if(S.exportLog && typeof S.exportLog === 'object') plObj.exportLog = S.exportLog;
   const plStr = JSON.stringify(plObj);
@@ -44329,7 +44329,7 @@ html body.cf-disc .jp-ux-larga > .jp-cf-row > .jp-cf-rn{ flex:1 1 auto !importan
       h.parentNode.insertBefore(e, h.nextSibling);
     });
   }
-  var RX_ESTRUCT = /^\\W*(?:every|emom|e\\d+mom|amrap|for\\s*time|chipper|tabata|\\d+\\s*(?:sets?|rounds?|rondas?|series)\\b|min(?:ute)?s?\\s*\\d)/i;
+  var RX_ESTRUCT = /^\\W*(?:every|emom|e\\d+mom|amrap|for\\s*time|chipper|tabata|\\d+(?:\\s*[-–]\\s*\\d+)?\\s*(?:sets?|quality\\s*(?:sets?|rounds?)|rounds?|rondas?|series|supersets?)\\b|(?:superset|supersets|alternating|alternando)\\b|min(?:ute)?s?\\s*\\d)/i;
   /* toda la metadata del bloque (estructura, rondas, time cap, regla de descanso) en UNA cabecera; sin parches sueltos ni textos repetidos */
   function metaWod(bd, cont){
     if($('.jp-ux-cab', bd)) return;
@@ -56721,8 +56721,8 @@ body.man-mode .gs-fab{right:318px}
     if(!(r.dias || []).length){ toast('Esa plantilla está vacía', 'warn'); return; }
     const p = plan(ath.id);
     if(!jpProtegerPlan(p, null, 'Asignar «' + r.nombre + '»')) return;
-    if(r.std){ ath.freq = (r.dias || []).length; }
-    const need = r.std ? r.dias.length : Math.max(3, Math.min(6, parseInt(ath.freq, 10) || 4));
+    if(r.std || r.cfMes){ ath.freq = (r.dias || []).length; }
+    const need = (r.std || r.cfMes) ? r.dias.length : Math.max(3, Math.min(6, parseInt(ath.freq, 10) || 4));
     const dias = clone(r.dias).slice(0, need);
     while(dias.length < need){
       const base = clone(r.dias[dias.length % r.dias.length]);
@@ -56749,6 +56749,8 @@ body.man-mode .gs-fab{right:318px}
       });
     });
     p.dias = dias;
+    /* Mes de CrossFit: re-id de los bloques de las 4 semanas, plan CrossFit y nivel del alumno/a (ver módulo del Mes 1) */
+    const cfNota = (r.cfMes && window.CoachCFMes) ? window.CoachCFMes.alAsignar(r, p, ath) : '';
     if($('#asigMeso').checked && (r.meso || []).length){
       p.meso = clone(r.meso);
       p.meta = Object.assign(p.meta || {}, clone(r.meta || {}));
@@ -56761,7 +56763,7 @@ body.man-mode .gs-fab{right:318px}
     if(window.CoachTools && window.CoachTools.inyectarCargas){ try{ window.CoachTools.inyectarCargas(true); }catch(e){} }
     renderAthletes(); renderBanco();
     $('#asigLog').innerHTML = '<div class="alert ' + (cambios.length ? 'warn' : 'good') + '" style="padding:10px 12px"><span class="ic">' + (cambios.length ? '⚠️' : '✅') + '</span>' +
-      '<div><b>Rutina asignada a ' + esc(fullName(ath)) + ' · ' + dias.length + ' días</b>' +
+      '<div><b>Rutina asignada a ' + esc(fullName(ath)) + ' · ' + dias.length + ' días</b>' + (cfNota ? esc(cfNota) + ' ' : '') +
       (resStd ? (resStd.cargas ? '🏋️ ' + resStd.cargas + ' carga(s) en kilos desde los 1RM de la ficha. ' : '') + (resStd.proy ? '📈 S2-S4 proyectadas. ' : '') + (resStd.conflictos && resStd.conflictos.length ? '⚠️ ' + resStd.conflictos.length + ' ejercicio(s) chocan con las lesiones o restricciones de la ficha: ' + esc(resStd.conflictos.slice(0, 3).join(' · ')) + '. ' : '') : '') +
       (cambios.length ? cambios.length + ' ejercicio(s) reemplazados por variantes seguras: ' + esc(cambios.slice(0,3).join(' · ')) : 'Sin conflictos con sus restricciones.') + '</div></div>';
     toast('🎯 Plantilla asignada a ' + fullName(ath));
@@ -56808,6 +56810,7 @@ body.man-mode .gs-fab{right:318px}
         const r = banco().find(x => x.id === du.dataset.bkdup); if(!r) return;
         const c = clone(r); c.id = uid('bk'); c.nombre = r.nombre + ' (copia)'; c.usos = 0;
         if(c.std){ delete c.std; delete c.stdId; }
+        if(c.cfMesSys){ delete c.cfMesSys; delete c.cfMesId; delete c.cfMesVer; }
         c.creado = new Date().toLocaleDateString('es-AR');
         banco().push(c); save(); renderBanco(); toast('📋 Rutina duplicada');
         return;
@@ -80185,3 +80188,1482 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 })();
 </script>
 
+<!--CF-MES1-->
+<style>
+.cfm-hide{display:none !important}
+.cfm-bar{margin:0 0 12px}
+.bank-card .bank-tag.cfm-t{background:rgba(210,121,63,.14);border-color:rgba(210,121,63,.4);color:#E8965E;font-weight:700}
+.bank-card .bank-tag.cfm-o{background:rgba(124,197,232,.1);border-color:rgba(124,197,232,.35);color:#9AD2EE;font-weight:700}
+.bank-card.cfm-dev{border-top:3px solid #3ecf7a}
+.bank-card.cfm-adv{border-top:3px solid #EFB44A}
+.bank-card.cfm-rx{border-top:3px solid #FF6B57}
+#mCfmView .pv-modal{max-width:940px}
+#mCfmView .modal-h h3 span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mCfmView .pv-nav button.cfm-on{background:var(--gold,#E5C378);border-color:var(--gold,#E5C378);color:#08090B}
+</style>
+<script>
+/* =========================================================
+   MÓDULO · MES 1 DE CROSSFIT EN EL BANCO DE PLANTILLAS BASE
+   Programación mensual (4 semanas x 5 sesiones: lunes, martes, miércoles, viernes y sábado) cargada en tres categorías de nivel:
+   Development · Intermedio / Advanced / RX · Élite. Cada plantilla es un plan CrossFit completo (d.bloquesPorSemana = las 4 semanas
+   independientes). El texto maestro marca con ~D / ~A / ~R (o combinaciones) las líneas que cambian según el nivel; el resto es común.
+   Los bloques se arman con el MISMO importador del Builder (parsearImportacion + crearBloqueImportado): son idénticos a los cargados a mano.
+   Las plantillas del sistema no guardan sus días en el almacenamiento del navegador: se regeneran desde este código (ver jpPersistirEstado).
+   ========================================================= */
+(function(){
+  'use strict';
+  var VER = 1;
+  var SEMANAS = [
+String.raw`#SEMANA 1
+=== DÍA 1: Lunes ===
+[WARM-UP] Activación · Bike, hombros y cross-overs
+Assault Bike 40s on : 20s off x 6 minutos (esfuerzo creciente)
+2 Sets:
+Wrist walks x 60 segundos
+Push-ups x 30 segundos
+Plank hold (brazos extendidos) x 30 segundos
+Rest 30s
+5 minutos de práctica de single / double cross-overs
+
+[SKILL / STRENGTH] A · Gymnastics & Skill Practice (15-25 min)
+~AR 3-5 Rounds:
+~AR 15 Double Cross-overs
+~AR 10 Freestanding Shoulder Taps (con asistencia de pared si necesitás)
+~AR 30 Single Cross-overs
+~AR 7.5m Handstand Walk (con 1-3 freestanding HSPU si es posible)
+~AR Rest 2:00 entre sets
+~D 3-5 Rounds:
+~D 25 Single Cross-overs
+~D 20-30s Handstand Hold (tocá la pared lo menos posible, o nada)
+~D 25 Single Cross-overs
+~D 10 Wall Walks
+~D Rest 2:00 entre sets
+OBJETIVO: La práctica es el estímulo principal: calidad en los cruces y en el control de la parada de manos, no velocidad ni volumen.
+TIPS: No te preocupes por bajar rondas o repeticiones. Máximo 3 intentos por movimiento en cada ronda: si te trabás en los cruces, seguí y reintentá en la siguiente ronda para no perder tiempo.
+PACING: Quien domina todas estas habilidades apunta a unos 2 minutos por ronda o menos.
+~D ESCALADO: Si los cross-overs todavía no salen, hacé single unders con foco en el ritmo de muñecas. Reemplazá el Handstand Hold por Wall Walks lentos.
+~A ESCALADO: Si el Handstand Walk se corta, hacé tramos de 3-4m con descanso en lugar de forzar los 7.5m.
+
+[WOD / METCON] B · Base Fitness Building (30 min)
+AMRAP 30 minutos:
+20/16 Cal Assault Bike
+12 Burpee Box Get Overs (120/100cm)
+400m Run
+Rest 1:00 después de cada round
+~R Con chaleco.
+~A Con chaleco opcional, o como está indicado.
+OBJETIVO: Día largo de base aeróbica: sostener un ritmo constante de rondas durante 30 minutos.
+TIPS: Es un día largo, tomate tu tiempo desde el principio y cuidá la consistencia de tus tiempos de ronda.
+PACING: Que la primera y la última ronda se parezcan: el descanso de 1:00 es parte del plan, usalo.
+~D ESCALADO: Sin chaleco. Burpee box get overs como step-over burpees; si las calorías te llevan más de 1:30, bajá a 16/12 cal.
+~A ESCALADO: Chaleco opcional según tu capacidad; si lo usás, empezá liviano.
+
+[SKILL / STRENGTH] C1 · Prone Barbell Row
+6 Sets:
+Prone Barbell Row x 8 reps @ carga pesada
+Rest 90s entre sets
+OBJETIVO: Tracción horizontal con la carga más pesada posible sin romper la técnica.
+TIPS: Usá la carga más pesada con la que completes las repeticiones sin pausas y con buena técnica. No desperdicies las primeras 1-2 series con pesos de calentamiento.
+
+[SKILL / STRENGTH] C2 · Strict Bar Dips
+6 Sets:
+Weighted Strict Bar Dips x 6-8 reps
+Rest 60-90s entre sets
+TIPS: Sumá lastre solo si las 6-8 reps salen limpias y sin rebote.
+~D ESCALADO: Sin lastre, o con banda; si todavía no salen estrictos, Ring Dips con pies apoyados o Push-ups con pausa.
+
+[ACCESSORY / COOLDOWN] C3 · Dual DB Spider Curls
+4-6 Sets:
+Dual DB Spider Curls x 12 reps
+Rest 60-90s entre sets
+TIPS: Cargá lo más pesado que permita las 12 reps sin balanceo.
+
+[ACCESSORY / COOLDOWN] C4 · Barbell Skull Crushers
+4-6 Sets:
+Barbell Skull Crushers x 12 reps
+Rest 60-90s entre sets
+TIPS: Mismo criterio: la carga más pesada con técnica limpia y sin romper las 12 reps.
+
+=== DÍA 2: Martes ===
+[WARM-UP] Remo, torácica y hombro
+Row 500m
+2 Sets:
+10 Banded Thoracic Openers por lado
+10 Barbell Z-Press
+2 Sets:
+10 Lateral Plate Raises
+20 Band Pull Aparts
+10 Barbell Strict Press (de pie)
+
+[SKILL / STRENGTH] A1 · Strict Press con pausa (30 min)
+Every 2:00 x 5 sets:
+5 Strict Press (pausa en los hombros en cada rep) @ 70-75%
+OBJETIVO: Fuerza de sostén en la posición de rack: la pausa elimina el rebote.
+TIPS: Las series no tienen que ser demasiado pesadas hoy: la idea es mejorar el posicionamiento y el juego de pies del split jerk bajo algo de fatiga.
+
+[SKILL / STRENGTH] A2 · Push Press + Split Jerk
+Every 90s x 8 sets:
+1 Push Press + 1 Split Jerk (pausa de 3s en la recepción) @ 80-85%
+OBJETIVO: Recepción estable y repetible en el split jerk, sin rescatar la barra con los pies.
+TIPS: Series livianas a moderadas: trabajá juego de pies y posición bajo fatiga.
+
+[WOD / METCON] B · Regional 2015 · 5 Rounds for time
+~AR 5 Rounds for time:
+~AR Row 25 Calories
+~AR 16 Chest to Bar Pull-ups
+~AR 9 Strict Handstand Push-ups
+~AR Time cap: 16:00
+~D 5 Rounds for time:
+~D Row 25 Calories
+~D 16 Pull-ups
+~D 9 Handstand Push-ups
+~D Time cap: 16:00
+OBJETIVO: Resistencia de tracción y empuje bajo fatiga: el gimnástico define el resultado, no las calorías.
+TIPS: Elegí la variante que corresponde a tu nivel competitivo. La versión Elite sale de los Regionales 2015.
+PACING: Los mejores tiempos del mundo rondaron los 11:30-12:00 en la versión Elite.
+~D ESCALADO: Pull-ups con banda o saltando; HSPU a Box Pike HSPU o DB Strict Press. Mantené el time cap.
+~A ESCALADO: Si el Strict HSPU se corta antes de tiempo, pasá a HSPU con kip en las últimas rondas. Mantené el time cap.
+@ELITE: 9 Strict Deficit Handstand Push-ups (12/8cm) por ronda. Mismo time cap.
+
+[ACCESSORY / COOLDOWN] C1 · Superset de tirón y bíceps
+Superset 3-4 rounds:
+Dual DB Upright Row x 15 reps
+Ring Row x 15 reps
+Barbell Bicep Curls x 15 reps
+Rest 2:00
+
+[ACCESSORY / COOLDOWN] C2 · Superset de hombro
+Superset 3-4 rounds:
+Cuban Rotations x 10 reps
+Dual DB Lateral Raises x 10 reps
+Band Pull Aparts x 20 reps
+Rest 60s
+OBJETIVO: Salud del manguito rotador y estabilidad escapular después del volumen de overhead.
+
+=== DÍA 3: Miércoles ===
+[WARM-UP] Bike, front rack y barra vacía
+Assault Bike 40s on : 20s off x 4-8 minutos
+2 Sets:
+20 Russian KB Swings
+30s con barra en front rack (movilidad y codos altos)
+2 Sets de 7 reps cada uno, barra vacía:
+RDL
+Muscle Clean from the hip
+Power Clean from low hang position
+Front Squat
+Build to A1 opening weight
+
+[SKILL / STRENGTH] A1 · Cleans (15 min)
+Every 90s x 10 sets:
+1 Paused-pull Power Clean + 1 Low Hang Squat Clean @ 80-87%
+OBJETIVO: Tiros desafiantes en todos los sets: posición de despegue sólida con pausa sobre la rodilla.
+TIPS: Hacé una pausa de 3 segundos sobre la rodilla durante el despegue.
+
+[WOD / METCON] B · Clean & Burpees (15 min)
+For time 21-15-15-9 reps:
+Power Cleans 61/43kg
+Bar Facing Burpees
+Time cap: 14:00
+OBJETIVO: Umbral de trabajo con barra: el burpee marca el ritmo y el clean define cuánto lo podés sostener.
+TIPS: Leíste bien: hay dos rondas de 15. Intentá hacerlo según lo prescrito, incluso si la carga es algo más pesada de lo habitual: es un peso muy típico de Open o competencia.
+~D ESCALADO: Power Clean con una carga que te permita 5 o más reps seguidas (por ejemplo 43/30kg). Bar Facing Burpees como Step-over burpees si hace falta.
+~A ESCALADO: Si 61/43kg se te va de las manos, bajá a 52/35kg y mantené el esquema de reps.
+
+[SKILL / STRENGTH] C1 · Posterior Strength (40 min)
+Every 3:00 x 6 sets:
+Deadlift Block Pulls x 6 reps @ carga pesada
+GHRs o Nordic Curls x 6-10 reps
+OBJETIVO: Fuerza de cadena posterior en rango acortado: cargás más de lo que tolerarías desde el suelo.
+TIPS: Poné colchonetas o bloques para que la barra quede a unos 30 cm del suelo (la barra, no la parte inferior de los discos). Sin porcentaje: andá por sensación; las últimas 2-3 repeticiones de cada serie tienen que ser un verdadero desafío, con calidad de movimiento.
+
+[ACCESSORY / COOLDOWN] C2 · Accessory Circuit
+15 Min AMRAP:
+15m Sandbag Carry
+20 DB Leg Extensions
+15m Sandbag Carry
+20 Calf Raises (sobre un disco)
+
+=== DÍA 4: Viernes ===
+[WARM-UP] Cardio, barra y construcción
+5 Sets:
+Cardio machine (cualquiera) 60s (esfuerzo creciente)
+Rest 30s
+2 Sets:
+7 Barbell Snatch Pulls
+7 Barbell Muscle Snatch
+7 Barbell BTN Push Press
+7 Barbell High Hang Squat Snatch
+6-8 sets construyendo peso:
+1 Power Snatch + 1 Squat Snatch
+
+[SKILL / STRENGTH] A1 · Snatch · Construcción (10-15 min)
+Dedicá 10-15 minutos a construir hasta ~80% en Power Snatch y Squat Snatch
+OBJETIVO: Encontrar la carga de trabajo del día sin acumular fatiga: subís hasta que la técnica manda.
+
+[SKILL / STRENGTH] A2 · Power + Squat Snatch
+Alternando every 15s x 4 reps (2 de cada uno):
+En 0:00 y 0:30: 1 Power Snatch
+En 0:15 y 0:45: 1 Squat Snatch
+Rest hasta completar 3:00
+x 5 Sets
+Carga del set 1: 80%
+OBJETIVO: Densidad técnica: cuatro tiros en 45 segundos te obligan a resetear rápido y confiar en la posición.
+TIPS: Como hicimos con los cleans hace dos semanas, no hace falta construir en todos los sets; si el primero se siente bien podés subir un poco. El segundo Power Snatch de cada ronda se va a sentir muy desafiante: concentrate en una extensión potente y una recepción sólida.
+
+[SKILL / STRENGTH] B · Squats (10 min)
+Every 3:00 x 3 sets:
+3 Front Squats + 7 Back Squats @ ~60%
+OBJETIVO: Volumen de sentadilla a intensidad moderada después del máximo de la semana pasada.
+TIPS: Si hace falta, descansá más entre series. Tratá de moverte rápido a través de las repeticiones.
+
+[WOD / METCON] C · 10 Rounds for time
+~AR 10 Rounds for time:
+~AR 3 Devil Press (dual DB 22.5/15kg)
+~AR 6 Box Step Overs (50cm)
+~AR 9 Dual DB Front Squats (22.5/15kg)
+~AR 30 Double Unders
+~AR Time cap: 20:00
+~D 10 Rounds for time:
+~D 3 Devil Press (dual DB 15/10kg)
+~D 6 Box Step Overs (50cm)
+~D 9 Dual DB Front Squats (15/10kg)
+~D 45 Single Unders
+~D Time cap: 20:00
+OBJETIVO: Resistencia muscular con mancuernas: el desafío es sostener el mismo ritmo diez veces, no arrancar rápido.
+TIPS: Todos los movimientos con dual DB y cajón de 50cm para todos los atletas. Va a ser muy desafiante: dividí los movimientos de DB con inteligencia.
+PACING: Ritmo controlado desde el principio y tratá de mantenerte en movimiento todo el tiempo: esto no es un sprint.
+~D ESCALADO: Si las mancuernas de 15/10kg siguen pesando mucho, bajá a 12.5/7.5kg y mantené las 10 rondas.
+~A ESCALADO: Si los Double Unders se cortan, intercalá 15 Single Unders extra por ronda sin soltar la soga.
+
+[ACCESSORY / COOLDOWN] D1 · Core y anillas
+2-3 Sets:
+15s Ring Support Hold
+25 Hollow Rocks
+15s Ring Support Hold
+Rest as needed
+
+[ACCESSORY / COOLDOWN] D2 · Hombro
+2-3 Sets:
+DB Maltese Press x 10 reps
+Lying Y-Raises x 15 reps
+Rest as needed
+
+=== DÍA 5: Sábado ===
+[WARM-UP] Remo y empuje / tirón
+Row 200m
+Rest 15s
+x 4 sets
+21 Push-ups
+21 Jumping Pull-ups
+15 Light DB Bench Press
+15 Jumping Pull-ups
+9 Heavier DB Bench Press
+9 Jumping Pull-ups
+
+[WOD / METCON] A · Intervals (6 sets)
+~AR 6 Sets:
+~AR Row 15/12 Calories
+~AR 10 Dual DB Bench Press 28/20kg
+~AR 5 Strict Pull-ups (con med-ball de 6kg, solo hombres)
+~AR Rest 1:1 entre sets
+~D 6 Sets:
+~D Row 15/12 Calories
+~D 10 Dual DB Bench Press 22.5/15kg
+~D 5 Strict Pull-ups
+~D Rest 1:1 entre sets
+OBJETIVO: Capacidad aeróbica con empuje y tirón: empujá el remo todo lo que puedas mientras puedas pasar directo a una serie sin cortes de DB Bench Press.
+TIPS: Las DB de 28/20kg son "o cerca de eso": elegí una carga que permita hacer las 10 repeticiones juntas.
+~D ESCALADO: Strict Pull-ups con banda o Ring Rows; si 22.5/15kg es mucho, bajá la carga para sostener las 10 reps juntas.
+~A ESCALADO: Si no podés sostener 5 Strict Pull-ups, hacé 3 estrictos + 2 con banda.
+@ELITE: DB 32.5/22.5kg y Strict Pull-ups con med-ball 9/6kg.
+
+[SKILL / STRENGTH] B · Ring MU Skill Work
+~AR 3 complejos unbroken:
+~AR 1 Toes to Ring + 1 Ring Muscle-up + 1 Ring Dip
+~AR Descanso lo necesario
+~AR x 4-6 sets
+~D EMOM x 5 Minutos:
+~D 1-2 Ring Muscle-ups (o banded assisted Ring Muscle-ups)
+~D Luego EMOM x 6 Minutos:
+~D Min 1: 10 Toes to Ring
+~D Min 2: 5-8 Ring Dips (con banda si hace falta)
+OBJETIVO: Skill en estado fresco: buscás calidad de transición, no volumen ni fatiga.
+~A ESCALADO: Si el complejo se rompe, hacelo en 2 tandas manteniendo los 3 complejos y descansando lo necesario entre ellas.
+@ELITE: 5 complejos unbroken por set.
+
+[WOD / METCON] C · Core Conditioning
+Every 2:00 x 6-10 sets:
+18/15 Cal Assault Bike (o 60s a esfuerzo duro)
+15 GHD Sit-ups
+OBJETIVO: Tolerancia de core con respiración alta; el volumen se ajusta a lo que ya venís aguantando.
+TIPS: Basá la cantidad de rondas en el volumen de GHD que normalmente tolerás: 150 repeticiones es mucho y está pensado para atletas de élite. Reducí según necesites.
+~D ESCALADO: Hacé 6 sets y bajá a 10 GHD Sit-ups; ante molestia lumbar, cambiá por Hollow Rocks.
+
+[ACCESSORY / COOLDOWN] D1 · Upper Accessory
+4 Quality Rounds:
+Prone DB Row x 8 reps (pesado)
+Banded Tricep Extensions x 20 reps
+Rest 2:00
+
+[ACCESSORY / COOLDOWN] D2 · Anti-rotación y core
+4 Quality Rounds:
+Banded Woodchops x 10 reps por lado
+DB Side Plank Raises (Powell raise) x 10 reps por lado
+Ring Plank Hold (agarre supino) x 20-30s
+Rest 1:00
+`,
+String.raw`#SEMANA 2
+=== DÍA 1: Lunes ===
+[WARM-UP] Remo, press y muscle cleans
+Row 250m (ritmo normal, fácil)
+Luego 2-3 Sets:
+100m Row
+10 Barbell Strict Press
+100m Row
+10 Barbell Muscle Cleans from the hip
+
+[SKILL / STRENGTH] A1 · Push Press + KB Swings (30 min)
+Every 2:00 x 5 sets:
+3 Push Press @ ~80%
+10 Russian KB Swings (carga pesada)
+OBJETIVO: Potencia de empuje sobre la cabeza y cadera explosiva con carga alta.
+TIPS: Usá un KB que se sienta muy pesado para 10 repeticiones; si no tenés uno más pesado, hacé swings con dos KB más livianos. Llevá las caderas hacia adelante sin inclinarte hacia atrás para ganar altura.
+
+[SKILL / STRENGTH] A2 · Power Clean + Push Jerk + Split Jerk
+Every 90s x 8 sets:
+1 Power Clean + 1 Push Jerk + 1 Split Jerk @ 70%
+OBJETIVO: Trabajo técnico simple para preparar el cuerpo antes del metcon.
+TIPS: Buscá una captura alta en el Power Clean y una posición de bloqueo firme con la barra encima de la cabeza en los jerks.
+
+[WOD / METCON] B · Run & Clean and Jerk (30 min)
+~AR 5 Rounds for time:
+~AR Run 800m
+~AR 10 Clean and Jerks 70/45kg
+~AR Time cap: 30:00
+~D 5 Rounds for time:
+~D Run 800m
+~D 10 Clean and Jerks 60/40kg
+~D Time cap: 30:00
+OBJETIVO: Capacidad aeróbica con barra: que las 10 repeticiones tomen alrededor de 60 segundos (90 como máximo).
+TIPS: Hacé la carrera al aire libre si podés (la cinta también está bien). Elegí un peso que se ajuste a tu nivel competitivo actual.
+~D ESCALADO: Si 60/40kg te lleva más de 90 segundos las 10 reps, bajá la carga; corré 600m si el cap te aprieta.
+~A ESCALADO: Si 70/45kg te pasa de 90 segundos, bajá a 60/40kg y mantené los 800m.
+@ELITE: Clean and Jerks 83/56kg.
+
+[ACCESSORY / COOLDOWN] C1 · Superset de espalda y empuje
+Superset 5 rounds:
+Weighted Bar Rows x 8-12 reps
+Ring Push-ups + Plank Hold x 6-10 reps + 20 segundos
+Rest 90s entre sets
+TIPS: Poné la barra de modo que el cuerpo quede casi horizontal al piso. Hacé una pausa abajo en cada repetición para no usar impulso.
+
+[ACCESSORY / COOLDOWN] C2 · Superset con banda
+3 Supersets:
+Banded Lat Pull Downs x 20-30 reps
+Banded Tricep Extensions x 20-30 reps
+Rest 2:00 o más
+TIPS: Ajustá la tensión de la banda para que las repeticiones sean muy desafiantes y terminen en el rango de 20-30. No rebotes en el final del recorrido: repeticiones controladas.
+
+[ACCESSORY / COOLDOWN] C3 · YTWs y Sorenson
+3 Supersets:
+YTWs x 21 reps (7 por dirección)
+Sorenson Hold x 30s
+Rest 90s entre sets
+TIPS: Agregá peso al Sorenson Hold si te resulta muy fácil.
+
+=== DÍA 2: Martes ===
+[WARM-UP] Bike y Front Squat
+Assault Bike 500m
+Rest 20s
+x 4-8 sets (esfuerzo creciente)
+Front Squat 10-10-6-4-2-2 (construyendo por encima del 50%)
+
+[SKILL / STRENGTH] A · Front Squat EMOM (12 min)
+EMOM x 12 Mins:
+Min 1-8: 1 Front Squat, construyendo del 50% al 80%
+Min 9-12: 1 Front Squat @ 85%
+OBJETIVO: Preparar el cuerpo para el metcon y medir cómo se siente hoy para elegir bien el porcentaje del WOD.
+TIPS: No hay demasiado volumen de carga: usalo para decidir con criterio la carga del metcon.
+
+[WOD / METCON] B · 5 Rounds for time (18 min)
+~AR 5 Rounds for time:
+~AR 100 Double Unders
+~AR 20 Toes to Bar
+~AR 10 Front Squats 83/56kg
+~AR Time cap: 18:00
+~D 5 Rounds for time:
+~D 75 Double Unders
+~D 15 Toes to Bar
+~D 10 Front Squats 70/45kg
+~D Time cap: 18:00
+OBJETIVO: Ritmo ajustado: unos 3:30 por ronda, con 10 front squats que se resuelvan con un solo descanso.
+TIPS: Elegí una carga de front squat que te desafíe pero te permita completar cada serie de 10 con solo 1 descanso. El time cap es ajustado.
+PACING: Sé inteligente con el ritmo temprano en el TTB: si presionás demasiado el agarre y el core, perdés tiempo en la transición a las sentadillas.
+~D ESCALADO: Double Unders a 2 Single Unders por repetición; Toes to Bar a Knees to Elbows.
+~A ESCALADO: Si el agarre se acaba, dividí los 20 TTB en 10-5-5 desde la primera ronda.
+@ELITE: Front Squats 102/70kg.
+
+[ACCESSORY / COOLDOWN] C · Lower Body Accessory (20 min)
+Superset 5 rounds:
+Split Stance RDL x 6 reps por pierna
+Banded Hamstring Curls x 20-30 reps
+Rest ~2:00 entre sets
+TIPS: Desplazá ligeramente la postura para poner más énfasis en la pierna delantera. Andá por sensación de carga: todas las series pesadas, con una pelea real en las últimas 2 repeticiones.
+
+[SKILL / STRENGTH] D · Gymnastic Skill Work (16 min)
+Alternating EMOM x 16 Mins:
+Min 1: Handstand Hold (~30s)
+Min 2: Paralette Shoot Through x 6-10 reps
+Min 3: Ring Support Hold (~30s)
+Min 4: Deadbugs x 10 reps (lento y controlado)
+OBJETIVO: Fuerza de sostén en parada de manos y anillas con calidad de posición.
+TIPS: Hacé el Handstand Hold solo/a; si lo necesitás, usá la pared o un compañero, pero que sea lo bastante desafiante para trabajar al menos 10-15 segundos cada minuto.
+
+=== DÍA 3: Miércoles ===
+[WARM-UP] Remo y circuito de empuje / tirón
+Row 45s on : 15s off x 4-6 sets (esfuerzo creciente)
+Luego 3 Rounds:
+10 Push-ups
+10 Jumping Pull-ups
+10 Barbell Skull Crushers
+20 Band Pull Aparts
+
+[SKILL / STRENGTH] A · Upper Strength (20 min)
+6 Supersets:
+6 Dual DB Bench Press (pesado)
+3 Strict Pull-ups (bajada de 3 segundos)
+Rest ~2:00
+OBJETIVO: Fuerza de empuje con DB sin desperdiciar series en pesos de calentamiento.
+TIPS: El trabajo pesado está en el press: cada ronda tiene que ser muy dura. Las dominadas, con buena forma y muy controladas (bajada de 2-3 segundos). No les pongas peso hoy para no llegar fatigado/a al WOD con rope climb.
+
+[WOD / METCON] B · 3 Rounds for time (25 min)
+3 Rounds for time:
+20 Handstand Push-ups
+800m Run
+3 Rope Climbs
+Time cap: 25:00
+OBJETIVO: Descubrir en la primera ronda el ritmo adecuado para sostener HSPU, carrera y soga.
+TIPS: Cómo encarar los HSPU depende de tu capacidad: buscá sets grandes. Corré con brazos y hombros relajados y buena técnica.
+PACING: En los últimos metros bajá un poco la intensidad para llegar bien a la soga: ajustá los pies, buscá un nudo alto y trepá con las manos hasta extenderte por completo. La idea es subir en 3 nudos como máximo.
+~D ESCALADO: HSPU a Box Pike HSPU o DB Strict Press; Rope Climb a 3 Rope Pulls sentado por cada subida.
+~A ESCALADO: Si el set de 20 HSPU se rompe seguido, planificá 10-5-5 desde el inicio.
+
+[SKILL / STRENGTH] C1 · Ring Dips EMOM (10 min)
+EMOM x 10 Mins:
+2-6 Ring Dips
+TIPS: Si tenés la posibilidad, hacelo con chaleco o algo de peso. Si es un ejercicio que aún no tenés desarrollado, usá banda, pero esforzate al máximo: la única forma de ponerte fuerte es haciendo fuerza.
+~D ESCALADO: Ring Dips con banda o con los pies apoyados en el piso.
+
+[ACCESSORY / COOLDOWN] C2 · GHD y Windmills
+3-4 Sets:
+GHD Hip Extensions x 20 reps
+KB Windmill x 5 reps por lado
+Rest 60-90s entre sets
+
+[ACCESSORY / COOLDOWN] C3 · Woodchops
+2-3 Sets:
+Kneeling Banded Woodchops x 60s (un lado)
+Kneeling Banded Woodchops x 60s (otro lado)
+Rest 60s
+
+=== DÍA 4: Viernes ===
+[WARM-UP] Remo, bici y soga
+2 Sets:
+60s Row (fácil)
+60s Bike (fácil)
+50 Single Unders
+
+[WOD / METCON] A · Cardio Starter (24 min)
+Alternating every 2:00 x 12 sets:
+A: Row 400/360m
+B: Bike 800/720m
+C: 50 Double Unders + 10 Air Squats + 6-10 Burpees
+OBJETIVO: Trabajo de respiración y soltura del cuerpo después de una semana muy exigente.
+TIPS: Empezá con bastante facilidad y desarrollá el esfuerzo a lo largo de las 4 rondas. No hay que esforzarse al máximo en ningún momento: terminá listo/a para empezar el calentamiento del WOD final.
+~D ESCALADO: Double Unders a 2 Single Unders por repetición; Burpees al extremo bajo del rango (6).
+
+[WOD / METCON] B · Semifinal WOD (6 min)
+~AR For time:
+~AR 30/22 Calorie Bike
+~AR 12/9 Ring Muscle-ups
+~AR 21m Dual DB Walking Lunge 35/25kg
+~AR Time cap: 6:00
+~D For time:
+~D 30/22 Calorie Bike
+~D 10/8 Bar Muscle-ups (o 10 Single Arm Devil Press)
+~D 21m Dual DB Walking Lunge 22.5/15kg
+~D Time cap: 6:00
+OBJETIVO: Entrenamiento final de la semana, tomado de un WOD de semifinales: manejar los músculos y la fatiga y aún así apretar hasta la meta.
+TIPS: Esforzate mucho en la bicicleta, pero este WOD trata de manejar el agotamiento muscular para poder seguir apretando.
+~D ESCALADO: Si los Bar Muscle-ups no salen, Single Arm Devil Press; las mancuernas se ajustan para completar los 21m sin soltarlas.
+~A ESCALADO: Si los Ring Muscle-ups se cortan, pasá a Bar Muscle-ups manteniendo el número de repeticiones.
+@ELITE: 15 Ring Muscle-ups y Walking Lunge con dual DB 45/32kg.
+
+[SKILL / STRENGTH] C1 · Back Squat (30 min)
+Every 2:00 x 6 sets:
+2 Back Squats @ ~80%
+OBJETIVO: Series duras pero no al máximo después de una semana exigente.
+TIPS: Ajustá la carga según cómo te sientas después de la semana de entrenamiento.
+
+[SKILL / STRENGTH] C2 · Reverse Hyper + Front Rack Hold
+Every 3:00 x 3 sets:
+Reverse Hyper Extensions x 20 reps
+Dual KB Front Rack Hold x 30s
+
+[ACCESSORY / COOLDOWN] D · Accessory (12 min)
+3 Quality Sets:
+Seated Barbell Good Mornings x 10 reps
+Banded Reverse Crunches x 20 reps
+DB Russian Twists en hollow body x 20 reps
+Descansá lo necesario
+
+=== DÍA 5: Sábado ===
+[WARM-UP] Remo, banda y barra
+2 Sets:
+Row 90s (fácil)
+10 Banded Passovers
+10 Banded Overhead Squats
+10 Plank Down Ups
+2-3 Sets con barra vacía o carga liviana:
+3-5 Muscle Snatch from the hip
+3-5 Paused Overhead Squats
+3-5 Snatch Balance
+3-5 High Hang Squat Snatch
+
+[SKILL / STRENGTH] A1 · Snatch Complex (carga liviana a moderada)
+Every 90s x 6 sets:
+1 Paused-pull Power Snatch
+1 Overhead Squat
+1 High Hang Squat Snatch
+1 Overhead Squat
+OBJETIVO: Volumen técnico con carga liviana a moderada.
+
+[SKILL / STRENGTH] A2 · Máximo diario
+Construir un máximo diario:
+1 Power Snatch + 1 Overhead Squat
+OBJETIVO: Construir confianza y consistencia con cargas pesadas más que alcanzar un número.
+TIPS: Dedicá unos 10 minutos y tratá de acumular alrededor de 8 series, con aumentos de peso relativamente pequeños para obtener buen volumen con cargas pesadas.
+
+[WOD / METCON] A3 · EMOM de potencia y gimnásticos
+~AR EMOM x 12 Minutos (siempre 40s de trabajo, 20s de descanso):
+~AR Max reps Power Snatch 61/43kg
+~AR Max reps Toes to Bar
+~AR Max reps Burpee Box Jump Overs 60/50cm
+~D EMOM x 12 Minutos (siempre 40s de trabajo, 20s de descanso):
+~D Max reps Power Snatch 52/35kg
+~D Max reps Toes to Bar
+~D Max reps Burpee Box Jump Overs 60/50cm
+OBJETIVO: Capacidad de trabajo sostenida en tres movimientos: máximas repeticiones de calidad en cada ventana de 40 segundos.
+~D ESCALADO: Si 52/35kg es mucho, usá 43/30kg; el nivel Scaled usa 40/25kg. Toes to Bar a Knees to Elbows.
+~A ESCALADO: Si la carga te frena, podés usar 52/35kg.
+
+[SKILL / STRENGTH] B · Front Squat (20 min)
+8 Sets:
+3 x 3 reps @ 75-80%
+2 x 2 reps @ 80-85%
+2 x 1 reps @ 85-90%
+1 x 8 reps @ 55-60%
+Rest 90s entre sets
+
+[ACCESSORY / COOLDOWN] C1 · Lower Strength & Accessory (30 min)
+3-4 Supersets:
+Box Step Ups con sandbag x 6 reps por pierna
+Banded Hamstring Curls x 20-30 reps
+Rest 90s entre sets
+TIPS: Usá una sandbag pesada (70/45kg como RX) o lo más cercano posible, y un cajón de 50cm. Si no tenés sandbag, usá KB duales en front rack. La banda tiene que hacer muy desafiantes las 20-30 repeticiones sin cortes.
+
+[ACCESSORY / COOLDOWN] C2 · Hip Extensions y Swings
+3-4 Supersets:
+Bent Knee Hip Extensions x 6-10 reps
+Russian KB Swings x 15-20 reps (carga pesada)
+Rest 60s entre sets
+TIPS: Usá un KB que haga muy desafiantes las 15-20 repeticiones sin cortes.
+`,
+String.raw`#SEMANA 3
+=== DÍA 1: Lunes ===
+[WARM-UP] Remo y bici
+Row 40s : Rest 20s
+Assault Bike 40s : Rest 20s
+x 6-10 minutos (esfuerzo creciente)
+
+[WOD / METCON] A · Cardio Starter (24 min)
+Every 8:00 x 3 sets:
+Completar 21-18-15 calorías (hombres) / 18-15-12 (mujeres):
+Echo Bike
+Ski Erg
+Time cap: 6:00 por set
+OBJETIVO: Ir más rápido en cada ronda, o completar más calorías en los 6 minutos de cada set.
+PACING: El esfuerzo de la primera ronda debe sentirse como un 80-85% (aunque no termines todas las calorías). Luego aumentá ese esfuerzo en las dos rondas siguientes.
+~D ESCALADO: Si las calorías no entran en los 6 minutos, hacé un AMRAP de calorías en el primer set y mantené esa cantidad en los otros dos.
+
+[SKILL / STRENGTH] B · Upper Body Push & Pull (15 min)
+Every 2:30 x 6 sets:
+1 Legless Rope Climb
+6-8 Dual DB Bench Press
+2 Rope Climbs
+OBJETIVO: Combinar tracción y empuje: el DB Bench Press cerca del esfuerzo máximo para quien quiera hacerse más fuerte.
+TIPS: Elegí una DB que haga de 6-8 repeticiones un esfuerzo casi máximo; si no tenés DB suficientemente pesadas, usá una barra. Si no tenés al menos 75 segundos de descanso, extendé el intervalo a every 3:00.
+~D ESCALADO: Legless Rope Climb: hacé 1-3 tirones sin piernas antes de agarrar con las piernas. Si todavía no sube la soga, 3 Rope Pulls sentado por subida.
+~A ESCALADO: Si ya dominás el Legless Rope Climb, hacelo sin saltar y/o sin usar las piernas en el descenso.
+
+[WOD / METCON] C · Gymnastic Conditioning (20 min)
+~R Completar:
+~R Handstand Walk 15m
+~R 10 Bar Muscle-ups
+~R Handstand Walk 15m
+~R Rest 2:00
+~R x 5 sets
+~A Completar:
+~A Handstand Walk 7.5-10m
+~A 5 Bar Muscle-ups
+~A Rest 1:00
+~A x 6-10 sets
+~D 4-5 Sets:
+~D 2 Wall Walks + 20 Alternating Shoulder Taps en la segunda repetición
+~D Rest 1:00 entre sets
+~D Luego EMOM x 6 minutos:
+~D 1-3 Bar Muscle-ups
+OBJETIVO: Acondicionamiento gimnástico según tu nivel: volumen de Handstand Walk y Bar Muscle-ups con fatiga de brazos.
+~D ESCALADO: Bar Muscle-ups a Jumping Bar Muscle-ups o Chin-over-bar Pull-ups + Bar Dips.
+~A ESCALADO: Si el Bar Muscle-up se corta, hacé 3 + 2 con 10 segundos de pausa.
+
+[ACCESSORY / COOLDOWN] D1 · Pecho y escápula
+3 Supersets:
+20 Banded Pec Flys
+21 YTWs (7 por movimiento)
+Rest 90s entre sets
+
+[ACCESSORY / COOLDOWN] D2 · Hombro y core
+3 Supersets:
+Dual KB Bottoms Up Rack Hold x 20-30s
+Ring Support Hold x 20-30s
+Rest 90s entre sets
+
+=== DÍA 2: Martes ===
+[WARM-UP] Bici, KB y barra vacía
+2 Sets:
+Echo Bike 90s (esfuerzo fácil-moderado)
+10 KB Russian Swings
+10 KB Goblet Squats
+10 Kneeling KB Halos
+2 Sets con barra vacía:
+7 Clean Deadlifts
+7 Muscle Cleans from the hip
+7 Front Squats
+7 Squat Cleans from the hip
+5-6 Building Sets de:
+1 Power Clean + 1 Hang Power Clean + 1 Front Squat
+
+[SKILL / STRENGTH] A · Cleans (20 min)
+EMOM x 8 Minutos:
+1 Power Clean + 1 Hang Power Clean + 1 Front Squat @ ~65kg
+Luego Every 75s x 4 sets:
+1 Power Clean + 1 Hang Squat Clean @ ~80kg
+Luego Every 90s x 2 sets:
+1 Power Clean + 1 Hang Squat Clean @ ~90kg
+OBJETIVO: Subir en tres tramos de intensidad manteniendo la técnica; es una marca de referencia (benchmark).
+TIPS: Las cargas son de referencia en kilos: ajustalas a tu nivel manteniendo la misma progresión entre tramos.
+
+[SKILL / STRENGTH] B · Pulls (20 min)
+Every 3:00 x 6 sets:
+Deadlift Block Pulls x 6 reps @ carga pesada
+GHRs o Nordic Curls x 6-10 reps
+OBJETIVO: Fuerza de cadena posterior en rango acortado.
+TIPS: Es una sesión repetida de hace 2 semanas: apuntá a levantar un poco más que entonces. Poné una pila de discos o bloques para que la barra quede a unos 30 cm del suelo. Sin porcentaje: andá por sensación; las últimas 2-3 reps de cada serie tienen que ser un verdadero desafío con calidad de movimiento.
+
+[WOD / METCON] C · Met-Con (20 min)
+~AR 20 Minute AMRAP:
+~AR Row 500m
+~AR 50 Double Unders
+~AR 10 Barbell Reverse Lunge Steps (5 por pierna, alternando) 75/50kg
+~AR 50 Double Unders
+~D 20 Minute AMRAP:
+~D Row 500m
+~D 50 Double Unders
+~D 10 Barbell Reverse Lunge Steps (5 por pierna, alternando) 61/43kg
+~D 50 Double Unders
+OBJETIVO: Trabajo duro pero consistente durante toda la sesión, con tiempos de ronda muy parecidos entre sí.
+TIPS: Los lunges se hacen con la barra en back rack (tomada del suelo). Dá un paso hacia atrás en cada repetición hasta que la rodilla toque el piso y terminá con las caderas totalmente extendidas.
+PACING: Paceá bien la primera ronda para que los splits de todas las rondas sean similares.
+~D ESCALADO: Si 61/43kg es mucho, usá 52/35kg; Double Unders a 2 Single Unders por repetición.
+~A ESCALADO: Si 75/50kg te rompe el ritmo, bajá a 61/43kg.
+@ELITE: Barra 83/56kg.
+
+[ACCESSORY / COOLDOWN] D · Core Accessory (12 min)
+x 2-3 sets:
+30 Hollow Rocks
+Rest 30s o 1:1
+30 Russian Plate Twists
+Rest 30s o 1:1
+30 Sit-ups
+Rest 30s o 1:1
+30 Russian Plate Twists
+Rest 30s o 1:1
+
+=== DÍA 3: Miércoles ===
+[WARM-UP] Bici, KB y barra vacía
+2 Sets:
+Assault Bike 2 min (esfuerzo fácil-moderado)
+10 KB Russian Swings
+10 KB Goblet Reverse Lunge Steps
+2 Sets con barra vacía:
+7 Clean Deadlifts
+7 Muscle Cleans from the hip
+7 Front Squats
+7 Squat Cleans from the hip
+5-6 Building Sets de:
+1 Power Clean + 1 Hang Power Clean + 1 Front Squat
+
+[SKILL / STRENGTH] A · Clean Complex (15 min)
+Construir un máximo diario:
+Power Clean + Hang Squat Clean + Front Squat
+OBJETIVO: Construir hasta un máximo del día en el complejo, sin ir al fallo.
+TIPS: Acumulación sugerida: un tiro cada 90 segundos durante 6-8 series (hasta ~80% del máximo) y después cada 2 minutos para las últimas 2-3 series. No construyas hasta el fallo: sé inteligente en cuándo terminar.
+
+[SKILL / STRENGTH] B1 · Front Squat
+4 x 2 @ ~80%
+Descansá lo necesario entre sets
+
+[SKILL / STRENGTH] B2 · Bulgarian Split Squat
+Dual KB en front rack
+3 x 10 reps por pierna
+Descansá lo necesario entre sets
+
+[WOD / METCON] C · Met-Con (15 min)
+~R 3 Rounds for time:
+~R Run 400m
+~R 21 Alternating DB Snatch 32.5/22.5kg
+~R 12 Burpee Pull-ups
+~A 3 Rounds for time:
+~A Run 400m
+~A 21 Alternating DB Snatch 32.5/22.5kg
+~A 12 Burpee Pull-ups
+~D 3 Rounds for time:
+~D Run 400m
+~D 21 Alternating DB Snatch 22.5/15kg
+~D 9 Burpee Pull-ups
+OBJETIVO: Una versión que te permita acelerar el ritmo con fuerza: el rango objetivo es de 10 a 12 minutos.
+TIPS: Los Burpee Pull-ups se hacen en una barra claramente por encima de tu alcance máximo con los brazos extendidos sobre la cabeza.
+~D ESCALADO: Burpee Pull-ups a Burpees + Jumping Pull-ups.
+~A ESCALADO: Si 32.5/22.5kg es mucho, usá 22.5/15kg y mantené las 12 repeticiones de Burpee Pull-ups.
+
+[ACCESSORY / COOLDOWN] D1 · Piernas
+Superset 3 rounds:
+Goblet Cossack Squats x 6 reps por lado (12 en total)
+Banded Hamstring Curls x 20-30 reps
+Rest 60s entre sets
+
+[ACCESSORY / COOLDOWN] D2 · Cuádriceps y core
+Superset 3 rounds:
+DB Leg Extensions x 20 reps
+Hollow Rocks x 20 reps
+Rest 60s entre sets
+
+=== DÍA 4: Viernes ===
+[WARM-UP] Remo, bici y sandbag
+90s Row
+90s Bike
+60s Row
+60s Bike
+30s Row
+30s Bike
+(esfuerzo creciente)
+Luego 2 Rounds de:
+15s Sandbag Bearhug Hold
+30 Double Unders
+10s Assault Bike Sprint
+
+[WOD / METCON] A · Cardio Intervals (32 min)
+Every 4:00 x 8 sets (alternando A y B):
+A · en 0:00 (time cap 2:00):
+50 Double Unders
+30/24 Cal Row
+B · en 4:00 (time cap 2:00):
+30s Sandbag Bearhug Hold
+25/20 Cal Bike
+OBJETIVO: Trabajar a alta intensidad: los time caps de 2:00 son muy ajustados a propósito.
+TIPS: Si las calorías son demasiado altas para tu capacidad (lo serán salvo que ya seas bueno/a), hacé un AMRAP de calorías en la primera ronda y trabajá muy duro para sostener ese mismo número en todas las series. Sandbag: usá la bolsa más pesada que tengas y que puedas sostener durante 30 segundos.
+~D ESCALADO: Double Unders a 2 Single Unders por repetición; calorías al número que alcanzas en el AMRAP de la primera ronda.
+
+[SKILL / STRENGTH] B1 · Bench Press
+Every 2:00 x 5 sets:
+Bench Press x 8 reps @ carga máxima a lo largo de los sets
+TIPS: Usá la carga más pesada posible en todas las series en las que puedas hacer las repeticiones sin cortes y con buena técnica. No desperdicies las primeras 1-2 series con pesos de calentamiento.
+
+[SKILL / STRENGTH] B2 · Prone Barbell Row
+Every 2:00 x 5 sets:
+Prone Barbell Row x 8 reps @ carga máxima a lo largo de los sets
+
+[ACCESSORY / COOLDOWN] B3 · Bíceps y tríceps
+Superset 4 rounds:
+Dual DB Bicep Curls en banco inclinado x 12 reps
+Barbell Skull Crushers x 12 reps
+Rest 60-90s entre sets
+
+[ACCESSORY / COOLDOWN] C · Grip Accessory (15 min)
+x 3-4 sets:
+KB Forearm Roll-ups x 4 reps (2 por dirección)
+30s Dead Hang
+KB Forearm Roll-ups x 4 reps (2 por dirección)
+30s Pinch Grip Farmers Hold
+Rest as needed
+OBJETIVO: Finisher de agarre muy exigente.
+TIPS: Descansá lo menos posible entre movimientos.
+
+=== DÍA 5: Sábado ===
+[WARM-UP] Remo, banda y barra
+2 Sets:
+Row 90s (esfuerzo fácil-moderado)
+10 Banded Passovers
+10 Banded Overhead Squats
+10 Plank Down Ups
+2-3 Sets (barra vacía o liviana):
+3-5 Muscle Snatch from the hip
+3-5 Paused Overhead Squats
+3-5 Snatch Balance
+3-5 High Hang Squat Snatch
+
+[SKILL / STRENGTH] A · Snatch (15 min)
+Every 3:00 x 5 sets:
+En 0:00, 0:30 y 1:00: 1 Power Snatch + 1 Squat Snatch @ 80%
+Rest hasta completar 3:00
+OBJETIVO: Múltiples repeticiones con técnica sólida (sin touch and go) a una carga que obligue a concentrarte.
+TIPS: Básicamente empezás un nuevo set cada 3 minutos: tres tiros en 0:00, 0:30 y 1:00. La carga sugerida es 80% de tu Power Snatch máximo.
+
+[SKILL / STRENGTH] B1 · Split Stance RDL
+3 x 8 reps por pierna @ ~30-40%
+Rest 90s entre sets
+
+[SKILL / STRENGTH] B2 · Off-set DB Deadlift
+3 x 10 reps por lado @ carga pesada
+Rest 90s entre sets
+TIPS: Para el Split Stance RDL, parate sobre un par de discos para crear un déficit, sostené una DB pesada en un brazo y hacé un peso muerto manteniendo una posición neutra del cuerpo y sin compensar de más el peso (también podés usar una barra).
+
+[WOD / METCON] C · Gymnastic Conditioning (30 min)
+~AR EMOM x 5 Minutos:
+~AR 2-6 Ring Muscle-ups (1 set unbroken)
+~AR En 8:00: 5 Minute AMRAP:
+~AR 2 Rope Climbs
+~AR 10/7 Cal Assault Bike
+~AR En 16:00: EMOM x 5 Minutos:
+~AR 2-6 Ring Muscle-ups (1 set unbroken)
+~AR En 24:00: 5 Minute AMRAP:
+~AR 2 Rope Climbs
+~AR 10/7 Cal Assault Bike
+~D Parte 1 · 10 min de práctica:
+~D 2-3 Sets:
+~D 5 Russian Dips
+~D 10s False Grip Dead Hang con brazos rectos
+~D Luego 2-3 minutos intentando Ring Muscle-ups o acumulando 5-8 reps de Jumping / Assisted Ring Muscle-ups
+~D Parte 2 · 5 Minute AMRAP:
+~D 2 Rope Climbs
+~D 10/7 Cal Assault Bike
+OBJETIVO: Gimnásticos de alta frecuencia cardíaca: muscle ups frescos entre bloques de soga y bici.
+TIPS: Elegí un número de Muscle-ups desafiante pero sostenible. Trabajá en una salida potente en la bicicleta para tener un breve descanso entre series de rope climb y hacer de este un bloque de alta frecuencia cardíaca.
+~D ESCALADO: Rope Climbs a 3 Rope Pulls sentado por cada subida.
+~A ESCALADO: Si 6 Ring Muscle-ups es mucho, mantené 2-3 de buena calidad por minuto.
+
+[ACCESSORY / COOLDOWN] D · Accessory (10 min)
+3-4 Sets:
+YTWs x 21 reps (7 por dirección)
+Dual KB Bottoms Up Rack Hold x 20-30s
+Rest 60s entre sets
+`,
+String.raw`#SEMANA 4
+=== DÍA 1: Lunes ===
+[WARM-UP] Remo, press y muscle cleans
+Row 250m (ritmo normal, fácil)
+Luego 2 Sets:
+100m Row
+10 Barbell Split Press
+10 Barbell Overhead Lunge Steps
+10 Barbell Muscle Cleans from the hip
+5-6 Building Sets:
+Power Clean + Squat Clean Thruster + 2 Split Jerks
+
+[SKILL / STRENGTH] A1 · Squat Clean Thruster + Split Jerk
+EMOM x 5 Minutos:
+Squat Clean Thruster + Split Jerk @ 70%
+
+[SKILL / STRENGTH] A2 · Squat Clean Thruster + Split Jerk (ascendente)
+Every 90s x 4-5 sets:
+Squat Clean Thruster + Split Jerk @ 80% - 85% - 90% - 95% - bonus lift
+OBJETIVO: Subir hacia el pico de la semana con un complejo técnico completo.
+
+[SKILL / STRENGTH] A3 · Squat Clean + Split Jerk (ascendente)
+Every 90s x 4-5 sets:
+Squat Clean + Split Jerk @ 75% - 80% - 85% - 90% - bonus lift
+
+[SKILL / STRENGTH] B · Back Squat (12 min)
+Every 2:00 x 6 sets:
+Set 1: 3 reps @ 74%
+Set 2: 2 reps @ 80%
+Set 3: 1 rep @ 86%
+Set 4: 3 reps @ 80%
+Set 5: 2 reps @ 86%
+Set 6: 1 rep @ 92%
+OBJETIVO: Ondulación de intensidad en la sentadilla: tres olas con picos crecientes.
+
+[WOD / METCON] C · For time 3-6-9-12-15-18-21 (20 min)
+For time, 3-6-9-12-15-18-21 reps:
+Toes to Bar
+Lateral Burpees over the DBs
+Dual DB Shoulder to Overhead 22.5/15kg
+Time cap: 20:00
+OBJETIVO: Resistencia de hombro y core con un esquema ascendente que engaña al ritmo.
+TIPS: Poné las DB una al lado de la otra mientras hacés los burpees y saltá claramente sobre ellas (no hacia atrás ni adelante), como en el Open pero con 2 DB en lugar de 1.
+PACING: El esquema corto de repeticiones al principio es un truco para atraerte a un ritmo rápido: tenelo presente, especialmente al pasar de los burpees a las DB.
+~D ESCALADO: Toes to Bar a Knees to Elbows; DB 15/10kg si el hombro se agota antes de las 15 reps.
+~A ESCALADO: Si los TTB se cortan, cortalos en sets de 5-5-X desde el principio.
+
+[ACCESSORY / COOLDOWN] D1 · Piernas
+Superset 3-4 rounds:
+VMO Squats x 15 reps (carga liviana y tempo lento)
+Sled Push x 20m (carga moderada-pesada)
+Rest as needed
+
+[ACCESSORY / COOLDOWN] D2 · Cuádriceps y tibial
+Superset 3 rounds:
+DB Leg Extensions x 20 reps
+Tibialis Raises x 20 reps
+Rest as needed
+
+=== DÍA 2: Martes ===
+[WARM-UP] Cardio y snatch desde colgado
+5 Sets:
+Cardio machine (cualquiera) 60s (esfuerzo creciente)
+Rest 30s
+2 Sets:
+7 Barbell Hang Snatch Pulls
+7 Barbell Hang Muscle Snatch
+7 Barbell BTN Push Press
+6-8 Sets construyendo:
+3 Hang Power Snatch
+
+[SKILL / STRENGTH] A · Barbell Cycling (10 min)
+EMOM x 10 Minutos:
+3 Hang Power Snatch @ ~70%
+OBJETIVO: Ciclar la barra con suavidad: el hang snatch es una forma más difícil de ciclar que desde el suelo porque no se obtiene el mismo ritmo.
+TIPS: No es una sesión de construcción: elegí una carga desafiante y quedate con ella los 10 minutos completos. Trabajá para ser suave al bajar la barra en cada repetición y para que no te empuje hacia adelante. Hace unas semanas hicimos esta sesión con Power Snatch desde el suelo.
+
+[SKILL / STRENGTH] B · Deadlift (20 min)
+Deadlift: construir un triple pesado del día
+En 10-15 minutos, 6-8 series para construir (90 segundos a 2 minutos de descanso entre series si lo necesitás)
+No vayas al fallo: tenés que quedarte con una repetición más en el tanque
+Luego:
+12-15 Reps (TNG) @ 70% del triple de hoy
+Rest 90s
+12-15 Reps (sumo stance) @ 70% del triple de hoy
+Rest 90s
+12-15 Reps (TNG, desde 5cm de déficit) @ 70% del triple de hoy
+OBJETIVO: Fuerza máxima con un triple pesado y luego volumen submáximo con tres variantes de pegada.
+TIPS: Apuntá a alguna cifra del rango 12-15 repeticiones sin perder la técnica. Bajá la carga si hace falta.
+
+[WOD / METCON] C · EMOM (20 min)
+EMOM x 20 Mins:
+Min 1: 20/16 Cal Row
+Min 2: 20 Wall Balls 9/6kg
+Min 3: 20 Box Jump Overs con step down 60/50cm
+Min 4: Max reps Bar Muscle-ups
+Min 5: Rest
+OBJETIVO: Intensidad alta y sostenible: un máximo de 3 repeticiones de diferencia entre tu peor y tu mejor ronda.
+TIPS: Un final de semana sencillo pero de alta intensidad: empujá a un ritmo duro pero sostenible en todo momento.
+~D ESCALADO: Bar Muscle-ups a Jumping Bar Muscle-ups o Chin-over-bar Pull-ups + Bar Dips; bajá calorías si no entran en el minuto.
+~A ESCALADO: Si el minuto 4 se te hace corto, mantené 3-4 reps de calidad y descansá lo que sobre.
+
+[ACCESSORY / COOLDOWN] D1 · Core y cadera
+4 Sets:
+Kneeling Landmine Rotations x 16 reps (8 por lado)
+GHD Hip Extensions x 10 reps con pausa de 2s arriba en cada una
+Rest 60s
+
+[ACCESSORY / COOLDOWN] D2 · Anti-rotación
+3 Sets:
+Banded Woodchops x 16 reps (8 por lado)
+Med-ball Deadbug x 20 reps
+
+=== DÍA 3: Miércoles ===
+[WARM-UP] EMOM de activación
+EMOM x 9 Minutos:
+Min 1: Row 40s
+Min 2: 5 KB Windmills + 5 KB Strict Press por brazo
+Min 3: 20 Mountain Climbers + 10 Jumping Squats
+
+[SKILL / STRENGTH] A · Clean and Jerk (15 min)
+Power Clean + Push Jerk
+Construir un single pesado del día @ RPE 9/10
+OBJETIVO: Un single técnicamente sólido, sin ir al fallo, dejando algunos kilos en el tanque.
+TIPS: Dedicá unos 10 minutos a construir una vez que hayas calentado alrededor del 40-50% de tu máximo. Durante el mayor tiempo posible, trabajá para ir directo desde la captura del Power Clean al impulso del Push Jerk.
+
+[WOD / METCON] B · Heavy Intervals (25 min)
+5 Sets:
+15/12 Cal Assault Bike
+2 Power Clean + Push Jerks @ 70% del máximo de hoy
+12 DB Box Step Ups (22.5/15kg en cada mano)
+2 Power Clean + Push Jerks @ 70% del máximo de hoy
+Rest 1:1 entre sets
+Weight cap: 93/61kg
+OBJETIVO: Ser consistente con tus tiempos de ronda o aumentar el ritmo a lo largo de las 5 series.
+TIPS: Si dejaste unos kilos en el tanque en el single pesado, estas series son un desafío pero te permiten moverte relativamente rápido en las 2 repeticiones. Step ups con el mismo estilo que los cuartos de final: DB de 22.5/15kg en cada mano y de pie hasta la extensión en el cajón. Reducí el peso para hacer 12 repeticiones sin cortes en unos 45 segundos.
+PACING: Trabajá bien tu ritmo temprano.
+~D ESCALADO: Bajá las DB para que las 12 repeticiones salgan sin cortes en unos 45 segundos; mantené el 70% del máximo de hoy en los jerks.
+
+[SKILL / STRENGTH] C1 · Front Squat
+4 x 4 reps @ ~80%
+Rest ~2:00 entre sets
+
+[SKILL / STRENGTH] C2 · Front Rack Holds
+3 sets de 20 segundos @ ~100%
+Rest ~90s entre sets
+TIPS: En los holds, esforzate por tener la barra en la palma de las manos y no en las yemas de los dedos. Quedate cerca del rack mientras sostenés y respirá manteniendo buena tensión.
+
+[ACCESSORY / COOLDOWN] D1 · Cadena posterior
+Superset 3-4 rounds:
+Reverse Hyper Extensions x 20 reps (carga pesada)
+Banded Reverse Crunches x 20 reps
+Rest 60s entre sets
+
+[ACCESSORY / COOLDOWN] D2 · Core
+Superset 3-4 rounds:
+Hollow Rocks x 20 reps
+GHD Back Extensions x 10 reps
+Rest 60s entre sets
+
+=== DÍA 4: Viernes ===
+[WARM-UP] Cardio y muscle snatch
+2 Sets:
+Cardio machine (cualquiera) 60s (esfuerzo fácil)
+Box Step Ups con DB/KB dual sobre la cabeza x 10 reps (carga liviana)
+2 Sets:
+Cardio machine (cualquiera) 60s (esfuerzo más duro)
+7 Barbell Muscle Snatch
+7 Barbell BTN Push Press
+3-4 Sets construyendo peso:
+Muscle Snatch x 2-3 reps
+TIPS: Antes de empezar: hacé tu movilidad / prehab personal y preparé una máquina de cardio, un cajón, DB/KB livianas, la barra y los discos.
+
+[SKILL / STRENGTH] A1 · Muscle Snatch (10 min)
+En 10 minutos:
+Construir un máximo del día de Muscle Snatch + Low Hang Muscle Snatch
+OBJETIVO: Reforzar una trayectoria de barra cercana y un tirón con codos altos.
+TIPS: Venimos trabajando el muscle snatch hace 2 semanas para reforzar una trayectoria cercana y el tirón con codos altos. Construí lo más pesado que puedas en este complejo sin perder la técnica trabajada.
+
+[SKILL / STRENGTH] A2 · Power Snatch + Low Hang Power Snatch
+EMOM x 10 Minutos:
+Power Snatch + Low Hang Power Snatch @ ~70%
+TIPS: Mantené una fase de descenso lenta y controlada hacia la posición de colgado bajo en cada repetición.
+
+[SKILL / STRENGTH] B · Gymnastic Strength (20-30 min)
+Completar 4-8 sets de:
+1 Pegboard o Seated Legless Rope Climb
+15-20 segundos de L-sit Hold
+8 Paralette Shoot Throughs
+Rest 60-90s entre sets
+OBJETIVO: Trabajo de fuerza gimnástica: hacé solo los sets en los que te seguís moviendo bien.
+TIPS: Amplio rango de sets y descanso porque cada atleta lo adapta a su capacidad. Reducí la altura del pegboard o hacé 8-10 repeticiones de Pegboard Pull-up. Reducí la dificultad del rope climb para ajustarla a tu capacidad actual.
+~D ESCALADO: Pegboard a 8-10 Pegboard Pull-ups o Seated Rope Climb; L-sit con rodillas flexionadas.
+
+[WOD / METCON] C · Met-Con (15 min)
+3 Rounds for time:
+30 Wall Balls 9/6kg (a 10/9ft)
+30 Alternating DB Snatch 22.5/15kg
+30/24 Calorie Row
+OBJETIVO: Intensidad alta desde el inicio, sostenida cuando empieza a doler.
+TIPS: Un workout muy simple que se puede ejecutar a alta intensidad desde el principio. Empujá un ritmo agresivo y fijate si podés mantenerlo cuando empieza a doler.
+~D ESCALADO: Wall Balls a 6/4kg al blanco de 9ft; calorías al número que mantengas sin pasarte del cap de tus rondas.
+
+[ACCESSORY / COOLDOWN] D · Accessory (10 min)
+3 Quality Sets de:
+Barbell Preacher Curls x 10 reps
+Dual DB Pallof Press x 10 reps
+KB Halos x 20 reps (10 por dirección)
+Rest as needed
+
+[2º TURNO · ENDURANCE] Engine Session (opcional) · Z2 Running
+@OPT
+Warm-up:
+3 minutos de trote fácil
+2 Sets:
+Forward Leg Swings x 10 reps por pierna
+Lateral Leg Swings x 10 reps por pierna
+Mountain Climbers x 10 reps por lado
+Calf Raises sobre un disco x 10 reps por lado
+3 minutos de trote fácil
+Main Set:
+Run 30-50 minutos a esfuerzo fácil o zona 2 de FC
+OBJETIVO: Pieza de entrenamiento opcional para atletas con 90 minutos o más disponibles: se hace en una sesión separada de la principal del día, con descanso adecuado entre sesiones.
+TIPS: Mantenelo simple y consistente hoy, idealmente en un sendero o terreno variado.
+
+=== DÍA 5: Sábado ===
+[WARM-UP] Remo y bici
+Row 3 minutos
+Echo Bike 3 minutos
+15s on : 15s off x 4 sets
+Echo Bike (esfuerzo creciente)
+
+[WOD / METCON] A · Cardio Main Set (40 min)
+Alternating every 2:30 x 16 sets (8 de cada uno):
+Set 1: 40/32 Cal Row
+Set 2: 36/30 Cal Echo Bike
+OBJETIVO: Esfuerzo duro pero repetible a lo largo de los 40 minutos.
+TIPS: Ponete un cap de 2 minutos en cada intervalo.
+~D ESCALADO: Calorías al número que podés completar en 2:00 con esfuerzo duro; mantené los 16 sets.
+
+[SKILL / STRENGTH] B · Cleans (20 min)
+EMOM x 4 Minutos:
+Power Clean + Squat Clean
+Rest 1 minuto
+x 4 Sets
+Todos los sets alrededor de ~75kg
+OBJETIVO: Sets desafiantes que te permitan moverte bien con técnica sólida.
+TIPS: Ajustá la carga hacia arriba o abajo según necesites, pero no vayas demasiado pesado hoy.
+
+[SKILL / STRENGTH] C1 · Split Stance RDL
+3 x 4 reps por pierna @ ~50-55kg
+Rest 90s entre sets
+TIPS: Más pesado que hace 2 semanas si hiciste esa sesión.
+
+[SKILL / STRENGTH] C2 · Off-set DB Deadlift
+3 x 6 reps por lado @ carga pesada
+Rest 90s entre sets
+TIPS: Más pesado que hace 2 semanas si hiciste esa sesión. Para el off-set deadlift, parate sobre un par de discos para crear un déficit, sostené una DB pesada en un brazo y hacé un peso muerto manteniendo una posición neutra (también podés usar un único farmers handle).
+
+[WOD / METCON] D · Gymnastic Conditioning (20 min)
+Alternating EMOM x 20 Minutos:
+Min 1: 15-20 GHD Sit-ups
+Min 2: 7.5-22.5m Handstand Walk
+Min 3: Max reps Bar Muscle-ups (cap 15)
+Min 4: Rest
+OBJETIVO: Los Bar Muscle-ups son el foco principal del bloque: guardá el esfuerzo para ellos.
+TIPS: Elegí esquemas de repeticiones para los minutos 1 y 2 que te permitan ser consistente y a la vez empujar fuerte en los Bar Muscle-ups.
+~D ESCALADO: Bar Muscle-ups a Jumping Bar Muscle-ups o Chin-over-bar Pull-ups; Handstand Walk a Wall Walks.
+~A ESCALADO: Si el cap de 15 es mucho, cortá en 8-10 reps de calidad.
+
+[ACCESSORY / COOLDOWN] E · Hombro
+Superset 3 rounds:
+Dual KB Bottoms Up Rack Hold x 20-30s
+Banded Thoracic Openers x 10 reps por lado
+Rest as needed
+TIPS: Algo de trabajo liviano de hombro para terminar la sesión: movete lento y controlado con buena técnica.
+
+[2º TURNO · ENDURANCE] Engine Session (opcional) · Run Block Training
+@OPT
+Warm-up:
+2 Rounds:
+Run 800m a ritmo moderado
+Forward Leg Swings x 10 reps por pierna
+Lateral Leg Swings x 10 reps por pierna
+Mountain Climbers x 10 reps por lado
+Calf Raises sobre un disco x 10 reps por lado
+Luego:
+Run 400m a ritmo objetivo
+Main Set:
+Run 400m
+Rest 15s
+x 3 Sets
+Main sets:
+Run 800m
+Rest 45s
+x 3 rounds
+Rest 3:00
+x 2
+OBJETIVO: Pieza opcional para atletas con 90 minutos o más disponibles: hacerla en una sesión separada de la principal del día, con descanso adecuado.
+TIPS: Los 400m iniciales sirven para subir la frecuencia cardíaca y afinar el ritmo para los 800 duros. Apuntá a estar justo por delante del ritmo de 5k en los 6 x 800m. Si salís demasiado fuerte, tomate más descanso entre intervalos: no tiene sentido correr estos 800 a ritmo lento.
+`
+  ];
+  var DIAS = ['Lunes', 'Martes', 'Miércoles', 'Viernes', 'Sábado'];
+  var OBJETIVOS = ['Halterofilia', 'Gimnásticos', 'Motor aeróbico', 'Fuerza', 'Accesorios y core'];
+  var COMUN = 'Mes de 4 semanas x 5 sesiones (lun, mar, mié, vie, sáb): halterofilia, fuerza, gimnásticos, motor aeróbico y accesorios, más 2 sesiones de motor opcionales en la semana 4. ';
+  var NIV = [
+    { k: 'dev', tag: 'D', id: 'bk_cf_mes1_dev', niv: 'intermedio', cf: 'development', corto: 'Development', ic: '🟢',
+      nombre: 'CrossFit · Mes 1 · Development (Intermedio)',
+      notas: COMUN + 'Versión Development / Intermedio: cargas y volúmenes intermedios de la programación y opciones de escalado claras en cada bloque exigente (gimnásticos, soga, double unders, barra).' },
+    { k: 'adv', tag: 'A', id: 'bk_cf_mes1_adv', niv: 'avanzado', cf: 'advanced', corto: 'Advanced', ic: '🟠',
+      nombre: 'CrossFit · Mes 1 · Advanced',
+      notas: COMUN + 'Versión Advanced: prescripción RX con los ajustes Advanced que trae la programación y alternativas de escalado puntuales para sostener el estímulo.' },
+    { k: 'rx', tag: 'R', id: 'bk_cf_mes1_rx', niv: 'competitivo', cf: 'rx', corto: 'RX / Élite', ic: '🔴',
+      nombre: 'CrossFit · Mes 1 · RX / Élite',
+      notas: COMUN + 'Versión RX / Élite: cargas y movimientos oficiales (RX); los atletas Élite reciben el ajuste de categoría en los bloques que lo traen (carga o gimnástico superior).' }
+  ];
+  var NIV_LB = { development: 'Development', advanced: 'Advanced', rx: 'RX / Élite' };
+  var NIV_TAG = { development: 'Development · Intermedio', advanced: 'Advanced', rx: 'RX / Élite' };
+
+  /* ---------- 1 · expansión del texto maestro para un nivel ---------- */
+  function filtrar(txt, tag){
+    var out = [], meta = {}, dia = -1, bl = -1;
+    String(txt).split(/\r?\n/).forEach(function(raw){
+      var l = raw.replace(/\s+$/, ''), m;
+      if(/^#SEMANA/.test(l)) return;
+      m = /^~([DAR]{1,3}) ?(.*)$/.exec(l);
+      if(m){ if(m[1].indexOf(tag) < 0) return; l = m[2]; }
+      if(/^===/.test(l)){ dia++; bl = -1; out.push(l); return; }
+      if(/^\[/.test(l)){ bl++; out.push(l); return; }
+      m = /^@(ELITE|OPT)\b:?\s*(.*)$/.exec(l);
+      if(m){
+        meta[dia] = meta[dia] || {}; meta[dia][bl] = meta[dia][bl] || {};
+        if(m[1] === 'OPT') meta[dia][bl].opt = true;
+        else if(tag === 'R' && m[2]) meta[dia][bl].elite = m[2];
+        return;
+      }
+      out.push(l);
+    });
+    return { texto: out.join('\n'), meta: meta };
+  }
+  function armarDias(N){
+    var sem = [], avisos = [];
+    SEMANAS.forEach(function(src, w){
+      var f = filtrar(src, N.tag), r = parsearImportacion(f.texto, false);
+      (r.avisos || []).forEach(function(a){ avisos.push('S' + (w + 1) + ': ' + a); });
+      sem.push(r.dias.map(function(dia, di){
+        return dia.bloques.map(function(b, bi){
+          var bl = crearBloqueImportado(b, true), mt = (f.meta[di] || {})[bi] || {};
+          if(mt.opt) bl.optional = true;
+          if(mt.elite) bl.scaling = { elite: mt.elite };
+          if(bl.category === 'strength' || bl.category === 'endurance') bl.cfScore = 'notas';
+          else if(bl.category === 'accessory') bl.cfScore = 'check';
+          return bl;
+        });
+      }));
+    });
+    var dias = DIAS.map(function(nom, di){
+      var d = newDay(di);
+      d.id = 'dia' + (di + 1); d.short = 'DÍA ' + (di + 1); d.label = 'Sesión ' + (di + 1); d.title = nom;
+      d.bloquesPorSemana = [0, 1, 2, 3].map(function(w){ return (sem[w] && sem[w][di]) || []; });
+      d.bloques = d.bloquesPorSemana[0];
+      return d;
+    });
+    armarDias.avisos = avisos;
+    return dias;
+  }
+
+  /* ---------- 2 · metadatos (duración, objetivos) ---------- */
+  function minutosDe(titulo){
+    var m = /\((\d+)(?:\s*-\s*(\d+))?\s*min\)/i.exec(String(titulo || ''));
+    if(!m) return 0;
+    return m[2] ? Math.round((parseInt(m[1], 10) + parseInt(m[2], 10)) / 2) : parseInt(m[1], 10);
+  }
+  function duracionMedia(dias){
+    var tot = 0, n = 0;
+    dias.forEach(function(d){
+      (d.bloquesPorSemana || []).forEach(function(arr){
+        var s = 10;      /* entrada en calor */
+        (arr || []).forEach(function(b){ if(!b.optional && b.category !== 'warmup') s += minutosDe(b.titulo) || (b.category === 'accessory' ? 8 : 0); });
+        tot += s; n++;
+      });
+    });
+    return n ? Math.round(tot / n / 5) * 5 : 0;
+  }
+  function ficha(N, dias){
+    var dur = duracionMedia(dias);
+    return {
+      id: N.id, ic: N.ic, tipo: 'base', cfMes: true, cfMesSys: true, cfMesId: N.k, cfMesVer: VER, cfNivel: N.cf,
+      nombre: N.nombre, disc: 'crossfit', niv: N.niv, tab: 'crossfit', carpeta: 'base', freq: DIAS.length, semanas: 4,
+      durMin: dur, objetivos: OBJETIVOS.slice(), notas: N.notas, creado: 'Plantilla del sistema', usos: 0,
+      dias: dias, meso: (typeof defaultWeeks === 'function' ? defaultWeeks() : []),
+      meta: { mesoDisc: 'crossfit', mesoNivel: N.niv, mesoName: 'CrossFit · Mes 1 · ' + N.corto, mesoObjetivo: 'Mes completo de CrossFit (4 semanas)',
+              mesoTexto: N.notas }
+    };
+  }
+  function nivDe(r){ return NIV.filter(function(x){ return x.k === r.cfMesId; })[0]; }
+
+  /* ---------- 3 · siembra e hidratación ---------- */
+  function hidratar(){
+    var n = 0;
+    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
+      if(!r || !r.cfMesSys || (r.dias && r.dias.length)) return;
+      var N = nivDe(r); if(!N) return;
+      r.dias = armarDias(N); n++;
+    });
+    return n;
+  }
+  function sembrar(forzar){
+    if(typeof S === 'undefined' || !S) return 0;
+    if(!Array.isArray(S.banco)) S.banco = [];
+    S.ui = S.ui || {};
+    var n = 0, primera = !S.ui.cfMes1Seed;
+    NIV.slice().reverse().forEach(function(N){
+      var ya = S.banco.filter(function(x){ return x.id === N.id; })[0];
+      if(ya){
+        if((ya.cfMesVer || 0) < VER){ var u = ficha(N, armarDias(N)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+        return;
+      }
+      /* si el coach la borró a propósito no vuelve sola (salvo "Restaurar") */
+      if(!primera && !forzar) return;
+      S.banco.unshift(ficha(N, armarDias(N))); n++;
+    });
+    S.ui.cfMes1Seed = VER;
+    if(n){ try{ save(); }catch(e){} }
+    return n;
+  }
+
+  /* ---------- 4 · asignación a un alumno/a ---------- */
+  function alAsignar(r, p, ath){
+    var wk = (typeof activeCfWeek === 'function') ? activeCfWeek() : 0, nota = '';
+    (p.dias || []).forEach(function(d){
+      var por = d.bloquesPorSemana || [];
+      por.forEach(function(arr){ (arr || []).forEach(function(b){ b.id = uid('b'); }); });
+      d.bloques = por[wk] || por[0] || d.bloques || [];
+    });
+    p.meta = Object.assign(p.meta || {}, clone(r.meta || {}));
+    if(typeof defaultWeeks === 'function') p.meso = defaultWeeks();
+    try{ _cfSemanaCargada = null; _cfAthCargado = null; }catch(e){}
+    var cf = r.cfNivel;
+    if(cf && ath){
+      var pf = ath.cfPerfil = ath.cfPerfil || {};
+      if(!pf.nivel){ pf.nivel = cf; nota = 'Se fijó el nivel del alumno/a en ' + NIV_LB[cf] + ' (podés cambiarlo en su ficha). '; }
+      else if(pf.nivel !== cf && !(cf === 'rx' && pf.nivel === 'elite')) nota = 'Ojo: el nivel de la ficha es ' + (NIV_LB[pf.nivel] || pf.nivel) + ' y esta plantilla es ' + NIV_LB[cf] + '. ';
+    }
+    return nota + '4 semanas x ' + (p.dias || []).length + ' sesiones cargadas (S1-S4).';
+  }
+
+  /* ---------- 5 · tarjetas del banco, filtros y vista previa ---------- */
+  var KEY = 'coachjp_cfm_v1', G = { niv: '', dur: '', obj: '' };
+  try{ G = Object.assign(G, JSON.parse(localStorage.getItem(KEY) || '{}')); }catch(e){}
+  function guardarG(){ try{ localStorage.setItem(KEY, JSON.stringify(G)); }catch(e){} }
+  function hay(){ return (S.banco || []).some(function(r){ return r && r.cfMes; }); }
+  function bucketDur(m){ return m <= 60 ? 'corta' : (m <= 90 ? 'media' : 'larga'); }
+  var DUR_LB = { corta: 'Hasta 60 min', media: '60-90 min', larga: 'Más de 90 min' };
+  function pasa(r){
+    if(!r.cfNivel) return !(G.niv || G.dur || G.obj);
+    if(G.niv && r.cfNivel !== G.niv) return false;
+    if(G.dur && bucketDur(r.durMin || 0) !== G.dur) return false;
+    if(G.obj && (r.objetivos || []).indexOf(G.obj) < 0) return false;
+    return true;
+  }
+  function E(s){ return (typeof esc === 'function') ? esc(s == null ? '' : s) : String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function contar(r){
+    var bl = 0, ej = 0;
+    (r.dias || []).forEach(function(d){ (d.bloquesPorSemana || [d.bloques || []]).forEach(function(arr){ (arr || []).forEach(function(b){ bl++; ej += (b.items || []).length; }); }); });
+    return { bl: bl, ej: ej };
+  }
+  function decorar(){
+    var g = document.getElementById('bankGrid'); if(!g) return;
+    (S.banco || []).forEach(function(r){
+      if(!r) return;
+      var card = g.querySelector('[data-bank="' + r.id + '"]'); if(!card) return;
+      card.classList.toggle('cfm-hide', !pasa(r));
+      if(!r.cfMes) return;
+      if(card.getAttribute('data-cfm') === String(r.cfMesVer)) return;
+      card.setAttribute('data-cfm', String(r.cfMesVer));
+      card.classList.add('cfm-card', 'cfm-' + r.cfMesId);
+      var c = contar(r), bm = card.querySelector('.bm');
+      if(bm) bm.textContent = (r.dias || []).length + ' sesiones x 4 semanas · ' + c.bl + ' bloques · plantilla del sistema';
+      var tags = card.querySelector('.bank-tags');
+      if(tags){
+        var nv = tags.querySelector('.bank-tag.n'); if(nv) nv.textContent = 'Nivel: ' + String(NIV_TAG[r.cfNivel] || '').toUpperCase();
+        tags.insertAdjacentHTML('beforeend',
+          '<span class="bank-tag cfm-t">4 SEMANAS</span><span class="bank-tag cfm-t">⏱ ~' + (r.durMin || 0) + ' MIN / SESIÓN</span>' +
+          (r.objetivos || []).slice(0, 3).map(function(o){ return '<span class="bank-tag cfm-o">🎯 ' + E(o) + '</span>'; }).join(''));
+      }
+      var dias = card.querySelector('.bank-days');
+      if(dias) dias.innerHTML = (r.dias || []).map(function(d){
+        var n = (d.bloquesPorSemana || []).map(function(a){ return (a || []).length; });
+        return '<div><b>' + E(d.short) + '</b> ' + E(d.title) + ' · ' + n.join(' / ') + ' bloques (S1-S4)</div>';
+      }).join('');
+    });
+    var vacio = (S.banco || []).filter(function(r){ return r && r.cfMes && pasa(r); }).length;
+    var hint = document.getElementById('cfmVacio');
+    if(hint) hint.style.display = (hay() && !vacio && (G.niv || G.dur || G.obj)) ? '' : 'none';
+  }
+  function barra(){
+    var w = document.getElementById('cfmBar'), grid = document.getElementById('bankGrid');
+    if(!hay() || !grid){ if(w) w.remove(); return; }
+    var cp = document.getElementById('cpWrap');
+    var tabCf = true;
+    try{ var F = window.CoachCentro && window.CoachCentro.filtro; if(F && F.tab && F.tab !== 'crossfit') tabCf = false; }catch(e){}
+    if(!tabCf){ if(w) w.style.display = 'none'; return; }
+    if(!w){
+      w = document.createElement('div'); w.id = 'cfmBar'; w.className = 'cfm-bar';
+      if(cp && cp.parentNode) cp.parentNode.insertBefore(w, cp.nextSibling); else grid.parentNode.insertBefore(w, grid);
+      w.addEventListener('click', function(e){
+        var b = e.target.closest('[data-cfmf]'); if(b){ var k = b.getAttribute('data-cfmf'), v = b.getAttribute('data-v'); G[k] = G[k] === v ? '' : v; guardarG(); pintarBarra(); decorar(); return; }
+        if(e.target.closest('#cfmClear')){ G = { niv: '', dur: '', obj: '' }; guardarG(); pintarBarra(); decorar(); return; }
+        if(e.target.closest('#cfmRest')){ var n = sembrar(true); hidratar(); try{ renderBanco(); }catch(e2){} toast(n ? '🏋️ Mes 1 de CrossFit restaurado en el banco' : 'Las tres plantillas del Mes 1 ya estaban en el banco'); return; }
+      });
+    }
+    w.style.display = '';
+    pintarBarra();
+  }
+  function pintarBarra(){
+    var w = document.getElementById('cfmBar'); if(!w) return;
+    function chips(k, lista){ return lista.map(function(x){ return '<button type="button" class="cp-chip' + (G[k] === x.v ? ' on' : '') + '" data-cfmf="' + k + '" data-v="' + E(x.v) + '">' + E(x.lb) + '</button>'; }).join(''); }
+    var objs = []; (S.banco || []).forEach(function(r){ if(r && r.cfMes) (r.objetivos || []).forEach(function(o){ if(objs.indexOf(o) < 0) objs.push(o); }); });
+    w.innerHTML = '<div class="cp-sub"><span class="lb">🏋️ CrossFit · Nivel</span>' +
+      chips('niv', [{ v: 'development', lb: 'Development · Intermedio' }, { v: 'advanced', lb: 'Advanced' }, { v: 'rx', lb: 'RX / Élite' }]) +
+      '<span class="lb" style="margin-left:8px">⏱ Duración</span>' + chips('dur', [{ v: 'corta', lb: DUR_LB.corta }, { v: 'media', lb: DUR_LB.media }, { v: 'larga', lb: DUR_LB.larga }]) +
+      '</div><div class="cp-sub"><span class="lb">🎯 Objetivo</span>' + chips('obj', objs.map(function(o){ return { v: o, lb: o }; })) +
+      '<button class="btn xs ghost" id="cfmClear" style="margin-left:auto">✕ Limpiar</button><button class="btn xs ghost" id="cfmRest" title="Vuelve a cargar las tres plantillas del Mes 1 si las borraste">↺ Restaurar Mes 1</button></div>' +
+      '<div class="cp-empty" id="cfmVacio" style="display:none">Ninguna plantilla coincide con esos filtros. Tocá «Limpiar».</div>';
+  }
+
+  var vista = { id: '', sem: 0 };
+  function bloqueVista(b){
+    var h = '<div class="pv-blq ' + (b.category === 'warmup' ? 'w' : (b.category === 'metcon' ? 'c' : 'f')) + '"><div class="pv-bh"><span class="pv-tag">' +
+      E(({ warmup: 'WARM-UP', strength: 'SKILL / STRENGTH', metcon: 'WOD / METCON', accessory: 'ACCESSORY', endurance: 'ENGINE' })[b.category] || 'BLOQUE') + '</span>' + (b.optional ? '<span class="pv-min">OPCIONAL</span>' : '') + '</div>' +
+      '<div class="pv-en">' + E(b.titulo) + '</div><ul class="pv-wu">' + (b.items || []).map(function(l){ return '<li>' + E(l) + '</li>'; }).join('') + '</ul>';
+    var c = b.cfCierre || {};
+    if(c.objetivo) h += '<p class="pv-obj"><b>Objetivo del estímulo</b><br>' + E(c.objetivo) + '</p>';
+    var extra = [['Tips', c.tips], ['Pacing', c.pacing], ['Escalado', c.escalado], ['Élite', b.scaling && b.scaling.elite]].filter(function(x){ return x[1]; });
+    if(extra.length) h += '<details class="pv-det"><summary>Coaching tips, pacing y escalado (' + extra.length + ')</summary><ul class="pv-tips">' + extra.map(function(x){ return '<li><b>' + E(x[0]) + ':</b> ' + E(String(x[1]).replace(/\n+/g, ' ')) + '</li>'; }).join('') + '</ul></details>';
+    return h + '</div>';
+  }
+  function pintarVista(){
+    var r = (S.banco || []).filter(function(x){ return x.id === vista.id; })[0], bd = document.getElementById('cfmVBody'); if(!r || !bd) return;
+    var dias = r.dias || [], c = contar(r);
+    bd.innerHTML = '<div class="pv-meta"><span class="pv-pill gold">' + E(NIV_TAG[r.cfNivel] || '') + '</span><span class="pv-pill">' + dias.length + ' sesiones</span><span class="pv-pill">4 semanas</span>' +
+      '<span class="pv-pill">' + c.bl + ' bloques</span><span class="pv-pill">⏱ ~' + (r.durMin || 0) + ' min / sesión</span></div>' +
+      '<p class="pv-resumen">' + E(r.notas) + '</p>' +
+      '<div class="pv-nav">' + [0, 1, 2, 3].map(function(w){ return '<button type="button" class="' + (vista.sem === w ? 'cfm-on' : '') + '" data-cfmw="' + w + '">SEMANA ' + (w + 1) + '</button>'; }).join('') + '</div>' +
+      dias.map(function(d){
+        var arr = (d.bloquesPorSemana || [])[vista.sem] || [];
+        return '<section class="pv-day"><div class="pv-dh"><span class="n">' + E(d.short) + '</span><h4>' + E(d.title) + '</h4></div>' + arr.map(bloqueVista).join('') + '</section>';
+      }).join('');
+    bd.scrollTop = 0;
+  }
+  function abrirVista(id){
+    var r = (S.banco || []).filter(function(x){ return x.id === id; })[0]; if(!r) return;
+    if(!(r.dias || []).length) hidratar();
+    vista = { id: id, sem: 0 };
+    var m = document.getElementById('mCfmView');
+    if(!m){
+      m = document.createElement('div'); m.className = 'modal-bg'; m.id = 'mCfmView';
+      m.innerHTML = '<div class="modal pv-modal"><div class="modal-h"><h3><span id="cfmVTit"></span></h3><div class="spacer"></div><button class="icon-btn" data-cfmx="1" aria-label="Cerrar">✕</button></div>' +
+        '<div class="modal-b" id="cfmVBody"></div><div class="modal-f"><button class="btn ghost" data-cfmx="1">← Volver al listado</button><div class="spacer"></div><button class="btn gold" id="cfmVAsig">⚡ Clonar / asignar</button></div></div>';
+      document.body.appendChild(m);
+      m.addEventListener('click', function(e){
+        if(e.target === m || e.target.closest('[data-cfmx]')){ closeModal('mCfmView'); return; }
+        var w = e.target.closest('[data-cfmw]'); if(w){ vista.sem = parseInt(w.getAttribute('data-cfmw'), 10) || 0; pintarVista(); return; }
+        if(e.target.closest('#cfmVAsig')){ var id2 = vista.id; closeModal('mCfmView'); var b2 = id2 && document.querySelector('[data-bkasig="' + id2 + '"]'); if(b2) setTimeout(function(){ b2.click(); }, 60); }
+      });
+    }
+    document.getElementById('cfmVTit').textContent = '👁️ ' + r.nombre;
+    pintarVista(); openModal('mCfmView');
+  }
+  window.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('[data-bkview]'); if(!b) return;
+    var r = (S.banco || []).filter(function(x){ return x.id === b.getAttribute('data-bkview'); })[0];
+    if(r && r.cfMes){ e.preventDefault(); e.stopImmediatePropagation(); abrirVista(r.id); }
+  }, true);
+
+  /* ---------- 6 · montaje ---------- */
+  var obs = null, t = null;
+  function repintar(){ clearTimeout(t); t = setTimeout(function(){ try{ barra(); decorar(); }catch(e){ console.warn('mes CF', e); } }, 60); }
+  function arranque(){
+    try{ hidratar(); sembrar(false); }catch(e){ console.warn('mes CF', e); }
+    var g = document.getElementById('bankGrid');
+    if(g && !obs){ obs = new MutationObserver(repintar); obs.observe(g, { childList: true }); }
+    var cp = document.getElementById('cpWrap');
+    if(cp && !cp.getAttribute('data-cfm')){ cp.setAttribute('data-cfm', '1'); cp.addEventListener('click', repintar); }
+    repintar();
+    try{ if(typeof renderBanco === 'function' && S.ui && S.ui.view === 'banco') renderBanco(); }catch(e){}
+  }
+  var _go = window.go;
+  if(typeof _go === 'function'){
+    window.go = function(v){ var r = _go.apply(this, arguments); if(v === 'banco') setTimeout(arranque, 120); return r; };
+  }
+  window.CoachCFMes = { sembrar: sembrar, hidratar: hidratar, alAsignar: alAsignar, armarDias: armarDias, niveles: NIV, semanas: SEMANAS, filtrar: filtrar, abrirVista: abrirVista, version: VER };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arranque, 400); });
+  else setTimeout(arranque, 400);
+})();
+</script>
+<!--/CF-MES1-->
