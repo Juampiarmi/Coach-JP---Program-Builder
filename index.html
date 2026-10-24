@@ -972,6 +972,28 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
         </div>
       </div>
       <datalist id="dlEx"></datalist>
+      <details class="cf-perfil-box" id="aCfPerfilBox">
+        <summary>🏋️ Perfil CrossFit · nivel operativo e inventario técnico</summary>
+        <div class="grid g2" style="margin-top:8px">
+          <div>
+            <label class="lb">Nivel operativo (categoría)</label>
+            <select id="aCfNivel">
+              <option value="">Sin definir</option>
+              <option value="development">Development</option>
+              <option value="advanced">Advanced</option>
+              <option value="rx">RX</option>
+              <option value="elite">Elite</option>
+            </select>
+            <div class="hint">La IA ajusta el pacing y las cargas sugeridas a esta categoría.</div>
+          </div>
+          <div class="hint" style="align-self:end">Un movimiento por línea o separados por coma. La IA los cruza con la programación de cada día para escribir la nota técnica y el pacing de cada bloque.</div>
+        </div>
+        <div class="grid g2" style="margin-top:8px">
+          <div><label class="lb">✅ Lo que sale</label><textarea id="aCfSale" placeholder="Ej: Power clean, wall balls, double unders"></textarea></div>
+          <div><label class="lb">⚠️ Lo que cuesta</label><textarea id="aCfCuesta" placeholder="Ej: Toes to bar en series largas, squat clean pesado"></textarea></div>
+        </div>
+        <div style="margin-top:8px"><label class="lb">⛔ Lo que no sale (todavía)</label><textarea id="aCfNoSale" placeholder="Ej: Muscle-up, handstand walk, pistol"></textarea></div>
+      </details>
       <div>
         <label class="lb">Notas internas del coach</label>
         <textarea id="aNotas" placeholder="Observaciones, historial, disponibilidad horaria…"></textarea>
@@ -3106,6 +3128,12 @@ function openAth(id){
   $('#aDeportes').value = a ? (a.deportes||'') : '';
   $('#aCompat').value   = a ? (a.compat||'') : '';
   $('#aNotas').value    = a ? (a.notas||'') : '';
+  const cfp = (a && a.cfPerfil) || {};
+  $('#aCfNivel').value  = cfp.nivel || '';
+  $('#aCfSale').value   = (cfp.sale || []).join('\n');
+  $('#aCfCuesta').value = (cfp.cuesta || []).join('\n');
+  $('#aCfNoSale').value = (cfp.noSale || []).join('\n');
+  $('#aCfPerfilBox').open = !!(cfp.nivel || (cfp.sale || []).length || (cfp.cuesta || []).length || (cfp.noSale || []).length);
   tmpTags  = a ? (a.tags||[]).slice()       : [];
   tmpBans  = a ? (a.prohibidos||[]).slice() : [];
   tmpPrefs = a ? (a.preferidos||[]).slice() : [];
@@ -3133,6 +3161,11 @@ function saveAth(){
     deportes: $('#aDeportes').value.trim(),
     compat: $('#aCompat').value.trim(),
     notas: $('#aNotas').value.trim(),
+    cfPerfil: (function(){
+      const lista = id => $('#' + id).value.split(/[\n,;]+/).map(x => x.trim()).filter(Boolean);
+      const o = { nivel: $('#aCfNivel').value, sale: lista('aCfSale'), cuesta: lista('aCfCuesta'), noSale: lista('aCfNoSale') };
+      return (o.nivel || o.sale.length || o.cuesta.length || o.noSale.length) ? o : null;
+    })(),
     tags: tmpTags.slice(),
     prohibidos: tmpBans.slice(),
     preferidos: tmpPrefs.slice()
@@ -7103,6 +7136,14 @@ function contextoAtletaDiaIA(){
     focoDia: (d && (d.label || d.title)) || '',
     nivel: (ath && ath.nivel) || '',
     lesiones: (ath && ath.tags && ath.tags.length) ? ath.tags.join('; ') : '',
+    perfilCF: (function(){
+      const p0 = ath && ath.cfPerfil; if(!p0) return '';
+      const NV = { development: 'Development', advanced: 'Advanced', rx: 'RX', elite: 'Elite' };
+      return [p0.nivel ? 'Categoría operativa: ' + (NV[p0.nivel] || p0.nivel) : '',
+        (p0.sale || []).length ? 'Lo que SALE: ' + p0.sale.join(', ') : '',
+        (p0.cuesta || []).length ? 'Lo que CUESTA: ' + p0.cuesta.join(', ') : '',
+        (p0.noSale || []).length ? 'Lo que NO SALE todavía: ' + p0.noSale.join(', ') : ''].filter(Boolean).join(' | ');
+    })(),
     semana: wm ? ((wm.short || ('S' + (wi + 1))) + (wm.phase ? ' · ' + wm.phase : '') + (wm.rpe ? ' · ' + wm.rpe : '')) : ''
   };
 }
@@ -7231,6 +7272,7 @@ async function generarFocoDiaConIA(btn){
     ad.disciplina ? 'Mesociclo: ' + ad.disciplina : '',
     ad.semana ? 'Semana activa del mesociclo: ' + ad.semana + ' -- el foco debe reflejar ese nivel de esfuerzo real (no genérico).' : '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
+    ad.perfilCF ? 'Perfil técnico del atleta: ' + ad.perfilCF : '',
     ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el foco NO debe contradecir esto.' : ''
   ].filter(Boolean).join('\n');
   const sistema = (esCF
@@ -7287,29 +7329,31 @@ async function generarTipsPacingIA(bid, btn){
     ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
     ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el pacing/objetivo NO debe contradecir esto.' : '',
+    ad.perfilCF ? 'PERFIL TÉCNICO DEL ATLETA (cruzalo con los movimientos del bloque): ' + ad.perfilCF : '',
     b.cfFmt ? 'Formato del trabajo: ' + b.cfFmt.toUpperCase() : '',
     b.cfParam ? 'Parámetro (time cap / intervalo / minutos): ' + b.cfParam : ''
   ].filter(Boolean).join('\n');
-  const sistema = 'Sos un coach de CrossFit & Hyrox de alto rendimiento. Dado un WOD/bloque, escribís en español rioplatense, ' +
-    'corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del estímulo" (1 frase, qué busca lograr fisiológicamente ' +
-    'esta sesión -- ej. "Salir rápido y sostener, el score se define en el último tercio") y "coaching tips" segmentados POR MOVIMIENTO, nunca en un solo párrafo. ' +
-    'Para CADA movimiento listado escribís: una línea con su nombre entre corchetes, "[Toes to Bar]", y debajo tres líneas -- ' +
-    '"SET-UP & AGARRE: ..." (o "SET-UP & POSTURA"), "EFICIENCIA & PACING: ..." (estrategia de quiebre de series, ritmo y transición) y "CUIDADO: ..." (la compensación crítica) -- ' +
-    'de 15 a 20 palabras como máximo por línea. Cerrá con una última línea "ESTRATEGIA GENERAL DEL WOD: ..." con ritmo objetivo, target time proyectado, time cap y ventana de pacing. ' +
-    'Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre líneas).';
+  const sistema = 'Sos un coach de CrossFit & Hyrox de alto rendimiento. Dado un WOD/bloque y el PERFIL TÉCNICO del atleta (categoría, lo que sale, lo que cuesta, lo que no sale), ' +
+    'escribís en español rioplatense, corto y directo (sin relleno), el contenido de "Pautas Técnicas & Tips del Bloque" en EXACTAMENTE tres ejes: ' +
+    '1) "foco": FOCO DEL ESTÍMULO, el propósito del día (1-2 frases: qué busca lograr fisiológicamente y cómo se siente un buen WOD). ' +
+    '2) "pacing": ESTRATEGIA DE PACING dosificada según su categoría (ritmo por ronda/intervalo, dónde quebrar series, cuándo empujar; sumá target y time cap si aplica; 2-3 frases). ' +
+    '3) "nota": NOTA TÉCNICA / AJUSTE, recordatorios que salen de cruzar los movimientos del bloque con sus debilidades registradas: para cada movimiento que figure en "lo que cuesta" o "lo que no sale" una línea "[Movimiento] consigna técnica concreta o ajuste/escalado (ej. banda, reducir repeticiones, variante)"; ' +
+    'si un movimiento figura en "lo que sale" mencionalo solo si hace falta cuidar la fatiga. Sin perfil cargado, dá una nota técnica general del bloque. Máximo 20 palabras por línea. ' +
+    'Respondé SOLO con JSON válido: {"foco":"...","pacing":"...","nota":"..."} (nota con \\n entre líneas).';
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
     'Generá objetivo y coaching tips en JSON para este bloque.\nMovimientos incluidos:\n' + lineas;
 
   const originalHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
   try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 800 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 900 });
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
-    let objetivo = j ? String(j.objetivo || '').trim() : '';
-    let tips = j ? String(j.tips || '').trim() : '';
-    if(!objetivo && !tips){
+    let objetivo = j ? String(j.foco || j.objetivo || '').trim() : '';
+    let tips = j ? String(j.nota || j.tips || '').trim() : '';
+    const pacingIA = j ? String(j.pacing || '').trim() : '';
+    if(!objetivo && !tips && !pacingIA){
       /* fallback a texto plano si el proveedor ignoró el pedido de JSON --
          primera línea como objetivo, el resto como tips, igual criterio
          que nombrarBloqueConIA() de arriba. */
@@ -7317,12 +7361,13 @@ async function generarTipsPacingIA(bid, btn){
       objetivo = (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g,'').trim();
       tips = partes.slice(1).join('\n').trim();
     }
-    if(!objetivo && !tips){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
+    if(!objetivo && !tips && !pacingIA){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
     b.cfCierre = b.cfCierre || {};
     if(objetivo) b.cfCierre.objetivo = objetivo;
+    if(pacingIA) b.cfCierre.pacing = pacingIA;
     if(tips) b.cfCierre.tips = tips;
     save(); renderBuilder();
-    toast('Tips y pacing generados con IA ⚡');
+    toast(ad.perfilCF ? 'Pautas generadas con IA según el perfil del atleta ⚡' : 'Pautas generadas con IA ⚡ (cargá el perfil CrossFit del alumno/a para personalizarlas)');
   }catch(e){
     console.warn('generarTipsPacingIA', e);
     toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
@@ -13392,7 +13437,8 @@ function datosStoryCF(weekIdx, day){
   const blocks = (day.blocks || []).filter(b => !esBloqueVacioCF(b));
   const warmup = blocks.find(b => b.category === 'warmup');
   const strengthBlocks = blocks.filter(b => b.category === 'strength');
-  const wod = blocks.find(b => b.category === 'metcon') || blocks.find(b => b.category === 'cardio' || b.category === 'endurance');
+  const wodsDia = blocks.filter(b => b.category === 'metcon');
+  const wod = wodsDia.find(b => String((state.scores && state.scores[weekIdx + '|' + day.id + '|' + b.id]) || '').trim()) || wodsDia[0] || blocks.find(b => b.category === 'cardio' || b.category === 'endurance');
   /* directiva (fix integral Story Card 9:16): antes la tarjeta sólo
      mostraba kilos clave + estructura + score -- si el bloque de fuerza
      no traía un "@ Xkg" literal (ej. técnica/skill sin carga puntual) o
@@ -15625,7 +15671,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     } else fmt = 'INTERVALOS';
     var pac = jpCfPlano(c && c.pacing); if(pac.length > 78) pac = '';
     var rx = jpCfParesCarga(lineas.join(' ')), sc = jpCfParesCarga(jpCfPlano(c && c.escalado));
-    var chips = (rx.length ? '<span class="jp-cf-chip"><b>Rx</b> ' + escSB(rx.join(' · ')) + '</span>' : '') + (sc.length ? '<span class="jp-cf-chip"><b>Scaled</b> ' + escSB(sc.join(' · ')) + '</span>' : '');
+    var chips = (rx.length ? '<span class="jp-cf-chip"><b>Rx</b> ' + escSB(rx.join(' · ')) + '</span>' : '') + (sc.length ? '<span class="jp-cf-chip"><b>Development</b> ' + escSB(sc.join(' · ')) + '</span>' : '');
     return '<div class="jp-cf-fmtbadge">[ ' + escSB(fmt) + ' ]</div>' +
       ((cap || pac) ? '<div class="jp-cf-capline">' + (cap ? '<span class="cap">' + cap + '</span>' : '') + (pac ? '<span class="pac">🎯 PACING: ' + escSB(pac) + '</span>' : '') + '</div>' : '') +
       (chips ? '<div class="jp-cf-chips">' + chips + '</div>' : '');
@@ -17003,9 +17049,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         ((tieneCierre || subtituloVisible) ?
           '<details class="jp-cf-acc"><summary><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T&Eacute;CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
             (subtituloVisible ? '<div class="jp-cf-accrow"><span class="lb">&#128270; FOCO DEL BLOQUE</span><p>' + subtituloVisible + '</p></div>' : '') +
-            (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; OBJETIVO</span><p>' + jpCfSubLabels(c.objetivo) + '</p></div>' : '') +
-            (c.tips ? '<div class="jp-cf-accrow"><span class="lb">&#128161; ESTRATEGIA &amp; COACHING TIPS</span>' + (formatTipsCF(c.tips) || '<p>' + jpCfSubLabels(c.tips) + '</p>') + '</div>' : '') +
-            ((c.pacing && !(cabeceraWod && cabeceraWod.indexOf('class="pac"') >= 0 && jpCfPlano(c.pacing).length <= 78)) ? '<div class="jp-cf-accrow"><span class="lb">&#9201;&#65039; PACING</span><p>' + jpCfSubLabels(c.pacing) + '</p></div>' : '') +
+            (c.objetivo ? '<div class="jp-cf-accrow"><span class="lb">&#127919; FOCO DEL EST&Iacute;MULO</span><p>' + jpCfSubLabels(c.objetivo) + '</p></div>' : '') +
+            (c.pacing ? '<div class="jp-cf-accrow"><span class="lb">&#9889; ESTRATEGIA DE PACING</span><p>' + jpCfSubLabels(c.pacing) + '</p></div>' : '') +
+            (c.tips ? '<div class="jp-cf-accrow"><span class="lb">&#128736;&#65039; NOTA T&Eacute;CNICA / AJUSTE</span>' + (formatTipsCF(c.tips) || '<p>' + jpCfSubLabels(c.tips) + '</p>') + '</div>' : '') +
             (c.escalado ? '<div class="jp-cf-accrow"><span class="lb">&#9878;&#65039; ESCALADO Y ADAPTACIONES</span><p>' + jpCfSubLabels(c.escalado) + '</p></div>' : '') +
           '</details>' : '') +
       '</div>';
@@ -17015,6 +17061,15 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var rowsEl = body.querySelector('[data-wodb="' + block.id + '"] .jp-cf-rows');
       if(rowsEl && !rowsEl.querySelector('[data-est]')){
         var estRows = [].slice.call(rowsEl.children).filter(function(r){ return r.classList.contains('jp-cf-row') && r.querySelector(':scope > .jp-cf-rn'); }), nHdr = 0;
+        /* "EVERY 04:00 x 5 SETS", "Every 3 min for 6 sets", "5 Sets", "Rest 2:00", "Min 3": encabezados de estructura, nunca ejercicios -> sin letra E y con estilo de encabezado */
+        var RX_ESTR = /^\\s*(?:\\d+\\s*[x\\u00d7]\\s*)?(?:every\\b|emom\\b|e\\d+mom\\b|amrap\\b|for\\s*time\\b|time\\s*cap\\b|cap\\b|rest\\b|descanso\\b|then\\b|buy-?in\\b|cash-?out\\b|\\d+\\s*(?:rounds?|rondas?|sets?|series)\\b|min(?:ute)?s?\\s*\\d)/i;
+        estRows = estRows.filter(function(r){
+          var rn0 = r.querySelector(':scope > .jp-cf-rn'), tx0 = rn0.textContent.replace(/\\s+/g, ' ').trim();
+          if(!RX_ESTR.test(tx0)) return true;
+          r.classList.add('jp-cf-header'); r.setAttribute('data-estr', '1');
+          r.textContent = '\\u23f1\\ufe0f ' + tx0.replace(/:\\s*$/, '');
+          return false;
+        });
         estRows.forEach(function(r){
           var rn = r.querySelector(':scope > .jp-cf-rn'), mE = rn.textContent.trim().match(/^([A-Fa-f]\\d{1,2})\\s*[:.\\-]\\s*\\S/);
           if(mE){ r.setAttribute('data-est', mE[1].toUpperCase()); nHdr++;
@@ -25012,7 +25067,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   /* ---------- CrossFit: el mismo diseno, el protagonista es el SCORE del WOD ---------- */
   function scoreHumano(sc){
     var t = String(sc || '').trim(), nivel = '', m;
-    if((m = t.match(/\\s*\\[(RX|SCALED)\\]\\s*$/i))){ nivel = m[1].toUpperCase(); t = t.replace(/\\s*\\[(RX|SCALED)\\]\\s*$/i, '').trim(); }
+    if((m = t.match(/\\s*\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i))){ nivel = m[1].toUpperCase(); t = t.replace(/\\s*\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i, '').trim(); }
     var hero = t, sub = '';
     if((m = t.match(/^(\\d+)\\s*\\+\\s*(\\d+)$/))){ hero = m[1] + ' RONDAS'; sub = '+ ' + m[2] + ' REPS'; }
     else if((m = t.match(/^(\\d+)\\s*:\\s*(\\d{1,2})$/))){ hero = m[1] + ':' + ('0' + m[2]).slice(-2); sub = 'TIEMPO FINAL'; }
@@ -25057,7 +25112,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     }
     g.fillStyle = OR; g.fillRect(X, 392, 8, yTitFin - 392 + 14);
 
-    /* hero: score del WOD (o volumen de fuerza si todavia no hay score) */
+    /* ---------- 3 · CORE: score final grande + categoria ---------- */
     var yH = Math.max(yTitFin + 110, 780), sc = d.score ? scoreHumano(d.score) : null;
     g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.55)'; fuente(g, 600, 28, MONO);
     g.fillText(sc ? '[ SCORE FINAL ]' : '[ VOLUMEN DE FUERZA ]', X, yH);
@@ -25066,9 +25121,8 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       g.fillStyle = OR; rr(g, W - X - pw, yH - 32, pw, 46, 23); g.fill();
       g.fillStyle = INK; g.textAlign = 'center'; g.fillText(ptxt, W - X - pw / 2, yH + 2); g.textAlign = 'left';
     }
-    var yy = yH + 76;
-    var fmtLinea = [d.formatoTxt, sc && sc.nivel].filter(Boolean).join(' · ');
-    if(fmtLinea){ g.fillStyle = CY; fuente(g, 700, 44); g.fillText(fmtLinea.toUpperCase(), X, yy); yy += 30; }
+    var yy = yH + 70;
+    if(d.formatoTxt){ g.fillStyle = CY; fuente(g, 700, 40); g.fillText(String(d.formatoTxt).toUpperCase(), X, yy); yy += 26; }
     var heroTxt, subTxt = '';
     if(sc){ heroTxt = sc.hero; subTxt = sc.sub; }
     else { var vol = Math.round(parseFloat(d.volumenTotal) || 0); heroTxt = vol > 0 ? fmtNum(vol) + ' KG' : (d.kgClave || '—'); }
@@ -25076,34 +25130,55 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
     g.fillStyle = '#FFFFFF'; g.fillText(heroTxt, X, yy + hp * .9);
     yy += hp * .9 + 20;
     if(subTxt){ g.fillStyle = OR; fuente(g, 700, 80); g.fillText(subTxt, X, yy + 66); yy += 86; }
-    g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X, yy + 30, MW, 2);
+    if(sc && sc.nivel){
+      var NIV = { DEVELOPMENT: 'DEVELOPMENT', ADVANCED: 'ADVANCED', RX: 'RX', ELITE: 'ELITE', SCALED: 'SCALED' };
+      var nTxt = 'CATEGORÍA  ' + (NIV[sc.nivel] || sc.nivel);
+      fuente(g, 700, 32, MONO); var nw = g.measureText(nTxt).width + 60;
+      g.strokeStyle = OR; g.lineWidth = 3; rr(g, X, yy + 10, nw, 58, 29); g.stroke();
+      g.fillStyle = OR; g.textAlign = 'left'; g.fillText(nTxt, X + 30, yy + 49); yy += 84;
+    }
+    g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X, yy + 24, MW, 2);
 
-    /* fila de datos */
-    var yS = yy + 36, vol2 = Math.round(parseFloat(d.volumenTotal) || 0), top = parseFloat(d.topLiftKg) || 0;
-    var cols = [
-      { v: vol2 > 0 ? fmtNum(vol2) + ' KG' : '—', l: 'VOLUMEN FUERZA' },
-      { v: top > 0 ? fmtNum(top) + ' KG' : (d.kgClave || '—'), l: d.esPR ? 'TOP LIFT · PR' : 'TOP LIFT' },
-      { v: (d.formatoTxt || 'WOD').toUpperCase(), l: 'FORMATO' }
-    ];
-    var cw = MW / 3;
-    cols.forEach(function(k, i){
-      var cx = X + cw * i + (i ? 34 : 0), mw = cw - (i ? 44 : 34);
-      g.textAlign = 'left'; g.fillStyle = '#FFFFFF'; ajustar(g, k.v, mw, 62, 30, 700); g.fillText(k.v, cx, yS + 52);
-      g.fillStyle = 'rgba(255,255,255,.5)'; fuente(g, 500, 22, MONO); g.fillText(k.l, cx, yS + 90);
-      if(i){ g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X + cw * i, yS + 6, 2, 100); }
+    /* ---------- 4/5/6 · zonas fijas desde abajo: firma, progreso de sesion y metricas (solo las que aplican) ---------- */
+    var yP = 1700;
+    var dia0 = DAYS.filter(function(x){ return x.id === state.currentDay; })[0], ids0 = dia0 ? dayBlockIds(dia0) : [];
+    var hechos0 = dia0 ? ids0.filter(function(id){ return isBlockDone(state.currentWeek, dia0.id, id); }).length : 0, tot0 = ids0.length;
+    var yBar = yP - 70;
+    var met = [], vol2 = Math.round(parseFloat(d.volumenTotal) || 0), top = parseFloat(d.topLiftKg) || 0;
+    if(vol2 > 0) met.push({ v: fmtNum(vol2) + ' KG', l: 'VOLUMEN FUERZA' });
+    if(top > 0) met.push({ v: fmtNum(top) + ' KG', l: d.esPR ? 'TOP LIFT · PR' : 'TOP LIFT' });
+    try{ var tS = (typeof window.jpTiempoSesion === 'function') ? window.jpTiempoSesion() : null; if(tS && tS.min > 0) met.push({ v: (tS.estimado ? '~' : '') + (typeof window.CoachFmtDuracion === 'function' ? String(window.CoachFmtDuracion(tS.min)).toUpperCase() : tS.min + ' MIN'), l: tS.estimado ? 'TIEMPO ESTIMADO' : 'TIEMPO DE SESIÓN' }); }catch(eT){}
+    try{ var rpeS = (typeof checkoutRpeLeer === 'function') ? checkoutRpeLeer()[state.currentWeek + '|' + state.currentDay + '|__sesion'] : null; if(rpeS) met.push({ v: rpeS + '/10', l: 'RPE DE LA SESIÓN' }); }catch(eR){}
+    var yMet = yBar - 40 - (met.length ? 112 : 0);
+    if(met.length){
+      var cwM = MW / met.length;
+      g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X, yMet - 18, MW, 2);
+      met.forEach(function(k, i){
+        var cx = X + cwM * i + (i ? 30 : 0), mw = cwM - (i ? 40 : 30);
+        g.textAlign = 'left'; g.fillStyle = '#FFFFFF'; ajustar(g, k.v, mw, 58, 28, 700); g.fillText(k.v, cx, yMet + 46);
+        g.fillStyle = 'rgba(255,255,255,.5)'; fuente(g, 500, 22, MONO); g.fillText(k.l, cx, yMet + 84);
+        if(i){ g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X + cwM * i, yMet + 4, 2, 96); }
+      });
+    }
+    /* movimientos del WOD en el espacio que queda entre el core y las metricas */
+    var yR = yy + 70;
+    var movs = String(d.estructura || '').split(' · ').filter(function(x){ return x && !/\\b(AMRAP|EMOM|FOR TIME|TABATA|EVERY|CHIPPER)\\b/.test(x); });
+    var limite = (met.length ? yMet - 30 : yBar - 30), disp = Math.min(6, movs.length);
+    var pitch = Math.max(40, Math.min(54, Math.floor((limite - (yR + 30)) / Math.max(1, disp + (movs.length > 6 ? 1 : 0)))));
+    var cupo = Math.max(1, Math.min(disp, Math.floor((limite - (yR + 30)) / pitch) - (movs.length > disp ? 1 : 0)));
+    var movsV = movs.slice(0, cupo), extra = movs.length - movsV.length, tamMov = Math.min(40, pitch - 12);
+    g.textAlign = 'left'; g.fillStyle = CY; fuente(g, 600, 28, MONO); g.fillText('[ MOVIMIENTOS ]', X, yR);
+    movsV.forEach(function(mv, i){
+      var y1 = yR + 44 + i * pitch; g.fillStyle = '#FFFFFF'; ajustar(g, mv, MW - 40, tamMov, 24, 700); g.fillText(recortar(g, limpiarNombre(mv).toUpperCase() || mv, MW - 40), X, y1);
+      g.fillStyle = 'rgba(255,255,255,.1)'; g.fillRect(X, y1 + 14, MW, 2);
     });
-    var yR = yS + 150;
-    g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(X, yR - 36, MW, 2);
-
-    /* movimientos clave del WOD */
-    var movs = String(d.estructura || '').split(' · ').filter(function(x){ return x && !/\\b(AMRAP|EMOM|FOR TIME|TABATA|EVERY|CHIPPER)\\b/.test(x); }).slice(0, 5);
-    g.textAlign = 'left'; g.fillStyle = CY; fuente(g, 600, 28, MONO); g.fillText('[ MOVIMIENTOS ]', X, yR + 4);
-    movs.forEach(function(mv, i){
-      var y1 = yR + 62 + i * 56; g.fillStyle = '#FFFFFF'; ajustar(g, mv, MW - 40, 42, 26, 700); g.fillText(recortar(g, limpiarNombre(mv).toUpperCase() || mv, MW - 40), X, y1);
-      g.fillStyle = 'rgba(255,255,255,.1)'; g.fillRect(X, y1 + 22, MW, 2);
-    });
-
-    var yP = Math.min(Math.max(yR + 62 + movs.length * 56 + 40, 1640), H - 190);
+    if(extra > 0){ g.fillStyle = 'rgba(255,255,255,.5)'; fuente(g, 500, 24, MONO); g.fillText('+ ' + extra + (extra === 1 ? ' MOVIMIENTO MÁS' : ' MOVIMIENTOS MÁS'), X, yR + 44 + movsV.length * pitch); }
+    /* footer: barra de progreso de la sesion + marca */
+    var fr = tot0 ? hechos0 / tot0 : 1;
+    g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.55)'; fuente(g, 500, 22, MONO); g.fillText('PROGRESO DE LA SESIÓN' + (tot0 ? ' · ' + hechos0 + '/' + tot0 + ' BLOQUES' : ''), X, yBar - 14);
+    g.textAlign = 'right'; g.fillStyle = OR; fuente(g, 700, 26, MONO); g.fillText(Math.round(fr * 100) + '%', W - X, yBar - 12);
+    g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(X, yBar, MW, 10);
+    g.fillStyle = OR; g.fillRect(X, yBar, Math.max(14, MW * fr), 10);
     escudo(g, X, yP, .95);
     g.textAlign = 'left'; fuente(g, 700, 34); g.fillStyle = '#FFFFFF'; g.fillText('COACH', X + 84, yP + 30);
     var wc = g.measureText('COACH ').width; g.fillStyle = OR; g.fillText('JP', X + 84 + wc, yP + 30);
@@ -25733,10 +25808,10 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
      5 · NIVEL DE ESCALADO ANTES DEL SCORE
   ========================================================= */
   var RX = [
-    { k:'rx',     lb:'RX' },
+    { k:'scaled', lb:'Development' },
     { k:'adv',    lb:'Advanced' },
-    { k:'scaled', lb:'Scaled' },
-    { k:'intro',  lb:'Intro' }
+    { k:'rx',     lb:'RX' },
+    { k:'elite',  lb:'Elite' }
   ];
   function escalado(){
     document.querySelectorAll('.wod-board').forEach(function(board){
@@ -29490,11 +29565,12 @@ body.cf-modo .block .block-body > .cf-levels{display:block !important}
       }
       /* escalados RX / ADVANCED / SCALED */
       var sc = b.scaling || {};
-      if(sc.rx || sc.adv || sc.scaled){
+      if(sc.rx || sc.adv || sc.scaled || sc.elite){
         var lv = board.querySelector('.cf-levels');
-        var h = (sc.rx ? '<span class="lv rx"><b>RX</b>' + esc(sc.rx) + '</span>' : '') +
+        var h = (sc.scaled ? '<span class="lv sc"><b>Development</b>' + esc(sc.scaled) + '</span>' : '') +
                 (sc.adv ? '<span class="lv adv"><b>Advanced</b>' + esc(sc.adv) + '</span>' : '') +
-                (sc.scaled ? '<span class="lv sc"><b>Scaled</b>' + esc(sc.scaled) + '</span>' : '');
+                (sc.rx ? '<span class="lv rx"><b>RX</b>' + esc(sc.rx) + '</span>' : '') +
+                (sc.elite ? '<span class="lv elite"><b>Elite</b>' + esc(sc.elite) + '</span>' : '');
         if(!lv){
           lv = document.createElement('div');
           lv.className = 'cf-levels';
@@ -42688,7 +42764,7 @@ html body .hdc-shield::after, html body.cf-disc .hdc-shield::after, html body.jp
 html body .hdc-shield svg, html body.cf-disc .hdc-shield svg, html body.jp-mission:not(.cf-disc) .hdc-shield svg{ filter:drop-shadow(0 0 8px rgba(245,197,24,.65)) drop-shadow(0 3px 5px rgba(0,0,0,.5)) !important; }
 html body .hd-shield, html body.cf-disc .hd-shield, html body.jp-mission:not(.cf-disc) .hd-shield{ filter:drop-shadow(0 0 20px rgba(245,197,24,.5)) drop-shadow(0 0 52px rgba(245,197,24,.22)) drop-shadow(0 6px 10px rgba(0,0,0,.55)) !important; }
 html body .hd-shield-aura, html body.cf-disc .hd-shield-aura, html body.jp-mission:not(.cf-disc) .hd-shield-aura{ background:radial-gradient(circle, rgba(245,197,24,.30) 0%, rgba(245,197,24,.18) 34%, rgba(245,197,24,0) 70%) !important; }
-/* ---- CrossFit: panel de score / rondas / notas compacto y alineado, con RX | SCALED integrado ---- */
+/* ---- CrossFit: panel de score / rondas / notas compacto y alineado, con categoría (Development · Advanced · RX · Elite) integrada ---- */
 html body.cf-disc .jp-cfboard .wod-score{ margin-top:10px !important; padding:10px 0 0 !important; gap:6px 8px !important; }
 html body.cf-disc .jp-cfboard .wod-score > label{ flex:0 0 100%; margin:0 0 -2px; line-height:1; }
 html body.cf-disc .jp-sc-ui{ display:flex !important; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; width:100%; }
@@ -42917,7 +42993,7 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
 
   /* 3 · SCORE: FOR TIME (completado MM:SS o CAPPED + reps), AMRAP (rondas + reps), EMOM (rondas completadas + kg) y toggle [ RX ] / [ SCALED ];
          marca [ ▲ NUEVO SCORE ] si supera el mejor registro previo de ese mismo WOD */
-  var RX_NIVEL = /\\s*\\[(RX|SCALED)\\]\\s*$/i;
+  var RX_NIVEL = /\\s*\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i;
   function valScore(sc, tipo){
     var t = String(sc || '').replace(RX_NIVEL, '').trim(), m;
     if(tipo === 'tiempo'){
@@ -42956,7 +43032,7 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
         else if(tipo === 'rondas') campos = '<span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="RONDAS" aria-label="Rondas"><b>+</b><input class="jp-sc-b" inputmode="numeric" maxlength="3" placeholder="REPS" aria-label="Repeticiones adicionales"></span>';
         else if(tipo === 'emom') campos = '<span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="RONDAS OK" aria-label="Rondas completadas"><b>·</b><input class="jp-sc-b" inputmode="decimal" maxlength="5" placeholder="KG" aria-label="Peso alcanzado"></span>';
         else campos = '<input class="jp-sc-free" type="text" placeholder="Ej: 42 reps">';
-        ui.innerHTML = campos + '<span class="jp-sc-rx"><button type="button" data-rx="RX">RX</button><button type="button" data-rx="SCALED">SCALED</button></span><span class="jp-sc-pr" hidden>▲ NUEVO SCORE</span>';
+        ui.innerHTML = campos + '<span class="jp-sc-rx" role="group" aria-label="Categor\\u00eda"><button type="button" data-rx="DEVELOPMENT">DEVELOPMENT</button><button type="button" data-rx="ADVANCED">ADVANCED</button><button type="button" data-rx="RX">RX</button><button type="button" data-rx="ELITE">ELITE</button></span><span class="jp-sc-pr" hidden>▲ NUEVO SCORE</span>';
         inp.parentNode.insertBefore(ui, inp.nextSibling);
         inp.style.display = 'none';
         var A = ui.querySelector('.jp-sc-a'), B = ui.querySelector('.jp-sc-b'), F = ui.querySelector('.jp-sc-free'), PR = ui.querySelector('.jp-sc-pr');
@@ -43506,8 +43582,8 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
       var carga = leerLS('coachjp_cf_carga_v1')[week + '|' + block.id] || {};
       var l3 = [];
       if(score || rondas.length || nJP(carga.kg) > 0 || nJP(carga.rondas) > 0){
-        var nivelM = score.match(/\\[(RX|SCALED)\\]\\s*$/i), nivelT = nivelM ? (/rx/i.test(nivelM[1]) ? 'Rx' : 'Scaled') : '';
-        var sc = score.replace(/\\s*\\[(?:RX|SCALED)\\]\\s*$/i, '').trim();
+        var nivelM = score.match(/\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i), nivelT = nivelM ? ({ DEVELOPMENT: 'Development', ADVANCED: 'Advanced', RX: 'RX', ELITE: 'Elite', SCALED: 'Scaled' }[nivelM[1].toUpperCase()] || '') : '';
+        var sc = score.replace(/\\s*\\[(?:DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i, '').trim();
         var capM = txt.match(/(?:time\\s*cap|cap)\\s*[:\\-]?\\s*(\\d{1,2})(?::(\\d{2}))?/i), cap = capM ? (capM[1] + ':' + (capM[2] || '00')) : '';
         var cargaTxt = nJP(carga.kg) > 0 ? ' | Carga: ' + fJP(nJP(carga.kg)) + ' kg' : '';
         if(mod === 'FOR TIME'){
@@ -43621,6 +43697,10 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
     });
     if(notas.length) L.push('📝 Feedback / Notas: "' + notas.join(' | ').replace(/\\s*\\n\\s*/g, ' ') + '"');
     if(!esSports) L.push('⏱ Tiempo total de sesión: ' + duracion());
+    try{
+      var rpeSes = (typeof checkoutRpeLeer === 'function') ? checkoutRpeLeer()[week + '|' + day.id + '|__sesion'] : null;
+      L.push('🎯 RPE de la sesión: ' + (rpeSes ? rpeSes + '/10' : 'sin informar'));
+    }catch(eRpe){}
     return L.join('\\n');
   }
   window.jpReporteSesionTexto = reporteTexto;
@@ -43780,6 +43860,55 @@ html body.cf-disc .jp-cfboard .wod-score{ width:auto !important; margin-left:0 !
 .jp-ux-cb-nada{ padding:12px; color:#9A9A9A; font:600 .76rem 'Chakra Petch',sans-serif; }
 .jp-ux-cb-msg{ margin-top:4px; color:#FF8A5C; font:600 .7rem 'Chakra Petch',sans-serif; }
 .jp-ux-q{ width:100%; box-sizing:border-box; margin-bottom:8px; }
+/* ===== CrossFit · auditoria UI/UX: tipografia uniforme, estructuras, CTA y categorias ===== */
+.jp-ux-oculto{ display:none !important; }
+/* 1 · escala tipografica unica dentro de los contenedores (ejercicios, minutos de EMOM, descansos) */
+html body.cf-disc .jp-cf-rows .jp-cf-rn, html body.cf-disc .jp-cf-rows .jp-cf-num{ font-size:16px !important; line-height:1.4 !important; }
+html body.cf-disc .jp-cf-rows .jp-cf-num{ font-weight:800 !important; }
+html body.cf-disc .jp-cf-rows .jp-cf-header, html body.cf-disc .jp-cf-rows .cf-format-badge{ font-size:14px !important; letter-spacing:.06em; }
+html body.cf-disc .jp-cf-rows .jp-cf-min{ font-size:12px !important; }
+html body.cf-disc .jp-cf-rows .jp-cf-badge{ font-size:13px !important; }
+html body.cf-disc .jp-cf-rows .jp-cf-closing, html body.cf-disc .jp-cf-rows .jp-cf-restbar{ font-size:15px !important; color:#B5B5B5 !important; }
+html body.cf-disc .jp-cf-rows .jp-ux-resto .jp-cf-rn{ color:#B5B5B5 !important; font-weight:600 !important; }
+html body.cf-disc .jp-cf-rows .jp-cf-rv, html body.cf-disc .jp-cf-rows .jp-cf-load, html body.cf-disc .jp-cf-rows .jp-cf-pct{ font-size:14px !important; }
+/* 2 · calentamiento: guia de flujo numerada, sin casillas */
+html body.cf-disc .jp-ux-flujo .jp-cf-rows{ counter-reset:paso; }
+html body.cf-disc .jp-ux-flujo .jp-cf-rows > .jp-cf-row:not([data-est]):not(.jp-cf-badge):not(.jp-cf-header):not(.jp-cf-rest-row):not(.jp-cf-closing)::before{ counter-increment:paso; content:counter(paso); display:inline-flex; align-items:center; justify-content:center; flex:0 0 26px; width:26px; height:26px; margin-right:12px; border-radius:50%; border:1.5px solid rgba(255,85,0,.6); color:#FF5500; font:700 12px 'JetBrains Mono',ui-monospace,monospace; }
+/* 3 · estructuras largas (barbell cycling, chippers, piramides): matriz de dos columnas */
+.jp-ux-matriz{ display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.jp-ux-matriz > *{ grid-column:1 / -1; }
+.jp-ux-matriz > .jp-cf-row:not(.jp-cf-header):not(.jp-cf-badge):not(.jp-cf-closing):not(.jp-cf-rest-row):not(.jp-cf-cell.jp-ux-resto){ grid-column:auto; display:flex !important; flex-wrap:nowrap !important; align-items:center !important; gap:8px; padding:9px 10px !important; min-height:54px; border:1px solid rgba(255,255,255,.1); border-radius:10px; background:rgba(255,255,255,.03); }
+.jp-ux-matriz > .jp-cf-row[data-est]{ grid-template-columns:none !important; }
+.jp-ux-matriz > .jp-cf-row[data-est]::before{ position:static !important; flex:0 0 auto; margin:0 !important; padding:2px 6px; border-radius:6px; background:rgba(255,85,0,.14); color:#FF5500; font-size:11px !important; }
+.jp-ux-matriz .jp-cf-row .jp-cf-rn{ flex:1 1 auto !important; min-width:0; font-size:15px !important; }
+.jp-ux-matriz .jp-cf-row .jp-ux-vid{ width:36px; height:26px; margin-left:0 !important; }
+.jp-ux-escalera{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:4px 0 8px; padding:8px 10px; border-radius:10px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); }
+.jp-ux-escalera .k{ font:700 .6rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; color:#9A9A9A; }
+.jp-ux-escalera .n{ display:flex; flex-wrap:wrap; gap:4px; }
+.jp-ux-escalera .n b{ min-width:30px; padding:4px 6px; border-radius:7px; background:rgba(255,85,0,.14); color:#FF8A4C; font:800 .85rem 'Chakra Petch',sans-serif; text-align:center; }
+.jp-ux-escalera .t{ margin-left:auto; font:700 .66rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; color:#D6D6D6; }
+/* 4 · unilaterales: secciones por hemicuerpo */
+.jp-ux-lado{ grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; margin:12px 0 4px; padding:8px 12px; border-left:4px solid #FF5500; border-radius:0 8px 8px 0; background:rgba(255,85,0,.09); color:#FF5500; font:800 .78rem 'Chakra Petch',sans-serif; letter-spacing:.14em; }
+.jp-ux-lado-i{ border-left-color:#00E6FF; background:rgba(0,230,255,.07); color:#00E6FF; }
+.jp-ux-lado em{ font:600 .62rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; color:#9A9A9A; font-style:normal; }
+/* 5 · metadatos obligatorios del WOD (time cap, rondas, regla de descanso) */
+.jp-ux-meta{ display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; }
+.jp-ux-meta span{ display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:9px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.04); }
+.jp-ux-meta i{ font:600 .58rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; color:#9A9A9A; font-style:normal; }
+.jp-ux-meta b{ font:800 .82rem 'Chakra Petch',sans-serif; color:#fff; letter-spacing:.03em; }
+/* 6 · CTA: INICIAR WOD con maximo peso visual; descansos como botones secundarios */
+html body.cf-disc .jp-cf-btnrow{ display:grid !important; grid-template-columns:1fr; gap:8px; }
+html body.cf-disc .jp-cfboard .jp-cf-btnrow .jp-cf-wodtimer, html body.cf-disc .jp-cfboard .jp-cf-wodtimer, html body.cf-disc .jp-cfboard button.jp-cf-wodtimer{ background:#FF5500 !important; color:#0A0A0A !important; border:0 !important; min-height:58px !important; font-size:15px !important; font-weight:900 !important; letter-spacing:.1em !important; box-shadow:0 8px 24px rgba(255,85,0,.38); }
+html body.cf-disc .jp-cfboard .jp-cf-wodtimer:active{ transform:scale(.985); }
+html body.cf-disc .jp-cfboard .jp-cf-btnrow .jp-cf-quickrest, html body.cf-disc .jp-cfboard .jp-cf-quickrest, html body.cf-disc .jp-cfboard .jp-cf-rest-main, html body.cf-disc .jp-cfboard .jp-cf-rest .jp-cf-rest-main{ background:transparent !important; color:#D6D6D6 !important; border:1px solid rgba(255,255,255,.22) !important; min-height:44px !important; font-size:12.5px !important; font-weight:600 !important; letter-spacing:.08em !important; box-shadow:none !important; }
+/* 7 · categoria de rendimiento: Development · Advanced · RX · Elite (2x2, tocable bajo fatiga) */
+html body.cf-disc .jp-sc-ui{ flex-wrap:wrap; }
+html body.cf-disc .jp-sc-rx{ display:grid !important; grid-template-columns:1fr 1fr; gap:8px; flex:1 1 100%; width:100% !important; margin:8px 0 0 !important; border:0 !important; border-radius:0 !important; overflow:visible !important; }
+html body.cf-disc .jp-sc-rx button{ min-width:0 !important; min-height:46px !important; padding:0 6px !important; border:1px solid rgba(255,255,255,.2) !important; border-radius:10px !important; background:rgba(255,255,255,.04) !important; color:#CFCFCF !important; font-size:12px !important; font-weight:800 !important; letter-spacing:.08em !important; }
+html body.cf-disc .jp-sc-rx button + button{ border-left:1px solid rgba(255,255,255,.2) !important; }
+html body.cf-disc .jp-sc-rx button.on{ background:#FF5500 !important; border-color:#FF5500 !important; color:#0A0A0A !important; }
+/* pautas del bloque: tres ejes del coaching (foco, pacing, nota tecnica) */
+.jp-cf-accrow .lb{ font-size:12px; }
 </style>
 <script>
 (function(){
@@ -43864,6 +43993,7 @@ html body.cf-disc .jp-cfboard .wod-score{ width:auto !important; margin-left:0 !
       /* el rotulo cuenta solo los ejercicios reales */
       var lbl = $('.jp-warm-lb', det);
       if(lbl){ var tw = D.createTreeWalker(lbl, NodeFilter.SHOW_TEXT, null), tn; while((tn = tw.nextNode())){ if(/\\d+\\s+EJERCICIOS?/.test(tn.nodeValue)){ tn.nodeValue = tn.nodeValue.replace(/\\d+\\s+EJERCICIOS?/, filas.length + (filas.length === 1 ? ' EJERCICIO' : ' EJERCICIOS')); break; } } }
+      if(esCf()) return;     /* CrossFit: el calentamiento es una guia de flujo, sin casillas por linea */
       var hecho = wuLoad();
       var sm = $('summary', det);
       if(sm && !$('.jp-ux-wu-prog', sm)){ var p = D.createElement('span'); p.className = 'jp-ux-wu-prog'; var ch = $('.jp-warm-chev', sm); if(ch) sm.insertBefore(p, ch); else sm.appendChild(p); }
@@ -43939,29 +44069,27 @@ html body.cf-disc .jp-cfboard .wod-score{ width:auto !important; margin-left:0 !
   /* CrossFit: el clip de cada movimiento va al margen derecho de su fila, centrado con el texto */
   function videosEnLineaCf(root){
     $$('.jp-cfboard', root).forEach(function(bd){
-      var cards = $$('.jp-cf-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); });
+      var cards = $$('.jp-cf-vid-card', bd);
       if(!cards.length) return;
       var nombres = $$('.jp-cf-rn', bd).filter(function(n){ return !n.parentNode.querySelector('.jp-ux-vid'); });
-      if(!nombres.length) return;
-      var pares = [];
-      cards.forEach(function(c, ci){
-        var nm = $('.jp-cf-vid-nombre', c), a = toks(nm ? nm.textContent : '');
-        nombres.forEach(function(n, ni){ var s = cobertura(a, toks(n.textContent)); if(s >= 0.6) pares.push({ s: s, ci: ci, ni: ni }); });
-      });
-      pares.sort(function(x, y){ return y.s - x.s; });
-      var usadoC = {}, usadoN = {};
-      pares.forEach(function(p){
-        if(usadoC[p.ci] || usadoN[p.ni]) return; usadoC[p.ci] = 1; usadoN[p.ni] = 1;
-        var c = cards[p.ci], n = nombres[p.ni], fila = n.parentNode;
-        var yt = c.getAttribute('data-yt'); if(!yt) return;
-        var nm = $('.jp-cf-vid-nombre', c), etq = nm ? nm.textContent.trim() : 'movimiento';
+      var usadas = {};
+      nombres.forEach(function(n){
+        var tn = toks(n.textContent), mejor = -1, mejorS = 0.6;
+        cards.forEach(function(c, ci){
+          var nm = $('.jp-cf-vid-nombre', c), s = cobertura(toks(nm ? nm.textContent : ''), tn);
+          if(s >= mejorS){ mejorS = s; mejor = ci; }
+        });
+        if(mejor < 0) return;
+        var c = cards[mejor], yt = c.getAttribute('data-yt'); if(!yt) return;
+        var nm2 = $('.jp-cf-vid-nombre', c), etq = nm2 ? nm2.textContent.trim() : 'movimiento', fila = n.parentNode;
         var bt = D.createElement('button'); bt.type = 'button'; bt.className = 'jp-ux-vid'; bt.setAttribute('data-yt', yt);
         bt.setAttribute('aria-label', 'Ver técnica de ' + etq.replace(/"/g, ''));
         bt.innerHTML = '<span class="jp-ux-vth" style="background-image:url(https://img.youtube.com/vi/' + yt + '/mqdefault.jpg)"></span><span class="jp-ux-vp">&#9654;&#65038;</span>';
         fila.classList.add('jp-ux-has-vid'); fila.appendChild(bt);
-        c.classList.add('jp-ux-gone');
+        usadas[mejor] = 1;
       });
-      var quedan = $$('.jp-cf-vid-card', bd).filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
+      cards.forEach(function(c, ci){ if(usadas[ci]) c.classList.add('jp-ux-gone'); });
+      var quedan = cards.filter(function(c){ return !c.classList.contains('jp-ux-gone'); }).length;
       if(!quedan){ $$('.jp-cf-vids, .jp-cf-vid-cards', bd).forEach(function(x){ x.classList.add('jp-ux-gone'); }); }
     });
   }
@@ -44020,7 +44148,7 @@ html body.cf-disc .jp-cfboard .wod-score{ width:auto !important; margin-left:0 !
     return null;
   }
   function partesMarca(txt){
-    var nivel = (/\\[(RX|SCALED)\\]\\s*$/i.exec(txt) || [])[1] || '', base = String(txt).replace(/\\s*\\[(?:RX|SCALED)\\]\\s*$/i, '').trim(), m;
+    var nivel = (/\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i.exec(txt) || [])[1] || '', base = String(txt).replace(/\\s*\\[(?:DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i, '').trim(), m;
     if((m = /^CAP\\s*\\+\\s*(\\d+)/i.exec(base))) return { cap: true, a: '', b: m[1], nivel: nivel, base: base };
     if((m = /^(\\d+)\\s*:\\s*(\\d+)/.exec(base))) return { a: m[1], b: m[2], nivel: nivel, base: base };
     if((m = /^(\\d+)\\s*\\+\\s*(\\d+)/.exec(base))) return { a: m[1], b: m[2], nivel: nivel, base: base };
@@ -44071,6 +44199,116 @@ html body.cf-disc .jp-cfboard .wod-score{ width:auto !important; margin-left:0 !
     if(pm.nivel){ var rx = $('[data-rx="' + pm.nivel.toUpperCase() + '"]', ui); if(rx && !rx.classList.contains('on')) rx.click(); }
     bt.classList.add('jp-ux-prev-ok');
   });
+
+  /* ---------- CrossFit · estructura de la pizarra: tipografía, intervalos, unilaterales, estructuras largas, metadatos ---------- */
+  function esFilaEj(r){
+    return !!$(':scope > .jp-cf-rn', r) && !r.classList.contains('jp-cf-header') && !r.classList.contains('jp-cf-badge') && !r.classList.contains('jp-cf-rest-row') && !r.classList.contains('jp-cf-closing');
+  }
+  function ladoDe(txt){
+    var t = String(txt || '').trim(), m = /\\b(derech[oa]|izquierd[oa]|right|left)\\b/i.exec(t);
+    if(m) return /^(?:derech|right)/i.test(m[1]) ? 'D' : 'I';
+    m = /\\(\\s*([RLDI])\\s*\\)\\s*$/.exec(t);
+    if(m) return /[RD]/.test(m[1].toUpperCase()) ? 'D' : 'I';
+    return '';
+  }
+  function limpiarLado(rn){
+    var tw = D.createTreeWalker(rn, NodeFilter.SHOW_TEXT, null), n;
+    while((n = tw.nextNode())){
+      var v = n.nodeValue.replace(/\\s*\\(\\s*[RLDI]\\s*\\)\\s*$/, '').replace(/\\s*\\b(?:derech[oa]|izquierd[oa]|right|left)\\b\\s*/ig, ' ').replace(/\\s{2,}/g, ' ');
+      if(v !== n.nodeValue) n.nodeValue = v;
+    }
+  }
+  /* "Min 4: REST" con el mismo cuerpo y escala que los demás minutos del EMOM */
+  function restEnEmom(cont){
+    $$(':scope > .jp-cf-badge', cont).forEach(function(r){
+      var m = /^\\s*min(?:ute)?s?\\s*(\\d+)\\s*[:.\\-]\\s*(rest|descanso)/i.exec(r.textContent);
+      if(!m) return;
+      r.className = 'jp-cf-row jp-cf-cell jp-ux-resto';
+      r.innerHTML = '<span class="jp-cf-rn"><span class="jp-cf-min">[ MIN ' + m[1] + ' ]</span>' + (/rest/i.test(m[2]) ? 'REST' : 'DESCANSO') + '</span>';
+    });
+  }
+  /* "Time cap: 25 min" es un dato del WOD (ya va en el resumen), no un movimiento */
+  function capComoDato(cont){
+    $$(':scope > .jp-cf-row', cont).forEach(function(r){
+      var rn = $(':scope > .jp-cf-rn', r);
+      if(rn && /^\\s*(?:time\\s*cap|cap)\\b/i.test(rn.textContent)) r.classList.add('jp-cf-badge');
+    });
+  }
+  /* un AMRAP mide trabajo continuo por tiempo: nunca lleva una etiqueta de rondas fijas */
+  function amrapSinRondas(bd, cont){
+    var cab = ($('.jp-cf-fmtbadge', bd) || {}).textContent || '', hdr = $$(':scope > .jp-cf-header', cont).map(function(x){ return x.textContent; }).join(' ');
+    if(!/AMRAP/i.test(cab + ' ' + hdr)) return;
+    $$(':scope > .cf-format-badge, :scope > .jp-cf-header', cont).forEach(function(x){
+      if(/^\\W*\\d+\\s*(?:rounds?|rondas?|sets?|series)\\b/i.test(x.textContent.trim())){ x.classList.add('jp-ux-oculto'); }
+    });
+    bd.classList.add('jp-ux-amrap');
+  }
+  function unilateral(cont){
+    var filas = $$(':scope > .jp-cf-row', cont).filter(esFilaEj), der = [], izq = [];
+    filas.forEach(function(r){ var l = ladoDe($(':scope > .jp-cf-rn', r).textContent); if(l === 'D') der.push(r); else if(l === 'I') izq.push(r); });
+    if(!der.length || !izq.length) return false;
+    var primero = (der[0].compareDocumentPosition(izq[0]) & 4) ? der[0] : izq[0];
+    var marca = D.createComment('lados'); cont.insertBefore(marca, primero);
+    var frag = D.createDocumentFragment();
+    function seccion(txt, cls, arr){
+      var h = D.createElement('div'); h.className = 'jp-ux-lado ' + cls; h.innerHTML = '<span>' + txt + '</span><em>' + arr.length + (arr.length === 1 ? ' movimiento' : ' movimientos') + '</em>';
+      frag.appendChild(h);
+      arr.forEach(function(r, k){ limpiarLado($(':scope > .jp-cf-rn', r)); if(r.hasAttribute('data-est')) r.setAttribute('data-est', 'E' + (k + 1)); frag.appendChild(r); });
+    }
+    seccion('LADO DERECHO', 'jp-ux-lado-d', der);
+    seccion('LADO IZQUIERDO', 'jp-ux-lado-i', izq);
+    cont.insertBefore(frag, marca); marca.remove();
+    cont.classList.add('jp-ux-unilateral');
+    return true;
+  }
+  function escalera(cont){
+    $$(':scope > .jp-cf-header, :scope > .cf-format-badge, :scope > .jp-cf-row', cont).forEach(function(h){
+      if(h.getAttribute('data-uxesc') || $(':scope > .jp-cf-rn', h) && !h.classList.contains('jp-cf-header')) return;
+      var m = /(\\d{1,3}(?:\\s*[-–]\\s*\\d{1,3}){2,})/.exec(h.textContent); if(!m) return;
+      h.setAttribute('data-uxesc', '1');
+      var nums = m[1].split(/\\s*[-–]\\s*/).map(Number), tot = nums.reduce(function(s, x){ return s + x; }, 0);
+      var e = D.createElement('div'); e.className = 'jp-ux-escalera';
+      e.innerHTML = '<span class="k">ESCALERA</span><span class="n">' + nums.map(function(n){ return '<b>' + n + '</b>'; }).join('') + '</span><span class="t">&Sigma; ' + tot + ' reps por movimiento</span>';
+      h.parentNode.insertBefore(e, h.nextSibling);
+    });
+  }
+  function metaWod(bd, cont){
+    if($('.jp-ux-meta', bd)) return;
+    var id = bd.getAttribute('data-wodb'), blk = null;
+    try{ var dia = DAYS.filter(function(x){ return x.id === state.currentDay; })[0]; blk = ((dia && dia.blocks) || []).filter(function(b){ return b.id === id; })[0]; }catch(e){}
+    var cat = blk ? blk.category : '', fmt = blk ? String(blk.boardFmt || '').toLowerCase().replace(/[^a-z]/g, '') : '';
+    if(cat !== 'metcon' && cat !== 'strength' && cat !== 'cardio' && cat !== 'endurance') return;
+    var txt = $$('.jp-cf-row, .cf-format-badge, .jp-cf-closing', cont).map(function(x){ return x.textContent.replace(/\\s+/g, ' '); }).join(' | ') + ' ' + ((blk && blk.cfParam) || '');
+    var amrap = /amrap/i.test(fmt + ' ' + txt), chips = [], m;
+    m = /time\\s*cap\\s*[:\\-]?\\s*(\\d{1,2}(?::\\d{2})?)/i.exec(txt) || (/^(?:fortime|chipper)$/.test(fmt) && blk && blk.cfParam ? /(\\d{1,2}(?::\\d{2})?)/.exec(blk.cfParam) : null);
+    if(m && !$('.jp-cf-capline .cap', bd)) chips.push(['TIME CAP', m[1] + (/^\\d+$/.test(m[1]) ? ' MIN' : '')]);
+    if(!amrap){
+      m = /(\\d+)\\s*(?:rounds?|rondas)\\b/i.exec(txt) || /\\bx\\s*(\\d+)\\s*(?:sets?|series)\\b/i.exec(txt) || /\\bfor\\s*(\\d+)\\s*sets?\\b/i.exec(txt) || /(?:^|\\|)\\s*\\W*(\\d+)\\s*sets\\b/i.exec(txt);
+      if(m && parseInt(m[1], 10) > 1) chips.push(['RONDAS', m[1]]);
+    }
+    if(/(?:rest|descanso)[^|]{0,24}1\\s*:\\s*1|1\\s*:\\s*1\\s*(?:rest|work|descanso|trabajo)|rest\\s*=\\s*work|descanso\\s*igual/i.test(txt)) chips.push(['DESCANSO', '1:1 · IGUAL AL TRABAJO']);
+    else { m = /(?:rest|descanso)\\s*(?:de|:)?\\s*(\\d+:\\d{2}|\\d+\\s*(?:s|seg|min))/i.exec(txt); if(m) chips.push(['DESCANSO', m[1].toUpperCase()]); }
+    if(!chips.length) return;
+    var ml = D.createElement('div'); ml.className = 'jp-ux-meta';
+    ml.innerHTML = chips.map(function(c){ return '<span><i>' + c[0] + '</i><b>' + c[1].replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</b></span>'; }).join('');
+    cont.parentNode.insertBefore(ml, cont);
+  }
+  function normalizarCf(root){
+    $$('.jp-cfboard', root).forEach(function(bd){
+      if(bd.getAttribute('data-uxcf')) return;
+      var cont = $('.jp-cf-rows', bd); if(!cont) return;
+      bd.setAttribute('data-uxcf', '1');
+      restEnEmom(cont);
+      capComoDato(cont);
+      amrapSinRondas(bd, cont);
+      var uni = false;
+      try{ uni = unilateral(cont); }catch(e1){ console.warn('ux unilateral', e1); }
+      escalera(cont);
+      if(!uni && $$(':scope > .jp-cf-row', cont).filter(esFilaEj).length >= 7) cont.classList.add('jp-ux-matriz');
+      if(bd.classList.contains('jp-cf-fase-warmup')) bd.classList.add('jp-ux-flujo');
+      try{ metaWod(bd, cont); }catch(e2){}
+    });
+  }
 
   /* ---------- 6 · sugerencia de carga: progresión entre semanas y marca real ---------- */
   function nrm2(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\\([^)]*\\)/g, ' ').replace(/^[a-f]\\d{1,2}[.):\\-]\\s*/, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\\s+/g, ' ').trim(); }
@@ -44350,7 +44588,7 @@ html body.cf-disc .jp-cfboard .wod-score{ width:auto !important; margin-left:0 !
     try{ montarMenu(); }catch(e){ console.warn('ux menu', e); }
     var raiz = $('#mainContent') || D.body;
     try{ mejorarActivacion(raiz); }catch(e1){ console.warn('ux activacion', e1); }
-    try{ if(esCf()){ videosEnLineaCf(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); } else { videosEnLinea(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
+    try{ if(esCf()){ normalizarCf(raiz); videosEnLineaCf(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); } else { videosEnLinea(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
     try{ if(esSb()){ clasificarFilas(raiz); sugerirFilas(raiz); actualizarContador(); } montarHistorial(); }catch(e4){ console.warn('ux registro', e4); }
   }
   function programar(){ if(tm) return; tm = setTimeout(pasada, 90); }
@@ -61914,10 +62152,10 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
      3 · NOTAS RÁPIDAS DE ADAPTACIÓN (SCALING)
   --------------------------------------------------------- */
   const NIVELES = [
-    { k:'rx',     lb:'RX',       ph:'Prescripción tal cual está escrita' },
-    { k:'adv',    lb:'Advanced', ph:'Más carga o menos asistencia' },
-    { k:'scaled', lb:'Scaled',   ph:'Carga reducida, movimiento equivalente' },
-    { k:'intro',  lb:'Intro',    ph:'Versión de aprendizaje, sin carga' }
+    { k:'scaled', lb:'Development', ph:'Carga reducida, movimiento equivalente o versión de aprendizaje' },
+    { k:'adv',    lb:'Advanced',    ph:'Más carga o menos asistencia' },
+    { k:'rx',     lb:'RX',          ph:'Prescripción tal cual está escrita' },
+    { k:'elite',  lb:'Elite',       ph:'Más carga, más volumen o variante más difícil' }
   ];
   function cajaScaling(bl, b){
     if(bl.querySelector('.sc-notes')) return;
@@ -63339,7 +63577,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       return !!(p && p.meta && p.meta.mesoDisc === 'crossfit');
     }catch(e){ return false; }
   }
-  const NIVELES = ['RX', 'Scaled', 'Hyrox Pro', 'Hyrox Open'];
+  const NIVELES = ['Development', 'Advanced', 'RX', 'Elite', 'Hyrox Pro', 'Hyrox Open'];
   /* directiva ("Refactor del Generador de IA en el Builder de CrossFit,
      Profundidad Táctica") -- el prompt viejo pedía 2 oraciones genéricas
      y el motor local concatenaba el texto de "focos" tal cual lo
@@ -63492,9 +63730,11 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
     const p = plan(a.id);
     p.meta = p.meta || {};
-    const nivel = p.meta.cfNivel || '';
+    const NVL = { development: 'Development', advanced: 'Advanced', rx: 'RX', elite: 'Elite' };
+    const nivel = p.meta.cfNivel || (a.cfPerfil && NVL[a.cfPerfil.nivel]) || '';
     const focos = p.meta.cfFocos || '';
     const lesiones = (a.tags && a.tags.length) ? a.tags.join(', ') : '';
+    const inventario = a.cfPerfil ? [(a.cfPerfil.sale || []).length ? 'lo que sale: ' + a.cfPerfil.sale.join(', ') : '', (a.cfPerfil.cuesta || []).length ? 'lo que cuesta: ' + a.cfPerfil.cuesta.join(', ') : '', (a.cfPerfil.noSale || []).length ? 'lo que no sale todavía: ' + a.cfPerfil.noSale.join(', ') : ''].filter(Boolean).join(' | ') : '';
 
     let briefing = null;
     const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
@@ -63502,6 +63742,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       try{
         const user = 'Nivel/categoría del atleta: ' + (nivel || 'sin especificar') + '.\n' +
           'Focos diana / debilidades a trabajar: ' + (focos || 'sin especificar') + '.\n' +
+          (inventario ? 'Inventario técnico del atleta (' + inventario + ').\n' : '') +
           (lesiones ? 'Lesiones/antecedentes activos (integrados desde su historial médico): ' + lesiones + '.\n' : '') +
           'Bloques programados hoy (ejercicios y esquemas reales):\n' + resumenBloques(d) + '\n\n' +
           'Redactá el Briefing Táctico Operativo de esta sesión en los tres apartados indicados, usando estos datos como insumo -- nunca los repitas literalmente.';
