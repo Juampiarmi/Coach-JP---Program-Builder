@@ -15673,7 +15673,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       else if(mR) fmt = mR[1] + ' RONDAS FOR TIME';
       else if(esq) fmt = 'FOR TIME · ' + esq[1].replace(/\\s+/g, '');
       else fmt = 'FOR TIME';
-      if(cfg.cap > 0) cap = '⏱ TIME CAP: ' + cfg.cap + ' MIN';
+      if(cfg.cap > 0) cap = 'TIME CAP: ' + cfg.cap + ' MIN';
     } else fmt = 'INTERVALOS';
     var pac = jpCfPlano(c && c.pacing); if(pac.length > 78) pac = '';
     var rx = jpCfParesCarga(lineas.join(' ')), sc = jpCfParesCarga(jpCfPlano(c && c.escalado));
@@ -16471,12 +16471,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         if(!ok) break;
         grp.forEach(function(g, ix){ nums[ix].push(g.n); }); ciclos++;
       }
-      if(ciclos < 4) continue;
+      if(ciclos < 3) continue;
       var paso = nums[0][1] - nums[0][0];
-      if(Math.abs(paso) !== 1) continue;
+      if(!paso) continue;
       var usar = ciclos;
-      for(var t = 2; t < ciclos; t++){ if(nums[0][t] - nums[0][t - 1] !== paso){ usar = t; break; } }
-      if(usar < 4) continue;
+      for(var t = 2; t < ciclos; t++){ if((nums[0][t] - nums[0][t - 1]) * paso <= 0){ usar = t; break; } }
+      if(usar < (Math.abs(paso) === 1 ? 4 : 3)) continue;
       var filas = cab.map(function(c, ix){
         var serie = nums[ix].slice(0, usar);
         var etiqueta = serie.length <= 12 ? serie.join('-') : (serie[0] + ' to ' + serie[serie.length - 1]);
@@ -18532,6 +18532,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
      contraste, tipografía condensada. SETS/REPS/TEMPO/REST comparten un
      estilo neutro "carbón integrado" (nunca cian, ese color es sólo del
      tracker); el RIR es el ÚNICO con color propio, por tier de esfuerzo. */
+  function jpIdx2(n){ return (n < 10 ? '0' : '') + n; }
   function fmtRestSB(s){
     s = parseInt(s, 10) || 0;
     return s + 's';
@@ -18544,6 +18545,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   /* ejercicio con tramos de carga (aclimatación / top set / back-off): total de sets, un chip por tramo y la fila de pausa y cadencia */
   function tramosHtmlSB(en){
+    var lad = en.tramos.length >= 3 && en.tramos.every(function(t){ return t.sets == 1 && /^\\d+$/.test(String(t.reps)) && !t.etq; });
+    if(lad){
+      var ns = en.tramos.map(function(t){ return parseInt(t.reps, 10); }), dir = ns[1] - ns[0];
+      lad = !!dir && ns.every(function(n, i){ return i === 0 || (n - ns[i - 1]) * dir > 0; });
+    }
+    if(lad){
+      var un = String(en.tramos[0].unidad || 'reps').toUpperCase(), rirs = en.tramos.map(function(t){ return t.rir || ''; });
+      var rirC = rirs.every(function(x){ return x === rirs[0]; }) ? rirs[0] : '';
+      var nums = ns.length > 8 ? '<b>' + ns[0] + '</b><i>\\u2192</i><b>' + ns[ns.length - 1] + '</b>' : ns.map(function(n){ return '<b>' + n + '</b>'; }).join('<i>\\u2013</i>');
+      var rb0 = restBadgeSB(en.restSeconds, en.restLabel);
+      return '<div class="jp-dose-bar jp-ladder-bar"><div class="jp-ux-ladder"><span class="k">ESCALERA</span><span class="n">' + nums + '</span><span class="u">' + escSB(un) + (rirC ? ' \\u00b7 RIR ' + escSB(rirC) : '') + '</span></div>' +
+        ((rb0 || en.unilateral) ? '<div class="jp-db-row jp-db-r2">' + rb0 + (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '') + '</div>';
+    }
     var t0 = en.tramos[0].tempo, tempoComun = en.tempo || ((t0 && en.tramos.every(function(t){ return t.tempo === t0; })) ? t0 : '');
     var chips = en.tramos.map(function(t){
       var extra = t.rir ? 'RIR ' + t.rir : '';
@@ -18832,7 +18846,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         nIndiv++;
         regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || '') });
         filas += '<div class="jp-sb-ex jp-sb-ex-int" data-rest-sec="0">' +
-            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + nIndiv + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span></div>' + subEsSB(entry.titulo, block) +
+            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + jpIdx2(nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span></div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets || 1, entry.reps, entry.unidad, entry.tempo, entry.rir, 0, entry.carga ? '@ ' + entry.carga : '') +
           '</div>';
         return;
@@ -18845,7 +18859,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
         const esAnclaTec = !anclaUsada; anclaUsada = true;
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
-            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
+            '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero) +
             estructuraTecnicaSB({ tecnica: entry.tecnica, sets: entry.sets, pct: entry.tecnicaPct, microReps: entry.myoInfo && entry.myoInfo.microReps }) +
             ((parseInt(entry.sets, 10) || 0) > 1 ? renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, (parseInt(entry.sets, 10) || 1) - 1, entry.unidad, true, null, '', entry.titulo, (entry.unidad === 'reps' || !entry.unidad) ? entry.reps : '', 1) : '') +
@@ -18890,7 +18904,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         const pillTxt = entry.sets ? (entry.sets + (entry.reps ? 'x' + entry.reps : '') + (entry.unidad && entry.unidad !== 'reps' ? ' ' + entry.unidad : '')) : partesPlain.val;
         const nombrePlain = esCalentamiento ? limpiarGuionActivacionSB(partesPlain.nm) : partesPlain.nm;
         filas += '<div class="jp-sb-plain' + (esCalentamiento ? ' jp-sb-plain-warmup' : '') + '">' +
-            (!esCalentamiento ? '<span class="jp-sb-ex-id">E' + (++nIndiv) + '</span>' : '') +
+            (!esCalentamiento ? '<span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span>' : '') +
             (pillTxt ? '<span class="jp-sb-plain-pill">' + escSB(pillTxt) + '</span>' : '') +
             '<span class="jp-sb-plain-nombre">' + escSB(nombrePlain) + '</span>' +
             (entry.tecnica && TECNICAS_BADGE_SB[entry.tecnica] ? '<span class="jp-sb-badge jp-sb-badge-' + entry.tecnica + '">' + TECNICAS_BADGE_SB[entry.tecnica] + '</span>' : '') +
@@ -18911,7 +18925,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       /* directiva técnica ("Auditoría integral del reloj emergente") --
          mismo data-rest-sec que .jp-sb-subex, ver comentario ahí arriba. */
       filas += '<div class="jp-sb-ex' + (esAncla ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
-          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">E' + (++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
+          '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
           (entry.tramos ? tramosHtmlSB(entry) : dosisCompletaSB(entry.setsDef ? 0 : entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero)) +
           (entry.tecnica === 'restpause' && !entry.tramos ? estructuraTecnicaSB({ tecnica: 'restpause', sets: entry.sets || 1 }) : '') +
           (entry.notas.length ? '<div class="jp-sb-nota">' + escSB(entry.notas.join(' · ')) + '</div>' : '') +
@@ -43889,11 +43903,6 @@ html body.cf-disc .jp-cf-rows .jp-ux-resto .jp-cf-rn{ color:#B5B5B5 !important; 
 html body.cf-disc .jp-cf-rows .jp-cf-rv, html body.cf-disc .jp-cf-rows .jp-cf-load, html body.cf-disc .jp-cf-rows .jp-cf-pct{ font-size:14px !important; }
 /* 2 · calentamiento: linea de tiempo limpia, sin numeros ni casillas */
 /* 3 · estructuras largas (barbell cycling, chippers, piramides): matriz de dos columnas */
-.jp-ux-escalera{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:4px 0 8px; padding:8px 10px; border-radius:10px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); }
-.jp-ux-escalera .k{ font:700 .6rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.14em; color:#9A9A9A; }
-.jp-ux-escalera .n{ display:flex; flex-wrap:wrap; gap:4px; }
-.jp-ux-escalera .n b{ min-width:30px; padding:4px 6px; border-radius:7px; background:rgba(255,85,0,.14); color:#FF8A4C; font:800 .85rem 'Chakra Petch',sans-serif; text-align:center; }
-.jp-ux-escalera .t{ margin-left:auto; font:700 .66rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.06em; color:#D6D6D6; }
 /* 4 · unilaterales: secciones por hemicuerpo */
 .jp-ux-lado{ grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; margin:12px 0 4px; padding:8px 12px; border-left:4px solid #FF5500; border-radius:0 8px 8px 0; background:rgba(255,85,0,.09); color:#FF5500; font:800 .78rem 'Chakra Petch',sans-serif; letter-spacing:.14em; }
 .jp-ux-lado-i{ border-left-color:#00E6FF; background:rgba(0,230,255,.07); color:#00E6FF; }
@@ -43919,8 +43928,6 @@ html body.cf-disc .jp-sc-rx button.on{ background:#FF5500 !important; border-col
 
 /* ===== ronda final: CrossFit sin niveles cruzados, calentamiento en timeline, videos al pie, CTAs sutiles ===== */
 html body.cf-disc .jp-ux-flujo .jp-cf-rows{ position:relative; }
-html body.cf-disc .jp-ux-flujo .jp-cf-rows > .jp-cf-row:not([data-est]):not(.jp-cf-badge):not(.jp-cf-header):not(.jp-cf-rest-row):not(.jp-cf-closing){ position:relative; padding-left:22px !important; }
-html body.cf-disc .jp-ux-flujo .jp-cf-rows > .jp-cf-row:not([data-est]):not(.jp-cf-badge):not(.jp-cf-header):not(.jp-cf-rest-row):not(.jp-cf-closing)::before{ content:'' !important; counter-increment:none !important; position:absolute; left:-4px; top:50%; width:7px; height:7px; margin:-3px 0 0 0 !important; padding:0 !important; border:0 !important; border-radius:50%; background:#FF5500; box-shadow:0 0 0 3px rgba(255,85,0,.14); flex:none; }
 .jp-sc-cat{ display:block; flex:1 1 100%; margin:8px 0 0; color:#9A9A9A; font:600 .64rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.12em; }
 /* videos tecnicos: una bandeja colapsable al pie del bloque */
 .jp-ux-vtray{ margin:10px 0 4px; border-top:1px solid rgba(255,255,255,.1); }
@@ -44032,11 +44039,34 @@ html body.cf-disc .jp-ux-score .jp-sc-fin button{ font-size:10px !important; }
 
 /* ===== ronda 8: cabecera del alumno sin alturas fijas; apilado vertical limpio (identidad arriba, semanas y dias abajo) ===== */
 html body #hdCompact{ display:flex !important; flex-direction:column !important; height:auto !important; }
-html body #hdCompact .hdc-top{ height:auto !important; min-height:48px !important; flex:0 0 auto !important; align-items:center !important; position:static !important; overflow:visible !important; margin:0 !important; padding-top:6px !important; padding-bottom:10px !important; }
+html body #hdCompact .hdc-top{ height:auto !important; min-height:0 !important; flex:0 0 auto !important; align-items:center !important; position:static !important; overflow:visible !important; margin:0 !important; padding-top:2px !important; padding-bottom:5px !important; }
 html body #hdCompact .hdc-id{ flex:1 1 auto !important; min-width:0 !important; max-width:none !important; margin-right:0 !important; overflow:visible !important; row-gap:3px !important; }
 html body #hdCompact .hdc-name{ line-height:1.25 !important; overflow:hidden; overflow-wrap:anywhere; padding-bottom:1px; }
-html body #hdCompact .hdc-days-row{ height:auto !important; min-height:48px !important; flex:0 0 auto !important; position:relative !important; align-items:center !important; margin:0 !important; padding:8px 0 10px !important; border-top:1px solid rgba(255,255,255,.07); }
-html body #hdCompact .hdc-days-wrap{ padding-top:2px !important; padding-bottom:2px !important; }
+html body #hdCompact .hdc-days-row{ height:auto !important; min-height:0 !important; flex:0 0 auto !important; position:relative !important; align-items:center !important; margin:0 !important; padding:4px 0 4px !important; border-top:1px solid rgba(255,255,255,.07); }
+html body #hdCompact .hdc-days-wrap{ padding-top:0 !important; padding-bottom:0 !important; }
+html body #hdCompact .hdc-days-wrap .week-tabs{ padding-top:2px !important; padding-bottom:2px !important; }
+
+/* ===== ronda 9: escalera en una sola linea + listas con tipografia industrial e indices tabulares ===== */
+/* escalera: la secuencia completa es el titulo del bloque (CrossFit y Sports) */
+.jp-ux-ladder{ display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:'k u' 'n n'; align-items:baseline; gap:3px 12px; margin:4px 0 12px; padding:0 2px; white-space:nowrap; }
+.jp-ux-ladder .k{ grid-area:k; font:700 .6rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.24em; color:#8A8A8A; }
+.jp-ux-ladder .n{ grid-area:n; display:flex; align-items:baseline; gap:9px; min-width:0; font:800 clamp(1.5rem,7.4vw,2rem) 'Chakra Petch','Barlow Condensed',sans-serif; letter-spacing:.04em; line-height:1.05; color:#FFFFFF; font-variant-numeric:tabular-nums; font-feature-settings:'tnum'; }
+.jp-ux-ladder .n b{ font-weight:800; }
+.jp-ux-ladder .n i{ font-style:normal; font-weight:500; font-size:.7em; color:#FF5500; opacity:.9; }
+.jp-ux-ladder .u{ grid-area:u; font:700 .6rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.2em; color:#8A8A8A; }
+.jp-ladder-bar{ padding-top:2px; }
+/* listas: tipografia geometrica en mayusculas con espaciado, numeros tabulares */
+html body.cf-disc .jp-cfboard .jp-cf-rows > .jp-cf-row .jp-cf-rn{ font-family:'Chakra Petch','Barlow Condensed',sans-serif !important; letter-spacing:.05em !important; text-transform:uppercase; font-variant-numeric:tabular-nums; font-feature-settings:'tnum'; }
+html body.cf-disc .jp-cfboard .jp-cf-rn .jp-cf-num{ font-family:'JetBrains Mono',ui-monospace,monospace !important; font-weight:700 !important; letter-spacing:.02em !important; font-variant-numeric:tabular-nums; }
+/* indice de secuencia: numero tabular de dos digitos en lugar de puntos */
+html body.cf-disc .jp-cf-rows.jp-ux-idx{ counter-reset:jpidx; }
+html body.cf-disc .jp-cf-rows.jp-ux-idx > .jp-cf-row.jp-ux-it{ counter-increment:jpidx; position:relative; padding-left:38px !important; }
+html body.cf-disc .jp-cf-rows.jp-ux-idx > .jp-cf-row.jp-ux-it::before{ content:counter(jpidx,decimal-leading-zero) !important; position:absolute; left:0; top:50%; width:auto; height:auto; margin:0 !important; padding:0 !important; border:0 !important; border-radius:0 !important; background:none !important; box-shadow:none !important; transform:translateY(-50%); font:600 11px 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; color:#FF5500; opacity:.8; font-variant-numeric:tabular-nums; }
+html body.cf-disc .jp-cfboard .jp-cf-rows > .jp-cf-row[data-est][data-idx]::before{ content:attr(data-idx) !important; font:600 11px 'JetBrains Mono',ui-monospace,monospace !important; letter-spacing:.1em !important; color:#FF5500 !important; opacity:.85; font-variant-numeric:tabular-nums; }
+/* Sports: indice de estacion tabular, sin punto */
+html body.jp-mission:not(.cf-disc) .jp-sb-ex-id, html body.jp-mission:not(.cf-disc) .jp-sb-letra{ font-family:'JetBrains Mono',ui-monospace,monospace !important; font-size:11px !important; font-weight:600 !important; letter-spacing:.1em !important; font-variant-numeric:tabular-nums; color:#FF5500 !important; opacity:.85; }
+html body.jp-mission:not(.cf-disc) .jp-sb-ex-id::after, html body.jp-mission:not(.cf-disc) .jp-sb-letra::after{ content:none !important; }
+html body.jp-mission:not(.cf-disc) .jp-sb-ex-nombre{ letter-spacing:.04em; font-variant-numeric:tabular-nums; }
 </style>
 <script>
 (function(){
@@ -44378,15 +44408,51 @@ html body #hdCompact .hdc-days-wrap{ padding-top:2px !important; padding-bottom:
     cont.classList.add('jp-ux-unilateral');
     return true;
   }
+  var RX_SEQ_G = /\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,}/;
+  function ladderEl(seq){
+    var nums = String(seq).split(/\\s*[-\\u2013]\\s*/).map(Number), e = D.createElement('div');
+    e.className = 'jp-ux-ladder';
+    var n = nums.length > 8 ? '<b>' + nums[0] + '</b><i>\\u2192</i><b>' + nums[nums.length - 1] + '</b>' : nums.map(function(x){ return '<b>' + x + '</b>'; }).join('<i>\\u2013</i>');
+    e.innerHTML = '<span class="k">ESCALERA</span><span class="n">' + n + '</span><span class="u">REPS</span>';
+    return e;
+  }
   function escalera(cont){
-    $$(':scope > .jp-cf-header, :scope > .cf-format-badge, :scope > .jp-cf-row', cont).forEach(function(h){
-      if(h.getAttribute('data-uxesc') || $(':scope > .jp-cf-rn', h) && !h.classList.contains('jp-cf-header')) return;
-      var m = /(\\d{1,3}(?:\\s*[-–]\\s*\\d{1,3}){2,})/.exec(h.textContent); if(!m) return;
-      h.setAttribute('data-uxesc', '1');
-      var nums = m[1].split(/\\s*[-–]\\s*/).map(Number), tot = nums.reduce(function(s, x){ return s + x; }, 0);
-      var e = D.createElement('div'); e.className = 'jp-ux-escalera';
-      e.innerHTML = '<span class="k">ESCALERA</span><span class="n">' + nums.map(function(n){ return '<b>' + n + '</b>'; }).join('') + '</span><span class="t">&Sigma; ' + tot + ' reps por movimiento</span>';
-      h.parentNode.insertBefore(e, h.nextSibling);
+    if(cont.getAttribute('data-uxesc')) return;
+    var bd = cont.closest('.jp-cfboard') || cont.parentNode, fm = $('.jp-cf-fmtbadge', bd), seq = '', m;
+    /* 1 · la secuencia que ya viene en el titulo del formato ("FOR TIME · 27-21-15-9") sale de ahi y pasa a la linea de escalera */
+    if(fm && (m = RX_SEQ_G.exec(fm.textContent))){
+      seq = m[0].replace(/\\s+/g, '');
+      fm.textContent = fm.textContent.replace(/\\s*[\\u00b7\\-\\u2013]\\s*\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,}/, '');
+    }
+    /* 2 · filas que traen la secuencia por delante ("27-21-15-9 WALL BALLS"): si es la misma en todas, se levanta una sola vez */
+    var filas = $$(':scope > .jp-cf-row', cont).filter(function(r){ var rn = $(':scope > .jp-cf-rn', r); return rn && /^\\s*\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,}(?:\\s|$)/.test(rn.textContent); });
+    if(filas.length){
+      var seqs = filas.map(function(r){ return (/^\\s*(\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,})/.exec($(':scope > .jp-cf-rn', r).textContent) || [''])[1].replace(/\\s+/g, ''); });
+      if(seqs.every(function(x){ return x === seqs[0]; }) && (!seq || seq === seqs[0])){
+        seq = seqs[0];
+        filas.forEach(function(r){
+          var rn = $(':scope > .jp-cf-rn', r);
+          rn.innerHTML = rn.innerHTML.replace(/^\\s*(?:<span[^>]*>)?\\s*\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,}\\s*(?:<\\/span>)?\\s*/, '');
+        });
+      }
+    }
+    cont.setAttribute('data-uxesc', '1');
+    if(!seq) return;
+    cont.parentNode.insertBefore(ladderEl(seq), cont);
+  }
+  /* indices de secuencia: numeros tabulares (01, 02...) en lugar de puntos; solo en listas cortas y sin etiquetas propias */
+  function indicesCf(root){
+    $$('.jp-cfboard .jp-cf-rows', root).forEach(function(cont){
+      $$(':scope > .jp-cf-row[data-est]', cont).forEach(function(r){ var m = /^E(\\d+)$/.exec(r.getAttribute('data-est')); if(m) r.setAttribute('data-idx', (m[1].length < 2 ? '0' : '') + m[1]); });
+      if(cont.getAttribute('data-uxidx')) return;
+      cont.setAttribute('data-uxidx', '1');
+      if(cont.classList.contains('jp-ux-larga') || cont.classList.contains('jp-ux-unilateral') || $(':scope > .jp-cf-row[data-est]', cont)) return;
+      var items = $$(':scope > .jp-cf-row', cont).filter(function(r){
+        return $(':scope > .jp-cf-rn', r) && !r.classList.contains('jp-cf-cell') && !/jp-cf-(?:header|badge|closing|rest-row|scheme|interval|notecard)|jp-ux-(?:tc|oculto)/.test(r.className);
+      });
+      var max = cont.closest('.jp-ux-flujo') ? 14 : 6;
+      if(items.length < 2 || items.length > max) return;
+      cont.classList.add('jp-ux-idx'); items.forEach(function(r){ r.classList.add('jp-ux-it'); });
     });
   }
   var RX_ESTRUCT = /^\\W*(?:every|emom|e\\d+mom|amrap|for\\s*time|chipper|tabata|\\d+(?:\\s*[-–]\\s*\\d+)?\\s*(?:sets?|quality\\s*(?:sets?|rounds?)|rounds?|rondas?|series|supersets?)\\b|(?:superset|supersets|alternating|alternando)\\b|min(?:ute)?s?\\s*\\d)/i;
@@ -44775,7 +44841,7 @@ html body #hdCompact .hdc-days-wrap{ padding-top:2px !important; padding-bottom:
     try{ montarMenu(); }catch(e){ console.warn('ux menu', e); }
     var raiz = $('#mainContent') || D.body;
     try{ mejorarActivacion(raiz); }catch(e1){ console.warn('ux activacion', e1); }
-    try{ if(esCf()){ normalizarCf(raiz); $$('.jp-cfboard .jp-cf-row', raiz).forEach(function(r){ if(!r.classList.contains('jp-ux-tc') && /^\\W*time\\s*cap\\b/i.test(r.textContent)) r.classList.add('jp-ux-tc'); }); videosEnLineaCf(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); fusionarScore(raiz); } else { videosEnLinea(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
+    try{ if(esCf()){ normalizarCf(raiz); indicesCf(raiz); $$('.jp-cfboard .jp-cf-row', raiz).forEach(function(r){ if(!r.classList.contains('jp-ux-tc') && /^\\W*time\\s*cap\\b/i.test(r.textContent)) r.classList.add('jp-ux-tc'); }); videosEnLineaCf(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); fusionarScore(raiz); } else { videosEnLinea(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
     try{ if(esSb()){ clasificarFilas(raiz); sugerirFilas(raiz); actualizarContador(); } montarHistorial(); briefingJerarquia(raiz); }catch(e4){ console.warn('ux registro', e4); }
   }
   function programar(){ if(tm) return; tm = setTimeout(pasada, 90); }
