@@ -1925,19 +1925,63 @@ function toast(msg, type){
   clearTimeout(toastT);
   toastT = setTimeout(()=>{ t.className = 'toast' + (type?' '+type:''); }, 2600);
 }
-function beep(times){
-  try{
-    const C = window.AudioContext || window.webkitAudioContext; if(!C) return;
-    const ctx = new C(); let t0 = ctx.currentTime;
-    for(let i=0;i<(times||2);i++){
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type='sine'; o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
-      g.gain.setValueAtTime(.0001,t0); g.gain.exponentialRampToValueAtTime(.28,t0+.02);
-      g.gain.exponentialRampToValueAtTime(.0001,t0+.22);
-      o.start(t0); o.stop(t0+.24); t0 += .3;
+/* sonido del temporizador del panel (descanso): mismo mecanismo que la app del alumno, Web Audio nativa sin archivos.
+   3 = 440 Hz, 2 = 587.33 Hz, 1 = 880 Hz, YA = 1174.66 Hz (mas fuerte, ataque cortante). Un solo AudioContext reutilizado. */
+const jpCoachSonido = (function(){
+  const HZ = { 3: 440, 2: 587.33, 1: 880, ya: 1174.66 };
+  let ctx = null, bus = null;
+  function mudo(){ try{ return localStorage.getItem('jp_audio_muted') === '1'; }catch(e){ return false; } }
+  function ctxA(){
+    if(!ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      try{ ctx = new AC({ latencyHint: 'interactive' }); }catch(e){ ctx = new AC(); }
+      try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e2){}
     }
-  }catch(e){}
-}
+    return ctx;
+  }
+  function desbloquear(){
+    try{
+      const c = ctxA(); if(c.state !== 'running') c.resume();
+      const bf = c.createBuffer(1, 1, 22050), sr = c.createBufferSource(); sr.buffer = bf; sr.connect(c.destination); sr.start(0);
+    }catch(e){}
+  }
+  function parcial(c, f, d, v, tipo, atk, lp){
+    const t0 = c.currentTime + 0.006, o = c.createOscillator(), g = c.createGain(); let nodo = o;
+    o.type = tipo || 'sine'; o.frequency.setValueAtTime(f, t0);
+    if(lp){ const bq = c.createBiquadFilter(); bq.type = 'lowpass'; bq.frequency.setValueAtTime(lp, t0); o.connect(bq); nodo = bq; }
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(v, t0 + (atk || 0.003));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    nodo.connect(g); g.connect(bus); o.start(t0); o.stop(t0 + d + 0.03);
+  }
+  function sonar(fn){
+    if(mudo()) return;
+    try{
+      const c = ctxA();
+      if(!bus){
+        const comp = c.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 10; comp.attack.value = 0.002; comp.release.value = 0.12;
+        const mg = c.createGain(); mg.gain.value = 0.9; comp.connect(mg); mg.connect(c.destination); bus = comp;
+      }
+      if(c.state !== 'running'){ const p = c.resume(); if(p && p.then) p.then(() => fn(c)).catch(() => {}); else fn(c); return; }
+      fn(c);
+    }catch(e){}
+  }
+  function pip(n){
+    sonar(c => {
+      const f = HZ[n] || HZ[3], v = n === 1 ? 0.26 : (n === 2 ? 0.22 : 0.18);
+      parcial(c, f, 0.13, v, 'sine', 0.004); parcial(c, f * 2, 0.08, v * 0.3); parcial(c, f * 2.76, 0.045, v * 0.1, 'sine', 0.002);
+    });
+  }
+  function ya(){
+    sonar(c => {
+      const f = HZ.ya;
+      parcial(c, f, 0.6, 0.36, 'sine', 0.002); parcial(c, f, 0.18, 0.17, 'square', 0.001, 5200);
+      parcial(c, f * 2, 0.38, 0.14, 'sine', 0.002); parcial(c, f * 2.76, 0.22, 0.08, 'sine', 0.001);
+    });
+  }
+  return { pip, ya, desbloquear, hz: HZ };
+})();
+window.jpCoachSonido = jpCoachSonido;
 function download(name, content, mime){
   const b = new Blob([content], {type: mime || 'text/plain;charset=utf-8'});
   const u = URL.createObjectURL(b), a = document.createElement('a');
@@ -8413,16 +8457,18 @@ function paintTimer(){
 function startTimer(sec, label){
   clearInterval(tInt);
   tLeft = Math.max(1, sec || 60);
+  jpCoachSonido.desbloquear();      /* dentro del toque del usuario: habilita el audio en iOS / Android */
   $('#timerLabel').textContent = label || 'Descanso';
   $('#timerFab').className = 'timer-fab on';
   paintTimer();
   tInt = setInterval(() => {
     tLeft--; paintTimer();
+    if(tLeft >= 1 && tLeft <= 3) jpCoachSonido.pip(tLeft);
     if(tLeft <= 0){
       clearInterval(tInt);
       $('#timerFab').className = 'timer-fab on done';
       $('#timerVal').textContent = '¡YA!';
-      beep(3);
+      jpCoachSonido.ya();
       setTimeout(() => { $('#timerFab').className = 'timer-fab'; }, 4000);
     }
   }, 1000);
@@ -11895,19 +11941,33 @@ function wireReadinessCheckin(day, weekIdx){
    AUDIO
 ========================================================= */
 let _audioCtx = null;
-function ensureAudioCtx(){ if(!_audioCtx) _audioCtx = new (window.AudioContext||window.webkitAudioContext)(); return _audioCtx; }
+function ensureAudioCtx(){
+  if(!_audioCtx){
+    var AC = window.AudioContext || window.webkitAudioContext;
+    /* latencyHint "interactive": el menor retardo posible entre el evento del timer y el tono */
+    try{ _audioCtx = new AC({ latencyHint: 'interactive' }); }catch(e){ _audioCtx = new AC(); }
+    /* iOS 16.4+: sesion de audio "playback" -> los avisos suenan aunque el interruptor de silencio del iPhone este activo */
+    try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e2){}
+  }
+  return _audioCtx;
+}
 function resumeAudioCtx(){ try{ const ctx = ensureAudioCtx(); if(ctx.state !== 'running') ctx.resume().catch(function(){}); }catch(e){} }
 function unlockAudio(){
   try{
     const ctx = ensureAudioCtx(); resumeAudioCtx();
+    /* buffer silencioso de 1 muestra dentro del gesto: es lo que Safari/iOS exige para habilitar el contexto */
+    const buf = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource();
+    src.buffer = buf; src.connect(ctx.destination); src.start(0);
     const osc = ctx.createOscillator(); const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, ctx.currentTime);
     osc.connect(gain); gain.connect(ctx.destination);
     osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.01);
+    /* el bus (compresor) queda armado de antemano: el primer aviso real no paga su creacion */
+    try{ if(window.jpPerfilSonido && jpPerfilSonido.calentar) jpPerfilSonido.calentar(); }catch(e3){}
   }catch(e){}
 }
 ['touchstart','pointerdown','click'].forEach(function(evt){ document.addEventListener(evt, resumeAudioCtx, { passive: true }); });
-document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') resumeAudioCtx(); });
+['visibilitychange','pageshow','focus'].forEach(function(evt){ (evt === 'visibilitychange' ? document : window).addEventListener(evt, function(){ if(evt !== 'visibilitychange' || document.visibilityState === 'visible') resumeAudioCtx(); }); });
 function isAudioMuted(){
   try{ return localStorage.getItem('jp_audio_muted') === '1'; }catch(e){ return false; }
 }
@@ -11927,426 +11987,133 @@ function playBeep(freq, dur, peakGain, delay, type){
   }catch(e){ console.warn('playBeep falló:', e); }
 }
 /* =========================================================
-   MOTOR ACÚSTICO DE BOX (directiva maestra "Sonido de Box / Rogue") --
-   todo lo que suena en un cronómetro/descanso pasa por acá. Web Audio
-   sintetizado (sin archivos externos: no falla por CORS ni offline):
-   tonos SECOS de onda cuadrada entre 800 y 1200 Hz, tipo chicharra de
-   reloj de pared Rogue/Gymboss -- cero pitidos finos o "tiernos". Reusa
-   el AudioContext único (ensureAudioCtx/resumeAudioCtx) y el mismo gate
-   de mute (isAudioMuted) que el resto de la app.
-     cuenta()    beep seco corto (segundos 3-2-1)
-     aviso10()   un tono corto de advertencia (10 s restantes)
-     mitad()     doble beep distintivo (50% del tiempo objetivo)
-     inicio()    beep seco de arranque
-     chicharra() buzzer largo y contundente (segundo 0 / cambio de
-                 intervalo / fin) -- con antirrebote para que el aviso de
-                 "segundo 0" y la transición de fase no suenen dos veces */
-/* =========================================================
-   PERFILES DE SONIDO DEL TIMER (showroom) -- un solo punto de decisión para TODOS los avisos del reloj de
-   descanso y del HUD Timer de intervalos. Todo sintetizado con Web Audio (sin archivos externos: funciona
-   offline) y pasa por un compresor + limitador común para que ningún perfil sature la salida. La elección se
-   guarda por alumno (clave propia de su STORAGE_KEY) y la leen jpBox / jpAudioTactical / CoachVibra.
-   Eventos: tick (3-2-1), aviso (10 s), mitad (50 %), fin (cambio de fase / fin del descanso), inicio.
+   SONIDO DE TIMERS Y DESCANSOS · UN SOLO MOTOR NATIVO (Web Audio API)
+   Todo se sintetiza por codigo: sin MP3/WAV ni librerias externas, sin retardo de carga y funciona sin conexion.
+   Es el unico sonido de TODOS los relojes (WOD, intervalos, descanso entre series). Cuenta ascendente:
+     3  -> La4   440.00 Hz  seco y sobrio
+     2  -> Re5   587.33 Hz  sube la tension
+     1  -> La5   880.00 Hz  pre-alerta brillante
+     YA -> Re6  1174.66 Hz  mas fuerte, ataque cortante (arranque / fin de la cuenta / fin del descanso)
+   Cada pip = seno limpio + octava + parcial inarmonico (timbre metalico) con envolvente de ganancia limpia
+   (ataque lineal de 2-4 ms, caida exponencial), todo por un compresor comun para que nunca sature.
+   Contrato: cuenta(n) con n = segundos que faltan (3, 2, 1); go() / chicharra() = el "YA".
 ========================================================= */
 var jpPerfilSonido = (function(){
-  var DEF = 'premium';
-  var LISTA = [
-    { id: 'tactico',   lb: 'TÁCTICO / HUD BEEP',    desc: 'Doble beep seco 800→1200 Hz, tipo timer C4. Cuenta 3-2-1 grave y pulso metálico final.' },
-    { id: 'comando',   lb: 'COMMAND VOICE / MILITAR', desc: 'Conteo por voz táctica "3, 2, 1… GO!" y "REST!" estilo comando militar.' },
-    { id: 'premium',   lb: 'APP PREMIUM / CHIME',   desc: 'Pulsos suaves y acorde ascendente al arrancar: el sonido de una app de entrenamiento premium.' },
-    { id: 'boxeo',     lb: 'RING DE BOXEO / CAMPANA', desc: 'Campana de bronce de ring: un golpe al arrancar, tres al terminar y clac de varas en el aviso de 10 s.' },
-    { id: 'navette',   lb: 'TEST DE NAVETTE / BEEP', desc: 'Beeps limpios de 1000 Hz como el Course Navette: pip de cuenta, beep largo al arrancar y triple al cambiar de etapa.' },
-    { id: 'silbato',   lb: 'WHISTLE / SILBATO',     desc: 'Silbato metálico tipo Fox 40 de juez de competencia, doble frecuencia.' },
-    { id: 'silencio',  lb: 'SILENCIOSO',            desc: 'Sin sonido en las alertas del timer.' }
-  ];
-  function clave(){ try{ return (typeof STORAGE_KEY !== 'undefined' ? STORAGE_KEY : 'coachjp') + '_sonido'; }catch(e){ return 'coachjp_sonido'; } }
-  function valido(id){ return LISTA.some(function(p){ return p.id === id; }); }
-  var actual = DEF;
-  try{ var v0 = localStorage.getItem(clave()); if(v0 && valido(v0)) actual = v0; }catch(e){}
+  var HZ = { 3: 440, 2: 587.33, 1: 880, ya: 1174.66 };
+  var LAT = 0.006;      /* margen minimo de agenda: el tono arranca en el proximo bloque de audio */
+  /* limpieza: la eleccion de perfil de versiones anteriores ya no existe */
+  try{ localStorage.removeItem(((typeof STORAGE_KEY !== 'undefined') ? STORAGE_KEY : 'coachjp') + '_sonido'); }catch(e){}
 
-  /* ---------- salida común: compresor + limitador suave ---------- */
   var bus = null, busCtx = null;
   function salida(ctx){
     if(bus && busCtx === ctx) return bus;
     var comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -18; comp.knee.value = 10; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.14;
-    var mg = ctx.createGain(); mg.gain.value = 0.8;
+    comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 10; comp.attack.value = 0.002; comp.release.value = 0.12;
+    var mg = ctx.createGain(); mg.gain.value = 0.9;
     comp.connect(mg); mg.connect(ctx.destination);
     bus = comp; busCtx = ctx; return bus;
   }
-  /* un tono con envolvente exponencial: f (Hz), d (s), v (volumen), t (retardo), tipo, atk, lp (corte), f2 (glide) */
-  function tono(ctx, o){
-    var t0 = ctx.currentTime + (o.t || 0), osc = ctx.createOscillator(), g = ctx.createGain(), nodo = osc;
+  /* un parcial: f (Hz), d (s), v (volumen pico), t (retardo), tipo, atk (s), lp (corte pasa-bajos) */
+  function parcial(ctx, o){
+    var t0 = ctx.currentTime + LAT + (o.t || 0), osc = ctx.createOscillator(), g = ctx.createGain(), nodo = osc;
     osc.type = o.tipo || 'sine';
     osc.frequency.setValueAtTime(o.f, t0);
-    if(o.f2) osc.frequency.exponentialRampToValueAtTime(o.f2, t0 + o.d);
-    if(o.lp){ var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = o.lp; osc.connect(lp); nodo = lp; }
+    if(o.lp){ var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(o.lp, t0); osc.connect(lp); nodo = lp; }
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(o.v, t0 + (o.atk || 0.005));
+    g.gain.linearRampToValueAtTime(o.v, t0 + (o.atk || 0.003));
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + o.d);
     nodo.connect(g); g.connect(salida(ctx));
-    osc.start(t0); osc.stop(t0 + o.d + 0.05);
+    osc.start(t0); osc.stop(t0 + o.d + 0.03);
   }
-  /* silbato: tono senoidal con vibrato rápido + ruido filtrado (aire) */
-  function silbido(ctx, t, d, v){
-    var t0 = ctx.currentTime + (t || 0), osc = ctx.createOscillator(), osc2 = ctx.createOscillator(), lfo = ctx.createOscillator(), lg = ctx.createGain(), g = ctx.createGain();
-    var lfoA = ctx.createOscillator(), lgA = ctx.createGain(), tr = ctx.createGain();
-    osc.type = 'sine'; osc.frequency.setValueAtTime(2800, t0);
-    osc2.type = 'sine'; osc2.frequency.setValueAtTime(3000, t0);
-    lfo.frequency.value = 42; lg.gain.value = 95; lfo.connect(lg); lg.connect(osc.frequency); lg.connect(osc2.frequency);
-    /* la bolita del silbato: tremolo rapido de amplitud entre los dos tonos */
-    tr.gain.value = 0.72; lfoA.frequency.value = 27; lgA.gain.value = 0.28; lfoA.connect(lgA); lgA.connect(tr.gain);
-    osc.connect(tr); osc2.connect(tr);
-    var len = Math.floor(ctx.sampleRate * (d + 0.06)), buf = ctx.createBuffer(1, len, ctx.sampleRate), ch = buf.getChannelData(0);
-    for(var i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
-    var n = ctx.createBufferSource(); n.buffer = buf;
-    var bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3100; bp.Q.value = 2.4;
-    var ng = ctx.createGain(); ng.gain.value = 0.35;
-    n.connect(bp); bp.connect(ng); ng.connect(g); tr.connect(g);
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(v, t0 + 0.014);
-    g.gain.setValueAtTime(v, t0 + Math.max(d - 0.05, 0.02));
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
-    g.connect(salida(ctx));
-    osc.start(t0); osc2.start(t0); lfo.start(t0); lfoA.start(t0); n.start(t0);
-    osc.stop(t0 + d + 0.05); osc2.stop(t0 + d + 0.05); lfo.stop(t0 + d + 0.05); lfoA.stop(t0 + d + 0.05); n.stop(t0 + d + 0.05);
+  /* 3 - 2 - 1: volumen creciente junto con la altura */
+  function pip(ctx, n){
+    var f = HZ[n] || HZ[3], v = n === 1 ? 0.26 : (n === 2 ? 0.22 : 0.18), d = 0.13;
+    parcial(ctx, { f: f, d: d, v: v, atk: 0.004 });
+    parcial(ctx, { f: f * 2, d: d * 0.6, v: v * 0.3, atk: 0.003 });
+    parcial(ctx, { f: f * 2.76, d: d * 0.35, v: v * 0.1, atk: 0.002 });
   }
-  /* pluck de app premium: nota con ataque inmediato, octava y un parcial brillante que se apaga rapido */
-  function pluck(ctx, f, d, v, t){
-    tono(ctx, { f: f, d: d, v: v, atk: .004, t: t || 0 });
-    tono(ctx, { f: f * 2, d: d * .6, v: v * .28, atk: .004, t: t || 0 });
-    tono(ctx, { f: f * 3.01, d: d * .35, v: v * .1, tipo: 'triangle', atk: .004, t: t || 0 });
+  /* YA: el mas agudo y el mas fuerte, con ataque cortante (cuadrada filtrada) y cola metalica */
+  function ya(ctx){
+    var f = HZ.ya;
+    parcial(ctx, { f: f, d: 0.6, v: 0.36, atk: 0.002 });
+    parcial(ctx, { f: f, d: 0.18, v: 0.17, tipo: 'square', lp: 5200, atk: 0.001 });
+    parcial(ctx, { f: f * 2, d: 0.38, v: 0.14, atk: 0.002 });
+    parcial(ctx, { f: f * 2.76, d: 0.22, v: 0.08, atk: 0.001 });
   }
-  /* campana de ring de boxeo: parciales inarmonicos de bronce, golpe duro y cola larga */
-  function ring(ctx, v, t){
-    [[1, 1, 1.7], [2.4, .62, 1.2], [3.9, .42, .85], [5.7, .26, .5], [8.1, .14, .3]].forEach(function(p){
-      tono(ctx, { f: 760 * p[0], d: p[2], v: v * p[1], atk: .002, t: t || 0 });
-    });
+  /* mitad del tiempo objetivo: doble pulso suave (no compite con la cuenta final) */
+  function mitad(ctx){
+    parcial(ctx, { f: HZ[2], d: 0.09, v: 0.1, atk: 0.004 });
+    parcial(ctx, { f: HZ[2], d: 0.09, v: 0.1, atk: 0.004, t: 0.15 });
   }
-  /* clac de varas de madera (aviso de 10 s del ring) */
-  function clac(ctx, v, t){
-    tono(ctx, { f: 1900, d: .04, v: v, tipo: 'square', lp: 2600, atk: .001, t: t || 0 });
-    tono(ctx, { f: 950, d: .05, v: v * .8, tipo: 'triangle', atk: .001, t: t || 0 });
-  }
-  /* pip limpio del Course Navette */
-  function pip(ctx, f, d, v, t){ tono(ctx, { f: f, d: d, v: v, tipo: 'sine', atk: .01, t: t || 0 }); }
-  /* doble beep seco 800 -> 1200 Hz (clic de radio tactica / timer C4) y pulso metalico final de 1760 Hz */
-  function c4(c, t){
-    tono(c, { f: 800, d: .035, v: .13, tipo: 'square', lp: 4200, atk: .002, t: t || 0 });
-    tono(c, { f: 1200, d: .04, v: .13, tipo: 'square', lp: 4600, atk: .002, t: (t || 0) + .06 });
-  }
-  function metal(c){
-    tono(c, { f: 1760, d: .38, v: .16, tipo: 'square', lp: 6000, atk: .002 });
-    tono(c, { f: 2373, d: .3, v: .07, atk: .002 });
-    tono(c, { f: 3520, d: .18, v: .05, tipo: 'triangle', atk: .002 });
-  }
-  /* voz de comando (Web Speech API): grave, firme, 1.1x, en el idioma del sistema; si el equipo no la tiene, cae a los beeps tacticos */
-  var PAL = {
-    en: { n: ['', 'one', 'two', 'three'], go: 'GO!', rest: 'REST!', done: 'TIME!', lang: 'en-US' },
-    es: { n: ['', 'uno', 'dos', 'tres'], go: '¡YA!', rest: '¡DESCANSO!', done: '¡TIEMPO!', lang: 'es-ES' }
-  };
-  function idioma(){ var l = ''; try{ l = String(navigator.language || 'es').toLowerCase(); }catch(e){} return /^en/.test(l) ? 'en' : 'es'; }
-  function elegirVoz(lang){
-    try{
-      var vs = (window.speechSynthesis.getVoices() || []).filter(function(v){ return v.lang && v.lang.toLowerCase().indexOf(lang.slice(0, 2)) === 0; });
-      var grave = vs.filter(function(v){ return /male|daniel|jorge|diego|alex|fred|david|mark|pablo|juan|carlos|google (uk|us|espa)/i.test(v.name) && !/female|samantha|karen|monica|paulina/i.test(v.name); });
-      return grave[0] || vs[0] || null;
-    }catch(e){ return null; }
-  }
-  function hablar(txt){
-    try{
-      if(!('speechSynthesis' in window) || typeof SpeechSynthesisUtterance === 'undefined') return false;
-      var p = PAL[idioma()], u = new SpeechSynthesisUtterance(txt), v = elegirVoz(p.lang);
-      u.lang = p.lang; u.pitch = .4; u.rate = 1.1; u.volume = 1; if(v) u.voice = v;
-      window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
-      return true;
-    }catch(e){ return false; }
-  }
-  var hintFase = '';
-  var VOCES = {
-    tactico: {
-      tick:   function(c){ tono(c, { f: 440, d: .07, v: .17, tipo: 'square', lp: 1700, atk: .003 }); },
-      aviso:  function(c){ c4(c, 0); },
-      mitad:  function(c){ c4(c, 0); c4(c, .2); },
-      fin:    function(c){ metal(c); },
-      inicio: function(c){ metal(c); }
-    },
-    comando: {
-      tick:   function(c, n){ var p = PAL[idioma()], k = (n >= 1 && n <= 3) ? 4 - n : 3; if(!hablar(p.n[k])) VOCES.tactico.tick(c); },
-      aviso:  function(c){ tono(c, { f: 440, d: .09, v: .15, tipo: 'square', lp: 1700, atk: .003 }); },
-      mitad:  function(c){ tono(c, { f: 440, d: .09, v: .15, tipo: 'square', lp: 1700, atk: .003 }); tono(c, { f: 440, d: .09, v: .15, tipo: 'square', lp: 1700, atk: .003, t: .16 }); },
-      fin:    function(c){ var p = PAL[idioma()], h = hintFase; hintFase = ''; if(!hablar(h === 'rest' ? p.rest : (h === 'done' ? p.done : p.go))) metal(c); },
-      inicio: function(c){ if(!hablar(PAL[idioma()].go)) metal(c); },
-      descanso: function(c){ if(!hablar(PAL[idioma()].rest)) c4(c, 0); }
-    },
-    premium: {
-      tick:   function(c){ pluck(c, 1319, .12, .11); },
-      aviso:  function(c){ pluck(c, 784, .3, .15); pluck(c, 1047, .3, .15, .12); },
-      mitad:  function(c){ pluck(c, 659, .3, .15); pluck(c, 784, .35, .15, .1); },
-      fin:    function(c){ [523, 659, 784, 1047].forEach(function(f, i){ pluck(c, f, 1.1, .15, i * .03); }); },
-      inicio: function(c){ [523, 659, 784, 1047].forEach(function(f, i){ pluck(c, f, i === 3 ? .8 : .5, i === 3 ? .18 : .15, i * .07); }); }
-    },
-    boxeo: {
-      tick:   function(c){ clac(c, .12); },
-      aviso:  function(c){ clac(c, .16); clac(c, .16, .16); },
-      mitad:  function(c){ ring(c, .1); },
-      fin:    function(c){ ring(c, .2); ring(c, .2, .34); ring(c, .2, .68); },
-      inicio: function(c){ ring(c, .22); }
-    },
-    navette: {
-      tick:   function(c){ pip(c, 1000, .09, .16); },
-      aviso:  function(c){ pip(c, 880, .14, .18); },
-      mitad:  function(c){ pip(c, 1000, .1, .18); pip(c, 1000, .1, .18, .16); },
-      fin:    function(c){ pip(c, 1000, .16, .2); pip(c, 1000, .16, .2, .26); pip(c, 1000, .16, .2, .52); },
-      inicio: function(c){ pip(c, 1000, .55, .2); }
-    },
-    silbato: {
-      tick:   function(c){ tono(c, { f: 3200, d: .04, v: .09, tipo: 'triangle' }); },
-      aviso:  function(c){ silbido(c, 0, .14, .22); },
-      mitad:  function(c){ silbido(c, 0, .1, .2); silbido(c, .17, .1, .2); },
-      fin:    function(c){ silbido(c, 0, .34, .26); },
-      inicio: function(c){ silbido(c, 0, .2, .22); }
-    }
-  };
-  var VIB = { tick: [30], aviso: [60], mitad: [50, 40, 50], fin: [120, 80, 160], inicio: [120, 80, 160] };
+  var VIB = { tick: [30], mitad: [50, 40, 50], fin: [120, 80, 160], inicio: [120, 80, 160] };
   function vibrar(ev, sinVib){
-    if(actual === 'silencio' || sinVib) return;
-    /* los perfiles con sonido conservan la háptica de siempre (tick / inicio / fin); el aviso de 10 s y la mitad solo vibran sin sonido */
-    if(ev === 'aviso' || ev === 'mitad') return;
+    if(sinVib || !VIB[ev] || ev === 'mitad') return;
     try{ if(navigator.vibrate) navigator.vibrate(VIB[ev]); }catch(e){}
   }
-  /* cuenta regresiva: los avisos 'tick' llegan de a uno por segundo (el HUD manda el 3er numero como 'inicio'); se numeran para
-     que el perfil tactico/voz distinga "3, 2, 1" del GO final */
+  /* si el llamador no dice que numero es (3, 2 o 1), se numera por orden de llegada dentro de una misma cuenta */
   var seqN = 0, seqT = 0;
-  function secuencia(ev){
-    var ahora = Date.now(), n = 0;
-    if(ev === 'tick'){ if(ahora - seqT > 2200) seqN = 0; seqN++; seqT = ahora; n = seqN; }
-    else if(ev === 'inicio' && seqN === 2 && ahora - seqT < 1700){ seqN = 3; seqT = ahora; ev = 'tick'; n = 3; }
-    else if(ev === 'inicio' || ev === 'fin'){ seqN = 0; }
-    return { ev: ev, n: n };
+  function siguiente(){
+    var ahora = Date.now();
+    if(ahora - seqT > 2200) seqN = 0;
+    seqN = Math.min(3, seqN + 1); seqT = ahora;
+    return 4 - seqN;
   }
-  function emitir(id, ev, n){
+  function emitir(ev, n){
     try{
-      var ctx = ensureAudioCtx(), voz = VOCES[id] || VOCES[DEF];
-      if(!voz[ev]) return;
-      if(ctx.state === 'suspended'){ ctx.resume().then(function(){ voz[ev](ctx, n); }).catch(function(){}); return; }
-      voz[ev](ctx, n);
-    }catch(e){ console.warn('perfil de sonido', e); }
-  }
-  function reproducir(ev, sinVib){
-    vibrar(ev, sinVib);
-    if(actual === 'silencio') return;
-    if(isAudioMuted()) return;
-    var r = (actual === 'tactico' || actual === 'comando') ? secuencia(ev) : { ev: ev, n: 0 };
-    emitir(actual, r.ev, r.n);
-  }
-  var demoT = [];
-  function demo(id){
-    demoT.forEach(clearTimeout); demoT = [];
-    try{ if(window.speechSynthesis) window.speechSynthesis.cancel(); }catch(e){}
-    hintFase = '';
-    var sec = (id === 'tactico' || id === 'comando') ? [['tick', 1, 0], ['tick', 2, 900], ['tick', 3, 1800], ['fin', 0, 2700]] : [['tick', 0, 0], ['tick', 0, 900], ['tick', 0, 1800], ['inicio', 0, 2700], ['fin', 0, 4300]];
-    sec.concat(id === 'comando' ? [['descanso', 0, 4000]] : []).forEach(function(p){
-      demoT.push(setTimeout(function(){ emitir(id, p[0], p[1]); }, p[2]));
-    });
-  }
-  function fijar(id){
-    if(!valido(id)) return;
-    actual = id;
-    try{ localStorage.setItem(clave(), id); }catch(e){}
-  }
-
-  /* ---------- showroom: lista de perfiles con preescucha ---------- */
-  function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function css(){
-    if(document.getElementById('jpSndCss')) return;
-    var st = document.createElement('style'); st.id = 'jpSndCss';
-    st.textContent =
-      '#jpSnd{position:fixed;inset:0;z-index:100000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.72);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}' +
-      '#jpSnd .snd-sheet{width:100%;max-width:520px;max-height:88vh;overflow-y:auto;box-sizing:border-box;padding:14px 16px calc(18px + env(safe-area-inset-bottom,0px));border-radius:22px 22px 0 0;background:#0E0E0F;border:1px solid rgba(255,85,0,.4);border-bottom:0;color:#F2F2F2;font-family:"Chakra Petch",sans-serif}' +
-      '#jpSnd .snd-grip{width:44px;height:4px;border-radius:2px;background:rgba(255,255,255,.2);margin:0 auto 12px}' +
-      '#jpSnd .snd-top{display:flex;align-items:center;justify-content:space-between;gap:8px}' +
-      '#jpSnd .snd-t{font-weight:700;font-size:1rem;letter-spacing:.12em;text-transform:uppercase}' +
-      '#jpSnd .snd-x{min-width:44px;min-height:44px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#fff;font-size:1.1rem;cursor:pointer}' +
-      '#jpSnd .snd-sub{margin:2px 0 12px;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.68rem;letter-spacing:.06em;color:#A3A3A3;line-height:1.5}' +
-      '#jpSnd .snd-row{display:flex;align-items:center;gap:10px;padding:12px;margin:8px 0;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);cursor:pointer}' +
-      '#jpSnd .snd-row.on{border-color:#FF5500;background:rgba(255,85,0,.08)}' +
-      '#jpSnd .snd-dot{flex:0 0 auto;width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,.35);box-sizing:border-box}' +
-      '#jpSnd .snd-row.on .snd-dot{border-color:#FF5500;background:radial-gradient(circle,#FF5500 0 45%,transparent 50%)}' +
-      '#jpSnd .snd-info{flex:1 1 auto;min-width:0}' +
-      '#jpSnd .snd-lb{font-weight:700;font-size:.86rem;letter-spacing:.06em}' +
-      '#jpSnd .snd-ds{margin-top:2px;font-family:Inter,system-ui,sans-serif;font-size:.74rem;line-height:1.35;color:#A3A3A3}' +
-      '#jpSnd .snd-play{flex:0 0 auto;min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,.28);background:transparent;color:#fff;font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:.72rem;letter-spacing:.06em;cursor:pointer;white-space:nowrap}' +
-      '#jpSnd .snd-play:active{background:#FF5500;color:#0A0A0A;border-color:#FF5500}' +
-      '#jpSnd .snd-msg{min-height:1.2em;margin:0 2px 8px;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.68rem;color:#FF5500}' +
-      '#jpSnd .snd-ok{width:100%;margin-top:12px;min-height:54px;border:0;border-radius:14px;background:#FF5500;color:#0A0A0A;font-family:"Chakra Petch",sans-serif;font-weight:700;font-size:.95rem;letter-spacing:.08em;cursor:pointer}' +
-      '.cwt-hud-min.snd-btn,.rh-snd{font-size:1.15rem;line-height:1}' +
-      '.rest-hud:not(.expanded) .rh-snd{display:none}' +
-      '.rh-snd{background:none;border:none;color:var(--text-muted,#A3A3A3);cursor:pointer;min-width:32px;min-height:32px}' +
-      'html body.jp-mission:not(.cf-disc) #restHud.on .rh-snd{display:inline-flex !important;align-items:center;justify-content:center;min-width:44px;min-height:44px;color:#E5E5E5}';
-    document.head.appendChild(st);
-  }
-  function cerrar(){ var m = document.getElementById('jpSnd'); if(m) m.remove(); }
-  function pintar(){
-    var m = document.getElementById('jpSnd'); if(!m) return;
-    m.querySelectorAll('.snd-row').forEach(function(r){ r.classList.toggle('on', r.getAttribute('data-id') === actual); });
-  }
-  function aviso(txt){ var e = document.querySelector('#jpSnd .snd-msg'); if(e) e.textContent = txt || ''; }
-  function probar(id){
-    var prev = actual;
-    actual = id;                       /* preescucha: usa el perfil pedido sin guardarlo */
-    try{
-      if(id === 'silencio'){ aviso('SILENCIOSO: las alertas del timer no emiten sonido.'); }
-      else {
-        if(isAudioMuted()) aviso('El sonido está en OFF (botón AUDIO del timer). Activalo para escuchar.');
-        else { aviso(id === 'comando' ? 'Probando: 3, 2, 1, GO y REST.' : 'Probando: cuenta, arranque y final.'); demo(id); }
+      var ctx = ensureAudioCtx();
+      var tocar = function(){
+        if(ev === 'tick') pip(ctx, n);
+        else if(ev === 'inicio' || ev === 'fin') ya(ctx);
+        else if(ev === 'mitad') mitad(ctx);
+      };
+      /* contexto suspendido / interrumpido (iOS tras bloquear la pantalla): se reanuda y suena apenas queda en marcha */
+      if(ctx.state !== 'running'){
+        var p = ctx.resume();
+        if(p && p.then) p.then(tocar).catch(function(){}); else tocar();
+        return;
       }
-    }finally{ actual = prev; }
+      tocar();
+    }catch(e){ console.warn('sonido de timer', e); }
   }
-  function abrir(){
-    css(); cerrar();
-    var h = '<div class="snd-sheet" role="dialog" aria-label="Sonido de alertas"><div class="snd-grip"></div>' +
-      '<div class="snd-top"><div class="snd-t">Sonido de alertas</div><button type="button" class="snd-x" data-snd-x="1" aria-label="Cerrar">&#10005;</button></div>' +
-      '<div class="snd-sub">Elegí cómo avisa el timer de descanso y el de intervalos. Tocá [ PROBAR ] para escucharlo antes de quedarte con uno.</div><div class="snd-msg" aria-live="polite"></div>';
-    LISTA.forEach(function(p){
-      h += '<div class="snd-row' + (p.id === actual ? ' on' : '') + '" data-id="' + p.id + '"><span class="snd-dot"></span>' +
-        '<div class="snd-info"><div class="snd-lb">' + esc(p.lb) + '</div><div class="snd-ds">' + esc(p.desc) + '</div></div>' +
-        '<button type="button" class="snd-play" data-snd-play="' + p.id + '">[ &#128266; PROBAR ]</button></div>';
-    });
-    h += '<button type="button" class="snd-ok" data-snd-x="1">[ GUARDAR Y CERRAR ]</button></div>';
-    var m = document.createElement('div'); m.id = 'jpSnd'; m.innerHTML = h; document.body.appendChild(m);
+  function reproducir(ev, sinVib, num){
+    vibrar(ev, sinVib);
+    if(isAudioMuted()) return;
+    var n = 0;
+    if(ev === 'tick') n = (num >= 1 && num <= 3) ? Math.round(num) : siguiente();
+    else if(ev === 'inicio' || ev === 'fin') seqN = 0;
+    emitir(ev, n);
   }
-  document.addEventListener('click', function(e){
-    var t = e.target; if(!t || !t.closest) return;
-    if(t.closest('#cwtSnd, #rhSnd')){ e.preventDefault(); abrir(); return; }
-    var m = document.getElementById('jpSnd'); if(!m) return;
-    if(t.closest('[data-snd-x]') || t === m){ cerrar(); return; }
-    var pl = t.closest('[data-snd-play]');
-    if(pl){ e.stopPropagation(); probar(pl.getAttribute('data-snd-play')); return; }
-    var row = t.closest('.snd-row');
-    if(row){ fijar(row.getAttribute('data-id')); pintar(); aviso('Guardado: ' + (LISTA.filter(function(p){ return p.id === actual; })[0] || {}).lb); }
-  }, true);   /* captura: el panel de descanso frena la propagación de sus propios clics */
+  function calentar(){ try{ salida(ensureAudioCtx()); }catch(e){} }
+  /* escucha de control (consola / QA): 3 - 2 - 1 - YA */
+  function probar(){
+    [[3, 0], [2, 900], [1, 1800]].forEach(function(p){ setTimeout(function(){ emitir('tick', p[0]); }, p[1]); });
+    setTimeout(function(){ emitir('inicio', 0); }, 2700);
+  }
   return {
-    lista: LISTA,
-    actual: function(){ return actual; },
-    fijar: fijar,
+    actual: function(){ return 'ascendente'; },
     reproducir: reproducir,
-    hint: function(v){ hintFase = v || ''; },
+    hint: function(){},
     probar: probar,
-    abrir: abrir,
-    silencio: function(){ return actual === 'silencio'; },
-    sinSonido: function(){ return actual === 'silencio'; }
+    calentar: calentar,
+    hz: HZ,
+    silencio: function(){ return false; },
+    sinSonido: function(){ return false; }
   };
 })();
 window.jpPerfilSonido = jpPerfilSonido;
 var jpBox = (function(){
   var ultimaChicharra = 0;
-  function seco(freq, dur, vol, delay){
-    if(isAudioMuted()) return;
-    try{
-      var ctx = ensureAudioCtx();
-      if(ctx.state === 'suspended'){ ctx.resume().then(function(){ seco(freq, dur, vol, delay); }).catch(function(){}); return; }
-      var t0 = ctx.currentTime + (delay || 0);
-      var osc = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
-      osc.type = 'square'; osc.frequency.setValueAtTime(freq, t0);
-      lp.type = 'lowpass'; lp.frequency.setValueAtTime(3400, t0);
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(vol, t0 + 0.004);
-      g.gain.setValueAtTime(vol, t0 + Math.max(dur - 0.025, 0.006));
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.connect(lp); lp.connect(g); g.connect(ctx.destination);
-      osc.start(t0); osc.stop(t0 + dur + 0.03);
-    }catch(e){ console.warn('jpBox.seco falló:', e); }
-  }
-  /* tono limpio senoidal con decaimiento exponencial (HUD militar) */
-  function suave(freq, dur, vol, ataque){
-    if(isAudioMuted()) return;
-    try{
-      var ctx = ensureAudioCtx();
-      if(ctx.state === 'suspended'){ ctx.resume().then(function(){ suave(freq, dur, vol, ataque); }).catch(function(){}); return; }
-      var t0 = ctx.currentTime;
-      var osc = ctx.createOscillator(), g = ctx.createGain();
-      osc.type = 'sine'; osc.frequency.setValueAtTime(freq, t0);
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(vol, t0 + (ataque || 0.004));
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.connect(g); g.connect(ctx.destination);
-      osc.start(t0); osc.stop(t0 + dur + 0.03);
-    }catch(e){ console.warn('jpBox.suave falló:', e); }
-  }
-  /* bocina industrial Rogue: fundamental de 650 Hz (diente de sierra) + armónicos
-     (2.º y 3.º, cuadradas) -- seca y potente, sin trémolo; 500 ms por defecto */
-  function buzzer(dur){
-    if(isAudioMuted()) return;
-    try{
-      var ctx = ensureAudioCtx();
-      if(ctx.state === 'suspended'){ ctx.resume().then(function(){ buzzer(dur); }).catch(function(){}); return; }
-      var t0 = ctx.currentTime;
-      var lp = ctx.createBiquadFilter(), env = ctx.createGain();
-      lp.type = 'lowpass'; lp.frequency.setValueAtTime(3600, t0);
-      env.gain.setValueAtTime(0.0001, t0);
-      env.gain.exponentialRampToValueAtTime(0.46, t0 + 0.005);
-      env.gain.setValueAtTime(0.46, t0 + Math.max(dur - 0.08, 0.01));
-      env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      lp.connect(env); env.connect(ctx.destination);
-      [[650, 'sawtooth', 1], [1300, 'square', .38], [1950, 'square', .16]].forEach(function(h){
-        var o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = h[1]; o.frequency.setValueAtTime(h[0], t0); g.gain.setValueAtTime(h[2], t0);
-        o.connect(g); g.connect(lp);
-        o.start(t0); o.stop(t0 + dur + 0.04);
-      });
-    }catch(e){ console.warn('jpBox.buzzer falló:', e); }
-  }
-  /* pre-aviso (3-2-1): tick seco y amortiguado de ~450 Hz, decay de 80 ms */
-  function tickSeco(){
-    try{ if(navigator.vibrate) navigator.vibrate([30]); }catch(e){}
-    if(isAudioMuted()) return;
-    try{
-      var ctx = ensureAudioCtx();
-      if(ctx.state === 'suspended'){ ctx.resume().catch(function(){}); }
-      var t0 = ctx.currentTime;
-      var osc = ctx.createOscillator(), lp = ctx.createBiquadFilter(), g = ctx.createGain();
-      osc.type = 'sine'; osc.frequency.setValueAtTime(450, t0);
-      lp.type = 'lowpass'; lp.frequency.setValueAtTime(1100, t0);
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(0.38, t0 + 0.004);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.08);
-      osc.connect(lp); lp.connect(g); g.connect(ctx.destination);
-      osc.start(t0); osc.stop(t0 + 0.11);
-    }catch(e){ console.warn('jpBox.tickSeco falló:', e); }
-  }
-  /* fin del descanso: campana tactica, 800 Hz descendiendo a 440 Hz en 800 ms, sin distorsion */
-  function gong(){
-    if(isAudioMuted()) return;
-    try{
-      var ctx = ensureAudioCtx();
-      if(ctx.state === 'suspended'){ ctx.resume().then(gong).catch(function(){}); return; }
-      var t0 = ctx.currentTime, lp = ctx.createBiquadFilter(), env = ctx.createGain();
-      lp.type = 'lowpass'; lp.frequency.setValueAtTime(2600, t0);
-      env.gain.setValueAtTime(0.0001, t0);
-      env.gain.exponentialRampToValueAtTime(0.42, t0 + 0.006);
-      env.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.8);
-      lp.connect(env); env.connect(ctx.destination);
-      [[800, 440, 1], [1200, 660, 0.28]].forEach(function(p){
-        var o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = 'sine'; o.frequency.setValueAtTime(p[0], t0); o.frequency.exponentialRampToValueAtTime(p[1], t0 + 0.8);
-        g.gain.setValueAtTime(p[2], t0); o.connect(g); g.connect(lp);
-        o.start(t0); o.stop(t0 + 0.85);
-      });
-    }catch(e){ console.warn('jpBox.gong falló:', e); }
-  }
-  /* los avisos del timer ya no son un sonido fijo: los resuelve el perfil elegido en el showroom (jpPerfilSonido) */
   return {
-    tickSeco: function(){ jpPerfilSonido.reproducir('tick'); },
+    tickSeco: function(n){ jpPerfilSonido.reproducir('tick', false, n); },
     gong:     function(){ jpPerfilSonido.reproducir('fin', true); },     /* fin del descanso: la vibración la dispara vibrateTimerEnd */
-    cuenta:   function(){ jpPerfilSonido.reproducir('tick'); },
+    cuenta:   function(n){ jpPerfilSonido.reproducir('tick', false, n); },
     go:       function(){ jpPerfilSonido.reproducir('inicio'); },
-    aviso10:  function(){ jpPerfilSonido.reproducir('aviso'); },
+    aviso10:  function(){},      /* sin sonido: la advertencia de 10 s es visual (el audio queda reservado para 3-2-1-YA y no satura) */
     mitad:    function(){ jpPerfilSonido.reproducir('mitad', true); },   /* la háptica de la mitad ya la envía el HUD Timer */
     inicio:   function(){ jpPerfilSonido.reproducir('inicio'); },
-    chicharra:function(dur){
+    chicharra:function(){
       var ahora = Date.now();
-      if(ahora - ultimaChicharra < 1400) return;
+      if(ahora - ultimaChicharra < 1400) return;      /* el "segundo 0" y la transicion de fase no suenan dos veces */
       ultimaChicharra = ahora; jpPerfilSonido.reproducir('fin');
     }
   };
@@ -12356,12 +12123,19 @@ window.jpBox = jpBox;
    gesto del usuario: el primer toque/click de cualquier tipo (antes de
    empezar un timer) lo desbloquea con un buffer silencioso. */
 (function(){
-  var evs = ['touchstart', 'touchend', 'pointerdown', 'click', 'keydown'];
-  function una(){
-    evs.forEach(function(ev){ document.removeEventListener(ev, una, true); });
+  var evs = ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'click', 'keydown'], armado = false;
+  function quitar(){ armado = false; evs.forEach(function(ev){ document.removeEventListener(ev, intentar, true); }); }
+  function armar(){ if(armado) return; armado = true; evs.forEach(function(ev){ document.addEventListener(ev, intentar, { capture: true, passive: true }); }); }
+  /* se reintenta en cada gesto hasta que el contexto queda en "running" (en iOS touchstart no alcanza: hace falta touchend/click) */
+  function intentar(){
     try{ unlockAudio(); }catch(e){}
+    var c = ensureAudioCtx();
+    if(c.state === 'running'){ quitar(); return; }
+    try{ var p = c.resume(); if(p && p.then) p.then(function(){ if(c.state === 'running') quitar(); }).catch(function(){}); }catch(e2){}
   }
-  evs.forEach(function(ev){ document.addEventListener(ev, una, { capture: true, passive: true }); });
+  armar();
+  /* si el sistema lo interrumpe (llamada, bloqueo de pantalla), vuelve a quedar a la espera del proximo toque */
+  try{ ensureAudioCtx().addEventListener('statechange', function(){ if(_audioCtx.state !== 'running') armar(); }); }catch(e){}
 })();
 function beepCountdown(){ jpBox.cuenta(); }
 function beepGo(){ jpBox.inicio(); }
@@ -12502,7 +12276,7 @@ var jpAudioTactical = {
   },
   /* directiva maestra ("Sonido de Box"): el tick de cuenta regresiva y el
      fin de descanso/timer usan el motor acústico seco de box (jpBox) */
-  soundTimerTick: function(){ jpBox.tickSeco(); },
+  soundTimerTick: function(n){ jpBox.tickSeco(n); },
   soundTimerEnd: function(){ jpBox.gong(); },
   /* directiva maestra ("Silenciado de guardado"): registrar un PR/1RM es
      SILENCIOSO -- se retira el arpegio agudo; queda sólo la vibración
@@ -15136,7 +14910,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
 </style>
 
 <div class="rest-hud" id="restHud" aria-live="polite">
-  <div class="rh-top"><span class="rh-lb" id="rhLb">Descanso</span><button class="rh-snd" id="rhSnd" type="button" aria-label="Sonido de alertas" title="Sonido de alertas">&#9834;</button><button class="rh-expand" id="rhExpand" type="button" aria-label="Más opciones de descanso" aria-expanded="false">▾</button><button class="rh-x" id="rhX" type="button" aria-label="Cerrar">×</button></div>
+  <div class="rh-top"><span class="rh-lb" id="rhLb">Descanso</span><button class="rh-expand" id="rhExpand" type="button" aria-label="Más opciones de descanso" aria-expanded="false">▾</button><button class="rh-x" id="rhX" type="button" aria-label="Cerrar">×</button></div>
   <div class="rh-time" id="rhTime">01:30</div>
   <div class="rh-set">
     <button type="button" data-rest="60">60s</button>
@@ -15301,7 +15075,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     if(restLeft <= 3 && restLeft > 0 && _restAv !== restLeft){
       _restAv = restLeft;
-      try{ jpAudioTactical.soundTimerTick(); }catch(e){}
+      try{ jpAudioTactical.soundTimerTick(restLeft); }catch(e){}
       CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     }
     if(restLeft <= 0){
@@ -15375,7 +15149,6 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     /* timestampFin absoluto: aviso en segundo plano aunque se bloquee la pantalla */
     _restAv = -1;
     try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
-    try{ jpPerfilSonido.reproducir('descanso', true); }catch(e){}
   }
   function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); guardarRestTimer(); try{ jpBgTimer.cancelar(); }catch(e){} }
   /* pausa/reanuda el descanso activo sin cerrarlo -- misma lógica que ya
@@ -23681,7 +23454,6 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       </div>
       <div class="hud-actions">
         <button type="button" class="cwt-hud-min" id="cwtMin" title="Minimizar" aria-label="Minimizar">&#10515;</button>
-        <button type="button" class="cwt-hud-min snd-btn" id="cwtSnd" title="Sonido de alertas" aria-label="Sonido de alertas">&#9834;</button>
         <button type="button" class="cwt-mute btn-sound-toggle" id="cwtMute" title="Silenciar sonidos">🔊 AUDIO: ON</button>
         <button type="button" class="cwt-hud-close btn-close-circle" id="cwtX" aria-label="Cerrar">&#10005;</button>
       </div>
@@ -23825,26 +23597,12 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
      desde el valor viejo, sin reflejar el tiempo real que pasó bloqueado. */
   var faseTargetEnd = 0, transcurridoBase = 0, transcurridoStart = 0;
 
-  var ACtx = null;
   var CWT_MUTE_KEY = 'jp_audio_muted';
   var muted = false;
   try{ muted = localStorage.getItem(CWT_MUTE_KEY) === '1'; }catch(e){}
+  /* un solo AudioContext para toda la app (ensureAudioCtx): el timer de WOD ya no abre uno propio */
   function desbloquearAudio(){
-    try{ if(!ACtx) ACtx = new (window.AudioContext || window.webkitAudioContext)(); if(ACtx.state !== 'running') ACtx.resume(); }catch(e){}
-    try{ if(typeof resumeAudioCtx === 'function') resumeAudioCtx(); }catch(e){}
-  }
-  function beep(freq, ms, vol){
-    if(muted) return;
-    try{
-      if(!ACtx) ACtx = new (window.AudioContext || window.webkitAudioContext)();
-      if(ACtx.state === 'suspended') ACtx.resume();
-      var o = ACtx.createOscillator(), g = ACtx.createGain();
-      o.type = 'sine'; o.frequency.value = freq || 880;
-      g.gain.value = vol == null ? 0.14 : vol;
-      o.connect(g); g.connect(ACtx.destination);
-      o.start();
-      setTimeout(function(){ try{ o.stop(); }catch(e){} }, ms || 140);
-    }catch(e){}
+    try{ unlockAudio(); }catch(e){}
   }
   function pintarMute(){
     var b = document.getElementById('cwtMute'); if(!b) return;
@@ -24067,7 +23825,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(seg === 10){
       if(duracionFase(cfg()) > 20 && fase !== 'prep') jpBox.aviso10();
     } else if(seg === 3 || seg === 2 || seg === 1){
-      if(seg === 1) jpBox.go(); else jpBox.cuenta();
+      jpBox.cuenta(seg);
       jpRayo('gold'); jpEscudoPulso(); window.CoachVibra && CoachVibra.cuenta(); window.pulsoVisual && pulsoVisual();
     } else if(seg === 0){
       /* GO tras la cuenta 3-2-1: tono agudo y enérgico (1760 Hz); el resto de las transiciones conserva la bocina */
@@ -42527,7 +42285,6 @@ html body.jp-mission:not(.cf-disc) #cwtFull .cf-reset, html body.jp-mission:not(
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-round{ background:rgba(255,255,255,.05) !important; border:1px solid rgba(255,85,0,.55) !important; color:#FFFFFF !important; }
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-brand em, html body.jp-mission:not(.cf-disc) #cwtFull em{ color:#FF5500 !important; font-style:normal; }
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-shield path{ stroke:rgba(255,85,0,.22) !important; }
-html body.jp-mission:not(.cf-disc) #restHud.on .rh-snd{ background:none !important; border:0 !important; box-shadow:none !important; color:#E5E5E5 !important; font-size:1.3rem !important; }
 html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar i,html body.jp-mission:not(.cf-disc) #cwtFull .cf-bar > *{ background:#FF5500 !important; }
 /* ===== botones principales vidriados (glass tactico) + cian tactico en micro-badges, tiempos y estaciones ===== */
 html body.jp-mission:not(.cf-disc) .jp-close-cta:not(.done), html body.jp-mission:not(.cf-disc) .jp-reg-ok{ background:rgba(10,10,10,.55) !important; -webkit-backdrop-filter:blur(12px) saturate(140%); backdrop-filter:blur(12px) saturate(140%); border:1px solid rgba(255,85,0,.75) !important; color:#FF5500 !important; box-shadow:0 0 22px rgba(255,85,0,.22), inset 0 0 20px rgba(255,85,0,.08) !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; letter-spacing:.08em; text-transform:uppercase; }
@@ -42647,7 +42404,6 @@ html body.cf-disc #cwtFull .cf-reset, html body.cf-disc #cwtFull #cfReset{ backg
 html body.cf-disc #cwtFull .cf-round{ background:rgba(255,255,255,.05) !important; border:1px solid rgba(255,85,0,.55) !important; color:#FFFFFF !important; }
 html body.cf-disc #cwtFull .cf-brand em, html body.cf-disc #cwtFull em{ color:#FF5500 !important; font-style:normal; }
 html body.cf-disc #cwtFull .cf-shield path{ stroke:rgba(255,85,0,.22) !important; }
-html body.cf-disc #restHud.on .rh-snd{ background:none !important; border:0 !important; box-shadow:none !important; color:#E5E5E5 !important; font-size:1.3rem !important; }
 html body.cf-disc #cwtFull .cf-bar i,html body.cf-disc #cwtFull .cf-bar > *{ background:#FF5500 !important; }
 html body.cf-disc .jp-close-cta:not(.done), html body.cf-disc .jp-reg-ok{ background:rgba(10,10,10,.55) !important; -webkit-backdrop-filter:blur(12px) saturate(140%); backdrop-filter:blur(12px) saturate(140%); border:1px solid rgba(255,85,0,.75) !important; color:#FF5500 !important; box-shadow:0 0 22px rgba(255,85,0,.22), inset 0 0 20px rgba(255,85,0,.08) !important; font-family:"Chakra Petch",sans-serif !important; font-weight:700 !important; letter-spacing:.08em; text-transform:uppercase; }
 html body.cf-disc .jp-close-cta:not(.done):active, html body.cf-disc .jp-reg-ok:active{ background:rgba(255,85,0,.18) !important; transform:scale(.985); }
@@ -61931,26 +61687,58 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   var pendiente = null, wl = null;
   var ultimoBeep = -1;
 
-  var ACtx = null;
   var CWT_MUTE_KEY = 'jp_audio_muted';
   var muted = false;
   try{ muted = localStorage.getItem(CWT_MUTE_KEY) === '1'; }catch(e){}
-  function desbloquearAudio(){
-    try{ if(!ACtx) ACtx = new (window.AudioContext || window.webkitAudioContext)(); if(ACtx.state !== 'running') ACtx.resume(); }catch(e){}
-    try{ if(typeof resumeAudioCtx === 'function') resumeAudioCtx(); }catch(e){}
+  /* sonido de cuenta regresiva: Web Audio nativa, sin archivos. 3 = 440 Hz, 2 = 587.33 Hz, 1 = 880 Hz, YA = 1174.66 Hz (mas fuerte y cortante) */
+  var ACtx = null, HZ = { 3: 440, 2: 587.33, 1: 880, ya: 1174.66 }, busA = null;
+  function ctxAudio(){
+    if(!ACtx){
+      var AC = window.AudioContext || window.webkitAudioContext;
+      try{ ACtx = new AC({ latencyHint: 'interactive' }); }catch(e){ ACtx = new AC(); }
+      try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e2){}
+    }
+    return ACtx;
   }
-  function beep(freq, ms, vol){
+  function desbloquearAudio(){
+    try{
+      var c = ctxAudio(); if(c.state !== 'running') c.resume();
+      var bf = c.createBuffer(1, 1, 22050), sr = c.createBufferSource(); sr.buffer = bf; sr.connect(c.destination); sr.start(0);
+    }catch(e){}
+  }
+  function parcial(c, f, d, v, tipo, atk, lp){
+    var t0 = c.currentTime + 0.006, o = c.createOscillator(), g = c.createGain(), nodo = o;
+    o.type = tipo || 'sine'; o.frequency.setValueAtTime(f, t0);
+    if(lp){ var bq = c.createBiquadFilter(); bq.type = 'lowpass'; bq.frequency.setValueAtTime(lp, t0); o.connect(bq); nodo = bq; }
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(v, t0 + (atk || 0.003));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+    nodo.connect(g); g.connect(busA); o.start(t0); o.stop(t0 + d + 0.03);
+  }
+  function sonar(fn){
     if(muted) return;
     try{
-      if(!ACtx) ACtx = new (window.AudioContext || window.webkitAudioContext)();
-      if(ACtx.state === 'suspended') ACtx.resume();
-      var o = ACtx.createOscillator(), g = ACtx.createGain();
-      o.type = 'sine'; o.frequency.value = freq || 880;
-      g.gain.value = vol == null ? 0.14 : vol;
-      o.connect(g); g.connect(ACtx.destination);
-      o.start();
-      setTimeout(function(){ try{ o.stop(); }catch(e){} }, ms || 140);
+      var c = ctxAudio();
+      if(!busA || busA.context !== c){
+        var comp = c.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 10; comp.attack.value = 0.002; comp.release.value = 0.12;
+        var mg = c.createGain(); mg.gain.value = 0.9; comp.connect(mg); mg.connect(c.destination); busA = comp;
+      }
+      if(c.state !== 'running'){ var p = c.resume(); if(p && p.then) p.then(function(){ fn(c); }).catch(function(){}); else fn(c); return; }
+      fn(c);
     }catch(e){}
+  }
+  function pip(n){
+    sonar(function(c){
+      var f = HZ[n] || HZ[3], v = n === 1 ? 0.26 : (n === 2 ? 0.22 : 0.18);
+      parcial(c, f, 0.13, v, 'sine', 0.004); parcial(c, f * 2, 0.08, v * 0.3); parcial(c, f * 2.76, 0.045, v * 0.1, 'sine', 0.002);
+    });
+  }
+  function ya(){
+    sonar(function(c){
+      var f = HZ.ya;
+      parcial(c, f, 0.6, 0.36, 'sine', 0.002); parcial(c, f, 0.18, 0.17, 'square', 0.001, 5200);
+      parcial(c, f * 2, 0.38, 0.14, 'sine', 0.002); parcial(c, f * 2.76, 0.22, 0.08, 'sine', 0.001);
+    });
   }
   function pintarMute(){
     var b = document.getElementById('cwtMute'); if(!b) return;
@@ -62065,8 +61853,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function avisar(seg){
     if(seg === ultimoBeep) return;
     ultimoBeep = seg;
-    if(seg === 3 || seg === 2 || seg === 1){ beep(760, 110); vibrar([70]); }
-    else if(seg === 0){ beep(1180, 260, .2); vibrar([100, 50, 100]); }
+    if(seg === 3 || seg === 2 || seg === 1){ pip(seg); vibrar([70]); }
+    else if(seg === 0){ ya(); vibrar([100, 50, 100]); }
   }
   function paso(){
     var c = cfg();
@@ -62077,7 +61865,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       fase = pendiente ? pendiente.fase : 'work';
       restante = pendiente ? pendiente.restante : 0;
       pendiente = null; ultimoBeep = -1;
-      beep(1080, 240, .2); vibrar([100, 50, 100]);
+      ya(); vibrar([100, 50, 100]);
       pintar(); return;
     }
     if(modo === 'fortime'){
@@ -62100,7 +61888,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     vueltas.push(c.intervalo);
     if(ronda >= rondas){ finalizar('EMOM completo'); return; }
     ronda++; restante = c.intervalo; ultimoBeep = -1;
-    beep(980, 180, .18); vibrar([100, 50, 100]);
+    ya(); vibrar([100, 50, 100]);
     pintar();
   }
   function arrancar(){
@@ -62109,7 +61897,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     if(!restante && !transcurrido) estadoInicial();
     corriendo = true;
     document.getElementById('cwtGo').textContent = '⏸ Pausar';
-    beep(620, 120); vibrar([30]);
+    ya(); vibrar([30]);
     tick = setInterval(paso, 1000);
     despierto(true);
     pintar();
@@ -62141,7 +61929,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function finalizar(motivo){
     corriendo = false; clearInterval(tick); tick = null;
     despierto(false);
-    beep(1240, 420, .22); vibrar([100, 50, 100, 50, 220]);
+    ya(); vibrar([100, 50, 100, 50, 220]);
     var f = document.getElementById('cwtPhase');
     if(f){ f.textContent = '🏁 ' + (motivo || 'Terminado') + ' · ' + mmss(transcurrido); f.className = 'cwt-phase work'; }
     var g = document.getElementById('cwtGo');
