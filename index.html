@@ -19527,8 +19527,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function resumenDatos(weekIdx, day){
     let vol = 0, series = 0, reps = 0, maxKg = 0;
     const pref = weekIdx + '|' + day.id + '|';
+    /* el progreso guardado puede traer restos de una planificacion anterior que usaba el mismo id de dia (otra rutina, otros bloques):
+       solo cuentan las series de los bloques que existen hoy en este dia */
+    const validos = {}; ((day && day.blocks) || []).forEach(function(b){ validos[b.id] = 1; });
+    const hayValidos = Object.keys(validos).length > 0;
     Object.keys(state.loads).forEach(function(k){
       if(k.indexOf(pref) !== 0) return;
+      if(hayValidos && !validos[k.split('|')[2]]) return;
       const l = state.loads[k];
       if(!l || !l.done) return;
       series++;
@@ -24505,13 +24510,21 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   /* ---------------------------------------------------------
      3 · MÉTRICAS NUEVAS DE LA STORY CARD
   --------------------------------------------------------- */
+  /* ids de los bloques que existen HOY en el dia activo (null si la rutina no los expone): el progreso viejo de otra planificacion con el mismo id de dia nunca entra a la tarjeta */
+  function bloquesVigentes(){
+    var o = {}, n = 0, day = DAYS.filter(function(x){ return x.id === state.currentDay; })[0];
+    ((day && day.blocks) || []).forEach(function(b){ o[b.id] = 1; n++; });
+    return n ? o : null;
+  }
   function topLift(){
-    var mejor = { kg: 0, ex: '' };
+    var mejor = { kg: 0, ex: '' }, vig = bloquesVigentes(), nombres = nombresEjDia();
     var pref = state.currentWeek + '|' + state.currentDay + '|';
     Object.keys(state.loads || {}).forEach(function(k){
       if(k.indexOf(pref) !== 0) return;
+      var p = k.split('|');
+      if(vig && !vig[p[2]]) return;
       var l = state.loads[k], kg = parseFloat(l && l.kg);
-      if(kg > mejor.kg) mejor = { kg: kg, ex: l.__ex || '' };
+      if(kg > mejor.kg) mejor = { kg: kg, ex: nombres[p[2] + '|' + p[3]] || (l && l.__ex) || '' };
     });
     return mejor;
   }
@@ -24533,10 +24546,11 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   }
   /* ejercicios con al menos una serie tildada hoy (aunque no lleven kg) */
   function ejerciciosHechosDia(){
-    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), vistos = {}, out = [];
+    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), vistos = {}, out = [], vig = bloquesVigentes();
     Object.keys(state.loads || {}).forEach(function(k){
       if(k.indexOf(pref) !== 0) return;
       var l = state.loads[k] || {}, p = k.split('|');
+      if(vig && !vig[p[2]]) return;
       if(!l.done) return;
       var nm = nombres[p[2] + '|' + p[3]] || l.__ex || '';
       if(!nm || vistos[nm]) return;
@@ -24546,10 +24560,11 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   }
   /* todos los ejercicios con series hechas hoy (mejor set, volumen, series) y el reparto por grupo muscular */
   function detalleDia(){
-    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), mapa = {}, orden = [];
+    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), mapa = {}, orden = [], vig = bloquesVigentes();
     Object.keys(state.loads || {}).forEach(function(k){
       if(k.indexOf(pref) !== 0) return;
       var l = state.loads[k] || {}, p = k.split('|');
+      if(vig && !vig[p[2]]) return;
       if(!l.done) return;
       var nm = nombres[p[2] + '|' + p[3]] || l.__ex || '';
       if(!nm) return;
@@ -24565,7 +24580,7 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       .sort(function(a, b){ return (b.vol - a.vol) || (b.n - a.n); });
   }
   var GRUPOS_RX = [
-    ['GEMELOS', /gemelo|pantorrilla|calf|talones/i], ['CORE', /abdominal|plancha|dead ?bug|rueda|pallof|core|crunch|ab wheel|bird ?dog|elevaci[oó]n de piernas/i],
+    ['GEMELOS', /gemelo|pantorrilla|calf|talones/i], ['CORE', /abdominal|plancha|dead ?bug|rueda|pallof|core|crunch|ab wheel|bird ?dog|elevaci[oó]n de piernas|farmer|carry|paseo del granjero/i],
     ['TRÍCEPS', /tr[ií]ceps|franc[eé]s|skull|pushdown|jm press|fondos/i], ['ISQUIOS', /femoral|isquio|hamstring|leg curl|rumano|rdl|peso muerto|deadlift|good ?morning|nordic/i],
     ['BÍCEPS', /(?:^|[^a-z])curl|b[ií]ceps|biceps|martillo|hammer/i], ['GLÚTEO', /hip ?thrust|gl[uú]te|glute|patada|abducci[oó]n|puente de gl|kickback|step ?up/i],
     ['CUÁDRICEPS', /sentadilla|squat|prensa|leg press|extensi[oó]n de cu[aá]d|leg extension|hack|zancada|lunge|b[uú]lgara|bulgarian|estocada|cu[aá]driceps/i],
@@ -24576,13 +24591,22 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
   function gruposDia(det){
     var c = {}, tot = 0;
     (det || []).forEach(function(x){ var g = grupoDe(x.ex); if(!g) return; c[g] = (c[g] || 0) + x.n; tot += x.n; });
-    return Object.keys(c).map(function(g){ return { nombre: g, n: c[g], pct: tot ? Math.round(c[g] / tot * 100) : 0 }; }).sort(function(a, b){ return b.n - a.n; });
+    var lista = Object.keys(c).map(function(g){ return { nombre: g, n: c[g], pct: tot ? Math.round(c[g] / tot * 100) : 0 }; }).sort(function(a, b){ return b.n - a.n; });
+    /* si la mayoria de las series de HOY es de tren inferior, el grupo principal es PIERNA y los subgrupos (cuadriceps, gluteo, isquios, gemelos) van debajo */
+    var PIERNA = { 'CUÁDRICEPS': 1, 'ISQUIOS': 1, 'GLÚTEO': 1, 'GEMELOS': 1 }, nPierna = 0;
+    lista.forEach(function(x){ if(PIERNA[x.nombre]) nPierna += x.n; });
+    if(tot && nPierna / tot >= 0.5){
+      return [{ nombre: 'PIERNA', n: nPierna, pct: Math.round(nPierna / tot * 100) }]
+        .concat(lista.filter(function(x){ return PIERNA[x.nombre]; }), lista.filter(function(x){ return !PIERNA[x.nombre]; }));
+    }
+    return lista;
   }
   function topSetsDia(){
-    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), mapa = {};
+    var pref = state.currentWeek + '|' + state.currentDay + '|', nombres = nombresEjDia(), mapa = {}, vig = bloquesVigentes();
     Object.keys(state.loads || {}).forEach(function(k){
       if(k.indexOf(pref) !== 0) return;
       var l = state.loads[k] || {}, p = k.split('|');
+      if(vig && !vig[p[2]]) return;
       var kg = parseFloat(l.kg), rp = parseFloat(l.reps);
       if(!l.done || !(kg > 0)) return;
       var nm = nombres[p[2] + '|' + p[3]] || l.__ex || '';
