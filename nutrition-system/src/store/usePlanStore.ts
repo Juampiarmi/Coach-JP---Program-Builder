@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_PRESETS } from '@/lib/bioenergetics';
+import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_PRESETS, trainingWeekdays } from '@/lib/bioenergetics';
 import { MAX_OIL_PER_MEAL_G, migrateModel } from '@/lib/ai';
 import { balancePlan } from '@/lib/balance';
 import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
@@ -37,6 +37,8 @@ interface PlanState {
   deployTab: DeployTab;
   previewMode: DayMode;
   intakeNotes: string;
+  /** Notas del Prompt Engine por atleta: al cambiar de atleta nunca quedan las del anterior. */
+  notesByAthlete: Record<string, string>;
   /** Alimentos / marcas creados por el coach (persistidos en localStorage). */
   customFoods: FoodRef[];
 
@@ -70,6 +72,8 @@ interface PlanState {
   balanceMeals: () => void;
   /** Reasigna las horas de las comidas a partir de la franja real de entreno (06:30 · 12:30 · pre · post · cena). */
   retimeMeals: () => void;
+  /** Horarios + exclusiones de la Anamnesis Pro aplicados a las comidas, con cierre de macros redistribuido. */
+  applyAnamnesisToMeals: () => number;
   /** Anamnesis Pro & Lifestyle del atleta activo (se guarda dentro del plan → localStorage y backup JSON). */
   setAnamnesis: (patch: Partial<Anamnesis>) => void;
 
@@ -87,7 +91,31 @@ interface PlanState {
   /** Importa un perfil desde un backup JSON como atleta nuevo y activo. Devuelve el nombre o null si el archivo no es válido. */
   importAthlete: (raw: unknown) => string | null;
   switchAthlete: (id: string) => void;
+  /** Cambio atómico de atleta: plan saneado, notas propias y estado de vista reseteado (simulador incluido). */
+  selectAthlete: (id: string) => void;
   deleteAthlete: (id: string) => void;
+}
+
+/**
+ * Activación atómica de un atleta: plan saneado, notas guardadas del saliente y cargadas del entrante,
+ * vista del simulador en DÍA ON. Ningún dato del atleta anterior sobrevive en el estado global.
+ */
+function activate(s: Pick<PlanState, 'plan' | 'intakeNotes' | 'notesByAthlete'>, plan: AthletePlan, roster: Record<string, AthletePlan>) {
+  const clean = sanitizePlan(plan) ?? plan;
+  const notesByAthlete = { ...s.notesByAthlete, [s.plan.id]: s.intakeNotes };
+  delete roster[clean.id];
+  return { plan: clean, roster, notesByAthlete, intakeNotes: notesByAthlete[clean.id] ?? '', previewMode: 'on' as DayMode };
+}
+
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+/** Ajusta el cronograma semanal a `n` días conservando los elegidos (quita desde el final de la semana, suma lo que falta). */
+function resizeWeekdays(days: number[], n: number) {
+  const target = Math.max(0, Math.min(7, n));
+  let out = WEEK_ORDER.filter((d) => days.includes(d));
+  while (out.length > target) out = out.slice(0, -1);
+  const fill = [...trainingWeekdays({ trainingDaysPerWeek: target, trainingWeekdays: undefined }), ...WEEK_ORDER];
+  for (const d of fill) if (out.length < target && !out.includes(d)) out.push(d);
+  return out.sort();
 }
 
 /** Lista de atletas de la base local con el activo actualizado. */
@@ -131,6 +159,7 @@ export const usePlanStore = create<PlanState>()(
       deployTab: 'preview',
       previewMode: 'on',
       intakeNotes: '',
+      notesByAthlete: {},
       customFoods: [],
 
       addCustomFood: (food) => {
@@ -149,12 +178,16 @@ export const usePlanStore = create<PlanState>()(
       setBuilderTab: (builderTab) => set({ builderTab }),
       setDeployTab: (deployTab) => set({ deployTab }),
       setPreviewMode: (previewMode) => set({ previewMode }),
-      setIntakeNotes: (intakeNotes) => set({ intakeNotes }),
+      setIntakeNotes: (intakeNotes) => set((s) => ({ intakeNotes, notesByAthlete: { ...s.notesByAthlete, [s.plan.id]: intakeNotes } })),
       setAi: (a) => set((s) => ({ ai: { ...s.ai, ...a } })),
 
       setProfile: (p) =>
         set((s) => {
           const profile = { ...s.plan.profile, ...p };
+          // «Días de entreno por semana» ↔ chips LUN-DOM: al cambiar el número se suman / quitan días del cronograma.
+          if (p.trainingDaysPerWeek !== undefined && p.trainingWeekdays === undefined) {
+            profile.trainingWeekdays = resizeWeekdays(trainingWeekdays(s.plan.profile), Math.round(p.trainingDaysPerWeek));
+          }
           if (p.sex && p.sex !== s.plan.profile.sex && profile.precisionMode === 'quick' && profile.bodyFatBand) {
             const band = BODY_FAT_BANDS[p.sex].find((b) => b.id === profile.bodyFatBand);
             if (band) profile.bodyFatPct = band.pct;
@@ -279,6 +312,15 @@ export const usePlanStore = create<PlanState>()(
 
       balanceMeals: () => set((s) => ({ plan: balancePlan(s.plan).plan })),
       retimeMeals: () => set((s) => ({ plan: touch({ ...s.plan, meals: retimeMeals(s.plan.meals, s.plan.profile, s.plan.anamnesis) }) })),
+      applyAnamnesisToMeals: () => {
+        const s = get();
+        const disabled = new Set<string>(s.plan.anamnesis?.disabledSlots ?? []);
+        const kept = s.plan.meals.filter((m) => m.day === 'off' || !disabled.has(m.role));
+        const removed = s.plan.meals.length - kept.length;
+        const timed = retimeMeals(kept, s.plan.profile, s.plan.anamnesis);
+        set({ plan: balancePlan(touch({ ...s.plan, meals: timed })).plan });
+        return removed;
+      },
       setAnamnesis: (patch) => set((s) => ({ plan: touch({ ...s.plan, anamnesis: { ...sanitizeAnamnesis(s.plan.anamnesis), ...patch } }) })),
 
       removeItem: (mealId, itemId) =>
@@ -332,7 +374,7 @@ export const usePlanStore = create<PlanState>()(
         const extra = (Array.isArray(data.customFoods) ? data.customFoods : []).filter((f) => f && typeof f.id === 'string' && !known.has(f.id));
         const customFoods = [...s.customFoods, ...extra];
         registerCustomFoods(customFoods);
-        set({ plan, roster: { ...s.roster, [s.plan.id]: s.plan }, customFoods });
+        set({ ...activate(s, plan, { ...s.roster, [s.plan.id]: s.plan }), customFoods });
         return plan.profile.name;
       },
 
@@ -340,17 +382,18 @@ export const usePlanStore = create<PlanState>()(
         set((s) => {
           const fresh = seedPlan();
           fresh.profile = { ...fresh.profile, name: `Atleta ${listAthletes(s).length + 1}` };
-          return { roster: { ...s.roster, [s.plan.id]: s.plan }, plan: fresh, builderTab: 'intake' };
+          return { ...activate(s, fresh, { ...s.roster, [s.plan.id]: s.plan }), builderTab: 'anamnesis' };
         }),
 
-      switchAthlete: (id) =>
+      selectAthlete: (id) =>
         set((s) => {
           if (id === s.plan.id || !s.roster[id]) return {};
           const roster = { ...s.roster, [s.plan.id]: s.plan };
           const plan = roster[id];
           delete roster[id];
-          return { roster, plan };
+          return activate(s, plan, roster);
         }),
+      switchAthlete: (id) => get().selectAthlete(id),
 
       deleteAthlete: (id) =>
         set((s) => {
@@ -361,8 +404,11 @@ export const usePlanStore = create<PlanState>()(
           }
           // Borrar el activo: pasa al siguiente guardado o arranca un demo nuevo.
           const [next, ...rest] = Object.values(s.roster).sort((a, b) => b.updatedAt - a.updatedAt);
-          if (!next) return { plan: seedPlan(), roster: {} };
-          return { plan: next, roster: Object.fromEntries(rest.map((p) => [p.id, p])) };
+          const notesByAthlete = { ...s.notesByAthlete };
+          delete notesByAthlete[id];
+          const base = { ...s, notesByAthlete, intakeNotes: '' };
+          if (!next) return { ...activate(base, seedPlan(), {}), notesByAthlete };
+          return { ...activate(base, next, Object.fromEntries(rest.map((p) => [p.id, p]))), notesByAthlete: { ...notesByAthlete } };
         }),
     }),
     {
@@ -384,6 +430,10 @@ export const usePlanStore = create<PlanState>()(
             .map((p) => [p.id, p]),
         );
         merged.ai = { ...current.ai, ...(saved.ai ?? {}) };
+        // Migración: las notas globales de versiones anteriores pasan a ser del atleta activo.
+        merged.notesByAthlete = { ...(saved.notesByAthlete ?? {}) };
+        if (!(merged.plan.id in merged.notesByAthlete) && typeof saved.intakeNotes === 'string') merged.notesByAthlete[merged.plan.id] = saved.intakeNotes;
+        merged.intakeNotes = merged.notesByAthlete[merged.plan.id] ?? '';
         // Un modelo de Gemini retirado que quedó guardado se reemplaza por el default vigente al hidratar.
         merged.ai.model = migrateModel(merged.ai.provider, merged.ai.model);
         return merged;
@@ -396,6 +446,7 @@ export const usePlanStore = create<PlanState>()(
         deployTab: s.deployTab,
         previewMode: s.previewMode,
         intakeNotes: s.intakeNotes,
+        notesByAthlete: s.notesByAthlete,
         customFoods: s.customFoods,
       }),
     },

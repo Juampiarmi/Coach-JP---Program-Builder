@@ -117,7 +117,7 @@ export function gramsFromGkg(gkg: Macros, weightKg: number): Macros {
 
 export type EaStatus = 'optimal' | 'reduced' | 'low';
 
-/** Semáforo EA: >45 óptima · 30–45 reducida · <30 baja (alerta RED-S). */
+/** Semáforo EA (kcal/kg FFM): > 45 óptimo · 30–45 rango táctico de recomposición (seguro) · < 30 riesgo RED-S. */
 export function eaStatus(ea: number): EaStatus {
   if (ea > 45) return 'optimal';
   if (ea >= 30) return 'reduced';

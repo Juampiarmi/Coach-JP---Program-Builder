@@ -20,7 +20,8 @@ import type { Phase, PrecisionMode } from '@/lib/types';
 import { usePlanStore } from '@/store/usePlanStore';
 import { ChoiceCard, Cite, cx, Label, NumberField, Panel, Readout, Segmented, Slider, TextField } from '../hud/primitives';
 
-const EA_LABEL = { optimal: 'ÓPTIMA (>45)', reduced: 'REDUCIDA (30–45)', low: 'BAJA (<30) · ALERTA RED-S' } as const;
+// Escala de EA (kcal/kg FFM): < 30 riesgo RED-S · 30-45 rango táctico de recomposición (seguro) · > 45 óptima.
+const EA_LABEL = { optimal: '[ ÓPTIMO · > 45 ]', reduced: '[ RANGO TÁCTICO / RECOMPOSICIÓN SEGURO ]', low: '[ RIESGO RED-S · < 30 ]' } as const;
 
 function PrecisionSelector() {
   const mode = usePlanStore((s) => s.plan.profile.precisionMode);
@@ -152,8 +153,8 @@ function IsakMode() {
 }
 
 function EaCard({ label, value, status, formula }: { label: string; value: number; status: 'optimal' | 'reduced' | 'low'; formula: string }) {
-  const color = { optimal: 'text-cyan-hud', reduced: 'text-fire', low: 'text-danger' }[status];
-  const border = { optimal: 'border-cyan-hud/30', reduced: 'border-fire/40', low: 'border-danger/50' }[status];
+  const color = { optimal: 'text-[#22C55E]', reduced: 'text-cyan-hud', low: 'text-danger' }[status];
+  const border = { optimal: 'border-[#22C55E]/40', reduced: 'border-cyan-hud/35', low: 'border-danger/50' }[status];
   return (
     <div className={cx('rounded-lg border bg-carbon p-3', border)}>
       <div className="flex items-center justify-between">
@@ -274,7 +275,7 @@ export function ProfileTab() {
         </div>
       </Panel>
 
-      <Panel title="DISPONIBILIDAD ENERGÉTICA · EA" tone={eaOn === 'low' || eaOff === 'low' ? 'danger' : eaOn === 'reduced' || eaOff === 'reduced' ? 'fire' : 'cyan'}>
+      <Panel title="DISPONIBILIDAD ENERGÉTICA · EA" tone={eaOn === 'low' || eaOff === 'low' ? 'danger' : 'cyan'}>
         <p className="mb-3 text-xs leading-relaxed text-steel">
           Energía que le queda al cuerpo después de entrenar, por kg de masa libre de grasa. Se calcula con las kcal que suman las comidas planificadas de cada día.
         </p>
@@ -288,9 +289,9 @@ export function ProfileTab() {
           <EaCard label="EA · DÍA OFF" value={t.eaOff} status={eaOff} formula={`(${fmt0(t.intakeOff)} kcal − 0 kcal sesión) / ${fmt1(t.ffm)} kg FFM`} />
         </div>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[9.5px] tracking-[0.06em] text-mute">
-          <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-cyan-hud" />&gt;45 ÓPTIMA</span>
-          <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-fire" />30–45 REDUCIDA</span>
-          <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-danger" />&lt;30 RED-S</span>
+          <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#22C55E]" />&gt;45 ÓPTIMO</span>
+          <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-cyan-hud" />30–45 RANGO TÁCTICO / RECOMPOSICIÓN SEGURO</span>
+          <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-danger" />&lt;30 RIESGO RED-S</span>
         </div>
         {Math.abs(t.eaOn - t.eaOff) < 3 && (
           <p className="mt-3 text-xs leading-relaxed text-steel">

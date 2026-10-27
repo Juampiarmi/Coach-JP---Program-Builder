@@ -39,6 +39,17 @@ export function PhonePreview() {
     }
   }, []);
 
+  // Cambio de atleta: el runtime de la PWA guarda checks / swaps / historial por atleta (slug), así que se
+  // recarga el documento completo en vez de sólo empujar el payload (sin estado «zombie» del anterior).
+  const athleteId = plan.id;
+  const firstAthlete = useRef(athleteId);
+  useEffect(() => {
+    if (firstAthlete.current === athleteId) return;
+    firstAthlete.current = athleteId;
+    setStatus({ kind: 'loading' });
+    setReloadKey((k) => k + 1);
+  }, [athleteId]);
+
   // Sincronización instantánea Builder → celular (comidas, macros, modo ON/OFF).
   useEffect(() => {
     push();

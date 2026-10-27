@@ -90,6 +90,8 @@ export interface Supplement {
 export type MealSlot = 'breakfast' | 'lunch' | 'peri' | 'post' | 'dinner';
 export type Budget = 'low' | 'mid' | 'high';
 export type CookingLevel = 'quick' | 'batch' | 'gourmet';
+export type Fasting = 'none' | '16-8' | '14-10' | 'circadian';
+export type AnxietyZone = 'morning' | 'afternoon' | 'night';
 
 /** Anamnesis Pro & Lifestyle: perfil 360° del atleta que se inyecta en el Prompt Engine. */
 export interface Anamnesis {
@@ -98,6 +100,11 @@ export interface Anamnesis {
   /** true = horarios de comida derivados de la franja de entreno; false = horarios cargados por el coach. */
   mealTimesAuto: boolean;
   mealTimes: Record<MealSlot, string>;
+  /** Ingestas desactivadas (ej. no come Pre-WOD): sus kcal y macros se redistribuyen en las restantes. */
+  disabledSlots: MealSlot[];
+  fasting: Fasting;
+  /** Franja crítica de ansiedad: ahí se ubican los snacks tácticos. */
+  anxiety: AnxietyZone;
   conditions: string[];
   allergies: string[];
   favorites: string;

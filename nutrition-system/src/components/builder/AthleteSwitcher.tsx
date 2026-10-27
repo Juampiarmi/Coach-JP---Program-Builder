@@ -11,7 +11,7 @@ export function AthleteSwitcher() {
   const plan = usePlanStore((s) => s.plan);
   const roster = usePlanStore((s) => s.roster);
   const newAthlete = usePlanStore((s) => s.newAthlete);
-  const switchAthlete = usePlanStore((s) => s.switchAthlete);
+  const selectAthlete = usePlanStore((s) => s.selectAthlete);
   const deleteAthlete = usePlanStore((s) => s.deleteAthlete);
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -51,7 +51,7 @@ export function AthleteSwitcher() {
                   <button
                     className="min-w-0 flex-1 text-left"
                     onClick={() => {
-                      switchAthlete(a.id);
+                      selectAthlete(a.id);
                       setOpen(false);
                     }}
                   >

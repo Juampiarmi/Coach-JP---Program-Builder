@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Cpu, Eye, EyeOff, KeyRound, Loader2, Radio, ShieldAlert, Trash2, Zap } from 'lucide-react';
+import { Check, ChevronDown, Cpu, Eye, EyeOff, KeyRound, Loader2, Radio, RefreshCw, ShieldAlert, Trash2, Zap } from 'lucide-react';
 import { compileWithAi, MODEL_OPTIONS, pingProvider, planFromAi, SYSTEM_PROMPT, SYSTEM_PROMPT_EXTENSION, type PingResult } from '@/lib/ai';
 import { balancePlan } from '@/lib/balance';
-import { buildPromptContext } from '@/lib/promptBuilder';
+import { anamnesisToNotes, buildPromptContext } from '@/lib/promptBuilder';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { fmt0 } from '@/lib/bioenergetics';
 import { COMPILE_STEPS, validateCompiled, type CompileCheck } from '@/lib/compileChecks';
@@ -113,7 +113,27 @@ export function IntakeTab() {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   const mark = (id: string, patch: Partial<CompileCheck>) => setChecks((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
 
-  async function compile() {
+  // Al entrar a la pestaña con la caja vacía, la ficha técnica se redacta sola desde la Anamnesis Pro.
+  useEffect(() => {
+    const s = usePlanStore.getState();
+    if (!s.intakeNotes.trim()) setNotes(anamnesisToNotes(s.plan, useFoodDbStore.getState().items));
+  }, [setNotes]);
+
+  const [synced, setSynced] = useState<string | null>(null);
+  async function syncAndCompile() {
+    const text = anamnesisToNotes(usePlanStore.getState().plan, useFoodDbStore.getState().items);
+    setNotes(text);
+    if (!ai.apiKey.trim()) {
+      setSynced('Ficha técnica actualizada desde Anamnesis Pro. Cargá una API key para compilar.');
+      return;
+    }
+    setSynced('Ficha técnica actualizada · compilando…');
+    await compile(text);
+    setSynced(null);
+  }
+
+  async function compile(override?: string) {
+    const notes = override ?? usePlanStore.getState().intakeNotes;
     setBusy(true);
     setError(null);
     setElapsed(0);
@@ -258,6 +278,10 @@ export function IntakeTab() {
       </Panel>
 
       <Panel title="NOTAS DEL ATLETA · ANAMNESIS">
+        <HudButton tone="cyan" onClick={syncAndCompile} disabled={busy} className="mb-2 w-full py-3 text-[11.5px]">
+          <RefreshCw className={cx('h-4 w-4', busy && 'animate-spin')} /> [ 🔄 SINCRONIZAR Y COMPILAR DESDE ANAMNESIS PRO ]
+        </HudButton>
+        {synced && <p className="mb-2 font-mono text-[10.5px] text-cyan-hud">{synced}</p>}
         <div className="mb-3 flex flex-wrap gap-2">
           {TEMPLATES.map((t) => (
             <button
@@ -277,7 +301,7 @@ export function IntakeTab() {
           placeholder="Peso, talla, % graso, edad, horarios de entrenamiento (CrossFit / Hyrox / Bodybuilding), gustos, alimentos rechazados, intolerancias, presupuesto…"
           className="scroll-thin w-full resize-y rounded-lg border border-line bg-carbon p-3 font-mono text-[12.5px] leading-relaxed text-ink outline-none placeholder:text-mute/70 focus:border-cyan-hud/60"
         />
-        <HudButton onClick={compile} disabled={busy} className={cx('mt-3 w-full py-4 text-[13px]', busy && 'relative overflow-hidden scanline')}>
+        <HudButton onClick={() => compile()} disabled={busy} className={cx('mt-3 w-full py-4 text-[13px]', busy && 'relative overflow-hidden scanline')}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
           {busy ? `COMPILANDO BIOENERGÉTICA · ${elapsed}s` : 'COMPILAR PLAN CON IA'}
         </HudButton>

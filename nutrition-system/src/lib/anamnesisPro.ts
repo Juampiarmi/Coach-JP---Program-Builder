@@ -1,4 +1,4 @@
-import type { Anamnesis, CookingLevel, Budget, MealSlot } from './types';
+import type { Anamnesis, AnxietyZone, CookingLevel, Budget, Fasting, MealSlot } from './types';
 
 export const CONDITIONS = [
   { id: 'none', label: 'Ninguna' },
@@ -29,6 +29,10 @@ export const SLOT_LABEL: Record<MealSlot, string> = {
   dinner: 'Cena Principal',
 };
 export const SLOTS: MealSlot[] = ['breakfast', 'lunch', 'peri', 'post', 'dinner'];
+export const FASTING_LABEL: Record<Fasting, string> = { none: 'Ninguno', '16-8': '16/8', '14-10': '14/10', circadian: 'Circadiano' };
+export const ANXIETY_LABEL: Record<AnxietyZone, string> = { morning: 'Mañana', afternoon: 'Tarde (17-19h)', night: 'Noche' };
+/** Horas de la ventana de alimentación según el protocolo de ayuno. */
+export const FASTING_WINDOW_H: Partial<Record<Fasting, number>> = { '16-8': 8, '14-10': 10 };
 
 export const DEFAULT_FAVORITES =
   'Milanesas (al horno), pastel de papa, bife de cuadril, pollo, arroz, huevos, yogur griego, mate, frutas, tutucas, almohaditas de avena';
@@ -39,6 +43,9 @@ export function defaultAnamnesis(): Anamnesis {
     bedTime: '23:00',
     mealTimesAuto: true,
     mealTimes: { breakfast: '06:30', lunch: '12:30', peri: '15:15', post: '18:15', dinner: '21:00' },
+    disabledSlots: [],
+    fasting: 'none',
+    anxiety: 'afternoon',
     conditions: ['none'],
     allergies: [],
     favorites: DEFAULT_FAVORITES,
@@ -63,6 +70,9 @@ export function sanitizeAnamnesis(raw: unknown): Anamnesis {
     bedTime: HHMM.test(a.bedTime ?? '') ? a.bedTime! : d.bedTime,
     mealTimesAuto: typeof a.mealTimesAuto === 'boolean' ? a.mealTimesAuto : true,
     mealTimes: times,
+    disabledSlots: strs(a.disabledSlots, []).filter((x): x is MealSlot => (SLOTS as string[]).includes(x)),
+    fasting: a.fasting && a.fasting in FASTING_LABEL ? a.fasting : 'none',
+    anxiety: a.anxiety === 'morning' || a.anxiety === 'night' ? a.anxiety : 'afternoon',
     conditions: strs(a.conditions, d.conditions),
     allergies: strs(a.allergies, d.allergies),
     favorites: typeof a.favorites === 'string' ? a.favorites : d.favorites,
@@ -100,4 +110,45 @@ const SAFE_RE: Record<string, RegExp> = {
 
 export function allergenHits(foodName: string, allergies: string[]) {
   return allergies.filter((a) => ALLERGEN_RE[a]?.test(foodName) && !SAFE_RE[a]?.test(foodName));
+}
+
+/** Presets rápidos de atleta (anamnesis + perfil). */
+export type PresetId = 'crossfit' | 'recomp' | 'fodmap';
+export const PRESETS: { id: PresetId; label: string }[] = [
+  { id: 'crossfit', label: '🏋️ Atleta CrossFit RX' },
+  { id: 'recomp', label: '🏃 Recomposición Agresiva' },
+  { id: 'fodmap', label: '🧘 Atleta FODMAP' },
+];
+
+export function presetPatch(id: PresetId): Partial<Anamnesis> {
+  if (id === 'crossfit')
+    return {
+      conditions: ['none'],
+      disabledSlots: [],
+      mealTimesAuto: true,
+      fasting: 'none',
+      anxiety: 'afternoon',
+      snacks: ['Tutucas de maíz', 'Frutos secos', 'Galletas de arroz'],
+      cooking: 'quick',
+      budget: 'mid',
+    };
+  if (id === 'recomp')
+    return {
+      disabledSlots: [],
+      mealTimesAuto: true,
+      fasting: 'none',
+      anxiety: 'night',
+      snacks: ['Gelatina light', 'Yogur proteico', 'Tutucas de maíz'],
+      cooking: 'batch',
+    };
+  return {
+    conditions: ['ibs'],
+    allergies: ['lactose'],
+    favorites: 'Arroz, papa, avena, pollo, merluza, huevos, carne magra, banana firme, frutillas, zanahoria, zapallito, espinaca, yogur deslactosado',
+    aversions: 'Ajo, cebolla, legumbres, manzana, trigo en exceso, picantes',
+    snacks: ['Galletas de arroz', 'Fruta fresca', 'Yogur proteico'],
+    anxiety: 'afternoon',
+    fasting: 'none',
+    cooking: 'quick',
+  };
 }

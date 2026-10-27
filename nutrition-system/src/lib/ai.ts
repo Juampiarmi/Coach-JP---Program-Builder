@@ -303,7 +303,10 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
   const sessionMinutes = window?.minutes ?? (num(pr.sessionMinutes, 0) >= 20 ? num(pr.sessionMinutes, 0) : base.profile.sessionMinutes);
   const athleteName = resolveAthleteName(json.athleteName, notes, base.profile.name);
   // Horarios determinísticos desde la franja real de entreno (la IA no decide la hora de la cena ni del post-WOD).
-  const timedMeals = retimeMeals(meals, { trainingTime, sessionMinutes }, base.anamnesis);
+  // Ingestas desactivadas en la Anamnesis Pro (ej. sin Pre-WOD): se descartan; el cierre de macros redistribuye.
+  const disabled = new Set<string>(base.anamnesis?.disabledSlots ?? []);
+  const kept = meals.filter((m) => m.day === 'off' || !disabled.has(m.role));
+  const timedMeals = retimeMeals(kept, { trainingTime, sessionMinutes }, base.anamnesis);
 
   const known = Object.fromEntries(aisGroupA(weightKg).map((s) => [s.id, s]));
   const supplements: Supplement[] = (json.supplements ?? []).map((s) => {

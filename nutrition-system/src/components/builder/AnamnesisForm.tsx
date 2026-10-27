@@ -2,11 +2,11 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDown, Clock3, Eye, HeartPulse, Plus, UtensilsCrossed } from 'lucide-react';
-import { ALLERGIES, BUDGET_LABEL, CONDITIONS, COOKING_LABEL, sanitizeAnamnesis, SLOT_LABEL, SLOTS, SNACK_OPTIONS, sleepHours } from '@/lib/anamnesisPro';
+import { ALLERGIES, ANXIETY_LABEL, BUDGET_LABEL, CONDITIONS, COOKING_LABEL, FASTING_LABEL, FASTING_WINDOW_H, presetPatch, PRESETS, sanitizeAnamnesis, SLOT_LABEL, SLOTS, SNACK_OPTIONS, sleepHours, type PresetId } from '@/lib/anamnesisPro';
 import { fmt1 } from '@/lib/bioenergetics';
 import { buildPromptContext } from '@/lib/promptBuilder';
 import { fmtHm, mealSchedule } from '@/lib/schedule';
-import type { Budget, CookingLevel, MealSlot } from '@/lib/types';
+import type { AnxietyZone, Budget, CookingLevel, Fasting, MealSlot } from '@/lib/types';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { cx, inputCls, Label, Panel, Segmented, Toggle } from '../hud/primitives';
@@ -62,7 +62,9 @@ export function AnamnesisForm() {
   const plan = usePlanStore((s) => s.plan);
   const setAnamnesis = usePlanStore((s) => s.setAnamnesis);
   const setProfile = usePlanStore((s) => s.setProfile);
-  const retimeMeals = usePlanStore((s) => s.retimeMeals);
+  const applyToMeals = usePlanStore((s) => s.applyAnamnesisToMeals);
+  const applyPhasePreset = usePlanStore((s) => s.applyPhasePreset);
+  const [applied, setApplied] = useState<string | null>(null);
   const foodDb = useFoodDbStore((s) => s.items);
   const intakeNotes = usePlanStore((s) => s.intakeNotes);
   const an = sanitizeAnamnesis(plan.anamnesis);
@@ -86,9 +88,27 @@ export function AnamnesisForm() {
     const base = Object.fromEntries(SLOTS.map((k) => [k, fmtHm(sch.slots[k])])) as Record<MealSlot, string>;
     setAnamnesis({ mealTimesAuto: false, mealTimes: { ...base, [slot]: v } });
   };
-  const ordered = [...SLOTS].sort((a, b) => sch.slots[a] - sch.slots[b]);
-  const orderOk = ordered.join() === SLOTS.join();
-  const outside = SLOTS.filter((k) => {
+  const enabled = SLOTS.filter((k) => !an.disabledSlots.includes(k));
+  const ordered = [...enabled].sort((a, b) => sch.slots[a] - sch.slots[b]);
+  const winH = FASTING_WINDOW_H[an.fasting];
+  const span = enabled.length ? (sch.slots[ordered[ordered.length - 1]] - sch.slots[ordered[0]]) / 60 : 0;
+
+  // Ayuno 16/8 → sin desayuno; volver a «Ninguno» lo reactiva.
+  const setFasting = (fasting: Fasting) => {
+    const off = new Set(an.disabledSlots);
+    if (fasting === '16-8') off.add('breakfast');
+    else if (an.fasting === '16-8') off.delete('breakfast');
+    setAnamnesis({ fasting, disabledSlots: SLOTS.filter((k) => off.has(k)) });
+  };
+  const toggleSlot = (k: MealSlot) => setAnamnesis({ disabledSlots: an.disabledSlots.includes(k) ? an.disabledSlots.filter((x) => x !== k) : [...an.disabledSlots, k] });
+  const applyPreset = (id: PresetId) => {
+    if (!confirm(`¿Aplicar el preset «${PRESETS.find((x) => x.id === id)?.label}»? Pisa los campos de anamnesis que define.`)) return;
+    setAnamnesis(presetPatch(id));
+    if (id === 'crossfit') setProfile({ discipline: 'hybrid', trainingTime: '16:00', sessionMinutes: 120, trainingDaysPerWeek: 5, trainingWeekdays: [1, 2, 3, 4, 5] });
+    if (id === 'recomp') applyPhasePreset('recomp');
+  };
+  const orderOk = ordered.join() === enabled.join();
+  const outside = enabled.filter((k) => {
     const t = sch.slots[k];
     const wake = toMin(an.wakeTime);
     const bed = toMin(an.bedTime) < wake ? toMin(an.bedTime) + 1440 : toMin(an.bedTime);
@@ -102,6 +122,19 @@ export function AnamnesisForm() {
           Perfil 360° de <b className="text-ink">{pr.name}</b>. Todo lo que cargues acá viaja al Prompt Engine junto con las notas: horarios exactos, patologías, alergias, gustos y el catálogo
           de marcas de la Food &amp; Brand DB. Se guarda en este navegador y en el backup JSON del perfil.
         </p>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-[9.5px] tracking-[0.14em] text-mute">PRESETS RÁPIDOS:</span>
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => applyPreset(p.id)}
+              className="rounded-md border border-fire/40 bg-fire/10 px-2.5 py-1.5 font-mono text-[10.5px] font-bold text-fire transition hover:border-fire hover:bg-fire/20"
+            >
+              [ {p.label} ]
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           onClick={() => setPreview((v) => !v)}
@@ -162,12 +195,26 @@ export function AnamnesisForm() {
           </div>
         </div>
         <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5">
-          {SLOTS.map((k) => (
-            <label key={k} className="block">
-              <Label>{SLOT_LABEL[k]}</Label>
-              <input type="time" value={fmtHm(sch.slots[k])} onChange={(e) => setMealTime(k, e.target.value)} className={timeCls} />
-            </label>
-          ))}
+          {SLOTS.map((k) => {
+            const off = an.disabledSlots.includes(k);
+            return (
+              <div key={k} className={cx('block', off && 'opacity-60')}>
+                <Label>{SLOT_LABEL[k]}</Label>
+                <input type="time" disabled={off} value={fmtHm(sch.slots[k])} onChange={(e) => setMealTime(k, e.target.value)} className={timeCls} aria-label={SLOT_LABEL[k]} />
+                <button
+                  type="button"
+                  onClick={() => toggleSlot(k)}
+                  aria-pressed={off}
+                  className={cx(
+                    'mt-1.5 w-full rounded-md border px-2 py-1 font-mono text-[9.5px] font-bold tracking-[0.06em] transition',
+                    off ? 'border-fire bg-fire/15 text-fire' : 'border-line text-mute hover:text-steel',
+                  )}
+                >
+                  {off ? '[ EXCLUIDA · REACTIVAR ]' : '[ Excluir / Desactivar ]'}
+                </button>
+              </div>
+            );
+          })}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className={cx('font-mono text-[10px]', orderOk && !outside.length ? 'text-cyan-hud' : 'text-fire')}>
@@ -176,11 +223,31 @@ export function AnamnesisForm() {
           </span>
           <button
             type="button"
-            onClick={retimeMeals}
+            onClick={() => {
+              if (an.disabledSlots.length && !confirm('Se quitan del plan las comidas desactivadas y sus kcal / macros se redistribuyen en el resto. ¿Continuar?')) return;
+              const removed = applyToMeals();
+              setApplied(removed ? `✓ ${removed} comida(s) quitada(s) · macros redistribuidos · horarios aplicados` : '✓ Horarios aplicados y cierre de macros recalculado');
+            }}
             className="ml-auto rounded-md border border-cyan-hud/40 px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.1em] text-cyan-hud hover:border-cyan-hud hover:bg-cyan-hud/10"
           >
-            [ ⏱ APLICAR HORARIOS A LAS COMIDAS ]
+            [ ⏱ APLICAR HORARIOS Y EXCLUSIONES ]
           </button>
+        </div>
+        {applied && <p className="mt-1 font-mono text-[10px] text-cyan-hud">{applied}</p>}
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label>Ayuno</Label>
+            <Segmented<Fasting> value={an.fasting} onChange={setFasting} size="sm" options={(['none', '16-8', '14-10', 'circadian'] as Fasting[]).map((v) => ({ value: v, label: FASTING_LABEL[v] }))} />
+            {winH && (
+              <p className={cx('mt-1 font-mono text-[10px]', span > winH ? 'text-fire' : 'text-cyan-hud')}>
+                Ventana actual ≈ {fmt1(span)} h {span > winH ? `· excede ${winH} h: la IA la comprime` : `· dentro de ${winH} h`}
+              </p>
+            )}
+          </div>
+          <div>
+            <Label>Zona crítica de ansiedad (snacks tácticos)</Label>
+            <Segmented<AnxietyZone> value={an.anxiety} onChange={(anxiety) => setAnamnesis({ anxiety })} size="sm" options={(['morning', 'afternoon', 'night'] as AnxietyZone[]).map((v) => ({ value: v, label: ANXIETY_LABEL[v] }))} />
+          </div>
         </div>
       </Block>
 

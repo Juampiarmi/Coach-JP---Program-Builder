@@ -35,7 +35,7 @@ const DEPLOY_TABS: { id: DeployTab; label: string; icon: typeof Brain }[] = [
   { id: 'story', label: 'Story 9:16', icon: ImageIcon },
 ];
 
-const EA_TEXT = { optimal: 'text-cyan-hud', reduced: 'text-fire', low: 'text-danger' } as const;
+const EA_TEXT = { optimal: 'text-[#22C55E]', reduced: 'text-cyan-hud', low: 'text-danger' } as const;
 
 function StatusBar() {
   const plan = usePlanStore((s) => s.plan);
@@ -70,6 +70,7 @@ export default function Home() {
   const deployTab = usePlanStore((s) => s.deployTab);
   const setDeployTab = usePlanStore((s) => s.setDeployTab);
   const resetDemo = usePlanStore((s) => s.resetDemo);
+  const activeId = usePlanStore((s) => s.plan.id);
 
   useEffect(() => setHydrated(true), []);
 
@@ -135,12 +136,15 @@ export default function Home() {
               </button>
             ))}
           </nav>
-          {builderTab === 'anamnesis' && <AnamnesisForm />}
+{/* key = atleta activo: al cambiar de atleta cada solapa se remonta sin estado local del anterior. */}
+          <div key={activeId}>
+                    {builderTab === 'anamnesis' && <AnamnesisForm />}
           {builderTab === 'intake' && <IntakeTab />}
           {builderTab === 'profile' && <ProfileTab />}
           {builderTab === 'periodization' && <PeriodizationTab />}
           {builderTab === 'meals' && <MealsTab />}
           {builderTab === 'fooddb' && <FoodBrandDatabase />}
+          </div>
         </section>
 
         <aside className="min-w-0 lg:sticky lg:top-[112px] lg:max-h-[calc(100vh-128px)] lg:self-start lg:overflow-y-auto scroll-thin">
