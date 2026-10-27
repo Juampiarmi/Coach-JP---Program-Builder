@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { ChevronDown, Clock3, Eye, HeartPulse, Plus, UtensilsCrossed } from 'lucide-react';
-import { ALLERGIES, ANXIETY_LABEL, BUDGET_LABEL, CONDITIONS, COOKING_LABEL, FASTING_LABEL, FASTING_WINDOW_H, presetPatch, PRESETS, sanitizeAnamnesis, SLOT_LABEL, SLOTS, SNACK_OPTIONS, sleepHours, type PresetId } from '@/lib/anamnesisPro';
+import { ChevronDown, Clock3, Eye, HeartPulse, Plus, Trophy, UtensilsCrossed } from 'lucide-react';
+import { BasketMatrix } from './BasketMatrix';
+import { GOALS, SEASON_LABEL, sportLabel, SPORT_GROUPS, ALLERGIES, ANXIETY_LABEL, BUDGET_LABEL, CONDITIONS, COOKING_LABEL, FASTING_LABEL, FASTING_WINDOW_H, presetPatch, PRESETS, sanitizeAnamnesis, SLOT_LABEL, SLOTS, SNACK_OPTIONS, sleepHours, type PresetId } from '@/lib/anamnesisPro';
 import { fmt1 } from '@/lib/bioenergetics';
 import { buildPromptContext } from '@/lib/promptBuilder';
 import { fmtHm, mealSchedule } from '@/lib/schedule';
-import type { AnxietyZone, Budget, CookingLevel, Fasting, MealSlot } from '@/lib/types';
+import type { AnxietyZone, Budget, CookingLevel, Fasting, MealSlot, SeasonPhase } from '@/lib/types';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { usePlanStore } from '@/store/usePlanStore';
 import { cx, inputCls, Label, Panel, Segmented, Toggle } from '../hud/primitives';
@@ -71,6 +72,8 @@ export function AnamnesisForm() {
   const pr = plan.profile;
   const sch = mealSchedule(pr, an);
   const [customSnack, setCustomSnack] = useState('');
+  const [customSport, setCustomSport] = useState('');
+  const knownSports = new Set<string>(SPORT_GROUPS.flatMap((g) => g.sports.map(([id]) => id as string)));
   const [preview, setPreview] = useState(false);
   const context = useMemo(() => (preview ? buildPromptContext(plan, foodDb, intakeNotes) : ''), [preview, plan, foodDb, intakeNotes]);
 
@@ -282,6 +285,72 @@ export function AnamnesisForm() {
         </div>
       </Block>
 
+      <Block
+        title="DISCIPLINAS, OBJETIVO Y TEMPORADA"
+        icon={<Trophy className="h-4 w-4" />}
+        badge={<span className="rounded border border-cyan-hud/25 bg-cyan-hud/10 px-1.5 py-0.5 font-mono text-[9.5px] text-cyan-hud">{an.sports.length} DEPORTE(S)</span>}
+      >
+        <div className="space-y-2.5">
+          {SPORT_GROUPS.map((g) => (
+            <div key={g.id}>
+              <Label>{g.label}</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {g.sports.map(([id, label]) => (
+                  <Chip key={id} on={an.sports.includes(id)} onClick={() => setAnamnesis({ sports: toggleIn(an.sports, id) })}>
+                    {label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div>
+            <Label>Personalizados</Label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {an.sports
+                .filter((x) => !knownSports.has(x))
+                .map((x) => (
+                  <Chip key={x} on onClick={() => setAnamnesis({ sports: an.sports.filter((y) => y !== x) })}>
+                    {sportLabel(x)} ✕
+                  </Chip>
+                ))}
+              <form
+                className="flex gap-1.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const v = customSport.trim();
+                  if (v && !an.sports.includes(v)) setAnamnesis({ sports: [...an.sports, v] });
+                  setCustomSport('');
+                }}
+              >
+                <input value={customSport} onChange={(e) => setCustomSport(e.target.value)} placeholder="Ej. Escalada, Natación…" className={cx(inputCls, 'w-48 py-1.5 text-xs')} />
+                <button type="submit" className="flex items-center gap-1 rounded-md border border-line px-2.5 font-mono text-[10px] text-steel hover:text-ink">
+                  <Plus className="h-3.5 w-3.5" /> [ ➕ Agregar Deporte Personalizado ]
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <div className="mt-4">
+          <Label>Objetivo nutricional deportivo</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {GOALS.map((g) => (
+              <Chip key={g.id} on={an.goal === g.id} onClick={() => setAnamnesis({ goal: g.id })} tone="fire">
+                {g.label}
+              </Chip>
+            ))}
+          </div>
+        </div>
+        <div className="mt-4">
+          <Label>Fase de temporada</Label>
+          <Segmented<SeasonPhase>
+            value={an.season}
+            onChange={(season) => setAnamnesis({ season })}
+            size="sm"
+            options={(['pre', 'comp', 'peak', 'rest'] as SeasonPhase[]).map((v) => ({ value: v, label: SEASON_LABEL[v] }))}
+          />
+        </div>
+      </Block>
+
       <Block title="PERFIL GASTRONÓMICO Y CONTROL DE ANTOJOS" icon={<UtensilsCrossed className="h-4 w-4" />}>
         <label className="block">
           <Label>Alimentos de preferencia / favoritos</Label>
@@ -336,6 +405,8 @@ export function AnamnesisForm() {
           </div>
         </div>
       </Block>
+
+      <BasketMatrix />
     </div>
   );
 }

@@ -13,7 +13,8 @@ export type SwapGroup =
   | 'fat'
   | 'veg'
   | 'sport-carb'
-  | 'protein-snack';
+  | 'protein-snack'
+  | 'plato';
 
 export interface FoodRef {
   id: string;
@@ -121,6 +122,7 @@ export const GROUP_LABEL: Record<SwapGroup, string> = {
   veg: 'Vegetal',
   'sport-carb': 'Carbo rápido',
   'protein-snack': 'Snack proteico comercial',
+  plato: 'Plato preparado',
 };
 
 /** Macro dominante que define la equivalencia del grupo en los Smart Swaps. */
@@ -136,6 +138,8 @@ export const GROUP_ANCHOR: Record<SwapGroup, 'p' | 'c' | 'f'> = {
   veg: 'c',
   'sport-carb': 'c',
   'protein-snack': 'p',
+  // Platos preparados: se intercambian por proteína (el macro que define la comida principal).
+  plato: 'p',
 };
 
 /** Kcal por 100 g (Atwater 4/4/9). */

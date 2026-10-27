@@ -1,11 +1,33 @@
 import { parseTrainingWindow } from './anamnesis';
-import { ALLERGIES, ANXIETY_LABEL, BUDGET_LABEL, CONDITIONS, COOKING_LABEL, FASTING_LABEL, FASTING_WINDOW_H, sanitizeAnamnesis, SLOT_LABEL, SLOTS, sleepHours } from './anamnesisPro';
+import { goalLabel, SEASON_LABEL, sportGroup, sportLabel, ALLERGIES, ANXIETY_LABEL, BUDGET_LABEL, CONDITIONS, COOKING_LABEL, FASTING_LABEL, FASTING_WINDOW_H, sanitizeAnamnesis, SLOT_LABEL, SLOTS, sleepHours } from './anamnesisPro';
 import { DISCIPLINE_LABEL } from './exportHtml';
 import { PHASE_LABEL } from './bioenergetics';
 import { trainingWeekdays } from './bioenergetics';
-import { foodDbPromptBlock, type BrandFood } from './foodBrandDb';
+import { basketItems, foodDbPromptBlock, type BrandFood } from './foodBrandDb';
 import { fmtHm, mealSchedule } from './schedule';
 import type { AnxietyZone, AthletePlan, MealSlot } from './types';
+
+const SPORT_RULES: Record<string, string> = {
+  strength: 'Fuerza / estética: proteína 2,0-2,4 g/kg repartida en 4-5 tomas con ≥ 2,7 g de leucina en las principales; carbos alrededor de la sesión para sostener el volumen.',
+  team: 'Deportes de equipo / contacto: carbos 5-7 g/kg en días de partido o doble turno, comida pre-partido 3-4 h antes (baja en grasa y fibra) y recuperación con 1-1,2 g/kg de carbos + 0,3 g/kg de proteína post.',
+  endurance: 'Resistencia (MTB, ciclismo, running, triatlón): carbos periodizados según volumen (5-10 g/kg en bloques largos), 30-90 g/h de carbos durante salidas > 90 min, hidratación con sodio y reposición de glucógeno post.',
+  combat: 'Raqueta / combate: carbos moderados según turnos, comidas livianas y digestivas pre-partido, colaciones transportables entre partidos y atención a la hidratación.',
+  custom: 'Deporte personalizado: ajustá la distribución de carbos a la duración e intensidad de las sesiones descritas.',
+};
+const GOAL_RULES: Record<string, string> = {
+  recomp: 'Recomposición agresiva: déficit moderado con proteína alta constante y carbos concentrados en la ventana peri-entreno.',
+  hypertrophy: 'Hipertrofia limpia: superávit controlado (+5-10 %), 4-5 comidas con ≥ 2,7 g de leucina y carbos altos en días ON.',
+  cut: 'Definición extrema: déficit marcado sin bajar la proteína, máxima saciedad (volumen de vegetales, proteínas magras) y carbos sólo peri-entreno.',
+  peri: 'Rendimiento Peri-WOD: priorizá la calidad y el timing del Pre-WOD y Post-WOD (carbos rápidos + proteína) por sobre el déficit.',
+  glycogen: 'Carga de glucógeno inter-sesión: carbos 1-1,2 g/kg/h en las primeras 4 h tras la sesión cuando hay doble turno o sesiones a < 8 h.',
+  'weight-class': 'Manejo de categoría por peso: déficit gradual y predecible, control de sodio / fibra la semana del pesaje y protocolo de rehidratación post pesaje; nada de deshidratación agresiva.',
+};
+const SEASON_RULES: Record<string, string> = {
+  pre: 'Pretemporada: base de volumen y adaptación; buen momento para el déficit de recomposición.',
+  comp: 'Competencia: el rendimiento manda; nada de déficits agresivos los días de partido / competencia.',
+  peak: 'Peaking / semana de torneo: carbos altos y conocidos, sin alimentos nuevos ni flex-meals; baja fibra y grasa 24-48 h antes.',
+  rest: 'Descanso activo: kcal cercanas a mantenimiento, carbos más bajos y foco en adherencia y recuperación.',
+};
 
 const ANXIETY_RANGE: Record<AnxietyZone, string> = { morning: '09:00-12:00', afternoon: '17:00-19:00', night: '21:00-23:00' };
 
@@ -26,13 +48,15 @@ export function anamnesisToNotes(plan: AthletePlan, foodDb: BrandFood[]) {
   const { an, sch, slots } = activeSlots(plan);
   const days = trainingWeekdays(pr).map((d) => WD[d]).join(', ') || '—';
   const conditions = an.conditions.filter((c) => c !== 'none');
-  const brands = foodDb.filter((b) => b.disponible_para_ia && b.es_marca_local);
+  const basket = basketItems(foodDb, an.basket);
+  const brands = basket.filter((b) => b.es_marca_local);
   const off = an.disabledSlots.map((k) => SLOT_LABEL[k]);
   return [
     `FICHA TÉCNICA · ANAMNESIS PRO`,
     `Nombre: ${pr.name}`,
     `- ${pr.sex === 'F' ? 'Mujer' : 'Hombre'} · ${pr.age} años · ${pr.heightCm} cm · ${pr.weightKg} kg · ${pr.bodyFatPct} % graso · fase ${PHASE_LABEL[pr.phase]}`,
     `- Disciplina: ${DISCIPLINE_LABEL[pr.discipline]} · ${pr.trainingDaysPerWeek} días ON (${days}) · entreno de ${fmtHm(sch.start)} a ${fmtHm(sch.end)} hs (${sch.end - sch.start} min)`,
+    `- Deportes: ${an.sports.map(sportLabel).join(', ') || '—'} · objetivo: ${goalLabel(an.goal)} · fase de temporada: ${SEASON_LABEL[an.season]}`,
     `- Despierta ${an.wakeTime} · se acuesta ${an.bedTime}`,
     `- Comidas del día ON: ${slots.map((k) => `${SLOT_LABEL[k]} ${fmtHm(sch.slots[k])}`).join(' · ')}${off.length ? ` · DESACTIVADAS: ${off.join(', ')}` : ''}`,
     `- Ayuno: ${FASTING_LABEL[an.fasting]} · zona crítica de ansiedad: ${ANXIETY_LABEL[an.anxiety]}`,
@@ -41,6 +65,7 @@ export function anamnesisToNotes(plan: AthletePlan, foodDb: BrandFood[]) {
     `- Aversiones: ${an.aversions.trim() || '—'}`,
     `- Snacks tácticos: ${an.snacks.join(', ') || '—'}`,
     `- Presupuesto ${BUDGET_LABEL[an.budget]} · cocina ${COOKING_LABEL[an.cooking]}`,
+    `- Canasta de alimentos permitidos: ${an.basket ? `${basket.length} ítems tildados (la IA usa ÚNICAMENTE esos)` : 'sin restricción (todo el catálogo habilitado)'}`,
     `- Marcas locales disponibles: ${brands.length ? brands.map((b) => (b.marca ? `${b.nombre} (${b.marca})` : b.nombre)).slice(0, 12).join(', ') : '—'}${brands.length > 12 ? '…' : ''}`,
   ].join('\n');
 }
@@ -116,6 +141,7 @@ export function buildPromptContext(plan: AthletePlan, foodDb: BrandFood[], notes
     lines.push('- ALIMENTACIÓN CIRCADIANA: primera ingesta dentro de la hora de despertar, cena ≥ 3 h antes de acostarse y carbos concentrados en la primera mitad del día (salvo Pre / Post-WOD).');
   if (an.snacks.length)
     lines.push(`- ZONA CRÍTICA DE ANSIEDAD: ${ANXIETY_LABEL[an.anxiety]} (${ANXIETY_RANGE[an.anxiety]}). Ubicá ahí los snacks tácticos como colación planificada dentro de las kcal del día.`);
+  lines.push(`- Deportes: ${an.sports.map(sportLabel).join(', ') || '—'} · objetivo nutricional: ${goalLabel(an.goal)} · fase de temporada: ${SEASON_LABEL[an.season]}.`);
   lines.push(`- Patologías / condiciones: ${conditions.length ? label(CONDITIONS, conditions).join(', ') : 'ninguna'}.`);
   lines.push(`- Alergias / intolerancias: ${an.allergies.length ? `${label(ALLERGIES, an.allergies).join(', ')} → EXCLUIR por completo` : 'ninguna'}.`);
   if (an.favorites.trim()) lines.push(`- Alimentos de preferencia (usalos cuando encajen en los macros): ${an.favorites.trim()}.`);
@@ -123,7 +149,11 @@ export function buildPromptContext(plan: AthletePlan, foodDb: BrandFood[], notes
   if (an.snacks.length) lines.push(`- Snacks tácticos permitidos para control de ansiedad (colaciones): ${an.snacks.join(', ')}.`);
   lines.push(`- Presupuesto: ${BUDGET_LABEL[an.budget]} · Nivel de cocina: ${COOKING_LABEL[an.cooking]}.`);
 
+  const sportRules = [...new Set(an.sports.map(sportGroup))].map((g) => SPORT_RULES[g]).filter(Boolean);
   const rules = [
+    ...sportRules,
+    GOAL_RULES[an.goal],
+    SEASON_RULES[an.season],
     ...conditions.map((c) => CLINICAL_RULES[c]).filter(Boolean),
     ...an.allergies.map((a) => ALLERGY_RULES[a]).filter(Boolean),
     BUDGET_RULE[an.budget],
@@ -132,7 +162,7 @@ export function buildPromptContext(plan: AthletePlan, foodDb: BrandFood[], notes
   ];
   lines.push('', 'REGLAS DE SEGURIDAD NUTRICIONAL PARA ESTE ATLETA (obligatorias):', ...rules.map((r) => `- ${r}`));
 
-  const db = foodDbPromptBlock(foodDb);
+  const db = foodDbPromptBlock(foodDb, an.basket);
   if (db) lines.push('', db);
   return `\n\n${lines.join('\n')}`;
 }

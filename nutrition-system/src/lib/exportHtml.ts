@@ -23,8 +23,9 @@ const SHOP_CATEGORY: Record<SwapGroup, string> = {
   'protein-snack': 'Almacén',
   fat: 'Almacén',
   whey: 'Suplementos',
+  plato: 'Platos preparados',
 };
-const SHOP_ORDER = ['Verdulería', 'Carnicería / Pescadería', 'Almacén', 'Almacén · Lácteos y huevos', 'Suplementos', 'Otros'];
+const SHOP_ORDER = ['Verdulería', 'Carnicería / Pescadería', 'Almacén', 'Almacén · Lácteos y huevos', 'Platos preparados', 'Suplementos', 'Otros'];
 
 /**
  * Reglas de compra por alimento (pesos del plan en cocido → peso de compra):

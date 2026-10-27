@@ -56,7 +56,7 @@ function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
         </optgroup>
       )}
       {brands.length > 0 && (
-        <optgroup label="★ Marcas locales · Food & Brand DB">
+        <optgroup label="★ Food & Brand DB · marcas locales y platos">
           {brands.map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}

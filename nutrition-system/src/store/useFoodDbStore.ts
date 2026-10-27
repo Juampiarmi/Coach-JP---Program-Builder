@@ -2,11 +2,13 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { brandFoodsToRefs, sanitizeBrandFood, seedFoodDb, type BrandFood } from '@/lib/foodBrandDb';
+import { brandFoodsToRefs, sanitizeBrandFood, SEED_VERSION, seedFoodDb, type BrandFood } from '@/lib/foodBrandDb';
 import { registerFoodSource } from '@/lib/foods';
 
 interface FoodDbState {
   items: BrandFood[];
+  /** Versión del catálogo pre-cargado ya incorporada (migraciones aditivas). */
+  seedVersion: number;
   upsert: (item: BrandFood) => void;
   remove: (id: string) => void;
   toggleAi: (id: string) => void;
@@ -25,6 +27,7 @@ export const useFoodDbStore = create<FoodDbState>()(
   persist(
     (set, get) => ({
       items: seedFoodDb(),
+      seedVersion: SEED_VERSION,
       upsert: (item) => {
         const items = get().items.some((x) => x.id === item.id) ? get().items.map((x) => (x.id === item.id ? item : x)) : [...get().items, item];
         set(sync(items));
@@ -49,13 +52,23 @@ export const useFoodDbStore = create<FoodDbState>()(
     }),
     {
       name: 'coachjp-food-db',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ items: s.items }),
+      partialize: (s) => ({ items: s.items, seedVersion: s.seedVersion }),
+      // La DB guardada del coach recibe los ítems nuevos del catálogo (platos, quiosco…) sin perder sus ediciones.
+      migrate: (persisted) => persisted as FoodDbState,
       merge: (persisted, current) => {
         const saved = (persisted ?? {}) as Partial<FoodDbState>;
-        const items = Array.isArray(saved.items) ? saved.items.map(sanitizeBrandFood).filter((x): x is BrandFood => !!x) : current.items;
-        return { ...current, ...sync(items) };
+        let items = Array.isArray(saved.items) ? saved.items.map(sanitizeBrandFood).filter((x): x is BrandFood => !!x) : current.items;
+        if (Array.isArray(saved.items) && (saved.seedVersion ?? 1) < SEED_VERSION) {
+          const have = new Set(items.map((x) => x.id));
+          const seed = seedFoodDb();
+          const byId = new Map(seed.map((x) => [x.id, x]));
+          // Completa también los campos nuevos (preparación, lactosa) de los ítems del seed original.
+          items = items.map((x) => (byId.has(x.id) ? { ...byId.get(x.id)!, ...x, prep_min: x.prep_min || byId.get(x.id)!.prep_min, lactosa: byId.get(x.id)!.lactosa } : x));
+          items = [...items, ...seed.filter((x) => !have.has(x.id))];
+        }
+        return { ...current, ...sync(items), seedVersion: SEED_VERSION };
       },
     },
   ),

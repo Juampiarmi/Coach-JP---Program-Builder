@@ -112,7 +112,16 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
             {m.p > 0 && !m.leucina && <span> · leucina sugerida ≈ {(m.p * 0.09).toFixed(1)} g</span>}
           </p>
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Num label="Preparación" unit="min" value={d.prep_min ?? 0} onChange={(prep_min) => setD({ ...d, prep_min })} />
+          <label className="col-span-1 block sm:col-span-3">
+            <Label>Detalle / composición</Label>
+            <input value={d.detalle ?? ''} onChange={(e) => setD({ ...d, detalle: e.target.value || undefined })} placeholder="Ej. 2 rebanadas de pan integral + 60 g de palta + 1 huevo" className={inputCls} />
+          </label>
+        </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <Toggle checked={!!d.lactosa} onChange={(v) => setD({ ...d, lactosa: v })} tone="cyan" label={<span className="text-xs text-steel">Contiene lactosa</span>} />
+          <Toggle checked={!!d.flex} onChange={(v) => setD({ ...d, flex: v })} tone="cyan" label={<span className="text-xs text-steel">Flex-meal / permitido social</span>} />
           <Toggle checked={d.es_marca_local} onChange={(v) => setD({ ...d, es_marca_local: v })} tone="cyan" label={<span className="text-xs text-steel">Marca local (entra al selector de comidas)</span>} />
           <Toggle checked={d.disponible_para_ia} onChange={(v) => setD({ ...d, disponible_para_ia: v })} tone="cyan" label={<span className="text-xs text-steel">Disponible para la IA</span>} />
         </div>
@@ -236,11 +245,15 @@ export function FoodBrandDatabase() {
                     <span className="text-[14px] font-medium text-ink">{b.nombre}</span>
                     {b.marca && b.marca !== 'Genérico' && <span className="text-xs text-steel">· {b.marca}</span>}
                     {b.es_marca_local && <span className="rounded border border-fire/30 bg-fire/10 px-1 font-mono text-[8.5px] font-bold text-fire">LOCAL</span>}
+                    {b.flex && <span className="rounded border border-gold/40 bg-gold/10 px-1 font-mono text-[8.5px] font-bold text-gold">FLEX</span>}
                   </div>
                   <div className="tnum font-mono text-[10.5px] text-mute">
                     {BRAND_CATEGORY_LABEL[b.categoria]} · {portionLabel(b)} · {fmt0(m.kcal)} kcal · P {m.p} · C {m.c} · G {m.f}
                     {m.leucina ? ` · Leu ${m.leucina}` : ''}
+                    {b.prep_min ? ` · ${b.prep_min} min` : ''}
+                    {b.lactosa ? ' · lactosa' : ''}
                   </div>
+                  {b.detalle && <div className="text-[11px] text-steel/80">{b.detalle}</div>}
                 </div>
                 <button
                   type="button"

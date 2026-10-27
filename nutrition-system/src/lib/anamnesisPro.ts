@@ -1,4 +1,4 @@
-import type { Anamnesis, AnxietyZone, CookingLevel, Budget, Fasting, MealSlot } from './types';
+import type { Anamnesis, AnxietyZone, CookingLevel, Budget, Fasting, MealSlot, SeasonPhase } from './types';
 
 export const CONDITIONS = [
   { id: 'none', label: 'Ninguna' },
@@ -53,6 +53,10 @@ export function defaultAnamnesis(): Anamnesis {
     snacks: ['Tutucas de maíz', 'Frutos secos', 'Chocolate 70%', 'Galletas de arroz'],
     budget: 'mid',
     cooking: 'quick',
+    sports: ['crossfit'],
+    goal: 'recomp',
+    season: 'pre',
+    basket: null,
   };
 }
 
@@ -80,6 +84,10 @@ export function sanitizeAnamnesis(raw: unknown): Anamnesis {
     snacks: strs(a.snacks, d.snacks),
     budget: a.budget === 'low' || a.budget === 'high' ? a.budget : 'mid',
     cooking: a.cooking === 'batch' || a.cooking === 'gourmet' ? a.cooking : 'quick',
+    sports: strs(a.sports, d.sports),
+    goal: typeof a.goal === 'string' && GOALS.some((g) => g.id === a.goal) ? a.goal : d.goal,
+    season: a.season && a.season in SEASON_LABEL ? a.season : d.season,
+    basket: Array.isArray(a.basket) ? a.basket.filter((x): x is string => typeof x === 'string') : null,
   };
 }
 
@@ -131,6 +139,8 @@ export function presetPatch(id: PresetId): Partial<Anamnesis> {
       snacks: ['Tutucas de maíz', 'Frutos secos', 'Galletas de arroz'],
       cooking: 'quick',
       budget: 'mid',
+      sports: ['crossfit'],
+      goal: 'peri',
     };
   if (id === 'recomp')
     return {
@@ -140,6 +150,7 @@ export function presetPatch(id: PresetId): Partial<Anamnesis> {
       anxiety: 'night',
       snacks: ['Gelatina light', 'Yogur proteico', 'Tutucas de maíz'],
       cooking: 'batch',
+      goal: 'recomp',
     };
   return {
     conditions: ['ibs'],
@@ -152,3 +163,29 @@ export function presetPatch(id: PresetId): Partial<Anamnesis> {
     cooking: 'quick',
   };
 }
+
+/** Deportes agrupados por demanda (cada grupo tiene su regla nutricional en el prompt). */
+export const SPORT_GROUPS = [
+  { id: 'strength', label: 'Fuerza / Estética', sports: [['crossfit', 'CrossFit'], ['weightlifting', 'Halterofilia'], ['powerlifting', 'Powerlifting'], ['bodybuilding', 'Musculación']] },
+  { id: 'team', label: 'Equipos / Contacto', sports: [['rugby', 'Rugby'], ['football', 'Fútbol'], ['hockey', 'Hockey'], ['basketball', 'Básquet'], ['volleyball', 'Vóley']] },
+  { id: 'endurance', label: 'Resistencia', sports: [['mtb', 'Mountain Bike (MTB)'], ['cycling', 'Ciclismo'], ['running', 'Running'], ['triathlon', 'Triatlón']] },
+  { id: 'combat', label: 'Combate / Otros', sports: [['padel', 'Pádel'], ['tennis', 'Tenis'], ['mma', 'MMA / Boxeo']] },
+] as const;
+
+const SPORT_INDEX: Record<string, { label: string; group: string }> = Object.fromEntries(
+  SPORT_GROUPS.flatMap((g) => g.sports.map(([id, label]) => [id, { label, group: g.id }])),
+);
+export const sportLabel = (id: string) => SPORT_INDEX[id]?.label ?? id;
+export const sportGroup = (id: string) => SPORT_INDEX[id]?.group ?? 'custom';
+
+export const GOALS = [
+  { id: 'recomp', label: 'Recomposición Corporal Agresiva' },
+  { id: 'hypertrophy', label: 'Hipertrofia Limpia' },
+  { id: 'cut', label: 'Definición Extrema' },
+  { id: 'peri', label: 'Rendimiento Peri-WOD' },
+  { id: 'glycogen', label: 'Carga de Glucógeno Inter-Sesión' },
+  { id: 'weight-class', label: 'Manejo de Categoría por Peso' },
+] as const;
+export const goalLabel = (id: string) => GOALS.find((g) => g.id === id)?.label ?? id;
+
+export const SEASON_LABEL: Record<SeasonPhase, string> = { pre: 'Pretemporada', comp: 'Competencia', peak: 'Peaking / Semana de Torneo', rest: 'Descanso Activo' };

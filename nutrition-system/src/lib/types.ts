@@ -92,6 +92,7 @@ export type Budget = 'low' | 'mid' | 'high';
 export type CookingLevel = 'quick' | 'batch' | 'gourmet';
 export type Fasting = 'none' | '16-8' | '14-10' | 'circadian';
 export type AnxietyZone = 'morning' | 'afternoon' | 'night';
+export type SeasonPhase = 'pre' | 'comp' | 'peak' | 'rest';
 
 /** Anamnesis Pro & Lifestyle: perfil 360° del atleta que se inyecta en el Prompt Engine. */
 export interface Anamnesis {
@@ -112,6 +113,16 @@ export interface Anamnesis {
   snacks: string[];
   budget: Budget;
   cooking: CookingLevel;
+  /** Deportes (ids del catálogo o nombres personalizados). */
+  sports: string[];
+  /** Objetivo nutricional deportivo (id). */
+  goal: string;
+  season: SeasonPhase;
+  /**
+   * Canasta de alimentos permitidos: ids de la Food & Brand DB tildados para este atleta.
+   * null = sin canasta (la IA usa todo lo habilitado).
+   */
+  basket: string[] | null;
 }
 
 export interface AthletePlan {
