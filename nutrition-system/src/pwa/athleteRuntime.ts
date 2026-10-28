@@ -77,6 +77,9 @@ const runtime = String.raw`
     phNote: '',
   };
 
+  // Inicio del plan en este dispositivo (Día X · Semana Y de la Storycard).
+  if (!D.preview && !store.get('start', null)) store.set('start', today);
+
   // Clave de IA propia del atleta: vive SOLO en el localStorage de este dispositivo (nunca en el plan exportado).
   var AI_KEY = 'coachjp-pwa:gemini-key';
   function getKey() { try { return localStorage.getItem(AI_KEY) || ''; } catch (e) { return mem[AI_KEY] || ''; } }
@@ -183,6 +186,9 @@ const runtime = String.raw`
     return out.filter(function (it) { return it.grams > 0 || it.adjusted; });
   }
 
+  // Opciones 2 a 5 (los planes exportados antes de las 5 opciones traen una sola en "alt").
+  function mealAlts(m) { return m.alts && m.alts.length ? m.alts : m.alt && m.alt.items ? [m.alt] : []; }
+
   function mealsFor(mode, extras, free, opt) {
     extras = extras || S.extras;
     free = free || S.free;
@@ -195,12 +201,13 @@ const runtime = String.raw`
       .sort(function (a, b) { return timeToMinutes(a.time) - timeToMinutes(b.time); })
       .map(function (m) {
         var fr = free[m.id];
-        // Opción culinaria elegida por el atleta (2 = alternativa equivalente).
-        var useAlt = opt[m.id] === 2 && m.alt && m.alt.items && m.alt.items.length;
-        var src = useAlt ? m.alt.items : m.items;
+        // Opción culinaria elegida por el atleta (1 = sugerida, 2 a 5 = alternativas equivalentes).
+        var alts = mealAlts(m), on = +opt[m.id] || 1, alt = on > 1 ? alts[on - 2] : null;
+        if (!alt || !alt.items || !alt.items.length) { alt = null; on = 1; }
+        var src = alt ? alt.items : m.items;
         var items = fr && typeof fr === 'object' && fr.items ? fr.items : fr ? [freeItem(m, fr)] : compensateResolved(src, src.map(resolveItem)).concat(extras[m.id] || []);
         var t = items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
-        return { m: m, items: items, src: src, opt: useAlt ? 2 : 1, t: t, kcal: t.p * 4 + t.c * 4 + t.f * 9 };
+        return { m: m, items: items, src: src, opt: on, alt: alt, t: t, kcal: t.p * 4 + t.c * 4 + t.f * 9 };
       });
   }
 
@@ -485,7 +492,7 @@ const runtime = String.raw`
     if (S.panel === 'fridge') return open(bg, sh, fridgePanel());
     if (S.panel === 'portions') return open(bg, sh, portionsPanel());
     if (S.panel === 'batch') return open(bg, sh, batchPanel());
-    if (S.panel === 'story') { open(bg, sh, storyPanel()); return drawStory(); }
+    if (S.panel === 'story') { open(bg, sh, storyPanel()); return paintStory(); }
     if (S.panel === 'guide') {
       var g = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ ? GUÍA · MANUAL TÁCTICO DEL ATLETA ]</div><h3>Cómo funciona tu plan</h3>';
       g += '<p class="muted" style="font-size:12.5px">Lenguaje directo. Tocá cada tema para abrirlo.</p>';
@@ -498,7 +505,7 @@ const runtime = String.raw`
       var meals = mealsFor(S.mode).filter(function (x) { return x.m.id !== '__out'; });
       var key = getKey();
       var lbl = S.scanTab === 'label';
-      var h4 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ FOTO · IA · ESCÁNER DUAL ]</div><h3>' + (key ? (lbl ? 'Escaneá la tabla nutricional' : 'Analizá tu plato con IA') : 'Mandale tu foto al coach') + '</h3>';
+      var h4 = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ 📷 ESCANEAR PLATO · IA MULTIMODAL ]</div><h3>' + (key ? (lbl ? 'Escaneá la tabla nutricional' : 'Analizá tu plato con IA') : 'Mandale tu foto al coach') + '</h3>';
       if (key) h4 += '<div class="tabs scantabs"><button data-scantab="plate" class="' + (!lbl ? 'on' : '') + '">[ PLATO DE COMIDA ]</button><button data-scantab="label" class="' + (lbl ? 'on' : '') + '">[ TABLA NUTRICIONAL ]</button></div>';
       h4 += '<p class="muted" style="font-size:12.5px;margin-top:8px">' + (key
         ? (lbl ? 'Sacale foto a la tabla de información nutricional del envase: se extraen porción, kcal, proteínas, carbos, grasas y sodio.' : 'Volumen visual, ingredientes, macros y calorías estimadas, directo en tu celular con tu clave de Gemini.')
@@ -543,6 +550,14 @@ const runtime = String.raw`
     return h;
   }
 
+  // Target de la comida elegida en el escáner (la opción que el atleta tiene seleccionada ese día).
+  function scanTarget() {
+    var id = S.phMeal || (($('#ph-meal') || {}).value) || '';
+    var x = mealsFor(S.mode).filter(function (q) { return q.m.id === id && id !== '__out'; })[0];
+    if (!x) return null;
+    return { name: mealName(x.m, S.mode).toUpperCase(), label: x.m.time + ' · ' + mealName(x.m, S.mode), kcal: x.kcal, p: x.t.p, c: x.t.c, f: x.t.f };
+  }
+
   function scanCard(r) {
     var color = r.score >= 70 ? '#38BDF8' : r.score >= 40 ? '#F97316' : '#EF4444';
     var h = '<div class="scan"><div class="row"><div style="min-width:0"><div class="tag">[ DESGLOSE DEL PLATO ]</div><b class="scan-nm">' + esc(r.dishName) + '</b></div>';
@@ -554,8 +569,18 @@ const runtime = String.raw`
     });
     var t = r.items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
     h += '</div><div class="scan-tot"><b>' + n0(t.p * 4 + t.c * 4 + t.f * 9) + ' kcal</b><span>P ' + n0(t.p) + ' g</span><span>C ' + n0(t.c) + ' g</span><span>G ' + n0(t.f) + ' g</span><span class="' + (t.l >= D.threshold ? 'ok' : 'lo') + '">LEU ' + n1(t.l) + ' g</span></div>';
+    var tg = scanTarget();
+    if (tg) {
+      var cmp = function (l, a, b, u) {
+        var d = b ? Math.round((a / b - 1) * 100) : 0, ok = Math.abs(d) <= 10;
+        return '<div class="cmp-row"><span>' + l + '</span><i>' + n0(a) + u + '</i><i>' + n0(b) + u + '</i><b class="' + (ok ? 'ok' : 'lo') + '">' + (d > 0 ? '+' : '') + d + ' %</b></div>';
+      };
+      h += '<div class="cmp"><div class="tag">[ COMPARATIVA VS TARGET · ' + esc(tg.label) + ' ]</div><div class="cmp-row hd"><span></span><i>PLATO</i><i>PLAN</i><b>DESVÍO</b></div>';
+      h += cmp('Kcal', t.p * 4 + t.c * 4 + t.f * 9, tg.kcal, '') + cmp('Proteína', t.p, tg.p, ' g') + cmp('Carbos', t.c, tg.c, ' g') + cmp('Grasas', t.f, tg.f, ' g') + '</div>';
+    }
     if (r.tips && r.tips.length) h += '<ul class="tips">' + r.tips.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>';
-    h += '<button class="add-meal" data-photo="add">[ + AGREGAR A LA COMIDA SELECCIONADA ]</button></div>';
+    h += '<button class="add-meal" data-photo="add">[ + AGREGAR A LA COMIDA SELECCIONADA ]</button>';
+    h += '<button class="add-meal story-go" data-scanstory="1">[ 📸 GENERAR STORYCARD DE ESTE PLATO ]</button></div>';
     return h;
   }
 
@@ -584,13 +609,14 @@ const runtime = String.raw`
 
 
   function findItem(meal, id) {
-    var all = meal.items.concat(meal.alt && meal.alt.items ? meal.alt.items : []);
+    var all = meal.items.slice();
+    mealAlts(meal).forEach(function (a) { all = all.concat(a.items || []); });
     return all.filter(function (i) { return i.id === id; })[0];
   }
 
   // Desglose táctico: ingredientes de los platos (receta escalada a la porción), técnica y condimentos.
   function desglose(m, x) {
-    var tech = x.opt === 2 ? m.alt.technique : m.technique;
+    var o = x.alt || m, tech = o.technique, steps = o.steps || [];
     var rows = '';
     x.items.forEach(function (it) {
       var ref = it.foodId && D.foods[it.foodId];
@@ -601,8 +627,9 @@ const runtime = String.raw`
         rows += '<li><b>' + esc(ref.name) + '</b>: ' + ref.recipe.map(function (r) { return esc(r.name) + ' ' + n0(r.grams * k) + ' g'; }).join(' · ') + '</li>';
       } else rows += '<li><b>' + esc(ref.name) + '</b>: ' + esc(ref.detail) + (ref.unit && it.grams !== ref.unit.grams ? ' (porción base ' + n0(ref.unit.grams) + ' g, la tuya ' + n0(it.grams) + ' g)' : '') + '</li>';
     });
-    if (!tech && !rows) return '';
-    return '<details class="desglose"><summary>[ DESGLOSE TÁCTICO & INGREDIENTES ]</summary>' + (rows ? '<ul>' + rows + '</ul>' : '') + (tech ? '<p><b>Técnica:</b> ' + esc(tech) + '</p>' : '') + '</details>';
+    var ing = '<ul class="ing">' + x.items.filter(function (it) { return it.grams > 0 && !it.free; }).map(function (it) { return '<li><b>' + n0(it.grams) + ' g</b> ' + esc(it.food) + (unitHintFor(it.foodId, it.grams) ? ' <em>' + unitHintFor(it.foodId, it.grams) + '</em>' : '') + '</li>'; }).join('') + '</ul>';
+    var how = steps.length ? '<div class="dsub">PREPARACIÓN PASO A PASO</div><ol class="psteps">' + steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' : '';
+    return '<details class="desglose"><summary>[ DESGLOSE TÁCTICO & INGREDIENTES ]</summary><div class="dsub">INGREDIENTES</div>' + ing + (rows ? '<div class="dsub">COMPOSICIÓN DE LOS PLATOS</div><ul>' + rows + '</ul>' : '') + how + (tech ? '<p><b>Tip:</b> ' + esc(tech) + '</p>' : '') + '</details>';
   }
 
   // =================== HERRAMIENTAS TÁCTICAS ===================
@@ -780,20 +807,20 @@ const runtime = String.raw`
 
   // ---------- Guía de batch cooking ----------
   var COOK = {
-    pollo: 'Horno 200 °C, 25-30 min (o plancha 6-8 min por lado)',
-    cuadril: 'Plancha / grill 4-5 min por lado o horno 200 °C 20 min',
-    lomo: 'Plancha 4 min por lado, reposo 5 min',
-    nalga: 'Plancha / milanesas al horno 200 °C 20 min',
-    picada: 'Sartén 10-12 min (salsa, albóndigas o relleno)',
-    merluza: 'Horno 180 °C 15-18 min o vapor',
-    cerdo: 'Horno 200 °C 30-35 min',
-    arroz: 'Hervir 1 parte de arroz + 2 de agua, 15-18 min',
-    yamani: 'Hervir 1 + 2,5 de agua, 35-40 min',
-    fideos: 'Hervir al dente 8-10 min, enfriar con un hilo de aceite',
-    papa: 'Hervir 20 min o al horno 200 °C 35-40 min',
-    batata: 'Horno 200 °C 35-40 min',
+    pollo: 'Mandalo al horno a 200 °C 25-30 min (o a la plancha 6-8 min por lado)',
+    cuadril: 'A la plancha o grill 4-5 min por lado, o al horno a 200 °C 20 min',
+    lomo: 'A la plancha 4 min por lado y dejalo reposar 5 min',
+    nalga: 'A la plancha, o en milanesas al horno a 200 °C 20 min',
+    picada: 'Sarteneala 10-12 min con spray antiadherente (para salsa, albóndigas o relleno)',
+    merluza: 'Mandala al horno a 180 °C 15-18 min o al vapor',
+    cerdo: 'Mandala al horno a 200 °C 30-35 min',
+    arroz: 'Hervir 1 taza de arroz por 2 de agua con sal, 15-18 min tapado',
+    yamani: 'Hervir 1 taza por 2½ de agua, 35-40 min tapado',
+    fideos: 'Hervir al dente 8-10 min y enfrialos con un chorrito de oliva para que no se peguen',
+    papa: 'Hervir 20 min o mandala al horno a 200 °C 35-40 min',
+    batata: 'Mandala al horno a 200 °C 35-40 min',
     lentejas: 'Remojo 2 h · hervir 20-25 min',
-    vegetales: 'Asar en bandeja 200 °C 25 min o lavar y cortar crudos',
+    vegetales: 'Mandalos al horno en bandeja a 200 °C 25 min, o lavalos y cortalos crudos',
   };
   function weeklyCooked() {
     var onDays = Math.max(0, Math.min(7, D.trainingDays)), mult = { on: onDays, off: 7 - onDays, both: 7 };
@@ -827,7 +854,7 @@ const runtime = String.raw`
     var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ GUÍA DE BATCH COOKING · FIN DE SEMANA ]</div><h3>Cociná una vez, comé toda la semana</h3>';
     if (!steps.length) h += '<p class="muted">Tu plan no tiene preparaciones para cocinar en lote.</p>';
     steps.forEach(function (st, i) { h += '<div class="d-row"><span class="n">' + (i + 1) + '</span><div><b>' + esc(st.t) + '</b><p>' + esc(st.d) + '</p></div></div>'; });
-    h += '<div class="d321" style="margin-top:12px"><div class="tag">[ CONSERVACIÓN ]</div><p class="muted" style="font-size:12.5px;margin-top:6px">Heladera: 3-4 días en tuppers cerrados (cociná el domingo y repetí el miércoles). Freezer: carnes y arroz porcionados hasta 2-3 meses; descongelar en heladera la noche anterior. Recalentar hasta que humee y no recongelar.</p></div>';
+    h += '<div class="d321" style="margin-top:12px"><div class="tag">[ CONSERVACIÓN ]</div><p class="muted" style="font-size:12.5px;margin-top:6px">Heladera: 3-4 días en tuppers cerrados (cociná el domingo y repetí el miércoles). Freezer: carnes y arroz porcionados hasta 2-3 meses; descongelalos en la heladera la noche anterior. Al momento de comer, cociná a fuego medio (o en microondas) hasta que humee y no lo vuelvas a congelar.</p></div>';
     h += '<div class="wbtns" style="margin-top:12px"><button data-batchcopy="1">Copiar guía</button><button data-batchwa="1" class="ghost">Mandar por WhatsApp</button></div>';
     return h;
   }
@@ -835,56 +862,220 @@ const runtime = String.raw`
     return '🍳 *BATCH COOKING · ' + D.athlete.name + '*\n' + batchSteps().map(function (st, i) { return (i + 1) + '. *' + st.t + '*: ' + st.d; }).join('\n') + '\n\nHeladera 3-4 días · freezer 2-3 meses.\n' + D.handle;
   }
 
-  // ---------- Social card 9:16 (HUD) ----------
+  // ---------- Storycard 9:16 (1080 × 1920) · foto del atleta + overlay táctico ----------
+  // kind: 'day' (resumen general) | 'meal' (bloque / comida del plan) | 'scan' (plato recién escaneado con IA).
+  function storyState() {
+    if (!S.story) S.story = { kind: 'day', meal: '', metric: 'kcal', img: null, url: '', scan: null };
+    return S.story;
+  }
+  // Día X · Semana Y desde la primera vez que el atleta abrió su plan en este dispositivo.
+  function planDay(iso) {
+    var start = store.get('start', null) || today;
+    var d = Math.round((new Date(iso + 'T12:00:00') - new Date(start + 'T12:00:00')) / 864e5) + 1;
+    d = Math.max(1, d);
+    return { day: d, week: Math.ceil(d / 7) };
+  }
+  function storyMeals() { return mealsFor(S.mode).filter(function (x) { return x.m.id !== '__out'; }); }
   function storyPanel() {
-    return '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ SOCIAL CARD · INSTAGRAM STORIES 9:16 ]</div><h3>Compartí tu día</h3><canvas id="story-cv" width="1080" height="1920" class="story-cv"></canvas><div class="wbtns" style="margin-top:12px"><button data-storyshare="1" class="cta">Compartir / descargar PNG</button></div>';
+    var st = storyState(), list = storyMeals();
+    if (st.kind === 'meal' && !list.some(function (x) { return x.m.id === st.meal; })) st.meal = (list.filter(function (x) { return S.checks[x.m.id]; }).pop() || list[0] || { m: {} }).m.id || '';
+    var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ STORYCARD · INSTAGRAM 9:16 ]</div><h3>' + (st.kind === 'scan' ? 'Story de tu plato' : st.kind === 'meal' ? 'Story de tu comida' : 'Story de tu día') + '</h3>';
+    h += '<div class="tabs scantabs"><button data-storykind="day" class="' + (st.kind === 'day' ? 'on' : '') + '">[ RESUMEN DEL DÍA ]</button><button data-storykind="meal" class="' + (st.kind !== 'day' ? 'on' : '') + '">[ BLOQUE / COMIDA ]</button></div>';
+    if (st.kind === 'meal') h += '<label class="lbl">Comida</label><select id="story-meal" class="inp">' + list.map(function (x) { return '<option value="' + esc(x.m.id) + '"' + (x.m.id === st.meal ? ' selected' : '') + '>' + esc(x.m.time + ' · ' + mealName(x.m, S.mode)) + (S.checks[x.m.id] ? ' ✓' : '') + '</option>'; }).join('') + '</select>';
+    if (st.kind === 'scan' && st.scan) h += '<p class="muted" style="font-size:12px;margin-top:8px">Plato escaneado: <b>' + esc(st.scan.dishName) + '</b>' + (st.target ? ' · vs ' + esc(st.target.label) : '') + '</p>';
+    if (st.kind === 'day') h += '<div class="tabs scantabs" style="margin-top:8px"><button data-storymetric="kcal" class="' + (st.metric !== 'pct' ? 'on' : '') + '">[ KCAL DEL DÍA ]</button><button data-storymetric="pct" class="' + (st.metric === 'pct' ? 'on' : '') + '">[ % CUMPLIMIENTO ]</button></div>';
+    h += '<div class="wbtns" style="margin-top:10px"><button data-storyphoto="pick">[ 📷 ' + (st.url ? 'CAMBIAR FOTO' : 'SUBIR FOTO / CÁMARA') + ' ]</button>' + (st.url ? '<button data-storyphoto="clear" class="ghost">Sin foto</button>' : '') + '</div>';
+    h += '<canvas id="story-cv" width="1080" height="1920" class="story-cv"></canvas><div class="wbtns" style="margin-top:12px"><button data-storyshare="1" class="cta">Compartir / descargar PNG</button></div>';
+    return h;
+  }
+  function loadStoryImg(url) {
+    var st = storyState(), img = new Image();
+    img.onload = function () { st.img = img; st.url = url; if (S.panel === 'story') { renderSheet(); } };
+    img.onerror = function () { toast('No se pudo leer la foto'); };
+    img.src = url;
+  }
+  var storyInput = document.getElementById('story-photo');
+  if (storyInput) storyInput.addEventListener('change', function () {
+    var file = storyInput.files && storyInput.files[0];
+    if (!file) return;
+    var st = storyState();
+    if (st.url && st.own) URL.revokeObjectURL(st.url);
+    st.own = true;
+    loadStoryImg(URL.createObjectURL(file));
+    storyInput.value = '';
+  });
+  // Plato escaneado → story con su foto, macros detectados y la comparación contra el plan.
+  function storyFromScan() {
+    if (!S.scan || !S.photo) return;
+    var st = storyState(), tgt = scanTarget();
+    st.kind = 'scan'; st.scan = S.scan; st.target = tgt; st.own = false; st.img = null; st.url = '';
+    loadStoryImg(S.photo.url);
+    S.sheet = null; S.panel = 'story'; renderSheet();
+  }
+
+  var FLUOR = '#FF6A00', CYAN = '#38BDF8';
+  function fitFont(x, txt, weight, family, max, min, width) {
+    var fs = max;
+    x.font = weight + ' ' + fs + 'px ' + family;
+    while (fs > min && x.measureText(txt).width > width) { fs -= 4; x.font = weight + ' ' + fs + 'px ' + family; }
+    return fs;
+  }
+  function clip(x, txt, width) {
+    txt = String(txt);
+    if (x.measureText(txt).width <= width) return txt;
+    while (txt.length > 1 && x.measureText(txt + '…').width > width) txt = txt.slice(0, -1);
+    return txt.replace(/\s+$/, '') + '…';
+  }
+  function storyData() {
+    var st = storyState(), list = storyMeals(), tgt = D.targets[S.mode], sum = daySummary(S.date);
+    if (st.kind === 'scan' && st.scan) {
+      var t = st.scan.items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f }; }, { p: 0, c: 0, f: 0 });
+      var k = t.p * 4 + t.c * 4 + t.f * 9, tg = st.target;
+      return {
+        block: '[ BLOQUE · ' + (tg ? tg.name : 'PLATO ESCANEADO') + ' ]', big: n0(k), unit: 'KCAL',
+        sub: tg ? 'Plan: ' + n0(tg.kcal) + ' kcal · ' + (k >= tg.kcal ? '+' : '') + Math.round((k / (tg.kcal || 1) - 1) * 100) + ' % vs target' : 'Estimación IA · Gemini Flash',
+        macros: [[t.p, tg && tg.p], [t.c, tg && tg.c], [t.f, tg && tg.f]],
+        title: '[ DESGLOSE DEL PLATO · IA ]', dish: st.scan.dishName,
+        rows: st.scan.items.map(function (i) { return { l: n0(i.grams) + ' g', t: i.food, r: n0(i.p * 4 + i.c * 4 + i.f * 9) + ' kcal', on: true }; }),
+        done: true,
+      };
+    }
+    if (st.kind === 'meal') {
+      var x = list.filter(function (q) { return q.m.id === st.meal; })[0] || list[0];
+      if (x) {
+        var title = x.alt ? x.alt.title : x.m.title;
+        return {
+          block: '[ BLOQUE · ' + mealName(x.m, S.mode).toUpperCase() + ' · ' + x.m.time + ' ]', big: n0(x.kcal), unit: 'KCAL',
+          sub: (x.opt > 1 ? 'Opción ' + x.opt + ' · ' : '') + (S.checks[x.m.id] ? 'Comida cumplida' : 'Comida del plan'),
+          macros: [[x.t.p], [x.t.c], [x.t.f]],
+          title: '[ INGREDIENTES DEL BLOQUE ]', dish: title || '',
+          rows: x.items.filter(function (i) { return i.grams > 0; }).map(function (i) { return { l: n0(i.grams) + ' g', t: i.food, r: n0(i.p * 4 + i.c * 4 + i.f * 9) + ' kcal', on: true }; }),
+          done: !!S.checks[x.m.id],
+        };
+      }
+    }
+    var eaten = list.reduce(function (a, q) { return S.checks[q.m.id] ? { p: a.p + q.t.p, c: a.c + q.t.c, f: a.f + q.t.f } : a; }, { p: 0, c: 0, f: 0 });
+    var pct = st.metric === 'pct';
+    return {
+      block: '[ CARGA PRINCIPAL · DÍA ' + S.mode.toUpperCase() + ' ]', big: pct ? String(sum.pct) : n0(sum.kcal), unit: pct ? '%' : 'KCAL',
+      sub: pct ? 'CUMPLIMIENTO NUTRICIONAL · ' + n0(sum.kcal) + '/' + n0(sum.target) + ' kcal' : 'de ' + n0(sum.target) + ' kcal del plan · ' + sum.pct + ' % cumplimiento',
+      macros: [[eaten.p, tgt.p], [eaten.c, tgt.c], [eaten.f, tgt.f]],
+      title: '[ COMIDAS DEL DÍA · ' + sum.done + '/' + sum.total + ' ]', dish: '',
+      rows: list.map(function (q) { var tt = q.alt ? q.alt.title : q.m.title; return { l: q.m.time, t: tt || mealName(q.m, S.mode), r: n0(q.kcal) + ' kcal', on: !!S.checks[q.m.id] }; }),
+      done: sum.adherent,
+    };
   }
   function drawStory() {
     var cv = document.getElementById('story-cv');
     if (!cv || !cv.getContext) return;
-    var x = cv.getContext('2d'), W = 1080, H = 1920;
-    var sum = daySummary(S.date), list = mealsFor(S.mode);
-    var eaten = list.reduce(function (a, it) { return S.checks[it.m.id] ? { p: a.p + it.t.p, c: a.c + it.t.c, f: a.f + it.t.f } : a; }, { p: 0, c: 0, f: 0 });
-    var tgt = D.targets[S.mode];
-    var mono = '"JetBrains Mono", ui-monospace, monospace', sans = 'Inter, system-ui, sans-serif';
-    x.fillStyle = '#0B0F17'; x.fillRect(0, 0, W, H);
-    x.strokeStyle = 'rgba(255,255,255,.04)'; x.lineWidth = 2;
-    for (var gx = 0; gx <= W; gx += 60) { x.beginPath(); x.moveTo(gx, 0); x.lineTo(gx, H); x.stroke(); }
-    for (var gy = 0; gy <= H; gy += 60) { x.beginPath(); x.moveTo(0, gy); x.lineTo(W, gy); x.stroke(); }
-    var corner = function (cx, cy, dx, dy) { x.beginPath(); x.moveTo(cx, cy + dy * 70); x.lineTo(cx, cy); x.lineTo(cx + dx * 70, cy); x.stroke(); };
-    x.strokeStyle = '#38BDF8'; x.lineWidth = 6;
-    corner(60, 60, 1, 1); corner(W - 60, 60, -1, 1); corner(60, H - 60, 1, -1); corner(W - 60, H - 60, -1, -1);
-    x.fillStyle = '#38BDF8'; x.font = '700 34px ' + mono; x.fillText('[ COACH JP · BIOENERGETICS & NUTRITION ]', 110, 170);
-    // Nombre: la fuente se achica hasta entrar en el ancho útil (nunca se corta).
-    var nm = String(D.athlete.name).toUpperCase(), fs = 92;
-    x.font = '800 ' + fs + 'px ' + sans;
-    while (fs > 44 && x.measureText(nm).width > W - 220) { fs -= 4; x.font = '800 ' + fs + 'px ' + sans; }
-    x.fillStyle = '#FFFFFF'; x.fillText(nm, 110, 300);
-    x.fillStyle = '#F97316'; x.font = '700 38px ' + mono; x.fillText(dateLabel(S.date) + ' · DÍA ' + S.mode.toUpperCase(), 110, 370);
-    // anillo de adherencia
-    var pct = Math.max(0, Math.min(1.25, sum.pct / 100)), cx0 = W / 2, cy0 = 760, R = 290;
-    x.lineWidth = 46; x.strokeStyle = 'rgba(255,255,255,.07)'; x.beginPath(); x.arc(cx0, cy0, R, 0, Math.PI * 2); x.stroke();
-    x.strokeStyle = sum.adherent ? '#38BDF8' : '#F97316'; x.lineCap = 'round';
-    x.beginPath(); x.arc(cx0, cy0, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, pct)); x.stroke(); x.lineCap = 'butt';
-    x.textAlign = 'center';
-    x.fillStyle = '#FFFFFF'; x.font = '800 170px ' + mono; x.fillText(sum.pct + '%', cx0, cy0 + 50);
-    x.fillStyle = '#94A3B8'; x.font = '600 34px ' + mono; x.fillText(n0(sum.kcal) + ' / ' + n0(sum.target) + ' KCAL', cx0, cy0 + 120);
-    x.fillStyle = sum.adherent ? '#38BDF8' : '#F97316'; x.font = '700 40px ' + mono;
-    x.fillText(sum.adherent ? '[ PROTOCOLO CUMPLIDO ]' : '[ ' + sum.done + '/' + sum.total + ' COMIDAS ]', cx0, cy0 + R + 120);
+    var x = cv.getContext('2d'), W = 1080, H = 1920, st = storyState(), dt = storyData();
+    var mono = '"JetBrains Mono", ui-monospace, monospace', sans = 'Inter, system-ui, sans-serif', impact = 'Anton, Impact, "Arial Black", sans-serif';
+    x.save();
+    // 1 · Fondo: foto del atleta (cover) o carbono táctico.
+    x.fillStyle = '#05080E'; x.fillRect(0, 0, W, H);
+    if (st.img) {
+      var iw = st.img.naturalWidth, ih = st.img.naturalHeight, k = Math.max(W / iw, H / ih);
+      x.drawImage(st.img, (W - iw * k) / 2, (H - ih * k) / 2, iw * k, ih * k);
+    } else {
+      var bg = x.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#0B1220'); bg.addColorStop(1, '#05080E');
+      x.fillStyle = bg; x.fillRect(0, 0, W, H);
+      x.strokeStyle = 'rgba(56,189,248,.06)'; x.lineWidth = 2;
+      for (var gx = 0; gx <= W; gx += 60) { x.beginPath(); x.moveTo(gx, 0); x.lineTo(gx, H); x.stroke(); }
+      for (var gy = 0; gy <= H; gy += 60) { x.beginPath(); x.moveTo(0, gy); x.lineTo(W, gy); x.stroke(); }
+    }
+    // 2 · Overlay oscuro + viñeta cibernética + scanlines.
+    x.fillStyle = st.img ? 'rgba(4,7,13,.52)' : 'rgba(4,7,13,.15)'; x.fillRect(0, 0, W, H);
+    var top = x.createLinearGradient(0, 0, 0, 640); top.addColorStop(0, 'rgba(3,5,10,.92)'); top.addColorStop(1, 'rgba(3,5,10,0)');
+    x.fillStyle = top; x.fillRect(0, 0, W, 640);
+    var bot = x.createLinearGradient(0, 980, 0, H); bot.addColorStop(0, 'rgba(3,5,10,0)'); bot.addColorStop(.35, 'rgba(3,5,10,.82)'); bot.addColorStop(1, 'rgba(3,5,10,.97)');
+    x.fillStyle = bot; x.fillRect(0, 980, W, H - 980);
+    var vg = x.createRadialGradient(W / 2, H / 2, 380, W / 2, H / 2, 1180); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.78)');
+    x.fillStyle = vg; x.fillRect(0, 0, W, H);
+    var tint = x.createRadialGradient(W, 0, 0, W, 0, 900); tint.addColorStop(0, 'rgba(56,189,248,.14)'); tint.addColorStop(1, 'rgba(56,189,248,0)');
+    x.fillStyle = tint; x.fillRect(0, 0, W, H);
+    x.fillStyle = 'rgba(255,255,255,.025)';
+    for (var sl = 0; sl < H; sl += 6) x.fillRect(0, sl, W, 2);
+    // 3 · Brackets naranja flúor en las 4 esquinas del encuadre.
+    x.strokeStyle = FLUOR; x.lineWidth = 10; x.lineCap = 'square'; x.shadowColor = 'rgba(255,106,0,.85)'; x.shadowBlur = 28;
+    var br = function (cx, cy, dx, dy) { x.beginPath(); x.moveTo(cx, cy + dy * 130); x.lineTo(cx, cy); x.lineTo(cx + dx * 130, cy); x.stroke(); };
+    br(48, 48, 1, 1); br(W - 48, 48, -1, 1); br(48, H - 48, 1, -1); br(W - 48, H - 48, -1, -1);
+    x.shadowBlur = 0; x.lineCap = 'butt';
+    var L = 96, R = W - 96, CW = R - L;
+    // 4 · Encabezado: [ DÍA X · SEMANA Y ] | fecha.
+    var pd = planDay(S.date), dd = new Date(S.date + 'T12:00:00');
+    x.textBaseline = 'alphabetic';
+    x.fillStyle = FLUOR; x.font = '800 38px ' + mono; x.textAlign = 'left';
+    x.fillText('[ DÍA ' + pd.day + ' · SEMANA ' + pd.week + ' ]', L, 168);
+    x.fillStyle = '#F8FAFC'; x.textAlign = 'right'; x.font = '700 38px ' + mono;
+    x.fillText(pad2(dd.getDate()) + ' ' + MO[dd.getMonth()] + ' ' + dd.getFullYear(), R, 168);
     x.textAlign = 'left';
-    // barras de macros
-    var bars = [['PROTEÍNA', eaten.p, tgt.p, '#38BDF8'], ['CARBOS', eaten.c, tgt.c, '#7DD3FC'], ['GRASAS', eaten.f, tgt.f, '#F97316']];
-    bars.forEach(function (b, i) {
-      var y = 1300 + i * 130;
-      x.fillStyle = '#94A3B8'; x.font = '700 34px ' + mono; x.fillText(b[0], 110, y);
-      x.textAlign = 'right'; x.fillStyle = '#FFFFFF'; x.fillText(n0(b[1]) + ' / ' + n0(b[2]) + ' g', W - 110, y); x.textAlign = 'left';
-      x.fillStyle = 'rgba(255,255,255,.07)'; x.fillRect(110, y + 22, W - 220, 22);
-      x.fillStyle = b[3]; x.fillRect(110, y + 22, (W - 220) * Math.min(1, b[2] ? b[1] / b[2] : 0), 22);
+    x.fillStyle = 'rgba(248,250,252,.22)'; x.fillRect(L, 196, CW, 2);
+    x.fillStyle = FLUOR; x.fillRect(L, 196, 160, 4);
+    // 5 · Atleta (alto impacto, hasta 2 líneas) + disciplina.
+    var words = String(D.athlete.name || 'ATLETA').toUpperCase().split(/\s+/), lines = [words.join(' ')];
+    x.font = '400 150px ' + impact;
+    if (words.length > 1 && x.measureText(lines[0]).width > CW) { var cut = Math.ceil(words.length / 2); lines = [words.slice(0, cut).join(' '), words.slice(cut).join(' ')]; }
+    var nfs = Math.min.apply(null, lines.map(function (ln) { return fitFont(x, ln, '400', impact, 150, 70, CW); }));
+    x.font = '400 ' + nfs + 'px ' + impact; x.fillStyle = '#FFFFFF';
+    x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 18;
+    var ny = 220 + nfs;
+    lines.forEach(function (ln, i) { x.fillText(ln, L, ny + i * (nfs * 1.02)); });
+    x.shadowBlur = 0;
+    var dy = ny + (lines.length - 1) * nfs * 1.02 + 70;
+    x.fillStyle = CYAN; x.font = '800 40px ' + mono; x.fillText(clip(x, String(D.athlete.discipline || '').toUpperCase(), CW), L, dy);
+    // 6 · Métrica rey.
+    var my = dy + 120;
+    x.fillStyle = FLUOR; x.font = '800 32px ' + mono; x.fillText(clip(x, dt.block, CW), L, my);
+    var bfs = fitFont(x, dt.big, '400', impact, 250, 140, CW - 240);
+    x.fillStyle = '#FFFFFF'; x.shadowColor = 'rgba(255,106,0,.35)'; x.shadowBlur = 40;
+    x.fillText(dt.big, L - 6, my + bfs + 4);
+    x.shadowBlur = 0;
+    var bw = x.measureText(dt.big).width;
+    x.fillStyle = FLUOR; x.font = '400 ' + Math.round(bfs * 0.36) + 'px ' + impact; x.fillText(dt.unit, L + bw + 18, my + bfs + 4);
+    x.fillStyle = '#CBD5E1'; x.font = '600 32px ' + mono; x.fillText(clip(x, dt.sub, CW), L, my + bfs + 64);
+    // 7 · Sub-métricas: proteína | carbohidratos | grasas.
+    var sy = my + bfs + 104, gap = 24, bwid = (CW - gap * 2) / 3, bh = 220;
+    var LBL = ['PROTEÍNA (g)', 'CARBOHIDRATOS (g)', 'GRASAS (g)'], COL = [CYAN, '#7DD3FC', FLUOR];
+    dt.macros.forEach(function (mc, i) {
+      var bx = L + i * (bwid + gap);
+      x.fillStyle = 'rgba(8,12,20,.72)'; x.fillRect(bx, sy, bwid, bh);
+      x.strokeStyle = 'rgba(248,250,252,.16)'; x.lineWidth = 2; x.strokeRect(bx + 1, sy + 1, bwid - 2, bh - 2);
+      x.fillStyle = COL[i]; x.fillRect(bx, sy, bwid, 6);
+      x.fillStyle = '#FFFFFF'; x.font = '400 104px ' + impact; x.fillText(n0(mc[0]), bx + 26, sy + 136);
+      x.fillStyle = '#94A3B8'; x.font = '700 22px ' + mono; x.fillText(LBL[i], bx + 26, sy + 178);
+      if (mc[1]) {
+        x.fillStyle = 'rgba(255,255,255,.1)'; x.fillRect(bx + 26, sy + 198, bwid - 52, 10);
+        x.fillStyle = COL[i]; x.fillRect(bx + 26, sy + 198, (bwid - 52) * Math.min(1, mc[0] / mc[1]), 10);
+      }
     });
-    var run = streak();
-    x.fillStyle = '#F97316'; x.font = '800 46px ' + mono;
-    if (run > 0) x.fillText('🔥 ' + run + ' DÍA' + (run > 1 ? 'S' : '') + ' EN ADHERENCIA', 110, 1740);
-    x.fillStyle = '#64748B'; x.font = '600 30px ' + mono; x.fillText(D.handle + ' · HIGH PERFORMANCE SYSTEM', 110, 1810);
+    // 8 · Resumen: comidas del día / ingredientes del bloque / desglose IA.
+    var ly = sy + bh + 80, foot = H - 236;
+    x.fillStyle = FLUOR; x.font = '800 30px ' + mono; x.fillText(dt.title, L, ly);
+    ly += 18;
+    if (dt.dish) { ly += 52; x.fillStyle = '#FFFFFF'; x.font = '700 40px ' + sans; x.fillText(clip(x, dt.dish, CW), L, ly); }
+    var rh = 62, max = Math.max(1, Math.floor((foot - ly - 20) / rh)), rows = dt.rows.slice(0, max);
+    if (dt.rows.length > max) rows[max - 1] = { l: '', t: '+ ' + (dt.rows.length - max + 1) + ' más', r: '', on: true };
+    rows.forEach(function (rw, i) {
+      var y = ly + 58 + i * rh;
+      x.fillStyle = rw.on ? FLUOR : 'rgba(148,163,184,.55)'; x.font = '800 30px ' + mono; x.fillText(rw.on ? '■' : '□', L, y);
+      x.fillStyle = rw.on ? '#94A3B8' : '#64748B'; x.font = '700 28px ' + mono; x.fillText(rw.l, L + 46, y);
+      x.textAlign = 'right'; x.fillStyle = rw.on ? '#F8FAFC' : '#64748B'; x.font = '700 28px ' + mono; x.fillText(rw.r, R, y); var rwid = x.measureText(rw.r).width; x.textAlign = 'left';
+      x.fillStyle = rw.on ? '#F8FAFC' : '#94A3B8'; x.font = '600 32px ' + sans; x.fillText(clip(x, rw.t, CW - 46 - 140 - rwid - 30), L + 46 + 140, y);
+    });
+    // 9 · Footer de marca.
+    x.fillStyle = 'rgba(248,250,252,.22)'; x.fillRect(L, H - 214, CW, 2);
+    x.fillStyle = '#FFFFFF'; x.font = '400 64px ' + impact; x.fillText('⚡ COACH JP', L, H - 132);
+    x.textAlign = 'right'; x.fillStyle = CYAN; x.font = '700 32px ' + mono; x.fillText(D.handle, R, H - 140); x.textAlign = 'left';
+    x.fillStyle = dt.done ? FLUOR : '#94A3B8'; x.font = '800 30px ' + mono;
+    x.fillText(dt.done ? '// PLAN NUTRICIONAL COMPLETADO' : '// PLAN NUTRICIONAL EN CURSO', L, H - 84);
+    x.restore();
+  }
+  function paintStory() {
+    drawStory();
+    // Re-dibuja cuando terminan de cargar Anton / Inter / JetBrains Mono (red lenta o primera apertura).
+    try {
+      if (document.fonts && document.fonts.load) Promise.all(['400 100px Anton', '800 40px "JetBrains Mono"', '700 40px Inter'].map(function (f) { return document.fonts.load(f); })).then(function () { if (S.panel === 'story') drawStory(); }, function () {});
+    } catch (e) {}
   }
   function shareStory() {
     var cv = document.getElementById('story-cv');
@@ -972,8 +1163,9 @@ const runtime = String.raw`
 
     h += '<section class="card"><div class="row"><span class="tag">[ TELEMETRÍA · ' + (mode === 'on' ? 'DÍA ON · ENTRENO' : 'DÍA OFF · DESCANSO') + ' ]</span><span class="hv">' + doneCount + '/' + list.length + ' COMIDAS</span></div>' + gauge(tgt, eaten, complete, streak()) + '</section>';
 
-    h += '<div class="actions"><button data-panel="shop">[ LISTA DE COMPRAS ]</button><button data-panel="out">[ COMER FUERA ]</button><button data-photo="pick">' + (getKey() ? '[ FOTO · IA ]' : '[ FOTO → COACH ]') + '</button></div>';
-    h += '<div class="actions tools"><button data-panel="fridge">[ 🧊 MI HELADERA ]</button><button data-panel="portions">[ ✋ PORCIONES SIN BALANZA ]</button><button data-panel="story">[ 📸 STORY 9:16 ]</button></div>';
+    h += '<div class="actions"><button data-panel="shop">[ LISTA DE COMPRAS ]</button><button data-panel="out">[ COMER FUERA ]</button><button data-panel="story">[ 📸 STORY 9:16 ]</button></div>';
+    h += '<button class="scan-cta" data-photo="pick">[ 📷 ESCANEAR PLATO / SUBIR FOTO ]<span>' + (getKey() ? 'IA multimodal · Gemini Flash: ingredientes, gramos, kcal, macros y comparativa vs tu plan' : 'Mandásela a tu coach · o cargá tu clave de Gemini para el análisis con IA') + '</span></button>';
+    h += '<div class="actions tools"><button data-panel="fridge">[ 🧊 MI HELADERA ]</button><button data-panel="portions">[ ✋ PORCIONES SIN BALANZA ]</button><button data-panel="batch">[ 🍳 BATCH COOKING ]</button></div>';
 
     h += hydration(mode);
     h += timeline(mode, list);
@@ -988,10 +1180,15 @@ const runtime = String.raw`
       var done = !!S.checks[m.id];
       h += '<section class="card meal' + (done ? ' done' : '') + '">';
       h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(mealName(m, mode)) + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar comida">' + CHECK + '</button></div>';
-      if (m.title || m.alt) {
-        if (m.alt) h += '<div class="opt-tabs"><button data-opt="' + esc(m.id) + '|1" class="' + (x.opt === 1 ? 'on' : '') + '">[ OPCIÓN 1 ]</button><button data-opt="' + esc(m.id) + '|2" class="' + (x.opt === 2 ? 'on' : '') + '">[ OPCIÓN 2 ]</button></div>';
-        var otitle = x.opt === 2 ? m.alt.title : m.title;
-        if (otitle) h += '<div class="dish"><span class="dtag">' + (x.opt === 2 ? '[ OPCIÓN 2 · ALTERNATIVA ]' : '[ OPCIÓN 1 · SUGERIDA ]') + '</span><b>' + esc(otitle) + '</b></div>';
+      var malts = mealAlts(m);
+      if (m.title || malts.length) {
+        if (malts.length) {
+          h += '<div class="opt-tabs' + (malts.length > 2 ? ' many' : '') + '">';
+          for (var on = 1; on <= malts.length + 1; on++) h += '<button data-opt="' + esc(m.id) + '|' + on + '" class="' + (x.opt === on ? 'on' : '') + '">[ OPCIÓN ' + on + ' ]</button>';
+          h += '</div>';
+        }
+        var otitle = x.alt ? x.alt.title : m.title;
+        if (otitle) h += '<div class="dish"><span class="dtag">' + (x.alt ? '[ OPCIÓN ' + x.opt + ' · ALTERNATIVA ]' : '[ OPCIÓN 1 · SUGERIDA ]') + '</span><b>' + esc(otitle) + '</b></div>';
       }
       h += '<div class="items">';
       x.items.forEach(function (it, idx) {
@@ -1077,6 +1274,12 @@ const runtime = String.raw`
         if (S.photo) URL.revokeObjectURL(S.photo.url);
         S.photo = { blob: blob, url: URL.createObjectURL(blob) };
         S.scan = null; S.scanErr = null; S.scanBusy = false;
+        // Comida por defecto: la próxima pendiente (la comparativa vs target usa esa).
+        if (!S.phMeal) {
+          var nm = now.getHours() * 60 + now.getMinutes(), pend = mealsFor(S.mode).filter(function (q) { return q.m.id !== '__out' && !S.checks[q.m.id]; });
+          var near = pend.filter(function (q) { return toMin(q.m.time) >= nm - 90; })[0] || pend[pend.length - 1];
+          if (near) S.phMeal = near.m.id;
+        }
         S.sheet = null; S.panel = 'photo'; renderSheet();
       }, 'image/jpeg', 0.75);
     };
@@ -1228,7 +1431,7 @@ const runtime = String.raw`
 
   // ---------- Eventos ----------
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-unfree],[data-washop],[data-fridgeuse],[data-batchcopy],[data-batchwa],[data-storyshare],[data-opt],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-unfree],[data-washop],[data-fridgeuse],[data-batchcopy],[data-batchwa],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
     if (ds.close) return closeSheet();
@@ -1250,7 +1453,7 @@ const runtime = String.raw`
     }
     if (ds.opt) {
       var po = ds.opt.split('|');
-      if (po[1] === '2') S.opt[po[0]] = 2;
+      if (+po[1] > 1) S.opt[po[0]] = +po[1];
       else delete S.opt[po[0]];
       store.set('opt:' + S.date, S.opt);
       haptic();
@@ -1260,6 +1463,11 @@ const runtime = String.raw`
     if (ds.batchcopy) return copy(batchText());
     if (ds.batchwa) return window.open('https://wa.me/?text=' + encodeURIComponent(batchText()), '_blank');
     if (ds.storyshare) return shareStory();
+    if (ds.storykind) { storyState().kind = ds.storykind; haptic(); return renderSheet(); }
+    if (ds.storymetric) { storyState().metric = ds.storymetric; return renderSheet(); }
+    if (ds.storyphoto === 'pick') { if (storyInput) storyInput.click(); return; }
+    if (ds.storyphoto === 'clear') { var sc0 = storyState(); if (sc0.url && sc0.own) URL.revokeObjectURL(sc0.url); sc0.img = null; sc0.url = ''; return renderSheet(); }
+    if (ds.scanstory) return storyFromScan();
     if (ds.washop) return window.open('https://wa.me/?text=' + encodeURIComponent(shopText(shoppingList())), '_blank');
     if (ds.tl) { S.tlOpen = !S.tlOpen; store.set('tlOpen', S.tlOpen); haptic(); return render(); }
     if (ds.dir) { S.dirOpen = !S.dirOpen; return render(); }
@@ -1351,7 +1559,8 @@ const runtime = String.raw`
     if (e.target.id === 'out-meal') S.outMeal = e.target.value;
     if (e.target.id === 'fr-meal') { S.fridge.meal = e.target.value; S.fridge.result = null; return renderSheet(); }
     if (e.target.dataset && e.target.dataset.fr !== undefined) { S.fridge.ing[+e.target.dataset.fr] = e.target.value; S.fridge.result = null; return renderSheet(); }
-    if (e.target.id === 'ph-meal') S.phMeal = e.target.value;
+    if (e.target.id === 'ph-meal') { S.phMeal = e.target.value; if (S.scan) renderSheet(); }
+    if (e.target.id === 'story-meal') { storyState().meal = e.target.value; drawStory(); }
   });
 
   // ---------- Instalación PWA (prompt nativo o guía iOS / Android) ----------

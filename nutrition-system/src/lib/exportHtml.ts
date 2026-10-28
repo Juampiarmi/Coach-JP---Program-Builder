@@ -6,7 +6,7 @@ import { CITES } from './evidence';
 import { FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
-import { autoTechnique, autoTitle } from './menuOptions';
+import { autoTechnique, autoTitle, optionSteps } from './menuOptions';
 import type { AthletePlan, DayMode } from './types';
 
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
@@ -130,7 +130,7 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     },
     threshold: LEUCINE_THRESHOLD,
     // Ingredientes repetidos fusionados y orden cronológico estricto antes de exportar.
-    // Opciones culinarias: título y técnica de la Opción 1 (automáticos si el coach no los cargó) y Opción 2.
+    // Opciones culinarias: título, técnica y pasos de la Opción 1 (automáticos si el coach no los cargó) y opciones 2 a 5.
     meals: [...plan.meals].sort(byTime).map((m) => {
       const c = consolidateMeal(m);
       return {
@@ -138,7 +138,11 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
         mps: isMpsMeal(m),
         title: c.title || autoTitle(c.items),
         technique: c.technique || autoTechnique(c.items),
-        alt: c.alt?.items.length ? { ...c.alt, title: c.alt.title || autoTitle(c.alt.items), technique: c.alt.technique || autoTechnique(c.alt.items) } : undefined,
+        steps: optionSteps(c),
+        // Opciones 2 a 5 con nombre, técnica y preparación paso a paso (automáticos si el coach no los cargó).
+        alts: (c.alts ?? [])
+          .filter((a) => a.items.length)
+          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: a.technique || autoTechnique(a.items), steps: optionSteps(a) })),
       };
     }),
     foods: Object.fromEntries(FOODS.map((f) => [f.id, f])),
@@ -175,7 +179,7 @@ const safeJson = (v: unknown) =>
     .replace(new RegExp(String.fromCharCode(0x2029), 'g'), '\\u2029');
 
 /** Lectura de la tabla de información nutricional de un envase (escáner dual de la PWA). */
-const LABEL_PROMPT = `Actúas como lector de etiquetas de Coach JP. Recibís la foto de la TABLA DE INFORMACIÓN NUTRICIONAL de un producto envasado
+const LABEL_PROMPT = `Actuás como lector de etiquetas de Coach JP. Recibís la foto de la TABLA DE INFORMACIÓN NUTRICIONAL de un producto envasado
 (formato argentino / Mercosur: "Porción X g", "Valor energético", "Carbohidratos", "Proteínas", "Grasas totales", "Sodio").
 Leé los valores tal como figuran. Si la tabla trae columna por 100 g, usala; si sólo trae por porción, completá perServing.
 Devolvé OBLIGATORIAMENTE sólo un JSON válido, sin texto extra:
@@ -185,7 +189,8 @@ Devolvé OBLIGATORIAMENTE sólo un JSON válido, sin texto extra:
 Usá null en lo que no se lea con claridad. Kcal en kcal (no kJ).
 Si la foto NO es una tabla nutricional sino un plato de comida servido (sin texto de etiqueta), devolvé sólo: { "isLabel": false, "looksLike": "plate" }.`;
 
-const FONTS = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap';
+// Anton: tipografía de alto impacto de la Storycard 9:16 (nombre del atleta y métrica rey).
+const FONTS = 'https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&display=swap';
 
 export function buildAthleteHtml(plan: AthletePlan, opts: { preview?: boolean; mode?: DayMode; icons?: ExportIcons } = {}) {
   const payload = buildPayload(plan, { preview: !!opts.preview, mode: opts.mode ?? 'on', icons: opts.icons });
@@ -249,7 +254,8 @@ ${opts.icons ? `<link rel="icon" type="image/png" sizes="192x192" href="${opts.i
 <div id="sheet-bg" class="sheet-bg"></div>
 <div id="sheet" class="sheet"></div>
 <div id="toast" class="toast"></div>
-<input id="photo" type="file" accept="image/*" capture="environment" hidden>
+<input id="photo" type="file" accept="image/*" hidden>
+<input id="story-photo" type="file" accept="image/*" hidden>
 <script id="cjp-data" type="application/json">${safeJson(payload)}</script>
 <script>${runtime}</script>
 </body>

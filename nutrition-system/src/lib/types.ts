@@ -75,7 +75,12 @@ export interface MealOption {
   items: FoodItem[];
   /** Técnica de cocción rápida y condimentos sugeridos. */
   technique?: string;
+  /** Preparación paso a paso en lenguaje simple (vacío = se arma sola desde los ingredientes). */
+  steps?: string[];
 }
+
+/** Máximo de opciones culinarias por comida (Opción 1 + 4 alternativas). */
+export const MAX_OPTIONS = 5;
 
 export interface Meal {
   id: string;
@@ -87,8 +92,9 @@ export interface Meal {
   items: FoodItem[];
   title?: string;
   technique?: string;
-  /** Opción 2 · alternativa equivalente en macros. */
-  alt?: MealOption;
+  steps?: string[];
+  /** Opciones 2 a 5 · alternativas equivalentes en macros. */
+  alts?: MealOption[];
 }
 
 export interface Supplement {

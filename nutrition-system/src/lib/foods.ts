@@ -40,6 +40,8 @@ export interface FoodRef {
   /** Receta: ingredientes por porción base (para el desglose táctico) y técnica de cocción. */
   recipe?: { name: string; grams: number }[];
   technique?: string;
+  /** Preparación paso a paso del plato. */
+  steps?: string[];
   /** Detalle legible de la porción (cuando no hay receta estructurada). */
   detail?: string;
 }

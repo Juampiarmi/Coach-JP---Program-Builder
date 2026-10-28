@@ -6,10 +6,10 @@ import { macrosFor, matchFood, round1, round2 } from './foods';
 import { consolidateItems, dayAnchors, retimeMeals } from './schedule';
 import { autoTitle } from './menuOptions';
 import { uid } from './seed';
-import type { AiProvider, AiSettings, AthletePlan, FoodItem, Meal, MealDay, MealRole, Phase, Supplement } from './types';
+import { MAX_OPTIONS, type AiProvider, type AiSettings, type AthletePlan, type FoodItem, type Meal, type MealDay, type MealRole, type Phase, type Supplement } from './types';
 
 export const SYSTEM_PROMPT =
-  'Actúas como el motor de IA de bioenergética de Coach JP (@coachjp.training). Tu tono es táctico, basado en evidencia (ISSN, Morton 2018). Recibes notas del atleta y devuelves OBLIGATORIAMENTE un JSON válido con la siguiente estructura: { athleteName, sportType, bmr, tdee, targetKcalOn, targetKcalOff, macrosOn: {p, c, f}, macrosOff: {p, c, f}, meals: [{ name, time, items: [{food, grams, p, c, f, leucine}], leucineTotal, mpsAchieved: boolean }], supplements: [{name, dose, timing, evidenceDOI}] }. Usar alimentos habituales de Argentina y asegurar umbral de leucina >= 2.7g por comida principal.';
+  'Actuás como el motor de IA de bioenergética de Coach JP (@coachjp.training). Tu tono es táctico, argentino neutro, directo y motivador, basado en evidencia (ISSN, Morton 2018). Recibís notas del atleta y devolvés OBLIGATORIAMENTE un JSON válido con la siguiente estructura: { athleteName, sportType, bmr, tdee, targetKcalOn, targetKcalOff, macrosOn: {p, c, f}, macrosOff: {p, c, f}, meals: [{ name, time, items: [{food, grams, p, c, f, leucine}], leucineTotal, mpsAchieved: boolean }], supplements: [{name, dose, timing, evidenceDOI}] }. Usá alimentos habituales de Argentina y asegurá el umbral de leucina >= 2.7g por comida principal.';
 
 /** Extensión del contrato: campos opcionales que el Builder usa para rellenar todas las pestañas. */
 export const SYSTEM_PROMPT_EXTENSION = `
@@ -35,7 +35,8 @@ REGLAS DE CÁLCULO Y FORMATO (obligatorias):
 - Horario de entrenamiento: "profile.trainingTime" = hora de INICIO de la sesión ("HH:MM") y "profile.sessionMinutes" = duración. Ej: "entreno de 16 a 18 hs" → trainingTime "16:00", sessionMinutes 120 (nunca 18:00 como inicio).
 - Leucina ≥ 2,7 g SOLO en comidas principales (desayuno, almuerzo, cena). Colaciones, meriendas, pre y post-WOD son ingestas auxiliares: no les agregues huevo ni whey para llegar al umbral.
 - Nunca repitas el mismo alimento dos veces dentro de una comida: sumá los gramos en un único ítem.
-- OPCIONES CULINARIAS (platos reales de la gastronomía argentina, no listas de supermercado): cada meal lleva "title" (nombre del plato, ej. "Bife de cuadril a la plancha con arroz primavera y ensalada verde"), "technique" (técnica de cocción rápida + condimentos, ej. "al horno con spray de oliva, orégano y limón") y, en desayuno / almuerzo / merienda / cena, "alt": { "title", "technique", "items": [...] } = Opción 2 con OTRO plato equivalente en macros a la Opción 1 (±5 % en kcal, proteína, carbos y grasas), ej. "1/4 de tarta de pollo y puerro + ensalada de tomate".
+- OPCIONES CULINARIAS (platos reales de la gastronomía argentina, no listas de supermercado): cada meal lleva "title" (nombre del plato, ej. "Bife de cuadril a la plancha con arroz primavera y ensalada verde"), "technique" (técnica de cocción + condimentos), "steps" (3-6 pasos de preparación en lenguaje simple, voseo argentino y con las cantidades, ej. "Hervir el arroz 15-18 min", "Sarteneá la carne picada 8 min", "Mandá al horno a 200 °C por 20 min") y "alts": [ { "title", "technique", "steps", "items": [...] } ] = entre 2 y 4 opciones MÁS (Opciones 2 a 5) en TODAS las comidas (desayuno, almuerzo, pre-entreno, post-entreno, merienda y cena), cada una con OTRO plato equivalente en macros a la Opción 1 (±5 % en kcal, proteína, carbos y grasas). No repitas el plato ni la proteína principal entre opciones de la misma comida ni entre comidas seguidas (ej. Opción 2 "1/4 de tarta de pollo y puerro + ensalada de tomate", Opción 3 "Merluza al horno con puré de batata").
+- TONO: argentino neutro, directo y motivador. Usá vocabulario local (palta, frutilla, choclo, morrón, zapallito, arvejas, heladera, sartén con spray antiadherente o un chorrito de oliva, "cociná a fuego medio", "mandá al horno", plato principal, acompañamiento, pre-entreno, cena). Nunca "aguacate", "fresa", "maíz dulce", "pimiento", "calabacín", "guisantes", "nevera", "tú", "puedes" o "calentar".
 - Día OFF: no hay sesión. Prohibido "Pre-Entreno", "PeriWOD" o "bloque glucolítico"; la merienda del OFF se llama "Merienda Táctica OFF" (modulación glucémica / saciedad). Cafeína en OFF: consumo matutino habitual (café / mate), sin toma pre-workout.
 - Suplementos: sólo AIS Grupo A (creatina 0,04 g/kg, cafeína 3-6 mg/kg, beta-alanina, bicarbonato, nitrato) con DOI real.
 - Respondé SOLO con el objeto JSON, sin texto antes ni después y sin bloques de código.`;
@@ -92,8 +93,10 @@ export interface AiPlanJson {
     /** Nombre del plato real (Opción 1) y técnica de cocción rápida / condimentos. */
     title?: string;
     technique?: string;
-    /** Opción 2 · alternativa equivalente en macros. */
-    alt?: { title?: string; technique?: string; items?: AiItem[] };
+    steps?: string[];
+    /** Opciones 2 a 5 · alternativas equivalentes en macros (`alt` = formato anterior de una sola). */
+    alts?: AiOption[];
+    alt?: AiOption;
     leucineTotal?: number;
     mpsAchieved?: boolean;
   }[];
@@ -254,6 +257,9 @@ function fixCulinary(items: FoodItem[]) {
   }
 }
 
+type AiOption = { title?: string; technique?: string; steps?: string[]; items?: AiItem[] };
+const aiSteps = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim()).slice(0, 10) : undefined);
+
 /** Convierte la respuesta de la IA en el plan del Builder (todas las pestañas). */
 export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): AthletePlan {
   const pr = json.profile ?? {};
@@ -269,11 +275,16 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
     const name = m.name?.trim() || 'Bloque';
     const role = inferRole(name, m.role);
     const items = mapAiItems(m.items);
-    const altItems = mapAiItems(m.alt?.items);
-    const alt = altItems.length ? { title: m.alt?.title?.trim() || autoTitle(altItems), items: consolidateItems(altItems), technique: m.alt?.technique?.trim() || undefined } : undefined;
+    const alts = (Array.isArray(m.alts) ? m.alts : m.alt ? [m.alt] : [])
+      .map((o) => {
+        const list = consolidateItems(mapAiItems(o?.items));
+        fixCulinary(list);
+        return list.length ? { title: o.title?.trim() || autoTitle(list), items: list, technique: o.technique?.trim() || undefined, steps: aiSteps(o.steps) } : null;
+      })
+      .filter((o): o is NonNullable<typeof o> => !!o)
+      .slice(0, MAX_OPTIONS - 1);
     const merged = consolidateItems(items);
     fixCulinary(merged);
-    if (alt) fixCulinary(alt.items);
     const day = inferDay(m.day, role);
     // Día OFF: sin sesión → nada de "Pre-Entreno PeriWOD" ni "Bloque glucolítico".
     const offPeri = day === 'off' && (role === 'peri' || PERI_WORDS.test(name));
@@ -282,7 +293,8 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
       name: offPeri ? OFF_PERI_NAME : name,
       title: m.title?.trim() || undefined,
       technique: m.technique?.trim() || undefined,
-      alt,
+      steps: aiSteps(m.steps),
+      alts: alts.length ? alts : undefined,
       time: /^\d{1,2}:\d{2}$/.test(m.time ?? '') ? m.time!.padStart(5, '0') : '12:00',
       day,
       role: offPeri ? 'snack' : role,

@@ -73,7 +73,7 @@ export const useFoodDbStore = create<FoodDbState>()(
             const untouched = same(x, seedItem) && x.nombre === seedItem.nombre;
             return untouched
               ? { ...seedItem, disponible_para_ia: x.disponible_para_ia }
-              : { ...seedItem, ...x, prep_min: x.prep_min || seedItem.prep_min, lactosa: x.lactosa ?? seedItem.lactosa, tecnica: x.tecnica ?? seedItem.tecnica };
+              : { ...seedItem, ...x, prep_min: x.prep_min || seedItem.prep_min, lactosa: x.lactosa ?? seedItem.lactosa, tecnica: x.tecnica ?? seedItem.tecnica, pasos: x.pasos ?? seedItem.pasos };
           });
           items = [...items, ...seed.filter((x) => !have.has(x.id))];
         }

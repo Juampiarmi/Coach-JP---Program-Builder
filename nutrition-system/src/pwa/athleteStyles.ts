@@ -307,6 +307,14 @@ body::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area
 .item.free .fd s.ia{color:#FDBA74}
 /* ---- Herramientas tácticas ---- */
 .actions.tools button{border-color:rgba(249,115,22,.35);background:var(--fire-soft);color:#FDBA74}
+.scan-cta{display:block;width:100%;margin:0 0 12px;padding:13px 12px;border-radius:12px;border:1px solid var(--fire);background:linear-gradient(135deg,rgba(255,106,0,.22),rgba(255,106,0,.06));color:#fff;font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:800;letter-spacing:.08em;text-align:center}
+.scan-cta span{display:block;margin-top:4px;font-family:Inter,system-ui,sans-serif;font-size:11px;font-weight:500;letter-spacing:0;color:#FDBA74}
+.cmp{margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.cmp-row{display:grid;grid-template-columns:1fr 64px 64px 62px;gap:6px;padding:5px 0;border-top:1px solid var(--line);font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--text)}
+.cmp-row.hd{border-top:0;margin-top:6px;font-size:9px;letter-spacing:.12em;color:var(--micro)}
+.cmp-row i{font-style:normal;text-align:right}.cmp-row b{text-align:right}
+.cmp-row b.ok{color:var(--cyan)}.cmp-row b.lo{color:var(--fire)}
+.add-meal.story-go{background:transparent;border:1px solid var(--fire);color:#FDBA74}
 .batch-btn{display:block;width:100%;margin:6px 0 2px;padding:11px;border-radius:10px;border:1px solid rgba(249,115,22,.45);background:var(--fire-soft);color:#FDBA74;font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:700;letter-spacing:.06em}
 .hands{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
 .hands div{padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
@@ -333,6 +341,8 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .opt-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:0 14px 8px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
 .opt-tabs button{padding:7px;border-radius:7px;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--micro)}
 .opt-tabs button.on{color:var(--title);background:rgba(249,115,22,.12);box-shadow:inset 0 0 0 1px var(--fire)}
+.opt-tabs.many{display:flex;flex-wrap:wrap}
+.opt-tabs.many button{flex:1 1 30%;padding:7px 4px;white-space:nowrap;letter-spacing:.04em}
 .dish{padding:0 14px 10px}
 .dish .dtag{display:block;font-family:"JetBrains Mono",monospace;font-size:8.5px;letter-spacing:.14em;color:var(--fire);margin-bottom:2px}
 .dish b{display:block;font-size:14.5px;line-height:1.3;color:var(--title);font-weight:600}
@@ -347,6 +357,11 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .desglose li b{color:var(--title);font-weight:600}
 .desglose p{font-size:12.5px;color:var(--text);padding-bottom:10px;line-height:1.45}
 .desglose p b{color:var(--title)}
+.desglose .dsub{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.14em;color:var(--micro);margin:4px 0 6px}
+.desglose ul.ing li em{font-style:normal;color:var(--micro);font-size:11.5px}
+.desglose ol.psteps{list-style:none;counter-reset:ps;display:grid;gap:7px;padding-bottom:10px}
+.desglose ol.psteps li{counter-increment:ps;position:relative;padding-left:28px;font-size:13px;line-height:1.45;color:var(--text)}
+.desglose ol.psteps li:before{content:counter(ps);position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;border:1px solid rgba(56,189,248,.45);color:var(--cyan);font-family:"JetBrains Mono",monospace;font-size:10px;display:flex;align-items:center;justify-content:center}
 `;
 
 export default styles;

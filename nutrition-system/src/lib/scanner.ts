@@ -7,7 +7,7 @@ import { uid } from './seed';
 import type { AiSettings, FoodItem } from './types';
 
 /** Prompt del analista visual: desglose por ingrediente con la canasta argentina. */
-export const SCAN_PROMPT = `Actúas como el analista visual de bioenergética de Coach JP (@coachjp.training).
+export const SCAN_PROMPT = `Actuás como el analista visual de bioenergética de Coach JP (@coachjp.training).
 Recibís la foto de un plato. Identificá cada ingrediente visible y estimá su peso en gramos (peso cocido para carnes,
 arroz, fideos, papa, batata) usando alimentos habituales de Argentina (ej: pechuga de pollo, cuadril, nalga, milanesa,
 arroz blanco, fideos, papa, batata, huevo, ensalada mixta, palta, aceite de oliva, pan, queso, yogur).

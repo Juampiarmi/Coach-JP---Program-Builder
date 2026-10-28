@@ -5,9 +5,9 @@ import { ChevronDown, CopyPlus, ExternalLink, Pill, Plus, RefreshCw, Trash2, Ute
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
 import { alternativesFor, equivalentGrams, macrosFor, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
-import type { DayMode, FoodItem, Meal, MealDay, MealRole } from '@/lib/types';
+import { MAX_OPTIONS, type DayMode, type FoodItem, type Meal, type MealDay, type MealOption, type MealRole } from '@/lib/types';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
-import { autoTechnique, autoTitle, compensateSwap, optionTotals } from '@/lib/menuOptions';
+import { ALT_TARGET, autoSteps, autoTechnique, autoTitle, compensateSwap, optionTotals } from '@/lib/menuOptions';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
 import { BalanceBanner } from './BalanceBanner';
@@ -327,7 +327,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         <FoodPicker onPick={(id) => addFood(meal.id, id, FOOD_BY_ID[id].unit?.grams ?? 100)} />
       </div>
       <TechniqueBox meal={meal} />
-      <AltOption meal={meal} />
+      <AltOptions meal={meal} />
     </Panel>
   );
 }
@@ -354,110 +354,198 @@ function OptionHeader({ meal }: { meal: Meal }) {
   );
 }
 
-/** Desglose táctico: técnica de cocción rápida y condimentos (editable, con sugerencia automática). */
-function TechniqueBox({ meal }: { meal: Meal }) {
-  const setMealOption = usePlanStore((s) => s.setMealOption);
-  const [open, setOpen] = useState(false);
-  const auto = autoTechnique(meal.items);
+/** Lista de pasos editable: una línea = un paso (vacío = preparación automática desde los ingredientes). */
+function StepsEditor({ steps, auto, onChange }: { steps?: string[]; auto: string[]; onChange: (v: string[] | undefined) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = steps?.length ? steps : auto;
   return (
-    <div className="mt-3 rounded-lg border border-line bg-carbon">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
-        <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-steel">[ DESGLOSE TÁCTICO · TÉCNICA Y CONDIMENTOS ]</span>
-        <span className="min-w-0 flex-1 truncate text-[11.5px] text-mute">{meal.technique || auto}</span>
-        <ChevronDown className={cx('h-4 w-4 flex-none text-mute transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div className="border-t border-line p-3">
+    <div>
+      <ol className="space-y-1">
+        {shown.map((st, k) => (
+          <li key={k} className="flex gap-2 text-[12.5px] leading-snug text-ink">
+            <span className="tnum mt-px flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full border border-cyan-hud/40 font-mono text-[9.5px] text-cyan-hud">{k + 1}</span>
+            <span>{st}</span>
+          </li>
+        ))}
+      </ol>
+      {draft === null ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setDraft(shown.join('\n'))} className="rounded-md border border-line px-2 py-1 font-mono text-[9.5px] text-steel hover:text-ink">
+            EDITAR PASOS
+          </button>
+          {steps?.length ? (
+            <button type="button" onClick={() => onChange(undefined)} className="rounded-md border border-line px-2 py-1 font-mono text-[9.5px] text-steel hover:text-ink">
+              VOLVER A AUTOMÁTICO
+            </button>
+          ) : (
+            <span className="font-mono text-[9px] text-mute">AUTO · SE ARMA CON LOS INGREDIENTES Y GRAMOS</span>
+          )}
+        </div>
+      ) : (
+        <div className="mt-2">
           <textarea
-            rows={2}
-            value={meal.technique ?? ''}
-            placeholder={auto}
-            onChange={(e) => setMealOption(meal.id, { technique: e.target.value || undefined })}
-            className="w-full resize-y rounded-md border border-line bg-panel2 p-2 text-[12.5px] text-ink outline-none placeholder:text-steel/70 focus:border-cyan-hud/50"
+            rows={Math.max(3, shown.length + 1)}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            aria-label="Pasos de preparación (uno por línea)"
+            className="w-full resize-y rounded-md border border-line bg-panel2 p-2 text-[12.5px] text-ink outline-none focus:border-cyan-hud/50"
           />
+          <div className="mt-1 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const list = draft.split('\n').map((x) => x.trim()).filter(Boolean);
+                onChange(list.length ? list : undefined);
+                setDraft(null);
+              }}
+              className="rounded-md border border-cyan-hud/40 px-2 py-1 font-mono text-[9.5px] font-bold text-cyan-hud"
+            >
+              GUARDAR PASOS
+            </button>
+            <button type="button" onClick={() => setDraft(null)} className="rounded-md border border-line px-2 py-1 font-mono text-[9.5px] text-steel">
+              CANCELAR
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-/** Opción 2 · alternativa equivalente en macros (plato del catálogo + acompañamientos). */
-function AltOption({ meal }: { meal: Meal }) {
-  const generateAlt = usePlanStore((s) => s.generateAlt);
+/** Desglose táctico de la Opción 1: preparación paso a paso + tip de técnica y condimentos. */
+function TechniqueBox({ meal }: { meal: Meal }) {
   const setMealOption = usePlanStore((s) => s.setMealOption);
+  const [open, setOpen] = useState(false);
+  const auto = autoTechnique(meal.items);
+  const autoS = autoSteps(meal.items);
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-carbon">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
+        <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-steel">[ DESGLOSE TÁCTICO · PREPARACIÓN PASO A PASO ]</span>
+        <span className="min-w-0 flex-1 truncate text-[11.5px] text-mute">{(meal.steps?.length ? meal.steps : autoS).length} pasos · {meal.technique || auto}</span>
+        <ChevronDown className={cx('h-4 w-4 flex-none text-mute transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-line p-3">
+          <StepsEditor steps={meal.steps} auto={autoS} onChange={(v) => setMealOption(meal.id, { steps: v })} />
+          <label className="block">
+            <span className="font-mono text-[9.5px] tracking-[0.12em] text-mute">TIP DE TÉCNICA Y CONDIMENTOS</span>
+            <textarea
+              rows={2}
+              value={meal.technique ?? ''}
+              placeholder={auto}
+              onChange={(e) => setMealOption(meal.id, { technique: e.target.value || undefined })}
+              className="mt-1 w-full resize-y rounded-md border border-line bg-panel2 p-2 text-[12.5px] text-ink outline-none placeholder:text-steel/70 focus:border-cyan-hud/50"
+            />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Opciones 2 a 5 · alternativas equivalentes en macros (platos del catálogo y combinaciones caseras). */
+function AltOptions({ meal }: { meal: Meal }) {
+  const generateAlt = usePlanStore((s) => s.generateAlt);
+  const [none, setNone] = useState(false);
+  const alts = meal.alts ?? [];
+  const canAdd = alts.length < ALT_TARGET && optionTotals(meal.items).kcal >= 80;
+  return (
+    <div className="mt-3 space-y-2">
+      {alts.map((a, k) => (
+        <AltCard key={`${k}-${a.title}`} meal={meal} alt={a} slot={k} />
+      ))}
+      {canAdd && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setNone(!generateAlt(meal.id, alts.length, 0))}
+            className="flex items-center gap-1.5 rounded-md border border-fire/40 bg-fire/10 px-2.5 py-1.5 font-mono text-[10px] font-bold tracking-[0.1em] text-fire transition hover:border-fire hover:bg-fire/20"
+          >
+            <Zap className="h-3.5 w-3.5" /> [ ⚡ GENERAR OPCIÓN {alts.length + 2} EQUIVALENTE ]
+          </button>
+          <span className="font-mono text-[9.5px] text-mute">
+            {alts.length + 1}/{MAX_OPTIONS} OPCIONES
+          </span>
+          {none && <span className="font-mono text-[10px] text-mute">No hay más platos distintos del catálogo / canasta para este momento del día.</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AltCard({ meal, alt, slot }: { meal: Meal; alt: MealOption; slot: number }) {
+  const generateAlt = usePlanStore((s) => s.generateAlt);
+  const setAlt = usePlanStore((s) => s.setAlt);
   const setAltItemGrams = usePlanStore((s) => s.setAltItemGrams);
   const removeAltItem = usePlanStore((s) => s.removeAltItem);
-  const [idx, setIdx] = useState(0);
-  const [none, setNone] = useState(false);
-  const alt = meal.alt;
+  const [cycle, setCycle] = useState(0);
+  const [open, setOpen] = useState(false);
   const main = optionTotals(meal.items);
-
-  if (!alt)
-    return (
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setNone(!generateAlt(meal.id, 0))}
-          className="flex items-center gap-1.5 rounded-md border border-fire/40 bg-fire/10 px-2.5 py-1.5 font-mono text-[10px] font-bold tracking-[0.1em] text-fire transition hover:border-fire hover:bg-fire/20"
-        >
-          <Zap className="h-3.5 w-3.5" /> [ ⚡ GENERAR OPCIÓN 2 EQUIVALENTE ]
-        </button>
-        {none && <span className="font-mono text-[10px] text-mute">Sin platos del catálogo / canasta para este momento del día.</span>}
-      </div>
-    );
-
   const t = optionTotals(alt.items);
+  const n = slot + 2;
   return (
-    <div className="mt-3 rounded-lg border border-fire/30 bg-fire/[0.04] p-3">
+    <div className="rounded-lg border border-fire/30 bg-fire/[0.04] p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={cx(optTag, 'border-fire/50 text-fire')}>[ OPCIÓN 2 · ALTERNATIVA ]</span>
+        <span className={cx(optTag, 'border-fire/50 text-fire')}>[ OPCIÓN {n} · ALTERNATIVA ]</span>
         <input
           value={alt.title}
-          onChange={(e) => setMealOption(meal.id, { alt: { ...alt, title: e.target.value } })}
-          aria-label="Nombre del plato · Opción 2"
+          onChange={(e) => setAlt(meal.id, slot, { title: e.target.value })}
+          aria-label={`Nombre del plato · Opción ${n}`}
           className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-ink outline-none"
         />
         <button
           type="button"
-          title="Probar otra alternativa del catálogo"
+          title="Probar otro plato del catálogo para esta opción"
           onClick={() => {
-            const n = idx + 1;
-            setIdx(n);
-            generateAlt(meal.id, n);
+            const c = cycle + 1;
+            setCycle(c);
+            generateAlt(meal.id, slot, c);
           }}
           className="flex items-center gap-1 rounded-md border border-line px-2 py-1 font-mono text-[9.5px] text-steel hover:text-ink"
         >
           <RefreshCw className="h-3 w-3" /> OTRA
         </button>
-        <button type="button" onClick={() => setMealOption(meal.id, { alt: undefined })} title="Quitar Opción 2" className="p-1 text-mute hover:text-fire">
+        <button type="button" onClick={() => setOpen((v) => !v)} className="rounded-md border border-line px-2 py-1 font-mono text-[9.5px] text-steel hover:text-ink" aria-expanded={open}>
+          {open ? 'OCULTAR' : 'VER DESGLOSE'}
+        </button>
+        <button type="button" onClick={() => setAlt(meal.id, slot, null)} title={`Quitar Opción ${n}`} className="p-1 text-mute hover:text-fire">
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="mt-2 divide-y divide-line">
-        {alt.items.map((it) => (
-          <div key={it.id} className="flex items-center gap-2 py-1.5">
-            <div className="relative w-[76px]">
-              <NumInput value={it.grams} min={0} max={3000} decimals={false} ariaLabel={`Gramos de ${it.food}`} onChange={(g) => setAltItemGrams(meal.id, it.id, g)} className="py-1 pl-2 pr-6 text-right" />
-              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-mute">g</span>
-            </div>
-            <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{it.food}</span>
-            <span className="tnum hidden font-mono text-[10px] text-mute sm:inline">
-              P{fmt0(it.p)} C{fmt0(it.c)} G{fmt0(it.f)}
-            </span>
-            <button type="button" onClick={() => removeAltItem(meal.id, it.id)} className="p-1 text-mute hover:text-fire" aria-label={`Quitar ${it.food}`}>
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="tnum mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">
+      <div className="tnum mt-1.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">
         <span className="text-ink">{fmt0(t.kcal)} kcal ({pctTxt(t.kcal, main.kcal)})</span>
         <span className="text-steel">P {fmt0(t.p)} g ({pctTxt(t.p, main.p)})</span>
         <span className="text-steel">C {fmt0(t.c)} g ({pctTxt(t.c, main.c)})</span>
         <span className="text-steel">G {fmt0(t.f)} g ({pctTxt(t.f, main.f)})</span>
         <span className="text-mute">vs Opción 1</span>
       </div>
-      {alt.technique && <p className="mt-1.5 text-[11.5px] text-steel">{alt.technique}</p>}
+      {open && (
+        <>
+          <div className="mt-2 divide-y divide-line">
+            {alt.items.map((it: FoodItem) => (
+              <div key={it.id} className="flex items-center gap-2 py-1.5">
+                <div className="relative w-[76px]">
+                  <NumInput value={it.grams} min={0} max={3000} decimals={false} ariaLabel={`Gramos de ${it.food}`} onChange={(g) => setAltItemGrams(meal.id, slot, it.id, g)} className="py-1 pl-2 pr-6 text-right" />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-mute">g</span>
+                </div>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{it.food}</span>
+                <span className="tnum hidden font-mono text-[10px] text-mute sm:inline">
+                  P{fmt0(it.p)} C{fmt0(it.c)} G{fmt0(it.f)}
+                </span>
+                <button type="button" onClick={() => removeAltItem(meal.id, slot, it.id)} className="p-1 text-mute hover:text-fire" aria-label={`Quitar ${it.food}`}>
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 rounded-md border border-line bg-carbon p-2.5">
+            <div className="mb-1.5 font-mono text-[9.5px] font-bold tracking-[0.12em] text-steel">[ PREPARACIÓN PASO A PASO ]</div>
+            <StepsEditor steps={alt.steps} auto={autoSteps(alt.items)} onChange={(v) => setAlt(meal.id, slot, { steps: v })} />
+          </div>
+          {alt.technique && <p className="mt-1.5 text-[11.5px] text-steel">Tip: {alt.technique}</p>}
+        </>
+      )}
     </div>
   );
 }
@@ -651,24 +739,27 @@ function RetimeBar() {
   );
 }
 
-/** Opciones culinarias: Opción 2 equivalente para todo el plan en un toque. */
+/** Opciones culinarias: hasta 5 opciones equivalentes por comida para todo el plan en un toque. */
 function AltsBar() {
   const meals = usePlanStore((s) => s.plan.meals);
   const generateAllAlts = usePlanStore((s) => s.generateAllAlts);
-  const main = meals.filter((m) => ['breakfast', 'lunch', 'snack', 'dinner'].includes(m.role));
-  const withAlt = main.filter((m) => m.alt).length;
+  const main = meals.filter((m) => optionTotals(m.items).kcal >= 80);
+  const full = main.filter((m) => (m.alts?.length ?? 0) >= 2).length;
+  const total = main.reduce((a, m) => a + 1 + (m.alts?.length ?? 0), 0);
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-carbon px-3 py-2">
       <span className="font-mono text-[10px] tracking-[0.12em] text-mute">OPCIONES CULINARIAS ·</span>
       <span className="tnum flex-1 font-mono text-[10.5px] text-steel">
-        {withAlt}/{main.length} comidas principales con [ OPCIÓN 2 ]
+        {full}/{main.length} comidas con 3 a 5 opciones · {total} opciones en total
       </span>
       <button
         type="button"
         onClick={() => generateAllAlts(false)}
+        title="Completa hasta 5 opciones equivalentes por comida, sin repetir la base de la anterior"
+
         className="rounded-md border border-fire/40 px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.1em] text-fire transition hover:border-fire hover:bg-fire/10"
       >
-        [ ⚡ COMPLETAR OPCIÓN 2 EN TODO EL PLAN ]
+        [ ⚡ COMPLETAR 5 OPCIONES EN TODO EL PLAN ]
       </button>
       <NewDishButton />
     </div>
