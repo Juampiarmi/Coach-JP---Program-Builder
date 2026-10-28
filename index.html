@@ -1966,23 +1966,27 @@ const jpCoachSonido = (function(){
       fn(c);
     }catch(e){}
   }
-  /* 3 - 2 - 1: tonos con cuerpo (~0.6 s), ataque suave y caida larga; volumen creciente */
-  function pip(n){
-    sonar(c => {
-      const f = HZ[n] || HZ[3], v = n === 1 ? 0.22 : (n === 2 ? 0.19 : 0.16), d = 0.6;
-      larga(c, f, d, v, { atk: 0.012, env: [[0.12, 0.78], [0.34, 0.42], [0.48, 0.14]] });
-      larga(c, f * 1.002, d * 0.92, v * 0.45, { atk: 0.015, env: [[0.14, 0.7], [0.36, 0.3]] });
-      larga(c, f, d * 0.8, v * 0.5, { tipo: 'triangle', lp: f * 3, atk: 0.01, env: [[0.12, 0.65], [0.3, 0.25]] });
-      larga(c, f * 2, d * 0.6, v * 0.2, { atk: 0.012, env: [[0.1, 0.6]] });
-      larga(c, f * 3, d * 0.35, v * 0.07, { atk: 0.01 });
-    });
+  const CURVAS = {};
+  function curva(k){
+    if(!CURVAS[k]){
+      const n = 1024, c = new Float32Array(n), t = Math.tanh(k);
+      for(let i = 0; i < n; i++){ const x = i * 2 / n - 1; c[i] = Math.tanh(k * x) / t; }
+      CURVAS[k] = c;
+    }
+    return CURVAS[k];
   }
-  /* parcial con envolvente de varios tramos (env: [segundos, fraccion del pico]) y respiracion opcional (resp) */
+  /* parcial con filtro resonante de barrido (lp, q, lpEnv), saturacion (dist), vibracion de amplitud (resp) y envolvente de varios tramos (env) */
   function larga(c, f, d, v, o){
     o = o || {};
     const t0 = c.currentTime + 0.006, osc = c.createOscillator(), g = c.createGain(); let nodo = osc;
     osc.type = o.tipo || 'sine'; osc.frequency.setValueAtTime(f, t0);
-    if(o.lp){ const bq = c.createBiquadFilter(); bq.type = 'lowpass'; bq.frequency.setValueAtTime(o.lp, t0); osc.connect(bq); nodo = bq; }
+    if(o.lp){
+      const bq = c.createBiquadFilter(); bq.type = 'lowpass'; bq.frequency.setValueAtTime(o.lp, t0);
+      if(o.q) bq.Q.setValueAtTime(o.q, t0);
+      if(o.lpEnv) o.lpEnv.forEach(p => bq.frequency.exponentialRampToValueAtTime(p[1], t0 + p[0]));
+      osc.connect(bq); nodo = bq;
+    }
+    if(o.dist){ const ws = c.createWaveShaper(); ws.curve = curva(o.dist); ws.oversample = '2x'; nodo.connect(ws); nodo = ws; }
     if(o.resp){
       const br = c.createGain(), lfo = c.createOscillator(), lg = c.createGain();
       br.gain.setValueAtTime(1, t0); lfo.frequency.setValueAtTime(o.resp.hz, t0); lg.gain.setValueAtTime(o.resp.prof, t0);
@@ -1994,20 +1998,26 @@ const jpCoachSonido = (function(){
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
     nodo.connect(g); g.connect(bus); osc.start(t0); osc.stop(t0 + d + 0.03);
   }
-  /* YA / fin: ring metalico sostenido (~2.6 s): 5 senos desafinados (batimiento), apoyo grave y parciales metalicos */
+  /* 3 - 2 - 1: pulso de alerta tactica (~0.17 s), dos sierras desafinadas por un pasa-bajos resonante que barre + cuadrada una octava abajo */
+  function pip(n){
+    sonar(c => {
+      const f = HZ[n] || HZ[3], v = n === 1 ? 0.25 : (n === 2 ? 0.22 : 0.19), barrido = [[0.09, f * 2.2]];
+      larga(c, f, 0.17, v, { tipo: 'sawtooth', lp: f * 7, lpEnv: barrido, q: 6, dist: 2, atk: 0.002, env: [[0.025, 1], [0.11, 0.45]] });
+      larga(c, f * 1.007, 0.17, v * 0.7, { tipo: 'sawtooth', lp: f * 7, lpEnv: barrido, q: 6, dist: 2, atk: 0.002, env: [[0.025, 1], [0.11, 0.45]] });
+      larga(c, f / 2, 0.15, v * 0.55, { tipo: 'square', lp: f * 2.5, q: 2, atk: 0.002, env: [[0.03, 1], [0.1, 0.4]] });
+    });
+  }
+  /* YA / fin: bocina tactica de combate (~1.9 s): sierras desafinadas con barrido, capa grave-media, saturacion y vibracion de amplitud */
   function ya(){
     sonar(c => {
-      const f = HZ.ya, D = 2.6;
-      larga(c, f * 2, 0.04, 0.16, { tipo: 'square', lp: 6000, atk: 0.001 });
-      [[0.996, 0.085], [0.998, 0.09], [1, 0.1], [1.002, 0.09], [1.005, 0.085]].forEach((p, i) => {
-        larga(c, f * p[0], D - i * 0.08, p[1], { atk: 0.004, env: [[0.25, 0.55], [0.9, 0.27], [1.6, 0.1], [2.1, 0.03]], resp: (i % 2) ? { hz: 5.2 + i * 0.4, prof: 0.08 } : null });
-      });
-      larga(c, f / 2, 2.2, 0.12, { atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
-      larga(c, f / 2 * 1.003, 2.1, 0.095, { atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
-      larga(c, f / 4, 1.8, 0.1, { atk: 0.008, env: [[0.3, 0.6], [0.9, 0.2]] });
-      larga(c, f * 2.01, 1.7, 0.09, { atk: 0.003, env: [[0.2, 0.5], [0.8, 0.15]] });
-      larga(c, f * 2.76, 1.2, 0.065, { atk: 0.002, env: [[0.15, 0.5]], resp: { hz: 6.5, prof: 0.15 } });
-      larga(c, f * 4.07, 0.5, 0.035, { atk: 0.002 });
+      const f = HZ.ya, D = 1.95, ENV = [[0.04, 1], [1.6, 0.8]], barrido = [[0.25, 3800], [1.6, 2800]];
+      larga(c, f * 2, 0.07, 0.14, { tipo: 'sawtooth', lp: 9000, atk: 0.001 });
+      larga(c, f * 0.994, D, 0.105, { tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 33, prof: 0.28 } });
+      larga(c, f * 1.006, D, 0.105, { tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 37, prof: 0.28 } });
+      larga(c, f, D, 0.09, { tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 41, prof: 0.2 } });
+      larga(c, f / 2, D, 0.15, { tipo: 'square', lp: 2600, q: 3, dist: 2, atk: 0.006, env: ENV });
+      larga(c, f / 2 * 1.005, D, 0.12, { tipo: 'sawtooth', lp: 2200, q: 3, dist: 2, atk: 0.006, env: ENV, resp: { hz: 29, prof: 0.3 } });
+      larga(c, f / 4, D, 0.11, { tipo: 'sawtooth', lp: 1100, atk: 0.008, env: ENV });
     });
   }
   return { pip, ya, desbloquear, hz: HZ };
@@ -12031,12 +12041,13 @@ function playBeep(freq, dur, peakGain, delay, type){
    SONIDO DE TIMERS Y DESCANSOS · UN SOLO MOTOR NATIVO (Web Audio API)
    Todo se sintetiza por codigo: sin MP3/WAV ni librerias externas, sin retardo de carga y funciona sin conexion.
    Es el unico sonido de TODOS los relojes (WOD, intervalos, descanso entre series). Cuenta ascendente:
-     3  -> La4   440.00 Hz  seco y sobrio
+     3  -> La4   440.00 Hz
      2  -> Re5   587.33 Hz  sube la tension
-     1  -> La5   880.00 Hz  pre-alerta brillante
-     YA -> Re6  1174.66 Hz  mas fuerte, ataque cortante y cola larga de ~2 s que respira (arranque / fin de la cuenta / fin del descanso)
-   Cada pip = seno limpio + octava + parcial inarmonico (timbre metalico) con envolvente de ganancia limpia
-   (ataque lineal de 2-4 ms, caida exponencial), todo por un compresor comun para que nunca sature.
+     1  -> La5   880.00 Hz  pre-alerta
+     YA -> Re6  1174.66 Hz  bocina / chicharra de combate de ~1.9 s (arranque / fin de la cuenta / fin del descanso)
+   Timbre tactico-industrial: ondas de sierra y cuadradas desafinadas entre si, filtro pasa-bajos con barrido dinamico y resonancia,
+   saturacion suave (waveshaper) y, en la bocina, vibracion de amplitud rapida (zumbido). Los pips son pulsos secos de ~0.17 s con cuerpo
+   grave-medio (cuadrada una octava abajo); todo por un compresor comun para que nunca sature.
    Contrato: cuenta(n) con n = segundos que faltan (3, 2, 1); go() / chicharra() = el "YA".
 ========================================================= */
 var jpPerfilSonido = (function(){
@@ -12054,12 +12065,29 @@ var jpPerfilSonido = (function(){
     comp.connect(mg); mg.connect(ctx.destination);
     bus = comp; busCtx = ctx; return bus;
   }
-  /* un parcial: f (Hz), d (s), v (volumen pico), t (retardo), tipo, atk (s), lp (corte pasa-bajos) */
+  var CURVAS = {};
+  function curva(k){
+    if(!CURVAS[k]){
+      var n = 1024, c = new Float32Array(n), i, x, t = Math.tanh(k);
+      for(i = 0; i < n; i++){ x = i * 2 / n - 1; c[i] = Math.tanh(k * x) / t; }
+      CURVAS[k] = c;
+    }
+    return CURVAS[k];
+  }
+  /* un parcial: f (Hz), d (s), v (volumen pico), t (retardo), tipo, atk (s), lp (corte pasa-bajos), q, lpEnv, dist, resp, env */
   function parcial(ctx, o){
     var t0 = ctx.currentTime + LAT + (o.t || 0), osc = ctx.createOscillator(), g = ctx.createGain(), nodo = osc;
     osc.type = o.tipo || 'sine';
     osc.frequency.setValueAtTime(o.f, t0);
-    if(o.lp){ var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(o.lp, t0); osc.connect(lp); nodo = lp; }
+    /* filtro pasa-bajos: corte inicial lp, resonancia q (dB) y barrido dinamico lpEnv [[segundos, Hz]] (exponencial) */
+    if(o.lp){
+      var lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(o.lp, t0);
+      if(o.q) lp.Q.setValueAtTime(o.q, t0);
+      if(o.lpEnv) o.lpEnv.forEach(function(p){ lp.frequency.exponentialRampToValueAtTime(p[1], t0 + p[0]); });
+      osc.connect(lp); nodo = lp;
+    }
+    /* saturacion suave (tanh): aspereza y pegada */
+    if(o.dist){ var ws = ctx.createWaveShaper(); ws.curve = curva(o.dist); ws.oversample = '2x'; nodo.connect(ws); nodo = ws; }
     /* respiracion: un LFO lento modula la ganancia de forma multiplicativa (la cola sigue cayendo a cero, sin zumbido residual) */
     if(o.resp){
       var br = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
@@ -12075,38 +12103,35 @@ var jpPerfilSonido = (function(){
     nodo.connect(g); g.connect(salida(ctx));
     osc.start(t0); osc.stop(t0 + o.d + 0.03);
   }
-  /* 3 - 2 - 1: tonos con cuerpo (~0.6 s). Seno + seno desafinado 0.2 % (la nota "respira") + triangular filtrada (calidez) + 2.º y 3.er armonico,
-     con ataque suave de 10-15 ms, un sustain corto y una caida larga y gradual. Volumen creciente junto con la altura. */
+  /* 3 - 2 - 1: pulso de alerta tactica (radar / control de lanzamiento). ~0.17 s, seco y fuerte.
+     Dos sierras desafinadas 0.7 % (densidad) por un pasa-bajos resonante que barre de brillante a oscuro en 90 ms (la "pegada"),
+     mas una cuadrada una octava abajo para el cuerpo grave-medio. Sube de tono y de volumen: 440 -> 587.33 -> 880 Hz. */
   function pip(ctx, n){
-    var f = HZ[n] || HZ[3], v = n === 1 ? 0.22 : (n === 2 ? 0.19 : 0.16), d = 0.6;
-    parcial(ctx, { f: f, d: d, v: v, atk: 0.012, env: [[0.12, 0.78], [0.34, 0.42], [0.48, 0.14]] });
-    parcial(ctx, { f: f * 1.002, d: d * 0.92, v: v * 0.45, atk: 0.015, env: [[0.14, 0.7], [0.36, 0.3]] });
-    parcial(ctx, { f: f, d: d * 0.8, v: v * 0.5, tipo: 'triangle', lp: f * 3, atk: 0.01, env: [[0.12, 0.65], [0.3, 0.25]] });
-    parcial(ctx, { f: f * 2, d: d * 0.6, v: v * 0.2, atk: 0.012, env: [[0.1, 0.6]] });
-    parcial(ctx, { f: f * 3, d: d * 0.35, v: v * 0.07, atk: 0.01 });
+    var f = HZ[n] || HZ[3], v = n === 1 ? 0.25 : (n === 2 ? 0.22 : 0.19);
+    var barrido = [[0.09, f * 2.2]];
+    parcial(ctx, { f: f, d: 0.17, v: v, tipo: 'sawtooth', lp: f * 7, lpEnv: barrido, q: 6, dist: 2, atk: 0.002, env: [[0.025, 1], [0.11, 0.45]] });
+    parcial(ctx, { f: f * 1.007, d: 0.17, v: v * 0.7, tipo: 'sawtooth', lp: f * 7, lpEnv: barrido, q: 6, dist: 2, atk: 0.002, env: [[0.025, 1], [0.11, 0.45]] });
+    parcial(ctx, { f: f / 2, d: 0.15, v: v * 0.55, tipo: 'square', lp: f * 2.5, q: 2, atk: 0.002, env: [[0.03, 1], [0.1, 0.4]] });
   }
-  /* YA / fin de descanso: RING metalico sostenido (~2.6 s) tipo timbre de gimnasio / ring de boxeo.
-     - nucleo: 5 senos desafinados entre si (-0.4 % ... +0.5 %) alrededor de 1174.66 Hz -> batimiento / chorus metalico que vibra en el aire
-     - ataque rapido (4 ms) con un golpe de martillo cortisimo y caida exponencial muy larga y suave en tres tramos
-     - apoyo grave: octava y doble octava por debajo (tambien desafinadas) para cuerpo y presencia
-     - parciales metalicos inarmonicos con una vibracion lenta */
+  /* YA / fin de descanso: BOCINA TACTICA de combate (~1.9 s), estilo chicharra de intervalos. Sin campana ni ring fino.
+     - capa aguda: 3 sierras en 1174.66 Hz desafinadas (-0.6 % / 0 / +0.6 %) con pasa-bajos que se cierra despacio (bite inicial brillante -> sustain oscuro)
+     - capa grave-media: cuadrada y sierra desafinada una octava abajo (587 Hz) + sierra dos octavas abajo (293 Hz) para peso y autoridad
+     - saturacion tanh y vibracion de amplitud de 29-41 Hz (rugosidad de zumbador)
+     - ataque de 6 ms, meseta sostenida de ~1.6 s y corte final rapido; un impacto breve de sierra agudo en el arranque */
   function ya(ctx){
-    var f = HZ.ya, D = 2.6;
-    parcial(ctx, { f: f * 2, d: 0.04, v: 0.16, tipo: 'square', lp: 6000, atk: 0.001 });
-    [[0.996, 0.085], [0.998, 0.09], [1, 0.1], [1.002, 0.09], [1.005, 0.085]].forEach(function(p, i){
-      parcial(ctx, { f: f * p[0], d: D - i * 0.08, v: p[1], atk: 0.004, env: [[0.25, 0.55], [0.9, 0.27], [1.6, 0.1], [2.1, 0.03]], resp: (i % 2) ? { hz: 5.2 + i * 0.4, prof: 0.08 } : null });
-    });
-    parcial(ctx, { f: f / 2, d: 2.2, v: 0.12, atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
-    parcial(ctx, { f: f / 2 * 1.003, d: 2.1, v: 0.095, atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
-    parcial(ctx, { f: f / 4, d: 1.8, v: 0.1, atk: 0.008, env: [[0.3, 0.6], [0.9, 0.2]] });
-    parcial(ctx, { f: f * 2.01, d: 1.7, v: 0.09, atk: 0.003, env: [[0.2, 0.5], [0.8, 0.15]] });
-    parcial(ctx, { f: f * 2.76, d: 1.2, v: 0.065, atk: 0.002, env: [[0.15, 0.5]], resp: { hz: 6.5, prof: 0.15 } });
-    parcial(ctx, { f: f * 4.07, d: 0.5, v: 0.035, atk: 0.002 });
+    var f = HZ.ya, D = 1.95, ENV = [[0.04, 1], [1.6, 0.8]], barrido = [[0.25, 3800], [1.6, 2800]];
+    parcial(ctx, { f: f * 2, d: 0.07, v: 0.14, tipo: 'sawtooth', lp: 9000, atk: 0.001 });
+    parcial(ctx, { f: f * 0.994, d: D, v: 0.105, tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 33, prof: 0.28 } });
+    parcial(ctx, { f: f * 1.006, d: D, v: 0.105, tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 37, prof: 0.28 } });
+    parcial(ctx, { f: f, d: D, v: 0.09, tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 41, prof: 0.2 } });
+    parcial(ctx, { f: f / 2, d: D, v: 0.15, tipo: 'square', lp: 2600, q: 3, dist: 2, atk: 0.006, env: ENV });
+    parcial(ctx, { f: f / 2 * 1.005, d: D, v: 0.12, tipo: 'sawtooth', lp: 2200, q: 3, dist: 2, atk: 0.006, env: ENV, resp: { hz: 29, prof: 0.3 } });
+    parcial(ctx, { f: f / 4, d: D, v: 0.11, tipo: 'sawtooth', lp: 1100, atk: 0.008, env: ENV });
   }
-  /* mitad del tiempo objetivo: doble pulso suave (no compite con la cuenta final) */
+  /* mitad del tiempo objetivo: doble golpe seco de sierra (no compite con la cuenta final) */
   function mitad(ctx){
-    parcial(ctx, { f: HZ[2], d: 0.09, v: 0.1, atk: 0.004 });
-    parcial(ctx, { f: HZ[2], d: 0.09, v: 0.1, atk: 0.004, t: 0.15 });
+    parcial(ctx, { f: HZ[2], d: 0.09, v: 0.08, tipo: 'sawtooth', lp: HZ[2] * 3, q: 4, atk: 0.002, env: [[0.02, 1]] });
+    parcial(ctx, { f: HZ[2], d: 0.09, v: 0.08, tipo: 'sawtooth', lp: HZ[2] * 3, q: 4, atk: 0.002, env: [[0.02, 1]], t: 0.15 });
   }
   var VIB = { tick: [30], mitad: [50, 40, 50], fin: [120, 80, 160], inicio: [120, 80, 160] };
   function vibrar(ev, sinVib){
@@ -61794,22 +61819,27 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     }catch(e){}
   }
   /* 3 - 2 - 1: tonos con cuerpo (~0.6 s), ataque suave y caida larga; volumen creciente */
-  function pip(n){
-    sonar(function(c){
-      var f = HZ[n] || HZ[3], v = n === 1 ? 0.22 : (n === 2 ? 0.19 : 0.16), d = 0.6;
-      larga(c, f, d, v, { atk: 0.012, env: [[0.12, 0.78], [0.34, 0.42], [0.48, 0.14]] });
-      larga(c, f * 1.002, d * 0.92, v * 0.45, { atk: 0.015, env: [[0.14, 0.7], [0.36, 0.3]] });
-      larga(c, f, d * 0.8, v * 0.5, { tipo: 'triangle', lp: f * 3, atk: 0.01, env: [[0.12, 0.65], [0.3, 0.25]] });
-      larga(c, f * 2, d * 0.6, v * 0.2, { atk: 0.012, env: [[0.1, 0.6]] });
-      larga(c, f * 3, d * 0.35, v * 0.07, { atk: 0.01 });
-    });
+  var CURVAS = {};
+  function curva(k){
+    if(!CURVAS[k]){
+      var n = 1024, c = new Float32Array(n), i, x, t = Math.tanh(k);
+      for(i = 0; i < n; i++){ x = i * 2 / n - 1; c[i] = Math.tanh(k * x) / t; }
+      CURVAS[k] = c;
+    }
+    return CURVAS[k];
   }
-  /* ejecuta un parcial con envolvente de varios tramos (env: [segundos, fraccion del pico]) y respiracion opcional (resp) */
+  /* parcial con filtro resonante de barrido (lp, q, lpEnv), saturacion (dist), vibracion de amplitud (resp) y envolvente de varios tramos (env) */
   function larga(c, f, d, v, o){
     o = o || {};
     var t0 = c.currentTime + 0.006, osc = c.createOscillator(), g = c.createGain(), nodo = osc;
     osc.type = o.tipo || 'sine'; osc.frequency.setValueAtTime(f, t0);
-    if(o.lp){ var bq = c.createBiquadFilter(); bq.type = 'lowpass'; bq.frequency.setValueAtTime(o.lp, t0); osc.connect(bq); nodo = bq; }
+    if(o.lp){
+      var bq = c.createBiquadFilter(); bq.type = 'lowpass'; bq.frequency.setValueAtTime(o.lp, t0);
+      if(o.q) bq.Q.setValueAtTime(o.q, t0);
+      if(o.lpEnv) o.lpEnv.forEach(function(p){ bq.frequency.exponentialRampToValueAtTime(p[1], t0 + p[0]); });
+      osc.connect(bq); nodo = bq;
+    }
+    if(o.dist){ var ws = c.createWaveShaper(); ws.curve = curva(o.dist); ws.oversample = '2x'; nodo.connect(ws); nodo = ws; }
     if(o.resp){
       var br = c.createGain(), lfo = c.createOscillator(), lg = c.createGain();
       br.gain.setValueAtTime(1, t0); lfo.frequency.setValueAtTime(o.resp.hz, t0); lg.gain.setValueAtTime(o.resp.prof, t0);
@@ -61821,20 +61851,26 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
     nodo.connect(g); g.connect(busA); osc.start(t0); osc.stop(t0 + d + 0.03);
   }
-  /* YA / fin: ring metalico sostenido (~2.6 s): 5 senos desafinados (batimiento), apoyo grave y parciales metalicos */
+  /* 3 - 2 - 1: pulso de alerta tactica (~0.17 s), dos sierras desafinadas por un pasa-bajos resonante que barre + cuadrada una octava abajo */
+  function pip(n){
+    sonar(function(c){
+      var f = HZ[n] || HZ[3], v = n === 1 ? 0.25 : (n === 2 ? 0.22 : 0.19), barrido = [[0.09, f * 2.2]];
+      larga(c, f, 0.17, v, { tipo: 'sawtooth', lp: f * 7, lpEnv: barrido, q: 6, dist: 2, atk: 0.002, env: [[0.025, 1], [0.11, 0.45]] });
+      larga(c, f * 1.007, 0.17, v * 0.7, { tipo: 'sawtooth', lp: f * 7, lpEnv: barrido, q: 6, dist: 2, atk: 0.002, env: [[0.025, 1], [0.11, 0.45]] });
+      larga(c, f / 2, 0.15, v * 0.55, { tipo: 'square', lp: f * 2.5, q: 2, atk: 0.002, env: [[0.03, 1], [0.1, 0.4]] });
+    });
+  }
+  /* YA / fin: bocina tactica de combate (~1.9 s): sierras desafinadas con barrido, capa grave-media, saturacion y vibracion de amplitud */
   function ya(){
     sonar(function(c){
-      var f = HZ.ya, D = 2.6;
-      larga(c, f * 2, 0.04, 0.16, { tipo: 'square', lp: 6000, atk: 0.001 });
-      [[0.996, 0.085], [0.998, 0.09], [1, 0.1], [1.002, 0.09], [1.005, 0.085]].forEach(function(p, i){
-        larga(c, f * p[0], D - i * 0.08, p[1], { atk: 0.004, env: [[0.25, 0.55], [0.9, 0.27], [1.6, 0.1], [2.1, 0.03]], resp: (i % 2) ? { hz: 5.2 + i * 0.4, prof: 0.08 } : null });
-      });
-      larga(c, f / 2, 2.2, 0.12, { atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
-      larga(c, f / 2 * 1.003, 2.1, 0.095, { atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
-      larga(c, f / 4, 1.8, 0.1, { atk: 0.008, env: [[0.3, 0.6], [0.9, 0.2]] });
-      larga(c, f * 2.01, 1.7, 0.09, { atk: 0.003, env: [[0.2, 0.5], [0.8, 0.15]] });
-      larga(c, f * 2.76, 1.2, 0.065, { atk: 0.002, env: [[0.15, 0.5]], resp: { hz: 6.5, prof: 0.15 } });
-      larga(c, f * 4.07, 0.5, 0.035, { atk: 0.002 });
+      var f = HZ.ya, D = 1.95, ENV = [[0.04, 1], [1.6, 0.8]], barrido = [[0.25, 3800], [1.6, 2800]];
+      larga(c, f * 2, 0.07, 0.14, { tipo: 'sawtooth', lp: 9000, atk: 0.001 });
+      larga(c, f * 0.994, D, 0.105, { tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 33, prof: 0.28 } });
+      larga(c, f * 1.006, D, 0.105, { tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 37, prof: 0.28 } });
+      larga(c, f, D, 0.09, { tipo: 'sawtooth', lp: 7000, lpEnv: barrido, q: 4, dist: 2.5, atk: 0.006, env: ENV, resp: { hz: 41, prof: 0.2 } });
+      larga(c, f / 2, D, 0.15, { tipo: 'square', lp: 2600, q: 3, dist: 2, atk: 0.006, env: ENV });
+      larga(c, f / 2 * 1.005, D, 0.12, { tipo: 'sawtooth', lp: 2200, q: 3, dist: 2, atk: 0.006, env: ENV, resp: { hz: 29, prof: 0.3 } });
+      larga(c, f / 4, D, 0.11, { tipo: 'sawtooth', lp: 1100, atk: 0.008, env: ENV });
     });
   }
   function pintarMute(){
