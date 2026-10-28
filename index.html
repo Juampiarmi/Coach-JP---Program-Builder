@@ -56732,7 +56732,7 @@ body.man-mode .gs-fab{right:318px}
   /* ============ B. BANCO DE RUTINAS ============ */
   function banco(){ if(!Array.isArray(S.banco)) S.banco = []; return S.banco; }
   const discLb = id => ((UX().disciplinas || []).find(d => d.id === id) || {}).lb || '—';
-  const nivLb  = id => ((UX().niveles || []).find(n => n.id === id) || {}).lb || '—';
+  const nivLb  = id => ((UX().niveles || []).find(n => n.id === id) || {}).lb || (id === 'competitivo' ? 'Competitivo · Élite' : '—');
 
   function renderBanco(){
     const g = $('#bankGrid'); if(!g) return;
@@ -56931,7 +56931,7 @@ body.man-mode .gs-fab{right:318px}
         const c = clone(r); c.id = uid('bk'); c.nombre = r.nombre + ' (copia)'; c.usos = 0;
         if(c.std){ delete c.std; delete c.stdId; }
         if(c.cfMesSys){ delete c.cfMesSys; delete c.cfMesId; delete c.cfMesVer; }
-        if(c.sbSys){ delete c.sbSys; delete c.sbSysVer; }
+        if(c.sbSys){ delete c.sbSys; delete c.sbSysVer; delete c.depSys; delete c.depDeporte; }
         c.creado = new Date().toLocaleDateString('es-AR');
         banco().push(c); save(); renderBanco(); toast('📋 Rutina duplicada');
         return;
@@ -60141,7 +60141,7 @@ body.man-mode .gs-fab{right:318px}
   ];
 
   const banco = () => (Array.isArray(S.banco) ? S.banco : (S.banco = []));
-  const tabDe = r => (TABS.find(t => { try{ return t.test(r); }catch(e){ return false; } }) || TABS[0]).id;
+  const tabDe = r => (r && r.depSys && r.tab) ? r.tab : (TABS.find(t => { try{ return t.test(r); }catch(e){ return false; } }) || TABS[0]).id;
   const carpetaDe = r => (FOLDERS.find(f => { try{ return f.test(r); }catch(e){ return false; } }) || FOLDERS[1]).id;
 
   /* ============ B. ESTADO DE LOS FILTROS ============ */
@@ -78564,7 +78564,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   /* ---------- asignación: kilos desde los 1RM de la ficha + proyección de las 4 semanas ---------- */
   /* S1-S3 conservan el RIR escrito en la plantilla (avanzado 0-1, intermedio 1-2: el esfuerzo nunca sale de su banda) y la progresión va en los kilos; S4 es descarga activa (-1 serie, RIR 3-4) */
   function proyectar(p, niv){
-    var n = 0, av = niv === 'avanzado';
+    var n = 0, av = niv === 'avanzado' || niv === 'competitivo' || niv === 'alto';
     (p.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){
       if(b.tipo !== 'list' || !b.sportsPizarra || !Array.isArray(b.items) || !b.items.length || b.modalidad === 'calentamiento') return;
       b.weekItems = [null, b.items.slice(), b.items.slice(), b.items.map(function(l){ return ondularLineaSports(l, 3); })]; n++;
@@ -82290,7 +82290,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   }
   function hidratar(){
     var n = 0;
-    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){ if(r && r.sbSys && !(r.dias && r.dias.length)){ r.dias = armarDias(); n++; } });
+    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){ if(r && r.sbSys && r.id === ID && !(r.dias && r.dias.length)){ r.dias = armarDias(); n++; } });
     return n;
   }
   function sembrar(forzar){
@@ -82314,3 +82314,784 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 })();
 </script>
 <!--/SB-WL1-->
+
+<!--SB-DEP1-->
+<script>
+/* =========================================================
+   PLANIFICACIONES AVANZADAS POR DEPORTE Y OBJETIVO · 40 plantillas del sistema en el Banco de Rutinas
+   Mountain Bike (3 días · Avanzado y Élite · hombre y mujer) · Rugby (3 y 4 días · Desarrollo y Avanzado-Élite) ·
+   Recomposición corporal y pérdida de grasa (3, 4 y 5 días · Desarrollo y Avanzado · hombre y mujer) · Golf (3 días · Desarrollo y Avanzado) ·
+   Hyrox (3, 4 y 5 días · Desarrollo, Avanzado y Pro · hombre y mujer).
+   Cada sesión se redacta con la sintaxis de importación del Builder (bloques con objetivo fisiológico y pautas con el fundamento en la literatura)
+   y se arma con el mismo importador que las demás plantillas. Como el resto de las del sistema, sus días no se guardan en el navegador:
+   se regeneran desde este código (ver jpPersistirEstado) y se proyectan S1-S4 con el motor de plantillas base.
+   ========================================================= */
+(function(){
+  'use strict';
+  var VER = 1;
+
+  /* ---------- 0 · helpers de redacción ---------- */
+  var LET = ['A', 'B', 'C', 'D', 'E', 'F'];
+  /* c = { lv: 0 Desarrollo · 1 Avanzado · 2 Élite / Pro, f: mujer, dias: n } */
+  function P(c, arr){ return arr[Math.min(c.lv, arr.length - 1)]; }
+  function dose(s, r, t, rir){ return s + 'x' + r + (t ? ' | Tempo ' + t : '') + (rir !== undefined && rir !== '' ? ' | RIR ' + rir : ''); }
+  function cdose(s, r, rpe){ return s + 'x' + r + ' | RPE ' + rpe; }
+  /* pirámide de fuerza: aclimatación + carga alta + top sets + back-off opcional */
+  function pira(a, b, top, back, tempo, rir){
+    return '1x' + a + ' (Aclimatación) + 1x' + b + ' (Carga alta) + ' + top + ' (Top Set)' + (back ? ' + ' + back + ' (Back-off -10%)' : '') + ' | Tempo ' + tempo + ' | RIR ' + rir;
+  }
+  function B(t, ej, rest, obj, tips){ return { t: t, ej: ej, rest: rest, obj: obj, tips: tips || [] }; }
+  function txtB(b, n){
+    var L = [];
+    if(b.ej.length === 1){ L.push('[BLOQUE ' + n + '] ' + (b.t || b.ej[0][0])); L.push(b.ej[0][1]); }
+    else {
+      L.push('[BLOQUE ' + n + '] ' + b.t);
+      b.ej.forEach(function(e, i){ L.push('A' + (i + 1) + '. ' + e[0]); L.push(e[1]); });
+    }
+    if(b.rest) L.push('Rest ' + b.rest);
+    L.push('[OBJETIVO FISIOLÓGICO]'); L.push(b.obj);
+    L.push('[COACHING TIPS & ESTRATEGIA]');
+    b.tips.forEach(function(t){ L.push(t); });
+    return L.join('\n');
+  }
+  function txtDia(n, d){
+    var L = ['=== DÍA ' + n + ': ' + d.titulo + ' ===', '[NOMBRE DEL DÍA] ' + d.nombre, '[FOCO DEL COACH] ' + d.foco];
+    d.bloques.forEach(function(b, i){ L.push(txtB(b, i + 1)); });
+    return L.join('\n');
+  }
+  var RAMPA = 'RAMPA DE APROXIMACIÓN: Antes del primer ejercicio pesado hacé 2-3 series de aproximación (50-60-80% de la carga de trabajo) que no cuentan como volumen.';
+  var SEMANAS = 'PROGRESIÓN S1-S4: S1 base de carga, S2-S3 sobrecarga en kilos (el RIR se mantiene) y S4 descarga activa (menos series y RIR 3-4).';
+
+  /* ---------- 1 · bloques compartidos ---------- */
+  function bWarmLower(c){
+    return B('Entrada en calor · Biset de activación de cadera y rodilla',
+      [['Banded Glute Bridge', dose(2, 15, '2112', 4)], ['Goblet Squat', dose(2, 8, '3112', 4)]], '30s',
+      'Elevar la temperatura central y pre-activar glúteo mayor y medio junto con el patrón de sentadilla profunda; el trabajo neuromuscular previo mejora el control dinámico de la rodilla bajo carga (Hewett 1999) y ordena el reclutamiento antes de la barra.',
+      ['ACTIVACIÓN GLÚTEA: En el puente empujá las rodillas contra la banda y sostené 2 segundos arriba; tenés que sentir el glúteo antes de pasar al goblet.',
+       'PATRÓN DE SENTADILLA: Bajá lento, pecho alto, rodillas siguiendo la línea de los pies y pausa de 1 segundo abajo.', RAMPA]);
+  }
+  function bWarmUpper(c){
+    return B('Entrada en calor · Biset de activación escapular',
+      [['Band Pull-Apart', dose(2, 15, '2112', 4)], ['Push-ups', dose(2, 10, '2121', 4)]], '30s',
+      'Activar trapecio medio e inferior, serrato y manguito antes de cargar el hombro; la posición escapular y el ritmo escapulohumeral condicionan la tolerancia del hombro al empuje y a la tracción pesada (Cools 2014).',
+      ['BAND PULL-APART: Brazos rectos a la altura del pecho, juntá las escápulas sin elevar los hombros y sostené 1 segundo.',
+       'PUSH-UPS: Al final de cada repetición sumá 1 segundo con las escápulas separadas (protracción) para activar el serrato.', RAMPA]);
+  }
+  function bAntiRot(c, sets){
+    var s = sets || P(c, [3, 3, 4]);
+    return B('Core anti-rotación · Biset de estabilidad lumbopélvica',
+      [['Pallof Press', dose(s, 10, '2121', 2)], ['Dead Bug', dose(s, 8, '3121', 2)]], '60s',
+      'Entrenar la rigidez del tronco frente a fuerzas que lo rotan o lo extienden, que es lo que la columna lumbar necesita para transmitir fuerza entre cadera y hombros sin sobrecargarse (McGill 2010).',
+      ['PALLOF PRESS: Resistí la rotación 1 segundo con los brazos extendidos; diez repeticiones por lado, pelvis y hombros cuadrados.',
+       'DEAD BUG: La zona lumbar pegada al piso durante todo el movimiento; si se despega, acortá el rango.']);
+  }
+  function bCuff(c){
+    return B('Salud del hombro · Biset de manguito y escápula',
+      [['Cable External Rotation', dose(P(c, [2, 3, 3]), '12-15', '2112', 2)], ['Cable Face Pull', dose(P(c, [2, 3, 3]), '15', '2111', 2)]], '60s',
+      'Fortalecer los rotadores externos y el trapecio inferior-medio para equilibrar el empuje y la tracción pesados: los ejercicios de rotación externa con carga baja y control escapular son los de mayor activación del manguito con menor demanda del deltoides (Reinold 2004).',
+      ['ROTACIÓN EXTERNA: Codo pegado al costado a 90°, rotá solo el antebrazo y volvé en 3 segundos; carga liviana, el objetivo es el control.',
+       'FACE PULL: Tirá hacia la frente con los codos altos y rotá hacia afuera al final; pausa de 1 segundo.']);
+  }
+  function bNordic(c, sets, reps){
+    return B('Nordic Hamstring Curl',
+      [['Nordic Hamstring Curl', dose(sets, reps, '5010', c.f ? 2 : 1)]], '2:00',
+      'Sobrecarga excéntrica del isquiotibial en rango largo: es el ejercicio con mejor evidencia para reducir las lesiones de isquiotibiales y para aumentar la longitud de fascículo y la fuerza excéntrica (Petersen 2011; van der Horst 2015).',
+      ['EJECUCIÓN: Rodillas fijas, cuerpo recto desde rodillas a cabeza y bajada de 5 segundos controlando con los isquios; atajá el piso con las manos y empujá para volver.',
+       'PROGRESIÓN: Si no controlás la bajada, usá una banda elástica de asistencia; sumá 1 repetición por semana antes de quitar asistencia.',
+       'FATIGA: Es un ejercicio que genera mucho dolor muscular; ubicalo lejos de las sesiones de velocidad y nunca antes de un partido o una competencia.']);
+  }
+  function bCopenhagen(c, sets){
+    return B('Copenhagen Plank',
+      [['Copenhagen Plank', cdose(sets || 3, '20s', 7)]], '60s',
+      'Fortalecer los aductores en posición alargada y estable: el Copenhagen reduce los problemas de ingle en deportistas que corren y cambian de dirección (Haroy 2019) y estabiliza la pelvis en el apoyo unilateral.',
+      ['EJECUCIÓN: Pierna superior apoyada en el banco, pelvis elevada y alineada; 20 segundos por lado.',
+       'PROGRESIÓN: Empezá con la rodilla apoyada (palanca corta) y pasá a la pierna completa cuando sostengas 25 segundos limpios.']);
+  }
+  function bCarry(c, serie, lblm){
+    return B('Cargas de transporte · Biset de agarre y estabilidad lateral',
+      [['Farmer Carry', cdose(serie, '30m', 8)], ['Side Plank', cdose(serie, '30s', 7)]], '75s',
+      'Agarre, trapecio y estabilidad lateral del tronco bajo carga: el transporte combina fuerza de agarre isométrica con control del cuadrado lumbar y oblicuos.',
+      ['FARMER CARRY: Pasos cortos, hombros atrás y costillas abajo; pesado pero sin que el tronco se incline.',
+       'SIDE PLANK: Cuerpo en línea desde el tobillo a la cabeza; treinta segundos por lado.' + (lblm ? ' ' + lblm : '')]);
+  }
+
+  /* ---------- 2 · MOUNTAIN BIKE (3 días) ---------- */
+  var MTB_EVID = 'Fuerza máxima y resistencia aeróbica conviven: el entrenamiento de fuerza pesado mejora la economía y el rendimiento en ciclistas sin sumar masa corporal (Rønnestad 2010; Aagaard 2011), y el mountain bike suma impactos y vibración que castigan hombros, manos y zona lumbar (Impellizzeri & Marcora 2007; Macdermid 2014).';
+  function mtb1(c){
+    var el = c.lv === 2;
+    return { titulo: 'Fuerza unilateral de miembro inferior y salud de rodilla', nombre: 'Fuerza unilateral & Rodilla',
+      foco: 'Día de fuerza máxima unilateral: Bulgarian Split Squat como eje (cada pierna pedalea sola, la asimetría se corrige acá), empuje y tracción unilateral encadenados, trabajo de tendón rotuliano y cuádriceps excéntrico para blindar la rodilla, core anti-rotación y cierre de torque a baja cadencia sobre la bici. ' + (el ? 'Élite: top sets a RIR 0-1 y 5 intervalos de torque.' : 'Avanzado: RIR 1-2 en los trabajos efectivos y 4 intervalos de torque.') + ' Si el tren inferior llega con fatiga residual, bajá una serie del eje y mantené el RIR.',
+      bloques: [
+        bWarmLower(c),
+        B(null, [['Bulgarian Split Squat', pira(el ? 6 : 8, el ? 5 : 6, el ? '3x4' : '2x5', null, '31X0', el ? '0-1' : '1-2')]], '3:00',
+          'Fuerza máxima unilateral con reclutamiento de alto umbral: la sentadilla a una pierna iguala o supera la ganancia de fuerza de la bilateral y corrige asimetrías entre piernas (Speirs 2016), clave en un deporte donde cada pedalada es un empuje unilateral.',
+          ['POSICIÓN: Pie trasero apoyado en el banco, torso levemente inclinado hacia adelante ' + (c.f ? 'para sostener la dominancia de glúteo y cuidar el valgo de rodilla' : 'y rodilla delantera alineada con el segundo dedo') + '; bajada de 3 segundos hasta que la rodilla trasera roce el piso.',
+           'PIERNA DÉBIL PRIMERO: Empezá siempre por la más débil e igualá las repeticiones de la otra; todas las repeticiones de una pierna antes de cambiar.',
+           'TOP SET: ' + (el ? 'Tres series de 4 a RIR 0-1; si la velocidad de la barra cae o la rodilla colapsa hacia adentro, la serie termina.' : 'Dos series de 5 a RIR 1-2 con la misma técnica en las dos piernas.'), RAMPA]),
+        B('Empuje y tracción unilateral · Transferencia a la pedalada',
+          [['Box Step Up', dose(el ? 4 : 3, 6, '3010', '1-2')], ['Single-Leg RDL', dose(el ? 4 : 3, 8, '3011', '1-2')]], '2:00',
+          'Encadenar el empuje de cuádriceps-glúteo (fase de empuje de la pedalada) con la tracción de isquio y glúteo (fase de recobro) en un solo pie: transferencia específica de fuerza a la cadena que sostiene la cadencia y protege la rodilla.',
+          ['BOX STEP UP: Cajón a la altura de la rodilla, empujá con el talón de la pierna que sube y bajá en 3 segundos sin rebotar con la otra.',
+           'SINGLE-LEG RDL: Cadera cuadrada, columna neutra y rodilla de apoyo ligeramente flexionada; diez repeticiones por pierna, la débil primero.']),
+        B('Resiliencia de rodilla · Tendón rotuliano y cuádriceps excéntrico',
+          [['Spanish Squat', cdose(3, '30s', 7)], ['Reverse Nordic Curl', dose(3, 8, '4010', 2)]], '75s',
+          'La isometría en rango largo reduce el dolor del tendón rotuliano y mantiene el estímulo de carga (Rio 2015), y el trabajo lento y pesado del cuádriceps sostiene la salud tendinosa (Kongsgaard 2009): el MTB carga mucho la rodilla en ascenso a baja cadencia.',
+          ['SPANISH SQUAT: Banda detrás de las rodillas anclada en un poste, tibias verticales y espalda recta; mantené 30 segundos con la tensión del cuádriceps.',
+           'REVERSE NORDIC CURL: Rodillas fijas, inclinate hacia atrás en 4 segundos y volvé; el rango lo define la comodidad de la rodilla y el muslo.']),
+        bAntiRot(c),
+        B('Cardio · Torque a baja cadencia en bicicleta',
+          [['Stationary Bike', cdose(el ? 5 : 4, '4min', 7)]], '3:00',
+          'Transferencia directa: fuerza aplicada a 50-60 rpm con resistencia alta, el mismo patrón neuromuscular que el ascenso técnico, sobre el cansancio residual de la fuerza (la economía y la potencia se mejoran por entrenamiento concurrente bien dosificado, Rønnestad & Mujika 2014).',
+          ['EJECUCIÓN: Sentado, cadencia 50-60 rpm con resistencia que te obligue a empujar el pedal, torso estable y manos sueltas; sin balancear la cadera.',
+           'GESTIÓN DE LA FATIGA: Si hubo carrera de ruta o salida larga ayer, dejá este bloque en 3 intervalos. ' + MTB_EVID]) ] };
+  }
+  function mtb2(c){
+    var el = c.lv === 2, dom = !c.f || el;
+    return { titulo: 'Tracción, empuje y absorción de impactos de tren superior', nombre: 'Tren superior & Absorción',
+      foco: 'Día de tren superior para sostener el manubrio en las bajadas: tracción vertical pesada, remo con pecho apoyado para la espalda alta, empuje horizontal, triserie de fuerza-resistencia a cargas moderadas (el brazo absorbe impactos durante minutos, no segundos), transporte de agarre y salud de hombro y muñeca. ' + (el ? 'Élite: tracción lastrada con top set a RIR 0-1.' : 'Avanzado: RIR 1-2 y carga relativa a tu técnica.'),
+      bloques: [
+        bWarmUpper(c),
+        B(null, [[dom ? 'Weighted Pull-ups' : 'Pull-ups', dom ? pira(6, 5, el ? '3x3' : '2x4', null, '30X0', el ? '0-1' : '1-2') : dose(4, '5-6', '30X0', '1-2')]], '3:00',
+          'Fuerza máxima de tracción vertical (dorsal ancho, bíceps y flexores de agarre): los trabajos de baja repetición con carga alta mejoran la fuerza relativa sin ganar masa de más, importante para un deportista que mueve su propio peso en el terreno (Suchomel 2016).',
+          ['EJECUCIÓN: Agarre un poco más ancho que los hombros, tirá del pecho hacia la barra con las escápulas deprimidas y bajá controlando 3 segundos hasta extensión completa.',
+           (dom ? 'LASTRE: Lastre en cinturón; si la última repetición se frena o hay balanceo, la serie termina ahí.' : 'PROGRESIÓN: Si la serie sale limpia a RIR 2, sumá lastre antes de sumar repeticiones.'), RAMPA]),
+        B(null, [['Incline Bench Dumbbell Row', dose(4, 8, '2011', '1-2')]], '90s',
+          'Tracción horizontal con pecho apoyado: aísla la espalda alta y los romboides sin demandar a la zona lumbar, que ya sufre la posición de manejo y las vibraciones.',
+          ['EJECUCIÓN: Pecho apoyado en el banco inclinado, tirá los codos hacia la cadera y pausa de 1 segundo con las escápulas juntas.',
+           'CARGA: Mantené ' + (c.f ? 'una carga que deje RIR 1-2 en todas las series, apoyándote en el control escapular' : 'la carga alta de todas las series con control, sin impulso del tronco') + '.']),
+        B(null, [['Flat Dumbbell Press', dose(el ? 4 : (c.f ? 3 : 4), 8, '3010', '1-2')]], '2:00',
+          'Empuje horizontal con mancuernas: fuerza de pecho, deltoides anterior y tríceps con libertad de trayectoria para el hombro, que es la articulación que más absorbe en las bajadas.',
+          ['SET-UP: Escápulas retraídas y deprimidas, pies firmes, codos a unos 45° del tronco y bajada de 3 segundos hasta el estiramiento del pecho.']),
+        B('Tríserie de fuerza-resistencia · Absorción de impactos',
+          [['Close-Grip Push-ups', dose(3, '12-15', '2010', 1)], ['Single-Arm Dumbbell Row', dose(3, '12-15', '2011', 1)], ['Cable Face Pull', dose(3, '15-20', '2011', 1)]], '90s',
+          'Resistencia de fuerza del tren superior con cargas moderadas y repeticiones altas: los volúmenes de 12-20 repeticiones cerca del fallo producen una adaptación muscular comparable a las cargas altas (Schoenfeld 2015) y entrenan la capacidad de sostener contracciones repetidas, como el agarre del manubrio en un descenso.',
+          ['PUSH-UPS CERRADOS: Manos bajo el pecho, codos pegados y tríceps cargado; si no llegás a 12, apoyá las rodillas.',
+           'REMO UNILATERAL: Tronco estable, tirá el codo hacia la cadera y bajá en 3 segundos; quince repeticiones por lado.',
+           'RITMO: Las tres estaciones seguidas, descanso solo al cerrar la ronda.']),
+        bCarry(c, el ? 5 : 4),
+        B('Hombro y muñeca · Biset de resiliencia',
+          [['Cable External Rotation', dose(2, 15, '2112', 3)], ['Barbell Reverse Wrist Curl', dose(2, 15, '2111', 2)]], '45s',
+          'Equilibrar la rotación del hombro y el extensor de la muñeca, las dos zonas con más sobrecarga por vibración y por el agarre sostenido del manubrio.',
+          ['ROTACIÓN EXTERNA: Carga muy liviana, codo pegado y 3 segundos de vuelta.',
+           'WRIST CURL INVERSO: Antebrazos apoyados sobre el banco, subí la muñeca en extensión y bajá lento.', SEMANAS]) ] };
+  }
+  function mtb3(c){
+    var el = c.lv === 2;
+    return { titulo: 'Cadena posterior, potencia y blindaje de rodilla', nombre: 'Cadena posterior & Potencia',
+      foco: 'Día de cadena posterior y potencia: Trap Bar Deadlift pesado en complejo de contraste con salto (' + (el ? 'Élite: 4 rondas' : 'Avanzado: 3 rondas') + '), Nordic Hamstring Curl para el isquio, Barbell Hip Thrust para el torque del glúteo mayor al pedalear de pie, ' + (c.f ? 'control neuromuscular de aterrizaje y rodilla (la mujer tiene mayor riesgo de lesión de ligamento cruzado, Hewett 1999)' : 'aductores y gemelo para estabilizar la bicicleta en las curvas') + ' y core anti-extensión. Es la sesión más agresiva para el sistema nervioso: dormí y comé antes.',
+      bloques: [
+        bWarmLower(c),
+        B('Complejo de contraste · Trap Bar Deadlift y salto',
+          [['Trap Bar Deadlift', dose(el ? 4 : 3, 3, '30X0', el ? '0-1' : 1)], ['Box Jump', cdose(el ? 4 : 3, 3, 8)]], '3:00',
+          'Potenciación post-activación: una serie pesada de baja repetición seguida de un salto explosivo eleva la producción de potencia por reclutamiento rápido de unidades motoras (Seitz & Haff 2016; Cormie 2011). Es entrenamiento de fuerza y potencia en un solo movimiento de triple extensión.',
+          ['TRAP BAR DEADLIFT: Tres repeticiones pesadas pero rápidas, espalda neutra y empuje fuerte desde el piso; sin rebotar la barra.',
+           'BOX JUMP: Descansá 45-60 segundos tras la barra, saltá lo más alto posible y bajá caminando; tres saltos y cada uno sale limpio.', RAMPA]),
+        bNordic(c, el ? 4 : 3, el ? 6 : 5),
+        B(null, [['Barbell Hip Thrust', dose(el ? 4 : 3, '8-10', '2022', '1-2')]], '2:00',
+          'Hip thrust: máxima activación del glúteo mayor en acortamiento, la musculatura que da el torque cuando se pedalea de pie y en las rampas empinadas (Contreras 2015).',
+          ['EJECUCIÓN: Mentón recogido, costillas abajo y pausa de 2 segundos con el glúteo contraído arriba; no hiperextiendas la zona lumbar.']),
+        (c.f
+          ? B('Control de aterrizaje y cadera lateral · Biset',
+              [['Lateral Bound', cdose(3, '5', 7)], ['Copenhagen Plank', cdose(3, '20s', 7)]], '60s',
+              'El programa neuromuscular de saltos laterales con aterrizaje controlado y fuerza de aductores reduce el valgo dinámico de rodilla, factor de riesgo del ligamento cruzado anterior en mujeres (Hewett 1999), y blinda la rodilla del ciclista en los apoyos de pie en las bajadas técnicas.',
+              ['LATERAL BOUND: Saltá de lado, aterrizá en una pierna y mantené 2 segundos con la rodilla sobre el pie; cinco por lado.',
+               'COPENHAGEN PLANK: Veinte segundos por lado, pelvis alta y estable.'])
+          : B('Estabilidad lateral y gemelo · Biset',
+              [['Copenhagen Plank', cdose(3, '20s', 7)], ['Single-Leg Calf Raise', dose(3, 12, '2112', 2)]], '60s',
+              'Aductores fuertes estabilizan la pelvis cuando el cuerpo balancea la bici en curvas y el gemelo sostiene el apoyo en el pedal.',
+              ['COPENHAGEN PLANK: Veinte segundos por lado.',
+               'SINGLE-LEG CALF RAISE: Pausa de 1 segundo arriba y estiramiento completo abajo; doce por pierna.'])),
+        B('Ab Wheel · Anti-extensión',
+          [['Ab Wheel', dose(3, 8, '3121', 2)], ['Suitcase Carry', cdose(3, '25m', 7)]], '60s',
+          'Estabilidad lumbopélvica frente a la extensión y la flexión lateral: protege la columna cuando el terreno sacude el cuerpo.',
+          ['AB WHEEL: Pelvis en retroversión y rango que puedas controlar; ocho repeticiones.',
+           'SUITCASE CARRY: Carga de un solo lado sin inclinar el tronco; veinticinco metros por lado. ' + SEMANAS]) ] };
+  }
+
+  /* ---------- 3 · RUGBY (3 y 4 días · hombres) ---------- */
+  var RUG_EVID = 'La fuerza máxima es la base de la potencia, la velocidad y la tolerancia al contacto (Suchomel 2016); la potencia se desarrolla con cargas contrastadas y saltos (Cormie 2011; Seitz & Haff 2016) y la carga de entrenamiento bien dosificada protege más de lo que expone (Gabbett 2016).';
+  function rug1(c){
+    var el = c.lv === 2;
+    return { titulo: 'Fuerza máxima de tren inferior y potencia contrastada', nombre: 'Fuerza inferior & Potencia',
+      foco: 'Día de fuerza máxima de tren inferior con potencia contrastada: Back Squat con pirámide hacia el top set, complejo de contraste de Trap Bar Deadlift con salto horizontal para la triple extensión, unilateral y cierre anti-rotación. ' + (el ? 'Avanzado-Élite: top set pesado a RIR 1 y cuatro rondas de contraste.' : 'Desarrollo: RIR 2 y tres rondas de contraste con foco técnico.') + ' Se entrena a 48-72 horas del último partido o de un contacto fuerte.',
+      bloques: [
+        bWarmLower(c),
+        B(null, [['Back Squat', el ? pira(4, 3, '3x2', '2x4', '31X0', 1) : pira(5, 5, '3x5', null, '30X0', 2)]], el ? '4:00' : '3:00',
+          'Fuerza máxima del tren inferior (cuádriceps, glúteo y cadena posterior) con pirámide ascendente corta: la fuerza máxima se correlaciona con velocidad, salto y cambio de dirección (Suchomel 2016) y la pirámide acumula tensión mecánica con poca fatiga periférica.',
+          ['SET-UP: Barra baja sobre el trapecio, abdomen apretado antes de desbloquear y respiración de 360° en cada repetición.',
+           'TOP SET: ' + (el ? 'Tres series de 2 a RIR 1; el RIR 1 es un tope, no un objetivo de fallo técnico. Back-off de 2x4 con 10% menos.' : 'Tres series de 5 a RIR 2 con velocidad controlada y técnica idéntica en todas.'), RAMPA]),
+        B('Complejo de contraste · Trap Bar Deadlift y salto horizontal',
+          [['Trap Bar Deadlift', dose(el ? 4 : 3, 3, '30X0', el ? 1 : 2)], ['Broad Jump', cdose(el ? 4 : 3, 3, 8)]], '3:00',
+          'Contraste carga pesada y salto: la serie de fuerza potencia la respuesta explosiva siguiente por potenciación post-activación (Seitz & Haff 2016) y entrena la triple extensión de cadera, rodilla y tobillo que usa el scrum, el sprint y el tackle.',
+          ['TRAP BAR DEADLIFT: Tres repeticiones rápidas y limpias, espalda neutra.',
+           'BROAD JUMP: Descansá 45-60 segundos tras la barra, saltá lejos y aterrizá en una pierna fija durante 2 segundos si buscás control; tres saltos.']),
+        B(null, [['Bulgarian Split Squat', dose(3, '6-8', '3110', el ? 1 : 2)]], '2:00',
+          'Fuerza unilateral para el apoyo y la aceleración en una pierna, corrigiendo las diferencias entre piernas que predisponen a lesión (Speirs 2016).',
+          ['EJECUCIÓN: Bajada de 3 segundos con torso erguido; empezá por la pierna más débil e igualá las repeticiones.']),
+        B('Core anti-rotación · Biset',
+          [['Pallof Press', dose(3, 10, '2121', 2)], ['Hanging Leg Raise', dose(3, 8, '3011', 2)]], '60s',
+          'Estabilidad de tronco para absorber contacto y transmitir fuerza entre cadera y hombros (McGill 2010).',
+          ['PALLOF PRESS: Resistí la rotación 1 segundo; diez por lado.', 'HANGING LEG RAISE: Sin balanceo, elevá las piernas con las costillas abajo. ' + SEMANAS]) ] };
+  }
+  function rug2(c){
+    var el = c.lv === 2;
+    return { titulo: 'Empuje y tracción de tren superior y prevención de hombro', nombre: 'Tren superior & Hombro',
+      foco: 'Día de fuerza de empuje y tracción con prevención de hombro para el contacto: Barbell Bench Press con pirámide, tracción lastrada con press inclinado, tríserie de manguito rotador y estabilidad escapular, y trabajo de cuello y trapecio para el placaje. ' + (el ? 'Avanzado-Élite: top sets a RIR 1.' : 'Desarrollo: RIR 2, técnica y rango completo.') + ' El hombro de contacto no se entrena al fallo.',
+      bloques: [
+        bWarmUpper(c),
+        B(null, [['Barbell Bench Press', el ? pira(5, 4, '3x3', '2x5', '3010', 1) : dose(4, 6, '3010', 2)]], el ? '3:30' : '3:00',
+          'Fuerza máxima de empuje horizontal con la pirámide de fuerza: pecho, deltoides anterior y tríceps; el empuje del tren superior es determinante en el contacto, el empuje de mano y el brazo en el placaje (Suchomel 2016).',
+          ['SET-UP: Escápulas retraídas y deprimidas, pies firmes y barra al esternón; bajada de 3 segundos sin rebotar.',
+           'TOP SET: ' + (el ? 'Tres series de 3 a RIR 1, con un back-off de 2x5 con 10% menos.' : 'Cuatro series de 6 a RIR 2.'), RAMPA]),
+        B('Tracción pesada y empuje inclinado · Biset',
+          [[el ? 'Weighted Pull-ups' : 'Pull-ups', dose(el ? 4 : 3, '5-6', '30X0', el ? 1 : 2)], ['Incline Dumbbell Press', dose(el ? 4 : 3, '6-8', '3010', el ? 1 : 2)]], '2:30',
+          'Tracción vertical y empuje inclinado antagonistas: mantienen el equilibrio entre empuje y tracción que sostiene la salud del hombro, y el biset antagonista permite el mismo volumen en menos tiempo con la misma eficiencia mecánica (Robbins 2010).',
+          ['PULL-UPS: Tirá del pecho hacia la barra con las escápulas deprimidas; bajada de 3 segundos hasta extensión completa.',
+           'PRESS INCLINADO: Mancuernas con codos a 45° y recorrido completo.']),
+        B('Manguito y escápula · Tríserie de prevención',
+          [['Cable External Rotation', dose(3, '12-15', '2112', 2)], ['Cable Face Pull', dose(3, 15, '2111', 2)], ['Prone Incline Y-Raises', dose(3, 12, '2111', 2)]], '60s',
+          'Rotadores externos y trapecio inferior fuertes equilibran el hombro anterior (pecho, deltoides) que la mayor parte del trabajo carga; el control escapular con ejercicios de bajo estrés y activación del manguito (Reinold 2004; Cools 2014) protege del hombro de contacto (luxación anterior y lesión del labrum).',
+          ['ROTACIÓN EXTERNA: Codo pegado a 90°, rotá solo el antebrazo.', 'FACE PULL: Codos altos y rotación al final.', 'Y-RAISES: Pecho apoyado, brazos en Y con pulgares arriba; sin encoger los hombros.']),
+        B('Cuello y trapecio · Preparación para el contacto',
+          [['Barbell Shrugs', dose(3, '8-10', '2111', 2)], ['Farmer Carry', cdose(3, '30m', 8)]], '75s',
+          'Trapecio y agarre fuertes y fuerza de cuello: un cuello más fuerte se asocia a menor riesgo de conmoción en deportes de contacto (Collins 2014) y el agarre sostiene el balón y el rival.',
+          ['SHRUGS: Subí el hombro hacia la oreja con pausa de 1 segundo; sin rotar.',
+           'CUELLO (opcional): Isométricos de cuello en las cuatro direcciones, 3 segundos de presión progresiva con la mano; sin dolor. ' + SEMANAS]) ] };
+  }
+  function rug3(c){
+    var el = c.lv === 2;
+    return { titulo: 'Potencia, desaceleración e isquiotibiales', nombre: 'Potencia, Frenado & Isquios',
+      foco: 'Día de potencia y prevención: desaceleración y aterrizaje (la parte más agresiva para el tejido, Harper & Kiely 2018), potencia de cadera con cargada o salto, isquiotibial excéntrico (Nordic) y aductor (Copenhagen), y aceleración con trineo. ' + (el ? 'Avanzado-Élite: cargada colgante y Nordic de 4 series.' : 'Desarrollo: salto con mancuernas y Nordic de 3 series.') + ' No lo hagas con piernas cargadas del día anterior.',
+      bloques: [
+        bWarmLower(c),
+        B('Desaceleración y aterrizaje · Biset',
+          [['Drop Landing', cdose(3, '5', 7)], ['Lateral Bound', cdose(3, '5', 7)]], '90s',
+          'Las desaceleraciones y los cambios de dirección imponen cargas excéntricas muy altas que causan el daño muscular y articular del rugby (Harper & Kiely 2018); aprender a frenar con control es protección.',
+          ['DROP LANDING: Bajá de un cajón de 30-40 cm y aterrizá en dos apoyos con caderas atrás y rodillas alineadas; sostené 2 segundos.',
+           'LATERAL BOUND: Saltá de lado, parate sobre una pierna y mantené la rodilla sobre el pie. ' + RAMPA]),
+        (el
+          ? B(null, [['Hang Power Clean', dose(5, 3, '', '2')]], '2:30',
+              'Potencia de triple extensión con carga moderada y alta velocidad: el hang power clean es el ejercicio de levantamiento con mayor potencia de salida del entrenamiento de fuerza (Cormie 2011).',
+              ['EJECUCIÓN: Barra a la altura de la rodilla, empujá el piso y extendé cadera, rodilla y tobillo con fuerza; recepción alta sin hundirte.', 'CARGA: 60-70% de tu cargada; la velocidad manda, no el peso.'])
+          : B(null, [['Jump Squat', dose(4, 4, '', '3')]], '2:00',
+              'Potencia con carga liviana: el salto con peso corporal o mancuernas trabaja la velocidad de contracción y la extensión de cadera sin sumar fatiga excesiva (Cormie 2011).',
+              ['EJECUCIÓN: Bajá en 1 segundo, saltá lo más alto posible y aterrizá suave; mancuernas livianas o peso corporal.'])),
+        B('Isquiotibiales y aductores · Biset de prevención',
+          [['Nordic Hamstring Curl', dose(el ? 4 : 3, el ? 6 : 5, '5010', 1)], ['Single-Leg RDL', dose(3, 8, '3011', 2)]], '90s',
+          'Sobrecarga excéntrica del isquio (Petersen 2011; van der Horst 2015) más bisagra unilateral para la estabilidad de la cadena posterior: las lesiones de isquios son de las más frecuentes en deportes de velocidad.',
+          ['NORDIC: Bajada de 5 segundos controlando con los isquios; empujá con las manos para volver.', 'SINGLE-LEG RDL: Cadera cuadrada, ocho por pierna.']),
+        bCopenhagen(c, 3),
+        B('Sled Push',
+          [['Sled Push', cdose(el ? 8 : 6, '20m', 8)]], '75s',
+          'Aceleración con resistencia: empujar un trineo pesado trabaja el ángulo de aceleración y la fuerza horizontal con bajo daño muscular.',
+          ['EJECUCIÓN: Torso inclinado a 45°, pasos cortos y explosivos; cada pasada de 20 metros es casi máxima. ' + SEMANAS]) ] };
+  }
+  function rug4(c){
+    var el = c.lv === 2;
+    return { titulo: 'Potencia de torso y capacidad bajo contacto', nombre: 'Potencia superior & Contacto',
+      foco: 'Día de potencia de torso y capacidad de repetir esfuerzos de alta intensidad con contacto: Push Press con lanzamiento, remo pesado, circuito de trineo y transporte (esfuerzos repetidos máximos propios del juego) y core. ' + (el ? 'Avanzado-Élite: cuatro rondas de circuito.' : 'Desarrollo: tres rondas y descanso completo.') + ' Es la sesión de menor carga neural: la dejás para el final de la semana.',
+      bloques: [
+        bWarmUpper(c),
+        B('Potencia de empuje · Push Press y lanzamiento',
+          [['Push Press', dose(el ? 4 : 3, 4, '', 2)], ['Slam Ball', cdose(el ? 4 : 3, 5, 8)]], '2:00',
+          'Complejo de potencia de empuje: la fuerza producida por piernas y cadera se transmite al tren superior en el push press, y el lanzamiento explosivo mantiene la velocidad de contracción (Cormie 2011).',
+          ['PUSH PRESS: Pequeña flexión de piernas y extensión explosiva; recepción en bloqueo.', 'SLAM BALL: Lanzá la pelota al piso con todo el cuerpo y recogela sin rebotar.']),
+        B(null, [['Bent-Over Barbell Row', dose(4, 6, '2011', el ? 1 : 2)]], '2:00',
+          'Tracción horizontal pesada: espalda alta y dorsal para el scrum, el ruck y el agarre del rival.',
+          ['EJECUCIÓN: Torso paralelo, tirá la barra al ombligo y pausa de 1 segundo; sin impulso de la zona lumbar.']),
+        B('Circuito de contacto · Trineo, transporte y cuerda',
+          [['Sled Push', cdose(el ? 4 : 3, '20m', 8)], ['Farmer Carry', cdose(el ? 4 : 3, '30m', 8)], ['Backward Sled Drag', cdose(el ? 4 : 3, '20m', 8)]], '90s',
+          'Capacidad para repetir esfuerzos máximos con poca pausa, característica del rugby: empuje, agarre y tracción encadenados con fatiga acumulada, de forma controlada (Gabbett 2016).',
+          ['SLED PUSH: Esfuerzo casi máximo.', 'FARMER CARRY: Pesado pero con tronco estable.', 'DRAG: Caminá hacia atrás tirando del trineo con los talones firmes.']),
+        B('Landmine Press · Hombro',
+          [['Half-Kneeling Landmine Press', dose(3, 8, '2011', 2)], ['Cable External Rotation', dose(3, 12, '2112', 2)]], '75s',
+          'Empuje en el plano escapular con el hombro estable: trabaja el serrato y el deltoides sin compresión subacromial, y el manguito se mantiene fuerte (Cools 2014).',
+          ['LANDMINE PRESS: Medio arrodillado, empuje diagonal y escápula libre.', 'ROTACIÓN EXTERNA: Carga liviana y control de 3 segundos. ' + SEMANAS]) ] };
+  }
+
+  /* ---------- 4 · RECOMPOSICIÓN CORPORAL Y PÉRDIDA DE GRASA (3, 4 y 5 días) ---------- */
+  var REC_EVID = 'En déficit calórico la masa muscular se conserva con carga relativa alta (la intensidad se mantiene), volumen moderado y RIR 1-3, no con más volumen: los ensayos y metaanálisis muestran que el déficit limita la ganancia de masa magra pero no la fuerza (Murphy & Koehler 2022; Helms 2014) y que la proteína alta (1,6-2,4 g/kg) protege el tejido magro (Longland 2016).';
+  var REC_RIR = function(c){ return P(c, ['2-3', '1-2']); };
+  function recWarm(c, tipo){ return tipo === 'u' ? bWarmUpper(c) : bWarmLower(c); }
+  function recFin(c, tipo){
+    var av = c.lv === 1;
+    if(tipo === 'sled') return B(null,
+      [['Sled Push', cdose(av ? 8 : 6, '20m', 8)]], '60s',
+      'Gasto energético alto con bajo daño muscular: el trineo es empuje con poco componente excéntrico, así que suma trabajo sin comprometer la recuperación del músculo en déficit.',
+      ['EJECUCIÓN: Torso inclinado, pasos cortos y explosivos; cada pasada es esfuerzo casi máximo.', 'GASTO ENERGÉTICO: Es trabajo de alta densidad con bajo daño muscular, pero no reemplaza la caminata diaria (8.000-12.000 pasos), que concentra la mayor parte del gasto fuera del entrenamiento.', SEMANAS]);
+    if(tipo === 'bike') return B('Cardio · Finisher metabólico en bicicleta',
+      [['Assault Bike', cdose(av ? 10 : 8, '30s', 9)]], '60s',
+      'Intervalos de alta intensidad sin impacto articular: la bicicleta de aire permite esfuerzos de 30 segundos muy exigentes con bajo daño muscular, y el trabajo es contabilizable en kilocalorías (Buchheit & Laursen 2013).',
+      ['EJECUCIÓN: Treinta segundos a máxima intensidad sostenible, pausa de 60 segundos con pedaleo suave; mantené la cadencia en todas las series.', 'GESTIÓN DE LA FATIGA: Si las piernas vienen muy cargadas, bajá a la mitad de las series; el déficit calórico aumenta el costo de recuperarse.']);
+    return B('Finisher metabólico · Transporte y cuerdas',
+      [['Farmer Carry', cdose(av ? 5 : 4, '40m', 8)], ['Battle Ropes', cdose(av ? 5 : 4, '30s', 8)]], '75s',
+      'Densidad metabólica con ejercicios de bajo impacto articular: el transporte mantiene el tono del tronco y el agarre mientras las cuerdas elevan la frecuencia cardíaca sin sumar sobrecarga excéntrica.',
+      ['FARMER CARRY: Pasos cortos, hombros atrás.', 'BATTLE ROPES: Olas alternadas a ritmo parejo; treinta segundos continuos.', SEMANAS]);
+  }
+  function recPrinc(c, nombre, series, reps, nota, objetivoExtra){
+    var av = c.lv === 1;
+    return B(null, [[nombre, av ? pira(8, 6, series + 'x' + reps, null, '30X0', REC_RIR(c)) : dose(series, reps, '3010', REC_RIR(c))]], av ? '3:00' : '2:30',
+      'Ejercicio multiarticular de alta demanda estructural (' + objetivoExtra + '): mantener la carga en el ejercicio principal es la señal que le dice al músculo que se conserve en déficit calórico (Helms 2014; Murphy & Koehler 2022).',
+      [nota, 'RIR: Terminá cada serie con ' + REC_RIR(c) + ' repeticiones en reserva; no vayas al fallo, la fatiga extra en déficit rinde menos y cuesta recuperarla.', RAMPA]);
+  }
+  function recBiset(c, t, e1, d1, e2, d2, obj, tips){
+    return B(t, [[e1, d1], [e2, d2]], '90s', obj + ' El biset antagonista mantiene el mismo volumen en menos tiempo y con igual eficiencia mecánica (Robbins 2010).', tips);
+  }
+  function recA1(c){   /* full body A / lower squat */
+    var av = c.lv === 1, s = av ? 4 : 3;
+    return { titulo: 'Sentadilla, empuje y tracción', nombre: 'Full Body A · Sentadilla',
+      foco: 'Full body con eje en sentadilla: ejercicio multiarticular pesado, empuje y tracción antagonistas, bisagra liviana y finisher de sled. Carga alta, RIR ' + REC_RIR(c) + ', volumen moderado: ' + REC_EVID,
+      bloques: [recWarm(c, 'l'),
+        recPrinc(c, 'Back Squat', av ? 3 : 3, av ? 5 : 8, 'EJECUCIÓN: Bajada de 3 segundos con brace de 360° y subida explosiva; profundidad hasta donde la columna se mantenga neutra.', 'cuádriceps, glúteo y erectores'),
+        recBiset(c, 'Empuje y tracción · Biset antagonista', 'Flat Dumbbell Press', dose(s, '8-10', '3010', REC_RIR(c)), 'Wide-Grip Lat Pulldown', dose(s, '8-10', '2011', REC_RIR(c)),
+          'Pecho y dorsal en pares: dos de los patrones con más masa muscular implicada, entrenados con intensidad media-alta.', ['PRESS: Bajada de 3 segundos con codos a 45°.', 'LAT PULLDOWN: Tirá del esternón con las escápulas deprimidas y pausa de 1 segundo.']),
+        recBiset(c, 'Bisagra y hombro · Biset', 'Dumbbell Romanian Deadlift', dose(3, 10, '3011', REC_RIR(c)), c.f ? 'Dumbbell Lateral Raises' : 'Seated Dumbbell Shoulder Press', dose(3, c.f ? '12-15' : '8-10', '2011', REC_RIR(c)),
+          'Cadena posterior con carga moderada y hombro para el volumen del tren superior.', ['RDL: Cadera atrás con espalda neutra y bajada hasta mitad de la tibia.', c.f ? 'ELEVACIONES LATERALES: Codos levemente flexionados, subí hasta la altura del hombro sin balanceo.' : 'PRESS DE HOMBROS: Sentado, codos a 90° y recorrido completo.']),
+        recFin(c, 'sled')] };
+  }
+  function recB1(c){   /* full body B / lower hinge */
+    var av = c.lv === 1, s = av ? 4 : 3;
+    return { titulo: 'Bisagra, tracción vertical y unilateral', nombre: 'Full Body B · Bisagra',
+      foco: 'Full body con eje en bisagra de cadera: Romanian Deadlift como ejercicio principal, tracción vertical, empuje inclinado, zancadas y finisher de bicicleta. Foco en conservar el glúteo y el isquio en déficit. ' + REC_EVID,
+      bloques: [recWarm(c, 'l'),
+        recPrinc(c, 'Romanian Deadlift', 3, av ? 5 : 8, 'EJECUCIÓN: Cadera atrás con espalda neutra y barra pegada al muslo; bajada de 3 segundos hasta mitad de la tibia y extensión explosiva.', 'isquiotibiales, glúteo y erectores'),
+        recBiset(c, 'Tracción vertical e inclinado · Biset', av ? 'Pull-ups' : 'Wide-Grip Lat Pulldown', dose(s, av ? '6-8' : '8-10', '3011', REC_RIR(c)), 'Incline Dumbbell Press', dose(s, '8-10', '3010', REC_RIR(c)),
+          'Tracción vertical y empuje inclinado con intensidad media-alta, dos de los ejercicios con mejor relación estímulo-fatiga del tren superior.', ['TRACCIÓN: Tirá del pecho a la barra con las escápulas deprimidas.', 'PRESS INCLINADO: Banco de 30° y recorrido completo.']),
+        recBiset(c, 'Unilateral y remo · Biset', 'Walking Lunge', dose(3, 10, '3010', REC_RIR(c)), 'Seated Cable Row', dose(3, '10-12', '2011', REC_RIR(c)),
+          'Trabajo unilateral de cuádriceps y glúteo con remo para la espalda media.', ['ZANCADAS: Paso largo, torso erguido y rodilla trasera cerca del piso; diez por pierna.', 'REMO: Tirá los codos a la cadera con pausa de 1 segundo.']),
+        recFin(c, 'bike')] };
+  }
+  function recC1(c){   /* full body C / unilateral + densidad */
+    var av = c.lv === 1, s = av ? 4 : 3;
+    return { titulo: 'Unilateral, glúteo y densidad metabólica', nombre: 'Full Body C · Unilateral & Densidad',
+      foco: 'Full body de densidad: trabajo unilateral y de glúteo, press de hombros, tracción y cierre metabólico en tríserie. Es la sesión con más trabajo por minuto de la semana, sin ir al fallo. ' + REC_EVID,
+      bloques: [recWarm(c, 'l'),
+        recPrinc(c, 'Bulgarian Split Squat', 3, av ? 6 : 8, 'POSICIÓN: Torso levemente inclinado para sumar glúteo, bajada de 3 segundos y la pierna débil primero.', 'cuádriceps, glúteo y estabilizadores'),
+        recBiset(c, 'Glúteo y hombro · Biset', 'Barbell Hip Thrust', dose(s, '8-10', '2022', REC_RIR(c)), 'Standing Barbell Overhead Press', dose(s, '6-8', '2011', REC_RIR(c)),
+          'Hip thrust para el glúteo mayor en acortamiento (Contreras 2015) y press de pie para el hombro y la cadena de estabilización del tronco.', ['HIP THRUST: Pausa de 2 segundos arriba, costillas abajo.', 'PRESS DE PIE: Glúteos y abdomen apretados, barra en línea con la cara.']),
+        B('Tríserie metabólica · Densidad de torso',
+          [['Seated Cable Row', dose(3, '10-12', '2011', REC_RIR(c))], ['Push-ups', dose(3, '12-15', '2010', REC_RIR(c))], ['Cable Face Pull', dose(3, '15-20', '2011', REC_RIR(c))]], '90s',
+          'Tres ejercicios encadenados sin pausa elevan la frecuencia cardíaca y el trabajo mecánico del torso por minuto manteniendo cargas moderadas y bajo daño muscular.',
+          ['RITMO: Las tres estaciones seguidas, descanso solo al cerrar la ronda.', 'PUSH-UPS: Si no llegás a 12 con técnica, apoyá las rodillas.']),
+        recFin(c, 'carry')] };
+  }
+  function recUA(c){   /* upper A · empuje */
+    var av = c.lv === 1;
+    return { titulo: 'Tren superior · Empuje', nombre: 'Upper A · Empuje',
+      foco: 'Tren superior con eje en empuje horizontal y vertical: Barbell Bench Press pesado, remo antagonista, press de hombros y brazos en biset. ' + (c.f ? 'Mujeres: hombro y dorsal con foco en la silueta, brazos con volumen moderado.' : 'Hombres: pecho, hombros y tríceps con carga alta.') + ' ' + REC_EVID,
+      bloques: [recWarm(c, 'u'),
+        recPrinc(c, 'Barbell Bench Press', 3, av ? 5 : 8, 'SET-UP: Escápulas retraídas y deprimidas, pies firmes; bajada de 3 segundos hasta el esternón.', 'pecho, deltoides anterior y tríceps'),
+        recBiset(c, 'Remo y press de hombros · Biset', 'Bent-Over Barbell Row', dose(av ? 4 : 3, '8-10', '2011', REC_RIR(c)), 'Seated Dumbbell Shoulder Press', dose(av ? 4 : 3, '8-10', '3010', REC_RIR(c)),
+          'Tracción horizontal y empuje vertical antagonistas con carga moderada-alta.', ['REMO: Torso paralelo, tirá al ombligo.', 'PRESS: Sentado, recorrido completo y sin hiperextender la zona lumbar.']),
+        recBiset(c, 'Hombro lateral y tríceps · Biset', 'Dumbbell Lateral Raises', dose(3, '12-15', '2011', REC_RIR(c)), 'Rope Triceps Pushdown', dose(3, '12-15', '2011', REC_RIR(c)),
+          'Volumen de aislamiento en deltoides lateral y tríceps, con baja fatiga sistémica, para mantener el tamaño sin costo de recuperación.', ['ELEVACIONES: Codos levemente flexionados y control en la bajada.', 'PUSHDOWN: Codos pegados y apertura de la cuerda al final.']),
+        bAntiRot(c, 3)] };
+  }
+  function recLA(c){   /* lower A · sentadilla */
+    var av = c.lv === 1;
+    return { titulo: 'Tren inferior · Sentadilla', nombre: 'Lower A · Sentadilla',
+      foco: 'Tren inferior con eje en sentadilla: Back Squat pesado, prensa, glúteo y gemelo; en mujeres se suma Barbell Hip Thrust como segundo ejercicio principal. ' + REC_EVID,
+      bloques: [recWarm(c, 'l'),
+        recPrinc(c, 'Back Squat', 3, av ? 5 : 8, 'EJECUCIÓN: Bajada de 3 segundos con brace de 360°, profundidad hasta donde se mantenga la columna neutra.', 'cuádriceps, glúteo y erectores'),
+        (c.f
+          ? recBiset(c, 'Glúteo y cuádriceps · Biset', 'Barbell Hip Thrust', dose(av ? 4 : 3, '8-10', '2022', REC_RIR(c)), 'Leg Press', dose(av ? 4 : 3, '10-12', '3011', REC_RIR(c)),
+              'Hip thrust para el glúteo mayor (Contreras 2015) y prensa para el cuádriceps con baja demanda axial.', ['HIP THRUST: Pausa de 2 segundos arriba.', 'PRENSA: Rango completo sin bloquear la rodilla.'])
+          : recBiset(c, 'Cuádriceps y cadena posterior · Biset', 'Leg Press', dose(av ? 4 : 3, '10-12', '3011', REC_RIR(c)), 'Lying Leg Curl', dose(av ? 4 : 3, '10-12', '3011', REC_RIR(c)),
+              'Cuádriceps e isquios antagonistas con baja demanda axial.', ['PRENSA: Rango completo sin bloquear la rodilla.', 'CURL: Bajada de 3 segundos.'])),
+        recBiset(c, 'Unilateral y gemelo · Biset', 'Walking Lunge', dose(3, 10, '3010', REC_RIR(c)), 'Standing Calf Raise', dose(3, '12-15', '2112', REC_RIR(c)),
+          'Trabajo unilateral y gemelo para completar el tren inferior.', ['ZANCADAS: Paso largo y torso erguido.', 'GEMELO: Pausa de 1 segundo arriba y estiramiento completo abajo.']),
+        recFin(c, 'sled')] };
+  }
+  function recUB(c){   /* upper B · tracción */
+    var av = c.lv === 1;
+    return { titulo: 'Tren superior · Tracción', nombre: 'Upper B · Tracción',
+      foco: 'Tren superior con eje en tracción vertical y horizontal: dominadas o jalón, press inclinado, remo y deltoides posterior. ' + (c.f ? 'Mujeres: dorsal y hombro posterior con volumen de aislamiento.' : 'Hombres: espalda y brazos con carga alta.') + ' ' + REC_EVID,
+      bloques: [recWarm(c, 'u'),
+        recPrinc(c, av ? 'Weighted Pull-ups' : 'Wide-Grip Lat Pulldown', 3, av ? 5 : 8, 'EJECUCIÓN: Tirá del pecho hacia la barra con las escápulas deprimidas; bajada de 3 segundos hasta extensión completa.', 'dorsal ancho, bíceps y agarre'),
+        recBiset(c, 'Press inclinado y remo · Biset', 'Incline Dumbbell Press', dose(av ? 4 : 3, '8-10', '3010', REC_RIR(c)), 'Single-Arm Dumbbell Row', dose(av ? 4 : 3, '8-10', '2011', REC_RIR(c)),
+          'Empuje inclinado y remo unilateral antagonistas con carga moderada-alta.', ['PRESS INCLINADO: Banco de 30°.', 'REMO: Torso estable y pausa de 1 segundo.']),
+        recBiset(c, 'Deltoides posterior y bíceps · Biset', 'Rear Delt Dumbbell Flyes', dose(3, '12-15', '2011', REC_RIR(c)), 'EZ-Bar Biceps Curl', dose(3, '10-12', '3010', REC_RIR(c)),
+          'Deltoides posterior y bíceps con baja fatiga sistémica para sostener el volumen total.', ['FLYES: Codos levemente flexionados.', 'CURL: Codos pegados y bajada de 3 segundos.']),
+        recFin(c, 'bike')] };
+  }
+  function recLB(c){   /* lower B · bisagra */
+    var av = c.lv === 1;
+    return { titulo: 'Tren inferior · Bisagra y glúteo', nombre: 'Lower B · Bisagra & Glúteo',
+      foco: 'Tren inferior con eje en bisagra: Romanian Deadlift pesado, glúteo, isquios y trabajo unilateral. ' + (c.f ? 'Mujeres: más volumen de glúteo (hip thrust unilateral).' : 'Hombres: cadena posterior con carga alta y volumen contenido.') + ' ' + REC_EVID,
+      bloques: [recWarm(c, 'l'),
+        recPrinc(c, 'Romanian Deadlift', 3, av ? 5 : 8, 'EJECUCIÓN: Cadera atrás, barra pegada al muslo y bajada de 3 segundos hasta mitad de la tibia.', 'isquiotibiales, glúteo y erectores'),
+        recBiset(c, 'Glúteo y isquios · Biset', c.f ? 'Single-Leg Hip Thrust' : 'Barbell Hip Thrust', dose(av ? 4 : 3, '8-10', '2022', REC_RIR(c)), 'Lying Leg Curl', dose(av ? 4 : 3, '10-12', '3011', REC_RIR(c)),
+          'Glúteo mayor en acortamiento (Contreras 2015) con isquios en flexión de rodilla para completar la cadena posterior.', ['HIP THRUST: Pausa de 2 segundos arriba.', 'CURL: Bajada de 3 segundos.']),
+        recBiset(c, 'Unilateral y core · Biset', 'Bulgarian Split Squat', dose(3, '8-10', '3110', REC_RIR(c)), 'Cable Crunch', dose(3, '12-15', '2012', REC_RIR(c)),
+          'Unilateral de cuádriceps y glúteo y flexión de tronco con carga.', ['BÚLGARA: La pierna débil primero.', 'CABLE CRUNCH: Flexioná la columna, no la cadera.']),
+        recFin(c, 'carry')] };
+  }
+  function recDens(c){   /* full body densidad metabólica (5º día) */
+    var av = c.lv === 1;
+    return { titulo: 'Full Body · Densidad metabólica', nombre: 'Full Body · Densidad',
+      foco: 'Quinto día de densidad metabólica: circuitos de ejercicios multiarticulares con cargas moderadas y pausas cortas para sumar gasto energético sin sumar daño muscular. Es la sesión más "liviana" de fuerza de la semana: se hace aunque el resto haya sido pesado, sin ir al fallo. ' + REC_EVID,
+      bloques: [recWarm(c, 'l'),
+        B('Circuito A · Piernas y empuje',
+          [['Goblet Squat', dose(3, 12, '2011', 3)], ['Push-ups', dose(3, 12, '2010', 3)], ['Kettlebell Swing', dose(3, 15, '', 3)]], '90s',
+          'Tres ejercicios multiarticulares encadenados con cargas moderadas: alto trabajo mecánico y gasto energético con baja carga articular.',
+          ['RITMO: Las tres estaciones seguidas, descanso solo al cerrar la ronda.', 'SWING: Empuje de cadera explosivo, brazos como cuerdas.']),
+        B('Circuito B · Tracción y bisagra',
+          [['Single-Arm Dumbbell Row', dose(3, 12, '2011', 3)], ['Dumbbell Romanian Deadlift', dose(3, 12, '3011', 3)], ['Walking Lunge', dose(3, 12, '2010', 3)]], '90s',
+          'Tracción, bisagra y zancada encadenadas: trabajo de espalda y cadena posterior sin fallos y con pausas cortas.',
+          ['RITMO: Seguido, pausa al cerrar la ronda.', 'ZANCADAS: Paso largo y torso erguido.']),
+        recFin(c, av ? 'bike' : 'carry')] };
+  }
+
+  /* ---------- 5 · GOLF (3 días) ---------- */
+  var GOLF_EVID = 'La fuerza y la potencia del tren inferior y del tronco se asocian a mayor velocidad de palo y distancia (Torres-Ronda 2011), y el swing es una cadena secuencial de suelo, cadera, tronco, hombro y palo que depende de la movilidad torácica y de la disociación entre caderas y hombros (Hume 2005).';
+  function golf1(c){
+    var av = c.lv === 1;
+    return { titulo: 'Movilidad torácica, disociación y fuerza de base', nombre: 'Movilidad & Disociación',
+      foco: 'Día de movilidad torácica, disociación de caderas y hombros y fuerza de base: rotación torácica activa, cadera en rotación interna y externa, sentadilla y bisagra, y cadenas diagonales del tronco. ' + GOLF_EVID,
+      bloques: [
+        B('Entrada en calor · Biset de movilidad torácica y cadera',
+          [['Quadruped T-Spine Rotation', dose(2, 8, '3121', 5)], ['90/90 Hip Switch', dose(2, 8, '3121', 5)]], '30s',
+          'Aumentar el rango de rotación torácica (columna dorsal) y de rotación de cadera, los dos lugares donde el golfista debe encontrar el giro para no pedirlo a la zona lumbar (Hume 2005).',
+          ['TORÁCICA: Mano detrás de la cabeza, rotá el codo hacia el techo desde la espalda alta, no desde la lumbar.', 'CADERA 90/90: Rotá las rodillas de un lado al otro con el torso erguido y las manos libres.', RAMPA]),
+        B(null, [[av ? 'Front Squat' : 'Goblet Squat', av ? dose(4, 6, '30X0', '2') : dose(3, 10, '3111', 3)]], '2:00',
+          'Fuerza de base del tren inferior: la sentadilla da fuerza vertical contra el piso, que es la fuente de velocidad del swing (Torres-Ronda 2011).',
+          ['EJECUCIÓN: Bajada de 3 segundos con torso erguido y rodillas siguiendo la línea de los pies.', 'AMPLITUD: Profundidad hasta donde la columna se mantenga neutra.']),
+        B(null, [['Romanian Deadlift', dose(3, 8, '3011', av ? 2 : 3)]], '2:00',
+          'Bisagra de cadera: la pelvis se estabiliza y los glúteos y isquios transmiten fuerza al tronco; es el patrón de la postura de dirección y del impacto.',
+          ['EJECUCIÓN: Cadera atrás, espalda neutra y barra pegada al muslo; bajada de 3 segundos.']),
+        B('Cadenas diagonales del tronco · Tríserie de disociación',
+          [['Half-Kneeling Band Rotational Chop', dose(3, 10, '2111', 2)], ['Cable Woodchopper', dose(3, 10, '2111', 2)], ['Dead Bug', dose(3, 8, '3121', 2)]], '75s',
+          'Control de la rotación a partir de la cadera con un hombro estable: las diagonales de tronco entrenan la transferencia de fuerza entre caderas y hombros sin sobrecargar la columna (McGill 2010).',
+          ['CHOP: Medio arrodillado, giro desde el torso con la pelvis cuadrada; diez por lado.', 'WOODCHOPPER: Brazos extendidos y rotación sin mover la cadera.', 'DEAD BUG: Zona lumbar pegada al piso.']),
+        B('Escápula y hombro · Biset',
+          [['Seated Cable Row', dose(3, 10, '2011', 2)], ['Prone Incline Y-Raises', dose(3, 12, '2111', 2)]], '60s',
+          'Tracción para contrarrestar la postura inclinada de la dirección y escápula estable en el swing; el trapecio inferior sostiene el hombro en la fase de impulso.',
+          ['REMO: Pausa de 1 segundo con las escápulas juntas.', 'Y-RAISES: Brazos en Y con pulgares arriba. ' + SEMANAS]) ] };
+  }
+  function golf2(c){
+    var av = c.lv === 1;
+    return { titulo: 'Potencia rotacional secuencial y transferencia del suelo', nombre: 'Potencia rotacional',
+      foco: 'Día de potencia: lanzamientos rotacionales con pelota medicinal para la secuencia suelo-cadera-tronco-brazo, salto vertical para la fuerza contra el piso, swing de kettlebell y core anti-rotación. ' + (av ? 'Avanzado: contraste con barra hexagonal.' : 'Desarrollo: técnica y control.') + ' ' + GOLF_EVID,
+      bloques: [
+        B('Entrada en calor · Biset de cadera y rotación',
+          [['Banded Monster Walk', dose(2, 12, '2112', 4)], ['Quadruped T-Spine Rotation', dose(2, 8, '3121', 5)]], '30s',
+          'Pre-activar los glúteos medios y mover la columna torácica antes de los lanzamientos de potencia.',
+          ['MONSTER WALK: Pasos laterales con tensión en la banda, rodillas hacia afuera.', 'TORÁCICA: Rotá el codo desde la espalda alta.', RAMPA]),
+        B('Lanzamiento rotacional y salto · Biset de potencia',
+          [['Medicine Ball Rotational Throw', cdose(av ? 5 : 4, 5, 8)], [av ? 'Trap Bar Jump' : 'Jump Squat', cdose(av ? 5 : 4, 4, 8)]], '2:00',
+          'Desarrollar potencia de rotación y de extensión vertical: el contraste de un lanzamiento rotacional y un salto entrena la secuencia de activación suelo-cadera-tronco (Cormie 2011).',
+          ['LANZAMIENTO: Contra la pared, rotá desde los pies y la cadera y lanzá con el torso; cinco por lado.', 'SALTO: Aterrizaje suave y estable; la velocidad manda.']),
+        B(null, [['Kettlebell Swing', cdose(av ? 5 : 4, 10, 8)]], '90s',
+          'Potencia de bisagra de cadera: el swing entrena la extensión explosiva y el patrón de impulso de la cadera que se necesita antes del impacto.',
+          ['EJECUCIÓN: Cadera atrás y empuje explosivo, brazos relajados; la pelota sube por la cadena, no por los hombros.']),
+        B('Landmine Rotation · Fuerza rotacional',
+          [['Landmine 180° Rotational Pivot', dose(3, 8, '2111', 2)], ['Pallof Press', dose(3, 10, '2121', 2)]], '75s',
+          'Fuerza rotacional con control: el pivote de landmine entrena la rotación completa desde los pies y el Pallof la resistencia a esa rotación (McGill 2010).',
+          ['LANDMINE: Rotá desde los pies y la cadera, no desde los brazos; ocho por lado.', 'PALLOF: Diez por lado. ' + SEMANAS]) ] };
+  }
+  function golf3(c){
+    var av = c.lv === 1;
+    return { titulo: 'Fuerza unilateral, estabilidad escapulohumeral y control lumbopélvico', nombre: 'Unilateral & Escápula',
+      foco: 'Día de fuerza unilateral y estabilidad del hombro: el golfista apoya el peso en una pierna en la fase de impacto y el hombro necesita el trapecio inferior y el serrato para no compensar. Incluye bisagra unilateral, zancadas inversas, tracción y empuje controlados y core lateral. ' + GOLF_EVID,
+      bloques: [
+        bWarmUpper(c),
+        B(null, [['Single-Leg RDL', dose(3, 8, '3011', av ? 2 : 3)]], '90s',
+          'Bisagra unilateral: estabilidad de la pelvis en el apoyo, determinante en el golpe y en la prevención de dolor lumbar.',
+          ['EJECUCIÓN: Cadera cuadrada, rodilla de apoyo levemente flexionada; ocho por pierna.']),
+        B(null, [['Reverse Lunge', dose(3, 8, '3010', av ? 2 : 3)]], '90s',
+          'Fuerza unilateral del tren inferior con control de la rodilla.',
+          ['EJECUCIÓN: Paso largo hacia atrás, torso erguido; ocho por pierna.']),
+        B('Tracción y empuje controlados · Biset',
+          [['Wide-Grip Lat Pulldown', dose(3, 10, '2011', 2)], ['Push-ups', dose(3, 12, '2010', 2)]], '90s',
+          'Dorsal fuerte y empuje estable sostienen el hombro en la fase de aceleración y reducen la sobrecarga del manguito.',
+          ['LAT PULLDOWN: Tirá del esternón con las escápulas deprimidas.', 'PUSH-UPS: Con serratos activos (sumá 1 segundo de protracción al final).']),
+        bCuff(c),
+        B('Core lateral · Biset',
+          [['Side Plank', cdose(3, '30s', 7)], ['Suitcase Carry', cdose(3, '25m', 7)]], '60s',
+          'Estabilidad lateral del tronco y control lumbopélvico para el impacto.',
+          ['SIDE PLANK: Treinta segundos por lado.', 'SUITCASE CARRY: Carga de un solo lado, sin inclinar el tronco. ' + SEMANAS]) ] };
+  }
+
+  /* ---------- 6 · HYROX (3, 4 y 5 días) ---------- */
+  var HX_EVID = 'La carrera combina 8 km de carrera en tramos de 1 km con ocho estaciones de fuerza-resistencia, así que se entrena con intensidad cercana al umbral de lactato (los mejores resultados se logran con mucho trabajo fácil y una porción de calidad cerca y por encima del umbral, Seiler 2010), intervalos de alta intensidad (Buchheit & Laursen 2013) y fuerza bajo fatiga acumulada, la "durabilidad" que separa a los atletas cuando el cansancio crece (Maunder 2021). La fuerza máxima de base mejora la economía en deportes de resistencia sin comprometer el rendimiento aeróbico (Rønnestad & Mujika 2014).';
+  function hxCarga(c){
+    return {
+      farmer: c.f ? '2 x 16-24 kg' : '2 x 24-32 kg',
+      bolsa: c.f ? '10-20 kg' : '20-30 kg',
+      wall: c.f ? '4-6 kg' : '6-9 kg'
+    };
+  }
+  function hxA(c){
+    var R = P(c, [4, 5, 6]), T = P(c, ['5min', '6min', '6min']), rp = P(c, [7, '7-8', 8]);
+    return { titulo: 'Umbral de lactato y estaciones de empuje y tracción', nombre: 'Umbral & Estaciones',
+      foco: 'Día de calidad: intervalos de carrera en el umbral de lactato (' + R + 'x' + T + ') y estaciones de empuje y tracción bajo fatiga (Sled Push, Sled Pull y Ski Erg encadenados), más core. ' + HX_EVID,
+      bloques: [
+        B('Entrada en calor · Rampa de carrera y activación',
+          [['Banded Monster Walk', dose(2, 12, '2112', 4)], ['Easy Run', cdose(1, '8min', 4)]], '30s',
+          'Subir la temperatura y la frecuencia cardíaca de manera progresiva y activar los glúteos medios antes de la intensidad de umbral.',
+          ['RAMPA: Los últimos 2 minutos del trote a ritmo de umbral para llegar al primer intervalo ya caliente.', RAMPA]),
+        B('Cardio · Intervalos de umbral en cinta',
+          [['Treadmill Run', cdose(R, T, rp)]], P(c, ['1:30', '1:30', '1:15']),
+          'Intervalos de 5-6 minutos a ritmo de umbral: es la zona donde el lactato se produce y se elimina casi a la misma velocidad y se logra el mayor rendimiento sostenible en esfuerzos largos (Seiler 2010).',
+          ['RITMO: RPE ' + rp + ', respiración controlada pero exigente; el último intervalo debe ser tan rápido como el primero.', 'PAUSA: Trote muy suave o caminata durante el descanso; no te sientes.']),
+        B('Estaciones de empuje y tracción bajo fatiga · Tríserie',
+          [['Sled Push', cdose(R, '25m', 8)], ['Sled Pull', cdose(R, '25m', 8)], ['SkiErg', cdose(R, '250m', 8)]], '90s',
+          'Simular la fatiga acumulada de la carrera: empuje, tracción y ski-erg encadenados con poca pausa entrenan la eficiencia mecánica cuando el cansancio ya está presente (Maunder 2021).',
+          ['SLED PUSH: Torso inclinado y pasos cortos; la carga es la que te deja a RPE 8 en la última pasada.', 'SLED PULL: Tirá con las piernas y la espalda, no con los brazos.', 'SKIERG: Tirá con caderas y espalda, brazos al final; 250 m por serie.']),
+        B('Core anti-rotación · Biset',
+          [['Hanging Leg Raise', dose(3, 8, '3011', 2)], ['Pallof Press', dose(3, 10, '2121', 2)]], '60s',
+          'Estabilidad de tronco para sostener la postura corriendo y empujando (McGill 2010).',
+          ['HANGING LEG RAISE: Sin balanceo.', 'PALLOF PRESS: Diez por lado. ' + SEMANAS]) ] };
+  }
+  function hxB(c){
+    var lv = c.lv, k = hxCarga(c);
+    return { titulo: 'Fuerza máxima y soporte estructural', nombre: 'Fuerza & Soporte',
+      foco: 'Día de fuerza: Trap Bar Deadlift pesado, zancada pesada con tracción, Push Press y transporte con bolsa. Es la sesión que sostiene las cargas de las estaciones. ' + HX_EVID,
+      bloques: [
+        bWarmLower(c),
+        B(null, [['Trap Bar Deadlift', lv === 0 ? dose(4, 5, '30X0', 2) : (lv === 1 ? pira(5, 4, '3x4', null, '30X0', 1) : pira(4, 3, '3x3', '2x5', '30X0', 1))]], lv === 0 ? '3:00' : '3:30',
+          'Fuerza máxima de la cadena posterior con una barra que permite empujar más peso con menos cizalla lumbar: la fuerza máxima de base es la que permite sostener el ritmo en las estaciones (Rønnestad & Mujika 2014).',
+          ['EJECUCIÓN: Pecho alto, barra pegada al cuerpo y empuje fuerte desde el piso.', 'TOP SET: ' + P(c, ['Cuatro series de 5 a RIR 2.', 'Tres series de 4 a RIR 1.', 'Tres series de 3 a RIR 1 y back-off de 2x5 con 10% menos.']), RAMPA]),
+        B('Zancada pesada y tracción · Biset',
+          [['Walking Lunge', dose(P(c, [3, 4, 4]), '8-10', '3010', P(c, [2, '1-2', 1]))], [lv === 0 ? 'Wide-Grip Lat Pulldown' : 'Pull-ups', dose(P(c, [3, 4, 4]), '6-8', '2011', P(c, [2, '1-2', 1]))]], '2:00',
+          'Zancada pesada (la estación con mayor cansancio de cuádriceps y glúteo) emparejada con tracción: dominio de la fuerza de resistencia del tren inferior y de la espalda, necesaria en Sled Pull, ski-erg y remo.',
+          ['ZANCADAS: Paso largo, torso erguido y rodilla trasera cerca del piso; con mancuernas o barra según el nivel.', 'TRACCIÓN: Pecho a la barra y bajada de 3 segundos.']),
+        B(null, [['Push Press', dose(P(c, [3, 4, 4]), 5, '', P(c, [2, '1-2', 1]))]], '2:00',
+          'Fuerza de empuje overhead con la ayuda de las piernas: el push press transmite fuerza de suelo a brazos, útil para wall balls y empuje de trineo.',
+          ['EJECUCIÓN: Pequeña flexión de piernas y extensión explosiva; recepción con codos bloqueados.']),
+        B('Transporte pesado · Biset de agarre',
+          [['Farmer Carry', cdose(P(c, [3, 4, 5]), '40m', 8)], ['Sandbag Bear Hug Carry', cdose(P(c, [3, 4, 5]), '30m', 8)]], '90s',
+          'Agarre y estabilidad del tronco bajo carga: las estaciones de transporte y de zancadas con bolsa se limitan por el agarre y la postura, no solo por el cardio.',
+          ['CARGA DE ENTRENAMIENTO: Farmer Carry ' + k.farmer + ', bolsa ' + k.bolsa + '; ajustá a RPE 8.', 'POSTURA: Costillas abajo, hombros atrás; si el tronco se inclina, bajá la carga. ' + SEMANAS]) ] };
+  }
+  function hxC(c){
+    var R = P(c, [3, 4, 5]), run = P(c, ['800m', '1000m', '1000m']), bbj = P(c, ['20m', '30m', '30m']);
+    return { titulo: 'Simulación de carrera · Running comprometido', nombre: 'Simulación de carrera',
+      foco: 'Día de simulación parcial de la carrera: ' + R + ' rondas de carrera + Sled Push + Burpee Broad Jump + remo, con pausa corta; entrena la eficiencia mecánica en las transiciones y la carrera con piernas ya cargadas. Más wall balls al cierre. ' + HX_EVID,
+      bloques: [
+        bWarmLower(c),
+        B('Cardio · Circuito de simulación con carrera comprometida',
+          [['Treadmill Run', cdose(R, run, 7)], ['Sled Push', cdose(R, '25m', 8)], ['Burpee Broad Jump', cdose(R, bbj, 8)], ['Rowing Erg', cdose(R, '500m', 8)]], P(c, ['2:00', '2:00', '1:30']),
+          'Correr con la fatiga de las estaciones es lo que más se parece a la carrera: la carrera "comprometida" entrena el mantenimiento del ritmo con piernas cargadas y la transición eficiente de la estación al trote (Maunder 2021).',
+          ['RITMO: Corré a RPE 7 desde la primera ronda; si la última ronda baja más de un 5% de velocidad, la anterior fue demasiado fuerte.', 'TRANSICIÓN: Bajá del trineo y ya en la cinta; practicá no detenerte entre estaciones.', 'REMO: 500 m a ritmo de carrera (RPE 8), 28-30 paladas por minuto.', 'BURPEE BROAD JUMP: Pecho al piso y salto largo; ' + bbj + ' por serie.']),
+        B(null, [['Wall Balls', cdose(P(c, [3, 4, 4]), P(c, [15, 20, 25]), 8)]], '90s',
+          'Estación con alto componente de sentadilla y press repetido: entrena la resistencia de fuerza del tren inferior y de los hombros bajo la fatiga del circuito previo.',
+          ['CARGA: ' + hxCarga(c).wall + ' según tu categoría; bajá a sentadilla completa y lanzá a la altura marcada.', 'RITMO: Series cortas con descanso de 5 segundos cada 8-10 repeticiones; evitá el fallo. ' + SEMANAS]) ] };
+  }
+  function hxD(c){
+    return { titulo: 'Base aeróbica y eficiencia de transiciones', nombre: 'Base aeróbica & Transiciones',
+      foco: 'Día de volumen aeróbico a intensidad baja (zona 2) con técnica de remo y ski-erg, práctica de transición burpee-carrera y resiliencia de isquios y pantorrilla. Es la sesión que construye la capacidad de recuperar entre esfuerzos. ' + HX_EVID,
+      bloques: [
+        B('Cardio · Zona 2 de carrera', [['Zone 2 Run', cdose(1, P(c, ['35min', '45min', '50min']), 5)]], '',
+          'Trabajo aeróbico a intensidad baja: aumenta la densidad mitocondrial y la capacidad de oxidar grasas con poco costo de recuperación; es la base sobre la que se apoyan los días de calidad (Seiler 2010).',
+          ['INTENSIDAD: Podés hablar frases completas; si no, bajá el ritmo. No es un día para competir contigo.']),
+        B('Cardio · Técnica de remo y ski-erg · Biset',
+          [['Rowing Erg', cdose(P(c, [4, 5, 6]), '500m', 6)], ['SkiErg', cdose(P(c, [4, 5, 6]), '250m', 6)]], '75s',
+          'La técnica eficiente en ergómetros ahorra energía en la carrera; practicarla a intensidad moderada consolida el patrón sin añadir fatiga.',
+          ['REMO: Piernas, espalda y brazos, en ese orden; cadencia de 24-26 paladas por minuto.', 'SKIERG: Caderas y espalda, brazos al final.']),
+        B('Cardio · Práctica de transición · Biset',
+          [['Burpees', cdose(P(c, [3, 4, 4]), 8, 7)], ['Easy Run', cdose(P(c, [3, 4, 4]), '200m', 7)]], '60s',
+          'Practicar el pasaje de una estación a la carrera: aprender a recuperar la respiración corriendo y a no frenar al terminar el ejercicio.',
+          ['BURPEES: Ritmo sostenido y pecho al piso.', 'CARRERA: Trote parejo de 200 m; ni ráfaga ni pausa.']),
+        B('Isquios y pantorrilla · Biset de resiliencia',
+          [['Nordic Hamstring Curl', dose(3, 5, '5010', 2)], ['Single-Leg Calf Raise', dose(3, 12, '2112', 2)]], '75s',
+          'Isquiotibiales y gemelos son las zonas con más lesión en carrera de volumen (Petersen 2011; van der Horst 2015); el excéntrico los prepara.',
+          ['NORDIC: Bajada de 5 segundos.', 'GEMELO: Pausa de 1 segundo arriba. ' + SEMANAS]) ] };
+  }
+  function hxE(c){
+    var k = hxCarga(c), R = P(c, [3, 4, 5]);
+    return { titulo: 'Fuerza-resistencia bajo fatiga acumulada', nombre: 'Fuerza-resistencia bajo fatiga',
+      foco: 'Día de durabilidad: dos tríseries de estaciones (wall balls, zancadas con bolsa y burpees; luego transporte, trineo y ski-erg) con pausa corta; entrena sostener la calidad técnica cuando la fatiga ya es alta. ' + HX_EVID,
+      bloques: [
+        bWarmLower(c),
+        B('Tríserie A · Wall balls, bolsa y burpees',
+          [['Wall Balls', cdose(R, P(c, [15, 20, 25]), 8)], ['Sandbag Lunges', cdose(R, '20m', 8)], ['Burpees', cdose(R, 10, 8)]], '2:00',
+          'Estaciones de piernas y hombros encadenadas con poca pausa: la durabilidad (mantener el rendimiento cuando la fatiga crece) se entrena acumulando fatiga con calidad (Maunder 2021).',
+          ['CARGA: Wall ball ' + k.wall + ' y bolsa ' + k.bolsa + '; ajustá para llegar al final de las rondas sin romper la técnica.', 'ZANCADAS CON BOLSA: Bolsa al hombro o al pecho, paso largo y rodilla trasera cerca del piso.']),
+        B('Tríserie B · Transporte, trineo y ski-erg',
+          [['Farmer Carry', cdose(R, '40m', 8)], ['Sled Pull', cdose(R, '25m', 8)], ['SkiErg', cdose(R, '250m', 8)]], '2:00',
+          'Agarre, tracción y ski-erg encadenados: la espalda y el agarre ya están cansados, justo cuando la carrera real exige sostener la postura.',
+          ['FARMER CARRY: ' + k.farmer + '; hombros atrás.', 'SLED PULL: Tirá con las piernas y la espalda.', 'GESTIÓN DE LA FATIGA: Si la técnica se rompe, cortá la serie; en la semana de descarga reducí las rondas a la mitad.']),
+        B(null,
+          [['Ab Wheel', dose(3, 8, '3121', 2)]], '60s',
+          'Estabilidad del tronco frente a la extensión para sostener la postura al final de la carrera.',
+          ['EJECUCIÓN: Pelvis en retroversión, rango que puedas controlar. ' + SEMANAS]) ] };
+  }
+
+  /* ---------- 7 · catálogo ---------- */
+  var DEPORTES = {
+    mtb:  { lb: 'Mountain Bike', ic: '🚵', disc: 'mtb', tab: 'atl', corto: 'MTB · Fuerza y Resiliencia',
+            obj: 'Fuerza unilateral de miembro inferior, estabilidad lumbopélvica anti-rotación, resistencia de fuerza del tren superior y salud de rodilla y cadena posterior',
+            nota: 'Tres días: fuerza unilateral y rodilla, tren superior con absorción de impactos y cadena posterior con potencia. ' },
+    rug:  { lb: 'Rugby', ic: '🏉', disc: 'deport', tab: 'atl', corto: 'Rugby · Fuerza y Potencia',
+            obj: 'Fuerza explosiva, potencia de tren inferior con cargas contrastadas, desaceleración y prevención de lesiones de hombro e isquiotibiales',
+            nota: 'Fuerza máxima de tren inferior con contraste, tren superior con prevención de hombro, potencia con desaceleración e isquios. ' },
+    rec:  { lb: 'Recomposición Corporal', ic: '🔥', disc: 'recomp', tab: 'bb', corto: 'Recomposición · Pérdida de Grasa',
+            obj: 'Retención de masa muscular en déficit calórico con sobrecarga progresiva eficiente, densidad metabólica y ejercicios multiarticulares de alta demanda estructural',
+            nota: 'Carga relativa alta, RIR 1-3 y volumen moderado para conservar el músculo en déficit; bisets antagonistas y finisher de bajo impacto para el gasto energético. ' },
+    golf: { lb: 'Golf', ic: '⛳', disc: 'deport', tab: 'atl', corto: 'Golf · Rotación y Transferencia',
+            obj: 'Movilidad torácica, disociación de caderas y hombros, potencia de rotación secuencial y estabilidad escapulohumeral',
+            nota: 'Tres días: movilidad y disociación, potencia rotacional del suelo al palo y fuerza unilateral con estabilidad escapular. ' },
+    hyx:  { lb: 'Hyrox', ic: '🏃', disc: 'deport', tab: 'atl', corto: 'Hyrox · Umbral y Estaciones',
+            obj: 'Acondicionamiento cardiovascular de alta intensidad, fuerza-resistencia bajo fatiga acumulada, umbral de lactato y eficiencia en las transiciones',
+            nota: 'Intervalos en el umbral de lactato, estaciones de sled, ski-erg, remo, zancadas y wall balls bajo fatiga, simulación de carrera y base aeróbica. ' }
+  };
+  var NIVEL_LB = ['Desarrollo', 'Avanzado', 'Élite'];
+  var NIVEL_ID = ['intermedio', 'avanzado', 'competitivo'];
+  var SESIONES = {
+    mtb: { 3: [mtb1, mtb2, mtb3] },
+    rug: { 3: [rug1, rug2, rug3], 4: [rug1, rug2, rug3, rug4] },
+    rec: { 3: [recA1, recB1, recC1], 4: [recUA, recLA, recUB, recLB], 5: [recLA, recUA, recLB, recUB, recDens] },
+    golf: { 3: [golf1, golf2, golf3] },
+    hyx: { 3: [hxA, hxB, hxC], 4: [hxA, hxB, hxD, hxC], 5: [hxA, hxB, hxD, hxE, hxC] }
+  };
+  var CATALOGO = [];
+  function alta(dep, lv, f, dias, lbNivel){
+    var D = DEPORTES[dep], sex = (f === null) ? '' : (f ? 'f' : 'm');
+    var partes = [D.corto, lbNivel || NIVEL_LB[lv]];
+    if(sex) partes.push(f ? 'Mujer' : 'Hombre');
+    partes.push(dias + ' días');
+    CATALOGO.push({ id: 'bkdep_' + dep + '_' + lv + '_' + (sex || 'u') + '_' + dias, dep: dep, lv: lv, f: !!f, sex: sex, dias: dias, nivId: NIVEL_ID[lv], nombre: partes.join(' · '), sesiones: SESIONES[dep][dias] });
+  }
+  [1, 2].forEach(function(lv){ [false, true].forEach(function(f){ alta('mtb', lv, f, 3); }); });
+  [3, 4].forEach(function(d){ [0, 2].forEach(function(lv){ alta('rug', lv, false, d, lv === 2 ? 'Avanzado-Élite' : 'Desarrollo'); }); });
+  [3, 4, 5].forEach(function(d){ [0, 1].forEach(function(lv){ [false, true].forEach(function(f){ alta('rec', lv, f, d); }); }); });
+  [0, 1].forEach(function(lv){ alta('golf', lv, null, 3); });
+  [3, 4, 5].forEach(function(d){ [0, 1, 2].forEach(function(lv){ [false, true].forEach(function(f){ alta('hyx', lv, f, d, lv === 2 ? 'Pro' : null); }); }); });
+
+  function porId(id){ return CATALOGO.filter(function(x){ return x.id === id; })[0]; }
+  function armarDias(E){
+    var c = { lv: E.lv, f: E.f, dias: E.dias }, D = DEPORTES[E.dep];
+    var ses = E.sesiones.map(function(fn){ return fn(c); });
+    var texto = ses.map(function(s, i){ return txtDia(i + 1, s); }).join('\n\n');
+    var r = parsearImportacion(texto, true);
+    var dias = r.dias.map(function(dia, i){
+      var d = newDay(i), s = ses[i] || {};
+      d.id = 'dia' + (i + 1); d.short = 'DÍA ' + (i + 1); d.label = s.nombre || ('Sesión ' + (i + 1)); d.title = dia.titulo || s.titulo || ('Día ' + (i + 1));
+      d.focusText = dia.foco || '';
+      d.metaChips = [D.ic + ' ' + D.lb, '🎚️ ' + (E.sex === 'f' ? 'Mujer · ' : (E.sex === 'm' ? 'Hombre · ' : '')) + E.nombre.split(' · ')[2], '🧬 ' + (s.nombre || '')];
+      d.summary = dia.bloques.length + ' bloques';
+      d.bloques = dia.bloques.map(function(b){ return crearBloqueImportado(b, false); });
+      return d;
+    });
+    armarDias.avisos = r.avisos || [];
+    if(r.dias.length !== E.sesiones.length) console.warn('deporte: ' + E.nombre + ' esperaba ' + E.sesiones.length + ' días y hay ' + r.dias.length);
+    try{ if(window.CoachBaseJP && typeof window.CoachBaseJP.proyectar === 'function') window.CoachBaseJP.proyectar({ dias: dias, meso: (typeof defaultWeeks === 'function' ? defaultWeeks() : []) }, E.nivId); }catch(e){ console.warn('deporte proyectar', e); }
+    return dias;
+  }
+  function ficha(E, dias){
+    var D = DEPORTES[E.dep];
+    return {
+      id: E.id, ic: D.ic, tipo: 'base', sbSys: true, sbSysVer: VER, depSys: true, depDeporte: E.dep,
+      nombre: E.nombre, disc: D.disc, niv: E.nivId, genero: E.sex, freq: E.dias, tab: D.tab, carpeta: 'base',
+      notas: D.nota + (E.sex === 'f' ? 'Versión mujer. ' : (E.sex === 'm' ? 'Versión hombre. ' : '')) + 'S1 base de carga, S2-S3 sobrecarga en kilos con el mismo RIR y S4 descarga activa; cada bloque trae su fundamento fisiológico y sus pautas.',
+      creado: 'Plantilla del sistema', usos: 0, dias: dias, meso: (typeof defaultWeeks === 'function' ? defaultWeeks() : []),
+      meta: { mesoDisc: D.disc, mesoNivel: E.nivId, mesoName: E.nombre, mesoObjetivo: D.lb + ' · ' + NIVEL_LB[E.lv], mesoTexto: D.obj + '. Ondulación de la semana: S1 base de carga, S2-S3 sobrecarga, S4 descarga activa.' }
+    };
+  }
+
+  /* ---------- 8 · siembra e hidratación (los días no se guardan: se regeneran desde este código) ---------- */
+  function hidratar(){
+    var n = 0;
+    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
+      if(!r || !r.depSys || (r.dias && r.dias.length)) return;
+      var E = porId(r.id); if(!E) return;
+      try{ r.dias = armarDias(E); n++; }catch(e){ console.warn('deporte hidratar', r.id, e); }
+    });
+    return n;
+  }
+  function sembrar(forzar){
+    if(typeof S === 'undefined' || !S) return 0;
+    if(!Array.isArray(S.banco)) S.banco = [];
+    S.ui = S.ui || {};
+    var primera = !S.ui.depSeed, n = 0;
+    CATALOGO.forEach(function(E){
+      var ya = S.banco.filter(function(x){ return x.id === E.id; })[0];
+      if(ya){
+        if((ya.sbSysVer || 0) < VER){ var u = ficha(E, armarDias(E)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+        return;
+      }
+      if(!primera && !forzar) return;      /* si el coach la borró a propósito no vuelve sola (salvo "Restaurar") */
+      S.banco.push(ficha(E, armarDias(E))); n++;
+    });
+    S.ui.depSeed = VER;
+    if(n){ try{ save(); }catch(e){} }
+    return n;
+  }
+
+  /* ---------- 9 · filtro por deporte y etiquetas de las tarjetas ---------- */
+  var KEY = 'coachjp_dep_v1', G = { dep: '' };
+  try{ G = Object.assign(G, JSON.parse(localStorage.getItem(KEY) || '{}')); }catch(e){}
+  function guardarG(){ try{ localStorage.setItem(KEY, JSON.stringify(G)); }catch(e){} }
+  function hay(){ return (S.banco || []).some(function(r){ return r && r.depSys; }); }
+  function E_(s){ return (typeof esc === 'function') ? esc(s == null ? '' : s) : String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function barra(){
+    var grid = document.getElementById('bankGrid'), w = document.getElementById('depBar');
+    if(!hay() || !grid){ if(w) w.remove(); return; }
+    if(!w){
+      w = document.createElement('div'); w.id = 'depBar'; w.className = 'cp-wrap';
+      var cp = document.getElementById('cpWrap');
+      if(cp && cp.parentNode) cp.parentNode.insertBefore(w, cp.nextSibling); else grid.parentNode.insertBefore(w, grid);
+      w.addEventListener('click', function(e){
+        var b = e.target.closest('[data-depf]');
+        if(b){ var v = b.getAttribute('data-depf'); G.dep = G.dep === v ? '' : v; guardarG(); pintarBarra(); decorar(); return; }
+        if(e.target.closest('#depClear')){ G.dep = ''; guardarG(); pintarBarra(); decorar(); return; }
+        if(e.target.closest('#depRest')){
+          var n = sembrar(true); hidratar();
+          try{ renderBanco(); }catch(e2){}
+          toast(n ? '🏔️ ' + n + ' planificación(es) de deporte restaurada(s)' : 'Las 40 planificaciones de deporte ya estaban en el banco');
+        }
+      });
+    }
+    pintarBarra();
+  }
+  function pintarBarra(){
+    var w = document.getElementById('depBar'); if(!w) return;
+    var cuentas = {}; (S.banco || []).forEach(function(r){ if(r && r.depSys) cuentas[r.depDeporte] = (cuentas[r.depDeporte] || 0) + 1; });
+    w.innerHTML = '<div class="cp-sub"><span class="lb">🏅 Deporte / objetivo</span>' +
+      Object.keys(DEPORTES).map(function(k){ return '<button type="button" class="cp-chip' + (G.dep === k ? ' on' : '') + '" data-depf="' + k + '">' + DEPORTES[k].ic + ' ' + E_(DEPORTES[k].lb) + ' <span class="cn">' + (cuentas[k] || 0) + '</span></button>'; }).join('') +
+      '<button class="btn xs ghost" id="depClear" style="margin-left:auto">✕ Limpiar</button>' +
+      '<button class="btn xs ghost" id="depRest" title="Vuelve a cargar las planificaciones de deporte si las borraste">↺ Restaurar planes de deporte</button></div>';
+  }
+  function decorar(){
+    var g = document.getElementById('bankGrid'); if(!g) return;
+    (S.banco || []).forEach(function(r){
+      if(!r) return;
+      var card = g.querySelector('[data-bank="' + r.id + '"]'); if(!card) return;
+      card.classList.toggle('dep-hide', !!G.dep && r.depDeporte !== G.dep);
+      if(!r.depSys || card.getAttribute('data-dep') === String(r.sbSysVer)) return;
+      card.setAttribute('data-dep', String(r.sbSysVer));
+      var tags = card.querySelector('.bank-tags');
+      if(tags){
+        var D = DEPORTES[r.depDeporte] || {};
+        tags.insertAdjacentHTML('beforeend', '<span class="bank-tag dep">' + (D.ic || '') + ' ' + E_(String(D.lb || '').toUpperCase()) + '</span>' +
+          (r.genero ? '<span class="bank-tag gen">' + (r.genero === 'f' ? '♀ FEMENINO' : '♂ MASCULINO') + '</span>' : '') + '<span class="bank-tag cfm-t">4 SEMANAS</span>');
+      }
+    });
+  }
+  var t = null;
+  function repintar(){ clearTimeout(t); t = setTimeout(function(){ try{ barra(); decorar(); }catch(e){ console.warn('banco deporte', e); } }, 60); }
+  function arranque(){
+    try{ hidratar(); sembrar(false); }catch(e){ console.warn('banco deporte', e); }
+    var g = document.getElementById('bankGrid');
+    if(g && !arranque.obs){ arranque.obs = new MutationObserver(repintar); arranque.obs.observe(g, { childList: true }); }
+    var cp = document.getElementById('cpWrap');
+    if(cp && !cp.getAttribute('data-dep')){ cp.setAttribute('data-dep', '1'); cp.addEventListener('click', repintar); }
+    repintar();
+    try{ if(typeof renderBanco === 'function' && S.ui && S.ui.view === 'banco') renderBanco(); }catch(e){}
+  }
+  var _go = window.go;
+  if(typeof _go === 'function'){
+    window.go = function(v){ var r = _go.apply(this, arguments); if(v === 'banco') setTimeout(arranque, 150); return r; };
+  }
+  window.CoachDeporte = { catalogo: CATALOGO, sembrar: sembrar, hidratar: hidratar, armarDias: armarDias, porId: porId, ficha: ficha, texto: function(id){ var E = porId(id); if(!E) return ''; var c = { lv: E.lv, f: E.f, dias: E.dias }; return E.sesiones.map(function(fn, i){ return txtDia(i + 1, fn(c)); }).join('\n\n'); }, version: VER };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arranque, 700); });
+  else setTimeout(arranque, 700);
+})();
+
+</script>
+<style>
+.bank-card.dep-hide{display:none!important}
+.bank-card .bank-tag.dep{background:rgba(63,169,255,.12);border:1px solid rgba(63,169,255,.38);color:#9FD1FF;font-weight:700}
+</style>
+<!--/SB-DEP1-->
