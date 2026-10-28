@@ -66088,6 +66088,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     return {
       id: uid2('bk'), ic: prog.genero === 'f' ? '♀' : (prog.genero === 'm' ? '♂' : '🏋️'),
       tipo:'base', disc: prog.freq === 1 ? 'dia' : 'hiper', niv: prog.niv || 'intermedio',
+      genero: prog.genero === 'f' || prog.genero === 'm' ? prog.genero : '', freq: prog.freq || c.dias.length,
       nombre: prog.lb, notas: prog.notas, creado: new Date().toLocaleDateString('es-AR'), usos: 0,
       dias: c.dias, meso: JSON.parse(JSON.stringify(SEMANAS)),
       meta: { mesoDisc:'hiper', mesoNivel: prog.niv || 'intermedio', mesoName: prog.lb,
@@ -75844,7 +75845,9 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     else lista.forEach(function(r){ (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ if(migrarBloqueTactico(b)) n++; }); }); });
     save();
     if(typeof renderBanco === 'function') renderBanco();
-    toast('Plantillas actualizadas: ' + n + ' bloque(s) convertidos');
+    var resto = window.CoachBaseJP && window.CoachBaseJP.detallePendientes ? window.CoachBaseJP.detallePendientes() : [];
+    if(resto.length){ try{ console.warn('[Banco de Rutinas] quedaron ' + resto.length + ' elemento(s) sin convertir:'); console.table(resto); }catch(e){} toast('Plantillas actualizadas: ' + n + ' convertidos · quedaron ' + resto.length + ' sin convertir (detalle en la consola)', 'warn'); }
+    else toast('Plantillas actualizadas: ' + n + ' elemento(s) convertidos');
   }
   window.migrarPlantillasBanco = migrarPlantillasBanco;
 
@@ -78633,27 +78636,63 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
 
   /* bloques de plantillas guardadas que siguen en un formato anterior (no se tocan solos: se convierten con "Actualizar plantillas") */
-  function pendientes(){
-    var n = 0;
+  /* criterio unico de "formato anterior" (lo usan el aviso del Banco, el boton Actualizar plantillas y el log de consola):
+     - bloque con tipo block / superset / finisher / hyrox (esquema previo a la redaccion libre), o lista que no es de pizarra (sin sportsPizarra) y no es metcon / cardio / endurance
+     - plantilla cuyo nombre dice Femenina / Masculino pero no tiene la propiedad "genero" (la leen los filtros del Centro de Planificaciones)
+     Se excluyen las plantillas del sistema (std) y las de CrossFit. Devuelve una fila por cada elemento pendiente. */
+  function detallePendientes(){
+    var out = [];
     (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
       if(!r || r.std || r.disc === 'crossfit' || (r.meta && r.meta.mesoDisc === 'crossfit')) return;
-      (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){
+      (r.dias || []).forEach(function(d, di){ (d.bloques || []).forEach(function(b, bi){
         if(!b || (b.tipo === 'list' && b.sportsPizarra)) return;
-        if(['block', 'superset', 'finisher', 'hyrox'].indexOf(b.tipo) >= 0) n++;
-        else if(b.tipo === 'list' && !/^(metcon|cardio|endurance)$/.test(b.category || '')) n++;
+        var m = '';
+        if(['block', 'superset', 'finisher', 'hyrox'].indexOf(b.tipo) >= 0) m = 'bloque con tipo "' + b.tipo + '" (esquema anterior)';
+        else if(b.tipo === 'list' && !/^(metcon|cardio|endurance)$/.test(b.category || '')) m = 'lista sin sportsPizarra (category "' + (b.category || '') + '")';
+        if(m) out.push({ plantilla: r.nombre, id: r.id, dia: d.short || ('DÍA ' + (di + 1)), bloque: bi + 1, titulo: b.titulo || '', motivo: m });
       }); });
-      if(!r.genero && /femenin|masculin/i.test(r.nombre || '')) n++;
+      if(!r.genero && /femenin|masculin/i.test(r.nombre || '')) out.push({ plantilla: r.nombre, id: r.id, dia: '—', bloque: '—', titulo: '', motivo: 'falta la propiedad "genero" (el nombre dice ' + (/femenin/i.test(r.nombre) ? 'Femenina' : 'Masculino') + ')' });
     });
+    return out;
+  }
+  function pendientes(){ return detallePendientes().length; }
+  /* log temporal de depuracion: imprime exactamente que plantillas / bloques se consideran viejos y por que */
+  function logPendientes(origen){
+    var d = detallePendientes();
+    if(!d.length) return d;
+    var sig = d.map(function(x){ return x.id + ':' + x.dia + ':' + x.bloque; }).join('|');
+    if(logPendientes.sig === sig) return d;
+    logPendientes.sig = sig;
+    try{
+      console.groupCollapsed('[Banco de Rutinas] ' + d.length + ' elemento(s) en formato anterior (' + origen + ')');
+      console.table(d);
+      console.log('Criterio: CoachBaseJP.detallePendientes(). Origen habitual de la ficha sin "genero": el Banco Pro (jpBancoPro.banco) la recreaba al cargar si faltaba por nombre. Para borrar: Banco de Rutinas > 🗑️ en la tarjeta con ese nombre; para adaptar: botón "Actualizar plantillas".');
+      console.groupEnd();
+    }catch(e){}
+    return d;
+  }
+  /* el genero es un metadato (no toca el contenido de ninguna rutina): se completa en silencio desde el nombre y no vuelve a aparecer como pendiente.
+     La conversion de BLOQUES viejos sigue siendo a pedido (boton Actualizar plantillas): modifica lo que el coach guardó. */
+  function completarGenero(){
+    var n = 0, nombres = [];
+    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
+      if(!r || r.std || r.genero || r.disc === 'crossfit' || (r.meta && r.meta.mesoDisc === 'crossfit')) return;
+      var gm = /femenin/i.test(r.nombre || '') ? 'f' : (/masculin/i.test(r.nombre || '') ? 'm' : '');
+      if(gm){ r.genero = gm; n++; nombres.push(r.nombre); }
+    });
+    if(n){ try{ save(); }catch(e){} try{ console.info('[Banco de Rutinas] género completado en silencio (' + n + '): ' + nombres.join(' · ')); }catch(e2){} }
     return n;
   }
 
   /* ---------- Banco de Rutinas: etiquetas de las plantillas del sistema + botón de restaurar ---------- */
   function pintarStd(){
     var g = document.getElementById('bankGrid'); if(!g) return;
-    var pend = pendientes(), barra = document.getElementById('bankLegacyBar');
+    var det = logPendientes('al abrir el Banco'), pend = det.length, barra = document.getElementById('bankLegacyBar');
+    var nbl = det.filter(function(x){ return x.dia !== '—'; }).length, ngen = pend - nbl;
+    var resumen = [nbl ? nbl + ' bloque(s) en formato anterior' : '', ngen ? ngen + ' plantilla(s) sin género' : ''].filter(Boolean).join(' y ');
     if(pend && !barra && g.parentNode){
       barra = document.createElement('div'); barra.id = 'bankLegacyBar'; barra.className = 'alert info'; barra.style.cssText = 'padding:10px 12px;margin:0 0 12px';
-      barra.innerHTML = '<span class="ic">🗂️</span><div><b>' + pend + ' bloque(s) de tus plantillas guardadas están en un formato anterior</b>No se modifican solos: tocá <button type="button" class="btn xs gold" id="bankLegacyGo">🔄 Actualizar plantillas</button> para llevarlas al formato actual (se puede deshacer con Ctrl+Z).</div>';
+      barra.innerHTML = '<span class="ic">🗂️</span><div><b>' + resumen + ' en tus plantillas guardadas</b>No se modifican solos: tocá <button type="button" class="btn xs gold" id="bankLegacyGo">🔄 Actualizar plantillas</button> para llevarlas al formato actual (se puede deshacer con Ctrl+Z).</div>';
       g.parentNode.insertBefore(barra, g);
       barra.querySelector('#bankLegacyGo').addEventListener('click', function(){ if(typeof window.migrarPlantillasBanco === 'function') window.migrarPlantillasBanco(); setTimeout(function(){ var b = document.getElementById('bankLegacyBar'); if(b && !pendientes()) b.remove(); }, 150); });
     } else if(!pend && barra){ barra.remove(); }
@@ -78687,10 +78726,10 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
 
   /* ---------- puertas de entrada viejas: las plantillas BB, "Plantillas profesionales" y el banco base abren la biblioteca unificada ---------- */
-  window.CoachBaseJP = { lista: LISTA, asignar: asignar, posAsignar: posAsignar, sembrar: sembrarBanco, modernizarBanco: modernizarBanco, pendientes: pendientes, modernizarBloque: modernizarBloque, modernizarDia: modernizarDia, proyectar: proyectar, auditar: PB.auditar, texto: PB.textoSesion, dias: PB.construirDias };
+  window.CoachBaseJP = { detallePendientes: detallePendientes, logPendientes: logPendientes, completarGenero: completarGenero, lista: LISTA, asignar: asignar, posAsignar: posAsignar, sembrar: sembrarBanco, modernizarBanco: modernizarBanco, pendientes: pendientes, modernizarBloque: modernizarBloque, modernizarDia: modernizarDia, proyectar: proyectar, auditar: PB.auditar, texto: PB.textoSesion, dias: PB.construirDias };
   window.jpModernizarDia = modernizarDia;
   /* al cargar solo se suman las plantillas del sistema y se regeneran sus días en memoria: la modernización de lo que el coach ya guardó es SOLO a pedido (botón "Actualizar plantillas") */
-  function arranque(){ try{ paraModal(); sembrarBanco(false); hidratarStd(); }catch(e){ console.warn('plantillas base', e); } }
+  function arranque(){ try{ paraModal(); sembrarBanco(false); hidratarStd(); completarGenero(); logPendientes('al cargar'); }catch(e){ console.warn('plantillas base', e); } }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arranque, 1600); });
   else setTimeout(arranque, 1600);
   paraModal();
