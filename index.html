@@ -11964,20 +11964,30 @@ function wireReadinessCheckin(day, weekIdx){
    AUDIO
 ========================================================= */
 let _audioCtx = null;
+var _audioFallo = false;
 function ensureAudioCtx(){
-  if(!_audioCtx){
+  /* El audio NUNCA puede romper la app: aqui no se lanza ninguna excepcion. Sin Web Audio (o si el constructor falla) devuelve null y
+     todos los llamadores simplemente no suenan. El contexto no se crea al cargar la pagina: nace en el primer gesto o el primer aviso. */
+  if(_audioCtx || _audioFallo) return _audioCtx;
+  try{
     var AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC){ _audioFallo = true; return null; }
     /* latencyHint "interactive": el menor retardo posible entre el evento del timer y el tono */
     try{ _audioCtx = new AC({ latencyHint: 'interactive' }); }catch(e){ _audioCtx = new AC(); }
     /* iOS 16.4+: sesion de audio "playback" -> los avisos suenan aunque el interruptor de silencio del iPhone este activo */
     try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e2){}
-  }
+    /* si el sistema lo interrumpe (llamada, bloqueo de pantalla), queda a la espera del proximo toque */
+    try{ _audioCtx.addEventListener('statechange', function(){ if(_audioCtx && _audioCtx.state !== 'running' && window.__jpArmarAudio) window.__jpArmarAudio(); }); }catch(e3){}
+  }catch(e4){ _audioCtx = null; _audioFallo = true; }
   return _audioCtx;
 }
-function resumeAudioCtx(){ try{ const ctx = ensureAudioCtx(); if(ctx.state !== 'running') ctx.resume().catch(function(){}); }catch(e){} }
+/* reanuda el contexto SOLO si ya existe (no lo crea: se llama tambien al volver a la pestana, sin gesto) */
+function resumeAudioCtx(){ try{ if(_audioCtx && _audioCtx.state !== 'running'){ var p = _audioCtx.resume(); if(p && p.catch) p.catch(function(){}); } }catch(e){} }
+/* gesto del usuario: aqui si se crea (si hace falta) y se reanuda */
+function gestoAudio(){ try{ ensureAudioCtx(); resumeAudioCtx(); }catch(e){} }
 function unlockAudio(){
   try{
-    const ctx = ensureAudioCtx(); resumeAudioCtx();
+    const ctx = ensureAudioCtx(); if(!ctx) return; resumeAudioCtx();
     /* buffer silencioso de 1 muestra dentro del gesto: es lo que Safari/iOS exige para habilitar el contexto */
     const buf = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource();
     src.buffer = buf; src.connect(ctx.destination); src.start(0);
@@ -11989,7 +11999,7 @@ function unlockAudio(){
     try{ if(window.jpPerfilSonido && jpPerfilSonido.calentar) jpPerfilSonido.calentar(); }catch(e3){}
   }catch(e){}
 }
-['touchstart','pointerdown','click'].forEach(function(evt){ document.addEventListener(evt, resumeAudioCtx, { passive: true }); });
+['touchstart','pointerdown','click'].forEach(function(evt){ try{ document.addEventListener(evt, gestoAudio, { passive: true }); }catch(e){} });
 ['visibilitychange','pageshow','focus'].forEach(function(evt){ (evt === 'visibilitychange' ? document : window).addEventListener(evt, function(){ if(evt !== 'visibilitychange' || document.visibilityState === 'visible') resumeAudioCtx(); }); });
 function isAudioMuted(){
   try{ return localStorage.getItem('jp_audio_muted') === '1'; }catch(e){ return false; }
@@ -11997,7 +12007,7 @@ function isAudioMuted(){
 function playBeep(freq, dur, peakGain, delay, type){
   if(isAudioMuted()) return;
   try{
-    const ctx = ensureAudioCtx(); resumeAudioCtx();
+    const ctx = ensureAudioCtx(); if(!ctx) return; resumeAudioCtx();
     const start = ctx.currentTime + (delay || 0);
     const osc = ctx.createOscillator(); const gain = ctx.createGain();
     osc.type = type || 'sine'; osc.frequency.setValueAtTime(freq, start);
@@ -12097,7 +12107,7 @@ var jpPerfilSonido = (function(){
   }
   function emitir(ev, n){
     try{
-      var ctx = ensureAudioCtx();
+      var ctx = ensureAudioCtx(); if(!ctx) return;
       var tocar = function(){
         if(ev === 'tick') pip(ctx, n);
         else if(ev === 'inicio' || ev === 'fin') ya(ctx);
@@ -12165,14 +12175,17 @@ window.jpBox = jpBox;
   function armar(){ if(armado) return; armado = true; evs.forEach(function(ev){ document.addEventListener(ev, intentar, { capture: true, passive: true }); }); }
   /* se reintenta en cada gesto hasta que el contexto queda en "running" (en iOS touchstart no alcanza: hace falta touchend/click) */
   function intentar(){
-    try{ unlockAudio(); }catch(e){}
-    var c = ensureAudioCtx();
-    if(c.state === 'running'){ quitar(); return; }
-    try{ var p = c.resume(); if(p && p.then) p.then(function(){ if(c.state === 'running') quitar(); }).catch(function(){}); }catch(e2){}
+    try{
+      unlockAudio();
+      var c = ensureAudioCtx();
+      if(!c){ quitar(); return; }      /* sin Web Audio: no hay nada que desbloquear */
+      if(c.state === 'running'){ quitar(); return; }
+      var p = c.resume(); if(p && p.then) p.then(function(){ if(c.state === 'running') quitar(); }).catch(function(){});
+    }catch(e){}
   }
-  armar();
-  /* si el sistema lo interrumpe (llamada, bloqueo de pantalla), vuelve a quedar a la espera del proximo toque */
-  try{ ensureAudioCtx().addEventListener('statechange', function(){ if(_audioCtx.state !== 'running') armar(); }); }catch(e){}
+  try{ armar(); }catch(e){}
+  /* el contexto avisa (statechange, ver ensureAudioCtx) cuando el sistema lo interrumpe: vuelve a quedar a la espera del proximo toque */
+  window.__jpArmarAudio = function(){ try{ armar(); }catch(e){} };
 })();
 function beepCountdown(){ jpBox.cuenta(); }
 function beepGo(){ jpBox.inicio(); }
