@@ -189,8 +189,8 @@ Devolvé OBLIGATORIAMENTE sólo un JSON válido, sin texto extra:
 Usá null en lo que no se lea con claridad. Kcal en kcal (no kJ).
 Si la foto NO es una tabla nutricional sino un plato de comida servido (sin texto de etiqueta), devolvé sólo: { "isLabel": false, "looksLike": "plate" }.`;
 
-// Anton: tipografía de alto impacto de la Storycard 9:16 (nombre del atleta y métrica rey).
-const FONTS = 'https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&display=swap';
+// Chakra Petch: tipografía de la Storycard 9:16 (todo el texto de la placa).
+const FONTS = 'https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap';
 
 export function buildAthleteHtml(plan: AthletePlan, opts: { preview?: boolean; mode?: DayMode; icons?: ExportIcons } = {}) {
   const payload = buildPayload(plan, { preview: !!opts.preview, mode: opts.mode ?? 'on', icons: opts.icons });

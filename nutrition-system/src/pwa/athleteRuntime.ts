@@ -914,167 +914,160 @@ const runtime = String.raw`
   }
 
   var FLUOR = '#FF6A00', CYAN = '#38BDF8';
-  function fitFont(x, txt, weight, family, max, min, width) {
-    var fs = max;
-    x.font = weight + ' ' + fs + 'px ' + family;
-    while (fs > min && x.measureText(txt).width > width) { fs -= 4; x.font = weight + ' ' + fs + 'px ' + family; }
-    return fs;
-  }
   function clip(x, txt, width) {
     txt = String(txt);
     if (x.measureText(txt).width <= width) return txt;
     while (txt.length > 1 && x.measureText(txt + '…').width > width) txt = txt.slice(0, -1);
     return txt.replace(/\s+$/, '') + '…';
   }
+  // Datos de la placa: métrica rey, fila de 3 stats y resumen (principal + grilla de 2 columnas).
   function storyData() {
     var st = storyState(), list = storyMeals(), tgt = D.targets[S.mode], sum = daySummary(S.date);
+    var stats = function (p, c, f) { return [[n0(p), 'PROTEÍNA (G)'], [n0(c), 'CARBOHIDRATOS (G)'], [n0(f), 'GRASAS (G)']]; };
+    var kc = function (i) { return i.p * 4 + i.c * 4 + i.f * 9; };
+    var ingGrid = function (items) { return items.filter(function (i) { return i.grams > 0; }).map(function (i) { return { n: i.food, v: n0(i.grams) + ' G · ' + n0(kc(i)) + ' KCAL', r: n0(i.p) + ' P' }; }); };
     if (st.kind === 'scan' && st.scan) {
       var t = st.scan.items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f }; }, { p: 0, c: 0, f: 0 });
-      var k = t.p * 4 + t.c * 4 + t.f * 9, tg = st.target;
+      var k = kc(t), tg = st.target, dv = tg ? Math.round((k / (tg.kcal || 1) - 1) * 100) : null;
       return {
-        block: '[ BLOQUE · ' + (tg ? tg.name : 'PLATO ESCANEADO') + ' ]', big: n0(k), unit: 'KCAL',
-        sub: tg ? 'Plan: ' + n0(tg.kcal) + ' kcal · ' + (k >= tg.kcal ? '+' : '') + Math.round((k / (tg.kcal || 1) - 1) * 100) + ' % vs target' : 'Estimación IA · Gemini Flash',
-        macros: [[t.p, tg && tg.p], [t.c, tg && tg.c], [t.f, tg && tg.f]],
-        title: '[ DESGLOSE DEL PLATO · IA ]', dish: st.scan.dishName,
-        rows: st.scan.items.map(function (i) { return { l: n0(i.grams) + ' g', t: i.food, r: n0(i.p * 4 + i.c * 4 + i.f * 9) + ' kcal', on: true }; }),
-        done: true,
+        label: '[ PLATO ESCANEADO · IA ]', big: n0(k), unit: 'KCAL', stats: stats(t.p, t.c, t.f), sumTitle: '[ DESGLOSE DEL PLATO ]',
+        mainLbl: tg ? 'BLOQUE · ' + tg.name : 'PLATO', mainName: st.scan.dishName, mainRight: dv === null ? 'ESTIMACIÓN IA' : (dv > 0 ? '+' : '') + dv + ' % VS PLAN', mainSub: tg ? 'TARGET ' + n0(tg.kcal) + ' KCAL' : 'GEMINI FLASH',
+        grid: ingGrid(st.scan.items), done: true,
       };
     }
     if (st.kind === 'meal') {
       var x = list.filter(function (q) { return q.m.id === st.meal; })[0] || list[0];
       if (x) {
-        var title = x.alt ? x.alt.title : x.m.title;
         return {
-          block: '[ BLOQUE · ' + mealName(x.m, S.mode).toUpperCase() + ' · ' + x.m.time + ' ]', big: n0(x.kcal), unit: 'KCAL',
-          sub: (x.opt > 1 ? 'Opción ' + x.opt + ' · ' : '') + (S.checks[x.m.id] ? 'Comida cumplida' : 'Comida del plan'),
-          macros: [[x.t.p], [x.t.c], [x.t.f]],
-          title: '[ INGREDIENTES DEL BLOQUE ]', dish: title || '',
-          rows: x.items.filter(function (i) { return i.grams > 0; }).map(function (i) { return { l: n0(i.grams) + ' g', t: i.food, r: n0(i.p * 4 + i.c * 4 + i.f * 9) + ' kcal', on: true }; }),
-          done: !!S.checks[x.m.id],
+          label: '[ ENERGÍA DEL BLOQUE ]', big: n0(x.kcal), unit: 'KCAL', stats: stats(x.t.p, x.t.c, x.t.f), sumTitle: '[ RESUMEN DEL BLOQUE ]',
+          mainLbl: mealName(x.m, S.mode).toUpperCase() + ' · ' + x.m.time, mainName: (x.alt ? x.alt.title : x.m.title) || mealName(x.m, S.mode),
+          mainRight: Math.round((x.kcal / (tgt.kcal || 1)) * 100) + ' % DEL DÍA', mainSub: 'OPCIÓN ' + x.opt + (S.checks[x.m.id] ? ' · CUMPLIDA' : ''),
+          grid: ingGrid(x.items), done: !!S.checks[x.m.id],
         };
       }
     }
-    var eaten = list.reduce(function (a, q) { return S.checks[q.m.id] ? { p: a.p + q.t.p, c: a.c + q.t.c, f: a.f + q.t.f } : a; }, { p: 0, c: 0, f: 0 });
-    var pct = st.metric === 'pct';
+    var pct = st.metric === 'pct', done = list.filter(function (q) { return S.checks[q.m.id]; });
+    var eaten = done.reduce(function (a, q) { return { p: a.p + q.t.p, c: a.c + q.t.c, f: a.f + q.t.f }; }, { p: 0, c: 0, f: 0 });
+    var pool = done.length ? done : list, main = pool.slice().sort(function (a, b) { return b.kcal - a.kcal; })[0];
+    var rest = list.filter(function (q) { return q !== main; });
     return {
-      block: '[ CARGA PRINCIPAL · DÍA ' + S.mode.toUpperCase() + ' ]', big: pct ? String(sum.pct) : n0(sum.kcal), unit: pct ? '%' : 'KCAL',
-      sub: pct ? 'CUMPLIMIENTO NUTRICIONAL · ' + n0(sum.kcal) + '/' + n0(sum.target) + ' kcal' : 'de ' + n0(sum.target) + ' kcal del plan · ' + sum.pct + ' % cumplimiento',
-      macros: [[eaten.p, tgt.p], [eaten.c, tgt.c], [eaten.f, tgt.f]],
-      title: '[ COMIDAS DEL DÍA · ' + sum.done + '/' + sum.total + ' ]', dish: '',
-      rows: list.map(function (q) { var tt = q.alt ? q.alt.title : q.m.title; return { l: q.m.time, t: tt || mealName(q.m, S.mode), r: n0(q.kcal) + ' kcal', on: !!S.checks[q.m.id] }; }),
+      label: pct ? '[ CUMPLIMIENTO NUTRICIONAL ]' : '[ ENERGÍA TOTAL DEL DÍA ]', big: pct ? String(sum.pct) : n0(sum.kcal), unit: pct ? '%' : 'KCAL',
+      stats: stats(eaten.p, eaten.c, eaten.f), sumTitle: '[ RESUMEN DEL DÍA · ' + sum.done + '/' + sum.total + ' COMIDAS ]',
+      mainLbl: main ? 'COMIDA PRINCIPAL · ' + main.m.time : '', mainName: main ? mealName(main.m, S.mode) : '',
+      mainRight: main ? Math.round((main.kcal / (tgt.kcal || 1)) * 100) + ' % DEL DÍA' : '', mainSub: main ? ((main.alt ? main.alt.title : main.m.title) || '') : '',
+      grid: rest.map(function (q) { return { n: (q.alt ? q.alt.title : q.m.title) || mealName(q.m, S.mode), v: n0(q.kcal) + ' KCAL · ' + n0(q.t.p) + ' P', r: q.m.time, off: !S.checks[q.m.id] }; }),
       done: sum.adherent,
     };
+  }
+  // Logo: escudo naranja con rayo (dibujado, no emoji: se ve igual en todos los celulares).
+  function drawLogo(x, cx, cy, s) {
+    x.save(); x.translate(cx, cy); x.scale(s / 100, s / 100);
+    x.beginPath(); x.moveTo(0, -50); x.lineTo(42, -34); x.lineTo(42, 6); x.quadraticCurveTo(38, 36, 0, 52); x.quadraticCurveTo(-38, 36, -42, 6); x.lineTo(-42, -34); x.closePath();
+    x.lineWidth = 9; x.strokeStyle = FLUOR; x.stroke();
+    x.beginPath(); x.moveTo(8, -32); x.lineTo(-18, 6); x.lineTo(-2, 6); x.lineTo(-8, 34); x.lineTo(18, -4); x.lineTo(2, -4); x.closePath();
+    x.fillStyle = FLUOR; x.fill();
+    x.restore();
   }
   function drawStory() {
     var cv = document.getElementById('story-cv');
     if (!cv || !cv.getContext) return;
     var x = cv.getContext('2d'), W = 1080, H = 1920, st = storyState(), dt = storyData();
-    var mono = '"JetBrains Mono", ui-monospace, monospace', sans = 'Inter, system-ui, sans-serif', impact = 'Anton, Impact, "Arial Black", sans-serif';
+    var F = '"Chakra Petch", "Rajdhani", system-ui, sans-serif';
+    var font = function (w, sz) { x.font = w + ' ' + sz + 'px ' + F; };
+    var GRAY = '#9CA3AF', WHITE = '#F8FAFC';
     x.save();
-    // 1 · Fondo: foto del atleta (cover) o carbono táctico.
+    x.textBaseline = 'alphabetic'; x.textAlign = 'left';
+    // 1 · Fondo: foto (cover) o carbono táctico.
     x.fillStyle = '#05080E'; x.fillRect(0, 0, W, H);
     if (st.img) {
       var iw = st.img.naturalWidth, ih = st.img.naturalHeight, k = Math.max(W / iw, H / ih);
       x.drawImage(st.img, (W - iw * k) / 2, (H - ih * k) / 2, iw * k, ih * k);
     } else {
-      var bg = x.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#0B1220'); bg.addColorStop(1, '#05080E');
+      var bg = x.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#111827'); bg.addColorStop(1, '#05080E');
       x.fillStyle = bg; x.fillRect(0, 0, W, H);
-      x.strokeStyle = 'rgba(56,189,248,.06)'; x.lineWidth = 2;
+      x.strokeStyle = 'rgba(56,189,248,.05)'; x.lineWidth = 2;
       for (var gx = 0; gx <= W; gx += 60) { x.beginPath(); x.moveTo(gx, 0); x.lineTo(gx, H); x.stroke(); }
       for (var gy = 0; gy <= H; gy += 60) { x.beginPath(); x.moveTo(0, gy); x.lineTo(W, gy); x.stroke(); }
     }
-    // 2 · Overlay oscuro + viñeta cibernética + scanlines.
-    x.fillStyle = st.img ? 'rgba(4,7,13,.52)' : 'rgba(4,7,13,.15)'; x.fillRect(0, 0, W, H);
-    var top = x.createLinearGradient(0, 0, 0, 640); top.addColorStop(0, 'rgba(3,5,10,.92)'); top.addColorStop(1, 'rgba(3,5,10,0)');
-    x.fillStyle = top; x.fillRect(0, 0, W, 640);
-    var bot = x.createLinearGradient(0, 980, 0, H); bot.addColorStop(0, 'rgba(3,5,10,0)'); bot.addColorStop(.35, 'rgba(3,5,10,.82)'); bot.addColorStop(1, 'rgba(3,5,10,.97)');
-    x.fillStyle = bot; x.fillRect(0, 980, W, H - 980);
-    var vg = x.createRadialGradient(W / 2, H / 2, 380, W / 2, H / 2, 1180); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.78)');
+    // 2 · Overlay oscuro + viñeta: la foto se ve arriba y el texto se lee abajo.
+    x.fillStyle = 'rgba(3,6,12,.30)'; x.fillRect(0, 0, W, H);
+    var top = x.createLinearGradient(0, 0, 0, 520); top.addColorStop(0, 'rgba(3,6,12,.70)'); top.addColorStop(1, 'rgba(3,6,12,0)');
+    x.fillStyle = top; x.fillRect(0, 0, W, 520);
+    var bot = x.createLinearGradient(0, 700, 0, H); bot.addColorStop(0, 'rgba(3,6,12,0)'); bot.addColorStop(.3, 'rgba(3,6,12,.62)'); bot.addColorStop(1, 'rgba(3,6,12,.94)');
+    x.fillStyle = bot; x.fillRect(0, 700, W, H - 700);
+    var vg = x.createRadialGradient(W / 2, H * 0.45, 420, W / 2, H * 0.45, 1200); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.65)');
     x.fillStyle = vg; x.fillRect(0, 0, W, H);
-    var tint = x.createRadialGradient(W, 0, 0, W, 0, 900); tint.addColorStop(0, 'rgba(56,189,248,.14)'); tint.addColorStop(1, 'rgba(56,189,248,0)');
-    x.fillStyle = tint; x.fillRect(0, 0, W, H);
-    x.fillStyle = 'rgba(255,255,255,.025)';
-    for (var sl = 0; sl < H; sl += 6) x.fillRect(0, sl, W, 2);
-    // 3 · Brackets naranja flúor en las 4 esquinas del encuadre.
-    x.strokeStyle = FLUOR; x.lineWidth = 10; x.lineCap = 'square'; x.shadowColor = 'rgba(255,106,0,.85)'; x.shadowBlur = 28;
-    var br = function (cx, cy, dx, dy) { x.beginPath(); x.moveTo(cx, cy + dy * 130); x.lineTo(cx, cy); x.lineTo(cx + dx * 130, cy); x.stroke(); };
-    br(48, 48, 1, 1); br(W - 48, 48, -1, 1); br(48, H - 48, 1, -1); br(W - 48, H - 48, -1, -1);
-    x.shadowBlur = 0; x.lineCap = 'butt';
-    var L = 96, R = W - 96, CW = R - L;
-    // 4 · Encabezado: [ DÍA X · SEMANA Y ] | fecha.
+    // 3 · Brackets naranja flúor en las 4 esquinas.
+    x.strokeStyle = FLUOR; x.lineWidth = 7; x.lineCap = 'square';
+    var br = function (cx, cy, dx, dy) { x.beginPath(); x.moveTo(cx, cy + dy * 110); x.lineTo(cx, cy); x.lineTo(cx + dx * 110, cy); x.stroke(); };
+    br(56, 56, 1, 1); br(W - 56, 56, -1, 1); br(56, H - 56, 1, -1); br(W - 56, H - 56, -1, -1);
+    x.lineCap = 'butt';
+    var L = 104, R = W - 104, CW = R - L;
+    // 4 · Encabezado.
     var pd = planDay(S.date), dd = new Date(S.date + 'T12:00:00');
-    x.textBaseline = 'alphabetic';
-    x.fillStyle = FLUOR; x.font = '800 38px ' + mono; x.textAlign = 'left';
-    x.fillText('[ DÍA ' + pd.day + ' · SEMANA ' + pd.week + ' ]', L, 168);
-    x.fillStyle = '#F8FAFC'; x.textAlign = 'right'; x.font = '700 38px ' + mono;
-    x.fillText(pad2(dd.getDate()) + ' ' + MO[dd.getMonth()] + ' ' + dd.getFullYear(), R, 168);
-    x.textAlign = 'left';
-    x.fillStyle = 'rgba(248,250,252,.22)'; x.fillRect(L, 196, CW, 2);
-    x.fillStyle = FLUOR; x.fillRect(L, 196, 160, 4);
-    // 5 · Atleta (alto impacto, hasta 2 líneas) + disciplina.
-    var words = String(D.athlete.name || 'ATLETA').toUpperCase().split(/\s+/), lines = [words.join(' ')];
-    x.font = '400 150px ' + impact;
-    if (words.length > 1 && x.measureText(lines[0]).width > CW) { var cut = Math.ceil(words.length / 2); lines = [words.slice(0, cut).join(' '), words.slice(cut).join(' ')]; }
-    var nfs = Math.min.apply(null, lines.map(function (ln) { return fitFont(x, ln, '400', impact, 150, 70, CW); }));
-    x.font = '400 ' + nfs + 'px ' + impact; x.fillStyle = '#FFFFFF';
-    x.shadowColor = 'rgba(0,0,0,.6)'; x.shadowBlur = 18;
-    var ny = 220 + nfs;
-    lines.forEach(function (ln, i) { x.fillText(ln, L, ny + i * (nfs * 1.02)); });
-    x.shadowBlur = 0;
-    var dy = ny + (lines.length - 1) * nfs * 1.02 + 70;
-    x.fillStyle = CYAN; x.font = '800 40px ' + mono; x.fillText(clip(x, String(D.athlete.discipline || '').toUpperCase(), CW), L, dy);
+    font(600, 34); x.fillStyle = CYAN; x.fillText('[ DÍA ' + pd.day + ' · SEMANA ' + pd.week + ' ]', L, 236);
+    x.fillStyle = FLUOR; x.fillRect(L, 262, 150, 6);
+    x.textAlign = 'right'; font(500, 32); x.fillStyle = GRAY; x.fillText(pad2(dd.getDate()) + ' ' + MO[dd.getMonth()] + ' ' + dd.getFullYear(), R, 236); x.textAlign = 'left';
+    // 5 · Atleta: nombre en blanco, apellido en naranja, barra lateral + disciplina.
+    var words = String(D.athlete.name || 'ATLETA').toUpperCase().split(/\s+/).filter(Boolean);
+    var lines = words.length > 1 ? [words[0], words.slice(1).join(' ')] : [words[0]];
+    var NX = L + 44, nfs = 120;
+    lines.forEach(function (ln) { font(700, nfs); while (nfs > 60 && x.measureText(ln).width > R - NX) { nfs -= 4; font(700, nfs); } });
+    font(700, nfs);
+    var y0 = 318, lh = nfs * 1.0;
+    lines.forEach(function (ln, i) { x.fillStyle = i === 0 ? WHITE : FLUOR; x.fillText(ln, NX, y0 + nfs * 0.82 + i * lh); });
+    var nameBottom = y0 + nfs * 0.82 + (lines.length - 1) * lh;
+    x.fillStyle = FLUOR; x.fillRect(L, y0, 8, nameBottom - y0 + 6);
+    font(500, 32); x.fillStyle = GRAY; x.fillText(clip(x, String(D.athlete.discipline || '').toUpperCase(), CW - 44), NX, nameBottom + 56);
     // 6 · Métrica rey.
-    var my = dy + 120;
-    x.fillStyle = FLUOR; x.font = '800 32px ' + mono; x.fillText(clip(x, dt.block, CW), L, my);
-    var bfs = fitFont(x, dt.big, '400', impact, 250, 140, CW - 240);
-    x.fillStyle = '#FFFFFF'; x.shadowColor = 'rgba(255,106,0,.35)'; x.shadowBlur = 40;
-    x.fillText(dt.big, L - 6, my + bfs + 4);
-    x.shadowBlur = 0;
+    var my = Math.max(nameBottom + 150, 700);
+    font(600, 32); x.fillStyle = CYAN; x.fillText(dt.label, L, my);
+    var bfs = 230; font(700, bfs); while (bfs > 130 && x.measureText(dt.big).width > CW - 230) { bfs -= 6; font(700, bfs); }
+    x.fillStyle = WHITE; x.fillText(dt.big, L - 4, my + bfs * 0.86);
     var bw = x.measureText(dt.big).width;
-    x.fillStyle = FLUOR; x.font = '400 ' + Math.round(bfs * 0.36) + 'px ' + impact; x.fillText(dt.unit, L + bw + 18, my + bfs + 4);
-    x.fillStyle = '#CBD5E1'; x.font = '600 32px ' + mono; x.fillText(clip(x, dt.sub, CW), L, my + bfs + 64);
-    // 7 · Sub-métricas: proteína | carbohidratos | grasas.
-    var sy = my + bfs + 104, gap = 24, bwid = (CW - gap * 2) / 3, bh = 220;
-    var LBL = ['PROTEÍNA (g)', 'CARBOHIDRATOS (g)', 'GRASAS (g)'], COL = [CYAN, '#7DD3FC', FLUOR];
-    dt.macros.forEach(function (mc, i) {
-      var bx = L + i * (bwid + gap);
-      x.fillStyle = 'rgba(8,12,20,.72)'; x.fillRect(bx, sy, bwid, bh);
-      x.strokeStyle = 'rgba(248,250,252,.16)'; x.lineWidth = 2; x.strokeRect(bx + 1, sy + 1, bwid - 2, bh - 2);
-      x.fillStyle = COL[i]; x.fillRect(bx, sy, bwid, 6);
-      x.fillStyle = '#FFFFFF'; x.font = '400 104px ' + impact; x.fillText(n0(mc[0]), bx + 26, sy + 136);
-      x.fillStyle = '#94A3B8'; x.font = '700 22px ' + mono; x.fillText(LBL[i], bx + 26, sy + 178);
-      if (mc[1]) {
-        x.fillStyle = 'rgba(255,255,255,.1)'; x.fillRect(bx + 26, sy + 198, bwid - 52, 10);
-        x.fillStyle = COL[i]; x.fillRect(bx + 26, sy + 198, (bwid - 52) * Math.min(1, mc[0] / mc[1]), 10);
-      }
+    font(700, Math.round(bfs * 0.4)); x.fillStyle = FLUOR; x.fillText(dt.unit, L + bw + 24, my + bfs * 0.86);
+    // 7 · Fila de 3 stats con separadores verticales.
+    var sy = my + bfs * 0.86 + 108, colW = CW / 3;
+    dt.stats.forEach(function (sv, i) {
+      var cx = L + i * colW + (i ? 34 : 0);
+      if (i) { x.fillStyle = 'rgba(248,250,252,.35)'; x.fillRect(L + i * colW, sy - 78, 3, 112); }
+      font(700, 90); x.fillStyle = WHITE; x.fillText(sv[0], cx, sy);
+      font(500, 24); x.fillStyle = GRAY; x.fillText(sv[1], cx, sy + 40);
     });
-    // 8 · Resumen: comidas del día / ingredientes del bloque / desglose IA.
-    var ly = sy + bh + 80, foot = H - 236;
-    x.fillStyle = FLUOR; x.font = '800 30px ' + mono; x.fillText(dt.title, L, ly);
-    ly += 18;
-    if (dt.dish) { ly += 52; x.fillStyle = '#FFFFFF'; x.font = '700 40px ' + sans; x.fillText(clip(x, dt.dish, CW), L, ly); }
-    var rh = 62, max = Math.max(1, Math.floor((foot - ly - 20) / rh)), rows = dt.rows.slice(0, max);
-    if (dt.rows.length > max) rows[max - 1] = { l: '', t: '+ ' + (dt.rows.length - max + 1) + ' más', r: '', on: true };
-    rows.forEach(function (rw, i) {
-      var y = ly + 58 + i * rh;
-      x.fillStyle = rw.on ? FLUOR : 'rgba(148,163,184,.55)'; x.font = '800 30px ' + mono; x.fillText(rw.on ? '■' : '□', L, y);
-      x.fillStyle = rw.on ? '#94A3B8' : '#64748B'; x.font = '700 28px ' + mono; x.fillText(rw.l, L + 46, y);
-      x.textAlign = 'right'; x.fillStyle = rw.on ? '#F8FAFC' : '#64748B'; x.font = '700 28px ' + mono; x.fillText(rw.r, R, y); var rwid = x.measureText(rw.r).width; x.textAlign = 'left';
-      x.fillStyle = rw.on ? '#F8FAFC' : '#94A3B8'; x.font = '600 32px ' + sans; x.fillText(clip(x, rw.t, CW - 46 - 140 - rwid - 30), L + 46 + 140, y);
+    // 8 · Resumen: principal + grilla de 2 columnas.
+    var ry = sy + 128;
+    font(600, 32); x.fillStyle = CYAN; x.fillText(dt.sumTitle, L, ry);
+    if (dt.mainName) {
+      font(500, 24); x.fillStyle = GRAY; x.fillText(clip(x, dt.mainLbl, CW * 0.55), L, ry + 66);
+      x.textAlign = 'right'; font(700, 32); x.fillStyle = FLUOR; x.fillText(dt.mainRight, R, ry + 70);
+      font(500, 22); x.fillStyle = GRAY; x.fillText(clip(x, dt.mainSub.toUpperCase(), CW * 0.42), R, ry + 108); x.textAlign = 'left';
+      var mfs = 68; font(700, mfs); while (mfs > 38 && x.measureText(dt.mainName.toUpperCase()).width > CW * 0.6) { mfs -= 4; font(700, mfs); }
+      x.fillStyle = WHITE; x.fillText(clip(x, dt.mainName.toUpperCase(), CW * 0.6), L, ry + 66 + mfs * 0.95);
+    }
+    var gy0 = ry + 196, rh = 86, gw = (CW - 48) / 2, foot = H - 226;
+    var maxRows = Math.max(1, Math.floor((foot - gy0) / rh)), cap = maxRows * 2, grid = dt.grid;
+    var more = grid.length > cap ? grid.length - (cap - 1) : 0;
+    if (more) grid = grid.slice(0, cap - 1);
+    grid.forEach(function (g, i) {
+      var gx2 = L + (i % 2) * (gw + 48), y = gy0 + Math.floor(i / 2) * rh;
+      font(700, 27); x.fillStyle = g.off ? GRAY : WHITE; x.fillText(clip(x, g.n.toUpperCase(), gw), gx2, y);
+      x.textAlign = 'right'; font(500, 22); x.fillStyle = GRAY; x.fillText(g.r, gx2 + gw, y + 38); var rw = x.measureText(g.r).width; x.textAlign = 'left';
+      font(700, 30); x.fillStyle = g.off ? 'rgba(255,106,0,.55)' : FLUOR; x.fillText(clip(x, g.v, gw - rw - 16), gx2, y + 40);
     });
+    if (more) { var mi = grid.length, mx = L + (mi % 2) * (gw + 48), myy = gy0 + Math.floor(mi / 2) * rh + 20; font(700, 30); x.fillStyle = CYAN; x.fillText('+ ' + more + (st.kind === 'day' ? ' COMIDAS' : ' INGREDIENTES') + ' MÁS', mx, myy); }
     // 9 · Footer de marca.
-    x.fillStyle = 'rgba(248,250,252,.22)'; x.fillRect(L, H - 214, CW, 2);
-    x.fillStyle = '#FFFFFF'; x.font = '400 64px ' + impact; x.fillText('⚡ COACH JP', L, H - 132);
-    x.textAlign = 'right'; x.fillStyle = CYAN; x.font = '700 32px ' + mono; x.fillText(D.handle, R, H - 140); x.textAlign = 'left';
-    x.fillStyle = dt.done ? FLUOR : '#94A3B8'; x.font = '800 30px ' + mono;
-    x.fillText(dt.done ? '// PLAN NUTRICIONAL COMPLETADO' : '// PLAN NUTRICIONAL EN CURSO', L, H - 84);
+    drawLogo(x, L + 34, H - 168, 70);
+    font(700, 46); x.fillStyle = WHITE; x.fillText('COACH ', L + 88, H - 160); var cw0 = x.measureText('COACH ').width; x.fillStyle = FLUOR; x.fillText('JP', L + 88 + cw0, H - 160);
+    font(500, 26); x.fillStyle = GRAY; x.fillText(D.handle, L + 88, H - 120);
+    x.textAlign = 'right'; font(700, 26); x.fillStyle = dt.done ? FLUOR : GRAY;
+    x.fillText(dt.done ? '// PLAN NUTRICIONAL COMPLETADO' : '// PLAN NUTRICIONAL EN CURSO', R, H - 140);
     x.restore();
   }
   function paintStory() {
     drawStory();
-    // Re-dibuja cuando terminan de cargar Anton / Inter / JetBrains Mono (red lenta o primera apertura).
+    // Re-dibuja cuando termina de cargar Chakra Petch (red lenta o primera apertura).
     try {
-      if (document.fonts && document.fonts.load) Promise.all(['400 100px Anton', '800 40px "JetBrains Mono"', '700 40px Inter'].map(function (f) { return document.fonts.load(f); })).then(function () { if (S.panel === 'story') drawStory(); }, function () {});
+      if (document.fonts && document.fonts.load) Promise.all(['700 100px "Chakra Petch"', '600 40px "Chakra Petch"', '500 40px "Chakra Petch"'].map(function (f) { return document.fonts.load(f); })).then(function () { if (S.panel === 'story') drawStory(); }, function () {});
     } catch (e) {}
   }
   function shareStory() {
