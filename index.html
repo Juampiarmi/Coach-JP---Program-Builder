@@ -1966,10 +1966,15 @@ const jpCoachSonido = (function(){
       fn(c);
     }catch(e){}
   }
+  /* 3 - 2 - 1: tonos con cuerpo (~0.6 s), ataque suave y caida larga; volumen creciente */
   function pip(n){
     sonar(c => {
-      const f = HZ[n] || HZ[3], v = n === 1 ? 0.26 : (n === 2 ? 0.22 : 0.18);
-      parcial(c, f, 0.13, v, 'sine', 0.004); parcial(c, f * 2, 0.08, v * 0.3); parcial(c, f * 2.76, 0.045, v * 0.1, 'sine', 0.002);
+      const f = HZ[n] || HZ[3], v = n === 1 ? 0.22 : (n === 2 ? 0.19 : 0.16), d = 0.6;
+      larga(c, f, d, v, { atk: 0.012, env: [[0.12, 0.78], [0.34, 0.42], [0.48, 0.14]] });
+      larga(c, f * 1.002, d * 0.92, v * 0.45, { atk: 0.015, env: [[0.14, 0.7], [0.36, 0.3]] });
+      larga(c, f, d * 0.8, v * 0.5, { tipo: 'triangle', lp: f * 3, atk: 0.01, env: [[0.12, 0.65], [0.3, 0.25]] });
+      larga(c, f * 2, d * 0.6, v * 0.2, { atk: 0.012, env: [[0.1, 0.6]] });
+      larga(c, f * 3, d * 0.35, v * 0.07, { atk: 0.01 });
     });
   }
   /* parcial con envolvente de varios tramos (env: [segundos, fraccion del pico]) y respiracion opcional (resp) */
@@ -1989,17 +1994,20 @@ const jpCoachSonido = (function(){
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
     nodo.connect(g); g.connect(bus); osc.start(t0); osc.stop(t0 + d + 0.03);
   }
-  /* YA / fin: campana electronica sostenida (~2 s) que respira y se apaga suave */
+  /* YA / fin: ring metalico sostenido (~2.6 s): 5 senos desafinados (batimiento), apoyo grave y parciales metalicos */
   function ya(){
     sonar(c => {
-      const f = HZ.ya, D = 2.0;
-      larga(c, f, D, 0.3, { atk: 0.002, env: [[0.16, 0.62], [0.9, 0.3], [1.5, 0.07]], resp: { hz: 5.5, prof: 0.1 } });
-      larga(c, f, 0.2, 0.17, { tipo: 'square', lp: 5200, atk: 0.001 });
-      larga(c, f * 1.003, 1.8, 0.09, { atk: 0.004, env: [[0.2, 0.6], [1.2, 0.2]], resp: { hz: 4.2, prof: 0.14 } });
-      larga(c, f / 2, 1.6, 0.09, { atk: 0.004, env: [[0.2, 0.6], [1.0, 0.2]] });
-      larga(c, f * 2, 1.5, 0.12, { atk: 0.002, env: [[0.14, 0.55], [0.8, 0.2], [1.2, 0.06]] });
-      larga(c, f * 2.76, 0.9, 0.08, { atk: 0.001, env: [[0.1, 0.5]] });
-      larga(c, f * 4.07, 0.35, 0.04, { atk: 0.001 });
+      const f = HZ.ya, D = 2.6;
+      larga(c, f * 2, 0.04, 0.16, { tipo: 'square', lp: 6000, atk: 0.001 });
+      [[0.996, 0.085], [0.998, 0.09], [1, 0.1], [1.002, 0.09], [1.005, 0.085]].forEach((p, i) => {
+        larga(c, f * p[0], D - i * 0.08, p[1], { atk: 0.004, env: [[0.25, 0.55], [0.9, 0.27], [1.6, 0.1], [2.1, 0.03]], resp: (i % 2) ? { hz: 5.2 + i * 0.4, prof: 0.08 } : null });
+      });
+      larga(c, f / 2, 2.2, 0.12, { atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
+      larga(c, f / 2 * 1.003, 2.1, 0.095, { atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
+      larga(c, f / 4, 1.8, 0.1, { atk: 0.008, env: [[0.3, 0.6], [0.9, 0.2]] });
+      larga(c, f * 2.01, 1.7, 0.09, { atk: 0.003, env: [[0.2, 0.5], [0.8, 0.15]] });
+      larga(c, f * 2.76, 1.2, 0.065, { atk: 0.002, env: [[0.15, 0.5]], resp: { hz: 6.5, prof: 0.15 } });
+      larga(c, f * 4.07, 0.5, 0.035, { atk: 0.002 });
     });
   }
   return { pip, ya, desbloquear, hz: HZ };
@@ -12067,25 +12075,33 @@ var jpPerfilSonido = (function(){
     nodo.connect(g); g.connect(salida(ctx));
     osc.start(t0); osc.stop(t0 + o.d + 0.03);
   }
-  /* 3 - 2 - 1: volumen creciente junto con la altura */
+  /* 3 - 2 - 1: tonos con cuerpo (~0.6 s). Seno + seno desafinado 0.2 % (la nota "respira") + triangular filtrada (calidez) + 2.º y 3.er armonico,
+     con ataque suave de 10-15 ms, un sustain corto y una caida larga y gradual. Volumen creciente junto con la altura. */
   function pip(ctx, n){
-    var f = HZ[n] || HZ[3], v = n === 1 ? 0.26 : (n === 2 ? 0.22 : 0.18), d = 0.13;
-    parcial(ctx, { f: f, d: d, v: v, atk: 0.004 });
-    parcial(ctx, { f: f * 2, d: d * 0.6, v: v * 0.3, atk: 0.003 });
-    parcial(ctx, { f: f * 2.76, d: d * 0.35, v: v * 0.1, atk: 0.002 });
+    var f = HZ[n] || HZ[3], v = n === 1 ? 0.22 : (n === 2 ? 0.19 : 0.16), d = 0.6;
+    parcial(ctx, { f: f, d: d, v: v, atk: 0.012, env: [[0.12, 0.78], [0.34, 0.42], [0.48, 0.14]] });
+    parcial(ctx, { f: f * 1.002, d: d * 0.92, v: v * 0.45, atk: 0.015, env: [[0.14, 0.7], [0.36, 0.3]] });
+    parcial(ctx, { f: f, d: d * 0.8, v: v * 0.5, tipo: 'triangle', lp: f * 3, atk: 0.01, env: [[0.12, 0.65], [0.3, 0.25]] });
+    parcial(ctx, { f: f * 2, d: d * 0.6, v: v * 0.2, atk: 0.012, env: [[0.1, 0.6]] });
+    parcial(ctx, { f: f * 3, d: d * 0.35, v: v * 0.07, atk: 0.01 });
   }
-  /* YA / fin de descanso: campana electronica sostenida (~2 s). Ataque cortante (cuadrada filtrada) + cuerpo de seno con caida en
-     tres tramos (golpe -> sustain -> cola), octava grave y octava brillante para presencia, parcial inarmonico de campana y un segundo seno
-     desafinado 3 cents que genera un batido lento: la nota "respira" y se apaga suave, como una bocina / voz sintetizada alargada */
+  /* YA / fin de descanso: RING metalico sostenido (~2.6 s) tipo timbre de gimnasio / ring de boxeo.
+     - nucleo: 5 senos desafinados entre si (-0.4 % ... +0.5 %) alrededor de 1174.66 Hz -> batimiento / chorus metalico que vibra en el aire
+     - ataque rapido (4 ms) con un golpe de martillo cortisimo y caida exponencial muy larga y suave en tres tramos
+     - apoyo grave: octava y doble octava por debajo (tambien desafinadas) para cuerpo y presencia
+     - parciales metalicos inarmonicos con una vibracion lenta */
   function ya(ctx){
-    var f = HZ.ya, D = 2.0;
-    parcial(ctx, { f: f, d: D, v: 0.3, atk: 0.002, env: [[0.16, 0.62], [0.9, 0.3], [1.5, 0.07]], resp: { hz: 5.5, prof: 0.1 } });
-    parcial(ctx, { f: f, d: 0.2, v: 0.17, tipo: 'square', lp: 5200, atk: 0.001 });
-    parcial(ctx, { f: f * 1.003, d: 1.8, v: 0.09, atk: 0.004, env: [[0.2, 0.6], [1.2, 0.2]], resp: { hz: 4.2, prof: 0.14 } });
-    parcial(ctx, { f: f / 2, d: 1.6, v: 0.09, atk: 0.004, env: [[0.2, 0.6], [1.0, 0.2]] });
-    parcial(ctx, { f: f * 2, d: 1.5, v: 0.12, atk: 0.002, env: [[0.14, 0.55], [0.8, 0.2], [1.2, 0.06]] });
-    parcial(ctx, { f: f * 2.76, d: 0.9, v: 0.08, atk: 0.001, env: [[0.1, 0.5]] });
-    parcial(ctx, { f: f * 4.07, d: 0.35, v: 0.04, atk: 0.001 });
+    var f = HZ.ya, D = 2.6;
+    parcial(ctx, { f: f * 2, d: 0.04, v: 0.16, tipo: 'square', lp: 6000, atk: 0.001 });
+    [[0.996, 0.085], [0.998, 0.09], [1, 0.1], [1.002, 0.09], [1.005, 0.085]].forEach(function(p, i){
+      parcial(ctx, { f: f * p[0], d: D - i * 0.08, v: p[1], atk: 0.004, env: [[0.25, 0.55], [0.9, 0.27], [1.6, 0.1], [2.1, 0.03]], resp: (i % 2) ? { hz: 5.2 + i * 0.4, prof: 0.08 } : null });
+    });
+    parcial(ctx, { f: f / 2, d: 2.2, v: 0.12, atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
+    parcial(ctx, { f: f / 2 * 1.003, d: 2.1, v: 0.095, atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
+    parcial(ctx, { f: f / 4, d: 1.8, v: 0.1, atk: 0.008, env: [[0.3, 0.6], [0.9, 0.2]] });
+    parcial(ctx, { f: f * 2.01, d: 1.7, v: 0.09, atk: 0.003, env: [[0.2, 0.5], [0.8, 0.15]] });
+    parcial(ctx, { f: f * 2.76, d: 1.2, v: 0.065, atk: 0.002, env: [[0.15, 0.5]], resp: { hz: 6.5, prof: 0.15 } });
+    parcial(ctx, { f: f * 4.07, d: 0.5, v: 0.035, atk: 0.002 });
   }
   /* mitad del tiempo objetivo: doble pulso suave (no compite con la cuenta final) */
   function mitad(ctx){
@@ -61777,10 +61793,15 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       fn(c);
     }catch(e){}
   }
+  /* 3 - 2 - 1: tonos con cuerpo (~0.6 s), ataque suave y caida larga; volumen creciente */
   function pip(n){
     sonar(function(c){
-      var f = HZ[n] || HZ[3], v = n === 1 ? 0.26 : (n === 2 ? 0.22 : 0.18);
-      parcial(c, f, 0.13, v, 'sine', 0.004); parcial(c, f * 2, 0.08, v * 0.3); parcial(c, f * 2.76, 0.045, v * 0.1, 'sine', 0.002);
+      var f = HZ[n] || HZ[3], v = n === 1 ? 0.22 : (n === 2 ? 0.19 : 0.16), d = 0.6;
+      larga(c, f, d, v, { atk: 0.012, env: [[0.12, 0.78], [0.34, 0.42], [0.48, 0.14]] });
+      larga(c, f * 1.002, d * 0.92, v * 0.45, { atk: 0.015, env: [[0.14, 0.7], [0.36, 0.3]] });
+      larga(c, f, d * 0.8, v * 0.5, { tipo: 'triangle', lp: f * 3, atk: 0.01, env: [[0.12, 0.65], [0.3, 0.25]] });
+      larga(c, f * 2, d * 0.6, v * 0.2, { atk: 0.012, env: [[0.1, 0.6]] });
+      larga(c, f * 3, d * 0.35, v * 0.07, { atk: 0.01 });
     });
   }
   /* ejecuta un parcial con envolvente de varios tramos (env: [segundos, fraccion del pico]) y respiracion opcional (resp) */
@@ -61800,17 +61821,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
     nodo.connect(g); g.connect(busA); osc.start(t0); osc.stop(t0 + d + 0.03);
   }
-  /* YA / fin: campana electronica sostenida (~2 s) que respira y se apaga suave */
+  /* YA / fin: ring metalico sostenido (~2.6 s): 5 senos desafinados (batimiento), apoyo grave y parciales metalicos */
   function ya(){
     sonar(function(c){
-      var f = HZ.ya, D = 2.0;
-      larga(c, f, D, 0.3, { atk: 0.002, env: [[0.16, 0.62], [0.9, 0.3], [1.5, 0.07]], resp: { hz: 5.5, prof: 0.1 } });
-      larga(c, f, 0.2, 0.17, { tipo: 'square', lp: 5200, atk: 0.001 });
-      larga(c, f * 1.003, 1.8, 0.09, { atk: 0.004, env: [[0.2, 0.6], [1.2, 0.2]], resp: { hz: 4.2, prof: 0.14 } });
-      larga(c, f / 2, 1.6, 0.09, { atk: 0.004, env: [[0.2, 0.6], [1.0, 0.2]] });
-      larga(c, f * 2, 1.5, 0.12, { atk: 0.002, env: [[0.14, 0.55], [0.8, 0.2], [1.2, 0.06]] });
-      larga(c, f * 2.76, 0.9, 0.08, { atk: 0.001, env: [[0.1, 0.5]] });
-      larga(c, f * 4.07, 0.35, 0.04, { atk: 0.001 });
+      var f = HZ.ya, D = 2.6;
+      larga(c, f * 2, 0.04, 0.16, { tipo: 'square', lp: 6000, atk: 0.001 });
+      [[0.996, 0.085], [0.998, 0.09], [1, 0.1], [1.002, 0.09], [1.005, 0.085]].forEach(function(p, i){
+        larga(c, f * p[0], D - i * 0.08, p[1], { atk: 0.004, env: [[0.25, 0.55], [0.9, 0.27], [1.6, 0.1], [2.1, 0.03]], resp: (i % 2) ? { hz: 5.2 + i * 0.4, prof: 0.08 } : null });
+      });
+      larga(c, f / 2, 2.2, 0.12, { atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
+      larga(c, f / 2 * 1.003, 2.1, 0.095, { atk: 0.006, env: [[0.3, 0.6], [1.1, 0.2]] });
+      larga(c, f / 4, 1.8, 0.1, { atk: 0.008, env: [[0.3, 0.6], [0.9, 0.2]] });
+      larga(c, f * 2.01, 1.7, 0.09, { atk: 0.003, env: [[0.2, 0.5], [0.8, 0.15]] });
+      larga(c, f * 2.76, 1.2, 0.065, { atk: 0.002, env: [[0.15, 0.5]], resp: { hz: 6.5, prof: 0.15 } });
+      larga(c, f * 4.07, 0.5, 0.035, { atk: 0.002 });
     });
   }
   function pintarMute(){
