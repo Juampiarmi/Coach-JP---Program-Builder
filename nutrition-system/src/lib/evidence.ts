@@ -17,6 +17,12 @@ export const CITES = {
   leucine: { label: 'NORTON & LAYMAN, 2006 · J NUTR', doi: '10.1093/jn/136.2.533S' },
   carbs: { label: 'THOMAS, ERDMAN & BURKE, 2016 · MED SCI SPORTS EXERC', doi: '10.1249/MSS.0000000000000852' },
   matador: { label: 'BYRNE ET AL., 2018 · INT J OBES (MATADOR)', doi: '10.1038/ijo.2017.206' },
+  timing: { label: 'KERKSICK ET AL., 2017 · ISSN NUTRIENT TIMING · J INT SOC SPORTS NUTR', doi: '10.1186/s12970-017-0189-4' },
+  issnReview: { label: 'KERKSICK ET AL., 2018 · ISSN EXERCISE & SPORTS NUTRITION REVIEW', doi: '10.1186/s12970-018-0242-y' },
+  bodyComp: { label: 'ARAGON ET AL., 2017 · ISSN DIETS & BODY COMPOSITION', doi: '10.1186/s12970-017-0174-y' },
+  burke: { label: 'BURKE ET AL., 2011 · J SPORTS SCI (CARBOHIDRATOS Y RENDIMIENTO)', doi: '10.1080/02640414.2011.585473' },
+  iraki: { label: 'IRAKI ET AL., 2019 · SPORTS (OFF-SEASON / HIPERTROFIA)', doi: '10.3390/sports7070154' },
+  gssi: { label: 'GATORADE SPORTS SCIENCE INSTITUTE · SPORTS SCIENCE EXCHANGE' },
 } satisfies Record<string, Citation>;
 
 export function doiUrl(doi: string) {

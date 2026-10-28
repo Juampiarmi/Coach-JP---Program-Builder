@@ -2,7 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { geminiGenerate, type GeminiNotice, type GeminiResult } from './gemini';
 import { aisGroupA } from './evidence';
 import { fixGreeting, OFF_PERI_NAME, parseTrainingWindow, PERI_WORDS, resolveAthleteName } from './anamnesis';
-import { macrosFor, matchFood, round1, round2 } from './foods';
+import { FOOD_BY_ID, macrosFor, matchFood, round1, round2 } from './foods';
+import { fitsSlot } from './mealSlots';
 import { consolidateItems, dayAnchors, retimeMeals } from './schedule';
 import { autoTitle } from './menuOptions';
 import { uid } from './seed';
@@ -36,8 +37,14 @@ REGLAS DE CÁLCULO Y FORMATO (obligatorias):
 - Leucina ≥ 2,7 g SOLO en comidas principales (desayuno, almuerzo, cena). Colaciones, meriendas, pre y post-WOD son ingestas auxiliares: no les agregues huevo ni whey para llegar al umbral.
 - Nunca repitas el mismo alimento dos veces dentro de una comida: sumá los gramos en un único ítem.
 - OPCIONES CULINARIAS (platos reales de la gastronomía argentina, no listas de supermercado): cada meal lleva "title" (nombre del plato, ej. "Bife de cuadril a la plancha con arroz primavera y ensalada verde"), "technique" (técnica de cocción + condimentos), "steps" (3-6 pasos de preparación en lenguaje simple, voseo argentino y con las cantidades, ej. "Hervir el arroz 15-18 min", "Sarteneá la carne picada 8 min", "Mandá al horno a 200 °C por 20 min") y "alts": [ { "title", "technique", "steps", "items": [...] } ] = entre 2 y 4 opciones MÁS (Opciones 2 a 5) en TODAS las comidas (desayuno, almuerzo, pre-entreno, post-entreno, merienda y cena), cada una con OTRO plato equivalente en macros a la Opción 1 (±5 % en kcal, proteína, carbos y grasas). No repitas el plato ni la proteína principal entre opciones de la misma comida ni entre comidas seguidas (ej. Opción 2 "1/4 de tarta de pollo y puerro + ensalada de tomate", Opción 3 "Merluza al horno con puré de batata").
+- MOMENTO DEL DÍA (meal_slot) ESTRICTO, también en las opciones 2 a 5:
+  · DESAYUNO / MERIENDA: sólo toast bar (avocado toast, tostadas integrales o de semillas), huevos / omelettes, tortillas livianas / pancakes de avena, yogures proteicos, granola, frutas, panadería integral y tostadas. PROHIBIDO: platos principales de almuerzo / cena, carnes rojas, minutas, tartas, empanadas, pastas, guisos, parrilla y achuras.
+  · ALMUERZO / CENA: platos principales, minutas, milanesas, tartas, empanadas, pastas, guisos magros, parrilla y ensaladas completas.
+  · PRE-WOD / POST-WOD (colaciones peri-entreno): fácil digestión, carbos de índice glucémico rápido / medio, lácteos proteicos, whey, frutas, frutos secos, galletas o tostadas de arroz y snacks aprobados (tutucas, alfajores proteicos, barritas). PROHIBIDO: carnes, huevos, frituras, platos de almuerzo / cena y comidas grasas.
+  · Cada plato del catálogo trae su franja entre corchetes: respetala.
+- NOMBRES PROFESIONALES: platos con nombre gastronómico claro y serio, en Title Case (ej. "Guiso de Lentejas Criollo Magro", "Pastel de Papa Tradicional Magro"). Nunca jerga interna como "táctico", "de atleta", "fit" o "power".
 - TONO: argentino neutro, directo y motivador. Usá vocabulario local (palta, frutilla, choclo, morrón, zapallito, arvejas, heladera, sartén con spray antiadherente o un chorrito de oliva, "cociná a fuego medio", "mandá al horno", plato principal, acompañamiento, pre-entreno, cena). Nunca "aguacate", "fresa", "maíz dulce", "pimiento", "calabacín", "guisantes", "nevera", "tú", "puedes" o "calentar".
-- Día OFF: no hay sesión. Prohibido "Pre-Entreno", "PeriWOD" o "bloque glucolítico"; la merienda del OFF se llama "Merienda Táctica OFF" (modulación glucémica / saciedad). Cafeína en OFF: consumo matutino habitual (café / mate), sin toma pre-workout.
+- Día OFF: no hay sesión. Prohibido "Pre-Entreno", "PeriWOD" o "bloque glucolítico"; la merienda del OFF se llama "Merienda · Día de Descanso" (modulación glucémica / saciedad). Cafeína en OFF: consumo matutino habitual (café / mate), sin toma pre-workout.
 - Suplementos: sólo AIS Grupo A (creatina 0,04 g/kg, cafeína 3-6 mg/kg, beta-alanina, bicarbonato, nitrato) con DOI real.
 - Respondé SOLO con el objeto JSON, sin texto antes ni después y sin bloques de código.`;
 
@@ -282,6 +289,8 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
         return list.length ? { title: o.title?.trim() || autoTitle(list), items: list, technique: o.technique?.trim() || undefined, steps: aiSteps(o.steps) } : null;
       })
       .filter((o): o is NonNullable<typeof o> => !!o)
+      // Filtro estricto por franja: si la IA propone parrilla en el desayuno o una minuta peri-entreno, esa opción no entra.
+      .filter((o) => o.items.every((i) => !i.foodId || fitsSlot(FOOD_BY_ID[i.foodId], role)))
       .slice(0, MAX_OPTIONS - 1);
     const merged = consolidateItems(items);
     fixCulinary(merged);

@@ -111,5 +111,5 @@ export function fixGreeting(note: string, aiName: string | undefined, realName: 
 }
 
 /** Bloques peri / pre-entreno que quedan en un día OFF: no hay sesión, son merienda de saciedad. */
-export const OFF_PERI_NAME = 'Merienda Táctica OFF';
+export const OFF_PERI_NAME = 'Merienda · Día de Descanso';
 export const PERI_WORDS = /pre.?entreno|pre.?wod|peri.?wod|peri.?entreno|intra|glucol[ií]tico|para entrenar/i;

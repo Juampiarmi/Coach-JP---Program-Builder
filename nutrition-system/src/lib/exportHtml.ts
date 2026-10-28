@@ -3,11 +3,15 @@ import styles from '@/pwa/athleteStyles';
 import { computeTelemetry, isMpsMeal, LEUCINE_THRESHOLD, PHASE_LABEL, trainingWeekdays } from './bioenergetics';
 import { BRAND, nutritionSvg, shieldSvg } from './brand';
 import { CITES } from './evidence';
-import { FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
+import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
 import { autoTechnique, autoTitle, optionSteps } from './menuOptions';
-import type { AthletePlan, DayMode } from './types';
+import { fitsSlot, foodSlots } from './mealSlots';
+import { modernizeName } from './foodBrandDb';
+import { BRAND_TIERS, TIER_OF_BUDGET } from './brandTiers';
+import { sanitizeAnamnesis } from './anamnesisPro';
+import type { AthletePlan, DayMode, FoodItem, Meal } from './types';
 
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
 
@@ -132,7 +136,7 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     // Ingredientes repetidos fusionados y orden cronológico estricto antes de exportar.
     // Opciones culinarias: título, técnica y pasos de la Opción 1 (automáticos si el coach no los cargó) y opciones 2 a 5.
     meals: [...plan.meals].sort(byTime).map((m) => {
-      const c = consolidateMeal(m);
+      const c = modernizeMeal(consolidateMeal(m));
       return {
         ...c,
         mps: isMpsMeal(m),
@@ -140,12 +144,19 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
         technique: c.technique || autoTechnique(c.items),
         steps: optionSteps(c),
         // Opciones 2 a 5 con nombre, técnica y preparación paso a paso (automáticos si el coach no los cargó).
+        // Las alternativas fuera de la franja del día (planes viejos) no llegan al atleta.
         alts: (c.alts ?? [])
-          .filter((a) => a.items.length)
+          .filter((a) => a.items.length && a.items.every((i) => !i.foodId || fitsSlot(FOOD_BY_ID[i.foodId], m.role)))
           .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: a.technique || autoTechnique(a.items), steps: optionSteps(a) })),
       };
     }),
-    foods: Object.fromEntries(FOODS.map((f) => [f.id, f])),
+    // Marca sugerida por ingrediente según el presupuesto del atleta (Nivel 1 / 2 / 3).
+    brands: Object.fromEntries(
+      [...new Set(plan.meals.flatMap((m) => [...m.items, ...(m.alts ?? []).flatMap((a) => a.items)]).map((i) => i.foodId).filter((id): id is string => !!id && !!BRAND_TIERS[id]))].map((id) => [id, BRAND_TIERS[id]]),
+    ),
+    brandTier: TIER_OF_BUDGET[sanitizeAnamnesis(plan.anamnesis).budget],
+    // Cada alimento viaja con sus franjas del día (filtro estricto de los swaps en la PWA).
+    foods: Object.fromEntries(FOODS.map((f) => [f.id, { ...f, slots: foodSlots(f) }])),
     anchors: GROUP_ANCHOR,
     groupLabels: GROUP_LABEL,
     swapGroups: usedGroups,
@@ -169,6 +180,18 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     // Prompt del análisis de foto en el celular del atleta (la API key la carga el atleta en su dispositivo; nunca viaja en el plan).
     scanPrompt: `${SCAN_PROMPT}\nAgregá a cada item "leucine" (g estimados de leucina para esa porción).`,
     labelPrompt: LABEL_PROMPT,
+  };
+}
+
+/** Nombres profesionales: platos renombrados y comidas con nombre de versiones anteriores. */
+function modernizeMeal(m: Meal): Meal {
+  const fixItems = (items: FoodItem[]) => items.map((i) => ({ ...i, food: i.foodId && FOOD_BY_ID[i.foodId] ? FOOD_BY_ID[i.foodId].name : modernizeName(i.food) }));
+  return {
+    ...m,
+    name: modernizeName(m.name),
+    title: m.title && modernizeName(m.title),
+    items: fixItems(m.items),
+    alts: m.alts?.map((a) => ({ ...a, title: modernizeName(a.title), items: fixItems(a.items), steps: a.steps?.map(modernizeName) })),
   };
 }
 

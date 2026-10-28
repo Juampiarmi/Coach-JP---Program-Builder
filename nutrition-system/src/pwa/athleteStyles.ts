@@ -359,6 +359,7 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .desglose p b{color:var(--title)}
 .desglose .dsub{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.14em;color:var(--micro);margin:4px 0 6px}
 .desglose ul.ing li em{font-style:normal;color:var(--micro);font-size:11.5px}
+.desglose ul.ing li em.br{color:#FDBA74}
 .desglose ol.psteps{list-style:none;counter-reset:ps;display:grid;gap:7px;padding-bottom:10px}
 .desglose ol.psteps li{counter-increment:ps;position:relative;padding-left:28px;font-size:13px;line-height:1.45;color:var(--text)}
 .desglose ol.psteps li:before{content:counter(ps);position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;border:1px solid rgba(56,189,248,.45);color:var(--cyan);font-family:"JetBrains Mono",monospace;font-size:10px;display:flex;align-items:center;justify-content:center}

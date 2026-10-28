@@ -8,6 +8,8 @@ import { balancePlan } from '@/lib/balance';
 import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
 import { baseKey, compensateSwap, fitAltsToMain, normalizeMealOptions, refreshSteps, suggestAlternatives, withAlternatives } from '@/lib/menuOptions';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
+import { buildTemplatePlan, goalById, type TemplateSelection } from '@/lib/templateBank';
+import { modernizeName } from '@/lib/foodBrandDb';
 import { aisGroupA } from '@/lib/evidence';
 import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
 import { itemFromFood, seedPlan, uid } from '@/lib/seed';
@@ -28,7 +30,7 @@ import type {
 } from '@/lib/types';
 import { MAX_OPTIONS } from '@/lib/types';
 
-export type BuilderTab = 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'fooddb';
+export type BuilderTab = 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'fooddb' | 'library';
 export type DeployTab = 'preview' | 'export' | 'story';
 
 interface PlanState {
@@ -86,6 +88,8 @@ interface PlanState {
   retimeMeals: () => void;
   /** Horarios + exclusiones de la Anamnesis Pro aplicados a las comidas, con cierre de macros redistribuido. */
   applyAnamnesisToMeals: () => number;
+  /** Biblioteca de planes master: clona el plan semilla adaptado al peso y target del atleta activo. */
+  applyTemplate: (sel: TemplateSelection) => void;
   /** Anamnesis Pro & Lifestyle del atleta activo (se guarda dentro del plan → localStorage y backup JSON). */
   setAnamnesis: (patch: Partial<Anamnesis>) => void;
 
@@ -378,6 +382,21 @@ export const usePlanStore = create<PlanState>()(
 
       balanceMeals: () => set((s) => ({ plan: balancePlan(s.plan).plan })),
       retimeMeals: () => set((s) => ({ plan: touch({ ...s.plan, meals: retimeMeals(s.plan.meals, s.plan.profile, s.plan.anamnesis) }) })),
+      applyTemplate: (sel) => {
+        const s = get();
+        const goal = goalById(sel.goal);
+        const an = sanitizeAnamnesis(s.plan.anamnesis);
+        // Preferencias del plan semilla que quedan registradas en la anamnesis (la IA y la PWA las respetan).
+        const anamnesis = {
+          ...an,
+          goal: goal.anamnesisGoal,
+          allergies: sel.pref === 'lactose' ? [...new Set([...an.allergies, 'lactose'])] : an.allergies,
+          cooking: sel.pref === 'quick' ? ('quick' as const) : an.cooking,
+          disabledSlots: [],
+        };
+        const next = buildTemplatePlan({ ...s.plan, anamnesis }, sel, { retime: true });
+        set({ plan: touch({ ...next, coachNote: s.plan.coachNote || goal.rationale }), builderTab: 'meals' });
+      },
       applyAnamnesisToMeals: () => {
         const s = get();
         const disabled = new Set<string>(s.plan.anamnesis?.disabledSlots ?? []);
@@ -528,6 +547,18 @@ function capCookingOil(m: Meal): Meal {
   return { ...m, items: m.items.map((i) => (i.foodId === 'oliva' && i.grams > 2 * MAX_OIL_PER_MEAL_G ? rescaleItem(i, MAX_OIL_PER_MEAL_G) : i)) };
 }
 
+/** Nombres profesionales: platos y comidas guardados con el nombre de una versión anterior (sin jerga). */
+function modernizeMealNames(m: Meal): Meal {
+  const fix = (items: FoodItem[]) => items.map((i) => ({ ...i, food: modernizeName(i.food) }));
+  return {
+    ...m,
+    name: modernizeName(m.name),
+    title: m.title && modernizeName(m.title),
+    items: fix(m.items),
+    alts: m.alts?.map((a) => ({ ...a, title: modernizeName(a.title), items: fix(a.items) })),
+  };
+}
+
 /** Valida la forma mínima del plan persistido y completa los campos agregados en versiones nuevas. */
 function sanitizePlan(raw: unknown): AthletePlan | null {
   const p = raw as AthletePlan | undefined;
@@ -555,7 +586,7 @@ function sanitizePlan(raw: unknown): AthletePlan | null {
     },
     periodization: { ...seed.periodization, ...p.periodization },
     // Ingredientes repetidos en una comida (ej. palta 70 g + 45 g) se fusionan al cargar.
-    meals: p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil).map(consolidateMeal).map(normalizeMealOptions),
+    meals: p.meals.filter((m) => m && Array.isArray(m.items)).map(capCookingOil).map(consolidateMeal).map(normalizeMealOptions).map(modernizeMealNames),
     anamnesis: sanitizeAnamnesis(p.anamnesis),
   };
 }

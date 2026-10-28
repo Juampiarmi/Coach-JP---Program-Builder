@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { ChevronDown, CopyPlus, ExternalLink, Pill, Plus, RefreshCw, Trash2, Utensils, X, Zap } from 'lucide-react';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
-import { alternativesFor, equivalentGrams, macrosFor, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
+import { FOOD_SLOT_LABEL, fitsSlot, SLOT_OF } from '@/lib/mealSlots';
+import { alternativesFor, equivalentGrams, type FoodRef, macrosFor, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
 import { MAX_OPTIONS, type DayMode, type FoodItem, type Meal, type MealDay, type MealOption, type MealRole } from '@/lib/types';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { ALT_TARGET, autoSteps, autoTechnique, autoTitle, compensateSwap, optionTotals } from '@/lib/menuOptions';
@@ -35,19 +36,22 @@ const smallSelect = 'rounded-md border border-line bg-carbon px-2 py-1 text-xs t
 const LEU_PER_EGG = (FOOD_BY_ID.huevo.leucine * 50) / 100;
 const LEU_PER_G_WHEY = FOOD_BY_ID.whey.leucine / 100;
 
-function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
-  const custom = usePlanStore((s) => s.customFoods);
+function FoodPicker({ onPick, role }: { onPick: (id: string) => void; role: MealRole }) {
+  const allCustom = usePlanStore((s) => s.customFoods);
   // Re-render al editar la Food & Brand DB; sus marcas locales ya viven en FOODS como custom.
   useFoodDbStore((s) => s.items);
-  const customIds = new Set(custom.map((f) => f.id));
-  const brands = FOODS.filter((f) => f.custom && !customIds.has(f.id));
+  // Filtro estricto por franja: sólo lo que corresponde a este momento del día (sin parrilla en el desayuno, etc.).
+  const ok = (f: FoodRef) => fitsSlot(f, role);
+  const custom = allCustom.filter(ok);
+  const customIds = new Set(allCustom.map((f) => f.id));
+  const brands = FOODS.filter((f) => f.custom && !customIds.has(f.id) && ok(f));
   return (
     <select
       value=""
       onChange={(e) => e.target.value && onPick(e.target.value)}
       className="w-full cursor-pointer rounded-lg border border-dashed border-line2 bg-transparent px-3 py-2 text-xs text-steel outline-none hover:border-steel/60 hover:text-ink"
     >
-      <option value="">+ Agregar alimento…</option>
+      <option value="">+ Agregar alimento · franja {FOOD_SLOT_LABEL[SLOT_OF[role]]}…</option>
       {custom.length > 0 && (
         <optgroup label="★ Mis alimentos / marcas">
           {custom.map((f) => (
@@ -66,9 +70,9 @@ function FoodPicker({ onPick }: { onPick: (id: string) => void }) {
           ))}
         </optgroup>
       )}
-      {GROUPS.map((g) => (
+      {GROUPS.filter((g) => FOODS.some((f) => f.group === g && !f.custom && ok(f))).map((g) => (
         <optgroup key={g} label={GROUP_LABEL[g]}>
-          {FOODS.filter((f) => f.group === g && !f.custom).map((f) => (
+          {FOODS.filter((f) => f.group === g && !f.custom && ok(f)).map((f) => (
             <option key={f.id} value={f.id}>
               {f.name}
             </option>
@@ -138,9 +142,13 @@ const shortName = (n: string) => n.replace(/ \(.*\)$/, '');
 function Equivalences({ mealId, item }: { mealId: string; item: FoodItem }) {
   const swapItem = usePlanStore((s) => s.swapItem);
   const ref = item.foodId ? FOOD_BY_ID[item.foodId] : undefined;
-  const alts = ref
-    ? alternativesFor(ref).map((f) => ({ food: f, grams: equivalentGrams(ref.id, item.grams, f.id) }))
-    : freeEquivalents(item);
+  const role = usePlanStore.getState().plan.meals.find((m) => m.id === mealId)?.role;
+  // Equivalencias sólo dentro de la franja del día de la comida.
+  const alts = (
+    ref ? alternativesFor(ref, 8).map((f) => ({ food: f, grams: equivalentGrams(ref.id, item.grams, f.id) })) : freeEquivalents(item, 8)
+  )
+    .filter(({ food }) => !role || fitsSlot(food, role))
+    .slice(0, 2);
   if (!alts.length) return <span className="text-xs text-steel/70">{ref ? 'Única opción de su grupo' : 'Sin macros para equivaler'}</span>;
   // Vista previa de la compensación (Swap Matrix): qué ajusta el resto de la comida para no descuadrarse.
   const meal = usePlanStore.getState().plan.meals.find((m) => m.id === mealId);
@@ -324,7 +332,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         <ProteinSensor meal={meal} />
       </div>
       <div className="mt-3">
-        <FoodPicker onPick={(id) => addFood(meal.id, id, FOOD_BY_ID[id].unit?.grams ?? 100)} />
+        <FoodPicker role={meal.role} onPick={(id) => addFood(meal.id, id, FOOD_BY_ID[id].unit?.grams ?? 100)} />
       </div>
       <TechniqueBox meal={meal} />
       <AltOptions meal={meal} />

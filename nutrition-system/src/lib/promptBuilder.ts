@@ -63,7 +63,7 @@ export function anamnesisToNotes(plan: AthletePlan, foodDb: BrandFood[]) {
     `- Patologías: ${conditions.length ? label(CONDITIONS, conditions).join(', ') : 'ninguna'} · Alergias / intolerancias: ${an.allergies.length ? label(ALLERGIES, an.allergies).join(', ') : 'ninguna'}`,
     `- Favoritos: ${an.favorites.trim() || '—'}`,
     `- Aversiones: ${an.aversions.trim() || '—'}`,
-    `- Snacks tácticos: ${an.snacks.join(', ') || '—'}`,
+    `- Snacks de control de ansiedad: ${an.snacks.join(', ') || '—'}`,
     `- Presupuesto ${BUDGET_LABEL[an.budget]} · cocina ${COOKING_LABEL[an.cooking]}`,
     `- Canasta de alimentos permitidos: ${an.basket ? `${basket.length} ítems tildados (la IA usa ÚNICAMENTE esos)` : 'sin restricción (todo el catálogo habilitado)'}`,
     `- Marcas locales disponibles: ${brands.length ? brands.map((b) => (b.marca ? `${b.nombre} (${b.marca})` : b.nombre)).slice(0, 12).join(', ') : '—'}${brands.length > 12 ? '…' : ''}`,
@@ -140,13 +140,13 @@ export function buildPromptContext(plan: AthletePlan, foodDb: BrandFood[], notes
   } else if (an.fasting === 'circadian')
     lines.push('- ALIMENTACIÓN CIRCADIANA: primera ingesta dentro de la hora de despertar, cena ≥ 3 h antes de acostarse y carbos concentrados en la primera mitad del día (salvo Pre / Post-WOD).');
   if (an.snacks.length)
-    lines.push(`- ZONA CRÍTICA DE ANSIEDAD: ${ANXIETY_LABEL[an.anxiety]} (${ANXIETY_RANGE[an.anxiety]}). Ubicá ahí los snacks tácticos como colación planificada dentro de las kcal del día.`);
+    lines.push(`- ZONA CRÍTICA DE ANSIEDAD: ${ANXIETY_LABEL[an.anxiety]} (${ANXIETY_RANGE[an.anxiety]}). Ubicá ahí los snacks elegidos como colación planificada dentro de las kcal del día.`);
   lines.push(`- Deportes: ${an.sports.map(sportLabel).join(', ') || '—'} · objetivo nutricional: ${goalLabel(an.goal)} · fase de temporada: ${SEASON_LABEL[an.season]}.`);
   lines.push(`- Patologías / condiciones: ${conditions.length ? label(CONDITIONS, conditions).join(', ') : 'ninguna'}.`);
   lines.push(`- Alergias / intolerancias: ${an.allergies.length ? `${label(ALLERGIES, an.allergies).join(', ')} → EXCLUIR por completo` : 'ninguna'}.`);
   if (an.favorites.trim()) lines.push(`- Alimentos de preferencia (usalos cuando encajen en los macros): ${an.favorites.trim()}.`);
   if (an.aversions.trim()) lines.push(`- Aversiones / rechazos (NO usar nunca): ${an.aversions.trim()}.`);
-  if (an.snacks.length) lines.push(`- Snacks tácticos permitidos para control de ansiedad (colaciones): ${an.snacks.join(', ')}.`);
+  if (an.snacks.length) lines.push(`- Snacks permitidos para control de ansiedad (colaciones): ${an.snacks.join(', ')}.`);
   lines.push(`- Presupuesto: ${BUDGET_LABEL[an.budget]} · Nivel de cocina: ${COOKING_LABEL[an.cooking]}.`);
 
   const sportRules = [...new Set(an.sports.map(sportGroup))].map((g) => SPORT_RULES[g]).filter(Boolean);

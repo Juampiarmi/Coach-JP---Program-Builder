@@ -42,6 +42,11 @@ export interface FoodRef {
   technique?: string;
   /** Preparación paso a paso del plato. */
   steps?: string[];
+  /** Plato con lactosa / minutos de preparación (filtros de preferencia de la Biblioteca de planes). */
+  lactose?: boolean;
+  prep?: number;
+  /** Franjas del día permitidas (platos). Sin definir = según el grupo (ver mealSlots). */
+  slots?: ('am' | 'main' | 'peri')[];
   /** Detalle legible de la porción (cuando no hay receta estructurada). */
   detail?: string;
 }
@@ -116,6 +121,12 @@ export const FOODS: FoodRef[] = [
   { id: 'pan-lactal', name: 'Pan lactal integral', group: 'cereal', unit: { label: 'rebanada', grams: 25 }, p: 10, c: 43, f: 4, leucine: 0.7, equiv: ['pan', 'tostadas-arroz'] },
   { id: 'barrita-cereal', name: 'Barrita de cereal', group: 'sport-carb', unit: { label: 'u', grams: 23 }, p: 6, c: 70, f: 9, leucine: 0.4, equiv: ['banana', 'dulce-membrillo'] },
   { id: 'vegetales', name: 'Vegetales mixtos / ensalada', group: 'veg', p: 1.5, c: 4, f: 0.2, leucine: 0.08 },
+  // Biblioteca de planes: variantes sin lactosa y plant-based.
+  { id: 'leche-deslactosada', name: 'Leche descremada deslactosada', group: 'dairy-protein', unit: { label: 'taza', grams: 250 }, p: 3.3, c: 5, f: 0.1, leucine: 0.33, equiv: ['leche'] },
+  { id: 'yogur-deslactosado', name: 'Yogur descremado deslactosado', group: 'dairy-protein', p: 6, c: 6, f: 0.5, leucine: 0.6, equiv: ['yogur'] },
+  { id: 'whey-isolate', name: 'Whey protein aislado (sin lactosa)', group: 'whey', unit: { label: 'scoop', grams: 30 }, p: 88, c: 2, f: 1, leucine: 9.5, equiv: ['whey'] },
+  { id: 'tofu', name: 'Tofu firme', group: 'lean-protein', p: 15, c: 2, f: 8, leucine: 1.2 },
+  { id: 'garbanzos', name: 'Garbanzos (cocidos)', group: 'starch', p: 8.9, c: 27, f: 2.6, leucine: 0.63, equiv: ['lentejas'] },
 ];
 
 export const FOOD_BY_ID: Record<string, FoodRef> = Object.fromEntries(FOODS.map((f) => [f.id, f]));

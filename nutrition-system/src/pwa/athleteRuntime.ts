@@ -125,12 +125,14 @@ const runtime = String.raw`
   }
 
   // Equivalencias calculadas: mismo aporte del macro ancla, ordenadas por densidad calórica más parecida.
-  function swapOptions(orig) {
+  // Franja del día de cada comida: los swaps nunca proponen parrilla en el desayuno ni platos pesados peri-entreno.
+  var SLOT = { breakfast: 'am', snack: 'am', lunch: 'main', dinner: 'main', peri: 'peri', post: 'peri' };
+  function swapOptions(orig, role) {
     var src = orig && srcOf(orig);
     if (!src) return [];
-    var dens = kcal100(src);
+    var dens = kcal100(src), slot = SLOT[role];
     return Object.keys(D.foods)
-      .filter(function (id) { var f = D.foods[id]; return id !== orig.foodId && src.groups.indexOf(f.group) >= 0 && f[src.anchor] > 0; })
+      .filter(function (id) { var f = D.foods[id]; return id !== orig.foodId && src.groups.indexOf(f.group) >= 0 && f[src.anchor] > 0 && (!slot || !f.slots || f.slots.indexOf(slot) >= 0); })
       .map(function (id) { var f = D.foods[id]; return { id: id, f: f, g: eqGrams(src, orig.grams, f), d: Math.abs(kcal100(f) - dens) }; })
       .sort(function (a, b) { return a.d - b.d; })
       .slice(0, 6);
@@ -150,7 +152,7 @@ const runtime = String.raw`
   // Día OFF: no hay sesión → los bloques pre / peri-entreno se muestran como merienda de saciedad.
   var PERI_RE = /pre.?entreno|pre.?wod|peri.?wod|peri.?entreno|intra|glucol[ií]tico|para entrenar/i;
   function isOffPeri(m, mode) { return mode === 'off' && (m.role === 'peri' || PERI_RE.test(m.name)); }
-  function mealName(m, mode) { return isOffPeri(m, mode) ? 'Merienda Táctica OFF' : m.name; }
+  function mealName(m, mode) { return isOffPeri(m, mode) ? 'Merienda · Día de Descanso' : m.name; }
 
   // Comida libre controlada (Comer fuera): bloque promedio balanceado que reemplaza la comida en la telemetría.
   var FREE_MEAL = { p: 45, c: 70, f: 32 };
@@ -594,7 +596,7 @@ const runtime = String.raw`
     var src = srcOf(orig);
     if (!src) { S.sheet = null; return renderSheet(); }
     var cur = S.swaps[orig.id];
-    var opts = swapOptions(orig);
+    var opts = swapOptions(orig, meal.role);
     var ok = function (f, g) { var k = g / 100; return n0(f.p * k) + ' P · ' + n0(f.c * k) + ' C · ' + n0(f.f * k) + ' G'; };
     var h = '<button class="xclose" data-close="1" aria-label="Cerrar">✕</button><div class="tag">[ SMART SWAP · ' + esc(src.group ? D.groupLabels[src.group] : 'EQUIVALENCIA POR ' + ANCHOR_LABEL[src.anchor].toUpperCase()) + ' ]</div>';
     h += '<h3>' + esc(src.name) + ' → equivalencias</h3>';
@@ -627,7 +629,7 @@ const runtime = String.raw`
         rows += '<li><b>' + esc(ref.name) + '</b>: ' + ref.recipe.map(function (r) { return esc(r.name) + ' ' + n0(r.grams * k) + ' g'; }).join(' · ') + '</li>';
       } else rows += '<li><b>' + esc(ref.name) + '</b>: ' + esc(ref.detail) + (ref.unit && it.grams !== ref.unit.grams ? ' (porción base ' + n0(ref.unit.grams) + ' g, la tuya ' + n0(it.grams) + ' g)' : '') + '</li>';
     });
-    var ing = '<ul class="ing">' + x.items.filter(function (it) { return it.grams > 0 && !it.free; }).map(function (it) { return '<li><b>' + n0(it.grams) + ' g</b> ' + esc(it.food) + (unitHintFor(it.foodId, it.grams) ? ' <em>' + unitHintFor(it.foodId, it.grams) + '</em>' : '') + '</li>'; }).join('') + '</ul>';
+    var ing = '<ul class="ing">' + x.items.filter(function (it) { return it.grams > 0 && !it.free; }).map(function (it) { return '<li><b>' + n0(it.grams) + ' g</b> ' + esc(it.food) + (unitHintFor(it.foodId, it.grams) ? ' <em>' + unitHintFor(it.foodId, it.grams) + '</em>' : '') + (D.brands && D.brands[it.foodId] ? ' <em class="br">· ' + esc(D.brands[it.foodId][D.brandTier || 0]) + '</em>' : '') + '</li>'; }).join('') + '</ul>';
     var how = steps.length ? '<div class="dsub">PREPARACIÓN PASO A PASO</div><ol class="psteps">' + steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>' : '';
     return '<details class="desglose"><summary>[ DESGLOSE TÁCTICO & INGREDIENTES ]</summary><div class="dsub">INGREDIENTES</div>' + ing + (rows ? '<div class="dsub">COMPOSICIÓN DE LOS PLATOS</div><ul>' + rows + '</ul>' : '') + how + (tech ? '<p><b>Tip:</b> ' + esc(tech) + '</p>' : '') + '</details>';
   }
@@ -1198,7 +1200,7 @@ const runtime = String.raw`
           h += '<div class="item extra"><span class="g">' + n0(it.grams) + ' g</span><span class="fd">' + esc(it.food) + '<s class="ia">Agregado por análisis IA · ' + n0(it.p) + ' P · ' + n0(it.c) + ' C · ' + n0(it.f) + ' G</s></span><button class="rm" data-rmextra="' + esc(m.id) + '|' + esc(it.id) + '" aria-label="Quitar">✕</button></div>';
           return;
         }
-        var canSwap = !it.adjusted && (!!it.swappedFrom || (x.src[idx] && x.src[idx].id === it.id && swapOptions(x.src[idx]).length > 0));
+        var canSwap = !it.adjusted && (!!it.swappedFrom || (x.src[idx] && x.src[idx].id === it.id && swapOptions(x.src[idx], m.role).length > 0));
         h += '<button class="item" ' + (canSwap ? 'data-swap="' + m.id + '|' + it.id + '"' : 'disabled') + '><span class="g">' + n0(it.grams) + ' g' + (hint ? '<em>' + hint + '</em>' : '') + '</span><span class="fd">' + esc(it.food) + (it.swappedFrom ? '<s>Reemplaza a: ' + esc(it.swappedFrom) + '</s>' : '') + (it.adjusted ? '<s class="adj">Ajustado por SWAP: ' + n0(it.adjusted) + ' → ' + n0(it.grams) + ' g (mismos macros)</s>' : '') + '</span>' + (canSwap ? '<span class="sw">SWAP</span>' : '') + '</button>';
       });
       h += '</div>';

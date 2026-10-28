@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Brain, ClipboardList, Crosshair, Database, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, SlidersHorizontal, Utensils } from 'lucide-react';
+import { Brain, ClipboardList, Library, Crosshair, Database, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, SlidersHorizontal, Utensils } from 'lucide-react';
 import { AnamnesisForm } from '@/components/builder/AnamnesisForm';
 import { FoodBrandDatabase } from '@/components/builder/FoodBrandDatabase';
 import { IntakeTab } from '@/components/builder/IntakeTab';
+import { TemplateBank } from '@/components/builder/TemplateBank';
 // Registra la Food & Brand DB en el motor de alimentos apenas carga el Builder.
 import '@/store/useFoodDbStore';
 import { MealsTab } from '@/components/builder/MealsTab';
@@ -27,6 +28,7 @@ const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain }[] = [
   { id: 'periodization', label: '02 · Matriz ON/OFF', icon: SlidersHorizontal },
   { id: 'meals', label: '03 · Ingestas & leucina', icon: Utensils },
   { id: 'fooddb', label: '04 · Food & Brand DB', icon: Database },
+  { id: 'library', label: '05 · 📚 Biblioteca de Planes', icon: Library },
 ];
 
 const DEPLOY_TABS: { id: DeployTab; label: string; icon: typeof Brain }[] = [
@@ -144,6 +146,7 @@ export default function Home() {
           {builderTab === 'periodization' && <PeriodizationTab />}
           {builderTab === 'meals' && <MealsTab />}
           {builderTab === 'fooddb' && <FoodBrandDatabase />}
+          {builderTab === 'library' && <TemplateBank />}
           </div>
         </section>
 

@@ -1,5 +1,7 @@
 import { FOOD_BY_ID, FOODS, macrosFor, round1, round2, type FoodRef } from './foods';
 import { uid } from './seed';
+import { dishTitleCase } from './foodBrandDb';
+import { fitsSlot } from './mealSlots';
 import { MAX_OPTIONS, type FoodItem, type Meal, type MealOption, type MealRole } from './types';
 
 type Tot = { p: number; c: number; f: number; kcal: number };
@@ -23,11 +25,11 @@ export function autoTitle(items: FoodItem[]) {
     .map((i) => ({ i, g: i.foodId ? (FOOD_BY_ID[i.foodId]?.group ?? 'zz') : 'zz' }))
     .sort((a, b) => (ORDER.indexOf(a.g) + 1 || 99) - (ORDER.indexOf(b.g) + 1 || 99) || b.i.grams - a.i.grams)
     .map((x) => short(x.i.food));
-  if (!named.length) return 'Plato del plan';
+  if (!named.length) return 'Plato del Plan';
   const [head, ...rest] = named;
-  if (!rest.length) return head;
+  if (!rest.length) return dishTitleCase(head);
   const tail = rest.map(lower);
-  return `${head} con ${tail.length > 1 ? `${tail.slice(0, -1).join(', ')} y ${tail[tail.length - 1]}` : tail[0]}`;
+  return dishTitleCase(`${head} con ${tail.length > 1 ? `${tail.slice(0, -1).join(', ')} y ${tail[tail.length - 1]}` : tail[0]}`);
 }
 
 const TECH: [RegExp, string][] = [
@@ -151,16 +153,6 @@ export const optionSteps = (o: { items: FoodItem[]; steps?: string[] }) => (o.st
 // OPCIONES 2 A 5: platos del catálogo + combinaciones caseras argentinas equivalentes en macros
 // ---------------------------------------------------------------------------------------------
 
-/** Categorías de plato apropiadas para cada momento del día. */
-const ROLE_DISHES: Record<MealRole, string[]> = {
-  breakfast: ['desayuno'],
-  snack: ['desayuno', 'dulce'],
-  peri: ['desayuno', 'dulce'],
-  // Post-WOD inmediato: liviano (los platos de minuta quedan para el almuerzo / la cena).
-  post: ['desayuno'],
-  lunch: ['minuta', 'tarta', 'parrilla'],
-  dinner: ['minuta', 'tarta', 'parrilla'],
-};
 const CARB_SIDE: Record<MealRole, string[]> = {
   breakfast: ['pan', 'banana', 'frutillas'],
   snack: ['banana', 'galletas-arroz', 'frutillas'],
@@ -175,14 +167,29 @@ function item(foodId: string, grams: number): FoodItem {
   return { id: uid(), foodId, food: ref.name, grams, ...macrosFor(foodId, grams)! };
 }
 
-/** Candidatos de plato (Food & Brand DB + recetas del coach) para las alternativas, filtrados por canasta. */
+/**
+ * Candidatos de plato (Food & Brand DB + recetas del coach) para las alternativas: sólo los de la franja del día
+ * (nada de minutas ni parrilla en el desayuno o el pre-entreno) y dentro de la canasta del atleta.
+ */
 export function dishCandidates(role: MealRole, allowed?: Set<string> | null): FoodRef[] {
-  const cats = ROLE_DISHES[role] ?? ROLE_DISHES.lunch;
-  return FOODS.filter((f) => f.group === 'plato' && !f.flex && f.dishCat && cats.includes(f.dishCat) && (!allowed || allowed.has(f.id)));
+  return FOODS.filter(
+    (f) =>
+      f.group === 'plato' &&
+      !f.flex &&
+      fitsSlot(f, role) &&
+      // Infusiones (mate, café) no son plato de una opción; los postres quedan para la merienda, no para el desayuno.
+      !/^(mate|caf[eé]|chocolatada)\b/i.test(f.name) &&
+      !(role === 'breakfast' && f.dishCat === 'dulce') &&
+      (!allowed || allowed.has(f.id)),
+  );
 }
 
+/** Todos los ingredientes de la opción respetan la franja del día (y la preferencia del plan, si hay). */
+const slotOk = (items: FoodItem[], role: MealRole, accept?: (foodId: string) => boolean) =>
+  items.every((i) => !i.foodId || (fitsSlot(FOOD_BY_ID[i.foodId], role) && (!accept || accept(i.foodId))));
+
 /** Parte de una combinación: la proteína (p), el carbo (c) y la grasa (f) se calculan; x = cantidad fija. */
-interface ComboPart {
+export interface ComboPart {
   id: string;
   r: 'p' | 'c' | 'f' | 'x';
   g?: number;
@@ -191,12 +198,14 @@ interface ComboPart {
   /** Redondeo en gramos (huevo = 50 → unidades enteras). */
   step?: number;
 }
-interface Combo {
+export interface Combo {
   title: string;
   roles: MealRole[];
   parts: ComboPart[];
   /** Pasos con marcadores {id} que se reemplazan por la cantidad calculada. */
   steps: string[];
+  /** Variante de preferencia (sin lactosa / plant-based): sólo se ofrece cuando el plan tiene ese filtro activo. */
+  special?: boolean;
 }
 
 const MAIN: MealRole[] = ['lunch', 'dinner'];
@@ -238,6 +247,27 @@ const COMBOS: Combo[] = [
     roles: AM,
     parts: [{ id: 'queso-light', r: 'p', max: 80, min: 20 }, { id: 'pan-lactal', r: 'c', step: 25, max: 100, min: 50 }, { id: 'manzana', r: 'x', g: 180 }],
     steps: ['Armá el sándwich con {pan-lactal} de pan lactal integral y {queso-light} de queso cremoso light.', 'Si querés, tostalo 2 min por lado en sartén tapada.', 'Acompañá con {manzana} de manzana.'],
+  },
+  {
+    title: 'Yogur Deslactosado con Avena, Frutillas y Nueces',
+    special: true,
+    roles: [...AM, 'post'],
+    parts: [{ id: 'yogur-deslactosado', r: 'p', max: 450, min: 100 }, { id: 'avena', r: 'c', max: 90 }, { id: 'nueces', r: 'f', max: 25 }, { id: 'frutillas', r: 'x', g: 100 }],
+    steps: ['Poné {yogur-deslactosado} de yogur deslactosado en un bowl.', 'Sumá {avena} de avena y {frutillas} de frutillas lavadas y cortadas.', 'Terminá con {nueces} de nueces picadas.'],
+  },
+  {
+    title: 'Licuado de Whey Aislado con Banana y Leche Deslactosada',
+    special: true,
+    roles: [...AM, 'post'],
+    parts: [{ id: 'whey-isolate', r: 'p', max: 50, min: 15 }, { id: 'banana', r: 'c', max: 300, min: 60 }, { id: 'mani', r: 'f', max: 20 }, { id: 'leche-deslactosada', r: 'x', g: 250 }],
+    steps: ['Poné en la licuadora {leche-deslactosada} de leche deslactosada, {banana} de banana y {whey-isolate} de whey aislado.', 'Sumá {mani} de pasta de maní.', 'Licuá 30 segundos y tomalo en el momento.'],
+  },
+  {
+    title: 'Avena Cocida con Leche Deslactosada, Whey Aislado y Banana',
+    special: true,
+    roles: AM,
+    parts: [{ id: 'whey-isolate', r: 'p', max: 45, min: 10 }, { id: 'avena', r: 'c', max: 100, min: 30 }, { id: 'nueces', r: 'f', max: 25 }, { id: 'leche-deslactosada', r: 'x', g: 200 }, { id: 'banana', r: 'x', g: 60 }],
+    steps: ['Cociná {avena} de avena con {leche-deslactosada} de leche deslactosada a fuego medio 3-4 min, revolviendo.', 'Fuera del fuego, mezclá {whey-isolate} de whey aislado.', 'Serví con {banana} de banana en rodajas y {nueces} de nueces picadas.'],
   },
   // ---- Pre-entreno (carbo rápido, poca grasa) ----
   {
@@ -300,7 +330,26 @@ const COMBOS: Combo[] = [
     parts: [{ id: 'batata', r: 'c', max: 400, min: 100 }, { id: 'miel', r: 'x', g: 10 }],
     steps: ['Mandá {batata} de batata en rodajas al horno a 200 °C por 25-30 min (podés dejarla lista del batch).', 'Servila tibia con {miel} de miel por arriba.'],
   },
+  {
+    title: 'Tostadas de Arroz con Ricota, Miel y Banana',
+    roles: ['post', 'snack'],
+    parts: [{ id: 'ricota', r: 'p', max: 250, min: 60 }, { id: 'banana', r: 'c', max: 300, min: 60 }, { id: 'tostadas-arroz', r: 'x', g: 24 }, { id: 'miel', r: 'x', g: 10 }],
+    steps: ['Untá {tostadas-arroz} de tostadas de arroz con {ricota} de ricota magra.', 'Sumá {banana} de banana en rodajas y un hilo de miel ({miel}).'],
+  },
+  {
+    title: 'Yogur Deslactosado con Copos de Maíz y Miel',
+    special: true,
+    roles: ['peri', 'post', 'snack'],
+    parts: [{ id: 'yogur-deslactosado', r: 'p', max: 400, min: 100 }, { id: 'copos-maiz', r: 'c', max: 80 }, { id: 'miel', r: 'x', g: 10 }],
+    steps: ['Poné {yogur-deslactosado} de yogur deslactosado en un bowl.', 'Sumá {copos-maiz} de copos de maíz sin azúcar justo antes de comer.', 'Terminá con {miel} de miel.'],
+  },
   // ---- Post-entreno (proteína + carbo) ----
+  {
+    title: 'Barra Proteica con Banana',
+    roles: ['post', 'peri', 'snack'],
+    parts: [{ id: 'barra-proteica', r: 'p', step: 23, max: 92, min: 23 }, { id: 'banana', r: 'c', max: 360, min: 60 }],
+    steps: ['Comé {barra-proteica} de barra proteica (revisá que diga "sin lactosa" si sos intolerante).', 'Acompañá con {banana} de banana y un vaso grande de agua.'],
+  },
   {
     title: 'Shake de whey con banana y avena',
     roles: ['post'],
@@ -320,6 +369,25 @@ const COMBOS: Combo[] = [
     steps: ['Escurrí bien {atun} de atún al natural.', 'Tostá {pan} de pan integral.', 'Pisá {palta} de palta con limón y untala en el pan.', 'Armá el sándwich con el atún y {vegetales} de tomate y lechuga.'],
   },
   // ---- Almuerzo / cena ----
+  {
+    title: 'Lentejas Salteadas con Arroz y Vegetales',
+    roles: MAIN,
+    parts: [{ id: 'lentejas', r: 'p', max: 450, min: 150 }, { id: 'arroz', r: 'c', max: 300 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'vegetales', r: 'x', g: 150 }],
+    steps: ['Hervir las lentejas 20-25 min (o usá de lata, enjuagadas). Serví {lentejas}.', 'Hervir el arroz 15-18 min. Serví {arroz} cocido.', 'Salteá {vegetales} de cebolla, morrón y zanahoria en sartén antiadherente 5 min y sumá las lentejas.', 'Serví sobre el arroz con {oliva} de aceite de oliva, comino y pimentón.'],
+  },
+  {
+    title: 'Fideos con Ricota, Espinaca y Nueces',
+    roles: MAIN,
+    parts: [{ id: 'ricota', r: 'p', max: 350, min: 100 }, { id: 'fideos', r: 'c', max: 350 }, { id: 'nueces', r: 'f', max: 25 }, { id: 'vegetales', r: 'x', g: 100 }],
+    steps: ['Hervir los fideos 8-10 min al dente. Serví {fideos} cocidos.', 'Salteá {vegetales} de espinaca 1-2 min en sartén antiadherente.', 'Mezclá los fideos con {ricota} de ricota magra, la espinaca, sal, pimienta y nuez moscada.', 'Terminá con {nueces} de nueces picadas.'],
+  },
+  {
+    title: 'Tofu Grillado con Batata al Horno y Ensalada',
+    special: true,
+    roles: MAIN,
+    parts: [{ id: 'tofu', r: 'p', max: 350, min: 100 }, { id: 'batata', r: 'c', max: 450 }, { id: 'oliva', r: 'f', max: 10 }, { id: 'vegetales', r: 'x', g: 150 }],
+    steps: ['Mandá {batata} de batata en cubos al horno a 200 °C por 30 min con spray antiadherente.', 'Cortá {tofu} de tofu en bastones, marinalo con salsa de soja y grillalo 3-4 min por lado.', 'Armá la ensalada con {vegetales} de verduras y {oliva} de aceite de oliva.'],
+  },
   {
     title: 'Pechuga de pollo a la plancha con arroz yamaní y ensalada',
     roles: MAIN,
@@ -385,7 +453,7 @@ const COMBOS: Combo[] = [
 const T_OF = (it: FoodItem[]) => totals(it);
 
 /** Resuelve las cantidades de una combinación para cerrar los macros del objetivo. */
-function solveCombo(c: Combo, T: Tot): FoodItem[] | null {
+export function solveCombo(c: Combo, T: Tot): FoodItem[] | null {
   if (c.parts.some((p) => !FOOD_BY_ID[p.id])) return null;
   const g: Record<string, number> = {};
   c.parts.forEach((p) => (g[p.id] = p.r === 'x' ? (p.g ?? 0) : 0));
@@ -406,7 +474,7 @@ function solveCombo(c: Combo, T: Tot): FoodItem[] | null {
   return items.length ? items : null;
 }
 
-function comboSteps(c: Combo, items: FoodItem[]) {
+export function comboSteps(c: Combo, items: FoodItem[]) {
   const q: Record<string, string> = {};
   items.forEach((i) => i.foodId && (q[i.foodId] = qtyLabel(i.foodId, i.grams)));
   return [
@@ -415,8 +483,18 @@ function comboSteps(c: Combo, items: FoodItem[]) {
   ];
 }
 
-const err = (cur: Tot, T: Tot) =>
-  Math.abs(cur.p - T.p) / Math.max(T.p, 10) + Math.abs(cur.c - T.c) / Math.max(T.c, 10) + Math.abs(cur.f - T.f) / Math.max(T.f, 5) + Math.abs(cur.kcal - T.kcal) / T.kcal;
+/** Rango de reescalado de una alternativa para igualar las kcal de la Opción 1. */
+const FIT_MIN = 0.6;
+const FIT_MAX = 1.8;
+/**
+ * Error de una alternativa ya llevada a las kcal de la Opción 1: desvíos de P / C / G pesados por su energía
+ * (5 g de grasa de más pesan lo mismo en una colación chica que en una cena) + un término propio de proteína.
+ */
+const err = (cur: Tot, T: Tot) => {
+  const k = cur.kcal > 0 ? Math.min(FIT_MAX, Math.max(FIT_MIN, T.kcal / cur.kcal)) : 1;
+  const p = cur.p * k, c = cur.c * k, f = cur.f * k, kcal = cur.kcal * k;
+  return ((4 * Math.abs(p - T.p) + 4 * Math.abs(c - T.c) + 9 * Math.abs(f - T.f)) / T.kcal) * 1.5 + (Math.abs(p - T.p) / Math.max(T.p, 10)) * 0.5 + Math.abs(kcal - T.kcal) / T.kcal;
+};
 
 interface Cand {
   opt: MealOption;
@@ -437,6 +515,7 @@ const PROT_KEY: [RegExp, string][] = [
   [/picada|bolo[ñn]esa|alb[oó]ndiga|carne/i, 'picada'],
   [/lenteja|garbanzo/i, 'legumbre'],
   [/huevo|claras|tortilla|omelette|revuelto/i, 'huevo'],
+  [/barra|alfajor/i, 'barra'],
   [/whey|proteic/i, 'whey'],
   [/yogur/i, 'yogur'],
   [/ricota|queso|untable/i, 'queso'],
@@ -476,7 +555,8 @@ function dishCands(meal: Meal, T: Tot, allowed?: Set<string> | null): Cand[] {
     // Carbos: acompañamiento si faltan > 10 g.
     const dc = T.c - cur.c;
     if (dc > 10) {
-      const side = (CARB_SIDE[meal.role] ?? CARB_SIDE.lunch).find((id) => FOOD_BY_ID[id]);
+      // Acompañamiento que no repita un ingrediente que el plato ya nombra (nada de "con banana + banana").
+      const side = (CARB_SIDE[meal.role] ?? CARB_SIDE.lunch).find((id) => FOOD_BY_ID[id] && !d.name.toLowerCase().includes(short(FOOD_BY_ID[id].name).toLowerCase().split(' ')[0]));
       if (side) {
         const r = FOOD_BY_ID[side];
         items.push(item(side, Math.min(250, Math.max(10, Math.round(((dc / r.c) * 100) / 5) * 5))));
@@ -491,11 +571,11 @@ function dishCands(meal: Meal, T: Tot, allowed?: Set<string> | null): Cand[] {
       items.push(item(fatId, Math.min(cap, Math.max(5, Math.round(((df / r.f) * 100) / 5) * 5))));
     }
     if (MAIN.includes(meal.role) && !/ensalada|vegetal/i.test(d.name)) items.push(item('vegetales', 150));
-    const portionTxt = portions === 1 ? '' : `${String(portions).replace('.', ',')} × `;
+    const portionTxt = portions === 1 ? '' : ` (${String(portions).replace('.', ',')} porciones)`;
     const sides = items.slice(1).map((i) => lower(short(i.food)));
     out.push({
       opt: {
-        title: `${portionTxt}${short(d.name)}${sides.length ? ` + ${sides.join(' + ')}` : ''}`,
+        title: dishTitleCase(`${short(d.name)}${portionTxt}${sides.length ? ` + ${sides.join(' + ')}` : ''}`),
         items,
         technique: d.technique ?? d.detail ?? autoTechnique(items),
         steps: autoSteps(items),
@@ -507,31 +587,33 @@ function dishCands(meal: Meal, T: Tot, allowed?: Set<string> | null): Cand[] {
   return out;
 }
 
-function comboCands(meal: Meal, T: Tot): Cand[] {
+function comboCands(meal: Meal, T: Tot, special: boolean): Cand[] {
   const out: Cand[] = [];
   for (const c of COMBOS) {
-    if (!c.roles.includes(meal.role)) continue;
+    if (!c.roles.includes(meal.role) || (c.special && !special)) continue;
     const items = solveCombo(c, T);
     if (!items) continue;
-    out.push({ opt: { title: c.title, items, technique: autoTechnique(items), steps: comboSteps(c, items) }, err: err(T_OF(items), T), key: baseKey(items) });
+    out.push({ opt: { title: dishTitleCase(c.title), items, technique: autoTechnique(items), steps: comboSteps(c, items) }, err: err(T_OF(items), T), key: baseKey(items) });
   }
   return out;
 }
 
 /** Tope de error relativo sumado (P + C + G + kcal) para ofrecer una alternativa como equivalente. */
-const MAX_ERR = 0.9;
+const MAX_ERR = 0.7;
 
 /**
  * Alternativas equivalentes en macros (platos del catálogo + combinaciones caseras), ordenadas por precisión y
  * sin repetir la base (plato o proteína principal) de la Opción 1 ni entre ellas.
  * `avoid`: bases a evitar (las de las opciones ya cargadas / de la comida anterior); se relaja si no alcanza.
  */
-export function suggestAlternatives(meal: Meal, allowed?: Set<string> | null, n = 4, avoid: string[] = []): MealOption[] {
+export function suggestAlternatives(meal: Meal, allowed?: Set<string> | null, n = 4, avoid: string[] = [], accept?: (foodId: string) => boolean): MealOption[] {
   const T = totals(meal.items);
   if (T.kcal < 80) return [];
   // Ranking: precisión de macros + leve preferencia por platos simples (menos agregados sueltos).
   const rank = (c: Cand) => c.err + 0.06 * Math.max(0, c.opt.items.length - 3);
-  const all = [...dishCands(meal, T, allowed), ...comboCands(meal, T)].filter((c) => c.err <= MAX_ERR).sort((a, b) => rank(a) - rank(b));
+  const all = [...dishCands(meal, T, allowed), ...comboCands(meal, T, !!accept)]
+    .filter((c) => c.err <= MAX_ERR && slotOk(c.opt.items, meal.role, accept))
+    .sort((a, b) => rank(a) - rank(b));
   const mainKey = baseKey(meal.items);
   const picked: Cand[] = [];
   const keys = new Set([mainKey]);
@@ -541,7 +623,7 @@ export function suggestAlternatives(meal: Meal, allowed?: Set<string> | null, n 
     for (const c of all) {
       if (picked.length >= n) break;
       if (picked.includes(c) || keys.has(c.key) || (!relax && soft.has(c.key))) continue;
-      if (picked.some((p) => p.opt.title === c.opt.title)) continue;
+      if (c.opt.title === meal.title || picked.some((p) => p.opt.title === c.opt.title)) continue;
       picked.push(c);
       keys.add(c.key);
     }
@@ -573,7 +655,7 @@ export function fitAltsToMain(meal: Meal): Meal {
     alts: meal.alts.map((alt) => {
       const a = totals(alt.items).kcal;
       if (!(a > 0) || !(m > 0) || Math.abs(m / a - 1) <= 0.03) return alt;
-      const k = m / a;
+      const k = Math.min(FIT_MAX, Math.max(FIT_MIN, m / a));
       const items = alt.items.map((i) => rescale(i, Math.max(5, Math.round((i.grams * k) / (i.foodId === 'huevo' ? 50 : 5)) * (i.foodId === 'huevo' ? 50 : 5))));
       // Pasos automáticos: se rehacen con las cantidades nuevas (los cargados a mano por el coach se respetan).
       return { ...alt, items, steps: alt.steps?.length && !alt.steps.some((st) => /\d+ g/.test(st)) ? alt.steps : refreshSteps(alt, items) };
@@ -583,7 +665,7 @@ export function fitAltsToMain(meal: Meal): Meal {
 
 /** Recalcula las cantidades dentro de los pasos de una alternativa tras reescalarla o editarla. */
 export function refreshSteps(alt: MealOption, items: FoodItem[]) {
-  const combo = COMBOS.find((c) => c.title === alt.title);
+  const combo = COMBOS.find((c) => dishTitleCase(c.title) === alt.title || c.title === alt.title);
   return combo ? comboSteps(combo, items) : autoSteps(items);
 }
 
@@ -641,7 +723,12 @@ export const ALT_TARGET = MAX_OPTIONS - 1;
  * Completa las opciones 2 a 5 de cada comida (desayuno, almuerzo, pre / post-WOD, merienda y cena). No repite la base
  * de la comida anterior del mismo día en la primera alternativa y respeta la canasta del atleta.
  */
-export function withAlternatives<P extends { meals: Meal[]; anamnesis?: { basket: string[] | null } }>(plan: P, overwrite = false, target = ALT_TARGET): P {
+export function withAlternatives<P extends { meals: Meal[]; anamnesis?: { basket: string[] | null } }>(
+  plan: P,
+  overwrite = false,
+  target = ALT_TARGET,
+  accept?: (foodId: string) => boolean,
+): P {
   const basket = plan.anamnesis?.basket;
   const allowed = basket ? new Set(basket) : null;
   const order = [...plan.meals].sort((a, b) => a.time.localeCompare(b.time));
@@ -650,11 +737,12 @@ export function withAlternatives<P extends { meals: Meal[]; anamnesis?: { basket
   const done = new Map<string, Meal>();
   for (const m of order) {
     const modes: ('on' | 'off')[] = m.day === 'both' ? ['on', 'off'] : [m.day];
-    const have = overwrite ? [] : (m.alts ?? []);
+    // Alternativas guardadas que quedaron fuera de la franja del día (versiones anteriores) se descartan.
+    const have = overwrite ? [] : (m.alts ?? []).filter((a) => slotOk(a.items, m.role, accept));
     const before = modes.flatMap((d) => used[d]);
     let alts = have;
     if (have.length < target) {
-      const extra = suggestAlternatives({ ...m, alts: have }, allowed, target, [...before, ...have.map((a) => baseKey(a.items))]).filter(
+      const extra = suggestAlternatives({ ...m, alts: have }, allowed, target, [...before, ...have.map((a) => baseKey(a.items))], accept).filter(
         (o) => !have.some((h) => h.title === o.title || baseKey(h.items) === baseKey(o.items)),
       );
       alts = [...have, ...extra].slice(0, target);

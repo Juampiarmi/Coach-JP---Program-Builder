@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { brandFoodsToRefs, sanitizeBrandFood, SEED_VERSION, seedFoodDb, type BrandFood } from '@/lib/foodBrandDb';
+import { brandFoodsToRefs, dishTitleCase, modernizeName, sanitizeBrandFood, SEED_VERSION, seedFoodDb, type BrandFood } from '@/lib/foodBrandDb';
 import { registerFoodSource } from '@/lib/foods';
 
 interface FoodDbState {
@@ -70,10 +70,11 @@ export const useFoodDbStore = create<FoodDbState>()(
             const seedItem = byId.get(x.id);
             if (!seedItem) return x;
             // Ítems del seed sin editar por el coach: reciben el detalle / técnica nuevos; los editados sólo completan campos.
-            const untouched = same(x, seedItem) && x.nombre === seedItem.nombre;
+            // Mismo plato aunque venga con el nombre anterior (renombres profesionales / Title Case).
+            const untouched = same(x, seedItem) && dishTitleCase(modernizeName(x.nombre)) === seedItem.nombre;
             return untouched
               ? { ...seedItem, disponible_para_ia: x.disponible_para_ia }
-              : { ...seedItem, ...x, prep_min: x.prep_min || seedItem.prep_min, lactosa: x.lactosa ?? seedItem.lactosa, tecnica: x.tecnica ?? seedItem.tecnica, pasos: x.pasos ?? seedItem.pasos };
+              : { ...seedItem, ...x, prep_min: x.prep_min || seedItem.prep_min, lactosa: x.lactosa ?? seedItem.lactosa, tecnica: x.tecnica ?? seedItem.tecnica, pasos: x.pasos ?? seedItem.pasos, nombre: modernizeName(x.nombre) };
           });
           items = [...items, ...seed.filter((x) => !have.has(x.id))];
         }
