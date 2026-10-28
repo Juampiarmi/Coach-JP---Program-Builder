@@ -6,6 +6,7 @@ import { BODY_FAT_BANDS, EMPTY_SKINFOLDS, hydrationDefaults, jp7BodyFat, PHASE_P
 import { MAX_OIL_PER_MEAL_G, migrateModel } from '@/lib/ai';
 import { balancePlan } from '@/lib/balance';
 import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
+import { compensateSwap, fitAltToMain, suggestAlternatives, withAlternatives } from '@/lib/menuOptions';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { aisGroupA } from '@/lib/evidence';
 import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
@@ -67,6 +68,14 @@ interface PlanState {
   addFood: (mealId: string, foodId: string, grams?: number) => void;
   setItemGrams: (mealId: string, itemId: string, grams: number) => void;
   swapItem: (mealId: string, itemId: string, foodId: string) => void;
+  /** Título / técnica de la Opción 1 o reemplazo / borrado de la Opción 2. */
+  setMealOption: (mealId: string, patch: Partial<Pick<Meal, 'title' | 'technique' | 'alt'>>) => void;
+  /** Genera la Opción 2 equivalente en macros (index = alternativa n del ranking). Devuelve cuántas hay. */
+  generateAlt: (mealId: string, index?: number) => number;
+  /** Opción 2 para todas las comidas principales del plan (overwrite = regenera también las existentes). */
+  generateAllAlts: (overwrite?: boolean) => void;
+  setAltItemGrams: (mealId: string, itemId: string, grams: number) => void;
+  removeAltItem: (mealId: string, itemId: string) => void;
   removeItem: (mealId: string, itemId: string) => void;
   /** Escala carbos y grasas para que cada día cierre al 100 % ± 3 % de sus metas. */
   balanceMeals: () => void;
@@ -300,14 +309,38 @@ export const usePlanStore = create<PlanState>()(
           })),
         })),
 
+      // Swap matrix: el alimento nuevo iguala el macro ancla y la comida compensa grasa / carbos para no descuadrarse.
       swapItem: (mealId, itemId, foodId) =>
         set((s) => ({
-          plan: mapMeal(s.plan, mealId, (m) => ({
-            ...m,
-            items: m.items.map((i) =>
-              i.id === itemId ? { ...itemFromFood(foodId, swapGrams(i, foodId)), id: i.id } : i,
-            ),
-          })),
+          plan: mapMeal(s.plan, mealId, (m) => {
+            const before = m.items.find((i) => i.id === itemId);
+            if (!before) return m;
+            const items = m.items.map((i) => (i.id === itemId ? { ...itemFromFood(foodId, swapGrams(i, foodId)), id: i.id } : i));
+            return fitAltToMain({ ...m, items: compensateSwap(items, itemId, before).items });
+          }),
+        })),
+
+      setMealOption: (mealId, patch) => set((s) => ({ plan: mapMeal(s.plan, mealId, (m) => ({ ...m, ...patch })) })),
+      generateAlt: (mealId, index = 0) => {
+        const s = get();
+        const meal = s.plan.meals.find((m) => m.id === mealId);
+        if (!meal) return 0;
+        const basket = s.plan.anamnesis?.basket;
+        const opts = suggestAlternatives(meal, basket ? new Set(basket) : null, 8);
+        if (!opts.length) return 0;
+        set({ plan: mapMeal(s.plan, mealId, (m) => ({ ...m, alt: opts[index % opts.length] })) });
+        return opts.length;
+      },
+      generateAllAlts: (overwrite = false) => set((s) => ({ plan: touch(withAlternatives(s.plan, overwrite)) })),
+      setAltItemGrams: (mealId, itemId, grams) =>
+        set((s) => ({
+          plan: mapMeal(s.plan, mealId, (m) =>
+            m.alt ? { ...m, alt: { ...m.alt, items: m.alt.items.map((i) => (i.id === itemId ? rescaleItem(i, Math.max(0, grams)) : i)) } } : m,
+          ),
+        })),
+      removeAltItem: (mealId, itemId) =>
+        set((s) => ({
+          plan: mapMeal(s.plan, mealId, (m) => (m.alt ? { ...m, alt: { ...m.alt, items: m.alt.items.filter((i) => i.id !== itemId) } } : m)),
         })),
 
       balanceMeals: () => set((s) => ({ plan: balancePlan(s.plan).plan })),

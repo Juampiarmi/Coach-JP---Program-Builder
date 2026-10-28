@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Database, Download, Pencil, Plus, RotateCcw, Save, Search, Trash2, Upload, X } from 'lucide-react';
+import { ChefHat, Database, Download, Pencil, Plus, RotateCcw, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { fmt0 } from '@/lib/bioenergetics';
-import { BRAND_CATEGORIES, BRAND_CATEGORY_LABEL, portionLabel, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
+import { BRAND_CATEGORIES, BRAND_CATEGORY_LABEL, DISH_CATEGORIES, portionLabel, type BrandCategory, type BrandFood } from '@/lib/foodBrandDb';
+import { FOOD_BY_ID, FOODS, macrosFor } from '@/lib/foods';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { cx, HudButton, inputCls, Label, NumInput, Panel, Toggle } from '../hud/primitives';
 
@@ -31,6 +32,80 @@ function Num({ label, unit, value, onChange }: { label: string; unit: string; va
 }
 
 /** Modal de alta / edición con la tabla nutricional por porción base. */
+/** Plato / preparación nuevo del coach (receta con ingredientes). */
+export const emptyDish = (): BrandFood => ({
+  ...empty(),
+  id: `db-receta-${Date.now().toString(36)}`,
+  categoria: 'minuta',
+  es_marca_local: false,
+  porcion_base: { cantidad: 1, unidad: 'porción', gramos: 0 },
+  ingredientes: [],
+  prep_min: 20,
+});
+
+type Ingr = NonNullable<BrandFood['ingredientes']>[number];
+
+/** Totales de una receta a partir de sus ingredientes (base del Builder / Food & Brand DB). */
+function recipeTotals(list: Ingr[]) {
+  return list.reduce(
+    (a, x) => {
+      const m = x.foodId && FOOD_BY_ID[x.foodId] ? macrosFor(x.foodId, x.gramos)! : { p: 0, c: 0, f: 0, leucine: 0 };
+      return { g: a.g + x.gramos, p: a.p + m.p, c: a.c + m.c, f: a.f + m.f, l: a.l + m.leucine };
+    },
+    { g: 0, p: 0, c: 0, f: 0, l: 0 },
+  );
+}
+
+/** Editor de receta: ingredientes con gramos → macros por porción calculados solos. */
+function RecipeEditor({ list, onChange }: { list: Ingr[]; onChange: (l: Ingr[]) => void }) {
+  const options = FOODS.filter((f) => f.group !== 'plato').sort((a, b) => a.name.localeCompare(b.name));
+  const t = recipeTotals(list);
+  return (
+    <div className="mt-3 rounded-lg border border-cyan-hud/25 bg-cyan-hud/[0.04] p-3">
+      <div className="font-mono text-[10px] font-bold tracking-[0.14em] text-cyan-hud">[ RECETA · INGREDIENTES POR PORCIÓN ]</div>
+      <div className="mt-2 space-y-1.5">
+        {list.map((x, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <select
+              value={x.foodId ?? ''}
+              aria-label={`Ingrediente ${i + 1}`}
+              onChange={(e) => {
+                const ref = FOOD_BY_ID[e.target.value];
+                onChange(list.map((y, j) => (j === i ? { ...y, foodId: e.target.value, nombre: ref?.name ?? y.nombre } : y)));
+              }}
+              className={cx(inputCls, 'min-w-0 flex-1 py-1.5 text-xs')}
+            >
+              <option value="">— elegí un ingrediente —</option>
+              {options.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <div className="relative w-24">
+              <NumInput value={x.gramos} min={0} max={3000} decimals={false} ariaLabel={`Gramos del ingrediente ${i + 1}`} onChange={(gramos) => onChange(list.map((y, j) => (j === i ? { ...y, gramos } : y)))} className="py-1.5 pr-7 text-right" />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 font-mono text-[10px] text-mute">g</span>
+            </div>
+            <button type="button" onClick={() => onChange(list.filter((_, j) => j !== i))} className="p-1 text-mute hover:text-fire" aria-label={`Quitar ingrediente ${i + 1}`}>
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => onChange([...list, { nombre: '', gramos: 100 }])}
+        className="mt-2 flex items-center gap-1 rounded-md border border-line px-2.5 py-1 font-mono text-[10px] text-steel hover:text-ink"
+      >
+        <Plus className="h-3.5 w-3.5" /> Ingrediente
+      </button>
+      <p className="tnum mt-2 font-mono text-[10.5px] text-steel">
+        Porción: {fmt0(t.g)} g · {fmt0(t.p * 4 + t.c * 4 + t.f * 9)} kcal · P {fmt0(t.p)} · C {fmt0(t.c)} · G {fmt0(t.f)} · Leu {t.l.toFixed(1)}
+      </p>
+    </div>
+  );
+}
+
 function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => void }) {
   const upsert = useFoodDbStore((s) => s.upsert);
   const [d, setD] = useState<BrandFood>(initial);
@@ -38,7 +113,10 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
   const atwater = m.p * 4 + m.c * 4 + m.f * 9;
   const setM = (patch: Partial<BrandFood['macros_por_porcion']>) => setD((x) => ({ ...x, macros_por_porcion: { ...x.macros_por_porcion, ...patch } }));
   const setP = (patch: Partial<BrandFood['porcion_base']>) => setD((x) => ({ ...x, porcion_base: { ...x.porcion_base, ...patch } }));
-  const valid = d.nombre.trim().length >= 2 && d.porcion_base.gramos > 0;
+  const isDish = DISH_CATEGORIES.includes(d.categoria);
+  const ingr = d.ingredientes ?? [];
+  const hasRecipe = isDish && ingr.some((x) => x.foodId && x.gramos > 0);
+  const valid = d.nombre.trim().length >= 2 && (hasRecipe || d.porcion_base.gramos > 0);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -56,7 +134,7 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
         className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-t-2xl border border-cyan-hud/25 bg-panel p-5 shadow-cyan sm:rounded-2xl"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="font-mono text-[10px] font-bold tracking-[0.18em] text-cyan-hud">[ + AGREGAR NUEVA MARCA / ALIMENTO ]</div>
+          <div className="font-mono text-[10px] font-bold tracking-[0.18em] text-cyan-hud">{isDish ? '[ ➕ PLATO / PREPARACIÓN ]' : '[ + AGREGAR NUEVA MARCA / ALIMENTO ]'}</div>
           <button onClick={onClose} className="rounded-md p-1 text-steel hover:text-ink" aria-label="Cerrar">
             <X className="h-4 w-4" />
           </button>
@@ -97,6 +175,15 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
           </label>
           <Num label="Peso porción" unit="g" value={d.porcion_base.gramos} onChange={(gramos) => setP({ gramos })} />
         </div>
+        {isDish && (
+          <>
+            <RecipeEditor list={ingr} onChange={(ingredientes) => setD({ ...d, ingredientes })} />
+            <label className="mt-3 block">
+              <Label>Técnica de cocción rápida y condimentos</Label>
+              <textarea rows={2} value={d.tecnica ?? ''} onChange={(e) => setD({ ...d, tecnica: e.target.value || undefined })} placeholder="Ej. al horno 200 °C 25 min con spray de oliva, orégano y limón" className={inputCls} />
+            </label>
+          </>
+        )}
         <div className="mt-3">
           <Label>Macros por porción ({portionLabel(d)})</Label>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
@@ -132,7 +219,20 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
           <HudButton
             disabled={!valid}
             onClick={() => {
-              upsert({ ...d, nombre: d.nombre.trim(), marca: d.marca.trim() });
+              // Receta: la porción base y los macros salen de la suma de ingredientes.
+              const rec = hasRecipe ? recipeTotals(ingr.filter((x) => x.foodId && x.gramos > 0)) : null;
+              upsert({
+                ...d,
+                nombre: d.nombre.trim(),
+                marca: d.marca.trim(),
+                ingredientes: hasRecipe ? ingr.filter((x) => x.foodId && x.gramos > 0) : d.ingredientes?.length ? d.ingredientes : undefined,
+                ...(rec
+                  ? {
+                      porcion_base: { cantidad: 1, unidad: d.porcion_base.unidad || 'porción', gramos: Math.round(rec.g) },
+                      macros_por_porcion: { kcal: Math.round(rec.p * 4 + rec.c * 4 + rec.f * 9), p: Math.round(rec.p * 10) / 10, c: Math.round(rec.c * 10) / 10, f: Math.round(rec.f * 10) / 10, leucina: Math.round(rec.l * 100) / 100 },
+                    }
+                  : {}),
+              });
               onClose();
             }}
           >
@@ -141,6 +241,26 @@ function FoodModal({ initial, onClose }: { initial: BrandFood; onClose: () => vo
         </div>
       </div>
     </div>
+  );
+}
+
+/** Botón reutilizable (Ingestas & leucina): abre el editor de recetas del coach. */
+export function NewDishButton({ className }: { className?: string }) {
+  const [open, setOpen] = useState<BrandFood | null>(null);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(emptyDish())}
+        className={cx(
+          'flex items-center gap-1.5 rounded-md border border-cyan-hud/40 px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.1em] text-cyan-hud transition hover:border-cyan-hud hover:bg-cyan-hud/10',
+          className,
+        )}
+      >
+        <ChefHat className="h-3.5 w-3.5" /> [ ➕ AGREGAR NUEVO PLATO / PREPARACIÓN ]
+      </button>
+      {open && <FoodModal initial={open} onClose={() => setOpen(null)} />}
+    </>
   );
 }
 
@@ -200,6 +320,9 @@ export function FoodBrandDatabase() {
         <div className="mt-3 flex flex-wrap gap-2">
           <HudButton onClick={() => setEditing(empty())}>
             <Plus className="h-4 w-4" /> [ + AGREGAR NUEVA MARCA / ALIMENTO ]
+          </HudButton>
+          <HudButton tone="cyan" onClick={() => setEditing(emptyDish())}>
+            <ChefHat className="h-4 w-4" /> [ ➕ AGREGAR NUEVO PLATO / PREPARACIÓN ]
           </HudButton>
           <HudButton tone="cyan" variant="ghost" onClick={exportJson}>
             <Download className="h-4 w-4" /> [ 📤 EXPORTAR FOOD DB JSON ]

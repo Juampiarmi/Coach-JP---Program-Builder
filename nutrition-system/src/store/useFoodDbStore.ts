@@ -52,7 +52,7 @@ export const useFoodDbStore = create<FoodDbState>()(
     }),
     {
       name: 'coachjp-food-db',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ items: s.items, seedVersion: s.seedVersion }),
       // La DB guardada del coach recibe los ítems nuevos del catálogo (platos, quiosco…) sin perder sus ediciones.
@@ -65,7 +65,16 @@ export const useFoodDbStore = create<FoodDbState>()(
           const seed = seedFoodDb();
           const byId = new Map(seed.map((x) => [x.id, x]));
           // Completa también los campos nuevos (preparación, lactosa) de los ítems del seed original.
-          items = items.map((x) => (byId.has(x.id) ? { ...byId.get(x.id)!, ...x, prep_min: x.prep_min || byId.get(x.id)!.prep_min, lactosa: byId.get(x.id)!.lactosa } : x));
+          const same = (a: BrandFood, b: BrandFood) => ['kcal', 'p', 'c', 'f'].every((k) => a.macros_por_porcion[k as 'p'] === b.macros_por_porcion[k as 'p']);
+          items = items.map((x) => {
+            const seedItem = byId.get(x.id);
+            if (!seedItem) return x;
+            // Ítems del seed sin editar por el coach: reciben el detalle / técnica nuevos; los editados sólo completan campos.
+            const untouched = same(x, seedItem) && x.nombre === seedItem.nombre;
+            return untouched
+              ? { ...seedItem, disponible_para_ia: x.disponible_para_ia }
+              : { ...seedItem, ...x, prep_min: x.prep_min || seedItem.prep_min, lactosa: x.lactosa ?? seedItem.lactosa, tecnica: x.tecnica ?? seedItem.tecnica };
+          });
           items = [...items, ...seed.filter((x) => !have.has(x.id))];
         }
         return { ...current, ...sync(items), seedVersion: SEED_VERSION };

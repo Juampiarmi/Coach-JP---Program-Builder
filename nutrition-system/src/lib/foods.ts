@@ -34,6 +34,14 @@ export interface FoodRef {
   custom?: boolean;
   /** false = la IA no puede mapear sus platos a este producto (toggle «disponible para IA» de la Food & Brand DB). */
   ai?: boolean;
+  /** Plato / receta: categoría de la Food & Brand DB (desayuno, minuta, tarta…). */
+  dishCat?: string;
+  flex?: boolean;
+  /** Receta: ingredientes por porción base (para el desglose táctico) y técnica de cocción. */
+  recipe?: { name: string; grams: number }[];
+  technique?: string;
+  /** Detalle legible de la porción (cuando no hay receta estructurada). */
+  detail?: string;
 }
 
 export type MacroPrincipal = 'protein' | 'carbs' | 'fat';

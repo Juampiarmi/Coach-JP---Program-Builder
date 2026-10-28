@@ -324,6 +324,29 @@ body::before{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area
 .scan-it .fd .vh{display:block;font-style:normal;font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--cyan)}
 .story-cv{display:block;width:100%;max-width:300px;height:auto;margin:10px auto 0;border-radius:12px;border:1px solid var(--line2)}
 .item.salva{border-left-color:var(--cyan)}
+/* ---- Desplegables oscuros (sin blanco sobre blanco) ---- */
+select{color-scheme:dark}
+select option,select optgroup{background-color:#0f172a;color:#f8fafc}
+select optgroup{color:#38bdf8}
+select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8}
+/* ---- Opciones culinarias ---- */
+.opt-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:0 14px 8px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.opt-tabs button{padding:7px;border-radius:7px;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--micro)}
+.opt-tabs button.on{color:var(--title);background:rgba(249,115,22,.12);box-shadow:inset 0 0 0 1px var(--fire)}
+.dish{padding:0 14px 10px}
+.dish .dtag{display:block;font-family:"JetBrains Mono",monospace;font-size:8.5px;letter-spacing:.14em;color:var(--fire);margin-bottom:2px}
+.dish b{display:block;font-size:14.5px;line-height:1.3;color:var(--title);font-weight:600}
+.item .fd s.adj{color:var(--cyan)}
+.desglose{border-top:1px solid var(--line);padding:0 14px}
+.desglose summary{list-style:none;cursor:pointer;padding:10px 0;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--cyan)}
+.desglose summary::-webkit-details-marker{display:none}
+.desglose summary:after{content:" ▾"}
+.desglose[open] summary:after{content:" ▴"}
+.desglose ul{list-style:none;display:grid;gap:5px;padding-bottom:6px}
+.desglose li{font-size:12.5px;color:var(--text);line-height:1.4}
+.desglose li b{color:var(--title);font-weight:600}
+.desglose p{font-size:12.5px;color:var(--text);padding-bottom:10px;line-height:1.45}
+.desglose p b{color:var(--title)}
 `;
 
 export default styles;

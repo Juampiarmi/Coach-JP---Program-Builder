@@ -63,6 +63,7 @@ const runtime = String.raw`
     dirOpen: false,
     extras: store.get('extras:' + today, {}),
     free: store.get('free:' + today, {}),
+    opt: store.get('opt:' + today, {}),
     fridge: { meal: '', ing: ['', '', ''], result: null },
     outScene: null,
     outMeal: '',
@@ -155,9 +156,37 @@ const runtime = String.raw`
     return { id: 'free-' + m.id, food: 'Comida libre controlada · ' + lbl, grams: 0, p: FREE_MEAL.p, c: FREE_MEAL.c, f: FREE_MEAL.f, leucine: FREE_MEAL.p * 0.08, free: true };
   }
 
-  function mealsFor(mode, extras, free) {
+  // Swap matrix: el alimento nuevo iguala el macro ancla y la grasa / el almidón de la misma comida compensan el resto.
+  function compensateResolved(orig, res) {
+    var out = res.slice();
+    var tweak = function (macro, delta, groups, tol, skip) {
+      if (Math.abs(delta) <= tol) return;
+      var best = -1;
+      out.forEach(function (it, i) {
+        var ref = it.foodId && D.foods[it.foodId];
+        if (i === skip || it.swappedFrom || !ref || groups.indexOf(ref.group) < 0 || !(ref[macro] > 0)) return;
+        if (best < 0 || it[macro] > out[best][macro]) best = i;
+      });
+      if (best < 0) return;
+      var host = out[best], ref = D.foods[host.foodId];
+      var g = Math.max(0, Math.round((host.grams - delta / (ref[macro] / 100)) / 5) * 5);
+      if (g === host.grams) return;
+      var k = g / 100;
+      out[best] = { id: host.id, foodId: host.foodId, food: host.food, grams: g, p: ref.p * k, c: ref.c * k, f: ref.f * k, leucine: ref.leucine * k, adjusted: host.grams };
+    };
+    res.forEach(function (it, i) {
+      if (!it.swappedFrom) return;
+      tweak('f', it.f - orig[i].f, ['fat'], 2, i);
+      tweak('c', it.c - orig[i].c, ['starch', 'cereal', 'fruit', 'sport-carb'], 5, i);
+    });
+    // Lo que quedó en 0 g por compensación se sigue mostrando ("Ajustado por SWAP: 8 → 0 g").
+    return out.filter(function (it) { return it.grams > 0 || it.adjusted; });
+  }
+
+  function mealsFor(mode, extras, free, opt) {
     extras = extras || S.extras;
     free = free || S.free;
+    opt = opt || S.opt;
     var base = D.meals.filter(function (m) { return m.day === 'both' || m.day === mode; });
     var out = extras.__out;
     if (out && out.length) base = base.concat([{ id: '__out', name: 'Fuera del plan · análisis IA', time: out[0].at || '12:00', day: mode, role: 'snack', mps: false, items: [] }]);
@@ -166,9 +195,12 @@ const runtime = String.raw`
       .sort(function (a, b) { return timeToMinutes(a.time) - timeToMinutes(b.time); })
       .map(function (m) {
         var fr = free[m.id];
-        var items = fr && typeof fr === 'object' && fr.items ? fr.items : fr ? [freeItem(m, fr)] : m.items.map(resolveItem).concat(extras[m.id] || []);
+        // Opción culinaria elegida por el atleta (2 = alternativa equivalente).
+        var useAlt = opt[m.id] === 2 && m.alt && m.alt.items && m.alt.items.length;
+        var src = useAlt ? m.alt.items : m.items;
+        var items = fr && typeof fr === 'object' && fr.items ? fr.items : fr ? [freeItem(m, fr)] : compensateResolved(src, src.map(resolveItem)).concat(extras[m.id] || []);
         var t = items.reduce(function (a, i) { return { p: a.p + i.p, c: a.c + i.c, f: a.f + i.f, l: a.l + i.leucine }; }, { p: 0, c: 0, f: 0, l: 0 });
-        return { m: m, items: items, t: t, kcal: t.p * 4 + t.c * 4 + t.f * 9 };
+        return { m: m, items: items, src: src, opt: useAlt ? 2 : 1, t: t, kcal: t.p * 4 + t.c * 4 + t.f * 9 };
       });
   }
 
@@ -179,7 +211,7 @@ const runtime = String.raw`
     var cur = iso === S.date;
     var checks = cur ? S.checks : store.get('checks:' + iso, {});
     var mode = cur ? S.mode : modeFor(iso);
-    var list = mealsFor(mode, cur ? S.extras : store.get('extras:' + iso, {}), cur ? S.free : store.get('free:' + iso, {}));
+    var list = mealsFor(mode, cur ? S.extras : store.get('extras:' + iso, {}), cur ? S.free : store.get('free:' + iso, {}), cur ? S.opt : store.get('opt:' + iso, {}));
     var tgt = D.targets[mode];
     var done = 0, k = 0;
     list.forEach(function (x) { if (checks[x.m.id]) { done++; k += x.kcal; } });
@@ -218,6 +250,7 @@ const runtime = String.raw`
     S.water = store.get('water:' + iso, 0);
     S.extras = store.get('extras:' + iso, {});
     S.free = store.get('free:' + iso, {});
+    S.opt = store.get('opt:' + iso, {});
     if (!D.preview) S.mode = modeFor(iso);
   }
 
@@ -531,7 +564,7 @@ const runtime = String.raw`
     if (S.panel) return renderPanel(bg, sh);
     if (!S.sheet) { bg.className = 'sheet-bg'; sh.className = 'sheet'; return; }
     var meal = D.meals.filter(function (m) { return m.id === S.sheet.meal; })[0];
-    var orig = meal && meal.items.filter(function (i) { return i.id === S.sheet.item; })[0];
+    var orig = meal && findItem(meal, S.sheet.item);
     if (!orig) { S.sheet = null; return renderSheet(); }
     var src = srcOf(orig);
     if (!src) { S.sheet = null; return renderSheet(); }
@@ -549,6 +582,28 @@ const runtime = String.raw`
     open(bg, sh, h);
   }
 
+
+  function findItem(meal, id) {
+    var all = meal.items.concat(meal.alt && meal.alt.items ? meal.alt.items : []);
+    return all.filter(function (i) { return i.id === id; })[0];
+  }
+
+  // Desglose táctico: ingredientes de los platos (receta escalada a la porción), técnica y condimentos.
+  function desglose(m, x) {
+    var tech = x.opt === 2 ? m.alt.technique : m.technique;
+    var rows = '';
+    x.items.forEach(function (it) {
+      var ref = it.foodId && D.foods[it.foodId];
+      if (!ref || !(ref.recipe || ref.detail)) return;
+      if (ref.recipe && ref.recipe.length) {
+        var base = (ref.unit && ref.unit.grams) || ref.recipe.reduce(function (a, r) { return a + r.grams; }, 0) || it.grams;
+        var k = it.grams / base;
+        rows += '<li><b>' + esc(ref.name) + '</b>: ' + ref.recipe.map(function (r) { return esc(r.name) + ' ' + n0(r.grams * k) + ' g'; }).join(' · ') + '</li>';
+      } else rows += '<li><b>' + esc(ref.name) + '</b>: ' + esc(ref.detail) + (ref.unit && it.grams !== ref.unit.grams ? ' (porción base ' + n0(ref.unit.grams) + ' g, la tuya ' + n0(it.grams) + ' g)' : '') + '</li>';
+    });
+    if (!tech && !rows) return '';
+    return '<details class="desglose"><summary>[ DESGLOSE TÁCTICO & INGREDIENTES ]</summary>' + (rows ? '<ul>' + rows + '</ul>' : '') + (tech ? '<p><b>Técnica:</b> ' + esc(tech) + '</p>' : '') + '</details>';
+  }
 
   // =================== HERRAMIENTAS TÁCTICAS ===================
 
@@ -933,6 +988,11 @@ const runtime = String.raw`
       var done = !!S.checks[m.id];
       h += '<section class="card meal' + (done ? ' done' : '') + '">';
       h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(mealName(m, mode)) + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar comida">' + CHECK + '</button></div>';
+      if (m.title || m.alt) {
+        if (m.alt) h += '<div class="opt-tabs"><button data-opt="' + esc(m.id) + '|1" class="' + (x.opt === 1 ? 'on' : '') + '">[ OPCIÓN 1 ]</button><button data-opt="' + esc(m.id) + '|2" class="' + (x.opt === 2 ? 'on' : '') + '">[ OPCIÓN 2 ]</button></div>';
+        var otitle = x.opt === 2 ? m.alt.title : m.title;
+        if (otitle) h += '<div class="dish"><span class="dtag">' + (x.opt === 2 ? '[ OPCIÓN 2 · ALTERNATIVA ]' : '[ OPCIÓN 1 · SUGERIDA ]') + '</span><b>' + esc(otitle) + '</b></div>';
+      }
       h += '<div class="items">';
       x.items.forEach(function (it, idx) {
         var hint = unitHintFor(it.foodId, it.grams);
@@ -948,10 +1008,11 @@ const runtime = String.raw`
           h += '<div class="item extra"><span class="g">' + n0(it.grams) + ' g</span><span class="fd">' + esc(it.food) + '<s class="ia">Agregado por análisis IA · ' + n0(it.p) + ' P · ' + n0(it.c) + ' C · ' + n0(it.f) + ' G</s></span><button class="rm" data-rmextra="' + esc(m.id) + '|' + esc(it.id) + '" aria-label="Quitar">✕</button></div>';
           return;
         }
-        var canSwap = !!it.swappedFrom || swapOptions(m.items[idx]).length > 0;
-        h += '<button class="item" ' + (canSwap ? 'data-swap="' + m.id + '|' + it.id + '"' : 'disabled') + '><span class="g">' + n0(it.grams) + ' g' + (hint ? '<em>' + hint + '</em>' : '') + '</span><span class="fd">' + esc(it.food) + (it.swappedFrom ? '<s>Reemplaza a: ' + esc(it.swappedFrom) + '</s>' : '') + '</span>' + (canSwap ? '<span class="sw">SWAP</span>' : '') + '</button>';
+        var canSwap = !it.adjusted && (!!it.swappedFrom || (x.src[idx] && x.src[idx].id === it.id && swapOptions(x.src[idx]).length > 0));
+        h += '<button class="item" ' + (canSwap ? 'data-swap="' + m.id + '|' + it.id + '"' : 'disabled') + '><span class="g">' + n0(it.grams) + ' g' + (hint ? '<em>' + hint + '</em>' : '') + '</span><span class="fd">' + esc(it.food) + (it.swappedFrom ? '<s>Reemplaza a: ' + esc(it.swappedFrom) + '</s>' : '') + (it.adjusted ? '<s class="adj">Ajustado por SWAP: ' + n0(it.adjusted) + ' → ' + n0(it.grams) + ' g (mismos macros)</s>' : '') + '</span>' + (canSwap ? '<span class="sw">SWAP</span>' : '') + '</button>';
       });
       h += '</div>';
+      h += desglose(m, x);
       // Umbral mTOR sólo en comidas principales; el resto son ingestas auxiliares (sin sugerir huevo o whey).
       if (!m.mps) h += '<div class="leu na"><span class="dot"></span>' + (isOffPeri(m, mode) || (mode === 'off' && m.role !== 'snack') ? '[ MODULACIÓN GLUCÉMICA / SACIEDAD ]' : m.role === 'peri' ? '[ BLOQUE GLUCOLÍTICO · ENERGÍA PARA ENTRENAR ]' : m.role === 'post' ? '[ RECUPERACIÓN POST-WOD · INGESTA AUXILIAR ]' : '[ INGESTA AUXILIAR / MODULACIÓN GLUCÉMICA ]') + '</div>';
       else if (x.t.l >= D.threshold) h += '<div class="leu ok"><span class="dot"></span>[ mTOR / MPS: ACTIVADO • ' + n1(x.t.l) + ' g LEUCINA ]</div>';
@@ -1167,7 +1228,7 @@ const runtime = String.raw`
 
   // ---------- Eventos ----------
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-unfree],[data-washop],[data-fridgeuse],[data-batchcopy],[data-batchwa],[data-storyshare],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-unfree],[data-washop],[data-fridgeuse],[data-batchcopy],[data-batchwa],[data-storyshare],[data-opt],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
     if (ds.close) return closeSheet();
@@ -1185,6 +1246,14 @@ const runtime = String.raw`
     if (ds.unfree) {
       delete S.free[ds.unfree];
       store.set('free:' + S.date, S.free);
+      return render();
+    }
+    if (ds.opt) {
+      var po = ds.opt.split('|');
+      if (po[1] === '2') S.opt[po[0]] = 2;
+      else delete S.opt[po[0]];
+      store.set('opt:' + S.date, S.opt);
+      haptic();
       return render();
     }
     if (ds.fridgeuse) return useFridge();
@@ -1252,7 +1321,7 @@ const runtime = String.raw`
       renderSheet();
     } else if (ds.pick) {
       var meal = D.meals.filter(function (m) { return m.id === S.sheet.meal; })[0];
-      var orig = meal.items.filter(function (it) { return it.id === S.sheet.item; })[0];
+      var orig = findItem(meal, S.sheet.item);
       if (ds.pick === '__orig' || ds.pick === orig.foodId) delete S.swaps[orig.id];
       else S.swaps[orig.id] = ds.pick;
       store.set('swaps', S.swaps);

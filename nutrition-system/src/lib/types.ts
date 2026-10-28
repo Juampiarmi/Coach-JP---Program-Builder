@@ -68,13 +68,27 @@ export interface FoodItem {
   macroPrincipal?: 'protein' | 'carbs' | 'fat';
 }
 
+/** Opción culinaria de una comida: plato real con su desglose de ingredientes y técnica. */
+export interface MealOption {
+  /** Nombre del plato (ej. "Bife de cuadril a la plancha con arroz primavera y ensalada verde"). */
+  title: string;
+  items: FoodItem[];
+  /** Técnica de cocción rápida y condimentos sugeridos. */
+  technique?: string;
+}
+
 export interface Meal {
   id: string;
   name: string;
   time: string;
   day: MealDay;
   role: MealRole;
+  /** Opción 1 · sugerida: los items son su desglose de ingredientes. */
   items: FoodItem[];
+  title?: string;
+  technique?: string;
+  /** Opción 2 · alternativa equivalente en macros. */
+  alt?: MealOption;
 }
 
 export interface Supplement {

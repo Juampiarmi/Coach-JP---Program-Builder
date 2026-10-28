@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, Cpu, Eye, EyeOff, KeyRound, Loader2, Radio, RefreshCw, ShieldAlert, Trash2, Zap } from 'lucide-react';
 import { compileWithAi, MODEL_OPTIONS, pingProvider, planFromAi, SYSTEM_PROMPT, SYSTEM_PROMPT_EXTENSION, type PingResult } from '@/lib/ai';
 import { balancePlan } from '@/lib/balance';
+import { withAlternatives } from '@/lib/menuOptions';
 import { anamnesisToNotes, buildPromptContext } from '@/lib/promptBuilder';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
 import { fmt0 } from '@/lib/bioenergetics';
@@ -165,7 +166,9 @@ export function IntakeTab() {
       // La IA no siempre cierra la suma de sus comidas: se escalan carbos y grasas hasta el 100 % ± 3 % de cada día.
       current = 'balance';
       mark('balance', { status: 'running' });
-      const { plan: next, report } = balancePlan(parsed);
+      const { plan: balanced, report } = balancePlan(parsed);
+      // Opción 2 culinaria equivalente para las comidas principales que la IA no haya propuesto.
+      const next = withAlternatives(balanced);
       await sleep(180);
       mark('balance', {
         status: 'ok',

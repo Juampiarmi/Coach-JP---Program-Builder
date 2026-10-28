@@ -1,15 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { CopyPlus, ExternalLink, Pill, Plus, Trash2, Utensils, X } from 'lucide-react';
+import { ChevronDown, CopyPlus, ExternalLink, Pill, Plus, RefreshCw, Trash2, Utensils, X, Zap } from 'lucide-react';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
-import { alternativesFor, equivalentGrams, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
+import { alternativesFor, equivalentGrams, macrosFor, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
 import type { DayMode, FoodItem, Meal, MealDay, MealRole } from '@/lib/types';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
+import { autoTechnique, autoTitle, compensateSwap, optionTotals } from '@/lib/menuOptions';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
 import { BalanceBanner } from './BalanceBanner';
+import { NewDishButton } from './FoodBrandDatabase';
 import { dayAnchors, timeToMinutes } from '@/lib/schedule';
 import { CustomFoodsBar } from './CustomFoods';
 import { FoodScanner } from './FoodScanner';
@@ -140,13 +142,32 @@ function Equivalences({ mealId, item }: { mealId: string; item: FoodItem }) {
     ? alternativesFor(ref).map((f) => ({ food: f, grams: equivalentGrams(ref.id, item.grams, f.id) }))
     : freeEquivalents(item);
   if (!alts.length) return <span className="text-xs text-steel/70">{ref ? 'Única opción de su grupo' : 'Sin macros para equivaler'}</span>;
+  // Vista previa de la compensación (Swap Matrix): qué ajusta el resto de la comida para no descuadrarse.
+  const meal = usePlanStore.getState().plan.meals.find((m) => m.id === mealId);
+  const preview = (toId: string, grams: number) => {
+    if (!meal) return [];
+    const ref2 = FOOD_BY_ID[toId];
+    const swapped = { ...item, foodId: toId, food: ref2.name, grams, ...macrosFor(toId, grams)! };
+    return compensateSwap(meal.items.map((i) => (i.id === item.id ? swapped : i)), item.id, item).adjust;
+  };
   return (
     <div className="flex flex-wrap gap-1.5">
-      {alts.map(({ food, grams }) => (
-        <button key={food.id} type="button" onClick={() => swapItem(mealId, item.id, food.id)} title="Reemplazar por esta opción" className={chipCls}>
-          o <b className="font-semibold text-ink/90">{grams} g</b> {shortName(food.name)}
-        </button>
-      ))}
+      {alts.map(({ food, grams }) => {
+        const adj = preview(food.id, grams);
+        const note = adj.map((a) => `${shortName(a.name)} ${a.from}→${a.to} g`).join(' · ');
+        return (
+          <button
+            key={food.id}
+            type="button"
+            onClick={() => swapItem(mealId, item.id, food.id)}
+            title={note ? `Reemplazar · compensa: ${note}` : 'Reemplazar por esta opción (mismos macros)'}
+            className={chipCls}
+          >
+            o <b className="font-semibold text-ink/90">{grams} g</b> {shortName(food.name)}
+            {adj.length > 0 && <span className="ml-1 font-mono text-[9px] text-cyan-hud">↺ {note}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -288,6 +309,7 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         </span>
       </div>
 
+      <OptionHeader meal={meal} />
       <div className="mt-3 hidden grid-cols-[minmax(0,1.2fr)_minmax(150px,auto)_minmax(0,1.3fr)_auto] gap-x-3 pb-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-steel sm:grid">
         <span>Alimento</span>
         <span>Porción sugerida</span>
@@ -304,7 +326,139 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
       <div className="mt-3">
         <FoodPicker onPick={(id) => addFood(meal.id, id, FOOD_BY_ID[id].unit?.grams ?? 100)} />
       </div>
+      <TechniqueBox meal={meal} />
+      <AltOption meal={meal} />
     </Panel>
+  );
+}
+
+const optTag = 'rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-[0.12em]';
+const pctTxt = (a: number, b: number) => (b > 0 ? `${a >= b ? '+' : ''}${fmt0((a / b - 1) * 100)} %` : '—');
+
+/** Opción 1 · sugerida: nombre del plato real (editable; vacío = automático desde los ingredientes). */
+function OptionHeader({ meal }: { meal: Meal }) {
+  const setMealOption = usePlanStore((s) => s.setMealOption);
+  const auto = autoTitle(meal.items);
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-cyan-hud/20 bg-cyan-hud/[0.04] px-3 py-2">
+      <span className={cx(optTag, 'border-cyan-hud/40 text-cyan-hud')}>[ OPCIÓN 1 · SUGERIDA ]</span>
+      <input
+        value={meal.title ?? ''}
+        onChange={(e) => setMealOption(meal.id, { title: e.target.value || undefined })}
+        placeholder={auto}
+        aria-label="Nombre del plato · Opción 1"
+        className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-ink outline-none placeholder:text-ink/70"
+      />
+      {!meal.title && <span className="font-mono text-[9px] text-mute">AUTO</span>}
+    </div>
+  );
+}
+
+/** Desglose táctico: técnica de cocción rápida y condimentos (editable, con sugerencia automática). */
+function TechniqueBox({ meal }: { meal: Meal }) {
+  const setMealOption = usePlanStore((s) => s.setMealOption);
+  const [open, setOpen] = useState(false);
+  const auto = autoTechnique(meal.items);
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-carbon">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
+        <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-steel">[ DESGLOSE TÁCTICO · TÉCNICA Y CONDIMENTOS ]</span>
+        <span className="min-w-0 flex-1 truncate text-[11.5px] text-mute">{meal.technique || auto}</span>
+        <ChevronDown className={cx('h-4 w-4 flex-none text-mute transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="border-t border-line p-3">
+          <textarea
+            rows={2}
+            value={meal.technique ?? ''}
+            placeholder={auto}
+            onChange={(e) => setMealOption(meal.id, { technique: e.target.value || undefined })}
+            className="w-full resize-y rounded-md border border-line bg-panel2 p-2 text-[12.5px] text-ink outline-none placeholder:text-steel/70 focus:border-cyan-hud/50"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Opción 2 · alternativa equivalente en macros (plato del catálogo + acompañamientos). */
+function AltOption({ meal }: { meal: Meal }) {
+  const generateAlt = usePlanStore((s) => s.generateAlt);
+  const setMealOption = usePlanStore((s) => s.setMealOption);
+  const setAltItemGrams = usePlanStore((s) => s.setAltItemGrams);
+  const removeAltItem = usePlanStore((s) => s.removeAltItem);
+  const [idx, setIdx] = useState(0);
+  const [none, setNone] = useState(false);
+  const alt = meal.alt;
+  const main = optionTotals(meal.items);
+
+  if (!alt)
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setNone(!generateAlt(meal.id, 0))}
+          className="flex items-center gap-1.5 rounded-md border border-fire/40 bg-fire/10 px-2.5 py-1.5 font-mono text-[10px] font-bold tracking-[0.1em] text-fire transition hover:border-fire hover:bg-fire/20"
+        >
+          <Zap className="h-3.5 w-3.5" /> [ ⚡ GENERAR OPCIÓN 2 EQUIVALENTE ]
+        </button>
+        {none && <span className="font-mono text-[10px] text-mute">Sin platos del catálogo / canasta para este momento del día.</span>}
+      </div>
+    );
+
+  const t = optionTotals(alt.items);
+  return (
+    <div className="mt-3 rounded-lg border border-fire/30 bg-fire/[0.04] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cx(optTag, 'border-fire/50 text-fire')}>[ OPCIÓN 2 · ALTERNATIVA ]</span>
+        <input
+          value={alt.title}
+          onChange={(e) => setMealOption(meal.id, { alt: { ...alt, title: e.target.value } })}
+          aria-label="Nombre del plato · Opción 2"
+          className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-ink outline-none"
+        />
+        <button
+          type="button"
+          title="Probar otra alternativa del catálogo"
+          onClick={() => {
+            const n = idx + 1;
+            setIdx(n);
+            generateAlt(meal.id, n);
+          }}
+          className="flex items-center gap-1 rounded-md border border-line px-2 py-1 font-mono text-[9.5px] text-steel hover:text-ink"
+        >
+          <RefreshCw className="h-3 w-3" /> OTRA
+        </button>
+        <button type="button" onClick={() => setMealOption(meal.id, { alt: undefined })} title="Quitar Opción 2" className="p-1 text-mute hover:text-fire">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mt-2 divide-y divide-line">
+        {alt.items.map((it) => (
+          <div key={it.id} className="flex items-center gap-2 py-1.5">
+            <div className="relative w-[76px]">
+              <NumInput value={it.grams} min={0} max={3000} decimals={false} ariaLabel={`Gramos de ${it.food}`} onChange={(g) => setAltItemGrams(meal.id, it.id, g)} className="py-1 pl-2 pr-6 text-right" />
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-mute">g</span>
+            </div>
+            <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{it.food}</span>
+            <span className="tnum hidden font-mono text-[10px] text-mute sm:inline">
+              P{fmt0(it.p)} C{fmt0(it.c)} G{fmt0(it.f)}
+            </span>
+            <button type="button" onClick={() => removeAltItem(meal.id, it.id)} className="p-1 text-mute hover:text-fire" aria-label={`Quitar ${it.food}`}>
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="tnum mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">
+        <span className="text-ink">{fmt0(t.kcal)} kcal ({pctTxt(t.kcal, main.kcal)})</span>
+        <span className="text-steel">P {fmt0(t.p)} g ({pctTxt(t.p, main.p)})</span>
+        <span className="text-steel">C {fmt0(t.c)} g ({pctTxt(t.c, main.c)})</span>
+        <span className="text-steel">G {fmt0(t.f)} g ({pctTxt(t.f, main.f)})</span>
+        <span className="text-mute">vs Opción 1</span>
+      </div>
+      {alt.technique && <p className="mt-1.5 text-[11.5px] text-steel">{alt.technique}</p>}
+    </div>
   );
 }
 
@@ -373,6 +527,7 @@ export function MealsTab() {
         </div>
         <BalanceBanner />
         <RetimeBar />
+        <AltsBar />
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <div className="w-72">
             <Segmented
@@ -496,3 +651,26 @@ function RetimeBar() {
   );
 }
 
+/** Opciones culinarias: Opción 2 equivalente para todo el plan en un toque. */
+function AltsBar() {
+  const meals = usePlanStore((s) => s.plan.meals);
+  const generateAllAlts = usePlanStore((s) => s.generateAllAlts);
+  const main = meals.filter((m) => ['breakfast', 'lunch', 'snack', 'dinner'].includes(m.role));
+  const withAlt = main.filter((m) => m.alt).length;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-carbon px-3 py-2">
+      <span className="font-mono text-[10px] tracking-[0.12em] text-mute">OPCIONES CULINARIAS ·</span>
+      <span className="tnum flex-1 font-mono text-[10.5px] text-steel">
+        {withAlt}/{main.length} comidas principales con [ OPCIÓN 2 ]
+      </span>
+      <button
+        type="button"
+        onClick={() => generateAllAlts(false)}
+        className="rounded-md border border-fire/40 px-2.5 py-1 font-mono text-[10px] font-bold tracking-[0.1em] text-fire transition hover:border-fire hover:bg-fire/10"
+      >
+        [ ⚡ COMPLETAR OPCIÓN 2 EN TODO EL PLAN ]
+      </button>
+      <NewDishButton />
+    </div>
+  );
+}

@@ -4,6 +4,7 @@ import { aisGroupA } from './evidence';
 import { fixGreeting, OFF_PERI_NAME, parseTrainingWindow, PERI_WORDS, resolveAthleteName } from './anamnesis';
 import { macrosFor, matchFood, round1, round2 } from './foods';
 import { consolidateItems, dayAnchors, retimeMeals } from './schedule';
+import { autoTitle } from './menuOptions';
 import { uid } from './seed';
 import type { AiProvider, AiSettings, AthletePlan, FoodItem, Meal, MealDay, MealRole, Phase, Supplement } from './types';
 
@@ -34,6 +35,7 @@ REGLAS DE CÁLCULO Y FORMATO (obligatorias):
 - Horario de entrenamiento: "profile.trainingTime" = hora de INICIO de la sesión ("HH:MM") y "profile.sessionMinutes" = duración. Ej: "entreno de 16 a 18 hs" → trainingTime "16:00", sessionMinutes 120 (nunca 18:00 como inicio).
 - Leucina ≥ 2,7 g SOLO en comidas principales (desayuno, almuerzo, cena). Colaciones, meriendas, pre y post-WOD son ingestas auxiliares: no les agregues huevo ni whey para llegar al umbral.
 - Nunca repitas el mismo alimento dos veces dentro de una comida: sumá los gramos en un único ítem.
+- OPCIONES CULINARIAS (platos reales de la gastronomía argentina, no listas de supermercado): cada meal lleva "title" (nombre del plato, ej. "Bife de cuadril a la plancha con arroz primavera y ensalada verde"), "technique" (técnica de cocción rápida + condimentos, ej. "al horno con spray de oliva, orégano y limón") y, en desayuno / almuerzo / merienda / cena, "alt": { "title", "technique", "items": [...] } = Opción 2 con OTRO plato equivalente en macros a la Opción 1 (±5 % en kcal, proteína, carbos y grasas), ej. "1/4 de tarta de pollo y puerro + ensalada de tomate".
 - Día OFF: no hay sesión. Prohibido "Pre-Entreno", "PeriWOD" o "bloque glucolítico"; la merienda del OFF se llama "Merienda Táctica OFF" (modulación glucémica / saciedad). Cafeína en OFF: consumo matutino habitual (café / mate), sin toma pre-workout.
 - Suplementos: sólo AIS Grupo A (creatina 0,04 g/kg, cafeína 3-6 mg/kg, beta-alanina, bicarbonato, nitrato) con DOI real.
 - Respondé SOLO con el objeto JSON, sin texto antes ni después y sin bloques de código.`;
@@ -70,6 +72,8 @@ export interface AiMacros {
   f: number;
 }
 
+type AiItem = { food?: string; grams?: number; p?: number; c?: number; f?: number; leucine?: number; macroPrincipal?: string };
+
 export interface AiPlanJson {
   athleteName?: string;
   sportType?: string;
@@ -84,7 +88,12 @@ export interface AiPlanJson {
     time?: string;
     day?: string;
     role?: string;
-    items?: { food?: string; grams?: number; p?: number; c?: number; f?: number; leucine?: number; macroPrincipal?: string }[];
+    items?: AiItem[];
+    /** Nombre del plato real (Opción 1) y técnica de cocción rápida / condimentos. */
+    title?: string;
+    technique?: string;
+    /** Opción 2 · alternativa equivalente en macros. */
+    alt?: { title?: string; technique?: string; items?: AiItem[] };
     leucineTotal?: number;
     mpsAchieved?: boolean;
   }[];
@@ -259,7 +268,29 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
   const meals: Meal[] = (json.meals ?? []).map((m) => {
     const name = m.name?.trim() || 'Bloque';
     const role = inferRole(name, m.role);
-    const items: FoodItem[] = (m.items ?? [])
+    const items = mapAiItems(m.items);
+    const altItems = mapAiItems(m.alt?.items);
+    const alt = altItems.length ? { title: m.alt?.title?.trim() || autoTitle(altItems), items: consolidateItems(altItems), technique: m.alt?.technique?.trim() || undefined } : undefined;
+    const merged = consolidateItems(items);
+    fixCulinary(merged);
+    if (alt) fixCulinary(alt.items);
+    const day = inferDay(m.day, role);
+    // Día OFF: sin sesión → nada de "Pre-Entreno PeriWOD" ni "Bloque glucolítico".
+    const offPeri = day === 'off' && (role === 'peri' || PERI_WORDS.test(name));
+    return {
+      id: uid(),
+      name: offPeri ? OFF_PERI_NAME : name,
+      title: m.title?.trim() || undefined,
+      technique: m.technique?.trim() || undefined,
+      alt,
+      time: /^\d{1,2}:\d{2}$/.test(m.time ?? '') ? m.time!.padStart(5, '0') : '12:00',
+      day,
+      role: offPeri ? 'snack' : role,
+      items: merged,
+    };
+  });
+  function mapAiItems(list: AiItem[] | undefined): FoodItem[] {
+    return (list ?? [])
       .filter((i) => i.food && num(i.grams, 0) > 0)
       .map((i) => {
         let grams = Math.round(num(i.grams, 100));
@@ -279,22 +310,9 @@ export function planFromAi(json: AiPlanJson, base: AthletePlan, notes = ''): Ath
           f: round1(num(i.f, 0)),
           leucine: round2(num(i.leucine, 0)),
           ...(mp === 'protein' || mp === 'carbs' || mp === 'fat' ? { macroPrincipal: mp } : {}),
-        };
+        } as FoodItem;
       });
-    const merged = consolidateItems(items);
-    fixCulinary(merged);
-    const day = inferDay(m.day, role);
-    // Día OFF: sin sesión → nada de "Pre-Entreno PeriWOD" ni "Bloque glucolítico".
-    const offPeri = day === 'off' && (role === 'peri' || PERI_WORDS.test(name));
-    return {
-      id: uid(),
-      name: offPeri ? OFF_PERI_NAME : name,
-      time: /^\d{1,2}:\d{2}$/.test(m.time ?? '') ? m.time!.padStart(5, '0') : '12:00',
-      day,
-      role: offPeri ? 'snack' : role,
-      items: merged,
-    };
-  });
+  }
 
   // Horario real de la anamnesis (ej. "entreno de 16 a 18 hs" → inicio 16:00, 120 min), por encima de la IA.
   const window = parseTrainingWindow(notes);

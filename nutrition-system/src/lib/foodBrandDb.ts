@@ -66,6 +66,10 @@ export interface BrandFood {
   flex?: boolean;
   /** Composición o aclaración de la porción (ej. "2 rebanadas de pan integral + 60 g de palta + 1 huevo"). */
   detalle?: string;
+  /** Receta estructurada (platos del coach): ingredientes por porción base. */
+  ingredientes?: { nombre: string; gramos: number; foodId?: string }[];
+  /** Técnica de cocción rápida / condimentos. */
+  tecnica?: string;
 }
 
 type Seed = [string, string, BrandCategory, number, string, number, number, number, number, number, number, boolean];
@@ -101,44 +105,44 @@ const SEED_ROWS: Seed[] = [
 ];
 
 
-type Dish = [string, BrandCategory, string, number, number, number, number, number, number, boolean, boolean, string, string?];
-// [nombre, categoría, unidad, gramos, P, C, G, leucina, prep (min), lactosa, flex, detalle, marca]. Kcal = Atwater 4/4/9.
+type Dish = [string, BrandCategory, string, number, number, number, number, number, number, boolean, boolean, string, string?, string?];
+// [nombre, categoría, unidad, gramos, P, C, G, leucina, prep (min), lactosa, flex, detalle, marca, técnica]. Kcal = Atwater 4/4/9.
 const DISH_ROWS: Dish[] = [
   // 1.1 · Desayunos, meriendas y toast bar
-  ['Avocado Toast integral', 'desayuno', 'porción', 170, 13, 30, 15.5, 1, 8, false, false, '2 rebanadas de pan integral o de semillas + 60 g de palta + 1 huevo'],
-  ['Avocado Toast en galletas de arroz', 'desayuno', 'porción', 127, 9, 23, 12.5, 0.7, 6, false, false, '3 galletas de arroz + 50 g de palta + 1 huevo'],
-  ['Tostadas proteicas', 'desayuno', 'porción', 180, 25, 28, 13, 2.1, 8, true, false, '2 rebanadas de pan integral + 30 g de untable o port salut + 40 g de jamón cocido + 1 huevo'],
-  ['Tostada liviana de galleta de arroz con queso y huevo', 'desayuno', 'porción', 88, 12, 15, 9, 1, 5, true, false, '2 galletas de arroz + 20 g de queso + 1 huevo'],
-  ['Pancake de avena, coco y huevo', 'desayuno', 'porción', 160, 18, 33, 17, 1.4, 10, false, false, '40 g de avena + 10 g de coco + 2 huevos + 10 g de miel · variantes: vainilla, ralladura de limón, canela, cacao amargo o café'],
-  ['Bowl de yogur proteico con granola y frutas', 'desayuno', 'bowl', 290, 18, 45, 5, 1.7, 3, true, false, '160 g de yogur proteico + 30 g de granola + 100 g de fruta'],
-  ['Café con leche descremada', 'desayuno', 'taza', 250, 8, 12, 0.3, 0.8, 3, true, false, '250 ml · sin azúcar o con edulcorante'],
+  ['Avocado Toast integral', 'desayuno', 'porción', 170, 13, 30, 15.5, 1, 8, false, false, 'Pan integral o de semillas + 50-70 g de palta + huevo poché o revuelto', undefined, 'Tostar el pan, pisar la palta con limón y sal, sumar el huevo poché (3 min) o revuelto'],
+  ['Avocado Toast en galletas de arroz', 'desayuno', 'porción', 127, 9, 23, 12.5, 0.7, 6, false, false, 'Galletas de arroz + 50 g de palta + huevo poché o revuelto', undefined, 'Pisar la palta con limón, armar sobre las galletas y coronar con el huevo'],
+  ['Tostadas proteicas', 'desayuno', 'porción', 180, 25, 28, 13, 2.1, 8, true, false, 'Pan de masa madre o integral + queso untable magro + jamón cocido + huevo duro', undefined, 'Tostar el pan y armar en frío; huevo duro hervido 9 min'],
+  ['Tostada liviana de galleta de arroz con queso y huevo', 'desayuno', 'porción', 88, 12, 15, 9, 1, 5, true, false, '2 galletas de arroz + 20 g de queso por salut + 1 huevo', undefined, 'Gratinar el queso 1 min en sartén tapada y sumar el huevo a la plancha'],
+  ['Pancake de avena, coco y huevo', 'desayuno', 'porción', 160, 18, 33, 17, 1.4, 10, false, false, '40 g de avena + 10 g de coco + 2 huevos + 1 cda de miel · saborizantes libres: vainilla, ralladura de limón, canela, cacao amargo o café instantáneo', undefined, 'Mixear todo y cocinar en sartén antiadherente 2-3 min por lado'],
+  ['Bowl de yogur proteico con granola y frutas', 'desayuno', 'bowl', 290, 18, 45, 5, 1.7, 3, true, false, '160 g de yogur proteico + 30 g de granola crujiente + 100 g de banana o frutos rojos', undefined, 'Armar en bowl en frío'],
+  ['Café con leche descremada', 'desayuno', 'taza', 250, 8, 12, 0.3, 0.8, 3, true, false, '250 ml · leche descremada o proteica · sin azúcar o con edulcorante', undefined, ''],
   ['Leche chocolatada fit', 'desayuno', 'taza', 250, 9, 14, 1.5, 0.85, 2, true, false, '250 ml de leche descremada + cacao amargo + edulcorante'],
   ['Mate cebado', 'desayuno', 'termo / ronda', 500, 0, 1, 0, 0, 3, false, false, 'Sin azúcar · cafeína ~70 mg por ronda'],
   // 1.2 · Tartas, empanadas y sfijas (porción casera estándar)
-  ['Tarta de pollo y puerro', 'tarta', 'porción (1/8)', 150, 16, 22, 14, 1.3, 60, true, false, 'Masa casera o integral · relleno de pollo, puerro y queso'],
+  ['Tarta de pollo y puerro', 'tarta', 'porción (1/8)', 150, 16, 22, 14, 1.3, 60, true, false, 'Pollo desmenuzado, puerro, verduras y queso · masa casera o integral', undefined, 'Horno 180 °C 35-40 min'],
   ['Tarta de jamón, queso y huevo', 'tarta', 'porción (1/8)', 150, 15, 21, 18, 1.3, 50, true, false, ''],
-  ['Tarta de atún y verduras', 'tarta', 'porción (1/8)', 150, 15, 22, 12, 1.2, 50, false, false, ''],
-  ['Tarta de carne magra', 'tarta', 'porción (1/8)', 150, 16, 22, 14, 1.3, 60, false, false, ''],
-  ['Tarta de zapallitos / Pascualina', 'tarta', 'porción (1/8)', 150, 10, 20, 13, 0.85, 60, true, false, ''],
-  ['Empanada de carne al horno', 'tarta', 'unidad', 80, 9, 21, 9, 0.75, 45, false, false, ''],
+  ['Tarta de atún y verduras', 'tarta', 'porción (1/8)', 150, 15, 22, 12, 1.2, 50, false, false, 'Atún al natural, pimiento, cebolla y huevo', undefined, 'Horno 180 °C 35-40 min'],
+  ['Tarta de carne magra', 'tarta', 'porción (1/8)', 150, 16, 22, 14, 1.3, 60, false, false, 'Carne picada magra, cebolla, huevo duro y aceitunas', undefined, 'Horno 180 °C 35-40 min'],
+  ['Tarta de zapallitos / Pascualina', 'tarta', 'porción (1/8)', 150, 10, 20, 13, 0.85, 60, true, false, 'Espinaca / acelga o zapallitos, salsa blanca liviana y huevo', undefined, 'Horno 180 °C 40 min'],
+  ['Empanada de carne al horno', 'tarta', 'unidad', 80, 9, 21, 9, 0.75, 45, false, false, 'Carne cortada a cuchillo, cebolla, huevo y aceitunas', undefined, 'Horno fuerte 200 °C 15-18 min'],
   ['Empanada de pollo al horno', 'tarta', 'unidad', 80, 9, 21, 8, 0.75, 45, false, false, ''],
   ['Empanada de jamón y queso al horno', 'tarta', 'unidad', 80, 8, 20, 10, 0.7, 45, true, false, ''],
-  ['Sfija / empanada árabe de carne', 'tarta', 'unidad', 70, 7, 18, 6, 0.6, 45, false, false, 'Carne con limón'],
+  ['Sfija / empanada árabe de carne', 'tarta', 'unidad', 70, 7, 18, 6, 0.6, 45, false, false, 'Carne picada magra con limón, tomate y cebolla', undefined, 'Horno 200 °C 15 min'],
   // 1.3 · Minutas y platos principales rioplatenses
-  ['Milanesa de pechuga de pollo al horno', 'minuta', 'unidad', 150, 38, 14, 9, 3, 25, false, false, 'Rebozado con pan rallado y huevo, al horno'],
-  ['Milanesa de nalga / peceto al horno', 'minuta', 'unidad', 150, 36, 14, 11, 2.9, 25, false, false, ''],
-  ['Milanesa de merluza al horno', 'minuta', 'unidad', 150, 27, 15, 7, 2.2, 25, false, false, ''],
-  ['Milanesa napolitana al horno', 'minuta', 'unidad', 200, 42, 18, 18, 3.4, 30, true, false, 'Con jamón, salsa de tomate y muzzarella'],
-  ['Pastel de papa táctico', 'minuta', 'porción', 300, 32, 40, 13, 2.6, 60, true, false, 'Carne magra + puré de papa + huevo duro'],
+  ['Milanesa de pechuga de pollo al horno', 'minuta', 'unidad', 150, 38, 14, 9, 3, 25, false, false, 'Rebozado con pan rallado y huevo', undefined, 'Horno 200 °C 20 min con spray de oliva, dar vuelta a mitad'],
+  ['Milanesa de nalga / peceto al horno', 'minuta', 'unidad', 150, 36, 14, 11, 2.9, 25, false, false, 'Rebozado con pan rallado y huevo', undefined, 'Horno 200 °C 15-18 min con spray de oliva'],
+  ['Milanesa de merluza al horno', 'minuta', 'unidad', 150, 27, 15, 7, 2.2, 25, false, false, 'Merluza con rebozado fino de pan rallado', undefined, 'Horno 200 °C 15-18 min con spray de oliva'],
+  ['Milanesa napolitana al horno', 'minuta', 'unidad', 200, 42, 18, 18, 3.4, 30, true, false, 'Napolitana fit: salsa de tomate, jamón magro y queso por salut', undefined, 'Horno 200 °C 20 min + 3 min de gratinado'],
+  ['Pastel de papa táctico', 'minuta', 'porción', 300, 32, 40, 13, 2.6, 60, true, false, 'Carne picada magra + puré de papa sin manteca pesada + huevo duro', undefined, 'Saltear la carne, cubrir con el puré y gratinar 15 min'],
   ['Matambre a la pizza', 'minuta', 'porción', 200, 40, 4, 22, 3.2, 90, true, false, ''],
-  ['Pollo a la provenzal', 'minuta', 'porción', 200, 46, 2, 14, 3.7, 40, false, false, 'Ajo, perejil y aceite de oliva'],
-  ['Guiso táctico de lentejas', 'minuta', 'plato', 350, 24, 52, 9, 1.9, 50, false, false, 'Lentejas + carne magra + verduras'],
-  ['Guiso fit de garbanzos', 'minuta', 'plato', 350, 22, 50, 11, 1.7, 50, false, false, ''],
-  ['Canelones de espinaca y ricota', 'minuta', '2 unidades', 300, 24, 40, 16, 2.3, 60, true, false, 'Con salsa de tomate'],
-  ['Canelones de carne', 'minuta', '2 unidades', 300, 28, 38, 17, 2.4, 60, true, false, ''],
+  ['Pollo a la provenzal', 'minuta', 'porción', 200, 46, 2, 14, 3.7, 40, false, false, 'Pollo con ajo, perejil y aceite de oliva', undefined, 'Horno 200 °C 35 min o sartén tapada'],
+  ['Guiso táctico de lentejas', 'minuta', 'plato', 350, 24, 52, 9, 1.9, 50, false, false, 'Lentejas con carne picada o pechuga, verduras · sin embutidos grasos', undefined, 'Olla 40 min a fuego bajo'],
+  ['Guiso fit de garbanzos', 'minuta', 'plato', 350, 22, 50, 11, 1.7, 50, false, false, 'Garbanzos con pechuga o carne magra y verduras · sin embutidos grasos', undefined, 'Olla 40 min a fuego bajo'],
+  ['Canelones de espinaca y ricota', 'minuta', '2 unidades', 300, 24, 40, 16, 2.3, 60, true, false, '2 canelones con salsa tuco liviana', undefined, 'Horno 180 °C 20 min'],
+  ['Canelones de carne', 'minuta', '2 unidades', 300, 28, 38, 17, 2.4, 60, true, false, '2 canelones de carne magra con salsa tuco liviana', undefined, 'Horno 180 °C 20 min'],
   ['Ensalada mixta', 'minuta', 'plato', 200, 2, 8, 0.4, 0.1, 5, false, false, 'Lechuga, tomate, zanahoria, cebolla · aliño aparte'],
   // 1.4 · Parrilla y flex-meals (rescate social)
-  ['Cuadril a la parrilla con ensalada', 'parrilla', 'plato', 400, 58, 8, 15, 4.7, 40, false, false, '200 g de cuadril + 200 g de ensalada'],
+  ['Cuadril a la parrilla con ensalada', 'parrilla', 'plato', 400, 58, 8, 15, 4.7, 40, false, false, '200 g de cuadril + ensalada o papa hervida', undefined, 'Parrilla a fuego medio, vuelta y vuelta'],
   ['Entraña a la parrilla con papa', 'parrilla', 'plato', 330, 46, 30, 22, 3.7, 40, false, false, '180 g de entraña + 150 g de papa'],
   ['Asado de tira', 'parrilla', 'porción', 200, 44, 0, 34, 3.5, 90, false, false, ''],
   ['Molleja', 'parrilla', 'porción', 100, 12, 0, 20, 1, 40, false, false, 'Achura medida'],
@@ -160,6 +164,39 @@ const DISH_ROWS: Dish[] = [
   ['Alfajor de arroz', 'dulce', 'unidad', 23, 1.2, 16, 4, 0.1, 0, false, false, '', 'Rice Up! / Gallo'],
   ['Barrita proteica local', 'dulce', 'unidad', 46, 15, 17, 6, 1.3, 0, true, false, '', 'ENA / Integra / marcas locales'],
   ['Turrón de maní', 'dulce', 'unidad', 25, 3, 15, 5, 0.3, 0, false, false, '', 'Misky / Arcor'],
+  // ---- Ampliación (criterio Coach JP): platos deportivos y caseros argentinos ----
+  ['Mate con tostadas integrales y queso untable', 'desayuno', 'porción', 90, 9, 26, 5, 0.8, 5, true, false, 'Mate cebado + 2 tostadas integrales + 30 g de queso untable magro', undefined, 'Tostar y untar'],
+  ['Mate con frutos secos', 'desayuno', 'porción', 25, 5, 4, 15, 0.35, 2, false, false, 'Mate cebado + 25 g de nueces / almendras', undefined, ''],
+  ['Overnight oats con banana', 'desayuno', 'frasco', 300, 16, 55, 8, 1.3, 5, true, false, '40 g de avena + 150 g de yogur proteico + 1/2 banana + canela', undefined, 'Hidratar en heladera toda la noche'],
+  ['Licuado de banana con leche y avena', 'desayuno', 'vaso', 400, 14, 52, 4, 1.1, 3, true, false, '250 ml de leche descremada + 1 banana + 20 g de avena', undefined, 'Licuar 30 s'],
+  ['Budín de avena y banana fit', 'desayuno', 'porción', 70, 6, 24, 5, 0.45, 50, false, false, 'Avena, banana, huevo y edulcorante · sin manteca', undefined, 'Horno 180 °C 35 min'],
+  ['Omelette de claras con espinaca y queso', 'desayuno', 'unidad', 200, 24, 4, 7, 2.1, 8, true, false, '4 claras + 1 huevo + espinaca + 20 g de queso por salut', undefined, 'Sartén antiadherente 3-4 min, doblar y gratinar'],
+  ['Revuelto de huevos con tostada integral', 'desayuno', 'porción', 160, 16, 22, 11, 1.4, 6, false, false, '2 huevos revueltos + 2 tostadas integrales', undefined, 'Sartén a fuego bajo con spray de oliva'],
+  ['Bife de cuadril a la plancha con arroz primavera y ensalada verde', 'minuta', 'plato', 450, 46, 52, 13, 3.8, 25, false, false, '180 g de cuadril + 180 g de arroz primavera + ensalada verde + 1 cda de oliva', undefined, 'Plancha bien caliente 4-5 min por lado; arroz con choclo, arvejas y zanahoria'],
+  ['Pollo al horno con papas y batatas', 'minuta', 'plato', 450, 45, 50, 12, 3.6, 45, false, false, '200 g de pollo + 200 g de papa y batata en cubos', undefined, 'Horno 200 °C 35-40 min con spray de oliva y romero'],
+  ['Wok de pollo y vegetales con arroz', 'minuta', 'plato', 420, 40, 55, 10, 3.2, 20, false, false, '160 g de pollo + vegetales salteados + 150 g de arroz + salsa de soja', undefined, 'Salteado a fuego fuerte 8-10 min'],
+  ['Fideos integrales con boloñesa magra', 'minuta', 'plato', 420, 36, 70, 12, 2.9, 25, false, false, '80 g de fideos secos + 120 g de carne picada magra + salsa de tomate', undefined, 'Salsa 15 min; fideos al dente'],
+  ['Ñoquis de papa con tuco y carne magra', 'minuta', 'plato', 400, 28, 78, 10, 2.3, 30, false, false, '250 g de ñoquis + tuco con carne magra', undefined, 'Hervir hasta que floten; tuco 15 min'],
+  ['Tortilla de papa al horno', 'minuta', 'porción (1/4)', 250, 16, 34, 12, 1.4, 40, false, false, 'Papa, cebolla y 2 huevos por porción', undefined, 'Horno 200 °C 25 min en molde con spray de oliva'],
+  ['Merluza al horno con puré mixto', 'minuta', 'plato', 400, 34, 38, 8, 2.8, 30, true, false, '200 g de merluza + puré de papa y calabaza', undefined, 'Horno 180 °C 15-18 min con limón'],
+  ['Arroz con pollo', 'minuta', 'plato', 400, 36, 58, 10, 2.9, 40, false, false, 'Pollo, arroz, morrón, arvejas y caldo casero', undefined, 'Olla 25-30 min'],
+  ['Polenta con tuco y carne', 'minuta', 'plato', 400, 30, 60, 10, 2.4, 25, false, false, 'Polenta + tuco con carne picada magra', undefined, 'Polenta instantánea 5 min; tuco 15 min'],
+  ['Locro fit', 'minuta', 'plato', 400, 28, 50, 10, 2.2, 120, false, false, 'Zapallo, maíz blanco, porotos y carne magra · sin chorizo ni panceta', undefined, 'Olla 2 h a fuego bajo'],
+  ['Carbonada criolla fit', 'minuta', 'plato', 400, 30, 48, 9, 2.4, 60, false, false, 'Carne magra, zapallo, papa, batata, choclo y durazno', undefined, 'Olla 50 min'],
+  ['Hamburguesas caseras de lentejas con ensalada', 'minuta', '2 unidades', 300, 20, 42, 9, 1.5, 30, false, false, '2 medallones de lentejas + ensalada mixta', undefined, 'Horno 200 °C 20 min'],
+  ['Ensalada César fit con pollo', 'minuta', 'plato', 350, 38, 18, 14, 3, 15, true, false, 'Pollo grillado, lechuga, croutons, parmesano y aderezo de yogur', undefined, 'Pollo a la plancha; aderezo aparte'],
+  ['Sándwich de lomito fit', 'minuta', 'unidad', 300, 40, 40, 14, 3.2, 15, true, false, 'Pan árabe o integral + 130 g de lomo + lechuga, tomate, huevo y queso light', undefined, 'Lomo a la plancha 2-3 min por lado'],
+  ['Wrap integral de pollo y vegetales', 'minuta', 'unidad', 250, 32, 34, 9, 2.6, 12, false, false, 'Tortilla integral + 120 g de pollo + vegetales + queso untable', undefined, 'Armar y dorar 1 min por lado'],
+  ['Albóndigas de carne magra con puré', 'minuta', 'plato', 400, 36, 40, 14, 2.9, 40, true, false, '5 albóndigas en salsa + puré de papa', undefined, 'Horno o salsa 20 min'],
+  ['Revuelto gramajo fit', 'minuta', 'plato', 300, 26, 30, 14, 2.1, 20, false, false, 'Papas al horno, 2 huevos, jamón magro y arvejas', undefined, 'Papas al horno en vez de fritas'],
+  ['Brochette de pollo y vegetales', 'parrilla', '2 brochettes', 300, 40, 12, 8, 3.2, 25, false, false, 'Pollo, morrón, cebolla y zapallito', undefined, 'Parrilla o grill 12-15 min'],
+  ['Provoleta medida', 'parrilla', 'porción', 70, 18, 1, 20, 1.7, 10, true, true, '1/2 provoleta compartida', undefined, 'Parrilla en provoletera 5 min'],
+  ['Tarta de calabaza y queso', 'tarta', 'porción (1/8)', 150, 9, 22, 11, 0.8, 50, true, false, 'Calabaza, cebolla, queso y huevo', undefined, 'Horno 180 °C 35 min'],
+  ['Empanada de verdura al horno', 'tarta', 'unidad', 80, 6, 20, 7, 0.5, 45, true, false, 'Acelga / espinaca, salsa blanca liviana y huevo', undefined, 'Horno 200 °C 15 min'],
+  ['Flan casero light', 'dulce', 'porción', 120, 8, 14, 4, 0.7, 50, true, false, 'Leche descremada, huevos y edulcorante', undefined, 'Baño maría 45 min'],
+  ['Gelatina light con fruta', 'dulce', 'porción', 200, 3, 12, 0.2, 0.1, 5, false, false, 'Gelatina sin azúcar + 100 g de fruta', undefined, 'Heladera 2 h'],
+  ['Medialuna de manteca', 'dulce', 'unidad', 45, 3.5, 22, 9, 0.3, 0, true, true, 'Flex de panadería', undefined, ''],
+  ['Factura (bola de fraile / vigilante)', 'dulce', 'unidad', 60, 4, 30, 10, 0.3, 0, true, true, 'Flex de panadería', undefined, ''],
   ['Manzana', 'fruitveg', 'unidad', 180, 0.5, 25, 0.4, 0.02, 0, false, false, ''],
   ['Frutillas', 'fruitveg', 'taza', 150, 1, 11.5, 0.5, 0.06, 0, false, false, ''],
   ['Vegetales grillados', 'fruitveg', 'plato', 200, 3, 10, 0.5, 0.15, 15, false, false, 'Zapallito, berenjena, morrón, cebolla'],
@@ -174,12 +211,12 @@ const slug = (s: string) =>
     .replace(/^-|-$/g, '');
 
 /** Versión del catálogo pre-cargado: al subirla, la DB guardada del coach recibe los ítems nuevos sin perder sus cambios. */
-export const SEED_VERSION = 2;
+export const SEED_VERSION = 3;
 
 const LACTOSE_RE = /yogur|untable|queso|leche|ricota|whey/i;
 
 export function seedFoodDb(): BrandFood[] {
-  const dishes: BrandFood[] = DISH_ROWS.map(([nombre, categoria, unidad, gramos, p, c, f, leucina, prep, lactosa, flex, detalle, marca]) => ({
+  const dishes: BrandFood[] = DISH_ROWS.map(([nombre, categoria, unidad, gramos, p, c, f, leucina, prep, lactosa, flex, detalle, marca, tecnica]) => ({
     id: `db-${slug(nombre)}`,
     nombre,
     marca: marca ?? '',
@@ -192,6 +229,7 @@ export function seedFoodDb(): BrandFood[] {
     lactosa,
     flex,
     detalle: detalle || undefined,
+    tecnica: tecnica || undefined,
   }));
   return [...baseItems(), ...dishes];
 }
@@ -243,6 +281,12 @@ export function sanitizeBrandFood(raw: unknown): BrandFood | null {
     lactosa: typeof r.lactosa === 'boolean' ? r.lactosa : LACTOSE_RE.test(r.nombre),
     flex: !!r.flex,
     detalle: typeof r.detalle === 'string' && r.detalle.trim() ? r.detalle.trim() : undefined,
+    ingredientes: Array.isArray(r.ingredientes)
+      ? r.ingredientes
+          .filter((x) => x && typeof x.nombre === 'string' && num(x.gramos) > 0)
+          .map((x) => ({ nombre: x.nombre, gramos: num(x.gramos), foodId: typeof x.foodId === 'string' ? x.foodId : undefined }))
+      : undefined,
+    tecnica: typeof r.tecnica === 'string' && r.tecnica.trim() ? r.tecnica.trim() : undefined,
   };
 }
 
@@ -272,6 +316,11 @@ export function brandFoodsToRefs(db: BrandFood[]): FoodRef[] {
         f: Math.round(m.f * k * 10) / 10,
         leucine: Math.round(m.leucina * k * 100) / 100,
         ai: b.disponible_para_ia,
+        dishCat: DISH_CATEGORIES.includes(b.categoria) ? b.categoria : undefined,
+        flex: b.flex,
+        recipe: b.ingredientes?.length ? b.ingredientes.map((x) => ({ name: x.nombre, grams: x.gramos })) : undefined,
+        technique: b.tecnica,
+        detail: b.detalle,
       };
     });
 }
@@ -294,7 +343,8 @@ export function foodDbPromptBlock(db: BrandFood[], basket?: string[] | null) {
       .map((b) => {
         const m = b.macros_por_porcion;
         if (b.categoria === 'supplement') return `- ${brandLabel(b)} · ${portionLabel(b)}`;
-        return `- ${brandLabel(b)}${b.flex ? ' [FLEX]' : ''} · porción ${portionLabel(b)}${b.detalle ? ` (${b.detalle})` : ''} · ${m.kcal} kcal · P ${m.p} g · C ${m.c} g · G ${m.f} g${m.leucina ? ` · Leu ${m.leucina} g` : ''}`;
+        const comp = b.ingredientes?.length ? b.ingredientes.map((x) => `${x.nombre} ${x.gramos} g`).join(' + ') : b.detalle;
+        return `- ${brandLabel(b)}${b.flex ? ' [FLEX]' : ''} · porción ${portionLabel(b)}${comp ? ` (${comp})` : ''}${b.tecnica ? ` · técnica: ${b.tecnica}` : ''} · ${m.kcal} kcal · P ${m.p} g · C ${m.c} g · G ${m.f} g${m.leucina ? ` · Leu ${m.leucina} g` : ''}`;
       })
       .join('\n')}`;
   }).filter(Boolean);

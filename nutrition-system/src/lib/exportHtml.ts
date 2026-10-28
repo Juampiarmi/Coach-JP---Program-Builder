@@ -6,6 +6,7 @@ import { CITES } from './evidence';
 import { FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
+import { autoTechnique, autoTitle } from './menuOptions';
 import type { AthletePlan, DayMode } from './types';
 
 export const DISCIPLINE_LABEL = { bodybuilding: 'SPORTS & BODYBUILDING', hybrid: 'CROSSFIT & HYROX' } as const;
@@ -129,7 +130,17 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     },
     threshold: LEUCINE_THRESHOLD,
     // Ingredientes repetidos fusionados y orden cronológico estricto antes de exportar.
-    meals: [...plan.meals].sort(byTime).map((m) => ({ ...consolidateMeal(m), mps: isMpsMeal(m) })),
+    // Opciones culinarias: título y técnica de la Opción 1 (automáticos si el coach no los cargó) y Opción 2.
+    meals: [...plan.meals].sort(byTime).map((m) => {
+      const c = consolidateMeal(m);
+      return {
+        ...c,
+        mps: isMpsMeal(m),
+        title: c.title || autoTitle(c.items),
+        technique: c.technique || autoTechnique(c.items),
+        alt: c.alt?.items.length ? { ...c.alt, title: c.alt.title || autoTitle(c.alt.items), technique: c.alt.technique || autoTechnique(c.alt.items) } : undefined,
+      };
+    }),
     foods: Object.fromEntries(FOODS.map((f) => [f.id, f])),
     anchors: GROUP_ANCHOR,
     groupLabels: GROUP_LABEL,

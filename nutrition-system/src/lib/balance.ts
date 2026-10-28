@@ -1,5 +1,6 @@
 import { computeTelemetry, dayTotals, mealTotals } from './bioenergetics';
 import { FOOD_BY_ID, GROUP_ANCHOR, inferMacroPrincipal, macrosFor, round1, round2 } from './foods';
+import { fitAltToMain } from './menuOptions';
 import { consolidateItems, consolidateMeal } from './schedule';
 import { uid } from './seed';
 import type { AthletePlan, DayMode, FoodItem, Macros, Meal } from './types';
@@ -214,5 +215,6 @@ export function balancePlan(plan: AthletePlan): { plan: AthletePlan; report: Day
     meals = k.meals;
     report.push({ day, target, before, after: dayTotals(meals, day), changed: pr.changed + c.changed + f.changed + c2.changed + k.changed });
   }
-  return { plan: { ...plan, meals: meals.map(consolidateMeal), updatedAt: Date.now() }, report };
+  // La Opción 2 de cada comida sigue a la Opción 1 tras el cierre (mismas kcal).
+  return { plan: { ...plan, meals: meals.map(consolidateMeal).map(fitAltToMain), updatedAt: Date.now() }, report };
 }
