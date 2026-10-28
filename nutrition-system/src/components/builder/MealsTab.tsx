@@ -8,7 +8,8 @@ import { FOOD_SLOT_LABEL, fitsSlot, SLOT_OF } from '@/lib/mealSlots';
 import { alternativesFor, equivalentGrams, type FoodRef, macrosFor, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
 import { MAX_OPTIONS, type DayMode, type FoodItem, type Meal, type MealDay, type MealOption, type MealRole } from '@/lib/types';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
-import { ALT_TARGET, autoSteps, autoTechnique, autoTitle, compensateSwap, optionTotals } from '@/lib/menuOptions';
+import { ALT_TARGET, autoSteps, autoTechnique, autoTitle, compensateSwap, fixSeasoning, optionTotals } from '@/lib/menuOptions';
+import { OptionBadges } from './OptionBadges';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
 import { BalanceBanner } from './BalanceBanner';
@@ -358,6 +359,7 @@ function OptionHeader({ meal }: { meal: Meal }) {
         className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-ink outline-none placeholder:text-ink/70"
       />
       {!meal.title && <span className="font-mono text-[9px] text-mute">AUTO</span>}
+      <OptionBadges items={meal.items} className="w-full sm:w-auto" />
     </div>
   );
 }
@@ -425,7 +427,7 @@ function TechniqueBox({ meal }: { meal: Meal }) {
   const setMealOption = usePlanStore((s) => s.setMealOption);
   const [open, setOpen] = useState(false);
   const auto = autoTechnique(meal.items);
-  const autoS = autoSteps(meal.items);
+  const autoS = autoSteps(meal.items, meal.title);
   return (
     <div className="mt-3 rounded-lg border border-line bg-carbon">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
@@ -435,7 +437,7 @@ function TechniqueBox({ meal }: { meal: Meal }) {
       </button>
       {open && (
         <div className="space-y-3 border-t border-line p-3">
-          <StepsEditor steps={meal.steps} auto={autoS} onChange={(v) => setMealOption(meal.id, { steps: v })} />
+          <StepsEditor steps={meal.steps && fixSeasoning(meal.steps, meal.items, meal.title)} auto={autoS} onChange={(v) => setMealOption(meal.id, { steps: v })} />
           <label className="block">
             <span className="font-mono text-[9.5px] tracking-[0.12em] text-mute">TIP DE TÉCNICA Y CONDIMENTOS</span>
             <textarea
@@ -521,6 +523,7 @@ function AltCard({ meal, alt, slot }: { meal: Meal; alt: MealOption; slot: numbe
           <X className="h-4 w-4" />
         </button>
       </div>
+      <OptionBadges items={alt.items} className="mt-1.5" />
       <div className="tnum mt-1.5 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">
         <span className="text-ink">{fmt0(t.kcal)} kcal ({pctTxt(t.kcal, main.kcal)})</span>
         <span className="text-steel">P {fmt0(t.p)} g ({pctTxt(t.p, main.p)})</span>
@@ -549,7 +552,7 @@ function AltCard({ meal, alt, slot }: { meal: Meal; alt: MealOption; slot: numbe
           </div>
           <div className="mt-2 rounded-md border border-line bg-carbon p-2.5">
             <div className="mb-1.5 font-mono text-[9.5px] font-bold tracking-[0.12em] text-steel">[ PREPARACIÓN PASO A PASO ]</div>
-            <StepsEditor steps={alt.steps} auto={autoSteps(alt.items)} onChange={(v) => setAlt(meal.id, slot, { steps: v })} />
+            <StepsEditor steps={alt.steps && fixSeasoning(alt.steps, alt.items, alt.title)} auto={autoSteps(alt.items, alt.title)} onChange={(v) => setAlt(meal.id, slot, { steps: v })} />
           </div>
           {alt.technique && <p className="mt-1.5 text-[11.5px] text-steel">Tip: {alt.technique}</p>}
         </>

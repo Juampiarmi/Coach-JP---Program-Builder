@@ -117,7 +117,67 @@ const STEP_RULES: StepRule[] = [
 ];
 // Orden de preparación: primero lo que más tarda (almidón), después la proteína, armado y condimento.
 const STEP_ORDER = ['starch', 'plato', 'lean-protein', 'eggs', 'cereal', 'whey', 'dairy-protein', 'protein-snack', 'fruit', 'veg', 'sport-carb', 'fat'];
-const CONDIMENT_STEP = 'Condimentá a gusto: sal moderada, pimienta, orégano, pimentón, ajo, perejil o limón.';
+/** Paso de condimento de versiones anteriores (único para todo, también para licuados y pancakes). */
+const LEGACY_CONDIMENT_STEP = 'Condimentá a gusto: sal moderada, pimienta, orégano, pimentón, ajo, perejil o limón.';
+
+// ---------- Condimento / saborizante según el tipo de preparación ----------
+export type Flavor = 'sweet' | 'savory' | 'salad';
+export const SEASONING_STEP: Record<Flavor, string> = {
+  sweet: 'Saborizá a gusto con esencia de vainilla, canela en polvo, edulcorante o cacao amargo.',
+  savory: 'Condimentá a gusto con sal moderada, pimienta, provenzal, pimentón o limón.',
+  salad: 'Aderezá con el aceite de oliva de la porción, sal, vinagre o limón.',
+};
+const SAVORY_DISH_CATS = ['minuta', 'tarta', 'parrilla'];
+const SAVORY_TEXT = /s[aá]ndwich|tostado\b|wrap|toast|palta|queso (light|cremoso)|pizza|milanesa|empanada|tarta/i;
+const SWEET_ADDS = ['miel', 'dulce-membrillo'];
+
+/** Dulce (licuados, shakes, avena, pancakes, yogures), salado (principales, minutas) o ensalada / verduras. */
+export function flavorOf(items: FoodItem[], title = ''): Flavor {
+  const live = items.filter((i) => i.grams > 0);
+  const refs = live.map((i) => (i.foodId ? FOOD_BY_ID[i.foodId] : undefined));
+  const groups = refs.map((r) => r?.group ?? 'zz');
+  if (groups.some((g) => g === 'lean-protein')) return 'savory';
+  // Pancakes, budines, licuados, avena y bowls dulces: aunque lleven huevo o claras.
+  if (/pancake|panqueque|bud[ií]n|flan|licuado|shake|batido|avena (cocida|remojada)|overnight|bowl de yogur/i.test(title)) return 'sweet';
+  if (groups.some((g) => g === 'eggs')) return 'savory';
+  if (refs.some((r) => r?.group === 'plato' && SAVORY_DISH_CATS.includes(r.dishCat ?? '') && !/^ensalada/i.test(r.name))) return 'savory';
+  if (/^ensalada|vegetales grillados/i.test(title)) return 'salad';
+  if (SAVORY_TEXT.test(`${title} ${live.map((i) => i.food).join(' ')}`)) return 'savory';
+  const sweetened = live.some((i) => i.foodId && SWEET_ADDS.includes(i.foodId));
+  if (!sweetened && groups.some((g) => g === 'starch')) return 'savory';
+  if (live.length && groups.every((g) => g === 'veg' || g === 'fat')) return 'salad';
+  if (refs.some((r) => r?.group === 'plato' && /ensalada/i.test(r.name))) return 'salad';
+  return 'sweet';
+}
+const seasoningStep = (items: FoodItem[], title = '') => SEASONING_STEP[flavorOf(items, title)];
+const ALL_SEASONING = new Set([LEGACY_CONDIMENT_STEP, ...Object.values(SEASONING_STEP)]);
+
+/** Reemplaza el paso de condimento (viejo o desactualizado) por el que corresponde al tipo de plato. */
+export function fixSeasoning(steps: string[], items: FoodItem[], title = '') {
+  const right = seasoningStep(items, title);
+  return steps.map((st) => (ALL_SEASONING.has(st) ? right : st));
+}
+
+// ---------- Tiempo de preparación estimado ----------
+/** Minutos de cocción / armado de cada alimento base (los platos traen los suyos desde la Food & Brand DB). */
+const COOK_MIN: Record<string, number> = {
+  yamani: 40, arroz: 18, fideos: 10, papa: 25, batata: 30, lentejas: 25, garbanzos: 25,
+  pollo: 12, cuadril: 10, lomo: 7, nalga: 8, picada: 10, merluza: 15, cerdo: 30, tofu: 8,
+  huevo: 4, claras: 4, vegetales: 5, avena: 2, pan: 2, 'pan-lactal': 2, palta: 2, atun: 2, whey: 2, 'whey-isolate': 2,
+};
+/** Estimación: lo que más tarda (se cocina en paralelo) + armado del resto. */
+export function prepMinutes(items: FoodItem[]) {
+  let max = 0, extra = 0;
+  for (const it of items) {
+    if (!(it.grams > 0)) continue;
+    const ref = it.foodId ? FOOD_BY_ID[it.foodId] : undefined;
+    const t = ref?.group === 'plato' ? (ref.prep ?? 15) : ((it.foodId ? COOK_MIN[it.foodId] : undefined) ?? 1);
+    max = Math.max(max, t);
+    if (t >= 2) extra += 0.75;
+  }
+  const m = Math.max(3, Math.round(max + Math.min(4, extra)));
+  return m <= 10 ? m : Math.round(m / 5) * 5;
+}
 
 /** Pasos de un ingrediente suelto o de un plato del catálogo (receta propia). */
 function stepsForItem(it: FoodItem): string[] {
@@ -133,21 +193,18 @@ function stepsForItem(it: FoodItem): string[] {
 }
 
 /** Preparación paso a paso armada desde los ingredientes (para cualquier persona, sin términos técnicos). */
-export function autoSteps(items: FoodItem[]): string[] {
+export function autoSteps(items: FoodItem[], title = ''): string[] {
   const live = items.filter((i) => i.grams > 0);
   const grp = (i: FoodItem) => STEP_ORDER.indexOf((i.foodId && FOOD_BY_ID[i.foodId]?.group) || 'zz') + 1 || 99;
   const out: string[] = [];
   [...live].sort((a, b) => grp(a) - grp(b)).forEach((it) => stepsForItem(it).forEach((st) => !out.includes(st) && out.push(st)));
-  const cooked = live.some((i) => {
-    const g = i.foodId ? FOOD_BY_ID[i.foodId]?.group : undefined;
-    return g === 'lean-protein' || g === 'eggs' || g === 'starch' || g === 'veg' || g === 'plato';
-  });
-  if (cooked) out.push(CONDIMENT_STEP);
+  if (live.length) out.push(seasoningStep(live, title));
   return out;
 }
 
 /** Pasos de una opción: los cargados por el coach / la IA o, si no hay, los automáticos. */
-export const optionSteps = (o: { items: FoodItem[]; steps?: string[] }) => (o.steps?.length ? o.steps : autoSteps(o.items));
+export const optionSteps = (o: { items: FoodItem[]; steps?: string[]; title?: string }) =>
+  o.steps?.length ? fixSeasoning(o.steps, o.items, o.title) : autoSteps(o.items, o.title);
 
 // ---------------------------------------------------------------------------------------------
 // OPCIONES 2 A 5: platos del catálogo + combinaciones caseras argentinas equivalentes en macros
@@ -202,7 +259,11 @@ export interface Combo {
   title: string;
   roles: MealRole[];
   parts: ComboPart[];
-  /** Pasos con marcadores {id} que se reemplazan por la cantidad calculada. */
+  /**
+   * Pasos con marcadores {id} que se reemplazan por la cantidad calculada. Un tramo entre [corchetes] es opcional:
+   * se quita si su ingrediente quedó en 0 g (el resto del paso se mantiene). Un paso sin corchetes cuyo ingrediente
+   * no está, se omite.
+   */
   steps: string[];
   /** Variante de preferencia (sin lactosa / plant-based): sólo se ofrece cuando el plan tiene ese filtro activo. */
   special?: boolean;
@@ -240,7 +301,7 @@ const COMBOS: Combo[] = [
     title: 'Ricota magra con tostadas de arroz, miel y nueces',
     roles: AM,
     parts: [{ id: 'ricota', r: 'p', max: 250, min: 60 }, { id: 'tostadas-arroz', r: 'c', step: 8, max: 64 }, { id: 'nueces', r: 'f', max: 20 }, { id: 'miel', r: 'x', g: 10 }],
-    steps: ['Untá {tostadas-arroz} de tostadas de arroz con {ricota} de ricota magra.', 'Sumá un hilo de miel ({miel}).', 'Terminá con {nueces} de nueces picadas arriba.'],
+    steps: ['Untá[ {tostadas-arroz} de] tostadas de arroz con {ricota} de ricota magra.', 'Sumá un hilo de miel ({miel}).', 'Terminá con {nueces} de nueces picadas arriba.'],
   },
   {
     title: 'Sándwich de pan lactal integral con queso light y fruta',
@@ -253,7 +314,7 @@ const COMBOS: Combo[] = [
     special: true,
     roles: [...AM, 'post'],
     parts: [{ id: 'yogur-deslactosado', r: 'p', max: 450, min: 100 }, { id: 'avena', r: 'c', max: 90 }, { id: 'nueces', r: 'f', max: 25 }, { id: 'frutillas', r: 'x', g: 100 }],
-    steps: ['Poné {yogur-deslactosado} de yogur deslactosado en un bowl.', 'Sumá {avena} de avena y {frutillas} de frutillas lavadas y cortadas.', 'Terminá con {nueces} de nueces picadas.'],
+    steps: ['Poné {yogur-deslactosado} de yogur deslactosado en un bowl.', 'Sumá {frutillas} de frutillas lavadas y cortadas[ y {avena} de avena].', 'Terminá con {nueces} de nueces picadas.'],
   },
   {
     title: 'Licuado de Whey Aislado con Banana y Leche Deslactosada',
@@ -267,7 +328,7 @@ const COMBOS: Combo[] = [
     special: true,
     roles: AM,
     parts: [{ id: 'whey-isolate', r: 'p', max: 45, min: 10 }, { id: 'avena', r: 'c', max: 100, min: 30 }, { id: 'nueces', r: 'f', max: 25 }, { id: 'leche-deslactosada', r: 'x', g: 200 }, { id: 'banana', r: 'x', g: 60 }],
-    steps: ['Cociná {avena} de avena con {leche-deslactosada} de leche deslactosada a fuego medio 3-4 min, revolviendo.', 'Fuera del fuego, mezclá {whey-isolate} de whey aislado.', 'Serví con {banana} de banana en rodajas y {nueces} de nueces picadas.'],
+    steps: ['Cociná {avena} de avena con {leche-deslactosada} de leche deslactosada a fuego medio 3-4 min, revolviendo.', 'Fuera del fuego, mezclá {whey-isolate} de whey aislado.', 'Serví con {banana} de banana en rodajas[ y {nueces} de nueces picadas].'],
   },
   // ---- Pre-entreno (carbo rápido, poca grasa) ----
   {
@@ -298,7 +359,7 @@ const COMBOS: Combo[] = [
     title: 'Banana con galletas de arroz y pasta de maní',
     roles: ['peri', 'snack'],
     parts: [{ id: 'banana', r: 'c', max: 360, min: 60 }, { id: 'mani', r: 'f', max: 16 }, { id: 'galletas-arroz', r: 'x', g: 18 }],
-    steps: ['Untá {galletas-arroz} de galletas de arroz con {mani} de pasta de maní.', 'Sumá {banana} de banana en rodajas.'],
+    steps: ['Untá {galletas-arroz} de galletas de arroz[ con {mani} de pasta de maní].', 'Sumá {banana} de banana en rodajas.'],
   },
   {
     title: 'Pan integral con miel y banana',
@@ -334,7 +395,7 @@ const COMBOS: Combo[] = [
     title: 'Tostadas de Arroz con Ricota, Miel y Banana',
     roles: ['post', 'snack'],
     parts: [{ id: 'ricota', r: 'p', max: 250, min: 60 }, { id: 'banana', r: 'c', max: 300, min: 60 }, { id: 'tostadas-arroz', r: 'x', g: 24 }, { id: 'miel', r: 'x', g: 10 }],
-    steps: ['Untá {tostadas-arroz} de tostadas de arroz con {ricota} de ricota magra.', 'Sumá {banana} de banana en rodajas y un hilo de miel ({miel}).'],
+    steps: ['Untá[ {tostadas-arroz} de] tostadas de arroz con {ricota} de ricota magra.', 'Sumá {banana} de banana en rodajas y un hilo de miel ({miel}).'],
   },
   {
     title: 'Yogur Deslactosado con Copos de Maíz y Miel',
@@ -373,7 +434,7 @@ const COMBOS: Combo[] = [
     title: 'Lentejas Salteadas con Arroz y Vegetales',
     roles: MAIN,
     parts: [{ id: 'lentejas', r: 'p', max: 450, min: 150 }, { id: 'arroz', r: 'c', max: 300 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'vegetales', r: 'x', g: 150 }],
-    steps: ['Hervir las lentejas 20-25 min (o usá de lata, enjuagadas). Serví {lentejas}.', 'Hervir el arroz 15-18 min. Serví {arroz} cocido.', 'Salteá {vegetales} de cebolla, morrón y zanahoria en sartén antiadherente 5 min y sumá las lentejas.', 'Serví sobre el arroz con {oliva} de aceite de oliva, comino y pimentón.'],
+    steps: ['Hervir las lentejas 20-25 min (o usá de lata, enjuagadas). Serví {lentejas}.', 'Hervir el arroz 15-18 min. Serví {arroz} cocido.', 'Salteá {vegetales} de cebolla, morrón y zanahoria en sartén antiadherente 5 min y sumá las lentejas.', 'Serví sobre el arroz y condimentá con comino y pimentón[ y {oliva} de aceite de oliva].'],
   },
   {
     title: 'Fideos con Ricota, Espinaca y Nueces',
@@ -386,7 +447,7 @@ const COMBOS: Combo[] = [
     special: true,
     roles: MAIN,
     parts: [{ id: 'tofu', r: 'p', max: 350, min: 100 }, { id: 'batata', r: 'c', max: 450 }, { id: 'oliva', r: 'f', max: 10 }, { id: 'vegetales', r: 'x', g: 150 }],
-    steps: ['Mandá {batata} de batata en cubos al horno a 200 °C por 30 min con spray antiadherente.', 'Cortá {tofu} de tofu en bastones, marinalo con salsa de soja y grillalo 3-4 min por lado.', 'Armá la ensalada con {vegetales} de verduras y {oliva} de aceite de oliva.'],
+    steps: ['Mandá {batata} de batata en cubos al horno a 200 °C por 30 min con spray antiadherente.', 'Cortá {tofu} de tofu en bastones, marinalo con salsa de soja y grillalo 3-4 min por lado.', 'Armá la ensalada con {vegetales} de verduras[ y {oliva} de aceite de oliva].'],
   },
   {
     title: 'Pechuga de pollo a la plancha con arroz yamaní y ensalada',
@@ -416,37 +477,37 @@ const COMBOS: Combo[] = [
     title: 'Bowl de atún, arroz, palta y vegetales',
     roles: MAIN,
     parts: [{ id: 'atun', r: 'p', max: 240, min: 80 }, { id: 'arroz', r: 'c', max: 350 }, { id: 'palta', r: 'f', max: 70 }, { id: 'vegetales', r: 'x', g: 150 }],
-    steps: ['Hervir el arroz 15-18 min y dejalo entibiar. Serví {arroz} cocido.', 'Escurrí {atun} de atún al natural.', 'Cortá {vegetales} de tomate, pepino y zanahoria y {palta} de palta en cubos.', 'Armá el bowl: arroz abajo, arriba el atún, la palta y los vegetales. Limón y sal.'],
+    steps: ['Hervir el arroz 15-18 min y dejalo entibiar. Serví {arroz} cocido.', 'Escurrí {atun} de atún al natural.', 'Cortá {vegetales} de tomate, pepino y zanahoria[ y {palta} de palta] en cubos.', 'Armá el bowl: arroz abajo, arriba el atún, la palta y los vegetales. Limón y sal.'],
   },
   {
     title: 'Lomo a la plancha con fideos al ajo y oliva',
     roles: MAIN,
     parts: [{ id: 'lomo', r: 'p', max: 240, min: 100 }, { id: 'fideos', r: 'c', max: 350 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'vegetales', r: 'x', g: 120 }],
-    steps: ['Hervir los fideos 8-10 min al dente. Serví {fideos} cocidos.', 'Sellá {lomo} de lomo en plancha bien caliente 3-4 min por lado.', 'Salteá ajo picado en {oliva} de aceite de oliva 1 min (sin quemarlo) y mezclá con los fideos.', 'Acompañá con {vegetales} de ensalada verde.'],
+    steps: ['Hervir los fideos 8-10 min al dente. Serví {fideos} cocidos.', 'Sellá {lomo} de lomo en plancha bien caliente 3-4 min por lado.', 'Salteá ajo picado[ en {oliva} de aceite de oliva] 1 min, sin quemarlo, y mezclá con los fideos.', 'Acompañá con {vegetales} de ensalada verde.'],
   },
   {
     title: 'Bondiola al horno con batatas y ensalada',
     roles: MAIN,
     parts: [{ id: 'cerdo', r: 'p', max: 240, min: 100 }, { id: 'batata', r: 'c', max: 450 }, { id: 'oliva', r: 'f', max: 10 }, { id: 'vegetales', r: 'x', g: 150 }],
-    steps: ['Condimentá la bondiola con ajo, pimentón y mostaza.', 'Mandá al horno {cerdo} de bondiola junto con {batata} de batata en cubos a 200 °C por 30-35 min.', 'Armá la ensalada con {vegetales} de verduras.', 'Condimentá con {oliva} de aceite de oliva.'],
+    steps: ['Condimentá la bondiola con ajo, pimentón y mostaza.', 'Mandá al horno {cerdo} de bondiola[ junto con {batata} de batata en cubos] a 200 °C por 30-35 min.', 'Armá la ensalada con {vegetales} de verduras.', 'Condimentá con {oliva} de aceite de oliva.'],
   },
   {
     title: 'Nalga a la plancha con lentejas salteadas y vegetales',
     roles: MAIN,
     parts: [{ id: 'nalga', r: 'p', max: 240, min: 80 }, { id: 'lentejas', r: 'c', max: 350 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'vegetales', r: 'x', g: 150 }],
-    steps: ['Hervir las lentejas 20-25 min (o usá de lata enjuagadas). Serví {lentejas}.', 'Salteá las lentejas con cebolla y morrón picados 5 min.', 'Sellá {nalga} de nalga en plancha bien caliente 3-4 min por lado.', 'Acompañá con {vegetales} de vegetales y {oliva} de aceite de oliva.'],
+    steps: ['Hervir las lentejas 20-25 min (o usá de lata enjuagadas). Serví {lentejas}.', 'Salteá las lentejas con cebolla y morrón picados 5 min.', 'Sellá {nalga} de nalga en plancha bien caliente 3-4 min por lado.', 'Acompañá con {vegetales} de vegetales[ y {oliva} de aceite de oliva].'],
   },
   {
     title: 'Tortilla de claras y papa con ensalada',
     roles: MAIN,
     parts: [{ id: 'claras', r: 'p', step: 33, max: 330, min: 99 }, { id: 'papa', r: 'c', max: 450 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'huevo', r: 'x', g: 50 }, { id: 'vegetales', r: 'x', g: 150 }],
-    steps: ['Hervir {papa} de papa en cubos 10 min y escurrila.', 'Batí {claras} con {huevo}, sal y pimienta, y mezclalo con la papa.', 'Cociná en sartén antiadherente tapada a fuego bajo 5 min por lado (o mandala al horno a 200 °C por 20 min).', 'Acompañá con {vegetales} de ensalada y {oliva} de aceite de oliva.'],
+    steps: ['Hervir {papa} de papa en cubos 10 min y escurrila.', 'Batí {claras} con {huevo}, sal y pimienta, y mezclalo con la papa.', 'Cociná en sartén antiadherente tapada a fuego bajo 5 min por lado (o mandala al horno a 200 °C por 20 min).', 'Acompañá con {vegetales} de ensalada[ y {oliva} de aceite de oliva].'],
   },
   {
     title: 'Wok de pollo con fideos y vegetales salteados',
     roles: MAIN,
     parts: [{ id: 'pollo', r: 'p', max: 240, min: 80 }, { id: 'fideos', r: 'c', max: 330 }, { id: 'oliva', r: 'f', max: 10 }, { id: 'vegetales', r: 'x', g: 200 }],
-    steps: ['Hervir los fideos 8 min y escurrilos. Serví {fideos} cocidos.', 'Cortá {pollo} de pollo en tiras y salteálo a fuego fuerte 5 min con {oliva} de aceite.', 'Sumá {vegetales} de vegetales en juliana (morrón, zanahoria, cebolla, zapallito) y salteá 3-4 min.', 'Mezclá con los fideos y terminá con un chorrito de salsa de soja.'],
+    steps: ['Hervir los fideos 8 min y escurrilos. Serví {fideos} cocidos.', 'Cortá {pollo} de pollo en tiras y salteálo a fuego fuerte 5 min[ con {oliva} de aceite].', 'Sumá {vegetales} de vegetales en juliana (morrón, zanahoria, cebolla, zapallito) y salteá 3-4 min.', 'Mezclá con los fideos y terminá con un chorrito de salsa de soja.'],
   },
 ];
 
@@ -476,11 +537,16 @@ export function solveCombo(c: Combo, T: Tot): FoodItem[] | null {
 
 export function comboSteps(c: Combo, items: FoodItem[]) {
   const q: Record<string, string> = {};
-  items.forEach((i) => i.foodId && (q[i.foodId] = qtyLabel(i.foodId, i.grams)));
-  return [
-    ...c.steps.filter((st) => (st.match(/\{([a-z-]+)\}/g) ?? []).every((m) => q[m.slice(1, -1)])).map((st) => st.replace(/\{([a-z-]+)\}/g, (_, id: string) => q[id])),
-    CONDIMENT_STEP,
-  ];
+  items.forEach((i) => i.foodId && i.grams > 0 && (q[i.foodId] = qtyLabel(i.foodId, i.grams)));
+  const has = (st: string) => (st.match(/\{([a-z-]+)\}/g) ?? []).every((m) => q[m.slice(1, -1)]);
+  const steps = c.steps
+    .map((st) => st.replace(/\[([^\]]*)\]/g, (_, seg: string) => (has(seg) ? seg : '')))
+    .filter(has)
+    .map((st) => st.replace(/\{([a-z-]+)\}/g, (_, id: string) => q[id]));
+  // Ingredientes que no son de la receta base (ej. la palta que suma el cierre del día): también llevan su paso.
+  const own = new Set(c.parts.map((p) => p.id));
+  items.filter((i) => i.grams > 0 && i.foodId && !own.has(i.foodId)).forEach((i) => stepsForItem(i).forEach((st) => steps.push(st)));
+  return [...steps, seasoningStep(items, c.title)];
 }
 
 /** Rango de reescalado de una alternativa para igualar las kcal de la Opción 1. */
@@ -578,7 +644,7 @@ function dishCands(meal: Meal, T: Tot, allowed?: Set<string> | null): Cand[] {
         title: dishTitleCase(`${short(d.name)}${portionTxt}${sides.length ? ` + ${sides.join(' + ')}` : ''}`),
         items,
         technique: d.technique ?? d.detail ?? autoTechnique(items),
-        steps: autoSteps(items),
+        steps: autoSteps(items, d.name),
       },
       err: err(totals(items), T),
       key: baseKey(items),
@@ -619,10 +685,12 @@ export function suggestAlternatives(meal: Meal, allowed?: Set<string> | null, n 
   const keys = new Set([mainKey]);
   const soft = new Set(avoid);
   // 1ª pasada: base distinta de todo lo anterior; 2ª: se permite repetir lo "a evitar" pero nunca la base de la Opción 1 ni un título.
-  for (const relax of [false, true]) {
+  // 3ª (sólo si no se llega a 3 opciones por comida): se acepta repetir la base con otro plato (ej. sin lactosa, todo es whey aislado).
+  for (const pass of [0, 1, 2]) {
+    if (pass === 2 && picked.length >= 2) break;
     for (const c of all) {
-      if (picked.length >= n) break;
-      if (picked.includes(c) || keys.has(c.key) || (!relax && soft.has(c.key))) continue;
+      if (picked.length >= (pass === 2 ? 2 : n)) break;
+      if (picked.includes(c) || (pass < 2 && keys.has(c.key)) || (pass === 0 && soft.has(c.key))) continue;
       if (c.opt.title === meal.title || picked.some((p) => p.opt.title === c.opt.title)) continue;
       picked.push(c);
       keys.add(c.key);
@@ -666,7 +734,7 @@ export function fitAltsToMain(meal: Meal): Meal {
 /** Recalcula las cantidades dentro de los pasos de una alternativa tras reescalarla o editarla. */
 export function refreshSteps(alt: MealOption, items: FoodItem[]) {
   const combo = COMBOS.find((c) => dishTitleCase(c.title) === alt.title || c.title === alt.title);
-  return combo ? comboSteps(combo, items) : autoSteps(items);
+  return combo ? comboSteps(combo, items) : autoSteps(items, alt.title);
 }
 
 function rescale(i: FoodItem, grams: number): FoodItem {

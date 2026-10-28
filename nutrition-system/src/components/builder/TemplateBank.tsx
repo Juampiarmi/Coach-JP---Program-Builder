@@ -5,7 +5,8 @@ import { BookOpen, ChevronDown, ExternalLink, Zap } from 'lucide-react';
 import { computeTelemetry, dayTotals, fmt0, fmt1, mealsForDay, mealTotals } from '@/lib/bioenergetics';
 import { BRAND_TIERS, TIER_LABEL } from '@/lib/brandTiers';
 import { doiUrl } from '@/lib/evidence';
-import { optionSteps, optionTotals } from '@/lib/menuOptions';
+import { optionSteps } from '@/lib/menuOptions';
+import { OptionBadges } from './OptionBadges';
 import { FOOD_SLOT_LABEL, SLOT_OF } from '@/lib/mealSlots';
 import {
   goalById,
@@ -211,7 +212,6 @@ function TemplateMeal({ meal }: { meal: Meal }) {
 
 function TemplateOption({ option, n }: { option: MealOption; n: number }) {
   const [open, setOpen] = useState(n === 1);
-  const t = optionTotals(option.items);
   return (
     <div className="px-3 py-2">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 text-left" aria-expanded={open}>
@@ -219,9 +219,10 @@ function TemplateOption({ option, n }: { option: MealOption; n: number }) {
           [ OPCIÓN {n} ]
         </span>
         <span className="min-w-0 flex-1 text-[13px] font-semibold text-ink">{option.title}</span>
-        <span className="tnum hidden font-mono text-[10px] text-mute sm:inline">{fmt0(t.kcal)} kcal</span>
+        <OptionBadges items={option.items} className="hidden sm:flex" />
         <ChevronDown className={cx('h-4 w-4 flex-none text-mute transition-transform', open && 'rotate-180')} />
       </button>
+      <OptionBadges items={option.items} className="mt-1 sm:hidden" />
       {open && (
         <div className="mt-2 grid gap-3 lg:grid-cols-2">
           <div>

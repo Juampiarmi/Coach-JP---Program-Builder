@@ -11,18 +11,19 @@ export type BrandTier = [string, string, string];
 
 export const TIER_LABEL: BrandTier = ['Nivel 1 · Económico / Rápido', 'Nivel 2 · Estándar / Comercial', 'Nivel 3 · Premium / Pro'];
 
-const FRESH: BrandTier = ['Verdulería de barrio', 'Supermercado (Coto / Carrefour / Día)', 'Verdulería orgánica / de estación'];
-const MEAT: BrandTier = ['Carnicería de barrio', 'Coto / Carrefour (bandeja)', 'Carnicería premium (novillo / Angus)'];
+// Frescos y carnes: los 3 niveles son canales de compra reales (no hay marca de góndola para un corte o una verdura).
+const FRESH: BrandTier = ['Verdulería de barrio', 'Supermercado (Coto / Carrefour / Día)', 'Verdulería de estación / Selección'];
+const MEAT: BrandTier = ['Carnicería de barrio', 'Bandeja Coto / Carrefour / Día', 'Frigorífico / Corte Premium Angus'];
 
 export const BRAND_TIERS: Record<string, BrandTier> = {
-  pollo: ['Pollería de barrio', 'Granja Tres Arroyos', 'Pollo de campo / pastoril'],
+  pollo: ['Pollería / carnicería de barrio', 'Bandeja Coto / Carrefour / Día', 'Frigorífico / Pollo de campo seleccionado'],
   cuadril: MEAT,
   lomo: MEAT,
   nalga: MEAT,
-  picada: ['Carnicería de barrio (picada especial)', 'Coto / Carrefour (picada especial 5 %)', 'Carnicería premium (picada de nalga a pedido)'],
-  merluza: ['Merluza congelada Día / Coto', 'Pescadería (filet fresco)', 'Pescadería premium (filet despinado)'],
+  picada: ['Carnicería de barrio (picada especial)', 'Bandeja Coto / Carrefour / Día (picada especial 5 %)', 'Frigorífico / Corte Premium (nalga picada a pedido)'],
+  merluza: ['Pescadería de barrio', 'Bandeja Coto / Carrefour / Día (filet fresco o congelado)', 'Pescadería de selección (filet despinado)'],
   atun: ['Marolio / Día', 'La Campagnola', 'Gomes da Costa'],
-  cerdo: ['Carnicería de barrio', 'Paladini (cortes envasados)', 'Cerdo de campo premium'],
+  cerdo: ['Carnicería de barrio', 'Bandeja Coto / Carrefour / Día', 'Frigorífico / Corte Premium de cerdo'],
   tofu: ['Tofu de dietética', 'Tofu envasado de supermercado', 'Tofu orgánico de dietética'],
   huevo: ['Huevos sueltos de granja', 'Huevos blancos / color de supermercado', 'Huevos de gallinas libres de jaula'],
   claras: ['Huevos sueltos (separar las claras)', 'Claras líquidas pasteurizadas de supermercado', 'Claras pasteurizadas premium'],
@@ -56,7 +57,7 @@ export const BRAND_TIERS: Record<string, BrandTier> = {
   banana: FRESH,
   manzana: FRESH,
   frutillas: FRESH,
-  palta: ['Verdulería de barrio', 'Supermercado (Coto / Carrefour / Día)', 'Palta Hass seleccionada'],
+  palta: FRESH,
   miel: ['Miel suelta de dietética', 'Miel de supermercado (frasco)', 'Miel pura de productor'],
   'dulce-membrillo': ['Dulce de membrillo Día / Coto', 'Arcor / Emeth', 'Dulce de membrillo sin azúcar agregada'],
   isotonica: ['Bebida isotónica Día / Coto', 'Gatorade / Powerade', 'Electrolitos en polvo (ENA / Star Nutrition)'],

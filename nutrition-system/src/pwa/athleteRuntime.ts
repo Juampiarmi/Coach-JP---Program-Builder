@@ -1183,7 +1183,8 @@ const runtime = String.raw`
           h += '</div>';
         }
         var otitle = x.alt ? x.alt.title : m.title;
-        if (otitle) h += '<div class="dish"><span class="dtag">' + (x.alt ? '[ OPCIÓN ' + x.opt + ' · ALTERNATIVA ]' : '[ OPCIÓN 1 · SUGERIDA ]') + '</span><b>' + esc(otitle) + '</b></div>';
+        var omin = (x.alt || m).prepMin;
+        if (otitle) h += '<div class="dish"><span class="dtag">' + (x.alt ? '[ OPCIÓN ' + x.opt + ' · ALTERNATIVA ]' : '[ OPCIÓN 1 · SUGERIDA ]') + '</span><b>' + esc(otitle) + '</b><span class="obadges">' + (omin ? '<i class="t">[ ⏱ ' + omin + ' min ]</i>' : '') + '<i>[ ' + n0(x.kcal) + ' kcal · P: ' + n0(x.t.p) + 'g | C: ' + n0(x.t.c) + 'g | G: ' + n0(x.t.f) + 'g ]</i></span></div>';
       }
       h += '<div class="items">';
       x.items.forEach(function (it, idx) {

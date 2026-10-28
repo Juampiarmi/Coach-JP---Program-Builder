@@ -6,7 +6,7 @@ import { CITES } from './evidence';
 import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
-import { autoTechnique, autoTitle, optionSteps } from './menuOptions';
+import { autoTechnique, autoTitle, optionSteps, prepMinutes } from './menuOptions';
 import { fitsSlot, foodSlots } from './mealSlots';
 import { modernizeName } from './foodBrandDb';
 import { BRAND_TIERS, TIER_OF_BUDGET } from './brandTiers';
@@ -143,11 +143,12 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
         title: c.title || autoTitle(c.items),
         technique: c.technique || autoTechnique(c.items),
         steps: optionSteps(c),
+        prepMin: prepMinutes(c.items),
         // Opciones 2 a 5 con nombre, técnica y preparación paso a paso (automáticos si el coach no los cargó).
         // Las alternativas fuera de la franja del día (planes viejos) no llegan al atleta.
         alts: (c.alts ?? [])
           .filter((a) => a.items.length && a.items.every((i) => !i.foodId || fitsSlot(FOOD_BY_ID[i.foodId], m.role)))
-          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: a.technique || autoTechnique(a.items), steps: optionSteps(a) })),
+          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: a.technique || autoTechnique(a.items), steps: optionSteps(a), prepMin: prepMinutes(a.items) })),
       };
     }),
     // Marca sugerida por ingrediente según el presupuesto del atleta (Nivel 1 / 2 / 3).

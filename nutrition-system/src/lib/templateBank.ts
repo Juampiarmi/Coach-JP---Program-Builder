@@ -2,7 +2,7 @@ import { computeTelemetry } from './bioenergetics';
 import { balancePlan } from './balance';
 import { CITES } from './evidence';
 import { FOOD_BY_ID } from './foods';
-import { autoTechnique, comboSteps, solveCombo, withAlternatives, type Combo } from './menuOptions';
+import { autoTechnique, comboSteps, prepMinutes, refreshSteps, solveCombo, withAlternatives, type Combo } from './menuOptions';
 import { retimeMeals } from './schedule';
 import { seedPlan, uid } from './seed';
 import type { AthletePlan, Macros, Meal, MealDay, MealRole, Phase, Sex } from './types';
@@ -122,7 +122,7 @@ export interface TemplateSelection {
 // ---------- Filtros de preferencia ----------
 const MEAT_RE =
   /pollo|pechuga|carne|cuadril|lomo|nalga|peceto|picada|merluza|pescado|at[uú]n|cerdo|bondiola|jam[oó]n|milanesa|asado|vac[ií]o|chori|molleja|chinchul|matambre|entra[ñn]a|alb[oó]ndiga|bolo[ñn]esa|hamburguesa casera|parrillada|brochette|locro|carbonada|pastel de papa|sfija|lomito|salpic/i;
-const LACTOSE_IDS = new Set(['leche', 'yogur', 'untable', 'ricota', 'queso-light', 'whey', 'yogur-proteico', 'alfajor-proteico']);
+const LACTOSE_IDS = new Set(['leche', 'yogur', 'untable', 'ricota', 'queso-light', 'whey', 'yogur-proteico', 'alfajor-proteico', 'barra-proteica']);
 const SLOW_IDS = new Set(['yamani', 'batata', 'papa', 'cerdo', 'lentejas', 'garbanzos']);
 
 export function prefAccept(pref: TemplatePref): ((foodId: string) => boolean) | undefined {
@@ -182,7 +182,7 @@ const C = (title: string, parts: Combo['parts'], steps: string[]): Combo => ({ t
 const BREAKFAST = C(
   'Tostadas Integrales con Huevos y Claras Revueltos, Palta y Frutillas',
   [{ id: 'claras', r: 'p', step: 33, min: 33, max: 264 }, { id: 'pan', r: 'c', step: 15, min: 30, max: 150 }, { id: 'palta', r: 'f', max: 60 }, { id: 'huevo', r: 'x', g: 100 }, { id: 'frutillas', r: 'x', g: 100 }],
-  ['Batí {huevo} con {claras}, una pizca de sal y pimienta.', 'Cocinalos en sartén antiadherente a fuego bajo, revolviendo 2-3 min hasta que cuajen.', 'Tostá {pan} de pan integral y untalo con {palta} de palta pisada con limón.', 'Serví los huevos arriba de las tostadas y acompañá con {frutillas} de frutillas.'],
+  ['Batí {huevo} con {claras}, una pizca de sal y pimienta.', 'Cocinalos en sartén antiadherente a fuego bajo, revolviendo 2-3 min hasta que cuajen.', 'Tostá {pan} de pan integral[ y untalo con {palta} de palta pisada con limón].', 'Serví los huevos arriba de las tostadas y acompañá con {frutillas} de frutillas.'],
 );
 const yogurBowl = (yog: string) =>
   C(
@@ -226,14 +226,14 @@ const BASE: Record<TemplatePref, Partial<Record<MealRole, Combo>>> = {
     lunch: C(
       'Salteado de Tofu con Arroz Yamaní y Vegetales',
       [{ id: 'tofu', r: 'p', min: 100, max: 350 }, { id: 'yamani', r: 'c', max: 400 }, { id: 'oliva', r: 'f', max: 10 }, { id: 'vegetales', r: 'x', g: 200 }],
-      ['Hervir el arroz yamaní 35-40 min. Serví {yamani} cocido.', 'Cortá {tofu} de tofu en cubos y doralo en sartén con {oliva} de aceite 6-8 min, dándolo vuelta.', 'Sumá {vegetales} de vegetales en juliana y salteá 3-4 min a fuego fuerte.', 'Terminá con un chorrito de salsa de soja y serví sobre el arroz.'],
+      ['Hervir el arroz yamaní 35-40 min. Serví {yamani} cocido.', 'Cortá {tofu} de tofu en cubos y doralo en sartén antiadherente[ con {oliva} de aceite] 6-8 min, dándolo vuelta.', 'Sumá {vegetales} de vegetales en juliana y salteá 3-4 min a fuego fuerte.', 'Terminá con un chorrito de salsa de soja y serví sobre el arroz.'],
     ),
     peri: preWod('yogur'),
     post: postWod('whey'),
     dinner: C(
       'Tortilla de Claras y Papa con Ensalada',
       [{ id: 'claras', r: 'p', step: 33, min: 99, max: 396 }, { id: 'papa', r: 'c', max: 500 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'huevo', r: 'x', g: 50 }, { id: 'vegetales', r: 'x', g: 150 }],
-      ['Hervir {papa} de papa en cubos 10 min y escurrila.', 'Batí {claras} con {huevo}, sal y pimienta, y mezclalo con la papa.', 'Cociná en sartén antiadherente tapada a fuego bajo 5 min por lado.', 'Acompañá con {vegetales} de ensalada y {oliva} de aceite de oliva.'],
+      ['Hervir {papa} de papa en cubos 10 min y escurrila.', 'Batí {claras} con {huevo}, sal y pimienta, y mezclalo con la papa.', 'Cociná en sartén antiadherente tapada a fuego bajo 5 min por lado.', 'Acompañá con {vegetales} de ensalada[ y {oliva} de aceite de oliva].'],
     ),
   },
   lactose: {
@@ -248,14 +248,14 @@ const BASE: Record<TemplatePref, Partial<Record<MealRole, Combo>>> = {
     lunch: C(
       'Fideos con Atún, Tomate y Oliva',
       [{ id: 'atun', r: 'p', min: 80, max: 260 }, { id: 'fideos', r: 'c', max: 400 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'vegetales', r: 'x', g: 100 }],
-      ['Hervir los fideos 8-10 min al dente. Serví {fideos} cocidos.', 'Mientras tanto, escurrí {atun} de atún y cortá {vegetales} de tomate en cubos.', 'Mezclá todo con {oliva} de aceite de oliva, sal y orégano.'],
+      ['Hervir los fideos 8-10 min al dente. Serví {fideos} cocidos.', 'Mientras tanto, escurrí {atun} de atún y cortá {vegetales} de tomate en cubos.', 'Mezclá todo con sal y orégano[ y {oliva} de aceite de oliva].'],
     ),
     peri: preWod('yogur'),
     post: postWod('whey'),
     dinner: C(
       'Lomo a la Plancha con Pan Integral y Ensalada',
       [{ id: 'lomo', r: 'p', min: 100, max: 260 }, { id: 'pan', r: 'c', step: 15, min: 30, max: 180 }, { id: 'oliva', r: 'f', max: 13 }, { id: 'vegetales', r: 'x', g: 150 }],
-      ['Sellá {lomo} de lomo en plancha bien caliente 3-4 min por lado.', 'Tostá {pan} de pan integral.', 'Armá la ensalada con {vegetales} de verduras y condimentala con {oliva} de aceite de oliva.'],
+      ['Sellá {lomo} de lomo en plancha bien caliente 3-4 min por lado.', 'Tostá {pan} de pan integral.', 'Armá la ensalada con {vegetales} de verduras[ y condimentala con {oliva} de aceite de oliva].'],
     ),
   },
 };
@@ -306,8 +306,38 @@ export function buildTemplatePlan(base: AthletePlan, sel: TemplateSelection, opt
   const t = computeTelemetry(draft);
   let meals = seedMeals(goal, sel.pref, t.gramsOn, t.gramsOff);
   if (opts.retime) meals = retimeMeals(meals, draft.profile, draft.anamnesis);
-  const balanced = balancePlan({ ...draft, meals }).plan;
-  return withAlternatives(balanced, true, undefined, prefAccept(sel.pref));
+  const accept = prefAccept(sel.pref);
+  const withAlts = withAlternatives(balancePlan({ ...draft, meals }).plan, true, undefined, accept);
+  // Filtro de preferencia de punta a punta: ninguna opción (tampoco la Opción 1) con el alérgeno o fuera del tiempo límite.
+  const enforced = { ...withAlts, meals: withAlts.meals.map((m) => enforcePref(m, sel.pref)) };
+  // Cierre final y pasos con los gramos definitivos (el balance reescala porciones y los pasos llevan cantidades).
+  const closed = balancePlan(enforced).plan;
+  return { ...closed, meals: closed.meals.map((m) => restep(m, sel.pref)) };
+}
+
+/** Tope de minutos de la preferencia «Rápido < 10 min». */
+export const QUICK_MAX_MIN = 10;
+
+/** La opción respeta la preferencia: ingredientes permitidos y, en «Rápido», tiempo dentro del límite. */
+export function prefOptionOk(pref: TemplatePref, items: Meal['items']) {
+  const accept = prefAccept(pref);
+  if (accept && !items.every((i) => !i.foodId || accept(i.foodId))) return false;
+  return pref !== 'quick' || prepMinutes(items) <= QUICK_MAX_MIN;
+}
+
+/** Opción 1 incompatible → se reemplaza por la primera alternativa compatible; las alternativas incompatibles salen. */
+function enforcePref(m: Meal, pref: TemplatePref): Meal {
+  if (pref === 'omni') return m;
+  const alts = (m.alts ?? []).filter((a) => prefOptionOk(pref, a.items));
+  if (prefOptionOk(pref, m.items) || !alts.length) return { ...m, alts };
+  const [first, ...rest] = alts;
+  return { ...m, items: first.items, title: first.title, technique: first.technique, steps: first.steps, alts: rest };
+}
+
+function restep(m: Meal, pref: TemplatePref): Meal {
+  const combo = baseFor(pref, m.role);
+  const steps = m.title === combo.title ? comboSteps(combo, m.items) : refreshSteps({ title: m.title ?? '', items: m.items, steps: m.steps }, m.items);
+  return { ...m, steps, alts: m.alts?.map((a) => ({ ...a, steps: refreshSteps(a, a.items) })) };
 }
 
 /** Plan de vista previa para el perfil semilla (sin tocar al atleta activo). */
