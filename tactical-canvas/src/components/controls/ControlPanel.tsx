@@ -17,6 +17,8 @@ import { AthleticEditor } from './AthleticEditor'
 import { WorkoutEditor } from './WorkoutEditor'
 import { FixEditor } from './FixEditor'
 import { SeamlessControls } from './SeamlessControls'
+import { ServicesPanel } from './ServicesPanel'
+import { SERVICE_BY_ID } from '../../lib/services'
 import { STICKER_OPTIONS, STICKER_SPEC } from '../../lib/remix'
 import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator, HookScorer } from './AiAssist'
@@ -51,6 +53,7 @@ export const TEMPLATES: { id: TemplateId; n: string; label: string }[] = [
   { id: 'essay', n: '16', label: 'Manifiesto texto' },
   { id: 'workout', n: '17', label: 'Sesión / Rutina' },
   { id: 'fix', n: '18', label: 'Error vs Corrección' },
+  { id: 'service', n: '19', label: 'Servicios' },
 ]
 
 const DIAGRAM_KINDS: { value: DiagramKind; label: string }[] = [
@@ -109,6 +112,8 @@ interface Props {
   addImage?: (dataUrl: string) => string
   resolveImage?: (id: string | null | undefined) => string | null
   slideCount?: number
+  /** Reemplaza el caption de Instagram (copy de venta de Servicios & Programas) */
+  onCaption?: (caption: string) => void
 }
 
 /**
@@ -124,7 +129,7 @@ function seedQuote(state: CanvasState): Partial<CanvasState> {
   return { quoteText: own, quoteEmphasis: state.headlineB.replace(/\*/g, '').trim(), quoteAuthor: author, quoteRole: '', quoteSource: '' }
 }
 
-export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1, addImage, resolveImage }: Props) {
+export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1, addImage, resolveImage, onCaption }: Props) {
   const ai = { state, update, topic, discipline: getDiscipline() }
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
@@ -304,7 +309,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           <span className="size-3 rounded-sm" style={{ background: state.accentSwap ? '#38BDF8' : '#EA580C' }} />
           [ ⚡ SWAP ACCENT · {state.accentSwap ? 'CIAN' : 'NARANJA'} ]
         </button>
-        {state.template === 'repeat' || state.template === 'quote' || state.template === 'essay' || state.template === 'workout' || state.template === 'fix' ? null : state.template === 'manifesto' ? (
+        {state.template === 'repeat' || state.template === 'quote' || state.template === 'essay' || state.template === 'workout' || state.template === 'fix' || state.template === 'service' ? null : state.template === 'manifesto' ? (
           <p className="font-mono text-[10px] text-steel/70">*palabra* invierte el color dentro de la frase.</p>
         ) : (
           <Field label={state.template === 'diagram' ? 'Párrafo (opcional)' : 'Párrafo'} hint={<span>*palabra* invierte color · {state.body.length} car.</span>}>
@@ -611,6 +616,9 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         {state.template === 'athletic' && <AthleticEditor state={state} update={update} />}
         {state.template === 'workout' && <WorkoutEditor state={state} update={update} />}
         {state.template === 'fix' && <FixEditor state={state} update={update} addImage={addImage} resolveImage={resolveImage} />}
+        {state.template === 'service' && (
+          <p className="font-mono text-[10px] leading-relaxed text-steel/80">▸ Programa, pilares, cupos y CTA se editan en «07 · Servicios &amp; Programas Coach JP».</p>
+        )}
         {state.template === 'essay' && (
           <Field label="Párrafos" hint="línea en blanco = párrafo nuevo · MAYÚSCULAS = remate en Chakra">
             <TextArea value={(state.essayParas ?? []).join('\n\n')} onChange={(v) => update({ essayParas: v.split(/\n[ \t]*\n/) })} rows={9} />
@@ -851,6 +859,15 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
         {(state.storySticker ?? 'none') !== 'none' && (
           <p className="font-mono text-[9px] leading-relaxed text-steel/60">▸ {STICKER_SPEC[state.storySticker as Exclude<StickerKind, 'none'>].hint}</p>
         )}
+      </Section>
+
+      <Section
+        index="07"
+        title="Servicios & Programas Coach JP"
+        summary={state.template === 'service' ? (state.serviceMode === 'catalog' ? `Catálogo · ${state.serviceCatalog.length} disciplinas` : `Ficha · ${SERVICE_BY_ID[state.serviceSport]?.label ?? ''}`) : 'Placas de conversión'}
+        defaultOpen={state.template === 'service'}
+      >
+        <ServicesPanel state={state} update={update} onCaption={onCaption} />
       </Section>
 
       {state.template !== 'manifesto' && state.template !== 'repeat' && (

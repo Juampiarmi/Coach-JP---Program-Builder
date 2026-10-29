@@ -485,6 +485,7 @@ export default function App() {
         bookmarkAuto={bookmarkAuto}
         onCopyStyle={copyStyle}
         slideCount={slides.length}
+        onCaption={setCaption}
       />
     </>
   )

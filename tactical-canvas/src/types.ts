@@ -1,4 +1,8 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay' | 'workout' | 'fix'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay' | 'workout' | 'fix' | 'service'
+/** Servicios & Programas Coach JP: especialidad de la placa de conversión */
+export type ServiceSport = 'hypertrophy' | 'crossfit' | 'hyrox' | 'mtb' | 'rugby' | 'hockey' | 'golf' | 'weightlifting' | 'powerlifting' | 'combat'
+/** Carátula «System Offer» con todos los servicios o ficha técnica de un solo programa */
+export type ServiceMode = 'catalog' | 'single'
 export type ThemeId = 'dark' | 'paper'
 export type DiagramKind = 'radar' | 'circles' | 'domino' | 'curve' | 'funnel' | 'versus'
 export type DiagramAccent = 'blue' | 'orange' | 'cyan'
@@ -234,6 +238,17 @@ export interface CanvasState {
   fixAccent: 'green' | 'brand'
   /** Lado a lado (split) o uno arriba del otro (stack) */
   fixLayout: 'split' | 'stack'
+  /** Servicios & Programas (plantilla 19): carátula de catálogo o ficha técnica de una disciplina */
+  serviceMode: ServiceMode
+  serviceSport: ServiceSport
+  /** Disciplinas de la grilla de la carátula, en orden */
+  serviceCatalog: ServiceSport[]
+  /** Ficha: pilares técnicos (3-4). Carátula: lo que incluye todo programa (viñetas ✓) */
+  serviceItems: string[]
+  /** Etiqueta de disponibilidad (ej «CUPOS LIMITADOS · EVALUACIÓN DE INGRESO») */
+  serviceAvailability: string
+  /** Botón de CTA al pie (ej «MANDÁ 'PROGRAMA' POR DM») */
+  serviceCta: string
   /** Carrusel continuo: hilo de marca que cruza de placa en placa */
   seamlessThread: boolean
   /** Carrusel continuo: foto panorámica repartida entre todas las placas (id en IndexedDB) */

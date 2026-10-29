@@ -1,4 +1,5 @@
 import { DEFAULT_AUTHOR } from './lib/brand'
+import { servicePatch } from './lib/services'
 import type { CanvasState, ChartConfig, TemplateId } from './types'
 
 /** Gráfico de ejemplo: volumen semanal vs. hipertrofia (pilar fuerza). */
@@ -90,6 +91,17 @@ export const DEFAULT_STATE: CanvasState = {
   workoutNote: 'Progresión: cuando completes todas las series con RIR 3, subí 2,5 kg.',
   slideCounter: false,
   storySticker: 'none',
+  serviceMode: 'single',
+  serviceSport: 'rugby',
+  serviceCatalog: ['hypertrophy', 'crossfit', 'hyrox', 'mtb', 'rugby', 'hockey', 'golf', 'weightlifting', 'powerlifting', 'combat'],
+  serviceItems: [
+    'Fuerza máxima y potencia para contacto, scrum y tackle',
+    'Capacidad de esfuerzos repetidos de alta intensidad (RSA)',
+    'Robustez de cuello, hombro e isquiotibiales',
+    'Carga semanal ajustada a partido y entrenamiento de campo (RPE de sesión)',
+  ],
+  serviceAvailability: 'CUPOS LIMITADOS · EVALUACIÓN DE INGRESO',
+  serviceCta: "MANDÁ 'PROGRAMA' POR DM",
   seamlessThread: false,
   panoramaImageId: null,
   fixWrongLabel: 'INCORRECTO',
@@ -234,6 +246,7 @@ export const SAMPLES: Record<TemplateId, Partial<CanvasState>> = {
     citeSub: '',
     structData: null,
   },
+  service: servicePatch('single', 'rugby', []),
   fix: {
     tag: 'TÉCNICA · SENTADILLA',
     headlineA: 'EL ERROR QUE TE',

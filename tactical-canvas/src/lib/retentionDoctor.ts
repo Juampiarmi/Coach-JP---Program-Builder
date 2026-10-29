@@ -94,6 +94,8 @@ export function slideCopy(s: CanvasState): { headline: string; body: string[] } 
         return s.essayParas
       case 'workout':
         return [...s.workoutRows.map((r) => `${r.name} ${r.scheme}`), s.workoutNote]
+      case 'service':
+        return [...s.serviceItems, s.serviceAvailability, s.serviceCta]
       case 'fix':
         return [s.fixWrongLabel, s.fixWrongText, s.fixRightLabel, s.fixRightText]
       default:

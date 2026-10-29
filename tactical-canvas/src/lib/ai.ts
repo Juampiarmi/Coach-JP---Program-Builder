@@ -11,6 +11,8 @@ import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 import { JsonRepairError, safeParseJson } from './safeJson'
 import type { QuoteIntent } from './quoteIntent'
+import { CATALOG_INCLUDES, SERVICE_BY_ID, SERVICES } from './services'
+import type { ServiceMode, ServiceSport } from '../types'
 
 export type AiProvider = 'openai' | 'anthropic' | 'gemini'
 export type Discipline = 'general' | 'sports' | 'crossfit'
@@ -127,6 +129,7 @@ PLANTILLAS DISPONIBLES (templateId):
 - "rutina": tarjeta de sesión de entrenamiento: ejercicios con código (A1, B1, B2 = superserie), series × reps, intensidad (RIR / RPE / % 1RM) y pausa. Ideal para «la sesión de hoy» o un protocolo aplicable.
 - "athletic": placa editorial clara estilo Opus Athletic (papel claro, titular negro) con datos en filas clave → valor («CARGAS PESADAS:» → «3-5 reps al 85-90 % 1RM») o tabla de 2 columnas (Intensidad | Reps × series). Ideal para protocolos con números reales.
 - "cita": cita célebre estilo «Forbes Quotes» (frase real de un deportista o persona de éxito + nombre + rol). SÓLO con una frase que esa persona dijo de verdad y de fuente conocida; si no tenés certeza absoluta, no uses esta plantilla.
+- "servicio": placa de conversión de un programa de Coach JP: ficha técnica de UNA disciplina (badge «PROGRAMA ALTO RENDIMIENTO // DEPORTE», titular del programa, 3-4 pilares técnicos y CTA a DM / evaluación) o carátula de catálogo con varias disciplinas. Ideal para cerrar un pitch de venta presentando el programa.
 - "opus": placa de mentalidad con jerarquía: título principal (titleWhite + titleAccent corto) y debajo 2 a 6 bloques numerados («00001:» + una frase de criterio u hábito operativo). Ideal para estándares, reglas o hábitos de mindset en una placa.
 CIERRE DE RETENCIÓN: en todo carrusel de 4 a 5 placas, la última placa es por defecto "guardado", salvo que el usuario pida otro cierre.
 
@@ -215,6 +218,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "error_correccion": { "wrong": { "label": string (ej «INCORRECTO»), "text": string (la falla, máx 16 palabras) }, "right": { "label": string (ej «CORRECCIÓN TÁCTICA»), "text": string (la solución concreta, máx 16 palabras) } } (OBLIGATORIO sólo si templateId es "error_correccion"; en los demás omitilo),
       "rutina": { "rows": [2 a 8 objetos { "code": "A1", "name": string (ejercicio), "scheme": string (ej «4 × 5»), "intensity": string (ej «RIR 2», «80 % 1RM»), "rest": string (ej «3:00») }], "note": string (progresión o criterio, 1 oración) } (OBLIGATORIO sólo si templateId es "rutina"; en los demás omitilo),
       "athletic": { "theme": "dark" | "light" (por defecto "dark", la estética nativa de Coach JP), "nr": string (número de la etiqueta «[Nr. X]»; "" en portada y cierre), "cta": string ("" salvo en el cierre), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
+      "servicio": { "mode": "single" | "catalog", "sport": "hypertrophy" | "crossfit" | "hyrox" | "mtb" | "rugby" | "hockey" | "golf" | "weightlifting" | "powerlifting" | "combat", "pillars": [3 o 4 strings (pilares técnicos concretos del deporte, máx 90 caracteres)], "availability": string (ej «CUPOS LIMITADOS · EVALUACIÓN DE INGRESO»), "cta": string (MAYÚSCULAS, ej «MANDÁ 'PROGRAMA' POR DM») } (OBLIGATORIO sólo si templateId es "servicio"; en los demás omitilo),
       "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo), "enfasis": string (2 a 6 palabras finales literales de quote, van en naranja) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
       "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
       "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
@@ -796,6 +800,9 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   athletic: 'athletic',
   rutina: 'workout',
   error_correccion: 'fix',
+  servicio: 'service',
+  service: 'service',
+  programa: 'service',
   manifiesto_texto: 'essay',
   essay: 'essay',
   'error vs correccion': 'fix',
@@ -1115,6 +1122,20 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
     // Con cita pedida, el párrafo de la IA es la bajada de contexto de la Cita táctica: no se borra.
     if (!ctx.quote) patch.body = ''
   } else if (template === 'essay') patch.template = 'statement'
+
+  // 19 · Servicios & Programas: ficha técnica o carátula de catálogo.
+  const sv = obj(s.servicio ?? s.service)
+  if (template === 'service' || Object.keys(sv).length) {
+    const sport = str(sv.sport).toLowerCase() as ServiceSport
+    const pillars = list(sv.pillars ?? sv.pilares ?? sv.items).slice(0, 5)
+    patch.serviceMode = sv.mode === 'catalog' ? 'catalog' : 'single'
+    if (SERVICE_BY_ID[sport]) patch.serviceSport = sport
+    if (pillars.length) patch.serviceItems = pillars
+    else if (template === 'service') patch.serviceItems = patch.serviceMode === 'catalog' ? CATALOG_INCLUDES : (SERVICE_BY_ID[sport] ?? SERVICE_BY_ID.rugby).pillars
+    if (str(sv.availability)) patch.serviceAvailability = upper(str(sv.availability))
+    if (str(sv.cta)) patch.serviceCta = upper(str(sv.cta))
+    if (template === 'service') Object.assign(patch, { citeMain: '', citeSub: '', body: '' })
+  }
 
   // 18 · Error vs Corrección
   const fx = obj(s.error_correccion ?? s.fix)
@@ -1554,6 +1575,7 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   workout: 'rutina',
   fix: 'error_correccion',
   essay: 'manifiesto_texto',
+  service: 'servicio',
 }
 
 export interface RegenerateRequest {
@@ -1997,4 +2019,60 @@ export async function transcribeAudio(
   }
   onStatus?.(null)
   throw lastErr instanceof Error ? lastErr : new Error('No se pudo transcribir el audio con los modelos disponibles.')
+}
+
+// ---------------------------------------------------------------------------
+// SERVICIOS & PROGRAMAS · copy de venta por disciplina.
+
+export interface ServiceCopy {
+  white: string
+  accent: string
+  /** Ficha: pilares técnicos. Carátula: lo que incluye todo programa. */
+  pillars: string[]
+  cta: string
+  availability: string
+  caption: string
+}
+
+/**
+ * Copy de conversión para la placa de servicio: gancho con las demandas físicas reales del deporte
+ * (nada de «llevá tu rendimiento al siguiente nivel»), los 3 pilares de la metodología Coach JP para
+ * esa disciplina y un caption de Instagram orientado a lead (DM o evaluación de ingreso).
+ */
+export async function generateServiceCopy(
+  settings: AiSettings,
+  ctx: { mode: ServiceMode; sport: ServiceSport; catalog: ServiceSport[] },
+  signal?: AbortSignal,
+  onStatus?: StatusFn,
+): Promise<ServiceCopy> {
+  const sp = SERVICE_BY_ID[ctx.sport]
+  const catalog = (ctx.catalog.length ? ctx.catalog : SERVICES.map((x) => x.id)).map((id) => SERVICE_BY_ID[id]?.label).filter(Boolean)
+  const target =
+    ctx.mode === 'single'
+      ? `FICHA TÉCNICA de UN programa: ${sp.label.toUpperCase()}.
+- "white" + "accent": gancho directo (máx 9 palabras entre los dos, MAYÚSCULAS) que nombre una DEMANDA FÍSICA REAL y específica de ${sp.label} (ej. para rugby: contactos repetidos y esfuerzos de alta intensidad con pausas cortas; para golf: velocidad de palo y carga rotacional sobre la zona lumbar). "accent" es el remate (va en naranja).
+- "pillars": EXACTAMENTE 3 pilares técnicos de la metodología Coach JP para ${sp.label} (máx 90 caracteres cada uno), cubriendo: fisiología aplicada y demandas energéticas del deporte, prevención de lesiones típicas de ese deporte, y programación con RPE / RIR. Con datos concretos (zonas, rangos, ejercicios, sistemas energéticos), nunca frases de folleto.`
+      : `CARÁTULA «SYSTEM OFFER» con el catálogo de programas: ${catalog.join(', ')}.
+- "white" + "accent": gancho directo para la carátula (máx 9 palabras entre los dos, MAYÚSCULAS): que el lector se identifique por su deporte y entienda que hay un programa específico, no una rutina genérica.
+- "pillars": EXACTAMENTE 3 cosas que incluye TODO programa (máx 34 caracteres cada una, ej «Evaluación de ingreso», «Video-análisis técnico», «Ajustes semanales por RPE»).`
+  const user = `Sos el redactor de conversión de COACH JP (preparador físico de alto rendimiento, Instagram, español rioplatense con voseo). Escribí el copy de venta de una placa de servicio.
+${target}
+- "cta": botón de llamado a la acción en MAYÚSCULAS, máx 6 palabras, a DM con palabra clave o a la evaluación de ingreso (ej «MANDÁ '${ctx.mode === 'single' ? sp.short : 'PROGRAMA'}' POR DM»).
+- "availability": etiqueta corta de disponibilidad en MAYÚSCULAS (ej «CUPOS LIMITADOS · EVALUACIÓN DE INGRESO»). No inventes cifras de cupos.
+- "caption": caption de Instagram orientado a lead: 1) primera línea = gancho con la demanda real del deporte, 2) 2-3 líneas sobre el problema de entrenar sin especificidad, 3) qué incluye el programa en viñetas «▸», 4) cierre con la acción concreta (mandar la palabra clave por DM o completar la evaluación). Entre 60 y 140 palabras, sin hashtags genéricos (máx 4 específicos al final).
+PROHIBIDO: clichés y promesas vacías («llevá tu rendimiento al siguiente nivel», «tu mejor versión», «resultados garantizados», «sin excusas»), testimonios o cifras inventadas, y pseudociencia.
+Forma exacta: { "white": string, "accent": string, "pillars": [3 strings], "cta": string, "availability": string, "caption": string }`
+  const res = await askJson(settings, user, signal, onStatus)
+  const pillars = list(res.pillars ?? res.pilares).map((p) => p.replace(/^[▸•\-\s]+/, '').trim()).filter(Boolean).slice(0, 4)
+  const white = upper(str(first(res.white, res.titleWhite)))
+  const accent = upper(str(first(res.accent, res.titleAccent)))
+  if (!white || pillars.length < 2) throw new Error('La IA no devolvió un copy de servicio utilizable. Probá de nuevo.')
+  return {
+    white,
+    accent,
+    pillars,
+    cta: upper(str(res.cta)),
+    availability: upper(str(first(res.availability, res.disponibilidad))),
+    caption: cleanCaption(str(res.caption)),
+  }
 }
