@@ -2075,19 +2075,22 @@ function syncLibrary(){
   return added;
 }
 function load(){
+  let _libLeida = false;
   try{
     /* Checkpoint 3 -- migración en frío, aditiva: coachjp_console_v2 (blob
        histórico) nunca se borra ni se reescribe. Cada función de migración
        es idempotente por su propia clave -- si esta rama ya tiene la suya,
        no vuelve a tocar nada. */
-    migrarLibreria();
-    migrarPlanesRama();
+    /* cada migracion en su propio try: una excepcion ahi no puede dejar sin leer los alumnos guardados (y que el primer guardado los pise con el estado vacio) */
+    try{ migrarLibreria(); }catch(eM1){ console.warn('migrarLibreria', eM1); }
+    try{ migrarPlanesRama(); }catch(eM2){ console.warn('migrarPlanesRama', eM2); }
     const rawLib = localStorage.getItem(LIB_KEY);
     if(rawLib){
       const lib = JSON.parse(rawLib);
       S.athletes  = lib.athletes  || [];
       S.exercises = lib.exercises || [];
       S.libV      = lib.libV;
+      _libLeida = true;
     }
     const rawPlanes = localStorage.getItem(PLANS_KEY);
     if(rawPlanes){
@@ -2121,7 +2124,7 @@ function load(){
        cuando ambas claves nuevas existen y parsearon bien, nunca si algo
        falló arriba (try/catch general de load() protege este bloque
        también). */
-    if(rawLib && rawPlanes && !window.__jpRescate){
+    if(rawLib && rawPlanes && !window.__jpRescate && S.athletes.length > 0){      /* con 0 alumnos el blob heredado puede ser la unica copia: no se borra */
       try{
         if(localStorage.getItem(KEY) != null){
           localStorage.removeItem(KEY);
@@ -2139,7 +2142,11 @@ function load(){
     S.exercises = S.exercises || [];
     S.plans     = S.plans     || {};
     S.ui        = S.ui        || {day:0, view:'alumnos'};
-  }catch(e){ console.warn('Error leyendo storage', e); }
+  }catch(e){
+    console.warn('Error leyendo storage', e);
+    /* la biblioteca (alumnos + videos) existe pero no se pudo leer: NO se escribe nada hasta resolverlo, para no pisarla con el estado vacio */
+    try{ if(!_libLeida && localStorage.getItem(LIB_KEY)) window.__jpLoadFallo = true; }catch(e3){}
+  }
   if(!S.exercises.length){ S.exercises = seedExercises(); S.libV = LIB_VERSION; }
   else {
     const nuevos = syncLibrary();
@@ -2150,6 +2157,8 @@ function load(){
     const rr = jpPersistirEstado();
     if(rr.ok) setTimeout(() => { try{ toast('🛟 Se recuperaron tu banco de rutinas y tus sedes guardados en la copia heredada'); }catch(e){} }, 1400);
   }
+  /* diagnostico de almacenamiento + rescate de emergencia si no hay alumnos (nunca pisa datos: solo actua con 0 alumnos) */
+  try{ jpRescateAlmacen(false); }catch(eR){ console.warn('rescate de almacenamiento', eR); }
 }
 /* ESCRITURA TRANSACCIONAL DEL ESTADO (Paso 1 · seguridad de datos)
    - un solo punto de escritura para save(), guardarAhora(), el guardado blindado y el volcado de salida;
@@ -2168,6 +2177,8 @@ function jpPersistirEstado(){
   if(S.exportLog && typeof S.exportLog === 'object') plObj.exportLog = S.exportLog;
   const plStr = JSON.stringify(plObj);
   if(libStr === _ultLib && plStr === _ultPlans) return { ok: true, omitido: true };
+  const _guarda = jpGuardaEscritura();
+  if(_guarda) return _guarda;
   let prevLib = null;
   try{ prevLib = localStorage.getItem(LIB_KEY); }catch(e){}
   try{
@@ -2179,12 +2190,162 @@ function jpPersistirEstado(){
   }
   _ultLib = libStr; _ultPlans = plStr;
   try{ localStorage.removeItem(KEY); }catch(e){}
+  try{ jpTrasEscritura(); }catch(e){}
   return { ok: true };
+}
+/* ---------- red de seguridad de los alumnos y los videos ----------
+   1) jpGuardaEscritura: nunca se escribe un estado SIN alumnos encima de un almacenamiento que SI los tiene (salvo borrado deliberado, ver delAth), ni mientras la
+      lectura inicial haya fallado. Asi un arranque a medias, otra pestaña vacia o un error de migracion no pueden borrar la base.
+   2) copia de rescate rotativa (coachjp_rescate_v1 / _v0): alumnos + vinculos de video (+ planes si caben) cada vez que cambian, con tope de frecuencia.
+   3) jpRescateAlmacen: al cargar, si hay 0 alumnos, busca copias (rescate, blob heredado, backups) y los recupera sin pisar nada.
+   4) jpDiagnosticoAlmacen: tabla en consola con todas las claves de localStorage y que contiene cada una. */
+const RESCATE_K1 = 'coachjp_rescate_v1', RESCATE_K0 = 'coachjp_rescate_v0';
+let _ultSnapT = 0, _ultSnapSig = '', _ultSnapN = -1, _avisoProtegido = false;
+function jpAvisoProtegido(motivo){
+  try{ console.error('[Almacenamiento] ESCRITURA BLOQUEADA para proteger los datos: ' + motivo + '. Ejecutá jpDiagnosticoAlmacen() y jpRescateAlmacen(true) en la consola.'); }catch(e){}
+  if(_avisoProtegido) return;
+  _avisoProtegido = true;
+  const cuerpo = '<p>El guardado se <b>pausó a propósito</b>: ' + motivo + '. No se tocó nada de lo guardado en este navegador.</p>' +
+    '<p>Probá <b>Recuperar ahora</b> (busca copias automáticas en este navegador). Si venías de otra dirección web, abrí la app desde la de siempre.</p>';
+  const acciones = [
+    { lb: '🛟 Recuperar ahora', tipo: 'go', cierra: false, fn: function(){ const r = jpRescateAlmacen(true); try{ toast(r && r.alumnos ? '🛟 Recuperados ' + r.alumnos + ' alumno(s)' : 'No encontré copias: mirá la consola (jpDiagnosticoAlmacen)', r && r.alumnos ? 'ok' : 'warn'); }catch(e){} } },
+    { lb: '🔄 Recargar', fn: function(){ location.reload(); } },
+    { lb: 'Permitir guardar igual', fn: function(){ window.__jpForzarEscritura = true; window.__jpLoadFallo = false; try{ save(); }catch(e){} } }
+  ];
+  try{ if(typeof window.jpAlarma === 'function') window.jpAlarma('🛟 Guardado pausado para proteger tus alumnos', cuerpo, acciones); else toast('🛟 Guardado pausado para proteger tus alumnos (ver consola)', 'warn'); }catch(e){}
+}
+function jpGuardaEscritura(){
+  if(window.__jpForzarEscritura) return null;
+  if(window.__jpLoadFallo){ jpAvisoProtegido('la lectura inicial del almacenamiento falló'); return { ok: true, omitido: true, protegido: true }; }
+  if(S.athletes && S.athletes.length === 0 && !window.__jpBorradoOk){
+    let previos = 0;
+    try{ const raw = localStorage.getItem(LIB_KEY); if(raw) previos = (JSON.parse(raw).athletes || []).length; }catch(e){ previos = 0; }
+    if(previos > 0){ jpAvisoProtegido('la memoria tiene 0 alumnos y el almacenamiento guarda ' + previos); return { ok: true, omitido: true, protegido: true }; }
+  }
+  return null;
+}
+function jpVideosDe(lista){
+  const v = {};
+  (lista || []).forEach(e => { if(e && e.id && (e.videoId || e.video)) v[e.id] = [e.video || '', e.videoId || '', e.es || '']; });
+  return v;
+}
+function jpSnapshotRescate(){
+  const n = S.athletes.length; if(!n) return;
+  const sig = n + '|' + JSON.stringify(S.athletes).length + '|' + (S.exercises || []).filter(e => e.videoId || e.video).length;
+  const ahora = Date.now();
+  if(sig === _ultSnapSig || (n === _ultSnapN && ahora - _ultSnapT < 300000)) return;      /* tope: una copia cada 5 minutos como maximo y solo si algo cambio (un alumno nuevo o borrado copia al instante) */
+  _ultSnapT = ahora; _ultSnapSig = sig; _ultSnapN = n;
+  let prev = null; try{ prev = localStorage.getItem(RESCATE_K1); }catch(e){}
+  const armar = conPlanes => JSON.stringify({ t: ahora, origen: location.origin, n: n, activeId: S.activeId, ath: S.athletes, vid: jpVideosDe(S.exercises), plansKey: PLANS_KEY, plans: conPlanes ? S.plans : undefined });
+  let txt = armar(true);
+  if(txt.length > 900000) txt = armar(false);      /* los planes se incluyen solo si la copia entera es chica: no puede competir por cupo con el guardado real */
+  try{
+    if(prev){
+      let n0 = 0, t0 = 0; try{ const p0 = JSON.parse(localStorage.getItem(RESCATE_K0) || 'null'); if(p0){ n0 = p0.n || 0; t0 = p0.t || 0; } }catch(e){}
+      let pp = null; try{ pp = JSON.parse(prev); }catch(e){}
+      if(pp && ((pp.n || 0) >= n0 || ahora - t0 > 7 * 86400000)) localStorage.setItem(RESCATE_K0, prev);
+    }
+    localStorage.setItem(RESCATE_K1, txt);
+  }catch(e){
+    try{ localStorage.removeItem(RESCATE_K0); localStorage.setItem(RESCATE_K1, armar(false)); }catch(e2){ try{ localStorage.removeItem(RESCATE_K1); }catch(e3){} }
+  }
+}
+function jpTrasEscritura(){
+  if(S.athletes.length === 0 && window.__jpBorradoOk){ try{ localStorage.removeItem(RESCATE_K1); localStorage.removeItem(RESCATE_K0); localStorage.setItem('coachjp_vacio_ok', '1'); }catch(e){} }      /* vacio deliberado: no se avisa ni se resucita */
+  else if(S.athletes.length > 0){ try{ localStorage.removeItem('coachjp_vacio_ok'); }catch(e){} jpSnapshotRescate(); }
+  window.__jpBorradoOk = false;
+}
+function jpDescribirClave(k, v){
+  const d = { clave: k, caracteres: v ? v.length : 0, contenido: '' };
+  if(!v || v.length < 2 || (v[0] !== '{' && v[0] !== '[')) { d.contenido = v && v.length < 60 ? v : '(texto)'; return d; }
+  try{
+    const o = JSON.parse(v), p = [];
+    if(Array.isArray(o)){ d.contenido = 'array de ' + o.length; return d; }
+    if(Array.isArray(o.athletes)) p.push('alumnos=' + o.athletes.length);
+    if(Array.isArray(o.ath)) p.push('alumnos=' + o.ath.length + ' (copia de rescate)');
+    if(Array.isArray(o.exercises)) p.push('ejercicios=' + o.exercises.length + ' · con video=' + o.exercises.filter(e => e && (e.videoId || e.video)).length);
+    if(o.vid) p.push('videos(copia)=' + Object.keys(o.vid).length);
+    if(o.plans && typeof o.plans === 'object') p.push('planes=' + Object.keys(o.plans).length);
+    if(Array.isArray(o.banco)) p.push('banco=' + o.banco.length);
+    if(o.t) p.push('t=' + new Date(o.t).toLocaleString('es-AR'));
+    d.contenido = p.join(' · ') || 'objeto: ' + Object.keys(o).slice(0, 8).join(',');
+  }catch(e){ d.contenido = 'JSON ilegible'; }
+  return d;
+}
+function jpDiagnosticoAlmacen(){
+  const filas = [];
+  try{ for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); filas.push(jpDescribirClave(k, localStorage.getItem(k))); } }catch(e){ console.error('[Almacenamiento] no se pudo leer localStorage', e); }
+  filas.sort((a, b) => b.caracteres - a.caracteres);
+  try{
+    console.group('[Almacenamiento] diagnóstico · ' + filas.length + ' clave(s) en localStorage');
+    console.log('Origen:', location.origin, '· rama:', window.COACH_DISCIPLINA || 'sports', '· LIB_KEY =', LIB_KEY, '· PLANS_KEY =', PLANS_KEY);
+    console.log('En memoria ahora: alumnos =', S.athletes.length, '· ejercicios =', S.exercises.length, '· con video =', S.exercises.filter(e => e.videoId || e.video).length, '· planes =', Object.keys(S.plans || {}).length, '· lectura inicial fallida =', !!window.__jpLoadFallo);
+    console.table(filas);
+    try{ console.log('sessionStorage:', Object.keys(sessionStorage)); }catch(e){}
+    if(navigator.storage && navigator.storage.estimate){ navigator.storage.estimate().then(r => console.log('Cupo del origen (bytes): usado', r.usage, 'de', r.quota)).catch(() => {}); }
+    if(navigator.storage && navigator.storage.persisted){ navigator.storage.persisted().then(p => console.log('Almacenamiento persistente (el navegador no lo borra solo):', p)).catch(() => {}); }
+    if(window.indexedDB && indexedDB.databases){ indexedDB.databases().then(l => console.log('IndexedDB:', l.map(x => x.name))).catch(() => {}); }
+    console.groupEnd();
+  }catch(e){}
+  return filas;
+}
+window.jpDiagnosticoAlmacen = jpDiagnosticoAlmacen;
+/* busca en TODO el almacenamiento una copia con alumnos (rescate, blob heredado, backups) y la recupera; solo actua con 0 alumnos */
+function jpRescateAlmacen(forzar){
+  const filas = jpDiagnosticoAlmacen();
+  const res = { alumnos: 0, videos: 0, planes: 0, fuente: '' };
+  if(S.athletes.length > 0 && !forzar) return res;
+  if(S.athletes.length > 0) return res;
+  const cands = [];
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k === LIB_KEY || k === PLANS_KEY) continue;
+      const v = localStorage.getItem(k);
+      if(!v || v.length < 300 || v[0] !== '{' || v.length > 12000000) continue;
+      let o = null; try{ o = JSON.parse(v); }catch(e){ continue; }
+      const ath = Array.isArray(o.athletes) ? o.athletes : (Array.isArray(o.ath) ? o.ath : null);
+      if(ath && ath.length) cands.push({ fuente: k, ath: ath, plans: o.plans, activeId: o.activeId, ex: Array.isArray(o.exercises) ? o.exercises : null, vid: o.vid || null, t: o.t || o.updatedAt || 0 });
+    }
+  }catch(e){}
+  if(!cands.length){
+    let huella = false; try{ huella = !!(localStorage.getItem(LIB_KEY) || localStorage.getItem(PLANS_KEY)) && !localStorage.getItem('coachjp_vacio_ok'); }catch(e){}
+    if(!huella) return res;
+    try{ console.warn('[Almacenamiento] 0 alumnos y no encontré ninguna copia en este navegador (origen ' + location.origin + '). Si antes veías tus alumnos, probablemente abriste la app desde otra dirección: usá la de siempre, el botón Backup / Datos > Restaurar, o la Nube Multi-dispositivo.'); }catch(e){}
+    if(huella && !window.__jpAvisoSinCopia){ window.__jpAvisoSinCopia = true; setTimeout(() => { try{ toast('⚠️ 0 alumnos y sin copias en este navegador: abrí la app desde la dirección de siempre o restaurá un backup (consola: jpDiagnosticoAlmacen)', 'warn'); }catch(e){} }, 2500); }
+    return res;
+  }
+  cands.sort((a, b) => (b.ath.length - a.ath.length) || (b.t - a.t));
+  const c = cands[0];
+  S.athletes = JSON.parse(JSON.stringify(c.ath));
+  res.alumnos = S.athletes.length; res.fuente = c.fuente;
+  if(c.plans && typeof c.plans === 'object'){
+    S.plans = S.plans || {};
+    Object.keys(c.plans).forEach(id => { if(!S.plans[id]){ S.plans[id] = JSON.parse(JSON.stringify(c.plans[id])); res.planes++; } });
+  }
+  if(!S.activeId || !S.athletes.some(a => a.id === S.activeId)) S.activeId = (c.activeId && S.athletes.some(a => a.id === c.activeId)) ? c.activeId : S.athletes[0].id;
+  /* vinculos de video: aditivo, solo rellena los que hoy estan vacios */
+  const porId = {}, porNombre = {};
+  (c.ex || []).forEach(e => { if(e && (e.videoId || e.video)){ porId[e.id] = e; if(e.es) porNombre[norm(e.es)] = e; } });
+  Object.keys(c.vid || {}).forEach(id => { const x = c.vid[id]; porId[id] = { video: x[0], videoId: x[1], es: x[2] }; if(x[2]) porNombre[norm(x[2])] = porId[id]; });
+  (S.exercises || []).forEach(e => {
+    if(e.videoId || e.video) return;
+    const src = porId[e.id] || porNombre[norm(e.es || '')];
+    if(src){ e.video = src.video || ''; e.videoId = src.videoId || ''; if(e.video || e.videoId) res.videos++; }
+  });
+  window.__jpForzarEscritura = false;
+  window.__jpLoadFallo = false;
+  const rr = jpPersistirEstado();
+  try{ console.warn('[Almacenamiento] 🛟 RESCATE: recuperé ' + res.alumnos + ' alumno(s), ' + res.planes + ' plan(es) y ' + res.videos + ' vínculo(s) de video desde "' + c.fuente + '" (' + (c.t ? new Date(c.t).toLocaleString('es-AR') : 'sin fecha') + ') · guardado ok=' + rr.ok); }catch(e){}
+  setTimeout(() => { try{ toast('🛟 Rescate automático: recuperé ' + res.alumnos + ' alumno(s)' + (res.videos ? ' y ' + res.videos + ' video(s)' : '') + ' desde una copia de este navegador', 'ok'); if(typeof renderAthletes === 'function') renderAthletes(); }catch(e){} }, 1200);
+  return res;
 }
 /* libera lo que seguro sobra (hoy: la copia completa heredada) sin tocar planes ni biblioteca */
 function jpLiberarSeguro(){
   let liberado = 0;
   try{ const v = localStorage.getItem(KEY); if(v != null){ liberado += v.length * 2; localStorage.removeItem(KEY); } }catch(e){}
+  /* si el cupo aprieta, la segunda copia de rescate es lo primero que se libera (la mas reciente queda) */
+  try{ const v0 = localStorage.getItem(RESCATE_K0); if(v0 != null){ liberado += v0.length * 2; localStorage.removeItem(RESCATE_K0); } }catch(e){}
   return liberado;
 }
 /* cupo REAL de localStorage en este navegador (se mide escribiendo una clave temporal que se borra siempre) */
@@ -2378,6 +2539,8 @@ window.addEventListener('storage', function(e){
   if(e.key !== LIB_KEY || !e.newValue) return;
   try{
     const lib = JSON.parse(e.newValue);
+    /* otra pestaña guardó una biblioteca SIN alumnos mientras esta los tiene: se ignora (no se vacia esta pestaña) y queda registrado */
+    if(!(lib.athletes || []).length && S.athletes.length && !window.__jpBorradoOk){ console.error('[Almacenamiento] otra pestaña escribió una biblioteca sin alumnos: se ignoró para proteger los ' + S.athletes.length + ' de esta pestaña'); return; }
     S.athletes  = lib.athletes  || [];
     S.exercises = lib.exercises || [];
     S.libV      = lib.libV;
@@ -3276,6 +3439,7 @@ function delAth(){
   if(!confirm('¿Eliminar a ' + fullName(a) + ' y toda su planificación? Esta acción no se puede deshacer.')) return;
   S.athletes = S.athletes.filter(x => x.id !== a.id);
   delete S.plans[a.id];
+  window.__jpBorradoOk = true;      /* borrado deliberado: se permite guardar aunque quede sin alumnos */
   if(S.activeId === a.id) S.activeId = S.athletes.length ? S.athletes[0].id : null;
   save(); closeModal('mAth'); renderAthletes(); toast('Alumno/a eliminado/a', 'warn');
 }
@@ -54325,6 +54489,7 @@ body{overflow-x:hidden}
     if(!remotoTmp) return;
     const r = remotoTmp.obj;
     if(modo === 'replace'){
+      window.__jpBorradoOk = true;      /* reemplazo deliberado por la version de la nube */
       S.athletes  = r.athletes || [];
       S.exercises = r.exercises || [];
       S.plans     = r.plans || {};
