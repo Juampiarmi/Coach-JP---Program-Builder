@@ -18,13 +18,45 @@ const lower = (n: string) => n.charAt(0).toLowerCase() + n.slice(1);
 
 const ORDER = ['plato', 'lean-protein', 'eggs', 'dairy-protein', 'protein-snack', 'whey', 'starch', 'cereal', 'fruit', 'sport-carb', 'veg', 'fat'];
 
-/** Nombre de plato real a partir del desglose: "Pechuga de pollo con arroz blanco y vegetales mixtos". */
+/** Nombre gastronómico de cada ingrediente dentro del título de un plato (con su cocción típica). */
+const CULINARY: Record<string, string> = {
+  pollo: 'Pechuga de Pollo a la Plancha',
+  cuadril: 'Bife de Cuadril a la Plancha',
+  lomo: 'Lomo a la Plancha',
+  nalga: 'Nalga a la Plancha',
+  picada: 'Carne Picada Salteada',
+  merluza: 'Merluza al Horno',
+  atun: 'Atún al Natural',
+  cerdo: 'Bondiola al Horno',
+  tofu: 'Tofu Salteado',
+  huevo: 'Huevos Revueltos',
+  claras: 'Claras Revueltas',
+  arroz: 'Arroz Blanco',
+  yamani: 'Arroz Yamaní',
+  fideos: 'Fideos al Dente',
+  papa: 'Papas al Horno',
+  batata: 'Batatas al Horno',
+  lentejas: 'Lentejas Salteadas',
+  garbanzos: 'Garbanzos Salteados',
+  vegetales: 'Ensalada Verde',
+  pan: 'Tostadas Integrales',
+  'pan-lactal': 'Pan Lactal Integral',
+  whey: 'Shake de Whey',
+  'whey-isolate': 'Shake de Whey Aislado',
+  yogur: 'Yogur Griego',
+  palta: 'Palta',
+  nueces: 'Nueces',
+  mani: 'Pasta de Maní',
+};
+const culinary = (i: FoodItem) => (i.foodId && CULINARY[i.foodId]) || short(i.food);
+
+/** Nombre de plato real a partir del desglose: "Bife de Cuadril a la Plancha con Papas al Horno y Ensalada Verde". */
 export function autoTitle(items: FoodItem[]) {
   const named = items
     .filter((i) => i.grams > 0 && !(i.foodId && ['oliva'].includes(i.foodId)))
     .map((i) => ({ i, g: i.foodId ? (FOOD_BY_ID[i.foodId]?.group ?? 'zz') : 'zz' }))
     .sort((a, b) => (ORDER.indexOf(a.g) + 1 || 99) - (ORDER.indexOf(b.g) + 1 || 99) || b.i.grams - a.i.grams)
-    .map((x) => short(x.i.food));
+    .map((x) => culinary(x.i));
   if (!named.length) return 'Plato del Plan';
   const [head, ...rest] = named;
   if (!rest.length) return dishTitleCase(head);
@@ -56,7 +88,8 @@ export function autoTechnique(items: FoodItem[]) {
     if (t && !tips.includes(t[1])) tips.push(t[1]);
   }
   const base = tips.slice(0, 3).join(' · ');
-  return `${base ? `${base.charAt(0).toUpperCase()}${base.slice(1)}. ` : ''}Condimentos libres: sal moderada, pimienta, orégano, pimentón, ajo, perejil y limón.`;
+  // Condimento / saborizante según el tipo de plato (nada de sal y orégano en un licuado).
+  return `${base ? `${base.charAt(0).toUpperCase()}${base.slice(1)}. ` : ''}${SEASONING_STEP[flavorOf(items)]}`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -151,6 +184,11 @@ export function flavorOf(items: FoodItem[], title = ''): Flavor {
 }
 const seasoningStep = (items: FoodItem[], title = '') => SEASONING_STEP[flavorOf(items, title)];
 const ALL_SEASONING = new Set([LEGACY_CONDIMENT_STEP, ...Object.values(SEASONING_STEP)]);
+
+/** Tips guardados con el condimento genérico de versiones anteriores → condimento según el tipo de plato. */
+export function fixTechnique(tech: string | undefined, items: FoodItem[], title = '') {
+  return tech?.replace(/Condimentos libres: sal moderada, pimienta, orégano, pimentón, ajo, perejil y limón\./, seasoningStep(items, title));
+}
 
 /** Reemplaza el paso de condimento (viejo o desactualizado) por el que corresponde al tipo de plato. */
 export function fixSeasoning(steps: string[], items: FoodItem[], title = '') {
@@ -386,6 +424,18 @@ const COMBOS: Combo[] = [
     steps: ['Comé {barrita-cereal} de barrita de cereal y {banana} de banana 30-45 min antes de entrenar.'],
   },
   {
+    title: 'Pan Integral con Miel y Banana + Bebida Isotónica',
+    roles: ['peri'],
+    parts: [{ id: 'pan', r: 'c', step: 15, max: 150, min: 60 }, { id: 'banana', r: 'x', g: 120 }, { id: 'miel', r: 'x', g: 30 }, { id: 'isotonica', r: 'x', g: 500 }],
+    steps: ['Tostá {pan} de pan integral y untalo con {miel} de miel.', 'Comelo con {banana} de banana 60-90 min antes de entrenar.', 'Tomá {isotonica} de bebida isotónica de a sorbos en la entrada en calor (carga de glucógeno).'],
+  },
+  {
+    title: 'Galletitas de Agua con Dulce de Membrillo + Bebida Isotónica',
+    roles: ['peri'],
+    parts: [{ id: 'galletitas-agua', r: 'c', step: 6, max: 150, min: 36 }, { id: 'dulce-membrillo', r: 'x', g: 40 }, { id: 'isotonica', r: 'x', g: 500 }],
+    steps: ['Armá {galletitas-agua} de galletitas de agua con {dulce-membrillo} de dulce de membrillo en fetas.', 'Tomá {isotonica} de bebida isotónica de a sorbos antes y durante la entrada en calor.'],
+  },
+  {
     title: 'Batata asada con miel',
     roles: ['peri'],
     parts: [{ id: 'batata', r: 'c', max: 400, min: 100 }, { id: 'miel', r: 'x', g: 10 }],
@@ -557,10 +607,62 @@ const FIT_MAX = 1.8;
  * (5 g de grasa de más pesan lo mismo en una colación chica que en una cena) + un término propio de proteína.
  */
 const err = (cur: Tot, T: Tot) => {
-  const k = cur.kcal > 0 ? Math.min(FIT_MAX, Math.max(FIT_MIN, T.kcal / cur.kcal)) : 1;
-  const p = cur.p * k, c = cur.c * k, f = cur.f * k, kcal = cur.kcal * k;
+  const { p, c, f, kcal } = cur;
   return ((4 * Math.abs(p - T.p) + 4 * Math.abs(c - T.c) + 9 * Math.abs(f - T.f)) / T.kcal) * 1.5 + (Math.abs(p - T.p) / Math.max(T.p, 10)) * 0.5 + Math.abs(kcal - T.kcal) / T.kcal;
 };
+
+/**
+ * Porciones de cocina deportiva real (en cocido): proteína principal 100-250 g, carbo base hasta 300 g,
+ * aceite / frutos secos 5-20 g (palta hasta 50 g ≈ ¼ unidad), vegetales 100-200 g y un plato del catálogo hasta 450 g.
+ */
+function portionRange(it: FoodItem, role: MealRole): [number, number] {
+  const id = it.foodId ?? '';
+  const main = MAIN.includes(role);
+  const peri = role === 'peri' || role === 'post';
+  switch (FOOD_BY_ID[id]?.group) {
+    case 'lean-protein':
+      return [main ? 100 : 60, 250];
+    case 'starch':
+      return [main ? 100 : 60, 300];
+    case 'fat':
+      return [5, id === 'palta' ? 50 : 20];
+    case 'veg':
+      return [main ? 100 : 30, 200];
+    case 'plato':
+      return [40, 450];
+    case 'cereal':
+      return [8, id === 'pan' || id === 'pan-lactal' ? 150 : peri ? 160 : 120];
+    case 'whey':
+      return [10, 50];
+    case 'dairy-protein':
+      // Yogur hasta ~1 pote y medio; ricota / quesos untables y light en porción de comida, no de pote entero.
+      return [20, ['leche', 'leche-deslactosada', 'yogur-proteico'].includes(id) ? 500 : id === 'ricota' ? 250 : id === 'untable' ? 60 : id === 'queso-light' ? 80 : 300];
+    case 'sport-carb':
+      // Miel / dulce: endulzan (≤ 2 cdas); la bebida isotónica, hasta 1 ½ botella.
+      return [5, id === 'isotonica' ? 750 : 30];
+    case 'fruit':
+      // Pre / post-WOD de carga de glucógeno: hasta 3 bananas.
+      return [30, peri ? 360 : 250];
+    case 'eggs':
+      return [33, id === 'huevo' ? 200 : 330];
+    default:
+      return [5, 600];
+  }
+}
+const snapG = (i: FoodItem, g: number) => {
+  const st = i.foodId === 'huevo' ? 50 : i.foodId === 'claras' ? 33 : 5;
+  return Math.max(st, Math.round(g / st) * st);
+};
+/** Lleva una opción a las kcal objetivo (escala pareja) y respeta las porciones reales de cada ingrediente. */
+function fitAndCap(items: FoodItem[], targetKcal: number, role: MealRole): FoodItem[] {
+  const kcal = totals(items).kcal;
+  const k = kcal > 0 && targetKcal > 0 ? Math.min(FIT_MAX, Math.max(FIT_MIN, targetKcal / kcal)) : 1;
+  return items.map((i) => {
+    const [lo, hi] = portionRange(i, role);
+    const g = Math.min(hi, Math.max(Math.min(lo, i.grams), snapG(i, i.grams * k)));
+    return g === i.grams ? i : rescale(i, g);
+  });
+}
 
 interface Cand {
   opt: MealOption;
@@ -596,58 +698,59 @@ export function baseKey(items: FoodItem[]) {
   return top ? protKey(`${top.foodId ?? ''} ${top.food}`, top.foodId ?? top.food) : '';
 }
 
+// Platos que ya traen su proteína: no se les suma otra fuente pesada (nada de "tarta de carne + pollo").
+const PROTEIN_DISH = /pollo|pechuga|carne|cuadril|lomo|nalga|peceto|picada|merluza|pescado|at[uú]n|cerdo|bondiola|jam[oó]n|milanesa|huevo|claras|omelette|revuelto|tortilla|lenteja|garbanzo|ricota|queso|yogur|whey|proteic|asado|entra[ñn]a|matambre|molleja|chinchul|provoleta|achura|parrillada|chori|alb[oó]ndiga|bolo[ñn]esa|hamburguesa|empanada|tarta|tostado|lomito|wrap|salpic/i;
+
 function dishCands(meal: Meal, T: Tot, allowed?: Set<string> | null): Cand[] {
   const used = new Set(meal.items.map((i) => i.foodId));
   const out: Cand[] = [];
+  const main = MAIN.includes(meal.role);
   for (const d of dishCandidates(meal.role, allowed)) {
     if (used.has(d.id) || !(d.p > 0)) continue;
     const portion = d.unit?.grams ?? 100;
     // Infusiones / bocados chicos (< 120 kcal la porción) no son plato principal de una opción.
     if (((d.p * 4 + d.c * 4 + d.f * 9) * portion) / 100 < 120) continue;
+    // Porción del plato: entre media y una y media (nunca 600 g de un plato para "llegar" a la proteína).
     const raw = (T.p / d.p) * 100;
-    const portions = Math.min(2, Math.max(0.5, Math.round((raw / portion) * 4) / 4));
-    const grams = Math.round(portions * portion);
+    const portions = Math.min(1.5, Math.max(0.5, Math.round((raw / portion) * 2) / 2));
+    const grams = Math.min(450, Math.round(portions * portion));
     const items: FoodItem[] = [item(d.id, grams)];
     let cur = totals(items);
-    // Proteína: si el plato no llega (> 8 g de diferencia), se suma una proteína simple acorde al momento del día.
+    // Proteína extra sólo en ensaladas (ensalada completa con pollo) o, a la mañana, un yogur junto a un plato sin proteína.
     const dp = T.p - cur.p;
-    if (dp > 8) {
-      const protId = MAIN.includes(meal.role) ? 'pollo' : dp > 18 ? 'whey' : 'yogur';
+    const salad = /ensalada|vegetales grillados/i.test(d.name);
+    if (dp > 8 && (salad || !PROTEIN_DISH.test(d.name))) {
+      const protId = main ? 'pollo' : 'yogur';
       const r = FOOD_BY_ID[protId];
-      const cap = protId === 'whey' ? 40 : protId === 'pollo' ? 200 : 250;
-      items.push(item(protId, Math.min(cap, Math.max(10, Math.round(((dp / r.p) * 100) / 5) * 5))));
+      const [lo, hi] = portionRange({ id: '', foodId: protId, food: r.name, grams: 0, p: 0, c: 0, f: 0, leucine: 0 }, meal.role);
+      items.push(item(protId, Math.min(hi, Math.max(lo, Math.round(((dp / r.p) * 100) / 5) * 5))));
       cur = totals(items);
     }
-    // Carbos: acompañamiento si faltan > 10 g.
+    // Carbo base: sólo si el plato no lo trae y falta una porción real (≥ 100 g de arroz / papa en almuerzo y cena).
     const dc = T.c - cur.c;
-    if (dc > 10) {
-      // Acompañamiento que no repita un ingrediente que el plato ya nombra (nada de "con banana + banana").
-      const side = (CARB_SIDE[meal.role] ?? CARB_SIDE.lunch).find((id) => FOOD_BY_ID[id] && !d.name.toLowerCase().includes(short(FOOD_BY_ID[id].name).toLowerCase().split(' ')[0]));
-      if (side) {
-        const r = FOOD_BY_ID[side];
-        items.push(item(side, Math.min(250, Math.max(10, Math.round(((dc / r.c) * 100) / 5) * 5))));
-      }
+    const side = (CARB_SIDE[meal.role] ?? CARB_SIDE.lunch).find((id) => FOOD_BY_ID[id] && !d.name.toLowerCase().includes(short(FOOD_BY_ID[id].name).toLowerCase().split(' ')[0]));
+    if (dc > 15 && side) {
+      const r = FOOD_BY_ID[side];
+      const g = Math.round(((dc / r.c) * 100) / 5) * 5;
+      const [lo, hi] = portionRange({ id: '', foodId: side, food: r.name, grams: 0, p: 0, c: 0, f: 0, leucine: 0 }, meal.role);
+      if (g >= lo * 0.8) items.push(item(side, Math.min(hi, Math.max(lo, g))));
     }
     cur = totals(items);
     const df = T.f - cur.f;
     if (df > 4) {
-      const fatId = MAIN.includes(meal.role) ? (df > 7 ? 'palta' : 'oliva') : 'nueces';
+      const fatId = main ? 'oliva' : 'nueces';
       const r = FOOD_BY_ID[fatId];
-      const cap = fatId === 'oliva' ? 10 : fatId === 'palta' ? 60 : 20;
-      items.push(item(fatId, Math.min(cap, Math.max(5, Math.round(((df / r.f) * 100) / 5) * 5))));
+      items.push(item(fatId, Math.min(fatId === 'oliva' ? 15 : 20, Math.max(10, Math.round(((df / r.f) * 100) / 5) * 5))));
     }
-    if (MAIN.includes(meal.role) && !/ensalada|vegetal/i.test(d.name)) items.push(item('vegetales', 150));
-    const portionTxt = portions === 1 ? '' : ` (${String(portions).replace('.', ',')} porciones)`;
-    const sides = items.slice(1).map((i) => lower(short(i.food)));
+    if (main && !salad) items.push(item('vegetales', 150));
+    const fitted = fitAndCap(items, T.kcal, meal.role);
+    // Nombre gastronómico: "Milanesa de Merluza al Horno con Arroz Blanco y Ensalada Verde" (el aceite es aderezo, no va al título).
+    const sides = fitted.slice(1).filter((i) => i.foodId !== 'oliva').map(culinary);
+    const title = sides.length ? `${short(d.name)} con ${sides.length > 1 ? `${sides.slice(0, -1).join(', ')} y ${sides[sides.length - 1]}` : sides[0]}` : short(d.name);
     out.push({
-      opt: {
-        title: dishTitleCase(`${short(d.name)}${portionTxt}${sides.length ? ` + ${sides.join(' + ')}` : ''}`),
-        items,
-        technique: d.technique ?? d.detail ?? autoTechnique(items),
-        steps: autoSteps(items, d.name),
-      },
-      err: err(totals(items), T),
-      key: baseKey(items),
+      opt: { title: dishTitleCase(title), items: fitted, technique: d.technique ?? d.detail ?? autoTechnique(fitted), steps: autoSteps(fitted, d.name) },
+      err: err(totals(fitted), T),
+      key: baseKey(fitted),
     });
   }
   return out;
@@ -657,8 +760,9 @@ function comboCands(meal: Meal, T: Tot, special: boolean): Cand[] {
   const out: Cand[] = [];
   for (const c of COMBOS) {
     if (!c.roles.includes(meal.role) || (c.special && !special)) continue;
-    const items = solveCombo(c, T);
-    if (!items) continue;
+    const solved = solveCombo(c, T);
+    if (!solved) continue;
+    const items = fitAndCap(solved, T.kcal, meal.role);
     out.push({ opt: { title: dishTitleCase(c.title), items, technique: autoTechnique(items), steps: comboSteps(c, items) }, err: err(T_OF(items), T), key: baseKey(items) });
   }
   return out;
@@ -696,8 +800,8 @@ export function suggestAlternatives(meal: Meal, allowed?: Set<string> | null, n 
       keys.add(c.key);
     }
   }
-  // Cada alternativa se lleva a las kcal de la Opción 1 (escala pareja, mantiene sus proporciones).
-  return fitAltsToMain({ ...meal, alts: picked.map((c) => c.opt) }).alts ?? [];
+  // Cada alternativa ya viene llevada a las kcal de la Opción 1 y con porciones reales (fitAndCap).
+  return picked.map((c) => c.opt);
 }
 
 /** Opciones 2-5 de una comida (lee también la Opción 2 única de planes guardados antes de las 5 opciones). */
@@ -723,8 +827,7 @@ export function fitAltsToMain(meal: Meal): Meal {
     alts: meal.alts.map((alt) => {
       const a = totals(alt.items).kcal;
       if (!(a > 0) || !(m > 0) || Math.abs(m / a - 1) <= 0.03) return alt;
-      const k = Math.min(FIT_MAX, Math.max(FIT_MIN, m / a));
-      const items = alt.items.map((i) => rescale(i, Math.max(5, Math.round((i.grams * k) / (i.foodId === 'huevo' ? 50 : 5)) * (i.foodId === 'huevo' ? 50 : 5))));
+      const items = fitAndCap(alt.items, m, meal.role);
       // Pasos automáticos: se rehacen con las cantidades nuevas (los cargados a mano por el coach se respetan).
       return { ...alt, items, steps: alt.steps?.length && !alt.steps.some((st) => /\d+ g/.test(st)) ? alt.steps : refreshSteps(alt, items) };
     }),

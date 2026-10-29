@@ -6,10 +6,11 @@ import { CITES } from './evidence';
 import { FOOD_BY_ID, FOODS, GROUP_ANCHOR, GROUP_LABEL, type SwapGroup } from './foods';
 import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
-import { autoTechnique, autoTitle, optionSteps, prepMinutes } from './menuOptions';
+import { autoTechnique, autoTitle, fixTechnique, optionSteps, prepMinutes } from './menuOptions';
 import { fitsSlot, foodSlots } from './mealSlots';
 import { modernizeName } from './foodBrandDb';
-import { BRAND_TIERS, TIER_OF_BUDGET } from './brandTiers';
+import { BRAND_TIERS, TIER_LABEL, TIER_OF_BUDGET } from './brandTiers';
+import { HAND, HOUSE } from './household';
 import { sanitizeAnamnesis } from './anamnesisPro';
 import type { AthletePlan, DayMode, FoodItem, Meal } from './types';
 
@@ -31,6 +32,35 @@ const SHOP_CATEGORY: Record<SwapGroup, string> = {
   plato: 'Platos preparados',
 };
 const SHOP_ORDER = ['Verdulería', 'Carnicería / Pescadería', 'Almacén', 'Almacén · Lácteos y huevos', 'Platos preparados', 'Suplementos', 'Otros'];
+
+/** Envases comerciales del supermercado argentino (g o ml) para traducir el total semanal a lo que se compra. */
+const SHOP_PACKS: Record<string, [number, string][]> = {
+  claras: [[1000, 'botellón de 1 L'], [500, 'sachet de 500 ml']],
+  leche: [[1000, 'sachet / caja de 1 L']],
+  'leche-deslactosada': [[1000, 'caja de 1 L']],
+  yogur: [[1000, 'pote de 1 kg'], [180, 'pote de 180 g']],
+  'yogur-deslactosado': [[180, 'pote de 180 g']],
+  'yogur-proteico': [[250, 'botellita de 250 ml']],
+  pan: [[500, 'paquete de 500 g']],
+  'pan-lactal': [[550, 'paquete de 550 g']],
+  arroz: [[1000, 'paquete de 1 kg'], [500, 'paquete de 500 g']],
+  yamani: [[1000, 'paquete de 1 kg'], [500, 'paquete de 500 g']],
+  fideos: [[500, 'paquete de 500 g']],
+  lentejas: [[500, 'paquete de 500 g']],
+  garbanzos: [[500, 'paquete de 500 g']],
+  avena: [[500, 'bolsa de 500 g']],
+  'avena-instantanea': [[500, 'bolsa de 500 g']],
+  ricota: [[500, 'pote de 500 g']],
+  untable: [[290, 'pote de 290 g']],
+  whey: [[1000, 'pote de 1 kg (≈ 33 scoops)']],
+  'whey-isolate': [[1000, 'pote de 1 kg (≈ 33 scoops)']],
+  atun: [[120, 'lata (120 g escurrido)']],
+  'galletas-arroz': [[100, 'paquete de 100 g']],
+  'tostadas-arroz': [[100, 'paquete de 100 g']],
+  miel: [[500, 'frasco de 500 g']],
+  mani: [[380, 'frasco de 380 g']],
+  huevo: [[1500, 'maple de 30 huevos'], [600, 'docena']],
+};
 
 /**
  * Reglas de compra por alimento (pesos del plan en cocido → peso de compra):
@@ -141,14 +171,14 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
         ...c,
         mps: isMpsMeal(m),
         title: c.title || autoTitle(c.items),
-        technique: c.technique || autoTechnique(c.items),
+        technique: fixTechnique(c.technique, c.items, c.title) || autoTechnique(c.items),
         steps: optionSteps(c),
         prepMin: prepMinutes(c.items),
         // Opciones 2 a 5 con nombre, técnica y preparación paso a paso (automáticos si el coach no los cargó).
         // Las alternativas fuera de la franja del día (planes viejos) no llegan al atleta.
         alts: (c.alts ?? [])
           .filter((a) => a.items.length && a.items.every((i) => !i.foodId || fitsSlot(FOOD_BY_ID[i.foodId], m.role)))
-          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: a.technique || autoTechnique(a.items), steps: optionSteps(a), prepMin: prepMinutes(a.items) })),
+          .map((a) => ({ ...a, title: a.title || autoTitle(a.items), technique: fixTechnique(a.technique, a.items, a.title) || autoTechnique(a.items), steps: optionSteps(a), prepMin: prepMinutes(a.items) })),
       };
     }),
     // Marca sugerida por ingrediente según el presupuesto del atleta (Nivel 1 / 2 / 3).
@@ -156,6 +186,9 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
       [...new Set(plan.meals.flatMap((m) => [...m.items, ...(m.alts ?? []).flatMap((a) => a.items)]).map((i) => i.foodId).filter((id): id is string => !!id && !!BRAND_TIERS[id]))].map((id) => [id, BRAND_TIERS[id]]),
     ),
     brandTier: TIER_OF_BUDGET[sanitizeAnamnesis(plan.anamnesis).budget],
+    // Medidas caseras y porciones sin balanza (lenguaje cotidiano).
+    house: HOUSE,
+    hand: HAND,
     // Cada alimento viaja con sus franjas del día (filtro estricto de los swaps en la PWA).
     foods: Object.fromEntries(FOODS.map((f) => [f.id, { ...f, slots: foodSlots(f) }])),
     anchors: GROUP_ANCHOR,
@@ -176,6 +209,8 @@ export function buildPayload(plan: AthletePlan, opts: { preview: boolean; mode: 
     categories: SHOP_CATEGORY,
     categoryOrder: SHOP_ORDER,
     shopRules: SHOP_RULES,
+    shopPacks: SHOP_PACKS,
+    tierLabels: TIER_LABEL,
     shopFallback: SHOP_ORDER_FALLBACK,
     manifest: { ...manifest, icons: [] },
     // Prompt del análisis de foto en el celular del atleta (la API key la carga el atleta en su dispositivo; nunca viaja en el plan).
