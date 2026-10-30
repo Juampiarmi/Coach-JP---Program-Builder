@@ -105,7 +105,8 @@ export function slideCopy(s: CanvasState): { headline: string; body: string[] } 
   return { headline, body: body.filter((t) => t && t.trim()) }
 }
 
-const CTA_RE = /\b(guard[aá]|compart[ií]|coment[aá]|segu[ií]|seguime|escrib[ií]|escribime|mand[aá]|reserv[aá]|link|bio|dm|etiquet[aá]|aplic[aá]lo|prob[aá]lo|anot[aá]te|inscrib[ií]|descarg[aá]|agend[aá]|sum[aá]te|empez[aá])\b/i
+// Imperativos con pronombre enclítico incluidos: «guardalo», «compartilo», «mandame».
+const CTA_RE = /\b(guard[aá]|compart[ií]|coment[aá]|segu[ií]|seguime|escrib[ií]|escribime|mand[aá]|reserv[aá]|link|bio|dm|etiquet[aá]|aplic[aá]lo|prob[aá]lo|anot[aá]te|inscrib[ií]|descarg[aá]|agend[aá]|sum[aá]te|empez[aá])(?:lo|la|los|las|me|nos)?\b/i
 
 /** ¿La placa tiene un llamado a la acción explícito? */
 export function hasCta(s: CanvasState) {
