@@ -15944,6 +15944,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function regPintar(){
     var bg = document.getElementById('jpRegSheet'); if(!bg || !regEst) return;
     var c = regEst.cfg, e = c.ex[regEst.ex], ld = getLoad(regKey());
+    var shQ = bg.querySelector('.jp-reg-sheet');
+    if(shQ) shQ.classList.toggle('jp-q', regEst.modo === 'rapido');
+    Array.prototype.forEach.call(bg.querySelectorAll('[data-regmodo]'), function(bm){ var on = bm.getAttribute('data-regmodo') === regEst.modo; bm.classList.toggle('on', on); bm.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    if(regEst.modo === 'rapido'){ regPintarRapido(); return; }
     var nGrp = e.grp ? c.ex.filter(function(x){ return x.grp === e.grp; }).length : 0;
     regQ('.jp-reg-t').textContent = 'REGISTRO DE TRABAJO // ' + e.sets + ' ' + (nGrp ? etqRondas(nGrp).toUpperCase() : 'SERIES');
     regQ('.jp-reg-exs').innerHTML = c.ex.length > 1 ? regBarraEj(c, regEst.ex) : '<div class="jp-reg-exn">' + escSB(e.nombre) + '</div>';
@@ -16011,6 +16015,114 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     var actual = regQ('.jp-reg-set.on'); if(actual && actual.scrollIntoView){ try{ actual.scrollIntoView({ inline: 'center', block: 'nearest' }); }catch(err){} }
   }
+  /* ---------- REGISTRO RAPIDO · al terminar el bloque, UNA fila por ejercicio con la serie efectiva (top set) ----------
+     Se carga kg x reps una sola vez y se indican las series hechas; la app completa el resto. Si el coach marco "Top Set" en una piramide, el dato va solo
+     a esas series (aclimatacion, carga alta y back-off quedan hechas sin kilos inventados); si no, se aplica a todas las series hechas. Nunca pisa lo que el
+     alumno ya registro serie por serie. El modo POR SERIE sigue disponible con un toque y la eleccion se recuerda. */
+  function regModoPref(){ try{ return localStorage.getItem('jp_reg_modo') === 'serie' ? 'serie' : 'rapido'; }catch(e0){ return 'rapido'; } }
+  function regGuardarModo(m){ try{ localStorage.setItem('jp_reg_modo', m); }catch(e0){} }
+  function regEtq(e, i){ return (e.et && e.et[i - 1]) ? String(e.et[i - 1]) : ''; }
+  /* series a las que se aplica lo cargado */
+  function regSetsTop(e){
+    var out = [], i;
+    for(i = 1; i <= e.sets; i++){ if(/top/i.test(regEtq(e, i))) out.push(i); }
+    if(out.length) return out;
+    if(e.rp && e.rp.length > 1){      /* piramide sin etiqueta: el ultimo tramo es el de mayor carga */
+      var ult = String(e.rp[e.rp.length - 1]);
+      for(i = e.rp.length; i >= 1 && String(e.rp[i - 1]) === ult; i--) out.unshift(i);
+      if(out.length && out.length < e.sets) return out;
+      out = [];
+    }
+    for(i = 1; i <= e.sets; i++){ if(!/aclimat|warm|calent|aproxim/i.test(regEtq(e, i))) out.push(i); }
+    if(out.length) return out;
+    for(i = 1; i <= e.sets; i++) out.push(i);
+    return out;
+  }
+  function regUltReg(c, e, set){
+    for(var pw = c.w - 1; pw >= 0; pw--){
+      var lq = getLoad(getLoadKey(pw, c.d, c.b, e.idx, set));
+      if(lq && ((lq.kg != null && lq.kg !== '') || (lq.reps != null && lq.reps !== ''))) return { w: pw, kg: lq.kg, reps: lq.reps };
+    }
+    return null;
+  }
+  function regPintarRapido(){
+    var c = regEst.cfg, q = regQ('.jp-reg-q'); if(!q) return;
+    regQ('.jp-reg-t').textContent = 'REGISTRO DE TRABAJO // ' + c.ex.length + (c.ex.length === 1 ? ' EJERCICIO' : ' EJERCICIOS');
+    var h = '';
+    c.ex.forEach(function(e, i){
+      var tops = regSetsTop(e), ref = tops[tops.length - 1], ld = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, ref));
+      var modoR = (typeof window.jpModoInput === 'function') ? window.jpModoInput(e.nombre) : '';
+      var sinKg = (modoR === 'banda' || modoR === 'tiempo' || modoR === 'solo' || (modoR === 'bw' && !(parseFloat(ld.kg) > 0)));
+      var kgV = (ld.kg != null && ld.kg !== '') ? String(ld.kg) : '', rpV = (ld.reps != null && ld.reps !== '') ? String(ld.reps) : '', pre = false, hint = '';
+      var repsRef = (e.rp && e.rp[ref - 1] != null) ? e.rp[ref - 1] : e.reps, nr = String(repsRef || '').match(/^[0-9]+/);
+      var ult = regUltReg(c, e, ref), kgPh = '\u2014';
+      if(!sinKg && !kgV){
+        var sug = null;
+        try{ if(typeof window.jpSugerirCarga === 'function') sug = window.jpSugerirCarga(c, e, ref); }catch(eS){}
+        if(sug && sug.kg > 0){
+          if(sug.pre){ kgV = String(Math.round(sug.kg * 100) / 100); pre = true; } else kgPh = String(Math.round(sug.kg * 100) / 100);
+          hint = sug.txt || '';
+        } else if(e.carga){
+          var pm = String(e.carga).match(/^\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(?:kgs?)?\\s*$/i);
+          if(pm){ kgV = pm[1].replace(',', '.'); pre = true; hint = 'Carga pautada'; }
+        }
+        if(!kgV && kgPh === '\u2014' && ult && ult.kg != null && ult.kg !== '') kgPh = String(ult.kg);
+      }
+      if(!hint && ult){ hint = '\u00daltima vez \u00b7 SEM ' + (ult.w + 1) + ' \u00b7 ' + [ult.kg !== '' && ult.kg != null ? ult.kg + ' kg' : '', ult.reps !== '' && ult.reps != null ? '\u00d7 ' + ult.reps : ''].filter(Boolean).join(' '); }
+      var rpPh = nr ? nr[0] : ((ult && ult.reps != null && ult.reps !== '') ? String(ult.reps) : '\u2014');
+      var hechas = 0; for(var s1 = 1; s1 <= e.sets; s1++){ if(getLoad(getLoadKey(c.w, c.d, c.b, e.idx, s1)).done) hechas++; }
+      var ns = hechas || e.sets;
+      var presTxt = [e.sets + ' \u00d7 ' + (e.reps || (e.rp ? e.rp.join('+') : '')) + (e.u ? ' ' + e.u : ''), e.rir ? 'RIR ' + e.rir : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' \u00b7 ');
+      var unidadR = modoR === 'tiempo' ? 'SEG' : (modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
+      var cuantas = tops.length < e.sets ? (tops.length === 1 ? 'la serie TOP' : 'las series TOP') : (e.sets > 1 ? 'todas las series' : 'la serie');
+      h += '<div class="jp-rq' + (sinKg ? ' jp-rq-sinkg' : '') + '" data-rqi="' + i + '" data-ns="' + ns + '">' +
+        '<div class="jp-rq-h"><span class="jp-rq-let">' + regLetra(c, i) + '</span><span class="jp-rq-n">' + escSB(regNombreCorto(e.nombre)) + '</span></div>' +
+        '<div class="jp-rq-p">' + escSB(presTxt) + '</div>' +
+        '<div class="jp-rq-f">' +
+          (sinKg ? '' : '<label><span>KG</span><input type="text" inputmode="decimal" class="jp-rq-kg' + (pre ? ' jp-rq-pre' : '') + '" autocomplete="off" value="' + escSB(kgV) + '" placeholder="' + escSB(kgPh) + '"></label><b>\u00d7</b>') +
+          '<label><span>' + unidadR + '</span><input type="text" inputmode="decimal" class="jp-rq-rp" autocomplete="off" value="' + escSB(rpV) + '" placeholder="' + escSB(rpPh) + '"></label>' +
+          '<div class="jp-rq-ns"><span>SERIES</span><div><button type="button" data-rqs="-1" aria-label="Una serie menos">\u2212</button><b class="jp-rq-nv">' + ns + '</b><button type="button" data-rqs="1" aria-label="Una serie m\u00e1s">+</button></div></div>' +
+        '</div>' +
+        '<div class="jp-rq-hint">' + escSB(hint) + (e.sets > 1 ? (hint ? ' \u00b7 ' : '') + 'se aplica a ' + cuantas : '') + '</div>' +
+      '</div>';
+    });
+    q.innerHTML = h;
+  }
+  function regRqPaso(btn){
+    var fila = btn.closest('.jp-rq'); if(!fila || !regEst) return;
+    var e = regEst.cfg.ex[parseInt(fila.getAttribute('data-rqi'), 10)], ns = (parseInt(fila.getAttribute('data-ns'), 10) || 0) + (parseInt(btn.getAttribute('data-rqs'), 10) || 0);
+    ns = Math.max(0, Math.min(e.sets, ns));
+    fila.setAttribute('data-ns', String(ns));
+    var nv = fila.querySelector('.jp-rq-nv'); if(nv) nv.textContent = String(ns);
+    fila.classList.toggle('jp-rq-omit', ns === 0);
+  }
+  function regConfirmarRapido(){
+    if(!regEst) return;
+    var c = regEst.cfg, filas = regQ('.jp-reg-q').querySelectorAll('.jp-rq'), falta = null, plan = [];
+    Array.prototype.forEach.call(filas, function(f){
+      var e = c.ex[parseInt(f.getAttribute('data-rqi'), 10)], ns = parseInt(f.getAttribute('data-ns'), 10) || 0;
+      if(!ns) return;
+      var kgI = f.querySelector('.jp-rq-kg'), rpI = f.querySelector('.jp-rq-rp');
+      var kv = kgI ? (kgI.value || (/^[0-9]/.test(kgI.placeholder) ? kgI.placeholder : '')) : '', rv = rpI ? (rpI.value || (/^[0-9]/.test(rpI.placeholder) ? rpI.placeholder : '')) : '';
+      if(!kv && !rv){ if(!falta) falta = f; f.classList.add('jp-rq-falta'); return; }
+      f.classList.remove('jp-rq-falta');
+      plan.push({ e: e, ns: ns, kv: kv, rv: rv });
+    });
+    if(falta){ try{ falta.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(e0){} return; }
+    if(!plan.length){ regCerrar(); return; }
+    plan.forEach(function(p){
+      var e = p.e, tops = regSetsTop(e).filter(function(x){ return x <= p.ns; });
+      if(!tops.length) tops = [p.ns];
+      for(var i = 1; i <= p.ns; i++){
+        var key = getLoadKey(c.w, c.d, c.b, e.idx, i);
+        if(tops.indexOf(i) >= 0){ if(p.kv) setLoadField(key, 'kg', p.kv); if(p.rv) setLoadField(key, 'reps', p.rv); }
+        setLoadField(key, 'done', true);
+      }
+    });
+    try{ jpAudioTactical.soundCheckSet(); }catch(err){}
+    try{ jpAudioTactical.vibrateCheckSet(); }catch(err2){}
+    regCerrar();
+  }
   function regSiguientePendiente(cfg){
     for(var ei = 0; ei < cfg.ex.length; ei++){
       for(var i = 1; i <= cfg.ex[ei].sets; i++){ if(!getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, cfg.ex[ei].idx, i)).done) return { ex: ei, set: i }; }
@@ -16022,11 +16134,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     try{ cfg = JSON.parse(decodeURIComponent(btn.dataset.regcfg || '')); }catch(err){}
     if(!cfg || !cfg.ex || !cfg.ex.length) return;
     var p = regSiguientePendiente(cfg);
-    regEst = { cfg: cfg, ex: p.ex, set: p.set, btn: btn };
+    regEst = { cfg: cfg, ex: p.ex, set: p.set, btn: btn, modo: regModoPref() };
     var bg = document.createElement('div'); bg.className = 'jp-reg-bg'; bg.id = 'jpRegSheet';
     bg.innerHTML = '<div class="jp-reg-sheet" role="dialog" aria-modal="true">' +
         '<div class="jp-reg-grip"></div>' +
         '<div class="jp-reg-h"><span class="jp-reg-t"></span><button type="button" class="jp-reg-x" aria-label="Cerrar">\\u2715</button></div>' +
+        '<div class="jp-reg-modos" role="group" aria-label="Modo de registro"><button type="button" data-regmodo="rapido" aria-pressed="true">\u26a1 POR BLOQUE</button><button type="button" data-regmodo="serie" aria-pressed="false">POR SERIE</button></div>' +
+        '<div class="jp-reg-q"></div>' +
         '<div class="jp-reg-exs"></div>' +
         '<div class="jp-reg-sets"></div>' +
         '<div class="jp-reg-pres"></div>' +
@@ -16036,6 +16150,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           '<b>\\u00d7</b><label><span>REPS</span><input type="text" inputmode="decimal" class="jp-reg-reps" autocomplete="off" placeholder="\\u2014"></label>' +
           '<button type="button" class="jp-reg-chk" aria-label="Confirmar set">\\u2713</button></div>' +
         '<button type="button" class="jp-reg-ok">[ CONFIRMAR REGISTRO ]</button>' +
+        '<button type="button" class="jp-reg-qok">[ GUARDAR BLOQUE ]</button>' +
       '</div>';
     document.body.appendChild(bg);
     document.body.style.overflow = 'hidden';
@@ -16075,10 +16190,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(ex){ regEst.lastre = false; regEst.ex = parseInt(ex.getAttribute('data-regex'), 10) || 0; var c = regEst.cfg, e0 = c.ex[regEst.ex], s0 = 1; for(var i = 1; i <= e0.sets; i++){ if(!getLoad(getLoadKey(c.w, c.d, c.b, e0.idx, i)).done){ s0 = i; break; } } regEst.set = s0; regPintar(); return; }
     var st = t.closest('[data-regset]');
     if(st){ regEst.set = parseInt(st.getAttribute('data-regset'), 10) || 1; regPintar(); return; }
+    var mdR = t.closest('[data-regmodo]'); if(mdR){ regEst.modo = mdR.getAttribute('data-regmodo') === 'serie' ? 'serie' : 'rapido'; regGuardarModo(regEst.modo); regPintar(); return; }
+    var qsR = t.closest('[data-rqs]'); if(qsR){ regRqPaso(qsR); return; }
+    if(t.closest('.jp-reg-qok')){ regConfirmarRapido(); return; }
     if(t.closest('.jp-reg-ok') || t.closest('.jp-reg-chk')){ regConfirmar(); return; }
   });
   document.addEventListener('input', function(e){
     var t = e.target; if(!regEst || !t || !t.classList) return;
+    if(t.classList.contains('jp-rq-kg') || t.classList.contains('jp-rq-rp')){
+      var vq = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+      if(vq !== t.value) t.value = vq;
+      t.classList.remove('jp-rq-pre');
+      var fq = t.closest('.jp-rq'); if(fq) fq.classList.remove('jp-rq-falta');
+      return;
+    }
     var campo = t.classList.contains('jp-reg-kg') ? 'kg' : (t.classList.contains('jp-reg-reps') ? 'reps' : '');
     if(!campo) return;
     if(campo === 'kg'){ t.classList.remove('jp-reg-pre'); var hk = regQ('.jp-reg-hint'); if(hk) hk.textContent = ''; }
@@ -41778,6 +41903,36 @@ html body.jp-mission:not(.cf-disc) .hd-dock{ background:#0D0D0D !important; bord
 html body.jp-mission:not(.cf-disc) #storyCtaBtn.story-cta{ background:transparent !important; border:1px solid rgba(255,255,255,.16) !important; color:#EFEFEF !important; }
 html body.jp-mission:not(.cf-disc) .jp-close-cta{ background:#FF5500 !important; border:0 !important; color:#0D0D0D !important; }
 html body.jp-mission:not(.cf-disc) .jp-reg-sheet{ background:#141414 !important; border-top:1px solid #FF5500 !important; }
+/* ---- registro rapido por bloque ---- */
+.jp-reg-sheet{ --rq:#F59E0B; --rq-bg:rgba(245,158,11,.14); }
+:where(body.cf-disc) .jp-reg-sheet{ --rq:#00E6FF; --rq-bg:rgba(0,230,255,.14); }
+html body.jp-mission:not(.cf-disc) .jp-reg-sheet{ --rq:#FF5500; --rq-bg:rgba(255,85,0,.14); }
+.jp-reg-modos{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:0 0 12px; padding:4px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); }
+.jp-reg-modos button{ padding:10px 6px; border:0; border-radius:9px; background:transparent; color:#94A3B8; font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.jp-reg-modos button.on{ background:var(--rq-bg); color:var(--rq); box-shadow:inset 0 0 0 1px var(--rq); }
+.jp-reg-q{ display:none; }
+.jp-reg-qok{ display:none; width:100%; padding:16px 10px; border:0; border-radius:12px; cursor:pointer; background:var(--rq); color:#0b0b0b; font:800 .9rem 'Chakra Petch',sans-serif; letter-spacing:.1em; }
+.jp-reg-sheet.jp-q .jp-reg-q{ display:block; }
+.jp-reg-sheet.jp-q .jp-reg-qok{ display:block; position:sticky; bottom:0; box-shadow:0 -10px 18px rgba(0,0,0,.45); }
+.jp-reg-sheet.jp-q .jp-reg-exs, .jp-reg-sheet.jp-q .jp-reg-sets, .jp-reg-sheet.jp-q .jp-reg-pres, .jp-reg-sheet.jp-q .jp-reg-hint, .jp-reg-sheet.jp-q .jp-reg-modo, .jp-reg-sheet.jp-q .jp-reg-fila, .jp-reg-sheet.jp-q .jp-reg-ok{ display:none !important; }
+.jp-rq{ margin:0 0 10px; padding:12px 12px 10px; border-radius:12px; background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.09); border-left:3px solid var(--rq); }
+.jp-rq.jp-rq-omit{ opacity:.45; }
+.jp-rq.jp-rq-falta{ border-color:#ef4444; box-shadow:0 0 0 1px rgba(239,68,68,.55); }
+.jp-rq-h{ display:flex; align-items:baseline; gap:8px; }
+.jp-rq-let{ flex:0 0 auto; font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; color:var(--rq); }
+.jp-rq-n{ min-width:0; overflow-wrap:anywhere; font:800 .95rem 'Chakra Petch',sans-serif; letter-spacing:.02em; text-transform:uppercase; color:#f8fafc; }
+.jp-rq-p{ margin:3px 0 10px; font-size:.74rem; font-weight:600; letter-spacing:.03em; color:rgba(148,163,184,.95); }
+.jp-rq-f{ display:flex; align-items:flex-end; gap:8px; }
+.jp-rq-f label{ display:flex; flex-direction:column; gap:4px; flex:1 1 0; min-width:0; font-size:.6rem; font-weight:700; letter-spacing:.12em; color:#94A3B8; }
+.jp-rq-f b{ padding-bottom:13px; color:#64748b; font-size:1.05rem; }
+.jp-rq-f input{ width:100%; box-sizing:border-box; padding:12px 6px; text-align:center; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(2,6,23,.7); color:#f8fafc; font:800 1.15rem 'Chakra Petch',sans-serif; }
+.jp-rq-f input.jp-rq-pre{ border-color:var(--rq); color:var(--rq); }
+.jp-rq-f input::placeholder{ color:rgba(148,163,184,.45); }
+.jp-rq-ns{ display:flex; flex-direction:column; gap:4px; flex:0 0 auto; font-size:.6rem; font-weight:700; letter-spacing:.12em; color:#94A3B8; }
+.jp-rq-ns > div{ display:flex; align-items:center; gap:4px; }
+.jp-rq-ns button{ width:38px; height:44px; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(255,255,255,.05); color:#f8fafc; font:800 1.1rem 'Chakra Petch',sans-serif; cursor:pointer; touch-action:manipulation; }
+.jp-rq-nv{ min-width:22px; text-align:center; padding:0 !important; font:800 1.1rem 'Chakra Petch',sans-serif; color:#f8fafc !important; }
+.jp-rq-hint{ min-height:1em; margin-top:7px; font-size:.68rem; font-weight:600; letter-spacing:.03em; color:rgba(148,163,184,.8); }
 html body.jp-mission:not(.cf-disc) .jp-reg-ok{ background:#FF5500 !important; border:0 !important; color:#0D0D0D !important; }
 html body.jp-mission:not(.cf-disc) .jp-reg-set.on{ border-color:#FF5500 !important; color:#FF5500 !important; box-shadow:none !important; }
 
@@ -83623,6 +83778,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
           '<div class="bk-hud"><span class="bk-cat">' + C.ic + ' ' + E(C.lb) + '</span>' + warn +
           '<div class="bk-cells"><div><i>Frecuencia</i><b>' + E(frec(r)) + '</b></div><div><i>Nivel</i><b>' + E(nivLb(r)) + '</b></div><div><i>Género</i><b>' + E(genLb(r)) + '</b></div><div><i>Semanas</i><b>' + E(semanas(r)) + '</b></div></div></div>');
       }
+      var bm = card.querySelector('.bank-h .bm');
+      if(bm && /guardada el Plantilla del sistema/i.test(bm.textContent)) bm.textContent = bm.textContent.replace(/guardada el Plantilla del sistema/i, 'plantilla del sistema');
       if(!card.hasAttribute('tabindex')){ card.setAttribute('tabindex', '0'); card.setAttribute('role', 'group'); card.setAttribute('aria-label', 'Plantilla ' + (r.nombre || '')); }
       var sec = card.querySelector('.bank-sec');
       if(sec && !sec.getAttribute('data-bki')){
