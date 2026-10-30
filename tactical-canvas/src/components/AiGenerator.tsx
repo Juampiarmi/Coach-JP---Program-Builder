@@ -25,6 +25,7 @@ import {
   type MindsetBurst,
 } from '../lib/ai'
 import { ContentCalendar } from './ContentCalendar'
+import { WeeklyPlan } from './WeeklyPlan'
 import { detectQuoteIntent } from '../lib/quoteIntent'
 import { PILLARS, type PillarId } from '../lib/pillars'
 import { usePersistentState } from '../hooks/usePersistentState'
@@ -323,6 +324,17 @@ export function AiGenerator({ onResult, onBurst }: Props) {
         onPick={(t) => {
           setTopic(t)
           setMode({ ...mode, inputMode: 'brief' })
+        }}
+        onNeedKey={() => setModal(true)}
+      />
+      <WeeklyPlan
+        settings={settings}
+        hasKey={hasKey}
+        discipline={mode.discipline ?? 'general'}
+        onResult={onResult}
+        onPrompt={(t) => {
+          setTopic(t)
+          setMode({ ...mode, inputMode: 'brief', pillar: undefined })
         }}
         onNeedKey={() => setModal(true)}
       />
