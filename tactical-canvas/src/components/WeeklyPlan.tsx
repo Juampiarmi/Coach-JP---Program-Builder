@@ -11,6 +11,8 @@ interface Props {
   /** Carga el prompt del día en el campo del generador (para editarlo antes de generar) */
   onPrompt: (prompt: string) => void
   onNeedKey: () => void
+  /** Carga el set del día como proyecto (con su fondo táctico); sin esto se carga como resultado suelto */
+  onLoadDay?: (dayId: string) => void
 }
 
 /**
@@ -18,7 +20,7 @@ interface Props {
  * precargado al instante (sin API Key); «Generar con IA» manda el prompt del día con formato,
  * objetivo y tono ya fijados.
  */
-export function WeeklyPlan({ settings, hasKey, discipline, onResult, onPrompt, onNeedKey }: Props) {
+export function WeeklyPlan({ settings, hasKey, discipline, onResult, onPrompt, onNeedKey, onLoadDay }: Props) {
   const today = packDayFor()
   const [ui, setUi] = usePersistentState<{ open: boolean; day: string }>('jp-tactical-canvas:weekly-pack', { open: true, day: today.id })
   const day = WEEKLY_PACK.find((d) => d.id === ui.day) ?? today
@@ -27,7 +29,8 @@ export function WeeklyPlan({ settings, hasKey, discipline, onResult, onPrompt, o
   const abort = useRef<AbortController | null>(null)
 
   const load = (d: WeeklyDay) => {
-    onResult({ format: d.format, slides: d.slides, caption: d.caption }, { topic: d.theme, discipline })
+    if (onLoadDay) onLoadDay(d.id)
+    else onResult({ format: d.format, slides: d.slides, caption: d.caption }, { topic: d.theme, discipline })
     setNote(`✓ ${d.day} cargado: ${d.slides.length} ${d.slides.length === 1 ? 'placa' : 'placas'} + caption con la referencia.`)
   }
 

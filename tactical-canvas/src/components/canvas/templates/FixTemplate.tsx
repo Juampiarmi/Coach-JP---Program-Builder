@@ -51,7 +51,9 @@ export function FixTemplate({ state, palette, contentWidth, scale: s, resolveIma
   const gap = 26 * s
   const cardW = stack ? contentWidth : (contentWidth - gap) / 2
   // Alto de la imagen: en split ~4:5 del ancho de la tarjeta; apilado, una franja horizontal.
-  const imgH = stack ? (isStory ? 330 : 250) * s : cardW * (isStory ? 1.25 : 1.02)
+  // Historia con zona de sticker: las fotos se acortan para que el texto conserve su tamaño.
+  const sticker = isStory && (state.storySticker ?? 'none') !== 'none'
+  const imgH = stack ? (isStory ? (sticker ? 260 : 330) : 250) * s : cardW * (isStory ? (sticker ? 0.92 : 1.25) : 1.02)
   const border = Math.max(2, 4 * s)
   const dark = palette.ink.toUpperCase() === '#FFFFFF'
 

@@ -1,7 +1,7 @@
 # MIÉ · Servicios / Rutina
 
 **Tema:** Fuerza para MTB: sesión + ficha técnica
-**Estructura:** Carrusel 2 · Sesión → Ficha técnica MTB (carrusel continuo)
+**Estructura:** Carrusel 3 · Sentencia → Sesión → Ficha técnica MTB (carrusel continuo)
 **Objetivo / tono IA:** sales · viral
 
 ## Paper de respaldo
@@ -14,7 +14,7 @@
 
 ## Prompt del día (Generador IA · modo brief)
 
-Carrusel de EXACTAMENTE 2 placas para MOUNTAIN BIKE: 1) "rutina": sesión de fuerza para MTB con 5 ejercicios (potencia, sentadilla pesada, bisagra, unilateral y core antirrotación), series × reps, RIR / RPE y pausas reales, y una nota de progresión y de frecuencia en pretemporada vs temporada; 2) "servicio" con servicio.mode "single" y servicio.sport "mtb": ficha técnica del programa MTB de Coach JP con 3-4 pilares técnicos (potencia sostenida en subida, fuerza para el control en bajada, esfuerzos intermitentes, prevención de lesiones) y CTA a DM con la palabra MTB. Evidencia para el caption: Rønnestad y col., 2015 · Scand J Med Sci Sports («Strength training improves performance and pedaling characteristics in elite cyclists»).
+Carrusel de EXACTAMENTE 3 placas para MOUNTAIN BIKE: 1) "sentencia" de portada: la subida no se gana sólo pedaleando, la fuerza pesada también suma; 2) "rutina": sesión de fuerza para MTB con 5 ejercicios (potencia, sentadilla pesada, bisagra, unilateral y core antirrotación), series × reps, RIR / RPE y pausas reales, y una nota de progresión y de frecuencia en pretemporada vs temporada; 3) "servicio" con servicio.mode "single" y servicio.sport "mtb": ficha técnica del programa MTB de Coach JP con 3-4 pilares técnicos (potencia sostenida en subida, fuerza para el control en bajada, esfuerzos intermitentes, prevención de lesiones) y CTA a DM con la palabra MTB. Evidencia para el caption: Rønnestad y col., 2015 · Scand J Med Sci Sports («Strength training improves performance and pedaling characteristics in elite cyclists»).
 
 ## Caption precargado
 

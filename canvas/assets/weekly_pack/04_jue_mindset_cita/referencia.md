@@ -14,7 +14,7 @@
 
 ## Prompt del día (Generador IA · modo brief)
 
-Carrusel de EXACTAMENTE 2 placas sobre DISCIPLINA Y AUTORRESPETO: 1) "cita" con la frase de Marco Aurelio en Meditaciones, Libro X, 16 («No pierdas más tiempo discutiendo cómo debe ser un buen hombre. Sé uno.»), role «Emperador romano y filósofo estoico», source «Meditaciones, Libro X, 16», y un parrafo de contexto que la lleve a la sala de entrenamiento; 2) "manifiesto_texto" sobre el autorrespeto como hábito: cumplir la sesión que te prometiste aunque no tengas ganas, con situaciones reales del entrenamiento y un remate en MAYÚSCULAS. Cero clichés de autoayuda.
+Carrusel de EXACTAMENTE 2 placas sobre DISCIPLINA Y AUTORRESPETO: 1) "cita" con la frase de Marco Aurelio en Meditaciones, Libro X, 16 («No pierdas más tiempo discutiendo cómo debe ser un buen hombre. Sé uno.»), role «Emperador romano y filósofo estoico», source «Meditaciones, Libro X, 16», y un parrafo de contexto que la lleve a la sala de entrenamiento; 2) "manifiesto_texto" sobre el autorrespeto como hábito: cumplir la sesión que te prometiste aunque no tengas ganas, con situaciones reales del entrenamiento y un remate-CTA en MAYÚSCULAS que invite a guardar la placa. Cero clichés de autoayuda.
 
 ## Caption precargado
 

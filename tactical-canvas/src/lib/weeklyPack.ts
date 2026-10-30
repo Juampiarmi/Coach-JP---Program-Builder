@@ -476,3 +476,20 @@ export const WEEKLY_PACK: WeeklyDay[] = [
 export function packDayFor(date = new Date()): WeeklyDay {
   return WEEKLY_PACK.find((d) => d.weekday === date.getDay()) ?? WEEKLY_PACK[0]
 }
+
+/** Fondo táctico vectorial del día (se publica con la app desde /public/assets/weekly_pack/). */
+export const packBackgroundUrl = (d: WeeklyDay) => `./assets/weekly_pack/${d.folder}/fondo-tactico.svg`
+
+/**
+ * Set completo y diseñado del día, listo para exportar: plantilla exacta de cada placa, titulares en
+ * Chakra Petch, formato Feed 4:5 y el fondo táctico del pack (grilla, anillos y acentos naranja) en
+ * todas las placas que dibujan fondo propio. Opus Athletic usa su composición dark y no lleva foto.
+ */
+export function buildPackSlides(d: WeeklyDay, base: CanvasState, bgImageId: string | null): CanvasState[] {
+  return d.slides.map((p) => {
+    const s: CanvasState = { ...base, aspect: 'feed', headlineFont: 'chakra', typePreset: 'none', contentAlign: 'auto', nudge: undefined, storySticker: 'none', ...p } as CanvasState
+    if (s.template === 'athletic' || !bgImageId) return { ...s, bgImageId: null }
+    // Fondo del pack: a color (el naranja no se pasa a B/N), velo medio y viñeta para la lectura.
+    return { ...s, bgImageId, bgStyle: 'photo', bgMono: false, bgOverlay: 12, bgGradient: false, bgVignette: 30, bgZoom: 100, bgX: 0, bgY: 0, floatingPlate: false }
+  })
+}

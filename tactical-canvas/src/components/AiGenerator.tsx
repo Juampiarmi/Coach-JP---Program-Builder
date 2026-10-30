@@ -35,6 +35,8 @@ interface Props {
   onResult: (r: GenerationResult, meta: { topic: string; discipline: Discipline }) => void
   /** Ráfaga elegida: se inyecta en el titular y el remate de la placa activa */
   onBurst?: (b: MindsetBurst) => void
+  /** Carga el set diseñado de un día del Plan Semanal (con su fondo y guardado como proyecto) */
+  onLoadDay?: (dayId: string) => void
 }
 
 const BURST_COUNTS = [1, 3, 5, 7] as const
@@ -124,7 +126,7 @@ function quotaMessage(err: RateLimitError, provider: string) {
 }
 
 /** Barra de generación táctica con IA (BYOK). */
-export function AiGenerator({ onResult, onBurst }: Props) {
+export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
   const [stored, setSettings] = usePersistentState<AiSettings>('jp-tactical-canvas:ai', DEFAULT_AI_SETTINGS)
   // Fusión profunda: settings guardados antes de sumar un proveedor no traen su key/modelo.
   const settings: AiSettings = {
@@ -332,6 +334,7 @@ export function AiGenerator({ onResult, onBurst }: Props) {
         hasKey={hasKey}
         discipline={mode.discipline ?? 'general'}
         onResult={onResult}
+        onLoadDay={onLoadDay}
         onPrompt={(t) => {
           setTopic(t)
           setMode({ ...mode, inputMode: 'brief', pillar: undefined })

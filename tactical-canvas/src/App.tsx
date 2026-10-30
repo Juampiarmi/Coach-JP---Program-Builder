@@ -18,6 +18,8 @@ import { zipFiles } from './lib/zip'
 import { remixToStories } from './lib/remix'
 import { ctaSlide, diagnose, SCORE_COLOR, trimSlide, type DoctorFix } from './lib/retentionDoctor'
 import { RetentionDoctor } from './components/RetentionDoctor'
+import { buildPackSlides, packBackgroundUrl, packDayFor, WEEKLY_PACK } from './lib/weeklyPack'
+import { WeekDayBar } from './components/WeekDayBar'
 import { usePhotoLuma } from './hooks/usePhotoLuma'
 import { CaptionBar } from './components/CaptionBar'
 import { BrandKitBar } from './components/controls/BrandKitBar'
@@ -72,6 +74,14 @@ interface Deck {
   /** Tema y enfoque de la última generación con IA (para re-generar una placa con coherencia) */
   topic?: string
   discipline?: Discipline
+  /** Día del Plan Semanal al que pertenece este set (sus ediciones se guardan en ese día) */
+  packDay?: string
+}
+
+/** Proyectos del Plan Semanal: el set de cada día con las ediciones del usuario + el id de su fondo. */
+interface WeeklyStore {
+  decks: Record<string, Deck>
+  bg: Record<string, string>
 }
 
 const DEFAULT_DECK: Deck = { slides: [DEFAULT_STATE], active: 0, caption: '' }
@@ -119,6 +129,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export default function App() {
   const [deck, setDeck] = usePersistentState<Deck>(STORAGE_KEY, DEFAULT_DECK)
+  const [weekly, setWeekly] = usePersistentState<WeeklyStore>('jp-tactical-canvas:weekly-decks', { decks: {}, bg: {} })
   const slides = deck.slides.length ? deck.slides.map((s) => ({ ...DEFAULT_STATE, ...migrateDiagram(s) }) as CanvasState) : [DEFAULT_STATE]
   const active = Math.min(deck.active, slides.length - 1)
   const state = slides[active]
@@ -160,6 +171,8 @@ export default function App() {
     const legacy = readLegacyBackground()
     // Todas las fotos referenciadas (fondo + Error vs Corrección): ninguna se borra en la limpieza.
     const ids = deck.slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId, s.panoramaImageId]).filter((id): id is string => Boolean(id))
+    // Los proyectos guardados del Plan Semanal (y sus fondos) también se conservan.
+    ids.push(...Object.values(weekly.bg), ...Object.values(weekly.decks).flatMap((d) => d.slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId, s.panoramaImageId]).filter((id): id is string => Boolean(id))))
     if (!legacy) {
       void pruneBackgrounds(ids)
       return
@@ -187,6 +200,49 @@ export default function App() {
     [setDeck],
   )
   const reset = useCallback(() => setDeck(DEFAULT_DECK), [setDeck])
+
+  // Plan Semanal: cada edición del set de un día queda guardada en su proyecto.
+  useEffect(() => {
+    if (!deck.packDay) return
+    setWeekly((w) => (w.decks[deck.packDay!] === deck ? w : { ...w, decks: { ...w.decks, [deck.packDay!]: deck } }))
+  }, [deck, setWeekly])
+
+  /** Fondo táctico del día: se descarga una vez (SVG del pack), se guarda en IndexedDB y se reutiliza. */
+  const packBackground = async (dayId: string): Promise<string | null> => {
+    const known = weekly.bg[dayId]
+    if (known) return known
+    const day = WEEKLY_PACK.find((d) => d.id === dayId)
+    if (!day) return null
+    try {
+      const svg = await (await fetch(packBackgroundUrl(day))).text()
+      if (!svg.includes('<svg')) return null
+      const { id } = bg.add(`data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`)
+      setWeekly((w) => ({ ...w, bg: { ...w.bg, [dayId]: id } }))
+      return id
+    } catch {
+      return null // sin red: el set se arma igual con los fondos tácticos propios de cada plantilla
+    }
+  }
+
+  /**
+   * [ 📅 CARGAR DÍA ]: muestra al instante el set diseñado del día. Si ya lo editaste, vuelve tu versión;
+   * «restaurar» descarta tus cambios y lo arma de nuevo desde el pack.
+   */
+  const loadDay = async (dayId: string, restore = false) => {
+    const day = WEEKLY_PACK.find((d) => d.id === dayId)
+    if (!day) return
+    const saved = weekly.decks[dayId]
+    if (saved && !restore) return setDeck({ ...saved, active: 0 })
+    const bgId = await packBackground(dayId)
+    setDeck({
+      slides: buildPackSlides(day, DEFAULT_STATE, bgId),
+      active: 0,
+      caption: day.caption,
+      topic: day.theme,
+      discipline: deck.discipline,
+      packDay: dayId,
+    })
+  }
   /** Foto nueva SÓLO para la placa activa (null = quitarla de esta placa). */
   const setBgImage = useCallback(
     (img: string | null) => {
@@ -253,6 +309,7 @@ export default function App() {
           }),
           active: 0,
           caption: r.caption,
+          packDay: undefined,
           topic: meta?.topic ?? d.topic,
           discipline: meta?.discipline ?? d.discipline,
         }
@@ -458,7 +515,7 @@ export default function App() {
 
   const panel = (
     <>
-      <AiGenerator onResult={applyGeneration} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />
+      <AiGenerator onResult={applyGeneration} onLoadDay={(id) => void loadDay(id, true)} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />
       <RetentionDoctor
         ref={doctorRef}
         report={report}
@@ -586,6 +643,7 @@ export default function App() {
         <main className="tc-grid-bg flex min-w-0 flex-1 flex-col">
           {/* Barra superior: pestañas (flex-1, scroll horizontal) + utilidades fijas a la derecha. */}
           <div className="border-b border-line bg-carbon/80 px-6 py-3 backdrop-blur">
+            <WeekDayBar active={deck.packDay ?? null} today={packDayFor().id} edited={Object.keys(weekly.decks)} onLoad={(id) => void loadDay(id)} onRestore={(id) => void loadDay(id, true)} />
             {slideBar(
               <>
                 {overlayToggle}
@@ -610,12 +668,16 @@ export default function App() {
       </header>
 
       <div className="flex items-center gap-2 border-b border-line px-4 py-2">
-        <div className="min-w-0 flex-1">
+        {/* El selector de modo conserva su ancho; las herramientas se desplazan si no entran. */}
+        <div className="w-40 shrink-0">
           <ModeSwitch mode={mode} onChange={setMode} compact />
         </div>
-        {overlayToggle}
+        <div className="scrollbar-none flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">{overlayToggle}</div>
       </div>
-      <div className="border-b border-line px-4 py-2">{slideBar()}</div>
+      <div className="border-b border-line px-4 py-2">
+        <WeekDayBar active={deck.packDay ?? null} today={packDayFor().id} edited={Object.keys(weekly.decks)} onLoad={(id) => void loadDay(id)} onRestore={(id) => void loadDay(id, true)} compact />
+        {slideBar()}
+      </div>
       <main className="tc-grid-bg min-h-0 flex-1 px-4 pt-3 pb-6">
         <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={4} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} resolveImage={bg.get} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
       </main>
