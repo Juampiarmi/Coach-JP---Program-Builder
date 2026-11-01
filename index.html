@@ -15907,35 +15907,6 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     Array.prototype.forEach.call(b.parentNode.querySelectorAll('[data-contrx]'), function(x){ x.classList.toggle('on', x.getAttribute('data-contrx') === state.notes[k]); });
     saveProgress();
   });
-  /* ============================================================
-     REGISTRO DE CARGAS EN BOTTOM SHEET (bloques de intervalo: "Every 1:30 x 6 sets", EMOM de fuerza, complexes)
-     La tarjeta muestra prescripcion + un boton; el sheet tiene selector horizontal de sets, kg x reps y [ CONFIRMAR REGISTRO ].
-     Escribe en state.loads con la MISMA clave que las filas nativas (getLoadKey), asi tonelaje, reporte y Story lo leen igual.
-     ============================================================ */
-  /* una ronda de biset/triset cuenta como UNA unidad (hecha cuando todas sus estaciones estan tildadas), no como una serie por estacion */
-  function etqRondas(n){ return n === 2 ? 'biseries' : (n === 3 ? 'triseries' : 'rondas'); }
-  function regProgreso(cfg){
-    var hechos = 0, total = 0, grupos = {}, claves = [], sueltos = 0;
-    cfg.ex.forEach(function(e){
-      if(e.grp){ if(!grupos[e.grp]){ grupos[e.grp] = []; claves.push(e.grp); } grupos[e.grp].push(e); return; }
-      sueltos++;
-      for(var i = 1; i <= e.sets; i++){ total++; if(getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, e.idx, i)).done) hechos++; }
-    });
-    claves.forEach(function(k){
-      var g = grupos[k];
-      for(var i = 1; i <= g[0].sets; i++){
-        total++;
-        if(g.every(function(e){ return getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, e.idx, i)).done; })) hechos++;
-      }
-    });
-    var etq = 'series';
-    if(claves.length && !sueltos) etq = claves.length === 1 ? etqRondas(grupos[claves[0]].length) : 'rondas';
-    return { hechos: hechos, total: total, etq: etq };
-  }
-  function regBotonInner(cfg){
-    var p = regProgreso(cfg);
-    return '<span class="jp-reg-lbl">\\ud83d\\udcdd REGISTRAR TRABAJO <b>(' + p.hechos + '/' + p.total + ' ' + p.etq + ')</b></span><span class="jp-reg-dot' + (p.total && p.hechos >= p.total ? ' ok' : (p.hechos ? ' mid' : '')) + '"></span>';
-  }
   function tituloBloqueHtmlSB(t){
     var m = String(t || '').match(/^([^:]{3,45}):\\s*(\\S.*)$/);
     if(!m) return '<div class="jp-sb-title">' + escSB(t) + '</div>';
@@ -15948,12 +15919,18 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       : ((en.reps ? en.reps + ' ' : '') + en.titulo);
     return txt + (en.carga ? ' @ ' + en.carga : '');
   }
-  function jpRegBotonHtml(cfg){
-    return '<button type="button" class="jp-reg-open' + (regProgreso(cfg).hechos > 0 ? ' jp-reg-on' : '') + '" data-regcfg="' + encodeURIComponent(JSON.stringify(cfg)) + '">' + regBotonInner(cfg) + '</button>';
-  }
-  var regEst = null;
-  function regQ(sel){ var bg = document.getElementById('jpRegSheet'); return bg ? bg.querySelector(sel) : null; }
-  function regKey(){ var c = regEst.cfg, e = c.ex[regEst.ex]; return getLoadKey(c.w, c.d, c.b, e.idx, regEst.set); }
+  /* ============================================================
+     REGISTRO DE 1 TOQUE · una sola tarjeta por ejercicio, sin hoja modal y sin elegir "por bloque / por serie"
+     - KG × REPS ya vienen cargados: lo que hiciste la semana pasada (o la progresión que sugiere la app).
+     - Si mantuviste la marca, un toque en ✓ guarda el ejercicio: la app aplica el dato a la serie efectiva (top set) y deja
+       las demás series hechas; aclimatación y back-off no reciben kilos inventados. Nunca hay modales.
+     - Si cambiás algo, tocás el casillero, lo corregís y ✓ guarda lo nuevo.
+     - Si el ejercicio lleva técnica avanzada (Myo-Reps / Drop-Set / Rest-Pause), las series normales se guardan con ✓ y
+       recién ahí aparece la SERIE FINAL con su fase; sin párrafos de teoría en pantalla.
+     Escribe en state.loads con la MISMA clave que siempre (getLoadKey): tonelaje, reporte y Story lo leen igual.
+     ============================================================ */
+  var QR_CFG = {};
+  var QR_TEC_NOM = { myoreps: 'MYO-REPS', dropset: 'DROP-SET', restpause: 'REST-PAUSE' };
   function regLetra(c, i){
     var x = c.ex[i], m = String(x.nombre || '').match(/^([A-Fa-f])(\\d{1,2})[.):\\-]\\s*/);
     if(m) return m[1].toUpperCase() + m[2];
@@ -15964,101 +15941,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return 'E' + (i + 1);
   }
   function regNombreCorto(n){ return String(n || '').replace(/^[A-Fa-f]\\d{1,2}[.):\\-]\\s*/, '').replace(/\\s*\\([^)]*\\)\\s*$/, '').trim(); }
-  function regBarraEj(c, activo){
-    return '<div class="jp-reg-exgrid" data-n="' + c.ex.length + '">' + c.ex.map(function(x, i){
-      var hechas = 0;
-      for(var s = 1; s <= x.sets; s++){ if(getLoad(getLoadKey(c.w, c.d, c.b, x.idx, s)).done) hechas++; }
-      return '<button type="button" class="jp-reg-ex' + (i === activo ? ' on' : '') + (hechas >= x.sets ? ' ok' : '') + '" data-regex="' + i + '" aria-pressed="' + (i === activo ? 'true' : 'false') + '">' +
-        '<span class="jp-reg-let">' + regLetra(c, i) + '</span><span class="jp-reg-exn2">' + escSB(regNombreCorto(x.nombre)) + '</span><span class="jp-reg-prog">' + hechas + '/' + x.sets + '</span></button>';
-    }).join('') + '</div><div class="jp-reg-activo"><b>' + regLetra(c, activo) + '</b> \\u00b7 CARGANDO: ' + escSB(regNombreCorto(c.ex[activo].nombre)).toUpperCase() + '</div>';
-  }
-  function regPintar(){
-    var bg = document.getElementById('jpRegSheet'); if(!bg || !regEst) return;
-    var c = regEst.cfg, e = c.ex[regEst.ex], ld = getLoad(regKey());
-    var shQ = bg.querySelector('.jp-reg-sheet');
-    if(shQ) shQ.classList.toggle('jp-q', regEst.modo === 'rapido');
-    Array.prototype.forEach.call(bg.querySelectorAll('[data-regmodo]'), function(bm){ var on = bm.getAttribute('data-regmodo') === regEst.modo; bm.classList.toggle('on', on); bm.setAttribute('aria-pressed', on ? 'true' : 'false'); });
-    if(regEst.modo === 'rapido'){ regPintarRapido(); return; }
-    var nGrp = e.grp ? c.ex.filter(function(x){ return x.grp === e.grp; }).length : 0;
-    regQ('.jp-reg-t').textContent = 'REGISTRO DE TRABAJO // ' + e.sets + ' ' + (nGrp ? etqRondas(nGrp).toUpperCase() : 'SERIES');
-    regQ('.jp-reg-exs').innerHTML = c.ex.length > 1 ? regBarraEj(c, regEst.ex) : '<div class="jp-reg-exn">' + escSB(e.nombre) + '</div>';
-    var sets = '';
-    for(var i = 1; i <= e.sets; i++){
-      var l2 = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, i));
-      sets += '<button type="button" class="jp-reg-set' + (i === regEst.set ? ' on' : '') + (l2.done ? ' done' : '') + '" data-regset="' + i + '">' + (e.grp ? 'Ronda ' : 'Serie ') + i + (l2.done ? ' \\u2713' : '') + '</button>';
-    }
-    regQ('.jp-reg-sets').innerHTML = sets;
-    var repsSet = (e.rp && e.rp[regEst.set - 1] != null) ? e.rp[regEst.set - 1] : e.reps, etqSet = (e.et && e.et[regEst.set - 1]) || '';
-    regQ('.jp-reg-pres').textContent = [repsSet ? repsSet + ' ' + (e.u || 'reps') : '', e.carga ? '@ ' + e.carga : '', etqSet].filter(Boolean).join(' \\u00b7 ');
-    var kg = regQ('.jp-reg-kg'), rp = regQ('.jp-reg-reps');
-    /* el casillero de KG existe solo para ejercicios con carga real (barra, mancuernas, kettlebell, maquina, polea...).
-       Peso corporal y bandas elasticas: solo reps (o segundos / unidad propia) y notas; el peso corporal admite "+ LASTRE" opcional. */
-    var modoR = (typeof window.jpModoInput === 'function') ? window.jpModoInput(e.nombre) : '';
-    var lastreOn = (modoR === 'bw') && (regEst.lastre === true || parseFloat(ld.kg) > 0);
-    var sinKg = (modoR === 'banda' || modoR === 'tiempo' || modoR === 'solo' || (modoR === 'bw' && !lastreOn));
-    var filaR = regQ('.jp-reg-fila'), modoEl = regQ('.jp-reg-modo');
-    if(filaR) filaR.classList.toggle('jp-reg-sinkg', sinKg);
-    if(modoEl) modoEl.innerHTML = modoR === 'banda' ? '<span class="jp-bw-chip">BANDA EL\\u00c1STICA</span>'
-      : (modoR === 'bw' ? '<span class="jp-bw-chip">PESO CORPORAL</span>' + (lastreOn ? '' : '<button type="button" class="jp-reg-lastre">+ LASTRE</button>') : '');
-    var etqReps = regQ('.jp-reg-fila label:nth-of-type(2) span');
-    if(etqReps) etqReps.textContent = modoR === 'tiempo' ? 'SEG' : (modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
-    kg.value = ld.kg != null ? ld.kg : ''; rp.value = ld.reps != null ? ld.reps : '';
-    var pk = '';
-    if(regEst.set > 1){ var lp = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, regEst.set - 1)); if(lp.kg != null && lp.kg !== '') pk = String(lp.kg); }
-    if(!pk && c.w > 0){ var lw = getLoad(getLoadKey(c.w - 1, c.d, c.b, e.idx, regEst.set)); if(lw.kg != null && lw.kg !== '') pk = String(lw.kg); }
-    if(!pk && e.carga){ var mkg = String(e.carga).match(/\\d+(?:\\.\\d+)?/); if(mkg) pk = mkg[0]; }
-    kg.placeholder = pk || '\\u2014';
-    kg.classList.remove('jp-reg-pre'); var hintKg = regQ('.jp-reg-hint'); if(hintKg){ hintKg.textContent = ''; hintKg.classList.remove('jp-reg-hint-mem'); }
-    var nr = String(repsSet || '').match(/^\\d+/);
-    rp.placeholder = nr ? nr[0] : '\\u2014';
-    /* sugerencia de carga (jpSugerirCarga): 1) progresión desde lo que el alumno registró en semanas anteriores, 2) su marca real (1RM estimado),
-       3) la carga pautada por el coach, 4) sin carga: se entrena por RIR/RPE. El valor queda escrito para confirmar con un toque; solo se guarda al confirmar. */
-    var sug = null;
-    try{ if(typeof window.jpSugerirCarga === 'function') sug = window.jpSugerirCarga(c, e, regEst.set); }catch(errSg){}
-    if(sug){
-      if(sug.kg > 0 && !kg.value){
-        if(sug.pre){ kg.value = String(Math.round(sug.kg * 100) / 100); kg.classList.add('jp-reg-pre'); }
-        else if(!/^\\d/.test(kg.placeholder)) kg.placeholder = String(Math.round(sug.kg * 100) / 100);
-      }
-      if(hintKg){ hintKg.textContent = sug.txt || ''; if(!sug.pre) hintKg.classList.add('jp-reg-hint-mem'); }
-    } else if(!kg.value && e.carga){
-      var pmKg = String(e.carga).match(/^\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:kgs?)?\\s*$/i);
-      if(pmKg){ kg.value = pmKg[1].replace(',', '.'); kg.classList.add('jp-reg-pre'); if(hintKg) hintKg.textContent = 'Carga pautada \\u00b7 toc\\u00e1 \\u2713 para confirmar'; }
-    }
-    /* memoria del atleta: la última vez que registró esta serie (semana anterior más reciente con dato) */
-    var ult = null;
-    for(var pw = c.w - 1; pw >= 0 && !ult; pw--){
-      var lq = getLoad(getLoadKey(pw, c.d, c.b, e.idx, regEst.set));
-      if(lq && ((lq.kg != null && lq.kg !== '') || (lq.reps != null && lq.reps !== ''))) ult = { w: pw, kg: lq.kg, reps: lq.reps };
-    }
-    if(ult){
-      if(!nr && ult.reps != null && ult.reps !== '') rp.placeholder = String(ult.reps);
-      if(!kg.value && !/^\\d/.test(kg.placeholder) && ult.kg != null && ult.kg !== '') kg.placeholder = String(ult.kg);
-      if(hintKg && !hintKg.textContent){
-        hintKg.textContent = '\\u00daltima vez \\u00b7 SEM ' + (ult.w + 1) + ' \\u00b7 ' + [ult.kg !== '' && ult.kg != null ? ult.kg + ' kg' : '', ult.reps !== '' && ult.reps != null ? '\\u00d7 ' + ult.reps : ''].filter(Boolean).join(' ');
-        hintKg.classList.add('jp-reg-hint-mem');
-      }
-    }
-    if(hintKg && !hintKg.textContent) hintKg.classList.remove('jp-reg-hint-mem');
-    if(sinKg){
-      kg.value = ''; kg.placeholder = '\\u2014'; kg.classList.remove('jp-reg-pre');
-      if(hintKg){ hintKg.textContent = ''; hintKg.classList.remove('jp-reg-hint-mem'); }
-    }
-    var actual = regQ('.jp-reg-set.on'); if(actual && actual.scrollIntoView){ try{ actual.scrollIntoView({ inline: 'center', block: 'nearest' }); }catch(err){} }
-  }
-  /* ---------- REGISTRO RAPIDO · al terminar el bloque, UNA fila por ejercicio con la serie efectiva (top set) ----------
-     Se carga kg x reps una sola vez y se indican las series hechas; la app completa el resto. Si el coach marco "Top Set" en una piramide, el dato va solo
-     a esas series (aclimatacion, carga alta y back-off quedan hechas sin kilos inventados); si no, se aplica a todas las series hechas. Nunca pisa lo que el
-     alumno ya registro serie por serie. El modo POR SERIE sigue disponible con un toque y la eleccion se recuerda. */
-  function regModoPref(){ try{ return localStorage.getItem('jp_reg_modo') === 'serie' ? 'serie' : 'rapido'; }catch(e0){ return 'rapido'; } }
-  function regGuardarModo(m){ try{ localStorage.setItem('jp_reg_modo', m); }catch(e0){} }
   function regEtq(e, i){ return (e.et && e.et[i - 1]) ? String(e.et[i - 1]) : ''; }
-  /* series a las que se aplica lo cargado */
+  /* series a las que se aplica lo cargado: las marcadas "Top Set"; si no hay, el último tramo de una pirámide; si no, todas menos aclimatación */
   function regSetsTop(e){
     var out = [], i;
     for(i = 1; i <= e.sets; i++){ if(/top/i.test(regEtq(e, i))) out.push(i); }
     if(out.length) return out;
-    if(e.rp && e.rp.length > 1){      /* piramide sin etiqueta: el ultimo tramo es el de mayor carga */
+    if(e.rp && e.rp.length > 1){
       var ult = String(e.rp[e.rp.length - 1]);
       for(i = e.rp.length; i >= 1 && String(e.rp[i - 1]) === ult; i--) out.unshift(i);
       if(out.length && out.length < e.sets) return out;
@@ -16076,171 +15965,189 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     return null;
   }
-  function regPintarRapido(){
-    var c = regEst.cfg, q = regQ('.jp-reg-q'); if(!q) return;
-    regQ('.jp-reg-t').textContent = 'REGISTRO DE TRABAJO // ' + c.ex.length + (c.ex.length === 1 ? ' EJERCICIO' : ' EJERCICIOS');
-    var h = '';
-    c.ex.forEach(function(e, i){
-      var tops = regSetsTop(e), ref = tops[tops.length - 1], ld = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, ref));
-      var modoR = (typeof window.jpModoInput === 'function') ? window.jpModoInput(e.nombre) : '';
-      var sinKg = (modoR === 'banda' || modoR === 'tiempo' || modoR === 'solo' || (modoR === 'bw' && !(parseFloat(ld.kg) > 0)));
-      var kgV = (ld.kg != null && ld.kg !== '') ? String(ld.kg) : '', rpV = (ld.reps != null && ld.reps !== '') ? String(ld.reps) : '', pre = false, hint = '';
-      var repsRef = (e.rp && e.rp[ref - 1] != null) ? e.rp[ref - 1] : e.reps, nr = String(repsRef || '').match(/^[0-9]+/);
-      var ult = regUltReg(c, e, ref), kgPh = '\u2014';
-      if(!sinKg && !kgV){
-        var sug = null;
+  function qrTec(e){ return (e && QR_TEC_NOM[e.tec] && e.sets > 1) ? e.tec : ''; }
+  function qrKey(cfg){ return cfg.w + '|' + cfg.d + '|' + cfg.b; }
+  function qrNum(v){ var n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
+  function qrRango(txt){ var m = /(\\d+)\\s*[-–]\\s*(\\d+)/.exec(String(txt || '')); return m ? { min: +m[1], max: +m[2] } : null; }
+  function qrSetsBase(e){ return qrTec(e) ? e.sets - 1 : e.sets; }
+  /* todo lo que la tarjeta necesita saber de un ejercicio (estado guardado + valores sugeridos) */
+  function qrModelo(c, e){
+    var nsMax = qrSetsBase(e), tec = qrTec(e);
+    var tops = regSetsTop(e).filter(function(x){ return x <= nsMax; });
+    if(!tops.length) tops = [nsMax];
+    var ref = tops[tops.length - 1], ld = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, ref));
+    var modoR = (typeof window.jpModoInput === 'function') ? window.jpModoInput(e.nombre) : '';
+    var sinKg = (modoR === 'banda' || modoR === 'tiempo' || modoR === 'solo' || (modoR === 'bw' && !(parseFloat(ld.kg) > 0)));
+    var hechas = 0, s;
+    for(s = 1; s <= nsMax; s++){ if(getLoad(getLoadKey(c.w, c.d, c.b, e.idx, s)).done) hechas++; }
+    var baseOk = hechas >= nsMax, finOk = tec ? !!getLoad(getLoadKey(c.w, c.d, c.b, e.idx, e.sets)).done : true;
+    var guardado = (ld.kg != null && ld.kg !== '') || (ld.reps != null && ld.reps !== '');
+    var repsRef = (e.rp && e.rp[ref - 1] != null) ? e.rp[ref - 1] : e.reps, rr = qrRango(repsRef), nr = String(repsRef || '').match(/^[0-9]+/);
+    var ult = regUltReg(c, e, ref), kgV = '', rpV = '', pre = false, hint = '', sug = null;
+    var base = ult ? 'Sem ' + (ult.w + 1) + ': ' + [ult.kg !== '' && ult.kg != null ? ult.kg + ' kg' : '', ult.reps !== '' && ult.reps != null ? '× ' + ult.reps : ''].filter(Boolean).join(' ') : '';
+    if(guardado){
+      kgV = ld.kg != null ? String(ld.kg) : ''; rpV = ld.reps != null ? String(ld.reps) : '';
+      hint = base;
+    } else {
+      if(!sinKg){
         try{ if(typeof window.jpSugerirCarga === 'function') sug = window.jpSugerirCarga(c, e, ref); }catch(eS){}
-        if(sug && sug.kg > 0){
-          if(sug.pre){ kgV = String(Math.round(sug.kg * 100) / 100); pre = true; } else kgPh = String(Math.round(sug.kg * 100) / 100);
-          hint = sug.txt || '';
-        } else if(e.carga){
+        if(sug && sug.kg > 0){ kgV = String(Math.round(sug.kg * 100) / 100); pre = true; }
+        else if(ult && ult.kg != null && ult.kg !== ''){ kgV = String(ult.kg); pre = true; }
+        else if(e.carga){
           var pm = String(e.carga).match(/^\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(?:kgs?)?\\s*$/i);
-          if(pm){ kgV = pm[1].replace(',', '.'); pre = true; hint = 'Carga pautada'; }
+          if(pm){ kgV = pm[1].replace(',', '.'); pre = true; }
         }
-        if(!kgV && kgPh === '\u2014' && ult && ult.kg != null && ult.kg !== '') kgPh = String(ult.kg);
       }
-      if(!hint && ult){ hint = '\u00daltima vez \u00b7 SEM ' + (ult.w + 1) + ' \u00b7 ' + [ult.kg !== '' && ult.kg != null ? ult.kg + ' kg' : '', ult.reps !== '' && ult.reps != null ? '\u00d7 ' + ult.reps : ''].filter(Boolean).join(' '); }
-      var rpPh = nr ? nr[0] : ((ult && ult.reps != null && ult.reps !== '') ? String(ult.reps) : '\u2014');
-      var hechas = 0; for(var s1 = 1; s1 <= e.sets; s1++){ if(getLoad(getLoadKey(c.w, c.d, c.b, e.idx, s1)).done) hechas++; }
-      var ns = hechas || e.sets;
-      var presTxt = [e.sets + ' \u00d7 ' + (e.reps || (e.rp ? e.rp.join('+') : '')) + (e.u ? ' ' + e.u : ''), e.rir ? 'RIR ' + e.rir : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' \u00b7 ');
-      var unidadR = modoR === 'tiempo' ? 'SEG' : (modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
-      var cuantas = tops.length < e.sets ? (tops.length === 1 ? 'la serie TOP' : 'las series TOP') : (e.sets > 1 ? 'todas las series' : 'la serie');
-      h += '<div class="jp-rq' + (sinKg ? ' jp-rq-sinkg' : '') + '" data-rqi="' + i + '" data-ns="' + ns + '">' +
-        '<div class="jp-rq-h"><span class="jp-rq-let">' + regLetra(c, i) + '</span><span class="jp-rq-n">' + escSB(regNombreCorto(e.nombre)) + '</span></div>' +
-        '<div class="jp-rq-p">' + escSB(presTxt) + '</div>' +
-        '<div class="jp-rq-f">' +
-          (sinKg ? '' : '<label><span>KG</span><input type="text" inputmode="decimal" class="jp-rq-kg' + (pre ? ' jp-rq-pre' : '') + '" autocomplete="off" value="' + escSB(kgV) + '" placeholder="' + escSB(kgPh) + '"></label><b>\u00d7</b>') +
-          '<label><span>' + unidadR + '</span><input type="text" inputmode="decimal" class="jp-rq-rp" autocomplete="off" value="' + escSB(rpV) + '" placeholder="' + escSB(rpPh) + '"></label>' +
-          '<div class="jp-rq-ns"><span>SERIES</span><div><button type="button" data-rqs="-1" aria-label="Una serie menos">\u2212</button><b class="jp-rq-nv">' + ns + '</b><button type="button" data-rqs="1" aria-label="Una serie m\u00e1s">+</button></div></div>' +
-        '</div>' +
-        '<div class="jp-rq-hint">' + escSB(hint) + (e.sets > 1 ? (hint ? ' \u00b7 ' : '') + 'se aplica a ' + cuantas : '') + '</div>' +
-      '</div>';
-    });
-    q.innerHTML = h;
-  }
-  function regRqPaso(btn){
-    var fila = btn.closest('.jp-rq'); if(!fila || !regEst) return;
-    var e = regEst.cfg.ex[parseInt(fila.getAttribute('data-rqi'), 10)], ns = (parseInt(fila.getAttribute('data-ns'), 10) || 0) + (parseInt(btn.getAttribute('data-rqs'), 10) || 0);
-    ns = Math.max(0, Math.min(e.sets, ns));
-    fila.setAttribute('data-ns', String(ns));
-    var nv = fila.querySelector('.jp-rq-nv'); if(nv) nv.textContent = String(ns);
-    fila.classList.toggle('jp-rq-omit', ns === 0);
-  }
-  function regConfirmarRapido(){
-    if(!regEst) return;
-    var c = regEst.cfg, filas = regQ('.jp-reg-q').querySelectorAll('.jp-rq'), falta = null, plan = [];
-    Array.prototype.forEach.call(filas, function(f){
-      var e = c.ex[parseInt(f.getAttribute('data-rqi'), 10)], ns = parseInt(f.getAttribute('data-ns'), 10) || 0;
-      if(!ns) return;
-      var kgI = f.querySelector('.jp-rq-kg'), rpI = f.querySelector('.jp-rq-rp');
-      var kv = kgI ? (kgI.value || (/^[0-9]/.test(kgI.placeholder) ? kgI.placeholder : '')) : '', rv = rpI ? (rpI.value || (/^[0-9]/.test(rpI.placeholder) ? rpI.placeholder : '')) : '';
-      if(!kv && !rv){ if(!falta) falta = f; f.classList.add('jp-rq-falta'); return; }
-      f.classList.remove('jp-rq-falta');
-      plan.push({ e: e, ns: ns, kv: kv, rv: rv });
-    });
-    if(falta){ try{ falta.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(e0){} return; }
-    if(!plan.length){ regCerrar(); return; }
-    plan.forEach(function(p){
-      var e = p.e, tops = regSetsTop(e).filter(function(x){ return x <= p.ns; });
-      if(!tops.length) tops = [p.ns];
-      for(var i = 1; i <= p.ns; i++){
-        var key = getLoadKey(c.w, c.d, c.b, e.idx, i);
-        if(tops.indexOf(i) >= 0){ if(p.kv) setLoadField(key, 'kg', p.kv); if(p.rv) setLoadField(key, 'reps', p.rv); }
-        setLoadField(key, 'done', true);
+      if(ult && ult.reps != null && ult.reps !== ''){
+        /* si la progresión sube el peso (llegaste al tope del rango), las reps arrancan de nuevo desde el mínimo */
+        var sube = !!(sug && sug.origen === 'progresion' && ult.kg != null && qrNum(kgV) > qrNum(ult.kg));
+        rpV = (sube && rr) ? String(rr.min) : String(ult.reps); pre = true;
       }
-    });
-    try{ jpAudioTactical.soundCheckSet(); }catch(err){}
-    try{ jpAudioTactical.vibrateCheckSet(); }catch(err2){}
-    regCerrar();
-  }
-  function regSiguientePendiente(cfg){
-    for(var ei = 0; ei < cfg.ex.length; ei++){
-      for(var i = 1; i <= cfg.ex[ei].sets; i++){ if(!getLoad(getLoadKey(cfg.w, cfg.d, cfg.b, cfg.ex[ei].idx, i)).done) return { ex: ei, set: i }; }
+      if(sug && sug.origen === 'progresion' && ult && qrNum(kgV) > qrNum(ult.kg)) hint = '↑ Subí a ' + kgV + ' kg · ' + base;
+      else if(sug && sug.origen === 'descarga') hint = 'Descarga · ' + base;
+      else if(sug && sug.origen === 'real') hint = 'Según tu marca · ' + kgV + ' kg';
+      else if(sug && sug.origen === 'coach') hint = 'Carga pautada';
+      else hint = base || (e.rir ? 'Elegí un peso para RIR ' + e.rir : '');
     }
-    return { ex: 0, set: 1 };
+    var ns = (hechas > 0 && hechas < nsMax) ? hechas : nsMax;
+    return { tec: tec, nsMax: nsMax, ns: ns, sinKg: sinKg, modoR: modoR, kgV: kgV, rpV: rpV, pre: pre, hint: hint, kgPh: '—', rpPh: nr ? nr[0] : (ult && ult.reps != null && ult.reps !== '' ? String(ult.reps) : '—'), baseOk: baseOk, finOk: finOk, todoOk: baseOk && finOk };
   }
-  function regAbrir(btn){
-    var cfg = null;
-    try{ cfg = JSON.parse(decodeURIComponent(btn.dataset.regcfg || '')); }catch(err){}
-    if(!cfg || !cfg.ex || !cfg.ex.length) return;
-    var p = regSiguientePendiente(cfg);
-    regEst = { cfg: cfg, ex: p.ex, set: p.set, btn: btn, modo: regModoPref() };
-    var bg = document.createElement('div'); bg.className = 'jp-reg-bg'; bg.id = 'jpRegSheet';
-    bg.innerHTML = '<div class="jp-reg-sheet" role="dialog" aria-modal="true">' +
-        '<div class="jp-reg-grip"></div>' +
-        '<div class="jp-reg-h"><span class="jp-reg-t"></span><button type="button" class="jp-reg-x" aria-label="Cerrar">\\u2715</button></div>' +
-        '<div class="jp-reg-modos" role="group" aria-label="Modo de registro"><button type="button" data-regmodo="rapido" aria-pressed="true">\u26a1 POR BLOQUE</button><button type="button" data-regmodo="serie" aria-pressed="false">POR SERIE</button></div>' +
-        '<div class="jp-reg-q"></div>' +
-        '<div class="jp-reg-exs"></div>' +
-        '<div class="jp-reg-sets"></div>' +
-        '<div class="jp-reg-pres"></div>' +
-        '<div class="jp-reg-hint"></div>' +
-        '<div class="jp-reg-modo"></div>' +
-        '<div class="jp-reg-fila"><label><span>KG</span><input type="text" inputmode="decimal" class="jp-reg-kg" autocomplete="off" placeholder="\\u2014"></label>' +
-          '<b>\\u00d7</b><label><span>REPS</span><input type="text" inputmode="decimal" class="jp-reg-reps" autocomplete="off" placeholder="\\u2014"></label>' +
-          '<button type="button" class="jp-reg-chk" aria-label="Confirmar set">\\u2713</button></div>' +
-        '<button type="button" class="jp-reg-ok">[ CONFIRMAR REGISTRO ]</button>' +
-        '<button type="button" class="jp-reg-qok">[ GUARDAR BLOQUE ]</button>' +
-      '</div>';
-    document.body.appendChild(bg);
-    document.body.style.overflow = 'hidden';
-    regPintar();
+  function qrCardHtml(c, e, i){
+    var m = qrModelo(c, e), k = qrKey(c);
+    var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
+    var pres = [e.sets + ' × ' + (e.reps || (e.rp ? e.rp.join('+') : '')) + (e.u ? ' ' + e.u : ''), e.rir ? 'RIR ' + e.rir : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' · ');
+    return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' +
+      '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
+      '<div class="jp-qc-f">' +
+        (m.sinKg ? '' : '<label><span>KG</span><input type="text" inputmode="decimal" class="jp-qc-kg' + (m.pre && m.kgV ? ' pre' : '') + '" autocomplete="off" value="' + escSB(m.kgV) + '" placeholder="' + escSB(m.kgPh) + '"></label><b>×</b>') +
+        '<label><span>' + unidad + '</span><input type="text" inputmode="decimal" class="jp-qc-rp' + (m.pre && m.rpV ? ' pre' : '') + '" autocomplete="off" value="' + escSB(m.rpV) + '" placeholder="' + escSB(m.rpPh) + '"></label>' +
+        '<button type="button" class="jp-qc-ok" aria-label="Guardar ejercicio">✓</button>' +
+      '</div>' +
+      '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span>' +
+        (m.nsMax > 1 ? '<span class="jp-qc-ns"><button type="button" class="jp-qc-s" data-qs="-1" aria-label="Una serie menos">−</button><b class="jp-qc-nv">' + m.ns + '</b><span>' + (e.grp ? 'RONDAS' : 'SERIES') + '</span><button type="button" class="jp-qc-s" data-qs="1" aria-label="Una serie más">+</button></span>' : '') +
+      '</div>' +
+      (m.tec ? '<div class="jp-qc-fin"><span class="jp-qc-fin-lb">⚡ ' + (e.grp ? 'RONDA' : 'SERIE') + ' FINAL · ' + QR_TEC_NOM[m.tec] + '</span><button type="button" class="jp-qc-finok' + (m.finOk ? ' ok' : '') + '" aria-label="Serie final hecha">' + (m.finOk ? '✓ HECHA' : 'HECHA ✓') + '</button></div>' : '') +
+    '</div>';
   }
-  function regCerrar(){
-    var bg = document.getElementById('jpRegSheet'); if(bg) bg.remove();
-    document.body.style.overflow = '';
-    if(regEst && regEst.btn){ regEst.btn.innerHTML = regBotonInner(regEst.cfg); regEst.btn.classList.toggle('jp-reg-on', regProgreso(regEst.cfg).hechos > 0); }
-    regEst = null;
+  /* devuelve el contenedor con una tarjeta por ejercicio; jpQrAcomodar() las mueve dentro de la fila de cada ejercicio */
+  function jpRegBotonHtml(cfg){
+    QR_CFG[qrKey(cfg)] = cfg;
+    return '<div class="jp-qr" data-qk="' + escSB(qrKey(cfg)) + '">' + cfg.ex.map(function(e, i){ return qrCardHtml(cfg, e, i); }).join('') + '</div>';
   }
-  function regConfirmar(){
-    if(!regEst) return;
-    var kg = regQ('.jp-reg-kg'), rp = regQ('.jp-reg-reps'), key = regKey();
-    var filaC = regQ('.jp-reg-fila'), sinKgC = !!(filaC && filaC.classList.contains('jp-reg-sinkg'));
-    var kv = sinKgC ? '' : (kg.value || (/^\\d/.test(kg.placeholder) ? kg.placeholder : ''));
-    var rv = rp.value || (/^\\d/.test(rp.placeholder) ? rp.placeholder : '');
-    if(!kv && !rv){ var fila = regQ('.jp-reg-fila'); fila.classList.add('jp-reg-falta'); setTimeout(function(){ fila.classList.remove('jp-reg-falta'); }, 600); return; }
-    var btnRef = regEst.btn, rDesc = regEst.cfg.ex[regEst.ex].r;
-    if(kv) setLoadField(key, 'kg', kv);
-    if(rv) setLoadField(key, 'reps', rv);
-    setLoadField(key, 'done', true);
-    try{ jpAudioTactical.soundCheckSet(); }catch(err){}
-    try{ jpAudioTactical.vibrateCheckSet(); }catch(err){}
-    regCerrar();
-    var blq = btnRef && btnRef.closest ? btnRef.closest('.block') : null;
-    if(blq && typeof window.jpArrancarDescansoSetNative === 'function'){ try{ window.jpArrancarDescansoSetNative(blq, rDesc === undefined ? 0 : rDesc); }catch(errR){} }
+  /* la técnica especial (mini-sets / bajadas) solo se muestra cuando las series normales ya están hechas */
+  function qrTecAbrir(board){
+    if(!board || !board.querySelectorAll) return;
+    var cards = board.querySelectorAll('.jp-qc[data-tec]');
+    if(!cards.length) return;
+    var abierto = false;
+    Array.prototype.forEach.call(cards, function(cd){ if(cd.getAttribute('data-base') === '1') abierto = true; });
+    board.classList.add('jp-tec-gate');
+    board.classList.toggle('jp-tec-open', abierto);
   }
-  document.addEventListener('click', function(e){
-    var t = e.target; if(!t || !t.closest) return;
-    var ab = t.closest('.jp-reg-open');
-    if(ab){ e.preventDefault(); e.stopPropagation(); regAbrir(ab); return; }
-    if(!regEst) return;
-    if(t.closest('.jp-reg-lastre')){ regEst.lastre = true; regPintar(); var kiL = regQ('.jp-reg-kg'); if(kiL){ try{ kiL.focus(); }catch(eL){} } return; }
-    if(t.closest('.jp-reg-x') || t.classList.contains('jp-reg-bg')){ regCerrar(); return; }
-    var ex = t.closest('[data-regex]');
-    if(ex){ regEst.lastre = false; regEst.ex = parseInt(ex.getAttribute('data-regex'), 10) || 0; var c = regEst.cfg, e0 = c.ex[regEst.ex], s0 = 1; for(var i = 1; i <= e0.sets; i++){ if(!getLoad(getLoadKey(c.w, c.d, c.b, e0.idx, i)).done){ s0 = i; break; } } regEst.set = s0; regPintar(); return; }
-    var st = t.closest('[data-regset]');
-    if(st){ regEst.set = parseInt(st.getAttribute('data-regset'), 10) || 1; regPintar(); return; }
-    var mdR = t.closest('[data-regmodo]'); if(mdR){ regEst.modo = mdR.getAttribute('data-regmodo') === 'serie' ? 'serie' : 'rapido'; regGuardarModo(regEst.modo); regPintar(); return; }
-    var qsR = t.closest('[data-rqs]'); if(qsR){ regRqPaso(qsR); return; }
-    if(t.closest('.jp-reg-qok')){ regConfirmarRapido(); return; }
-    if(t.closest('.jp-reg-ok') || t.closest('.jp-reg-chk')){ regConfirmar(); return; }
-  });
-  document.addEventListener('input', function(e){
-    var t = e.target; if(!regEst || !t || !t.classList) return;
-    if(t.classList.contains('jp-rq-kg') || t.classList.contains('jp-rq-rp')){
-      var vq = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
-      if(vq !== t.value) t.value = vq;
-      t.classList.remove('jp-rq-pre');
-      var fq = t.closest('.jp-rq'); if(fq) fq.classList.remove('jp-rq-falta');
+  /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
+  function jpQrAcomodar(root){
+    var boards = root && root.matches && root.matches('[data-sportsboard]') ? [root] : (root && root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll('[data-sportsboard]')) : []);
+    boards.forEach(function(board){
+      var box = board.querySelector('.jp-qr');
+      if(box){
+        var cards = Array.prototype.slice.call(box.querySelectorAll('.jp-qc'));
+        var filas = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
+        if(filas.length === cards.length && cards.length){
+          cards.forEach(function(cd, i){ filas[i].appendChild(cd); });
+          box.parentNode.removeChild(box);
+        }
+      }
+      qrTecAbrir(board);
+    });
+  }
+  function qrCtx(card){
+    var cfg = QR_CFG[card.getAttribute('data-qk')], e = cfg && cfg.ex[parseInt(card.getAttribute('data-qi'), 10)];
+    return (cfg && e) ? { c: cfg, e: e } : null;
+  }
+  function qrValores(card){
+    var kgI = card.querySelector('.jp-qc-kg'), rpI = card.querySelector('.jp-qc-rp');
+    return {
+      kv: kgI ? (kgI.value || (/^[0-9]/.test(kgI.placeholder) ? kgI.placeholder : '')) : '',
+      rv: rpI ? (rpI.value || (/^[0-9]/.test(rpI.placeholder) ? rpI.placeholder : '')) : ''
+    };
+  }
+  function qrAviso(){
+    try{ jpAudioTactical.soundCheckSet(); }catch(e1){}
+    try{ jpAudioTactical.vibrateCheckSet(); }catch(e2){}
+  }
+  function qrRefrescar(card){
+    var k = qrCtx(card); if(!k || !card.parentNode) return;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = qrCardHtml(k.c, k.e, parseInt(card.getAttribute('data-qi'), 10));
+    var nuevo = tmp.firstChild, board = card.closest('[data-sportsboard]');
+    card.parentNode.replaceChild(nuevo, card);
+    qrTecAbrir(board);
+  }
+  /* ✓ : guarda el ejercicio con un toque (las series efectivas llevan KG × REPS; el resto queda hecho sin kilos inventados) */
+  function qrGuardar(card){
+    var k = qrCtx(card); if(!k) return;
+    var v = qrValores(card);
+    var pideKg = !!card.querySelector('.jp-qc-kg');
+    if((pideKg && !v.kv) || !v.rv){
+      card.classList.add('falta'); setTimeout(function(){ card.classList.remove('falta'); }, 700);
+      var vacio = (pideKg && !v.kv) ? card.querySelector('.jp-qc-kg') : card.querySelector('.jp-qc-rp');
+      if(vacio){ try{ vacio.focus(); }catch(eF){} }
       return;
     }
-    var campo = t.classList.contains('jp-reg-kg') ? 'kg' : (t.classList.contains('jp-reg-reps') ? 'reps' : '');
-    if(!campo) return;
-    if(campo === 'kg'){ t.classList.remove('jp-reg-pre'); var hk = regQ('.jp-reg-hint'); if(hk) hk.textContent = ''; }
-    var v = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '').replace(/(\\..*)\\./g, '$1');
-    if(v !== t.value) t.value = v;
-    setLoadField(regKey(), campo, v);
+    var c = k.c, e = k.e, nsMax = qrSetsBase(e);
+    var ns = Math.max(1, Math.min(nsMax, parseInt(card.getAttribute('data-ns'), 10) || nsMax));
+    var tops = regSetsTop(e).filter(function(x){ return x <= ns; });
+    if(!tops.length) tops = [ns];
+    for(var i = 1; i <= ns; i++){
+      var key = getLoadKey(c.w, c.d, c.b, e.idx, i);
+      if(tops.indexOf(i) >= 0){ if(v.kv) setLoadField(key, 'kg', v.kv); if(v.rv) setLoadField(key, 'reps', v.rv); }
+      setLoadField(key, 'done', true);
+    }
+    qrAviso();
+    qrRefrescar(card);
+  }
+  /* serie final con técnica: se marca hecha con el mismo KG × REPS de la tarjeta */
+  function qrFinal(card){
+    var k = qrCtx(card); if(!k) return;
+    var v = qrValores(card), c = k.c, e = k.e, key = getLoadKey(c.w, c.d, c.b, e.idx, e.sets);
+    var estaba = !!getLoad(key).done;
+    if(estaba){ setLoadField(key, 'done', false); }
+    else {
+      if(v.kv) setLoadField(key, 'kg', v.kv);
+      if(v.rv) setLoadField(key, 'reps', v.rv);
+      setLoadField(key, 'done', true);
+      qrAviso();
+    }
+    qrRefrescar(card);
+  }
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var st = t.closest('.jp-qc-s');
+    if(st){
+      ev.preventDefault();
+      var cd = st.closest('.jp-qc'), max = parseInt(cd.getAttribute('data-max'), 10) || 1;
+      var ns = Math.max(1, Math.min(max, (parseInt(cd.getAttribute('data-ns'), 10) || max) + (parseInt(st.getAttribute('data-qs'), 10) || 0)));
+      cd.setAttribute('data-ns', String(ns));
+      var nv = cd.querySelector('.jp-qc-nv'); if(nv) nv.textContent = String(ns);
+      cd.classList.remove('ok');
+      return;
+    }
+    var ok = t.closest('.jp-qc-ok');
+    if(ok){ ev.preventDefault(); ev.stopPropagation(); qrGuardar(ok.closest('.jp-qc')); return; }
+    var fi = t.closest('.jp-qc-finok');
+    if(fi){ ev.preventDefault(); ev.stopPropagation(); qrFinal(fi.closest('.jp-qc')); return; }
+  });
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || !t.classList || !(t.classList.contains('jp-qc-kg') || t.classList.contains('jp-qc-rp'))) return;
+    var vq = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '').replace(/(\\..*)\\./g, '$1');
+    if(vq !== t.value) t.value = vq;
+    t.classList.remove('pre');
+    var cd = t.closest('.jp-qc');
+    if(cd){ cd.classList.remove('falta'); cd.classList.remove('ok'); }
+  });
+  /* al tocar un casillero se selecciona todo: se corrige escribiendo encima, sin borrar a mano */
+  document.addEventListener('focusin', function(ev){
+    var t = ev.target; if(t && t.classList && (t.classList.contains('jp-qc-kg') || t.classList.contains('jp-qc-rp'))){ try{ t.select(); }catch(e0){} }
   });
   document.addEventListener('click', function(e){
     var b = e.target && e.target.closest ? e.target.closest('#jpCerrarDiaBtn') : null;
@@ -18318,9 +18225,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var pills = '';
     for(var i = 1; i <= n; i++) pills += '<span class="jp-tec-p' + (i === n ? ' on' : '') + '">' + (i === n ? ic + ' ' : '') + i + '</span>';
     var previas = n > 1 ? '<b>' + U + (n > 2 ? 'S 1 a ' + (n - 1) : ' 1') + '</b>: normales, al RIR indicado. ' : '';
-    return '<div class="jp-tec-est"><div class="jp-tec-strip">' + pills + '<span class="jp-tec-tot">' + n + ' ' + (ronda ? (n === 1 ? 'ronda' : 'rondas') : (n === 1 ? 'serie' : 'series')) + ' en total</span></div>' +
-      '<div class="jp-tec-txt">' + previas + '<b>' + U + ' ' + n + ' \\u00b7 ' + nom + '</b> en ' + fases.length + ' fases' + (tec === 'myoreps' ? '' : ' seguidas') + ': ' + fases.join(' \\u2192 ') + '.</div>' +
-      '<div class="jp-tec-nota">Las fases son parte de la ' + u + ' ' + n + ': no suman ' + (ronda ? 'rondas' : 'series') + '.</div></div>';
+    return '<div class="jp-tec-est"><div class="jp-tec-strip">' + pills + '<span class="jp-tec-nm">' + ic + ' ' + nom + '</span><span class="jp-tec-tot">' + n + ' ' + (ronda ? (n === 1 ? 'ronda' : 'rondas') : (n === 1 ? 'serie' : 'series')) + '</span></div></div>';
   }
   function renderRegistroDropsetSB(weekIdx, dayId, blockId, exIdx, unidadSec, refSemanaAnterior, ctx){
     unidadSec = unidadSec || 'reps'; ctx = ctx || {};
@@ -19076,7 +18981,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             '</div>';
         }).join('');
         subsInfo.forEach(function(o){
-          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0) });
+          regCfg.push({ grp: 'b' + idx, gn: subsInfo.length, idx: 'b' + idx + 's' + o.si, nombre: o.sub.nombre, sets: rondasN, reps: o.sub.reps || '', carga: o.sub.carga || '', u: o.sub.unidad && o.sub.unidad !== 'reps' ? o.sub.unidad : '', rir: String(o.sub.rir != null ? o.sub.rir : (entry.rir || '')), r: String(o.restSub) === '0' ? -1 : (parseInt(o.restSub, 10) || 0), tec: o.sub.tecnica || '' });
         });
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
@@ -19102,14 +19007,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const exIdx = 'e' + idx;
       if(entry.int && !esCalentamiento && !entry.tecnica){
         nIndiv++;
-        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: -1 });
+        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: -1, tec: entry.tecnica || '' });
         filas += '<div class="jp-int-rx" data-rest-sec="0"><div class="jp-int-txt">' + escSB(rxIntervaloSB(entry)) + '</div>' +
           ((entry.tempo || entry.rir) ? '<div class="jp-int-meta">' + [entry.tempo ? 'TEMPO ' + escSB(entry.tempo) : '', entry.rir ? 'RIR ' + escSB(entry.rir) : ''].filter(Boolean).join(' \\u00b7 ') + '</div>' : '') + '</div>';
         return;
       }
       if(entry.sets > 6 && !esCalentamiento && !entry.tecnica){
         nIndiv++;
-        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || '') });
+        regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), tec: entry.tecnica || '' });
         filas += '<div class="jp-sb-ex jp-sb-ex-int" data-rest-sec="0">' +
             '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + jpIdx2(nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span></div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets || 1, entry.reps, entry.unidad, entry.tempo, entry.rir, 0, entry.carga ? '@ ' + entry.carga : '') +
@@ -19178,7 +19083,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return;
       }
       const esAncla = !anclaUsada; anclaUsada = true;
-      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0) });
+      regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica || '' });
       if(entry.tecnica === 'restpause' && !entry.tramos){
         var cfgRp = regCfg[regCfg.length - 1]; cfgRp.et = [];
         for(var kq = 0; kq < cfgRp.sets; kq++) cfgRp.et.push(kq === cfgRp.sets - 1 ? '\\u26a1 REST-PAUSE: al fallo \\u2192 pausa 15-20 s \\u2192 +2-4 reps \\u2192 pausa \\u2192 +2-4 reps (una sola serie)' : '');
@@ -19310,6 +19215,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       htmlFinal = '<details class="jp-warm-acc"><summary><span class="jp-warm-lb">\\ud83d\\udd25 ACTIVACI\\u00d3N' + (nAct ? ' \\u00b7 ' + nAct + ' EJERCICIOS' : '') + '</span><span class="jp-warm-chev">\\u25bc</span></summary>' + html + '</details>';
     }
     body.insertAdjacentHTML('afterbegin', htmlFinal);
+    try{ jpQrAcomodar(body); }catch(eQr){ console.warn('registro 1 toque', eQr); }
     body.querySelectorAll('.ex-row, .wu-phase, .coach-note').forEach(function(el){
       if(!el.closest('[data-sportsboard]')) el.style.display = 'none';
     });
@@ -41686,75 +41592,7 @@ body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform 
 .jp-ronda-sub{ display:flex !important; align-items:center; gap:8px; border:0 !important; padding:0 !important; margin:0 0 6px !important; background:none !important; }
 .jp-int-pill{ margin:6px 0 8px; }
 .jp-sb-ex-int{ margin-bottom:10px; }
-.jp-reg-open{ display:flex; flex-direction:column; align-items:center; gap:2px; width:100%; margin:6px 0 10px; padding:14px 10px; border-radius:12px; cursor:pointer; background:rgba(56,189,248,.12); border:1px solid rgba(56,189,248,.6); color:#38BDF8; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.82rem; letter-spacing:.06em; }
-:where(body.cf-disc) .jp-reg-open{ background:rgba(0,230,255,.12);border:1px solid rgba(0,230,255,.6);color:#00E6FF; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-open{ background:rgba(0,230,255,.12);border:1px solid rgba(0,230,255,.6);color:#00E6FF; }
-.jp-reg-open small{ font-size:.66rem; font-weight:600; letter-spacing:.04em; color:rgba(148,163,184,.9); }
-:where(body.cf-disc) .jp-reg-open small{ color:rgba(166,166,166,.9); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-open small{ color:rgba(166,166,166,.9); }
-.jp-reg-open:active{ background:rgba(56,189,248,.24); }
-:where(body.cf-disc) .jp-reg-open:active{ background:rgba(0,230,255,.24); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-open:active{ background:rgba(0,230,255,.24); }
-.jp-reg-bg{ position:fixed; inset:0; z-index:100000; display:flex; align-items:flex-end; justify-content:center; background:rgba(2,6,23,.66); }
-:where(body.cf-disc) .jp-reg-bg{ background:rgba(13,13,13,.66); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-bg{ background:rgba(13,13,13,.66); }
-.jp-reg-sheet{ width:100%; max-width:520px; max-height:82vh; overflow-y:auto; box-sizing:border-box; padding:10px 16px calc(20px + env(safe-area-inset-bottom)); border-radius:22px 22px 0 0; background:#0b1220; border:1px solid rgba(56,189,248,.35); border-bottom:0; box-shadow:0 -18px 50px rgba(0,0,0,.6); animation:jpRegUp .22s ease-out; }
-:where(body.cf-disc) .jp-reg-sheet{ background:#161616;border:1px solid rgba(0,230,255,.35); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-sheet{ background:#161616;border:1px solid rgba(0,230,255,.35); }
 @keyframes jpRegUp{ from{ transform:translateY(40px); opacity:.4; } to{ transform:none; opacity:1; } }
-.jp-reg-grip{ width:44px; height:5px; margin:0 auto 10px; border-radius:3px; background:rgba(148,163,184,.4); }
-:where(body.cf-disc) .jp-reg-grip{ background:rgba(166,166,166,.4); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-grip{ background:rgba(166,166,166,.4); }
-.jp-reg-h{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
-.jp-reg-t{ font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.8rem; letter-spacing:.1em; color:#F59E0B; min-width:0; overflow-wrap:anywhere; }
-:where(body.cf-disc) .jp-reg-t{ color:#FF5500; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-t{ color:#FF5500; }
-.jp-reg-x{ flex:0 0 auto; width:36px; height:36px; border-radius:50%; cursor:pointer; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); color:#e2e8f0; font-size:1rem; }
-:where(body.cf-disc) .jp-reg-x{ color:#E9E9E9; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-x{ color:#E9E9E9; }
-.jp-reg-exs{ display:flex; gap:8px; overflow-x:auto; margin-bottom:10px; padding-bottom:2px; }
-.jp-reg-ex{ flex:0 0 auto; padding:8px 12px; border-radius:999px; cursor:pointer; background:transparent; border:1px solid rgba(148,163,184,.3); color:#94A3B8; font-size:.78rem; font-weight:700; white-space:nowrap; }
-:where(body.cf-disc) .jp-reg-ex{ border:1px solid rgba(166,166,166,.3);color:#A6A6A6; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-ex{ border:1px solid rgba(166,166,166,.3);color:#A6A6A6; }
-.jp-reg-ex.on{ background:rgba(245,158,11,.14); border-color:#F59E0B; color:#F59E0B; }
-:where(body.cf-disc) .jp-reg-ex.on{ background:rgba(255,85,0,.14);border-color:#FF5500;color:#FF5500; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-ex.on{ background:rgba(255,85,0,.14);border-color:#FF5500;color:#FF5500; }
-.jp-reg-exn{ margin-bottom:10px; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:1rem; letter-spacing:.03em; color:#fbbf24; text-transform:uppercase; overflow-wrap:anywhere; }
-:where(body.cf-disc) .jp-reg-exn{ color:#FFFFFF; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-exn{ color:#FFFFFF; }
-.jp-reg-sets{ display:flex; gap:8px; overflow-x:auto; padding:2px 0 10px; scrollbar-width:none; }
-.jp-reg-sets::-webkit-scrollbar{ display:none; }
-.jp-reg-set{ flex:0 0 auto; min-width:76px; padding:12px 10px; border-radius:10px; cursor:pointer; background:rgba(15,23,42,.8); border:1px solid rgba(148,163,184,.3); color:#cbd5e1; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.8rem; letter-spacing:.04em; white-space:nowrap; }
-:where(body.cf-disc) .jp-reg-set{ background:rgba(28,28,28,.8);border:1px solid rgba(166,166,166,.3);color:#D6D6D6; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-set{ background:rgba(28,28,28,.8);border:1px solid rgba(166,166,166,.3);color:#D6D6D6; }
-.jp-reg-set.done{ border-color:rgba(16,185,129,.6); color:#34D399; }
-.jp-reg-set.on{ background:rgba(56,189,248,.18); border-color:#38BDF8; color:#38BDF8; }
-:where(body.cf-disc) .jp-reg-set.on{ background:rgba(0,230,255,.18);border-color:#00E6FF;color:#00E6FF; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-set.on{ background:rgba(0,230,255,.18);border-color:#00E6FF;color:#00E6FF; }
-.jp-reg-pres{ min-height:1.2em; margin-bottom:12px; font-size:.78rem; font-weight:600; letter-spacing:.03em; color:rgba(148,163,184,.9); }
-:where(body.cf-disc) .jp-reg-pres{ color:rgba(166,166,166,.9); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-pres{ color:rgba(166,166,166,.9); }
-.jp-reg-fila{ display:flex; align-items:flex-end; justify-content:center; gap:12px; margin-bottom:14px; }
-.jp-reg-fila.jp-reg-sinkg > label:first-of-type, .jp-reg-fila.jp-reg-sinkg > b{ display:none; }
-.jp-reg-modo{ display:flex; align-items:center; justify-content:center; gap:10px; }
-.jp-reg-modo:not(:empty){ margin:0 0 12px; }
-.jp-reg-lastre{ padding:5px 10px; border-radius:6px; cursor:pointer; background:transparent; border:1px dashed #585858; color:#A6A6A6; font-size:.7rem; letter-spacing:.06em; }
-.jp-reg-fila.jp-reg-falta input{ border-color:#ef4444; }
-.jp-reg-fila label{ display:flex; flex-direction:column; gap:4px; flex:1 1 0; font-size:.62rem; font-weight:700; letter-spacing:.1em; color:#94A3B8; }
-:where(body.cf-disc) .jp-reg-fila label{ color:#A6A6A6; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-fila label{ color:#A6A6A6; }
-.jp-reg-fila input{ width:100%; box-sizing:border-box; padding:14px 10px; text-align:center; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(2,6,23,.7); color:#f8fafc; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:1.4rem; }
-:where(body.cf-disc) .jp-reg-fila input{ border:1px solid rgba(166,166,166,.3);background:rgba(13,13,13,.7);color:#FAFAFA; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-fila input{ border:1px solid rgba(166,166,166,.3);background:rgba(13,13,13,.7);color:#FAFAFA; }
-.jp-reg-fila input::placeholder{ color:rgba(148,163,184,.45); }
-:where(body.cf-disc) .jp-reg-fila input::placeholder{ color:rgba(166,166,166,.45); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-fila input::placeholder{ color:rgba(166,166,166,.45); }
-.jp-reg-fila b{ padding-bottom:16px; color:#64748b; font-size:1.2rem; }
-:where(body.cf-disc) .jp-reg-fila b{ color:#777777; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-fila b{ color:#777777; }
-.jp-reg-ok{ display:block; width:100%; padding:16px 10px; border-radius:12px; cursor:pointer; background:linear-gradient(135deg,#38BDF8,#1E7AA8); border:0; color:#021214; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.9rem; letter-spacing:.08em; }
-:where(body.cf-disc) .jp-reg-ok{ background:linear-gradient(135deg,#00E6FF,#00B2C6);color:#0B0B0B; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-ok{ background:linear-gradient(135deg,#00E6FF,#00B2C6);color:#0B0B0B; }
 .jp-int-head{ display:inline-flex; align-items:center; gap:10px; max-width:100%; margin:6px 0 10px; padding:7px 14px; border-radius:12px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.1); }
 .jp-int-e{ flex:0 0 auto; font-family:'Chakra Petch',sans-serif; font-weight:800; font-size:.9rem; color:#E5B04A; }
 :where(body.cf-disc) .jp-int-e{ color:#FF5500; }
@@ -41775,27 +41613,6 @@ body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform 
 :where(body.cf-disc) .jp-int-pt{ color:#FF5500; }
 :where(body.jp-mission:not(.cf-disc)) .jp-int-pt{ color:#FF5500; }
 .jp-int-pt *{ color:inherit !important; }
-.jp-reg-open{ background:linear-gradient(135deg,#E8B54E,#C9922B) !important; border:0 !important; color:#1a1205 !important; font-size:1rem !important; padding:18px 12px !important; border-radius:16px !important; box-shadow:0 8px 22px rgba(201,146,43,.3); }
-:where(body.cf-disc) .jp-reg-open{ background:linear-gradient(135deg,#FF5500,#FF5500) !important;color:#0F0F0F !important;box-shadow:0 8px 22px rgba(255,85,0,.3); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-open{ background:linear-gradient(135deg,#FF5500,#FF5500) !important;color:#0F0F0F !important;box-shadow:0 8px 22px rgba(255,85,0,.3); }
-.jp-reg-open small{ color:rgba(26,18,5,.7) !important; font-weight:700 !important; }
-:where(body.cf-disc) .jp-reg-open small{ color:rgba(15,15,15,.7) !important; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-open small{ color:rgba(15,15,15,.7) !important; }
-.jp-reg-open:active{ filter:brightness(.92); }
-.jp-reg-bg{ background:rgba(0,0,0,.55) !important; }
-.jp-reg-sheet{ background:rgba(23,23,23,.95) !important; -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border-radius:18px 18px 0 0 !important; border:0 !important; border-top:1px solid #262626 !important; padding:10px 16px calc(20px + env(safe-area-inset-bottom)) !important; }
-.jp-reg-t{ font-size:.95rem !important; color:#fff !important; letter-spacing:.04em !important; }
-.jp-reg-set{ background:rgba(255,255,255,.06) !important; border:1px solid rgba(255,255,255,.12) !important; color:#d4d4d4 !important; }
-.jp-reg-set.done{ color:#34D399 !important; border-color:rgba(16,185,129,.55) !important; }
-.jp-reg-set.on{ background:rgba(2,6,23,.9) !important; border:2px solid #fff !important; color:#fff !important; box-shadow:0 0 14px rgba(56,189,248,.55); }
-:where(body.cf-disc) .jp-reg-set.on{ background:rgba(13,13,13,.9) !important;box-shadow:0 0 14px rgba(0,230,255,.55); }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-set.on{ background:rgba(13,13,13,.9) !important;box-shadow:0 0 14px rgba(0,230,255,.55); }
-.jp-reg-fila input{ background:rgba(0,0,0,.45) !important; border:1px solid rgba(255,255,255,.12) !important; }
-.jp-reg-chk{ flex:0 0 auto; width:48px; height:48px; margin-bottom:0; border-radius:50%; cursor:pointer; background:transparent; border:1px solid rgba(255,255,255,.3); color:#fff; font-size:1.2rem; }
-.jp-reg-chk:active{ background:rgba(255,255,255,.14); }
-.jp-reg-ok{ background:linear-gradient(135deg,#E8B54E,#C9922B) !important; color:#1a1205 !important; border-radius:14px !important; }
-:where(body.cf-disc) .jp-reg-ok{ background:linear-gradient(135deg,#FF5500,#FF5500) !important;color:#0F0F0F !important; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-ok{ background:linear-gradient(135deg,#FF5500,#FF5500) !important;color:#0F0F0F !important; }
 /* ===== estilo sobrio "Cyber oscuro": sin amarillo invasivo ===== */
 .jp-sb-title-split{ margin-bottom:12px !important; }
 .jp-sb-title-pre{ display:block; font-family:'Chakra Petch',sans-serif !important; font-weight:800; font-size:1rem !important; letter-spacing:.08em; color:#f5f5f4; line-height:1.3; }
@@ -41825,26 +41642,8 @@ body.jp-scrolled .hd-compact{ transform:translateY(-110%); transition:transform 
 :where(body.jp-mission:not(.cf-disc)) .jp-sb-board .jp-sb-pauta{ border-left:2px solid rgba(0,202,224,.5) !important; }
 .jp-sb-board .jp-sb-pauta-lb{ color:#a3a3a3 !important; }
 .jp-sb-board .jp-sb-pauta-txt{ color:#d4d4d4 !important; }
-.jp-reg-open{ flex-direction:row !important; justify-content:space-between !important; align-items:center !important; gap:10px !important; margin:4px 0 6px !important; padding:10px 14px !important; background:rgba(23,23,23,.85) !important; border:1px solid rgba(201,146,43,.4) !important; border-radius:12px !important; color:#f5f5f4 !important; font-size:.78rem !important; letter-spacing:.05em !important; box-shadow:none !important; }
-:where(body.cf-disc) .jp-reg-open{ border:1px solid rgba(255,85,0,.4) !important; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-open{ border:1px solid rgba(255,85,0,.4) !important; }
-.jp-reg-lbl b{ color:#d1b06a; font-weight:700; }
-:where(body.cf-disc) .jp-reg-lbl b{ color:#FF5500; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-lbl b{ color:#FF5500; }
-.jp-reg-dot{ flex:0 0 auto; width:8px; height:8px; border-radius:50%; background:#525252; }
-.jp-reg-dot.mid{ background:#c9922b; }
-:where(body.cf-disc) .jp-reg-dot.mid{ background:#FF5500; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-dot.mid{ background:#FF5500; }
-.jp-reg-dot.ok{ background:#34D399; }
 body .jp-done-btn.jp-done-foot{ height:36px !important; min-height:36px !important; margin:8px 0 2px !important; font-size:.68rem !important; letter-spacing:.08em !important; color:#a3a3a3 !important; background:transparent !important; border:1px solid rgba(255,255,255,.1) !important; border-radius:10px !important; }
 body .jp-done-btn.jp-done-foot.on{ color:#34D399 !important; background:rgba(16,185,129,.08) !important; border-color:rgba(16,185,129,.4) !important; }
-.jp-reg-ok{ background:rgba(23,23,23,.9) !important; border:1px solid rgba(201,146,43,.55) !important; color:#f5f5f4 !important; }
-:where(body.cf-disc) .jp-reg-ok{ border:1px solid rgba(255,85,0,.55) !important; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-ok{ border:1px solid rgba(255,85,0,.55) !important; }
-.jp-reg-exn{ color:#f5f5f4 !important; }
-.jp-reg-ex.on{ background:rgba(34,150,190,.14) !important; border-color:rgba(34,150,190,.6) !important; color:#9fd0e0 !important; }
-:where(body.cf-disc) .jp-reg-ex.on{ background:rgba(0,202,224,.14) !important;border-color:rgba(0,202,224,.6) !important;color:#00E6FF !important; }
-:where(body.jp-mission:not(.cf-disc)) .jp-reg-ex.on{ background:rgba(0,202,224,.14) !important;border-color:rgba(0,202,224,.6) !important;color:#00E6FF !important; }
 /* ===== estandarizacion: Chakra Petch + ejercicios dominantes + acordeon ===== */
 .jp-sb-board, .jp-sb-board button, .jp-sb-board input, .jp-reg-sheet, .jp-reg-sheet button, .jp-reg-sheet input{ font-family:'Chakra Petch',sans-serif; }
 .jp-sb-board .jp-sb-ex .jp-sb-ex-nombre, .jp-sb-board .jp-sb-ex-ancla .jp-sb-ex-nombre, .jp-sb-board .jp-sb-subex-tit{ color:#fff !important; font-family:'Chakra Petch',sans-serif !important; font-weight:800 !important; letter-spacing:.05em !important; text-transform:uppercase !important; font-size:calc(1rem * var(--fzs,1)) !important; }
@@ -41926,46 +41725,47 @@ html body.jp-mission:not(.cf-disc) .jp-sb-bracket{ border-left:0 !important; pad
 html body.jp-mission:not(.cf-disc) .jp-nota-t{ background:transparent !important; border-left:2px solid #FF5500 !important; }
 html body.jp-mission:not(.cf-disc) .jp-nota-tt{ color:#FF5500 !important; }
 html body.jp-mission:not(.cf-disc) .jp-block-details{ border:0 !important; border-top:1px solid rgba(255,255,255,.07) !important; border-radius:0 !important; background:transparent !important; }
-html body.jp-mission:not(.cf-disc) .jp-reg-open{ background:transparent !important; border:1px solid #FF5500 !important; color:#FF5500 !important; border-radius:10px !important; height:44px !important; }
-html body.jp-mission:not(.cf-disc) .jp-reg-lbl b{ color:#fff !important; }
-html body.jp-mission:not(.cf-disc) .jp-reg-dot{ background:#FF5500 !important; }
 html body.jp-mission:not(.cf-disc) .jp-done-btn.jp-done-foot{ border:0 !important; color:#6b7280 !important; background:transparent !important; }
 html body.jp-mission:not(.cf-disc) .hd-dock{ background:#0D0D0D !important; border:1px solid rgba(255,255,255,.08) !important; border-radius:14px !important; }
 html body.jp-mission:not(.cf-disc) #storyCtaBtn.story-cta{ background:transparent !important; border:1px solid rgba(255,255,255,.16) !important; color:#EFEFEF !important; }
 html body.jp-mission:not(.cf-disc) .jp-close-cta{ background:#FF5500 !important; border:0 !important; color:#0D0D0D !important; }
-html body.jp-mission:not(.cf-disc) .jp-reg-sheet{ background:#141414 !important; border-top:1px solid #FF5500 !important; }
-/* ---- registro rapido por bloque ---- */
-.jp-reg-sheet{ --rq:#F59E0B; --rq-bg:rgba(245,158,11,.14); }
-:where(body.cf-disc) .jp-reg-sheet{ --rq:#00E6FF; --rq-bg:rgba(0,230,255,.14); }
-html body.jp-mission:not(.cf-disc) .jp-reg-sheet{ --rq:#FF5500; --rq-bg:rgba(255,85,0,.14); }
-.jp-reg-modos{ display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:0 0 12px; padding:4px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08); }
-.jp-reg-modos button{ padding:10px 6px; border:0; border-radius:9px; background:transparent; color:#94A3B8; font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; cursor:pointer; -webkit-tap-highlight-color:transparent; }
-.jp-reg-modos button.on{ background:var(--rq-bg); color:var(--rq); box-shadow:inset 0 0 0 1px var(--rq); }
-.jp-reg-q{ display:none; }
-.jp-reg-qok{ display:none; width:100%; padding:16px 10px; border:0; border-radius:12px; cursor:pointer; background:var(--rq); color:#0b0b0b; font:800 .9rem 'Chakra Petch',sans-serif; letter-spacing:.1em; }
-.jp-reg-sheet.jp-q .jp-reg-q{ display:block; }
-.jp-reg-sheet.jp-q .jp-reg-qok{ display:block; position:sticky; bottom:0; box-shadow:0 -10px 18px rgba(0,0,0,.45); }
-.jp-reg-sheet.jp-q .jp-reg-exs, .jp-reg-sheet.jp-q .jp-reg-sets, .jp-reg-sheet.jp-q .jp-reg-pres, .jp-reg-sheet.jp-q .jp-reg-hint, .jp-reg-sheet.jp-q .jp-reg-modo, .jp-reg-sheet.jp-q .jp-reg-fila, .jp-reg-sheet.jp-q .jp-reg-ok{ display:none !important; }
-.jp-rq{ margin:0 0 10px; padding:12px 12px 10px; border-radius:12px; background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.09); border-left:3px solid var(--rq); }
-.jp-rq.jp-rq-omit{ opacity:.45; }
-.jp-rq.jp-rq-falta{ border-color:#ef4444; box-shadow:0 0 0 1px rgba(239,68,68,.55); }
-.jp-rq-h{ display:flex; align-items:baseline; gap:8px; }
-.jp-rq-let{ flex:0 0 auto; font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; color:var(--rq); }
-.jp-rq-n{ min-width:0; overflow-wrap:anywhere; font:800 .95rem 'Chakra Petch',sans-serif; letter-spacing:.02em; text-transform:uppercase; color:#f8fafc; }
-.jp-rq-p{ margin:3px 0 10px; font-size:.74rem; font-weight:600; letter-spacing:.03em; color:rgba(148,163,184,.95); }
-.jp-rq-f{ display:flex; align-items:flex-end; gap:8px; }
-.jp-rq-f label{ display:flex; flex-direction:column; gap:4px; flex:1 1 0; min-width:0; font-size:.6rem; font-weight:700; letter-spacing:.12em; color:#94A3B8; }
-.jp-rq-f b{ padding-bottom:13px; color:#64748b; font-size:1.05rem; }
-.jp-rq-f input{ width:100%; box-sizing:border-box; padding:12px 6px; text-align:center; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(2,6,23,.7); color:#f8fafc; font:800 1.15rem 'Chakra Petch',sans-serif; }
-.jp-rq-f input.jp-rq-pre{ border-color:var(--rq); color:var(--rq); }
-.jp-rq-f input::placeholder{ color:rgba(148,163,184,.45); }
-.jp-rq-ns{ display:flex; flex-direction:column; gap:4px; flex:0 0 auto; font-size:.6rem; font-weight:700; letter-spacing:.12em; color:#94A3B8; }
-.jp-rq-ns > div{ display:flex; align-items:center; gap:4px; }
-.jp-rq-ns button{ width:38px; height:44px; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(255,255,255,.05); color:#f8fafc; font:800 1.1rem 'Chakra Petch',sans-serif; cursor:pointer; touch-action:manipulation; }
-.jp-rq-nv{ min-width:22px; text-align:center; padding:0 !important; font:800 1.1rem 'Chakra Petch',sans-serif; color:#f8fafc !important; }
-.jp-rq-hint{ min-height:1em; margin-top:7px; font-size:.68rem; font-weight:600; letter-spacing:.03em; color:rgba(148,163,184,.8); }
-html body.jp-mission:not(.cf-disc) .jp-reg-ok{ background:#FF5500 !important; border:0 !important; color:#0D0D0D !important; }
-html body.jp-mission:not(.cf-disc) .jp-reg-set.on{ border-color:#FF5500 !important; color:#FF5500 !important; box-shadow:none !important; }
+/* ---- registro de 1 toque: una tarjeta por ejercicio (KG × REPS ya cargados + ✓), sin hoja modal ---- */
+.jp-qc{ --qr:#F59E0B; --qr-bg:rgba(245,158,11,.14); margin:10px 0 4px; padding:10px 10px 8px; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-left:3px solid var(--qr); }
+:where(body.cf-disc) .jp-qc{ --qr:#00E6FF; --qr-bg:rgba(0,230,255,.14); }
+html body.jp-mission:not(.cf-disc) .jp-qc{ --qr:#FF5500; --qr-bg:rgba(255,85,0,.14); }
+.jp-qr{ display:flex; flex-direction:column; gap:2px; margin:8px 0 6px; }
+.jp-qc.ok{ border-color:rgba(34,197,94,.5); border-left-color:#22C55E; background:rgba(34,197,94,.07); }
+.jp-qc.falta{ border-color:#ef4444; box-shadow:0 0 0 1px rgba(239,68,68,.55); }
+.jp-qc-top{ display:flex; align-items:baseline; gap:8px; margin:0 0 9px; }
+.jp-qc-let{ flex:0 0 auto; font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; color:var(--qr); }
+.jp-qc-n{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; font:800 .92rem 'Chakra Petch',sans-serif; letter-spacing:.02em; text-transform:uppercase; color:#f8fafc; }
+.jp-qc-p{ flex:0 0 auto; font-size:.7rem; font-weight:600; letter-spacing:.02em; color:rgba(148,163,184,.95); }
+.jp-sb-ex > .jp-qc .jp-qc-top, .jp-sb-subex-resumen > .jp-qc .jp-qc-top{ display:none; }
+.jp-qc-f{ display:flex; align-items:flex-end; gap:8px; }
+.jp-qc-f label{ display:flex; flex-direction:column; gap:3px; flex:1 1 0; min-width:0; font-size:.58rem; font-weight:700; letter-spacing:.12em; color:#94A3B8; }
+.jp-qc-f b{ padding-bottom:15px; color:#64748b; font-size:1.05rem; }
+.jp-qc-f input{ width:100%; box-sizing:border-box; min-height:54px; padding:12px 4px; text-align:center; border-radius:12px; border:1px solid rgba(148,163,184,.3); background:rgba(2,6,23,.7); color:#f8fafc; font:800 1.3rem 'Chakra Petch',sans-serif; outline:none; }
+.jp-qc-f input:focus{ border-color:var(--qr); box-shadow:0 0 0 2px var(--qr-bg); }
+.jp-qc-f input.pre{ border-color:var(--qr); color:var(--qr); }
+.jp-qc-f input::placeholder{ color:rgba(148,163,184,.45); }
+.jp-qc-ok{ flex:0 0 66px; min-height:54px; border:0; border-radius:12px; cursor:pointer; background:var(--qr); color:#0b0b0b; font:800 1.6rem/1 'Chakra Petch',sans-serif; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+.jp-qc-ok:active{ transform:scale(.94); }
+.jp-qc.ok .jp-qc-ok{ background:#22C55E; }
+.jp-qc-m{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; min-height:1em; }
+.jp-qc-hint{ flex:1 1 auto; min-width:0; font-size:.68rem; font-weight:600; letter-spacing:.02em; color:rgba(148,163,184,.85); }
+.jp-qc-ns{ display:flex; align-items:center; gap:3px; flex:0 0 auto; font-size:.58rem; font-weight:700; letter-spacing:.1em; color:#94A3B8; }
+.jp-qc-ns button{ width:40px; height:40px; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(255,255,255,.05); color:#f8fafc; font:800 1.1rem 'Chakra Petch',sans-serif; cursor:pointer; touch-action:manipulation; }
+.jp-qc-nv{ min-width:18px; text-align:center; font:800 1.05rem 'Chakra Petch',sans-serif; color:#f8fafc; }
+.jp-qc-fin{ display:none; align-items:center; justify-content:space-between; gap:8px; margin-top:9px; padding-top:9px; border-top:1px dashed rgba(148,163,184,.3); }
+.jp-qc[data-base="1"] .jp-qc-fin{ display:flex; }
+.jp-qc-fin-lb{ font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; color:var(--qr); }
+.jp-qc-finok{ min-height:44px; padding:0 16px; border:0; border-radius:10px; cursor:pointer; background:var(--qr); color:#0b0b0b; font:800 .78rem 'Chakra Petch',sans-serif; letter-spacing:.08em; touch-action:manipulation; }
+.jp-qc-finok.ok{ background:#22C55E; }
+/* teoría de técnicas fuera de la pantalla principal: la fase especial aparece sola cuando llegás a esa serie */
+.jp-tec-txt, .jp-tec-nota, .jp-tec-head small, .jp-tecnica-protocolo, .jp-drop-cap small{ display:none !important; }
+.jp-tec-est{ margin:6px 0 8px; padding:6px 10px; }
+.jp-tec-strip{ margin:0; }
+.jp-tec-gate:not(.jp-tec-open) .jp-myo-mod, .jp-tec-gate:not(.jp-tec-open) .jp-set-tracker-tecnica, .jp-tec-gate:not(.jp-tec-open) .jp-drop-tracker{ display:none !important; }
 
 /* ===== Stealth Pro · paleta unica: neutros + naranja de marca ===== */
 html body.jp-mission:not(.cf-disc) .jp-sb-vid-title{ color:#979797 !important; }
@@ -42109,8 +41909,6 @@ html body.jp-mission:not(.cf-disc) .jp-session-emphasis{ display:none !important
 html body.jp-mission:not(.cf-disc) .day-tab:not(.active){ background:rgba(255,255,255,.05) !important; border:1px solid rgba(255,255,255,.1) !important; }
 html body.jp-mission:not(.cf-disc) .hdc-days-wrap .day-tab{ min-width:max-content; padding:0 12px !important; }
 html body.jp-mission:not(.cf-disc) .jp-wk-btn b{ white-space:nowrap; }
-html body.jp-mission:not(.cf-disc) .jp-reg-open{ border:1px solid rgba(255,255,255,.1) !important; color:#AAAAAA !important; }
-html body.jp-mission:not(.cf-disc) .jp-reg-open.jp-reg-on{ border-color:#FF5500 !important; color:#FF5500 !important; }
 html body.jp-mission:not(.cf-disc) .jp-sb-ex-head, html body.jp-mission:not(.cf-disc) .jp-sb-subex-head{ display:flex !important; flex-wrap:nowrap !important; align-items:baseline !important; gap:8px !important; }
 html body.jp-mission:not(.cf-disc) .jp-sb-ex-id, html body.jp-mission:not(.cf-disc) .jp-sb-letra{ flex:0 0 auto !important; }
 html body.jp-mission:not(.cf-disc) .jp-sb-ex-nombre, html body.jp-mission:not(.cf-disc) .jp-sb-subex-tit, html body.jp-mission:not(.cf-disc) .jp-sb-subex-nombre{ flex:1 1 auto !important; min-width:0 !important; overflow-wrap:anywhere; }
@@ -42185,7 +41983,6 @@ html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-ex .jp-sb-ex-nombre, html
 html body.jp-mission:not(.cf-disc) .jp-sb-title:not(.jp-sb-title-split), html body.jp-mission:not(.cf-disc) .jp-sb-title-main, html body.jp-mission:not(.cf-disc) .jp-sb-tag, html body.jp-mission:not(.cf-disc) .jp-tag-lb, html body.jp-mission:not(.cf-disc) .jp-chev, html body.jp-mission:not(.cf-disc) .jp-sb-pauta-lb, html body.jp-mission:not(.cf-disc) .jp-sb-vid-title, html body.jp-mission:not(.cf-disc) .jp-summary-btn, html body.jp-mission:not(.cf-disc) .jp-tr-total, html body.jp-mission:not(.cf-disc) .jp-warm-lb, html body.jp-mission:not(.cf-disc) .jp-cont-reg-lb, html body.jp-mission:not(.cf-disc) .jp-cont-f{ color:#A3A3A3 !important; }
 html body.jp-mission:not(.cf-disc) .jp-sb-title-pre, html body.jp-mission:not(.cf-disc) .jp-es-sub, html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-es-sub, html body.jp-mission:not(.cf-disc) .jp-sb-biset-title, html body.jp-mission:not(.cf-disc) .jp-block-emphasis, html body.jp-mission:not(.cf-disc) .jp-done-btn.jp-done-foot{ color:#737373 !important; }
 html body.jp-mission:not(.cf-disc) .jp-tr-chip em{ color:#A3A3A3 !important; }
-html body.jp-mission:not(.cf-disc) .jp-reg-open:not(.jp-reg-on){ color:#A3A3A3 !important; }
 html body.jp-mission:not(.cf-disc) .jp-cont-in{ border-color:rgba(64,64,64,.6) !important; }
 html body.jp-mission:not(.cf-disc) .jp-sb-vid-card{ background:rgba(23,23,23,.6) !important; }
 html body.jp-mission:not(.cf-disc) .jp-sb-vid-card:hover{ background:rgba(38,38,38,.7) !important; }
@@ -42197,7 +41994,6 @@ html body.jp-mission:not(.cf-disc) .jp-sb-ex-id::after, html body.jp-mission:not
 html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-ex, html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-subex-resumen, html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-int-rx, html body.jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-plain:not(.jp-sb-plain-warmup){ border-left-color:rgba(255,85,0,.85) !important; }
 html body.jp-mission:not(.cf-disc) .jp-nom-en{ font-weight:500; text-transform:none; letter-spacing:0; color:#A3A3A3; font-size:.78em; }
 html body.jp-mission:not(.cf-disc) .jp-dose-bar .jp-db-seg.jp-db-rir:not(.jp-rest-go){ color:#FF5500 !important; }
-html body.jp-mission:not(.cf-disc) .jp-reg-open.jp-reg-on{ border-color:#FF5500 !important; color:#FF5500 !important; }
 html body.jp-mission:not(.cf-disc) .jp-myo-chips .jp-myo-mini.hecho{ border-color:#FF5500 !important; color:#FF5500 !important; background:rgba(255,85,0,.12) !important; }
 html body.jp-mission:not(.cf-disc) .jp-tempo-row{ font-size:.78rem; line-height:1.5; color:#d4d4d4; }
 html body.jp-mission:not(.cf-disc) .jp-tempo-row b{ color:#F5F5F5; font-family:'Chakra Petch',sans-serif; text-transform:uppercase; letter-spacing:.02em; }
@@ -42949,9 +42745,6 @@ html body.cf-disc .wu-dose, html body.cf-disc .jp-cfboard .wu-dose{ background:r
 html body.cf-disc .jp-cf-vid-thumb{ border-color:rgba(255,255,255,.14) !important; }
 html body.cf-disc .jp-sb-vid-title{ color:#A3A3A3 !important; }
 html body.cf-disc .jp-cf-row.jp-cf-badge{ color:#E5E5E5 !important; background:transparent !important; border-color:rgba(255,255,255,.14) !important; }
-html body.cf-disc .jp-reg-open:not(.jp-reg-on){ background:rgba(255,255,255,.03) !important; border:1px solid rgba(255,255,255,.14) !important; box-shadow:none !important; }
-html body.cf-disc .jp-reg-open .jp-reg-lbl b{ color:#FFFFFF !important; }
-html body.cf-disc .jp-reg-open.jp-reg-on{ border-color:#FF5500 !important; }
 html body.cf-disc #dayCompleteBtn, html body.cf-disc #jpWaReportBtn{ display:none !important; }
 html body.cf-disc #storyCtaBtn.story-cta{ display:flex !important; align-items:center; justify-content:center; width:100%; min-height:54px; margin:22px 0 10px !important; border-radius:14px !important; background:rgba(0,229,255,.06) !important; border:1px solid rgba(0,229,255,.55) !important; color:#E6FDFF !important; box-shadow:0 0 18px rgba(0,229,255,.12) !important; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); font-family:'Chakra Petch',sans-serif !important; font-weight:700 !important; letter-spacing:.08em; text-transform:uppercase; }
 html body.cf-disc .jp-close-cta{ margin:0 0 10px !important; }
@@ -43096,9 +42889,6 @@ html body.cf-disc .jp-cfboard .wod-score + .jp-cf-notas{ border-top:0; margin-to
 .jp-er-grid::-webkit-scrollbar{ display:none; }
 .jp-er-c{ flex:0 0 60px; width:60px; min-width:0; scroll-snap-align:start; }
 .jp-er-c input{ width:100%; min-width:0; box-sizing:border-box; padding:0 4px; }
-.jp-reg-sets, .jp-reg-exs{ flex-wrap:nowrap; scroll-snap-type:x proximity; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
-.jp-reg-exs::-webkit-scrollbar{ display:none; }
-.jp-reg-set{ flex:0 0 auto; min-width:68px; scroll-snap-align:center; }
 /* ---- boton de pago de Mercado Pago (Sports y CrossFit): vidrio oscuro, borde de estado ---- */
 .jp-pago-cta{ display:flex; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:8px; margin:6px 12px 0; padding:5px 5px 5px 12px; border-radius:12px; background:linear-gradient(180deg, rgba(20,20,20,.92), rgba(10,10,10,.92)); border:1px solid rgba(245,197,24,.4); box-shadow:0 6px 16px rgba(0,0,0,.4); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px); }
 .jp-pago-cta.venc{ border-color:rgba(224,101,74,.6); }
@@ -44096,8 +43886,6 @@ html body.jp-mission:not(.cf-disc) .day-header .jp-brief-dir{ align-self:flex-st
 .jp-sb-pauta.jp-ux-acc.jp-ux-shut > .jp-sb-pauta-txt{ display:none !important; }
 .jp-sb-pauta.jp-ux-acc.jp-ux-shut > .jp-sb-pauta-lb .jp-ux-chev{ transform:rotate(-90deg); }
 /* 7 · registro: carga precargada */
-.jp-reg-kg.jp-reg-pre{ color:#FF5500 !important; font-weight:700; }
-.jp-reg-hint{ margin:-6px 0 10px; font:600 .6rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.1em; color:#FF5500; text-transform:uppercase; }
 /* 8 · filas de series: una linea compacta si no llevan referencia; con "// S ANTERIOR" o insignia, dos lineas (nunca encimadas) */
 html body.jp-mission:not(.cf-disc) .jp-set-tracker-native .jp-set-row-native{ box-sizing:border-box; max-width:100%; }
 html body.jp-mission:not(.cf-disc) .jp-set-tracker-native .jp-set-row-native.jp-ux-simple{ flex-wrap:nowrap !important; gap:6px !important; padding:5px 8px !important; }
@@ -44145,7 +43933,6 @@ html body.cf-disc .jp-cf-btnrow button{ font-size:12px !important; }
 html body.cf-disc .wod-score label, html body.cf-disc .jp-cf-notas label{ font-size:11.5px !important; }
 html body.cf-disc .jp-done-btn{ font-size:12px !important; letter-spacing:.06em !important; }
 html body.cf-disc .jp-cf-vid-tap{ font-size:11px !important; }
-.jp-reg-hint.jp-reg-hint-mem{ color:#9A9A9A; }
 /* filas con etiqueta E1/A1 (grilla): el clip ocupa la tercera columna, centrado con el titulo del ejercicio */
 .jp-cf-row[data-est].jp-ux-has-vid{ grid-template-columns:44px minmax(0,1fr) auto !important; align-items:start !important; }
 .jp-cf-row[data-est].jp-ux-has-vid::before, .jp-cf-row[data-est].jp-ux-has-vid > .jp-cf-rn{ align-self:baseline; }
@@ -44162,19 +43949,6 @@ html body.cf-disc .jp-cfboard .wod-score{ width:auto !important; margin-left:0 !
 .jp-ux-sug-rir, .jp-ux-sug-ultima{ border-color:rgba(255,255,255,.18); background:rgba(255,255,255,.04); color:#BDBDBD; }
 .jp-ux-sug-real{ border-color:rgba(0,230,255,.4); background:rgba(0,230,255,.06); }
 /* modal de registro de biseries / triseries: ejercicio activo inconfundible */
-.jp-reg-exs{ display:block !important; overflow:visible !important; white-space:normal !important; }
-.jp-reg-exgrid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(138px,1fr)); gap:8px; margin:0 0 8px; }
-.jp-reg-exgrid[data-n="3"]{ grid-template-columns:repeat(3,minmax(0,1fr)); }
-.jp-reg-exgrid .jp-reg-ex{ position:relative; display:grid !important; grid-template-columns:auto 1fr; grid-template-rows:auto auto; align-items:center; gap:2px 8px; min-width:0; padding:10px 10px 8px !important; border-radius:12px !important; border:1.5px solid rgba(255,255,255,.14) !important; background:rgba(255,255,255,.04) !important; color:#BDBDBD !important; text-align:left; white-space:normal !important; flex:none !important; }
-.jp-reg-exgrid .jp-reg-ex .jp-reg-let{ grid-row:1 / span 2; display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.1); color:#fff; font:800 .82rem 'Chakra Petch',sans-serif; letter-spacing:.02em; }
-.jp-reg-exgrid .jp-reg-ex .jp-reg-exn2{ font:700 .72rem 'Chakra Petch',sans-serif; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.jp-reg-exgrid .jp-reg-ex .jp-reg-prog{ font:600 .6rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; color:#8E8E8E; }
-.jp-reg-exgrid .jp-reg-ex.on{ border-color:#FF5500 !important; background:rgba(255,85,0,.14) !important; color:#fff !important; box-shadow:0 0 0 2px rgba(255,85,0,.22); }
-.jp-reg-exgrid .jp-reg-ex.on .jp-reg-let{ background:#FF5500; color:#0A0A0A; }
-.jp-reg-exgrid .jp-reg-ex.on .jp-reg-prog{ color:#FF5500; }
-.jp-reg-exgrid .jp-reg-ex.ok:not(.on) .jp-reg-prog{ color:#4ADE80; }
-.jp-reg-activo{ margin:0 0 10px; padding:7px 10px; border-radius:8px; background:rgba(255,85,0,.1); color:#FFB48A; font:700 .66rem 'JetBrains Mono',ui-monospace,monospace; letter-spacing:.08em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.jp-reg-activo b{ display:inline-block; min-width:26px; padding:1px 6px; margin-right:4px; border-radius:6px; background:#FF5500; color:#0A0A0A; text-align:center; }
 /* buscador de ejercicios (Historial / carga manual) */
 .jp-ux-cb{ position:relative; display:block; min-width:0; }
 .jp-ux-cb > input{ width:100%; box-sizing:border-box; }
