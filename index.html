@@ -84024,7 +84024,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 #v-pizarra .pz-ds{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 #v-pizarra .pz-ch{display:inline-block;padding:3px 9px;border-radius:7px;background:var(--panel-3);border:1px solid var(--line);font-size:12.5px;font-weight:700;color:var(--txt-2);font-family:var(--font-mono)}
 #v-pizarra .pz-ch.m{background:color-mix(in srgb,var(--ac,var(--gold)) 20%,transparent);border-color:color-mix(in srgb,var(--ac,var(--gold)) 50%,transparent);color:var(--txt);font-size:15px}
-#v-pizarra .pz-tip{padding:9px 12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.4}
+#v-pizarra .pz-tip{white-space:pre-line;padding:9px 12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.4}
 #v-pizarra .pz-vid{flex:0 0 auto;min-width:64px;min-height:56px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
   background:var(--ac,var(--gold));color:#0B0C0E;font-size:10.5px;font-weight:800;letter-spacing:.08em;text-decoration:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 #v-pizarra .pz-vid i{font-style:normal;font-size:20px;line-height:1}
@@ -84166,6 +84166,9 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   function bloquesDe(d, wi){ return (d.bloquesPorSemana && d.bloquesPorSemana[wi]) ? d.bloquesPorSemana[wi] : (d.bloques || []); }
   function mmss(s){ s = parseInt(s, 10); if(!(s > 0)) return ''; return s >= 60 ? Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2) : s + 's'; }
   function ch(t, m){ return t ? '<span class="pz-ch' + (m ? ' m' : '') + '">' + E(t) + '</span>' : ''; }
+  function dosisChips(d){
+    return String(d).split('|').map(function(x, i){ x = x.trim().replace(/^Tempo\s+/i, 'T '); return x ? ch(x, i === 0) : ''; }).join('');
+  }
   /* "10-12" → "10-12 reps"; un texto libre ("4 x 20 m", "12 c/lado", "30 s") se muestra tal cual */
   function repsTxt(r){ r = String(r == null ? '' : r).trim(); return /^\d+(\s*-\s*\d+)?$/.test(r) ? r + ' reps' : r; }
   var TEC = { dropset: 'Drop Set', restpause: 'Rest-Pause', isometria: 'Isometría', myoreps: 'Myo-Reps', fallo: 'Al fallo', topset: 'Top Set + back-off', intervalo: 'Densidad' };
@@ -84206,6 +84209,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       (b.movements || []).forEach(function(m){ h += fila('', String(m), null, '', true); });
     } else if(b.tipo === 'list'){
       var it = (b.items || []).filter(function(v){ return typeof v === 'string' && v.trim(); });
+      /* Pizarra Táctica nativa (redacción libre): nombre del ejercicio, línea de dosis y "Rest Ns" sin letra A1 */
+      var nativo = !!b.sportsPizarra && b.modalidad !== 'calentamiento';
       h = cab(b.titulo || b.category || 'Bloque', b.optional ? 'opcional' : '');
       for(i = 0; i < it.length; i++){
         var m = /^([A-F]\d+)[.)]\s*(.+)$/.exec(it[i]);
@@ -84214,7 +84219,15 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
           var par = /^(.+?)\s+[—–]\s+(.+)$/.exec(m[2]);
           var nom = par ? par[1] : m[2];
           var dosis = par ? par[2] : ((it[i + 1] && /^\d/.test(it[i + 1])) ? it[++i] : '');
-          h += fila(m[1], nom, porNombre(nom), dosis ? ch(dosis, true) : '');
+          h += fila(m[1], nom, porNombre(nom), dosis ? (par ? ch(dosis, true) : dosisChips(dosis)) : '');
+        } else if(nativo){
+          var ln = it[i].replace(/^[-•*·]\s*/, ''), mr = /^(?:rest|descanso)\s*:?\s*(\d+)/i.exec(ln);
+          if(mr){ h += fila('', 'Descanso', null, ch('⏱ ' + mmss(mr[1])), true); }
+          else if(/^\d/.test(ln)){ h += fila('', ln.split('|')[0].trim(), null, dosisChips(ln.split('|').slice(1).join('|')), true); }
+          else {
+            var ds = (it[i + 1] && /^\d/.test(it[i + 1])) ? it[++i] : '';
+            h += fila('', ln, porNombre(ln), ds ? dosisChips(ds) : '');
+          }
         } else {
           h += fila('', it[i], null, '', true);
         }
