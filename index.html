@@ -15960,7 +15960,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   }
   function regUltReg(c, e, set){
     for(var pw = c.w - 1; pw >= 0; pw--){
-      var lq = getLoad(getLoadKey(pw, c.d, c.b, e.idx, set));
+      var lq = getLoad(getLoadKey(pw, c.d, c.b, e.idx, set + (e.ko || 0)));
       if(lq && ((lq.kg != null && lq.kg !== '') || (lq.reps != null && lq.reps !== ''))) return { w: pw, kg: lq.kg, reps: lq.reps };
     }
     return null;
@@ -15970,17 +15970,20 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   function qrNum(v){ var n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
   function qrRango(txt){ var m = /(\\d+)\\s*[-–]\\s*(\\d+)/.exec(String(txt || '')); return m ? { min: +m[1], max: +m[2] } : null; }
   function qrSetsBase(e){ return qrTec(e) ? e.sets - 1 : e.sets; }
+  /* clave de la serie i (1..n) y de la serie con técnica: en los simples con Drop-Set / Myo-Reps las normales van desplazadas (e.ko) y la técnica en la posición 1 */
+  function qrClave(c, e, i){ return getLoadKey(c.w, c.d, c.b, e.idx, i + (e.ko || 0)); }
+  function qrClaveFinal(c, e){ return getLoadKey(c.w, c.d, c.b, e.idx, e.ko ? 1 : e.sets); }
   /* todo lo que la tarjeta necesita saber de un ejercicio (estado guardado + valores sugeridos) */
   function qrModelo(c, e){
     var nsMax = qrSetsBase(e), tec = qrTec(e);
     var tops = regSetsTop(e).filter(function(x){ return x <= nsMax; });
     if(!tops.length) tops = [nsMax];
-    var ref = tops[tops.length - 1], ld = getLoad(getLoadKey(c.w, c.d, c.b, e.idx, ref));
+    var ref = tops[tops.length - 1], ld = getLoad(qrClave(c, e, ref));
     var modoR = (typeof window.jpModoInput === 'function') ? window.jpModoInput(e.nombre) : '';
     var sinKg = (modoR === 'banda' || modoR === 'tiempo' || modoR === 'solo' || (modoR === 'bw' && !(parseFloat(ld.kg) > 0)));
     var hechas = 0, s;
-    for(s = 1; s <= nsMax; s++){ if(getLoad(getLoadKey(c.w, c.d, c.b, e.idx, s)).done) hechas++; }
-    var baseOk = hechas >= nsMax, finOk = tec ? !!getLoad(getLoadKey(c.w, c.d, c.b, e.idx, e.sets)).done : true;
+    for(s = 1; s <= nsMax; s++){ if(getLoad(qrClave(c, e, s)).done) hechas++; }
+    var baseOk = hechas >= nsMax, finOk = tec ? !!getLoad(qrClaveFinal(c, e)).done : true;
     var guardado = (ld.kg != null && ld.kg !== '') || (ld.reps != null && ld.reps !== '');
     var repsRef = (e.rp && e.rp[ref - 1] != null) ? e.rp[ref - 1] : e.reps, rr = qrRango(repsRef), nr = String(repsRef || '').match(/^[0-9]+/);
     var ult = regUltReg(c, e, ref), kgV = '', rpV = '', pre = false, hint = '', sug = null;
@@ -15990,7 +15993,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       hint = base;
     } else {
       if(!sinKg){
-        try{ if(typeof window.jpSugerirCarga === 'function') sug = window.jpSugerirCarga(c, e, ref); }catch(eS){}
+        try{ if(typeof window.jpSugerirCarga === 'function') sug = window.jpSugerirCarga(c, e, ref + (e.ko || 0)); }catch(eS){}
         if(sug && sug.kg > 0){ kgV = String(Math.round(sug.kg * 100) / 100); pre = true; }
         else if(ult && ult.kg != null && ult.kg !== ''){ kgV = String(ult.kg); pre = true; }
         else if(e.carga){
@@ -16026,7 +16029,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span>' +
         (m.nsMax > 1 ? '<span class="jp-qc-ns"><button type="button" class="jp-qc-s" data-qs="-1" aria-label="Una serie menos">−</button><b class="jp-qc-nv">' + m.ns + '</b><span>' + (e.grp ? 'RONDAS' : 'SERIES') + '</span><button type="button" class="jp-qc-s" data-qs="1" aria-label="Una serie más">+</button></span>' : '') +
       '</div>' +
-      (m.tec ? '<div class="jp-qc-fin"><span class="jp-qc-fin-lb">⚡ ' + (e.grp ? 'RONDA' : 'SERIE') + ' FINAL · ' + QR_TEC_NOM[m.tec] + '</span><button type="button" class="jp-qc-finok' + (m.finOk ? ' ok' : '') + '" aria-label="Serie final hecha">' + (m.finOk ? '✓ HECHA' : 'HECHA ✓') + '</button></div>' : '') +
+      (m.tec && !e.ko ? '<div class="jp-qc-fin"><span class="jp-qc-fin-lb">⚡ ' + (e.grp ? 'RONDA' : 'SERIE') + ' FINAL · ' + QR_TEC_NOM[m.tec] + '</span><button type="button" class="jp-qc-finok' + (m.finOk ? ' ok' : '') + '" aria-label="Serie final hecha">' + (m.finOk ? '✓ HECHA' : 'HECHA ✓') + '</button></div>' : '') +
     '</div>';
   }
   /* devuelve el contenedor con una tarjeta por ejercicio; jpQrAcomodar() las mueve dentro de la fila de cada ejercicio */
@@ -16053,7 +16056,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var cards = Array.prototype.slice.call(box.querySelectorAll('.jp-qc'));
         var filas = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
         if(filas.length === cards.length && cards.length){
-          cards.forEach(function(cd, i){ filas[i].appendChild(cd); });
+          cards.forEach(function(cd, i){
+            var tr = filas[i].querySelector(':scope > .jp-set-tracker-tecnica');
+            if(tr) filas[i].insertBefore(cd, tr); else filas[i].appendChild(cd);
+          });
           box.parentNode.removeChild(box);
         }
       }
@@ -16099,7 +16105,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var tops = regSetsTop(e).filter(function(x){ return x <= ns; });
     if(!tops.length) tops = [ns];
     for(var i = 1; i <= ns; i++){
-      var key = getLoadKey(c.w, c.d, c.b, e.idx, i);
+      var key = qrClave(c, e, i);
       if(tops.indexOf(i) >= 0){ if(v.kv) setLoadField(key, 'kg', v.kv); if(v.rv) setLoadField(key, 'reps', v.rv); }
       setLoadField(key, 'done', true);
     }
@@ -16109,7 +16115,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   /* serie final con técnica: se marca hecha con el mismo KG × REPS de la tarjeta */
   function qrFinal(card){
     var k = qrCtx(card); if(!k) return;
-    var v = qrValores(card), c = k.c, e = k.e, key = getLoadKey(c.w, c.d, c.b, e.idx, e.sets);
+    var v = qrValores(card), c = k.c, e = k.e, key = qrClaveFinal(c, e);
     var estaba = !!getLoad(key).done;
     if(estaba){ setLoadField(key, 'done', false); }
     else {
@@ -16148,6 +16154,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   /* al tocar un casillero se selecciona todo: se corrige escribiendo encima, sin borrar a mano */
   document.addEventListener('focusin', function(ev){
     var t = ev.target; if(t && t.classList && (t.classList.contains('jp-qc-kg') || t.classList.contains('jp-qc-rp'))){ try{ t.select(); }catch(e0){} }
+  });
+  /* al marcar la fase de la técnica (fila del tracker) la tarjeta del ejercicio se actualiza sola */
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var chk = t.closest('.jp-btn-check-native'); if(!chk) return;
+    var board = chk.closest('[data-sportsboard]'); if(!board) return;
+    setTimeout(function(){ Array.prototype.forEach.call(board.querySelectorAll('.jp-qc'), qrRefrescar); }, 80);
   });
   document.addEventListener('click', function(e){
     var b = e.target && e.target.closest ? e.target.closest('#jpCerrarDiaBtn') : null;
@@ -19028,11 +19041,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
          línea. Nunca en calentamiento (ahí la técnica no aplica). */
       if(!esCalentamiento && (entry.tecnica === 'myoreps' || entry.tecnica === 'dropset')){
         const esAnclaTec = !anclaUsada; anclaUsada = true;
+        if((parseInt(entry.sets, 10) || 0) > 1) regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: parseInt(entry.sets, 10) || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica, ko: 1 });
         filas += '<div class="jp-sb-ex' + (esAnclaTec ? ' jp-sb-ex-ancla' : '') + '" data-rest-sec="' + restAttrSB(entry) + '">' +
             '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + jpIdx2(++nIndiv) + '</span><span class="jp-sb-ex-nombre">' + nombreHibridoSB(entry.titulo, block) + '</span>' + verTecnicaSB(entry.titulo, block) + '</div>' + subEsSB(entry.titulo, block) +
             dosisCompletaSB(entry.sets, entry.reps, entry.unidad, entry.tempo, entry.rir, entry.restSeconds, entry.carga ? '@ ' + entry.carga : '', entry.unilateral, !!entry.restCero) +
             estructuraTecnicaSB({ tecnica: entry.tecnica, sets: entry.sets, pct: entry.tecnicaPct, microReps: entry.myoInfo && entry.myoInfo.microReps }) +
-            ((parseInt(entry.sets, 10) || 0) > 1 ? renderSetRowsNativeSB(weekIdx, dayId, block.id, exIdx, (parseInt(entry.sets, 10) || 1) - 1, entry.unidad, true, null, '', entry.titulo, (entry.unidad === 'reps' || !entry.unidad) ? entry.reps : '', 1) : '') +
             renderRegistroTecnicaUnicaSB(weekIdx, dayId, block.id, exIdx, entry.tecnica, entry.unidad, true, { n: parseInt(entry.sets, 10) || 1, tot: parseInt(entry.sets, 10) || 1, pct: entry.tecnicaPct, nombre: entry.titulo }) +
           '</div>';
         return;
@@ -41754,7 +41767,7 @@ html body.jp-mission:not(.cf-disc) .jp-qc{ --qr:#FF5500; --qr-bg:rgba(255,85,0,.
 .jp-qc-m{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; min-height:1em; }
 .jp-qc-hint{ flex:1 1 auto; min-width:0; font-size:.68rem; font-weight:600; letter-spacing:.02em; color:rgba(148,163,184,.85); }
 .jp-qc-ns{ display:flex; align-items:center; gap:3px; flex:0 0 auto; font-size:.58rem; font-weight:700; letter-spacing:.1em; color:#94A3B8; }
-.jp-qc-ns button{ width:40px; height:40px; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(255,255,255,.05); color:#f8fafc; font:800 1.1rem 'Chakra Petch',sans-serif; cursor:pointer; touch-action:manipulation; }
+.jp-qc-ns button{ width:46px; height:46px; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(255,255,255,.05); color:#f8fafc; font:800 1.1rem 'Chakra Petch',sans-serif; cursor:pointer; touch-action:manipulation; }
 .jp-qc-nv{ min-width:18px; text-align:center; font:800 1.05rem 'Chakra Petch',sans-serif; color:#f8fafc; }
 .jp-qc-fin{ display:none; align-items:center; justify-content:space-between; gap:8px; margin-top:9px; padding-top:9px; border-top:1px dashed rgba(148,163,184,.3); }
 .jp-qc[data-base="1"] .jp-qc-fin{ display:flex; }
@@ -41762,9 +41775,24 @@ html body.jp-mission:not(.cf-disc) .jp-qc{ --qr:#FF5500; --qr-bg:rgba(255,85,0,.
 .jp-qc-finok{ min-height:44px; padding:0 16px; border:0; border-radius:10px; cursor:pointer; background:var(--qr); color:#0b0b0b; font:800 .78rem 'Chakra Petch',sans-serif; letter-spacing:.08em; touch-action:manipulation; }
 .jp-qc-finok.ok{ background:#22C55E; }
 /* teoría de técnicas fuera de la pantalla principal: la fase especial aparece sola cuando llegás a esa serie */
-.jp-tec-txt, .jp-tec-nota, .jp-tec-head small, .jp-tecnica-protocolo, .jp-drop-cap small{ display:none !important; }
+.jp-tec-txt, .jp-tec-nota, .jp-tec-head small, .jp-tecnica-protocolo, .jp-drop-cap small, .jp-drop-nota{ display:none !important; }
 .jp-tec-est{ margin:6px 0 8px; padding:6px 10px; }
 .jp-tec-strip{ margin:0; }
+.jp-tec-gate .jp-ux-sug{ display:none !important; }
+/* PISO TÁCTIL 44 px (pulgar) en la vista del alumno. La app arrastra reglas por tema (jp-mission / cf-disc) con !important y alta especificidad;
+   body:not(#_) suma un id a la especificidad para que este piso gane siempre sin pelear regla por regla. */
+html body:not(#_) .jp-btn-check-native{ min-width:44px !important; min-height:48px !important; }
+html body:not(#_) .jp-input-native, html body:not(#_) .jp-intensity-note{ min-height:48px !important; }
+html body:not(#_) button.jp-db-seg, html body:not(#_) .jp-dose-bar .jp-rest-go{ min-height:44px !important; }
+html body:not(#_) .jp-done-btn, html body:not(#_) .jp-done-btn.jp-done-foot{ height:auto !important; min-height:46px !important; }
+html body:not(#_) .jp-ux-vid{ min-width:44px !important; min-height:44px !important; }
+html body:not(#_) .jp-summary-btn, html body:not(#_) .hdp-acc-summary, html body:not(#_) .hdp-acc-summary-link, html body:not(#_) .story-cta, html body:not(#_) .jp-brief-dir{ min-height:44px !important; }
+html body:not(#_) .jp-tecnica-step-btn{ min-width:44px !important; min-height:44px !important; }
+html body:not(#_) .fz-p, html body:not(#_) .hdp-uni-b, html body:not(#_) .jmb-timer, html body:not(#_) .jp-ux-menu-btn, html body:not(#_) .jp-wk-btn{ min-height:44px !important; }
+html body:not(#_) .fz-p, html body:not(#_) .jp-ux-menu-btn{ min-width:44px !important; }
+/* botón minúsculo del HUD: el área de toque crece sin deformar el HUD */
+html body:not(#_) .hud-min{ position:relative; }
+html body:not(#_) .hud-min::after{ content:''; position:absolute; top:-10px; bottom:-10px; left:-16px; right:-16px; }
 .jp-tec-gate:not(.jp-tec-open) .jp-myo-mod, .jp-tec-gate:not(.jp-tec-open) .jp-set-tracker-tecnica, .jp-tec-gate:not(.jp-tec-open) .jp-drop-tracker{ display:none !important; }
 
 /* ===== Stealth Pro · paleta unica: neutros + naranja de marca ===== */
