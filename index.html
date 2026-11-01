@@ -84166,6 +84166,10 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   function bloquesDe(d, wi){ return (d.bloquesPorSemana && d.bloquesPorSemana[wi]) ? d.bloquesPorSemana[wi] : (d.bloques || []); }
   function mmss(s){ s = parseInt(s, 10); if(!(s > 0)) return ''; return s >= 60 ? Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2) : s + 's'; }
   function ch(t, m){ return t ? '<span class="pz-ch' + (m ? ' m' : '') + '">' + E(t) + '</span>' : ''; }
+  /* "10-12" → "10-12 reps"; un texto libre ("4 x 20 m", "12 c/lado", "30 s") se muestra tal cual */
+  function repsTxt(r){ r = String(r == null ? '' : r).trim(); return /^\d+(\s*-\s*\d+)?$/.test(r) ? r + ' reps' : r; }
+  var TEC = { dropset: 'Drop Set', restpause: 'Rest-Pause', isometria: 'Isometría', myoreps: 'Myo-Reps', fallo: 'Al fallo', topset: 'Top Set + back-off', intervalo: 'Densidad' };
+  function tecTxt(m, par){ return m ? (TEC[m] || m) + (par ? ' · ' + par : '') : ''; }
 
   function fila(k, nombre, ex, chips, plano){
     return '<div class="pz-ex"><span class="pz-k">' + E(k) + '</span><div class="pz-exm"><div class="pz-n' + (plano ? ' pl' : '') + '">' + E(nombre) + '</div>' +
@@ -84181,13 +84185,13 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       var ef = b.efSets || b.sets;
       var ch1 = ch(ef ? ef + '×' + (b.reps || '—') : (b.reps || ''), true) +
         ((b.hasApprox !== false && b.approxSets) ? ch('+' + b.approxSets + ' aclim.') : '') +
-        (b.tempo ? ch('T ' + b.tempo) : '') + (b.restSeconds ? ch('⏱ ' + mmss(b.restSeconds)) : '');
+        (b.tempo ? ch('T ' + b.tempo) : '') + (b.restSeconds ? ch('⏱ ' + mmss(b.restSeconds)) : '') + (b.metodologia ? ch(tecTxt(b.metodologia, b.tecParam)) : '');
       h = cab(b.titulo && x && b.titulo !== x.es ? b.titulo : (b.category || 'Bloque'), b.optional ? 'opcional' : '') + fila('', nom, x, ch1);
     } else if(b.tipo === 'superset'){
       h = cab(b.titulo || 'Superserie', [b.efSets ? b.efSets + ' series' : '', b.restSeconds ? 'pausa ' + mmss(b.restSeconds) : ''].filter(Boolean).join(' · '));
       (b.ejercicios || []).forEach(function(e, n){
         var x = exDe(e);
-        h += fila('A' + (n + 1), x ? x.es : (e.nombre || '—'), x, ch(e.reps ? e.reps + ' reps' : '', true) + (e.tempo ? ch('T ' + e.tempo) : '') + (e.metodologia ? ch(e.metodologia) : ''));
+        h += fila('A' + (n + 1), x ? x.es : (e.nombre || '—'), x, ch(repsTxt(e.reps), true) + (e.tempo ? ch('T ' + e.tempo) : '') + (e.metodologia ? ch(tecTxt(e.metodologia, e.tecParam)) : ''));
       });
     } else if(b.tipo === 'finisher'){
       var rondas = (b.roundsByWeek && b.roundsByWeek[wi]) || '';
@@ -84195,7 +84199,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       if(rondas) h += '<div class="pz-tip" style="border-top:0;color:var(--txt-2)">' + E(rondas) + '</div>';
       (b.fin || []).forEach(function(e, n){
         var x = exDe(e);
-        h += fila('A' + (n + 1), x ? x.es : (e.nombre || '—'), x, ch(e.repsRange ? e.repsRange + ' reps' : '', true));
+        h += fila('A' + (n + 1), x ? x.es : (e.nombre || '—'), x, ch(repsTxt(e.repsRange), true));
       });
     } else if(b.tipo === 'hyrox'){
       h = cab(b.titulo || 'Hyrox');
@@ -84206,8 +84210,11 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       for(i = 0; i < it.length; i++){
         var m = /^([A-F]\d+)[.)]\s*(.+)$/.exec(it[i]);
         if(m){
-          var dosis = (it[i + 1] && /^\d/.test(it[i + 1])) ? it[++i] : '';
-          h += fila(m[1], m[2], porNombre(m[2]), dosis ? ch(dosis, true) : '');
+          /* "A1. Nombre — 2x12" (dosis en la misma línea) o "A1) Nombre" + línea de dosis siguiente */
+          var par = /^(.+?)\s+[—–]\s+(.+)$/.exec(m[2]);
+          var nom = par ? par[1] : m[2];
+          var dosis = par ? par[2] : ((it[i + 1] && /^\d/.test(it[i + 1])) ? it[++i] : '');
+          h += fila(m[1], nom, porNombre(nom), dosis ? ch(dosis, true) : '');
         } else {
           h += fila('', it[i], null, '', true);
         }
