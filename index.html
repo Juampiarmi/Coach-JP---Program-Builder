@@ -3151,6 +3151,158 @@ function aplicarDosisEstandar(b){
     (b.fin||[]).forEach(e => { if(!String(e.repsRange||'').trim()) e.repsRange = repsDef; });
   }
 }
+/* ============================================================
+   LOGÍSTICA DE SALÓN · ESTACIÓN FIJA
+   Regla: un biset / triset / finisher agrupado solo puede juntar ejercicios que se resuelvan en UNA misma estación
+   (misma torre de poleas, misma máquina, misma polea del jalón, misma colchoneta, mismo sector de mancuernas).
+   Nada de cruzar el gimnasio, mover un banco o rearmar una máquina entre un ejercicio y el siguiente.
+   - jpEstacion(ex)           -> clave de la estación donde se hace el ejercicio
+   - jpEstacionCompat(a, b)   -> ¿se pueden combinar sin peregrinar?
+   - jpLogisticaBloque(b)     -> avisos de un bloque (alimenta las alertas del Builder)
+   - jpSepararPorEstacion(b)  -> parte un biset inviable en bloques viables (lo usa el saneador de la IA)
+   - jpAjustarSuperset(...)   -> intenta reemplazar el compañero inviable por otro de la misma estación (generadores locales)
+   ============================================================ */
+const JP_ESTACION_LB = { torre: 'la torre de poleas', jalon: 'la polea alta del jalón', remo_sentado: 'el asiento del remo', banco_poleas: 'el banco entre poleas',
+  mancuernas: 'la zona de mancuernas', kb: 'la zona de kettlebells', rack: 'el rack de barra', multipower: 'el multipower', colchoneta: 'la colchoneta',
+  barra_fija: 'la barra fija', pista: 'la pista de césped', 'maq:cadera_lateral': 'la máquina de abductores/aductores' };
+/* pares de estaciones distintas pero a pocos pasos y sin rearmar nada */
+const JP_ESTACION_OK = [['colchoneta', 'mancuernas'], ['colchoneta', 'kb'], ['mancuernas', 'kb'], ['pista', 'kb'], ['pista', 'mancuernas'],
+  ['rack', 'mancuernas'], ['rack', 'kb'], ['barra_fija', 'mancuernas'], ['barra_fija', 'kb'], ['barra_fija', 'colchoneta']];
+function jpEstacion(ex){
+  if(!ex) return '';
+  const n = norm((ex.es || '') + ' ' + (ex.en || '')), eq = String(ex.equipo || '');
+  if(/(^|\s)(sled|trineo|farmer|carry|zancadas caminando|walking lunge|wall ball|slam|box jump|burpee)/.test(n)) return 'pista';
+  if(eq === 'Cardio') return 'cardio:' + (n.split(' ')[0] || 'x');
+  if(eq === 'Peso corporal' && /colgad|dominada|barra fija|pull-?up|toes to bar|muscle|anillas|paralelas|fondos/.test(n)) return 'barra_fija';
+  if(eq === 'Peso corporal' || eq === 'Banda') return 'colchoneta';
+  if(eq === 'Polea'){
+    /* el jalón es el asiento con almohadillas; el pull-over de brazos rectos ("Straight-Arm Cable Pulldown") se hace parada en la torre */
+    const nes = norm(ex.es || ''), nen = norm(ex.en || '');
+    if(/jalon/.test(nes) || (/lat pull|pull-?down/.test(nen) && !/pull-?over|brazos extendidos|straight/.test(nes + ' ' + nen))) return 'jalon';
+    /* asiento del remo: se decide por el nombre en español (los remos unilaterales y de pie se hacen parado en la torre) */
+    if(/remo sentado|remo en polea baja agarre en v|remo articulado|face pull sentado/.test(nes)) return 'remo_sentado';
+    if(/en banco|banco plano|banco inclin|sentado con poleas|sobre banco|inclinado en polea|declinado en polea|bench/.test(n)) return 'banco_poleas';
+    return 'torre';
+  }
+  if(eq === 'Mancuernas') return 'mancuernas';
+  if(eq === 'Kettlebell') return 'kb';
+  if(eq === 'Barra') return 'rack';
+  if(eq === 'Multipower') return 'multipower';
+  if(eq === 'Máquina') return /abducci|aducci/.test(n) ? 'maq:cadera_lateral' : 'maq:' + norm(ex.es || ex.id);
+  return 'otro:' + norm(eq);
+}
+function jpEstacionCompat(a, b){
+  if(!a || !b || a === b) return true;
+  return JP_ESTACION_OK.some(p => (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a));
+}
+function jpEstacionLb(k, ex){
+  if(JP_ESTACION_LB[k]) return JP_ESTACION_LB[k];
+  if(String(k).indexOf('maq:') === 0) return 'la máquina «' + ((ex && ex.es) || String(k).slice(4)) + '»';
+  return String(k).replace(/^[a-z]+:/, '');
+}
+/* línea de pizarra ("A1. Nombre (EN) — dosis") -> ejercicio de la biblioteca */
+let _jpMapaEx = null, _jpMapaSig = '';
+function jpExDeNombre(txt){
+  const sig = S.exercises.length + '|' + (S.exercises[0] ? S.exercises[0].id : '');
+  if(!_jpMapaEx || sig !== _jpMapaSig){
+    _jpMapaEx = {}; _jpMapaSig = sig;
+    S.exercises.forEach(e => { [e.es, e.en].forEach(n => { const k = norm(n); if(k && !_jpMapaEx[k]) _jpMapaEx[k] = e; }); });
+  }
+  const base = String(txt || '').replace(/^[A-Fa-f]\d{1,2}[.):\-]\s*/, '').trim(), cand = [base];
+  const par = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(base); if(par) cand.push(par[1], par[2]);
+  for(let i = 0; i < cand.length; i++){ const e = _jpMapaEx[norm(cand[i])]; if(e) return e; }
+  return null;
+}
+/* ejercicios agrupados de un bloque (superset / finisher clásicos o líneas A1/A2 de una pizarra de trabajo) */
+function jpEjerciciosAgrupados(b){
+  if(!b) return [];
+  if(b.tipo === 'superset') return (b.ejercicios || []).map(e => getEx(e.exId)).filter(Boolean);
+  if(b.tipo === 'finisher') return (b.fin || []).map(e => getEx(e.exId)).filter(Boolean);
+  if(b.tipo === 'list' && b.sportsPizarra && b.category !== 'warmup' && b.modalidad !== 'calentamiento'){
+    const out = [];
+    (b.items || []).forEach(l => {
+      const m = /^[A-Fa-f]\d{1,2}[.):]\s*(.+?)(?:\s+[—–]\s+.*)?$/.exec(String(l).trim());
+      if(m){ const e = jpExDeNombre(m[1]); if(e) out.push(e); }
+    });
+    return out;
+  }
+  return [];
+}
+/* [{ titulo, msg }] por cada pareja que obliga a cruzar el salón o rearmar */
+function jpLogisticaBloque(b){
+  const exs = jpEjerciciosAgrupados(b), issues = [];
+  if(exs.length < 2) return issues;
+  const ks = exs.map(jpEstacion);
+  for(let i = 1; i < exs.length; i++){
+    for(let j = 0; j < i; j++){
+      if(!jpEstacionCompat(ks[j], ks[i])){
+        issues.push({ titulo: 'Estaciones distintas', msg: '«' + exs[j].es + '» (' + jpEstacionLb(ks[j], exs[j]) + ') + «' + exs[i].es + '» (' + jpEstacionLb(ks[i], exs[i]) +
+          '): obligan a cruzar el salón o rearmar el equipo y rompen la densidad del bloque. Resolvé el grupo en una misma estación o separalos en bloques consecutivos.' });
+        return issues;
+      }
+    }
+  }
+  return issues;
+}
+function jpNuevoBloqueSimple(b, e){
+  const x = getEx(e.exId), nb = newBlock('block');
+  nb.exId = e.exId; nb.titulo = x ? x.es : nb.titulo; nb.category = b.category || nb.category;
+  nb.efSets = b.efSets || 3; nb.reps = e.reps || '10-12'; nb.tempo = e.tempo || '2011'; nb.restSeconds = Math.max(60, parseInt(b.restSeconds, 10) || 90);
+  nb.hasApprox = false; nb.approxSets = 0; nb.failCapable = b.failCapable !== false;
+  return nb;
+}
+/* parte un grupo inviable: el primer ejercicio fija la estación; los que no combinan pasan a bloques de series rectas a continuación */
+function jpSepararPorEstacion(b){
+  const res = { bloques: [b], notas: [] };
+  if(!b || (b.tipo !== 'superset' && b.tipo !== 'finisher')) return res;
+  const lista = b.tipo === 'superset' ? (b.ejercicios || []) : (b.fin || []);
+  if(lista.length < 2) return res;
+  const exs = lista.map(e => getEx(e.exId)), ks = exs.map(jpEstacion), grupo = [0], resto = [];
+  for(let i = 1; i < lista.length; i++){
+    if(!exs[i]) { grupo.push(i); continue; }
+    if(grupo.every(j => !exs[j] || jpEstacionCompat(ks[j], ks[i]))) grupo.push(i); else resto.push(i);
+  }
+  if(!resto.length) return res;
+  const nombres = resto.map(i => '«' + exs[i].es + '»').join(', ');
+  if(b.tipo === 'finisher'){
+    b.fin = grupo.map(i => lista[i]);
+    res.notas.push('Finisher: se quitó ' + nombres + ' porque obligaba a cruzar el salón (no era de la misma estación que «' + exs[0].es + '»).');
+    if(b.fin.length < 1) res.bloques = [];
+    return res;
+  }
+  const singles = resto.map(i => jpNuevoBloqueSimple(b, lista[i]));
+  if(grupo.length < 2){
+    res.bloques = lista.map(e => jpNuevoBloqueSimple(b, e));
+    res.notas.push('El biset se separó en bloques de series rectas: ningún par se resolvía en una misma estación.');
+  } else {
+    b.ejercicios = grupo.map(i => lista[i]);
+    res.bloques = [b].concat(singles);
+    res.notas.push('Se sacó ' + nombres + ' del biset (no combinaba en la misma estación que «' + exs[0].es + '») y quedó como bloque de series rectas.');
+  }
+  return res;
+}
+/* generadores locales: cambia al compañero inviable por otro ejercicio del mismo grupo en la misma estación; si no hay, deja el aviso */
+function jpAjustarSuperset(b, ath, used){
+  const notas = [];
+  if(!b || b.tipo !== 'superset' || (b.ejercicios || []).length < 2) return notas;
+  const lista = b.ejercicios, e0 = getEx(lista[0].exId);
+  for(let i = 1; i < lista.length; i++){
+    const e = getEx(lista[i].exId); if(!e) continue;
+    const previos = lista.slice(0, i).map(x => jpEstacion(getEx(x.exId))), k = jpEstacion(e);
+    if(previos.every(p => jpEstacionCompat(p, k))) continue;
+    const yaEstan = lista.map(x => x.exId);
+    const alt = S.exercises.filter(x => x.id !== e.id && yaEstan.indexOf(x.id) < 0 && (used || []).indexOf(x.id) < 0 && x.grupo === e.grupo &&
+        previos.every(p => jpEstacionCompat(p, jpEstacion(x))) && !(ath && checkExercise(ath, x).some(a => a.level === 'danger')))
+      .sort((p, q) => ((q.patron === e.patron) - (p.patron === e.patron)) || ((q.videoId ? 1 : 0) - (p.videoId ? 1 : 0)))[0];
+    if(alt){
+      lista[i].exId = alt.id; if(used) used.push(alt.id);
+      notas.push('«' + e.es + '» se cambió por «' + alt.es + '» para que el biset se resuelva en una sola estación (' + jpEstacionLb(jpEstacion(alt), alt) + ').');
+    } else {
+      notas.push('«' + e.es + '» no combina en la misma estación que «' + (e0 ? e0.es : 'el primer ejercicio') + '»: pasalo a un bloque aparte.');
+    }
+  }
+  return notas;
+}
 function blockAlerts(ath, b){
   if(!ath) return [];
   let out = [];
@@ -3161,6 +3313,8 @@ function blockAlerts(ath, b){
   blockFreeText(b).forEach(t => {
     checkFreeText(ath, t).forEach(a => out.push(Object.assign({txt:t}, a)));
   });
+  /* logística de salón: un grupo (biset / triset / finisher) debe resolverse en una sola estación */
+  try{ jpLogisticaBloque(b).forEach(m => out.push({ level:'warn', title:'📍 LOGÍSTICA DE SALÓN', msg:m.msg })); }catch(eLg){}
   return out;
 }
 </script>
@@ -47156,7 +47310,7 @@ document.addEventListener('DOMContentLoaded', init);
     const porCap = Math.max(8, Math.floor((cap || 120) / Math.max(1, Object.keys(porGrupo).length)));
     const out = [];
     Object.keys(porGrupo).forEach(g => {
-      porGrupo[g].slice(0, porCap).forEach(e => out.push(e.id + '|' + e.es + '|' + e.equipo + '|' + e.patron));
+      porGrupo[g].slice(0, porCap).forEach(e => out.push(e.id + '|' + e.es + '|' + e.equipo + '|' + e.patron + '|' + jpEstacion(e)));
     });
     return out.join('\n');
   }
@@ -47199,7 +47353,7 @@ document.addEventListener('DOMContentLoaded', init);
   }
   const SYS =
     'Sos el asistente de programación de Coach JP (biomecánica, alto rendimiento, readaptación).\n' +
-    'REGLAS: 1) Nunca uses un ejercicio prohibido ni una variante equivalente. 2) Evitá ejercicios cuyo riesgo articular coincida con la lesión del alumno, o regresionalos y explicalo en tips. 3) Usá SOLO ids de la lista dada. 4) Devolvé JSON válido y nada más: sin markdown, sin texto extra, sin comentarios. 5) Textos breves en español rioplatense, segunda persona, técnicos.';
+    'REGLAS: 1) Nunca uses un ejercicio prohibido ni una variante equivalente. 2) Evitá ejercicios cuyo riesgo articular coincida con la lesión del alumno, o regresionalos y explicalo en tips. 3) Usá SOLO ids de la lista dada. 4) Devolvé JSON válido y nada más: sin markdown, sin texto extra, sin comentarios. 5) Textos breves en español rioplatense, segunda persona, técnicos. 6) REGLA DE SALÓN · ESTACIÓN FIJA: un biset, triset o finisher agrupado solo puede juntar ejercicios de la MISMA estación (columna ESTACIÓN de la lista: misma torre de poleas, misma máquina, misma polea del jalón, misma colchoneta o mismo sector de mancuernas). NUNCA combines ejercicios que obliguen a cruzar el gimnasio, mover un banco o rearmar una máquina (jalón + torre de poleas, remo sentado + cruce de cables, una máquina + OTRA máquina, banco con poleas + polea libre): ponelos en bloques de series rectas consecutivos. Colchoneta, mancuernas, kettlebell, rack y barra fija sí combinan entre sí (están a pocos pasos).';
 
   const ESTILOS = {
     fuerza:'2 anclas pesadas (6-8 reps, RPE 8, descanso 150s) + bisets densos de accesorios.',
@@ -47224,7 +47378,7 @@ document.addEventListener('DOMContentLoaded', init);
     if(opts.hyrox) inc.push('hyrox de cierre (optional true)');
     const grupos = opts.econ && foco && foco.grupos ? foco.grupos.concat(opts.core ? ['Core'] : [], opts.hyrox ? ['Full Body / Cardio'] : []) : null;
     return 'ALUMNO:\n' + athLine(ath) + '\n\n' +
-      'EJERCICIOS (id|nombre|equipo|patrón):\n' + libLines(grupos, ath, opts.econ ? 90 : 200) + '\n\n' +
+      'EJERCICIOS (id|nombre|equipo|patrón|ESTACIÓN):\n' + libLines(grupos, ath, opts.econ ? 90 : 200) + '\n\n' +
       'DÍA ' + (i + 1) + '/' + n + (foco && foco.label ? ' · foco: ' + foco.label : '') + '. Estilo: ' + (esAtletaDUP(ath) ? 'el del PERFIL DUP de abajo (reemplaza al estilo general).' : (ESTILOS[opts.style] || ESTILOS.fuerza)) + '\n' +
       (esAtletaDUP(ath) ? textoDUPParaIA(i) + '\n' : '') +
       (opts.notes ? 'Extra: ' + opts.notes + '\n' : '') +
@@ -47350,7 +47504,10 @@ document.addEventListener('DOMContentLoaded', init);
         b.movements = (b.movements||[]).filter(t => !danger.some(x => x.txt === t));
         notes.push({t:'warn', m:'Se quitaron ' + danger.length + ' línea(s) con ejercicios vetados en ' + ctx + '.'});
       }
-      d.bloques.push(b);
+      /* regla de salón: un biset / triset / finisher que cruza estaciones se parte en bloques de series rectas */
+      const sep = (typeof jpSepararPorEstacion === 'function') ? jpSepararPorEstacion(b) : { bloques: [b], notas: [] };
+      sep.notas.forEach(m => notes.push({ t:'warn', m: m + ' (' + ctx + ')' }));
+      sep.bloques.forEach(x => d.bloques.push(x));
     });
     return d;
   }
@@ -48716,6 +48873,7 @@ document.addEventListener('DOMContentLoaded', init);
           used.push(ex.id);
           b.ejercicios.push({ exId: ex.id, reps: P ? P.reps : '10-12', tempo: P ? P.tempo : '2011' });
         });
+        try{ jpAjustarSuperset(b, ath, used).forEach(m => notas.push(m)); }catch(eLg){}
         if(b.ejercicios.length < 2) notas.push('«' + spec.titulo + '» quedó con ' + b.ejercicios.length + ' ejercicio(s): completalo a mano.');
         if(P) b.restSeconds = P.rest;
         if(!b.tips && b.ejercicios.length){
@@ -49729,6 +49887,7 @@ document.addEventListener('DOMContentLoaded', init);
           used.push(ex2.id);
           b.ejercicios.push({ exId: ex2.id, reps: '10-12', tempo: '2011' });
         });
+        try{ jpAjustarSuperset(b, ath, used).forEach(m => notasOut.push(m)); }catch(eLg){}
         if(b.ejercicios.length < 2) notasOut.push('«' + b.titulo + '» (' + arch.titulo + ') quedó con ' + b.ejercicios.length + ' ejercicio(s): completalo a mano.');
         if(!b.tips && b.ejercicios.length){
           var pr = getEx(b.ejercicios[0].exId);
@@ -53141,6 +53300,7 @@ body{overflow-x:hidden}
           used.push(ex.id);
           b.ejercicios.push({ exId: ex.id, reps: par.reps, tempo: par.tempo });
         });
+        try{ jpAjustarSuperset(b, ath, used).forEach(m => avisos.push(m)); }catch(eLg){}
         if(b.ejercicios.length < 2){ avisos.push('«' + sl.ti + '» quedó incompleto'); }
         b.efSets = par.efSets; b.restSeconds = par.rest;
         b.subtitulo = b.ejercicios.length > 2 ? 'Tri-set sin pausa entre ejercicios' : 'Biset sin pausa entre A y B';
@@ -79652,7 +79812,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '3b) SELECCIÓN EXPERTA DE EJERCICIOS (nada al azar): pensá como un entrenador de élite con gimnasio real. (a) Cubrí TODOS los grupos y porciones del foco del día con al menos 2 ejercicios distintos por grupo principal, con ángulos y funciones diferentes (ej: pecho = press inclinado con mancuernas para la porción superior + cruce o apertura en polea para trabajar en posición estirada; hombros = press + elevaciones laterales + deltoide posterior; tríceps = cabeza larga por encima de la cabeza + empuje en polea; cuádriceps = sentadilla o prensa + extensión; isquios = peso muerto rumano + curl femoral). ' +
       '(b) Orden lógico: multiarticular pesado primero, luego secundarios, al final aislamiento. (c) Variá implementos (barra, mancuernas, poleas, máquinas) y perfiles de resistencia. (d) Entre fuerza e hipertrofia sumá ' + (av ? '8 a 10' : '6 a 8') + ' ejercicios de trabajo (sin contar warm-up ni core). Prohibido armar un día con un solo ejercicio raro o repetir el mismo patrón sin motivo.\n' +
       '3c) CORE: UN bloque corto (6-8 min) de 2 o 3 ejercicios DISTINTOS, duro pero entretenido, que cubra funciones diferentes (anti-extensión, anti-rotación, flexión de tronco o cadera, rotación o cargas asimétricas). NO lo limites a un solo ejercicio ni a Pallof Press, tampoco en atletas avanzados: el alumno tiene que sentir que entrenó bien. Variá: rueda abdominal, elevación de piernas colgado, woodchop en polea, plancha con carga, dead bug con peso, etc.\n' +
-      '3d) REGLA DE ORO DE EQUIPAMIENTO EN BISERIES/TRISETS (gestión de congestión en sala, el gimnasio puede estar lleno): PROHIBIDO ABSOLUTO combinar dos máquinas o poleas en la misma biserie/triserie. Combinaciones permitidas, y SOLO estas: Mancuerna + Mancuerna; Mancuerna + Máquina; Mancuerna + Kettlebell; Mancuerna o Kettlebell + estructura (barra de dominadas, paralelas, anillas); Barra + Máquina, Mancuerna o Kettlebell; Peso corporal/cajón/elementos libres + carga externa (mancuerna, kettlebell o barra). En trisets TODAS las parejas deben cumplirlo. Si necesitás dos ejercicios de máquina, ponelos en bloques separados de series rectas. En la BIBLIOTECA cada ejercicio trae entre corchetes su clase de equipamiento.\n' +
+      '3d) REGLA DE SALÓN · ESTACIÓN FIJA (el gimnasio puede estar lleno: cero peregrinaje entre ejercicios): una biserie, triserie o finisher agrupado SOLO puede juntar ejercicios que se resuelvan en UNA misma estación: dos o tres ejercicios de polea en la MISMA torre (poleas altas o bajas, cambiando solo el agarre o la cuerda), dos de mancuernas con un solo banco, dos de colchoneta, la misma máquina (ej: abductores y aductores) o la misma polea del jalón. También combinan entre sí colchoneta, mancuernas, kettlebell, rack de barra y barra fija (están a pocos pasos). PROHIBIDO juntar ejercicios que obliguen a cruzar el gimnasio, mover un banco, rearmar una máquina o ir de una máquina a OTRA distinta (ej: jalón en su asiento + ejercicio en la torre; remo sentado + cruce de cables; prensa + curl femoral; banco con poleas + polea libre). En trisets TODAS las parejas deben cumplirlo. Si dos ejercicios usan estaciones distintas, ponelos en bloques consecutivos de series rectas. En la BIBLIOTECA cada ejercicio trae su equipamiento entre corchetes: usalo para decidir la estación.\n' +
       '3e) AUDITORÍA DE ALTO RENDIMIENTO (obligatoria en atletas intermedios, avanzados y de élite): ' +
       '(a) WARM-UP ESPECÍFICO: 1 ejercicio de movilidad del foco + 1 o 2 de activación de estabilizadores (escápulas, manguito rotador, core o glúteo medio según el día) y, en los TIPS del primer bloque de fuerza, un RAMP-UP de 2 o 3 series de aproximación progresivas (ej: 50% x 8, 70% x 5, 85% x 2) antes de las series efectivas. ' +
       (av ? '(b) VOLUMEN DE ÉLITE: cada grupo principal del foco acumula 14 a 20 series efectivas (a RIR 0-1 o al fallo técnico) en la sesión; los sinergistas o de apoyo 6 a 9; la sesión completa suma entre 24 y 32 series de trabajo (sin contar warm-up ni core). Un 3x10 por ejercicio, o menos de 3 series por ejercicio de trabajo, es una sesión corta e inaceptable para este perfil. En los básicos pesados usá top set + back-off: 1 serie pesada a RIR 1 y 2 o 3 series de back-off con 5-10% menos de carga a RIR 0-1. '
