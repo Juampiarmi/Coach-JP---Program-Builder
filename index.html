@@ -57286,7 +57286,7 @@ body.man-mode .gs-fab{right:318px}
         const c = clone(r); c.id = uid('bk'); c.nombre = r.nombre + ' (copia)'; c.usos = 0;
         if(c.std){ delete c.std; delete c.stdId; }
         if(c.cfMesSys){ delete c.cfMesSys; delete c.cfMesId; delete c.cfMesVer; }
-        if(c.sbSys){ delete c.sbSys; delete c.sbSysVer; delete c.depSys; delete c.depDeporte; }
+        if(c.sbSys){ delete c.sbSys; delete c.sbSysVer; delete c.depSys; delete c.depDeporte; delete c.fbSys; delete c.fbId; }
         c.creado = new Date().toLocaleDateString('es-AR');
         banco().push(c); save(); renderBanco(); toast('📋 Rutina duplicada');
         return;
@@ -83511,6 +83511,412 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 .bank-card .bank-tag.dep{background:rgba(63,169,255,.12);border:1px solid rgba(63,169,255,.38);color:#9FD1FF;font-weight:700}
 </style>
 <!--/SB-DEP1-->
+
+<!--SB-FB1-->
+<script>
+/* =========================================================
+   FULL-BODY MENSUAL · MUJER AVANZADA Y ÉLITE · 4 plantillas del sistema en el Banco de Rutinas
+   Full-Body de 3 días y de 4 días, cada una en nivel Avanzado y Élite (Competitivo). Mesociclo de 4 semanas:
+   S1 base de carga, S2-S3 sobrecarga en kilos con el mismo RIR y S4 descarga activa (lo proyecta el motor de plantillas base).
+   Cada sesión se redacta con la sintaxis de la Pizarra Táctica (bloques con objetivo fisiológico y pautas), se arma con el mismo importador
+   que las demás plantillas del sistema y respeta la regla de estación fija: ningún biset / triset junta ejercicios de estaciones lejanas
+   (se valida con jpLogisticaBloque en CoachFullBody.validar()). Como el resto de las del sistema, sus días no se guardan en el navegador:
+   se regeneran desde este código (ver jpPersistirEstado, bandera sbSys).
+   ========================================================= */
+(function(){
+  'use strict';
+  var VER = 1;
+
+  /* ---------- 0 · helpers de redacción ---------- */
+  function P(c, arr){ return arr[Math.min(c.lv, arr.length - 1)]; }
+  function dose(s, r, t, rir, tec){ return s + 'x' + r + (t ? ' | Tempo ' + t : '') + (rir !== undefined && rir !== '' ? ' | RIR ' + rir : '') + (tec ? ' | ' + tec : ''); }
+  function cdose(s, r, rpe){ return s + 'x' + r + ' | RIR ' + (10 - rpe); }
+  /* pirámide de fuerza: aclimatación + carga alta + top sets + back-off */
+  function pira(a, b, top, back, tempo, rir){
+    return '1x' + a + ' (Aclimatación) + 1x' + b + ' (Carga alta) + ' + top + ' (Top Set)' + (back ? ' + ' + back + ' (Back-off -10%)' : '') + ' | Tempo ' + tempo + ' | RIR ' + rir;
+  }
+  function B(t, ej, rest, obj, tips){ return { t: t, ej: ej, rest: rest, obj: obj, tips: tips || [] }; }
+  function txtB(b, n){
+    var L = [];
+    if(b.ej.length === 1){ L.push('[BLOQUE ' + n + '] ' + (b.t || b.ej[0][0])); L.push(b.ej[0][1]); }
+    else {
+      L.push('[BLOQUE ' + n + '] ' + b.t);
+      b.ej.forEach(function(e, i){ L.push('A' + (i + 1) + '. ' + e[0]); L.push(e[1]); });
+    }
+    if(b.rest) L.push('Rest ' + b.rest);
+    L.push('[OBJETIVO FISIOLÓGICO]'); L.push(b.obj);
+    L.push('[COACHING TIPS & ESTRATEGIA]');
+    b.tips.forEach(function(t){ if(t) L.push(t); });
+    return L.join('\n');
+  }
+  function txtDia(n, d){
+    var L = ['=== DÍA ' + n + ': ' + d.titulo + ' ===', '[NOMBRE DEL DÍA] ' + d.nombre, '[FOCO DEL COACH] ' + d.foco];
+    d.bloques.forEach(function(b, i){ L.push(txtB(b, i + 1)); });
+    return L.join('\n');
+  }
+  var RAMPA = 'RAMPA DE APROXIMACIÓN: Antes del primer ejercicio pesado hacé dos o tres series de aproximación con el 50, el 60 y el 80 por ciento de la carga de trabajo; no cuentan como volumen.';
+  var SEMANAS = 'PROGRESIÓN S1-S4: S1 base de carga, S2 y S3 sobrecarga en kilos manteniendo el RIR, S4 descarga activa con menos series y RIR 3-4. Anotá siempre kilos y repeticiones para superar la semana anterior.';
+  var TEC_ELITE = 'Élite: dos técnicas de intensidad por sesión, siempre en aislamientos y nunca en el básico pesado.';
+  var TEC_AV = 'Avanzado: una sola técnica de intensidad por sesión, en el último aislamiento.';
+  function tecTxt(c){ return c.lv === 2 ? TEC_ELITE : TEC_AV; }
+  var DROP = 'DROP-SET: Al llegar al fallo técnico bajá 25 a 30 por ciento la carga y seguí sin descanso hasta un nuevo fallo; cuenta como parte de la última serie.';
+  var MYO = 'MYO-REPS: Serie de activación a una o dos repeticiones del fallo; después tres o cuatro mini-series de cuatro a cinco repeticiones con quince segundos de pausa y respiraciones profundas. Todo junto cuenta como una sola serie.';
+
+  /* ---------- 1 · bloques compartidos ---------- */
+  function bWarmLower(c){
+    return B('Entrada en calor · Biset de activación de cadera y rodilla',
+      [['Banded Glute Bridge', dose(2, 15, '2112', 4)], ['Goblet Squat', dose(2, 8, '3112', 4)]], '30s',
+      'Elevar la temperatura central y pre-activar glúteo mayor y medio junto con el patrón de sentadilla profunda antes de cargar la barra; el trabajo neuromuscular previo ordena el reclutamiento y mejora el control de la rodilla bajo carga.',
+      ['ACTIVACIÓN GLÚTEA: En el puente empujá las rodillas contra la banda y sostené dos segundos arriba; tenés que sentir el glúteo antes de pasar al goblet.',
+       'PATRÓN DE SENTADILLA: Bajá lento con el pecho alto y las rodillas siguiendo la línea de los pies; pausa de un segundo abajo.', RAMPA]);
+  }
+  function bWarmHinge(c){
+    return B('Entrada en calor · Biset de activación de bisagra de cadera',
+      [['Banded Glute Bridge', dose(2, 15, '2112', 4)], ['Dumbbell Romanian Deadlift', dose(2, 10, '3112', 4)]], '30s',
+      'Activar glúteo mayor e isquiosurales y ensayar el patrón de bisagra con carga liviana antes del peso muerto rumano: el calentamiento específico mejora la sensación de la técnica y baja el riesgo de sobrecarga lumbar en la primera serie pesada.',
+      ['ACTIVACIÓN GLÚTEA: Sostené dos segundos arriba en cada puente y no compenses con la zona lumbar.',
+       'BISAGRA: Cadera hacia atrás con las rodillas apenas flexionadas y la espalda neutra; las mancuernas rozan los muslos todo el recorrido.', RAMPA]);
+  }
+  function bWarmUpper(c){
+    return B('Entrada en calor · Biset de activación escapular',
+      [['Dumbbell W-Raise', dose(2, 12, '2112', 4)], ['Push-ups', dose(2, 10, '2121', 4)]], '30s',
+      'Activar trapecio medio e inferior, serrato y manguito antes de cargar el hombro: la posición escapular condiciona la tolerancia del hombro al empuje y a la tracción pesada.',
+      ['ELEVACIONES W: Mancuernas muy livianas, codos a 90 grados y juntá las escápulas sin elevar los hombros; sostené un segundo.',
+       'PUSH-UPS: Al final de cada repetición sumá un segundo con las escápulas separadas para activar el serrato.', RAMPA]);
+  }
+  function bCoreMat(c, a, b, extra){
+    return B('Core · Biset de estabilidad en la colchoneta',
+      [[a[0], a[1]], [b[0], b[1]]], '60s',
+      'Entrenar la rigidez del tronco frente a fuerzas que lo extienden, lo flexionan o lo inclinan: un core fuerte transmite la fuerza de cadera a hombros y protege la columna en los básicos pesados de la semana.',
+      [a[2], b[2], extra || SEMANAS]);
+  }
+
+  /* ---------- 2 · sesiones Full-Body de 3 días ---------- */
+  function fb3a(c){
+    var el = c.lv === 2;
+    return { titulo: 'Full-Body A · Sentadilla, empuje inclinado y jalón', nombre: 'Full-Body A · Sentadilla & Empuje',
+      foco: 'Día de fuerza en cuádriceps y glúteo con Back Squat como eje, empuje y remo en el mismo banco inclinado, jalón vertical y hombro completo en la torre. ' + (el ? 'Élite: top sets de tres series a RIR 0-1 y dos técnicas de intensidad.' : 'Avanzado: top sets de dos series a RIR 1-2 y una técnica de intensidad.'),
+      bloques: [
+        bWarmLower(c),
+        B(null, [['Back Squat', pira(8, 6, P(c, ['2x5', '2x5', '3x4']), '1x8', '3010', P(c, ['1-2', '1-2', '0-1']))]], '3:00',
+          'Fuerza máxima y tensión mecánica en el patrón de sentadilla: los top sets pesados con descanso completo maximizan el reclutamiento de alto umbral y sostienen el estímulo de hipertrofia de cuádriceps y glúteo con pocas series y mucha calidad.',
+          ['SET-UP: Barra baja en el trapecio, pies a la anchura de los hombros y profundidad hasta que el muslo pase la horizontal sin perder la posición del tronco.',
+           'TOP SET: ' + (el ? 'Tres series de cuatro a RIR 0-1; si la velocidad cae o la rodilla colapsa hacia adentro, la serie termina ahí.' : 'Dos series de cinco a RIR 1-2 con la misma técnica en todas.') + ' Después de la última, una serie de back-off con diez por ciento menos de carga.',
+           'DESCANSO: Tres minutos completos entre series; no es el momento de acortar.', RAMPA]),
+        B('Empuje y remo en banco inclinado · Biset antagonista',
+          [['Incline Dumbbell Press', dose(4, '8-10', '3010', P(c, [1, 1, '0-1']))], ['Incline Bench Dumbbell Row', dose(4, '10-12', '2012', 1)]], '2:00',
+          'Encadenar un empuje y una tracción sobre el mismo banco, sin mover nada: los pares antagonistas mantienen el rendimiento de cada ejercicio y reducen el tiempo de sesión a casi la mitad.',
+          ['PRESS INCLINADO: Banco a 30 grados, escápulas retraídas y codos a unos 45 grados del tronco; bajá en tres segundos hasta sentir el estiramiento del pecho.',
+           'REMO CON PECHO APOYADO: Pecho pegado al banco, tirá los codos hacia la cadera y pausa de un segundo con las escápulas juntas.',
+           'RITMO: Los dos ejercicios en el mismo banco, descanso solo al cerrar la ronda.']),
+        B(null, [['Wide-Grip Lat Pulldown', dose(4, '10-12', '2111', P(c, [1, 1, '0-1']), el ? 'Drop-set' : '')]], '90s',
+          'Tracción vertical con tensión en rango largo para el dorsal ancho: el agarre ancho carga el dorsal y el redondo mayor sin demandar al bíceps más de lo necesario.',
+          ['EJECUCIÓN: Tirá del pecho hacia la barra con las escápulas deprimidas, codos hacia el piso y vuelta en dos segundos hasta extensión completa.',
+           el ? DROP : 'CARGA: Si la última repetición se acelera o el torso se balancea, la serie termina ahí.']),
+        B('Hombro completo en la torre · Biset',
+          [['Cable Lateral Raise', dose(3, '12-15', '2011', 0, 'Myo-reps')], ['Cable Face Pull', dose(3, 15, '2111', 1)]], '75s',
+          'Deltoides lateral con tensión constante gracias a la polea y deltoides posterior con trapecio medio e inferior: el hombro completo se entrena en una sola estación de la torre sin cambiar de lugar.',
+          ['ELEVACIÓN LATERAL: Codo levemente flexionado, la mano nunca por encima del codo y subí hasta la altura del hombro.',
+           'FACE PULL: Tirá hacia la frente con los codos altos y rotá hacia afuera al final; pausa de un segundo.',
+           MYO]),
+        bCoreMat(c, ['Dead Bug', dose(3, '8-10', '3121', 2), 'DEAD BUG: La zona lumbar pegada al piso durante todo el movimiento; si se despega, acortá el rango.'],
+                    ['Side Plank', cdose(3, '30s', 7), 'PLANCHA LATERAL: Cuerpo en línea desde el tobillo hasta la cabeza; treinta segundos por lado.'],
+                    tecTxt(c) + ' ' + SEMANAS)
+      ] };
+  }
+  function fb3b(c){
+    var el = c.lv === 2;
+    return { titulo: 'Full-Body B · Cadena posterior, empuje vertical y brazos', nombre: 'Full-Body B · Cadena posterior & Brazos',
+      foco: 'Día de cadena posterior: Romanian Deadlift pesado como eje y Barbell Hip Thrust, empuje vertical y remo unilateral compartiendo banco, y cierre de brazos en la torre. ' + (el ? 'Élite: top sets a RIR 0-1 y técnica en bíceps y tríceps.' : 'Avanzado: top sets a RIR 1-2 y drop-set en el tríceps.'),
+      bloques: [
+        bWarmHinge(c),
+        B(null, [['Romanian Deadlift', pira(8, 6, P(c, ['2x6', '2x6', '3x5']), '1x8', '3110', P(c, ['1-2', '1-2', '0-1']))]], '3:00',
+          'Sobrecarga del glúteo mayor y los isquiosurales en rango largo: el peso muerto rumano combina tensión mecánica alta con estiramiento bajo carga, el estímulo que mejor se asocia con el crecimiento de la cadena posterior.',
+          ['SET-UP: Barra pegada a los muslos, cadera hacia atrás hasta sentir los isquios tensos y espalda neutra; bajá hasta debajo de la rodilla sin perder la columna.',
+           'TOP SET: ' + (el ? 'Tres series de cinco a RIR 0-1; cortá la serie si la espalda pierde la posición.' : 'Dos series de seis a RIR 1-2.') + ' Cerrá con una serie de back-off.',
+           'AGARRE: Si el agarre limita antes que la cadena posterior, usá straps solo en las series pesadas.', RAMPA]),
+        B(null, [['Barbell Hip Thrust', dose(4, '8-10', '2012', P(c, [1, 1, '0-1']))]], '2:00',
+          'Máxima activación del glúteo mayor en rango acortado: el hip thrust genera mayor actividad del glúteo que la sentadilla en la fase de bloqueo de cadera y complementa la bisagra en rango largo del rumano.',
+          ['SET-UP: Espalda alta apoyada en el banco, barra sobre la cadera con almohadilla, pies a la anchura de la cadera y tibias verticales arriba.',
+           'EJECUCIÓN: Subí en dos tiempos con el mentón hacia el pecho, sostené dos segundos arriba con el glúteo contraído y bajá en control.',
+           'ERROR FRECUENTE: Si la zona lumbar se arquea arriba, estás compensando; bajá la carga y cerrá la costilla.']),
+        B('Empuje vertical y remo unilateral · Biset en el banco',
+          [['Seated Dumbbell Shoulder Press', dose(4, '8-10', '3010', 1)], ['Single-Arm Dumbbell Row', dose(4, '10-12', '2011', 1)]], '2:00',
+          'Empuje vertical para deltoides y tríceps junto con tracción unilateral para el dorsal: los dos en la misma zona de mancuernas, con un único banco, para mantener la densidad sin cruzar el salón.',
+          ['PRESS DE HOMBROS: Respaldo casi vertical, codos delante de la línea del torso y bajá hasta que las mancuernas queden a la altura de las orejas.',
+           'REMO UNILATERAL: Una mano y una rodilla en el banco, tirá el codo hacia la cadera y bajá en dos segundos; diez a doce repeticiones por lado.']),
+        B('Brazos en la torre · Biset bíceps y tríceps',
+          [['Cable Biceps Curl', dose(3, '10-12', '3010', 1, el ? 'Myo-reps' : '')], ['Rope Triceps Pushdown', dose(3, '12-15', '2011', 0, 'Drop-set')]], '75s',
+          'Bíceps y tríceps en la misma estación de la torre: la polea mantiene tensión constante en todo el recorrido, algo que las mancuernas no dan en la parte baja del movimiento.',
+          ['CURL: Codos pegados al torso, subí sin balancear y bajá en tres segundos.',
+           'PUSHDOWN: Codos fijos a los costados, abrí la cuerda abajo y sostené un segundo con el tríceps contraído.',
+           DROP, el ? MYO : '']),
+        B(null, [['Cable Crunch', dose(3, '12-15', '3011', 1)]], '60s',
+          'Flexión de tronco con carga en rango largo para el recto abdominal: la polea permite sobrecarga progresiva medible, algo que el abdominal en el piso no da.',
+          ['EJECUCIÓN: De rodillas frente a la polea alta, redondeá la columna llevando los codos a las rodillas y mantené la cadera quieta.',
+           tecTxt(c) + ' ' + SEMANAS])
+      ] };
+  }
+  function fb3c(c){
+    var el = c.lv === 2;
+    return { titulo: 'Full-Body C · Cuádriceps, unilateral y tracción en polea', nombre: 'Full-Body C · Cuádriceps & Tracción',
+      foco: 'Día de volumen de piernas con Hack Squat como eje y unilateral en las mancuernas, empuje y remo de pie en la torre y hombro posterior y lateral con mancuernas. ' + (el ? 'Élite: top sets a RIR 0-1 y dos técnicas de intensidad.' : 'Avanzado: top sets a RIR 1-2 y una técnica de intensidad.'),
+      bloques: [
+        bWarmLower(c),
+        B(null, [['Hack Squat', pira(8, 6, P(c, ['2x6', '2x6', '3x6']), '1x10', '3110', P(c, ['1-2', '1-2', '0-1']))]], '2:30',
+          'Hipertrofia del cuádriceps con la columna descargada: el hack squat permite llevar el cuádriceps al fallo técnico con tensión continua y sin la demanda del tronco que limita a la sentadilla libre.',
+          ['POSICIÓN: Pies bajos y juntos para sumar cuádriceps, rodillas hacia adelante y bajada de tres segundos hasta el máximo rango controlable.',
+           'TOP SET: ' + (el ? 'Tres series de seis a RIR 0-1.' : 'Dos series de seis a RIR 1-2.') + ' Cerrá con una serie de back-off de diez repeticiones.', RAMPA]),
+        B('Unilateral en la zona de mancuernas · Biset',
+          [['Reverse Lunge', dose(P(c, [3, 3, 4]), '8-10', '3010', 1)], ['Single-Leg RDL', dose(P(c, [3, 3, 4]), '8-10', '3011', 1)]], '2:00',
+          'Encadenar el empuje de cuádriceps y glúteo con la bisagra a una pierna: la fuerza unilateral corrige asimetrías y suma estímulo de glúteo medio y estabilizadores de cadera.',
+          ['ZANCADA INVERSA: Paso largo hacia atrás, torso levemente inclinado para sumar glúteo y bajada de tres segundos; ocho a diez repeticiones por pierna.',
+           'PESO MUERTO A UNA PIERNA: Cadera cuadrada, rodilla de apoyo apenas flexionada y la pierna libre en línea con el torso; la pierna débil primero.']),
+        B('Empuje y remo de pie en la torre · Biset antagonista',
+          [['Standing Cable Chest Press', dose(P(c, [3, 3, 4]), '10-12', '2011', 1)], ['Standing High Cable Row', dose(P(c, [3, 3, 4]), '10-12', '2012', 1)]], '90s',
+          'Empuje y tracción en la misma torre, con la polea manteniendo tensión constante en todo el recorrido y el tronco como estabilizador: pares antagonistas sin cambiar de estación.',
+          ['PRESS DE PIE: Un pie adelantado para estabilizarte, codos a unos 45 grados y extensión completa sin bloquear con tensión.',
+           'REMO ALTO: Tirá los codos hacia atrás con las escápulas juntas y pausa de un segundo; torso quieto.']),
+        B('Hombro lateral y posterior · Biset de mancuernas',
+          [['Dumbbell Lateral Raises', dose(3, '12-15', '2011', 0, el ? 'Drop-set' : '')], ['Rear Delt Dumbbell Flyes', dose(3, 15, '2111', 0, 'Myo-reps')]], '75s',
+          'Los dos deltoides que más aportan al volumen del hombro, entrenados con la misma mancuerna liviana y en la misma zona: trabajo de alta repetición cerca del fallo para sumar volumen efectivo con poca fatiga sistémica.',
+          ['ELEVACIÓN LATERAL: Inclinación leve del torso hacia adelante, codos flexionados y subí en arco hasta la altura del hombro.',
+           'PÁJARO: Torso paralelo al piso, codos hacia afuera y sin impulso; pausa de un segundo arriba.',
+           el ? DROP + ' ' + MYO : MYO]),
+        bCoreMat(c, ['Ab Wheel', dose(3, '8-12', '3010', 1), 'RUEDA ABDOMINAL: Pelvis en retroversión y costillas abajo; extendé solo hasta donde mantengas la zona lumbar neutra.'],
+                    ['Hollow Body Hold', cdose(3, '25s', 8), 'HOLLOW BODY: Lumbar pegada al piso, brazos y piernas extendidos y sostené el tiempo indicado.'],
+                    tecTxt(c) + ' ' + SEMANAS)
+      ] };
+  }
+
+  /* ---------- 3 · sesiones Full-Body de 4 días ---------- */
+  function fb4a(c){
+    var el = c.lv === 2;
+    return { titulo: 'Full-Body A · Sentadilla y empuje horizontal', nombre: 'Full-Body A · Sentadilla & Press',
+      foco: 'Primer día de la semana: Back Squat pesado, empuje y remo horizontal en el banco plano, extensión de cuádriceps al fallo y hombro con tríceps en la torre. ' + (el ? 'Élite: top sets a RIR 0-1 y dos técnicas de intensidad.' : 'Avanzado: top sets a RIR 1-2 y drop-set en la extensión.'),
+      bloques: [
+        bWarmLower(c),
+        B(null, [['Back Squat', pira(8, 6, P(c, ['2x5', '2x5', '3x4']), '1x8', '3010', P(c, ['1-2', '1-2', '0-1']))]], '3:00',
+          'Fuerza máxima y tensión mecánica en el patrón de sentadilla: los top sets pesados con descanso completo maximizan el reclutamiento de alto umbral y sostienen el estímulo de hipertrofia de cuádriceps y glúteo.',
+          ['SET-UP: Barra baja en el trapecio, pies a la anchura de los hombros y profundidad hasta que el muslo pase la horizontal.',
+           'TOP SET: ' + (el ? 'Tres series de cuatro a RIR 0-1; si la velocidad cae o la rodilla colapsa, la serie termina.' : 'Dos series de cinco a RIR 1-2.') + ' Cerrá con una serie de back-off.', RAMPA]),
+        B('Empuje y remo en banco plano · Biset antagonista',
+          [['Flat Dumbbell Press', dose(4, '8-10', '3010', P(c, [1, 1, '0-1']))], ['Flat Bench Dumbbell Row', dose(4, '10-12', '2012', 1)]], '2:00',
+          'Pecho y espalda alta alternados en el mismo banco con el rango completo de cada ejercicio: el par antagonista mantiene la fuerza de ambos y comprime el tiempo de sesión.',
+          ['PRESS PLANO: Escápulas retraídas y deprimidas, pies firmes y bajada de tres segundos hasta el estiramiento del pecho.',
+           'REMO EN BANCO: Pecho apoyado, las dos mancuernas al mismo tiempo y los codos hacia la cadera; pausa de un segundo arriba.']),
+        B(null, [['Leg Extension', dose(3, '12-15', '2111', 0, el ? 'Myo-reps' : 'Drop-set')]], '90s',
+          'Aislamiento del cuádriceps en rango largo y a fallo: tras el básico pesado, la extensión agrega volumen efectivo al recto femoral sin sumar carga axial.',
+          ['EJECUCIÓN: Pausa de un segundo arriba con el cuádriceps contraído; la última serie va al fallo.',
+           el ? MYO : DROP]),
+        B('Hombro y tríceps en la torre · Biset',
+          [['Cable Lateral Raise', dose(3, '12-15', '2011', 0)], ['Rope Triceps Pushdown', dose(3, '12-15', '2011', 0, el ? 'Drop-set' : '')]], '75s',
+          'Deltoides lateral y tríceps en la misma torre, con la polea como fuente de tensión constante: mucho volumen de aislamiento en poco tiempo y sin cambiar de lugar.',
+          ['ELEVACIÓN LATERAL: Codo levemente flexionado y subí hasta la altura del hombro; la mano nunca por encima del codo.',
+           'PUSHDOWN: Codos fijos a los costados y pausa de un segundo abajo.', el ? DROP : 'SIN TÉCNICA ACÁ: La técnica de hoy está en la extensión de cuádriceps.']),
+        B(null, [['Cable Crunch', dose(3, '12-15', '3011', 1)]], '60s',
+          'Flexión de tronco con carga progresiva en rango largo para el recto abdominal.',
+          ['EJECUCIÓN: De rodillas frente a la polea alta, redondeá la columna llevando los codos a las rodillas; la cadera no se mueve.',
+           tecTxt(c) + ' ' + SEMANAS])
+      ] };
+  }
+  function fb4b(c){
+    var el = c.lv === 2;
+    return { titulo: 'Full-Body B · Cadena posterior y tracción', nombre: 'Full-Body B · Posterior & Tracción',
+      foco: 'Romanian Deadlift pesado, jalón vertical y remo sentado como tracción doble en dos estaciones separadas, curl femoral y brazos en la zona de mancuernas. ' + (el ? 'Élite: top sets a RIR 0-1 y dos técnicas de intensidad.' : 'Avanzado: top sets a RIR 1-2 y drop-set en el curl femoral.'),
+      bloques: [
+        bWarmHinge(c),
+        B(null, [['Romanian Deadlift', pira(8, 6, P(c, ['2x6', '2x6', '3x5']), '1x8', '3110', P(c, ['1-2', '1-2', '0-1']))]], '3:00',
+          'Sobrecarga del glúteo mayor y los isquiosurales en rango largo: el peso muerto rumano combina tensión mecánica alta con estiramiento bajo carga.',
+          ['SET-UP: Barra pegada a los muslos, cadera hacia atrás hasta sentir los isquios tensos y espalda neutra.',
+           'TOP SET: ' + (el ? 'Tres series de cinco a RIR 0-1.' : 'Dos series de seis a RIR 1-2.') + ' Cerrá con una serie de back-off.', RAMPA]),
+        B(null, [['Wide-Grip Lat Pulldown', dose(4, '8-10', '2111', P(c, [1, 1, '0-1']))]], '2:00',
+          'Tracción vertical con carga alta en el jalón: dorsal ancho y redondo mayor en rango largo, con el agarre ancho como base de la anchura de espalda.',
+          ['EJECUCIÓN: Tirá del pecho hacia la barra con las escápulas deprimidas y los codos al piso; vuelta en dos segundos hasta extensión completa.',
+           'CARGA: Si el torso se balancea, bajá el peso; el dorsal tiene que hacer el trabajo.']),
+        B('Remo sentado y face pull · Biset en el asiento',
+          [['Seated Cable Row', dose(4, '10-12', '2012', 1)], ['Seated Cable Face Pull', dose(4, 15, '2111', 1)]], '90s',
+          'Tracción horizontal para el espesor de espalda seguida de deltoides posterior y trapecio inferior desde el mismo asiento de la polea: sin cambiar de lugar ni de agarre largo.',
+          ['REMO SENTADO: Pecho alto, tirá los codos hacia la cadera y pausa de un segundo con las escápulas juntas.',
+           'FACE PULL SENTADO: Tirá hacia la frente con los codos altos y rotá hacia afuera al final.']),
+        B(null, [['Lying Leg Curl', dose(3, '10-12', '3011', 0, el ? 'Myo-reps' : 'Drop-set')]], '90s',
+          'Isquiosurales en flexión de rodilla: el curl femoral completa el trabajo del rumano, que carga la cadera, con el isquio en acortamiento y tensión continua.',
+          ['EJECUCIÓN: Cadera pegada al banco, subí sin elevar la pelvis y bajá en tres segundos.', el ? MYO : DROP]),
+        B('Brazos en la zona de mancuernas · Biset',
+          [['Incline Dumbbell Curl', dose(3, '10-12', '3010', 1, el ? 'Drop-set' : '')], ['Overhead Dumbbell Triceps Extension', dose(3, '10-12', '3010', 1)]], '75s',
+          'Bíceps en posición estirada y tríceps con el brazo por encima de la cabeza: las dos posiciones de mayor estiramiento muscular, que son las que más hipertrofia aportan por ejercicio.',
+          ['CURL INCLINADO: Banco a 45 grados, brazos colgando atrás del torso; subí sin balancear.',
+           'EXTENSIÓN TRAS NUCA: Un solo codo bien cerrado, bajá hasta el máximo estiramiento y subí sin abrir los codos.',
+           (el ? DROP + ' ' : '') + tecTxt(c) + ' ' + SEMANAS])
+      ] };
+  }
+  function fb4c(c){
+    var el = c.lv === 2;
+    return { titulo: 'Full-Body C · Glúteo y empuje vertical', nombre: 'Full-Body C · Glúteo & Press vertical',
+      foco: 'Barbell Hip Thrust pesado como eje, empuje vertical y remo supino en el banco, unilateral de pierna y trabajo de cadera lateral en una sola máquina. ' + (el ? 'Élite: top sets a RIR 0-1 y dos técnicas de intensidad.' : 'Avanzado: top sets a RIR 1-2 y Myo-reps en la abducción.'),
+      bloques: [
+        bWarmLower(c),
+        B(null, [['Barbell Hip Thrust', pira(10, 8, P(c, ['2x8', '2x8', '3x6']), '1x12', '2012', P(c, ['1-2', '1-2', '0-1']))]], '2:30',
+          'Máxima activación del glúteo mayor en rango acortado: el hip thrust con pirámide de carga combina tensión mecánica y estímulo específico del glúteo con muy poca carga axial.',
+          ['SET-UP: Espalda alta apoyada en el banco, barra sobre la cadera con almohadilla y tibias verticales arriba.',
+           'EJECUCIÓN: Subí con el mentón hacia el pecho, sostené dos segundos arriba y bajá en control; si la zona lumbar se arquea, bajá la carga.',
+           'TOP SET: ' + (el ? 'Tres series de seis a RIR 0-1.' : 'Dos series de ocho a RIR 1-2.') + ' Cerrá con una serie de back-off.', RAMPA]),
+        B('Empuje vertical y remo supino · Biset en el banco',
+          [['Seated Dumbbell Shoulder Press', dose(4, '8-10', '3010', 1)], ['Supinated Dumbbell Row', dose(4, '10-12', '2011', 1)]], '2:00',
+          'Empuje vertical para deltoides y tríceps junto con un remo de agarre supino que suma bíceps y dorsal bajo: todo en la zona de mancuernas y con un solo banco.',
+          ['PRESS DE HOMBROS: Respaldo casi vertical y codos delante de la línea del torso; bajá hasta la altura de las orejas.',
+           'REMO SUPINO: Palmas hacia arriba, codos pegados al tronco y tirá hacia la cadera; pausa de un segundo.']),
+        B(null, [['Bulgarian Split Squat', dose(P(c, [3, 3, 4]), '8-10', '3010', 1)]], '2:00',
+          'Fuerza unilateral de cuádriceps y glúteo en rango largo: la sentadilla búlgara iguala o supera a la bilateral en estímulo y corrige asimetrías entre piernas.',
+          ['POSICIÓN: Pie trasero en el banco, torso levemente inclinado hacia adelante para sumar glúteo y bajada de tres segundos; ocho a diez repeticiones por pierna.',
+           'PIERNA DÉBIL PRIMERO: Empezá por la más débil e igualá las repeticiones en la otra.']),
+        B('Cadera lateral en una sola máquina · Biset abducción y aducción',
+          [['Hip Abduction Machine', dose(3, '15-20', '2111', 0, 'Myo-reps')], ['Hip Adduction Machine', dose(3, '15-20', '2111', 1, el ? 'Drop-set' : '')]], '60s',
+          'Glúteo medio y aductores en la misma máquina de cadera lateral, solo cambiando el tope: estabilizadores de la pelvis con alta repetición y estrés metabólico, sin cruzar el salón.',
+          ['ABDUCCIÓN: Respaldo apoyado y tronco quieto; abrí con control y pausa de un segundo afuera.',
+           'ADUCCIÓN: Cerrá sin rebotar y volvé en tres segundos hasta el estiramiento.', MYO, el ? DROP : '']),
+        bCoreMat(c, ['Front Plank', cdose(3, '40s', 7), 'PLANCHA FRONTAL: Pelvis neutra y glúteos apretados; si la cadera cae, cortá la serie.'],
+                    ['Bird Dog', dose(3, '10-12', '3121', 2), 'BIRD DOG: Brazo y pierna contrarios extendidos sin rotar la pelvis; pausa de dos segundos.'],
+                    tecTxt(c) + ' ' + SEMANAS)
+      ] };
+  }
+  function fb4d(c){
+    var el = c.lv === 2;
+    return { titulo: 'Full-Body D · Cuádriceps, unilateral y torre', nombre: 'Full-Body D · Hack Squat & Torre',
+      foco: 'Hack Squat pesado, unilateral en la zona de mancuernas, empuje y remo de pie en la torre y un triset de pull-over, bíceps y tríceps sin salir de la torre. ' + (el ? 'Élite: top sets a RIR 0-1 y dos técnicas de intensidad.' : 'Avanzado: top sets a RIR 1-2 y drop-set en el tríceps.'),
+      bloques: [
+        bWarmLower(c),
+        B(null, [['Hack Squat', pira(8, 6, P(c, ['2x6', '2x6', '3x6']), '1x10', '3110', P(c, ['1-2', '1-2', '0-1']))]], '2:30',
+          'Hipertrofia del cuádriceps con la columna descargada: el hack squat permite llevar el cuádriceps al fallo técnico con tensión continua.',
+          ['POSICIÓN: Pies bajos y juntos, rodillas hacia adelante y bajada de tres segundos hasta el máximo rango controlable.',
+           'TOP SET: ' + (el ? 'Tres series de seis a RIR 0-1.' : 'Dos series de seis a RIR 1-2.') + ' Cerrá con una serie de back-off de diez repeticiones.', RAMPA]),
+        B('Unilateral en la zona de mancuernas · Biset',
+          [['Reverse Lunge', dose(P(c, [3, 3, 4]), '8-10', '3010', 1)], ['Single-Leg RDL', dose(P(c, [3, 3, 4]), '8-10', '3011', 1)]], '2:00',
+          'Empuje de cuádriceps y glúteo seguido de bisagra a una pierna: fuerza unilateral que corrige asimetrías y suma glúteo medio y estabilizadores.',
+          ['ZANCADA INVERSA: Paso largo hacia atrás y bajada de tres segundos; ocho a diez repeticiones por pierna.',
+           'PESO MUERTO A UNA PIERNA: Cadera cuadrada y rodilla de apoyo apenas flexionada; la pierna débil primero.']),
+        B('Empuje y remo de pie en la torre · Biset antagonista',
+          [['Standing Cable Chest Press', dose(P(c, [3, 3, 4]), '10-12', '2011', 1)], ['Standing High Cable Row', dose(P(c, [3, 3, 4]), '10-12', '2012', 1)]], '90s',
+          'Empuje y tracción en la misma torre con tensión constante de la polea y el tronco como estabilizador.',
+          ['PRESS DE PIE: Un pie adelantado y codos a unos 45 grados del tronco.', 'REMO ALTO: Tirá los codos hacia atrás con las escápulas juntas; torso quieto.']),
+        B('Pull-over, bíceps y tríceps · Triset en la torre',
+          [['Straight-Arm Cable Pulldown', dose(3, 12, '2111', 1)], ['Cable Biceps Curl', dose(3, '10-12', '3010', 1, el ? 'Myo-reps' : '')], ['Rope Triceps Pushdown', dose(3, '12-15', '2011', 0, 'Drop-set')]], '90s',
+          'Dorsal ancho en rango largo con los brazos extendidos y cierre de bíceps y tríceps en la misma torre: tres ejercicios consecutivos que no mueven ni un accesorio.',
+          ['PULL-OVER EN POLEA: Brazos casi rectos, llevá la barra a los muslos con el dorsal y sostené un segundo.',
+           'CURL Y PUSHDOWN: Codos fijos al torso; el curl sube sin balanceo y el pushdown abre la cuerda abajo.', DROP, el ? MYO : '']),
+        B(null, [['Ab Wheel', dose(3, '8-12', '3010', 1)]], '60s',
+          'Anti-extensión del tronco con rango largo y palanca máxima: el core trabaja como estabilizador del movimiento completo.',
+          ['RUEDA ABDOMINAL: Pelvis en retroversión y costillas abajo; extendé solo hasta donde mantengas la zona lumbar neutra.',
+           tecTxt(c) + ' ' + SEMANAS])
+      ] };
+  }
+
+  /* ---------- 4 · catálogo ---------- */
+  var NOTA3 = 'Full-Body de tres días para mujer avanzada: tres sesiones distintas (A sentadilla y empuje, B cadena posterior y brazos, C cuádriceps y tracción en polea), cada una con un básico pesado en top sets, bisets antagonistas dentro de una misma estación y aislamientos con técnicas de intensidad dosificadas. ';
+  var NOTA4 = 'Full-Body de cuatro días para mujer avanzada: cuatro sesiones distintas (A sentadilla y press, B cadena posterior y tracción, C glúteo y empuje vertical, D hack squat y torre), con básico pesado en top sets, bisets antagonistas dentro de una misma estación y técnicas de intensidad dosificadas. ';
+  var CATALOGO = [
+    { id: 'fb3_f_av', dias: 3, lv: 1, niv: 'avanzado', nivLb: 'Avanzado', sesiones: [fb3a, fb3b, fb3c], nota: NOTA3 + 'Avanzado: top sets de dos series a RIR 1-2 y una técnica de intensidad por sesión.' },
+    { id: 'fb3_f_el', dias: 3, lv: 2, niv: 'competitivo', nivLb: 'Élite', sesiones: [fb3a, fb3b, fb3c], nota: NOTA3 + 'Élite: top sets de tres series a RIR 0-1 y dos técnicas de intensidad por sesión.' },
+    { id: 'fb4_f_av', dias: 4, lv: 1, niv: 'avanzado', nivLb: 'Avanzado', sesiones: [fb4a, fb4b, fb4c, fb4d], nota: NOTA4 + 'Avanzado: top sets de dos series a RIR 1-2 y una técnica de intensidad por sesión.' },
+    { id: 'fb4_f_el', dias: 4, lv: 2, niv: 'competitivo', nivLb: 'Élite', sesiones: [fb4a, fb4b, fb4c, fb4d], nota: NOTA4 + 'Élite: top sets de tres series a RIR 0-1 y dos técnicas de intensidad por sesión.' }
+  ];
+  CATALOGO.forEach(function(E){ E.nombre = 'Full-Body ' + E.dias + ' días · Mujer · ' + E.nivLb; });
+  function porId(id){ return CATALOGO.filter(function(E){ return E.id === id; })[0] || null; }
+
+  /* ---------- 5 · armado (mismo importador que las demás plantillas del sistema) ---------- */
+  function sesionesDe(E){ var c = { lv: E.lv, f: true, dias: E.dias }; return E.sesiones.map(function(fn){ return fn(c); }); }
+  function armarDias(E){
+    var ses = sesionesDe(E), texto = ses.map(function(s, i){ return txtDia(i + 1, s); }).join('\n\n');
+    var r = parsearImportacion(texto, true);
+    var SHORT = E.dias === 3 ? ['LUN', 'MIÉ', 'VIE'] : ['LUN', 'MAR', 'JUE', 'VIE'];
+    var dias = r.dias.map(function(dia, i){
+      var d = newDay(i), s = ses[i] || {};
+      d.id = 'dia' + (i + 1); d.short = SHORT[i] || ('DÍA ' + (i + 1)); d.label = s.nombre || ('Sesión ' + (i + 1)); d.title = dia.titulo || s.titulo || ('Día ' + (i + 1));
+      d.focusText = dia.foco || '';
+      d.metaChips = ['🏋️‍♀️ Full-Body ' + E.dias + ' días', '🎚️ Mujer · ' + E.nivLb, '🧬 ' + (s.nombre || '')];
+      d.summary = dia.bloques.length + ' bloques';
+      d.bloques = dia.bloques.map(function(b){ return crearBloqueImportado(b, false); });
+      return d;
+    });
+    armarDias.avisos = r.avisos || [];
+    if(r.dias.length !== E.sesiones.length) console.warn('fullbody: ' + E.nombre + ' esperaba ' + E.sesiones.length + ' días y hay ' + r.dias.length);
+    try{ if(window.CoachBaseJP && typeof window.CoachBaseJP.proyectar === 'function') window.CoachBaseJP.proyectar({ dias: dias, meso: (typeof defaultWeeks === 'function' ? defaultWeeks() : []) }, E.niv); }catch(e){ console.warn('fullbody proyectar', e); }
+    return dias;
+  }
+  function ficha(E, dias){
+    return {
+      id: E.id, ic: '🏋️‍♀️', tipo: 'base', sbSys: true, sbSysVer: VER, fbSys: true, fbId: E.id,
+      nombre: E.nombre, disc: 'hiper', niv: E.niv, genero: 'f', freq: E.dias, tab: 'bb', carpeta: 'base',
+      notas: E.nota + ' S1 base de carga, S2-S3 sobrecarga en kilos con el mismo RIR y S4 descarga activa; cada bloque trae su fundamento fisiológico y sus pautas.',
+      creado: 'Plantilla del sistema', usos: 0, dias: dias, meso: (typeof defaultWeeks === 'function' ? defaultWeeks() : []),
+      meta: { mesoDisc: 'hiper', mesoNivel: E.niv, mesoName: E.nombre, mesoObjetivo: 'Hipertrofia y fuerza · Full-Body ' + E.dias + ' días · ' + E.nivLb,
+              mesoTexto: 'Sobrecarga progresiva con top sets, tempo controlado y técnicas de intensidad dosificadas. Ondulación de la semana: S1 base de carga, S2-S3 sobrecarga, S4 descarga activa.' }
+    };
+  }
+
+  /* ---------- 6 · siembra e hidratación (los días no se guardan: se regeneran desde este código) ---------- */
+  function hidratar(){
+    var n = 0;
+    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
+      if(!r || !r.fbSys || (r.dias && r.dias.length)) return;
+      var E = porId(r.id); if(!E) return;
+      try{ r.dias = armarDias(E); n++; }catch(e){ console.warn('fullbody hidratar', r.id, e); }
+    });
+    return n;
+  }
+  function sembrar(forzar){
+    if(typeof S === 'undefined' || !S) return 0;
+    if(!Array.isArray(S.banco)) S.banco = [];
+    S.ui = S.ui || {};
+    var primera = (S.ui.fbSeed || 0) < VER, n = 0;
+    CATALOGO.forEach(function(E){
+      var ya = S.banco.filter(function(x){ return x.id === E.id; })[0];
+      if(ya){
+        if((ya.sbSysVer || 0) < VER || !ya.fbSys){ var u = ficha(E, armarDias(E)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+        return;
+      }
+      if(!primera && !forzar) return;      /* si la coach la borró a propósito no vuelve sola (salvo CoachFullBody.sembrar(true)) */
+      S.banco.unshift(ficha(E, armarDias(E))); n++;
+    });
+    S.ui.fbSeed = VER;
+    if(n){ try{ save(); }catch(e){} }
+    return n;
+  }
+
+  /* ---------- 7 · validación: nombres contra la biblioteca y estación fija por bloque ---------- */
+  function validar(){
+    var out = { planes: 0, bloques: 0, ejercicios: 0, sinResolver: [], estaciones: [], formatoViejo: 0, avisos: [] };
+    CATALOGO.forEach(function(E){
+      var dias = armarDias(E); out.planes++;
+      (armarDias.avisos || []).forEach(function(a){ out.avisos.push(E.id + ': ' + a); });
+      dias.forEach(function(d, di){ (d.bloques || []).forEach(function(b, bi){
+        out.bloques++;
+        if(!(b.tipo === 'list' && b.sportsPizarra)) out.formatoViejo++;
+        (b.items || []).forEach(function(l){
+          var m = /^[A-Fa-f]\d{1,2}[.):]\s*(.+?)(?:\s+[—–]\s+.*)?$/.exec(String(l).trim());
+          if(m){ out.ejercicios++; if(!jpExDeNombre(m[1])) out.sinResolver.push(E.id + ' D' + (di + 1) + ' B' + (bi + 1) + ': ' + m[1]); }
+        });
+        jpLogisticaBloque(b).forEach(function(i){ out.estaciones.push(E.id + ' D' + (di + 1) + ' B' + (bi + 1) + ': ' + i.msg); });
+      }); });
+    });
+    return out;
+  }
+
+  function arranque(){
+    try{ hidratar(); sembrar(false); }catch(e){ console.warn('banco fullbody', e); }
+    try{ if(typeof renderBanco === 'function' && S.ui && S.ui.view === 'banco') renderBanco(); }catch(e){}
+  }
+  var _go = window.go;
+  if(typeof _go === 'function'){
+    window.go = function(v){ var r = _go.apply(this, arguments); if(v === 'banco') setTimeout(arranque, 200); return r; };
+  }
+  window.CoachFullBody = { catalogo: CATALOGO, sembrar: sembrar, hidratar: hidratar, armarDias: armarDias, porId: porId, ficha: ficha, validar: validar, version: VER,
+    texto: function(id){ var E = porId(id); return E ? sesionesDe(E).map(function(s, i){ return txtDia(i + 1, s); }).join('\n\n') : ''; } };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arranque, 800); });
+  else setTimeout(arranque, 800);
+})();
+</script>
+<!--/SB-FB1-->
 
 <!--BK-HUD-->
 <style>
