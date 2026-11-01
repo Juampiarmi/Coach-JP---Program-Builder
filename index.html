@@ -2566,6 +2566,8 @@ const getAth = id => S.athletes.find(a => a.id === id) || null;
 const getEx  = id => S.exercises.find(e => e.id === id) || null;
 const active = () => getAth(S.activeId);
 const fullName = a => a ? ((a.nombre||'') + ' ' + (a.apellido||'')).trim() : '';
+/* orden A–Z (por nombre y apellido, sin distinguir tildes ni mayúsculas) para todo desplegable de alumnos */
+const jpAthAZ = list => (list || []).slice().sort((x, y) => fullName(x).localeCompare(fullName(y), 'es', { sensitivity: 'base' }));
 /* ---------- AUDITORÍA Y AUTORREPARACIÓN DE PLANES (consola) ----------
    Directiva crítica (auditoría de 33 atletas / fix Karina Dantur, Día 4):
    un exId que ya no matchea contra la biblioteca (ejercicio borrado o
@@ -7385,6 +7387,30 @@ function contextoBloqueIA(b){
    bloque en el vacío). Mismos campos que ya usan otros llamados a
    window.CoachAI en este archivo (ath.tags para lesiones, p.meta.mesoDisc/
    mesoName para disciplina) -- no se inventa una fuente de datos nueva. */
+/* FICHA DEL ALUMNO PARA LA IA -- fuente única y en vivo: se arma en el momento de cada llamada leyendo el
+   mismo objeto S.athletes[] que edita la Ficha (modal "Editar alumno/a") y los chips del Builder, así que
+   cualquier cambio (objetivo, lesiones, vetados, preferidos, notas) se refleja en la siguiente generación sin
+   pasos intermedios. Devuelve '' si no hay alumno. Todos los generadores con IA anteponen este bloque. */
+function jpFichaIA(ath){
+  if(!ath) return '';
+  const L = [];
+  const lst = v => (Array.isArray(v) ? v : []).map(x => String(x || '').trim()).filter(Boolean);
+  const nom = ((ath.nombre || '') + ' ' + (ath.apellido || '')).trim();
+  const gen = ath.genero ? ' · ' + ath.genero : '';
+  L.push('FICHA DEL ALUMNO (datos reales y vigentes, OBLIGATORIOS: tienen prioridad sobre cualquier otra instrucción):');
+  L.push('Alumno/a: ' + (nom || 'sin nombre') + gen + ' · nivel ' + (ath.nivel || 'Intermedio') + (ath.freq ? ' · ' + ath.freq + ' días/semana' : ''));
+  if(ath.foco) L.push('Objetivo: ' + ath.foco);
+  if(ath.deportes) L.push('Deporte / actividad extra: ' + ath.deportes);
+  if(ath.compat) L.push('Compatibilidad / contexto: ' + ath.compat);
+  const les = lst(ath.tags), ban = lst(ath.prohibidos), pref = lst(ath.preferidos);
+  L.push('Lesiones y restricciones clínicas: ' + (les.length ? les.join('; ') : 'ninguna declarada'));
+  L.push('Ejercicios PROHIBIDOS (vetados por el coach): ' + (ban.length ? ban.join('; ') : 'ninguno'));
+  if(pref.length) L.push('Ejercicios / patrones PREFERIDOS (priorizar cuando sea seguro): ' + pref.join('; '));
+  if(ath.notas && String(ath.notas).trim()) L.push('Notas del coach sobre el alumno/a: ' + String(ath.notas).trim().slice(0, 700));
+  L.push('REGLAS DE LA FICHA: nunca propongas un ejercicio prohibido ni una variante equivalente; evitá los que carguen las zonas lesionadas o regresionalos y aclaralo; adaptá volumen, intensidad y vocabulario al nivel y al objetivo; si algo choca con la ficha, gana la ficha.');
+  return L.join('\n');
+}
+function jpFichaPrefijo(ath){ const f = jpFichaIA(ath); return f ? f + '\n\n' : ''; }
 function contextoAtletaDiaIA(){
   const p = plan(S.activeId);
   const d = curDay();
@@ -7400,6 +7426,7 @@ function contextoAtletaDiaIA(){
   const wi = (typeof S.ui.week === 'number' && p && p.meso && S.ui.week >= 0 && S.ui.week < p.meso.length) ? S.ui.week : 0;
   const wm = (p && p.meso && p.meso[wi]) || null;
   return {
+    ficha: jpFichaIA(ath),
     disciplina: (p && p.meta && (p.meta.mesoName || p.meta.mesoDisc)) || '',
     focoDia: (d && (d.label || d.title)) || '',
     nivel: (ath && ath.nivel) || '',
@@ -7443,6 +7470,7 @@ async function nombrarBloqueConIA(bid, btn){
   const contextoLineas = [
     ad.disciplina ? 'Disciplina activa: ' + ad.disciplina : '',
     ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
+    ad.ficha || '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
     ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas del atleta: ' + ad.lesiones + ' -- el nombre NO debe contradecir ni ignorar esto (ej. no llamar "empuje pesado sin límites" a algo con antecedente de hombro).' : ''
   ].filter(Boolean).join('\n');
@@ -7539,6 +7567,7 @@ async function generarFocoDiaConIA(btn){
   const contextoLineas = [
     ad.disciplina ? 'Mesociclo: ' + ad.disciplina : '',
     ad.semana ? 'Semana activa del mesociclo: ' + ad.semana + ' -- el foco debe reflejar ese nivel de esfuerzo real (no genérico).' : '',
+    ad.ficha || '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
     ad.perfilCF ? 'Perfil técnico del atleta: ' + ad.perfilCF : '',
     ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el foco NO debe contradecir esto.' : ''
@@ -7595,6 +7624,7 @@ async function generarTipsPacingIA(bid, btn){
     ad.disciplina ? 'Disciplina activa: ' + ad.disciplina : '',
     ad.semana ? 'Semana activa del mesociclo: ' + ad.semana + ' -- el objetivo/tips deben reflejar ese nivel de esfuerzo real (no genérico).' : '',
     ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
+    ad.ficha || '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
     ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el pacing/objetivo NO debe contradecir esto.' : '',
     ad.perfilCF ? 'PERFIL TÉCNICO DEL ATLETA (cruzalo con los movimientos del bloque): ' + ad.perfilCF : '',
@@ -7669,6 +7699,7 @@ async function generarTipsSports(bid, btn){
     ad.disciplina ? 'Mesociclo: ' + ad.disciplina : '',
     ad.semana ? 'Semana activa del mesociclo: ' + ad.semana + ' -- el objetivo/tips deben reflejar ese nivel de esfuerzo real (no genérico).' : '',
     ad.focoDia ? 'Foco del día: ' + ad.focoDia : '',
+    ad.ficha || '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
     ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el objetivo/tips NO deben contradecir esto.' : '',
     b.tempo ? 'Tempo prescripto: ' + b.tempo : '',
@@ -46070,7 +46101,7 @@ function compile(ath){
 /* ---------- Vista Exportar ---------- */
 function renderExport(){
   const opts = '<option value="">— Elegir alumno/a —</option>' +
-    S.athletes.map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
+    jpAthAZ(S.athletes).map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
   const cur = $('#expAth').value || S.activeId || '';
   $('#expAth').innerHTML = opts; $('#expAth').value = cur;
 
@@ -47350,6 +47381,8 @@ document.addEventListener('DOMContentLoaded', init);
     if(ath.foco) L.push('Objetivo: ' + ath.foco);
     if(ath.deportes) L.push('Extra: ' + ath.deportes);
     if(ath.compat) L.push('Compatibilidad: ' + ath.compat);
+    if(ath.genero) L.push('Género: ' + ath.genero);
+    if(ath.notas && String(ath.notas).trim()) L.push('NOTAS DEL COACH SOBRE EL ALUMNO (obligatorias): ' + String(ath.notas).trim().slice(0, 700));
     if((ath.tags || []).length) L.push('LESIONES: ' + ath.tags.join('; '));
     if((ath.prohibidos || []).length) L.push('PROHIBIDOS: ' + ath.prohibidos.join('; '));
     if((ath.preferidos || []).length) L.push('PRIORIZAR: ' + ath.preferidos.join('; '));
@@ -48160,7 +48193,8 @@ document.addEventListener('DOMContentLoaded', init);
           PRESETS.map(P => '<button data-qp="' + P.id + '" data-b="' + bid + '" title="' + P.reps + ' reps · tempo ' + P.tempo + ' · ' + P.rest + 's">' + P.lb + '</button>').join('') +
           '<span class="qhint">' + (b.tipo === 'finisher' ? 'Ajusta el rango de reps' : 'Ajusta reps, tempo y descanso') + '</span>';
         const anchor = body.querySelector('.fields, .item, .picker');
-        body.insertBefore(bar, anchor || body.firstChild);
+        /* el ancla puede estar anidada (no ser hija directa de body): se inserta en su propio padre para no lanzar NotFoundError */
+        (anchor && anchor.parentNode ? anchor.parentNode : body).insertBefore(bar, anchor || body.firstChild);
       }
 
       /* buscador visual */
@@ -50644,8 +50678,8 @@ document.addEventListener('DOMContentLoaded', init);
       return p && (p.dias || []).some(d => (d.bloques || []).length);
     });
     const origenLista = conPlan.length ? conPlan : S.athletes;
-    const opts = S.athletes.map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
-    const optsOrigen = origenLista.map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
+    const opts = jpAthAZ(S.athletes).map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
+    const optsOrigen = jpAthAZ(origenLista).map(a => '<option value="' + a.id + '">' + esc(fullName(a)) + '</option>').join('');
     $('#dupFrom').innerHTML = optsOrigen; $('#dupTo').innerHTML = opts;
     if(haciaActivo && S.activeId && origenLista.some(a => a.id !== S.activeId)){
       $('#dupTo').value = S.activeId;
@@ -51367,13 +51401,16 @@ body{overflow-x:hidden}
 
   /* ============ A. BIBLIOTECA PAGINADA ============ */
   const PP = 24;
-  let libPage = 0, libSig = '';
+  /* carga por lotes ACUMULATIVA: libShown = cuántas tarjetas hay dibujadas; un lote nuevo se AGREGA al final,
+     no reemplaza la página (antes "Siguiente" cambiaba todo el contenido y subía el scroll → salto y recarga fantasma) */
+  let libShown = PP, libSig = '', libCache = [], libTotal = 0;
 
   window.renderLibrary = function(){
     const q = norm($('#exSearch').value), g = $('#fGrupo').value, eq = $('#fEquipo').value, vf = $('#fVideo').value;
     const sig = q + '|' + g + '|' + eq + '|' + vf + '|' + S.exercises.length + '|' + (window.libDiscSig || '') +
                 '|' + (typeof window.libVideoFiltro === 'function' ? 'nv' : '');
-    if(sig !== libSig){ libSig = sig; libPage = 0; }
+    const cambio = (sig !== libSig);
+    if(cambio){ libSig = sig; libShown = PP; }
 
     const list = S.exercises.filter(e => {
       if(g && e.grupo !== g) return false;
@@ -51387,20 +51424,17 @@ body{overflow-x:hidden}
       return true;
     }).sort((a, b) => a.es.localeCompare(b.es, 'es'));
 
-    const paginas = Math.max(1, Math.ceil(list.length / PP));
-    if(libPage >= paginas) libPage = paginas - 1;
-    const visto = list.slice(libPage * PP, libPage * PP + PP);
+    libTotal = list.length;
+    libShown = Math.max(PP, Math.min(libShown, list.length));
+    const visto = list.slice(0, libShown);
     const ath = active();
 
-    const nav = paginas > 1
-      ? '<div class="pg" style="grid-column:1/-1">' +
-          '<button data-lpage="' + (libPage - 1) + '"' + (libPage === 0 ? ' disabled' : '') + '>← Anterior</button>' +
-          '<span class="pgn">' + (libPage * PP + 1) + '–' + Math.min(list.length, libPage * PP + PP) + ' de ' + list.length + ' · pág. ' + (libPage + 1) + '/' + paginas + '</span>' +
-          '<button data-lpage="' + (libPage + 1) + '"' + (libPage >= paginas - 1 ? ' disabled' : '') + '>Siguiente →</button>' +
-        '</div>'
+    const nav = list.length > PP
+      ? '<div class="pg" id="libPg" style="grid-column:1/-1"><span class="pgn">' + libShown + ' de ' + list.length + (libShown >= list.length ? ' · fin de la lista' : '') + '</span>' +
+          (libShown < list.length ? '<button type="button" data-lmore="1">Cargar más ↓</button>' : '') + '</div>'
       : '';
 
-    $('#exGrid').innerHTML = (list.length ? visto.map(e => {
+    const arrHtml = visto.map(e => {
       const al = ath ? checkExercise(ath, e) : [];
       const w = worst(al);
       return '<div class="ex-card">' +
@@ -51430,13 +51464,35 @@ body{overflow-x:hidden}
           '</div>' +
         '</div>' +
       '</div>';
-    }).join('')
-      : '<div class="card" style="grid-column:1/-1"><div class="empty"><div class="big">🔍</div><h4>Sin resultados</h4><p>Probá con otro término o agregá el ejercicio a la biblioteca.</p><button class="btn gold" style="margin-top:14px" onclick="openEx()">➕ Añadir Ejercicio</button></div></div>') + nav;
+    });
+    const vacio = '<div class="card" style="grid-column:1/-1"><div class="empty"><div class="big">🔍</div><h4>Sin resultados</h4><p>Probá con otro término o agregá el ejercicio a la biblioteca.</p><button class="btn gold" style="margin-top:14px" onclick="openEx()">➕ Añadir Ejercicio</button></div></div>';
+    const grid = $('#exGrid');
+    const hijos = grid.querySelectorAll(':scope > .ex-card').length;
+    const sinCambios = !cambio && list.length > 0 && libCache.length > 0 && hijos === libCache.length &&
+      libCache.length <= arrHtml.length && libCache.every((h, i) => h === arrHtml[i]);
+    if(sinCambios){
+      /* lo ya dibujado no se toca (sin salto de scroll ni miniaturas recargadas): sólo se suman las tarjetas nuevas */
+      const viejo = document.getElementById('libPg'); if(viejo) viejo.remove();
+      grid.insertAdjacentHTML('beforeend', arrHtml.slice(libCache.length).join('') + nav);
+    } else {
+      const y = window.scrollY;
+      grid.innerHTML = (list.length ? arrHtml.join('') : vacio) + nav;
+      if(!cambio && y > 0) window.scrollTo(0, y);      /* un re-render sin cambio de filtro conserva la posición */
+    }
+    libCache = arrHtml;
 
     $('#exCount').textContent = list.length + ' ejercicios';
     $('#exVidCount').textContent = S.exercises.filter(e => e.videoId).length + ' con video';
     const pendEl = $('#exPendCount'); if(pendEl) pendEl.textContent = S.exercises.filter(e => !e.videoId).length + ' pendientes';
     $('#badgeEx').textContent = S.exercises.length;
+  };
+
+  /* siguiente lote (lo usan el botón «Cargar más» y el scroll infinito); devuelve true si agregó tarjetas */
+  window.jpLibCargarMas = function(){
+    if(libShown >= libTotal) return false;
+    libShown = Math.min(libTotal, libShown + PP);
+    renderLibrary();
+    return true;
   };
 
   /* ============ B. AUTOCOMPLETADO LOCAL DE PARÁMETROS ============ */
@@ -51663,13 +51719,7 @@ body{overflow-x:hidden}
   /* ============ C. MONTAJE ============ */
   function mount(){
     $('#exGrid').addEventListener('click', e => {
-      const pg = e.target.closest('[data-lpage]');
-      if(pg && !pg.disabled){
-        libPage = parseInt(pg.dataset.lpage, 10);
-        renderLibrary();
-        const top = document.querySelector('#v-biblioteca .card');
-        if(top) top.scrollIntoView({ behavior:'smooth', block:'nearest' });
-      }
+      if(e.target.closest('[data-lmore]')) window.jpLibCargarMas();
     });
     $('#dayPanel').addEventListener('click', e => {
       const m = e.target.closest('[data-magic]');
@@ -57138,11 +57188,21 @@ body.man-mode .gs-fab{right:318px}
       toast('🗂️ Plantilla actualizada');
     } else {
       const ath = active(), p = plan(ath.id);
-      banco().push(Object.assign({
+      const reg = Object.assign({
         id: uid('bk'), ic:'🗂️', creado: new Date().toLocaleDateString('es-AR'), usos: 0,
         dias: clone(p.dias), meso: clone(p.meso || []),
         meta: clone(p.meta || {})
-      }, datos));
+      }, datos);
+      const cf = reg.disc === 'crossfit' || (reg.meta && reg.meta.mesoDisc === 'crossfit');
+      if(!cf){
+        try{
+          if(typeof window.jpModernizarDia === 'function') reg.dias.forEach(d => window.jpModernizarDia(d.bloques, reg.niv));
+        }catch(eMod){ console.warn('plantilla: no se pudo modernizar la copia', eMod); }
+        const gx = String(ath.genero || '').toLowerCase();
+        const gm = /^f|fem|muj/.test(gx) ? 'f' : (/^m|mas|hom|var/.test(gx) ? 'm' : (/femenin/i.test(reg.nombre) ? 'f' : (/masculin/i.test(reg.nombre) ? 'm' : '')));
+        if(gm) reg.genero = gm;
+      }
+      banco().push(reg);
       toast('🗂️ Plantilla guardada en el banco');
     }
     save(); closeModal('mBank'); renderBanco();
@@ -57163,7 +57223,7 @@ body.man-mode .gs-fab{right:318px}
     asigId = id;
     $('#asigInfo').innerHTML = '<div class="alert info" style="padding:10px 12px"><span class="ic">🗂️</span><div><b>' + esc(r.nombre) + '</b>' +
       (r.dias || []).length + ' días · ' + esc(discLb(r.disc)) + ' · ' + esc(nivLb(r.niv)) + '</div></div>';
-    $('#asigAth').innerHTML = S.athletes.map(a => '<option value="' + a.id + '"' + (a.id === S.activeId ? ' selected' : '') + '>' +
+    $('#asigAth').innerHTML = jpAthAZ(S.athletes).map(a => '<option value="' + a.id + '"' + (a.id === S.activeId ? ' selected' : '') + '>' +
       esc(fullName(a)) + ' · ' + a.freq + ' días/sem</option>').join('');
     $('#asigLog').innerHTML = '';
     openModal('mBankAsig');
@@ -59233,7 +59293,7 @@ body.man-mode .gs-fab{right:318px}
       try{
         const ath = (typeof active === 'function') ? active() : null;
         const user =
-          'Bloque: "' + (b.titulo || 'Bloque') + '" (' + tipoBloque(b, inv.length) + ').' +
+          jpFichaPrefijo(ath) + 'Bloque: "' + (b.titulo || 'Bloque') + '" (' + tipoBloque(b, inv.length) + ').' +
           (b.subtitulo ? ' Subtítulo: ' + b.subtitulo + '.' : '') +
           (ath && ath.tags && ath.tags.length ? ' Antecedentes del alumno: ' + ath.tags.join(', ') + '.' : '') +
           '\nEjercicios del bloque, en orden de ejecución:\n' +
@@ -59959,7 +60019,7 @@ body.man-mode .gs-fab{right:318px}
 
   function abrir(){
     if(!S.athletes.length){ toast('Registrá al menos un alumno/a', 'warn'); go('alumnos'); return; }
-    $('#memAth').innerHTML = S.athletes.map(a =>
+    $('#memAth').innerHTML = jpAthAZ(S.athletes).map(a =>
       '<option value="' + a.id + '"' + (a.id === S.activeId ? ' selected' : '') + '>' + esc(fullName(a)) + '</option>').join('');
     $('#memVec').innerHTML = (CF().vectores || []).map(v =>
       '<option value="' + v.id + '">' + esc(v.lb) + '</option>').join('');
@@ -63531,7 +63591,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
     if(conIA){
       try{
-        const user = 'Alumno: ' + ((a.nombre || '') + ' ' + (a.apellido || '')).trim() +
+        const user = jpFichaPrefijo(a) + 'Alumno: ' + ((a.nombre || '') + ' ' + (a.apellido || '')).trim() +
           '. Frecuencia: ' + (a.freq || 4) + ' días. ' +
           (a.tags && a.tags.length ? 'Antecedentes: ' + a.tags.join(', ') + '. ' : '') +
           (a.prohibidos && a.prohibidos.length ? 'Ejercicios vetados: ' + a.prohibidos.join(', ') + '. ' : '') +
@@ -63978,7 +64038,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
     if(conIA){
       try{
-        const user = 'Sesión de bodybuilding: ' + (d.title || d.label || d.short || '') + '. ' +
+        const user = jpFichaPrefijo(a) + 'Sesión de bodybuilding: ' + (d.title || d.label || d.short || '') + '. ' +
           'Enfoque elegido por el coach para este finisher: ' + enfoqueLb + ' -- el método y la redacción tienen que ser coherentes con ese enfoque. ' +
           (a.tags && a.tags.length ? 'Antecedentes del alumno: ' + a.tags.join(', ') + '. ' : '') +
           (a.prohibidos && a.prohibidos.length ? 'Ejercicios vetados: ' + a.prohibidos.join(', ') + '. ' : '') +
@@ -64386,7 +64446,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
     const conIA = window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave();
     if(conIA){
       try{
-        const user = 'Nivel/categoría del atleta: ' + (nivel || 'sin especificar') + '.\n' +
+        const user = jpFichaPrefijo(a) + 'Nivel/categoría del atleta: ' + (nivel || 'sin especificar') + '.\n' +
           'Focos diana / debilidades a trabajar: ' + (focos || 'sin especificar') + '.\n' +
           (inventario ? 'Inventario técnico del atleta (' + inventario + ').\n' : '') +
           (lesiones ? 'Lesiones/antecedentes activos (integrados desde su historial médico): ' + lesiones + '.\n' : '') +
@@ -66025,7 +66085,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     }
     /* alumnos */
     const sa = document.getElementById('sbAth');
-    const ath = (S.athletes || []);
+    const ath = jpAthAZ(S.athletes || []);
     const htmlA = ath.map(x => '<option value="' + esc(x.id) + '"' + (x.id === S.activeId ? ' selected' : '') + '>' +
       esc(((x.nombre || '') + ' ' + (x.apellido || '')).trim() || 'Alumno') + '</option>').join('') ||
       '<option value="">Sin alumnos cargados</option>';
@@ -67422,7 +67482,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
 
   function contexto(r){
     const a = r.ath;
-    return 'Sesión: "' + (r.dia.title || r.dia.label || r.dia.short || 'Día') + '".' +
+    return jpFichaPrefijo(a) + 'Sesión: "' + (r.dia.title || r.dia.label || r.dia.short || 'Día') + '".' +
       (a.tags && a.tags.length ? ' Antecedentes del alumno: ' + a.tags.join(', ') + '.' : '') +
       (a.prohibidos && a.prohibidos.length ? ' Ejercicios vetados: ' + a.prohibidos.join(', ') + '.' : '') +
       '\nEjercicios programados hoy: ' + (r.nombres.join(', ') || 'sin cargar') + '.' +
@@ -73386,8 +73446,30 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       if(btn && !btn.disabled) btn.click();
     }, { root:null, rootMargin:'600px' }).observe(sentinela);
   }
+  /* Biblioteca: el centinela agrega el lote siguiente al final de la grilla (jpLibCargarMas). Un solo lote por vez:
+     se espera a que el layout se asiente antes de volver a mirar, para no encadenar cargas ni saltar de posición. */
+  function observarBiblioteca(){
+    if(!('IntersectionObserver' in window)) return;
+    var s = armarSentinela('exGrid');
+    if(!s || s.__jpio) return;
+    s.__jpio = 1;
+    var cargando = false;
+    function cerca(){ var r = s.getBoundingClientRect(); return r.top < (window.innerHeight || 800) + 600; }
+    function cargar(){
+      if(cargando || typeof window.jpLibCargarMas !== 'function') return;
+      var v = document.getElementById('v-biblioteca');
+      if(!v || v.style.display === 'none') return;
+      cargando = true;
+      var hay = window.jpLibCargarMas();
+      /* temporizador (no rAF): el navegador pausa rAF en pestañas en segundo plano y la guarda quedaría trabada */
+      setTimeout(function(){ cargando = false; if(hay && cerca()) cargar(); }, 160);
+    }
+    new IntersectionObserver(function(entries){
+      if(entries.some(function(en){ return en.isIntersecting; })) cargar();
+    }, { root:null, rootMargin:'600px' }).observe(s);
+  }
   function boot(){
-    observarScrollInfinito('exGrid');
+    observarBiblioteca();
     observarScrollInfinito('findGrid');
     observarScrollInfinitoPick();
     /* el modal del Builder crea/recrea su contenido al abrirse: reintenta
@@ -84345,3 +84427,143 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 })();
 </script>
 <!--/PIZARRA-COACH-->
+
+<!--BUILDER-PICKER-->
+<style>
+/* ============ Builder · selector de alumno/a (A–Z + buscador predictivo) ============ */
+.jp-bpick{position:relative;margin:0 0 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.jp-bpick-btn{display:flex;align-items:center;gap:10px;min-height:48px;max-width:100%;padding:0 14px;border-radius:12px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--txt);text-align:left;touch-action:manipulation}
+.jp-bpick-btn:hover,.jp-bpick-btn[aria-expanded="true"]{border-color:var(--gold)}
+.jp-bpick-btn .k{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--muted)}
+.jp-bpick-btn b{font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw}
+.jp-bpick-btn .n{font-family:var(--font-mono);font-size:11.5px;color:var(--muted)}
+.jp-bpick-btn i{font-style:normal;color:var(--muted)}
+.jp-bpick-pop{position:absolute;z-index:60;top:calc(100% + 6px);left:0;width:min(420px,calc(100vw - 24px));background:var(--panel);border:1px solid var(--line-2);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.jp-bpick-pop[hidden]{display:none}
+.jp-bpick-pop input{border:0;border-bottom:1px solid var(--line);border-radius:0;min-height:50px;padding:0 14px;font-size:16px;background:var(--panel-3)}
+.jp-bpick-list{max-height:min(52vh,420px);overflow-y:auto;-webkit-overflow-scrolling:touch}
+.jp-bpick-row{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:6px 14px;text-align:left;color:var(--txt-2);border-bottom:1px solid var(--line);touch-action:manipulation}
+.jp-bpick-row .l{font-family:var(--ffh);font-size:18px;font-weight:800;color:var(--gold);min-width:20px}
+.jp-bpick-row .t{flex:1;min-width:0;font-weight:700;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jp-bpick-row small{color:var(--muted);font-size:11.5px}
+.jp-bpick-row.on,.jp-bpick-row:hover{background:rgba(210,121,63,.14);color:var(--txt)}
+.jp-bpick-row.cur .t::after{content:" ✓";color:var(--gold)}
+.jp-bpick-row mark{background:none;color:var(--gold);font-weight:800}
+.jp-bpick-empty{padding:18px 14px;color:var(--muted);font-size:13px}
+.step-bar .jp-bpick{margin:0;width:100%;display:block}
+.step-bar .jp-bpick-btn{width:100%;min-height:46px;background:rgba(9,10,15,.8);border-radius:10px;font-size:13px}
+.step-bar .jp-bpick-btn .k{display:none}
+.step-bar .jp-bpick-btn b{flex:1;max-width:none}
+</style>
+<script>
+(function(){
+  'use strict';
+  if(window.CoachBuilderPicker) return;
+  function E(s){ return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function nz(s){ return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function nombre(a){ return ((a.nombre || '') + ' ' + (a.apellido || '')).trim() || 'Sin nombre'; }
+  function lista(){ return (typeof jpAthAZ === 'function') ? jpAthAZ(S.athletes) : S.athletes.slice().sort(function(x, y){ return nombre(x).localeCompare(nombre(y), 'es', { sensitivity: 'base' }); }); }
+
+  var pop, btn, q, list, sel = 0, vis = [];
+
+  function resaltar(txt, toks){
+    var base = nz(txt), out = '', i = 0, marks = [];
+    toks.forEach(function(t){ var k = base.indexOf(t); if(k >= 0) marks.push([k, k + t.length]); });
+    marks.sort(function(a, b){ return a[0] - b[0]; });
+    marks.forEach(function(m){ if(m[0] < i) return; out += E(txt.slice(i, m[0])) + '<mark>' + E(txt.slice(m[0], m[1])) + '</mark>'; i = m[1]; });
+    return out + E(txt.slice(i));
+  }
+  function filtrar(){
+    var toks = nz(q.value).split(' ').filter(Boolean), todos = lista();
+    if(!toks.length){ vis = todos; return toks; }
+    vis = todos.filter(function(a){ var n = nz(nombre(a)); return toks.every(function(t){ return n.indexOf(t) >= 0; }); });
+    /* predictivo: primero los que EMPIEZAN con lo tipeado (por nombre o por apellido), después los que lo contienen */
+    function rango(a){ var ws = nz(nombre(a)).split(' '); return toks.every(function(t){ return ws.some(function(w){ return w.indexOf(t) === 0; }); }) ? 0 : 1; }
+    vis = vis.map(function(a, i){ return { a: a, r: rango(a), i: i }; }).sort(function(x, y){ return x.r - y.r || x.i - y.i; }).map(function(o){ return o.a; });
+    return toks;
+  }
+  function pintar(){
+    var toks = filtrar(), prev = '';
+    if(sel >= vis.length) sel = Math.max(0, vis.length - 1);
+    list.innerHTML = vis.length ? vis.map(function(a, i){
+      var n = nombre(a), L = (n.charAt(0) || '').toUpperCase(), cab = (!toks.length && L !== prev) ? L : '';
+      prev = L;
+      return '<button type="button" role="option" class="jp-bpick-row' + (i === sel ? ' on' : '') + (a.id === S.activeId ? ' cur' : '') + '" data-i="' + i + '" aria-selected="' + (a.id === S.activeId) + '">' +
+        '<span class="l">' + E(cab) + '</span><span class="t">' + resaltar(n, toks) + '</span><small>' + E(a.freq ? a.freq + ' d/sem' : '') + '</small></button>';
+    }).join('') : '<div class="jp-bpick-empty">Nadie coincide con “' + E(q.value) + '”.</div>';
+    var on = list.querySelector('.on'); if(on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  }
+  function etiqueta(){
+    var b = document.getElementById('bPickName'), n = document.getElementById('bPickN'); if(!b) return;
+    var a = (typeof active === 'function') ? active() : null;
+    b.textContent = a ? nombre(a) : 'Elegir alumno/a…';
+    if(n) n.textContent = S.athletes.length + ' alumnos';
+    if(q) q.placeholder = 'Buscar entre ' + S.athletes.length + ' alumnos…';
+  }
+  function abrir(){
+    if(!S.athletes.length){ if(typeof toast === 'function') toast('Registrá al menos un alumno/a', 'warn'); return; }
+    pop.hidden = false; btn.setAttribute('aria-expanded', 'true'); q.value = ''; sel = 0;
+    pintar();
+    var cur = vis.findIndex(function(a){ return a.id === S.activeId; });
+    if(cur >= 0){ sel = cur; pintar(); }
+    q.focus();
+  }
+  function cerrar(){ if(!pop) return; pop.hidden = true; btn.setAttribute('aria-expanded', 'false'); }
+  function elegir(i){
+    var a = vis[i]; if(!a) return;
+    cerrar();
+    var nat = document.getElementById('sbAth');
+    if(a.id !== S.activeId){
+      if(nat){ nat.value = a.id; nat.dispatchEvent(new Event('change', { bubbles: true })); }
+      else {
+        S.activeId = a.id; if(typeof save === 'function') save();
+        if(typeof renderBuilder === 'function') renderBuilder();
+      }
+      if(typeof toast === 'function') toast('Alumno/a activo/a: ' + nombre(a));
+      if(typeof renderAthletes === 'function'){ try{ renderAthletes(); }catch(e){} }
+    }
+    if(typeof sincronizarAlumnoActivo === 'function') sincronizarAlumnoActivo();
+    etiqueta();
+  }
+
+  function montar(sinSelect){
+    var v = document.getElementById('v-builder'); if(!v) return false;
+    if(document.getElementById('bPick')) return true;
+    var nat = document.getElementById('sbAth');
+    if(!nat && !sinSelect) return false;
+    var tb = v.querySelector('.topbar'), box = document.createElement('div');
+    box.className = 'jp-bpick'; box.id = 'bPick';
+    box.innerHTML = '<button type="button" class="jp-bpick-btn" id="bPickBtn" aria-haspopup="listbox" aria-expanded="false"><span class="k">ALUMNO/A</span><b id="bPickName"></b><span class="n" id="bPickN"></span><i>▾</i></button>' +
+      '<div class="jp-bpick-pop" id="bPickPop" hidden><input type="search" id="bPickQ" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Buscar alumno/a"><div class="jp-bpick-list" id="bPickList" role="listbox"></div></div>';
+    if(nat){ nat.style.display = 'none'; nat.parentNode.insertBefore(box, nat.nextSibling); }
+    else if(tb && tb.nextSibling) tb.parentNode.insertBefore(box, tb.nextSibling); else v.insertBefore(box, v.firstChild);
+    pop = document.getElementById('bPickPop'); btn = document.getElementById('bPickBtn'); q = document.getElementById('bPickQ'); list = document.getElementById('bPickList');
+    btn.addEventListener('click', function(){ if(pop.hidden) abrir(); else cerrar(); });
+    q.addEventListener('input', function(){ sel = 0; pintar(); });
+    q.addEventListener('keydown', function(e){
+      if(e.key === 'ArrowDown'){ e.preventDefault(); sel = Math.min(vis.length - 1, sel + 1); pintar(); }
+      else if(e.key === 'ArrowUp'){ e.preventDefault(); sel = Math.max(0, sel - 1); pintar(); }
+      else if(e.key === 'Enter'){ e.preventDefault(); elegir(sel); }
+      else if(e.key === 'Escape'){ e.preventDefault(); cerrar(); btn.focus(); }
+    });
+    list.addEventListener('click', function(e){ var r = e.target.closest('[data-i]'); if(r) elegir(parseInt(r.getAttribute('data-i'), 10)); });
+    document.addEventListener('click', function(e){ if(!pop.hidden && !box.contains(e.target)) cerrar(); });
+    etiqueta();
+    return true;
+  }
+
+  var _go = window.go;
+  if(typeof _go === 'function'){
+    window.go = function(v){ var r = _go.apply(this, arguments); if(v === 'builder'){ montar(); etiqueta(); } return r; };
+  }
+  var _sync = window.sincronizarAlumnoActivo;
+  if(typeof _sync === 'function'){
+    window.sincronizarAlumnoActivo = function(){ var r = _sync.apply(this, arguments); try{ etiqueta(); }catch(e){} return r; };
+  }
+  montar();
+  [300, 800, 1600, 3000].forEach(function(ms){ setTimeout(function(){ montar(); etiqueta(); }, ms); });
+  setTimeout(function(){ montar(true); etiqueta(); }, 5000);
+  window.CoachBuilderPicker = { abrir: abrir, cerrar: cerrar, etiqueta: etiqueta };
+})();
+</script>
+<!--/BUILDER-PICKER-->
