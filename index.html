@@ -778,15 +778,14 @@ html.jp-cargando body > *:not(#jpSplashB){visibility:hidden !important}
             </div>
             <div id="expStats" class="sum-grid"></div>
             <div id="expHealth" class="exp-health"></div>
-            <button class="btn gold block" id="btnExport" style="padding:14px;font-size:15px">🚀 GENERAR Y DESCARGAR INDEX.HTML</button>
-            <div class="row">
-              <button class="btn sm" id="btnPreview">👁️ Previsualizar</button>
-              <button class="btn sm" id="btnCopyCode">📋 Copiar código</button>
+            <div class="exp-actions">
+              <button class="btn gold block" id="btnExport">🚀 GENERAR Y DESCARGAR INDEX.HTML</button>
+              <div class="exp-sec">
+                <button class="btn" id="btnPreview">👁️ Previsualizar</button>
+                <button class="btn" id="btnCopyCode">📋 Copiar código</button>
+              </div>
             </div>
-            <div class="alert info" style="padding:9px 12px">
-              <span class="ic">🧩</span>
-              <div><b>Plantilla maestra</b>El archivo se compila sobre tu SCRIPT BASE: mismos estilos, temporizadores con audio y Wake Lock, calculadora de 1RM, guía, registro de cargas por serie y check-in de fatiga.</div>
-            </div>
+            <div class="exp-guia"><span aria-hidden="true">🧩</span><div><b>Plantilla maestra</b> · El archivo se compila sobre tu SCRIPT BASE: mismos estilos, temporizadores con audio y Wake Lock, calculadora de 1RM, guía, registro de cargas por serie y check-in de fatiga.</div></div>
           </div>
         </div>
         <div class="card">
@@ -3303,6 +3302,146 @@ function jpAjustarSuperset(b, ath, used){
   }
   return notas;
 }
+/* ---------- solución rápida de un conflicto de logística (botones del recuadro 📍 LOGÍSTICA DE SALÓN en el Builder) ----------
+   Solo corre cuando el coach toca el botón: deja un punto de restauración (Ctrl+Z) y modifica únicamente el bloque señalado
+   (más, en "Separar", los bloques nuevos que salen de él). Nunca se aplica solo ni sobre otros bloques o días. */
+const JP_RX_ALINEA = /^([A-Fa-f])(\d{1,2})([.):]\s*)(.+)$/;
+function jpLgParsear(items){
+  const r = { pre: [], grupo: [], post: [] };
+  let cur = null;
+  (items || []).forEach(l => {
+    const s = String(l).trim(), m = JP_RX_ALINEA.exec(s);
+    if(m){
+      const nm = /^(.+?)(\s+[—–]\s+.*)?$/.exec(m[4]);
+      cur = { letra: m[1].toUpperCase(), sep: m[3], nombre: nm[1].trim(), resto: nm[2] || '', lineas: [], ex: null };
+      cur.ex = jpExDeNombre(cur.nombre);
+      r.grupo.push(cur); return;
+    }
+    if(cur && !/^(rest|descanso)\b/i.test(s)){ cur.lineas.push(l); return; }
+    (r.grupo.length ? r.post : r.pre).push(l);
+  });
+  return r;
+}
+/* líneas de pauta ("NOMBRE: texto") que pertenecen a un ejercicio; el resto (ritmo, descanso, progresión) es del bloque */
+function jpLgTipsDe(tips, g){
+  const claves = [g.nombre, g.ex && g.ex.es, g.ex && g.ex.en].filter(Boolean).map(norm);
+  return String(tips || '').split(/\r?\n/).map(l => {
+    const m = /^\s*([^:]{2,80}):/.exec(l);
+    return { l: l, suyo: !!(m && claves.indexOf(norm(m[1])) >= 0) };
+  });
+}
+function jpLgEstacionesDe(p){ return p.grupo.map(g => g.ex ? jpEstacion(g.ex) : ''); }
+/* primer par que obliga a cruzar el salón: devuelve el índice del compañero (el que llega después) */
+function jpLgIncompatible(p){
+  const ks = jpLgEstacionesDe(p);
+  for(let i = 1; i < p.grupo.length; i++){
+    if(!p.grupo[i].ex) continue;
+    for(let j = 0; j < i; j++){ if(p.grupo[j].ex && !jpEstacionCompat(ks[j], ks[i])) return i; }
+  }
+  return -1;
+}
+function jpLgSepararLista(d, b){
+  const p = jpLgParsear(b.items), n = p.grupo.length, ks = jpLgEstacionesDe(p);
+  if(n < 2) return null;
+  const stay = [0], move = [];
+  for(let i = 1; i < n; i++){
+    if(!p.grupo[i].ex || stay.every(j => !p.grupo[j].ex || jpEstacionCompat(ks[j], ks[i]))) stay.push(i); else move.push(i);
+  }
+  if(!move.length) return null;
+  const stayN = stay.map(i => norm(p.grupo[i].nombre)), moveN = move.map(i => norm(p.grupo[i].nombre));
+  const armar = pp => {
+    const sel = pp.grupo.filter(g => stayN.indexOf(norm(g.nombre)) >= 0);
+    if(!sel.length) return pp.pre.concat(pp.post);
+    if(sel.length === 1) return sel[0].lineas.concat(pp.post);
+    const out = pp.pre.slice();
+    sel.forEach((g, i) => { out.push(g.letra + (i + 1) + g.sep + g.nombre + g.resto); g.lineas.forEach(x => out.push(x)); });
+    return out.concat(pp.post);
+  };
+  const semanas = b.weekItems && typeof b.weekItems === 'object' ? Object.keys(b.weekItems) : [];
+  const nuevos = move.map(i => {
+    const g = p.grupo[i], nb = clone(b);
+    nb.id = uid('b'); nb.titulo = g.nombre; nb.items = g.lineas.concat(p.post);
+    nb.objective = '';
+    nb.tips = jpLgTipsDe(b.tips, g).filter(x => x.suyo).map(x => x.l).join('\n');
+    if(semanas.length){
+      nb.weekItems = {};
+      semanas.forEach(k => {
+        const pw = jpLgParsear(b.weekItems[k]), e = pw.grupo.filter(x => norm(x.nombre) === norm(g.nombre))[0];
+        nb.weekItems[k] = !Array.isArray(b.weekItems[k]) ? b.weekItems[k] : (e ? e.lineas.concat(pw.post) : []);
+      });
+      if(Array.isArray(b.weekItems)) nb.weekItems = semanas.map(k => nb.weekItems[k]);
+    }
+    return nb;
+  });
+  /* el bloque original conserva solo los que se quedan */
+  const mueveTips = move.map(i => p.grupo[i]);
+  b.tips = String(b.tips || '').split(/\r?\n/).filter(l => {
+    const m = /^\s*([^:]{2,80}):/.exec(l); if(!m) return true;
+    return !mueveTips.some(g => [g.nombre, g.ex && g.ex.es, g.ex && g.ex.en].filter(Boolean).map(norm).indexOf(norm(m[1])) >= 0);
+  }).join('\n');
+  b.items = armar(p);
+  semanas.forEach(k => { if(Array.isArray(b.weekItems[k])) b.weekItems[k] = armar(jpLgParsear(b.weekItems[k])); });
+  if(stay.length === 1) b.titulo = p.grupo[stay[0]].nombre;
+  else if(stay.length === 2) b.titulo = String(b.titulo || '').replace(/triset/i, m => m[0] === 'T' ? 'Biset' : 'biset');
+  const idx = d.bloques.findIndex(x => x.id === b.id);
+  d.bloques.splice(idx + 1, 0, ...nuevos);
+  return { nuevos: nuevos.length, nombres: move.map(i => p.grupo[i].nombre) };
+}
+function jpLgReemplazarLista(b, ath){
+  const p = jpLgParsear(b.items), i = jpLgIncompatible(p);
+  if(i < 0) return null;
+  const e = p.grupo[i].ex, otros = p.grupo.filter((g, k) => k !== i), ancla = otros[0] && otros[0].ex ? jpEstacion(otros[0].ex) : '', ids = p.grupo.map(g => g.ex && g.ex.id).filter(Boolean);
+  const alt = S.exercises.filter(x => x.id !== e.id && ids.indexOf(x.id) < 0 && x.grupo === e.grupo && x.equipo !== 'Cardio' &&
+      otros.every(o => !o.ex || jpEstacionCompat(jpEstacion(o.ex), jpEstacion(x))) && !(ath && checkExercise(ath, x).some(a => a.level === 'danger')))
+    .sort((a, c) => ((jpEstacion(c) === ancla) - (jpEstacion(a) === ancla)) || ((c.patron === e.patron) - (a.patron === e.patron)) || ((c.videoId ? 1 : 0) - (a.videoId ? 1 : 0)))[0];
+  if(!alt) return { sinAlt: true, viejo: e.es };
+  const viejoN = norm(p.grupo[i].nombre), nombreViejo = p.grupo[i].nombre;
+  const nuevoNombre = nombreViejo.indexOf('(') >= 0 ? alt.es + ' (' + alt.en + ')' : (norm(nombreViejo) === norm(e.en) ? (alt.en || alt.es) : alt.es);
+  const renombrar = lista => !Array.isArray(lista) ? lista : lista.map(l => {
+    const m = JP_RX_ALINEA.exec(String(l).trim()); if(!m) return l;
+    const nm = /^(.+?)(\s+[—–]\s+.*)?$/.exec(m[4]);
+    return norm(nm[1].trim()) === viejoN ? m[1] + m[2] + m[3] + nuevoNombre + (nm[2] || '') : l;
+  });
+  b.items = renombrar(b.items);
+  if(b.weekItems && typeof b.weekItems === 'object') Object.keys(b.weekItems).forEach(k => { b.weekItems[k] = renombrar(b.weekItems[k]); });
+  const claves = [nombreViejo, e.es, e.en].filter(Boolean).map(norm);
+  b.tips = String(b.tips || '').split(/\r?\n/).filter(l => { const m = /^\s*([^:]{2,80}):/.exec(l); return !(m && claves.indexOf(norm(m[1])) >= 0); }).join('\n');
+  return { viejo: e.es, nuevo: alt.es, estacion: jpEstacionLb(jpEstacion(alt), alt) };
+}
+function jpLogisticaArreglar(bid, modo){
+  const d = (typeof curDay === 'function') ? curDay() : null, b = (typeof findBlock === 'function') ? findBlock(bid) : null;
+  if(!d || !b) return;
+  const ath = (typeof active === 'function') ? active() : null;
+  if(window.CoachUndo && typeof CoachUndo.vigilar === 'function') CoachUndo.vigilar('Corregir logística de salón');
+  let msg = '';
+  const lista = b.tipo === 'list' && b.sportsPizarra;
+  if(modo === 'reemplazar'){
+    if(lista){
+      const r = jpLgReemplazarLista(b, ath);
+      if(!r){ toast('Este bloque ya no tiene conflicto de estación', 'info'); renderBuilder(); return; }
+      if(r.sinAlt){ toast('No hay un reemplazo de «' + r.viejo + '» en la misma estación: usá «Separar en bloques consecutivos»', 'warn'); return; }
+      msg = '«' + r.viejo + '» → «' + r.nuevo + '» (' + r.estacion + '). Revisá la dosis y las pautas del bloque.';
+    } else if(b.tipo === 'superset'){
+      const notas = jpAjustarSuperset(b, ath, []);
+      if(!notas.length){ toast('Este bloque ya no tiene conflicto de estación', 'info'); renderBuilder(); return; }
+      if(notas.some(x => x.indexOf('no combina') >= 0)){ toast(notas[0], 'warn'); return; }
+      msg = notas.join(' ');
+    } else { toast('En este tipo de bloque usá «Separar en bloques consecutivos»', 'warn'); return; }
+  } else {
+    if(lista){
+      const r = jpLgSepararLista(d, b);
+      if(!r){ toast('Este bloque ya no tiene conflicto de estación', 'info'); renderBuilder(); return; }
+      msg = 'Se separó en ' + (r.nuevos + 1) + ' bloques consecutivos: ' + r.nombres.join(', ') + ' pasó a su propio bloque (' + r.nuevos + ' nuevo' + (r.nuevos > 1 ? 's' : '') + ').';
+    } else {
+      const res = jpSepararPorEstacion(b);
+      if(!res.notas.length){ toast('Este bloque ya no tiene conflicto de estación', 'info'); renderBuilder(); return; }
+      const idx = d.bloques.findIndex(x => x.id === b.id);
+      d.bloques.splice(idx, 1, ...res.bloques);
+      msg = res.notas.join(' ');
+    }
+  }
+  save(); renderBuilder(); toast('📍 ' + msg + ' (Ctrl+Z deshace)');
+}
 function blockAlerts(ath, b){
   if(!ath) return [];
   let out = [];
@@ -3314,7 +3453,7 @@ function blockAlerts(ath, b){
     checkFreeText(ath, t).forEach(a => out.push(Object.assign({txt:t}, a)));
   });
   /* logística de salón: un grupo (biset / triset / finisher) debe resolverse en una sola estación */
-  try{ jpLogisticaBloque(b).forEach(m => out.push({ level:'warn', title:'📍 LOGÍSTICA DE SALÓN', msg:m.msg })); }catch(eLg){}
+  try{ jpLogisticaBloque(b).forEach(m => out.push({ level:'warn', title:'📍 LOGÍSTICA DE SALÓN', msg:m.msg, logistica:true })); }catch(eLg){}
   return out;
 }
 </script>
@@ -4006,10 +4145,16 @@ function moverDia(desde, dir){ return moverDiaA(desde, desde + dir); }
    visibles que todavía son el default ("DÍA 3" -> "DÍA 2"), jamás un
    nombre que el coach haya escrito a mano. */
 const MAX_DIAS = 7;
-const BTN_ELIMINAR_DIA = '<div class="row jp-day-tools" style="margin-top:12px;gap:8px;flex-wrap:wrap">' +
-  '<button type="button" class="btn ghost sm" style="border-color:rgba(56,189,248,.4);color:#38bdf8" data-copiardia="1">📋 COPIAR DÍA A OTRO ALUMNO</button>' +
-  '<button type="button" class="btn ghost sm" style="border-color:rgba(255,107,87,.4);color:#FF6B57" data-eliminardia="1">🗑️ ELIMINAR DÍA ACTIVO</button>' +
+/* barra de acciones del día: columnas de igual ancho (simétrica); mismos data-copiardia / data-eliminardia de siempre. "Avanzado" ya no es un desplegable suelto sino la
+   tercera acción de la misma barra: abre el panel de chip, ID interno y notas extra (su estado se recuerda en S.ui.diaAdv, nada del plan cambia) */
+function jpBarraDia(conAdv){
+  const abierto = !!(S.ui && S.ui.diaAdv);
+  return '<div class="jp-day-foot' + (conAdv ? '' : ' dos') + '">' +
+    '<button type="button" class="btn ghost sm jp-df jp-df-cp" data-copiardia="1" title="Copia este día completo a otro alumno">📋 Copiar día</button>' +
+    (conAdv ? '<button type="button" class="btn ghost sm jp-df jp-df-adv" data-diaadv="1" aria-expanded="' + abierto + '" title="Chip de pestaña, ID interno y notas extra">⚙️ Avanzado ' + (abierto ? '▴' : '▾') + '</button>' : '') +
+    '<button type="button" class="btn ghost sm jp-df jp-df-del" data-eliminardia="1" title="Elimina el día que estás editando">🗑️ Eliminar día activo</button>' +
   '</div>';
+}
 function agregarDia(){
   const p = plan(S.activeId); if(!p) return;
   if(p.dias.length >= MAX_DIAS){ toast('Máximo ' + MAX_DIAS + ' días por mesociclo', 'err'); return; }
@@ -7049,7 +7194,7 @@ function renderDay(){
         '<div class="hint" style="margin-top:4px">Se muestra como banner destacado arriba de todo en la app del alumno.</div>' +
       '</div>' +
       ('' + prsBarCF(ath)) +
-      BTN_ELIMINAR_DIA +
+      jpBarraDia(false) +
     '</div>' +
     htmlImportadorRapido() +
     '<button type="button" class="btn gold" style="width:100%;min-height:52px;font-size:15px;letter-spacing:.04em;margin-bottom:14px" data-addcfblock="1">➕ AGREGAR BLOQUE DE PIZARRA</button>';
@@ -7079,9 +7224,9 @@ function renderDay(){
          todos los bloques/ejercicios/semana activa y genera título+foco
          (ver generarFocoDiaConIA(), reusa window.CoachAI). */
       '<button type="button" class="btn sm gold" style="margin-top:10px" onclick="generarFocoDiaConIA(this)">✨ Generar Tips &amp; Objetivos con IA</button>' +
-      '<details class="cf-acc" style="margin-top:12px">' +
-        '<summary class="lb">▾ Avanzado: chip de pestaña, ID interno y notas extra</summary>' +
-        '<div class="grid g3" style="margin-top:10px">' +
+      jpBarraDia(true) +
+      '<div class="jp-day-advp" id="diaAdvPanel"' + ((S.ui && S.ui.diaAdv) ? '' : ' hidden') + '>' +
+        '<div class="grid g3" style="margin-top:2px">' +
           '<div><label class="lb">Chip (short)</label><input data-df="short" value="' + esc(d.short) + '" placeholder="DÍA 1"></div>' +
           '<div><label class="lb">Etiqueta de pestaña</label><input data-df="label" value="' + esc(d.label) + '" placeholder="Espalda/Bíceps"></div>' +
           '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1"></div>' +
@@ -7090,8 +7235,7 @@ function renderDay(){
         '<div style="margin-top:10px"><label class="lb">Título del foco técnico</label><input data-df="focusTitle" value="' + esc(d.focusTitle||'') + '"></div>' +
         '<div style="margin-top:10px"><label class="lb">Cool-down (una línea por ítem)</label><textarea data-df="cooldown" placeholder="Estiramiento de dorsal — 2x30s">' + esc((d.cooldown||[]).join('\n')) + '</textarea></div>' +
         '<div style="margin-top:10px"><label class="lb">Resumen de la sesión</label><textarea data-df="summary">' + esc(d.summary||'') + '</textarea></div>' +
-      '</details>' +
-      BTN_ELIMINAR_DIA +
+      '</div>' +
     '</div>';
     /* REFACTOR DEFINITIVO: mismo botón único de alta que ya usa CrossFit
        (data-addcfblock/addBlockCF), acá su equivalente Sports
@@ -7196,8 +7340,13 @@ function renderDay(){
         (riesgoPorEx[a.exId] = riesgoPorEx[a.exId] || { exName:a.exName, zonas:[] }).zonas.push(a.zonaLb);
         return;
       }
+      /* logística de salón: dos soluciones de un toque dentro del mismo recuadro (reemplazar al compañero o separar en bloques consecutivos) */
+      const lgBtns = a.logistica
+        ? '<div class="lg-fix"><button type="button" class="btn xs gold" data-lgfix="reemplazar" data-b="' + b.id + '" title="Cambia el ejercicio que no cabe en la estación por otro del mismo grupo muscular en la misma estación">↔ Reemplazar compañero incompatible</button>' +
+          '<button type="button" class="btn xs" data-lgfix="separar" data-b="' + b.id + '" title="Deja cada ejercicio en su estación: el que no cabe pasa a un bloque propio a continuación">✂ Separar en bloques consecutivos</button></div>'
+        : '';
       h += '<div class="alert ' + a.level + ' flash" style="margin-bottom:9px"><span class="ic">' + (a.level==='danger'?'🚨':(a.level==='warn'?'⚠️':'⭐')) + '</span>' +
-        '<div><b>' + esc(a.title) + '</b>' + esc(a.msg) + '</div></div>';
+        '<div><b>' + esc(a.title) + '</b>' + esc(a.msg) + lgBtns + '</div></div>';
     });
     Object.keys(riesgoPorEx).forEach(exId => {
       const r = riesgoPorEx[exId];
@@ -7257,8 +7406,9 @@ function renderDay(){
          FINISHER -- ningún dato se toca hasta que el coach elige convertir
          (migrarBloqueAPizarra) o eliminar el bloque (🗑 de la cabecera, ya
          existente arriba). */
-      h += '<div class="alert warn" style="margin-bottom:9px"><span class="ic">🗂️</span><div><b>Bloque en formato anterior</b><br>Este bloque se armó con el formulario clásico (previo a la Pizarra Táctica). Convertilo para poder editarlo como texto libre, con chips y alertas biomecánicas en vivo.</div></div>' +
-        '<button type="button" class="btn sm gold" data-migrarpizarra="' + b.id + '">🔄 Convertir a Bloque de Pizarra</button>';
+      h += '<div class="jp-legacy" role="note"><span class="ic" aria-hidden="true">🗂️</span>' +
+          '<div class="jp-legacy-t"><b>Bloque en formato anterior</b><small>Armado con el formulario clásico. Convertilo para editarlo como texto libre, con chips y alertas en vivo.</small></div>' +
+          '<button type="button" class="btn sm gold" data-migrarpizarra="' + b.id + '">🔄 Convertir a Pizarra</button></div>';
     } else if(b.tipo === 'block'){
       const exAncla = getEx(b.exId);
       /* blindaje de auditoría: un exId huérfano en el ancla principal no debe
@@ -8746,6 +8896,13 @@ function bindBuilder(){
       if(j < 0 || j >= arr.length) return;
       const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
       save(); renderBuilder(); return;
+    }
+    if(t.dataset.lgfix){ jpLogisticaArreglar(t.dataset.b, t.dataset.lgfix); return; }
+    if(t.dataset.diaadv){
+      S.ui = S.ui || {}; S.ui.diaAdv = !S.ui.diaAdv;
+      const pn = document.getElementById('diaAdvPanel'); if(pn) pn.hidden = !S.ui.diaAdv;
+      t.setAttribute('aria-expanded', S.ui.diaAdv ? 'true' : 'false'); t.textContent = '⚙️ Avanzado ' + (S.ui.diaAdv ? '▴' : '▾');
+      return;
     }
     if(t.dataset.swap){
       const b = findBlock(t.dataset.b); if(!b) return;
@@ -17768,6 +17925,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         return '<div class="jp-tip-ex">' + cab + porLetra[L].map(function(g){ return '<div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">' + ICO_TIP[g.cat] + g.cat + '</b> ' + escSB(corto(g.tx.join(' '))) + '</div>'; }).join('') + '</div>';
       }).join('') + (trans.length ? '<div class="jp-tip-ex jp-tip-trans"><div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">&#9201; TRANSICI&Oacute;N' + (transDesc ? ' &amp; DESCANSO' : '') + '</b> ' + escSB(corto(trans.join(' '))) + '</div></div>' : '');
     }
+    /* pautas escritas "EJERCICIO: texto" (o "TOP SET:", "DESCANSO:"): cada línea conserva su rótulo y su orden, igual que en el Builder. Antes se fundían en un solo
+       SET-UP / CLAVE / CUIDADO y se perdía a qué ejercicio hablaba cada pauta. Solo se agrupa cuando los rótulos son del vocabulario técnico (SET-UP, CLAVE, CUIDADO...). */
+    var VOC_TIP_SB = /set up|estabilidad|anclaje|postura|posicion|error|evitar|cuidado|clave|cue|control de la fase|intencion|tempo|transici/;
+    var propiosTip = etiquetados.filter(function(i){ return !VOC_TIP_SB.test(normTitSB(i.lb)); });
+    if(etiquetados.length >= 2 && propiosTip.length * 2 >= etiquetados.length){
+      return items.map(function(it){
+        if(it.lb) return '<div class="jp-tip-fase"><b class="jp-tip-lb">' + escSB(it.lb) + '</b> ' + escSB(it.tx) + '</div>';
+        return '<div class="jp-tip-fase">' + escSB(it.tx) + '</div>';
+      }).join('');
+    }
     if(etiquetados.length >= 2){
       var setup = [], accion = [], error = [];
       etiquetados.forEach(function(i){
@@ -18896,7 +19063,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (t.etq ? ' <em>(' + escSB(t.etq) + ')</em>' : '') + (extra ? ' \\u00b7 ' + escSB(extra) : '') + '</span>';
     }).join('');
     var rb = restBadgeSB(en.restSeconds, en.restLabel);
-    var r2 = (rb || en.unilateral) ? '<div class="jp-db-row jp-db-r2">' + rb +
+    /* mismo orden que la línea del Builder ("tramos | Tempo | RIR" y abajo el descanso): el tempo y el RIR del ejercicio se muestran antes de la pausa */
+    var tmpT = tempoComun ? '<span class="jp-db-seg jp-db-tempo jp-db-tempo-c">TEMPO ' + escSB(tempoComun) + '</span>' : '';
+    var rirT = (en.rir && !en.tramos.some(function(t){ return t.rir; })) ? '<span class="jp-db-seg jp-db-rir jp-rir-' + tierRirSB(en.rir) + '">' + ICONO_RIR_SB[tierRirSB(en.rir)] + ' RIR ' + escSB(en.rir) + '</span>' : '';
+    var r2 = (rb || en.unilateral || tmpT || rirT) ? '<div class="jp-db-row jp-db-r2">' + tmpT + rirT + rb +
       (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '';
     return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + '</div>';
   }
@@ -18915,6 +19085,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
     else if(reps) r1.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
     else r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
+    if(tempo) r1.push('<span class="jp-db-seg jp-db-tempo jp-db-tempo-c">TEMPO ' + escSB(tempo) + '</span>');
     if(rir){
       var tier = tierRirSB(rir);
       r1.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
@@ -18922,7 +19093,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var rb = restBadgeSB(restSeconds, restLabel);
     if(rb) r2.push(rb);
     else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\\u26a1 SIN DESCANSO</span>');
-    /* el tempo ya no se muestra en la tarjeta: su explicación vive en el acordeón de pautas */
+    /* el tempo es un chip corto entre las series y el RIR (mismo orden que la línea de dosis del Builder: series x reps | tempo | RIR, y abajo el descanso); su explicación sigue en el acordeón de pautas */
     if(extra) r2.push('<span class="jp-db-seg jp-db-tempo">' + escSB(extra) + '</span>');
     if(uni) r2.push(chipUnilateralSB(uni));
     return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1.join('') + '</div>' +
@@ -63415,14 +63586,24 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   display:flex;align-items:center;gap:9px;margin:0 0 4px;font-size:15px;
   font-family:var(--ffh);text-transform:uppercase;letter-spacing:.05em;color:var(--txt);
 }
-.ctx-card .cx-sub{margin:0 0 11px;color:var(--muted);font-size:12px;line-height:1.5}
+.ctx-card .cx-sub{margin:6px 0 8px;color:var(--muted);font-size:12px;line-height:1.45}
+.ctx-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px}
+.ctx-head h3{margin:0;flex:1 1 260px;min-width:0}
+.ctx-head .ctx-badge{margin-left:8px}
+.ctx-prev{display:none;margin-top:7px;color:var(--muted);font-size:12px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctx-card.ctx-col .ctx-prev{display:block}
+.ctx-card.ctx-col .ctx-body{display:none}
+.ctx-card.ctx-col{padding-bottom:11px}
 .ctx-card textarea{
-  width:100%;min-height:96px;resize:vertical;padding:11px 12px;border-radius:12px;
+  width:100%;min-height:58px;max-height:260px;resize:vertical;padding:9px 12px;border-radius:12px;transition:min-height .15s ease;
   font-family:var(--ff);font-size:13px;line-height:1.55;
   background:rgba(9,10,15,.7);border:1px solid var(--line-2);color:var(--txt-2);
 }
-.ctx-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.ctx-acts .btn{flex:1 1 190px}
+.ctx-card textarea:focus{min-height:118px}
+.ctx-acts{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+.ctx-acts .btn{flex:0 0 auto;min-height:40px}
+.ctx-head .ctx-acts #ctxRun{min-width:190px}
+@media (max-width:640px){ .ctx-acts{width:100%} .ctx-acts #ctxRun{flex:1 1 100%} .ctx-acts .btn:not(#ctxRun){flex:1 1 calc(50% - 4px)} }
 .ctx-out{
   margin-top:12px;padding:14px 15px;border-radius:14px;display:none;
   background:rgba(210,121,63,.05);border:1px solid rgba(210,121,63,.28);
@@ -63676,13 +63857,18 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       card = document.createElement('div');
       card.className = 'card ctx-card'; card.id = 'ctxCard';
       card.innerHTML =
-        '<h3>🧠 Contexto y Objetivos del Atleta<span class="ctx-badge" id="ctxMotor">IA</span></h3>' +
-        '<p class="cx-sub">Escribí tus notas rápidas tal como te salgan: objetivo, molestias, preferencias, ' +
-        'frecuencia. El sistema las convierte en la nota metodológica que ve el alumno arriba de su rutina.</p>' +
-        '<textarea id="ctxTxt" placeholder="Ej: Objetivo hipertrofia de cadena posterior, molesta levemente la rodilla en flexión profunda, prefiere series pesadas a RPE 8, 4 días por semana"></textarea>' +
-        '<div class="ctx-acts">' +
-          '<button class="btn gold" id="ctxRun" type="button">✨ Estructurar con IA</button>' +
-          '<button class="btn" id="ctxClear" type="button">🗑️ Limpiar nota</button>' +
+        '<div class="ctx-head">' +
+          '<h3>🧠 Contexto y Objetivos del Atleta<span class="ctx-badge" id="ctxMotor">IA</span></h3>' +
+          '<div class="ctx-acts">' +
+            '<button class="btn gold" id="ctxRun" type="button">✨ Estructurar con IA</button>' +
+            '<button class="btn ghost" id="ctxClear" type="button">🗑️ Limpiar nota</button>' +
+            '<button class="btn ghost ctx-tgl" id="ctxTgl" type="button" aria-expanded="true" title="Mostrar u ocultar las notas rápidas">▾ Notas</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ctx-prev" id="ctxPrev"></div>' +
+        '<div class="ctx-body" id="ctxBody">' +
+          '<p class="cx-sub">Escribí tus notas rápidas tal como te salgan (objetivo, molestias, preferencias, frecuencia): el sistema las convierte en la nota metodológica que ve el alumno arriba de su rutina.</p>' +
+          '<textarea id="ctxTxt" rows="2" placeholder="Ej: Objetivo hipertrofia de cadena posterior, molesta levemente la rodilla en flexión profunda, prefiere series pesadas a RPE 8, 4 días por semana"></textarea>' +
         '</div>' +
         '<div class="ctx-load" id="ctxLoad" style="display:none"><i></i> Redactando la nota metodológica…</div>' +
         '<div class="ctx-out" id="ctxOut"></div>';
@@ -63691,6 +63877,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       else vista.insertBefore(card, vista.firstChild);
 
       document.getElementById('ctxRun').addEventListener('click', () => estructurar());
+      const aplicarColapso = () => {
+        let col = false; try{ col = localStorage.getItem('coachjp_ctx_col') === '1'; }catch(e){}
+        card.classList.toggle('ctx-col', col);
+        const tg = document.getElementById('ctxTgl'); if(tg){ tg.setAttribute('aria-expanded', col ? 'false' : 'true'); tg.textContent = (col ? '▸' : '▾') + ' Notas'; }
+        const pv = document.getElementById('ctxPrev'), tx = document.getElementById('ctxTxt');
+        if(pv){ const t = String((tx && tx.value) || '').replace(/\s+/g, ' ').trim(); pv.textContent = t ? t : 'Sin notas rápidas (tocá «Notas» para escribirlas).'; }
+      };
+      card._ctxColapso = aplicarColapso;
+      document.getElementById('ctxTgl').addEventListener('click', () => {
+        let col = false; try{ col = localStorage.getItem('coachjp_ctx_col') === '1'; }catch(e){}
+        try{ localStorage.setItem('coachjp_ctx_col', col ? '0' : '1'); }catch(e){}
+        aplicarColapso();
+      });
+      aplicarColapso();
       document.getElementById('ctxClear').addEventListener('click', () => {
         const at = (typeof active === 'function') ? active() : null;
         if(!at) return;
@@ -63722,6 +63922,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       motor.style.opacity = hay ? '1' : '.7';
     }
     if(card.dataset.ath !== a.id){ card.dataset.ath = a.id; pintarNota(c.nota); }
+    if(typeof card._ctxColapso === 'function') card._ctxColapso();
   }
 
   function repintar(){ try{ montar(); }catch(e){} }
@@ -68435,8 +68636,39 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
   color:#FFD600;margin-left:6px;white-space:nowrap;font-family:var(--fm,monospace);font-weight:700}
 .jp-vbadge.old{border-color:rgba(239,180,74,.6);background:rgba(239,180,74,.12);color:#EFB44A}
 .jp-vbadge.ok{border-color:rgba(72,213,151,.45);background:rgba(72,213,151,.1);color:#48D597}
-#jpLote{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
-#jpLote .hint{font-size:12.5px;color:#828A97}
+#jpLote{display:flex;flex-direction:column;gap:9px;margin-top:4px;padding:13px 14px;border-radius:14px;background:rgba(229,195,120,.04);border:1px solid rgba(229,195,120,.22)}
+#jpLote .hint{font-size:12.5px;color:#9AA3B0;margin:0;line-height:1.45}
+#jpLote .btn{width:100%;min-height:46px;justify-content:center;font-weight:700}
+.jp-lote-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.jp-lote-h b{font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--txt-2,#c3cad6)}
+.jp-lote-ver{padding:2px 9px;border-radius:999px;border:1px solid rgba(229,195,120,.4);color:#E5C378;font-size:11px;font-weight:700;font-family:var(--fm,monospace)}
+.jp-lote-kpis{display:flex;flex-wrap:wrap;gap:7px}
+.jp-lote-kpis .k{padding:5px 10px;border-radius:8px;font-size:12px;border:1px solid var(--line-2,#2a2f3a);color:var(--txt-2,#c3cad6)}
+.jp-lote-kpis .k b{font-size:14px;margin-right:3px}
+.jp-lote-kpis .k.ok{border-color:rgba(72,213,151,.45);background:rgba(72,213,151,.08);color:#48D597}
+.jp-lote-kpis .k.old{border-color:rgba(239,180,74,.55);background:rgba(239,180,74,.1);color:#EFB44A}
+.jp-lote-kpis .k.sin{border-color:rgba(255,214,0,.4);background:rgba(255,214,0,.08);color:#FFD600}
+.jp-lote-prog{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--txt-2,#c3cad6)}
+.jp-lote-prog[hidden]{display:none}
+.jp-lt-bar{height:8px;border-radius:6px;background:rgba(255,255,255,.08);overflow:hidden}
+.jp-lt-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#D2793F,#E5C378);transition:width .2s ease}
+.jp-lote-det{border-top:1px dashed var(--line-2,#2a2f3a);padding-top:8px}
+.jp-lote-det summary{cursor:pointer;font-size:12.5px;color:var(--txt-2,#c3cad6);min-height:32px;display:flex;align-items:center}
+#jpLoteList{list-style:none;margin:6px 0 0;padding:0;max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
+.jp-lt-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 9px;border-radius:8px;background:rgba(255,255,255,.03);font-size:12.5px}
+.jp-lt-row .jp-vbadge{margin-left:auto}
+.jp-lt-n{flex:1 1 140px;min-width:0;overflow-wrap:anywhere}
+.jp-lt-f{color:#828A97;font-size:11.5px}
+.jp-lt-row.hecho{background:rgba(72,213,151,.07)}
+.jp-lt-row.error{background:rgba(224,101,74,.1)}
+/* Exportar: la acción principal destaca; Previsualizar y Copiar quedan agrupadas; la guía de la plantilla pasa a segundo plano */
+.exp-actions{display:flex;flex-direction:column;gap:9px}
+.exp-actions #btnExport{width:100%;min-height:58px;padding:12px 14px;font-size:15px;letter-spacing:.03em;line-height:1.2;white-space:normal;text-align:center;justify-content:center;box-shadow:0 6px 22px rgba(210,121,63,.28)}
+.exp-sec{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.exp-sec .btn{min-height:44px;justify-content:center;font-weight:700}
+.exp-guia{display:flex;gap:9px;align-items:flex-start;padding:2px 4px;font-size:12px;line-height:1.5;color:#8A93A0}
+.exp-guia b{color:var(--txt-2,#b6bfcc)}
+@media (max-width:520px){ .exp-sec{grid-template-columns:1fr} }
 </style>
 
 <script>
@@ -68722,57 +68954,117 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       return p && typeof totalEjercicios === 'function' && totalEjercicios(p) > 0;
     });
   }
+  var corriendo = false, ultimo = null, lastSig = '';
+  function fechaCorta(ts){ if(!ts) return ''; try{ return new Date(ts).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }); }catch(e){ return ''; } }
+  function contar(lista){
+    var c = { ok: 0, old: 0, sin: 0 };
+    lista.forEach(function(a){ var e = estado(a.id); if(e.cls === 'ok') c.ok++; else if(e.cls === 'old') c.old++; else c.sin++; });
+    return c;
+  }
+  function filaEstado(a){
+    var e = estado(a.id), m = metaDe(a.id) || {}, f = fechaCorta(m.tplFecha);
+    return '<li class="jp-lt-row" data-lt="' + a.id + '"><span class="jp-lt-n">' + esc(fullName(a)) + '</span>' +
+      '<span class="jp-vbadge ' + (e.cls || '') + '">' + esc(e.txt) + '</span>' + (f ? '<span class="jp-lt-f">' + esc(f) + '</span>' : '') + '</li>';
+  }
+  function progreso(n, total, txt){
+    var bar = document.querySelector('#jpLoteProg .jp-lt-bar i'), tx = document.getElementById('jpLoteProgTx');
+    if(bar) bar.style.width = Math.round(n / total * 100) + '%';
+    if(tx) tx.textContent = n + ' de ' + total + (txt ? ' · ' + txt : '');
+  }
+  function marcarFila(id, ok){
+    var li = document.querySelector('#jpLoteList [data-lt="' + id + '"]'); if(!li) return;
+    li.classList.add(ok ? 'hecho' : 'error');
+    var b = li.querySelector('.jp-vbadge');
+    if(b){ b.className = 'jp-vbadge ' + (ok ? 'ok' : 'old'); b.textContent = ok ? 'v' + TPL + ' · recién compilada' : 'error al compilar'; }
+  }
   function lote(){
+    if(corriendo) return;
     var lista = conPlan();
     if(!lista.length){ try{ toast('No hay alumnos con plan cargado', 'warn'); }catch(e){} return; }
-    var archivos = [], fallos = [];
-    lista.forEach(function(a){
+    corriendo = true; ultimo = null;
+    var archivos = [], fallos = [], i = 0, btn = document.getElementById('jpLoteGo'), prog = document.getElementById('jpLoteProg');
+    if(btn){ btn.disabled = true; btn.textContent = '⏳ Compilando…'; }
+    if(prog) prog.hidden = false;
+    var det = document.getElementById('jpLoteDet'); if(det) det.open = true;
+    function fin(){
+      if(!archivos.length){
+        corriendo = false; try{ toast('No se pudo compilar ninguna app', 'err'); }catch(e){}
+        ultimo = { ok: 0, err: fallos.length }; lastSig = ''; barra(); return;
+      }
+      archivos.push({ nombre: 'LEEME.txt', contenido:
+        'Coach JP · apps compiladas con la plantilla v' + TPL + '\n' +
+        'Generado el ' + new Date().toLocaleString('es-AR') + '\n\n' +
+        'Cada archivo es la app autónoma de un alumno.\n' +
+        'Para publicarla en GitHub Pages, renombrala a index.html.\n\n' +
+        archivos.map(function(f){ return '• ' + f.nombre; }).join('\n') });
+      var b = zip(archivos);
+      var u = URL.createObjectURL(b), el = document.createElement('a');
+      el.href = u; el.download = 'coachjp-apps-v' + TPL + '.zip';
+      document.body.appendChild(el); el.click();
+      setTimeout(function(){ URL.revokeObjectURL(u); el.remove(); }, 600);
+      progreso(lista.length, lista.length, 'listo');
+      corriendo = false; ultimo = { ok: archivos.length - 1, err: fallos.length, fallos: fallos };
       try{
-        archivos.push({ nombre: 'index-' + slug(fullName(a)) + '.html', contenido: compile(a) });
-        marcar(a.id);
-      }catch(e){ fallos.push(fullName(a)); }
-    });
-    if(!archivos.length){ try{ toast('No se pudo compilar ninguna app', 'err'); }catch(e){} return; }
-    archivos.push({ nombre: 'LEEME.txt', contenido:
-      'Coach JP · apps compiladas con la plantilla v' + TPL + '\n' +
-      'Generado el ' + new Date().toLocaleString('es-AR') + '\n\n' +
-      'Cada archivo es la app autónoma de un alumno.\n' +
-      'Para publicarla en GitHub Pages, renombrala a index.html.\n\n' +
-      archivos.map(function(f){ return '• ' + f.nombre; }).join('\n') });
-    var b = zip(archivos);
-    var u = URL.createObjectURL(b), el = document.createElement('a');
-    el.href = u; el.download = 'coachjp-apps-v' + TPL + '.zip';
-    document.body.appendChild(el); el.click();
-    setTimeout(function(){ URL.revokeObjectURL(u); el.remove(); }, 600);
-    try{
-      toast('📦 ' + (archivos.length - 1) + ' apps recompiladas con la plantilla v' + TPL +
-            (fallos.length ? ' · ' + fallos.length + ' con error' : ''));
-    }catch(e){}
-    insignias();
+        toast('📦 ' + (archivos.length - 1) + ' apps recompiladas con la plantilla v' + TPL +
+              (fallos.length ? ' · ' + fallos.length + ' con error' : ''), fallos.length ? 'warn' : undefined);
+      }catch(e){}
+      insignias(); lastSig = ''; barra();
+    }
+    function paso(){
+      if(i >= lista.length) return fin();
+      var a = lista[i];
+      progreso(i, lista.length, 'compilando ' + fullName(a) + '…');
+      setTimeout(function(){
+        try{
+          archivos.push({ nombre: 'index-' + slug(fullName(a)) + '.html', contenido: compile(a) });
+          marcar(a.id); marcarFila(a.id, true);
+        }catch(e){ fallos.push(fullName(a)); marcarFila(a.id, false); }
+        i++; paso();
+      }, 40);
+    }
+    paso();
   }
   window.jpRecompilarTodo = lote;
 
-  /* --- barra en la vista Exportar --- */
+  /* --- panel de compilación masiva en la vista Exportar --- */
   function barra(){
     var host = document.getElementById('btnExport');
     if(!host || !host.parentNode) return;
+    var anchor = host.closest('.exp-actions') || host;
     var caja = document.getElementById('jpLote');
     if(!caja){
       caja = document.createElement('div');
       caja.id = 'jpLote';
       caja.innerHTML =
+        '<div class="jp-lote-h"><b>📦 Compilación masiva</b><span class="jp-lote-ver">Plantilla v' + TPL + '</span></div>' +
+        '<div class="jp-lote-kpis" id="jpLoteK"></div>' +
+        '<div class="jp-lote-prog" id="jpLoteProg" hidden><div class="jp-lt-bar"><i></i></div><span id="jpLoteProgTx"></span></div>' +
         '<button class="btn" type="button" id="jpLoteGo">📦 Recompilar todas las apps</button>' +
-        '<span class="hint" id="jpLoteTx"></span>';
-      host.parentNode.insertBefore(caja, host.nextSibling);
+        '<div class="hint" id="jpLoteTx"></div>' +
+        '<details class="jp-lote-det" id="jpLoteDet"><summary>Estado por alumno</summary><ul id="jpLoteList"></ul></details>';
+      anchor.parentNode.insertBefore(caja, anchor.nextSibling);
       caja.querySelector('#jpLoteGo').addEventListener('click', lote);
     }
-    var lista = conPlan();
-    var viejas = lista.filter(function(a){ return estado(a.id).cls !== 'ok'; }).length;
-    var t = lista.length + (lista.length === 1 ? ' alumno con plan' : ' alumnos con plan') +
-            ' · plantilla actual v' + TPL +
-            (viejas ? ' · ' + viejas + ' con versión vieja' : ' · todas al día');
-    var tx = caja.querySelector('#jpLoteTx');
-    if(tx && tx.textContent !== t) tx.textContent = t;
+    if(corriendo) return;
+    var lista = conPlan(), c = contar(lista);
+    var sig = lista.map(function(a){ var e = estado(a.id), m = metaDe(a.id) || {}; return a.id + e.txt + (m.tplFecha || ''); }).join('|') + '#' + (ultimo ? ultimo.ok + '/' + ultimo.err : '');
+    if(sig === lastSig) return;
+    lastSig = sig;
+    var k = caja.querySelector('#jpLoteK');
+    k.innerHTML = lista.length
+      ? '<span class="k ok"><b>' + c.ok + '</b> al día</span><span class="k old"><b>' + c.old + '</b> con versión vieja</span><span class="k sin"><b>' + c.sin + '</b> sin exportar</span>'
+      : '<span class="k sin">Ningún alumno tiene plan cargado todavía</span>';
+    var go = caja.querySelector('#jpLoteGo');
+    go.disabled = !lista.length;
+    go.className = 'btn' + ((c.old + c.sin) ? ' gold' : '');
+    go.textContent = '📦 Recompilar todas las apps (' + lista.length + ')';
+    var t = lista.length + (lista.length === 1 ? ' alumno con plan' : ' alumnos con plan') + ' · plantilla actual v' + TPL +
+            ((c.old + c.sin) ? ' · ' + (c.old + c.sin) + ' por actualizar' : ' · todas al día');
+    if(ultimo) t = (ultimo.ok ? '✔ Última recompilación: ' + ultimo.ok + (ultimo.ok === 1 ? ' app' : ' apps') + ' con la plantilla v' + TPL : '✖ No se pudo compilar ninguna app') +
+      (ultimo.err ? ' · ' + ultimo.err + ' con error (' + (ultimo.fallos || []).join(', ') + ')' : '') + '. ' + t;
+    caja.querySelector('#jpLoteTx').textContent = t;
+    caja.querySelector('#jpLoteList').innerHTML = lista.map(filaEstado).join('');
+    var prog = caja.querySelector('#jpLoteProg'); if(prog && !ultimo) prog.hidden = true;
   }
 
   function repintar(){ try{ insignias(); barra(); }catch(e){} }
@@ -77215,6 +77507,48 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 .jp-dayactions > [data-vaciardia]{ flex:0 0 auto !important; margin-left:auto; padding:0 14px !important; position:relative; background:rgba(224,101,74,.06) !important; border:1px solid rgba(224,101,74,.28) !important; color:#E0856F !important; font-weight:600; }
 .jp-dayactions > [data-vaciardia]::before{ content:''; position:absolute; left:-9px; top:20%; height:60%; width:1px; background:var(--line-2,#2a2f3a); }
 .jp-day-tools{ border-top:1px solid var(--line,#1f242d); padding-top:12px; }
+/* barra de acciones de la ficha del día: tres columnas iguales */
+.jp-day-foot{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:14px; padding-top:12px; border-top:1px solid var(--line,#1f242d); }
+.jp-day-foot.dos{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+.jp-day-foot .jp-df{ width:100%; min-height:44px; justify-content:center; text-align:center; white-space:normal; line-height:1.2; font-weight:700; }
+.jp-day-foot .jp-df-cp{ border-color:rgba(56,189,248,.4) !important; color:#38bdf8 !important; }
+.jp-day-foot .jp-df-adv{ border-color:var(--line-2,#2a2f3a) !important; color:var(--txt-2,#c3cad6) !important; }
+.jp-day-foot .jp-df-adv[aria-expanded="true"]{ border-color:var(--gold-active,#E5C378) !important; color:var(--gold-active,#E5C378) !important; }
+.jp-day-foot .jp-df-del{ margin-left:0 !important; background:rgba(224,101,74,.06) !important; border:1px solid rgba(224,101,74,.34) !important; color:#E8907A !important; }
+.jp-day-advp{ margin-top:12px; padding:12px; border:1px solid var(--line,#1f242d); border-radius:12px; background:rgba(255,255,255,.02); }
+.jp-day-advp[hidden]{ display:none; }
+@media (max-width:640px){ .jp-day-foot, .jp-day-foot.dos{ grid-template-columns:1fr; } }
+/* volumen semanal de series efectivas: las chips envuelven (sin scroll horizontal ni recorte) y el texto de rangos baja a su propia línea cuando no entra */
+.vol-card{ overflow:hidden; }
+.vol-head{ row-gap:4px; }
+.vol-head h3{ flex:1 1 auto; min-width:0; }
+.vol-head .hint{ flex:1 1 100%; margin:0 !important; white-space:normal; color:var(--txt-2,#b6bfcc); }
+@media (min-width:900px){ .vol-head .hint{ flex:0 1 auto; margin-left:auto !important; text-align:right; } }
+.vol-chips{ flex-wrap:wrap !important; overflow:visible !important; padding-bottom:0 !important; row-gap:6px; }
+.vol-sub{ color:var(--txt-2,#b6bfcc) !important; overflow-wrap:anywhere; }
+/* selector de días del Builder: textos legibles (2 líneas), flechas de mover fuera del texto y mayor contraste */
+#dayTabs .tab{ flex:1 1 150px; min-width:0; max-width:100%; text-align:left; color:var(--txt-2,#c3cad6); border-color:var(--line-2,#2a2f3a); }
+#dayTabs .tab .tab-label, #dayTabs .tab .tab-grp{ text-align:left; }
+#dayTabs .tab .tab-short{ color:var(--txt,#eef1f5); }
+#dayTabs .tab .tab-label{ max-width:190px !important; white-space:normal !important; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; color:var(--txt-2,#c3cad6) !important; font-size:11.5px; line-height:1.25; }
+#dayTabs .tab .tab-grp{ white-space:normal !important; color:#7FC4E4 !important; font-size:10.5px; line-height:1.25; }
+#dayTabs .tab.on{ padding-right:18px !important; }
+#dayTabs .tab.on .tab-short{ color:var(--gold-active,#E5C378); }
+#dayTabs .tab .tab-mv{ position:static !important; margin-top:5px; }
+#dayTabs .tab.tab-add{ flex:0 0 auto; min-width:0; align-items:center; justify-content:center; }
+/* aviso de bloque en formato anterior: franja compacta */
+.jp-legacy{ display:flex; align-items:center; gap:10px; margin:0 0 10px; padding:8px 10px; border-radius:10px; background:rgba(229,195,120,.07); border:1px solid rgba(229,195,120,.28); }
+.jp-legacy .ic{ flex:0 0 auto; font-size:16px; }
+.jp-legacy-t{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.jp-legacy-t b{ font-size:12.5px; color:var(--gold-active,#E5C378); }
+.jp-legacy-t small{ font-size:11.5px; line-height:1.35; color:var(--txt-2,#b6bfcc); }
+.jp-legacy .btn{ flex:0 0 auto; min-height:40px; }
+@media (max-width:640px){ .jp-legacy{ flex-wrap:wrap; } .jp-legacy .btn{ width:100%; } }
+/* recuadro 📍 LOGÍSTICA DE SALÓN: botones de solución rápida */
+.lg-fix{ display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+.lg-fix .btn{ min-height:40px; flex:1 1 220px; justify-content:center; text-align:center; white-space:normal; line-height:1.2; }
+/* panel de contexto: sin párrafo explicativo (queda en el título del badge) para ganar altura */
+.ctx-card .cx-sub{ display:none; }
 .jp-day-tools > [data-eliminardia]{ margin-left:auto; background:rgba(224,101,74,.06) !important; border:1px solid rgba(224,101,74,.28) !important; color:#E0856F !important; font-weight:600; }
 .jp-cb{ display:inline-flex; align-items:center; gap:8px; margin-left:auto; padding:5px 6px 5px 12px; border:1px solid rgba(224,101,74,.5); border-radius:10px; background:rgba(224,101,74,.1); font-size:12.5px; }
 .jp-cb-q{ color:#f0a08c; font-weight:700; }
