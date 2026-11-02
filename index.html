@@ -41594,6 +41594,51 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     }).join('');
     if(pop.__h !== hp){ pop.__h = hp; pop.innerHTML = hp; }
   }
+  /* Selector de día: reemplaza la barra horizontal de pastillas (se cortaba y costaba deslizarla en pantallas chicas) por un botón con el día activo
+     y un menú vertical, con el mismo estilo que el selector de semana (SEM). Las pastillas .day-tab siguen en el DOM (ocultas) para que el resto
+     de los módulos las lean; elegir un día hace click sobre su pastilla, así corre exactamente la misma lógica de siempre. */
+  function diaMenu(){
+    var row = $('.hdc-days-row'); if(!row || typeof DAYS === 'undefined' || !DAYS || !DAYS.length) return;
+    var btn = $('#jpDayBtn'), pop = $('#jpDayPop');
+    var cerrar = function(){ var p = $('#jpDayPop'), b = $('#jpDayBtn'); if(p) p.classList.remove('on'); if(b) b.setAttribute('aria-expanded', 'false'); };
+    if(!btn){
+      btn = document.createElement('button'); btn.type = 'button'; btn.id = 'jpDayBtn'; btn.className = 'jp-wk-btn jp-day-btn';
+      btn.setAttribute('aria-haspopup', 'listbox'); btn.setAttribute('aria-expanded', 'false');
+      var wk = $('#jpWkBtn');
+      row.insertBefore(btn, wk ? wk.nextSibling : row.firstChild);
+      pop = document.createElement('div'); pop.id = 'jpDayPop'; pop.className = 'jp-wk-pop jp-day-pop'; pop.setAttribute('role', 'listbox'); row.appendChild(pop);
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var w = $('#jpWkPop'); if(w) w.classList.remove('on');
+        var on = pop.classList.toggle('on'); btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+      });
+      if(wk) wk.addEventListener('click', cerrar);
+      document.addEventListener('click', cerrar);
+      pop.addEventListener('click', function(e){
+        var o = e.target.closest('[data-dia]'); if(!o) return;
+        e.stopPropagation(); cerrar();
+        var t = document.querySelector('.hdc-days-wrap .day-tab[data-day="' + o.getAttribute('data-dia') + '"]');
+        if(t && !t.classList.contains('active')) t.click();
+        try{ window.scrollTo({ top: 0, behavior: 'smooth' }); }catch(e2){}
+      });
+      document.body.classList.add('jp-day-menu');
+    }
+    var idx = 0;
+    DAYS.forEach(function(d, i){ if(d.id === state.currentDay) idx = i; });
+    var etq = function(d, i){
+      var n = 'D\\u00cdA ' + (i + 1), l = String(d.label || '').split(' \\u00b7 ').join(' - ').trim().toUpperCase();
+      return (l && l !== n) ? n + ': ' + l : n;
+    };
+    var h = '<span class="jp-day-ic" aria-hidden="true">&#128197;</span><b>' + escHtmlSafe(etq(DAYS[idx], idx)) + '</b><i>&#9662;</i>';
+    if(btn.__h !== h){ btn.__h = h; btn.innerHTML = h; }
+    var hp = DAYS.map(function(d, i){
+      var hecho = false; try{ hecho = isDayDone(state.currentWeek, d.id); }catch(e){}
+      var l = String(d.label || '').split(' \\u00b7 ').join(' - ').trim().toUpperCase();
+      return '<button type="button" role="option" data-dia="' + escHtmlSafe(d.id) + '" class="' + (i === idx ? 'on' : '') + '" aria-selected="' + (i === idx ? 'true' : 'false') + '"><b>D\\u00cdA ' + (i + 1) + '</b><span class="jp-dp-t">' +
+        escHtmlSafe(l) + '</span><small>' + (hecho ? '&#10003; HECHO' : (d.optional ? 'OPCIONAL' : '')) + '</small></button>';
+    }).join('');
+    if(pop.__h !== hp){ pop.__h = hp; pop.innerHTML = hp; }
+  }
   function dias(){
     var cambio = false;
     [].forEach.call(document.querySelectorAll('.hdc-days-wrap .day-tab .tab-name'), function(n){
@@ -41670,7 +41715,7 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
   function aplicar(){
     pend = 0;
     if(obs) obs.disconnect();
-    try{ idBar(); semana(); dias(); if(ES_SPORTS) brief(); }catch(e){}
+    try{ idBar(); semana(); diaMenu(); dias(); if(ES_SPORTS) brief(); }catch(e){}
     try{ emojis(); }catch(e){}
     try{ if(window.__jpSoltarHold) window.__jpSoltarHold(); }catch(e){}
     if(obs) obs.observe(document.body, { childList:true, subtree:true, characterData:true });
@@ -45181,6 +45226,21 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
 })();
 <\/script>
 <!--/UX-FINAL-JP-->
+<style id="jpDayMenu">
+/* SELECTOR DE DÍA: botón con el día activo + menú vertical (reemplaza la barra horizontal de pastillas, que se cortaba en pantallas chicas).
+   Reutiliza el estilo de .jp-wk-btn / .jp-wk-pop del selector de semana; las pastillas .day-tab quedan ocultas en el DOM. */
+html body.jp-day-menu .hdc-days-row .hdc-days-wrap{ display:none !important; }
+html body:not(#_) .jp-day-btn{ flex:1 1 0 !important; min-width:0 !important; max-width:none !important; width:auto !important; justify-content:flex-start !important; gap:8px !important; height:auto !important; min-height:44px !important; padding:0 12px !important; }
+html body:not(#_) .jp-day-btn b{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; white-space:normal !important; text-align:left; font-size:.74rem; line-height:1.15; letter-spacing:.03em; padding:4px 0; }
+.jp-day-btn .jp-day-ic{ flex:0 0 auto; font-size:.95rem; line-height:1; }
+html body:not(#_) .jp-day-btn i{ flex:0 0 auto; margin-left:auto; transition:transform .18s ease; }
+html body:not(#_) .jp-day-btn[aria-expanded="true"] i{ transform:rotate(180deg); }
+html body:not(#_) .jp-day-pop{ left:12px !important; right:12px !important; min-width:0 !important; width:auto; max-height:min(66vh,440px); overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+html body:not(#_) .jp-day-pop button{ min-height:48px !important; align-items:center; }
+.jp-day-pop button b{ flex:0 0 auto; min-width:46px; white-space:nowrap; }
+.jp-day-pop button .jp-dp-t{ flex:1 1 auto; min-width:0; font-weight:700; letter-spacing:.03em; font-size:.78rem; line-height:1.2; }
+.jp-day-pop button small{ flex:0 0 auto; font-size:.62rem; letter-spacing:.08em; }
+</style>
 
 </body>
 </html>
@@ -79289,12 +79349,17 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     ['biceps', /curl(?! femoral| nordico)|biceps/],
     ['inf', /sentadilla|prensa|zancada|bulgar|split squat|step ?up|step down|rumano|hip thrust|puente de gluteo|patada de gluteo|extension de cadera|pull-?through|abduccion|aduccion|curl femoral|nordico|extension de cuadriceps|hack|gemelo|talones|buenos dias|good morning|monster walk|sissy|peso muerto/],
     ['espalda', /remo|jalon|dominada|pull-?up|chin-?up|pull-?over en polea|encogimientos|hiperextension|superman|dorsal|australian/],
-    ['dpost', /pajaro|elevaciones posteriores|cruce de cables deltoides|face pull|deltoide posterior|rotacion externa/],
+    ['dpost', /pajaro|elevaciones posteriores|elevacion posterior|cruce de cables deltoides|face pull|deltoide posterior|rotacion externa|pec deck inverso/],
     ['hombros', /press militar|press de hombros|press arnold|elevaciones laterales|elevacion lateral|elevaciones frontales|push press|remo al menton|press landmine|handstand/],
     ['pecho', /press de banca|press banca|bench|press plano|press inclinado|press declinado|aperturas|cruce de cables|cruce de poleas|pec deck|contractor de pecho|fondos|flexiones|press de pecho|floor press|pull-?over con mancuerna/]
   ];
   function famDe(nombre){
     var n = nz(nombre);
+    /* nombre en inglés ("Incline Bench Dumbbell Row", "Reverse Pec Deck"): se clasifica por el nombre en español de la biblioteca; si no, "bench" o "pec deck" lo mandaban a pecho */
+    try{
+      var eb = window.__jpPB && window.__jpPB.exLib(String(nombre).replace(/\s*\(.*\)\s*$/, ''));
+      if(eb && eb.es) n = nz(eb.es);
+    }catch(eb2){}
     for(var i = 0; i < RX_FAM.length; i++){ if(RX_FAM[i][1].test(n)) return RX_FAM[i][0]; }
     /* sin coincidencia por nombre: el grupo de la biblioteca */
     try{
@@ -79312,11 +79377,21 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(!b || b.optional && /metcon|cardio|endurance/.test(b.category || '')) return;
       if(/^(warmup|metcon|cardio|endurance)$/.test(b.category || '') || b.modalidad === 'calentamiento' || b.modalidad === 'metcon') return;
       if(b.tipo === 'list'){
-        var nombre = null;
+        /* bloque de un solo ejercicio (sin líneas A1/A2): el ejercicio es el título del bloque; antes se ignoraba y el día se rotulaba por los bisets nada más */
+        var nombre = (b.items || []).some(function(l){ return /^[A-F]\d+[.):]/i.test(String(l).trim()); }) ? null : String(b.titulo || '').replace(/\s*\(.*\)\s*$/, '').trim() || null;
         (b.items || []).forEach(function(l){
           l = String(l).trim(); if(!l || /^(rest|descanso)\b/i.test(l)) return;
           var m = /^(\d+)\s*x\s*\d/i.exec(l);
-          if(m){ if(nombre){ out.push({ n: nombre, s: parseInt(m[1], 10) || 1 }); nombre = null; } return; }
+          if(m){
+            if(nombre){
+              /* dosis por tramos ("1x8 (Aclimatación) + 1x6 + 3x4 (Top Set)"): suma todas las series, no solo la primera */
+              var sv = 0, rxS = /(\d+)\s*x\s*\d/gi, mS;
+              var base = l.split('|')[0].replace(/\([^)]*\)/g, '');
+              while((mS = rxS.exec(base))) sv += parseInt(mS[1], 10) || 0;
+              out.push({ n: nombre, s: sv || parseInt(m[1], 10) || 1 }); nombre = null;
+            }
+            return;
+          }
           var inline = /^(.*?)\s*[—–-]\s*(\d+)\s*x\s*\d/.exec(l);
           if(inline){ out.push({ n: inline[1].replace(/^-\s*/, ''), s: parseInt(inline[2], 10) || 1 }); nombre = null; return; }
           nombre = l.replace(/^A\d+\.\s*/, '').replace(/^-\s*/, '').replace(/\s*\(.*\)\s*$/, '').replace(/\s*[—–]\s*.*$/, '').trim();
