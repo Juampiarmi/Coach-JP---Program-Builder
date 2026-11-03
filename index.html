@@ -57574,6 +57574,12 @@ body.man-mode .gs-fab{right:318px}
         try{
           if(typeof window.jpModernizarDia === 'function') reg.dias.forEach(d => window.jpModernizarDia(d.bloques, reg.niv));
         }catch(eMod){ console.warn('plantilla: no se pudo modernizar la copia', eMod); }
+        try{
+          if(window.CoachAuditoria && typeof window.CoachAuditoria.rellenarDias === 'function'){
+            const rel = window.CoachAuditoria.rellenarDias(reg);
+            if(rel.length) toast('🧩 ' + rel.length + ' bloque(s) sin ejercicio se completaron en la plantilla (el plan del alumno no se tocó)', 'info');
+          }
+        }catch(eRel){ console.warn('plantilla: relleno', eRel); }
         const gx = String(ath.genero || '').toLowerCase();
         const gm = /^f|fem|muj/.test(gx) ? 'f' : (/^m|mas|hom|var/.test(gx) ? 'm' : (/femenin/i.test(reg.nombre) ? 'f' : (/masculin/i.test(reg.nombre) ? 'm' : '')));
         if(gm) reg.genero = gm;
@@ -79826,6 +79832,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       h += '<ul class="pv-wu">' + items.map(function(l){ return '<li>' + E(String(l).replace(/^-\s*/, '')) + '</li>'; }).join('') + '</ul>';
     } else {
       var ex = null, bloques = [];
+      /* bloque de un solo ejercicio: el nombre vive en el título y las líneas son solo dosis y descanso (antes se perdía y el bloque se veía vacío) */
+      var primera = String(items.filter(function(l){ return String(l).trim(); })[0] || '').trim();
+      if(primera && /^\d+\s*x\s*\d/i.test(primera)){ ex = { st: '', n: limpio || 'Ejercicio sin nombre', dose: '', rest: '', sin: !limpio }; bloques.push(ex); }
       items.forEach(function(l){
         var s = String(l), m;
         if((m = /^A(\d+)\.\s*(.+)$/.exec(s))){ ex = { st: 'A' + m[1], n: m[2], dose: '', rest: '' }; bloques.push(ex); }
@@ -79836,13 +79845,15 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       var multi = bloques.length > 1 && bloques[0].st;
       bloques.forEach(function(x, i){
         var nm = String(x.n), pm = /^(.*?)\s*\((.+)\)\s*$/.exec(nm);
-        h += '<div class="pv-ex"><div class="pv-en">' + (x.st ? '<span class="st">' + x.st + '</span>' : '') + E(pm ? pm[1] : nm) + (pm ? ' <small>' + E(pm[2]) + '</small>' : '') + '</div>';
+        h += '<div class="pv-ex"><div class="pv-en">' + (x.st ? '<span class="st">' + x.st + '</span>' : '') + E(pm ? pm[1] : nm) + (pm ? ' <small>' + E(pm[2]) + '</small>' : '') + (x.sin ? ' <small>· falta asignar el ejercicio</small>' : '') + '</div>';
         var last = i === bloques.length - 1, restTxt = x.rest || (last ? (bloques.filter(function(y){ return y.rest; })[0] || {}).rest : '');
-        h += '<div class="pv-dose">' + x.dose + (tempo && !multi ? '<span class="pv-d tp">Tempo ' + E(tempo) + '</span>' : '') + ((multi ? last : true) && restTxt ? '<span class="pv-d rest">⏱ ' + (multi ? 'al cerrar la ronda: ' : 'descanso ') + E(restTxt) + 's</span>' : '') + '</div></div>';
+        h += '<div class="pv-dose">' + x.dose + (tempo && !multi && x.dose.indexOf('Tempo') < 0 ? '<span class="pv-d tp">Tempo ' + E(tempo) + '</span>' : '') + ((multi ? last : true) && restTxt ? '<span class="pv-d rest">⏱ ' + (multi ? 'al cerrar la ronda: ' : 'descanso ') + E(restTxt) + 's</span>' : '') + '</div></div>';
       });
     }
-    if(b.objective) h += '<p class="pv-obj"><b>Objetivo fisiológico</b><br>' + E(b.objective) + '</p>';
-    var tips = String(b.tips || '').split(/\n+/).map(function(x){ return x.trim(); }).filter(Boolean);
+    if(!items.some(function(l){ return String(l).trim(); })) h += '<div class="pv-legacy">⚠ Este bloque no tiene ejercicios cargados. Abrí «🔎 AUDITAR BANCO» y tocá «Reparar mis plantillas» para completarlo.</div>';
+    var aclarar = function(t){ return (typeof window.jpAclararTexto === 'function') ? window.jpAclararTexto(t) : t; };
+    if(b.objective) h += '<p class="pv-obj"><b>Objetivo fisiológico</b><br>' + E(aclarar(b.objective)) + '</p>';
+    var tips = String(b.tips || '').split(/\n+/).map(function(x){ return aclarar(x.trim()); }).filter(Boolean);
     if(tips.length){
       h += '<details class="pv-det"><summary>Pautas técnicas y coaching tips (' + tips.length + ')</summary><ul class="pv-tips">' + tips.map(function(t){
         var m = /^([A-F]\d\s*·\s*)?([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ \-\/·+]{2,40}):\s*(.*)$/.exec(t);
@@ -84953,7 +84964,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
         if(['block', 'superset', 'finisher', 'hyrox'].indexOf(b.tipo) >= 0){ add('crit', 'formato_viejo', t + ': bloque de formato anterior («' + b.tipo + '»); se convierte con Actualizar plantillas.'); return; }
         if(b.tipo !== 'list') return;
         var items = b.items || [];
-        if(!items.length || !items.some(function(l){ return String(l).trim(); })){ add('crit', 'bloque_vacio', t + ': bloque vacío.'); return; }
+        if(!items.length || !items.some(function(l){ return String(l).trim(); })){ add('crit', 'bloque_vacio', t + ': bloque vacío' + ((String(b.objective || '').trim() || String(b.tips || '').trim()) ? ' (tiene objetivo y pautas, pero ningún ejercicio)' : '') + '.'); return; }
+        if(!cf && esCascaron(b)){ add('crit', 'bloque_cascaron', t + ': tiene dosis' + ((String(b.objective || '').trim() || String(b.tips || '').trim()) ? ' y objetivo/pautas' : '') + ' pero ningún ejercicio asignado.'); return; }
         if(!b.titulo || !String(b.titulo).trim()) add('warn', 'bloque_sin_titulo', t + ': sin título.');
         if(b.tipo === 'list' && !b.sportsPizarra && !cf && !cardio) add('crit', 'formato_viejo', t + ': lista que no es de Pizarra Táctica.');
         if(cf) return;
@@ -84977,6 +84989,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
         try{ if(!(typeof jpLgExento === 'function' && jpLgExento(b))) jpLogisticaBloque(b).forEach(function(i){ add('crit', 'logistica', t + ': ' + i.msg); }); }catch(e){}
       });
     });
+    { var nl = aclararRegistro(JSON.parse(JSON.stringify(r)), true); if(nl) add('warn', 'lenguaje', nl + ' texto(s) con tecnicismos o citas de estudios (se aclaran con Reparar).'); }
     return H;
   }
   function firma(r){
@@ -85047,13 +85060,15 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     var niv = /avanz|compet|elite|élite/i.test(String(r.niv || '')) ? 'avanzado' : 'intermedio';
     (r.dias || []).forEach(function(d, di){
       var n0 = (d.bloques || []).length;
-      d.bloques = (d.bloques || []).filter(function(b){ return !(b && b.tipo === 'list' && !(b.items || []).some(function(l){ return String(l).trim(); }) && !String(b.titulo || '').trim()); });
-      if(d.bloques.length !== n0) cambios.push(nom + ' · día ' + (di + 1) + ': ' + (n0 - d.bloques.length) + ' bloque(s) vacío(s) eliminado(s)');
+      d.bloques = (d.bloques || []).filter(function(b){ return !(b && b.tipo === 'list' && !(b.items || []).some(function(l){ return String(l).trim(); }) && !String(b.titulo || '').trim() && !String(b.objective || '').trim() && !String(b.tips || '').trim()); });
+      if(d.bloques.length !== n0) cambios.push(nom + ' · día ' + (di + 1) + ': ' + (n0 - d.bloques.length) + ' bloque(s) totalmente vacío(s) eliminado(s)');
       if(!esCF(r) && typeof window.jpModernizarDia === 'function'){ var m = window.jpModernizarDia(d.bloques, niv); if(m) cambios.push(nom + ' · día ' + (di + 1) + ': ' + m + ' bloque(s) pasados al formato actual'); }
     });
     if(!esCF(r)){
+      try{ rellenarCascarones(r).forEach(function(c){ cambios.push(nom + ' · ' + c); }); }catch(e){ console.warn('relleno', e); }
       try{ jpSanearLogisticaDias(r.dias, null).forEach(function(c){ cambios.push(nom + ' · día ' + c.dia + ': ' + c.accion + ' (' + c.detalle + ')'); }); }catch(e){ console.warn('saneo', e); }
     }
+    try{ var nl = aclararRegistro(r, false); if(nl) cambios.push(nom + ': ' + nl + ' texto(s) aclarados (sin tecnicismos ni citas)'); }catch(e){ console.warn('lenguaje', e); }
     return cambios;
   }
   function reparar(){
@@ -85101,7 +85116,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   }
 
   /* ---------- informe ---------- */
-  var ETQ = { sin_dias: 'Sin días', sin_nombre: 'Sin nombre', sin_genero: 'Sin género', sin_nivel: 'Sin nivel', frecuencia: 'Frecuencia incoherente', mesociclo: 'Mesociclo incompleto', dia_vacio: 'Días vacíos', dia_sin_titulo: 'Días sin nombre', formato_viejo: 'Formato anterior', bloque_vacio: 'Bloques vacíos', bloque_sin_titulo: 'Bloques sin título',
+  var ETQ = { sin_dias: 'Sin días', sin_nombre: 'Sin nombre', sin_genero: 'Sin género', sin_nivel: 'Sin nivel', frecuencia: 'Frecuencia incoherente', mesociclo: 'Mesociclo incompleto', dia_vacio: 'Días vacíos', dia_sin_titulo: 'Días sin nombre', formato_viejo: 'Formato anterior', bloque_vacio: 'Bloques vacíos', bloque_cascaron: 'Bloques sin ejercicio', lenguaje: 'Textos para aclarar', bloque_sin_titulo: 'Bloques sin título',
     sin_dosis: 'Sin dosis', sin_tempo: 'Sin tempo', sin_rir: 'Sin RIR', sin_descanso: 'Sin descanso', sin_objetivo: 'Sin objetivo fisiológico', sin_pautas: 'Sin pautas', nombre_sin_resolver: 'Nombres sin resolver', ejercicio_repetido: 'Ejercicios repetidos en el día', logistica: 'Cruces de estación',
     contenido_duplicado: 'Contenido duplicado', nombre_duplicado: 'Nombres duplicados' };
   function porTipo(a){
@@ -85205,9 +85220,273 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     anchor.parentNode.insertBefore(b, anchor);
     b.addEventListener('click', abrir);
   }
-  window.CoachAuditoria = { auditar: auditarBanco, auditarAlumnos: auditarAlumnos, reparar: reparar, alinearAlumnos: alinearAlumnos, abrir: abrir, informe: function(){ var a = auditarBanco(), al = auditarAlumnos(); return informeTexto(a, al); },
+
+  /* ---------- lenguaje claro: sin citas de estudios ni tecnicismos que el alumno no necesita ---------- */
+  function kase(m, r){ return /^[A-ZÁÉÍÓÚÑ]/.test(m) ? r.charAt(0).toUpperCase() + r.slice(1) : r; }
+  var CLARO = [
+    [/\(\s*anti-?extensi[oó]n,\s*anti-?rr?otaci[oó]n\s*\)/gi, '(que la espalda no se arquee ni gire)'],
+    [/estabilidad axial/gi, 'estabilidad del tronco'],
+    [/anti-?rr?otaci[oó]n del tronco/gi, 'contra el giro del tronco'],
+    [/anti-?extensi[oó]n y anti-?rr?otaci[oó]n/gi, 'contra el arqueo y el giro de la espalda'],
+    [/anti-?extensi[oó]n del tronco/gi, 'tronco firme contra el arqueo'],
+    [/anti-?extensi[oó]n/gi, 'contra el arqueo de la espalda'],
+    [/anti-?rr?otaci[oó]n/gi, 'contra el giro del tronco'],
+    [/el brace de (?:la )?columna/gi, 'la firmeza del tronco'],
+    [/\s*\(\s*retroversi[oó]n\s*\)/gi, ''],
+    [/en (?:una )?(?:leve |ligera )?retroversi[oó]n/gi, 'levemente hacia atrás'],
+    [/retroversi[oó]n(?: de (?:la )?pelvis)?/gi, 'pelvis hacia atrás'],
+    [/isquiosurales/gi, 'isquiotibiales'],
+    [/reclutan? unidades motoras/gi, 'activa más fibras musculares'],
+    [/el reclutamiento de (?:unidades motoras de )?alto umbral/gi, 'la activación de las fibras más grandes'],
+    [/reclutamiento de unidades motoras de alto umbral/gi, 'activación de las fibras musculares más grandes'],
+    [/reclutamiento de alto umbral/gi, 'activación de las fibras más grandes'],
+    [/unidades motoras de alto umbral/gi, 'fibras musculares más grandes'],
+    [/unidades motoras/gi, 'fibras musculares'],
+    [/fibras tipo I y IIa/gi, 'fibras lentas y rápidas'],
+    [/ordena el reclutamiento/gi, 'ordena la activación muscular'],
+    [/\bel reclutamiento\b/gi, 'la activación'],
+    [/\bdel reclutamiento\b/gi, 'de la activación'],
+    [/\breclutamiento\b/gi, 'activación'],
+    [/\brecluta\b/gi, 'activa'],
+    [/\breclutan\b/gi, 'activan'],
+    [/columna tor[aá]cica/gi, 'parte alta de la columna'],
+    [/trabajo neuromuscular previo/gi, 'trabajo previo de coordinación'],
+    [/patr[oó]n neuromuscular/gi, 'movimiento'],
+    [/neuromuscular/gi, 'de coordinación'],
+    [/carga exc[eé]ntrica/gi, 'carga en la bajada'],
+    [/fase exc[eé]ntrica/gi, 'fase de bajada'],
+    [/pausa isom[eé]trica/gi, 'pausa quieta'],
+    [/isom[eé]trica/gi, 'sostenida'],
+    [/\ben acortamiento\b/gi, 'con el músculo contraído'],
+    [/ejercicio multiarticular pesado/gi, 'ejercicio pesado que mueve varias articulaciones'],
+    [/ejercicio multiarticular de alta demanda estructural/gi, 'ejercicio que mueve varias articulaciones y exige mucho al cuerpo'],
+    [/ejercicio multiarticular/gi, 'ejercicio que mueve varias articulaciones'],
+    [/\bmultiarticulares?\b/gi, 'de varias articulaciones'],
+    [/baja demanda sist[eé]mica/gi, 'poco cansancio general'],
+    [/alta demanda sist[eé]mica/gi, 'mucho cansancio general'],
+    [/fatiga sist[eé]mica baja/gi, 'poco cansancio general'],
+    [/fatiga sist[eé]mica alta/gi, 'mucho cansancio general'],
+    [/fatiga sist[eé]mica/gi, 'cansancio general'],
+    [/alta demanda estructural/gi, 'mucha exigencia para el cuerpo'],
+    [/dominancia de cu[aá]driceps/gi, 'más trabajo de cuádriceps'],
+    [/dominancia de gl[uú]teo/gi, 'más trabajo de glúteo'],
+    [/esc[aá]pulas deprimidas/gi, 'escápulas hacia abajo'],
+    [/esc[aá]pulas retra[ií]das/gi, 'escápulas hacia atrás y juntas'],
+    [/\s*\(\s*protracci[oó]n\s*\)/gi, ''],
+    [/control escapular/gi, 'control de los omóplatos'],
+    [/elevaci[oó]n escapular/gi, 'elevación de los omóplatos'],
+    [/remo supino/gi, 'remo con las palmas hacia vos'],
+    [/agarre supino/gi, 'agarre con las palmas hacia vos'],
+    [/movilidad tor[aá]cica/gi, 'movilidad de la parte alta de la espalda'],
+    [/rotaci[oó]n tor[aá]cica/gi, 'giro de la parte alta de la espalda'],
+    [/disociaci[oó]n de caderas y hombros/gi, 'independencia entre caderas y hombros'],
+    [/umbral de lactato/gi, 'ritmo exigente que apenas podés sostener'],
+    [/el lactato se produce y se elimina/gi, 'el cansancio muscular se genera y se elimina'],
+    [/capacidad anaer[oó]bica l[aá]ctica/gi, 'capacidad de sostener esfuerzos muy intensos y cortos'],
+    [/cardio aer[oó]bico/gi, 'cardio suave'],
+    [/capacidad aer[oó]bica/gi, 'resistencia'],
+    [/a baja cadencia/gi, 'pedaleando lento y con fuerza'],
+    [/cadencia (\d)/gi, 'ritmo de $1'],
+    [/sostiene la cadencia/gi, 'sostiene el ritmo de pedaleo'],
+    [/econom[ií]a/gi, 'eficiencia'],
+    [/potenciaci[oó]n post-?activaci[oó]n/gi, 'efecto de activación previa'],
+    [/transferencia directa/gi, 'efecto directo'],
+    [/transferencia espec[ií]fica/gi, 'efecto específico'],
+    [/tensi[oó]n mec[aá]nica/gi, 'tensión sobre el músculo'],
+    [/est[ií]mulo hipertr[oó]fico/gi, 'estímulo para ganar músculo'],
+    [/hipertrofia/gi, 'crecimiento muscular'],
+    [/posici[oó]n overhead/gi, 'posición con los brazos arriba de la cabeza'],
+    [/pre-activar/gi, 'activar antes']
+  ];
+  var RX_ANIO = /\b(?:19|20)\d\d[a-z]?\b/;
+  function sinCitas(s){
+    s = s.replace(/\s*\(([^()]{4,110})\)/g, function(m, c){
+      return (RX_ANIO.test(c) && /^(?:[A-ZÁÉÍÓÚÑ]|seg[uú]n |ver )/.test(c) && c.indexOf(':') < 0 && !/\d\s*[x×]\s*\d/.test(c)) ? '' : m;
+    });
+    return s.replace(/,\s*[A-ZÁÉÍÓÚÑ][^(),;]{1,60}?\b(?:19|20)\d\d[a-z]?(?=\s*\))/g, '');
+  }
+  function sinRepetidos(s){
+    var partes = s.split(/(?<=\.)\s+/);
+    if(partes.length < 2) return s;
+    var vistos = [], out = [];
+    partes.forEach(function(p){
+      var k = N(p).replace(/[.:;\s]+$/, '');
+      if(k.length > 25 && vistos.some(function(v){ return v.indexOf(k) >= 0; })) return;
+      vistos.push(k); out.push(p);
+    });
+    return out.join(' ');
+  }
+  function aclararTexto(t){
+    var s = String(t == null ? '' : t); if(!s.trim()) return s;
+    s = sinCitas(s);
+    CLARO.forEach(function(par){
+      s = s.replace(par[0], function(){ var a = arguments, m = a[0]; return kase(m, par[1].replace(/\$(\d)/g, function(_, i){ return a[+i] || ''; })); });
+    });
+    s = sinRepetidos(s);
+    return s.replace(/\s+([.,;:])/g, '$1').replace(/\(\s*\)/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+  }
+  /* las pautas llevan una etiqueta en mayúsculas («SET-UP:», «HANGING LEG RAISE:») que enlaza con el ejercicio: se conserva tal cual */
+  var RX_ETQ = /^((?:[A-F]\d\s*·\s*)?[A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9 \-\/·+()'.]{1,60}:\s*)([\s\S]*)$/;
+  function aclararPautas(t){
+    return String(t == null ? '' : t).split('\n').map(function(l){ var m = RX_ETQ.exec(l); return m ? m[1] + aclararTexto(m[2]) : aclararTexto(l); }).join('\n');
+  }
+  /* devuelve cuántos textos cambian; con seco=true no escribe nada */
+  function aclararRegistro(r, seco){
+    var n = 0;
+    function fx(o, k, f){ if(!o || typeof o[k] !== 'string' || !o[k]) return; var v = f(o[k]); if(v !== o[k]){ n++; if(!seco) o[k] = v; } }
+    fx(r, 'notas', aclararTexto);
+    if(r.meta) fx(r.meta, 'mesoTexto', aclararTexto);
+    (r.dias || []).forEach(function(d){
+      fx(d, 'focusText', aclararTexto);
+      (d.bloques || []).forEach(function(b){ if(!b) return; fx(b, 'objective', aclararTexto); fx(b, 'tips', aclararPautas); });
+    });
+    return n;
+  }
+
+  /* ---------- bloque cascarón: tiene objetivo/pautas/dosis pero ningún ejercicio ---------- */
+  var RX_DOSIS = /^\s*\d+\s*x\s*\d/i;
+  function esEstruct(l){ return RX_DOSIS.test(l) || /^\s*[-–]?\s*(?:rest|descanso)\b/i.test(l) || /^\s*\d+\s*(?:sets?|series|rondas?)\s*:?\s*$/i.test(l) || !/[A-Za-zÁÉÍÓÚáéíóúñÑ]{3,}/.test(l); }
+  function tituloLimpio(b){ return String(b.titulo || '').replace(/\s*\(\s*\d+\s*MIN\s*\)\s*$/i, '').replace(/^(?:Fuerza principal|Hipertrofia|Accesorios|Core|Entrada en calor)\s*[–-]\s*/i, '').trim(); }
+  var RX_TIT_GENERICO = /^(?:core|finisher|circuito|cierre|estabilidad|accesorios?|fuerza|hipertrofia|bloque|trabajo|ejercicios?|brazos|hombros|piernas|espalda|pecho)\b|core y estabilidad|cierre de/i;
+  function esCascaron(b){
+    if(!b || b.tipo !== 'list') return '';
+    var cardio = /^(?:cardio|endurance|metcon)$/.test(b.category || '') || b.modalidad === 'metcon', warm = b.category === 'warmup' || b.modalidad === 'calentamiento';
+    var items = (b.items || []).map(function(l){ return String(l).trim(); }).filter(Boolean);
+    if(!items.length) return (warm ? '' : 'sin_items');
+    if(items.some(function(l){ return !esEstruct(l); })) return '';
+    var tit = tituloLimpio(b);
+    if(cardio) return tit ? '' : 'sin_nombre';
+    if(tit && !RX_TIT_GENERICO.test(tit)) return '';
+    return 'sin_nombre';
+  }
+
+  /* ---------- relleno: recupera el ejercicio desde las pautas o lo elige por contexto (título, objetivo, patrón) ---------- */
+  var RELLENO = [
+    { id: 'core',   rx: /core|abdom|plancha|anti-?rot|anti-?ext|pallof|tronco|estabilidad|giro de la espalda|arqueo/i, mod: 'core', cat: 'accessory', s: 3, r: '10-12', tp: '2020', rest: 45, pref: ['Elevación de piernas colgado', 'Crunch en polea alta', 'Pallof press', 'Dead bug', 'Rueda abdominal', 'Plancha frontal'], patron: 'Core / Anti-rotación' },
+    { id: 'gem',    rx: /gemelo|pantorrilla|s[oó]leo/i, mod: 'hipertrofia', cat: 'accessory', s: 4, r: '12-15', tp: '2112', rest: 60, pref: ['Elevación de gemelos de pie', 'Elevación de talones sentado', 'Elevación de talones en prensa'], patron: 'Aislamiento' },
+    { id: 'bic',    rx: /b[ií]ceps|curl|braquial/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '10-12', tp: '3011', rest: 60, pref: ['Curl de bíceps con mancuernas', 'Curl de bíceps con barra Z', 'Curl de bíceps en banco inclinado', 'Curl predicador / Banco Scott barra Z'], patron: 'Bíceps' },
+    { id: 'tri',    rx: /tr[ií]ceps|pushdown/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '10-12', tp: '3011', rest: 60, pref: ['Extensión tríceps tras nuca a 2 manos', 'Press francés con mancuernas plano', 'Extensión de tríceps a una mano sentado'], patron: 'Tríceps' },
+    { id: 'hlat',   rx: /deltoid\w* lateral|elevaci\w+ lateral|hombros? 3d|ensanch|cabeza lateral/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '12-15', tp: '2011', rest: 60, pref: ['Elevaciones laterales con mancuernas', 'Elevaciones laterales cruzadas en polea'], patron: 'Aislamiento hombro' },
+    { id: 'hpos',   rx: /posterior|p[aá]jaro|face pull|manguito|escapular/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '12-15', tp: '2011', rest: 60, pref: ['Face Pull con cuerda en polea alta', 'Pájaro / Elevaciones posteriores inclinado', 'Cruce de cables deltoides posterior'], patron: 'Salud articular' },
+    { id: 'evert',  rx: /press militar|empuje vertical|hombros?\b|deltoid/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '8-10', tp: '3010', rest: 90, pref: ['Press militar sentado', 'Press Arnold', 'Press militar de pie'], patron: 'Empuje vertical' },
+    { id: 'eho',    rx: /pecho|pectoral|press de banca|empuje horizontal|apertura/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '8-10', tp: '3010', rest: 90, pref: ['Press de banca inclinado con mancuernas', 'Press banca con mancuernas', 'Press de banca inclinado con barra'], patron: 'Empuje horizontal' },
+    { id: 'tvert',  rx: /tracci[oó]n vertical|jal[oó]n|dominad|dorsal ancho|ancho de (?:la )?espalda/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '8-10', tp: '2011', rest: 90, pref: ['Jalón al pecho con agarre ancho', 'Jalón al pecho agarre supinado', 'Jalón al pecho con agarre estrecho', 'Dominadas agarre neutro'], patron: 'Tracción vertical' },
+    { id: 'thor',   rx: /remo|tracci[oó]n horizontal|espalda alta|romboid|grosor/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '8-10', tp: '2011', rest: 90, pref: ['Remo en barra T', 'Remo con barra inclinado', 'Remo Gorila con mancuernas'], patron: 'Tracción horizontal' },
+    { id: 'cad',    rx: /isquio|gl[uú]teo|bisagra|cadena posterior|peso muerto|cadera|hip thrust/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '8-10', tp: '3010', rest: 90, pref: ['Peso muerto rumano con mancuernas', 'Hip thrust con barra', 'Peso muerto rumano', 'Curl femoral sentado'], patron: 'Cadera dominante' },
+    { id: 'rod',    rx: /cu[aá]dr|sentadilla|prensa|rodilla|pierna/i, mod: 'hipertrofia', cat: 'accessory', s: 3, r: '10-12', tp: '3010', rest: 90, pref: ['Prensa 45°', 'Hack squat', 'Bulgarian split squat', 'Sentadilla goblet'], patron: 'Rodilla dominante' }
+  ];
+  function exsDelDia(d){
+    var ids = {};
+    (d.bloques || []).forEach(function(b){ if(!b || b.tipo !== 'list') return; nombresDeBloque(b).forEach(function(nm){ var ex = (typeof jpExDeNombre === 'function') ? jpExDeNombre(nm) : null; if(ex) ids[ex.id] = 1; }); var te = (typeof jpExDeNombre === 'function') ? jpExDeNombre(tituloLimpio(b)) : null; if(te) ids[te.id] = 1; });
+    return ids;
+  }
+  function categoriaDe(b){
+    var tit = tituloLimpio(b), res = null;
+    RELLENO.some(function(c){ if(c.rx.test(tit)){ res = c; return true; } return false; });
+    if(res) return res;
+    var ctx = String(b.objective || '') + ' ' + String(b.tips || '');
+    RELLENO.some(function(c){ if(c.rx.test(ctx)){ res = c; return true; } return false; });
+    if(res) return res;
+    return RELLENO.filter(function(c){ return c.id === (b.modalidad === 'core' ? 'core' : 'rod'); })[0];
+  }
+  function elegir(cat, usados, n){
+    var out = [];
+    function tomar(ex){ if(ex && !usados[ex.id] && out.indexOf(ex) < 0){ out.push(ex); usados[ex.id] = 1; } }
+    cat.pref.forEach(function(nm){ if(out.length < n) tomar((typeof jpExDeNombre === 'function') ? jpExDeNombre(nm) : null); });
+    if(out.length < n){
+      (S.exercises || []).filter(function(e){ return e.patron === cat.patron && e.oficial !== false && ['Máquina', 'Polea', 'Mancuernas', 'Barra', 'Peso corporal'].indexOf(e.equipo) >= 0; }).forEach(function(e){ if(out.length < n) tomar(e); });
+    }
+    return out;
+  }
+  /* ejercicios que las propias pautas nombran («HANGING LEG RAISE: …»; «SET-UP:», «CUE EFICIENTE:» y similares no cuentan) */
+  function ejerciciosDeLasPautas(b){
+    var out = [];
+    String(b.tips || '').split(/\n+/).forEach(function(l){
+      var m = /^(?:[A-F]\d\s*·\s*)?([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9 \-\/+()'.]{2,60}):/.exec(l.trim()); if(!m) return;
+      if(/^(?:SET-UP|CUE EFICIENTE|CUIDADO|TEMPO|RAMP-UP|NOTA|TRANSICI|PROGRESI|GESTI|TIP|OJO|ERROR)/.test(m[1])) return;
+      var ex = (typeof jpExDeNombre === 'function') ? jpExDeNombre(m[1].toLowerCase()) : null; if(ex && out.indexOf(ex) < 0) out.push(ex);
+    });
+    return out;
+  }
+  function dosisDe(cat, niv, ex){
+    var av = /avanz|compet|elite|élite/i.test(String(niv || '')), rir = cat.id === 'core' ? (av ? 'RIR 1' : 'RIR 2') : (av ? 'RIR 0-1' : 'RIR 1-2');
+    if(cat.id === 'core' && ex && /plancha|plank|hollow|hold|bird dog|copenhagen/i.test(ex.es + ' ' + (ex.en || ''))) return cat.s + 'x30s | RIR 2';     /* isométricos: se miden en segundos */
+    return cat.s + 'x' + cat.r + ' | Tempo ' + cat.tp + ' | ' + rir;
+  }
+  function kbDe(ex){ try{ return (window.__jpPB && typeof window.__jpPB.kbDe === 'function') ? window.__jpPB.kbDe(ex.es) : null; }catch(e){ return null; } }
+  function rellenarBloque(b, dia, niv){
+    var cat = categoriaDe(b); if(!cat) return '';
+    var usados = exsDelDia(dia), previos = ejerciciosDeLasPautas(b);
+    var tit = tituloLimpio(b), biset = /biset|superset|super set|\b2 ejercicios\b/i.test(tit + ' ' + String(b.objective || '')) || (cat.id === 'core' && /cierre|core y estabilidad/i.test(tit));
+    var n = previos.length ? Math.min(previos.length, 3) : (biset ? 2 : 1), exs = previos.length ? previos.slice(0, n) : elegir(cat, usados, n);
+    if(!exs.length) return '';
+    var mm = /\(\s*(\d+)\s*MIN\s*\)\s*$/i.exec(String(b.titulo || '')), sfx = mm ? ' (' + mm[1] + ' MIN)' : '';
+    var items = [], tips = [];
+    if(exs.length === 1){
+      b.titulo = exs[0].es + (exs[0].en ? ' (' + exs[0].en + ')' : '') + sfx;
+      items = [dosisDe(cat, niv, exs[0]), 'Rest ' + cat.rest + 's'];
+    } else {
+      exs.forEach(function(e, i){ items.push('A' + (i + 1) + '. ' + e.es); items.push(dosisDe(cat, niv, e)); });
+      items.push('Rest ' + cat.rest + 's');
+      if(!tit) b.titulo = 'Biset' + sfx;
+    }
+    b.items = items; b.sportsPizarra = true; b.tipo = 'list';
+    if(!b.modalidad) b.modalidad = cat.mod;
+    if(!b.category) b.category = cat.cat;
+    var kb0 = kbDe(exs[0]);
+    if(!String(b.objective || '').trim() && kb0 && kb0.o) b.objective = kb0.o;
+    if(!String(b.tips || '').trim()){
+      exs.forEach(function(e, i){ var k = kbDe(e); if(!k) return; var p = exs.length > 1 ? 'A' + (i + 1) + ' · ' : ''; tips.push(p + 'SET-UP: ' + k.s); tips.push(p + 'CUE EFICIENTE: ' + k.c); tips.push(p + 'CUIDADO / ERROR COMÚN: ' + k.x); });
+      if(tips.length) b.tips = tips.join('\n');
+    }
+    return exs.map(function(e){ return e.es; }).join(' + ');
+  }
+  /* completa los cascarones de una plantilla; devuelve el detalle de cada bloque reparado */
+  function rellenarCascarones(r){
+    var log = [];
+    if(esCF(r)) return log;
+    (r.dias || []).forEach(function(d, di){
+      (d.bloques || []).forEach(function(b, bi){
+        if(!esCascaron(b)) return;
+        var antes = String(b.titulo || '').slice(0, 40), nom = rellenarBloque(b, d, r.niv);
+        if(nom) log.push('día ' + (di + 1) + ' · bloque ' + (bi + 1) + ' «' + antes + '»: se completó con ' + nom);
+      });
+    });
+    return log;
+  }
+  /* plantillas del sistema: se regeneran desde el código, así que se aclaran y completan solas (los planes de los alumnos no se tocan) */
+  var HECHO = (typeof WeakSet === 'function') ? new WeakSet() : null;
+  function sanearSistema(){
+    var n = 0;
+    (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
+      if(!esSistema(r) || !(r.dias || []).length || (HECHO && HECHO.has(r.dias))) return;
+      try{ rellenarCascarones(r); n += aclararRegistro(r, false); }catch(e){ console.warn('saneo sistema', e); }
+      if(HECHO) HECHO.add(r.dias);
+    });
+    return n;
+  }
+  /* plantillas propias: una sola vez, con copia previa restaurable desde el panel de auditoría; solo toca el Banco, nunca los planes de los alumnos */
+  function sanearBancoUnaVez(){
+    if(typeof S === 'undefined' || !S || !Array.isArray(S.banco) || !S.banco.length) return 0;
+    S.ui = S.ui || {}; if(S.ui.bancoClaro1) return 0;
+    var propias = S.banco.filter(function(r){ return !esSistema(r) && (r.dias || []).length; }), afectadas = [];
+    propias.forEach(function(r){ var c = JSON.parse(JSON.stringify(r)), antes = JSON.stringify(c); rellenarCascarones(c); aclararRegistro(c, false); if(JSON.stringify(c) !== antes) afectadas.push(r.id); });
+    if(afectadas.length && !guardarCopia(afectadas)) return 0;     /* sin respaldo no se toca nada */
+    var bloques = 0, textos = 0;
+    propias.forEach(function(r){ if(afectadas.indexOf(r.id) < 0) return; bloques += rellenarCascarones(r).length; textos += aclararRegistro(r, false); });
+    S.ui.bancoClaro1 = 1;
+    try{ save(); }catch(e){}
+    if(afectadas.length){ try{ if(typeof renderBanco === 'function') renderBanco(); toast('🧩 Banco ordenado: ' + bloques + ' bloque(s) completados y ' + textos + ' texto(s) aclarados en ' + afectadas.length + ' plantilla(s). Podés deshacerlo en «🔎 AUDITAR BANCO» → «Restaurar plantillas previas».', 'info'); }catch(e){} }
+    return afectadas.length;
+  }
+  window.jpAclararTexto = aclararTexto;
+  window.jpAclararPautas = aclararPautas;
+  window.CoachAuditoria = { cascaron: esCascaron, rellenarDias: rellenarCascarones, aclarar: aclararRegistro, sanearSistema: sanearSistema, sanearPropias: sanearBancoUnaVez, auditar: auditarBanco, auditarAlumnos: auditarAlumnos, reparar: reparar, alinearAlumnos: alinearAlumnos, abrir: abrir, informe: function(){ var a = auditarBanco(), al = auditarAlumnos(); return informeTexto(a, al); },
     secciones: SECCIONES, seccionDe: seccionDe, comparar: comparar, restaurarCopia: restaurarCopia, restaurarAlumnos: restaurarAlumnos };
   window.jpSeccionBanco = seccionDe;
+  [700, 2500, 5000].forEach(function(ms){ setTimeout(sanearSistema, ms); });
+  [3000, 6000].forEach(function(ms){ setTimeout(function(){ try{ sanearBancoUnaVez(); }catch(e){ console.warn('banco claro', e); } }, ms); });
+  (function(){ var _rb = window.renderBanco; if(typeof _rb === 'function' && !_rb.__claro){ window.renderBanco = function(){ try{ sanearSistema(); }catch(e){} return _rb.apply(this, arguments); }; window.renderBanco.__claro = true; } })();
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(montarBoton, 600); });
   else setTimeout(montarBoton, 600);
   [1500, 3000].forEach(function(ms){ setTimeout(montarBoton, ms); });
