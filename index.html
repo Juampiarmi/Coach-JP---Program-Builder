@@ -16442,18 +16442,44 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var saved = (baseOk && guardado) ? [ld.kg != null && ld.kg !== '' && !sinKg ? ld.kg + ' kg' : '', ld.reps != null && ld.reps !== '' ? '× ' + ld.reps : ''].filter(Boolean).join(' ') : '';
     return { ref: ref0, saved: saved, tec: tec, nsMax: nsMax, ns: ns, sinKg: sinKg, modoR: modoR, kgV: kgV, rpV: rpV, pre: pre, hint: hint, kgPh: '—', rpPh: nr ? nr[0] : (ult && ult.reps != null && ult.reps !== '' ? String(ult.reps) : '—'), baseOk: baseOk, finOk: finOk, todoOk: baseOk && finOk };
   }
+  var QR_LBL = {};
+  function qrPlano(s){ return String(s || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\\s+/g, ' ').trim(); }
+  function qrCorta(s, n){
+    s = qrPlano(s); if(s.length <= n) return s;
+    var cut = s.slice(0, n), sp = cut.lastIndexOf(' ');
+    return (sp > 40 ? cut.slice(0, sp) : cut).replace(/[,;:\\s]+$/, '') + '…';
+  }
+  /* línea guía del panel: la pauta del coach para ESE ejercicio (cue eficiente) y, si no hay, la primera frase del objetivo del bloque */
+  function qrGuia(c, e, i){
+    var tips = String(c.tp || '').split(/\\n+|<br\\s*\\/?>/i).map(qrPlano).filter(Boolean), L = regLetra(c, i), nom = regNombreCorto(e.nombre).toLowerCase(), hit = '', kind = 'PAUTA';
+    tips.some(function(l){ var mm = /^([A-F]\\d)\\s*·\\s*CUE EFICIENTE\\s*:\\s*(.+)$/i.exec(l); if(mm && mm[1].toUpperCase() === L){ hit = mm[2]; return true; } return false; });
+    if(!hit && nom) tips.some(function(l){
+      var mm = /^([^:]{3,60}):\\s*(.+)$/.exec(l), et = mm ? mm[1].toLowerCase() : '';
+      if(mm && !/^(set-up|cue eficiente|cuidado|tempo|ramp-up|nota|transici|progresi|[a-f]\\d\\s*·)/.test(et) && (et.indexOf(nom) >= 0 || nom.indexOf(et) >= 0)){ hit = mm[2]; return true; }
+      return false;
+    });
+    if(!hit && c.ex.length === 1) tips.some(function(l){ var mm = /^CUE EFICIENTE\\s*:\\s*(.+)$/i.exec(l); if(mm){ hit = mm[1]; return true; } return false; });
+    if(!hit){ var o = qrPlano(c.obj); if(o){ hit = o.split(/[.:]\\s/)[0]; kind = 'OBJETIVO'; } }
+    return { k: kind, t: qrCorta(hit, 130) };
+  }
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
     var pres = [e.sets + ' × ' + (e.reps || (e.rp ? e.rp.join('+') : '')) + (e.u ? ' ' + e.u : ''), e.rir ? 'RIR ' + e.rir : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' · ');
-    var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + '</span>' + (m.saved ? '<span class="jp-qc-tg-s">✓ ' + escSB(m.saved) + '</span>' : (m.ref ? '<span class="jp-qc-tg-r">' + escSB(m.ref) + '</span>' : '')) + '<span class="jp-qc-chev" aria-hidden="true">▾</span></button>';
+    /* la pastilla dice siempre de QUÉ ejercicio es: orden (01) o letra de la estación (A1/A2) + nombre + estado */
+    var letraE = regLetra(c, i), idE = (QR_LBL[k + '|' + i] || {}).id || (/^E\\d+$/.test(letraE) ? ('0' + (i + 1)).slice(-2) : letraE), nomE = regNombreCorto(e.nombre);
+    var guia = qrGuia(c, e, i);
+    var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false" aria-label="' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + ' del ejercicio ' + escSB(idE) + ', ' + escSB(nomE) + '">' +
+      '<span class="jp-qc-tg-t"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + '</span><span class="jp-qc-tg-id">· ' + escSB(idE) + '</span><span class="jp-qc-chev" aria-hidden="true">▾</span></span>' +
+      '<span class="jp-qc-tg-b"><span class="jp-qc-tg-n">' + escSB(nomE) + '</span>' + (m.saved ? '<span class="jp-qc-tg-s">✓ ' + escSB(m.saved) + '</span>' : (m.ref ? '<span class="jp-qc-tg-r">' + escSB(m.ref) + '</span>' : '<span class="jp-qc-tg-h">Tocar para registrar</span>')) + '</span></button>';
     return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
       '<div class="jp-qc-f">' +
-        (m.sinKg ? '' : '<label><span>KG</span><input type="text" inputmode="decimal" class="jp-qc-kg' + (m.pre && m.kgV ? ' pre' : '') + '" autocomplete="off" value="' + escSB(m.kgV) + '" placeholder="' + escSB(m.kgPh) + '"></label><b>×</b>') +
-        '<label><span>' + unidad + '</span><input type="text" inputmode="decimal" class="jp-qc-rp' + (m.pre && m.rpV ? ' pre' : '') + '" autocomplete="off" value="' + escSB(m.rpV) + '" placeholder="' + escSB(m.rpPh) + '"></label>' +
+        (m.sinKg ? '' : '<label><span>PESO · KG</span><input type="text" inputmode="decimal" class="jp-qc-kg' + (m.pre && m.kgV ? ' pre' : '') + '" autocomplete="off" aria-label="Peso en kilos" value="' + escSB(m.kgV) + '" placeholder="' + escSB(m.kgPh) + '"></label><b>×</b>') +
+        '<label><span>' + (unidad === 'REPS' ? 'REPETICIONES' : (unidad === 'SEG' ? 'SEGUNDOS' : unidad)) + '</span><input type="text" inputmode="decimal" class="jp-qc-rp' + (m.pre && m.rpV ? ' pre' : '') + '" autocomplete="off" aria-label="' + (unidad === 'REPS' ? 'Repeticiones' : unidad) + '" value="' + escSB(m.rpV) + '" placeholder="' + escSB(m.rpPh) + '"></label>' +
         '<button type="button" class="jp-qc-ok" aria-label="Guardar ejercicio">✓</button>' +
       '</div>' +
+      (guia.t ? '<div class="jp-qc-guia"><b>' + guia.k + '</b><span>' + escSB(guia.t) + '</span></div>' : '') +
       (m.hint ? '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span></div>' : '') +
       (m.tec && !e.ko ? '<div class="jp-qc-fin"><span class="jp-qc-fin-lb">⚡ ' + (e.grp ? 'RONDA' : 'SERIE') + ' FINAL · ' + QR_TEC_NOM[m.tec] + '</span><button type="button" class="jp-qc-finok' + (m.finOk ? ' ok' : '') + '" aria-label="Serie final hecha">' + (m.finOk ? '✓ HECHA' : 'HECHA ✓') + '</button></div>' : '') +
     '</div></div></div></div>';
@@ -16483,6 +16509,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         var filas = Array.prototype.slice.call(board.querySelectorAll('.jp-sb-ex, .jp-sb-subex-resumen'));
         if(filas.length === cards.length && cards.length){
           cards.forEach(function(cd, i){
+            /* la pastilla toma el mismo número (01) o letra (A1) que muestra la fila del ejercicio: nunca hay dos criterios distintos */
+            var idEl = filas[i].querySelector('.jp-sb-ex-id, .jp-sb-letra'), idTx = idEl ? String(idEl.textContent || '').replace(/[^0-9A-Za-z]/g, '') : '';
+            if(idTx){ QR_LBL[cd.getAttribute('data-qk') + '|' + cd.getAttribute('data-qi')] = { id: idTx }; var spId = cd.querySelector('.jp-qc-tg-id'); if(spId) spId.textContent = '· ' + idTx; }
             var tr = filas[i].querySelector(':scope > .jp-set-tracker-tecnica');
             if(tr) filas[i].insertBefore(cd, tr); else filas[i].appendChild(cd);
           });
@@ -19207,11 +19236,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(seg <= 0) return '';
     return '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + seg + '" aria-label="Iniciar descanso de ' + seg + ' segundos">\\u23f1\\ufe0e\\u25b6\\ufe0e DESCANSO ' + (lbl ? escSB(lbl) : fmtRestSB(seg)) + '</button>';
   }
-  function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra, uni, sinPausa, restLabel){
+  function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra, uni, sinPausa, restLabel, rondas){
     var r1 = [], r2 = [];
     var u = escSB(String(unidad || 'reps').toUpperCase());
     if(!sets && !reps) return '';
-    var rotSets = sets == 1 ? ' SERIE' : ' SERIES';
+    /* criterio único: ejercicio suelto = SERIES; estaciones encadenadas (biset / triset) = RONDAS */
+    var rotSets = rondas ? (sets == 1 ? ' RONDA' : ' RONDAS') : (sets == 1 ? ' SERIE' : ' SERIES');
     if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
     else if(reps) r1.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
     else r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
@@ -19443,7 +19473,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           return '<div class="jp-sb-subex-resumen">' +
               '<div class="jp-sb-subex-head"><span class="jp-sb-letra">' + (entry.letra || 'A') + (o.si + 1) + '</span>' +
                 '<span class="jp-sb-subex-tit">' + nombreHibridoSB(o.sub.nombre, block) + '</span>' + verTecnicaSB(o.sub.nombre, block) + '</div>' + subEsSB(o.sub.nombre, block) +
-              dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), o.sub.carga ? '@ ' + o.sub.carga : '', o.sub.unilateral, o.si < subsInfo.length - 1) +
+              dosisCompletaSB(entry.rondas, o.sub.reps, o.sub.unidad, o.sub.tempo, o.sub.rir, o.sub.restSeconds || (o.si === subsInfo.length - 1 ? entry.restSeconds : 0), o.sub.carga ? '@ ' + o.sub.carga : '', o.sub.unilateral, o.si < subsInfo.length - 1, undefined, true) +
               (o.sub.tecnica && o.sub.tecnica !== 'fallo' ? estructuraTecnicaSB({ tecnica: o.sub.tecnica, sets: rondasN, ronda: true, pct: o.sub.tecnicaPct, microReps: o.sub.myoInfo && o.sub.myoInfo.microReps }) : '') +
               (o.sub.nota && !o.sub.tecnica ? '<div class="jp-sb-nota">' + escSB(o.sub.nota) + '</div>' : '') +
             '</div>';
@@ -19454,7 +19484,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
         filas += '<div class="jp-sb-biset">' +
-            '<div class="jp-sb-biset-title">[ ' + rondasN + ' ' + (subsInfo.length === 2 ? 'BISERIES' : (subsInfo.length === 3 ? 'TRISERIES' : 'RONDAS')) + ' ]</div>' +
+            '<div class="jp-sb-biset-title">[ ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + ' \\u00b7 ' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' ]</div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
           '</div>';
         return;
@@ -19672,7 +19702,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
               tempoHtml +
             '</div>' +
           '</details>' : '') +
-        (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg }) : '') +
+        (regCfg.length ? jpRegBotonHtml({ w: weekIdx, d: dayId, b: block.id, t: block.title || '', ex: regCfg, obj: String(block.objective || ''), tp: String(block.tips || '') }) : '') +
       '</div>';
     var htmlFinal = html;
     if(esCalentamiento){
@@ -42246,13 +42276,18 @@ html body.jp-mission:not(.cf-disc) .jp-close-cta{ background:#FF5500 !important;
 .jp-qc{ --qr:#EDEFF2; --qr-bg:rgba(237,239,242,.08); margin:8px 0 4px; }
 .jp-qr{ display:flex; flex-direction:column; gap:2px; margin:8px 0 6px; }
 /* pastilla plegable: el panel de carga queda oculto hasta que se toca */
-.jp-qc-tg{ display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:0 14px; box-sizing:border-box; border-radius:12px; border:1px solid rgba(130,138,151,.3); background:rgba(255,255,255,.03); color:#828A97; font:700 .74rem 'Chakra Petch',sans-serif; letter-spacing:.1em; text-transform:uppercase; text-align:left; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.jp-qc-tg{ display:flex; flex-direction:column; align-items:stretch; gap:3px; width:100%; min-height:58px; padding:9px 14px 10px; box-sizing:border-box; border-radius:12px; border:1px solid rgba(130,138,151,.3); background:rgba(255,255,255,.03); color:#C9CFD8; font:700 .72rem 'Chakra Petch',sans-serif; letter-spacing:.1em; text-transform:uppercase; text-align:left; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
 .jp-qc-tg:active{ background:rgba(255,255,255,.07); }
-.jp-qc-tg-l{ flex:1 1 auto; min-width:0; }
-.jp-qc-tg-r, .jp-qc-tg-s{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.72rem; letter-spacing:.02em; text-transform:none; }
+.jp-qc-tg-t{ display:flex; align-items:center; gap:6px; min-width:0; }
+.jp-qc-tg-l{ flex:0 1 auto; min-width:0; }
+.jp-qc-tg-id{ flex:1 1 auto; min-width:0; color:#FF5500; font-weight:800; letter-spacing:.08em; }
+.jp-qc-tg-b{ display:flex; align-items:baseline; gap:10px; min-width:0; }
+.jp-qc-tg-n{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#EDEFF2; font-size:.86rem; font-weight:800; letter-spacing:.03em; }
+.jp-qc-tg-r, .jp-qc-tg-s, .jp-qc-tg-h{ flex:0 0 auto; min-width:0; max-width:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.72rem; letter-spacing:.02em; text-transform:none; }
 .jp-qc-tg-r{ color:#00e5ff; }
 .jp-qc-tg-s{ color:#EDEFF2; }
-.jp-qc-chev{ flex:0 0 auto; font-size:.8rem; color:#828A97; transition:transform .24s ease; }
+.jp-qc-tg-h{ flex:0 0 auto; max-width:none; color:#B6BDC8; font-weight:600; }
+.jp-qc-chev{ flex:0 0 auto; font-size:.85rem; color:#C9CFD8; transition:transform .24s ease; }
 .jp-qc.jp-open .jp-qc-chev{ transform:rotate(180deg); }
 .jp-qc.jp-open .jp-qc-tg{ border-color:rgba(0,229,255,.4); color:#EDEFF2; }
 /* despliegue fluido: la fila de la grilla pasa de 0 a su alto real (sin saltos) y el contenido cerrado no recibe foco */
@@ -42269,7 +42304,10 @@ html body.jp-mission:not(.cf-disc) .jp-close-cta{ background:#FF5500 !important;
 .jp-sb-ex > .jp-qc .jp-qc-top, .jp-sb-subex-resumen > .jp-qc .jp-qc-top{ display:none; }
 /* una sola línea: [ KG ] × [ REPS ] [ ✓ ] */
 .jp-qc-f{ display:flex; align-items:flex-end; gap:8px; }
-.jp-qc-f label{ display:flex; flex-direction:column; gap:3px; flex:1 1 0; min-width:0; font-size:.58rem; font-weight:700; letter-spacing:.12em; color:#828A97; }
+.jp-qc-f label{ display:flex; flex-direction:column; gap:4px; flex:1 1 0; min-width:0; font-size:.62rem; font-weight:800; letter-spacing:.1em; color:#C9CFD8; white-space:nowrap; }
+.jp-qc-guia{ display:flex; gap:7px; align-items:baseline; margin-top:9px; padding:7px 9px; border-radius:9px; background:rgba(255,255,255,.035); border-left:2px solid #FF5500; font-size:.7rem; line-height:1.4; color:#D5DAE1; }
+.jp-qc-guia b{ flex:0 0 auto; font:800 .6rem 'Chakra Petch',sans-serif; letter-spacing:.12em; color:#FF8A4D; }
+.jp-qc-guia span{ min-width:0; }
 .jp-qc-f b{ padding-bottom:15px; color:#828A97; font-size:1.05rem; }
 .jp-qc-f input{ width:100%; box-sizing:border-box; min-height:54px; padding:12px 4px; text-align:center; border-radius:12px; border:1px solid rgba(130,138,151,.35); background:rgba(0,0,0,.35); color:#EDEFF2; font:800 1.3rem 'Chakra Petch',sans-serif; outline:none; }
 .jp-qc-f input:focus{ border-color:#00e5ff; box-shadow:0 0 0 2px rgba(0,229,255,.16); }
@@ -45563,12 +45601,17 @@ html body:not(#_) .jp-day-pop button{ min-height:48px !important; align-items:ce
    Cian #00e5ff = solo dato de rendimiento / referencia histórica (marca de la semana pasada). Solo estilo: no toca ningún dato del plan. */
 html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-pauta, html body:not(#_).jp-mission:not(.cf-disc) .jp-set-row-native.jp-ux-simple, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-ex-ancla, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-subex-resumen{ border-left-color:rgba(130,138,151,.3) !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .block.cat-strength.block-current{ border-left-color:#FF5500 !important; }
-html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-letra, html body:not(#_).jp-mission:not(.cf-disc) .jp-ux-chev, html body:not(#_).jp-mission:not(.cf-disc) .jp-warm-chev, html body:not(#_).jp-mission:not(.cf-disc) .chev, html body:not(#_).jp-mission:not(.cf-disc) .cr-cv, html body:not(#_).jp-mission:not(.cf-disc) .gcb-chev, html body:not(#_).jp-mission:not(.cf-disc) .hdp-eyebrow, html body:not(#_).jp-mission:not(.cf-disc) .hdp-wk-row .n, html body:not(#_).jp-mission:not(.cf-disc) .hdp-wk-row .pc, html body:not(#_).jp-mission:not(.cf-disc) .jp-warm-acc summary, html body:not(#_).jp-mission:not(.cf-disc) .hdp-acc-k, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-pauta-lb, html body:not(#_).jp-mission:not(.cf-disc) .hdp-curve-lb, html body:not(#_).jp-mission:not(.cf-disc) .load-suggest.rpe b, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-biset-title, html body:not(#_).jp-mission:not(.cf-disc) .jp-tec-head, html body:not(#_).jp-mission:not(.cf-disc) .jp-qc-fin-lb{ color:#828A97 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .hdp-eyebrow, html body:not(#_).jp-mission:not(.cf-disc) .hdp-wk-row .n, html body:not(#_).jp-mission:not(.cf-disc) .hdp-wk-row .pc, html body:not(#_).jp-mission:not(.cf-disc) .jp-warm-acc summary, html body:not(#_).jp-mission:not(.cf-disc) .hdp-acc-k, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-pauta-lb, html body:not(#_).jp-mission:not(.cf-disc) .hdp-curve-lb, html body:not(#_).jp-mission:not(.cf-disc) .load-suggest.rpe b, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-biset-title, html body:not(#_).jp-mission:not(.cf-disc) .jp-tec-head, html body:not(#_).jp-mission:not(.cf-disc) .jp-qc-fin-lb{ color:#828A97 !important; }
 /* subtítulos superiores con corchetes: [ DÍA 1 · SEMANA 1 ] y [ BIOMECÁNICA APLICADA · FUERZA ] // 23 MIN en cian sutil */
 html body:not(#_).jp-mission:not(.cf-disc) .jp-session-pretag, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-tag, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-tag-lb, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-tmin{ color:rgba(0,229,255,.78) !important; }
-html body:not(#_).jp-mission:not(.cf-disc) .jp-summary-btn svg{ color:#828A97 !important; stroke:#828A97 !important; }
+/* iconos pasivos con contraste: bombilla de pautas en naranja suave, chevrones y temporizadores en hueso */
+html body:not(#_).jp-mission:not(.cf-disc) .jp-summary-btn svg{ color:#FF8A4D !important; stroke:#FF8A4D !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-summary-btn{ color:#D5DAE1 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-ux-chev, html body:not(#_).jp-mission:not(.cf-disc) .jp-warm-chev, html body:not(#_).jp-mission:not(.cf-disc) .chev, html body:not(#_).jp-mission:not(.cf-disc) .cr-cv, html body:not(#_).jp-mission:not(.cf-disc) .gcb-chev, html body:not(#_).jp-mission:not(.cf-disc) .jp-qc-chev{ color:#C9CFD8 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jmb-timer, html body:not(#_).jp-mission:not(.cf-disc) #guideBtn.guide-pill, html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rest.jp-rest-go{ color:#EDEFF2 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-qc-hint, html body:not(#_).jp-mission:not(.cf-disc) .jp-qc-p, html body:not(#_).jp-mission:not(.cf-disc) .jp-qc-let, html body:not(#_).jp-mission:not(.cf-disc) .jp-qc-f b{ color:#B6BDC8 !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-tr-total, html body:not(#_).jp-mission:not(.cf-disc) .jmb-d{ color:#EDEFF2 !important; }
-html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-ex-id{ color:#FF5500 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-ex-id, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-letra{ color:#FF5500 !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rir, html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rir.jp-rir-alto, html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rir.jp-rir-danger{ color:#FF8A4D !important; border-color:rgba(255,85,0,.4) !important; background:rgba(255,85,0,.08) !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rir .jp-emo{ display:none !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rest.jp-rest-go{ color:#EDEFF2 !important; background:transparent !important; border-color:rgba(130,138,151,.4) !important; box-shadow:none !important; }
