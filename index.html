@@ -16438,13 +16438,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       else hint = base || (e.rir ? 'Elegí un peso para RIR ' + e.rir : '');
     }
     var ns = (hechas > 0 && hechas < nsMax) ? hechas : nsMax;
-    return { tec: tec, nsMax: nsMax, ns: ns, sinKg: sinKg, modoR: modoR, kgV: kgV, rpV: rpV, pre: pre, hint: hint, kgPh: '—', rpPh: nr ? nr[0] : (ult && ult.reps != null && ult.reps !== '' ? String(ult.reps) : '—'), baseOk: baseOk, finOk: finOk, todoOk: baseOk && finOk };
+    var ref0 = base ? base.replace(': ', ' · ') : '';
+    var saved = (baseOk && guardado) ? [ld.kg != null && ld.kg !== '' && !sinKg ? ld.kg + ' kg' : '', ld.reps != null && ld.reps !== '' ? '× ' + ld.reps : ''].filter(Boolean).join(' ') : '';
+    return { ref: ref0, saved: saved, tec: tec, nsMax: nsMax, ns: ns, sinKg: sinKg, modoR: modoR, kgV: kgV, rpV: rpV, pre: pre, hint: hint, kgPh: '—', rpPh: nr ? nr[0] : (ult && ult.reps != null && ult.reps !== '' ? String(ult.reps) : '—'), baseOk: baseOk, finOk: finOk, todoOk: baseOk && finOk };
   }
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
     var pres = [e.sets + ' × ' + (e.reps || (e.rp ? e.rp.join('+') : '')) + (e.u ? ' ' + e.u : ''), e.rir ? 'RIR ' + e.rir : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' · ');
-    return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' +
+    var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + '</span>' + (m.saved ? '<span class="jp-qc-tg-s">✓ ' + escSB(m.saved) + '</span>' : (m.ref ? '<span class="jp-qc-tg-r">' + escSB(m.ref) + '</span>' : '')) + '<span class="jp-qc-chev" aria-hidden="true">▾</span></button>';
+    return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + tg + '<div class="jp-qc-body">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
       '<div class="jp-qc-f">' +
         (m.sinKg ? '' : '<label><span>KG</span><input type="text" inputmode="decimal" class="jp-qc-kg' + (m.pre && m.kgV ? ' pre' : '') + '" autocomplete="off" value="' + escSB(m.kgV) + '" placeholder="' + escSB(m.kgPh) + '"></label><b>×</b>') +
@@ -16455,7 +16458,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (m.nsMax > 1 ? '<span class="jp-qc-ns"><button type="button" class="jp-qc-s" data-qs="-1" aria-label="Una serie menos">−</button><b class="jp-qc-nv">' + m.ns + '</b><span>' + (e.grp ? 'RONDAS' : 'SERIES') + '</span><button type="button" class="jp-qc-s" data-qs="1" aria-label="Una serie más">+</button></span>' : '') +
       '</div>' +
       (m.tec && !e.ko ? '<div class="jp-qc-fin"><span class="jp-qc-fin-lb">⚡ ' + (e.grp ? 'RONDA' : 'SERIE') + ' FINAL · ' + QR_TEC_NOM[m.tec] + '</span><button type="button" class="jp-qc-finok' + (m.finOk ? ' ok' : '') + '" aria-label="Serie final hecha">' + (m.finOk ? '✓ HECHA' : 'HECHA ✓') + '</button></div>' : '') +
-    '</div>';
+    '</div></div>';
   }
   /* devuelve el contenedor con una tarjeta por ejercicio; jpQrAcomodar() las mueve dentro de la fila de cada ejercicio */
   function jpRegBotonHtml(cfg){
@@ -16506,11 +16509,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     try{ jpAudioTactical.soundCheckSet(); }catch(e1){}
     try{ jpAudioTactical.vibrateCheckSet(); }catch(e2){}
   }
-  function qrRefrescar(card){
+  function qrRefrescar(card, mantener){
     var k = qrCtx(card); if(!k || !card.parentNode) return;
     var tmp = document.createElement('div');
     tmp.innerHTML = qrCardHtml(k.c, k.e, parseInt(card.getAttribute('data-qi'), 10));
     var nuevo = tmp.firstChild, board = card.closest('[data-sportsboard]');
+    if(mantener && card.classList.contains('jp-open')){ nuevo.classList.add('jp-open'); var tg0 = nuevo.querySelector('.jp-qc-tg'); if(tg0) tg0.setAttribute('aria-expanded', 'true'); }
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
   }
@@ -16551,8 +16555,28 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     qrRefrescar(card);
   }
+  function qrCerrar(card){
+    card.classList.remove('jp-open');
+    var tg = card.querySelector('.jp-qc-tg'); if(tg) tg.setAttribute('aria-expanded', 'false');
+    var af = document.activeElement; if(af && card.contains(af) && af.blur){ try{ af.blur(); }catch(eB){} }
+  }
+  function qrAlternar(card){
+    if(!card) return;
+    if(card.classList.contains('jp-open')){ qrCerrar(card); return; }
+    Array.prototype.forEach.call(document.querySelectorAll('.jp-qc.jp-open'), function(o){ if(o !== card) qrCerrar(o); });
+    card.classList.add('jp-open');
+    var tg = card.querySelector('.jp-qc-tg'); if(tg) tg.setAttribute('aria-expanded', 'true');
+    /* solo se abre el teclado cuando falta el peso; si viene sugerido alcanza con tocar el ✓ */
+    var kg = card.querySelector('.jp-qc-kg');
+    setTimeout(function(){
+      try{ card.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }catch(eS){}
+      if(kg && !kg.value){ try{ kg.focus({ preventScroll: true }); }catch(eF){} }
+    }, 40);
+  }
   document.addEventListener('click', function(ev){
     var t = ev.target; if(!t || !t.closest) return;
+    var tgb = t.closest('.jp-qc-tg');
+    if(tgb){ ev.preventDefault(); qrAlternar(tgb.closest('.jp-qc')); return; }
     var st = t.closest('.jp-qc-s');
     if(st){
       ev.preventDefault();
@@ -16585,7 +16609,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var t = ev.target; if(!t || !t.closest) return;
     var chk = t.closest('.jp-btn-check-native'); if(!chk) return;
     var board = chk.closest('[data-sportsboard]'); if(!board) return;
-    setTimeout(function(){ Array.prototype.forEach.call(board.querySelectorAll('.jp-qc'), qrRefrescar); }, 80);
+    setTimeout(function(){ Array.prototype.forEach.call(board.querySelectorAll('.jp-qc'), function(cd){ qrRefrescar(cd, true); }); }, 80);
   });
   document.addEventListener('click', function(e){
     var b = e.target && e.target.closest ? e.target.closest('#jpCerrarDiaBtn') : null;
@@ -42227,37 +42251,48 @@ html body.jp-mission:not(.cf-disc) .hd-dock{ background:#0D0D0D !important; bord
 html body.jp-mission:not(.cf-disc) #storyCtaBtn.story-cta{ background:transparent !important; border:1px solid rgba(255,255,255,.16) !important; color:#EFEFEF !important; }
 html body.jp-mission:not(.cf-disc) .jp-close-cta{ background:#FF5500 !important; border:0 !important; color:#0D0D0D !important; }
 /* ---- registro de 1 toque: una tarjeta por ejercicio (KG × REPS ya cargados + ✓), sin hoja modal ---- */
-.jp-qc{ --qr:#F59E0B; --qr-bg:rgba(245,158,11,.14); margin:10px 0 4px; padding:10px 10px 8px; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); border-left:3px solid var(--qr); }
-:where(body.cf-disc) .jp-qc{ --qr:#00E6FF; --qr-bg:rgba(0,230,255,.14); }
-html body.jp-mission:not(.cf-disc) .jp-qc{ --qr:#FF5500; --qr-bg:rgba(255,85,0,.14); }
+.jp-qc{ --qr:#EFEFEF; --qr-bg:rgba(255,255,255,.08); margin:8px 0 4px; }
 .jp-qr{ display:flex; flex-direction:column; gap:2px; margin:8px 0 6px; }
-.jp-qc.ok{ border-color:rgba(34,197,94,.5); border-left-color:#22C55E; background:rgba(34,197,94,.07); }
-.jp-qc.falta{ border-color:#ef4444; box-shadow:0 0 0 1px rgba(239,68,68,.55); }
+/* pastilla plegable: el panel de carga queda oculto hasta que se toca */
+.jp-qc-tg{ display:flex; align-items:center; gap:10px; width:100%; min-height:48px; padding:0 14px; box-sizing:border-box; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.03); color:#979797; font:700 .74rem 'Chakra Petch',sans-serif; letter-spacing:.1em; text-transform:uppercase; text-align:left; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.jp-qc-tg:active{ background:rgba(255,255,255,.07); }
+.jp-qc-tg-l{ flex:1 1 auto; min-width:0; }
+.jp-qc-tg-r, .jp-qc-tg-s{ flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.72rem; letter-spacing:.02em; text-transform:none; }
+.jp-qc-tg-r{ color:#00e5ff; }
+.jp-qc-tg-s{ color:#EFEFEF; }
+.jp-qc-chev{ flex:0 0 auto; font-size:.8rem; color:#979797; transition:transform .18s ease; }
+.jp-qc.jp-open .jp-qc-chev{ transform:rotate(180deg); }
+.jp-qc.jp-open .jp-qc-tg{ border-color:rgba(255,255,255,.22); color:#EFEFEF; }
+.jp-qc-body{ display:none; margin-top:8px; padding:10px 10px 8px; border-radius:14px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.1); }
+.jp-qc.jp-open .jp-qc-body{ display:block; animation:jpQcIn .18s ease-out; }
+@keyframes jpQcIn{ from{ opacity:0; transform:translateY(-4px); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion:reduce){ .jp-qc.jp-open .jp-qc-body{ animation:none; } .jp-qc-chev{ transition:none; } }
+.jp-qc.falta .jp-qc-body{ border-color:#ef4444; box-shadow:0 0 0 1px rgba(239,68,68,.55); }
 .jp-qc-top{ display:flex; align-items:baseline; gap:8px; margin:0 0 9px; }
-.jp-qc-let{ flex:0 0 auto; font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; color:var(--qr); }
-.jp-qc-n{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; font:800 .92rem 'Chakra Petch',sans-serif; letter-spacing:.02em; text-transform:uppercase; color:#f8fafc; }
-.jp-qc-p{ flex:0 0 auto; font-size:.7rem; font-weight:600; letter-spacing:.02em; color:rgba(148,163,184,.95); }
+.jp-qc-let{ flex:0 0 auto; font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; color:#979797; }
+.jp-qc-n{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; font:800 .92rem 'Chakra Petch',sans-serif; letter-spacing:.02em; text-transform:uppercase; color:#EFEFEF; }
+.jp-qc-p{ flex:0 0 auto; font-size:.7rem; font-weight:600; letter-spacing:.02em; color:#979797; }
 .jp-sb-ex > .jp-qc .jp-qc-top, .jp-sb-subex-resumen > .jp-qc .jp-qc-top{ display:none; }
 .jp-qc-f{ display:flex; align-items:flex-end; gap:8px; }
-.jp-qc-f label{ display:flex; flex-direction:column; gap:3px; flex:1 1 0; min-width:0; font-size:.58rem; font-weight:700; letter-spacing:.12em; color:#94A3B8; }
-.jp-qc-f b{ padding-bottom:15px; color:#64748b; font-size:1.05rem; }
-.jp-qc-f input{ width:100%; box-sizing:border-box; min-height:54px; padding:12px 4px; text-align:center; border-radius:12px; border:1px solid rgba(148,163,184,.3); background:rgba(2,6,23,.7); color:#f8fafc; font:800 1.3rem 'Chakra Petch',sans-serif; outline:none; }
-.jp-qc-f input:focus{ border-color:var(--qr); box-shadow:0 0 0 2px var(--qr-bg); }
-.jp-qc-f input.pre{ border-color:var(--qr); color:var(--qr); }
-.jp-qc-f input::placeholder{ color:rgba(148,163,184,.45); }
-.jp-qc-ok{ flex:0 0 66px; min-height:54px; border:0; border-radius:12px; cursor:pointer; background:var(--qr); color:#0b0b0b; font:800 1.6rem/1 'Chakra Petch',sans-serif; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
+.jp-qc-f label{ display:flex; flex-direction:column; gap:3px; flex:1 1 0; min-width:0; font-size:.58rem; font-weight:700; letter-spacing:.12em; color:#979797; }
+.jp-qc-f b{ padding-bottom:15px; color:#6b7280; font-size:1.05rem; }
+.jp-qc-f input{ width:100%; box-sizing:border-box; min-height:54px; padding:12px 4px; text-align:center; border-radius:12px; border:1px solid rgba(255,255,255,.18); background:rgba(0,0,0,.35); color:#EFEFEF; font:800 1.3rem 'Chakra Petch',sans-serif; outline:none; }
+.jp-qc-f input:focus{ border-color:rgba(255,255,255,.55); box-shadow:0 0 0 2px var(--qr-bg); }
+.jp-qc-f input.pre{ border-color:rgba(255,255,255,.4); color:#EFEFEF; }
+.jp-qc-f input::placeholder{ color:rgba(151,151,151,.7); }
+.jp-qc-ok{ flex:0 0 66px; min-height:54px; border:0; border-radius:12px; cursor:pointer; background:#FF5500; color:#0D0D0D; font:800 1.6rem/1 'Chakra Petch',sans-serif; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
 .jp-qc-ok:active{ transform:scale(.94); }
-.jp-qc.ok .jp-qc-ok{ background:#22C55E; }
+.jp-qc.ok .jp-qc-ok{ background:#EFEFEF; }
 .jp-qc-m{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; min-height:1em; }
-.jp-qc-hint{ flex:1 1 auto; min-width:0; font-size:.68rem; font-weight:600; letter-spacing:.02em; color:rgba(148,163,184,.85); }
-.jp-qc-ns{ display:flex; align-items:center; gap:3px; flex:0 0 auto; font-size:.58rem; font-weight:700; letter-spacing:.1em; color:#94A3B8; }
-.jp-qc-ns button{ width:46px; height:46px; border-radius:10px; border:1px solid rgba(148,163,184,.3); background:rgba(255,255,255,.05); color:#f8fafc; font:800 1.1rem 'Chakra Petch',sans-serif; cursor:pointer; touch-action:manipulation; }
-.jp-qc-nv{ min-width:18px; text-align:center; font:800 1.05rem 'Chakra Petch',sans-serif; color:#f8fafc; }
-.jp-qc-fin{ display:none; align-items:center; justify-content:space-between; gap:8px; margin-top:9px; padding-top:9px; border-top:1px dashed rgba(148,163,184,.3); }
+.jp-qc-hint{ flex:1 1 auto; min-width:0; font-size:.68rem; font-weight:600; letter-spacing:.02em; color:#979797; }
+.jp-qc-ns{ display:flex; align-items:center; gap:3px; flex:0 0 auto; font-size:.58rem; font-weight:700; letter-spacing:.1em; color:#979797; }
+.jp-qc-ns button{ width:46px; height:46px; border-radius:10px; border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.05); color:#EFEFEF; font:800 1.1rem 'Chakra Petch',sans-serif; cursor:pointer; touch-action:manipulation; }
+.jp-qc-nv{ min-width:18px; text-align:center; font:800 1.05rem 'Chakra Petch',sans-serif; color:#EFEFEF; }
+.jp-qc-fin{ display:none; align-items:center; justify-content:space-between; gap:8px; margin-top:9px; padding-top:9px; border-top:1px dashed rgba(255,255,255,.16); }
 .jp-qc[data-base="1"] .jp-qc-fin{ display:flex; }
-.jp-qc-fin-lb{ font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; color:var(--qr); }
-.jp-qc-finok{ min-height:44px; padding:0 16px; border:0; border-radius:10px; cursor:pointer; background:var(--qr); color:#0b0b0b; font:800 .78rem 'Chakra Petch',sans-serif; letter-spacing:.08em; touch-action:manipulation; }
-.jp-qc-finok.ok{ background:#22C55E; }
+.jp-qc-fin-lb{ font:800 .72rem 'Chakra Petch',sans-serif; letter-spacing:.08em; color:#EFEFEF; }
+.jp-qc-finok{ min-height:44px; padding:0 16px; border:1px solid rgba(255,255,255,.25); border-radius:10px; cursor:pointer; background:transparent; color:#EFEFEF; font:800 .78rem 'Chakra Petch',sans-serif; letter-spacing:.08em; touch-action:manipulation; }
+.jp-qc-finok.ok{ background:#EFEFEF; border-color:#EFEFEF; color:#0D0D0D; }
 /* teoría de técnicas fuera de la pantalla principal: la fase especial aparece sola cuando llegás a esa serie */
 .jp-tec-txt, .jp-tec-nota, .jp-tec-head small, .jp-tecnica-protocolo, .jp-drop-cap small, .jp-drop-nota{ display:none !important; }
 .jp-tec-est{ margin:6px 0 8px; padding:6px 10px; }
@@ -45525,6 +45560,34 @@ html body:not(#_) .jp-day-pop button{ min-height:48px !important; align-items:ce
 .jp-day-pop button b{ flex:0 0 auto; min-width:46px; white-space:nowrap; }
 .jp-day-pop button .jp-dp-t{ flex:1 1 auto; min-width:0; font-weight:700; letter-spacing:.03em; font-size:.78rem; line-height:1.2; }
 .jp-day-pop button small{ flex:0 0 auto; font-size:.62rem; letter-spacing:.08em; }
+</style>
+<style id="jpSobrio">
+/* SOBRIEDAD CROMÁTICA (tema Sports): el naranja queda solo para el cierre del día y el ✓ de guardar la carga; el cian solo para la referencia de la semana pasada.
+   Todo lo demás usa los neutros de la paleta: hueso #EFEFEF, titanio #979797 y líneas blancas translúcidas. Solo estilo: no toca ningún dato del plan. */
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-ex-ancla, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-subex-resumen, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-pauta, html body:not(#_).jp-mission:not(.cf-disc) .jp-set-row-native.jp-ux-simple, html body:not(#_).jp-mission:not(.cf-disc) .block.cat-strength.block-current{ border-left-color:rgba(255,255,255,.14) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .hdc-shield, html body:not(#_).jp-mission:not(.cf-disc) .hdp-wk-row.cur, html body:not(#_).jp-mission:not(.cf-disc) .load-suggest.rpe, html body:not(#_).jp-mission:not(.cf-disc) .hdp-curve-chip.cur{ border-color:rgba(255,255,255,.16) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-ex-id, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-letra, html body:not(#_).jp-mission:not(.cf-disc) .jp-ux-chev, html body:not(#_).jp-mission:not(.cf-disc) .jp-warm-chev, html body:not(#_).jp-mission:not(.cf-disc) .chev, html body:not(#_).jp-mission:not(.cf-disc) .cr-cv, html body:not(#_).jp-mission:not(.cf-disc) .gcb-chev, html body:not(#_).jp-mission:not(.cf-disc) .jp-session-pretag, html body:not(#_).jp-mission:not(.cf-disc) .jp-tec-head, html body:not(#_).jp-mission:not(.cf-disc) .hdp-eyebrow, html body:not(#_).jp-mission:not(.cf-disc) .jmb-d, html body:not(#_).jp-mission:not(.cf-disc) .hdp-wk-row .n, html body:not(#_).jp-mission:not(.cf-disc) .hdp-wk-row .pc, html body:not(#_).jp-mission:not(.cf-disc) .hdp-curve-chip.cur, html body:not(#_).jp-mission:not(.cf-disc) .jp-warm-acc summary, html body:not(#_).jp-mission:not(.cf-disc) .load-suggest.rpe b{ color:#979797 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-tr-total{ color:#EFEFEF !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rir, html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rir.jp-rir-alto, html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rir.jp-rir-danger{ color:#EFEFEF !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rir .jp-emo{ display:none !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-tag, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-pauta-lb, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-biset-title, html body:not(#_).jp-mission:not(.cf-disc) .hdp-curve-lb{ color:#979797 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-db-rest.jp-rest-go{ color:#EFEFEF !important; background:transparent !important; border-color:rgba(255,255,255,.16) !important; box-shadow:none !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jmb-timer, html body:not(#_).jp-mission:not(.cf-disc) #guideBtn.guide-pill{ background:transparent !important; border-color:rgba(255,255,255,.18) !important; box-shadow:none !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-btn-check-native{ color:#EFEFEF !important; border-color:rgba(255,255,255,.2) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-tec-p{ color:#979797 !important; background:transparent !important; border-color:rgba(255,255,255,.16) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-tec-p.on{ color:#0D0D0D !important; background:#EFEFEF !important; border-color:#EFEFEF !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-drop-cap b{ background:rgba(255,255,255,.12) !important; color:#EFEFEF !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .hdd-fab{ color:#EFEFEF !important; border-color:rgba(255,255,255,.2) !important; box-shadow:none !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .fz-p.on, html body:not(#_).jp-mission:not(.cf-disc) .hdp-uni-b.on, html body:not(#_).jp-mission:not(.cf-disc) .nav-pill.mode-pill.active{ color:#EFEFEF !important; background:rgba(255,255,255,.08) !important; border-color:rgba(255,255,255,.4) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-brief-dir{ color:#979797 !important; border-color:rgba(255,255,255,.14) !important; background:transparent !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-tag-lb, html body:not(#_).jp-mission:not(.cf-disc) .hdp-acc-k{ color:#979797 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-summary-btn svg{ color:#979797 !important; stroke:#979797 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-tec-est{ border-color:rgba(255,255,255,.14) !important; background:rgba(255,255,255,.03) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-badge, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-set-badge{ background:rgba(255,255,255,.1) !important; color:#EFEFEF !important; border-color:rgba(255,255,255,.2) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-wk-pop, html body:not(#_).jp-mission:not(.cf-disc) .jp-day-pop{ border-color:rgba(255,255,255,.16) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-wk-pop button b, html body:not(#_).jp-mission:not(.cf-disc) .jp-day-pop button b{ color:#979797 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-wk-pop button.on, html body:not(#_).jp-mission:not(.cf-disc) .jp-day-pop button.on{ background:rgba(255,255,255,.08) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-wk-pop button.on b, html body:not(#_).jp-mission:not(.cf-disc) .jp-day-pop button.on b{ color:#EFEFEF !important; }
 </style>
 
 </body>
