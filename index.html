@@ -11898,35 +11898,51 @@ function jpGuardarPosicion(){
 function jpLeerPosicion(){
   try{ var p = JSON.parse(localStorage.getItem(STORAGE_KEY + ':pos') || 'null'); return (p && typeof p === 'object') ? p : null; }catch(e){ return null; }
 }
+/* un campo guardado que no sea un objeto (dato viejo o dañado) se trata como vacío: el resto de la app asume objetos */
+function _objOk(v){ return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}; }
 function loadProgress(){
+  let raw = null;
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
+    raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
       const parsed = JSON.parse(raw);
-      if(parsed && typeof parsed === 'object'){
-        state.completed = parsed.completed || {};
-        state.fatigue = parsed.fatigue || {};
-        state.loads = parsed.loads || {};
-        state.notes = parsed.notes || {};
-        state.checkout = parsed.checkout || {};
-        state.sleep = parsed.sleep || {};
-        state.readinessPain = parsed.readinessPain || {};
-        state.videoLinks = parsed.videoLinks || {};
+      if(parsed && typeof parsed === 'object' && !Array.isArray(parsed)){
+        state.completed = _objOk(parsed.completed);
+        state.fatigue = _objOk(parsed.fatigue);
+        state.loads = _objOk(parsed.loads);
+        state.notes = _objOk(parsed.notes);
+        state.checkout = _objOk(parsed.checkout);
+        state.sleep = _objOk(parsed.sleep);
+        state.readinessPain = _objOk(parsed.readinessPain);
+        state.videoLinks = _objOk(parsed.videoLinks);
         /* sesionNotificada (28/08, feed de actividad): guarda qué días ya
            encolaron su evento "sesión completa", para no reenviarlo en
            cada visita al mismo día ya terminado — ver pintarResumen() más
            abajo. Clave nueva, no pisa ni reinterpreta ninguna de arriba. */
-        state.sesionNotificada = parsed.sesionNotificada || {};
-        state.historialCargas = parsed.historialCargas || {};
-        state.oneRM = parsed.oneRM || {};
-        state.customBenchmarks = parsed.customBenchmarks || [];
+        state.sesionNotificada = _objOk(parsed.sesionNotificada);
+        state.historialCargas = _objOk(parsed.historialCargas);
+        state.oneRM = _objOk(parsed.oneRM);
+        state.customBenchmarks = Array.isArray(parsed.customBenchmarks) ? parsed.customBenchmarks : [];
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
     }
-  }catch(e){ state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = []; }
+  }catch(e){
+    /* JSON dañado: se conserva una copia intacta (clave ":corrupto") antes de que el próximo guardado la pise, y se arranca limpio */
+    try{ if(raw) localStorage.setItem(STORAGE_KEY + ':corrupto', raw); }catch(e2){}
+    state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = [];
+  }
 }
-let _spT = null, _spDirty = false;
+let _spT = null, _spDirty = false, _spFallos = 0, _spAvisado = false;
+function _spReintentar(){
+  _spDirty = true; _spFallos++;
+  if(_spFallos >= 3 && !_spAvisado){
+    _spAvisado = true;
+    try{ if(window.CoachAviso && window.CoachAviso.mostrar) window.CoachAviso.mostrar('fatiga', '⚠️', 'No se pudo guardar tu progreso', 'El teléfono no deja escribir en el almacenamiento (puede estar lleno). Liberá espacio o cerrá otras pestañas: lo registrado sigue en pantalla y se reintenta solo.', 12000); }catch(e){}
+  }
+  clearTimeout(_spT);
+  _spT = setTimeout(function(){ try{ _spFlush(); }catch(e){} }, Math.min(15000, 2000 * _spFallos));
+}
 function _spSerialize(){
   return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM, customBenchmarks: state.customBenchmarks });
 }
@@ -11941,11 +11957,17 @@ function _spFlush(){
      instante exacto en que background timer más lo necesita. Pasa a
      mezclar sobre lo que ya había en vez de reemplazarlo entero. */
   try{
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    let raw = {};
+    try{ raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); if(!raw || typeof raw !== 'object' || Array.isArray(raw)) raw = {}; }
+    catch(eP){
+      /* lo guardado está dañado: se conserva una copia antes de reemplazarlo por el estado en memoria */
+      try{ if(!localStorage.getItem(STORAGE_KEY + ':corrupto')) localStorage.setItem(STORAGE_KEY + ':corrupto', localStorage.getItem(STORAGE_KEY) || ''); }catch(eC){}
+      raw = {};
+    }
     Object.assign(raw, JSON.parse(_spSerialize()));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
-  }catch(e){}
-  _spDirty = false;
+    _spDirty = false; _spFallos = 0;
+  }catch(e){ _spReintentar(); }
 }
 function saveProgress(){
   _spDirty = true;
@@ -11958,6 +11980,7 @@ function saveProgress(){
 window.addEventListener('pagehide', function(){ _spFlush(); });
 window.addEventListener('beforeunload', function(){ _spFlush(); });
 document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'hidden') _spFlush(); });
+document.addEventListener('freeze', function(){ _spFlush(); });
 function isBlockDone(weekIdx, dayId, blockId){
   return !!(state.completed[weekIdx] && state.completed[weekIdx][dayId] && state.completed[weekIdx][dayId][blockId]);
 }
@@ -11965,6 +11988,8 @@ function setBlockDone(weekIdx, dayId, blockId, val){
   state.completed[weekIdx] = state.completed[weekIdx] || {};
   state.completed[weekIdx][dayId] = state.completed[weekIdx][dayId] || {};
   state.completed[weekIdx][dayId][blockId] = val;
+  /* al destildar un bloque el día deja de estar concluido (antes quedaba "hecho" con un bloque sin hacer) */
+  if(!val && state.completed[weekIdx][dayId].__dayDone) state.completed[weekIdx][dayId].__dayDone = false;
   saveProgress();
 }
 function isDayDone(weekIdx, dayId){
@@ -14576,6 +14601,7 @@ function wireBlockInteractions(day, weekIdx, blocks){
     cb.addEventListener('click', function(e){
       e.stopPropagation();
       const val = cb.checked;
+      const eraDiaHecho = isDayDone(weekIdx, day.id);
       setBlockDone(weekIdx, day.id, blockId, val);
       blockEl.classList.toggle('block-done', val);
       if(val){
@@ -14584,6 +14610,8 @@ function wireBlockInteractions(day, weekIdx, blocks){
       }
       updateProgress(day, weekIdx, blocks);
       renderDayTabs();
+      /* el día estaba concluido y este bloque lo desmarca: se repinta para que el botón de cierre, el resumen y la pestaña digan lo mismo */
+      if(eraDiaHecho && !val){ const y = window.scrollY; renderMain(); try{ window.scrollTo(0, y); }catch(eS){} }
     });
     blockEl.querySelectorAll('.set-row').forEach(wireSetRow);
     const noteEl = blockEl.querySelector('.block-note-input');
@@ -15732,7 +15760,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
       raw.scores = state.scores; raw.session = state.session; raw.restSec = state.restSec;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(raw));
-    }catch(e){}
+    }catch(e){ _spReintentar(); }
   };
   try{
     const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
@@ -16005,8 +16033,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       restTargetEnd = rt.targetEnd;
       restTotal = rt.total || 90;
       hudLb.textContent = rt.label || 'Descanso';
-      hud.classList.add('on'); restRun = true;
+      hud.classList.add('on'); restRun = true; restActive = true;
       clearInterval(restInt); restInt = setInterval(tick, 1000);
+      try{ window.jpWake.on('descanso'); }catch(eW){}
       tick();
       if(restRun) try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
     }catch(e){}
