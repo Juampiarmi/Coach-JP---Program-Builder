@@ -1,4 +1,4 @@
-export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay' | 'workout' | 'fix' | 'service'
+export type TemplateId = 'metric' | 'compare' | 'chart' | 'statement' | 'manifesto' | 'diagram' | 'repeat' | 'matrix' | 'pipeline' | 'pyramid' | 'checklist' | 'bookmark' | 'opus' | 'quote' | 'athletic' | 'essay' | 'workout' | 'fix' | 'service' | 'case' | 'myth'
 /** Servicios & Programas Coach JP: especialidad de la placa de conversión */
 export type ServiceSport = 'hypertrophy' | 'crossfit' | 'hyrox' | 'mtb' | 'rugby' | 'hockey' | 'golf' | 'weightlifting' | 'powerlifting' | 'combat'
 /** Carátula «System Offer» con todos los servicios o ficha técnica de un solo programa */
@@ -249,6 +249,24 @@ export interface CanvasState {
   serviceAvailability: string
   /** Botón de CTA al pie (ej «MANDÁ 'PROGRAMA' POR DM») */
   serviceCta: string
+  /** Caso de Atleta (plantilla 20): ficha de rendimiento con datos reales y permiso del atleta */
+  caseAthlete: string
+  caseDiscipline: string
+  /** Columna 1 · diagnóstico / limitante inicial */
+  caseLimit: string
+  /** Columna 2 · protocolo aplicado */
+  caseProtocol: string
+  /** Resultado medido (va destacado en naranja) */
+  caseResult: string
+  /** Mito vs Fisiología (plantilla 21): el mito popular y la explicación fisiológica real */
+  mythText: string
+  truthText: string
+  mythLabel: string
+  truthLabel: string
+  /** Lado verdadero en naranja de marca o en verde */
+  truthAccent: 'brand' | 'green'
+  /** Arriba / abajo (stack) o lado a lado (split) */
+  mythLayout: 'stack' | 'split'
   /** Carrusel continuo: hilo de marca que cruza de placa en placa */
   seamlessThread: boolean
   /** Carrusel continuo: foto panorámica repartida entre todas las placas (id en IndexedDB) */

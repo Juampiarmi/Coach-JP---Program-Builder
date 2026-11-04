@@ -182,6 +182,9 @@ export function splitBlock(block: string): Partial<CanvasState> {
   // Técnica: «❌ / Error: …» + «✅ / Corrección: …» → plantilla 18 · Error vs Corrección.
   const fix = splitFix(block)
   if (fix) return fix
+  // Mito vs fisiología: «Mito: …» + «Realidad: …» → plantilla 21.
+  const myth = splitMyth(block)
+  if (myth) return myth
   // Rutina: renglones «A1 Sentadilla 4x5 RIR 2 3:00» → plantilla 17 · Sesión.
   const workout = splitWorkout(block)
   if (workout) return workout
@@ -333,6 +336,20 @@ function splitFix(block: string): Partial<CanvasState> | null {
   const title = lines.filter((_, i) => i !== wi && i !== ri)
   const head = title.length ? splitBlock(title.join('\n')) : { headlineA: 'ERROR VS', headlineB: 'CORRECCIÓN.' }
   return { headlineA: head.headlineA ?? '', headlineB: head.headlineB ?? '', template: 'fix', fixWrongText: wrong, fixRightText: right, body: '' }
+}
+
+/** «Mito: …» + «Realidad / Verdad / Fisiología / Ciencia: …» → plantilla 21 · Mito vs Fisiología. */
+const MYTH_LINE = /^\s*(?:[✘✗❌×]\s*)?mito(?:\s+popular)?\s*[:：\-–—]\s*(.+)$/iu
+const TRUTH_LINE = /^\s*(?:[✓✔✅]\s*)?(?:realidad|verdad|fisiolog[ií]a(?:\s+real)?|ciencia|evidencia)\s*[:：\-–—]\s*(.+)$/iu
+function splitMyth(block: string): Partial<CanvasState> | null {
+  const lines = block.replace(/\*\*|__/g, '').split('\n').map((l) => l.trim()).filter(Boolean)
+  const mi = lines.findIndex((l) => MYTH_LINE.test(l))
+  const ti = lines.findIndex((l) => TRUTH_LINE.test(l))
+  if (mi < 0 || ti < 0) return null
+  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+  const title = lines.filter((_, i) => i !== mi && i !== ti)
+  const head = title.length ? splitBlock(title.join('\n')) : { headlineA: 'MITO VS', headlineB: 'FISIOLOGÍA.' }
+  return { headlineA: head.headlineA ?? '', headlineB: head.headlineB ?? '', template: 'myth', mythText: cap(cleanValue(lines[mi].match(MYTH_LINE)![1])), truthText: cap(cleanValue(lines[ti].match(TRUTH_LINE)![1])), body: '' }
 }
 
 const WORKOUT_LINE = /^\s*(?:[-•▸►*]\s*)?([A-Za-z]\d{1,2})\s*[.):\-–—]?\s+(.+)$/
@@ -540,7 +557,7 @@ export function guardMapped(blocks: MappedBlock[], aiSlides: Partial<CanvasState
     // Nada de gráficos / diagramas que el usuario no pidió.
     const wantsVisual = ASKS_VISUAL.test(block.text)
     const hasNumber = /\d/.test(block.text)
-    if (local.template === 'opus' || local.template === 'quote' || local.template === 'essay' || local.template === 'workout' || local.template === 'fix') p = { ...p, ...local, template: local.template }
+    if (local.template === 'opus' || local.template === 'quote' || local.template === 'essay' || local.template === 'workout' || local.template === 'fix' || local.template === 'myth') p = { ...p, ...local, template: local.template }
     else if (anaphora) p = { ...p, template: 'manifesto' }
     else if (!p.template || (!TEXT_TEMPLATES.includes(p.template) && !wantsVisual && !(p.template === 'metric' && hasNumber))) p = { ...p, template: 'statement' }
     if (p.template === 'repeat') p = { ...p, repeatPhrase: `${p.headlineA ?? ''} ${p.headlineB ?? ''}`.trim(), repeatMode: 'justified' }

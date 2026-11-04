@@ -94,6 +94,10 @@ export function slideCopy(s: CanvasState): { headline: string; body: string[] } 
         return s.essayParas
       case 'workout':
         return [...s.workoutRows.map((r) => `${r.name} ${r.scheme}`), s.workoutNote]
+      case 'case':
+        return [s.caseAthlete, s.caseDiscipline, s.caseLimit, s.caseProtocol, s.caseResult]
+      case 'myth':
+        return [s.mythText, s.truthText]
       case 'service':
         return [...s.serviceItems, s.serviceAvailability, s.serviceCta]
       case 'fix':
@@ -106,7 +110,11 @@ export function slideCopy(s: CanvasState): { headline: string; body: string[] } 
 }
 
 // Imperativos con pronombre enclítico incluidos: «guardalo», «compartilo», «mandame».
-const CTA_RE = /\b(guard[aá]|compart[ií]|coment[aá]|segu[ií]|seguime|escrib[ií]|escribime|mand[aá]|reserv[aá]|link|bio|dm|etiquet[aá]|aplic[aá]lo|prob[aá]lo|anot[aá]te|inscrib[ií]|descarg[aá]|agend[aá]|sum[aá]te|empez[aá])(?:lo|la|los|las|me|nos)?\b/i
+// Límites de palabra con \p{L} (con «u»): \b no reconoce las vocales acentuadas («guardá», «compartí»).
+const CTA_RE = /(?<![\p{L}])(guard[aá]|compart[ií]|coment[aá]|segu[ií]|seguime|escrib[ií]|escribime|mandá|mandame|mandanos|reserv[aá]|link|bio|dm|etiquet[aá]|aplic[aá]lo|prob[aá]lo|anot[aá]te|inscrib[ií]|descarg[aá]|agend[aá]|sum[aá]te|empez[aá])(?:lo|la|los|las|me|nos)?(?![\p{L}])/iu
+
+/** ¿El texto tiene un llamado a la acción explícito? */
+export const hasCallToAction = (text: string) => CTA_RE.test(text)
 
 /** ¿La placa tiene un llamado a la acción explícito? */
 export function hasCta(s: CanvasState) {

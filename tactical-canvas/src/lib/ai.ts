@@ -136,6 +136,7 @@ PLANTILLAS DISPONIBLES (templateId):
 - "rutina": tarjeta de sesión de entrenamiento: ejercicios con código (A1, B1, B2 = superserie), series × reps, intensidad (RIR / RPE / % 1RM) y pausa. Ideal para «la sesión de hoy» o un protocolo aplicable.
 - "athletic": placa editorial clara estilo Opus Athletic (papel claro, titular negro) con datos en filas clave → valor («CARGAS PESADAS:» → «3-5 reps al 85-90 % 1RM») o tabla de 2 columnas (Intensidad | Reps × series). Ideal para protocolos con números reales.
 - "cita": cita célebre estilo «Forbes Quotes» (frase real de un deportista o persona de éxito + nombre + rol). SÓLO con una frase que esa persona dijo de verdad y de fuente conocida; si no tenés certeza absoluta, no uses esta plantilla.
+- "mito_fisiologia": desarmar UN mito de gimnasio: tarjeta MITO POPULAR (la creencia tal como la dice la gente, máx 16 palabras) y tarjeta FISIOLOGÍA REAL (el mecanismo correcto en lenguaje de sala, máx 32 palabras). Sólo mitos que la evidencia contradice con claridad.
 - "servicio": placa de conversión de un programa de Coach JP: ficha técnica de UNA disciplina (badge «PROGRAMA ALTO RENDIMIENTO // DEPORTE», titular del programa, 3-4 pilares técnicos y CTA a DM / evaluación) o carátula de catálogo con varias disciplinas. Ideal para cerrar un pitch de venta presentando el programa.
 - "opus": placa de mentalidad con jerarquía: título principal (titleWhite + titleAccent corto) y debajo 2 a 6 bloques numerados («00001:» + una frase de criterio u hábito operativo). Ideal para estándares, reglas o hábitos de mindset en una placa.
 CIERRE DE RETENCIÓN: en todo carrusel de 4 a 5 placas, la última placa es por defecto "guardado", salvo que el usuario pida otro cierre.
@@ -148,6 +149,7 @@ COMPATIBILIDAD SEMÁNTICA ESTRICTA (prohibido el «gráfico por hacer»: cada vi
 - Rótulos de diagramas y estructuras: cortos (idealmente hasta 14 caracteres por palabra y 3 palabras), para que se lean enteros.
 
 MAPEO CONCEPTUAL (elegí la plantilla según la idea central del slide, no al azar):
+- Mito de gimnasio que la fisiología desmiente («el ácido láctico causa agujetas», «hay que sentir el bombeo para crecer»): "mito_fisiologia".
 - Dualidad o contraste entre dos estados («Ego vs Progreso», «Estático vs Dinámico», «Volumen vs Intensidad»): "ab", o "grafico" con curva y zona umbral.
 - Progresión o acumulación en el tiempo («Persistencia», «Constancia», «Sobrecarga progresiva», «Hábitos»): "diagrama" con recommendedType "domino", o "repeticion".
 - Equilibrio o fenómeno multifactorial («Obsesión», «Fatiga», «Recuperación», «Rendimiento global»): "diagrama" con recommendedType "radar".
@@ -225,6 +227,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "error_correccion": { "wrong": { "label": string (ej «INCORRECTO»), "text": string (la falla, máx 16 palabras) }, "right": { "label": string (ej «CORRECCIÓN TÁCTICA»), "text": string (la solución concreta, máx 16 palabras) } } (OBLIGATORIO sólo si templateId es "error_correccion"; en los demás omitilo),
       "rutina": { "rows": [2 a 8 objetos { "code": "A1", "name": string (ejercicio), "scheme": string (ej «4 × 5»), "intensity": string (ej «RIR 2», «80 % 1RM»), "rest": string (ej «3:00») }], "note": string (progresión o criterio, 1 oración) } (OBLIGATORIO sólo si templateId es "rutina"; en los demás omitilo),
       "athletic": { "theme": "dark" | "light" (por defecto "dark", la estética nativa de Coach JP), "nr": string (número de la etiqueta «[Nr. X]»; "" en portada y cierre), "cta": string ("" salvo en el cierre), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
+      "mito_fisiologia": { "myth": string (el mito, máx 16 palabras), "truth": string (la fisiología real, máx 32 palabras, con el mecanismo) } (OBLIGATORIO sólo si templateId es "mito_fisiologia"; en los demás omitilo),
       "servicio": { "mode": "single" | "catalog", "sport": "hypertrophy" | "crossfit" | "hyrox" | "mtb" | "rugby" | "hockey" | "golf" | "weightlifting" | "powerlifting" | "combat", "pillars": [3 o 4 strings (pilares técnicos concretos del deporte, máx 90 caracteres)], "availability": string (ej «CUPOS LIMITADOS · EVALUACIÓN DE INGRESO»), "cta": string (MAYÚSCULAS, ej «MANDÁ 'PROGRAMA' POR DM») } (OBLIGATORIO sólo si templateId es "servicio"; en los demás omitilo),
       "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo), "enfasis": string (2 a 6 palabras finales literales de quote, van en naranja) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
       "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
@@ -809,6 +812,9 @@ const TEMPLATE_MAP: Record<string, TemplateId> = {
   error_correccion: 'fix',
   servicio: 'service',
   service: 'service',
+  mito_fisiologia: 'myth',
+  mito: 'myth',
+  myth: 'myth',
   programa: 'service',
   manifiesto_texto: 'essay',
   essay: 'essay',
@@ -1129,6 +1135,13 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
     // Con cita pedida, el párrafo de la IA es la bajada de contexto de la Cita táctica: no se borra.
     if (!ctx.quote) patch.body = ''
   } else if (template === 'essay') patch.template = 'statement'
+
+  // 21 · Mito vs Fisiología: sin las dos tarjetas no hay placa (vuelve a sentencia).
+  const mf = obj(s.mito_fisiologia ?? s.mito ?? s.myth)
+  const mythText = first(mf.myth, mf.mito)
+  const truthText = first(mf.truth, mf.verdad, mf.realidad, mf.fisiologia)
+  if (mythText && truthText) Object.assign(patch, { mythText, truthText })
+  else if (template === 'myth') patch.template = 'statement'
 
   // 19 · Servicios & Programas: ficha técnica o carátula de catálogo.
   const sv = obj(s.servicio ?? s.service)
@@ -1583,6 +1596,7 @@ const AI_TEMPLATE_ID: Partial<Record<TemplateId, string>> = {
   fix: 'error_correccion',
   essay: 'manifiesto_texto',
   service: 'servicio',
+  myth: 'mito_fisiologia',
 }
 
 export interface RegenerateRequest {

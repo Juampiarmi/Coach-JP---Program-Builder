@@ -313,6 +313,18 @@ export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
           <span className="truncate">{hasKey ? `${settings.provider.toUpperCase()} · ${settings.models[settings.provider]}` : 'CARGAR API KEY'}</span>
         </button>
       </div>
+      <WeeklyPlan
+        settings={settings}
+        hasKey={hasKey}
+        discipline={mode.discipline ?? 'general'}
+        onResult={onResult}
+        onLoadDay={onLoadDay}
+        onPrompt={(t) => {
+          setTopic(t)
+          setMode({ ...mode, inputMode: 'brief', pillar: undefined })
+        }}
+        onNeedKey={() => setModal(true)}
+      />
       <ContentCalendar
         settings={settings}
         hasKey={hasKey}
@@ -326,18 +338,6 @@ export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
         onPick={(t) => {
           setTopic(t)
           setMode({ ...mode, inputMode: 'brief' })
-        }}
-        onNeedKey={() => setModal(true)}
-      />
-      <WeeklyPlan
-        settings={settings}
-        hasKey={hasKey}
-        discipline={mode.discipline ?? 'general'}
-        onResult={onResult}
-        onLoadDay={onLoadDay}
-        onPrompt={(t) => {
-          setTopic(t)
-          setMode({ ...mode, inputMode: 'brief', pillar: undefined })
         }}
         onNeedKey={() => setModal(true)}
       />

@@ -15,6 +15,8 @@ import { EssayTemplate } from './templates/EssayTemplate'
 import { WorkoutTemplate } from './templates/WorkoutTemplate'
 import { FixTemplate } from './templates/FixTemplate'
 import { ServiceTemplate } from './templates/ServiceTemplate'
+import { CaseTemplate } from './templates/CaseTemplate'
+import { MythTemplate } from './templates/MythTemplate'
 import { SlideCounter } from './SlideCounter'
 import { PanoramaLayer, ThreadLayer } from './SeamlessLayer'
 import { StickerZone } from './StickerZone'
@@ -445,6 +447,8 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     {isStatement && <StatementTemplate state={state} scale={scale} />}
                     {isDiagram && <DiagramTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isStruct && <StructTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
+                    {state.template === 'case' && <CaseTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
+                    {state.template === 'myth' && <MythTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {state.template === 'service' && <ServiceTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isFix && <FixTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} resolveImage={resolveImage} />}
                     {isWorkout && <WorkoutTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}

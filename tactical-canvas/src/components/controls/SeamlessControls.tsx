@@ -55,7 +55,7 @@ export function SeamlessControls({ state, update, addImage, resolveImage, slideC
       </div>
       <p className="font-mono text-[9px] leading-relaxed text-steel/60">
         {slideCount > 1
-          ? `La foto se reparte en ${slideCount} franjas (una por placa). Ideal: una imagen horizontal ~${slideCount}:1.25. Usa la capa táctica y el B/N de 03 · Fondo.`
+          ? `La foto se reparte en ${slideCount} franjas (una por placa). Ideal: una imagen horizontal ~${slideCount}:1.25. Usa la capa táctica y el B/N de «Estilo › 02 · Fondo».`
           : 'Agregá placas: con una sola no hay recorrido que repartir.'}
       </p>
     </>

@@ -18,7 +18,7 @@ export function AthleticEditor({ state, update }: Props) {
   return (
     <>
       <p className="font-mono text-[10px] leading-relaxed tracking-[0.06em] text-steel/80">
-        Nr. vacío = encabezado sin número («[ GUÍA DE RENDIMIENTO // COACH JP ]»). Para el atleta, subí un PNG recortado (fondo transparente) en 03 · Fondo: se pasa a B/N de alto contraste.
+        Nr. vacío = encabezado sin número («[ GUÍA DE RENDIMIENTO // COACH JP ]»). Para el atleta, subí un PNG recortado (fondo transparente) en «Estilo › 02 · Fondo»: se pasa a B/N de alto contraste.
       </p>
       <Field label="Estética" plain>
         <Segmented<AthleticTheme>
@@ -46,7 +46,7 @@ export function AthleticEditor({ state, update }: Props) {
           size="sm"
         />
       </Field>
-      <p className="-mt-1 font-mono text-[9px] leading-relaxed text-steel/60">AUTO alterna anillos y grilla por placa. FOTO B/N usa la imagen de 03 · Fondo a sangre con velo (en lugar de recorte).</p>
+      <p className="-mt-1 font-mono text-[9px] leading-relaxed text-steel/60">AUTO alterna anillos y grilla por placa. FOTO B/N usa la imagen de «Estilo › 02 · Fondo» a sangre con velo (en lugar de recorte).</p>
       <div className="grid grid-cols-[5rem_1fr] gap-2">
         <Field label="Nr.">
           <TextInput value={state.athleticNr ?? ''} onChange={(athleticNr) => update({ athleticNr })} placeholder="1" />

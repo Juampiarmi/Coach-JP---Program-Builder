@@ -1,8 +1,12 @@
 import { useRef, useState } from 'react'
 import { generateServiceCopy, loadAiSettings, RateLimitError } from '../../lib/ai'
 import { SERVICE_BY_ID, SERVICES, servicePatch } from '../../lib/services'
+import { SAMPLES } from '../../defaults'
 import type { CanvasState, ServiceMode, ServiceSport } from '../../types'
 import { Field, Segmented, TextArea, TextInput } from './primitives'
+
+/** Modalidad del panel: las dos de la plantilla 19 + el caso de atleta (plantilla 20). */
+type PanelMode = ServiceMode | 'case'
 
 interface Props {
   state: CanvasState
@@ -12,22 +16,29 @@ interface Props {
 }
 
 /**
- * Sección «07 · Servicios & Programas Coach JP»: elegir la disciplina y la modalidad (ficha técnica o
+ * Pestaña «04 · Servicios & Casos»: elegir la disciplina y la modalidad (ficha técnica o
  * carátula de catálogo), cargarla en la placa, editar programa / pilares / cupos / CTA y pedirle a la
  * IA el copy de venta de esa disciplina (gancho, 3 pilares y caption orientado a lead).
  */
 export function ServicesPanel({ state, update, onCaption }: Props) {
   const isService = state.template === 'service'
-  const [mode, setMode] = useState<ServiceMode>(isService ? state.serviceMode : 'single')
+  const isCase = state.template === 'case'
+  const [mode, setMode] = useState<PanelMode>(isCase ? 'case' : isService ? state.serviceMode : 'single')
   const [sport, setSport] = useState<ServiceSport>(isService ? state.serviceSport : 'rugby')
   const catalog = state.serviceCatalog ?? []
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const abort = useRef<AbortController | null>(null)
-  const curMode = isService ? state.serviceMode : mode
+  const curMode: PanelMode = isCase ? 'case' : isService ? state.serviceMode : mode
   const curSport = isService ? state.serviceSport : sport
 
-  const load = (m: ServiceMode, sp: ServiceSport) => update(servicePatch(m, sp, catalog))
+  const load = (m: PanelMode, sp: ServiceSport) =>
+    update(
+      m === 'case'
+        ? // Caso de atleta: la plantilla 20 con la disciplina elegida (el caso en sí lo cargás vos, con datos reales).
+          { ...(isCase ? {} : SAMPLES.case), template: 'case', tag: `CASO DE RENDIMIENTO // ${SERVICE_BY_ID[sp].short}`, caseDiscipline: SERVICE_BY_ID[sp].short }
+        : servicePatch(m, sp, catalog),
+    )
   const pickSport = (id: ServiceSport) => {
     if (curMode === 'catalog') {
       // En la carátula, cada chip suma / saca la disciplina de la grilla (mínimo 1).
@@ -36,12 +47,13 @@ export function ServicesPanel({ state, update, onCaption }: Props) {
       return
     }
     setSport(id)
+    if (isCase) return load('case', id)
     // Ficha ya cargada: elegir otra disciplina carga su programa de fábrica.
     if (isService) load('single', id)
   }
-  const pickMode = (m: ServiceMode) => {
+  const pickMode = (m: PanelMode) => {
     setMode(m)
-    if (isService) load(m, curSport)
+    if (isService || isCase) load(m, curSport)
   }
 
   const writeWithAi = async () => {
@@ -53,6 +65,7 @@ export function ServicesPanel({ state, update, onCaption }: Props) {
     setBusy(true)
     setNote('')
     try {
+      if (curMode === 'case') return
       const copy = await generateServiceCopy(loadAiSettings(), { mode: curMode, sport: curSport, catalog }, abort.current.signal, (s) => setNote(s ?? ''))
       const base = isService ? {} : servicePatch(curMode, curSport, catalog)
       update({
@@ -77,12 +90,13 @@ export function ServicesPanel({ state, update, onCaption }: Props) {
   return (
     <div className="space-y-3">
       <Field label="Modalidad" plain>
-        <Segmented<ServiceMode>
+        <Segmented<PanelMode>
           value={curMode}
           onChange={pickMode}
           options={[
-            { value: 'single', label: 'FICHA TÉCNICA' },
-            { value: 'catalog', label: 'CATÁLOGO ALL-IN-ONE' },
+            { value: 'catalog', label: 'CATÁLOGO' },
+            { value: 'single', label: 'FICHA' },
+            { value: 'case', label: 'CASO ATLETA' },
           ]}
           size="sm"
         />
@@ -112,15 +126,24 @@ export function ServicesPanel({ state, update, onCaption }: Props) {
           })}
         </div>
       </div>
-      {!isService && (
+      {!isService && !isCase && (
         <button
           type="button"
           onClick={() => load(curMode, curSport)}
           className="w-full rounded-md border border-fire/60 bg-fire/10 py-2 font-mono text-[10px] font-semibold tracking-[0.12em] text-fire transition hover:bg-fire/20"
         >
-          {curMode === 'catalog' ? '[ ⬇ CARGAR CARÁTULA DE SERVICIOS EN ESTA PLACA ]' : `[ ⬇ CARGAR FICHA · ${SERVICE_BY_ID[curSport].short} ]`}
+          {curMode === 'catalog'
+            ? '[ ⬇ CARGAR CARÁTULA DE SERVICIOS EN ESTA PLACA ]'
+            : curMode === 'case'
+              ? `[ ⬇ CARGAR CASO DE ATLETA · ${SERVICE_BY_ID[curSport].short} ]`
+              : `[ ⬇ CARGAR FICHA · ${SERVICE_BY_ID[curSport].short} ]`}
         </button>
       )}
+      {curMode === 'case' ? (
+        <p className="font-mono text-[9px] leading-relaxed text-gold/80">
+          ⚠ El caso no lo escribe la IA: cargá diagnóstico, protocolo y resultado reales (y con permiso del atleta) en «Texto › 02 · Caso de atleta».
+        </p>
+      ) : (
       <button
         type="button"
         onClick={writeWithAi}
@@ -129,6 +152,7 @@ export function ServicesPanel({ state, update, onCaption }: Props) {
       >
         {busy ? '[ REDACTANDO COPY DE VENTA… · CANCELAR ]' : `[ ✨ COPY DE VENTA CON IA · ${curMode === 'catalog' ? 'CATÁLOGO' : SERVICE_BY_ID[curSport].short} ]`}
       </button>
+      )}
       {note && <p className={`font-mono text-[10px] leading-relaxed ${note.startsWith('✓') ? 'text-cyan' : busy ? 'text-gold' : 'text-fire'}`}>{note}</p>}
 
       {isService && (

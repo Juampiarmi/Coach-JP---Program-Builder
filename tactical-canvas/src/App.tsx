@@ -1,7 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandBar } from './components/BrandBar'
 import { ModeSwitch, type WorkMode } from './components/ModeSwitch'
-import { ControlPanel } from './components/controls/ControlPanel'
+import { ControlPanel, type PanelTab } from './components/controls/ControlPanel'
+import { PanelTabs } from './components/PanelTabs'
 import { Segmented } from './components/controls/primitives'
 import { ExportButtons } from './components/ExportButtons'
 import { Preview } from './components/Preview'
@@ -162,6 +163,7 @@ export default function App() {
   const report = diagnose(slides, (i) => luma(photoId(slides[i])))
   const [doctorOpen, setDoctorOpen] = usePersistentState<{ open: boolean }>('jp-tactical-canvas:doctor', { open: true })
   const doctorRef = useRef<HTMLDivElement>(null)
+  const [panelTab, setPanelTab] = usePersistentState<{ tab: PanelTab }>('jp-tactical-canvas:panel-tab', { tab: 'ai' })
   // Una sola vez: la foto global de versiones anteriores pasa a ser la foto propia de cada placa
   // existente (se ven igual que antes, pero desde ahora cada una se cambia por separado).
   const migrated = useRef(false)
@@ -508,14 +510,48 @@ export default function App() {
 
   const fixDoctor = (fixes: DoctorFix[]) => setDeck((d) => applyFixes(d, fixes))
   const showDoctor = () => {
+    setPanelTab({ tab: 'export' })
     setDoctorOpen({ open: true })
     setDrawerOpen(true)
     window.setTimeout(() => doctorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
   }
 
+  const controls = (tab: PanelTab) => (
+    <ControlPanel
+      state={state}
+      update={update}
+      onReset={reset}
+      bgImage={bgImage}
+      setBgImage={setBgImage}
+      addImage={(img) => bg.add(img).id}
+      resolveImage={bg.get}
+      bgPersisted={bg.persisted}
+      getDiscipline={getDiscipline}
+      slideIndex={active}
+      topic={deck.topic?.trim() || `${slides[0].headlineA} ${slides[0].headlineB}`.replace(/\*/g, '').trim()}
+      bookmarkAuto={bookmarkAuto}
+      onCopyStyle={copyStyle}
+      slideCount={slides.length}
+      onCaption={setCaption}
+      tab={tab}
+    />
+  )
+
+  /** Panel lateral en 5 pestañas: IA & plan · texto · estilo · servicios · carrusel & exportación. */
   const panel = (
     <>
-      <AiGenerator onResult={applyGeneration} onLoadDay={(id) => void loadDay(id, true)} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />
+      <PanelTabs tab={panelTab.tab} onChange={(tab) => setPanelTab({ tab })} score={report.score} />
+      {panelTab.tab === 'ai' && <AiGenerator onResult={applyGeneration} onLoadDay={(id) => void loadDay(id, true)} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />}
+      {panelTab.tab === 'text' && controls('text')}
+      {panelTab.tab === 'style' && (
+        <>
+          <BrandKitBar state={state} onApply={applyKit} slideCount={slides.length} />
+          {controls('style')}
+        </>
+      )}
+      {panelTab.tab === 'services' && controls('services')}
+      {panelTab.tab === 'export' && (
+        <>
       <RetentionDoctor
         ref={doctorRef}
         report={report}
@@ -526,24 +562,9 @@ export default function App() {
         onFix={(f) => fixDoctor([f])}
         onFixAll={() => fixDoctor(report.findings.flatMap((f) => (f.fix ? [f.fix] : [])))}
       />
-      <BrandKitBar state={state} onApply={applyKit} slideCount={slides.length} />
-      <ControlPanel
-        state={state}
-        update={update}
-        onReset={reset}
-        bgImage={bgImage}
-        setBgImage={setBgImage}
-        addImage={(img) => bg.add(img).id}
-        resolveImage={bg.get}
-        bgPersisted={bg.persisted}
-        getDiscipline={getDiscipline}
-        slideIndex={active}
-        topic={deck.topic?.trim() || `${slides[0].headlineA} ${slides[0].headlineB}`.replace(/\*/g, '').trim()}
-        bookmarkAuto={bookmarkAuto}
-        onCopyStyle={copyStyle}
-        slideCount={slides.length}
-        onCaption={setCaption}
-      />
+          {controls('export')}
+        </>
+      )}
     </>
   )
 
@@ -655,7 +676,7 @@ export default function App() {
             <Preview state={canvasState} bgImage={bgImage} canvasRef={canvasRef} gutter={16} overlay={overlay && !exporting} gridGuide={gridGuide && !exporting} resolveImage={bg.get} slideCount={slides.length} slideIndex={active} onNudge={exporting ? undefined : nudge} />
           </div>
           <div className="mx-auto flex w-full max-w-xl flex-col gap-2 px-6 pb-6">
-            <CaptionBar caption={caption} onChange={setCaption} />
+            <CaptionBar caption={caption} onChange={setCaption} slides={slides} fallback={fallbackCaption(slides)} />
             <ExportButtons target={canvasRef} state={state} />
           </div>
         </main>
@@ -711,7 +732,7 @@ export default function App() {
         )}
         <div className="border-t border-line px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">
           <div className="flex flex-col gap-2">
-            <CaptionBar caption={caption} onChange={setCaption} />
+            <CaptionBar caption={caption} onChange={setCaption} slides={slides} fallback={fallbackCaption(slides)} />
             <ExportButtons target={canvasRef} state={state} compact />
           </div>
         </div>
