@@ -3469,27 +3469,35 @@ function jpTempoAplica(ex){
   if(ex.equipo === 'Cardio' || ex.patron === 'Cardio / Metcon' || ex.grupo === 'Full Body / Cardio' || jpEstacion(ex) === 'pista') return false;
   return !/jump|swing|push press|plank|carry|throw|slam|clean|snatch|jerk|sprint|bound|hold|landing|hang|salto|plancha|transporte|lanzamiento/i.test((ex.en || '') + ' ' + (ex.es || ''));
 }
-/* completa "Tempo XXXX" en las líneas de dosis que no lo traen (entre las series x repeticiones y el RIR); no toca nada que ya tenga tempo */
+/* línea de pauta del tempo: "TEMPO: Tempo 3010 (3 s bajada, ...)". El tempo vive en las pautas, nunca en la línea principal de series. */
+function jpTempoLineaPauta(t, nombre){
+  const x = String(t || '').toUpperCase();
+  let txt = ''; try{ txt = (window.__jpPB && typeof window.__jpPB.tempoTxt === 'function') ? window.__jpPB.tempoTxt(x) : ''; }catch(e){}
+  return 'TEMPO: ' + (nombre ? nombre + ' · ' : '') + 'Tempo ' + x + (txt ? ' (' + txt + ')' : '');
+}
+/* el ejercicio que no trae tempo en ningún lado lo recibe en las PAUTAS del bloque (línea "TEMPO: ..."), no en la línea de dosis; no toca nada que ya tenga tempo */
 function jpCompletarTempoBloque(b){
   if(!(b && b.tipo === 'list' && b.sportsPizarra)) return 0;
   if(b.category === 'warmup' || b.modalidad === 'calentamiento' || /^(cardio|endurance|metcon)$/.test(b.category || '')) return 0;
+  if(/(^|\n)\s*TEMPO\s*:/i.test(String(b.tips || ''))) return 0;
   const items = b.items || [], hayA = items.some(l => JP_RX_ALINEA.test(String(l).trim()));
-  let cur = null, n = 0;
+  let cur = null, n = 0; const faltan = [];
   if(!hayA){
     const f = String(items[0] || '').trim();
     cur = jpExDeNombre(/^\d/.test(f) ? String(b.titulo || '').replace(/\s*\(\s*\d+\s*MIN\s*\)\s*$/i, '') : f.replace(/\s*[—–]\s+.*$/, ''));
   }
-  const nuevo = items.map(l => {
+  items.forEach(l => {
     const s = String(l).trim(), m = JP_RX_ALINEA.exec(s);
-    if(m){ cur = jpExDeNombre(/^(.+?)(\s+[—–]\s+.*)?$/.exec(m[4])[1].trim()); return l; }
-    if(cur && /^\d+\s*x\s*\d/i.test(s) && !/tempo\s*\d/i.test(s) && jpTempoAplica(cur)){
-      const kb = (window.__jpPB && window.__jpPB.kbDe) ? window.__jpPB.kbDe(cur.es) : null, t = (kb && kb.t) || '2011', partes = s.split('|').map(x => x.trim());
-      partes.splice(1, 0, 'Tempo ' + t); n++;
-      return partes.join(' | ');
+    if(m){ cur = jpExDeNombre(/^(.+?)(\s+[—–]\s+.*)?$/.exec(m[4])[1].trim()); return; }
+    if(cur && /^\d+\s*x\s*\d/i.test(s) && !/tempo\s*\d/i.test(s) && jpTempoAplica(cur) && !faltan.some(x => x.ex === cur)){
+      const kb = (window.__jpPB && window.__jpPB.kbDe) ? window.__jpPB.kbDe(cur.es) : null;
+      faltan.push({ ex: cur, t: (kb && kb.t) || '2011' }); n++;
     }
-    return l;
   });
-  if(n) b.items = nuevo;
+  if(n){
+    const multi = faltan.length > 1;
+    b.tips = (b.tips ? b.tips + '\n' : '') + faltan.map(x => jpTempoLineaPauta(x.t, multi ? x.ex.es : '')).join('\n');
+  }
   return n;
 }
 function jpLgExento(b){ return /circuito|simulaci[oó]n/i.test(String((b && b.titulo) || '')); }
@@ -12614,17 +12622,28 @@ function wireReadinessCheckin(day, weekIdx){
 ========================================================= */
 let _audioCtx = null;
 var _audioFallo = false;
-function ensureAudioCtx(){
+/* Sesión de audio "playback" SOLO mientras suena un aviso (para que suene con el interruptor de silencio del iPhone) y se devuelve a "auto" a los
+   pocos segundos: si queda fija, el sistema muestra un reproductor multimedia fantasma (con el nombre del sitio, "GitHub") en el centro de control. */
+var _sesAudioTm = null;
+function jpSesionAudio(){
+  try{ if(navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; }catch(e0){}
+  clearTimeout(_sesAudioTm);
+  _sesAudioTm = setTimeout(function(){
+    try{ if(navigator.audioSession) navigator.audioSession.type = 'auto'; }catch(e1){}
+    try{ if(navigator.mediaSession){ navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; } }catch(e2){}
+  }, 6000);
+}
+function ensureAudioCtx(pasivo){
   /* El audio NUNCA puede romper la app: aqui no se lanza ninguna excepcion. Sin Web Audio (o si el constructor falla) devuelve null y
      todos los llamadores simplemente no suenan. El contexto no se crea al cargar la pagina: nace en el primer gesto o el primer aviso. */
+  if(!pasivo) jpSesionAudio();
   if(_audioCtx || _audioFallo) return _audioCtx;
   try{
     var AC = window.AudioContext || window.webkitAudioContext;
     if(!AC){ _audioFallo = true; return null; }
     /* latencyHint "interactive": el menor retardo posible entre el evento del timer y el tono */
     try{ _audioCtx = new AC({ latencyHint: 'interactive' }); }catch(e){ _audioCtx = new AC(); }
-    /* iOS 16.4+: sesion de audio "playback" -> los avisos suenan aunque el interruptor de silencio del iPhone este activo */
-    try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e2){}
+    /* iOS 16.4+: la sesion "playback" (avisos audibles con el silencio activo) se activa por aviso en jpSesionAudio(), no de forma permanente */
     /* si el sistema lo interrumpe (llamada, bloqueo de pantalla), queda a la espera del proximo toque */
     try{ _audioCtx.addEventListener('statechange', function(){ if(_audioCtx && _audioCtx.state !== 'running' && window.__jpArmarAudio) window.__jpArmarAudio(); }); }catch(e3){}
   }catch(e4){ _audioCtx = null; _audioFallo = true; }
@@ -12633,10 +12652,10 @@ function ensureAudioCtx(){
 /* reanuda el contexto SOLO si ya existe (no lo crea: se llama tambien al volver a la pestana, sin gesto) */
 function resumeAudioCtx(){ try{ if(_audioCtx && _audioCtx.state !== 'running'){ var p = _audioCtx.resume(); if(p && p.catch) p.catch(function(){}); } }catch(e){} }
 /* gesto del usuario: aqui si se crea (si hace falta) y se reanuda */
-function gestoAudio(){ try{ ensureAudioCtx(); resumeAudioCtx(); }catch(e){} }
+function gestoAudio(){ try{ ensureAudioCtx(true); resumeAudioCtx(); }catch(e){} }
 function unlockAudio(){
   try{
-    const ctx = ensureAudioCtx(); if(!ctx) return; resumeAudioCtx();
+    const ctx = ensureAudioCtx(true); if(!ctx) return; resumeAudioCtx();
     /* buffer silencioso de 1 muestra dentro del gesto: es lo que Safari/iOS exige para habilitar el contexto */
     const buf = ctx.createBuffer(1, 1, 22050), src = ctx.createBufferSource();
     src.buffer = buf; src.connect(ctx.destination); src.start(0);
@@ -13048,6 +13067,33 @@ const WakeLockManager = (function(){
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible' && count>0) acquireSentinel(); });
   return { acquire: acquire, release: release, register: register };
 })();
+/* Pantalla siempre encendida mientras corre CUALQUIER cronómetro (descanso entre series, Custom WOD Timer, timers rápidos). Un único candado,
+   con un "motivo" por cronómetro: se libera solo cuando ya no queda ninguno activo y se vuelve a pedir al regresar a la app (el sistema lo suelta
+   cada vez que la pantalla se bloquea o se cambia de pestaña). */
+const jpWake = (function(){
+  var motivos = {}, sentinel = null, pidiendo = false;
+  function hay(){ for(var k in motivos){ if(motivos[k]) return true; } return false; }
+  function pedir(){
+    if(sentinel || pidiendo || !hay() || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    pidiendo = true;
+    try{
+      navigator.wakeLock.request('screen').then(function(s){
+        pidiendo = false;
+        if(!hay()){ try{ s.release().catch(function(){}); }catch(e0){} return; }
+        sentinel = s;
+        s.addEventListener('release', function(){ if(sentinel === s) sentinel = null; });
+      }).catch(function(){ pidiendo = false; });
+    }catch(e1){ pidiendo = false; }
+  }
+  function soltar(){ if(sentinel){ var s = sentinel; sentinel = null; try{ s.release().catch(function(){}); }catch(e2){} } }
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') pedir(); });
+  return {
+    on: function(m){ motivos[m] = 1; pedir(); },
+    off: function(m){ delete motivos[m]; if(!hay()) soltar(); },
+    activo: function(){ return !!sentinel; }
+  };
+})();
+window.jpWake = jpWake;
 /* =========================================================
    ITEM LINE PARSER
 ========================================================= */
@@ -13548,16 +13594,7 @@ function renderWeekSelector(){
          avanzar si quiere. En CrossFit las semanas son independientes a
          propósito (directiva de independencia de semanas): no hay una
          "semana correcta" que reforzar, así que este aviso no aplica. */
-      if(!esCF){
-        try{
-          var correcta = semanaActivaCorrespondiente();
-          if(destino > correcta && window.CoachAviso && window.CoachAviso.mostrar){
-            window.CoachAviso.mostrar('fatiga', '⚠️', 'Semana adelantada',
-              'Todavía no cerraste del todo la Semana ' + (correcta + 1) + '. Podés seguir viendo la Semana ' +
-              (destino + 1) + ', pero lo que registres acá no se mezcla con esa -- cada semana guarda sus propios datos.', 7000);
-          }
-        }catch(e){}
-      }
+      /* el cartel emergente "Semana adelantada ... Entendido" se retiró por completo: cambiar de semana es directo y sin avisos */
       state.currentWeek = destino;
       jpGuardarPosicion();
       aplicarSemanaActivaBlocks();
@@ -15860,6 +15897,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     hud.classList.toggle('cf-mirrored', !!oculto);
     hud.classList.add('on'); restRun = true;
     clearInterval(restInt); restInt = setInterval(tick, 1000);
+    try{ window.jpWake.on('descanso'); }catch(eW){}
     pintarRest();
     mostrarAjusteKgRest();
     guardarRestTimer();
@@ -15867,7 +15905,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     _restAv = -1;
     try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
   }
-  function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; pintarRest(); guardarRestTimer(); try{ jpBgTimer.cancelar(); }catch(e){} }
+  function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; try{ window.jpWake.off('descanso'); }catch(eW){} pintarRest(); guardarRestTimer(); try{ jpBgTimer.cancelar(); }catch(e){} }
   /* pausa/reanuda el descanso activo sin cerrarlo -- misma lógica que ya
      tenía el toggle ▶/⏸ de la barra flotante, ahora nombrada aparte para
      que el widget in-situ de CrossFit (jpCfRestOnTick) pueda dispararla
@@ -15878,9 +15916,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       restTargetEnd = Date.now() + restLeft * 1000;
       if(!restInt) restInt = setInterval(tick, 1000);
       try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
+      try{ window.jpWake.on('descanso'); }catch(eW){}
     }else{
       clearInterval(restInt); restInt = null;
       try{ jpBgTimer.cancelar(); }catch(e){}
+      try{ window.jpWake.off('descanso'); }catch(eW){}
     }
     pintarRest();
     guardarRestTimer();
@@ -19223,7 +19263,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }).join('');
     var rb = restBadgeSB(en.restSeconds, en.restLabel);
     /* mismo orden que la línea del Builder ("tramos | Tempo | RIR" y abajo el descanso): el tempo y el RIR del ejercicio se muestran antes de la pausa */
-    var tmpT = tempoComun ? '<span class="jp-db-seg jp-db-tempo jp-db-tempo-c">TEMPO ' + escSB(tempoComun) + '</span>' : '';
+    /* el tempo ya no se imprime en la línea principal: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
+    var tmpT = '';
     var rirT = (en.rir && !en.tramos.some(function(t){ return t.rir; })) ? '<span class="jp-db-seg jp-db-rir jp-rir-' + tierRirSB(en.rir) + '">' + ICONO_RIR_SB[tierRirSB(en.rir)] + ' RIR ' + escSB(en.rir) + '</span>' : '';
     var r2 = (rb || en.unilateral || tmpT || rirT) ? '<div class="jp-db-row jp-db-r2">' + tmpT + rirT + rb +
       (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '';
@@ -19245,7 +19286,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
     else if(reps) r1.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
     else r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
-    if(tempo) r1.push('<span class="jp-db-seg jp-db-tempo jp-db-tempo-c">TEMPO ' + escSB(tempo) + '</span>');
+    /* el tempo no se imprime en la línea principal de series: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
     if(rir){
       var tier = tierRirSB(rir);
       r1.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
@@ -19507,7 +19548,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         nIndiv++;
         regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: -1, tec: entry.tecnica || '' });
         filas += '<div class="jp-int-rx" data-rest-sec="0"><div class="jp-int-txt">' + escSB(rxIntervaloSB(entry)) + '</div>' +
-          ((entry.tempo || entry.rir) ? '<div class="jp-int-meta">' + [entry.tempo ? 'TEMPO ' + escSB(entry.tempo) : '', entry.rir ? 'RIR ' + escSB(entry.rir) : ''].filter(Boolean).join(' \\u00b7 ') + '</div>' : '') + '</div>';
+          (entry.rir ? '<div class="jp-int-meta">' + 'RIR ' + escSB(entry.rir) + '</div>' : '') + '</div>';
         return;
       }
       if(entry.sets > 6 && !esCalentamiento && !entry.tecnica){
@@ -22576,15 +22617,15 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        nombre de caché también se subió de versión y las cachés viejas se
        borran solas al activarse, para no dejar basura de versiones previas. */
     const src =
-      "const CACHE='coachjp-athlete-v2';" +
+      "const CACHE='coachjp-athlete-v3';" +
       "self.addEventListener('install',e=>self.skipWaiting());" +
       "self.addEventListener('activate',e=>e.waitUntil(Promise.all([" +
         "caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE&&k.indexOf('coachjp-athlete-')===0).map(k=>caches.delete(k))))," +
         "self.clients.claim()" +
       "])));" +
       "self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;" +
-        "e.respondWith(fetch(e.request).then(res=>{" +
-        "const c=res.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return res;})" +
+        "e.respondWith(fetch(e.request,{cache:'no-cache'}).then(res=>{" +
+        "if(!res||res.status!==200||res.type==='opaque')return res;const c=res.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return res;})" +
         ".catch(()=>caches.match(e.request).then(r=>r||caches.match(location.href))));});" +
       /* directiva 13, capa 2: infraestructura para push remotas. Ningún
          backend de esta app manda pushes todavía (no hay servidor de
@@ -22619,7 +22660,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
             "return self.registration.showNotification(d.titulo||'Coach JP',{body:d.cuerpo||'',vibrate:[200,100,200],tag:'coachjp-timer',renotify:true});" +
           "}).then(res,res);},ms);}));" +
       "});";
-    navigator.serviceWorker.register('./sw.js').catch(function(){
+    /* updateViaCache:'none' + update(): el propio sw.js nunca se sirve del caché HTTP, así una versión nueva se detecta en cada arranque */
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function(reg){ try{ reg.update(); }catch(e0){} }).catch(function(){
       try{
         const u = URL.createObjectURL(new Blob([src], { type:'text/javascript' }));
         navigator.serviceWorker.register(u).catch(function(){});
@@ -24750,13 +24792,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     try{ if(finMs > now) jpBgTimer.programar(finMs); else jpBgTimer.cancelar(); }catch(e){}
   }
   function despierto(on){
-    try{
-      if(on){
-        if(!wl && navigator.wakeLock && navigator.wakeLock.request)
-          navigator.wakeLock.request('screen').then(function(s){ wl = s; s.addEventListener('release', function(){ wl = null; }); })
-            .catch(function(){ wl = null; });
-      } else if(wl){ wl.release(); wl = null; }
-    }catch(e){ wl = null; }
+    /* mismo candado unificado que el descanso: se vuelve a pedir solo al regresar a la app */
+    try{ if(on) window.jpWake.on('wod'); else window.jpWake.off('wod'); }catch(e){}
   }
   function pausar(){
     /* directiva10 -- recalcula contra el reloj real antes de congelar
@@ -57622,6 +57659,7 @@ body.man-mode .gs-fab{right:318px}
         try{
           if(window.CoachAuditoria && typeof window.CoachAuditoria.rellenarDias === 'function'){
             const rel = window.CoachAuditoria.rellenarDias(reg);
+            try{ window.CoachAuditoria.tempoANotas(reg); }catch(eT){ console.warn('plantilla: tempo', eT); }
             if(rel.length) toast('🧩 ' + rel.length + ' bloque(s) sin ejercicio se completaron en la plantilla (el plan del alumno no se tocó)', 'info');
           }
         }catch(eRel){ console.warn('plantilla: relleno', eRel); }
@@ -60991,6 +61029,17 @@ body.man-mode .gs-fab{right:318px}
   const cuentaTab = id => banco().filter(r => tabDe(r) === id).length;
   const cuentaFold = id => banco().filter(r => (!F.tab || tabDe(r) === F.tab) && carpetaDe(r) === id).length;
 
+  /* Limpiar filtros / Limpiar todo: blanquea TODOS los estados (disciplina, carpeta, sección, género, nivel, días, búsqueda y los chips de
+     deportes y meses de CrossFit) y deja la vista general completa. Un solo camino para los dos botones. */
+  function limpiarTodo(){
+    F = { tab:'', fold:'', gen:'', niv:'', freq:'', sec:'', q:'' }; guardarF();
+    document.querySelectorAll('#depBar .cp-chip.on, #cfmBar .cp-chip.on').forEach(b => { try{ b.click(); }catch(e){} });
+    const q = document.getElementById('bkQ'); if(q) q.value = '';
+    const q2 = document.getElementById('cpQ'); if(q2) q2.value = '';
+    pintar();
+    try{ if(window.CoachBancoHUD && typeof window.CoachBancoHUD.repintar === 'function') window.CoachBancoHUD.repintar(); }catch(e){}
+  }
+
   /* ============ C. BARRA DE NAVEGACIÓN ============ */
   function barra(){
     const cont = document.querySelector('#v-banco');
@@ -61011,7 +61060,7 @@ body.man-mode .gs-fab{right:318px}
         const n = e.target.closest('[data-cpniv]'); if(n){ F.niv = n.dataset.cpniv === F.niv ? '' : n.dataset.cpniv; guardarF(); pintar(); return; }
         const q = e.target.closest('[data-cpfreq]'); if(q){ F.freq = q.dataset.cpfreq === F.freq ? '' : q.dataset.cpfreq; guardarF(); pintar(); return; }
         const sc = e.target.closest('[data-cpsec]'); if(sc){ F.sec = sc.dataset.cpsec === F.sec ? '' : sc.dataset.cpsec; guardarF(); pintar(); return; }
-        if(e.target.closest('#cpClear')){ F = { tab:'', fold:'', gen:'', niv:'', freq:'', sec:'', q:'' }; guardarF(); pintar(); return; }
+        if(e.target.closest('#cpClear')){ limpiarTodo(); return; }
       });
       w.addEventListener('input', e => {
         if(e.target.id === 'cpQ'){ F.q = e.target.value; guardarF(); pintar(true); }
@@ -61327,7 +61376,7 @@ body.man-mode .gs-fab{right:318px}
     window.CoachCentro = { tabs: TABS, carpetas: FOLDERS, filtro: F,
                            tabDe: tabDe, carpetaDe: carpetaDe, pintar: pintar,
                            set: (k, v) => { F[k] = v; guardarF(); pintar(); },
-                           limpiar: () => { F = { tab:'', fold:'', gen:'', niv:'', freq:'', q:'' }; guardarF(); pintar(); },
+                           limpiar: limpiarTodo,
                            etiquetar: etiquetar };
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
@@ -61848,7 +61897,7 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
        una actualización del coach.html no se quede pegada en una versión
        vieja guardada en el celular/PC del coach. */
     const src =
-      "const CACHE='coachjp-coach-v2';" +
+      "const CACHE='coachjp-coach-v3';" +
       "self.addEventListener('install',e=>{self.skipWaiting();});" +
       "self.addEventListener('activate',e=>{e.waitUntil(Promise.all([" +
         "caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE&&k.indexOf('coachjp-coach-')===0).map(k=>caches.delete(k))))," +
@@ -61856,12 +61905,12 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
       "]));});" +
       "self.addEventListener('fetch',e=>{" +
         "if(e.request.method!=='GET')return;" +
-        "e.respondWith(fetch(e.request).then(res=>{" +
-          "const c=res.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return res;" +
+        "e.respondWith(fetch(e.request,{cache:'no-cache'}).then(res=>{" +
+          "if(!res||res.status!==200||res.type==='opaque')return res;const c=res.clone();caches.open(CACHE).then(k=>k.put(e.request,c));return res;" +
         "}).catch(()=>caches.match(e.request).then(r=>r||caches.match('./index.html'))));" +
       "});";
     try{
-      navigator.serviceWorker.register('./sw.js').catch(() => {
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => { try{ reg.update(); }catch(e0){} }).catch(() => {
         const u = URL.createObjectURL(new Blob([src], { type:'text/javascript' }));
         navigator.serviceWorker.register(u).catch(() => {});
       });
@@ -79839,6 +79888,13 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 .pv-tips{margin:7px 0 0;padding:0;list-style:none;display:grid;gap:5px;font-size:12px;line-height:1.5;color:var(--txt-2)}
 .pv-tips b{color:#EDEFF2;font-size:10.5px;letter-spacing:.05em}
 .pv-legacy{font-size:12px;color:var(--muted)}
+.pv-ed label.pv-edl{display:block;margin:9px 0 0;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.pv-ed .pv-ei,.pv-ed .pv-ea{width:100%;box-sizing:border-box;margin-top:4px;padding:9px 11px;border-radius:10px;border:1px solid var(--line-2);background:rgba(0,0,0,.35);color:var(--txt);font:600 13px/1.5 ui-monospace,Menlo,monospace;text-transform:none;letter-spacing:0}
+.pv-ed textarea.pv-ea{resize:vertical;min-height:64px}
+.pv-ed .pv-ei:focus,.pv-ed .pv-ea:focus{outline:none;border-color:#E5C378}
+.pv-edb{display:flex;justify-content:flex-end;margin-top:9px}
+.pv-edb .btn{min-height:44px}
+.pv-modo-ed{margin:0 0 12px;padding:9px 12px;border-radius:12px;border:1px dashed rgba(229,195,120,.55);background:rgba(229,195,120,.07);color:#E5C378;font-size:12px;font-weight:700;line-height:1.5}
 @media(max-width:620px){ .pv-day{padding:12px 12px 4px} .pv-en{font-size:13px} }
 </style>
 <script>
@@ -79854,6 +79910,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     p.forEach(function(x, i){
       var m;
       if(i === 0 && (m = /^(\d+)\s*x\s*(.+)$/i.exec(x))) h += '<span class="pv-d vol">' + E(m[1]) + ' × ' + E(m[2]) + '</span>';
+      else if(/^Tempo\s*[0-9Xx]{4}$/i.test(x)) { /* el tempo vive en las pautas */ }
       else if(/^RIR/i.test(x)) h += '<span class="pv-d rir">' + E(x) + '</span>';
       else if(/kg$/i.test(x)) h += '<span class="pv-d kg">' + E(x) + '</span>';
       else if(/drop|myo|rest-?pause/i.test(x)) h += '<span class="pv-d tec">' + E(x) + '</span>';
@@ -79863,7 +79920,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   function seriesDe(items){ var n = 0; (items || []).forEach(function(l){ var m = /^(\d+)\s*x\s*\d/i.exec(String(l)); if(m) n += parseInt(m[1], 10); }); return n; }
 
-  function bloqueHtml(b){
+  var editando = false, iaBusy = false, iaStop = false;
+  function bloqueHtml(b, di, bi){
     if(!b) return '';
     var titulo = String(b.titulo || ''), mm = /\((\d+)\s*MIN\)/i.exec(titulo), min = mm ? mm[1] : '';
     var limpio = titulo.replace(/\s*\(\d+\s*MIN\)\s*$/i, '').replace(/^(Fuerza principal|Hipertrofia|Accesorios|Core|Entrada en calor)\s*[–-]\s*/i, '');
@@ -79871,6 +79929,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       return '<div class="pv-blq w"><div class="pv-bh"><span class="pv-tag">BLOQUE · FORMATO ANTERIOR</span></div><div class="pv-en">' + E(titulo || b.tipo) + '</div><div class="pv-legacy">Este bloque conserva el formato anterior: se ve completo una vez asignado. Usá “Actualizar plantillas” para llevarlo al formato actual.</div></div>';
     }
     var mod = MOD[b.modalidad] || ['BLOQUE', 'h'], items = b.items || [], h = '';
+    if(editando){
+      return '<div class="pv-blq pv-ed ' + mod[1] + '" data-pvd="' + di + '" data-pvb="' + bi + '"><div class="pv-bh"><span class="pv-tag">' + mod[0] + '</span></div>' +
+        '<label class="pv-edl">Título del bloque<input class="pv-ei" data-pvf="titulo" value="' + E(b.titulo || '') + '"></label>' +
+        '<label class="pv-edl">Ejercicios y dosis (un renglón por línea)<textarea class="pv-ea" data-pvf="items" rows="' + Math.max(3, Math.min(12, items.length + 1)) + '">' + E(items.join('\n')) + '</textarea></label>' +
+        '<label class="pv-edl">Objetivo<textarea class="pv-ea" data-pvf="objective" rows="3">' + E(b.objective || '') + '</textarea></label>' +
+        '<label class="pv-edl">Pautas y coaching tips (el tempo va acá)<textarea class="pv-ea" data-pvf="tips" rows="6">' + E(b.tips || '') + '</textarea></label>' +
+        (b.modalidad === 'calentamiento' ? '' : '<div class="pv-edb"><button type="button" class="btn xs ghost" data-pvia="' + di + ':' + bi + '">✨ Regenerar tips con IA</button></div>') + '</div>';
+    }
     var tempo = (/TEMPO:\s*Tempo\s*(\d{4})/i.exec(b.tips || '') || [])[1];
     h += '<div class="pv-blq ' + mod[1] + '"><div class="pv-bh"><span class="pv-tag">' + mod[0] + '</span>' + (min ? '<span class="pv-min">' + E(min) + ' MIN</span>' : '') + '</div>';
     if(b.modalidad === 'calentamiento' || !items.some(function(l){ return /^\d+\s*x\s*\d/i.test(l); })){
@@ -79892,13 +79958,17 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         var nm = String(x.n), pm = /^(.*?)\s*\((.+)\)\s*$/.exec(nm);
         h += '<div class="pv-ex"><div class="pv-en">' + (x.st ? '<span class="st">' + x.st + '</span>' : '') + E(pm ? pm[1] : nm) + (pm ? ' <small>' + E(pm[2]) + '</small>' : '') + (x.sin ? ' <small>· falta asignar el ejercicio</small>' : '') + '</div>';
         var last = i === bloques.length - 1, restTxt = x.rest || (last ? (bloques.filter(function(y){ return y.rest; })[0] || {}).rest : '');
-        h += '<div class="pv-dose">' + x.dose + (tempo && !multi && x.dose.indexOf('Tempo') < 0 ? '<span class="pv-d tp">Tempo ' + E(tempo) + '</span>' : '') + ((multi ? last : true) && restTxt ? '<span class="pv-d rest">⏱ ' + (multi ? 'al cerrar la ronda: ' : 'descanso ') + E(restTxt) + 's</span>' : '') + '</div></div>';
+        h += '<div class="pv-dose">' + x.dose + '' + ((multi ? last : true) && restTxt ? '<span class="pv-d rest">⏱ ' + (multi ? 'al cerrar la ronda: ' : 'descanso ') + E(restTxt) + 's</span>' : '') + '</div></div>';
       });
     }
     if(!items.some(function(l){ return String(l).trim(); })) h += '<div class="pv-legacy">⚠ Este bloque no tiene ejercicios cargados. Abrí «🔎 AUDITAR BANCO» y tocá «Reparar mis plantillas» para completarlo.</div>';
     var aclarar = function(t){ return (typeof window.jpAclararTexto === 'function') ? window.jpAclararTexto(t) : t; };
     if(b.objective) h += '<p class="pv-obj"><b>Objetivo fisiológico</b><br>' + E(aclarar(b.objective)) + '</p>';
     var tips = String(b.tips || '').split(/\n+/).map(function(x){ return aclarar(x.trim()); }).filter(Boolean);
+    if(!tips.some(function(t){ return /^TEMPO\s*:/i.test(t); })){
+      var mt = /Tempo\s*([0-9Xx]{4})/i.exec(items.join(' '));
+      if(mt && typeof jpTempoLineaPauta === 'function') tips.push(jpTempoLineaPauta(mt[1]));
+    }
     if(tips.length){
       h += '<details class="pv-det"><summary>Pautas técnicas y coaching tips (' + tips.length + ')</summary><ul class="pv-tips">' + tips.map(function(t){
         var m = /^([A-F]\d\s*·\s*)?([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ \-\/·+]{2,40}):\s*(.*)$/.exec(t);
@@ -79906,6 +79976,126 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       }).join('') + '</ul></details>';
     }
     return h + '</div>';
+  }
+
+  function pintarPie(){
+    var f = document.getElementById('pvFoot'); if(!f) return;
+    f.innerHTML = '<button class="btn ghost" data-pvx="1">← Volver al listado</button><div class="spacer"></div>' +
+      (editando
+        ? '<button class="btn ghost" id="pvCancel">Cancelar</button><button class="btn gold" id="pvSave">💾 Guardar cambios</button>'
+        : '<button class="btn ghost" id="pvEdit">✏️ Editar plantilla</button><button class="btn ghost" id="pvIA">✨ Regenerar tips con IA</button><button class="btn gold" id="pvAsig">⚡ Clonar / asignar</button>');
+  }
+  function esSist(r){ return !!(r && (r.std || r.cfMesSys || r.sbSys || r.depSys || r.fbSys || r.elbSys)); }
+  /* las plantillas del sistema se regeneran desde el código: para editarlas se crea una copia propia (la original queda intacta) */
+  function copiaPropia(r){
+    var c = JSON.parse(JSON.stringify(r));
+    ['std', 'stdId', 'cfMesSys', 'sbSys', 'depSys', 'fbSys', 'elbSys'].forEach(function(k){ delete c[k]; });
+    c.id = uid('bk'); c.nombre = String(r.nombre || 'Plantilla') + ' · copia'; c.creado = new Date().toLocaleDateString('es-AR'); c.usos = 0; c.tipo = 'copia';
+    S.banco.unshift(c);
+    try{ save(); }catch(e){}
+    try{ if(typeof renderBanco === 'function') renderBanco(); }catch(e2){}
+    return c;
+  }
+  function entrarEdicion(){
+    var r = actual; if(!r) return;
+    if(esSist(r)){
+      if(!confirm('Esta es una plantilla del sistema: se regenera desde el código y no conserva cambios.\n\n¿Creo una copia propia para editarla? La original queda intacta.')) return;
+      var c = copiaPropia(r); editando = true; abrir(c.id);
+      toast('✏️ Copia creada: «' + c.nombre + '». Ahora podés editarla.'); return;
+    }
+    editando = true; abrir(r.id);
+  }
+  function guardarEdicion(){
+    var r = actual; if(!r) return;
+    document.querySelectorAll('#pvBody .pv-ed').forEach(function(box){
+      var d = (r.dias || [])[parseInt(box.getAttribute('data-pvd'), 10)], b = d && (d.bloques || [])[parseInt(box.getAttribute('data-pvb'), 10)]; if(!b) return;
+      var v = function(f){ var el = box.querySelector('[data-pvf="' + f + '"]'); return el ? el.value : null; };
+      var t = v('titulo'), it = v('items'), ob = v('objective'), tp = v('tips');
+      if(t !== null) b.titulo = t.trim();
+      if(it !== null) b.items = it.split(/\n/).map(function(x){ return x.replace(/\s+$/, ''); }).filter(function(x){ return x.trim(); });
+      if(ob !== null) b.objective = ob.trim();
+      if(tp !== null) b.tips = tp.split(/\n/).map(function(x){ return x.trim(); }).filter(Boolean).join('\n');
+      if(b.weekItems) delete b.weekItems;       /* las semanas se vuelven a proyectar al asignar */
+    });
+    try{ if(window.CoachAuditoria && window.CoachAuditoria.tempoANotas) window.CoachAuditoria.tempoANotas(r); }catch(e){}
+    try{ save(); }catch(e2){}
+    editando = false; abrir(r.id);
+    toast('💾 Plantilla guardada. Los planes de los alumnos no se tocaron.');
+    try{ if(typeof renderBanco === 'function') renderBanco(); }catch(e3){}
+  }
+
+  /* ---------- coaching tips con IA (misma infraestructura de claves que el generador del Builder) ---------- */
+  var SIS_TIPS = 'Sos el Head Coach de Coach JP: especialista en ciencias del ejercicio. Te paso UN bloque de entrenamiento ya armado (ejercicios con dosis) y tenés que redactar SOLO su objetivo fisiológico y sus coaching tips.\n' +
+    'REGLAS: (1) Lenguaje simple y directo, como si le hablaras a alguien que hace el ejercicio por primera vez; sin jerga, sin citas de estudios ni nombres de autores. (2) Cada tip dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (hasta 30 palabras). (3) El TEMPO nunca va en la dosis: si te paso tempos, incluilos solo en una línea "TEMPO: Tempo 3010 (3 s bajada, sin pausa abajo, 1 s subida, sin pausa arriba)".\n' +
+    'FORMATO EXACTO (texto plano, sin markdown):\n[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones}\n[COACHING TIPS & ESTRATEGIA]\nEjercicio suelto: SET-UP: ... / CUE EFICIENTE: ... / CUIDADO / ERROR COMÚN: ... / TEMPO: ...\nBiserie o triserie, por estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ..." y al final "TRANSICIÓN: ...".';
+  function tempoDe(b){
+    var out = [];
+    String(b.tips || '').split(/\n+/).forEach(function(l){ if(/^\s*TEMPO\s*:/i.test(l)) out.push(l.trim()); });
+    if(!out.length){ var m = /Tempo\s*([0-9Xx]{4})/i.exec((b.items || []).join(' ')); if(m && typeof jpTempoLineaPauta === 'function') out.push(jpTempoLineaPauta(m[1])); }
+    return out;
+  }
+  function hayIA(){ return !!(window.CoachAI && window.CoachAI.generarTexto); }
+  function pedirTips(r, b){
+    var tempos = tempoDe(b), items = (b.items || []).map(function(l){ return String(l).replace(/\s*\|\s*Tempo\s*[0-9Xx]{4}/i, ''); }).join('\n');
+    var user = 'PLANTILLA: ' + (r.nombre || '') + ' · nivel ' + (r.niv || 'intermedio') + (r.genero ? ' · ' + (r.genero === 'f' ? 'mujer' : 'hombre') : '') + '\nBLOQUE: ' + (b.titulo || '') +
+      '\nEJERCICIOS Y DOSIS:\n' + items + (tempos.length ? '\n\nTEMPOS ACTUALES (mantenelos, solo en la línea TEMPO):\n' + tempos.join('\n') : '') + '\n\nEscribí ahora el objetivo fisiológico y los coaching tips de este bloque.';
+    return window.CoachAI.generarTexto(user, SIS_TIPS, { maxTokens: 1600, plain: true, sinEspera: true }).then(function(out){
+      var t = String(out || '').replace(/\x60{3}[a-zA-Z]*\s*\n?/g, '').replace(/\*\*/g, '').trim();
+      var mo = t.match(/\[OBJETIVO FISIOL[ÓO]GICO\]\s*([\s\S]*?)(?=\n\s*\[COACHING|$)/i), mt = t.match(/\[COACHING TIPS[^\]]*\]\s*([\s\S]*)$/i);
+      var obj = mo ? mo[1].replace(/\s*\n+\s*/g, ' ').trim() : '';
+      var lines = mt ? mt[1].split(/\n+/).map(function(l){ return l.replace(/^[-•*\s]+/, '').trim(); }).filter(Boolean) : [];
+      if(!obj && !lines.length) throw new Error('La IA no devolvió objetivo ni tips válidos');
+      tempos.forEach(function(l){ if(!lines.some(function(x){ return /^TEMPO\s*:/i.test(x); })) lines.push(l); });
+      var cl = (typeof window.jpAclararTexto === 'function'), cp = (typeof window.jpAclararPautas === 'function');
+      return { objective: obj ? (cl ? window.jpAclararTexto(obj) : obj) : '', tips: lines.length ? (cp ? window.jpAclararPautas(lines.join('\n')) : lines.join('\n')) : '' };
+    });
+  }
+  function errIA(err){
+    var m = String((err && err.message) || err || '');
+    toast(/429|cuota|quota|rate|limit/i.test(m) ? 'La API está limitando la velocidad: reintentá en un minuto o cambiá de API Key' : 'No se pudieron regenerar los tips: ' + m.slice(0, 90), 'warn');
+  }
+  /* un bloque, desde el modo edición: escribe en los campos sin cerrar nada */
+  function iaUnBloque(di, bi, btn){
+    var r = actual; if(!r) return;
+    if(!hayIA() || !window.CoachAI.hayClave()){ toast('Configurá una clave de IA para regenerar los tips', 'warn'); try{ window.CoachAI && window.CoachAI.config && window.CoachAI.config(); }catch(e){} return; }
+    if(iaBusy) return;
+    var box = btn.closest('.pv-ed'); if(!box) return;
+    var b = JSON.parse(JSON.stringify(r.dias[di].bloques[bi]));
+    var v = function(f){ var el = box.querySelector('[data-pvf="' + f + '"]'); return el ? el.value : ''; };
+    b.titulo = v('titulo'); b.items = v('items').split(/\n/).filter(function(x){ return x.trim(); }); b.tips = v('tips');
+    iaBusy = true; var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '⏳ Regenerando…';
+    pedirTips(r, b).then(function(o){
+      var ob = box.querySelector('[data-pvf="objective"]'), tp = box.querySelector('[data-pvf="tips"]');
+      if(o.objective && ob) ob.value = o.objective; if(o.tips && tp) tp.value = o.tips;
+      toast('✨ Tips regenerados: revisalos y tocá «Guardar cambios»');
+    }).catch(errIA).then(function(){ iaBusy = false; btn.disabled = false; btn.innerHTML = orig; });
+  }
+  /* toda la plantilla: bloque por bloque, con progreso y cancelación; guarda a medida que avanza */
+  async function iaPlantilla(btn){
+    var r = actual; if(!r) return;
+    if(!hayIA() || !window.CoachAI.hayClave()){ toast('Configurá una clave de IA para regenerar los tips', 'warn'); try{ window.CoachAI && window.CoachAI.config && window.CoachAI.config(); }catch(e){} return; }
+    if(iaBusy){ iaStop = true; btn.innerHTML = '⏹ Deteniendo…'; return; }
+    if(esSist(r)){
+      if(!confirm('Esta es una plantilla del sistema: se regenera desde el código y no conserva cambios.\n\n¿Creo una copia propia y regenero los tips en esa copia? La original queda intacta.')) return;
+      r = copiaPropia(r); actual = r;
+    } else if(!confirm('Se reescriben el objetivo y los coaching tips de todos los bloques de «' + r.nombre + '» con IA (puede tardar unos minutos). Los ejercicios y dosis no cambian. ¿Continuar?')) return;
+    var lista = []; (r.dias || []).forEach(function(d, di){ (d.bloques || []).forEach(function(b, bi){ if(b && b.tipo === 'list' && b.modalidad !== 'calentamiento' && b.category !== 'warmup' && (b.items || []).some(function(l){ return String(l).trim(); })) lista.push([di, bi]); }); });
+    if(!lista.length){ toast('Esta plantilla no tiene bloques de trabajo para regenerar', 'info'); return; }
+    iaBusy = true; iaStop = false; var orig = btn.innerHTML, hechos = 0, falla = false;
+    for(var i = 0; i < lista.length && !iaStop; i++){
+      btn.innerHTML = '⏹ Detener · ' + (i + 1) + '/' + lista.length;
+      var b = r.dias[lista[i][0]].bloques[lista[i][1]];
+      try{
+        var o = await pedirTips(r, b);
+        if(o.objective) b.objective = o.objective; if(o.tips) b.tips = o.tips;
+        hechos++; try{ save(); }catch(e){}
+      }catch(err){ errIA(err); falla = true; break; }
+    }
+    iaBusy = false; iaStop = false; btn.innerHTML = orig;
+    try{ if(window.CoachAuditoria && window.CoachAuditoria.tempoANotas) window.CoachAuditoria.tempoANotas(r); save(); }catch(e){}
+    abrir(r.id);
+    toast('✨ ' + hechos + ' de ' + lista.length + ' bloques con tips nuevos' + (falla ? ' (se detuvo por un error)' : ''));
+    try{ if(typeof renderBanco === 'function') renderBanco(); }catch(e){}
   }
 
   function abrir(id){
@@ -79919,7 +80109,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(!m){
       m = document.createElement('div'); m.className = 'modal-bg'; m.id = 'mBankView';
       m.innerHTML = '<div class="modal pv-modal"><div class="modal-h"><h3><span id="pvTit"></span></h3><div class="spacer"></div><button class="icon-btn" data-pvx="1" aria-label="Cerrar">✕</button></div>' +
-        '<div class="modal-b" id="pvBody"></div><div class="modal-f"><button class="btn ghost" data-pvx="1">← Volver al listado</button><div class="spacer"></div><button class="btn gold" id="pvAsig">⚡ Clonar / asignar</button></div></div>';
+        '<div class="modal-b" id="pvBody"></div><div class="modal-f" id="pvFoot"></div></div>';
       document.body.appendChild(m);
       m.addEventListener('click', function(e){
         if(e.target === m || e.target.closest('[data-pvx]')){ closeModal('mBankView'); return; }
@@ -79932,13 +80122,22 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
         if(e.target.closest('#pvAsig')){
           var id2 = actual && actual.id; closeModal('mBankView');
           var b2 = id2 && document.querySelector('[data-bkasig="' + id2 + '"]'); if(b2) setTimeout(function(){ b2.click(); }, 60);
+          return;
         }
+        if(e.target.closest('#pvEdit')){ entrarEdicion(); return; }
+        if(e.target.closest('#pvCancel')){ editando = false; abrir(actual.id); return; }
+        if(e.target.closest('#pvSave')){ guardarEdicion(); return; }
+        if(e.target.closest('#pvIA')){ iaPlantilla(e.target.closest('#pvIA')); return; }
+        var ia1 = e.target.closest('[data-pvia]');
+        if(ia1){ var pp = ia1.getAttribute('data-pvia').split(':'); iaUnBloque(parseInt(pp[0], 10), parseInt(pp[1], 10), ia1); }
       });
     }
     m.__abiertos = false;
-    document.getElementById('pvTit').textContent = '👁️ ' + r.nombre;
+    pintarPie();
+    document.getElementById('pvTit').textContent = (editando ? '✏️ ' : '👁️ ') + r.nombre;
     var body = '<div class="pv-meta">' + (r.genero ? '<span class="pv-pill cy">' + (r.genero === 'f' ? '♀ Femenino' : '♂ Masculino') + '</span>' : '') + (nivLb ? '<span class="pv-pill gold">' + E(nivLb) + '</span>' : '') +
       '<span class="pv-pill">' + dias.length + ' días</span><span class="pv-pill">' + nBl + ' bloques</span>' + (nEj ? '<span class="pv-pill">' + nEj + ' ejercicios</span>' : '') + (nSer ? '<span class="pv-pill">' + nSer + ' series / semana</span>' : '') + '</div>';
+    if(editando) body += '<div class="pv-modo-ed">✏️ Modo edición: cambiá títulos, ejercicios, objetivo y pautas de cada bloque y tocá «Guardar cambios». Solo se modifica esta plantilla del Banco; los planes de los alumnos no se tocan.</div>';
     if(r.notas) body += '<p class="pv-resumen">' + E(r.notas) + '</p>';
     var prog = String((r.meta && r.meta.mesoTexto) || '');
     if(r.notas && prog.indexOf(r.notas) === 0) prog = prog.slice(r.notas.length).trim();
@@ -79948,17 +80147,17 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     dias.forEach(function(d, i){
       body += '<section class="pv-day" id="pvDia' + i + '"><div class="pv-dh"><span class="n">' + E(d.short || ('DÍA ' + (i + 1))) + '</span><h4>' + E(d.title || d.label || '') + '</h4></div>' +
         ((d.metaChips || []).length ? '<div class="pv-meta">' + d.metaChips.map(function(c){ return '<span class="pv-pill">' + E(c) + '</span>'; }).join('') + '</div>' : '') +
-        (d.focusText ? '<p class="pv-foco">' + E(d.focusText) + '</p>' : '') + (d.bloques || []).map(bloqueHtml).join('') + '</section>';
+        (d.focusText ? '<p class="pv-foco">' + E(d.focusText) + '</p>' : '') + (d.bloques || []).map(function(b, bi){ return bloqueHtml(b, i, bi); }).join('') + '</section>';
     });
     var bd = document.getElementById('pvBody'); bd.innerHTML = body; bd.scrollTop = 0;
     openModal('mBankView'); m.scrollTop = 0;
   }
   document.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('[data-bkview]');
-    if(b){ e.preventDefault(); e.stopPropagation(); abrir(b.getAttribute('data-bkview')); }
+    if(b){ e.preventDefault(); e.stopPropagation(); editando = false; abrir(b.getAttribute('data-bkview')); }
   }, true);
   document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ var m = document.getElementById('mBankView'); if(m && m.classList.contains('on')) closeModal('mBankView'); } });
-  window.CoachBaseJP = window.CoachBaseJP || {}; window.CoachBaseJP.previsualizar = abrir;
+  window.CoachBaseJP = window.CoachBaseJP || {}; window.CoachBaseJP.previsualizar = function(id){ editando = false; abrir(id); };
 })();
 </script>
 <script>
@@ -85015,7 +85214,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
         if(b.tipo === 'list' && !b.sportsPizarra && !cf && !cardio) add('crit', 'formato_viejo', t + ': lista que no es de Pizarra Táctica.');
         if(cf) return;
         if(!warm && !cardio){
-          var txt = items.join(' ');
+          var txt = items.join(' ') + ' ' + String(b.tips || '');
+          if(items.some(function(l){ return RX_TEMPO_SEG.test(String(l)); })) add('warn', 'tempo_en_linea', t + ': el tempo está en la línea de series (debe ir en las pautas).');
           /* el tempo se exige solo si el bloque tiene al menos un ejercicio de fuerza (no carrera, trineo, ergómetro ni saltos de campo) */
           var exsB = nombresDeBloque(b).map(function(nm){ return (typeof jpExDeNombre === 'function') ? jpExDeNombre(nm) : null; }).filter(Boolean);
           var hayFuerza = !exsB.length || exsB.some(function(e){ return jpTempoAplica(e); });
@@ -85111,6 +85311,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     });
     if(!esCF(r)){
       try{ rellenarCascarones(r).forEach(function(c){ cambios.push(nom + ' · ' + c); }); }catch(e){ console.warn('relleno', e); }
+      try{ var nt = tempoANotas(r); if(nt) cambios.push(nom + ': ' + nt + ' bloque(s) con el tempo pasado de la línea de series a las pautas'); }catch(e){ console.warn('tempo', e); }
       try{ jpSanearLogisticaDias(r.dias, null).forEach(function(c){ cambios.push(nom + ' · día ' + c.dia + ': ' + c.accion + ' (' + c.detalle + ')'); }); }catch(e){ console.warn('saneo', e); }
     }
     try{ var nl = aclararRegistro(r, false); if(nl) cambios.push(nom + ': ' + nl + ' texto(s) aclarados (sin tecnicismos ni citas)'); }catch(e){ console.warn('lenguaje', e); }
@@ -85161,7 +85362,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   }
 
   /* ---------- informe ---------- */
-  var ETQ = { sin_dias: 'Sin días', sin_nombre: 'Sin nombre', sin_genero: 'Sin género', sin_nivel: 'Sin nivel', frecuencia: 'Frecuencia incoherente', mesociclo: 'Mesociclo incompleto', dia_vacio: 'Días vacíos', dia_sin_titulo: 'Días sin nombre', formato_viejo: 'Formato anterior', bloque_vacio: 'Bloques vacíos', bloque_cascaron: 'Bloques sin ejercicio', lenguaje: 'Textos para aclarar', bloque_sin_titulo: 'Bloques sin título',
+  var ETQ = { sin_dias: 'Sin días', sin_nombre: 'Sin nombre', sin_genero: 'Sin género', sin_nivel: 'Sin nivel', frecuencia: 'Frecuencia incoherente', mesociclo: 'Mesociclo incompleto', dia_vacio: 'Días vacíos', dia_sin_titulo: 'Días sin nombre', formato_viejo: 'Formato anterior', bloque_vacio: 'Bloques vacíos', bloque_cascaron: 'Bloques sin ejercicio', tempo_en_linea: 'Tempo en la línea de series', lenguaje: 'Textos para aclarar', bloque_sin_titulo: 'Bloques sin título',
     sin_dosis: 'Sin dosis', sin_tempo: 'Sin tempo', sin_rir: 'Sin RIR', sin_descanso: 'Sin descanso', sin_objetivo: 'Sin objetivo fisiológico', sin_pautas: 'Sin pautas', nombre_sin_resolver: 'Nombres sin resolver', ejercicio_repetido: 'Ejercicios repetidos en el día', logistica: 'Cruces de estación',
     contenido_duplicado: 'Contenido duplicado', nombre_duplicado: 'Nombres duplicados' };
   function porTipo(a){
@@ -85388,6 +85589,48 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     return n;
   }
 
+
+  /* ---------- tempo: fuera de la línea principal de series, dentro de las pautas ---------- */
+  var RX_TEMPO_SEG = /\s*\|\s*Tempo\s*([0-9Xx]{4})\s*(?=\||$)/i;
+  function quitarTempoItems(items, nombreBase, hallados){
+    var cur = nombreBase || '';
+    return (items || []).map(function(l){
+      var s = String(l), est = /^[A-Fa-f]\d{1,2}[.):]\s*(.+?)(?:\s*[:—–]\s+.*)?$/.exec(s.trim());
+      if(est) cur = est[1].replace(/:.*$/, '').trim();
+      var m = RX_TEMPO_SEG.exec(s);
+      if(!m) return l;
+      var nm = est ? est[1].replace(/:.*$/, '').trim() : cur;
+      hallados.push({ n: nm, t: m[1].toUpperCase() });
+      return s.replace(RX_TEMPO_SEG, ' ').replace(/(\S)\|/g, '$1 |').replace(/\|(?=\S)/g, '| ').replace(/[ \t]{2,}/g, ' ').replace(/\s+$/, '');
+    });
+  }
+  function tempoANotasBloque(b){
+    if(!b || b.tipo !== 'list' || !Array.isArray(b.items)) return 0;
+    var entrada = b.category === 'warmup' || b.modalidad === 'calentamiento';
+    if(!b.items.some(function(l){ return RX_TEMPO_SEG.test(String(l)); }) && !(b.weekItems && typeof b.weekItems === 'object')) return 0;
+    var hallados = [], base = tituloLimpio(b).replace(/\s*\(.*\)\s*$/, '');
+    b.items = quitarTempoItems(b.items, base, hallados);
+    if(b.weekItems && typeof b.weekItems === 'object'){ Object.keys(b.weekItems).forEach(function(k){ if(Array.isArray(b.weekItems[k])) b.weekItems[k] = quitarTempoItems(b.weekItems[k], base, []); }); }
+    if(!hallados.length) return 0;
+    if(entrada) return 1;          /* entrada en calor: el tempo no aporta, se retira sin más */
+    /* un solo renglón por ejercicio (el primer tempo que traía) */
+    var vistos = {}, unicos = hallados.filter(function(x){ var k = N(x.n) + '|' + x.t; if(vistos[k]) return false; vistos[k] = 1; return true; });
+    var porEj = {}; unicos.forEach(function(x){ porEj[N(x.n)] = 1; });
+    var multi = Object.keys(porEj).length > 1, tips = String(b.tips || '');
+    if(!/(^|\n)\s*TEMPO\s*:/i.test(tips)){
+      var vistosEj = {}, nuevas = [];
+      unicos.forEach(function(x){ var k = N(x.n); if(vistosEj[k]) return; vistosEj[k] = 1; nuevas.push(jpTempoLineaPauta(x.t, multi ? x.n : '')); });
+      b.tips = (tips ? tips + '\n' : '') + nuevas.join('\n');
+    }
+    return 1;
+  }
+  function tempoANotas(r){
+    var n = 0;
+    if(esCF(r)) return 0;
+    (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ n += tempoANotasBloque(b); }); });
+    return n;
+  }
+
   /* ---------- bloque cascarón: tiene objetivo/pautas/dosis pero ningún ejercicio ---------- */
   var RX_DOSIS = /^\s*\d+\s*x\s*\d/i;
   function esEstruct(l){ return RX_DOSIS.test(l) || /^\s*[-–]?\s*(?:rest|descanso)\b/i.test(l) || /^\s*\d+\s*(?:sets?|series|rondas?)\s*:?\s*$/i.test(l) || !/[A-Za-zÁÉÍÓÚáéíóúñÑ]{3,}/.test(l); }
@@ -85456,7 +85699,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   function dosisDe(cat, niv, ex){
     var av = /avanz|compet|elite|élite/i.test(String(niv || '')), rir = cat.id === 'core' ? (av ? 'RIR 1' : 'RIR 2') : (av ? 'RIR 0-1' : 'RIR 1-2');
     if(cat.id === 'core' && ex && /plancha|plank|hollow|hold|bird dog|copenhagen/i.test(ex.es + ' ' + (ex.en || ''))) return cat.s + 'x30s | RIR 2';     /* isométricos: se miden en segundos */
-    return cat.s + 'x' + cat.r + ' | Tempo ' + cat.tp + ' | ' + rir;
+    return cat.s + 'x' + cat.r + ' | ' + rir;
   }
   function kbDe(ex){ try{ return (window.__jpPB && typeof window.__jpPB.kbDe === 'function') ? window.__jpPB.kbDe(ex.es) : null; }catch(e){ return null; } }
   function rellenarBloque(b, dia, niv){
@@ -85484,6 +85727,11 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       exs.forEach(function(e, i){ var k = kbDe(e); if(!k) return; var p = exs.length > 1 ? 'A' + (i + 1) + ' · ' : ''; tips.push(p + 'SET-UP: ' + k.s); tips.push(p + 'CUE EFICIENTE: ' + k.c); tips.push(p + 'CUIDADO / ERROR COMÚN: ' + k.x); });
       if(tips.length) b.tips = tips.join('\n');
     }
+    /* el tempo vive en las pautas, nunca en la línea de dosis */
+    if(!/(^|\n)\s*TEMPO\s*:/i.test(String(b.tips || ''))){
+      var tpl = exs.filter(function(e){ return !(cat.id === 'core' && /plancha|plank|hollow|hold|bird dog|copenhagen/i.test(e.es + ' ' + (e.en || ''))) && jpTempoAplica(e); }).map(function(e){ return jpTempoLineaPauta(cat.tp, exs.length > 1 ? e.es : ''); });
+      if(tpl.length) b.tips = (b.tips ? b.tips + '\n' : '') + tpl.join('\n');
+    }
     return exs.map(function(e){ return e.es; }).join(' + ');
   }
   /* completa los cascarones de una plantilla; devuelve el detalle de cada bloque reparado */
@@ -85505,7 +85753,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     var n = 0;
     (Array.isArray(S.banco) ? S.banco : []).forEach(function(r){
       if(!esSistema(r) || !(r.dias || []).length || (HECHO && HECHO.has(r.dias))) return;
-      try{ rellenarCascarones(r); n += aclararRegistro(r, false); }catch(e){ console.warn('saneo sistema', e); }
+      try{ rellenarCascarones(r); n += aclararRegistro(r, false); n += tempoANotas(r); }catch(e){ console.warn('saneo sistema', e); }
       if(HECHO) HECHO.add(r.dias);
     });
     return n;
@@ -85513,20 +85761,20 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   /* plantillas propias: una sola vez, con copia previa restaurable desde el panel de auditoría; solo toca el Banco, nunca los planes de los alumnos */
   function sanearBancoUnaVez(){
     if(typeof S === 'undefined' || !S || !Array.isArray(S.banco) || !S.banco.length) return 0;
-    S.ui = S.ui || {}; if(S.ui.bancoClaro1) return 0;
+    S.ui = S.ui || {}; if(S.ui.bancoClaro1 && S.ui.bancoTempo1) return 0;
     var propias = S.banco.filter(function(r){ return !esSistema(r) && (r.dias || []).length; }), afectadas = [];
-    propias.forEach(function(r){ var c = JSON.parse(JSON.stringify(r)), antes = JSON.stringify(c); rellenarCascarones(c); aclararRegistro(c, false); if(JSON.stringify(c) !== antes) afectadas.push(r.id); });
+    propias.forEach(function(r){ var c = JSON.parse(JSON.stringify(r)), antes = JSON.stringify(c); rellenarCascarones(c); aclararRegistro(c, false); tempoANotas(c); if(JSON.stringify(c) !== antes) afectadas.push(r.id); });
     if(afectadas.length && !guardarCopia(afectadas)) return 0;     /* sin respaldo no se toca nada */
     var bloques = 0, textos = 0;
-    propias.forEach(function(r){ if(afectadas.indexOf(r.id) < 0) return; bloques += rellenarCascarones(r).length; textos += aclararRegistro(r, false); });
-    S.ui.bancoClaro1 = 1;
+    propias.forEach(function(r){ if(afectadas.indexOf(r.id) < 0) return; bloques += rellenarCascarones(r).length; textos += aclararRegistro(r, false); bloques += tempoANotas(r); });
+    S.ui.bancoClaro1 = 1; S.ui.bancoTempo1 = 1;
     try{ save(); }catch(e){}
     if(afectadas.length){ try{ if(typeof renderBanco === 'function') renderBanco(); toast('🧩 Banco ordenado: ' + bloques + ' bloque(s) completados y ' + textos + ' texto(s) aclarados en ' + afectadas.length + ' plantilla(s). Podés deshacerlo en «🔎 AUDITAR BANCO» → «Restaurar plantillas previas».', 'info'); }catch(e){} }
     return afectadas.length;
   }
   window.jpAclararTexto = aclararTexto;
   window.jpAclararPautas = aclararPautas;
-  window.CoachAuditoria = { cascaron: esCascaron, rellenarDias: rellenarCascarones, aclarar: aclararRegistro, sanearSistema: sanearSistema, sanearPropias: sanearBancoUnaVez, auditar: auditarBanco, auditarAlumnos: auditarAlumnos, reparar: reparar, alinearAlumnos: alinearAlumnos, abrir: abrir, informe: function(){ var a = auditarBanco(), al = auditarAlumnos(); return informeTexto(a, al); },
+  window.CoachAuditoria = { tempoANotas: tempoANotas, cascaron: esCascaron, rellenarDias: rellenarCascarones, aclarar: aclararRegistro, sanearSistema: sanearSistema, sanearPropias: sanearBancoUnaVez, auditar: auditarBanco, auditarAlumnos: auditarAlumnos, reparar: reparar, alinearAlumnos: alinearAlumnos, abrir: abrir, informe: function(){ var a = auditarBanco(), al = auditarAlumnos(); return informeTexto(a, al); },
     secciones: SECCIONES, seccionDe: seccionDe, comparar: comparar, restaurarCopia: restaurarCopia, restaurarAlumnos: restaurarAlumnos };
   window.jpSeccionBanco = seccionDe;
   [700, 2500, 5000].forEach(function(ms){ setTimeout(sanearSistema, ms); });
@@ -85778,8 +86026,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
         var ch = e.target.closest('[data-bkchip]'); if(!ch) return;
         var k = ch.getAttribute('data-bkchip');
         if(k === '__all'){
-          try{ window.CoachCentro.limpiar(); }catch(x){}
-          Array.prototype.forEach.call(document.querySelectorAll('#depBar .cp-chip.on, #cfmBar .cp-chip.on'), function(b){ b.click(); });
+          try{ window.CoachCentro.limpiar(); }catch(x){}          /* limpiar() ya apaga también los chips de deportes y de CrossFit */
         } else if(k === '__q'){
           try{ window.CoachCentro.set('q', ''); }catch(x){}
         } else {

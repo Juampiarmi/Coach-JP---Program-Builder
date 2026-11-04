@@ -7,7 +7,7 @@
      notificación local "tiempo cumplido" SÓLO si ninguna ventana de la app
      está visible (si el alumno la está mirando, el propio timer ya avisó).
      Best effort: el sistema operativo puede dormir el SW antes de tiempo. */
-const CACHE = 'coachjp-athlete-v2';
+const CACHE = 'coachjp-athlete-v3';   /* v3: invalida las cachés v2 al activarse */
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(Promise.all([
   caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k.indexOf('coachjp-athlete-') === 0).map(k => caches.delete(k)))),
@@ -15,7 +15,9 @@ self.addEventListener('activate', e => e.waitUntil(Promise.all([
 ])));
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || new URL(e.request.url).origin !== self.location.origin) return;
-  e.respondWith(fetch(e.request).then(res => {
+  /* cache:'no-cache' = revalidar siempre contra el servidor (ETag): así nunca se sirve del caché HTTP una versión vieja de la app mientras arranca */
+  e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(res => {
+    if(!res || res.status !== 200 || res.type === 'opaque') return res;
     const c = res.clone(); caches.open(CACHE).then(k => k.put(e.request, c)); return res;
   }).catch(() => caches.match(e.request).then(r => r || caches.match(self.location.origin + '/'))));
 });
