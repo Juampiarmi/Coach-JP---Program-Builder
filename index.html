@@ -4828,7 +4828,7 @@ function insertarFormatoCF(ta, kind){
   const val = ta.value;
   const start = ta.selectionStart, end = ta.selectionEnd;
   const sel = val.slice(start, end);
-  let ins, ph;
+  let ins, ph, tempoNota = '';
   if(kind === 'bold'){
     const texto = sel || 'texto';
     ins = '**' + texto + '**'; ph = texto;
@@ -4863,7 +4863,9 @@ function insertarFormatoCF(ta, kind){
        (A1.) para que el coach lo sobrescriba, después edita A2 a mano. */
     const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
     ph = 'Ejercicio';
-    ins = nl + 'A1. ' + ph + '\n3 sets x 10-12 reps | Tempo 3010 | RIR 1\nA2. ' + ph + '\n3 sets x 10-12 reps | Tempo 3010 | RIR 1\n';
+    /* el tempo NO va en la línea de dosis: queda limpio ("3x10-12 | RIR 1") y el tempo pasa a las pautas del bloque (ver jpTempoAPautas) */
+    ins = nl + 'A1. ' + ph + '\n3x10-12 | RIR 1\nA2. ' + ph + '\n3x10-12 | RIR 1\n';
+    tempoNota = '3010';
   } else if(kind === 'dropset'){
     /* directiva -- mismo tag [DROPSET] que ya reconoce extraerTecnicaSB()
        (TEMPLATE_HTML): el % queda seleccionado para que el coach lo
@@ -4889,7 +4891,21 @@ function insertarFormatoCF(ta, kind){
   ta.focus();
   ta.setSelectionRange(selFrom, selTo);
   ta.dispatchEvent(new Event('input', { bubbles: true }));
+  if(tempoNota) jpTempoAPautas(ta, tempoNota);
 }
+/* el tempo de una plantilla insertada va a la caja de PAUTAS del mismo bloque ("TEMPO: Tempo 3010 (...)"), nunca dentro de la línea de series x repeticiones.
+   Si el bloque ya trae una línea de tempo en sus pautas, no se toca. */
+function jpTempoAPautas(ta, tempo){
+  try{
+    const bId = ta && ta.getAttribute && ta.getAttribute('data-b'); if(!bId) return;
+    const tips = document.querySelector('textarea[data-bf="tips"][data-b="' + bId + '"]'); if(!tips) return;
+    if(/(^|\n)\s*TEMPO\s*:/i.test(tips.value)) return;
+    const linea = (typeof jpTempoLineaPauta === 'function') ? jpTempoLineaPauta(tempo) : ('TEMPO: Tempo ' + tempo);
+    tips.value = (tips.value ? tips.value.replace(/\s+$/, '') + '\n' : '') + linea;
+    tips.dispatchEvent(new Event('input', { bubbles: true }));
+  }catch(e){}
+}
+window.jpTempoAPautas = jpTempoAPautas;
 
 /* ============================================================
    directiva maestra ("Explorador Táctico de Ejercicios por Grupo
@@ -12077,12 +12093,20 @@ function calcularTonelajeSesion(){
     var ld = state.loads[k];
     if(!ld || !ld.done) return;
     var kg = numJP(ld.kg), reps = numJP(ld.reps);
-    if(kg <= 0 || reps <= 0) return;
+    if(!(kg > 0) || !(reps > 0)) return;
+    /* ejercicios medidos en tiempo, distancia o con banda: ahí el segundo casillero NO son repeticiones (segundos / metros), kg × eso inflaría el total */
+    if(ld.u && ld.u !== 'reps') return;                          /* el ejercicio se prescribió en metros / segundos / minutos */
+    if(ld.ex){
+      var mo = ''; try{ if(typeof window.jpModoInput === 'function') mo = window.jpModoInput(ld.ex); }catch(eM){}
+      if(mo === 'tiempo' || mo === 'solo' || mo === 'banda') return;
+      if(/\\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\\b/i.test(String(ld.ex))) return;   /* acarreos y trineo: kg × metros no es tonelaje */
+    }
     total += kg * reps;
   });
-  return Math.round(total);
+  return isFinite(total) ? Math.round(total) : 0;
 }
-var _tonelajeAnimId = null, _tonelajeActual = 0;
+var _tonelajeAnimId = null, _tonelajeActual = 0, _tonelajeMostrado = 0, _tonelajeFinT = null;
+function _tonFmt(n){ return Number(n || 0).toLocaleString('es-AR'); }
 /* odómetro de 300ms (directiva: "transición rápida (300ms)") + destello
    dorado tenue -- reactivo desde setLoadField() de acá abajo, así que
    cubre check/uncheck Y edición manual de kg o reps en el mismo tick. */
@@ -12090,8 +12114,17 @@ function actualizarTonelajeHUD(){
   var hud = document.getElementById('jpTonelajeHud'); var val = document.getElementById('jpTonelajeVal');
   if(!hud || !val) return;
   var nuevo = calcularTonelajeSesion();
-  var desde = _tonelajeActual;
-  if(nuevo === desde){ return; }
+  /* el cálculo real se publica en el acto: la píldora superior del día y cualquier otro lector usan ESTE número, nunca el que está a mitad de la animación */
+  try{ val.setAttribute('data-kg', String(nuevo)); document.dispatchEvent(new CustomEvent('jp:tonelaje', { detail: { kg: nuevo } })); }catch(eEv){}
+  if(nuevo === _tonelajeActual && val.textContent === _tonFmt(nuevo)){ return; }
+  _tonelajeActual = nuevo;
+  clearTimeout(_tonelajeFinT);
+  /* garantía: pase lo que pase con la animación (cancelada por otro tildado, pestaña lenta u oculta) el número termina SIEMPRE en el total real */
+  _tonelajeFinT = setTimeout(function(){
+    if(_tonelajeAnimId){ cancelAnimationFrame(_tonelajeAnimId); _tonelajeAnimId = null; }
+    val.textContent = _tonFmt(_tonelajeActual); _tonelajeMostrado = _tonelajeActual;
+  }, 420);
+  var desde = _tonelajeMostrado;
   /* directiva maestra ("HUD de telemetría en vivo") -- requestAnimationFrame
      se suspende por completo en una pestaña/documento oculto (throttling
      estándar de todo navegador moderno, para ahorrar batería): si el
@@ -12102,8 +12135,8 @@ function actualizarTonelajeHUD(){
      efecto visual del odómetro, que de todos modos nadie está mirando
      mientras la pantalla está apagada/oculta. */
   if(document.hidden){
-    val.textContent = nuevo.toLocaleString('es-AR');
-    _tonelajeActual = nuevo;
+    val.textContent = _tonFmt(nuevo);
+    _tonelajeMostrado = nuevo;
     hud.classList.add('jp-tonelaje-flash');
     clearTimeout(hud._tonelajeFlashT);
     hud._tonelajeFlashT = setTimeout(function(){ hud.classList.remove('jp-tonelaje-flash'); }, 320);
@@ -12115,9 +12148,9 @@ function actualizarTonelajeHUD(){
     if(t0 === null) t0 = ts;
     var p = Math.min(1, (ts - t0) / dur);
     var v = Math.round(desde + (nuevo - desde) * p);
-    val.textContent = v.toLocaleString('es-AR');
+    val.textContent = _tonFmt(v); _tonelajeMostrado = v;
     if(p < 1){ _tonelajeAnimId = requestAnimationFrame(frame); }
-    else{ _tonelajeAnimId = null; _tonelajeActual = nuevo; }
+    else{ _tonelajeAnimId = null; _tonelajeMostrado = nuevo; }
   }
   _tonelajeAnimId = requestAnimationFrame(frame);
   hud.classList.remove('jp-tonelaje-flash');
@@ -16711,6 +16744,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(v.kv) setLoadField(key, 'kg', v.kv);
     if(v.rv) setLoadField(key, 'reps', v.rv);
     setLoadField(key, 'ex', regNombreCorto(e.nombre));           /* el historial verifica que la marca sea de ESTE ejercicio */
+    if(e.u && e.u !== 'reps') setLoadField(key, 'u', e.u);       /* la unidad del segundo casillero (m / seg): el tonelaje la excluye */
     setLoadField(key, 'done', true);
     qrAviso();
     var i = parseInt(card.getAttribute('data-qi'), 10), m = qrModelo(c, e, i);
@@ -16733,6 +16767,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(v.kv) setLoadField(key, 'kg', v.kv);
     if(v.rv) setLoadField(key, 'reps', v.rv);
     setLoadField(key, 'ex', regNombreCorto(e.nombre));
+    if(e.u && e.u !== 'reps') setLoadField(key, 'u', e.u);
     setLoadField(key, 'done', true);
     qrAviso();
     qrCerrarYRefrescar(card);
@@ -42177,11 +42212,12 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
   function brief(){
     var dh = $('.day-view .day-header'); if(!dh) return;
     var nB = document.querySelectorAll('.day-view .blocks-stack > .block').length;
-    var kg = (($('#jpTonelajeVal') || {}).textContent || '0').trim();
+    var kgN = 0; try{ kgN = calcularTonelajeSesion(); }catch(eT){}          /* total real calculado, no el texto del HUD (que puede estar a mitad de la animación) */
+    var kg = kgN.toLocaleString('es-AR');
     var rir = 'RIR OBJ';
     try{ var m = /RIR\\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
     /* sin tonelaje registrado la tarjeta no se muestra (antes quedaba un guion suelto) */
-    var hayTon = parseFloat(String(kg).replace(/[^\\d.,]/g, '').replace(',', '.')) > 0;
+    var hayTon = kgN > 0;
     var pildora = function(v, l){ return '<span><b>' + v + '</b><small>' + l + '</small></span>'; };
     var h = (hayTon ? pildora(kg, 'KG TONELAJE') : '') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO');
     var hud = $('.jp-brief-hud', dh);
@@ -42247,6 +42283,7 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
   function montar(){
     document.body.classList.add(ES_SPORTS ? 'jp-mission' : 'jp-hdr-cf');
     obs = new MutationObserver(programar);
+    document.addEventListener('jp:tonelaje', programar);        /* el tonelaje cambió (serie agregada, corregida o tildada): la píldora superior se repinta */
     aplicar();
     [300, 900, 2000].forEach(function(ms){ setTimeout(aplicar, ms); });
   }
@@ -77762,11 +77799,11 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
 
   /* ---------- 3 · autocompletado ---------- */
   var PLANTILLAS = [
-    { k: 'biset',    lb: 'Biset · A1 + A2',                  texto: 'A1. \n4x10 | Tempo 3010 | RIR 1\nA2. \n4x10 | Tempo 3010 | RIR 1\nRest 90s', cursor: 4 },
+    { k: 'biset',    lb: 'Biset · A1 + A2',                  texto: 'A1. \n4x10 | RIR 1\nA2. \n4x10 | RIR 1\nRest 90s', cursor: 4, tempo: '3010' },
     { k: 'triset',   lb: 'Triset · A1 + A2 + A3',            texto: 'A1. \n3x12 | RIR 1\nA2. \n3x12 | RIR 1\nA3. \n3x12 | RIR 0\nRest 90s', cursor: 4 },
-    { k: 'piramide', lb: 'Pirámide · 10-8-6-6',              texto: '10-8-6-6 reps | Tempo 3010 | RIR 1\nRest 2 min', cursor: 0 },
-    { k: 'tramos',   lb: 'Multi-serie · 1x3 + 1x6 + 2x8',    texto: '1x3 (Aclimatación) + 1x6 (Top Set) + 2x8 (Back-off) | Tempo 3010\nRest 120-180s', cursor: 0 },
-    { k: 'myo',      lb: 'Myo-reps',                         texto: '3x12 | Tempo 2011 | RIR 0 + 3 set myo-reps (5 respiraciones)\nRest 90s', cursor: 0 }
+    { k: 'piramide', lb: 'Pirámide · 10-8-6-6',              texto: '10-8-6-6 reps | RIR 1\nRest 2 min', cursor: 0, tempo: '3010' },
+    { k: 'tramos',   lb: 'Multi-serie · 1x3 + 1x6 + 2x8',    texto: '1x3 (Aclimatación) + 1x6 (Top Set) + 2x8 (Back-off)\nRest 120-180s', cursor: 0, tempo: '3010' },
+    { k: 'myo',      lb: 'Myo-reps',                         texto: '3x12 | RIR 0 + 3 set myo-reps (5 respiraciones)\nRest 90s', cursor: 0, tempo: '2011' }
   ];
   var UI = { menu: null, items: [], sel: 0, nav: false, ta: null, ini: 0, fin: 0, modo: 'ej', saltar: false };
   var SEL_TA = 'textarea[data-bf="items"], textarea[data-bf="movements"], #cfPegarTxt';
@@ -77872,6 +77909,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     UI.saltar = true;
     ta.dispatchEvent(new Event('input', { bubbles: true }));       /* los handlers del Builder (guardar, chips de video) corren igual que al tipear */
     UI.saltar = false;
+    if(UI.modo === 'tpl' && it.tempo && typeof window.jpTempoAPautas === 'function') window.jpTempoAPautas(ta, it.tempo);     /* el tempo de la plantilla va a las pautas, no a la línea de series */
     ta.focus();
   }
 
