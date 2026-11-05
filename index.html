@@ -11539,6 +11539,14 @@ window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); 
 ========================================================= */
 const PROGRAM_CONFIG = {{PROGRAM_CONFIG_JSON}};
 const WEEKS_META = PROGRAM_CONFIG.weeks;
+/* Nomenclatura de periodización de las 4 semanas (solo lo que se muestra: el plan guardado del alumno no se modifica). CrossFit conserva sus nombres. */
+(function(){
+  try{
+    var NOM = ['Bloque A · Acumulación Base (Volumen útil)', 'Bloque B · Sobrecarga Progresiva (RIR ajustado)', 'Bloque C · Intensificación Máxima (Pico de RPE)', 'Bloque D · Descarga Funcional (Deload & Supercompensación)'];
+    if(PROGRAM_CONFIG.modoSemanal || !Array.isArray(WEEKS_META)) return;
+    WEEKS_META.forEach(function(w, i){ if(w && i < NOM.length){ if(w.faseOriginal === undefined) w.faseOriginal = w.phase; w.phase = NOM[i]; } });
+  }catch(e){}
+})();
 const VIDEO_MAP = PROGRAM_CONFIG.videoMap;
 const DAYS = PROGRAM_CONFIG.days;
 /* 10/09 -- CONCORDANCIA DE GÉNERO: PROGRAM_CONFIG.genero llega 'F'/'M'/''
@@ -16452,13 +16460,19 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     for(i = 1; i <= e.sets; i++) out.push(i);
     return out;
   }
-  function regUltReg(c, e, set){
-    for(var pw = c.w - 1; pw >= 0; pw--){
-      var lq = getLoad(getLoadKey(pw, c.d, c.b, e.idx, set + (e.ko || 0)));
-      if(lq && ((lq.kg != null && lq.kg !== '') || (lq.reps != null && lq.reps !== ''))) return { w: pw, kg: lq.kg, reps: lq.reps };
+  /* referencia de una serie: la Semana 1 manda (base estricta de la progresión); si esa serie no tiene dato en la Semana 1, la semana anterior más cercana que lo tenga.
+     Una serie desmarcada a propósito (done === false) no cuenta como marca. */
+  function regUltRegKey(c, e, keyIdx){
+    var orden = [], pw;
+    if(c.w > 0) orden.push(0);
+    for(pw = c.w - 1; pw >= 1; pw--) orden.push(pw);
+    for(var q = 0; q < orden.length; q++){
+      var lq = getLoad(getLoadKey(orden[q], c.d, c.b, e.idx, keyIdx));
+      if(lq && lq.done !== false && ((lq.kg != null && lq.kg !== '') || (lq.reps != null && lq.reps !== ''))) return { w: orden[q], kg: lq.kg, reps: lq.reps };
     }
     return null;
   }
+  function regUltReg(c, e, set){ return regUltRegKey(c, e, set + (e.ko || 0)); }
   function qrTec(e){ return (e && QR_TEC_NOM[e.tec] && e.sets > 1) ? e.tec : ''; }
   function qrKey(cfg){ return cfg.w + '|' + cfg.d + '|' + cfg.b; }
   function qrNum(v){ var n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
@@ -16467,8 +16481,53 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
   /* clave de la serie i (1..n) y de la serie con técnica: en los simples con Drop-Set / Myo-Reps las normales van desplazadas (e.ko) y la técnica en la posición 1 */
   function qrClave(c, e, i){ return getLoadKey(c.w, c.d, c.b, e.idx, i + (e.ko || 0)); }
   function qrClaveFinal(c, e){ return getLoadKey(c.w, c.d, c.b, e.idx, e.ko ? 1 : e.sets); }
+  /* ---- registro serie por serie ----
+     Cada serie efectiva tiene su propia fila (SERIE 1, 2, 3...) con su KG × REPS y su ✓, guardada con la MISMA clave de siempre (getLoadKey):
+     el tonelaje, el reporte, el historial y la Story la leen igual. Las series que el alumno agrega por encima de lo prescripto usan las
+     claves que siguen a las del ejercicio (nunca pisan la serie con técnica). */
+  var QR_EXTRA = {};
+  function qrExtraKey(c, i){ return qrKey(c) + '|' + i; }
+  function qrIdxClave(e, j){ var nb = qrSetsBase(e); return j <= nb ? j + (e.ko || 0) : e.sets + (j - nb); }
+  function qrClaveSerie(c, e, j){ return getLoadKey(c.w, c.d, c.b, e.idx, qrIdxClave(e, j)); }
+  function qrConDato(ld){ return !!(ld && ((ld.kg != null && ld.kg !== '') || (ld.reps != null && ld.reps !== '') || ld.done)); }
+  /* cuántas filas se muestran: las prescriptas + las agregadas (las que ya tienen dato guardado siguen apareciendo después de una recarga) */
+  function qrTotalSeries(c, e, i){
+    var nb = Math.max(1, qrSetsBase(e)), n = nb, extra = QR_EXTRA[qrExtraKey(c, i)] || 0, j;
+    for(j = nb + 1; j <= nb + 12; j++){ if(qrConDato(getLoad(qrClaveSerie(c, e, j)))) n = j; }
+    return Math.min(nb + 12, Math.max(n, nb + extra));
+  }
+  function qrFila(c, e, j, nb, sinKg, prev){
+    var key = qrClaveSerie(c, e, j), ld = getLoad(key), kx = qrIdxClave(e, j);
+    var f = { j: j, key: key, done: !!ld.done, kg: '', rp: '', pre: false, extra: j > nb, rpPh: '—' };
+    var presc = (j <= nb && e.rp && e.rp[j - 1] != null) ? e.rp[j - 1] : e.reps, nr = String(presc || '').match(/^[0-9]+/);
+    if(nr) f.rpPh = nr[0];
+    if((ld.kg != null && ld.kg !== '') || (ld.reps != null && ld.reps !== '')){
+      f.kg = ld.kg != null ? String(ld.kg) : ''; f.rp = ld.reps != null ? String(ld.reps) : '';
+      return f;
+    }
+    var ult = regUltRegKey(c, e, kx), sug = null, rr = qrRango(presc);
+    if(!sinKg){
+      try{ if(typeof window.jpSugerirCarga === 'function') sug = window.jpSugerirCarga(c, e, kx); }catch(eS){}
+      if(sug && sug.kg > 0){ f.kg = String(Math.round(sug.kg * 100) / 100); f.pre = true; }
+      else if(ult && ult.kg != null && ult.kg !== ''){ f.kg = String(ult.kg); f.pre = true; }
+      else if(prev && prev.kg){ f.kg = prev.kg; f.pre = true; }
+      else if(e.carga){
+        var pm = String(e.carga).match(/^\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(?:kgs?)?\\s*$/i);
+        if(pm){ f.kg = pm[1].replace(',', '.'); f.pre = true; }
+      }
+    }
+    if(ult && ult.reps != null && ult.reps !== ''){
+      /* si la progresión sube el peso (llegaste al tope del rango), las reps arrancan de nuevo desde el mínimo */
+      var sube = !!(sug && sug.origen === 'progresion' && ult.kg != null && qrNum(f.kg) > qrNum(ult.kg));
+      f.rp = (sube && rr) ? String(rr.min) : String(ult.reps); f.pre = true;
+    }
+    return f;
+  }
+  function qrTxtSerie(kg, reps, sinKg){
+    return [kg != null && kg !== '' && !sinKg ? kg + ' kg' : '', reps != null && reps !== '' ? '× ' + reps : ''].filter(Boolean).join(' ');
+  }
   /* todo lo que la tarjeta necesita saber de un ejercicio (estado guardado + valores sugeridos) */
-  function qrModelo(c, e){
+  function qrModelo(c, e, i){
     var nsMax = qrSetsBase(e), tec = qrTec(e);
     var tops = regSetsTop(e).filter(function(x){ return x <= nsMax; });
     if(!tops.length) tops = [nsMax];
@@ -16477,39 +16536,42 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var sinKg = (modoR === 'banda' || modoR === 'tiempo' || modoR === 'solo' || (modoR === 'bw' && !(parseFloat(ld.kg) > 0)));
     var hechas = 0, s;
     for(s = 1; s <= nsMax; s++){ if(getLoad(qrClave(c, e, s)).done) hechas++; }
-    var baseOk = hechas >= nsMax, finOk = tec ? !!getLoad(qrClaveFinal(c, e)).done : true;
-    var guardado = (ld.kg != null && ld.kg !== '') || (ld.reps != null && ld.reps !== '');
-    var repsRef = (e.rp && e.rp[ref - 1] != null) ? e.rp[ref - 1] : e.reps, rr = qrRango(repsRef), nr = String(repsRef || '').match(/^[0-9]+/);
-    var ult = regUltReg(c, e, ref), kgV = '', rpV = '', pre = false, hint = '', sug = null;
+    var baseOk = hechas >= nsMax, fld = tec ? getLoad(qrClaveFinal(c, e)) : {}, finOk = tec ? !!fld.done : true;
+    var repsRef = (e.rp && e.rp[ref - 1] != null) ? e.rp[ref - 1] : e.reps, nr = String(repsRef || '').match(/^[0-9]+/);
+    var ult = regUltReg(c, e, ref), hint = '', sug = null;
     var base = ult ? 'Sem ' + (ult.w + 1) + ': ' + [ult.kg !== '' && ult.kg != null ? ult.kg + ' kg' : '', ult.reps !== '' && ult.reps != null ? '× ' + ult.reps : ''].filter(Boolean).join(' ') : '';
-    if(guardado){
-      kgV = ld.kg != null ? String(ld.kg) : ''; rpV = ld.reps != null ? String(ld.reps) : '';
-      hint = base;
-    } else {
-      if(!sinKg){
-        try{ if(typeof window.jpSugerirCarga === 'function') sug = window.jpSugerirCarga(c, e, ref + (e.ko || 0)); }catch(eS){}
-        if(sug && sug.kg > 0){ kgV = String(Math.round(sug.kg * 100) / 100); pre = true; }
-        else if(ult && ult.kg != null && ult.kg !== ''){ kgV = String(ult.kg); pre = true; }
-        else if(e.carga){
-          var pm = String(e.carga).match(/^\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(?:kgs?)?\\s*$/i);
-          if(pm){ kgV = pm[1].replace(',', '.'); pre = true; }
-        }
-      }
-      if(ult && ult.reps != null && ult.reps !== ''){
-        /* si la progresión sube el peso (llegaste al tope del rango), las reps arrancan de nuevo desde el mínimo */
-        var sube = !!(sug && sug.origen === 'progresion' && ult.kg != null && qrNum(kgV) > qrNum(ult.kg));
-        rpV = (sube && rr) ? String(rr.min) : String(ult.reps); pre = true;
-      }
-      if(sug && sug.origen === 'progresion' && ult && qrNum(kgV) > qrNum(ult.kg)) hint = '↑ Subí a ' + kgV + ' kg · ' + base;
+    var guardado = (ld.kg != null && ld.kg !== '') || (ld.reps != null && ld.reps !== '');
+    if(guardado) hint = base;
+    else {
+      try{ if(!sinKg && typeof window.jpSugerirCarga === 'function') sug = window.jpSugerirCarga(c, e, ref + (e.ko || 0)); }catch(eS){}
+      var kgS = sug && sug.kg > 0 ? String(Math.round(sug.kg * 100) / 100) : '';
+      if(sug && sug.origen === 'progresion' && ult && qrNum(kgS) > qrNum(ult.kg)) hint = '↑ Subí a ' + kgS + ' kg · ' + base;
+      else if(sug && sug.origen === 'progresion' && base) hint = 'Mantené el peso · ' + base;
       else if(sug && sug.origen === 'descarga') hint = 'Descarga · ' + base;
-      else if(sug && sug.origen === 'real') hint = 'Según tu marca · ' + kgV + ' kg';
+      else if(sug && sug.origen === 'real') hint = 'Según tu marca · ' + kgS + ' kg';
       else if(sug && sug.origen === 'coach') hint = 'Carga pautada';
       else hint = base || (e.rir ? 'Elegí un peso para RIR ' + e.rir : '');
     }
-    var ns = (hechas > 0 && hechas < nsMax) ? hechas : nsMax;
-    var ref0 = base ? base.replace(': ', ' · ') : '';
-    var saved = (baseOk && guardado) ? [ld.kg != null && ld.kg !== '' && !sinKg ? ld.kg + ' kg' : '', ld.reps != null && ld.reps !== '' ? '× ' + ld.reps : ''].filter(Boolean).join(' ') : '';
-    return { ref: ref0, saved: saved, tec: tec, nsMax: nsMax, ns: ns, sinKg: sinKg, modoR: modoR, kgV: kgV, rpV: rpV, pre: pre, hint: hint, kgPh: '—', rpPh: nr ? nr[0] : (ult && ult.reps != null && ult.reps !== '' ? String(ult.reps) : '—'), baseOk: baseOk, finOk: finOk, todoOk: baseOk && finOk };
+    var nt = qrTotalSeries(c, e, i), nd = 0, filas = [], prev = null, mejor = null, j;
+    for(j = 1; j <= nt; j++){
+      var f = qrFila(c, e, j, nsMax, sinKg, prev); filas.push(f); prev = f;
+      if(f.done){
+        nd++;
+        /* la serie que representa al ejercicio en la pastilla: la de más kilos (o, sin peso, la de más repeticiones) */
+        var kgN = qrNum(f.kg), rpN = qrNum(f.rp);
+        if(!mejor || kgN > mejor.kgN || (kgN === mejor.kgN && rpN > mejor.rpN)) mejor = { kgN: kgN, rpN: rpN, kg: f.kg, rp: f.rp };
+      }
+    }
+    var conFinal = !!(tec && !e.ko);                              /* la serie final con técnica cuenta como una serie más del ejercicio */
+    var saved = mejor ? qrTxtSerie(mejor.kg, mejor.rp, sinKg) + ((baseOk && finOk) ? '' : ' · ' + (nd + (conFinal && finOk ? 1 : 0)) + '/' + (nt + (conFinal ? 1 : 0))) : '';
+    /* serie final con técnica: valores propios (Drop-Set arranca sin kilos; Myo-Reps y Rest-Pause, con los de la última serie normal) */
+    var ult1 = filas[Math.max(0, nsMax - 1)] || {}, fin = null;
+    if(tec && !e.ko){
+      var fg = (fld.kg != null && fld.kg !== '') || (fld.reps != null && fld.reps !== '');
+      fin = { done: finOk, kg: fg ? String(fld.kg != null ? fld.kg : '') : (tec === 'dropset' ? '' : (ult1.kg || '')), rp: fg ? String(fld.reps != null ? fld.reps : '') : '', pre: !fg && tec !== 'dropset' && !!ult1.kg, key: qrClaveFinal(c, e) };
+    }
+    var quitable = (QR_EXTRA[qrExtraKey(c, i)] || 0) > 0 && nt > Math.max(1, nsMax) && !qrConDato(getLoad(qrClaveSerie(c, e, nt)));
+    return { ref: base ? base.replace(': ', ' · ') : '', saved: saved, tec: tec, nsMax: nsMax, ns: nsMax, nt: nt, nd: nd, filas: filas, fin: fin, quitable: quitable, sinKg: sinKg, modoR: modoR, hint: hint, kgPh: '—', rpPh: nr ? nr[0] : '—', baseOk: baseOk, finOk: finOk, todoOk: baseOk && finOk };
   }
   var QR_LBL = {};
   function qrPlano(s){ return String(s || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\\s+/g, ' ').trim(); }
@@ -16532,8 +16594,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return { k: kind, t: qrCorta(hit, 130) };
   }
   function qrCardHtml(c, e, i){
-    var m = qrModelo(c, e), k = qrKey(c);
+    var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
+    var ulb = unidad === 'REPS' ? 'REPETICIONES' : (unidad === 'SEG' ? 'SEGUNDOS' : unidad), ual = unidad === 'REPS' ? 'repeticiones' : unidad.toLowerCase();
     var pres = [e.sets + ' × ' + (e.reps || (e.rp ? e.rp.join('+') : '')) + (e.u ? ' ' + e.u : ''), e.rir ? 'RIR ' + e.rir : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' · ');
     /* la pastilla dice siempre de QUÉ ejercicio es: orden (01) o letra de la estación (A1/A2) + nombre + estado */
     var letraE = regLetra(c, i), idE = (QR_LBL[k + '|' + i] || {}).id || (/^E\\d+$/.test(letraE) ? ('0' + (i + 1)).slice(-2) : letraE), nomE = regNombreCorto(e.nombre);
@@ -16541,16 +16604,31 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false" aria-label="' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + ' del ejercicio ' + escSB(idE) + ', ' + escSB(nomE) + '">' +
       '<span class="jp-qc-tg-t"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + '</span><span class="jp-qc-tg-id">· ' + escSB(idE) + '</span><span class="jp-qc-chev" aria-hidden="true">▾</span></span>' +
       '<span class="jp-qc-tg-b"><span class="jp-qc-tg-n">' + escSB(nomE) + '</span>' + (m.saved ? '<span class="jp-qc-tg-s">✓ ' + escSB(m.saved) + '</span>' : (m.ref ? '<span class="jp-qc-tg-r">' + escSB(m.ref) + '</span>' : '<span class="jp-qc-tg-h">Tocar para registrar</span>')) + '</span></button>';
+    var inputs = function(kg, rp, pre, rpPh, n){
+      return (m.sinKg ? '' : '<input type="text" inputmode="decimal" class="jp-qc-kg' + (pre && kg ? ' pre' : '') + '" autocomplete="off" aria-label="Peso en kilos de la ' + n + '" value="' + escSB(kg) + '" placeholder="—"><b class="jp-qc-x">×</b>') +
+        '<input type="text" inputmode="decimal" class="jp-qc-rp' + (pre && rp ? ' pre' : '') + '" autocomplete="off" aria-label="' + ual.charAt(0).toUpperCase() + ual.slice(1) + ' de la ' + n + '" value="' + escSB(rp) + '" placeholder="' + escSB(rpPh) + '">';
+    };
+    var filas = m.filas.map(function(f){
+      var n = 'serie ' + f.j;
+      return '<div class="jp-qc-r' + (f.done ? ' jp-done' : '') + (f.extra ? ' extra' : '') + '" data-sj="' + f.j + '" data-key="' + escSB(f.key) + '">' +
+        '<span class="jp-qc-sn"><small>SERIE</small><b>' + f.j + '</b></span>' + inputs(f.kg, f.rp, f.pre, f.rpPh, n) +
+        '<button type="button" class="jp-qc-ok' + (f.done ? ' on' : '') + '" aria-pressed="' + (f.done ? 'true' : 'false') + '" aria-label="' + (f.done ? 'Desmarcar ' : 'Marcar ') + n + ' como hecha">✓</button></div>';
+    }).join('');
+    var cab = '<div class="jp-qc-hd"><i></i>' + (m.sinKg ? '' : '<span>PESO · KG</span><i></i>') + '<span>' + ulb + '</span><i></i></div>';
+    var fin = '';
+    if(m.fin){
+      fin = '<div class="jp-qc-fin"><span class="jp-qc-fin-lb">⚡ ' + (e.grp ? 'RONDA' : 'SERIE') + ' FINAL · ' + QR_TEC_NOM[m.tec] + '</span>' +
+        '<div class="jp-qc-r jp-qc-rf' + (m.fin.done ? ' jp-done' : '') + '" data-sj="f" data-key="' + escSB(m.fin.key) + '"><span class="jp-qc-sn"><small>SERIE</small><b>' + (m.nsMax + 1) + '</b></span>' +
+        inputs(m.fin.kg, m.fin.rp, m.fin.pre, m.rpPh, 'serie final') +
+        '<button type="button" class="jp-qc-finok jp-qc-ok' + (m.fin.done ? ' on ok' : '') + '" aria-pressed="' + (m.fin.done ? 'true' : 'false') + '" aria-label="' + (m.fin.done ? 'Desmarcar' : 'Marcar') + ' la serie final como hecha">✓</button></div></div>';
+    }
     return '<div class="jp-qc' + (m.todoOk ? ' ok' : '') + (m.sinKg ? ' sinkg' : '') + '" data-qk="' + escSB(k) + '" data-qi="' + i + '" data-ns="' + m.ns + '" data-max="' + m.nsMax + '"' + (m.tec ? ' data-tec="' + m.tec + '"' : '') + (m.baseOk ? ' data-base="1"' : '') + '>' + tg + '<div class="jp-qc-body"><div class="jp-qc-bi"><div class="jp-qc-bx">' +
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
-      '<div class="jp-qc-f">' +
-        (m.sinKg ? '' : '<label><span>PESO · KG</span><input type="text" inputmode="decimal" class="jp-qc-kg' + (m.pre && m.kgV ? ' pre' : '') + '" autocomplete="off" aria-label="Peso en kilos" value="' + escSB(m.kgV) + '" placeholder="' + escSB(m.kgPh) + '"></label><b>×</b>') +
-        '<label><span>' + (unidad === 'REPS' ? 'REPETICIONES' : (unidad === 'SEG' ? 'SEGUNDOS' : unidad)) + '</span><input type="text" inputmode="decimal" class="jp-qc-rp' + (m.pre && m.rpV ? ' pre' : '') + '" autocomplete="off" aria-label="' + (unidad === 'REPS' ? 'Repeticiones' : unidad) + '" value="' + escSB(m.rpV) + '" placeholder="' + escSB(m.rpPh) + '"></label>' +
-        '<button type="button" class="jp-qc-ok" aria-label="Guardar ejercicio">✓</button>' +
-      '</div>' +
+      cab + '<div class="jp-qc-rows">' + filas + '</div>' +
+      '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
+      fin +
       (guia.t ? '<div class="jp-qc-guia"><b>' + guia.k + '</b><span>' + escSB(guia.t) + '</span></div>' : '') +
       (m.hint ? '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span></div>' : '') +
-      (m.tec && !e.ko ? '<div class="jp-qc-fin"><span class="jp-qc-fin-lb">⚡ ' + (e.grp ? 'RONDA' : 'SERIE') + ' FINAL · ' + QR_TEC_NOM[m.tec] + '</span><button type="button" class="jp-qc-finok' + (m.finOk ? ' ok' : '') + '" aria-label="Serie final hecha">' + (m.finOk ? '✓ HECHA' : 'HECHA ✓') + '</button></div>' : '') +
     '</div></div></div></div>';
   }
   /* devuelve el contenedor con una tarjeta por ejercicio; jpQrAcomodar() las mueve dentro de la fila de cada ejercicio */
@@ -16594,63 +16672,84 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var cfg = QR_CFG[card.getAttribute('data-qk')], e = cfg && cfg.ex[parseInt(card.getAttribute('data-qi'), 10)];
     return (cfg && e) ? { c: cfg, e: e } : null;
   }
-  function qrValores(card){
-    var kgI = card.querySelector('.jp-qc-kg'), rpI = card.querySelector('.jp-qc-rp');
-    return {
-      kv: kgI ? (kgI.value || (/^[0-9]/.test(kgI.placeholder) ? kgI.placeholder : '')) : '',
-      rv: rpI ? (rpI.value || (/^[0-9]/.test(rpI.placeholder) ? rpI.placeholder : '')) : ''
-    };
+  /* valores de una fila: lo escrito o, si falta, el valor sugerido que se ve en gris (reps prescriptas) */
+  function qrValFila(row){
+    var kgI = row.querySelector('.jp-qc-kg'), rpI = row.querySelector('.jp-qc-rp');
+    var fb = function(inp){ return inp ? (inp.value || (/^[0-9]/.test(inp.placeholder) ? inp.placeholder : '')) : ''; };
+    return { kv: fb(kgI), rv: fb(rpI), pideKg: !!kgI, kgI: kgI, rpI: rpI };
   }
   function qrAviso(){
     try{ jpAudioTactical.soundCheckSet(); }catch(e1){}
     try{ jpAudioTactical.vibrateCheckSet(); }catch(e2){}
   }
   function qrRefrescar(card, mantener){
-    var k = qrCtx(card); if(!k || !card.parentNode) return;
+    var k = qrCtx(card); if(!k || !card.parentNode) return null;
     var tmp = document.createElement('div');
     tmp.innerHTML = qrCardHtml(k.c, k.e, parseInt(card.getAttribute('data-qi'), 10));
     var nuevo = tmp.firstChild, board = card.closest('[data-sportsboard]');
     if(mantener && card.classList.contains('jp-open')){ nuevo.classList.add('jp-open'); var tg0 = nuevo.querySelector('.jp-qc-tg'); if(tg0) tg0.setAttribute('aria-expanded', 'true'); }
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
+    return nuevo;
   }
-  /* ✓ : guarda el ejercicio con un toque (las series efectivas llevan KG × REPS; el resto queda hecho sin kilos inventados) */
-  function qrGuardar(card){
-    var k = qrCtx(card); if(!k) return;
+  /* marca o desmarca UNA serie: guarda KG × REPS de esa serie con su propia clave (nunca se reparten kilos entre series) */
+  function qrGuardarSerie(card, row){
+    var k = qrCtx(card); if(!k || !row) return;
     if(card.classList.contains('jp-sav')) return;
-    var v = qrValores(card);
-    var pideKg = !!card.querySelector('.jp-qc-kg');
-    if((pideKg && !v.kv) || !v.rv){
-      card.classList.add('falta'); setTimeout(function(){ card.classList.remove('falta'); }, 700);
-      var vacio = (pideKg && !v.kv) ? card.querySelector('.jp-qc-kg') : card.querySelector('.jp-qc-rp');
+    var c = k.c, e = k.e, key = row.getAttribute('data-key'), ld = getLoad(key);
+    if(ld.done){                                                   /* segundo toque: desmarca y conserva lo escrito */
+      setLoadField(key, 'done', false);
+      qrRefrescar(card, true); return;
+    }
+    var v = qrValFila(row);
+    if((v.pideKg && !v.kv) || !v.rv){
+      row.classList.add('falta'); setTimeout(function(){ row.classList.remove('falta'); }, 700);
+      var vacio = (v.pideKg && !v.kv) ? v.kgI : v.rpI;
       if(vacio){ try{ vacio.focus(); }catch(eF){} }
       return;
     }
-    var c = k.c, e = k.e, nsMax = qrSetsBase(e);
-    var ns = Math.max(1, nsMax);
-    var tops = regSetsTop(e).filter(function(x){ return x <= ns; });
-    if(!tops.length) tops = [ns];
-    for(var i = 1; i <= ns; i++){
-      var key = qrClave(c, e, i);
-      if(tops.indexOf(i) >= 0){ if(v.kv) setLoadField(key, 'kg', v.kv); if(v.rv) setLoadField(key, 'reps', v.rv); }
-      setLoadField(key, 'done', true);
+    if(v.kv) setLoadField(key, 'kg', v.kv);
+    if(v.rv) setLoadField(key, 'reps', v.rv);
+    setLoadField(key, 'ex', regNombreCorto(e.nombre));           /* el historial verifica que la marca sea de ESTE ejercicio */
+    setLoadField(key, 'done', true);
+    qrAviso();
+    var i = parseInt(card.getAttribute('data-qi'), 10), m = qrModelo(c, e, i);
+    if(m.todoOk){ qrCerrarYRefrescar(card); return; }             /* todo hecho: el panel se pliega */
+    var nuevo = qrRefrescar(card, true);
+    if(nuevo){ var sig = nuevo.querySelector('.jp-qc-r:not(.jp-done) .jp-qc-kg') || nuevo.querySelector('.jp-qc-r:not(.jp-done) .jp-qc-rp'); if(sig){ try{ sig.focus({ preventScroll: true }); }catch(eN){} } }
+  }
+  /* serie final con técnica: KG × REPS propios, marcada aparte de las series normales */
+  function qrFinal(card){
+    var k = qrCtx(card); if(!k) return;
+    var row = card.querySelector('.jp-qc-fin .jp-qc-r'); if(!row) return;
+    var c = k.c, e = k.e, key = row.getAttribute('data-key');
+    if(getLoad(key).done){ setLoadField(key, 'done', false); qrRefrescar(card, true); return; }
+    var v = qrValFila(row);
+    if(!v.rv && !v.kv){
+      row.classList.add('falta'); setTimeout(function(){ row.classList.remove('falta'); }, 700);
+      if(v.rpI){ try{ v.rpI.focus(); }catch(eF){} }
+      return;
     }
+    if(v.kv) setLoadField(key, 'kg', v.kv);
+    if(v.rv) setLoadField(key, 'reps', v.rv);
+    setLoadField(key, 'ex', regNombreCorto(e.nombre));
+    setLoadField(key, 'done', true);
     qrAviso();
     qrCerrarYRefrescar(card);
   }
-  /* serie final con técnica: se marca hecha con el mismo KG × REPS de la tarjeta */
-  function qrFinal(card){
+  function qrAgregar(card){
     var k = qrCtx(card); if(!k) return;
-    var v = qrValores(card), c = k.c, e = k.e, key = qrClaveFinal(c, e);
-    var estaba = !!getLoad(key).done;
-    if(estaba){ setLoadField(key, 'done', false); }
-    else {
-      if(v.kv) setLoadField(key, 'kg', v.kv);
-      if(v.rv) setLoadField(key, 'reps', v.rv);
-      setLoadField(key, 'done', true);
-      qrAviso();
-    }
-    qrCerrarYRefrescar(card);
+    var i = parseInt(card.getAttribute('data-qi'), 10), ek = qrExtraKey(k.c, i);
+    if(qrTotalSeries(k.c, k.e, i) >= Math.max(1, qrSetsBase(k.e)) + 12) return;
+    QR_EXTRA[ek] = (QR_EXTRA[ek] || 0) + 1;
+    var nuevo = qrRefrescar(card, true);
+    if(nuevo){ var filas = nuevo.querySelectorAll('.jp-qc-r:not(.jp-qc-rf)'), ult = filas[filas.length - 1], inp = ult && (ult.querySelector('.jp-qc-kg') || ult.querySelector('.jp-qc-rp')); if(inp){ try{ inp.focus({ preventScroll: true }); inp.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }catch(eF){} } }
+  }
+  function qrQuitar(card){
+    var k = qrCtx(card); if(!k) return;
+    var i = parseInt(card.getAttribute('data-qi'), 10), ek = qrExtraKey(k.c, i);
+    if((QR_EXTRA[ek] || 0) > 0) QR_EXTRA[ek]--;
+    qrRefrescar(card, true);
   }
   function qrCerrar(card){
     card.classList.remove('jp-open');
@@ -16668,8 +16767,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     Array.prototype.forEach.call(document.querySelectorAll('.jp-qc.jp-open'), function(o){ if(o !== card) qrCerrar(o); });
     card.classList.add('jp-open');
     var tg = card.querySelector('.jp-qc-tg'); if(tg) tg.setAttribute('aria-expanded', 'true');
-    /* el foco va directo al campo de kilos (o al de reps si el ejercicio no lleva peso); se hace dentro del toque para que el teclado abra de una */
-    var campo = card.querySelector('.jp-qc-kg') || card.querySelector('.jp-qc-rp');
+    /* el foco va a los kilos de la primera serie pendiente (o a las reps si el ejercicio no lleva peso); se hace dentro del toque para que el teclado abra de una */
+    var campo = card.querySelector('.jp-qc-r:not(.jp-done) .jp-qc-kg') || card.querySelector('.jp-qc-r:not(.jp-done) .jp-qc-rp') || card.querySelector('.jp-qc-kg') || card.querySelector('.jp-qc-rp');
     if(campo){ try{ campo.focus({ preventScroll: true }); }catch(eF){} }
     setTimeout(function(){ try{ card.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }catch(eS){} }, 260);
   }
@@ -16677,18 +16776,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var t = ev.target; if(!t || !t.closest) return;
     var tgb = t.closest('.jp-qc-tg');
     if(tgb){ ev.preventDefault(); qrAlternar(tgb.closest('.jp-qc')); return; }
-    var ok = t.closest('.jp-qc-ok');
-    if(ok){ ev.preventDefault(); ev.stopPropagation(); qrGuardar(ok.closest('.jp-qc')); return; }
     var fi = t.closest('.jp-qc-finok');
     if(fi){ ev.preventDefault(); ev.stopPropagation(); qrFinal(fi.closest('.jp-qc')); return; }
+    var ok = t.closest('.jp-qc-ok');
+    if(ok){ ev.preventDefault(); ev.stopPropagation(); qrGuardarSerie(ok.closest('.jp-qc'), ok.closest('.jp-qc-r')); return; }
+    var ad = t.closest('.jp-qc-add');
+    if(ad){ ev.preventDefault(); ev.stopPropagation(); qrAgregar(ad.closest('.jp-qc')); return; }
+    var dl = t.closest('.jp-qc-del');
+    if(dl){ ev.preventDefault(); ev.stopPropagation(); qrQuitar(dl.closest('.jp-qc')); return; }
   });
   document.addEventListener('input', function(ev){
     var t = ev.target; if(!t || !t.classList || !(t.classList.contains('jp-qc-kg') || t.classList.contains('jp-qc-rp'))) return;
     var vq = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '').replace(/(\\..*)\\./g, '$1');
     if(vq !== t.value) t.value = vq;
     t.classList.remove('pre');
-    var cd = t.closest('.jp-qc');
-    if(cd){ cd.classList.remove('falta'); cd.classList.remove('ok'); }
+    var row = t.closest('.jp-qc-r');
+    if(row){
+      row.classList.remove('falta');
+      /* una serie ya marcada que se corrige: el dato nuevo se guarda en el acto (el tonelaje y el historial no quedan desfasados) */
+      if(row.classList.contains('jp-done') && row.getAttribute('data-key')) setLoadField(row.getAttribute('data-key'), t.classList.contains('jp-qc-kg') ? 'kg' : 'reps', t.value);
+    }
   });
   /* al tocar un casillero se selecciona todo: se corrige escribiendo encima, sin borrar a mano */
   document.addEventListener('focusin', function(ev){
@@ -23473,6 +23580,21 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     return out;
   }
   var phDia = null;
+  /* mismo ejercicio en otra semana: se busca por NOMBRE en el bloque de esa semana (si el orden de las líneas cambió, el índice 'e1' ya no es el mismo ejercicio) */
+  function nomLimpioHist(n){ return nrmHist(String(n || '').replace(/^[A-Fa-f]\\d{1,2}[.):\\-]\\s*/, '').replace(/\\s*\\([^)]*\\)\\s*$/, '')); }
+  function exIdxSemana(ex, w){
+    try{
+      var day = DAYS.filter(function(d){ return d.id === ex.dayId; })[0], b = day && (day.blocks || []).filter(function(x){ return x.id === ex.blockId; })[0];
+      if(!b || !b.sportsPizarra || typeof window.parsearPizarraSB !== 'function') return ex.exIdx;
+      var lin = itemsDeSemana(b, w).filter(function(l){ return l != null && String(l).trim(); }), obj = nomLimpioHist(ex.nombre), hit = null;
+      window.parsearPizarraSB(lin, { titulo: b.title }).forEach(function(en, idx){
+        var add = function(nm, id){ if(!hit && nomLimpioHist(nm) === obj) hit = id; };
+        if(en.tipo === 'simple' && en.sets) add(en.titulo, 'e' + idx);
+        else if(en.tipo === 'biserie') (en.subs || []).forEach(function(s, si){ add(s.nombre, 'b' + idx + 's' + si); });
+      });
+      return hit || ex.exIdx;
+    }catch(e){ return ex.exIdx; }
+  }
   function pintarProg(){
     var daysEl = document.getElementById('phDays'), sel = document.getElementById('phProgSel'), out = document.getElementById('phProgOut');
     if(!sel || !out) return;
@@ -23494,9 +23616,13 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     var filas = '', volTotal = 0, hayDatos = false, volPrev = 0;
     for(var w = 0; w < semanas; w++){
       var sets = [], vol = 0;
+      var idxW = exIdxSemana(ex, w);
       for(var si = 1; si <= 12; si++){
-        var l = state.loads[getLoadKey(w, ex.dayId, ex.blockId, ex.exIdx, si)];
+        var l = state.loads[getLoadKey(w, ex.dayId, ex.blockId, idxW, si)];
         if(!l) continue;
+        /* solo series COMPLETADAS (✓) y, si la marca trae el nombre del ejercicio, que sea exactamente este */
+        if(l.done !== true) continue;
+        if(l.ex && nomLimpioHist(l.ex) !== nomLimpioHist(ex.nombre)) continue;
         var kg = parseFloat(l.kg), rp = parseFloat(l.reps);
         if(!(kg > 0) && !(rp > 0)) continue;
         sets.push((kg > 0 ? kg : 'BW') + '\\u00d7' + (rp > 0 ? rp : '–'));
@@ -42374,6 +42500,34 @@ html body.jp-mission:not(.cf-disc) .jp-close-cta{ background:#FF5500 !important;
 .jp-qc-guia{ display:flex; gap:7px; align-items:baseline; margin-top:9px; padding:7px 9px; border-radius:9px; background:rgba(255,255,255,.035); border-left:2px solid #FF5500; font-size:.7rem; line-height:1.4; color:#D5DAE1; }
 .jp-qc-guia b{ flex:0 0 auto; font:800 .6rem 'Chakra Petch',sans-serif; letter-spacing:.12em; color:#FF8A4D; }
 .jp-qc-guia span{ min-width:0; }
+/* registro serie por serie: una fila por serie efectiva (SERIE · KG × REPS · ✓) */
+.jp-qc-hd, .jp-qc-r{ display:grid; grid-template-columns:38px minmax(0,1fr) 12px minmax(0,1fr) 50px; gap:6px; align-items:center; }
+.jp-qc.sinkg .jp-qc-hd, .jp-qc.sinkg .jp-qc-r{ grid-template-columns:38px minmax(0,1fr) 50px; }
+.jp-qc-hd{ margin:0 0 4px; font-size:.58rem; font-weight:800; letter-spacing:.1em; color:#C9CFD8; white-space:nowrap; }
+.jp-qc-hd span{ text-align:center; }
+.jp-qc-rows{ display:flex; flex-direction:column; gap:6px; }
+.jp-qc-sn{ display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1; color:#B6BDC8; }
+.jp-qc-sn small{ font:700 .48rem 'Chakra Petch',sans-serif; letter-spacing:.1em; }
+.jp-qc-sn b{ font:800 1.05rem 'Chakra Petch',sans-serif; color:#EDEFF2; margin-top:1px; }
+.jp-qc-x{ text-align:center; color:#B6BDC8; font-size:.95rem; }
+.jp-qc-r input{ width:100%; box-sizing:border-box; min-height:46px; padding:8px 4px; text-align:center; border-radius:10px; border:1px solid rgba(130,138,151,.35); background:rgba(0,0,0,.35); color:#EDEFF2; font:800 1.15rem 'Chakra Petch',sans-serif; outline:none; }
+.jp-qc-r input:focus{ border-color:#EDEFF2; box-shadow:0 0 0 2px rgba(237,239,242,.14); }
+.jp-qc-r input.pre{ border-color:rgba(0,229,255,.38); }
+.jp-qc-r input::placeholder{ color:rgba(130,138,151,.7); }
+.jp-qc-r .jp-qc-ok{ flex:none; width:100%; min-height:46px; border-radius:10px; font-size:1.25rem; }
+.jp-qc-r .jp-qc-ok.on{ background:#EDEFF2; color:#0D0D0D; }
+.jp-qc-r.jp-done input{ color:#B6BDC8; border-color:rgba(237,239,242,.22); }
+.jp-qc-r.falta input{ border-color:#ef4444; box-shadow:inset 0 0 0 1px rgba(239,68,68,.55); }
+.jp-qc-r.extra .jp-qc-sn b{ color:#FF8A4D; }
+.jp-qc-acts{ display:flex; gap:8px; margin-top:8px; }
+.jp-qc-add, .jp-qc-del{ min-height:44px; border-radius:10px; border:1px dashed rgba(130,138,151,.5); background:transparent; color:#EDEFF2; font:800 .7rem 'Chakra Petch',sans-serif; letter-spacing:.1em; cursor:pointer; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.jp-qc-add{ flex:1 1 auto; }
+.jp-qc-del{ flex:0 0 auto; padding:0 14px; color:#B6BDC8; }
+.jp-qc-add:active, .jp-qc-del:active{ background:rgba(255,255,255,.07); }
+.jp-qc-fin{ flex-direction:column; align-items:stretch; justify-content:flex-start; gap:6px; }
+.jp-qc-rf{ border-left:3px solid #FF5500; padding-left:5px; border-radius:6px; }
+.jp-qc-r.jp-qc-rf .jp-qc-ok{ background:#FF5500; color:#0D0D0D; border:0; padding:0; letter-spacing:0; }
+.jp-qc-r.jp-qc-rf .jp-qc-ok.on{ background:#EDEFF2; }
 .jp-qc-f b{ padding-bottom:15px; color:#828A97; font-size:1.05rem; }
 .jp-qc-f input{ width:100%; box-sizing:border-box; min-height:54px; padding:12px 4px; text-align:center; border-radius:12px; border:1px solid rgba(130,138,151,.35); background:rgba(0,0,0,.35); color:#EDEFF2; font:800 1.3rem 'Chakra Petch',sans-serif; outline:none; }
 .jp-qc-f input:focus{ border-color:#00e5ff; box-shadow:0 0 0 2px rgba(0,229,255,.16); }
@@ -45400,12 +45554,17 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
     }catch(e2){}
     return mejor;
   }
+  /* la Semana 1 es la base estricta: se busca primero ahí; si esa serie no tiene marca, la semana anterior más cercana. Solo series completadas (done !== false) */
   function ultimoRegistro(c, e, setN){
-    for(var pw = c.w - 1; pw >= 0; pw--){
+    var orden = [], pw;
+    if(c.w > 0) orden.push(0);
+    for(pw = c.w - 1; pw >= 1; pw--) orden.push(pw);
+    for(var q = 0; q < orden.length; q++){
+      pw = orden[q];
       var sets = [];
-      for(var s = 1; s <= (parseInt(e.sets, 10) || 1) + 1; s++){
+      for(var s = 1; s <= 12; s++){
         var l = carga(pw, c.d, c.b, e.idx, s), kg = parseFloat(l.kg), rp = parseFloat(l.reps);
-        if(kg > 0 && rp > 0) sets.push({ s: s, kg: kg, reps: rp });
+        if(kg > 0 && rp > 0 && l.done !== false) sets.push({ s: s, kg: kg, reps: rp });
       }
       if(!sets.length) continue;
       var mismo = sets.filter(function(x){ return x.s === setN; })[0];
@@ -45424,11 +45583,23 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
       if(ult && !deload){
         var ref = ult.ref, previo = 'S' + (ult.w + 1) + ': ' + fmtKg(ref.kg) + ' kg × ' + ref.reps;
         if(!rr) return { kg: ref.kg, pre: false, origen: 'ultima', txt: 'Última vez · SEM ' + (ult.w + 1) + ' · ' + fmtKg(ref.kg) + ' kg × ' + ref.reps };
+        /* Semanas 2, 3 y siguientes: la sobrecarga sale SIEMPRE de lo registrado en la Semana 1 (S2 sube si en S1 llegaste al tope de reps; S3 sube más) */
+        if(ult.w === 0 && c.w >= 1){
+          var llego = ref.reps >= rr.max, fac = c.w === 1 ? (llego ? 1.025 : 1) : (llego ? 1.05 : 1.025);
+          if(fac === 1) return { kg: ref.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(ref.kg) + ' kg y buscá ' + rr.max + ' reps (base ' + previo + ')' };
+          var kgN = Math.max(redondear(ref.kg * fac), ref.kg + 2.5);
+          return { kg: kgN, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(kgN) + ' kg (+' + fmtKg(kgN - ref.kg) + ' sobre tu base de ' + previo + ')' };
+        }
         if(ref.reps >= rr.max){
           var sube = Math.max(redondear(ref.kg * 1.025), ref.kg + 2.5);
           return { kg: sube, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(sube) + ' kg (+' + fmtKg(sube - ref.kg) + ') · llegaste a ' + ref.reps + ' reps con ' + fmtKg(ref.kg) + ' kg (' + previo + ')' };
         }
         return { kg: ref.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(ref.kg) + ' kg y buscá ' + rr.max + ' reps (' + previo + ')' };
+      }
+      /* descarga: ~85% de la carga de la Semana 1 (va antes de la marca real, que ignoraría la base de la semana) */
+      if(ult && deload){
+        var kgD0 = redondear(ult.ref.kg * 0.85);
+        return { kg: kgD0, pre: true, origen: 'descarga', txt: 'Descarga · ~85% de tu base de S' + (ult.w + 1) + ' (' + fmtKg(ult.ref.kg) + ' kg)' };
       }
       var real = e1rmReal(e.nombre);
       if(real > 0 && rr){
@@ -45703,6 +45874,18 @@ html body:not(#_).jp-mission:not(.cf-disc) .jp-tec-fase{ color:#FF8A4D !importan
 html body:not(#_).jp-mission:not(.cf-disc) .jp-tec-est{ border-color:rgba(130,138,151,.25) !important; background:transparent !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-tecnica-add-btn{ background:transparent !important; border-color:rgba(130,138,151,.45) !important; color:#EDEFF2 !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .hud-btn.hud-reset, html body:not(#_).jp-mission:not(.cf-disc) .site-footer{ border-color:rgba(130,138,151,.3) !important; }
+/* HUD compacto: sin espacios muertos entre la pastilla de carga, las pautas y «Completar bloque» */
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-ex, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-subex-resumen{ padding-bottom:6px !important; margin-bottom:4px !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-ex > .jp-qc, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-subex-resumen > .jp-qc{ margin:6px 0 0 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-block-details{ margin:4px 0 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-summary-btn{ min-height:40px !important; padding-top:4px !important; padding-bottom:4px !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board{ padding-bottom:4px !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-ex:has(.jp-tec-banner) > .jp-sb-badge{ display:none !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .block-body .jp-done-line{ margin-top:2px !important; margin-bottom:0 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-wk-pop{ min-width:min(340px, 92vw) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-wk-pop button{ align-items:flex-start !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-wk-pop button b{ white-space:nowrap !important; min-width:52px !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-wk-pop button small{ white-space:normal !important; line-height:1.3 !important; font-size:.72rem !important; color:#C9CFD8 !important; }
 html body:not(#_) #jpCerrarDiaBtn.jp-close-cta{ background:#FF5500 !important; border:1px solid #FF5500 !important; color:#0D0D0D !important; font-weight:800 !important; letter-spacing:.08em !important; min-height:56px !important; box-shadow:0 10px 26px -12px rgba(255,85,0,.7) !important; }
 html body:not(#_) #jpCerrarDiaBtn.jp-close-cta:active{ transform:scale(.98); }
 html body:not(#_) #storyCtaBtn.story-cta{ background:transparent !important; border:1px solid rgba(130,138,151,.5) !important; color:#EDEFF2 !important; box-shadow:none !important; }</style>
