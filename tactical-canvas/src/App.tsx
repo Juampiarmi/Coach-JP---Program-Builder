@@ -25,6 +25,7 @@ import { DRAFT_ID, deckImageIds, EMPTY_LIBRARY, exportLibrary, importLibrary, ne
 import { ProjectBar } from './components/ProjectBar'
 import { ProjectLibrary } from './components/ProjectLibrary'
 import { usePhotoLuma } from './hooks/usePhotoLuma'
+import { cleanSlideLanguage } from './lib/language'
 import { CaptionBar } from './components/CaptionBar'
 import { BrandKitBar } from './components/controls/BrandKitBar'
 import { dropLegacyBackground, pruneBackgrounds, readLegacyBackground, useBackgroundImages } from './hooks/useBackgroundImage'
@@ -125,6 +126,7 @@ function applyFixes(d: Deck, fixes: DoctorFix[]): Deck {
       if (t.removed.trim()) moved.push(t.removed.trim())
     } else if (f.kind === 'swap') patch = { template: f.to }
     else if (f.kind === 'contrast') patch = { bgOverlay: f.overlay, bgGradient: true }
+    else if (f.kind === 'lang') patch = cleanSlideLanguage(slides[i])
     slides = slides.map((s, j) => (j === i ? { ...s, ...patch } : s))
   }
   // Lo recortado no se pierde: pasa al caption, donde se lee con calma.

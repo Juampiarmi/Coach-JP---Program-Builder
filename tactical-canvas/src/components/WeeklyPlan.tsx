@@ -22,7 +22,7 @@ interface Props {
  */
 export function WeeklyPlan({ settings, hasKey, discipline, onResult, onPrompt, onNeedKey, onLoadDay }: Props) {
   const today = packDayFor()
-  const [ui, setUi] = usePersistentState<{ open: boolean; day: string }>('jp-tactical-canvas:weekly-pack', { open: true, day: today.id })
+  const [ui, setUi] = usePersistentState<{ day: string }>('jp-tactical-canvas:weekly-pack', { day: today.id })
   const day = WEEKLY_PACK.find((d) => d.id === ui.day) ?? today
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
@@ -63,11 +63,10 @@ export function WeeklyPlan({ settings, hasKey, discipline, onResult, onPrompt, o
 
   return (
     <div className="mb-2 space-y-2 rounded-lg border border-line bg-surface-2/60 p-2">
-      <button type="button" onClick={() => setUi({ ...ui, open: !ui.open })} aria-expanded={ui.open} className="flex w-full items-center justify-between">
-        <span className="font-mono text-[9px] font-semibold tracking-[0.16em] text-steel uppercase">▦ Plan semanal · papers & trends</span>
-        <span className="font-mono text-[9px] tracking-wider text-steel/70">{ui.open ? '▴' : `▾ HOY: ${today.day} · ${today.theme.toUpperCase()}`}</span>
-      </button>
-      {ui.open && (
+      <p className="font-mono text-[9px] leading-relaxed tracking-[0.08em] text-steel/80">
+        7 días con su paper. <span className="text-white">Cargar set listo</span> no usa IA ni cuota; <span className="text-white">Generar este día</span> pide una versión nueva con el prompt del día.
+      </p>
+      {(
         <>
           <div className="grid grid-cols-7 gap-1">
             {WEEKLY_PACK.map((d) => {
@@ -114,11 +113,11 @@ export function WeeklyPlan({ settings, hasKey, discipline, onResult, onPrompt, o
               title="Genera una versión nueva con el prompt del día (formato, objetivo y tono ya fijados)"
               className={`rounded-md border py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] transition ${busy ? 'animate-pulse border-gold/60 text-gold' : 'border-gold/40 text-gold hover:bg-gold/10'}`}
             >
-              {busy ? '[ GENERANDO… · CANCELAR ]' : '[ ✨ GENERAR CON IA ]'}
+              {busy ? '[ GENERANDO… · CANCELAR ]' : '[ ✨ GENERAR ESTE DÍA ]'}
             </button>
           </div>
           <button type="button" onClick={() => onPrompt(day.prompt)} className="w-full font-mono text-[9px] tracking-[0.12em] text-steel/80 hover:text-white">
-            ✎ EDITAR EL PROMPT DEL DÍA EN EL GENERADOR
+            ✎ EDITAR EL PROMPT DEL DÍA (ABRE EL GENERADOR LIBRE)
           </button>
           {note && <p className={`font-mono text-[10px] leading-relaxed ${note.startsWith('✓') ? 'text-cyan' : busy ? 'text-gold' : 'text-fire'}`}>{note}</p>}
         </>

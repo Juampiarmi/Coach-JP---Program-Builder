@@ -1,6 +1,7 @@
 import { BRAND } from './brand'
 import { swapHex } from './accent'
 import { effectiveTheme, PALETTES } from './theme'
+import { aiTells } from './language'
 import type { CanvasState, TemplateId } from '../types'
 
 /**
@@ -17,6 +18,7 @@ export type DoctorFix =
   | { kind: 'cta' }
   | { kind: 'swap'; slide: number; to: TemplateId }
   | { kind: 'contrast'; slide: number; overlay: number }
+  | { kind: 'lang'; slide: number }
 
 export interface Finding {
   id: string
@@ -234,6 +236,24 @@ export function diagnose(slides: CanvasState[], photoLuma: (i: number) => PhotoL
         ...(photo ? { fix: { kind: 'contrast', slide: i, overlay: overlayFor(s, photo) } as DoctorFix, fixLabel: `Subir velo a ${overlayFor(s, photo)} % + degradé` } : {}),
       })
     }
+  })
+
+  // Lenguaje: muletillas de IA y ganchos gastados (la frase de una cita es literal: no se revisa).
+  slides.forEach((s, i) => {
+    const { headline, body } = slideCopy(s)
+    const tells = aiTells([s.template === 'quote' ? '' : headline, s.tag, ...body].join(' · '))
+    if (!tells.length) return
+    const fixable = tells.some((t) => t.fixable)
+    findings.push({
+      id: `lang-${i}`,
+      slide: i,
+      severity: 'warn',
+      title: `Suena a IA en la placa ${i + 1}: ${tells.map((t) => t.label).join(', ')}`,
+      detail: fixable
+        ? 'Muletillas que delatan texto generado. Se reemplazan por lenguaje de sala («clave», «dispara», «mirá»); los ganchos gastados hay que reescribirlos.'
+        : 'Gancho gastado: reescribilo con una tensión concreta de la sala (una carga, un error de técnica, un número).',
+      ...(fixable ? { fix: { kind: 'lang', slide: i } as DoctorFix, fixLabel: 'Reemplazar muletillas' } : {}),
+    })
   })
 
   if (n > 1 && !hasCta(slides[n - 1])) {

@@ -11,6 +11,7 @@ import { DEFAULT_AUTHOR } from './brand'
 import { listGeminiModels, preferredGeminiModel, type GeminiModel } from './geminiModels'
 import { JsonRepairError, safeParseJson } from './safeJson'
 import type { QuoteIntent } from './quoteIntent'
+import { ARG_LANGUAGE_RULE, cleanSlideLanguage, deAI } from './language'
 import { CATALOG_INCLUDES, SERVICE_BY_ID, SERVICES } from './services'
 import type { ServiceMode, ServiceSport } from '../types'
 
@@ -114,9 +115,11 @@ const SCIENTIFIC_RIGOR = `RIGOR FISIOLÓGICO Y BIOQUÍMICO (inquebrantable, apli
 
 export const SYSTEM_PROMPT = `Sos el Director Creativo y Copywriter de COACH JP (@coachjp.training), un sistema de entrenamiento de alto rendimiento. Escribís en español rioplatense (voseo: "tenés", "podés").
 
-TONO: táctico, autoritario, preciso y basado en evidencia. Frases cortas, contundentes. Cero clichés motivacionales ("no pain no gain", "sin excusas", "sal de tu zona de confort"), cero emojis, cero hashtags, cero signos de exclamación. Desarmás mitos con fisiología y datos.
+TONO: táctico, autoritario, preciso y basado en evidencia. Frases cortas, contundentes. Cero clichés motivacionales ("no pain no gain", "sin excusas", "salí de tu zona de confort"), cero emojis, cero hashtags, cero signos de exclamación. Desarmás mitos con fisiología y datos.
 
 ${SCIENTIFIC_RIGOR}
+
+${ARG_LANGUAGE_RULE}
 
 PLANTILLAS DISPONIBLES (templateId):
 - "metrica": un número gigante que resume el argumento (ej: "3X", "~600", "7700", "+14%").
@@ -1431,7 +1434,9 @@ export function parseGeneration(payload: unknown, mode: GenMode, ctx: SlideConte
   const format = mode === 'auto' ? (slides.length === 1 ? 'single' : declared === 'single' ? 'carousel' : declared) : mode
   slides = slides.map((p) => enforceSubstance(p, format === 'single'))
   if (ctx.quote) slides = enforceQuote(slides, ctx.quote)
-  const caption = cleanCaption(str(root.caption))
+  // Blindaje de lenguaje: las muletillas de IA que se colaron se reemplazan por lenguaje de sala.
+  slides = slides.map((p) => cleanSlideLanguage(p))
+  const caption = deAI(cleanCaption(str(root.caption)))
   const rawPlan = obj(root.plan)
   const plan = Object.keys(rawPlan).length
     ? { goal: str(rawPlan.objetivo ?? rawPlan.goal), intent: str(rawPlan.intencion ?? rawPlan.intent), sequence: slides.map((sl) => sl.template ?? 'statement') }
@@ -1604,6 +1609,7 @@ Forma exacta: { "bursts": [ ${n} objetos { "white": string, "accent": string } ]
     .map((b) => ({ white: cleanText(upper(first(b.white, b.titleWhite, b.blanco, b.titular))), accent: cleanText(upper(first(b.accent, b.titleAccent, b.remate))) }))
     .filter((b) => (b.white || b.accent) && !CLICHES.test(`${b.white} ${b.accent}`) && !PSEUDO.test(`${b.white} ${b.accent}`))
     .map(balanceBurst)
+    .map((b) => ({ white: deAI(b.white), accent: deAI(b.accent) }))
     .slice(0, n)
   if (!out.length) throw new Error('La IA no devolvió ráfagas utilizables (o sólo clichés / pseudociencia descartados). Probá de nuevo.')
   return out
@@ -1711,6 +1717,7 @@ export async function regenerateSlide(
 
 const TOOL_SYSTEM = `Sos el editor de COACH JP (@coachjp.training), sistema de entrenamiento de alto rendimiento. Español rioplatense (voseo). Tono táctico, militar, científico y quirúrgico: frases cortas, cero clichés de autoayuda, cero emojis, cero signos de exclamación.
 ${SCIENTIFIC_RIGOR}
+${ARG_LANGUAGE_RULE}
 Respondé estrictamente con un objeto JSON válido con la forma pedida, sin markdown ni texto antes o después. Dentro de los textos usá « » en lugar de comillas dobles.`
 
 /** Settings de IA guardados por el generador (BYOK), con fusión profunda sobre los defaults. */
@@ -1811,7 +1818,7 @@ Forma exacta: { "hooks": [ { "angle": "contrarian", "white": string, "accent": s
   const out = angles
     .map((angle, i) => {
       const h = hooks.find((x) => str(x.angle).toLowerCase() === angle) ?? hooks[i] ?? {}
-      return { angle, white: upper(first(h.white, h.titleWhite, h.blanco)), accent: upper(first(h.accent, h.titleAccent, h.remate)) }
+      return { angle, white: deAI(upper(first(h.white, h.titleWhite, h.blanco))), accent: deAI(upper(first(h.accent, h.titleAccent, h.remate))) }
     })
     .filter((h) => h.white || h.accent)
   if (!out.length) throw new Error('La IA no devolvió ganchos utilizables. Probá de nuevo.')
@@ -1904,7 +1911,7 @@ Forma exacta: { "score": number, "clarity": number, "impact": number, "retention
   const res = await askJson(settings, user, signal, onStatus)
   const variants = (Array.isArray(res.variants) ? res.variants : [])
     .map(obj)
-    .map((v) => ({ white: upper(first(v.white, v.blanco)), accent: upper(first(v.accent, v.remate)), why: str(first(v.why, v.porque)) }))
+    .map((v) => ({ white: deAI(upper(first(v.white, v.blanco))), accent: deAI(upper(first(v.accent, v.remate))), why: str(first(v.why, v.porque)) }))
     .filter((v) => v.white || v.accent)
     .slice(0, 3)
   if (!res.score && !variants.length) throw new Error('La IA no devolvió una evaluación utilizable. Probá de nuevo.')
@@ -2126,11 +2133,11 @@ Forma exacta: { "white": string, "accent": string, "pillars": [3 strings], "cta"
   const accent = upper(str(first(res.accent, res.titleAccent)))
   if (!white || pillars.length < 2) throw new Error('La IA no devolvió un copy de servicio utilizable. Probá de nuevo.')
   return {
-    white,
-    accent,
-    pillars,
-    cta: upper(str(res.cta)),
+    white: deAI(white),
+    accent: deAI(accent),
+    pillars: pillars.map(deAI),
+    cta: deAI(upper(str(res.cta))),
     availability: upper(str(first(res.availability, res.disponibilidad))),
-    caption: cleanCaption(str(res.caption)),
+    caption: deAI(cleanCaption(str(res.caption))),
   }
 }

@@ -433,14 +433,14 @@ export const WEEKLY_PACK: WeeklyDay[] = [
     goal: 'science',
     tone: 'viral',
     prompt:
-      'Carrusel de EXACTAMENTE 3 placas sobre FATIGA DEL SISTEMA NERVIOSO Y DESCANSO ACTIVO: 1) "sentencia" de portada que desarme el mito del «SNC frito» (la fatiga central se recupera rápido; la que dura días es sobre todo muscular), sin hipérboles; 2) "opus" con 4 bloques de descanso activo con dosis concretas (caminata, movilidad, sueño, proteína); 3) "guardado" con 4 señales medibles de fatiga real y un CTA que indique bajar el volumen 30-50 % esa semana si aparecen 2. Evidencia (caption y citation de la portada): Carroll y col., 2017 · J Appl Physiol («Recovery of central and peripheral neuromuscular fatigue after exercise»).',
+      'Carrusel de EXACTAMENTE 3 placas sobre FATIGA DEL SISTEMA NERVIOSO Y DESCANSO ACTIVO: 1) "sentencia" de portada: la fatiga que dura días es sobre todo muscular, no nerviosa (la fatiga central se recupera en horas), con una regla directa sobre volumen y pausas completas; sin hipérboles ni la palabra «frito»; 2) "opus" con 4 bloques de descanso activo con dosis concretas (caminata, movilidad, sueño, proteína); 3) "guardado" con 4 señales medibles de fatiga real y un CTA que indique bajar el volumen 30-50 % esa semana si aparecen 2. Evidencia (caption y citation de la portada): Carroll y col., 2017 · J Appl Physiol («Recovery of central and peripheral neuromuscular fatigue after exercise»).',
     slides: [
       statement({
         tag: 'RECUPERACIÓN · FISIOLOGÍA',
-        headlineA: 'TU SISTEMA NERVIOSO',
-        headlineB: 'NO ESTÁ «FRITO».',
-        kicker: 'TUS MÚSCULOS ESTÁN CANSADOS.',
-        body: 'Lo que dura días es, sobre todo, fatiga muscular.',
+        headlineA: 'LA FATIGA QUE TE DURA DÍAS',
+        headlineB: 'ES SOBRE TODO MUSCULAR.',
+        kicker: 'PAUSAS COMPLETAS Y VOLUMEN AJUSTADO.',
+        body: 'La fatiga central se recupera en horas.',
         citeMain: 'CARROLL Y COL., 2017 · J APPL PHYSIOL',
         citeSub: 'Recuperación de la fatiga neuromuscular central y periférica después del ejercicio',
         bgStyle: 'radial',
@@ -471,7 +471,7 @@ export const WEEKLY_PACK: WeeklyDay[] = [
       ),
     ],
     caption:
-      'Tu sistema nervioso no está «frito». Tus músculos están cansados.\n\nDespués de entrenar, la fatiga central se recupera rápido; la que dura días es sobre todo periférica, del propio músculo (Carroll y col., 2017 · J Appl Physiol). Por eso el domingo no se trata de quedarte quieto, sino de recuperar bien.\n\n▸ Caminata de 30-45 min suave\n▸ 10 min de movilidad\n▸ 7-9 h de sueño\n▸ Proteína suficiente\n\nSi aparecen 2 señales de fatiga real, bajá el volumen 30-50 % esa semana. Guardalo.',
+      'La fatiga que te dura días es sobre todo muscular, no nerviosa.\n\nDespués de entrenar, la fatiga central se recupera rápido; la que dura días es sobre todo periférica, del propio músculo (Carroll y col., 2017 · J Appl Physiol). Por eso el domingo no se trata de quedarte quieto, sino de recuperar bien.\n\n▸ Caminata de 30-45 min suave\n▸ 10 min de movilidad\n▸ 7-9 h de sueño\n▸ Proteína suficiente\n\nSi aparecen 2 señales de fatiga real, bajá el volumen 30-50 % esa semana. Guardalo.',
   },
 ]
 

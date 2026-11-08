@@ -62,7 +62,15 @@ interface GenPrefs {
   pillar?: PillarId
   /** [ ❝ CITA CÉLEBRE ]: fuerza la plantilla 14 · Cita táctica aunque el texto no nombre a nadie */
   quote?: boolean
+  /** Sector de la pestaña: plan semanal científico o generador libre con idea propia */
+  sector?: Sector
 }
+
+type Sector = 'plan' | 'free'
+const SECTORS: { id: Sector; label: string; title: string }[] = [
+  { id: 'plan', label: '📅 PLAN SEMANAL CIENTÍFICO', title: 'Los 7 días con su paper: cargar el set listo o generar ese día con IA' },
+  { id: 'free', label: '⚡ GENERADOR LIBRE', title: 'Tu propia idea o brief: tono, objetivo, formato y generar placas' },
+]
 /** Clave vieja: el enfriamiento ya no se persiste (recargar siempre deja el botón activo). */
 const SEQ_LABEL: Record<string, string> = {
   metric: 'MÉTRICA',
@@ -139,6 +147,7 @@ export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
     mode: 'auto',
     discipline: 'general',
   })
+  const sector: Sector = mode.sector ?? 'plan'
   const inputMode: InputMode = mode.inputMode ?? 'concept'
   const goal: EditorialGoal = mode.goal ?? 'auto'
   const tone: EditorialTone = mode.tone ?? 'viral'
@@ -313,308 +322,340 @@ export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
           <span className="truncate">{hasKey ? `${settings.provider.toUpperCase()} · ${settings.models[settings.provider]}` : 'CARGAR API KEY'}</span>
         </button>
       </div>
-      <WeeklyPlan
-        settings={settings}
-        hasKey={hasKey}
-        discipline={mode.discipline ?? 'general'}
-        onResult={onResult}
-        onLoadDay={onLoadDay}
-        onPrompt={(t) => {
-          setTopic(t)
-          setMode({ ...mode, inputMode: 'brief', pillar: undefined })
-        }}
-        onNeedKey={() => setModal(true)}
-      />
-      <ContentCalendar
-        settings={settings}
-        hasKey={hasKey}
-        discipline={mode.discipline ?? 'general'}
-        pillar={mode.pillar ?? null}
-        onSelect={(id) => {
-          const p = PILLARS.find((x) => x.id === id)
-          // El pilar fija tono, objetivo y formato; «generador libre» sólo suelta el pilar.
-          setMode(p ? { ...mode, pillar: p.id, tone: p.tone, goal: p.goal, mode: p.mode } : { ...mode, pillar: undefined })
-        }}
-        onPick={(t) => {
-          setTopic(t)
-          setMode({ ...mode, inputMode: 'brief' })
-        }}
-        onNeedKey={() => setModal(true)}
-      />
-      <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
-        {(['concept', 'brief'] as InputMode[]).map((m) => (
+      {/* Dos sectores explícitos: el plan científico listo o el generador con idea propia. */}
+      <div role="tablist" aria-label="Motor de generación" className="mb-3 grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+        {SECTORS.map((sc) => (
           <button
-            key={m}
+            key={sc.id}
             type="button"
-            onClick={() => setMode({ ...mode, inputMode: m })}
-            aria-pressed={inputMode === m}
-            className={`rounded-md px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
-              inputMode === m ? 'bg-white/10 text-white' : 'text-steel hover:text-white'
-            }`}
+            role="tab"
+            aria-selected={sector === sc.id}
+            onClick={() => setMode({ ...mode, sector: sc.id })}
+            title={sc.title}
+            className={`rounded-md px-1 py-2 font-mono text-[10px] font-semibold tracking-[0.1em] transition ${sector === sc.id ? 'bg-fire text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'}`}
           >
-            {m === 'concept' ? '[ CONCEPTO RÁPIDO ]' : '[ BRIEF LIBRE / ESTRATÉGICO ]'}
+            {sc.label}
           </button>
         ))}
       </div>
-      {inputMode === 'concept' ? (
-        <input
-          className="tc-input"
-          value={topic}
-          placeholder={PLACEHOLDER.concept}
-          aria-label="Concepto"
-          onChange={(e) => setTopic(e.target.value)}
-          onPaste={(e) => {
-            // Un guion de varias líneas o con «Placa N» no entra en un campo de una línea (perdería
-            // los saltos): se pasa al modo BRIEF LIBRE con el texto exacto.
-            const pasted = e.clipboardData.getData('text')
-            if (/\n/.test(pasted.trim()) || detectStructuredCopy(pasted)) {
-              e.preventDefault()
-              setTopic(pasted.trim())
-              setMode({ ...mode, inputMode: 'brief' })
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') run()
-          }}
-        />
-      ) : (
-        <textarea
-          className="tc-input resize-y"
-          rows={5}
-          value={topic}
-          placeholder={PLACEHOLDER.brief}
-          aria-label="Brief"
-          onChange={(e) => setTopic(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run()
-          }}
-        />
+      {sector === 'plan' && (
+        <>
+          <WeeklyPlan
+            settings={settings}
+            hasKey={hasKey}
+            discipline={mode.discipline ?? 'general'}
+            onResult={onResult}
+            onLoadDay={onLoadDay}
+            onPrompt={(t) => {
+              setTopic(t)
+              setMode({ ...mode, inputMode: 'brief', pillar: undefined, sector: 'free' })
+            }}
+            onNeedKey={() => setModal(true)}
+          />
+        </>
       )}
-      {blocks && (
-        <p className="mt-1.5 rounded-md border border-gold/40 bg-gold/5 px-2 py-1.5 font-mono text-[9px] leading-relaxed tracking-[0.08em] text-gold" aria-live="polite">
-          ▸ COPY ESTRUCTURADO DETECTADO · {blocks.length} {blocks.length === 1 ? 'PLACA' : 'PLACAS'} → MAPEO FIEL: se respeta tu texto y la cantidad exacta de placas, sin citas ni gráficos inventados.
-        </p>
-      )}
-      <div className="mt-2">
-        <p className="mb-1 font-mono text-[9px] tracking-[0.14em] text-steel/70 uppercase">Tono / enfoque estratégico</p>
-        <div className="grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
-          {(['viral', 'academic'] as EditorialTone[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setMode({ ...mode, tone: t, pillar: undefined })}
-              aria-pressed={tone === t}
-              title={t === 'viral' ? 'Ganchos polarizantes, verdades incómodas y contraste alto para frenar el scroll' : 'Divulgación fisiológica formal con citas indexadas'}
-              className={`rounded-md px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
-                tone === t ? (t === 'viral' ? 'bg-gold text-carbon' : 'bg-cyan text-carbon') : 'text-steel hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              [ {TONE_LABEL[t].toUpperCase()} ]
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="mt-2">
-        <p className="mb-1 font-mono text-[9px] tracking-[0.14em] text-steel/70 uppercase">Objetivo editorial</p>
-        <div className="grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
-          {GOALS.map((g) => (
-            <button
-              key={g}
-              type="button"
-              onClick={() => setMode({ ...mode, goal: g, pillar: undefined })}
-              aria-pressed={goal === g}
-              className={`rounded-md px-1 py-1.5 font-mono text-[9px] leading-tight tracking-wider transition ${
-                goal === g ? 'bg-fire text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              {GOAL_LABEL[g].toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="mt-2 flex gap-1.5">
-        {(Object.keys(DISCIPLINE_LABEL) as Exclude<Discipline, 'general'>[]).map((d) => {
-          const on = mode.discipline === d
-          return (
-            <button
-              key={d}
-              type="button"
-              onClick={() => setMode({ ...mode, discipline: on ? 'general' : d })}
-              aria-pressed={on}
-              title={on ? 'Tocá de nuevo para volver a enfoque general' : undefined}
-              className={`flex-1 rounded-md border px-1.5 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
-                on
-                  ? d === 'sports'
-                    ? 'border-fire/70 bg-fire/15 text-fire'
-                    : 'border-gold/70 bg-gold/10 text-gold'
-                  : 'border-line text-steel hover:text-white'
-              }`}
-            >
-              [ {DISCIPLINE_LABEL[d]} ]
-            </button>
-          )
-        })}
-      </div>
-      <div className="mt-2 grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
-        {MODES.map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setMode({ ...mode, mode: m, pillar: undefined })}
-            aria-pressed={mode.mode === m}
-            className={`rounded-md px-1 py-1.5 font-mono text-[9px] leading-tight tracking-wider transition ${
-              mode.mode === m ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            {MODE_LABEL[m].toUpperCase()}
-          </button>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={() => setMode({ ...mode, quote: !mode.quote })}
-        aria-pressed={Boolean(mode.quote)}
-        title="Fuerza la plantilla 14 · Cita táctica: frase real de una figura icónica + autor + contexto Coach JP"
-        className={`mt-2 w-full rounded-lg border py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] transition ${
-          mode.quote ? 'border-fire/70 bg-fire/15 text-fire' : quoteIntent ? 'border-fire/40 text-fire/90' : 'border-line text-steel hover:text-white'
-        }`}
-      >
-        {mode.quote ? '[ ❝ CITA CÉLEBRE · FORZADA ]' : quoteIntent ? `[ ❝ CITA DETECTADA${quoteIntent.author ? ` · ${quoteIntent.author.toUpperCase()}` : ''} ]` : '[ ❝ CITA CÉLEBRE ]'}
-      </button>
-      {quoteIntent && (
-        <p className="mt-1.5 font-mono text-[9px] tracking-[0.1em] text-fire/90 uppercase" aria-live="polite">
-          ▸ Plantilla 14 · Cita táctica{quoteIntent.author ? ` · ${quoteIntent.author}` : ''} · nunca Manifiesto
-        </p>
-      )}
-      {detectedGoal && (
-        <p className="mt-1.5 font-mono text-[9px] tracking-[0.1em] text-steel/80 uppercase" aria-live="polite">
-          ▸ {goal === 'auto' ? 'Detectado' : 'Objetivo'}: <span className="text-white">{GOAL_LABEL[detectedGoal]}</span> · Formato:{' '}
-          <span className="text-cyan">
-            {formatForcedToCarousel(mode.mode, editorial)
-              ? `${FORMAT_LABEL[effectiveMode]} (FORZADO: ${tone === 'academic' ? 'ACADÉMICO' : 'CIENCIA'})`
-              : mode.mode === 'auto' && effectiveMode !== 'auto'
-                ? `AUTO → ${FORMAT_LABEL[effectiveMode]}`
-                : FORMAT_LABEL[effectiveMode]}
-          </span>
-        </p>
-      )}
-      <button
-        type="button"
-        onClick={() => run()}
-        disabled={locked}
-        aria-busy={busy}
-        className={`relative mt-2 w-full overflow-hidden rounded-lg border py-2.5 font-mono text-[11px] font-bold tracking-[0.14em] transition disabled:cursor-not-allowed ${
-          busy
-            ? 'border-cyan/60 bg-cyan/10 text-cyan'
-            : cooldown.remaining > 0
-              ? 'border-gold/50 bg-gold/10 text-gold'
-              : 'border-cyan bg-cyan text-carbon hover:brightness-110'
-        }`}
-      >
-        {busy && <span className="absolute inset-y-0 left-0 w-1/3 animate-[tcscan_1.2s_ease-in-out_infinite] bg-cyan/25" />}
-        <span className="relative flex items-center justify-center gap-2">
-          {busy && <span className="size-3 animate-spin rounded-full border-2 border-cyan/30 border-t-cyan" aria-hidden />}
-          {busy
-            ? '[ GENERANDO... ]'
-            : cooldown.remaining > 0
-              ? `[ ESPERÁ ${cooldown.remaining}s · CUOTA RESETEANDO ]`
-              : blocks
-                ? `[ ⇢ MAPEAR ${blocks.length} ${blocks.length === 1 ? 'PLACA' : 'PLACAS'} ]`
-                : '[ ✨ GENERAR PLACAS ]'}
-        </span>
-      </button>
-      {busy && (
-        <button
-          type="button"
-          onClick={() => abort.current?.abort()}
-          className="mt-1 w-full font-mono text-[9px] tracking-[0.14em] text-steel/60 hover:text-fire"
-        >
-          CANCELAR
-        </button>
-      )}
-      {status && (
-        <p
-          role="status"
-          className={`mt-2 font-mono text-[10px] leading-relaxed tracking-wider ${busy ? 'animate-pulse text-gold/90' : 'text-steel/80'}`}
-        >
-          {status}
-        </p>
-      )}
-      {error && (
-        <div className="mt-2 space-y-2">
-          <p className="font-mono text-[10px] leading-relaxed text-fire">{error}</p>
-          {!busy && (
-            <div className="flex gap-2">
+      {sector === 'free' && (
+        <>
+          <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+            {(['concept', 'brief'] as InputMode[]).map((m) => (
               <button
+                key={m}
                 type="button"
-                onClick={() => run(true)}
-                title="Ignora la cuenta regresiva y vuelve a probar todos los modelos"
-                className="flex-1 whitespace-nowrap rounded-md border border-fire/50 bg-fire/10 px-1.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-fire transition hover:bg-fire/20"
-              >
-                [ 🔄 REINTENTAR FORZADO ]
-              </button>
-              <button
-                type="button"
-                onClick={() => setModal(true)}
-                className="flex-1 whitespace-nowrap rounded-md border border-line px-1.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-steel transition hover:border-cyan/50 hover:text-cyan"
-              >
-                [ 🔑 CAMBIAR KEY ]
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-      {/* MODO 2 · Ráfagas de Mindset Táctico */}
-      <div className="mt-3 space-y-2 rounded-lg border border-fire/30 bg-fire/[.04] p-2">
-        <div className="flex items-center justify-between gap-2">
-          <p className="font-mono text-[9px] font-semibold tracking-[0.14em] text-fire uppercase">⚡ Ráfagas de mindset táctico</p>
-          <div className="flex gap-1" role="group" aria-label="Cantidad de variantes">
-            {BURST_COUNTS.map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setBurstCount(n)}
-                aria-pressed={burstCount === n}
-                className={`size-6 rounded border font-mono text-[10px] font-bold transition ${burstCount === n ? 'border-fire bg-fire text-carbon' : 'border-line text-steel hover:text-white'}`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={runBursts}
-          disabled={burstBusy || busy || cooldown.remaining > 0}
-          className="w-full rounded-md border border-fire/60 py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] text-fire transition hover:bg-fire/10 disabled:opacity-50"
-        >
-          {burstBusy ? '[ GENERANDO RÁFAGA... ]' : `[ ⚡ GENERAR ${burstCount} ${burstCount === 1 ? 'VARIANTE' : 'VARIANTES'} ]`}
-        </button>
-        <p className="font-mono text-[8px] leading-relaxed tracking-wider text-steel/60">
-          Brutalista y fisiológico: disciplina vs motivación, fatiga del SNC, estándares medidos. Cero clichés de autoayuda. Tocá una tarjeta para aplicarla a la placa activa.
-        </p>
-        {burstError && <p className="font-mono text-[10px] leading-relaxed text-fire">{burstError}</p>}
-        {bursts.length > 0 && (
-          <div className="space-y-1.5">
-            {bursts.map((b, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => {
-                  onBurst?.(b)
-                  setPicked(i)
-                }}
-                className={`block w-full rounded-md border px-2 py-1.5 text-left font-display text-[12px] leading-tight font-bold tracking-[0.01em] uppercase transition ${
-                  picked === i ? 'border-fire bg-fire/10' : 'border-line bg-surface-2 hover:border-fire/50'
+                onClick={() => setMode({ ...mode, inputMode: m })}
+                aria-pressed={inputMode === m}
+                className={`rounded-md px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
+                  inputMode === m ? 'bg-white/10 text-white' : 'text-steel hover:text-white'
                 }`}
               >
-                <span className="text-white">{b.white}</span> <span className="text-fire">{b.accent}</span>
-                {picked === i && <span className="ml-1 font-mono text-[8px] tracking-wider text-fire/80">✓ APLICADA</span>}
+                {m === 'concept' ? '[ CONCEPTO RÁPIDO ]' : '[ BRIEF LIBRE / ESTRATÉGICO ]'}
               </button>
             ))}
           </div>
-        )}
-      </div>
+          {inputMode === 'concept' ? (
+            <input
+              className="tc-input"
+              value={topic}
+              placeholder={PLACEHOLDER.concept}
+              aria-label="Concepto"
+              onChange={(e) => setTopic(e.target.value)}
+              onPaste={(e) => {
+                // Un guion de varias líneas o con «Placa N» no entra en un campo de una línea (perdería
+                // los saltos): se pasa al modo BRIEF LIBRE con el texto exacto.
+                const pasted = e.clipboardData.getData('text')
+                if (/\n/.test(pasted.trim()) || detectStructuredCopy(pasted)) {
+                  e.preventDefault()
+                  setTopic(pasted.trim())
+                  setMode({ ...mode, inputMode: 'brief' })
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') run()
+              }}
+            />
+          ) : (
+            <textarea
+              className="tc-input resize-y"
+              rows={5}
+              value={topic}
+              placeholder={PLACEHOLDER.brief}
+              aria-label="Brief"
+              onChange={(e) => setTopic(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) run()
+              }}
+            />
+          )}
+          {blocks && (
+            <p className="mt-1.5 rounded-md border border-gold/40 bg-gold/5 px-2 py-1.5 font-mono text-[9px] leading-relaxed tracking-[0.08em] text-gold" aria-live="polite">
+              ▸ COPY ESTRUCTURADO DETECTADO · {blocks.length} {blocks.length === 1 ? 'PLACA' : 'PLACAS'} → MAPEO FIEL: se respeta tu texto y la cantidad exacta de placas, sin citas ni gráficos inventados.
+            </p>
+          )}
+          <div className="mt-2">
+            <p className="mb-1 font-mono text-[9px] tracking-[0.14em] text-steel/70 uppercase">Tono / enfoque estratégico</p>
+            <div className="grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+              {(['viral', 'academic'] as EditorialTone[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setMode({ ...mode, tone: t, pillar: undefined })}
+                  aria-pressed={tone === t}
+                  title={t === 'viral' ? 'Ganchos polarizantes, verdades incómodas y contraste alto para frenar el scroll' : 'Divulgación fisiológica formal con citas indexadas'}
+                  className={`rounded-md px-1 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
+                    tone === t ? (t === 'viral' ? 'bg-gold text-carbon' : 'bg-cyan text-carbon') : 'text-steel hover:bg-white/5 hover:text-white'
+                  }`}
+                >
+                  [ {TONE_LABEL[t].toUpperCase()} ]
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2">
+            <p className="mb-1 font-mono text-[9px] tracking-[0.14em] text-steel/70 uppercase">Objetivo editorial</p>
+            <div className="grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+              {GOALS.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setMode({ ...mode, goal: g, pillar: undefined })}
+                  aria-pressed={goal === g}
+                  className={`rounded-md px-1 py-1.5 font-mono text-[9px] leading-tight tracking-wider transition ${
+                    goal === g ? 'bg-fire text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
+                  }`}
+                >
+                  {GOAL_LABEL[g].toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            {(Object.keys(DISCIPLINE_LABEL) as Exclude<Discipline, 'general'>[]).map((d) => {
+              const on = mode.discipline === d
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setMode({ ...mode, discipline: on ? 'general' : d })}
+                  aria-pressed={on}
+                  title={on ? 'Tocá de nuevo para volver a enfoque general' : undefined}
+                  className={`flex-1 rounded-md border px-1.5 py-1.5 font-mono text-[9px] font-semibold tracking-wider transition ${
+                    on
+                      ? d === 'sports'
+                        ? 'border-fire/70 bg-fire/15 text-fire'
+                        : 'border-gold/70 bg-gold/10 text-gold'
+                      : 'border-line text-steel hover:text-white'
+                  }`}
+                >
+                  [ {DISCIPLINE_LABEL[d]} ]
+                </button>
+              )
+            })}
+          </div>
+          <div className="mt-2 grid grid-cols-4 gap-1 rounded-lg border border-line bg-surface-2 p-0.5">
+            {MODES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode({ ...mode, mode: m, pillar: undefined })}
+                aria-pressed={mode.mode === m}
+                className={`rounded-md px-1 py-1.5 font-mono text-[9px] leading-tight tracking-wider transition ${
+                  mode.mode === m ? 'bg-cyan text-carbon' : 'text-steel hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                {MODE_LABEL[m].toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setMode({ ...mode, quote: !mode.quote })}
+            aria-pressed={Boolean(mode.quote)}
+            title="Fuerza la plantilla 14 · Cita táctica: frase real de una figura icónica + autor + contexto Coach JP"
+            className={`mt-2 w-full rounded-lg border py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] transition ${
+              mode.quote ? 'border-fire/70 bg-fire/15 text-fire' : quoteIntent ? 'border-fire/40 text-fire/90' : 'border-line text-steel hover:text-white'
+            }`}
+          >
+            {mode.quote ? '[ ❝ CITA CÉLEBRE · FORZADA ]' : quoteIntent ? `[ ❝ CITA DETECTADA${quoteIntent.author ? ` · ${quoteIntent.author.toUpperCase()}` : ''} ]` : '[ ❝ CITA CÉLEBRE ]'}
+          </button>
+          {quoteIntent && (
+            <p className="mt-1.5 font-mono text-[9px] tracking-[0.1em] text-fire/90 uppercase" aria-live="polite">
+              ▸ Plantilla 14 · Cita táctica{quoteIntent.author ? ` · ${quoteIntent.author}` : ''} · nunca Manifiesto
+            </p>
+          )}
+          {detectedGoal && (
+            <p className="mt-1.5 font-mono text-[9px] tracking-[0.1em] text-steel/80 uppercase" aria-live="polite">
+              ▸ {goal === 'auto' ? 'Detectado' : 'Objetivo'}: <span className="text-white">{GOAL_LABEL[detectedGoal]}</span> · Formato:{' '}
+              <span className="text-cyan">
+                {formatForcedToCarousel(mode.mode, editorial)
+                  ? `${FORMAT_LABEL[effectiveMode]} (FORZADO: ${tone === 'academic' ? 'ACADÉMICO' : 'CIENCIA'})`
+                  : mode.mode === 'auto' && effectiveMode !== 'auto'
+                    ? `AUTO → ${FORMAT_LABEL[effectiveMode]}`
+                    : FORMAT_LABEL[effectiveMode]}
+              </span>
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => run()}
+            disabled={locked}
+            aria-busy={busy}
+            className={`relative mt-2 w-full overflow-hidden rounded-lg border py-2.5 font-mono text-[11px] font-bold tracking-[0.14em] transition disabled:cursor-not-allowed ${
+              busy
+                ? 'border-cyan/60 bg-cyan/10 text-cyan'
+                : cooldown.remaining > 0
+                  ? 'border-gold/50 bg-gold/10 text-gold'
+                  : 'border-cyan bg-cyan text-carbon hover:brightness-110'
+            }`}
+          >
+            {busy && <span className="absolute inset-y-0 left-0 w-1/3 animate-[tcscan_1.2s_ease-in-out_infinite] bg-cyan/25" />}
+            <span className="relative flex items-center justify-center gap-2">
+              {busy && <span className="size-3 animate-spin rounded-full border-2 border-cyan/30 border-t-cyan" aria-hidden />}
+              {busy
+                ? '[ GENERANDO... ]'
+                : cooldown.remaining > 0
+                  ? `[ ESPERÁ ${cooldown.remaining}s · CUOTA RESETEANDO ]`
+                  : blocks
+                    ? `[ ⇢ MAPEAR ${blocks.length} ${blocks.length === 1 ? 'PLACA' : 'PLACAS'} ]`
+                    : '[ ✨ GENERAR PLACAS ]'}
+            </span>
+          </button>
+          {busy && (
+            <button
+              type="button"
+              onClick={() => abort.current?.abort()}
+              className="mt-1 w-full font-mono text-[9px] tracking-[0.14em] text-steel/60 hover:text-fire"
+            >
+              CANCELAR
+            </button>
+          )}
+          {status && (
+            <p
+              role="status"
+              className={`mt-2 font-mono text-[10px] leading-relaxed tracking-wider ${busy ? 'animate-pulse text-gold/90' : 'text-steel/80'}`}
+            >
+              {status}
+            </p>
+          )}
+          {error && (
+            <div className="mt-2 space-y-2">
+              <p className="font-mono text-[10px] leading-relaxed text-fire">{error}</p>
+              {!busy && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => run(true)}
+                    title="Ignora la cuenta regresiva y vuelve a probar todos los modelos"
+                    className="flex-1 whitespace-nowrap rounded-md border border-fire/50 bg-fire/10 px-1.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-fire transition hover:bg-fire/20"
+                  >
+                    [ 🔄 REINTENTAR FORZADO ]
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModal(true)}
+                    className="flex-1 whitespace-nowrap rounded-md border border-line px-1.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.04em] text-steel transition hover:border-cyan/50 hover:text-cyan"
+                  >
+                    [ 🔑 CAMBIAR KEY ]
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          <details className="mt-3 rounded-lg border border-line bg-surface-2/40 px-2 py-1.5">
+            <summary className="cursor-pointer font-mono text-[9px] font-semibold tracking-[0.16em] text-steel uppercase">💡 Ideas con evidencia por pilar</summary>
+            <div className="mt-2">
+              <ContentCalendar
+                settings={settings}
+                hasKey={hasKey}
+                discipline={mode.discipline ?? 'general'}
+                pillar={mode.pillar ?? null}
+                onSelect={(id) => {
+                  const p = PILLARS.find((x) => x.id === id)
+                  // El pilar fija tono, objetivo y formato; «generador libre» sólo suelta el pilar.
+                  setMode(p ? { ...mode, pillar: p.id, tone: p.tone, goal: p.goal, mode: p.mode } : { ...mode, pillar: undefined })
+                }}
+                onPick={(t) => {
+                  setTopic(t)
+                  setMode({ ...mode, inputMode: 'brief' })
+                }}
+                onNeedKey={() => setModal(true)}
+              />
+            </div>
+          </details>
+          <details className="mt-2 rounded-lg border border-line bg-surface-2/40 px-2 py-1.5">
+            <summary className="cursor-pointer font-mono text-[9px] font-semibold tracking-[0.16em] text-steel uppercase">⚡ Ráfagas de mindset (sólo titulares)</summary>
+              {/* MODO 2 · Ráfagas de Mindset Táctico */}
+              <div className="mt-3 space-y-2 rounded-lg border border-fire/30 bg-fire/[.04] p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-mono text-[9px] font-semibold tracking-[0.14em] text-fire uppercase">⚡ Ráfagas de mindset táctico</p>
+                  <div className="flex gap-1" role="group" aria-label="Cantidad de variantes">
+                    {BURST_COUNTS.map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setBurstCount(n)}
+                        aria-pressed={burstCount === n}
+                        className={`size-6 rounded border font-mono text-[10px] font-bold transition ${burstCount === n ? 'border-fire bg-fire text-carbon' : 'border-line text-steel hover:text-white'}`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={runBursts}
+                  disabled={burstBusy || busy || cooldown.remaining > 0}
+                  className="w-full rounded-md border border-fire/60 py-1.5 font-mono text-[10px] font-semibold tracking-[0.12em] text-fire transition hover:bg-fire/10 disabled:opacity-50"
+                >
+                  {burstBusy ? '[ GENERANDO RÁFAGA... ]' : `[ ⚡ GENERAR ${burstCount} ${burstCount === 1 ? 'VARIANTE' : 'VARIANTES'} ]`}
+                </button>
+                <p className="font-mono text-[8px] leading-relaxed tracking-wider text-steel/60">
+                  Brutalista y fisiológico: disciplina vs motivación, fatiga del SNC, estándares medidos. Cero clichés de autoayuda. Tocá una tarjeta para aplicarla a la placa activa.
+                </p>
+                {burstError && <p className="font-mono text-[10px] leading-relaxed text-fire">{burstError}</p>}
+                {bursts.length > 0 && (
+                  <div className="space-y-1.5">
+                    {bursts.map((b, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          onBurst?.(b)
+                          setPicked(i)
+                        }}
+                        className={`block w-full rounded-md border px-2 py-1.5 text-left font-display text-[12px] leading-tight font-bold tracking-[0.01em] uppercase transition ${
+                          picked === i ? 'border-fire bg-fire/10' : 'border-line bg-surface-2 hover:border-fire/50'
+                        }`}
+                      >
+                        <span className="text-white">{b.white}</span> <span className="text-fire">{b.accent}</span>
+                        {picked === i && <span className="ml-1 font-mono text-[8px] tracking-wider text-fire/80">✓ APLICADA</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+          </details>
+        </>
+      )}
       {modal && <AiSettingsModal settings={settings} onSave={setSettings} onClose={() => setModal(false)} />}
     </div>
   )
