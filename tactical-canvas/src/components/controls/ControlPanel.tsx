@@ -341,6 +341,16 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               <TextArea value={state.body} onChange={(body) => update({ body })} rows={3} />
             </Field>
           )}
+          {state.template !== 'athletic' && state.template !== 'quote' && state.template !== 'manifesto' && state.template !== 'repeat' && (
+            <Field label="Datos clave · cajas tácticas" hint="uno por línea, con número (máx 4)">
+              <TextArea
+                value={(state.dataChips ?? []).join('\n')}
+                onChange={(v) => update({ dataChips: v.split('\n').map((c) => c.toUpperCase()).slice(0, 4) })}
+                rows={2}
+                placeholder={'RIR 1-2\nPAUSA 2-3 MIN\n10-20 SERIES/SEM'}
+              />
+            </Field>
+          )}
         </Section>
       )}
 

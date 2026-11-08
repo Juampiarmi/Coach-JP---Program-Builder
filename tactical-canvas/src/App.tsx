@@ -27,6 +27,7 @@ import { BrandKitBar } from './components/controls/BrandKitBar'
 import { dropLegacyBackground, pruneBackgrounds, readLegacyBackground, useBackgroundImages } from './hooks/useBackgroundImage'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { usePersistentState } from './hooks/usePersistentState'
+import { useUndoHistory } from './hooks/useUndoHistory'
 import type { AspectId, CanvasState, Nudge, NudgeTarget } from './types'
 
 const STORAGE_KEY = 'jp-tactical-canvas:v3'
@@ -142,10 +143,36 @@ export default function App() {
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [exporting, setExporting] = useState<string | null>(null)
+  // Deshacer / rehacer: cualquier edición del set (no la selección de placa ni la exportación).
+  const history = useUndoHistory(deck, setDeck, {
+    meaningful: (a, b) => a.slides !== b.slides || a.caption !== b.caption,
+    paused: Boolean(exporting),
+  })
   // Modo de trabajo: placas o video. Cada uno conserva su estado al alternar.
   const [modeState, setModeState] = usePersistentState<{ mode: WorkMode }>('jp-tactical-canvas:mode', { mode: 'canvas' })
   const mode = modeState.mode
   const [videoVisited, setVideoVisited] = useState(mode === 'video')
+  // ⌘/Ctrl+Z deshace y ⌘/Ctrl+⇧+Z (o Ctrl+Y) rehace. Dentro de un campo de texto manda el deshacer
+  // nativo del campo; en el Video Studio, sus propios atajos.
+  const { undo, redo } = history
+  useEffect(() => {
+    if (mode !== 'canvas') return
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
+      const k = e.key.toLowerCase()
+      if (k === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      } else if ((k === 'z' && e.shiftKey) || k === 'y') {
+        e.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mode, undo, redo])
   const setMode = (m: WorkMode) => {
     if (m === 'video') setVideoVisited(true)
     setModeState({ mode: m })
@@ -580,8 +607,34 @@ export default function App() {
     />
   )
 
+  const undoButtons = (
+    <span className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        onClick={history.undo}
+        disabled={!history.canUndo}
+        title="Deshacer (⌘/Ctrl + Z)"
+        aria-label="Deshacer"
+        className="rounded-lg border border-line px-2.5 py-1.5 font-mono text-[12px] text-steel transition hover:text-white disabled:opacity-30"
+      >
+        ↶
+      </button>
+      <button
+        type="button"
+        onClick={history.redo}
+        disabled={!history.canRedo}
+        title="Rehacer (⌘/Ctrl + ⇧ + Z)"
+        aria-label="Rehacer"
+        className="rounded-lg border border-line px-2.5 py-1.5 font-mono text-[12px] text-steel transition hover:text-white disabled:opacity-30"
+      >
+        ↷
+      </button>
+    </span>
+  )
+
   const overlayToggle = (
     <>
+    {undoButtons}
     <button
       type="button"
       onClick={showDoctor}

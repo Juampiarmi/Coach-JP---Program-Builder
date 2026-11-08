@@ -65,6 +65,9 @@ export function QuoteEditor({ state, update, discipline, topic }: Props) {
       {state.quoteEmphasis && !cleanQuote(state.quoteText ?? '').toLowerCase().includes(state.quoteEmphasis.trim().toLowerCase()) && (
         <p className="font-mono text-[9px] text-gold/80">El remate tiene que ser texto literal de la cita para pintarse.</p>
       )}
+      <Field label="Regla Coach JP (va en naranja)" hint="la mentalidad del autor como regla aplicable hoy">
+        <TextInput value={state.quoteRule ?? ''} onChange={(quoteRule) => update({ quoteRule })} uppercase placeholder="ANOTÁ LA SERIE QUE FALLASTE: ES DATO" />
+      </Field>
       <Field label="Contexto Coach JP (máx. 2 líneas)" hint={`${(state.body ?? '').trim().split(/\s+/).filter(Boolean).length} / 24 palabras`}>
         <TextArea value={state.body ?? ''} onChange={(body) => update({ body })} rows={2} />
       </Field>

@@ -40,8 +40,8 @@ function splitEmphasis(text: string, emphasis: string): [string, string, string]
 
 /**
  * Plantilla 14 · Cita táctica: badge mono «[ AUTOR // MICHAEL JORDAN ]», la frase en Chakra Petch
- * Bold gigante (blanco + remate de énfasis en naranja), el rol y una bajada de contexto de máximo
- * 2 líneas que traduce la lección al sistema de Coach JP.
+ * Bold gigante (blanco + remate de énfasis en naranja), el rol, la REGLA COACH JP (la mentalidad del
+ * autor como regla aplicable, en naranja) y una bajada de máximo 2 líneas que la lleva a la sesión.
  * Sin frase cargada (plantilla elegida a mano sobre otra placa), usa el titular como cita.
  */
 export function QuoteTemplate({ state, palette, contentWidth, scale: s }: Props) {
@@ -51,6 +51,7 @@ export function QuoteTemplate({ state, palette, contentWidth, scale: s }: Props)
   const author = (state.quoteAuthor ?? '').trim()
   const role = (state.quoteRole ?? '').trim()
   const context = (state.body ?? '').trim()
+  const rule = (state.quoteRule ?? '').trim()
   if (!text) return null
   const emphasis = (state.quoteEmphasis ?? '').trim() || (fromHeadline ? state.headlineB.replace(/\*/g, '').trim() : autoEmphasis(text))
   const [pre, emph, post] = splitEmphasis(text, emphasis)
@@ -109,11 +110,20 @@ export function QuoteTemplate({ state, palette, contentWidth, scale: s }: Props)
           <span style={{ fontFamily: FONT_MONO, fontWeight: 500, fontSize: 23 * s, letterSpacing: '0.14em', textTransform: 'uppercase', color: palette.muted }}>{role}</span>
         </div>
       )}
+      {rule && (
+        // Regla Coach JP: la mentalidad del autor traducida a algo que se aplica hoy en la sesión.
+        <div data-part="quote-rule" style={{ marginTop: (role ? 34 : 46) * s, borderLeft: `${Math.max(4, 6 * s)}px solid ${orange}`, paddingLeft: 20 * s }}>
+          <p style={{ margin: `0 0 ${8 * s}px`, fontFamily: FONT_MONO, fontWeight: 600, fontSize: 18 * s, letterSpacing: '0.2em', color: palette.muted }}>
+            <span style={{ color: orange }}>//</span> REGLA COACH JP
+          </p>
+          <p style={{ margin: 0, fontFamily: FONT_BRAND, fontWeight: 700, fontSize: 36 * s, lineHeight: 1.12, letterSpacing: '0.01em', textTransform: 'uppercase', color: orange, textWrap: 'balance' }}>{rule}</p>
+        </div>
+      )}
       {context && (
         <p
           data-part="quote-context"
           style={{
-            margin: `${(role ? 34 : 48) * s}px 0 0`,
+            margin: `${rule ? 22 * s : (role ? 34 : 48) * s}px 0 0`,
             fontFamily: FONT_BODY,
             fontWeight: 500,
             fontSize: 30 * s,

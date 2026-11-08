@@ -87,7 +87,8 @@ export function slideCopy(s: CanvasState): { headline: string; body: string[] } 
       case 'opus':
         return s.opusBlocks.map((b) => b.text)
       case 'quote':
-        return [s.quoteAuthor, s.quoteRole]
+        // Autor y rol son rótulos de un vistazo; la regla y la bajada sí se leen.
+        return [s.quoteRule, s.body]
       case 'athletic':
         return [s.body, ...s.athleticRows.map((r) => `${r.k} ${r.v}`), s.athleticCta]
       case 'essay':
@@ -106,7 +107,7 @@ export function slideCopy(s: CanvasState): { headline: string; body: string[] } 
         return []
     }
   })()
-  return { headline, body: body.filter((t) => t && t.trim()) }
+  return { headline, body: [...body, ...(s.template === 'athletic' ? [] : (s.dataChips ?? []))].filter((t) => t && t.trim()) }
 }
 
 // Imperativos con pronombre enclítico incluidos: «guardalo», «compartilo», «mandame».

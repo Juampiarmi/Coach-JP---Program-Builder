@@ -254,7 +254,7 @@ export const WEEKLY_PACK: WeeklyDay[] = [
     tone: 'viral',
     quote: { author: 'Marco Aurelio', reason: 'explicit' },
     prompt:
-      'Carrusel de EXACTAMENTE 2 placas sobre DISCIPLINA Y AUTORRESPETO: 1) "cita" con la frase de Marco Aurelio en Meditaciones, Libro X, 16 («No pierdas más tiempo discutiendo cómo debe ser un buen hombre. Sé uno.»), role «Emperador romano y filósofo estoico», source «Meditaciones, Libro X, 16», y un parrafo de contexto que la lleve a la sala de entrenamiento; 2) "manifiesto_texto" sobre el autorrespeto como hábito: cumplir la sesión que te prometiste aunque no tengas ganas, con situaciones reales del entrenamiento y un remate-CTA en MAYÚSCULAS que invite a guardar la placa. Cero clichés de autoayuda.',
+      'Carrusel de EXACTAMENTE 2 placas sobre DISCIPLINA Y AUTORRESPETO: 1) "cita" con la frase de Marco Aurelio en Meditaciones, Libro X, 16 («No pierdas más tiempo discutiendo cómo debe ser un buen hombre. Sé uno.»), role «Emperador romano y filósofo estoico», source «Meditaciones, Libro X, 16», una regla Coach JP aplicable (cita.regla) y un parrafo que vincule la idea con el autorrespeto y la sesión de hoy; 2) "manifiesto_texto" sobre el autorrespeto como hábito: cumplir la sesión que te prometiste aunque no tengas ganas, con situaciones reales del entrenamiento y un remate-CTA en MAYÚSCULAS que invite a guardar la placa. Cero clichés de autoayuda.',
     slides: [
       {
         template: 'quote',
@@ -264,7 +264,8 @@ export const WEEKLY_PACK: WeeklyDay[] = [
         quoteRole: 'Emperador romano y filósofo estoico',
         quoteSource: 'Meditaciones, Libro X, 16',
         quoteEmphasis: 'Sé uno',
-        body: 'En la sala: dejá de leer sobre disciplina. Hacé la sesión que te toca hoy y registrala.',
+        quoteRule: 'MENOS LEER SOBRE DISCIPLINA, MÁS SESIONES CUMPLIDAS.',
+        body: '',
         headlineA: '',
         headlineB: '',
         ...NO_CITE,
@@ -398,6 +399,7 @@ export const WEEKLY_PACK: WeeklyDay[] = [
         cardA: { label: 'SERIE BASURA', value: 'RIR 5+', caption: 'Lejos del fallo, técnica que se rompe', accent: 'gray' },
         cardB: { label: 'SERIE EFECTIVA', value: 'RIR 0-3', caption: 'Carga o reps que suben, registradas', accent: 'orange' },
         verdict: 'MENOS SERIES, MEJOR HECHAS.',
+        dataChips: ['RIR 0-3', '3 × 8-12', 'SUBÍ 2,5-5 %'],
         body: 'En 8 semanas, progresar sumando reps o sumando kilos dio un crecimiento similar: lo que cuenta es que algo suba.',
         ...NO_CITE,
         ...CAROUSEL,
@@ -454,6 +456,7 @@ export const WEEKLY_PACK: WeeklyDay[] = [
           { num: '00003', text: 'Dormí 7-9 horas: es la herramienta que más rinde.' },
           { num: '00004', text: 'Comé proteína suficiente también el día libre.' },
         ],
+        dataChips: ['SUEÑO 7-9 H', 'CAMINATA 30-45 MIN'],
         body: '',
         ...NO_CITE,
         ...CAROUSEL,

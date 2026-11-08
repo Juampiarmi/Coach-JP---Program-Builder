@@ -18,6 +18,7 @@ import { ServiceTemplate } from './templates/ServiceTemplate'
 import { CaseTemplate } from './templates/CaseTemplate'
 import { MythTemplate } from './templates/MythTemplate'
 import { SlideCounter } from './SlideCounter'
+import { DataChips } from './DataChips'
 import { PanoramaLayer, ThreadLayer } from './SeamlessLayer'
 import { StickerZone } from './StickerZone'
 import { stickerReserve } from '../../lib/remix'
@@ -455,6 +456,7 @@ export const TacticalCanvas = forwardRef<HTMLDivElement, Props>(function Tactica
                     {isEssay && <EssayTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {isOpus && <OpusTemplate state={state} palette={palette} contentWidth={contentWidth} scale={scale} />}
                     {state.template === 'bookmark' && <BookmarkTemplate state={state} palette={palette} theme={theme} contentWidth={contentWidth} scale={scale} />}
+                    {(state.dataChips ?? []).length > 0 && <DataChips chips={state.dataChips} scale={scale} width={contentWidth} />}
                   </div>
                 </>
               )}

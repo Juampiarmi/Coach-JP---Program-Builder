@@ -214,6 +214,8 @@ export interface CanvasState {
   quoteSource: string
   /** Remate de la cita que va en naranja (palabras literales de la frase; '' = automático: la última cláusula) */
   quoteEmphasis: string
+  /** Regla Coach JP: la mentalidad del autor traducida a una regla aplicable (va en naranja bajo la cita) */
+  quoteRule: string
   /** Opus Athletic (plantilla 15): número de la etiqueta «[Nr. X]» */
   athleticNr: string
   athleticRows: AthleticRow[]
@@ -267,6 +269,8 @@ export interface CanvasState {
   truthAccent: 'brand' | 'green'
   /** Arriba / abajo (stack) o lado a lado (split) */
   mythLayout: 'stack' | 'split'
+  /** Datos clave en cajas tácticas de alto contraste (RIR, pausa, % 1RM, series): 0 a 4 */
+  dataChips: string[]
   /** Carrusel continuo: hilo de marca que cruza de placa en placa */
   seamlessThread: boolean
   /** Carrusel continuo: foto panorámica repartida entre todas las placas (id en IndexedDB) */

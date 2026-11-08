@@ -198,11 +198,12 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
   "caption": string,
   "slides": [
     {
-      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita" | "athletic" | "rutina" | "error_correccion" | "manifiesto_texto",
+      "templateId": "sentencia" | "ab" | "grafico" | "diagrama" | "metrica" | "manifiesto" | "repeticion" | "matriz2x2" | "pipeline" | "piramide" | "checklist" | "guardado" | "opus" | "cita" | "athletic" | "rutina" | "error_correccion" | "manifiesto_texto" | "servicio" | "mito_fisiologia",
       "theme": string (el tema de este slide en 2-4 palabras),
       "text": { "titleWhite": string, "titleAccent": string, "tagSuperior": string, "parrafo": string },
       "citation": string,
       "description": string,
+      "datos_clave": [0 a 4 strings] (cajas de datos operativos de alto contraste, máx 18 caracteres cada una, SIEMPRE con número: «RIR 1-2», «PAUSA 2-3 MIN», «10-20 SERIES/SEM», «70-85 % 1RM», «RPE 8». Obligatorio en placas técnicas o de evidencia; [] en mindset, cita y servicios),
       "sentencia": { "highlight": string (remate en MAYÚSCULAS, máx 14 palabras) },
       "metrica": { "value": string (corto, máx 5 caracteres), "label": string (MAYÚSCULAS, qué mide), "unidad": string, "accent": "orange" | "cyan" | "gold" },
       "ab": {
@@ -229,7 +230,7 @@ PAYLOAD MULTIFORMATO: cada slide trae los datos de TODAS las plantillas, escrito
       "athletic": { "theme": "dark" | "light" (por defecto "dark", la estética nativa de Coach JP), "nr": string (número de la etiqueta «[Nr. X]»; "" en portada y cierre), "cta": string ("" salvo en el cierre), "mode": "list" | "table", "head": [2 strings, encabezados de columna si mode es "table"], "rows": [2 a 6 objetos { "k": string (clave en negrita, ej «Cargas pesadas:» o «75-82,5 % 1RM»), "v": string (descripción o valor, ej «4 × 6, pausa 3 min») }] } (OBLIGATORIO sólo si templateId es "athletic"; en los demás omitilo),
       "mito_fisiologia": { "myth": string (el mito, máx 16 palabras), "truth": string (la fisiología real, máx 32 palabras, con el mecanismo) } (OBLIGATORIO sólo si templateId es "mito_fisiologia"; en los demás omitilo),
       "servicio": { "mode": "single" | "catalog", "sport": "hypertrophy" | "crossfit" | "hyrox" | "mtb" | "rugby" | "hockey" | "golf" | "weightlifting" | "powerlifting" | "combat", "pillars": [3 o 4 strings (pilares técnicos concretos del deporte, máx 90 caracteres)], "availability": string (ej «CUPOS LIMITADOS · EVALUACIÓN DE INGRESO»), "cta": string (MAYÚSCULAS, ej «MANDÁ 'PROGRAMA' POR DM») } (OBLIGATORIO sólo si templateId es "servicio"; en los demás omitilo),
-      "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo), "enfasis": string (2 a 6 palabras finales literales de quote, van en naranja) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
+      "cita": { "quote": string (la frase en español, sin comillas), "author": string (nombre y apellido), "role": string (rol corto, ej «Bicampeón olímpico de maratón»), "source": string (dónde y cuándo lo dijo), "enfasis": string (2 a 6 palabras finales literales de quote, van en naranja), "regla": string (la mentalidad del autor como regla Coach JP aplicable hoy, MAYÚSCULAS, máx 10 palabras) } (OBLIGATORIO sólo si templateId es "cita"; en los demás omitilo),
       "opus": { "titulo_principal": string (opcional, MAYÚSCULAS; si falta se usa titleWhite + titleAccent), "bloques": [2 a 6 objetos { "numero": "00001", "texto": string (una frase de 4 a 14 palabras, sin prefijos) }] } (OBLIGATORIO sólo si templateId es "opus"; en los demás omitilo),
       "guardado": { "points": [3 o 4 strings, máx 70 caracteres, las ideas clave de TODO el carrusel], "cta": string (MAYÚSCULAS; por defecto «ESTÁNDAR OPERATIVO: GUARDÁ ESTA REFERENCIA PARA TU PRÓXIMO BLOQUE») } (OBLIGATORIO sólo si templateId es "guardado"; en los demás omitilo),
       "grafico": { ... } (SIEMPRE: completo y preciso si templateId es "grafico"; en los demás, una versión breve del mismo tema)
@@ -288,14 +289,29 @@ export interface EditorialOptions {
 }
 
 /** Cita célebre: manda por sobre objetivo, pilar, tono y secuencias (nunca Manifiesto ni Sentencia). */
+/** Figuras con frases documentadas que la IA puede elegir cuando el pedido no nombra a nadie. */
+const QUOTE_ROSTER =
+  'Atletas: Kobe Bryant, Michael Jordan, Muhammad Ali, Eliud Kipchoge, Rafael Nadal, Serena Williams, Manu Ginóbili, Luciana Aymar. Entrenadores: Marcelo Bielsa, John Wooden, Vince Lombardi, Phil Jackson. Mentalidad: David Goggins, Bruce Lee, Jocko Willink. Filosofía: Séneca, Marco Aurelio, Epicteto, Aristóteles'
+
+/**
+ * Cita célebre: manda por sobre objetivo, pilar, tono y secuencias (nunca Manifiesto ni Sentencia).
+ * La cita nunca va «a secas»: la regla Coach JP y la bajada traducen la mentalidad del autor a la
+ * disciplina de vida, el autorrespeto y el rendimiento en la sesión.
+ */
 function quoteRule(q: QuoteIntent, single: boolean) {
-  const who = q.author ? `de ${q.author.toUpperCase()}` : 'de una figura del alto rendimiento (deporte, entrenamiento o estoicismo) pertinente al tema'
+  const who = q.author
+    ? `de ${q.author.toUpperCase()}`
+    : `de una figura del alto rendimiento pertinente al tema. Elegí entre: ${QUOTE_ROSTER} (o la figura que mejor encaje, si tenés una frase suya documentada)`
   return `CITA CÉLEBRE DETECTADA (manda por sobre el OBJETIVO EDITORIAL, el pilar, la arquitectura de placas y cualquier secuencia de otros bloques):
 - ${single ? 'Devolvé EXACTAMENTE 1 placa' : 'La placa 1'} con templateId "cita" (PROHIBIDO "manifiesto", "manifiesto_texto" o "sentencia" para la cita).
-- "cita.quote": UNA frase REAL y verificable ${who}, traducida fiel al español rioplatense neutro si el original es en otro idioma. Corta y contundente (ideal ≤ 22 palabras). Si no tenés certeza de una frase real de esa persona, elegí la más conocida y documentada; nunca inventes.
+- "cita.quote": UNA frase REAL y verificable ${who}, traducida fiel al español rioplatense neutro si el original es en otro idioma. Corta y contundente (ideal ≤ 22 palabras). Nunca inventes ni «mejores» la frase. Cuidado con las atribuciones falsas: «Somos lo que hacemos repetidamente…» es de Will Durant resumiendo a Aristóteles, no de Aristóteles.
 - "cita.author": nombre y apellido. "cita.role": rol corto en español (ej «6 veces campeón de la NBA»). "cita.source": dónde y cuándo lo dijo (libro, entrevista, discurso).
 - "cita.enfasis": el remate de la frase (2 a 6 palabras finales, LITERALES de cita.quote) que va en naranja.
-- "text.parrafo": bajada de contexto de MÁXIMO 2 líneas (≤ 24 palabras) que traduce la lección al sistema de entrenamiento de Coach JP (registro de cargas, protocolo, progresión). "text.titleWhite" / "text.titleAccent": repetí la frase partida en premisa / remate (respaldo).${single ? '' : '\n- El resto de las placas desarrolla la lección aplicada al entrenamiento con las plantillas que correspondan.'}`
+- FILOSOFÍA COACH JP (obligatorio, la cita nunca va a secas): vinculá explícitamente el principio del autor con la DISCIPLINA DE VIDA, el AUTORRESPETO y el RENDIMIENTO en la actividad física.
+  · "cita.regla": la mentalidad del autor traducida a UNA regla aplicable hoy, en MAYÚSCULAS, imperativo con voseo, máx 10 palabras, concreta y de sala (ej: Jordan y los tiros fallados → «ANOTÁ LA SERIE QUE FALLASTE: ES DATO, NO DERROTA»; Séneca y el tiempo → «LA SESIÓN DE HOY NO SE PASA A MAÑANA»).
+  · "text.parrafo": bajada de MÁXIMO 2 líneas (≤ 24 palabras) que explica por qué esa regla construye autorrespeto o rendimiento: una situación real del entrenamiento o del estilo de vida (cumplir la sesión sin ganas, registrar cargas, dormir, sostener el protocolo).
+  · PROHIBIDO repetir la idea de la cita con otras palabras, las bajadas genéricas («la disciplina es la clave», «nunca te rindas», «creé en vos», «el éxito es constancia») y cualquier cliché de autoayuda.
+- "text.titleWhite" / "text.titleAccent": repetí la frase partida en premisa / remate (respaldo).${single ? '' : '\n- El resto de las placas desarrolla la regla aplicada al entrenamiento con las plantillas que correspondan.'}`
 }
 
 /** Regla de plantilla por pilar: manda sobre las secuencias tipo. */
@@ -395,6 +411,19 @@ export function resolveFormat(text: string, mode: GenMode, opts: EditorialOption
   return 'auto'
 }
 
+/** Pedidos basados en literatura: autores de referencia o palabras de evidencia. */
+const PAPER_RX = /\bpaper|estudio|meta-?an[aá]lisis|revisi[oó]n sistem|evidencia|y col\.|et al|schoenfeld|vigotsky|r[øo]nnestad|plotkin|carroll|helms|nuckols|pareja-?blanco|israetel/i
+
+/**
+ * EVIDENCIA → APLICACIÓN: cada placa técnica responde «¿cómo aplico esto hoy en la barra?». El
+ * hallazgo va con su variable real y se traduce de inmediato a una regla de sala con número.
+ */
+export const EVIDENCE_RULE = `EVIDENCIA → APLICACIÓN (obligatorio en cada placa técnica o basada en papers; manda sobre la tendencia a explicar en abstracto):
+1) HALLAZGO: el resultado central del paper o del mecanismo en 1 oración, con la variable real que cambia (tensión mecánica, RIR, velocidad de la barra, volumen semanal, fatiga periférica) y en qué dirección. Sin inflar su alcance.
+2) REGLA DE SALA inmediata: imperativo con voseo y con número, aplicable en la próxima sesión. Traducciones tipo: tensión mecánica → «trabajá el rango completo (o con énfasis en la posición estirada); no lo recortes para cargar más»; sobrecarga progresiva → «anotá carga, reps y RIR de cada serie»; recuperación entre series → «pausá 2-3 min en los básicos»; volumen → «10-20 series efectivas por músculo por semana».
+3) "datos_clave": 2 a 4 cajas con los números operativos de esa placa (RIR, RPE, pausa, % 1RM, series efectivas, reps).
+PROHIBIDO: una placa técnica que termine sin regla aplicable, jerga sin traducir, y números que no sean conservadores y aceptados.`
+
 const GOAL_RULE: Record<ResolvedGoal, string> = {
   sales:
     'OBJETIVO EDITORIAL: VENTA / SERVICIOS. plan.objetivo = "venta". Pitch directo del servicio, NO un carrusel educativo: propuesta de valor + filtro de alumno ideal (sentencia) → diagnóstico improvisación vs. High Performance System (ab) → entregables y pilares (pipeline) → criterios de admisión, para quién SÍ y para quién NO (checklist) → cierre con CTA a DM con palabra clave para aplicar (guardado). Esta secuencia manda por sobre las reglas de portada, métricas y guardado del bloque de TONO: el tono sólo cambia la voz, no la estructura del pitch.',
@@ -452,7 +481,9 @@ export function buildUserPrompt(topic: string, mode: GenMode, discipline: Discip
   // Mindset, 1 placa o repetición: sustancia obligatoria (titular + remate + bajada).
   const substance = resolved === 'mindset' || mode === 'single' ? `${SUBSTANCE_RULE}\n\n` : ''
   const pillar = editorial?.pillar && !editorial.quote ? `${PILLAR_RULE[editorial.pillar]}\n\n` : ''
-  return `${head}\n\n${expanded ? `PREMISA EXPANDIDA (el input es breve): ${expanded}\n\n` : ''}${goal}${pillar}${benefits ? `${benefits}\n\n` : ''}${substance}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
+  // Ciencia / papers: cada placa técnica baja el hallazgo a una regla de sala con números en cajas.
+  const evidence = !editorial?.quote && (resolved === 'science' || PAPER_RX.test(text)) ? `${EVIDENCE_RULE}\n\n` : ''
+  return `${head}\n\n${expanded ? `PREMISA EXPANDIDA (el input es breve): ${expanded}\n\n` : ''}${goal}${pillar}${evidence}${benefits ? `${benefits}\n\n` : ''}${substance}${editorial ? 'Si el formato termina siendo de menos placas que la secuencia tipo, quedate con las plantillas más fuertes de esa secuencia, en el mismo orden narrativo.\n\n' : ''}${focus ? `${focus}\n\n` : ''}${MODE_RULE[mode]}`
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,6 +1058,11 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
     citeSub: str(s.description),
   }
   const headline = `${headlineA} ${headlineB}`.replace(/\*/g, '').trim()
+  // Cajas de datos: sólo valores operativos cortos y con número (nada de frases sueltas).
+  patch.dataChips = list(s.datos_clave ?? s.dataChips ?? s.data_chips)
+    .map((c) => upper(c).replace(/^[«"“\s]+|[»"”\s]+$/gu, ''))
+    .filter((c) => c.length <= 24 && /\d/.test(c))
+    .slice(0, 4)
 
   // 01 · Métrica
   const m = obj(s.metrica ?? s.metric)
@@ -1205,7 +1241,8 @@ export function slideToPatch(raw: unknown, ctx: SlideContext = {}): Partial<Canv
   const quoteSource = first(ci.source, ci.fuente)
   if (quoteText && quoteAuthor) {
     const emph = first(ci.enfasis, ci.emphasis, ci.remate).replace(/^[«"“\s]+|[»"”\s.]+$/gu, '')
-    Object.assign(patch, { quoteText, quoteAuthor, quoteRole: first(ci.role, ci.rol), quoteSource, quoteEmphasis: emph && quoteText.toLowerCase().includes(emph.toLowerCase()) ? emph : '' })
+    const rule = upper(first(ci.regla, ci.rule, ci.regla_coach)).replace(/^[«"“\s]+|[»"”\s]+$/gu, '')
+    Object.assign(patch, { quoteText, quoteAuthor, quoteRole: first(ci.role, ci.rol), quoteSource, quoteEmphasis: emph && quoteText.toLowerCase().includes(emph.toLowerCase()) ? emph : '', quoteRule: rule.split(/\s+/).length <= 14 ? rule : '' })
   }
   // Sin una cita pedida, una frase sin fuente concreta no se acepta (defensa contra apócrifas). Con la
   // cita pedida, la plantilla se respeta: el panel avisa que falta verificar la fuente.
