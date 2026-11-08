@@ -2041,7 +2041,24 @@ function download(name, content, mime){
   const b = new Blob([content], {type: mime || 'text/plain;charset=utf-8'});
   const u = URL.createObjectURL(b), a = document.createElement('a');
   a.href = u; a.download = name; document.body.appendChild(a); a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(u); a.remove(); }, 400);
+  /* el index.html autónomo pesa varios MB: la URL temporal se libera con margen para que el navegador termine de escribirlo */
+  setTimeout(()=>{ URL.revokeObjectURL(u); a.remove(); }, 30000);
+}
+/* copia al portapapeles con respaldo: Clipboard API si existe y, si el navegador la bloquea (http, iframe, Safari), textarea temporal + execCommand. Devuelve una promesa booleana. */
+function copiarTexto(texto){
+  const t = String(texto == null ? '' : texto);
+  const respaldo = () => {
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = t; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0';
+      document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, t.length);
+      const ok = document.execCommand('copy'); ta.remove(); return !!ok;
+    }catch(e){ return false; }
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    return navigator.clipboard.writeText(t).then(() => true, () => respaldo());
+  }
+  return Promise.resolve(respaldo());
 }
 function slug(s){ return norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'alumno'; }
 
@@ -2396,6 +2413,8 @@ function jpMedirCupo(){
 let saveT;
 function save(){
   clearTimeout(saveT);
+  /* panel de exportación abierto: las métricas siguen al plan en tiempo real */
+  try{ if(S.ui && S.ui.view === 'exportar' && typeof pintarExportStats === 'function'){ const a0 = getAth(($('#expAth') || {}).value); if(a0) pintarExportStats(a0, true); } }catch(eX){}
   /* Debounce de 1100ms (antes 900ms -- ajustado en la auditoría de
      performance de sesiones largas): mientras el coach tipea en el Builder,
      save() se llama en cada tecla, pero la escritura real a localStorage
@@ -2763,7 +2782,15 @@ window.JP_IA = {
   sala: 'REGLA ANTI-COLISIÓN EN SALA: PROHIBIDO emparejar en un biset, triset o finisher dos máquinas guiadas (selectorizadas o de discos) ni dos ejercicios de polea o cable, aunque sean de la misma torre: ocupan estaciones fijas, bloquean el espacio y el alumno pierde la máquina si se ocupa. ' +
     'Tampoco encadenes en bloques CONSECUTIVOS dos máquinas guiadas distintas ni dos estaciones de cable que obliguen a cruzar la sala: intercalá un bloque de mancuernas, barra, kettlebell o peso corporal entre ellas. ' +
     'Parejas válidas: mancuerna+mancuerna (un solo banco), mancuerna+máquina, barra+máquina, mancuerna o kettlebell + estructura (barra fija, paralelas, anillas), peso corporal + carga externa, colchoneta. ',
-  volumen: 'VOLUMEN ÚTIL POR BLOQUE: cada bloque de trabajo (fuerza, hipertrofia, accesorio, biset o triset) prescribe entre 3 y 8 series efectivas por ejercicio (en bisets y trisets, entre 3 y 8 rondas): con menos de 3 no alcanza para estimular y más de 8 en un mismo bloque suma fatiga sin estímulo útil (el volumen semanal por grupo se reparte entre bloques y días). Warm-up y core quedan fuera de esta cuenta. '
+  volumen: 'VOLUMEN ÚTIL POR BLOQUE: cada bloque de trabajo (fuerza, hipertrofia, accesorio, biset o triset) prescribe entre 3 y 8 series efectivas por ejercicio (en bisets y trisets, entre 3 y 8 rondas): con menos de 3 no alcanza para estimular y más de 8 en un mismo bloque suma fatiga sin estímulo útil (el volumen semanal por grupo se reparte entre bloques y días). Warm-up y core quedan fuera de esta cuenta. ',
+  cf: 'FORMATOS DE CROSSFIT Y ENTRENAMIENTO FUNCIONAL (respetalos literalmente, sin inventar tiempos ni cargas): ' +
+    'EMOM N min (una consigna por minuto; "Min 1 / Min 2" para estaciones rotativas); E2MOM y E3MOM (cada 2 o 3 minutos: "E2MOM 16 min" = 8 rondas de 2:00; también "Every 2:30 x 6"); ' +
+    'AMRAP N min (rondas + repeticiones); FOR TIME con time cap ("For Time — Time Cap: 15:00", "5 Rounds for Time", "21-15-9"); ' +
+    'CHIPPER (lista larga, cada movimiento una sola vez y en orden) y LADDER (escalera ascendente o descendente, indicando cuánto sube o baja por ronda); ' +
+    'DESCANSOS PLANIFICADOS: "Rest 1:1" o "Rest 1:2" es una relación trabajo:descanso (1x o 2x el tiempo trabajado) y "Rest 2:00" es un tiempo fijo; ' +
+    'PARTNERS: "I go, you go" (uno trabaja mientras el otro descansa, alternando por ronda), sincronizado (los dos a la vez) o reparto libre, aclarando quién hace qué y cuándo se cambia; ' +
+    'HÍBRIDOS TIPO HYROX: estaciones de ergómetro y fuerza (SkiErg, Sled Push y Pull, Burpee Broad Jump, RowErg, Farmers Carry, Sandbag Lunges, Wall Balls) alternadas con carrera, con distancias, cargas Rx/Scaled y orden fijo. ' +
+    'Cuando hay reloj, el formato y el cap van en la PRIMERA línea del bloque: así la app del alumno arma el cronómetro sola. '
 };
 function jpIA(k){ return (window.JP_IA && window.JP_IA[k]) || ''; }
 function newDay(i){
@@ -2848,13 +2875,39 @@ function blockFreeText(b){
   if(b.tipo === 'hyrox') return (b.movements||[]);
   return [];
 }
+/* una Pizarra de Sports sin ningún ejercicio, dosis ni minutos (el coach la agregó y no la llenó) no viaja al alumno */
+function jpBloqueExportable(b){
+  if(!b) return false;
+  const esPizarraSports = b.tipo === 'list' && b.sportsPizarra && !b.cfPizarra && !b.cfTipo && !b.cfFmt && b.cfModo !== 'board';
+  if(!esPizarraSports) return true;
+  const tieneTexto = l => String(l == null ? '' : l).trim() !== '';
+  return (b.items || []).some(tieneTexto) || String(b.cardioMinutes || '').trim() !== '' ||
+    [b.weekItems, b.exSemana].some(w => Array.isArray(w) && w.some(x => Array.isArray(x) ? x.some(tieneTexto) : tieneTexto(x)));
+}
+/* ejercicios REALES de un bloque: en una Pizarra de Sports las líneas de dosis ("4x8-10 | RIR 1"), los descansos y las notas no son ejercicios
+   (antes cada línea contaba como uno y el total salía inflado) */
+function contarEjerciciosBloque(b){
+  if(b.tipo === 'list'){
+    const lineas = (b.items || []).map(l => String(l == null ? '' : l).trim()).filter(Boolean);
+    if(!lineas.length) return 0;
+    const esPizarraSports = b.sportsPizarra && !b.cfPizarra && !b.cfTipo && !b.cfFmt && b.cfModo !== 'board';
+    if(!esPizarraSports) return lineas.length;
+    try{
+      const nombres = {};
+      lineas.forEach(l => {
+        if(/^(?:rest|descanso)\b/i.test(l) || lineaSoloDosisSB(l) || esLineaDirectivaSports(l) || esEstructuraONotaSB(l) || esLineaProsaEj(l)) return;
+        const n = nombreEjercicioSB(l);
+        if(n) nombres[normSports(n)] = 1;
+      });
+      return Object.keys(nombres).length || 1;      /* plantillas del Banco: el ejercicio es el título del bloque y las líneas son solo dosis */
+    }catch(e){ return lineas.length; }
+  }
+  if(b.tipo === 'hyrox') return (b.movements || []).length;
+  return blockExIds(b).length;
+}
 function totalEjercicios(p){
   if(!p) return 0;
-  return p.dias.reduce((s,d) => s + d.bloques.reduce((x,b) => {
-    if(b.tipo === 'list') return x + (b.items||[]).length;
-    if(b.tipo === 'hyrox') return x + (b.movements||[]).length;
-    return x + blockExIds(b).length;
-  }, 0), 0);
+  return p.dias.reduce((s,d) => s + d.bloques.reduce((x,b) => x + (jpBloqueExportable(b) ? contarEjerciciosBloque(b) : 0), 0), 0);
 }
 /* Nombre canónico usado en el índice de videos del script base y en TODO
    nombre de ejercicio mostrado al alumno (bloques, bisets, trisets, finisher,
@@ -4485,17 +4538,18 @@ function cfScoreOptions(sel){
    a mano. "Every" se trata como EMOM: es la forma en que se prescribe casi
    cualquier EMOM ("Every 1:00 x 12 rounds"). */
 const CF_AUTO_FORMATO = [
-  { rx: /\b(emom|every)\b/i, fmt: 'emom',    score: 'reps'   },
-  { rx: /\bamrap\b/i,        fmt: 'amrap',   score: 'rondas' },
-  { rx: /\bfor\s*time\b/i,   fmt: 'fortime', score: 'tiempo' },
-  { rx: /\btabata\b/i,       fmt: 'tabata',  score: 'reps'   }
+  { rx: /\bdeath\s*by\b/i,                               fmt: 'emom',    score: 'reps'   },
+  { rx: /\b(?:emom|e\d+\s*m?om|every)\b/i,               fmt: 'emom',    score: 'reps'   },
+  { rx: /\bamrap\b/i,                                    fmt: 'amrap',   score: 'rondas' },
+  { rx: /\b(?:chipper|ladders?|escalera)\b/i,            fmt: 'chipper', score: 'tiempo' },
+  { rx: /\b(?:for\s*time|rft|rounds?\s*for\s*time)\b/i,  fmt: 'fortime', score: 'tiempo' },
+  { rx: /\b(?:tabata|intervals?|intervalos?)\b/i,        fmt: 'tabata',  score: 'reps'   }
 ];
 function detectarFormatoCF(texto){
   const primera = String(texto || '').split('\n').map(l => l.trim()).find(l => l.length) || '';
-  for(let i = 0; i < CF_AUTO_FORMATO.length; i++){
-    if(CF_AUTO_FORMATO[i].rx.test(primera)) return CF_AUTO_FORMATO[i];
-  }
-  return null;
+  let mejor = null, pos = Infinity;
+  CF_AUTO_FORMATO.forEach(f => { const m = f.rx.exec(primera); if(m && m.index < pos){ pos = m.index; mejor = f; } });
+  return mejor;
 }
 /* refleja b.cfFmt/b.cfScore en los <select> ya pintados sin re-renderizar
    el bloque entero -- un renderBuilder() a mitad de tipeo le robaría el
@@ -4547,6 +4601,13 @@ function cfFmtToolbar(bId){
     btns.map(b => '<button type="button" class="cf-fmt-btn" data-fmtins="' + b.k + '" data-b="' + bId + '">' + b.lb + '</button>').join('') +
     '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="emom" data-b="' + bId + '">⏱ + Estructura EMOM</button>' +
     '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="amrap" data-b="' + bId + '">⏱ + AMRAP</button>' +
+    '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="e2om" data-b="' + bId + '">⏱ + E2MOM</button>' +
+    '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="fortime" data-b="' + bId + '">⏱ + FOR TIME</button>' +
+    '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="chipper" data-b="' + bId + '">+ CHIPPER</button>' +
+    '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="ladder" data-b="' + bId + '">+ LADDER</button>' +
+    '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="partners" data-b="' + bId + '">+ PARTNERS</button>' +
+    '<button type="button" class="cf-fmt-btn cf-fmt-emom" data-fmtins="hybrid" data-b="' + bId + '">+ HYBRID</button>' +
+    '<button type="button" class="cf-fmt-btn" data-fmtins="rest11" data-b="' + bId + '">Rest 1:1</button>' +
     '<button type="button" class="cf-fmt-btn cf-fmt-tec" data-fmtins="biset" data-b="' + bId + '">+ BISET</button>' +
     '<button type="button" class="cf-fmt-btn cf-fmt-tec" data-fmtins="dropset" data-b="' + bId + '">+ DROPSET</button>' +
     '<button type="button" class="cf-fmt-btn cf-fmt-tec" data-fmtins="myoreps" data-b="' + bId + '">+ MYO-REPS</button>' +
@@ -4879,6 +4940,34 @@ function insertarFormatoCF(ta, kind){
     const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
     ph = '12';
     ins = nl + 'AMRAP ' + ph + ' min:\n';
+  } else if(kind === 'e2om'){
+    /* E2MOM / E3MOM: "E2MOM 16 min" = una estación cada 2:00 durante 16 minutos (8 rondas); el parser del alumno arma el cronómetro con ese intervalo */
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = '16';
+    ins = nl + 'E2MOM ' + ph + ' min (cada 2:00):\nIntervalo 1 -- 10 Movimiento A\nIntervalo 2 -- 12 Movimiento B\n';
+  } else if(kind === 'fortime'){
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = '15:00';
+    ins = nl + 'FOR TIME — Time Cap: ' + ph + '\n5 Rondas:\n10 Movimiento A\n10 Movimiento B\n10 Movimiento C\n';
+  } else if(kind === 'chipper'){
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = '20:00';
+    ins = nl + 'CHIPPER — Time Cap: ' + ph + '\n50 Movimiento A\n40 Movimiento B\n30 Movimiento C\n20 Movimiento D\n10 Movimiento E\n';
+  } else if(kind === 'ladder'){
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = '15:00';
+    ins = nl + 'LADDER ascendente — For Time (Time Cap: ' + ph + ')\nCada ronda suma 1 rep: 1-2-3-4-5…\nMovimiento A\nMovimiento B\n';
+  } else if(kind === 'partners'){
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = '12';
+    ins = nl + 'PARTNERS — I go, you go (AMRAP ' + ph + ' min):\nUno trabaja mientras el otro descansa; cambian cada ronda.\n10 Movimiento A\n10 Movimiento B\n';
+  } else if(kind === 'hybrid'){
+    const nl = (start > 0 && val[start - 1] !== '\n') ? '\n' : '';
+    ph = '1 km';
+    ins = nl + 'HYBRID tipo Hyrox — For Time:\n' + ph + ' Run\n1000 m SkiErg\n50 m Sled Push @ 102/78kg\n1 km Run\n1000 m Row\n';
+  } else if(kind === 'rest11'){
+    ph = '1:1';
+    ins = '\nRest ' + ph + ' (descanso = tiempo de trabajo)';
   } else if(kind === 'biset'){
     /* directiva -- estructura canónica A1./A2. con su propia dosis en la
        línea siguiente (mismo formato ya usado por coaches reales en
@@ -5299,7 +5388,7 @@ const AVISO_LETRAS = 'Bloques "A) / B) / C)": la fase se infirió del texto -- r
 const IMP_FASES_SOFT = [
   { rx:/warm|calent/i,                                        fase:'warmup' },
   { rx:/skill|strength|fuerza|hipertrofia|hypertrophy|pir[aá]mide|pyramid|weightlifting|halterofilia/i,  fase:'strength' },
-  { rx:/wod|met\s*-?\s*con|amrap|emom|for\s*time|chipper|tabata/i, fase:'metcon' },
+  { rx:/wod|met\s*-?\s*con|amrap|emom|e\d+\s*m?om|for\s*time|\brft\b|chipper|ladder|partners?|tabata/i, fase:'metcon' },
   { rx:/access|accesor|core|estabilidad|abdominal|cool\s*-?\s*down|enfriamiento|movilidad/i, fase:'accessory' },
   { rx:/hyrox|station/i,                                      fase:'cardio' },
   { rx:/endurance|turno|running/i,                            fase:'endurance' }
@@ -8195,7 +8284,8 @@ async function generarTipsPacingIA(bid, btn){
     '2) "pacing": ESTRATEGIA DE PACING dosificada según su categoría (ritmo por ronda/intervalo, dónde quebrar series, cuándo empujar; sumá target y time cap si aplica; 2-3 frases). ' +
     '3) "nota": NOTA TÉCNICA / AJUSTE PERSONALIZADO, recordatorios que salen de cruzar los movimientos del bloque con sus debilidades registradas: para cada movimiento que figure en "lo que cuesta" o "lo que se escala" una línea "[Movimiento] consigna técnica concreta o ajuste/escalado (ej. banda, reducir repeticiones, variante)"; ' +
     'si un movimiento figura en "lo que sale" mencionalo solo si hace falta cuidar la fatiga. Sin perfil cargado, dá una nota técnica general del bloque. Máximo 20 palabras por línea. ' +
-    'Respondé SOLO con JSON válido: {"foco":"...","pacing":"...","nota":"..."} (nota con \\n entre líneas).';
+    'El pacing se adapta al formato: EMOM/E2MOM = cuánto del intervalo se trabaja y cuánto queda de descanso; AMRAP = ritmo objetivo por ronda y dónde cortar series; For Time y Chipper = estación por estación con el cap en mente; Ladder = cuándo empieza a pesar la escalera; Partners = reglas de cambio; híbrido tipo Hyrox = ritmo sostenible de carrera y dosificación en las estaciones. ' +
+    jpIA('cf') + 'Respondé SOLO con JSON válido: {"foco":"...","pacing":"...","nota":"..."} (nota con \\n entre líneas).';
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
     'Generá objetivo y coaching tips en JSON para este bloque.\nMovimientos incluidos:\n' + lineas;
 
@@ -10719,6 +10809,9 @@ window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); 
   footer.site-footer { max-width: 1140px; margin: 2rem auto 0; padding: 1.5rem 1.25rem 0; text-align: center; border-top: 1px solid var(--border); }
   footer.site-footer p { font-size: 0.72rem; color: var(--text-muted); margin: 2px 0; }
   footer.site-footer b { color: var(--text-secondary); }
+  footer.site-footer .jp-firma{ font-size:.78rem; line-height:1.5; margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,85,0,.35); color:#C9CFD8; }
+  footer.site-footer .jp-firma .jp-firma-n{ color:#FF5500; letter-spacing:.02em; }
+  footer.site-footer .jp-firma .jp-firma-r{ color:#00E5FF; }
   @media (max-width: 600px) {
     .hero h1 { font-size: 1.75rem; }
     .day-tab { min-width: 64px; padding: 0.65rem 0.7rem; }
@@ -11383,6 +11476,7 @@ window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); 
 <footer class="site-footer">
   <p>{{FOOTER_1}}</p>
   <p>{{FOOTER_2}}</p>
+  <p class="jp-firma">{{FIRMA_COACH}}</p>
   <p class="jp-build">build {{BUILD}}</p>
 </footer>
 <div id="guideModal" class="modal-overlay">
@@ -13120,25 +13214,71 @@ const WakeLockManager = (function(){
 /* Pantalla siempre encendida mientras corre CUALQUIER cronómetro (descanso entre series, Custom WOD Timer, timers rápidos). Un único candado,
    con un "motivo" por cronómetro: se libera solo cuando ya no queda ninguno activo y se vuelve a pedir al regresar a la app (el sistema lo suelta
    cada vez que la pantalla se bloquea o se cambia de pestaña). */
+/* Reloj sin deriva para los cronómetros: cada pasada se agenda al PRÓXIMO borde de segundo del instante objetivo (refFn devuelve el epoch ms de la meta o del inicio),
+   no "1000 ms desde ahora", así no se acumula atraso aunque el hilo se demore. Un vigilante revive la cadena si el navegador la congeló (pantalla bloqueada, ahorro
+   de batería) y, ante cualquier error en la pasada, el reloj sigue vivo. El estado real SIEMPRE se calcula contra el reloj de pared, nunca contando ticks. */
+function jpTicker(fn, refFn){
+  var t = null, vig = null, activo = false, ultimo = 0;
+  function programar(){
+    clearTimeout(t); t = null;
+    if(!activo) return;
+    var ref = 0; try{ ref = refFn ? Number(refFn()) : 0; }catch(e0){ ref = 0; }
+    var delay = 1000;
+    if(ref > 0 && isFinite(ref)){ delay = (((ref - Date.now()) % 1000) + 1000) % 1000 + 12; }
+    t = setTimeout(pasada, delay);
+  }
+  function pasada(){
+    ultimo = Date.now();
+    try{ fn(); }catch(e1){ try{ console.warn('cronómetro', e1); }catch(e2){} }
+    programar();
+  }
+  return {
+    start: function(){
+      activo = true; ultimo = Date.now(); programar();
+      clearInterval(vig);
+      vig = setInterval(function(){ if(activo && Date.now() - ultimo > 2300) pasada(); }, 1000);
+    },
+    stop: function(){ activo = false; clearTimeout(t); clearInterval(vig); t = null; vig = null; },
+    activo: function(){ return activo; }
+  };
+}
+window.jpTicker = jpTicker;
 const jpWake = (function(){
-  var motivos = {}, sentinel = null, pidiendo = false;
+  var motivos = {}, sentinel = null, pidiendo = false, reintento = null, avisado = false;
   function hay(){ for(var k in motivos){ if(motivos[k]) return true; } return false; }
+  function soporta(){ return 'wakeLock' in navigator; }
   function pedir(){
-    if(sentinel || pidiendo || !hay() || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    if(sentinel || pidiendo || !hay() || !soporta() || document.visibilityState !== 'visible') return;
     pidiendo = true;
     try{
       navigator.wakeLock.request('screen').then(function(s){
         pidiendo = false;
         if(!hay()){ try{ s.release().catch(function(){}); }catch(e0){} return; }
         sentinel = s;
-        s.addEventListener('release', function(){ if(sentinel === s) sentinel = null; });
+        s.addEventListener('release', function(){ if(sentinel === s){ sentinel = null; if(hay()) setTimeout(pedir, 300); } });
       }).catch(function(){ pidiendo = false; });
     }catch(e1){ pidiendo = false; }
   }
   function soltar(){ if(sentinel){ var s = sentinel; sentinel = null; try{ s.release().catch(function(){}); }catch(e2){} } }
+  /* mientras haya un cronómetro activo y no haya candado, se vuelve a pedir cada 4 s (el sistema lo puede soltar por ahorro de batería o por un permiso que tardó) */
+  function vigilar(){
+    if(reintento) return;
+    reintento = setInterval(function(){
+      if(!hay()){ clearInterval(reintento); reintento = null; return; }
+      if(!sentinel) pedir();
+    }, 4000);
+  }
+  /* sin Wake Lock (navegadores viejos) el teléfono puede bloquearse solo: se avisa una vez para que el alumno lo evite */
+  function avisarSinSoporte(){
+    if(avisado || soporta()) return;
+    avisado = true;
+    try{ if(window.CoachAviso && window.CoachAviso.mostrar) window.CoachAviso.mostrar('fatiga', '💡', 'Mantené la pantalla encendida', 'Tu navegador no puede evitar que el teléfono se bloquee solo: poné el bloqueo automático en "nunca" mientras entrenás para que el reloj no se detenga.', 9000); }catch(e3){}
+  }
   document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible') pedir(); });
+  window.addEventListener('pageshow', pedir);
+  window.addEventListener('focus', pedir);
   return {
-    on: function(m){ motivos[m] = 1; pedir(); },
+    on: function(m){ motivos[m] = 1; pedir(); vigilar(); avisarSinSoporte(); },
     off: function(m){ delete motivos[m]; if(!hay()) soltar(); },
     activo: function(){ return !!sentinel; }
   };
@@ -15627,7 +15767,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     restActive = true; restJustFinished = false;
     hud.classList.toggle('cf-mirrored', !!oculto);
     hud.classList.add('on'); restRun = true;
-    clearInterval(restInt); restInt = setInterval(tick, 1000);
+    if(restInt){ restInt.stop(); } restInt = jpTicker(tick, function(){ return restTargetEnd; }); restInt.start();
     try{ window.jpWake.on('descanso'); }catch(eW){}
     pintarRest();
     mostrarAjusteKgRest();
@@ -15636,7 +15776,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     _restAv = -1;
     try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
   }
-  function pararRest(){ restRun = false; clearInterval(restInt); restInt = null; try{ window.jpWake.off('descanso'); }catch(eW){} pintarRest(); guardarRestTimer(); try{ jpBgTimer.cancelar(); }catch(e){} }
+  function pararRest(){ restRun = false; if(restInt){ restInt.stop(); } restInt = null; try{ window.jpWake.off('descanso'); }catch(eW){} pintarRest(); guardarRestTimer(); try{ jpBgTimer.cancelar(); }catch(e){} }
   /* pausa/reanuda el descanso activo sin cerrarlo -- misma lógica que ya
      tenía el toggle ▶/⏸ de la barra flotante, ahora nombrada aparte para
      que el widget in-situ de CrossFit (jpCfRestOnTick) pueda dispararla
@@ -15645,11 +15785,11 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     restRun = !restRun;
     if(restRun){
       restTargetEnd = Date.now() + restLeft * 1000;
-      if(!restInt) restInt = setInterval(tick, 1000);
+      if(!restInt){ restInt = jpTicker(tick, function(){ return restTargetEnd; }); restInt.start(); }
       try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
       try{ window.jpWake.on('descanso'); }catch(eW){}
     }else{
-      clearInterval(restInt); restInt = null;
+      if(restInt){ restInt.stop(); } restInt = null;
       try{ jpBgTimer.cancelar(); }catch(e){}
       try{ window.jpWake.off('descanso'); }catch(eW){}
     }
@@ -15737,7 +15877,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       restTotal = rt.total || 90;
       hudLb.textContent = rt.label || 'Descanso';
       hud.classList.add('on'); restRun = true; restActive = true;
-      clearInterval(restInt); restInt = setInterval(tick, 1000);
+      if(restInt){ restInt.stop(); } restInt = jpTicker(tick, function(){ return restTargetEnd; }); restInt.start();
       try{ window.jpWake.on('descanso'); }catch(eW){}
       tick();
       if(restRun) try{ jpBgTimer.programar(restTargetEnd); }catch(e){}
@@ -15842,6 +15982,10 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     { re:/chipper/i, lb:'CHIPPER', modo:'up' },
     { re:/for\\s*time/i, lb:'FOR TIME', modo:'up' },
     { re:/tabata/i, lb:'TABATA', modo:'down' },
+    { re:/\\be(\\d+)\\s*m?om\\b/i, lb:'EMOM', modo:'down' },
+    { re:/every\\s*\\d+(?:[.,]\\d+)?\\s*(?:min|minutos?|')/i, lb:'EVERY X:00', modo:'down' },
+    { re:/death\\s*by/i, lb:'DEATH BY', modo:'down' },
+    { re:/\\bladders?\\b|escalera\\s*(?:ascendente|descendente)/i, lb:'LADDER', modo:'up' },
     { re:/interval/i, lb:'INTERVALOS', modo:'down' }
   ];
   function primerFormato(txt){
@@ -15916,9 +16060,9 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     }
     var modo = '';
     if(kFmt === 'amrap' || /AMRAP/.test(lb)) modo = 'amrap';
-    else if(kFmt === 'emom' || /EMOM|EVERY/.test(lb)) modo = 'emom';
+    else if(kFmt === 'emom' || /EMOM|EVERY|DEATH/.test(lb)) modo = 'emom';
     else if(kFmt === 'tabata' || /TABATA/.test(lb)) modo = 'tabata';
-    else if(kFmt === 'fortime' || kFmt === 'chipper' || /FOR TIME|CHIPPER/.test(lb)) modo = 'fortime';
+    else if(kFmt === 'fortime' || kFmt === 'chipper' || /FOR TIME|CHIPPER|LADDER/.test(lb)) modo = 'fortime';
     else if(/INTERVALOS/.test(lb)) modo = 'intervalos';
     if(!modo) return null;
     var c = { modo: modo };
@@ -15930,19 +16074,26 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var mE = txt.match(/every\\s*(\\d+)\\s*:\\s*(\\d+)/i);
       var inter = mE ? parseInt(mE[1], 10) * 60 + parseInt(mE[2], 10) : 0;
       if(!inter){ var mE2 = txt.match(/every\\s*(\\d+(?:\\.\\d+)?)\\s*(?:min|minutos|')/i); if(mE2) inter = Math.round(parseFloat(mE2[1]) * 60); }
+      var mEn = txt.match(/\\be(\\d+)\\s*m?om\\b/i);          /* E2OM / E2MOM / E3MOM: el número es el intervalo en minutos */
+      if(!inter && mEn) inter = parseInt(mEn[1], 10) * 60;
       if(!inter && param) inter = seg(param);
       /* "EMOM 16" con 16 cargado como parametro: es la duracion total, no un intervalo de 16 minutos */
       if(inter > 600 && /emom/i.test(txt)) inter = 60;
       if(!(inter >= 5)) inter = 60;
       var mR = txt.match(/\\bx\\s*(\\d+)/i) || txt.match(/(\\d+)\\s*(?:sets?|rounds?|rondas?)\\b/i);
-      var mTot = txt.match(/emom\\s*(?:de\\s*)?(\\d+)/i);
+      var mTot = txt.match(/emom\\s*(?:de\\s*)?(\\d+)/i), mTotE = mEn ? txt.match(/\\be\\d+\\s*m?om\\s*(?:de\\s*)?(\\d+)/i) : null;
       c.intervalo = inter;
       var hayEvery = /\\bevery\\b/i.test(txt);
       c.rondas = (!hayEvery && mTot) ? parseInt(mTot[1], 10) : mR ? parseInt(mR[1], 10)
         : Math.max(1, Math.round(((mTot ? parseInt(mTot[1], 10) : (minutosDe(block, lineas) || 12)) * 60) / inter));
+      /* "E2MOM 16 min" = 16 minutos en total, no 16 rondas: 8 rondas de 2:00 */
+      if(mEn && mTotE && !/\\bx\\s*\\d/i.test(txt)) c.rondas = Math.max(1, Math.round(parseInt(mTotE[1], 10) * 60 / inter));
+      /* DEATH BY: cada minuto suma una repetición hasta fallar; el reloj queda en intervalos de 1:00 (20 como tope, el alumno corta cuando falla) */
+      if(/death\\s*by/i.test(txt)){ c.intervalo = 60; c.rondas = 20; }
     } else if(modo === 'fortime'){
-      var mC = txt.match(/cap\\s*(?:de\\s*)?(\\d+)(?:\\s*:\\s*(\\d+))?/i);
-      c.cap = mC ? parseInt(mC[1], 10) : (param ? Math.round(seg(param) / 60) : 0);
+      /* "Time Cap: 15:00", "cap 12", "cap de 20" y "Time cap - 9:30" (el ':' o el guion después de "cap" es el formato del botón Cap del Builder) */
+      var mC = txt.match(/cap\\s*(?:de\\s*)?[:\\-\\u2013]?\\s*(\\d+)(?:\\s*:\\s*(\\d+))?/i);
+      c.cap = mC ? Math.round((parseInt(mC[1], 10) + (mC[2] ? parseInt(mC[2], 10) / 60 : 0)) * 10) / 10 : (param ? Math.round(seg(param) / 60) : 0);
     } else {
       var mW = txt.match(/(\\d+)\\s*s?\\s*(?:on|work|trabajo)\\b/i), mRs = txt.match(/(\\d+)\\s*s?\\s*(?:off|rest|descanso)\\b/i);
       var mRd = txt.match(/(\\d+)\\s*(?:rounds?|rondas?|sets?)\\b/i);
@@ -15973,11 +16124,12 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var txt = lineas.join(' ') + ' ' + (block.title || ''), fmt = '', cap = '';
     function mm(sg){ sg = Math.round(sg); return Math.floor(sg / 60) + ':' + ('0' + (sg % 60)).slice(-2); }
     if(cfg.modo === 'amrap') fmt = 'AMRAP ' + cfg.total + ' MIN';
-    else if(cfg.modo === 'emom') fmt = cfg.intervalo === 60 ? 'EMOM ' + Math.round(cfg.rondas) + ' MIN' : 'EVERY ' + mm(cfg.intervalo) + ' × ' + cfg.rondas;
+    else if(cfg.modo === 'emom') fmt = /death\\s*by/i.test(txt) ? 'DEATH BY · CADA 1:00' : (cfg.intervalo === 60 ? 'EMOM ' + Math.round(cfg.rondas) + ' MIN' : 'EVERY ' + mm(cfg.intervalo) + ' × ' + cfg.rondas);
     else if(cfg.modo === 'tabata') fmt = 'TABATA ' + cfg.rondas + ' RONDAS';
     else if(cfg.modo === 'fortime'){
       var mR = txt.match(/(\\d+)\\s*(?:rounds?|rondas?)\\b/i), esq = txt.match(/\\b(\\d+(?:\\s*-\\s*\\d+){1,})\\b/);
       if(/chipper/i.test(txt)) fmt = 'CHIPPER';
+      else if(/\\bladders?\\b/i.test(txt)) fmt = 'LADDER · FOR TIME';
       else if(mR) fmt = mR[1] + ' RONDAS FOR TIME';
       else if(esq) fmt = 'FOR TIME · ' + esq[1].replace(/\\s+/g, '');
       else fmt = 'FOR TIME';
@@ -15990,6 +16142,16 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var lbN = { development: 'Development', advanced: 'Advanced', rx: 'RX', elite: 'Elite' }[nvA] || 'Rx';
     var cargasN = rx.length ? rx : ((esEsc && sc.length) ? sc : []);
     var chips = cargasN.length ? '<span class="jp-cf-chip"><b>' + lbN + '</b> ' + escSB(cargasN.join(' · ')) + '</span>' : '';
+    /* etiquetas de dinámica: partners, relación de descanso e híbrido tipo Hyrox (se leen del propio texto del bloque, no se inventan) */
+    var txtT = lineas.join(' ') + ' ' + (block.title || '') + ' ' + (block.subtitle || ''), tags = [];
+    if(/i\\s*go\\s*,?\\s*you\\s*go|\\bigyg\\b|yo\\s*voy\\s*,?\\s*vos\\s*vas/i.test(txtT)) tags.push('I GO · YOU GO');
+    else if(/sincroniz|synchro/i.test(txtT)) tags.push('PARTNERS · SINCRONIZADO');
+    else if(/\\bpartners?\\b|en\\s*parejas|\\bpairs?\\b/i.test(txtT)) tags.push('PARTNERS');
+    var rrT = /rest\\s*(\\d)\\s*:\\s*(\\d)(?!\\d)/i.exec(txtT);
+    if(rrT) tags.push('DESCANSO ' + rrT[1] + ':' + rrT[2] + ' · TRABAJO:DESCANSO');
+    var estT = ['hyrox', 'skierg', 'ski erg', 'sled', 'farmer', 'sandbag', 'wall ball', 'rowerg', 'burpee broad'].filter(function(k){ return txtT.toLowerCase().indexOf(k) >= 0; }).length;
+    if(estT >= 2) tags.push('HYBRID · ESTACIONES');
+    chips += tags.map(function(t){ return '<span class="jp-cf-chip jp-cf-dyn">' + escSB(t) + '</span>'; }).join('');
     return '<div class="jp-cf-fmtbadge">[ ' + escSB(fmt) + ' ]</div>' +
       ((cap || pac) ? '<div class="jp-cf-capline">' + (cap ? '<span class="cap">' + cap + '</span>' : '') + (pac ? '<span class="pac">🎯 PACING: ' + escSB(pac) + '</span>' : '') + '</div>' : '') +
       (chips ? '<div class="jp-cf-chips">' + chips + '</div>' : '');
@@ -24617,6 +24779,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
       continue;
     }
   }
+  /* instante de referencia del reloj: el fin de la fase (cuenta regresiva) o el inicio (cuenta arriba) */
+  function refTick(){ return fase === 'up' ? transcurridoStart : faseTargetEnd; }
   function arrancar(){
     desbloquearAudio();      /* dentro del tap: en iOS/Chrome movil el contexto solo arranca asi */
     if(corriendo){ pausar(); return; }
@@ -24636,8 +24800,8 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
        (iOS/Chrome móvil) y se pide, una sola vez, el permiso de notificaciones */
     jpBox.inicio(); vibrar([30]);
     try{ jpBgTimer.pedirPermiso(); }catch(e){}
-    clearInterval(tick);
-    tick = setInterval(paso, 1000);
+    if(tick) tick.stop();
+    tick = jpTicker(paso, refTick); tick.start();
     despierto(true);
     pintar();
     /* timestampFin absoluto del entrenamiento completo -> aviso en segundo plano */
@@ -24656,7 +24820,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
     if(fase !== 'up') restante = Math.max(0, Math.round((faseTargetEnd - now) / 1000));
     if(fase !== 'prep') transcurrido = transcurridoBase + Math.round((now - transcurridoStart) / 1000);
     corriendo = false;
-    clearInterval(tick); tick = null;
+    if(tick){ tick.stop(); } tick = null;
     despierto(false);
     try{ jpBgTimer.cancelar(); }catch(e){}
     document.getElementById('cwtGo').textContent = '▶ Continuar';
@@ -24672,7 +24836,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
      tiempo viejo. */
   function sincronizarWodActivo(){ if(corriendo) paso(); }
   function reset(){
-    corriendo = false; clearInterval(tick); tick = null;
+    corriendo = false; if(tick){ tick.stop(); } tick = null;
     despierto(false);
     try{ jpBgTimer.cancelar(); }catch(e){}
     estadoInicial();
@@ -24682,7 +24846,7 @@ body.cf-disc .week-pill.wpc-cf::after{content:none !important}
   }
   function finalizar(motivo, silencioso){
     try{ document.dispatchEvent(new CustomEvent('jp-wod-fin', { detail: { modo: modo, seg: transcurrido, motivo: String(motivo || '') } })); }catch(eFin){}
-    corriendo = false; clearInterval(tick); tick = null;
+    corriendo = false; if(tick){ tick.stop(); } tick = null;
     despierto(false);
     /* chicharra larga de fin de round. Si el fin ocurrió hace rato (el
        celular estuvo bloqueado), ya avisó la notificación: no se hace sonar
@@ -26320,8 +26484,8 @@ body.ses-paused .set-tracker,body.ses-paused .jp-tools,body.ses-paused .rir-bar{
       if(board && !board.dataset.tipo){
         var fmtEl = board.querySelector('.wb-fmt');
         var t = (fmtEl ? fmtEl.textContent : '') + ' ' + board.textContent;
-        var k = /amrap/i.test(t) ? 'amrap' : /emom|every/i.test(t) ? 'emom'
-              : /tabata/i.test(t) ? 'tabata' : /for time|rft|chipper|rounds? for time/i.test(t) ? 'fortime' : '';
+        var k = /amrap/i.test(t) ? 'amrap' : /emom|e\\d+m?om|every/i.test(t) ? 'emom'
+              : /tabata/i.test(t) ? 'tabata' : /for time|rft|chipper|ladder|rounds? for time/i.test(t) ? 'fortime' : '';
         if(k){
           board.dataset.tipo = k;
           board.classList.add('b-' + k);
@@ -26969,9 +27133,9 @@ body.cf-modo .block .directive-chip{display:none !important}
   function fmtDe(txt){
     var t = String(txt || '');
     if(/\\bamrap\\b/i.test(t))  return { k:'amrap',   lb:'🟢 AMRAP' };
-    if(/\\bemom\\b|every\\s*\\d/i.test(t)) return { k:'emom', lb:'🔵 EMOM' };
+    if(/\\bemom\\b|\\be\\d+m?om\\b|every\\s*\\d/i.test(t)) return { k:'emom', lb:'🔵 EMOM' };
     if(/\\btabata\\b/i.test(t)) return { k:'tabata',  lb:'🟡 TABATA' };
-    if(/for\\s*time|\\brft\\b|rounds?\\s*for\\s*time|chipper/i.test(t)) return { k:'fortime', lb:'🔴 FOR TIME' };
+    if(/for\\s*time|\\brft\\b|rounds?\\s*for\\s*time|chipper|\\bladders?\\b/i.test(t)) return { k:'fortime', lb:'🔴 FOR TIME' };
     return null;
   }
   function lineasDe(bl){
@@ -45620,6 +45784,30 @@ html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-biset-title{ color:#00E5FF !im
 html body:not(#_).jp-mission:not(.cf-disc) .jp-nom-en{ font-size:.8rem !important; opacity:.78; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-subex-resumen{ margin-top:4px !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-subex-resumen .jp-dose-bar .jp-db-row{ gap:4px !important; }
+/* ===== CrossFit / Hyrox: misma identidad HUD (naranja + cian) que Bodybuilding ===== */
+html body:not(#_).cf-disc .hd-compact{ background:linear-gradient(180deg, rgba(255,85,0,.13) 0%, rgba(10,10,10,.97) 70%), #0A0A0A !important; border-bottom:1px solid rgba(255,85,0,.42) !important; box-shadow:0 12px 28px -18px rgba(0,229,255,.34) !important; }
+html body:not(#_).cf-disc .hdc-brand-mark{ color:#FF5500 !important; font-size:.72rem !important; letter-spacing:.22em !important; font-weight:800 !important; }
+html body:not(#_).cf-disc .hdc-brand-mark em{ color:#FFFFFF !important; font-style:normal !important; text-shadow:0 0 12px rgba(255,85,0,.6); }
+html body:not(#_).cf-disc #hdcName{ font-size:1.28rem !important; line-height:1.15 !important; font-weight:800 !important; letter-spacing:.01em !important; color:#FFFFFF !important; text-shadow:0 0 20px rgba(255,85,0,.3); }
+html body:not(#_).cf-disc .jp-status-pill.jp-status-active{ color:#00E5FF !important; border-color:rgba(0,229,255,.75) !important; background:rgba(0,229,255,.1) !important; box-shadow:0 0 12px rgba(0,229,255,.4), inset 0 0 8px rgba(0,229,255,.14) !important; font-size:.62rem !important; padding:2px 8px !important; letter-spacing:.12em !important; }
+html body:not(#_).cf-disc .hdc-shield{ border-color:rgba(255,85,0,.65) !important; box-shadow:0 0 18px rgba(255,85,0,.4), inset 0 0 10px rgba(255,85,0,.12) !important; }
+html body:not(#_).cf-disc .jp-ux-menu-btn, html body:not(#_).cf-disc .hdc-info, html body:not(#_).cf-disc .hdc-fz, html body:not(#_).cf-disc .jp-prs-quickbtn{ border-color:rgba(255,85,0,.4) !important; background:rgba(255,85,0,.07) !important; color:#FF8A3D !important; }
+html body:not(#_).cf-disc .hdc-fz .hdc-fz-tx{ color:#FF8A3D !important; }
+html body:not(#_).cf-disc #jpWkBtn{ border:1px solid rgba(255,85,0,.75) !important; background:linear-gradient(180deg, rgba(255,85,0,.26), rgba(255,85,0,.08)) !important; box-shadow:0 0 16px -4px rgba(255,85,0,.55) !important; }
+html body:not(#_).cf-disc #jpWkBtn b{ color:#FFFFFF !important; letter-spacing:.06em; }
+html body:not(#_).cf-disc #jpWkBtn i{ color:#FF5500 !important; }
+html body:not(#_).cf-disc #jpDayBtn{ border:1px solid rgba(0,229,255,.6) !important; background:linear-gradient(180deg, rgba(0,229,255,.16), rgba(0,229,255,.04)) !important; box-shadow:0 0 16px -4px rgba(0,229,255,.5) !important; }
+html body:not(#_).cf-disc #jpDayBtn i, html body:not(#_).cf-disc #jpDayBtn .jp-day-ic{ color:#00E5FF !important; }
+html body:not(#_).cf-disc .jp-wk-pop{ border:1px solid rgba(255,85,0,.45) !important; box-shadow:0 18px 40px -12px rgba(0,0,0,.8), 0 0 22px -6px rgba(255,85,0,.35) !important; }
+html body:not(#_).cf-disc .jp-wk-pop button.on{ background:rgba(255,85,0,.16) !important; border-color:rgba(255,85,0,.65) !important; }
+html body:not(#_).cf-disc .jp-wk-pop button.on b{ color:#FF5500 !important; }
+html body:not(#_).cf-disc .jp-wk-pop button small{ color:#7FE9FF !important; }
+html body:not(#_).cf-disc .day-title{ border-left:4px solid #FF5500 !important; padding-left:12px !important; }
+html body:not(#_).cf-disc .jp-cf-fmtbadge{ color:#FF5500 !important; text-shadow:0 0 18px rgba(255,85,0,.35); }
+html body:not(#_).cf-disc .jp-cf-capline .cap{ color:#00E5FF !important; font-weight:800 !important; }
+html body:not(#_).cf-disc .jp-cf-chip{ border:1px solid rgba(0,229,255,.4) !important; background:rgba(0,229,255,.08) !important; color:#EDEFF2 !important; }
+html body:not(#_).cf-disc .jp-cf-chip b{ color:#FF5500 !important; }
+html body:not(#_).cf-disc .jp-cf-chip.jp-cf-dyn{ border-color:rgba(255,85,0,.55) !important; background:rgba(255,85,0,.1) !important; color:#FF8A3D !important; font-weight:800 !important; letter-spacing:.08em !important; }
 /* botonera superior: cuadrícula simétrica de 3 métricas + «Ver directiva táctica» a todo el ancho */
 html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud{ display:grid !important; grid-template-columns:repeat(3, minmax(0,1fr)) !important; grid-auto-flow:row !important; grid-auto-columns:auto !important; gap:8px !important; margin:14px 0 0 !important; width:100% !important; box-sizing:border-box; }
 html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span{ min-width:0 !important; min-height:64px; box-sizing:border-box !important; padding:10px 4px !important; border-radius:12px !important; border:1px solid rgba(255,255,255,.16) !important; background:rgba(255,255,255,.04) !important; }
@@ -45898,12 +46086,8 @@ function buildProgramConfig(ath){
        & Bodybuilding sigue mapeando d.bloques una sola vez, exactamente
        como siempre. */
     function mapearBloques(bloquesDelDia){
-      /* una Pizarra de Sports sin ningún ejercicio ni dosis (el coach la agregó y no la llenó) no viaja al alumno: antes llegaba como tarjeta vacía ("bloque fantasma") */
-      const tieneTexto = l => String(l == null ? '' : l).trim() !== '';
-      const conContenido = b => !(b && b.tipo === 'list' && b.sportsPizarra && !esBloqueCF(b)) ||
-        (b.items || []).some(tieneTexto) || String(b.cardioMinutes || '').trim() !== '' ||
-        [b.weekItems, b.exSemana].some(w => Array.isArray(w) && w.some(x => Array.isArray(x) ? x.some(tieneTexto) : tieneTexto(x)));
-      return bloquesDelDia.filter(conContenido).map(b => {
+      /* una Pizarra de Sports vacía no viaja al alumno: antes llegaba como tarjeta vacía ("bloque fantasma") */
+      return bloquesDelDia.filter(b => esBloqueCF(b) || jpBloqueExportable(b)).map(b => {
       bloqueCF = esBloqueCF(b);
       window.__jpDiaTitulo = d.title || '';      /* coherencia anatomica de los videos de este dia */
       const out = {
@@ -46462,7 +46646,12 @@ function painRestrictionsHtml(ath){
 }
 
 /* Rol / especialidad: siempre texto plano (sin etiquetas crudas tipo <span class="role-dot">) y con el valor oficial por defecto */
-const ROL_COACH_DEFECTO = 'Especialista en Biomecánica, desarrollo de fuerza y Alto Rendimiento Deportivo';
+const ROL_COACH_DEFECTO = 'Especialista en Biomecánica · Alto Rendimiento Deportivo y Readaptación Física';
+const NOMBRE_COACH_DEFECTO = 'Prof. Juan Pablo Armiñana';
+/* firma del coach de cada exportación: nunca queda vacía (si el Builder no tiene nombre/rol cargado, va la firma institucional) */
+function firmaCoach(M){
+  return { nombre: String((M && M.coachName) || '').replace(/\s+/g, ' ').trim() || NOMBRE_COACH_DEFECTO, rol: rolPlano(M && M.coachRole) };
+}
 function rolPlano(r){
   const t = String(r || '').replace(/<span class="role-dot">\s*·\s*<\/span>/gi, '·').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
   return t || ROL_COACH_DEFECTO;
@@ -46483,7 +46672,7 @@ function compile(ath){
   const vals = {
     TITLE: 'Coach JP — ' + nombre + (window.COACH_DISCIPLINA === 'crossfit' ? ' · CrossFit & Hyrox' : ' · Sports & Bodybuilding'),
     META_DESC: (M.coachName || 'Coach JP') + ' · Programa de ' + nombre + ' · ' + (M.mesoName || ''),
-    COACH_NAME: M.coachName || 'Prof. Juan Pablo Armiñana',
+    COACH_NAME: esc(firmaCoach(M).nombre),
     /* directiva ("Sanitización de HTML en inputs") -- el campo ya no
        "acepta HTML": lo que el coach tipeó se escapa siempre (nunca se
        inyecta una etiqueta cruda al HTML compilado) y el separador "·"
@@ -46492,8 +46681,9 @@ function compile(ath){
        el <span class="role-dot"> crudo baked como default) se
        autocura: se desenvuelve a "·" plano antes de escapar, así nunca
        se ve la etiqueta como texto literal. */
-    COACH_ROLE: esc(rolPlano(M.coachRole))
+    COACH_ROLE: esc(firmaCoach(M).rol)
       .replace(/·/g, '<span class="role-dot">·</span>'),
+    FIRMA_COACH: '<b class="jp-firma-n">' + esc(firmaCoach(M).nombre) + '</b> <span class="jp-firma-d">—</span> <span class="jp-firma-r">' + esc(firmaCoach(M).rol) + '</span>',
     ATHLETE_NAME: nombre,
     HERO_EYEBROW: (M.mesoName || '') + ' — ' + (cfg.weeks[0] ? cfg.weeks[0].name : 'Semana 1'),
     HERO_H1: (M.heroTitle || '') + (M.heroEm ? ' <em>' + M.heroEm + '</em>' : ''),
@@ -46559,8 +46749,16 @@ function renderExport(){
      automático por nombre Y video agregado manualmente (que se escribe
      en b.videoOverrides, ver agregarVideoManual() más abajo), así el
      conteo acá queda IDÉNTICO al que de verdad viaja al alumno. */
+  pintarExportStats(ath);
+}
+/* métricas globales del plan para el panel de exportación. Se leen del plan en memoria (lo que el Builder y la Pizarra acaban de editar), no de la copia guardada:
+   por eso coinciden en tiempo real con lo que va a compilar. soloStats = true no toca la auditoría (no destilda "forzar descarga"). */
+function pintarExportStats(ath, soloStats){
+  const box = $('#expStats'); if(!box || !ath) return;
+  const p = plan(ath.id);
   let conf = 0, vids = 0, blocks = 0;
   p.dias.forEach(d => d.bloques.forEach(b => {
+    if(!jpBloqueExportable(b)) return;
     blocks++;
     conf += blockAlerts(ath, b).filter(a => a.level !== 'good').length;
     if(b.tipo === 'list' || b.tipo === 'hyrox'){
@@ -46578,7 +46776,7 @@ function renderExport(){
     '<div class="stat"><div class="v">' + totalEjercicios(p) + '</div><div class="k">Ejercicios</div></div>' +
     '<div class="stat teal"><div class="v">' + vids + '</div><div class="k">Con video</div></div>' +
     '<div class="stat ' + (conf ? 'red' : 'teal') + '"><div class="v">' + conf + '</div><div class="k">Conflictos</div></div>';
-  pintarHealthCheck(p);
+  pintarHealthCheck(p, !!soloStats);
 }
 /* directiva ("Health Check / Auditoría Pre-Compilación") -- validación
    silenciosa y liviana (heurística, no reimplementa el parser completo
@@ -46623,10 +46821,13 @@ function pizarraHealthCheck(p){
   return issues;
 }
 let jpExportForzado = false;
-function pintarHealthCheck(p){
+function pintarHealthCheck(p, soloSiCambio){
   const host = document.getElementById('expHealth'); if(!host) return;
-  jpExportForzado = false;
   const issues = pizarraHealthCheck(p);
+  const firma = issues.join('|');
+  if(soloSiCambio && host.dataset.sig === firma) return;      /* refresco en vivo: si las alertas son las mismas no se repinta (se conserva "forzar descarga") */
+  host.dataset.sig = firma;
+  jpExportForzado = false;
   if(!issues.length){
     host.innerHTML = '<div class="exp-health-ok">✅ Auditoría completa: sin alertas antes de compilar</div>';
     return;
@@ -46856,9 +47057,7 @@ function init(){
     const a = getAth($('#expAth').value);
     if(!a){ toast('Elegí un alumno/a', 'err'); return; }
     const code = compile(a);
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(code).then(()=> toast('Código copiado al portapapeles ✔'), ()=> toast('No se pudo copiar', 'err'));
-    } else toast('Portapapeles no disponible', 'err');
+    copiarTexto(code).then(ok => ok ? toast('Código copiado al portapapeles ✔ (' + (code.length / 1024).toFixed(0) + ' KB)') : toast('No se pudo copiar: usá "Descargar" en su lugar', 'err'));
   });
 
   /* ---- datos ---- */
@@ -51023,6 +51222,7 @@ document.addEventListener('DOMContentLoaded', init);
     });
     return { total: total, porDia: porDia };
   }
+  window.jpCalcVolumen = calcVolumen;      /* mismo cálculo para las métricas globales, la agenda y el mensaje de entrega */
   /* rangos semanales de series efectivas por capacidad de recuperación */
   const RANGOS = {
     'Pectoral':[12,22], 'Espalda':[12,22], 'Glúteo / Isquios':[12,22], 'Cuádriceps':[12,22], 'Piernas':[12,22],
@@ -52522,6 +52722,13 @@ body{overflow-x:hidden}
   /* ============ D. MÉTRICAS GLOBALES ============ */
   function volSemanal(athId){
     const p = plan(athId); if(!p) return 0;
+    /* series efectivas reales (incluye la Pizarra de Sports, que el conteo viejo ignoraba y daba 0): mismo cálculo que la barra de volumen del Builder */
+    try{
+      if(typeof window.jpCalcVolumen === 'function'){
+        const v = window.jpCalcVolumen(p), t = Object.keys(v.total).reduce((a, k) => a + v.total[k], 0);
+        if(t) return t;
+      }
+    }catch(eV){}
     let s = 0;
     p.dias.forEach(d => (d.bloques||[]).forEach(b => {
       if(b.tipo === 'block')    s += parseInt(b.efSets,10) || 0;
@@ -53150,7 +53357,7 @@ body{overflow-x:hidden}
         ((ath.prohibidos||[]).length ? '<span><b>⛔ Vetados:</b> ' + esc(ath.prohibidos.join(', ')) + '</span>' : '') +
         ((ath.tags||[]).length ? '<span><b>🦴 Reglas:</b> ' + esc(ath.tags.join(', ')) + '</span>' : '') +
       '</div>' + dias +
-      '<footer>Generado por Coach JP — Steel Vault Console · Los tempos se leen excéntrica / pausa abajo / concéntrica / pausa arriba.</footer>' +
+      '<footer>Generado por Coach JP — Steel Vault Console · Los tempos se leen excéntrica / pausa abajo / concéntrica / pausa arriba.<br><b>' + esc(firmaCoach(plan(ath.id).meta).nombre) + '</b> — ' + esc(firmaCoach(plan(ath.id).meta).rol) + '</footer>' +
       '<div class="noprint" style="text-align:center;margin-top:14px"><button onclick="window.print()" style="padding:9px 18px;font-size:13px;cursor:pointer">🖨️ Imprimir / Guardar PDF</button></div>' +
       '</body></html>';
   }
@@ -53166,53 +53373,143 @@ body{overflow-x:hidden}
   /* ============ F. MENSAJE DE WHATSAPP ============ */
   function resumenPlan(ath){
     const p = plan(ath.id);
-    return p.dias.filter(d => d.bloques.length).map(d => {
-      const n = d.bloques.reduce((s,b) => s + blockExIds(b).length, 0);
-      return '• ' + d.short + ' — ' + (d.label || d.title) + ' (' + n + ' ejercicios)';
+    return p.dias.filter(d => d.bloques.some(jpBloqueExportable)).map(d => {
+      const n = d.bloques.filter(jpBloqueExportable).reduce((s, b) => s + contarEjerciciosBloque(b), 0);
+      return '• ' + d.short + ' — ' + (d.label || d.title) + ' (' + n + ' ejercicio' + (n === 1 ? '' : 's') + ')';
     }).join('\n');
+  }
+  /* link del alumno: se normaliza solo (https://, sin espacios ni comillas, barra final en GitHub Pages) para que nunca llegue un enlace roto al mensaje */
+  const WA_TOKEN = '‹link pendiente›';
+  let waUltimo = '';
+  function waNormalizarLink(v){
+    let t = String(v || '').replace(/[\s<>"'“”]+/g, '');
+    if(!t) return '';
+    if(!/^https?:\/\//i.test(t)) t = 'https://' + t.replace(/^\/+/, '');
+    try{
+      const u = new URL(t);
+      if(!/\.[a-z]{2,}$/i.test(u.hostname)) return '';
+      if(/\.github\.io$/i.test(u.hostname) && !/\.[a-z0-9]{2,5}$/i.test(u.pathname) && !u.pathname.endsWith('/')) u.pathname += '/';
+      return u.toString();
+    }catch(e){ return ''; }
+  }
+  function waLinkActual(){
+    const el = $('#waLink'), a = active();
+    return waNormalizarLink(el ? el.value : '') || waNormalizarLink(a && a.link);
+  }
+  /* sugerencia de enlace: usuario de GitHub Pages que ya usan los otros alumnos + "plan-nombre" */
+  function waSugerencia(ath){
+    const o = S.athletes.map(a => waNormalizarLink(a.link)).find(l => /\.github\.io\//i.test(l));
+    if(!o) return 'https://usuario.github.io/plan-nombre/';
+    try{ return new URL(o).origin + '/plan-' + slug(fullName(ath)) + '/'; }catch(e){ return 'https://usuario.github.io/plan-nombre/'; }
   }
   function armarWA(){
     const ath = active(); if(!ath) return '';
-    const link = $('#waLink').value.trim();
+    const link = waLinkActual() || WA_TOKEN;
     const tono = $('#waTono').value;
     const p = plan(ath.id), ag = p.agenda || {};
     const W = (p.meso || defaultWeeks())[(ag.semana||1)-1] || {};
     const nom = (ath.nombre || '').trim();
     const res = resumenPlan(ath);
     const vol = (G().volSemanal ? G().volSemanal(ath.id) : 0);
+    const f = firmaCoach(p.meta);
+    const semana = (W.name || 'Semana 1') + (W.phase ? ' — ' + W.phase : '') + (W.rpe ? ' · ' + W.rpe : '');
 
     if(tono === 'corto'){
-      return '¡Hola ' + nom + '! 💪 Ya está tu nueva planificación:\n' + (link || '[pegá acá el link]') +
-        '\n\n' + res + '\n\nEntrás desde el celular, marcás cada serie y te guarda el progreso. Cualquier duda me escribís.';
+      return [
+        nom + ', ya tenés tu planificación cargada.',
+        '',
+        link,
+        '',
+        'Desde la Semana 1 registrá cada serie con kilos y repeticiones: esos números son la base de toda tu progresión. Si algo no te cierra, escribime antes de entrenar.',
+        '',
+        f.nombre
+      ].join('\n');
     }
     if(tono === 'motiv'){
-      return '¡' + nom + '! 🔥 Arrancamos bloque nuevo.\n\n' +
-        'Tu app personal está acá 👉 ' + (link || '[pegá acá el link]') + '\n\n' +
-        'Lo que viene:\n' + res + '\n\n' +
-        'Estamos en ' + (W.name || 'Semana 1') + ' — ' + (W.phase || '') + ' (' + (W.rpe || 'RPE 7-8') + '). ' +
-        (W.deload ? 'Semana de descarga: bajamos volumen para que llegues fresco al próximo bloque.' : 'Cada serie cuenta. Registrala en la app y la vamos ajustando juntos.') +
-        '\n\nNos vemos en el gym 💪';
+      return [
+        nom + ', arranca un bloque nuevo y lo vamos a trabajar en serio.',
+        '',
+        'Tu app: ' + link,
+        '',
+        res,
+        '',
+        'Lo que define este ciclo es la sobrecarga progresiva. La Semana 1 fija tu línea base y de ahí se construye todo lo que viene: cada serie que no registrás es información que perdemos. Anotá kilos, repeticiones y con cuántas en reserva (RIR) terminaste; con eso te ajusto la carga semana a semana.',
+        '',
+        (W.deload ? 'Esta semana es de descarga: se baja el volumen para que llegues fresco al próximo bloque. Descargar también es entrenar.' : 'Entrená con intención en cada serie. Los resultados son la consecuencia de eso.'),
+        '',
+        f.nombre
+      ].join('\n');
     }
-    return '¡Hola ' + nom + '! Te dejo tu planificación actualizada 💪\n\n' +
-      '🔗 Tu app de entrenamiento:\n' + (link || '[pegá acá el link de GitHub Pages]') + '\n\n' +
-      '📋 Estructura de la semana (' + ath.freq + ' días):\n' + res + '\n\n' +
-      '📈 Semana actual: ' + (W.name || 'Semana 1') + ' — ' + (W.phase || '') + ' · ' + (W.rpe || '') + '\n' +
-      '🎯 Volumen semanal: ' + vol + ' series efectivas' + (ath.foco ? '\n🧭 Foco del bloque: ' + ath.foco : '') +
-      ((ath.prohibidos||[]).length ? '\n⛔ Seguimos evitando: ' + ath.prohibidos.join(', ') : '') +
-      '\n\nCómo usarla: abrís el link desde el celular, elegís el día, y vas marcando cada serie con el peso que usaste. Tiene temporizador de descanso, videos de cada ejercicio y calculadora de 1RM. Todo queda guardado en tu teléfono.\n\n' +
-      'Cualquier molestia o duda con algún movimiento, me escribís antes de forzar. ¡A darle! 🔥';
+    const L = [
+      '*' + nom + '* — tu planificación está lista.',
+      '',
+      '*Acceso:* ' + link,
+      'Abrila desde el celular y agregala a la pantalla de inicio para tenerla siempre a mano.',
+      '',
+      '*Estructura (' + ath.freq + ' días por semana):*',
+      res,
+      '',
+      '*Ciclo actual:* ' + semana,
+      '*Volumen:* ' + vol + ' series efectivas por semana'
+    ];
+    if(ath.foco) L.push('*Foco del bloque:* ' + ath.foco);
+    if((ath.prohibidos || []).length) L.push('*Se evita en tu plan:* ' + ath.prohibidos.join(', '));
+    L.push('',
+      '*Cómo trabajar el bloque*',
+      '1. Registrá cada serie: kilos y repeticiones. Sin datos no hay sobrecarga progresiva medible.',
+      '2. Controlá el RIR: llegá a las repeticiones en reserva que marca cada bloque. Subir carga con la técnica rota no suma.',
+      '3. La Semana 1 es tu referencia: las cargas de las semanas 2 a 4 se construyen sobre lo que registres ahí.',
+      '4. Respetá tempo y descansos; son parte del estímulo.',
+      '5. Si aparece una molestia, frená y escribime antes de forzar.',
+      '',
+      'La app trae temporizador de descanso y video técnico de cada ejercicio, y guarda todo en tu teléfono.',
+      '',
+      f.nombre,
+      f.rol);
+    return L.join('\n');
   }
   function pintarWA(){
-    const t = armarWA();
-    $('#waTxt').value = t;
+    const ta = $('#waTxt');
+    waUltimo = armarWA();
+    ta.value = waUltimo;
+    ta.dataset.link = waLinkActual();
+  }
+  /* el link se sincroniza SIN pisar lo que el coach editó a mano en el mensaje: si el texto sigue siendo el generado se rearma completo; si lo tocó, solo se reemplaza el link */
+  function waSincronizarLink(){
+    const ta = $('#waTxt'), nuevo = waLinkActual(), previo = ta.dataset.link || '';
+    if(ta.value === waUltimo || !ta.value.trim()){ pintarWA(); return; }
+    let t = ta.value.split(WA_TOKEN).join(nuevo || WA_TOKEN);
+    if(previo && nuevo && previo !== nuevo) t = t.split(previo).join(nuevo);
+    ta.value = t; ta.dataset.link = nuevo;
+  }
+  /* texto listo para entregar: link real inyectado (nunca un hueco ni corchetes), o aviso si todavía no se cargó */
+  function waTextoFinal(){
+    const link = waLinkActual();
+    if(!link){
+      toast('Falta el link publicado del alumno/a: pegalo arriba y se inserta solo en el mensaje', 'warn');
+      const el = $('#waLink'); if(el) el.focus();
+      return null;
+    }
+    const a = active(), el = $('#waLink'), ta = $('#waTxt');
+    if(a && a.link !== link){ a.link = link; save(); }
+    if(el && el.value !== link) el.value = link;
+    let t = ta.value.split(WA_TOKEN).join(link).replace(/\[\s*peg[aá] ac[aá][^\]]*\]/gi, link);
+    if(t.indexOf(link) < 0){                    /* el coach borró el link del texto: se vuelve a poner después de la primera línea */
+      const lineas = t.split('\n'); lineas.splice(1, 0, '', link); t = lineas.join('\n');
+    }
+    t = t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    ta.value = t; ta.dataset.link = link;
+    return t;
   }
   function openWA(){
     const ath = active(); if(!ath){ toast('Elegí un alumno/a activo/a', 'err'); return; }
-    $('#waLink').value = ath.link || '';
+    const el = $('#waLink');
+    el.value = ath.link || '';
+    el.placeholder = waSugerencia(ath);
     pintarWA(); openModal('mWa');
   }
 
-  /* ============ G. HISTORIAL Y GRÁFICO DE 1RM ============ */
+    /* ============ G. HISTORIAL Y GRÁFICO DE 1RM ============ */
   function registrarHistorial(ath, antes){
     if(!ath) return 0;
     ath.histPR = Array.isArray(ath.histPR) ? ath.histPR : [];
@@ -53389,17 +53686,21 @@ body{overflow-x:hidden}
       renderPlate();
     });
 
-    ['#waLink','#waTono'].forEach(s => $(s).addEventListener('change', () => {
-      const a = active(); if(a && s === '#waLink'){ a.link = $('#waLink').value.trim(); save(); }
-      pintarWA();
-    }));
+    $('#waTono').addEventListener('change', pintarWA);
+    let waT = null;
+    $('#waLink').addEventListener('input', () => { clearTimeout(waT); waT = setTimeout(waSincronizarLink, 180); });
+    $('#waLink').addEventListener('change', () => {
+      const l = waNormalizarLink($('#waLink').value), a = active();
+      if(l){ $('#waLink').value = l; if(a && a.link !== l){ a.link = l; save(); } }
+      waSincronizarLink();
+    });
     $('#waCopy').addEventListener('click', () => {
-      const t = $('#waTxt').value;
-      if(navigator.clipboard) navigator.clipboard.writeText(t).then(() => toast('📋 Mensaje copiado'), () => toast('No se pudo copiar','err'));
-      else { $('#waTxt').select(); document.execCommand('copy'); toast('📋 Mensaje copiado'); }
+      const t = waTextoFinal(); if(t == null) return;
+      copiarTexto(t).then(ok => ok ? toast('📋 Mensaje copiado, con el link incluido') : toast('No se pudo copiar: seleccioná el texto y copialo a mano', 'err'));
     });
     $('#waSend').addEventListener('click', () => {
-      window.open('https://wa.me/?text=' + encodeURIComponent($('#waTxt').value), '_blank', 'noopener');
+      const t = waTextoFinal(); if(t == null) return;
+      window.open('https://wa.me/?text=' + encodeURIComponent(t), '_blank', 'noopener');
     });
 
     $$('#mGym [data-close], #mPlate [data-close], #mWa [data-close]').forEach(b =>
@@ -78908,7 +79209,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   /* ---------- UI: botones en el Importador rapido de CrossFit ---------- */
   var SYS_IA = 'Sos un formateador estricto de planificaciones de CrossFit. Convertí el texto del coach (cualquier formato) a EXACTAMENTE esta sintaxis, en texto plano, sin markdown ni explicaciones:\n' +
     '=== DÍA N: Título ===\nFOCO: frase corta (opcional)\n[WARM-UP]\nuna línea por ejercicio\n[SKILL / STRENGTH] Nombre del trabajo\n5x3 Power Snatch @ 60kg\nRest 90s\n[WOD / METCON] Nombre\nAMRAP 12 min:\n10 Wall Balls (9/6 kg)\n[ACCESSORY / COOLDOWN]\n...\nOBJETIVO: ...\nTIPS: ...\nPACING: ...\nESCALADO: ...\n' +
-    'Reglas: un delimitador por bloque con las fases [WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN], [HYROX STATIONS] o [2º TURNO · ENDURANCE]; OBJETIVO/TIPS/PACING/ESCALADO van DESPUÉS de las líneas del bloque al que pertenecen; no inventes ejercicios, series ni cargas y no agregues RIR, tempo ni descansos que el coach no escribió; conservá cargas, tiempos y formatos (AMRAP, EMOM, For Time, Every, Tabata); un movimiento por línea.';
+    'Reglas: un delimitador por bloque con las fases [WARM-UP], [SKILL / STRENGTH], [WOD / METCON], [ACCESSORY / COOLDOWN], [HYROX STATIONS] o [2º TURNO · ENDURANCE]; OBJETIVO/TIPS/PACING/ESCALADO van DESPUÉS de las líneas del bloque al que pertenecen; no inventes ejercicios, series ni cargas y no agregues RIR, tempo ni descansos que el coach no escribió; conservá cargas, tiempos y formatos (AMRAP, EMOM, E2MOM, For Time, Chipper, Ladder, Every, Tabata, Partners, Hyrox); un movimiento por línea.\n' + jpIA('cf');
   function ta(){ return document.getElementById('cfPegarTxt'); }
   function resumen(r){ return r.dias + ' día' + (r.dias === 1 ? '' : 's') + ', ' + r.bloques + ' bloque' + (r.bloques === 1 ? '' : 's') + ' y ' + r.coach + ' campo' + (r.coach === 1 ? '' : 's') + ' de coaching'; }
   function aplicar(r){
