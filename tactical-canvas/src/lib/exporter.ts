@@ -1,4 +1,4 @@
-import { getFontEmbedCSS, toBlob } from 'html-to-image'
+import { getFontEmbedCSS, toBlob, toJpeg } from 'html-to-image'
 import { BRAND } from './brand'
 
 /** Multiplicador fijo de render (independiente del viewport y del devicePixelRatio). */
@@ -35,11 +35,8 @@ function usedFontsKey(node: HTMLElement) {
   return [...fams].sort().join('|')
 }
 
-/** Renderiza el nodo a PNG en alta resolución. */
-export async function renderPng(node: HTMLElement, w: number, h: number): Promise<{ blob: Blob; ratio: number }> {
-  await document.fonts.ready
-  // Dos cuadros de animación: el layout final (fuentes, SVG, auto-ajuste) ya está pintado.
-  await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
+/** CSS de fuentes embebidas para este nodo (en caché por combinación de familias). */
+function fontCSSFor(node: HTMLElement) {
   const key = usedFontsKey(node)
   let fontCSS = fontCSSCache.get(key)
   if (!fontCSS) {
@@ -49,6 +46,29 @@ export async function renderPng(node: HTMLElement, w: number, h: number): Promis
     })
     fontCSSCache.set(key, fontCSS)
   }
+  return fontCSS
+}
+
+/** Miniatura JPEG chica (≈ 216 px de ancho) para la biblioteca de proyectos. */
+export async function renderThumb(node: HTMLElement, w: number, h: number): Promise<string> {
+  await document.fonts.ready
+  return toJpeg(node, {
+    width: w,
+    height: h,
+    pixelRatio: 0.2,
+    quality: 0.72,
+    backgroundColor: getComputedStyle(node).backgroundColor || BRAND.bg,
+    fontEmbedCSS: await fontCSSFor(node),
+    style: { transform: 'none', margin: '0' },
+  })
+}
+
+/** Renderiza el nodo a PNG en alta resolución. */
+export async function renderPng(node: HTMLElement, w: number, h: number): Promise<{ blob: Blob; ratio: number }> {
+  await document.fonts.ready
+  // Dos cuadros de animación: el layout final (fuentes, SVG, auto-ajuste) ya está pintado.
+  await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
+  const fontCSS = fontCSSFor(node)
   const ratio = effectivePixelRatio(w, h)
   const options = {
     width: w,

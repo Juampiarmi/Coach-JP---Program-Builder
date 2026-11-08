@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
  * La escritura espera 250 ms para no serializar en cada tecla, pero se fuerza al cerrar o esconder
  * la pestaña: la última edición nunca se pierde.
  */
-export function usePersistentState<T extends object>(key: string, defaults: T) {
+export function usePersistentState<T extends object>(key: string, defaults: T, onError?: (err: unknown) => void) {
   const [state, setState] = useState<T>(() => {
     try {
       const raw = localStorage.getItem(key)
@@ -19,6 +19,8 @@ export function usePersistentState<T extends object>(key: string, defaults: T) {
   // almacenamiento no cuenta como pendiente: re-escribirlo podría pisar lo que guardó otra pestaña.
   const pending = useRef<T | null>(null)
   const loaded = useRef<T | null>(state)
+  const errRef = useRef(onError)
+  errRef.current = onError
 
   useEffect(() => {
     const write = () => {
@@ -49,8 +51,9 @@ export function usePersistentState<T extends object>(key: string, defaults: T) {
       try {
         localStorage.setItem(key, JSON.stringify(state))
         pending.current = null
-      } catch {
-        /* sin almacenamiento disponible */
+      } catch (err) {
+        // Cuota llena o almacenamiento bloqueado: quien lo pidió avisa (ej. la biblioteca de proyectos).
+        errRef.current?.(err)
       }
     }, 250)
     return () => window.clearTimeout(id)
