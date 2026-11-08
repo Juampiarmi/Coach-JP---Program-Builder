@@ -1,6 +1,7 @@
 # Publica en GitHub Pages el sitio estático completo:
 #   /                → app de entrenamiento existente (index.html, dashboard.html, showroom…)
 #   /nutrition/      → Nutrition Command Builder (Next.js export estático de nutrition-system/)
+#   /gea/            → Hotel GEA · Instagram Content Canvas (Next.js export estático de gea-canvas/)
 # Requisito: Settings → Pages → Source: "GitHub Actions".
 # Si la fuente quedó en "Deploy from a branch", GitHub corre además su build automático (Jekyll)
 # sobre main, que NO contiene /nutrition/ y pisa este deploy si termina después (→ 404).
@@ -32,7 +33,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: nutrition-system/package-lock.json
+          cache-dependency-path: |
+            nutrition-system/package-lock.json
+            gea-canvas/package-lock.json
 
       - name: Build Nutrition Command Builder
         working-directory: nutrition-system
@@ -43,13 +46,23 @@ jobs:
           npm ci
           npm run build
 
+      - name: Build GEA Content Canvas
+        working-directory: gea-canvas
+        env:
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}/gea
+        run: |
+          npm ci
+          npm run build
+
       - name: Assemble site
         run: |
           mkdir -p _site
-          rsync -a --exclude '.git' --exclude '.github' --exclude 'nutrition-system' --exclude '_site' ./ _site/
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'nutrition-system' --exclude 'gea-canvas' --exclude '_site' ./ _site/
           # El export de Next va SIEMPRE a _site/nutrition (sin anidar out/ si la carpeta ya existiera).
           rm -rf _site/nutrition
           cp -r nutrition-system/out _site/nutrition
+          rm -rf _site/gea
+          cp -r gea-canvas/out _site/gea
           # 404 de Pages en la raíz (sólo si la app principal no trae uno propio).
           [ -f _site/404.html ] || cp nutrition-system/gh-pages/404.html _site/404.html
           touch _site/.nojekyll
@@ -64,6 +77,10 @@ jobs:
           JS=$(grep -o "$BASE/_next/static/[^\"]*\.js" _site/nutrition/index.html | head -1)
           test -f "_site/${JS#/${{ github.event.repository.name }}/}" || { echo "::error::No existe el chunk $JS en el artifact"; exit 1; }
           echo "OK · Builder en $BASE/ · chunk verificado: $JS"
+          GEA="/${{ github.event.repository.name }}/gea"
+          test -f _site/gea/index.html || { echo "::error::Falta _site/gea/index.html"; exit 1; }
+          grep -q "$GEA/_next/static/" _site/gea/index.html || { echo "::error::gea/index.html no referencia $GEA/_next/static/"; exit 1; }
+          echo "OK · GEA Canvas en $GEA/"
           ls _site _site/nutrition
 
       - uses: actions/upload-pages-artifact@v3
