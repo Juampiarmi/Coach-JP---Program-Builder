@@ -2752,6 +2752,20 @@ const initials = a => {
   return (n + p).toUpperCase();
 };
 
+/* Principios científicos y reglas de sala que TODOS los prompts de IA del Builder comparten (generador de sesiones, bloque suelto, tips, ficha del día):
+   un solo texto para que ninguna herramienta contradiga a otra. */
+window.JP_IA = {
+  ciencia: 'PRINCIPIOS CIENTÍFICOS OBLIGATORIOS (aplicalos en la selección de ejercicios, en la dosis y en los tips): ' +
+    '(1) HIPERTROFIA POR ESTIRAMIENTO: priorizá ejercicios y rangos que carguen el músculo en longitud larga (recorrido completo, pausa de 1-2 s o parciales largos en el tramo estirado), porque ahí la tensión mecánica y el estímulo de crecimiento son mayores. ' +
+    '(2) RANGO DE MOVIMIENTO: elegí el rango óptimo de cada ejercicio (recorrido completo y controlado, sin rebote ni inercia; si el rango completo suma fatiga articular sin más estímulo, indicá el recorte exacto) y decilo en el CUE EFICIENTE. ' +
+    '(3) ESTABILIDAD EXTERNA: cuanto más cerca del fallo o más fatigado está el músculo, más estabilidad externa (máquina con respaldo, press inclinado con apoyo, remo con el pecho apoyado, banco): el estímulo queda en el músculo y no en el equilibrio. Lo libre o inestable va al inicio, con carga alta y técnica fresca. ' +
+    '(4) CONTROL DE TEMPO: excéntrica de 3 s en casi todo el trabajo efectivo (Tempo 3010; 3110 con 1 s de pausa en el estiramiento; 2011 en aislamientos de acabado; X para potencia), siempre escrito en [COACHING TIPS & ESTRATEGIA] y nunca en la línea de dosis. ',
+  sala: 'REGLA ANTI-COLISIÓN EN SALA: PROHIBIDO emparejar en un biset, triset o finisher dos máquinas guiadas (selectorizadas o de discos) ni dos ejercicios de polea o cable, aunque sean de la misma torre: ocupan estaciones fijas, bloquean el espacio y el alumno pierde la máquina si se ocupa. ' +
+    'Tampoco encadenes en bloques CONSECUTIVOS dos máquinas guiadas distintas ni dos estaciones de cable que obliguen a cruzar la sala: intercalá un bloque de mancuernas, barra, kettlebell o peso corporal entre ellas. ' +
+    'Parejas válidas: mancuerna+mancuerna (un solo banco), mancuerna+máquina, barra+máquina, mancuerna o kettlebell + estructura (barra fija, paralelas, anillas), peso corporal + carga externa, colchoneta. ',
+  volumen: 'VOLUMEN ÚTIL POR BLOQUE: cada bloque de trabajo (fuerza, hipertrofia, accesorio, biset o triset) prescribe entre 3 y 8 series efectivas por ejercicio (en bisets y trisets, entre 3 y 8 rondas): con menos de 3 no alcanza para estimular y más de 8 en un mismo bloque suma fatiga sin estímulo útil (el volumen semanal por grupo se reparte entre bloques y días). Warm-up y core quedan fuera de esta cuenta. '
+};
+function jpIA(k){ return (window.JP_IA && window.JP_IA[k]) || ''; }
 function newDay(i){
   return {
     id: 'dia' + (i+1), short: 'DÍA ' + (i+1), label: 'Sesión ' + (i+1),
@@ -2766,7 +2780,7 @@ function newPlan(ath){
   /* directiva 13: estado de planificación (borrador/listo) + vigencia del
      ciclo -- un plan recién creado arranca siempre en borrador, sin fechas
      forzadas (el coach las carga si quiere mostrarlas). */
-  return { athleteId: ath.id, meta: defaultMeta(ath), meso: defaultWeeks(), dias: dias,
+  return { athleteId: ath.id, meta: defaultMeta(ath), meso: defaultWeeks(), dias: dias, freqBase: n,
     estado: 'borrador', vigenciaDesde: '', vigenciaHasta: '' };
 }
 function plan(athId){
@@ -2781,7 +2795,17 @@ function plan(athId){
   if(p.vigenciaDesde == null) p.vigenciaDesde = '';
   if(p.vigenciaHasta == null) p.vigenciaHasta = '';
   const need = Math.max(3, Math.min(6, parseInt(a.freq,10)||4));
-  while(p.dias.length < need) p.dias.push(newDay(p.dias.length));
+  /* los días se completan SOLO cuando el plan es nuevo o cuando sube la frecuencia del alumno/a. Antes plan() rellenaba hasta ath.freq en cada acceso:
+     al eliminar un día se volvía a crear uno vacío ("día fantasma") que además viajaba al export. p.freqBase recuerda la frecuencia ya aplicada. */
+  const idLibre = () => { const usados = new Set(p.dias.map(x => x && x.id)); let k = p.dias.length + 1; while(usados.has('dia' + k)) k++; return 'dia' + k; };
+  if(typeof p.freqBase !== 'number'){
+    while(p.dias.length < need){ const nd = newDay(p.dias.length); nd.id = idLibre(); p.dias.push(nd); }
+    p.freqBase = need;
+  } else if(need !== p.freqBase){
+    let falta = need - p.freqBase;
+    while(falta-- > 0 && p.dias.length < need){ const nd = newDay(p.dias.length); nd.id = idLibre(); p.dias.push(nd); }
+    p.freqBase = need;
+  }
   p.dias.forEach((d,i) => {
     if(!d.id) d.id = 'dia' + (i+1);
     if(!d.short) d.short = 'DÍA ' + (i+1);
@@ -7991,10 +8015,64 @@ async function nombrarBloqueConIA(bid, btn){
    metodológico que ya usan generarTipsSports()/generarTipsPacingIA() por
    bloque -- reutiliza el MISMO motor (window.CoachAI), sin inventar un
    sistema de IA paralelo. */
+/* análisis REAL del día activo (en el momento del clic): grupos musculares con sus series efectivas, patrones y cantidad de ejercicios, leídos de los bloques que hay hoy
+   en el Builder (Pizarra de redacción libre y bloques clásicos). Es la base de la ficha del día: la IA recibe estos números y, si falla o responde a medias, los campos se completan con ellos. */
+function analizarDiaParaIA(d){
+  const grupos = {}, patrones = {}, ejercicios = [], vistos = {};
+  let series = 0;
+  const sumar = (ex, nombre, sets) => {
+    const g = (ex && ex.grupo) || '';
+    if(g){ grupos[g] = (grupos[g] || 0) + (sets || 0); }
+    if(ex && ex.patron) patrones[ex.patron] = (patrones[ex.patron] || 0) + 1;
+    const k = String(nombre || '').toLowerCase();
+    if(k && !vistos[k]){ vistos[k] = 1; ejercicios.push(nombre); }
+    series += (sets || 0);
+  };
+  (d.bloques || []).forEach(b => {
+    const tit = String(b.titulo || '') + ' ' + String(b.subtitulo || '');
+    if(/entrada en calor|warm|movilidad|cool|enfriamiento/i.test(tit)) return;
+    if(b.tipo === 'list' && Array.isArray(b.items)){
+      let pend = null, nombrados = 0, setsSueltos = 0;
+      b.items.forEach(l => {
+        const linea = String(l || '').trim(); if(!linea) return;
+        let det = [];
+        try{ det = detectarEjerciciosSports(linea, {}) || []; }catch(e){}
+        let sets = 0;
+        try{ sets = (typeof parsearDosisSports === 'function' && parsearDosisSports(linea).sets) || 0; }catch(e){}
+        if(det.length){
+          nombrados++;
+          if(pend && !pend.hecho){ sumar(pend.ex, pend.nombre, 3); }
+          const e0 = det[0];
+          if(sets){ sumar(e0.ex, e0.nombre, sets); pend = null; }
+          else pend = { ex: e0.ex, nombre: e0.nombre, hecho: false };
+        } else if(sets && pend){
+          sumar(pend.ex, pend.nombre, sets); pend = null;
+        } else if(sets){
+          setsSueltos += sets;
+        }
+      });
+      if(pend && !pend.hecho) sumar(pend.ex, pend.nombre, 3);
+      /* plantillas del Banco: el ejercicio es el TÍTULO del bloque y las líneas son solo dosis ("4x8-10 | RIR 1-2") */
+      if(!nombrados && setsSueltos){
+        let dt = [];
+        try{ dt = detectarEjerciciosSports(String(b.titulo || ''), {}) || []; }catch(e){}
+        if(dt.length) sumar(dt[0].ex, dt[0].nombre, setsSueltos);
+      }
+    } else {
+      contextoBloqueIA(b).items.forEach(it => {
+        const ex = (S.exercises || []).find(e => e && (e.es === it.nombre || exDisplayName(e) === it.nombre)) || { grupo: it.grupo, patron: it.patron };
+        sumar(ex, it.nombre, parseInt(b.sets, 10) || 3);
+      });
+    }
+  });
+  const orden = Object.keys(grupos).sort((x, y) => grupos[y] - grupos[x]);
+  const patOrden = Object.keys(patrones).sort((x, y) => patrones[y] - patrones[x]);
+  return { grupos: orden.map(g => ({ nombre: g, series: grupos[g] })), patron: patOrden[0] || '', ejercicios: ejercicios, series: series };
+}
 async function generarFocoDiaConIA(btn){
   const d = curDay(); if(!d){ toast('Seleccioná un alumno/a', 'err'); return; }
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
-    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar el foco automáticamente', 'err');
+    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar la ficha del día automáticamente', 'err');
     if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
     return;
   }
@@ -8002,48 +8080,86 @@ async function generarFocoDiaConIA(btn){
   const bloques = (d.bloques || []).filter(b => b.tipo === 'block' || b.tipo === 'superset' || b.tipo === 'finisher' || b.tipo === 'hyrox' || (b.tipo === 'list' && Array.isArray(b.items) && b.items.length));
   const items = [];
   bloques.forEach(b => { contextoBloqueIA(b).items.forEach(it => items.push(it)); });
-  if(!items.length){ toast('Agregá al menos un bloque con ejercicios antes de generar el foco con IA', 'warn'); return; }
+  if(!items.length){ toast('Agregá al menos un bloque con ejercicios antes de generar la ficha del día con IA', 'warn'); return; }
+  /* lo que el coach tiene escrito en la pantalla en este momento (puede ir un paso adelante del dato guardado) */
+  const vivo = (campo) => { const el = document.querySelector('[data-df="' + campo + '"]'); return el ? el.value : (d[campo] || ''); };
+  const focoCoach = String(vivo('focusText') || '').trim();
+  const an = analizarDiaParaIA(d);
   const ad = contextoAtletaDiaIA();
-  const lineas = items.slice(0, 16).map(it => '- ' + it.nombre +
+  const lineas = items.slice(0, 18).map(it => '- ' + it.nombre +
     (it.patron || it.grupo ? ' (' + [it.grupo, it.patron].filter(Boolean).join(' · ') + ')' : '')).join('\n');
+  const resumenGrupos = an.grupos.length
+    ? an.grupos.slice(0, 6).map(g => g.nombre + ': ' + g.series + ' series').join(' · ') + ' · total ' + an.series + ' series efectivas en ' + an.ejercicios.length + ' ejercicios'
+    : 'no se pudieron clasificar los grupos (usá los ejercicios listados)';
   const contextoLineas = [
     ad.disciplina ? 'Mesociclo: ' + ad.disciplina : '',
     ad.semana ? 'Semana activa del mesociclo: ' + ad.semana + ' -- el foco debe reflejar ese nivel de esfuerzo real (no genérico).' : '',
     ad.ficha || '',
     ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
     ad.perfilCF ? 'Perfil técnico del atleta: ' + ad.perfilCF : '',
-    ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- el foco NO debe contradecir esto.' : ''
+    ad.lesiones ? 'Restricciones biomecánicas / lesiones declaradas: ' + ad.lesiones + ' -- nada de lo que escribas debe contradecir esto.' : '',
+    'Nombre del día: ' + (d.title || d.label || ''),
+    'ANÁLISIS DE LA SESIÓN (calculado ahora sobre los bloques reales): ' + resumenGrupos + (an.patron ? ' · patrón dominante: ' + an.patron : ''),
+    focoCoach ? 'FOCO DEL COACH ESCRITO POR EL ENTRENADOR (es la fuente: tu título, chips y resumen tienen que ser coherentes con esto, no lo contradigas): ' + focoCoach : ''
   ].filter(Boolean).join('\n');
   const sistema = (esCF
     ? 'Sos un coach de CrossFit & Hyrox de alto rendimiento. '
-    : 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. ') +
-    'Dado el listado completo de ejercicios/movimientos de la sesión de HOY, escribís en español rioplatense, ' +
-    'corto y directo (sin emojis, sin relleno), dos textos: un "título del foco técnico" (2-5 palabras, la síntesis biomecánica ' +
-    'de la sesión -- ej. "Tracción Horizontal & Densidad Metabólica") y "foco del coach" (1-2 frases, la directiva táctica ' +
-    'que el atleta lee antes de empezar, fundamentando brevemente el porqué fisiológico de la sesión). ' +
-    'Respondé SOLO con JSON válido: {"titulo":"...","foco":"..."}.';
+    : 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento, especialista en biomecánica e hipertrofia. ') +
+    'Dado el listado de ejercicios de la sesión de HOY, su análisis de grupos musculares y el foco del coach, completás la FICHA DEL DÍA en español rioplatense, ' +
+    'corto, directo y sin emojis salvo en los chips: ' +
+    '"short": chip de 3 a 8 letras en MAYÚSCULAS que nombra el día por su foco (ej. "PUSH", "PIERNA", "ESPALDA"); ' +
+    '"label": etiqueta de pestaña de 1 a 3 palabras con los grupos principales (ej. "Pecho/Hombros"); ' +
+    '"chips": exactamente 3 chips de meta, cada uno con UN emoji al inicio y 2 a 4 palabras (ej. "🎯 Empuje Horizontal", "💪 Pecho + Tríceps", "📊 18 series efectivas") basados en el análisis, sin inventar números; ' +
+    '"titulo": título del foco técnico de 2 a 5 palabras (síntesis biomecánica de la sesión); ' +
+    '"foco": foco del coach de 1 a 2 frases (la directiva táctica que el atleta lee antes de empezar, con el porqué fisiológico); ' +
+    '"cooldown": 3 o 4 ítems de vuelta a la calma específicos de los grupos que más se trabajaron hoy, cada uno con formato "Movimiento — dosis" (ej. "Estiramiento de pectoral en marco de puerta — 2x30 s"); ' +
+    '"resumen": resumen de la sesión de 2 a 3 frases (qué se entrenó, con qué volumen y qué debe sentir el atleta). ' + jpIA('ciencia') +
+    'Respondé SOLO con JSON válido: {"short":"...","label":"...","chips":["...","...","..."],"titulo":"...","foco":"...","cooldown":["...","..."],"resumen":"..."}.';
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
-    'Generá el título del foco y el foco del coach en JSON para la sesión de hoy.\nEjercicios/movimientos incluidos:\n' + lineas;
+    'Completá la ficha del día en JSON para la sesión de hoy.\nEjercicios/movimientos incluidos:\n' + lineas;
 
   const originalHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
   try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 260 });
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 900 });
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
-    let titulo = j ? String(j.titulo || '').trim() : '';
-    let foco = j ? String(j.foco || '').trim() : '';
-    if(!titulo && !foco){
+    j = (j && typeof j === 'object') ? j : {};
+    const txt = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+    let titulo = txt(j.titulo), foco = txt(j.foco), label = txt(j.label), short = txt(j.short).toUpperCase(), resumen = txt(j.resumen);
+    let chips = (Array.isArray(j.chips) ? j.chips : String(j.chips || '').split(';')).map(txt).filter(Boolean).slice(0, 4);
+    let cooldown = (Array.isArray(j.cooldown) ? j.cooldown : String(j.cooldown || '').split('\n')).map(txt).filter(Boolean).slice(0, 5);
+    if(!titulo && !foco && !chips.length && !resumen && !label){
+      /* respuesta en texto plano: primera línea = título, el resto = foco (compatibilidad con el comportamiento anterior) */
       const partes = raw.split('\n').filter(Boolean);
-      titulo = (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g,'').trim();
+      titulo = (partes[0] || '').replace(/^["'“”]+|["'“”]+$/g, '').trim();
       foco = partes.slice(1).join(' ').trim();
     }
-    if(!titulo && !foco){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
-    if(titulo) d.focusTitle = titulo;
-    if(foco) d.focusText = foco;
+    /* completar con el análisis real lo que la IA no devolvió: la ficha nunca queda estática ni genérica */
+    const top = an.grupos.slice(0, 2).map(g => g.nombre);
+    if(!label && top.length) label = top.join('/');
+    if(!chips.length && an.grupos.length){
+      chips = ['💪 ' + top.join(' + '), '📊 ' + an.series + ' series efectivas'];
+      if(an.patron) chips.push('🎯 ' + an.patron);
+    }
+    if(!cooldown.length && an.grupos.length) cooldown = an.grupos.slice(0, 3).map(g => 'Estiramiento de ' + String(g.nombre).toLowerCase() + ' — 2x30 s');
+    if(!resumen && an.grupos.length) resumen = 'Sesión de ' + top.join(' y ').toLowerCase() + ': ' + an.series + ' series efectivas en ' + an.ejercicios.length + ' ejercicios.';
+    if(!titulo && !foco && !chips.length && !resumen){ toast('La IA no devolvió texto válido, probá de nuevo', 'err'); return; }
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function'){ try{ CoachUndo.vigilar('Generar ficha del día con IA'); }catch(eU){} }
+    const hechos = [];
+    if(titulo){ d.focusTitle = titulo; hechos.push('título'); }
+    /* el Foco del Coach escrito a mano se respeta (es la fuente de todo lo demás); solo se genera si está vacío */
+    if(foco && focoCoach.length < 12){ d.focusText = foco; hechos.push('foco'); }
+    /* el chip solo se reemplaza si sigue siendo el rótulo por defecto ("DÍA 3"): un "LUN" o "PUSH" puesto por el coach no se pisa */
+    if(short && /^(D[IÍ]A|SESI[OÓ]N)\s*\d+$/i.test(String(d.short || '').trim() || 'DÍA 0')){ d.short = short.slice(0, 8); hechos.push('chip'); }
+    if(label){ d.label = label; hechos.push('pestaña'); }
+    if(chips.length){ d.metaChips = chips; hechos.push('chips'); }
+    if(cooldown.length){ d.cooldown = cooldown; hechos.push('cool-down'); }
+    if(resumen){ d.summary = resumen; hechos.push('resumen'); }
+    if(S.ui) S.ui.diaAdv = true;      /* los campos avanzados quedan a la vista para revisarlos */
     save(); renderBuilder();
-    toast('Foco del día generado con IA ⚡');
+    toast('Ficha del día generada con IA ⚡ (' + hechos.join(', ') + ')');
   }catch(e){
     console.warn('generarFocoDiaConIA', e);
     toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
@@ -8152,7 +8268,7 @@ async function generarTipsSports(bid, btn){
     'escribís en español rioplatense, corto y directo (sin emojis, sin relleno), dos textos: un "objetivo del bloque" (1 frase, ' +
     'qué busca lograr fisiológicamente este ejercicio/biset -- ej. "Máxima tensión mecánica en el rango medio, sin perder tempo excéntrico") ' +
     'y "coaching tips" en EXACTAMENTE TRES líneas separadas por salto de línea, cada una con una etiqueta de UNA sola palabra en mayúsculas y de 15 a 20 palabras como máximo: ' +
-    '"SET-UP: clave postural y anclaje inicial", "CLAVE: tempo, intención motora y trayectoria", "CUIDADO: la compensación crítica más frecuente a evitar" ' +
+    '"SET-UP: clave postural y anclaje inicial", "CLAVE: tempo excéntrico (ej. 3110), rango de movimiento óptimo con tramo estirado e intención motora", "CUIDADO: la compensación crítica más frecuente a evitar" ' +
     '(sin párrafos de justificación biomecánica, citando el ejercicio real). Respondé SOLO con JSON válido: {"objetivo":"...","tips":"..."} (tips con \\n entre las tres líneas).';
   const sistema = esBiset
     ? 'Sos un coach de musculación (Sports & Bodybuilding) de alto rendimiento. El bloque es un BISET/SUPERSET: los ejercicios listados son las estaciones A1, A2 (y A3) en ese orden. ' +
@@ -19430,7 +19546,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
           (en.subs || []).forEach(function(sb){ if(sb.tempo) add(sb.nombre, sb.tempo); });
         }
       });
-      return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">\\u23f1 TEMPO (CADENCIA)</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
+      return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\\u23f1 TEMPO (CADENCIA)</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
     })();
     const tieneObjTips = objetivoHtml || tipsHtml;
     const tieneAcc = tieneObjTips || !!tempoHtml;
@@ -19455,8 +19571,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
         (tieneAcc ?
           '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T\\u00c9CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
             '<div class="jp-details-content">' +
-              (objetivoHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">&#127919; OBJETIVO FISIOL&Oacute;GICO</div><div class="jp-sb-pauta-txt">' + objetivoHtml + '</div></div>' : '') +
-              (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
+              (objetivoHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-obj">&#127919; OBJETIVO FISIOL&Oacute;GICO</div><div class="jp-sb-pauta-txt">' + objetivoHtml + '</div></div>' : '') +
+              (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tips">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
               tempoHtml +
             '</div>' +
           '</details>' : '') +
@@ -41764,10 +41880,9 @@ body.jp-mission .hdc-chip-row .jp-status-pill{ padding:1px 6px !important; }
     var kg = kgN.toLocaleString('es-AR');
     var rir = 'RIR OBJ';
     try{ var m = /RIR\\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
-    /* sin tonelaje registrado la tarjeta no se muestra (antes quedaba un guion suelto) */
-    var hayTon = kgN > 0;
+    /* las 3 métricas están siempre: grilla simétrica de 3 columnas (sin series registradas el tonelaje es 0, nunca un guion ni NaN) */
     var pildora = function(v, l){ return '<span><b>' + v + '</b><small>' + l + '</small></span>'; };
-    var h = (hayTon ? pildora(kg, 'KG TONELAJE') : '') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO');
+    var h = pildora(kg, 'KG TONELAJE') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO');
     var hud = $('.jp-brief-hud', dh);
     if(!hud){ hud = document.createElement('div'); hud.className = 'jp-brief-hud'; dh.appendChild(hud); }
     if(hud.__h !== h){ hud.__h = h; hud.innerHTML = h; }
@@ -45505,6 +45620,23 @@ html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-biset-title{ color:#00E5FF !im
 html body:not(#_).jp-mission:not(.cf-disc) .jp-nom-en{ font-size:.8rem !important; opacity:.78; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-subex-resumen{ margin-top:4px !important; }
 html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-subex-resumen .jp-dose-bar .jp-db-row{ gap:4px !important; }
+/* botonera superior: cuadrícula simétrica de 3 métricas + «Ver directiva táctica» a todo el ancho */
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud{ display:grid !important; grid-template-columns:repeat(3, minmax(0,1fr)) !important; grid-auto-flow:row !important; grid-auto-columns:auto !important; gap:8px !important; margin:14px 0 0 !important; width:100% !important; box-sizing:border-box; }
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span{ min-width:0 !important; min-height:64px; box-sizing:border-box !important; padding:10px 4px !important; border-radius:12px !important; border:1px solid rgba(255,255,255,.16) !important; background:rgba(255,255,255,.04) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span b{ font-size:1.18rem !important; color:#FFFFFF !important; white-space:nowrap; }
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span small{ color:#B6BDC8 !important; font-size:.56rem !important; letter-spacing:.1em !important; white-space:nowrap; }
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span:nth-child(1){ border-color:rgba(255,85,0,.6) !important; background:linear-gradient(180deg, rgba(255,85,0,.16), rgba(255,85,0,.03)) !important; box-shadow:0 0 14px -6px rgba(255,85,0,.55); }
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span:nth-child(1) b{ color:#FF5500 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span:nth-child(3){ border-color:rgba(0,229,255,.55) !important; background:linear-gradient(180deg, rgba(0,229,255,.12), rgba(0,229,255,.02)) !important; box-shadow:0 0 14px -6px rgba(0,229,255,.5); }
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-hud > span:nth-child(3) b{ color:#00E5FF !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .day-header .jp-brief-dir{ align-self:stretch !important; display:flex !important; width:100% !important; box-sizing:border-box !important; align-items:center; justify-content:center; gap:8px; min-height:46px !important; height:auto !important; margin:8px 0 0 !important; border:1px solid rgba(0,229,255,.6) !important; border-radius:12px !important; background:rgba(0,229,255,.07) !important; color:#00E5FF !important; font-weight:800 !important; letter-spacing:.12em !important; box-shadow:0 0 14px -6px rgba(0,229,255,.5); }
+/* títulos de los acordeones de pautas: sin grises, cian o naranja del branding */
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta > .jp-sb-pauta-lb, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta > .jp-sb-pauta-lb .jp-emo{ color:#00E5FF !important; text-shadow:0 0 14px rgba(0,229,255,.28); }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta > .jp-sb-pauta-lb::before, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta > .jp-sb-pauta-lb::after{ color:#FF5500 !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta > .jp-sb-pauta-lb.jp-lb-tips, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta > .jp-sb-pauta-lb.jp-lb-tips .jp-emo{ color:#FF7A1F !important; text-shadow:0 0 14px rgba(255,85,0,.3); }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta > .jp-sb-pauta-lb.jp-lb-tips::before, html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta > .jp-sb-pauta-lb.jp-lb-tips::after{ color:#00E5FF !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta:has(> .jp-lb-tips){ border-left-color:rgba(255,85,0,.65) !important; }
+html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta:has(> .jp-lb-obj), html body:not(#_).jp-mission:not(.cf-disc) .jp-sb-board .jp-sb-pauta:has(> .jp-lb-tempo){ border-left-color:rgba(0,229,255,.65) !important; }
 html body:not(#_) #jpCerrarDiaBtn.jp-close-cta{ background:#FF5500 !important; border:1px solid #FF5500 !important; color:#0D0D0D !important; font-weight:800 !important; letter-spacing:.08em !important; min-height:56px !important; box-shadow:0 10px 26px -12px rgba(255,85,0,.7) !important; }
 html body:not(#_) #jpCerrarDiaBtn.jp-close-cta:active{ transform:scale(.98); }
 html body:not(#_) #storyCtaBtn.story-cta{ background:transparent !important; border:1px solid rgba(130,138,151,.5) !important; color:#EDEFF2 !important; box-shadow:none !important; }</style>
@@ -45766,7 +45898,12 @@ function buildProgramConfig(ath){
        & Bodybuilding sigue mapeando d.bloques una sola vez, exactamente
        como siempre. */
     function mapearBloques(bloquesDelDia){
-      return bloquesDelDia.map(b => {
+      /* una Pizarra de Sports sin ningún ejercicio ni dosis (el coach la agregó y no la llenó) no viaja al alumno: antes llegaba como tarjeta vacía ("bloque fantasma") */
+      const tieneTexto = l => String(l == null ? '' : l).trim() !== '';
+      const conContenido = b => !(b && b.tipo === 'list' && b.sportsPizarra && !esBloqueCF(b)) ||
+        (b.items || []).some(tieneTexto) || String(b.cardioMinutes || '').trim() !== '' ||
+        [b.weekItems, b.exSemana].some(w => Array.isArray(w) && w.some(x => Array.isArray(x) ? x.some(tieneTexto) : tieneTexto(x)));
+      return bloquesDelDia.filter(conContenido).map(b => {
       bloqueCF = esBloqueCF(b);
       window.__jpDiaTitulo = d.title || '';      /* coherencia anatomica de los videos de este dia */
       const out = {
@@ -59512,6 +59649,7 @@ body.man-mode .gs-fab{right:318px}
     'hablándole directamente al alumno. PROHIBIDO la tercera persona: nunca «el atleta», «la alumna», «se recomienda». ' +
     'REGLA INNEGOCIABLE DE ESTILO: PROHIBIDO EL USO DE EMOJIS, íconos o signos decorativos. ' +
     'Tono profesional, científico, directo y ejecutivo. ' +
+    jpIA('ciencia') + jpIA('sala') + ' ' +
     'Tenés que evaluar la interacción neuromuscular y metabólica DEL CONJUNTO: relación agonista/antagonista, ' +
     'pre-fatiga, densidad metabólica, competencia por los mismos estabilizadores y orden de reclutamiento. ' +
     'Devolvés SIEMPRE un JSON válido con esta forma exacta: ' +
@@ -65017,6 +65155,20 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 }
 #dayPanel .block > .block-h .icon-btn:hover{border-color:#D2793F;color:#D2793F}
 #dayPanel .block > .block-h .icon-btn.danger:hover{border-color:#E0654A;color:#E0654A}
+/* ===== HUD táctico del Builder: botones de acción de cada bloque, barra de colapsar y volumen semanal con cian / naranja (sin grises inertes) ===== */
+#dayPanel .block > .block-h{ gap:6px; }
+#dayPanel .block > .block-h .icon-btn{ width:32px; height:32px; flex:0 0 auto; background:rgba(0,229,255,.06); border-color:rgba(0,229,255,.34); color:#00E5FF; }
+#dayPanel .block > .block-h .icon-btn.danger{ background:rgba(255,85,0,.07); border-color:rgba(255,85,0,.4); color:#FF7A3D; }
+#dayPanel .block > .block-h .icon-btn:hover{ background:rgba(255,85,0,.16); border-color:#FF5500; color:#FF5500; }
+#dayPanel .block > .block-h .icon-btn.danger:hover{ background:rgba(255,59,48,.2); border-color:#FF3B30; color:#FF6B5E; }
+#jpColBar button{ background:rgba(0,229,255,.07) !important; border:1px solid rgba(0,229,255,.38) !important; color:#00E5FF !important; font-weight:700; }
+#jpColBar button:hover{ background:rgba(255,85,0,.14) !important; border-color:#FF5500 !important; color:#FF8A3D !important; }
+#jpColBar .lb{ color:#FF8A3D !important; }
+#jpColBar .cnt{ color:#7FE9FF !important; }
+.vol-card{ border-color:rgba(0,229,255,.3) !important; }
+.vol-card .vol-head h3{ color:#00E5FF; }
+.btn.ghost{ border-color:rgba(255,85,0,.4); color:#FFB07A; }
+.btn.ghost:hover{ background:rgba(255,85,0,.1); border-color:#FF5500; color:#FF8A3D; }
 #dayPanel .block > .block-h .pill{align-self:center}
 @media(max-width:720px){
   #dayPanel .block > .block-h input.bt{font-size:16px;flex:1 1 100%}
@@ -79859,6 +80011,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   /* ---------- coaching tips con IA (misma infraestructura de claves que el generador del Builder) ---------- */
   var SIS_TIPS = 'Sos el Head Coach de Coach JP: especialista en ciencias del ejercicio. Te paso UN bloque de entrenamiento ya armado (ejercicios con dosis) y tenés que redactar SOLO su objetivo fisiológico y sus coaching tips.\n' +
     'REGLAS: (1) Lenguaje simple y directo, como si le hablaras a alguien que hace el ejercicio por primera vez; sin jerga, sin citas de estudios ni nombres de autores. (2) Cada tip dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (hasta 30 palabras). (3) El TEMPO nunca va en la dosis: si te paso tempos, incluilos solo en una línea "TEMPO: Tempo 3010 (3 s bajada, sin pausa abajo, 1 s subida, sin pausa arriba)".\n' +
+    '(4) ' + jpIA('ciencia') + 'Aplicalo en el objetivo y en el CUE EFICIENTE (rango de movimiento, tramo estirado, apoyo/estabilidad y tempo), sin citar estudios.\n' +
     'FORMATO EXACTO (texto plano, sin markdown):\n[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones}\n[COACHING TIPS & ESTRATEGIA]\nEjercicio suelto: SET-UP: ... / CUE EFICIENTE: ... / CUIDADO / ERROR COMÚN: ... / TEMPO: ...\nBiserie o triserie, por estación: "A1 · SET-UP: ...", "A1 · CUE EFICIENTE: ...", "A1 · CUIDADO / ERROR COMÚN: ...", "A2 · SET-UP: ..." y al final "TRANSICIÓN: ...".';
   function tempoDe(b){
     var out = [];
@@ -80546,7 +80699,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '3b) SELECCIÓN EXPERTA DE EJERCICIOS (nada al azar): pensá como un entrenador de élite con gimnasio real. (a) Cubrí TODOS los grupos y porciones del foco del día con al menos 2 ejercicios distintos por grupo principal, con ángulos y funciones diferentes (ej: pecho = press inclinado con mancuernas para la porción superior + cruce o apertura en polea para trabajar en posición estirada; hombros = press + elevaciones laterales + deltoide posterior; tríceps = cabeza larga por encima de la cabeza + empuje en polea; cuádriceps = sentadilla o prensa + extensión; isquios = peso muerto rumano + curl femoral). ' +
       '(b) Orden lógico: multiarticular pesado primero, luego secundarios, al final aislamiento. (c) Variá implementos (barra, mancuernas, poleas, máquinas) y perfiles de resistencia. (d) Entre fuerza e hipertrofia sumá ' + (av ? '8 a 10' : '6 a 8') + ' ejercicios de trabajo (sin contar warm-up ni core). Prohibido armar un día con un solo ejercicio raro o repetir el mismo patrón sin motivo.\n' +
       '3c) CORE: UN bloque corto (6-8 min) de 2 o 3 ejercicios DISTINTOS, duro pero entretenido, que cubra funciones diferentes (anti-extensión, anti-rotación, flexión de tronco o cadera, rotación o cargas asimétricas). NO lo limites a un solo ejercicio ni a Pallof Press, tampoco en atletas avanzados: el alumno tiene que sentir que entrenó bien. Variá: rueda abdominal, elevación de piernas colgado, woodchop en polea, plancha con carga, dead bug con peso, etc.\n' +
-      '3d) REGLA DE SALÓN · ESTACIÓN FIJA (el gimnasio puede estar lleno: cero peregrinaje entre ejercicios): una biserie, triserie o finisher agrupado SOLO puede juntar ejercicios que se resuelvan en UNA misma estación: dos o tres ejercicios de polea en la MISMA torre (poleas altas o bajas, cambiando solo el agarre o la cuerda), dos de mancuernas con un solo banco, dos de colchoneta, la misma máquina (ej: abductores y aductores) o la misma polea del jalón. También combinan entre sí colchoneta, mancuernas, kettlebell, rack de barra y barra fija (están a pocos pasos). PROHIBIDO juntar ejercicios que obliguen a cruzar el gimnasio, mover un banco, rearmar una máquina o ir de una máquina a OTRA distinta (ej: jalón en su asiento + ejercicio en la torre; remo sentado + cruce de cables; prensa + curl femoral; banco con poleas + polea libre). En trisets TODAS las parejas deben cumplirlo. Si dos ejercicios usan estaciones distintas, ponelos en bloques consecutivos de series rectas. En la BIBLIOTECA cada ejercicio trae su equipamiento entre corchetes: usalo para decidir la estación.\n' +
+      '3d) REGLA DE SALÓN · ESTACIÓN FIJA (el gimnasio puede estar lleno: cero peregrinaje entre ejercicios): una biserie, triserie o finisher agrupado SOLO puede juntar ejercicios que se resuelvan en UNA misma estación: dos de mancuernas con un solo banco, dos de colchoneta o una sola máquina que cubra ambos movimientos (ej: abductores y aductores). También combinan entre sí colchoneta, mancuernas, kettlebell, rack de barra y barra fija (están a pocos pasos). PROHIBIDO juntar ejercicios que obliguen a cruzar el gimnasio, mover un banco, rearmar una máquina o ir de una máquina a OTRA distinta (ej: jalón en su asiento + ejercicio en la torre; remo sentado + cruce de cables; prensa + curl femoral; banco con poleas + polea libre). En trisets TODAS las parejas deben cumplirlo. Si dos ejercicios usan estaciones distintas, ponelos en bloques consecutivos de series rectas. En la BIBLIOTECA cada ejercicio trae su equipamiento entre corchetes: usalo para decidir la estación.\n' +
       '3e) AUDITORÍA DE ALTO RENDIMIENTO (obligatoria en atletas intermedios, avanzados y de élite): ' +
       '(a) WARM-UP ESPECÍFICO: 1 ejercicio de movilidad del foco + 1 o 2 de activación de estabilizadores (escápulas, manguito rotador, core o glúteo medio según el día) y, en los TIPS del primer bloque de fuerza, un RAMP-UP de 2 o 3 series de aproximación progresivas (ej: 50% x 8, 70% x 5, 85% x 2) antes de las series efectivas. ' +
       (av ? '(b) VOLUMEN DE ÉLITE: cada grupo principal del foco acumula 14 a 20 series efectivas (a RIR 0-1 o al fallo técnico) en la sesión; los sinergistas o de apoyo 6 a 9; la sesión completa suma entre 24 y 32 series de trabajo (sin contar warm-up ni core). Un 3x10 por ejercicio, o menos de 3 series por ejercicio de trabajo, es una sesión corta e inaceptable para este perfil. En los básicos pesados usá top set + back-off: 1 serie pesada a RIR 1 y 2 o 3 series de back-off con 5-10% menos de carga a RIR 0-1. '
@@ -80560,6 +80713,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
          '(h) TÉCNICAS DE INTENSIDAD OBLIGATORIAS (mínimo 2 por sesión, en aislamientos y nunca en el básico pesado ni sobre una articulación con molestia): drop-set, myo-reps, rest-pause, parciales en el estiramiento o pausa isométrica de 2 s en el máximo estiramiento, escritas al final de la dosis ("| Drop-set", "| Myo-reps", "| Rest-pause"). ' +
          '(i) CIERRE METABÓLICO: el último bloque de trabajo (antes del core, o en lugar de un accesorio liviano) es un biset o triset de aislamientos del foco de 8 a 12 minutos: 3 rondas de 12 a 20 repeticiones a RIR 0, con 30-45 s entre estaciones y 60-75 s al final de cada ronda, y una técnica de intensidad en la última estación. El atleta tiene que terminar con la sensación de haber hecho un trabajo profesional y exigente.\n'
          : '(g) DURACIÓN REAL: el (N MIN) de cada bloque = series x (45 s de trabajo + descanso) / 60 + 2 min de preparación; la suma de todos los bloques respeta el tiempo máximo. Un bloque de fuerza con 3 series o menos solo se justifica como top set pesado.\n') +
+      '3f) ' + jpIA('ciencia') + '\n' +
+      '3g) ' + jpIA('sala') + '\n' +
+      '3h) ' + jpIA('volumen') + '\n' +
       '4) FORMATO DE REDACCIÓN LIBRE ESTRICTO (este texto se renderiza tal cual en la app del alumno): entrada en calor = viñetas "- Nombre ES (Name EN) x 12" (o "x 30s"). Ejercicio suelto de fuerza/hipertrofia = EXACTAMENTE 3 líneas: "Nombre ES (Name EN)" / "SxR | RIR n" / "Rest Ns". ' +
       'Biserie o triserie = una línea por estación "A1. Nombre ES (Name EN) | SxR | RIR n", "A2. ... | SxR | RIR n" y debajo UNA línea "Rest Ns". ' +
       'PROHIBIDO escribir explicaciones, notas, tempos o frases sueltas dentro del bloque de ejercicios: solo nombres, dosis y descanso. ' +
@@ -81308,6 +81464,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     return 'Sos el Head Coach de Coach JP: especialista en ciencias del ejercicio, hipertrofia y biomecánica. Te paso UN bloque de entrenamiento ya armado (ejercicios con dosis) y tenés que redactar SOLO su objetivo fisiológico y sus coaching tips, acordes a los ejercicios ACTUALES.\n' +
       'REGLAS: (1) DIDÁCTICA: escribí como si le hablaras a alguien que hace el ejercicio por primera vez, en lenguaje simple y directo, sin jerga de manual universitario; cada término técnico se explica en palabras cotidianas ("tensión mecánica = el peso estira y exige al músculo"). Rigor científico intacto (tensión mecánica, reclutamiento de fibras, estiramiento bajo carga, perfil de resistencia, metabolitos). ' +
       '(2) Cada línea de tip dice QUÉ hacer, CÓMO se siente cuando sale bien y POR QUÉ importa (hasta 35 palabras). (3) CUIDADO / ERROR COMÚN: nombrá la compensación típica y vinculala a las restricciones o lesiones de la ficha. (4) NIVEL: ' + perfilNivel(ath) + ' (5) Los tempos actuales que te paso NO van en la dosis: incluilos así: en un ejercicio suelto, una línea "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)"; en biseries/triseries dentro de la línea de la estación ("A1 · CUE EFICIENTE: Tempo 3011 — ...").\n' +
+      '(6) ' + jpIA('ciencia') + 'Aplicalo en el objetivo y en el CUE EFICIENTE (rango de movimiento, tramo estirado, apoyo/estabilidad y tempo), sin citar estudios.\n' +
       'FORMATO EXACTO (texto plano, sin markdown ni nada fuera del formato):\n' +
       '[OBJETIVO FISIOLÓGICO] {2 o 3 oraciones didácticas: qué se entrena, por qué funciona y qué va a sentir el atleta}\n' +
       '[COACHING TIPS & ESTRATEGIA]\n' +
@@ -81378,9 +81535,11 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       '3) Complementá la sesión: NO repitas ejercicios ni patrones que ya están en los OTROS BLOQUES DEL DÍA. Cada ejercicio aporta un ángulo, una función o un perfil de resistencia nuevo; al menos uno por grupo grande en posición estirada.\n' +
       '4) INTENSIDAD: ' + (av ? 'atleta avanzado: 3 a 5 series por ejercicio de trabajo a RIR 0-1 (aislamientos a RIR 0), fuerza principal con top set + back-off, al menos una técnica de intensidad en un aislamiento ("| Drop-set", "| Myo-reps" o "| Rest-pause" al final de la dosis).' : 'RIR 1-3 en fuerza principal, 1-2 en hipertrofia compuesta y 0-1 en la última serie del aislamiento; 3 a 4 series por ejercicio.') + ' Un 3x10 genérico sin criterio es un bloque flojo.\n' +
       '5) DESCANSOS: fuerza principal ' + (av ? '180-240' : '150-240') + 's, hipertrofia compuesta ' + (av ? '90-150' : '120-180') + 's, aislamiento ' + (av ? '45-75' : '60-90') + 's, bisets/trisets 60-90s al terminar cada ronda (la transición entre estaciones va sin descanso), core y accesorios 30-60s.\n' +
-      '6) EQUIPAMIENTO EN BISERIES/TRISETS: PROHIBIDO combinar dos máquinas o poleas. Parejas permitidas: Mancuerna+Mancuerna, Mancuerna+Máquina, Mancuerna+Kettlebell, Mancuerna o Kettlebell + estructura (barra de dominadas, paralelas, anillas), Barra + Máquina, Mancuerna o Kettlebell, Peso corporal + carga externa. En la BIBLIOTECA cada ejercicio trae su clase entre corchetes.\n' +
+      '6) EQUIPAMIENTO EN BISERIES/TRISETS: ' + jpIA('sala') + 'PROHIBIDO combinar dos máquinas o poleas. Parejas permitidas: Mancuerna+Mancuerna, Mancuerna+Máquina, Mancuerna+Kettlebell, Mancuerna o Kettlebell + estructura (barra de dominadas, paralelas, anillas), Barra + Máquina, Mancuerna o Kettlebell, Peso corporal + carga externa. En la BIBLIOTECA cada ejercicio trae su clase entre corchetes.\n' +
       '7) FORMATO DE REDACCIÓN LIBRE ESTRICTO: ejercicio suelto = EXACTAMENTE 3 líneas: "Nombre ES (Name EN)" / "SxR | RIR n" / "Rest Ns". Biserie o triserie = una línea por estación "A1. Nombre ES (Name EN) | SxR | RIR n", "A2. ... | SxR | RIR n" y debajo UNA línea "Rest Ns". Core/accesorios con 2 o 3 ejercicios distintos. PROHIBIDO escribir explicaciones, notas o tempos dentro del bloque de ejercicios: solo nombres, dosis y descanso.\n' +
       '8) TEMPO: nunca en la dosis. Va solo en [COACHING TIPS & ESTRATEGIA]: "TEMPO: Tempo 3010 (3 s bajada, 1 s pausa abajo, 1 s subida, 0 s pausa arriba)" en ejercicio suelto; "A1 · CUE EFICIENTE: Tempo 3011 — ..." en bisets.\n' +
+      '8b) ' + jpIA('ciencia') + '\n' +
+      '8c) ' + jpIA('volumen') + '\n' +
       '9) NIVEL: ' + perfilNivel(ath) + '\n' + fichaReglas + reglaCargasKg(ath) +
       'FORMATO DE SALIDA (texto plano EXACTO, sin markdown ni nada fuera del formato; el bloque se numera siempre como 1):\n' +
       '[BLOQUE 1] {Categoría – título corto} (N MIN)\n' +
