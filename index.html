@@ -5391,6 +5391,23 @@ function impEtiqCoachSinonimo(t){
   if(!mm || !impCampoCoachDeTag(mm[1])) return null;
   return [mm[0], mm[1], mm[2]];
 }
+/* Líneas de METADATA sueltas de la redacción libre ("⏱️ PAUTA DE DESCANSO: 2 min entre series", "📌 NOTAS: ..."): el emoji inicial se ignora para reconocerlas y se interpretan
+   en vez de quedar impresas como texto huérfano dentro de la caja de ejercicios. */
+const IMP_RX_EMO_INI = new RegExp('^(?:' + IMP_EMO + '|\\s)+');
+function impSinEmojiInicial(s){ return String(s == null ? '' : s).replace(IMP_RX_EMO_INI, ''); }
+const IMP_RX_PAUTA_DESC = /^[\s*_>\-–•·]*(?:pautas?\s+de\s+descansos?|descansos?(?:\s+(?:entre\s+(?:series|rondas|estaciones|ejercicios|intervalos)|sugerido|recomendado|planificado|programado))?|tiempos?\s+de\s+descanso|pausa(?:\s+entre\s+series)?|recuperaci[oó]n(?:\s+entre\s+(?:series|rondas))?|rest(?:\s+time)?)\s*[*_]*\s*[:=]\s*[*_]*\s*(.+?)[*_]*\s*$/i;
+/* "2 min entre series" -> 120 · "90-120 s" -> 105 · "1:30" -> 90 · "2-3 min" -> 150 · "60" -> 60 (sin unidad: hasta 10 se lee como minutos). null si no hay un tiempo creíble */
+function impSegundosDeTexto(v){
+  const s = String(v == null ? '' : v).toLowerCase().replace(/,/g, '.');
+  let m = s.match(/(\d+)\s*:\s*(\d{2})/);
+  if(m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  m = s.match(/(\d+(?:\.\d+)?)(?:\s*(?:-|–|—|a|to)\s*(\d+(?:\.\d+)?))?\s*(min(?:utos?)?|mins?|m(?![a-z])|'|seg(?:undos?)?|segs?|sec(?:s|onds?)?|s(?![a-z])|")?/);
+  if(!m) return null;
+  const a = parseFloat(m[1]), b = m[2] ? parseFloat(m[2]) : a, u = m[3] || '';
+  const minutos = u ? /^(?:min|m$|')/.test(u) : Math.max(a, b) <= 10;
+  const seg = Math.round((((a + b) / 2) * (minutos ? 60 : 1)) / 5) * 5;
+  return (seg > 0 && seg <= 900) ? seg : null;
+}
 function impCampoDeEtiqueta(et){
   const sx = impCampoCoachDeTag(et); if(sx) return sx;
   const e = String(et).toLowerCase();
@@ -5800,7 +5817,9 @@ function parsearImportacion(texto, sports){
   const arr = String(texto || '').split(/\r?\n/).map(l => sports ? canonEstacionSB(l) : l);      /* "A1:" "A1 -" "A1 Nombre" -> "A1. Nombre": el biset se agrupa igual */
   arr.forEach((raw, i) => {
     const l = raw.replace(/\s+$/, '');
-    const t = l.trim();
+    const t0 = l.trim();
+    let t = impSinEmojiInicial(t0).trim();      /* el emoji de adorno ("⏱️", "🎯", "📌") no cuenta para reconocer la línea */
+    const conEmoji = t !== t0;
     /* una línea en blanco corta la continuación del FOCO: antes, todo el
        texto posterior (incluidos bloques cuyo delimitador no se reconocía)
        quedaba tragado dentro del foco y el día se importaba sin bloques */
@@ -5841,6 +5860,28 @@ function parsearImportacion(texto, sports){
         dia.foco = (dia.foco ? dia.foco + '\n' : '') + t; enFoco = true;
       }
       return;
+    }
+    /* metadata suelta dentro de un bloque: "PAUTA DE DESCANSO: 2 min" -> "Rest 120s" (el motor de estructura ya lo entiende); si no trae un tiempo claro va a los tips como
+       "DESCANSO: ..."; con emoji delante, "📌 NOTAS: ..." / "💡 CUES: ..." van al campo de coaching que corresponde. Nunca queda como texto plano en la caja de ejercicios. */
+    if(bloque){
+      const md = t.match(IMP_RX_PAUTA_DESC);
+      if(md){
+        const seg = impSegundosDeTexto(md[1]);
+        if(seg){ t = 'Rest ' + seg + 's'; }
+        else{
+          bloque.cierre = bloque.cierre || {};
+          bloque.cierre.tips = (bloque.cierre.tips ? bloque.cierre.tips + '\n' : '') + 'DESCANSO: ' + md[1].trim();
+          campoAct = 'tips'; return;
+        }
+      } else if(conEmoji){
+        const mx = t.match(/^([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ \/&]{2,40}?)\s*:\s*(.+)$/);
+        const cx = mx ? impCampoCoachDeTag(mx[1]) : '';
+        if(cx){
+          bloque.cierre = bloque.cierre || {};
+          bloque.cierre[cx] = (bloque.cierre[cx] ? bloque.cierre[cx] + '\n' : '') + mx[2].trim();
+          campoAct = cx; return;
+        }
+      }
     }
     if(bloque && IMP_RX_TIPHEAD.test(t)){
       bloque.cierre = bloque.cierre || {};
@@ -5968,26 +6009,51 @@ const IMP_PLACEHOLDER = '=== DÍA 1: Oly Cycling, Press Den y Metcon ===\nFOCO: 
 const IMP_PLACEHOLDER_SB = '=== DÍA 1: Empuje · Pecho y Hombro ===\n[NOMBRE DEL DÍA] Empuje\n[FOCO DEL COACH] Tensión mecánica en pecho; controlá la fase excéntrica.\n[BLOQUE 1] Entrada en calor de hombro\n- Rotaciones externas con banda x 12\n- Cat cow lento x 10\n[BLOQUE 2] Press banca plano con barra\n4x8-10 | Tempo 3010 | RIR 2\nRest 120s\n[OBJETIVO FISIOLÓGICO]\nMáxima tensión mecánica en el rango medio.\n[COACHING TIPS & ESTRATEGIA]\nSET-UP & ESTABILIDAD INICIAL: escápulas retraídas.\nCONTROL DE LA FASE EXCÉNTRICA: bajada de 3 segundos.\n[BLOQUE 3] Biset: Hombro & Tríceps\nA1. Elevaciones laterales\n3x12-15 | Tempo 2011 | RIR 0-1\nA2. Extensión de tríceps en polea\n3x12-15 | Tempo 2011 | RIR 0-1\nRest 90s\n\n=== DÍA 2: ... ===';
 /* sports: true -> modalidad Sports & Bodybuilding (vocabulario de hipertrofia) */
 function impEsSports(){ const p = plan(S.activeId); return !(p && esPlanCFActivo(p)); }
+/* textos de los dos botones según lo que hay pegado y dónde está parado el coach: destino = día abierto (+ semana S# en CrossFit modular, que se edita semana por semana) */
+function impEtiquetasBotones(r){
+  const sp = impEsSports(), d = curDay();
+  let sem = '';
+  try{ if(!sp) sem = 'S' + (activeCfWeek() + 1); }catch(e){}
+  const dia = d ? (d.short || ('DÍA ' + ((S.ui.day || 0) + 1))) : 'EL DÍA ABIERTO';
+  const dest = dia + (sem ? ' · ' + sem : '');
+  const nd = r ? r.dias.filter(x => x.bloques.length).length : 0;
+  if(nd > 1){
+    return { dia: 'IMPORTAR SOLO EN ' + dest, semana: 'IMPORTAR LOS ' + nd + ' DÍAS (DÍA 1..' + nd + ')' + (sem ? ' EN ' + sem : ''), semanaOff: false, primario: 'semana',
+      tDia: 'Carga únicamente el día del texto que corresponde a ' + dest + ' y no toca los demás días.', tSemana: 'Distribuye los ' + nd + ' días del texto en los días correlativos del plan' + (sem ? ' (semana ' + sem + ')' : '') + ' y pide confirmación antes de sobrescribir.' };
+  }
+  return { dia: 'IMPORTAR EN ' + dest, semana: 'IMPORTAR SEMANA COMPLETA' + (sem ? ' (' + sem + ')' : '') + (nd === 1 ? ' · el texto trae 1 día' : ''), semanaOff: nd === 1, primario: 'dia',
+    tDia: 'Reemplaza los bloques de ' + dest + '.', tSemana: nd === 1 ? 'El texto pegado trae un solo día: usá el botón de la izquierda.' : 'Pegá varios encabezados === DÍA X === para cargar toda la semana de una vez.' };
+}
+function impRefrescarBotones(r){
+  const L = impEtiquetasBotones(r);
+  const bd = document.querySelector('[data-impgo="dia"]'), bs = document.querySelector('[data-impgo="semana"]');
+  if(!bd || !bs) return;
+  bd.textContent = L.dia; bd.title = L.tDia; bs.textContent = L.semana; bs.title = L.tSemana;
+  bd.classList.toggle('gold', L.primario === 'dia'); bs.classList.toggle('gold', L.primario === 'semana');
+  bs.disabled = !!L.semanaOff; bs.style.opacity = L.semanaOff ? '.45' : '';
+}
 function htmlImportadorRapido(){
   const sp = impEsSports();
+  let rPrev = null; try{ if(String(_impTexto || '').trim()) rPrev = parsearImportacion(_impTexto, sp); }catch(e){}
+  const LB = impEtiquetasBotones(rPrev);
   return '<details class="card" id="impBox" style="margin-bottom:14px">' +
     '<summary class="lb" style="cursor:pointer">📋 Importador rápido de sesión · Pegar día completo (auto-split por bloque)</summary>' +
     '<div style="margin-top:10px">' +
       '<textarea id="cfPegarTxt" style="min-height:240px" placeholder="' + esc(sp ? IMP_PLACEHOLDER_SB : IMP_PLACEHOLDER) + '">' + esc(_impTexto) + '</textarea>' +
       '<div id="impPreview" class="hint" style="margin-top:6px"></div>' +
       '<div class="imp-actions">' +
-        '<button type="button" class="btn gold sm" data-impgo="dia">IMPORTAR DÍA ACTIVO</button>' +
+        '<button type="button" class="btn sm' + (LB.primario === 'dia' ? ' gold' : '') + '" data-impgo="dia" title="' + esc(LB.tDia) + '">' + esc(LB.dia) + '</button>' +
         '<span class="imp-sep"></span>' +
-        '<button type="button" class="btn sm imp-semana" data-impgo="semana">IMPORTAR SEMANA COMPLETA (' + (sp ? 'DÍA 1..N' : 'S1..S4') + ')</button>' +
+        '<button type="button" class="btn sm imp-semana' + (LB.primario === 'semana' ? ' gold' : '') + '" data-impgo="semana" title="' + esc(LB.tSemana) + '"' + (LB.semanaOff ? ' disabled style="opacity:.45"' : '') + '>' + esc(LB.semana) + '</button>' +
       '</div>' +
       (sp ? '' : '<div class="imp-actions" style="margin-top:6px"><button type="button" class="btn sm" data-impnorm="1" title="Detecta días y bloques del texto pegado y lo deja en el formato exacto de la plataforma, para que lo revises antes de importar">✨ ESTANDARIZAR PLANILLA</button>' +
         '<button type="button" class="btn sm ghost" data-impnormia="1" title="Usa tu IA para ordenar un texto muy desordenado (después se revisa igual)">🤖 ESTANDARIZAR CON IA</button></div>' +
         '<div class="hint" style="margin-top:6px">✨ <b>Pegado libre</b>: pegá la planificación como la tengas redactada (WhatsApp, Excel, notas). Se detectan solos los <b>días</b>, los bloques (<b>warm-up, strength / skill, AMRAP / EMOM / For Time / rondas, accesorios, hyrox, endurance</b>) y los campos <b>objetivo / tips / pacing / escalado</b>; los videos de la biblioteca se vinculan a cada bloque al importar.</div>') +
       (sp
         ? '<div class="hint" style="margin-top:6px">Sintaxis esperada: cada día empieza con <b>=== DÍA X: Título ===</b> (opcional <b>[NOMBRE DEL DÍA]</b> y <b>[FOCO DEL COACH]</b>) · cada ejercicio con <b>[BLOQUE X] Nombre</b> (o <b>[FUERZA]</b>, <b>[HIPERTROFIA]</b>, <b>[ACCESORIO]</b> + nombre) · prescripción <b>4x8-10 | Tempo 3010 | RIR 2</b> y descanso <b>Rest 120s</b> · bisets con <b>A1.</b> / <b>A2.</b> · listas de calentamiento con <b>- Ejercicio x 12</b> · <b>[OBJETIVO FISIOLÓGICO]</b> y <b>[COACHING TIPS &amp; ESTRATEGIA]</b> van a sus propios campos. <b>Ctrl+Enter</b> importa directo · escribí <b>/biset</b> <b>/triset</b> <b>/piramide</b> <b>/tramos</b> <b>/myo</b> para insertar plantillas · el nombre del ejercicio se autocompleta (Tab). ' +
-          '<b>Importar día activo</b> reemplaza los bloques del día abierto; <b>Importar semana completa</b> carga cada <i>DÍA X</i> en su pestaña correlativa y pide confirmación antes de sobrescribir.</div>'
+          'El botón de la izquierda importa <b>solo en el día abierto</b> (si el texto trae varios días toma el que corresponde y no toca los demás); el de la derecha carga <b>todos los días del texto</b> en sus pestañas correlativas y pide confirmación antes de sobrescribir. Los botones muestran siempre el destino exacto.</div>'
         : '<div class="hint" style="margin-top:6px">Encabezado de día: <b>=== DÍA X: Título ===</b> o <b>### DÍA X: Título</b> · <b>FOCO:</b> / <b>BRIEFING:</b> · delimitadores <b>[WARM-UP]</b> <b>[SKILL / STRENGTH]</b> <b>[WOD / METCON]</b> <b>[ACCESSORY / COOLDOWN]</b> + título opcional (también <b>A) …</b> / <b>B) …</b> para sesiones en bruto, con la fase inferida). ' +
-          '<b>Día activo</b> reemplaza los bloques del día abierto; <b>Semana completa</b> carga cada <i>DÍA X</i> en su día correlativo de la semana que estás editando.</div>') +
+          'El botón de la izquierda importa <b>solo en el día abierto</b> de la semana que estás editando; el de la derecha carga <b>cada <i>DÍA X</i> del texto</b> en su día correlativo de esa misma semana. Los botones muestran siempre el destino exacto (día y semana).</div>') +
     '</div>' +
   '</details>';
 }
@@ -5995,7 +6061,7 @@ function previewImportacion(){
   const box = document.getElementById('impPreview'), ta = document.getElementById('cfPegarTxt');
   if(!box || !ta) return;
   _impTexto = ta.value;
-  if(!ta.value.trim()){ box.innerHTML = ''; return; }
+  if(!ta.value.trim()){ box.innerHTML = ''; try{ impRefrescarBotones(null); }catch(eB){} return; }
   const sp = impEsSports();
   const r = parsearImportacion(ta.value, sp);
   /* varios "=== DÍA X" pegados: el modo pasa solo a "Semana completa" */
@@ -6003,6 +6069,7 @@ function previewImportacion(){
     _impModo = 'semana';
     document.querySelectorAll('[data-impmodo]').forEach(b => { const on = b.dataset.impmodo === _impModo; b.classList.toggle('gold', on); b.classList.toggle('ghost', !on); });
   }
+  try{ impRefrescarBotones(r); }catch(eB){}
   const nB = r.dias.reduce((s, d) => s + d.bloques.length, 0);
   const nT = r.dias.reduce((s, d) => s + d.bloques.reduce((x, b) => x + Object.keys(b.cierre || {}).length, 0), 0);
   const semaforo = b => '<span style="color:' + (!b.items.length ? '#ff5d5d' : (b.estado === 'warn' ? '#FFB703' : '#3ecf7a')) + '" title="' + (!b.items.length ? 'sin prescripción' : (b.estado === 'warn' ? 'inferido: revisá fase y nombre' : 'reconocido')) + '">●</span> ';
@@ -6055,14 +6122,15 @@ function jpProtegerPlan(p, indices, etiqueta){
   }catch(e){ console.warn('proteger plan', e); }
   return true;
 }
-function ejecutarImportacion(texto, modo){
+function ejecutarImportacion(texto, modo, opts){
   const p = plan(S.activeId), ath = active();
   if(!p || !ath){ toast('Seleccioná un alumno/a primero', 'err'); return false; }
+  const soloDia = !!(opts && opts.soloDia);      /* botón "IMPORTAR SOLO EN <día>": un solo día aunque el texto traiga varios */
   const r = parsearImportacion(texto, !esPlanCFActivo(p));
   /* causa real del "sólo carga el Día 1": el modo por defecto es "Día activo",
      que toma UN solo día del texto aunque se pegue la semana entera. Si el
      texto trae varios encabezados DÍA, se importan todos (modo semana). */
-  if(modo === 'dia' && r.dias.filter(d => d.bloques.length).length > 1){
+  if(modo === 'dia' && !soloDia && r.dias.filter(d => d.bloques.length).length > 1){
     modo = 'semana'; _impModo = 'semana';
     toast('Se detectaron ' + r.dias.length + ' días en el texto: se importa la semana completa', 'warn');
   }
@@ -9313,7 +9381,7 @@ function bindBuilder(){
     }
     if(t.dataset.impgo){
       const ta = document.getElementById('cfPegarTxt');
-      ejecutarImportacion(ta ? ta.value : _impTexto, t.dataset.impgo === 'semana' ? 'semana' : 'dia');
+      ejecutarImportacion(ta ? ta.value : _impTexto, t.dataset.impgo === 'semana' ? 'semana' : 'dia', { soloDia: t.dataset.impgo !== 'semana' });
       return;
     }
     if(t.dataset.addsportsblock){ addBlockSportsPizarra(); return; }
@@ -79172,6 +79240,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(md){ nuevoDia(parseInt(md[1], 10), (md[2] || '').trim()); return; }
       if(mw){ dowN++; nuevoDia(dowN, mw[1].charAt(0).toUpperCase() + mw[1].slice(1).toLowerCase() + ((mw[2] || '').trim() ? ' · ' + mw[2].trim() : '')); return; }
       if(RX_SEMANA.test(c) && c.length < 40 && !bloque){ avisos.push('Se ignoró el título «' + c.slice(0, 30) + '»'); return; }
+      /* "PAUTA DE DESCANSO: 2 min" suelta: descanso del bloque ("Rest 120s"), no un ejercicio */
+      var mDesc = (bloque && typeof IMP_RX_PAUTA_DESC !== 'undefined') ? c.match(IMP_RX_PAUTA_DESC) : null;
+      if(mDesc){
+        var segD = (typeof impSegundosDeTexto === 'function') ? impSegundosDeTexto(mDesc[1]) : null;
+        if(segD){ bloque.items.push('Rest ' + segD + 's'); campo = ''; }
+        else agregarCoach('tips', 'DESCANSO: ' + mDesc[1].trim());
+        return;
+      }
       /* etiquetas de coaching (objetivo / tips / pacing / escalado / foco) */
       var m;
       if((m = c.match(L_FOCO)) && !bloque){ if((m[1] || '').trim()) preambulo.push(m[1].trim()); campo = ''; return; }
