@@ -5,10 +5,10 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 
 const src = readFileSync(new URL('../src/brand/logo.ts', import.meta.url), 'utf8');
-const all = [...src.matchAll(/^\s+'(M [^']+)'/gm)].map((m) => m[1]);
-const stroke = Number(src.match(/LOGO_STROKE = ([\d.]+)/)[1]);
-const strokes = all.slice(0, 2).map((d) => `<path d="${d}" fill="none" stroke="#fff" stroke-width="${stroke}"/>`).join('');
-const fills = all.slice(2).map((d) => `<path d="${d}" fill="#fff"/>`).join('');
+// todos los trazados del isotipo son rellenos: d: 'M …'
+const all = [...src.matchAll(/d: '(M [^']+)'/g)].map((m) => m[1]);
+const strokes = '';
+const fills = all.map((d) => `<path d="${d}" fill="#fff"/>`).join('');
 const glyph = (w) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 46 212 70" width="${w}">${strokes}${fills}</svg>`;
 
 // favicon vectorial: placa carbón + isotipo + filete neón
