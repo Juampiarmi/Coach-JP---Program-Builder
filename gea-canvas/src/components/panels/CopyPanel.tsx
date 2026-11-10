@@ -161,7 +161,7 @@ export function CopyPanel() {
       onChange={(v: Engine) => (v === 'ia' && !ready ? setSettings(true) : setEngine(v))}
       options={[
         { value: 'banco', label: 'Banco GEA', title: 'Copys curados con la voz de la marca, sin conexión' },
-        { value: 'ia', label: ready ? `IA · ${ai.provider === 'anthropic' ? 'Claude' : 'OpenAI'}` : 'IA (configurar)', title: 'Copys en vivo con tu API key' },
+        { value: 'ia', label: ready ? 'IA · Gemini' : 'IA (configurar)', title: 'Copys en vivo con tu API key' },
       ]}
     />
   );
