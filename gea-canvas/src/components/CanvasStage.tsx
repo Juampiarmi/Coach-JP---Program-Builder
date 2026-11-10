@@ -1,6 +1,7 @@
 'use client';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { HANDLE, handlePoints, hitLayer, renderScene, type MediaEl } from '@/lib/canvas/render';
+import { findConflicts, layerAABB } from '@/lib/canvas/safe';
 import { FORMATS, type Layer } from '@/lib/types';
 import { useCurrent, usePage, useStudio } from '@/store/studio';
 
@@ -18,6 +19,7 @@ export function CanvasStage({ media, fontsReady }: { media: MediaEl | null; font
   const page = usePage();
   const selectedId = useStudio((s) => s.selectedId);
   const guides = useStudio((s) => s.guides);
+  const igUi = useStudio((s) => s.igUi);
   const select = useStudio((s) => s.select);
   const updateLayer = useStudio((s) => s.updateLayer);
   const checkpoint = useStudio((s) => s.checkpoint);
@@ -51,11 +53,18 @@ export function CanvasStage({ media, fontsReady }: { media: MediaEl | null; font
 
   const ui = W / Math.max(1, box.w);
 
+  // stickers que pisan la UI de Instagram: se marcan en rojo mientras haya guías o simulador
+  const conflicts = useMemo(() => {
+    if (!fontsReady || (!guides && !igUi)) return [];
+    const ids = findConflicts(page, project.format);
+    return page.layers.filter((l) => ids.has(l.id)).map(layerAABB);
+  }, [page, project.format, guides, igUi, fontsReady]);
+
   const draw = useCallback(() => {
     const c = canvasRef.current;
     if (!c || !fontsReady) return;
-    renderScene(c.getContext('2d')!, page, { format: project.format, media, guides, selectedId, ui, snap });
-  }, [page, project.format, media, guides, selectedId, ui, snap, fontsReady]);
+    renderScene(c.getContext('2d')!, page, { format: project.format, media, guides, selectedId, ui, snap, igUi, conflicts });
+  }, [page, project.format, media, guides, selectedId, ui, snap, fontsReady, igUi, conflicts]);
 
   useEffect(() => {
     draw();

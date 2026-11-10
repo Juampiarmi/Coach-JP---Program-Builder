@@ -6,8 +6,8 @@
  */
 import { ACCENTS, BRAND } from '@/brand/tokens';
 import { drawLogo, logoHeight } from '@/brand/logo';
-import type { StickerProps } from '@/lib/types';
-import { arcText, drawBlock, fillSpaced, fit, font, measureSpaced } from './text';
+import type { InfoItem, StickerProps } from "@/lib/types";
+import { arcText, drawBlock, fillSpaced, fit, font, measureSpaced, wrap } from './text';
 import { dropShadow, glass, grain, neonGlow, neonStroke, rgba, rr, softGlow, tint } from './paint';
 
 /** Margen alrededor de la caja para que el glow no se corte. */
@@ -654,7 +654,258 @@ const text: Layout = (ctx, p) => {
   };
 };
 
-export const LAYOUTS: Record<StickerProps['kind'], Layout> = { stamp, ticket, sash, tag, pill, vip, tab, logo, text };
+/* ───────────────────────── 10 · PLACAS INFORMATIVAS (turnos / carta) ───────────────────────── */
+
+/** Cuerpo de placa según estilo. Devuelve los colores de texto a usar encima. */
+function plate(ctx: CanvasRenderingContext2D, p: StickerProps, shape: Path2D, W: number, H: number, k: number) {
+  const a = acc(p);
+  const paper = p.style === 'paper';
+  if (p.style === 'glass') glass(ctx, shape, 0, 0, W, H, a.hex);
+  else if (p.style === 'neon') {
+    ctx.fillStyle = 'rgba(14,14,14,0.82)';
+    ctx.fill(shape);
+    neonStroke(ctx, shape, a.hex, 4, k, 0.8);
+  } else
+    dropShadow(ctx, k, () => {
+      ctx.fillStyle = paper ? BRAND.bone : BRAND.ink;
+      ctx.fill(shape);
+    });
+  if (paper) grain(ctx, shape, 0, 0, W, H, 0.05);
+  const ink = paper ? BRAND.ink : '#FFFFFF';
+  return {
+    ink,
+    muted: paper ? rgba(BRAND.ink, 0.62) : 'rgba(255,255,255,0.66)',
+    line: paper ? rgba(BRAND.ink, 0.16) : 'rgba(255,255,255,0.14)',
+    accent: paper ? (p.accent === 'white' ? BRAND.ink : a.deep) : a.hex,
+  };
+}
+
+/** Línea de medios de pago como chips ("Efectivo · Débito · QR"). Devuelve el alto usado. */
+function chips(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxW: number, color: string, center = false) {
+  const parts = text.split(/\s*[·|,]\s*/).filter(Boolean);
+  ctx.font = font('body', 21, 700);
+  const padX = 18;
+  const h = 44;
+  const gap = 10;
+  const rows: { t: string; w: number }[][] = [[]];
+  let rowW = 0;
+  for (const t of parts) {
+    const w = ctx.measureText(t).width + padX * 2;
+    if (rowW + w > maxW && rows[rows.length - 1].length) {
+      rows.push([]);
+      rowW = 0;
+    }
+    rows[rows.length - 1].push({ t, w });
+    rowW += w + gap;
+  }
+  ctx.textBaseline = 'middle';
+  rows.forEach((row, r) => {
+    const total = row.reduce((s, c) => s + c.w, 0) + gap * (row.length - 1);
+    let cx = center ? x + (maxW - total) / 2 : x;
+    const cy = y + r * (h + gap);
+    for (const c of row) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke(rr(cx, cy, c.w, h, h / 2));
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.fillText(c.t, cx + c.w / 2, cy + h / 2 + 1);
+      cx += c.w + gap;
+    }
+  });
+  ctx.textAlign = 'left';
+  return rows.length * h + (rows.length - 1) * gap;
+}
+
+const DEFAULT_RATES: InfoItem[] = [
+  { label: 'Turno estándar', detail: '2 horas' },
+  { label: 'Turno extendido', detail: '4 horas' },
+  { label: 'Pernocte', detail: 'De 22 a 10 h' },
+];
+
+const rates: Layout = (ctx, p) => {
+  const W = 780;
+  const items = (p.items?.length ? p.items : DEFAULT_RATES).slice(0, 7);
+  const ROW = 104;
+  const HEAD = 186;
+  const pay = p.sub ?? 'Efectivo · Débito · Crédito · QR';
+  // altura del pie según cuántas filas de chips ocupe el pago
+  ctx.font = font('body', 21, 700);
+  const payW = pay.split(/\s*[·|,]\s*/).filter(Boolean).reduce((s, t) => s + ctx.measureText(t).width + 46, 0);
+  const payRows = Math.max(1, Math.ceil(payW / (W - 96)));
+  const FOOT = pay.trim() ? 92 + payRows * 54 : 40;
+  const H = HEAD + items.length * ROW + FOOT;
+  const title = fit(ctx, p.text || 'Modalidades', { family: 'display', weight: 700, maxW: W - 260, maxH: 96, maxLines: 2, max: 40, min: 22, lineHeight: 1.15, upper: true });
+  return {
+    w: W,
+    h: H,
+    draw(ctx, k) {
+      const c = plate(ctx, p, rr(0, 0, W, H, 34), W, H, k);
+      // encabezado
+      ctx.textBaseline = 'middle';
+      ctx.font = font('tech', 16);
+      ctx.fillStyle = c.accent;
+      fillSpaced(ctx, (p.meta || 'ABIERTO 24 HS · 365 DÍAS').toUpperCase(), 48, 56, 3);
+      ctx.fillStyle = c.ink;
+      drawBlock(ctx, title, 'display', 700, 48, 118, 'left');
+      drawLogo(ctx, W - 48 - 60, 66, 120, c.ink);
+      ctx.fillStyle = c.accent;
+      ctx.fillRect(48, HEAD - 14, 64, 3);
+      // filas
+      items.forEach((it, i) => {
+        const y = HEAD + i * ROW;
+        if (i > 0) {
+          ctx.fillStyle = c.line;
+          ctx.fillRect(48, y, W - 96, 1.5);
+        }
+        const hasDetail = !!it.detail?.trim();
+        const priceW = it.price?.trim() ? 220 : 0;
+        const label = fit(ctx, it.label, { family: 'body', weight: 800, maxW: W - 96 - priceW - 40, maxH: 40, maxLines: 1, max: 32, min: 18, upper: true, spacingEm: 0.02 });
+        ctx.fillStyle = c.ink;
+        drawBlock(ctx, label, 'body', 800, 48 + 30, y + (hasDetail ? 38 : ROW / 2), 'left');
+        // viñeta de acento
+        ctx.fillStyle = c.accent;
+        ctx.beginPath();
+        ctx.arc(56, y + (hasDetail ? 38 : ROW / 2), 6, 0, Math.PI * 2);
+        ctx.fill();
+        if (hasDetail) {
+          ctx.font = font('body', 22, 600);
+          ctx.fillStyle = c.muted;
+          ctx.textBaseline = 'middle';
+          ctx.fillText(it.detail!, 48 + 30, y + 72);
+        }
+        if (priceW) {
+          ctx.font = font('tech', 28);
+          ctx.textBaseline = 'middle';
+          if (p.style === 'neon') neonGlow(ctx, acc(p).hex, k, () => fillSpaced(ctx, it.price!, W - 48, y + ROW / 2, 1, 'right'), 0.5, 0.5);
+          else {
+            ctx.fillStyle = c.accent;
+            fillSpaced(ctx, it.price!, W - 48, y + ROW / 2, 1, 'right');
+          }
+        }
+      });
+      // pie: medios de pago
+      if (pay.trim()) {
+        const fy = HEAD + items.length * ROW + 10;
+        ctx.fillStyle = c.line;
+        ctx.fillRect(48, fy, W - 96, 1.5);
+        ctx.font = font('tech', 14);
+        ctx.fillStyle = c.muted;
+        ctx.textBaseline = 'middle';
+        fillSpaced(ctx, 'MEDIOS DE PAGO', 48, fy + 34, 3);
+        chips(ctx, pay, 48, fy + 58, W - 96, c.ink);
+      }
+    },
+  };
+};
+
+const DEFAULT_MENU: InfoItem[] = [
+  { label: 'Gin tonic de autor', detail: 'Gin, tónica premium, pepino y pimienta rosa' },
+  { label: 'Negroni', detail: 'Gin, vermut rosso y Campari, twist de naranja' },
+  { label: 'Espumante para dos', detail: 'Botella fría con dos copas' },
+  { label: 'Tabla para compartir', detail: 'Quesos, fiambres, frutos secos y pan tostado' },
+];
+
+const menu: Layout = (ctx, p) => {
+  const W = 720;
+  const items = (p.items?.length ? p.items : DEFAULT_MENU).slice(0, 8);
+  const inner = W - 120;
+  const title = fit(ctx, p.text || 'Carta de coctelería', { family: 'display', weight: 700, maxW: inner, maxH: 104, maxLines: 2, max: 40, min: 22, lineHeight: 1.18, upper: true, spacingEm: 0.04 });
+  const titleH = title.lines.length * title.lineH;
+  ctx.font = font('body', 21, 500);
+  const blocks = items.map((it) => {
+    const desc = it.detail?.trim() ? wrap(ctx, it.detail, inner, 0).slice(0, 2) : [];
+    return { it, desc, h: 52 + desc.length * 28 + 26 };
+  });
+  const promo = p.sub?.trim() ?? '';
+  const promoLines = promo ? (ctx.font = font('body', 22, 700), wrap(ctx, promo, inner - 150, 0).slice(0, 2)) : [];
+  const TOP = 92 + titleH + 64;
+  const PROMO = promo ? 40 + promoLines.length * 30 + 40 : 0;
+  const H = TOP + blocks.reduce((s, b) => s + b.h, 0) + PROMO + 110;
+  return {
+    w: W,
+    h: H,
+    draw(ctx, k) {
+      const c = plate(ctx, p, rr(0, 0, W, H, 30), W, H, k);
+      // filete interior (carta impresa)
+      ctx.strokeStyle = c.line;
+      ctx.lineWidth = 1.5;
+      ctx.stroke(rr(18, 18, W - 36, H - 36, 20));
+      ctx.textBaseline = 'middle';
+      ctx.font = font('tech', 15);
+      ctx.fillStyle = c.accent;
+      fillSpaced(ctx, (p.meta || 'SERVICIO A LA HABITACIÓN · 24 HS').toUpperCase(), W / 2, 64, 3, 'center');
+      const ty = 92 + titleH / 2;
+      if (p.style === 'neon') softGlow(ctx, acc(p).hex, k, () => drawBlock(ctx, title, 'display', 700, W / 2, ty));
+      else {
+        ctx.fillStyle = c.ink;
+        drawBlock(ctx, title, 'display', 700, W / 2, ty);
+      }
+      // ornamento: línea — rombo — línea
+      const oy = 92 + titleH + 30;
+      ctx.fillStyle = c.accent;
+      ctx.fillRect(W / 2 - 120, oy - 1, 96, 2);
+      ctx.fillRect(W / 2 + 24, oy - 1, 96, 2);
+      ctx.beginPath();
+      ctx.moveTo(W / 2, oy - 8);
+      ctx.lineTo(W / 2 + 8, oy);
+      ctx.lineTo(W / 2, oy + 8);
+      ctx.lineTo(W / 2 - 8, oy);
+      ctx.fill();
+      // ítems
+      let y = TOP;
+      for (const b of blocks) {
+        const ny = y + 24;
+        const priceTxt = b.it.price?.trim() ?? '';
+        ctx.font = font('tech', 24);
+        const pw = priceTxt ? ctx.measureText(priceTxt).width + 6 : 0;
+        const name = fit(ctx, b.it.label, { family: 'body', weight: 800, maxW: inner - pw - 40, maxH: 36, maxLines: 1, max: 28, min: 17, upper: true, spacingEm: 0.03 });
+        ctx.fillStyle = c.ink;
+        drawBlock(ctx, name, 'body', 800, 60, ny, 'left');
+        if (priceTxt) {
+          ctx.font = font('body', name.size, 800);
+          const nameW = measureSpaced(ctx, name.lines[0] ?? '', name.spacing);
+          // puntos guía hasta el precio
+          ctx.fillStyle = c.muted;
+          for (let dx = 60 + nameW + 14; dx < W - 60 - pw - 12; dx += 10) ctx.fillRect(dx, ny + 8, 2.5, 2.5);
+          ctx.font = font('tech', 24);
+          ctx.fillStyle = c.accent;
+          ctx.textAlign = 'right';
+          ctx.fillText(priceTxt, W - 60, ny + 2);
+          ctx.textAlign = 'left';
+        }
+        ctx.font = font('body', 21, 500);
+        ctx.fillStyle = c.muted;
+        b.desc.forEach((l, i) => ctx.fillText(l, 60, ny + 38 + i * 28));
+        y += b.h;
+      }
+      // promo destacada
+      if (promo) {
+        const py = y + 14;
+        const ph = PROMO - 28;
+        const box = rr(48, py, W - 96, ph, 18);
+        if (p.style === 'neon') neonStroke(ctx, box, acc(p).hex, 3, k, 0.6);
+        else {
+          ctx.fillStyle = p.style === 'paper' ? rgba(BRAND.ink, 0.06) : rgba(acc(p).hex, 0.16);
+          ctx.fill(box);
+          ctx.strokeStyle = c.accent;
+          ctx.lineWidth = 2;
+          ctx.stroke(box);
+        }
+        ctx.font = font('display', 17, 700);
+        ctx.fillStyle = c.accent;
+        fillSpaced(ctx, 'PROMO', 76, py + ph / 2, 4);
+        ctx.font = font('body', 22, 700);
+        ctx.fillStyle = c.ink;
+        const top = py + ph / 2 - ((promoLines.length - 1) * 30) / 2;
+        promoLines.forEach((l, i) => ctx.fillText(l, 196, top + i * 30));
+      }
+      drawLogo(ctx, W / 2, H - 58, 104, c.ink);
+    },
+  };
+};
+
+export const LAYOUTS: Record<StickerProps['kind'], Layout> = { stamp, ticket, sash, tag, pill, vip, tab, logo, text, rates, menu };
 
 /* ───────────────────────── render + caché ───────────────────────── */
 export interface Rendered {

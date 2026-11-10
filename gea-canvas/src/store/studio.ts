@@ -3,11 +3,51 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { kindSpec } from '@/data/library';
 import { uid } from '@/lib/id';
-import type { Background, CopyPiece, FormatKey, Layer, Page, Project, StickerProps } from '@/lib/types';
+import type { Background, CopyPiece, FormatKey, Layer, Page, PillarKey, Project, StickerProps, ToneKey } from '@/lib/types';
 import { FORMATS } from '@/lib/types';
 import { renderSticker } from '@/lib/canvas/stickers';
 
-export type PanelKey = 'stickers' | 'fondo' | 'copys' | 'paginas' | 'proyectos';
+export type PanelKey = 'stickers' | 'fondo' | 'galeria' | 'copys' | 'paginas' | 'proyectos';
+
+export type AssetCategory = 'suite' | 'jacuzzi' | 'bar' | 'confort';
+
+export const ASSET_CATEGORIES: Record<AssetCategory, string> = {
+  suite: 'Suite Neón',
+  jacuzzi: 'Jacuzzi',
+  bar: 'Bar',
+  confort: 'Detalle Confort',
+};
+
+/** Fondo guardado en la Galería GEA (el archivo vive en IndexedDB, acá solo la ficha). */
+export interface Asset {
+  id: string;
+  mediaId: string;
+  name: string;
+  kind: 'image' | 'video';
+  category: AssetCategory;
+  /** Miniatura JPEG chica (dataURL). */
+  thumb: string;
+  createdAt: number;
+}
+
+export interface WeekItem {
+  day: string;
+  /** YYYY-MM-DD */
+  date: string;
+  pillar: PillarKey;
+  format: FormatKey | 'carousel';
+  piece: CopyPiece;
+  projectId?: string;
+}
+
+export interface WeekPlan {
+  id: string;
+  /** Lunes de la semana, YYYY-MM-DD. */
+  start: string;
+  tone: ToneKey;
+  source: 'banco' | 'ia';
+  items: WeekItem[];
+}
 
 export const newBackground = (): Background => ({
   kind: 'none',
@@ -42,7 +82,10 @@ interface StudioState {
   pageIndex: number;
   selectedId: string | null;
   guides: boolean;
+  igUi: boolean;
   panel: PanelKey;
+  assets: Asset[];
+  week: WeekPlan | null;
   past: Project[];
   future: Project[];
 
@@ -50,6 +93,7 @@ interface StudioState {
   page: () => Page;
   setPanel: (p: PanelKey) => void;
   toggleGuides: () => void;
+  toggleIgUi: () => void;
   select: (id: string | null) => void;
 
   /** Guarda un punto de deshacer antes de una edición. */
@@ -82,6 +126,13 @@ interface StudioState {
   deleteProject: (id: string) => void;
   importProject: (p: Project) => void;
   setCopy: (c: CopyPiece) => void;
+
+  addAsset: (a: Asset) => void;
+  updateAsset: (id: string, patch: Partial<Asset>) => void;
+  removeAsset: (id: string) => void;
+  setWeek: (w: WeekPlan | null) => void;
+  /** Agrega proyectos sin abrirlos (piezas de la semana). */
+  addProjects: (ps: Project[]) => void;
 }
 
 const first = newProject('story', 'Primera pieza GEA');
@@ -94,7 +145,10 @@ export const useStudio = create<StudioState>()(
       pageIndex: 0,
       selectedId: null,
       guides: true,
+      igUi: false,
       panel: 'stickers',
+      assets: [],
+      week: null,
       past: [],
       future: [],
 
@@ -108,6 +162,7 @@ export const useStudio = create<StudioState>()(
       },
       setPanel: (panel) => set({ panel }),
       toggleGuides: () => set((s) => ({ guides: !s.guides })),
+      toggleIgUi: () => set((s) => ({ igUi: !s.igUi })),
       select: (selectedId) => set({ selectedId }),
 
       checkpoint: () => set((s) => ({ past: [...s.past.slice(-49), clone(s.current())], future: [] })),
@@ -301,11 +356,17 @@ export const useStudio = create<StudioState>()(
         p.copy = copy;
         p.pillar = copy.pillar;
       }),
+
+      addAsset: (a) => set((s) => ({ assets: [a, ...s.assets] })),
+      updateAsset: (id, patch) => set((s) => ({ assets: s.assets.map((a) => (a.id === id ? { ...a, ...patch } : a)) })),
+      removeAsset: (id) => set((s) => ({ assets: s.assets.filter((a) => a.id !== id) })),
+      setWeek: (week) => set({ week }),
+      addProjects: (ps) => set((s) => ({ projects: [...ps, ...s.projects.filter((p) => !ps.some((n) => n.id === p.id))] })),
     }),
     {
       name: 'gea-canvas:v1',
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ projects: s.projects, currentId: s.currentId, guides: s.guides }),
+      partialize: (s) => ({ projects: s.projects, currentId: s.currentId, guides: s.guides, igUi: s.igUi, assets: s.assets, week: s.week }),
     },
   ),
 );

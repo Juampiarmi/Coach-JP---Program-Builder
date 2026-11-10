@@ -5,7 +5,7 @@ import { PILLARS } from '@/data/library';
 import { download } from '@/lib/canvas/export';
 import { dataUrlToMedia, mediaToDataUrl } from '@/lib/media';
 import { FORMATS, type FormatKey, type Project } from '@/lib/types';
-import { useStudio } from '@/store/studio';
+import { useStudio, type Asset } from '@/store/studio';
 import { Btn, Section, inputCls } from '../ui';
 
 const STATUS: Record<Project['status'], string> = {
@@ -16,6 +16,8 @@ const STATUS: Record<Project['status'], string> = {
 
 export function ProjectsPanel() {
   const projects = useStudio((s) => s.projects);
+  const assets = useStudio((s) => s.assets);
+  const addAsset = useStudio((s) => s.addAsset);
   const currentId = useStudio((s) => s.currentId);
   const createProject = useStudio((s) => s.createProject);
   const openProject = useStudio((s) => s.openProject);
@@ -31,13 +33,13 @@ export function ProjectsPanel() {
   /** Respaldo JSON con las fotos/videos embebidos, para pasar a otro dispositivo. */
   const backup = async () => {
     const media: Record<string, string> = {};
-    for (const p of projects)
-      for (const pg of p.pages)
-        if (pg.background.mediaId && !media[pg.background.mediaId]) {
-          const d = await mediaToDataUrl(pg.background.mediaId);
-          if (d) media[pg.background.mediaId] = d;
-        }
-    const blob = new Blob([JSON.stringify({ app: 'gea-canvas', v: 1, projects, media })], { type: 'application/json' });
+    const ids = [...projects.flatMap((p) => p.pages.map((pg) => pg.background.mediaId)), ...assets.map((a) => a.mediaId)];
+    for (const id of ids)
+      if (id && !media[id]) {
+        const d = await mediaToDataUrl(id);
+        if (d) media[id] = d;
+      }
+    const blob = new Blob([JSON.stringify({ app: 'gea-canvas', v: 2, projects, assets, media })], { type: 'application/json' });
     download(blob, `gea-canvas-respaldo-${new Date().toISOString().slice(0, 10)}.json`);
   };
 
@@ -47,6 +49,8 @@ export function ProjectsPanel() {
     if (data.app !== 'gea-canvas') return alert('El archivo no es un respaldo de GEA Canvas.');
     for (const [id, url] of Object.entries<string>(data.media ?? {})) await dataUrlToMedia(id, url);
     for (const p of (data.projects as Project[]).reverse()) importProject(p);
+    const have = new Set(useStudio.getState().assets.map((a) => a.mediaId));
+    for (const a of (data.assets ?? []) as Asset[]) if (!have.has(a.mediaId)) addAsset(a);
   };
 
   return (
@@ -164,7 +168,7 @@ export function ProjectsPanel() {
         </div>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => restore(e.target.files?.[0])} />
         <p className="mt-2 text-[10px] leading-snug text-white/40">
-          Los proyectos se guardan solos en este dispositivo. El respaldo incluye fotos y videos para llevarlos a otro equipo.
+          Los proyectos se guardan solos en este dispositivo. El respaldo incluye fotos, videos y la Galería GEA para llevarlos a otro equipo (las API keys no se incluyen).
         </p>
       </Section>
     </div>

@@ -11,6 +11,9 @@ import { uid } from '@/lib/id';
 import { StickerThumb } from '../StickerThumb';
 import { Section } from '../ui';
 
+/** Formatos que no usan frases de la biblioteca. */
+const NO_PHRASES: StickerKind[] = ['logo', 'rates', 'menu'];
+
 export function StickersPanel({ ready }: { ready: boolean }) {
   const addLayer = useStudio((s) => s.addLayer);
   const updateProps = useStudio((s) => s.updateProps);
@@ -35,7 +38,7 @@ export function StickersPanel({ ready }: { ready: boolean }) {
 
   const applyPhrase = (p: (typeof PHRASES)[number]) => {
     // si hay un sticker seleccionado que admite la frase, la reemplaza; si no, crea uno nuevo
-    if (selected && selected.props.kind !== 'logo') {
+    if (selected && !NO_PHRASES.includes(selected.props.kind)) {
       updateProps(selected.id, { text: p.text, ...(p.sub ? { sub: p.sub } : {}), ...(p.meta ? { meta: p.meta } : {}) });
       return;
     }
@@ -126,7 +129,7 @@ export function StickersPanel({ ready }: { ready: boolean }) {
           <Chip on={kindFilter === 'all'} onClick={() => setKindFilter('all')}>
             Todas
           </Chip>
-          {KINDS.filter((k) => k.kind !== 'logo').map((k) => (
+          {KINDS.filter((k) => !NO_PHRASES.includes(k.kind)).map((k) => (
             <Chip key={k.kind} on={kindFilter === k.kind} onClick={() => setKindFilter(k.kind)}>
               {k.name}
             </Chip>

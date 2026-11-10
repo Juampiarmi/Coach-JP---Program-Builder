@@ -1,6 +1,8 @@
 'use client';
-import { useState } from 'react';
-import { Clapperboard, Download, Grid3x3, Images, Loader2, Redo2, Undo2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { AlertTriangle, Clapperboard, Download, Grid3x3, Images, Loader2, Redo2, Settings, Smartphone, Undo2 } from 'lucide-react';
+import { findConflicts, fitIntoSafe } from '@/lib/canvas/safe';
+import { SettingsModal } from './SettingsModal';
 import { GeaLogo } from '@/brand/GeaLogo';
 import { exportPage, exportVideo, slug, videoMime } from '@/lib/canvas/export';
 import type { MediaEl } from '@/lib/canvas/render';
@@ -22,12 +24,29 @@ export function TopBar({ media }: { media: MediaEl | null }) {
   const canRedo = useStudio((s) => s.future.length > 0);
   const guides = useStudio((s) => s.guides);
   const toggleGuides = useStudio((s) => s.toggleGuides);
+  const igUi = useStudio((s) => s.igUi);
+  const toggleIgUi = useStudio((s) => s.toggleIgUi);
   const [busy, setBusy] = useState<string | null>(null);
+  const [settings, setSettings] = useState(false);
+
+  const conflicts = useMemo(() => findConflicts(page, project.format), [page, project.format]);
+  const fixAll = () =>
+    mutate((p) => {
+      const pg = p.pages.find((x) => x.id === page.id);
+      if (!pg) return;
+      for (const l of pg.layers) if (conflicts.has(l.id)) Object.assign(l, fitIntoSafe(l, p.format, pg.span));
+    });
+  /** Antes de exportar: avisa si algo queda tapado por Instagram. */
+  const okToExport = (pages = [page]) => {
+    const n = pages.reduce((s, pg) => s + findConflicts(pg, project.format).size, 0);
+    return n === 0 || confirm(`${n} sticker(s) quedan debajo de la interfaz de Instagram. ¿Exportar igual?`);
+  };
 
   const base = `gea-${slug(project.name)}`;
   const startIndex = project.pages.slice(0, pageIndex).reduce((a, p) => a + p.span, 0) + 1;
 
   const exportCurrent = async () => {
+    if (!okToExport()) return;
     setBusy('png');
     try {
       await deliver(await exportPage(page, project.format, media, base, startIndex));
@@ -37,6 +56,7 @@ export function TopBar({ media }: { media: MediaEl | null }) {
   };
 
   const exportAll = async () => {
+    if (!okToExport(project.pages)) return;
     setBusy('all');
     try {
       const files = [];
@@ -98,8 +118,21 @@ export function TopBar({ media }: { media: MediaEl | null }) {
         <Btn className="!px-2" onClick={redo} disabled={!canRedo} title="Rehacer (Ctrl+Shift+Z)">
           <Redo2 className="h-4 w-4" />
         </Btn>
+        {conflicts.size > 0 && (
+          <Btn onClick={fixAll} className="!bg-red-500/15 !text-red-200 !ring-red-400/40" title="Mover a la zona segura los stickers tapados por Instagram">
+            <AlertTriangle className="h-4 w-4" />
+            <span className="hidden sm:inline">{conflicts.size} tapado{conflicts.size > 1 ? 's' : ''} · Reubicar</span>
+            <span className="sm:hidden">{conflicts.size}</span>
+          </Btn>
+        )}
+        <Btn className={`!px-2 ${igUi ? '!text-neon' : ''}`} onClick={toggleIgUi} title="Simular la interfaz de Instagram">
+          <Smartphone className="h-4 w-4" />
+        </Btn>
         <Btn className={`!px-2 ${guides ? '!text-neon' : ''}`} onClick={toggleGuides} title="Zonas seguras">
           <Grid3x3 className="h-4 w-4" />
+        </Btn>
+        <Btn className="!px-2" onClick={() => setSettings(true)} title="Configuración (IA)">
+          <Settings className="h-4 w-4" />
         </Btn>
         {isVideo && (
           <Btn onClick={exportMp4} disabled={!!busy} title="Grabar video con overlays">
@@ -118,6 +151,7 @@ export function TopBar({ media }: { media: MediaEl | null }) {
           <span>PNG</span>
         </Btn>
       </div>
+      {settings && <SettingsModal onClose={() => setSettings(false)} />}
     </header>
   );
 }

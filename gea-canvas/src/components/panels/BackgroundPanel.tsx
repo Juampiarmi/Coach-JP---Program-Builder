@@ -2,9 +2,10 @@
 import { useRef, useState } from 'react';
 import { ImagePlus, Trash2, Video } from 'lucide-react';
 import { FILTERS } from '@/lib/canvas/render';
-import { deleteMedia, normalizeImage, saveMedia } from '@/lib/media';
+import { deleteMedia, makeThumb, loadMedia, mediaInUse, normalizeImage, saveMedia } from '@/lib/media';
+import { uid } from '@/lib/id';
 import type { FilterKey } from '@/lib/types';
-import { usePage, useStudio } from '@/store/studio';
+import { ASSET_CATEGORIES, usePage, useStudio, type AssetCategory } from '@/store/studio';
 import { Btn, Section, Slider } from '../ui';
 
 const SOLIDS = ['#212121', '#121212', '#2B0A1C', '#06161C', '#2A1A08', '#FFFFFF'];
@@ -14,7 +15,18 @@ export function BackgroundPanel() {
   const bg = page.background;
   const setBackground = useStudio((s) => s.setBackground);
   const checkpoint = useStudio((s) => s.checkpoint);
-  const projects = useStudio((s) => s.projects);
+  const assets = useStudio((s) => s.assets);
+  const addAsset = useStudio((s) => s.addAsset);
+  const setPanel = useStudio((s) => s.setPanel);
+  const [cat, setCat] = useState<AssetCategory>('suite');
+  const inGallery = !!bg.mediaId && assets.some((a) => a.mediaId === bg.mediaId);
+
+  const saveToGallery = async () => {
+    if (!bg.mediaId || bg.kind === 'none') return;
+    const blob = await loadMedia(bg.mediaId);
+    if (!blob) return;
+    addAsset({ id: uid('as_'), mediaId: bg.mediaId, name: (bg.mediaName ?? 'Fondo').replace(/\.[^.]+$/, ''), kind: bg.kind, category: cat, thumb: await makeThumb(blob, bg.kind), createdAt: Date.now() });
+  };
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
@@ -36,9 +48,9 @@ export function BackgroundPanel() {
   const remove = async () => {
     const id = bg.mediaId;
     setBackground({ kind: 'none', mediaId: undefined, mediaName: undefined });
-    // borra el archivo solo si ninguna otra página lo usa
-    const stillUsed = projects.some((p) => p.pages.some((pg) => pg.id !== page.id && pg.background.mediaId === id));
-    if (id && !stillUsed) await deleteMedia(id);
+    // borra el archivo solo si ninguna otra página ni la Galería lo usan
+    const s = useStudio.getState();
+    if (id && !mediaInUse(id, s.projects, s.assets, page.id)) await deleteMedia(id);
   };
 
   return (
@@ -79,6 +91,23 @@ export function BackgroundPanel() {
             </Btn>
           </div>
         )}
+        {bg.kind !== 'none' && !inGallery && (
+          <div className="mt-2 flex gap-2">
+            <select value={cat} onChange={(e) => setCat(e.target.value as AssetCategory)} className="rounded-lg bg-black/40 px-2 text-xs text-white ring-1 ring-white/10" aria-label="Categoría">
+              {(Object.keys(ASSET_CATEGORIES) as AssetCategory[]).map((c) => (
+                <option key={c} value={c}>
+                  {ASSET_CATEGORIES[c]}
+                </option>
+              ))}
+            </select>
+            <Btn onClick={saveToGallery} className="flex-1">
+              Guardar en Galería GEA
+            </Btn>
+          </div>
+        )}
+        <button onClick={() => setPanel('galeria')} className="mt-3 w-full text-center text-[11px] text-neon hover:underline">
+          Elegir de la Galería GEA ({assets.length})
+        </button>
       </Section>
 
       {bg.kind !== 'none' && (

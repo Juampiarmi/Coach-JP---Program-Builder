@@ -16,9 +16,11 @@ import { ACCENTS, type AccentKey } from '@/brand/tokens';
 import { kindSpec } from '@/data/library';
 import { download, exportSticker, slug } from '@/lib/canvas/export';
 import { layerBox, safeZones } from '@/lib/canvas/render';
+import { findConflicts, fitIntoSafe } from '@/lib/canvas/safe';
 import { FORMATS, type Layer, type StickerStyle, type TextFont } from '@/lib/types';
 import { useCurrent, usePage, useStudio } from '@/store/studio';
 import { Btn, Field, Section, Segmented, Slider, inputCls } from './ui';
+import { ItemsEditor } from './ItemsEditor';
 
 const STYLE_LABEL: Record<StickerStyle, string> = { neon: 'Neón', glass: 'Vidrio', paper: 'Papel', solid: 'Sólido' };
 
@@ -34,6 +36,7 @@ export function Inspector() {
   const moveLayer = useStudio((s) => s.moveLayer);
   const checkpoint = useStudio((s) => s.checkpoint);
   const l = page.layers.find((x) => x.id === selectedId);
+  const conflict = l ? findConflicts(page, project.format).get(l.id) : undefined;
 
   const anchor = (ax: -1 | 0 | 1, ay: -1 | 0 | 1) => {
     if (!l) return;
@@ -56,6 +59,17 @@ export function Inspector() {
 
   return (
     <div>
+      {l && conflict && (
+        <div className="m-4 mb-0 rounded-xl bg-red-500/10 p-3 text-[12px] leading-snug text-red-100 ring-1 ring-red-400/40">
+          <b>Queda tapado por Instagram:</b> {conflict.join(', ')}.
+          <button
+            onClick={() => updateLayer(l.id, fitIntoSafe(l, project.format, page.span))}
+            className="mt-2 block w-full rounded-lg bg-red-500/25 py-1.5 font-semibold text-white hover:bg-red-500/40"
+          >
+            Mover a la zona segura
+          </button>
+        </div>
+      )}
       {l ? (
         <LayerEditor
           l={l}
@@ -167,6 +181,7 @@ function LayerEditor({
               <input className={inputCls} value={p.meta ?? ''} onChange={(e) => onProps({ meta: e.target.value })} />
             </Field>
           )}
+          {spec.fields.items && <ItemsEditor l={l} onProps={onProps} />}
           <Field label="Estilo">
             <Segmented value={p.style} onChange={(style) => onProps({ style })} options={spec.styles.map((s) => ({ value: s, label: STYLE_LABEL[s] }))} />
           </Field>

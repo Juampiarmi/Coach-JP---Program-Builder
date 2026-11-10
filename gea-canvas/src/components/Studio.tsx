@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { FolderKanban, Image as ImageIcon, Layers, PenLine, SlidersHorizontal, Sticker } from 'lucide-react';
+import { FolderKanban, GalleryVerticalEnd, Image as ImageIcon, Layers, PenLine, SlidersHorizontal, Sticker } from 'lucide-react';
+import { GalleryPanel } from './panels/GalleryPanel';
 import { useFontsReady } from '@/hooks/useFontsReady';
 import { useMedia } from '@/hooks/useMedia';
 import { thumbnail } from '@/lib/canvas/export';
@@ -18,6 +19,7 @@ import { TopBar } from './TopBar';
 const NAV: { key: PanelKey | 'editar'; label: string; icon: typeof Sticker }[] = [
   { key: 'stickers', label: 'Stickers', icon: Sticker },
   { key: 'fondo', label: 'Fondo', icon: ImageIcon },
+  { key: 'galeria', label: 'Galería', icon: GalleryVerticalEnd },
   { key: 'copys', label: 'Copys', icon: PenLine },
   { key: 'paginas', label: 'Páginas', icon: Layers },
   { key: 'proyectos', label: 'Proyectos', icon: FolderKanban },
@@ -70,6 +72,8 @@ function StudioInner() {
       <StickersPanel ready={fontsReady} />
     ) : k === 'fondo' ? (
       <BackgroundPanel />
+    ) : k === 'galeria' ? (
+      <GalleryPanel />
     ) : k === 'copys' ? (
       <CopyPanel />
     ) : k === 'paginas' ? (
@@ -141,7 +145,7 @@ function StudioInner() {
         {/* celular: pestañas + panel debajo de la pizarra */}
         <div className="flex h-[42dvh] shrink-0 flex-col border-t border-line bg-carbon lg:hidden">
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">{renderPanel(mobileTab)}</div>
-          <nav className="grid shrink-0 grid-cols-6 border-t border-line pb-[env(safe-area-inset-bottom)]">
+          <nav className="grid shrink-0 grid-cols-7 border-t border-line pb-[env(safe-area-inset-bottom)]">
             {[{ key: 'editar' as const, label: 'Editar', icon: SlidersHorizontal }, ...NAV].map(({ key, label, icon: Icon }) => (
               <button
                 key={key}

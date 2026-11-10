@@ -18,7 +18,14 @@ export const FORMATS: Record<FormatKey, FormatSpec> = {
   feed11: { key: 'feed11', label: 'Feed cuadrado', short: 'Feed 1:1', w: 1080, h: 1080, ratio: '1:1' },
 };
 
-export type StickerKind = 'stamp' | 'ticket' | 'sash' | 'tag' | 'pill' | 'vip' | 'tab' | 'logo' | 'text';
+export type StickerKind = 'stamp' | 'ticket' | 'sash' | 'tag' | 'pill' | 'vip' | 'tab' | 'logo' | 'text' | 'rates' | 'menu';
+
+/** Fila de una placa informativa (modalidad de estadía o ítem de la carta). */
+export interface InfoItem {
+  label: string;
+  detail?: string;
+  price?: string;
+}
 export type StickerStyle = 'neon' | 'glass' | 'paper' | 'solid';
 export type TextFont = 'display' | 'body' | 'tech';
 
@@ -36,6 +43,8 @@ export interface StickerProps {
   side?: 'left' | 'right';
   /** Texto libre: familia tipográfica. */
   font?: TextFont;
+  /** Placas informativas (turnos / carta): filas. */
+  items?: InfoItem[];
 }
 
 export interface Layer {

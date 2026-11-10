@@ -39,7 +39,7 @@ export interface KindSpec {
   rotation?: number;
   scale?: number;
   /** Etiquetas de los campos secundarios en el inspector. */
-  fields: { sub?: string; meta?: string };
+  fields: { sub?: string; meta?: string; items?: { title: string; label: string; detail: string; price: string; max: number } };
 }
 
 export const KINDS: KindSpec[] = [
@@ -132,6 +132,57 @@ export const KINDS: KindSpec[] = [
     rotation: 0,
     scale: 1,
     fields: { sub: 'Bajada' },
+  },
+  {
+    kind: 'rates',
+    name: 'Placa de turnos',
+    hint: 'Modalidades de estadía, horarios y medios de pago.',
+    styles: ['glass', 'neon', 'solid', 'paper'],
+    defaults: {
+      text: 'Modalidades',
+      meta: 'ABIERTO 24 HS · 365 DÍAS',
+      sub: 'Efectivo · Débito · Crédito · QR',
+      accent: 'cyan',
+      style: 'glass',
+      items: [
+        { label: 'Turno estándar', detail: '2 horas' },
+        { label: 'Turno extendido', detail: '4 horas' },
+        { label: 'Pernocte', detail: 'De 22 a 10 h' },
+      ],
+    },
+    rotation: 0,
+    scale: 1,
+    fields: {
+      meta: 'Encabezado',
+      sub: 'Medios de pago (separados por ·)',
+      items: { title: 'Modalidades', label: 'Modalidad', detail: 'Horario / duración', price: 'Tarifa (opcional)', max: 7 },
+    },
+  },
+  {
+    kind: 'menu',
+    name: 'Carta de tragos',
+    hint: 'Carta elegante de coctelería y snackería con promo destacada.',
+    styles: ['glass', 'neon', 'solid', 'paper'],
+    defaults: {
+      text: 'Carta de coctelería',
+      meta: 'SERVICIO A LA HABITACIÓN · 24 HS',
+      sub: '2×1 en gin tonic de autor, de domingo a jueves',
+      accent: 'amber',
+      style: 'glass',
+      items: [
+        { label: 'Gin tonic de autor', detail: 'Gin, tónica premium, pepino y pimienta rosa' },
+        { label: 'Negroni', detail: 'Gin, vermut rosso y Campari, twist de naranja' },
+        { label: 'Espumante para dos', detail: 'Botella fría con dos copas' },
+        { label: 'Tabla para compartir', detail: 'Quesos, fiambres, frutos secos y pan tostado' },
+      ],
+    },
+    rotation: 0,
+    scale: 0.95,
+    fields: {
+      meta: 'Encabezado',
+      sub: 'Promo destacada (vacío = sin promo)',
+      items: { title: 'Ítems de la carta', label: 'Nombre', detail: 'Descripción', price: 'Precio (opcional)', max: 8 },
+    },
   },
 ];
 

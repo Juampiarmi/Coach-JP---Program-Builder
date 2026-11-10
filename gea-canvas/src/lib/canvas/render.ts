@@ -3,6 +3,7 @@ import { BRAND } from '@/brand/tokens';
 import type { Background, FilterKey, FormatKey, Layer, Page } from '@/lib/types';
 import { FORMATS } from '@/lib/types';
 import { PAD, renderSticker } from './stickers';
+import { drawConflicts, drawInstagramUI } from './igui';
 
 export type MediaEl = HTMLImageElement | HTMLVideoElement;
 
@@ -144,6 +145,10 @@ export interface SceneOpts {
   /** px de documento por px de pantalla (tamaño de los controles). */
   ui?: number;
   snap?: { x?: boolean; y?: boolean } | null;
+  /** Simula la UI de Instagram encima (solo vista previa). */
+  igUi?: boolean;
+  /** Cajas de stickers que pisan zonas tapadas (se marcan en rojo). */
+  conflicts?: { x: number; y: number; w: number; h: number }[];
 }
 
 export function renderScene(ctx: CanvasRenderingContext2D, page: Page, o: SceneOpts) {
@@ -154,14 +159,16 @@ export function renderScene(ctx: CanvasRenderingContext2D, page: Page, o: SceneO
   ctx.clearRect(0, 0, W, H);
   drawBackground(ctx, page.background, W, H, o.media);
   for (const l of page.layers) drawLayer(ctx, l);
-  if (o.guides) drawGuides(ctx, o.format, page.span, W, H, o.ui ?? 1);
+  if (o.igUi) drawInstagramUI(ctx, o.format, page.span);
+  if (o.guides) drawGuides(ctx, o.format, page.span, W, H, o.ui ?? 1, !o.igUi);
+  if (o.conflicts?.length) drawConflicts(ctx, o.conflicts, o.ui ?? 1);
   if (o.snap) drawSnap(ctx, W, H, o.snap, o.ui ?? 1, fw, page.span);
   const sel = page.layers.find((l) => l.id === o.selectedId);
   if (sel) drawSelection(ctx, sel, o.ui ?? 1);
   ctx.restore();
 }
 
-function drawGuides(ctx: CanvasRenderingContext2D, format: FormatKey, span: number, W: number, H: number, ui: number) {
+function drawGuides(ctx: CanvasRenderingContext2D, format: FormatKey, span: number, W: number, H: number, ui: number, labels = true) {
   const fw = FORMATS[format].w;
   ctx.save();
   for (let s = 0; s < span; s++) {
@@ -173,7 +180,7 @@ function drawGuides(ctx: CanvasRenderingContext2D, format: FormatKey, span: numb
       ctx.strokeStyle = 'rgba(255,46,136,0.7)';
       ctx.lineWidth = 1.5 * ui;
       ctx.strokeRect(x + 0.5, z.y + 0.5, z.w - 1, z.h - 1);
-      if (z.label) {
+      if (z.label && labels) {
         ctx.setLineDash([]);
         ctx.font = `600 ${13 * Math.min(ui, 2.4)}px Manrope, sans-serif`;
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
