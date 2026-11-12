@@ -4184,6 +4184,18 @@ function openVideo(exId){
    Emite exactamente la estructura que consume el script base:
    isBlock · isSuperset/isTriset · isFinisher · isHyrox · listas
    ============================================================ */
+/* Cambia el alumno/a activo recordando el día (y la semana CrossFit) en que estaba cada uno. S.ui.day es global: antes, al pasar de un alumno a otro se heredaba el día
+   del anterior (ej. el Día 5) y el plan nuevo parecía limitado a ese día. */
+function jpActivarAlumno(id){
+  const u = S.ui = S.ui || {};
+  if(!id || id === S.activeId){ S.activeId = id || S.activeId; return; }
+  u.diaPorAlumno = u.diaPorAlumno || {};
+  if(S.activeId) u.diaPorAlumno[S.activeId] = { d: u.day || 0, w: u.cfWeek || 0 };
+  S.activeId = id;
+  const rec = u.diaPorAlumno[id], p = plan(id), n = p ? p.dias.length : 1;
+  u.day = (rec && rec.d >= 0 && rec.d < n) ? rec.d : 0;
+  u.cfWeek = (rec && rec.w > 0) ? rec.w : 0;
+}
 function curDay(){
   const p = plan(S.activeId); if(!p) return null;
   if(S.ui.day >= p.dias.length) S.ui.day = 0;
@@ -4756,24 +4768,26 @@ function etiquetaDiaCopia(d){
 function abrirModalCopiarDia(){
   const athO = active(), pO = plan(S.activeId), dO = curDay();
   if(!athO || !pO || !dO){ toast('Seleccioná un alumno/a y un día primero', 'err'); return; }
-  const otros = S.athletes.filter(a => a.id !== athO.id)
-    .sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'));
-  if(!otros.length){ toast('No hay otro alumno/a registrado para copiar el día', 'warn'); return; }
+  /* destinos: el MISMO alumno/a primero (copiar un día a otra semana u otro día de su plan) y después los demás */
+  const otros = S.athletes.filter(a => a.id !== athO.id).sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'));
   cerrarModalCopiarDia();
   const diaIdx = S.ui.day;
-  const nBl = (dO.bloques || []).length;
+  const cfO = esPlanCFActivo(pO), semO = cfO ? activeCfWeek() : 0;
+  if(cfO){ try{ sincronizarBloquesSemana(pO); }catch(e){} }
+  const nBlO = cfO ? ((asegurarBloquesPorSemana(dO)[semO]) || []).length : (dO.bloques || []).length;
   const bg = document.createElement('div');
   bg.className = 'modal-bg on'; bg.id = 'mCopiarDiaBg';
   bg.innerHTML =
     '<div class="modal cd-modal">' +
-      '<div class="modal-h"><h3>// COPIAR DÍA A OTRO ALUMNO</h3><div class="spacer"></div><button class="icon-btn" data-cdcancel="1">✕</button></div>' +
+      '<div class="modal-h"><h3>// COPIAR DÍA</h3><div class="spacer"></div><button class="icon-btn" data-cdcancel="1">✕</button></div>' +
       '<div class="modal-b">' +
         '<div class="cd-origen"><span class="k">Origen · solo lectura</span>' +
           '<span class="v">' + esc(fullName(athO)) + '</span>' +
-          '<span class="s">' + esc(etiquetaDiaCopia(dO)) + ' · ' + nBl + ' bloque' + (nBl === 1 ? '' : 's') + '</span></div>' +
+          '<span class="s">' + esc(etiquetaDiaCopia(dO)) + (cfO ? ' · Semana ' + (semO + 1) : '') + ' · ' + nBlO + ' bloque' + (nBlO === 1 ? '' : 's') + '</span></div>' +
         '<div class="cd-f"><label class="lb">Alumno/a destino</label>' +
-          '<input type="text" id="cdBuscar" placeholder="Buscar alumno/a…" autocomplete="off" style="margin-bottom:6px">' +
+          (otros.length > 3 ? '<input type="text" id="cdBuscar" placeholder="Buscar alumno/a…" autocomplete="off" style="margin-bottom:6px">' : '') +
           '<select id="cdAlumno"></select></div>' +
+        '<div class="cd-f" id="cdSemWrap" hidden><label class="lb">Semana destino</label><select id="cdSemana"></select></div>' +
         '<div class="cd-f"><label class="lb">Día destino</label><select id="cdDia" disabled></select></div>' +
         '<div id="cdInfo"></div>' +
         '<div class="row" style="margin-top:14px;gap:8px">' +
@@ -4784,99 +4798,155 @@ function abrirModalCopiarDia(){
     '</div>';
   document.body.appendChild(bg);
   document.body.style.overflow = 'hidden';
-  const selA = bg.querySelector('#cdAlumno'), selD = bg.querySelector('#cdDia');
+  const selA = bg.querySelector('#cdAlumno'), selD = bg.querySelector('#cdDia'), selS = bg.querySelector('#cdSemana'), wrapS = bg.querySelector('#cdSemWrap');
   const info = bg.querySelector('#cdInfo'), btn = bg.querySelector('#cdConfirmar'), buscar = bg.querySelector('#cdBuscar');
+  const esMismo = () => selA.value === athO.id;
+  const semElegida = () => (selS && selS.value !== '' && selS.value !== 'all') ? parseInt(selS.value, 10) : (selS && selS.value === 'all' ? 'all' : undefined);
+  const nBloquesDia = (pD, d, sem) => {
+    if(!d) return 0;
+    if(esPlanCFActivo(pD) && typeof sem === 'number'){ const ps = Array.isArray(d.bloquesPorSemana) ? d.bloquesPorSemana : null; return ps ? (ps[sem] || []).length : (d.bloques || []).length; }
+    return (d.bloques || []).length;
+  };
 
   function pintarAlumnos(){
-    const q = norm(buscar.value);
+    const q = buscar ? norm(buscar.value) : '';
     const lista = otros.filter(a => !q || norm(fullName(a)).indexOf(q) >= 0);
-    const prev = selA.value;
-    selA.innerHTML = '<option value="">— Elegí un alumno/a (' + lista.length + ') —</option>' +
-      lista.map(a => '<option value="' + esc(a.id) + '"' + (a.id === prev ? ' selected' : '') + '>' + esc(fullName(a)) + '</option>').join('');
+    const prev = selA.value || athO.id;
+    selA.innerHTML = '<option value="' + esc(athO.id) + '"' + (prev === athO.id ? ' selected' : '') + '>★ Este alumno/a — ' + esc(fullName(athO)) + ' (otro día o semana)</option>' +
+      (lista.length ? '<optgroup label="Otros alumnos/as">' + lista.map(a => '<option value="' + esc(a.id) + '"' + (a.id === prev ? ' selected' : '') + '>' + esc(fullName(a)) + '</option>').join('') + '</optgroup>' : '');
+    pintarSemanas();
+  }
+  function pintarSemanas(){
+    const pD = plan(selA.value), cfD = esPlanCFActivo(pD);
+    wrapS.hidden = !cfD;
+    if(cfD){
+      const prev = selS.value;
+      const defecto = esMismo() ? String(semO) : (cfO ? 'all' : '0');
+      const semanas = (pD.meso && pD.meso.length) ? pD.meso : [0, 1, 2, 3];
+      selS.innerHTML = [0, 1, 2, 3].map(i => '<option value="' + i + '">Semana ' + (i + 1) + (semanas[i] && semanas[i].phase ? ' · ' + esc(String(semanas[i].phase).slice(0, 28)) : '') + '</option>').join('') +
+        '<option value="all">Todas las semanas (clona el día completo)</option>';
+      selS.value = (prev && selS.querySelector('option[value="' + prev + '"]')) ? prev : defecto;
+    }
     pintarDias();
   }
   function pintarDias(){
-    const id = selA.value;
-    if(!id){ selD.innerHTML = '<option value="">— Primero elegí un alumno/a —</option>'; selD.disabled = true; info.innerHTML = ''; btn.disabled = true; return; }
-    const pD = plan(id);
+    const id = selA.value, pD = plan(id), cfD = esPlanCFActivo(pD), sem = cfD ? semElegida() : undefined;
     const lleno = pD.dias.length >= MAX_DIAS;
     selD.innerHTML = '<option value="">— Elegí el día destino —</option>' +
-      pD.dias.map((d, i) => '<option value="' + i + '">' + esc(etiquetaDiaCopia(d)) + ' (' + (d.bloques || []).length + ((d.bloques || []).length === 1 ? ' bloque' : ' bloques') + ')</option>').join('') +
-      '<option value="__new"' + (lleno ? ' disabled' : '') + '>[ + Crear como nuevo día en el alumno receptor ]' + (lleno ? ' — límite de ' + MAX_DIAS + ' días' : '') + '</option>';
+      pD.dias.map((d, i) => {
+        const esOrigen = esMismo() && i === diaIdx && (!cfD || sem === 'all' || sem === semO);
+        const n = nBloquesDia(pD, d, sem);
+        return '<option value="' + i + '"' + (esOrigen ? ' disabled' : '') + '>' + esc(etiquetaDiaCopia(d)) + ' (' + n + (n === 1 ? ' bloque' : ' bloques') + ')' + (esOrigen ? ' — es el origen' : '') + '</option>';
+      }).join('') +
+      '<option value="__new"' + (lleno ? ' disabled' : '') + '>[ + Crear como nuevo día ]' + (lleno ? ' — límite de ' + MAX_DIAS + ' días' : '') + '</option>';
     selD.disabled = false; btn.disabled = true; info.innerHTML = '';
   }
   function pintarInfo(){
     const id = selA.value, v = selD.value;
     btn.disabled = !(id && v !== '');
     if(!id || v === ''){ info.innerHTML = ''; return; }
-    const pD = plan(id), pO2 = plan(S.activeId);
+    const pD = plan(id), cfD = esPlanCFActivo(pD), sem = cfD ? semElegida() : undefined;
     let h = '';
     if(v !== '__new'){
-      const dd = pD.dias[parseInt(v, 10)], n = dd ? (dd.bloques || []).length : 0;
-      if(n) h += '<div class="alert warn"><span class="ic">⚠️</span><div><b>El día receptor ya tiene ' + n + ' bloque' + (n === 1 ? '' : 's') + '.</b> Se reemplazará por completo y se pedirá confirmación.</div></div>';
+      const dd = pD.dias[parseInt(v, 10)], n = nBloquesDia(pD, dd, sem);
+      if(n) h += '<div class="alert warn"><span class="ic">⚠️</span><div><b>El destino ya tiene ' + n + ' bloque' + (n === 1 ? '' : 's') + (cfD && typeof sem === 'number' ? ' en la Semana ' + (sem + 1) : '') + '.</b> Se reemplazará' + (cfD && typeof sem === 'number' ? ' solo esa semana' : ' por completo') + ' y se pedirá confirmación.</div></div>';
     }
-    if(esPlanCFActivo(pO2) !== esPlanCFActivo(pD)){
-      h += '<div class="alert info"><span class="ic">ℹ️</span><div><b>Distinta disciplina.</b> Origen ' + (esPlanCFActivo(pO2) ? 'CrossFit' : 'Fuerza/Hipertrofia') + ' → destino ' + (esPlanCFActivo(pD) ? 'CrossFit' : 'Fuerza/Hipertrofia') + ': los bloques se copian tal cual y pueden verse distinto.</div></div>';
+    if(esPlanCFActivo(pO) !== cfD){
+      h += '<div class="alert info"><span class="ic">ℹ️</span><div><b>Distinta disciplina.</b> Origen ' + (esPlanCFActivo(pO) ? 'CrossFit' : 'Fuerza/Hipertrofia') + ' → destino ' + (cfD ? 'CrossFit' : 'Fuerza/Hipertrofia') + ': los bloques se copian tal cual y pueden verse distinto.</div></div>';
     }
     info.innerHTML = h;
   }
-  buscar.addEventListener('input', pintarAlumnos);
-  selA.addEventListener('change', pintarDias);
+  if(buscar) buscar.addEventListener('input', pintarAlumnos);
+  selA.addEventListener('change', pintarSemanas);
+  selS.addEventListener('change', pintarDias);
   selD.addEventListener('change', pintarInfo);
   bg.addEventListener('click', e => {
     if(e.target === bg || e.target.closest('[data-cdcancel]')){ cerrarModalCopiarDia(); return; }
     if(e.target.closest('#cdConfirmar') && !btn.disabled){
-      if(ejecutarCopiaDia(athO.id, diaIdx, selA.value, selD.value)) cerrarModalCopiarDia();
+      const sem = esPlanCFActivo(plan(selA.value)) ? semElegida() : undefined;
+      if(ejecutarCopiaDia(athO.id, diaIdx, selA.value, selD.value, { semOrigen: semO, semDest: sem })) cerrarModalCopiarDia();
     }
   });
   pintarAlumnos();
 }
-function ejecutarCopiaDia(origenId, diaIdx, destId, destSel){
+function ejecutarCopiaDia(origenId, diaIdx, destId, destSel, opts){
   const pO = plan(origenId), dO = pO && pO.dias[diaIdx];
   const athD = getAth(destId), pD = plan(destId);
   if(!pO || !dO || !athD || !pD){ toast('No se pudo copiar: faltan datos del origen o del destino', 'err'); return false; }
-  /* en CrossFit d.bloques es un puntero a la semana activa: se asegura que
-     todas las semanas estén al día en el origen antes de clonar. */
-  if(origenId === S.activeId && esPlanCFActivo(pO)){ try{ sincronizarBloquesSemana(pO); }catch(e){} }
+  const cfO = esPlanCFActivo(pO), cfD = esPlanCFActivo(pD);
+  const mismoPlan = origenId === destId;
+  /* en CrossFit d.bloques es un puntero a la semana activa: se confirman todas las semanas del origen antes de leer */
+  if(cfO && origenId === S.activeId){ try{ sincronizarBloquesSemana(pO); }catch(e){} }
+  const semO = (opts && typeof opts.semOrigen === 'number') ? opts.semOrigen : (cfO ? activeCfWeek() : 0);
+  let semD = (opts && opts.semDest !== undefined) ? opts.semDest : (cfD ? 'all' : undefined);
+  if(!cfD) semD = undefined;
   const nuevo = destSel === '__new';
   if(nuevo && pD.dias.length >= MAX_DIAS){ toast('El alumno receptor ya tiene el máximo de ' + MAX_DIAS + ' días', 'err'); return false; }
   const idx = nuevo ? pD.dias.length : parseInt(destSel, 10);
   const dDest = nuevo ? null : pD.dias[idx];
   if(!nuevo && !dDest){ toast('Elegí un día destino válido', 'err'); return false; }
-  const nPrev = dDest ? (dDest.bloques || []).length : 0;
-  if(nPrev && !confirm('El día receptor (' + etiquetaDiaCopia(dDest) + ' de ' + fullName(athD) + ') ya contiene ' + nPrev +
-                       ' bloque' + (nPrev === 1 ? '' : 's') + '.\n\n¿Reemplazarlo por completo con el día clonado?')) return false;
+  if(mismoPlan && !nuevo && idx === diaIdx && (!cfD || semD === 'all' || semD === semO)){ toast('El destino es el mismo día y semana del origen: elegí otro', 'warn'); return false; }
+  /* bloques de origen: la semana elegida (CrossFit) o la lista única (Sports) */
+  const srcBl = cfO ? (asegurarBloquesPorSemana(dO)[semO] || []) : (dO.bloques || []);
+  const porSemana = cfD && typeof semD === 'number';
+  const nPrev = dDest ? (porSemana ? ((Array.isArray(dDest.bloquesPorSemana) ? dDest.bloquesPorSemana[semD] : dDest.bloques) || []).length : (dDest.bloques || []).length) : 0;
+  if(nPrev && !confirm('El destino (' + etiquetaDiaCopia(dDest) + (porSemana ? ' · Semana ' + (semD + 1) : '') + ' de ' + fullName(athD) + ') ya contiene ' + nPrev +
+                       ' bloque' + (nPrev === 1 ? '' : 's') + '.\n\n¿Reemplazarlo por completo con el día copiado?')) return false;
 
-  const copia = clonarEstructuraProfunda(dO);
-  /* ids de bloque nuevos, un solo mapa para que un mismo bloque CrossFit
-     conserve id idéntico en sus 4 semanas */
-  const mapa = {}, vistos = new Set();
-  [copia.bloques].concat(Array.isArray(copia.bloquesPorSemana) ? copia.bloquesPorSemana : []).forEach(arr => {
-    (Array.isArray(arr) ? arr : []).forEach(b => {
-      if(!b || typeof b !== 'object' || vistos.has(b)) return;
-      vistos.add(b);
-      const viejo = b.id;
-      if(viejo == null || !mapa[viejo]){ const nid = uid('b'); if(viejo != null) mapa[viejo] = nid; b.id = nid; }
-      else b.id = mapa[viejo];
-    });
+  /* ids de bloque nuevos (sin referencias ni ids compartidos con el origen) */
+  const renovar = (arr, mapa) => (Array.isArray(arr) ? arr : []).forEach(b => {
+    if(!b || typeof b !== 'object') return;
+    const viejo = b.id;
+    if(mapa && viejo != null && mapa[viejo]){ b.id = mapa[viejo]; return; }
+    const nid = uid('b'); if(mapa && viejo != null) mapa[viejo] = nid; b.id = nid;
   });
-  if(nuevo){
-    const usados = new Set(pD.dias.map(x => x.id));
-    let k = idx + 1; while(usados.has('dia' + k)) k++;
-    copia.id = 'dia' + k;
-    copia.short = 'DÍA ' + (idx + 1);
-  } else {
-    copia.id = dDest.id;
-    copia.short = dDest.short;
-  }
-  if(/^Sesi[oó]n\s*\d+$/i.test(copia.label || '')) copia.label = 'Sesión ' + (idx + 1);
-  if(/^D[IÍ]A\s*\d+$/i.test(copia.title || '')) copia.title = 'Día ' + (idx + 1);
-  if(!esPlanCFActivo(pD)) delete copia.bloquesPorSemana;   /* sólo CrossFit usa semanas independientes */
+  const idDiaNuevo = () => { const usados = new Set(pD.dias.map(x => x.id)); let k = idx + 1; while(usados.has('dia' + k)) k++; return 'dia' + k; };
+  let etiquetaDest = '';
 
-  if(nuevo) pD.dias.push(copia); else pD.dias[idx] = copia;
+  if(porSemana){
+    /* una semana concreta del destino: solo se reemplazan los bloques de ESA semana, el resto del día y sus otras semanas no se tocan */
+    const bloques = clonarEstructuraProfunda(srcBl); renovar(bloques);
+    if(nuevo){
+      const copia = clonarEstructuraProfunda(dO);
+      copia.id = idDiaNuevo(); copia.short = 'DÍA ' + (idx + 1);
+      copia.bloquesPorSemana = [[], [], [], []]; copia.bloquesPorSemana[semD] = bloques;
+      copia.bloques = copia.bloquesPorSemana[(destId === S.activeId) ? activeCfWeek() : semD];
+      if(/^Sesi[oó]n\s*\d+$/i.test(copia.label || '')) copia.label = 'Sesión ' + (idx + 1);
+      if(/^D[IÍ]A\s*\d+$/i.test(copia.title || '')) copia.title = 'Día ' + (idx + 1);
+      pD.dias.push(copia);
+    } else {
+      const ps = asegurarBloquesPorSemana(dDest);
+      ps[semD] = bloques;
+      if(destId === S.activeId && semD === activeCfWeek()) dDest.bloques = ps[semD];
+    }
+    etiquetaDest = (nuevo ? 'DÍA ' + (idx + 1) : dDest.short) + ' · S' + (semD + 1);
+  } else {
+    /* día completo: se clona la estructura (con todas las semanas si el destino es CrossFit y el origen también) */
+    const copia = clonarEstructuraProfunda(dO);
+    if(cfO){ copia.bloques = clonarEstructuraProfunda(srcBl); }
+    const mapa = {}, vistos = new Set();
+    [copia.bloques].concat(Array.isArray(copia.bloquesPorSemana) ? copia.bloquesPorSemana : []).forEach(arr => {
+      if(!Array.isArray(arr) || vistos.has(arr)) return; vistos.add(arr); renovar(arr, mapa);
+    });
+    if(nuevo){ copia.id = idDiaNuevo(); copia.short = 'DÍA ' + (idx + 1); }
+    else { copia.id = dDest.id; copia.short = dDest.short; }
+    if(/^Sesi[oó]n\s*\d+$/i.test(copia.label || '')) copia.label = 'Sesión ' + (idx + 1);
+    if(/^D[IÍ]A\s*\d+$/i.test(copia.title || '')) copia.title = 'Día ' + (idx + 1);
+    if(!cfD) delete copia.bloquesPorSemana;                       /* sólo CrossFit usa semanas independientes */
+    else if(!cfO){ delete copia.bloquesPorSemana; asegurarBloquesPorSemana(copia); }
+    if(cfD && Array.isArray(copia.bloquesPorSemana)) copia.bloques = copia.bloquesPorSemana[(destId === S.activeId) ? activeCfWeek() : 0] || copia.bloques;
+    if(nuevo) pD.dias.push(copia); else pD.dias[idx] = copia;
+    etiquetaDest = copia.short + (cfD ? ' · todas las semanas' : '');
+  }
+  /* mismo alumno/a: se navega al destino para ver el resultado; otro alumno/a: queda donde estaba */
+  if(mismoPlan){
+    S.ui.day = idx;
+    if(porSemana){ S.ui.cfWeek = semD; }
+  }
   guardarAhora();
+  try{ renderBuilder(); }catch(e){}
   renderAthletes();
-  toast('✓ DÍA CLONADO EXITOSAMENTE A ' + fullName(athD).toUpperCase());
+  toast('✓ ' + dO.short + (cfO ? ' · S' + (semO + 1) : '') + ' → ' + (mismoPlan ? '' : fullName(athD) + ' · ') + etiquetaDest + ' copiado');
   return true;
 }
 function sbFmtToolbar(bId){
@@ -47089,7 +47159,7 @@ function init(){
   bindTagInput('#aBanInput',  '#aBans',  () => tmpBans,  'red',    '⛔');
   bindTagInput('#aPrefInput', '#aPrefs', () => tmpPrefs, 'teal',   '⭐');
   $('#selActive').addEventListener('change', e => {
-    S.activeId = e.target.value || null; save();
+    jpActivarAlumno(e.target.value || null); save();
     renderAthletes(); toast(active() ? 'Alumno/a activo/a: ' + fullName(active()) : 'Sin alumno/a activo/a');
   });
   $('#athGrid').addEventListener('click', e => {
@@ -47097,13 +47167,13 @@ function init(){
     if(btn){
       const id = btn.dataset.id;
       if(btn.dataset.act === 'edit'){ openAth(id); return; }
-      S.activeId = id; save();
+      jpActivarAlumno(id); save();
       if(btn.dataset.act === 'build'){ renderAthletes(); go('builder'); return; }
       renderAthletes(); toast('Alumno/a activo/a: ' + fullName(getAth(id)));
       return;
     }
     const card = e.target.closest('[data-ath]');
-    if(card){ S.activeId = card.dataset.ath; save(); renderAthletes(); }
+    if(card){ jpActivarAlumno(card.dataset.ath); save(); renderAthletes(); }
   });
 
   /* ---- biblioteca ---- */
@@ -52924,7 +52994,7 @@ body{overflow-x:hidden}
           '<div class="hint" style="margin-top:11px">' + publicados + ' de ' + n + ' alumnos tienen su link publicado cargado en la ficha.</div>' +
         '</div>' +
       '</div>';
-    box.querySelectorAll('[data-mxcomp]').forEach(b => b.addEventListener('click', () => { S.activeId = b.dataset.mxcomp; save(); go('exportar'); }));
+    box.querySelectorAll('[data-mxcomp]').forEach(b => b.addEventListener('click', () => { jpActivarAlumno(b.dataset.mxcomp); save(); go('exportar'); }));
   }
   window.renderMetricas = renderMetricas;
 
@@ -52999,7 +53069,7 @@ body{overflow-x:hidden}
         if(w){ const ag = agendaDe(w.dataset.agwk); ag.semana = parseInt(w.dataset.n,10); ag.semanaManual = true; save(); renderAgenda(); return; }
         const b = e.target.closest('[data-agact]');
         if(!b) return;
-        S.activeId = b.dataset.id; save();
+        jpActivarAlumno(b.dataset.id); save();
         if(b.dataset.agact === 'build') go('builder');
         else { go('exportar'); const s = $('#expAth'); if(s){ s.value = b.dataset.id; s.dispatchEvent(new Event('change')); } }
       });
@@ -55080,7 +55150,7 @@ body{overflow-x:hidden}
       .slice(0,6).forEach(a => out.push({
         k:'Alumno/a', ic:'👤', n: fullName(a),
         m: a.freq + ' días/sem · ' + (a.nivel || 'Intermedio') + ((a.sede && G().sedeDe) ? ' · ' + G().sedeDe(a.sede).lb : ''),
-        go: () => { S.activeId = a.id; save(); go('builder'); }
+        go: () => { jpActivarAlumno(a.id); save(); go('builder'); }
       }));
     S.exercises.filter(e => norm(e.es + ' ' + (e.en||'') + ' ' + e.grupo + ' ' + e.equipo + ' ' + e.patron).indexOf(n) >= 0)
       .slice(0,8).forEach(e => out.push({
@@ -55169,7 +55239,7 @@ body{overflow-x:hidden}
       const q = e.target.closest('[data-qa]');
       if(q){ accion(q.dataset.qa); return; }
       const h = e.target.closest('[data-halert]');
-      if(h){ S.activeId = h.dataset.halert; save(); go('builder'); }
+      if(h){ jpActivarAlumno(h.dataset.halert); save(); go('builder'); }
     });
 
     $('#gsQ').addEventListener('input', () => { gsSel = 0; renderRes(); });
@@ -77565,6 +77635,65 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
     return l;
   }
 
+  /* ---------- pre-proceso: progresiones "2x8, 2x6, 2x4", una sola línea con " / " y campos sueltos ---------- */
+  var RX_NXM = '\\d+\\s*[x×]\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\([^)]*\\))?';
+  var RX_PROG = new RegExp('(' + RX_NXM + ')\\s*(?:,|;|\\/|\\by\\b)\\s*(?=' + RX_NXM + '\\s*(?:$|[|,;\\/+]|\\b(?:rest|descanso|tempo|rir|rpe)\\b))', 'gi');
+  var RX_NXM_SOLO = new RegExp('^' + RX_NXM + '(?:\\s*\\+\\s*' + RX_NXM + ')*$', 'i');
+  var RX_DOSIS_OUT = /(?:Sets?|Series?): |^\d+x\d/;
+  function unirProgresiones(t){
+    var prev;
+    do{ prev = t; t = t.replace(RX_PROG, '$1 + '); }while(t !== prev);
+    return t;
+  }
+  function claseChunk(c){
+    c = String(c).replace(/^A\d+[.)]\s*/i, '').trim();
+    if(RX_REST_LINE.test(c)) return 'rest';
+    var p = parsePart(c), dosis = !!(p.sets || p.reps || p.rir !== undefined || p.tempo || p.rest !== undefined);
+    if(!p.nombre) return dosis ? 'dose' : 'x';
+    return dosis ? 'mixed' : 'name';
+  }
+  /* "Hack squat / 4 Series: 12 reps | Tempo 2011 | RIR 1 / Rest 90s" -> nombre / dosis (tempo y RIR como campos) / Rest, cada uno en su línea.
+     Solo se abre cuando el primer tramo es el ejercicio y todo lo demás es dosis o descanso: "Press 4x10 / Remo 4x10" (biset) no se toca. */
+  function expandirLineas(lineas){
+    var out = [];
+    lineas.forEach(function(raw){
+      var t = raw.trim();
+      if(!t || RX_TECNICA.test(t) || RX_PLACEHOLDER.test(t) || (typeof IMP_RX_TIPHEAD !== 'undefined' && IMP_RX_TIPHEAD.test(t))){ out.push(raw); return; }
+      var u = unirProgresiones(t);
+      var chunks = u.split(/\s+\/\s+/).map(function(c){ return c.trim(); }).filter(Boolean);
+      if(chunks.length >= 2){
+        var cl = chunks.map(claseChunk);
+        var ok = (cl[0] === 'name' || cl[0] === 'mixed') && cl.slice(1).every(function(c){ return c === 'dose' || c === 'rest'; }) && (cl[0] === 'mixed' || cl.indexOf('dose') > 0);
+        if(ok){
+          var lin = [chunks[0]], di = cl[0] === 'mixed' ? 0 : -1;
+          for(var k = 1; k < chunks.length; k++){
+            if(cl[k] === 'rest'){ lin.push(chunks[k]); di = -2; }
+            else if(di >= 0){ lin[di] += ' | ' + chunks[k]; }
+            else { lin.push(chunks[k]); di = lin.length - 1; }
+          }
+          lin.forEach(function(l){ out.push(l); });
+          return;
+        }
+      }
+      out.push(u === t ? raw : u);
+    });
+    /* 2x8 / 2x6 / 2x4 escritos cada uno en su línea: una sola dosis por tramos */
+    var fin = [];
+    out.forEach(function(l){
+      var tt = l.trim();
+      if(fin.length && RX_NXM_SOLO.test(tt) && RX_NXM_SOLO.test(fin[fin.length - 1].trim())) fin[fin.length - 1] = fin[fin.length - 1].trim() + ' + ' + tt;
+      else fin.push(l);
+    });
+    return fin;
+  }
+  /* "Tempo 3010" / "RIR 2" sueltos ajustan o agregan el campo en la línea de dosis (Tempo siempre antes que RIR) */
+  function setCampoDosis(l, campo, v){
+    var rx = campo === 'RIR' ? /RIR [\d-]+/ : /Tempo \S+/;
+    if(rx.test(l)) return l.replace(rx, campo + ' ' + v);
+    if(campo === 'Tempo' && /\|\s*RIR /.test(l)) return l.replace(/\s*\|\s*RIR /, ' | Tempo ' + v + ' | RIR ');
+    return l + ' | ' + campo + ' ' + v;
+  }
+
   /* ---------- una línea natural -> líneas canónicas (o null si hace falta IA) ---------- */
   function formatearLinea(linea, opts){
     opts = opts || {};
@@ -77628,7 +77757,7 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
 
   /* ---------- texto completo ---------- */
   function procesarTexto(texto){
-    var lineas = String(texto || '').split(/\r?\n/);
+    var lineas = expandirLineas(String(texto || '').split(/\r?\n/));
     var out = [], ia = [], i, nombrePrevio = '', cambios = 0, restPend = null, placeholders = 0;
     var cierraRest = function(){ if(restPend){ out.push('Rest ' + restPend + 's'); restPend = null; } };
     for(i = 0; i < lineas.length; i++){
@@ -77637,7 +77766,13 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       if(RX_PLACEHOLDER.test(t)){ placeholders++; cierraRest(); out.push(raw); continue; }
       if(RX_REST_LINE.test(t)){
         var rr = parsePart(t);
-        if(rr.rest !== undefined){ restPend = null; var __rt = 'Rest ' + (rr.restLabel || (rr.rest + 's')); out.push(__rt); cambios += (__rt !== t ? 1 : 0); }
+        if(rr.rest !== undefined){
+          restPend = null; var __rt = 'Rest ' + (rr.restLabel || (rr.rest + 's'));
+          /* "Rest" consecutivo (con o sin líneas vacías en el medio) = huérfano: queda uno solo, el último que escribió el coach */
+          var __ul = out.length - 1; while(__ul >= 0 && out[__ul] === '') __ul--;
+          if(__ul >= 0 && /^Rest /.test(out[__ul])){ out.length = __ul; cambios++; }
+          out.push(__rt); cambios += (__rt !== t ? 1 : 0);
+        }
         else out.push(raw);
         continue;
       }
@@ -77689,13 +77824,13 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       var pt = parsePart(t);
       /* "rir 2" / "tempo 3010" sueltos en su propia línea: ajustan la dosis anterior */
       if(!pt.nombre && !(pt.sets || pt.reps) && (pt.rir !== undefined || pt.tempo)){
-        var li = -1; for(var z = out.length - 1; z >= 0; z--){ if(/(?:Sets?|Series?): /.test(out[z])){ li = z; break; } if(out[z] && !/^Rest /.test(out[z])) break; }
+        var li = -1; for(var z = out.length - 1; z >= 0; z--){ if(RX_DOSIS_OUT.test(out[z])){ li = z; break; } if(out[z] && !/^Rest /.test(out[z])) break; }
         if(li >= 0){
           var objetivos = [li];
-          if(pt.compartida){ objetivos = []; var y = out.length - 1; while(y >= 0 && /^Rest /.test(out[y])) y--; for(; y >= 0 && out[y] && !/^Rest /.test(out[y]); y--){ if(/(?:Sets?|Series?): /.test(out[y])) objetivos.push(y); } }
+          if(pt.compartida){ objetivos = []; var y = out.length - 1; while(y >= 0 && /^Rest /.test(out[y])) y--; for(; y >= 0 && out[y] && !/^Rest /.test(out[y]); y--){ if(RX_DOSIS_OUT.test(out[y])) objetivos.push(y); } }
           objetivos.forEach(function(ix){
-            if(pt.rir !== undefined) out[ix] = out[ix].replace(/RIR [\d-]+/, 'RIR ' + pt.rir);
-            if(pt.tempo) out[ix] = out[ix].replace(/Tempo \S+/, 'Tempo ' + pt.tempo);
+            if(pt.tempo) out[ix] = setCampoDosis(out[ix], 'Tempo', pt.tempo);
+            if(pt.rir !== undefined) out[ix] = setCampoDosis(out[ix], 'RIR', pt.rir);
           });
           cambios++; continue;
         }
@@ -77748,6 +77883,9 @@ html body #dayPanel .block > .block-h > input.bt{ flex:1 1 0 !important; min-wid
       '  Línea 3: (Si hay A2) "A2. Nombre"\n' +
       '  Línea 4: Series x Reps | Tempo | RIR\n' +
       '  Línea Final: Rest Xs\n' +
+      '- Tempo y RIR (o RPE convertido a RIR) van siempre como campos separados por | en la línea de dosis, nunca pegados al nombre del ejercicio.\n' +
+      '- Si hay una progresión de cargas (ej. 2x8, 2x6, 2x4) escribila como "2x8 + 2x6 + 2x4 | Tempo 3010 | RIR 1".\n' +
+      '- Un solo "Rest" por ejercicio o biset: nunca dos líneas Rest seguidas.\n' +
       '- Devolvé EXCLUSIVAMENTE las líneas estructuradas, sin código Markdown, sin explicaciones ni saludos.';
     var out = await window.CoachAI.generarTexto(prompt, 'Sos un formateador estricto de prescripciones de entrenamiento. Respondés únicamente con las líneas pedidas, en texto plano.', { maxTokens: 400, plain: true });
     return normalizarSalidaIA(out);
