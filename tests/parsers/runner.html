@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tests de parsers · Coach JP</title>
+<style>
+  :root{ --bg:#0A0A0A; --pn:#141414; --ln:#262626; --tx:#EDEDED; --mu:#8a8a8a; --ok:#2ecc71; --ko:#ff5a5f; --gp:#f5a524; --cy:#22d3ee; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--tx); font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header{ position:sticky; top:0; z-index:5; background:rgba(10,10,10,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--ln); padding:12px 16px; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  h1{ font-size:16px; margin:0; letter-spacing:.04em; }
+  .pill{ padding:3px 10px; border-radius:999px; border:1px solid var(--ln); font-weight:600; font-variant-numeric:tabular-nums; }
+  .pill.ok{ color:var(--ok); border-color:var(--ok); } .pill.ko{ color:var(--ko); border-color:var(--ko); } .pill.gp{ color:var(--gp); border-color:var(--gp); }
+  button,label{ font:inherit; color:var(--tx); } button{ background:var(--pn); border:1px solid var(--ln); border-radius:8px; padding:6px 12px; cursor:pointer; }
+  main{ padding:12px 16px 60px; max-width:1100px; margin:0 auto; }
+  h2{ font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--cy); margin:22px 0 6px; }
+  .row{ display:grid; grid-template-columns:84px 1fr; gap:4px 12px; padding:8px 10px; border:1px solid var(--ln); background:var(--pn); border-radius:8px; margin-bottom:6px; }
+  .row .st{ font-weight:700; font-size:12px; letter-spacing:.06em; }
+  .row.pass .st{ color:var(--ok); } .row.fail .st{ color:var(--ko); } .row.gap .st{ color:var(--gp); } .row.gapfix .st{ color:var(--cy); }
+  .row .id{ color:var(--mu); font-size:12px; } .row .nt{ color:var(--mu); font-size:12px; }
+  pre{ margin:4px 0 0; padding:8px; background:#0d0d0d; border:1px solid var(--ln); border-radius:6px; white-space:pre-wrap; word-break:break-word; font:12px/1.4 ui-monospace,Consolas,monospace; }
+  .cols{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; grid-column:1 / -1; }
+  @media (max-width:760px){ .cols{ grid-template-columns:1fr; } .row{ grid-template-columns:1fr; } }
+  .cols b{ font-size:11px; color:var(--mu); text-transform:uppercase; letter-spacing:.06em; }
+  .hide{ display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>TESTS DE PARSERS · COACH JP</h1>
+  <span class="pill" id="pTotal">…</span><span class="pill ok" id="pOk">0 ok</span><span class="pill ko" id="pKo">0 fallan</span>
+  <span class="pill gp" id="pGp">0 gaps</span>
+  <label><input type="checkbox" id="soloFallas"> solo fallas y gaps</label>
+  <button id="bCopiar">Copiar reporte</button>
+  <button id="bReload">Volver a correr</button>
+</header>
+<main id="out"><p>Cargando la app en un iframe…</p></main>
+<iframe id="app" src="../../index.html" style="position:absolute; left:-9999px; width:420px; height:800px; border:0" aria-hidden="true"></iframe>
+<script src="cases.js"></script>
+<script>
+/* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
+   Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
+   y abrir  http://localhost:8765/tests/parsers/runner.html  */
+(function(){
+  var win;
+  function esc(s){ return String(s).replace(/[&<>]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+  function fmt(v){ if(v instanceof RegExp) return String(v); try{ var s = JSON.stringify(v, function(k, x){ return x instanceof RegExp ? String(x) : x; }, 2); return s === undefined ? 'undefined' : s; }catch(e){ return String(v); } }
+  function igual(a, b){ return JSON.stringify(a) === JSON.stringify(b); }
+  /* subset: objetos -> solo claves de expect; arrays -> mismo largo y subset por posicion; resto -> igualdad */
+  function subset(exp, act){
+    if(exp === null || typeof exp !== 'object') return exp === act;
+    if(Array.isArray(exp)){ return Array.isArray(act) && act.length === exp.length && exp.every(function(e, i){ return subset(e, act[i]); }); }
+    if(act === null || typeof act !== 'object') return false;
+    return Object.keys(exp).every(function(k){ return subset(exp[k], act[k]); });
+  }
+  function texto(v){ return Array.isArray(v) ? v.join('\n') : String(v); }
+
+  /* ---------- adaptadores: que funcion real se llama y con que ---------- */
+  var ADAPT = {
+    autoformat: { run: function(i){ return win.jpAutoFormat.procesarTexto(i); }, valor: function(r){ return r.lineas; }, siguiente: function(r){ return win.jpAutoFormat.procesarTexto(r.lineas.join('\n')).lineas; } },
+    wod:        { run: function(i){ return win.jpAutoFormat.formatearWod(i); }, valor: function(r){ return r; }, siguiente: function(r){ return win.jpAutoFormat.formatearWod(r); } },
+    esWod:      { run: function(i){ return !!win.jpAutoFormat.esWodBloque(i.bloque, i.texto); }, valor: function(r){ return r; } },
+    cfFormato:  { run: function(i){ var f = win.detectarFormatoCF(i); return f ? f.fmt : null; }, valor: function(r){ return r; } },
+    dosis:      { run: function(i){ return win.jpDosisCanon(i); }, valor: function(r){ return r; } },
+    tag:        { run: function(i){ return win.impCampoCoachDeTag(i); }, valor: function(r){ return r; } },
+    segundos:   { run: function(i){ return win.impSegundosDeTexto(i); }, valor: function(r){ return r; } },
+    importSB:   { run: function(i){ return win.parsearImportacion(i, true); }, valor: function(r){ return r; } },
+    importCF:   { run: function(i){ return win.parsearImportacion(i, false); }, valor: function(r){ return r; } }
+  };
+  function itemsPlanos(r){ var out = []; (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ out.push((b.items || []).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); })); }); }); return out; }
+  function restConsecutivos(r){ var n = 0; itemsPlanos(r).forEach(function(its){ for(var k = 1; k < its.length; k++){ if(/^\s*Rest\b/i.test(its[k]) && /^\s*Rest\b/i.test(its[k - 1])) n++; } }); return n; }
+
+  function evaluar(c){
+    var ad = ADAPT[c.fn]; if(!ad) throw new Error('fn desconocida: ' + c.fn);
+    var r = ad.run(c.input), v = ad.valor(r), modo = c.modo || 'igual', ok, actual = v;
+    switch(modo){
+      case 'igual': ok = igual(v, c.expect); break;
+      case 'subset': ok = subset(c.expect, v); break;
+      case 'contiene': { var t = texto(v), lista = [].concat(c.expect); ok = lista.every(function(s){ return t.indexOf(s) >= 0; }); break; }
+      case 'noContiene': { var t2 = texto(v), l2 = [].concat(c.expect); ok = l2.every(function(s){ return t2.indexOf(s) < 0; }); break; }
+      case 'idempotente': { var sig = ad.siguiente(r); ok = igual(v, sig); actual = { primera: v, segunda: sig }; c = Object.assign({}, c, { expect: '(segunda pasada igual a la primera)' }); break; }
+      case 'conPlaceholders': ok = r.placeholders === c.expect; actual = r.placeholders; break;
+      case 'iaLineas': ok = r.ia.length === c.expect; actual = r.ia.length; break;
+      case 'proyeccion': {
+        var e = c.expect, okP = true;
+        if(e.dias) okP = okP && subset(e.dias, v.dias);
+        if(e.cantDias !== undefined) okP = okP && v.dias.length === e.cantDias;
+        if(e.sinAvisos) okP = okP && v.avisos.every(function(a){ return !e.sinAvisos.test(a); });
+        if(e.avisoContiene) okP = okP && v.avisos.some(function(a){ return a.indexOf(e.avisoContiene) >= 0; });
+        ok = okP; actual = { dias: v.dias.map(function(d){ return { num: d.num, titulo: d.titulo, foco: d.foco, bloques: (d.bloques || []).map(function(b){ return { fase: b.fase, titulo: b.titulo, items: b.items, cierre: b.cierre }; }) }; }), avisos: v.avisos };
+        break;
+      }
+      case 'proyeccionItems': {
+        var e2 = c.expect, okI = true, planos = itemsPlanos(v), todo = planos.map(function(x){ return x.join('\n'); }).join('\n');
+        if(e2.itemsContienen) okI = okI && e2.itemsContienen.every(function(s){ return todo.indexOf(s) >= 0; });
+        if(e2.itemsNoContienen) okI = okI && e2.itemsNoContienen.every(function(s){ return todo.indexOf(s) < 0; });
+        if(e2.cantBloques !== undefined) okI = okI && planos.length === e2.cantBloques;
+        if(e2.restConsecutivos !== undefined) okI = okI && restConsecutivos(v) === e2.restConsecutivos;
+        ok = okI; actual = { bloques: planos, restConsecutivos: restConsecutivos(v), avisos: v.avisos };
+        break;
+      }
+      default: throw new Error('modo desconocido: ' + modo);
+    }
+    return { ok: !!ok, actual: actual, expect: c.expect };
+  }
+
+  function correr(){
+    var res = [];
+    window.JP_PARSER_CASES.forEach(function(c){
+      var r;
+      try{ r = evaluar(c); }catch(err){ r = { ok: false, actual: 'EXCEPCION: ' + (err && err.message || err), expect: c.expect }; }
+      /* estado: pass | fail | gap (esperado que falle hoy) | gapfix (marcado gap pero ya pasa) */
+      var estado = c.gap ? (r.ok ? 'gapfix' : 'gap') : (r.ok ? 'pass' : 'fail');
+      res.push({ caso: c, estado: estado, actual: r.actual, expect: r.expect });
+    });
+    return res;
+  }
+
+  function pintar(res){
+    var por = {}, orden = [];
+    res.forEach(function(r){ var a = r.caso.area; if(!por[a]){ por[a] = []; orden.push(a); } por[a].push(r); });
+    var cnt = { pass: 0, fail: 0, gap: 0, gapfix: 0 };
+    res.forEach(function(r){ cnt[r.estado]++; });
+    var html = '';
+    orden.forEach(function(a){
+      html += '<h2>' + esc(a) + '</h2>';
+      por[a].forEach(function(r){
+        var lbl = { pass: 'OK', fail: 'FALLA', gap: 'GAP', gapfix: 'YA PASA' }[r.estado];
+        html += '<div class="row ' + r.estado + '" data-estado="' + r.estado + '"><div class="st">' + lbl + '</div><div><span class="id">' + esc(r.caso.id) + '</span> · ' + esc(r.caso.nota || '') +
+          '<pre>' + esc(typeof r.caso.input === 'string' ? r.caso.input : fmt(r.caso.input)) + '</pre></div>';
+        if(r.estado !== 'pass'){
+          html += '<div class="cols"><div><b>Esperado</b><pre>' + esc(fmt(r.expect)) + '</pre></div><div><b>Actual</b><pre>' + esc(fmt(r.actual)) + '</pre></div></div>';
+        }
+        html += '</div>';
+      });
+    });
+    document.getElementById('out').innerHTML = html;
+    document.getElementById('pTotal').textContent = res.length + ' casos';
+    document.getElementById('pOk').textContent = cnt.pass + ' ok';
+    document.getElementById('pKo').textContent = cnt.fail + ' fallan';
+    document.getElementById('pGp').textContent = cnt.gap + ' gaps' + (cnt.gapfix ? ' · ' + cnt.gapfix + ' ya pasan' : '');
+    document.title = (cnt.fail ? '✗ ' : '✓ ') + cnt.pass + '/' + res.length + ' · Tests de parsers';
+    aplicarFiltro();
+    window.__jpTests = { total: res.length, pass: cnt.pass, fail: cnt.fail, gap: cnt.gap, gapfix: cnt.gapfix, fallas: res.filter(function(r){ return r.estado === 'fail'; }).map(function(r){ return { id: r.caso.id, esperado: r.expect, actual: r.actual }; }), gaps: res.filter(function(r){ return r.estado === 'gap' || r.estado === 'gapfix'; }).map(function(r){ return r.caso.id + ':' + r.estado; }) };
+    window.__jpReporte = function(){
+      var s = '# Tests de parsers\n\n' + cnt.pass + ' ok · ' + cnt.fail + ' fallan · ' + cnt.gap + ' gaps conocidos · ' + cnt.gapfix + ' gaps que ya pasan (total ' + res.length + ')\n';
+      res.filter(function(r){ return r.estado !== 'pass'; }).forEach(function(r){
+        s += '\n## ' + r.caso.id + ' [' + r.estado + ']\n' + (r.caso.nota || '') + '\n\nEntrada:\n```\n' + (typeof r.caso.input === 'string' ? r.caso.input : fmt(r.caso.input)) + '\n```\nEsperado:\n```\n' + fmt(r.expect) + '\n```\nActual:\n```\n' + fmt(r.actual) + '\n```\n';
+      });
+      return s;
+    };
+  }
+  function aplicarFiltro(){
+    var solo = document.getElementById('soloFallas').checked;
+    [].forEach.call(document.querySelectorAll('.row'), function(el){ el.classList.toggle('hide', solo && el.getAttribute('data-estado') === 'pass'); });
+  }
+  document.getElementById('soloFallas').addEventListener('change', aplicarFiltro);
+  document.getElementById('bReload').addEventListener('click', function(){ location.reload(); });
+  document.getElementById('bCopiar').addEventListener('click', function(){ try{ navigator.clipboard.writeText(window.__jpReporte()); this.textContent = 'Copiado'; }catch(e){ this.textContent = 'No se pudo copiar'; } });
+
+  var frame = document.getElementById('app'), intentos = 0;
+  function listo(){
+    try{ win = frame.contentWindow; return !!(win && win.jpAutoFormat && typeof win.jpDosisCanon === 'function' && typeof win.parsearImportacion === 'function' && typeof win.detectarFormatoCF === 'function' && typeof win.impCampoCoachDeTag === 'function'); }catch(e){ return false; }
+  }
+  var t = setInterval(function(){
+    intentos++;
+    if(listo()){ clearInterval(t); setTimeout(function(){ pintar(correr()); }, 300); }
+    else if(intentos > 120){ clearInterval(t); document.getElementById('out').innerHTML = '<p>No se pudo acceder a la app dentro del iframe. Serví la carpeta por http (no file://) y abrí esta pagina desde el mismo servidor.</p>'; }
+  }, 250);
+})();
+</script>
+</body>
+</html>
