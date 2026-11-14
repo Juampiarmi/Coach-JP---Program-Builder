@@ -1950,8 +1950,8 @@ const jpCoachSonido = (function(){
   function ctxA(){
     if(!ctx){
       const AC = window.AudioContext || window.webkitAudioContext;
+      try{ if(navigator.audioSession) navigator.audioSession.type = 'ambient'; }catch(e2){}      /* nunca 'playback': pausaria la musica del usuario */
       try{ ctx = new AC({ latencyHint: 'interactive' }); }catch(e){ ctx = new AC(); }
-      try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e2){}
     }
     return ctx;
   }
@@ -5631,7 +5631,8 @@ function jpDosisCanon(texto){
       while((x = rxS.exec(cl))){ last = x; if(x[0].length === 0) rxS.lastIndex++; }
       if(last){ out.rest = seg(last[1], last[2]); fin = last.index + last[0].length; }
     }
-    /* un descanso de 1 a 9 s no es real ("Rest 4", "Rest 3 minutes" mal leído): 1-6 se leen como minutos, 7-9 vuelven a 60 s */
+    /* Regla única para números SIN unidad (la misma en impSegundosDeTexto y en el auto-formato): hasta 10 = minutos ("Rest 4" = 240 s, "Rest 8" = 480 s), más de 10 = segundos.
+       Esto de acá solo corrige un descanso con unidad EXPLÍCITA de 1 a 9 segundos ("Rest 5s"), que no es real: 1-6 se leen como minutos, 7-9 vuelven a 60 s */
     if(out.rest > 0 && out.rest < 10){ out.rest = out.rest <= 6 ? out.rest * 60 : 60; delete out.restLabel; }
     if(out.rest !== undefined && fin >= 0) tapar(mr.index, mr[0].length + fin);
   }
@@ -5724,6 +5725,8 @@ function impPushLineaSports(bloque, t, avisos){
   /* un calentamiento/activación es una LISTA de ejercicios: sus líneas se conservan tal cual
      (con sus guiones, viñetas o comas), nunca se convierten en dosis con tracker */
   if(bloque.fase === 'warmup'){
+    const ult = bloque.items.length ? bloque.items[bloque.items.length - 1] : null;
+    if(typeof ult === 'string' && /^\s*(?:rest|descanso)\b/i.test(ult) && /^\s*(?:rest|descanso)\b/i.test(t)) bloque.items.pop();      /* "Rest" consecutivo: queda el último */
     bloque.items.push(t);
     /* la línea "Rest ..." de una activación queda visible Y fija el descanso del bloque */
     if(/^\s*(?:rest|descanso)\b/i.test(t)){ const xr = impDosisSB(t); if(xr.d.rest !== undefined && bloque.rest === undefined) bloque.rest = xr.d.rest; }
@@ -5736,6 +5739,11 @@ function impPushLineaSports(bloque, t, avisos){
   if(x.nombre){ bloque.items.push(x.nombre); bloque._g = null; }
   let g = bloque._g;
   if(!g || (x.d.sets && g.d.sets)){ g = bloque._g = { d: {} }; bloque.items.push(g); }
+  /* "Rest" repetido (dos líneas seguidas de descanso para el mismo ejercicio): no queda un huérfano, manda el último que escribió el coach */
+  if(x.d.rest !== undefined && g.d.rest !== undefined && Object.keys(x.d).every(k => k === 'rest' || k === 'restLabel')){
+    g.d.rest = x.d.rest; if(x.d.restLabel) g.d.restLabel = x.d.restLabel; else delete g.d.restLabel;
+    return;
+  }
   if(['tempo', 'rir', 'rest'].some(k => x.d[k] !== undefined && g.d[k] !== undefined)){ bloque.items.push(t); return; }
   Object.keys(x.d).forEach(k => { if(k !== 'rpeConv' && k !== 'tempoX' && g.d[k] === undefined) g.d[k] = x.d[k]; });
   if(x.d.rpeConv && avisos.indexOf(AVISO_RPE) < 0) avisos.push(AVISO_RPE);
@@ -12929,17 +12937,13 @@ function wireReadinessCheckin(day, weekIdx){
 ========================================================= */
 let _audioCtx = null;
 var _audioFallo = false;
-/* Sesión de audio "playback" SOLO mientras suena un aviso (para que suene con el interruptor de silencio del iPhone) y se devuelve a "auto" a los
-   pocos segundos: si queda fija, el sistema muestra un reproductor multimedia fantasma (con el nombre del sitio, "GitHub") en el centro de control. */
-var _sesAudioTm = null;
+/* Sesión de audio SIEMPRE "ambient": mezcla los avisos con lo que el alumno ya está escuchando (Spotify, Apple Music, podcasts) y nunca toma el foco de audio.
+   La sesión "playback" hacía lo contrario: pausaba su música al abrir la app y registraba a Coach JP como reproductor multimedia (control center / pantalla de bloqueo).
+   Costo asumido: con el interruptor de silencio del iPhone activado los avisos no suenan (la vibración sí). Ningún lugar de la app puede volver a "playback". */
 function jpSesionAudio(){
-  try{ if(navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; }catch(e0){}
-  clearTimeout(_sesAudioTm);
-  _sesAudioTm = setTimeout(function(){
-    try{ if(navigator.audioSession) navigator.audioSession.type = 'auto'; }catch(e1){}
-    try{ if(navigator.mediaSession){ navigator.mediaSession.metadata = null; navigator.mediaSession.playbackState = 'none'; } }catch(e2){}
-  }, 6000);
+  try{ if(navigator.audioSession && navigator.audioSession.type !== 'ambient') navigator.audioSession.type = 'ambient'; }catch(e0){}
 }
+jpSesionAudio();
 function ensureAudioCtx(pasivo){
   /* El audio NUNCA puede romper la app: aqui no se lanza ninguna excepcion. Sin Web Audio (o si el constructor falla) devuelve null y
      todos los llamadores simplemente no suenan. El contexto no se crea al cargar la pagina: nace en el primer gesto o el primer aviso. */
@@ -12950,7 +12954,7 @@ function ensureAudioCtx(pasivo){
     if(!AC){ _audioFallo = true; return null; }
     /* latencyHint "interactive": el menor retardo posible entre el evento del timer y el tono */
     try{ _audioCtx = new AC({ latencyHint: 'interactive' }); }catch(e){ _audioCtx = new AC(); }
-    /* iOS 16.4+: la sesion "playback" (avisos audibles con el silencio activo) se activa por aviso en jpSesionAudio(), no de forma permanente */
+    /* iOS 16.4+: la sesion de audio queda en "ambient" (jpSesionAudio): mezcla con la musica del usuario y nunca pide el foco de audio */
     /* si el sistema lo interrumpe (llamada, bloqueo de pantalla), queda a la espera del proximo toque */
     try{ _audioCtx.addEventListener('statechange', function(){ if(_audioCtx && _audioCtx.state !== 'running' && window.__jpArmarAudio) window.__jpArmarAudio(); }); }catch(e3){}
   }catch(e4){ _audioCtx = null; _audioFallo = true; }
@@ -63182,8 +63186,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
   function ctxAudio(){
     if(!ACtx){
       var AC = window.AudioContext || window.webkitAudioContext;
+      try{ if(navigator.audioSession) navigator.audioSession.type = 'ambient'; }catch(e2){}      /* nunca 'playback': pausaria la musica del usuario */
       try{ ACtx = new AC({ latencyHint: 'interactive' }); }catch(e){ ACtx = new AC(); }
-      try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e2){}
     }
     return ACtx;
   }
