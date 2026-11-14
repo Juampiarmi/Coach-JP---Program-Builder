@@ -2205,7 +2205,7 @@ let _ultLib = null, _ultPlans = null;
 function jpPersistirEstado(){
   const libStr = JSON.stringify({ athletes: S.athletes, exercises: S.exercises, libV: S.libV });
   const plObj = { plans: S.plans, activeId: S.activeId, ui: S.ui };
-  if(Array.isArray(S.banco)) plObj.banco = S.banco.map(r => (r && (r.std || r.cfMesSys || r.sbSys)) ? Object.assign({}, r, { dias: [] }) : r);      /* plantillas del sistema (std): sus dias se regeneran desde el codigo, no se guardan (cada una pesa ~35 KB) */
+  if(Array.isArray(S.banco)) plObj.banco = S.banco.map(r => (r && (r.std || r.cfMesSys || r.sbSys) && !r.editada) ? Object.assign({}, r, { dias: [] }) : r);      /* plantillas del sistema (std): sus dias se regeneran desde el codigo, no se guardan (cada una pesa ~35 KB) */
   if(Array.isArray(S.sedes)) plObj.sedes = S.sedes;
   if(S.exportLog && typeof S.exportLog === 'object') plObj.exportLog = S.exportLog;
   const plStr = JSON.stringify(plObj);
@@ -21582,7 +21582,7 @@ body.man-mode .gs-fab{right:318px}
           '<div class="bm">' + (r.dias || []).length + ' días · ' + nEj + ' ejercicios · guardada el ' + esc(r.creado || '') + '</div></div></div>' +
         '<div class="bank-tags">' +
           '<span class="bank-tag fr">Frecuencia: ' + ((r.freq || (r.dias || []).length) || '—') + ' DÍAS</span>' +
-          '<span class="bank-tag n">Nivel: ' + esc(String(nivLb(r.niv)).toUpperCase()) + '</span>' +
+          '<span class="bank-tag n">Nivel: ' + esc(String(nivLb(r.niv)).toUpperCase()) + '</span>' + (r.editada ? '<span class="bank-tag gen" title="Plantilla del sistema que editaste: se guarda con tus cambios">✏️ EDITADA</span>' : '') +
         '</div>' +
         (r.notas ? '<div class="mini" style="font-size:11.5px;color:var(--txt-2);line-height:1.5">' + esc(r.notas) + '</div>' : '') +
         '<div class="bank-days">' + (r.dias || []).map(d => '<div><b>' + esc(d.short) + '</b> ' + esc(d.title || d.label || '') + ' · ' + (d.bloques || []).length + ' bloques</div>').join('') + '</div>' +
@@ -21783,6 +21783,7 @@ body.man-mode .gs-fab{right:318px}
       if(du){
         const r = banco().find(x => x.id === du.dataset.bkdup); if(!r) return;
         const c = clone(r); c.id = uid('bk'); c.nombre = r.nombre + ' (copia)'; c.usos = 0;
+        delete c.editada; delete c.editadaEl;
         if(c.std){ delete c.std; delete c.stdId; }
         if(c.cfMesSys){ delete c.cfMesSys; delete c.cfMesId; delete c.cfMesVer; }
         if(c.sbSys){ delete c.sbSys; delete c.sbSysVer; delete c.depSys; delete c.depDeporte; delete c.fbSys; delete c.fbId; delete c.elbSys; }
@@ -21790,7 +21791,7 @@ body.man-mode .gs-fab{right:318px}
         banco().push(c); save(); renderBanco(); toast('📋 Rutina duplicada');
         return;
       }
-      const ed = e.target.closest('[data-bkedit]'); if(ed){ openGuardar(ed.dataset.bkedit); return; }
+      const ed = e.target.closest('[data-bkedit]'); if(ed){ if(window.CoachBaseJP && typeof window.CoachBaseJP.editar === 'function') window.CoachBaseJP.editar(ed.dataset.bkedit); else openGuardar(ed.dataset.bkedit); return; }
       const de = e.target.closest('[data-bkdel]');
       if(de){
         const r = banco().find(x => x.id === de.dataset.bkdel); if(!r) return;
@@ -43088,497 +43089,22 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 })();
 </script>
 <script>
-/* =========================================================
-   PLANTILLAS BASE COACH JP · ESTÁNDAR 2026
-   Matriz completa: 2 niveles (Desarrollo-Intermedio · Avanzado / Élite) x 2 géneros x 3 frecuencias (3 / 4 / 5 días).
-   Cada sesión se escribe como texto de "Redacción libre" (el mismo formato que produce el generador de IA) y pasa por el importador del Builder:
-   así los bloques son idénticos a los de cualquier sesión actual (video vinculado solo, dosis en líneas, tempo en tips, RIR, descansos).
-   Los kilos salen de los 1RM de la ficha del alumno/a al asignar; la ondulación S2-S4 se proyecta sola.
-   ========================================================= */
-(function(){
-  'use strict';
-  function nzz(s){ return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim(); }
-
-  /* ---------- base de conocimiento por patrón: objetivo + set-up + cue + cuidado + tempo ---------- */
-  var KB = {
-    press_h:  { o: 'Cargás pectoral, deltoide anterior y tríceps con la carga más alta de la semana: tu cuerpo recluta las fibras grandes y fuertes, que son las que más crecen.', s: 'Escápulas juntas y hacia abajo, pies firmes en el piso y la barra sobre la línea del pecho.', c: 'Bajá controlado hasta rozar el pecho y empujá como si te alejaras del banco.', x: 'No rebotes ni despegues la cadera del banco; si el hombro molesta, cerrá un poco el agarre.', t: '3010' },
-    press_inc:{ o: 'Trabajás la porción superior del pecho y el deltoide anterior con el brazo en un ángulo que estira bien el músculo bajo carga.', s: 'Banco a 30°, mancuernas a la altura del pecho y escápulas apoyadas.', c: 'Empujá hacia arriba y un poco hacia adentro, sin chocar las mancuernas.', x: 'No subas el banco más de 30-35°: el hombro toma el trabajo y el pecho se apaga.', t: '3110' },
-    aper:     { o: 'Llevás el pectoral a posición estirada, donde recibe más tensión mecánica con poca carga y poco estrés articular.', s: 'Pecho afuera, escápulas fijas y codos apenas flexionados durante todo el recorrido.', c: 'Abrí hasta sentir el estiramiento del pecho y cerrá como si abrazaras un tronco.', x: 'No bajes los codos por detrás del torso: el hombro queda expuesto.', t: '3011' },
-    fondos:   { o: 'Sumás tensión al pecho bajo y al tríceps con tu propio peso (y lastre si hace falta), un clásico para el volumen de empuje.', s: 'Hombros lejos de las orejas, torso levemente inclinado hacia adelante y piernas cruzadas.', c: 'Bajá hasta que el hombro quede a la altura del codo y empujá el cuerpo hacia arriba.', x: 'No bajes más del rango cómodo del hombro; si hay molestia, pasá a una máquina.', t: '3010' },
-    pullover: { o: 'Estirás el pecho y el dorsal con el brazo por encima de la cabeza, un perfil de resistencia que casi ningún otro ejercicio da.', s: 'Brazos casi rectos, costillas abajo y abdomen firme.', c: 'Llevá los brazos hacia atrás en arco y volvé apretando el pecho y el dorsal.', x: 'No arquees la espalda baja al estirar: el rango termina donde la lumbar se despega.', t: '3011' },
-    press_v:  { o: 'Desarrollás los tres deltoides y el tríceps con carga alta y el tronco estable: ahí se construyen hombros fuertes y anchos.', s: 'Glúteos y abdomen contraídos, costillas abajo y muñecas justo encima de los codos.', c: 'Empujá la barra en línea recta y terminá con la cabeza "pasando" por delante de ella.', x: 'No arquees la espalda baja para ayudarte; si pasa, bajá la carga.', t: '2011' },
-    lateral:  { o: 'Aislás la porción lateral del deltoides, la que ensancha el contorno del hombro.', s: 'Torso levemente inclinado, codos apenas flexionados y hombros lejos de las orejas.', c: 'Subí los codos (no las manos) hasta la altura del hombro y bajá lento.', x: 'No balancees el torso ni encojas los hombros: si lo hacés, la carga es demasiada.', t: '2011' },
-    delt_post:{ o: 'Trabajás el deltoide posterior y la espalda alta, clave para hombros 3D y una postura sana.', s: 'Torso paralelo al piso o pecho apoyado, codos altos y apenas flexionados.', c: 'Abrí los brazos hacia afuera y atrás, apretando las escápulas al final.', x: 'No tires con el trapecio ni con impulso de cadera.', t: '2011' },
-    trap:     { o: 'Cargás el trapecio superior, el que da volumen entre el cuello y el hombro.', s: 'Brazos relajados al costado y pecho arriba.', c: 'Subí los hombros hacia las orejas y sostené 1-2 segundos arriba.', x: 'No rotes los hombros hacia atrás ni cuelgues la cabeza.', t: '1012' },
-    tracc_v:  { o: 'Cargás el dorsal ancho en vertical, el músculo que da el ancho a la espalda.', s: 'Pecho hacia la barra, escápulas hacia abajo antes de tirar y agarre apenas más ancho que los hombros.', c: 'Llevá los codos hacia las costillas y sentí cómo se cierra el dorsal.', x: 'No te cuelgues de los brazos ni te inclines hacia atrás para terminar la repetición.', t: '2011' },
-    remo:     { o: 'Trabajás dorsal, romboides y espalda alta en horizontal: es lo que da grosor y densidad a la espalda.', s: 'Torso firme (45° o apoyado), rodillas flexionadas y abdomen duro.', c: 'Tirá los codos hacia atrás y apretá las escápulas medio segundo arriba.', x: 'No uses impulso de cadera ni redondees la espalda baja.', t: '2011' },
-    lumbar:   { o: 'Fortalecés la cadena posterior y los erectores, la base que sostiene todos los levantamientos pesados.', s: 'Cadera apoyada en el aparato y cuerpo alineado de la cabeza a los talones.', c: 'Subí hasta alinear el tronco, sin pasarte de ahí, y bajá controlado.', x: 'No hiperextiendas la zona lumbar arriba: el rango termina con el cuerpo recto.', t: '2012' },
-    rdl:      { o: 'Cargás isquiotibiales y glúteo en posición estirada: el rango largo es lo que más hipertrofia genera en la cadena posterior.', s: 'Cadera atrás, rodillas apenas flexionadas, barra pegada a las piernas y espalda neutra.', c: 'Empujá la cadera hacia atrás como cerrando una puerta con la cola y subí apretando el glúteo.', x: 'No redondees la espalda baja: el rango termina donde la columna pierde su forma.', t: '3110' },
-    pmuerto:  { o: 'Entrenás cadena posterior, espalda y agarre con carga máxima: el ejercicio de fuerza más completo del programa.', s: 'Barra sobre el medio del pie, espalda neutra, dorsales activos y pecho arriba.', c: 'Empujá el piso con las piernas antes de mover la barra y terminá con el glúteo, sin hiperextender.', x: 'No tires desde la espalda baja ni dejes que la barra se separe del cuerpo.', t: '2010' },
-    hip:      { o: 'Cargás el glúteo mayor en extensión de cadera con pausa arriba: el ejercicio que más lo activa.', s: 'Espalda alta apoyada en el banco, pies al ancho de cadera y mentón hacia el pecho.', c: 'Empujá con los talones y frená 1 segundo arriba apretando el glúteo, con las costillas abajo.', x: 'No arquees la lumbar para ganar altura: el glúteo termina con la cadera alineada.', t: '2011' },
-    glute_iso:{ o: 'Aislás el glúteo con tensión constante, ideal para sumar volumen sin cargar la espalda baja.', s: 'Cadera cuadrada, abdomen firme y el apoyo estable.', c: 'Extendé la cadera apretando el glúteo y sostené 1 segundo arriba.', x: 'No rotes la pelvis ni arquees la espalda baja para subir más la pierna.', t: '2011' },
-    abduccion:{ o: 'Trabajás glúteo medio y menor, que dan la forma lateral de la cadera y estabilizan la pelvis.', s: 'Torso levemente inclinado hacia adelante y espalda apoyada si la máquina lo permite.', c: 'Abrí las piernas empujando con las rodillas y volvé lento sin soltar la tensión.', x: 'No rebotes con la pila de pesas ni uses el torso para impulsarte.', t: '2011' },
-    aduccion: { o: 'Fortalecés los aductores de la cara interna del muslo, un grupo que suele quedar sin trabajar.', s: 'Espalda apoyada y piernas al ancho cómodo de la máquina.', c: 'Cerrá las piernas controlado y abrí en 3 segundos sintiendo el estiramiento.', x: 'No abras más de lo que tu cadera tolera sin dolor.', t: '3011' },
-    sentadilla:{ o: 'Entrenás cuádriceps, glúteo y todo el tronco con carga alta: el patrón de pierna que más estimula al cuerpo entero.', s: 'Barra firme en la espalda alta, pies al ancho de hombros y pecho arriba.', c: 'Bajá hasta la profundidad de tu mejor técnica y subí empujando el piso con todo el pie.', x: 'No dejes que las rodillas colapsen hacia adentro ni redondees la zona lumbar al fondo.', t: '3010' },
-    prensa:   { o: 'Cargás cuádriceps y glúteo con mucho volumen y poca exigencia del tronco, ideal después del básico pesado.', s: 'Espalda y cadera pegadas al respaldo y pies al ancho de hombros.', c: 'Bajá hasta donde la cadera no se despegue y empujá el piso con todo el pie.', x: 'No bloquees las rodillas arriba ni dejes que la cadera se levante al fondo.', t: '3110' },
-    hack:     { o: 'Llevás el cuádriceps a un rango profundo con el torso apoyado y muy poca fatiga lumbar.', s: 'Espalda apoyada, pies a la altura media de la plataforma y rodillas alineadas con los pies.', c: 'Bajá controlado hasta una flexión profunda y subí empujando con el medio pie.', x: 'No despegues los talones ni rebotes abajo.', t: '3110' },
-    unilat:   { o: 'Trabajás cada pierna por separado: corregís diferencias de fuerza y sumás glúteo y cuádriceps en rango profundo.', s: 'Torso firme, paso largo y pie de apoyo bien plantado.', c: 'Bajá en vertical hasta que la rodilla casi roce el piso y subí empujando con el talón.', x: 'No dejes que la rodilla se meta hacia adentro ni te apoyes en la pierna de atrás.', t: '2110' },
-    curl_fem: { o: 'Aislás los isquiotibiales en flexión de rodilla, la función que los ejercicios de cadera no cubren.', s: 'Cadera pegada al apoyo y rodillas alineadas con el eje de la máquina.', c: 'Flexioná sin despegar la cadera y bajá lento (3 segundos) hasta casi extender.', x: 'No levantes la cadera para ayudarte ni rebotes al final.', t: '3110' },
-    ext_cuad: { o: 'Aislás el cuádriceps, sobre todo el recto femoral, con tensión constante y muy poco estrés articular.', s: 'Espalda apoyada, rodillas alineadas con el eje y el rodillo sobre los tobillos.', c: 'Extendé apretando el cuádriceps 1 segundo arriba y bajá en 3 segundos.', x: 'No lances la pierna con impulso ni bloquees la rodilla de golpe.', t: '3011' },
-    gemelo:   { o: 'Cargás el gemelo, un músculo de fibras lentas que responde a rangos completos y pausas en el estiramiento.', s: 'Puntas de pie en el borde, rodillas casi extendidas y tronco firme.', c: 'Bajá hasta estirar bien el talón, pausa de 1-2 segundos abajo y subí al máximo.', x: 'No rebotes ni acortes el rango: el estiramiento abajo es el estímulo.', t: '2211' },
-    curl:     { o: 'Aislás el bíceps y el braquial con el codo fijo: tensión limpia sobre el músculo.', s: 'Codos pegados al costado, hombros atrás y torso quieto.', c: 'Subí sin mover los codos y bajá en 3 segundos sintiendo el estiramiento.', x: 'No balancees el torso: si lo hacés, la carga es demasiado alta.', t: '3011' },
-    triceps:  { o: 'Trabajás las tres cabezas del tríceps, que son dos tercios del volumen del brazo; con el brazo arriba de la cabeza se estira la porción larga.', s: 'Codos fijos y apuntando al frente, muñecas neutras y torso estable.', c: 'Extendé hasta bloquear sin sacudir y bajá en 2-3 segundos hasta estirar.', x: 'No abras los codos hacia afuera ni uses el torso para empujar.', t: '2011' },
-    core_ant: { o: 'Entrenás el tronco para resistir el movimiento (antiextensión, antirrotación): la base que protege la columna bajo carga.', s: 'Abdomen contraído, costillas abajo y pelvis neutra.', c: 'Mantené el tronco quieto mientras se mueven brazos o piernas y respirá sin soltar la tensión.', x: 'Terminá la serie cuando la lumbar se despega o el torso rota, no cuando "arde".', t: '3011' },
-    core_flex:{ o: 'Trabajás los abdominales con flexión de tronco o de cadera bajo control, en rangos que cuidan la columna.', s: 'Pelvis hacia atrás (retroversión) y abdomen contraído antes de empezar.', c: 'Llevá el esternón hacia la pelvis y subí las piernas sin balanceo.', x: 'No uses impulso ni dejes que la lumbar se arquee en la bajada.', t: '3011' },
-    gen:      { o: 'Estimulás el grupo muscular objetivo con técnica controlada y rango completo.', s: 'Posición estable, postura neutra y el músculo objetivo activado antes de empezar.', c: 'Controlá la bajada y buscá la contracción máxima en cada repetición.', x: 'No sacrifiques el rango ni la técnica por mover más carga.', t: '2011' }
-  };
-  /* ejercicio -> patrón del KB (el primero que coincide) */
-  var RX_KB = [
-    [/press de banca|press banca|bench press|press plano con mancuernas|press de pecho en maquina|floor press/, 'press_h'],
-    [/press inclinado|inclinado con barra|press de pecho inclinado/, 'press_inc'],
-    [/aperturas|cruce de cables|pec deck|contractor de pecho/, 'aper'],
-    [/fondos en paralelas|fondos de triceps/, 'fondos'],
-    [/pull-?over/, 'pullover'],
-    [/press militar|press de hombros|press arnold|push press|strict press/, 'press_v'],
-    [/elevaciones laterales|elevacion lateral/, 'lateral'],
-    [/pajaro|elevaciones posteriores|cruce de cables deltoides|face pull|deltoide posterior/, 'delt_post'],
-    [/encogimientos/, 'trap'],
-    [/dominadas|jalon|pull-up/, 'tracc_v'],
-    [/remo/, 'remo'],
-    [/hiperextension|superman|buenos dias/, 'lumbar'],
-    [/peso muerto rumano|rumano/, 'rdl'],
-    [/peso muerto/, 'pmuerto'],
-    [/hip thrust|puente de gluteo/, 'hip'],
-    [/patada de gluteo|extension de cadera|pull-through/, 'glute_iso'],
-    [/abduccion|monster walk/, 'abduccion'],
-    [/aduccion|copenhagen/, 'aduccion'],
-    [/hack squat/, 'hack'],
-    [/sentadilla con barra|sentadilla frontal|back squat|front squat/, 'sentadilla'],
-    [/prensa/, 'prensa'],
-    [/bulgarian|bulgara|zancada|step up|split squat|sentadilla goblet|sentadilla sumo/, 'unilat'],
-    [/curl femoral|nordico/, 'curl_fem'],
-    [/extension de cuadriceps/, 'ext_cuad'],
-    [/gemelos|talones/, 'gemelo'],
-    [/triceps|press frances|press de banca agarre cerrado|patada de triceps/, 'triceps'],
-    [/curl/, 'curl'],
-    [/rueda abdominal|plancha|pallof|dead bug|bird dog|hollow|woodchopper|copenhagen/, 'core_ant'],
-    [/elevacion de piernas|crunch|v-ups|bicicleta abdominal/, 'core_flex']
-  ];
-  function kbDe(nombre){
-    var n = nzz(nombre);
-    for(var i = 0; i < RX_KB.length; i++){ if(RX_KB[i][0].test(n)) return KB[RX_KB[i][1]]; }
-    return KB.gen;
-  }
-  var TEC = {
-    drop: { lb: 'Drop-set', tip: 'TÉCNICA · DROP-SET: en la última serie, al llegar al fallo técnico bajá 20-25% la carga y seguí sin descanso hasta un nuevo fallo.' },
-    myo:  { lb: 'Myo-reps', tip: 'TÉCNICA · MYO-REPS: una serie de activación a 1-2 repeticiones del fallo; después 3-4 mini-series de 4-5 repeticiones con 15 segundos de pausa y respiraciones profundas.' },
-    rp:   { lb: 'Rest-pause', tip: 'TÉCNICA · REST-PAUSE: serie hasta el fallo técnico, descansá 15-20 segundos y sacá 2-4 repeticiones más; repetí una vez.' }
-  };
-  function tempoTxt(t){
-    var d = String(t).split('');
-    var f = function(x, a, b, c){ return x === '0' ? c : (x === 'X' ? b : x + ' s ' + a); };
-    return f(d[0], 'bajada', 'bajada explosiva', 'bajada libre') + ', ' + f(d[1], 'pausa abajo', 'pausa abajo', 'sin pausa abajo') + ', ' + f(d[2], 'subida', 'subida explosiva', 'subida libre') + ', ' + f(d[3], 'pausa arriba', 'pausa arriba', 'sin pausa arriba');
-  }
-
-  /* ---------- resolución de ejercicios de la biblioteca ("Nombre ES (Name EN)": se vincula el video solo) ---------- */
-  function exLib(nombre){
-    var n = nzz(nombre);
-    var lista = (typeof S !== 'undefined' && S.exercises) ? S.exercises : [];
-    for(var i = 0; i < lista.length; i++){ if(lista[i].es && nzz(lista[i].es) === n) return lista[i]; }
-    for(var j = 0; j < lista.length; j++){ if(lista[j].en && nzz(lista[j].en) === n) return lista[j]; }
-    return null;
-  }
-  function etiquetaEj(nombre){
-    var e = exLib(nombre);
-    if(!e) return nombre;
-    return e.es + ((e.en && nzz(e.en) !== nzz(e.es)) ? ' (' + e.en + ')' : '');
-  }
-
-  /* ---------- una fila de sesión: rol, ejercicio(s), dosis intermedio / avanzado ---------- */
-  /* dosis: "SxR|RIR|Rest|tec"; en bisets/trisets "SxR1/R2|RIR1/RIR2|Rest|tec"; roles F fuerza · H hipertrofia · A aislamiento · B biset · T triset · C core · M cierre metabólico */
-  function R(rol, ej, i, a, o){ var r = { rol: rol, ej: ej, i: i, a: a }; if(o){ for(var k in o) r[k] = o[k]; } return r; }
-  function partesDosis(s){
-    var p = String(s || '').split('|'), m = /^(\d+)\s*x\s*(.+)$/i.exec((p[0] || '').trim()) || [];
-    return { sets: parseInt(m[1], 10) || 3, reps: String(m[2] || '10').split('/').map(function(x){ return x.trim(); }), rir: String(p[1] == null ? '1' : p[1]).split('/').map(function(x){ return x.trim(); }), rest: parseInt(p[2], 10) || 90, tec: (p[3] || '').trim() };
-  }
-  function nombreCorto(n){ return String(n).replace(/\s*\(.*\)\s*$/, ''); }
-  function minBloque(sets, estaciones, rest){ return Math.max(4, Math.round(sets * (estaciones * 45 + rest) / 60 + 2)); }
-  var TAG = { F: 'FUERZA', H: 'HIPERTROFIA', B: 'HIPERTROFIA', T: 'HIPERTROFIA', A: 'ACCESORIO', M: 'ACCESORIO', C: 'CORE' };
-  var PREF = { F: 'Fuerza principal', H: 'Hipertrofia', A: 'Accesorios', M: 'Accesorios', C: 'Core' };
-
-  /* texto de un bloque; devuelve { txt, sets, grupos:[{ej,sets}] } */
-  function textoBloque(n, fila, niv, esPrimeroFuerza){
-    var av = niv === 'avanzado', d = partesDosis(av ? (fila.a || fila.i) : fila.i);
-    var ejs = [].concat(av && fila.ea ? fila.ea : fila.ej);
-    var multi = ejs.length > 1, nombresCortos = ejs.map(nombreCorto);
-    var titulo = (fila.rol === 'B' ? 'Hipertrofia – Biset ' : (fila.rol === 'T' ? 'Hipertrofia – Triset ' : (fila.rol === 'M' ? 'Accesorios – Cierre metabólico: ' : (fila.rol === 'C' ? 'Core – ' : (PREF[fila.rol] || 'Hipertrofia') + ' – ')))) + nombresCortos.join(' + ');
-    var mins = minBloque(d.sets, ejs.length, d.rest);
-    var L = ['[BLOQUE ' + n + '] [' + TAG[fila.rol] + '] ' + titulo + ' (' + mins + ' MIN)'];
-    var tecTxt = d.tec && TEC[d.tec] ? ' | ' + TEC[d.tec].lb : '';
-    ejs.forEach(function(e, k){
-      var reps = d.reps[k] != null ? d.reps[k] : d.reps[d.reps.length - 1], rir = d.rir[k] != null ? d.rir[k] : d.rir[d.rir.length - 1];
-      var dosis = d.sets + 'x' + reps + ' | Tempo ' + kbDe(e).t + ' | RIR ' + rir + (k === ejs.length - 1 ? tecTxt : '');
-      L.push((multi ? 'A' + (k + 1) + '. ' : '') + etiquetaEj(e));
-      L.push(dosis);
-    });
-    L.push('Rest ' + d.rest + 's');
-    var kb0 = kbDe(ejs[0]), objetivo = kb0.o;
-    if(multi){
-      var kb1 = kbDe(ejs[1]);
-      objetivo = (fila.rol === 'C' ? 'Trabajás el tronco con ' + ejs.length + ' ejercicios que cubren funciones distintas: ' : 'Encadenás ' + ejs.length + ' ejercicios sin pausa para sumar volumen en menos tiempo: ') + kb0.o.charAt(0).toLowerCase() + kb0.o.slice(1) + ' ' + kb1.o;
-    }
-    if(av && d.tec && TEC[d.tec]) objetivo += ' La técnica de intensidad (' + TEC[d.tec].lb + ') suma estímulo sin sumar series.';
-    L.push('[OBJETIVO FISIOLÓGICO]'); L.push(objetivo);
-    L.push('[COACHING TIPS & ESTRATEGIA]');
-    if(!multi){
-      L.push('SET-UP: ' + kb0.s); L.push('CUE EFICIENTE: ' + kb0.c); L.push('CUIDADO / ERROR COMÚN: ' + kb0.x);
-      L.push('TEMPO: Tempo ' + kb0.t + ' (' + tempoTxt(kb0.t) + ')');
-      if(esPrimeroFuerza) L.push('RAMP-UP: 2 o 3 series de aproximación antes de las efectivas (ej: 50% x 8, 70% x 5, 85% x 2).');
-      if(fila.rol === 'F' && av) L.push('TOP SET + BACK-OFF: la primera serie efectiva es el top set a RIR 1; en las siguientes bajá 5-8% la carga y mantené RIR 0-1.');
-    } else {
-      ejs.forEach(function(e, k){
-        var kb = kbDe(e), id = 'A' + (k + 1);
-        L.push(id + ' · SET-UP: ' + kb.s);
-        L.push(id + ' · CUE EFICIENTE: Tempo ' + kb.t + ' — ' + kb.c);
-        L.push(id + ' · CUIDADO / ERROR COMÚN: ' + kb.x);
-      });
-      L.push('TRANSICIÓN: pasá de una estación a la otra sin descanso; el descanso de ' + d.rest + 's va recién al terminar cada ronda.');
-    }
-    if(av && d.tec && TEC[d.tec]) L.push(TEC[d.tec].tip);
-    var grupos = ejs.map(function(e){ var x = exLib(e); return { ej: e, grupo: x ? x.grupo : '', patron: x ? x.patron : '', sets: d.sets }; });
-    return { txt: L.join('\n'), sets: d.sets * ejs.length, grupos: grupos, mins: mins };
-  }
-
-  /* ---------- entradas en calor específicas por tipo de día ---------- */
-  var WU = {
-    push:   ['Rotación externa manguito rotador x 15', 'Retracciones escapulares colgado x 10', 'Flexiones de brazos x 10'],
-    pull:   ['Retracciones escapulares colgado x 10', 'Face Pull con cuerda x 15', 'Extensión lumbar tipo Superman x 12'],
-    upper:  ['Rotación externa manguito rotador x 15', 'Face Pull con cuerda x 15', 'Retracciones escapulares colgado x 10'],
-    legs:   ['Sentadilla goblet x 10', 'Puente de glúteo con banda x 15', 'Abducción con banda (monster walk) x 12', 'Dead bug x 8'],
-    glute:  ['Puente de glúteo con banda x 15', 'Abducción con banda (monster walk) x 12', 'Peso muerto rumano a una pierna x 8', 'Bird dog x 8'],
-    full:   ['Sentadilla goblet x 10', 'Retracciones escapulares colgado x 10', 'Puente de glúteo con banda x 12', 'Rotación externa manguito rotador x 12']
-  };
-  function textoWarmup(n, tipo, etiqueta){
-    var L = ['[BLOQUE ' + n + '] [WARM-UP] Entrada en calor · ' + etiqueta + ' (8 MIN)'];
-    WU[tipo].forEach(function(x){ var m = /^(.*?)\s+x\s+(\d+)$/.exec(x); L.push('- ' + (m ? etiquetaEj(m[1]) + ' x ' + m[2] : x)); });
-    L.push('[OBJETIVO FISIOLÓGICO]');
-    L.push('Subís la temperatura de los músculos del día y activás los estabilizadores (escápulas, manguito rotador, glúteo medio o core) para que la primera serie pesada salga con técnica y sin riesgo.');
-    L.push('[COACHING TIPS & ESTRATEGIA]');
-    L.push('SET-UP: hacé 2 rondas fluidas, sin fatigarte: el objetivo es entrar en calor, no cansarte.');
-    L.push('CUE EFICIENTE: sentí el músculo trabajar en cada repetición y cuidá el rango completo.');
-    L.push('CUIDADO / ERROR COMÚN: si una articulación molesta, regresioná el ejercicio o salteálo y avisale a tu coach.');
-    return L.join('\n');
-  }
-
-  window.__jpPB = { tempoTxt: tempoTxt, KB: KB, kbDe: kbDe, R: R, textoBloque: textoBloque, textoWarmup: textoWarmup, exLib: exLib, etiquetaEj: etiquetaEj, partesDosis: partesDosis, TEC: TEC, nzz: nzz };
-})();
+@@include coach/banco/10-motor-textos.js@@
 </script>
 <script>
-/* =========================================================
-   PLANTILLAS BASE COACH JP · matriz, armado y asignación
-   ========================================================= */
-(function(){
-  'use strict';
-  var PB = window.__jpPB; if(!PB) return;
-  var R = PB.R;
-
-  /* ---------- sesiones tipo (cada fila: rol, ejercicio, dosis intermedio, dosis avanzado) ---------- */
-  var CORE_A = ['Rueda abdominal', 'Plancha lateral'];
-  var D = {};
-  /* ===== MASCULINO ===== */
-  D.M_PUSH = { short: 'PUSH', label: 'Push', title: 'Push · Pecho, Hombros y Tríceps', wu: 'push', chips: ['💪 Empuje', '🎯 Pecho + hombro + tríceps'],
-    foco: 'Día de empuje con el press de banca como ancla: carga alta, técnica estricta y el pecho trabajado en tres ángulos y longitudes (plano, inclinado y estirado en polea). El hombro y el tríceps llegan precalentados por el press, así que el deltoide lateral y la cabeza larga del tríceps cierran con aislamiento. Empujá cada serie efectiva cerca del fallo técnico sin sacrificar el rango por mover más peso.',
-    filas: [
-      R('F', 'Press de banca plano con barra', '4x6-8|2|180', '5x5-6|1|210'),
-      R('H', 'Press inclinado con mancuernas', '3x8-12|1|120', '4x8-10|0-1|120'),
-      R('H', 'Press militar sentado', '3x8-10|1|120', '4x6-8|1|150'),
-      R('A', 'Aperturas en banco inclinado con poleas', '3x12-15|1|75', '4x12-15|0|60|drop'),
-      R('A', 'Elevaciones laterales en polea baja', '3x12-15|1|60', '4x15-20|0|45|myo'),
-      R('B', ['Press francés con mancuernas plano', 'Extensión tríceps polea alta con cuerda'], '3x10-12/12-15|1|75', '4x10-12/12-15|0|75|rp')
-    ] };
-  D.M_PULL = { short: 'PULL', label: 'Pull', title: 'Pull · Espalda, Deltoide Posterior y Bíceps', wu: 'pull', chips: ['💪 Tracción', '🎯 Dorsal + espalda alta + bíceps'],
-    foco: 'Día de tracción con un remo pesado como ancla y el dorsal trabajado en vertical y horizontal. El deltoide posterior y el pull-over en polea (estirado) refinan el ancho y la densidad de la espalda, y el bíceps cierra con un biset sin pausa. Tirá con los codos, no con las manos, y controlá la bajada de cada repetición.',
-    filas: [
-      R('F', 'Remo con barra inclinado', '4x6-8|2|180', '5x5-6|1|210'),
-      R('H', 'Jalón al pecho con agarre ancho', '3x8-12|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas' }),
-      R('H', 'Remo en polea baja agarre en V', '3x10-12|1|90', '4x10-12|0-1|90'),
-      R('A', 'Pull-over en polea alta brazos extendidos', '3x12-15|1|60', '4x12-15|0|60|drop'),
-      R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|myo'),
-      R('B', ['Curl de bíceps con mancuernas', 'Curl martillo'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|rp')
-    ] };
-  D.M_LEGS = { short: 'LEGS', label: 'Legs', title: 'Legs · Cuádriceps, Isquios y Gemelo', wu: 'legs', chips: ['🦵 Pierna', '🎯 Sentadilla + volumen'],
-    foco: 'Día de pierna completa: la sentadilla marca la carga de la semana, la prensa suma volumen de cuádriceps sin fatiga lumbar y el peso muerto rumano carga los isquios estirados. Los aislamientos de isquio, cuádriceps y gemelo cierran el trabajo con tensión constante. Respetá la profundidad asignada: la serie que no la alcanza no cuenta como efectiva.',
-    filas: [
-      R('F', 'Sentadilla con barra', '4x6-8|2|180', '5x5-6|1|240'),
-      R('H', 'Prensa 45°', '3x10-12|1|120', '4x10-12|0-1|120'),
-      R('H', 'Peso muerto rumano', '3x8-10|2|150', '4x6-8|1|180'),
-      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|drop'),
-      R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|myo'),
-      R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '4x10-15|0|60'),
-      R('C', CORE_A, '3x8/30s|1|45', null, { soloI: true })
-    ] };
-  D.M_UP_A = { short: 'TORSO A', label: 'Torso A', title: 'Torso A · Fuerza de Empuje y Tracción', wu: 'upper', chips: ['💪 Torso', '🎯 Fuerza'],
-    foco: 'Sesión de fuerza de torso: dos básicos pesados (press de banca y remo) abren el día cuando el sistema nervioso está fresco, seguidos de un press de hombro y una tracción vertical. Los deltoides (lateral y posterior) y el biset de brazos cierran con volumen controlado. Las series pesadas llevan descansos largos: es lo que sostiene la carga.',
-    filas: [
-      R('F', 'Press de banca plano con barra', '4x5-7|2|180', '5x4-6|1|210'),
-      R('F', 'Remo con barra inclinado', '4x6-8|2|150', '4x5-7|1|180', { ea: 'Remo Pendlay' }),
-      R('H', 'Press militar de pie', '3x6-8|2|150', '3x6-8|1|150'),
-      R('H', 'Jalón al pecho con agarre estrecho', '3x8-12|1|90', '4x6-8|1|120', { ea: 'Dominadas lastradas' }),
-      R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|60', '3x12-15/15-20|0|60|drop'),
-      R('B', ['Curl de bíceps con barra Z', 'Extensión tríceps polea alta con cuerda'], '3x8-10/10-12|1|75', '3x8-10/10-12|0|75|rp')
-    ] };
-  D.M_LO_A = { short: 'PIERNA A', label: 'Pierna A', title: 'Pierna A · Fuerza de Sentadilla', wu: 'legs', chips: ['🦵 Pierna', '🎯 Fuerza'],
-    foco: 'Sesión de fuerza de pierna: sentadilla pesada, peso muerto rumano para la cadena posterior y un unilateral que corrige diferencias entre piernas. Isquio, gemelo y core cierran el día. La sentadilla va con tempo controlado y sin rebote abajo.',
-    filas: [
-      R('F', 'Sentadilla con barra', '4x5-7|2|180', '5x4-6|1|240'),
-      R('H', 'Peso muerto rumano', '3x6-8|2|150', '4x6-8|1|180'),
-      R('H', 'Bulgarian split squat', '3x8-10|1|90', '4x8-10|0-1|90'),
-      R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|drop'),
-      R('A', 'Elevación de gemelos de pie', '4x8-12|1|60', '5x8-12|0|60|rp'),
-      R('C', ['Elevación de piernas colgado', 'Pallof press'], '3x10/10 por lado|1|45', '3x12/12 por lado|0|45')
-    ] };
-  D.M_UP_B = { short: 'TORSO B', label: 'Torso B', title: 'Torso B · Hipertrofia de Pecho, Espalda y Hombros', wu: 'upper', chips: ['💪 Torso', '🎯 Hipertrofia'],
-    foco: 'Sesión de volumen de torso: cuatro compuestos en rangos medios (8-12) buscan tensión mecánica y estiramiento, y los aislamientos cierran con superseries no competitivas para hombros y brazos. Acá se busca la sensación muscular: controlá la bajada y no regales rango.',
-    filas: [
-      R('H', 'Press inclinado con mancuernas', '4x8-10|1|120', '4x8-12|0-1|120'),
-      R('H', 'Remo apoyado en banco inclinado', '4x8-10|1|120', '4x8-12|0-1|120'),
-      R('H', 'Press de hombros sentado', '3x10-12|1|90', '4x10-12|0-1|90'),
-      R('H', 'Jalón al pecho con agarre ancho', '3x10-12|1|90', '4x10-12|0-1|90'),
-      R('A', 'Cruce de cables en polea alta', '4x12-15|1|60', '4x12-15|0|45|drop'),
-      R('B', ['Elevaciones laterales con mancuernas', 'Pájaro / Elevaciones posteriores inclinado'], '3x12-15/15|1|60', '4x15-20/15-20|0|60|myo'),
-      R('B', ['Curl martillo', 'Press francés en banco inclinado'], '3x10-12/10-12|1|75', '4x10-12/10-12|0|75|rp')
-    ] };
-  D.M_UP_C = { short: 'TORSO C', label: 'Torso C', title: 'Torso C · Refuerzo de Hombro y Brazos', wu: 'upper', chips: ['💪 Torso', '🎯 Refuerzo'],
-    foco: 'Sesión corta de refuerzo de torso para llegar a frecuencia 2 por grupo sin duplicar el volumen del push y el pull: un empuje y una tracción de rango medio, hombros en tres planos y un biset de brazos. Acá no se va a buscar el máximo: se busca estímulo con poca fatiga para llegar fresco a la sesión de pierna.',
-    filas: [
-      R('H', 'Press plano con mancuernas', '3x8-12|1|90', '3x8-10|0-1|90'),
-      R('H', 'Remo unilateral a una mano', '3x8-12|1|90', '3x8-10|0-1|90'),
-      R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '3x15-20|0|45|drop'),
-      R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '3x15-20|0|45|myo'),
-      R('B', ['Curl martillo', 'Press francés en banco inclinado'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|rp')
-    ] };
-  D.M_LO_B = { short: 'PIERNA B', label: 'Pierna B', title: 'Pierna B · Cadena Posterior y Volumen', wu: 'legs', chips: ['🦵 Pierna', '🎯 Cadena posterior'],
-    foco: 'Sesión de cadena posterior y volumen: un peso muerto con trap bar abre el día con una bisagra segura, el hack squat y el hip thrust suman cuádriceps y glúteo en rangos largos y los aislamientos cierran isquios, cuádriceps y sóleo. Pausa de 1 segundo arriba en el hip thrust.',
-    filas: [
-      R('F', 'Peso muerto con trap bar', '4x5-6|2|180', '5x4-6|1|210'),
-      R('H', 'Hack squat', '3x8-12|1|120', '4x8-10|0-1|120'),
-      R('H', 'Hip thrust con barra', '3x8-10|1|120', '4x8-10|0-1|120'),
-      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|75|myo'),
-      R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
-      R('A', 'Elevación de talones sentado', '3x12-15|1|60', '4x12-20|0|60'),
-      R('C', CORE_A, '3x8/30s|1|45', '3x10/40s|0|45')
-    ] };
-  D.M_FB_A = { short: 'FULL A', label: 'Full Body A', title: 'Full Body A · Rodilla y Empuje', wu: 'full', chips: ['⚡ Full body', '🎯 Sentadilla + press'],
-    foco: 'Full body de fuerza: sentadilla pesada, press de banca y remo cubren los tres patrones grandes en una sola sesión, y un biset de brazos con core cierra el día. Con frecuencia 3, cada patrón se entrena tres veces por semana: guardá el RIR de los básicos para que la tercera sesión salga tan bien como la primera.',
-    filas: [
-      R('F', 'Sentadilla con barra', '4x6-8|2|180', '5x5-6|1|210'),
-      R('H', 'Press de banca plano con barra', '4x6-8|2|150', '5x6-8|1|150'),
-      R('H', 'Remo apoyado en banco inclinado', '4x8-10|1|120', '4x8-10|1|120'),
-      R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|60', '4x15|0|45|drop'),
-      R('B', ['Curl de bíceps con barra Z', 'Extensión tríceps polea alta con cuerda'], '3x8-10/10-12|1|75', '3x8-10/10-12|0|75|rp'),
-      R('C', CORE_A, '3x8/30s|1|45', '3x10/40s|0|45')
-    ] };
-  D.M_FB_B = { short: 'FULL B', label: 'Full Body B', title: 'Full Body B · Cadera y Tracción', wu: 'full', chips: ['⚡ Full body', '🎯 Bisagra + tracción'],
-    foco: 'Full body con la bisagra de cadera como protagonista: peso muerto rumano pesado, press inclinado, tracción vertical y prensa para el volumen de pierna. El isquio y el deltoide posterior cierran con aislamiento. Cuidá la espalda neutra en cada repetición del rumano.',
-    filas: [
-      R('F', 'Peso muerto rumano', '4x6-8|2|180', '5x5-6|1|210'),
-      R('H', 'Press inclinado con mancuernas', '4x8-10|1|120', '4x8-10|1|120'),
-      R('H', 'Jalón al pecho con agarre ancho', '4x8-12|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas' }),
-      R('H', 'Prensa 45°', '4x10-12|1|120', '3x10-12|0-1|120'),
-      R('A', 'Curl femoral sentado', '4x10-12|1|75', '4x10-12|0|75|myo'),
-      R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '3x15-20|0|45|drop'),
-      R('A', 'Elevación de gemelos de pie', '3x10-15|1|60', '3x10-15|0|60')
-    ] };
-  D.M_FB_C = { short: 'FULL C', label: 'Full Body C', title: 'Full Body C · Hombro y Volumen', wu: 'full', chips: ['⚡ Full body', '🎯 Hombro + volumen'],
-    foco: 'Full body de hipertrofia: press militar como ancla, hack squat y remo en polea para el volumen, y aislamiento de pecho, deltoide lateral, gemelo y brazos. Es la sesión más "de bombeo" de la semana: buscá conexión mente-músculo y rangos completos en cada ejercicio.',
-    filas: [
-      R('F', 'Press militar sentado', '4x6-8|2|150', '5x5-6|1|180'),
-      R('H', 'Hack squat', '4x8-12|1|120', '3x8-10|0-1|120'),
-      R('H', 'Remo en polea baja agarre en V', '4x10-12|1|90', '4x10-12|0-1|90'),
-      R('B', ['Aperturas en banco inclinado con poleas', 'Elevaciones laterales con mancuernas'], '3x12-15/12-15|1|60', '4x12-15/15-20|0|60|drop'),
-      R('H', 'Hip thrust con barra', '3x8-10|1|120', '4x8-10|0-1|120'),
-      R('B', ['Curl martillo', 'Extensión tríceps tras nuca con cuerda'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|rp'),
-      R('A', 'Elevación de gemelos de pie', '3x10-15|1|60', '4x10-15|0|60')
-    ] };
-  /* ===== FEMENINO ===== */
-  D.F_GLU_A = { short: 'GLÚTEO A', label: 'Cadera y Glúteo', title: 'Cadera y Glúteo · Hip Thrust Pesado', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Hip thrust pesado'],
-    foco: 'Día madre de glúteo: el hip thrust con pausa de 1 segundo arriba es el ejercicio de carga de la semana, el peso muerto rumano estira isquios y glúteo y un biset unilateral con abducción suma glúteo medio sin fatigar la espalda baja. La pausa arriba es innegociable: sin ella el ejercicio se vuelve un rebote lumbar.',
-    filas: [
-      R('F', 'Hip thrust con barra', '4x8-10|2|150', '5x6-8|1|180'),
-      R('H', 'Peso muerto rumano', '3x8-10|2|120', '4x6-8|1|150'),
-      R('B', ['Bulgarian split squat', 'Abducción de cadera en máquina'], '3x8-10/15|1|90', '4x8-10/15-20|0-1/0|90|myo'),
-      R('A', 'Patada de glúteo en polea', '3x12-15|1|60', '4x12-15|0|45|drop'),
-      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '4x10-12|0|60'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45')
-    ] };
-  D.F_QUAD = { short: 'PIERNA', label: 'Cuádriceps', title: 'Cuádriceps · Rodilla Dominante', wu: 'legs', chips: ['🦵 Pierna', '🎯 Sentadilla + prensa'],
-    foco: 'Día de rodilla dominante: sentadilla como ancla, prensa y hack squat para el volumen de cuádriceps y glúteo en rangos profundos, y aislamientos de cuádriceps, isquio, gemelo y aductores. Pies a la altura media de la plataforma para repartir el trabajo entre cuádriceps y glúteo.',
-    filas: [
-      R('F', 'Sentadilla con barra', '4x6-8|2|150', '5x5-7|1|210'),
-      R('H', 'Prensa 45°', '3x10-12|1|120', '4x10-12|0-1|120'),
-      R('H', 'Hack squat', '3x8-12|1|120', '3x8-10|0-1|120'),
-      R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
-      R('A', 'Curl femoral sentado', '3x10-12|1|75', '4x10-12|0|75|myo'),
-      R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '4x10-15|0|60'),
-      R('A', 'Aducción en máquina', '3x12-15|1|60', '3x15|0|45')
-    ] };
-  D.F_GLU_B = { short: 'GLÚTEO B', label: 'Glúteo y Armonía', title: 'Glúteo y Armonía · Volumen, Espalda y Brazos', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Volumen + espalda + brazos'],
-    foco: 'Segunda sesión de glúteo de la semana, pensada para volumen: unilaterales, abducción y patadas con tensión constante, una tracción vertical y un deltoide lateral que le dan una segunda exposición semanal a la espalda y al hombro, y un biset de brazos para el equilibrio estético. Acá no se busca la carga máxima sino la conexión con el glúteo en cada repetición.',
-    filas: [
-      R('H', 'Hip thrust a una pierna', '3x10 por lado|1|90', '4x8-10 por lado|0-1|90'),
-      R('H', 'Step up al cajón', '3x10 por lado|1|90', '3x10 por lado|0-1|90'),
-      R('A', 'Abducción sentado en máquina', '4x15-20|1|45', '4x15-20|0|45|myo'),
-      R('A', 'Patada de glúteo en máquina', '3x12-15|1|60', '3x12-15|0|45|drop'),
-      R('A', 'Extensión de cadera en polea de pie', null, '3x15|0|45', { soloA: true }),
-      R('H', 'Jalón al pecho con agarre estrecho', '3x10-12|1|90', '3x10-12|0-1|90'),
-      R('A', 'Elevaciones laterales con mancuernas', '3x12-15|1|45', '3x15-20|0|45'),
-      R('B', ['Curl martillo', 'Extensión tríceps polea alta con cuerda'], '2x10-12/12-15|1|75', '3x10-12/12-15|0|75|rp'),
-      R('C', CORE_A, '3x8/30s|1|45', '3x10/40s|0|45')
-    ] };
-  D.F_GLU_SH = { short: 'GLÚTEO + HOMBRO', label: 'Glúteo y Hombros', title: 'Glúteo y Hombros · Frecuencia y Estética', wu: 'glute', chips: ['🍑 Glúteo', '🎯 Hombros'],
-    foco: 'Tercera exposición semanal del glúteo con hip thrust en rango medio y un unilateral, más un bloque de hombros (press, laterales y posteriores) para sumar anchura y proporción. Los hombros llegan frescos porque el trabajo de pierna es de baja demanda sistémica.',
-    filas: [
-      R('H', 'Hip thrust con barra', '3x10-12|1|120', '4x8-10|0-1|120'),
-      R('H', 'Zancada inversa', '3x10 por lado|1|90', '3x10 por lado|0-1|90'),
-      R('A', 'Patada de glúteo en polea', '3x12-15|1|60', '3x12-15|0|45|drop'),
-      R('H', 'Press de hombros sentado', '3x8-12|1|90', '4x8-10|0-1|90'),
-      R('A', 'Elevaciones laterales en polea baja', '3x12-15|1|45', '4x15-20|0|45|myo'),
-      R('A', 'Pájaro / Elevaciones posteriores inclinado', null, '3x15-20|0|45|drop', { soloA: true }),
-      R('C', CORE_A, '3x8/30s|1|45', '3x10/40s|0|45')
-    ] };
-  D.F_UP = { short: 'TORSO', label: 'Torso y Core', title: 'Torso y Core · Espalda, Pecho y Hombros', wu: 'upper', chips: ['💪 Torso', '🎯 Espalda + pecho + hombro'],
-    foco: 'Sesión de torso integral: espalda con tracción vertical y horizontal, pecho en dos ángulos (press inclinado y cruce de cables), un press de hombro y un biset de deltoide lateral y posterior para la postura y la proporción. Un biset de brazos y el core cierran el día. Priorizá la espalda: es el contrapeso del trabajo de pierna.',
-    filas: [
-      R('H', 'Jalón al pecho con agarre ancho', '4x8-12|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas' }),
-      R('H', 'Press inclinado con mancuernas', '4x8-12|1|120', '4x8-10|1|120'),
-      R('H', 'Remo apoyado en banco inclinado', '4x10-12|1|90', '4x10-12|0-1|90'),
-      R('H', 'Press de hombros sentado', '3x10-12|1|90', '3x10-12|0-1|90'),
-      R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '3x12-15|0|60'),
-      R('B', ['Elevaciones laterales en polea baja', 'Pájaro / Elevaciones posteriores inclinado'], '4x12-15/15|1|45', '4x15-20/15-20|0|45|myo'),
-      R('B', ['Curl martillo', 'Extensión tríceps polea alta con cuerda'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|rp'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45')
-    ] };
-  D.F_PUSH = { short: 'PUSH', label: 'Hombro y Pecho', title: 'Push · Hombro, Pecho y Tríceps', wu: 'push', chips: ['💪 Empuje', '🎯 Hombro + pecho'],
-    foco: 'Día de empuje con el hombro como prioridad: press militar como ancla, press inclinado para el pecho superior y aislamientos de deltoide lateral y tríceps. Es una sesión corta y densa que no compite con las de pierna.',
-    filas: [
-      R('F', 'Press militar sentado', '4x6-8|2|150', '5x5-6|1|180'),
-      R('H', 'Press inclinado con mancuernas', '3x8-12|1|120', '4x8-10|0-1|120'),
-      R('H', 'Press plano con mancuernas', '3x8-12|1|90', '3x8-10|0-1|90'),
-      R('A', 'Cruce de cables en polea alta', '3x12-15|1|60', '4x12-15|0|60|drop'),
-      R('A', 'Elevaciones laterales en polea baja', '4x12-15|1|45', '4x15-20|0|45|myo'),
-      R('B', ['Press francés con mancuernas plano', 'Extensión tríceps polea alta con cuerda'], '3x10-12/12-15|1|75', '3x10-12/12-15|0|75|rp')
-    ] };
-  D.F_PULL = { short: 'PULL', label: 'Espalda y Bíceps', title: 'Pull · Espalda, Deltoide Posterior y Bíceps', wu: 'pull', chips: ['💪 Tracción', '🎯 Dorsal + postura'],
-    foco: 'Día de tracción: remo pesado, tracción vertical y horizontal para el dorsal, y trabajo de deltoide posterior y face pull para la postura. El bíceps entra al final con un biset sin pausa. Tirá con los codos y apretá las escápulas medio segundo en cada repetición.',
-    filas: [
-      R('F', 'Remo con barra inclinado', '4x6-8|2|150', '5x5-7|1|180'),
-      R('H', 'Jalón al pecho con agarre ancho', '3x8-12|1|120', '4x6-8|1|150', { ea: 'Dominadas lastradas' }),
-      R('H', 'Remo en polea baja agarre en V', '3x10-12|1|90', '4x10-12|0-1|90'),
-      R('A', 'Pájaro / Elevaciones posteriores inclinado', '3x15|1|45', '4x15-20|0|45|myo'),
-      R('A', 'Face Pull con cuerda', '3x15|1|45', '4x15-20|0|45'),
-      R('B', ['Curl de bíceps con mancuernas', 'Curl martillo'], '3x10-12/10-12|1|75', '3x10-12/10-12|0|75|rp'),
-      R('C', ['Dead bug', 'Plancha lateral'], '3x8 por lado/30s|1|45', '3x10 por lado/40s|0|45')
-    ] };
-  D.F_PIE = { short: 'PIERNA', label: 'Pierna Completa', title: 'Pierna Completa · Glúteo Medio y Cuádriceps', wu: 'legs', chips: ['🦵 Pierna', '🎯 Armonía de pierna'],
-    foco: 'Sesión de pierna completa: sentadilla como ancla, peso muerto rumano para la cadena posterior y un biset unilateral con abducción para el glúteo medio. Cuádriceps, isquios y gemelo cierran el día con aislamiento. Pierna armónica: ningún grupo se descuida.',
-    filas: [
-      R('F', 'Sentadilla con barra', '4x6-8|2|150', '5x5-7|1|210'),
-      R('H', 'Peso muerto rumano', '3x8-10|2|120', '4x6-8|1|150'),
-      R('B', ['Zancadas caminando', 'Abducción de cadera en máquina'], '3x10 por lado/15|1|90', '4x10 por lado/15-20|0-1/0|90|myo'),
-      R('A', 'Extensión de cuádriceps', '3x12-15|1|60', '4x12-15|0|60|drop'),
-      R('A', 'Curl femoral tumbado', '3x10-12|1|75', '3x10-12|0|60'),
-      R('A', 'Elevación de gemelos de pie', '4x10-15|1|60', '4x10-15|0|60'),
-      R('C', CORE_A, '3x8/30s|1|45', '3x10/40s|0|45')
-    ] };
-
-  /* ---------- matriz: género x frecuencia x nivel ---------- */
-  var ESTR = [
-    { g: 'm', f: 3, est: 'Full Body 3 días', dias: ['M_FB_A', 'M_FB_B', 'M_FB_C'], res: 'Full body de tres sesiones (A: rodilla y empuje · B: cadera y tracción · C: hombro y volumen): cada patrón se entrena tres veces por semana.' },
-    { g: 'm', f: 4, est: 'Torso / Pierna x2', dias: ['M_UP_A', 'M_LO_A', 'M_UP_B', 'M_LO_B'], res: 'Torso / Pierna dos veces por semana: dos sesiones de fuerza (torso A y pierna A) y dos de hipertrofia (torso B y pierna B), con cada grupo en frecuencia 2.' },
-    { g: 'm', f: 5, est: 'Push / Pull / Legs + Torso / Pierna', dias: ['M_PUSH', 'M_PULL', 'M_LEGS', 'M_UP_C', 'M_LO_B'], res: 'Push / Pull / Legs con volumen completo, más dos sesiones de refuerzo (torso y pierna) para llegar a frecuencia 2 por grupo.' },
-    { g: 'f', f: 3, est: 'Glúteo · Torso y Core · Pierna completa', dias: ['F_GLU_A', 'F_UP', 'F_PIE'], res: 'Frecuencia 3 con énfasis en glúteo y pierna sin descuidar el torso: sesión de cadera y glúteo pesado, sesión de torso con core y sesión de pierna completa con glúteo medio.' },
-    { g: 'f', f: 4, est: 'Glúteo · Torso · Pierna · Glúteo y Hombros', dias: ['F_GLU_A', 'F_UP', 'F_QUAD', 'F_GLU_SH'], res: 'Glúteo en frecuencia 2 (con una tercera exposición a baja demanda), torso integral y una sesión de rodilla dominante: la mayor parte del volumen va a tren inferior sin descuidar el desarrollo general.' },
-    { g: 'f', f: 5, est: 'Glúteo · Push · Pierna · Pull · Glúteo y Armonía', dias: ['F_GLU_A', 'F_PUSH', 'F_QUAD', 'F_PULL', 'F_GLU_B'], res: 'Glúteo y pierna en frecuencia 2-3 con Push y Pull dedicados: cadera pesada, empuje (hombro y pecho), cuádriceps e isquios, tracción y una segunda sesión de glúteo con brazos.' }
-  ];
-  var NIVELES = [
-    { k: 'intermedio', lb: 'Desarrollo-Intermedio',
-      res: 'Trabajás a RIR 1-2 en los básicos y RIR 1 en los aislamientos, con progresión de carga: S1 base, S2 y S3 con más kilos y S4 descarga.',
-      suf: ' Trabajás a RIR 1-2 en los básicos y RIR 1 en los aislamientos: subí la carga solo cuando completes todas las series en el techo del rango de repeticiones.',
-      meso: 'Mesociclo de 4 semanas: S1 a S3 siempre a RIR 1-2 (nunca al fallo) con sobrecarga progresiva de kilos (S1 base, S2 +2,5%, S3 +5%) y S4 descarga activa (una serie menos, RIR 3-4). Los ejercicios se repiten las 4 semanas: progresan la carga y las repeticiones.' },
-    { k: 'avanzado', lb: 'Avanzado / Élite',
-      res: 'Volumen de élite con todas las series efectivas a RIR 0-1, básicos con descansos largos y técnicas de intensidad (drop-set, myo-reps, rest-pause) en los aislamientos.',
-      suf: ' Nivel avanzado / élite: todas las series efectivas van a RIR 0-1 (las de aproximación no cuentan), con técnicas de intensidad solo en aislamientos y descansos largos en los básicos para sostener la carga.',
-      meso: 'Mesociclo de 4 semanas para atleta avanzado: S1 a S3 a RIR 0-1 con sobrecarga progresiva de kilos (+2,5 a 5%) y rotación de técnicas de intensidad en aislamientos; S4 descarga activa (una serie menos por ejercicio, RIR 3-4).' }
-  ];
-  var GEN = { m: 'Masculino', f: 'Femenino' };
-
-  function armarLista(){
-    var out = [];
-    ESTR.forEach(function(e){
-      NIVELES.forEach(function(n){
-        var t = { id: 'jp26_' + e.g + e.f + '_' + (n.k === 'avanzado' ? 'a' : 'i'), g: e.g, gen: GEN[e.g], f: e.f, niv: n.k, nivLb: n.lb, est: e.est,
-          nombre: 'Bodybuilding · ' + GEN[e.g] + ' · ' + e.f + ' días · ' + n.lb,
-          resumen: e.est + '. ' + e.res + ' ' + n.res, meso: n.meso, suf: n.suf, dias: e.dias };
-        out.push(t);
-      });
-    });
-    return out;
-  }
-  var LISTA = armarLista();
-
-  /* ---------- texto de una sesión (formato Redacción libre) y bloques reales ---------- */
-  function filasDe(tpl, i){
-    var D0 = D[tpl.dias[i]], av = tpl.niv === 'avanzado';
-    return D0.filas.filter(function(r){ return !(r.soloA && !av) && !(r.soloI && av); });
-  }
-  function textoSesion(tpl, i){
-    var D0 = D[tpl.dias[i]], av = tpl.niv === 'avanzado';
-    var T = ['=== DÍA ' + (i + 1) + ': ' + D0.title + ' ===', '[NOMBRE DEL DÍA] ' + D0.title, '[FOCO DEL COACH] ' + D0.foco + tpl.suf];
-    T.push(PB.textoWarmup(1, D0.wu, D0.label));
-    var n = 2, primero = true, sets = 0, mins = 8;
-    filasDe(tpl, i).forEach(function(r){
-      var b = PB.textoBloque(n, r, tpl.niv, primero && r.rol === 'F');
-      if(r.rol === 'F') primero = false;
-      T.push(b.txt); n++; sets += b.sets; mins += b.mins;
-    });
-    return { txt: T.join('\n'), sets: sets, mins: mins };
-  }
-  function construirDias(tpl){
-    var dias = tpl.dias.map(function(id, i){
-      var D0 = D[id], s = textoSesion(tpl, i);
-      var r = parsearImportacion(s.txt, true), dia = r.dias[0];
-      var d = newDay(i);
-      d.id = 'dia' + (i + 1); d.short = 'DÍA ' + (i + 1); d.label = D0.label; d.title = D0.title;
-      d.metaChips = D0.chips.concat(['🎚️ ' + tpl.nivLb, '⏱ ~' + (Math.round(s.mins / 5) * 5) + ' min']);
-      d.focusTitle = 'Foco Técnico del Día'; d.focusText = dia.foco || (D0.foco + tpl.suf);
-      d.bloques = dia.bloques.map(function(b){ return crearBloqueImportado(b, false); });
-      return d;
-    });
-    try{ if(typeof jpSanearLogisticaDias === 'function') jpSanearLogisticaDias(dias, { id: tpl.id }); }catch(eSn){ console.warn('saneo logística', eSn); }
-    return dias;
-  }
-  function metaDe(tpl){
-    return { mesoDisc: 'hiper', mesoNivel: tpl.niv, mesoName: tpl.nombre, mesoObjetivo: 'Bodybuilding & Musculación — ' + tpl.gen + ' · ' + tpl.f + ' días · ' + tpl.nivLb, mesoTexto: tpl.resumen + ' ' + tpl.meso };
-  }
-  /* auditoría: series efectivas por grupo y por semana, RIR, minutos y bisets */
-  function auditar(tpl){
-    var porGrupo = {}, rirs = { cero: 0, total: 0 }, dias = [], av = tpl.niv === 'avanzado';
-    tpl.dias.forEach(function(id, i){
-      var s = textoSesion(tpl, i), sets = 0, nb = 0;
-      filasDe(tpl, i).forEach(function(r){
-        var b = PB.textoBloque(2, r, tpl.niv, false); sets += b.sets; nb++;
-        b.grupos.forEach(function(g){ var k = g.grupo + (g.grupo === 'Piernas/Glúteos' ? ' · ' + g.patron : ''); porGrupo[k] = (porGrupo[k] || 0) + g.sets; });
-        var d = PB.partesDosis(av ? (r.a || r.i) : r.i);
-        [].concat(av && r.ea ? r.ea : r.ej).forEach(function(e, k){ var rr = (d.rir[k] != null ? d.rir[k] : d.rir[d.rir.length - 1]); rirs.total += d.sets; if(parseInt(rr, 10) <= 1) rirs.cero += d.sets; });
-      });
-      dias.push({ dia: i + 1, titulo: D[id].title, series: sets, minutos: s.mins, bloques: nb });
-    });
-    return { porGrupo: porGrupo, rirCeroUno: rirs.total ? Math.round(rirs.cero / rirs.total * 100) : 0, dias: dias };
-  }
-
-  window.__jpPB.D = D; window.__jpPB.LISTA = LISTA; window.__jpPB.textoSesion = textoSesion; window.__jpPB.construirDias = construirDias;
-  window.__jpPB.metaDe = metaDe; window.__jpPB.auditar = auditar; window.__jpPB.NIVELES = NIVELES; window.__jpPB.GEN = GEN;
-})();
+@@include coach/banco/11-finishers.js@@
+</script>
+<script>
+@@include coach/banco/12-dias-masculino.js@@
+</script>
+<script>
+@@include coach/banco/13-dias-femenino.js@@
+</script>
+<script>
+@@include coach/banco/14-dias-hyrox.js@@
+</script>
+<script>
+@@include coach/banco/20-armado.js@@
 </script>
 <script>
 /* =========================================================
@@ -43818,7 +43344,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     ath.freq = t.f;
     if(!ath.genero) ath.genero = t.g === 'f' ? 'F' : 'M';
     p = plan(ath.id);
-    p.dias = PB.construirDias(t);
+    var regEd = (Array.isArray(S.banco) ? S.banco : []).filter(function(x){ return x && x.id === 'bkstd_' + t.id && x.editada && (x.dias || []).length; })[0];
+    p.dias = regEd ? JSON.parse(JSON.stringify(regEd.dias)) : PB.construirDias(t);      /* si el coach editó la plantilla en el Banco, se asigna su versión */
     p.meta = Object.assign(p.meta || {}, PB.metaDe(t));
     if(typeof defaultWeeks === 'function'){ p.meso = defaultWeeks(); }
     var res = posAsignar(t.niv, ath);
@@ -43983,12 +43510,20 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
 .pv-tips{margin:7px 0 0;padding:0;list-style:none;display:grid;gap:5px;font-size:12px;line-height:1.5;color:var(--txt-2)}
 .pv-tips b{color:#EDEFF2;font-size:10.5px;letter-spacing:.05em}
 .pv-legacy{font-size:12px;color:var(--muted)}
-.pv-ed label.pv-edl{display:block;margin:9px 0 0;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.pv-ed .pv-ei,.pv-ed .pv-ea{width:100%;box-sizing:border-box;margin-top:4px;padding:9px 11px;border-radius:10px;border:1px solid var(--line-2);background:rgba(0,0,0,.35);color:var(--txt);font:600 13px/1.5 ui-monospace,Menlo,monospace;text-transform:none;letter-spacing:0}
-.pv-ed textarea.pv-ea{resize:vertical;min-height:64px}
-.pv-ed .pv-ei:focus,.pv-ed .pv-ea:focus{outline:none;border-color:#E5C378}
+.pv-ed label.pv-edl,.pv-ficha label.pv-edl,.pv-day[data-pvdd] > label.pv-edl{display:block;margin:9px 0 0;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.pv-ed .pv-ei,.pv-ed .pv-ea,.pv-ficha .pv-ei,.pv-ficha .pv-ea,.pv-day[data-pvdd] > label .pv-ei,.pv-day[data-pvdd] > label .pv-ea,.pv-add .pv-ei{width:100%;box-sizing:border-box;margin-top:4px;padding:9px 11px;border-radius:10px;border:1px solid var(--line-2);background:rgba(0,0,0,.35);color:var(--txt);font:600 13px/1.5 ui-monospace,Menlo,monospace;text-transform:none;letter-spacing:0}
+.pv-ed textarea.pv-ea,.pv-ficha textarea.pv-ea,.pv-day[data-pvdd] > label textarea.pv-ea{resize:vertical;min-height:64px}
+.pv-ed .pv-ei:focus,.pv-ed .pv-ea:focus,.pv-ficha .pv-ei:focus,.pv-ficha .pv-ea:focus,.pv-day[data-pvdd] > label .pv-ei:focus,.pv-day[data-pvdd] > label .pv-ea:focus{outline:none;border-color:#E5C378}
 .pv-edb{display:flex;justify-content:flex-end;margin-top:9px}
 .pv-edb .btn{min-height:44px}
+.pv-mv{display:inline-flex;gap:6px;margin-left:auto}
+.pv-mv .btn{min-height:32px;min-width:36px}
+.pv-bh,.pv-dh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.pv-ficha{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin:0 0 14px}
+.pv-ficha .pv-ficha-n{grid-column:1 / -1}
+.pv-add{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 16px}
+.pv-add select.pv-ei{width:auto;min-width:200px;flex:0 1 260px;margin-top:0}
+@media(max-width:620px){ .pv-ficha{grid-template-columns:1fr} }
 .pv-modo-ed{margin:0 0 12px;padding:9px 12px;border-radius:12px;border:1px dashed rgba(229,195,120,.55);background:rgba(229,195,120,.07);color:#E5C378;font-size:12px;font-weight:700;line-height:1.5}
 @media(max-width:620px){ .pv-day{padding:12px 12px 4px} .pv-en{font-size:13px} }
 </style>
@@ -44021,11 +43556,14 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     var titulo = String(b.titulo || ''), mm = /\((\d+)\s*MIN\)/i.exec(titulo), min = mm ? mm[1] : '';
     var limpio = titulo.replace(/\s*\(\d+\s*MIN\)\s*$/i, '').replace(/^(Fuerza principal|Hipertrofia|Accesorios|Core|Entrada en calor)\s*[–-]\s*/i, '');
     if(b.tipo !== 'list'){
-      return '<div class="pv-blq w"><div class="pv-bh"><span class="pv-tag">BLOQUE · FORMATO ANTERIOR</span></div><div class="pv-en">' + E(titulo || b.tipo) + '</div><div class="pv-legacy">Este bloque conserva el formato anterior: se ve completo una vez asignado. Usá “Actualizar plantillas” para llevarlo al formato actual.</div></div>';
+      return '<div class="pv-blq w"><div class="pv-bh"><span class="pv-tag">BLOQUE · FORMATO ANTERIOR</span>' + (editando ? '<span class="pv-mv"><button type="button" class="btn xs ghost" data-pvact="bup" data-pvarg="' + di + ':' + bi + '">▲</button><button type="button" class="btn xs ghost" data-pvact="bdn" data-pvarg="' + di + ':' + bi + '">▼</button><button type="button" class="btn xs ghost" data-pvact="bdel" data-pvarg="' + di + ':' + bi + '">🗑</button></span>' : '') + '</div><div class="pv-en">' + E(titulo || b.tipo) + '</div><div class="pv-legacy">Este bloque conserva el formato anterior: se ve completo una vez asignado. Usá “Actualizar plantillas” para llevarlo al formato actual.</div></div>';
     }
     var mod = MOD[b.modalidad] || ['BLOQUE', 'h'], items = b.items || [], h = '';
     if(editando){
-      return '<div class="pv-blq pv-ed ' + mod[1] + '" data-pvd="' + di + '" data-pvb="' + bi + '"><div class="pv-bh"><span class="pv-tag">' + mod[0] + '</span></div>' +
+      return '<div class="pv-blq pv-ed ' + mod[1] + '" data-pvd="' + di + '" data-pvb="' + bi + '"><div class="pv-bh"><span class="pv-tag">' + mod[0] + '</span><span class="pv-mv">' +
+        '<button type="button" class="btn xs ghost" data-pvact="bup" data-pvarg="' + di + ':' + bi + '" title="Subir el bloque">▲</button>' +
+        '<button type="button" class="btn xs ghost" data-pvact="bdn" data-pvarg="' + di + ':' + bi + '" title="Bajar el bloque">▼</button>' +
+        '<button type="button" class="btn xs ghost" data-pvact="bdel" data-pvarg="' + di + ':' + bi + '" title="Quitar el bloque">🗑</button></span></div>' +
         '<label class="pv-edl">Título del bloque<input class="pv-ei" data-pvf="titulo" value="' + E(b.titulo || '') + '"></label>' +
         '<label class="pv-edl">Ejercicios y dosis (un renglón por línea)<textarea class="pv-ea" data-pvf="items" rows="' + Math.max(3, Math.min(12, items.length + 1)) + '">' + E(items.join('\n')) + '</textarea></label>' +
         '<label class="pv-edl">Objetivo<textarea class="pv-ea" data-pvf="objective" rows="3">' + E(b.objective || '') + '</textarea></label>' +
@@ -44073,35 +43611,95 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     return h + '</div>';
   }
 
+  function esSist(r){ return !!(r && (r.std || r.cfMesSys || r.sbSys || r.depSys || r.fbSys || r.elbSys)); }
   function pintarPie(){
     var f = document.getElementById('pvFoot'); if(!f) return;
-    f.innerHTML = '<button class="btn ghost" data-pvx="1">← Volver al listado</button><div class="spacer"></div>' +
+    var rest = (actual && esSist(actual) && actual.editada) ? '<button class="btn ghost" id="pvRestaurar" title="Vuelve a la versión original del sistema (se pierden tus cambios en esta plantilla)">↩ Restaurar original</button>' : '';
+    f.innerHTML = '<button class="btn ghost" data-pvx="1">← Volver al listado</button><div class="spacer"></div>' + rest +
       (editando
         ? '<button class="btn ghost" id="pvCancel">Cancelar</button><button class="btn gold" id="pvSave">💾 Guardar cambios</button>'
         : '<button class="btn ghost" id="pvEdit">✏️ Editar plantilla</button><button class="btn ghost" id="pvIA">✨ Regenerar tips con IA</button><button class="btn gold" id="pvAsig">⚡ Clonar / asignar</button>');
   }
-  function esSist(r){ return !!(r && (r.std || r.cfMesSys || r.sbSys || r.depSys || r.fbSys || r.elbSys)); }
-  /* las plantillas del sistema se regeneran desde el código: para editarlas se crea una copia propia (la original queda intacta) */
+  /* duplicar una plantilla del sistema como copia propia (se sigue usando desde "Duplicar" y desde la IA sobre una original que se quiere conservar) */
   function copiaPropia(r){
     var c = JSON.parse(JSON.stringify(r));
-    ['std', 'stdId', 'cfMesSys', 'sbSys', 'depSys', 'fbSys', 'elbSys'].forEach(function(k){ delete c[k]; });
+    ['std', 'stdId', 'cfMesSys', 'sbSys', 'depSys', 'fbSys', 'elbSys', 'editada', 'editadaEl'].forEach(function(k){ delete c[k]; });
     c.id = uid('bk'); c.nombre = String(r.nombre || 'Plantilla') + ' · copia'; c.creado = new Date().toLocaleDateString('es-AR'); c.usos = 0; c.tipo = 'copia';
     S.banco.unshift(c);
     try{ save(); }catch(e){}
     try{ if(typeof renderBanco === 'function') renderBanco(); }catch(e2){}
     return c;
   }
+  /* edición en el lugar: las plantillas del sistema se editan igual que las propias. Al guardar quedan marcadas (editada) y dejan de regenerarse desde el código:
+     sus días se guardan en el navegador y "↩ Restaurar original" las devuelve a la versión del sistema */
+  var snap = null;
   function entrarEdicion(){
     var r = actual; if(!r) return;
-    if(esSist(r)){
-      if(!confirm('Esta es una plantilla del sistema: se regenera desde el código y no conserva cambios.\n\n¿Creo una copia propia para editarla? La original queda intacta.')) return;
-      var c = copiaPropia(r); editando = true; abrir(c.id);
-      toast('✏️ Copia creada: «' + c.nombre + '». Ahora podés editarla.'); return;
+    if(esSist(r) && !r.editada){
+      S.ui = S.ui || {};
+      if(!S.ui.avisoEditSist){
+        if(!confirm('Esta es una plantilla del sistema. Podés editarla completa (ficha, días, bloques, ejercicios, dosis y pautas) y tus cambios quedan guardados.\n\nSi después querés volver a la versión original, usá «↩ Restaurar original». Los planes de los alumnos no se tocan.\n\n¿Seguimos?')) return;
+        S.ui.avisoEditSist = 1;
+      }
     }
-    editando = true; abrir(r.id);
+    snap = JSON.stringify(r); editando = true; abrir(r.id);
   }
-  function guardarEdicion(){
+  function cancelarEdicion(){
     var r = actual; if(!r) return;
+    if(snap){ try{ var i = S.banco.indexOf(r); if(i >= 0){ S.banco[i] = JSON.parse(snap); r = S.banco[i]; } }catch(e){} }
+    snap = null; editando = false; abrir(r.id);
+  }
+  /* ↩ vuelve una plantilla del sistema a la versión del código: se borran los días guardados y se pide a cada módulo que la regenere (go('banco') los dispara) */
+  function restaurarOriginal(){
+    var r = actual; if(!r || !esSist(r)) return;
+    if(!confirm('Se descartan todos los cambios que hiciste en «' + r.nombre + '» y vuelve la versión original del sistema.\n\nLos planes de los alumnos no se tocan.\n\n¿Restaurar?')) return;
+    var id = r.id;
+    r.dias = []; delete r.editada; delete r.editadaEl; r.sbSysVer = 0; r.cfMesVer = 0;
+    if(r.std){ var t = LISTA.filter(function(x){ return x.id === r.stdId; })[0]; if(t){ r.nombre = t.nombre; r.notas = t.resumen; r.niv = t.niv; } }
+    try{ save(); }catch(e){}
+    editando = false; snap = null;
+    try{ if(typeof go === 'function') go('banco'); }catch(e2){}
+    setTimeout(function(){ try{ if(typeof renderBanco === 'function') renderBanco(); }catch(e3){} abrir(id); toast('↩ Plantilla restaurada a la versión original del sistema'); }, 400);
+  }
+
+  /* ---------- plantillas de bloque nuevo (se arman con el mismo importador: quedan idénticos a los demás) ---------- */
+  var BLOQUES_NUEVOS = {
+    calentamiento: ['Entrada en calor', '[BLOQUE 1] [WARM-UP] Entrada en calor (10 MIN)\n- Ejercicio x 10\n- Ejercicio x 10\n[OBJETIVO FISIOLÓGICO]\nPara qué se entrena este bloque.\n[COACHING TIPS & ESTRATEGIA]\nSET-UP: cómo se prepara el ejercicio.'],
+    fuerza: ['Fuerza principal', '[BLOQUE 1] [FUERZA] Fuerza principal – Ejercicio (15 MIN)\nEjercicio\n4x6-8 | Tempo 3010 | RIR 2\nRest 150s\n[OBJETIVO FISIOLÓGICO]\nPara qué se entrena este bloque.\n[COACHING TIPS & ESTRATEGIA]\nSET-UP: cómo se prepara el ejercicio.\nCUE EFICIENTE: qué pensar durante la repetición.\nCUIDADO / ERROR COMÚN: qué evitar.'],
+    hipertrofia: ['Hipertrofia', '[BLOQUE 1] [HIPERTROFIA] Hipertrofia – Ejercicio (12 MIN)\nEjercicio\n3x8-12 | Tempo 2011 | RIR 1\nRest 90s\n[OBJETIVO FISIOLÓGICO]\nPara qué se entrena este bloque.\n[COACHING TIPS & ESTRATEGIA]\nSET-UP: cómo se prepara el ejercicio.\nCUE EFICIENTE: qué pensar durante la repetición.'],
+    accesorio: ['Accesorio / aislamiento', '[BLOQUE 1] [ACCESORIO] Accesorios – Ejercicio (9 MIN)\nEjercicio\n3x12-15 | Tempo 2011 | RIR 1\nRest 60s\n[OBJETIVO FISIOLÓGICO]\nPara qué se entrena este bloque.\n[COACHING TIPS & ESTRATEGIA]\nSET-UP: cómo se prepara el ejercicio.'],
+    biset: ['Biset', '[BLOQUE 1] [HIPERTROFIA] Hipertrofia – Biset Ejercicio 1 + Ejercicio 2 (10 MIN)\nA1. Ejercicio 1\n3x10-12 | Tempo 2011 | RIR 1\nA2. Ejercicio 2\n3x12-15 | Tempo 2011 | RIR 1\nRest 75s\n[OBJETIVO FISIOLÓGICO]\nPara qué se entrena este bloque.\n[COACHING TIPS & ESTRATEGIA]\nTRANSICIÓN: pasá de una estación a la otra sin descanso.'],
+    core: ['Core', '[BLOQUE 1] [CORE] Core – Ejercicio (6 MIN)\nEjercicio\n3x30s | Tempo 2011 | RIR 1\nRest 45s\n[OBJETIVO FISIOLÓGICO]\nPara qué se entrena este bloque.\n[COACHING TIPS & ESTRATEGIA]\nSET-UP: cómo se prepara el ejercicio.'],
+    finisher: ['Finisher metabólico', '[BLOQUE 1] [FINISHER] Cierre metabólico (8 MIN)\nCinco rondas: sin pausa entre estaciones y 90 segundos de descanso al cerrar cada ronda\n- Ejercicio x 20 m\n- Ejercicio x 30 s\n[OBJETIVO FISIOLÓGICO]\nPara qué se entrena este bloque.\n[COACHING TIPS & ESTRATEGIA]\nRITMO: cómo se reparte el esfuerzo.'],
+    cardio: ['Cardio', '[BLOQUE 1] [CARDIO] Cardio (20 MIN)\n20 min Carrera suave\n[OBJETIVO FISIOLÓGICO]\nPara qué se entrena este bloque.\n[COACHING TIPS & ESTRATEGIA]\nINTENSIDAD: cómo se controla el ritmo.']
+  };
+  function bloqueNuevo(clave){
+    var spec = BLOQUES_NUEVOS[clave] || BLOQUES_NUEVOS.hipertrofia;
+    var r = parsearImportacion('=== DÍA 1: Nuevo ===\n' + spec[1], true), b = r.dias[0] && r.dias[0].bloques[0];
+    return b ? crearBloqueImportado(b, false) : null;
+  }
+  function diaNuevo(){
+    var dias = actual.dias = actual.dias || [], i = dias.length, d = newDay(i);
+    d.id = 'dia' + (i + 1); d.short = 'DÍA ' + (i + 1); d.label = 'Día ' + (i + 1); d.title = 'Nuevo día'; d.focusText = ''; d.bloques = [];
+    return d;
+  }
+  function renumerarDias(){
+    (actual.dias || []).forEach(function(d, i){ d.id = 'dia' + (i + 1); if(/^D[IÍ]A\s*\d+$/i.test(String(d.short || ''))) d.short = 'DÍA ' + (i + 1); });
+  }
+
+  /* pasa lo que está escrito en la pantalla al modelo (sin guardar): se llama antes de cada cambio de estructura y al guardar */
+  function volcarCampos(){
+    var r = actual; if(!r) return;
+    var nm = document.getElementById('pvNombre'), nt = document.getElementById('pvNotas'), nv = document.getElementById('pvNiv');
+    if(nm && nm.value.trim()) r.nombre = nm.value.trim();
+    if(nt) r.notas = nt.value.trim();
+    if(nv && nv.value) r.niv = nv.value;
+    document.querySelectorAll('#pvBody [data-pvdd]').forEach(function(box){
+      var d = (r.dias || [])[parseInt(box.getAttribute('data-pvdd'), 10)]; if(!d) return;
+      var t = box.querySelector('[data-pvdf="title"]'), f = box.querySelector('[data-pvdf="focusText"]');
+      if(t && t.value.trim()) d.title = t.value.trim();
+      if(f) d.focusText = f.value.trim();
+    });
     document.querySelectorAll('#pvBody .pv-ed').forEach(function(box){
       var d = (r.dias || [])[parseInt(box.getAttribute('data-pvd'), 10)], b = d && (d.bloques || [])[parseInt(box.getAttribute('data-pvb'), 10)]; if(!b) return;
       var v = function(f){ var el = box.querySelector('[data-pvf="' + f + '"]'); return el ? el.value : null; };
@@ -44112,10 +43710,47 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
       if(tp !== null) b.tips = tp.split(/\n/).map(function(x){ return x.trim(); }).filter(Boolean).join('\n');
       if(b.weekItems) delete b.weekItems;       /* las semanas se vuelven a proyectar al asignar */
     });
+  }
+  /* cambios de estructura en modo edición: mover / borrar / agregar bloques y días */
+  function accionEstructura(el){
+    var r = actual; if(!r || !editando) return false;
+    var a = el.getAttribute('data-pvact'), p = String(el.getAttribute('data-pvarg') || '').split(':').map(function(x){ return parseInt(x, 10); });
+    volcarCampos();
+    var dias = r.dias = r.dias || [], d = dias[p[0]], b;
+    if(a === 'bup' || a === 'bdn'){
+      if(!d) return true; var j = p[1] + (a === 'bup' ? -1 : 1);
+      if(j < 0 || j >= d.bloques.length) return true;
+      b = d.bloques[p[1]]; d.bloques[p[1]] = d.bloques[j]; d.bloques[j] = b;
+    } else if(a === 'bdel'){
+      if(!d || !confirm('¿Quitar este bloque de la plantilla?')) return true;
+      d.bloques.splice(p[1], 1);
+    } else if(a === 'badd'){
+      if(!d) return true;
+      var sel = document.querySelector('[data-pvnuevo="' + p[0] + '"]'), nb = bloqueNuevo(sel ? sel.value : 'hipertrofia');
+      if(!nb){ toast('No se pudo crear el bloque', 'warn'); return true; }
+      d.bloques.push(nb);
+    } else if(a === 'dup' || a === 'ddn'){
+      if(!d) return true; var k = p[0] + (a === 'dup' ? -1 : 1);
+      if(k < 0 || k >= dias.length) return true;
+      var tmp = dias[p[0]]; dias[p[0]] = dias[k]; dias[k] = tmp; renumerarDias();
+    } else if(a === 'ddel'){
+      if(!d || !confirm('¿Quitar el día «' + (d.title || d.short) + '» de la plantilla?')) return true;
+      dias.splice(p[0], 1); renumerarDias();
+    } else if(a === 'dadd'){
+      dias.push(diaNuevo());
+    } else return false;
+    abrir(r.id, true);
+    return true;
+  }
+  function guardarEdicion(){
+    var r = actual; if(!r) return;
+    volcarCampos();
+    renumerarDias();
+    if(esSist(r)){ r.editada = 1; r.editadaEl = new Date().toLocaleDateString('es-AR'); }
     try{ if(window.CoachAuditoria && window.CoachAuditoria.tempoANotas) window.CoachAuditoria.tempoANotas(r); }catch(e){}
     try{ save(); }catch(e2){}
-    editando = false; abrir(r.id);
-    toast('💾 Plantilla guardada. Los planes de los alumnos no se tocaron.');
+    snap = null; editando = false; abrir(r.id);
+    toast('💾 Plantilla guardada' + (esSist(r) ? ' (marcada como editada: «↩ Restaurar original» vuelve a la del sistema)' : '') + '. Los planes de los alumnos no se tocaron.');
     try{ if(typeof renderBanco === 'function') renderBanco(); }catch(e3){}
   }
 
@@ -44172,8 +43807,8 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     if(!hayIA() || !window.CoachAI.hayClave()){ toast('Configurá una clave de IA para regenerar los tips', 'warn'); try{ window.CoachAI && window.CoachAI.config && window.CoachAI.config(); }catch(e){} return; }
     if(iaBusy){ iaStop = true; btn.innerHTML = '⏹ Deteniendo…'; return; }
     if(esSist(r)){
-      if(!confirm('Esta es una plantilla del sistema: se regenera desde el código y no conserva cambios.\n\n¿Creo una copia propia y regenero los tips en esa copia? La original queda intacta.')) return;
-      r = copiaPropia(r); actual = r;
+      if(!confirm('Se reescriben el objetivo y los coaching tips de todos los bloques de esta plantilla del sistema con IA (puede tardar unos minutos). Los ejercicios y dosis no cambian. Queda marcada como editada y «↩ Restaurar original» vuelve a la del sistema.\n\n¿Continuar?')) return;
+      r.editada = 1; r.editadaEl = new Date().toLocaleDateString('es-AR');
     } else if(!confirm('Se reescriben el objetivo y los coaching tips de todos los bloques de «' + r.nombre + '» con IA (puede tardar unos minutos). Los ejercicios y dosis no cambian. ¿Continuar?')) return;
     var lista = []; (r.dias || []).forEach(function(d, di){ (d.bloques || []).forEach(function(b, bi){ if(b && b.tipo === 'list' && b.modalidad !== 'calentamiento' && b.category !== 'warmup' && (b.items || []).some(function(l){ return String(l).trim(); })) lista.push([di, bi]); }); });
     if(!lista.length){ toast('Esta plantilla no tiene bloques de trabajo para regenerar', 'info'); return; }
@@ -44194,8 +43829,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     try{ if(typeof renderBanco === 'function') renderBanco(); }catch(e){}
   }
 
-  function abrir(id){
+  function abrir(id, conservarScroll){
     var r = (S.banco || []).filter(function(x){ return x.id === id; })[0]; if(!r) return;
+    var keep = 0; if(conservarScroll){ var bd0 = document.getElementById('pvBody'); keep = bd0 ? bd0.scrollTop : 0; }
     if(r.std && !(r.dias || []).length){ var t = LISTA.filter(function(x){ return x.id === r.stdId; })[0]; if(t) r.dias = PB.construirDias(t); }
     actual = r;
     var dias = r.dias || [], nBl = 0, nSer = 0, nEj = 0;
@@ -44221,7 +43857,9 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
           return;
         }
         if(e.target.closest('#pvEdit')){ entrarEdicion(); return; }
-        if(e.target.closest('#pvCancel')){ editando = false; abrir(actual.id); return; }
+        if(e.target.closest('#pvCancel')){ cancelarEdicion(); return; }
+        if(e.target.closest('#pvRestaurar')){ restaurarOriginal(); return; }
+        var act = e.target.closest('[data-pvact]'); if(act){ accionEstructura(act); return; }
         if(e.target.closest('#pvSave')){ guardarEdicion(); return; }
         if(e.target.closest('#pvIA')){ iaPlantilla(e.target.closest('#pvIA')); return; }
         var ia1 = e.target.closest('[data-pvia]');
@@ -44233,19 +43871,35 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
     document.getElementById('pvTit').textContent = (editando ? '✏️ ' : '👁️ ') + r.nombre;
     var body = '<div class="pv-meta">' + (r.genero ? '<span class="pv-pill cy">' + (r.genero === 'f' ? '♀ Femenino' : '♂ Masculino') + '</span>' : '') + (nivLb ? '<span class="pv-pill gold">' + E(nivLb) + '</span>' : '') +
       '<span class="pv-pill">' + dias.length + ' días</span><span class="pv-pill">' + nBl + ' bloques</span>' + (nEj ? '<span class="pv-pill">' + nEj + ' ejercicios</span>' : '') + (nSer ? '<span class="pv-pill">' + nSer + ' series / semana</span>' : '') + '</div>';
-    if(editando) body += '<div class="pv-modo-ed">✏️ Modo edición: cambiá títulos, ejercicios, objetivo y pautas de cada bloque y tocá «Guardar cambios». Solo se modifica esta plantilla del Banco; los planes de los alumnos no se tocan.</div>';
-    if(r.notas) body += '<p class="pv-resumen">' + E(r.notas) + '</p>';
+    if(editando){
+      body += '<div class="pv-modo-ed">✏️ Modo edición: cambiá la ficha, los días, los bloques (subir, bajar, quitar, agregar), los ejercicios, las dosis, el objetivo y las pautas, y tocá «Guardar cambios». Solo se modifica esta plantilla del Banco; los planes de los alumnos no se tocan.' +
+        (esSist(r) ? ' Es una plantilla del sistema: al guardar queda marcada como editada y «↩ Restaurar original» vuelve a la del sistema.' : '') + '</div>' +
+        '<div class="pv-ficha"><label class="pv-edl">Nombre de la plantilla<input class="pv-ei" id="pvNombre" value="' + E(r.nombre || '') + '"></label>' +
+        '<label class="pv-edl">Nivel<select class="pv-ei" id="pvNiv">' + [['inicial', 'Inicial'], ['intermedio', 'Intermedio · Desarrollo'], ['avanzado', 'Avanzado'], ['competitivo', 'Competitivo · Élite']].map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === r.niv ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+        '<label class="pv-edl pv-ficha-n">Descripción (la que se ve en la tarjeta del Banco)<textarea class="pv-ea" id="pvNotas" rows="3">' + E(r.notas || '') + '</textarea></label></div>';
+    } else if(r.notas) body += '<p class="pv-resumen">' + E(r.notas) + '</p>';
     var prog = String((r.meta && r.meta.mesoTexto) || '');
     if(r.notas && prog.indexOf(r.notas) === 0) prog = prog.slice(r.notas.length).trim();
     if(prog && prog !== r.notas) body += '<p class="pv-resumen"><b style="color:#E5C378">Progresión:</b> ' + E(prog.slice(0, 600)) + '</p>';
     body += '<div class="pv-nav">' + dias.map(function(d, i){ return '<button type="button" data-pvdia="' + i + '">' + E(d.short || ('DÍA ' + (i + 1))) + '</button>'; }).join('') + '<button type="button" class="pv-tg" id="pvTg">▾ Expandir pautas</button></div>';
     if(!dias.length) body += '<div class="hint">Esta plantilla está vacía.</div>';
     dias.forEach(function(d, i){
+      if(editando){
+        body += '<section class="pv-day" id="pvDia' + i + '" data-pvdd="' + i + '"><div class="pv-dh"><span class="n">' + E(d.short || ('DÍA ' + (i + 1))) + '</span>' +
+          '<span class="pv-mv"><button type="button" class="btn xs ghost" data-pvact="dup" data-pvarg="' + i + '" title="Subir el día">▲</button><button type="button" class="btn xs ghost" data-pvact="ddn" data-pvarg="' + i + '" title="Bajar el día">▼</button><button type="button" class="btn xs ghost" data-pvact="ddel" data-pvarg="' + i + '" title="Quitar el día">🗑 Quitar día</button></span></div>' +
+          '<label class="pv-edl">Título del día<input class="pv-ei" data-pvdf="title" value="' + E(d.title || '') + '"></label>' +
+          '<label class="pv-edl">Foco del día (lo que lee el alumno antes de entrenar)<textarea class="pv-ea" data-pvdf="focusText" rows="4">' + E(d.focusText || '') + '</textarea></label>' +
+          (d.bloques || []).map(function(b, bi){ return bloqueHtml(b, i, bi); }).join('') +
+          '<div class="pv-add"><select class="pv-ei" data-pvnuevo="' + i + '">' + Object.keys(BLOQUES_NUEVOS).map(function(k){ return '<option value="' + k + '">' + BLOQUES_NUEVOS[k][0] + '</option>'; }).join('') + '</select>' +
+          '<button type="button" class="btn xs gold" data-pvact="badd" data-pvarg="' + i + '">➕ Agregar bloque</button></div></section>';
+        return;
+      }
       body += '<section class="pv-day" id="pvDia' + i + '"><div class="pv-dh"><span class="n">' + E(d.short || ('DÍA ' + (i + 1))) + '</span><h4>' + E(d.title || d.label || '') + '</h4></div>' +
         ((d.metaChips || []).length ? '<div class="pv-meta">' + d.metaChips.map(function(c){ return '<span class="pv-pill">' + E(c) + '</span>'; }).join('') + '</div>' : '') +
         (d.focusText ? '<p class="pv-foco">' + E(d.focusText) + '</p>' : '') + (d.bloques || []).map(function(b, bi){ return bloqueHtml(b, i, bi); }).join('') + '</section>';
     });
-    var bd = document.getElementById('pvBody'); bd.innerHTML = body; bd.scrollTop = 0;
+    if(editando) body += '<div class="pv-add"><button type="button" class="btn sm gold" data-pvact="dadd" data-pvarg="0">➕ Agregar día</button></div>';
+    var bd = document.getElementById('pvBody'); bd.innerHTML = body; bd.scrollTop = keep || 0;
     openModal('mBankView'); m.scrollTop = 0;
   }
   document.addEventListener('click', function(e){
@@ -44254,6 +43908,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }, true);
   document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ var m = document.getElementById('mBankView'); if(m && m.classList.contains('on')) closeModal('mBankView'); } });
   window.CoachBaseJP = window.CoachBaseJP || {}; window.CoachBaseJP.previsualizar = function(id){ editando = false; abrir(id); };
+  window.CoachBaseJP.editar = function(id){ editando = false; abrir(id); if(actual && actual.id === id) entrarEdicion(); };
 })();
 </script>
 <script>
@@ -47059,7 +46714,7 @@ TIPS: Es la versión de descarga del Run Block: una sola tanda de 3 x 800m (no d
     NIV.slice().reverse().forEach(function(N){
       var ya = S.banco.filter(function(x){ return x.id === N.id; })[0];
       if(ya){
-        if((ya.cfMesVer || 0) < VER){ var u = ficha(N, armarDias(N)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+        if(!ya.editada && (ya.cfMesVer || 0) < VER){ var u = ficha(N, armarDias(N)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
         return;
       }
       /* si el coach la borró a propósito no vuelve sola (salvo "Restaurar") */
@@ -47720,7 +47375,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     S.ui = S.ui || {};
     var ya = S.banco.filter(function(x){ return x.id === ID; })[0], n = 0;
     if(ya){
-      if((ya.sbSysVer || 0) < VER){ var u = ficha(armarDias()); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+      if(!ya.editada && (ya.sbSysVer || 0) < VER){ var u = ficha(armarDias()); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
     } else if(!S.ui.sbWlSeed || forzar){
       S.banco.unshift(ficha(armarDias())); n++;
     }
@@ -47749,7 +47404,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
    ========================================================= */
 (function(){
   'use strict';
-  var VER = 1;
+  var VER = 2;      /* 2: Hyrox rehecho (14-dias-hyrox.js); la ficha de las plantillas ya guardadas se refresca en sembrar() */
 
   /* ---------- 0 · helpers de redacción ---------- */
   var LET = ['A', 'B', 'C', 'D', 'E', 'F'];
@@ -48233,111 +47888,11 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
           ['SIDE PLANK: Treinta segundos por lado.', 'SUITCASE CARRY: Carga de un solo lado, sin inclinar el tronco. ' + SEMANAS]) ] };
   }
 
-  /* ---------- 6 · HYROX (3, 4 y 5 días) ---------- */
-  var HX_EVID = 'La carrera combina 8 km de carrera en tramos de 1 km con ocho estaciones de fuerza-resistencia, así que se entrena con intensidad cercana al umbral de lactato (los mejores resultados se logran con mucho trabajo fácil y una porción de calidad cerca y por encima del umbral, Seiler 2010), intervalos de alta intensidad (Buchheit & Laursen 2013) y fuerza bajo fatiga acumulada, la "durabilidad" que separa a los atletas cuando el cansancio crece (Maunder 2021). La fuerza máxima de base mejora la economía en deportes de resistencia sin comprometer el rendimiento aeróbico (Rønnestad & Mujika 2014).';
-  function hxCarga(c){
-    return {
-      farmer: c.f ? '2 x 16-24 kg' : '2 x 24-32 kg',
-      bolsa: c.f ? '10-20 kg' : '20-30 kg',
-      wall: c.f ? '4-6 kg' : '6-9 kg'
-    };
-  }
-  function hxA(c){
-    var R = P(c, [4, 5, 6]), T = P(c, ['5min', '6min', '6min']), rp = P(c, [7, '7-8', 8]);
-    return { titulo: 'Umbral de lactato y estaciones de empuje y tracción', nombre: 'Umbral & Estaciones',
-      foco: 'Día de calidad: intervalos de carrera en el umbral de lactato (' + R + 'x' + T + ') y estaciones de empuje y tracción bajo fatiga (Sled Push, Sled Pull y Ski Erg encadenados), más core. ' + HX_EVID,
-      bloques: [
-        B('Entrada en calor · Rampa de carrera y activación',
-          [['Banded Monster Walk', dose(2, 12, '2112', 4)], ['Easy Run', cdose(1, '8min', 4)]], '30s',
-          'Subir la temperatura y la frecuencia cardíaca de manera progresiva y activar los glúteos medios antes de la intensidad de umbral.',
-          ['RAMPA: Los últimos 2 minutos del trote a ritmo de umbral para llegar al primer intervalo ya caliente.', RAMPA]),
-        B('Cardio · Intervalos de umbral en cinta',
-          [['Treadmill Run', cdose(R, T, rp)]], P(c, ['1:30', '1:30', '1:15']),
-          'Intervalos de 5-6 minutos a ritmo de umbral: es la zona donde el lactato se produce y se elimina casi a la misma velocidad y se logra el mayor rendimiento sostenible en esfuerzos largos (Seiler 2010).',
-          ['RITMO: RPE ' + rp + ', respiración controlada pero exigente; el último intervalo debe ser tan rápido como el primero.', 'PAUSA: Trote muy suave o caminata durante el descanso; no te sientes.']),
-        B('Estaciones de empuje y tracción bajo fatiga · Tríserie',
-          [['Sled Push', cdose(R, '25m', 8)], ['Sled Pull', cdose(R, '25m', 8)], ['SkiErg', cdose(R, '250m', 8)]], '90s',
-          'Simular la fatiga acumulada de la carrera: empuje, tracción y ski-erg encadenados con poca pausa entrenan la eficiencia mecánica cuando el cansancio ya está presente (Maunder 2021).',
-          ['SLED PUSH: Torso inclinado y pasos cortos; la carga es la que te deja a RPE 8 en la última pasada.', 'SLED PULL: Tirá con las piernas y la espalda, no con los brazos.', 'SKIERG: Tirá con caderas y espalda, brazos al final; 250 m por serie.']),
-        B('Core anti-rotación · Biset',
-          [['Hanging Leg Raise', dose(3, 8, '3011', 2)], ['Pallof Press', dose(3, 10, '2121', 2)]], '60s',
-          'Estabilidad de tronco para sostener la postura corriendo y empujando (McGill 2010).',
-          ['HANGING LEG RAISE: Sin balanceo.', 'PALLOF PRESS: Diez por lado. ' + SEMANAS]) ] };
-  }
-  function hxB(c){
-    var lv = c.lv, k = hxCarga(c);
-    return { titulo: 'Fuerza máxima y soporte estructural', nombre: 'Fuerza & Soporte',
-      foco: 'Día de fuerza: Trap Bar Deadlift pesado, zancada pesada con tracción, Push Press y transporte con bolsa. Es la sesión que sostiene las cargas de las estaciones. ' + HX_EVID,
-      bloques: [
-        bWarmLower(c),
-        B(null, [['Trap Bar Deadlift', lv === 0 ? dose(4, 5, '30X0', 2) : (lv === 1 ? pira(5, 4, '3x4', null, '30X0', 1) : pira(4, 3, '3x3', '2x5', '30X0', 1))]], lv === 0 ? '3:00' : '3:30',
-          'Fuerza máxima de la cadena posterior con una barra que permite empujar más peso con menos cizalla lumbar: la fuerza máxima de base es la que permite sostener el ritmo en las estaciones (Rønnestad & Mujika 2014).',
-          ['EJECUCIÓN: Pecho alto, barra pegada al cuerpo y empuje fuerte desde el piso.', 'TOP SET: ' + P(c, ['Cuatro series de 5 a RIR 2.', 'Tres series de 4 a RIR 1.', 'Tres series de 3 a RIR 1 y back-off de 2x5 con 10% menos.']), RAMPA]),
-        B('Zancada pesada y tracción · Biset',
-          [['Walking Lunge', dose(P(c, [3, 4, 4]), '8-10', '3010', P(c, [2, '1-2', 1]))], [lv === 0 ? 'Wide-Grip Lat Pulldown' : 'Pull-ups', dose(P(c, [3, 4, 4]), '6-8', '2011', P(c, [2, '1-2', 1]))]], '2:00',
-          'Zancada pesada (la estación con mayor cansancio de cuádriceps y glúteo) emparejada con tracción: dominio de la fuerza de resistencia del tren inferior y de la espalda, necesaria en Sled Pull, ski-erg y remo.',
-          ['ZANCADAS: Paso largo, torso erguido y rodilla trasera cerca del piso; con mancuernas o barra según el nivel.', 'TRACCIÓN: Pecho a la barra y bajada de 3 segundos.']),
-        B(null, [['Push Press', dose(P(c, [3, 4, 4]), 5, '', P(c, [2, '1-2', 1]))]], '2:00',
-          'Fuerza de empuje overhead con la ayuda de las piernas: el push press transmite fuerza de suelo a brazos, útil para wall balls y empuje de trineo.',
-          ['EJECUCIÓN: Pequeña flexión de piernas y extensión explosiva; recepción con codos bloqueados.']),
-        B('Transporte pesado · Biset de agarre',
-          [['Farmer Carry', cdose(P(c, [3, 4, 5]), '40m', 8)], ['Sandbag Bear Hug Carry', cdose(P(c, [3, 4, 5]), '30m', 8)]], '90s',
-          'Agarre y estabilidad del tronco bajo carga: las estaciones de transporte y de zancadas con bolsa se limitan por el agarre y la postura, no solo por el cardio.',
-          ['CARGA DE ENTRENAMIENTO: Farmer Carry ' + k.farmer + ', bolsa ' + k.bolsa + '; ajustá a RPE 8.', 'POSTURA: Costillas abajo, hombros atrás; si el tronco se inclina, bajá la carga. ' + SEMANAS]) ] };
-  }
-  function hxC(c){
-    var R = P(c, [3, 4, 5]), run = P(c, ['800m', '1000m', '1000m']), bbj = P(c, ['20m', '30m', '30m']);
-    return { titulo: 'Simulación de carrera · Running comprometido', nombre: 'Simulación de carrera',
-      foco: 'Día de simulación parcial de la carrera: ' + R + ' rondas de carrera + Sled Push + Burpee Broad Jump + remo, con pausa corta; entrena la eficiencia mecánica en las transiciones y la carrera con piernas ya cargadas. Más wall balls al cierre. ' + HX_EVID,
-      bloques: [
-        bWarmLower(c),
-        B('Cardio · Circuito de simulación con carrera comprometida',
-          [['Treadmill Run', cdose(R, run, 7)], ['Sled Push', cdose(R, '25m', 8)], ['Burpee Broad Jump', cdose(R, bbj, 8)], ['Rowing Erg', cdose(R, '500m', 8)]], P(c, ['2:00', '2:00', '1:30']),
-          'Correr con la fatiga de las estaciones es lo que más se parece a la carrera: la carrera "comprometida" entrena el mantenimiento del ritmo con piernas cargadas y la transición eficiente de la estación al trote (Maunder 2021).',
-          ['RITMO: Corré a RPE 7 desde la primera ronda; si la última ronda baja más de un 5% de velocidad, la anterior fue demasiado fuerte.', 'TRANSICIÓN: Bajá del trineo y ya en la cinta; practicá no detenerte entre estaciones.', 'REMO: 500 m a ritmo de carrera (RPE 8), 28-30 paladas por minuto.', 'BURPEE BROAD JUMP: Pecho al piso y salto largo; ' + bbj + ' por serie.']),
-        B(null, [['Wall Balls', cdose(P(c, [3, 4, 4]), P(c, [15, 20, 25]), 8)]], '90s',
-          'Estación con alto componente de sentadilla y press repetido: entrena la resistencia de fuerza del tren inferior y de los hombros bajo la fatiga del circuito previo.',
-          ['CARGA: ' + hxCarga(c).wall + ' según tu categoría; bajá a sentadilla completa y lanzá a la altura marcada.', 'RITMO: Series cortas con descanso de 5 segundos cada 8-10 repeticiones; evitá el fallo. ' + SEMANAS]) ] };
-  }
-  function hxD(c){
-    return { titulo: 'Base aeróbica y eficiencia de transiciones', nombre: 'Base aeróbica & Transiciones',
-      foco: 'Día de volumen aeróbico a intensidad baja (zona 2) con técnica de remo y ski-erg, práctica de transición burpee-carrera y resiliencia de isquios y pantorrilla. Es la sesión que construye la capacidad de recuperar entre esfuerzos. ' + HX_EVID,
-      bloques: [
-        B('Cardio · Zona 2 de carrera', [['Zone 2 Run', cdose(1, P(c, ['35min', '45min', '50min']), 5)]], '',
-          'Trabajo aeróbico a intensidad baja: aumenta la densidad mitocondrial y la capacidad de oxidar grasas con poco costo de recuperación; es la base sobre la que se apoyan los días de calidad (Seiler 2010).',
-          ['INTENSIDAD: Podés hablar frases completas; si no, bajá el ritmo. No es un día para competir contigo.']),
-        B('Cardio · Técnica de remo y ski-erg · Biset',
-          [['Rowing Erg', cdose(P(c, [4, 5, 6]), '500m', 6)], ['SkiErg', cdose(P(c, [4, 5, 6]), '250m', 6)]], '75s',
-          'La técnica eficiente en ergómetros ahorra energía en la carrera; practicarla a intensidad moderada consolida el patrón sin añadir fatiga.',
-          ['REMO: Piernas, espalda y brazos, en ese orden; cadencia de 24-26 paladas por minuto.', 'SKIERG: Caderas y espalda, brazos al final.']),
-        B('Cardio · Práctica de transición · Biset',
-          [['Burpees', cdose(P(c, [3, 4, 4]), 8, 7)], ['Easy Run', cdose(P(c, [3, 4, 4]), '200m', 7)]], '60s',
-          'Practicar el pasaje de una estación a la carrera: aprender a recuperar la respiración corriendo y a no frenar al terminar el ejercicio.',
-          ['BURPEES: Ritmo sostenido y pecho al piso.', 'CARRERA: Trote parejo de 200 m; ni ráfaga ni pausa.']),
-        B('Isquios y pantorrilla · Biset de resiliencia',
-          [['Nordic Hamstring Curl', dose(3, 5, '5010', 2)], ['Single-Leg Calf Raise', dose(3, 12, '2112', 2)]], '75s',
-          'Isquiotibiales y gemelos son las zonas con más lesión en carrera de volumen (Petersen 2011; van der Horst 2015); el excéntrico los prepara.',
-          ['NORDIC: Bajada de 5 segundos.', 'GEMELO: Pausa de 1 segundo arriba. ' + SEMANAS]) ] };
-  }
-  function hxE(c){
-    var k = hxCarga(c), R = P(c, [3, 4, 5]);
-    return { titulo: 'Fuerza-resistencia bajo fatiga acumulada', nombre: 'Fuerza-resistencia bajo fatiga',
-      foco: 'Día de durabilidad: dos tríseries de estaciones (wall balls, zancadas con bolsa y burpees; luego transporte, trineo y ski-erg) con pausa corta; entrena sostener la calidad técnica cuando la fatiga ya es alta. ' + HX_EVID,
-      bloques: [
-        bWarmLower(c),
-        B('Tríserie A · Wall balls, bolsa y burpees',
-          [['Wall Balls', cdose(R, P(c, [15, 20, 25]), 8)], ['Sandbag Lunges', cdose(R, '20m', 8)], ['Burpees', cdose(R, 10, 8)]], '2:00',
-          'Estaciones de piernas y hombros encadenadas con poca pausa: la durabilidad (mantener el rendimiento cuando la fatiga crece) se entrena acumulando fatiga con calidad (Maunder 2021).',
-          ['CARGA: Wall ball ' + k.wall + ' y bolsa ' + k.bolsa + '; ajustá para llegar al final de las rondas sin romper la técnica.', 'ZANCADAS CON BOLSA: Bolsa al hombro o al pecho, paso largo y rodilla trasera cerca del piso.']),
-        B('Tríserie B · Transporte, trineo y ski-erg',
-          [['Farmer Carry', cdose(R, '40m', 8)], ['Sled Pull', cdose(R, '25m', 8)], ['SkiErg', cdose(R, '250m', 8)]], '2:00',
-          'Agarre, tracción y ski-erg encadenados: la espalda y el agarre ya están cansados, justo cuando la carrera real exige sostener la postura.',
-          ['FARMER CARRY: ' + k.farmer + '; hombros atrás.', 'SLED PULL: Tirá con las piernas y la espalda.', 'GESTIÓN DE LA FATIGA: Si la técnica se rompe, cortá la serie; en la semana de descarga reducí las rondas a la mitad.']),
-        B(null,
-          [['Ab Wheel', dose(3, 8, '3121', 2)]], '60s',
-          'Estabilidad del tronco frente a la extensión para sostener la postura al final de la carrera.',
-          ['EJECUCIÓN: Pelvis en retroversión, rango que puedas controlar. ' + SEMANAS]) ] };
-  }
+  /* ---------- 6 · HYROX (3, 4 y 5 días) ----------
+     Las sesiones se redactan en src/coach/banco/14-dias-hyrox.js con el mismo motor que Bodybuilding (entrada en calor, fuerza principal, hipertrofia, bisets de cierre, core,
+     carrera y estaciones) y devuelven el texto ya armado: s.texto(n). */
+  function nHx(k){ return function(c){ return window.__jpPB.hyroxSesion(k, c); }; }
+  var hxA = nHx('A'), hxB = nHx('B'), hxC = nHx('C'), hxD = nHx('D'), hxE = nHx('E');
 
   /* ---------- 7 · catálogo ---------- */
   var DEPORTES = {
@@ -48354,8 +47909,8 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
             obj: 'Movilidad torácica, disociación de caderas y hombros, potencia de rotación secuencial y estabilidad escapulohumeral',
             nota: 'Tres días: movilidad y disociación, potencia rotacional del suelo al palo y fuerza unilateral con estabilidad escapular. ' },
     hyx:  { lb: 'Hyrox', ic: '🏃', disc: 'deport', tab: 'atl', corto: 'Hyrox · Umbral y Estaciones',
-            obj: 'Acondicionamiento cardiovascular de alta intensidad, fuerza-resistencia bajo fatiga acumulada, umbral de lactato y eficiencia en las transiciones',
-            nota: 'Intervalos en el umbral de lactato, estaciones de sled, ski-erg, remo, zancadas y wall balls bajo fatiga, simulación de carrera y base aeróbica. ' }
+            obj: 'Fuerza de base, acondicionamiento cardiovascular de alta intensidad, fuerza-resistencia bajo fatiga acumulada, umbral de lactato y eficiencia en las transiciones',
+            nota: 'Cada sesión combina entrada en calor específica, fuerza principal, volumen de hipertrofia, biset de cierre, core y trabajo de carrera: intervalos de umbral, estaciones de trineo, ski erg, remo, zancadas con bolsa y wall balls bajo fatiga, simulación de carrera y base aeróbica. ' }
   };
   var NIVEL_LB = ['Desarrollo', 'Avanzado', 'Élite'];
   var NIVEL_ID = ['intermedio', 'avanzado', 'competitivo'];
@@ -48384,7 +47939,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   function armarDias(E){
     var c = { lv: E.lv, f: E.f, dias: E.dias }, D = DEPORTES[E.dep];
     var ses = E.sesiones.map(function(fn){ return fn(c); });
-    var texto = ses.map(function(s, i){ return txtDia(i + 1, s); }).join('\n\n');
+    var texto = ses.map(function(s, i){ return s.texto ? s.texto(i + 1) : txtDia(i + 1, s); }).join('\n\n');
     var r = parsearImportacion(texto, true);
     var dias = r.dias.map(function(dia, i){
       var d = newDay(i), s = ses[i] || {};
@@ -48430,7 +47985,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     CATALOGO.forEach(function(E){
       var ya = S.banco.filter(function(x){ return x.id === E.id; })[0];
       if(ya){
-        if((ya.sbSysVer || 0) < VER){ var u = ficha(E, armarDias(E)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+        if(!ya.editada && (ya.sbSysVer || 0) < VER){ var u = ficha(E, armarDias(E)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
         return;
       }
       if(!primera && !forzar) return;      /* si el coach la borró a propósito no vuelve sola (salvo "Restaurar") */
@@ -48878,7 +48433,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     CATALOGO.forEach(function(E){
       var ya = S.banco.filter(function(x){ return x.id === E.id; })[0];
       if(ya){
-        if((ya.sbSysVer || 0) < VER || !ya.fbSys){ var u = ficha(E, armarDias(E)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+        if(!ya.editada && ((ya.sbSysVer || 0) < VER || !ya.fbSys)){ var u = ficha(E, armarDias(E)); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
         return;
       }
       if(!primera && !forzar) return;      /* si la coach la borró a propósito no vuelve sola (salvo CoachFullBody.sembrar(true)) */
@@ -49153,7 +48708,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     S.ui = S.ui || {};
     var ya = S.banco.filter(function(x){ return x.id === ID; })[0], n = 0;
     if(ya){
-      if((ya.sbSysVer || 0) < VER || !ya.elbSys){ var u = ficha(armarDias()); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
+      if(!ya.editada && ((ya.sbSysVer || 0) < VER || !ya.elbSys)){ var u = ficha(armarDias()); u.usos = ya.usos || 0; Object.assign(ya, u); n++; }
     } else if((S.ui.elbSeed || 0) < VER || forzar){
       S.banco.unshift(ficha(armarDias())); n++;
     }

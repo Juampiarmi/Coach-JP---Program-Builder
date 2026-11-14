@@ -38,6 +38,8 @@
 <main id="out"><p>Cargando la app en un iframe…</p></main>
 <iframe id="app" src="../../index.html" style="position:absolute; left:-9999px; width:420px; height:800px; border:0" aria-hidden="true"></iframe>
 <script src="cases.js"></script>
+<script src="cases-banco.js"></script>
+<script src="cases-alumno.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -66,8 +68,110 @@
     tag:        { run: function(i){ return win.impCampoCoachDeTag(i); }, valor: function(r){ return r; } },
     segundos:   { run: function(i){ return win.impSegundosDeTexto(i); }, valor: function(r){ return r; } },
     importSB:   { run: function(i){ return win.parsearImportacion(i, true); }, valor: function(r){ return r; } },
-    importCF:   { run: function(i){ return win.parsearImportacion(i, false); }, valor: function(r){ return r; } }
+    importCF:   { run: function(i){ return win.parsearImportacion(i, false); }, valor: function(r){ return r; } },
+    /* banco de rutinas: devuelven la lista de problemas encontrados (lo esperado es []) */
+    bancoBB:      { run: function(i){ return auditarBancoBB(i); }, valor: function(r){ return r; } },
+    bancoHyx:     { run: function(i){ return auditarBancoHyx(i); }, valor: function(r){ return r; } },
+    bancoNombres: { run: function(i){ return auditarNombres(i); }, valor: function(r){ return r; } },
+    bancoEditor:  { run: function(i){ return auditarEditor(i); }, valor: function(r){ return r; } },
+    /* app del alumno: se compila un alumno de prueba con el compile() real, se abre en un iframe y se llaman sus funciones globales (input: { fn, args }) */
+    alumnoParidad: { run: function(lista){ var w = alumnoWin(); if(!w || typeof w.jpDosisCanon !== 'function') throw new Error('la app del alumno no expone jpDosisCanon'); return lista.filter(function(x){ return JSON.stringify(w.jpDosisCanon(x)) !== JSON.stringify(win.jpDosisCanon(x)); }).map(function(x){ return 'distinto para: ' + x; }); }, valor: function(r){ return r; } },
+    alumno:       { run: function(i){ var w = alumnoWin(); if(!w || typeof w[i.fn] !== 'function') throw new Error('la app del alumno no expone ' + i.fn); return w[i.fn].apply(w, i.args || []); }, valor: function(r){ return r; } }
   };
+
+  /* ---------- app del alumno compilada (sin tocar el estado real: el alumno de prueba y su plan viven solo durante el compile) ---------- */
+  var alumnoFrame = null;
+  function alumnoWin(){ return alumnoFrame && alumnoFrame.contentWindow; }
+  function prepararAlumno(cb){
+    try{
+      var S = getS(), id = 'ath_test_runner', fake = { id: id, nombre: 'Prueba', apellido: 'Runner', freq: 4, nivel: 'intermedio', genero: 'M', createdAt: Date.now() }, html = '';
+      S.athletes.push(fake);      /* compile() solo acepta alumnos registrados: va y vuelve en el mismo instante, sin guardar nada */
+      try{ S.plans[id] = win.newPlan(fake); html = win.compile(fake); } finally { delete S.plans[id]; var ix = S.athletes.indexOf(fake); if(ix >= 0) S.athletes.splice(ix, 1); }
+      alumnoFrame = document.createElement('iframe'); alumnoFrame.style.cssText = 'position:absolute;left:-9999px;width:420px;height:800px;border:0'; alumnoFrame.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(alumnoFrame); alumnoFrame.srcdoc = html;
+    }catch(e){ console.warn('app del alumno', e); return cb(); }
+    var n = 0;
+    (function esp(){ try{ if(alumnoWin().jpDosisCanon && alumnoWin().jpLimpiarDecimal) return cb(); }catch(e){} if(++n > 40) return cb(); setTimeout(esp, 250); })();
+  }
+  function limpiarAlumno(){ try{ Object.keys(localStorage).filter(function(k){ return /prueba_runner/.test(k); }).forEach(function(k){ localStorage.removeItem(k); }); }catch(e){} }
+
+  /* ---------- auditoría de plantillas del Banco ---------- */
+  function getS(){ try{ return win.eval('S') || {}; }catch(e){ return {}; } }
+  /* logística de salón: ningún biset / triset debe haberse reemplazado ni separado por cruzar de estación (el saneador de la app lo registra) */
+  function logistica(id){ return ((win.JP_SANEO_LOG || {})[id] || []).filter(function(c){ return c.accion !== 'tempo'; }).map(function(c){ return id + ': logística de salón (' + c.accion + ') · ' + c.detalle; }); }
+  function lineasTips(b){ return String(b.tips || '').split('\n').map(function(x){ return x.trim(); }).filter(Boolean); }
+  function seriesDe(items){ var n = 0; (items || []).forEach(function(l){ var m = /^(\d+)\s*x\s*\d/i.exec(String(l)); if(m) n += parseInt(m[1], 10); }); return n; }
+  /* una sesión: estructura obligatoria + calidad de las notas. op: { minSeries, minHiper } */
+  function auditarDia(nombre, d, op){
+    var P = [], tag = nombre + ' · ' + (d.short || '') + ' ' + (d.title || '');
+    var bl = d.bloques || [];
+    if(!bl.length){ return [tag + ': sin bloques']; }
+    if(bl[0].modalidad !== 'calentamiento') P.push(tag + ': el primer bloque no es la entrada en calor');
+    var cuenta = function(m){ return bl.filter(function(b){ return b.modalidad === m; }).length; };
+    if(cuenta('fuerza') < 1) P.push(tag + ': falta el ejercicio principal de fuerza');
+    if(cuenta('hipertrofia') < (op.minHiper || 2)) P.push(tag + ': menos de ' + (op.minHiper || 2) + ' bloques de hipertrofia / accesorios');
+    if(cuenta('core') < 1) P.push(tag + ': falta el core');
+    if(cuenta('metcon') < 1) P.push(tag + ': falta el cardio / finisher metabólico');
+    if(!bl.some(function(b){ return (b.items || []).some(function(l){ return /^A2\.\s/.test(l); }); })) P.push(tag + ': falta un biset o triset');
+    if(String(d.focusText || '').length < 200) P.push(tag + ': el foco del día es muy corto');
+    if((bl[0].items || []).length < 5) P.push(tag + ': la entrada en calor tiene menos de 5 ejercicios');
+    var series = 0;
+    bl.forEach(function(b, i){
+      series += seriesDe(b.items);
+      if(!String(b.objective || '').trim()) P.push(tag + ' · bloque ' + (i + 1) + ': sin objetivo fisiológico');
+      var tips = lineasTips(b);
+      if(tips.length < 3) P.push(tag + ' · bloque ' + (i + 1) + ': menos de 3 pautas (' + tips.length + ')');
+      if((b.items || []).some(function(l){ return /^\s*(?:SET-UP|CUE|CUIDADO|POR QU[ÉE]|PROGRESI[ÓO]N|SENSACI[ÓO]N|RITMO|TEMPO)\b|^\[/.test(l); })) P.push(tag + ' · bloque ' + (i + 1) + ': una pauta quedó dentro de los ejercicios');
+      if(b.modalidad === 'metcon'){
+        if(/^\d+x\d/i.test(String((b.items || [])[0] || ''))) P.push(tag + ' · bloque ' + (i + 1) + ': el cardio / finisher se convirtió en una dosis de fuerza');
+        if((b.items || []).some(function(l){ return /\|\s*RIR/i.test(l); })) P.push(tag + ' · bloque ' + (i + 1) + ': el cardio / finisher quedó con RIR');
+      }
+    });
+    if(op.minSeries && series < op.minSeries) P.push(tag + ': solo ' + series + ' series (mínimo ' + op.minSeries + ')');
+    return P;
+  }
+  function auditarBancoBB(){
+    var PB = win.__jpPB, P = [];
+    if(!PB || !PB.LISTA || PB.LISTA.length !== 12) P.push('esperaba 12 plantillas Bodybuilding y hay ' + (PB && PB.LISTA ? PB.LISTA.length : 0));
+    (PB.LISTA || []).forEach(function(t){
+      var dias = PB.construirDias(t), av = t.niv === 'avanzado';
+      if(dias.length !== t.f) P.push(t.id + ': tiene ' + dias.length + ' días y debería tener ' + t.f);
+      dias.forEach(function(d){ auditarDia(t.id, d, { minSeries: av ? 28 : 24, minHiper: 2 }).forEach(function(x){ P.push(x); }); });
+      logistica(t.id).forEach(function(x){ P.push(x); });
+    });
+    return P;
+  }
+  function auditarBancoHyx(){
+    var P = [], hx = (getS().banco || []).filter(function(r){ return r && r.depDeporte === 'hyx'; });
+    if(hx.length !== 18) P.push('esperaba 18 plantillas Hyrox y hay ' + hx.length);
+    hx.forEach(function(r){
+      if(!(r.dias || []).length){ P.push(r.id + ': sin días'); return; }
+      if(r.dias.length !== r.freq) P.push(r.id + ': tiene ' + r.dias.length + ' días y debería tener ' + r.freq);
+      r.dias.forEach(function(d){ auditarDia(r.id, d, { minSeries: 14, minHiper: 1 }).forEach(function(x){ P.push(x); }); });
+      logistica(r.id).forEach(function(x){ P.push(x); });
+    });
+    return P;
+  }
+  /* todos los ejercicios nombrados en las sesiones existen en la biblioteca (el video se vincula solo) */
+  function auditarNombres(){
+    var PB = win.__jpPB, P = [], vistos = {};
+    var chequear = function(e, donde){ if(!vistos[e] && !PB.exLib(e)){ vistos[e] = 1; P.push(donde + ': «' + e + '» no está en la biblioteca'); } };
+    Object.keys(PB.D).forEach(function(k){ PB.D[k].filas.forEach(function(r){ if(r.fin) return; [].concat(r.ej || []).concat(r.ea || []).forEach(function(e){ chequear(e, k); }); }); });
+    Object.keys(PB.WU).forEach(function(k){ PB.WU[k].items.forEach(function(x){ var m = /^(.*?)\s+x\s+(.+)$/.exec(x); chequear(m ? m[1] : x, 'warm-up ' + k); }); });
+    PB.hyroxClaves.forEach(function(k){ [0, 1, 2].forEach(function(lv){ [false, true].forEach(function(f){
+      PB.hyroxSesion(k, { lv: lv, f: f, dias: 5 }).def.filas.forEach(function(r){ if(r.fin) return; [].concat(r.ej || []).concat(r.ea || []).forEach(function(e){ chequear(e, 'Hyrox ' + k); }); });
+    }); }); });
+    return P;
+  }
+  /* editor del Banco: ver que exista la API y que lo editado de un sistema se persista (la prueba de punta a punta está en el README: usa la UI) */
+  function auditarEditor(){
+    var P = [], w = win, S = getS(), B = w.CoachBaseJP;
+    if(!B || typeof B.editar !== 'function') return ['CoachBaseJP.editar no existe'];
+    var r = (S.banco || []).filter(function(x){ return x.id === 'bkstd_jp26_m3_i'; })[0];
+    if(!r) return ['no está bkstd_jp26_m3_i'];
+    if(!(r.dias || []).length) P.push('la plantilla del sistema no tiene días hidratados');
+    return P;
+  }
   function itemsPlanos(r){ var out = []; (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ out.push((b.items || []).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); })); }); }); return out; }
   function restConsecutivos(r){ var n = 0; itemsPlanos(r).forEach(function(its){ for(var k = 1; k < its.length; k++){ if(/^\s*Rest\b/i.test(its[k]) && /^\s*Rest\b/i.test(its[k - 1])) n++; } }); return n; }
 
@@ -160,12 +264,18 @@
   document.getElementById('bCopiar').addEventListener('click', function(){ try{ navigator.clipboard.writeText(window.__jpReporte()); this.textContent = 'Copiado'; }catch(e){ this.textContent = 'No se pudo copiar'; } });
 
   var frame = document.getElementById('app'), intentos = 0;
+  /* las plantillas del sistema se hidratan unos segundos después de cargar la app (arranque diferido): se espera a que estén las de Hyrox y las de Bodybuilding */
+  function esperarBanco(n){
+    var ok = false;
+    try{ var b = getS().banco || []; ok = b.some(function(r){ return r && r.depDeporte === 'hyx' && (r.dias || []).length; }) && b.some(function(r){ return r && r.std && (r.dias || []).length; }); }catch(e){}
+    if(ok || n > 60) setTimeout(function(){ prepararAlumno(function(){ var r = correr(); limpiarAlumno(); pintar(r); }); }, 300); else setTimeout(function(){ esperarBanco(n + 1); }, 250);
+  }
   function listo(){
     try{ win = frame.contentWindow; return !!(win && win.jpAutoFormat && typeof win.jpDosisCanon === 'function' && typeof win.parsearImportacion === 'function' && typeof win.detectarFormatoCF === 'function' && typeof win.impCampoCoachDeTag === 'function'); }catch(e){ return false; }
   }
   var t = setInterval(function(){
     intentos++;
-    if(listo()){ clearInterval(t); setTimeout(function(){ pintar(correr()); }, 300); }
+    if(listo()){ clearInterval(t); esperarBanco(0); }
     else if(intentos > 120){ clearInterval(t); document.getElementById('out').innerHTML = '<p>No se pudo acceder a la app dentro del iframe. Serví la carpeta por http (no file://) y abrí esta pagina desde el mismo servidor.</p>'; }
   }, 250);
 })();

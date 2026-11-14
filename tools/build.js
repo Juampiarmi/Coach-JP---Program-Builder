@@ -61,5 +61,12 @@ if(check){
   console.error('Si editaste index.html a mano: trasladá el cambio a src/ (o corré "node tools/split.js" para volver a partir). Si editaste src/: corré "node tools/build.js".');
   process.exit(1);
 }
-fs.writeFileSync(SALIDA, salida);
+/* OneDrive / antivirus pueden tener el archivo tomado un instante: se reintenta antes de rendirse */
+for(let intento = 1; ; intento++){
+  try{ fs.writeFileSync(SALIDA, salida); break; }
+  catch(e){
+    if(intento >= 5) throw e;
+    const hasta = Date.now() + 500 * intento; while(Date.now() < hasta){ /* espera corta */ }
+  }
+}
 console.log('index.html generado (' + Buffer.byteLength(salida) + ' bytes, ' + salida.split('\n').length + ' lineas)');
