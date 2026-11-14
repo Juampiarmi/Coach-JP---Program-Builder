@@ -19,7 +19,7 @@
     if(bl.classList.contains('cat-warmup')) return true;
     /* sólo el título del bloque decide, nunca una palabra suelta del subtítulo */
     var t = ((b && b.title) || (bl.querySelector('.block-label') || {}).textContent || '').trim();
-    return /^(?:\\W*)?(entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|vuelta a la calma)/i.test(t);
+    return /^(?:\W*)?(entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|vuelta a la calma)/i.test(t);
   }
   function esc(s){
     return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -37,45 +37,45 @@
   }
   /* separa la dosis (tiempo, reps, distancia) del nombre del ejercicio */
   function partir(txt){
-    var t = String(txt || '').replace(/\\s+/g, ' ').trim();
+    var t = String(txt || '').replace(/\s+/g, ' ').trim();
     if(!t) return null;
     var dosis = '', nombre = t;
     var m;
-    /* «Row 4 min», «Bicicleta o cinta — 6 min progresivos» -- \\s+ (no \\s*)
+    /* «Row 4 min», «Bicicleta o cinta — 6 min progresivos» -- \s+ (no \s*)
        alrededor del guion a propósito: un guion sin espacio a los lados
        casi siempre es parte de un nombre compuesto ("Pass-Through",
-       "Sit-up", "Face-pull"), no el separador nombre/dosis. Con \\s*
+       "Sit-up", "Face-pull"), no el separador nombre/dosis. Con \s*
        .*? no-codicioso paraba en ESE guion interno (ej. "Banded Pass" +
        "Through — 15 reps", que igual "parecía" válido porque el resto
        tenía un dígito) y perdía la dosis real más adelante. Exigir
        espacio real de los dos lados obliga a saltar los guiones de
        compuestos y llegar al separador real. */
-    if((m = t.match(/^(.*?)\\s+[—–-]\\s+(.+)$/)) && /\\d/.test(m[2])){
+    if((m = t.match(/^(.*?)\s+[—–-]\s+(.+)$/)) && /\d/.test(m[2])){
       nombre = m[1].trim(); dosis = m[2].trim();
     }
     /* «3x12 Curl», «2x15 Face pull» */
-    else if((m = t.match(/^(\\d+\\s*[x×]\\s*\\d+[^\\s]*)\\s+(.+)$/i))){ dosis = m[1]; nombre = m[2]; }
+    else if((m = t.match(/^(\d+\s*[x×]\s*\d+[^\s]*)\s+(.+)$/i))){ dosis = m[1]; nombre = m[2]; }
     /* «15 Banded pass-through», «10/10 Puente de glúteo» */
-    else if((m = t.match(/^(\\d+\\s*\\/\\s*\\d+|\\d+)\\s*(reps?|s|seg|segundos?|min|minutos?|m|km|cal)?\\s+(.+)$/i))){
+    else if((m = t.match(/^(\d+\s*\/\s*\d+|\d+)\s*(reps?|s|seg|segundos?|min|minutos?|m|km|cal)?\s+(.+)$/i))){
       dosis = (m[1] + (m[2] ? ' ' + m[2] : '')).trim(); nombre = m[3];
     }
     /* «Row 5:00 @ suave» */
-    else if((m = t.match(/^(.+?)\\s+(\\d+:\\d{2}|\\d+\\s*(?:min|minutos?|s|seg))\\b(.*)$/i))){
+    else if((m = t.match(/^(.+?)\s+(\d+:\d{2}|\d+\s*(?:min|minutos?|s|seg))\b(.*)$/i))){
       nombre = (m[1] + (m[3] || '')).trim(); dosis = m[2];
     }
     if(dosis){
-      dosis = dosis.replace(/\\breps?\\b/i, 'reps').replace(/\\bminutos?\\b/i, 'min')
-                   .replace(/\\bsegundos?\\b/i, 's').replace(/\\s{2,}/g, ' ').trim();
+      dosis = dosis.replace(/\breps?\b/i, 'reps').replace(/\bminutos?\b/i, 'min')
+                   .replace(/\bsegundos?\b/i, 's').replace(/\s{2,}/g, ' ').trim();
       /* se queda sólo la parte numérica; lo demás vuelve al nombre */
-      var md = dosis.match(/^(\\d+\\s*[x×]\\s*\\d+\\s*(?:s|seg|min|reps)?|\\d+\\s*\\/\\s*\\d+|\\d+\\s*(?:min|s|seg|reps|m|km|cal)?)\\b/i);
+      var md = dosis.match(/^(\d+\s*[x×]\s*\d+\s*(?:s|seg|min|reps)?|\d+\s*\/\s*\d+|\d+\s*(?:min|s|seg|reps|m|km|cal)?)\b/i);
       if(md && md[1] && md[1].length < dosis.length){
         var cola = dosis.slice(md[1].length).trim();
-        if(cola) nombre = (nombre + ' ' + cola).replace(/\\s{2,}/g, ' ').trim();
+        if(cola) nombre = (nombre + ' ' + cola).replace(/\s{2,}/g, ' ').trim();
         dosis = md[1].trim();
       }
       if(dosis.length > 16) { nombre = t; dosis = ''; }
     }
-    return { dosis: dosis, nombre: nombre.replace(/^[·•\\-\\s]+/, '').trim() };
+    return { dosis: dosis, nombre: nombre.replace(/^[·•\-\s]+/, '').trim() };
   }
 
   /* ---------------------------------------------------------
@@ -119,7 +119,7 @@
           filas.push({ head:false, txt: String(nombre || '').trim() + (d ? ' — ' + d.textContent.trim() : ''), vid: vidEl ? vidEl.outerHTML : '' });
         });
       }
-      filas = filas.filter(function(f){ return String(f.txt || '').replace(/\\s+/g, ' ').trim(); });
+      filas = filas.filter(function(f){ return String(f.txt || '').replace(/\s+/g, ' ').trim(); });
       if(!filas.length){ return; }
 
       /* directiva de refactor (2026-09): el video demostrativo del ítem NO
@@ -130,9 +130,9 @@
          a la derecha del nombre, igual que en los bloques principales. */
       var prefijo = prefijoFase(b);
       var html = filas.map(function(f){
-        var t = String(f.txt).replace(/\\s+/g, ' ').trim();
-        if(f.head || /^\\d+\\s*[\\.\\)]\\s/.test(t) || /:$/.test(t))
-          return '<div class="wu-fase">' + esc(prefijo + ' \\u00b7 ' + t.replace(/^\\d+\\s*[\\.\\)]\\s*/, '').replace(/:$/, '')) + '</div>';
+        var t = String(f.txt).replace(/\s+/g, ' ').trim();
+        if(f.head || /^\d+\s*[\.\)]\s/.test(t) || /:$/.test(t))
+          return '<div class="wu-fase">' + esc(prefijo + ' \u00b7 ' + t.replace(/^\d+\s*[\.\)]\s*/, '').replace(/:$/, '')) + '</div>';
         var p = partir(t);
         if(!p) return '';
         return '<div class="wu-item">' +
@@ -164,7 +164,7 @@
   /* ---------------------------------------------------------
      2 · METCON: UNA SOLA ESTRUCTURA, SIN TEXTO REPETIDO
   --------------------------------------------------------- */
-  function nrm(s){ return String(s || '').toLowerCase().replace(/\\s+/g, ' ').trim().replace(/[:.]$/, ''); }
+  function nrm(s){ return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[:.]$/, ''); }
   function sinDuplicados(){
     document.querySelectorAll('.block').forEach(function(bl){
       if(bl.classList.contains('wu-card')) return;

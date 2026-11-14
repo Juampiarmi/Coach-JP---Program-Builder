@@ -43,7 +43,7 @@
      o "10-12", que no traen ninguna unidad pegada). */
   function esUnidadNoRep(s){
     if(s == null) return false;
-    return /\\d\\s*(metros?|minutos?|min|segundos?|seg|km|m|s)\\b/i.test(String(s));
+    return /\d\s*(metros?|minutos?|min|segundos?|seg|km|m|s)\b/i.test(String(s));
   }
 
   /* Catalogo de tecnicas de intensidad (mismo set que el modulo de
@@ -533,7 +533,7 @@
     var el = campoActivo();
     if(!lb) return;
     var nom = nombreCampo(el);
-    var t = 'Ajuste rápido' + (nom ? ' · ' + nom.replace(/\\s*\\(.*\\)/, '') : '') +
+    var t = 'Ajuste rápido' + (nom ? ' · ' + nom.replace(/\s*\(.*\)/, '') : '') +
             (el ? ' · ' + mmss(leerSeg(el)) : '');
     if(lb.textContent !== t) lb.textContent = t;
   }
@@ -691,7 +691,7 @@
       var e = T() ? T().estado() : null;
       var txt2 = (e && (e.modo === 'tabata' || e.modo === 'emom'))
         ? 'RONDA ' + e.ronda + ' / ' + e.rondas
-        : (r.textContent || '').toUpperCase().replace(/\\s+/g, ' ').trim();
+        : (r.textContent || '').toUpperCase().replace(/\s+/g, ' ').trim();
       if(fr.textContent !== txt2) fr.textContent = txt2;
     }
     if(b && fb && fb.style.width !== b.style.width) fb.style.width = b.style.width;

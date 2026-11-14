@@ -46,7 +46,7 @@
        cada repintado), sólo cambia qué etiqueta y qué color le impone. */
     var esCF = window.COACH_DISCIPLINA === 'crossfit';
     var etiqueta = esCF ? 'CROSSFIT & HYROX TACTICAL' : 'BODYBUILDING & SPORTS PERFORMANCE';
-    if(c && c.textContent.replace(/\\s+/g, ' ').trim() !== etiqueta) c.textContent = etiqueta;
+    if(c && c.textContent.replace(/\s+/g, ' ').trim() !== etiqueta) c.textContent = etiqueta;
     if(c) c.style.setProperty('color', esCF ? '#D2793F' : '#38BDF8', 'important');
   }
 
@@ -87,24 +87,24 @@
   ========================================================= */
   var VM = (typeof VIDEO_MAP !== 'undefined' && VIDEO_MAP) || {};
   var BASURA = new RegExp([
-    '\\\\d+\\\\s*(kg|lb|lbs|m|min|seg|reps?|rondas?|rounds?)\\\\b', '%', '\\\\bx\\\\s*\\\\d',
-    '\\\\d+\\\\s*[-\\u2013]\\\\s*\\\\d', '\\\\bronda', '\\\\bround', 'amrap', 'emom', 'for\\\\s*time',
+    '\\d+\\s*(kg|lb|lbs|m|min|seg|reps?|rondas?|rounds?)\\b', '%', '\\bx\\s*\\d',
+    '\\d+\\s*[-\u2013]\\s*\\d', '\\bronda', '\\bround', 'amrap', 'emom', 'for\\s*time',
     'tabata', 'chipper', 'progres', 'calent', 'movilidad', 'activaci', 'aproximaci',
-    'entrada en calor', 'descans', '\\\\brest\\\\b', '\\\\bserie', 'tempo', '\\\\brpe\\\\b', '\\\\brir\\\\b'
+    'entrada en calor', 'descans', '\\brest\\b', '\\bserie', 'tempo', '\\brpe\\b', '\\brir\\b'
   ].join('|'), 'i');
   function limpioNombre(txt){
-    var t = String(txt || '').replace(/🔎|🎬/g, '').replace(/\\s+/g, ' ').trim();
+    var t = String(txt || '').replace(/🔎|🎬/g, '').replace(/\s+/g, ' ').trim();
     t = t.split(' — ')[0].split(' - ')[0].split(' · ')[0];
-    t = t.replace(/^\\d+\\s*[.)]?\\s*/, '');                 /* numeración inicial */
-    t = t.replace(/\\([^)]*\\)/g, ' ');                      /* aclaraciones entre paréntesis */
-    t = t.replace(/\\b\\d+([.,]\\d+)?\\s*(kg|lbs?|m|km|cal|min|s|seg|reps?)\\b/gi, ' ');
-    t = t.replace(/\\b\\d+\\s*[x×]\\s*\\d+\\b/gi, ' ');
+    t = t.replace(/^\d+\s*[.)]?\s*/, '');                 /* numeración inicial */
+    t = t.replace(/\([^)]*\)/g, ' ');                      /* aclaraciones entre paréntesis */
+    t = t.replace(/\b\d+([.,]\d+)?\s*(kg|lbs?|m|km|cal|min|s|seg|reps?)\b/gi, ' ');
+    t = t.replace(/\b\d+\s*[x×]\s*\d+\b/gi, ' ');
     /* preserva ángulos/variantes propias del nombre (ej. "Prensa 45°") al
        barrer el resto de números sueltos (series/rondas residuales) */
-    t = t.replace(/\\d+(?:\\s*°)?/g, function(m){ return /°$/.test(m) ? m : ' '; });
+    t = t.replace(/\d+(?:\s*°)?/g, function(m){ return /°$/.test(m) ? m : ' '; });
     /* restos de unidades al inicio: "200 m Row" -> "Row" */
-    t = t.replace(/^(m|km|cal|kg|lbs?|min|s|seg|reps?|x)\\b\\s*/i, '');
-    t = t.replace(/\\s+/g, ' ').replace(/^[·:,\\-–\\s]+|[·:,\\-–\\s]+$/g, '').trim();
+    t = t.replace(/^(m|km|cal|kg|lbs?|min|s|seg|reps?|x)\b\s*/i, '');
+    t = t.replace(/\s+/g, ' ').replace(/^[·:,\-–\s]+|[·:,\-–\s]+$/g, '').trim();
     return t;
   }
   function esEjercicioDeBiblioteca(nombre){
@@ -112,10 +112,10 @@
     /* los ángulos/variantes numéricas propias del nombre (ej. "Prensa 45°")
        no cuentan como dígito residual de dosis -- se descartan antes de
        chequear si queda algún número suelto (indicio real de reps/series) */
-    if(/\\d/.test(nombre.replace(/\\d+\\s*°/g, ''))) return false;
+    if(/\d/.test(nombre.replace(/\d+\s*°/g, ''))) return false;
     var n = nombre.toLowerCase();
     if(BASURA.test(n)) return false;
-    var palabras = nombre.split(/\\s+/);
+    var palabras = nombre.split(/\s+/);
     if(palabras.length > 5) return false;
     if(!/[a-záéíóúñ]/i.test(nombre)) return false;
     /* si el índice de videos de la biblioteca lo reconoce, entra seguro */

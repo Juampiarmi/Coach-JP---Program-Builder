@@ -138,7 +138,7 @@
        caller viejo, o un test), se derivan de sesion/disciplina como
        antes para no romper nada. */
     const diaCorto = d.diaCorto || String(d.sesion || '').split(' · ')[0] || 'DÍA';
-    const semanaN = d.semanaN || (function(){ var m = String(d.disciplina || '').match(/(\\d+)\\s*$/); return m ? m[1] : ''; })();
+    const semanaN = d.semanaN || (function(){ var m = String(d.disciplina || '').match(/(\d+)\s*$/); return m ? m[1] : ''; })();
     const tituloSesion = d.tituloSesion || String(d.sesion || '').split(' · ').slice(1).join(' · ') || d.disciplina || 'Sesión';
 
     /* atleta, chico, arriba de todo -- se conserva para no perder la
@@ -296,7 +296,7 @@
         var nom = String(it.ex).toUpperCase(), maxN = pw - 88 - wDer - 30;
         g.font = '700 36px "Chakra Petch", sans-serif';
         while(nom.length > 3 && g.measureText(nom).width > maxN){ nom = nom.slice(0, -2); }
-        if(nom.length < String(it.ex).length) nom = nom.replace(/\\s+$/, '') + '…';
+        if(nom.length < String(it.ex).length) nom = nom.replace(/\s+$/, '') + '…';
         g.textAlign = 'left'; g.fillStyle = '#FFFFFF'; g.fillText(nom, px + 44, yy + 18);
         g.font = '800 40px "Chakra Petch", sans-serif';
         g.textAlign = 'right'; g.fillStyle = '#E5C378'; g.fillText(der, px + pw - 44, yy + 18);
@@ -305,7 +305,7 @@
       });
       if(d.bloquesExtra > 0 && lista.length){
         g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,.45)'; g.font = '600 28px Inter, sans-serif';
-        g.fillText('+ ' + d.bloquesExtra + (d.bloquesExtra === 1 ? ' bloque m\\u00e1s completado' : ' bloques m\\u00e1s completados'), px + 44, yTop + ph - (d.rpe ? 82 : 34));
+        g.fillText('+ ' + d.bloquesExtra + (d.bloquesExtra === 1 ? ' bloque m\u00e1s completado' : ' bloques m\u00e1s completados'), px + 44, yTop + ph - (d.rpe ? 82 : 34));
       }
       if(d.rpe){
         g.textAlign = 'left'; g.fillStyle = '#38BDF8'; g.font = '700 32px "JetBrains Mono", ui-monospace, monospace';
@@ -887,10 +887,10 @@
     h.dataset.jp = '1';
     /* "Fuerza Pesada, <em>Densidad Metabólica.</em>" → "FUERZA PESADA • DENSIDAD METABÓLICA" */
     h.innerHTML = h.innerHTML
-      .replace(/,\\s*(?=<em)/i, '&nbsp;<span class="hd-dot">&bull;</span> ')
-      .replace(/,\\s*$/, '')
-      .replace(/\\.\\s*(<\\/em>)/i, '$1')
-      .replace(/\\.\\s*$/, '');
+      .replace(/,\s*(?=<em)/i, '&nbsp;<span class="hd-dot">&bull;</span> ')
+      .replace(/,\s*$/, '')
+      .replace(/\.\s*(<\/em>)/i, '$1')
+      .replace(/\.\s*$/, '');
   }
 
   /* la barra de días se pega justo debajo de la de semanas */
@@ -929,7 +929,7 @@
     const icono = function(px, mask){ return http ? PWA_BASE + 'icon-' + px + (mask ? '-maskable' : '') + '.png' : iconoPNG(px); };
     const iniciaUrl = http ? (location.origin + location.pathname + location.search) : location.href;
     const m = {
-      name: nombreApp + ' \\u2022 Performance Program',
+      name: nombreApp + ' \u2022 Performance Program',
       short_name: nombreApp,
       description: 'Planificación personalizada de ' + nombre + ' — Coach JP Performance System',
       start_url: iniciaUrl,

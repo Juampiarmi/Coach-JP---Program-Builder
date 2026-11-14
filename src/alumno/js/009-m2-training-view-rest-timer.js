@@ -327,7 +327,7 @@
     const t = ex ? ex.childNodes[0] : null;
     return (t ? t.textContent : (blockEl.querySelector('.block-label')||{}).textContent || '').trim();
   }
-  const _nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
+  const _nrm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const PRS_N = (function(){ const o = {}; Object.keys(PRS).forEach(function(k){ o[_nrm(k)] = PRS[k]; }); return o; })();
   function prDe(nombre){
     const n = _nrm(nombre), l = _nrm(limpiarNombre(nombre));
@@ -408,17 +408,17 @@
      3) PIZARRA METCON / WOD
   ========================================================= */
   const FMT_RX = [
-    { re:/amrap\\s*(\\d+)?/i, lb:'AMRAP', modo:'down' },
-    { re:/emom\\s*(\\d+)?/i,  lb:'EMOM',  modo:'down' },
-    { re:/every\\s*(\\d+):(\\d+)/i, lb:'EVERY X:00', modo:'down' },
-    { re:/rounds?\\s*for\\s*time|\\bRFT\\b/i, lb:'ROUNDS FOR TIME', modo:'up' },
+    { re:/amrap\s*(\d+)?/i, lb:'AMRAP', modo:'down' },
+    { re:/emom\s*(\d+)?/i,  lb:'EMOM',  modo:'down' },
+    { re:/every\s*(\d+):(\d+)/i, lb:'EVERY X:00', modo:'down' },
+    { re:/rounds?\s*for\s*time|\bRFT\b/i, lb:'ROUNDS FOR TIME', modo:'up' },
     { re:/chipper/i, lb:'CHIPPER', modo:'up' },
-    { re:/for\\s*time/i, lb:'FOR TIME', modo:'up' },
+    { re:/for\s*time/i, lb:'FOR TIME', modo:'up' },
     { re:/tabata/i, lb:'TABATA', modo:'down' },
-    { re:/\\be(\\d+)\\s*m?om\\b/i, lb:'EMOM', modo:'down' },
-    { re:/every\\s*\\d+(?:[.,]\\d+)?\\s*(?:min|minutos?|')/i, lb:'EVERY X:00', modo:'down' },
-    { re:/death\\s*by/i, lb:'DEATH BY', modo:'down' },
-    { re:/\\bladders?\\b|escalera\\s*(?:ascendente|descendente)/i, lb:'LADDER', modo:'up' },
+    { re:/\be(\d+)\s*m?om\b/i, lb:'EMOM', modo:'down' },
+    { re:/every\s*\d+(?:[.,]\d+)?\s*(?:min|minutos?|')/i, lb:'EVERY X:00', modo:'down' },
+    { re:/death\s*by/i, lb:'DEATH BY', modo:'down' },
+    { re:/\bladders?\b|escalera\s*(?:ascendente|descendente)/i, lb:'LADDER', modo:'up' },
     { re:/interval/i, lb:'INTERVALOS', modo:'down' }
   ];
   function primerFormato(txt){
@@ -470,7 +470,7 @@
   }
   function minutosDe(block, lineas){
     if(block.cardioMinutes) return parseInt(block.cardioMinutes, 10) || 0;
-    const m = ((block.subtitle||'') + ' ' + lineas.join(' ')).match(/(\\d{1,2})\\s*(?:min|minuto|')/i);
+    const m = ((block.subtitle||'') + ' ' + lineas.join(' ')).match(/(\d{1,2})\s*(?:min|minuto|')/i);
     return m ? parseInt(m[1], 10) : 0;
   }
   /* directiva ("Sprint 1: Timer contextual de WOD") -- traduce el formato
@@ -486,9 +486,9 @@
     var txt = lineas.join(' ') + ' ' + (block.title || '') + ' ' + (block.subtitle || '');
     var param = String(block.cfParam || '').trim();
     function seg(s){
-      var m = String(s || '').match(/(\\d+)\\s*:\\s*(\\d+)/);
+      var m = String(s || '').match(/(\d+)\s*:\s*(\d+)/);
       if(m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-      var n = String(s || '').match(/(\\d+)/);
+      var n = String(s || '').match(/(\d+)/);
       return n ? parseInt(n[1], 10) * 60 : 0;
     }
     var modo = '';
@@ -500,36 +500,36 @@
     if(!modo) return null;
     var c = { modo: modo };
     if(modo === 'amrap'){
-      var mA = txt.match(/amrap\\s*(?:de\\s*)?(\\d+)/i) || txt.match(/(\\d+)\\s*(?:min|minutos|')\\s*amrap/i);
+      var mA = txt.match(/amrap\s*(?:de\s*)?(\d+)/i) || txt.match(/(\d+)\s*(?:min|minutos|')\s*amrap/i);
       c.total = mA ? parseInt(mA[1], 10) : (param ? Math.round(seg(param) / 60) : minutosDe(block, lineas));
       if(!(c.total > 0)) c.total = 12;
     } else if(modo === 'emom'){
-      var mE = txt.match(/every\\s*(\\d+)\\s*:\\s*(\\d+)/i);
+      var mE = txt.match(/every\s*(\d+)\s*:\s*(\d+)/i);
       var inter = mE ? parseInt(mE[1], 10) * 60 + parseInt(mE[2], 10) : 0;
-      if(!inter){ var mE2 = txt.match(/every\\s*(\\d+(?:\\.\\d+)?)\\s*(?:min|minutos|')/i); if(mE2) inter = Math.round(parseFloat(mE2[1]) * 60); }
-      var mEn = txt.match(/\\be(\\d+)\\s*m?om\\b/i);          /* E2OM / E2MOM / E3MOM: el número es el intervalo en minutos */
+      if(!inter){ var mE2 = txt.match(/every\s*(\d+(?:\.\d+)?)\s*(?:min|minutos|')/i); if(mE2) inter = Math.round(parseFloat(mE2[1]) * 60); }
+      var mEn = txt.match(/\be(\d+)\s*m?om\b/i);          /* E2OM / E2MOM / E3MOM: el número es el intervalo en minutos */
       if(!inter && mEn) inter = parseInt(mEn[1], 10) * 60;
       if(!inter && param) inter = seg(param);
       /* "EMOM 16" con 16 cargado como parametro: es la duracion total, no un intervalo de 16 minutos */
       if(inter > 600 && /emom/i.test(txt)) inter = 60;
       if(!(inter >= 5)) inter = 60;
-      var mR = txt.match(/\\bx\\s*(\\d+)/i) || txt.match(/(\\d+)\\s*(?:sets?|rounds?|rondas?)\\b/i);
-      var mTot = txt.match(/emom\\s*(?:de\\s*)?(\\d+)/i), mTotE = mEn ? txt.match(/\\be\\d+\\s*m?om\\s*(?:de\\s*)?(\\d+)/i) : null;
+      var mR = txt.match(/\bx\s*(\d+)/i) || txt.match(/(\d+)\s*(?:sets?|rounds?|rondas?)\b/i);
+      var mTot = txt.match(/emom\s*(?:de\s*)?(\d+)/i), mTotE = mEn ? txt.match(/\be\d+\s*m?om\s*(?:de\s*)?(\d+)/i) : null;
       c.intervalo = inter;
-      var hayEvery = /\\bevery\\b/i.test(txt);
+      var hayEvery = /\bevery\b/i.test(txt);
       c.rondas = (!hayEvery && mTot) ? parseInt(mTot[1], 10) : mR ? parseInt(mR[1], 10)
         : Math.max(1, Math.round(((mTot ? parseInt(mTot[1], 10) : (minutosDe(block, lineas) || 12)) * 60) / inter));
       /* "E2MOM 16 min" = 16 minutos en total, no 16 rondas: 8 rondas de 2:00 */
-      if(mEn && mTotE && !/\\bx\\s*\\d/i.test(txt)) c.rondas = Math.max(1, Math.round(parseInt(mTotE[1], 10) * 60 / inter));
+      if(mEn && mTotE && !/\bx\s*\d/i.test(txt)) c.rondas = Math.max(1, Math.round(parseInt(mTotE[1], 10) * 60 / inter));
       /* DEATH BY: cada minuto suma una repetición hasta fallar; el reloj queda en intervalos de 1:00 (20 como tope, el alumno corta cuando falla) */
-      if(/death\\s*by/i.test(txt)){ c.intervalo = 60; c.rondas = 20; }
+      if(/death\s*by/i.test(txt)){ c.intervalo = 60; c.rondas = 20; }
     } else if(modo === 'fortime'){
       /* "Time Cap: 15:00", "cap 12", "cap de 20" y "Time cap - 9:30" (el ':' o el guion después de "cap" es el formato del botón Cap del Builder) */
-      var mC = txt.match(/cap\\s*(?:de\\s*)?[:\\-\\u2013]?\\s*(\\d+)(?:\\s*:\\s*(\\d+))?/i);
+      var mC = txt.match(/cap\s*(?:de\s*)?[:\-\u2013]?\s*(\d+)(?:\s*:\s*(\d+))?/i);
       c.cap = mC ? Math.round((parseInt(mC[1], 10) + (mC[2] ? parseInt(mC[2], 10) / 60 : 0)) * 10) / 10 : (param ? Math.round(seg(param) / 60) : 0);
     } else {
-      var mW = txt.match(/(\\d+)\\s*s?\\s*(?:on|work|trabajo)\\b/i), mRs = txt.match(/(\\d+)\\s*s?\\s*(?:off|rest|descanso)\\b/i);
-      var mRd = txt.match(/(\\d+)\\s*(?:rounds?|rondas?|sets?)\\b/i);
+      var mW = txt.match(/(\d+)\s*s?\s*(?:on|work|trabajo)\b/i), mRs = txt.match(/(\d+)\s*s?\s*(?:off|rest|descanso)\b/i);
+      var mRd = txt.match(/(\d+)\s*(?:rounds?|rondas?|sets?)\b/i);
       c.work = mW ? parseInt(mW[1], 10) : 20;
       c.rest = mRs ? parseInt(mRs[1], 10) : 10;
       c.rondas = mRd ? parseInt(mRd[1], 10) : 8;
@@ -538,17 +538,17 @@
   }
   window.jpWodTimerCfg = jpWodTimerCfg;
   function jpCfLimpiaPacing(h){
-    return String(h || '').replace(/(^|<br\\s*\\/?>)\\s*(?:[^A-Za-z0-9\\u00c0-\\u00ff<]{0,6}\\s*pacing(?:\\s+(?:general|sugerido))?\\s*:\\s*)+/gi, '$1').trim();
+    return String(h || '').replace(/(^|<br\s*\/?>)\s*(?:[^A-Za-z0-9\u00c0-\u00ff<]{0,6}\s*pacing(?:\s+(?:general|sugerido))?\s*:\s*)+/gi, '$1').trim();
   }
   function jpCfSubLabels(h){
-    return String(h || '').replace(/(^|<br\\s*\\/?>|\\s)((?:[-\\u2022*](?:\\s|<br\\s*\\/?>)*)?(?:[^A-Za-z0-9\\u00c0-\\u00ff<\\s\\-\\u2022*:]{1,6}(?:\\s|<br\\s*\\/?>)*)?)([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1 \\/\\-]{3,38}):\\s+/g, function(m, pre, ico, lb){
-      var ic = String(ico || '').replace(/<br\\s*\\/?>/gi, ' ').replace(/^[-\\u2022*]\\s*/, '').replace(/\\s+$/, '');
-      return '<span class="jp-cf-sub">' + (ic ? ic + ' ' : '') + lb.replace(/\\s+$/, '') + ':</span>';
+    return String(h || '').replace(/(^|<br\s*\/?>|\s)((?:[-\u2022*](?:\s|<br\s*\/?>)*)?(?:[^A-Za-z0-9\u00c0-\u00ff<\s\-\u2022*:]{1,6}(?:\s|<br\s*\/?>)*)?)([A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1 \/\-]{3,38}):\s+/g, function(m, pre, ico, lb){
+      var ic = String(ico || '').replace(/<br\s*\/?>/gi, ' ').replace(/^[-\u2022*]\s*/, '').replace(/\s+$/, '');
+      return '<span class="jp-cf-sub">' + (ic ? ic + ' ' : '') + lb.replace(/\s+$/, '') + ':</span>';
     }).replace(/^<span class="jp-cf-sub">/, '<span class="jp-cf-sub jp-cf-sub0">');
   }
-  function jpCfPlano(h){ return String(h || '').replace(/<br\\s*\\/?>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim(); }
+  function jpCfPlano(h){ return String(h || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(); }
   function jpCfParesCarga(txt){
-    var re = /(\\d+(?:[.,]\\d+)?)\\s*\\/\\s*(\\d+(?:[.,]\\d+)?)\\s*(kg|lb)/gi, out = [], seen = {}, m;
+    var re = /(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)\s*(kg|lb)/gi, out = [], seen = {}, m;
     while((m = re.exec(String(txt || '')))){ var k = m[1] + '/' + m[2] + ' ' + m[3].toLowerCase(); if(!seen[k]){ seen[k] = 1; out.push(k); } }
     return out;
   }
@@ -557,14 +557,14 @@
     var txt = lineas.join(' ') + ' ' + (block.title || ''), fmt = '', cap = '';
     function mm(sg){ sg = Math.round(sg); return Math.floor(sg / 60) + ':' + ('0' + (sg % 60)).slice(-2); }
     if(cfg.modo === 'amrap') fmt = 'AMRAP ' + cfg.total + ' MIN';
-    else if(cfg.modo === 'emom') fmt = /death\\s*by/i.test(txt) ? 'DEATH BY · CADA 1:00' : (cfg.intervalo === 60 ? 'EMOM ' + Math.round(cfg.rondas) + ' MIN' : 'EVERY ' + mm(cfg.intervalo) + ' × ' + cfg.rondas);
+    else if(cfg.modo === 'emom') fmt = /death\s*by/i.test(txt) ? 'DEATH BY · CADA 1:00' : (cfg.intervalo === 60 ? 'EMOM ' + Math.round(cfg.rondas) + ' MIN' : 'EVERY ' + mm(cfg.intervalo) + ' × ' + cfg.rondas);
     else if(cfg.modo === 'tabata') fmt = 'TABATA ' + cfg.rondas + ' RONDAS';
     else if(cfg.modo === 'fortime'){
-      var mR = txt.match(/(\\d+)\\s*(?:rounds?|rondas?)\\b/i), esq = txt.match(/\\b(\\d+(?:\\s*-\\s*\\d+){1,})\\b/);
+      var mR = txt.match(/(\d+)\s*(?:rounds?|rondas?)\b/i), esq = txt.match(/\b(\d+(?:\s*-\s*\d+){1,})\b/);
       if(/chipper/i.test(txt)) fmt = 'CHIPPER';
-      else if(/\\bladders?\\b/i.test(txt)) fmt = 'LADDER · FOR TIME';
+      else if(/\bladders?\b/i.test(txt)) fmt = 'LADDER · FOR TIME';
       else if(mR) fmt = mR[1] + ' RONDAS FOR TIME';
-      else if(esq) fmt = 'FOR TIME · ' + esq[1].replace(/\\s+/g, '');
+      else if(esq) fmt = 'FOR TIME · ' + esq[1].replace(/\s+/g, '');
       else fmt = 'FOR TIME';
       if(cfg.cap > 0) cap = 'TIME CAP: ' + cfg.cap + ' MIN';
     } else fmt = 'INTERVALOS';
@@ -577,10 +577,10 @@
     var chips = cargasN.length ? '<span class="jp-cf-chip"><b>' + lbN + '</b> ' + escSB(cargasN.join(' · ')) + '</span>' : '';
     /* etiquetas de dinámica: partners, relación de descanso e híbrido tipo Hyrox (se leen del propio texto del bloque, no se inventan) */
     var txtT = lineas.join(' ') + ' ' + (block.title || '') + ' ' + (block.subtitle || ''), tags = [];
-    if(/i\\s*go\\s*,?\\s*you\\s*go|\\bigyg\\b|yo\\s*voy\\s*,?\\s*vos\\s*vas/i.test(txtT)) tags.push('I GO · YOU GO');
+    if(/i\s*go\s*,?\s*you\s*go|\bigyg\b|yo\s*voy\s*,?\s*vos\s*vas/i.test(txtT)) tags.push('I GO · YOU GO');
     else if(/sincroniz|synchro/i.test(txtT)) tags.push('PARTNERS · SINCRONIZADO');
-    else if(/\\bpartners?\\b|en\\s*parejas|\\bpairs?\\b/i.test(txtT)) tags.push('PARTNERS');
-    var rrT = /rest\\s*(\\d)\\s*:\\s*(\\d)(?!\\d)/i.exec(txtT);
+    else if(/\bpartners?\b|en\s*parejas|\bpairs?\b/i.test(txtT)) tags.push('PARTNERS');
+    var rrT = /rest\s*(\d)\s*:\s*(\d)(?!\d)/i.exec(txtT);
     if(rrT) tags.push('DESCANSO ' + rrT[1] + ':' + rrT[2] + ' · TRABAJO:DESCANSO');
     var estT = ['hyrox', 'skierg', 'ski erg', 'sled', 'farmer', 'sandbag', 'wall ball', 'rowerg', 'burpee broad'].filter(function(k){ return txtT.toLowerCase().indexOf(k) >= 0; }).length;
     if(estT >= 2) tags.push('HYBRID · ESTACIONES');
@@ -595,9 +595,9 @@
      solo donde empieza cada "Min N:" y cada estacion se muestra COMPLETA en su propio renglon. La pildora superior lleva
      solo la estructura clave: [ EMOM 14 MIN | 4 INTERVALOS | REST PLANIFICADO ].
      ============================================================ */
-  var RX_CONT_SB = /\\b(?:emom|e\\d+mom|amrap|for\\s*time|min(?:ute|uto)?s?\\s*continu\\w*)\\b/i;
-  var RX_MIN_LINEA_SB = /^\\s*[-\\u2022*]?\\s*min(?:ute|uto)?s?\\s*\\d+/i;
-  var RX_MARCA_MIN_SB = /(?:^|[\\s\\/;.,])(?=min(?:ute|uto)?s?\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?\\s*[:.\\-\\u2013\\u2014)])/gi;
+  var RX_CONT_SB = /\b(?:emom|e\d+mom|amrap|for\s*time|min(?:ute|uto)?s?\s*continu\w*)\b/i;
+  var RX_MIN_LINEA_SB = /^\s*[-\u2022*]?\s*min(?:ute|uto)?s?\s*\d+/i;
+  var RX_MARCA_MIN_SB = /(?:^|[\s\/;.,])(?=min(?:ute|uto)?s?\s*\d+(?:\s*[-\u2013]\s*\d+)?\s*[:.\-\u2013\u2014)])/gi;
   function jpExplotarContinuo(lineas){
     var out = [];
     (lineas || []).forEach(function(l){
@@ -612,8 +612,8 @@
       cortes.forEach(function(c){ piezas.push(t.slice(ult, c)); ult = c; });
       piezas.push(t.slice(ult));
       piezas.forEach(function(p){
-        p.split(/\\.\\s+(?=repet\\w*\\b|repite\\b)/i).forEach(function(q){
-          q = q.replace(/[\\s\\/;,]+$/, '').trim();
+        p.split(/\.\s+(?=repet\w*\b|repite\b)/i).forEach(function(q){
+          q = q.replace(/[\s\/;,]+$/, '').trim();
           if(q) out.push(q);
         });
       });
@@ -624,7 +624,7 @@
     var ex = jpExplotarContinuo(lineas);
     var minL = ex.filter(function(l){ return RX_MIN_LINEA_SB.test(l); });
     /* relajado (Sports): un bloque de Metcon/cardio con AMRAP/EMOM/FOR TIME y SIN lineas de series "NxM" tambien es continuo aunque no traiga "Min N:" */
-    var contSinMin = !!relajado && /^(?:metcon|cardio|endurance)$/.test(String(block.category || '')) && !ex.some(function(l){ return /\\d+\\s*x\\s*\\d/i.test(l); });
+    var contSinMin = !!relajado && /^(?:metcon|cardio|endurance)$/.test(String(block.category || '')) && !ex.some(function(l){ return /\d+\s*x\s*\d/i.test(l); });
     if(minL.length < 2 && !contSinMin) return null;
     var iCab = -1;
     for(var i = 0; i < ex.length; i++){ if(RX_CONT_SB.test(ex[i]) && !RX_MIN_LINEA_SB.test(ex[i])){ iCab = i; break; } }
@@ -632,40 +632,40 @@
     var cab = cabTxt + ' ' + (block.title || '') + ' ' + (block.boardFmt || '');
     var mF = cab.match(RX_CONT_SB);
     if(!mF) return null;
-    var fmt = mF[0].toUpperCase().replace(/\\s+/g, ' ');
+    var fmt = mF[0].toUpperCase().replace(/\s+/g, ' ');
     if(/CONTINU/.test(fmt)) fmt = 'MIN CONTINUO';
-    var mins = 0, mM = cabTxt.match(/(?:emom|e\\d+mom|amrap)\\s*(?:de\\s*)?(\\d+)/i) || cabTxt.match(/(\\d+)\\s*(?:min\\w*|')/i);
+    var mins = 0, mM = cabTxt.match(/(?:emom|e\d+mom|amrap)\s*(?:de\s*)?(\d+)/i) || cabTxt.match(/(\d+)\s*(?:min\w*|')/i);
     if(mM && !/FOR TIME/.test(fmt)) mins = parseInt(mM[1], 10);
-    var cap = 0, mC = cab.match(/cap\\s*(?:de\\s*)?(\\d+)/i);
+    var cap = 0, mC = cab.match(/cap\s*(?:de\s*)?(\d+)/i);
     if(mC) cap = parseInt(mC[1], 10);
     var maxMin = 0;
-    minL.forEach(function(l){ var n = parseInt((l.match(/\\d+/) || [0])[0], 10); if(n > maxMin) maxMin = n; });
-    var mI = cab.match(/(\\d+)\\s*intervalos?/i);
+    minL.forEach(function(l){ var n = parseInt((l.match(/\d+/) || [0])[0], 10); if(n > maxMin) maxMin = n; });
+    var mI = cab.match(/(\d+)\s*intervalos?/i);
     var inter = mI ? parseInt(mI[1], 10) : maxMin;
-    var rest = /descanso|\\brest\\b/i.test(ex.join(' '));
+    var rest = /descanso|\brest\b/i.test(ex.join(' '));
     var detalle = ex.filter(function(l, k){ return k !== iCab; });
-    var resto = cabTxt.replace(RX_CONT_SB, ' ').replace(/\\d+\\s*(?:min\\w*|')/ig, ' ').replace(/\\(?\\s*\\d+\\s*intervalos?\\s*\\)?/ig, ' ').replace(/[:()\\-\\u2013\\u2014]/g, ' ').replace(/\\s+/g, ' ').trim();
+    var resto = cabTxt.replace(RX_CONT_SB, ' ').replace(/\d+\s*(?:min\w*|')/ig, ' ').replace(/\(?\s*\d+\s*intervalos?\s*\)?/ig, ' ').replace(/[:()\-\u2013\u2014]/g, ' ').replace(/\s+/g, ' ').trim();
     if(resto.length >= 6) detalle.unshift(resto);
     return { lineas: ex, fmt: fmt, mins: mins, cap: cap, inter: inter, rest: rest, detalle: detalle, etiqueta: fmt + (mins ? ' ' + mins + ' MIN' : '') };
   }
   function jpCfgContinuo(c){
     if(!c) return null;
-    if(/^E?\\d*MOM$|EMOM/.test(c.fmt)) return { modo: 'emom', intervalo: 60, rondas: c.mins || c.inter || 12 };
+    if(/^E?\d*MOM$|EMOM/.test(c.fmt)) return { modo: 'emom', intervalo: 60, rondas: c.mins || c.inter || 12 };
     if(/AMRAP/.test(c.fmt)) return { modo: 'amrap', total: c.mins || 12 };
     if(/FOR TIME/.test(c.fmt)) return { modo: 'fortime', cap: c.cap || 0 };
     return null;
   }
   function jpContinuoPillHtml(c){
-    var seg = ['<span class="jp-db-seg jp-db-vol">\\u23f1 ' + escSB(c.etiqueta) + '</span>'];
+    var seg = ['<span class="jp-db-seg jp-db-vol">\u23f1 ' + escSB(c.etiqueta) + '</span>'];
     if(c.inter) seg.push('<span class="jp-db-seg jp-db-tempo">' + c.inter + ' INTERVALOS</span>');
     if(c.rest) seg.push('<span class="jp-db-seg jp-db-rest">REST PLANIFICADO</span>');
     return '<div class="jp-dose-bar jp-cont-pill"><span class="jp-db-br">[</span>' + seg.join('<span class="jp-db-sep">|</span>') + '<span class="jp-db-br">]</span></div>';
   }
   function jpContinuoListaHtml(c){
     return '<ul class="jp-cont-lista">' + c.detalle.map(function(l){
-      var m = String(l).match(/^\\s*[-\\u2022*]?\\s*(min(?:ute|uto)?s?\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*[:.\\-\\u2013\\u2014)]*\\s*(.*)$/i);
+      var m = String(l).match(/^\s*[-\u2022*]?\s*(min(?:ute|uto)?s?\s*\d+(?:\s*[-\u2013]\s*\d+)?)\s*[:.\-\u2013\u2014)]*\s*(.*)$/i);
       return '<li>' + (m ? '<b>' + escSB(m[1].charAt(0).toUpperCase() + m[1].slice(1)) + ':</b> ' + escSB(m[2]) : escSB(l)) + '</li>';
-    }).join('\\n') + '</ul>';
+    }).join('\n') + '</ul>';
   }
   /* Sports: pildora + detalle completo + boton de timer + tarjeta de registro (carga usada, score/rondas, notas) */
   function jpContinuoSportsHtml(c, block, weekIdx, dayId){
@@ -675,7 +675,7 @@
     var nivel = (state.notes && state.notes[nk('nivel')]) || '';
     var tcfg = jpCfgContinuo(c);
     return jpContinuoPillHtml(c) + jpContinuoListaHtml(c) +
-      (tcfg ? '<button type="button" class="jp-cf-wodtimer jp-cont-timer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">\\u23f1 INICIAR TIMER ' + escSB(c.etiqueta) + '</button>' : '') +
+      (tcfg ? '<button type="button" class="jp-cf-wodtimer jp-cont-timer" data-wodcfg="' + encodeURIComponent(JSON.stringify(tcfg)) + '">\u23f1 INICIAR TIMER ' + escSB(c.etiqueta) + '</button>' : '') +
       '<div class="jp-cont-reg"><div class="jp-cont-reg-lb">[ REGISTRO DEL WOD ]</div>' +
         '<label class="jp-cont-f"><span>CARGA UTILIZADA</span><input type="text" class="jp-cont-in" data-nkey="' + nk('carga') + '" placeholder="Ej: KB 16 kg / 20 kg" value="' + val('carga') + '"></label>' +
         '<label class="jp-cont-f"><span>SCORE / RONDAS</span><input type="text" class="jp-cont-in" data-nkey="' + nk('score') + '" placeholder="Ej: 4 rondas + 6 reps" value="' + val('score') + '"></label>' +
@@ -700,12 +700,12 @@
     saveProgress();
   });
   function tituloBloqueHtmlSB(t){
-    var m = String(t || '').match(/^([^:]{3,45}):\\s*(\\S.*)$/);
+    var m = String(t || '').match(/^([^:]{3,45}):\s*(\S.*)$/);
     if(!m) return '<div class="jp-sb-title">' + escSB(t) + '</div>';
     return '<div class="jp-sb-title jp-sb-title-split"><span class="jp-sb-title-pre">' + escSB(m[1]) + ':</span> <span class="jp-sb-title-main">' + escSB(m[2]) + '</span></div>';
   }
   function rxIntervaloSB(en){
-    var nombres = String(en.titulo || '').split(/\\s*\\+\\s*/), reps = String(en.reps || '').split('+');
+    var nombres = String(en.titulo || '').split(/\s*\+\s*/), reps = String(en.reps || '').split('+');
     var txt = (en.reps && reps.length === nombres.length)
       ? nombres.map(function(n, i){ return reps[i] + ' ' + n; }).join(' + ')
       : ((en.reps ? en.reps + ' ' : '') + en.titulo);
@@ -724,15 +724,15 @@
   var QR_CFG = {};
   var QR_TEC_NOM = { myoreps: 'MYO-REPS', dropset: 'DROP-SET', restpause: 'REST-PAUSE' };
   function regLetra(c, i){
-    var x = c.ex[i], m = String(x.nombre || '').match(/^([A-Fa-f])(\\d{1,2})[.):\\-]\\s*/);
+    var x = c.ex[i], m = String(x.nombre || '').match(/^([A-Fa-f])(\d{1,2})[.):\-]\s*/);
     if(m) return m[1].toUpperCase() + m[2];
     if(x.grp){
       var idx = 0, k; for(k = 0; k < i; k++){ if(c.ex[k].grp === x.grp) idx++; }
-      return String.fromCharCode(65 + ((parseInt(String(x.grp).replace(/\\D/g, ''), 10) || 0) % 6)) + (idx + 1);
+      return String.fromCharCode(65 + ((parseInt(String(x.grp).replace(/\D/g, ''), 10) || 0) % 6)) + (idx + 1);
     }
     return 'E' + (i + 1);
   }
-  function regNombreCorto(n){ return String(n || '').replace(/^[A-Fa-f]\\d{1,2}[.):\\-]\\s*/, '').replace(/\\s*\\([^)]*\\)\\s*$/, '').trim(); }
+  function regNombreCorto(n){ return String(n || '').replace(/^[A-Fa-f]\d{1,2}[.):\-]\s*/, '').replace(/\s*\([^)]*\)\s*$/, '').trim(); }
   function regEtq(e, i){ return (e.et && e.et[i - 1]) ? String(e.et[i - 1]) : ''; }
   /* series a las que se aplica lo cargado: las marcadas "Top Set"; si no hay, el último tramo de una pirámide; si no, todas menos aclimatación */
   function regSetsTop(e){
@@ -766,7 +766,7 @@
   function qrTec(e){ return (e && QR_TEC_NOM[e.tec] && e.sets > 1) ? e.tec : ''; }
   function qrKey(cfg){ return cfg.w + '|' + cfg.d + '|' + cfg.b; }
   function qrNum(v){ var n = parseFloat(String(v).replace(',', '.')); return isFinite(n) ? n : 0; }
-  function qrRango(txt){ var m = /(\\d+)\\s*[-–]\\s*(\\d+)/.exec(String(txt || '')); return m ? { min: +m[1], max: +m[2] } : null; }
+  function qrRango(txt){ var m = /(\d+)\s*[-–]\s*(\d+)/.exec(String(txt || '')); return m ? { min: +m[1], max: +m[2] } : null; }
   function qrSetsBase(e){ return qrTec(e) ? e.sets - 1 : e.sets; }
   /* clave de la serie i (1..n) y de la serie con técnica: en los simples con Drop-Set / Myo-Reps las normales van desplazadas (e.ko) y la técnica en la posición 1 */
   function qrClave(c, e, i){ return getLoadKey(c.w, c.d, c.b, e.idx, i + (e.ko || 0)); }
@@ -802,7 +802,7 @@
       else if(ult && ult.kg != null && ult.kg !== ''){ f.kg = String(ult.kg); f.pre = true; }
       else if(prev && prev.kg){ f.kg = prev.kg; f.pre = true; }
       else if(e.carga){
-        var pm = String(e.carga).match(/^\\s*([0-9]+(?:[.,][0-9]+)?)\\s*(?:kgs?)?\\s*$/i);
+        var pm = String(e.carga).match(/^\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:kgs?)?\s*$/i);
         if(pm){ f.kg = pm[1].replace(',', '.'); f.pre = true; }
       }
     }
@@ -864,23 +864,23 @@
     return { ref: base ? base.replace(': ', ' · ') : '', saved: saved, tec: tec, nsMax: nsMax, ns: nsMax, nt: nt, nd: nd, filas: filas, fin: fin, quitable: quitable, sinKg: sinKg, modoR: modoR, hint: hint, kgPh: '—', rpPh: nr ? nr[0] : '—', baseOk: baseOk, finOk: finOk, todoOk: baseOk && finOk };
   }
   var QR_LBL = {};
-  function qrPlano(s){ return String(s || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\\s+/g, ' ').trim(); }
+  function qrPlano(s){ return String(s || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(); }
   function qrCorta(s, n){
     s = qrPlano(s); if(s.length <= n) return s;
     var cut = s.slice(0, n), sp = cut.lastIndexOf(' ');
-    return (sp > 40 ? cut.slice(0, sp) : cut).replace(/[,;:\\s]+$/, '') + '…';
+    return (sp > 40 ? cut.slice(0, sp) : cut).replace(/[,;:\s]+$/, '') + '…';
   }
   /* línea guía del panel: la pauta del coach para ESE ejercicio (cue eficiente) y, si no hay, la primera frase del objetivo del bloque */
   function qrGuia(c, e, i){
-    var tips = String(c.tp || '').split(/\\n+|<br\\s*\\/?>/i).map(qrPlano).filter(Boolean), L = regLetra(c, i), nom = regNombreCorto(e.nombre).toLowerCase(), hit = '', kind = 'PAUTA';
-    tips.some(function(l){ var mm = /^([A-F]\\d)\\s*·\\s*CUE EFICIENTE\\s*:\\s*(.+)$/i.exec(l); if(mm && mm[1].toUpperCase() === L){ hit = mm[2]; return true; } return false; });
+    var tips = String(c.tp || '').split(/\n+|<br\s*\/?>/i).map(qrPlano).filter(Boolean), L = regLetra(c, i), nom = regNombreCorto(e.nombre).toLowerCase(), hit = '', kind = 'PAUTA';
+    tips.some(function(l){ var mm = /^([A-F]\d)\s*·\s*CUE EFICIENTE\s*:\s*(.+)$/i.exec(l); if(mm && mm[1].toUpperCase() === L){ hit = mm[2]; return true; } return false; });
     if(!hit && nom) tips.some(function(l){
-      var mm = /^([^:]{3,60}):\\s*(.+)$/.exec(l), et = mm ? mm[1].toLowerCase() : '';
-      if(mm && !/^(set-up|cue eficiente|cuidado|tempo|ramp-up|nota|transici|progresi|[a-f]\\d\\s*·)/.test(et) && (et.indexOf(nom) >= 0 || nom.indexOf(et) >= 0)){ hit = mm[2]; return true; }
+      var mm = /^([^:]{3,60}):\s*(.+)$/.exec(l), et = mm ? mm[1].toLowerCase() : '';
+      if(mm && !/^(set-up|cue eficiente|cuidado|tempo|ramp-up|nota|transici|progresi|[a-f]\d\s*·)/.test(et) && (et.indexOf(nom) >= 0 || nom.indexOf(et) >= 0)){ hit = mm[2]; return true; }
       return false;
     });
-    if(!hit && c.ex.length === 1) tips.some(function(l){ var mm = /^CUE EFICIENTE\\s*:\\s*(.+)$/i.exec(l); if(mm){ hit = mm[1]; return true; } return false; });
-    if(!hit){ var o = qrPlano(c.obj); if(o){ hit = o.split(/[.:]\\s/)[0]; kind = 'OBJETIVO'; } }
+    if(!hit && c.ex.length === 1) tips.some(function(l){ var mm = /^CUE EFICIENTE\s*:\s*(.+)$/i.exec(l); if(mm){ hit = mm[1]; return true; } return false; });
+    if(!hit){ var o = qrPlano(c.obj); if(o){ hit = o.split(/[.:]\s/)[0]; kind = 'OBJETIVO'; } }
     return { k: kind, t: qrCorta(hit, 130) };
   }
   function qrCardHtml(c, e, i){
@@ -889,7 +889,7 @@
     var ulb = unidad === 'REPS' ? 'REPETICIONES' : (unidad === 'SEG' ? 'SEGUNDOS' : unidad), ual = unidad === 'REPS' ? 'repeticiones' : unidad.toLowerCase();
     var pres = [e.sets + ' × ' + (e.reps || (e.rp ? e.rp.join('+') : '')) + (e.u ? ' ' + e.u : ''), e.rir ? 'RIR ' + e.rir : '', e.carga ? '@ ' + e.carga : ''].filter(Boolean).join(' · ');
     /* la pastilla dice siempre de QUÉ ejercicio es: orden (01) o letra de la estación (A1/A2) + nombre + estado */
-    var letraE = regLetra(c, i), idE = (QR_LBL[k + '|' + i] || {}).id || (/^E\\d+$/.test(letraE) ? ('0' + (i + 1)).slice(-2) : letraE), nomE = regNombreCorto(e.nombre);
+    var letraE = regLetra(c, i), idE = (QR_LBL[k + '|' + i] || {}).id || (/^E\d+$/.test(letraE) ? ('0' + (i + 1)).slice(-2) : letraE), nomE = regNombreCorto(e.nombre);
     var guia = qrGuia(c, e, i);
     var tg = '<button type="button" class="jp-qc-tg" aria-expanded="false" aria-label="' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + ' del ejercicio ' + escSB(idE) + ', ' + escSB(nomE) + '">' +
       '<span class="jp-qc-tg-t"><span class="jp-qc-tg-l">' + (m.todoOk ? 'Carga registrada' : 'Registrar carga') + '</span><span class="jp-qc-tg-id">· ' + escSB(idE) + '</span><span class="jp-qc-chev" aria-hidden="true">▾</span></span>' +
@@ -1079,7 +1079,7 @@
   });
   document.addEventListener('input', function(ev){
     var t = ev.target; if(!t || !t.classList || !(t.classList.contains('jp-qc-kg') || t.classList.contains('jp-qc-rp'))) return;
-    var vq = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '').replace(/(\\..*)\\./g, '$1');
+    var vq = t.value.replace(/,/g, '.').replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
     if(vq !== t.value) t.value = vq;
     t.classList.remove('pre');
     var row = t.closest('.jp-qc-r');
@@ -1122,7 +1122,7 @@
   function jpCfFaseLabel(block){
     if(block.category === 'strength'){
       var t = (block.title || '') + ' ' + (block.subtitle || '') + ' ' + (block.items || []).slice(0, 3).join(' ');
-      if(/skill|t[eé]cnic|gymnastic|mechanic|kipping|handstand|muscle.?up|double.?under|efficiency|drill|progresi[oó]n/i.test(t) && !/heavy|pesad|\\b1\\s*rm\\b|\\b3\\s*rm\\b|build to|m[aá]x/i.test(t)) return 'SKILL / TÉCNICA';
+      if(/skill|t[eé]cnic|gymnastic|mechanic|kipping|handstand|muscle.?up|double.?under|efficiency|drill|progresi[oó]n/i.test(t) && !/heavy|pesad|\b1\s*rm\b|\b3\s*rm\b|build to|m[aá]x/i.test(t)) return 'SKILL / TÉCNICA';
     }
     /* accesorios: solo el bloque de cierre (estiramiento, respiracion, vuelta a la calma) es CASH OUT / COOL DOWN; el trabajo de volumen es ACCESSORY */
     if(block.category === 'accessory'){
@@ -1134,7 +1134,7 @@
   /* identidad visual táctica por fase (directiva): un glifo distinto por
      tipo de trabajo para que se reconozca de un vistazo, además del
      color de borde/tag ya diferenciado por CSS (.jp-cf-fase-*). */
-  var CF_FASE_ICON = { warmup:'\\ud83d\\udd25', strength:'\\ud83c\\udfcb\\ufe0f', metcon:'\\u26a1', cardio:'\\ud83c\\udfc3', accessory:'\\ud83e\\udde9', endurance:'\\ud83c\\udfc3' };
+  var CF_FASE_ICON = { warmup:'\ud83d\udd25', strength:'\ud83c\udfcb\ufe0f', metcon:'\u26a1', cardio:'\ud83c\udfc3', accessory:'\ud83e\udde9', endurance:'\ud83c\udfc3' };
   var CF_PARAM_PREFIX = { fortime:'Cap ', chipper:'Cap ', emom:'Cada ' };
   /* solo las fases de competencia/tiempo (WOD-Metcon, Hyrox Stations,
      2º Turno/Endurance) llevan campo de Score -- Warm-up, Skill/Strength y
@@ -1152,8 +1152,8 @@
      suelto, ya sin prescripción de carga) y movimiento real (reps+nombre con
      carga '@ 70kg', medida 'cm/m' o el separador estructurado 'Nombre — valor')
      -- sólo el movimiento real va en tarjeta modular con pastilla de carga. */
-  function jpMdBold(t){ return String(t || '').replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>'); }
-  function jpCfEsHeader(l){ return /^\\s*#+\\s*/.test(l) || /:\\s*$/.test(l.replace(/\\*\\*/g, '').trim()); }
+  function jpMdBold(t){ return String(t || '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'); }
+  function jpCfEsHeader(l){ return /^\s*#+\s*/.test(l) || /:\s*$/.test(l.replace(/\*\*/g, '').trim()); }
   /* directiva ("Rediseño y reubicación del texto colgado de Core") -- un
      header que declara el FORMATO del bloque ("5 Super Sets:", "Every
      4:00 x 4 Sets:", "3 Rondas:") es distinto de un header narrativo
@@ -1161,9 +1161,9 @@
      rondas y se renderiza como pastilla táctica propia (.cf-format-
      badge, naranja), nunca como el bloque de texto blanco genérico. */
   function jpCfEsFormatoHeader(l){
-    return /\\b(sets?|rounds?|rondas?)\\s*:\\s*$/i.test(String(l || '').replace(/\\*\\*/g, '').trim());
+    return /\b(sets?|rounds?|rondas?)\s*:\s*$/i.test(String(l || '').replace(/\*\*/g, '').trim());
   }
-  function jpCfTieneCarga(l){ return /@\\s*[\\d.]/.test(l) || /\\d[\\d.\\/]*\\s*(?:kg|kgs|lb|lbs|cm|m)\\b/i.test(l); }
+  function jpCfTieneCarga(l){ return /@\s*[\d.]/.test(l) || /\d[\d.\/]*\s*(?:kg|kgs|lb|lbs|cm|m)\b/i.test(l); }
   /* directiva ("Erradicar Óvalos y Textos Sueltos") -- una palabra de
      transición entre movimientos/series ("Then:", "Rest between sets")
      no es ni un header de protocolo ni una instrucción con badge propio
@@ -1171,11 +1171,11 @@
      matchea una de las frases de transición conocidas) y se renderiza
      como divisor (.jp-cf-divider), nunca como pastilla ni texto
      blanco suelto. */
-  var RX_CF_TRANSICION = /^(then|rest\\s*between\\s*(?:sets?|rounds?)|immediately\\s*after|straight\\s*into|no\\s*rest)\\s*:?\\s*$/i;
-  function jpCfEsTransicion(l){ return RX_CF_TRANSICION.test(String(l || '').replace(/\\*\\*/g, '').trim()); }
+  var RX_CF_TRANSICION = /^(then|rest\s*between\s*(?:sets?|rounds?)|immediately\s*after|straight\s*into|no\s*rest)\s*:?\s*$/i;
+  function jpCfEsTransicion(l){ return RX_CF_TRANSICION.test(String(l || '').replace(/\*\*/g, '').trim()); }
   /* esquema de reps puro (ej. "21-15-9", "5-5-5-5-5") -- pastilla táctica
      propia, no es ni encabezado ni movimiento con carga */
-  function jpCfEsEsquema(l){ return /^\\d+(?:\\s*[-–\\/]\\s*\\d+){1,}$/.test(l.trim()); }
+  function jpCfEsEsquema(l){ return /^\d+(?:\s*[-–\/]\s*\d+){1,}$/.test(l.trim()); }
   /* resalta el número/unidad inicial de una línea de movimiento (reps,
      calorías, minutos) en Cyan Táctico -- el resto del nombre del
      ejercicio queda en blanco nítido. Sólo reconoce unidades reales
@@ -1201,7 +1201,7 @@
      Hombre/Mujer con barra ("15/12 Cal row", "30/24 Cal Assault Bike",
      "21/15/9") como UNA sola entidad numérica -- antes la barra cortaba la
      cadena y el primer número quedaba solo en celeste. */
-  var JP_CF_UNIT_RX = /^(\\d+(?:[.,]\\d+)?(?:\\s*[-–\\/]\\s*\\d+(?:[.,]\\d+)?)*)\\s*(?:(kgs?|lbs?|cms?|kms?|mins?|minutos?|segs?|segundos?|secs?|cals?|calories|reps?|rondas?|rounds?|mts?|metros?|%|m)(?![a-zA-Z]))?\\s*(.*)$/i;
+  var JP_CF_UNIT_RX = /^(\d+(?:[.,]\d+)?(?:\s*[-–\/]\s*\d+(?:[.,]\d+)?)*)\s*(?:(kgs?|lbs?|cms?|kms?|mins?|minutos?|segs?|segundos?|secs?|cals?|calories|reps?|rondas?|rounds?|mts?|metros?|%|m)(?![a-zA-Z]))?\s*(.*)$/i;
   /* directiva ("Estandarización del número de reps y display") -- "Set 1:
      5 Strict press" no arrancaba con dígito (arranca con "Set"), así que
      JP_CF_UNIT_RX nunca lo tocaba: quedaba TODO en blanco plano, sin
@@ -1211,7 +1211,7 @@
      cualquier otra línea. */
   function jpCfHighlightNum(t){
     const raw = String(t || '');
-    const setM = raw.match(/^set\\s*(\\d+)\\s*:\\s*(.+)$/i);
+    const setM = raw.match(/^set\s*(\d+)\s*:\s*(.+)$/i);
     if(setM){
       return '<span class="jp-cf-set-pill">SET ' + setM[1] + '</span> ' + jpCfHighlightNum(setM[2]);
     }
@@ -1219,8 +1219,8 @@
     if(!m || !m[1]) return jpMdBold(raw);
     let num = m[1], unit = m[2] || '', rest = (m[3] || '').trim();
     /* "5x5 Back Squat", "4 x 8-10 Press": el esquema de series x repeticiones va junto, no "5 x5" */
-    const mx = !unit ? rest.match(/^[x×]\\s*(\\d+(?:\\s*[-–]\\s*\\d+)?)\\s*(.*)$/i) : null;
-    if(mx){ num = num + 'x' + mx[1].replace(/\\s+/g, ''); rest = (mx[2] || '').trim(); }
+    const mx = !unit ? rest.match(/^[x×]\s*(\d+(?:\s*[-–]\s*\d+)?)\s*(.*)$/i) : null;
+    if(mx){ num = num + 'x' + mx[1].replace(/\s+/g, ''); rest = (mx[2] || '').trim(); }
     return '<span class="jp-cf-num">' + num + (unit ? ' ' + unit : '') + '</span>' + (rest ? ' ' + jpMdBold(rest) : '');
   }
   /* título del bloque: color sólido titanio, una sola pieza -- el corte
@@ -1237,13 +1237,13 @@
   function jpCfSplit(l){
     const i = l.indexOf(' — ');
     if(i >= 0) return { nm: l.slice(0, i).trim(), val: l.slice(i + 3).trim() };
-    const m = l.match(/^(.*?)(@\\s*[^()]+(?:\\([^)]*\\))?)\\s*$/);
+    const m = l.match(/^(.*?)(@\s*[^()]+(?:\([^)]*\))?)\s*$/);
     if(m && m[1].trim()) return { nm: m[1].trim(), val: m[2].trim() };
     /* el número del valor puede ser un rango/dual completo ("Run 160-200m" ->
        "Run" + "160-200m"): antes el regex arrancaba en mitad del rango y
        partía "Run 160-" de un badge "200m". Exige un espacio antes del número. */
-    const m2 = l.match(/^(.*?)\\s+((?:\\d[\\d.,]*(?:\\s*[-–\\/]\\s*\\d[\\d.,]*)*)\\s*(?:kg|kgs|lb|lbs|cm|cms|m|km|kms|mts?|cal|cals)\\b.*)$/i);
-    if(m2 && m2[1].trim() && !/\\s\\/\\s|\\bmin(?:ute|uto)?s?\\s*\\d+\\s*[:.\\-]/i.test(m2[2])) return { nm: m2[1].trim(), val: m2[2].trim() };
+    const m2 = l.match(/^(.*?)\s+((?:\d[\d.,]*(?:\s*[-–\/]\s*\d[\d.,]*)*)\s*(?:kg|kgs|lb|lbs|cm|cms|m|km|kms|mts?|cal|cals)\b.*)$/i);
+    if(m2 && m2[1].trim() && !/\s\/\s|\bmin(?:ute|uto)?s?\s*\d+\s*[:.\-]/i.test(m2[2])) return { nm: m2[1].trim(), val: m2[2].trim() };
     return { nm: l, val: '' };
   }
   /* directiva ("normalización lingüística del motor de 1RM") --
@@ -1251,7 +1251,7 @@
      (ES/EN) palabra por palabra, para que "Back squats"/"Power
      snatches"/"Clean & Jerks"/"Deadlifts"/"Push presses" resuelvan la
      MISMA familia que su forma singular ("Back squats" sin lematizar
-     nunca matcheaba /\\bsquat\\b/ porque "squat" ahí no termina en un
+     nunca matcheaba /\bsquat\b/ porque "squat" ahí no termina en un
      límite de palabra -- le sigue la "s" del plural). No lematiza
      palabras de 3 letras o menos (evita romper "rdl", "oly", etc.) ni
      las que ya terminan en doble "s" tipo "press"/"cross" (esas son
@@ -1274,8 +1274,8 @@
   function jpLemaFrase(s){
     return String(s || '')
       .toLowerCase()
-      .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
-      .split(/\\s+/)
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .split(/\s+/)
       .map(jpLemaPalabra)
       .join(' ');
   }
@@ -1289,22 +1289,22 @@
   function jpBenchmarkMadre(nombre){
     const n = jpLemaFrase(nombre);
     /* sinónimos en español: la Bóveda de PRs reconoce el mismo benchmark */
-    if(/\\bsnatch\\b|\\barranque\\b/.test(n)) return 'Snatch';
-    if(/\\bsentadilla\\s*frontal\\b/.test(n)) return 'Front Squat';
-    if(/\\bpeso\\s*muerto\\b/.test(n)) return 'Deadlift';
-    if(/\\bpress\\s*(?:de\\s*)?banca\\b|\\bpress\\s*plano\\b/.test(n)) return 'Bench Press';
-    if(/\\bpress\\s*(?:militar|estricto)\\b|\\bshoulder\\s*press\\b|\\boverhead\\s*press\\b/.test(n)) return 'Strict Press';
-    if(/\\bcargada\\b/.test(n) && /\\benvion\\b/.test(n)) return 'Clean & Jerk';
-    if(/\\bcargada\\b/.test(n)) return 'Clean';
-    if(/\\benvion\\b/.test(n)) return 'Jerk';
-    if(/\\bclean\\b/.test(n) && /\\bjerk\\b/.test(n)) return 'Clean & Jerk';
-    if(/\\bclean\\b/.test(n)) return 'Clean';
-    if(/\\bjerk\\b/.test(n)) return 'Jerk';
-    if(/\\bfront\\s*squat\\b/.test(n)) return 'Front Squat';
-    if(/\\bback\\s*squat\\b|\\bsquat\\b/.test(n)) return 'Back Squat';
-    if(/\\bdeadlift\\b/.test(n)) return 'Deadlift';
-    if(/\\bbench\\b/.test(n)) return 'Bench Press';
-    if(/\\bstrict\\s*press\\b|\\bpress\\b/.test(n)) return 'Strict Press';
+    if(/\bsnatch\b|\barranque\b/.test(n)) return 'Snatch';
+    if(/\bsentadilla\s*frontal\b/.test(n)) return 'Front Squat';
+    if(/\bpeso\s*muerto\b/.test(n)) return 'Deadlift';
+    if(/\bpress\s*(?:de\s*)?banca\b|\bpress\s*plano\b/.test(n)) return 'Bench Press';
+    if(/\bpress\s*(?:militar|estricto)\b|\bshoulder\s*press\b|\boverhead\s*press\b/.test(n)) return 'Strict Press';
+    if(/\bcargada\b/.test(n) && /\benvion\b/.test(n)) return 'Clean & Jerk';
+    if(/\bcargada\b/.test(n)) return 'Clean';
+    if(/\benvion\b/.test(n)) return 'Jerk';
+    if(/\bclean\b/.test(n) && /\bjerk\b/.test(n)) return 'Clean & Jerk';
+    if(/\bclean\b/.test(n)) return 'Clean';
+    if(/\bjerk\b/.test(n)) return 'Jerk';
+    if(/\bfront\s*squat\b/.test(n)) return 'Front Squat';
+    if(/\bback\s*squat\b|\bsquat\b/.test(n)) return 'Back Squat';
+    if(/\bdeadlift\b/.test(n)) return 'Deadlift';
+    if(/\bbench\b/.test(n)) return 'Bench Press';
+    if(/\bstrict\s*press\b|\bpress\b/.test(n)) return 'Strict Press';
     return String(nombre || '').trim();
   }
   /* directiva -- "sin redondeos forzados": (1RM * %) / 100 exacto, sin
@@ -1329,29 +1329,29 @@
   /* unidad natural del movimiento: ergs = cal, traslados = mts, isometricos = seg; el resto reps */
   function unidadMatrizCF(nm){
     var n = String(nm || '').toLowerCase();
-    if(/\\b(?:row|rower|rowing|echo|assault|air bike|bike ?erg|ski ?erg)\\b/.test(n)) return 'cal';
-    if(/\\b(?:carry|carries|lunges?|zancadas?|shuttle|handstand walk|hs walk|bear crawl|run|sled|yoke)\\b/.test(n)) return 'mts';
-    if(/\\b(?:plank|plancha|l-?sit|hang|wall ?sit|hollow hold)\\b/.test(n)) return 'seg';
+    if(/\b(?:row|rower|rowing|echo|assault|air bike|bike ?erg|ski ?erg)\b/.test(n)) return 'cal';
+    if(/\b(?:carry|carries|lunges?|zancadas?|shuttle|handstand walk|hs walk|bear crawl|run|sled|yoke)\b/.test(n)) return 'mts';
+    if(/\b(?:plank|plancha|l-?sit|hang|wall ?sit|hollow hold)\b/.test(n)) return 'seg';
     return '';
   }
   function jpCfListaEjercicios(lineas){
     var L = (lineas || []).map(function(x){ return String(x == null ? '' : x).trim(); }).filter(Boolean);
     var global = 0;
-    L.forEach(function(l){ var m = l.match(/(\\d+)\\s*(?:sets?|series?|rondas?|vueltas?|rounds?)\\b/i); if(m && !global) global = parseInt(m[1], 10); });
+    L.forEach(function(l){ var m = l.match(/(\d+)\s*(?:sets?|series?|rondas?|vueltas?|rounds?)\b/i); if(m && !global) global = parseInt(m[1], 10); });
     var exs = [];
     L.forEach(function(l){
       if(!jpCfEsMovimiento(l) || jpCfEsTransicion(l) || RX_CF_OR.test(l)) return;
-      var mx = l.match(/(?:^|\\s)(\\d+)\\s*[x\\u00d7]\\s*\\d/i), ms = l.match(/(\\d+)\\s*(?:sets?|series?)\\b/i);
+      var mx = l.match(/(?:^|\s)(\d+)\s*[x\u00d7]\s*\d/i), ms = l.match(/(\d+)\s*(?:sets?|series?)\b/i);
       var sets = mx ? parseInt(mx[1], 10) : (ms ? parseInt(ms[1], 10) : global);
-      var nm = l.replace(/\\*\\*/g, '').replace(/@.*$/, '').replace(/^[A-F]\\d[.)]\\s*/i, '')
-        .replace(/\\b\\d+\\s*(?:sets?|series?|rondas?|rounds?)\\b\\s*[:x\\u00d7-]?/ig, ' ')
-        .replace(/\\b\\d+(?:\\s*[-\\u2013]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b/ig, ' ')
-        .replace(/(?:^|\\s)\\d+\\s*[x\\u00d7]\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?/ig, ' ')
-        .replace(/\\s*\\(.*$/, '').replace(/^[\\s:\\u00b7\\-\\u2013\\u2014]+|[\\s:\\u00b7\\-\\u2013\\u2014]+$/g, '').replace(/\\s{2,}/g, ' ').trim();
-      var um = l.match(/(?:\\d+\\s*[x\\u00d7]\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?|\\d+)\\s*(seg(?:undos?)?|min|mts?|metros?|cal(?:or[i\\u00ed]as?)?|s|m)\\b/i), und = '';
+      var nm = l.replace(/\*\*/g, '').replace(/@.*$/, '').replace(/^[A-F]\d[.)]\s*/i, '')
+        .replace(/\b\d+\s*(?:sets?|series?|rondas?|rounds?)\b\s*[:x\u00d7-]?/ig, ' ')
+        .replace(/\b\d+(?:\s*[-\u2013]\s*\d+)?\s*(?:reps?|repeticiones)\b/ig, ' ')
+        .replace(/(?:^|\s)\d+\s*[x\u00d7]\s*\d+(?:\s*[-\u2013]\s*\d+)?/ig, ' ')
+        .replace(/\s*\(.*$/, '').replace(/^[\s:\u00b7\-\u2013\u2014]+|[\s:\u00b7\-\u2013\u2014]+$/g, '').replace(/\s{2,}/g, ' ').trim();
+      var um = l.match(/(?:\d+\s*[x\u00d7]\s*\d+(?:\s*[-\u2013]\s*\d+)?|\d+)\s*(seg(?:undos?)?|min|mts?|metros?|cal(?:or[i\u00ed]as?)?|s|m)\b/i), und = '';
       if(um){ var uu = um[1].toLowerCase(); und = /^s/.test(uu) ? 'seg' : (/^min/.test(uu) ? 'min' : (/^cal/.test(uu) ? 'cal' : 'mts')); }
-      nm = nm.replace(/^(?:seg(?:undos?)?|min|mts?|metros?|cal(?:or[i\\u00ed]as?)?)\\b\\s*/i, '').trim();
-      if(!und && !/\\breps?\\b/i.test(l)) und = unidadMatrizCF(nm);
+      nm = nm.replace(/^(?:seg(?:undos?)?|min|mts?|metros?|cal(?:or[i\u00ed]as?)?)\b\s*/i, '').trim();
+      if(!und && !/\breps?\b/i.test(l)) und = unidadMatrizCF(nm);
       if(!nm || nm.length > 48 || !(sets > 0 && sets <= 10)) return;
       exs.push({ nombre: nm, sets: sets, unidad: und || 'reps' });
     });
@@ -1363,25 +1363,25 @@
     var out = { lineas: [], objetivo: '', tips: '', pacing: '', escalado: '' }, campo = '';
     (lineas || []).forEach(function(raw){
       var t = String(raw == null ? '' : raw).trim();
-      var m = t.match(/^[\\s*_>\\-\\u2013\\u2022\\u00b7]*\\[\\s*(objetivo[^\\]]*|estrategia[^\\]]*|pautas[^\\]]*|coaching[^\\]]*|tips?|pacing[^\\]]*|escalado[^\\]]*|rx\\s+alternativo)\\s*\\]\\s*:?\\s*(.*)$/i);
+      var m = t.match(/^[\s*_>\-\u2013\u2022\u00b7]*\[\s*(objetivo[^\]]*|estrategia[^\]]*|pautas[^\]]*|coaching[^\]]*|tips?|pacing[^\]]*|escalado[^\]]*|rx\s+alternativo)\s*\]\s*:?\s*(.*)$/i);
       if(m){
         var e = m[1].toLowerCase();
         campo = /objetivo/.test(e) ? 'objetivo' : (/pacing/.test(e) ? 'pacing' : (/escalado|rx/.test(e) ? 'escalado' : 'tips'));
-        if(m[2].trim()) out[campo] += (out[campo] ? '\\n' : '') + m[2].trim();
+        if(m[2].trim()) out[campo] += (out[campo] ? '\n' : '') + m[2].trim();
         return;
       }
-      var mi = t.match(/^[\\s*_>\\-\\u2013\\u2022\\u00b7]*(?:[^A-Za-z0-9\\u00c0-\\u00ff\\s\\[]{1,6}\\s*)?(estrategia(?:\\s+de\\s+progresi[o\\u00f3]n)?|progresi[o\\u00f3]n|pacing(?:\\s+(?:general|sugerido))?|coaching(?:\\s+tips?)?|tips?(?:\\s*\\/\\s*pautas)?|pautas?(?:\\s+t[e\\u00e9]cnicas?)?|gesti[o\\u00f3]n\\s+del\\s+tiempo(?:\\s*\\/\\s*transiciones)?|transiciones|foco(?:\\s+del\\s+(?:coach|bloque))?|criterio(?:\\s+del\\s+coach)?|cuidado|claves?|errores?\\s+comunes|objetivo)\\s*:\\s*(\\S.*)$/i);
+      var mi = t.match(/^[\s*_>\-\u2013\u2022\u00b7]*(?:[^A-Za-z0-9\u00c0-\u00ff\s\[]{1,6}\s*)?(estrategia(?:\s+de\s+progresi[o\u00f3]n)?|progresi[o\u00f3]n|pacing(?:\s+(?:general|sugerido))?|coaching(?:\s+tips?)?|tips?(?:\s*\/\s*pautas)?|pautas?(?:\s+t[e\u00e9]cnicas?)?|gesti[o\u00f3]n\s+del\s+tiempo(?:\s*\/\s*transiciones)?|transiciones|foco(?:\s+del\s+(?:coach|bloque))?|criterio(?:\s+del\s+coach)?|cuidado|claves?|errores?\s+comunes|objetivo)\s*:\s*(\S.*)$/i);
       if(mi){
         var ei = mi[1].toLowerCase(), ci = /objetivo/.test(ei) ? 'objetivo' : (/^pacing/.test(ei) ? 'pacing' : 'tips');
         var txi = mi[2].trim();
-        if(ci === 'tips' && /estrategia|progresi|gesti|transicion|cuidado|errores|claves?/.test(ei)) txi = mi[1].replace(/\\s+/g, ' ').toUpperCase() + ': ' + txi;
-        out[ci] += (out[ci] ? '\\n' : '') + txi;
+        if(ci === 'tips' && /estrategia|progresi|gesti|transicion|cuidado|errores|claves?/.test(ei)) txi = mi[1].replace(/\s+/g, ' ').toUpperCase() + ': ' + txi;
+        out[ci] += (out[ci] ? '\n' : '') + txi;
         campo = '';
         return;
       }
       if(campo){
-        if(/^\\s*(?:\\d|@|\\[)/.test(t)) campo = '';
-        else { out[campo] += (out[campo] ? '\\n' : '') + t; return; }
+        if(/^\s*(?:\d|@|\[)/.test(t)) campo = '';
+        else { out[campo] += (out[campo] ? '\n' : '') + t; return; }
       }
       out.lineas.push(raw);
     });
@@ -1390,9 +1390,9 @@
   function jpCfEsMovimiento(l){
     if(jpCfEsHeader(l)) return false;
     if(jpCfEsEsquema(l)) return false;
-    if(/^\\s*\\d+\\.\\s/.test(l) && l.indexOf(' — ') < 0 && !jpCfTieneCarga(l)) return false;
+    if(/^\s*\d+\.\s/.test(l) && l.indexOf(' — ') < 0 && !jpCfTieneCarga(l)) return false;
     if(esLineaDirectiva(l) && !jpCfTieneCarga(l)) return false;
-    if(/\\b(amrap|emom|rest|descanso)\\b/i.test(l) && !jpCfTieneCarga(l) && l.indexOf(' — ') < 0) return false;
+    if(/\b(amrap|emom|rest|descanso)\b/i.test(l) && !jpCfTieneCarga(l) && l.indexOf(' — ') < 0) return false;
     return true;
   }
   /* directiva ("Resuelve dinámicamente referencias de carga entre
@@ -1412,18 +1412,18 @@
   function jpCfResolverKgLinea(l){
     const partes = jpCfSplit(l);
     if(!partes.val) return null;
-    const pctMatch = partes.val.match(/^@\\s*(\\d{1,3}(?:[.,]\\d+)?)(?:\\s*[-–]\\s*(\\d{1,3}(?:[.,]\\d+)?))?\\s*%(?:\\s*1\\s*rm)?/i);
+    const pctMatch = partes.val.match(/^@\s*(\d{1,3}(?:[.,]\d+)?)(?:\s*[-–]\s*(\d{1,3}(?:[.,]\d+)?))?\s*%(?:\s*1\s*rm)?/i);
     if(pctMatch){
       const pctLo = parseFloat(pctMatch[1].replace(',', '.'));
       /* rango ("@ 70-80%"): para el tonelaje/cargas cruzadas se usa el punto medio */
       const pct = pctMatch[2] ? (pctLo + parseFloat(pctMatch[2].replace(',', '.'))) / 2 : pctLo;
-      const liftBase = partes.nm.replace(/^\\d+\\s*/, '') || partes.nm;
+      const liftBase = partes.nm.replace(/^\d+\s*/, '') || partes.nm;
       const benchmark = jpBenchmarkMadre(liftBase);
       const liftKey = nrmHist(benchmark);
       const propio = state.oneRM && state.oneRM[liftKey];
       return { kg: (propio > 0) ? parseFloat(jpKgExacto(propio, pct)) : null, benchmark: benchmark, liftKey: liftKey };
     }
-    const kgMatch = partes.val.match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
+    const kgMatch = partes.val.match(/(\d+(?:[.,]\d+)?)\s*kg/i);
     if(kgMatch) return { kg: parseFloat(kgMatch[1].replace(',', '.')), benchmark: null, liftKey: null };
     return null;
   }
@@ -1440,7 +1440,7 @@
   function jpCfCargaBloque(dayId, n){
     const day = (typeof DAYS !== 'undefined') ? DAYS.find(function(d){ return d.id === dayId; }) : null;
     if(!day || !day.blocks) return null;
-    const rxTitulo = new RegExp('\\\\b(?:bloque|block)\\\\s*' + n + '\\\\b', 'i');
+    const rxTitulo = new RegExp('\\b(?:bloque|block)\\s*' + n + '\\b', 'i');
     let block = day.blocks.find(function(b){ return b.title && rxTitulo.test(b.title); });
     if(!block) block = day.blocks[n - 1];
     if(!block || !block.items) return null;
@@ -1461,12 +1461,12 @@
      texto plano, nunca un botón que no sabría cuánto contar. */
   function jpCfParsearDescanso(l){
     const t = String(l || '');
-    if(!/\\brest\\b|\\bdescanso\\b/i.test(t)) return null;
-    let m = t.match(/(\\d{1,2}):(\\d{2})/);
+    if(!/\brest\b|\bdescanso\b/i.test(t)) return null;
+    let m = t.match(/(\d{1,2}):(\d{2})/);
     if(m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-    m = t.match(/(\\d+(?:[.,]\\d+)?)\\s*(?:seg|segundos?|s)\\b/i);
+    m = t.match(/(\d+(?:[.,]\d+)?)\s*(?:seg|segundos?|s)\b/i);
     if(m) return Math.round(parseFloat(m[1].replace(',', '.')));
-    m = t.match(/(\\d+(?:[.,]\\d+)?)\\s*(?:min|minutos?)\\b/i);
+    m = t.match(/(\d+(?:[.,]\d+)?)\s*(?:min|minutos?)\b/i);
     if(m) return Math.round(parseFloat(m[1].replace(',', '.')) * 60);
     return null;
   }
@@ -1544,24 +1544,24 @@
      descansos fijos con el running clock.
   ========================================================= */
   var jpCfIntervaloCtx = false;
-  var RX_CF_NOTA_INI = /^\\s*(?:[-•*]\\s*)?(?:esquema\\s+de\\s+cargas?|opci[oó]n(?:es)?\\b|escalad[oa]s?\\b|scaled?\\b|scaling\\b|rx\\+?\\s*:|intermedi[oa]\\b|nota\\b|note\\b)/i;
+  var RX_CF_NOTA_INI = /^\s*(?:[-•*]\s*)?(?:esquema\s+de\s+cargas?|opci[oó]n(?:es)?\b|escalad[oa]s?\b|scaled?\b|scaling\b|rx\+?\s*:|intermedi[oa]\b|nota\b|note\b)/i;
   function jpCfEsNotaInicio(l){
-    var t = String(l || '').replace(/\\*\\*/g, '').trim();
+    var t = String(l || '').replace(/\*\*/g, '').trim();
     if(RX_CF_NOTA_INI.test(t)) return true;
     var arrobas = (t.match(/@/g) || []).length;
-    if(/\\b(?:rounds?|rondas?)\\s*\\d+(?:\\s*[-–]\\s*\\d+)?\\s*:/i.test(t) && arrobas >= 1) return true;
-    return arrobas >= 2 && t.length > 50 && !/^\\d/.test(t);
+    if(/\b(?:rounds?|rondas?)\s*\d+(?:\s*[-–]\s*\d+)?\s*:/i.test(t) && arrobas >= 1) return true;
+    return arrobas >= 2 && t.length > 50 && !/^\d/.test(t);
   }
   function jpCfEsNotaCont(l){
     var t = String(l || '').trim();
     if(!t) return false;
     if(RX_CF_NOTA_INI.test(t) || RX_CF_OR.test(t)) return false;
-    return /^(?:[-•*]|\\(|rounds?\\b|rondas?\\b|r\\d\\b|round\\s*\\d|\\d+\\s*[-–]\\s*\\d+\\s*:)/i.test(t) ||
-           /^[a-záéíóúñ]/.test(t) || (/@/.test(t) && !/^\\d/.test(t));
+    return /^(?:[-•*]|\(|rounds?\b|rondas?\b|r\d\b|round\s*\d|\d+\s*[-–]\s*\d+\s*:)/i.test(t) ||
+           /^[a-záéíóúñ]/.test(t) || (/@/.test(t) && !/^\d/.test(t));
   }
   function jpCfMicroRest(s){
-    var t = String(s || '').replace(/\\*\\*/g, '').trim();
-    if(!/^(?:rest|descanso)\\b/i.test(t) || t.length > 24) return 0;
+    var t = String(s || '').replace(/\*\*/g, '').trim();
+    if(!/^(?:rest|descanso)\b/i.test(t) || t.length > 24) return 0;
     var seg = jpCfParsearDescanso(t);
     return (seg > 0 && seg < 30) ? seg : 0;
   }
@@ -1570,10 +1570,10 @@
      movimiento en notación estándar ("10-9-8-7-6-5-4-3-2-1 Burpees") */
   function jpCfDetectarEscalera(L, i){
     function parse(s){
-      var m = String(s || '').match(/^\\s*(\\d+)\\s+(?!x\\b)(.+)$/i);
+      var m = String(s || '').match(/^\s*(\d+)\s+(?!x\b)(.+)$/i);
       if(!m) return null;
       var resto = m[2].trim();
-      return { n: parseInt(m[1], 10), resto: resto, base: resto.split(/\\s+(?:@|—|-)\\s*/)[0].toLowerCase().replace(/\\s+/g, ' ') };
+      return { n: parseInt(m[1], 10), resto: resto, base: resto.split(/\s+(?:@|—|-)\s*/)[0].toLowerCase().replace(/\s+/g, ' ') };
     }
     for(var p = 1; p <= 3; p++){
       var cab = [];
@@ -1601,31 +1601,31 @@
     }
     return null;
   }
-  var RX_CF_OR = /^[\\s\\-–—*_]*(?:or|o|ó|o\\s+bien)[\\s\\-–—*_]*$/i;
+  var RX_CF_OR = /^[\s\-–—*_]*(?:or|o|ó|o\s+bien)[\s\-–—*_]*$/i;
   /* tarjeta de nota táctica: las plecas "|" se desglosan en una lista con
      sangría (Rounds 1–2 / 3–4 / 5+), la directiva final lleva flecha sutil (↳)
      y las opciones intermedias/escaladas van con borde cian tenue (jerarquía
      secundaria, distinta del borde ámbar del esquema RX) */
   function jpCfNotaHtml(grupo){
-    var alt = /^\\s*(?:[-•*]\\s*)?(?:opci[oó]n|escalad|scaled?|scaling|intermedi)/i.test(String(grupo[0]).replace(/\\*\\*/g, ''));
+    var alt = /^\s*(?:[-•*]\s*)?(?:opci[oó]n|escalad|scaled?|scaling|intermedi)/i.test(String(grupo[0]).replace(/\*\*/g, ''));
     var toks = [];
     grupo.forEach(function(l){ String(l).split('|').forEach(function(p){ p = p.trim(); if(p) toks.push(p); }); });
     if(!toks.length) return '';
     var titulo = '';
-    var m0 = toks[0].match(/^(.*?)\\s*\\(\\s*(.*)$/);
+    var m0 = toks[0].match(/^(.*?)\s*\(\s*(.*)$/);
     if(m0 && m0[1]){ titulo = m0[1]; toks[0] = m0[2]; }
     else {
-      var mc = toks[0].match(/^([^:]{2,40}):\\s*(.+)$/);
-      if(mc && !/^(?:rounds?|rondas?|r\\d)/i.test(toks[0])){ titulo = mc[1]; toks[0] = mc[2]; }
+      var mc = toks[0].match(/^([^:]{2,40}):\s*(.+)$/);
+      if(mc && !/^(?:rounds?|rondas?|r\d)/i.test(toks[0])){ titulo = mc[1]; toks[0] = mc[2]; }
     }
-    toks[toks.length - 1] = toks[toks.length - 1].replace(/\\)\\s*$/, '');
+    toks[toks.length - 1] = toks[toks.length - 1].replace(/\)\s*$/, '');
     toks = toks.filter(Boolean);
     var fmt = function(t){
       return jpMdBold(String(t)
-        .replace(/(rounds?|rondas?)\\s*(\\d+)\\s*-\\s*(\\d+)/ig, '$1 $2–$3')
-        .replace(/(\\d)(kg|lbs?)\\b/ig, '$1 $2'));
+        .replace(/(rounds?|rondas?)\s*(\d+)\s*-\s*(\d+)/ig, '$1 $2–$3')
+        .replace(/(\d)(kg|lbs?)\b/ig, '$1 $2'));
     };
-    var esRound = function(t){ return /^(?:rounds?|rondas?|r\\d)/i.test(t); };
+    var esRound = function(t){ return /^(?:rounds?|rondas?|r\d)/i.test(t); };
     var lead = [], items = [], notas = [];
     toks.forEach(function(t){
       if(esRound(t)) items.push(t);
@@ -1649,7 +1649,7 @@
         var j = i, grupo = [], prof = 0;
         do {
           var cur = L[j]; grupo.push(cur);
-          prof += (cur.match(/\\(/g) || []).length - (cur.match(/\\)/g) || []).length;
+          prof += (cur.match(/\(/g) || []).length - (cur.match(/\)/g) || []).length;
           j++;
         } while(j < L.length && grupo.length < 8 && (prof > 0 || jpCfEsNotaCont(L[j])));
         out.push(jpCfNotaHtml(grupo));
@@ -1675,13 +1675,13 @@
      dentro de un bloque gobernado por un running clock (Every X:XX) es una
      línea de cierre tenue (itálica), nunca un botón huérfano. */
   function jpCfRestFila(l){
-    var t = String(l || '').replace(/\\*\\*/g, '').trim();
-    var esRest = /^\\s*(?:rest|descanso)\\b/i.test(t);
+    var t = String(l || '').replace(/\*\*/g, '').trim();
+    var esRest = /^\s*(?:rest|descanso)\b/i.test(t);
     var seg = jpCfParsearDescanso(l);
     if(esRest && (seg == null || jpCfIntervaloCtx)){
       /* micro-barra técnica con icono, gris acero: "⏱️ Rest: tiempo restante hasta completar el intervalo" */
-      var resto = t.replace(/^\\s*(?:rest|descanso)\\b\\s*:?\\s*/i, '').trim();
-      var txt = (!resto || /tiempo\\s+restante|remaining|time\\s+left/i.test(resto))
+      var resto = t.replace(/^\s*(?:rest|descanso)\b\s*:?\s*/i, '').trim();
+      var txt = (!resto || /tiempo\s+restante|remaining|time\s+left/i.test(resto))
         ? 'Rest: tiempo restante hasta completar el intervalo'
         : 'Rest: ' + resto;
       return '<div class="jp-cf-row jp-cf-closing jp-cf-restbar"><span>' + jpMdBold(txt) + '</span></div>';
@@ -1690,9 +1690,9 @@
   }
   /* "20s on / 40s off" (y variantes work/rest): estructura de intervalos en un
      solo chip -- el trabajo activo nunca se pierde detrás de un botón de rest */
-  var RX_CF_ONOFF = /(\\d+(?:[.,]\\d+)?)\\s*(s|sec|secs|seg|segs|min|mins)?\\s*(?:on|work|trabajo)\\b\\s*[\\/\\-–,;·|+&]*\\s*(\\d+(?:[.,]\\d+)?)\\s*(s|sec|secs|seg|segs|min|mins)?\\s*(?:off|rest|descanso)\\b/i;
+  var RX_CF_ONOFF = /(\d+(?:[.,]\d+)?)\s*(s|sec|secs|seg|segs|min|mins)?\s*(?:on|work|trabajo)\b\s*[\/\-–,;·|+&]*\s*(\d+(?:[.,]\d+)?)\s*(s|sec|secs|seg|segs|min|mins)?\s*(?:off|rest|descanso)\b/i;
   /* calificadores de lado: "(Right)"/"(Left)" se quedan pegados al nombre */
-  var RX_CF_LADO = /\\s*\\((right|left|derecha?|izquierd[ao]|der|izq|each|each side|per side|por lado|c\\/u)\\)/i;
+  var RX_CF_LADO = /\s*\((right|left|derecha?|izquierd[ao]|der|izq|each|each side|per side|por lado|c\/u)\)/i;
   function jpCfFila(raw, dayId, extra){
     /* directiva ("Alineación Táctica en Movilidad y Cooldown") -- una
        viñeta manual tipeada por el coach ("✦ Foam roll — 2 min") queda
@@ -1700,19 +1700,19 @@
        recorta acá, ANTES de cualquier clasificación, así la fila usa
        siempre la sangría/alineación uniforme que ya da .jp-cf-row (flex),
        nunca el carácter crudo del coach. */
-    let l = String(raw || '').trim().replace(/^[\\u2726\\u2022\\u2023\\u25aa\\u00b7\\u2043]\\s*/, '');
+    let l = String(raw || '').trim().replace(/^[\u2726\u2022\u2023\u25aa\u00b7\u2043]\s*/, '');
     if(RX_CF_OR.test(l)){
       return '<div class="jp-cf-or"><span>&mdash; O BIEN &mdash;</span></div>';
     }
     if(jpCfEsTransicion(l)){
-      return '<div class="jp-cf-divider"><span>' + l.replace(/:\\s*$/, '').toUpperCase() + '</span></div>';
+      return '<div class="jp-cf-divider"><span>' + l.replace(/:\s*$/, '').toUpperCase() + '</span></div>';
     }
     if(jpCfEsHeader(l)){
-      const txt = l.replace(/^\\s*#+\\s*/, '');
+      const txt = l.replace(/^\s*#+\s*/, '');
       if(jpCfEsFormatoHeader(txt)){
         /* directiva ("Erradicación de Óvalos") -- nunca ":" colgado al
            final del chip: "⚡ 5 SETS", jamás "⚡ 5 SETS:". */
-        return '<div class="cf-format-badge">\\u26a1 ' + jpMdBold(txt).replace(/:\\s*$/, '') + '</div>';
+        return '<div class="cf-format-badge">\u26a1 ' + jpMdBold(txt).replace(/:\s*$/, '') + '</div>';
       }
       return '<div class="jp-cf-row jp-cf-header">' + jpMdBold(txt) + '</div>';
     }
@@ -1722,11 +1722,11 @@
     const mOnOff = l.match(RX_CF_ONOFF);
     if(mOnOff){
       const uni = function(u){ return /^min/i.test(u || '') ? 'min' : 's'; };
-      const resto = l.replace(mOnOff[0], ' ').replace(/^[\\s\\-–—:·|,;]+|[\\s\\-–—:·|,;]+$/g, '').trim();
+      const resto = l.replace(mOnOff[0], ' ').replace(/^[\s\-–—:·|,;]+|[\s\-–—:·|,;]+$/g, '').trim();
       return '<div class="jp-cf-row jp-cf-interval"><span class="jp-cf-rn">' + (resto ? jpCfHighlightNum(resto) : 'Intervalos') + '</span>' +
         '<span class="jp-cf-rv"><span class="jp-cf-time">' + mOnOff[1] + uni(mOnOff[2]) + ' ON &middot; ' + mOnOff[3] + uni(mOnOff[4]) + ' OFF</span></span></div>';
     }
-    if(/^\\s*\\d+\\.\\s/.test(l) && l.indexOf(' — ') < 0 && !jpCfTieneCarga(l)){
+    if(/^\s*\d+\.\s/.test(l) && l.indexOf(' — ') < 0 && !jpCfTieneCarga(l)){
       return '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     if(esLineaDirectiva(l) && !jpCfTieneCarga(l)){
@@ -1735,12 +1735,12 @@
     /* objetivo/transición de intervalo suelto (ej: "90 Seg AMRAP") -- lleva
        AMRAP/EMOM/rest en el cuerpo (no sólo al inicio, por eso esLineaDirectiva
        no lo agarra) pero no prescribe carga ni movimiento puntual */
-    if(/\\b(amrap|emom|rest|descanso)\\b/i.test(l) && !jpCfTieneCarga(l) && l.indexOf(' — ') < 0){
+    if(/\b(amrap|emom|rest|descanso)\b/i.test(l) && !jpCfTieneCarga(l) && l.indexOf(' — ') < 0){
       return jpCfRestFila(l) || '<div class="jp-cf-row jp-cf-badge">' + jpMdBold(l) + '</div>';
     }
     let lado = '';
     const mLado = l.match(RX_CF_LADO);
-    if(mLado){ lado = mLado[1]; l = l.replace(RX_CF_LADO, ' ').replace(/\\s{2,}/g, ' ').trim(); }
+    if(mLado){ lado = mLado[1]; l = l.replace(RX_CF_LADO, ' ').replace(/\s{2,}/g, ' ').trim(); }
     const partes = jpCfSplit(l);
     /* directiva ("Resolución activa de % 1RM a Kilogramos"): "@ 76%" (con
        o sin el "(~XX kg)" que compile() ya haya resuelto con la marca
@@ -1759,8 +1759,8 @@
        (c) el bloque no existe o no tiene ninguna carga referenciable ->
        span neutro "@ -- kg". Nunca el mensaje de depuración "sin
        resolver" que veía el alumno antes. */
-    const refBloqueMatch = partes.val && partes.val.match(/^@\\s*carga\\s*(?:del\\s*)?bloque\\s*(\\d+)/i);
-    const pctMatch = partes.val && partes.val.match(/^@\\s*(\\d{1,3}(?:[.,]\\d+)?)(?:\\s*[-–]\\s*(\\d{1,3}(?:[.,]\\d+)?))?\\s*%(?:\\s*1\\s*rm)?/i);
+    const refBloqueMatch = partes.val && partes.val.match(/^@\s*carga\s*(?:del\s*)?bloque\s*(\d+)/i);
+    const pctMatch = partes.val && partes.val.match(/^@\s*(\d{1,3}(?:[.,]\d+)?)(?:\s*[-–]\s*(\d{1,3}(?:[.,]\d+)?))?\s*%(?:\s*1\s*rm)?/i);
     let valHtml = jpMdBold(partes.val);
     /* directiva ("Separación de Metadatos") -- una línea con DOS o más
        etiquetas "@" (ej. "@ 45/30kg @ 60s") no es un único valor: es
@@ -1771,10 +1771,10 @@
     const multiAtMatch = partes.val && (partes.val.match(/@/g) || []).length >= 2;
     if(multiAtMatch){
       valHtml = partes.val.split(/(?=@)/).map(function(seg){
-        seg = seg.trim().replace(/^@\\s*/, '');
+        seg = seg.trim().replace(/^@\s*/, '');
         if(!seg) return '';
-        if(/^\\d+\\s*(?:seg|segundos|s|sec|min|minutos)\\b/i.test(seg) || /^\\u23f1/.test(seg)){
-          return '<span class="jp-cf-time">' + jpMdBold(seg.replace(/^\\u23f1\\ufe0f?\\s*/, '')) + '</span>';
+        if(/^\d+\s*(?:seg|segundos|s|sec|min|minutos)\b/i.test(seg) || /^\u23f1/.test(seg)){
+          return '<span class="jp-cf-time">' + jpMdBold(seg.replace(/^\u23f1\ufe0f?\s*/, '')) + '</span>';
         }
         return '<span class="jp-cf-load">' + jpMdBold(seg) + '</span>';
       }).join(' ');
@@ -1791,13 +1791,13 @@
     } else if(pctMatch){
       const pct = parseFloat(pctMatch[1].replace(',', '.'));
       const pctHi = pctMatch[2] ? parseFloat(pctMatch[2].replace(',', '.')) : null;
-      const con1RM = /1\\s*rm/i.test(pctMatch[0]);
+      const con1RM = /1\s*rm/i.test(pctMatch[0]);
       /* directiva -- la clave del 1RM no puede incluir el conteo de reps
          de ESA serie puntual ("5 Back squat" vs "3 Back squat"): son el
          mismo levantamiento, un solo 1RM cargado por el atleta tiene que
          aplicar a TODAS las filas del bloque que lo usan, no sólo a la
          que tocó primero. */
-      const liftBase = partes.nm.replace(/^\\d+\\s*/, '') || partes.nm;
+      const liftBase = partes.nm.replace(/^\d+\s*/, '') || partes.nm;
       /* directiva ("Motor de 1RM exacto") -- la clave y el nombre que ve
          el atleta en el modal son el benchmark madre (Snatch/Clean &
          Jerk/Back Squat/Deadlift/...), no el texto literal del complejo:
@@ -1817,14 +1817,14 @@
         kgTxt = resto ? ' ' + resto : '';
       }
       valHtml = '<button type="button" class="jp-cf-pct" data-pct-lift="' + benchmark.replace(/"/g,'') + '" data-pct-key="' + liftKey + '">@ ' + (pctHi != null ? pct + '-' + pctHi : pct) + '%' + (con1RM ? ' 1RM' : '') + kgTxt + '</button>';
-    } else if(partes.val && /^@?\\s*[\\d.]+(?:\\s*\\/\\s*[\\d.]+)?\\s*(?:kg|kgs|lbs?)\\b/i.test(partes.val)){
+    } else if(partes.val && /^@?\s*[\d.]+(?:\s*\/\s*[\d.]+)?\s*(?:kg|kgs|lbs?)\b/i.test(partes.val)){
       /* directiva ("Integración del Amarillo Oro de Branding") -- carga
          literal en kg/lb ("@ 43/29kg", "42.5/30kg") sin porcentaje ni
          referencia cruzada: mismo tratamiento visual de pastilla que
          .jp-cf-pct/.jp-cf-refload (ver CSS .jp-cf-load), pero como texto
          plano (no hay 1RM ni bloque que resolver, ya es un valor final). */
       valHtml = '<span class="jp-cf-load">' + jpMdBold(partes.val) + '</span>';
-    } else if(partes.val && /^@?\\s*rpe\\s*\\d+(?:\\.\\d+)?/i.test(partes.val)){
+    } else if(partes.val && /^@?\s*rpe\s*\d+(?:\.\d+)?/i.test(partes.val)){
       /* directiva ("Regex de Oro: cargas reales únicamente") -- "@ RPE 8"
          es una carga de esfuerzo real (igual que un %/kg), va en oro --
          nunca el texto descriptivo genérico de abajo (dimensiones,
@@ -1832,15 +1832,15 @@
          suave"), que ahora queda neutro por default en .jp-cf-rv (ver
          CSS, ya no es oro por defecto). */
       valHtml = '<span class="jp-cf-load">' + jpMdBold(partes.val) + '</span>';
-    } else if(partes.val && /^@?\\s*\\d+\\s*(?:min|minutos?|s|sec|seg|segundos?)\\s*$/i.test(partes.val)){
+    } else if(partes.val && /^@?\s*\d+\s*(?:min|minutos?|s|sec|seg|segundos?)\s*$/i.test(partes.val)){
       /* directiva ("Alineación Táctica en Movilidad y Cooldown") -- un
          tiempo prescrito suelto ("— 2 min", "— 60 s", típico de Warm-up/
          Cooldown) se extrae a su propia pastilla de tiempo a la derecha,
          mismo tratamiento visual que .jp-cf-time del split de "@ ... @
          ..." de arriba -- nunca texto plano gris sin jerarquía. */
-      valHtml = '<span class="jp-cf-time">' + jpMdBold(partes.val.replace(/^@\\s*/, '')) + '</span>';
-    } else if(partes.val && partes.val.length <= 48 && /^\\[.*\\]$|^[~(]|\\d/.test(partes.val) &&
-              !/^[\\d.,]+(?:\\s*[-–\\/]\\s*[\\d.,]+)*\\s*(?:m|km|mts?|cm|kg|cal|cals)$/i.test(partes.val)){
+      valHtml = '<span class="jp-cf-time">' + jpMdBold(partes.val.replace(/^@\s*/, '')) + '</span>';
+    } else if(partes.val && partes.val.length <= 48 && /^\[.*\]$|^[~(]|\d/.test(partes.val) &&
+              !/^[\d.,]+(?:\s*[-–\/]\s*[\d.,]+)*\s*(?:m|km|mts?|cm|kg|cal|cals)$/i.test(partes.val)){
       /* nota auxiliar corta ("[ 5cm déficit ]", "~30% Back Squat"): píldora de
          carbón sólido con texto ámbar técnico, nunca un borde de alerta */
       valHtml = '<span class="jp-cf-nota-chip">' + jpMdBold(partes.val) + '</span>';
@@ -1848,14 +1848,14 @@
     /* micro-pausa fusionada: "Dead hang @ 10s" + "Rest 10s" -> "10s hold · 10s rest" */
     const micro = extra && extra.microRest;
     if(micro){
-      const mt = partes.val && partes.val.match(/^@?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:s|seg|sec|segundos?)$/i);
+      const mt = partes.val && partes.val.match(/^@?\s*(\d+(?:[.,]\d+)?)\s*(?:s|seg|sec|segundos?)$/i);
       if(mt) valHtml = '<span class="jp-cf-time">' + mt[1] + 's hold &middot; ' + micro + 's rest</span>';
       else valHtml = (partes.val ? valHtml + ' ' : '') + '<span class="jp-cf-time">' + micro + 's rest</span>';
     }
     const esComplex = partes.nm.indexOf(' + ') >= 0 && partes.nm.length > 26;
     /* estación de EMOM / intervalos: celda táctil "[ MIN 1 ] Run" */
-    const mMin = partes.nm.match(/^Min(?:uto)?s?\\s*(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:--|[-\\u2013\\u2014:])\\s*(.+)$/i);
-    const nmHtml = mMin ? '<span class="jp-cf-min">[ MIN ' + mMin[1].replace(/\\s+/g, '') + ' ]</span>' + jpCfHighlightNum(mMin[2]) : jpCfHighlightNum(partes.nm);
+    const mMin = partes.nm.match(/^Min(?:uto)?s?\s*(\d+(?:\s*[-\u2013]\s*\d+)?)\s*(?:--|[-\u2013\u2014:])\s*(.+)$/i);
+    const nmHtml = mMin ? '<span class="jp-cf-min">[ MIN ' + mMin[1].replace(/\s+/g, '') + ' ]</span>' + jpCfHighlightNum(mMin[2]) : jpCfHighlightNum(partes.nm);
     return '<div class="jp-cf-row' + (mMin ? ' jp-cf-cell' : '') + ((micro || /jp-cf-time/.test(valHtml)) ? ' jp-cf-row-chip' : '') + '">' +
         '<span class="jp-cf-rn' + (esComplex ? ' jp-cf-rn-complex' : '') + '">' + nmHtml +
           (lado ? '&nbsp;<span class="jp-cf-side">(' + lado + ')</span>' : '') + '</span>' +
@@ -1887,7 +1887,7 @@
   function jpCfClipNombre(raw){
     const limpio = limpiarNombre(raw);
     if(!limpio) return limpio;
-    const partes = limpio.split(/\\s+/);
+    const partes = limpio.split(/\s+/);
     const ultima = partes.pop();
     partes.push(jpLemaPalabra(ultima));
     return jpCfClipTitleCase(partes.join(' '));
@@ -1903,18 +1903,18 @@
      ya usa una línea simple) -- una línea sin separador produce un
      único segmento, comportamiento sin cambios para el caso normal. */
   function jpCfTokenizarComplex(nm){
-    return String(nm || '').split(/\\s*[+\/&,]\\s*/).map(function(s){ return s.trim(); }).filter(Boolean);
+    return String(nm || '').split(/\s*[+/&,]\s*/).map(function(s){ return s.trim(); }).filter(Boolean);
   }
   /* [✕] del Builder + sanitización: mismas claves que el compilador
      (nombre normalizado y nombre con stemming de plurales) y tope de 45
      caracteres para el nombre -- una instrucción larga nunca es un ejercicio */
   function jpNrmKey(s){
-    return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
-      .replace(/[.,;:!\\u00a1?\\u00bf"'\\u0060]+/g, ' ').replace(/\\s+/g, ' ').trim();
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[.,;:!\u00a1?\u00bf"'\u0060]+/g, ' ').replace(/\s+/g, ' ').trim();
   }
   function jpStemKey(s){
-    var base = String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
-      .replace(/[.,;:!\\u00a1?\\u00bf"'\\u0060()\\[\\]]+/g, ' ').replace(/\\s+/g, ' ').trim();
+    var base = String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[.,;:!\u00a1?\u00bf"'\u0060()\[\]]+/g, ' ').replace(/\s+/g, ' ').trim();
     return base.split(' ').map(function(w){
       if(w.length <= 3) return w;
       if(/(ches|shes|sses|xes|zes|ones)$/.test(w)) return w.slice(0, -2);
@@ -1939,7 +1939,7 @@
     const dis = Array.isArray(descartados) ? descartados : [];
     lineas.forEach(function(raw){
       const l = String(raw || '').trim();
-      if(l.length > 45 && !/[\\d:|@+]/.test(l)) return;
+      if(l.length > 45 && !/[\d:|@+]/.test(l)) return;
       if(!jpCfEsMovimiento(l)) return;
       const nmCrudo = jpCfSplit(l).nm;
       /* directiva (fix de videos en Warm-up/Corework/Accesorios) -- acá
@@ -1981,13 +1981,13 @@
      único combinando esto con objetivo/tips/pacing/escalado). */
   /* tips de WOD combinado: "[MOVIMIENTO]" + SET-UP / EFICIENCIA / CUIDADO por movimiento y una estrategia general al final */
   function formatTipsCF(h){
-    var lineas = String(h || '').split(/<br\\s*\\/?>|\\r?\\n/i).map(function(x){ return x.trim(); }).filter(Boolean);
+    var lineas = String(h || '').split(/<br\s*\/?>|\r?\n/i).map(function(x){ return x.trim(); }).filter(Boolean);
     var secs = [], cur = null, gen = null, ultimo = null;
     lineas.forEach(function(l){
-      var t0 = l.replace(/^[^A-Za-z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1\\[*]+/, '');
-      var mh = t0.match(/^\\[([^\\]]{2,60})\\]$/);
+      var t0 = l.replace(/^[^A-Za-z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1\[*]+/, '');
+      var mh = t0.match(/^\[([^\]]{2,60})\]$/);
       if(mh){ cur = { nombre: mh[1], items: [] }; secs.push(cur); gen = null; ultimo = null; return; }
-      var ml = t0.match(/^([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d1 &\\/\\-]{2,42}):\\s*(.*)$/);
+      var ml = t0.match(/^([A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1][A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d1 &\/\-]{2,42}):\s*(.*)$/);
       if(ml){
         if(/ESTRATEGIA GENERAL/.test(ml[1])){ gen = { txt: ml[2] ? [ml[2]] : [] }; cur = null; ultimo = null; return; }
         if(cur){ ultimo = { lb: ml[1], tx: ml[2] }; cur.items.push(ultimo); return; }
@@ -2006,7 +2006,7 @@
     if(!clips.length) return '';
     return '<div class="jp-cf-vid-cards">' +
       clips.map(function(c){
-        return '<button type="button" class="jp-cf-vid-card" data-yt="' + c.ytid + '" aria-label="Ver la t\\u00e9cnica de ' + String(c.nombre).replace(/"/g,'') + '">' +
+        return '<button type="button" class="jp-cf-vid-card" data-yt="' + c.ytid + '" aria-label="Ver la t\u00e9cnica de ' + String(c.nombre).replace(/"/g,'') + '">' +
           '<span class="jp-cf-vid-thumb" style="background-image:url(https://img.youtube.com/vi/' + c.ytid + '/mqdefault.jpg)">' +
             '<span class="jp-cf-vid-play">&#9654;</span>' +
           '</span>' +
@@ -2051,7 +2051,7 @@
     const kFmt = String(block.boardFmt || '').toLowerCase().replace(/[^a-z]/g, '');
     const paramTxt = block.cfParam ? ((CF_PARAM_PREFIX[kFmt] || '') + block.cfParam) : (min ? (min + ' min') : '');
     const c0 = block.cierre || {};
-    const unir = function(a, b){ return [a, b ? escSB(b).replace(/\\n/g, '<br>') : ''].filter(Boolean).join('<br>'); };
+    const unir = function(a, b){ return [a, b ? escSB(b).replace(/\n/g, '<br>') : ''].filter(Boolean).join('<br>'); };
     const c = { objetivo: unir(c0.objetivo, metaTxt.objetivo), tips: unir(c0.tips, metaTxt.tips), pacing: jpCfLimpiaPacing(unir(c0.pacing, metaTxt.pacing)), escalado: unir(c0.escalado, metaTxt.escalado) };
     const tieneCierre = !!(c.objetivo || c.tips || c.pacing || c.escalado);
     /* directiva ("Rediseño y reubicación del texto colgado de Core") --
@@ -2075,7 +2075,7 @@
        todavía no tiene prescripción propia (lineas vacío por semana > 1),
        nunca se deja el tablero con las filas en blanco sin explicación:
        un mensaje claro en vez del WOD de otra semana. */
-    const filas = cont ? (jpCfIntervaloCtx = true, jpContinuoPillHtml(cont) + jpContinuoListaHtml(cont)) : lineas.length ? (jpCfIntervaloCtx = lineas.some(function(l){ return /^[^A-Za-z0-9]*(?:every|e\\d*mom|emom|cada)\\b|^\\s*\\d+:\\d{2}\\s*(?:min\\w*)?\\s*(?:x|×)\\s*\\d/i.test(String(l)); }), jpCfRenderLineas(lineas, dayId))
+    const filas = cont ? (jpCfIntervaloCtx = true, jpContinuoPillHtml(cont) + jpContinuoListaHtml(cont)) : lineas.length ? (jpCfIntervaloCtx = lineas.some(function(l){ return /^[^A-Za-z0-9]*(?:every|e\d*mom|emom|cada)\b|^\s*\d+:\d{2}\s*(?:min\w*)?\s*(?:x|×)\s*\d/i.test(String(l)); }), jpCfRenderLineas(lineas, dayId))
       : (weekIdx > 0 ? '<div class="jp-cf-row jp-cf-badge">Todavía no se cargó la prescripción de esta semana. Consultá con tu coach.</div>' : '');
     /* registro de series: un casillero IDENTIFICADO por ejercicio (A1 / A2 / triserie), nunca uno generico */
     let gridHtml = '';
@@ -2095,11 +2095,11 @@
     const cabeceraWod = cfgCab ? jpCfCabeceraWod(cfgCab, block, lineas, c) : '';
     /* cabecera limpia: [ CROSSFIT · FASE ] // N MIN. El "(N MIN)" del titulo pasa a la etiqueta; el titulo grande se oculta cuando solo repite la fase
        (queda en el DOM: lo usan el bloque plegado y "bloque completado"). Un titulo con informacion propia ("Fran", "Back Squat 5x5") se conserva. */
-    const tituloCrudoCF = (!block.title || /^\\s*bloque\\s*\\d*\\s*$/i.test(block.title)) ? fase : block.title;
-    const mMinCF = String(tituloCrudoCF).match(/\\(\\s*(\\d+)\\s*min\\w*\\s*\\)\\s*$/i);
-    const tituloVisCF = mMinCF ? String(tituloCrudoCF).replace(/\\s*\\(\\s*\\d+\\s*min\\w*\\s*\\)\\s*$/i, '') : tituloCrudoCF;
+    const tituloCrudoCF = (!block.title || /^\s*bloque\s*\d*\s*$/i.test(block.title)) ? fase : block.title;
+    const mMinCF = String(tituloCrudoCF).match(/\(\s*(\d+)\s*min\w*\s*\)\s*$/i);
+    const tituloVisCF = mMinCF ? String(tituloCrudoCF).replace(/\s*\(\s*\d+\s*min\w*\s*\)\s*$/i, '') : tituloCrudoCF;
     const minTagCF = mMinCF ? mMinCF[1] : ((!cabeceraWod && min) ? min : '');
-    const nrmCF = function(x){ return String(x || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); };
+    const nrmCF = function(x){ return String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); };
     const faseNrmCF = nrmCF(jpCfFaseLabel(block)), titNrmCF = nrmCF(tituloVisCF);
     const tituloDupCF = !titNrmCF || titNrmCF === faseNrmCF || titNrmCF === nrmCF(fase) || (titNrmCF.length >= 3 && faseNrmCF.indexOf(titNrmCF) >= 0);
     const html =
@@ -2134,7 +2134,7 @@
             if(!(segQ > 0)) segQ = block.category === 'accessory' ? 60 : 90;
             /* descanso prescrito < 30 s = micro-pausa: sin botón */
             if(segQ >= 30 && !jpCfIntervaloCtx){
-              var lbQ = 'Descanso \\u00b7 ' + String(block.title || 'Bloque').replace(/[<>"&]/g, '').slice(0, 28);
+              var lbQ = 'Descanso \u00b7 ' + String(block.title || 'Bloque').replace(/[<>"&]/g, '').slice(0, 28);
               btnRest = '<button type="button" class="jp-cf-quickrest" data-rest-sec="' + segQ + '" data-rest-lb="' + lbQ + '">DESCANSO R&Aacute;PIDO ' + jpCfRestMMSS(segQ) + '</button>';
             }
           }
@@ -2187,21 +2187,21 @@
       if(rowsEl && !rowsEl.querySelector('[data-est]')){
         var estRows = [].slice.call(rowsEl.children).filter(function(r){ return r.classList.contains('jp-cf-row') && r.querySelector(':scope > .jp-cf-rn'); }), nHdr = 0;
         /* "EVERY 04:00 x 5 SETS", "Every 3 min for 6 sets", "5 Sets", "Rest 2:00", "Min 3": encabezados de estructura, nunca ejercicios -> sin letra E y con estilo de encabezado */
-        var RX_ESTR = /^\\s*(?:\\d+\\s*[x\\u00d7]\\s*)?(?:every\\b|emom\\b|e\\d+mom\\b|amrap\\b|for\\s*time\\b|time\\s*cap\\b|cap\\b|rest\\b|descanso\\b|descans[a\\u00e1]\\b|then\\b|luego\\b|buy-?in\\b|cash-?out\\b|\\d+\\s*(?:rounds?|rondas?|sets?|series)\\b|min(?:ute)?s?\\s*\\d|x\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?\\s*(?:sets?|series|rounds?|rondas?)?\\s*$|(?:todos\\s+los\\s+sets|all\\s+sets)\\b|carga\\s+(?:del?\\s+)?(?:set|serie|ronda)\\b|(?:dedic[a\\u00e1]|constru[i\\u00ed]|build\\s+to)\\w*)/i;
+        var RX_ESTR = /^\s*(?:\d+\s*[x\u00d7]\s*)?(?:every\b|emom\b|e\d+mom\b|amrap\b|for\s*time\b|time\s*cap\b|cap\b|rest\b|descanso\b|descans[a\u00e1]\b|then\b|luego\b|buy-?in\b|cash-?out\b|\d+\s*(?:rounds?|rondas?|sets?|series)\b|min(?:ute)?s?\s*\d|x\s*\d+(?:\s*[-\u2013]\s*\d+)?\s*(?:sets?|series|rounds?|rondas?)?\s*$|(?:todos\s+los\s+sets|all\s+sets)\b|carga\s+(?:del?\s+)?(?:set|serie|ronda)\b|(?:dedic[a\u00e1]|constru[i\u00ed]|build\s+to)\w*)/i;
         estRows = estRows.filter(function(r){
-          var rn0 = r.querySelector(':scope > .jp-cf-rn'), tx0 = rn0.textContent.replace(/\\s+/g, ' ').trim();
+          var rn0 = r.querySelector(':scope > .jp-cf-rn'), tx0 = rn0.textContent.replace(/\s+/g, ' ').trim();
           if(!RX_ESTR.test(tx0)) return true;
           r.classList.add('jp-cf-header'); r.setAttribute('data-estr', '1');
-          r.textContent = tx0.replace(/:\\s*$/, '');
+          r.textContent = tx0.replace(/:\s*$/, '');
           return false;
         });
         estRows.forEach(function(r){
-          var rn = r.querySelector(':scope > .jp-cf-rn'), mE = rn.textContent.trim().match(/^([A-Fa-f]\\d{1,2})\\s*[:.\\-]\\s*\\S/);
+          var rn = r.querySelector(':scope > .jp-cf-rn'), mE = rn.textContent.trim().match(/^([A-Fa-f]\d{1,2})\s*[:.\-]\s*\S/);
           if(mE){ r.setAttribute('data-est', mE[1].toUpperCase()); nHdr++;
-            var tn = rn.firstChild; if(tn && tn.nodeType === 3) tn.nodeValue = tn.nodeValue.replace(/^\\s*[A-Fa-f]\\d{1,2}\\s*[:.\\-]\\s*/, ''); }
+            var tn = rn.firstChild; if(tn && tn.nodeType === 3) tn.nodeValue = tn.nodeValue.replace(/^\s*[A-Fa-f]\d{1,2}\s*[:.\-]\s*/, ''); }
         });
         /* letras E1, E2... solo en supersets REALES (ejercicios cruzados en una misma ronda); en EMOM, AMRAP, circuitos y series simples el nombre del ejercicio alcanza */
-        var esSuper = /super\\s*-?set|bi\\s*-?set|tri\\s*-?set|giant\\s*set/i.test(String(block.title || '') + ' ' + rowsEl.textContent);
+        var esSuper = /super\s*-?set|bi\s*-?set|tri\s*-?set|giant\s*set/i.test(String(block.title || '') + ' ' + rowsEl.textContent);
         if(esSuper){ rowsEl.classList.add('jp-cf-super'); rowsEl.setAttribute('data-super', '1'); }
         if(!nHdr && esSuper && estRows.length > 1) estRows.forEach(function(r, i){ r.setAttribute('data-est', 'E' + (i + 1)); });
       }
@@ -2269,10 +2269,10 @@
      en el resto del archivo. */
   function escSB(s){ return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   var TAGS_TECNICA_SB = [
-    { reBracket:/\\[\\s*drop\\s*-?\\s*set\\s*\\]/i, reLibre:/\\bdrop[\\s-]?set\\b/i, v:'dropset' },
-    { reBracket:/\\[\\s*rest\\s*-?\\s*pause\\s*\\]/i, reLibre:/\\brest[\\s-]?pause\\b/i, v:'restpause' },
-    { reBracket:/\\[\\s*myo\\s*-?\\s*reps?\\s*\\]/i, reLibre:/\\bmyo[\\s-]?reps?\\b/i, v:'myoreps' },
-    { reBracket:/\\[\\s*al\\s+fallo\\s*\\]/i, reLibre:/\\bal\\s+fallo\\b/i, v:'fallo' }
+    { reBracket:/\[\s*drop\s*-?\s*set\s*\]/i, reLibre:/\bdrop[\s-]?set\b/i, v:'dropset' },
+    { reBracket:/\[\s*rest\s*-?\s*pause\s*\]/i, reLibre:/\brest[\s-]?pause\b/i, v:'restpause' },
+    { reBracket:/\[\s*myo\s*-?\s*reps?\s*\]/i, reLibre:/\bmyo[\s-]?reps?\b/i, v:'myoreps' },
+    { reBracket:/\[\s*al\s+fallo\s*\]/i, reLibre:/\bal\s+fallo\b/i, v:'fallo' }
   ];
   var TECNICAS_BADGE_SB = {
     dropset: '🔥 DROP SET', restpause: '⚡ REST-PAUSE',
@@ -2295,14 +2295,14 @@
      sin sets ni inputs. Se recorta la cláusula "+ N set myo-reps (...)"
      ANTES de parsear la dosis base, así "3 sets x 12" se reconoce limpio
      y el detalle (activación/microseries/pausa) se extrae aparte. */
-  var RX_MYO_CLAUSE_SB = /\\+?\\s*(?:\\d+\\s*sets?\\s*)?myo[\\s-]?reps?\\s*(?:\\(([^)]*)\\))?/i;
+  var RX_MYO_CLAUSE_SB = /\+?\s*(?:\d+\s*sets?\s*)?myo[\s-]?reps?\s*(?:\(([^)]*)\))?/i;
   function extraerMyoInfoSB(detalle){
     var t = String(detalle || ''), out = {};
-    var mAct = t.match(/(\\d+)\\s*reps?\\s*(?:de\\s*)?activaci[o\\u00f3]n/i);
+    var mAct = t.match(/(\d+)\s*reps?\s*(?:de\s*)?activaci[o\u00f3]n/i);
     if(mAct) out.activacion = parseInt(mAct[1], 10);
-    var mMicro = t.match(/(\\d+)\\s*x\\s*(\\d+)\\s*(?:micro\\s*-?\\s*series|miniseries)/i);
+    var mMicro = t.match(/(\d+)\s*x\s*(\d+)\s*(?:micro\s*-?\s*series|miniseries)/i);
     if(mMicro){ out.microCount = parseInt(mMicro[1], 10); out.microReps = parseInt(mMicro[2], 10); }
-    var mRest = t.match(/(\\d+)\\s*s(?:eg(?:undos)?)?\\s*(?:de\\s*)?(?:pausa|descanso|rest)/i);
+    var mRest = t.match(/(\d+)\s*s(?:eg(?:undos)?)?\s*(?:de\s*)?(?:pausa|descanso|rest)/i);
     if(mRest) out.restSeg = parseInt(mRest[1], 10);
     return (out.activacion || out.microCount || out.restSeg) ? out : null;
   }
@@ -2311,7 +2311,7 @@
      badge del set ("🔥 DROP SET (-30%)") en vez de dejarlo como texto
      suelto. */
   function extraerPctSB(texto){
-    var m = String(texto || '').match(/(-?\\d+)\\s*%/);
+    var m = String(texto || '').match(/(-?\d+)\s*%/);
     return m ? parseInt(m[1], 10) : null;
   }
   /* directiva ("Fix crítico: parser flexible") -- "4x6-8" era el ÚNICO
@@ -2323,13 +2323,13 @@
      casilleros). "sets?/series?/rondas?" con su conector x/de opcional
      cubren la prosa humana real sin dejar de matchear "4x6-8" (la
      primera alternativa sigue siendo "x" pelado). */
-  var RX_DOSIS_SB = /(\\d+)\\s*(?:x|×|sets?\\s*(?:x|×|de|:)?|series?\\s*(?:x|×|de|:)?|rondas?\\s*(?:x|×|de|:)?)\\s*(\\d+(?:(?:\\s*[-\\u2013\\u2014]\\s*|\\s+a\\s+)\\d+)*)/i;
+  var RX_DOSIS_SB = /(\d+)\s*(?:x|×|sets?\s*(?:x|×|de|:)?|series?\s*(?:x|×|de|:)?|rondas?\s*(?:x|×|de|:)?)\s*(\d+(?:(?:\s*[-\u2013\u2014]\s*|\s+a\s+)\d+)*)/i;
   /* volumen escrito sin patron "NxM": "8-10 reps", "10 repeticiones", "3 series" */
-  var RX_MULTI_TRAMO_SB = /\\d+\\s*[x\\u00d7]\\s*\\d+(?:\\s*[-\\u2013]\\s*\\d+)?\\s*(?:\\([^)]*\\))?\\s*\\+\\s*\\d+\\s*[x\\u00d7]\\s*\\d+/i;
-  var RX_REPS_SUELTAS_SB = /(\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?)\\s*(?:reps?|repeticiones)\\b/i;
-  var RX_SETS_SUELTOS_SB = /(\\d+)\\s*(?:sets?|series?|rondas?)\\b/i;
+  var RX_MULTI_TRAMO_SB = /\d+\s*[x\u00d7]\s*\d+(?:\s*[-\u2013]\s*\d+)?\s*(?:\([^)]*\))?\s*\+\s*\d+\s*[x\u00d7]\s*\d+/i;
+  var RX_REPS_SUELTAS_SB = /(\d+(?:\s*[-\u2013\u2014]\s*\d+)?)\s*(?:reps?|repeticiones)\b/i;
+  var RX_SETS_SUELTOS_SB = /(\d+)\s*(?:sets?|series?|rondas?)\b/i;
   /* donde empieza la prescripcion dentro de "Nombre 8-10 reps | Tempo 2110 | Rest 15s" */
-  var RX_CORTE_DOSIS_SB = /\\s*(?:\\||\\b(?:tempo|rir|rest|descanso)\\b|\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b)/i;
+  var RX_CORTE_DOSIS_SB = /\s*(?:\||\b(?:tempo|rir|rest|descanso)\b|\d+(?:\s*[-\u2013\u2014]\s*\d+)?\s*(?:reps?|repeticiones)\b)/i;
   /* un descanso de 1 a 9 s no es real ("Rest 3 – 4 minutes", "Rest 4" salian como 4 s): 1-6 se leen como minutos, 7-9 vuelven al estandar de 60 s */
   function normRestSB(seg){
     seg = parseInt(seg, 10) || 0;
@@ -2339,7 +2339,7 @@
   function parsearDosisSB(txt){
     var t = String(txt || ''), out = {}, m;
     if((m = t.match(RX_DOSIS_SB))){
-      out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\\s+a\\s+/g, '-').replace(/\\s+/g, '').replace(/[\\u2013\\u2014]/g, '-');
+      out.sets = parseInt(m[1], 10); out.reps = m[2].replace(/\s+a\s+/g, '-').replace(/\s+/g, '').replace(/[\u2013\u2014]/g, '-');
       /* directiva ("Reconstrucción total del tracker de series") --
          detecta la unidad de la magnitud secundaria mirando SÓLO el
          tramo de texto justo después del rango de reps (hasta el
@@ -2354,40 +2354,40 @@
       out.unidad = detectarUnidadSecundariaSB(tras);
     }
     /* el volumen NUNCA se pierde: sin patron "NxM", se toman las reps ("8-10 reps") y los sets ("3 series") por separado */
-    if(!out.reps && (m = t.match(RX_REPS_SUELTAS_SB))){ out.reps = m[1].replace(/\\s+/g, '').replace(/[\\u2013\\u2014]/g, '-'); out.unidad = 'reps'; }
+    if(!out.reps && (m = t.match(RX_REPS_SUELTAS_SB))){ out.reps = m[1].replace(/\s+/g, '').replace(/[\u2013\u2014]/g, '-'); out.unidad = 'reps'; }
     if(!out.sets && (m = t.match(RX_SETS_SUELTOS_SB))) out.sets = parseInt(m[1], 10);
-    if((m = t.match(/tempo\\s*([\\d\\u00a7]{3,4})/i))) out.tempo = m[1];
+    if((m = t.match(/tempo\s*([\d\u00a7]{3,4})/i))) out.tempo = m[1];
     /* carga prescripta en kilos: "| 80 kg" o "@ 80 kg" (tambien rango "70-75 kg") */
-    if((m = t.match(/(?:@|\\|)\\s*(?:carga\\s*:?\\s*)?(\\d+(?:[.,]\\d+)?(?:\\s*[-\\u2013]\\s*\\d+(?:[.,]\\d+)?)?)\\s*kgs?\\b/i))) out.carga = m[1].replace(/\\s+/g, '').replace(',', '.') + ' kg';
+    if((m = t.match(/(?:@|\|)\s*(?:carga\s*:?\s*)?(\d+(?:[.,]\d+)?(?:\s*[-\u2013]\s*\d+(?:[.,]\d+)?)?)\s*kgs?\b/i))) out.carga = m[1].replace(/\s+/g, '').replace(',', '.') + ' kg';
     /* directiva ("Impresión completa de dosis en el header") -- antes
        sólo capturaba UN dígito ("RIR 2-1" perdía el "-1"): el header del
        alumno necesita el RIR EXACTO que escribió el coach, rango u
        observación "/ Fallo técnico" incluidos. */
-    if((m = t.match(/rir\\s*(\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?)/i))) out.rir = m[1].replace(/\\s+/g, ' ').trim();
+    if((m = t.match(/rir\s*(\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?)/i))) out.rir = m[1].replace(/\s+/g, ' ').trim();
     /* directiva maestra ("Parser universal y tolerante para Sports &
        Bodybuilding") -- reescritura genérica: en vez de intentar cubrir
        formas COMPUESTAS puntuales de descanso a mano (frágil, se rompe
        apenas el coach redacta distinto -- "Rest 60s entre piernas / 90s
        AL COMPLETAR AMBAS" nunca hubiera matcheado el patrón anterior,
        anclado a "entre <palabra>" en las DOS mitades), se captura TODA la
-       cláusula de descanso tal cual venga (Rest\\s*([^|]+), hasta el
+       cláusula de descanso tal cual venga (Rest\s*([^|]+), hasta el
        próximo "|" o fin de línea, sin asumir estructura interna) y se usa
        el ÚLTIMO número mencionado ahí como el descanso real del
        temporizador -- es siempre el que separa una serie/ronda completa
        de la siguiente, sin importar cuántas aclaraciones vengan antes. */
-    var restM = t.match(/(?:rest|descanso)\\s*(?:de\\s*)?([^|;)]+)/i);
+    var restM = t.match(/(?:rest|descanso)\s*(?:de\s*)?([^|;)]+)/i);
     if(restM){
-      var clausulaRest = restM[1].replace(/\\b(?:rir|tempo)\\b.*$/i, '');
-      var restMin = clausulaRest.match(/(\\d+)\\s*:\\s*(\\d{2})/);
-      var restNums = clausulaRest.match(/\\d+/g);
-      var restMn = clausulaRest.match(/(\\d+(?:[.,]\\d+)?)\\s*(?:min\\b|minutos?\\b|minutes?\\b|m\\b|')/i);
-      var restMS = clausulaRest.match(/(\\d+)\\s*(?:min(?:utos?|utes?)?|m)\\b\\.?\\s*(\\d{1,2})\\s*(?:s|seg\\w*)?\\b/i);
+      var clausulaRest = restM[1].replace(/\b(?:rir|tempo)\b.*$/i, '');
+      var restMin = clausulaRest.match(/(\d+)\s*:\s*(\d{2})/);
+      var restNums = clausulaRest.match(/\d+/g);
+      var restMn = clausulaRest.match(/(\d+(?:[.,]\d+)?)\s*(?:min\b|minutos?\b|minutes?\b|m\b|')/i);
+      var restMS = clausulaRest.match(/(\d+)\s*(?:min(?:utos?|utes?)?|m)\b\.?\s*(\d{1,2})\s*(?:s|seg\w*)?\b/i);
       if(restMin) out.restSeconds = parseInt(restMin[1], 10) * 60 + parseInt(restMin[2], 10);
       else if(restMS) out.restSeconds = parseInt(restMS[1], 10) * 60 + parseInt(restMS[2], 10);
       else if(restMn) out.restSeconds = Math.round(parseFloat(restMn[1].replace(',', '.')) * 60);
       else if(restNums) out.restSeconds = normRestSB(parseInt(restNums[restNums.length - 1], 10));
     } else {
-      var restPre = t.match(/(\\d+)\\s*(?:"|\\u2033|\\u201d|seg(?:undos)?\\b|s\\b)\\s*(?:de\\s+)?(?:rest|descanso)\\b/i);
+      var restPre = t.match(/(\d+)\s*(?:"|\u2033|\u201d|seg(?:undos)?\b|s\b)\s*(?:de\s+)?(?:rest|descanso)\b/i);
       if(restPre) out.restSeconds = parseInt(restPre[1], 10);
     }
     /* parser canónico (el mismo que usa el Builder): descansos en min/minutes/rangos y etiqueta del rango ("180-240s") */
@@ -2400,9 +2400,9 @@
        dosis base ni colarse como nombre de ejercicio nuevo -- se guarda
        aparte para que el llamador la muestre como micro-etiqueta de
        soporte (directiva: "[ ⚡ UNILATERAL · POR PIERNA ]"). */
-    if(/\\bpor\\s*pierna\\b/i.test(t)) out.notaSecundaria = 'Por pierna';
-    else if(/\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bc\\/lado\\b|\\bcada\\s*lado\\b/i.test(t)) out.notaSecundaria = 'Por lado';
-    else if(/\\bisom[eé]tric[oa]\\b/i.test(t)) out.notaSecundaria = 'Isométrico';
+    if(/\bpor\s*pierna\b/i.test(t)) out.notaSecundaria = 'Por pierna';
+    else if(/\bpor\s*lado\b|\bc\/u\b|\bc\/lado\b|\bcada\s*lado\b/i.test(t)) out.notaSecundaria = 'Por lado';
+    else if(/\bisom[eé]tric[oa]\b/i.test(t)) out.notaSecundaria = 'Isométrico';
     return out;
   }
   function esSoloDosisSB(linea, dosis){
@@ -2415,21 +2415,21 @@
        continuación del ejercicio anterior (se abría un ejercicio nuevo
        fantasma con el texto de la dosis como nombre). */
     /* directiva maestra ("Parser universal y tolerante") -- el strip del
-       segmento de descanso ahora consume TODA la cláusula (rest\\s*[^|]+,
+       segmento de descanso ahora consume TODA la cláusula (rest\s*[^|]+,
        mismo patrón agnóstico que parsearDosisSB de arriba) sin importar
        cuántas aclaraciones/barras traiga -- antes sólo se comía "Rest
        60s" y el resto quedaba como residuo largo, tumbando la línea a
        "ejercicio nuevo" fantasma. Se suma "isométrico" a las
        especificaciones secundarias en prosa que nunca son parte del
        nombre. */
-    var resto = linea.replace(/\\d+\\s*(?:x|×|sets?\\s*(?:x|×|de|:)?|series?\\s*(?:x|×|de|:)?|rondas?\\s*(?:x|×|de|:)?)\\s*\\d+(?:(?:\\s*[-\\u2013\\u2014]\\s*|\\s+a\\s+)\\d+)*(?:\\s*(?:reps?|repeticiones)\\b)?/gi, '')
-      .replace(/\\d+(?:\\s*[-\\u2013\\u2014]\\s*\\d+)?\\s*(?:reps?|repeticiones)\\b/gi, '').replace(/\\d+\\s*(?:sets?|series?|rondas?)\\b/gi, '')
-      .replace(/tempo\\s*(?:[\\d\\u00a7]{3,4}|isom[eé]tric[oa]|continuo)/gi, '').replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '')
-      .replace(/(?:@|\\|)\\s*(?:carga\\s*:?\\s*)?\\d+(?:[.,]\\d+)?(?:\\s*[-\\u2013]\\s*\\d+(?:[.,]\\d+)?)?\\s*kgs?\\b/gi, '')
-      .replace(/\\bdrop[\\s-]?set\\b|\\brest[\\s-]?pause\\b|\\bmyo[\\s-]?reps?\\b|\\bal\\s+fallo\\b/gi, '')
-      .replace(/(?:rest|descanso)\\s*[^|]+/gi, '')
-      .replace(/\\bpor\\s*pierna\\b|\\bpor\\s*lado\\b|\\bc\\\/u\\b|\\bcada\\s*lado\\b|\\bisom[eé]tric[oa]\\b/gi, '')
-      .replace(/[|.:,\\-–\\/]/g, '').trim();
+    var resto = linea.replace(/\d+\s*(?:x|×|sets?\s*(?:x|×|de|:)?|series?\s*(?:x|×|de|:)?|rondas?\s*(?:x|×|de|:)?)\s*\d+(?:(?:\s*[-\u2013\u2014]\s*|\s+a\s+)\d+)*(?:\s*(?:reps?|repeticiones)\b)?/gi, '')
+      .replace(/\d+(?:\s*[-\u2013\u2014]\s*\d+)?\s*(?:reps?|repeticiones)\b/gi, '').replace(/\d+\s*(?:sets?|series?|rondas?)\b/gi, '')
+      .replace(/tempo\s*(?:[\d\u00a7]{3,4}|isom[eé]tric[oa]|continuo)/gi, '').replace(/rir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/gi, '')
+      .replace(/(?:@|\|)\s*(?:carga\s*:?\s*)?\d+(?:[.,]\d+)?(?:\s*[-\u2013]\s*\d+(?:[.,]\d+)?)?\s*kgs?\b/gi, '')
+      .replace(/\bdrop[\s-]?set\b|\brest[\s-]?pause\b|\bmyo[\s-]?reps?\b|\bal\s+fallo\b/gi, '')
+      .replace(/(?:rest|descanso)\s*[^|]+/gi, '')
+      .replace(/\bpor\s*pierna\b|\bpor\s*lado\b|\bc\/u\b|\bcada\s*lado\b|\bisom[eé]tric[oa]\b/gi, '')
+      .replace(/[|.:,\-–\/]/g, '').trim();
     return resto.length < 4;
   }
   /* directiva ("Parser avanzado de metodologías de hipertrofia") -- un
@@ -2443,13 +2443,13 @@
   function esFaseTacticaSB(linea){
     var t = String(linea || '').trim();
     if(!t || t.length > 40) return false;
-    if(/\\d/.test(t)) return false;
+    if(/\d/.test(t)) return false;
     if(esLineaDirectiva(t)) return false;
     var soloLetras = t.replace(/[^A-Za-zÀ-ÿ]/g, '');
     if(!soloLetras) return false;
     return t === t.toUpperCase() && t !== t.toLowerCase();
   }
-  var RX_SUBEJ_SB = /^A(\\d+)[.)]\\s*(.+?):\\s*(.+)$/i;
+  var RX_SUBEJ_SB = /^A(\d+)[.)]\s*(.+?):\s*(.+)$/i;
   /* directiva ("Refactoring maestro UI/UX Sports: colisión de letras en
      circuitos de Core") -- RX_SUBEJ_SB captura el nombre hasta el ÚLTIMO
      ":" antes de la dosis (no greedy pero ancla al primer ":" que
@@ -2460,20 +2460,20 @@
      reportado ("A3. A2. PRESS PALLOF" con una pastilla "C" montada
      encima). Se limpia CUALQUIER prefijo de estación sobrante (uno o
      varios, "A1.", "B2)", etc.) del nombre antes de asignarlo. */
-  var RX_PREFIJO_ESTACION_SB = /^(?:[A-Za-z]\\d+\\s*[.:)\\-\\u2013\\u2014\\u00b7]+\\s*|[A-Za-z]\\d+\\s+(?=\\S)|[A-Za-z]\\d*[.)]\\s*|[A-Za-z]\\s*:\\s+)/;
+  var RX_PREFIJO_ESTACION_SB = /^(?:[A-Za-z]\d+\s*[.:)\-\u2013\u2014\u00b7]+\s*|[A-Za-z]\d+\s+(?=\S)|[A-Za-z]\d*[.)]\s*|[A-Za-z]\s*:\s+)/;
   function limpiarPrefijoEstacionSB(nombre){
     var t = String(nombre || '').trim();
     var guard = 0;
     while(RX_PREFIJO_ESTACION_SB.test(t) && guard < 5){ t = t.replace(RX_PREFIJO_ESTACION_SB, '').trim(); guard++; }
     return t;
   }
-  var RX_BISET_HEAD_SB = /\\b(biset|biserie|superset|superserie|triset|triserie|circuito)\\b/i;
+  var RX_BISET_HEAD_SB = /\b(biset|biserie|superset|superserie|triset|triserie|circuito)\b/i;
   /* metadatos de coaching que NUNCA son prescripción: "[OBJETIVO ...]", "[COACHING TIPS ...]" y los encabezados de
      tips ("SET-UP", "CONTROL DE LA FASE", "INTENCIÓN NEUROMUSCULAR", "CUE MOTOR", "ERROR COMÚN"). Todo ese texto
      (y sus renglones de continuación) va exclusivamente al acordeón "PAUTAS TÉCNICAS, TIPS & VIDEOS DEL BLOQUE". */
-  var RX_META_ETIQ_SB = /^\\s*\\[\\s*(objetivo|coaching)\\b[^\\]]*\\]\\s*:?\\s*(.*)$/i;
-  var RX_META_TIPHEAD_SB = /^\\s*(?:set[\\s-]*up|control\\s+de\\s+la\\s+fase|fase\\s+exc[eé]ntrica|intenci[oó]n\\s+neuromuscular|cue\\s+motor|error\\s+com[uú]n)\\b/i;
-  var RX_BLOQUE_TAG_SB = /^\\s*\\[\\s*bloque\\s*\\d*\\s*\\]/i;
+  var RX_META_ETIQ_SB = /^\s*\[\s*(objetivo|coaching)\b[^\]]*\]\s*:?\s*(.*)$/i;
+  var RX_META_TIPHEAD_SB = /^\s*(?:set[\s-]*up|control\s+de\s+la\s+fase|fase\s+exc[eé]ntrica|intenci[oó]n\s+neuromuscular|cue\s+motor|error\s+com[uú]n)\b/i;
+  var RX_BLOQUE_TAG_SB = /^\s*\[\s*bloque\s*\d*\s*\]/i;
   function separarMetaPizarraSB(lineas){
     var cuerpo = [], obj = [], tips = [], modo = '';
     for(var i = 0; i < lineas.length; i++){
@@ -2490,13 +2490,13 @@
       if(RX_META_TIPHEAD_SB.test(l)){ modo = 'tips'; tips.push(l); continue; }
       if(modo){
         var sig = String(lineas[i + 1] == null ? '' : lineas[i + 1]).trim();
-        var esEj = RX_DOSIS_SB.test(l) || /^[A-Za-z]?\\d+[.)]\\s+\\S/.test(l) || (!!sig && esSoloDosisSB(sig, parsearDosisSB(sig)));
+        var esEj = RX_DOSIS_SB.test(l) || /^[A-Za-z]?\d+[.)]\s+\S/.test(l) || (!!sig && esSoloDosisSB(sig, parsearDosisSB(sig)));
         if(!esEj){ (modo === 'obj' ? obj : tips).push(l); continue; }
         modo = '';
       }
       cuerpo.push(lineas[i]);
     }
-    return { lineas: cuerpo, objective: obj.join('\\n'), tips: tips.join('\\n') };
+    return { lineas: cuerpo, objective: obj.join('\n'), tips: tips.join('\n') };
   }
   /* la técnica suelta (Myo-Reps / Drop Set) pertenece a la estación que nombra; si no nombra ninguna, a la última escrita */
   function subPorNombreSB(entry, linea){
@@ -2519,26 +2519,26 @@
   function formatTipsSB(texto, nombres){
     var t = String(texto || '').trim();
     if(!t) return '';
-    t = t.replace(/\\b((?:ESTRATEGIA|REGLA|PAUTA|PLAN)\\s+DE)\\s*\\n+\\s*(?=TRANSICI)/gi, '$1 ');
-    t = t.replace(/(TRANSICI[OÓ]N R[AÁ]PIDA)\\s*,?\\s*\\n?\\s*SET-?UP(?: Y ANCLAJE)?\\s*:/gi, '$1 & SET-UP:');
-    t = t.replace(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ &\\/-]{3,60}),\\s*\\n+(?=[A-ZÁÉÍÓÚÑ][^:\\n]{2,70}:)/gm, '$1 & ');
-    t = t.replace(/\\s+(?=[A-F]\\d\\s*\\u00b7\\s*[A-Z])/g, '\\n');      /* "A1 · ... A1 · ..." en un solo renglon: una etiqueta por linea */
-    t = t.replace(/(\\S)\\s*(?=(?:SET-?UP|CLAVE|CUIDADO|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\\n]{0,70}:)/g, function(m, c, off, whole){
-      return /\\b[A-F]\\d\\s*\\u00b7\\s*$/.test(whole.slice(0, off + m.length)) ? m : c + '\\n';
+    t = t.replace(/\b((?:ESTRATEGIA|REGLA|PAUTA|PLAN)\s+DE)\s*\n+\s*(?=TRANSICI)/gi, '$1 ');
+    t = t.replace(/(TRANSICI[OÓ]N R[AÁ]PIDA)\s*,?\s*\n?\s*SET-?UP(?: Y ANCLAJE)?\s*:/gi, '$1 & SET-UP:');
+    t = t.replace(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ &\/-]{3,60}),\s*\n+(?=[A-ZÁÉÍÓÚÑ][^:\n]{2,70}:)/gm, '$1 & ');
+    t = t.replace(/\s+(?=[A-F]\d\s*\u00b7\s*[A-Z])/g, '\n');      /* "A1 · ... A1 · ..." en un solo renglon: una etiqueta por linea */
+    t = t.replace(/(\S)\s*(?=(?:SET-?UP|CLAVE|CUIDADO|CONTROL DE LA FASE|INTENCI[OÓ]N NEUROMUSCULAR|ERROR COM[UÚ]N|CUE MOTOR)[^:\n]{0,70}:)/g, function(m, c, off, whole){
+      return /\b[A-F]\d\s*\u00b7\s*$/.test(whole.slice(0, off + m.length)) ? m : c + '\n';
     });
-    t = t.replace(/ &\\n/g, ' & ');
-    var items = t.split(/\\n+/).map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
-      var m = l.match(/^([A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d10-9][A-Z\\u00c1\\u00c9\\u00cd\\u00d3\\u00da\\u00d10-9 &\\/\\-\\u2013\\u00b7().,]{2,90}?):\\s*(.*)$/);
+    t = t.replace(/ &\n/g, ' & ');
+    var items = t.split(/\n+/).map(function(l){ return l.trim(); }).filter(Boolean).map(function(l){
+      var m = l.match(/^([A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d10-9][A-Z\u00c1\u00c9\u00cd\u00d3\u00da\u00d10-9 &\/\-\u2013\u00b7().,]{2,90}?):\s*(.*)$/);
       return m ? { lb: m[1], tx: m[2] } : { lb: '', tx: l };
     });
     var etiquetados = items.filter(function(i){ return i.lb; });
     function corto(x){ return String(x || '').trim(); }
     var ICO_TIP = { 'SET-UP': '&#127919; ', 'CLAVE': '&#9889; ', 'CUIDADO': '&#128721; ' };
     /* biset: cada estación conserva su letra ("A1 · SET-UP:", "A2 · ERROR:") */
-    if(etiquetados.some(function(i){ return /^[A-F]\\d\\s*\\u00b7/.test(i.lb); })){
+    if(etiquetados.some(function(i){ return /^[A-F]\d\s*\u00b7/.test(i.lb); })){
       var grupos = {}, orden = [], trans = [], transDesc = false;
       etiquetados.forEach(function(i){
-        var mm = i.lb.match(/^([A-F]\\d)\\s*\\u00b7\\s*(.+)$/), letra = mm ? mm[1] : '', k = normTitSB(mm ? mm[2] : i.lb);
+        var mm = i.lb.match(/^([A-F]\d)\s*\u00b7\s*(.+)$/), letra = mm ? mm[1] : '', k = normTitSB(mm ? mm[2] : i.lb);
         if(/transici/.test(k)){ trans.push(i.tx); if(/descanso/.test(k)) transDesc = true; return; }
         var cat = /set up|estabilidad|anclaje|postura|posicion/.test(k) ? 'SET-UP' : (/error|evitar|cuidado/.test(k) ? 'CUIDADO' : 'CLAVE');
         var key = letra + '|' + cat;
@@ -2551,7 +2551,7 @@
       orden.forEach(function(k){ var g = grupos[k]; if(!porLetra[g.letra]){ porLetra[g.letra] = []; ordL.push(g.letra); } porLetra[g.letra].push(g); });
       return ordL.map(function(L){
         var info = nom[L] || null;
-        var cab = L ? '<div class="jp-tip-exh"><span class="jp-tip-exn">' + L + (info && info.nombre ? ' \\u00b7 ' + escSB(String(info.nombre).toUpperCase()) : '') + '</span>' + ((info && info.btn) || '') + '</div>' : '';
+        var cab = L ? '<div class="jp-tip-exh"><span class="jp-tip-exn">' + L + (info && info.nombre ? ' \u00b7 ' + escSB(String(info.nombre).toUpperCase()) : '') + '</span>' + ((info && info.btn) || '') + '</div>' : '';
         return '<div class="jp-tip-ex">' + cab + porLetra[L].map(function(g){ return '<div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">' + ICO_TIP[g.cat] + g.cat + '</b> ' + escSB(corto(g.tx.join(' '))) + '</div>'; }).join('') + '</div>';
       }).join('') + (trans.length ? '<div class="jp-tip-ex jp-tip-trans"><div class="jp-tip-fase jp-tip-bullet"><b class="jp-tip-lb">&#9201; TRANSICI&Oacute;N' + (transDesc ? ' &amp; DESCANSO' : '') + '</b> ' + escSB(corto(trans.join(' '))) + '</div></div>' : '');
     }
@@ -2584,11 +2584,11 @@
       return '<div class="jp-tip-fase">' + escSB(it.tx) + '</div>';
     }).join('');
   }
-  function metaHtmlSB(t){ return escSB(t).replace(/\\n/g, '<br>'); }
-  function normTitSB(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+  function metaHtmlSB(t){ return escSB(t).replace(/\n/g, '<br>'); }
+  function normTitSB(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
   /* estación de biset/superserie con el nombre en su propio renglón ("A1) Goblet Squat", "B2. Remo", "1. Press"):
      la dosis llega en las líneas siguientes. El prefijo sólo con número ("1.") exige estar ya dentro de un biset. */
-  var RX_ESTACION_SB = /^([A-Za-z]?)(\\d+)[.)]\\s+(\\S.*)$/;
+  var RX_ESTACION_SB = /^([A-Za-z]?)(\d+)[.)]\s+(\S.*)$/;
   /* vuelca una línea de dosis ("3x12 | Tempo 3010 | RIR 2", "Rest 90s") sobre una estación del biset */
   function aplicarDosisSubSB(sub, entry, txt){
     var res = extraerTecnicaSB(txt);
@@ -2602,22 +2602,22 @@
     if(res.tecnica === 'dropset') sub.tecnicaPct = extraerPctSB(res.texto);
     var myoC = txt.match(RX_MYO_CLAUSE_SB);
     if(myoC){ sub.tecnica = 'myoreps'; sub.myoInfo = extraerMyoInfoSB(myoC[1] || ''); }
-    var parenM = res.texto.match(/\\(([^)]+)\\)/);
+    var parenM = res.texto.match(/\(([^)]+)\)/);
     var extra = [parenM ? parenM[1] : '', (d.notaSecundaria && d.notaSecundaria !== 'Por pierna' && d.notaSecundaria !== 'Por lado') ? d.notaSecundaria : ''].filter(Boolean).join(' · ');
     if(extra) sub.nota = sub.nota ? sub.nota + ' · ' + extra : extra;
     if(d.notaSecundaria === 'Por pierna' || d.notaSecundaria === 'Por lado') sub.unilateral = d.notaSecundaria;
     if(d.sets && !entry.rondasExp){ entry.rondas = Math.max(entry.rondasAuto || 0, d.sets); entry.rondasAuto = entry.rondas; }
     return d;
   }
-  var RX_RONDAS_SB = /(\\d+)\\s*rondas?/i;
-  var RX_REST_SB = /rest\\s*(\\d+)/i;
+  var RX_RONDAS_SB = /(\d+)\s*rondas?/i;
+  var RX_REST_SB = /rest\s*(\d+)/i;
   /* directiva ("Pizarra Única"): 🎯/"Objetivo:" y 💡/"Tip:"/"Pauta:" son
      metadata del bloque (ver extraerMetadatosPizarraSports() del lado
      del Builder, mismo par de prefijos) -- NUNCA deben convertirse en un
      ejercicio fantasma ni en la dosis del ejercicio anterior, así que se
      detectan y descartan ANTES que cualquier otra clasificación. */
-  var RX_META_OBJETIVO_SB = /^(?:🎯|objetivo\\s*:)/i;
-  var RX_META_TIP_SB = /^(?:💡|tip\\s*:|pauta\\s*:)/i;
+  var RX_META_OBJETIVO_SB = /^(?:🎯|objetivo\s*:)/i;
+  var RX_META_TIP_SB = /^(?:💡|tip\s*:|pauta\s*:)/i;
   function esLineaMetaSB(linea){
     return RX_META_OBJETIVO_SB.test(linea) || RX_META_TIP_SB.test(linea);
   }
@@ -2627,7 +2627,7 @@
      "Nombre 4 series de 6 a 8 repeticiones": el titulo se corta limpio donde empieza la dosis (sin patron NxM, solo con reps +
      tempo/RIR/descanso tambien cuenta). Devuelve null si la linea no trae dosis o lo que queda no parece un nombre de ejercicio. */
   function cortarNombreDosisSB(linea){
-    var t = String(linea || '').trim().replace(/^\\d+\\s*[.)]\\s+/, '');
+    var t = String(linea || '').trim().replace(/^\d+\s*[.)]\s+/, '');
     if(!t) return null;
     var m = t.match(RX_DOSIS_SB), idx = -1, fin = 0;
     if(m){ idx = m.index; fin = m.index + m[0].length; }
@@ -2637,35 +2637,35 @@
     }
     if(idx < 0) return null;
     var nombre;
-    if(idx > 0) nombre = t.slice(0, idx).replace(/[\\s:|\\-\\u2013\\u2014(\\[]+$/, '');
-    else nombre = t.slice(fin).replace(/^[\\s:|\\-\\u2013\\u2014,]+/, '').replace(/^(?:reps?|repeticiones)\\b\\s*(?:de\\s+)?/i, '').split(/\\s*(?:@|\\||\\(|,)/)[0];
+    if(idx > 0) nombre = t.slice(0, idx).replace(/[\s:|\-\u2013\u2014(\[]+$/, '');
+    else nombre = t.slice(fin).replace(/^[\s:|\-\u2013\u2014,]+/, '').replace(/^(?:reps?|repeticiones)\b\s*(?:de\s+)?/i, '').split(/\s*(?:@|\||\(|,)/)[0];
     nombre = String(nombre).trim();
-    if(nombre.length < 3 || nombre.length > 70 || !/[A-Za-z\\u00c0-\\u00ff]{3}/.test(nombre)) return null;
-    if(esLineaDirectiva(nombre) || /^(?:rest|descanso|tempo|rir|realizar|hacer|completar|repetir|luego|despu[e\\u00e9]s|total|en total|aprox\\w*|aplicar|mantener|usar|buscar)\\b/i.test(nombre)) return null;
+    if(nombre.length < 3 || nombre.length > 70 || !/[A-Za-z\u00c0-\u00ff]{3}/.test(nombre)) return null;
+    if(esLineaDirectiva(nombre) || /^(?:rest|descanso|tempo|rir|realizar|hacer|completar|repetir|luego|despu[e\u00e9]s|total|en total|aprox\w*|aplicar|mantener|usar|buscar)\b/i.test(nombre)) return null;
     return { nombre: nombre, dosis: t, dosisPrimero: idx === 0 };
   }
   /* un ejercicio sin dosis escrita que NO es cardio/calentamiento/nota se registra igual: 1 set interactivo por defecto */
   function esEjercicioIndividualSB(entry, block){
     var t = String(entry.titulo || '').trim();
-    if(!t || t.length > 60 || t.split(/\\s+/).length > 8 || /[.!?]\\s*$/.test(t)) return false;
-    if(/^(?:nota|tip|obj|objetivo|pauta|recuerd|importante|descanso|rest|cap|amrap|emom|every|realizar|hacer|completar|repetir|luego|despu[e\\u00e9]s|total|aplicar|mantener|usar|buscar|controlar|evitar|priorizar|enfocar|cuidar|recordar|respirar|\\*)/i.test(t)) return false;
+    if(!t || t.length > 60 || t.split(/\s+/).length > 8 || /[.!?]\s*$/.test(t)) return false;
+    if(/^(?:nota|tip|obj|objetivo|pauta|recuerd|importante|descanso|rest|cap|amrap|emom|every|realizar|hacer|completar|repetir|luego|despu[e\u00e9]s|total|aplicar|mantener|usar|buscar|controlar|evitar|priorizar|enfocar|cuidar|recordar|respirar|\*)/i.test(t)) return false;
     if(/^(?:metcon|cardio|endurance|warmup)$/.test(String(block.category || ''))) return false;
-    if(/^\\s*(?:\\u26a1|\\u23f1|\\u26a0|[\\ud83c-\\ud83d][\\udc00-\\udfff])/.test(t) || /\\b(?:estrategia|coaching|tips?|objetivo|notas?|errores?|cues?|progresi[o\\u00f3]n)\\b/i.test(t)) return false;
-    if(/\\b\\d+\\s*(?:min|minutos|km|cal|mts?|metros)\\b/i.test(t) || /\\b(?:cardio|bici|bike|cinta|trote|trotar|correr|caminata|el[ií]ptico|assault|skierg|remo suave)\\b/i.test(t)) return false;
+    if(/^\s*(?:\u26a1|\u23f1|\u26a0|[\ud83c-\ud83d][\udc00-\udfff])/.test(t) || /\b(?:estrategia|coaching|tips?|objetivo|notas?|errores?|cues?|progresi[o\u00f3]n)\b/i.test(t)) return false;
+    if(/\b\d+\s*(?:min|minutos|km|cal|mts?|metros)\b/i.test(t) || /\b(?:cardio|bici|bike|cinta|trote|trotar|correr|caminata|el[ií]ptico|assault|skierg|remo suave)\b/i.test(t)) return false;
     return true;
   }
   /* "Every 1:30 x 6 sets", "Every 2 min x 5", "EMOM 10 min", "E2MOM 12 min": encabezado de intervalo, NUNCA un ejercicio
      (antes "1:30 x 6" se leia como 30 series x 6 reps = 30 casilleros). Solo si no trae nombre de ejercicio en la misma linea. */
   function parseIntervaloSB(linea){
-    var l = String(linea || '').replace(/^[^A-Za-z0-9]+/, '').replace(/[*\\s]+$/, '').trim(), m, seg = 0, sets = 0, resto = '';
-    if((m = l.match(/^(?:every|each|cada)\\s+(\\d+)(?::(\\d{2}))?\\s*(?:(min(?:ute|uto)?s?|seg(?:undos?)?|secs?|s)\\b)?(.*)$/i))){
+    var l = String(linea || '').replace(/^[^A-Za-z0-9]+/, '').replace(/[*\s]+$/, '').trim(), m, seg = 0, sets = 0, resto = '';
+    if((m = l.match(/^(?:every|each|cada)\s+(\d+)(?::(\d{2}))?\s*(?:(min(?:ute|uto)?s?|seg(?:undos?)?|secs?|s)\b)?(.*)$/i))){
       if(m[2] !== undefined) seg = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
       else if(m[3] && /^s/i.test(m[3])) seg = parseInt(m[1], 10);
       else seg = parseInt(m[1], 10) * 60;
       resto = m[4] || '';
-    } else if((m = l.match(/^(\\d+):(\\d{2})\\s*(?:min\\w*)?\\s*(?:x|\\u00d7)\\s*(\\d+)(.*)$/i))){
+    } else if((m = l.match(/^(\d+):(\d{2})\s*(?:min\w*)?\s*(?:x|\u00d7)\s*(\d+)(.*)$/i))){
       seg = parseInt(m[1], 10) * 60 + parseInt(m[2], 10); sets = parseInt(m[3], 10); resto = m[4] || '';
-    } else if((m = l.match(/^(?:emom|e(\\d+)mom)\\s*(?:de\\s*)?(\\d+)\\s*(?:min\\w*)?(.*)$/i))){
+    } else if((m = l.match(/^(?:emom|e(\d+)mom)\s*(?:de\s*)?(\d+)\s*(?:min\w*)?(.*)$/i))){
       seg = m[1] ? parseInt(m[1], 10) * 60 : 60;
       sets = m[1] ? Math.floor(parseInt(m[2], 10) / parseInt(m[1], 10)) : parseInt(m[2], 10);
       resto = m[3] || '';
@@ -2673,36 +2673,36 @@
     if(!(seg > 0)) return null;
     var mS = null;
     if(!sets){
-      var r0 = resto.replace(/^[\\s,;]*(?:min(?:ute|uto)?s?\\b)?/i, '');
-      mS = r0.match(/^\\s*(?:x|\\u00d7|\\u00b7|por|for)\\s*(\\d+)\\s*(?:sets?|rondas?|rounds?|series|vueltas)?/i) || r0.match(/^\\s*(\\d+)\\s*(?:sets?|rondas?|rounds?|series|vueltas)\\b/i);
+      var r0 = resto.replace(/^[\s,;]*(?:min(?:ute|uto)?s?\b)?/i, '');
+      mS = r0.match(/^\s*(?:x|\u00d7|\u00b7|por|for)\s*(\d+)\s*(?:sets?|rondas?|rounds?|series|vueltas)?/i) || r0.match(/^\s*(\d+)\s*(?:sets?|rondas?|rounds?|series|vueltas)\b/i);
       if(mS){ sets = parseInt(mS[1], 10); resto = r0.slice(mS[0].length); }
-    } else resto = resto.replace(/^\\s*(?:sets?|rondas?|rounds?|series|vueltas)\\b/i, '');
+    } else resto = resto.replace(/^\s*(?:sets?|rondas?|rounds?|series|vueltas)\b/i, '');
     var guard = 0, ant;
-    do{ ant = resto; resto = resto.replace(/^[\\s:,.;\\-\\u2013\\u2014\\u00b7*]+/, '').replace(/^\\([^)]*\\)/, ''); guard++; } while(resto !== ant && guard < 6);
+    do{ ant = resto; resto = resto.replace(/^[\s:,.;\-\u2013\u2014\u00b7*]+/, '').replace(/^\([^)]*\)/, ''); guard++; } while(resto !== ant && guard < 6);
     resto = resto.trim();
-    if(resto && !/[A-Za-z\\u00c0-\\u00ff0-9]/.test(resto)) resto = '';
+    if(resto && !/[A-Za-z\u00c0-\u00ff0-9]/.test(resto)) resto = '';
     return { seg: seg, sets: sets, resto: resto, texto: 'Every ' + fmtIntervaloSB(seg) + (sets ? ' x ' + sets + ' sets' : '') };
   }
   function fmtIntervaloSB(seg){ return Math.floor(seg / 60) + ':' + ('0' + (seg % 60)).slice(-2); }
-  var RX_NOTA_INT_SB = /^\\s*(?:\\u26a1|\\u23f1|\\u26a0|[\\ud83c-\\ud83d][\\udc00-\\udfff])|\\b(?:estrategia|coaching|tips?|objetivo|notas?|errores?|cues?|progresi[o\\u00f3]n)\\b/i;
+  var RX_NOTA_INT_SB = /^\s*(?:\u26a1|\u23f1|\u26a0|[\ud83c-\ud83d][\udc00-\udfff])|\b(?:estrategia|coaching|tips?|objetivo|notas?|errores?|cues?|progresi[o\u00f3]n)\b/i;
   /* ejercicio dentro de un grupo de intervalo: "1 Snatch balance + 1 Overhead squat @ 60-70% 1RM" -> nombre "Snatch balance + Overhead squat",
      reps "1+1", carga "60-70% 1RM", sets del encabezado */
   function aplicarIntervaloSB(en, hdr){
     var titulo = String(en.titulo || '');
     if(RX_NOTA_INT_SB.test(titulo) && !/@/.test(titulo)) return;
     en.int = hdr;
-    var mC = titulo.match(/@\\s*(.+)$/);
-    if(mC){ en.carga = mC[1].trim(); titulo = titulo.replace(/\\s*@.*$/, ''); }
+    var mC = titulo.match(/@\s*(.+)$/);
+    if(mC){ en.carga = mC[1].trim(); titulo = titulo.replace(/\s*@.*$/, ''); }
     if(titulo.indexOf('|') >= 0){
       var dP = parsearDosisSB(titulo);
       if(dP.tempo && !en.tempo) en.tempo = dP.tempo;
       if(dP.rir && !en.rir) en.rir = dP.rir;
       titulo = titulo.split('|')[0];
     }
-    var partes = titulo.trim().split(/\\s*\\+\\s*/), reps = [], nombres = [];
+    var partes = titulo.trim().split(/\s*\+\s*/), reps = [], nombres = [];
     partes.forEach(function(p){
-      var m = p.match(/^(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:x|reps?)?\\s+(\\S.*)$/i);
-      if(m){ reps.push(m[1].replace(/\\s+/g, '')); nombres.push(m[2].trim()); } else nombres.push(p.trim());
+      var m = p.match(/^(\d+(?:\s*[-\u2013]\s*\d+)?)\s*(?:x|reps?)?\s+(\S.*)$/i);
+      if(m){ reps.push(m[1].replace(/\s+/g, '')); nombres.push(m[2].trim()); } else nombres.push(p.trim());
     });
     en.titulo = nombres.join(' + ');
     if(!en.reps) en.reps = reps.length === nombres.length ? reps.join('+') : (reps[0] || '');
@@ -2711,35 +2711,35 @@
     if(!en.restSeconds) en.restSeconds = hdr.seg || 0;
   }
   /* notas tacticas ("⏱ PAUTA DE DESCANSO: ...", "ESTRATEGIA DE PROGRESIÓN: ...", "⚡ Foco ..."): jamas un ejercicio; se muestran como micro-banner */
-  var RX_NOTA_EMOJI_SB = /^\\s*(?:\\u26a1|\\u23f1|\\u23f0|\\u26a0|\\ud83c\\udfaf|\\ud83d\\udca1|\\ud83d\\uded1|\\ud83d\\udccc|\\ud83d\\udcdd)/;
-  var RX_NOTA_TACTICA_SB = /^\\s*(?:estrategia|pauta|notas?|coaching|progresi[o\\u00f3]n|recomendaci[o\\u00f3]n|criterio)\\b[^:\\n]{0,45}:\\s*\\S/i;
+  var RX_NOTA_EMOJI_SB = /^\s*(?:\u26a1|\u23f1|\u23f0|\u26a0|\ud83c\udfaf|\ud83d\udca1|\ud83d\uded1|\ud83d\udccc|\ud83d\udcdd)/;
+  var RX_NOTA_TACTICA_SB = /^\s*(?:estrategia|pauta|notas?|coaching|progresi[o\u00f3]n|recomendaci[o\u00f3]n|criterio)\b[^:\n]{0,45}:\s*\S/i;
   function crearNotaSB(linea){
-    var t = String(linea || '').trim(), mE = t.match(/^\\s*(\\u26a1|\\u23f1|\\u23f0|\\u26a0|\\ud83c\\udfaf|\\ud83d\\udca1|\\ud83d\\uded1|\\ud83d\\udccc|\\ud83d\\udcdd)\\s*/);
+    var t = String(linea || '').trim(), mE = t.match(/^\s*(\u26a1|\u23f1|\u23f0|\u26a0|\ud83c\udfaf|\ud83d\udca1|\ud83d\uded1|\ud83d\udccc|\ud83d\udcdd)\s*/);
     var icono = mE ? mE[1] : '', cuerpo = mE ? t.slice(mE[0].length) : t, label = '', texto = cuerpo;
-    var mC = cuerpo.match(/^([^:]{2,60}):\\s*(.*)$/);
+    var mC = cuerpo.match(/^([^:]{2,60}):\s*(.*)$/);
     if(mC){ label = mC[1].trim(); texto = mC[2].trim(); }
-    if(!label) label = /descanso|rest/i.test(cuerpo) ? 'PAUTA DE DESCANSO' : (/progres|estrateg/i.test(cuerpo) ? 'ESTRATEGIA DE PROGRESI\\u00d3N' : 'NOTA');
-    if(!icono) icono = /descanso|rest/i.test(label) ? '\\u23f1' : (/progres|estrateg/i.test(label) ? '\\ud83c\\udfaf' : '\\ud83d\\udca1');
+    if(!label) label = /descanso|rest/i.test(cuerpo) ? 'PAUTA DE DESCANSO' : (/progres|estrateg/i.test(cuerpo) ? 'ESTRATEGIA DE PROGRESI\u00d3N' : 'NOTA');
+    if(!icono) icono = /descanso|rest/i.test(label) ? '\u23f1' : (/progres|estrateg/i.test(label) ? '\ud83c\udfaf' : '\ud83d\udca1');
     return { tipo: 'nota', icono: icono, titulo: label, texto: texto };
   }
   /* "12 High & Wide Leg Press" suelto dentro de una triserie: es otra estacion del mismo grupo, nunca un renglon aparte */
   function nombreHuerfanoSB(linea){
     var t = String(linea || '').trim();
-    if(!t || t.length > 70 || /[:@|]/.test(t) || /[.!?]\\s*$/.test(t)) return null;
+    if(!t || t.length > 70 || /[:@|]/.test(t) || /[.!?]\s*$/.test(t)) return null;
     if(esLineaDirectiva(t) || RX_NOTA_TACTICA_SB.test(t) || RX_NOTA_EMOJI_SB.test(t)) return null;
     var cn = cortarNombreDosisSB(t);
     if(cn) return { nombre: limpiarPrefijoEstacionSB(cn.nombre), dosis: cn.dosis };
-    var m = t.match(/^(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:x|\\u00d7|reps?)?\\s+(\\S.*)$/i);
-    var nom = (m ? m[2] : t).trim(), reps = m ? m[1].replace(/\\s+/g, '') : '';
-    if(nom.length < 3 || nom.split(/\\s+/).length > 8 || !/[A-Za-z\\u00c0-\\u00ff]{3}/.test(nom)) return null;
-    if(/^(?:rest|descanso|descansar|tempo|rir|realizar|hacer|completar|repetir|luego|despu[e\\u00e9]s|total|mantener|usar|rondas?|rounds?)\\b/i.test(nom)) return null;
+    var m = t.match(/^(\d+(?:\s*[-\u2013]\s*\d+)?)\s*(?:x|\u00d7|reps?)?\s+(\S.*)$/i);
+    var nom = (m ? m[2] : t).trim(), reps = m ? m[1].replace(/\s+/g, '') : '';
+    if(nom.length < 3 || nom.split(/\s+/).length > 8 || !/[A-Za-z\u00c0-\u00ff]{3}/.test(nom)) return null;
+    if(/^(?:rest|descanso|descansar|tempo|rir|realizar|hacer|completar|repetir|luego|despu[e\u00e9]s|total|mantener|usar|rondas?|rounds?)\b/i.test(nom)) return null;
     return { nombre: nom, reps: reps };
   }
   /* tempo con X ("Tempo 31X0"): la X no es un "NxM" -- antes se leia como 31 series x 0 reps y la linea entera pasaba a ser el titulo.
-     Se enmascara con \\u00a7 mientras se parsea y se restaura al devolver las entradas. */
+     Se enmascara con \u00a7 mientras se parsea y se restaura al devolver las entradas. */
   function restaurarTempoSB(o, vistos){
     vistos = vistos || [];
-    if(typeof o === 'string') return o.indexOf('\\u00a7') >= 0 ? o.replace(/\\u00a7/g, 'X') : o;
+    if(typeof o === 'string') return o.indexOf('\u00a7') >= 0 ? o.replace(/\u00a7/g, 'X') : o;
     if(!o || typeof o !== 'object' || vistos.indexOf(o) >= 0) return o;
     vistos.push(o);
     if(Array.isArray(o)){ for(var i = 0; i < o.length; i++) o[i] = restaurarTempoSB(o[i], vistos); return o; }
@@ -2749,13 +2749,13 @@
   function parsearPizarraSB(lineas, opts){
     var entries = [], actual = null;
     lineas = separarMetaPizarraSB(lineas).lineas.map(function(l){
-      return String(l == null ? '' : l).replace(/(tempo\\s*:?\\s*)([0-9Xx]{3,4})\\b/gi, function(m, a, b){ return /[Xx]/.test(b) ? a + b.replace(/[Xx]/g, '\\u00a7') : m; });
+      return String(l == null ? '' : l).replace(/(tempo\s*:?\s*)([0-9Xx]{3,4})\b/gi, function(m, a, b){ return /[Xx]/.test(b) ? a + b.replace(/[Xx]/g, '\u00a7') : m; });
     });
     var hayIntSB = false;
     lineas = lineas.reduce(function(a, l){
       var h = parseIntervaloSB(l);
       if(h){ hayIntSB = true; a.push(h.texto); if(h.resto) a.push(h.resto); return a; }
-      a.push(hayIntSB ? String(l).replace(/^\\s*[A-Fa-f]\\d+\\s*[.:)\\-\\u2013\\u2014]\\s*/, '') : l);
+      a.push(hayIntSB ? String(l).replace(/^\s*[A-Fa-f]\d+\s*[.:)\-\u2013\u2014]\s*/, '') : l);
       return a;
     }, []);
     /* el título del bloque ("Superserie", "Biset: ...") habilita las estaciones sólo-número ("1." / "2.") */
@@ -2768,13 +2768,13 @@
       var hdrInt = parseIntervaloSB(linea);
       if(hdrInt){ actual = null; entries.push({ tipo: 'intervalo', seg: hdrInt.seg, sets: hdrInt.sets, texto: hdrInt.texto }); return; }
       if(RX_NOTA_EMOJI_SB.test(linea) || RX_NOTA_TACTICA_SB.test(linea)){ entries.push(crearNotaSB(linea)); return; }
-      var mSetR = linea.match(/^\\s*(?:sets?|series?)\\s*(\\d+)(?:\\s*[-\\u2013]\\s*(\\d+))?\\s*[:.\\-\\u2013\\u2014]\\s*(\\S.*)$/i);
+      var mSetR = linea.match(/^\s*(?:sets?|series?)\s*(\d+)(?:\s*[-\u2013]\s*(\d+))?\s*[:.\-\u2013\u2014]\s*(\S.*)$/i);
       if(mSetR){
-        var restoSR = mSetR[3], cargaSR = '', mCSR = restoSR.match(/@\\s*(.+)$/);
-        if(mCSR){ cargaSR = mCSR[1].trim(); restoSR = restoSR.replace(/\\s*@.*$/, ''); }
-        var mRSR = restoSR.match(/^(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:x|\\u00d7|reps?)?\\s+(\\S.*)$/i);
+        var restoSR = mSetR[3], cargaSR = '', mCSR = restoSR.match(/@\s*(.+)$/);
+        if(mCSR){ cargaSR = mCSR[1].trim(); restoSR = restoSR.replace(/\s*@.*$/, ''); }
+        var mRSR = restoSR.match(/^(\d+(?:\s*[-\u2013]\s*\d+)?)\s*(?:x|\u00d7|reps?)?\s+(\S.*)$/i);
         var nSetsSR = mSetR[2] ? Math.max(1, parseInt(mSetR[2], 10) - parseInt(mSetR[1], 10) + 1) : 1;
-        actual = { tipo:'simple', titulo: (mRSR ? mRSR[2] : restoSR).trim(), tituloOriginal: linea, sets: nSetsSR, reps: mRSR ? mRSR[1].replace(/\\s+/g, '').replace(/\\u2013/g, '-') : '', carga: cargaSR, tempo:'', restSeconds:0, rir:'', dosisAsignada:true, tecnica:'', tecnicaPct:null, myoInfo:null, notas:[], unidad:'reps' };
+        actual = { tipo:'simple', titulo: (mRSR ? mRSR[2] : restoSR).trim(), tituloOriginal: linea, sets: nSetsSR, reps: mRSR ? mRSR[1].replace(/\s+/g, '').replace(/\u2013/g, '-') : '', carga: cargaSR, tempo:'', restSeconds:0, rir:'', dosisAsignada:true, tecnica:'', tecnicaPct:null, myoInfo:null, notas:[], unidad:'reps' };
         entries.push(actual);
         return;
       }
@@ -2782,14 +2782,14 @@
          (4 sets en total), nunca solo la primera dosis. Sin nombre en la línea, los tramos pasan al ejercicio recién nombrado. */
       var cnT = (typeof jpDosisCanon === 'function') ? jpDosisCanon(linea) : null;
       if(((cnT && cnT.tramos.length > 1) || (!cnT && RX_MULTI_TRAMO_SB.test(linea))) && !(actual && actual.tipo === 'biserie' && actual.subs.length)){
-        var iTr = cnT ? cnT.corte : linea.search(/\\d+\\s*[x\\u00d7]\\s*\\d+/i);
-        var nomTr = (typeof jpLimpiarNombreEj === 'function') ? jpLimpiarNombreEj(linea.slice(0, iTr)) : linea.slice(0, iTr).replace(/^[\\s\\-\\u2013\\u2014\\u2022*]+/, '').replace(/\\s+[x\\u00d7]\\s*$/i, '').replace(/[\\s\\u00d7:|\\-\\u2013\\u2014(]+$/, '').trim();
+        var iTr = cnT ? cnT.corte : linea.search(/\d+\s*[x\u00d7]\s*\d+/i);
+        var nomTr = (typeof jpLimpiarNombreEj === 'function') ? jpLimpiarNombreEj(linea.slice(0, iTr)) : linea.slice(0, iTr).replace(/^[\s\-\u2013\u2014\u2022*]+/, '').replace(/\s+[x\u00d7]\s*$/i, '').replace(/[\s\u00d7:|\-\u2013\u2014(]+$/, '').trim();
         var colaTr = linea.slice(iTr), segTr = colaTr.split('|')[0], tramosTr = [], mTr2;
         if(cnT){
           cnT.tramos.forEach(function(t){ tramosTr.push({ sets: t.sets, reps: t.reps, unidad: 'reps', tempo: '', rir: '', rest: 0, etq: t.etq || '' }); });
         } else {
-          var rxT = /(\\d+)\\s*[x\\u00d7]\\s*(\\d+(?:\\s*[-\\u2013]\\s*\\d+)?)\\s*(?:\\(([^)]*)\\))?/gi;
-          while((mTr2 = rxT.exec(segTr))) tramosTr.push({ sets: parseInt(mTr2[1], 10), reps: mTr2[2].replace(/\\s+/g, '').replace(/\\u2013/g, '-'), unidad: 'reps', tempo: '', rir: '', rest: 0, etq: mTr2[3] ? mTr2[3].trim() : '' });
+          var rxT = /(\d+)\s*[x\u00d7]\s*(\d+(?:\s*[-\u2013]\s*\d+)?)\s*(?:\(([^)]*)\))?/gi;
+          while((mTr2 = rxT.exec(segTr))) tramosTr.push({ sets: parseInt(mTr2[1], 10), reps: mTr2[2].replace(/\s+/g, '').replace(/\u2013/g, '-'), unidad: 'reps', tempo: '', rir: '', rest: 0, etq: mTr2[3] ? mTr2[3].trim() : '' });
         }
         var destTr = null;
         if(tramosTr.length > 1){
@@ -2816,7 +2816,7 @@
       var mDosisE = estM ? estM[3].match(RX_DOSIS_SB) : null;
       var corteE = (estM && !mDosisE) ? estM[3].search(RX_CORTE_DOSIS_SB) : -1;
       var idxDosisE = mDosisE ? mDosisE.index : (corteE > 0 ? corteE : -1);
-      var nomPuroE = estM ? (idxDosisE >= 0 ? estM[3].slice(0, idxDosisE) : estM[3]).replace(/[\\s:|\\-\\u2013\\u2014]+$/, '').trim() : '';
+      var nomPuroE = estM ? (idxDosisE >= 0 ? estM[3].slice(0, idxDosisE) : estM[3]).replace(/[\s:|\-\u2013\u2014]+$/, '').trim() : '';
       if(estM && nomPuroE && (estM[1] || titBiset || (actual && actual.tipo === 'biserie'))){
         var letraE = estM[1].toUpperCase();
         if(!actual || actual.tipo !== 'biserie' || (letraE && actual.letra && actual.letra !== letraE) || (estM[2] === '1' && actual.subs.length)){
@@ -2835,7 +2835,7 @@
         if(!actual || actual.tipo !== 'biserie'){ actual = { tipo:'biserie', titulo:'Biset / Triset', subs:[], rondas:3, restSeconds:90 }; entries.push(actual); }
         var resSub = extraerTecnicaSB(subM[3]);
         var dosisSub = parsearDosisSB(resSub.texto);
-        var parenM = resSub.texto.match(/\\(([^)]+)\\)/);
+        var parenM = resSub.texto.match(/\(([^)]+)\)/);
         /* directiva maestra ("Parser universal y tolerante") -- "por
            pierna"/"por lado" se montan como micro-chip táctico propio
            (ver jp-sb-unilateral en el render, más abajo), nunca mezclados
@@ -2850,7 +2850,7 @@
         return;
       }
       if(RX_BISET_HEAD_SB.test(linea) && (!actual || actual.tipo !== 'biserie' || actual.subs.length)){
-        actual = { tipo:'biserie', titulo: linea.replace(/^(biset|superset|triset|circuito)\\s*[·:\\-]?\\s*/i, '').trim() || linea, subs:[], rondas:3, restSeconds:90 };
+        actual = { tipo:'biserie', titulo: linea.replace(/^(biset|superset|triset|circuito)\s*[·:\-]?\s*/i, '').trim() || linea, subs:[], rondas:3, restSeconds:90 };
         entries.push(actual);
         return;
       }
@@ -2861,7 +2861,7 @@
       }
       if(actual && actual.tipo === 'biserie'){
         var dBis = parsearDosisSB(linea);
-        var esRestBis = /^\\s*(?:rest|descanso)\\b/i.test(linea);
+        var esRestBis = /^\s*(?:rest|descanso)\b/i.test(linea);
         var arrancaConDosis = !!(dBis.sets && linea.search(RX_DOSIS_SB) === 0);
         /* "3 sets x 4 reps, 5 respiraciones": detalle del protocolo Myo-Reps de la estación que lo prescribe, no su dosis */
         if(actual.subs.length && arrancaConDosis && !esRestBis){
@@ -2883,16 +2883,16 @@
         }
         /* "+ 3 set myo-reps (...)" / "[DROPSET] ..." sueltos: son de la ESTACIÓN que los prescribe (la anterior) */
         var porNombreB = actual.subs.length ? subPorNombreSB(actual, linea) : null;
-        if(actual.subs.length && (porNombreB || !/^[^:\\[\\n]{3,}:\\s*\\S/.test(linea))){
+        if(actual.subs.length && (porNombreB || !/^[^:\[\n]{3,}:\s*\S/.test(linea))){
           var lastB = porNombreB || destinoTecnicaSB(actual, linea);
           var myoB = linea.match(RX_MYO_CLAUSE_SB);
-          var resTB = extraerTecnicaSB(linea.replace(/^\\*\\s*/, ''));
+          var resTB = extraerTecnicaSB(linea.replace(/^\*\s*/, ''));
           if(myoB){ lastB.tecnica = 'myoreps'; lastB.myoInfo = extraerMyoInfoSB(myoB[1] || ''); return; }
           if(resTB.tecnica){ lastB.tecnica = resTB.tecnica; if(resTB.tecnica === 'dropset') lastB.tecnicaPct = extraerPctSB(resTB.texto); return; }
         }
-        if(actual.subs.length && (/^\\*/.test(linea) || esLineaDirectiva(linea))){
+        if(actual.subs.length && (/^\*/.test(linea) || esLineaDirectiva(linea))){
           var ult = actual.subs[actual.subs.length - 1];
-          var txtN = linea.replace(/^\\*\\s*/, '');
+          var txtN = linea.replace(/^\*\s*/, '');
           ult.nota = ult.nota ? ult.nota + ' · ' + txtN : txtN;
           return;
         }
@@ -2912,7 +2912,7 @@
          ▸, como si fuera algo que el alumno tiene que "hacer". Se separa
          a su propio tipo para que el render la monte como chip de
          cabecera del bloque (⏱ TIEMPO ESTIMADO), nunca como fila. */
-      var mDuracion = linea.match(/^(\\d+)\\s*(?:minutos?|mins?)\\s*:?\\s*$/i);
+      var mDuracion = linea.match(/^(\d+)\s*(?:minutos?|mins?)\s*:?\s*$/i);
       if(mDuracion){
         entries.push({ tipo:'duracion', minutos: parseInt(mDuracion[1], 10) });
         return;
@@ -2931,17 +2931,17 @@
          sets x 12 reps" se sigue reconociendo limpio aunque comparta
          línea con el detalle de Myo-Reps. */
       var myoClauseM = linea.match(RX_MYO_CLAUSE_SB);
-      var lineaParaDosis = myoClauseM ? (linea.slice(0, myoClauseM.index) + linea.slice(myoClauseM.index + myoClauseM[0].length)).replace(/\\s+/g, ' ').trim() : linea;
+      var lineaParaDosis = myoClauseM ? (linea.slice(0, myoClauseM.index) + linea.slice(myoClauseM.index + myoClauseM[0].length)).replace(/\s+/g, ' ').trim() : linea;
       var dosis = parsearDosisSB(lineaParaDosis);
       /* detalle del protocolo Myo-Reps escrito como línea de dosis ("3 sets x 4 reps con 5 respiraciones"): es del ejercicio con la
          técnica; nunca abre una tarjeta nueva "3 SETS | 4 REPS" */
       /* series escalonadas: "1 Set × 3 reps (Aclimatación pesada) | Tempo 31X0" bajo "Sentadilla con barra" son TRAMOS del mismo
          ejercicio (aclimatación, top set, back-off), nunca ejercicios nuevos. Solo si la línea empieza con la dosis y no trae nombre propio. */
       if(actual && actual.tipo === 'simple' && (actual.tramos || (!actual.dosisAsignada && !actual.tecnica)) && dosis.sets && lineaParaDosis.search(RX_DOSIS_SB) === 0){
-        var mTr = lineaParaDosis.match(RX_DOSIS_SB), restoTr = lineaParaDosis.slice(mTr[0].length), parenTr = restoTr.match(/\\(([^)]*)\\)/);
-        var sinTr = restoTr.replace(/\\([^)]*\\)/g, '').replace(/^\\s*(?:reps?|repeticiones)\\b/i, '').replace(/tempo\\s*[\\d\\u00a7]{3,4}/gi, '')
-          .replace(/rir\\s*\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?/gi, '').replace(/(?:rest|descanso)\\s*[^|]+/gi, '').replace(/[|.:,\\-\\u2013\\u2014\\/@%\\s]/g, '');
-        if((actual.tramos || parenTr) && !/[A-Za-z\\u00c0-\\u00ff]{3}/.test(sinTr)){
+        var mTr = lineaParaDosis.match(RX_DOSIS_SB), restoTr = lineaParaDosis.slice(mTr[0].length), parenTr = restoTr.match(/\(([^)]*)\)/);
+        var sinTr = restoTr.replace(/\([^)]*\)/g, '').replace(/^\s*(?:reps?|repeticiones)\b/i, '').replace(/tempo\s*[\d\u00a7]{3,4}/gi, '')
+          .replace(/rir\s*\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?/gi, '').replace(/(?:rest|descanso)\s*[^|]+/gi, '').replace(/[|.:,\-\u2013\u2014\/@%\s]/g, '');
+        if((actual.tramos || parenTr) && !/[A-Za-z\u00c0-\u00ff]{3}/.test(sinTr)){
           actual.tramos = actual.tramos || [];
           actual.tramos.push({ sets: dosis.sets, reps: dosis.reps || '', unidad: dosis.unidad || 'reps', tempo: dosis.tempo || '', rir: dosis.rir || '', rest: dosis.restSeconds || 0, etq: parenTr ? parenTr[1].trim() : '' });
           var mayorTr = actual.tramos.reduce(function(a, t){ return t.sets > a.sets ? t : a; }, actual.tramos[0]);
@@ -3000,16 +3000,16 @@
          sigue funcionando exactamente igual. */
       /* una línea "Rest 120s" / "Rest 0s" suelta tras la dosis fija el descanso del ejercicio
          (la dosis y el descanso se redactan en renglones separados); "Rest 0s" = sin descanso */
-      if(actual && actual.tipo === 'simple' && /^\\s*(?:rest|descanso)\\b/i.test(linea) && dosis.restSeconds !== undefined){
+      if(actual && actual.tipo === 'simple' && /^\s*(?:rest|descanso)\b/i.test(linea) && dosis.restSeconds !== undefined){
         actual.restSeconds = dosis.restSeconds;
         if(dosis.restLabel) actual.restLabel = dosis.restLabel;
         if(dosis.restSeconds === 0) actual.restCero = true;
         return;
       }
       var resTecLinea = extraerTecnicaSB(linea);
-      var esPropioNombreConDosis = /^[^:\\[\\n]{3,}:\\s*\\S/.test(linea);
-      if(actual && actual.tipo === 'simple' && (esLineaDirectiva(linea) || /^\\*/.test(linea) || (resTecLinea.tecnica && !esPropioNombreConDosis))){
-        var resNota = extraerTecnicaSB(linea.replace(/^\\*\\s*/, ''));
+      var esPropioNombreConDosis = /^[^:\[\n]{3,}:\s*\S/.test(linea);
+      if(actual && actual.tipo === 'simple' && (esLineaDirectiva(linea) || /^\*/.test(linea) || (resTecLinea.tecnica && !esPropioNombreConDosis))){
+        var resNota = extraerTecnicaSB(linea.replace(/^\*\s*/, ''));
         if(resNota.tecnica) actual.tecnica = resNota.tecnica;
         /* directiva ("Limpieza de residuos en técnicas avanzadas") -- el
            texto explicativo crudo de una línea de técnica (dropset/rest-
@@ -3041,7 +3041,7 @@
          si lo que sigue al PRIMER ":" matchea una dosis real reconocible
          (nunca con un "Nota: ..."/"Objetivo: ..." suelto, que no trae
          NxM adentro). */
-      var mNombreDosis = linea.match(/^([^:]+):\\s*(.+)$/);
+      var mNombreDosis = linea.match(/^([^:]+):\s*(.+)$/);
       var dosisPrevND = mNombreDosis ? parsearDosisSB(mNombreDosis[2]) : null;
       var repsConPrescSB = !!(dosisPrevND && dosisPrevND.reps && (dosisPrevND.tempo || dosisPrevND.rir || dosisPrevND.restSeconds !== undefined));
       if(mNombreDosis && (RX_DOSIS_SB.test(mNombreDosis[2]) || repsConPrescSB)){
@@ -3065,7 +3065,7 @@
           if(dosisCN.notaSecundaria === 'Por pierna' || dosisCN.notaSecundaria === 'Por lado') actual.unilateral = dosisCN.notaSecundaria;
           else actual.notas.push(dosisCN.notaSecundaria);
         }
-        var mCarga = corteND.dosisPrimero ? corteND.dosis.match(/@\\s*([\\d.,]+\\s*(?:kg|lbs?))/i) : null;
+        var mCarga = corteND.dosisPrimero ? corteND.dosis.match(/@\s*([\d.,]+\s*(?:kg|lbs?))/i) : null;
         if(mCarga) actual.notas.push('@ ' + mCarga[1]);
         else if(dosisCN.carga) actual.carga = dosisCN.carga;
         if(actual.sets){ entries.push(actual); return; }
@@ -3081,7 +3081,7 @@
          resTecLinea ya calculado arriba (cero llamada duplicada) --
          nunca se le suma al título/nombre visible, que sigue siendo la
          línea original menos el corchete de técnica si lo traía. */
-      var tituloSinTecnica = (resTecLinea.tecnica ? resTecLinea.texto : linea).replace(/^\\d+\\s*[.)]\\s+/, '');
+      var tituloSinTecnica = (resTecLinea.tecnica ? resTecLinea.texto : linea).replace(/^\d+\s*[.)]\s+/, '');
       actual = { tipo:'simple', titulo: tituloSinTecnica, sets:0, reps:'', tempo:'', restSeconds:0, rir:'', dosisAsignada:false,
         tecnica: resTecLinea.tecnica || '',
         tecnicaPct: resTecLinea.tecnica === 'dropset' ? extraerPctSB(resTecLinea.texto) : null,
@@ -3147,10 +3147,10 @@
      "metros", "cal"). */
   function detectarUnidadSecundariaSB(trasTexto){
     var t = String(trasTexto || '').trim();
-    if(/^(?:seg(?:undos?)?|s)\\b/i.test(t)) return 'seg';
-    if(/^min(?:utos?)?\\b/i.test(t)) return 'min';
-    if(/^(?:m|mts?|metros?)\\b/i.test(t)) return 'mts';
-    if(/^cal(?:or[ií]as?)?\\b/i.test(t)) return 'cal';
+    if(/^(?:seg(?:undos?)?|s)\b/i.test(t)) return 'seg';
+    if(/^min(?:utos?)?\b/i.test(t)) return 'min';
+    if(/^(?:m|mts?|metros?)\b/i.test(t)) return 'mts';
+    if(/^cal(?:or[ií]as?)?\b/i.test(t)) return 'cal';
     return 'reps';
   }
   /* directiva maestra ("Registro ágil de 1 toque para Drop Sets y Myo-
@@ -3168,8 +3168,8 @@
      nota opcional (persistida en state.notes, mismo mecanismo ya usado
      por el resto de la app, ver listener .jp-intensity-note más abajo). */
   var PROTOCOLO_TECNICA_SB = {
-    myoreps: { pill: 'SERIE ACTIVACI\\u00d3N', icono: '\\u26a1', texto: 'Protocolo Myo-reps: despu\\u00e9s de la activaci\\u00f3n, 3 a 5 mini-sets al fallo t\\u00e9cnico (RIR 0) con 5 respiraciones de pausa. Los mini-sets son parte de esta serie: no suman series.', ph: '4 mini-sets completados' },
-    dropset: { pill: 'CARGA INICIAL', icono: '\\ud83d\\udcc9', texto: 'Protocolo Drop Set: Descarga inmediata (-20% a -25%) al fallo sin descanso.', ph: '2 bajadas hasta 20kg' }
+    myoreps: { pill: 'SERIE ACTIVACI\u00d3N', icono: '\u26a1', texto: 'Protocolo Myo-reps: despu\u00e9s de la activaci\u00f3n, 3 a 5 mini-sets al fallo t\u00e9cnico (RIR 0) con 5 respiraciones de pausa. Los mini-sets son parte de esta serie: no suman series.', ph: '4 mini-sets completados' },
+    dropset: { pill: 'CARGA INICIAL', icono: '\ud83d\udcc9', texto: 'Protocolo Drop Set: Descarga inmediata (-20% a -25%) al fallo sin descanso.', ph: '2 bajadas hasta 20kg' }
   };
   /* DROP SET: tres tarjetas en secuencia (la serie principal y dos bajadas), cada una con su peso x repeticiones al fallo y su check. Reusa la fila
      nativa (data-set-key / .jp-input-native / .jp-btn-check-native): mismos listeners, mismo setLoadField(), mismo tonelaje. Claves: slot 1 (la de siempre,
@@ -3180,11 +3180,11 @@
   function estructuraTecnicaSB(o){
     var tec = o.tecnica, n = parseInt(o.sets, 10) || 1, ronda = !!o.ronda, U = ronda ? 'RONDA' : 'SERIE', u = ronda ? 'ronda' : 'serie';
     var nom = { dropset: 'DROP-SET', myoreps: 'MYO-REPS', restpause: 'REST-PAUSE' }[tec]; if(!nom) return '';
-    var ic = { dropset: '\\ud83d\\udd25', myoreps: '\\ud83d\\udd01', restpause: '\\u26a1' }[tec], pct = Math.abs(o.pct || 20);
+    var ic = { dropset: '\ud83d\udd25', myoreps: '\ud83d\udd01', restpause: '\u26a1' }[tec], pct = Math.abs(o.pct || 20);
     var fases = {
-      dropset: ['<span class="jp-tec-fase">1 \\u00b7 carga de trabajo</span> al fallo', '<span class="jp-tec-fase">2 \\u00b7 bajada \\u2212' + pct + '%</span> al fallo', '<span class="jp-tec-fase">3 \\u00b7 bajada \\u2212' + pct + '%</span> al fallo'],
-      myoreps: ['<span class="jp-tec-fase">1 \\u00b7 activaci\\u00f3n</span> a 1-2 reps del fallo', '<span class="jp-tec-fase">2 \\u00b7 mini-sets</span>: 3 a 5 de ' + (o.microReps || 4) + ' reps, con 5 respiraciones de pausa'],
-      restpause: ['<span class="jp-tec-fase">1 \\u00b7 serie al fallo</span> t\\u00e9cnico', '<span class="jp-tec-fase">2 \\u00b7 pausa 15-20 s</span> y +2-4 reps', '<span class="jp-tec-fase">3 \\u00b7 pausa 15-20 s</span> y +2-4 reps']
+      dropset: ['<span class="jp-tec-fase">1 \u00b7 carga de trabajo</span> al fallo', '<span class="jp-tec-fase">2 \u00b7 bajada \u2212' + pct + '%</span> al fallo', '<span class="jp-tec-fase">3 \u00b7 bajada \u2212' + pct + '%</span> al fallo'],
+      myoreps: ['<span class="jp-tec-fase">1 \u00b7 activaci\u00f3n</span> a 1-2 reps del fallo', '<span class="jp-tec-fase">2 \u00b7 mini-sets</span>: 3 a 5 de ' + (o.microReps || 4) + ' reps, con 5 respiraciones de pausa'],
+      restpause: ['<span class="jp-tec-fase">1 \u00b7 serie al fallo</span> t\u00e9cnico', '<span class="jp-tec-fase">2 \u00b7 pausa 15-20 s</span> y +2-4 reps', '<span class="jp-tec-fase">3 \u00b7 pausa 15-20 s</span> y +2-4 reps']
     }[tec];
     var pills = '';
     for(var i = 1; i < n; i++) pills += '<span class="jp-tec-p">' + i + '</span>';
@@ -3195,12 +3195,12 @@
     unidadSec = unidadSec || 'reps'; ctx = ctx || {};
     var pctD = Math.abs(ctx.pct || 20), nS = ctx.n || 1, totS = ctx.tot || nS;
     var pasos = [
-      { idx: 1,    n: 1, lb: 'FASE 1 \\u00b7 CARGA DE TRABAJO',      sub: 'al fallo \\u00b7 es la serie ' + nS },
-      { idx: 'd1', n: 2, lb: 'FASE 2 \\u00b7 BAJADA 1', sub: '-' + pctD + '% del peso \\u00b7 al fallo \\u00b7 misma serie ' + nS },
-      { idx: 'd2', n: 3, lb: 'FASE 3 \\u00b7 BAJADA 2', sub: '-' + pctD + '% otra vez \\u00b7 al fallo \\u00b7 misma serie ' + nS }
+      { idx: 1,    n: 1, lb: 'FASE 1 \u00b7 CARGA DE TRABAJO',      sub: 'al fallo \u00b7 es la serie ' + nS },
+      { idx: 'd1', n: 2, lb: 'FASE 2 \u00b7 BAJADA 1', sub: '-' + pctD + '% del peso \u00b7 al fallo \u00b7 misma serie ' + nS },
+      { idx: 'd2', n: 3, lb: 'FASE 3 \u00b7 BAJADA 2', sub: '-' + pctD + '% otra vez \u00b7 al fallo \u00b7 misma serie ' + nS }
     ];
     var base = 0, html = '<div class="jp-set-tracker-native jp-set-tracker-tecnica jp-drop-tracker" data-pct="' + pctD + '">' +
-      '<div class="jp-tec-head">SERIE ' + nS + ' DE ' + totS + ' \\u00b7 DROP-SET<small>3 fases seguidas, sin descanso entre fases: cuentan como 1 sola serie</small></div>';
+      '<div class="jp-tec-head">SERIE ' + nS + ' DE ' + totS + ' \u00b7 DROP-SET<small>3 fases seguidas, sin descanso entre fases: cuentan como 1 sola serie</small></div>';
     pasos.forEach(function(p, i){
       var key = getLoadKey(weekIdx, dayId, blockId, exIdx, p.idx);
       var ld = getLoad(key);
@@ -3212,12 +3212,12 @@
       }
       var kgVal = ld.kg != null ? ld.kg : '';
       var secVal = ld.reps != null ? ld.reps : '';
-      var kgPh = '\\u2014';
+      var kgPh = '\u2014';
       if(kgVal === ''){
         if(i > 0 && base > 0) kgPh = String(dropRedondeoSB(base, pctD));
         else if(prevKg != null) kgPh = String(prevKg);
       }
-      var secPh = (secVal === '' && prevSec != null) ? String(prevSec) : '\\u2014';
+      var secPh = (secVal === '' && prevSec != null) ? String(prevSec) : '\u2014';
       var kgNum = parseFloat(String(kgVal).replace(',', '.'));
       base = kgNum > 0 ? kgNum : (parseFloat(kgPh) || 0);
       html += '<div class="jp-drop-card" data-drop-step="' + p.n + '"' + (i === pasos.length - 1 ? ' data-drop-last="1"' : '') + '>' +
@@ -3226,15 +3226,15 @@
             '<div class="jp-set-inputs-group">' +
               '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-primary" placeholder="' + kgPh + '" value="' + escSB(kgVal) + '" />' +
               '<span class="jp-unit">kg</span>' +
-              '<span class="jp-sep">\\u00d7</span>' +
+              '<span class="jp-sep">\u00d7</span>' +
               '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-secondary" placeholder="' + secPh + '" value="' + escSB(secVal) + '" />' +
               '<span class="jp-unit">' + unidadSec + '</span>' +
-              '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar ' + p.lb + ' completada">\\u2713</button>' +
+              '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar ' + p.lb + ' completada">\u2713</button>' +
             '</div>' +
           '</div>' +
         '</div>';
     });
-    return html + '<div class="jp-drop-nota">Sin descanso entre bajadas: el reloj arranca al marcar la \\u00faltima.</div></div>';
+    return html + '<div class="jp-drop-nota">Sin descanso entre bajadas: el reloj arranca al marcar la \u00faltima.</div></div>';
   }
   /* al escribir el peso de una tarjeta, la sugerencia de las siguientes se recalcula (-20% de la anterior) */
   function jpDropSugerirSB(tr){
@@ -3280,28 +3280,28 @@
       '<div class="jp-tecnica-chips">' +
         ['10', '15', '20', '25'].map(function(p){ return '<button type="button" class="jp-tecnica-chip" data-pct="' + p + '">-' + p + '%</button>'; }).join('') +
       '</div>' : '';
-    var addLabel = esDropset ? '\\u2795 Agregar bajada' : '\\u2795 Agregar mini-set';
+    var addLabel = esDropset ? '\u2795 Agregar bajada' : '\u2795 Agregar mini-set';
     var nSerie = ctx.n || 1, totSerie = ctx.tot || nSerie;
     return '<div class="jp-set-tracker-native jp-set-tracker-tecnica">' +
-        '<div class="jp-tec-head">SERIE ' + nSerie + ' DE ' + totSerie + ' \\u00b7 MYO-REPS<small>activaci\\u00f3n + 3 a 5 mini-sets: cuentan como 1 sola serie</small></div>' +
+        '<div class="jp-tec-head">SERIE ' + nSerie + ' DE ' + totSerie + ' \u00b7 MYO-REPS<small>activaci\u00f3n + 3 a 5 mini-sets: cuentan como 1 sola serie</small></div>' +
         '<div class="jp-set-row-native' + (ld.done ? ' completed' : '') + modoClsCtxSB(ctx) + '" data-set-key="' + key + '">' +
-          '<span class="jp-set-pill">' + 'SERIE ' + nSerie + ' \\u00b7 ACTIVACI\\u00d3N' + '</span>' +
+          '<span class="jp-set-pill">' + 'SERIE ' + nSerie + ' \u00b7 ACTIVACI\u00d3N' + '</span>' +
           '<div class="jp-set-inputs-group">' +
             '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />' +
             '<span class="jp-unit">kg</span>' +
-            '<span class="jp-sep">\\u00d7</span>' +
+            '<span class="jp-sep">\u00d7</span>' +
             '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />' +
             '<span class="jp-unit">' + unidadSec + '</span>' +
-            '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie completada">\\u2713</button>' +
+            '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie completada">\u2713</button>' +
           '</div>' +
         '</div>' +
         '<div class="jp-tecnica-protocolo">' + proto.icono + ' ' + proto.texto + '</div>' +
         '<div class="jp-tecnica-quickreg">' +
           chipsHtml +
           '<div class="jp-tecnica-stepper">' +
-            '<button type="button" class="jp-tecnica-step-btn" data-step="-1" aria-label="Menos reps">\\u2212</button>' +
+            '<button type="button" class="jp-tecnica-step-btn" data-step="-1" aria-label="Menos reps">\u2212</button>' +
             '<span class="jp-tecnica-step-val" data-stepval>0</span>' +
-            '<button type="button" class="jp-tecnica-step-btn" data-step="1" aria-label="M\\u00e1s reps">+</button>' +
+            '<button type="button" class="jp-tecnica-step-btn" data-step="1" aria-label="M\u00e1s reps">+</button>' +
             '<span class="jp-tecnica-step-unit">reps</span>' +
             '<button type="button" class="jp-tecnica-add-btn" data-addbajada="' + notaKey + '">' + addLabel + '</button>' +
           '</div>' +
@@ -3345,9 +3345,9 @@
       var refHtml = '';
       if(prevKg != null || prevSec != null){
         var refTxt = (prevKg != null ? prevKg + ' kg' : '') +
-          (prevKg != null && prevSec != null ? ' \\u00d7 ' : '') +
+          (prevKg != null && prevSec != null ? ' \u00d7 ' : '') +
           (prevSec != null ? prevSec + ' ' + unidadSec : '') +
-          (rirAnterior ? ' \\u00b7 [RIR ' + rirAnterior + ']' : '');
+          (rirAnterior ? ' \u00b7 [RIR ' + rirAnterior + ']' : '');
         refHtml = '<span class="jp-set-ref">// S ANTERIOR: ' + refTxt + '</span>';
       }
       var kgVal = ld.kg != null ? ld.kg : '';
@@ -3370,26 +3370,26 @@
         badgeHtml = '<span class="jp-sb-set-badge jp-sb-badge-' + setTecnica.tecnica + '">' + TECNICAS_BADGE_SB[setTecnica.tecnica] + pctSufijo + '</span>';
       }
       var esActMyo = esMyo && i === numSetsInt;
-      var pillTxt = esActMyo ? 'SERIE ' + i + ' \\u00b7 MYO' : 'SERIE ' + i;
+      var pillTxt = esActMyo ? 'SERIE ' + i + ' \u00b7 MYO' : 'SERIE ' + i;
       var kgInputHtml = '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-primary" placeholder="' + kgPlaceholder + '" value="' + escSB(kgVal) + '" />';
       var secInputHtml = '<input type="number" inputmode="decimal" step="0.5" pattern="[0-9]*" autocomplete="off" enterkeyhint="done" class="jp-input-native jp-val-secondary" placeholder="' + secPlaceholder + '" value="' + escSB(secVal) + '" />';
-      var checkHtml = '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\\u2713</button>';
+      var checkHtml = '<button type="button" class="jp-btn-check-native' + (ld.done ? ' completed' : '') + '" aria-label="Marcar serie ' + i + ' completada">\u2713</button>';
       var inputsInner;
       if(modoEj === 'tiempo' || modoEj === 'solo'){
         /* isométrico (Plancha, Hold): un único input de tiempo [ 30 ] seg */
-        inputsInner = kgInputHtml + '<span class="jp-pad-cell"></span><span class="jp-sep jp-sep-ghost">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + ((modoEj === 'solo' || unidadSec !== 'reps') ? unidadSec : 'seg') + '</span>' + checkHtml;
+        inputsInner = kgInputHtml + '<span class="jp-pad-cell"></span><span class="jp-sep jp-sep-ghost">\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + ((modoEj === 'solo' || unidadSec !== 'reps') ? unidadSec : 'seg') + '</span>' + checkHtml;
       } else if(modoEj === 'banda'){
         /* banda elastica: chip BANDA fijo, sin kg ni lastre -- solo reps */
         inputsInner = '<span class="jp-bw-cell"><span class="jp-bw-chip">BANDA</span></span>' +
           kgInputHtml + '<span class="jp-unit jp-unit-kg">kg</span>' +
-          '<span class="jp-sep">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
+          '<span class="jp-sep">\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
       } else if(modoEj === 'bw'){
         /* peso corporal: chip BW fijo; el kg sólo aparece si se agrega lastre */
         inputsInner = '<span class="jp-bw-cell"><span class="jp-bw-chip">BW</span><button type="button" class="jp-lastre-btn">+ Lastre</button></span>' +
           kgInputHtml + '<span class="jp-unit jp-unit-kg">kg</span>' +
-          '<span class="jp-sep">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
+          '<span class="jp-sep">\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
       } else {
-        inputsInner = kgInputHtml + '<span class="jp-unit">kg</span>' + '<span class="jp-sep">\\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
+        inputsInner = kgInputHtml + '<span class="jp-unit">kg</span>' + '<span class="jp-sep">\u00d7</span>' + secInputHtml + '<span class="jp-unit">' + unidadSec + '</span>' + checkHtml;
       }
       var modoCls = modoEj ? ' jp-modo-' + modoEj + ((modoEj === 'bw' && parseFloat(kgVal) > 0) ? ' jp-lastre-on' : '') : '';
       html += '<div class="jp-set-row-native' + doneCls + modoCls + '" data-set-key="' + key + '">' +
@@ -3423,7 +3423,7 @@
         microInputs += '<button type="button" class="jp-myo-mini' + (mVal ? ' hecho' : '') + '" data-micro-key="' + mKey + '" data-micro-target="' + microReps + '" aria-pressed="' + (mVal ? 'true' : 'false') + '"' + (mj > microVis ? ' hidden' : '') + '>+' + (mVal ? escSB(mVal) : microReps) + '</button>';
       }
       html += '<div class="jp-myo-mod">' +
-          '<div class="jp-myo-lb">\\u26a1 MYO-REPS \\u00b7 3 a 5 mini-sets \\u00b7 RIR 0</div>' +
+          '<div class="jp-myo-lb">\u26a1 MYO-REPS \u00b7 3 a 5 mini-sets \u00b7 RIR 0</div>' +
           '<div class="jp-myo-chips">' + microInputs + '<button type="button" class="jp-myo-add"' + (microVis >= microMax ? ' hidden' : '') + '>[ + AGREGAR MINI-SET ]</button></div>' +
         '</div>';
     }
@@ -3469,15 +3469,15 @@
      finales y el resto de texto tras un "|". */
   function limpiarNombreParaVideoSB(nombre){
     var t = String(nombre || '').trim();
-    t = t.replace(/^[\\s\\-–—•*]+/, '');
+    t = t.replace(/^[\s\-–—•*]+/, '');
     t = t.split('|')[0].trim();
-    t = t.replace(/\\s*\\([^)]*\\)\\s*$/, '');
-    t = t.replace(/\\s*[x\\u00d7]\\s*\\d[\\w.\\/]*.*$/i, '');
-    t = t.replace(/\\s*\\btempo\\s*\\d+\\w*.*$/i, '');
-    t = t.replace(/\\s*\\brir\\s*\\d+(?:-\\d+)?.*$/i, '');
-    t = t.replace(/\\s*\\brest\\s*\\d+\\s*s(?:eg)?.*$/i, '');
-    t = t.replace(/\\s*\\bpor\\s+(?:lado|pierna)\\b.*$/i, '');
-    t = t.replace(/\\s*\\bc\\/u\\b.*$/i, '');
+    t = t.replace(/\s*\([^)]*\)\s*$/, '');
+    t = t.replace(/\s*[x\u00d7]\s*\d[\w.\/]*.*$/i, '');
+    t = t.replace(/\s*\btempo\s*\d+\w*.*$/i, '');
+    t = t.replace(/\s*\brir\s*\d+(?:-\d+)?.*$/i, '');
+    t = t.replace(/\s*\brest\s*\d+\s*s(?:eg)?.*$/i, '');
+    t = t.replace(/\s*\bpor\s+(?:lado|pierna)\b.*$/i, '');
+    t = t.replace(/\s*\bc\/u\b.*$/i, '');
     return t.trim();
   }
   /* directiva maestra ("Compilación universal de videos en desplegable
@@ -3497,10 +3497,10 @@
     return Array.isArray(block.videosBloque) ? block.videosBloque : null;
   }
   /* titulo con el termino tecnico en ingles y, debajo y tenue, la descripcion en español (solo si el ejercicio esta en la biblioteca) */
-  function claveNomSB(x){ return String(x || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[.,;:!?"']+/g, ' ').replace(/\\s+/g, ' ').trim(); }
+  function claveNomSB(x){ return String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.,;:!?"']+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function singNomSB(x){ return claveNomSB(x).split(' ').map(function(w){ return w.length > 3 ? w.replace(/(?:es|s)$/, '') : w; }).join(' '); }
   function limpiarTituloSB(t){
-    return String(t == null ? '' : t).replace(/^[\\s\\-\\u2013\\u2014\\u2022*]+/, '').replace(/\\s+[x\\u00d7]\\s*$/i, '').replace(/[\\u00d7:]\\s*$/, '').trim();
+    return String(t == null ? '' : t).replace(/^[\s\-\u2013\u2014\u2022*]+/, '').replace(/\s+[x\u00d7]\s*$/i, '').replace(/[\u00d7:]\s*$/, '').trim();
   }
   function infoNombreSB(titulo, block){
     titulo = limpiarTituloSB(titulo);
@@ -3519,8 +3519,8 @@
   /* abreviaturas comerciales para que el inglés entre paréntesis no rompa la línea en 375px */
   function enCortoSB(en){
     var t = String(en == null ? '' : en).trim();
-    t = t.replace(/\\bRomanian Deadlift\\b/i, 'RDL').replace(/\\bStiff[- ]Leg(?:ged)? Deadlift\\b/i, 'SLDL').replace(/\\bOverhead Press\\b/i, 'OHP');
-    if(t.length > 24) t = t.replace(/\\bDumbbells?\\b/i, 'DB').replace(/\\bBarbell\\b/i, 'BB').replace(/\\bKettlebell\\b/i, 'KB');
+    t = t.replace(/\bRomanian Deadlift\b/i, 'RDL').replace(/\bStiff[- ]Leg(?:ged)? Deadlift\b/i, 'SLDL').replace(/\bOverhead Press\b/i, 'OHP');
+    if(t.length > 24) t = t.replace(/\bDumbbells?\b/i, 'DB').replace(/\bBarbell\b/i, 'BB').replace(/\bKettlebell\b/i, 'KB');
     return t;
   }
   function nombreHibridoSB(titulo, block){
@@ -3565,9 +3565,9 @@
     if(!lista.length && !busquedas.length) return '';
     return '<div class="jp-sb-vid-title">&#127916; VIDEOS T&Eacute;CNICOS DEL BLOQUE</div>' +
       '<div class="jp-sb-vid-cards">' + lista.map(function(v){
-        return '<button type="button" class="jp-sb-vid-card" data-yt="' + v.ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(v.nombre).replace(/"/g,'') + '">' +
+        return '<button type="button" class="jp-sb-vid-card" data-yt="' + v.ytid + '" aria-label="Ver t\u00e9cnica de ' + escSB(v.nombre).replace(/"/g,'') + '">' +
           '<span class="jp-sb-vid-thumb" style="background-image:url(https://img.youtube.com/vi/' + v.ytid + '/mqdefault.jpg)">' +
-            '<span class="jp-sb-vid-play">\\u25b6\\ufe0e</span>' +
+            '<span class="jp-sb-vid-play">\u25b6\ufe0e</span>' +
           '</span>' +
           '<span class="jp-sb-vid-info">' +
             '<span class="jp-sb-vid-nombre">' + escSB(v.nombre) + '</span>' +
@@ -3576,8 +3576,8 @@
         '</button>';
       }).join('') + busquedas.map(function(nm){
         var q = limpiarNombreParaVideoSB(nm) || nm;
-        return '<button type="button" class="jp-sb-vid-card jp-ver-busca" data-vsearch="' + escSB(q) + '" aria-label="Buscar la t\\u00e9cnica de ' + escSB(nm).replace(/"/g,'') + '">' +
-          '<span class="jp-sb-vid-thumb jp-sb-vid-thumb-na"><span class="jp-sb-vid-play">\\u25b6\\ufe0e</span></span>' +
+        return '<button type="button" class="jp-sb-vid-card jp-ver-busca" data-vsearch="' + escSB(q) + '" aria-label="Buscar la t\u00e9cnica de ' + escSB(nm).replace(/"/g,'') + '">' +
+          '<span class="jp-sb-vid-thumb jp-sb-vid-thumb-na"><span class="jp-sb-vid-play">\u25b6\ufe0e</span></span>' +
           '<span class="jp-sb-vid-info">' +
             '<span class="jp-sb-vid-nombre">' + escSB(nm) + '</span>' +
             '<span class="jp-sb-vid-tap">[ TAP PARA BUSCAR EN YOUTUBE ]</span>' +
@@ -3628,7 +3628,7 @@
      criterio de "forma, no lista cerrada de una sola palabra" que ya usa
      esWarm() para bloques clásicos (que nunca toca la Pizarra, ver esa
      función más abajo en el archivo). */
-  var RX_CALENTAMIENTO_SB = /calentamiento|warm.?up|movilidad|activaci[oó]n|entrada\\s+en\\s+calor/i;
+  var RX_CALENTAMIENTO_SB = /calentamiento|warm.?up|movilidad|activaci[oó]n|entrada\s+en\s+calor/i;
   function esBloqueCalentamientoSB(block){
     /* por título, o porque el bloque se eligió/importó como "Entrada en calor" (modalidad / categoría) */
     return RX_CALENTAMIENTO_SB.test(String((block && block.title) || '')) ||
@@ -3646,14 +3646,14 @@
     const t = String(rir || '').toLowerCase();
     if(!t) return null;
     if(/fallo/.test(t)) return 'danger';
-    const nums = t.match(/\\d+/g);
+    const nums = t.match(/\d+/g);
     if(!nums) return 'margen';
     const min = Math.min.apply(null, nums.map(Number));
     if(min <= 0) return 'danger';
     if(min <= 2) return 'alto';
     return 'margen';
   }
-  var ICONO_RIR_SB = { danger:'\\ud83d\\udd25', alto:'\\ud83d\\udd25', margen:'\\ud83d\\udd25' };
+  var ICONO_RIR_SB = { danger:'\ud83d\udd25', alto:'\ud83d\udd25', margen:'\ud83d\udd25' };
   /* directiva ("Prescripción Táctica Ilustrativa de la Dosis"): banner de
      micro-badges tácticos (series/reps/tempo/RIR/rest) en vez del texto
      plano gris de antes -- cada campo es su propio pill de alto
@@ -3673,7 +3673,7 @@
   }
   /* ejercicio con tramos de carga (aclimatación / top set / back-off): total de sets, un chip por tramo y la fila de pausa y cadencia */
   function tramosHtmlSB(en){
-    var lad = en.tramos.length >= 3 && en.tramos.every(function(t){ return t.sets == 1 && /^\\d+$/.test(String(t.reps)) && !t.etq; });
+    var lad = en.tramos.length >= 3 && en.tramos.every(function(t){ return t.sets == 1 && /^\d+$/.test(String(t.reps)) && !t.etq; });
     if(lad){
       var ns = en.tramos.map(function(t){ return parseInt(t.reps, 10); }), dir = ns[1] - ns[0];
       lad = !!dir && ns.every(function(n, i){ return i === 0 || (n - ns[i - 1]) * dir > 0; });
@@ -3681,16 +3681,16 @@
     if(lad){
       var un = String(en.tramos[0].unidad || 'reps').toUpperCase(), rirs = en.tramos.map(function(t){ return t.rir || ''; });
       var rirC = rirs.every(function(x){ return x === rirs[0]; }) ? rirs[0] : '';
-      var nums = ns.length > 8 ? '<b>' + ns[0] + '</b><i>\\u2192</i><b>' + ns[ns.length - 1] + '</b>' : ns.map(function(n){ return '<b>' + n + '</b>'; }).join('<i>\\u2013</i>');
+      var nums = ns.length > 8 ? '<b>' + ns[0] + '</b><i>\u2192</i><b>' + ns[ns.length - 1] + '</b>' : ns.map(function(n){ return '<b>' + n + '</b>'; }).join('<i>\u2013</i>');
       var rb0 = restBadgeSB(en.restSeconds, en.restLabel);
-      return '<div class="jp-dose-bar jp-ladder-bar"><div class="jp-ux-ladder"><span class="k">ESCALERA</span><span class="n">' + nums + '</span><span class="u">' + escSB(un) + (rirC ? ' \\u00b7 RIR ' + escSB(rirC) : '') + '</span></div>' +
+      return '<div class="jp-dose-bar jp-ladder-bar"><div class="jp-ux-ladder"><span class="k">ESCALERA</span><span class="n">' + nums + '</span><span class="u">' + escSB(un) + (rirC ? ' \u00b7 RIR ' + escSB(rirC) : '') + '</span></div>' +
         ((rb0 || en.unilateral) ? '<div class="jp-db-row jp-db-r2">' + rb0 + (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '') + '</div>';
     }
     var t0 = en.tramos[0].tempo, tempoComun = en.tempo || ((t0 && en.tramos.every(function(t){ return t.tempo === t0; })) ? t0 : '');
     var chips = en.tramos.map(function(t){
       var extra = t.rir ? 'RIR ' + t.rir : '';
-      return '<span class="jp-db-seg jp-db-vol jp-tr-chip">' + t.sets + (t.sets == 1 ? ' SERIE' : ' SERIES') + ' \\u00d7 ' + escSB(t.reps) + ' ' + escSB(String(t.unidad || 'reps').toUpperCase()) +
-        (t.etq ? ' <em>(' + escSB(t.etq) + ')</em>' : '') + (extra ? ' \\u00b7 ' + escSB(extra) : '') + '</span>';
+      return '<span class="jp-db-seg jp-db-vol jp-tr-chip">' + t.sets + (t.sets == 1 ? ' SERIE' : ' SERIES') + ' \u00d7 ' + escSB(t.reps) + ' ' + escSB(String(t.unidad || 'reps').toUpperCase()) +
+        (t.etq ? ' <em>(' + escSB(t.etq) + ')</em>' : '') + (extra ? ' \u00b7 ' + escSB(extra) : '') + '</span>';
     }).join('');
     var rb = restBadgeSB(en.restSeconds, en.restLabel);
     /* mismo orden que la línea del Builder ("tramos | Tempo | RIR" y abajo el descanso): el tempo y el RIR del ejercicio se muestran antes de la pausa */
@@ -3706,7 +3706,7 @@
   function restBadgeSB(seg, lbl){
     seg = normRestSB(seg);
     if(seg <= 0) return '';
-    return '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + seg + '" aria-label="Iniciar descanso de ' + seg + ' segundos">\\u23f1\\ufe0e\\u25b6\\ufe0e DESCANSO ' + (lbl ? escSB(lbl) : fmtRestSB(seg)) + '</button>';
+    return '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + seg + '" aria-label="Iniciar descanso de ' + seg + ' segundos">\u23f1\ufe0e\u25b6\ufe0e DESCANSO ' + (lbl ? escSB(lbl) : fmtRestSB(seg)) + '</button>';
   }
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra, uni, sinPausa, restLabel, rondas){
     var r1 = [], r2 = [];
@@ -3714,7 +3714,7 @@
     if(!sets && !reps) return '';
     /* criterio único: ejercicio suelto = SERIES; estaciones encadenadas (biset / triset) = RONDAS */
     var rotSets = rondas ? (sets == 1 ? ' RONDA' : ' RONDAS') : (sets == 1 ? ' SERIE' : ' SERIES');
-    if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
+    if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \u00d7 ' + escSB(reps) + ' ' + u + '</span>');
     else if(reps) r1.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
     else r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
     /* el tempo no se imprime en la línea principal de series: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
@@ -3724,7 +3724,7 @@
     }
     var rb = restBadgeSB(restSeconds, restLabel);
     if(rb) r2.push(rb);
-    else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\\u26a1 SIN DESCANSO</span>');
+    else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\u26a1 SIN DESCANSO</span>');
     /* el tempo es un chip corto entre las series y el RIR (mismo orden que la línea de dosis del Builder: series x reps | tempo | RIR, y abajo el descanso); su explicación sigue en el acordeón de pautas */
     if(extra) r2.push('<span class="jp-db-seg jp-db-tempo">' + escSB(extra) + '</span>');
     if(uni) r2.push(chipUnilateralSB(uni));
@@ -3739,7 +3739,7 @@
      parsearPizarraSB, más abajo). */
   function chipUnilateralSB(valor){
     if(!valor) return '';
-    return '<span class="jp-sb-unilateral">\\u26a1 UNILATERAL \\u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
+    return '<span class="jp-sb-unilateral">\u26a1 UNILATERAL \u00b7 ' + escSB(String(valor).toUpperCase()) + '</span>';
   }
   /* directiva maestra ("Estilización de Listados de Activación") -- el
      glifo táctico (▸, cian, ver .jp-sb-plain-warmup::before en CSS) ya
@@ -3762,17 +3762,17 @@
      dead bug", "• a • b", "a - b - c") se parte en un renglón por ejercicio */
   function partirListaActivacionSB(txt){
     var t = String(txt || '').trim();
-    var porMarcas = t.split(/\\s*[•·]\\s*|\\s+-\\s+/).map(function(s){ return s.trim(); }).filter(Boolean);
+    var porMarcas = t.split(/\s*[•·]\s*|\s+-\s+/).map(function(s){ return s.trim(); }).filter(Boolean);
     if(porMarcas.length > 1) return porMarcas;
-    var cs = t.split(/\\s*[,;]\\s+/).map(function(s){ return s.trim(); }).filter(Boolean);
-    var sinDosis = cs.every(function(s){ return (/[a-záéíóúñ]/i.test(s) || /^\\d+\\s*\\/\\s*\\d+$/.test(s)) && !/^\\d+\\s*(?:reps?|seg|s|min|m)\\b/i.test(s); });
+    var cs = t.split(/\s*[,;]\s+/).map(function(s){ return s.trim(); }).filter(Boolean);
+    var sinDosis = cs.every(function(s){ return (/[a-záéíóúñ]/i.test(s) || /^\d+\s*\/\s*\d+$/.test(s)) && !/^\d+\s*(?:reps?|seg|s|min|m)\b/i.test(s); });
     if(cs.length > 1 && sinDosis && (cs.length >= 3 || t.length > 50)) return cs;
     return [t];
   }
   /* botón de video junto al nombre de cada estación de un biset: el mismo video que reconoce el bloque
      (block.videosBloque) o, en exports viejos, el de la biblioteca; sin video no se dibuja nada */
   function miniVideoSB(nombre, block){
-    var norm = function(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\\s+/g, ' ').trim(); };
+    var norm = function(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); };
     var n = norm(limpiarNombreParaVideoSB(nombre)), ytid = '';
     if(!n) return '';
     var lista = videosDeSemanaSB(block) || [];
@@ -3785,7 +3785,7 @@
     }
     if(!ytid && !videosDeSemanaSB(block)){ try{ ytid = buscarVideo(limpiarNombreParaVideoSB(nombre)) || ''; }catch(e){ ytid = ''; } }
     if(!ytid) return '';
-    return '<button type="button" class="jp-sb-vid-mini" data-yt="' + ytid + '" aria-label="Ver t\\u00e9cnica de ' + escSB(nombre).replace(/"/g, '') + '" title="Ver t\\u00e9cnica">&#9654;</button>';
+    return '<button type="button" class="jp-sb-vid-mini" data-yt="' + ytid + '" aria-label="Ver t\u00e9cnica de ' + escSB(nombre).replace(/"/g, '') + '" title="Ver t\u00e9cnica">&#9654;</button>';
   }
   /* [ ▶ VER TÉCNICA ]: mismo video del bloque, en modal rápido con loop y sin sonido */
   function verTecnicaSB(nombre, block){
@@ -3794,8 +3794,8 @@
   /* autocarga y calistenia: sin input de kg por defecto (chip BW + "+ Lastre"); isométricos: un único input de tiempo */
   var RX_BW_SB = /(?:hanging|colgad|dominad|pull ?ups?|chin ?ups?|fondos?|dips?|flexion(?:es)?|push ?ups?|knee raises?|leg raises?|elevacion(?:es)? de (?:rodillas|piernas)|muscle ?ups?|burpees?|abdominales|crunch(?:es)?|sit ?ups?|v ?ups?|remo invertido|inverted row|australian|puente de gluteos?|glute bridge|bird ?dog|dead ?bug|superman|mountain climbers?|escaladores|air squats?|sentadillas? (?:al )?aire)/;
   var RX_NOBW_SB = /(?:lastre|weighted|con peso|chaleco|maquina|polea|asistid|smith|con barra|barbell|mancuernas?|dumbbells?|kettlebells?|discos?)/;
-  var RX_CF_SOLO_SB = /(?:^|\\s)(?:row|rower|rowing|echo bike|assault bike|air bike|bike ?erg|ski ?erg|shuttle run|handstand walk|hs walk|bear crawl|run|toes to bar|t2b|ttb|box jumps?|double unders?|rope climbs?|handstand push ?ups?|hspu)(?=\\s|$)/;
-  var RX_PLANK_DIN_SB = /(?:pull ?through|\\brow\\b|remo|reach|\\btaps?\\b|walk ?outs?|up ?down|jacks?|mountain|climb|\\bsaw\\b|drag|tuck|rotaci|rotation|toque|pasos)/;
+  var RX_CF_SOLO_SB = /(?:^|\s)(?:row|rower|rowing|echo bike|assault bike|air bike|bike ?erg|ski ?erg|shuttle run|handstand walk|hs walk|bear crawl|run|toes to bar|t2b|ttb|box jumps?|double unders?|rope climbs?|handstand push ?ups?|hspu)(?=\s|$)/;
+  var RX_PLANK_DIN_SB = /(?:pull ?through|\brow\b|remo|reach|\btaps?\b|walk ?outs?|up ?down|jacks?|mountain|climb|\bsaw\b|drag|tuck|rotaci|rotation|toque|pasos)/;
   var RX_TIEMPO_SB = /(?:plancha|plank|isometric|isometrico|hold|wall ?sit|dead ?hang|colgado pasivo|hollow|suspension)/;
   function modoInputSB(nombre){
     var n = normTitSB(nombre);
@@ -3836,11 +3836,11 @@
     var card = go.closest('.jp-sb-ex, .jp-sb-subex-resumen'), nm = card && card.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-tit');
     try{ if(navigator.vibrate) navigator.vibrate(12); }catch(err){}
     go.classList.add('on'); setTimeout(function(){ go.classList.remove('on'); }, 900);
-    if(typeof window.jpArrancarDescansoManual === 'function') window.jpArrancarDescansoManual(seg, 'Descanso \\u00b7 ' + (nm ? nm.textContent.replace(/\\s*\\([^)]*\\)\\s*$/, '').trim() : 'ejercicio'));
+    if(typeof window.jpArrancarDescansoManual === 'function') window.jpArrancarDescansoManual(seg, 'Descanso \u00b7 ' + (nm ? nm.textContent.replace(/\s*\([^)]*\)\s*$/, '').trim() : 'ejercicio'));
   });
   function restAttrSB(e){ return e.restCero ? '0' : (e.restSeconds || ''); }
   function limpiarGuionActivacionSB(nombre){
-    return String(nombre || '').replace(/^[\\s\\-–—•*]+/, '').trim();
+    return String(nombre || '').replace(/^[\s\-–—•*]+/, '').trim();
   }
   /* directiva maestra ("Ghost Load & Target Pacing") -- el RIR de la
      ghost load es el que el coach prescribió la semana ANTERIOR para
@@ -3956,7 +3956,7 @@
         const subsHtml = cabeceras + subsInfo.map(function(o){ return o.myo; }).join('');
         const tituloBiset = entry.titulo === 'Biset / Triset' ? (entry.subs.length === 2 ? 'Biset' : (entry.subs.length === 3 ? 'Triset' : 'Superserie')) : entry.titulo;
         filas += '<div class="jp-sb-biset">' +
-            '<div class="jp-sb-biset-title">[ ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + ' \\u00b7 ' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' ]</div>' +
+            '<div class="jp-sb-biset-title">[ ' + rondasN + (rondasN === 1 ? ' RONDA' : ' RONDAS') + ' \u00b7 ' + (subsInfo.length === 2 ? 'BISET' : (subsInfo.length === 3 ? 'TRISET' : 'SUPERSERIE')) + ' ]</div>' +
             '<div class="jp-sb-bracket">' + subsHtml + '</div>' +
           '</div>';
         return;
@@ -3967,10 +3967,10 @@
       }
       if(entry.tipo === 'intervalo'){
         const nGrupo = gruposInt[idx] || 0, e0 = nIndiv + 1;
-        const rotE = nGrupo ? (nGrupo > 1 ? 'E' + e0 + '\\u2013E' + (e0 + nGrupo - 1) : 'E' + e0) : '';
+        const rotE = nGrupo ? (nGrupo > 1 ? 'E' + e0 + '\u2013E' + (e0 + nGrupo - 1) : 'E' + e0) : '';
         const hhmm = ('0' + Math.floor(entry.seg / 60)).slice(-2) + ':' + ('0' + (entry.seg % 60)).slice(-2);
         filas += '<div class="jp-int-head">' + (rotE ? '<span class="jp-int-e">[ ' + rotE + ' ]</span>' : '') +
-          '<span class="jp-int-t">EVERY ' + hhmm + (entry.sets ? ' \\u00d7 ' + entry.sets + ' SERIES' : '') + '</span></div>';
+          '<span class="jp-int-t">EVERY ' + hhmm + (entry.sets ? ' \u00d7 ' + entry.sets + ' SERIES' : '') + '</span></div>';
         return;
       }
       if(entry.tipo !== 'simple') return;
@@ -4056,7 +4056,7 @@
       regCfg.push({ idx: exIdx, nombre: entry.titulo, sets: entry.sets || 1, reps: entry.reps || '', carga: entry.carga || '', u: entry.unidad && entry.unidad !== 'reps' ? entry.unidad : '', rir: String(entry.rir || ''), r: restAttrSB(entry) === '0' ? -1 : (parseInt(restAttrSB(entry), 10) || 0), tec: entry.tecnica || '' });
       if(entry.tecnica === 'restpause' && !entry.tramos){
         var cfgRp = regCfg[regCfg.length - 1]; cfgRp.et = [];
-        for(var kq = 0; kq < cfgRp.sets; kq++) cfgRp.et.push(kq === cfgRp.sets - 1 ? '\\u26a1 REST-PAUSE: al fallo \\u2192 pausa 15-20 s \\u2192 +2-4 reps \\u2192 pausa \\u2192 +2-4 reps (una sola serie)' : '');
+        for(var kq = 0; kq < cfgRp.sets; kq++) cfgRp.et.push(kq === cfgRp.sets - 1 ? '\u26a1 REST-PAUSE: al fallo \u2192 pausa 15-20 s \u2192 +2-4 reps \u2192 pausa \u2192 +2-4 reps (una sola serie)' : '');
       }
       if(entry.tramos){
         var cfgTr = regCfg[regCfg.length - 1]; cfgTr.rp = []; cfgTr.et = [];
@@ -4122,18 +4122,18 @@
           var np = normTitSB(p), nx = normTitSB(x);
           if(np.indexOf(nx) >= 0) return p;
           if(nx.indexOf(np) >= 0) return x;
-          return p + '\\n' + x;
+          return p + '\n' + x;
         })(), nombresTips);
     /* tempo "3110" -> "3 s bajada · 1 s pausa abajo · 1 s subida · 0 s pausa arriba" (X = explosivo) */
     const explicarTempoSB = function(tp){
-      const m = String(tp || '').match(/^([\\dXx])([\\dXx])([\\dXx])([\\dXx])$/);
+      const m = String(tp || '').match(/^([\dXx])([\dXx])([\dXx])([\dXx])$/);
       if(!m) return '';
       const sg = function(v, txt){ return v + ' s ' + txt; };
-      return [sg(m[1], 'bajada'), sg(m[2], 'pausa abajo'), /x/i.test(m[3]) ? 'subida explosiva' : sg(m[3], 'subida'), sg(m[4], 'pausa arriba')].join(' \\u00b7 ');
+      return [sg(m[1], 'bajada'), sg(m[2], 'pausa abajo'), /x/i.test(m[3]) ? 'subida explosiva' : sg(m[3], 'subida'), sg(m[4], 'pausa arriba')].join(' \u00b7 ');
     };
     const tempoHtml = (function(){
       const filasT = [];
-      const add = function(nom, tp){ const ex = explicarTempoSB(tp); if(ex) filasT.push('<div class="jp-tempo-row"><b>' + escSB((function(){ const inf = infoNombreSB(nom, block); return (inf && (inf.es || inf.en)) || limpiarTituloSB(nom); })()) + '</b> \\u00b7 ' + escSB(tp) + ' \\u2192 ' + ex + '</div>'); };
+      const add = function(nom, tp){ const ex = explicarTempoSB(tp); if(ex) filasT.push('<div class="jp-tempo-row"><b>' + escSB((function(){ const inf = infoNombreSB(nom, block); return (inf && (inf.es || inf.en)) || limpiarTituloSB(nom); })()) + '</b> \u00b7 ' + escSB(tp) + ' \u2192 ' + ex + '</div>'); };
       if(esCalentamiento) return '';
       entries.forEach(function(en){
         if(!en) return;
@@ -4144,7 +4144,7 @@
           (en.subs || []).forEach(function(sb){ if(sb.tempo) add(sb.nombre, sb.tempo); });
         }
       });
-      return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\\u23f1 TEMPO (CADENCIA)</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
+      return filasT.length ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tempo">\u23f1 TEMPO (CADENCIA)</div><div class="jp-sb-pauta-txt">' + filasT.join('') + '</div></div>' : '';
     })();
     const tieneObjTips = objetivoHtml || tipsHtml;
     const tieneAcc = tieneObjTips || !!tempoHtml;
@@ -4155,19 +4155,19 @@
        naranja pleno -- se separa a su propia línea técnica con doble
        barra ("// ..."), mismo patrón ya usado para el título de la
        sesión (splitTituloSesionSports). */
-    const tituloBloqueM = String(block.title || '').match(/^(.*?)\\s*\\(([^)]+)\\)\\s*$/);
+    const tituloBloqueM = String(block.title || '').match(/^(.*?)\s*\(([^)]+)\)\s*$/);
     const tituloBloquePrincipal = tituloBloqueM ? (tituloBloqueM[1].trim() || block.title) : (block.title || '');
     const tituloBloqueEnfasis = tituloBloqueM ? tituloBloqueM[2].trim() : '';
     /* cabecera limpia: [ BIOMECANICA APLICADA · FUERZA ] // 22 MIN. El titulo grande repetia la categoria: queda en el DOM (lo usa el bloque plegado y
        "Bloque completado") pero se oculta con CSS. El tiempo sale del "(22 MIN)" del titulo o de la duracion estimada del bloque. */
-    const mMinT = tituloBloqueEnfasis.match(/^(\\d+)\\s*MIN/i), minutosTag = mMinT ? mMinT[1] : (duracionEstimada || '');
+    const mMinT = tituloBloqueEnfasis.match(/^(\d+)\s*MIN/i), minutosTag = mMinT ? mMinT[1] : (duracionEstimada || '');
     const html = '<div class="wod-board jp-sb-board" data-sportsboard="' + block.id + '">' +
         '<div class="jp-sb-tag">[ BIOMEC&Aacute;NICA APLICADA &middot; ' + tagCategoriaSB(block, esCalentamiento) + ' ]' + (minutosTag ? ' <span class="jp-sb-tmin">// ' + minutosTag + ' MIN</span>' : '') + '</div>' +
         (block.ocultaTituloTablero ? '' : tituloBloqueHtmlSB(tituloBloquePrincipal)) +
         (tituloBloqueEnfasis ? '<div class="jp-block-emphasis">// ' + escSB(tituloBloqueEnfasis.toUpperCase()) + '</div>' : '') +
         filas + chipsVideoSB(videosBloque, busquedasVid) +
         (tieneAcc ?
-          '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T\\u00c9CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
+          '<details class="jp-block-details"><summary class="jp-summary-btn"><svg class="jp-pauta-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2v.2h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>PAUTAS T\u00c9CNICAS &amp; TIPS DEL BLOQUE</span></summary>' +
             '<div class="jp-details-content">' +
               (objetivoHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-obj">&#127919; OBJETIVO FISIOL&Oacute;GICO</div><div class="jp-sb-pauta-txt">' + objetivoHtml + '</div></div>' : '') +
               (tipsHtml ? '<div class="jp-sb-pauta"><div class="jp-sb-pauta-lb jp-lb-tips">&#128161; ESTRATEGIA BIOMEC&Aacute;NICA &amp; TIPS</div><div class="jp-sb-pauta-txt">' + tipsHtml + '</div></div>' : '') +
@@ -4179,10 +4179,10 @@
     var htmlFinal = html;
     if(esCalentamiento){
       /* solo ejercicios reales: se excluye la prescripcion general ("1 Set: 6 min continuo", "3 rondas") */
-      var RX_PRESC_GEN_SB = /^\\s*(?:\\d+\\s*(?:sets?|series?|rondas?|rounds?)\\b\\s*[:\\-\\u2013]|\\d+\\s*(?:min|minutos)\\b.*\\b(?:continu\\w*|total|de trabajo)|(?:circuito|rondas?|tiempo total|total)\\b)/i;
+      var RX_PRESC_GEN_SB = /^\s*(?:\d+\s*(?:sets?|series?|rondas?|rounds?)\b\s*[:\-\u2013]|\d+\s*(?:min|minutos)\b.*\b(?:continu\w*|total|de trabajo)|(?:circuito|rondas?|tiempo total|total)\b)/i;
       var nAct = 0;
       filas.split('jp-sb-plain-nombre">').slice(1).forEach(function(p){ if(!RX_PRESC_GEN_SB.test(p.split('<')[0])) nAct++; });
-      htmlFinal = '<details class="jp-warm-acc"><summary><span class="jp-warm-lb">\\ud83d\\udd25 ACTIVACI\\u00d3N' + (nAct ? ' \\u00b7 ' + nAct + ' EJERCICIOS' : '') + '</span><span class="jp-warm-chev">\\u25bc</span></summary>' + html + '</details>';
+      htmlFinal = '<details class="jp-warm-acc"><summary><span class="jp-warm-lb">\ud83d\udd25 ACTIVACI\u00d3N' + (nAct ? ' \u00b7 ' + nAct + ' EJERCICIOS' : '') + '</span><span class="jp-warm-chev">\u25bc</span></summary>' + html + '</details>';
     }
     body.insertAdjacentHTML('afterbegin', htmlFinal);
     try{ jpQrAcomodar(body); }catch(eQr){ console.warn('registro 1 toque', eQr); }
@@ -4262,12 +4262,12 @@
         (row.classList.contains('jp-modo-bw') && !row.classList.contains('jp-lastre-on'));
       if(kgInput && !kgInput.value && !sinKgFila){
         const autoKg = (prevKgInput && prevKgInput.value) ? prevKgInput.value
-          : (/^\\d/.test(kgInput.placeholder) && kgInput.placeholder !== '0' ? kgInput.placeholder : '');
+          : (/^\d/.test(kgInput.placeholder) && kgInput.placeholder !== '0' ? kgInput.placeholder : '');
         if(autoKg){ kgInput.value = autoKg; setLoadField(key, 'kg', autoKg); }
       }
       if(repsInput && !repsInput.value){
         const autoReps = (prevRepsInput && prevRepsInput.value) ? prevRepsInput.value
-          : (/^\\d+(?:[.,]\\d+)?$/.test(repsInput.placeholder) && repsInput.placeholder !== '0' ? repsInput.placeholder : '');
+          : (/^\d+(?:[.,]\d+)?$/.test(repsInput.placeholder) && repsInput.placeholder !== '0' ? repsInput.placeholder : '');
         if(autoReps){ repsInput.value = autoReps; setLoadField(key, 'reps', autoReps); }
       }
     }
@@ -4634,7 +4634,7 @@
     const nav = document.getElementById('tvNav');
     if(nav){
       const lbEl = bs[tvIdx] && bs[tvIdx].querySelector('.block-label');
-      const corto = lbEl ? lbEl.textContent.replace(/^bloque\\s*[a-z0-9]*\\s*·\\s*/i, '').split('—')[0].trim().slice(0, 26) : '';
+      const corto = lbEl ? lbEl.textContent.replace(/^bloque\s*[a-z0-9]*\s*·\s*/i, '').split('—')[0].trim().slice(0, 26) : '';
       nav.querySelector('.tv-pos').textContent = (tvIdx+1) + '/' + bs.length + (corto ? ' · ' + corto : '');
       nav.querySelector('[data-tv="prev"]').disabled = tvIdx === 0;
       nav.querySelector('[data-tv="next"]').disabled = tvIdx >= bs.length - 1;
@@ -4731,10 +4731,10 @@
           if(entry.tecnica === 'dropset'){
             ['d1', 'd2'].forEach(function(ds, di){
               var ldd = getLoad(getLoadKey(weekIdx, day.id, block.id, 'e' + idx, ds));
-              if(ldd && ldd.done && numJP(ldd.reps) > 0) setsTxt.push('  \\u2022 Drop ' + (di + 1) + ': ' + (numJP(ldd.kg) > 0 ? fmtJP(numJP(ldd.kg)) + ' kg \\u00d7 ' : '') + fmtJP(numJP(ldd.reps)) + ' reps');
+              if(ldd && ldd.done && numJP(ldd.reps) > 0) setsTxt.push('  \u2022 Drop ' + (di + 1) + ': ' + (numJP(ldd.kg) > 0 ? fmtJP(numJP(ldd.kg)) + ' kg \u00d7 ' : '') + fmtJP(numJP(ldd.reps)) + ' reps');
             });
           }
-          if(setsTxt.length) out.push('*' + entry.titulo + '*:\\n' + setsTxt.join('\\n'));
+          if(setsTxt.length) out.push('*' + entry.titulo + '*:\n' + setsTxt.join('\n'));
         } else if(entry.tipo === 'biserie'){
           (entry.subs || []).forEach(function(sub, si){
             var setsTxt = [];
@@ -4745,7 +4745,7 @@
                 setsTxt.push(lineaSetWA(i, ld));
               }
             }
-            if(setsTxt.length) out.push('*' + sub.nombre + '*:\\n' + setsTxt.join('\\n'));
+            if(setsTxt.length) out.push('*' + sub.nombre + '*:\n' + setsTxt.join('\n'));
           });
         }
       });
@@ -4836,7 +4836,7 @@
         '<div class="sc-stats">' +
           statsHtml +
           /* valor de una sola cifra a propósito: el odómetro de animarResumen()
-             (más abajo) hace parseInt(v.textContent.replace(/[^\\d]/g,'')) sobre
+             (más abajo) hace parseInt(v.textContent.replace(/[^\d]/g,'')) sobre
              CADA .sc-stat .v de la tarjeta salvo data-no-odo -- un formato "3/16"
              se leería como 316 y el odómetro reescribiría el texto final a "316" */
         '</div>' +
@@ -4864,7 +4864,7 @@
             ((state.notes && state.notes[nkey]) || '') + '</textarea>' +
           '<div class="sc-actions">' +
             '<button class="sc-save" id="scSave" type="button">💾 Guardar y sincronizar</button>' +
-            '<button class="sc-share" id="scShare" type="button">' + (SP ? '[ \\ud83d\\udcf2 FINALIZAR D\\u00cdA Y ENVIAR REPORTE ]' : '\\ud83d\\udcf2 ENVIAR RESUMEN DE SESI\\u00d3N AL COACH') + '</button>' +
+            '<button class="sc-share" id="scShare" type="button">' + (SP ? '[ \ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE ]' : '\ud83d\udcf2 ENVIAR RESUMEN DE SESI\u00d3N AL COACH') + '</button>' +
           '</div>' +
         '</div>' +
       '</div>';
@@ -4935,7 +4935,7 @@
       const prLinea = prsHoy.length
         ? '🔥 *PRs de hoy:* ' + prsHoy.map(function(p){
             const deltaTxt = (p.delta != null && p.delta > 0) ? ' (+' + p.delta + 'kg)' : '';
-            return p.ex + ' ' + fmtJP(numJP(p.kg)) + 'kg \\u00d7 ' + p.reps + deltaTxt;
+            return p.ex + ' ' + fmtJP(numJP(p.kg)) + 'kg \u00d7 ' + p.reps + deltaTxt;
           }).join(', ')
         : '';
       const rpeHoy = checkoutRpeLeer()[nkey];
@@ -4944,16 +4944,16 @@
       const tonelajeHoy = (typeof calcularTonelajeSesion === 'function') ? calcularTonelajeSesion() : d.vol;
       const desglose = generarDesgloseBloquesWA(weekIdx, day);
 
-      let txt = '🏋️\\u200d\\u2642\\ufe0f *REPORTE DE SESI\\u00d3N \\u00b7 COACH JP*\\n' +
-        '\\ud83d\\udc64 *Atleta:* ' + PROGRAM_CONFIG.athleteName + '\\n' +
-        '\\ud83d\\udcc5 *D\\u00eda:* ' + day.short + ' | *Fase:* ' + WEEKS_META[weekIdx].short + ' | ' + fechaHoy + '\\n' +
-        '\\u26a1 *Tonelaje Total Acumulado:* ' + tonelajeHoy.toLocaleString('es-AR') + ' KG\\n' +
-        '-----------------------------\\n' +
-        (desglose.length ? desglose.join('\\n\\n') : '_A\\u00fan no hay series completadas con carga registrada._') +
-        '\\n-----------------------------';
-      if(prLinea) txt += '\\n' + prLinea;
-      if(rpeHoy) txt += '\\n\\ud83d\\udcaa *Esfuerzo percibido (RPE):* ' + rpeHoy + '/10';
-      if(notaHoy) txt += '\\n\\ud83d\\udcdd *Comentarios del Alumno/a:* ' + notaHoy;
+      let txt = '🏋️\u200d\u2642\ufe0f *REPORTE DE SESI\u00d3N \u00b7 COACH JP*\n' +
+        '\ud83d\udc64 *Atleta:* ' + PROGRAM_CONFIG.athleteName + '\n' +
+        '\ud83d\udcc5 *D\u00eda:* ' + day.short + ' | *Fase:* ' + WEEKS_META[weekIdx].short + ' | ' + fechaHoy + '\n' +
+        '\u26a1 *Tonelaje Total Acumulado:* ' + tonelajeHoy.toLocaleString('es-AR') + ' KG\n' +
+        '-----------------------------\n' +
+        (desglose.length ? desglose.join('\n\n') : '_A\u00fan no hay series completadas con carga registrada._') +
+        '\n-----------------------------';
+      if(prLinea) txt += '\n' + prLinea;
+      if(rpeHoy) txt += '\n\ud83d\udcaa *Esfuerzo percibido (RPE):* ' + rpeHoy + '/10';
+      if(notaHoy) txt += '\n\ud83d\udcdd *Comentarios del Alumno/a:* ' + notaHoy;
 
       /* directiva: wa.me/<numero>?text= abre directo la conversación con
          el coach cuando PROGRAM_CONFIG.coachPhone está cargado (Builder,
@@ -4989,16 +4989,16 @@
     var fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
     var tonelaje = (typeof calcularTonelajeSesion === 'function') ? calcularTonelajeSesion() : 0;
     var desglose = generarDesgloseBloquesWA(weekIdx, day);
-    var txt = '🏋️ *REPORTE DE SESIÓN · COACH JP*\\n' +
-      '👤 *Atleta:* ' + PROGRAM_CONFIG.athleteName + '\\n' +
-      '📅 *Día:* ' + day.short + ' | *Fase:* ' + WEEKS_META[weekIdx].short + ' | ' + fecha + '\\n' +
-      '⚡ *Tonelaje Total Acumulado:* ' + Number(tonelaje || 0).toLocaleString('es-AR') + ' KG\\n' +
-      '-----------------------------\\n' +
-      (desglose.length ? desglose.join('\\n\\n') : '_Aún no hay series completadas con carga registrada._') +
-      '\\n-----------------------------';
-    if(prsHoy.length) txt += '\\n🔥 *PRs de hoy:* ' + prsHoy.map(function(p){ return p.ex + ' ' + fmtJP(numJP(p.kg)) + 'kg × ' + p.reps; }).join(', ');
-    if(rpeHoy) txt += '\\n💪 *Esfuerzo percibido (RPE):* ' + rpeHoy + '/10';
-    if(notaHoy) txt += '\\n📝 *Comentarios del Alumno/a:* ' + notaHoy;
+    var txt = '🏋️ *REPORTE DE SESIÓN · COACH JP*\n' +
+      '👤 *Atleta:* ' + PROGRAM_CONFIG.athleteName + '\n' +
+      '📅 *Día:* ' + day.short + ' | *Fase:* ' + WEEKS_META[weekIdx].short + ' | ' + fecha + '\n' +
+      '⚡ *Tonelaje Total Acumulado:* ' + Number(tonelaje || 0).toLocaleString('es-AR') + ' KG\n' +
+      '-----------------------------\n' +
+      (desglose.length ? desglose.join('\n\n') : '_Aún no hay series completadas con carga registrada._') +
+      '\n-----------------------------';
+    if(prsHoy.length) txt += '\n🔥 *PRs de hoy:* ' + prsHoy.map(function(p){ return p.ex + ' ' + fmtJP(numJP(p.kg)) + 'kg × ' + p.reps; }).join(', ');
+    if(rpeHoy) txt += '\n💪 *Esfuerzo percibido (RPE):* ' + rpeHoy + '/10';
+    if(notaHoy) txt += '\n📝 *Comentarios del Alumno/a:* ' + notaHoy;
     var tel = window.COACH_WHATSAPP_PHONE || (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '';
     try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
     window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(txt), '_blank', 'noopener');

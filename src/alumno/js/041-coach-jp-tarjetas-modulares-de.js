@@ -40,7 +40,7 @@
     if(/gymnastic|skill|gimn/i.test(t)) return 'disc-gym';
     if(/weightlifting|fuerza principal|oly|halterofilia|snatch|clean|jerk|squat|deadlift|press/i.test(t)) return 'disc-oly';
     var cuerpo = (bl.querySelector('.cf-body, .wb-body') || {}).textContent || '';
-    if(/amrap|emom|for\\s*time|tabata|chipper|met.?con/i.test(t + ' ' + cuerpo)) return 'disc-met';
+    if(/amrap|emom|for\s*time|tabata|chipper|met.?con/i.test(t + ' ' + cuerpo)) return 'disc-met';
     return 'disc-oly';
   }
   function tarjetas(){

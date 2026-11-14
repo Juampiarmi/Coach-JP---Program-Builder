@@ -75,7 +75,7 @@
   function unaSolaSugerencia(){
     document.querySelectorAll('.block').forEach(function(bl){
       var cajas = [].slice.call(bl.querySelectorAll('.rm-sug, .load-suggest'));
-      var conKg = cajas.filter(function(c){ return /\\d\\s*(kg|%)/i.test(c.textContent || ''); });
+      var conKg = cajas.filter(function(c){ return /\d\s*(kg|%)/i.test(c.textContent || ''); });
       if(conKg.length < 2) return;
       /* prioridad fija: la carga precomputada de la semana gana sobre cualquier
          rango genérico. Así el resultado no depende de quién pintó primero. */
@@ -86,7 +86,7 @@
     });
   }
   function numDe(txt){
-    var m = String(txt || '').replace(',', '.').match(/(\\d+(?:\\.\\d+)?)\\s*kg/i);
+    var m = String(txt || '').replace(',', '.').match(/(\d+(?:\.\d+)?)\s*kg/i);
     return m ? parseFloat(m[1]) : 0;
   }
   function sugerirEnCampo(){
@@ -110,7 +110,7 @@
       if(caja && desdeCampo){
         var actual = numDe(caja.textContent);
         if(actual && Math.abs(actual - kg) > 0.4){
-          caja.textContent = caja.textContent.replace(/(\\d+(?:[.,]\\d+)?)\\s*kg/i, String(kg).replace('.', ',') + ' kg');
+          caja.textContent = caja.textContent.replace(/(\d+(?:[.,]\d+)?)\s*kg/i, String(kg).replace('.', ',') + ' kg');
         }
       }
     });

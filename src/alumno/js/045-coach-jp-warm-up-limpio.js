@@ -24,7 +24,7 @@
      1 · PROTOCOLO DE ENTRADA EN CALOR
         subtítulo, dosis o instrucción — nunca una píldora vacía
   --------------------------------------------------------- */
-  var RX_FASE = /^(?:\\d+\\s*[\\.\\)]\\s*)?(?:fase\\s*\\d|elevaci[óo]n de (?:temperatura|pulso)|elevar temperatura|activaci[óo]n|movilidad(?: articular)?|series de aproximaci[óo]n|aproximaci[óo]n|cool.?down|vuelta a la calma|preparaci[óo]n)/i;
+  var RX_FASE = /^(?:\d+\s*[\.\)]\s*)?(?:fase\s*\d|elevaci[óo]n de (?:temperatura|pulso)|elevar temperatura|activaci[óo]n|movilidad(?: articular)?|series de aproximaci[óo]n|aproximaci[óo]n|cool.?down|vuelta a la calma|preparaci[óo]n)/i;
   /* directiva de refactor (2026-09): RX_FASE detecta títulos de sección por
      una palabra genérica al inicio ("Movilidad...", "Activación...") -- eso
      atrapaba ejercicios reales con nombres que arrancan igual (ej.
@@ -34,12 +34,12 @@
      del texto, SIEMPRE es un ítem de trabajo, nunca un título de sección,
      sin importar con qué palabra empiece. */
   function claseDe(txt, dosis){
-    var t = String(txt || '').replace(/\\s+/g, ' ').trim();
+    var t = String(txt || '').replace(/\s+/g, ' ').trim();
     if(!t) return null;
     if(dosis) return 'item';
     /* si declara una dosis en el texto, es trabajo y no un subtítulo */
-    if(/\\d/.test(t) && /(\\bmin\\b|\\bseg\\b|\\d\\s*s\\b|\\breps?\\b|[x×]\\s*\\d|\\d\\s*\\/\\s*\\d|\\bm\\b|\\bcal\\b)/i.test(t)) return 'item';
-    if(/:\\s*$/.test(t) || RX_FASE.test(t)) return 'fase';
+    if(/\d/.test(t) && /(\bmin\b|\bseg\b|\d\s*s\b|\breps?\b|[x×]\s*\d|\d\s*\/\s*\d|\bm\b|\bcal\b)/i.test(t)) return 'item';
+    if(/:\s*$/.test(t) || RX_FASE.test(t)) return 'fase';
     /* pulido (armonización Concepto F): "es corto y sin puntuación" ya no
        se usa como aproximación de "debe ser un subtítulo de fase" -- eso
        atrapaba ejercicios reales sin dosis explícita (técnica corporal,
@@ -60,8 +60,8 @@
         var dose = it.querySelector('.wu-dose');
         var name = it.querySelector('.wu-name');
         if(!name) return;
-        var txt = name.textContent.replace(/\\s+/g, ' ').trim();
-        var dosis = dose ? dose.textContent.replace(/\\s+/g, ' ').trim() : '';
+        var txt = name.textContent.replace(/\s+/g, ' ').trim();
+        var dosis = dose ? dose.textContent.replace(/\s+/g, ' ').trim() : '';
         if(dosis === '·' || dosis === '.') dosis = '';
         var cls = claseDe(txt, dosis);
         var vid = it.querySelector('.video-link'); /* se preserva al reclasificar */
@@ -70,7 +70,7 @@
           var bDe = blDe ? bloqueDe(blDe.dataset.blockId) : null;
           var f = document.createElement('div');
           f.className = 'wu-fase';
-          f.textContent = prefijoFase(bDe) + ' \\u00b7 ' + txt.replace(/^\\d+\\s*[\\.\\)]\\s*/, '').replace(/:\\s*$/, '');
+          f.textContent = prefijoFase(bDe) + ' \u00b7 ' + txt.replace(/^\d+\s*[\.\)]\s*/, '').replace(/:\s*$/, '');
           it.parentNode.replaceChild(f, it);
           return;
         }
@@ -113,7 +113,7 @@
     var n = row ? row.closest('.block') : bl;
     var ex = n ? n.querySelector('.ex-name') : null;
     var t = ex ? (ex.childNodes[0] ? ex.childNodes[0].textContent : ex.textContent) : '';
-    return String(t || 'Descanso').replace(/\\s+/g, ' ').trim().slice(0, 34);
+    return String(t || 'Descanso').replace(/\s+/g, ' ').trim().slice(0, 34);
   }
   /* Athlete C (Rest Timer táctico in-situ, Bodybuilding) -- mismo patrón
      que jpCfRestBadge/jpCfRestOnTick de CrossFit (más arriba en el

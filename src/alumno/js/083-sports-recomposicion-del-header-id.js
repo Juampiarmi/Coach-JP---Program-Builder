@@ -41,7 +41,7 @@
         if(p && !p.classList.contains('active')) p.click();
       });
     }
-    var etqSem = function(t){ var m = /(\\d+)/.exec(t || ''); return m ? 'SEM ' + m[1] : String(t || '').trim(); };
+    var etqSem = function(t){ var m = /(\d+)/.exec(t || ''); return m ? 'SEM ' + m[1] : String(t || '').trim(); };
     var lbl = etqSem((act.textContent || '').trim());
     var h = '<b>' + lbl + '</b><i>&#9662;</i>';
     if(btn.__h !== h){ btn.__h = h; btn.innerHTML = h; }
@@ -83,15 +83,15 @@
     var idx = 0;
     DAYS.forEach(function(d, i){ if(d.id === state.currentDay) idx = i; });
     var etq = function(d, i){
-      var n = 'D\\u00cdA ' + (i + 1), l = String(d.label || '').split(' \\u00b7 ').join(' - ').trim().toUpperCase();
+      var n = 'D\u00cdA ' + (i + 1), l = String(d.label || '').split(' \u00b7 ').join(' - ').trim().toUpperCase();
       return (l && l !== n) ? n + ': ' + l : n;
     };
     var h = '<span class="jp-day-ic" aria-hidden="true">&#128197;</span><b>' + escHtmlSafe(etq(DAYS[idx], idx)) + '</b><i>&#9662;</i>';
     if(btn.__h !== h){ btn.__h = h; btn.innerHTML = h; }
     var hp = DAYS.map(function(d, i){
       var hecho = false; try{ hecho = isDayDone(state.currentWeek, d.id); }catch(e){}
-      var l = String(d.label || '').split(' \\u00b7 ').join(' - ').trim().toUpperCase();
-      return '<button type="button" role="option" data-dia="' + escHtmlSafe(d.id) + '" class="' + (i === idx ? 'on' : '') + '" aria-selected="' + (i === idx ? 'true' : 'false') + '"><b>D\\u00cdA ' + (i + 1) + '</b><span class="jp-dp-t">' +
+      var l = String(d.label || '').split(' \u00b7 ').join(' - ').trim().toUpperCase();
+      return '<button type="button" role="option" data-dia="' + escHtmlSafe(d.id) + '" class="' + (i === idx ? 'on' : '') + '" aria-selected="' + (i === idx ? 'true' : 'false') + '"><b>D\u00cdA ' + (i + 1) + '</b><span class="jp-dp-t">' +
         escHtmlSafe(l) + '</span><small>' + (hecho ? '&#10003; HECHO' : (d.optional ? 'OPCIONAL' : '')) + '</small></button>';
     }).join('');
     if(pop.__h !== hp){ pop.__h = hp; pop.innerHTML = hp; }
@@ -99,8 +99,8 @@
   function dias(){
     var cambio = false;
     [].forEach.call(document.querySelectorAll('.hdc-days-wrap .day-tab .tab-name'), function(n){
-      var m = /(\\d+)/.exec(n.textContent || '');
-      if(m && n.textContent !== 'D\\u00cdA ' + m[1]){ n.textContent = 'D\\u00cdA ' + m[1]; cambio = true; }
+      var m = /(\d+)/.exec(n.textContent || '');
+      if(m && n.textContent !== 'D\u00cdA ' + m[1]){ n.textContent = 'D\u00cdA ' + m[1]; cambio = true; }
     });
     var act = $('.hdc-days-wrap .day-tab.active'), wrap = $('.hdc-days-wrap .week-tabs');
     if(act && wrap && wrap.getAttribute('data-act') !== act.getAttribute('data-day')){
@@ -114,7 +114,7 @@
     var kgN = 0; try{ kgN = calcularTonelajeSesion(); }catch(eT){}          /* total real calculado, no el texto del HUD (que puede estar a mitad de la animación) */
     var kg = kgN.toLocaleString('es-AR');
     var rir = 'RIR OBJ';
-    try{ var m = /RIR\\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
+    try{ var m = /RIR\s*([0-9][0-9–-]*)/i.exec((WEEKS_META[state.currentWeek] || {}).rpe || ''); if(m) rir = 'RIR ' + m[1]; }catch(e){}
     /* las 3 métricas están siempre: grilla simétrica de 3 columnas (sin series registradas el tonelaje es 0, nunca un guion ni NaN) */
     var pildora = function(v, l){ return '<span><b>' + v + '</b><small>' + l + '</small></span>'; };
     var h = pildora(kg, 'KG TONELAJE') + pildora(nB, nB === 1 ? 'BLOQUE' : 'BLOQUES') + pildora(rir === 'RIR OBJ' ? '&mdash;' : rir.replace('RIR ', ''), 'RIR OBJETIVO');
@@ -145,7 +145,7 @@
     m.classList.add('on');
   }
   /* Stealth Pro: los emojis a color rompen la paleta; se envuelven en .jp-emo para teñirlos en un solo tono (ver CSS) */
-  var RX_EMO_SB = /(?:\\uD83C[\\uDC00-\\uDFFF]|\\uD83D[\\uDC00-\\uDFFF]|\\uD83E[\\uDC00-\\uDFFF]|[\\u26A1\\u23F1\\u23F0\\u26A0\\u2795\\u2728\\u2B50\\u2757\\u23F3])\\uFE0F?/g;
+  var RX_EMO_SB = /(?:\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDC00-\uDFFF]|[\u26A1\u23F1\u23F0\u26A0\u2795\u2728\u2B50\u2757\u23F3])\uFE0F?/g;
   function emojis(){
     if(!ES_SPORTS || document.body.classList.contains('cf-disc')) return;
     var raices = document.querySelectorAll('.day-view, .hd-compact'), pend2 = [];

@@ -354,7 +354,7 @@
      estático compartido -- y si no hay ninguna fecha cargada el chip
      no inventa una: cae al estado neutro "Plan Activo" (ver más abajo). */
   function fmtFechaCortaISO(iso){
-    var m = /^(\\d{4})-(\\d{2})-(\\d{2})/.exec(String(iso || ''));
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
     return m ? (m[3] + '/' + m[2]) : '';
   }
   /* directiva9 -- ahora con 3 estados (antes sólo ok/venc): "proximo" cubre
@@ -396,11 +396,11 @@
     var viejo = q('jpPagoModal'); if(viejo) viejo.remove();
     var alias = String(cfg.payAlias || '').trim(); if(!alias) return;
     var titular = String(cfg.payTitular || '').trim(), monto = fmtMontoPago(cfg.payMonto, cfg.payMoneda);
-    var tel = String(cfg.coachPhone || '').replace(/\\D/g, '');
+    var tel = String(cfg.coachPhone || '').replace(/\D/g, '');
     var wa = tel ? 'https://wa.me/' + tel + '?text=' + encodeURIComponent('Hola! Te envío el comprobante de la transferencia de mi cuota' + (monto ? ' (' + monto + ')' : '') + '. ' + (cfg.athleteName || '')) : '';
     var ov = document.createElement('div'); ov.id = 'jpPagoModal'; ov.className = 'jp-pm';
     ov.innerHTML = '<div class="jp-pm-card" role="dialog" aria-modal="true" aria-label="Pagar cuota por transferencia">' +
-      '<button type="button" class="jp-pm-x" data-pm="x" aria-label="Cerrar">\\u00d7</button>' +
+      '<button type="button" class="jp-pm-x" data-pm="x" aria-label="Cerrar">\u00d7</button>' +
       '<div class="jp-pm-k">TRANSFERENCIA BANCARIA</div>' +
       (monto ? '<div class="jp-pm-monto">' + escAcc(monto) + '</div><div class="jp-pm-sub">Monto exacto de tu cuota</div>'
              : '<div class="jp-pm-sub">Consultá el monto de tu cuota con tu coach</div>') +
@@ -419,7 +419,7 @@
       copiarTextoPago(alias, function(ok){
         try{ if(ok && navigator.vibrate) navigator.vibrate(25); }catch(e2){}
         btn.classList.toggle('ok', ok);
-        btn.textContent = ok ? '\\u2713 ALIAS COPIADO' : 'MANTENÉ APRETADO EL ALIAS PARA COPIARLO';
+        btn.textContent = ok ? '\u2713 ALIAS COPIADO' : 'MANTENÉ APRETADO EL ALIAS PARA COPIARLO';
         clearTimeout(t0); t0 = setTimeout(function(){ btn.classList.remove('ok'); btn.textContent = 'COPIAR ALIAS'; }, 2400);
       });
     });
@@ -434,8 +434,8 @@
       if(wrap && wrap.parentNode) wrap.parentNode.insertBefore(box, wrap.nextSibling); else document.body.insertBefore(box, document.body.firstChild);
     }
     box.className = 'jp-pago-cta ' + info.estado;
-    box.innerHTML = '<span class="jp-pago-msg"><i></i>' + (info.estado === 'venc' ? 'VENCIDA' : 'VENCE') + ' \\u00b7 ' + escAcc(info.corta) + '</span>' +
-      '<button type="button" class="jp-pago-btn" id="jpPagoBtn">\\ud83d\\udcb3 PAGAR CUOTA' + (monto ? ' \\u00b7 ' + escAcc(monto) : '') + '</button>';
+    box.innerHTML = '<span class="jp-pago-msg"><i></i>' + (info.estado === 'venc' ? 'VENCIDA' : 'VENCE') + ' \u00b7 ' + escAcc(info.corta) + '</span>' +
+      '<button type="button" class="jp-pago-btn" id="jpPagoBtn">\ud83d\udcb3 PAGAR CUOTA' + (monto ? ' \u00b7 ' + escAcc(monto) : '') + '</button>';
     var b = q('jpPagoBtn'); if(b) b.onclick = function(){ abrirPagoAlias(cfg); };
   }
   function pintarPago(){
@@ -458,7 +458,7 @@
          (.jp-status-pill = estado primario, oro táctico cuando está al
          día; .jp-status-cycle = dato secundario, titanio apagado, sin
          pastilla) -- una sola línea compacta, nunca dos cápsulas iguales. */
-      if(elChip) elChip.innerHTML = '<span class="jp-status-pill jp-status-active">\\u26a1 ACTIVO</span>';
+      if(elChip) elChip.innerHTML = '<span class="jp-status-pill jp-status-active">\u26a1 ACTIVO</span>';
       return;
     }
     if(elDrawer){
@@ -475,10 +475,10 @@
        y "vencido" no mostraban fecha alguna en el chip. */
     if(elChip){
       elChip.innerHTML = info.estado === 'venc'
-        ? '<span class="jp-status-pill jp-status-venc">\\u26a1 VENCIDO ' + escAcc(info.corta) + '</span>'
+        ? '<span class="jp-status-pill jp-status-venc">\u26a1 VENCIDO ' + escAcc(info.corta) + '</span>'
         : info.estado === 'proximo'
-          ? '<span class="jp-status-pill jp-status-proximo">\\u26a1 VENCE ' + escAcc(info.corta) + '</span>'
-          : '<span class="jp-status-pill jp-status-active">\\u26a1 ACTIVO \\u00b7 HASTA ' + escAcc(info.corta) + '</span>';
+          ? '<span class="jp-status-pill jp-status-proximo">\u26a1 VENCE ' + escAcc(info.corta) + '</span>'
+          : '<span class="jp-status-pill jp-status-active">\u26a1 ACTIVO \u00b7 HASTA ' + escAcc(info.corta) + '</span>';
     }
   }
   /* directiva 13: micro-badge de vigencia/estado del plan, mismo lenguaje

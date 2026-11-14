@@ -9,7 +9,7 @@
     return todos.filter(function(b){ return b.id === id; })[0] || null;
   }
   var RX_WARM = /entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|vuelta a la calma|estiramiento/i;
-  var RX_CORE = /\\bcore\\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
+  var RX_CORE = /\bcore\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
 
   /* ---------------------------------------------------------
      1 · SIN BADGES NI SWITCHES INTERNOS
@@ -31,7 +31,7 @@
       var cat = (b && b.category) || '';
       var medible = !RX_WARM.test(titulo) && cat !== 'warmup' &&
                     (cat === 'metcon' || cat === 'cardio' || cat === 'endurance' ||
-                     /\\bemom\\b|\\bamrap\\b|for\\s*time|\\brft\\b|tabata|chipper|met.?con|\\bwod\\b|test|\\brm\\b|1rm/i
+                     /\bemom\b|\bamrap\b|for\s*time|\brft\b|tabata|chipper|met.?con|\bwod\b|test|\brm\b|1rm/i
                        .test(titulo + ' ' + ((bl.querySelector('.cf-body, .wb-body') || {}).textContent || '')));
       bl.classList.toggle('sin-score', !medible);
       if(!medible){

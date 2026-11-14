@@ -84,10 +84,10 @@
   /* nombres para el resumen tactico: sin prefijo de estacion, sin (traduccion) ni "x" huerfana */
   function limpiarNombre(n){
     var t = String(n || '');
-    t = t.replace(/\\s*\\([^)]*\\)\\s*$/, '');
-    t = t.replace(/^\\s*[A-Za-z]\\d{1,2}[.):\\-]\\s*/, '');
-    t = t.replace(/(?:\\s+[xX]|\\s*[×*])\\s*$/, '');
-    return t.replace(/\\s{2,}/g, ' ').trim();
+    t = t.replace(/\s*\([^)]*\)\s*$/, '');
+    t = t.replace(/^\s*[A-Za-z]\d{1,2}[.):\-]\s*/, '');
+    t = t.replace(/(?:\s+[xX]|\s*[×*])\s*$/, '');
+    return t.replace(/\s{2,}/g, ' ').trim();
   }
   function recortar(g, txt, maxW){
     var t = String(txt);
@@ -297,12 +297,12 @@
   /* ---------- CrossFit: el mismo diseno, el protagonista es el SCORE del WOD ---------- */
   function scoreHumano(sc){
     var t = String(sc || '').trim(), nivel = '', m;
-    if((m = t.match(/\\s*\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i))){ nivel = m[1].toUpperCase(); t = t.replace(/\\s*\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i, '').trim(); }
+    if((m = t.match(/\s*\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\]\s*$/i))){ nivel = m[1].toUpperCase(); t = t.replace(/\s*\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\]\s*$/i, '').trim(); }
     var hero = t, sub = '';
-    if((m = t.match(/^(\\d+)\\s*\\+\\s*(\\d+)$/))){ hero = m[1] + ' RONDAS'; sub = '+ ' + m[2] + ' REPS'; }
-    else if((m = t.match(/^(\\d+)\\s*:\\s*(\\d{1,2})$/))){ hero = m[1] + ':' + ('0' + m[2]).slice(-2); sub = 'TIEMPO FINAL'; }
-    else if((m = t.match(/^CAP\\s*\\+\\s*(\\d+)$/i))){ hero = 'CAPPED'; sub = '+ ' + m[1] + ' REPS'; }
-    else if((m = t.match(/^(\\d+)\\s*rondas?(?:\\s*·\\s*([\\d.,]+)\\s*kg)?$/i))){ hero = m[1] + ' RONDAS'; sub = m[2] ? m[2] + ' KG' : ''; }
+    if((m = t.match(/^(\d+)\s*\+\s*(\d+)$/))){ hero = m[1] + ' RONDAS'; sub = '+ ' + m[2] + ' REPS'; }
+    else if((m = t.match(/^(\d+)\s*:\s*(\d{1,2})$/))){ hero = m[1] + ':' + ('0' + m[2]).slice(-2); sub = 'TIEMPO FINAL'; }
+    else if((m = t.match(/^CAP\s*\+\s*(\d+)$/i))){ hero = 'CAPPED'; sub = '+ ' + m[1] + ' REPS'; }
+    else if((m = t.match(/^(\d+)\s*rondas?(?:\s*·\s*([\d.,]+)\s*kg)?$/i))){ hero = m[1] + ' RONDAS'; sub = m[2] ? m[2] + ' KG' : ''; }
     return { hero: hero.toUpperCase(), sub: sub, nivel: nivel };
   }
   function dibujarMarcaCF(d){
@@ -392,7 +392,7 @@
     }
     /* movimientos del WOD en el espacio que queda entre el core y las metricas */
     var yR = yy + 70;
-    var movs = String(d.estructura || '').split(' · ').filter(function(x){ return x && !/\\b(AMRAP|EMOM|FOR TIME|TABATA|EVERY|CHIPPER)\\b/.test(x); });
+    var movs = String(d.estructura || '').split(' · ').filter(function(x){ return x && !/\b(AMRAP|EMOM|FOR TIME|TABATA|EVERY|CHIPPER)\b/.test(x); });
     var limite = (met.length ? yMet - 30 : yBar - 30), disp = Math.min(6, movs.length);
     var pitch = Math.max(40, Math.min(54, Math.floor((limite - (yR + 30)) / Math.max(1, disp + (movs.length > 6 ? 1 : 0)))));
     var cupo = Math.max(1, Math.min(disp, Math.floor((limite - (yR + 30)) / pitch) - (movs.length > disp ? 1 : 0)));

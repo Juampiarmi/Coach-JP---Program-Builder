@@ -3,13 +3,13 @@
 ========================================================= */
 (function(){
   var FMT = [
-    { re:/\\bemom\\b|every\\s*\\d+\\s*(?:min|')/i,                    lb:'EMOM' },
-    { re:/\\bamrap\\b/i,                                           lb:'AMRAP' },
-    { re:/\\btabata\\b/i,                                          lb:'TABATA' },
-    { re:/rounds?\\s*for\\s*time|\\brft\\b/i,                        lb:'ROUNDS FOR TIME' },
-    { re:/\\bchipper\\b/i,                                         lb:'CHIPPER' },
-    { re:/for\\s*time/i,                                          lb:'FOR TIME' },
-    { re:/\\bintervals?\\b|intervalos?/i,                          lb:'INTERVALOS' }
+    { re:/\bemom\b|every\s*\d+\s*(?:min|')/i,                    lb:'EMOM' },
+    { re:/\bamrap\b/i,                                           lb:'AMRAP' },
+    { re:/\btabata\b/i,                                          lb:'TABATA' },
+    { re:/rounds?\s*for\s*time|\brft\b/i,                        lb:'ROUNDS FOR TIME' },
+    { re:/\bchipper\b/i,                                         lb:'CHIPPER' },
+    { re:/for\s*time/i,                                          lb:'FOR TIME' },
+    { re:/\bintervals?\b|intervalos?/i,                          lb:'INTERVALOS' }
   ];
   /* gana el formato que aparece primero en el texto real del bloque */
   function formatoReal(txt){
@@ -24,22 +24,22 @@
     /* sólo se acepta un tiempo que esté escrito en la planificación */
     var t = String(txt || '');
     if(fmt){
-      var linea = t.split(/\\n|\\.\\s/).filter(function(l){ return fmt.re.test(l); })[0] || t;
-      var m = linea.match(/(\\d{1,3})\\s*(?:min|minutos?|minutes?|')/i);
+      var linea = t.split(/\n|\.\s/).filter(function(l){ return fmt.re.test(l); })[0] || t;
+      var m = linea.match(/(\d{1,3})\s*(?:min|minutos?|minutes?|')/i);
       if(m) return m[1] + ' min';
     }
-    var g = t.match(/(\\d{1,3})\\s*(?:min|minutos?|minutes?)\\b/i);
+    var g = t.match(/(\d{1,3})\s*(?:min|minutos?|minutes?)\b/i);
     return g ? g[1] + ' min' : '';
   }
   function esWod(bl, txt){
     if(bl.classList.contains('cat-metcon')) return true;
     if(bl.querySelector('.wod-board')) return true;
-    return /\\bemom\\b|\\bamrap\\b|for\\s*time|\\brft\\b|tabata|chipper|met.?con|\\bwod\\b/i.test(txt);
+    return /\bemom\b|\bamrap\b|for\s*time|\brft\b|tabata|chipper|met.?con|\bwod\b/i.test(txt);
   }
   function cuerpoDe(bl){
     var b = bl.querySelector('.wod-board .wb-body') || bl.querySelector('.cf-board .cf-body') ||
             bl.querySelector('.block-body') || bl;
-    return (b.textContent || '').replace(/\\s+/g, ' ');
+    return (b.textContent || '').replace(/\s+/g, ' ');
   }
 
   /* ---------------------------------------------------------
@@ -55,7 +55,7 @@
       if(el.classList.contains('wb-fmt') || el.classList.contains('cf-t') ||
          el.classList.contains('cf-fmt') || el.classList.contains('cf-modo-tag')) return;
       var t = (el.textContent || '').trim();
-      if(/⏱|⏲|🕐|\\d+\\s*(min|minutos?|seg|s)\\b|\\d{1,2}:\\d{2}/i.test(t)) el.remove();
+      if(/⏱|⏲|🕐|\d+\s*(min|minutos?|seg|s)\b|\d{1,2}:\d{2}/i.test(t)) el.remove();
     });
   }
 
@@ -82,8 +82,8 @@
      3 · FORMATO Y SUBTÍTULO COHERENTES CON EL TEXTO REAL
   --------------------------------------------------------- */
   function limpioFmt(s){
-    return String(s || '').replace(/[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}]/gu, '')
-      .replace(/\\s{2,}/g, ' ').trim();
+    return String(s || '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+      .replace(/\s{2,}/g, ' ').trim();
   }
   function coherencia(){
     document.querySelectorAll('.block').forEach(function(bl){
@@ -104,12 +104,12 @@
       if(!sub) return;
       var actual = (sub.textContent || '').trim();
       if(!actual) return;
-      var partes = actual.split(/\\s*[·|]\\s*/).filter(Boolean);
+      var partes = actual.split(/\s*[·|]\s*/).filter(Boolean);
       var dur = duracionReal(cuerpo, f);
       var resto = partes.filter(function(x){
         /* se descartan los tramos que declaran formato o tiempo */
         if(formatoReal(x)) return false;
-        if(/\\d{1,3}\\s*(min|minutos?|minutes?|seg|s)\\b|\\d{1,2}:\\d{2}/i.test(x)) return false;
+        if(/\d{1,3}\s*(min|minutos?|minutes?|seg|s)\b|\d{1,2}:\d{2}/i.test(x)) return false;
         return true;
       });
       var nuevo = [];

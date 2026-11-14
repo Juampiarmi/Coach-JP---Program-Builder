@@ -24,7 +24,7 @@
   /* =========================================================
      1 · DISCIPLINA DEL DÍA
   ========================================================= */
-  var RX_CF = /met.?con|\\bwod\\b|amrap|emom|for\\s*time|tabata|chipper|crossfit|complex|snatch|clean\\s*(&|and|y)?\\s*jerk|thruster|muscle.?up|box jump|wall ball|double under|toes.?to.?bar|kettlebell swing|burpee/i;
+  var RX_CF = /met.?con|\bwod\b|amrap|emom|for\s*time|tabata|chipper|crossfit|complex|snatch|clean\s*(&|and|y)?\s*jerk|thruster|muscle.?up|box jump|wall ball|double under|toes.?to.?bar|kettlebell swing|burpee/i;
   function textoDelDia(){
     var d = (typeof DAYS !== 'undefined' ? DAYS : []).find(function(x){ return x.id === state.currentDay; });
     if(!d) return '';
@@ -92,10 +92,10 @@
   ========================================================= */
   function fmtDe(txt){
     var t = String(txt || '');
-    if(/\\bamrap\\b/i.test(t))  return { k:'amrap',   lb:'🟢 AMRAP' };
-    if(/\\bemom\\b|\\be\\d+m?om\\b|every\\s*\\d/i.test(t)) return { k:'emom', lb:'🔵 EMOM' };
-    if(/\\btabata\\b/i.test(t)) return { k:'tabata',  lb:'🟡 TABATA' };
-    if(/for\\s*time|\\brft\\b|rounds?\\s*for\\s*time|chipper|\\bladders?\\b/i.test(t)) return { k:'fortime', lb:'🔴 FOR TIME' };
+    if(/\bamrap\b/i.test(t))  return { k:'amrap',   lb:'🟢 AMRAP' };
+    if(/\bemom\b|\be\d+m?om\b|every\s*\d/i.test(t)) return { k:'emom', lb:'🔵 EMOM' };
+    if(/\btabata\b/i.test(t)) return { k:'tabata',  lb:'🟡 TABATA' };
+    if(/for\s*time|\brft\b|rounds?\s*for\s*time|chipper|\bladders?\b/i.test(t)) return { k:'fortime', lb:'🔴 FOR TIME' };
     return null;
   }
   function lineasDe(bl){
@@ -103,18 +103,18 @@
     /* se recorre en el orden real del bloque: los títulos de fase quedan como cabeceras */
     bl.querySelectorAll('.ex-row, .wu-phase').forEach(function(r){
       if(r.classList.contains('wu-phase')){
-        var t = r.textContent.replace(/\\s+/g, ' ').trim();
+        var t = r.textContent.replace(/\s+/g, ' ').trim();
         if(t) out.push({ nombre: t, det: '', head: true });
         return;
       }
       var n = r.querySelector('.ex-name');
       var d = r.querySelector('.ex-detail');
       var nombre = n ? (n.childNodes[0] ? n.childNodes[0].textContent : n.textContent) : r.textContent;
-      out.push({ nombre: String(nombre || '').replace(/\\s+/g, ' ').trim(),
-                 det: d ? d.textContent.replace(/\\s+/g, ' ').trim() : '' });
+      out.push({ nombre: String(nombre || '').replace(/\s+/g, ' ').trim(),
+                 det: d ? d.textContent.replace(/\s+/g, ' ').trim() : '' });
     });
     bl.querySelectorAll('.wb-line').forEach(function(l){
-      var txt = l.textContent.replace(/\\s+/g, ' ').trim().replace(/^\\d+\\s/, '');
+      var txt = l.textContent.replace(/\s+/g, ' ').trim().replace(/^\d+\s/, '');
       if(txt) out.push({ nombre: txt, det: '', head: l.classList.contains('head') });
     });
     return out.filter(function(x){ return x.nombre; });

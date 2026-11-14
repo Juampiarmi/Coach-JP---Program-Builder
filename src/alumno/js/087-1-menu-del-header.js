@@ -79,7 +79,7 @@
       det.setAttribute('data-uxwu', '1');
       /* el rotulo cuenta solo los ejercicios reales */
       var lbl = $('.jp-warm-lb', det);
-      if(lbl){ var tw = D.createTreeWalker(lbl, NodeFilter.SHOW_TEXT, null), tn; while((tn = tw.nextNode())){ if(/\\d+\\s+EJERCICIOS?/.test(tn.nodeValue)){ tn.nodeValue = tn.nodeValue.replace(/\\d+\\s+EJERCICIOS?/, filas.length + (filas.length === 1 ? ' EJERCICIO' : ' EJERCICIOS')); break; } } }
+      if(lbl){ var tw = D.createTreeWalker(lbl, NodeFilter.SHOW_TEXT, null), tn; while((tn = tw.nextNode())){ if(/\d+\s+EJERCICIOS?/.test(tn.nodeValue)){ tn.nodeValue = tn.nodeValue.replace(/\d+\s+EJERCICIOS?/, filas.length + (filas.length === 1 ? ' EJERCICIO' : ' EJERCICIOS')); break; } } }
       if(esCf()) return;     /* CrossFit: el calentamiento es una guia de flujo, sin casillas por linea */
       var hecho = wuLoad();
       var sm = $('summary', det);
@@ -116,7 +116,7 @@
   /* ---------- 3 · videos en línea junto a cada ejercicio ---------- */
   var STOP = { de:1, con:1, en:1, la:1, el:1, los:1, las:1, a:1, y:1, al:1, del:1, the:1, with:1, on:1, and:1, of:1, un:1, una:1, por:1 };
   function toks(s){
-    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').split(/\\s+/)
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/)
       .filter(function(w){ return w && !STOP[w]; }).map(function(w){ if(w.length > 3) return w.replace(/(?:es|s)$/, ''); return (w.length === 3 && /[^s]s$/.test(w)) ? w.slice(0, 2) : w; });
   }
   function cobertura(a, b){
@@ -224,11 +224,11 @@
     return null;
   }
   function partesMarca(txt){
-    var nivel = (/\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i.exec(txt) || [])[1] || '', base = String(txt).replace(/\\s*\\[(?:DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i, '').trim(), m;
-    if((m = /^CAP\\s*\\+\\s*(\\d+)/i.exec(base))) return { cap: true, a: '', b: m[1], nivel: nivel, base: base };
-    if((m = /^(\\d+)\\s*:\\s*(\\d+)/.exec(base))) return { a: m[1], b: m[2], nivel: nivel, base: base };
-    if((m = /^(\\d+)\\s*\\+\\s*(\\d+)/.exec(base))) return { a: m[1], b: m[2], nivel: nivel, base: base };
-    if((m = /^(\\d+)\\s*rondas?(?:\\s*·\\s*([\\d.,]+)\\s*kg)?/i.exec(base))) return { a: m[1], b: m[2] || '', nivel: nivel, base: base };
+    var nivel = (/\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\]\s*$/i.exec(txt) || [])[1] || '', base = String(txt).replace(/\s*\[(?:DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\]\s*$/i, '').trim(), m;
+    if((m = /^CAP\s*\+\s*(\d+)/i.exec(base))) return { cap: true, a: '', b: m[1], nivel: nivel, base: base };
+    if((m = /^(\d+)\s*:\s*(\d+)/.exec(base))) return { a: m[1], b: m[2], nivel: nivel, base: base };
+    if((m = /^(\d+)\s*\+\s*(\d+)/.exec(base))) return { a: m[1], b: m[2], nivel: nivel, base: base };
+    if((m = /^(\d+)\s*rondas?(?:\s*·\s*([\d.,]+)\s*kg)?/i.exec(base))) return { a: m[1], b: m[2] || '', nivel: nivel, base: base };
     return { free: true, a: '', b: '', nivel: nivel, base: base };
   }
   function memoriaScore(root){
@@ -281,23 +281,23 @@
     return !!$(':scope > .jp-cf-rn', r) && !r.classList.contains('jp-cf-header') && !r.classList.contains('jp-cf-badge') && !r.classList.contains('jp-cf-rest-row') && !r.classList.contains('jp-cf-closing');
   }
   function ladoDe(txt){
-    var t = String(txt || '').trim(), m = /\\b(derech[oa]|izquierd[oa]|right|left)\\b/i.exec(t);
+    var t = String(txt || '').trim(), m = /\b(derech[oa]|izquierd[oa]|right|left)\b/i.exec(t);
     if(m) return /^(?:derech|right)/i.test(m[1]) ? 'D' : 'I';
-    m = /\\(\\s*([RLDI])\\s*\\)\\s*$/.exec(t);
+    m = /\(\s*([RLDI])\s*\)\s*$/.exec(t);
     if(m) return /[RD]/.test(m[1].toUpperCase()) ? 'D' : 'I';
     return '';
   }
   function limpiarLado(rn){
     var tw = D.createTreeWalker(rn, NodeFilter.SHOW_TEXT, null), n;
     while((n = tw.nextNode())){
-      var v = n.nodeValue.replace(/\\s*\\(\\s*[RLDI]\\s*\\)\\s*$/, '').replace(/\\s*\\b(?:derech[oa]|izquierd[oa]|right|left)\\b\\s*/ig, ' ').replace(/\\s{2,}/g, ' ');
+      var v = n.nodeValue.replace(/\s*\(\s*[RLDI]\s*\)\s*$/, '').replace(/\s*\b(?:derech[oa]|izquierd[oa]|right|left)\b\s*/ig, ' ').replace(/\s{2,}/g, ' ');
       if(v !== n.nodeValue) n.nodeValue = v;
     }
   }
   /* "Min 4: REST" con el mismo cuerpo y escala que los demás minutos del EMOM */
   function restEnEmom(cont){
     $$(':scope > .jp-cf-badge', cont).forEach(function(r){
-      var m = /^\\s*min(?:ute)?s?\\s*(\\d+)\\s*[:.\\-]\\s*(rest|descanso)/i.exec(r.textContent);
+      var m = /^\s*min(?:ute)?s?\s*(\d+)\s*[:.\-]\s*(rest|descanso)/i.exec(r.textContent);
       if(!m) return;
       r.className = 'jp-cf-row jp-cf-cell jp-ux-resto';
       r.innerHTML = '<span class="jp-cf-rn"><span class="jp-cf-min">[ MIN ' + m[1] + ' ]</span>' + (/rest/i.test(m[2]) ? 'REST' : 'DESCANSO') + '</span>';
@@ -307,7 +307,7 @@
   function capComoDato(cont){
     $$(':scope > .jp-cf-row', cont).forEach(function(r){
       var rn = $(':scope > .jp-cf-rn', r);
-      if(rn && /^\\s*(?:time\\s*cap|cap)\\b/i.test(rn.textContent)) r.classList.add('jp-cf-badge');
+      if(rn && /^\s*(?:time\s*cap|cap)\b/i.test(rn.textContent)) r.classList.add('jp-cf-badge');
     });
   }
   /* un AMRAP mide trabajo continuo por tiempo: nunca lleva una etiqueta de rondas fijas */
@@ -315,7 +315,7 @@
     var cab = ($('.jp-cf-fmtbadge', bd) || {}).textContent || '', hdr = $$(':scope > .jp-cf-header', cont).map(function(x){ return x.textContent; }).join(' ');
     if(!/AMRAP/i.test(cab + ' ' + hdr)) return;
     $$(':scope > .cf-format-badge, :scope > .jp-cf-header', cont).forEach(function(x){
-      if(/^\\W*\\d+\\s*(?:rounds?|rondas?|sets?|series)\\b/i.test(x.textContent.trim())){ x.classList.add('jp-ux-oculto'); }
+      if(/^\W*\d+\s*(?:rounds?|rondas?|sets?|series)\b/i.test(x.textContent.trim())){ x.classList.add('jp-ux-oculto'); }
     });
     bd.classList.add('jp-ux-amrap');
   }
@@ -337,11 +337,11 @@
     cont.classList.add('jp-ux-unilateral');
     return true;
   }
-  var RX_SEQ_G = /\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,}/;
+  var RX_SEQ_G = /\d{1,3}(?:\s*[-\u2013]\s*\d{1,3}){2,}/;
   function ladderEl(seq){
-    var nums = String(seq).split(/\\s*[-\\u2013]\\s*/).map(Number), e = D.createElement('div');
+    var nums = String(seq).split(/\s*[-\u2013]\s*/).map(Number), e = D.createElement('div');
     e.className = 'jp-ux-ladder';
-    var n = nums.length > 8 ? '<b>' + nums[0] + '</b><i>\\u2192</i><b>' + nums[nums.length - 1] + '</b>' : nums.map(function(x){ return '<b>' + x + '</b>'; }).join('<i>\\u2013</i>');
+    var n = nums.length > 8 ? '<b>' + nums[0] + '</b><i>\u2192</i><b>' + nums[nums.length - 1] + '</b>' : nums.map(function(x){ return '<b>' + x + '</b>'; }).join('<i>\u2013</i>');
     e.innerHTML = '<span class="k">ESCALERA</span><span class="n">' + n + '</span><span class="u">REPS</span>';
     return e;
   }
@@ -350,18 +350,18 @@
     var bd = cont.closest('.jp-cfboard') || cont.parentNode, fm = $('.jp-cf-fmtbadge', bd), seq = '', m;
     /* 1 · la secuencia que ya viene en el titulo del formato ("FOR TIME · 27-21-15-9") sale de ahi y pasa a la linea de escalera */
     if(fm && (m = RX_SEQ_G.exec(fm.textContent))){
-      seq = m[0].replace(/\\s+/g, '');
-      fm.textContent = fm.textContent.replace(/\\s*[\\u00b7\\-\\u2013]\\s*\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,}/, '');
+      seq = m[0].replace(/\s+/g, '');
+      fm.textContent = fm.textContent.replace(/\s*[\u00b7\-\u2013]\s*\d{1,3}(?:\s*[-\u2013]\s*\d{1,3}){2,}/, '');
     }
     /* 2 · filas que traen la secuencia por delante ("27-21-15-9 WALL BALLS"): si es la misma en todas, se levanta una sola vez */
-    var filas = $$(':scope > .jp-cf-row', cont).filter(function(r){ var rn = $(':scope > .jp-cf-rn', r); return rn && /^\\s*\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,}(?:\\s|$)/.test(rn.textContent); });
+    var filas = $$(':scope > .jp-cf-row', cont).filter(function(r){ var rn = $(':scope > .jp-cf-rn', r); return rn && /^\s*\d{1,3}(?:\s*[-\u2013]\s*\d{1,3}){2,}(?:\s|$)/.test(rn.textContent); });
     if(filas.length){
-      var seqs = filas.map(function(r){ return (/^\\s*(\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,})/.exec($(':scope > .jp-cf-rn', r).textContent) || [''])[1].replace(/\\s+/g, ''); });
+      var seqs = filas.map(function(r){ return (/^\s*(\d{1,3}(?:\s*[-\u2013]\s*\d{1,3}){2,})/.exec($(':scope > .jp-cf-rn', r).textContent) || [''])[1].replace(/\s+/g, ''); });
       if(seqs.every(function(x){ return x === seqs[0]; }) && (!seq || seq === seqs[0])){
         seq = seqs[0];
         filas.forEach(function(r){
           var rn = $(':scope > .jp-cf-rn', r);
-          rn.innerHTML = rn.innerHTML.replace(/^\\s*(?:<span[^>]*>)?\\s*\\d{1,3}(?:\\s*[-\\u2013]\\s*\\d{1,3}){2,}\\s*(?:<\\/span>)?\\s*/, '');
+          rn.innerHTML = rn.innerHTML.replace(/^\s*(?:<span[^>]*>)?\s*\d{1,3}(?:\s*[-\u2013]\s*\d{1,3}){2,}\s*(?:<\/span>)?\s*/, '');
         });
       }
     }
@@ -376,7 +376,7 @@
       var rows = $$('.jp-cf-rows .jp-cf-load', bd);
       bd.setAttribute('data-uxcg', '1');
       if(!rows.length) return;
-      var vals = rows.map(function(e){ return String(e.textContent).toLowerCase().replace(/[\\s()]/g, '').replace(/,.*$/, ''); });
+      var vals = rows.map(function(e){ return String(e.textContent).toLowerCase().replace(/[\s()]/g, '').replace(/,.*$/, ''); });
       var distintas = vals.filter(function(v, i){ return vals.indexOf(v) === i; });
       if(distintas.length === 1 && rows.length >= 2) rows.forEach(function(e){ e.classList.add('jp-ux-dup'); });
       else chips.classList.add('jp-ux-dup');
@@ -385,7 +385,7 @@
   /* indices de secuencia: numeros tabulares (01, 02...) en lugar de puntos; solo en listas cortas y sin etiquetas propias */
   function indicesCf(root){
     $$('.jp-cfboard .jp-cf-rows', root).forEach(function(cont){
-      $$(':scope > .jp-cf-row[data-est]', cont).forEach(function(r){ var m = /^E(\\d+)$/.exec(r.getAttribute('data-est')); if(m) r.setAttribute('data-idx', (m[1].length < 2 ? '0' : '') + m[1]); });
+      $$(':scope > .jp-cf-row[data-est]', cont).forEach(function(r){ var m = /^E(\d+)$/.exec(r.getAttribute('data-est')); if(m) r.setAttribute('data-idx', (m[1].length < 2 ? '0' : '') + m[1]); });
       if(cont.getAttribute('data-uxidx')) return;
       cont.setAttribute('data-uxidx', '1');
       if(cont.classList.contains('jp-ux-larga') || cont.classList.contains('jp-ux-unilateral') || $(':scope > .jp-cf-row[data-est]', cont)) return;
@@ -397,7 +397,7 @@
       cont.classList.add('jp-ux-idx'); items.forEach(function(r){ r.classList.add('jp-ux-it'); });
     });
   }
-  var RX_ESTRUCT = /^\\W*(?:every|emom|e\\d+mom|amrap|for\\s*time|chipper|tabata|\\d+(?:\\s*[-–]\\s*\\d+)?\\s*(?:sets?|quality\\s*(?:sets?|rounds?)|rounds?|rondas?|series|supersets?)\\b|(?:superset|supersets|alternating|alternando)\\b|min(?:ute)?s?\\s*\\d)/i;
+  var RX_ESTRUCT = /^\W*(?:every|emom|e\d+mom|amrap|for\s*time|chipper|tabata|\d+(?:\s*[-–]\s*\d+)?\s*(?:sets?|quality\s*(?:sets?|rounds?)|rounds?|rondas?|series|supersets?)\b|(?:superset|supersets|alternating|alternando)\b|min(?:ute)?s?\s*\d)/i;
   /* toda la metadata del bloque (estructura, rondas, time cap, regla de descanso) en UNA cabecera; sin parches sueltos ni textos repetidos */
   function metaWod(bd, cont){
     if($('.jp-ux-cab', bd)) return;
@@ -410,31 +410,31 @@
     /* estructura: la primera linea de encabezado de formato */
     var hRow = null;
     $$(':scope > .jp-cf-header, :scope > .cf-format-badge', cont).forEach(function(h){ if(!hRow && RX_ESTRUCT.test(h.textContent.replace(/[⚡⏱️]/g, '').trim())) hRow = h; });
-    var head = hRow ? hRow.textContent.replace(/[⚡⏱️]\\uFE0F?/g, '').replace(/:\\s*$/, '').replace(/\\s+/g, ' ').trim() : '';
+    var head = hRow ? hRow.textContent.replace(/[⚡⏱️]\uFE0F?/g, '').replace(/:\s*$/, '').replace(/\s+/g, ' ').trim() : '';
     if(hRow) hRow.classList.add('jp-ux-oculto');
     if(fm){ /* el formato grande ya dice la estructura: los encabezados repetidos sobran */
-      $$(':scope > .jp-cf-header', cont).forEach(function(h){ if(/^\\W*(?:amrap|emom|e\\d+mom|for\\s*time|chipper|tabata)\\b/i.test(h.textContent.trim())) h.classList.add('jp-ux-oculto'); });
+      $$(':scope > .jp-cf-header', cont).forEach(function(h){ if(/^\W*(?:amrap|emom|e\d+mom|for\s*time|chipper|tabata)\b/i.test(h.textContent.trim())) h.classList.add('jp-ux-oculto'); });
       head = '';
     }
-    var txt = $$(':scope > .jp-cf-row, :scope > .cf-format-badge, :scope > .jp-cf-closing', cont).map(function(x){ return x.textContent.replace(/\\s+/g, ' '); }).join(' | ');
+    var txt = $$(':scope > .jp-cf-row, :scope > .cf-format-badge, :scope > .jp-cf-closing', cont).map(function(x){ return x.textContent.replace(/\s+/g, ' '); }).join(' | ');
     var fmtTxt = head + ' ' + (fm ? fm.textContent : ''), items = [], m;
     /* rondas (nunca en un AMRAP) */
     var ron = (blk && parseInt(blk.cfRondas, 10)) || 0;
-    if(!ron && !amrap){ m = /(\\d+)\\s*(?:rounds?|rondas)\\b/i.exec(txt) || /\\bx\\s*(\\d+)\\s*(?:sets?|series)\\b/i.exec(txt) || /(?:^|\\|)\\s*\\W*(\\d+)\\s*sets\\b/i.exec(txt); if(m) ron = parseInt(m[1], 10) || 0; }
-    if(ron > 1 && !amrap && !/\\b\\d+\\s*(?:sets?|rounds?|rondas?|series)\\b|\\bx\\s*\\d/i.test(fmtTxt)) items.push('RONDAS ' + ron);
+    if(!ron && !amrap){ m = /(\d+)\s*(?:rounds?|rondas)\b/i.exec(txt) || /\bx\s*(\d+)\s*(?:sets?|series)\b/i.exec(txt) || /(?:^|\|)\s*\W*(\d+)\s*sets\b/i.exec(txt); if(m) ron = parseInt(m[1], 10) || 0; }
+    if(ron > 1 && !amrap && !/\b\d+\s*(?:sets?|rounds?|rondas?|series)\b|\bx\s*\d/i.test(fmtTxt)) items.push('RONDAS ' + ron);
     /* regla de descanso */
     var rest = '', ocultarRest = false;
     if(blk && blk.cfRest) rest = blk.cfRest === '1:1' ? '1:1 · IGUAL AL TRABAJO' : (blk.cfRest === 'libre' ? 'LIBRE' : blk.cfRest);
-    else if(/(?:rest|descanso)[^|]{0,24}1\\s*:\\s*1|1\\s*:\\s*1\\s*(?:rest|work|descanso|trabajo)|rest\\s*=\\s*work|descanso\\s*igual/i.test(txt)) rest = '1:1 · IGUAL AL TRABAJO';
-    else { m = /(?:^|\\|)\\s*\\W*(?:rest|descanso)\\s*(?:de|:)?\\s*(\\d+:\\d{2}|\\d+\\s*(?:s|seg|min))\\s*(?:\\||$)/i.exec(txt); if(m){ rest = m[1].toUpperCase(); ocultarRest = true; } }
+    else if(/(?:rest|descanso)[^|]{0,24}1\s*:\s*1|1\s*:\s*1\s*(?:rest|work|descanso|trabajo)|rest\s*=\s*work|descanso\s*igual/i.test(txt)) rest = '1:1 · IGUAL AL TRABAJO';
+    else { m = /(?:^|\|)\s*\W*(?:rest|descanso)\s*(?:de|:)?\s*(\d+:\d{2}|\d+\s*(?:s|seg|min))\s*(?:\||$)/i.exec(txt); if(m){ rest = m[1].toUpperCase(); ocultarRest = true; } }
     if(rest){ items.push('DESCANSO ' + rest); $$(':scope > .jp-cf-closing.jp-cf-restbar', cont).forEach(function(r){ if(ocultarRest || /rest|descanso/i.test(r.textContent)) r.classList.add('jp-ux-oculto'); }); }
     /* time cap */
     if(!$('.jp-cf-capline .cap', bd) && !fm){
-      m = /time\\s*cap\\s*[:\\-]?\\s*(\\d{1,2}(?::\\d{2})?)/i.exec(txt) || (/^(?:fortime|chipper)$/.test(fmt) && blk.cfParam ? /(\\d{1,2}(?::\\d{2})?)/.exec(blk.cfParam) : null);
-      if(m) items.push('TIME CAP ' + m[1] + (/^\\d+$/.test(m[1]) ? ' MIN' : ''));
+      m = /time\s*cap\s*[:\-]?\s*(\d{1,2}(?::\d{2})?)/i.exec(txt) || (/^(?:fortime|chipper)$/.test(fmt) && blk.cfParam ? /(\d{1,2}(?::\d{2})?)/.exec(blk.cfParam) : null);
+      if(m) items.push('TIME CAP ' + m[1] + (/^\d+$/.test(m[1]) ? ' MIN' : ''));
     }
     var capVisto = !!$('.jp-cf-capline .cap', bd) || items.some(function(t){ return /^TIME CAP/.test(t); });
-    if(capVisto) $$(':scope > .jp-cf-badge', cont).forEach(function(r){ if(/^\\s*(?:time\\s*cap|cap)\\b/i.test(r.textContent)) r.classList.add('jp-ux-oculto'); });
+    if(capVisto) $$(':scope > .jp-cf-badge', cont).forEach(function(r){ if(/^\s*(?:time\s*cap|cap)\b/i.test(r.textContent)) r.classList.add('jp-ux-oculto'); });
     if(!head && !items.length) return;
     var cab = D.createElement('div'); cab.className = 'jp-ux-cab';
     cab.innerHTML = (head ? '<b>' + head.toUpperCase().replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</b>' : '') + items.map(function(t){ return '<span' + (/^TIME CAP/.test(t) ? ' class="jp-ux-tc"' : '') + '>' + t + '</span>'; }).join('');
@@ -468,7 +468,7 @@
       while((n = tw.nextNode())) nodos.push(n);
       nodos.forEach(function(t){
         if(t.parentNode.closest('.jp-cf-side, .jp-cf-min')) return;
-        var v = t.nodeValue.replace(/\\s*\\(([^()]{3,})\\)/g, function(all, inner){ mods.push(inner.trim()); return ''; });
+        var v = t.nodeValue.replace(/\s*\(([^()]{3,})\)/g, function(all, inner){ mods.push(inner.trim()); return ''; });
         if(v !== t.nodeValue) t.nodeValue = v;
       });
       var txt = D.createElement('span'); txt.className = 'jp-ux-txt';
@@ -492,29 +492,29 @@
   function briefingJerarquia(root){
     $$('.tactical-briefing .tb-body', root).forEach(function(b){
       if(b.getAttribute('data-uxbr')) return;
-      var t = String(b.textContent || '').replace(/\\r/g, '').trim(); if(!t) return;
+      var t = String(b.textContent || '').replace(/\r/g, '').trim(); if(!t) return;
       b.setAttribute('data-uxbr', '1');
       function esc(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
       function bloque(p){
-        var m = /^\\W*(?:\\d+\\s*[).\\-]\\s*)?([^:.\\n]{3,48}):\\s+([\\s\\S]+)$/.exec(p);
+        var m = /^\W*(?:\d+\s*[).\-]\s*)?([^:.\n]{3,48}):\s+([\s\S]+)$/.exec(p);
         return m ? '<div class="jp-ux-bp"><b>' + esc(m[1]) + '</b><span>' + esc(m[2]) + '</span></div>' : '<div class="jp-ux-bp"><span>' + esc(p) + '</span></div>';
       }
-      var partes = t.split(/\\n+/).map(function(s){ return s.trim(); }).filter(Boolean), pri = [], cool = [];
-      partes.forEach(function(p){ if(/^\\W*(?:cool[\\s-]*down|enfriamiento|vuelta a la calma)\\b/i.test(p)) cool.push(p.replace(/^\\W*(?:cool[\\s-]*down|enfriamiento|vuelta a la calma)\\s*[:\\-–]?\\s*/i, '')); else pri.push(p); });
+      var partes = t.split(/\n+/).map(function(s){ return s.trim(); }).filter(Boolean), pri = [], cool = [];
+      partes.forEach(function(p){ if(/^\W*(?:cool[\s-]*down|enfriamiento|vuelta a la calma)\b/i.test(p)) cool.push(p.replace(/^\W*(?:cool[\s-]*down|enfriamiento|vuelta a la calma)\s*[:\-–]?\s*/i, '')); else pri.push(p); });
       b.innerHTML = pri.map(bloque).join('') + (cool.length ? '<div class="jp-ux-br-sub">COOL-DOWN</div>' + cool.map(function(p){ return '<div class="jp-ux-bp"><span>' + esc(p) + '</span></div>'; }).join('') : '');
     });
   }
 
   /* ---------- 6 · sugerencia de carga: progresión entre semanas y marca real ---------- */
-  function nrm2(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\\([^)]*\\)/g, ' ').replace(/^[a-f]\\d{1,2}[.):\\-]\\s*/, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\\s+/g, ' ').trim(); }
+  function nrm2(s){ return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\([^)]*\)/g, ' ').replace(/^[a-f]\d{1,2}[.):\-]\s*/, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function rangoReps(txt){
-    var m = String(txt || '').match(/(\\d+)\\s*[-–]\\s*(\\d+)/);
+    var m = String(txt || '').match(/(\d+)\s*[-–]\s*(\d+)/);
     if(m) return { min: +m[1], max: +m[2] };
-    m = String(txt || '').match(/\\d+/);
+    m = String(txt || '').match(/\d+/);
     return m ? { min: +m[0], max: +m[0] } : null;
   }
   function rirNum(txt){
-    var a = String(txt || '').match(/\\d+(?:[.,]\\d+)?/g); if(!a) return null;
+    var a = String(txt || '').match(/\d+(?:[.,]\d+)?/g); if(!a) return null;
     var v = a.map(function(x){ return parseFloat(x.replace(',', '.')); });
     return v.reduce(function(s, x){ return s + x; }, 0) / v.length;
   }
@@ -590,7 +590,7 @@
     try{
       var rr = rangoReps(e.reps), meta = (typeof WEEKS_META !== 'undefined' && WEEKS_META[c.w]) || {}, deload = !!meta.deload;
       var rir = rirNum(e.rir);
-      if(rir == null){ var mr = /RIR\\s*(\\d+)/i.exec(meta.rpe || ''); rir = mr ? +mr[1] : 2; }
+      if(rir == null){ var mr = /RIR\s*(\d+)/i.exec(meta.rpe || ''); rir = mr ? +mr[1] : 2; }
       var ult = ultimoRegistro(c, e, setN || 1);
       if(ult && !deload){
         var ref = ult.ref, previo = 'S' + (ult.w + 1) + ': ' + fmtKg(ref.kg) + ' kg × ' + ref.reps;
@@ -622,7 +622,7 @@
         var kgD = redondear(ult.ref.kg * 0.85);
         return { kg: kgD, pre: true, origen: 'descarga', txt: 'Descarga · ~85% de tu carga habitual (' + fmtKg(ult.ref.kg) + ' kg)' };
       }
-      var mc = String(e.carga || '').match(/^\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:kgs?)?\\s*$/i);
+      var mc = String(e.carga || '').match(/^\s*(\d+(?:[.,]\d+)?)\s*(?:kgs?)?\s*$/i);
       if(mc) return { kg: parseFloat(mc[1].replace(',', '.')), pre: true, origen: 'coach', txt: 'Carga pautada · tocá ✓ para confirmar' };
       if(rr || e.rir) return { kg: 0, pre: false, origen: 'rir', txt: 'Sin carga previa · elegí un peso con RIR ' + (e.rir || rir) + ' (RPE ' + (10 - Math.round(rir)) + ')' };
     }catch(err){ console.warn('sugerir carga', err); }
@@ -707,8 +707,8 @@
   /* ---------- 8 · Historial: buscador de ejercicios de la semana activa ---------- */
   function ejerciciosSemana(){
     var w = (typeof state !== 'undefined' && state.currentWeek) || 0, out = [], vistos = {};
-    function limpio(n){ return String(n || '').replace(/^[A-Fa-f]\\d{1,2}[.):\\-]\\s*/, '').replace(/\\s*\\([^)]*\\)\\s*$/, '').replace(/\\s+[x×]\\s*$/i, '').trim(); }
-    function valido(n){ n = String(n || '').trim(); if(!n || /^(?:d[ií]a|day)\\s*\\d+/i.test(n) || /^\\d+\\s*(?:sets?|series?|rondas?|x|×)/i.test(n) || /^(?:rest|tempo|rir|nota)\\b/i.test(n)) return false; return n.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= 4; }
+    function limpio(n){ return String(n || '').replace(/^[A-Fa-f]\d{1,2}[.):\-]\s*/, '').replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+[x×]\s*$/i, '').trim(); }
+    function valido(n){ n = String(n || '').trim(); if(!n || /^(?:d[ií]a|day)\s*\d+/i.test(n) || /^\d+\s*(?:sets?|series?|rondas?|x|×)/i.test(n) || /^(?:rest|tempo|rir|nota)\b/i.test(n)) return false; return n.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= 4; }
     function sumar(nombre, day, di, b, exIdx){
       if(!valido(nombre)) return;
       var nm = limpio(nombre), k = nrm2(nm); if(!k) return;
@@ -800,7 +800,7 @@
     try{ montarMenu(); }catch(e){ console.warn('ux menu', e); }
     var raiz = $('#mainContent') || D.body;
     try{ mejorarActivacion(raiz); }catch(e1){ console.warn('ux activacion', e1); }
-    try{ if(esCf()){ normalizarCf(raiz); indicesCf(raiz); cargasUnicas(raiz); $$('.jp-cfboard .jp-cf-row', raiz).forEach(function(r){ if(!r.classList.contains('jp-ux-tc') && /^\\W*time\\s*cap\\b/i.test(r.textContent)) r.classList.add('jp-ux-tc'); }); videosEnLineaCf(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); fusionarScore(raiz); } else { videosEnLinea(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
+    try{ if(esCf()){ normalizarCf(raiz); indicesCf(raiz); cargasUnicas(raiz); $$('.jp-cfboard .jp-cf-row', raiz).forEach(function(r){ if(!r.classList.contains('jp-ux-tc') && /^\W*time\s*cap\b/i.test(r.textContent)) r.classList.add('jp-ux-tc'); }); videosEnLineaCf(raiz); mejorarPautasCf(raiz); memoriaScore(raiz); fusionarScore(raiz); } else { videosEnLinea(raiz); mejorarPautas(raiz); } }catch(e2){ console.warn('ux contenido', e2); }
     try{ if(esSb()){ clasificarFilas(raiz); sugerirFilas(raiz); actualizarContador(); } montarHistorial(); briefingJerarquia(raiz); }catch(e4){ console.warn('ux registro', e4); }
   }
   function programar(){ if(tm) return; tm = setTimeout(pasada, 90); }

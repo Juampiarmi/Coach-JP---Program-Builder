@@ -510,7 +510,7 @@
     var mt = document.getElementById('cwtMiniTime'), mr = document.getElementById('cwtMiniRound');
     var mg = document.getElementById('cwtMiniGo');
     if(mt && t) mt.textContent = t.textContent;
-    if(mr && r) mr.textContent = r.textContent.replace(/\\s+/g, ' ');
+    if(mr && r) mr.textContent = r.textContent.replace(/\s+/g, ' ');
     if(mg) mg.innerHTML = corriendo ? JP_IC_PAUSA : JP_IC_PLAY;
   }
   function montarTimer(){
@@ -613,7 +613,7 @@
       if(host){
         var b = document.createElement('button');
         b.type = 'button'; b.className = 'nav-pill'; b.id = 'btnWodTimerAth';
-        b.innerHTML = '\\u23f1<span class="lbl"> Custom Timer</span>';
+        b.innerHTML = '\u23f1<span class="lbl"> Custom Timer</span>';
         b.title = 'Custom WOD Timer';
         b.addEventListener('click', abrirTimer);
         var guide = document.getElementById('guideBtn');

@@ -74,8 +74,8 @@
   function badges(){
     document.querySelectorAll('.set-row-label').forEach(function(l){
       var t = l.textContent.trim();
-      var m = t.match(/(\\d+)/);
-      if(m && !/^SERIE \\d+$/.test(t)) l.textContent = 'SERIE ' + m[1];
+      var m = t.match(/(\d+)/);
+      if(m && !/^SERIE \d+$/.test(t)) l.textContent = 'SERIE ' + m[1];
     });
   }
   /* al completar una serie, la siguiente hereda los kilos */

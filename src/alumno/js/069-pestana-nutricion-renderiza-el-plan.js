@@ -171,10 +171,10 @@
      de abajo (log de comidas, intercambios, barras, etc.) que asumen un
      plan con .comidas/.macros -- rama 100% aparte y aditiva. */
   function parrafosPlanExterno(texto){
-    var bloques = String(texto || '').replace(/\\r\\n/g, '\\n').split(/\\n\\s*\\n+/);
+    var bloques = String(texto || '').replace(/\r\n/g, '\n').split(/\n\s*\n+/);
     var out = [];
     bloques.forEach(function(b){
-      var lineas = b.split('\\n').map(function(l){ return l.trim(); }).filter(Boolean);
+      var lineas = b.split('\n').map(function(l){ return l.trim(); }).filter(Boolean);
       if(!lineas.length) return;
       var esTitulo = lineas[0].length <= 42 && !/[.:,]$/.test(lineas[0]) && lineas.length > 1;
       out.push({ titulo: esTitulo ? lineas[0].replace(/:$/, '') : '', cuerpo: esTitulo ? lineas.slice(1) : lineas });
@@ -504,8 +504,8 @@
       if(shopCopy){
         e.preventDefault(); e.stopPropagation();
         var itemsCompra = listaDeComprasSemanalNut(PLAN);
-        var textoCompra = '🛒 Lista de compras semanal\\n\\n' +
-          itemsCompra.map(function(it){ return '• ' + it.grupo + ': ' + it.texto; }).join('\\n');
+        var textoCompra = '🛒 Lista de compras semanal\n\n' +
+          itemsCompra.map(function(it){ return '• ' + it.grupo + ': ' + it.texto; }).join('\n');
         var okEl = document.getElementById('nuShopOk');
         function marcarShopOk(){ if(okEl) okEl.textContent = '✅ Copiado'; }
         if(navigator.clipboard && navigator.clipboard.writeText){

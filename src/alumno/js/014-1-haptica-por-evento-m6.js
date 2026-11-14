@@ -119,7 +119,7 @@
                    (it.tipo || 'evt') + '_' + it.ts + '_' + Math.random().toString(36).slice(2, 7),
                  data: JSON.stringify(it), updated_at: it.ts, device: 'atleta' };
       });
-      return fetch(SYNC.url.replace(/\\/+$/, '') + '/rest/v1/' + (SYNC.table || 'coachjp_sync'),
+      return fetch(SYNC.url.replace(/\/+$/, '') + '/rest/v1/' + (SYNC.table || 'coachjp_sync'),
         { method:'POST',
           headers:{ apikey:SYNC.key, Authorization:'Bearer ' + SYNC.key,
                     'Content-Type':'application/json', Prefer:'resolution=merge-duplicates,return=minimal' },
@@ -338,7 +338,7 @@
         var m = o.marcas[ex];
         Object.keys(m).sort(function(a, b){ return (+a) - (+b); }).forEach(function(r){ lin.push(ex + ' · ' + r + 'RM: ' + m[r].kg + ' kg (1RM est. ' + e1rm(m[r].kg, r) + ' kg)'); });
       });
-      var txt = lin.join('\\n');
+      var txt = lin.join('\n');
       if(navigator.share){ navigator.share({ title: 'Mis récords', text: txt }).catch(function(){}); }
       else if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(function(){ shB.textContent = '✓ Copiado'; setTimeout(function(){ shB.textContent = '📤 Compartir mis marcas'; }, 1600); }); }
     });
@@ -354,8 +354,8 @@
   /* sólo nombres reales de ejercicio: nunca "DÍA 1 · 3 Sets" ni líneas de dosis */
   function nombreEjValido(n){
     n = String(n || '').trim();
-    if(!n || /^(?:d[ií]a|day)\\s*\\d+/i.test(n) || /^\\d+\\s*(?:sets?|series?|rondas?|x|\\u00d7)/i.test(n)) return false;
-    if(/^(?:rest|tempo|rir|nota)\\b/i.test(n)) return false;
+    if(!n || /^(?:d[ií]a|day)\s*\d+/i.test(n) || /^\d+\s*(?:sets?|series?|rondas?|x|\u00d7)/i.test(n)) return false;
+    if(/^(?:rest|tempo|rir|nota)\b/i.test(n)) return false;
     return n.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= 4;
   }
   function progEjercicios(){
@@ -379,7 +379,7 @@
   }
   var phDia = null;
   /* mismo ejercicio en otra semana: se busca por NOMBRE en el bloque de esa semana (si el orden de las líneas cambió, el índice 'e1' ya no es el mismo ejercicio) */
-  function nomLimpioHist(n){ return nrmHist(String(n || '').replace(/^[A-Fa-f]\\d{1,2}[.):\\-]\\s*/, '').replace(/\\s*\\([^)]*\\)\\s*$/, '')); }
+  function nomLimpioHist(n){ return nrmHist(String(n || '').replace(/^[A-Fa-f]\d{1,2}[.):\-]\s*/, '').replace(/\s*\([^)]*\)\s*$/, '')); }
   function exIdxSemana(ex, w){
     try{
       var day = DAYS.filter(function(d){ return d.id === ex.dayId; })[0], b = day && (day.blocks || []).filter(function(x){ return x.id === ex.blockId; })[0];
@@ -423,7 +423,7 @@
         if(l.ex && nomLimpioHist(l.ex) !== nomLimpioHist(ex.nombre)) continue;
         var kg = parseFloat(l.kg), rp = parseFloat(l.reps);
         if(!(kg > 0) && !(rp > 0)) continue;
-        sets.push((kg > 0 ? kg : 'BW') + '\\u00d7' + (rp > 0 ? rp : '–'));
+        sets.push((kg > 0 ? kg : 'BW') + '\u00d7' + (rp > 0 ? rp : '–'));
         vol += (kg > 0 ? kg : 0) * (rp > 0 ? rp : 0);
       }
       if(sets.length) hayDatos = true;
@@ -502,13 +502,13 @@
     if(kg > 0) return kg;
     var ls = scope.querySelector('.load-suggest');
     if(ls){
-      var m = ls.textContent.replace(/,/g, '.').match(/(\\d+(?:\\.\\d+)?)\\s*kg/i);
+      var m = ls.textContent.replace(/,/g, '.').match(/(\d+(?:\.\d+)?)\s*kg/i);
       if(m) return parseFloat(m[1]);
     }
     var nom = nombreDelBloque(scope);
     var rm = mejor1RM(nom);
     if(rm > 0){
-      var p = (ls ? (ls.textContent.match(/(\\d{2,3})\\s*%/) || [])[1] : 0) || 75;
+      var p = (ls ? (ls.textContent.match(/(\d{2,3})\s*%/) || [])[1] : 0) || 75;
       return Math.round(rm * p / 100 * 2) / 2;
     }
     return 0;
@@ -724,7 +724,7 @@
   var W = 1080, HH = 1920, estilo = 'cyber';
   /* corta un texto en líneas que entren en maxW; marca .recortado si sobra */
   function envolverTexto(g, txt, maxW, maxLineas){
-    var palabras = String(txt || '').split(/\\s+/).filter(Boolean);
+    var palabras = String(txt || '').split(/\s+/).filter(Boolean);
     var lineas = [], actual = '';
     for(var i = 0; i < palabras.length; i++){
       var prueba = actual ? actual + ' ' + palabras[i] : palabras[i];
@@ -733,12 +733,12 @@
       if(lineas.length === maxLineas) break;
     }
     if(lineas.length < maxLineas && actual) lineas.push(actual);
-    var usadas = lineas.join(' ').split(/\\s+/).filter(Boolean).length;
+    var usadas = lineas.join(' ').split(/\s+/).filter(Boolean).length;
     if(usadas < palabras.length){
       lineas.recortado = true;
       var ult = lineas[lineas.length - 1] || '';
       while(ult && g.measureText(ult + '…').width > maxW) ult = ult.slice(0, -1);
-      lineas[lineas.length - 1] = ult.replace(/\\s+$/, '') + '…';
+      lineas[lineas.length - 1] = ult.replace(/\s+$/, '') + '…';
     }
     return lineas;
   }

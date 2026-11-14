@@ -10,12 +10,12 @@
     document.querySelectorAll('.block .superset-header').forEach(function(sh){
       var cuerpo = sh.closest('.block-body');
       if(!sh.dataset.v2){
-        var crudo = (sh.textContent || '').replace(/\\s+/g, ' ').trim();
+        var crudo = (sh.textContent || '').replace(/\s+/g, ' ').trim();
         var tipo = (crudo.match(/TRI-?SET|BISET|SUPERSET/i) || ['BISET'])[0].toUpperCase().replace('TRISET', 'TRI-SET');
-        var rondas = (crudo.match(/(\\d+)\\s*RONDAS?/i) || [])[1] || '';
+        var rondas = (crudo.match(/(\d+)\s*RONDAS?/i) || [])[1] || '';
         /* lo que no es estructura (RPE, fallo técnico) baja a la línea secundaria */
         var resto = crudo.split(/·/).map(function(s){ return s.trim(); })
-          .filter(function(s){ return s && !/TRI-?SET|BISET|SUPERSET/i.test(s) && !/^\\d+\\s*RONDAS?$/i.test(s); })
+          .filter(function(s){ return s && !/TRI-?SET|BISET|SUPERSET/i.test(s) && !/^\d+\s*RONDAS?$/i.test(s); })
           .join(' · ');
         var html = '<span class="sh-kind">Linked Block</span>' +
           '<span class="sh-dot">&#9679;</span>' +
@@ -57,10 +57,10 @@
   }
   /* el protocolo formateado se pinta línea por línea, con su numeración en volt */
   function lineas(s){
-    return String(s || '').split(/\\r?\\n/).map(function(l){
+    return String(s || '').split(/\r?\n/).map(function(l){
       var t = txt(l);
       if(!t) return '';
-      var m = t.match(/^(\\d{1,2})[.)]\\s*(.+)$/);
+      var m = t.match(/^(\d{1,2})[.)]\s*(.+)$/);
       if(m) return '<div class="fw-l"><span class="fw-n">' + m[1] + '</span>' + m[2] + '</div>';
       return '<div class="fw-l fw-h">' + t + '</div>';
     }).join('');
@@ -68,8 +68,8 @@
   /* regla estricta del módulo: nada de emojis en el texto generado */
   function txt(s){
     return String(s || '')
-      .replace(/[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}]/gu, '')
-      .replace(/\\s{2,}/g, ' ')
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+      .replace(/\s{2,}/g, ' ')
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .trim();
   }

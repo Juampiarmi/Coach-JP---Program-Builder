@@ -152,8 +152,8 @@
   }
   function esc(s){
     return String(s == null ? '' : s)
-      .replace(/[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}]/gu, '')
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\s{2,}/g, ' ').trim();
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\s{2,}/g, ' ').trim();
   }
   function tips(){
     /* v3.0 · los coaching tips ya no se inyectan sueltos: viven en el

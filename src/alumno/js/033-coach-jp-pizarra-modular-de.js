@@ -13,26 +13,26 @@
                  ronda:1, series:1, serie:1, cal:1, calorias:1, metros:1, m:1, kg:1, x:1 };
   function nrm(s){
     return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-      .replace(/\\([^)]*\\)/g, ' ').replace(/[^a-z0-9 ]/g, ' ')
-      .replace(/\\s+/g, ' ').trim();
+      .replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ').trim();
   }
   function tokens(s){
     return nrm(s).split(' ').filter(function(t){
-      return t.length > 2 && !VACIAS[t] && !/^\\d+$/.test(t);
+      return t.length > 2 && !VACIAS[t] && !/^\d+$/.test(t);
     });
   }
   /* busca el movimiento en el mapa de videos del programa */
   /* nombres candidatos dentro de una línea de pizarra, sin números ni unidades */
   function movimientos(txt){
-    var t = String(txt || '').replace(/^[\\s\\-•*]+/, '')
-      .replace(/^(?:\\d+\\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\\b[:.]?\\s*)+/i, '');
-    return t.split(/\\s*\\+\\s*|\\s*\\/\\s*/).map(function(p){
-      return p.replace(/\\([^)]*\\)/g, ' ')
-              .replace(/[—–]\\s*.*$/, '')
-              .replace(/^\\s*\\d+\\s*(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)?\\s*/i, '')
-              .replace(/\\b\\d+\\s*(?:kg|lbs?|cal|m|s|seg|min|%)\\b.*$/i, '')
-              .replace(/\\bx\\s*\\d+.*$/i, '')
-              .replace(/\\s{2,}/g, ' ').trim();
+    var t = String(txt || '').replace(/^[\s\-•*]+/, '')
+      .replace(/^(?:\d+\s*(?:sets?|series?|rondas?|rounds?|reps?|x)\b[:.]?\s*)+/i, '');
+    return t.split(/\s*\+\s*|\s*\/\s*/).map(function(p){
+      return p.replace(/\([^)]*\)/g, ' ')
+              .replace(/[—–]\s*.*$/, '')
+              .replace(/^\s*\d+\s*(?:m|km|s|seg|segundos?|min|minutos?|cal|kg|lbs?|reps?|x)?\s*/i, '')
+              .replace(/\b\d+\s*(?:kg|lbs?|cal|m|s|seg|min|%)\b.*$/i, '')
+              .replace(/\bx\s*\d+.*$/i, '')
+              .replace(/\s{2,}/g, ' ').trim();
     }).filter(function(s){ return s.length > 2; });
   }
   /* coincidencia 100% exacta con la biblioteca: cero asignación por aproximación */
@@ -57,9 +57,9 @@
       var b = bloqueDe(bl.dataset.blockId);
       if(!b) return;
       /* un WOD nunca lleva video embebido: la pizarra pura es obligatoria */
-      var cuerpo = (bl.textContent || '').replace(/\\s+/g, ' ');
+      var cuerpo = (bl.textContent || '').replace(/\s+/g, ' ');
       var esWod = bl.classList.contains('cat-metcon') || !!bl.querySelector('.wod-board') ||
-                  /\\bemom\\b|\\bamrap\\b|for\\s*time|\\brft\\b|tabata|chipper|met.?con|\\bwod\\b/i.test(cuerpo);
+                  /\bemom\b|\bamrap\b|for\s*time|\brft\b|tabata|chipper|met.?con|\bwod\b/i.test(cuerpo);
       var tech = (b.boardMode === 'tech') && !esWod;
       var board = bl.querySelector('.cf-board') || bl.querySelector('.wod-board');
       if(!board) return;
@@ -101,8 +101,8 @@
   --------------------------------------------------------- */
   function esc(s){
     return String(s || '')
-      .replace(/[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}]/gu, '')
-      .replace(/\\s{2,}/g, ' ')
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
+      .replace(/\s{2,}/g, ' ')
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').trim();
   }
   function cierres(){

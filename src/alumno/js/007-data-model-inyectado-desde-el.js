@@ -80,21 +80,21 @@ const CATEGORY_META = {
 };
 function limpiarNombre(n){
   let t = String(n||'').trim();
-  t = t.replace(/^\\s*(?:[A-Za-z]\\d+\\s*[.:)\\-\\u2013\\u2014\\u00b7]+\\s*|\\d+\\s*[.)]\\s+)/, '');      /* "A1. " / "B2) " / "1. " */
+  t = t.replace(/^\s*(?:[A-Za-z]\d+\s*[.:)\-\u2013\u2014\u00b7]+\s*|\d+\s*[.)]\s+)/, '');      /* "A1. " / "B2) " / "1. " */
   /* saca prefijos tipo "Fase 1 · " o "Block A: " para encontrar mejor el video */
   const p1 = t.split(' · ');
   if(p1.length > 1 && p1[0].length <= 26) t = p1.slice(1).join(' · ');
   const p2 = t.split(': ');
   if(p2.length > 1 && p2[0].length <= 22) t = p2.slice(1).join(': ');
-  t = t.replace(/\\s*\\(.*?\\)\\s*$/, '');
+  t = t.replace(/\s*\(.*?\)\s*$/, '');
   /* saca reps, cargas y unidades para que la búsqueda quede sobre el movimiento */
-  t = t.replace(/^\\s*\\d+\\s*[\\-–]?\\s*\\d*\\s*(reps?|cals?|m|km|metros?|seg|s)?\\s+/i, '');
-  t = t.replace(/\\s*@.*$/, '');
-  t = t.replace(/\\s*[\\d\\.]+\\s*\\/\\s*[\\d\\.]+\\s*kg.*$/i, '');
-  t = t.replace(/\\s*x\\s*\\d+.*$/i, '');
-  t = t.replace(/\\s*[\\-–—]\\s*$/, '');
+  t = t.replace(/^\s*\d+\s*[\-–]?\s*\d*\s*(reps?|cals?|m|km|metros?|seg|s)?\s+/i, '');
+  t = t.replace(/\s*@.*$/, '');
+  t = t.replace(/\s*[\d\.]+\s*\/\s*[\d\.]+\s*kg.*$/i, '');
+  t = t.replace(/\s*x\s*\d+.*$/i, '');
+  t = t.replace(/\s*[\-–—]\s*$/, '');
   t = t.split(',')[0];                                   /* "Power cleans, construyendo…" → "Power cleans" */
-  const w = t.trim().split(/\\s+/);
+  const w = t.trim().split(/\s+/);
   if(w.length > 6) t = w.slice(0, 6).join(' ');
   return t.trim();
 }
@@ -107,13 +107,13 @@ function limpiarNombre(n){
    (siempre ancladas al INICIO de la línea, mismo criterio ya usado acá
    para "rest"/"amrap"/etc., admitiendo un número + espacio adelante para
    "8 minutos"/"30 segundos"). */
-const NO_VIDEO = /^(\\s*[-–—]|min\\s*\\d+\\s*[:\\-]?\\s*$|rest\\b|descans|x\\s*\\d+\\s*(sets?|rondas?|rounds?)|\\d+\\s*(sets?|rondas?|rounds?)\\b|amrap\\b|emom\\b|every\\s*\\d|for\\s*time|cap\\b|elite\\s*:|rx\\+?\\s*:|int(ermediate|ermedio)?\\s*:|scaled\\s*:|target|notas?\\b|luego\\b|then\\b|despu[eé]s\\b|objetivo\\b|score\\b|\\(|\\d+\\s*$|\\d*\\s*(minutos?|segundos?)\\b|warm.?up|calentamiento\\b|movilidad\\b|activaci[oó]n\\b|enfriamiento\\b|vuelta a la calma\\b)/i;
+const NO_VIDEO = /^(\s*[-–—]|min\s*\d+\s*[:\-]?\s*$|rest\b|descans|x\s*\d+\s*(sets?|rondas?|rounds?)|\d+\s*(sets?|rondas?|rounds?)\b|amrap\b|emom\b|every\s*\d|for\s*time|cap\b|elite\s*:|rx\+?\s*:|int(ermediate|ermedio)?\s*:|scaled\s*:|target|notas?\b|luego\b|then\b|despu[eé]s\b|objetivo\b|score\b|\(|\d+\s*$|\d*\s*(minutos?|segundos?)\b|warm.?up|calentamiento\b|movilidad\b|activaci[oó]n\b|enfriamiento\b|vuelta a la calma\b)/i;
 function esEstructura(t){
   const s = String(t || '').trim();
   if(!s) return true;
   if(NO_VIDEO.test(s)) return true;
-  if(/[:：]\\s*$/.test(s)) return true;          /* encabezado de formato */
-  if(s.split(/\\s+/).length > 12) return true;   /* frase larga = indicación, no ejercicio */
+  if(/[:：]\s*$/.test(s)) return true;          /* encabezado de formato */
+  if(s.split(/\s+/).length > 12) return true;   /* frase larga = indicación, no ejercicio */
   if(!/[a-záéíóúñ]/i.test(s)) return true;
   return false;
 }
@@ -121,23 +121,23 @@ function esEstructura(t){
    COACH JP v3.0 · MATCHER INTELIGENTE DE VIDEOS
    Normaliza el nombre (tildes, signos, prefijos "01." / "Fase 1 ·" /
    "Block A:", sufijos "x 10-12 reps", "@ 2110") y busca coincidencia
-   exacta y parcial en VIDEO_MAP y en el cat\\u00e1logo de la biblioteca.
+   exacta y parcial en VIDEO_MAP y en el cat\u00e1logo de la biblioteca.
 ========================================================= */
 const VIDEO_LIB = (PROGRAM_CONFIG && PROGRAM_CONFIG.videoLib) || {};
 function nrmVid(t){
   return String(t == null ? '' : t)
-    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')      /* tildes */
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')      /* tildes */
     .toLowerCase()
-    .replace(/[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}]/gu, ' ')
-    .replace(/^\\s*\\d+\\s*[.)\\-\\u2013]\\s*/, '')             /* "01." / "3)" */
-    .replace(/^\\s*(fase|bloque|block|parte|serie|estacion|station)\\s*[a-z0-9]*\\s*[:\\u00b7\\-\\u2013]\\s*/i, '')
-    .replace(/\\s*[@]\\s*[\\d\\/xX\\s\\-]+$/, '')                /* "@ 2110" */
-    .replace(/\\s*[x\\u00d7]\\s*\\d+\\s*[\\-\\u2013]?\\s*\\d*\\s*(reps?|rep|seg|s|min|cal|m)?\\s*$/i, '')
-    .replace(/\\s*\\d+\\s*[\\-\\u2013]\\s*\\d+\\s*(reps?|seg|s|min|cal|m)?\\s*$/i, '')
-    .replace(/\\s*\\b(tempo|rpe|rir)\\b.*$/i, '')
-    .replace(/\\s*\\([^)]*\\)\\s*/g, ' ')
-    .replace(/[^a-z0-9\\u00f1\\s]/g, ' ')
-    .replace(/\\s+/g, ' ').trim();
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, ' ')
+    .replace(/^\s*\d+\s*[.)\-\u2013]\s*/, '')             /* "01." / "3)" */
+    .replace(/^\s*(fase|bloque|block|parte|serie|estacion|station)\s*[a-z0-9]*\s*[:\u00b7\-\u2013]\s*/i, '')
+    .replace(/\s*[@]\s*[\d\/xX\s\-]+$/, '')                /* "@ 2110" */
+    .replace(/\s*[x\u00d7]\s*\d+\s*[\-\u2013]?\s*\d*\s*(reps?|rep|seg|s|min|cal|m)?\s*$/i, '')
+    .replace(/\s*\d+\s*[\-\u2013]\s*\d+\s*(reps?|seg|s|min|cal|m)?\s*$/i, '')
+    .replace(/\s*\b(tempo|rpe|rir)\b.*$/i, '')
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/[^a-z0-9\u00f1\s]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
 }
 var _vidIdx = null;
 function vidIndex(){
@@ -163,7 +163,7 @@ function vidIndex(){
    contención de más abajo: "low hang power snatch" nunca "pasa a"
    "hang power snatch" por esta vía, sólo se tolera la "s" final. */
 function nrmVidSingular(t){
-  return String(t || '').replace(/([a-z])s\\b/gi, function(m, prev){ return prev.toLowerCase() === 's' ? m : prev; });
+  return String(t || '').replace(/([a-z])s\b/gi, function(m, prev){ return prev.toLowerCase() === 's' ? m : prev; });
 }
 function buscarVideo(name, soloDirecto){
   var idx = vidIndex();
@@ -193,7 +193,7 @@ function buscarVideo(name, soloDirecto){
      de la app (Bodybuilding, warmup/cooldown, biset) sigue exactamente
      igual, con el fallback aproximado que ya tenía. */
   if(soloDirecto) return null;
-  /* coincidencia parcial: gana la clave m\\u00e1s larga contenida en el nombre */
+  /* coincidencia parcial: gana la clave m\u00e1s larga contenida en el nombre */
   for(var j = 0; j < candidatos.length; j++){
     var t = candidatos[j];
     if(!t || t.length < 4) continue;
@@ -220,7 +220,7 @@ function buscarVideo(name, soloDirecto){
    -> Snatch que pide la directiva, deteniéndose en el primer nivel que
    sí tenga video cargado. */
 function jpVideoFallbackBenchmark(nombre){
-  var palabras = String(nombre || '').trim().split(/\\s+/);
+  var palabras = String(nombre || '').trim().split(/\s+/);
   for(var corte = 1; corte < palabras.length; corte++){
     var candidato = palabras.slice(corte).join(' ');
     if(candidato.length < 3) break;
@@ -247,7 +247,7 @@ function videoLinkHtml(name){
      estaba antes — el botón nunca se rompe visualmente. */
   if(ytid) return ' <a class="video-link jp-play has-thumb" href="javascript:void(0)" data-yt="' + ytid + '" ' +
     'style="background-image:url(https://img.youtube.com/vi/' + ytid + '/mqdefault.jpg)" ' +
-    'title="Ver la t\\u00e9cnica" aria-label="Ver la t\\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
+    'title="Ver la t\u00e9cnica" aria-label="Ver la t\u00e9cnica de ' + key.replace(/"/g,'') + '">' +
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></a>';
   /* FIX (auditoría Karina Dantur): sin match en la biblioteca -- el ID
      puede estar roto o el ejercicio renombrado/borrado. Nunca se deja el
@@ -256,9 +256,9 @@ function videoLinkHtml(name){
      Reutiliza .vsearch, la clase de fallback que ya existía en el CSS
      (~línea 8915) pero que había quedado sin ningún generador conectado. */
   return ' <a class="video-link jp-play vsearch" href="https://www.youtube.com/results?search_query=' +
-    encodeURIComponent(key + ' t\\u00e9cnica ejercicio') + '" target="_blank" rel="noopener noreferrer" ' +
-    'title="Buscar t\\u00e9cnica en YouTube" aria-label="Buscar t\\u00e9cnica de ' + key.replace(/"/g,'') + ' en YouTube">' +
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg><span class="mag">\\ud83d\\udd0d</span></a>';
+    encodeURIComponent(key + ' t\u00e9cnica ejercicio') + '" target="_blank" rel="noopener noreferrer" ' +
+    'title="Buscar t\u00e9cnica en YouTube" aria-label="Buscar t\u00e9cnica de ' + key.replace(/"/g,'') + ' en YouTube">' +
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg><span class="mag">\ud83d\udd0d</span></a>';
 }
 /* Micro-badge "EN" (2026-09, refinamiento visual): el nombre en inglés del
    ejercicio ya no se muestra pegado al español en la cabecera -- compile()
@@ -274,7 +274,7 @@ function enBadgeHtml(en){
      para no atarse al orden de carga de los scripts. */
   var safe = String(en).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   return ' <button type="button" class="ex-en-badge" data-en="' + safe +
-    '" aria-label="Nombre en ingl\\u00e9s: ' + safe + '">EN</button>';
+    '" aria-label="Nombre en ingl\u00e9s: ' + safe + '">EN</button>';
 }
 (function(){
   document.addEventListener('click', function(e){
@@ -350,11 +350,11 @@ let activeTimerId = null;
 /* Equipamiento por NOMBRE del ejercicio: 'banda' (banda elastica), 'bw' (peso corporal declarado) o '' (carga real: barra, mancuernas,
    kettlebell, maquina, polea, disco...). El casillero de kg se reserva para '' -- en 'banda' y 'bw' solo van reps / tiempo / notas.
    Cualquier palabra de carga real gana: "sentadilla con barra y bandas" o "dominadas con lastre" siguen pidiendo kg. */
-var JP_RX_CARGA_EQ = /(?:^|\\s)(?:con barra|barra (?:olimpica|z|ez|recta|hexagonal)|barbell|mancuernas?|dumbbells?|db|kettlebells?|kb|polea|poleas|cables?|maquina|machine|smith|multipower|discos?|plates?|landmine|trap bar|hex bar|trineo|sled|sandbag|saco|wall ?balls?|balon medicinal|medball|lastre|lastrad[oa]s?|weighted|chaleco|con peso|asistid[oa]s?|assisted|jalon|pec deck|contractora|prensa|hack)(?=\\s|$)/;
-var JP_RX_BANDA_EQ = /(?:^|\\s)(?:bandas?|bands?|banded|elastic[oa]s?|theraband|miniband|mini bands?|resistance bands?|tubing)(?=\\s|$)/;
-var JP_RX_BW_EQ = /(?:^|\\s)(?:peso corporal|bodyweight|body weight|bw|sin peso|sin carga|autocarga|calistenia|calisthenics)(?=\\s|$)/;
+var JP_RX_CARGA_EQ = /(?:^|\s)(?:con barra|barra (?:olimpica|z|ez|recta|hexagonal)|barbell|mancuernas?|dumbbells?|db|kettlebells?|kb|polea|poleas|cables?|maquina|machine|smith|multipower|discos?|plates?|landmine|trap bar|hex bar|trineo|sled|sandbag|saco|wall ?balls?|balon medicinal|medball|lastre|lastrad[oa]s?|weighted|chaleco|con peso|asistid[oa]s?|assisted|jalon|pec deck|contractora|prensa|hack)(?=\s|$)/;
+var JP_RX_BANDA_EQ = /(?:^|\s)(?:bandas?|bands?|banded|elastic[oa]s?|theraband|miniband|mini bands?|resistance bands?|tubing)(?=\s|$)/;
+var JP_RX_BW_EQ = /(?:^|\s)(?:peso corporal|bodyweight|body weight|bw|sin peso|sin carga|autocarga|calistenia|calisthenics)(?=\s|$)/;
 function jpClasificarEquipo(nombre){
-  var n = String(nombre == null ? '' : nombre).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
+  var n = String(nombre == null ? '' : nombre).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   if(!n) return '';
   if(JP_RX_CARGA_EQ.test(n)) return '';
   if(JP_RX_BANDA_EQ.test(n)) return 'banda';
@@ -508,7 +508,7 @@ function getLoadKey(weekIdx, dayId, blockId, exIdx, setIdx){
    de esa IIFE: ambas deben coincidir letra por letra para que la clave
    que graba registrarHistorial() sea la misma que lee ultimoHistorial(). */
 function nrmHist(s){
-  return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\\s+/g, ' ').trim();
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 function ultimoHistorial(nombreEx){
   const hk = nrmHist(nombreEx);
@@ -521,7 +521,7 @@ function fmtJP(n){ return String(Math.round(n * 100) / 100); }
 /* una serie del reporte: se omite si quedó en 0 reps (no hay trabajo efectivo) */
 function lineaSetWA(i, ld){
   var kg = numJP(ld.kg), reps = numJP(ld.reps);
-  return '  \\u2022 Serie ' + i + ': ' + (kg > 0 ? fmtJP(kg) + ' kg \\u00d7 ' : '') + fmtJP(reps) + ' reps';
+  return '  \u2022 Serie ' + i + ': ' + (kg > 0 ? fmtJP(kg) + ' kg \u00d7 ' : '') + fmtJP(reps) + ' reps';
 }
 /* directiva maestra ("HUD de telemetría en vivo: tonelaje acumulado de
    sesión") -- suma kg*reps de TODA serie tildada (done===true) en el
@@ -547,7 +547,7 @@ function calcularTonelajeSesion(){
     if(ld.ex){
       var mo = ''; try{ if(typeof window.jpModoInput === 'function') mo = window.jpModoInput(ld.ex); }catch(eM){}
       if(mo === 'tiempo' || mo === 'solo' || mo === 'banda') return;
-      if(/\\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\\b/i.test(String(ld.ex))) return;   /* acarreos y trineo: kg × metros no es tonelaje */
+      if(/\b(carry|carries|transporte|farmer|maleta|suitcase|trineo|sled|prowler|caminata|paseo)\b/i.test(String(ld.ex))) return;   /* acarreos y trineo: kg × metros no es tonelaje */
     }
     total += kg * reps;
   });
@@ -634,8 +634,8 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
   const rh = String(repsHint || '');
   const bl = String(blockLabel || '');
   let repsPlaceholder = 'Reps';
-  if(/\\bcarry\\b/i.test(nm) || /\\d\\s*(metros?|km|m)\\b/i.test(rh) || /\\d\\s*(metros?|km|m)\\b/i.test(nm)) repsPlaceholder = 'm';
-  else if(/\\d\\s*(segundos?|seg|minutos?|min|s)\\b/i.test(rh)) repsPlaceholder = 'seg';
+  if(/\bcarry\b/i.test(nm) || /\d\s*(metros?|km|m)\b/i.test(rh) || /\d\s*(metros?|km|m)\b/i.test(nm)) repsPlaceholder = 'm';
+  else if(/\d\s*(segundos?|seg|minutos?|min|s)\b/i.test(rh)) repsPlaceholder = 'seg';
   /* FASE 2.4 -- fallback táctico: numSets llega en 0/NaN cuando el
      ejercicio no tiene series cargadas (dato viejo, importación
      incompleta, o el coach todavía escribiendo) -- antes esto pintaba un
@@ -664,7 +664,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
      para no deshabilitar el campo por accidente en un ejercicio con
      barra que mencione un peso en el detalle. */
   /* mismo criterio que la pizarra (jpClasificarEquipo): bandas elasticas (singular/plural) y peso corporal declarado, salvo que el nombre traiga carga real */
-  const esBanda = /\\b(banda|band|el[aá]stica|bw|bodyweight)\\b/i.test(nm) || jpClasificarEquipo(nm) !== '';
+  const esBanda = /\b(banda|band|el[aá]stica|bw|bodyweight)\b/i.test(nm) || jpClasificarEquipo(nm) !== '';
   /* supresión de Kg en Core/abdominales (directiva): estos ejercicios se
      miden en reps o tiempo, nunca en Kg -- ni siquiera cuando llevan algo
      de lastre, ese dato no es lo que el coach quiere trackear semana a
@@ -672,8 +672,8 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
      patrones de Core) o por la etiqueta del BLOQUE ("Core"/"Zona Media"),
      esta última pasada aparte en blockLabel porque acá sólo se recibe el
      nombre del ejercicio puntual. */
-  const esCore = /\\b(plank|rollout|flutter|dead\\s*bug|hollow|crunch|ab\\s*wheel|pallof|twist|v-?up|sit-?up)\\b/i.test(nm) ||
-    /\\b(core|zona\\s*media)\\b/i.test(bl);
+  const esCore = /\b(plank|rollout|flutter|dead\s*bug|hollow|crunch|ab\s*wheel|pallof|twist|v-?up|sit-?up)\b/i.test(nm) ||
+    /\b(core|zona\s*media)\b/i.test(bl);
   const ocultaKg = esBanda || esCore;
   /* claridad mancuernas (directiva): "15 kg" es ambiguo -- ¿una mancuerna
      o las dos sumadas? El label/placeholder aclaran que es POR MANO; el
@@ -682,7 +682,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
      sin multiplicarlo por 2 en ningún lado -- convención unitaria
      consistente en todo el sistema, para no arriesgar los históricos de
      carga ya guardados de los atletas reales con una duplicación oculta. */
-  const esMancuerna = /\\b(mancuernas?|dumbbell|db)\\b/i.test(nm);
+  const esMancuerna = /\b(mancuernas?|dumbbell|db)\b/i.test(nm);
   let html = '<div class="set-tracker">';
   /* directiva de rediseño: marca la primera serie sin completar como
      "activa" para darle escala numérica destacada (kg/reps más grandes) --
@@ -753,15 +753,15 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
        reales); el CSS decide cuándo mostrar esto vs. los inputs reales,
        nunca se lee/escribe un dato nuevo. */
     const resumenCompacto = ocultaKg
-      ? (repsVal != null && repsVal !== '' ? (repsVal + ' ' + repsPlaceholder.toLowerCase()) : '\\u2014')
+      ? (repsVal != null && repsVal !== '' ? (repsVal + ' ' + repsPlaceholder.toLowerCase()) : '\u2014')
       : ((kgVal != null && kgVal !== '' && repsVal != null && repsVal !== '')
-        ? (kgVal + '\\u00d7' + repsVal) : '\\u2014');
+        ? (kgVal + '\u00d7' + repsVal) : '\u2014');
     /* Core/abdominales (directiva): cuando la prescripción es por tiempo
        ("30 seg", "45s", '30"'), la etiqueta chica del campo de Reps pasa
        a decir "SEGUNDOS / TIEMPO" en vez de "seg" -- más claro para el
        alumno que ese número no son repeticiones. Sólo aplica a Core (las
        bandas siguen con su etiqueta habitual m/seg/reps). */
-    const esTiempo = /seg|\\d\\s*s\\b|"/i.test(rh);
+    const esTiempo = /seg|\d\s*s\b|"/i.test(rh);
     const repsUnitLabel = (esCore && esTiempo) ? 'SEGUNDOS / TIEMPO' : repsPlaceholder.toLowerCase();
     /* directiva "Memoria de Cargas Históricas": chip sutil "Último: X kg"
        sólo en la Serie 1, sólo cuando todavía no hay un valor cargado ni
@@ -772,7 +772,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
     if(!ocultaKg && i === 1 && (kgVal == null || kgVal === '')){
       const hReg = ultimoHistorial(nm);
       if(hReg && hReg.kg > 0){
-        historialChipHtml = '<button type="button" class="set-hist-chip" data-hist-kg="' + hReg.kg + '">\\u21a9 \\u00daltimo: <b>' + hReg.kg + ' kg</b></button>';
+        historialChipHtml = '<button type="button" class="set-hist-chip" data-hist-kg="' + hReg.kg + '">\u21a9 \u00daltimo: <b>' + hReg.kg + ' kg</b></button>';
       }
     }
     /* directiva ("Referencia de Carga Semana a Semana"): micro-badge
@@ -782,7 +782,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
     let refBadgeHtml = '';
     if(refSemanaAnterior && (prevRefKg != null || prevRefReps != null)){
       const refTxt = (prevRefKg != null ? prevRefKg + 'kg' : '') +
-        (prevRefKg != null && prevRefReps != null ? ' \\u00d7 ' : '') +
+        (prevRefKg != null && prevRefReps != null ? ' \u00d7 ' : '') +
         (prevRefReps != null ? prevRefReps : '');
       refBadgeHtml = '<span class="set-ref-badge">S' + weekIdx + ': ' + refTxt + '</span>';
     }
@@ -803,7 +803,7 @@ function renderSetRows(weekIdx, dayId, blockId, exIdx, numSets, repsHint, sugKg,
           '<span class="set-field"><span class="set-unit">' + (esMancuerna ? 'KG (C/U)' : 'kg') + '</span>' +
             '<input class="set-input set-kg' + (sugerido&&kgVal!=null?' set-input-sug':'') + '" type="text" inputmode="decimal" autocomplete="off" placeholder="' + kgPlaceholder + '" value="' + (kgVal!=null?kgVal:'') + '" />' +
           '</span>' +
-          '<span class="set-x" aria-hidden="true">\\u00d7</span>'
+          '<span class="set-x" aria-hidden="true">\u00d7</span>'
         ) +
         /* el objetivo (repsHint) ya no va como placeholder acá: se veía como
            texto tenue "dato ya cargado" y desaparecía justo al tocar el campo
@@ -951,7 +951,7 @@ function renderContextoSesion(){
     /* nombre del ejercicio: se saca el paréntesis final (traducción/alias,
        ej. "Press Guillotina (Guillotine Press)") antes de truncar, así el
        chip no corta a mitad de palabra en el caso común */
-    const nombrePR = String(ultimoPR.ex || '').replace(/\\s*\\([^)]*\\)\\s*$/, '').trim();
+    const nombrePR = String(ultimoPR.ex || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
     const nombreCorto = nombrePR.length > 24 ? nombrePR.slice(0, 23).trim() + '…' : nombrePR;
     chips.push('<div class="ctx-chip"><span class="ctx-val">' + ultimoPR.kg + 'kg</span><span class="ctx-key">🏆 último PR · ' + nombreCorto + '</span></div>');
   }
@@ -1003,14 +1003,14 @@ function readinessResumenTxt(sleepVal, stressVal, zonas){
    entrada sin tener que scrollear el foco completo. */
 function renderFocoTecnico(day){
   if(!day.focusText) return '';
-  var preview = String(day.focusText).replace(/\\s+/g, ' ').trim();
+  var preview = String(day.focusText).replace(/\s+/g, ' ').trim();
   if(preview.length > 72) preview = preview.slice(0, 72).trim() + '…';
   return '<details class="jp-foco-acc">' +
     '<summary class="jp-foco-acc-summary">' +
       '<span class="jp-foco-acc-ic">🎯</span>' +
-      '<span class="jp-foco-acc-tx">DIRECTIVA TÁCTICA \\u00b7 FOCO T\\u00c9CNICO</span>' +
+      '<span class="jp-foco-acc-tx">DIRECTIVA TÁCTICA \u00b7 FOCO T\u00c9CNICO</span>' +
       '<span class="jp-foco-acc-preview">' + preview + '</span>' +
-      '<span class="jp-foco-acc-chev" aria-hidden="true">\\u25be</span>' +
+      '<span class="jp-foco-acc-chev" aria-hidden="true">\u25be</span>' +
     '</summary>' +
     '<div class="jp-foco-acc-body">' +
       '<div class="rdy-foco">' +
@@ -1399,7 +1399,7 @@ function beepFinish(){ jpBox.chicharra(); }
    permiso, sin SW o sin soporte la app sigue exactamente igual. */
 var jpBgTimer = (function(){
   var TAG = 'coachjp-timer';
-  var TXT = '\\u23f1\\ufe0f \\u00a1Tiempo cumplido! Tu descanso/bloque ha finalizado.';
+  var TXT = '\u23f1\ufe0f \u00a1Tiempo cumplido! Tu descanso/bloque ha finalizado.';
   var KEY = 'jp_timer_fin';
   var pedido = false;
   function reg(){
@@ -1669,7 +1669,7 @@ window.jpWake = jpWake;
    ejercicio fantasma en el Glosario Técnico (el mismo renderer genérico
    paralelo que ya limpia nombreLimpioParaVideo() en renderLine(), ver
    más abajo). */
-const RX_LINEA_DIRECTIVA = /^[-–—].*[-–—]$|^\\(.*\\)$|^(cap|rest|descanso|nota|amrap|emom|e2mom|e3mom|for\\s*time|ft|min\\s*\\d+\\s*:)\\b|^\\d+\\s*rondas?\\b|\\b(biset|superset|triset|circuito)\\b/i;
+const RX_LINEA_DIRECTIVA = /^[-–—].*[-–—]$|^\(.*\)$|^(cap|rest|descanso|nota|amrap|emom|e2mom|e3mom|for\s*time|ft|min\s*\d+\s*:)\b|^\d+\s*rondas?\b|\b(biset|superset|triset|circuito)\b/i;
 function esLineaDirectiva(text){
   const t = String(text == null ? '' : text).trim();
   if(!t) return true;
@@ -1687,11 +1687,11 @@ function esLineaDirectiva(text){
 function extraerDosisWU(detail){
   const t = String(detail || '').trim();
   let m;
-  if((m = t.match(/^(\\d+)\\s*(?:x|\\*)\\s*(\\d+)\\s*(s|seg|segundos?)\\b/i))) return { dosis: m[1] + 'X' + m[2] + 'S', resto: t };
-  if((m = t.match(/^(\\d+)\\s*(?:min|minutos?)\\b/i))) return { dosis: m[1] + ' MIN', resto: t };
-  if((m = t.match(/^(\\d+)\\s*(?:s|seg|segundos?)\\b/i))) return { dosis: m[1] + ' SEG', resto: t };
-  if((m = t.match(/^(\\d+)\\s*(?:reps?|repeticiones?)\\s*(?:por\\s*lado|c\\/u|cada\\s*lado)\\b/i))) return { dosis: m[1] + '/LADO', resto: t };
-  if((m = t.match(/^(\\d+)\\s*(?:reps?|repeticiones?)\\b/i))) return { dosis: m[1] + ' REPS', resto: t };
+  if((m = t.match(/^(\d+)\s*(?:x|\*)\s*(\d+)\s*(s|seg|segundos?)\b/i))) return { dosis: m[1] + 'X' + m[2] + 'S', resto: t };
+  if((m = t.match(/^(\d+)\s*(?:min|minutos?)\b/i))) return { dosis: m[1] + ' MIN', resto: t };
+  if((m = t.match(/^(\d+)\s*(?:s|seg|segundos?)\b/i))) return { dosis: m[1] + ' SEG', resto: t };
+  if((m = t.match(/^(\d+)\s*(?:reps?|repeticiones?)\s*(?:por\s*lado|c\/u|cada\s*lado)\b/i))) return { dosis: m[1] + '/LADO', resto: t };
+  if((m = t.match(/^(\d+)\s*(?:reps?|repeticiones?)\b/i))) return { dosis: m[1] + ' REPS', resto: t };
   return { dosis: null, resto: t };
 }
 /* directiva ("Sanitización del detector de videos y parser"): antes de
@@ -1704,14 +1704,14 @@ function extraerDosisWU(detail){
    todo -- nunca se llama a videoLinkHtml() con eso, así nunca aparece
    un chip fantasma "3x10-12 | Tempo 2011"/"Rest ... entre sets"/
    "BISET..." como el reportado. */
-const RX_SUBEJ_VIDEO = /^A\\d+[.)]\\s*(.+?):\\s*(.+)$/i;
-const RX_DOSIS_SOLA_VIDEO = /^\\d+\\s*(?:x|×|sets?\\s*(?:x|×|de|:)?|series?\\s*(?:x|×|de|:)?|rondas?\\s*(?:x|×|de|:)?)\\s*\\d+(?:\\s*-\\s*\\d+)*(?:\\s*(?:reps?|kg|lbs?|min|s|seg)\\b)?\\s*$/i;
+const RX_SUBEJ_VIDEO = /^A\d+[.)]\s*(.+?):\s*(.+)$/i;
+const RX_DOSIS_SOLA_VIDEO = /^\d+\s*(?:x|×|sets?\s*(?:x|×|de|:)?|series?\s*(?:x|×|de|:)?|rondas?\s*(?:x|×|de|:)?)\s*\d+(?:\s*-\s*\d+)*(?:\s*(?:reps?|kg|lbs?|min|s|seg)\b)?\s*$/i;
 function nombreLimpioParaVideo(text){
   let t = String(text || '').trim();
   const subM = t.match(RX_SUBEJ_VIDEO);
   if(subM) t = subM[1].trim();
   else{
-    t = t.replace(/^[\\s\\-•*]+/, '');
+    t = t.replace(/^[\s\-•*]+/, '');
     t = t.split('|')[0].trim();
   }
   if(!t || RX_DOSIS_SOLA_VIDEO.test(t)) return '';
@@ -1720,7 +1720,7 @@ function nombreLimpioParaVideo(text){
 function renderLine(text, enBadge){
   enBadge = enBadge || '';
   /* las fases del calentamiento se muestran como subtítulo, no como ejercicio */
-  if(/^\\s*\\d+\\.\\s/.test(text) && text.indexOf(' — ') < 0){
+  if(/^\s*\d+\.\s/.test(text) && text.indexOf(' — ') < 0){
     return '<div class="wu-phase">' + text.trim() + '</div>';
   }
   /* líneas de directiva/descanso/nota: texto plano, nunca .ex-row (así
@@ -2200,7 +2200,7 @@ function renderDayTabs(){
   weekTabsEl.innerHTML = DAYS.map(function(d){
     const isActive = d.id === state.currentDay;
     const isDone = isDayDone(state.currentWeek, d.id);
-    return '<div class="day-tab' + (isActive?' active':'') + (isDone?' completed-day':'') + (d.optional?' is-optional':'') + '" data-day="' + d.id + '" title="' + escHtmlSafe(d.short + (d.label ? ' \\u00b7 ' + d.label : '')) + '">' +
+    return '<div class="day-tab' + (isActive?' active':'') + (isDone?' completed-day':'') + (d.optional?' is-optional':'') + '" data-day="' + d.id + '" title="' + escHtmlSafe(d.short + (d.label ? ' \u00b7 ' + d.label : '')) + '">' +
       '<span class="tab-name">' + d.short + '</span>' +
       '<span class="tab-label">' + d.label + '</span>' +
       '<span class="day-dot"></span>' +
@@ -2323,7 +2323,7 @@ function renderBlockInner(block, day, weekIdx){
         html += renderSetRows(weekIdx, day.id, block.id, exIdx, sd.rounds, ex.reps, cargaSugeridaKg(block, weekIdx), ex.name, (block.title||'') + ' ' + (block.subtitle||''));
       }
     });
-    html += '<span class="directive-badge">\\u26a1 Transici\\u00f3n continua (sin pausa)</span>';
+    html += '<span class="directive-badge">\u26a1 Transici\u00f3n continua (sin pausa)</span>';
     if(block.tips){ html += '<div class="coach-note"><strong>Coach Note</strong>' + block.tips + '</div>'; }
     if(block.altNote){ html += '<div class="coach-note note-safe"><strong>Alternativa</strong>' + block.altNote + '</div>'; }
     html += alertsHtml(block);
@@ -2606,9 +2606,9 @@ function datosStoryCF(weekIdx, day){
     (b.items || []).forEach(function(raw){
       const l = String(raw || '').trim();
       if(!l) return;
-      const schemeM = l.match(/x\\s*(\\d+)\\s*sets?\\b/i) || l.match(/^(\\d+)\\s*sets?\\b/i);
+      const schemeM = l.match(/x\s*(\d+)\s*sets?\b/i) || l.match(/^(\d+)\s*sets?\b/i);
       if(schemeM){ setsActuales = parseInt(schemeM[1], 10) || 1; return; }
-      const repsM = l.match(/^(\\d+)\\s+\\S/);
+      const repsM = l.match(/^(\d+)\s+\S/);
       if(!repsM) return;
       const reps = parseInt(repsM[1], 10) || 0;
       if(!reps) return;
@@ -2639,7 +2639,7 @@ function datosStoryCF(weekIdx, day){
     return /snatch|clean|jerk|c&j|complex/.test(texto);
   }
   function limpiarTituloBloque(b){
-    return String((b && b.title) || '').replace(/^\\s*(?:bloque|block)\\s*\\d+\\s*:\\s*/i, '').trim();
+    return String((b && b.title) || '').replace(/^\s*(?:bloque|block)\s*\d+\s*:\s*/i, '').trim();
   }
   let skillTitulo = '', skillChips = '', kgClave = '';
   if(strengthBlocks.length){
@@ -2648,11 +2648,11 @@ function datosStoryCF(weekIdx, day){
     if(tieneOlimpico && tieneBasico) skillTitulo = 'OLYMPIC LIFTING & STRENGTH';
     else if(tieneOlimpico) skillTitulo = 'OLYMPIC WEIGHTLIFTING';
     else skillTitulo = 'STRENGTH & TONNAGE';
-    skillChips = strengthBlocks.map(limpiarTituloBloque).filter(function(t){ return t && !/^bloque\\s*\\d*$/i.test(t); }).join(' · ');
+    skillChips = strengthBlocks.map(limpiarTituloBloque).filter(function(t){ return t && !/^bloque\s*\d*$/i.test(t); }).join(' · ');
     if(topLiftKg <= 0){
       outer: for(const b of strengthBlocks){
         for(const l of (b.items || [])){
-          const m = String(l).match(/@\\s*([\\d.,\/]+)\\s*kg/i) || String(l).match(/(\\d+(?:[.,]\\d+)?)\\s*kg/i);
+          const m = String(l).match(/@\s*([\d.,/]+)\s*kg/i) || String(l).match(/(\d+(?:[.,]\d+)?)\s*kg/i);
           if(m){ kgClave = m[1] + ' KG'; break outer; }
         }
       }
@@ -2665,21 +2665,21 @@ function datosStoryCF(weekIdx, day){
        EVERY X:XX x N SETS), esa línea va primero -- es lo que el atleta
        reconoce de un vistazo, antes que el esquema de reps. */
     const formatoCrudo = (wod.items.map(x => String(x).trim())
-      .find(l => /^(emom|e\\d*mom|amrap|tabata|for\\s*time|ft|every\\s*\\d)/i.test(l)) || '')
-      .replace(/:\\s*$/, '');
+      .find(l => /^(emom|e\d*mom|amrap|tabata|for\s*time|ft|every\s*\d)/i.test(l)) || '')
+      .replace(/:\s*$/, '');
     /* directiva maestra ("Story Card táctica"): el formato se muestra en notación
        compacta ("20:00 AMRAP", "EMOM 20:00", "EVERY 4:00 × 5") */
     let formatoTxt;
     (function(){
       let mm;
-      if((mm = formatoCrudo.match(/amrap\\s*(\\d+)/i)) || (mm = formatoCrudo.match(/(\\d+)\\s*(?:min(?:utos?)?)?\\s*amrap/i))) formatoTxt = String(mm[1]).padStart(2, '0') + ':00 AMRAP';
-      else if((mm = formatoCrudo.match(/^e(?:\\d*)mom\\s*(\\d+)?/i)) && /emom/i.test(formatoCrudo)) formatoTxt = 'EMOM' + (mm[1] ? ' ' + String(mm[1]).padStart(2, '0') + ':00' : '');
-      else if((mm = formatoCrudo.match(/every\\s*(\\d+:\\d{2}|\\d+)(?:\\s*(?:x|×)\\s*(\\d+))?/i))) formatoTxt = 'EVERY ' + mm[1] + (mm[2] ? ' × ' + mm[2] : '');
+      if((mm = formatoCrudo.match(/amrap\s*(\d+)/i)) || (mm = formatoCrudo.match(/(\d+)\s*(?:min(?:utos?)?)?\s*amrap/i))) formatoTxt = String(mm[1]).padStart(2, '0') + ':00 AMRAP';
+      else if((mm = formatoCrudo.match(/^e(?:\d*)mom\s*(\d+)?/i)) && /emom/i.test(formatoCrudo)) formatoTxt = 'EMOM' + (mm[1] ? ' ' + String(mm[1]).padStart(2, '0') + ':00' : '');
+      else if((mm = formatoCrudo.match(/every\s*(\d+:\d{2}|\d+)(?:\s*(?:x|×)\s*(\d+))?/i))) formatoTxt = 'EVERY ' + mm[1] + (mm[2] ? ' × ' + mm[2] : '');
       else if(/tabata/i.test(formatoCrudo)) formatoTxt = 'TABATA';
-      else if(/for\\s*time|^ft/i.test(formatoCrudo)) formatoTxt = 'FOR TIME';
+      else if(/for\s*time|^ft/i.test(formatoCrudo)) formatoTxt = 'FOR TIME';
       else formatoTxt = formatoCrudo.length && formatoCrudo.length <= 26 ? formatoCrudo : undefined;
     })();
-    const esquema = wod.items.map(x => String(x).trim()).find(l => /^\\d+(-\\d+){1,}$/.test(l));
+    const esquema = wod.items.map(x => String(x).trim()).find(l => /^\d+(-\d+){1,}$/.test(l));
     /* directiva ("Movimientos condensados COMPLETOS") -- antes se
        cortaba a los primeros 2 movimientos (".slice(0,2)"), la causa del
        bug reportado que omitía el 3er movimiento real del WOD (ej. "12
@@ -2692,11 +2692,11 @@ function datosStoryCF(weekIdx, day){
        cargas; máximo 4 */
     const movs = wod.items
       .map(x => String(x).trim())
-      .filter(l => l && l.length <= 56 && !/^\\d+(?:\\s*[-–\\/]\\s*\\d+){1,}$/.test(l) && !/^(cap|rest|descanso|nota|note|amrap|emom|e\\d*mom|tabata|every|for\\s*time|esquema|opci[oó]n|escal|scaled|rx|intermedi|tip)\\b/i.test(l) && !/:\\s*$/.test(l) && !/^[(\\[]/.test(l))
+      .filter(l => l && l.length <= 56 && !/^\d+(?:\s*[-–\/]\s*\d+){1,}$/.test(l) && !/^(cap|rest|descanso|nota|note|amrap|emom|e\d*mom|tabata|every|for\s*time|esquema|opci[oó]n|escal|scaled|rx|intermedi|tip)\b/i.test(l) && !/:\s*$/.test(l) && !/^[(\[]/.test(l))
       .map(l => l.split(' — ')[0].split('@')[0]
-        .replace(/\\([^)]*\\)/g, ' ')
-        .replace(/^\\d+(?:[.,]\\d+)?(?:\\s*[-–\\/]\\s*\\d+(?:[.,]\\d+)?)*\\s*(?:cals?|calories|reps?|mts?|m|km|kg)?\\s+/i, '')
-        .replace(/\\s+/g, ' ').trim())
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/^\d+(?:[.,]\d+)?(?:\s*[-–\/]\s*\d+(?:[.,]\d+)?)*\s*(?:cals?|calories|reps?|mts?|m|km|kg)?\s+/i, '')
+        .replace(/\s+/g, ' ').trim())
       .filter(Boolean)
       .slice(0, 4);
     estructura = [formatoTxt, movs.join(' · ')].filter(Boolean).join(' · ').toUpperCase();
@@ -2712,8 +2712,8 @@ function datosStoryCF(weekIdx, day){
      N Sets" (intervalos), se muestra "N / N INTERVALOS COMPLETADOS" en
      vez de dejar la Hero Card 2 sin ninguna métrica de cierre. */
   if(!score && wod && wod.items){
-    const schemeLine = wod.items.map(x => String(x).trim()).find(l => /every\\s*\\d/i.test(l));
-    const nM = schemeLine && schemeLine.match(/x\\s*(\\d+)\\s*sets?/i);
+    const schemeLine = wod.items.map(x => String(x).trim()).find(l => /every\s*\d/i.test(l));
+    const nM = schemeLine && schemeLine.match(/x\s*(\d+)\s*sets?/i);
     if(nM && isBlockDone(weekIdx, day.id, wod.id)){
       score = nM[1] + ' / ' + nM[1] + ' INTERVALOS COMPLETADOS';
     }
@@ -2722,7 +2722,7 @@ function datosStoryCF(weekIdx, day){
     modo: 'crossfit',
     atleta: PROGRAM_CONFIG.athleteName || 'Atleta',
     tituloWod: (wod && wod.title) || day.title || day.short || 'WOD',
-    wodTitulo: (wod && wod.title && !/^\\s*bloque\\s*\\d*\\s*$/i.test(wod.title)) ? String(wod.title).replace(/^\\s*(?:bloque|block)\\s*\\d+\\s*:\\s*/i, '').trim() : '',
+    wodTitulo: (wod && wod.title && !/^\s*bloque\s*\d*\s*$/i.test(wod.title)) ? String(wod.title).replace(/^\s*(?:bloque|block)\s*\d+\s*:\s*/i, '').trim() : '',
     volumenTotal: volumenTotal,
     topLiftKg: topLiftKg,
     esPR: esPR,
@@ -2736,8 +2736,8 @@ function datosStoryCF(weekIdx, day){
     scorePR: !!(wod && state.scorePR && state.scorePR[weekIdx + '|' + day.id + '|' + wod.id]),
     formatoTxt: (function(){
       var p0 = String(estructura || '').split(' · ')[0] || '', m;
-      if((m = p0.match(/^(\\d+):00\\s*AMRAP/i))) return 'AMRAP ' + parseInt(m[1], 10) + 'M';
-      if((m = p0.match(/^EMOM\\s*(\\d+):00/i))) return 'EMOM ' + parseInt(m[1], 10) + 'M';
+      if((m = p0.match(/^(\d+):00\s*AMRAP/i))) return 'AMRAP ' + parseInt(m[1], 10) + 'M';
+      if((m = p0.match(/^EMOM\s*(\d+):00/i))) return 'EMOM ' + parseInt(m[1], 10) + 'M';
       if(/^EMOM/i.test(p0)) return 'EMOM';
       if(/^(?:EVERY|TABATA|FOR TIME)/i.test(p0)) return p0.toUpperCase();
       return '';
@@ -2816,10 +2816,10 @@ function nutriCard(day){
                (n.nota ? '<div class="nut-row nota"><span class="nut-lb">Nota del coach</span><p class="nut-tx">' + n.nota + '</p></div>' : '');
   if(!cuerpo) return '';
   return '<details class="nutri-card"><summary class="nutri-sum">' +
-      '<span class="nut-ic">\\uD83C\\uDF7D\\uFE0F</span>' +
+      '<span class="nut-ic">\uD83C\uDF7D\uFE0F</span>' +
       '<span class="nut-ti">Nutrición de hoy</span>' +
       '<span class="nut-hint">antes · durante · después</span>' +
-      '<span class="nut-cv">\\u25BE</span>' +
+      '<span class="nut-cv">\u25BE</span>' +
     '</summary><div class="nutri-body">' + cuerpo +
       '<p class="nut-legal">' + NUTRI_DISCLAIMER_TXT + '</p>' +
     '</div></details>';
@@ -2839,15 +2839,15 @@ function splitTituloSesionSports(tituloRaw, dayNum){
      (new RegExp(str)) acá adentro es una trampa: el string pasa DOS veces
      por des-escapado de backslash (una al parsear TEMPLATE_HTML como
      template literal en el Builder, otra al parsear ESE string literal ya
-     compilado como JS real en el navegador del alumno) -- \\\\s sobrevive
-     la primera pasada como \\s, pero \\s todavía no es un escape válido
+     compilado como JS real en el navegador del alumno) -- \\s sobrevive
+     la primera pasada como \s, pero \s todavía no es un escape válido
      para un STRING literal (sólo lo es para un regex literal), así que la
      segunda pasada se come el backslash igual. Un regex LITERAL sólo pasa
-     por la primera desescapada, así que \\d+ genérico (sin interpolar
+     por la primera desescapada, así que \d+ genérico (sin interpolar
      dayNum) evita el problema de raíz. */
-  const mPrefijo = t.match(/^d[ií]a\\s*\\d+\\s*[:\\-–—]\\s*/i);
+  const mPrefijo = t.match(/^d[ií]a\s*\d+\s*[:\-–—]\s*/i);
   if(mPrefijo) t = t.slice(mPrefijo[0].length);
-  const m = t.match(/^(.*?)\\s*\\(([^)]+)\\)\\s*$/);
+  const m = t.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
   if(m) return { principal: m[1].trim() || t, enfasis: m[2].trim() };
   return { principal: t, enfasis: '' };
 }
@@ -2965,7 +2965,7 @@ function renderMain(){
     /* las fases numeradas del generador se leen como subtítulo, no como una viñeta más */
     html += '<div class="info-card cooldown-card"><div class="info-card-title">Cool-Down y Recuperación</div><ul>' +
       day.cooldown.map(function(c){
-        var f = String(c).match(/^(\\d+)\\.\\s*(.+)$/);
+        var f = String(c).match(/^(\d+)\.\s*(.+)$/);
         return f ? '<li class="cd-fase"><span>' + f[1] + '</span><b>' + f[2] + '</b></li>'
                  : '<li><span>&#10022;</span>' + c + '</li>';
       }).join('') + '</ul>' +
@@ -3002,7 +3002,7 @@ function renderMain(){
     '<span class="dcc-tx">' + (dayDone?'DÍA COMPLETO':'MARCAR DÍA COMPLETO') + '</span>' +
     '</button>';
   html += '<button type="button" class="jp-wa-report" id="jpWaReportBtn">&#128242; ENVIAR REPORTE AL COACH POR WHATSAPP</button>' +
-    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '[ \\u2714 D\\u00cdA CONCLUIDO \\u00b7 ENVIAR REPORTE ]' : '[ \\ud83d\\udcf2 FINALIZAR D\\u00cdA Y ENVIAR REPORTE ]') + '</button>';
+    '<button type="button" class="jp-close-cta' + (dayDone ? ' done' : '') + '" id="jpCerrarDiaBtn">' + (dayDone ? '[ \u2714 D\u00cdA CONCLUIDO \u00b7 ENVIAR REPORTE ]' : '[ \ud83d\udcf2 FINALIZAR D\u00cdA Y ENVIAR REPORTE ]') + '</button>';
   html += '</div>';
   mainEl.innerHTML = html;
   wireBlockInteractions(day, weekIdx, blocks);
@@ -3072,11 +3072,11 @@ function wireSetRow(row){
     if(!compactEl) return;
     const reps = repsInput ? repsInput.value : '';
     if(esBandaRow){
-      compactEl.textContent = reps ? (reps + ' ' + (repsInput.placeholder||'reps').toLowerCase()) : '\\u2014';
+      compactEl.textContent = reps ? (reps + ' ' + (repsInput.placeholder||'reps').toLowerCase()) : '\u2014';
       return;
     }
     const kg = kgInput ? kgInput.value : '';
-    compactEl.textContent = (kg && reps) ? (kg + '\\u00d7' + reps) : '\\u2014';
+    compactEl.textContent = (kg && reps) ? (kg + '\u00d7' + reps) : '\u2014';
   }
   if(kgInput){
     kgInput.addEventListener('input', function(){
@@ -3160,7 +3160,7 @@ function wireBlockInteractions(day, weekIdx, blocks){
         if(!noteEl) return;
         const frase = chip.dataset.noteFrase;
         /* si ya hay texto propio, se agrega abajo en vez de pisarlo */
-        noteEl.value = noteEl.value.trim() ? (noteEl.value.replace(/\\s+$/,'') + '\\n' + frase) : frase;
+        noteEl.value = noteEl.value.trim() ? (noteEl.value.replace(/\s+$/,'') + '\n' + frase) : frase;
         state.notes = state.notes || {};
         state.notes[noteEl.dataset.noteKey] = noteEl.value;
         chip.classList.add('on');

@@ -6,8 +6,8 @@
    3 · El reloj de descanso lo dispara la ronda, no el ejercicio.
 ========================================================= */
 (function(){
-  var RX_CORE = /\\bcore\\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
-  var RX_ESTR = /^\\s*(?:\\d+\\s*(?:sets?|series?|rondas?|rounds?)\\s*:?\\s*$|[-–—]?\\s*(?:rest|descanso)\\b|[-–—]+\\s*$)/i;
+  var RX_CORE = /\bcore\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
+  var RX_ESTR = /^\s*(?:\d+\s*(?:sets?|series?|rondas?|rounds?)\s*:?\s*$|[-–—]?\s*(?:rest|descanso)\b|[-–—]+\s*$)/i;
 
   function bloqueDe(id){
     var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
@@ -55,7 +55,7 @@
   --------------------------------------------------------- */
   function rondasDe(items){
     for(var i = 0; i < items.length; i++){
-      var m = String(items[i]).match(/(\\d+)\\s*(?:sets?|series?|rondas?|rounds?)/i);
+      var m = String(items[i]).match(/(\d+)\s*(?:sets?|series?|rondas?|rounds?)/i);
       if(m) return Math.max(1, Math.min(10, parseInt(m[1], 10)));
     }
     return 3;
@@ -63,16 +63,16 @@
   function movimientosDe(items){
     var out = [];
     (items || []).forEach(function(raw){
-      var t = String(raw || '').replace(/^[\\s\\-•*]+/, '').replace(/[\\s\\-–—]+$/, '').trim();
+      var t = String(raw || '').replace(/^[\s\-•*]+/, '').replace(/[\s\-–—]+$/, '').trim();
       if(!t || RX_ESTR.test(t)) return;
       var dosis = '';
-      var corte = t.split(/\\s+[—–]\\s+/);
+      var corte = t.split(/\s+[—–]\s+/);
       if(corte.length > 1){ t = corte[0].trim(); dosis = corte.slice(1).join(' — ').trim(); }
-      var pre = t.match(/^(\\d+\\s*(?:s|seg|segundos?|min|reps?|x)?\\.?)\\s+(.+)$/i);
+      var pre = t.match(/^(\d+\s*(?:s|seg|segundos?|min|reps?|x)?\.?)\s+(.+)$/i);
       if(pre && !dosis){ dosis = pre[1].trim(); t = pre[2].trim(); }
-      var post = t.match(/^(.+?)\\s+(\\d+\\s*(?:s|seg|min)\\b.*)$/i);
+      var post = t.match(/^(.+?)\s+(\d+\s*(?:s|seg|min)\b.*)$/i);
       if(post && !dosis){ t = post[1].trim(); dosis = post[2].trim(); }
-      t = t.replace(/\\s{2,}/g, ' ').trim();
+      t = t.replace(/\s{2,}/g, ' ').trim();
       if(t.length < 3) return;
       out.push({ name: t, reps: dosis || '' });
     });

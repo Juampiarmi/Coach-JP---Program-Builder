@@ -16,10 +16,10 @@
      suma "REPS" atrás. */
   function esUnidadNoRep(s){
     if(s == null) return false;
-    return /\\d\\s*(metros?|minutos?|min|segundos?|seg|km|m|s)\\b/i.test(String(s));
+    return /\d\s*(metros?|minutos?|min|segundos?|seg|km|m|s)\b/i.test(String(s));
   }
   var RX_WARM = /entrada en calor|warm.?up|movilidad|activaci[óo]n|cool.?down|estiramiento/i;
-  var RX_CORE = /\\bcore\\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
+  var RX_CORE = /\bcore\b|abdomen|abdominal|estabilidad|anti.?rotaci[óo]n/i;
 
   /* Catalogo de tecnicas de intensidad (Drop Set, Rest-Pause, Isometria,
      Myo-Reps, Serie al Fallo). Campo opcional y aditivo (block.metodologia
@@ -49,23 +49,23 @@
       filas.forEach(function(row, fi){
       var det = row.querySelector('.ex-detail');
       if(!det) return;
-      var crudo = (det.textContent || '').replace(/\\s+/g, ' ').trim();
+      var crudo = (det.textContent || '').replace(/\s+/g, ' ').trim();
       if(!crudo) return;
       var partes = [];
       /* series efectivas y de aproximación */
-      var ap = crudo.match(/(\\d+)\\s*aprox/i);
+      var ap = crudo.match(/(\d+)\s*aprox/i);
       if(ap) partes.push({ t: ap[1] + ' series de aproximación', alt: true });
-      var ef = crudo.match(/(\\d+)\\s*Ef\\.?/i) || crudo.match(/(\\d+)\\s*series/i);
+      var ef = crudo.match(/(\d+)\s*Ef\.?/i) || crudo.match(/(\d+)\s*series/i);
       if(ef) partes.push({ t: ef[1] + ' series efectivas' });
       /* repeticiones */
-      var reps = crudo.replace(/.*?(?:Ef\\.?|series)\\s*/i, '').match(/(\\d+\\s*(?:-|a|–)\\s*\\d+|\\d+)\\s*(?:reps?)?/i);
-      var rondas = crudo.match(/(\\d+)\\s*rondas?/i);
+      var reps = crudo.replace(/.*?(?:Ef\.?|series)\s*/i, '').match(/(\d+\s*(?:-|a|–)\s*\d+|\d+)\s*(?:reps?)?/i);
+      var rondas = crudo.match(/(\d+)\s*rondas?/i);
       if(rondas) partes.push({ t: rondas[1] + ' rondas totales' });
-      if(reps && !/^\\s*$/.test(reps[1]) && !rondas) partes.push({ t: reps[1].replace(/\\s/g, '') + ' reps' });
+      if(reps && !/^\s*$/.test(reps[1]) && !rondas) partes.push({ t: reps[1].replace(/\s/g, '') + ' reps' });
       /* tempo y descanso */
-      var tempo = crudo.match(/tempo\\s*([0-9Xx]{3,4})/i);
+      var tempo = crudo.match(/tempo\s*([0-9Xx]{3,4})/i);
       if(tempo) partes.push({ t: 'Tempo ' + tempo[1].toUpperCase() });
-      var desc = crudo.match(/descanso\\s*(\\d+)\\s*s/i);
+      var desc = crudo.match(/descanso\s*(\d+)\s*s/i);
       if(desc) partes.push({ t: 'Descanso ' + desc[1] + 's', alt: true });
       var fallo = /fallo/i.test(crudo);
       if(fallo) partes.push({ t: 'Última serie al fallo técnico', alt: true });
@@ -142,7 +142,7 @@
     }
     if(b){
       var items = itemsDeSemana(b, wi);
-      var mov = items.filter(function(x){ return !/^\\s*(-|\\d+\\s*sets?:|rest|descanso)/i.test(x); }).length;
+      var mov = items.filter(function(x){ return !/^\s*(-|\d+\s*sets?:|rest|descanso)/i.test(x); }).length;
       /* etiqueta ya resuelta para la semana actual (no el título estático
          congelado en la semana 1) -- misma corrección que en esCore() */
       var etiquetaWi = (b.weekName && b.weekName[wi]) || b.title || '';
@@ -270,7 +270,7 @@
      mitades de UNA sola ronda, no dos series independientes) -- se
      registra una sola fila con un contador de rondas completadas para
      todo el bloque. */
-  var RX_CIRCUITO_RONDAS = /\\bamrap\\b|\\be[23]?mom\\b|\\bfor\\s*time\\b|\\bft\\b|\\brondas?\\b|\\brounds?\\b/i;
+  var RX_CIRCUITO_RONDAS = /\bamrap\b|\be[23]?mom\b|\bfor\s*time\b|\bft\b|\brondas?\b|\brounds?\b/i;
   function esCircuitoRondas(b){
     var texto = (b.title || '') + ' ' + (b.subtitle || '') + ' ' + (b.items || []).join(' ');
     return RX_CIRCUITO_RONDAS.test(texto);

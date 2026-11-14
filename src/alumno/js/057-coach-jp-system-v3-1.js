@@ -119,7 +119,7 @@
      SIN TÍTULOS DUPLICADOS ENTRE LA TARJETA Y SU PIZARRA
   --------------------------------------------------------- */
   function nrm(t){
-    return String(t || '').replace(/\\s+/g, ' ').trim().toLowerCase()
+    return String(t || '').replace(/\s+/g, ' ').trim().toLowerCase()
       .replace(/[^a-z0-9áéíóúñ ]/g, '').trim();
   }
   function limpiarTitulos(){
@@ -137,7 +137,7 @@
       var sub = bl.querySelector('.block-subtitle');
       if(sub){
         var st = nrm(sub.textContent);
-        var vacio = /^0+\\s*(min|minutos?|seg|s)?$/i.test(sub.textContent.replace(/\\s+/g, ' ').trim());
+        var vacio = /^0+\s*(min|minutos?|seg|s)?$/i.test(sub.textContent.replace(/\s+/g, ' ').trim());
         /* tampoco repite lo que ya declara el banner de protocolo */
         var tag2 = bl.querySelector('.blk-tag');
         var enTag = !!(st && tag2 && nrm(tag2.textContent).indexOf(st) >= 0);
@@ -166,13 +166,13 @@
      Evita que "01. 2 Front Squats @ 82% 1RM" se pinte como
      eyebrow chiquito en lugar de como ejercicio legible.
   --------------------------------------------------------- */
-  var RX_FMT = /^(amrap|emom|every|for\\s*time|tabata|chipper|rounds?\\s*for\\s*time|\\d+\\s*(rondas?|rounds?|sets?|series)\\b|in\\s*\\d)/i;
-  var RX_DOSIS = /@|%|\\bkg\\b|\\blbs?\\b|\\breps?\\b|\\bcal\\b|\\d+\\s*[x\\u00d7]\\s*\\d+|\\d+\\s*(m|km|cm)\\b/i;
+  var RX_FMT = /^(amrap|emom|every|for\s*time|tabata|chipper|rounds?\s*for\s*time|\d+\s*(rondas?|rounds?|sets?|series)\b|in\s*\d)/i;
+  var RX_DOSIS = /@|%|\bkg\b|\blbs?\b|\breps?\b|\bcal\b|\d+\s*[x\u00d7]\s*\d+|\d+\s*(m|km|cm)\b/i;
   function reclasificar(){
     document.querySelectorAll('.cf-line.head, .wb-line.head').forEach(function(l){
-      var t = (l.textContent || '').replace(/\\s+/g, ' ').trim();
+      var t = (l.textContent || '').replace(/\s+/g, ' ').trim();
       if(!t || RX_FMT.test(t)) return;
-      if(/\\d/.test(t) && RX_DOSIS.test(t) && !/:\\s*$/.test(t)) l.classList.remove('head');
+      if(/\d/.test(t) && RX_DOSIS.test(t) && !/:\s*$/.test(t)) l.classList.remove('head');
     });
   }
   /* ---------------------------------------------------------
@@ -185,7 +185,7 @@
       var tag = bl.querySelector('.blk-tag');
       if(!tag) return;
       var base = {};
-      String(tag.textContent || '').split(/[·\\u2022\\u25cf|]/).forEach(function(x){
+      String(tag.textContent || '').split(/[·\u2022\u25cf|]/).forEach(function(x){
         var t = nrm(x); if(t) base[t] = 1;
       });
       /* el banner del bloque ya lo dijo: la píldora del ejercicio no lo repite */
@@ -206,7 +206,7 @@
       });
       bl.querySelectorAll('.ex-detail').forEach(function(d){
         if(d.dataset.dedup === '1' && d.dataset.dedupSrc === d.textContent) return;
-        var partes = d.textContent.split(/\\s*·\\s*/);
+        var partes = d.textContent.split(/\s*·\s*/);
         var quedan = partes.filter(function(x){ return x.trim() && !base[nrm(x)]; });
         if(quedan.length === partes.length) return;      /* nada que recortar */
         var txt = quedan.join(' · ').trim();

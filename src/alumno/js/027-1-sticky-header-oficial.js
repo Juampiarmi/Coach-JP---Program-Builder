@@ -177,7 +177,7 @@
          libre ("11:42", "6+12 reps") -- el odómetro lo reescribiría como
          un número sin sentido (parseInt de los dígitos, sin los separadores). */
       if(v.dataset.noOdo) return;
-      var n = parseInt(String(v.textContent).replace(/[^\\d]/g, ''), 10);
+      var n = parseInt(String(v.textContent).replace(/[^\d]/g, ''), 10);
       if(!isNaN(n)) odometro(v, n, 900);
     });
   }

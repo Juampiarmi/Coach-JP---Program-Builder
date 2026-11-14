@@ -5,7 +5,7 @@
   function infoDia(){
     var dv = document.querySelector('.day-view.active'); if(!dv) return null;
     var pre = (dv.querySelector('.jp-session-pretag') || {}).textContent || '';
-    var m = pre.match(/D[IÍ]A\\s*(\\d+)/i);
+    var m = pre.match(/D[IÍ]A\s*(\d+)/i);
     var t = ((dv.querySelector('.day-title') || {}).textContent || '').trim();
     return { d: m ? 'D' + m[1] : '', t: t };
   }
@@ -62,7 +62,7 @@
   document.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('.jp-ver-busca'); if(!b) return;
     e.preventDefault(); e.stopPropagation();
-    window.open('https://www.youtube.com/results?search_query=' + encodeURIComponent(b.getAttribute('data-vsearch') + ' t\\u00e9cnica ejercicio'), '_blank', 'noopener');
+    window.open('https://www.youtube.com/results?search_query=' + encodeURIComponent(b.getAttribute('data-vsearch') + ' t\u00e9cnica ejercicio'), '_blank', 'noopener');
   }, true);
   /* Story: etiquetas de los dos botones que quedan */
   function etiquetasStory(){
@@ -79,7 +79,7 @@
   function limpiarDecimal(v){
     v = String(v == null ? '' : v).replace(/,/g, '.').replace(/[^0-9.]/g, '');
     var i = v.indexOf('.');
-    if(i >= 0) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\\./g, '');
+    if(i >= 0) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, '');
     return v;
   }
   window.jpLimpiarDecimal = limpiarDecimal;
@@ -128,12 +128,12 @@
 
   /* 1 · "— O BIEN —": switch segmentado [ 🚴 BIKE | 🚣 ROW ]: el texto completo vive en los botones, las filas originales quedan ocultas */
   function iconoAlt(t){
-    return /bike|assault|echo|air\\s*bike|bici/i.test(t) ? '\\ud83d\\udeb4' : (/\\brow\\b|remo|ski/i.test(t) ? '\\ud83d\\udea3' : (/run|corr|trote|carrera/i.test(t) ? '\\ud83c\\udfc3' : (/swim|nado/i.test(t) ? '\\ud83c\\udfca' : '\\u21c4')));
+    return /bike|assault|echo|air\s*bike|bici/i.test(t) ? '\ud83d\udeb4' : (/\brow\b|remo|ski/i.test(t) ? '\ud83d\udea3' : (/run|corr|trote|carrera/i.test(t) ? '\ud83c\udfc3' : (/swim|nado/i.test(t) ? '\ud83c\udfca' : '\u21c4')));
   }
   /* "Assault Bike x 5:00 @ easy pace" -> "BIKE 5:00"; "Row x 5:00 @ easy pace" -> "ROW 5:00" */
   function compactoAlt(t){
-    var tiempo = (t.match(/\\d+:\\d{2}/) || t.match(/\\d+\\s*(?:min|cal|km|mts?|m)\\b/i) || [''])[0].replace(/\\s+/g, ' ');
-    var nom = /assault|echo|air\\s*bike|bike|bici/i.test(t) ? 'BIKE' : (/\\brow(?:er|ing)?\\b|remo/i.test(t) ? 'ROW' : (/ski/i.test(t) ? 'SKI' : (/\\brun\\b|corr|trote/i.test(t) ? 'RUN' : '')));
+    var tiempo = (t.match(/\d+:\d{2}/) || t.match(/\d+\s*(?:min|cal|km|mts?|m)\b/i) || [''])[0].replace(/\s+/g, ' ');
+    var nom = /assault|echo|air\s*bike|bike|bici/i.test(t) ? 'BIKE' : (/\brow(?:er|ing)?\b|remo/i.test(t) ? 'ROW' : (/ski/i.test(t) ? 'SKI' : (/\brun\b|corr|trote/i.test(t) ? 'RUN' : '')));
     return nom ? (nom + (tiempo ? ' ' + tiempo : '')) : t;
   }
   function alternativas(){
@@ -146,7 +146,7 @@
         var board = or.closest('.jp-cfboard');
         var etq = function(r){
           var rn = r.querySelector('.jp-cf-rn'), rv = r.querySelector('.jp-cf-rv');
-          var t = ((rn ? rn.textContent : r.textContent) + ' ' + (rv ? rv.textContent : '')).replace(/\\[\\s*MIN\\s*\\d+\\s*\\]/i, '').replace(/\\s+/g, ' ').trim();
+          var t = ((rn ? rn.textContent : r.textContent) + ' ' + (rv ? rv.textContent : '')).replace(/\[\s*MIN\s*\d+\s*\]/i, '').replace(/\s+/g, ' ').trim();
           return t;
         };
         var ta = compactoAlt(etq(a)), tb = compactoAlt(etq(b));
@@ -173,22 +173,22 @@
       var bd = bds[i];
       var n = bd.querySelectorAll('.jp-cf-rows .jp-cf-row').length;
       var det = document.createElement('details'); det.className = 'jp-warm-acc';
-      det.innerHTML = '<summary><span class="jp-warm-lb">\\ud83d\\udd25 ACTIVACI\\u00d3N' + (n ? ' \\u00b7 ' + n + ' EJERCICIOS' : '') + '</span><span class="jp-warm-chev">\\u25bc</span></summary>';
+      det.innerHTML = '<summary><span class="jp-warm-lb">\ud83d\udd25 ACTIVACI\u00d3N' + (n ? ' \u00b7 ' + n + ' EJERCICIOS' : '') + '</span><span class="jp-warm-chev">\u25bc</span></summary>';
       bd.parentNode.insertBefore(det, bd); det.appendChild(bd);
     }
   }
 
   /* 3 · SCORE: FOR TIME (completado MM:SS o CAPPED + reps), AMRAP (rondas + reps), EMOM (rondas completadas + kg) y toggle [ RX ] / [ SCALED ];
          marca [ ▲ NUEVO SCORE ] si supera el mejor registro previo de ese mismo WOD */
-  var RX_NIVEL = /\\s*\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i;
+  var RX_NIVEL = /\s*\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\]\s*$/i;
   function valScore(sc, tipo){
     var t = String(sc || '').replace(RX_NIVEL, '').trim(), m;
     if(tipo === 'tiempo'){
-      if((m = t.match(/^CAP\\s*\\+\\s*(\\d+)/i))) return -1e6 + parseInt(m[1], 10);
-      if((m = t.match(/^(\\d+)\\s*:\\s*(\\d+)/))) return -(parseInt(m[1], 10) * 60 + parseInt(m[2], 10));
+      if((m = t.match(/^CAP\s*\+\s*(\d+)/i))) return -1e6 + parseInt(m[1], 10);
+      if((m = t.match(/^(\d+)\s*:\s*(\d+)/))) return -(parseInt(m[1], 10) * 60 + parseInt(m[2], 10));
       return null;
     }
-    if(tipo === 'rondas' && (m = t.match(/^(\\d+)\\s*\\+\\s*(\\d+)/))) return parseInt(m[1], 10) * 1000 + parseInt(m[2], 10);
+    if(tipo === 'rondas' && (m = t.match(/^(\d+)\s*\+\s*(\d+)/))) return parseInt(m[1], 10) * 1000 + parseInt(m[2], 10);
     return null;
   }
   function mejorPrevio(skey, tipo){
@@ -212,16 +212,16 @@
         nivel = nivelAtl;     /* la categoria la define el coach en el Builder: no hay selector en la vista del atleta */
         var base = val.replace(RX_NIVEL, '');
         var tipo = /tiempo/i.test(ph) ? 'tiempo' : (/rondas/i.test(ph) ? 'rondas' : 'libre');
-        var esEmom = !!board && /\\bEMOM\\b|\\bEVERY\\b/i.test((board.querySelector('.jp-cf-fmtbadge') || board).textContent || '');
+        var esEmom = !!board && /\bEMOM\b|\bEVERY\b/i.test((board.querySelector('.jp-cf-fmtbadge') || board).textContent || '');
         if(tipo === 'rondas' && esEmom) tipo = 'emom';
-        var capped = /^CAP\\s*\\+/i.test(base);
+        var capped = /^CAP\s*\+/i.test(base);
         var ui = document.createElement('div'); ui.className = 'jp-sc-ui';
         var campos = '';
         if(tipo === 'tiempo') campos = '<span class="jp-sc-fin"><button type="button" data-fin="ok">COMPLETADO</button><button type="button" data-fin="cap">CAPPED</button></span><span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="MM" aria-label="Minutos"><b class="jp-sc-sep">:</b><input class="jp-sc-b" inputmode="numeric" maxlength="3" placeholder="SS" aria-label="Segundos"></span>';
         else if(tipo === 'rondas') campos = '<span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="RONDAS" aria-label="Rondas"><b>+</b><input class="jp-sc-b" inputmode="numeric" maxlength="3" placeholder="REPS" aria-label="Repeticiones adicionales"></span>';
         else if(tipo === 'emom') campos = '<span class="jp-sc-seg"><input class="jp-sc-a" inputmode="numeric" maxlength="3" placeholder="RONDAS OK" aria-label="Rondas completadas"><b>·</b><input class="jp-sc-b" inputmode="decimal" maxlength="5" placeholder="KG" aria-label="Peso alcanzado"></span>';
         else campos = '<input class="jp-sc-free" type="text" placeholder="Ej: 42 reps">';
-        ui.innerHTML = campos + '' + (nivelAtl ? '<span class="jp-sc-cat" title="Categor\\u00eda">' + nivelAtl + '</span>' : '') + '<span class="jp-sc-pr" hidden>▲ NUEVO SCORE</span>';
+        ui.innerHTML = campos + '' + (nivelAtl ? '<span class="jp-sc-cat" title="Categor\u00eda">' + nivelAtl + '</span>' : '') + '<span class="jp-sc-pr" hidden>▲ NUEVO SCORE</span>';
         inp.parentNode.insertBefore(ui, inp.nextSibling);
         inp.style.display = 'none';
         var A = ui.querySelector('.jp-sc-a'), B = ui.querySelector('.jp-sc-b'), F = ui.querySelector('.jp-sc-free'), PR = ui.querySelector('.jp-sc-pr');
@@ -234,11 +234,11 @@
         if(A){
           var pm;
           if(tipo === 'tiempo'){
-            if(capped){ pm = base.match(/^CAP\\s*\\+\\s*(\\d+)/i); if(pm) B.value = pm[1]; }
-            else { pm = base.match(/^(\\d+)\\s*:\\s*(\\d+)/); if(pm){ A.value = pm[1]; B.value = pm[2]; } }
+            if(capped){ pm = base.match(/^CAP\s*\+\s*(\d+)/i); if(pm) B.value = pm[1]; }
+            else { pm = base.match(/^(\d+)\s*:\s*(\d+)/); if(pm){ A.value = pm[1]; B.value = pm[2]; } }
           } else if(tipo === 'emom'){
-            pm = base.match(/^(\\d+)\\s*rondas?(?:\\s*·\\s*([\\d.,]+)\\s*kg)?/i); if(pm){ A.value = pm[1]; B.value = pm[2] || ''; }
-          } else { pm = base.match(/^(\\d+)\\s*\\+\\s*(\\d+)/); if(pm){ A.value = pm[1]; B.value = pm[2]; } }
+            pm = base.match(/^(\d+)\s*rondas?(?:\s*·\s*([\d.,]+)\s*kg)?/i); if(pm){ A.value = pm[1]; B.value = pm[2] || ''; }
+          } else { pm = base.match(/^(\d+)\s*\+\s*(\d+)/); if(pm){ A.value = pm[1]; B.value = pm[2]; } }
         }
         if(F) F.value = base;
         function marcar(){ var bs = ui.querySelectorAll('[data-rx]'); for(var k = 0; k < bs.length; k++) bs[k].classList.toggle('on', bs[k].getAttribute('data-rx') === nivel); }
@@ -252,7 +252,7 @@
         function componer(){
           var sTxt = '';
           if(A){
-            var a = (A.value || '').replace(/\\D/g, ''), b = (B.value || '').replace(tipo === 'emom' ? /[^\\d.,]/g : /\\D/g, '');
+            var a = (A.value || '').replace(/\D/g, ''), b = (B.value || '').replace(tipo === 'emom' ? /[^\d.,]/g : /\D/g, '');
             if(tipo === 'tiempo' && capped){ if(b) sTxt = 'CAP+' + b; }
             else if(a || b){
               if(tipo === 'tiempo') sTxt = (a || '0') + ':' + ((b.length === 1 ? '0' + b : b) || '00');
@@ -296,18 +296,18 @@
       (function(bd){
         bd.setAttribute('data-jp-emom', '1');
         var txt = bd.textContent || '';
-        if(!/\\bEMOM\\b/i.test(txt)) return;
+        if(!/\bEMOM\b/i.test(txt)) return;
         var sc = bd.querySelector('.wod-score'); if(!sc) return;
-        var m = txt.match(/\\bEMOM\\s*(\\d+)\\s*min/i);
+        var m = txt.match(/\bEMOM\s*(\d+)\s*min/i);
         var mins = m ? parseInt(m[1], 10) : 0, mn = 0;
         var mc = bd.querySelectorAll('.jp-cf-min');
-        for(var j = 0; j < mc.length; j++){ var v = parseInt((mc[j].textContent.match(/\\d+/) || [0])[0], 10); if(v > mn) mn = v; }
+        for(var j = 0; j < mc.length; j++){ var v = parseInt((mc[j].textContent.match(/\d+/) || [0])[0], 10); if(v > mn) mn = v; }
         var rondas = (mins && mn) ? Math.max(1, Math.floor(mins / mn)) : mins;
         if(!rondas || rondas > 24) return;
         var key = ((typeof state !== 'undefined' && state && state.currentWeek) || 0) + '|' + (bd.getAttribute('data-wodb') || '');
         var guardado = leer(KRND)[key] || [];
         var ins = '';
-        for(var r = 1; r <= rondas; r++) ins += '<label class="jp-er-c"><span>R' + r + '</span><input type="text" inputmode="decimal" data-r="' + (r - 1) + '" value="' + esc(guardado[r - 1] || '') + '" placeholder="\\u2014"></label>';
+        for(var r = 1; r <= rondas; r++) ins += '<label class="jp-er-c"><span>R' + r + '</span><input type="text" inputmode="decimal" data-r="' + (r - 1) + '" value="' + esc(guardado[r - 1] || '') + '" placeholder="\u2014"></label>';
         var det = document.createElement('details'); det.className = 'jp-er';
         det.innerHTML = '<summary>[ REGISTRO POR RONDA ] <b class="jp-er-total">TOTAL 0</b></summary><div class="jp-er-grid">' + ins + '</div>';
         sc.parentNode.insertBefore(det, sc);
@@ -342,15 +342,15 @@
       (function(bd){
         bd.setAttribute('data-jp-ic', '1');
         var txt = bd.textContent || '';
-        if(!(bd.querySelector('.jp-cf-interval, .jp-cf-cell') || /\\b(?:every|emom|intervalos?)\\b/i.test(txt))) return;
-        var pesado = !!bd.querySelector('.jp-cf-load, .jp-cf-pct, .jp-cf-refload') || /@\\s*\\d+(?:[.,]\\d+)?\\s*(?:kg|lbs?)\\b|\\b\\d+\\s*(?:kg|lbs?)\\b/i.test(txt) || /\\b(?:deadlift|clean|snatch|thruster|lunges?|carry|carries|barbell|kettlebell|dumbbell|sled)\\b/i.test(txt);
+        if(!(bd.querySelector('.jp-cf-interval, .jp-cf-cell') || /\b(?:every|emom|intervalos?)\b/i.test(txt))) return;
+        var pesado = !!bd.querySelector('.jp-cf-load, .jp-cf-pct, .jp-cf-refload') || /@\s*\d+(?:[.,]\d+)?\s*(?:kg|lbs?)\b|\b\d+\s*(?:kg|lbs?)\b/i.test(txt) || /\b(?:deadlift|clean|snatch|thruster|lunges?|carry|carries|barbell|kettlebell|dumbbell|sled)\b/i.test(txt);
         if(!pesado) return;      /* WOD sin barras pesadas: solo [ SCORE ] */
         var key = ((typeof state !== 'undefined' && state && state.currentWeek) || 0) + '|' + (bd.getAttribute('data-wodb') || '');
         var g = leer(KCAR)[key] || {};
         var det = document.createElement('details'); det.className = 'jp-icr';
         det.innerHTML = '<summary>[ CARGA / RONDAS ]<span>opcional</span></summary><div class="jp-ic-grid">' +
-          '<label>CARGA UTILIZADA<input type="text" data-k="kg" value="' + esc(g.kg || '') + '" placeholder="\\u2014"></label>' +
-          '<label>RONDAS COMPLETADAS<input type="text" inputmode="numeric" data-k="rondas" value="' + esc(g.rondas || '') + '" placeholder="\\u2014"></label></div>';
+          '<label>CARGA UTILIZADA<input type="text" data-k="kg" value="' + esc(g.kg || '') + '" placeholder="\u2014"></label>' +
+          '<label>RONDAS COMPLETADAS<input type="text" inputmode="numeric" data-k="rondas" value="' + esc(g.rondas || '') + '" placeholder="\u2014"></label></div>';
         var ref = bd.querySelector('.jp-er') || bd.querySelector('.wod-score') || null;
         if(ref) ref.parentNode.insertBefore(det, ref); else bd.appendChild(det);
         det.addEventListener('input', function(e){
@@ -408,7 +408,7 @@
       var txt = tituloBloque(bl);
       if(line.getAttribute('data-t') !== txt){
         line.setAttribute('data-t', txt);
-        line.innerHTML = '<span class="jp-dl-ck">\\u2713</span><span class="jp-dl-t"></span><span class="jp-dl-re">Reabrir</span>';
+        line.innerHTML = '<span class="jp-dl-ck">\u2713</span><span class="jp-dl-t"></span><span class="jp-dl-re">Reabrir</span>';
         line.querySelector('.jp-dl-t').textContent = txt;
       }
       var sports = true;      /* Sports y CrossFit: cabecera solo con etiqueta + chevron, boton de cierre al pie */
@@ -427,7 +427,7 @@
             var tlbS = document.createElement('span'); tlbS.className = 'jp-tag-lb';
             while(tagS.firstChild) tlbS.appendChild(tagS.firstChild);
             tagS.appendChild(tlbS);
-            var chvS = document.createElement('span'); chvS.className = 'jp-chev'; chvS.textContent = '\\u25b2';
+            var chvS = document.createElement('span'); chvS.className = 'jp-chev'; chvS.textContent = '\u25b2';
             tagS.appendChild(chvS);
           }
         } else if(sum){ sum.insertBefore(btn, q('.jp-warm-chev', sum)); }
@@ -439,7 +439,7 @@
             while(tag.firstChild) tlb.appendChild(tag.firstChild);
             tag.appendChild(tlb);
             var act = document.createElement('span'); act.className = 'jp-tag-act'; act.appendChild(btn);
-            var chv = document.createElement('span'); chv.className = 'jp-chev'; chv.textContent = '\\u25b2'; act.appendChild(chv);
+            var chv = document.createElement('span'); chv.className = 'jp-chev'; chv.textContent = '\u25b2'; act.appendChild(chv);
             tag.appendChild(act);
           } else board.insertBefore(btn, board.firstChild);
         }
@@ -449,7 +449,7 @@
       /* escrituras idempotentes: reescribir el mismo valor igual genera un registro de mutacion, y este modulo se vuelve a disparar con esos registros (bucle infinito) */
       var apv = cb.checked ? 'true' : 'false';
       if(btn.getAttribute('aria-pressed') !== apv) btn.setAttribute('aria-pressed', apv);
-      var chv2 = q('.jp-chev', bl), chT = bl.classList.contains('jp-fold') ? '\\u25bc' : '\\u25b2';
+      var chv2 = q('.jp-chev', bl), chT = bl.classList.contains('jp-fold') ? '\u25bc' : '\u25b2';
       if(chv2 && chv2.textContent !== chT) chv2.textContent = chT;
       if(cb.checked){
         bl.classList.add('block-done');
@@ -491,7 +491,7 @@
       var bf = cab.closest('.block');
       if(bf && !bf.classList.contains('collapsed')){
         bf.classList.toggle('jp-fold');
-        var cv = q('.jp-chev', bf); if(cv) cv.textContent = bf.classList.contains('jp-fold') ? '\\u25bc' : '\\u25b2';
+        var cv = q('.jp-chev', bf); if(cv) cv.textContent = bf.classList.contains('jp-fold') ? '\u25bc' : '\u25b2';
       }
       return;
     }
@@ -509,7 +509,7 @@
   function marcarActivas(){
     var rows = document.querySelectorAll('#mainContent .jp-set-row-native'), grupos = {}, ks = [];
     for(var i = 0; i < rows.length; i++){
-      var g = (rows[i].getAttribute('data-set-key') || '').replace(/\\|[^|]*$/, '');
+      var g = (rows[i].getAttribute('data-set-key') || '').replace(/\|[^|]*$/, '');
       if(!grupos[g]){ grupos[g] = []; ks.push(g); }
       grupos[g].push(rows[i]);
     }
@@ -552,12 +552,12 @@
         if(cat === 'warmup'){ totCF += 8; return; }
         if(cat === 'strength' || cat === 'accessory'){
           var exs = (typeof window.jpCfListaEjercicios === 'function') ? window.jpCfListaEjercicios(lin) : [];
-          var rm = txtCF.match(/rest\\s*(\\d+):(\\d{2})/i), rs2 = txtCF.match(/rest\\s*(\\d+)\\s*s/i);
+          var rm = txtCF.match(/rest\s*(\d+):(\d{2})/i), rs2 = txtCF.match(/rest\s*(\d+)\s*s/i);
           var restS = rm ? (parseInt(rm[1], 10) * 60 + parseInt(rm[2], 10)) : (rs2 ? parseInt(rs2[1], 10) : 90);
           exs.forEach(function(ex){ totCF += ex.sets * (0.75 + restS / 60); });
           return;
         }
-        var mm = txtCF.match(/(?:amrap|emom|cap)\\s*(\\d{1,2})\\s*(?:min|')?/i) || txtCF.match(/(\\d{1,2})\\s*min/i);
+        var mm = txtCF.match(/(?:amrap|emom|cap)\s*(\d{1,2})\s*(?:min|')?/i) || txtCF.match(/(\d{1,2})\s*min/i);
         totCF += (mm ? parseInt(mm[1], 10) : 12) + 3;
       });
       return totCF > 0 ? Math.round(totCF + 5) : 0;
@@ -641,7 +641,7 @@
     if(mi){
       /* botón nativo: un toque marca el mini-set con las reps objetivo, otro toque lo desmarca (misma clave 'mN' de state.loads) */
       var hecho = mi.classList.contains('hecho');
-      var objetivo = String(mi.getAttribute('data-micro-target') || '').replace(/\\D/g, '');
+      var objetivo = String(mi.getAttribute('data-micro-target') || '').replace(/\D/g, '');
       var nuevo = hecho ? '' : objetivo;
       mi.classList.toggle('hecho', !hecho);
       mi.setAttribute('aria-pressed', hecho ? 'false' : 'true');
@@ -670,10 +670,10 @@
   /* ---- Sports: nombre una sola vez, sin prefijo de estacion ni "x" huerfana, series iguales agrupadas con └─ ---- */
   function limpiarNombreRep(n){
     var t = String(n || '');
-    t = t.replace(/\\s*\\([^)]*\\)\\s*$/, '');
-    t = t.replace(/^\\s*[A-Za-z]\\d{1,2}[.):\\-]\\s*/, '');
-    t = t.replace(/(?:\\s+[xX]|\\s*[×*])\\s*$/, '');
-    return t.replace(/\\s{2,}/g, ' ').trim();
+    t = t.replace(/\s*\([^)]*\)\s*$/, '');
+    t = t.replace(/^\s*[A-Za-z]\d{1,2}[.):\-]\s*/, '');
+    t = t.replace(/(?:\s+[xX]|\s*[×*])\s*$/, '');
+    return t.replace(/\s{2,}/g, ' ').trim();
   }
   function setTxtSB(s, un){ return (s.kg > 0 ? fJP(s.kg) + ' kg' : '') + (s.kg > 0 && s.reps > 0 ? ' × ' : '') + (s.reps > 0 ? fJP(s.reps) + ' ' + (un || 'reps') : ''); }
   function agruparSB(arr, un, etq){
@@ -697,7 +697,7 @@
         if(arr.length || myo){
           out.push('*' + limpiarNombreRep(en.titulo) + '*');
           agruparSB(arr, en.unidad, 'series').forEach(function(l){ out.push(l); });
-          if(myo) out.push(myo.replace(/^\\s*-\\s*/, '└─ '));
+          if(myo) out.push(myo.replace(/^\s*-\s*/, '└─ '));
         }
       } else if(en.tipo === 'biserie' && en.subs && en.subs.length){
         var porSub = en.subs.map(function(){ return []; }), rondas = Math.max(en.rondas || 3, 12), hay = false;
@@ -713,7 +713,7 @@
           out.push('*' + tipo + '* · ' + en.subs.map(function(sub, si){ return L0 + (si + 1) + ' ' + limpiarNombreRep(sub.nombre); }).join(' + '));
           en.subs.forEach(function(sub, si){
             agruparSB(porSub[si], sub.unidad, 'rondas').forEach(function(l){ out.push(l.replace('└─ ', '└─ ' + L0 + (si + 1) + ' · ')); });
-            if(myos[si]) out.push(myos[si].replace(/^\\s*-\\s*/, '└─ '));
+            if(myos[si]) out.push(myos[si].replace(/^\s*-\s*/, '└─ '));
           });
         }
       }
@@ -761,7 +761,7 @@
   function bloqueCF(block, week, day){
     var out = [], cat = block.category, skey = week + '|' + day.id + '|' + block.id;
     var lineas = (typeof itemsDeSemana === 'function') ? itemsDeSemana(block, week) : (block.items || []);
-    var titulo = (block.title && !/^\\s*bloque\\s*\\d*\\s*$/i.test(block.title)) ? block.title : (cat === 'strength' ? 'Fuerza / Skill' : (cat === 'accessory' ? 'Accesorios' : 'WOD / Metcon'));
+    var titulo = (block.title && !/^\s*bloque\s*\d*\s*$/i.test(block.title)) ? block.title : (cat === 'strength' ? 'Fuerza / Skill' : (cat === 'accessory' ? 'Accesorios' : 'WOD / Metcon'));
     if(cat === 'strength' || cat === 'accessory'){
       var exs = (typeof window.jpCfListaEjercicios === 'function') ? window.jpCfListaEjercicios(lineas) : [];
       var l2 = [];
@@ -772,24 +772,24 @@
       });
       if(l2.length){ out.push('• ' + titulo + ':'); l2.forEach(function(l){ out.push(l); }); }
     } else if(cat === 'metcon' || cat === 'cardio' || cat === 'endurance'){
-      var txt = (lineas || []).join(' '), mod = /\\bemom\\b/i.test(txt) ? 'EMOM' : (/\\bamrap\\b/i.test(txt) ? 'AMRAP' : (/for\\s*time|\\bRFT\\b/i.test(txt) ? 'FOR TIME' : (/tabata/i.test(txt) ? 'TABATA' : '')));
+      var txt = (lineas || []).join(' '), mod = /\bemom\b/i.test(txt) ? 'EMOM' : (/\bamrap\b/i.test(txt) ? 'AMRAP' : (/for\s*time|\bRFT\b/i.test(txt) ? 'FOR TIME' : (/tabata/i.test(txt) ? 'TABATA' : '')));
       var score = String((state.scores && state.scores[skey]) || '').trim();
       var rondas = (leerLS('coachjp_cf_rounds_v1')[week + '|' + block.id] || []).filter(function(x){ return nJP(x) > 0; });
       var carga = leerLS('coachjp_cf_carga_v1')[week + '|' + block.id] || {};
       var l3 = [];
       if(score || rondas.length || nJP(carga.kg) > 0 || nJP(carga.rondas) > 0){
-        var nivelM = score.match(/\\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i), nivelT = nivelM ? ({ DEVELOPMENT: 'Development', ADVANCED: 'Advanced', RX: 'RX', ELITE: 'Elite', SCALED: 'Scaled' }[nivelM[1].toUpperCase()] || '') : '';
-        var sc = score.replace(/\\s*\\[(?:DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\\]\\s*$/i, '').trim();
-        var capM = txt.match(/(?:time\\s*cap|cap)\\s*[:\\-]?\\s*(\\d{1,2})(?::(\\d{2}))?/i), cap = capM ? (capM[1] + ':' + (capM[2] || '00')) : '';
+        var nivelM = score.match(/\[(DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\]\s*$/i), nivelT = nivelM ? ({ DEVELOPMENT: 'Development', ADVANCED: 'Advanced', RX: 'RX', ELITE: 'Elite', SCALED: 'Scaled' }[nivelM[1].toUpperCase()] || '') : '';
+        var sc = score.replace(/\s*\[(?:DEVELOPMENT|ADVANCED|RX|ELITE|SCALED)\]\s*$/i, '').trim();
+        var capM = txt.match(/(?:time\s*cap|cap)\s*[:\-]?\s*(\d{1,2})(?::(\d{2}))?/i), cap = capM ? (capM[1] + ':' + (capM[2] || '00')) : '';
         var cargaTxt = nJP(carga.kg) > 0 ? ' | Carga: ' + fJP(nJP(carga.kg)) + ' kg' : '';
         if(mod === 'FOR TIME'){
           if(sc) l3.push('  ⏱ Tiempo final: ' + sc + (cap ? ' [Cap ' + cap + ']' : '') + (nivelT ? ' | ' + nivelT : ''));
         } else if(mod === 'AMRAP'){
-          var ra = sc.match(/(\\d+)\\s*\\+\\s*(\\d+)/);
+          var ra = sc.match(/(\d+)\s*\+\s*(\d+)/);
           if(sc) l3.push('  🔄 Score: ' + (ra ? ra[1] + ' Rondas + ' + ra[2] + ' Reps' : sc) + cargaTxt + (nivelT ? ' | ' + nivelT : ''));
           else if(cargaTxt) l3.push('  🔄 Score: —' + cargaTxt);
         } else if(mod === 'EMOM'){
-          var totM = txt.match(/emom\\s*(\\d{1,2})/i) || txt.match(/(?:x|por)\\s*(\\d{1,2})\\s*(?:sets?|rondas?|min)?/i);
+          var totM = txt.match(/emom\s*(\d{1,2})/i) || txt.match(/(?:x|por)\s*(\d{1,2})\s*(?:sets?|rondas?|min)?/i);
           l3.push('  ⏱ Intervalos completados: ' + rondas.length + (totM ? '/' + totM[1] : '') + (nivelT ? ' | ' + nivelT : ''));
           if(sc) l3.push('  - Score: ' + sc);
         } else {
@@ -811,7 +811,7 @@
     Object.keys(state.loads || {}).forEach(function(k){
       if(k.indexOf(pref) !== 0 || usadas[k]) return;
       var p = k.slice(pref.length).split('|'), ex = p[0], idx = p[1];
-      if(/^m\\d/.test(String(idx))) return;      /* mini-sets de Myo-Reps: los cubre myoLinea */
+      if(/^m\d/.test(String(idx))) return;      /* mini-sets de Myo-Reps: los cubre myoLinea */
       var ld = state.loads[k] || {};
       if(!(nJP(ld.kg) > 0 || nJP(ld.reps) > 0)) return;
       if(!porEj[ex]){ porEj[ex] = { nombre: ld.__ex || '', sets: [] }; orden.push(ex); }
@@ -891,18 +891,18 @@
       var bid = resto.split('|')[0], bl = (day.blocks || []).filter(function(x){ return x.id === bid; })[0];
       notas.push((bl && (bl.title || bl.exerciseName) ? (bl.title || bl.exerciseName) + ': ' : '') + v);
     });
-    if(notas.length) L.push('📝 Feedback / Notas: "' + notas.join(' | ').replace(/\\s*\\n\\s*/g, ' ') + '"');
+    if(notas.length) L.push('📝 Feedback / Notas: "' + notas.join(' | ').replace(/\s*\n\s*/g, ' ') + '"');
     if(!esSports) L.push('⏱ Tiempo total de sesión: ' + duracion());
     try{
       var rpeSes = (typeof checkoutRpeLeer === 'function') ? checkoutRpeLeer()[week + '|' + day.id + '|__sesion'] : null;
       L.push('🎯 RPE de la sesión: ' + (rpeSes ? rpeSes + '/10' : 'sin informar'));
     }catch(eRpe){}
-    return L.join('\\n');
+    return L.join('\n');
   }
   window.jpReporteSesionTexto = reporteTexto;
   window.jpEnviarReporteSesion = function(){
     var txt = reporteTexto(); if(!txt) return;
-    var tel = String(window.COACH_WHATSAPP_PHONE || (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '').replace(/\\D/g, '');
+    var tel = String(window.COACH_WHATSAPP_PHONE || (typeof PROGRAM_CONFIG !== 'undefined' && PROGRAM_CONFIG.coachPhone) || '').replace(/\D/g, '');
     try{ if('vibrate' in navigator) navigator.vibrate(20); }catch(e){}
     window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(txt), '_blank', 'noopener');
   };

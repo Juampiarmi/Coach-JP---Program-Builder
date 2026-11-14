@@ -33,16 +33,24 @@ function resolver(rel, desde){
   if(!fs.existsSync(abs)) throw new Error('include inexistente: ' + rel + ' (en ' + desde + ')');
   return abs;
 }
+/* escape para meter un texto REAL (HTML / CSS / JS) dentro de un template literal que vive en un <script>:
+   \ -> \\ · ` -> \` · ${ -> \${ · </script -> <\/script (el cierre de etiqueta cortaría el <script> que contiene el literal) */
+function escaparPlantilla(t){
+  return t.replace(/\\/g, () => '\\\\').replace(/`/g, () => '\\`').replace(/\$\{/g, () => '\\${').replace(/<\/(script)/gi, (m, s) => '<\\/' + s);
+}
 function expandir(texto, desde, pila){
-  const sub = rel => {
+  const sub = (rel, esc) => {
     const abs = resolver(rel, desde);
     if(pila.indexOf(abs) >= 0) throw new Error('include circular: ' + pila.concat(abs).map(p => path.relative(SRC, p)).join(' -> '));
-    return expandir(leer(abs), path.relative(SRC, abs), pila.concat(abs));
+    const t = expandir(leer(abs), path.relative(SRC, abs), pila.concat(abs));
+    return esc ? escaparPlantilla(t) : t;
   };
-  /* una funcion de reemplazo evita que "$&" o "$1" dentro del contenido se interpreten */
+  /* una funcion de reemplazo evita que "$&" o "$1" dentro del contenido se interpreten.
+     @@template ruta@@ = igual que @@include, pero el resultado completo se escapa para un template literal (se usa una sola vez, en el TEMPLATE_HTML del alumno) */
   return texto
-    .replace(/^@@include ([^\s@]+)@@\n/gm, (m, rel) => sub(rel))
-    .replace(/@@include ([^\s@]+)@@/g, (m, rel) => sub(rel));
+    .replace(/^@@include ([^\s@]+)@@\n/gm, (m, rel) => sub(rel, false))
+    .replace(/@@template ([^\s@]+)@@/g, (m, rel) => sub(rel, true))
+    .replace(/@@include ([^\s@]+)@@/g, (m, rel) => sub(rel, false));
 }
 function construir(){
   return expandir(leer(ENTRADA), path.relative(SRC, ENTRADA), [ENTRADA]);

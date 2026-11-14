@@ -61,7 +61,7 @@
     bl.querySelectorAll('.ex-detail, .block-subtitle, .load-suggest, .ex-name, .wb-line').forEach(function(e){
       txt += ' ' + (e.textContent || '');
     });
-    var m = txt.match(/(\\d{2,3})\\s*%/);
+    var m = txt.match(/(\d{2,3})\s*%/);
     if(!m) return 0;
     var p = parseInt(m[1], 10);
     return (p >= 30 && p <= 110) ? p : 0;
@@ -122,11 +122,11 @@
       bl.querySelectorAll('.set-kg').forEach(function(i){ var v = parseFloat(i.value); if(v > kg) kg = v; });
       if(!kg){
         var s = bl.querySelector('.rm-sug b');
-        if(s){ var m = s.textContent.replace(',', '.').match(/([\\d.]+)/); if(m) kg = parseFloat(m[1]); }
+        if(s){ var m = s.textContent.replace(',', '.').match(/([\d.]+)/); if(m) kg = parseFloat(m[1]); }
       }
       if(!kg){
         var ls = bl.querySelector('.load-suggest');
-        if(ls){ var m2 = ls.textContent.replace(',', '.').match(/([\\d.]+)\\s*kg/i); if(m2) kg = parseFloat(m2[1]); }
+        if(ls){ var m2 = ls.textContent.replace(',', '.').match(/([\d.]+)\s*kg/i); if(m2) kg = parseFloat(m2[1]); }
       }
     }
     return kg;
@@ -207,7 +207,7 @@
   ========================================================= */
   function esComplex(bl){
     var t = (bl.textContent || '');
-    return /complex/i.test(t) || (/weightlifting|halterofilia/i.test(t) && /\\+/.test((bl.querySelector('.ex-name') || {}).textContent || ''));
+    return /complex/i.test(t) || (/weightlifting|halterofilia/i.test(t) && /\+/.test((bl.querySelector('.ex-name') || {}).textContent || ''));
   }
   function esWodBloque(bl){
     /* FIX (estrategia de videos en CrossFit/Hyrox): Accessory/Cooldown
@@ -238,7 +238,7 @@
     if(bl.classList.contains('cat-metcon')) return true;
     if(bl.querySelector('.wod-board')) return true;
     var t = (bl.querySelector('.block-label') || {}).textContent + ' ' + ((bl.querySelector('.block-title') || {}).textContent || '');
-    return /met.?con|\\bwod\\b|amrap|emom|for time|tabata|chipper/i.test(t || '');
+    return /met.?con|\bwod\b|amrap|emom|for time|tabata|chipper/i.test(t || '');
   }
   var LEXICO = [];
   function limpiar(bl){
@@ -254,8 +254,8 @@
          "AElevación de piernas colgado"). */
       var nombreEl = a.parentElement ? a.parentElement.querySelector('.jp-sb-ex-nombre, .jp-sb-subex-nombre, .jp-sb-plain-nombre') : null;
       var fila = nombreEl || a.closest('.ex-row, .wb-line, .ex-name') || a.parentElement;
-      var nombre = (fila ? fila.textContent : '').replace(/\\s+/g, ' ').trim();
-      nombre = nombre.split(' — ')[0].replace(/^\\d+\\s*/, '').trim();
+      var nombre = (fila ? fila.textContent : '').replace(/\s+/g, ' ').trim();
+      nombre = nombre.split(' — ')[0].replace(/^\d+\s*/, '').trim();
       if(nombre) LEXICO.push({ nombre: nombre, html: a.outerHTML });
       a.remove();
     });
@@ -291,7 +291,7 @@
       if(board && !board.dataset.tipo){
         var fmtEl = board.querySelector('.wb-fmt');
         var t = (fmtEl ? fmtEl.textContent : '') + ' ' + board.textContent;
-        var k = /amrap/i.test(t) ? 'amrap' : /emom|e\\d+m?om|every/i.test(t) ? 'emom'
+        var k = /amrap/i.test(t) ? 'amrap' : /emom|e\d+m?om|every/i.test(t) ? 'emom'
               : /tabata/i.test(t) ? 'tabata' : /for time|rft|chipper|ladder|rounds? for time/i.test(t) ? 'fortime' : '';
         if(k){
           board.dataset.tipo = k;

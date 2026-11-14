@@ -24,9 +24,9 @@
 
   function esc(s){
     return String(s == null ? '' : s)
-      .replace(/[\\u{1F000}-\\u{1FAFF}\\u{2600}-\\u{27BF}\\u{FE0F}]/gu, '')
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '')
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/\\s{2,}/g,' ').trim();
+      .replace(/\s{2,}/g,' ').trim();
   }
   function bloqueDe(id){
     var d = (typeof getCurrentDay === 'function') ? getCurrentDay() : null;
@@ -59,7 +59,7 @@
      Objetivo + coaching tips de todos los ejercicios +
      alternativa, en un solo desplegable de un toque.
   --------------------------------------------------------- */
-  function textoDe(el){ return el ? el.textContent.replace(/\\s+/g,' ').trim() : ''; }
+  function textoDe(el){ return el ? el.textContent.replace(/\s+/g,' ').trim() : ''; }
 
   function metodologia(){
     document.querySelectorAll('.block').forEach(function(bl){
@@ -88,7 +88,7 @@
       var notas = [];
       var alternativa = b.altNote || '';
       [].slice.call(cuerpo.querySelectorAll(':scope > .coach-note')).forEach(function(n){
-        var t = textoDe(n).replace(/^(Coach Note|Alternativa|Aviso|Atenci[oó]n)\\s*/i, '');
+        var t = textoDe(n).replace(/^(Coach Note|Alternativa|Aviso|Atenci[oó]n)\s*/i, '');
         if(!t) return;
         if(n.classList.contains('note-safe')){ if(!alternativa) alternativa = t; }
         else notas.push(t);
@@ -177,10 +177,10 @@
       return arr.length ? arr : null;
     }
     if(met === 'restpause' || met === 'myoreps'){
-      var m = s.match(/^([\\d+]+)/);
+      var m = s.match(/^([\d+]+)/);
       if(!m) return null;
       var reps = m[1].split('+').map(function(x){ return parseInt(x, 10); }).filter(function(x){ return x > 0; });
-      var pm = s.match(/(\\d+)\\s*s(?:eg)?\\.?\\s*$/i);
+      var pm = s.match(/(\d+)\s*s(?:eg)?\.?\s*$/i);
       var pausa = pm ? parseInt(pm[1], 10) : 15;
       return reps.length ? { reps: reps, pausa: pausa } : null;
     }
@@ -190,7 +190,7 @@
       return arrb.length ? arrb : null;
     }
     if(met === 'intervalo'){
-      var nums = s.match(/\\d+/g);
+      var nums = s.match(/\d+/g);
       if(!nums || nums.length < 3) return null;
       return { work: parseInt(nums[0], 10), rest: parseInt(nums[1], 10), sets: parseInt(nums[2], 10) };
     }
@@ -354,7 +354,7 @@
   /* ---------------------------------------------------------
      4 · PARSER DE PIZARRAS: SIN DOBLE NUMERACIÓN NI HUÉRFANOS
   --------------------------------------------------------- */
-  var RX_NUM = /^\\s*\\d{1,2}\\s*[.)\\-–·]\\s+/;
+  var RX_NUM = /^\s*\d{1,2}\s*[.)\-–·]\s+/;
   function sanearNumeracion(){
     document.querySelectorAll('.cf-line, .wb-line').forEach(function(l){
       var span = l.querySelector('span:not(.n)');

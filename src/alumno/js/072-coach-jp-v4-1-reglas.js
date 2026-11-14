@@ -43,7 +43,7 @@
          encabezado y el índice del ítem no coincide con el del DOM */
       var filas = bl.querySelectorAll('.ex-row .ex-name, .wb-line, .cf-line, .ex-name, li');
       var norm = function(t){ return String(t || '').toLowerCase()
-        .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\\s+/g, ' ').trim(); };
+        .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim(); };
       var puesto = 0;
       Object.keys(b.itemVideos).forEach(function(ix){
         var txt = norm((b.items || [])[parseInt(ix, 10)] || '');

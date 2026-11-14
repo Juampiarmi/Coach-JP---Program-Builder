@@ -80,7 +80,7 @@
 
     /* tempo */
     var tempo = b.tempo || ((b.exercises || [])[0] || {}).tempo || '';
-    if(/^\\d{4}$/.test(tempo)){
+    if(/^\d{4}$/.test(tempo)){
       var ecc = tempo.charAt(0), pausaAbajo = tempo.charAt(1), pausaArriba = tempo.charAt(3);
       var t = 'Elegí el tempo ' + tempo + ': ' + ecc + ' segundos de bajada controlada';
       if(pausaAbajo !== '0') t += ' y ' + pausaAbajo + ' segundo de pausa abajo, en el estiramiento, que es donde más rinde el estímulo';
@@ -100,7 +100,7 @@
 
     /* RIR del subtítulo, si lo declaré al programar */
     var sub = (b.subtitle || '') + ' ' + (b.title || '');
-    var rir = sub.match(/RIR\\s*(\\d)(?:\\s*-\\s*(\\d))?/i);
+    var rir = sub.match(/RIR\s*(\d)(?:\s*-\s*(\d))?/i);
     if(rir) out.push('Te pido RIR ' + rir[1] + (rir[2] ? ' a ' + rir[2] : '') +
       ': terminás cada serie con esas repeticiones en el bolsillo. No busco el fallo acá.');
 

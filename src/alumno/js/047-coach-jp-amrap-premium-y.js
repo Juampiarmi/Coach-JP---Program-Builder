@@ -18,7 +18,7 @@
     var cuerpo = (bl.querySelector('.cf-body, .wb-body') || {}).textContent || '';
     if(b && b.isHyrox) return true;
     if(b && b.category === 'cardio') return true;
-    return /\\bamrap\\b/i.test(t + ' ' + cuerpo) || /\\bengine\\b|zona 2/i.test(t);
+    return /\bamrap\b/i.test(t + ' ' + cuerpo) || /\bengine\b|zona 2/i.test(t);
   }
   function volt(){
     document.querySelectorAll('.block').forEach(function(bl){
