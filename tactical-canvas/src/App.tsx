@@ -10,142 +10,41 @@ import { AiGenerator } from './components/AiGenerator'
 import { SlideBar } from './components/SlideBar'
 import { DEFAULT_STATE } from './defaults'
 import { harmonizeChart } from './lib/chartPillar'
-import { migrateDiagram } from './lib/diagramPillar'
 import { deriveBookmarkPoints, resolveBookmark } from './lib/bookmark'
-import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type EditorialTone, type GenerationResult } from './lib/ai'
+import { DEFAULT_AI_SETTINGS, regenerateSlide, type AiSettings, type Discipline, type EditorialTone } from './lib/ai'
 import { ASPECTS } from './lib/brand'
-import { canShareFiles, downloadBlob, renderPng, renderThumb, shareBlobs, slugify } from './lib/exporter'
+import { canShareFiles, downloadBlob, renderPng, shareBlobs, slugify } from './lib/exporter'
 import { zipFiles } from './lib/zip'
 import { remixToStories } from './lib/remix'
-import { ctaSlide, diagnose, SCORE_COLOR, trimSlide, type DoctorFix } from './lib/retentionDoctor'
+import { diagnose, SCORE_COLOR, type DoctorFix } from './lib/retentionDoctor'
 import { RetentionDoctor } from './components/RetentionDoctor'
-import { buildPackSlides, packBackgroundUrl, packDayFor, WEEKLY_PACK } from './lib/weeklyPack'
+import { packDayFor, WEEKLY_PACK } from './lib/weeklyPack'
 import { WeekDayBar } from './components/WeekDayBar'
-import { DRAFT_ID, deckImageIds, EMPTY_LIBRARY, exportLibrary, importLibrary, newProjectId, suggestName, toSaved, type Project, type ProjectStore } from './lib/projects'
+import { deckImageIds } from './lib/projects'
 import { ProjectBar } from './components/ProjectBar'
 import { ProjectLibrary } from './components/ProjectLibrary'
 import { usePhotoLuma } from './hooks/usePhotoLuma'
-import { cleanSlideLanguage } from './lib/language'
 import { CaptionBar } from './components/CaptionBar'
 import { BrandKitBar } from './components/controls/BrandKitBar'
 import { dropLegacyBackground, pruneBackgrounds, readLegacyBackground, useBackgroundImages } from './hooks/useBackgroundImage'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { usePersistentState } from './hooks/usePersistentState'
 import { useUndoHistory } from './hooks/useUndoHistory'
-import type { AspectId, CanvasState, Nudge, NudgeTarget } from './types'
+import { useDeck } from './hooks/useDeck'
+import { useProjects } from './hooks/useProjects'
+import { useWeeklyPlan } from './hooks/useWeeklyPlan'
+import { DEFAULT_DECK, applyFixes, fallbackCaption, GLOBAL_KEYS, BG_KEYS } from './lib/deck'
+import type { AspectId, CanvasState } from './types'
 
-const STORAGE_KEY = 'jp-tactical-canvas:v3'
 
 // Video Studio en un chunk aparte: el editor de placas no carga su código hasta que se usa.
 const VideoStudio = lazy(() => import('./video/VideoStudio'))
 
-/** Ajustes de estilo que comparten todos los slides de una secuencia. */
-const GLOBAL_KEYS = [
-  'aspect',
-  'headlineFont',
-  'headlineScale',
-  'floatingPlate',
-  'contentAlign',
-  'contentGap',
-  'theme',
-  'slideCounter',
-  'seamlessThread',
-  'panoramaImageId',
-] as const
-
-/** Fondo de cada placa: foto, capa, encuadre y tratamiento. Nunca se propaga a las demás al editar. */
-const BG_KEYS = ['bgImageId', 'bgStyle', 'bgOverlay', 'bgGradient', 'bgVignette', 'bgMono', 'bgZoom', 'bgX', 'bgY'] as const
-
-/** Lo que replica [ 📋 COPIAR ESTILO ]: tipografía, viñeta / contraste de la foto y paleta de acentos. */
-const STYLE_KEYS = [
-  'headlineFont',
-  'headlineScale',
-  'typePreset',
-  'remateNewLine',
-  'bgVignette',
-  'bgOverlay',
-  'bgGradient',
-  'bgMono',
-  'accentSwap',
-  'metricAccent',
-  'diagramAccent',
-  'repeatAccent',
-] as const
-
-interface Deck {
-  slides: CanvasState[]
-  active: number
-  /** Copy de Instagram generado por la IA para toda la pieza */
-  caption?: string
-  /** Tema y enfoque de la última generación con IA (para re-generar una placa con coherencia) */
-  topic?: string
-  discipline?: Discipline
-  /** Día del Plan Semanal al que pertenece este set (sus ediciones se guardan en ese día) */
-  packDay?: string
-  /** Proyecto de la biblioteca al que pertenece este set (sus ediciones se guardan en él) */
-  projectId?: string
-}
-
-/** Proyectos del Plan Semanal: el set de cada día con las ediciones del usuario + el id de su fondo. */
-interface WeeklyStore {
-  decks: Record<string, Deck>
-  bg: Record<string, string>
-}
-
-const DEFAULT_DECK: Deck = { slides: [DEFAULT_STATE], active: 0, caption: '' }
-/** Caption de respaldo para el ZIP cuando no hubo generación con IA: gancho, puntos y CTA. */
-function fallbackCaption(slides: CanvasState[]) {
-  const clean = (t: string) => t.replace(/\*/g, '').replace(/\s+/g, ' ').trim()
-  const title = (s: CanvasState) => clean(s.template === 'repeat' ? s.repeatPhrase : `${s.headlineA} ${s.headlineB}`)
-  const [first, ...rest] = slides
-  const lines = [title(first)]
-  if (clean(first.body)) lines.push('', clean(first.body))
-  const points = rest.map((s) => `▸ ${title(s)}`).filter((l) => l.length > 2)
-  if (points.length) lines.push('', ...points)
-  lines.push('', 'Guardá este post y compartilo con quien lo necesite.', '', '@coachjp.training')
-  return lines.join('\n')
-}
-
-/** Aplica fixes del Doctor de retención sobre el deck (el CTA va último: agrega una placa al final). */
-function applyFixes(d: Deck, fixes: DoctorFix[]): Deck {
-  let slides = d.slides.map((s) => ({ ...DEFAULT_STATE, ...s }) as CanvasState)
-  const moved: string[] = []
-  let active = d.active
-  for (const f of [...fixes].sort((a, b) => Number(a.kind === 'cta') - Number(b.kind === 'cta'))) {
-    if (f.kind === 'cta') {
-      slides = [...slides, ctaSlide(slides[slides.length - 1])]
-      active = slides.length - 1
-      continue
-    }
-    const i = f.slide
-    if (!slides[i]) continue
-    let patch: Partial<CanvasState> = {}
-    if (f.kind === 'trim') {
-      const t = trimSlide(slides[i], i === 0 && slides.length > 1)
-      patch = t.patch
-      if (t.removed.trim()) moved.push(t.removed.trim())
-    } else if (f.kind === 'swap') patch = { template: f.to }
-    else if (f.kind === 'contrast') patch = { bgOverlay: f.overlay, bgGradient: true }
-    else if (f.kind === 'lang') patch = cleanSlideLanguage(slides[i])
-    slides = slides.map((s, j) => (j === i ? { ...s, ...patch } : s))
-  }
-  // Lo recortado no se pierde: pasa al caption, donde se lee con calma.
-  const caption = moved.length ? [d.caption?.trim(), ...moved].filter(Boolean).join('\n\n') : d.caption
-  return { ...d, slides, active, caption }
-}
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export default function App() {
-  const [deck, setDeck] = usePersistentState<Deck>(STORAGE_KEY, DEFAULT_DECK)
-  const [weekly, setWeekly] = usePersistentState<WeeklyStore>('jp-tactical-canvas:weekly-decks', { decks: {}, bg: {} })
-  // Biblioteca de proyectos: si el navegador se queda sin cuota, se avisa en la biblioteca (nunca en silencio).
-  const [libraryFull, setLibraryFull] = useState(false)
-  const [library, setLibrary] = usePersistentState<ProjectStore>('jp-tactical-canvas:projects', EMPTY_LIBRARY, () => setLibraryFull(true))
-  const [libraryOpen, setLibraryOpen] = useState<null | 'browse' | 'save'>(null)
-  const slides = deck.slides.length ? deck.slides.map((s) => ({ ...DEFAULT_STATE, ...migrateDiagram(s) }) as CanvasState) : [DEFAULT_STATE]
-  const active = Math.min(deck.active, slides.length - 1)
-  const state = slides[active]
+  const { deck, setDeck, slides, active, state, update, reset, copyStyle, applyKit, nudge, applyGeneration, moveSlide, selectSlide, addSlide, removeSlide, setCaption, caption, remix } = useDeck()
   // Placa de guardado sin viñetas propias: se extraen del resto del carrusel en cada render.
   const bookmarkAuto = state.template === 'bookmark' ? deriveBookmarkPoints(slides, active) : []
   const canvasState: CanvasState =
@@ -195,6 +94,9 @@ export default function App() {
   // Fotos de todas las placas: fondo y las imágenes propias de Error vs Corrección.
   const bg = useBackgroundImages(slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId, s.panoramaImageId]).filter((id): id is string => Boolean(id)))
   const bgImage = bg.get(state.bgImageId)
+  // Biblioteca de proyectos y Plan Semanal (el set suelto se guarda como borrador antes de reemplazarlo).
+  const { library, libraryFull, libraryOpen, setLibraryOpen, saveDraftIfNeeded, projectActions, currentProject, openLibrary } = useProjects({ deck, setDeck, canvasRef, aspect: state.aspect })
+  const { weekly, loadDay } = useWeeklyPlan({ deck, setDeck, bg, saveDraftIfNeeded })
   // Doctor de retención: diagnóstico en vivo del set (la foto de cada placa se mide una vez).
   const photoId = (s: CanvasState) => s.panoramaImageId ?? ((s.bgStyle ?? 'photo') === 'photo' ? s.bgImageId : null)
   const luma = usePhotoLuma(slides.map(photoId), bg.get)
@@ -228,125 +130,9 @@ export default function App() {
     })
   }, [bg, deck.slides, setDeck])
 
-  const update = useCallback(
-    (patch: Partial<CanvasState>) =>
-      setDeck((d) => {
-        const globals: Partial<CanvasState> = {}
-        for (const k of GLOBAL_KEYS) if (k in patch) Object.assign(globals, { [k]: patch[k] })
-        const i = Math.min(d.active, d.slides.length - 1)
-        return {
-          ...d,
-          slides: d.slides.map((s, j) => ({ ...s, ...globals, ...(j === i ? patch : {}) })),
-        }
-      }),
-    [setDeck],
-  )
-  const reset = useCallback(() => setDeck(DEFAULT_DECK), [setDeck])
 
-  // Plan Semanal: cada edición del set de un día queda guardada en su proyecto.
-  useEffect(() => {
-    if (!deck.packDay) return
-    setWeekly((w) => (w.decks[deck.packDay!] === deck ? w : { ...w, decks: { ...w.decks, [deck.packDay!]: deck } }))
-  }, [deck, setWeekly])
 
-  // Biblioteca: el set vinculado a un proyecto se guarda solo en cada edición.
-  useEffect(() => {
-    const id = deck.projectId
-    if (!id) return
-    const p = library.projects.find((x) => x.id === id)
-    // Proyecto borrado (en otra pestaña, por ejemplo): el set queda suelto, sin perder nada.
-    if (!p) return setDeck((d) => ({ ...d, projectId: undefined }))
-    const changed = p.deck.slides !== deck.slides || p.deck.caption !== deck.caption
-    if (!changed && p.deck.active === deck.active) return
-    // Tras recargar las referencias difieren aunque el contenido sea igual: se compara una vez.
-    const same = !changed || (JSON.stringify(p.deck.slides) === JSON.stringify(deck.slides) && p.deck.caption === deck.caption)
-    setLibrary((l) => ({
-      projects: l.projects.map((x) => (x.id === id ? { ...x, deck: toSaved(deck), updatedAt: same ? x.updatedAt : Date.now() } : x)),
-    }))
-  }, [deck, library.projects, setDeck, setLibrary])
 
-  /**
-   * Nunca perder trabajo: antes de reemplazar un set que no está guardado en ningún lado (ni proyecto
-   * ni día del plan), se guarda como BORRADOR AUTOMÁTICO. Hay uno solo y se pisa cada vez.
-   */
-  const saveDraftIfNeeded = () => {
-    if (deck.projectId || deck.packDay) return
-    if (JSON.stringify(deck.slides) === JSON.stringify(DEFAULT_DECK.slides)) return
-    const now = Date.now()
-    setLibrary((l) => {
-      const prev = l.projects.find((p) => p.id === DRAFT_ID)
-      const draft: Project = { id: DRAFT_ID, name: 'Borrador automático', draft: true, deck: toSaved(deck), createdAt: prev?.createdAt ?? now, updatedAt: now }
-      return { projects: [draft, ...l.projects.filter((p) => p.id !== DRAFT_ID)] }
-    })
-  }
-
-  /** Miniatura de la placa en pantalla para un proyecto (best-effort: si falla, queda el ícono). */
-  const captureThumb = async (id: string) => {
-    if (!canvasRef.current) return
-    try {
-      const { w, h } = ASPECTS[state.aspect]
-      const thumb = await renderThumb(canvasRef.current, w, h)
-      setLibrary((l) => ({ projects: l.projects.map((p) => (p.id === id ? { ...p, thumb } : p)) }))
-    } catch {
-      /* sin miniatura */
-    }
-  }
-
-  const projectActions = {
-    /** Guarda el set actual como proyecto nuevo y lo deja vinculado. */
-    saveAs: (name: string) => {
-      const id = newProjectId()
-      const now = Date.now()
-      setLibrary((l) => ({ projects: [...l.projects, { id, name: name.trim() || suggestName(deck), deck: toSaved(deck), createdAt: now, updatedAt: now }] }))
-      setDeck((d) => ({ ...d, projectId: id, packDay: undefined }))
-      void captureThumb(id)
-    },
-    open: (id: string) => {
-      const p = library.projects.find((x) => x.id === id)
-      if (!p) return
-      if (id !== deck.projectId) saveDraftIfNeeded()
-      // El borrador se abre suelto (guardarlo es ponerle nombre); el resto queda vinculado.
-      setDeck({ ...p.deck, active: Math.min(p.deck.active ?? 0, p.deck.slides.length - 1), projectId: p.draft ? undefined : p.id, packDay: undefined })
-      setLibraryOpen(null)
-    },
-    newSet: () => {
-      saveDraftIfNeeded()
-      setDeck(DEFAULT_DECK)
-      setLibraryOpen(null)
-    },
-    duplicate: (id: string) => {
-      const p = library.projects.find((x) => x.id === id)
-      if (!p) return
-      const now = Date.now()
-      setLibrary((l) => ({ projects: [...l.projects, { ...p, id: newProjectId(), name: p.draft ? suggestName(p.deck) : `${p.name} (copia)`, draft: false, createdAt: now, updatedAt: now }] }))
-    },
-    rename: (id: string, name: string) => {
-      const n = name.trim()
-      if (!n) return
-      // Renombrar el borrador lo convierte en un proyecto propio.
-      setLibrary((l) => ({ projects: l.projects.map((p) => (p.id === id ? { ...p, name: n, draft: false, id: p.draft ? newProjectId() : p.id } : p)) }))
-    },
-    remove: (id: string) => {
-      setLibrary((l) => ({ projects: l.projects.filter((p) => p.id !== id) }))
-      if (deck.projectId === id) setDeck((d) => ({ ...d, projectId: undefined }))
-    },
-    exportAll: async () => {
-      const blob = await exportLibrary(library.projects)
-      downloadBlob(blob, `coachjp_proyectos_${new Date().toISOString().slice(0, 10)}.json`)
-    },
-    importFile: async (file: File) => {
-      const imported = await importLibrary(await file.text())
-      setLibrary((l) => ({ projects: [...l.projects, ...imported] }))
-      return imported.length
-    },
-  }
-
-  const currentProject = library.projects.find((p) => p.id === deck.projectId) ?? null
-  const openLibrary = (mode: 'browse' | 'save') => {
-    // La miniatura del proyecto abierto se refresca con lo que está en pantalla.
-    if (deck.projectId) void captureThumb(deck.projectId)
-    setLibraryOpen(mode)
-  }
   const projectBar = (compact = false) => (
     <ProjectBar
       projectName={currentProject?.name ?? null}
@@ -359,43 +145,6 @@ export default function App() {
     />
   )
 
-  /** Fondo táctico del día: se descarga una vez (SVG del pack), se guarda en IndexedDB y se reutiliza. */
-  const packBackground = async (dayId: string): Promise<string | null> => {
-    const known = weekly.bg[dayId]
-    if (known) return known
-    const day = WEEKLY_PACK.find((d) => d.id === dayId)
-    if (!day) return null
-    try {
-      const svg = await (await fetch(packBackgroundUrl(day))).text()
-      if (!svg.includes('<svg')) return null
-      const { id } = bg.add(`data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`)
-      setWeekly((w) => ({ ...w, bg: { ...w.bg, [dayId]: id } }))
-      return id
-    } catch {
-      return null // sin red: el set se arma igual con los fondos tácticos propios de cada plantilla
-    }
-  }
-
-  /**
-   * [ 📅 CARGAR DÍA ]: muestra al instante el set diseñado del día. Si ya lo editaste, vuelve tu versión;
-   * «restaurar» descarta tus cambios y lo arma de nuevo desde el pack.
-   */
-  const loadDay = async (dayId: string, restore = false) => {
-    const day = WEEKLY_PACK.find((d) => d.id === dayId)
-    if (!day) return
-    saveDraftIfNeeded()
-    const saved = weekly.decks[dayId]
-    if (saved && !restore) return setDeck({ ...saved, active: 0 })
-    const bgId = await packBackground(dayId)
-    setDeck({
-      slides: buildPackSlides(day, DEFAULT_STATE, bgId),
-      active: 0,
-      caption: day.caption,
-      topic: day.theme,
-      discipline: deck.discipline,
-      packDay: dayId,
-    })
-  }
   /** Foto nueva SÓLO para la placa activa (null = quitarla de esta placa). */
   const setBgImage = useCallback(
     (img: string | null) => {
@@ -403,71 +152,6 @@ export default function App() {
       update({ bgImageId: bg.add(img).id })
     },
     [bg, update],
-  )
-  /** [ 📋 COPIAR ESTILO A TODAS LAS PLACAS ]: tipografía, viñeta y paleta de acentos de la placa activa. */
-  const copyStyle = useCallback(
-    () =>
-      setDeck((d) => {
-        const src = { ...DEFAULT_STATE, ...d.slides[Math.min(d.active, d.slides.length - 1)] }
-        const style: Partial<CanvasState> = {}
-        for (const k of STYLE_KEYS) Object.assign(style, { [k]: src[k] })
-        return { ...d, slides: d.slides.map((s) => ({ ...s, ...style })) }
-      }),
-    [setDeck],
-  )
-  /** [ KIT DE MARCA ]: aplica un preset visual a TODAS las placas (nunca toca contenido ni imágenes). */
-  const applyKit = useCallback(
-    (patch: Partial<CanvasState>) => setDeck((d) => ({ ...d, slides: d.slides.map((s) => ({ ...s, ...patch })) })),
-    [setDeck],
-  )
-  /** Ajuste fino desde el lienzo (null = volver a la posición y escala original). */
-  const nudge = useCallback(
-    (target: NudgeTarget, n: Nudge | null) =>
-      setDeck((d) => {
-        const i = Math.min(d.active, d.slides.length - 1)
-        return {
-          ...d,
-          slides: d.slides.map((s, j) => {
-            if (j !== i) return s
-            const next = { ...s.nudge }
-            if (n) next[target] = n
-            else delete next[target]
-            return { ...s, nudge: Object.keys(next).length ? next : undefined }
-          }),
-        }
-      }),
-    [setDeck],
-  )
-
-  const applyGeneration = useCallback(
-    (r: GenerationResult, meta?: { topic: string; discipline: Discipline }) =>
-      setDeck((d) => {
-        const current = { ...DEFAULT_STATE, ...d.slides[Math.min(d.active, d.slides.length - 1)] }
-        const globals: Partial<CanvasState> = {}
-        for (const k of GLOBAL_KEYS) Object.assign(globals, { [k]: current[k] })
-        // El set nuevo arranca con el fondo de la placa activa (luego cada placa se edita por separado).
-        for (const k of BG_KEYS) Object.assign(globals, { [k]: current[k] })
-        // Identidad de marca: todo set nuevo arranca con titulares en Chakra Petch (se puede cambiar a mano).
-        globals.headlineFont = 'chakra'
-        globals.typePreset = 'none'
-        if (r.format === 'stories') globals.aspect = 'story'
-        if (r.format === 'carousel') globals.aspect = 'feed'
-        const discipline = meta?.discipline ?? d.discipline ?? 'general'
-        return {
-          // Los gráficos de la IA se ponen en caja (rango, zona, barras) antes de mostrarse.
-          slides: r.slides.map((p) => {
-            const s = { ...DEFAULT_STATE, ...globals, ...p }
-            // Todas las placas traen su nodo de gráfico (multiformato): se armoniza siempre.
-            return { ...s, chart: harmonizeChart(s.chart, discipline) }
-          }),
-          active: 0,
-          caption: r.caption,
-          packDay: undefined,
-          topic: meta?.topic ?? d.topic,
-          discipline: meta?.discipline ?? d.discipline,
-        }
-      }),
-    [setDeck],
   )
 
   /** Pilar activo: el chip del generador IA si está marcado; si no, el de la última generación. */
@@ -481,24 +165,6 @@ export default function App() {
     return deck.discipline ?? 'general'
   }, [deck.discipline])
 
-  /** Mueve la placa activa una posición (◀ / ▶) y la sigue seleccionando. */
-  const moveSlide = (dir: -1 | 1) =>
-    setDeck((d) => {
-      const i = Math.min(d.active, d.slides.length - 1)
-      const j = i + dir
-      if (j < 0 || j >= d.slides.length) return d
-      const next = [...d.slides]
-      ;[next[i], next[j]] = [next[j], next[i]]
-      return { ...d, slides: next, active: j }
-    })
-
-  const selectSlide = (i: number) => setDeck((d) => ({ ...d, active: i }))
-  const addSlide = () =>
-    setDeck((d) => ({ ...d, slides: [...d.slides.slice(0, active + 1), { ...state }, ...d.slides.slice(active + 1)], active: active + 1 }))
-  const removeSlide = () =>
-    setDeck((d) => (d.slides.length > 1 ? { ...d, slides: d.slides.filter((_, i) => i !== active), active: Math.max(0, active - 1) } : d))
-  const setCaption = (caption: string) => setDeck((d) => ({ ...d, caption }))
-  const caption = deck.caption ?? ''
 
   /** Recorre la secuencia y renderiza cada placa a 4x con nombre numerado (prefix = carpeta del ZIP). */
   const renderAll = async (aspect: AspectId = state.aspect, prefix = '', label = 'RENDER') => {
@@ -518,8 +184,6 @@ export default function App() {
     return files
   }
 
-  /** [ ⇅ REMIX 9:16 ]: el set pasa a historias con reacomodo vertical y zonas de sticker. */
-  const remix = () => setDeck((d) => ({ ...d, slides: remixToStories(d.slides.map((s) => ({ ...DEFAULT_STATE, ...s }) as CanvasState)) }))
 
   /**
    * ZIP unificado: /feed_4x5/ + /stories_9x16/ + caption.txt. Renderiza el set en los dos formatos
