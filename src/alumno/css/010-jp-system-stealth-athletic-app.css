@@ -1,0 +1,565 @@
+/* =========================================================
+   JP SYSTEM · STEALTH ATHLETIC — app del alumno
+========================================================= */
+:root{
+  /* directiva ("Reskin Estético CrossFit"): carbón táctico + borde de
+     tarjeta cian translúcido, mismo criterio visual que ya usa la app
+     del alumno de CrossFit (nunca se toca body.cf-disc). --accent-cyan
+     y --accent-crimson estaban puestas a un celeste apagado idéntico
+     pese a que su propio comentario decía "Cyan Neón" y "Ámbar de
+     alerta" -- ahora sí son lo que dicen ser. */
+  --bg-canvas:#0A0A0A;
+  --card-bg:rgba(22,27,34,.85);
+  --card-border:rgba(0,229,255,.2);
+  --accent-volt:#D2793F;          /* Oro Cálido / Champán */
+  --accent-gold:#D2793F;
+  --accent-bone:#EDEFF2;          /* Blanco Hueso */
+  --accent-titanium:#828A97;      /* Titanio Mate */
+  --accent-cyan:#00e5ff;          /* Cyan Neón táctico */
+  --accent-crimson:#f59e0b;       /* Ámbar de alerta */
+  --font-head:'Chakra Petch','Barlow Condensed',sans-serif;
+  --font-mono:'JetBrains Mono','SFMono-Regular',ui-monospace,monospace;
+  --ease:cubic-bezier(.4,0,.2,1);
+  --glow-volt:0 0 20px rgba(210,121,63,.15);
+
+  /* puente con los tokens que ya usaba la app */
+  --bg:var(--bg-canvas);
+  --bg-card:var(--card-bg);
+  --bg-card-hover:rgba(24,29,40,.85);
+  --bg-surface:rgba(14,17,24,.8);
+  --bg-elevated:rgba(24,29,40,.85);
+  --gold:var(--accent-volt);
+  --red:var(--accent-crimson);
+  --red-light:#E8AE8E;
+  --teal:var(--accent-cyan);
+  --text-primary:#EDEFF2;
+  --text-secondary:#A0A8B4;
+  --text-muted:#5A6577;
+  --border:var(--card-border);
+  --border-active:rgba(210,121,63,.4);
+}
+body{
+  /* arranque: fondo negro liso desde el primer pintado (sin degradados celestes ni azul marino antes de que el body reciba su clase de disciplina) */
+  background:#0A0A0A !important;
+}
+:where(body.cf-disc) body{ background:radial-gradient(1000px 560px at 90% -14%, rgba(255,85,0,.05), transparent 62%), radial-gradient(820px 540px at -14% 106%, rgba(0,230,255,.045), transparent 62%), var(--bg-canvas) !important; }
+:where(body.jp-mission:not(.cf-disc)) body{ background:radial-gradient(1000px 560px at 90% -14%, rgba(255,85,0,.05), transparent 62%), radial-gradient(820px 540px at -14% 106%, rgba(0,230,255,.045), transparent 62%), var(--bg-canvas) !important; }
+body::before{
+  content:'JP';
+  position:fixed; left:3vw; bottom:3vh; z-index:0; pointer-events:none;
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:min(44vh,360px);
+  line-height:.8; letter-spacing:-.03em; color:#FFFFFF; opacity:.03; user-select:none;
+}
+.hero,.main,.site-footer,.progress-bar-wrap,.week-info-bar{position:relative;z-index:1}
+.week-selector-wrap{position:sticky;top:0;z-index:72}
+.week-tabs-wrap{position:sticky;top:var(--wsel-h,62px);z-index:71}
+/* --- tipografía --- */
+h1,h2,h3,h4,.block-label,.ex-name,.week-pill-name,.tab-name,.sc-h h3,.wb-fmt,
+.sc-stat .v,.set-cap-lb,.jp-badge,.directive-chip,.insights-header{
+  font-family:'Barlow Condensed',sans-serif; text-transform:uppercase; letter-spacing:.05em; font-weight:700;
+}
+p,.block-subtitle,.coach-note,.hero-sub,.week-info-text,.insight-text,.set-input,
+textarea,input,.wb-line,.tab-label,.week-pill-phase{
+  font-family:'Inter',sans-serif; font-weight:400; line-height:1.5; text-transform:none; letter-spacing:0;
+}
+.load-suggest strong,.load-value,.sc-stat .v,.rh-time,.wb-dur{color:var(--accent-cyan)}
+/* --- glass en las tarjetas --- */
+.block,.info-card,.week-info-card,.summary-card,.wod-board,.modal{
+  background:var(--card-bg);
+  border:1px solid var(--card-border);
+  backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  border-radius:12px;
+  transition:border-color .25s var(--ease),box-shadow .25s var(--ease),transform .25s var(--ease),background-color .25s var(--ease);
+}
+/* --- glow del ejercicio activo --- */
+.block.tv-active,.block.jp-live{
+  box-shadow:0 0 20px rgba(210,121,63,.15);
+  border-color:rgba(210,121,63,.4);
+}
+:where(body.cf-disc) .block.tv-active,
+:where(body.cf-disc) .block.jp-live{ box-shadow:0 0 20px rgba(255,85,0,.15);border-color:rgba(255,85,0,.4); }
+:where(body.jp-mission:not(.cf-disc)) .block.tv-active,
+:where(body.jp-mission:not(.cf-disc)) .block.jp-live{ box-shadow:0 0 20px rgba(255,85,0,.15);border-color:rgba(255,85,0,.4); }
+.block.block-done{border-color:rgba(210,121,63,.28)}
+:where(body.cf-disc) .block.block-done{ border-color:rgba(255,85,0,.28); }
+:where(body.jp-mission:not(.cf-disc)) .block.block-done{ border-color:rgba(255,85,0,.28); }
+.block-done-cb{accent-color:var(--accent-volt)}
+/* =========================================================
+   CÁPSULAS INTERACTIVAS DE SET
+========================================================= */
+.set-tracker{gap:var(--sp-1) !important}
+.set-row{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:6px var(--sp-2); border-radius:999px;
+  border:1px solid var(--card-border); background:rgba(255,255,255,.025);
+  transition:border-color .25s var(--ease),box-shadow .25s var(--ease),transform .25s var(--ease),background-color .25s var(--ease);
+}
+.set-row-done{
+  background:rgba(210,121,63,.12) !important;
+  border-color:rgba(210,121,63,.45) !important;
+  transform:scale(1.02);
+  box-shadow:0 0 16px rgba(210,121,63,.14);
+}
+:where(body.cf-disc) .set-row-done{ background:rgba(255,85,0,.12) !important;border-color:rgba(255,85,0,.45) !important;box-shadow:0 0 16px rgba(255,85,0,.14); }
+:where(body.jp-mission:not(.cf-disc)) .set-row-done{ background:rgba(255,85,0,.12) !important;border-color:rgba(255,85,0,.45) !important;box-shadow:0 0 16px rgba(255,85,0,.14); }
+.set-row-label{
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; text-transform:uppercase;
+  letter-spacing:.08em; font-size:12px; color:var(--text-secondary); min-width:56px;
+}
+.set-row-done .set-row-label{color:var(--accent-volt)}
+.set-input{border-radius:999px !important; background:rgba(8,9,11,.55) !important; min-height:34px}
+:where(body.cf-disc) .set-input{ background:rgba(10,10,10,.55) !important; }
+:where(body.jp-mission:not(.cf-disc)) .set-input{ background:rgba(10,10,10,.55) !important; }
+.set-input:focus{border-color:rgba(210,121,63,.55) !important; box-shadow:0 0 0 3px rgba(210,121,63,.1)}
+:where(body.cf-disc) .set-input:focus{ border-color:rgba(255,85,0,.55) !important;box-shadow:0 0 0 3px rgba(255,85,0,.1); }
+:where(body.jp-mission:not(.cf-disc)) .set-input:focus{ border-color:rgba(255,85,0,.55) !important;box-shadow:0 0 0 3px rgba(255,85,0,.1); }
+/* el checkbox se vuelve una cápsula táctil de pulgar */
+.set-check{
+  -webkit-appearance:none; appearance:none;
+  width:44px !important; height:34px !important; margin:0 0 0 auto !important;
+  border-radius:999px; border:1px solid var(--card-border);
+  background:rgba(255,255,255,.05); position:relative; cursor:pointer;
+  transition:background .25s var(--ease),border-color .25s var(--ease),transform .25s var(--ease),box-shadow .25s var(--ease); flex:0 0 auto;
+}
+.set-check::after{
+  content:'✓'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:16px; font-weight:800; color:var(--text-muted); transition:color .25s var(--ease);
+}
+.set-check:checked{
+  background:var(--accent-volt); border-color:var(--accent-volt);
+  transform:scale(1.05); box-shadow:0 0 18px rgba(210,121,63,.35);
+}
+:where(body.cf-disc) .set-check:checked{ box-shadow:0 0 18px rgba(255,85,0,.35); }
+:where(body.jp-mission:not(.cf-disc)) .set-check:checked{ box-shadow:0 0 18px rgba(255,85,0,.35); }
+.set-check:checked::after{color:#0A0F13}
+:where(body.cf-disc) .set-check:checked::after{ color:#0F0F0F; }
+:where(body.jp-mission:not(.cf-disc)) .set-check:checked::after{ color:#0F0F0F; }
+.set-check:active{transform:scale(.94)}
+/* chip "Último: X kg" (Memoria de Cargas Históricas) -- fila propia
+   (flex:1 1 100%) para no competir por ancho con Serie N / Kg×Reps,
+   discreta y opcional: sólo existe cuando hay historial y el casillero
+   de esa serie sigue vacío (ver renderSetRows/ultimoHistorial). */
+.set-hist-row{ flex:1 1 100%; order:3; }
+.set-hist-chip{
+  display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px;
+  background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.3); color:#38BDF8;
+  font-family:'Inter',sans-serif; font-size:.72rem; font-weight:600; cursor:pointer;
+}
+:where(body.cf-disc) .set-hist-chip{ background:rgba(0,230,255,.08);border:1px solid rgba(0,230,255,.3);color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .set-hist-chip{ background:rgba(0,230,255,.08);border:1px solid rgba(0,230,255,.3);color:#00E6FF; }
+.set-hist-chip b{color:#7CC5E8}
+:where(body.cf-disc) .set-hist-chip b{ color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .set-hist-chip b{ color:#00E6FF; }
+.set-hist-chip:active{transform:scale(.96)}
+/* directiva ("Referencia de Carga Semana a Semana", Sports & Bodybuilding
+   exclusivo): micro-badge no-interactivo (a diferencia de .set-hist-chip,
+   que es un botón que autocompleta) -- sólo informa lo que el alumno
+   levantó la semana pasada en esta misma serie, el placeholder del
+   casillero de Kg ya hace el trabajo de sugerir el número. */
+.set-ref-badge{
+  display:inline-flex; align-items:center; padding:3px 9px; border-radius:20px;
+  background:rgba(56,189,248,.08); border:1px solid rgba(56,189,248,.3); color:#38bdf8;
+  font-family:'Inter',sans-serif; font-size:.7rem; font-weight:600;
+}
+:where(body.cf-disc) .set-ref-badge{ background:rgba(0,230,255,.08);border:1px solid rgba(0,230,255,.3);color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .set-ref-badge{ background:rgba(0,230,255,.08);border:1px solid rgba(0,230,255,.3);color:#00E6FF; }
+/* =========================================================
+   REST TIMER CON ANILLO CONIC
+========================================================= */
+.rest-hud{
+  right:14px; bottom:calc(14px + env(safe-area-inset-bottom,0px));
+  min-width:152px; padding:11px; border-radius:18px;
+  border:1px solid rgba(210,121,63,.35) !important;
+  background:rgba(8,9,11,.94) !important;
+  box-shadow:0 20px 50px rgba(0,0,0,.66),0 0 26px rgba(210,121,63,.1) !important;
+}
+:where(body.cf-disc) .rest-hud{ border:1px solid rgba(255,85,0,.35) !important;background:rgba(10,10,10,.94) !important;box-shadow:0 20px 50px rgba(0,0,0,.66),0 0 26px rgba(255,85,0,.1) !important; }
+:where(body.jp-mission:not(.cf-disc)) .rest-hud{ border:1px solid rgba(255,85,0,.35) !important;background:rgba(10,10,10,.94) !important;box-shadow:0 20px 50px rgba(0,0,0,.66),0 0 26px rgba(255,85,0,.1) !important; }
+.rest-hud .rh-lb{color:var(--accent-volt) !important}
+/* directiva9 -- anillo ~27% más chico (132px -> 96px) para que el HUD de
+   descanso no tape el contexto de la rutina detrás; inset/tipografía
+   reducidos en la misma proporción para mantener el mismo look. */
+.rh-ring{
+  position:relative; width:96px; height:96px; margin:2px auto 4px; border-radius:50%;
+  background:conic-gradient(var(--accent-volt) calc(var(--p,1) * 360deg), rgba(255,255,255,.07) 0);
+  display:flex; align-items:center; justify-content:center;
+  transition:background .3s linear;
+}
+.rh-ring::after{content:'';position:absolute;inset:7px;border-radius:50%;background:rgba(8,9,11,.96)}
+:where(body.cf-disc) .rh-ring::after{ background:rgba(10,10,10,.96); }
+:where(body.jp-mission:not(.cf-disc)) .rh-ring::after{ background:rgba(10,10,10,.96); }
+.rh-ring .rh-time{
+  position:relative; z-index:1; margin:0 !important;
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:1.85rem; line-height:1;
+  color:#fff !important; font-variant-numeric:tabular-nums;
+}
+.rest-hud.warn .rh-ring{background:conic-gradient(var(--accent-crimson) calc(var(--p,1) * 360deg), rgba(255,255,255,.07) 0)}
+.rest-hud.warn .rh-ring .rh-time{color:var(--accent-crimson) !important}
+.rest-hud .rh-set button.on{background:var(--accent-volt) !important;border-color:var(--accent-volt) !important;color:#0A0F13 !important}
+:where(body.cf-disc) .rest-hud .rh-set button.on{ color:#0F0F0F !important; }
+:where(body.jp-mission:not(.cf-disc)) .rest-hud .rh-set button.on{ color:#0F0F0F !important; }
+.rest-hud .rh-ctl button{border-radius:999px;min-height:36px}
+/* =========================================================
+   PIZARRA METCON / LEADERBOARD
+========================================================= */
+.wod-board{border-color:rgba(124,197,232,.42) !important;
+  background:linear-gradient(180deg,rgba(124,197,232,.10),rgba(0,0,0,0)) !important}
+:where(body.cf-disc) .wod-board{ border-color:rgba(0,230,255,.42) !important;background:linear-gradient(180deg,rgba(0,230,255,.10),rgba(0,0,0,0)) !important; }
+.wod-board .wb-h{
+  background:linear-gradient(90deg,var(--accent-crimson),rgba(124,197,232,.35)) !important;
+  border-bottom:1px solid rgba(124,197,232,.4) !important; padding:.7rem 1rem !important;
+}
+:where(body.cf-disc) .wod-board .wb-h{ background:linear-gradient(90deg,var(--accent-crimson),rgba(0,230,255,.35)) !important;border-bottom:1px solid rgba(0,230,255,.4) !important; }
+.wod-board .wb-fmt{color:#fff !important; font-size:1.25rem !important; letter-spacing:.14em !important}
+.wod-board .wb-dur{color:rgba(255,255,255,.9) !important; font-weight:800}
+.wod-board .wb-line.head{color:var(--accent-volt) !important}
+.wod-board .quick-timer{padding:.4rem .9rem .9rem}
+.wod-board .quick-timer .qt-time,.wod-board .qt-time{font-size:3.2rem !important;letter-spacing:.02em}
+.wod-score{background:rgba(124,197,232,.07) !important;border-top:1px solid rgba(124,197,232,.24) !important}
+:where(body.cf-disc) .wod-score{ background:rgba(0,230,255,.07) !important;border-top:1px solid rgba(0,230,255,.24) !important; }
+.wod-score label{color:var(--accent-crimson) !important;letter-spacing:.12em !important}
+.wod-score input{border-radius:999px !important;min-height:40px;font-weight:700}
+/* =========================================================
+   NAVEGACIÓN STICKY Y THUMB ZONE
+========================================================= */
+.week-selector-wrap,.week-tabs-wrap{
+  background:rgba(8,9,11,.92) !important; backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+:where(body.cf-disc) .week-selector-wrap,
+:where(body.cf-disc) .week-tabs-wrap{ background:rgba(10,10,10,.92) !important; }
+:where(body.jp-mission:not(.cf-disc)) .week-selector-wrap,
+:where(body.jp-mission:not(.cf-disc)) .week-tabs-wrap{ background:rgba(10,10,10,.92) !important; }
+.week-selector,.week-tabs{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+.week-selector::-webkit-scrollbar,.week-tabs::-webkit-scrollbar{display:none}
+.week-pill,.day-tab{scroll-snap-align:start}
+.week-pill{border-radius:999px !important;min-width:110px}
+.week-pill.active{
+  border-color:rgba(210,121,63,.55) !important; background:rgba(210,121,63,.1) !important;
+  box-shadow:0 0 18px rgba(210,121,63,.14) !important;
+}
+:where(body.cf-disc) .week-pill.active{ border-color:rgba(255,85,0,.55) !important;background:rgba(255,85,0,.1) !important;box-shadow:0 0 18px rgba(255,85,0,.14) !important; }
+:where(body.jp-mission:not(.cf-disc)) .week-pill.active{ border-color:rgba(255,85,0,.55) !important;background:rgba(255,85,0,.1) !important;box-shadow:0 0 18px rgba(255,85,0,.14) !important; }
+.week-pill.active .week-pill-name{color:var(--accent-volt) !important}
+.day-tab.active{border-bottom-color:var(--accent-volt) !important}
+.day-tab.active .tab-name{color:var(--accent-volt) !important}
+.day-tab.active .day-dot{background:var(--accent-volt) !important;box-shadow:0 0 8px rgba(210,121,63,.6) !important}
+:where(body.cf-disc) .day-tab.active .day-dot{ box-shadow:0 0 8px rgba(255,85,0,.6) !important; }
+:where(body.jp-mission:not(.cf-disc)) .day-tab.active .day-dot{ box-shadow:0 0 8px rgba(255,85,0,.6) !important; }
+.day-tab.completed-day .day-dot{background:var(--accent-cyan) !important}
+/* thumb zone: la acción principal vive abajo en móvil */
+.tv-start{border-radius:999px !important;background:linear-gradient(135deg,#D2793F,#8A4A1E) !important;color:#0A0F13 !important;
+  box-shadow:0 10px 26px rgba(210,121,63,.26) !important}
+:where(body.cf-disc) .tv-start{ background:linear-gradient(135deg,#FF5500,#A83800) !important;color:#0F0F0F !important;box-shadow:0 10px 26px rgba(255,85,0,.26) !important; }
+:where(body.jp-mission:not(.cf-disc)) .tv-start{ background:linear-gradient(135deg,#FF5500,#A83800) !important;color:#0F0F0F !important;box-shadow:0 10px 26px rgba(255,85,0,.26) !important; }
+.tv-start.on{background:linear-gradient(135deg,#7CC5E8,#4A93B8) !important;color:#021214 !important}
+:where(body.cf-disc) .tv-start.on{ background:linear-gradient(135deg,#00E6FF,#00E6FF) !important;color:#0B0B0B !important; }
+:where(body.jp-mission:not(.cf-disc)) .tv-start.on{ background:linear-gradient(135deg,#00E6FF,#00E6FF) !important;color:#0B0B0B !important; }
+.tv-nav{border-radius:20px !important;background:rgba(8,9,11,.95) !important;
+  padding-bottom:calc(.7rem + env(safe-area-inset-bottom,0px)) !important}
+:where(body.cf-disc) .tv-nav{ background:rgba(10,10,10,.95) !important; }
+:where(body.jp-mission:not(.cf-disc)) .tv-nav{ background:rgba(10,10,10,.95) !important; }
+.tv-nav button{border-radius:999px;min-height:44px}
+.tv-nav .tv-done{background:linear-gradient(135deg,#D2793F,#8A4A1E) !important;color:#0A0F13 !important}
+:where(body.cf-disc) .tv-nav .tv-done{ background:linear-gradient(135deg,#FF5500,#A83800) !important;color:#0F0F0F !important; }
+:where(body.jp-mission:not(.cf-disc)) .tv-nav .tv-done{ background:linear-gradient(135deg,#FF5500,#A83800) !important;color:#0F0F0F !important; }
+.tv-start.tv-mini{flex:0 0 auto !important;font-size:.9rem !important;padding:.6rem .9rem !important;
+  min-height:44px;box-shadow:none !important}
+.tv-nav{flex-wrap:wrap}
+@media(max-width:640px){
+  .tv-bar{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:58;
+    padding:6px 0;background:linear-gradient(180deg,transparent,rgba(8,9,11,.92) 38%)}
+:where(body.cf-disc) .tv-bar{ background:linear-gradient(180deg,transparent,rgba(10,10,10,.92) 38%); }
+:where(body.jp-mission:not(.cf-disc)) .tv-bar{ background:linear-gradient(180deg,transparent,rgba(10,10,10,.92) 38%); }
+  .tv-nav .tv-pos{max-width:34vw}
+  .main{padding-bottom:96px}
+  .sc-actions button{min-height:48px}
+}
+/* --- color de los encabezados de bloque según su tema --- */
+.block.cat-strength .block-label{color:var(--accent-volt) !important}
+.block.cat-metcon .block-label{color:var(--accent-crimson) !important}
+.block.cat-warmup .block-label{color:#FFB05C !important}
+:where(body.cf-disc) .block.cat-warmup .block-label{ color:#FF5500 !important; }
+:where(body.jp-mission:not(.cf-disc)) .block.cat-warmup .block-label{ color:#FF5500 !important; }
+.block.cat-cardio .block-label{color:var(--accent-cyan) !important}
+.block.cat-accessory .block-label{color:#B9AEFF !important}
+:where(body.cf-disc) .block.cat-accessory .block-label{ color:#00E6FF !important; }
+:where(body.jp-mission:not(.cf-disc)) .block.cat-accessory .block-label{ color:#00E6FF !important; }
+.block.cat-strength{border-left:3px solid rgba(210,121,63,.5)}
+:where(body.cf-disc) .block.cat-strength{ border-left:3px solid rgba(255,85,0,.5); }
+:where(body.jp-mission:not(.cf-disc)) .block.cat-strength{ border-left:3px solid rgba(255,85,0,.5); }
+.block.cat-metcon{border-left:3px solid rgba(124,197,232,.55)}
+:where(body.cf-disc) .block.cat-metcon{ border-left:3px solid rgba(0,230,255,.55); }
+:where(body.jp-mission:not(.cf-disc)) .block.cat-metcon{ border-left:3px solid rgba(0,230,255,.55); }
+.block.cat-warmup{border-left:3px solid rgba(255,176,92,.5)}
+:where(body.cf-disc) .block.cat-warmup{ border-left:3px solid rgba(255,85,0,.5); }
+:where(body.jp-mission:not(.cf-disc)) .block.cat-warmup{ border-left:3px solid rgba(255,85,0,.5); }
+.block.cat-cardio{border-left:3px solid rgba(124,197,232,.5)}
+:where(body.cf-disc) .block.cat-cardio{ border-left:3px solid rgba(0,230,255,.5); }
+:where(body.jp-mission:not(.cf-disc)) .block.cat-cardio{ border-left:3px solid rgba(0,230,255,.5); }
+.block.cat-accessory{border-left:3px solid rgba(185,174,255,.5)}
+:where(body.cf-disc) .block.cat-accessory{ border-left:3px solid rgba(0,230,255,.5); }
+:where(body.jp-mission:not(.cf-disc)) .block.cat-accessory{ border-left:3px solid rgba(0,230,255,.5); }
+/* --- el HUD de descanso no tapa la navegación del focus --- */
+body.focus-mode .rest-hud{bottom:calc(88px + env(safe-area-inset-bottom,0px))}
+.tv-nav .tv-pos{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46vw;font-size:.85rem}
+/* --- M4 · sensación de pulsación en toda acción --- */
+button,.nav-pill,.week-pill,.day-tab,.set-check,.block-done-cb,.sc-actions button,
+.tv-nav button,.story-actions button,.rest-hud button,.wod-score input{
+  transition:transform .2s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease;
+}
+button:active,.nav-pill:active,.day-tab:active,.sc-actions button:active,
+.tv-nav button:active,.story-actions button:active,.rest-hud button:active{
+  transform:scale(.96);box-shadow:0 2px 8px rgba(0,0,0,.5) inset;
+}
+.set-check:active{transform:scale(.92)}
+.block-done-cb:active{transform:scale(.9)}
+/* --- badge de estado del mesociclo --- */
+.hd-phase{
+  display:inline-flex;align-items:center;gap:6px;margin-top:7px;
+  padding:4px 11px;border-radius:20px;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.62rem;letter-spacing:.16em;
+  text-transform:uppercase;color:#0A0F13;
+  background:linear-gradient(135deg,#D2793F,#D2793F);
+  box-shadow:0 4px 14px rgba(210,121,63,.28);
+}
+:where(body.cf-disc) .hd-phase{ color:#0F0F0F;background:linear-gradient(135deg,#FF5500,#FF5500);box-shadow:0 4px 14px rgba(255,85,0,.28); }
+:where(body.jp-mission:not(.cf-disc)) .hd-phase{ color:#0F0F0F;background:linear-gradient(135deg,#FF5500,#FF5500);box-shadow:0 4px 14px rgba(255,85,0,.28); }
+.hd-phase.deload{background:linear-gradient(135deg,#7CC5E8,#4A93B8);color:#021214;
+  box-shadow:0 4px 14px rgba(124,197,232,.26)}
+:where(body.cf-disc) .hd-phase.deload{ background:linear-gradient(135deg,#00E6FF,#00E6FF);color:#0B0B0B;box-shadow:0 4px 14px rgba(0,230,255,.26); }
+:where(body.jp-mission:not(.cf-disc)) .hd-phase.deload{ background:linear-gradient(135deg,#00E6FF,#00E6FF);color:#0B0B0B;box-shadow:0 4px 14px rgba(0,230,255,.26); }
+.hd-phase.peak{background:linear-gradient(135deg,#7CC5E8,#2E5A72);color:#fff;
+  box-shadow:0 4px 14px rgba(124,197,232,.3)}
+:where(body.cf-disc) .hd-phase.peak{ background:linear-gradient(135deg,#00E6FF,#0090A0);box-shadow:0 4px 14px rgba(0,230,255,.3); }
+:where(body.jp-mission:not(.cf-disc)) .hd-phase.peak{ background:linear-gradient(135deg,#00E6FF,#0090A0);box-shadow:0 4px 14px rgba(0,230,255,.3); }
+.hd-athlete{flex-direction:column;align-items:flex-end;gap:2px}
+.hd-athlete .top{display:flex;align-items:center;gap:8px}
+@media(max-width:720px){ .hd-athlete{align-items:flex-start} }
+/* =========================================================
+   BOTÓN DE TÉCNICA · PLAY TÁCTICO
+========================================================= */
+.video-link.jp-play{
+  display:inline-flex;align-items:center;justify-content:center;position:relative;
+  width:30px;height:30px;padding:0;margin-left:9px;flex:0 0 auto;
+  border-radius:50%;border:1px solid rgba(255,255,255,0.16);
+  background:rgba(255,255,255,0.08);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:transform .2s ease,box-shadow .2s ease,background .2s ease,border-color .2s ease;
+  vertical-align:middle;
+}
+.video-link.jp-play svg{width:13px;height:13px;fill:var(--accent-volt);transition:fill .2s ease;
+  transform:translateX(1px)}
+.video-link.jp-play:hover,.video-link.jp-play:focus-visible{
+  background:rgba(210,121,63,.14);border-color:rgba(210,121,63,.45);
+  box-shadow:0 0 12px rgba(210,121,63,0.4);
+}
+:where(body.cf-disc) .video-link.jp-play:hover,
+:where(body.cf-disc) .video-link.jp-play:focus-visible{ background:rgba(255,85,0,.14);border-color:rgba(255,85,0,.45);box-shadow:0 0 12px rgba(255,85,0,0.4); }
+:where(body.jp-mission:not(.cf-disc)) .video-link.jp-play:hover,
+:where(body.jp-mission:not(.cf-disc)) .video-link.jp-play:focus-visible{ background:rgba(255,85,0,.14);border-color:rgba(255,85,0,.45);box-shadow:0 0 12px rgba(255,85,0,0.4); }
+.video-link.jp-play:active{transform:scale(.9)}
+/* ---------- trigger con thumbnail real (28/08, Fase 3) ----------
+   .has-thumb solo lo agregan videoLinkHtml()/playHtml() cuando SÍ hay un
+   ytid confirmado (nunca .vsearch, que es el fallback "buscar en YouTube"
+   sin video real) — el modal/iframe no cambian, solo se agranda y
+   rectangulariza el disparador para mostrar la miniatura real de YouTube
+   como fondo. El scrim via box-shadow inset (no ::after) para que el
+   triángulo SVG, que es contenido normal del <a>, siga pintando arriba
+   sin tener que armar un contexto de apilamiento nuevo. Selector repetido
+   con la especificidad de ".block:not(.wu-card) .ex-name .video-link"
+   (línea ~12941) para ganarle a esa regla más específica que si no
+   volvería a forzar el círculo de 30x30. */
+.video-link.jp-play.has-thumb,
+.block:not(.wu-card) .ex-name .video-link.has-thumb{
+  /* el ancho/alto real los fuerza la regla de ergonomía táctil de un
+     pedido anterior (.video-link.jp-play{width/height:40px!important},
+     ~línea 15676) — 40x40 en vez del círculo de 30x30 de antes, así que
+     acá se diseña directamente para ese cuadrado, no para un rectángulo
+     que después la regla !important reescribiría igual. */
+  border-radius:9px;
+  background-color:rgba(255,255,255,.08);background-size:cover;background-position:center;
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:inset 0 0 0 999px rgba(5,6,10,.34);
+}
+:where(body.cf-disc) .video-link.jp-play.has-thumb,
+:where(body.cf-disc) .block:not(.wu-card) .ex-name .video-link.has-thumb{ box-shadow:inset 0 0 0 999px rgba(7,7,7,.34); }
+:where(body.jp-mission:not(.cf-disc)) .video-link.jp-play.has-thumb,
+:where(body.jp-mission:not(.cf-disc)) .block:not(.wu-card) .ex-name .video-link.has-thumb{ box-shadow:inset 0 0 0 999px rgba(7,7,7,.34); }
+.video-link.jp-play.has-thumb svg,
+.block:not(.wu-card) .ex-name .video-link.has-thumb svg{
+  width:15px;height:15px;fill:#fff;transform:translateX(1px);
+  filter:drop-shadow(0 1px 3px rgba(0,0,0,.85));
+}
+.video-link.jp-play.has-thumb:hover,.video-link.jp-play.has-thumb:focus-visible,
+.block:not(.wu-card) .ex-name .video-link.has-thumb:hover{
+  border-color:rgba(210,121,63,.6);background-color:rgba(255,255,255,.08);
+  box-shadow:inset 0 0 0 999px rgba(5,6,10,.2),0 0 12px rgba(210,121,63,.4);
+}
+:where(body.cf-disc) .video-link.jp-play.has-thumb:hover,
+:where(body.cf-disc) .video-link.jp-play.has-thumb:focus-visible,
+:where(body.cf-disc) .block:not(.wu-card) .ex-name .video-link.has-thumb:hover{ border-color:rgba(255,85,0,.6);box-shadow:inset 0 0 0 999px rgba(7,7,7,.2),0 0 12px rgba(255,85,0,.4); }
+:where(body.jp-mission:not(.cf-disc)) .video-link.jp-play.has-thumb:hover,
+:where(body.jp-mission:not(.cf-disc)) .video-link.jp-play.has-thumb:focus-visible,
+:where(body.jp-mission:not(.cf-disc)) .block:not(.wu-card) .ex-name .video-link.has-thumb:hover{ border-color:rgba(255,85,0,.6);box-shadow:inset 0 0 0 999px rgba(7,7,7,.2),0 0 12px rgba(255,85,0,.4); }
+@media(prefers-reduced-motion:reduce){ .video-link.jp-play.has-thumb{ transition:none; } }
+.video-link.jp-play.vsearch{border-style:dashed;border-color:rgba(255,255,255,.2)}
+.video-link.jp-play.vsearch svg{fill:#D2793F;opacity:.85}
+:where(body.cf-disc) .video-link.jp-play.vsearch svg{ fill:#FF5500; }
+:where(body.jp-mission:not(.cf-disc)) .video-link.jp-play.vsearch svg{ fill:#FF5500; }
+.video-link.jp-play.vsearch .mag{position:absolute;right:-3px;bottom:-3px;font-size:9px;line-height:1;
+  filter:drop-shadow(0 1px 2px rgba(0,0,0,.7))}
+.video-link.jp-play.vsearch:hover{border-color:rgba(210,121,63,.5);box-shadow:0 0 12px rgba(210,121,63,.35)}
+:where(body.cf-disc) .video-link.jp-play.vsearch:hover{ border-color:rgba(255,85,0,.5);box-shadow:0 0 12px rgba(255,85,0,.35); }
+:where(body.jp-mission:not(.cf-disc)) .video-link.jp-play.vsearch:hover{ border-color:rgba(255,85,0,.5);box-shadow:0 0 12px rgba(255,85,0,.35); }
+/* =========================================================
+   BRANDING CENTRADO Y GRANDE
+========================================================= */
+.hd-top{flex-direction:column !important;align-items:center !important;text-align:center}
+header.masthead.hd-top{justify-content:center !important;gap:14px}
+.masthead-brand.hd-brand{
+  flex-direction:column !important;align-items:center !important;gap:10px !important;
+  margin:0 auto !important;text-align:center;width:100%;
+}
+.hd-shield{
+  width:88px !important;height:100px !important;
+  filter:drop-shadow(0 0 20px rgba(245,197,24,.5)) drop-shadow(0 0 46px rgba(245,197,24,.2)) !important;
+}
+:where(body.cf-disc) .hd-shield{ filter:drop-shadow(0 0 20px rgba(255,85,0,.5)) drop-shadow(0 0 46px rgba(255,85,0,.2)) !important; }
+:where(body.jp-mission:not(.cf-disc)) .hd-shield{ filter:drop-shadow(0 0 20px rgba(255,85,0,.5)) drop-shadow(0 0 46px rgba(255,85,0,.2)) !important; }
+.hd-word{align-items:center;gap:5px}
+.hd-word .n{font-size:2.5rem !important;letter-spacing:.08em}
+.hd-cert{font-size:.72rem;letter-spacing:.24em}
+.hd-cert b{color:var(--accent-volt)}
+.masthead-utility.hd-actions{margin:0 auto !important;justify-content:center !important}
+@media(max-width:720px){
+  header.masthead.hd-top .hd-shield{width:74px !important;height:84px !important}
+  .masthead-brand.hd-brand{width:100%}
+  .hd-word .n{font-size:2rem !important}
+  .hd-cert{font-size:.6rem;letter-spacing:.16em}
+  .masthead-utility.hd-actions{width:100% !important;justify-content:flex-start !important}
+}
+/* =========================================================
+   PWA · INSTALAR MI RUTINA
+========================================================= */
+.pwa-athlete{
+  display:flex;align-items:center;justify-content:center;gap:9px;margin:14px auto 0;
+  padding:.8rem 1.2rem;border-radius:30px;cursor:pointer;width:100%;max-width:420px;
+  border:1px solid rgba(210,121,63,.42);background:rgba(210,121,63,.1);color:var(--accent-volt);
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1rem;letter-spacing:.07em;
+  text-transform:uppercase;
+  transition:transform .2s ease,box-shadow .2s ease;
+}
+:where(body.cf-disc) .pwa-athlete{ border:1px solid rgba(255,85,0,.42);background:rgba(255,85,0,.1); }
+:where(body.jp-mission:not(.cf-disc)) .pwa-athlete{ border:1px solid rgba(255,85,0,.42);background:rgba(255,85,0,.1); }
+.pwa-athlete:hover{box-shadow:0 0 18px rgba(210,121,63,.3)}
+:where(body.cf-disc) .pwa-athlete:hover{ box-shadow:0 0 18px rgba(255,85,0,.3); }
+:where(body.jp-mission:not(.cf-disc)) .pwa-athlete:hover{ box-shadow:0 0 18px rgba(255,85,0,.3); }
+.pwa-athlete:active{transform:scale(.97)}
+.pwa-athlete.ok{border-color:rgba(124,197,232,.42);background:rgba(124,197,232,.1);color:var(--accent-cyan)}
+:where(body.cf-disc) .pwa-athlete.ok{ border-color:rgba(0,230,255,.42);background:rgba(0,230,255,.1); }
+:where(body.jp-mission:not(.cf-disc)) .pwa-athlete.ok{ border-color:rgba(0,230,255,.42);background:rgba(0,230,255,.1); }
+.pwa-wrap{display:flex;justify-content:center;padding:0 clamp(18px,3.2vw,30px) 6px}
+/* --- badge de marca --- */
+.jp-badge{
+  display:inline-flex;align-items:center;gap:8px;margin:0 auto 10px;
+  padding:5px 13px;border-radius:20px;font-size:10px;letter-spacing:.16em;color:#EDEFF2;
+  background:linear-gradient(135deg,rgba(255,255,255,.13),rgba(255,255,255,.03) 42%,rgba(255,255,255,.10));
+  border:1px solid rgba(255,255,255,.16);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 6px 18px rgba(0,0,0,.45);
+}
+:where(body.cf-disc) .jp-badge{ color:#EFEFEF; }
+:where(body.jp-mission:not(.cf-disc)) .jp-badge{ color:#EFEFEF; }
+.jp-badge .sp{color:var(--accent-volt);font-size:12px}
+.jp-badge .dot{width:3px;height:3px;border-radius:50%;background:var(--text-secondary);opacity:.7}
+.jp-badge-wrap{display:flex;justify-content:center;padding:12px 1rem 0;position:relative;z-index:2}
+/* --- PR --- */
+.pr-badge{background:linear-gradient(135deg,#ff9100,#f59e0b) !important;color:#0A0F13 !important}
+:where(body.cf-disc) .pr-badge{ background:linear-gradient(135deg,#FF5500,#FF5500) !important;color:#0F0F0F !important; }
+:where(body.jp-mission:not(.cf-disc)) .pr-badge{ background:linear-gradient(135deg,#FF5500,#FF5500) !important;color:#0F0F0F !important; }
+.set-row.is-pr{border-color:rgba(210,121,63,.65) !important;background:rgba(210,121,63,.14) !important}
+:where(body.cf-disc) .set-row.is-pr{ border-color:rgba(255,85,0,.65) !important;background:rgba(255,85,0,.14) !important; }
+:where(body.jp-mission:not(.cf-disc)) .set-row.is-pr{ border-color:rgba(255,85,0,.65) !important;background:rgba(255,85,0,.14) !important; }
+.block.has-pr{box-shadow:0 0 0 1px rgba(210,121,63,.45),0 0 30px rgba(210,121,63,.16) !important}
+:where(body.cf-disc) .block.has-pr{ box-shadow:0 0 0 1px rgba(255,85,0,.45),0 0 30px rgba(255,85,0,.16) !important; }
+:where(body.jp-mission:not(.cf-disc)) .block.has-pr{ box-shadow:0 0 0 1px rgba(255,85,0,.45),0 0 30px rgba(255,85,0,.16) !important; }
+/* --- resumen --- */
+.summary-card{border-color:rgba(210,121,63,.4) !important;
+  background:linear-gradient(180deg,rgba(210,121,63,.09),rgba(0,0,0,0)) !important}
+:where(body.cf-disc) .summary-card{ border-color:rgba(255,85,0,.4) !important;background:linear-gradient(180deg,rgba(255,85,0,.09),rgba(0,0,0,0)) !important; }
+:where(body.jp-mission:not(.cf-disc)) .summary-card{ border-color:rgba(255,85,0,.4) !important;background:linear-gradient(180deg,rgba(255,85,0,.09),rgba(0,0,0,0)) !important; }
+.summary-card .sc-h{border-bottom-color:rgba(210,121,63,.26) !important}
+:where(body.cf-disc) .summary-card .sc-h{ border-bottom-color:rgba(255,85,0,.26) !important; }
+:where(body.jp-mission:not(.cf-disc)) .summary-card .sc-h{ border-bottom-color:rgba(255,85,0,.26) !important; }
+.sc-save{background:linear-gradient(135deg,#D2793F,#8A4A1E) !important;color:#0A0F13 !important}
+:where(body.cf-disc) .sc-save{ background:linear-gradient(135deg,#FF5500,#A83800) !important;color:#0F0F0F !important; }
+:where(body.jp-mission:not(.cf-disc)) .sc-save{ background:linear-gradient(135deg,#FF5500,#A83800) !important;color:#0F0F0F !important; }
+/* directiva ("Story Card Viral Compartible") -- botón táctico glass
+   (cyan/oro) en vez del pill sólido dorado: distingue visualmente el
+   disparador de "compartir en redes" del resto de acciones opacas del
+   resumen (.sc-save sigue sólida). */
+.sc-story{
+  background:linear-gradient(135deg,rgba(124,197,232,.14),rgba(229,195,120,.10)) !important;
+  color:#EDEFF2 !important;
+  border:1.5px solid rgba(124,197,232,.5) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 18px rgba(229,195,120,.16) !important;
+  letter-spacing:.03em;font-weight:800;
+}
+:where(body.cf-disc) .sc-story{ background:linear-gradient(135deg,rgba(0,230,255,.14),rgba(255,85,0,.10)) !important;color:#EFEFEF !important;border:1.5px solid rgba(0,230,255,.5) !important;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 18px rgba(255,85,0,.16) !important; }
+:where(body.jp-mission:not(.cf-disc)) .sc-story{ background:linear-gradient(135deg,rgba(0,230,255,.14),rgba(255,85,0,.10)) !important;color:#EFEFEF !important;border:1.5px solid rgba(0,230,255,.5) !important;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 18px rgba(255,85,0,.16) !important; }
+/* =========================================================
+   STORY CARD 9:16
+========================================================= */
+/* directiva (rediseño total Story Card 9:16) -- z-index:200 quedaba POR
+   DEBAJO de .hd-wrap/.hd-compact (header sticky del atleta, z-index:300),
+   así que la cabecera (escudo COACH JP + nombre + pestañas de DÍA)
+   quedaba pintada ENCIMA del modal en vez de taparse por él -- eso
+   recortaba el aire visual de la Story Card contra el borde superior del
+   lienzo. Mismo nivel que los demás overlays de pantalla completa de la
+   app (champion, #jpAlarma, .nm-modal-overlay), todos en z-index:900. */
+.story-wrap{position:fixed;inset:0;z-index:900;display:none;align-items:center;justify-content:center;
+  padding:16px;background:rgba(4,5,8,.92);backdrop-filter:blur(10px)}
+:where(body.cf-disc) .story-wrap{ background:rgba(6,6,6,.92); }
+:where(body.jp-mission:not(.cf-disc)) .story-wrap{ background:rgba(6,6,6,.92); }
+.story-wrap.on{display:flex}
+.story-box{display:flex;flex-direction:column;gap:10px;align-items:center;max-height:90vh;overflow-y:auto;overflow-x:hidden;padding:2px 2px 6px;box-sizing:border-box}
+/* directiva (fix integral StoryCard): el canvas es 1080x1920 real (9:16)
+   -- antes se limitaba con height:min(72vh,640px), que en viewports
+   bajos (poca altura real, con teclado abierto o en horizontal) dejaba
+   muy poco margen para los 3 botones de abajo y la tarjeta terminaba
+   tapada/cortada. aspect-ratio + max-height:65vh le deja más aire al
+   footer de acciones siempre, en cualquier alto de pantalla. */
+.story-box canvas{
+  aspect-ratio:9/16;max-height:calc(90vh - 250px);min-height:200px;width:auto;max-width:94vw;flex:0 1 auto;
+  object-fit:contain;margin:0 auto;border-radius:18px;
+  box-shadow:0 26px 70px rgba(0,0,0,.7),0 0 30px rgba(210,121,63,.12);border:1px solid rgba(255,255,255,.1)}
+:where(body.cf-disc) .story-box canvas{ box-shadow:0 26px 70px rgba(0,0,0,.7),0 0 30px rgba(255,85,0,.12); }
+:where(body.jp-mission:not(.cf-disc)) .story-box canvas{ box-shadow:0 26px 70px rgba(0,0,0,.7),0 0 30px rgba(255,85,0,.12); }
+.story-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.story-actions button{padding:.75rem 1.2rem;border-radius:999px;border:1px solid var(--card-border);
+  background:var(--bg-card);color:var(--text-primary);cursor:pointer;
+  font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:.07em;text-transform:uppercase;font-size:.95rem}
+.story-actions .sa-dl{background:linear-gradient(135deg,#E5C378,#9C7A2E);color:#0A0F13;border:none}
+:where(body.cf-disc) .story-actions .sa-dl{ background:linear-gradient(135deg,#FF5500,#CA4300);color:#0F0F0F; }
+:where(body.jp-mission:not(.cf-disc)) .story-actions .sa-dl{ background:linear-gradient(135deg,#FF5500,#CA4300);color:#0F0F0F; }
+.story-actions .sa-cp{background:linear-gradient(135deg,#38BDF8,#1E7AA8);color:#021214;border:none}
+:where(body.cf-disc) .story-actions .sa-cp{ background:linear-gradient(135deg,#00E6FF,#00B2C6);color:#0B0B0B; }
+:where(body.jp-mission:not(.cf-disc)) .story-actions .sa-cp{ background:linear-gradient(135deg,#00E6FF,#00B2C6);color:#0B0B0B; }
+/* foto de fondo personalizada (directiva) */
+.story-actions .sa-foto{background:linear-gradient(135deg,#7CC5E8,#2E6B8A);color:#021214;border:none}
+:where(body.cf-disc) .story-actions .sa-foto{ background:linear-gradient(135deg,#00E6FF,#00A6B8);color:#0B0B0B; }
+:where(body.jp-mission:not(.cf-disc)) .story-actions .sa-foto{ background:linear-gradient(135deg,#00E6FF,#00A6B8);color:#0B0B0B; }
+.story-actions .sa-fotox{display:none;background:transparent;color:var(--text-secondary);font-size:.8rem;padding:.6rem 1rem}
+.story-hint{font-family:'Inter',sans-serif;font-size:.8rem;color:var(--text-secondary);text-align:center;max-width:340px}
+/* directiva9 -- en móviles angostos (≤420px, ej 390px) el padding lateral
+   del overlay se reduce solo (16px ya alcanza para no tocar el borde),
+   pero los 3 botones en fila se apretaban/desbordaban; se apilan en
+   columna a ancho completo para que queden prolijos y con buen target
+   táctil, sin flotar sobre ningún otro control. */
+@media(max-width:420px){
+  .story-wrap{padding:12px}
+  .story-box{width:100%;gap:10px}
+  .story-actions{flex-direction:column;width:100%;gap:8px}
+  .story-actions button{width:100%;box-sizing:border-box;padding:.85rem 1rem}
+  .story-hint{max-width:100%;padding:0 6px}
+}

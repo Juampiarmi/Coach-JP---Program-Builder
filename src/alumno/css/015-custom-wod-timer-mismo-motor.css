@@ -1,0 +1,275 @@
+/* Custom WOD Timer — mismo motor que el panel del entrenador */
+/* ---------------------------------------------------------
+   2 · CUSTOM WOD TIMER (compartido panel + alumno)
+--------------------------------------------------------- */
+.cwt-wrap{
+  /* directiva ("Refactor integral del Timer Táctico") -- z-index real de
+     fábrica (240) auditado en vivo: quedaba POR DEBAJO del propio chrome
+     de la app (.app-frame z-index:500, .hd-wrap/#hdCompact z-index:300),
+     así que el header/día-tabs de la app se veían encima del HUD del
+     timer en vez de quedar tapados por el overlay. Se sube a 600 --
+     por encima de todo el chrome fijo de la app, por debajo de
+     #storyWrap(900)/#video-popup-wrap(9999), que nunca corren a la vez
+     que el timer. */
+  position:fixed;inset:0;z-index:600;display:none;align-items:center;justify-content:center;
+  padding:18px;background:rgba(4,5,9,.9);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+}
+:where(body.cf-disc) .cwt-wrap{ background:rgba(6,6,6,.9); }
+:where(body.jp-mission:not(.cf-disc)) .cwt-wrap{ background:rgba(6,6,6,.9); }
+.cwt-wrap.on{display:flex}
+/* directiva ("Modo Mini-HUD Flotante Persistente") -- minimizado, el
+   overlay/backdrop de pantalla completa se retira (deja de tapar/bloquear
+   el resto de la app) pero #cwtWrap sigue "on" (el motor -- setInterval,
+   wake lock, resync de visibilidad -- no se toca ni se pausa, sigue
+   corriendo en background exactamente igual): sólo se oculta la tarjeta
+   .cwt, la barra flotante .cwt-mini (ver más abajo) toma su lugar. */
+.cwt-wrap.cwt-minimized{background:transparent !important;backdrop-filter:none !important;-webkit-backdrop-filter:none !important;pointer-events:none}
+.cwt-wrap.cwt-minimized .cwt{display:none}
+.cwt{
+  width:min(520px,100%);max-height:94vh;overflow-y:auto;border-radius:22px;padding:18px;
+  background:rgba(13,16,23,.97);border:1px solid rgba(255,255,255,.1);
+  box-shadow:0 26px 70px rgba(0,0,0,.65);
+}
+:where(body.cf-disc) .cwt{ background:rgba(18,18,18,.97); }
+:where(body.jp-mission:not(.cf-disc)) .cwt{ background:rgba(18,18,18,.97); }
+.cwt h3{margin:0 0 3px;font-family:'Barlow Condensed','Barlow Condensed',sans-serif;text-transform:uppercase;
+  letter-spacing:.06em;font-size:1.5rem;color:#fff}
+.cwt .cwt-sub{margin:0 0 14px;color:#A0A8B4;font-size:.82rem;line-height:1.5}
+:where(body.cf-disc) .cwt .cwt-sub{ color:#AAAAAA; }
+:where(body.jp-mission:not(.cf-disc)) .cwt .cwt-sub{ color:#AAAAAA; }
+/* directiva ("Refactor integral del Timer Táctico, inspirado en SmartWOD")
+   -- cabecera fija sticky, primer hijo de .cwt (su ancestro con scroll
+   real, overflow-y:auto arriba): CERRAR a la izquierda, título centrado
+   en Chakra Petch, MINIMIZAR a la derecha -- valores exactos pedidos. */
+.cwt-hud-head{
+  position:sticky;top:0;z-index:1000;background:#07090e;
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:12px 16px;margin:-18px -18px 14px;border-bottom:1px solid rgba(255,255,255,.08);
+  border-radius:22px 22px 0 0;
+}
+:where(body.cf-disc) .cwt-hud-head{ background:#0A0A0A; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-hud-head{ background:#0A0A0A; }
+.cwt-hud-title{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:800;font-size:.78rem;
+  letter-spacing:.08em;text-transform:uppercase;color:#38bdf8;flex:1;text-align:center;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+:where(body.cf-disc) .cwt-hud-title{ color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-hud-title{ color:#00E6FF; }
+.cwt-hud-close,.cwt-hud-min{
+  flex:0 0 auto;border-radius:8px;cursor:pointer;padding:8px 10px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#EDEFF2;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:700;font-size:10.5px;letter-spacing:.03em;
+  white-space:nowrap;
+}
+:where(body.cf-disc) .cwt-hud-close,
+:where(body.cf-disc) .cwt-hud-min{ color:#EFEFEF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-hud-close,
+:where(body.jp-mission:not(.cf-disc)) .cwt-hud-min{ color:#EFEFEF; }
+.cwt-hud-close:active,.cwt-hud-min:active{background:rgba(255,255,255,.14)}
+.cwt-mute{
+  flex:0 0 auto;width:34px;height:34px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);
+  color:#EDEFF2;font-size:15px;display:grid;place-items:center;margin:0 auto 12px;
+}
+:where(body.cf-disc) .cwt-mute{ color:#EFEFEF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-mute{ color:#EFEFEF; }
+.cwt-mute.off{background:rgba(168,68,44,.15);border-color:rgba(168,68,44,.4);color:#E0654A}
+/* directiva -- arquitectura de pantallas: Selección de Modalidad ->
+   Configuración Específica -> HUD en carrera, una sola visible a la vez
+   dentro de la misma tarjeta .cwt (ver mostrarPantalla() en el JS). */
+.cwt-pantalla{display:none}
+.cwt-pantalla.on{display:block}
+.cwt-modes{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:9px}
+.cwt-mode{
+  min-height:78px;border-radius:14px;cursor:pointer;padding:6px 4px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);color:#EDEFF2;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.05em;
+  font-weight:800;font-size:15px;
+}
+:where(body.cf-disc) .cwt-mode{ color:#EFEFEF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-mode{ color:#EFEFEF; }
+.cwt-mode.on{background:rgba(210,121,63,.16);border-color:rgba(210,121,63,.5);color:#D2793F}
+:where(body.cf-disc) .cwt-mode.on{ background:rgba(255,85,0,.16);border-color:rgba(255,85,0,.5);color:#FF5500; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-mode.on{ background:rgba(255,85,0,.16);border-color:rgba(255,85,0,.5);color:#FF5500; }
+.cwt-mode-extra{
+  grid-column:1/-1;width:100%;min-height:44px;margin-top:2px;border-radius:12px;cursor:pointer;
+  background:rgba(255,255,255,.03);border:1px dashed rgba(255,255,255,.16);color:#8B93A1;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.05em;
+  font-weight:700;font-size:11.5px;
+}
+:where(body.cf-disc) .cwt-mode-extra{ color:#969696; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-mode-extra{ color:#969696; }
+.cwt-mode-extra.on{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.45);color:#38bdf8;border-style:solid}
+:where(body.cf-disc) .cwt-mode-extra.on{ background:rgba(0,230,255,.12);border-color:rgba(0,230,255,.45);color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-mode-extra.on{ background:rgba(0,230,255,.12);border-color:rgba(0,230,255,.45);color:#00E6FF; }
+.cwt-cfg-title{
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:800;font-size:.72rem;
+  letter-spacing:.08em;text-transform:uppercase;color:#38bdf8;margin:2px 0 14px;text-align:center;
+}
+:where(body.cf-disc) .cwt-cfg-title{ color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-cfg-title{ color:#00E6FF; }
+.cwt-cfg{display:flex;flex-direction:column;align-items:center;gap:2px;margin-bottom:4px}
+.cwt-cfg label{display:flex;flex-direction:column;gap:4px;font-size:10.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:#A0A8B4;font-family:'Barlow Condensed','Barlow Condensed',sans-serif;font-weight:700}
+:where(body.cf-disc) .cwt-cfg label{ color:#AAAAAA; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-cfg label{ color:#AAAAAA; }
+.cwt-cfg input,.cwt-cfg select{min-height:48px;border-radius:11px;padding:0 11px;font-size:17px;text-align:center;
+  background:rgba(8,9,11,.72);border:1px solid rgba(255,255,255,.14);color:#fff}
+:where(body.cf-disc) .cwt-cfg input,
+:where(body.cf-disc) .cwt-cfg select{ background:rgba(10,10,10,.72); }
+:where(body.jp-mission:not(.cf-disc)) .cwt-cfg input,
+:where(body.jp-mission:not(.cf-disc)) .cwt-cfg select{ background:rgba(10,10,10,.72); }
+.cwt-cfg select{font-size:15px}
+.cwt-cfg .hide{display:none}
+.cwt-prep-row{width:140px;margin-bottom:16px}
+.cwt-prep-row select{min-height:42px;font-size:13px}
+/* AMRAP -- input central grande de minutos + chips tácticos +1m/+5m */
+.cwt-central-cfg{text-align:center;margin-bottom:14px}
+.cwt-central-cfg .cwt-central-lb{font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:#A0A8B4;margin-bottom:4px}
+:where(body.cf-disc) .cwt-central-cfg .cwt-central-lb{ color:#AAAAAA; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-central-cfg .cwt-central-lb{ color:#AAAAAA; }
+.cwt-central-cfg .cwt-central-input{
+  width:150px;min-height:78px;border-radius:16px;margin:2px auto 12px;display:block;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:800;font-size:42px;text-align:center;
+  background:rgba(8,9,11,.72);border:1px solid rgba(255,255,255,.14);color:#fff;
+}
+:where(body.cf-disc) .cwt-central-cfg .cwt-central-input{ background:rgba(10,10,10,.72); }
+:where(body.jp-mission:not(.cf-disc)) .cwt-central-cfg .cwt-central-input{ background:rgba(10,10,10,.72); }
+.cwt-chip-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.cwt-chip{
+  min-height:40px;padding:0 16px;border-radius:999px;cursor:pointer;
+  background:rgba(210,121,63,.14);border:1px solid rgba(210,121,63,.5);color:#D2793F;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:700;font-size:12.5px;letter-spacing:.03em;
+}
+:where(body.cf-disc) .cwt-chip{ background:rgba(255,85,0,.14);border:1px solid rgba(255,85,0,.5);color:#FF5500; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-chip{ background:rgba(255,85,0,.14);border:1px solid rgba(255,85,0,.5);color:#FF5500; }
+.cwt-chip.cwt-chip-alt{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.45);color:#38bdf8}
+:where(body.cf-disc) .cwt-chip.cwt-chip-alt{ background:rgba(0,230,255,.12);border-color:rgba(0,230,255,.45);color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-chip.cwt-chip-alt{ background:rgba(0,230,255,.12);border-color:rgba(0,230,255,.45);color:#00E6FF; }
+.cwt-chip.on{background:rgba(56,189,248,.22);border-color:#38bdf8;color:#fff}
+:where(body.cf-disc) .cwt-chip.on{ background:rgba(0,230,255,.22);border-color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-chip.on{ background:rgba(0,230,255,.22);border-color:#00E6FF; }
+/* EMOM -- "EVERY [interval] FOR [rondas] RONDAS" */
+.cwt-emom-row{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.cwt-emom-row .cwt-emom-lb{font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:800;
+  letter-spacing:.06em;text-transform:uppercase;font-size:13px;color:#A0A8B4}
+:where(body.cf-disc) .cwt-emom-row .cwt-emom-lb{ color:#AAAAAA; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-emom-row .cwt-emom-lb{ color:#AAAAAA; }
+.cwt-emom-row input{width:80px;min-height:54px;border-radius:12px;text-align:center;font-size:18px;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:800;
+  background:rgba(8,9,11,.72);border:1px solid rgba(255,255,255,.14);color:#fff}
+:where(body.cf-disc) .cwt-emom-row input{ background:rgba(10,10,10,.72); }
+:where(body.jp-mission:not(.cf-disc)) .cwt-emom-row input{ background:rgba(10,10,10,.72); }
+/* TABATA -- "[rondas] RONDAS • [trabajo] TRABAJO • [descanso] DESCANSO" */
+.cwt-tabata-row{display:flex;align-items:flex-end;justify-content:center;gap:5px;flex-wrap:nowrap;margin-bottom:14px}
+.cwt-tabata-row .cwt-tabata-sep{color:#5A6577;font-weight:700;padding-bottom:14px;flex:0 0 auto}
+:where(body.cf-disc) .cwt-tabata-row .cwt-tabata-sep{ color:#686868; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-tabata-row .cwt-tabata-sep{ color:#686868; }
+.cwt-tabata-field{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;flex:1 1 0}
+.cwt-tabata-field span{font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:700;
+  letter-spacing:.05em;text-transform:uppercase;font-size:9px;color:#A0A8B4;white-space:nowrap}
+:where(body.cf-disc) .cwt-tabata-field span{ color:#AAAAAA; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-tabata-field span{ color:#AAAAAA; }
+.cwt-tabata-field input{width:100%;max-width:76px;min-width:0;min-height:50px;border-radius:11px;text-align:center;font-size:15px;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:800;box-sizing:border-box;
+  background:rgba(8,9,11,.72);border:1px solid rgba(255,255,255,.14);color:#fff}
+:where(body.cf-disc) .cwt-tabata-field input{ background:rgba(10,10,10,.72); }
+:where(body.jp-mission:not(.cf-disc)) .cwt-tabata-field input{ background:rgba(10,10,10,.72); }
+.cwt-start{
+  width:100%;min-height:60px;border-radius:15px;cursor:pointer;border:none;margin-top:4px;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.07em;
+  font-weight:800;font-size:17px;background:linear-gradient(135deg,#D2793F,#8A4A1E);color:#0A0F13;
+}
+:where(body.cf-disc) .cwt-start{ background:linear-gradient(135deg,#FF5500,#A83800);color:#0F0F0F; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-start{ background:linear-gradient(135deg,#FF5500,#A83800);color:#0F0F0F; }
+.cwt-back{
+  width:100%;min-height:42px;margin-top:9px;border-radius:11px;cursor:pointer;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.13);color:#8B93A1;
+  font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:700;font-size:11.5px;letter-spacing:.04em;
+}
+:where(body.cf-disc) .cwt-back{ color:#969696; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-back{ color:#969696; }
+.cwt-screen{
+  border-radius:18px;padding:20px 14px;text-align:center;margin-bottom:12px;
+  background:rgba(8,9,11,.7);border:1px solid rgba(255,255,255,.1);
+}
+:where(body.cf-disc) .cwt-screen{ background:rgba(10,10,10,.7); }
+:where(body.jp-mission:not(.cf-disc)) .cwt-screen{ background:rgba(10,10,10,.7); }
+.cwt-phase{font-family:'Barlow Condensed','Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.14em;
+  font-size:13px;color:#A0A8B4}
+:where(body.cf-disc) .cwt-phase{ color:#AAAAAA; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-phase{ color:#AAAAAA; }
+.cwt-phase.work{color:#D2793F}
+:where(body.cf-disc) .cwt-phase.work{ color:#FF5500; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-phase.work{ color:#FF5500; }
+.cwt-phase.rest{color:#7CC5E8}
+:where(body.cf-disc) .cwt-phase.rest{ color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-phase.rest{ color:#00E6FF; }
+.cwt-time{
+  font-family:'Barlow Condensed','Barlow Condensed',sans-serif;font-weight:700;font-size:clamp(58px,17vw,104px);
+  line-height:1;color:#fff;letter-spacing:.02em;margin:4px 0 2px;font-variant-numeric:tabular-nums;
+}
+.cwt-time.alerta{color:#7CC5E8;animation:cwtPulse .5s ease}
+:where(body.cf-disc) .cwt-time.alerta{ color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-time.alerta{ color:#00E6FF; }
+@keyframes cwtPulse{0%{transform:scale(1)}50%{transform:scale(1.07)}100%{transform:scale(1)}}
+.cwt-round{font-family:'Barlow Condensed','Barlow Condensed',sans-serif;letter-spacing:.1em;text-transform:uppercase;
+  font-size:14px;color:#A0A8B4}
+:where(body.cf-disc) .cwt-round{ color:#AAAAAA; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-round{ color:#AAAAAA; }
+.cwt-round b{color:#7CC5E8}
+:where(body.cf-disc) .cwt-round b{ color:#00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-round b{ color:#00E6FF; }
+.cwt-bar{height:6px;border-radius:20px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:12px}
+.cwt-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#D2793F,#7CC5E8);transition:width .25s linear}
+:where(body.cf-disc) .cwt-bar i{ background:linear-gradient(90deg,#FF5500,#00E6FF); }
+:where(body.jp-mission:not(.cf-disc)) .cwt-bar i{ background:linear-gradient(90deg,#FF5500,#00E6FF); }
+.cwt-acts{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.cwt-acts button{min-height:60px;border-radius:15px;cursor:pointer;border:none;
+  font-family:'Barlow Condensed','Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.07em;
+  font-weight:700;font-size:16px}
+.cwt-go{background:linear-gradient(135deg,#D2793F,#8A4A1E);color:#0A0F13}
+:where(body.cf-disc) .cwt-go{ background:linear-gradient(135deg,#FF5500,#A83800);color:#0F0F0F; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-go{ background:linear-gradient(135deg,#FF5500,#A83800);color:#0F0F0F; }
+.cwt-stop{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16) !important;color:#EDEFF2}
+:where(body.cf-disc) .cwt-stop{ color:#EFEFEF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-stop{ color:#EFEFEF; }
+.cwt-fin{grid-column:1/-1;min-height:76px !important;font-size:22px !important;
+  background:linear-gradient(135deg,#7CC5E8,#2E5A72);color:#fff}
+:where(body.cf-disc) .cwt-fin{ background:linear-gradient(135deg,#00E6FF,#0090A0); }
+:where(body.jp-mission:not(.cf-disc)) .cwt-fin{ background:linear-gradient(135deg,#00E6FF,#0090A0); }
+.cwt-laps{margin-top:10px;display:grid;gap:5px;max-height:120px;overflow-y:auto}
+.cwt-laps div{display:flex;justify-content:space-between;padding:6px 10px;border-radius:9px;
+  background:rgba(255,255,255,.04);font-size:12.5px;color:#D6DBE2}
+:where(body.cf-disc) .cwt-laps div{ color:#DCDCDC; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-laps div{ color:#DCDCDC; }
+/* directiva ("Modo Mini-HUD Flotante Persistente") -- barra angosta sobre
+   el dock inferior, visible sólo mientras el timer está minimizado;
+   valores exactos pedidos (bottom:65px, z-index:999, fondo/borde propios,
+   50px de alto). Refleja el mismo estado que pinta el HUD completo (ver
+   pintarMini(), llamada aditiva desde pintar() -- el motor no se toca). */
+.cwt-mini{
+  position:fixed;left:0;right:0;bottom:65px;z-index:999;height:50px;
+  background:#0b0e15;border-top:1px solid #38bdf8;
+  display:none;align-items:center;justify-content:space-between;padding:0 16px;
+  cursor:pointer;
+}
+:where(body.cf-disc) .cwt-mini{ background:#101010;border-top:1px solid #00E6FF; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-mini{ background:#101010;border-top:1px solid #00E6FF; }
+.cwt-mini.on{display:flex}
+.cwt-mini-info{display:flex;align-items:center;gap:10px;min-width:0}
+.cwt-mini-time{font-family:'Barlow Condensed','Barlow Condensed',sans-serif;font-weight:700;font-size:20px;
+  color:#fff;font-variant-numeric:tabular-nums;flex:0 0 auto}
+.cwt-mini-round{font-family:'Chakra Petch','Barlow Condensed',sans-serif;font-weight:700;font-size:11px;
+  letter-spacing:.04em;text-transform:uppercase;color:#A0A8B4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:where(body.cf-disc) .cwt-mini-round{ color:#AAAAAA; }
+:where(body.jp-mission:not(.cf-disc)) .cwt-mini-round{ color:#AAAAAA; }
+.cwt-mini-ctrls{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.cwt-mini-ctrls button{
+  width:34px;height:34px;border-radius:9px;cursor:pointer;display:grid;place-items:center;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#fff;font-size:14px;
+}
+.cwt-mini-ctrls #cwtMiniX{background:rgba(224,101,74,.14);border-color:rgba(224,101,74,.4);color:#E0654A}
+@media(max-width:520px){ .cwt-modes{grid-template-columns:repeat(2,1fr)} }

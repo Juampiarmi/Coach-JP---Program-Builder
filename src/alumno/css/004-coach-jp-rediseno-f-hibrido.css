@@ -1,0 +1,259 @@
+/* =========================================================
+   COACH JP · REDISEÑO F — HÍBRIDO TÁCTICO (v2, estructural)
+   No es sólo maquillaje: reorganiza qué se ve y qué se oculta.
+   - Cero cambios a state.*/localStorage/Supabase.
+   - Cero cambios a data-set-key, IDs, ni a la lógica de
+     setLoadField()/getLoadKey() — sólo se reordena y se oculta
+     lo que ya existe, y se suman clases de estado puramente
+     visuales (.set-row-active/.set-row-expanded) calculadas en
+     el render o en wireBlockInteractions().
+   ========================================================= */
+
+/* -- 1. Un solo título: el header del bloque pasa a ser el rótulo
+   chico entre corchetes (antes repetía el nombre del ejercicio en
+   letra gigante, duplicado con .ex-name de abajo). El nombre grande
+   real vive UNA sola vez, en el cuerpo (.ex-name). -------------- */
+.block .block-header{ gap: 10px !important; }
+.block .block-label{
+  /* pulido: usaba la mono táctica (JetBrains Mono) -- el pedido es que
+     lleve la tipografía de marca, la misma que ya usan .ex-name, h1-h4
+     y el resto de los títulos del sistema (--font-head, Chakra Petch/
+     Barlow Condensed). Esta regla es más específica que la genérica
+     compartida (.block-label{font-family:var(--font-head)!important})
+     así que sin este cambio seguía ganando la mono de acá. */
+  font-family: var(--font-head, 'Chakra Petch', 'Barlow Condensed', sans-serif) !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: .01em !important;
+  text-transform: uppercase !important;
+  line-height: 1.3 !important;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%; display: block;
+}
+.block .block-icon{ width: 32px !important; height: 32px !important; font-size: 15px !important; }
+.block .block-label::before{ content:"[ "; opacity:.7; }
+.block .block-label::after{ content:" ]"; opacity:.7; }
+.block .block-subtitle{ display: none !important; } /* redundante con el rótulo de arriba */
+
+.block .ex-name{
+  font-family: var(--font-head, 'Barlow Condensed', sans-serif) !important;
+  /* pulido (selector aA): fijo en 1.4rem, el nombre del ejercicio --lo
+     que el pedido explícitamente llama "de un vistazo rápido"-- tampoco
+     respondía al toggle de tamaño. Escala con --fzs. */
+  font-size: calc(1.4rem * var(--fzs, 1)) !important;
+  font-weight: 800 !important;
+  line-height: 1.15 !important;
+  color: var(--text-primary, #EDEFF2) !important;
+}
+:where(body.cf-disc) .block .ex-name{ color:var(--text-primary, #EFEFEF) !important; }
+:where(body.jp-mission:not(.cf-disc)) .block .ex-name{ color:var(--text-primary, #EFEFEF) !important; }
+
+/* -- 2. Las cajas de prescripción sueltas (.blk-tag, .rx-badge) quedan
+   ocultas -- son restataciones grandes de lo mismo que ya dice, chico
+   y prolijo, .ex-detail (ver punto 3). Nada de lo que generan esos
+   módulos se borra ni se deja de calcular, sólo no se pinta. --------- */
+.block .blk-tag,
+.block .rx-badge{ display: none !important; }
+
+/* -- 3. .ex-detail pasa a ser la micro-línea (Tempo · Descanso · RIR),
+   monoespaciada y discreta, debajo del nombre. --------------------- */
+.block .ex-detail{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  color: var(--red, #7CC5E8) !important;
+  text-align: left !important;
+  letter-spacing: .01em;
+}
+:where(body.cf-disc) .block .ex-detail{ color:var(--red, #00E6FF) !important; }
+:where(body.jp-mission:not(.cf-disc)) .block .ex-detail{ color:var(--red, #00E6FF) !important; }
+.block .ex-detail strong{ color: var(--gold, #D2793F) !important; font-weight: 700 !important; }
+:where(body.cf-disc) .block .ex-detail strong{ color:var(--gold, #FF5500) !important; }
+:where(body.jp-mission:not(.cf-disc)) .block .ex-detail strong{ color:var(--gold, #FF5500) !important; }
+.block .ex-row{ flex-direction: column !important; align-items: flex-start !important; gap: 3px !important; }
+.block .ex-row .ex-bullet{ display: none; }
+
+/* -- 4. tracker de series: la activa ocupa toda la fila con números
+   grandes; el resto colapsa a chips angostos, tocables para expandir
+   sin perder su input real. Todo esto va ACOTADO a ".set-tracker"
+   (el bloque de un solo ejercicio) a propósito: en un biset/triset,
+   unificar() (más abajo) saca las mismas filas .set-row de adentro
+   de .set-tracker y las reparte en las "rondas" (.bs-r) -- ahí las
+   filas tienen que seguir viéndose TODAS completas para poder cargar
+   cada estación sin toques extra, así que el colapso a chip no debe
+   alcanzarlas. La escala numérica grande de la fila activa (fuera de
+   este bloque, más abajo) sí se deja general: en la Ronda 1 realmente
+   activa se ve linda y no le tapa nada a nadie. ------------------- */
+.set-tracker{ display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; gap: 8px !important; align-items: flex-start !important; }
+.set-tracker .set-row{
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 6px !important;
+}
+.set-row-toggle{
+  display: none; width: 100%; background: none; border: none; padding: 0;
+  cursor: pointer; color: inherit;
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+}
+/* fila activa: ancho completo, arriba de todo (order:-1 la saca del orden
+   natural del DOM para que siempre quede primera, sin importar qué serie
+   sea la activa). Las demás forman la tira horizontal compacta debajo:
+   ancho flexible pero acotado (56-104px) para que 3, 4 o 5 chips entren
+   en una sola fila sin desbordar los 390px típicos de un celular; si no
+   entran todos, el sobrante pasa a una segunda línea (flex-wrap). ------ */
+.set-tracker .set-row.set-row-active,
+.set-tracker .set-row.set-row-expanded{
+  order: -1;
+  flex: 1 1 100%;
+  /* fix de desborde: sin min-width:0 un hijo flex nunca se achica por
+     debajo del ancho mínimo de su contenido (acá, los dígitos grandes
+     de 2.1rem + el check de 48px, todos "unshrinkable") -- eso empujaba
+     esta fila más allá del borde derecho de la tarjeta en viewports
+     angostos (360px) en vez de respetar flex-basis:100%. box-sizing
+     explícito porque el padding de 14px cuenta hacia ese mismo ancho. */
+  min-width: 0;
+  box-sizing: border-box;
+  width: 100%;
+  border-color: rgba(210,121,63,.55) !important;
+  background: rgba(210,121,63,.07) !important;
+  border-radius: 14px !important;
+  padding: 14px !important;
+}
+:where(body.cf-disc) .set-tracker .set-row.set-row-active,
+:where(body.cf-disc) .set-tracker .set-row.set-row-expanded{ border-color:rgba(255,85,0,.55) !important;background:rgba(255,85,0,.07) !important; }
+:where(body.jp-mission:not(.cf-disc)) .set-tracker .set-row.set-row-active,
+:where(body.jp-mission:not(.cf-disc)) .set-tracker .set-row.set-row-expanded{ border-color:rgba(255,85,0,.55) !important;background:rgba(255,85,0,.07) !important; }
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded){
+  order: 1;
+  flex: 1 1 0;
+  min-width: 56px; max-width: 104px;
+  padding: 8px 4px !important;
+  border-radius: 12px !important;
+  /* pulido de experiencia del alumno: un módulo aparte ("Focus mode de
+     serie activa", .set-tracker.foco) apaga a opacity:.4 todo lo que no
+     sea la serie activa -- pensado para una lista vertical vieja, acá
+     sumaba un segundo efecto de "apagado" sobre chips que ya se
+     distinguen solos por color de borde (pendiente/hecha), y hacía más
+     difícil leer qué serie era cuál. Se neutraliza sólo en esta tira
+     compacta; el resto de .foco (glow de la fila activa) sigue intacto. */
+  opacity: 1 !important;
+}
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-load{ display: none !important; }
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-toggle{
+  display: flex !important; flex-direction: column; align-items: center; gap: 3px; text-align: center;
+}
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-label{
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted, #64748B);
+}
+:where(body.cf-disc) .set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-label{ color:var(--text-muted, #777777); }
+:where(body.jp-mission:not(.cf-disc)) .set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-label{ color:var(--text-muted, #777777); }
+.set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-compact{
+  font-size: 10.5px; font-weight: 700; color: var(--text-primary, #EDEFF2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+:where(body.cf-disc) .set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-compact{ color:var(--text-primary, #EFEFEF); }
+:where(body.jp-mission:not(.cf-disc)) .set-tracker .set-row:not(.set-row-active):not(.set-row-expanded) .set-row-compact{ color:var(--text-primary, #EFEFEF); }
+.set-tracker .set-row.set-row-done:not(.set-row-active):not(.set-row-expanded){
+  border-color: rgba(111,191,149,.35) !important;
+}
+/* pulido de experiencia del alumno: antes se ocultaba el toggle entero
+   en la fila activa, así que la caja grande de carga no decía en
+   ningún lado qué serie era -- un alumno nuevo veía "Kg × Reps" vacío
+   sin saber si era la serie 1, 2 o 3. Se deja de ocultar y en cambio
+   se muestra sólo la etiqueta ("SET N", ver badges() más abajo) como
+   título fijo arriba de los inputs; el resumen "—"/"62.5×10" no hace
+   falta acá (los inputs de abajo ya muestran el dato real) y el botón
+   deja de comportarse como toggle (nada para expandir/colapsar cuando
+   ya está expandida). */
+.set-tracker .set-row.set-row-active .set-row-toggle,
+.set-tracker .set-row.set-row-expanded .set-row-toggle{
+  display: flex !important; width: auto; pointer-events: none;
+  padding: 0 0 2px !important; justify-content: flex-start;
+}
+.set-tracker .set-row.set-row-active .set-row-toggle .set-row-compact,
+.set-tracker .set-row.set-row-expanded .set-row-toggle .set-row-compact{ display: none; }
+.set-tracker .set-row.set-row-active .set-row-toggle .set-row-label,
+.set-tracker .set-row.set-row-expanded .set-row-toggle .set-row-label{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-size: 11px; font-weight: 800; letter-spacing: .08em;
+  color: var(--jp-cyan, #7CC5E8);
+}
+:where(body.cf-disc) .set-tracker .set-row.set-row-active .set-row-toggle .set-row-label,
+:where(body.cf-disc) .set-tracker .set-row.set-row-expanded .set-row-toggle .set-row-label{ color:var(--jp-cyan, #00E6FF); }
+:where(body.jp-mission:not(.cf-disc)) .set-tracker .set-row.set-row-active .set-row-toggle .set-row-label,
+:where(body.jp-mission:not(.cf-disc)) .set-tracker .set-row.set-row-expanded .set-row-toggle .set-row-label{ color:var(--jp-cyan, #00E6FF); }
+.set-tracker .set-row.set-row-active .set-load,
+.set-tracker .set-row.set-row-expanded .set-load{
+  display: flex !important; align-items: center !important; gap: 10px !important;
+  min-width: 0; width: 100%;
+}
+.set-tracker .set-row.set-row-active .set-load > .set-field,
+.set-tracker .set-row.set-row-expanded .set-load > .set-field{ min-width: 0; flex: 1 1 0; }
+.set-tracker .set-row.set-row-expanded .set-kg,
+.set-tracker .set-row.set-row-expanded .set-reps{ font-size: calc(1.1rem * var(--fzs, 1)) !important; }
+/* escala numérica grande: general a propósito (también embellece la
+   estación activa de una ronda de biset, sin ocultar nada ahí) */
+.set-row.set-row-active .set-kg,
+.set-row.set-row-active .set-reps{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  /* fix de desborde (directiva urgente, 2026-09): el 2.1rem fijo (y
+     luego escalado por --fzs hasta 48px+ en modo extra grande) se leía
+     grande, pero un valor de 4-5 caracteres ("120.5") ya no entraba en
+     el ancho real del campo y el texto se recortaba. clamp() con un
+     componente en vw deja que el tamaño ceda ante el ancho de pantalla
+     real en vez de un rem fijo, y el piso/techo siguen escalando con
+     --fzs para que el selector aA (Normal/Grande/Extra) conserve una
+     diferencia real y evidente sin volver a desbordar. */
+  font-size: clamp(calc(18px * var(--fzs, 1)), 5vw, calc(24px * var(--fzs, 1))) !important;
+  font-weight: 700 !important;
+  color: var(--text-primary, #EDEFF2) !important;
+  /* pulido de fidelidad: transparente/sin borde leía como texto suelto
+     encima de un contenedor apagado, no como un campo de carga real --
+     vuelve a tener fondo oscuro táctico y borde con contraste (mismo
+     lenguaje que el resto de los inputs del sistema, sólo más grande). */
+  background: rgba(7,8,10,.6) !important;
+  border: 1px solid rgba(255,255,255,.14) !important;
+  border-radius: 12px !important;
+  box-sizing: border-box !important; width: 100% !important; max-width: none !important;
+  padding: 6px 2px !important; text-align: center; letter-spacing: -0.02em;
+}
+:where(body.cf-disc) .set-row.set-row-active .set-kg,
+:where(body.cf-disc) .set-row.set-row-active .set-reps{ color:var(--text-primary, #EFEFEF) !important;/* pulido de fidelidad:transparente/sin borde leía como texto suelto encima de un contenedor apagado, no como un campo de carga real -- vuelve a tener fondo oscuro táctico y borde con contraste (mismo lenguaje que el resto de los inputs del sistema, sólo más grande). */ background: rgba(9,9,9,.6) !important; }
+:where(body.jp-mission:not(.cf-disc)) .set-row.set-row-active .set-kg,
+:where(body.jp-mission:not(.cf-disc)) .set-row.set-row-active .set-reps{ color:var(--text-primary, #EFEFEF) !important;/* pulido de fidelidad:transparente/sin borde leía como texto suelto encima de un contenedor apagado, no como un campo de carga real -- vuelve a tener fondo oscuro táctico y borde con contraste (mismo lenguaje que el resto de los inputs del sistema, sólo más grande). */ background: rgba(9,9,9,.6) !important; }
+.set-row.set-row-active .set-kg:focus,
+.set-row.set-row-active .set-reps:focus{
+  border-color: rgba(210,121,63,.65) !important;
+  box-shadow: 0 0 0 3px rgba(210,121,63,.14) !important;
+}
+:where(body.cf-disc) .set-row.set-row-active .set-kg:focus,
+:where(body.cf-disc) .set-row.set-row-active .set-reps:focus{ border-color:rgba(255,85,0,.65) !important;box-shadow:0 0 0 3px rgba(255,85,0,.14) !important; }
+:where(body.jp-mission:not(.cf-disc)) .set-row.set-row-active .set-kg:focus,
+:where(body.jp-mission:not(.cf-disc)) .set-row.set-row-active .set-reps:focus{ border-color:rgba(255,85,0,.65) !important;box-shadow:0 0 0 3px rgba(255,85,0,.14) !important; }
+.set-row.set-row-active .set-x{ font-size: 1.3rem; opacity: .4; }
+.set-row.set-row-active .set-check{
+  margin-left: auto !important; border-radius: 50% !important;
+}
+
+/* -- 5. disparador del acordeón de metodología: mismo lenguaje
+   monoespaciado entre corchetes que ya trae el texto (ver
+   metodologia() más abajo) -- acá vive todo lo que no es la
+   ejecución inmediata de la serie (objetivo, criterio del coach,
+   alternativa, aproximación). ------------------------------------- */
+.methodology-summary{
+  font-family: var(--font-mono, 'JetBrains Mono', monospace) !important;
+  letter-spacing: .02em !important;
+}
+
+/* -- 6. conector de biset: acento en el margen de .bs-wrap, el
+   contenedor real que unificar() ya arma (roster .bs-ex + rondas
+   .bs-r) -- no se toca su estructura, sólo se le suma la línea
+   lateral de marca. -------------------------------------------- */
+.block .bs-wrap{ position: relative; padding-left: 14px; }
+/* FASE 2.3 -- bracket lateral cian continuo (antes gold→red-dim): une
+   visualmente estación A con estación B/C, mismo acento cian que ya usa
+   el resto del sistema para "protocolo/estructura enlazada" (.jp-cf-rest,
+   .rdy-foco). border-left en vez de ::before + gradiente: una línea
+   sólida y continua, no un degradé que se apaga. */
+.block .bs-wrap{ border-left: 2px solid #00e5ff; padding-left: 12px; }
+.block .bs-wrap::before{ content: none; }
