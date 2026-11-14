@@ -81,6 +81,10 @@ export function applyFixes(d: Deck, fixes: DoctorFix[]): Deck {
       active = slides.length - 1
       continue
     }
+    if (f.kind === 'cite') {
+      slides = slides.map((s) => (s.citeMain === f.from ? { ...s, citeMain: f.to } : s))
+      continue
+    }
     const i = f.slide
     if (!slides[i]) continue
     let patch: Partial<CanvasState> = {}

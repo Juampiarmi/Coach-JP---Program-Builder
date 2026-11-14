@@ -23,6 +23,9 @@ import { SERVICE_BY_ID } from '../../lib/services'
 import { STICKER_OPTIONS, STICKER_SPEC } from '../../lib/remix'
 import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator, HookScorer } from './AiAssist'
+import { PaperBadge } from './PaperBadge'
+import { PaperLibraryPanel } from './PaperLibraryPanel'
+import type { CitationStatus } from '../../lib/paperVerify'
 import { TYPE_PRESETS } from '../../lib/typography'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
 
@@ -103,6 +106,9 @@ const CITATION_LIBRARY = [
   { label: 'HELMS', main: 'HELMS Y COL., 2014 · J INT SOC SPORTS NUTR', sub: 'Recomendaciones basadas en evidencia para atletas de fuerza' },
 ]
 
+/** Marca del verificador en el resumen de la sección (se ve con la sección cerrada) */
+const CITE_MARK: Record<CitationStatus['state'] | 'none', string> = { none: '', pending: '◌ ', verified: '✓ ', mismatch: '⚠ ', notfound: '⚠ ', error: '' }
+
 const CARD_ACCENTS: Accent[] = ['cyan', 'orange', 'gold', 'gray', 'white']
 
 interface Props {
@@ -130,6 +136,9 @@ interface Props {
   onCaption?: (caption: string) => void
   /** Pestaña activa del panel: el ControlPanel muestra sólo sus secciones */
   tab?: PanelTab
+  /** Verificador de papers: estado de la cita de la placa activa (null = no es una cita científica) */
+  citation?: CitationStatus | null
+  onRecheckCitation?: () => void
 }
 
 /**
@@ -145,7 +154,7 @@ function seedQuote(state: CanvasState): Partial<CanvasState> {
   return { quoteText: own, quoteEmphasis: state.headlineB.replace(/\*/g, '').trim(), quoteAuthor: author, quoteRole: '', quoteSource: '' }
 }
 
-export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1, addImage, resolveImage, onCaption, tab = 'text' }: Props) {
+export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1, addImage, resolveImage, onCaption, tab = 'text', citation = null, onRecheckCitation }: Props) {
   const ai = { state, update, topic, discipline: getDiscipline() }
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
@@ -919,7 +928,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
       )}
 
       {tab === 'text' && state.template !== 'manifesto' && state.template !== 'repeat' && (
-        <Section index="03" title="Fuente científica" summary={state.citeMain} defaultOpen={false}>
+        <Section index="03" title="Fuente científica" summary={`${CITE_MARK[citation?.state ?? 'none']}${state.citeMain}`} defaultOpen={false}>
           <div className="tc-scroll -mt-1 flex gap-1.5 overflow-x-auto pb-1">
             {CITATION_LIBRARY.map((c) => (
               <button
@@ -937,7 +946,14 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
           </div>
           <TextInput value={state.citeMain} onChange={(citeMain) => update({ citeMain })} uppercase placeholder="AUTOR Y COL., AÑO · REVISTA" />
           <TextInput value={state.citeSub} onChange={(citeSub) => update({ citeSub })} placeholder="Descripción del estudio" />
+          <PaperBadge status={citation} onRecheck={onRecheckCitation} onFix={(citeMain) => update({ citeMain })} />
           <CitationSuggester {...ai} />
+        </Section>
+      )}
+
+      {tab === 'text' && state.template !== 'manifesto' && state.template !== 'repeat' && (
+        <Section index="04" title="Biblioteca de papers propios" summary="Evidencia validada · la IA puede citar sólo de acá" defaultOpen={false}>
+          <PaperLibraryPanel state={state} update={update} />
         </Section>
       )}
 

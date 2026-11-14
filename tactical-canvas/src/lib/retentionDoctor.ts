@@ -2,6 +2,7 @@ import { BRAND } from './brand'
 import { swapHex } from './accent'
 import { effectiveTheme, PALETTES } from './theme'
 import { aiTells } from './language'
+import { citeFromMatch, citationKey, parseCitation, type CitationStatus } from './paperVerify'
 import type { CanvasState, TemplateId } from '../types'
 
 /**
@@ -19,6 +20,8 @@ export type DoctorFix =
   | { kind: 'swap'; slide: number; to: TemplateId }
   | { kind: 'contrast'; slide: number; overlay: number }
   | { kind: 'lang'; slide: number }
+  /** Reemplaza una cita por los datos reales del paper en todas las placas que la usan */
+  | { kind: 'cite'; slide: number; from: string; to: string }
 
 export interface Finding {
   id: string
@@ -182,11 +185,15 @@ const TEMPLATE_NAME: Partial<Record<TemplateId, string>> = {
   fix: 'Error vs Corrección',
 }
 
+/** Plantillas que no muestran la fuente científica en la placa */
+const NO_CITE: TemplateId[] = ['manifesto', 'repeat', 'quote']
+
 /**
  * Diagnóstico del set. `photoLuma(i)` devuelve la luminancia medida de la foto de la placa i (null si
  * no tiene foto o todavía no se midió: en ese caso se usa el fondo liso de la paleta).
+ * `citation(cite)` devuelve el resultado del verificador de papers para esa cita (null = sin dato).
  */
-export function diagnose(slides: CanvasState[], photoLuma: (i: number) => PhotoLuma | null): DoctorReport {
+export function diagnose(slides: CanvasState[], photoLuma: (i: number) => PhotoLuma | null, citation?: (citeMain: string) => CitationStatus | null): DoctorReport {
   const findings: Finding[] = []
   const n = slides.length
   const stats: SlideStat[] = slides.map((s, i) => {
@@ -255,6 +262,40 @@ export function diagnose(slides: CanvasState[], photoLuma: (i: number) => PhotoL
       ...(fixable ? { fix: { kind: 'lang', slide: i } as DoctorFix, fixLabel: 'Reemplazar muletillas' } : {}),
     })
   })
+
+  // Verificador de papers: una alerta por cita (aunque se repita en varias placas).
+  if (citation) {
+    const seen = new Set<string>()
+    slides.forEach((s, i) => {
+      const cite = s.citeMain?.trim()
+      if (!cite || NO_CITE.includes(s.template) || !parseCitation(cite) || seen.has(citationKey(cite))) return
+      seen.add(citationKey(cite))
+      const r = citation(cite)
+      if (!r || (r.state !== 'notfound' && r.state !== 'mismatch')) return
+      const where = slides.map((x, j) => (x.citeMain?.trim() && citationKey(x.citeMain) === citationKey(cite) && !NO_CITE.includes(x.template) ? j + 1 : 0)).filter(Boolean)
+      const placas = where.length > 1 ? `las placas ${where.join(', ')}` : `la placa ${i + 1}`
+      if (r.state === 'notfound') {
+        findings.push({
+          id: `cite-${i}`,
+          slide: i,
+          severity: 'warn',
+          title: `⚠ CITA SIN VERIFICAR en ${placas}`,
+          detail: `Crossref y PubMed no tienen un paper que coincida con «${cite}» (primer autor, año y revista). Revisá los datos o elegí uno de tu Biblioteca de papers antes de publicar.`,
+        })
+      } else {
+        const to = citeFromMatch(r.match)
+        findings.push({
+          id: `cite-${i}`,
+          slide: i,
+          severity: 'warn',
+          title: `⚠ CITA SIN VERIFICAR en ${placas}: datos inconsistentes`,
+          detail: `Apareció «${r.match.title}» (${r.match.author}, ${r.match.year}), pero ${r.issues.join(' y ')}.`,
+          fix: { kind: 'cite', slide: i, from: s.citeMain, to },
+          fixLabel: `Corregir a ${to}`,
+        })
+      }
+    })
+  }
 
   if (n > 1 && !hasCta(slides[n - 1])) {
     findings.push({

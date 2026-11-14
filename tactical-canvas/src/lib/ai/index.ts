@@ -9,6 +9,7 @@ import { JsonRepairError, safeParseJson } from '../safeJson'
 import { deAI } from '../language'
 import { SERVICE_BY_ID, SERVICES } from '../services'
 import { type Discipline, type GenMode, type AiSettings, GEMINI_DEFAULT_MODEL, DEFAULT_AI_SETTINGS, type EditorialOptions, type EditorialTone, type StatusFn, type ModelChangeFn } from './config'
+import { citeFromPaper, enforceLibrary, loadPaperLibrary, paperLibraryRule } from '../paperLibrary'
 import { DISCIPLINE_RULE, TONE_RULE, buildUserPrompt, repairPrompt, MAPPING_SYSTEM, mappingPrompt, TOOL_SYSTEM } from './prompts'
 import { callOpenAI, callAnthropic, HttpError, RateLimitError, rateLimitError, markExhausted, isExhausted, callGemini } from './providers'
 import { obj, str, num, upper, stripBrackets, AI_DIAGRAM_TYPE, first, list, type SlideContext, slideToPatch, cleanText, sanitizePatch, cleanCaption, type GenerationResult, parseGeneration } from './parser'
@@ -34,7 +35,11 @@ export async function generateContent(
   const key = (settings.keys[settings.provider] ?? '').trim()
   if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
   const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
-  const user = buildUserPrompt(topic, mode, discipline, editorial)
+  // Biblioteca de papers en modo exclusivo: lista cerrada de citas en el prompt + guardia en la salida.
+  const papers = loadPaperLibrary()
+  const libRule = paperLibraryRule(papers)
+  const user = buildUserPrompt(topic, mode, discipline, editorial) + (libRule ? `\n\n${libRule}` : '')
+  const guard = (r: GenerationResult): GenerationResult => (libRule ? { ...r, slides: r.slides.map((x) => enforceLibrary(x, papers)) } : r)
   const ctx: SlideContext = { discipline, topic, quote: editorial?.quote ?? null }
   const ask = (prompt: string) =>
     settings.provider === 'gemini'
@@ -44,14 +49,14 @@ export async function generateContent(
         : callOpenAI(key, model, prompt, signal)
   const text = await ask(user)
   try {
-    return parseGeneration(safeParseJson(text), mode, ctx)
+    return guard(parseGeneration(safeParseJson(text), mode, ctx))
   } catch (err) {
     if (!(err instanceof JsonRepairError)) throw err
     // Ni la limpieza local lo salvó: un único reintento pidiéndole al modelo la corrección.
     onStatus?.('[ Respuesta con JSON inválido · Pidiendo corrección sintáctica... ]')
     const fixed = await ask(repairPrompt(err))
     try {
-      const result = parseGeneration(safeParseJson(fixed), mode, ctx)
+      const result = guard(parseGeneration(safeParseJson(fixed), mode, ctx))
       onStatus?.(null)
       return result
     } catch (again) {
@@ -249,7 +254,9 @@ export async function regenerateSlide(
       : settings.provider === 'anthropic'
         ? callAnthropic(key, model, prompt, signal)
         : callOpenAI(key, model, prompt, signal)
-  const text = await ask(regeneratePrompt(req))
+  const papers = loadPaperLibrary()
+  const libRule = paperLibraryRule(papers)
+  const text = await ask(regeneratePrompt(req) + (libRule ? `\n\n${libRule}` : ''))
   let parsed: unknown
   try {
     parsed = safeParseJson(text)
@@ -259,7 +266,7 @@ export async function regenerateSlide(
     parsed = safeParseJson(await ask(repairPrompt(err)))
   }
   onStatus?.(null)
-  return parseGeneration(parsed, 'single', { discipline: req.discipline, topic: req.topic }).slides[0]
+  return enforceLibrary(parseGeneration(parsed, 'single', { discipline: req.discipline, topic: req.topic }).slides[0], papers)
 }
 
 /** Settings de IA guardados por el generador (BYOK), con fusión profunda sobre los defaults. */
@@ -527,6 +534,20 @@ export async function suggestCitation(
   onStatus?: StatusFn,
 ): Promise<{ citeMain: string; citeSub: string }> {
   const focus = DISCIPLINE_RULE[ctx.discipline]
+  // Modo exclusivo: la IA sólo elige cuál de los papers de la biblioteca respalda la placa.
+  const papers = loadPaperLibrary()
+  if (paperLibraryRule(papers)) {
+    const list = papers.papers.map((p, i) => `${i + 1}. ${citeFromPaper(p).citeMain} — «${p.title}» — ${p.finding}`).join('\n')
+    const pick = await askJson(
+      settings,
+      `Contenido de la placa: "${ctx.slide}".\nTema general: "${ctx.topic}".\nBiblioteca de papers del coach:\n${list}\nElegí el paper de la lista que respalde MÁS directamente el contenido. Si ninguno lo respalda, devolvé 0. Forma exacta: { "index": number }`,
+      signal,
+      onStatus,
+    )
+    const p = papers.papers[Number(pick.index) - 1]
+    if (!p) throw new Error('Ningún paper de tu biblioteca respalda esta placa. Sumá uno o desactivá el modo exclusivo.')
+    return citeFromPaper(p)
+  }
   const user = `Contenido de la placa: "${ctx.slide}".
 Tema general: "${ctx.topic}".
 ${focus ? `${focus}\n` : ''}Sugerí UN estudio científico REAL, publicado en una revista indexada (ej: Journal of Strength and Conditioning Research, Sports Medicine, Medicine & Science in Sports & Exercise, British Journal of Sports Medicine, Journal of the International Society of Sports Nutrition), que respalde directamente ese contenido. Preferí revisiones sistemáticas y metaanálisis muy citados (ej: Schoenfeld y col. sobre volumen e hipertrofia, Morton y col. 2018 sobre proteína, Helms y col. 2014 sobre nutrición de culturismo). Si no tenés certeza de que el estudio exista exactamente con ese autor, año y revista, devolvé "found": false: nunca inventes una cita.

@@ -103,7 +103,7 @@ export function CitationSuggester({ state, update, topic, discipline }: Ctx) {
       {note ? (
         <p className={`font-mono text-[10px] leading-relaxed ${busy ? 'animate-pulse text-gold/90' : 'text-fire'}`}>{note}</p>
       ) : (
-        <p className="font-mono text-[9px] leading-relaxed text-steel/60">Verificá la cita en PubMed antes de publicar.</p>
+        <p className="font-mono text-[9px] leading-relaxed text-steel/60">La cita se verifica sola contra Crossref / PubMed.</p>
       )}
     </div>
   )

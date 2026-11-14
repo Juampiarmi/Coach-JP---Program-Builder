@@ -1,8 +1,14 @@
 import { expect, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
+/** APIs públicas del verificador de papers */
+export const PAPER_APIS = /api\.crossref\.org|eutils\.ncbi\.nlm\.nih\.gov/
+
 /** App limpia en modo canvas, con el estado inicial que se le pase (localStorage). */
 export async function openApp(page: Page, storage: Record<string, unknown> = {}) {
+  // Crossref / PubMed nunca se consultan de verdad en los tests: por defecto «sin servicio» (el
+  // verificador queda en error y no suma alertas); cada spec puede registrar sus respuestas.
+  await page.route(PAPER_APIS, (r) => r.fulfill({ status: 503, body: '{}' }))
   await page.goto('/')
   await page.evaluate((s) => {
     localStorage.clear()

@@ -33,6 +33,7 @@ import { useUndoHistory } from './hooks/useUndoHistory'
 import { useDeck } from './hooks/useDeck'
 import { useProjects } from './hooks/useProjects'
 import { useWeeklyPlan } from './hooks/useWeeklyPlan'
+import { useCitationChecks } from './hooks/useCitationChecks'
 import { DEFAULT_DECK, applyFixes, fallbackCaption, GLOBAL_KEYS, BG_KEYS } from './lib/deck'
 import type { AspectId, CanvasState } from './types'
 
@@ -100,7 +101,9 @@ export default function App() {
   // Doctor de retención: diagnóstico en vivo del set (la foto de cada placa se mide una vez).
   const photoId = (s: CanvasState) => s.panoramaImageId ?? ((s.bgStyle ?? 'photo') === 'photo' ? s.bgImageId : null)
   const luma = usePhotoLuma(slides.map(photoId), bg.get)
-  const report = diagnose(slides, (i) => luma(photoId(slides[i])))
+  // Verificador de papers: cada cita científica visible del set se contrasta con Crossref / PubMed.
+  const citations = useCitationChecks(slides.filter((s) => !['manifesto', 'repeat', 'quote'].includes(s.template)).map((s) => s.citeMain))
+  const report = diagnose(slides, (i) => luma(photoId(slides[i])), citations.get)
   const [doctorOpen, setDoctorOpen] = usePersistentState<{ open: boolean }>('jp-tactical-canvas:doctor', { open: true })
   const doctorRef = useRef<HTMLDivElement>(null)
   const [panelTab, setPanelTab] = usePersistentState<{ tab: PanelTab }>('jp-tactical-canvas:panel-tab', { tab: 'ai' })
@@ -349,6 +352,8 @@ export default function App() {
       slideCount={slides.length}
       onCaption={setCaption}
       tab={tab}
+      citation={['manifesto', 'repeat', 'quote'].includes(state.template) ? null : citations.get(state.citeMain)}
+      onRecheckCitation={() => citations.recheck(state.citeMain)}
     />
   )
 
