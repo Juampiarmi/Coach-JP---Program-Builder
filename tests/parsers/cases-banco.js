@@ -10,6 +10,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'Todos los ejercicios de las sesiones (BB, Hyrox y entradas en calor) existen en la biblioteca: el video se vincula solo' },
   { id: 'bank.hyx.01', area: 'Banco · Hyrox (18 plantillas)', fn: 'bancoHyx', input: '', expect: [],
     nota: 'Mismas reglas de estructura que Bodybuilding (con volumen mínimo menor) en las 18 plantillas Hyrox (3 niveles x 2 géneros x 3 frecuencias)' },
+  { id: 'bank.bb.03', area: 'Banco · Bodybuilding (12 plantillas)', fn: 'bancoSplit3', input: '', expect: [],
+    nota: 'Frecuencia 3: hombre = Push / Pull / Pierna completa; mujer = Pierna A / Push, Pull y Brazos / Pierna B. Ningún día es Full Body, en intermedio y en avanzado' },
   { id: 'bank.edit.01', area: 'Banco · editor', fn: 'bancoEditor', input: '', expect: [],
     nota: 'Existe la API de edición y las plantillas del sistema están hidratadas' },
 

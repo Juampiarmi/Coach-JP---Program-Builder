@@ -74,6 +74,7 @@
     bancoHyx:     { run: function(i){ return auditarBancoHyx(i); }, valor: function(r){ return r; } },
     bancoNombres: { run: function(i){ return auditarNombres(i); }, valor: function(r){ return r; } },
     bancoEditor:  { run: function(i){ return auditarEditor(i); }, valor: function(r){ return r; } },
+    bancoSplit3:  { run: function(i){ return auditarSplit3(i); }, valor: function(r){ return r; } },
     /* app del alumno: se compila un alumno de prueba con el compile() real, se abre en un iframe y se llaman sus funciones globales (input: { fn, args }) */
     alumnoParidad: { run: function(lista){ var w = alumnoWin(); if(!w || typeof w.jpDosisCanon !== 'function') throw new Error('la app del alumno no expone jpDosisCanon'); return lista.filter(function(x){ return JSON.stringify(w.jpDosisCanon(x)) !== JSON.stringify(win.jpDosisCanon(x)); }).map(function(x){ return 'distinto para: ' + x; }); }, valor: function(r){ return r; } },
     alumno:       { run: function(i){ var w = alumnoWin(); if(!w || typeof w[i.fn] !== 'function') throw new Error('la app del alumno no expone ' + i.fn); return w[i.fn].apply(w, i.args || []); }, valor: function(r){ return r; } }
@@ -170,6 +171,24 @@
     var r = (S.banco || []).filter(function(x){ return x.id === 'bkstd_jp26_m3_i'; })[0];
     if(!r) return ['no está bkstd_jp26_m3_i'];
     if(!(r.dias || []).length) P.push('la plantilla del sistema no tiene días hidratados');
+    return P;
+  }
+  /* split analítico de 3 días: hombre Push / Pull / Pierna completa; mujer Pierna A / Push, Pull y Brazos / Pierna B (nada de Full Body) */
+  function auditarSplit3(){
+    var P = [], S = getS(), ESP = {
+      m: [/^Push\b/, /^Pull\b/, /^Pierna Completa\b/],
+      f: [/^Pierna A\b/, /^Push, Pull y Brazos\b/, /^Pierna B\b/]
+    };
+    ['m', 'f'].forEach(function(g){ ['i', 'a'].forEach(function(n){
+      var id = 'bkstd_jp26_' + g + '3_' + n, r = (S.banco || []).filter(function(x){ return x.id === id; })[0];
+      if(!r){ P.push(id + ': no existe'); return; }
+      if((r.dias || []).length !== 3){ P.push(id + ': tiene ' + (r.dias || []).length + ' días y deberían ser 3'); return; }
+      r.dias.forEach(function(d, k){
+        var t = String(d.title || d.titulo || '');
+        if(/full\s*body/i.test(t + ' ' + (d.short || ''))) P.push(id + ' día ' + (k + 1) + ': sigue siendo Full Body');
+        if(!ESP[g][k].test(String(d.label || d.short || '').replace(/^DÍA \d+\s*\/\s*/, '') || t)) P.push(id + ' día ' + (k + 1) + ': esperaba ' + ESP[g][k] + ' y es «' + (d.label || d.short || t) + '»');
+      });
+    }); });
     return P;
   }
   function itemsPlanos(r){ var out = []; (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ out.push((b.items || []).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); })); }); }); return out; }
