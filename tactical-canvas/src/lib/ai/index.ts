@@ -440,7 +440,7 @@ const clamp10 = (v: unknown) => Math.min(10, Math.max(1, Math.round(Number(v) ||
  */
 export async function scoreHook(
   settings: AiSettings,
-  ctx: { topic: string; discipline: Discipline; headline: string },
+  ctx: { topic: string; discipline: Discipline; headline: string; history?: string },
   signal?: AbortSignal,
   onStatus?: StatusFn,
 ): Promise<HookScore> {
@@ -456,7 +456,7 @@ ${focus ? `${focus}
 - score: promedio ponderado (impact 40 %, retention 35 %, clarity 25 %), redondeado.
 - verdict: una oración en español argentino neutro: qué funciona y qué le falta.
 Después escribí 3 variantes MEJORES en MAYÚSCULAS (5 a 12 palabras cada una), partidas en "white" (base) y "accent" (remate en naranja, máx 6 palabras), con un ángulo distinto cada una (desmitificar, error concreto, curiosidad con dato real). Voz Coach JP: directa, de sala, voseo, sin clickbait vacío, sin emojis ni signos de exclamación, sin cifras inventadas. "why": por qué rinde más, en 1 línea.
-Forma exacta: { "score": number, "clarity": number, "impact": number, "retention": number, "verdict": string, "variants": [ 3 objetos { "white": string, "accent": string, "why": string } ] }`
+Forma exacta: { "score": number, "clarity": number, "impact": number, "retention": number, "verdict": string, "variants": [ 3 objetos { "white": string, "accent": string, "why": string } ] }${ctx.history ? `\n\n${ctx.history}` : ''}`
   const res = await askJson(settings, user, signal, onStatus)
   const variants = (Array.isArray(res.variants) ? res.variants : [])
     .map(obj)

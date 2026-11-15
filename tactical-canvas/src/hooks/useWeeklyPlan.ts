@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { DEFAULT_STATE } from '../defaults'
+import type { Discipline } from '../lib/ai'
 import type { Deck } from '../lib/deck'
+import { withPhoto } from '../lib/photoBank'
 import { buildPackSlides, packBackgroundUrl, WEEKLY_PACK } from '../lib/weeklyPack'
 import { usePersistentState } from './usePersistentState'
 
@@ -17,10 +19,12 @@ interface Options {
   bg: { add: (dataUrl: string) => { id: string } }
   /** Antes de reemplazar el set (ej: guardar el trabajo suelto como borrador) */
   saveDraftIfNeeded: () => void
+  /** Banco de fotos reales: id de una foto acorde al día (tiene prioridad sobre el fondo táctico del pack) */
+  takePhoto?: (text: string, discipline?: Discipline) => string | null
 }
 
 /** Plan Semanal: el set de cada día como proyecto propio, con su fondo táctico y la carga en 1 clic. */
-export function useWeeklyPlan({ deck, setDeck, bg, saveDraftIfNeeded }: Options) {
+export function useWeeklyPlan({ deck, setDeck, bg, saveDraftIfNeeded, takePhoto }: Options) {
   const [weekly, setWeekly] = usePersistentState<WeeklyStore>('jp-tactical-canvas:weekly-decks', { decks: {}, bg: {} })
 
   // Plan Semanal: cada edición del set de un día queda guardada en su proyecto.
@@ -56,9 +60,11 @@ export function useWeeklyPlan({ deck, setDeck, bg, saveDraftIfNeeded }: Options)
     saveDraftIfNeeded()
     const saved = weekly.decks[dayId]
     if (saved && !restore) return setDeck({ ...saved, active: 0 })
-    const bgId = await packBackground(dayId)
+    // Foto real acorde al día (banco de fotos) o, si no hay, el fondo táctico del pack.
+    const photo = takePhoto?.(`${day.pillar} ${day.theme} ${day.structure} ${day.prompt}`, deck.discipline) ?? null
+    const slides = photo ? withPhoto(buildPackSlides(day, DEFAULT_STATE, null), photo) : buildPackSlides(day, DEFAULT_STATE, await packBackground(dayId))
     setDeck({
-      slides: buildPackSlides(day, DEFAULT_STATE, bgId),
+      slides,
       active: 0,
       caption: day.caption,
       topic: day.theme,

@@ -4,6 +4,8 @@ import { DEFAULT_DECK, type Deck } from '../lib/deck'
 import { downloadBlob, renderThumb } from '../lib/exporter'
 import { DRAFT_ID, EMPTY_LIBRARY, exportLibrary, importLibrary, newProjectId, suggestName, toSaved, type Project, type ProjectStore } from '../lib/projects'
 import type { AspectId } from '../types'
+import type { PostMetrics } from '../lib/performance'
+import type { BankPhoto } from '../lib/photoBank'
 import { usePersistentState } from './usePersistentState'
 
 interface Options {
@@ -12,10 +14,13 @@ interface Options {
   /** Lienzo en pantalla (miniaturas de los proyectos) */
   canvasRef: RefObject<HTMLDivElement | null>
   aspect: AspectId
+  /** Banco de fotos: viaja en el respaldo .json */
+  photoBank?: BankPhoto[]
+  onImportPhotos?: (photos: BankPhoto[]) => void
 }
 
 /** Biblioteca de proyectos: vínculo del set con su proyecto, autoguardado, borrador automático y acciones. */
-export function useProjects({ deck, setDeck, canvasRef, aspect }: Options) {
+export function useProjects({ deck, setDeck, canvasRef, aspect, photoBank = [], onImportPhotos }: Options) {
   // Biblioteca de proyectos: si el navegador se queda sin cuota, se avisa en la biblioteca (nunca en silencio).
   const [libraryFull, setLibraryFull] = useState(false)
   const [library, setLibrary] = usePersistentState<ProjectStore>('jp-tactical-canvas:projects', EMPTY_LIBRARY, () => setLibraryFull(true))
@@ -102,13 +107,18 @@ export function useProjects({ deck, setDeck, canvasRef, aspect }: Options) {
       setLibrary((l) => ({ projects: l.projects.filter((p) => p.id !== id) }))
       if (deck.projectId === id) setDeck((d) => ({ ...d, projectId: undefined }))
     },
+    /** Métricas de Instagram cargadas tras publicar (null = borrarlas). No cuenta como edición del set. */
+    setMetrics: (id: string, metrics: PostMetrics | null) => {
+      setLibrary((l) => ({ projects: l.projects.map((p) => (p.id === id ? { ...p, metrics: metrics ?? undefined } : p)) }))
+    },
     exportAll: async () => {
-      const blob = await exportLibrary(library.projects)
+      const blob = await exportLibrary(library.projects, photoBank)
       downloadBlob(blob, `coachjp_proyectos_${new Date().toISOString().slice(0, 10)}.json`)
     },
     importFile: async (file: File) => {
-      const imported = await importLibrary(await file.text())
+      const { projects: imported, photoBank: photos } = await importLibrary(await file.text())
       setLibrary((l) => ({ projects: [...l.projects, ...imported] }))
+      if (photos.length) onImportPhotos?.(photos)
       return imported.length
     },
   }

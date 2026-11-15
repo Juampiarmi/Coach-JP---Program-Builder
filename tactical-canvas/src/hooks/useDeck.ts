@@ -5,6 +5,7 @@ import { harmonizeChart } from '../lib/chartPillar'
 import { BG_KEYS, DEFAULT_DECK, GLOBAL_KEYS, STORAGE_KEY, STYLE_KEYS, type Deck } from '../lib/deck'
 import { migrateDiagram } from '../lib/diagramPillar'
 import { remixToStories } from '../lib/remix'
+import { withPhoto } from '../lib/photoBank'
 import type { CanvasState, Nudge, NudgeTarget } from '../types'
 import { usePersistentState } from './usePersistentState'
 
@@ -68,7 +69,7 @@ export function useDeck() {
   )
 
   const applyGeneration = useCallback(
-    (r: GenerationResult, meta?: { topic: string; discipline: Discipline }) =>
+    (r: GenerationResult, meta?: { topic: string; discipline: Discipline; photoId?: string | null }) =>
       setDeck((d) => {
         const current = { ...DEFAULT_STATE, ...d.slides[Math.min(d.active, d.slides.length - 1)] }
         const globals: Partial<CanvasState> = {}
@@ -83,11 +84,15 @@ export function useDeck() {
         const discipline = meta?.discipline ?? d.discipline ?? 'general'
         return {
           // Los gráficos de la IA se ponen en caja (rango, zona, barras) antes de mostrarse.
-          slides: r.slides.map((p) => {
-            const s = { ...DEFAULT_STATE, ...globals, ...p }
-            // Todas las placas traen su nodo de gráfico (multiformato): se armoniza siempre.
-            return { ...s, chart: harmonizeChart(s.chart, discipline) }
-          }),
+          slides: (() => {
+            const built = r.slides.map((p) => {
+              const s = { ...DEFAULT_STATE, ...globals, ...p }
+              // Todas las placas traen su nodo de gráfico (multiformato): se armoniza siempre.
+              return { ...s, chart: harmonizeChart(s.chart, discipline) }
+            })
+            // Banco de fotos: una foto real acorde al tema tiene prioridad sobre el fondo heredado.
+            return meta?.photoId ? withPhoto(built, meta.photoId) : built
+          })(),
           active: 0,
           caption: r.caption,
           packDay: undefined,

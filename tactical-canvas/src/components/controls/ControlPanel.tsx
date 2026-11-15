@@ -25,6 +25,8 @@ import { QuoteEditor } from './QuoteEditor'
 import { CitationSuggester, HookGenerator, HookScorer } from './AiAssist'
 import { PaperBadge } from './PaperBadge'
 import { PaperLibraryPanel } from './PaperLibraryPanel'
+import { PhotoBankPanel, type PhotoBankApi } from './PhotoBankPanel'
+import { photoBackground } from '../../lib/photoBank'
 import type { CitationStatus } from '../../lib/paperVerify'
 import { TYPE_PRESETS } from '../../lib/typography'
 import { AccentPicker, Field, NumberInput, Range, Section, Segmented, TextArea, TextInput, Toggle } from './primitives'
@@ -139,6 +141,8 @@ interface Props {
   /** Verificador de papers: estado de la cita de la placa activa (null = no es una cita científica) */
   citation?: CitationStatus | null
   onRecheckCitation?: () => void
+  /** Banco de fotos reales etiquetadas */
+  photoBank?: PhotoBankApi
 }
 
 /**
@@ -154,7 +158,7 @@ function seedQuote(state: CanvasState): Partial<CanvasState> {
   return { quoteText: own, quoteEmphasis: state.headlineB.replace(/\*/g, '').trim(), quoteAuthor: author, quoteRole: '', quoteSource: '' }
 }
 
-export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1, addImage, resolveImage, onCaption, tab = 'text', citation = null, onRecheckCitation }: Props) {
+export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPersisted, getDiscipline, slideIndex, topic, bookmarkAuto, onCopyStyle, slideCount = 1, addImage, resolveImage, onCaption, tab = 'text', citation = null, onRecheckCitation, photoBank }: Props) {
   const ai = { state, update, topic, discipline: getDiscipline() }
   const setChart = (patch: Partial<ChartConfig>) => update({ chart: { ...state.chart, ...patch } })
   const setCard = (key: 'cardA' | 'cardB', patch: Partial<CompareCard>) => update({ [key]: { ...state[key], ...patch } })
@@ -309,7 +313,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
               <Range value={state.remateGap ?? 0} onChange={(remateGap) => update({ remateGap })} min={0} max={60} step={2} suffix="%" />
             </Field>
           )}
-          {slideIndex === 0 && <HookScorer {...ai} />}
+          {slideIndex === 0 && <HookScorer {...ai} slideCount={slideCount} />}
           {slideIndex === 0 && <HookGenerator {...ai} />}
           </>
           )}
@@ -954,6 +958,12 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
       {tab === 'text' && state.template !== 'manifesto' && state.template !== 'repeat' && (
         <Section index="04" title="Biblioteca de papers propios" summary="Evidencia validada · la IA puede citar sólo de acá" defaultOpen={false}>
           <PaperLibraryPanel state={state} update={update} />
+        </Section>
+      )}
+
+      {tab === 'style' && photoBank && state.template !== 'athletic' && (
+        <Section index="02B" title="Banco de fotos reales" summary={photoBank.bank.photos.length ? `${photoBank.bank.photos.length} fotos etiquetadas` : 'Atletas · sala · técnica'} defaultOpen={false}>
+          <PhotoBankPanel api={photoBank} currentId={state.bgImageId} onUse={(id) => update(photoBackground(id))} />
         </Section>
       )}
 

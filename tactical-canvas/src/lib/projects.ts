@@ -1,6 +1,8 @@
 import { getImage, putImage } from './imageStore'
 import type { Discipline } from './ai'
 import type { CanvasState } from '../types'
+import type { PostMetrics } from './performance'
+import type { BankPhoto } from './photoBank'
 
 /**
  * BIBLIOTECA DE PROYECTOS: sets guardados con nombre (campañas, programas, series de contenido).
@@ -27,6 +29,8 @@ export interface Project {
   thumb?: string
   /** Borrador automático: el último set sin guardar (hay uno solo; se pisa) */
   draft?: boolean
+  /** Métricas de Instagram cargadas después de publicar */
+  metrics?: PostMetrics
 }
 
 export interface ProjectStore {
@@ -70,35 +74,40 @@ export function relativeTime(ts: number, now = Date.now()) {
 
 const BACKUP_APP = 'jp-tactical-canvas/projects'
 
-/** Respaldo completo: proyectos + las fotos que usan (para restaurar en otro navegador o equipo). */
-export async function exportLibrary(projects: Project[]): Promise<Blob> {
-  const ids = [...new Set(projects.flatMap((p) => deckImageIds(p.deck)))]
+/** Respaldo completo: proyectos + banco de fotos + las imágenes que usan (para restaurar en otro navegador o equipo). */
+export async function exportLibrary(projects: Project[], photoBank: BankPhoto[] = []): Promise<Blob> {
+  const ids = [...new Set([...projects.flatMap((p) => deckImageIds(p.deck)), ...photoBank.map((p) => p.id)])]
   const images: Record<string, string> = {}
   for (const id of ids) {
     const url = await getImage(id).catch(() => undefined)
     if (url) images[id] = url
   }
-  const payload = { app: BACKUP_APP, version: 1, exportedAt: new Date().toISOString(), projects, images }
+  const payload = { app: BACKUP_APP, version: 2, exportedAt: new Date().toISOString(), projects, photoBank, images }
   return new Blob([JSON.stringify(payload)], { type: 'application/json' })
 }
 
 /**
  * Importa un respaldo: guarda sus fotos en IndexedDB (mismo id) y devuelve sus proyectos con ids
- * nuevos (nunca pisan los existentes). Lanza un error legible si el archivo no es un respaldo.
+ * nuevos (nunca pisan los existentes) y las fotos del banco. Lanza un error legible si el archivo no
+ * es un respaldo. Acepta respaldos v1 (sólo proyectos) y v2 (con banco de fotos).
  */
-export async function importLibrary(text: string): Promise<Project[]> {
-  let data: { app?: string; projects?: unknown; images?: Record<string, unknown> }
+export async function importLibrary(text: string): Promise<{ projects: Project[]; photoBank: BankPhoto[] }> {
+  let data: { app?: string; projects?: unknown; photoBank?: unknown; images?: Record<string, unknown> }
   try {
     data = JSON.parse(text)
   } catch {
     throw new Error('El archivo no es un JSON válido.')
   }
   if (data.app !== BACKUP_APP || !Array.isArray(data.projects)) throw new Error('El archivo no es un respaldo de proyectos de Tactical Canvas.')
-  for (const [id, url] of Object.entries(data.images ?? {})) {
+  const images = data.images ?? {}
+  for (const [id, url] of Object.entries(images)) {
     if (typeof url === 'string' && url.startsWith('data:image/')) await putImage(id, url).catch(() => undefined)
   }
   const now = Date.now()
-  return (data.projects as Project[])
+  const projects = (data.projects as Project[])
     .filter((p) => p && typeof p.name === 'string' && p.deck && Array.isArray(p.deck.slides) && p.deck.slides.length)
     .map((p) => ({ ...p, id: newProjectId(), draft: false, updatedAt: p.updatedAt ?? now, createdAt: p.createdAt ?? now }))
+  // Del banco sólo vuelven las fotos cuya imagen viajó en el respaldo.
+  const photoBank = (Array.isArray(data.photoBank) ? (data.photoBank as BankPhoto[]) : []).filter((p) => p && typeof p.id === 'string' && typeof images[p.id] === 'string')
+  return { projects, photoBank }
 }

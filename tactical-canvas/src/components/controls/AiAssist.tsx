@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { generateHooks, HOOK_ANGLE_LABEL, loadAiSettings, RateLimitError, scoreHook, suggestCitation, type Discipline, type HookScore, type HookVariant } from '../../lib/ai'
 import type { CanvasState } from '../../types'
+import { historyVerdict, hookHistoryContext, loadSummary, MIN_POSTS } from '../../lib/performance'
 
 interface Ctx {
   state: CanvasState
@@ -112,8 +113,11 @@ export function CitationSuggester({ state, update, topic, discipline }: Ctx) {
 const tone = (n: number) => (n >= 8 ? 'text-emerald-400' : n >= 6 ? 'text-gold' : 'text-fire')
 
 /** [ 🎯 PUNTAJE DEL GANCHO ]: evalúa el titular de la portada (1-10) y propone 3 variantes. */
-export function HookScorer({ state, update, topic, discipline }: Ctx) {
+export function HookScorer({ state, update, topic, discipline, slideCount = 1 }: Ctx & { slideCount?: number }) {
   const { busy, note, run } = useAiTask()
+  // Historial real (métricas cargadas en la Biblioteca de proyectos): contexto para la IA y lectura local.
+  const summary = loadSummary()
+  const history = historyVerdict(summary, { cover: state.template, format: slideCount > 1 ? 'carousel' : 'single', pillar: discipline })
   const [res, setRes] = useState<HookScore | null>(null)
   const [scored, setScored] = useState('')
   const headline = `${state.headlineA} ${state.headlineB}`.replace(/\*/g, '').replace(/\s+/g, ' ').trim()
@@ -124,7 +128,7 @@ export function HookScorer({ state, update, topic, discipline }: Ctx) {
         type="button"
         disabled={!headline}
         onClick={() =>
-          run((signal, onStatus) => scoreHook(loadAiSettings(), { topic: topic || headline, discipline, headline }, signal, onStatus), (r) => {
+          run((signal, onStatus) => scoreHook(loadAiSettings(), { topic: topic || headline, discipline, headline, history: hookHistoryContext(summary) }, signal, onStatus), (r) => {
             setRes(r)
             setScored(headline)
           })
@@ -135,6 +139,21 @@ export function HookScorer({ state, update, topic, discipline }: Ctx) {
         {busy ? '[ EVALUANDO… · CANCELAR ]' : res ? '[ 🎯 RE-EVALUAR GANCHO ]' : '[ 🎯 PUNTAJE DEL GANCHO ]'}
       </button>
       {note && <p className={`font-mono text-[10px] leading-relaxed ${busy ? 'animate-pulse text-gold/90' : 'text-fire'}`}>{note}</p>}
+      {history ? (
+        <div className="rounded border border-line px-2 py-1.5 font-mono text-[9px] leading-relaxed text-steel" data-testid="hook-history">
+          <p className={`font-semibold tracking-wider ${history.delta >= 0 ? 'text-cyan' : 'text-fire'}`}>
+            📊 TU HISTORIAL ({summary.posts} POSTS · PROMEDIO {summary.avgRate} %): {history.delta >= 0 ? '+' : ''}
+            {history.delta} PTS
+          </p>
+          {history.lines.map((l) => (
+            <p key={l}>▸ {l}</p>
+          ))}
+        </div>
+      ) : (
+        <p className="font-mono text-[9px] leading-relaxed text-steel/60">
+          📊 Cargá Guardados, Compartidos y Alcance en {MIN_POSTS - summary.posts} {MIN_POSTS - summary.posts === 1 ? 'proyecto publicado más' : 'proyectos publicados más'} (Biblioteca de proyectos) y el puntaje usa tu historial real.
+        </p>
+      )}
       {res && (
         <div className={`space-y-2 ${stale ? 'opacity-50' : ''}`}>
           <div className="flex items-end gap-3">

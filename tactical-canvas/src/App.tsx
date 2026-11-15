@@ -23,6 +23,7 @@ import { WeekDayBar } from './components/WeekDayBar'
 import { deckImageIds } from './lib/projects'
 import { ProjectBar } from './components/ProjectBar'
 import { ProjectLibrary } from './components/ProjectLibrary'
+import { FeedGridPreview } from './components/FeedGridPreview'
 import { usePhotoLuma } from './hooks/usePhotoLuma'
 import { CaptionBar } from './components/CaptionBar'
 import { BrandKitBar } from './components/controls/BrandKitBar'
@@ -34,6 +35,7 @@ import { useDeck } from './hooks/useDeck'
 import { useProjects } from './hooks/useProjects'
 import { useWeeklyPlan } from './hooks/useWeeklyPlan'
 import { useCitationChecks } from './hooks/useCitationChecks'
+import { usePhotoBank } from './hooks/usePhotoBank'
 import { DEFAULT_DECK, applyFixes, fallbackCaption, GLOBAL_KEYS, BG_KEYS } from './lib/deck'
 import type { AspectId, CanvasState } from './types'
 
@@ -92,12 +94,23 @@ export default function App() {
   const [overlay, setOverlay] = useState(false)
   // Guía de recorte de la grilla del perfil (sólo pantalla; nunca entra en el PNG).
   const [gridGuide, setGridGuide] = useState(false)
+  // Vista previa en grilla 3×3 del perfil (modal; sólo pantalla).
+  const [feedGrid, setFeedGrid] = useState(false)
   // Fotos de todas las placas: fondo y las imágenes propias de Error vs Corrección.
   const bg = useBackgroundImages(slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId, s.panoramaImageId]).filter((id): id is string => Boolean(id)))
   const bgImage = bg.get(state.bgImageId)
   // Biblioteca de proyectos y Plan Semanal (el set suelto se guarda como borrador antes de reemplazarlo).
-  const { library, libraryFull, libraryOpen, setLibraryOpen, saveDraftIfNeeded, projectActions, currentProject, openLibrary } = useProjects({ deck, setDeck, canvasRef, aspect: state.aspect })
-  const { weekly, loadDay } = useWeeklyPlan({ deck, setDeck, bg, saveDraftIfNeeded })
+  // Banco de fotos reales etiquetadas: el generador y el Plan Semanal eligen una acorde al tema.
+  const photos = usePhotoBank(bg)
+  const { library, libraryFull, libraryOpen, setLibraryOpen, saveDraftIfNeeded, projectActions, currentProject, openLibrary } = useProjects({
+    deck,
+    setDeck,
+    canvasRef,
+    aspect: state.aspect,
+    photoBank: photos.bank.photos,
+    onImportPhotos: photos.importPhotos,
+  })
+  const { weekly, loadDay } = useWeeklyPlan({ deck, setDeck, bg, saveDraftIfNeeded, takePhoto: photos.take })
   // Doctor de retención: diagnóstico en vivo del set (la foto de cada placa se mide una vez).
   const photoId = (s: CanvasState) => s.panoramaImageId ?? ((s.bgStyle ?? 'photo') === 'photo' ? s.bgImageId : null)
   const luma = usePhotoLuma(slides.map(photoId), bg.get)
@@ -120,6 +133,8 @@ export default function App() {
     ids.push(...Object.values(weekly.bg), ...Object.values(weekly.decks).flatMap((d) => d.slides.flatMap((s) => [s.bgImageId, s.fixWrongImageId, s.fixRightImageId, s.panoramaImageId]).filter((id): id is string => Boolean(id))))
     // …y las de todos los proyectos de la biblioteca.
     ids.push(...library.projects.flatMap((p) => deckImageIds(p.deck)))
+    // …y las del banco de fotos reales.
+    ids.push(...photos.bank.photos.map((p) => p.id))
     if (!legacy) {
       void pruneBackgrounds(ids)
       return
@@ -354,6 +369,7 @@ export default function App() {
       tab={tab}
       citation={['manifesto', 'repeat', 'quote'].includes(state.template) ? null : citations.get(state.citeMain)}
       onRecheckCitation={() => citations.recheck(state.citeMain)}
+      photoBank={photos}
     />
   )
 
@@ -361,7 +377,7 @@ export default function App() {
   const panel = (
     <>
       <PanelTabs tab={panelTab.tab} onChange={(tab) => setPanelTab({ tab })} score={report.score} />
-      {panelTab.tab === 'ai' && <AiGenerator onResult={(r, meta) => (saveDraftIfNeeded(), applyGeneration(r, meta))} onLoadDay={(id) => void loadDay(id, true)} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />}
+      {panelTab.tab === 'ai' && <AiGenerator onResult={(r, meta) => (saveDraftIfNeeded(), applyGeneration(r, { ...meta, photoId: photos.take(`${meta.topic} ${r.slides.map((x) => `${x.tag ?? ''} ${x.headlineA ?? ''} ${x.headlineB ?? ''}`).join(' ')}`, meta.discipline) }))} onLoadDay={(id) => void loadDay(id, true)} onBurst={(b) => update({ headlineA: b.white, headlineB: b.accent })} />}
       {panelTab.tab === 'text' && controls('text')}
       {panelTab.tab === 'style' && (
         <>
@@ -481,6 +497,14 @@ export default function App() {
       }`}
     >
       {isDesktop ? '[ ▦ GRILLA PERFIL ]' : '▦'}
+    </button>
+    <button
+      type="button"
+      onClick={() => setFeedGrid(true)}
+      title="La portada nueva junto a tus últimos posts en la grilla del perfil: contraste y armonía (no se exporta)"
+      className="rounded-lg border border-line px-2.5 py-1.5 font-mono text-[10px] font-semibold tracking-[0.1em] whitespace-nowrap text-steel transition hover:text-white"
+    >
+      {isDesktop ? '[ ⊞ VISTA FEED 3×3 ]' : '⊞ 3×3'}
     </button>
     <button
       type="button"
@@ -604,7 +628,19 @@ export default function App() {
           initialMode={libraryOpen}
           actions={projectActions}
           storageFull={libraryFull}
+          photoCount={photos.bank.photos.length}
           onClose={() => setLibraryOpen(null)}
+        />
+      )}
+      {feedGrid && (
+        <FeedGridPreview
+          cover={slides[0]}
+          coverImage={bg.get(slides[0].bgImageId)}
+          resolveImage={bg.get}
+          slideCount={slides.length}
+          projects={library.projects}
+          currentProjectId={deck.projectId ?? null}
+          onClose={() => setFeedGrid(false)}
         />
       )}
       {/* El estudio queda montado tras la primera visita: alternar de modo no pierde el clip ni el timeline. */}
