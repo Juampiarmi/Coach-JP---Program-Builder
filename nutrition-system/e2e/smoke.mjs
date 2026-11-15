@@ -77,7 +77,7 @@ try {
   await page.waitForTimeout(150);
 
   // Exportación + indicador de plan desactualizado.
-  await page.getByRole('button', { name: /PWA Deploy/ }).click();
+  await page.locator('aside nav button', { hasText: 'Publicar' }).click();
   check(await page.getByText('Todavía no exportaste este plan.').isVisible(), 'Indicador: plan nunca exportado');
   const dir = mkdtempSync(join(tmpdir(), 'cjp-smoke-'));
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Descargar index.html/ }).click()]);
@@ -86,7 +86,7 @@ try {
   check(await page.getByText('Plan al día.').isVisible(), 'Indicador: plan al día después de exportar');
   await page.getByText('03 · Ingestas & leucina').first().click();
   await page.getByTitle('Eliminar comida').first().click();
-  await page.getByRole('button', { name: /PWA Deploy/ }).click();
+  await page.locator('aside nav button', { hasText: 'Publicar' }).click();
   check(await page.getByText('Plan desactualizado.').isVisible(), 'Indicador: plan desactualizado después de editar');
   check(errs.length === 0, `Builder sin errores de JS ${errs.length ? JSON.stringify(errs) : ''}`);
   await ctx.close();
@@ -98,6 +98,9 @@ try {
   pwa.on('pageerror', (e) => perrs.push(e.message));
   await pwa.goto('file://' + html, { waitUntil: 'load' });
   await pwa.waitForTimeout(500);
+  check(await pwa.getByText('Entendido, arrancar').isVisible(), 'PWA: bienvenida de 3 pasos la primera vez');
+  await pwa.getByText('Entendido, arrancar').click();
+  check((await pwa.locator('.welcome').count()) === 0, 'PWA: la bienvenida no vuelve a aparecer');
   check(await pwa.locator('.next-card').isVisible(), 'PWA: tarjeta Próxima comida');
   const firstName = await pwa.locator('.next-card .nx-name').innerText();
   await pwa.locator('.next-card .nx-check').click();

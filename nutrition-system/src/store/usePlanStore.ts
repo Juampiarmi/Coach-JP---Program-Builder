@@ -11,6 +11,7 @@ import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { buildTemplatePlan, goalById, type TemplateSelection } from '@/lib/templateBank';
 import { modernizeName } from '@/lib/foodBrandDb';
 import { aisGroupA } from '@/lib/evidence';
+import { cloudConfigured } from '@/lib/cloud/config';
 import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
 import { itemFromFood, seedPlan, uid } from '@/lib/seed';
 import type {
@@ -30,7 +31,7 @@ import type {
 } from '@/lib/types';
 import { MAX_OPTIONS } from '@/lib/types';
 
-export type BuilderTab = 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'fooddb' | 'library';
+export type BuilderTab = 'athletes' | 'anamnesis' | 'intake' | 'profile' | 'periodization' | 'meals' | 'fooddb' | 'library';
 export type DeployTab = 'preview' | 'export' | 'story';
 
 interface PlanState {
@@ -113,6 +114,8 @@ interface PlanState {
   /** Cambio atómico de atleta: plan saneado, notas propias y estado de vista reseteado (simulador incluido). */
   selectAthlete: (id: string) => void;
   deleteAthlete: (id: string) => void;
+  /** Recibe un plan desde la nube (otro dispositivo del coach): reemplaza el activo o la entrada de la base local. */
+  receiveCloudPlan: (raw: unknown) => string | null;
 }
 
 /**
@@ -486,6 +489,13 @@ export const usePlanStore = create<PlanState>()(
         }),
       switchAthlete: (id) => get().selectAthlete(id),
 
+      receiveCloudPlan: (raw) => {
+        const plan = sanitizePlan(raw);
+        if (!plan) return null;
+        set((s) => (plan.id === s.plan.id ? { plan } : { roster: { ...s.roster, [plan.id]: plan } }));
+        return plan.id;
+      },
+
       deleteAthlete: (id) =>
         set((s) => {
           if (id !== s.plan.id) {
@@ -522,6 +532,8 @@ export const usePlanStore = create<PlanState>()(
         );
         merged.ai = { ...current.ai, ...(saved.ai ?? {}) };
         merged.exports = saved.exports && typeof saved.exports === 'object' ? saved.exports : {};
+        // El panel de atletas sólo existe con la nube configurada.
+        if (merged.builderTab === 'athletes' && !cloudConfigured) merged.builderTab = 'profile';
         // Migración: las notas globales de versiones anteriores pasan a ser del atleta activo.
         merged.notesByAthlete = { ...(saved.notesByAthlete ?? {}) };
         if (!(merged.plan.id in merged.notesByAthlete) && typeof saved.intakeNotes === 'string') merged.notesByAthlete[merged.plan.id] = saved.intakeNotes;

@@ -1,7 +1,7 @@
 // Coach JP Nutrition Builder · Service Worker (app shell offline).
 // Navegación: network-first (siempre la última versión); assets con hash de Next: cache-first;
 // Google Fonts: cache-first. Las llamadas a APIs de IA nunca se cachean.
-const VERSION = 'cjp-nutrition-v3';
+const VERSION = 'cjp-nutrition-v4';
 const SCOPE = self.registration.scope;
 const SHELL = [SCOPE, SCOPE + 'manifest.webmanifest', SCOPE + 'icons/icon-192.png', SCOPE + 'icons/favicon.svg'];
 
@@ -27,6 +27,8 @@ self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  // La app del atleta (/plan/) tiene su propio Service Worker.
+  if (url.pathname.includes('/plan/')) return;
 
   if (url.origin === location.origin && url.href.startsWith(SCOPE)) {
     if (req.mode === 'navigate') {

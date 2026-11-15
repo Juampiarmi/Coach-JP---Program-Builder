@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Brain, ClipboardList, Library, Crosshair, Database, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, SlidersHorizontal, Utensils } from 'lucide-react';
+import { Brain, ClipboardList, Users, Library, Crosshair, Database, Dna, Download, Image as ImageIcon, RotateCcw, Smartphone, SlidersHorizontal, Utensils } from 'lucide-react';
 import { AnamnesisForm } from '@/components/builder/AnamnesisForm';
 import { FoodBrandDatabase } from '@/components/builder/FoodBrandDatabase';
 import { IntakeTab } from '@/components/builder/IntakeTab';
@@ -22,8 +22,13 @@ import { computeTelemetry, eaStatus, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, m
 import { usePlanStore, type BuilderTab, type DeployTab } from '@/store/usePlanStore';
 import { useExportFreshness } from '@/components/deploy/ExportFreshness';
 import { UndoBar } from '@/components/builder/UndoBar';
+import { CloudAccount, ConflictBanner } from '@/components/cloud/CloudAccount';
+import { StepFlow } from '@/components/cloud/StepFlow';
+import { CoachBoard } from '@/components/cloud/CoachBoard';
+import { cloudConfigured } from '@/lib/cloud/config';
 
 const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain }[] = [
+  ...(cloudConfigured ? [{ id: 'athletes' as BuilderTab, label: 'Mis atletas', icon: Users }] : []),
   { id: 'anamnesis', label: '00 · Anamnesis Pro & Lifestyle', icon: ClipboardList },
   { id: 'intake', label: 'IA Prompt Engine', icon: Brain },
   { id: 'profile', label: '01 · Perfil biológico', icon: Dna },
@@ -35,7 +40,7 @@ const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain }[] = [
 
 const DEPLOY_TABS: { id: DeployTab; label: string; icon: typeof Brain }[] = [
   { id: 'preview', label: 'Simulador', icon: Smartphone },
-  { id: 'export', label: 'PWA Deploy', icon: Download },
+  { id: 'export', label: 'Publicar', icon: Download },
   { id: 'story', label: 'Story 9:16', icon: ImageIcon },
 ];
 
@@ -108,6 +113,7 @@ export default function Home() {
             <span className="hidden items-center gap-2 rounded-md border border-cyan-hud/20 bg-cyan-hud/10 px-2.5 py-1.5 font-mono text-[10px] tracking-[0.14em] text-cyan-hud xl:flex">
               <Crosshair className="h-3.5 w-3.5" /> SISTEMA OPERATIVO
             </span>
+            <CloudAccount />
             <ProfileBackup />
             <AthleteSwitcher />
             <InstallButton />
@@ -125,6 +131,8 @@ export default function Home() {
       <main className="grid gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]">
         <section className="min-w-0">
           <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">PANEL IZQUIERDO · TACTICAL COMMAND BUILDER</div>
+          <ConflictBanner />
+          <StepFlow />
           <div className="mb-4 flex items-start gap-2">
           <nav className="scroll-thin flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1">
             {BUILDER_TABS.map(({ id, label, icon: Icon }) => (
@@ -146,7 +154,8 @@ export default function Home() {
           </div>
 {/* key = atleta activo: al cambiar de atleta cada solapa se remonta sin estado local del anterior. */}
           <div key={activeId}>
-                    {builderTab === 'anamnesis' && <AnamnesisForm />}
+          {builderTab === 'athletes' && <CoachBoard />}
+          {builderTab === 'anamnesis' && <AnamnesisForm />}
           {builderTab === 'intake' && <IntakeTab />}
           {builderTab === 'profile' && <ProfileTab />}
           {builderTab === 'periodization' && <PeriodizationTab />}
@@ -169,7 +178,7 @@ export default function Home() {
                 )}
               >
                 <Icon className="h-3.5 w-3.5" /> {label}
-                {id === 'export' && stale && <span className="h-2 w-2 rounded-full bg-fire shadow-[0_0_8px_rgba(249,115,22,.9)]" title="Plan desactualizado: editado después de la última exportación" />}
+                {id === 'export' && stale && <span className="h-2 w-2 rounded-full bg-fire shadow-[0_0_8px_rgba(249,115,22,.9)]" title="Tenés cambios sin publicar" />}
               </button>
             ))}
           </nav>

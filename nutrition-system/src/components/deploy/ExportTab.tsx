@@ -8,6 +8,9 @@ import { usePlanStore } from '@/store/usePlanStore';
 import { suggestedUrl, whatsappSummary } from '@/lib/share';
 import { BalanceBanner } from '../builder/BalanceBanner';
 import { ExportFreshness } from './ExportFreshness';
+import { PublishPanel } from '../cloud/PublishPanel';
+import { athleteLink, cloudConfigured } from '@/lib/cloud/config';
+import { useCloudStore } from '@/store/useCloudStore';
 import { planFingerprint } from '@/lib/planHash';
 import { HudButton, inputCls, Label, Panel, Tag } from '../hud/primitives';
 
@@ -83,13 +86,14 @@ function WhatsAppPanel() {
 export function ExportTab() {
   const plan = usePlanStore((s) => s.plan);
   const markExported = usePlanStore((s) => s.markExported);
+  const cloudLink = useCloudStore((s) => s.links[plan.id]);
   const [copied, setCopied] = useState(false);
   const [lastSize, setLastSize] = useState<number | null>(null);
   const slug = slugify(plan.profile.name);
   const repo = `atleta-${slug}`;
 
   const generate = () => {
-    const html = buildAthleteHtml(plan, { preview: false, mode: 'on', icons: icons() });
+    const html = buildAthleteHtml(plan, { preview: false, mode: 'on', icons: icons(), migrateTo: cloudLink?.token ? athleteLink(cloudLink.slug, cloudLink.token) : undefined });
     setLastSize(new Blob([html]).size);
     markExported(planFingerprint(plan));
     return html;
@@ -110,11 +114,18 @@ export function ExportTab() {
 
   return (
     <div className="space-y-4">
-      <Panel title="EXPORTAR INDEX.HTML // PWA DEPLOY" tone="fire" right={<FileCode2 className="h-4 w-4 text-fire" />}>
+      {cloudConfigured && <PublishPanel />}
+      <Panel title={cloudConfigured ? 'RESPALDO · EXPORTAR ARCHIVO HTML' : 'EXPORTAR INDEX.HTML // PWA DEPLOY'} tone={cloudConfigured ? 'steel' : 'fire'} right={<FileCode2 className="h-4 w-4 text-fire" />}>
         <p className="mb-4 text-sm text-steel">
           Genera una PWA 100% autocontenida en un único archivo: diseño táctico, runtime vanilla JS, datos de <b className="text-ink">{plan.profile.name}</b> embebidos en JSON,
           manifest inline (data URI + blob con URLs absolutas), iconos PNG embebidos y registro de Service Worker.
         </p>
+        {cloudConfigured && <p className="mb-3 text-[13px] text-steel">Plan B sin internet: el archivo funciona solo, pero no se actualiza ni te manda los registros del alumno. Para el día a día usá <b className="text-ink">Publicar</b>.</p>}
+        {cloudLink?.token && (
+          <p className="mb-3 rounded-lg border border-cyan-hud/30 bg-cyan-hud/[0.06] px-3 py-2 text-[12.5px] text-steel">
+            <b className="text-ink">¿Tu alumno usaba la app en archivo?</b> Subí este index.html en su repo de siempre: al abrirlo le aparece el botón <b className="text-cyan-hud">“Pasar mi historial a mi link nuevo”</b> y se lleva comidas, agua y peso al link fijo.
+          </p>
+        )}
         <ExportFreshness onReexport={() => download('index.html', generate(), 'text/html;charset=utf-8')} />
         <div className="mb-3">
           <BalanceBanner context="export" />

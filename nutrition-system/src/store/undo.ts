@@ -82,6 +82,16 @@ function apply(plan: AthletePlan) {
   }
 }
 
+/** Aplica un cambio que no debe quedar en el historial (ej. un plan que llega desde la nube). */
+export function withoutUndo<T>(fn: () => T): T {
+  restoring = true;
+  try {
+    return fn();
+  } finally {
+    restoring = false;
+  }
+}
+
 /** Deshace el último paso. Devuelve su descripción (o null si no hay nada). */
 export function undo(): string | null {
   const { past, future } = useUndoStore.getState();

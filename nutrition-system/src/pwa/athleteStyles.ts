@@ -460,6 +460,25 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .prog{font-family:Inter,system-ui,sans-serif;font-size:12px}
 .cites{font-family:Inter,system-ui,sans-serif;letter-spacing:0;font-size:11px}
 .sec .tag{white-space:nowrap}.sec .prog{text-align:right}
+/* Nube: estado de envío a tu coach y bienvenida */
+.sync-chip{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line2);color:var(--text)}
+.sync-chip.synced{color:#4ADE80;border-color:rgba(34,197,94,.35);background:rgba(34,197,94,.08)}
+.sync-chip.pending{color:var(--cyan);border-color:var(--cyan-edge);background:var(--cyan-soft)}
+.sync-chip.offline{color:#FCD34D;border-color:rgba(252,211,77,.35);background:rgba(252,211,77,.08)}
+.welcome-bg{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:16px;background:rgba(5,8,13,.78);backdrop-filter:blur(4px)}
+.welcome{width:100%;max-width:400px;padding:22px 20px 18px;border-radius:18px;border:1px solid rgba(249,115,22,.5);background:linear-gradient(170deg,rgba(249,115,22,.16),var(--panel) 50%);box-shadow:0 30px 80px -30px rgba(0,0,0,.9)}
+.wl-k{font-size:12px;font-weight:600;color:#FDBA74}
+.welcome h2{margin-top:4px;font-size:24px;font-weight:700;color:var(--title)}
+.wl-sub{margin-top:4px;font-size:14px;color:var(--text)}
+.wl-steps{list-style:none;margin-top:14px;display:grid;gap:10px}
+.wl-steps li{display:flex;gap:12px;align-items:flex-start;font-size:14px;line-height:1.4;color:#E2E8F0}
+.wl-steps b{flex:none;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--fire);color:#fff;font-size:14px}
+.wl-steps strong{color:var(--title)}
+.wl-note{margin-top:14px;font-size:12.5px;color:var(--text)}
+.wl-go{display:block;width:100%;margin-top:18px;padding:14px;border-radius:12px;background:var(--fire);color:#fff;font-size:16px;font-weight:700;box-shadow:0 10px 26px -12px rgba(249,115,22,.9)}
+.migrate-card{margin:0 0 12px;padding:16px;border-radius:16px;border:1px solid rgba(56,189,248,.45);background:linear-gradient(160deg,rgba(56,189,248,.14),var(--panel) 60%)}
+.mg-k{font-size:15px;font-weight:700;color:var(--title)}.migrate-card p{margin-top:6px;font-size:13.5px;line-height:1.45;color:var(--text)}
+.migrate-card button{display:block;width:100%;margin-top:12px;padding:13px;border-radius:11px;background:var(--cyan);color:#0B0F17;font-size:14.5px;font-weight:700}
 `;
 
 export default styles;

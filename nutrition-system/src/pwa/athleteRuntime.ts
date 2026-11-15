@@ -21,6 +21,8 @@ const runtime = String.raw`
       try {
         localStorage.setItem(KEY + ':' + k, JSON.stringify(v));
       } catch (e) {}
+      // Plan en la nube: avisa qué cambió para subirlo a tu coach (cola de envío del arranque).
+      if (window.__cjpCloud) try { window.__cjpCloud.dirty(k); } catch (e) {}
     },
   };
 
@@ -257,10 +259,13 @@ const runtime = String.raw`
     var mode = cur ? S.mode : modeFor(iso);
     var list = mealsFor(mode, cur ? S.extras : store.get('extras:' + iso, {}), cur ? S.free : store.get('free:' + iso, {}), cur ? S.opt : store.get('opt:' + iso, {}), cur ? S.rebal : store.get('rebal:' + iso, {}));
     var tgt = D.targets[mode];
-    var done = 0, k = 0;
-    list.forEach(function (x) { if (checks[x.m.id]) { done++; k += x.kcal; } });
+    var done = 0, k = 0, mp = 0, mc = 0, mf = 0, missed = [];
+    list.forEach(function (x) {
+      if (checks[x.m.id]) { done++; k += x.kcal; mp += x.t.p; mc += x.t.c; mf += x.t.f; }
+      else missed.push(mealName(x.m, mode));
+    });
     var pct = tgt.kcal ? k / tgt.kcal : 0;
-    return { date: iso, mode: mode, done: done, total: list.length, kcal: Math.round(k), target: tgt.kcal, pct: Math.round(pct * 100), adherent: list.length > 0 && done === list.length && Math.abs(pct - 1) <= ADHERENCE_TOL };
+    return { date: iso, mode: mode, done: done, total: list.length, kcal: Math.round(k), target: tgt.kcal, pct: Math.round(pct * 100), adherent: list.length > 0 && done === list.length && Math.abs(pct - 1) <= ADHERENCE_TOL, p: Math.round(mp), c: Math.round(mc), f: Math.round(mf), missed: missed };
   }
 
   var H = store.get('history', {});
@@ -1413,6 +1418,10 @@ const runtime = String.raw`
     // Fila 2 · atleta + selector de fecha.
     h += '<div class="idrow"><div class="who"><b>' + esc(D.athlete.name) + '</b><span>' + esc(D.athlete.discipline) + '</span></div>';
     h += '<div class="datesel"><button data-day="-1" aria-label="Día anterior">◀</button><span class="dlab' + (S.date === today ? ' now' : '') + '">' + dateLabel(S.date) + '</span><button data-day="1" aria-label="Día siguiente">▶</button></div></div>';
+    if (D.cloud && window.__cjpCloud) {
+      var cs = window.__cjpCloud.status();
+      h += '<div class="sync-chip ' + cs.state + '" title="' + esc(cs.tip || '') + '">' + esc(cs.text) + '</div>';
+    }
     if (S.date !== today) h += '<button class="back-today" data-day="0">' + (S.date < today ? '◷ REGISTRO HISTÓRICO' : '◷ VISTA ANTICIPADA DEL PLAN') + ' · VOLVER A HOY</button>';
     if (D.coachNote) {
       var head = D.coachNote.split(/[.!?](\s|$)/)[0];
@@ -1421,6 +1430,7 @@ const runtime = String.raw`
 
     h += '<div class="switch ' + mode + '"><span class="knob"></span><button data-mode="on" class="' + (mode === 'on' ? 'on' : '') + '">MODO DÍA ON</button><button data-mode="off" class="' + (mode === 'off' ? 'on' : '') + '">MODO DÍA OFF</button></div>';
 
+    if (D.migrateTo && !D.cloud && !D.preview) h += '<section class="migrate-card"><div class="mg-k">📲 Tu plan se mudó a un link fijo</div><p>Desde ahora tu plan vive en un link nuevo que tu coach actualiza solo. Pasá tu historial (comidas, agua y peso) con un toque:</p><button data-migrate="1">Pasar mi historial a mi link nuevo</button></section>';
     h += nextCard(list, mode);
 
     h += '<section class="card"><div class="row"><span class="tag">[ TELEMETRÍA · ' + (mode === 'on' ? 'DÍA ON · ENTRENO' : 'DÍA OFF · DESCANSO') + ' ]</span><span class="hv">' + doneCount + '/' + list.length + ' COMIDAS</span></div>' + gauge(tgt, eaten, complete, streak()) + '</section>';
@@ -1500,10 +1510,41 @@ const runtime = String.raw`
     h += '<div class="reset-row"><button id="reset" class="reset-link">↺ Reiniciar checklist e hidratación de este día</button></div>';
     h += '<footer class="foot">' + D.shieldSm + '<div><div class="brand" style="font-size:13px">COACH JP · <span class="muted" style="font-weight:500">HIGH PERFORMANCE SYSTEM</span></div><div class="handle">' + esc(D.handle) + ' · ACTUALIZADO ' + esc(D.generatedLabel) + '</div></div></footer>';
 
+    if (!D.preview && !store.get('welcomed', false)) h += welcomeCard();
     var y = window.scrollY;
     $('#app').innerHTML = h;
     window.scrollTo(0, y);
     renderSheet();
+  }
+
+  // Traspaso del historial de este archivo al link fijo (otro dominio): viaja dentro del link, sin pasar por servidores.
+  function migrateHistory() {
+    var since = addDays(today, -90), data = {}, n = 0, days = {};
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var full = localStorage.key(i);
+        if (full.indexOf(KEY + ':') !== 0) continue;
+        var k = full.slice(KEY.length + 1), m = /^(checks|opt|water|mode|free|rebal):(\d{4}-\d{2}-\d{2})$/.exec(k);
+        if (m ? m[2] >= since : /^(history|weights|swaps|start)$/.test(k)) { data[k] = JSON.parse(localStorage.getItem(full)); n++; if (m) days[m[2]] = 1; }
+      }
+    } catch (e) {}
+    if (!n) return toast('No hay historial para pasar en este celular');
+    var b64 = btoa(unescape(encodeURIComponent(JSON.stringify({ v: 1, d: data })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    toast('Abriendo tu link nuevo con ' + Object.keys(days).length + ' días de historial…');
+    setTimeout(function () { location.href = D.migrateTo + (D.migrateTo.indexOf('#') >= 0 ? '&' : '#') + 'm=' + b64; }, 400);
+  }
+
+  // Bienvenida (primera vez): 3 pasos y a usar la app.
+  function welcomeCard() {
+    var first = String(D.athlete.name || '').split(' ')[0];
+    return '<div class="welcome-bg"><section class="welcome" role="dialog" aria-modal="true" aria-label="Bienvenida">'
+      + '<div class="wl-k">Tu plan de nutrición</div><h2>¡Hola' + (first ? ' ' + esc(first) : '') + '! 👋</h2>'
+      + '<p class="wl-sub">Así se usa, en 3 pasos:</p><ol class="wl-steps">'
+      + '<li><b>1</b><span><strong>Tildá lo que vas comiendo.</strong> Tocá el círculo de cada comida cuando la termines.</span></li>'
+      + '<li><b>2</b><span><strong>Usá SWAP si querés cambiar un alimento.</strong> Te da opciones con los mismos macros.</span></li>'
+      + '<li><b>3</b><span><strong>Anotá tu peso en ayunas.</strong> Una vez por día, apenas te levantás.</span></li>'
+      + '</ol>' + (D.cloud ? '<p class="wl-note">Tu coach ve tu avance y, cuando actualice tu plan, lo vas a ver acá solo.</p>' : '')
+      + '<button class="wl-go" data-welcome="1">Entendido, arrancar</button></section></div>';
   }
 
   // ---------- Utilidades ----------
@@ -1700,7 +1741,7 @@ const runtime = String.raw`
   // ---------- Eventos ----------
   document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.id === 'w-in') { e.preventDefault(); saveWeight(); } });
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-goto],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-goto],[data-welcome],[data-migrate],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
     if (ds.close) return closeSheet();
@@ -1757,6 +1798,8 @@ const runtime = String.raw`
     if (ds.storyphoto === 'clear') { var sc0 = storyState(); if (sc0.url && sc0.own) URL.revokeObjectURL(sc0.url); sc0.img = null; sc0.url = ''; return renderSheet(); }
     if (ds.scanstory) return storyFromScan();
     if (ds.washop) return window.open('https://wa.me/?text=' + encodeURIComponent(shopText(shoppingList())), '_blank');
+    if (ds.migrate) return migrateHistory();
+    if (ds.welcome) { store.set('welcomed', true); haptic(); return render(); }
     if (ds.hy) { S.hyOpen = !S.hyOpen; store.set('hyOpen', S.hyOpen); haptic(); return render(); }
     if (ds.wsave) return saveWeight();
     if (ds.goto) { var mt = document.getElementById('meal-' + ds.goto); if (mt) mt.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
@@ -1939,7 +1982,22 @@ const runtime = String.raw`
     });
   }
 
+  // Puente con el arranque en la nube (/plan/): fila del día para enviar a tu coach y re-render del estado de envío.
+  function dayRow(iso) {
+    var sm = daySummary(iso), cur = iso === S.date;
+    return {
+      day: iso, mode: sm.mode, plan_version: D.version || null,
+      checks: cur ? S.checks : store.get('checks:' + iso, {}), opts: cur ? S.opt : store.get('opt:' + iso, {}), swaps: S.swaps,
+      social: cur ? S.free : store.get('free:' + iso, {}), extras: cur ? S.extras : store.get('extras:' + iso, {}), rebal: cur ? S.rebal : store.get('rebal:' + iso, {}),
+      water_ml: Math.round(cur ? S.water : store.get('water:' + iso, 0)), water_target_ml: sm.mode === 'on' ? D.hydration.onMl : D.hydration.offMl,
+      meals_done: sm.done, meals_total: sm.total, missed: sm.missed, kcal: sm.kcal, kcal_target: sm.target,
+      p: sm.p, c: sm.c, f: sm.f, p_target: D.targets[sm.mode].p, adherent: sm.adherent,
+    };
+  }
+  window.__cjpApi = { dayRow: dayRow, today: function () { return today; }, render: function () { if (!S.sheet && !S.panel) render(); }, toast: toast };
+
   render();
+  if (window.__cjpBootMsg) { toast(window.__cjpBootMsg); window.__cjpBootMsg = ''; }
 })();
 `;
 

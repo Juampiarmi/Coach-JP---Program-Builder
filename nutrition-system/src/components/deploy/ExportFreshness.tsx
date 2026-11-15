@@ -4,19 +4,27 @@ import { useMemo } from 'react';
 import { AlertTriangle, CheckCircle2, Zap } from 'lucide-react';
 import { planFingerprint, timeAgo } from '@/lib/planHash';
 import { usePlanStore } from '@/store/usePlanStore';
+import { useCloudStore } from '@/store/useCloudStore';
 
-/** Estado de la última exportación del atleta activo: nunca exportado, al día o desactualizado. */
-export function useExportFreshness() {
+/**
+ * Estado de entrega del atleta activo: nunca entregado, al día o con cambios sin entregar.
+ * Con la nube conectada se compara contra el plan publicado; si no, contra la última exportación del archivo.
+ */
+export function useExportFreshness(mode: 'auto' | 'file' = 'auto') {
   const plan = usePlanStore((s) => s.plan);
-  const last = usePlanStore((s) => s.exports[s.plan.id]);
+  const exported = usePlanStore((s) => s.exports[s.plan.id]);
+  const link = useCloudStore((s) => s.links[plan.id]);
+  const pub = useCloudStore((s) => (link ? s.published[link.athleteId] : undefined));
   const hash = useMemo(() => planFingerprint(plan), [plan]);
+  const cloud = !!link && mode === 'auto';
+  const last = cloud ? (pub ? { at: Date.parse(pub.at), hash: pub.hash } : undefined) : exported;
   const state: 'never' | 'fresh' | 'stale' = !last ? 'never' : last.hash === hash ? 'fresh' : 'stale';
-  return { state, last, hash };
+  return { state, last, hash, cloud };
 }
 
 /** Banner del panel de exportación con re-exportación en un clic. */
 export function ExportFreshness({ onReexport, busy }: { onReexport: () => void; busy?: boolean }) {
-  const { state, last } = useExportFreshness();
+  const { state, last } = useExportFreshness('file');
   if (state === 'fresh' && last)
     return (
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-cyan-hud/30 bg-cyan-hud/[0.06] px-3 py-2.5 text-[12.5px] text-steel">

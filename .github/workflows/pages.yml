@@ -24,8 +24,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Permisos de la base (RLS + funciones) contra un Postgres 16 descartable: si fallan, no se publica.
-  db-tests:
+  # Pruebas con Postgres 16 descartable: permisos de la base (RLS + funciones), alertas del panel del coach
+  # y la prueba de punta a punta con la nube (Builder ↔ app del atleta). Si algo falla, no se publica.
+  tests:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -35,19 +36,34 @@ jobs:
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    defaults:
+      run:
+        working-directory: nutrition-system
     steps:
       - uses: actions/checkout@v4
-      - name: Pruebas de seguridad de la base
-        working-directory: nutrition-system
-        env:
-          PGHOST: localhost
-          PGPORT: '5432'
-          PGUSER: postgres
-          PGPASSWORD: postgres
-        run: bash supabase/tests/run.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: nutrition-system/package-lock.json
+      - run: npm ci
+      - name: Permisos de la base (RLS + funciones)
+        run: npm run test:db
+      - name: Alertas del panel del coach
+        run: npm run test:unit
+      - name: Builder ↔ app del atleta con la nube (Playwright)
+        run: |
+          npm i --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+          npm run test:cloud
 
   build:
-    needs: db-tests
+    needs: tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
