@@ -143,3 +143,57 @@ export function handMeasure(foodId: string | undefined, grams: number) {
   if (hand && ref.group !== 'dairy-protein' && !HOUSE[foodId]?.some((m) => /scoop|huevo|clara|galleta|tostada|rebanada|cda|cdita|feta|botell|pote/.test(m.one))) return humanQty(grams / hand.g, hand);
   return houseMeasure(foodId, grams).replace(/^≈ /, '');
 }
+
+/**
+ * Envases reales del supermercado argentino (cadenas nacionales y Tucumán), en g o ml, para traducir el total semanal
+ * de la lista de compras a lo que se compra. Se arma de mayor a menor; el último envase redondea hacia arriba.
+ * Las claras se compran como huevos frescos para separar (1 clara ≈ 33 g): no hay claras líquidas en el mercado local.
+ */
+export const CLARA_G = 33;
+export const SHOP_PACKS: Record<string, [number, string][]> = {
+  claras: [
+    [30 * CLARA_G, 'maple de 30 huevos'],
+    [12 * CLARA_G, 'docena'],
+    [6 * CLARA_G, 'media docena'],
+  ],
+  huevo: [
+    [30 * 50, 'maple de 30 huevos'],
+    [12 * 50, 'docena'],
+    [6 * 50, 'media docena'],
+  ],
+  leche: [[1000, 'sachet / caja de 1 L']],
+  'leche-deslactosada': [[1000, 'caja de 1 L']],
+  yogur: [
+    [500, 'pote familiar de 500 g'],
+    [190, 'pote individual de 180-190 g'],
+  ],
+  'yogur-deslactosado': [
+    [500, 'pote familiar de 500 g'],
+    [190, 'pote individual de 180-190 g'],
+  ],
+  'yogur-proteico': [[190, 'pote / botellita de 180-190 g']],
+  untable: [[300, 'pote de 290-300 g']],
+  ricota: [[500, 'pote de 500 g']],
+  pan: [[500, 'paquete de 500 g']],
+  'pan-lactal': [[550, 'paquete de 500-600 g']],
+  arroz: [
+    [1000, 'paquete de 1 kg'],
+    [500, 'paquete de 500 g'],
+  ],
+  yamani: [
+    [1000, 'paquete de 1 kg'],
+    [500, 'paquete de 500 g'],
+  ],
+  fideos: [[500, 'paquete de 500 g']],
+  lentejas: [[500, 'paquete de 500 g']],
+  garbanzos: [[500, 'paquete de 500 g']],
+  avena: [[500, 'bolsa de 500 g']],
+  'avena-instantanea': [[500, 'bolsa de 500 g']],
+  whey: [[1000, 'pote de 1 kg (≈ 33 scoops)']],
+  'whey-isolate': [[1000, 'pote de 1 kg (≈ 33 scoops)']],
+  atun: [[120, 'lata de 170 g (120 g escurrido)']],
+  'galletas-arroz': [[100, 'paquete de 100 g']],
+  'tostadas-arroz': [[100, 'paquete de 100 g']],
+  miel: [[500, 'frasco de 500 g']],
+  mani: [[375, 'frasco de 350-400 g']],
+};

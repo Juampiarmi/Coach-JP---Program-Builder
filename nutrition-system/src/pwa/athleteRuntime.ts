@@ -491,7 +491,18 @@ const runtime = String.raw`
     });
   }
 
-  // "1,5 kg Claras ≈ 1 botellón de 1 L + 1 sachet de 500 ml" · "720 g Pan integral ≈ 2 paquetes de 500 g".
+  // Plural de un envase: todas las palabras antes de "de" / "(" ("pote individual" → "potes individuales").
+  function pluralPack(label) {
+    var m = /^(.*?)( de .*| \(.*)?$/.exec(label), head = m[1], tail = m[2] || '';
+    return head.split(' ').map(function (w) {
+      if (w === '/' || /s$/.test(w)) return w;
+      if (/ón$/.test(w)) return w.slice(0, -2) + 'ones';
+      if (/[lrnd]$/.test(w)) return w + 'es';
+      return w + 's';
+    }).join(' ') + tail;
+  }
+  // "720 g Pan integral ≈ 2 paquetes de 500 g" · claras: huevos frescos para separar
+  // ("1,5 kg Claras ≈ 46 huevos para separar las claras: 1 maple de 30 huevos + 1 docena + 1 media docena").
   function packText(foodId, grams) {
     var packs = foodId && D.shopPacks && D.shopPacks[foodId];
     if (!packs || !(grams > 0)) return '';
@@ -499,9 +510,10 @@ const runtime = String.raw`
     packs.forEach(function (pk, i) {
       var last = i === packs.length - 1, n = last ? Math.max(0, Math.ceil((rest - pk[0] * 0.15) / pk[0])) : Math.floor(rest / pk[0]);
       if (last && n === 0 && rest > pk[0] * 0.15) n = 1;
-      if (n > 0) { parts.push(n + ' ' + (n > 1 ? pluralFirst(pk[1]) : pk[1])); rest -= n * pk[0]; }
+      if (n > 0) { parts.push(n + ' ' + (n > 1 ? pluralPack(pk[1]) : pk[1])); rest -= n * pk[0]; }
     });
     if (!parts.length) parts.push('1 ' + packs[packs.length - 1][1]);
+    if (foodId === 'claras') return '≈ ' + Math.ceil(grams / 33) + ' huevos para separar las claras: ' + parts.join(' + ') + ' (las yemas no entran en tu plan)';
     return '≈ ' + parts.join(' + ');
   }
   function qty(g) { return g >= 1000 ? n1(Math.round(g / 100) / 10) + ' kg' : n0(Math.round(g / 10) * 10) + ' g'; }

@@ -10,7 +10,7 @@ import { autoTechnique, autoTitle, fixTechnique, optionSteps, prepMinutes } from
 import { fitsSlot, foodSlots } from './mealSlots';
 import { modernizeName } from './foodBrandDb';
 import { BRAND_TIERS, TIER_LABEL, TIER_OF_BUDGET } from './brandTiers';
-import { HAND, HOUSE } from './household';
+import { HAND, HOUSE, SHOP_PACKS } from './household';
 import { sanitizeAnamnesis } from './anamnesisPro';
 import type { AthletePlan, DayMode, FoodItem, Meal } from './types';
 
@@ -33,34 +33,6 @@ const SHOP_CATEGORY: Record<SwapGroup, string> = {
 };
 const SHOP_ORDER = ['Verdulería', 'Carnicería / Pescadería', 'Almacén', 'Almacén · Lácteos y huevos', 'Platos preparados', 'Suplementos', 'Otros'];
 
-/** Envases comerciales del supermercado argentino (g o ml) para traducir el total semanal a lo que se compra. */
-const SHOP_PACKS: Record<string, [number, string][]> = {
-  claras: [[1000, 'botellón de 1 L'], [500, 'sachet de 500 ml']],
-  leche: [[1000, 'sachet / caja de 1 L']],
-  'leche-deslactosada': [[1000, 'caja de 1 L']],
-  yogur: [[1000, 'pote de 1 kg'], [180, 'pote de 180 g']],
-  'yogur-deslactosado': [[180, 'pote de 180 g']],
-  'yogur-proteico': [[250, 'botellita de 250 ml']],
-  pan: [[500, 'paquete de 500 g']],
-  'pan-lactal': [[550, 'paquete de 550 g']],
-  arroz: [[1000, 'paquete de 1 kg'], [500, 'paquete de 500 g']],
-  yamani: [[1000, 'paquete de 1 kg'], [500, 'paquete de 500 g']],
-  fideos: [[500, 'paquete de 500 g']],
-  lentejas: [[500, 'paquete de 500 g']],
-  garbanzos: [[500, 'paquete de 500 g']],
-  avena: [[500, 'bolsa de 500 g']],
-  'avena-instantanea': [[500, 'bolsa de 500 g']],
-  ricota: [[500, 'pote de 500 g']],
-  untable: [[290, 'pote de 290 g']],
-  whey: [[1000, 'pote de 1 kg (≈ 33 scoops)']],
-  'whey-isolate': [[1000, 'pote de 1 kg (≈ 33 scoops)']],
-  atun: [[120, 'lata (120 g escurrido)']],
-  'galletas-arroz': [[100, 'paquete de 100 g']],
-  'tostadas-arroz': [[100, 'paquete de 100 g']],
-  miel: [[500, 'frasco de 500 g']],
-  mani: [[380, 'frasco de 380 g']],
-  huevo: [[1500, 'maple de 30 huevos'], [600, 'docena']],
-};
 
 /**
  * Reglas de compra por alimento (pesos del plan en cocido → peso de compra):
