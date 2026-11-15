@@ -100,7 +100,7 @@ const TRAINING_PRESETS: { label: string; chart: Partial<ChartConfig> }[] = [
 
 /** Citas frecuentes de fisiología y fuerza: un toque completa autor/año y descripción. */
 const CITATION_LIBRARY = [
-  { label: 'SCHOENFELD', main: 'SCHOENFELD Y COL., 2019 · J STRENGTH COND RES', sub: 'Respuesta a la dosis de volumen en hipertrofia muscular' },
+  { label: 'SCHOENFELD', main: 'SCHOENFELD Y COL., 2019 · MED SCI SPORTS EXERC', sub: 'Más volumen semanal, más hipertrofia en entrenados (la fuerza no siguió la misma curva)' },
   { label: 'MEEUSEN', main: 'MEEUSEN Y COL., 2013 · MED SCI SPORTS EXERC', sub: 'Consenso sobre diagnóstico y prevención del sobreentrenamiento' },
   { label: 'MORTON', main: 'MORTON Y COL., 2018 · BR J SPORTS MED', sub: 'Ingesta proteica y respuesta anabólica en entrenamiento de fuerza' },
   { label: 'HELMS', main: 'HELMS Y COL., 2014 · J INT SOC SPORTS NUTR', sub: 'Recomendaciones basadas en evidencia para atletas de fuerza' },

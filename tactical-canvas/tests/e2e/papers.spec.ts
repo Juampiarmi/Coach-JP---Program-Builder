@@ -35,7 +35,9 @@ async function doctorSays(page: import('@playwright/test').Page, rx: RegExp, cou
 const citeInput = (page: import('@playwright/test').Page) => page.getByPlaceholder('AUTOR Y COL., AÑO · REVISTA')
 
 test('cita verificada, inconsistente y no encontrada (badge + Doctor)', async ({ page }) => {
-  // La cita de ejemplo dice 2012: Crossref tiene el paper en 2011 → inconsistencia con corrección.
+  // La cita de ejemplo (Hall 2011) ya está verificada; con el año mal → inconsistencia con corrección.
+  await expect(page.locator('[data-paper-status="verified"]')).toContainText('✓ PAPER VERIFICADO')
+  await citeInput(page).fill('HALL Y COL., 2012 · THE LANCET')
   await expect(page.locator('[data-paper-status="mismatch"]')).toContainText('el año publicado es 2011, no 2012')
   await doctorSays(page, /CITA SIN VERIFICAR en la placa 1: datos inconsistentes/, 1)
   const base = await doctorScore(page)

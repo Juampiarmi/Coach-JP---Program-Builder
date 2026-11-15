@@ -48,7 +48,7 @@ export const DEFAULT_STATE: CanvasState = {
   headlineA: 'UN KILO DE GRASA NO SE QUEMA',
   headlineB: 'EN UNA SESIÓN.',
   body: 'Un kilo de tejido adiposo almacena cerca de 7700 kcal. Ninguna clase de spinning lo borra: lo borra el déficit sostenido semana tras semana.',
-  citeMain: 'HALL Y COL., 2012 · THE LANCET',
+  citeMain: 'HALL Y COL., 2011 · THE LANCET',
   citeSub: 'Cuantificación del efecto del desequilibrio energético sobre el peso corporal',
   metricValue: '7700',
   metricLabel: 'KCAL ALMACENADAS EN 1 KG DE GRASA',
