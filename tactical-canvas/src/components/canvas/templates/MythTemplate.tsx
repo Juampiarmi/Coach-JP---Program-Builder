@@ -1,4 +1,5 @@
 import { BRAND, FONT_BODY, FONT_BRAND } from '../../../lib/brand'
+import { keepRanges } from '../KeepRanges'
 import { useAccent } from '../../../lib/accent'
 import type { CanvasPalette } from '../../../lib/theme'
 import type { CanvasState } from '../../../types'
@@ -101,7 +102,7 @@ export function MythTemplate({ state, palette, contentWidth, scale: s }: Props) 
                 textWrap: 'pretty',
               }}
             >
-              {side.text}
+              {keepRanges(side.text)}
             </p>
           )}
         </div>

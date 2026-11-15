@@ -6,6 +6,7 @@ import { DRAFT_ID, EMPTY_LIBRARY, exportLibrary, importLibrary, newProjectId, su
 import type { AspectId } from '../types'
 import type { PostMetrics } from '../lib/performance'
 import type { BankPhoto } from '../lib/photoBank'
+import { importPapers, loadPaperLibrary } from '../lib/paperLibrary'
 import { usePersistentState } from './usePersistentState'
 
 interface Options {
@@ -57,15 +58,26 @@ export function useProjects({ deck, setDeck, canvasRef, aspect, photoBank = [], 
     })
   }
 
-  /** Miniatura de la placa en pantalla para un proyecto (best-effort: si falla, queda el ícono). */
+  /**
+   * Miniatura del proyecto = su PORTADA (es lo que se ve en la grilla del perfil y en la Vista Feed
+   * 3×3). Si en pantalla hay otra placa, se muestra la portada un instante, se captura y se vuelve.
+   */
   const captureThumb = async (id: string) => {
     if (!canvasRef.current) return
+    const back = deck.active
     try {
+      if (back !== 0) {
+        setDeck((d) => ({ ...d, active: 0 }))
+        // Dos cuadros: React pinta la portada y el titular termina su ajuste por ancho.
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
+      }
       const { w, h } = ASPECTS[aspect]
-      const thumb = await renderThumb(canvasRef.current, w, h)
+      const thumb = await renderThumb(canvasRef.current!, w, h)
       setLibrary((l) => ({ projects: l.projects.map((p) => (p.id === id ? { ...p, thumb } : p)) }))
     } catch {
       /* sin miniatura */
+    } finally {
+      if (back !== 0) setDeck((d) => ({ ...d, active: back }))
     }
   }
 
@@ -112,20 +124,21 @@ export function useProjects({ deck, setDeck, canvasRef, aspect, photoBank = [], 
       setLibrary((l) => ({ projects: l.projects.map((p) => (p.id === id ? { ...p, metrics: metrics ?? undefined } : p)) }))
     },
     exportAll: async () => {
-      const blob = await exportLibrary(library.projects, photoBank)
+      const blob = await exportLibrary(library.projects, photoBank, loadPaperLibrary().papers)
       downloadBlob(blob, `coachjp_proyectos_${new Date().toISOString().slice(0, 10)}.json`)
     },
     importFile: async (file: File) => {
-      const { projects: imported, photoBank: photos } = await importLibrary(await file.text())
+      const { projects: imported, photoBank: photos, papers } = await importLibrary(await file.text())
       setLibrary((l) => ({ projects: [...l.projects, ...imported] }))
       if (photos.length) onImportPhotos?.(photos)
+      if (papers.length) importPapers(papers)
       return imported.length
     },
   }
 
   const currentProject = library.projects.find((p) => p.id === deck.projectId) ?? null
   const openLibrary = (mode: 'browse' | 'save') => {
-    // La miniatura del proyecto abierto se refresca con lo que está en pantalla.
+    // La miniatura del proyecto abierto se refresca con su portada actual.
     if (deck.projectId) void captureThumb(deck.projectId)
     setLibraryOpen(mode)
   }

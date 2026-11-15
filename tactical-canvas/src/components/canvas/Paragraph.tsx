@@ -1,4 +1,5 @@
 import { BRAND, FONT_BODY } from '../../lib/brand'
+import { keepRanges } from './KeepRanges'
 
 export function Paragraph({ text, scale, size = 31, color = BRAND.gray, leading = 1.42 }: { text: string; scale: number; size?: number; color?: string; leading?: number }) {
   if (!text.trim()) return null
@@ -14,7 +15,7 @@ export function Paragraph({ text, scale, size = 31, color = BRAND.gray, leading 
         textWrap: 'pretty',
       }}
     >
-      {text.trim()}
+      {keepRanges(text.trim())}
     </p>
   )
 }

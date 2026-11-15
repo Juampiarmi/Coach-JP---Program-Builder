@@ -52,7 +52,9 @@ export function isolateRemate(a: string, b: string): [string, string] {
   const lines = a.split('\n')
   const last = lines[lines.length - 1].trim().split(/\s+/).filter(Boolean)
   const moved: string[] = []
-  while (last.length > 1 && DANGLING.has(bare(last[last.length - 1])) && !/^\*[^*]*$|^[^*]*\*$/.test(last[last.length - 1])) moved.unshift(last.pop()!)
+  // Una palabra con puntuación final («TIER A:», «ES.») cierra una idea: no es funcional aunque coincida.
+  const dangling = (w: string) => DANGLING.has(bare(w)) && !/[:.,;!?…»)]$/.test(w) && !/^\*[^*]*$|^[^*]*\*$/.test(w)
+  while (last.length > 1 && dangling(last[last.length - 1])) moved.unshift(last.pop()!)
   if (!moved.length) return [a, b]
   lines[lines.length - 1] = last.join(' ')
   return [lines.join('\n'), `${moved.join(' ')} ${b.trim()}`]

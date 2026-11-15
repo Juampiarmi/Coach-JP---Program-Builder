@@ -213,7 +213,7 @@ export function diagnose(slides: CanvasState[], photoLuma: (i: number) => PhotoL
         slide: i,
         severity: st.words > LIMITS.warn ? 'critical' : 'warn',
         title: `Portada densa: ${st.words} palabras (~${st.seconds} s)`,
-        detail: `La portada decide el swipe en ~1,5 s. Dejá el gancho y que el desarrollo viva en las placas siguientes (ideal ≤ ${LIMITS.cover} palabras).`,
+        detail: `La portada decide el swipe en ~1,5 s. Dejá el gancho y que el desarrollo viva en las placas siguientes (ideal ≤ ${LIMITS.cover} palabras). Cuenta: titular ${words(slideCopy(s).headline)} + resto ${st.words - words(slideCopy(s).headline)}${s.template === 'statement' && s.kicker?.trim() ? ' (incluye el remate de la barra naranja)' : ''}.`,
         ...trimFix,
       })
     } else if (st.words > LIMITS.warn) {

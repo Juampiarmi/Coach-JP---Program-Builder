@@ -92,7 +92,7 @@ test('banco de fotos: subir con etiquetas, usar en la placa, Plan Semanal y resp
   await page.getByRole('button', { name: /PROYECTOS/ }).first().click()
   const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /EXPORTAR RESPALDO/ }).click()])
   const backup = JSON.parse(readFileSync((await dl.path())!, 'utf8'))
-  expect(backup.version).toBe(2)
+  expect(backup.version).toBe(3)
   expect(backup.photoBank).toMatchObject([{ id: photoId, disciplines: ['mtb'], kind: 'atleta' }])
   expect(backup.images[photoId]).toMatch(/^data:image\//)
 })

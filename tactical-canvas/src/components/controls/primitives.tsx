@@ -85,18 +85,22 @@ export function TextArea({
   rows = 3,
   placeholder,
   mono,
+  ariaLabel,
 }: {
   value: string
   onChange: (v: string) => void
   rows?: number
   placeholder?: string
   mono?: boolean
+  /** Nombre accesible cuando el campo no está dentro de un <Field> (lectores de pantalla y tests) */
+  ariaLabel?: string
 }) {
   return (
     <textarea
       className={`tc-input resize-y leading-relaxed ${mono ? 'font-mono text-[13px]' : ''}`}
       rows={rows}
       value={value}
+      aria-label={ariaLabel}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
     />

@@ -23,8 +23,9 @@ export function DataChips({ chips, scale: s, width }: Props) {
       {list.map((c, i) => {
         // «RIR 1-2» → rótulo «RIR» en tenue + valor «1-2» en grande; sin rótulo, todo como valor.
         const m = c.match(/^([^\d]*?)\s*(\d.*)$/)
-        const label = m && m[1].trim() ? m[1].trim() : ''
-        const value = m ? m[2] : c
+        // Sólo es rótulo si tiene letras: «-300-500 KCAL» o «+14 %» son valores enteros (el signo no es rótulo).
+        const label = m && /\p{L}/u.test(m[1]) ? m[1].trim() : ''
+        const value = m && label ? m[2] : c
         return (
           <div
             key={i}

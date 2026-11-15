@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePersistentState } from '../../hooks/usePersistentState'
-import { citeFromPaper, EMPTY_PAPERS, findInLibrary, mergePapers, newPaperId, paperFromMatch, PAPERS_KEY, weeklyPapers, type OwnPaper, type PaperLibrary } from '../../lib/paperLibrary'
+import { citeFromPaper, EMPTY_PAPERS, findInLibrary, loadPaperLibrary, mergePapers, newPaperId, paperFromMatch, PAPERS_KEY, PAPERS_UPDATED, weeklyPapers, type OwnPaper, type PaperLibrary } from '../../lib/paperLibrary'
 import { lookupDoi } from '../../lib/paperVerify'
 import type { CanvasState } from '../../types'
 import { TextInput, Toggle } from './primitives'
@@ -25,6 +25,12 @@ export function PaperLibraryPanel({ state, update }: Props) {
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const inUse = findInLibrary(state.citeMain, lib.papers)
+  // Un respaldo importado desde la Biblioteca de proyectos suma papers: se recargan acá.
+  useEffect(() => {
+    const reload = () => setLib(loadPaperLibrary())
+    window.addEventListener(PAPERS_UPDATED, reload)
+    return () => window.removeEventListener(PAPERS_UPDATED, reload)
+  }, [setLib])
 
   const add = (p: OwnPaper[]) => setLib((l) => ({ ...l, papers: mergePapers(l.papers, p) }))
 

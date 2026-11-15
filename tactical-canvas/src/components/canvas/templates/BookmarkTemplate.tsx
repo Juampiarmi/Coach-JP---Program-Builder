@@ -1,4 +1,5 @@
 import { BRAND, FONT_BRAND } from '../../../lib/brand'
+import { keepRanges } from '../KeepRanges'
 import { useAccent } from '../../../lib/accent'
 import { BOOKMARK_CTA } from '../../../lib/bookmark'
 import type { CanvasPalette } from '../../../lib/theme'
@@ -82,7 +83,7 @@ export function BookmarkTemplate({ state, palette, theme, contentWidth, scale: s
               }}
             >
               <span style={{ fontFamily: MONO_FONT, fontWeight: 700, fontSize: 24 * s, color: accent, flexShrink: 0, whiteSpace: 'pre' }}>{`> ${String(i + 1).padStart(2, '0')}`}</span>
-              <span style={{ fontFamily: LABEL_FONT, fontWeight: 700, fontSize: 29 * s, lineHeight: 1.25, color: palette.ink, textWrap: 'pretty' }}>{p}</span>
+              <span style={{ fontFamily: LABEL_FONT, fontWeight: 700, fontSize: 29 * s, lineHeight: 1.25, color: palette.ink, textWrap: 'pretty' }}>{keepRanges(p)}</span>
             </div>
           ))}
         </div>

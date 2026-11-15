@@ -32,6 +32,22 @@ export const EMPTY_PAPERS: PaperLibrary = { papers: [], exclusive: false }
 
 export const newPaperId = () => `pp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
+/** Evento para que el panel de la biblioteca recargue lo que se importó desde un respaldo. */
+export const PAPERS_UPDATED = 'jp-papers-updated'
+
+/** Suma papers importados (sin duplicar) directo en el almacenamiento y avisa al panel. */
+export function importPapers(incoming: OwnPaper[]): number {
+  const lib = loadPaperLibrary()
+  const merged = mergePapers(lib.papers, incoming)
+  try {
+    localStorage.setItem(PAPERS_KEY, JSON.stringify({ ...lib, papers: merged }))
+  } catch {
+    return 0
+  }
+  window.dispatchEvent(new Event(PAPERS_UPDATED))
+  return merged.length - lib.papers.length
+}
+
 /** Lectura directa (las funciones de IA la consultan al momento de generar). */
 export function loadPaperLibrary(): PaperLibrary {
   try {

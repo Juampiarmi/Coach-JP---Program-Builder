@@ -264,7 +264,7 @@ export function ProjectLibrary({ projects, currentId, current, currentSaved, ini
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-5 py-3">
-          <p className="font-mono text-[9px] leading-relaxed text-steel/60">Los proyectos viven en este navegador. El respaldo .json incluye las fotos, las métricas y el banco de fotos.</p>
+          <p className="font-mono text-[9px] leading-relaxed text-steel/60">Los proyectos viven en este navegador. El respaldo .json incluye las fotos, las métricas, el banco de fotos y la Biblioteca de Papers.</p>
           <div className="flex gap-2">
             <input
               ref={fileRef}
@@ -291,7 +291,7 @@ export function ProjectLibrary({ projects, currentId, current, currentSaved, ini
               disabled={!projects.length && !photoCount}
               onClick={async () => {
                 await actions.exportAll()
-                setNote('✓ Respaldo descargado (proyectos, métricas y banco de fotos).')
+                setNote('✓ Respaldo descargado (proyectos, métricas, banco de fotos y papers).')
               }}
               className="rounded-lg border border-cyan/50 px-3 py-1.5 font-mono text-[10px] tracking-[0.1em] text-cyan hover:bg-cyan/10 disabled:opacity-40"
             >

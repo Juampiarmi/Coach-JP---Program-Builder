@@ -303,7 +303,7 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
                   ⇄ INVERTIR
                 </button>
               </div>
-              <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} />
+              <TextArea value={state.headlineB} onChange={(headlineB) => update({ headlineB })} rows={2} ariaLabel="Remate · naranja" />
             </div>
           </div>
           <p className="-mt-1 font-mono text-[9px] tracking-wider text-steel/60">↵ Enter = salto de línea forzado · *palabra* invierte color</p>
@@ -358,7 +358,8 @@ export function ControlPanel({ state, update, onReset, bgImage, setBgImage, bgPe
             <Field label="Datos clave · cajas tácticas" hint="uno por línea, con número (máx 4)">
               <TextArea
                 value={(state.dataChips ?? []).join('\n')}
-                onChange={(v) => update({ dataChips: v.split('\n').map((c) => c.toUpperCase()).slice(0, 4) })}
+                // Campo vacío = sin cajas (antes quedaba [''] guardado como una caja vacía).
+                onChange={(v) => update({ dataChips: v.trim() ? v.split('\n').map((c) => c.toUpperCase()).slice(0, 4) : [] })}
                 rows={2}
                 placeholder={'RIR 1-2\nPAUSA 2-3 MIN\n10-20 SERIES/SEM'}
               />

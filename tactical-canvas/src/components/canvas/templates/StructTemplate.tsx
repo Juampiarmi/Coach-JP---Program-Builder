@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import { keepRanges } from '../KeepRanges'
 import { useAccent } from '../../../lib/accent'
 import { BRAND, FONT_BRAND } from '../../../lib/brand'
 import { resolveStructData } from '../../../lib/structPillar'
@@ -309,8 +310,8 @@ function Checklist({ data, look }: { data: StructData['checklist']; look: Look }
           >
             <span style={{ fontFamily: MONO_FONT, fontWeight: 700, fontSize: 35 * s, lineHeight: 1.1, color, whiteSpace: 'pre', flexShrink: 0 }}>{ok ? '[ ✓ ]' : '[ ✗ ]'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontFamily: FONT_BRAND, fontWeight: 700, fontSize: 35 * s, lineHeight: 1.2, color: palette.ink, textWrap: 'pretty' }}>{it.text}</p>
-              {it.detail && <p style={{ margin: `${6 * s}px 0 0`, fontFamily: LABEL_FONT, fontWeight: 500, fontSize: 26 * s, lineHeight: 1.3, color: palette.muted }}>{it.detail}</p>}
+              <p style={{ margin: 0, fontFamily: FONT_BRAND, fontWeight: 700, fontSize: 35 * s, lineHeight: 1.2, color: palette.ink, textWrap: 'pretty' }}>{keepRanges(it.text)}</p>
+              {it.detail && <p style={{ margin: `${6 * s}px 0 0`, fontFamily: LABEL_FONT, fontWeight: 500, fontSize: 26 * s, lineHeight: 1.3, color: palette.muted }}>{keepRanges(it.detail)}</p>}
             </div>
             <div style={{ paddingTop: 4 * s, flexShrink: 0 }}>
               <Badge color={color} look={look}>
