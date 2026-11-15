@@ -6,7 +6,8 @@
 2. **Authentication → Sign In / Providers**
    - *Email*: activado (email + contraseña). El link mágico usa el mismo proveedor.
    - **Allow anonymous sign-ins**: activado (así el atleta entra con su link, sin crear cuenta).
-   - Recomendado: *Attack Protection → CAPTCHA* (Turnstile) para que nadie cree sesiones anónimas en masa.
+   - **No actives** *Attack Protection → CAPTCHA* por ahora: la app del atleta abre su sesión anónima sin CAPTCHA
+     y quedaría bloqueada. El límite de sesiones por IP que trae Supabase por defecto alcanza para empezar.
 3. **Authentication → URL Configuration**
    - *Site URL*: `https://<usuario>.github.io/<repo>/nutrition/`
    - *Redirect URLs*: agregá `https://<usuario>.github.io/<repo>/nutrition/**` (link mágico y recuperación de contraseña).
