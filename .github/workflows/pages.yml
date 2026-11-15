@@ -24,7 +24,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Permisos de la base (RLS + funciones) contra un Postgres 16 descartable: si fallan, no se publica.
+  db-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pruebas de seguridad de la base
+        working-directory: nutrition-system
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: bash supabase/tests/run.sh
+
   build:
+    needs: db-tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +65,9 @@ jobs:
         env:
           # basePath/assetPrefix explícitos: el Builder vive en https://<usuario>.github.io/<repo>/nutrition/
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}/nutrition
+          # Conexión a Supabase (Settings → Variables). Vacías = el Builder funciona en modo local como siempre.
+          NEXT_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: |
           npm ci
           npm run build
