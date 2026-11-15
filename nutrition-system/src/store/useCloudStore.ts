@@ -49,6 +49,7 @@ interface CloudState {
 
   init: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<string | null>;
+  signUp: (email: string, password: string) => Promise<{ error: string | null; confirm: boolean }>;
   magicLink: (email: string) => Promise<string | null>;
   resetPassword: (email: string) => Promise<string | null>;
   signOut: () => Promise<void>;
@@ -211,6 +212,29 @@ export const useCloudStore = create<CloudState>()(
           // Primera pantalla después de entrar: el panel con todos los atletas.
           usePlanStore.getState().setBuilderTab('athletes');
           return null;
+        },
+
+        signUp: async (email, password) => {
+          set({ busy: 'Creando tu cuenta…', error: '' });
+          const sb = supa();
+          const { data, error } = await sb.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: window.location.href.split('#')[0] } });
+          if (error) return { error: fail(error), confirm: false };
+          if (!data.session) {
+            set({ busy: null });
+            return { error: null, confirm: true };
+          }
+          const { data: coach, error: e2 } = await sb.rpc('ensure_coach', { p_name: '' });
+          if (e2) {
+            await sb.auth.signOut();
+            set({ user: null });
+            return { error: fail(e2), confirm: false };
+          }
+          set({ coachName: (coach as { name?: string })?.name ?? '' });
+          await get().pull();
+          watch();
+          set({ busy: null });
+          usePlanStore.getState().setBuilderTab('athletes');
+          return { error: null, confirm: false };
         },
 
         magicLink: async (email) => {

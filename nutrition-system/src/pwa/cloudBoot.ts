@@ -9,6 +9,12 @@ const cloudBoot = String.raw`
 (function () {
   'use strict';
   var B = JSON.parse(document.getElementById('cjp-boot').textContent);
+  // Conexión de prueba del coach (asistente "Conectar nube" del Builder, mismo navegador): sirve para probar
+  // el link antes de fijar la conexión para todos los alumnos.
+  if (!B.url || !B.key) try {
+    var ov = JSON.parse(localStorage.getItem('coachjp-cloud-override') || 'null');
+    if (ov && ov.url && ov.key) { B.url = String(ov.url).replace(/\/$/, ''); B.key = ov.key; }
+  } catch (e) {}
   var app = document.getElementById('app');
   var qs = new URLSearchParams(location.search);
   var pm = /\/plan\/([a-z0-9-]{2,60})\/?$/i.exec(location.pathname);

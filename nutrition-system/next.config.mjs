@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 /**
  * Export 100% estático (carpeta out/) para publicar el Command Builder en GitHub Pages.
  *
@@ -17,6 +19,25 @@ function resolveBasePath() {
 
 const basePath = resolveBasePath();
 
+/**
+ * Conexión a Supabase: variables del build (GitHub → Settings → Variables) o, si no están, cloud.config.json.
+ * URL y clave pública (anon) son públicas por diseño: la seguridad la dan los permisos por fila de la base.
+ */
+function resolveCloud() {
+  let file = {};
+  try {
+    file = JSON.parse(readFileSync(new URL('./cloud.config.json', import.meta.url), 'utf8'));
+  } catch {}
+  return {
+    url: (process.env.NEXT_PUBLIC_SUPABASE_URL || file.supabaseUrl || '').trim(),
+    key: (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || file.anonKey || '').trim(),
+  };
+}
+const cloud = resolveCloud();
+// El post-build (app del atleta en out/plan/) lee las mismas variables.
+process.env.NEXT_PUBLIC_SUPABASE_URL = cloud.url;
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = cloud.key;
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'export',
@@ -24,7 +45,7 @@ const nextConfig = {
   assetPrefix: basePath || undefined,
   trailingSlash: true,
   images: { unoptimized: true },
-  env: { NEXT_PUBLIC_BASE_PATH: basePath },
+  env: { NEXT_PUBLIC_BASE_PATH: basePath, NEXT_PUBLIC_SUPABASE_URL: cloud.url, NEXT_PUBLIC_SUPABASE_ANON_KEY: cloud.key, NEXT_PUBLIC_REPO: process.env.GITHUB_REPOSITORY ?? '' },
 };
 
 export default nextConfig;

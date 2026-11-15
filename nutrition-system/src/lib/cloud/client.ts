@@ -22,6 +22,8 @@ export function humanError(e: unknown): string {
   if (/Invalid login credentials/i.test(msg)) return 'Email o contraseña incorrectos.';
   if (/Email not confirmed/i.test(msg)) return 'Todavía no confirmaste tu email: revisá tu casilla.';
   if (/no está habilitado como coach/i.test(msg)) return 'Este email no está habilitado como coach. Pedile a tu coach principal que te invite.';
+  if (/already registered|already been registered/i.test(msg)) return 'Ese email ya tiene cuenta: tocá "Entrar".';
+  if (/Password should be/i.test(msg)) return 'La contraseña es muy corta o muy simple: usá al menos 8 caracteres.';
   if (/rate limit|too many/i.test(msg)) return 'Demasiados intentos seguidos. Esperá unos minutos y probá de nuevo.';
   if (/duplicate key.*slug|athletes_slug_key/i.test(msg)) return 'Ese link ya lo usa otro atleta. Probá con otro nombre de link.';
   if (/JWT|session|not authenticated/i.test(msg) || err?.status === 401) return 'Tu sesión venció. Volvé a iniciar sesión.';

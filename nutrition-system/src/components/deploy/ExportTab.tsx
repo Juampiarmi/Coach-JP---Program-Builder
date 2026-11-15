@@ -9,6 +9,7 @@ import { suggestedUrl, whatsappSummary } from '@/lib/share';
 import { BalanceBanner } from '../builder/BalanceBanner';
 import { ExportFreshness } from './ExportFreshness';
 import { PublishPanel } from '../cloud/PublishPanel';
+import { CloudConnect } from '../cloud/CloudConnect';
 import { athleteLink, cloudConfigured } from '@/lib/cloud/config';
 import { useCloudStore } from '@/store/useCloudStore';
 import { planFingerprint } from '@/lib/planHash';
@@ -83,6 +84,21 @@ function WhatsAppPanel() {
   );
 }
 
+/** Sin nube todavía: invitación a conectarla en 1 paso. */
+function ConnectCard() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="rounded-2xl border border-cyan-hud/30 bg-cyan-hud/[0.05] p-5">
+      <div className="text-[16px] font-bold text-ink">Publicá con link fijo (nube)</div>
+      <p className="mt-1.5 text-[13.5px] text-steel">Tu alumno abre siempre el mismo link y ve cada cambio al instante; vos ves sus registros y su peso. Se conecta en 1 paso con tu proyecto de Supabase.</p>
+      <button onClick={() => setOpen(true)} className="mt-4 w-full rounded-xl bg-fire py-3.5 text-[15px] font-bold text-white hover:bg-fire-hot">
+        Conectar nube en 1 paso
+      </button>
+      {open && <CloudConnect onClose={() => setOpen(false)} />}
+    </section>
+  );
+}
+
 export function ExportTab() {
   const plan = usePlanStore((s) => s.plan);
   const markExported = usePlanStore((s) => s.markExported);
@@ -114,7 +130,7 @@ export function ExportTab() {
 
   return (
     <div className="space-y-4">
-      {cloudConfigured && <PublishPanel />}
+      {cloudConfigured ? <PublishPanel /> : <ConnectCard />}
       <Panel title={cloudConfigured ? 'RESPALDO · EXPORTAR ARCHIVO HTML' : 'EXPORTAR INDEX.HTML // PWA DEPLOY'} tone={cloudConfigured ? 'steel' : 'fire'} right={<FileCode2 className="h-4 w-4 text-fire" />}>
         <p className="mb-4 text-sm text-steel">
           Genera una PWA 100% autocontenida en un único archivo: diseño táctico, runtime vanilla JS, datos de <b className="text-ink">{plan.profile.name}</b> embebidos en JSON,

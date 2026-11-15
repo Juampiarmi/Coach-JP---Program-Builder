@@ -11,7 +11,7 @@ import pg from 'pg';
 const ROOT = new URL('../supabase/', import.meta.url).pathname;
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 
-export async function startFakeSupabase({ port = 0, users = [] } = {}) {
+export async function startFakeSupabase({ port = 0, users = [], migrate = true } = {}) {
   const admin = new pg.Client();
   await admin.connect();
   const db = `cjp_e2e_${process.pid}_${Date.now().toString(36)}`;
@@ -22,7 +22,7 @@ export async function startFakeSupabase({ port = 0, users = [] } = {}) {
   admin.on('error', () => {});
   const boot = await pool.connect();
   await boot.query(readFileSync(ROOT + 'tests/shim.sql', 'utf8'));
-  for (const f of readdirSync(ROOT + 'migrations').sort()) await boot.query(readFileSync(ROOT + 'migrations/' + f, 'utf8'));
+  if (migrate) for (const f of readdirSync(ROOT + 'migrations').sort()) await boot.query(readFileSync(ROOT + 'migrations/' + f, 'utf8'));
   boot.release();
 
   const passwords = new Map(); // email → { id, password }
@@ -182,6 +182,15 @@ export async function startFakeSupabase({ port = 0, users = [] } = {}) {
       // ---------- Auth ----------
       if (url.pathname.startsWith('/auth/v1/')) {
         const p = url.pathname.slice(8);
+        if (p === '/settings') return send(200, { external: { email: true, anonymous_users: true }, disable_signup: false, mailer_autoconfirm: true });
+        if (p === '/signup' && body?.email) {
+          const mail = String(body.email).toLowerCase();
+          if (passwords.has(mail)) return send(422, { code: 'user_already_exists', msg: 'User already registered' });
+          const id = randomUUID();
+          await pool.query('insert into auth.users (id, email, is_anonymous) values ($1, $2, false)', [id, mail]);
+          passwords.set(mail, { id, password: body.password });
+          return send(200, session({ id, email: mail }));
+        }
         if (p === '/signup' && !body?.email) {
           const id = randomUUID();
           await pool.query('insert into auth.users (id, is_anonymous) values ($1, true)', [id]);
