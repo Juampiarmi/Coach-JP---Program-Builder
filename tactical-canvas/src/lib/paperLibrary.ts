@@ -93,18 +93,39 @@ export function mergePapers(current: OwnPaper[], incoming: OwnPaper[]): OwnPaper
   return [...current, ...incoming.filter((p) => !seen.has(key(p)) && (seen.add(key(p)), true))]
 }
 
+/** Raíces de palabras con contenido (5 letras, sin acentos): «hipertrofia» y «hypertrophy» comparten «hiper»/«hyper» → se normaliza y≈i. */
+const roots = (t: string) =>
+  new Set(
+    fold(t)
+      .replace(/y/g, 'i')
+      .replace(/ph/g, 'f')
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length >= 4)
+      .map((w) => w.slice(0, 5)),
+  )
+
 /**
- * Regla para el prompt cuando el modo exclusivo está activo: la lista cerrada de papers citables.
- * Sin biblioteca o sin modo exclusivo no se agrega nada (el prompt queda idéntico).
+ * Los papers más relevantes para un tema (coincidencia de raíces entre el tema y título + hallazgo +
+ * revista), para mandarle a la IA sólo 3 en lugar de toda la biblioteca. A igual puntaje, el más nuevo.
  */
-export function paperLibraryRule(lib: PaperLibrary): string {
+export function relevantPapers(papers: OwnPaper[], text: string, n = 3): OwnPaper[] {
+  if (papers.length <= n) return papers
+  const want = roots(text)
+  const score = (p: OwnPaper) => [...roots(`${p.title} ${p.finding} ${p.journal}`)].filter((r) => want.has(r)).length
+  return [...papers].map((p, i) => ({ p, i, sc: score(p) })).sort((a, b) => b.sc - a.sc || b.p.year - a.p.year || a.i - b.i).slice(0, n).map((x) => x.p)
+}
+
+/**
+ * Regla para el prompt cuando el modo exclusivo está activo: la lista cerrada de papers citables
+ * (con tema: sólo los 3 más relevantes). Sin biblioteca o sin modo exclusivo no se agrega nada.
+ */
+export function paperLibraryRule(lib: PaperLibrary, topic?: string): string {
   if (!lib.exclusive || !lib.papers.length) return ''
-  const list = lib.papers.map((p, i) => `${i + 1}. ${citeFromPaper(p).citeMain} — «${p.title}» — Hallazgo: ${p.finding}`).join('\n')
-  return `BIBLIOTECA DE EVIDENCIA DEL COACH (modo exclusivo, inquebrantable):
-Sólo podés citar papers de esta lista, con el autor, el año y la revista EXACTOS como figuran:
+  const papers = topic ? relevantPapers(lib.papers, topic) : lib.papers
+  const list = papers.map((p, i) => `${i + 1}. ${citeFromPaper(p).citeMain} — ${p.finding || p.title}`).join('\n')
+  return `BIBLIOTECA DE EVIDENCIA (modo exclusivo): sólo podés citar estos papers, con la cita EXACTA:
 ${list}
-- citeMain de cualquier placa: copiá la cita de la lista tal cual; citeSub: su hallazgo.
-- Si ningún paper de la lista respalda el contenido, dejá citeMain y citeSub vacíos y no menciones estudios en el caption. Prohibido citar cualquier otro paper, aunque exista.`
+citeMain = la cita tal cual; description = su hallazgo. Si ninguno respalda el contenido, citation y description vacíos y sin estudios en el caption.`
 }
 
 /** Guardia post-IA: con el modo exclusivo, toda cita que no esté en la biblioteca se borra. */

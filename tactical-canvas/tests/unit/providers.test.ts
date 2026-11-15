@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_AI_SETTINGS, generateContent, type AiProvider, type AiSettings } from '../../src/lib/ai'
+import { clearAiCache, DEFAULT_AI_SETTINGS, generateContent, type AiProvider, type AiSettings } from '../../src/lib/ai'
 
 const ANSWER = { format: 'single', caption: 'c', slides: [{ templateId: 'sentencia', text: { titleWhite: 'LA CARGA', titleAccent: 'MANDA.', parrafo: 'p' } }] }
 const RESPONSE: Record<AiProvider, unknown> = {
@@ -8,7 +8,7 @@ const RESPONSE: Record<AiProvider, unknown> = {
   gemini: { candidates: [{ content: { parts: [{ text: JSON.stringify(ANSWER) }] } }] },
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => (vi.unstubAllGlobals(), clearAiCache()))
 
 describe('clientes de proveedor (request exacto: snapshot)', () => {
   for (const provider of ['anthropic', 'openai', 'gemini'] as AiProvider[]) {

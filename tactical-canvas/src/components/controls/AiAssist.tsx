@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { generateHooks, HOOK_ANGLE_LABEL, loadAiSettings, RateLimitError, scoreHook, suggestCitation, type Discipline, type HookScore, type HookVariant } from '../../lib/ai'
+import { generateHooks, localHooks, HOOK_ANGLE_LABEL, loadAiSettings, RateLimitError, scoreHook, suggestCitation, type Discipline, type HookScore, type HookVariant } from '../../lib/ai'
 import type { CanvasState } from '../../types'
 import { historyVerdict, hookHistoryContext, loadSummary, MIN_POSTS } from '../../lib/performance'
 
@@ -50,7 +50,13 @@ const pill =
 export function HookGenerator({ state, update, topic, discipline }: Ctx) {
   const { busy, note, run } = useAiTask()
   const [hooks, setHooks] = useState<HookVariant[]>([])
+  const [localN, setLocalN] = useState(0)
   const headline = `${state.headlineA} ${state.headlineB}`.replace(/\*/g, '').trim()
+  // Sin API (sin key, caída o sin cuota): ganchos armados localmente con la voz de sala.
+  const local = () => {
+    setHooks(localHooks(topic || headline, localN))
+    setLocalN((n) => n + 1)
+  }
   return (
     <div className="space-y-2">
       <button
@@ -62,6 +68,11 @@ export function HookGenerator({ state, update, topic, discipline }: Ctx) {
         {busy ? '[ GENERANDO GANCHOS… · CANCELAR ]' : '[ ✨ GENERAR 3 GANCHOS ]'}
       </button>
       {note && <p className={`font-mono text-[10px] leading-relaxed ${busy ? 'animate-pulse text-gold/90' : 'text-fire'}`}>{note}</p>}
+      {note && !busy && (
+        <button type="button" onClick={local} className={`${pill} border-gold/50 text-gold hover:bg-gold/10`}>
+          [ ⚡ 3 GANCHOS LOCALES · SIN API ]
+        </button>
+      )}
       {hooks.length > 0 && (
         <div className="space-y-1.5">
           {hooks.map((h) => {

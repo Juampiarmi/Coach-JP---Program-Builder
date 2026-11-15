@@ -141,7 +141,7 @@ describe('IA con biblioteca exclusiva', () => {
     )
     const settings = { ...DEFAULT_AI_SETTINGS, provider: 'anthropic' as const, keys: { ...DEFAULT_AI_SETTINGS.keys, anthropic: 'KEY' } }
     const r = await generateContent(settings, 'tensión mecánica', 'carousel', 'general')
-    expect(prompt).toContain('BIBLIOTECA DE EVIDENCIA DEL COACH')
+    expect(prompt).toContain('BIBLIOTECA DE EVIDENCIA (modo exclusivo)')
     expect(prompt).toContain('SCHOENFELD, 2010 · J STRENGTH COND RES')
     expect(r.slides[0].citeMain).toBe('')
     expect(r.slides[1].citeMain).toBe('SCHOENFELD, 2010 · J STRENGTH COND RES')

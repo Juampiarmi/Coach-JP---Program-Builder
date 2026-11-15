@@ -23,7 +23,10 @@ import {
   generateMindsetBursts,
   mapCopy,
   type MindsetBurst,
+  generateOffline,
+  clearAiCache,
 } from '../lib/ai'
+import { loadPaperLibrary } from '../lib/paperLibrary'
 import { ContentCalendar } from './ContentCalendar'
 import { WeeklyPlan } from './WeeklyPlan'
 import { detectQuoteIntent } from '../lib/quoteIntent'
@@ -221,6 +224,7 @@ export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
     if (inFlight.current || busy || (!force && cooldown.remaining > 0)) return
     if (force) {
       resetQuotaMemory()
+      clearAiCache()
       cooldown.clear()
     }
     if (blocks) {
@@ -301,6 +305,25 @@ export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
       inFlight.current = false
       setBusy(false)
     }
+  }
+
+  // MODO SIN API: variante estructural local (plantillas + Biblioteca de Papers), instantánea y sin
+  // tokens. Cada clic rota portada, escenario y orden de las placas.
+  const [offlineN, setOfflineN] = useState(0)
+  const runOffline = () => {
+    if (busy) return
+    if (!topic.trim()) {
+      setError('Escribí el tema o concepto a comunicar.')
+      return
+    }
+    const format = resolveFormat(topic, mode.mode, editorial)
+    const result = generateOffline(topic, format, mode.discipline ?? 'general', editorial, loadPaperLibrary().papers, offlineN)
+    const final = mode.quote && quoteIntent ? { ...result, slides: enforceQuote(result.slides, quoteIntent) } : result
+    onResult(final, { topic, discipline: mode.discipline ?? 'general' })
+    setOfflineN((n) => n + 1)
+    setError('')
+    setQuotaError(null)
+    setStatus(`[ VARIANTE LOCAL ${(offlineN % 3) + 1}/3 · SIN API · 0 TOKENS · ${final.slides.length} ${final.slides.length === 1 ? 'PLACA' : 'PLACAS'} ]`)
   }
 
   return (
@@ -538,7 +561,7 @@ export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
                     : '[ ✨ GENERAR PLACAS ]'}
             </span>
           </button>
-          {busy && (
+          {busy ? (
             <button
               type="button"
               onClick={() => abort.current?.abort()}
@@ -546,6 +569,19 @@ export function AiGenerator({ onResult, onBurst, onLoadDay }: Props) {
             >
               CANCELAR
             </button>
+          ) : (
+            !blocks && (
+              <button
+                type="button"
+                onClick={runOffline}
+                title="Arma una variante con tus plantillas y tu Biblioteca de Papers, sin API y sin gastar tokens"
+                className={`mt-1.5 w-full rounded-md border py-1.5 font-mono text-[9px] font-semibold tracking-[0.12em] transition ${
+                  error || !hasKey ? 'border-gold/60 bg-gold/10 text-gold hover:bg-gold/20' : 'border-line text-steel hover:border-gold/50 hover:text-gold'
+                }`}
+              >
+                [ ⚡ VARIANTE LOCAL · SIN API ]
+              </button>
+            )
           )}
           {status && (
             <p

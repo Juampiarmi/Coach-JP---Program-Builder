@@ -156,6 +156,39 @@ export const sleep = (ms: number, signal?: AbortSignal) =>
     })
   })
 
+/** Espera máxima que se aguanta en pantalla antes de devolver el error (más que esto, mejor avisar). */
+export const MAX_VISIBLE_WAIT_SEC = 60
+/** Reintentos tras esperar un límite por minuto. */
+export const RATE_RETRIES = 2
+
+/** Espera con cuenta regresiva visible: «Límite por minuto alcanzado, reintentando en 8 s...». */
+export async function countdown(seconds: number, signal?: AbortSignal, onStatus?: StatusFn, what = 'Límite por minuto alcanzado') {
+  for (let left = Math.max(1, Math.ceil(seconds)); left > 0; left--) {
+    onStatus?.(`[ ${what}, reintentando en ${left} s... ]`)
+    await sleep(1000, signal)
+  }
+  onStatus?.('[ Reintentando... ]')
+}
+
+/** ¿Este 429 se arregla esperando? Sólo el límite por minuto (o sin clasificar) con una espera corta. */
+export const isShortRateLimit = (err: unknown): err is RateLimitError =>
+  err instanceof RateLimitError && (err.kind === 'minute' || err.kind === 'unknown') && err.retryAfterSec <= MAX_VISIBLE_WAIT_SEC
+
+/**
+ * Backoff para OpenAI / Anthropic: ante un límite por minuto espera lo que indica el proveedor (con
+ * cuenta regresiva) y reintenta, hasta 2 veces. La cuota diaria o «límite 0» se informa directo.
+ */
+export async function withBackoff<T>(run: () => Promise<T>, signal?: AbortSignal, onStatus?: StatusFn): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run()
+    } catch (err) {
+      if (!isShortRateLimit(err) || attempt >= RATE_RETRIES) throw err
+      await countdown(err.retryAfterSec, signal, onStatus)
+    }
+  }
+}
+
 /** Saturación temporal del servicio (503 / "high demand"): se reintenta el mismo modelo. */
 export function isOverloaded(err: unknown) {
   if (!(err instanceof HttpError)) return false
@@ -163,9 +196,28 @@ export function isOverloaded(err: unknown) {
   return /high demand|spikes in demand|overloaded/i.test(err.message)
 }
 
-export async function requestGemini(key: string, model: string, prompt: string, signal?: AbortSignal, schema?: object) {
+/** Modelos que rechazaron la configuración de razonamiento (se manda sin ella desde entonces). */
+const noThinking = new Set<string>()
+
+/**
+ * Razonamiento interno al mínimo: en Flash, los tokens de «thinking» se cobran como salida y queman la
+ * cuota sin mejorar un copy corto. 2.5 Flash / Flash-Lite: presupuesto 0; 3.x Flash: nivel bajo. Pro no
+ * permite apagarlo (se deja como viene).
+ */
+export function thinkingFor(model: string): Record<string, unknown> | null {
+  if (noThinking.has(model) || /pro/.test(model)) return null
+  if (/^gemini-2\.5-flash/.test(model)) return { thinkingBudget: 0 }
+  if (/^gemini-([3-9]|\d{2,})(\.\d+)?-flash/.test(model)) return { thinkingLevel: 'low' }
+  return null
+}
+
+/** Tope de salida: el payload ya no trae todas las plantillas por placa, alcanza con 8k. */
+export const GEMINI_MAX_OUTPUT = 8192
+
+export async function requestGemini(key: string, model: string, prompt: string, signal?: AbortSignal, schema?: object): Promise<string> {
   const apiKey = key
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+  const thinking = thinkingFor(model)
   const res = await fetch(url, {
     method: 'POST',
     signal,
@@ -174,7 +226,8 @@ export async function requestGemini(key: string, model: string, prompt: string, 
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: 'application/json',
-        maxOutputTokens: 16384,
+        maxOutputTokens: GEMINI_MAX_OUTPUT,
+        ...(thinking ? { thinkingConfig: thinking } : {}),
         // Structured Outputs: Gemini valida la respuesta contra el esquema (OpenAPI subset).
         ...(schema ? { responseSchema: schema } : {}),
       },
@@ -182,11 +235,19 @@ export async function requestGemini(key: string, model: string, prompt: string, 
   })
   const json = await res.json().catch(() => ({}))
   if (res.status === 429) throw rateLimitError(res, json, json?.error?.message ?? 'Quota exceeded', model)
+  // El modelo no acepta la configuración de razonamiento: se recuerda y se reintenta sin ella.
+  if (res.status === 400 && thinking && /thinking/i.test(json?.error?.message ?? '')) {
+    noThinking.add(model)
+    return requestGemini(key, model, prompt, signal, schema)
+  }
   if (!res.ok) throw new HttpError(json?.error?.message ?? `Gemini respondió ${res.status}`, res.status)
   const cand = json?.candidates?.[0]
   if (!cand?.content) throw new Error(`Gemini no devolvió contenido${cand?.finishReason ? ` (${cand.finishReason})` : ''}.`)
-  const parts: { text?: string }[] = cand.content.parts ?? []
-  const text = parts.map((p) => p.text ?? '').join('')
+  const parts: { text?: string; thought?: boolean }[] = cand.content.parts ?? []
+  const text = parts
+    .filter((p) => !p.thought)
+    .map((p) => p.text ?? '')
+    .join('')
   if (cand.finishReason === 'MAX_TOKENS') {
     try {
       extractJson(text)
@@ -201,6 +262,14 @@ export const OVERLOAD_FINAL_MSG =
   'El servidor de Google está recibiendo alto tráfico en este instante. Esperá 15-30 segundos y volvé a presionar Generar.'
 /** Esperas antes de cada reintento con el MISMO modelo (3 intentos en total). */
 export const OVERLOAD_WAITS_MS = [2500, 4000]
+
+/** Flash ↔ Flash-Lite de la misma versión («gemini-2.5-flash» ↔ «gemini-2.5-flash-lite»). */
+export function siblingModel(model: string): string | null {
+  if (/-flash-lite(\b|-)/.test(model)) return model.replace(/-flash-lite/, '-flash')
+  if (/-flash(\b|-)/.test(model)) return model.replace(/-flash/, '-flash-lite')
+  if (/-pro(\b|-)/.test(model)) return model.replace(/-pro.*$/, '-flash')
+  return null
+}
 
 /** Modelo inexistente o no habilitado para esta key. */
 export function isModelGone(err: unknown) {
@@ -236,17 +305,24 @@ export async function callGemini(
   let candidates = known
   let lastQuota: RateLimitError | null = null
 
-  /** Siguiente modelo habilitado para la key cuya cuota no esté agotada (cada modelo tiene cuota propia). */
-  const nextModel = async () => {
+  /**
+   * Modelo de respaldo ante un 429: primero el hermano de la misma versión (Flash ↔ Flash-Lite, cada
+   * uno con cuota propia); si no, otro Flash habilitado. Nunca Pro (sin cuota gratuita en casi todas
+   * las keys: cada intento quemaba un pedido más).
+   */
+  const fallbackModel = async (): Promise<string | null> => {
+    const sibling = siblingModel(current)
+    if (sibling && !isExhausted(sibling) && sibling !== current && (!candidates.length || candidates.some((m) => m.id === sibling))) return sibling
     if (!candidates.length) candidates = await listGeminiModels(key, signal).catch(() => [] as GeminiModel[])
-    return candidates.find((m) => m.id !== current && !isExhausted(m.id))?.id ?? null
+    return candidates.find((m) => m.id !== current && /flash/.test(m.id) && !/pro/.test(m.id) && !isExhausted(m.id))?.id ?? (sibling && !isExhausted(sibling) ? sibling : null)
   }
 
-  // Si el modelo elegido ya agotó su cuota en esta sesión, se arranca directo con otro.
+  // Si el modelo elegido ya agotó su cuota en esta sesión, se arranca directo con el respaldo.
   if (isExhausted(current)) {
-    const alt = await nextModel()
+    const alt = await fallbackModel()
     if (alt) current = alt
   }
+  let waits = 0
 
   for (;;) {
     try {
@@ -255,15 +331,24 @@ export async function callGemini(
       return text
     } catch (err) {
       if (err instanceof RateLimitError) {
-        // 429: se marca el modelo y se prueba otro habilitado (hasta 3 cambios). Recién si
-        // todos están agotados se informa al usuario, con el tipo de límite (RPM / RPD).
+        // 429: límite por minuto (se espera y se reintenta) vs. cuota diaria / sin cuota (no se arregla
+        // esperando). En ambos casos se prueba primero el modelo hermano, que tiene cuota propia.
+        const long = err.kind === 'daily' || err.kind === 'zero'
         markExhausted(err)
         lastQuota = err
-        const alt = switches < 3 ? await nextModel() : null
+        const alt = switches < 2 ? await fallbackModel() : null
         if (alt) {
           switches++
-          onStatus?.(`[ Cuota de ${current} agotada · probando ${alt}... ]`)
+          onStatus?.(`[ ${long ? 'Cuota diaria' : 'Límite por minuto'} de ${current} · probando ${alt}... ]`)
           current = alt
+          continue
+        }
+        if (isShortRateLimit(err) && waits < RATE_RETRIES) {
+          waits++
+          await countdown(err.retryAfterSec, signal, onStatus)
+          // Pasada la ventana del minuto, se vuelve al modelo elegido (si su cuota no es la diaria).
+          exhausted.delete(current)
+          if (!isExhausted(selected)) current = selected
           continue
         }
         onStatus?.(null)

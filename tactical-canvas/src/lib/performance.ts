@@ -158,12 +158,10 @@ export function historyVerdict(s: PerformanceSummary, f: Omit<PostFeatures, 'hoo
 /** Contexto para el prompt del Hook Score: el historial real del coach (vacío sin historial suficiente). */
 export function hookHistoryContext(s: PerformanceSummary): string {
   if (s.posts < MIN_POSTS) return ''
-  const fmt = (m: Measured) => `«${m.features.hook}» → ${m.rate} % (${PILLAR_LABEL[m.features.pillar]}, portada ${TEMPLATE_LABEL[m.features.cover]}, ${m.features.format === 'carousel' ? 'carrusel' : 'placa única'})`
-  const best = (b: Bucket[]) => b.slice(0, 2).map((x) => `${x.label} ${x.rate} %`).join(', ')
-  return `HISTORIAL REAL DE ESTA CUENTA (${s.posts} posts medidos; métrica = guardados + compartidos cada 100 cuentas alcanzadas; promedio ${s.avgRate} %):
-- Portadas que MEJOR rindieron: ${s.top.map(fmt).join(' · ')}
-${s.bottom.length ? `- Portadas que PEOR rindieron: ${s.bottom.map(fmt).join(' · ')}\n` : ''}- Plantillas de portada que más rinden: ${best(s.byCover)}. Formato: ${best(s.byFormat)}. Pilar: ${best(s.byPillar)}.
-Usá este historial como evidencia: subí el puntaje de impacto/retención si el titular comparte el ángulo de los que mejor rindieron y bajalo si se parece a los peores. Las 3 variantes tienen que inspirarse en el ángulo de los ganadores (sin copiarlos). Mencioná el historial en "verdict" cuando pese.`
+  const fmt = (m: Measured) => `«${m.features.hook}» ${m.rate} %`
+  const best = (b: Bucket[]) => b[0] ? `${b[0].label} ${b[0].rate} %` : '-'
+  return `HISTORIAL REAL (${s.posts} posts; guardados + compartidos / alcance; promedio ${s.avgRate} %). Mejores: ${s.top.slice(0, 2).map(fmt).join(' · ')}.${s.bottom.length ? ` Peor: ${fmt(s.bottom[0])}.` : ''} Rinden más: portada ${best(s.byCover)}, ${best(s.byFormat)}, pilar ${best(s.byPillar)}.
+Subí impacto/retención si el titular comparte el ángulo de los mejores, bajalo si se parece al peor; las variantes se inspiran en los ganadores sin copiarlos.`
 }
 
 /** Historial leído directo del almacenamiento (el Hook Score lo consulta al evaluar). */

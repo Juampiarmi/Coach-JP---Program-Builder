@@ -9,18 +9,67 @@ import { JsonRepairError, safeParseJson } from '../safeJson'
 import { deAI } from '../language'
 import { SERVICE_BY_ID, SERVICES } from '../services'
 import { type Discipline, type GenMode, type AiSettings, GEMINI_DEFAULT_MODEL, DEFAULT_AI_SETTINGS, type EditorialOptions, type EditorialTone, type StatusFn, type ModelChangeFn } from './config'
-import { citeFromPaper, enforceLibrary, loadPaperLibrary, paperLibraryRule } from '../paperLibrary'
-import { DISCIPLINE_RULE, TONE_RULE, buildUserPrompt, repairPrompt, MAPPING_SYSTEM, mappingPrompt, TOOL_SYSTEM } from './prompts'
-import { callOpenAI, callAnthropic, HttpError, RateLimitError, rateLimitError, markExhausted, isExhausted, callGemini } from './providers'
+import { citeFromPaper, enforceLibrary, loadPaperLibrary, paperLibraryRule, relevantPapers } from '../paperLibrary'
+import { DISCIPLINE_RULE, TONE_RULE, buildUserPrompt, repairPrompt, MAPPING_SYSTEM, mappingPrompt, TOOL_SYSTEM, COMPACT_SYSTEM_PROMPT } from './prompts'
+import { cacheGet, cacheSet, hashPrompt } from './cache'
+import { callOpenAI, callAnthropic, HttpError, RateLimitError, rateLimitError, markExhausted, isExhausted, callGemini, withBackoff } from './providers'
 import { obj, str, num, upper, stripBrackets, AI_DIAGRAM_TYPE, first, list, type SlideContext, slideToPatch, cleanText, sanitizePatch, cleanCaption, type GenerationResult, parseGeneration } from './parser'
 
 export { MODEL_OPTIONS, GEMINI_DEFAULT_MODEL, PROVIDER_LABEL, KEY_PLACEHOLDER, DEFAULT_AI_SETTINGS, MODE_LABEL, DISCIPLINE_LABEL, TONE_LABEL, GOAL_LABEL } from './config'
 export type { AiProvider, Discipline, GenMode, AiSettings, InputMode, EditorialGoal, ResolvedGoal, EditorialOptions, EditorialTone, StatusFn, ModelChangeFn } from './config'
 export { SYSTEM_PROMPT, detectGoal, formatForcedToCarousel, resolveFormat, EVIDENCE_RULE, salesEnrichment, BRIEF_EXPAND_WORDS, expandBriefInput, buildUserPrompt } from './prompts'
 export { RateLimitError, resetQuotaMemory, OVERLOAD_FINAL_MSG, extractJson } from './providers'
+export { clearAiCache } from './cache'
 export type { QuotaKind } from './providers'
 export { slideToPatch, cleanText, cleanCaption, collapseRepeats, enforceSubstance, enforceQuote, parseGeneration } from './parser'
 export type { SlideContext, GenerationResult } from './parser'
+
+/** Opciones de un pedido a la IA. */
+interface AskOptions {
+  /** System prompt propio (sin él, el de generación de placas) */
+  system?: string
+  /** Structured Outputs: en Gemini va como responseSchema; en el resto, dentro del prompt */
+  schema?: object
+  signal?: AbortSignal
+  onStatus?: StatusFn
+  onModelChange?: ModelChangeFn
+  /** Saltea la caché (ej: re-generar una placa pide, a propósito, una versión nueva) */
+  fresh?: boolean
+}
+
+/**
+ * Único punto de salida a los proveedores: caché por hash del pedido (0 ms y 0 tokens si se repite),
+ * backoff con cuenta regresiva ante el límite por minuto y, en Gemini, cambio a Flash ↔ Flash-Lite.
+ */
+function makeAsk(settings: AiSettings, opts: AskOptions = {}) {
+  const key = (settings.keys[settings.provider] ?? '').trim()
+  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA.')
+  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
+  const { system, schema, signal, onStatus, onModelChange } = opts
+  return async (prompt: string): Promise<string> => {
+    const body = schema && settings.provider !== 'gemini' ? `${prompt}\n\nRespondé con un objeto JSON que cumpla exactamente este esquema (OpenAPI):\n${JSON.stringify(schema)}` : prompt
+    const cacheKey = hashPrompt([settings.provider, model, system ?? '·', body, schema ? JSON.stringify(schema) : ''].join('\u0001'))
+    if (!opts.fresh) {
+      const hit = cacheGet(cacheKey)
+      if (hit !== null) {
+        onStatus?.('[ Mismo pedido que antes · resultado en caché (0 tokens) ]')
+        return hit
+      }
+    }
+    const text =
+      settings.provider === 'gemini'
+        ? await callGemini(key, model, body, signal, onStatus, onModelChange, settings.geminiModels ?? [], system ?? COMPACT_SYSTEM_PROMPT, schema)
+        : await withBackoff(() => (settings.provider === 'anthropic' ? callAnthropic(key, model, body, signal, system) : callOpenAI(key, model, body, signal, system)), signal, onStatus)
+    // Sólo se guarda lo que es JSON válido (una respuesta rota nunca vuelve desde la caché).
+    try {
+      safeParseJson(text)
+      cacheSet(cacheKey, text)
+    } catch {
+      /* respuesta inválida: no se cachea */
+    }
+    return text
+  }
+}
 
 export async function generateContent(
   settings: AiSettings,
@@ -32,21 +81,14 @@ export async function generateContent(
   onModelChange?: ModelChangeFn,
   editorial?: EditorialOptions,
 ): Promise<GenerationResult> {
-  const key = (settings.keys[settings.provider] ?? '').trim()
-  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
-  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
+  if (!(settings.keys[settings.provider] ?? '').trim()) throw new Error('Falta la API Key. Configurala en el ícono de llave.')
   // Biblioteca de papers en modo exclusivo: lista cerrada de citas en el prompt + guardia en la salida.
   const papers = loadPaperLibrary()
-  const libRule = paperLibraryRule(papers)
+  const libRule = paperLibraryRule(papers, topic)
   const user = buildUserPrompt(topic, mode, discipline, editorial) + (libRule ? `\n\n${libRule}` : '')
   const guard = (r: GenerationResult): GenerationResult => (libRule ? { ...r, slides: r.slides.map((x) => enforceLibrary(x, papers)) } : r)
   const ctx: SlideContext = { discipline, topic, quote: editorial?.quote ?? null }
-  const ask = (prompt: string) =>
-    settings.provider === 'gemini'
-      ? callGemini(key, model, prompt, signal, onStatus, onModelChange, settings.geminiModels ?? [])
-      : settings.provider === 'anthropic'
-        ? callAnthropic(key, model, prompt, signal)
-        : callOpenAI(key, model, prompt, signal)
+  const ask = makeAsk(settings, { signal, onStatus, onModelChange })
   const text = await ask(user)
   try {
     return guard(parseGeneration(safeParseJson(text), mode, ctx))
@@ -95,15 +137,9 @@ export async function mapCopy(
     local,
   })
   if (!key) return done(mapLocally(blocks), '', true)
-  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
   const prompt = mappingPrompt(blocks, discipline)
   try {
-    const raw =
-      settings.provider === 'gemini'
-        ? await callGemini(key, model, prompt, signal, onStatus, onModelChange, settings.geminiModels ?? [], MAPPING_SYSTEM)
-        : settings.provider === 'anthropic'
-          ? await callAnthropic(key, model, prompt, signal, MAPPING_SYSTEM)
-          : await callOpenAI(key, model, prompt, signal, MAPPING_SYSTEM)
+    const raw = await makeAsk(settings, { system: MAPPING_SYSTEM, signal, onStatus, onModelChange })(prompt)
     const root = obj(safeParseJson(raw))
     const aiSlides = (Array.isArray(root.slides) ? root.slides : []).map((r) => slideToPatch(r, { discipline, topic: text }))
     return done(guardMapped(blocks, aiSlides, text), cleanCaption(str(root.caption)), false)
@@ -245,17 +281,10 @@ export async function regenerateSlide(
   signal?: AbortSignal,
   onStatus?: StatusFn,
 ): Promise<Partial<CanvasState>> {
-  const key = (settings.keys[settings.provider] ?? '').trim()
-  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA.')
-  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
-  const ask = (prompt: string) =>
-    settings.provider === 'gemini'
-      ? callGemini(key, model, prompt, signal, onStatus, undefined, settings.geminiModels ?? [])
-      : settings.provider === 'anthropic'
-        ? callAnthropic(key, model, prompt, signal)
-        : callOpenAI(key, model, prompt, signal)
+  // Re-generar pide a propósito una versión nueva: no se usa la caché.
+  const ask = makeAsk(settings, { signal, onStatus, fresh: true })
   const papers = loadPaperLibrary()
-  const libRule = paperLibraryRule(papers)
+  const libRule = paperLibraryRule(papers, `${req.topic} ${req.slide.headlineA} ${req.slide.headlineB} ${req.slide.body}`)
   const text = await ask(regeneratePrompt(req) + (libRule ? `\n\n${libRule}` : ''))
   let parsed: unknown
   try {
@@ -280,15 +309,7 @@ export function loadAiSettings(): AiSettings {
 }
 
 async function askJson(settings: AiSettings, user: string, signal?: AbortSignal, onStatus?: StatusFn): Promise<Record<string, unknown>> {
-  const key = (settings.keys[settings.provider] ?? '').trim()
-  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA.')
-  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
-  const ask = (prompt: string) =>
-    settings.provider === 'gemini'
-      ? callGemini(key, model, prompt, signal, onStatus, undefined, settings.geminiModels ?? [], TOOL_SYSTEM)
-      : settings.provider === 'anthropic'
-        ? callAnthropic(key, model, prompt, signal, TOOL_SYSTEM)
-        : callOpenAI(key, model, prompt, signal, TOOL_SYSTEM)
+  const ask = makeAsk(settings, { system: TOOL_SYSTEM, signal, onStatus })
   const text = await ask(user)
   try {
     return obj(safeParseJson(text))
@@ -313,16 +334,8 @@ export async function askStructured(
   signal?: AbortSignal,
   onStatus?: StatusFn,
 ): Promise<Record<string, unknown>> {
-  const key = (settings.keys[settings.provider] ?? '').trim()
-  if (!key) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA (modo placas).')
-  const model = (settings.models[settings.provider] ?? '').trim() || DEFAULT_AI_SETTINGS.models[settings.provider]
-  const withSchema = `${user}\n\nRespondé con un objeto JSON que cumpla exactamente este esquema (OpenAPI):\n${JSON.stringify(schema)}`
-  const ask = (prompt: string) =>
-    settings.provider === 'gemini'
-      ? callGemini(key, model, prompt, signal, onStatus, undefined, settings.geminiModels ?? [], system, schema)
-      : settings.provider === 'anthropic'
-        ? callAnthropic(key, model, withSchema, signal, system)
-        : callOpenAI(key, model, withSchema, signal, system)
+  if (!(settings.keys[settings.provider] ?? '').trim()) throw new Error('Falta la API Key. Configurala en el ícono de llave del Generador IA (modo placas).')
+  const ask = makeAsk(settings, { system, schema, signal, onStatus })
   const text = await ask(user)
   try {
     return obj(safeParseJson(text))
@@ -537,14 +550,15 @@ export async function suggestCitation(
   // Modo exclusivo: la IA sólo elige cuál de los papers de la biblioteca respalda la placa.
   const papers = loadPaperLibrary()
   if (paperLibraryRule(papers)) {
-    const list = papers.papers.map((p, i) => `${i + 1}. ${citeFromPaper(p).citeMain} — «${p.title}» — ${p.finding}`).join('\n')
+    const pool = relevantPapers(papers.papers, `${ctx.slide} ${ctx.topic}`)
+    const list = pool.map((p, i) => `${i + 1}. ${citeFromPaper(p).citeMain} — «${p.title}» — ${p.finding}`).join('\n')
     const pick = await askJson(
       settings,
       `Contenido de la placa: "${ctx.slide}".\nTema general: "${ctx.topic}".\nBiblioteca de papers del coach:\n${list}\nElegí el paper de la lista que respalde MÁS directamente el contenido. Si ninguno lo respalda, devolvé 0. Forma exacta: { "index": number }`,
       signal,
       onStatus,
     )
-    const p = papers.papers[Number(pick.index) - 1]
+    const p = pool[Number(pick.index) - 1]
     if (!p) throw new Error('Ningún paper de tu biblioteca respalda esta placa. Sumá uno o desactivá el modo exclusivo.')
     return citeFromPaper(p)
   }
@@ -703,4 +717,4 @@ Forma exacta: { "white": string, "accent": string, "pillars": [3 strings], "cta"
     availability: upper(str(first(res.availability, res.disponibilidad))),
     caption: deAI(cleanCaption(str(res.caption))),
   }
-}
+}export { generateOffline, localHooks, topicTitle } from './offline'
