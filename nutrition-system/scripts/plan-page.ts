@@ -10,7 +10,7 @@ const out = join(process.cwd(), 'out', 'plan');
 mkdirSync(out, { recursive: true });
 let file: { supabaseUrl?: string; anonKey?: string } = {};
 try {
-  file = JSON.parse(readFileSync(join(process.cwd(), 'cloud.config.json'), 'utf8'));
+  if (!process.env.CJP_IGNORE_CLOUD_CONFIG) file = JSON.parse(readFileSync(join(process.cwd(), 'cloud.config.json'), 'utf8'));
 } catch {}
 const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || file.supabaseUrl || '').trim();
 const anonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || file.anonKey || '').trim();

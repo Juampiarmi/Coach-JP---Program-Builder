@@ -1,6 +1,19 @@
 # Supabase · base en la nube del Builder y la app del atleta
 
-## Configuración única en el panel de Supabase
+## Activación automática (recomendada)
+
+```bash
+./setup-cloud.sh            # pide tu token personal de Supabase y hace todo: proyecto, base, login, commit + push
+./setup-cloud.sh --github   # además carga las variables en GitHub con `gh` y corre el deploy
+```
+
+Token: https://supabase.com/dashboard/account/tokens · También existe el asistente **Conectar nube en 1 paso**
+dentro del Builder (botón "Modo local · Conectar nube") para probar una conexión al instante.
+
+Estado actual: proyecto **coach-jp-nutrition** (São Paulo) creado y configurado; la conexión está fijada en
+`nutrition-system/cloud.config.json`.
+
+## Configuración única en el panel de Supabase (manual, si no usás el script)
 
 1. **SQL Editor → New query**: pegá y ejecutá `migrations/20261115000100_core.sql` completo (una sola vez).
 2. **Authentication → Sign In / Providers**

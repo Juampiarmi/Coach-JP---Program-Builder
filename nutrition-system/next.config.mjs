@@ -25,6 +25,8 @@ const basePath = resolveBasePath();
  */
 function resolveCloud() {
   let file = {};
+  // Pruebas del modo local / asistente: compilar ignorando la conexión fijada en el repo.
+  if (process.env.CJP_IGNORE_CLOUD_CONFIG) return { url: process.env.NEXT_PUBLIC_SUPABASE_URL ?? '', key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '' };
   try {
     file = JSON.parse(readFileSync(new URL('./cloud.config.json', import.meta.url), 'utf8'));
   } catch {}
