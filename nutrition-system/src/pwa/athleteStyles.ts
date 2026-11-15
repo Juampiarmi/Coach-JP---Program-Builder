@@ -416,6 +416,50 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .desglose ol.psteps{list-style:none;counter-reset:ps;display:grid;gap:7px;padding-bottom:10px}
 .desglose ol.psteps li{counter-increment:ps;position:relative;padding-left:28px;font-size:13px;line-height:1.45;color:var(--text)}
 .desglose ol.psteps li:before{content:counter(ps);position:absolute;left:0;top:0;width:20px;height:20px;border-radius:50%;border:1px solid rgba(56,189,248,.45);color:var(--cyan);font-family:"JetBrains Mono",monospace;font-size:10px;display:flex;align-items:center;justify-content:center}
+/* A6 · Jerarquía: tarjeta Próxima comida, bloques plegables, peso y tipografía (mono sólo en etiquetas clave y números) */
+.next-card{position:relative;margin:0 0 12px;padding:16px 16px 14px;border-radius:16px;border:1px solid rgba(249,115,22,.55);background:linear-gradient(160deg,rgba(249,115,22,.18),rgba(19,27,42,.96) 55%);box-shadow:0 10px 30px -18px rgba(249,115,22,.7)}
+.next-card.done{border-color:var(--cyan-edge);background:linear-gradient(160deg,rgba(56,189,248,.14),rgba(19,27,42,.96) 60%);box-shadow:none}
+.nx-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.nx-k{font-size:12px;font-weight:600;color:#FDBA74}
+.next-card.done .nx-k{color:var(--cyan)}
+.nx-time{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;font-size:13px;font-weight:700;color:var(--title);background:rgba(0,0,0,.25);border:1px solid var(--line2);border-radius:7px;padding:3px 8px}
+.nx-name{margin-top:6px;font-size:21px;font-weight:700;line-height:1.15;letter-spacing:-.01em;color:var(--title)}
+.nx-dish{margin-top:3px;font-size:13.5px;color:#E2E8F0}
+.nx-sub{margin-top:4px;font-size:13px;color:var(--text)}
+.nx-macros{margin-top:8px;font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--text)}
+.nx-macros b{color:var(--title);font-size:13px}
+.nx-items{list-style:none;margin-top:10px;display:grid;gap:4px}
+.nx-items li{font-size:13px;color:#E2E8F0;line-height:1.35}
+.nx-items li span{display:inline-block;min-width:54px;font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;font-size:12px;color:var(--title)}
+.nx-items li em{font-style:normal;color:var(--micro);font-size:12px}
+.nx-btns{display:flex;gap:8px;margin-top:14px}
+.nx-check{flex:1;padding:13px 10px;border-radius:11px;background:var(--fire);color:#fff;font-size:14px;font-weight:700;box-shadow:0 6px 18px -8px rgba(249,115,22,.9)}
+.nx-go{flex:none;padding:13px 12px;border-radius:11px;border:1px solid var(--line2);color:var(--title);font-size:13px;font-weight:600}
+.fold{padding:0}
+.fold-hd{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:14px 16px 10px}
+.fold-peek{flex:1;text-align:right;font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--title)}
+.fold-bar{height:4px;margin:0 16px 14px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden}
+.fold-bar i{display:block;height:100%;background:var(--cyan);border-radius:3px;transition:width .4s}
+.fold-body{padding:0 16px 16px}
+.fold-sub{font-size:12.5px;color:var(--text);margin-bottom:10px}
+.wcard .w-in{display:flex;align-items:center;gap:8px;margin-top:10px}
+.w-in input{flex:1;min-width:0;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:var(--title);font:600 16px "JetBrains Mono",monospace}
+.w-in span{font-size:13px;color:var(--text)}
+.w-in button{flex:none;padding:10px 14px;border-radius:10px;background:var(--cyan);color:#0B0F17;font-size:13px;font-weight:700}
+.w-hint{margin-top:6px;font-size:12px;color:var(--micro)}
+.w-chart{display:block;width:100%;height:74px;margin-top:12px;border-radius:8px;background:rgba(56,189,248,.04)}
+.w-axis{display:flex;justify-content:space-between;margin-top:3px;font-size:10.5px;color:var(--micro)}
+.w-stats{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:12px;color:var(--text)}
+.w-stats b{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums;color:var(--title);font-weight:600}
+.toolgrid button{font-family:Inter,system-ui,sans-serif;font-size:12.5px;font-weight:600;letter-spacing:0}
+.scan-cta{font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:700;letter-spacing:0}
+.opt-tabs button,.opt-tabs.many button{font-family:Inter,system-ui,sans-serif;font-size:12px;font-weight:600;letter-spacing:0}
+.leu.na{font-family:Inter,system-ui,sans-serif;font-size:12px;letter-spacing:0}
+.streak{font-family:Inter,system-ui,sans-serif;font-size:13px;letter-spacing:0}
+.wbtns button,.ok-line,.reset-link,.back-today,.wa-btn,.add-meal,.cfg-link{font-family:Inter,system-ui,sans-serif;letter-spacing:0;font-size:12.5px}
+.prog{font-family:Inter,system-ui,sans-serif;font-size:12px}
+.cites{font-family:Inter,system-ui,sans-serif;letter-spacing:0;font-size:11px}
+.sec .tag{white-space:nowrap}.sec .prog{text-align:right}
 `;
 
 export default styles;

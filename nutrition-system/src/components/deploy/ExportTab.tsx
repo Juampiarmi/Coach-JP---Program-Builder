@@ -7,6 +7,8 @@ import { buildAthleteHtml, buildServiceWorker, slugify, type ExportIcons } from 
 import { usePlanStore } from '@/store/usePlanStore';
 import { suggestedUrl, whatsappSummary } from '@/lib/share';
 import { BalanceBanner } from '../builder/BalanceBanner';
+import { ExportFreshness } from './ExportFreshness';
+import { planFingerprint } from '@/lib/planHash';
 import { HudButton, inputCls, Label, Panel, Tag } from '../hud/primitives';
 
 function download(name: string, content: string, type: string) {
@@ -80,6 +82,7 @@ function WhatsAppPanel() {
 
 export function ExportTab() {
   const plan = usePlanStore((s) => s.plan);
+  const markExported = usePlanStore((s) => s.markExported);
   const [copied, setCopied] = useState(false);
   const [lastSize, setLastSize] = useState<number | null>(null);
   const slug = slugify(plan.profile.name);
@@ -88,6 +91,7 @@ export function ExportTab() {
   const generate = () => {
     const html = buildAthleteHtml(plan, { preview: false, mode: 'on', icons: icons() });
     setLastSize(new Blob([html]).size);
+    markExported(planFingerprint(plan));
     return html;
   };
 
@@ -111,6 +115,7 @@ export function ExportTab() {
           Genera una PWA 100% autocontenida en un único archivo: diseño táctico, runtime vanilla JS, datos de <b className="text-ink">{plan.profile.name}</b> embebidos en JSON,
           manifest inline (data URI + blob con URLs absolutas), iconos PNG embebidos y registro de Service Worker.
         </p>
+        <ExportFreshness onReexport={() => download('index.html', generate(), 'text/html;charset=utf-8')} />
         <div className="mb-3">
           <BalanceBanner context="export" />
         </div>

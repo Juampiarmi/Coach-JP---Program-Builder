@@ -20,6 +20,8 @@ import { AthleteSwitcher } from '@/components/builder/AthleteSwitcher';
 import { ProfileBackup } from '@/components/builder/ProfileBackup';
 import { computeTelemetry, eaStatus, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals, PHASE_LABEL } from '@/lib/bioenergetics';
 import { usePlanStore, type BuilderTab, type DeployTab } from '@/store/usePlanStore';
+import { useExportFreshness } from '@/components/deploy/ExportFreshness';
+import { UndoBar } from '@/components/builder/UndoBar';
 
 const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain }[] = [
   { id: 'anamnesis', label: '00 · Anamnesis Pro & Lifestyle', icon: ClipboardList },
@@ -73,6 +75,7 @@ export default function Home() {
   const setDeployTab = usePlanStore((s) => s.setDeployTab);
   const resetDemo = usePlanStore((s) => s.resetDemo);
   const activeId = usePlanStore((s) => s.plan.id);
+  const stale = useExportFreshness().state === 'stale';
 
   useEffect(() => setHydrated(true), []);
 
@@ -122,7 +125,8 @@ export default function Home() {
       <main className="grid gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]">
         <section className="min-w-0">
           <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">PANEL IZQUIERDO · TACTICAL COMMAND BUILDER</div>
-          <nav className="scroll-thin mb-4 flex gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1">
+          <div className="mb-4 flex items-start gap-2">
+          <nav className="scroll-thin flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1">
             {BUILDER_TABS.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -138,6 +142,8 @@ export default function Home() {
               </button>
             ))}
           </nav>
+          <UndoBar />
+          </div>
 {/* key = atleta activo: al cambiar de atleta cada solapa se remonta sin estado local del anterior. */}
           <div key={activeId}>
                     {builderTab === 'anamnesis' && <AnamnesisForm />}
@@ -163,6 +169,7 @@ export default function Home() {
                 )}
               >
                 <Icon className="h-3.5 w-3.5" /> {label}
+                {id === 'export' && stale && <span className="h-2 w-2 rounded-full bg-fire shadow-[0_0_8px_rgba(249,115,22,.9)]" title="Plan desactualizado: editado después de la última exportación" />}
               </button>
             ))}
           </nav>

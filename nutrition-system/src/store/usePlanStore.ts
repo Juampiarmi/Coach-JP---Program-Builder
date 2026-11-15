@@ -46,6 +46,9 @@ interface PlanState {
   notesByAthlete: Record<string, string>;
   /** Alimentos / marcas creados por el coach (persistidos en localStorage). */
   customFoods: FoodRef[];
+  /** Última exportación de la PWA por atleta: cuándo y con qué huella de contenido (indicador "plan desactualizado"). */
+  exports: Record<string, { at: number; hash: string }>;
+  markExported: (hash: string) => void;
 
   addCustomFood: (food: Omit<FoodRef, 'id' | 'custom'>) => string;
   removeCustomFood: (id: string) => void;
@@ -177,6 +180,9 @@ export const usePlanStore = create<PlanState>()(
       intakeNotes: '',
       notesByAthlete: {},
       customFoods: [],
+      exports: {},
+
+      markExported: (hash) => set((s) => ({ exports: { ...s.exports, [s.plan.id]: { at: Date.now(), hash } } })),
 
       addCustomFood: (food) => {
         const id = `custom-${uid()}`;
@@ -515,6 +521,7 @@ export const usePlanStore = create<PlanState>()(
             .map((p) => [p.id, p]),
         );
         merged.ai = { ...current.ai, ...(saved.ai ?? {}) };
+        merged.exports = saved.exports && typeof saved.exports === 'object' ? saved.exports : {};
         // Migración: las notas globales de versiones anteriores pasan a ser del atleta activo.
         merged.notesByAthlete = { ...(saved.notesByAthlete ?? {}) };
         if (!(merged.plan.id in merged.notesByAthlete) && typeof saved.intakeNotes === 'string') merged.notesByAthlete[merged.plan.id] = saved.intakeNotes;
@@ -533,6 +540,7 @@ export const usePlanStore = create<PlanState>()(
         intakeNotes: s.intakeNotes,
         notesByAthlete: s.notesByAthlete,
         customFoods: s.customFoods,
+        exports: s.exports,
       }),
     },
   ),

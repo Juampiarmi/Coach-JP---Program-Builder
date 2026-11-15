@@ -60,6 +60,8 @@ const runtime = String.raw`
     itab: 'ios',
     photo: null,
     tlOpen: store.get('tlOpen', false),
+    hyOpen: store.get('hyOpen', false),
+    weights: store.get('weights', {}),
     dirOpen: false,
     extras: store.get('extras:' + today, {}),
     free: store.get('free:' + today, {}),
@@ -370,7 +372,7 @@ const runtime = String.raw`
       h += '</svg><div class="gv"><div class="glabel">' + (left >= 0 ? 'KCAL RESTANTES' : 'KCAL EXCEDIDAS') + '</div><div class="gnum' + (left < 0 ? ' over' : '') + '">' + n0(Math.abs(left)) + '</div><div class="gsub">' + n0(eaten.k) + ' / ' + n0(tgt.kcal) + ' kcal</div></div></div>';
     }
     h += '<div class="minis">' + mini('PROTEÍNA', eaten.p, tgt.p, '#38BDF8', complete) + mini('CARBOS', eaten.c, tgt.c, '#7DD3FC', complete) + mini('GRASAS', eaten.f, tgt.f, '#F97316', complete) + '</div>';
-    if (run > 0) h += '<div class="streak' + (complete ? ' hot' : '') + '">🔥 ' + run + ' DÍA' + (run > 1 ? 'S' : '') + ' EN ADHERENCIA</div>';
+    if (run > 0) h += '<div class="streak' + (complete ? ' hot' : '') + '">🔥 ' + run + ' día' + (run > 1 ? 's' : '') + ' seguidos en adherencia</div>';
     return h;
   }
 
@@ -383,12 +385,89 @@ const runtime = String.raw`
   // ---------- 2 · Hidratación ----------
   function hydration(mode) {
     var goal = mode === 'on' ? D.hydration.onMl : D.hydration.offMl;
-    var cups = Math.ceil(goal / 250), full = Math.floor(S.water / 250);
-    var h = '<section class="card"><div class="row"><span class="tag">[ HIDRATACIÓN · META ' + L(goal) + ' L · DÍA ' + mode.toUpperCase() + ' ]</span><span class="hv">' + L(S.water) + ' / ' + L(goal) + ' L</span></div><div class="cups">';
+    var cups = Math.ceil(goal / 250), full = Math.floor(S.water / 250), pct = goal ? Math.min(100, Math.round((S.water / goal) * 100)) : 0;
+    // Plegado por defecto: el encabezado muestra el progreso y se expande al tocarlo.
+    var h = '<section class="card fold"><button class="fold-hd" data-hy="1" aria-expanded="' + (S.hyOpen ? 'true' : 'false') + '"><span class="tag">[ HIDRATACIÓN ]</span><span class="fold-peek">' + L(S.water) + ' / ' + L(goal) + ' L' + (S.water >= goal ? ' · ✓' : '') + '</span><span class="chev' + (S.hyOpen ? ' up' : '') + '"></span></button>';
+    h += '<div class="fold-bar"><i style="width:' + pct + '%"></i></div>';
+    if (!S.hyOpen) return h + '</section>';
+    h += '<div class="fold-body"><p class="fold-sub">Meta del día ' + (mode === 'on' ? 'de entreno' : 'de descanso') + ': ' + L(goal) + ' L · cada vaso son 250 ml</p><div class="cups">';
     for (var i = 0; i < cups; i++) h += '<button class="cup' + (i < full ? ' on' : '') + '" data-cup="' + i + '" aria-label="Vaso ' + (i + 1) + '"><i></i></button>';
     h += '</div><div class="wbtns"><button data-water="250">+250 ml</button><button data-water="500">+500 ml</button><button data-water="0" class="ghost">Reiniciar</button></div>';
-    if (S.water >= goal) h += '<div class="ok-line">✓ META DE HIDRATACIÓN CUMPLIDA</div>';
+    if (S.water >= goal) h += '<div class="ok-line">✓ Meta de hidratación cumplida</div>';
+    return h + '</div></section>';
+  }
+
+  // ---------- 1b · Próxima comida (según la hora) ----------
+  function nextMeal(list) {
+    var pending = list.filter(function (x) { return !S.checks[x.m.id]; });
+    if (!pending.length) return null;
+    if (S.date !== today) return pending[0];
+    var nowMin = now.getHours() * 60 + now.getMinutes();
+    // La comida en curso (hasta 60 min tarde) o la siguiente; si todas quedaron atrás, la pendiente más reciente.
+    var up = pending.filter(function (x) { return toMin(x.m.time) >= nowMin - 60; });
+    return up.length ? up[0] : pending[pending.length - 1];
+  }
+  function nextCard(list, mode) {
+    var x = nextMeal(list);
+    if (!list.length) return '';
+    if (!x) return '<section class="next-card done"><div class="nx-k">Próxima comida</div><div class="nx-name">✓ Todas las comidas del día cumplidas</div><p class="nx-sub">Buen trabajo. Mañana seguimos con el mismo plan.</p></section>';
+    var nowMin = now.getHours() * 60 + now.getMinutes(), t = toMin(x.m.time), when = '';
+    if (S.date === today) when = t > nowMin ? 'en ' + fmtDur(t - nowMin) : t >= nowMin - 60 ? 'ahora' : 'pendiente desde las ' + esc(x.m.time);
+    var title = x.alt ? x.alt.title : x.m.title;
+    var h = '<section class="next-card"><div class="nx-top"><span class="nx-k">Próxima comida' + (when ? ' · ' + when : '') + '</span><span class="nx-time">' + esc(x.m.time) + '</span></div>';
+    h += '<div class="nx-name">' + esc(mealName(x.m, mode)) + '</div>';
+    if (title) h += '<div class="nx-dish">' + esc(title) + (x.opt > 1 ? ' · opción ' + x.opt : '') + '</div>';
+    h += '<div class="nx-macros"><b>' + n0(x.kcal) + '</b> kcal · P ' + n0(x.t.p) + ' g · C ' + n0(x.t.c) + ' g · G ' + n0(x.t.f) + ' g</div>';
+    var its = x.items.filter(function (it) { return !it.free; }).slice(0, 5);
+    if (its.length) h += '<ul class="nx-items">' + its.map(function (it) { var hint = unitHintFor(it.foodId, it.grams); return '<li><span>' + n0(it.grams) + ' g</span>' + esc(it.food) + (hint ? ' <em>' + hint + '</em>' : '') + '</li>'; }).join('') + '</ul>';
+    h += '<div class="nx-btns"><button class="nx-check" data-check="' + esc(x.m.id) + '">✓ Marcar como cumplida</button><button class="nx-go" data-goto="' + esc(x.m.id) + '">Ver detalle ↓</button></div></section>';
+    return h;
+  }
+
+  // ---------- 1c · Peso corporal: registro diario opcional + curva de 4 semanas ----------
+  function weightSeries(endIso, days) {
+    var pts = [];
+    for (var i = days - 1; i >= 0; i--) { var d = addDays(endIso, -i), v = S.weights[d]; if (v > 0) pts.push({ i: days - 1 - i, d: d, v: v }); }
+    return pts;
+  }
+  function weightDelta(pts, back) {
+    if (pts.length < 2) return null;
+    var last = pts[pts.length - 1], ref = null;
+    pts.forEach(function (p) { if (p.i <= last.i - back + 3 && (!ref || p.i > ref.i)) ref = p; });
+    if (!ref) ref = pts[0];
+    return ref === last ? null : Math.round((last.v - ref.v) * 10) / 10;
+  }
+  function weightCard() {
+    var pts = weightSeries(S.date, 28), cur = S.weights[S.date];
+    var last = pts.length ? pts[pts.length - 1] : null;
+    var h = '<section class="card wcard"><div class="row"><span class="tag">[ PESO CORPORAL ]</span><span class="hv">' + (last ? n1(last.v) + ' kg' : 'Sin registros') + '</span></div>';
+    h += '<div class="w-in"><input id="w-in" type="number" inputmode="decimal" step="0.1" min="30" max="250" placeholder="' + (last ? n1(last.v) : 'Ej. 78,5') + '" value="' + (cur ? cur : '') + '" aria-label="Peso en kg"><span>kg</span><button data-wsave="1">' + (cur ? 'Actualizar' : 'Registrar') + '</button></div>';
+    h += '<p class="w-hint">Opcional · en ayunas, después del baño, mismo horario' + (S.date !== today ? ' · se guarda para el ' + dateLabel(S.date) : '') + '</p>';
+    if (pts.length >= 2) {
+      var W = 300, Hh = 74, pad = 6, min = Infinity, max = -Infinity;
+      pts.forEach(function (p) { min = Math.min(min, p.v); max = Math.max(max, p.v); });
+      if (max - min < 1) { var mid = (max + min) / 2; min = mid - 0.5; max = mid + 0.5; }
+      var X = function (i) { return pad + (i / 27) * (W - pad * 2); }, Y = function (v) { return pad + (1 - (v - min) / (max - min)) * (Hh - pad * 2); };
+      var line = pts.map(function (p) { return X(p.i).toFixed(1) + ',' + Y(p.v).toFixed(1); }).join(' ');
+      var grid = '';
+      [7, 14, 21].forEach(function (g) { grid += '<line x1="' + X(g).toFixed(1) + '" y1="0" x2="' + X(g).toFixed(1) + '" y2="' + Hh + '" stroke="rgba(255,255,255,.06)"/>'; });
+      h += '<svg class="w-chart" viewBox="0 0 ' + W + ' ' + Hh + '" preserveAspectRatio="none" aria-label="Curva de peso de 4 semanas">' + grid + '<polyline points="' + line + '" fill="none" stroke="#38BDF8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>';
+      pts.forEach(function (p, k) { h += '<circle cx="' + X(p.i).toFixed(1) + '" cy="' + Y(p.v).toFixed(1) + '" r="' + (k === pts.length - 1 ? 3.4 : 2) + '" fill="' + (k === pts.length - 1 ? '#F97316' : '#38BDF8') + '"/>'; });
+      h += '</svg><div class="w-axis"><span>hace 4 sem</span><span>hace 2 sem</span><span>' + (S.date === today ? 'hoy' : dateLabel(S.date)) + '</span></div>';
+      var d7 = weightDelta(pts, 7), d28 = weightDelta(pts, 28), sg = function (v) { return (v > 0 ? '+' : v < 0 ? '−' : '±') + n1(Math.abs(v)) + ' kg'; };
+      h += '<div class="w-stats"><span>Mín <b>' + n1(Math.min.apply(null, pts.map(function (p) { return p.v; }))) + '</b></span><span>Máx <b>' + n1(Math.max.apply(null, pts.map(function (p) { return p.v; }))) + '</b></span>' + (d7 !== null ? '<span>7 días <b>' + sg(d7) + '</b></span>' : '') + (d28 !== null ? '<span>4 sem <b>' + sg(d28) + '</b></span>' : '') + '</div>';
+    } else h += '<p class="w-hint">Registrá tu peso 2 días o más para ver la curva de las últimas 4 semanas.</p>';
     return h + '</section>';
+  }
+  function saveWeight() {
+    var el = $('#w-in'), v = el ? parseFloat(String(el.value).replace(',', '.')) : NaN;
+    if (el && !String(el.value).trim()) { delete S.weights[S.date]; store.set('weights', S.weights); toast('Registro de peso borrado'); return render(); }
+    if (!(v >= 30 && v <= 250)) return toast('Ingresá un peso válido en kg (30 a 250)');
+    S.weights[S.date] = Math.round(v * 10) / 10;
+    store.set('weights', S.weights);
+    haptic();
+    render();
+    toast('Peso registrado · ' + n1(S.weights[S.date]) + ' kg');
   }
 
   // ---------- 3 · Timeline peri-entreno 06:00 → 23:00 ----------
@@ -501,19 +580,22 @@ const runtime = String.raw`
       return w + 's';
     }).join(' ') + tail;
   }
-  // "720 g Pan integral ≈ 2 paquetes de 500 g" · claras: huevos frescos para separar
-  // ("1,5 kg Claras ≈ 46 huevos para separar las claras: 1 maple de 30 huevos + 1 docena + 1 media docena").
+  // "720 g Pan integral ≈ 2 paquetes de 500 g" · claras: huevos frescos para separar, siempre hacia arriba
+  // ("1,5 kg Claras ≈ comprá 48 huevos (1 maple de 30 + 1 docena + 1 media docena) para separar claras; ...").
   function packText(foodId, grams) {
     var packs = foodId && D.shopPacks && D.shopPacks[foodId];
     if (!packs || !(grams > 0)) return '';
-    var rest = grams, parts = [];
+    var eggs = foodId === 'claras', tol = eggs ? 0 : 0.15, rest = grams, parts = [], bought = 0;
     packs.forEach(function (pk, i) {
-      var last = i === packs.length - 1, n = last ? Math.max(0, Math.ceil((rest - pk[0] * 0.15) / pk[0])) : Math.floor(rest / pk[0]);
-      if (last && n === 0 && rest > pk[0] * 0.15) n = 1;
-      if (n > 0) { parts.push(n + ' ' + (n > 1 ? pluralPack(pk[1]) : pk[1])); rest -= n * pk[0]; }
+      var last = i === packs.length - 1, n = last ? Math.max(0, Math.ceil((rest - pk[0] * tol) / pk[0])) : Math.floor(rest / pk[0]);
+      if (last && n === 0 && rest > pk[0] * tol) n = 1;
+      if (n > 0) {
+        var lab = eggs ? pk[1].replace(/ huevos$/, '') : pk[1];
+        parts.push(n + ' ' + (n > 1 ? pluralPack(lab) : lab)); rest -= n * pk[0]; bought += n * pk[0];
+      }
     });
-    if (!parts.length) parts.push('1 ' + packs[packs.length - 1][1]);
-    if (foodId === 'claras') return '≈ ' + Math.ceil(grams / 33) + ' huevos para separar las claras: ' + parts.join(' + ') + ' (las yemas no entran en tu plan)';
+    if (!parts.length) { parts.push('1 ' + packs[packs.length - 1][1]); bought = packs[packs.length - 1][0]; }
+    if (eggs) return '≈ comprá ' + Math.round(bought / 33) + ' huevos (' + parts.join(' + ') + ') para separar claras; las yemas no entran en tu plan';
     return '≈ ' + parts.join(' + ');
   }
   function qty(g) { return g >= 1000 ? n1(Math.round(g / 100) / 10) + ' kg' : n0(Math.round(g / 10) * 10) + ' g'; }
@@ -1339,18 +1421,21 @@ const runtime = String.raw`
 
     h += '<div class="switch ' + mode + '"><span class="knob"></span><button data-mode="on" class="' + (mode === 'on' ? 'on' : '') + '">MODO DÍA ON</button><button data-mode="off" class="' + (mode === 'off' ? 'on' : '') + '">MODO DÍA OFF</button></div>';
 
+    h += nextCard(list, mode);
+
     h += '<section class="card"><div class="row"><span class="tag">[ TELEMETRÍA · ' + (mode === 'on' ? 'DÍA ON · ENTRENO' : 'DÍA OFF · DESCANSO') + ' ]</span><span class="hv">' + doneCount + '/' + list.length + ' COMIDAS</span></div>' + gauge(tgt, eaten, complete, streak()) + '</section>';
 
-    h += '<button class="scan-cta" data-photo="pick">[ 📷 ESCANEAR PLATO / SUBIR FOTO ]<span>' + (getKey() ? 'IA multimodal · Gemini Flash: ingredientes, gramos, kcal, macros y comparativa vs tu plan' : 'Mandásela a tu coach · o cargá tu clave de Gemini para el análisis con IA') + '</span></button>';
+    h += '<button class="scan-cta" data-photo="pick">📷 Escanear plato / subir foto<span>' + (getKey() ? 'IA multimodal · Gemini Flash: ingredientes, gramos, kcal, macros y comparativa vs tu plan' : 'Mandásela a tu coach · o cargá tu clave de Gemini para el análisis con IA') + '</span></button>';
     // Herramientas en una grilla compacta 2 × 3 (sin scroll extra en el celular).
     h += '<div class="toolgrid">' + [
-      ['shop', '🛒', 'LISTA DE COMPRAS'], ['out', '🍔', 'COMER FUERA'],
-      ['fridge', '🧊', 'MI HELADERA'], ['portions', '✋', 'PORCIONES SIN BALANZA'],
-      ['batch', '🍳', 'BATCH COOKING'], ['story', '📸', 'STORY 9:16'],
+      ['shop', '🛒', 'Lista de compras'], ['out', '🍔', 'Comer fuera'],
+      ['fridge', '🧊', 'Mi heladera'], ['portions', '✋', 'Porciones sin balanza'],
+      ['batch', '🍳', 'Batch cooking'], ['story', '📸', 'Story 9:16'],
     ].map(function (b) { return '<button data-panel="' + b[0] + '"><span class="ti">' + b[1] + '</span><span>' + b[2] + '</span></button>'; }).join('') + '</div>';
 
     h += hydration(mode);
     h += timeline(mode, list);
+    if (!D.preview) h += weightCard();
 
     D.protocols.forEach(function (p) {
       h += '<section class="card alert"><div class="tag" style="margin-bottom:6px">[ ' + esc(p.tag) + ' ]</div><div style="font-weight:700;font-size:16px;color:#FFFFFF">' + esc(p.title) + '</div><p class="muted" style="font-size:13px;margin-top:4px">' + esc(p.body) + '</p></section>';
@@ -1360,13 +1445,13 @@ const runtime = String.raw`
     list.forEach(function (x) {
       var m = x.m;
       var done = !!S.checks[m.id];
-      h += '<section class="card meal' + (done ? ' done' : '') + '">';
+      h += '<section class="card meal' + (done ? ' done' : '') + '" id="meal-' + esc(m.id) + '">';
       h += '<div class="hd"><span class="time">' + esc(m.time) + '</span><div><div class="nm">' + esc(mealName(m, mode)) + '</div><div class="mm">' + n0(x.kcal) + ' kcal · ' + n0(x.t.p) + ' g de proteína</div></div><button class="chk" data-check="' + m.id + '" aria-label="Marcar comida">' + CHECK + '</button></div>';
       var malts = mealAlts(m);
       if (m.title || malts.length) {
         if (malts.length) {
           h += '<div class="opt-tabs' + (malts.length > 2 ? ' many' : '') + '">';
-          for (var on = 1; on <= malts.length + 1; on++) h += '<button data-opt="' + esc(m.id) + '|' + on + '" class="' + (x.opt === on ? 'on' : '') + '">[ OPCIÓN ' + on + ' ]</button>';
+          for (var on = 1; on <= malts.length + 1; on++) h += '<button data-opt="' + esc(m.id) + '|' + on + '" class="' + (x.opt === on ? 'on' : '') + '">Opción ' + on + '</button>';
           h += '</div>';
         }
         var otitle = x.alt ? x.alt.title : m.title;
@@ -1394,7 +1479,7 @@ const runtime = String.raw`
       h += '</div>';
       h += desglose(m, x);
       // Umbral mTOR sólo en comidas principales; el resto son ingestas auxiliares (sin sugerir huevo o whey).
-      if (!m.mps) h += '<div class="leu na"><span class="dot"></span>' + (isOffPeri(m, mode) || (mode === 'off' && m.role !== 'snack') ? '[ MODULACIÓN GLUCÉMICA / SACIEDAD ]' : m.role === 'peri' ? '[ BLOQUE GLUCOLÍTICO · ENERGÍA PARA ENTRENAR ]' : m.role === 'post' ? '[ RECUPERACIÓN POST-WOD · INGESTA AUXILIAR ]' : '[ INGESTA AUXILIAR / MODULACIÓN GLUCÉMICA ]') + '</div>';
+      if (!m.mps) h += '<div class="leu na"><span class="dot"></span>' + (isOffPeri(m, mode) || (mode === 'off' && m.role !== 'snack') ? 'Modulación glucémica / saciedad' : m.role === 'peri' ? 'Bloque glucolítico · energía para entrenar' : m.role === 'post' ? 'Recuperación post-WOD · ingesta auxiliar' : 'Ingesta auxiliar / modulación glucémica') + '</div>';
       else if (x.t.l >= D.threshold) h += '<div class="leu ok"><span class="dot"></span>[ mTOR / MPS: ACTIVADO • ' + n1(x.t.l) + ' g LEUCINA ]</div>';
       else h += '<div class="leu low"><span class="dot"></span>[ SUB-UMBRAL mTOR • ' + n1(x.t.l) + ' g LEUCINA ] · ' + leuTip(D.threshold - x.t.l) + '</div>';
       h += '</section>';
@@ -1613,8 +1698,9 @@ const runtime = String.raw`
   }
 
   // ---------- Eventos ----------
+  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target && e.target.id === 'w-in') { e.preventDefault(); saveWeight(); } });
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],#sheet-bg,#install,#reset');
+    var el = e.target.closest('[data-mode],[data-check],[data-swap],[data-pick],[data-itab],[data-panel],[data-cup],[data-water],[data-shopcheck],[data-copyshop],[data-shopreset],[data-photo],[data-aicfg],[data-tl],[data-close],[data-rmextra],[data-day],[data-dir],[data-scantab],[data-portion],[data-scene],[data-imputar],[data-drink],[data-outrebal],[data-unfree],[data-washop],[data-fridgeuse],[data-guidego],[data-frauto],[data-batchcopy],[data-batchwa],[data-batchmode],[data-batchdone],[data-batchreset],[data-storyshare],[data-storykind],[data-storymetric],[data-storyphoto],[data-scanstory],[data-opt],[data-hy],[data-wsave],[data-goto],#sheet-bg,#install,#reset');
     if (!el) return;
     var ds = el.dataset;
     if (ds.close) return closeSheet();
@@ -1671,6 +1757,9 @@ const runtime = String.raw`
     if (ds.storyphoto === 'clear') { var sc0 = storyState(); if (sc0.url && sc0.own) URL.revokeObjectURL(sc0.url); sc0.img = null; sc0.url = ''; return renderSheet(); }
     if (ds.scanstory) return storyFromScan();
     if (ds.washop) return window.open('https://wa.me/?text=' + encodeURIComponent(shopText(shoppingList())), '_blank');
+    if (ds.hy) { S.hyOpen = !S.hyOpen; store.set('hyOpen', S.hyOpen); haptic(); return render(); }
+    if (ds.wsave) return saveWeight();
+    if (ds.goto) { var mt = document.getElementById('meal-' + ds.goto); if (mt) mt.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if (ds.tl) { S.tlOpen = !S.tlOpen; store.set('tlOpen', S.tlOpen); haptic(); return render(); }
     if (ds.dir) { S.dirOpen = !S.dirOpen; return render(); }
     if (ds.day !== undefined) {

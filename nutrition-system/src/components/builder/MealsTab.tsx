@@ -1,14 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronDown, CopyPlus, ExternalLink, Pill, Plus, RefreshCw, Trash2, Utensils, X, Zap } from 'lucide-react';
+import { ChevronDown, CopyPlus, ExternalLink, LayoutList, Pill, Plus, RefreshCw, Table2, Trash2, Utensils, X, Zap } from 'lucide-react';
 import { computeTelemetry, dayTotals, fmt0, fmt1, isMpsMeal, LEUCINE_THRESHOLD, mealTotals } from '@/lib/bioenergetics';
 import { CITES, doiUrl } from '@/lib/evidence';
 import { FOOD_SLOT_LABEL, fitsSlot, SLOT_OF } from '@/lib/mealSlots';
 import { alternativesFor, equivalentGrams, type FoodRef, macrosFor, FOOD_BY_ID, FOODS, freeEquivalents, freeGroup, GROUP_LABEL, householdHint, type SwapGroup } from '@/lib/foods';
 import { MAX_OPTIONS, type DayMode, type FoodItem, type Meal, type MealDay, type MealOption, type MealRole } from '@/lib/types';
 import { useFoodDbStore } from '@/store/useFoodDbStore';
-import { ALT_TARGET, autoSteps, autoTechnique, autoTitle, compensateSwap, fixSeasoning, optionTotals } from '@/lib/menuOptions';
+import { ALT_TARGET, autoSteps, autoTechnique, autoTitle, compensateSwap, fixSeasoning, optionTotals, prepMinutes } from '@/lib/menuOptions';
 import { OptionBadges } from './OptionBadges';
 import { usePlanStore } from '@/store/usePlanStore';
 import { Cite, cx, HudButton, Label, NumInput, Panel, Segmented, Toggle } from '../hud/primitives';
@@ -270,6 +270,8 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
   const t = mealTotals(meal);
   const kcal = t.p * 4 + t.c * 4 + t.f * 9;
   const lowLeu = isMpsMeal(meal) && t.leucine < LEUCINE_THRESHOLD;
+  const [view, setView] = useState<'cards' | 'table'>('cards');
+  const hasAlts = (meal.alts?.length ?? 0) > 0;
 
   return (
     <Panel tone={lowLeu ? 'fire' : meal.day === 'off' ? 'gold' : 'cyan'} className={cx(lowLeu && 'border-fire/35')}>
@@ -336,7 +338,30 @@ function MealCard({ meal, technical }: { meal: Meal; technical: boolean }) {
         <FoodPicker role={meal.role} onPick={(id) => addFood(meal.id, id, FOOD_BY_ID[id].unit?.grams ?? 100)} />
       </div>
       <TechniqueBox meal={meal} />
-      <AltOptions meal={meal} />
+      {hasAlts && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-[11.5px] text-mute">{(meal.alts?.length ?? 0) + 1} opciones para esta comida</span>
+          <div className="flex rounded-lg border border-line bg-carbon p-0.5" role="group" aria-label="Vista de opciones">
+            {(
+              [
+                ['cards', 'Tarjetas', LayoutList],
+                ['table', 'Comparar', Table2],
+              ] as const
+            ).map(([v, label, Icon]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className={cx('flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-semibold transition', view === v ? 'bg-cyan-hud/15 text-ink' : 'text-mute hover:text-steel')}
+              >
+                <Icon className="h-3.5 w-3.5" /> {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {hasAlts && view === 'table' ? <OptionsTable meal={meal} onEdit={() => setView('cards')} /> : <AltOptions meal={meal} />}
     </Panel>
   );
 }
@@ -450,6 +475,71 @@ function TechniqueBox({ meal }: { meal: Meal }) {
           </label>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Proteína base de una opción: el ingrediente que más proteína aporta. */
+function proteinBase(items: FoodItem[]) {
+  const top = [...items].sort((a, b) => b.p - a.p)[0];
+  return top && top.p > 0 ? top.food : '—';
+}
+
+/** Vista comparativa: las opciones de la comida lado a lado (kcal, P/C/G, tiempo y proteína base). */
+function OptionsTable({ meal, onEdit }: { meal: Meal; onEdit: () => void }) {
+  const main = optionTotals(meal.items);
+  const rows = [
+    { n: 1, title: meal.title || autoTitle(meal.items), items: meal.items },
+    ...(meal.alts ?? []).map((a, k) => ({ n: k + 2, title: a.title, items: a.items })),
+  ];
+  // Desvío > 10 % respecto de la Opción 1 se marca en naranja.
+  const dev = (v: number, ref: number) => (ref > 0 && Math.abs(v / ref - 1) > 0.1 ? 'text-fire' : 'text-ink');
+  const th = 'px-2 py-1.5 text-left font-mono text-[9.5px] font-bold uppercase tracking-[0.1em] text-mute';
+  const td = 'tnum px-2 py-2 align-top font-mono text-[11.5px]';
+  return (
+    <div className="mt-2">
+      <div className="scroll-thin overflow-x-auto rounded-lg border border-line">
+        <table className="w-full min-w-[620px] border-collapse">
+          <thead className="bg-white/[0.03]">
+            <tr>
+              <th className={th}>#</th>
+              <th className={th}>Plato</th>
+              <th className={cx(th, 'text-right')}>Kcal</th>
+              <th className={cx(th, 'text-right')}>P</th>
+              <th className={cx(th, 'text-right')}>C</th>
+              <th className={cx(th, 'text-right')}>G</th>
+              <th className={cx(th, 'text-right')}>⏱</th>
+              <th className={th}>Proteína base</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const t = optionTotals(r.items);
+              return (
+                <tr key={r.n} className={cx('border-t border-line', r.n === 1 && 'bg-cyan-hud/[0.04]')}>
+                  <td className={cx(td, r.n === 1 ? 'text-cyan-hud' : 'text-fire')}>{r.n}</td>
+                  <td className="px-2 py-2 align-top text-[12.5px] font-semibold leading-snug text-ink">{r.title}</td>
+                  <td className={cx(td, 'text-right', dev(t.kcal, main.kcal))}>
+                    {fmt0(t.kcal)}
+                    {r.n > 1 && <div className="text-[9.5px] text-mute">{pctTxt(t.kcal, main.kcal)}</div>}
+                  </td>
+                  <td className={cx(td, 'text-right', dev(t.p, main.p))}>{fmt0(t.p)}</td>
+                  <td className={cx(td, 'text-right', dev(t.c, main.c))}>{fmt0(t.c)}</td>
+                  <td className={cx(td, 'text-right', dev(t.f, main.f))}>{fmt0(t.f)}</td>
+                  <td className={cx(td, 'text-right text-gold')}>{prepMinutes(r.items)}′</td>
+                  <td className="px-2 py-2 align-top text-[12px] text-steel">{proteinBase(r.items)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-mute">
+        <span>En naranja: desvío mayor al 10 % respecto de la Opción 1 · ⏱ en minutos</span>
+        <button type="button" onClick={onEdit} className="font-semibold text-cyan-hud hover:underline">
+          Editar opciones →
+        </button>
+      </div>
     </div>
   );
 }
