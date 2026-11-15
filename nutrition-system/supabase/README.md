@@ -18,6 +18,30 @@
    `SUPABASE_URL` y `SUPABASE_ANON_KEY` (son públicas: la seguridad la dan los permisos por fila).
    Nunca uses la clave `service_role` en el Builder ni en la app del atleta.
 
+6. **GitHub → Actions → Deploy GitHub Pages → Run workflow** (o cualquier commit a `main`): el Builder publicado
+   ya muestra **Entrar a la nube** y la app del atleta queda viva en `…/nutrition/plan/<slug>`.
+
+## Uso diario
+
+- **Coach:** entrá al Builder → *Entrar a la nube* → *Mis atletas* (panel con alertas) → abrí un atleta →
+  ajustá el plan (se guarda solo) → *Publicar* → *Mandar por WhatsApp* la primera vez. Después cada *Publicar*
+  le llega solo al alumno.
+- **Alumno:** abre el link una vez, toca *Agregar a inicio* y usa la app como siempre. Sus comidas, agua y peso
+  le llegan al coach solos (sin señal quedan guardados en el celular y se envían al volver).
+- **Alumnos con la app en archivo:** exportá el respaldo (*Publicar → Respaldo · exportar archivo HTML*) y subilo
+  en su repo de siempre: al abrirlo le aparece *Pasar mi historial a mi link nuevo*.
+
+## Pruebas
+
+```bash
+npm run test:db      # permisos de la base (RLS + funciones) · requiere Postgres (PGHOST/PGPORT/PGUSER)
+npm run test:unit    # alertas del panel del coach
+npm run test:cloud   # punta a punta: Builder ↔ app del atleta contra un Supabase de prueba (Postgres real + RLS)
+```
+
+`e2e/fake-supabase.mjs` levanta un Supabase de prueba: Postgres real con estas migraciones y permisos, más una
+imitación mínima de Auth y de la API REST. Sólo para pruebas.
+
 ## Pruebas de seguridad (local / CI)
 
 ```bash
