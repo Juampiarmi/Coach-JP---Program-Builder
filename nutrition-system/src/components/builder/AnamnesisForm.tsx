@@ -120,10 +120,10 @@ export function AnamnesisForm() {
 
   return (
     <div className="space-y-3">
-      <Panel title="00 · ANAMNESIS PRO & LIFESTYLE" right={<HeartPulse className="h-4 w-4 text-cyan-hud" />}>
+      <Panel title="PASO 1 · ANAMNESIS · HÁBITOS Y SALUD" right={<HeartPulse className="h-4 w-4 text-cyan-hud" />}>
         <p className="text-sm leading-relaxed text-steel">
-          Perfil 360° de <b className="text-ink">{pr.name}</b>. Todo lo que cargues acá viaja al Prompt Engine junto con las notas: horarios exactos, patologías, alergias, gustos y el catálogo
-          de marcas de la Food &amp; Brand DB. Se guarda en este navegador y en el backup JSON del perfil.
+          Perfil 360° de <b className="text-ink">{pr.name}</b>. Horarios, salud, alergias y gustos: todo lo que cargues acá lo usa el Asistente IA para armar las comidas
+          y la app para ordenar el día del alumno. Se guarda con el atleta (y en la copia de seguridad).
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <span className="font-mono text-[9.5px] tracking-[0.14em] text-mute">PRESETS RÁPIDOS:</span>

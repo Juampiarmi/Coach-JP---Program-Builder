@@ -21,12 +21,12 @@ import { FoodScanner } from './FoodScanner';
 const ROLE_LABEL: Record<MealRole, string> = {
   breakfast: 'Desayuno',
   lunch: 'Almuerzo',
-  peri: 'Pre / intra entreno',
-  post: 'Post entreno',
+  peri: 'Antes de entrenar',
+  post: 'Después de entrenar',
   snack: 'Colación',
   dinner: 'Cena',
 };
-const DAY_LABEL: Record<MealDay, string> = { on: 'Día ON', off: 'Día OFF', both: 'Todos los días' };
+const DAY_LABEL: Record<MealDay, string> = { on: 'Día de entreno', off: 'Día de descanso', both: 'Todos los días' };
 const DAY_ORDER: Record<MealDay, number> = { both: 0, on: 1, off: 2 };
 
 const GROUPS = Object.keys(GROUP_LABEL) as SwapGroup[];
@@ -91,19 +91,19 @@ function ProteinSensor({ meal }: { meal: Meal }) {
     return (
       <span className="inline-flex items-center rounded-md border border-line bg-white/[0.03] px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] text-mute">
         {meal.role === 'post'
-          ? '[ RECUPERACIÓN POST-WOD · INGESTA AUXILIAR ]'
+          ? 'Recuperación después de entrenar · no necesita llegar al mínimo de proteína'
           : meal.role === 'snack'
-          ? '[ INGESTA AUXILIAR / MODULACIÓN GLUCÉMICA ]'
+          ? 'Colación de apoyo · controla hambre y energía'
           : meal.day === 'off'
-            ? '[ MODULACIÓN GLUCÉMICA / SACIEDAD ]'
-            : '[ BLOQUE GLUCOLÍTICO · LEUCINA NO PRIORITARIA ]'}
+            ? 'Comida liviana de descanso · controla hambre y energía'
+            : 'Energía para entrenar · la proteína no es prioridad acá'}
       </span>
     );
   const ok = t.leucine >= LEUCINE_THRESHOLD;
   if (ok)
     return (
       <span className="tnum inline-flex items-center gap-2 rounded-md border border-cyan-hud/30 bg-cyan-hud/10 px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] text-cyan-hud">
-        <span className="h-1.5 w-1.5 rounded-full bg-cyan-hud" />[ mTOR / MPS: ACTIVADO • {fmt1(t.leucine)} g LEUCINA ]
+        <span className="h-1.5 w-1.5 rounded-full bg-cyan-hud" />✓ Proteína suficiente para estimular el músculo · {fmt1(t.leucine)} g de leucina
       </span>
     );
   const need = LEUCINE_THRESHOLD - t.leucine;
@@ -112,10 +112,10 @@ function ProteinSensor({ meal }: { meal: Meal }) {
   return (
     <span className="flex flex-wrap items-center gap-2">
       <span className="tnum inline-flex items-center gap-2 rounded-md border border-fire/60 bg-fire/10 px-2.5 py-1 font-mono text-[10.5px] tracking-[0.06em] text-fire">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fire" />[ SUB-UMBRAL mTOR • {fmt1(t.leucine)} g LEUCINA ]
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-fire" />Le falta proteína para estimular el músculo · {fmt1(t.leucine)} de {fmt1(LEUCINE_THRESHOLD)} g de leucina
       </span>
       <span className="text-xs text-steel">
-        Sugerencia: +{eggs} huevo{eggs > 1 ? 's' : ''} o +{whey} g whey
+        Sugerencia: sumá {eggs} huevo{eggs > 1 ? 's' : ''} o {whey} g de proteína en polvo (whey)
       </span>
     </span>
   );
@@ -383,7 +383,7 @@ function OptionHeader({ meal }: { meal: Meal }) {
         aria-label="Nombre del plato · Opción 1"
         className="min-w-0 flex-1 bg-transparent text-[14px] font-semibold text-ink outline-none placeholder:text-ink/70"
       />
-      {!meal.title && <span className="font-mono text-[9px] text-mute">AUTO</span>}
+      {!meal.title && <span className="font-mono text-[9px] text-mute" title="Nombre armado solo a partir de los ingredientes. Escribí uno propio si querés.">AUTOMÁTICO</span>}
       <OptionBadges items={meal.items} className="w-full sm:w-auto" />
     </div>
   );
@@ -456,7 +456,7 @@ function TechniqueBox({ meal }: { meal: Meal }) {
   return (
     <div className="mt-3 rounded-lg border border-line bg-carbon">
       <button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2 px-3 py-2 text-left">
-        <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-steel">[ DESGLOSE TÁCTICO · PREPARACIÓN PASO A PASO ]</span>
+        <span className="font-mono text-[10px] font-bold tracking-[0.12em] text-steel">[ PREPARACIÓN PASO A PASO ]</span>
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-mute">{(meal.steps?.length ? meal.steps : autoS).length} pasos · {meal.technique || auto}</span>
         <ChevronDown className={cx('h-4 w-4 flex-none text-mute transition-transform', open && 'rotate-180')} />
       </button>
@@ -562,7 +562,7 @@ function AltOptions({ meal }: { meal: Meal }) {
             onClick={() => setNone(!generateAlt(meal.id, alts.length, 0))}
             className="flex items-center gap-1.5 rounded-md border border-fire/40 bg-fire/10 px-2.5 py-1.5 font-mono text-[10px] font-bold tracking-[0.1em] text-fire transition hover:border-fire hover:bg-fire/20"
           >
-            <Zap className="h-3.5 w-3.5" /> [ ⚡ GENERAR OPCIÓN {alts.length + 2} EQUIVALENTE ]
+            <Zap className="h-3.5 w-3.5" /> [ ⚡ CREAR OPCIÓN {alts.length + 2} CON LOS MISMOS MACROS ]
           </button>
           <span className="font-mono text-[9.5px] text-mute">
             {alts.length + 1}/{MAX_OPTIONS} OPCIONES
@@ -664,7 +664,7 @@ function DayCompare({ day }: { day: DayMode }) {
   ];
   return (
     <div className="rounded-lg border border-line bg-carbon p-3">
-      <div className="mb-2.5 font-mono text-[10px] font-bold tracking-[0.16em] text-mute">{day === 'on' ? 'DÍA ON' : 'DÍA OFF'} · COMIDAS vs OBJETIVO</div>
+      <div className="mb-2.5 font-mono text-[10px] font-bold tracking-[0.16em] text-mute">{day === 'on' ? 'DÍA DE ENTRENO' : 'DÍA DE DESCANSO'} · COMIDAS vs OBJETIVO</div>
       <div className="space-y-2">
         {rows.map(([l, g, tg]) => {
           const diff = tg ? (g / tg - 1) * 100 : 0;
@@ -709,7 +709,8 @@ export function MealsTab() {
 
   return (
     <div className="space-y-4">
-      <Panel title="03 · COMIDAS DEL PLAN" right={<Utensils className="h-4 w-4 text-cyan-hud/80" />}>
+      <Panel title="PASO 2 · COMIDAS DEL PLAN" right={<Utensils className="h-4 w-4 text-cyan-hud/80" />}>
+        <p className="-mt-1 mb-3 text-[13px] text-steel">Armá las comidas del día de entreno y de descanso. Cada comida puede tener hasta 5 opciones con los mismos macros; tu alumno elige la que quiera. La línea de proteína te avisa si desayuno, almuerzo y cena llegan al mínimo para el músculo.</p>
         <div className="grid gap-3 lg:grid-cols-2">
           <DayCompare day="on" />
           <DayCompare day="off" />
@@ -725,8 +726,8 @@ export function MealsTab() {
               size="sm"
               options={[
                 { value: 'all', label: 'Todas' },
-                { value: 'on', label: 'Día ON' },
-                { value: 'off', label: 'Día OFF' },
+                { value: 'on', label: 'Entreno' },
+                { value: 'off', label: 'Descanso' },
               ]}
             />
           </div>

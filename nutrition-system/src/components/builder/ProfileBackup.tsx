@@ -59,13 +59,13 @@ export function ProfileBackup() {
 
   return (
     <div className="flex items-center gap-1.5">
-      <button onClick={exportJson} title="Descargar el perfil completo (plan, comidas, suplementos y marcas propias)" className={`${btn} border-line text-steel hover:border-cyan-hud/50 hover:text-cyan-hud`}>
-        <Save className="h-3.5 w-3.5" /> <span className="hidden md:inline">[ EXPORTAR PERFIL JSON ]</span>
+      <button onClick={exportJson} title="Descarga un archivo con todo el atleta (plan, comidas, suplementos y marcas propias) para guardarlo o pasarlo a otra compu" className={`${btn} border-line text-steel hover:border-cyan-hud/50 hover:text-cyan-hud`}>
+        <Save className="h-3.5 w-3.5" /> <span className="hidden md:inline">[ GUARDAR COPIA ]</span>
       </button>
-      <button onClick={() => file.current?.click()} title="Recuperar o duplicar un atleta desde un backup JSON" className={`${btn} border-line text-steel hover:border-cyan-hud/50 hover:text-cyan-hud`}>
-        <FolderOpen className="h-3.5 w-3.5" /> <span className="hidden md:inline">[ IMPORTAR PERFIL ]</span>
+      <button onClick={() => file.current?.click()} title="Abre una copia guardada para recuperar o duplicar un atleta" className={`${btn} border-line text-steel hover:border-cyan-hud/50 hover:text-cyan-hud`}>
+        <FolderOpen className="h-3.5 w-3.5" /> <span className="hidden md:inline">[ ABRIR COPIA ]</span>
       </button>
-      <button onClick={shareWhatsapp} title="Enviar el link de la PWA con mensaje de bienvenida" className={`${btn} border-[#25D366]/40 bg-[#25D366]/10 text-[#4ADE80] hover:border-[#25D366]`}>
+      <button onClick={shareWhatsapp} title="Manda por WhatsApp el link de la app del alumno con un mensaje de bienvenida" className={`${btn} border-[#25D366]/40 bg-[#25D366]/10 text-[#4ADE80] hover:border-[#25D366]`}>
         <MessageCircle className="h-3.5 w-3.5" /> <span className="hidden lg:inline">[ COMPARTIR POR WHATSAPP ]</span>
       </button>
       <input ref={file} type="file" accept="application/json,.json" className="hidden" onChange={(e) => importJson(e.target.files?.[0])} />

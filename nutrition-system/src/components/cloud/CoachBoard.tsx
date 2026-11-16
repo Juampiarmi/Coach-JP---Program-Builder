@@ -126,6 +126,7 @@ export function CoachBoard() {
         </button>
       </div>
 
+      {rows && rows.length > 0 && <Legend />}
       {err && <div className="rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-[#FCA5A5]">{err}</div>}
       {rows === null && !err && <div className="rounded-xl border border-line bg-panel p-6 text-center text-[13px] text-mute">Cargando tus atletas…</div>}
       {rows?.length === 0 && (
@@ -248,6 +249,28 @@ export function CoachBoard() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** ¿Qué significan los colores y las alertas? (plegable) */
+function Legend() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border border-line bg-panel/60 px-3 py-2 text-[12.5px]">
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center justify-between font-semibold text-steel hover:text-ink" aria-expanded={open}>
+        ¿Qué significan las alertas y los colores?
+        <ChevronDown className={cx('h-4 w-4 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="mt-2 grid gap-1.5 text-steel sm:grid-cols-2">
+          <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-danger" /><b className="text-ink">Urgente:</b> lleva días sin registrar, cumple poco el plan o el peso cambia demasiado rápido. Escribile hoy.</p>
+          <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-fire" /><b className="text-ink">Revisar:</b> cumple el plan pero el peso no se mueve. Puede ser momento de ajustar las calorías.</p>
+          <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-gold" /><b className="text-ink">Atención:</b> se saltea una comida, le falta proteína, se pasa de calorías, sale mucho a comer o toma poca agua.</p>
+          <p><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-steel" /><b className="text-ink">Info:</b> detalles para ordenar: cambios sin publicar, días de entreno distintos o que dejó de pesarse.</p>
+          <p className="sm:col-span-2"><b className="text-ink">Adherencia:</b> días en que tildó todas las comidas y comió lo planeado (± 5 %). Las barras muestran el % de calorías de cada uno de los últimos 14 días: <span className="text-[#4ADE80]">verde</span> justo, <span className="text-cyan-hud">celeste</span> cerca, <span className="text-[#FDBA74]">naranja</span> lejos. Tocá un atleta para ver el detalle. «Visto» oculta la alerta 7 días; «Posponer» la vuelve a mostrar en 3.</p>
         </div>
       )}
     </div>

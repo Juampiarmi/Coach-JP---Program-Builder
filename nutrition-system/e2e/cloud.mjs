@@ -120,8 +120,12 @@ try {
 
   // ================= El coach actualiza el plan =================
   const mealsBefore = await ath.locator('.card.meal').count();
-  await coach.getByText('03 · Ingestas & leucina').first().click();
-  await coach.getByTitle('Eliminar comida').last().click();
+  await coach.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
+  // Se borra una comida del mismo tipo de día que está viendo el alumno (entreno o descanso), sea cual sea el día de la semana.
+  const athMode = (await ath.locator('.switch').getAttribute('class')).includes(' on') ? 'Entreno' : 'Descanso';
+  await coach.getByRole('button', { name: athMode, exact: true }).first().click();
+  await coach.getByTitle('Eliminar comida').first().click();
+  await coach.getByRole('button', { name: 'Todas', exact: true }).first().click().catch(() => {});
   await coach.locator('aside nav button', { hasText: 'Publicar' }).click();
   check(await until(() => coach.getByText('Tenés cambios sin publicar.', { exact: false }).first().isVisible()), 'Builder: "Tenés cambios sin publicar"');
   await coach.getByRole('button', { name: 'Publicar cambios' }).click();

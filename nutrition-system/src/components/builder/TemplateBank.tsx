@@ -157,7 +157,7 @@ export function TemplateBank() {
       </Panel>
 
       <Panel
-        title={`PLAN SEMILLA · ${day === 'on' ? 'DÍA ON (ENTRENO)' : 'DÍA OFF (DESCANSO)'}`}
+        title={`PLAN SEMILLA · ${day === 'on' ? 'DÍA DE ENTRENO (ON)' : 'DÍA DE DESCANSO (OFF)'}`}
         right={
           <div className="w-56">
             <Segmented
@@ -165,8 +165,8 @@ export function TemplateBank() {
               onChange={setDay}
               size="sm"
               options={[
-                { value: 'on', label: 'Día ON' },
-                { value: 'off', label: 'Día OFF' },
+                { value: 'on', label: 'Entreno' },
+                { value: 'off', label: 'Descanso' },
               ]}
             />
           </div>

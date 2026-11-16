@@ -23,7 +23,7 @@ export function BalanceBanner({ context = 'meals' }: { context?: 'meals' | 'expo
   if (!open.length)
     return (
       <div className="mt-3 font-mono text-[10.5px] tracking-[0.04em] text-cyan-hud">
-        ✓ {days.map((d) => d.toUpperCase()).join(' y ')} cierran al 100 % ± {fmt0(KCAL_TOLERANCE * 100)} % de las kcal (± {tol} % por macro) · el atleta llega a 0 kcal restantes al completar el día
+        ✓ {days.length > 1 ? 'Los días de entreno y descanso cierran' : days[0] === 'on' ? 'El día de entreno cierra' : 'El día de descanso cierra'} justo con sus objetivos (± {fmt0(KCAL_TOLERANCE * 100)} % de calorías, ± {tol} % por macro): si tu alumno come todo, llega exacto a su meta
       </div>
     );
 

@@ -255,6 +255,7 @@ function VersionHistory() {
         </span>
         <ChevronDown className={cx('h-4 w-4 transition-transform', open && 'rotate-180')} />
       </button>
+      {open && <p className="mt-2 text-[12px] text-mute">Cada vez que publicás se guarda una versión. Si te equivocaste, volvé a una anterior: tu alumno la ve al instante en su link (y tu borrador no se toca).</p>}
       {open && (
         <ul className="mt-2 space-y-1 text-[12.5px]">
           {list === null && <li className="text-mute">Cargando…</li>}

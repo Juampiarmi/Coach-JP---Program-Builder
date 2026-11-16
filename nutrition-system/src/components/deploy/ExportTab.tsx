@@ -55,9 +55,9 @@ function WhatsAppPanel() {
   const [copied, setCopied] = useState(false);
   const text = whatsappSummary(plan);
   return (
-    <Panel title="COMPARTIR CON EL ATLETA" right={<MessageCircle className="h-4 w-4 text-cyan-hud" />}>
+    <Panel title="MANDARLE EL LINK AL ALUMNO" right={<MessageCircle className="h-4 w-4 text-cyan-hud" />}>
       <label className="block">
-        <Label>Link público de su app (GitHub Pages)</Label>
+        <Label>Link donde subiste su app (GitHub Pages)</Label>
         <input value={plan.publicUrl} placeholder={suggestedUrl(plan)} onChange={(e) => setPlanMeta({ publicUrl: e.target.value.trim() })} className={inputCls + ' font-mono text-xs'} />
       </label>
       <pre className="scroll-thin mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-carbon p-3 font-mono text-[11px] leading-5 text-steel">{text}</pre>
@@ -133,8 +133,8 @@ export function ExportTab() {
       {cloudConfigured ? <PublishPanel /> : <ConnectCard />}
       <Panel title={cloudConfigured ? 'RESPALDO · EXPORTAR ARCHIVO HTML' : 'EXPORTAR INDEX.HTML // PWA DEPLOY'} tone={cloudConfigured ? 'steel' : 'fire'} right={<FileCode2 className="h-4 w-4 text-fire" />}>
         <p className="mb-4 text-sm text-steel">
-          Genera una PWA 100% autocontenida en un único archivo: diseño táctico, runtime vanilla JS, datos de <b className="text-ink">{plan.profile.name}</b> embebidos en JSON,
-          manifest inline (data URI + blob con URLs absolutas), iconos PNG embebidos y registro de Service Worker.
+          Genera <b className="text-ink">un único archivo</b> (index.html) con la app completa de <b className="text-ink">{plan.profile.name}</b>: plan, comidas, herramientas e ícono para instalarla.
+          Lo subís a una página web (GitHub Pages) y le mandás el link.
         </p>
         {cloudConfigured && <p className="mb-3 text-[13px] text-steel">Plan B sin internet: el archivo funciona solo, pero no se actualiza ni te manda los registros del alumno. Para el día a día usá <b className="text-ink">Publicar</b>.</p>}
         {cloudLink?.token && (
@@ -149,30 +149,30 @@ export function ExportTab() {
         <div className="grid gap-2">
           <HudButton onClick={copy} className="py-4 text-[12px]">
             {copied ? <Check className="h-4 w-4" /> : <ClipboardCopy className="h-4 w-4" />}
-            {copied ? 'CÓDIGO COPIADO AL PORTAPAPELES' : 'GENERAR Y COPIAR CÓDIGO INDEX.HTML'}
+            {copied ? 'CÓDIGO COPIADO' : 'COPIAR EL CÓDIGO DEL ARCHIVO'}
           </HudButton>
           <div className="grid grid-cols-2 gap-2">
             <HudButton tone="cyan" variant="ghost" onClick={() => download('index.html', generate(), 'text/html;charset=utf-8')}>
               <Download className="h-4 w-4" /> Descargar index.html
             </HudButton>
             <HudButton tone="steel" variant="ghost" onClick={() => download('sw.js', buildServiceWorker(slug), 'text/javascript;charset=utf-8')}>
-              <WifiOff className="h-4 w-4" /> Descargar sw.js
+              <WifiOff className="h-4 w-4" /> Descargar sw.js (sin señal)
             </HudButton>
           </div>
         </div>
         {lastSize !== null && (
           <div className="mt-3 font-mono text-[10.5px] tracking-[0.1em] text-cyan-hud">
-            ✓ INDEX.HTML COMPILADO · {(lastSize / 1024).toFixed(1).replace('.', ',')} KB · SIN DEPENDENCIAS EXTERNAS OBLIGATORIAS
+            ✓ ARCHIVO LISTO · {(lastSize / 1024).toFixed(1).replace('.', ',')} KB · FUNCIONA SOLO, SIN INSTALAR NADA MÁS
           </div>
         )}
         <p className="mt-3 font-mono text-[9.5px] leading-4 text-steel/80">
-          sw.js es opcional: habilita modo offline total. Sin él, la app se instala igual (Chrome/Android y Safari/iOS) y las fuentes caen a system-ui si no hay señal.
+          sw.js es opcional: subilo al lado del index.html para que la app abra aunque no haya señal. Sin él se instala igual en iPhone y Android.
         </p>
       </Panel>
 
       <WhatsAppPanel />
 
-      <Panel title="DEPLOY EN 60 SEGUNDOS" right={<Rocket className="h-4 w-4 text-cyan-hud" />}>
+      <Panel title="CÓMO SUBIR EL ARCHIVO (GITHUB PAGES)" right={<Rocket className="h-4 w-4 text-cyan-hud" />}>
         <ol className="space-y-3">
           {steps.map((s, i) => (
             <li key={s.t} className="flex gap-3">
@@ -194,15 +194,15 @@ export function ExportTab() {
         </a>
       </Panel>
 
-      <Panel title="CHECKLIST DE INSTALACIÓN" tone="steel">
+      <Panel title="CÓMO INSTALA LA APP TU ALUMNO" tone="steel">
         <Tag tone="steel" className="mb-2">
-          IOS · SAFARI
+          IPHONE · SAFARI
         </Tag>
-        <p className="text-[13px] text-steel">Metas apple-mobile-web-app + apple-touch-icon embebido → pantalla completa sin barra del navegador.</p>
+        <p className="text-[13px] text-steel">Abre el link en Safari → botón Compartir → «Agregar a inicio». Queda como una app, a pantalla completa.</p>
         <Tag tone="steel" className="mb-2 mt-3">
           ANDROID · CHROME
         </Tag>
-        <p className="text-[13px] text-steel">Manifest con iconos 192/512 + maskable → botón «Instalar app» nativo dentro de la PWA.</p>
+        <p className="text-[13px] text-steel">Abre el link en Chrome → toca «Instalar app» (aparece dentro de la misma app o en el menú ⋮).</p>
       </Panel>
     </div>
   );

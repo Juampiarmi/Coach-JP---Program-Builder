@@ -479,6 +479,24 @@ select option:checked,select option:hover{background-color:#1e293b;color:#38bdf8
 .migrate-card{margin:0 0 12px;padding:16px;border-radius:16px;border:1px solid rgba(56,189,248,.45);background:linear-gradient(160deg,rgba(56,189,248,.14),var(--panel) 60%)}
 .mg-k{font-size:15px;font-weight:700;color:var(--title)}.migrate-card p{margin-top:6px;font-size:13.5px;line-height:1.45;color:var(--text)}
 .migrate-card button{display:block;width:100%;margin-top:12px;padding:13px;border-radius:11px;background:var(--cyan);color:#0B0F17;font-size:14.5px;font-weight:700}
+/* Ayudas (?) y lenguaje claro */
+.qh{display:inline-grid;place-items:center;flex:none;width:20px;height:20px;margin-left:6px;border-radius:50%;border:1px solid var(--cyan-edge);background:var(--cyan-soft);color:var(--cyan);font:700 11.5px Inter,system-ui,sans-serif;vertical-align:middle}
+.qh.on{background:var(--cyan);color:#0B0F17}
+.help-pop{margin:-4px 0 12px;padding:10px 12px;border-radius:11px;border:1px solid var(--cyan-edge);background:rgba(56,189,248,.07);font-size:13px;line-height:1.5;color:#E2E8F0}
+.help-pop b{color:var(--title)}
+.meal .help-pop{margin:0 14px 12px}
+.mode-line{display:flex;align-items:center;justify-content:center;gap:2px;margin:-4px 0 12px;font-size:12.5px;color:var(--text);text-align:center}
+.switch button{font-size:10.5px;letter-spacing:.06em}
+.leu .leu-t{flex:1;min-width:0;font-family:Inter,system-ui,sans-serif;font-size:12.5px;letter-spacing:0;line-height:1.35}
+.leu .leu-t i{display:block;font-style:normal;font-family:"JetBrains Mono",monospace;font-size:10.5px;opacity:.8;margin-top:1px}
+.item .sw{font-family:Inter,system-ui,sans-serif;font-size:11.5px;letter-spacing:0;font-weight:600}
+.dish .dtag{font-family:Inter,system-ui,sans-serif;letter-spacing:0;text-transform:none;font-size:11.5px}
+.dish .obadges i{font-family:Inter,system-ui,sans-serif;letter-spacing:0;font-size:11.5px;font-weight:600}
+.gsub{font-family:Inter,system-ui,sans-serif}
+.glabel{letter-spacing:.12em}
+.prog .qh{margin-left:4px}
+.w-hint .qh{width:18px;height:18px;font-size:10.5px}
+.guide-btn{font-family:Inter,system-ui,sans-serif;font-size:12px;letter-spacing:0}
 `;
 
 export default styles;

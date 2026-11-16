@@ -9,7 +9,7 @@ import { consolidateItems, consolidateMeal, retimeMeals } from '@/lib/schedule';
 import { baseKey, compensateSwap, fitAltsToMain, normalizeMealOptions, refreshSteps, suggestAlternatives, withAlternatives } from '@/lib/menuOptions';
 import { sanitizeAnamnesis } from '@/lib/anamnesisPro';
 import { buildTemplatePlan, goalById, type TemplateSelection } from '@/lib/templateBank';
-import { modernizeName } from '@/lib/foodBrandDb';
+import { friendlyMealName, modernizeName } from '@/lib/foodBrandDb';
 import { aisGroupA } from '@/lib/evidence';
 import { cloudConfigured } from '@/lib/cloud/config';
 import { equivalentGrams, FOOD_BY_ID, freeEquivalents, macrosFor, registerCustomFoods, round1, round2, type FoodRef } from '@/lib/foods';
@@ -572,7 +572,7 @@ function modernizeMealNames(m: Meal): Meal {
   const fix = (items: FoodItem[]) => items.map((i) => ({ ...i, food: modernizeName(i.food) }));
   return {
     ...m,
-    name: modernizeName(m.name),
+    name: friendlyMealName(m.name),
     title: m.title && modernizeName(m.title),
     items: fix(m.items),
     alts: m.alts?.map((a) => ({ ...a, title: modernizeName(a.title), items: fix(a.items) })),

@@ -9,7 +9,7 @@ import { SCAN_PROMPT } from './scanner';
 import { byTime, consolidateMeal } from './schedule';
 import { autoTechnique, autoTitle, fixTechnique, optionSteps, prepMinutes } from './menuOptions';
 import { fitsSlot, foodSlots } from './mealSlots';
-import { modernizeName } from './foodBrandDb';
+import { friendlyMealName, modernizeName } from './foodBrandDb';
 import { BRAND_TIERS, TIER_LABEL, TIER_OF_BUDGET } from './brandTiers';
 import { HAND, HOUSE, SHOP_PACKS } from './household';
 import { sanitizeAnamnesis } from './anamnesisPro';
@@ -197,7 +197,7 @@ function modernizeMeal(m: Meal): Meal {
   const fixItems = (items: FoodItem[]) => items.map((i) => ({ ...i, food: i.foodId && FOOD_BY_ID[i.foodId] ? FOOD_BY_ID[i.foodId].name : modernizeName(i.food) }));
   return {
     ...m,
-    name: modernizeName(m.name),
+    name: friendlyMealName(m.name),
     title: m.title && modernizeName(m.title),
     items: fixItems(m.items),
     alts: m.alts?.map((a) => ({ ...a, title: modernizeName(a.title), items: fixItems(a.items), steps: a.steps?.map(modernizeName) })),

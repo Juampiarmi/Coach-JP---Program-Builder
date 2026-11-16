@@ -21,20 +21,22 @@ export function StepFlow() {
   const mealsOk = plan.meals.length > 0 && plan.meals.every((m) => m.items.length > 0);
   const sentOk = state === 'fresh';
   const steps = [
-    { n: 1, title: 'Armar perfil', hint: 'Anamnesis, datos físicos y macros ON/OFF del atleta.', ok: profileOk, on: PROFILE_TABS.includes(tab) && deployTab !== 'export', go: () => setBuilderTab('profile') },
-    { n: 2, title: 'Ajustar comidas', hint: 'Comidas del día con hasta 5 opciones cada una (o cargá un plan de la Biblioteca).', ok: mealsOk, on: MEAL_TABS.includes(tab) && deployTab !== 'export', go: () => setBuilderTab('meals') },
+    { n: 1, title: 'Armar perfil', hint: 'cargá hábitos y salud (anamnesis), datos físicos y los macros del día de entreno y de descanso.', ok: profileOk, on: PROFILE_TABS.includes(tab) && deployTab !== 'export', go: () => setBuilderTab('profile') },
+    { n: 2, title: 'Ajustar comidas', hint: 'armá las comidas del día con hasta 5 opciones cada una, o cargá un plan listo de la Biblioteca y adaptalo.', ok: mealsOk, on: MEAL_TABS.includes(tab) && deployTab !== 'export', go: () => setBuilderTab('meals') },
     {
       n: 3,
       title: cloud ? 'Publicar link' : 'Entregar plan',
-      hint: cloud ? 'Publicá y tu alumno ve el plan al instante en su link fijo.' : 'Publicá con link fijo (nube) o exportá el archivo de respaldo.',
+      hint: cloud ? 'tocá Publicar y tu alumno ve el plan al instante en su link fijo. Cada cambio que publiques le llega solo.' : 'publicá con link fijo (nube) o exportá el archivo de respaldo para subirlo vos.',
       ok: sentOk,
       on: deployTab === 'export',
       go: () => setDeployTab('export'),
       warn: state === 'stale',
     },
   ];
+  const current = steps.find((s) => s.on);
   return (
-    <ol className="mb-3 grid grid-cols-3 gap-1.5" aria-label="Pasos para armar el plan">
+    <>
+    <ol className="mb-1.5 grid grid-cols-3 gap-1.5" aria-label="Pasos para armar el plan">
       {steps.map((s, i) => (
         <li key={s.n}>
           <button
@@ -63,5 +65,15 @@ export function StepFlow() {
         </li>
       ))}
     </ol>
+    <p className="mb-3 px-1 text-[12.5px] text-steel">
+      {current ? (
+        <>
+          <b className="text-ink">Paso {current.n} · {current.title}:</b> {current.hint}
+        </>
+      ) : (
+        <>Seguí los 3 pasos: armá el perfil, ajustá las comidas y publicá el link para tu alumno.</>
+      )}
+    </p>
+    </>
   );
 }

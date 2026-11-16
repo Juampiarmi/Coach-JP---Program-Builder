@@ -49,7 +49,7 @@ try {
   await page.goto(ROOT, { waitUntil: 'networkidle' });
   check(await page.getByText('COACH JP').first().isVisible(), 'Builder carga');
 
-  await page.getByText('03 · Ingestas & leucina').first().click();
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
   const meals = page.locator('input[type="time"]');
   const n0 = await meals.count();
   check(n0 > 0, `Plan con comidas (${n0})`);
@@ -84,7 +84,7 @@ try {
   const html = join(dir, 'index.html');
   await dl.saveAs(html);
   check(await page.getByText('Plan al día.').isVisible(), 'Indicador: plan al día después de exportar');
-  await page.getByText('03 · Ingestas & leucina').first().click();
+  await page.locator('section nav button', { hasText: /^\s*Comidas$/ }).click();
   await page.getByTitle('Eliminar comida').first().click();
   await page.locator('aside nav button', { hasText: 'Publicar' }).click();
   check(await page.getByText('Plan desactualizado.').isVisible(), 'Indicador: plan desactualizado después de editar');

@@ -21,7 +21,7 @@ import { usePlanStore } from '@/store/usePlanStore';
 import { ChoiceCard, Cite, cx, Label, NumberField, Panel, Readout, Segmented, Slider, TextField } from '../hud/primitives';
 
 // Escala de EA (kcal/kg FFM): < 30 riesgo RED-S · 30-45 rango táctico de recomposición (seguro) · > 45 óptima.
-const EA_LABEL = { optimal: '[ ÓPTIMO · > 45 ]', reduced: '[ RANGO TÁCTICO / RECOMPOSICIÓN SEGURO ]', low: '[ RIESGO RED-S · < 30 ]' } as const;
+const EA_LABEL = { optimal: '[ ÓPTIMA · MÁS DE 45 ]', reduced: '[ SEGURA PARA RECOMPONER · 30-45 ]', low: '[ RIESGO PARA LA SALUD · MENOS DE 30 ]' } as const;
 
 function PrecisionSelector() {
   const mode = usePlanStore((s) => s.plan.profile.precisionMode);
@@ -129,7 +129,7 @@ function IsakMode() {
       <div className="grid gap-3 sm:grid-cols-2">
         <NumberField label="Masa libre de grasa medida (DEXA / BIA) · opcional" unit="kg" value={pr.measuredFfmKg} min={0} max={200} onChange={setMeasuredFfm} />
         <div>
-          <Label>Fórmula de BMR</Label>
+          <Label>Fórmula del metabolismo basal (BMR)</Label>
           <Segmented
             value={pr.bmrFormula}
             onChange={(bmrFormula) => setProfile({ bmrFormula })}
@@ -142,7 +142,7 @@ function IsakMode() {
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Slider label="Factor de actividad (NEAT)" value={pr.activityFactor} min={1.2} max={1.7} step={0.05} onChange={(activityFactor) => setProfile({ activityFactor })} suffix="× BMR" />
+        <Slider label="Actividad fuera del gimnasio (NEAT)" value={pr.activityFactor} min={1.2} max={1.7} step={0.05} onChange={(activityFactor) => setProfile({ activityFactor })} suffix="× BMR" />
         <Slider label="Gasto de la sesión (día ON)" value={pr.sessionKcal} min={200} max={1200} step={25} tone="fire" onChange={(sessionKcal) => setProfile({ sessionKcal })} suffix="kcal" />
       </div>
       <div className="w-full sm:w-1/3">
@@ -181,7 +181,7 @@ export function ProfileTab() {
 
   return (
     <div className="space-y-4">
-      <Panel title="01 · PERFIL BIOLÓGICO" right={<Activity className="h-4 w-4 text-cyan-hud/80" />}>
+      <Panel title="PASO 1 · PERFIL FÍSICO" right={<Activity className="h-4 w-4 text-cyan-hud/80" />}>
         <div className="grid gap-3 sm:grid-cols-2">
           <TextField label="Nombre del atleta" value={pr.name} onChange={(name) => setProfile({ name })} />
           <div>
@@ -275,23 +275,24 @@ export function ProfileTab() {
         </div>
       </Panel>
 
-      <Panel title="DISPONIBILIDAD ENERGÉTICA · EA" tone={eaOn === 'low' || eaOff === 'low' ? 'danger' : 'cyan'}>
+      <Panel title="ENERGÍA DISPONIBLE (EA)" tone={eaOn === 'low' || eaOff === 'low' ? 'danger' : 'cyan'}>
+        <p className="-mt-1 mb-3 text-[13px] text-steel">Lo que le queda al cuerpo para funcionar después de entrenar, por kg de masa magra. Si baja de 30, el déficit es demasiado agresivo y se resiente la salud hormonal (síndrome RED-S).</p>
         <p className="mb-3 text-xs leading-relaxed text-steel">
           Energía que le queda al cuerpo después de entrenar, por kg de masa libre de grasa. Se calcula con las kcal que suman las comidas planificadas de cada día.
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
           <EaCard
-            label="EA · DÍA ON"
+            label="DÍA DE ENTRENO"
             value={t.eaOn}
             status={eaOn}
             formula={`(${fmt0(t.intakeOn)} kcal − ${fmt0(pr.sessionKcal)} kcal sesión) / ${fmt1(t.ffm)} kg FFM`}
           />
-          <EaCard label="EA · DÍA OFF" value={t.eaOff} status={eaOff} formula={`(${fmt0(t.intakeOff)} kcal − 0 kcal sesión) / ${fmt1(t.ffm)} kg FFM`} />
+          <EaCard label="DÍA DE DESCANSO" value={t.eaOff} status={eaOff} formula={`(${fmt0(t.intakeOff)} kcal − 0 kcal sesión) / ${fmt1(t.ffm)} kg FFM`} />
         </div>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[9.5px] tracking-[0.06em] text-mute">
           <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#22C55E]" />&gt;45 ÓPTIMO</span>
           <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-cyan-hud" />30–45 RANGO TÁCTICO / RECOMPOSICIÓN SEGURO</span>
-          <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-danger" />&lt;30 RIESGO RED-S</span>
+          <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-danger" />&lt;30 RIESGO PARA LA SALUD</span>
         </div>
         {Math.abs(t.eaOn - t.eaOff) < 3 && (
           <p className="mt-3 text-xs leading-relaxed text-steel">
@@ -301,7 +302,7 @@ export function ProfileTab() {
         )}
         {(eaOn === 'low' || eaOff === 'low') && (
           <div className="mt-3 rounded-lg border border-danger/40 bg-danger/10 p-3 text-xs leading-5 text-danger">
-            ⚠ ALERTA RED-S: EA por debajo de 30 kcal/kg FFM. Riesgo de supresión hormonal (T3, LH, leptina). Subí los carbohidratos del día ON o reducí el déficit.
+            ⚠ Energía disponible por debajo de 30: el déficit es demasiado agresivo y puede frenar hormonas clave (tiroides, testosterona/estrógenos, leptina). Subí los carbohidratos del día de entreno o achicá el déficit.
           </div>
         )}
         <div className="mt-3 flex flex-col gap-1">

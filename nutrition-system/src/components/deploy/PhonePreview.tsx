@@ -91,8 +91,8 @@ export function PhonePreview() {
           tone="cyan"
           size="sm"
           options={[
-            { value: 'on', label: 'Modo día ON' },
-            { value: 'off', label: 'Modo día OFF' },
+            { value: 'on', label: 'Día de entreno' },
+            { value: 'off', label: 'Día de descanso' },
           ]}
         />
       </div>
@@ -124,9 +124,9 @@ export function PhonePreview() {
             <div className="absolute inset-0 z-10 flex items-center bg-carbon/95 p-5">
               <div className="w-full rounded-xl border border-fire/40 bg-panel p-4">
                 <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.2em] text-fire">
-                  <AlertTriangle className="h-3.5 w-3.5" /> [ ERROR DE RENDER ]
+                  <AlertTriangle className="h-3.5 w-3.5" /> [ NO SE PUDO MOSTRAR ]
                 </div>
-                <p className="mt-2 text-sm text-ink">El simulador no pudo renderizar la PWA del atleta.</p>
+                <p className="mt-2 text-sm text-ink">La vista previa de la app del alumno no pudo cargarse. Tocá Reintentar; si sigue, revisá la última comida que editaste.</p>
                 <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10.5px] text-steel">{status.message}</pre>
                 <HudButton tone="steel" variant="ghost" onClick={reload} className="mt-3 w-full">
                   <RefreshCw className="h-3.5 w-3.5" /> Reintentar

@@ -29,20 +29,30 @@ import { cloudConfigured } from '@/lib/cloud/config';
 
 const BUILDER_TABS: { id: BuilderTab; label: string; icon: typeof Brain }[] = [
   ...(cloudConfigured ? [{ id: 'athletes' as BuilderTab, label: 'Mis atletas', icon: Users }] : []),
-  { id: 'anamnesis', label: '00 · Anamnesis Pro & Lifestyle', icon: ClipboardList },
-  { id: 'intake', label: 'IA Prompt Engine', icon: Brain },
-  { id: 'profile', label: '01 · Perfil biológico', icon: Dna },
-  { id: 'periodization', label: '02 · Matriz ON/OFF', icon: SlidersHorizontal },
-  { id: 'meals', label: '03 · Ingestas & leucina', icon: Utensils },
-  { id: 'fooddb', label: '04 · Food & Brand DB', icon: Database },
-  { id: 'library', label: '05 · 📚 Biblioteca de Planes', icon: Library },
+  { id: 'anamnesis', label: 'Anamnesis · hábitos y salud', icon: ClipboardList },
+  { id: 'intake', label: 'Asistente IA', icon: Brain },
+  { id: 'profile', label: 'Perfil físico', icon: Dna },
+  { id: 'periodization', label: 'Macros entreno / descanso', icon: SlidersHorizontal },
+  { id: 'meals', label: 'Comidas', icon: Utensils },
+  { id: 'library', label: '📚 Planes listos', icon: Library },
+  { id: 'fooddb', label: 'Alimentos y marcas', icon: Database },
 ];
 
 const DEPLOY_TABS: { id: DeployTab; label: string; icon: typeof Brain }[] = [
-  { id: 'preview', label: 'Simulador', icon: Smartphone },
+  { id: 'preview', label: 'Vista del alumno', icon: Smartphone },
   { id: 'export', label: 'Publicar', icon: Download },
-  { id: 'story', label: 'Story 9:16', icon: ImageIcon },
+  { id: 'story', label: 'Instagram', icon: ImageIcon },
 ];
+
+/** Explicación de cada dato de la barra de estado (al pasar el mouse). */
+const STATUS_TIP: Record<string, string> = {
+  ATLETA: 'Atleta que estás editando. Cambialo desde el selector de atletas arriba a la derecha.',
+  FASE: 'Objetivo actual del plan (recomposición, mantenimiento o superávit).',
+  'DÍA DE ENTRENO': 'Calorías totales de un día con entrenamiento.',
+  'DÍA DE DESCANSO': 'Calorías totales de un día sin entrenamiento.',
+  'ENERGÍA DISPONIBLE': 'Lo que le queda al cuerpo después de entrenar, por kg de masa magra (entreno / descanso). Por debajo de 30 hay riesgo para la salud hormonal; 30-45 es seguro para recomponer; más de 45 es óptimo.',
+  'PROTEÍNA POR COMIDA': 'Si desayuno, almuerzo y cena llegan a la proteína que estimula el músculo (~2,5 g de leucina por comida).',
+};
 
 const EA_TEXT = { optimal: 'text-[#22C55E]', reduced: 'text-cyan-hud', low: 'text-danger' } as const;
 
@@ -54,16 +64,15 @@ function StatusBar() {
   const items: [string, string, string][] = [
     ['ATLETA', plan.profile.name.toUpperCase(), 'text-ink'],
     ['FASE', PHASE_LABEL[plan.profile.phase].toUpperCase(), 'text-fire'],
-    ['ON', `${fmt0(t.kcalOn)} KCAL`, 'text-ink'],
-    ['OFF', `${fmt0(t.kcalOff)} KCAL`, 'text-ink'],
-    ['EA ON', fmt1(t.eaOn), EA_TEXT[eaStatus(t.eaOn)]],
-    ['EA OFF', fmt1(t.eaOff), EA_TEXT[eaStatus(t.eaOff)]],
-    ['LEUCINA', low ? `${low} SUB-UMBRAL` : 'mTOR OK', low ? 'text-fire' : 'text-cyan-hud'],
+    ['DÍA DE ENTRENO', `${fmt0(t.kcalOn)} KCAL`, 'text-ink'],
+    ['DÍA DE DESCANSO', `${fmt0(t.kcalOff)} KCAL`, 'text-ink'],
+    ['ENERGÍA DISPONIBLE', `${fmt1(t.eaOn)} / ${fmt1(t.eaOff)}`, EA_TEXT[eaStatus(Math.min(t.eaOn, t.eaOff))]],
+    ['PROTEÍNA POR COMIDA', low ? `${low} COMIDA${low > 1 ? 'S' : ''} CORTA${low > 1 ? 'S' : ''}` : 'BIEN EN TODAS', low ? 'text-fire' : 'text-cyan-hud'],
   ];
   return (
     <div className="scroll-thin flex gap-5 overflow-x-auto border-t border-line bg-panel2 px-4 py-2 sm:px-6">
       {items.map(([k, v, c]) => (
-        <div key={k} className="flex flex-none items-baseline gap-2 font-mono text-[10px] tracking-[0.14em]">
+        <div key={k} title={STATUS_TIP[k]} className="flex flex-none cursor-help items-baseline gap-2 font-mono text-[10px] tracking-[0.14em]">
           <span className="text-mute">{k}</span>
           <span className={cx('font-bold', c)}>{v}</span>
         </div>
@@ -104,21 +113,19 @@ export default function Home() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[17px] font-bold leading-none tracking-[0.04em] text-ink">COACH JP</span>
               <span className="rounded border border-cyan-hud/20 bg-cyan-hud/10 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-cyan-hud">
-                [ Bioenergetics &amp; Nutrition ]
+                [ Nutrición de alto rendimiento ]
               </span>
             </div>
-            <div className="mt-1.5 font-mono text-[10px] tracking-[0.14em] text-mute">@coachjp.training · COMMAND BUILDER</div>
+            <div className="mt-1.5 font-mono text-[10px] tracking-[0.14em] text-mute">@coachjp.training · ARMADOR DE PLANES</div>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden items-center gap-2 rounded-md border border-cyan-hud/20 bg-cyan-hud/10 px-2.5 py-1.5 font-mono text-[10px] tracking-[0.14em] text-cyan-hud xl:flex">
-              <Crosshair className="h-3.5 w-3.5" /> SISTEMA OPERATIVO
-            </span>
             <CloudAccount />
             <ProfileBackup />
             <AthleteSwitcher />
             <InstallButton />
             <button
-              onClick={() => confirm('¿Restaurar el atleta de demostración? Se reemplaza el plan actual.') && resetDemo()}
+              onClick={() => confirm('¿Cargar el atleta de ejemplo? Reemplaza el plan que estás viendo.') && resetDemo()}
+              title="Carga un atleta de ejemplo para probar el Builder (reemplaza el plan que estás viendo)"
               className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 font-mono text-[10px] tracking-[0.12em] text-mute hover:border-white/20 hover:text-ink"
             >
               <RotateCcw className="h-3.5 w-3.5" /> DEMO
@@ -130,7 +137,7 @@ export default function Home() {
 
       <main className="grid gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px]">
         <section className="min-w-0">
-          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">PANEL IZQUIERDO · TACTICAL COMMAND BUILDER</div>
+          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">ARMÁ EL PLAN</div>
           <ConflictBanner />
           <StepFlow />
           <div className="mb-4 flex items-start gap-2">
@@ -166,7 +173,7 @@ export default function Home() {
         </section>
 
         <aside className="min-w-0 lg:sticky lg:top-[112px] lg:max-h-[calc(100vh-128px)] lg:self-start lg:overflow-y-auto scroll-thin">
-          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">PANEL DERECHO · SIMULADOR & MOTOR DE DEPLOY</div>
+          <div className="mb-3 font-mono text-[10px] tracking-[0.24em] text-mute">ASÍ LO VE TU ALUMNO · PUBLICAR</div>
           <nav className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-line bg-panel p-1">
             {DEPLOY_TABS.map(({ id, label, icon: Icon }) => (
               <button

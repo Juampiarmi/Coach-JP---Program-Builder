@@ -295,6 +295,19 @@ export function modernizeName(text: string) {
   return out;
 }
 
+/** Nombres de comida en lenguaje claro: "Pre-WOD" → "Antes de entrenar" (sólo si es el nombre completo de la comida). */
+const MEAL_NAMES: [RegExp, string][] = [
+  [/^pre[\s-]?(wod|entreno)$/i, 'Antes de entrenar'],
+  [/^post[\s-]?(wod|entreno)$/i, 'Después de entrenar'],
+  [/^peri[\s-]?(wod|entreno)$/i, 'Antes de entrenar'],
+  [/^intra[\s-]?(wod|entreno)$/i, 'Durante el entreno'],
+];
+export function friendlyMealName(name: string) {
+  const n = modernizeName(name).trim();
+  for (const [re, to] of MEAL_NAMES) if (re.test(n)) return to;
+  return n;
+}
+
 /** Versión del catálogo pre-cargado: al subirla, la DB guardada del coach recibe los ítems nuevos sin perder sus cambios. */
 export const SEED_VERSION = 5;
 

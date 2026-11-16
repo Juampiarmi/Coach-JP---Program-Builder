@@ -41,7 +41,7 @@ function DayColumn({ day }: { day: DayMode }) {
 
   return (
     <Panel
-      title={isOn ? 'DÍA ON · ALTA DEMANDA GLUCOLÍTICA' : 'DÍA OFF · DESCANSO / GRASAS HORMONALES'}
+      title={isOn ? 'DÍA DE ENTRENO (ON) · MÁS CARBOHIDRATOS' : 'DÍA DE DESCANSO (OFF) · MENOS CARBOS, MÁS GRASAS'}
       right={isOn ? <Flame className="h-4 w-4 text-fire" /> : <Moon className="h-4 w-4 text-cyan-hud" />}
     >
       <div className="flex items-end justify-between gap-3">
@@ -91,11 +91,11 @@ export function PeriodizationTab() {
 
   return (
     <div className="space-y-4">
-      <Panel title="02 · CÓMO FUNCIONA LA MATRIZ ON/OFF">
+      <Panel title="PASO 1 · MACROS DE ENTRENO Y DESCANSO">
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-lg border border-line bg-carbon p-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-              <Flame className="h-4 w-4 text-fire" /> Día ON · entrenamiento
+              <Flame className="h-4 w-4 text-fire" /> Día de entreno (ON)
             </div>
             <p className="mt-1.5 text-[13px] leading-relaxed text-steel">
               Prioridad en <b className="font-semibold text-ink">carbohidratos alrededor del entrenamiento</b> para recargar glucógeno y sostener la alta intensidad.
@@ -104,7 +104,7 @@ export function PeriodizationTab() {
           </div>
           <div className="rounded-lg border border-line bg-carbon p-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-ink">
-              <Moon className="h-4 w-4 text-cyan-hud" /> Día OFF · descanso
+              <Moon className="h-4 w-4 text-cyan-hud" /> Día de descanso (OFF)
             </div>
             <p className="mt-1.5 text-[13px] leading-relaxed text-steel">
               Menos carbohidratos para el <b className="font-semibold text-ink">control glucémico</b>, más <b className="font-semibold text-ink">grasas saludables</b> para el
