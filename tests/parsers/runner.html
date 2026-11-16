@@ -40,6 +40,7 @@
 <script src="cases.js"></script>
 <script src="cases-banco.js"></script>
 <script src="cases-alumno.js"></script>
+<script src="cases-ia.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -75,6 +76,10 @@
     bancoNombres: { run: function(i){ return auditarNombres(i); }, valor: function(r){ return r; } },
     bancoEditor:  { run: function(i){ return auditarEditor(i); }, valor: function(r){ return r; } },
     bancoSplit3:  { run: function(i){ return auditarSplit3(i); }, valor: function(r){ return r; } },
+    /* generadores de IA del Builder (CrossFit): con el motor de IA simulado, sin red y sin guardar nada */
+    iaCF:         { run: function(i){ return iaCaso(i); }, valor: function(r){ return r; } },
+    /* app del alumno: objetivo de la semana en la información de la semana */
+    alumnoObjetivo: { run: function(i){ return alumnoObjetivoSemana(i); }, valor: function(r){ return r; } },
     /* app del alumno: se compila un alumno de prueba con el compile() real, se abre en un iframe y se llaman sus funciones globales (input: { fn, args }) */
     alumnoParidad: { run: function(lista){ var w = alumnoWin(); if(!w || typeof w.jpDosisCanon !== 'function') throw new Error('la app del alumno no expone jpDosisCanon'); return lista.filter(function(x){ return JSON.stringify(w.jpDosisCanon(x)) !== JSON.stringify(win.jpDosisCanon(x)); }).map(function(x){ return 'distinto para: ' + x; }); }, valor: function(r){ return r; } },
     alumno:       { run: function(i){ var w = alumnoWin(); if(!w || typeof w[i.fn] !== 'function') throw new Error('la app del alumno no expone ' + i.fn); return w[i.fn].apply(w, i.args || []); }, valor: function(r){ return r; } }
@@ -190,6 +195,56 @@
       });
     }); });
     return P;
+  }
+
+  /* ---------- generadores de IA (CrossFit): prevalidación y objetivo de la semana ---------- */
+  function iaCaso(c){
+    var AIx = win.CoachAI, S = getS(), toasts = [], llamadas = 0;
+    var orig = { hay: AIx.hayClave, esp: AIx.esperaCooldown, cfg: AIx.config, gen: AIx.generarTexto, toast: win.toast, active: S.activeId };
+    win.toast = function(m, k){ toasts.push((k || 'ok') + ': ' + m); };
+    AIx.config = function(){ toasts.push('config'); };
+    AIx.generarTexto = function(){ llamadas++; return Promise.resolve('{}'); };
+    var ath = null;
+    try{
+      if(c.caso === 'sinClave'){ AIx.hayClave = function(){ return false; }; var ok = win.jpIAListo('probar'); return { ok: ok, avisoClave: toasts.some(function(x){ return /Configurá una clave/.test(x); }), cfgAbierto: toasts.indexOf('config') >= 0 }; }
+      if(c.caso === 'pausa'){ AIx.hayClave = function(){ return true; }; AIx.esperaCooldown = function(){ return 45; }; var ok2 = win.jpIAListo('probar'); return { ok: ok2, avisoPausa: toasts.some(function(x){ return /en pausa/.test(x); }) }; }
+      if(c.caso === 'listo'){ AIx.hayClave = function(){ return true; }; AIx.esperaCooldown = function(){ return 0; }; var ok3 = win.jpIAListo('probar'); return { ok: ok3, sinAvisos: toasts.length === 0 }; }
+      if(c.caso === 'textoIA'){ return [win.jpTextoIA(null), win.jpTextoIA(['a', '', 'b']), win.jpTextoIA({ x: 'uno', y: ['dos'] }), win.jpTextoIA('  hola  ')]; }
+      if(c.caso === 'ocupado'){ var b = { dataset: {}, isConnected: false }; var a1 = win.jpIAOcupado(b), a2 = win.jpIAOcupado(b); win.jpIALibre(b, null); var a3 = win.jpIAOcupado(b); return [a1, a2, a3]; }
+      if(c.caso === 'resumen'){
+        var plan = { dias: [{ title: 'Día 1', bloques: [
+          { tipo: 'list', category: 'warmup', titulo: 'Entrada en calor', items: ['Remo 500 m'] },
+          { tipo: 'list', category: 'strength', titulo: 'Back Squat', items: ['5x3 Back Squat @80%', 'Rest 3:00'] },
+          { tipo: 'list', category: 'metcon', titulo: 'Fran', cfFmt: 'fortime', items: ['21-15-9 Thrusters', 'Pull-ups'] },
+          { tipo: 'list', category: 'metcon', titulo: 'Vacío', items: [] } ] }, { title: 'Día 2', bloques: [] }] };
+        var r = win.resumenSemanaCFParaIA(plan, 0);
+        return { bloques: r.bloques, dias: r.dias, tieneSquat: /Back Squat/.test(r.texto), tieneFran: /Fran/.test(r.texto), sinWarmup: !/Remo 500/.test(r.texto), sinVacio: !/Vacío/.test(r.texto) };
+      }
+      /* handlers: con el motor sin clave NO se arma contexto ni se pide nada a la red, el botón queda libre y se avisa */
+      if(c.caso === 'handlerObjetivo' || c.caso === 'handlerTips'){
+        AIx.hayClave = function(){ return false; };
+        var id = 'ath_test_ia', bl = win.nuevoBloquePizarra(true, 'metcon', 'Fran', ['21-15-9 Thrusters', 'Pull-ups']);
+        ath = { id: id, nombre: 'Prueba', apellido: 'IA', freq: 3, nivel: 'Avanzado', genero: 'F' };
+        var guardar = win.save, render = win.renderBuilder; win.save = function(){}; win.renderBuilder = function(){};
+        S.athletes.push(ath);
+        try{
+          var p = win.newPlan(ath); p.meta.mesoDisc = 'crossfit'; p.dias[0].bloques.push(bl); S.plans[id] = p; S.activeId = id;
+          var btn = { dataset: {}, isConnected: false, innerHTML: 'x', disabled: false };
+          if(c.caso === 'handlerObjetivo') win.generarObjetivoSemanaCF(btn); else win.generarTipsPacingIA(bl.id, btn);
+          return { llamadas: llamadas, avisoClave: toasts.some(function(x){ return /Configurá una clave/.test(x); }), botonLibre: !btn.disabled && !btn.dataset.iaBusy, sinFalsoError: !toasts.some(function(x){ return /revisá la conexión|Error en API/.test(x); }) };
+        } finally { delete S.plans[id]; var ix = S.athletes.indexOf(ath); if(ix >= 0) S.athletes.splice(ix, 1); win.save = guardar; win.renderBuilder = render; }
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      AIx.hayClave = orig.hay; AIx.esperaCooldown = orig.esp; AIx.config = orig.cfg; AIx.generarTexto = orig.gen; win.toast = orig.toast; S.activeId = orig.active;
+    }
+  }
+  function alumnoObjetivoSemana(texto){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    var wm = w.eval('WEEKS_META'), cur = w.eval('state.currentWeek') || 0, prev = wm[cur].objetivo;
+    wm[cur].objetivo = texto;
+    try{ w.renderWeekInfo(); return w.document.getElementById('weekInfoModalText').innerHTML; }
+    finally{ wm[cur].objetivo = prev; w.renderWeekInfo(); }
   }
   function itemsPlanos(r){ var out = []; (r.dias || []).forEach(function(d){ (d.bloques || []).forEach(function(b){ out.push((b.items || []).map(function(x){ return typeof x === 'string' ? x : JSON.stringify(x); })); }); }); return out; }
   function restConsecutivos(r){ var n = 0; itemsPlanos(r).forEach(function(its){ for(var k = 1; k < its.length; k++){ if(/^\s*Rest\b/i.test(its[k]) && /^\s*Rest\b/i.test(its[k - 1])) n++; } }); return n; }

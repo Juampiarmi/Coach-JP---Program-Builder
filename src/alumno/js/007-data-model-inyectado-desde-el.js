@@ -2183,7 +2183,14 @@ function renderWeekInfo(){
   var mText = document.getElementById('weekInfoModalText');
   if(mIcon) mIcon.textContent = w.icon;
   if(mTitle) mTitle.textContent = w.name + ' · ' + w.phase + ' — ' + w.rpe;
-  if(mText) mText.innerHTML = w.note;
+  if(mText){
+    /* objetivo de la semana (CrossFit, generado/editado por el coach): se muestra primero, como texto (nunca como HTML) */
+    var objSem = String(w.objetivo || '').trim();
+    var objEl = document.createElement('div'); objEl.textContent = objSem;
+    mText.innerHTML = objSem
+      ? '<b>🎯 Objetivo de la semana</b><br>' + objEl.innerHTML.replace(/\n/g, '<br>') + (w.note ? '<br><br>' : '') + (w.note || '')
+      : w.note;
+  }
   renderWeekActiveBadge();
 }
 /* =========================================================

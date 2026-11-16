@@ -7604,6 +7604,15 @@ function renderDay(){
         (cfWkActiva !== 3 ? '<button type="button" class="btn sm ghost" data-cfdeload="1" title="Genera la Semana 4 (Descarga) de este día a partir de la semana activa: -1 serie por ejercicio, RIR 3-4, nombres intactos">🍃 Generar Deload S4</button>' : '') +
       '</div>' +
       '<div class="hint" style="margin-top:6px">Cada semana de CrossFit &amp; Hyrox es una prescripción 100% independiente -- editar acá nunca modifica el contenido de otra semana. Una semana nunca prescripta arranca en blanco, nunca copia otra semana.</div>' +
+      /* OBJETIVO DE LA SEMANA (CrossFit): resumen ejecutivo del estímulo neuromuscular y metabólico de la semana activa; editable a mano o generado con IA */
+      '<div class="cf-obj" id="cfObjSemana">' +
+        '<div class="cf-obj-h">' +
+          '<label class="lb" for="cfObjTa">🎯 Objetivo de la semana · ' + esc(((pAct.meso || [])[cfWkActiva] || {}).short || ('S' + (cfWkActiva + 1))) + '</label>' +
+          '<button type="button" class="btn sm gold" data-cfobjia="1" title="Analiza los bloques, WODs y levantamientos cargados en esta semana y redacta el objetivo según el nivel del atleta">✨ Generar Objetivo de la Semana con IA</button>' +
+        '</div>' +
+        '<textarea id="cfObjTa" data-cfobj="' + cfWkActiva + '" rows="4" placeholder="Qué estímulo neuromuscular y metabólico busca esta semana, cómo se reparte la fatiga entre los días y qué tiene que cuidar el atleta. Escribilo a mano o generalo con IA a partir de lo que ya cargaste.">' + esc((((pAct.meso || [])[cfWkActiva]) || {}).objetivo || '') + '</textarea>' +
+        '<div class="hint">Se muestra al alumno/a en la información de la semana. Cada semana tiene su propio objetivo.</div>' +
+      '</div>' +
     '</div>' +
     '<div class="card" style="margin-bottom:14px">' +
       '<div class="grid g2">' +
@@ -8167,6 +8176,51 @@ function contextoAtletaDiaIA(){
     semana: wm ? ((wm.short || ('S' + (wi + 1))) + (wm.phase ? ' · ' + wm.phase : '') + (wm.rpe ? ' · ' + wm.rpe : '')) : ''
   };
 }
+/* PREVALIDACIÓN COMÚN DE LOS GENERADORES DE IA: se corre ANTES de armar el prompt y de tocar la red, así un generador nunca dispara una
+   petición que ya se sabe que va a fallar (sin clave, proveedores en pausa, sin conexión) ni deja el botón colgado.
+   Devuelve true si se puede generar; si no, avisa el motivo exacto con un toast (nunca un "error de API" falso) y devuelve false. */
+function jpIAListo(que){
+  const AIx = window.CoachAI;
+  if(!AIx || typeof AIx.generarTexto !== 'function' || typeof AIx.hayClave !== 'function'){
+    toast('El motor de IA todavía no está listo: esperá un segundo y probá de nuevo', 'warn');
+    return false;
+  }
+  if(!AIx.hayClave()){
+    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para ' + (que || 'generar con IA'), 'err');
+    if(typeof AIx.config === 'function') AIx.config();
+    return false;
+  }
+  let espera = 0;
+  try{ espera = (typeof AIx.esperaCooldown === 'function' && AIx.esperaCooldown()) || 0; }catch(e){ espera = 0; }
+  if(espera > 0){
+    toast('Los proveedores de IA están en pausa por un límite temporal: probá de nuevo en ' + (typeof AIx.coolTxt === 'function' ? AIx.coolTxt(espera) : espera + ' s'), 'warn');
+    return false;
+  }
+  if(typeof navigator !== 'undefined' && navigator.onLine === false){
+    toast('Sin conexión a internet: la IA necesita red para generar', 'warn');
+    return false;
+  }
+  return true;
+}
+/* texto de un campo que la IA pudo devolver como texto, lista u objeto */
+function jpTextoIA(v){
+  if(v == null) return '';
+  if(Array.isArray(v)) return v.map(jpTextoIA).filter(Boolean).join('\n').trim();
+  if(typeof v === 'object') return Object.keys(v).map(k => jpTextoIA(v[k])).filter(Boolean).join('\n').trim();
+  return String(v).trim();
+}
+/* una sola generación por botón a la vez: el doble clic no dispara dos peticiones ni deja el botón en estado de carga */
+function jpIAOcupado(btn){
+  if(!btn) return false;
+  if(btn.dataset && btn.dataset.iaBusy === '1') return true;
+  if(btn.dataset) btn.dataset.iaBusy = '1';
+  return false;
+}
+function jpIALibre(btn, originalHtml){
+  if(!btn) return;
+  if(btn.dataset) delete btn.dataset.iaBusy;
+  if(btn.isConnected){ btn.disabled = false; if(originalHtml != null) btn.innerHTML = originalHtml; }
+}
 async function nombrarBloqueConIA(bid, btn){
   const b = findBlock(bid); if(!b) return;
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
@@ -8426,15 +8480,33 @@ async function generarFocoDiaConIA(btn){
     if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
   }
 }
+/* BOTÓN "Auto-generar Tips & Pacing con IA" (CrossFit). Antes fallaba "en seco": armaba el contexto y el prompt FUERA del try (cualquier dato nulo del bloque o del alumno
+   rompía el clic sin aviso) y, si la API fallaba, mostraba además un segundo aviso falso ("revisá la clave") aunque la clave estuviera bien. Ahora:
+   1) prevalida entorno, clave, pausa de proveedores y conexión ANTES de armar nada (jpIAListo); 2) todo el armado va dentro del try; 3) un clic a la vez;
+   4) el aviso de error es el motivo real, una sola vez. */
 async function generarTipsPacingIA(bid, btn){
-  const b = findBlock(bid); if(!b) return;
-  if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
-    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar tips automáticamente', 'err');
-    if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
-    return;
+  if(jpIAOcupado(btn)) return;
+  const originalHtml = btn ? btn.innerHTML : null;
+  try{
+    const b = findBlock(bid);
+    if(!b){ toast('No se encontró el bloque: actualizá la pantalla y probá de nuevo', 'warn'); return; }
+    /* lectura EN VIVO de la Pizarra (lo recién tipeado puede ir un paso adelante del dato guardado) */
+    const taVivo = document.querySelector('textarea[data-bf="items"][data-b="' + bid + '"]');
+    if(taVivo && b.tipo === 'list'){ try{ setBlockField(b, 'items', taVivo.value); }catch(e){ b.items = taVivo.value.split(/\r?\n/); } }
+    const ctxPrev = contextoBloqueIA(b);
+    if(!ctxPrev.items.length){ toast('Agregá al menos un movimiento a la Pizarra antes de generar tips con IA', 'warn'); return; }
+    if(!jpIAListo('generar tips automáticamente')) return;
+    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+    await generarTipsPacingIACore(b, btn);
+  }catch(e){
+    console.warn('generarTipsPacingIA', e);
+    if(!(e && e.__toast)) toast('No se pudieron generar los tips: ' + String((e && e.message) || e).slice(0, 200), 'err');
+  }finally{
+    jpIALibre(btn, originalHtml);
   }
+}
+async function generarTipsPacingIACore(b, btn){
   const ctx = contextoBloqueIA(b);
-  if(!ctx.items.length){ toast('Agregá al menos un movimiento a la Pizarra antes de generar tips con IA', 'warn'); return; }
   const ad = contextoAtletaDiaIA();
   const lineas = ctx.items.slice(0, 12).map(it => '- ' + it.nombre).join('\n');
   const contextoLineas = [
@@ -8460,16 +8532,17 @@ async function generarTipsPacingIA(bid, btn){
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
     'Generá objetivo y coaching tips en JSON para este bloque.\nMovimientos incluidos:\n' + lineas;
 
-  const originalHtml = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
-  try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 900 });
+  /* el armado del contexto ya pasó: de acá en más solo hay red. Los errores de red/API los avisa callAI() (con el motivo real) y suben al botón. */
+  {
+    /* 1500 tokens: foco + pacing + nota con SET-UP / CUE / ERROR de 2 movimientos no entra en 900 (Gemini corta el JSON y daba "respuesta cortada") */
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1500 });
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
-    let objetivo = j ? String(j.foco || j.objetivo || '').trim() : '';
-    let tips = j ? String(j.nota || j.tips || '').trim() : '';
-    const pacingIA = j ? String(j.pacing || '').trim() : '';
+    let objetivo = j ? jpTextoIA(j.foco || j.objetivo) : '';
+    let tips = j ? jpTextoIA(j.nota || j.tips) : '';
+    /* el pacing vive en un input de una línea: si la IA lo devolvió en varias, se unen */
+    const pacingIA = j ? jpTextoIA(j.pacing).replace(/\s*\n\s*/g, ' ') : '';
     if(!objetivo && !tips && !pacingIA){
       /* fallback a texto plano si el proveedor ignoró el pedido de JSON --
          primera línea como objetivo, el resto como tips, igual criterio
@@ -8485,11 +8558,99 @@ async function generarTipsPacingIA(bid, btn){
     if(tips) b.cfCierre.tips = tips;
     save(); renderBuilder();
     toast(ad.perfilCF ? 'Pautas generadas con IA según el perfil del atleta ⚡' : 'Pautas generadas con IA ⚡ (cargá el perfil CrossFit del alumno/a para personalizarlas)');
+  }
+}
+/* ---------- OBJETIVO DE LA SEMANA con IA (CrossFit) ----------
+   Lee TODO lo que hay cargado hoy en la semana CrossFit que se está editando (todos los días: Skill / Strength, levantamientos, WODs, accesorios; la entrada en calor y el
+   cool-down quedan afuera) y redacta un resumen ejecutivo y motivador del estímulo neuromuscular y metabólico que busca la semana, adaptado al nivel del atleta.
+   Se guarda en p.meso[semana].objetivo (campo propio: no pisa la "Nota de la semana" ni toca ningún bloque), queda editable en la cabecera y el alumno lo lee en la
+   información de la semana. */
+function resumenSemanaCFParaIA(p, wi){
+  const L = [], nombres = [];
+  let bloquesTotal = 0;
+  (p.dias || []).forEach((d, di) => {
+    /* d.bloques apunta a la semana activa (sincronizarBloquesSemana); si esa semana no es la pedida se lee su lista propia */
+    const lista = (Array.isArray(d.bloquesPorSemana) && Array.isArray(d.bloquesPorSemana[wi])) ? d.bloquesPorSemana[wi] : (d.bloques || []);
+    const partes = [];
+    lista.forEach(b => {
+      if(!b) return;
+      const cat = String(b.category || '').toLowerCase();
+      const tit = String(b.titulo || '') + ' ' + String(b.subtitulo || '');
+      if(cat === 'warmup' || cat === 'calentamiento' || /entrada en calor|warm[\s-]?up|movilidad|cool[\s-]?down|vuelta a la calma/i.test(tit)) return;
+      let lineas = [];
+      if(b.tipo === 'list' && Array.isArray(b.items)) lineas = b.items.map(x => String(x == null ? '' : x).trim()).filter(Boolean);
+      else lineas = contextoBloqueIA(b).items.map(it => it.nombre);
+      if(!lineas.length) return;
+      bloquesTotal++;
+      const fmt = [b.cfFmt ? String(b.cfFmt).toUpperCase() : '', b.cfParam ? String(b.cfParam) : ''].filter(Boolean).join(' ');
+      const cab = [cat && cat !== 'metcon' ? cat.toUpperCase() : (cat ? 'WOD' : ''), String(b.titulo || '').trim(), fmt].filter(Boolean).join(' · ');
+      partes.push('  - ' + (cab || 'Bloque') + ': ' + lineas.slice(0, 9).join(' / ').slice(0, 330));
+      const obj = b.cfCierre && b.cfCierre.objetivo ? String(b.cfCierre.objetivo).trim() : '';
+      if(obj) partes.push('    (objetivo del bloque escrito por el coach: ' + obj.slice(0, 180) + ')');
+      lineas.slice(0, 9).forEach(l => nombres.push(l));
+    });
+    if(partes.length) L.push('DÍA ' + (di + 1) + ' · ' + String(d.title || d.label || d.short || '').trim() + (d.briefing ? ' — briefing: ' + String(d.briefing).trim().slice(0, 200) : '') + '\n' + partes.join('\n'));
+  });
+  return { texto: L.join('\n\n').slice(0, 7500), bloques: bloquesTotal, dias: L.length };
+}
+async function generarObjetivoSemanaCF(btn){
+  if(jpIAOcupado(btn)) return;
+  const originalHtml = btn ? btn.innerHTML : null;
+  try{
+    const p = plan(S.activeId);
+    if(!p || !esPlanCFActivo(p)){ toast('El objetivo de la semana con IA es de los planes de CrossFit & Hyrox', 'warn'); return; }
+    const wi = activeCfWeek();
+    const w = (p.meso || [])[wi];
+    if(!w){ toast('No se encontró la semana activa', 'warn'); return; }
+    /* lo escrito a mano en la cabecera manda: se pregunta antes de reemplazarlo */
+    const ta = document.querySelector('textarea[data-cfobj="' + wi + '"]');
+    const previo = String((ta ? ta.value : w.objetivo) || '').trim();
+    const res = resumenSemanaCFParaIA(p, wi);
+    if(!res.bloques){ toast('Cargá al menos un WOD, levantamiento o bloque en esta semana antes de generar el objetivo con IA', 'warn'); return; }
+    if(!jpIAListo('generar el objetivo de la semana')) return;
+    if(previo.length > 24 && typeof confirm === 'function' && !confirm('Esta semana ya tiene un objetivo escrito. ¿Lo reemplazo por uno nuevo generado con IA?')) return;
+    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+    const ad = contextoAtletaDiaIA();
+    const semLb = (w.short || ('S' + (wi + 1))) + (w.name ? ' · ' + w.name : '');
+    const contexto = [
+      ad.ficha || '',
+      ad.disciplina ? 'Disciplina del mesociclo: ' + ad.disciplina : '',
+      'SEMANA QUE SE REDACTA: ' + semLb + (w.phase ? ' · fase ' + w.phase : '') + (w.rpe ? ' · ' + w.rpe : '') + (w.deload ? ' · SEMANA DE DESCARGA (volumen e intensidad reducidos para recuperar)' : ''),
+      ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
+      ad.perfilCF ? 'Perfil técnico del atleta: ' + ad.perfilCF : '',
+      ad.lesiones ? 'Restricciones / lesiones declaradas: ' + ad.lesiones + ' (el texto no puede contradecirlas)' : '',
+      'LO QUE HAY CARGADO ESTA SEMANA (' + res.dias + ' sesiones, ' + res.bloques + ' bloques):\n' + res.texto
+    ].filter(Boolean).join('\n');
+    const sistema = 'Sos Coach JP: coach de CrossFit & Hyrox de alto rendimiento. Escribís en español rioplatense neutro y profesional, con tono técnico-metodológico, directo y motivador, sin emojis, sin relleno y sin frases hechas. ' +
+      'Dada la semana completa de entrenamiento (sesiones, levantamientos, WODs y accesorios) y el nivel del atleta, redactás el "OBJETIVO DE LA SEMANA": un resumen ejecutivo de 4 a 6 oraciones (90 a 140 palabras en un solo párrafo) que explique: ' +
+      '1) el estímulo NEUROMUSCULAR que busca la semana (qué patrones, qué levantamientos, qué calidad de movimiento y qué fuerza o técnica se trabaja y por qué); ' +
+      '2) el estímulo METABÓLICO (qué sistema energético carga cada WOD o formato: potencia anaeróbica, capacidad aeróbica, tolerancia al lactato, trabajo mixto) y cómo se distribuye la fatiga entre los días; ' +
+      '3) qué tiene que sentir y cuidar el atleta, adaptado a su nivel (más técnica y escalado en Development; más densidad y pacing en Advanced; carga y capacidad de trabajo en RX / Elite) y a su perfil si lo hay; ' +
+      '4) un cierre motivador concreto y creíble (un desafío o criterio de éxito de la semana, no un eslogan). ' +
+      'Nombrá los levantamientos y los WODs reales de la semana (por su nombre o formato), nunca inventes cargas, tiempos ni ejercicios que no estén cargados, y no cambies la prescripción. Si es semana de descarga, explicá que el objetivo es recuperar y sostener la técnica. ' +
+      jpIA('cf') + 'Respondé SOLO con JSON válido: {"objetivo":"..."}.';
+    const user = contexto + '\n\nRedactá el objetivo de la semana en JSON.';
+    /* 1400 tokens: el texto es de ~150 palabras, el resto es margen para que el JSON no se corte */
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1400 });
+    const raw = String(out || '').trim();
+    let j = null;
+    try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
+    let objetivo = j ? jpTextoIA(j.objetivo || j.resumen || j.texto) : '';
+    if(!objetivo){
+      /* el proveedor ignoró el JSON: texto plano, sin comillas ni llaves sueltas */
+      objetivo = raw.replace(/^```(?:json|text)?|```$/gm, '').replace(/^\s*\{?\s*"?objetivo"?\s*:\s*"?|"?\s*\}?\s*$/gi, '').replace(/^["'“”]+|["'“”]+$/g, '').trim();
+    }
+    objetivo = objetivo.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    if(objetivo.length < 40){ toast('La IA no devolvió un objetivo válido, probá de nuevo', 'err'); return; }
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function'){ try{ CoachUndo.vigilar('Generar objetivo de la semana con IA'); }catch(eU){} }
+    w.objetivo = objetivo;
+    save(); renderBuilder();
+    toast('Objetivo de ' + (w.short || ('S' + (wi + 1))) + ' generado con IA ⚡ — revisalo y editalo si hace falta');
   }catch(e){
-    console.warn('generarTipsPacingIA', e);
-    toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
+    console.warn('generarObjetivoSemanaCF', e);
+    if(!(e && e.__toast)) toast('No se pudo generar el objetivo de la semana: ' + String((e && e.message) || e).slice(0, 200), 'err');
   }finally{
-    if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
+    jpIALibre(btn, originalHtml);
   }
 }
 /* Equivalente de generarTipsPacingIA() de arriba pero para bloques de
@@ -9193,6 +9354,12 @@ function bindBuilder(){
       }
       return;
     }
+    /* objetivo de la semana CrossFit (cabecera): se guarda en la semana activa, sin renderizar de nuevo mientras se tipea */
+    if(t.dataset.cfobj !== undefined){
+      const wObj = ((plan(S.activeId) || {}).meso || [])[parseInt(t.dataset.cfobj, 10)];
+      if(wObj){ wObj.objetivo = t.value; save(); }
+      return;
+    }
     if(t.dataset.df){
       const f = t.dataset.df;
       if(f === 'metaChips') d.metaChips = t.value.split(';').map(s => s.trim()).filter(Boolean);
@@ -9375,6 +9542,7 @@ function bindBuilder(){
       save(); renderBuilder();
       return;
     }
+    if(t.dataset.cfobjia !== undefined){ generarObjetivoSemanaCF(t); return; }
     if(t.dataset.cfclonewk !== undefined){ clonarSemanaAnteriorCF(); return; }
     if(t.dataset.cfdeload !== undefined){ generarDeloadS4CF(); return; }
     if(t.dataset.addex){ addSubEx(t.dataset.addex, $('[data-pick="' + t.dataset.addex + '"]').value); return; }
@@ -13984,7 +14152,14 @@ function renderWeekInfo(){
   var mText = document.getElementById('weekInfoModalText');
   if(mIcon) mIcon.textContent = w.icon;
   if(mTitle) mTitle.textContent = w.name + ' · ' + w.phase + ' — ' + w.rpe;
-  if(mText) mText.innerHTML = w.note;
+  if(mText){
+    /* objetivo de la semana (CrossFit, generado/editado por el coach): se muestra primero, como texto (nunca como HTML) */
+    var objSem = String(w.objetivo || '').trim();
+    var objEl = document.createElement('div'); objEl.textContent = objSem;
+    mText.innerHTML = objSem
+      ? '<b>🎯 Objetivo de la semana</b><br>' + objEl.innerHTML.replace(/\\n/g, '<br>') + (w.note ? '<br><br>' : '') + (w.note || '')
+      : w.note;
+  }
   renderWeekActiveBadge();
 }
 /* =========================================================
@@ -46279,7 +46454,8 @@ function buildProgramConfig(ath){
     phase: w.phase || '', rpe: w.rpe || '', note: w.note || '',
     deload: !!w.deload, fail: !!w.fail, icon: w.icon || '🎯',
     amrapMinutes: (w.amrapMinutes === '' || w.amrapMinutes == null) ? null : parseInt(w.amrapMinutes,10),
-    hyroxNote: w.hyroxNote || ''
+    hyroxNote: w.hyroxNote || '',
+    objetivo: w.objetivo || ''
   }));
 
   const days = p.dias.map((d, di) => {
@@ -87854,6 +88030,168 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 .step-bar .jp-bpick-btn{width:100%;min-height:46px;background:rgba(9,10,15,.8);border-radius:10px;font-size:13px}
 .step-bar .jp-bpick-btn .k{display:none}
 .step-bar .jp-bpick-btn b{flex:1;max-width:none}
+</style>
+<style id="jpLiftCss">
+/* =========================================================
+   LIFT ESTÉTICO DEL BUILDER · capa visual final (se carga ÚLTIMA: gana la cascada)
+   ---------------------------------------------------------
+   Problema: la interfaz se veía demasiado oscura, plana y de bajo contraste para usarla todo el día en el gimnasio.
+   Qué hace esta capa (solo presentación: no toca datos, ni lógica, ni el HTML):
+     1) Superficies en grises grafito tipo zinc / slate profundo, un escalón más claros que antes y con una jerarquía clara:
+        fondo de página < tarjeta < panel interno < campo.
+     2) Bordes con brillo sutil (arriba un hilo de luz) y profundidad con sombra suave, para que las tarjetas "respiren".
+     3) El color ocre de la marca (#E5C378) marca TODO lo activo: día seleccionado, semana activa, navegación, pestañas, foco.
+     4) Jerarquía tipográfica: título de vista > título de tarjeta > etiqueta > texto, con más contraste y aire.
+   Para revertir todo: borrar el <style id="jpLiftCss"> de index.src.html (esta capa no cambia nada fuera de CSS).
+   ========================================================= */
+:root{
+  /* escala grafito (zinc / slate profundo) */
+  --lift-bg:#0F1115;          /* fondo de página */
+  --lift-surface:#181B22;     /* tarjeta */
+  --lift-surface-hi:#1E222B;  /* tarjeta elevada / hover */
+  --lift-inner:#14171D;       /* panel anidado (un escalón más hundido que la tarjeta) */
+  --lift-field:#101319;       /* campos de entrada: hundidos para que el texto se lea */
+  --lift-line:rgba(148,163,184,.17);
+  --lift-line-hi:rgba(148,163,184,.30);
+  --lift-glow:rgba(255,255,255,.055);   /* hilo de luz del borde superior */
+  --lift-shadow:0 1px 0 var(--lift-glow) inset, 0 12px 30px -14px rgba(0,0,0,.65), 0 2px 6px rgba(0,0,0,.25);
+  /* ocre de la marca */
+  --ocre:#E5C378; --ocre-hi:#F1D699; --ocre-lo:#C9A24D;
+  --ocre-bg:rgba(229,195,120,.10); --ocre-line:rgba(229,195,120,.42);
+  /* tokens base reasignados: todo lo que usa var(--panel...) sube de nivel sin tocar cada regla */
+  --bg:var(--lift-bg);
+  --panel:var(--lift-surface); --panel-2:var(--lift-inner); --panel-3:#232833; --panel-nested:var(--lift-inner);
+  --line:var(--lift-line); --line-2:var(--lift-line-hi); --line-3:rgba(148,163,184,.26);
+  --txt:#FFFFFF; --txt-2:#EEF0F4; --muted:#AAB3C0;
+  --gold-active:var(--ocre);
+}
+body{
+  background:
+    radial-gradient(1100px 640px at 88% -12%, rgba(229,195,120,.07), transparent 62%),
+    radial-gradient(900px 600px at -8% 108%, rgba(100,116,139,.10), transparent 60%),
+    var(--lift-bg);
+  line-height:1.55;
+}
+.sidebar{background:linear-gradient(180deg,#14171D,#0F1115);border-right-color:var(--lift-line-hi)}
+
+/* ---------- tarjetas y paneles: profundidad + borde con brillo ---------- */
+.card,#builderWrap .card,#v-builder .card,.cf-week-bar,.ath-card,.ex-card,.stat,.tools-in,.fin-card,.prep-card,.ctx-card,.vol-card,.ton-card,.pr-feed{
+  background:linear-gradient(180deg,var(--lift-surface-hi) 0%,var(--lift-surface) 38%,#161920 100%);
+  border:1px solid var(--lift-line-hi);
+  box-shadow:var(--lift-shadow);
+}
+.card{border-radius:16px}
+.ath-card:hover,.ex-card:hover{border-color:var(--ocre-line);box-shadow:var(--lift-shadow),0 0 0 1px var(--ocre-bg)}
+/* paneles que viven dentro de una tarjeta: un escalón más hundidos, borde fino */
+#v-builder .week-box,.week-box,.item,.picker,#v-builder .tools-in{
+  background:linear-gradient(180deg,#171A21,var(--lift-inner));
+  border:1px solid var(--lift-line);
+  box-shadow:0 1px 0 rgba(255,255,255,.03) inset;
+}
+.week-box.deload{border-color:rgba(100,170,200,.4)}
+
+/* bloques del día: tarjeta con acento lateral por tipo */
+.block{
+  background:linear-gradient(180deg,#1C2029,var(--lift-surface));
+  border:1px solid var(--lift-line-hi);border-left-width:3px;
+  box-shadow:var(--lift-shadow);
+}
+.block-h{background:rgba(255,255,255,.035);border-bottom:1px solid var(--lift-line)}
+
+/* ---------- campos: hundidos, legibles, foco ocre ---------- */
+input,select,textarea{
+  background:var(--lift-field);
+  border:1px solid var(--lift-line-hi);
+  box-shadow:0 1px 2px rgba(0,0,0,.35) inset;
+}
+input:hover,select:hover,textarea:hover{border-color:rgba(148,163,184,.42)}
+input:focus,select:focus,textarea:focus{border-color:var(--ocre);box-shadow:0 0 0 3px rgba(229,195,120,.16),0 1px 2px rgba(0,0,0,.35) inset}
+input::placeholder,textarea::placeholder{color:#7A8494}
+
+/* ---------- tipografía: jerarquía y contraste ---------- */
+.topbar h2{color:var(--ocre);text-shadow:0 0 26px rgba(229,195,120,.18)}
+.card h3,#v-builder .card h3{
+  color:var(--txt);font-size:14px;letter-spacing:.1em;
+  border-bottom:1px solid var(--lift-line);padding-bottom:12px;margin-bottom:16px;
+}
+.card h3::before{content:"";width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,var(--ocre-hi),var(--ocre-lo));flex:0 0 3px}
+label.lb{color:#B6BECB;letter-spacing:.08em}
+.hint{color:#9BA5B4}
+.block-h input.bt{font-size:15px}
+
+/* ---------- ACTIVO = ocre ---------- */
+.navbtn.on{
+  background:linear-gradient(90deg,rgba(229,195,120,.18),rgba(229,195,120,.04));
+  color:var(--ocre);border-color:var(--ocre-line);
+  box-shadow:0 0 18px rgba(229,195,120,.12);
+}
+.navbtn:hover{background:rgba(255,255,255,.05)}
+/* días del Builder */
+#dayTabs .tab{background:linear-gradient(180deg,#1E222B,#171A21);border-color:var(--lift-line-hi);color:#B6BECB}
+#dayTabs .tab:hover{color:#fff;border-color:rgba(229,195,120,.5)}
+#dayTabs .tab.on{
+  background:linear-gradient(180deg,rgba(229,195,120,.20),rgba(229,195,120,.07));
+  color:var(--ocre-hi);border-color:var(--ocre);
+  box-shadow:0 0 0 1px var(--ocre),0 6px 18px -4px rgba(229,195,120,.35);
+}
+#dayTabs .tab.on .tab-label{color:#F4E4BB}
+/* semana activa de CrossFit */
+.cf-week-bar .btn.cf-wk-activa{
+  background:linear-gradient(135deg,var(--ocre-hi),var(--ocre-lo));color:#14100A;border:none;
+  box-shadow:0 0 0 3px rgba(229,195,120,.30),0 8px 20px rgba(229,195,120,.28);font-weight:800;
+}
+.cf-week-bar .btn.ghost{background:rgba(255,255,255,.03);border:1px solid var(--lift-line-hi)}
+.cf-week-bar .btn.ghost:hover{border-color:var(--ocre-line);color:var(--ocre-hi)}
+.pill.gold{background:var(--ocre-bg);border-color:var(--ocre-line);color:var(--ocre-hi)}
+
+/* botones: un poco más de volumen */
+.btn{background:linear-gradient(180deg,#2A2F3B,#222733);border:1px solid var(--lift-line-hi);box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
+.btn:hover{background:linear-gradient(180deg,#313746,#272C38);border-color:rgba(229,195,120,.4)}
+.btn.ghost{background:transparent;box-shadow:none}
+.btn.ghost:hover{background:rgba(255,255,255,.05)}
+.btn.gold{box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 8px 20px rgba(210,121,63,.25)}
+.icon-btn{background:#232833;border-color:var(--lift-line-hi)}
+.icon-btn:hover{background:#2D3340;border-color:var(--ocre-line)}
+
+/* ---------- OBJETIVO DE LA SEMANA (CrossFit) ---------- */
+.cf-obj{
+  margin-top:14px;padding:14px 15px 12px;border-radius:12px;
+  background:linear-gradient(180deg,rgba(229,195,120,.07),rgba(229,195,120,.02));
+  border:1px solid var(--ocre-line);border-left:3px solid var(--ocre);
+}
+.cf-obj-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.cf-obj-h label.lb{margin:0;color:var(--ocre-hi);font-size:11.5px}
+.cf-obj textarea{min-height:92px;font-size:13.5px;line-height:1.6;background:var(--lift-field)}
+.cf-obj .hint{margin-top:7px}
+
+/* ---------- reglas con !important de capas anteriores: el menú activo también va en ocre ---------- */
+.navbtn.on,.navbtn.active{
+  background:linear-gradient(90deg,rgba(229,195,120,.20),rgba(229,195,120,.05)) !important;
+  color:var(--ocre-hi) !important;
+  border-left:3px solid var(--ocre) !important;
+  box-shadow:0 0 18px rgba(229,195,120,.14),inset 0 0 0 1px rgba(229,195,120,.22) !important;
+}
+.navbtn.on .jp-ic,.navbtn.active .jp-ic{color:var(--ocre) !important}
+/* cabecera del Builder: misma profundidad que una tarjeta, con un hilo ocre */
+#v-builder .builder-head{
+  background:linear-gradient(90deg,rgba(229,195,120,.10),transparent 55%),linear-gradient(180deg,var(--lift-surface-hi),var(--lift-surface));
+  border:1px solid var(--ocre-line);box-shadow:var(--lift-shadow);
+}
+/* semana activa y bloque en edición: ocre (las reglas previas usaban !important con el cobre) */
+.cf-week-bar .btn.gold.cf-wk-activa{
+  background:linear-gradient(135deg,var(--ocre-hi),var(--ocre-lo)) !important;color:#14100A !important;
+  box-shadow:0 0 0 3px rgba(229,195,120,.30),0 8px 20px rgba(229,195,120,.28) !important;
+}
+#dayPanel .block:focus-within,#dayPanel .block.jp-live{
+  box-shadow:0 0 0 1px var(--ocre-line),0 14px 34px -14px rgba(229,195,120,.30),var(--lift-shadow) !important;
+  border-color:var(--ocre-line) !important;
+}
+/* campos: la capa anterior los fijaba con !important */
+input,select,textarea{
+  background:var(--lift-field) !important;
+  border:1px solid var(--lift-line-hi) !important;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--ocre) !important}
 </style>
 <script>
 (function(){

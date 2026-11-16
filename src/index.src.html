@@ -7604,6 +7604,15 @@ function renderDay(){
         (cfWkActiva !== 3 ? '<button type="button" class="btn sm ghost" data-cfdeload="1" title="Genera la Semana 4 (Descarga) de este día a partir de la semana activa: -1 serie por ejercicio, RIR 3-4, nombres intactos">🍃 Generar Deload S4</button>' : '') +
       '</div>' +
       '<div class="hint" style="margin-top:6px">Cada semana de CrossFit &amp; Hyrox es una prescripción 100% independiente -- editar acá nunca modifica el contenido de otra semana. Una semana nunca prescripta arranca en blanco, nunca copia otra semana.</div>' +
+      /* OBJETIVO DE LA SEMANA (CrossFit): resumen ejecutivo del estímulo neuromuscular y metabólico de la semana activa; editable a mano o generado con IA */
+      '<div class="cf-obj" id="cfObjSemana">' +
+        '<div class="cf-obj-h">' +
+          '<label class="lb" for="cfObjTa">🎯 Objetivo de la semana · ' + esc(((pAct.meso || [])[cfWkActiva] || {}).short || ('S' + (cfWkActiva + 1))) + '</label>' +
+          '<button type="button" class="btn sm gold" data-cfobjia="1" title="Analiza los bloques, WODs y levantamientos cargados en esta semana y redacta el objetivo según el nivel del atleta">✨ Generar Objetivo de la Semana con IA</button>' +
+        '</div>' +
+        '<textarea id="cfObjTa" data-cfobj="' + cfWkActiva + '" rows="4" placeholder="Qué estímulo neuromuscular y metabólico busca esta semana, cómo se reparte la fatiga entre los días y qué tiene que cuidar el atleta. Escribilo a mano o generalo con IA a partir de lo que ya cargaste.">' + esc((((pAct.meso || [])[cfWkActiva]) || {}).objetivo || '') + '</textarea>' +
+        '<div class="hint">Se muestra al alumno/a en la información de la semana. Cada semana tiene su propio objetivo.</div>' +
+      '</div>' +
     '</div>' +
     '<div class="card" style="margin-bottom:14px">' +
       '<div class="grid g2">' +
@@ -8167,6 +8176,51 @@ function contextoAtletaDiaIA(){
     semana: wm ? ((wm.short || ('S' + (wi + 1))) + (wm.phase ? ' · ' + wm.phase : '') + (wm.rpe ? ' · ' + wm.rpe : '')) : ''
   };
 }
+/* PREVALIDACIÓN COMÚN DE LOS GENERADORES DE IA: se corre ANTES de armar el prompt y de tocar la red, así un generador nunca dispara una
+   petición que ya se sabe que va a fallar (sin clave, proveedores en pausa, sin conexión) ni deja el botón colgado.
+   Devuelve true si se puede generar; si no, avisa el motivo exacto con un toast (nunca un "error de API" falso) y devuelve false. */
+function jpIAListo(que){
+  const AIx = window.CoachAI;
+  if(!AIx || typeof AIx.generarTexto !== 'function' || typeof AIx.hayClave !== 'function'){
+    toast('El motor de IA todavía no está listo: esperá un segundo y probá de nuevo', 'warn');
+    return false;
+  }
+  if(!AIx.hayClave()){
+    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para ' + (que || 'generar con IA'), 'err');
+    if(typeof AIx.config === 'function') AIx.config();
+    return false;
+  }
+  let espera = 0;
+  try{ espera = (typeof AIx.esperaCooldown === 'function' && AIx.esperaCooldown()) || 0; }catch(e){ espera = 0; }
+  if(espera > 0){
+    toast('Los proveedores de IA están en pausa por un límite temporal: probá de nuevo en ' + (typeof AIx.coolTxt === 'function' ? AIx.coolTxt(espera) : espera + ' s'), 'warn');
+    return false;
+  }
+  if(typeof navigator !== 'undefined' && navigator.onLine === false){
+    toast('Sin conexión a internet: la IA necesita red para generar', 'warn');
+    return false;
+  }
+  return true;
+}
+/* texto de un campo que la IA pudo devolver como texto, lista u objeto */
+function jpTextoIA(v){
+  if(v == null) return '';
+  if(Array.isArray(v)) return v.map(jpTextoIA).filter(Boolean).join('\n').trim();
+  if(typeof v === 'object') return Object.keys(v).map(k => jpTextoIA(v[k])).filter(Boolean).join('\n').trim();
+  return String(v).trim();
+}
+/* una sola generación por botón a la vez: el doble clic no dispara dos peticiones ni deja el botón en estado de carga */
+function jpIAOcupado(btn){
+  if(!btn) return false;
+  if(btn.dataset && btn.dataset.iaBusy === '1') return true;
+  if(btn.dataset) btn.dataset.iaBusy = '1';
+  return false;
+}
+function jpIALibre(btn, originalHtml){
+  if(!btn) return;
+  if(btn.dataset) delete btn.dataset.iaBusy;
+  if(btn.isConnected){ btn.disabled = false; if(originalHtml != null) btn.innerHTML = originalHtml; }
+}
 async function nombrarBloqueConIA(bid, btn){
   const b = findBlock(bid); if(!b) return;
   if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
@@ -8426,15 +8480,33 @@ async function generarFocoDiaConIA(btn){
     if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
   }
 }
+/* BOTÓN "Auto-generar Tips & Pacing con IA" (CrossFit). Antes fallaba "en seco": armaba el contexto y el prompt FUERA del try (cualquier dato nulo del bloque o del alumno
+   rompía el clic sin aviso) y, si la API fallaba, mostraba además un segundo aviso falso ("revisá la clave") aunque la clave estuviera bien. Ahora:
+   1) prevalida entorno, clave, pausa de proveedores y conexión ANTES de armar nada (jpIAListo); 2) todo el armado va dentro del try; 3) un clic a la vez;
+   4) el aviso de error es el motivo real, una sola vez. */
 async function generarTipsPacingIA(bid, btn){
-  const b = findBlock(bid); if(!b) return;
-  if(!(window.CoachAI && window.CoachAI.hayClave && window.CoachAI.hayClave())){
-    toast('Configurá una clave de IA (Gemini / OpenAI / Anthropic) para generar tips automáticamente', 'err');
-    if(window.CoachAI && window.CoachAI.config) window.CoachAI.config();
-    return;
+  if(jpIAOcupado(btn)) return;
+  const originalHtml = btn ? btn.innerHTML : null;
+  try{
+    const b = findBlock(bid);
+    if(!b){ toast('No se encontró el bloque: actualizá la pantalla y probá de nuevo', 'warn'); return; }
+    /* lectura EN VIVO de la Pizarra (lo recién tipeado puede ir un paso adelante del dato guardado) */
+    const taVivo = document.querySelector('textarea[data-bf="items"][data-b="' + bid + '"]');
+    if(taVivo && b.tipo === 'list'){ try{ setBlockField(b, 'items', taVivo.value); }catch(e){ b.items = taVivo.value.split(/\r?\n/); } }
+    const ctxPrev = contextoBloqueIA(b);
+    if(!ctxPrev.items.length){ toast('Agregá al menos un movimiento a la Pizarra antes de generar tips con IA', 'warn'); return; }
+    if(!jpIAListo('generar tips automáticamente')) return;
+    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+    await generarTipsPacingIACore(b, btn);
+  }catch(e){
+    console.warn('generarTipsPacingIA', e);
+    if(!(e && e.__toast)) toast('No se pudieron generar los tips: ' + String((e && e.message) || e).slice(0, 200), 'err');
+  }finally{
+    jpIALibre(btn, originalHtml);
   }
+}
+async function generarTipsPacingIACore(b, btn){
   const ctx = contextoBloqueIA(b);
-  if(!ctx.items.length){ toast('Agregá al menos un movimiento a la Pizarra antes de generar tips con IA', 'warn'); return; }
   const ad = contextoAtletaDiaIA();
   const lineas = ctx.items.slice(0, 12).map(it => '- ' + it.nombre).join('\n');
   const contextoLineas = [
@@ -8460,16 +8532,17 @@ async function generarTipsPacingIA(bid, btn){
   const user = (contextoLineas ? contextoLineas + '\n\n' : '') +
     'Generá objetivo y coaching tips en JSON para este bloque.\nMovimientos incluidos:\n' + lineas;
 
-  const originalHtml = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
-  try{
-    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 900 });
+  /* el armado del contexto ya pasó: de acá en más solo hay red. Los errores de red/API los avisa callAI() (con el motivo real) y suben al botón. */
+  {
+    /* 1500 tokens: foco + pacing + nota con SET-UP / CUE / ERROR de 2 movimientos no entra en 900 (Gemini corta el JSON y daba "respuesta cortada") */
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1500 });
     const raw = String(out || '').trim();
     let j = null;
     try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
-    let objetivo = j ? String(j.foco || j.objetivo || '').trim() : '';
-    let tips = j ? String(j.nota || j.tips || '').trim() : '';
-    const pacingIA = j ? String(j.pacing || '').trim() : '';
+    let objetivo = j ? jpTextoIA(j.foco || j.objetivo) : '';
+    let tips = j ? jpTextoIA(j.nota || j.tips) : '';
+    /* el pacing vive en un input de una línea: si la IA lo devolvió en varias, se unen */
+    const pacingIA = j ? jpTextoIA(j.pacing).replace(/\s*\n\s*/g, ' ') : '';
     if(!objetivo && !tips && !pacingIA){
       /* fallback a texto plano si el proveedor ignoró el pedido de JSON --
          primera línea como objetivo, el resto como tips, igual criterio
@@ -8485,11 +8558,99 @@ async function generarTipsPacingIA(bid, btn){
     if(tips) b.cfCierre.tips = tips;
     save(); renderBuilder();
     toast(ad.perfilCF ? 'Pautas generadas con IA según el perfil del atleta ⚡' : 'Pautas generadas con IA ⚡ (cargá el perfil CrossFit del alumno/a para personalizarlas)');
+  }
+}
+/* ---------- OBJETIVO DE LA SEMANA con IA (CrossFit) ----------
+   Lee TODO lo que hay cargado hoy en la semana CrossFit que se está editando (todos los días: Skill / Strength, levantamientos, WODs, accesorios; la entrada en calor y el
+   cool-down quedan afuera) y redacta un resumen ejecutivo y motivador del estímulo neuromuscular y metabólico que busca la semana, adaptado al nivel del atleta.
+   Se guarda en p.meso[semana].objetivo (campo propio: no pisa la "Nota de la semana" ni toca ningún bloque), queda editable en la cabecera y el alumno lo lee en la
+   información de la semana. */
+function resumenSemanaCFParaIA(p, wi){
+  const L = [], nombres = [];
+  let bloquesTotal = 0;
+  (p.dias || []).forEach((d, di) => {
+    /* d.bloques apunta a la semana activa (sincronizarBloquesSemana); si esa semana no es la pedida se lee su lista propia */
+    const lista = (Array.isArray(d.bloquesPorSemana) && Array.isArray(d.bloquesPorSemana[wi])) ? d.bloquesPorSemana[wi] : (d.bloques || []);
+    const partes = [];
+    lista.forEach(b => {
+      if(!b) return;
+      const cat = String(b.category || '').toLowerCase();
+      const tit = String(b.titulo || '') + ' ' + String(b.subtitulo || '');
+      if(cat === 'warmup' || cat === 'calentamiento' || /entrada en calor|warm[\s-]?up|movilidad|cool[\s-]?down|vuelta a la calma/i.test(tit)) return;
+      let lineas = [];
+      if(b.tipo === 'list' && Array.isArray(b.items)) lineas = b.items.map(x => String(x == null ? '' : x).trim()).filter(Boolean);
+      else lineas = contextoBloqueIA(b).items.map(it => it.nombre);
+      if(!lineas.length) return;
+      bloquesTotal++;
+      const fmt = [b.cfFmt ? String(b.cfFmt).toUpperCase() : '', b.cfParam ? String(b.cfParam) : ''].filter(Boolean).join(' ');
+      const cab = [cat && cat !== 'metcon' ? cat.toUpperCase() : (cat ? 'WOD' : ''), String(b.titulo || '').trim(), fmt].filter(Boolean).join(' · ');
+      partes.push('  - ' + (cab || 'Bloque') + ': ' + lineas.slice(0, 9).join(' / ').slice(0, 330));
+      const obj = b.cfCierre && b.cfCierre.objetivo ? String(b.cfCierre.objetivo).trim() : '';
+      if(obj) partes.push('    (objetivo del bloque escrito por el coach: ' + obj.slice(0, 180) + ')');
+      lineas.slice(0, 9).forEach(l => nombres.push(l));
+    });
+    if(partes.length) L.push('DÍA ' + (di + 1) + ' · ' + String(d.title || d.label || d.short || '').trim() + (d.briefing ? ' — briefing: ' + String(d.briefing).trim().slice(0, 200) : '') + '\n' + partes.join('\n'));
+  });
+  return { texto: L.join('\n\n').slice(0, 7500), bloques: bloquesTotal, dias: L.length };
+}
+async function generarObjetivoSemanaCF(btn){
+  if(jpIAOcupado(btn)) return;
+  const originalHtml = btn ? btn.innerHTML : null;
+  try{
+    const p = plan(S.activeId);
+    if(!p || !esPlanCFActivo(p)){ toast('El objetivo de la semana con IA es de los planes de CrossFit & Hyrox', 'warn'); return; }
+    const wi = activeCfWeek();
+    const w = (p.meso || [])[wi];
+    if(!w){ toast('No se encontró la semana activa', 'warn'); return; }
+    /* lo escrito a mano en la cabecera manda: se pregunta antes de reemplazarlo */
+    const ta = document.querySelector('textarea[data-cfobj="' + wi + '"]');
+    const previo = String((ta ? ta.value : w.objetivo) || '').trim();
+    const res = resumenSemanaCFParaIA(p, wi);
+    if(!res.bloques){ toast('Cargá al menos un WOD, levantamiento o bloque en esta semana antes de generar el objetivo con IA', 'warn'); return; }
+    if(!jpIAListo('generar el objetivo de la semana')) return;
+    if(previo.length > 24 && typeof confirm === 'function' && !confirm('Esta semana ya tiene un objetivo escrito. ¿Lo reemplazo por uno nuevo generado con IA?')) return;
+    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>'; }
+    const ad = contextoAtletaDiaIA();
+    const semLb = (w.short || ('S' + (wi + 1))) + (w.name ? ' · ' + w.name : '');
+    const contexto = [
+      ad.ficha || '',
+      ad.disciplina ? 'Disciplina del mesociclo: ' + ad.disciplina : '',
+      'SEMANA QUE SE REDACTA: ' + semLb + (w.phase ? ' · fase ' + w.phase : '') + (w.rpe ? ' · ' + w.rpe : '') + (w.deload ? ' · SEMANA DE DESCARGA (volumen e intensidad reducidos para recuperar)' : ''),
+      ad.nivel ? 'Nivel del atleta: ' + ad.nivel : '',
+      ad.perfilCF ? 'Perfil técnico del atleta: ' + ad.perfilCF : '',
+      ad.lesiones ? 'Restricciones / lesiones declaradas: ' + ad.lesiones + ' (el texto no puede contradecirlas)' : '',
+      'LO QUE HAY CARGADO ESTA SEMANA (' + res.dias + ' sesiones, ' + res.bloques + ' bloques):\n' + res.texto
+    ].filter(Boolean).join('\n');
+    const sistema = 'Sos Coach JP: coach de CrossFit & Hyrox de alto rendimiento. Escribís en español rioplatense neutro y profesional, con tono técnico-metodológico, directo y motivador, sin emojis, sin relleno y sin frases hechas. ' +
+      'Dada la semana completa de entrenamiento (sesiones, levantamientos, WODs y accesorios) y el nivel del atleta, redactás el "OBJETIVO DE LA SEMANA": un resumen ejecutivo de 4 a 6 oraciones (90 a 140 palabras en un solo párrafo) que explique: ' +
+      '1) el estímulo NEUROMUSCULAR que busca la semana (qué patrones, qué levantamientos, qué calidad de movimiento y qué fuerza o técnica se trabaja y por qué); ' +
+      '2) el estímulo METABÓLICO (qué sistema energético carga cada WOD o formato: potencia anaeróbica, capacidad aeróbica, tolerancia al lactato, trabajo mixto) y cómo se distribuye la fatiga entre los días; ' +
+      '3) qué tiene que sentir y cuidar el atleta, adaptado a su nivel (más técnica y escalado en Development; más densidad y pacing en Advanced; carga y capacidad de trabajo en RX / Elite) y a su perfil si lo hay; ' +
+      '4) un cierre motivador concreto y creíble (un desafío o criterio de éxito de la semana, no un eslogan). ' +
+      'Nombrá los levantamientos y los WODs reales de la semana (por su nombre o formato), nunca inventes cargas, tiempos ni ejercicios que no estén cargados, y no cambies la prescripción. Si es semana de descarga, explicá que el objetivo es recuperar y sostener la técnica. ' +
+      jpIA('cf') + 'Respondé SOLO con JSON válido: {"objetivo":"..."}.';
+    const user = contexto + '\n\nRedactá el objetivo de la semana en JSON.';
+    /* 1400 tokens: el texto es de ~150 palabras, el resto es margen para que el JSON no se corte */
+    const out = await window.CoachAI.generarTexto(user, sistema, { maxTokens: 1400 });
+    const raw = String(out || '').trim();
+    let j = null;
+    try{ j = window.CoachAI.extractJson(raw); }catch(e1){}
+    let objetivo = j ? jpTextoIA(j.objetivo || j.resumen || j.texto) : '';
+    if(!objetivo){
+      /* el proveedor ignoró el JSON: texto plano, sin comillas ni llaves sueltas */
+      objetivo = raw.replace(/^```(?:json|text)?|```$/gm, '').replace(/^\s*\{?\s*"?objetivo"?\s*:\s*"?|"?\s*\}?\s*$/gi, '').replace(/^["'“”]+|["'“”]+$/g, '').trim();
+    }
+    objetivo = objetivo.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    if(objetivo.length < 40){ toast('La IA no devolvió un objetivo válido, probá de nuevo', 'err'); return; }
+    if(window.CoachUndo && typeof CoachUndo.vigilar === 'function'){ try{ CoachUndo.vigilar('Generar objetivo de la semana con IA'); }catch(eU){} }
+    w.objetivo = objetivo;
+    save(); renderBuilder();
+    toast('Objetivo de ' + (w.short || ('S' + (wi + 1))) + ' generado con IA ⚡ — revisalo y editalo si hace falta');
   }catch(e){
-    console.warn('generarTipsPacingIA', e);
-    toast('No se pudo generar (revisá la conexión o la clave de IA)', 'err');
+    console.warn('generarObjetivoSemanaCF', e);
+    if(!(e && e.__toast)) toast('No se pudo generar el objetivo de la semana: ' + String((e && e.message) || e).slice(0, 200), 'err');
   }finally{
-    if(btn && btn.isConnected){ btn.disabled = false; btn.innerHTML = originalHtml; }
+    jpIALibre(btn, originalHtml);
   }
 }
 /* Equivalente de generarTipsPacingIA() de arriba pero para bloques de
@@ -9193,6 +9354,12 @@ function bindBuilder(){
       }
       return;
     }
+    /* objetivo de la semana CrossFit (cabecera): se guarda en la semana activa, sin renderizar de nuevo mientras se tipea */
+    if(t.dataset.cfobj !== undefined){
+      const wObj = ((plan(S.activeId) || {}).meso || [])[parseInt(t.dataset.cfobj, 10)];
+      if(wObj){ wObj.objetivo = t.value; save(); }
+      return;
+    }
     if(t.dataset.df){
       const f = t.dataset.df;
       if(f === 'metaChips') d.metaChips = t.value.split(';').map(s => s.trim()).filter(Boolean);
@@ -9375,6 +9542,7 @@ function bindBuilder(){
       save(); renderBuilder();
       return;
     }
+    if(t.dataset.cfobjia !== undefined){ generarObjetivoSemanaCF(t); return; }
     if(t.dataset.cfclonewk !== undefined){ clonarSemanaAnteriorCF(); return; }
     if(t.dataset.cfdeload !== undefined){ generarDeloadS4CF(); return; }
     if(t.dataset.addex){ addSubEx(t.dataset.addex, $('[data-pick="' + t.dataset.addex + '"]').value); return; }
@@ -9791,7 +9959,8 @@ function buildProgramConfig(ath){
     phase: w.phase || '', rpe: w.rpe || '', note: w.note || '',
     deload: !!w.deload, fail: !!w.fail, icon: w.icon || '🎯',
     amrapMinutes: (w.amrapMinutes === '' || w.amrapMinutes == null) ? null : parseInt(w.amrapMinutes,10),
-    hyroxNote: w.hyroxNote || ''
+    hyroxNote: w.hyroxNote || '',
+    objetivo: w.objetivo || ''
   }));
 
   const days = p.dias.map((d, di) => {
@@ -50367,6 +50536,9 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 .step-bar .jp-bpick-btn{width:100%;min-height:46px;background:rgba(9,10,15,.8);border-radius:10px;font-size:13px}
 .step-bar .jp-bpick-btn .k{display:none}
 .step-bar .jp-bpick-btn b{flex:1;max-width:none}
+</style>
+<style id="jpLiftCss">
+@@include coach/estilos/lift-estetico.css@@
 </style>
 <script>
 (function(){
