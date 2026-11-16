@@ -78,6 +78,8 @@
     bancoSplit3:  { run: function(i){ return auditarSplit3(i); }, valor: function(r){ return r; } },
     /* generadores de IA del Builder (CrossFit): con el motor de IA simulado, sin red y sin guardar nada */
     iaCF:         { run: function(i){ return iaCaso(i); }, valor: function(r){ return r; } },
+    bancoSinRopes: { run: function(i){ return auditarSinRopes(i); }, valor: function(r){ return r; } },
+    bancoRecFem:  { run: function(i){ return auditarRecFem(i); }, valor: function(r){ return r; } },
     /* app del alumno: objetivo de la semana en la información de la semana */
     alumnoObjetivo: { run: function(i){ return alumnoObjetivoSemana(i); }, valor: function(r){ return r; } },
     /* app del alumno: se compila un alumno de prueba con el compile() real, se abre en un iframe y se llaman sus funciones globales (input: { fn, args }) */
@@ -179,6 +181,31 @@
     return P;
   }
   /* split analítico de 3 días: hombre Push / Pull / Pierna completa; mujer Pierna A / Push, Pull y Brazos / Pierna B (nada de Full Body) */
+  /* ningún battle rope en ninguna plantilla del Banco (sistema, Banco Pro ni copias guardadas) */
+  function auditarSinRopes(){
+    var P = [];
+    (getS().banco || []).forEach(function(r){ if(/battle\s*rope/i.test(JSON.stringify(r.dias || []))) P.push(r.id + ' · ' + r.nombre + ': todavía tiene battle ropes'); });
+    return P;
+  }
+  /* recomposición femenina: abre con cardio de baja intensidad en cinta con inclinación (10 a 15 min) y cierra con una máquina de cardio al fallo; sin dominadas lastradas */
+  function auditarRecFem(){
+    var P = [], S = getS(), n = 0;
+    (S.banco || []).forEach(function(r){
+      if(!/Recomposici/i.test(r.nombre || '') || r.genero !== 'f') return;
+      n++;
+      var txt = JSON.stringify(r.dias || []);
+      if(/weighted pull|dominadas lastradas/i.test(txt)) P.push(r.id + ': tiene dominadas lastradas');
+      (r.dias || []).forEach(function(d, k){
+        var bl = d.bloques || [], a = bl[0], z = bl[bl.length - 1], tag = r.id + ' día ' + (k + 1);
+        if(!a || !/cinta/i.test(String(a.titulo || '') + ' ' + (a.items || []).join(' ')) || !/inclinaci/i.test(String(a.titulo || '') + ' ' + (a.items || []).join(' '))) P.push(tag + ': no abre con cardio en cinta con inclinación');
+        else { var m = /(\d+)\s*min/i.exec((a.items || []).join(' ') + ' ' + (a.titulo || '')); var mins = m ? parseInt(m[1], 10) : 0; if(mins < 10 || mins > 15) P.push(tag + ': el cardio pre-entreno dura ' + mins + ' min (tiene que ser de 10 a 15)'); }
+        if(!z || !/echo bike|concept2|skierg|ski erg|ciclismo|bicicleta/i.test(String(z.titulo || '') + ' ' + (z.items || []).join(' '))) P.push(tag + ': no cierra con una máquina de cardio (Echo Bike, Concept2, SkiErg o ciclismo)');
+        else if(!/fallo/i.test(String(z.titulo || '') + ' ' + (z.items || []).join(' '))) P.push(tag + ': el cierre en máquina no se lleva al fallo');
+      });
+    });
+    if(n < 8) P.push('esperaba 8 plantillas de recomposición femenina y hay ' + n);
+    return P;
+  }
   function auditarSplit3(){
     var P = [], S = getS(), ESP = {
       m: [/^Push\b/, /^Pull\b/, /^Pierna Completa\b/],
@@ -221,16 +248,19 @@
         return { bloques: r.bloques, dias: r.dias, tieneSquat: /Back Squat/.test(r.texto), tieneFran: /Fran/.test(r.texto), sinWarmup: !/Remo 500/.test(r.texto), sinVacio: !/Vacío/.test(r.texto) };
       }
       /* handlers: con el motor sin clave NO se arma contexto ni se pide nada a la red, el botón queda libre y se avisa */
-      if(c.caso === 'handlerObjetivo' || c.caso === 'handlerTips'){
+      if(c.caso === 'handlerObjetivo' || c.caso === 'handlerTips' || c.caso === 'handlerObjetivoSB' || c.caso === 'handlerTipsSB' || c.caso === 'handlerFichaSB'){
         AIx.hayClave = function(){ return false; };
-        var id = 'ath_test_ia', bl = win.nuevoBloquePizarra(true, 'metcon', 'Fran', ['21-15-9 Thrusters', 'Pull-ups']);
+        var esSB = /SB$/.test(c.caso), id = 'ath_test_ia', bl = esSB ? win.nuevoBloquePizarra(false, 'strength', 'Press de banca', ['Press de banca con barra', '4x8-10 | RIR 2']) : win.nuevoBloquePizarra(true, 'metcon', 'Fran', ['21-15-9 Thrusters', 'Pull-ups']);
         ath = { id: id, nombre: 'Prueba', apellido: 'IA', freq: 3, nivel: 'Avanzado', genero: 'F' };
         var guardar = win.save, render = win.renderBuilder; win.save = function(){}; win.renderBuilder = function(){};
         S.athletes.push(ath);
         try{
-          var p = win.newPlan(ath); p.meta.mesoDisc = 'crossfit'; p.dias[0].bloques.push(bl); S.plans[id] = p; S.activeId = id;
+          var p = win.newPlan(ath); if(!esSB) p.meta.mesoDisc = 'crossfit'; p.dias[0].bloques.push(bl); S.plans[id] = p; S.activeId = id;
           var btn = { dataset: {}, isConnected: false, innerHTML: 'x', disabled: false };
-          if(c.caso === 'handlerObjetivo') win.generarObjetivoSemanaCF(btn); else win.generarTipsPacingIA(bl.id, btn);
+          if(c.caso === 'handlerObjetivo' || c.caso === 'handlerObjetivoSB') win.generarObjetivoSemanaCF(btn);
+          else if(c.caso === 'handlerTipsSB') win.generarTipsSports(bl.id, btn);
+          else if(c.caso === 'handlerFichaSB') win.generarFocoDiaConIA(btn);
+          else win.generarTipsPacingIA(bl.id, btn);
           return { llamadas: llamadas, avisoClave: toasts.some(function(x){ return /Configurá una clave/.test(x); }), botonLibre: !btn.disabled && !btn.dataset.iaBusy, sinFalsoError: !toasts.some(function(x){ return /revisá la conexión|Error en API/.test(x); }) };
         } finally { delete S.plans[id]; var ix = S.athletes.indexOf(ath); if(ix >= 0) S.athletes.splice(ix, 1); win.save = guardar; win.renderBuilder = render; }
       }

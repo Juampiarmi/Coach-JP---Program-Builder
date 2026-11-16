@@ -12,6 +12,10 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'Mismas reglas de estructura que Bodybuilding (con volumen mínimo menor) en las 18 plantillas Hyrox (3 niveles x 2 géneros x 3 frecuencias)' },
   { id: 'bank.bb.03', area: 'Banco · Bodybuilding (12 plantillas)', fn: 'bancoSplit3', input: '', expect: [],
     nota: 'Frecuencia 3: hombre = Push / Pull / Pierna completa; mujer = Pierna A / Push, Pull y Brazos / Pierna B. Ningún día es Full Body, en intermedio y en avanzado' },
+  { id: 'bank.rope.01', area: 'Banco · Bodybuilding (12 plantillas)', fn: 'bancoSinRopes', input: '', expect: [],
+    nota: 'Ningún battle rope en ninguna plantilla del Banco (Bodybuilding, Hyrox, recomposición, Banco Pro ni copias guardadas): se reemplazan por slam ball, SkiErg o remo' },
+  { id: 'bank.rec.01', area: 'Banco · Recomposición femenina', fn: 'bancoRecFem', input: '', expect: [],
+    nota: 'Las 8 plantillas de recomposición femenina abren con cardio en cinta con inclinación (10 a 15 min), cierran con una máquina de cardio al fallo (Echo Bike, Concept2, SkiErg o ciclismo) y no llevan dominadas lastradas' },
   { id: 'bank.edit.01', area: 'Banco · editor', fn: 'bancoEditor', input: '', expect: [],
     nota: 'Existe la API de edición y las plantillas del sistema están hidratadas' },
 

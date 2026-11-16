@@ -71,7 +71,7 @@
           [w(rr).charAt(0).toUpperCase() + w(rr).slice(1) + ' rondas: sin pausa entre estaciones y 90 segundos de descanso al cerrar cada ronda',
            '- Farmer carry x 40 m con ' + k.farmer,
            '- Zancadas con bolsa de arena x 20 m con ' + k.bolsa,
-           '- Battle ropes x 30 s'],
+           '- SkiErg x 30 s a ritmo fuerte'],
           'Agarre, estabilidad del tronco y piernas bajo carga: las estaciones de transporte y de zancadas con bolsa se limitan más por el agarre y la postura que por el cardio, así que se entrenan con el cansancio ya presente.',
           ['POR QUÉ ESTÁ ACÁ: el agarre y el tronco son lo primero que se rompe en una carrera Hyrox. Acá se entrenan con cargas reales y con cansancio.',
            'CARGA DE ENTRENAMIENTO: farmer carry con ' + k.farmer + ' y bolsa de ' + k.bolsa + '; ajustá para llegar a esfuerzo 8 sobre 10 sin romper la postura.',
