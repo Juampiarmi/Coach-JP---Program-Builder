@@ -4362,6 +4362,43 @@ function moverDia(desde, dir){ return moverDiaA(desde, desde + dir); }
    visibles que todavía son el default ("DÍA 3" -> "DÍA 2"), jamás un
    nombre que el coach haya escrito a mano. */
 const MAX_DIAS = 7;
+/* El id de cada día es la CLAVE de todo lo que el alumno registra (cargas, series hechas, RIR, notas: getLoadKey = semana|día|bloque|ejercicio|serie). Un id vacío, repetido o con
+   un "|" corrompe esas claves y la Semana 2 deja de encontrar lo que el alumno hizo en la Semana 1. Este helper es el único lugar que decide si un id es válido. */
+function jpIdDiaValido(p, d, nuevo){
+  const limpio = String(nuevo == null ? '' : nuevo).trim().replace(/[^A-Za-z0-9_-]/g, '');
+  if(!limpio) return { ok: false, motivo: 'El ID del día no puede quedar vacío (solo letras, números, guion y guion bajo).' };
+  if(((p && p.dias) || []).some(x => x && x !== d && x.id === limpio)) return { ok: false, motivo: 'Ya hay otro día con ese ID: cada día necesita uno propio.' };
+  return { ok: true, id: limpio };
+}
+/* Revisa la estructura de un plan y devuelve la lista de problemas (vacía = sana): ids de día vacíos / repetidos / con caracteres que rompen las claves, bloques sin id o repetidos
+   dentro de un día, y días sin lista de bloques. No modifica nada: es solo lectura (la usan compile() y los tests). */
+function jpValidarEstructuraPlan(p){
+  const P = [];
+  if(!p || !Array.isArray(p.dias)) return ['el plan no tiene lista de días'];
+  const idsDia = {};
+  p.dias.forEach((d, i) => {
+    const nom = 'Día ' + (i + 1) + (d && d.title ? ' (' + d.title + ')' : '');
+    if(!d){ P.push(nom + ': día vacío'); return; }
+    if(!d.id) P.push(nom + ': sin ID interno');
+    else {
+      if(/[^A-Za-z0-9_-]/.test(String(d.id))) P.push(nom + ': el ID "' + d.id + '" tiene caracteres que rompen el registro de cargas');
+      if(idsDia[d.id]) P.push(nom + ': el ID "' + d.id + '" está repetido con el ' + idsDia[d.id]);
+      else idsDia[d.id] = 'Día ' + (i + 1);
+    }
+    const listas = Array.isArray(d.bloquesPorSemana) ? d.bloquesPorSemana : [d.bloques];
+    listas.forEach((lista, wi) => {
+      if(!Array.isArray(lista)){ P.push(nom + ': la lista de bloques' + (listas.length > 1 ? ' de la semana ' + (wi + 1) : '') + ' está dañada'); return; }
+      const vistos = {};
+      lista.forEach((b, bi) => {
+        if(!b || !b.id){ P.push(nom + ': el bloque ' + (bi + 1) + ' no tiene ID'); return; }
+        if(String(b.id).indexOf('|') >= 0) P.push(nom + ': el ID de bloque "' + b.id + '" contiene "|"');
+        if(vistos[b.id]) P.push(nom + ': el ID de bloque "' + b.id + '" está repetido');
+        vistos[b.id] = 1;
+      });
+    });
+  });
+  return P;
+}
 /* barra de acciones del día: columnas de igual ancho (simétrica); mismos data-copiardia / data-eliminardia de siempre. "Avanzado" ya no es un desplegable suelto sino la
    tercera acción de la misma barra: abre el panel de chip, ID interno y notas extra (su estado se recuerda en S.ui.diaAdv, nada del plan cambia) */
 function jpBarraDia(conAdv){
@@ -7677,7 +7714,7 @@ function renderDay(){
         '<div class="grid g3" style="margin-top:2px">' +
           '<div><label class="lb">Chip (short)</label><input data-df="short" value="' + esc(d.short) + '" placeholder="DÍA 1"></div>' +
           '<div><label class="lb">Etiqueta de pestaña</label><input data-df="label" value="' + esc(d.label) + '" placeholder="Espalda/Bíceps"></div>' +
-          '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1"></div>' +
+          '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1" maxlength="24" autocomplete="off" title="Es la clave de todo lo que el alumno registra en este día: cambiarlo desconecta su historial de cargas"></div>' +
         '</div>' +
         '<div style="margin-top:10px"><label class="lb">Chips de meta (separados por «;»)</label><input data-df="metaChips" value="' + esc((d.metaChips||[]).join('; ')) + '" placeholder="🎯 Tracción Horizontal; 💪 Ancla Doble"></div>' +
         '<div style="margin-top:10px"><label class="lb">Título del foco técnico</label><input data-df="focusTitle" value="' + esc(d.focusTitle||'') + '"></div>' +
@@ -9419,6 +9456,12 @@ function bindBuilder(){
       const f = t.dataset.df;
       if(f === 'metaChips') d.metaChips = t.value.split(';').map(s => s.trim()).filter(Boolean);
       else if(f === 'cooldown') d.cooldown = t.value.split('\n').map(s => s.trim()).filter(Boolean);
+      else if(f === 'id'){
+        const pId = plan(S.activeId), vId = jpIdDiaValido(pId, d, t.value);
+        t.classList.toggle('jp-invalido', !vId.ok); t.setAttribute('aria-invalid', vId.ok ? 'false' : 'true');
+        if(!vId.ok){ t.title = vId.motivo; return; }      /* mientras no sea válido, el plan conserva el ID anterior */
+        t.title = ''; d.id = vId.id;
+      }
       else d[f] = t.value;
       save();
       /* actualización en vivo de la pestaña sin renderBuilder() completo --
@@ -9516,6 +9559,15 @@ function bindBuilder(){
   });
   panel.addEventListener('change', e => {
     const t = e.target;
+    /* ID interno del día: al salir del campo, si lo escrito no es válido se vuelve al ID vigente y se avisa por qué */
+    if(t.dataset && t.dataset.df === 'id'){
+      const dId = curDay(); if(!dId) return;
+      const vId = jpIdDiaValido(plan(S.activeId), dId, t.value);
+      if(!vId.ok){ toast(vId.motivo, 'warn'); t.value = dId.id; }
+      else t.value = vId.id;
+      t.classList.remove('jp-invalido'); t.setAttribute('aria-invalid', 'false'); t.title = '';
+      return;
+    }
     if(t.type === 'checkbox' && t.dataset.bf){ t.dispatchEvent(new Event('input', {bubbles:true})); return; }
     if(t.dataset.bf === 'exId' || t.dataset.sf === 'exId' || t.dataset.ff === 'exId'){
       const b = findBlock(t.dataset.b); if(!b) return;
@@ -12368,7 +12420,7 @@ if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
    el "@ 76%" de una fila) -- gana siempre sobre la marca del coach que
    compile() ya haya resuelto en el texto, para recalcular todo el
    bloque al instante con el 1RM real del día. Clave nueva, aditiva. */
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{}, customBenchmarks:[] };
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{}, customBenchmarks:[], rirEx:{}, rir:{}, dolor:{} };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -12420,6 +12472,8 @@ function loadProgress(){
         state.historialCargas = _objOk(parsed.historialCargas);
         state.oneRM = _objOk(parsed.oneRM);
         state.customBenchmarks = Array.isArray(parsed.customBenchmarks) ? parsed.customBenchmarks : [];
+        /* RIR que el alumno marca por ejercicio (alimenta la doble progresión de la semana siguiente) y RIR / dolor por bloque: antes no se guardaban y se perdían al recargar */
+        state.rirEx = _objOk(parsed.rirEx); state.rir = _objOk(parsed.rir); state.dolor = _objOk(parsed.dolor);
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
@@ -12427,7 +12481,7 @@ function loadProgress(){
   }catch(e){
     /* JSON dañado: se conserva una copia intacta (clave ":corrupto") antes de que el próximo guardado la pise, y se arranca limpio */
     try{ if(raw) localStorage.setItem(STORAGE_KEY + ':corrupto', raw); }catch(e2){}
-    state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = [];
+    state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = []; state.rirEx = {}; state.rir = {}; state.dolor = {};
   }
 }
 let _spT = null, _spDirty = false, _spFallos = 0, _spAvisado = false;
@@ -12441,7 +12495,7 @@ function _spReintentar(){
   _spT = setTimeout(function(){ try{ _spFlush(); }catch(e){} }, Math.min(15000, 2000 * _spFallos));
 }
 function _spSerialize(){
-  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM, customBenchmarks: state.customBenchmarks });
+  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM, customBenchmarks: state.customBenchmarks, rirEx: state.rirEx, rir: state.rir, dolor: state.dolor });
 }
 function _spFlush(){
   if(!_spDirty) return;
@@ -16725,6 +16779,13 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       var lq = getLoad(getLoadKey(orden[q], c.d, c.b, e.idx, keyIdx));
       if(lq && lq.done !== false && ((lq.kg != null && lq.kg !== '') || (lq.reps != null && lq.reps !== ''))) return { w: orden[q], kg: lq.kg, reps: lq.reps };
     }
+    /* sin registro en la misma posición (bloque regenerado, ejercicios reordenados, plantilla reasignada): se busca por el NOMBRE del ejercicio */
+    try{
+      if(typeof window.jpRegistroPrevio === 'function'){
+        var rp = window.jpRegistroPrevio(c, e, keyIdx);
+        if(rp && rp.ref) return { w: rp.w, kg: rp.ref.kg, reps: rp.ref.reps > 0 ? rp.ref.reps : '' };
+      }
+    }catch(eN){}
     return null;
   }
   function regUltReg(c, e, set){ return regUltRegKey(c, e, set + (e.ko || 0)); }
@@ -16848,6 +16909,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(!hit){ var o = qrPlano(c.obj); if(o){ hit = o.split(/[.:]\\s/)[0]; kind = 'OBJETIVO'; } }
     return { k: kind, t: qrCorta(hit, 130) };
   }
+  /* RIR del ejercicio: lo marca el alumno al terminar; la doble progresión de la semana siguiente solo sube la carga si hubo reservas (RIR 1 o más) */
+  function qrRirKey(c, e){ return c.w + '|' + c.d + '|' + c.b + '|' + e.idx; }
+  function qrRirHtml(c, e, m){
+    var sel = (state.rirEx || {})[qrRirKey(c, e)];
+    return '<div class="jp-qc-rir" role="group" aria-label="RIR del ejercicio (repeticiones que te sobraron)"><span class="jp-qc-rir-lb">RIR</span>' +
+      [0, 1, 2, 3].map(function(n){ return '<button type="button" class="jp-qc-rirb' + (sel === n ? ' on' : '') + '" data-rirx="' + n + '" aria-pressed="' + (sel === n ? 'true' : 'false') + '">' + (n === 3 ? '3+' : n) + '</button>'; }).join('') +
+      '<span class="jp-qc-rir-h">reps que te sobraron</span></div>';
+  }
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -16881,6 +16950,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
       cab + '<div class="jp-qc-rows">' + filas + '</div>' +
       '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
+      (m.sinKg ? '' : qrRirHtml(c, e, m)) +
       fin +
       (guia.t ? '<div class="jp-qc-guia"><b>' + guia.k + '</b><span>' + escSB(guia.t) + '</span></div>' : '') +
       (m.hint ? '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span></div>' : '') +
@@ -17037,6 +17107,17 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     if(fi){ ev.preventDefault(); ev.stopPropagation(); qrFinal(fi.closest('.jp-qc')); return; }
     var ok = t.closest('.jp-qc-ok');
     if(ok){ ev.preventDefault(); ev.stopPropagation(); qrGuardarSerie(ok.closest('.jp-qc'), ok.closest('.jp-qc-r')); return; }
+    var rb = t.closest('.jp-qc-rirb');
+    if(rb){
+      ev.preventDefault(); ev.stopPropagation();
+      var cardR = rb.closest('.jp-qc'), kr = cardR && qrCtx(cardR); if(!kr) return;
+      var nR = parseInt(rb.getAttribute('data-rirx'), 10), clR = qrRirKey(kr.c, kr.e);
+      state.rirEx = state.rirEx || {};
+      if(state.rirEx[clR] === nR) delete state.rirEx[clR]; else state.rirEx[clR] = nR;
+      saveProgress();
+      qrRefrescar(cardR, true);
+      return;
+    }
     var ad = t.closest('.jp-qc-add');
     if(ad){ ev.preventDefault(); ev.stopPropagation(); qrAgregar(ad.closest('.jp-qc')); return; }
     var dl = t.closest('.jp-qc-del');
@@ -17050,8 +17131,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     var row = t.closest('.jp-qc-r');
     if(row){
       row.classList.remove('falta');
-      /* una serie ya marcada que se corrige: el dato nuevo se guarda en el acto (el tonelaje y el historial no quedan desfasados) */
-      if(row.classList.contains('jp-done') && row.getAttribute('data-key')) setLoadField(row.getAttribute('data-key'), t.classList.contains('jp-qc-kg') ? 'kg' : 'reps', t.value);
+      /* lo tipeado se guarda en el acto: antes solo se guardaba al tildar ✓ y si el alumno cargaba kilos y reps y salía sin tildar, la Semana 2 quedaba sin ninguna referencia.
+         Un borrador NO cuenta como serie hecha (done sigue sin marcar: el tonelaje y el historial no lo suman) pero sí sirve de referencia para la carga sugerida de la semana siguiente. */
+      var kRow = row.getAttribute('data-key');
+      if(kRow){
+        var campoQ = t.classList.contains('jp-qc-kg') ? 'kg' : 'reps';
+        setLoadField(kRow, campoQ, t.value);
+        if(!getLoad(kRow).ex){ var cardQ = row.closest('.jp-qc'), kq = cardQ && qrCtx(cardQ); if(kq) setLoadField(kRow, 'ex', regNombreCorto(kq.e.nombre)); }
+      }
     }
   });
   /* al tocar un casillero se selecciona todo: se corrige escribiendo encima, sin borrar a mano */
@@ -42762,6 +42849,12 @@ html body.jp-mission:not(.cf-disc) .jp-close-cta{ background:#FF5500 !important;
 .jp-qc-guia{ display:flex; gap:7px; align-items:baseline; margin-top:9px; padding:7px 9px; border-radius:9px; background:rgba(255,255,255,.035); border-left:2px solid #FF5500; font-size:.7rem; line-height:1.4; color:#D5DAE1; }
 .jp-qc-guia b{ flex:0 0 auto; font:800 .6rem 'Chakra Petch',sans-serif; letter-spacing:.12em; color:#FF8A4D; }
 .jp-qc-guia span{ min-width:0; }
+/* RIR del ejercicio (reps que le sobraron al alumno): alimenta la doble progresión de la semana siguiente */
+.jp-qc-rir{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:9px; }
+.jp-qc-rir-lb{ font:800 .6rem 'Chakra Petch',sans-serif; letter-spacing:.12em; color:#9AA4B2; }
+.jp-qc-rirb{ min-width:36px; height:30px; padding:0 8px; border-radius:9px; border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.04); color:#D5DAE1; font:800 .72rem 'Chakra Petch',sans-serif; }
+.jp-qc-rirb.on{ background:#FF5500; border-color:#FF5500; color:#0A0F13; }
+.jp-qc-rir-h{ font-size:.62rem; color:#7F8896; }
 /* registro serie por serie: una fila por serie efectiva (SERIE · KG × REPS · ✓) */
 .jp-qc-hd, .jp-qc-r{ display:grid; grid-template-columns:38px minmax(0,1fr) 12px minmax(0,1fr) 50px; gap:6px; align-items:center; }
 .jp-qc.sinkg .jp-qc-hd, .jp-qc.sinkg .jp-qc-r{ grid-template-columns:38px minmax(0,1fr) 50px; }
@@ -45814,25 +45907,85 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
     }catch(e2){}
     return mejor;
   }
+  /* ---------- registro previo de un ejercicio (enlace entre semanas) ----------
+     Antes la referencia se buscaba SOLO por posición exacta (semana|día|bloque|ejercicio|serie): si el coach regeneraba un bloque, reordenaba ejercicios o reasignaba
+     la plantilla entre semana, la clave de la Semana 2 ya no coincidía con la que el alumno había usado en la Semana 1 y no había ninguna carga sugerida.
+     Ahora se busca primero por posición y, si no hay nada, por NOMBRE del ejercicio (cada serie registrada guarda el nombre en l.ex), así el registro siempre se encuentra. */
+  /* semanas donde buscar, en orden de prioridad: la Semana 1 manda (base de la progresión); después la anterior más cercana */
+  function ordenSemanas(w){
+    var orden = [], pw;
+    if(w > 0) orden.push(0);
+    for(pw = w - 1; pw >= 1; pw--) orden.push(pw);
+    return orden;
+  }
+  /* una serie cuenta como registro si tiene kilos (las reps pueden faltar) y no fue desmarcada a propósito (done === false) */
+  function serieValida(l){
+    var kg = parseFloat(l && l.kg), rp = parseFloat(l && l.reps);
+    return (kg > 0 && l.done !== false) ? { kg: kg, reps: rp > 0 ? rp : 0 } : null;
+  }
+  function nombreDeCarga(k, l){
+    if(l && l.ex) return l.ex;
+    var p = String(k).split('|');
+    return mapaNombres()[p[1] + '|' + p[2] + '|' + p[3]] || '';
+  }
+  function elegirRef(sets, setN){
+    var mismo = sets.filter(function(x){ return x.s === setN; })[0];
+    var mejor = sets.reduce(function(a, x){ return (x.kg * (1 + x.reps / 30) > a.kg * (1 + a.reps / 30)) ? x : a; }, sets[0]);
+    return mismo || mejor;
+  }
+  /* registro de UNA semana: por posición exacta y, si no hay, por nombre del ejercicio */
+  function registroSemana(c, e, setN, pw){
+    var sets = [], s;
+    for(s = 1; s <= 12; s++){
+      var v = serieValida(carga(pw, c.d, c.b, e.idx, s));
+      if(v) sets.push({ s: s, kg: v.kg, reps: v.reps });
+    }
+    if(sets.length) return { w: pw, ref: elegirRef(sets, setN), sets: sets, clave: { w: pw, d: c.d, b: c.b, idx: e.idx }, porNombre: false };
+    var obj = nrm2(e.nombre); if(!obj) return null;
+    var grupos = {};
+    Object.keys(state.loads || {}).forEach(function(k){
+      var p = k.split('|'); if(p.length < 5 || parseInt(p[0], 10) !== pw) return;
+      var n = parseInt(p[4], 10); if(!(n >= 1)) return;                         /* las micro-series de Myo-Reps ('m1'...) no son series de trabajo */
+      var l = state.loads[k] || {}, v2 = serieValida(l); if(!v2) return;
+      if(nrm2(nombreDeCarga(k, l)) !== obj) return;
+      var gk = p[1] + '|' + p[2] + '|' + p[3];
+      var g = grupos[gk] = grupos[gk] || { d: p[1], b: p[2], idx: p[3], sets: [], ts: 0 };
+      g.sets.push({ s: n, kg: v2.kg, reps: v2.reps }); g.ts = Math.max(g.ts, l.ts || 0);
+    });
+    var lista = Object.keys(grupos).map(function(k2){ return grupos[k2]; });
+    if(!lista.length) return null;
+    /* el mismo día primero; si no, el registro más reciente */
+    lista.sort(function(a, b){ return ((b.d === c.d) - (a.d === c.d)) || (b.ts - a.ts); });
+    var g0 = lista[0];
+    return { w: pw, ref: elegirRef(g0.sets, setN), sets: g0.sets, clave: { w: pw, d: g0.d, b: g0.b, idx: g0.idx }, porNombre: true };
+  }
   /* la Semana 1 es la base estricta: se busca primero ahí; si esa serie no tiene marca, la semana anterior más cercana. Solo series completadas (done !== false) */
   function ultimoRegistro(c, e, setN){
-    var orden = [], pw;
-    if(c.w > 0) orden.push(0);
-    for(pw = c.w - 1; pw >= 1; pw--) orden.push(pw);
+    var orden = ordenSemanas(c.w);
     for(var q = 0; q < orden.length; q++){
-      pw = orden[q];
-      var sets = [];
-      for(var s = 1; s <= 12; s++){
-        var l = carga(pw, c.d, c.b, e.idx, s), kg = parseFloat(l.kg), rp = parseFloat(l.reps);
-        if(kg > 0 && rp > 0 && l.done !== false) sets.push({ s: s, kg: kg, reps: rp });
-      }
-      if(!sets.length) continue;
-      var mismo = sets.filter(function(x){ return x.s === setN; })[0];
-      var mejor = sets.reduce(function(a, x){ return (x.kg * (1 + x.reps / 30) > a.kg * (1 + a.reps / 30)) ? x : a; }, sets[0]);
-      return { w: pw, ref: mismo || mejor };
+      var r = registroSemana(c, e, setN, orden[q]);
+      if(r) return r;
     }
     return null;
   }
+  /* RIR que el alumno marcó para ese ejercicio de esa semana (chips de la tarjeta) o, en bloques clásicos, el RIR de hoy del bloque. null = no lo marcó */
+  function rirRegistrado(clave){
+    try{
+      var v = (state.rirEx || {})[clave.w + '|' + clave.d + '|' + clave.b + '|' + clave.idx];
+      if(typeof v !== 'number') v = (state.rir || {})[clave.w + '|' + clave.d + '|' + clave.b];
+      return typeof v === 'number' ? v : null;
+    }catch(e){ return null; }
+  }
+  /* doble progresión pura (sin DOM): ref = lo hecho la semana de referencia; rr = rango de reps; rirReg = RIR marcado por el alumno o null. Devuelve { kg, sube, motivo } */
+  function progresion(ref, rr, rirReg, fac){
+    var llego = ref.reps >= rr.max, holgado = (rirReg == null) || rirReg >= 1;
+    if(llego && holgado){
+      var kgN = Math.max(redondear(ref.kg * (fac || 1.025)), ref.kg + 2.5);
+      return { kg: kgN, sube: true, motivo: 'tope' };
+    }
+    return { kg: ref.kg, sube: false, motivo: llego ? 'fallo' : 'rango' };
+  }
+  window.jpProgresionCarga = progresion;
   /* devuelve { kg, pre, origen, txt } — pre = se escribe en el casillero para confirmar con un toque */
   window.jpSugerirCarga = function(c, e, setN){
     try{
@@ -45841,20 +45994,33 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
       if(rir == null){ var mr = /RIR\\s*(\\d+)/i.exec(meta.rpe || ''); rir = mr ? +mr[1] : 2; }
       var ult = ultimoRegistro(c, e, setN || 1);
       if(ult && !deload){
-        var ref = ult.ref, previo = 'S' + (ult.w + 1) + ': ' + fmtKg(ref.kg) + ' kg × ' + ref.reps;
-        if(!rr) return { kg: ref.kg, pre: false, origen: 'ultima', txt: 'Última vez · SEM ' + (ult.w + 1) + ' · ' + fmtKg(ref.kg) + ' kg × ' + ref.reps };
-        /* Semanas 2, 3 y siguientes: la sobrecarga sale SIEMPRE de lo registrado en la Semana 1 (S2 sube si en S1 llegaste al tope de reps; S3 sube más) */
+        var ref = ult.ref, previo = 'S' + (ult.w + 1) + ': ' + fmtKg(ref.kg) + ' kg' + (ref.reps ? ' × ' + ref.reps : '');
+        if(!rr || !(ref.reps > 0)) return { kg: ref.kg, pre: !!rr, origen: rr ? 'progresion' : 'ultima', txt: 'Última vez · SEM ' + (ult.w + 1) + ' · ' + fmtKg(ref.kg) + ' kg' + (ref.reps ? ' × ' + ref.reps : '') };
+        var rirReg = rirRegistrado(ult.clave), nota = '', pr;
         if(ult.w === 0 && c.w >= 1){
-          var llego = ref.reps >= rr.max, fac = c.w === 1 ? (llego ? 1.025 : 1) : (llego ? 1.05 : 1.025);
-          if(fac === 1) return { kg: ref.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(ref.kg) + ' kg y buscá ' + rr.max + ' reps (base ' + previo + ')' };
-          var kgN = Math.max(redondear(ref.kg * fac), ref.kg + 2.5);
-          return { kg: kgN, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(kgN) + ' kg (+' + fmtKg(kgN - ref.kg) + ' sobre tu base de ' + previo + ')' };
+          /* Semanas 2, 3 y siguientes: la sobrecarga sale de lo registrado en la Semana 1 (S2 sube si en S1 llegaste al tope de reps con RIR de sobra; S3 sube más) */
+          var llego = ref.reps >= rr.max, holgado = (rirReg == null || rirReg >= 1);
+          var fac = c.w === 1 ? ((llego && holgado) ? 1.025 : 1) : ((llego && holgado) ? 1.05 : (rirReg === 0 ? 1 : 1.025));
+          pr = fac === 1 ? { kg: ref.kg, sube: false, motivo: (llego && !holgado) ? 'fallo' : 'rango' } : { kg: Math.max(redondear(ref.kg * fac), ref.kg + 2.5), sube: true, motivo: 'tope' };
+          /* ...pero nunca por debajo de lo que el alumno YA hizo en la semana inmediatamente anterior, ni por encima de lo que no pudo completar ahí */
+          if(c.w >= 2){
+            var prev = registroSemana(c, e, setN || 1, c.w - 1);
+            if(prev && prev.ref.reps > 0){
+              var pk = prev.ref.kg, sem = 'S' + (prev.w + 1);
+              if(prev.ref.reps < rr.min){
+                if(pr.kg > pk){ pr = { kg: pk, sube: false, motivo: 'rango' }; nota = ' · en ' + sem + ' no llegaste a ' + rr.min + ' reps con ' + fmtKg(pk) + ' kg: mantené'; }
+              } else {
+                var pp = progresion(prev.ref, rr, rirRegistrado(prev.clave), 1.025);
+                if(pp.kg > pr.kg){ pr = { kg: pp.kg, sube: pp.sube, motivo: pp.motivo }; nota = ' · sobre lo que hiciste en ' + sem + ' (' + fmtKg(pk) + ' kg × ' + prev.ref.reps + ')'; }
+                else if(pk > pr.kg){ pr = { kg: pk, sube: false, motivo: 'rango' }; nota = ' · no menos que lo que ya hiciste en ' + sem; }
+              }
+            }
+          }
+        } else {
+          pr = progresion(ref, rr, rirReg, 1.025);
         }
-        if(ref.reps >= rr.max){
-          var sube = Math.max(redondear(ref.kg * 1.025), ref.kg + 2.5);
-          return { kg: sube, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(sube) + ' kg (+' + fmtKg(sube - ref.kg) + ') · llegaste a ' + ref.reps + ' reps con ' + fmtKg(ref.kg) + ' kg (' + previo + ')' };
-        }
-        return { kg: ref.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(ref.kg) + ' kg y buscá ' + rr.max + ' reps (' + previo + ')' };
+        if(!pr.sube) return { kg: pr.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · mantené ' + fmtKg(pr.kg) + ' kg y buscá ' + rr.max + ' reps' + (pr.motivo === 'fallo' ? ' (marcaste RIR 0: sumá reservas antes de subir)' : '') + ' (' + previo + ')' + nota };
+        return { kg: pr.kg, pre: true, origen: 'progresion', txt: 'Sugerido S' + (c.w + 1) + ' · ' + fmtKg(pr.kg) + ' kg (+' + fmtKg(Math.max(0, pr.kg - ref.kg)) + ')' + (ref.reps >= rr.max ? ' · llegaste a ' + ref.reps + ' reps' + (rirReg != null ? ' con RIR ' + rirReg : '') : '') + ' (' + previo + ')' + nota };
       }
       /* descarga: ~85% de la carga de la Semana 1 (va antes de la marca real, que ignoraría la base de la semana) */
       if(ult && deload){
@@ -45866,16 +46032,14 @@ html body.cf-disc .jp-done-btn.jp-done-foot:not(.on), html body.cf-disc .jp-done
         var rm = (rr.min + rr.max) / 2, kg2 = redondear(real / (1 + (rm + rir) / 30));
         if(kg2 > 0) return { kg: kg2, pre: true, origen: 'real', txt: 'Según tu marca real · 1RM est. ' + fmtKg(Math.round(real)) + ' kg → ' + fmtKg(kg2) + ' kg para ' + e.reps + ' reps a RIR ' + (e.rir || rir) };
       }
-      if(ult && deload){
-        var kgD = redondear(ult.ref.kg * 0.85);
-        return { kg: kgD, pre: true, origen: 'descarga', txt: 'Descarga · ~85% de tu carga habitual (' + fmtKg(ult.ref.kg) + ' kg)' };
-      }
       var mc = String(e.carga || '').match(/^\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:kgs?)?\\s*$/i);
       if(mc) return { kg: parseFloat(mc[1].replace(',', '.')), pre: true, origen: 'coach', txt: 'Carga pautada · tocá ✓ para confirmar' };
       if(rr || e.rir) return { kg: 0, pre: false, origen: 'rir', txt: 'Sin carga previa · elegí un peso con RIR ' + (e.rir || rir) + ' (RPE ' + (10 - Math.round(rir)) + ')' };
     }catch(err){ console.warn('sugerir carga', err); }
     return null;
   };
+  /* para los módulos de la tarjeta (referencia "Sem N: kg × reps"): mismo registro previo, también por nombre */
+  window.jpRegistroPrevio = function(c, e, setN){ try{ return ultimoRegistro(c, e, setN || 1); }catch(err){ return null; } };
   /* ejercicio de una fila nativa: lo reconstruye del bloque de ESA semana */
   var cacheMeta = {};
   function metaEjercicio(w, dayId, blockId, idx){
@@ -47105,6 +47269,14 @@ function rolPlano(r){
 }
 function compile(ath){
   const p = plan(ath.id);
+  /* estructura sana antes de exportar: un ID de día repetido o con "|" rompe el enlace entre semanas del alumno (solo avisa, no modifica nada del plan) */
+  try{
+    const probl = jpValidarEstructuraPlan(p);
+    if(probl.length){
+      console.warn('[Plan] estructura con problemas en ' + fullName(ath) + ':\n - ' + probl.join('\n - '));
+      if(!window.__jpAvisoEstructura || window.__jpAvisoEstructura !== ath.id){ window.__jpAvisoEstructura = ath.id; try{ toast('⚠️ El plan de ' + fullName(ath) + ' tiene problemas de estructura (' + probl.length + '): revisá la consola', 'warn'); }catch(eT){} }
+    }
+  }catch(eV){ console.warn('validar estructura', eV); }
   const cfg = buildProgramConfig(ath);
   const M = p.meta;
   const nombre = fullName(ath);
@@ -71558,7 +71730,11 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       ath.freq = String(pl.sesiones.length);
       ampliado = pl.sesiones.length;
     }
-    while(p.dias.length < pl.sesiones.length) p.dias.push(newDay(p.dias.length));
+    while(p.dias.length < pl.sesiones.length){
+      const ndI = newDay(p.dias.length), usadosI = new Set(p.dias.map(x => x && x.id));
+      let kI = p.dias.length + 1; while(usadosI.has('dia' + kI)) kI++;
+      ndI.id = 'dia' + kI; p.dias.push(ndI);
+    }
 
     var total = 0, notas = [], vinculados = 0, sinVideo = [];
     pl.sesiones.forEach(function(s, i){
@@ -88342,6 +88518,9 @@ input,select,textarea{
   border:1px solid var(--lift-line-hi) !important;
 }
 input:focus,select:focus,textarea:focus{border-color:var(--ocre) !important}
+
+/* campo con un valor no válido (ej. ID interno de día repetido o vacío) */
+input.jp-invalido,textarea.jp-invalido{border-color:#E0654A !important;box-shadow:0 0 0 3px rgba(224,101,74,.18) !important}
 </style>
 <script>
 (function(){

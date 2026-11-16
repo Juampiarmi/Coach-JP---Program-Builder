@@ -41,6 +41,7 @@
 <script src="cases-banco.js"></script>
 <script src="cases-alumno.js"></script>
 <script src="cases-ia.js"></script>
+<script src="cases-progresion.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -78,6 +79,8 @@
     bancoSplit3:  { run: function(i){ return auditarSplit3(i); }, valor: function(r){ return r; } },
     /* generadores de IA del Builder (CrossFit): con el motor de IA simulado, sin red y sin guardar nada */
     iaCF:         { run: function(i){ return iaCaso(i); }, valor: function(r){ return r; } },
+    alumnoProg:   { run: function(i){ return alumnoProgresion(i); }, valor: function(r){ return r; } },
+    editorPlan:   { run: function(i){ return editorCaso(i); }, valor: function(r){ return r; } },
     bancoSinRopes: { run: function(i){ return auditarSinRopes(i); }, valor: function(r){ return r; } },
     bancoRecFem:  { run: function(i){ return auditarRecFem(i); }, valor: function(r){ return r; } },
     /* app del alumno: objetivo de la semana en la información de la semana */
@@ -181,6 +184,51 @@
     return P;
   }
   /* split analítico de 3 días: hombre Push / Pull / Pierna completa; mujer Pierna A / Push, Pull y Brazos / Pierna B (nada de Full Body) */
+  /* ---------- carga sugerida de la semana siguiente (app del alumno compilada) ----------
+     input: { loads: { clave: { kg, reps, done, ex } }, rirEx: { clave: n }, c: { w, d, b }, e: { idx, nombre, reps, rir }, setN }
+     Se reemplaza state.loads / state.rirEx del documento del alumno solo mientras dura la llamada y se restauran al terminar: no se guarda nada. */
+  function alumnoProgresion(i){
+    var w = alumnoWin(); if(!w || typeof w.jpSugerirCarga !== 'function') throw new Error('la app del alumno no expone jpSugerirCarga');
+    var st = w.eval('state'), l0 = st.loads, r0 = st.rirEx;
+    st.loads = JSON.parse(JSON.stringify(i.loads || {})); st.rirEx = JSON.parse(JSON.stringify(i.rirEx || {}));
+    try{
+      var r = w.jpSugerirCarga(i.c, i.e, i.setN || 1);
+      return r ? { kg: r.kg, origen: r.origen, pre: r.pre } : null;
+    } finally { st.loads = l0; st.rirEx = r0; }
+  }
+  /* editor del Builder: ids de día y estructura del plan, con las funciones reales; save / renderBuilder / toast se anulan y el alumno de prueba se quita al terminar */
+  function editorCaso(c){
+    var S = getS();
+    if(c.caso === 'idValido'){
+      var p0 = { dias: [{ id: 'dia1' }, { id: 'dia2' }] };
+      return c.casos.map(function(v){ var r = win.jpIdDiaValido(p0, p0.dias[0], v); return r.ok ? r.id : '✗'; });
+    }
+    if(c.caso === 'validador'){
+      var malo = { dias: [{ id: 'dia1', bloques: [{ id: 'b1' }, { id: 'b1' }] }, { id: 'dia1', bloques: [{ id: 'a|b' }] }, { id: '', bloques: [] }, { id: 'ok', bloques: 'x' }] };
+      var probs = win.jpValidarEstructuraPlan(malo).join(' · ');
+      return { repiteDia: /repetido con el Día 1/.test(probs), repiteBloque: /bloque "b1" está repetido|"b1" está repetido/.test(probs), barra: /contiene "\|"/.test(probs), sinId: /sin ID interno/.test(probs), listaRota: /dañada/.test(probs), sano: win.jpValidarEstructuraPlan({ dias: [{ id: 'dia1', bloques: [{ id: 'b1' }] }] }).length };
+    }
+    if(c.caso === 'plantillasSanas'){
+      var out = [];
+      (S.banco || []).forEach(function(r){ if(!(r.dias || []).length) return; var pr = win.jpValidarEstructuraPlan({ dias: r.dias }); if(pr.length) out.push(r.id + ': ' + pr[0]); });
+      return out;
+    }
+    if(c.caso === 'altasYBajas'){
+      var id = 'ath_test_ed', ath = { id: id, nombre: 'Prueba', apellido: 'Editor', freq: 4, nivel: 'Intermedio', genero: 'M' };
+      var guardar = win.save, render = win.renderBuilder, aviso = win.toast, act0 = S.activeId, dia0 = S.ui && S.ui.day;
+      win.save = function(){}; win.renderBuilder = function(){}; win.toast = function(){};
+      S.athletes.push(ath);
+      try{
+        var p = win.newPlan(ath); S.plans[id] = p; S.activeId = id; S.ui = S.ui || {}; S.ui.day = 0;
+        var pasos = [];
+        /* se quita el día 2, se agrega uno, se quita el 1, se agregan dos: los ids nunca se repiten */
+        S.ui.day = 1; win.eliminarDiaActivo(); win.agregarDia(); S.ui.day = 0; win.eliminarDiaActivo(); win.agregarDia(); win.agregarDia();
+        pasos.push(p.dias.map(function(d){ return d.id; }).join(','));
+        return { problemas: win.jpValidarEstructuraPlan(p), ids: pasos[0], cantidad: p.dias.length };
+      } finally { delete S.plans[id]; var ix = S.athletes.indexOf(ath); if(ix >= 0) S.athletes.splice(ix, 1); win.save = guardar; win.renderBuilder = render; win.toast = aviso; S.activeId = act0; if(S.ui) S.ui.day = dia0; }
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
   /* ningún battle rope en ninguna plantilla del Banco (sistema, Banco Pro ni copias guardadas) */
   function auditarSinRopes(){
     var P = [];

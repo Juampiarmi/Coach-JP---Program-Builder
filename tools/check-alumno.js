@@ -36,6 +36,19 @@ let nJs = 0, nCss = 0;
   });
 })(DIR);
 
+/* 2b · la sesión de audio NUNCA puede ser 'playback': pausaría la música del usuario al abrir la app (siempre 'ambient') */
+(function revisarAudio(){
+  const RX = /audioSession\.type\s*=\s*['"]playback['"]/;
+  function recorrer(p){
+    if(!fs.existsSync(p)) return;
+    if(fs.statSync(p).isDirectory()){ fs.readdirSync(p).forEach(n => recorrer(path.join(p, n))); return; }
+    if(!/\.(js|html)$/.test(p)) return;
+    if(RX.test(fs.readFileSync(p, 'utf8'))) falla(path.relative(RAIZ, p) + ": asigna audioSession.type = 'playback' (tiene que ser 'ambient')");
+  }
+  recorrer(path.join(RAIZ, 'src', 'index.src.html'));
+  recorrer(DIR);
+})();
+
 /* 3 · el TEMPLATE_HTML de index.html == lo que dicen los archivos */
 function plantillaDe(html){
   const ini = html.indexOf('const TEMPLATE_HTML = `');

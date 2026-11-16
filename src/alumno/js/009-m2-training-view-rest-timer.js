@@ -760,6 +760,13 @@
       var lq = getLoad(getLoadKey(orden[q], c.d, c.b, e.idx, keyIdx));
       if(lq && lq.done !== false && ((lq.kg != null && lq.kg !== '') || (lq.reps != null && lq.reps !== ''))) return { w: orden[q], kg: lq.kg, reps: lq.reps };
     }
+    /* sin registro en la misma posición (bloque regenerado, ejercicios reordenados, plantilla reasignada): se busca por el NOMBRE del ejercicio */
+    try{
+      if(typeof window.jpRegistroPrevio === 'function'){
+        var rp = window.jpRegistroPrevio(c, e, keyIdx);
+        if(rp && rp.ref) return { w: rp.w, kg: rp.ref.kg, reps: rp.ref.reps > 0 ? rp.ref.reps : '' };
+      }
+    }catch(eN){}
     return null;
   }
   function regUltReg(c, e, set){ return regUltRegKey(c, e, set + (e.ko || 0)); }
@@ -883,6 +890,14 @@
     if(!hit){ var o = qrPlano(c.obj); if(o){ hit = o.split(/[.:]\s/)[0]; kind = 'OBJETIVO'; } }
     return { k: kind, t: qrCorta(hit, 130) };
   }
+  /* RIR del ejercicio: lo marca el alumno al terminar; la doble progresión de la semana siguiente solo sube la carga si hubo reservas (RIR 1 o más) */
+  function qrRirKey(c, e){ return c.w + '|' + c.d + '|' + c.b + '|' + e.idx; }
+  function qrRirHtml(c, e, m){
+    var sel = (state.rirEx || {})[qrRirKey(c, e)];
+    return '<div class="jp-qc-rir" role="group" aria-label="RIR del ejercicio (repeticiones que te sobraron)"><span class="jp-qc-rir-lb">RIR</span>' +
+      [0, 1, 2, 3].map(function(n){ return '<button type="button" class="jp-qc-rirb' + (sel === n ? ' on' : '') + '" data-rirx="' + n + '" aria-pressed="' + (sel === n ? 'true' : 'false') + '">' + (n === 3 ? '3+' : n) + '</button>'; }).join('') +
+      '<span class="jp-qc-rir-h">reps que te sobraron</span></div>';
+  }
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -916,6 +931,7 @@
       '<div class="jp-qc-top"><span class="jp-qc-let">' + regLetra(c, i) + '</span><span class="jp-qc-n">' + escSB(regNombreCorto(e.nombre)) + '</span><span class="jp-qc-p">' + escSB(pres) + '</span></div>' +
       cab + '<div class="jp-qc-rows">' + filas + '</div>' +
       '<div class="jp-qc-acts"><button type="button" class="jp-qc-add" aria-label="Agregar una serie más">＋ AGREGAR SERIE</button>' + (m.quitable ? '<button type="button" class="jp-qc-del" aria-label="Quitar la última serie agregada">− QUITAR</button>' : '') + '</div>' +
+      (m.sinKg ? '' : qrRirHtml(c, e, m)) +
       fin +
       (guia.t ? '<div class="jp-qc-guia"><b>' + guia.k + '</b><span>' + escSB(guia.t) + '</span></div>' : '') +
       (m.hint ? '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span></div>' : '') +
@@ -1072,6 +1088,17 @@
     if(fi){ ev.preventDefault(); ev.stopPropagation(); qrFinal(fi.closest('.jp-qc')); return; }
     var ok = t.closest('.jp-qc-ok');
     if(ok){ ev.preventDefault(); ev.stopPropagation(); qrGuardarSerie(ok.closest('.jp-qc'), ok.closest('.jp-qc-r')); return; }
+    var rb = t.closest('.jp-qc-rirb');
+    if(rb){
+      ev.preventDefault(); ev.stopPropagation();
+      var cardR = rb.closest('.jp-qc'), kr = cardR && qrCtx(cardR); if(!kr) return;
+      var nR = parseInt(rb.getAttribute('data-rirx'), 10), clR = qrRirKey(kr.c, kr.e);
+      state.rirEx = state.rirEx || {};
+      if(state.rirEx[clR] === nR) delete state.rirEx[clR]; else state.rirEx[clR] = nR;
+      saveProgress();
+      qrRefrescar(cardR, true);
+      return;
+    }
     var ad = t.closest('.jp-qc-add');
     if(ad){ ev.preventDefault(); ev.stopPropagation(); qrAgregar(ad.closest('.jp-qc')); return; }
     var dl = t.closest('.jp-qc-del');
@@ -1085,8 +1112,14 @@
     var row = t.closest('.jp-qc-r');
     if(row){
       row.classList.remove('falta');
-      /* una serie ya marcada que se corrige: el dato nuevo se guarda en el acto (el tonelaje y el historial no quedan desfasados) */
-      if(row.classList.contains('jp-done') && row.getAttribute('data-key')) setLoadField(row.getAttribute('data-key'), t.classList.contains('jp-qc-kg') ? 'kg' : 'reps', t.value);
+      /* lo tipeado se guarda en el acto: antes solo se guardaba al tildar ✓ y si el alumno cargaba kilos y reps y salía sin tildar, la Semana 2 quedaba sin ninguna referencia.
+         Un borrador NO cuenta como serie hecha (done sigue sin marcar: el tonelaje y el historial no lo suman) pero sí sirve de referencia para la carga sugerida de la semana siguiente. */
+      var kRow = row.getAttribute('data-key');
+      if(kRow){
+        var campoQ = t.classList.contains('jp-qc-kg') ? 'kg' : 'reps';
+        setLoadField(kRow, campoQ, t.value);
+        if(!getLoad(kRow).ex){ var cardQ = row.closest('.jp-qc'), kq = cardQ && qrCtx(cardQ); if(kq) setLoadField(kRow, 'ex', regNombreCorto(kq.e.nombre)); }
+      }
     }
   });
   /* al tocar un casillero se selecciona todo: se corrige escribiendo encima, sin borrar a mano */

@@ -343,7 +343,7 @@ if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
    el "@ 76%" de una fila) -- gana siempre sobre la marca del coach que
    compile() ya haya resuelto en el texto, para recalcular todo el
    bloque al instante con el 1RM real del día. Clave nueva, aditiva. */
-const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{}, customBenchmarks:[] };
+const state = { mode:'complete', currentWeek:0, currentDay:(DAYS[0]||{}).id, completed:{}, fatigue:{}, loads:{}, notes:{}, scores:{}, session:{}, checkout:{}, restSec:90, sleep:{}, readinessPain:{}, videoLinks:{}, sesionNotificada:{}, historialCargas:{}, oneRM:{}, customBenchmarks:[], rirEx:{}, rir:{}, dolor:{} };
 let timerCounter = 0;
 const liveTimers = {};
 let activeTimerId = null;
@@ -395,6 +395,8 @@ function loadProgress(){
         state.historialCargas = _objOk(parsed.historialCargas);
         state.oneRM = _objOk(parsed.oneRM);
         state.customBenchmarks = Array.isArray(parsed.customBenchmarks) ? parsed.customBenchmarks : [];
+        /* RIR que el alumno marca por ejercicio (alimenta la doble progresión de la semana siguiente) y RIR / dolor por bloque: antes no se guardaban y se perdían al recargar */
+        state.rirEx = _objOk(parsed.rirEx); state.rir = _objOk(parsed.rir); state.dolor = _objOk(parsed.dolor);
         if(parsed.mode === 'complete' || parsed.mode === 'quick') state.mode = parsed.mode;
         if(typeof parsed.currentWeek === 'number' && WEEKS_META[parsed.currentWeek]) state.currentWeek = parsed.currentWeek;
       }
@@ -402,7 +404,7 @@ function loadProgress(){
   }catch(e){
     /* JSON dañado: se conserva una copia intacta (clave ":corrupto") antes de que el próximo guardado la pise, y se arranca limpio */
     try{ if(raw) localStorage.setItem(STORAGE_KEY + ':corrupto', raw); }catch(e2){}
-    state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = [];
+    state.completed = {}; state.fatigue = {}; state.loads = {}; state.notes = {}; state.checkout = {}; state.sleep = {}; state.readinessPain = {}; state.videoLinks = {}; state.sesionNotificada = {}; state.historialCargas = {}; state.oneRM = {}; state.customBenchmarks = []; state.rirEx = {}; state.rir = {}; state.dolor = {};
   }
 }
 let _spT = null, _spDirty = false, _spFallos = 0, _spAvisado = false;
@@ -416,7 +418,7 @@ function _spReintentar(){
   _spT = setTimeout(function(){ try{ _spFlush(); }catch(e){} }, Math.min(15000, 2000 * _spFallos));
 }
 function _spSerialize(){
-  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM, customBenchmarks: state.customBenchmarks });
+  return JSON.stringify({ completed: state.completed, fatigue: state.fatigue, loads: state.loads, notes: state.notes, checkout: state.checkout, sleep: state.sleep, readinessPain: state.readinessPain, videoLinks: state.videoLinks, mode: state.mode, currentWeek: state.currentWeek, sesionNotificada: state.sesionNotificada, historialCargas: state.historialCargas, oneRM: state.oneRM, customBenchmarks: state.customBenchmarks, rirEx: state.rirEx, rir: state.rir, dolor: state.dolor });
 }
 function _spFlush(){
   if(!_spDirty) return;

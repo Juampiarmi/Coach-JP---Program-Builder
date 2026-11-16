@@ -4362,6 +4362,43 @@ function moverDia(desde, dir){ return moverDiaA(desde, desde + dir); }
    visibles que todavía son el default ("DÍA 3" -> "DÍA 2"), jamás un
    nombre que el coach haya escrito a mano. */
 const MAX_DIAS = 7;
+/* El id de cada día es la CLAVE de todo lo que el alumno registra (cargas, series hechas, RIR, notas: getLoadKey = semana|día|bloque|ejercicio|serie). Un id vacío, repetido o con
+   un "|" corrompe esas claves y la Semana 2 deja de encontrar lo que el alumno hizo en la Semana 1. Este helper es el único lugar que decide si un id es válido. */
+function jpIdDiaValido(p, d, nuevo){
+  const limpio = String(nuevo == null ? '' : nuevo).trim().replace(/[^A-Za-z0-9_-]/g, '');
+  if(!limpio) return { ok: false, motivo: 'El ID del día no puede quedar vacío (solo letras, números, guion y guion bajo).' };
+  if(((p && p.dias) || []).some(x => x && x !== d && x.id === limpio)) return { ok: false, motivo: 'Ya hay otro día con ese ID: cada día necesita uno propio.' };
+  return { ok: true, id: limpio };
+}
+/* Revisa la estructura de un plan y devuelve la lista de problemas (vacía = sana): ids de día vacíos / repetidos / con caracteres que rompen las claves, bloques sin id o repetidos
+   dentro de un día, y días sin lista de bloques. No modifica nada: es solo lectura (la usan compile() y los tests). */
+function jpValidarEstructuraPlan(p){
+  const P = [];
+  if(!p || !Array.isArray(p.dias)) return ['el plan no tiene lista de días'];
+  const idsDia = {};
+  p.dias.forEach((d, i) => {
+    const nom = 'Día ' + (i + 1) + (d && d.title ? ' (' + d.title + ')' : '');
+    if(!d){ P.push(nom + ': día vacío'); return; }
+    if(!d.id) P.push(nom + ': sin ID interno');
+    else {
+      if(/[^A-Za-z0-9_-]/.test(String(d.id))) P.push(nom + ': el ID "' + d.id + '" tiene caracteres que rompen el registro de cargas');
+      if(idsDia[d.id]) P.push(nom + ': el ID "' + d.id + '" está repetido con el ' + idsDia[d.id]);
+      else idsDia[d.id] = 'Día ' + (i + 1);
+    }
+    const listas = Array.isArray(d.bloquesPorSemana) ? d.bloquesPorSemana : [d.bloques];
+    listas.forEach((lista, wi) => {
+      if(!Array.isArray(lista)){ P.push(nom + ': la lista de bloques' + (listas.length > 1 ? ' de la semana ' + (wi + 1) : '') + ' está dañada'); return; }
+      const vistos = {};
+      lista.forEach((b, bi) => {
+        if(!b || !b.id){ P.push(nom + ': el bloque ' + (bi + 1) + ' no tiene ID'); return; }
+        if(String(b.id).indexOf('|') >= 0) P.push(nom + ': el ID de bloque "' + b.id + '" contiene "|"');
+        if(vistos[b.id]) P.push(nom + ': el ID de bloque "' + b.id + '" está repetido');
+        vistos[b.id] = 1;
+      });
+    });
+  });
+  return P;
+}
 /* barra de acciones del día: columnas de igual ancho (simétrica); mismos data-copiardia / data-eliminardia de siempre. "Avanzado" ya no es un desplegable suelto sino la
    tercera acción de la misma barra: abre el panel de chip, ID interno y notas extra (su estado se recuerda en S.ui.diaAdv, nada del plan cambia) */
 function jpBarraDia(conAdv){
@@ -7677,7 +7714,7 @@ function renderDay(){
         '<div class="grid g3" style="margin-top:2px">' +
           '<div><label class="lb">Chip (short)</label><input data-df="short" value="' + esc(d.short) + '" placeholder="DÍA 1"></div>' +
           '<div><label class="lb">Etiqueta de pestaña</label><input data-df="label" value="' + esc(d.label) + '" placeholder="Espalda/Bíceps"></div>' +
-          '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1"></div>' +
+          '<div><label class="lb">ID interno</label><input data-df="id" value="' + esc(d.id) + '" placeholder="dia1" maxlength="24" autocomplete="off" title="Es la clave de todo lo que el alumno registra en este día: cambiarlo desconecta su historial de cargas"></div>' +
         '</div>' +
         '<div style="margin-top:10px"><label class="lb">Chips de meta (separados por «;»)</label><input data-df="metaChips" value="' + esc((d.metaChips||[]).join('; ')) + '" placeholder="🎯 Tracción Horizontal; 💪 Ancla Doble"></div>' +
         '<div style="margin-top:10px"><label class="lb">Título del foco técnico</label><input data-df="focusTitle" value="' + esc(d.focusTitle||'') + '"></div>' +
@@ -9419,6 +9456,12 @@ function bindBuilder(){
       const f = t.dataset.df;
       if(f === 'metaChips') d.metaChips = t.value.split(';').map(s => s.trim()).filter(Boolean);
       else if(f === 'cooldown') d.cooldown = t.value.split('\n').map(s => s.trim()).filter(Boolean);
+      else if(f === 'id'){
+        const pId = plan(S.activeId), vId = jpIdDiaValido(pId, d, t.value);
+        t.classList.toggle('jp-invalido', !vId.ok); t.setAttribute('aria-invalid', vId.ok ? 'false' : 'true');
+        if(!vId.ok){ t.title = vId.motivo; return; }      /* mientras no sea válido, el plan conserva el ID anterior */
+        t.title = ''; d.id = vId.id;
+      }
       else d[f] = t.value;
       save();
       /* actualización en vivo de la pestaña sin renderBuilder() completo --
@@ -9516,6 +9559,15 @@ function bindBuilder(){
   });
   panel.addEventListener('change', e => {
     const t = e.target;
+    /* ID interno del día: al salir del campo, si lo escrito no es válido se vuelve al ID vigente y se avisa por qué */
+    if(t.dataset && t.dataset.df === 'id'){
+      const dId = curDay(); if(!dId) return;
+      const vId = jpIdDiaValido(plan(S.activeId), dId, t.value);
+      if(!vId.ok){ toast(vId.motivo, 'warn'); t.value = dId.id; }
+      else t.value = vId.id;
+      t.classList.remove('jp-invalido'); t.setAttribute('aria-invalid', 'false'); t.title = '';
+      return;
+    }
     if(t.type === 'checkbox' && t.dataset.bf){ t.dispatchEvent(new Event('input', {bubbles:true})); return; }
     if(t.dataset.bf === 'exId' || t.dataset.sf === 'exId' || t.dataset.ff === 'exId'){
       const b = findBlock(t.dataset.b); if(!b) return;
@@ -10610,6 +10662,14 @@ function rolPlano(r){
 }
 function compile(ath){
   const p = plan(ath.id);
+  /* estructura sana antes de exportar: un ID de día repetido o con "|" rompe el enlace entre semanas del alumno (solo avisa, no modifica nada del plan) */
+  try{
+    const probl = jpValidarEstructuraPlan(p);
+    if(probl.length){
+      console.warn('[Plan] estructura con problemas en ' + fullName(ath) + ':\n - ' + probl.join('\n - '));
+      if(!window.__jpAvisoEstructura || window.__jpAvisoEstructura !== ath.id){ window.__jpAvisoEstructura = ath.id; try{ toast('⚠️ El plan de ' + fullName(ath) + ' tiene problemas de estructura (' + probl.length + '): revisá la consola', 'warn'); }catch(eT){} }
+    }
+  }catch(eV){ console.warn('validar estructura', eV); }
   const cfg = buildProgramConfig(ath);
   const M = p.meta;
   const nombre = fullName(ath);
@@ -35063,7 +35123,11 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       ath.freq = String(pl.sesiones.length);
       ampliado = pl.sesiones.length;
     }
-    while(p.dias.length < pl.sesiones.length) p.dias.push(newDay(p.dias.length));
+    while(p.dias.length < pl.sesiones.length){
+      const ndI = newDay(p.dias.length), usadosI = new Set(p.dias.map(x => x && x.id));
+      let kI = p.dias.length + 1; while(usadosI.has('dia' + kI)) kI++;
+      ndI.id = 'dia' + kI; p.dias.push(ndI);
+    }
 
     var total = 0, notas = [], vinculados = 0, sinVideo = [];
     pl.sesiones.forEach(function(s, i){

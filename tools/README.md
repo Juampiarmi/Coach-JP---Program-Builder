@@ -33,7 +33,7 @@ El orden de los bloques es el orden de los `@@include` en `src/alumno/index.html
 # editar archivos en src/ ...
 node tools/build.js            # regenera index.html
 node tools/build.js --check    # falla si index.html no coincide con src/ (no escribe nada)
-node tools/check-alumno.js     # sintaxis de cada JS del alumno + TEMPLATE_HTML coherente
+node tools/check-alumno.js     # sintaxis de cada JS del alumno + TEMPLATE_HTML coherente + la sesión de audio nunca es 'playback'
 ```
 
 Después, probar (`tests/parsers/runner.html`) y commitear **`src/` e `index.html` juntos**.
