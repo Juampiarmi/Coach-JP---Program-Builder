@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 const vm = require('vm');
+const { expandirEstilos } = require('./estilos.js');
 
 const RAIZ = path.resolve(__dirname, '..');
 const DIR = path.join(RAIZ, 'src', 'alumno');
@@ -49,6 +50,16 @@ let nJs = 0, nCss = 0;
   recorrer(DIR);
 })();
 
+/* 2c · estilos de tarjeta: el CSS compartido produce los 4 estilos y en index.html no queda ninguna directiva ni selector "@est" sin expandir */
+(function revisarEstilos(){
+  const css = fs.readFileSync(path.join(RAIZ, 'src', 'shared', 'tarjeta-ejercicio.css'), 'utf8');
+  const sal = expandirEstilos(css);
+  [1, 2, 3, 4].forEach(n => { if(sal.indexOf('[data-jp-estilo="' + n + '"]') < 0) falla('shared/tarjeta-ejercicio.css: no genera reglas para el estilo ' + n); });
+  if(/@est/.test(sal)) falla('shared/tarjeta-ejercicio.css: quedó un selector @est sin expandir');
+  const html = fs.readFileSync(path.join(RAIZ, 'index.html'), 'utf8');
+  if(/@est[(\s]/.test(html) || /@@estilo/.test(html)) falla('index.html: quedó una directiva o un selector @est sin expandir (¿falta correr node tools/build.js?)');
+})();
+
 /* 3 · el TEMPLATE_HTML de index.html == lo que dicen los archivos */
 function plantillaDe(html){
   const ini = html.indexOf('const TEMPLATE_HTML = `');
@@ -59,7 +70,9 @@ function plantillaDe(html){
 function expandirSinEscapar(rel, pila){
   const abs = path.join(path.join(RAIZ, 'src'), rel);
   const t = fs.readFileSync(abs, 'utf8').replace(/\r\n/g, '\n');
-  return t.replace(/^@@include ([^\s@]+)@@\n/gm, (m, r) => expandirSinEscapar(r)).replace(/@@include ([^\s@]+)@@/g, (m, r) => expandirSinEscapar(r));
+  const estilo = r => expandirEstilos(fs.readFileSync(path.join(path.join(RAIZ, 'src'), r), 'utf8'));
+  return t.replace(/^@@estilo ([^\s@]+)@@\n/gm, (m, r) => estilo(r)).replace(/@@estilo ([^\s@]+)@@/g, (m, r) => estilo(r))
+    .replace(/^@@include ([^\s@]+)@@\n/gm, (m, r) => expandirSinEscapar(r)).replace(/@@include ([^\s@]+)@@/g, (m, r) => expandirSinEscapar(r));
 }
 const salida = fs.readFileSync(path.join(RAIZ, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 let evaluada = '';

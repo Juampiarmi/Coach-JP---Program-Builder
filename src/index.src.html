@@ -4722,7 +4722,8 @@ function abrirModalCopiarPlan(){
           '<option value="">— Elegí un alumno/a —</option>' +
           otros.map(a => '<option value="' + esc(a.id) + '">' + esc(fullName(a)) + '</option>').join('') +
         '</select>' +
-        '<div class="alert warn" style="margin-top:14px"><span class="ic">⚠️</span><div><b>La planificación existente en el alumno destino será reemplazada por completo.</b> Esta acción no se puede deshacer.</div></div>' +
+        '<div id="cpAviso"></div>' +
+        '<div class="alert warn" style="margin-top:14px"><span class="ic">⚠️</span><div><b>La planificación existente en el alumno destino será reemplazada por completo</b> (días, semanas y modalidad). Si te equivocás, el panel tiene "Deshacer" apenas termina la copia.</div></div>' +
         '<div class="row" style="margin-top:16px;gap:8px">' +
           '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cancelar</button>' +
           '<button type="button" class="btn gold" id="cpConfirmar" style="flex:1" disabled>Confirmar y sobreescribir</button>' +
@@ -4733,13 +4734,21 @@ function abrirModalCopiarPlan(){
   document.body.style.overflow = 'hidden';
   const sel = bg.querySelector('#cpDestino');
   const btnConfirmar = bg.querySelector('#cpConfirmar');
-  sel.addEventListener('change', function(){ btnConfirmar.disabled = !sel.value; });
+  const avisoEl = bg.querySelector('#cpAviso');
+  sel.addEventListener('change', function(){
+    btnConfirmar.disabled = !sel.value;
+    const pDx = sel.value ? plan(sel.value) : null;
+    avisoEl.innerHTML = (pDx && esPlanCFActivo(pOrigen) !== esPlanCFActivo(pDx))
+      ? '<div class="alert info" style="margin-top:12px"><span class="ic">ℹ️</span><div><b>El destino cambia de modalidad.</b> Pasa de ' + (esPlanCFActivo(pDx) ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + ' a ' + (esPlanCFActivo(pOrigen) ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + ' porque el plan se copia completo.</div></div>' : '';
+  });
   bg.addEventListener('click', function(e){
     if(e.target === bg || e.target.closest('[data-cpcancel]')){ cerrarModalCopiarPlan(); return; }
     if(e.target.closest('#cpConfirmar')){
       if(!sel.value) return;
       ejecutarCopiaPlan(athOrigen.id, sel.value);
     }
+    const bu = e.target.closest('[data-cpundo]');
+    if(bu){ if(deshacerCopiaPlan(bu.dataset.cpundo)) cerrarModalCopiarPlan(); return; }
     if(e.target.closest('[data-cpirdestino]')){
       const destId = e.target.closest('[data-cpirdestino]').dataset.cpirdestino;
       cerrarModalCopiarPlan();
@@ -4747,35 +4756,100 @@ function abrirModalCopiarPlan(){
     }
   });
 }
+/* ---------- helpers compartidos por las tres copias (día · semana · plan) ---------- */
+/* campos del plan que definen la MODALIDAD y el texto del mesociclo (no la identidad del alumno): el destino los hereda cuando se copia el plan completo.
+   Antes se dejaban los del destino y un plan de CrossFit copiado a un alumno de Fuerza quedaba en modalidad Fuerza: las 4 semanas independientes se ignoraban y solo se veía una. */
+const JP_META_PLAN = ['mesoDisc', 'mesoNivel', 'mesoName', 'mesoObjetivo', 'mesoTexto', 'mesoFecha', 'heroTitle', 'heroEm', 'heroSub'];
+/* campos de una semana del mesociclo que viajan con "copiar semana" (el nombre, el chip y el ícono de la semana destino se conservan) */
+const JP_CAMPOS_SEMANA = ['objetivo', 'note', 'phase', 'rpe', 'deload', 'fail', 'amrapMinutes', 'hyroxNote'];
+/* en CrossFit d.bloques es un puntero a la semana activa: antes de leer un plan como origen (o de escribir en uno activo) se confirman todas las semanas */
+function jpSincronizarCF(p, id){
+  if(p && id === S.activeId && esPlanCFActivo(p)){ try{ sincronizarBloquesSemana(p); }catch(e){} }
+}
+/* ids de bloque nuevos: un solo mapa por copia, así el mismo bloque conserva el mismo id nuevo en todas las semanas */
+function jpRenovarIdsBloques(listas, mapa){
+  const vistos = new Set();
+  (listas || []).forEach(arr => {
+    if(!Array.isArray(arr) || vistos.has(arr)) return; vistos.add(arr);
+    arr.forEach(b => {
+      if(!b || typeof b !== 'object') return;
+      const viejo = b.id;
+      if(viejo != null && mapa[viejo]){ b.id = mapa[viejo]; return; }
+      const nid = uid('b'); if(viejo != null) mapa[viejo] = nid; b.id = nid;
+    });
+  });
+}
+function jpListasDeDia(d){ return [d.bloques].concat(Array.isArray(d.bloquesPorSemana) ? d.bloquesPorSemana : []); }
+function jpIdDiaLibre(p, desde){
+  const usados = new Set((p.dias || []).map(x => x && x.id)); let k = desde + 1; while(usados.has('dia' + k)) k++; return 'dia' + k;
+}
+const JP_COPIA_UNDO = {};      /* última copia de plan por alumno destino: permite deshacerla mientras el panel está abierto */
 function ejecutarCopiaPlan(origenId, destinoId){
   const pOrigen = plan(origenId);
   const athDestino = getAth(destinoId);
   const pDestino = plan(destinoId);
-  if(!pOrigen || !athDestino || !pDestino) return;
-  /* estructura EXACTA del origen (días/bloques/ejercicios/videos
-     manuales/overrides/objetivos/tips/ondulación) -- deep clone real,
-     cero referencias compartidas con el origen. */
-  pDestino.dias = clonarEstructuraProfunda(pOrigen.dias);
-  pDestino.meso = clonarEstructuraProfunda(pOrigen.meso);
+  if(!pOrigen || !athDestino || !pDestino){ toast('No se pudo copiar: faltan datos del origen o del destino', 'err'); return false; }
+  if(origenId === destinoId){ toast('El destino es el mismo alumno/a: elegí otro', 'warn'); return false; }
+  jpSincronizarCF(pOrigen, origenId);
+  jpSincronizarCF(pDestino, destinoId);
+  const cfO = esPlanCFActivo(pOrigen);
+  /* se arma TODO en variables locales y recién al final se asigna: si algo sale mal, el destino queda exactamente como estaba */
+  const dias = clonarEstructuraProfunda(pOrigen.dias);
+  const mapa = {};
+  dias.forEach(d => { jpRenovarIdsBloques(jpListasDeDia(d), mapa); });
+  dias.forEach(d => {
+    if(cfO){ const ps = asegurarBloquesPorSemana(d); d.bloques = ps[0]; }      /* el puntero apunta a la semana 1, igual que un día recién abierto */
+    else { delete d.bloquesPorSemana; if(!Array.isArray(d.bloques)) d.bloques = []; }
+  });
+  const problemas = jpValidarEstructuraPlan({ dias: dias });
+  if(problemas.length){ console.warn('[Copia de plan] estructura inválida:\n - ' + problemas.join('\n - ')); toast('No se copió: el plan de origen tiene problemas de estructura (' + problemas[0] + ')', 'err'); return false; }
+  const meso = clonarEstructuraProfunda(pOrigen.meso);
+  /* copia de seguridad en memoria del plan que se va a reemplazar */
+  JP_COPIA_UNDO[destinoId] = clonarEstructuraProfunda({ dias: pDestino.dias, meso: pDestino.meso, estado: pDestino.estado, vigenciaDesde: pDestino.vigenciaDesde, vigenciaHasta: pDestino.vigenciaHasta,
+    meta: JP_META_PLAN.reduce((o, k) => { if(pDestino.meta && pDestino.meta[k] !== undefined) o[k] = pDestino.meta[k]; return o; }, {}), tenia: JP_META_PLAN.filter(k => pDestino.meta && pDestino.meta[k] !== undefined) });
+  pDestino.dias = dias;
+  pDestino.meso = meso;
   pDestino.estado = pOrigen.estado;
   pDestino.vigenciaDesde = pOrigen.vigenciaDesde;
   pDestino.vigenciaHasta = pOrigen.vigenciaHasta;
-  /* NUNCA se toca: athDestino.id/nombre/apellido/freq/etc (identidad
-     propia, ver S.athletes) ni pDestino.meta (branding con el nombre
-     del destino ya insertado). */
-  save();
+  /* modalidad y textos del mesociclo: los hereda el destino. La identidad (S.athletes, footer2 con su nombre, coachName...) NUNCA se toca. */
+  pDestino.meta = pDestino.meta || {};
+  JP_META_PLAN.forEach(k => {
+    if(pOrigen.meta && pOrigen.meta[k] !== undefined) pDestino.meta[k] = clonarEstructuraProfunda(pOrigen.meta[k]);
+    else if(k === 'mesoDisc' || k === 'mesoNivel' || k === 'mesoObjetivo' || k === 'mesoTexto' || k === 'mesoFecha') delete pDestino.meta[k];
+  });
+  if(destinoId === S.activeId){ S.ui.cfWeek = 0; S.ui.day = 0; }
+  guardarAhora();
   renderAthletes();
   const nombreDestino = fullName(athDestino);
+  const nBl = dias.reduce((s, d) => s + (cfO ? (asegurarBloquesPorSemana(d)[0] || []).length : (d.bloques || []).length), 0);
+  const nTodas = cfO ? dias.reduce((s, d) => s + asegurarBloquesPorSemana(d).reduce((q, arr) => q + (arr || []).length, 0), 0) : nBl;
   const body = document.getElementById('cpModalBody');
   if(body){
     body.innerHTML =
-      '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + pOrigen.dias.length + ' días, ' + pOrigen.dias.reduce((s,d)=>s+(d.bloques||[]).length,0) + ' bloques.</div></div>' +
-      '<div class="row" style="margin-top:16px;gap:8px">' +
+      '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + dias.length + ' días' +
+        (cfO ? ', 4 semanas independientes y ' + nTodas + ' bloques en total' : ' y ' + nBl + ' bloques') + '. La modalidad del plan pasó a ' + (cfO ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + '.</div></div>' +
+      '<div class="row" style="margin-top:16px;gap:8px;flex-wrap:wrap">' +
+        '<button type="button" class="btn ghost" data-cpundo="' + esc(destinoId) + '" style="flex:1 1 100%">↩ Deshacer esta copia</button>' +
         '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cerrar</button>' +
         '<button type="button" class="btn gold" data-cpirdestino="' + esc(destinoId) + '" style="flex:1">Ir al perfil de ' + esc(nombreDestino) + '</button>' +
       '</div>';
   }
   toast('✅ Planificación copiada con éxito a ' + nombreDestino);
+  return true;
+}
+/* deshace la última copia de plan hecha sobre ese alumno (vuelve a lo que tenía: días, semanas, estado y modalidad) */
+function deshacerCopiaPlan(destinoId){
+  const prev = JP_COPIA_UNDO[destinoId], pD = plan(destinoId);
+  if(!prev || !pD){ toast('No hay una copia reciente para deshacer', 'warn'); return false; }
+  pD.dias = prev.dias; pD.meso = prev.meso; pD.estado = prev.estado; pD.vigenciaDesde = prev.vigenciaDesde; pD.vigenciaHasta = prev.vigenciaHasta;
+  pD.meta = pD.meta || {};
+  JP_META_PLAN.forEach(k => { if(prev.tenia.indexOf(k) >= 0) pD.meta[k] = prev.meta[k]; else delete pD.meta[k]; });
+  delete JP_COPIA_UNDO[destinoId];
+  guardarAhora(); renderAthletes();
+  if(destinoId === S.activeId) renderBuilder();
+  toast('↩ Copia deshecha: el plan de ' + fullName(getAth(destinoId)) + ' volvió a como estaba');
+  return true;
 }
 /* ============================================================
    directiva maestra ("Copiar día completo entre alumnos") -- transfiere
@@ -4984,6 +5058,176 @@ function ejecutarCopiaDia(origenId, diaIdx, destId, destSel, opts){
   try{ renderBuilder(); }catch(e){}
   renderAthletes();
   toast('✓ ' + dO.short + (cfO ? ' · S' + (semO + 1) : '') + ' → ' + (mismoPlan ? '' : fullName(athD) + ' · ') + etiquetaDest + ' copiado');
+  return true;
+}
+
+/* ============================================================
+   COPIAR SEMANA (CrossFit & Hyrox) -- clona UNA semana completa (todos sus días y todos sus bloques, más el objetivo / fase / RPE de la semana) hacia otra semana del
+   mismo alumno/a o hacia cualquier semana de otro alumno/a. Cada semana de CrossFit es independiente (d.bloquesPorSemana[0..3]), así que se reemplazan SOLO los bloques de
+   la semana destino: las otras 3 semanas del destino no se tocan. Los días del destino conservan su identidad (id, rótulo, título); si el origen tiene más días, se crean los que
+   faltan (con id libre). Los bloques llegan con ids nuevos. Se arma todo aparte y recién al final se escribe: si algo falla, el destino queda como estaba.
+   ============================================================ */
+function cerrarModalCopiarSemana(){
+  const bg = document.getElementById('mCopiarSemBg');
+  if(bg) bg.remove();
+  document.body.style.overflow = '';
+}
+function jpResumenSemanaCF(p, sem){
+  let dias = 0, bloques = 0;
+  (p.dias || []).forEach(d => { const n = (asegurarBloquesPorSemana(d)[sem] || []).length; if(n){ dias++; bloques += n; } });
+  return { dias: dias, bloques: bloques };
+}
+function abrirModalCopiarSemana(){
+  const athO = active(), pO = plan(S.activeId);
+  if(!athO || !pO){ toast('Seleccioná un alumno/a primero', 'err'); return; }
+  if(!esPlanCFActivo(pO)){
+    toast('En Fuerza / Hipertrofia las 4 semanas comparten la misma estructura de bloques: para llevarla a otro alumno/a usá "Copiar plan completo" o "Copiar día".', 'warn');
+    return;
+  }
+  jpSincronizarCF(pO, S.activeId);
+  cerrarModalCopiarSemana();
+  const otros = S.athletes.filter(a => a.id !== athO.id).sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'));
+  const semAct = activeCfWeek();
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg on'; bg.id = 'mCopiarSemBg';
+  bg.innerHTML =
+    '<div class="modal cd-modal">' +
+      '<div class="modal-h"><h3>// COPIAR SEMANA</h3><div class="spacer"></div><button class="icon-btn" data-csc="1">✕</button></div>' +
+      '<div class="modal-b">' +
+        '<div class="cd-origen"><span class="k">Origen · solo lectura</span><span class="v">' + esc(fullName(athO)) + '</span><span class="s" id="csOrigenTxt"></span></div>' +
+        '<div class="cd-f"><label class="lb">Semana de origen</label><select id="csSemO">' +
+          [0, 1, 2, 3].map(i => '<option value="' + i + '"' + (i === semAct ? ' selected' : '') + '>Semana ' + (i + 1) + (pO.meso && pO.meso[i] && pO.meso[i].phase ? ' · ' + esc(String(pO.meso[i].phase).slice(0, 28)) : '') + '</option>').join('') +
+        '</select></div>' +
+        '<div class="cd-f"><label class="lb">Alumno/a destino</label>' +
+          (otros.length > 3 ? '<input type="text" id="csBuscar" placeholder="Buscar alumno/a…" autocomplete="off" style="margin-bottom:6px">' : '') +
+          '<select id="csAlumno"></select></div>' +
+        '<div class="cd-f"><label class="lb">Semana destino</label><select id="csSemD"></select></div>' +
+        '<div class="cd-f"><label class="chk"><input type="checkbox" id="csNotas" checked> Incluir el objetivo, la fase y el RPE de la semana</label>' +
+          '<label class="chk"><input type="checkbox" id="csDias" checked> Crear los días que le falten al destino</label></div>' +
+        '<div id="csInfo"></div>' +
+        '<div class="row" style="margin-top:14px;gap:8px">' +
+          '<button type="button" class="btn ghost" data-csc="1" style="flex:1">Cancelar</button>' +
+          '<button type="button" class="btn gold" id="csConfirmar" style="flex:1" disabled>📋 COPIAR SEMANA</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(bg);
+  document.body.style.overflow = 'hidden';
+  const $s = id => bg.querySelector(id);
+  const selO = $s('#csSemO'), selA = $s('#csAlumno'), selD = $s('#csSemD'), info = $s('#csInfo'), btn = $s('#csConfirmar'), buscar = $s('#csBuscar');
+  const esMismo = () => selA.value === athO.id;
+  function pintarOrigen(){
+    const r = jpResumenSemanaCF(pO, parseInt(selO.value, 10));
+    $s('#csOrigenTxt').textContent = 'Semana ' + (parseInt(selO.value, 10) + 1) + ' · ' + r.dias + ' día' + (r.dias === 1 ? '' : 's') + ' con contenido · ' + r.bloques + ' bloque' + (r.bloques === 1 ? '' : 's');
+  }
+  function pintarAlumnos(){
+    const q = buscar ? norm(buscar.value) : '';
+    const lista = otros.filter(a => !q || norm(fullName(a)).indexOf(q) >= 0);
+    const prev = selA.value || athO.id;
+    selA.innerHTML = '<option value="' + esc(athO.id) + '"' + (prev === athO.id ? ' selected' : '') + '>★ Este alumno/a — ' + esc(fullName(athO)) + ' (otra semana)</option>' +
+      (lista.length ? '<optgroup label="Otros alumnos/as">' + lista.map(a => '<option value="' + esc(a.id) + '"' + (a.id === prev ? ' selected' : '') + '>' + esc(fullName(a)) + '</option>').join('') + '</optgroup>' : '');
+    pintarSemanasDestino();
+  }
+  function pintarSemanasDestino(){
+    const pD = plan(selA.value), cfD = esPlanCFActivo(pD);
+    const prev = selD.value;
+    selD.innerHTML = '<option value="">— Elegí la semana destino —</option>' + [0, 1, 2, 3].map(i => {
+      const r = cfD ? jpResumenSemanaCF(pD, i) : { bloques: 0 };
+      const esOrigen = esMismo() && i === parseInt(selO.value, 10);
+      return '<option value="' + i + '"' + (esOrigen ? ' disabled' : '') + '>Semana ' + (i + 1) + (r.bloques ? ' (' + r.bloques + ' bloques)' : ' (vacía)') + (esOrigen ? ' — es el origen' : '') + '</option>';
+    }).join('');
+    if(prev && selD.querySelector('option[value="' + prev + '"]:not([disabled])')) selD.value = prev;
+    pintarInfo();
+  }
+  function pintarInfo(){
+    const id = selA.value, pD = plan(id), cfD = esPlanCFActivo(pD), v = selD.value;
+    let h = '';
+    if(!cfD){
+      h += '<div class="alert danger"><span class="ic">🚫</span><div><b>El alumno/a destino no está en modalidad CrossFit &amp; Hyrox.</b> La copia de semana necesita las 4 semanas independientes: cambiá su modalidad en el Builder o usá "Copiar día" / "Copiar plan completo".</div></div>';
+    } else if(v !== ''){
+      const n = jpResumenSemanaCF(pD, parseInt(v, 10));
+      if(n.bloques) h += '<div class="alert warn"><span class="ic">⚠️</span><div><b>La semana destino ya tiene ' + n.bloques + ' bloque' + (n.bloques === 1 ? '' : 's') + ' en ' + n.dias + ' día' + (n.dias === 1 ? '' : 's') + '.</b> Se reemplazará solo esa semana y se pedirá confirmación. Las otras 3 semanas del destino no se tocan.</div></div>';
+      const nO = pO.dias.length;
+      if(nO > pD.dias.length) h += '<div class="alert info"><span class="ic">ℹ️</span><div>El origen tiene ' + nO + ' días y el destino ' + pD.dias.length + ': ' + ($s('#csDias').checked ? 'se crean los que faltan.' : 'los días de más no se copian.') + '</div></div>';
+    }
+    info.innerHTML = h;
+    btn.disabled = !(cfD && v !== '');
+  }
+  if(buscar) buscar.addEventListener('input', pintarAlumnos);
+  selO.addEventListener('change', () => { pintarOrigen(); pintarSemanasDestino(); });
+  selA.addEventListener('change', pintarSemanasDestino);
+  selD.addEventListener('change', pintarInfo);
+  $s('#csDias').addEventListener('change', pintarInfo);
+  bg.addEventListener('click', e => {
+    if(e.target === bg || e.target.closest('[data-csc]')){ cerrarModalCopiarSemana(); return; }
+    if(e.target.closest('#csConfirmar') && !btn.disabled){
+      const ok = ejecutarCopiaSemana(athO.id, parseInt(selO.value, 10), selA.value, parseInt(selD.value, 10), { notas: $s('#csNotas').checked, crearDias: $s('#csDias').checked });
+      if(ok) cerrarModalCopiarSemana();
+    }
+  });
+  pintarOrigen();
+  pintarAlumnos();
+}
+function ejecutarCopiaSemana(origenId, semO, destId, semD, opts){
+  opts = opts || {};
+  const pO = plan(origenId), pD = plan(destId), athD = getAth(destId);
+  if(!pO || !pD || !athD){ toast('No se pudo copiar: faltan datos del origen o del destino', 'err'); return false; }
+  if(!esPlanCFActivo(pO)){ toast('La copia de semana es de CrossFit & Hyrox: en Fuerza / Hipertrofia usá "Copiar plan completo" o "Copiar día"', 'warn'); return false; }
+  if(!esPlanCFActivo(pD)){ toast('El alumno/a destino no está en modalidad CrossFit & Hyrox: cambiá su modalidad o usá "Copiar día" / "Copiar plan completo"', 'warn'); return false; }
+  const valida = n => Number.isInteger(n) && n >= 0 && n <= 3;
+  if(!valida(semO) || !valida(semD)){ toast('Elegí una semana de origen y una de destino (1 a 4)', 'err'); return false; }
+  const mismo = origenId === destId;
+  if(mismo && semO === semD){ toast('La semana destino es la misma que la de origen: elegí otra', 'warn'); return false; }
+  jpSincronizarCF(pO, origenId);
+  jpSincronizarCF(pD, destId);
+  const crear = opts.crearDias !== false, copiarNotas = opts.notas !== false;
+  const nO = pO.dias.length;
+  const mapa = {};
+  /* 1) se arma en variables locales: bloques nuevos por día de origen */
+  const bloquesPorDia = pO.dias.map(d => { const arr = clonarEstructuraProfunda(asegurarBloquesPorSemana(d)[semO] || []); jpRenovarIdsBloques([arr], mapa); return arr; });
+  const totalBl = bloquesPorDia.reduce((s, a) => s + a.length, 0);
+  if(!totalBl){ toast('La Semana ' + (semO + 1) + ' de origen no tiene bloques para copiar', 'warn'); return false; }
+  const faltan = Math.max(0, nO - pD.dias.length);
+  if(faltan && crear && pD.dias.length + faltan > MAX_DIAS){ toast('El destino quedaría con más de ' + MAX_DIAS + ' días: no se puede crear la cantidad que falta', 'err'); return false; }
+  const prevBl = jpResumenSemanaCF(pD, semD).bloques;
+  if(prevBl && !confirm('La Semana ' + (semD + 1) + ' de ' + fullName(athD) + ' ya contiene ' + prevBl + ' bloque' + (prevBl === 1 ? '' : 's') + '.\n\n¿Reemplazarla por completo con la Semana ' + (semO + 1) + ' copiada?')) return false;
+  /* 2) días nuevos del destino (si hacen falta), todavía sin enganchar */
+  const nuevos = [];
+  if(faltan && crear){
+    const tmp = { dias: pD.dias.concat() };
+    for(let i = pD.dias.length; i < nO; i++){
+      const dO = pO.dias[i], copia = newDay(i);
+      ['title', 'label', 'briefing', 'summary', 'focusTitle', 'focusText', 'optional'].forEach(k => { if(dO[k] !== undefined) copia[k] = clonarEstructuraProfunda(dO[k]); });
+      ['metaChips', 'cooldown'].forEach(k => { copia[k] = Array.isArray(dO[k]) ? dO[k].slice() : []; });
+      copia.id = jpIdDiaLibre(tmp, i); copia.short = 'DÍA ' + (i + 1);
+      if(/^Sesi[oó]n\s*\d+$/i.test(copia.label || '')) copia.label = 'Sesión ' + (i + 1);
+      if(/^D[IÍ]A\s*\d+$/i.test(copia.title || '')) copia.title = 'Día ' + (i + 1);
+      copia.bloquesPorSemana = [[], [], [], []]; copia.bloques = copia.bloquesPorSemana[0];
+      tmp.dias.push(copia); nuevos.push(copia);
+    }
+  }
+  /* 3) se escribe: los días existentes reciben los bloques de su semana; los nuevos, los suyos */
+  const activo = (destId === S.activeId);
+  pD.dias.concat(nuevos).forEach((dd, i) => {
+    if(i >= nO) return;
+    const ps = asegurarBloquesPorSemana(dd);
+    ps[semD] = bloquesPorDia[i];
+    if(activo && semD === activeCfWeek()) dd.bloques = ps[semD];
+  });
+  nuevos.forEach(n => pD.dias.push(n));
+  if(copiarNotas){
+    pD.meso = Array.isArray(pD.meso) && pD.meso.length ? pD.meso : clonarEstructuraProfunda(pO.meso);
+    while(pD.meso.length <= semD) pD.meso.push(clonarEstructuraProfunda(pO.meso[pD.meso.length] || pO.meso[semO] || {}));
+    const wO = (pO.meso && pO.meso[semO]) || {}, wD = pD.meso[semD];
+    JP_CAMPOS_SEMANA.forEach(k => { if(wO[k] !== undefined) wD[k] = clonarEstructuraProfunda(wO[k]); else delete wD[k]; });
+  }
+  const problemas = jpValidarEstructuraPlan(pD);
+  if(problemas.length) console.warn('[Copia de semana] el destino quedó con avisos de estructura:\n - ' + problemas.join('\n - '));
+  if(mismo){ S.ui.cfWeek = semD; }
+  guardarAhora();
+  try{ renderBuilder(); }catch(e){}
+  renderAthletes();
+  toast('✓ Semana ' + (semO + 1) + ' → ' + (mismo ? '' : fullName(athD) + ' · ') + 'Semana ' + (semD + 1) + ' copiada (' + totalBl + ' bloques' + (nuevos.length ? ', ' + nuevos.length + ' día' + (nuevos.length === 1 ? '' : 's') + ' nuevo' + (nuevos.length === 1 ? '' : 's') : '') + ')');
   return true;
 }
 function sbFmtToolbar(bId){
@@ -7475,10 +7719,11 @@ function renderBuilder(){
       /* directiva maestra ("Clonación completa de planificación entre
          alumnos") -- disparador del modal de copia, estilo celeste
          táctico pedido explícitamente. */
-      '<button type="button" class="btn sm" id="btnCopiarPlan" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 Copiar plan a otro alumno</button>' +
+      '<button type="button" class="btn sm" id="btnCopiarPlan" title="Copia el plan completo (todos los días, las 4 semanas y la modalidad) a otro alumno/a" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR PLAN COMPLETO</button>' +
       /* directiva maestra ("Copiar día completo entre alumnos") -- mismo
          estilo celeste táctico, junto al botón de copiar el plan entero. */
-      '<button type="button" class="btn sm" id="btnCopiarDia" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR DÍA A OTRO ALUMNO</button>' +
+      '<button type="button" class="btn sm" id="btnCopiarSemana" title="CrossFit &amp; Hyrox: copia una semana completa (todos sus días y bloques) a otra semana o a otro alumno/a" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR SEMANA</button>' +
+      '<button type="button" class="btn sm" id="btnCopiarDia" title="Copia el día que estás editando a otro día o a otro alumno/a" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR DÍA</button>' +
     '</div>';
 
   /* ---------- Mesociclo (WEEKS_META) ---------- */
@@ -7638,6 +7883,7 @@ function renderDay(){
             (i===cfWkActiva?'✓ ':'') + esc(w.short || ('S'+(i+1))) + '</button>'
         ).join('') +
         (cfWkActiva > 0 ? '<button type="button" class="btn sm ghost" data-cfclonewk="1" title="Copia todos los días y bloques de la semana anterior en la semana activa">📋 Clonar semana anterior</button>' : '') +
+        '<button type="button" class="btn sm ghost" data-cfcopiarsemana="1" title="Copia esta semana completa (todos los días y bloques) a otra semana o a otro alumno/a">📋 Copiar esta semana</button>' +
         (cfWkActiva !== 3 ? '<button type="button" class="btn sm ghost" data-cfdeload="1" title="Genera la Semana 4 (Descarga) de este día a partir de la semana activa: -1 serie por ejercicio, RIR 3-4, nombres intactos">🍃 Generar Deload S4</button>' : '') +
       '</div>' +
       '<div class="hint" style="margin-top:6px">Cada semana de CrossFit &amp; Hyrox es una prescripción 100% independiente -- editar acá nunca modifica el contenido de otra semana. Una semana nunca prescripta arranca en blanco, nunca copia otra semana.</div>' +
@@ -9404,6 +9650,7 @@ function bindBuilder(){
   $('#bHead').addEventListener('click', e => {
     if(e.target.closest('#btnCopiarPlan')){ abrirModalCopiarPlan(); return; }
     if(e.target.closest('#btnCopiarDia')){ abrirModalCopiarDia(); return; }
+    if(e.target.closest('#btnCopiarSemana')){ abrirModalCopiarSemana(); return; }
     if(!e.target.closest('#btnPlanEstado')) return;
     const ath = active();
     const p = plan(S.activeId); if(!p) return;
@@ -9652,6 +9899,7 @@ function bindBuilder(){
     if(t.dataset.cfobjia !== undefined){ generarObjetivoSemanaCF(t); return; }
     if(t.dataset.sbwk !== undefined){ S.ui = S.ui || {}; S.ui.week = parseInt(t.dataset.sbwk, 10) || 0; save(); renderBuilder(); return; }
     if(t.dataset.cfclonewk !== undefined){ clonarSemanaAnteriorCF(); return; }
+    if(t.dataset.cfcopiarsemana !== undefined){ abrirModalCopiarSemana(); return; }
     if(t.dataset.cfdeload !== undefined){ generarDeloadS4CF(); return; }
     if(t.dataset.addex){ addSubEx(t.dataset.addex, $('[data-pick="' + t.dataset.addex + '"]').value); return; }
     if(t.dataset.bai){ nombrarBloqueConIA(t.dataset.bai, t); return; }
@@ -10477,6 +10725,8 @@ function buildProgramConfig(ath){
     mesoNivel: (p.meta && p.meta.mesoNivel) || '',
     disciplina: (p.meta && p.meta.mesoDisc) || '',
     modoSemanal: !!discCF,
+    /* estilo de tarjeta de ejercicio que el coach fijó en el Showroom (1 Clean Tech · 2 High-Performance · 3 Glass · 4 Compacto de élite) */
+    estiloTarjeta: (function(){ const n = parseInt(S.ui && S.ui.estiloTarjeta, 10); return (n >= 1 && n <= 4) ? n : 2; })(),
     /* directiva ("Estrategia & Enfoque de la Semana") -- campo nuevo,
        aditivo, propio de CrossFit (p.meta.cfEstrategia, ver módulo
        "Athlete Tactical Profile" del Builder): reemplaza en la Ficha
@@ -50753,6 +51003,14 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 <style id="jpLiftCss">
 @@include coach/estilos/lift-estetico.css@@
 </style>
+<style id="jpShowroomCss">
+@@include coach/estilos/showroom.css@@
+@@estilo shared/tarjeta-ejercicio.css@@
+@@estilo coach/estilos/estilo-bloques.css@@
+</style>
+<script>
+@@include coach/showroom.js@@
+</script>
 <script>
 (function(){
   'use strict';

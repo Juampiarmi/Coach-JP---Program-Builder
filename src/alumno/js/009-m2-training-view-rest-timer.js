@@ -898,6 +898,24 @@
       [0, 1, 2, 3].map(function(n){ return '<button type="button" class="jp-qc-rirb' + (sel === n ? ' on' : '') + '" data-rirx="' + n + '" aria-pressed="' + (sel === n ? 'true' : 'false') + '">' + (n === 3 ? '3+' : n) + '</button>'; }).join('') +
       '<span class="jp-qc-rir-h">reps que te sobraron</span></div>';
   }
+  /* COACHING TIPS del ejercicio (Set-up · Ejecución · Cuidado): salen de las pautas del bloque; en un biset / triset, solo las líneas de ESTE ejercicio (A1 · ..., A2 · ...) */
+  function qrTipsHtml(c, e, i){
+    var lineas = String(c.tp || '').split(/\n+|<br\s*\/?>/i).map(qrPlano).filter(Boolean);
+    var L = regLetra(c, i), multi = c.ex && c.ex.length > 1;
+    var G = { su: '', ej: '', cu: '' };
+    lineas.forEach(function(l){
+      var m = /^(?:([A-F]\d)\s*\u00b7\s*)?([^:]{2,40}):\s*(.+)$/.exec(l); if(!m) return;
+      if(multi && (!m[1] || m[1].toUpperCase() !== L)) return;
+      var et = m[2].toUpperCase();
+      if(/^SET-?UP/.test(et)){ if(!G.su) G.su = m[3]; }
+      else if(/^(CUE|CLAVE|EJECUCI|CONTROL|RITMO)/.test(et)){ if(!G.ej) G.ej = m[3]; }
+      else if(/^(CUIDADO|ERROR|PRECAUCI)/.test(et)){ if(!G.cu) G.cu = m[3]; }
+    });
+    if(!G.su && !G.ej && !G.cu) return '';
+    var fila = function(cls, lb, txt){ return txt ? '<div class="jp-ex-tip ' + cls + '"><b>' + lb + '</b><span>' + escSB(qrCorta(txt, 190)) + '</span></div>' : ''; };
+    return '<details class="jp-ex-tips"><summary><span class="jp-ex-tips-t">COACHING TIPS</span><span class="jp-ex-tips-s">Set-up \u00b7 Ejecuci\u00f3n \u00b7 Cuidado</span></summary><div class="jp-ex-tips-b">' +
+      fila('su', 'SET-UP', G.su) + fila('ej', 'EJECUCI\u00d3N', G.ej) + fila('cu', 'CUIDADO', G.cu) + '</div></details>';
+  }
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -935,7 +953,7 @@
       fin +
       (guia.t ? '<div class="jp-qc-guia"><b>' + guia.k + '</b><span>' + escSB(guia.t) + '</span></div>' : '') +
       (m.hint ? '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span></div>' : '') +
-    '</div></div></div></div>';
+    '</div></div></div>' + qrTipsHtml(c, e, i) + '</div>';
   }
   /* devuelve el contenedor con una tarjeta por ejercicio; jpQrAcomodar() las mueve dentro de la fila de cada ejercicio */
   function jpRegBotonHtml(cfg){
@@ -952,6 +970,25 @@
     board.classList.add('jp-tec-gate');
     board.classList.toggle('jp-tec-open', abierto);
   }
+  /* tempo del ejercicio: el de la dosis (e.tempo) o, si el coach lo dejó solo en las pautas ("TEMPO: Tempo 3010 (...)"), el que figura ahí */
+  function qrTempoDe(c, e, i){
+    var propio = tempoLimpioSB(e && e.tempo); if(propio) return propio;
+    var L = regLetra(c, i), out = '';
+    String(c.tp || '').split(/\n+|<br\s*\/?>/i).map(qrPlano).some(function(l){
+      var m = /^(?:([A-F]\d)\s*\u00b7\s*)?TEMPO\s*:\s*(?:Tempo\s*)?([0-9xX]{3,4})\b/i.exec(l); if(!m) return false;
+      if(m[1] && c.ex && c.ex.length > 1 && m[1].toUpperCase() !== L) return false;
+      out = m[2]; return true;
+    });
+    return out;
+  }
+  /* el tempo va en la fila técnica de la tarjeta (junto al RIR); si la barra de dosis no lo trae, se agrega acá */
+  function qrInyectarTempo(fila, tp){
+    var bar = fila && fila.querySelector(':scope > .jp-dose-bar'); if(!bar || !tp || bar.querySelector('.jp-db-tempo')) return;
+    var r3 = bar.querySelector('.jp-db-r3');
+    if(!r3){ r3 = document.createElement('div'); r3.className = 'jp-db-row jp-db-r3'; bar.appendChild(r3); }
+    var s = document.createElement('span'); s.className = 'jp-db-seg jp-db-tempo'; s.innerHTML = '<small>TEMPO</small> <b>' + escSB(tp) + '</b>';
+    r3.insertBefore(s, r3.firstChild);
+  }
   /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
   function jpQrAcomodar(root){
     var boards = root && root.matches && root.matches('[data-sportsboard]') ? [root] : (root && root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll('[data-sportsboard]')) : []);
@@ -967,6 +1004,7 @@
             if(idTx){ QR_LBL[cd.getAttribute('data-qk') + '|' + cd.getAttribute('data-qi')] = { id: idTx }; var spId = cd.querySelector('.jp-qc-tg-id'); if(spId) spId.textContent = '· ' + idTx; }
             var tr = filas[i].querySelector(':scope > .jp-set-tracker-tecnica');
             if(tr) filas[i].insertBefore(cd, tr); else filas[i].appendChild(cd);
+            try{ var kt = qrCtx(cd); if(kt) qrInyectarTempo(filas[i], qrTempoDe(kt.c, kt.e, parseInt(cd.getAttribute('data-qi'), 10))); }catch(eT){}
           });
           box.parentNode.removeChild(box);
         }
@@ -994,6 +1032,8 @@
     tmp.innerHTML = qrCardHtml(k.c, k.e, parseInt(card.getAttribute('data-qi'), 10));
     var nuevo = tmp.firstChild, board = card.closest('[data-sportsboard]');
     if(mantener && card.classList.contains('jp-open')){ nuevo.classList.add('jp-open'); var tg0 = nuevo.querySelector('.jp-qc-tg'); if(tg0) tg0.setAttribute('aria-expanded', 'true'); }
+    var tipsAntes = card.querySelector('.jp-ex-tips'), tipsAhora = nuevo.querySelector('.jp-ex-tips');
+    if(tipsAntes && tipsAhora && tipsAntes.open) tipsAhora.open = true;
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
     return nuevo;
@@ -2397,7 +2437,7 @@
        alumno necesita el RIR EXACTO que escribió el coach, rango u
        observación "/ Fallo técnico" incluidos. */
     if((m = t.match(/rir\s*(\d+(?:\s*-\s*\d+)?(?:\s*\/\s*fallo\s*t[eé]cnico)?)/i))) out.rir = m[1].replace(/\s+/g, ' ').trim();
-    /* directiva maestra ("Parser universal y tolerante para Sports &
+  /* directiva maestra ("Parser universal y tolerante para Sports &
        Bodybuilding") -- reescritura genérica: en vez de intentar cubrir
        formas COMPUESTAS puntuales de descanso a mano (frágil, se rompe
        apenas el coach redacta distinto -- "Rest 60s entre piernas / 90s
@@ -3734,7 +3774,14 @@
       (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '';
     return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + '</div>';
   }
-  /* fila 1: volumen y esfuerzo; fila 2: pausa (1 toque = cuenta regresiva), cadencia y modificador tactico.
+  function tempoLimpioSB(tempo){
+    var s = String(tempo == null ? '' : tempo).replace(/^\s*tempo\s*[:\-]?\s*/i, '').trim();
+    return /^[0-9xX]{3,4}$|^[0-9xX](?:\s*[-\/]\s*[0-9xX]){2,3}$/.test(s) ? s.replace(/\s+/g, '') : '';
+  }
+  /* Tarjeta de ejercicio en tres filas horizontales (el estilo visual lo pone data-jp-estilo, ver shared/tarjeta-ejercicio.css):
+       fila 1 · VOLUMEN: series x repeticiones, grande y a lo largo de la tarjeta
+       fila 2 · DESCANSO: debajo del volumen (un toque = cuenta regresiva)
+       fila 3 · TÉCNICA: tempo y RIR (más la carga pautada y el modificador unilateral)
      sinPausa marca la estacion intermedia de un biset/triset (A1 -> A2 sin descanso) */
   function restBadgeSB(seg, lbl){
     seg = normRestSB(seg);
@@ -3742,28 +3789,30 @@
     return '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + seg + '" aria-label="Iniciar descanso de ' + seg + ' segundos">\u23f1\ufe0e\u25b6\ufe0e DESCANSO ' + (lbl ? escSB(lbl) : fmtRestSB(seg)) + '</button>';
   }
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra, uni, sinPausa, restLabel, rondas){
-    var r1 = [], r2 = [];
+    var r1 = '', r2 = [], r3 = [];
     var u = escSB(String(unidad || 'reps').toUpperCase());
     if(!sets && !reps) return '';
     /* criterio único: ejercicio suelto = SERIES; estaciones encadenadas (biset / triset) = RONDAS */
-    var rotSets = rondas ? (sets == 1 ? ' RONDA' : ' RONDAS') : (sets == 1 ? ' SERIE' : ' SERIES');
-    if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \u00d7 ' + escSB(reps) + ' ' + u + '</span>');
-    else if(reps) r1.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
-    else r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
-    /* el tempo no se imprime en la línea principal de series: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
-    if(rir){
-      var tier = tierRirSB(rir);
-      r1.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
-    }
+    var rotSets = rondas ? (sets == 1 ? 'RONDA' : 'RONDAS') : (sets == 1 ? 'SERIE' : 'SERIES');
+    var vS = sets ? '<b class="jp-vn">' + sets + '</b> <span class="jp-vl">' + rotSets + '</span>' : '';
+    var vR = reps ? '<b class="jp-vr">' + escSB(reps) + '</b> <span class="jp-vl">' + u + '</span>' : '';
+    r1 = '<span class="jp-db-seg jp-db-vol">' + vS + (vS && vR ? ' <i class="jp-vx">\u00d7</i> ' : '') + vR + '</span>';
     var rb = restBadgeSB(restSeconds, restLabel);
     if(rb) r2.push(rb);
     else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\u26a1 SIN DESCANSO</span>');
-    /* el tempo es un chip corto entre las series y el RIR (mismo orden que la línea de dosis del Builder: series x reps | tempo | RIR, y abajo el descanso); su explicación sigue en el acordeón de pautas */
-    if(extra) r2.push('<span class="jp-db-seg jp-db-tempo">' + escSB(extra) + '</span>');
-    if(uni) r2.push(chipUnilateralSB(uni));
-    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1.join('') + '</div>' +
-      (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') + '</div>';
+    var tp = tempoLimpioSB(tempo);
+    if(tp) r3.push('<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + escSB(tp) + '</b></span>');
+    if(rir){
+      var tier = tierRirSB(rir);
+      r3.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '"><small>RIR</small> <b>' + escSB(rir) + '</b></span>');
+    }
+    if(extra) r3.push('<span class="jp-db-seg jp-db-carga"><small>CARGA</small> <b>' + escSB(String(extra).replace(/^@\s*/, '')) + '</b></span>');
+    if(uni) r3.push(chipUnilateralSB(uni));
+    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1 + '</div>' +
+      (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') +
+      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + '</div>';
   }
+  window.jpDosisHtml = dosisCompletaSB;      /* público para las pruebas del runner (tests/parsers) */
   /* directiva maestra ("Parser universal y tolerante para Sports &
      Bodybuilding") -- micro-chip táctico de soporte para modificadores de
      unilateralidad/ejecución ("por pierna"/"por lado"): formato exacto

@@ -42,6 +42,8 @@
 <script src="cases-alumno.js"></script>
 <script src="cases-ia.js"></script>
 <script src="cases-progresion.js"></script>
+<script src="cases-estilos.js"></script>
+<script src="cases-copia.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -79,6 +81,9 @@
     bancoSplit3:  { run: function(i){ return auditarSplit3(i); }, valor: function(r){ return r; } },
     /* generadores de IA del Builder (CrossFit): con el motor de IA simulado, sin red y sin guardar nada */
     iaCF:         { run: function(i){ return iaCaso(i); }, valor: function(r){ return r; } },
+    copiaCF:      { run: function(i){ return copiaCaso(i); }, valor: function(r){ return r; } },
+    showroom:     { run: function(i){ return showroomCaso(i); }, valor: function(r){ return r; } },
+    alumnoEstilo: { run: function(i){ return alumnoEstilo(i); }, valor: function(r){ return r; } },
     alumnoProg:   { run: function(i){ return alumnoProgresion(i); }, valor: function(r){ return r; } },
     editorPlan:   { run: function(i){ return editorCaso(i); }, valor: function(r){ return r; } },
     bancoSinRopes: { run: function(i){ return auditarSinRopes(i); }, valor: function(r){ return r; } },
@@ -184,6 +189,136 @@
     return P;
   }
   /* split analítico de 3 días: hombre Push / Pull / Pierna completa; mujer Pierna A / Push, Pull y Brazos / Pierna B (nada de Full Body) */
+  /* ---------- copia entre alumnos (CrossFit): plan completo · semana · día ----------
+     Se usan las funciones reales con dos alumnos de prueba en memoria; save / guardarAhora / renderBuilder / renderAthletes / toast / confirm se anulan y todo se retira al terminar. */
+  function copiaCaso(c){
+    var S = getS(), A = [], ids = ['ath_test_cp_o', 'ath_test_cp_d', 'ath_test_cp_e'];
+    var orig = { save: win.save, ga: win.guardarAhora, rb: win.renderBuilder, ra: win.renderAthletes, toast: win.toast, confirm: win.confirm, act: S.activeId, ui: S.ui ? JSON.parse(JSON.stringify({ cfWeek: S.ui.cfWeek, day: S.ui.day })) : {} };
+    win.save = win.guardarAhora = win.renderBuilder = win.renderAthletes = function(){}; win.toast = function(){}; win.confirm = function(){ return true; };
+    function alumno(id, nombre, cf){
+      var a = { id: id, nombre: nombre, apellido: 'Copia', freq: 3, nivel: 'Avanzado', genero: 'F' }; S.athletes.push(a); A.push(a);
+      var p = win.newPlan(a); if(cf) p.meta.mesoDisc = 'crossfit'; S.plans[id] = p; return p;
+    }
+    function bloque(tit, cat){ return win.nuevoBloquePizarra(true, cat || 'metcon', tit, ['21-15-9 For Time', 'Thrusters', 'Pull-ups']); }
+    try{
+      S.ui = S.ui || {};
+      var pO = alumno(ids[0], 'Origen', true), pD = alumno(ids[1], 'Destino', c.destCF === true), pE = alumno(ids[2], 'Otro', true);
+      S.activeId = ids[0]; S.ui.cfWeek = 0; S.ui.day = 0;
+      var d0 = pO.dias[0], d1 = pO.dias[1], ps0 = win.asegurarBloquesPorSemana(d0), ps1 = win.asegurarBloquesPorSemana(d1);
+      ps0[0].push(bloque('Squat S1', 'strength')); ps0[1].push(bloque('Squat S2', 'strength'), bloque('Fran S2')); ps0[2].push(bloque('Cindy S3'));
+      ps1[1].push(bloque('Dia2 S2')); d0.bloques = ps0[0];
+      pO.meso[1].objetivo = 'Objetivo S2'; pO.meso[1].phase = 'Pico';
+      var pareja = function(p){ return p.dias.map(function(d){ return win.asegurarBloquesPorSemana(d).map(function(a){ return a.length; }).join('/'); }).join(' | '); };
+
+      if(c.caso === 'planCF'){
+        /* edición sin commit: el coach borra un bloque de la semana 2 reasignando el puntero (sin volver a renderizar) */
+        S.ui.cfWeek = 1; win.sincronizarBloquesSemana(pO); d0.bloques = d0.bloques.filter(function(b){ return !/Fran/.test(b.titulo); });
+        var ok = win.ejecutarCopiaPlan(ids[0], ids[1]), dD = pD.dias[0];
+        dD.bloquesPorSemana[0][0].titulo = 'MUTADO';
+        return { ok: ok, esCF: win.esPlanCFActivo(pD), disc: pD.meta.mesoDisc, semanas: pareja(pD), punteroEnS1: dD.bloques === dD.bloquesPorSemana[0], sinBloqueBorrado: JSON.stringify(dD.bloquesPorSemana[1]).indexOf('Fran') < 0,
+          problemas: win.jpValidarEstructuraPlan(pD), objetivoS2: pD.meso[1].objetivo, idsNuevos: dD.bloquesPorSemana[1][0].id !== ps0[1][0].id, origenIntacto: JSON.stringify(pO.dias).indexOf('MUTADO') < 0, nombrePropio: pD.meta.footer2.indexOf('Destino') >= 0 };
+      }
+      if(c.caso === 'planUndo'){
+        var antes = JSON.stringify(pD.dias) + '|' + (pD.meta.mesoDisc || '');
+        win.ejecutarCopiaPlan(ids[0], ids[1]);
+        var cambio = win.esPlanCFActivo(pD), u = win.deshacerCopiaPlan(ids[1]);
+        return { cambio: cambio, deshecho: u, vuelveIgual: (JSON.stringify(pD.dias) + '|' + (pD.meta.mesoDisc || '')) === antes, sinMasUndo: win.deshacerCopiaPlan(ids[1]) === false };
+      }
+      if(c.caso === 'planSports'){
+        var pS = pD; pS.dias[0].bloques.push(win.nuevoBloquePizarra(false, 'strength', 'Press', ['Press de banca', '4x8 | RIR 2']));
+        pE.meta.mesoDisc = 'crossfit'; S.activeId = ids[1];
+        var ok2 = win.ejecutarCopiaPlan(ids[1], ids[2]);
+        return { ok: ok2, esCF: win.esPlanCFActivo(pE), sinSemanasIndependientes: !pE.dias[0].bloquesPorSemana, bloques: pE.dias[0].bloques.length, problemas: win.jpValidarEstructuraPlan(pE) };
+      }
+      if(c.caso === 'semana'){
+        pD.meta.mesoDisc = 'crossfit'; pD.dias.pop();
+        var otras = function(){ return [0, 1, 3].map(function(i){ return pD.dias.map(function(d){ return win.asegurarBloquesPorSemana(d)[i].length; }).join(','); }).join('|'); };
+        var otras0 = otras(), diasAntes = pD.dias.length;
+        var okS = win.ejecutarCopiaSemana(ids[0], 1, ids[1], 2, { notas: true, crearDias: true });
+        return { ok: okS, diasCreados: pD.dias.length - diasAntes, s3: pD.dias.map(function(d){ return win.asegurarBloquesPorSemana(d)[2].map(function(b){ return b.titulo; }).join('+'); }).join(' | '),
+          otrasSemanasIntactas: otras().split('|').map(function(x, k){ return x.split(',').slice(0, diasAntes).join(','); }).join('|') === otras0,
+          objetivo: pD.meso[2].objetivo, fase: pD.meso[2].phase, nombreSemanaPropio: pD.meso[2].name === pD.meso[2].name && pD.meso[2].name !== undefined, problemas: win.jpValidarEstructuraPlan(pD),
+          idDiaNuevoUnico: new Set(pD.dias.map(function(d){ return d.id; })).size === pD.dias.length };
+      }
+      if(c.caso === 'semanaMismo'){
+        var okM = win.ejecutarCopiaSemana(ids[0], 1, ids[0], 3, { notas: false, crearDias: true });
+        return { ok: okM, s4: pO.dias.map(function(d){ return win.asegurarBloquesPorSemana(d)[3].map(function(b){ return b.titulo; }).join('+'); }).join(' | '), objetivoS4: pO.meso[3].objetivo === undefined, s2Intacta: pO.dias.map(function(d){ return win.asegurarBloquesPorSemana(d)[1].length; }).join(',') === '2,1,0', semanaActiva: S.ui.cfWeek };
+      }
+      if(c.caso === 'semanaRechazos'){
+        var f0 = pareja(pO) + '#' + pareja(pD);
+        var r = { misma: win.ejecutarCopiaSemana(ids[0], 1, ids[0], 1, {}), destinoNoCF: win.ejecutarCopiaSemana(ids[0], 1, ids[1], 0, {}), origenVacio: win.ejecutarCopiaSemana(ids[0], 3, ids[2], 0, {}), semanaInvalida: win.ejecutarCopiaSemana(ids[0], 9, ids[2], 0, {}) };
+        r.nadaCambio = (pareja(pO) + '#' + pareja(pD)) === f0;
+        return r;
+      }
+      if(c.caso === 'dia'){
+        S.ui.cfWeek = 0; S.ui.day = 0;
+        var idDest = pE.dias[1].id, shortDest = pE.dias[1].short;
+        var okD = win.ejecutarCopiaDia(ids[0], 0, ids[2], '1', { semOrigen: 1, semDest: 0 });
+        var dE = pE.dias[1];
+        return { ok: okD, s1: win.asegurarBloquesPorSemana(dE)[0].map(function(b){ return b.titulo; }).join('+'), conservaId: dE.id === idDest, conservaRotulo: dE.short === shortDest, problemas: win.jpValidarEstructuraPlan(pE) };
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      ids.forEach(function(id){ delete S.plans[id]; });
+      A.forEach(function(a){ var ix = S.athletes.indexOf(a); if(ix >= 0) S.athletes.splice(ix, 1); });
+      win.save = orig.save; win.guardarAhora = orig.ga; win.renderBuilder = orig.rb; win.renderAthletes = orig.ra; win.toast = orig.toast; win.confirm = orig.confirm;
+      S.activeId = orig.act; if(S.ui){ S.ui.cfWeek = orig.ui.cfWeek; S.ui.day = orig.ui.day; }
+    }
+  }
+  /* ---------- Showroom y estilos de tarjeta ---------- */
+  function showroomCaso(c){
+    var S = getS(), SR = win.CoachShowroom;
+    if(!SR) throw new Error('el Showroom no está cargado');
+    if(c.caso === 'estilos') return { cantidad: SR.estilos.length, numeros: SR.estilos.map(function(e){ return e.n; }).join(',') };
+    if(c.caso === 'pantalla'){
+      var host = win.document.getElementById('v-showroom'); if(!host) throw new Error('no existe #v-showroom');
+      SR.render();
+      var stages = [].slice.call(host.querySelectorAll('.sr-stage'));
+      var ordenOk = stages.every(function(st){
+        var h = st.querySelector('.jp-dose-bar').innerHTML, a = h.indexOf('jp-db-r1'), b = h.indexOf('jp-db-r2'), d = h.indexOf('jp-db-r3');
+        return a >= 0 && b > a && d > b;
+      });
+      var uno = stages[0];
+      return { stages: stages.length, estilos: stages.map(function(s){ return s.getAttribute('data-jp-estilo'); }).join(','), ordenOk: ordenOk,
+        tieneVolumen: !!uno.querySelector('.jp-db-vol .jp-vn') && !!uno.querySelector('.jp-db-vol .jp-vr'), tieneTempoYRir: !!uno.querySelector('.jp-db-tempo') && !!uno.querySelector('.jp-db-rir'),
+        tipsDesplegables: !!uno.querySelector('details.jp-ex-tips'), botonesFijar: host.querySelectorAll('[data-sr-fijar]').length };
+    }
+    if(c.caso === 'fijar'){
+      var guardar = win.save, aviso = win.toast, previo = S.ui ? S.ui.estiloTarjeta : undefined;
+      win.save = function(){}; win.toast = function(){};
+      try{
+        SR.fijar(3);
+        var enVistas = [].slice.call(win.document.querySelectorAll('.view')).filter(function(v){ return v.id !== 'v-showroom'; }).every(function(v){ return v.getAttribute('data-jp-estilo') === '3'; });
+        var showroomLimpio = !win.document.getElementById('v-showroom').getAttribute('data-jp-estilo');
+        return { fijado: S.ui.estiloTarjeta, enVistas: enVistas, showroomLimpio: showroomLimpio, bodySinAtributo: !win.document.body.getAttribute('data-jp-estilo') };
+      } finally {
+        if(previo === undefined) delete S.ui.estiloTarjeta; else S.ui.estiloTarjeta = previo;
+        SR.aplicar(SR.fijado()); SR.render(); win.save = guardar; win.toast = aviso;
+      }
+    }
+    throw new Error('caso desconocido: ' + c.caso);
+  }
+  /* app del alumno: estilo de tarjeta aplicado y barra de dosis en tres filas */
+  function alumnoEstilo(i){
+    var w = alumnoWin(); if(!w) throw new Error('no hay app del alumno');
+    if(i.caso === 'aplicar'){
+      var previo = w.document.body.getAttribute('data-jp-estilo');
+      var r = i.valores.map(function(v){ var n = w.jpEstiloTarjeta(v); return n + ':' + w.document.body.getAttribute('data-jp-estilo'); });
+      w.document.body.setAttribute('data-jp-estilo', previo || '2');
+      return r;
+    }
+    if(i.caso === 'dosis'){
+      var h = w.jpDosisHtml.apply(w, i.args), tmp = w.document.createElement('div'); tmp.innerHTML = h;
+      var q = function(s){ var e = tmp.querySelector(s); return e ? e.textContent.replace(/\s+/g, ' ').trim() : null; };
+      return { vol: q('.jp-db-r1 .jp-db-vol'), descanso: q('.jp-db-r2 .jp-db-rest'), tempo: q('.jp-db-r3 .jp-db-tempo'), rir: q('.jp-db-r3 .jp-db-rir'), filas: tmp.querySelectorAll('.jp-db-row').length,
+        orden: (function(){ var a = h.indexOf('jp-db-r1'), b = h.indexOf('jp-db-r2'), d = h.indexOf('jp-db-r3'); return a >= 0 && b > a && d > b; })() };
+    }
+    if(i.caso === 'config'){
+      var est = w.eval('PROGRAM_CONFIG.estiloTarjeta'), bd = w.document.body.getAttribute('data-jp-estilo');
+      return { valido: est >= 1 && est <= 4, coincide: String(est) === bd };
+    }
+    throw new Error('caso desconocido: ' + i.caso);
+  }
   /* ---------- carga sugerida de la semana siguiente (app del alumno compilada) ----------
      input: { loads: { clave: { kg, reps, done, ex } }, rirEx: { clave: n }, c: { w, d, b }, e: { idx, nombre, reps, rir }, setN }
      Se reemplaza state.loads / state.rirEx del documento del alumno solo mientras dura la llamada y se restauran al terminar: no se guarda nada. */

@@ -4722,7 +4722,8 @@ function abrirModalCopiarPlan(){
           '<option value="">— Elegí un alumno/a —</option>' +
           otros.map(a => '<option value="' + esc(a.id) + '">' + esc(fullName(a)) + '</option>').join('') +
         '</select>' +
-        '<div class="alert warn" style="margin-top:14px"><span class="ic">⚠️</span><div><b>La planificación existente en el alumno destino será reemplazada por completo.</b> Esta acción no se puede deshacer.</div></div>' +
+        '<div id="cpAviso"></div>' +
+        '<div class="alert warn" style="margin-top:14px"><span class="ic">⚠️</span><div><b>La planificación existente en el alumno destino será reemplazada por completo</b> (días, semanas y modalidad). Si te equivocás, el panel tiene "Deshacer" apenas termina la copia.</div></div>' +
         '<div class="row" style="margin-top:16px;gap:8px">' +
           '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cancelar</button>' +
           '<button type="button" class="btn gold" id="cpConfirmar" style="flex:1" disabled>Confirmar y sobreescribir</button>' +
@@ -4733,13 +4734,21 @@ function abrirModalCopiarPlan(){
   document.body.style.overflow = 'hidden';
   const sel = bg.querySelector('#cpDestino');
   const btnConfirmar = bg.querySelector('#cpConfirmar');
-  sel.addEventListener('change', function(){ btnConfirmar.disabled = !sel.value; });
+  const avisoEl = bg.querySelector('#cpAviso');
+  sel.addEventListener('change', function(){
+    btnConfirmar.disabled = !sel.value;
+    const pDx = sel.value ? plan(sel.value) : null;
+    avisoEl.innerHTML = (pDx && esPlanCFActivo(pOrigen) !== esPlanCFActivo(pDx))
+      ? '<div class="alert info" style="margin-top:12px"><span class="ic">ℹ️</span><div><b>El destino cambia de modalidad.</b> Pasa de ' + (esPlanCFActivo(pDx) ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + ' a ' + (esPlanCFActivo(pOrigen) ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + ' porque el plan se copia completo.</div></div>' : '';
+  });
   bg.addEventListener('click', function(e){
     if(e.target === bg || e.target.closest('[data-cpcancel]')){ cerrarModalCopiarPlan(); return; }
     if(e.target.closest('#cpConfirmar')){
       if(!sel.value) return;
       ejecutarCopiaPlan(athOrigen.id, sel.value);
     }
+    const bu = e.target.closest('[data-cpundo]');
+    if(bu){ if(deshacerCopiaPlan(bu.dataset.cpundo)) cerrarModalCopiarPlan(); return; }
     if(e.target.closest('[data-cpirdestino]')){
       const destId = e.target.closest('[data-cpirdestino]').dataset.cpirdestino;
       cerrarModalCopiarPlan();
@@ -4747,35 +4756,100 @@ function abrirModalCopiarPlan(){
     }
   });
 }
+/* ---------- helpers compartidos por las tres copias (día · semana · plan) ---------- */
+/* campos del plan que definen la MODALIDAD y el texto del mesociclo (no la identidad del alumno): el destino los hereda cuando se copia el plan completo.
+   Antes se dejaban los del destino y un plan de CrossFit copiado a un alumno de Fuerza quedaba en modalidad Fuerza: las 4 semanas independientes se ignoraban y solo se veía una. */
+const JP_META_PLAN = ['mesoDisc', 'mesoNivel', 'mesoName', 'mesoObjetivo', 'mesoTexto', 'mesoFecha', 'heroTitle', 'heroEm', 'heroSub'];
+/* campos de una semana del mesociclo que viajan con "copiar semana" (el nombre, el chip y el ícono de la semana destino se conservan) */
+const JP_CAMPOS_SEMANA = ['objetivo', 'note', 'phase', 'rpe', 'deload', 'fail', 'amrapMinutes', 'hyroxNote'];
+/* en CrossFit d.bloques es un puntero a la semana activa: antes de leer un plan como origen (o de escribir en uno activo) se confirman todas las semanas */
+function jpSincronizarCF(p, id){
+  if(p && id === S.activeId && esPlanCFActivo(p)){ try{ sincronizarBloquesSemana(p); }catch(e){} }
+}
+/* ids de bloque nuevos: un solo mapa por copia, así el mismo bloque conserva el mismo id nuevo en todas las semanas */
+function jpRenovarIdsBloques(listas, mapa){
+  const vistos = new Set();
+  (listas || []).forEach(arr => {
+    if(!Array.isArray(arr) || vistos.has(arr)) return; vistos.add(arr);
+    arr.forEach(b => {
+      if(!b || typeof b !== 'object') return;
+      const viejo = b.id;
+      if(viejo != null && mapa[viejo]){ b.id = mapa[viejo]; return; }
+      const nid = uid('b'); if(viejo != null) mapa[viejo] = nid; b.id = nid;
+    });
+  });
+}
+function jpListasDeDia(d){ return [d.bloques].concat(Array.isArray(d.bloquesPorSemana) ? d.bloquesPorSemana : []); }
+function jpIdDiaLibre(p, desde){
+  const usados = new Set((p.dias || []).map(x => x && x.id)); let k = desde + 1; while(usados.has('dia' + k)) k++; return 'dia' + k;
+}
+const JP_COPIA_UNDO = {};      /* última copia de plan por alumno destino: permite deshacerla mientras el panel está abierto */
 function ejecutarCopiaPlan(origenId, destinoId){
   const pOrigen = plan(origenId);
   const athDestino = getAth(destinoId);
   const pDestino = plan(destinoId);
-  if(!pOrigen || !athDestino || !pDestino) return;
-  /* estructura EXACTA del origen (días/bloques/ejercicios/videos
-     manuales/overrides/objetivos/tips/ondulación) -- deep clone real,
-     cero referencias compartidas con el origen. */
-  pDestino.dias = clonarEstructuraProfunda(pOrigen.dias);
-  pDestino.meso = clonarEstructuraProfunda(pOrigen.meso);
+  if(!pOrigen || !athDestino || !pDestino){ toast('No se pudo copiar: faltan datos del origen o del destino', 'err'); return false; }
+  if(origenId === destinoId){ toast('El destino es el mismo alumno/a: elegí otro', 'warn'); return false; }
+  jpSincronizarCF(pOrigen, origenId);
+  jpSincronizarCF(pDestino, destinoId);
+  const cfO = esPlanCFActivo(pOrigen);
+  /* se arma TODO en variables locales y recién al final se asigna: si algo sale mal, el destino queda exactamente como estaba */
+  const dias = clonarEstructuraProfunda(pOrigen.dias);
+  const mapa = {};
+  dias.forEach(d => { jpRenovarIdsBloques(jpListasDeDia(d), mapa); });
+  dias.forEach(d => {
+    if(cfO){ const ps = asegurarBloquesPorSemana(d); d.bloques = ps[0]; }      /* el puntero apunta a la semana 1, igual que un día recién abierto */
+    else { delete d.bloquesPorSemana; if(!Array.isArray(d.bloques)) d.bloques = []; }
+  });
+  const problemas = jpValidarEstructuraPlan({ dias: dias });
+  if(problemas.length){ console.warn('[Copia de plan] estructura inválida:\n - ' + problemas.join('\n - ')); toast('No se copió: el plan de origen tiene problemas de estructura (' + problemas[0] + ')', 'err'); return false; }
+  const meso = clonarEstructuraProfunda(pOrigen.meso);
+  /* copia de seguridad en memoria del plan que se va a reemplazar */
+  JP_COPIA_UNDO[destinoId] = clonarEstructuraProfunda({ dias: pDestino.dias, meso: pDestino.meso, estado: pDestino.estado, vigenciaDesde: pDestino.vigenciaDesde, vigenciaHasta: pDestino.vigenciaHasta,
+    meta: JP_META_PLAN.reduce((o, k) => { if(pDestino.meta && pDestino.meta[k] !== undefined) o[k] = pDestino.meta[k]; return o; }, {}), tenia: JP_META_PLAN.filter(k => pDestino.meta && pDestino.meta[k] !== undefined) });
+  pDestino.dias = dias;
+  pDestino.meso = meso;
   pDestino.estado = pOrigen.estado;
   pDestino.vigenciaDesde = pOrigen.vigenciaDesde;
   pDestino.vigenciaHasta = pOrigen.vigenciaHasta;
-  /* NUNCA se toca: athDestino.id/nombre/apellido/freq/etc (identidad
-     propia, ver S.athletes) ni pDestino.meta (branding con el nombre
-     del destino ya insertado). */
-  save();
+  /* modalidad y textos del mesociclo: los hereda el destino. La identidad (S.athletes, footer2 con su nombre, coachName...) NUNCA se toca. */
+  pDestino.meta = pDestino.meta || {};
+  JP_META_PLAN.forEach(k => {
+    if(pOrigen.meta && pOrigen.meta[k] !== undefined) pDestino.meta[k] = clonarEstructuraProfunda(pOrigen.meta[k]);
+    else if(k === 'mesoDisc' || k === 'mesoNivel' || k === 'mesoObjetivo' || k === 'mesoTexto' || k === 'mesoFecha') delete pDestino.meta[k];
+  });
+  if(destinoId === S.activeId){ S.ui.cfWeek = 0; S.ui.day = 0; }
+  guardarAhora();
   renderAthletes();
   const nombreDestino = fullName(athDestino);
+  const nBl = dias.reduce((s, d) => s + (cfO ? (asegurarBloquesPorSemana(d)[0] || []).length : (d.bloques || []).length), 0);
+  const nTodas = cfO ? dias.reduce((s, d) => s + asegurarBloquesPorSemana(d).reduce((q, arr) => q + (arr || []).length, 0), 0) : nBl;
   const body = document.getElementById('cpModalBody');
   if(body){
     body.innerHTML =
-      '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + pOrigen.dias.length + ' días, ' + pOrigen.dias.reduce((s,d)=>s+(d.bloques||[]).length,0) + ' bloques.</div></div>' +
-      '<div class="row" style="margin-top:16px;gap:8px">' +
+      '<div class="alert" style="border-color:rgba(72,213,151,.4);background:rgba(72,213,151,.08)"><span class="ic">✅</span><div><b>Planificación copiada con éxito a ' + esc(nombreDestino) + '.</b> ' + dias.length + ' días' +
+        (cfO ? ', 4 semanas independientes y ' + nTodas + ' bloques en total' : ' y ' + nBl + ' bloques') + '. La modalidad del plan pasó a ' + (cfO ? 'CrossFit &amp; Hyrox' : 'Fuerza / Hipertrofia') + '.</div></div>' +
+      '<div class="row" style="margin-top:16px;gap:8px;flex-wrap:wrap">' +
+        '<button type="button" class="btn ghost" data-cpundo="' + esc(destinoId) + '" style="flex:1 1 100%">↩ Deshacer esta copia</button>' +
         '<button type="button" class="btn ghost" data-cpcancel="1" style="flex:1">Cerrar</button>' +
         '<button type="button" class="btn gold" data-cpirdestino="' + esc(destinoId) + '" style="flex:1">Ir al perfil de ' + esc(nombreDestino) + '</button>' +
       '</div>';
   }
   toast('✅ Planificación copiada con éxito a ' + nombreDestino);
+  return true;
+}
+/* deshace la última copia de plan hecha sobre ese alumno (vuelve a lo que tenía: días, semanas, estado y modalidad) */
+function deshacerCopiaPlan(destinoId){
+  const prev = JP_COPIA_UNDO[destinoId], pD = plan(destinoId);
+  if(!prev || !pD){ toast('No hay una copia reciente para deshacer', 'warn'); return false; }
+  pD.dias = prev.dias; pD.meso = prev.meso; pD.estado = prev.estado; pD.vigenciaDesde = prev.vigenciaDesde; pD.vigenciaHasta = prev.vigenciaHasta;
+  pD.meta = pD.meta || {};
+  JP_META_PLAN.forEach(k => { if(prev.tenia.indexOf(k) >= 0) pD.meta[k] = prev.meta[k]; else delete pD.meta[k]; });
+  delete JP_COPIA_UNDO[destinoId];
+  guardarAhora(); renderAthletes();
+  if(destinoId === S.activeId) renderBuilder();
+  toast('↩ Copia deshecha: el plan de ' + fullName(getAth(destinoId)) + ' volvió a como estaba');
+  return true;
 }
 /* ============================================================
    directiva maestra ("Copiar día completo entre alumnos") -- transfiere
@@ -4984,6 +5058,176 @@ function ejecutarCopiaDia(origenId, diaIdx, destId, destSel, opts){
   try{ renderBuilder(); }catch(e){}
   renderAthletes();
   toast('✓ ' + dO.short + (cfO ? ' · S' + (semO + 1) : '') + ' → ' + (mismoPlan ? '' : fullName(athD) + ' · ') + etiquetaDest + ' copiado');
+  return true;
+}
+
+/* ============================================================
+   COPIAR SEMANA (CrossFit & Hyrox) -- clona UNA semana completa (todos sus días y todos sus bloques, más el objetivo / fase / RPE de la semana) hacia otra semana del
+   mismo alumno/a o hacia cualquier semana de otro alumno/a. Cada semana de CrossFit es independiente (d.bloquesPorSemana[0..3]), así que se reemplazan SOLO los bloques de
+   la semana destino: las otras 3 semanas del destino no se tocan. Los días del destino conservan su identidad (id, rótulo, título); si el origen tiene más días, se crean los que
+   faltan (con id libre). Los bloques llegan con ids nuevos. Se arma todo aparte y recién al final se escribe: si algo falla, el destino queda como estaba.
+   ============================================================ */
+function cerrarModalCopiarSemana(){
+  const bg = document.getElementById('mCopiarSemBg');
+  if(bg) bg.remove();
+  document.body.style.overflow = '';
+}
+function jpResumenSemanaCF(p, sem){
+  let dias = 0, bloques = 0;
+  (p.dias || []).forEach(d => { const n = (asegurarBloquesPorSemana(d)[sem] || []).length; if(n){ dias++; bloques += n; } });
+  return { dias: dias, bloques: bloques };
+}
+function abrirModalCopiarSemana(){
+  const athO = active(), pO = plan(S.activeId);
+  if(!athO || !pO){ toast('Seleccioná un alumno/a primero', 'err'); return; }
+  if(!esPlanCFActivo(pO)){
+    toast('En Fuerza / Hipertrofia las 4 semanas comparten la misma estructura de bloques: para llevarla a otro alumno/a usá "Copiar plan completo" o "Copiar día".', 'warn');
+    return;
+  }
+  jpSincronizarCF(pO, S.activeId);
+  cerrarModalCopiarSemana();
+  const otros = S.athletes.filter(a => a.id !== athO.id).sort((a, b) => fullName(a).localeCompare(fullName(b), 'es'));
+  const semAct = activeCfWeek();
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg on'; bg.id = 'mCopiarSemBg';
+  bg.innerHTML =
+    '<div class="modal cd-modal">' +
+      '<div class="modal-h"><h3>// COPIAR SEMANA</h3><div class="spacer"></div><button class="icon-btn" data-csc="1">✕</button></div>' +
+      '<div class="modal-b">' +
+        '<div class="cd-origen"><span class="k">Origen · solo lectura</span><span class="v">' + esc(fullName(athO)) + '</span><span class="s" id="csOrigenTxt"></span></div>' +
+        '<div class="cd-f"><label class="lb">Semana de origen</label><select id="csSemO">' +
+          [0, 1, 2, 3].map(i => '<option value="' + i + '"' + (i === semAct ? ' selected' : '') + '>Semana ' + (i + 1) + (pO.meso && pO.meso[i] && pO.meso[i].phase ? ' · ' + esc(String(pO.meso[i].phase).slice(0, 28)) : '') + '</option>').join('') +
+        '</select></div>' +
+        '<div class="cd-f"><label class="lb">Alumno/a destino</label>' +
+          (otros.length > 3 ? '<input type="text" id="csBuscar" placeholder="Buscar alumno/a…" autocomplete="off" style="margin-bottom:6px">' : '') +
+          '<select id="csAlumno"></select></div>' +
+        '<div class="cd-f"><label class="lb">Semana destino</label><select id="csSemD"></select></div>' +
+        '<div class="cd-f"><label class="chk"><input type="checkbox" id="csNotas" checked> Incluir el objetivo, la fase y el RPE de la semana</label>' +
+          '<label class="chk"><input type="checkbox" id="csDias" checked> Crear los días que le falten al destino</label></div>' +
+        '<div id="csInfo"></div>' +
+        '<div class="row" style="margin-top:14px;gap:8px">' +
+          '<button type="button" class="btn ghost" data-csc="1" style="flex:1">Cancelar</button>' +
+          '<button type="button" class="btn gold" id="csConfirmar" style="flex:1" disabled>📋 COPIAR SEMANA</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(bg);
+  document.body.style.overflow = 'hidden';
+  const $s = id => bg.querySelector(id);
+  const selO = $s('#csSemO'), selA = $s('#csAlumno'), selD = $s('#csSemD'), info = $s('#csInfo'), btn = $s('#csConfirmar'), buscar = $s('#csBuscar');
+  const esMismo = () => selA.value === athO.id;
+  function pintarOrigen(){
+    const r = jpResumenSemanaCF(pO, parseInt(selO.value, 10));
+    $s('#csOrigenTxt').textContent = 'Semana ' + (parseInt(selO.value, 10) + 1) + ' · ' + r.dias + ' día' + (r.dias === 1 ? '' : 's') + ' con contenido · ' + r.bloques + ' bloque' + (r.bloques === 1 ? '' : 's');
+  }
+  function pintarAlumnos(){
+    const q = buscar ? norm(buscar.value) : '';
+    const lista = otros.filter(a => !q || norm(fullName(a)).indexOf(q) >= 0);
+    const prev = selA.value || athO.id;
+    selA.innerHTML = '<option value="' + esc(athO.id) + '"' + (prev === athO.id ? ' selected' : '') + '>★ Este alumno/a — ' + esc(fullName(athO)) + ' (otra semana)</option>' +
+      (lista.length ? '<optgroup label="Otros alumnos/as">' + lista.map(a => '<option value="' + esc(a.id) + '"' + (a.id === prev ? ' selected' : '') + '>' + esc(fullName(a)) + '</option>').join('') + '</optgroup>' : '');
+    pintarSemanasDestino();
+  }
+  function pintarSemanasDestino(){
+    const pD = plan(selA.value), cfD = esPlanCFActivo(pD);
+    const prev = selD.value;
+    selD.innerHTML = '<option value="">— Elegí la semana destino —</option>' + [0, 1, 2, 3].map(i => {
+      const r = cfD ? jpResumenSemanaCF(pD, i) : { bloques: 0 };
+      const esOrigen = esMismo() && i === parseInt(selO.value, 10);
+      return '<option value="' + i + '"' + (esOrigen ? ' disabled' : '') + '>Semana ' + (i + 1) + (r.bloques ? ' (' + r.bloques + ' bloques)' : ' (vacía)') + (esOrigen ? ' — es el origen' : '') + '</option>';
+    }).join('');
+    if(prev && selD.querySelector('option[value="' + prev + '"]:not([disabled])')) selD.value = prev;
+    pintarInfo();
+  }
+  function pintarInfo(){
+    const id = selA.value, pD = plan(id), cfD = esPlanCFActivo(pD), v = selD.value;
+    let h = '';
+    if(!cfD){
+      h += '<div class="alert danger"><span class="ic">🚫</span><div><b>El alumno/a destino no está en modalidad CrossFit &amp; Hyrox.</b> La copia de semana necesita las 4 semanas independientes: cambiá su modalidad en el Builder o usá "Copiar día" / "Copiar plan completo".</div></div>';
+    } else if(v !== ''){
+      const n = jpResumenSemanaCF(pD, parseInt(v, 10));
+      if(n.bloques) h += '<div class="alert warn"><span class="ic">⚠️</span><div><b>La semana destino ya tiene ' + n.bloques + ' bloque' + (n.bloques === 1 ? '' : 's') + ' en ' + n.dias + ' día' + (n.dias === 1 ? '' : 's') + '.</b> Se reemplazará solo esa semana y se pedirá confirmación. Las otras 3 semanas del destino no se tocan.</div></div>';
+      const nO = pO.dias.length;
+      if(nO > pD.dias.length) h += '<div class="alert info"><span class="ic">ℹ️</span><div>El origen tiene ' + nO + ' días y el destino ' + pD.dias.length + ': ' + ($s('#csDias').checked ? 'se crean los que faltan.' : 'los días de más no se copian.') + '</div></div>';
+    }
+    info.innerHTML = h;
+    btn.disabled = !(cfD && v !== '');
+  }
+  if(buscar) buscar.addEventListener('input', pintarAlumnos);
+  selO.addEventListener('change', () => { pintarOrigen(); pintarSemanasDestino(); });
+  selA.addEventListener('change', pintarSemanasDestino);
+  selD.addEventListener('change', pintarInfo);
+  $s('#csDias').addEventListener('change', pintarInfo);
+  bg.addEventListener('click', e => {
+    if(e.target === bg || e.target.closest('[data-csc]')){ cerrarModalCopiarSemana(); return; }
+    if(e.target.closest('#csConfirmar') && !btn.disabled){
+      const ok = ejecutarCopiaSemana(athO.id, parseInt(selO.value, 10), selA.value, parseInt(selD.value, 10), { notas: $s('#csNotas').checked, crearDias: $s('#csDias').checked });
+      if(ok) cerrarModalCopiarSemana();
+    }
+  });
+  pintarOrigen();
+  pintarAlumnos();
+}
+function ejecutarCopiaSemana(origenId, semO, destId, semD, opts){
+  opts = opts || {};
+  const pO = plan(origenId), pD = plan(destId), athD = getAth(destId);
+  if(!pO || !pD || !athD){ toast('No se pudo copiar: faltan datos del origen o del destino', 'err'); return false; }
+  if(!esPlanCFActivo(pO)){ toast('La copia de semana es de CrossFit & Hyrox: en Fuerza / Hipertrofia usá "Copiar plan completo" o "Copiar día"', 'warn'); return false; }
+  if(!esPlanCFActivo(pD)){ toast('El alumno/a destino no está en modalidad CrossFit & Hyrox: cambiá su modalidad o usá "Copiar día" / "Copiar plan completo"', 'warn'); return false; }
+  const valida = n => Number.isInteger(n) && n >= 0 && n <= 3;
+  if(!valida(semO) || !valida(semD)){ toast('Elegí una semana de origen y una de destino (1 a 4)', 'err'); return false; }
+  const mismo = origenId === destId;
+  if(mismo && semO === semD){ toast('La semana destino es la misma que la de origen: elegí otra', 'warn'); return false; }
+  jpSincronizarCF(pO, origenId);
+  jpSincronizarCF(pD, destId);
+  const crear = opts.crearDias !== false, copiarNotas = opts.notas !== false;
+  const nO = pO.dias.length;
+  const mapa = {};
+  /* 1) se arma en variables locales: bloques nuevos por día de origen */
+  const bloquesPorDia = pO.dias.map(d => { const arr = clonarEstructuraProfunda(asegurarBloquesPorSemana(d)[semO] || []); jpRenovarIdsBloques([arr], mapa); return arr; });
+  const totalBl = bloquesPorDia.reduce((s, a) => s + a.length, 0);
+  if(!totalBl){ toast('La Semana ' + (semO + 1) + ' de origen no tiene bloques para copiar', 'warn'); return false; }
+  const faltan = Math.max(0, nO - pD.dias.length);
+  if(faltan && crear && pD.dias.length + faltan > MAX_DIAS){ toast('El destino quedaría con más de ' + MAX_DIAS + ' días: no se puede crear la cantidad que falta', 'err'); return false; }
+  const prevBl = jpResumenSemanaCF(pD, semD).bloques;
+  if(prevBl && !confirm('La Semana ' + (semD + 1) + ' de ' + fullName(athD) + ' ya contiene ' + prevBl + ' bloque' + (prevBl === 1 ? '' : 's') + '.\n\n¿Reemplazarla por completo con la Semana ' + (semO + 1) + ' copiada?')) return false;
+  /* 2) días nuevos del destino (si hacen falta), todavía sin enganchar */
+  const nuevos = [];
+  if(faltan && crear){
+    const tmp = { dias: pD.dias.concat() };
+    for(let i = pD.dias.length; i < nO; i++){
+      const dO = pO.dias[i], copia = newDay(i);
+      ['title', 'label', 'briefing', 'summary', 'focusTitle', 'focusText', 'optional'].forEach(k => { if(dO[k] !== undefined) copia[k] = clonarEstructuraProfunda(dO[k]); });
+      ['metaChips', 'cooldown'].forEach(k => { copia[k] = Array.isArray(dO[k]) ? dO[k].slice() : []; });
+      copia.id = jpIdDiaLibre(tmp, i); copia.short = 'DÍA ' + (i + 1);
+      if(/^Sesi[oó]n\s*\d+$/i.test(copia.label || '')) copia.label = 'Sesión ' + (i + 1);
+      if(/^D[IÍ]A\s*\d+$/i.test(copia.title || '')) copia.title = 'Día ' + (i + 1);
+      copia.bloquesPorSemana = [[], [], [], []]; copia.bloques = copia.bloquesPorSemana[0];
+      tmp.dias.push(copia); nuevos.push(copia);
+    }
+  }
+  /* 3) se escribe: los días existentes reciben los bloques de su semana; los nuevos, los suyos */
+  const activo = (destId === S.activeId);
+  pD.dias.concat(nuevos).forEach((dd, i) => {
+    if(i >= nO) return;
+    const ps = asegurarBloquesPorSemana(dd);
+    ps[semD] = bloquesPorDia[i];
+    if(activo && semD === activeCfWeek()) dd.bloques = ps[semD];
+  });
+  nuevos.forEach(n => pD.dias.push(n));
+  if(copiarNotas){
+    pD.meso = Array.isArray(pD.meso) && pD.meso.length ? pD.meso : clonarEstructuraProfunda(pO.meso);
+    while(pD.meso.length <= semD) pD.meso.push(clonarEstructuraProfunda(pO.meso[pD.meso.length] || pO.meso[semO] || {}));
+    const wO = (pO.meso && pO.meso[semO]) || {}, wD = pD.meso[semD];
+    JP_CAMPOS_SEMANA.forEach(k => { if(wO[k] !== undefined) wD[k] = clonarEstructuraProfunda(wO[k]); else delete wD[k]; });
+  }
+  const problemas = jpValidarEstructuraPlan(pD);
+  if(problemas.length) console.warn('[Copia de semana] el destino quedó con avisos de estructura:\n - ' + problemas.join('\n - '));
+  if(mismo){ S.ui.cfWeek = semD; }
+  guardarAhora();
+  try{ renderBuilder(); }catch(e){}
+  renderAthletes();
+  toast('✓ Semana ' + (semO + 1) + ' → ' + (mismo ? '' : fullName(athD) + ' · ') + 'Semana ' + (semD + 1) + ' copiada (' + totalBl + ' bloques' + (nuevos.length ? ', ' + nuevos.length + ' día' + (nuevos.length === 1 ? '' : 's') + ' nuevo' + (nuevos.length === 1 ? '' : 's') : '') + ')');
   return true;
 }
 function sbFmtToolbar(bId){
@@ -7475,10 +7719,11 @@ function renderBuilder(){
       /* directiva maestra ("Clonación completa de planificación entre
          alumnos") -- disparador del modal de copia, estilo celeste
          táctico pedido explícitamente. */
-      '<button type="button" class="btn sm" id="btnCopiarPlan" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 Copiar plan a otro alumno</button>' +
+      '<button type="button" class="btn sm" id="btnCopiarPlan" title="Copia el plan completo (todos los días, las 4 semanas y la modalidad) a otro alumno/a" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR PLAN COMPLETO</button>' +
       /* directiva maestra ("Copiar día completo entre alumnos") -- mismo
          estilo celeste táctico, junto al botón de copiar el plan entero. */
-      '<button type="button" class="btn sm" id="btnCopiarDia" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR DÍA A OTRO ALUMNO</button>' +
+      '<button type="button" class="btn sm" id="btnCopiarSemana" title="CrossFit &amp; Hyrox: copia una semana completa (todos sus días y bloques) a otra semana o a otro alumno/a" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR SEMANA</button>' +
+      '<button type="button" class="btn sm" id="btnCopiarDia" title="Copia el día que estás editando a otro día o a otro alumno/a" style="border-color:rgba(56,189,248,.4);color:#38bdf8;background:rgba(56,189,248,.08)">📋 COPIAR DÍA</button>' +
     '</div>';
 
   /* ---------- Mesociclo (WEEKS_META) ---------- */
@@ -7638,6 +7883,7 @@ function renderDay(){
             (i===cfWkActiva?'✓ ':'') + esc(w.short || ('S'+(i+1))) + '</button>'
         ).join('') +
         (cfWkActiva > 0 ? '<button type="button" class="btn sm ghost" data-cfclonewk="1" title="Copia todos los días y bloques de la semana anterior en la semana activa">📋 Clonar semana anterior</button>' : '') +
+        '<button type="button" class="btn sm ghost" data-cfcopiarsemana="1" title="Copia esta semana completa (todos los días y bloques) a otra semana o a otro alumno/a">📋 Copiar esta semana</button>' +
         (cfWkActiva !== 3 ? '<button type="button" class="btn sm ghost" data-cfdeload="1" title="Genera la Semana 4 (Descarga) de este día a partir de la semana activa: -1 serie por ejercicio, RIR 3-4, nombres intactos">🍃 Generar Deload S4</button>' : '') +
       '</div>' +
       '<div class="hint" style="margin-top:6px">Cada semana de CrossFit &amp; Hyrox es una prescripción 100% independiente -- editar acá nunca modifica el contenido de otra semana. Una semana nunca prescripta arranca en blanco, nunca copia otra semana.</div>' +
@@ -9404,6 +9650,7 @@ function bindBuilder(){
   $('#bHead').addEventListener('click', e => {
     if(e.target.closest('#btnCopiarPlan')){ abrirModalCopiarPlan(); return; }
     if(e.target.closest('#btnCopiarDia')){ abrirModalCopiarDia(); return; }
+    if(e.target.closest('#btnCopiarSemana')){ abrirModalCopiarSemana(); return; }
     if(!e.target.closest('#btnPlanEstado')) return;
     const ath = active();
     const p = plan(S.activeId); if(!p) return;
@@ -9652,6 +9899,7 @@ function bindBuilder(){
     if(t.dataset.cfobjia !== undefined){ generarObjetivoSemanaCF(t); return; }
     if(t.dataset.sbwk !== undefined){ S.ui = S.ui || {}; S.ui.week = parseInt(t.dataset.sbwk, 10) || 0; save(); renderBuilder(); return; }
     if(t.dataset.cfclonewk !== undefined){ clonarSemanaAnteriorCF(); return; }
+    if(t.dataset.cfcopiarsemana !== undefined){ abrirModalCopiarSemana(); return; }
     if(t.dataset.cfdeload !== undefined){ generarDeloadS4CF(); return; }
     if(t.dataset.addex){ addSubEx(t.dataset.addex, $('[data-pick="' + t.dataset.addex + '"]').value); return; }
     if(t.dataset.bai){ nombrarBloqueConIA(t.dataset.bai, t); return; }
@@ -12409,6 +12657,9 @@ window.COACH_DISCIPLINA = PROGRAM_CONFIG.modoSemanal ? 'crossfit' : 'sports';
    vez, apenas se conoce la disciplina) en vez de depender de body.cf-modo,
    que sólo se activa en días 100% CrossFit y nunca en días híbridos. */
 if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
+/* estilo de tarjeta de ejercicio que el coach fijó en el Showroom (1 Clean Tech · 2 High-Performance · 3 Glass · 4 Compacto de élite): lo aplica el atributo data-jp-estilo del body */
+window.jpEstiloTarjeta = function(n){ n = parseInt(n, 10); if(!(n >= 1 && n <= 4)) n = 2; document.body.setAttribute('data-jp-estilo', String(n)); return n; };
+try{ window.jpEstiloTarjeta(PROGRAM_CONFIG.estiloTarjeta); }catch(eEst){ document.body.setAttribute('data-jp-estilo', '2'); }
 /* historialCargas (directiva "Memoria de Cargas Históricas"): índice por
    nombre de ejercicio (normalizado) -> {kg, reps, ts}, independiente de
    semana/día/bloque (a diferencia de state.loads, que vive atado a un
@@ -16917,6 +17168,24 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       [0, 1, 2, 3].map(function(n){ return '<button type="button" class="jp-qc-rirb' + (sel === n ? ' on' : '') + '" data-rirx="' + n + '" aria-pressed="' + (sel === n ? 'true' : 'false') + '">' + (n === 3 ? '3+' : n) + '</button>'; }).join('') +
       '<span class="jp-qc-rir-h">reps que te sobraron</span></div>';
   }
+  /* COACHING TIPS del ejercicio (Set-up · Ejecución · Cuidado): salen de las pautas del bloque; en un biset / triset, solo las líneas de ESTE ejercicio (A1 · ..., A2 · ...) */
+  function qrTipsHtml(c, e, i){
+    var lineas = String(c.tp || '').split(/\\n+|<br\\s*\\/?>/i).map(qrPlano).filter(Boolean);
+    var L = regLetra(c, i), multi = c.ex && c.ex.length > 1;
+    var G = { su: '', ej: '', cu: '' };
+    lineas.forEach(function(l){
+      var m = /^(?:([A-F]\\d)\\s*\\u00b7\\s*)?([^:]{2,40}):\\s*(.+)$/.exec(l); if(!m) return;
+      if(multi && (!m[1] || m[1].toUpperCase() !== L)) return;
+      var et = m[2].toUpperCase();
+      if(/^SET-?UP/.test(et)){ if(!G.su) G.su = m[3]; }
+      else if(/^(CUE|CLAVE|EJECUCI|CONTROL|RITMO)/.test(et)){ if(!G.ej) G.ej = m[3]; }
+      else if(/^(CUIDADO|ERROR|PRECAUCI)/.test(et)){ if(!G.cu) G.cu = m[3]; }
+    });
+    if(!G.su && !G.ej && !G.cu) return '';
+    var fila = function(cls, lb, txt){ return txt ? '<div class="jp-ex-tip ' + cls + '"><b>' + lb + '</b><span>' + escSB(qrCorta(txt, 190)) + '</span></div>' : ''; };
+    return '<details class="jp-ex-tips"><summary><span class="jp-ex-tips-t">COACHING TIPS</span><span class="jp-ex-tips-s">Set-up \\u00b7 Ejecuci\\u00f3n \\u00b7 Cuidado</span></summary><div class="jp-ex-tips-b">' +
+      fila('su', 'SET-UP', G.su) + fila('ej', 'EJECUCI\\u00d3N', G.ej) + fila('cu', 'CUIDADO', G.cu) + '</div></details>';
+  }
   function qrCardHtml(c, e, i){
     var m = qrModelo(c, e, i), k = qrKey(c);
     var unidad = m.modoR === 'tiempo' ? 'SEG' : (m.modoR === 'solo' && e.u && e.u !== 'reps' ? String(e.u).toUpperCase() : 'REPS');
@@ -16954,7 +17223,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       fin +
       (guia.t ? '<div class="jp-qc-guia"><b>' + guia.k + '</b><span>' + escSB(guia.t) + '</span></div>' : '') +
       (m.hint ? '<div class="jp-qc-m"><span class="jp-qc-hint">' + escSB(m.hint) + '</span></div>' : '') +
-    '</div></div></div></div>';
+    '</div></div></div>' + qrTipsHtml(c, e, i) + '</div>';
   }
   /* devuelve el contenedor con una tarjeta por ejercicio; jpQrAcomodar() las mueve dentro de la fila de cada ejercicio */
   function jpRegBotonHtml(cfg){
@@ -16971,6 +17240,25 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     board.classList.add('jp-tec-gate');
     board.classList.toggle('jp-tec-open', abierto);
   }
+  /* tempo del ejercicio: el de la dosis (e.tempo) o, si el coach lo dejó solo en las pautas ("TEMPO: Tempo 3010 (...)"), el que figura ahí */
+  function qrTempoDe(c, e, i){
+    var propio = tempoLimpioSB(e && e.tempo); if(propio) return propio;
+    var L = regLetra(c, i), out = '';
+    String(c.tp || '').split(/\\n+|<br\\s*\\/?>/i).map(qrPlano).some(function(l){
+      var m = /^(?:([A-F]\\d)\\s*\\u00b7\\s*)?TEMPO\\s*:\\s*(?:Tempo\\s*)?([0-9xX]{3,4})\\b/i.exec(l); if(!m) return false;
+      if(m[1] && c.ex && c.ex.length > 1 && m[1].toUpperCase() !== L) return false;
+      out = m[2]; return true;
+    });
+    return out;
+  }
+  /* el tempo va en la fila técnica de la tarjeta (junto al RIR); si la barra de dosis no lo trae, se agrega acá */
+  function qrInyectarTempo(fila, tp){
+    var bar = fila && fila.querySelector(':scope > .jp-dose-bar'); if(!bar || !tp || bar.querySelector('.jp-db-tempo')) return;
+    var r3 = bar.querySelector('.jp-db-r3');
+    if(!r3){ r3 = document.createElement('div'); r3.className = 'jp-db-row jp-db-r3'; bar.appendChild(r3); }
+    var s = document.createElement('span'); s.className = 'jp-db-seg jp-db-tempo'; s.innerHTML = '<small>TEMPO</small> <b>' + escSB(tp) + '</b>';
+    r3.insertBefore(s, r3.firstChild);
+  }
   /* cada tarjeta pasa a vivir DENTRO de la fila de su ejercicio (nombre, video y dosis arriba; KG × REPS y ✓ abajo): una sola tarjeta por ejercicio */
   function jpQrAcomodar(root){
     var boards = root && root.matches && root.matches('[data-sportsboard]') ? [root] : (root && root.querySelectorAll ? Array.prototype.slice.call(root.querySelectorAll('[data-sportsboard]')) : []);
@@ -16986,6 +17274,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
             if(idTx){ QR_LBL[cd.getAttribute('data-qk') + '|' + cd.getAttribute('data-qi')] = { id: idTx }; var spId = cd.querySelector('.jp-qc-tg-id'); if(spId) spId.textContent = '· ' + idTx; }
             var tr = filas[i].querySelector(':scope > .jp-set-tracker-tecnica');
             if(tr) filas[i].insertBefore(cd, tr); else filas[i].appendChild(cd);
+            try{ var kt = qrCtx(cd); if(kt) qrInyectarTempo(filas[i], qrTempoDe(kt.c, kt.e, parseInt(cd.getAttribute('data-qi'), 10))); }catch(eT){}
           });
           box.parentNode.removeChild(box);
         }
@@ -17013,6 +17302,8 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     tmp.innerHTML = qrCardHtml(k.c, k.e, parseInt(card.getAttribute('data-qi'), 10));
     var nuevo = tmp.firstChild, board = card.closest('[data-sportsboard]');
     if(mantener && card.classList.contains('jp-open')){ nuevo.classList.add('jp-open'); var tg0 = nuevo.querySelector('.jp-qc-tg'); if(tg0) tg0.setAttribute('aria-expanded', 'true'); }
+    var tipsAntes = card.querySelector('.jp-ex-tips'), tipsAhora = nuevo.querySelector('.jp-ex-tips');
+    if(tipsAntes && tipsAhora && tipsAntes.open) tipsAhora.open = true;
     card.parentNode.replaceChild(nuevo, card);
     qrTecAbrir(board);
     return nuevo;
@@ -18416,7 +18707,7 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
        alumno necesita el RIR EXACTO que escribió el coach, rango u
        observación "/ Fallo técnico" incluidos. */
     if((m = t.match(/rir\\s*(\\d+(?:\\s*-\\s*\\d+)?(?:\\s*\\/\\s*fallo\\s*t[eé]cnico)?)/i))) out.rir = m[1].replace(/\\s+/g, ' ').trim();
-    /* directiva maestra ("Parser universal y tolerante para Sports &
+  /* directiva maestra ("Parser universal y tolerante para Sports &
        Bodybuilding") -- reescritura genérica: en vez de intentar cubrir
        formas COMPUESTAS puntuales de descanso a mano (frágil, se rompe
        apenas el coach redacta distinto -- "Rest 60s entre piernas / 90s
@@ -19753,7 +20044,14 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
       (en.unilateral ? chipUnilateralSB(en.unilateral) : '') + '</div>' : '';
     return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1"><span class="jp-tr-total">' + en.sets + ' SERIES</span></div><div class="jp-db-row jp-db-tr">' + chips + '</div>' + r2 + '</div>';
   }
-  /* fila 1: volumen y esfuerzo; fila 2: pausa (1 toque = cuenta regresiva), cadencia y modificador tactico.
+  function tempoLimpioSB(tempo){
+    var s = String(tempo == null ? '' : tempo).replace(/^\\s*tempo\\s*[:\\-]?\\s*/i, '').trim();
+    return /^[0-9xX]{3,4}$|^[0-9xX](?:\\s*[-\\/]\\s*[0-9xX]){2,3}$/.test(s) ? s.replace(/\\s+/g, '') : '';
+  }
+  /* Tarjeta de ejercicio en tres filas horizontales (el estilo visual lo pone data-jp-estilo, ver shared/tarjeta-ejercicio.css):
+       fila 1 · VOLUMEN: series x repeticiones, grande y a lo largo de la tarjeta
+       fila 2 · DESCANSO: debajo del volumen (un toque = cuenta regresiva)
+       fila 3 · TÉCNICA: tempo y RIR (más la carga pautada y el modificador unilateral)
      sinPausa marca la estacion intermedia de un biset/triset (A1 -> A2 sin descanso) */
   function restBadgeSB(seg, lbl){
     seg = normRestSB(seg);
@@ -19761,28 +20059,30 @@ body.nav-stuck .week-selector-wrap,body.nav-stuck .week-tabs-wrap{box-shadow:0 6
     return '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" data-rest-go="' + seg + '" aria-label="Iniciar descanso de ' + seg + ' segundos">\\u23f1\\ufe0e\\u25b6\\ufe0e DESCANSO ' + (lbl ? escSB(lbl) : fmtRestSB(seg)) + '</button>';
   }
   function dosisCompletaSB(sets, reps, unidad, tempo, rir, restSeconds, extra, uni, sinPausa, restLabel, rondas){
-    var r1 = [], r2 = [];
+    var r1 = '', r2 = [], r3 = [];
     var u = escSB(String(unidad || 'reps').toUpperCase());
     if(!sets && !reps) return '';
     /* criterio único: ejercicio suelto = SERIES; estaciones encadenadas (biset / triset) = RONDAS */
-    var rotSets = rondas ? (sets == 1 ? ' RONDA' : ' RONDAS') : (sets == 1 ? ' SERIE' : ' SERIES');
-    if(sets && reps) r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + ' \\u00d7 ' + escSB(reps) + ' ' + u + '</span>');
-    else if(reps) r1.push('<span class="jp-db-seg jp-db-vol">' + escSB(reps) + ' ' + u + '</span>');
-    else r1.push('<span class="jp-db-seg jp-db-vol">' + sets + rotSets + '</span>');
-    /* el tempo no se imprime en la línea principal de series: vive en el acordeón de pautas ("TEMPO (CADENCIA)") */
-    if(rir){
-      var tier = tierRirSB(rir);
-      r1.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '">' + ICONO_RIR_SB[tier] + ' RIR ' + escSB(rir) + '</span>');
-    }
+    var rotSets = rondas ? (sets == 1 ? 'RONDA' : 'RONDAS') : (sets == 1 ? 'SERIE' : 'SERIES');
+    var vS = sets ? '<b class="jp-vn">' + sets + '</b> <span class="jp-vl">' + rotSets + '</span>' : '';
+    var vR = reps ? '<b class="jp-vr">' + escSB(reps) + '</b> <span class="jp-vl">' + u + '</span>' : '';
+    r1 = '<span class="jp-db-seg jp-db-vol">' + vS + (vS && vR ? ' <i class="jp-vx">\\u00d7</i> ' : '') + vR + '</span>';
     var rb = restBadgeSB(restSeconds, restLabel);
     if(rb) r2.push(rb);
     else if(sinPausa) r2.push('<span class="jp-db-seg jp-db-rest jp-db-nopause">\\u26a1 SIN DESCANSO</span>');
-    /* el tempo es un chip corto entre las series y el RIR (mismo orden que la línea de dosis del Builder: series x reps | tempo | RIR, y abajo el descanso); su explicación sigue en el acordeón de pautas */
-    if(extra) r2.push('<span class="jp-db-seg jp-db-tempo">' + escSB(extra) + '</span>');
-    if(uni) r2.push(chipUnilateralSB(uni));
-    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1.join('') + '</div>' +
-      (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') + '</div>';
+    var tp = tempoLimpioSB(tempo);
+    if(tp) r3.push('<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + escSB(tp) + '</b></span>');
+    if(rir){
+      var tier = tierRirSB(rir);
+      r3.push('<span class="jp-db-seg jp-db-rir jp-rir-' + tier + '"><small>RIR</small> <b>' + escSB(rir) + '</b></span>');
+    }
+    if(extra) r3.push('<span class="jp-db-seg jp-db-carga"><small>CARGA</small> <b>' + escSB(String(extra).replace(/^@\\s*/, '')) + '</b></span>');
+    if(uni) r3.push(chipUnilateralSB(uni));
+    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1 + '</div>' +
+      (r2.length ? '<div class="jp-db-row jp-db-r2">' + r2.join('') + '</div>' : '') +
+      (r3.length ? '<div class="jp-db-row jp-db-r3">' + r3.join('') + '</div>' : '') + '</div>';
   }
+  window.jpDosisHtml = dosisCompletaSB;      /* público para las pruebas del runner (tests/parsers) */
   /* directiva maestra ("Parser universal y tolerante para Sports &
      Bodybuilding") -- micro-chip táctico de soporte para modificadores de
      unilateralidad/ejecución ("por pierna"/"por lado"): formato exacto
@@ -46436,6 +46736,163 @@ html body:not(#_) #jpCerrarDiaBtn.jp-close-cta:not(.done):active{ transform:scal
 html body:not(#_) #jpCerrarDiaBtn.jp-close-cta.done{ min-height:56px !important; border-radius:14px !important; font:800 clamp(.7rem, 3.3vw, .84rem) 'Chakra Petch',sans-serif !important; letter-spacing:.12em !important; color:#34D399 !important; background:rgba(52,211,153,.08) !important; border:1.5px solid rgba(52,211,153,.55) !important; box-shadow:0 0 0 1px rgba(0,229,255,.2) !important; }
 html body:not(#_) #storyCtaBtn ~ #jpCerrarDiaBtn{ margin-top:12px !important; }
 </style>
+<style id="jpPaletaNoche">
+/* =========================================================
+   PALETA AZUL NOCHE PROFUNDO · app del alumno
+   Reemplaza los fondos casi negros (#0A0A0A) por un azul marino / noche (#0B132B) y sube un escalón las superficies (tarjetas, cajones, paneles)
+   con bordes iluminados finos, para que contrasten sobre el fondo. Solo presentación: no toca datos ni lógica.
+   ========================================================= */
+:root{
+  --jp-noche:#0B132B;          /* fondo de página */
+  --jp-noche-2:#0F1938;        /* cabecera / barras */
+  --jp-noche-3:#131F43;        /* tarjeta */
+  --jp-noche-4:#1A2850;        /* tarjeta elevada */
+  --jp-noche-borde:rgba(130,160,230,.22);
+  --jp-noche-borde-2:rgba(150,178,240,.36);
+  --bg:#0B132B;
+  --panel:#101A3A;
+  --bg-card:rgba(19,31,67,.88);
+  --text-secondary:#A9B6D6;
+}
+html, html body:not(#_):not(#__){ background:#0B132B !important; }
+html body:not(#_):not(#__){
+  background-image:radial-gradient(900px 520px at 85% -8%, rgba(229,195,120,.07), transparent 62%), radial-gradient(800px 560px at -10% 105%, rgba(88,120,210,.14), transparent 60%) !important;
+  background-attachment:fixed !important;
+}
+/* cabecera y barras */
+html body:not(#_):not(#__) header, html body:not(#_):not(#__) .hd-compact, html body:not(#_):not(#__) .nav-pill, html body:not(#_):not(#__) .ses-pause{ background-color:var(--jp-noche-2) !important; }
+html body:not(#_):not(#__) .hd-compact{ border-bottom:1px solid var(--jp-noche-borde) !important; }
+/* tarjetas de bloque */
+html body:not(#_):not(#__) .block{
+  background-color:var(--jp-noche-3) !important;
+  background-image:linear-gradient(180deg, rgba(160,190,255,.06) 0%, rgba(255,255,255,0) 22%) !important;
+  border-color:var(--jp-noche-borde) !important;
+  box-shadow:0 14px 34px -20px rgba(0,0,0,.75), inset 0 1px 0 rgba(180,205,255,.08) !important;
+}
+/* cajones y paneles */
+html body:not(#_):not(#__) .hd-full-drawer, html body:not(#_):not(#__) .hdp-wk-row, html body:not(#_):not(#__) .hdp-uni-toggle{ background-color:var(--jp-noche-2) !important; border-color:var(--jp-noche-borde) !important; }
+html body:not(#_):not(#__) .hdp-row, html body:not(#_):not(#__) .hdp-card, html body:not(#_):not(#__) .info-card, html body:not(#_):not(#__) .jp-sb-vid-card{ background-color:var(--jp-noche-4) !important; border-color:var(--jp-noche-borde-2) !important; }
+html body:not(#_):not(#__) .timer-hud{ background-color:rgba(15,25,56,.94) !important; border-color:var(--jp-noche-borde-2) !important; }
+/* texto secundario con más contraste sobre el azul */
+html body:not(#_):not(#__) .block-subtitle, html body:not(#_):not(#__) .coach-note{ color:#B4C1E0 !important; }
+</style>
+<style id="jpEstiloTarjetas">
+html body:not(#_):not(#__)[data-jp-estilo="1"], html body:not(#_):not(#__) [data-jp-estilo="1"]{--xc-surface:rgba(255,255,255,.022); --xc-surface-2:rgba(255,255,255,.035);
+  --xc-bd:rgba(150,176,235,.17); --xc-bd-2:rgba(150,176,235,.3);
+  --xc-r:10px; --xc-sh:none; --xc-blur:none; --xc-pad:12px 14px; --xc-gap:0px;
+  --xc-num:#EAF0FF; --xc-num-sz:1.55rem; --xc-num-w:500; --xc-font:'JetBrains Mono','SF Mono',ui-monospace,Consolas,monospace;
+  --xc-lbl:#8FA3CF; --xc-txt:#EAF0FF; --xc-name-sz:1rem; --xc-name-w:600;
+  --xc-acc:#7DA2FF; --xc-acc-bg:rgba(125,162,255,.1);
+  --xc-rest-bg:transparent; --xc-rest-bd:rgba(150,176,235,.28); --xc-rest-c:#CFDBFF;
+  --xc-chip-bg:transparent; --xc-chip-bd:transparent; --xc-chip-n:#EAF0FF;
+  --xc-tip-bg:rgba(255,255,255,.02);}
+html body:not(#_):not(#__)[data-jp-estilo="2"], html body:not(#_):not(#__) [data-jp-estilo="2"]{--xc-surface:linear-gradient(180deg,#18265A 0%,#111C42 100%); --xc-surface-2:rgba(8,14,36,.55);
+  --xc-bd:rgba(229,195,120,.26); --xc-bd-2:rgba(229,195,120,.5);
+  --xc-r:12px; --xc-sh:0 10px 26px -14px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06); --xc-blur:none; --xc-pad:14px 14px 12px; --xc-gap:8px;
+  --xc-num:#E5C378; --xc-num-sz:2.7rem; --xc-num-w:800; --xc-font:'Chakra Petch','Barlow Condensed',system-ui,sans-serif;
+  --xc-lbl:#C9B27A; --xc-txt:#FFFFFF; --xc-name-sz:1.05rem; --xc-name-w:800;
+  --xc-acc:#E5C378; --xc-acc-bg:rgba(229,195,120,.12);
+  --xc-rest-bg:rgba(229,195,120,.1); --xc-rest-bd:rgba(229,195,120,.55); --xc-rest-c:#F4E4BB;
+  --xc-chip-bg:#0A1230; --xc-chip-bd:rgba(229,195,120,.4); --xc-chip-n:#F6E7BE;
+  --xc-tip-bg:rgba(8,14,36,.5);}
+html body:not(#_):not(#__)[data-jp-estilo="3"], html body:not(#_):not(#__) [data-jp-estilo="3"]{--xc-surface:linear-gradient(135deg,rgba(255,255,255,.11) 0%,rgba(255,255,255,.04) 55%,rgba(255,255,255,.07) 100%); --xc-surface-2:rgba(255,255,255,.06);
+  --xc-bd:rgba(190,214,255,.32); --xc-bd-2:rgba(210,228,255,.5);
+  --xc-r:20px; --xc-sh:0 22px 44px -20px rgba(2,8,28,.85),inset 0 1px 0 rgba(255,255,255,.22); --xc-blur:blur(16px) saturate(150%); --xc-pad:16px 16px 14px; --xc-gap:10px;
+  --xc-num:#FFFFFF; --xc-num-sz:2.3rem; --xc-num-w:600; --xc-font:'Inter','Segoe UI',system-ui,sans-serif;
+  --xc-lbl:#B9CCF2; --xc-txt:#FFFFFF; --xc-name-sz:1.05rem; --xc-name-w:700;
+  --xc-acc:#9CC2FF; --xc-acc-bg:rgba(156,194,255,.14);
+  --xc-rest-bg:rgba(255,255,255,.08); --xc-rest-bd:rgba(200,222,255,.38); --xc-rest-c:#FFFFFF;
+  --xc-chip-bg:rgba(255,255,255,.07); --xc-chip-bd:rgba(200,222,255,.28); --xc-chip-n:#FFFFFF;
+  --xc-tip-bg:rgba(255,255,255,.05);}
+html body:not(#_):not(#__)[data-jp-estilo="4"], html body:not(#_):not(#__) [data-jp-estilo="4"]{--xc-surface:#0F1A3A; --xc-surface-2:#0B1330;
+  --xc-bd:rgba(140,165,225,.28); --xc-bd-2:rgba(170,192,240,.5);
+  --xc-r:6px; --xc-sh:none; --xc-blur:none; --xc-pad:8px 10px; --xc-gap:0px;
+  --xc-num:#FFFFFF; --xc-num-sz:1.75rem; --xc-num-w:900; --xc-font:'Chakra Petch','Barlow Condensed',system-ui,sans-serif;
+  --xc-lbl:#9AB0DE; --xc-txt:#FFFFFF; --xc-name-sz:.95rem; --xc-name-w:900;
+  --xc-acc:#E5C378; --xc-acc-bg:rgba(229,195,120,.1);
+  --xc-rest-bg:transparent; --xc-rest-bd:transparent; --xc-rest-c:#FFFFFF;
+  --xc-chip-bg:transparent; --xc-chip-bd:transparent; --xc-chip-n:#FFFFFF;
+  --xc-tip-bg:rgba(255,255,255,.03);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex{background:var(--xc-surface) !important; border:1px solid var(--xc-bd) !important; border-radius:var(--xc-r) !important; box-shadow:var(--xc-sh) !important;
+  padding:var(--xc-pad) !important; margin:10px 0 !important; -webkit-backdrop-filter:var(--xc-blur); backdrop-filter:var(--xc-blur);
+  position:relative; overflow:hidden;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex-head{display:flex !important; align-items:center !important; gap:10px !important; margin:0 0 6px !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex-id, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex-id, html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-letra, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-letra{font-family:var(--xc-font) !important; font-weight:700 !important; font-size:.75rem !important; letter-spacing:.14em !important; color:var(--xc-acc) !important; opacity:1 !important;
+  background:var(--xc-acc-bg) !important; border-radius:6px !important; padding:3px 7px !important; align-self:center !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex .jp-sb-ex-nombre, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex .jp-sb-ex-nombre, html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex-ancla .jp-sb-ex-nombre, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex-ancla .jp-sb-ex-nombre{color:var(--xc-txt) !important; font-family:var(--xc-font) !important; font-weight:var(--xc-name-w) !important; font-size:var(--xc-name-sz) !important;
+  letter-spacing:.03em !important; line-height:1.2 !important; flex:1 1 auto; min-width:0;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex .jp-nom-en, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex .jp-nom-en{color:var(--xc-lbl) !important; font-weight:500 !important; font-size:.72em !important; letter-spacing:.02em !important; text-transform:none !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar{display:grid !important; grid-template-columns:minmax(0,1fr) !important; gap:var(--xc-gap) !important; overflow:visible !important; white-space:normal !important;
+  background:none !important; border:0 !important; box-shadow:none !important; padding:0 !important; margin:4px 0 8px !important; width:100%;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-row, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-row{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:8px 10px !important; width:100% !important; padding:0 !important; margin:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-seg, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-seg{background:none !important; border:0 !important; box-shadow:none !important; border-radius:0 !important; padding:0 !important; margin:0 !important; height:auto !important; min-height:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-vol, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-vol{display:flex !important; align-items:baseline !important; flex-wrap:wrap !important; gap:2px 8px !important; width:100% !important;
+  font-family:var(--xc-font) !important; font-weight:var(--xc-num-w) !important; color:var(--xc-num) !important; font-variant-numeric:tabular-nums;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vn, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vn, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vr, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vr{font-size:var(--xc-num-sz) !important; line-height:1 !important; letter-spacing:-.02em !important; color:var(--xc-num) !important; font-weight:var(--xc-num-w) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vl, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vl{font-size:.64rem !important; letter-spacing:.16em !important; font-weight:700 !important; color:var(--xc-lbl) !important; text-transform:uppercase !important; font-family:var(--xc-font) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vx, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vx{font-style:normal !important; font-size:calc(var(--xc-num-sz) * .55) !important; color:var(--xc-acc) !important; font-weight:600 !important; padding:0 2px;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rest{display:inline-flex !important; align-items:center !important; gap:6px !important; background:var(--xc-rest-bg) !important; border:1px solid var(--xc-rest-bd) !important;
+  color:var(--xc-rest-c) !important; border-radius:calc(var(--xc-r) * .7) !important; padding:7px 12px !important; font-family:var(--xc-font) !important;
+  font-weight:700 !important; font-size:.78rem !important; letter-spacing:.08em !important; box-shadow:none !important; cursor:pointer;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rest.jp-db-nopause, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rest.jp-db-nopause{cursor:default;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{display:inline-flex !important; align-items:baseline !important; gap:6px !important; background:var(--xc-chip-bg) !important; border:1px solid var(--xc-chip-bd) !important;
+  border-radius:calc(var(--xc-r) * .6) !important; padding:5px 10px !important; color:var(--xc-chip-n) !important; font-family:var(--xc-font) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo small, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir small, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga small{font-size:.58rem !important; letter-spacing:.16em !important; font-weight:700 !important; color:var(--xc-lbl) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga b{font-size:1rem !important; font-weight:800 !important; letter-spacing:.04em !important; color:var(--xc-chip-n) !important; font-variant-numeric:tabular-nums;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir .jp-emo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir .jp-emo{display:none !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{font-size:.66rem !important; font-weight:700 !important; letter-spacing:.1em !important; color:var(--xc-lbl) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg{background:var(--xc-surface-2) !important; border:1px solid var(--xc-bd) !important; border-radius:calc(var(--xc-r) * .8) !important; box-shadow:none !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-l, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-l{color:var(--xc-txt) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-id, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-id, html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-h, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-h, html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-r, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-r{color:var(--xc-acc) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips{margin:8px 0 0; background:var(--xc-tip-bg); border:1px solid var(--xc-bd); border-radius:calc(var(--xc-r) * .8); overflow:hidden;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips > summary, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips > summary{list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:9px 12px; position:relative; -webkit-tap-highlight-color:transparent;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips > summary::-webkit-details-marker, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips > summary::-webkit-details-marker{display:none;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips > summary::after, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips > summary::after{content:"\\25BE"; margin-left:auto; color:var(--xc-acc); transition:transform .18s ease; font-size:.8rem;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips[open] > summary::after, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips[open] > summary::after{transform:rotate(180deg);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips-t, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips-t{font-family:var(--xc-font); font-weight:800; font-size:.7rem; letter-spacing:.16em; color:var(--xc-acc);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips-s, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips-s{font-size:.66rem; color:var(--xc-lbl); letter-spacing:.04em;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips-b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips-b{display:grid; gap:0; padding:0 12px 10px;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip{display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; align-items:start; padding:8px 0; border-top:1px solid var(--xc-bd);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip b{font-family:var(--xc-font); font-size:.62rem; letter-spacing:.14em; font-weight:800; color:var(--xc-lbl); padding-top:2px;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip.su b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip.su b{color:var(--xc-acc);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip.cu b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip.cu b{color:#FF9C7A;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip span, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip span{font-size:.82rem; line-height:1.5; color:var(--xc-txt); opacity:.92;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-row, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-row{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px 16px !important; border-top:1px solid var(--xc-bd) !important; padding:8px 0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1{border-top:0 !important; padding-top:2px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-row::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-row::before{flex:0 0 68px; font-family:var(--xc-font); font-size:.6rem; letter-spacing:.18em; color:var(--xc-lbl); font-weight:600;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1::before{content:"VOLUMEN";}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r2::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r2::before{content:"DESCANSO";}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r3::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r3::before{content:"TÉCNICA";}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1 .jp-db-vol, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1 .jp-db-vol{flex:1 1 0; width:auto !important; min-width:0;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-rest{padding:0 !important; border:0 !important; letter-spacing:.06em !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-carga{padding:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-sb-ex-head{border-bottom:1px solid var(--xc-bd) !important; padding-bottom:8px !important; margin-bottom:8px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-sb-ex{border-left:4px solid #E5C378 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-r1{background:rgba(229,195,120,.1); border:1px solid rgba(229,195,120,.3); border-radius:10px; padding:10px 12px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-vn, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-vn{text-shadow:0 0 22px rgba(229,195,120,.3);}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-rest{font-weight:800 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-rir b{color:#E5C378 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-ex-tip.su b, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-ex-tip.su b, html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-ex-tips-t, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-ex-tips-t{color:#E5C378;}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-sb-ex{margin:14px 0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-dose-bar .jp-db-rest{backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-dose-bar .jp-db-carga{backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-ex-tips, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-ex-tips{backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex{margin:6px 0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex-head{margin-bottom:4px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar{grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr) minmax(0,.8fr) !important; border-top:1px solid var(--xc-bd) !important; border-bottom:1px solid var(--xc-bd) !important; margin:2px 0 6px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r1{grid-column:1 / -1; padding:6px 0 !important; border-bottom:1px solid var(--xc-bd);}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r2, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r2, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r3, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r3{display:contents !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rest{padding:7px 6px !important; border:0 !important; border-radius:0 !important; justify-content:flex-start; font-weight:900 !important; font-size:.8rem !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-sb-unilateral{padding:7px 8px !important; border:0 !important; border-left:1px solid var(--xc-bd) !important; border-radius:0 !important; justify-content:flex-start;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir b{font-weight:900 !important; font-size:1.05rem !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-carga{flex-direction:column !important; align-items:flex-start !important; gap:0 !important; min-width:0;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rest{min-width:0; line-height:1.15; white-space:normal;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-ex-tips > summary, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-ex-tips > summary{padding:6px 10px;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-ex-tip, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-ex-tip{padding:5px 0; grid-template-columns:70px minmax(0,1fr);}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-ex-tip span, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-ex-tip span{font-size:.78rem; line-height:1.4;}
+@media (max-width:380px){html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vn, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vn, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vr, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vr{font-size:calc(var(--xc-num-sz) * .85) !important;}
+}
+</style>
 
 </body>
 </html>
@@ -47084,6 +47541,8 @@ function buildProgramConfig(ath){
     mesoNivel: (p.meta && p.meta.mesoNivel) || '',
     disciplina: (p.meta && p.meta.mesoDisc) || '',
     modoSemanal: !!discCF,
+    /* estilo de tarjeta de ejercicio que el coach fijó en el Showroom (1 Clean Tech · 2 High-Performance · 3 Glass · 4 Compacto de élite) */
+    estiloTarjeta: (function(){ const n = parseInt(S.ui && S.ui.estiloTarjeta, 10); return (n >= 1 && n <= 4) ? n : 2; })(),
     /* directiva ("Estrategia & Enfoque de la Semana") -- campo nuevo,
        aditivo, propio de CrossFit (p.meta.cfEstrategia, ver módulo
        "Athlete Tactical Profile" del Builder): reemplaza en la Ficha
@@ -88361,7 +88820,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
 /* =========================================================
    LIFT ESTÉTICO DEL BUILDER · capa visual final (se carga ÚLTIMA: gana la cascada)
    ---------------------------------------------------------
-   Problema: la interfaz se veía demasiado oscura, plana y de bajo contraste para usarla todo el día en el gimnasio.
+   Problema: la interfaz se veía demasiado oscura, plana y de bajo contraste para usarla todo el día en el gimnasio. Ahora el fondo es azul noche profundo (#0B132B).
    Qué hace esta capa (solo presentación: no toca datos, ni lógica, ni el HTML):
      1) Superficies en grises grafito tipo zinc / slate profundo, un escalón más claros que antes y con una jerarquía clara:
         fondo de página < tarjeta < panel interno < campo.
@@ -88372,13 +88831,13 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
    ========================================================= */
 :root{
   /* escala grafito (zinc / slate profundo) */
-  --lift-bg:#0F1115;          /* fondo de página */
-  --lift-surface:#181B22;     /* tarjeta */
-  --lift-surface-hi:#1E222B;  /* tarjeta elevada / hover */
-  --lift-inner:#14171D;       /* panel anidado (un escalón más hundido que la tarjeta) */
-  --lift-field:#101319;       /* campos de entrada: hundidos para que el texto se lea */
-  --lift-line:rgba(148,163,184,.17);
-  --lift-line-hi:rgba(148,163,184,.30);
+  --lift-bg:#0B132B;          /* fondo de página: azul noche profundo */
+  --lift-surface:#131E3D;     /* tarjeta */
+  --lift-surface-hi:#1A2750;  /* tarjeta elevada / hover */
+  --lift-inner:#0F1936;       /* panel anidado (un escalón más hundido que la tarjeta) */
+  --lift-field:#0A1128;       /* campos de entrada: hundidos para que el texto se lea */
+  --lift-line:rgba(130,160,230,.2);
+  --lift-line-hi:rgba(150,178,240,.34);
   --lift-glow:rgba(255,255,255,.055);   /* hilo de luz del borde superior */
   --lift-shadow:0 1px 0 var(--lift-glow) inset, 0 12px 30px -14px rgba(0,0,0,.65), 0 2px 6px rgba(0,0,0,.25);
   /* ocre de la marca */
@@ -88386,23 +88845,25 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
   --ocre-bg:rgba(229,195,120,.10); --ocre-line:rgba(229,195,120,.42);
   /* tokens base reasignados: todo lo que usa var(--panel...) sube de nivel sin tocar cada regla */
   --bg:var(--lift-bg);
-  --panel:var(--lift-surface); --panel-2:var(--lift-inner); --panel-3:#232833; --panel-nested:var(--lift-inner);
-  --line:var(--lift-line); --line-2:var(--lift-line-hi); --line-3:rgba(148,163,184,.26);
-  --txt:#FFFFFF; --txt-2:#EEF0F4; --muted:#AAB3C0;
+  --panel:var(--lift-surface); --panel-2:var(--lift-inner); --panel-3:#1D2A52; --panel-nested:var(--lift-inner);
+  --line:var(--lift-line); --line-2:var(--lift-line-hi); --line-3:rgba(150,178,240,.3);
+  --txt:#FFFFFF; --txt-2:#EAF0FF; --muted:#A9B6D6;
   --gold-active:var(--ocre);
+  --bg-canvas:#0B132B;          /* una capa anterior pinta el body con esta ficha (!important) */
 }
-body{
+html, html body:not(#_){ background-color:#0B132B !important; }
+html body:not(#_){
   background:
     radial-gradient(1100px 640px at 88% -12%, rgba(229,195,120,.07), transparent 62%),
-    radial-gradient(900px 600px at -8% 108%, rgba(100,116,139,.10), transparent 60%),
-    var(--lift-bg);
+    radial-gradient(900px 600px at -8% 108%, rgba(88,120,210,.16), transparent 60%),
+    #0B132B !important;
   line-height:1.55;
 }
-.sidebar{background:linear-gradient(180deg,#14171D,#0F1115);border-right-color:var(--lift-line-hi)}
+.sidebar{background:linear-gradient(180deg,#0F1938,#0B132B);border-right-color:var(--lift-line-hi)}
 
 /* ---------- tarjetas y paneles: profundidad + borde con brillo ---------- */
 .card,#builderWrap .card,#v-builder .card,.cf-week-bar,.ath-card,.ex-card,.stat,.tools-in,.fin-card,.prep-card,.ctx-card,.vol-card,.ton-card,.pr-feed{
-  background:linear-gradient(180deg,var(--lift-surface-hi) 0%,var(--lift-surface) 38%,#161920 100%);
+  background:linear-gradient(180deg,var(--lift-surface-hi) 0%,var(--lift-surface) 38%,#101B3A 100%);
   border:1px solid var(--lift-line-hi);
   box-shadow:var(--lift-shadow);
 }
@@ -88410,7 +88871,7 @@ body{
 .ath-card:hover,.ex-card:hover{border-color:var(--ocre-line);box-shadow:var(--lift-shadow),0 0 0 1px var(--ocre-bg)}
 /* paneles que viven dentro de una tarjeta: un escalón más hundidos, borde fino */
 #v-builder .week-box,.week-box,.item,.picker,#v-builder .tools-in{
-  background:linear-gradient(180deg,#171A21,var(--lift-inner));
+  background:linear-gradient(180deg,#121D40,var(--lift-inner));
   border:1px solid var(--lift-line);
   box-shadow:0 1px 0 rgba(255,255,255,.03) inset;
 }
@@ -88418,7 +88879,7 @@ body{
 
 /* bloques del día: tarjeta con acento lateral por tipo */
 .block{
-  background:linear-gradient(180deg,#1C2029,var(--lift-surface));
+  background:linear-gradient(180deg,#17234A,var(--lift-surface));
   border:1px solid var(--lift-line-hi);border-left-width:3px;
   box-shadow:var(--lift-shadow);
 }
@@ -88430,9 +88891,9 @@ input,select,textarea{
   border:1px solid var(--lift-line-hi);
   box-shadow:0 1px 2px rgba(0,0,0,.35) inset;
 }
-input:hover,select:hover,textarea:hover{border-color:rgba(148,163,184,.42)}
+input:hover,select:hover,textarea:hover{border-color:rgba(170,195,245,.45)}
 input:focus,select:focus,textarea:focus{border-color:var(--ocre);box-shadow:0 0 0 3px rgba(229,195,120,.16),0 1px 2px rgba(0,0,0,.35) inset}
-input::placeholder,textarea::placeholder{color:#7A8494}
+input::placeholder,textarea::placeholder{color:#7586AD}
 
 /* ---------- tipografía: jerarquía y contraste ---------- */
 .topbar h2{color:var(--ocre);text-shadow:0 0 26px rgba(229,195,120,.18)}
@@ -88441,8 +88902,8 @@ input::placeholder,textarea::placeholder{color:#7A8494}
   border-bottom:1px solid var(--lift-line);padding-bottom:12px;margin-bottom:16px;
 }
 .card h3::before{content:"";width:3px;height:15px;border-radius:2px;background:linear-gradient(180deg,var(--ocre-hi),var(--ocre-lo));flex:0 0 3px}
-label.lb{color:#B6BECB;letter-spacing:.08em}
-.hint{color:#9BA5B4}
+label.lb{color:#B4C1E0;letter-spacing:.08em}
+.hint{color:#9AA9CC}
 .block-h input.bt{font-size:15px}
 
 /* ---------- ACTIVO = ocre ---------- */
@@ -88453,7 +88914,7 @@ label.lb{color:#B6BECB;letter-spacing:.08em}
 }
 .navbtn:hover{background:rgba(255,255,255,.05)}
 /* días del Builder */
-#dayTabs .tab{background:linear-gradient(180deg,#1E222B,#171A21);border-color:var(--lift-line-hi);color:#B6BECB}
+#dayTabs .tab{background:linear-gradient(180deg,#1A2750,#131E3D);border-color:var(--lift-line-hi);color:#B4C1E0}
 #dayTabs .tab:hover{color:#fff;border-color:rgba(229,195,120,.5)}
 #dayTabs .tab.on{
   background:linear-gradient(180deg,rgba(229,195,120,.20),rgba(229,195,120,.07));
@@ -88471,13 +88932,13 @@ label.lb{color:#B6BECB;letter-spacing:.08em}
 .pill.gold{background:var(--ocre-bg);border-color:var(--ocre-line);color:var(--ocre-hi)}
 
 /* botones: un poco más de volumen */
-.btn{background:linear-gradient(180deg,#2A2F3B,#222733);border:1px solid var(--lift-line-hi);box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
-.btn:hover{background:linear-gradient(180deg,#313746,#272C38);border-color:rgba(229,195,120,.4)}
+.btn{background:linear-gradient(180deg,#25345F,#1B2850);border:1px solid var(--lift-line-hi);box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
+.btn:hover{background:linear-gradient(180deg,#2C3D6E,#21305E);border-color:rgba(229,195,120,.4)}
 .btn.ghost{background:transparent;box-shadow:none}
 .btn.ghost:hover{background:rgba(255,255,255,.05)}
 .btn.gold{box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 8px 20px rgba(210,121,63,.25)}
-.icon-btn{background:#232833;border-color:var(--lift-line-hi)}
-.icon-btn:hover{background:#2D3340;border-color:var(--ocre-line)}
+.icon-btn{background:#1D2A52;border-color:var(--lift-line-hi)}
+.icon-btn:hover{background:#27376A;border-color:var(--ocre-line)}
 
 /* ---------- OBJETIVO DE LA SEMANA (CrossFit) ---------- */
 .cf-obj{
@@ -88522,6 +88983,328 @@ input:focus,select:focus,textarea:focus{border-color:var(--ocre) !important}
 /* campo con un valor no válido (ej. ID interno de día repetido o vacío) */
 input.jp-invalido,textarea.jp-invalido{border-color:#E0654A !important;box-shadow:0 0 0 3px rgba(224,101,74,.18) !important}
 </style>
+<style id="jpShowroomCss">
+/* =========================================================
+   SHOWROOM · maqueta de la vista (la piel de las tarjetas viene de shared/tarjeta-ejercicio.css)
+   ========================================================= */
+#v-showroom .sr-info{ margin-bottom:16px; display:grid; gap:10px; }
+#v-showroom .sr-info-t{ font-size:14px; }
+#v-showroom .sr-ctrl{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:4px; }
+#v-showroom .sr-seg{ display:flex; flex-wrap:wrap; gap:6px; }
+#v-showroom .sr-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:18px; align-items:start; }
+#v-showroom .sr-uno{ display:grid; grid-template-columns:minmax(0,520px); justify-content:center; }
+#v-showroom .sr-col{ display:grid; gap:10px; padding:14px; border-radius:16px; background:linear-gradient(180deg,rgba(26,39,80,.55),rgba(15,25,54,.55)); border:1px solid var(--lift-line-hi,rgba(150,178,240,.34)); }
+#v-showroom .sr-col.sr-fijado{ border-color:#E5C378; box-shadow:0 0 0 1px #E5C378,0 12px 30px -14px rgba(229,195,120,.35); }
+#v-showroom .sr-col-h{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+#v-showroom .sr-col-t{ font-family:var(--ffh); font-size:17px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#fff; }
+#v-showroom .sr-col-s{ font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; color:#E5C378; font-weight:700; margin-top:2px; }
+#v-showroom .sr-col-d{ font-size:12.5px; color:#B4C1E0; line-height:1.5; min-height:56px; }
+#v-showroom .sr-acc{ display:flex; flex-wrap:wrap; gap:8px; justify-content:space-between; }
+#v-showroom .sr-acc .btn{ flex:1 1 auto; }
+/* el escenario: el fondo azul noche de la app del alumno, con sus resplandores (para que el vidrio del estilo 3 tenga algo que desenfocar) */
+#v-showroom .sr-stage{
+  position:relative; padding:14px; border-radius:14px; background:#0B132B; overflow:hidden;
+  background-image:radial-gradient(220px 160px at 90% 8%, rgba(229,195,120,.16), transparent 70%), radial-gradient(260px 200px at 6% 92%, rgba(88,120,210,.30), transparent 70%);
+  border:1px solid rgba(130,160,230,.22); color:#EAF0FF;
+}
+#v-showroom .sr-bloque{ position:relative; }
+#v-showroom .sr-bloque-h{ display:flex; align-items:baseline; gap:8px; padding:2px 2px 6px; font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; color:#8FA3CF; }
+#v-showroom .sr-bloque-h em{ font-style:normal; color:#E5C378; }
+/* en el Showroom los botones de muestra no responden */
+#v-showroom .sr-stage button{ pointer-events:none; }
+#v-showroom .sr-stage details > summary{ pointer-events:auto; }
+
+/* botón "Registrar carga" de muestra (la app del alumno le da su forma con otra capa de CSS) */
+#v-showroom .sr-stage .jp-qc-tg{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; padding:9px 12px; text-align:left; font:inherit; color:inherit; cursor:default; }
+#v-showroom .sr-stage .jp-qc-tg-t{ display:flex; gap:8px; font-weight:800; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; }
+#v-showroom .sr-stage .jp-qc-tg-h{ font-size:.72rem; font-weight:600; }
+#v-showroom .sr-stage .jp-sb-ex-nombre .jp-nom-en{ display:inline; }
+html body:not(#_):not(#__)[data-jp-estilo="1"], html body:not(#_):not(#__) [data-jp-estilo="1"]{--xc-surface:rgba(255,255,255,.022); --xc-surface-2:rgba(255,255,255,.035);
+  --xc-bd:rgba(150,176,235,.17); --xc-bd-2:rgba(150,176,235,.3);
+  --xc-r:10px; --xc-sh:none; --xc-blur:none; --xc-pad:12px 14px; --xc-gap:0px;
+  --xc-num:#EAF0FF; --xc-num-sz:1.55rem; --xc-num-w:500; --xc-font:'JetBrains Mono','SF Mono',ui-monospace,Consolas,monospace;
+  --xc-lbl:#8FA3CF; --xc-txt:#EAF0FF; --xc-name-sz:1rem; --xc-name-w:600;
+  --xc-acc:#7DA2FF; --xc-acc-bg:rgba(125,162,255,.1);
+  --xc-rest-bg:transparent; --xc-rest-bd:rgba(150,176,235,.28); --xc-rest-c:#CFDBFF;
+  --xc-chip-bg:transparent; --xc-chip-bd:transparent; --xc-chip-n:#EAF0FF;
+  --xc-tip-bg:rgba(255,255,255,.02);}
+html body:not(#_):not(#__)[data-jp-estilo="2"], html body:not(#_):not(#__) [data-jp-estilo="2"]{--xc-surface:linear-gradient(180deg,#18265A 0%,#111C42 100%); --xc-surface-2:rgba(8,14,36,.55);
+  --xc-bd:rgba(229,195,120,.26); --xc-bd-2:rgba(229,195,120,.5);
+  --xc-r:12px; --xc-sh:0 10px 26px -14px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.06); --xc-blur:none; --xc-pad:14px 14px 12px; --xc-gap:8px;
+  --xc-num:#E5C378; --xc-num-sz:2.7rem; --xc-num-w:800; --xc-font:'Chakra Petch','Barlow Condensed',system-ui,sans-serif;
+  --xc-lbl:#C9B27A; --xc-txt:#FFFFFF; --xc-name-sz:1.05rem; --xc-name-w:800;
+  --xc-acc:#E5C378; --xc-acc-bg:rgba(229,195,120,.12);
+  --xc-rest-bg:rgba(229,195,120,.1); --xc-rest-bd:rgba(229,195,120,.55); --xc-rest-c:#F4E4BB;
+  --xc-chip-bg:#0A1230; --xc-chip-bd:rgba(229,195,120,.4); --xc-chip-n:#F6E7BE;
+  --xc-tip-bg:rgba(8,14,36,.5);}
+html body:not(#_):not(#__)[data-jp-estilo="3"], html body:not(#_):not(#__) [data-jp-estilo="3"]{--xc-surface:linear-gradient(135deg,rgba(255,255,255,.11) 0%,rgba(255,255,255,.04) 55%,rgba(255,255,255,.07) 100%); --xc-surface-2:rgba(255,255,255,.06);
+  --xc-bd:rgba(190,214,255,.32); --xc-bd-2:rgba(210,228,255,.5);
+  --xc-r:20px; --xc-sh:0 22px 44px -20px rgba(2,8,28,.85),inset 0 1px 0 rgba(255,255,255,.22); --xc-blur:blur(16px) saturate(150%); --xc-pad:16px 16px 14px; --xc-gap:10px;
+  --xc-num:#FFFFFF; --xc-num-sz:2.3rem; --xc-num-w:600; --xc-font:'Inter','Segoe UI',system-ui,sans-serif;
+  --xc-lbl:#B9CCF2; --xc-txt:#FFFFFF; --xc-name-sz:1.05rem; --xc-name-w:700;
+  --xc-acc:#9CC2FF; --xc-acc-bg:rgba(156,194,255,.14);
+  --xc-rest-bg:rgba(255,255,255,.08); --xc-rest-bd:rgba(200,222,255,.38); --xc-rest-c:#FFFFFF;
+  --xc-chip-bg:rgba(255,255,255,.07); --xc-chip-bd:rgba(200,222,255,.28); --xc-chip-n:#FFFFFF;
+  --xc-tip-bg:rgba(255,255,255,.05);}
+html body:not(#_):not(#__)[data-jp-estilo="4"], html body:not(#_):not(#__) [data-jp-estilo="4"]{--xc-surface:#0F1A3A; --xc-surface-2:#0B1330;
+  --xc-bd:rgba(140,165,225,.28); --xc-bd-2:rgba(170,192,240,.5);
+  --xc-r:6px; --xc-sh:none; --xc-blur:none; --xc-pad:8px 10px; --xc-gap:0px;
+  --xc-num:#FFFFFF; --xc-num-sz:1.75rem; --xc-num-w:900; --xc-font:'Chakra Petch','Barlow Condensed',system-ui,sans-serif;
+  --xc-lbl:#9AB0DE; --xc-txt:#FFFFFF; --xc-name-sz:.95rem; --xc-name-w:900;
+  --xc-acc:#E5C378; --xc-acc-bg:rgba(229,195,120,.1);
+  --xc-rest-bg:transparent; --xc-rest-bd:transparent; --xc-rest-c:#FFFFFF;
+  --xc-chip-bg:transparent; --xc-chip-bd:transparent; --xc-chip-n:#FFFFFF;
+  --xc-tip-bg:rgba(255,255,255,.03);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex{background:var(--xc-surface) !important; border:1px solid var(--xc-bd) !important; border-radius:var(--xc-r) !important; box-shadow:var(--xc-sh) !important;
+  padding:var(--xc-pad) !important; margin:10px 0 !important; -webkit-backdrop-filter:var(--xc-blur); backdrop-filter:var(--xc-blur);
+  position:relative; overflow:hidden;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex-head{display:flex !important; align-items:center !important; gap:10px !important; margin:0 0 6px !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex-id, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex-id, html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-letra, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-letra{font-family:var(--xc-font) !important; font-weight:700 !important; font-size:.75rem !important; letter-spacing:.14em !important; color:var(--xc-acc) !important; opacity:1 !important;
+  background:var(--xc-acc-bg) !important; border-radius:6px !important; padding:3px 7px !important; align-self:center !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex .jp-sb-ex-nombre, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex .jp-sb-ex-nombre, html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex-ancla .jp-sb-ex-nombre, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex-ancla .jp-sb-ex-nombre{color:var(--xc-txt) !important; font-family:var(--xc-font) !important; font-weight:var(--xc-name-w) !important; font-size:var(--xc-name-sz) !important;
+  letter-spacing:.03em !important; line-height:1.2 !important; flex:1 1 auto; min-width:0;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-sb-ex .jp-nom-en, html body:not(#_):not(#__) [data-jp-estilo] .jp-sb-ex .jp-nom-en{color:var(--xc-lbl) !important; font-weight:500 !important; font-size:.72em !important; letter-spacing:.02em !important; text-transform:none !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar{display:grid !important; grid-template-columns:minmax(0,1fr) !important; gap:var(--xc-gap) !important; overflow:visible !important; white-space:normal !important;
+  background:none !important; border:0 !important; box-shadow:none !important; padding:0 !important; margin:4px 0 8px !important; width:100%;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-row, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-row{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:8px 10px !important; width:100% !important; padding:0 !important; margin:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-seg, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-seg{background:none !important; border:0 !important; box-shadow:none !important; border-radius:0 !important; padding:0 !important; margin:0 !important; height:auto !important; min-height:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-vol, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-vol{display:flex !important; align-items:baseline !important; flex-wrap:wrap !important; gap:2px 8px !important; width:100% !important;
+  font-family:var(--xc-font) !important; font-weight:var(--xc-num-w) !important; color:var(--xc-num) !important; font-variant-numeric:tabular-nums;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vn, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vn, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vr, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vr{font-size:var(--xc-num-sz) !important; line-height:1 !important; letter-spacing:-.02em !important; color:var(--xc-num) !important; font-weight:var(--xc-num-w) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vl, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vl{font-size:.64rem !important; letter-spacing:.16em !important; font-weight:700 !important; color:var(--xc-lbl) !important; text-transform:uppercase !important; font-family:var(--xc-font) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vx, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vx{font-style:normal !important; font-size:calc(var(--xc-num-sz) * .55) !important; color:var(--xc-acc) !important; font-weight:600 !important; padding:0 2px;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rest{display:inline-flex !important; align-items:center !important; gap:6px !important; background:var(--xc-rest-bg) !important; border:1px solid var(--xc-rest-bd) !important;
+  color:var(--xc-rest-c) !important; border-radius:calc(var(--xc-r) * .7) !important; padding:7px 12px !important; font-family:var(--xc-font) !important;
+  font-weight:700 !important; font-size:.78rem !important; letter-spacing:.08em !important; box-shadow:none !important; cursor:pointer;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rest.jp-db-nopause, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rest.jp-db-nopause{cursor:default;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{display:inline-flex !important; align-items:baseline !important; gap:6px !important; background:var(--xc-chip-bg) !important; border:1px solid var(--xc-chip-bd) !important;
+  border-radius:calc(var(--xc-r) * .6) !important; padding:5px 10px !important; color:var(--xc-chip-n) !important; font-family:var(--xc-font) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo small, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir small, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga small, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga small{font-size:.58rem !important; letter-spacing:.16em !important; font-weight:700 !important; color:var(--xc-lbl) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-carga b, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-carga b{font-size:1rem !important; font-weight:800 !important; letter-spacing:.04em !important; color:var(--xc-chip-n) !important; font-variant-numeric:tabular-nums;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-db-rir .jp-emo, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-db-rir .jp-emo{display:none !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-sb-unilateral{font-size:.66rem !important; font-weight:700 !important; letter-spacing:.1em !important; color:var(--xc-lbl) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg{background:var(--xc-surface-2) !important; border:1px solid var(--xc-bd) !important; border-radius:calc(var(--xc-r) * .8) !important; box-shadow:none !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-l, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-l{color:var(--xc-txt) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-id, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-id, html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-h, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-h, html body:not(#_):not(#__)[data-jp-estilo] .jp-qc-tg .jp-qc-tg-r, html body:not(#_):not(#__) [data-jp-estilo] .jp-qc-tg .jp-qc-tg-r{color:var(--xc-acc) !important;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips{margin:8px 0 0; background:var(--xc-tip-bg); border:1px solid var(--xc-bd); border-radius:calc(var(--xc-r) * .8); overflow:hidden;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips > summary, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips > summary{list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:9px 12px; position:relative; -webkit-tap-highlight-color:transparent;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips > summary::-webkit-details-marker, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips > summary::-webkit-details-marker{display:none;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips > summary::after, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips > summary::after{content:"\25BE"; margin-left:auto; color:var(--xc-acc); transition:transform .18s ease; font-size:.8rem;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips[open] > summary::after, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips[open] > summary::after{transform:rotate(180deg);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips-t, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips-t{font-family:var(--xc-font); font-weight:800; font-size:.7rem; letter-spacing:.16em; color:var(--xc-acc);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips-s, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips-s{font-size:.66rem; color:var(--xc-lbl); letter-spacing:.04em;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tips-b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tips-b{display:grid; gap:0; padding:0 12px 10px;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip{display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; align-items:start; padding:8px 0; border-top:1px solid var(--xc-bd);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip b{font-family:var(--xc-font); font-size:.62rem; letter-spacing:.14em; font-weight:800; color:var(--xc-lbl); padding-top:2px;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip.su b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip.su b{color:var(--xc-acc);}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip.cu b, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip.cu b{color:#FF9C7A;}
+html body:not(#_):not(#__)[data-jp-estilo] .jp-ex-tip span, html body:not(#_):not(#__) [data-jp-estilo] .jp-ex-tip span{font-size:.82rem; line-height:1.5; color:var(--xc-txt); opacity:.92;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-row, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-row{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px 16px !important; border-top:1px solid var(--xc-bd) !important; padding:8px 0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1{border-top:0 !important; padding-top:2px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-row::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-row::before{flex:0 0 68px; font-family:var(--xc-font); font-size:.6rem; letter-spacing:.18em; color:var(--xc-lbl); font-weight:600;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1::before{content:"VOLUMEN";}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r2::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r2::before{content:"DESCANSO";}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r3::before, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r3::before{content:"TÉCNICA";}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-r1 .jp-db-vol, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-r1 .jp-db-vol{flex:1 1 0; width:auto !important; min-width:0;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-rest{padding:0 !important; border:0 !important; letter-spacing:.06em !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-dose-bar .jp-db-carga{padding:0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo="1"] .jp-sb-ex-head{border-bottom:1px solid var(--xc-bd) !important; padding-bottom:8px !important; margin-bottom:8px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-sb-ex{border-left:4px solid #E5C378 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-r1{background:rgba(229,195,120,.1); border:1px solid rgba(229,195,120,.3); border-radius:10px; padding:10px 12px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-vn, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-vn{text-shadow:0 0 22px rgba(229,195,120,.3);}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-rest{font-weight:800 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-dose-bar .jp-db-rir b{color:#E5C378 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-ex-tip.su b, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-ex-tip.su b, html body:not(#_):not(#__)[data-jp-estilo="2"] .jp-ex-tips-t, html body:not(#_):not(#__) [data-jp-estilo="2"] .jp-ex-tips-t{color:#E5C378;}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-sb-ex{margin:14px 0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-dose-bar .jp-db-rest{backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-dose-bar .jp-db-carga{backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .jp-ex-tips, html body:not(#_):not(#__) [data-jp-estilo="3"] .jp-ex-tips{backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex{margin:6px 0 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-sb-ex-head, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-sb-ex-head{margin-bottom:4px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar{grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr) minmax(0,.8fr) !important; border-top:1px solid var(--xc-bd) !important; border-bottom:1px solid var(--xc-bd) !important; margin:2px 0 6px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r1, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r1{grid-column:1 / -1; padding:6px 0 !important; border-bottom:1px solid var(--xc-bd);}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r2, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r2, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-r3, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-r3{display:contents !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rest{padding:7px 6px !important; border:0 !important; border-radius:0 !important; justify-content:flex-start; font-weight:900 !important; font-size:.8rem !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-sb-unilateral, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-sb-unilateral{padding:7px 8px !important; border:0 !important; border-left:1px solid var(--xc-bd) !important; border-radius:0 !important; justify-content:flex-start;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo b, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir b, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir b{font-weight:900 !important; font-size:1.05rem !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-tempo, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rir, html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-carga, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-carga{flex-direction:column !important; align-items:flex-start !important; gap:0 !important; min-width:0;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-dose-bar .jp-db-rest, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-dose-bar .jp-db-rest{min-width:0; line-height:1.15; white-space:normal;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-ex-tips > summary, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-ex-tips > summary{padding:6px 10px;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-ex-tip, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-ex-tip{padding:5px 0; grid-template-columns:70px minmax(0,1fr);}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .jp-ex-tip span, html body:not(#_):not(#__) [data-jp-estilo="4"] .jp-ex-tip span{font-size:.78rem; line-height:1.4;}
+@media (max-width:380px){html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vn, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vn, html body:not(#_):not(#__)[data-jp-estilo] .jp-dose-bar .jp-vr, html body:not(#_):not(#__) [data-jp-estilo] .jp-dose-bar .jp-vr{font-size:calc(var(--xc-num-sz) * .85) !important;}
+}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .block, html body:not(#_):not(#__) [data-jp-estilo="1"] .block{box-shadow:none !important; border-radius:10px !important; border-left-width:1px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] .block-h, html body:not(#_):not(#__) [data-jp-estilo="1"] .block-h{background:transparent !important;}
+html body:not(#_):not(#__)[data-jp-estilo="1"] #dayTabs .tab, html body:not(#_):not(#__) [data-jp-estilo="1"] #dayTabs .tab{border-radius:8px;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .block, html body:not(#_):not(#__) [data-jp-estilo="2"] .block{border-left:4px solid #E5C378 !important;}
+html body:not(#_):not(#__)[data-jp-estilo="2"] .block-h, html body:not(#_):not(#__) [data-jp-estilo="2"] .block-h{background:rgba(229,195,120,.07) !important;}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .block, html body:not(#_):not(#__) [data-jp-estilo="3"] .block, html body:not(#_):not(#__)[data-jp-estilo="3"] .card, html body:not(#_):not(#__) [data-jp-estilo="3"] .card, html body:not(#_):not(#__)[data-jp-estilo="3"] #builderWrap .card, html body:not(#_):not(#__) [data-jp-estilo="3"] #builderWrap .card{background:linear-gradient(135deg,rgba(255,255,255,.1),rgba(255,255,255,.035)) !important; -webkit-backdrop-filter:blur(14px) saturate(140%); backdrop-filter:blur(14px) saturate(140%);
+  border:1px solid rgba(190,214,255,.3) !important; border-radius:18px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="3"] .block-h, html body:not(#_):not(#__) [data-jp-estilo="3"] .block-h{background:rgba(255,255,255,.04) !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .block, html body:not(#_):not(#__) [data-jp-estilo="4"] .block{border-radius:6px !important; margin-bottom:8px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .block-h, html body:not(#_):not(#__) [data-jp-estilo="4"] .block-h{padding:7px 10px !important;}
+html body:not(#_):not(#__)[data-jp-estilo="4"] .block-body, html body:not(#_):not(#__) [data-jp-estilo="4"] .block-body{padding:8px 10px !important;}
+</style>
+<script>
+/* =========================================================
+   SHOWROOM · prototipado visual de las tarjetas de ejercicio (4 estilos sobre el fondo azul noche)
+   ---------------------------------------------------------
+   - Vista "🎨 Showroom" del menú lateral: muestra la MISMA tarjeta de ejercicio de la app del alumno en los 4 estilos, en tiempo real.
+   - El coach puede comparar los 4 a la vez o ver uno grande, probarlo en el Builder y fijarlo como definitivo: queda guardado en S.ui.estiloTarjeta,
+     se aplica al Builder (data-jp-estilo en <body>) y viaja a la app del alumno en PROGRAM_CONFIG.estiloTarjeta (la recibe al exportar / recompilar).
+   - Las tarjetas de muestra usan las clases REALES de la app del alumno (jp-sb-ex, jp-dose-bar, jp-ex-tips...), así que lo que se ve acá es lo que verá el alumno.
+   ========================================================= */
+(function(){
+  'use strict';
+  if(window.CoachShowroom) return;
+
+  var ESTILOS = [
+    { n: 1, nombre: 'Clean Tech', tag: 'Minimalista', desc: 'Líneas finas, tipografía tabular y una estructura horizontal estricta: cada fila lleva su rótulo (volumen, descanso, técnica). La máxima limpieza visual.' },
+    { n: 2, nombre: 'High-Performance', tag: 'Acento ocre', desc: 'Industrial deportivo: el volumen va en un bloque resaltado con el ocre de la marca, números enormes y mayor contraste en las métricas.' },
+    { n: 3, nombre: 'Glass', tag: 'Glassmorphism sutil', desc: 'Capas translúcidas con desenfoque suave sobre el azul noche, bordes brillantes de 1 px y tarjetas que flotan.' },
+    { n: 4, nombre: 'Compacto de élite', tag: 'Densidad optimizada', desc: 'Pensado para leer en un segundo en el gimnasio: filas estrictas, descanso, tempo y RIR en una sola línea de celdas y números en negrita pura.' }
+  ];
+  var VISTA = { modo: 'comparar', sel: 2, prueba: 0 };       /* modo: comparar | uno · sel: estilo grande · prueba: estilo probado (sin fijar) en el Builder */
+
+  function esc(s){ return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function ui(){ try{ S.ui = S.ui || {}; return S.ui; }catch(e){ return {}; } }
+  function fijado(){ var n = parseInt(ui().estiloTarjeta, 10); return (n >= 1 && n <= 4) ? n : 2; }
+  function tieneFijado(){ var n = parseInt(ui().estiloTarjeta, 10); return n >= 1 && n <= 4; }
+  function nombreDe(n){ var e = ESTILOS[n - 1]; return e ? n + ' · ' + e.nombre : String(n); }
+  /* El estilo fijado se aplica a las vistas del Builder (NO al <body>) para que las tarjetas de muestra del Showroom, que llevan su propio estilo, no hereden el del Builder. */
+  function aplicar(n){
+    try{
+      document.body.removeAttribute('data-jp-estilo');
+      var vistas = document.querySelectorAll('.view');
+      for(var i = 0; i < vistas.length; i++){ if(vistas[i].id === 'v-showroom') vistas[i].removeAttribute('data-jp-estilo'); else vistas[i].setAttribute('data-jp-estilo', String(n)); }
+    }catch(e){}
+  }
+
+  /* ---------- tarjetas de muestra (mismas clases que la app del alumno) ---------- */
+  function tips(su, ej, cu){
+    return '<details class="jp-ex-tips" open><summary><span class="jp-ex-tips-t">COACHING TIPS</span><span class="jp-ex-tips-s">Set-up · Ejecución · Cuidado</span></summary><div class="jp-ex-tips-b">' +
+      '<div class="jp-ex-tip su"><b>SET-UP</b><span>' + esc(su) + '</span></div>' +
+      '<div class="jp-ex-tip ej"><b>EJECUCIÓN</b><span>' + esc(ej) + '</span></div>' +
+      '<div class="jp-ex-tip cu"><b>CUIDADO</b><span>' + esc(cu) + '</span></div></div></details>';
+  }
+  function dosis(o){
+    var r1 = '<span class="jp-db-seg jp-db-vol"><b class="jp-vn">' + o.series + '</b> <span class="jp-vl">SERIES</span> <i class="jp-vx">×</i> <b class="jp-vr">' + esc(o.reps) + '</b> <span class="jp-vl">' + (o.unidad || 'REPS') + '</span></span>';
+    var r2 = '<button type="button" class="jp-db-seg jp-db-rest jp-rest-go" tabindex="-1">⏱︎▶︎ DESCANSO ' + esc(o.rest) + '</button>';
+    var r3 = (o.tempo ? '<span class="jp-db-seg jp-db-tempo"><small>TEMPO</small> <b>' + esc(o.tempo) + '</b></span>' : '') +
+             '<span class="jp-db-seg jp-db-rir jp-rir-alto"><small>RIR</small> <b>' + esc(o.rir) + '</b></span>' +
+             (o.extra ? '<span class="jp-db-seg jp-db-carga"><small>CARGA</small> <b>' + esc(o.extra) + '</b></span>' : '');
+    return '<div class="jp-dose-bar"><div class="jp-db-row jp-db-r1">' + r1 + '</div><div class="jp-db-row jp-db-r2">' + r2 + '</div><div class="jp-db-row jp-db-r3">' + r3 + '</div></div>';
+  }
+  function tarjeta(o){
+    return '<div class="jp-sb-ex' + (o.ancla ? ' jp-sb-ex-ancla' : '') + '">' +
+      '<div class="jp-sb-ex-head"><span class="jp-sb-ex-id">' + o.id + '</span><span class="jp-sb-ex-nombre">' + esc(o.nombre) + ' <span class="jp-nom-en">(' + esc(o.en) + ')</span></span></div>' +
+      dosis(o) +
+      '<div class="jp-qc"><button type="button" class="jp-qc-tg" tabindex="-1"><span class="jp-qc-tg-t"><span class="jp-qc-tg-l">Registrar carga</span><span class="jp-qc-tg-id">· ' + o.id + '</span></span><span class="jp-qc-tg-b"><span class="jp-qc-tg-h">Tocar para registrar</span></span></button>' +
+      tips(o.su, o.ej, o.cu) + '</div></div>';
+  }
+  var MUESTRA = [
+    { id: '01', nombre: 'Press de banca plano con barra', en: 'Barbell Bench Press', ancla: true, series: 4, reps: '5-7', rest: '3:00', tempo: '3010', rir: '2',
+      su: 'Escápulas juntas y hacia abajo, pies firmes y la barra sobre la línea del pecho.', ej: 'Bajá controlado hasta rozar el pecho y empujá como si te alejaras del banco.', cu: 'No rebotes ni despegues la cadera del banco; si el hombro molesta, cerrá un poco el agarre.' },
+    { id: '02', nombre: 'Remo con barra inclinado', en: 'Bent-Over Barbell Row', series: 4, reps: '6-8', rest: '2:30', tempo: '2011', rir: '1',
+      su: 'Torso a 45 grados, abdomen duro y la barra cerca de las piernas.', ej: 'Tirá de los codos hacia la cadera y sostené medio segundo arriba.', cu: 'Si el torso se levanta para ayudar, bajá la carga.' },
+    { id: '03', nombre: 'Plancha lateral', en: 'Side Plank', series: 3, reps: '30', unidad: 'SEG', rest: '0:45', rir: '1',
+      su: 'Codo bajo el hombro, pies apilados y la cadera alta.', ej: 'Cuerpo en línea recta, respirando sin soltar el abdomen.', cu: 'No dejes caer la cadera hacia el piso.' }
+  ];
+  function pantalla(n, conTips){
+    var lista = conTips ? MUESTRA : MUESTRA.slice(0, 2);
+    return '<div class="sr-stage" data-jp-estilo="' + n + '"><div class="sr-bloque"><div class="sr-bloque-h"><span>FUERZA PRINCIPAL</span><em>// 17 MIN</em></div>' + lista.map(tarjeta).join('') + '</div></div>';
+  }
+
+  /* ---------- la vista ---------- */
+  function cabeza(){
+    var fj = fijado();
+    return '<div class="topbar"><div><h2>🎨 Showroom</h2><div class="sub">Tarjetas de ejercicio sobre el fondo azul noche · 4 estilos para elegir</div></div></div>' +
+      '<div class="card sr-info"><div class="sr-info-t"><b>Estilo vigente:</b> <span class="pill gold">' + esc(nombreDe(fj)) + '</span> ' + (tieneFijado() ? '' : '<span class="hint" style="display:inline">(por defecto: todavía no fijaste ninguno)</span>') +
+        (VISTA.prueba ? ' <span class="pill teal">probando: ' + esc(nombreDe(VISTA.prueba)) + '</span>' : '') + '</div>' +
+      '<div class="hint">Las 4 versiones comparten la misma estructura: <b>volumen grande</b> a lo largo de la tarjeta, el <b>descanso debajo</b>, el <b>tempo y el RIR</b> en la línea técnica y los <b>coaching tips</b> (Set-up, Ejecución, Cuidado) desplegables al pie. Al fijar un estilo se aplica al Builder y viaja a la app de cada alumno cuando exportás o recompilás.</div>' +
+      '<div class="sr-ctrl"><div class="sr-seg" role="tablist" aria-label="Modo de vista">' +
+        '<button type="button" class="btn sm' + (VISTA.modo === 'comparar' ? ' gold' : ' ghost') + '" data-sr-modo="comparar">▦ Comparar los 4</button>' +
+        '<button type="button" class="btn sm' + (VISTA.modo === 'uno' ? ' gold' : ' ghost') + '" data-sr-modo="uno">▭ Ver uno grande</button></div>' +
+        (VISTA.modo === 'uno' ? '<div class="sr-seg" role="tablist" aria-label="Estilo">' + ESTILOS.map(function(e){ return '<button type="button" class="btn sm' + (VISTA.sel === e.n ? ' gold' : ' ghost') + '" data-sr-sel="' + e.n + '">Estilo ' + e.n + '</button>'; }).join('') + '</div>' : '') +
+      '</div></div>';
+  }
+  function columna(e, grande){
+    var fj = fijado(), es = (fj === e.n && tieneFijado());
+    return '<div class="sr-col' + (es ? ' sr-fijado' : '') + '">' +
+      '<div class="sr-col-h"><div><div class="sr-col-t">Estilo ' + e.n + ' · ' + esc(e.nombre) + '</div><div class="sr-col-s">' + esc(e.tag) + '</div></div>' + (es ? '<span class="pill gold">✓ FIJADO</span>' : '') + '</div>' +
+      '<p class="sr-col-d">' + esc(e.desc) + '</p>' + pantalla(e.n, !!grande) +
+      '<div class="sr-acc"><button type="button" class="btn sm ghost" data-sr-prueba="' + e.n + '" title="Aplica este estilo al Builder mientras lo probás, sin fijarlo">👁️ Probar en el Builder</button>' +
+      '<button type="button" class="btn sm gold" data-sr-fijar="' + e.n + '"' + (es ? ' disabled' : '') + '>' + (es ? '✓ Estilo fijado' : '📌 Fijar como definitivo') + '</button></div></div>';
+  }
+  function render(){
+    var host = document.getElementById('v-showroom'); if(!host) return;
+    var cuerpo = VISTA.modo === 'comparar'
+      ? '<div class="sr-grid">' + ESTILOS.map(function(e){ return columna(e, false); }).join('') + '</div>'
+      : '<div class="sr-uno">' + columna(ESTILOS[VISTA.sel - 1], true) + '</div>';
+    host.innerHTML = cabeza() + cuerpo;
+  }
+  function fijar(n){
+    var u = ui(); u.estiloTarjeta = n;
+    VISTA.prueba = 0; aplicar(n);
+    try{ save(); }catch(e){}
+    render();
+    try{ toast('📌 Estilo ' + nombreDe(n) + ' fijado. El Builder ya lo usa; los alumnos lo reciben al exportar o recompilar su app.'); }catch(e){}
+  }
+  function probar(n){
+    VISTA.prueba = (VISTA.prueba === n) ? 0 : n;
+    aplicar(VISTA.prueba || fijado());
+    render();
+    try{ toast(VISTA.prueba ? '👁️ Probando el estilo ' + nombreDe(n) + ' en el Builder (sin fijar)' : 'Volviste al estilo vigente: ' + nombreDe(fijado())); }catch(e){}
+  }
+  function clic(e){
+    var t = e.target.closest ? e.target.closest('[data-sr-modo],[data-sr-sel],[data-sr-fijar],[data-sr-prueba]') : null; if(!t) return;
+    if(t.dataset.srModo){ VISTA.modo = t.dataset.srModo; render(); return; }
+    if(t.dataset.srSel){ VISTA.sel = parseInt(t.dataset.srSel, 10) || 2; render(); return; }
+    if(t.dataset.srFijar){ fijar(parseInt(t.dataset.srFijar, 10)); return; }
+    if(t.dataset.srPrueba){ probar(parseInt(t.dataset.srPrueba, 10)); return; }
+  }
+
+  /* ---------- montaje: botón del menú, sección y enganche a go() ---------- */
+  function montar(){
+    var side = document.querySelector('.sidebar');
+    if(side && !side.querySelector('[data-view="showroom"]')){
+      var ref = side.querySelector('[data-view="datos"]');
+      var b = document.createElement('button'); b.className = 'navbtn'; b.setAttribute('data-view', 'showroom'); b.innerHTML = '<i>🎨</i> Showroom';
+      if(ref && ref.parentNode) ref.parentNode.insertBefore(b, ref); else side.appendChild(b);
+    }
+    var sec = document.getElementById('v-showroom');
+    if(!sec){
+      sec = document.createElement('section'); sec.id = 'v-showroom'; sec.className = 'view'; sec.style.display = 'none';
+      var datos = document.getElementById('v-datos');
+      if(datos && datos.parentNode) datos.parentNode.insertBefore(sec, datos); else document.querySelector('.main').appendChild(sec);
+    }
+    if(!sec.getAttribute('data-sr')){ sec.setAttribute('data-sr', '1'); sec.addEventListener('click', clic); }
+    aplicar(fijado());
+  }
+  function enganchar(){
+    var go0 = window.go;
+    if(typeof go0 !== 'function' || go0.__showroom) return;
+    var go1 = function(view){
+      /* una prueba sin fijar no se queda: al salir del Showroom el Builder vuelve al estilo vigente */
+      if(view !== 'showroom' && VISTA.prueba){ VISTA.prueba = 0; aplicar(fijado()); }
+      var r = go0.apply(this, arguments);
+      aplicar(VISTA.prueba || fijado());
+      if(view === 'showroom') render();
+      return r;
+    };
+    go1.__showroom = true; window.go = go1;
+  }
+  function arrancar(){
+    try{ montar(); enganchar(); }catch(e){ console.warn('showroom', e); }
+    /* los botones del menú se atan por delegación o por elemento: el nuevo se ata acá */
+    var nb = document.querySelector('.navbtn[data-view="showroom"]');
+    if(nb && !nb.getAttribute('data-sr-nav')){ nb.setAttribute('data-sr-nav', '1'); nb.addEventListener('click', function(){ try{ window.go('showroom'); }catch(e){} }); }
+  }
+  window.CoachShowroom = { estilos: ESTILOS, fijado: fijado, fijar: fijar, probar: probar, render: render, aplicar: aplicar };
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arrancar, 300); }); else setTimeout(arrancar, 300);
+})();
+</script>
 <script>
 (function(){
   'use strict';
