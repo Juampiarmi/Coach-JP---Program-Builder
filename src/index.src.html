@@ -2828,6 +2828,14 @@ function plan(athId){
   if(p.vigenciaDesde == null) p.vigenciaDesde = '';
   if(p.vigenciaHasta == null) p.vigenciaHasta = '';
   const need = Math.max(3, Math.min(6, parseInt(a.freq,10)||4));
+  /* estructura de días sana SIEMPRE: si falta la lista, si trae elementos nulos o si quedó vacía, se arma la lista estándar de días vacíos (nunca se arrastra nada de otro alumno) */
+  if(!Array.isArray(p.dias)) p.dias = [];
+  p.dias = p.dias.filter(x => x && typeof x === 'object');
+  if(!p.dias.length){
+    p.dias = [];
+    for(let i = 0; i < need; i++) p.dias.push(newDay(i));
+    p.freqBase = need;
+  }
   /* los días se completan SOLO cuando el plan es nuevo o cuando sube la frecuencia del alumno/a. Antes plan() rellenaba hasta ath.freq en cada acceso:
      al eliminar un día se volvía a crear uno vacío ("día fantasma") que además viajaba al export. p.freqBase recuerda la frecuencia ya aplicada. */
   const idLibre = () => { const usados = new Set(p.dias.map(x => x && x.id)); let k = p.dias.length + 1; while(usados.has('dia' + k)) k++; return 'dia' + k; };
@@ -3941,7 +3949,7 @@ function saveAth(){
     const a = Object.assign({ id: uid('ath'), createdAt: Date.now() }, data);
     S.athletes.push(a);
     S.plans[a.id] = newPlan(a);
-    S.activeId = a.id;
+    jpActivarAlumno(a.id);
     if(typeof finAplicarCondicionComercial === 'function') finAplicarCondicionComercial(a);
     toast('Alumno/a registrado/a ✔');
   }
@@ -4186,15 +4194,28 @@ function openVideo(exId){
    ============================================================ */
 /* Cambia el alumno/a activo recordando el día (y la semana CrossFit) en que estaba cada uno. S.ui.day es global: antes, al pasar de un alumno a otro se heredaba el día
    del anterior (ej. el Día 5) y el plan nuevo parecía limitado a ese día. */
+/* época del alumno activo: sube con CADA cambio de alumno. Los procesos asíncronos (IA, importaciones) la anotan al arrancar y, al terminar, comparan: si cambió, el resultado
+   NO se escribe en el alumno que quedó en pantalla (bug de "estado cruzado": la respuesta de la IA pedida para un alumno caía en el Día 1 del siguiente). */
+window.__jpEpocaAlumno = window.__jpEpocaAlumno || 0;
+function jpAlumnoVigente(athId, epoca){ return S.activeId === athId && window.__jpEpocaAlumno === epoca; }
 function jpActivarAlumno(id){
   const u = S.ui = S.ui || {};
   if(!id || id === S.activeId){ S.activeId = id || S.activeId; return; }
+  /* 1) lo que el alumno saliente tenía en pantalla se CONFIRMA antes de soltarlo (en CrossFit d.bloques es un puntero a la semana activa) */
+  const saliente = S.activeId ? S.plans[S.activeId] : null;
+  if(saliente && esPlanCFActivo(saliente)){ try{ sincronizarBloquesSemana(saliente); }catch(e){} }
   u.diaPorAlumno = u.diaPorAlumno || {};
   if(S.activeId) u.diaPorAlumno[S.activeId] = { d: u.day || 0, w: u.cfWeek || 0 };
+  window.__jpEpocaAlumno++;
   S.activeId = id;
-  const rec = u.diaPorAlumno[id], p = plan(id), n = p ? p.dias.length : 1;
+  /* 2) se purga TODA la memoria de módulo ligada al alumno anterior: qué semana CrossFit estaba cargada y de quién, la caché de opciones de ejercicios */
+  _cfSemanaCargada = null; _cfAthCargado = null;
+  try{ _exOptionsBaseCache = null; }catch(e){}
+  /* 3) el alumno nuevo se normaliza (plan(id) completa lo que falte) y se reindexa según SU modalidad: día y semana propios, nunca los del anterior */
+  const rec = u.diaPorAlumno[id], p = plan(id), n = (p && p.dias.length) || 1;
   u.day = (rec && rec.d >= 0 && rec.d < n) ? rec.d : 0;
-  u.cfWeek = (rec && rec.w > 0) ? rec.w : 0;
+  u.cfWeek = (p && esPlanCFActivo(p) && rec && rec.w > 0 && rec.w <= 3) ? rec.w : 0;
+  if(p && esPlanCFActivo(p)){ try{ sincronizarBloquesSemana(p); }catch(e){} }
 }
 function curDay(){
   const p = plan(S.activeId); if(!p) return null;
@@ -4372,6 +4393,31 @@ function jpIdDiaValido(p, d, nuevo){
 }
 /* Revisa la estructura de un plan y devuelve la lista de problemas (vacía = sana): ids de día vacíos / repetidos / con caracteres que rompen las claves, bloques sin id o repetidos
    dentro de un día, y días sin lista de bloques. No modifica nada: es solo lectura (la usan compile() y los tests). */
+/* Busca objetos o listas COMPARTIDOS entre planes de alumnos distintos (el síntoma del "estado cruzado": el Día 1 de un alumno mostrando los bloques de otro). Devuelve una lista
+   de textos; vacía = cada plan es dueño de todas sus listas y bloques. Solo lectura. */
+function jpAuditarReferenciasCompartidas(planes){
+  const dueño = new Map(), out = [];
+  const marca = (obj, athId, donde) => {
+    if(!obj || typeof obj !== 'object') return;
+    const prev = dueño.get(obj);
+    if(prev === undefined){ dueño.set(obj, athId); return; }
+    if(prev !== athId) out.push(donde + ' de ' + athId + ' comparte referencia con ' + prev);
+  };
+  Object.keys(planes || {}).forEach(athId => {
+    const p = planes[athId]; if(!p || !Array.isArray(p.dias)) return;
+    marca(p.dias, athId, 'la lista de días');
+    p.dias.forEach((d, i) => {
+      if(!d) return;
+      marca(d, athId, 'el día ' + (i + 1));
+      jpListasDeDia(d).forEach(arr => {
+        if(!Array.isArray(arr)) return;
+        marca(arr, athId, 'una lista de bloques del día ' + (i + 1));
+        arr.forEach(b => marca(b, athId, 'un bloque del día ' + (i + 1)));
+      });
+    });
+  });
+  return out;
+}
 function jpValidarEstructuraPlan(p){
   const P = [];
   if(!p || !Array.isArray(p.dias)) return ['el plan no tiene lista de días'];
@@ -7690,6 +7736,10 @@ function renderBuilder(){
   /* punto único: mantiene d.bloques apuntando a la semana activa antes de
      que nada de lo de abajo lo lea (ver comentario junto a curDay()). */
   sincronizarBloquesSemana(p);
+  /* día y semana CrossFit válidos para ESTE plan (un índice heredado de otro alumno, vacío o fuera de rango nunca llega a dibujarse) */
+  S.ui = S.ui || {};
+  if(!(S.ui.day >= 0 && S.ui.day < p.dias.length)) S.ui.day = 0;
+  if(!(S.ui.cfWeek >= 0 && S.ui.cfWeek <= 3)) S.ui.cfWeek = 0;
 
   $('#bHead').innerHTML =
     '<div class="avatar ' + esc(ath.color||'') + '">' + esc(initials(ath)) + '</div>' +
@@ -7792,7 +7842,7 @@ function renderBuilder(){
      y puso un label propio, ese gana siempre. d.label NUNCA se
      sobreescribe en storage -- esto es solo una preferencia de qué
      mostrar, cero mutación de dato ya guardado en los 33 atletas. */
-  $('#dayTabs').innerHTML = p.dias.map((d,i) => {
+  const dibujarPestanas = () => p.dias.map((d,i) => {
     const labelEsDefault = (d.label || '') === ('Sesión ' + (i+1));
     const textoTab = (labelEsDefault && d.title) ? d.title : (d.label || d.title || '');
     const flechas = (i === S.ui.day && p.dias.length > 1)
@@ -7810,12 +7860,20 @@ function renderBuilder(){
   }).join('') + (p.dias.length < MAX_DIAS
     ? '<button type="button" class="tab tab-add" data-addday="1" title="Agregar un día al mesociclo (máx. ' + MAX_DIAS + ')" style="border-style:dashed;color:var(--gold,#FFD600)"><span class="tab-short">+ DÍA</span></button>'
     : '');
+  /* si algún día trae un dato raro y el dibujo falla, se arma una versión mínima de las pestañas en vez de dejar la vista rota */
+  let htmlTabs = '';
+  try{ htmlTabs = dibujarPestanas(); }
+  catch(eTabs){
+    console.warn('[Builder] pestañas de días: dibujo mínimo por un dato inesperado', eTabs);
+    htmlTabs = p.dias.map((d, i) => '<button class="tab ' + (i === S.ui.day ? 'on' : '') + '" data-day="' + i + '"><span class="tab-short">' + esc((d && d.short) || ('DÍA ' + (i + 1))) + '</span></button>').join('');
+  }
+  $('#dayTabs').innerHTML = htmlTabs;
   const btnML = $('#btnMoveDayL'), btnMR = $('#btnMoveDayR');
   if(btnML) btnML.disabled = S.ui.day <= 0;
   if(btnMR) btnMR.disabled = S.ui.day >= p.dias.length - 1;
 
-  renderDay();
-  renderGlobalAlerts();
+  try{ renderDay(); }catch(eDay){ console.warn('[Builder] renderDay', eDay); const pn = $('#dayPanel'); if(pn) pn.innerHTML = '<div class="alert danger"><span class="ic">⚠️</span><div><b>No se pudo dibujar este día.</b> Cambiá de día o de alumno/a y volvé; si se repite, revisá la consola.</div></div>'; }
+  try{ renderGlobalAlerts(); }catch(eAl){ console.warn('[Builder] alertas', eAl); }
 }
 
 function renderGlobalAlerts(){
@@ -22265,7 +22323,7 @@ body.man-mode .gs-fab{right:318px}
       p.meta = Object.assign(p.meta || {}, clone(r.meta || {}));
     }
     r.usos = (r.usos || 0) + 1;
-    S.activeId = ath.id;
+    jpActivarAlumno(ath.id);
     let resStd = null;
     if((r.std || r.sbSys) && window.CoachBaseJP){ resStd = window.CoachBaseJP.posAsignar(r.niv, ath); }
     save();
@@ -24994,7 +25052,7 @@ body.man-mode .gs-fab{right:318px}
       mesoTexto: p.foco.nota + ' Construido sobre la base de 3 meses cargada en memoria.'
     });
     if(window.CoachWeek) pl.meso = (window.CoachWeek.logica || []).map(w => Object.assign({}, w));
-    S.activeId = ath.id;
+    jpActivarAlumno(ath.id);
 
     if($('#memBanco').checked){
       if(!Array.isArray(S.banco)) S.banco = [];
@@ -29555,7 +29613,8 @@ body.athlete-lock .sidebar .btn:not(.pwa-btn){display:none !important}
 
     d.briefing = briefing;
     save();
-    const ta = document.querySelector('#dayPanel textarea[data-df="briefing"]');
+    /* el cuadro de texto solo se actualiza si el día pedido sigue siendo el que se está mirando (si no, pintaría el texto de un alumno en la pantalla de otro) */
+    const ta = (curDay() === d && S.activeId === a.id) ? document.querySelector('#dayPanel textarea[data-df="briefing"]') : null;
     if(ta) ta.value = briefing;
 
     if(load) load.style.display = 'none';
@@ -31171,7 +31230,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       else vista.insertBefore(bar, vista.firstChild);
 
       document.getElementById('sbAth').addEventListener('change', e => {
-        S.activeId = e.target.value;
+        jpActivarAlumno(e.target.value || null);
         try{ save(); }catch(x){}
         if(typeof renderBuilder === 'function') renderBuilder();
         if(typeof renderDay === 'function') renderDay();
@@ -32625,6 +32684,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
 
   async function generar(tipo){
     const r = radiografia();
+    const epocaPedida = window.__jpEpocaAlumno;
     if(!r){ try{ toast('Elegí un alumno y un día primero', 'warn'); }catch(e){} return null; }
     if(!r.exs.length && !((r.dia.bloques || []).length)){
       try{ toast('Cargá los bloques de la sesión antes de generar la preparación', 'warn'); }catch(e){} return null;
@@ -32660,10 +32720,13 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     out.ts = Date.now();
 
     if(load) load.style.display = 'none';
-    const a = active(), d = curDay();
+    /* alumno y día que se pidieron (r viene de radiografia() al arrancar): si el coach cambió de alumno o de día mientras la IA respondía, se escribe ahí y NO en lo que quedó en pantalla */
+    const a = r.ath, d = r.dia;
+    const enPantalla = jpAlumnoVigente(a.id, epocaPedida) && curDay() === d;
     setPrep(a.id, d.id, tipo === 'wu' ? { wu: out } : { cd: out });
-    aplicar(tipo, out);
-    pintar(tipo, out);
+    aplicar(tipo, out, d, enPantalla);
+    if(enPantalla) pintar(tipo, out);
+    try{ if(!enPantalla) toast('La preparación de ' + fullName(a) + ' se guardó en su plan (cambiaste de alumno/a mientras se generaba)', 'warn'); }catch(e){}
     try{ toast(out.motor === 'ia'
       ? (tipo === 'wu' ? '🔥 Warm-up contextual generado con IA' : '🧘 Cool-down generado con IA')
       : (tipo === 'wu' ? '🔥 Warm-up contextual generado con el motor local' : '🧘 Cool-down generado con el motor local')); }catch(e){}
@@ -32682,8 +32745,8 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
     });
     return items;
   }
-  function aplicar(tipo, out){
-    const d = (typeof curDay === 'function') ? curDay() : null;
+  function aplicar(tipo, out, diaDestino, enPantalla){
+    const d = diaDestino || ((typeof curDay === 'function') ? curDay() : null);
     if(!d) return;
     if(tipo === 'wu'){
       const b = { id:'wu' + Math.random().toString(36).slice(2, 8),
@@ -32716,7 +32779,7 @@ details.cf-acc-tac select:focus,details.cf-acc-tac input:focus{
       d.cooldownNota = out.nota || '';
     }
     try{ save(); }catch(e){}
-    if(typeof renderBuilder === 'function') renderBuilder();
+    if(enPantalla !== false && typeof renderBuilder === 'function') renderBuilder();
   }
 
   /* ---------------------------------------------------------
@@ -43871,7 +43934,7 @@ html body #dayPanel#dayPanel .block > .block-h > .blk-modalidad{ max-width:300px
   }
   function posAsignar(niv, ath){
     var p = plan(ath.id), res = { cargas: 0, proy: 0, conflictos: conflictosDe(plan(ath.id), ath) };
-    S.activeId = ath.id;
+    jpActivarAlumno(ath.id);
     /* primero se proyectan las 4 semanas y despues se calculan los kilos de CADA una con su propio RIR (la descarga lleva menos kilos, la intensificación más) */
     try{ res.proy = proyectar(p, niv); }catch(e2){ console.warn('proyeccion plantilla', e2); }
     try{
@@ -50886,7 +50949,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
       q.presencial = false; delete ui.open[id]; persistUI(); guardar(); render();
     }
     else if(act === 'edit'){
-      if(typeof S !== 'undefined'){ S.activeId = id; }
+      if(typeof S !== 'undefined'){ jpActivarAlumno(id); }
       if(typeof go === 'function') go('builder');
     }
   }
@@ -51072,7 +51135,7 @@ SEGURIDAD: Calentá 5 minutos antes del primer sprint y cortá el bloque ante cu
     if(a.id !== S.activeId){
       if(nat){ nat.value = a.id; nat.dispatchEvent(new Event('change', { bubbles: true })); }
       else {
-        S.activeId = a.id; if(typeof save === 'function') save();
+        jpActivarAlumno(a.id); if(typeof save === 'function') save();
         if(typeof renderBuilder === 'function') renderBuilder();
       }
       if(typeof toast === 'function') toast('Alumno/a activo/a: ' + nombre(a));

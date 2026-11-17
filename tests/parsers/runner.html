@@ -44,6 +44,7 @@
 <script src="cases-progresion.js"></script>
 <script src="cases-estilos.js"></script>
 <script src="cases-copia.js"></script>
+<script src="cases-cruce.js"></script>
 <script>
 /* El runner NUNCA modifica index.html ni guarda estado: solo llama funciones puras del iframe.
    Hay que servirlo por http (file:// bloquea el acceso al iframe):   npx http-server -p 8765   o   python -m http.server 8765
@@ -81,6 +82,7 @@
     bancoSplit3:  { run: function(i){ return auditarSplit3(i); }, valor: function(r){ return r; } },
     /* generadores de IA del Builder (CrossFit): con el motor de IA simulado, sin red y sin guardar nada */
     iaCF:         { run: function(i){ return iaCaso(i); }, valor: function(r){ return r; } },
+    cruceCF:      { run: function(i){ return cruceCaso(i); }, valor: function(r){ return r; } },
     copiaCF:      { run: function(i){ return copiaCaso(i); }, valor: function(r){ return r; } },
     showroom:     { run: function(i){ return showroomCaso(i); }, valor: function(r){ return r; } },
     alumnoEstilo: { run: function(i){ return alumnoEstilo(i); }, valor: function(r){ return r; } },
@@ -189,6 +191,69 @@
     return P;
   }
   /* split analítico de 3 días: hombre Push / Pull / Pierna completa; mujer Pierna A / Push, Pull y Brazos / Pierna B (nada de Full Body) */
+  /* ---------- cambio de alumno: estado cruzado entre modalidades ---------- */
+  function cruceCaso(c){
+    var S = getS(), A = [], ids = ['ath_test_cr_a', 'ath_test_cr_b'];
+    var orig = { save: win.save, ga: win.guardarAhora, rb: win.renderBuilder, ra: win.renderAthletes, toast: win.toast, act: S.activeId, ui: S.ui ? { day: S.ui.day, cfWeek: S.ui.cfWeek } : {}, dpa: S.ui && S.ui.diaPorAlumno };
+    win.save = win.guardarAhora = win.renderAthletes = function(){}; win.toast = function(){};
+    function alumno(id, nombre, cf){
+      var a = { id: id, nombre: nombre, apellido: 'Cruce', freq: 5, nivel: 'Avanzado', genero: 'F' }; S.athletes.push(a); A.push(a);
+      var p = win.newPlan(a); p.meta.mesoDisc = cf ? 'crossfit' : 'hiper'; S.plans[id] = p; return p;
+    }
+    try{
+      S.ui = S.ui || {}; S.ui.diaPorAlumno = {};
+      var pA = alumno(ids[0], 'Cecilia', false), pB = alumno(ids[1], 'Heliana', true);
+      [0, 1, 2].forEach(function(i){ pA.dias[i].bloques.push(win.nuevoBloquePizarra(false, 'strength', 'Hip thrust D' + (i + 1), ['Hip thrust con barra', '4x8 | RIR 2'])); });
+      win.jpActivarAlumno(ids[1]); var psB = win.asegurarBloquesPorSemana(pB.dias[0]); psB[0].push(win.nuevoBloquePizarra(true, 'metcon', 'WOD D1', ['AMRAP 10', '10 Burpees'])); pB.dias[0].bloques = psB[0];
+      win.jpActivarAlumno(ids[0]); S.ui.day = 2;
+      var resA = function(){ return pA.dias.map(function(d){ return d.bloques.map(function(b){ return b.titulo; }).join('+') || '-'; }).join(' | '); };
+      var resB = function(){ return pB.dias.map(function(d){ return win.asegurarBloquesPorSemana(d).map(function(x){ return x.length; }).join('/'); }).join(' | '); };
+      var a0 = resA(), b0 = resB();
+
+      if(c.caso === 'cambio'){
+        var ep0 = win.__jpEpocaAlumno;
+        win.jpActivarAlumno(ids[1]);
+        return { dia: S.ui.day, semana: S.ui.cfWeek, activo: S.activeId === ids[1], aIntacto: resA() === a0, bIntacto: resB() === b0, referencias: win.jpAuditarReferenciasCompartidas(S.plans).length,
+          epocaCambio: win.__jpEpocaAlumno > ep0, vigenteViejo: win.jpAlumnoVigente(ids[0], ep0), vigenteNuevo: win.jpAlumnoVigente(ids[1], win.__jpEpocaAlumno) };
+      }
+      if(c.caso === 'vuelta'){
+        win.jpActivarAlumno(ids[1]); S.ui.day = 0; win.jpActivarAlumno(ids[0]);
+        return { diaDeA: S.ui.day, aIntacto: resA() === a0, bIntacto: resB() === b0 };
+      }
+      if(c.caso === 'confirmaSaliente'){
+        /* alumno CrossFit saliente con un cambio sin confirmar (puntero reasignado): al cambiar de alumno ese cambio se guarda en SU semana */
+        win.jpActivarAlumno(ids[1]); S.ui.cfWeek = 0; win.sincronizarBloquesSemana(pB);
+        pB.dias[0].bloques = pB.dias[0].bloques.filter(function(b){ return b.titulo !== 'WOD D1'; });
+        win.jpActivarAlumno(ids[0]);
+        return { s1EnB: win.asegurarBloquesPorSemana(pB.dias[0])[0].length, aIntacto: resA() === a0 };
+      }
+      if(c.caso === 'estructuraNula'){
+        var out = {};
+        var casos = { diasNull: function(p){ p.dias = null; }, diasVacio: function(p){ p.dias = []; }, diaNulo: function(p){ p.dias.splice(1, 0, null); }, sinBloques: function(p){ delete p.dias[0].bloques; } };
+        Object.keys(casos).forEach(function(k){
+          var p = alumno('ath_test_cr_' + k, 'N' + k, true); casos[k](p);
+          var pp = win.plan('ath_test_cr_' + k); out[k] = pp.dias.length >= 3 && pp.dias.every(function(d){ return d && Array.isArray(d.bloques); });
+        });
+        return out;
+      }
+      if(c.caso === 'dibujo'){
+        S.activeId = ids[1]; S.ui.day = NaN; S.ui.cfWeek = 9;
+        var rotos = {};
+        var variantes = { diaNulo: function(){ pB.dias.splice(1, 0, null); }, sinBloques: function(){ delete pB.dias[2].bloques; }, semanasRotas: function(){ pB.dias[0].bloquesPorSemana = [null, 'x', [], 7]; } };
+        Object.keys(variantes).forEach(function(k){
+          var copia = JSON.parse(JSON.stringify(pB.dias)); try{ variantes[k](); win.renderBuilder = orig.rb; win.renderBuilder(); rotos[k] = true; }catch(e){ rotos[k] = String(e && e.message || e); } pB.dias = copia;
+        });
+        rotos.indices = (S.ui.day === 0 && S.ui.cfWeek === 0);
+        return rotos;
+      }
+      throw new Error('caso desconocido: ' + c.caso);
+    } finally {
+      Object.keys(S.plans).filter(function(k){ return /^ath_test_cr_/.test(k); }).forEach(function(k){ delete S.plans[k]; });
+      S.athletes = S.athletes.filter(function(a){ return !/^ath_test_cr_/.test(a.id); });
+      win.save = orig.save; win.guardarAhora = orig.ga; win.renderBuilder = orig.rb; win.renderAthletes = orig.ra; win.toast = orig.toast;
+      S.activeId = orig.act; if(S.ui){ S.ui.day = orig.ui.day; S.ui.cfWeek = orig.ui.cfWeek; S.ui.diaPorAlumno = orig.dpa; }
+    }
+  }
   /* ---------- copia entre alumnos (CrossFit): plan completo · semana · día ----------
      Se usan las funciones reales con dos alumnos de prueba en memoria; save / guardarAhora / renderBuilder / renderAthletes / toast / confirm se anulan y todo se retira al terminar. */
   function copiaCaso(c){
