@@ -12,6 +12,8 @@ window.JP_PARSER_CASES = window.JP_PARSER_CASES.concat([
     nota: 'La vista compara los 4 estilos con la misma tarjeta: volumen grande, descanso debajo, tempo y RIR, coaching tips desplegables y un botón para fijar cada uno' },
   { id: 'est.sr.03', area: 'Showroom · estilos', fn: 'showroom', input: { caso: 'fijar' }, expect: { fijado: 3, enVistas: true, showroomLimpio: true, bodySinAtributo: true }, modo: 'subset',
     nota: 'Fijar un estilo lo guarda, lo aplica a las vistas del Builder y deja limpio el Showroom (así las muestras no heredan el estilo fijado)' },
+  { id: 'est.sr.04', area: 'Showroom · vista real', fn: 'showroom', input: { caso: 'real' }, expect: { hayHtml: true, azulNoche: true, conEstilo: true, sinResiduo: true, sello: true, contenedorReal: true }, modo: 'subset',
+    nota: 'El Showroom arma la app del alumno real (fondo azul noche, estilos conmutables) con un alumno de muestra que no deja rastro, y muestra el sello de versión nuevo' },
   { id: 'est.stu.01', area: 'App del alumno · estilos', fn: 'alumnoEstilo', input: { caso: 'aplicar', valores: [1, 2, 3, 4, 9, 0, 'x'] }, expect: ['1:1', '2:2', '3:3', '4:4', '2:2', '2:2', '2:2'],
     nota: 'jpEstiloTarjeta acepta 1 a 4; cualquier otro valor cae en el estilo 2 (el de la marca)' },
   { id: 'est.stu.02', area: 'App del alumno · estilos', fn: 'alumnoEstilo', input: { caso: 'config' }, expect: { valido: true, coincide: true }, modo: 'subset',

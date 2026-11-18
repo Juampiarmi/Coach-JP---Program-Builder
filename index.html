@@ -89082,6 +89082,12 @@ input.jp-invalido,textarea.jp-invalido{border-color:#E0654A !important;box-shado
 #v-showroom .sr-stage .jp-qc-tg-t{ display:flex; gap:8px; font-weight:800; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; }
 #v-showroom .sr-stage .jp-qc-tg-h{ font-size:.72rem; font-weight:600; }
 #v-showroom .sr-stage .jp-sb-ex-nombre .jp-nom-en{ display:inline; }
+
+/* vista previa REAL de la app del alumno (iframe con el estilo cambiando en vivo) */
+#v-showroom .sr-real-card{ margin-top:18px; }
+#v-showroom .sr-real-card .sr-seg{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+#v-showroom .sr-phone{ width:min(420px,100%); height:min(760px,78vh); margin:0 auto; border:1px solid rgba(255,255,255,.14); border-radius:26px; overflow:hidden; background:#0B132B; box-shadow:0 18px 50px rgba(0,0,0,.45); }
+#v-showroom .sr-phone iframe{ width:100%; height:100%; border:0; display:block; background:#0B132B; }
 html body:not(#_):not(#__)[data-jp-estilo="1"], html body:not(#_):not(#__) [data-jp-estilo="1"]{--xc-surface:rgba(255,255,255,.022); --xc-surface-2:rgba(255,255,255,.035);
   --xc-bd:rgba(150,176,235,.17); --xc-bd-2:rgba(150,176,235,.3);
   --xc-r:10px; --xc-sh:none; --xc-blur:none; --xc-pad:12px 14px; --xc-gap:0px;
@@ -89222,6 +89228,7 @@ html body:not(#_):not(#__)[data-jp-estilo="4"] .block-body, html body:not(#_):no
   'use strict';
   if(window.CoachShowroom) return;
 
+  var VERSION = 'v2 · Azul Noche · 4 estilos interactivos';
   var ESTILOS = [
     { n: 1, nombre: 'Clean Tech', tag: 'Minimalista', desc: 'Líneas finas, tipografía tabular y una estructura horizontal estricta: cada fila lleva su rótulo (volumen, descanso, técnica). La máxima limpieza visual.' },
     { n: 2, nombre: 'High-Performance', tag: 'Acento ocre', desc: 'Industrial deportivo: el volumen va en un bloque resaltado con el ocre de la marca, números enormes y mayor contraste en las métricas.' },
@@ -89282,7 +89289,7 @@ html body:not(#_):not(#__)[data-jp-estilo="4"] .block-body, html body:not(#_):no
   /* ---------- la vista ---------- */
   function cabeza(){
     var fj = fijado();
-    return '<div class="topbar"><div><h2>🎨 Showroom</h2><div class="sub">Tarjetas de ejercicio sobre el fondo azul noche · 4 estilos para elegir</div></div></div>' +
+    return '<div class="topbar"><div><h2>🎨 Showroom</h2><div class="sub">Tarjetas de ejercicio sobre el fondo azul noche · 4 estilos para elegir</div></div><span class="pill teal" title="Si ves este sello estás en el Showroom nuevo">' + VERSION + '</span></div>' +
       '<div class="card sr-info"><div class="sr-info-t"><b>Estilo vigente:</b> <span class="pill gold">' + esc(nombreDe(fj)) + '</span> ' + (tieneFijado() ? '' : '<span class="hint" style="display:inline">(por defecto: todavía no fijaste ninguno)</span>') +
         (VISTA.prueba ? ' <span class="pill teal">probando: ' + esc(nombreDe(VISTA.prueba)) + '</span>' : '') + '</div>' +
       '<div class="hint">Las 4 versiones comparten la misma estructura: <b>volumen grande</b> a lo largo de la tarjeta, el <b>descanso debajo</b>, el <b>tempo y el RIR</b> en la línea técnica y los <b>coaching tips</b> (Set-up, Ejecución, Cuidado) desplegables al pie. Al fijar un estilo se aplica al Builder y viaja a la app de cada alumno cuando exportás o recompilás.</div>' +
@@ -89300,18 +89307,73 @@ html body:not(#_):not(#__)[data-jp-estilo="4"] .block-body, html body:not(#_):no
       '<div class="sr-acc"><button type="button" class="btn sm ghost" data-sr-prueba="' + e.n + '" title="Aplica este estilo al Builder mientras lo probás, sin fijarlo">👁️ Probar en el Builder</button>' +
       '<button type="button" class="btn sm gold" data-sr-fijar="' + e.n + '"' + (es ? ' disabled' : '') + '>' + (es ? '✓ Estilo fijado' : '📌 Fijar como definitivo') + '</button></div></div>';
   }
+  /* ---------- vista previa REAL: la app del alumno compilada con tus datos, con el estilo cambiando en vivo ----------
+     Se arma con el mismo compile() que la exportación: es literalmente lo que recibe el alumno. Usa el alumno activo si su plan tiene bloques; si no, un plan de ejemplo del Banco
+     (un alumno de muestra que existe solo durante el armado: nada se guarda). El iframe vive en su propio contenedor (#srReal) para no recargarse cada vez que se redibuja el resto. */
+  function planConBloques(p){ return !!(p && (p.dias || []).some(function(d){ return d && ((d.bloques || []).length || (Array.isArray(d.bloquesPorSemana) && d.bloquesPorSemana.some(function(a){ return a && a.length; }))); })); }
+  function htmlAlumnoDemo(){
+    var act = (typeof active === 'function') ? active() : null, p = act ? plan(act.id) : null;
+    if(act && planConBloques(p)) return { html: compile(act), origen: 'alumno', nombre: fullName(act) };
+    var tpl = (S.banco || []).filter(function(r){ return r && r.id === 'bkstd_jp26_m3_i' && (r.dias || []).length; })[0] || (S.banco || []).filter(function(r){ return r && (r.dias || []).length && !r.cfMes; })[0];
+    if(!tpl) return null;
+    var demo = { id: 'showroom_demo', nombre: 'Alumno', apellido: 'de muestra', freq: tpl.dias.length, nivel: 'Intermedio', genero: 'M', createdAt: Date.now() };
+    var pd = newPlan(demo); pd.dias = JSON.parse(JSON.stringify(tpl.dias)); pd.meso = JSON.parse(JSON.stringify(tpl.meso || defaultWeeks()));
+    pd.meta = Object.assign(pd.meta || {}, JSON.parse(JSON.stringify(tpl.meta || {})));
+    S.athletes.push(demo); S.plans[demo.id] = pd;      /* el plan se registra antes de compilar para que plan() no dispare un guardado */
+    try{ return { html: compile(demo), origen: 'demo', nombre: 'plan de ejemplo del Banco' }; }
+    finally{ delete S.plans[demo.id]; var ix = S.athletes.indexOf(demo); if(ix >= 0) S.athletes.splice(ix, 1); }
+  }
+  function realCuerpo(){
+    var n = REAL.estilo || fijado();
+    return '<div class="card sr-real-card"><h3>📱 Vista previa REAL en la app del alumno</h3>' +
+      '<div class="hint" style="margin:-6px 0 10px">Es la app del alumno compilada de verdad (fondo azul noche, tarjeta en tres filas, coaching tips desplegables). Cambiá de estilo y se aplica en el acto, sin recargar.</div>' +
+      '<div class="sr-seg" style="margin-bottom:10px">' + ESTILOS.map(function(e){ return '<button type="button" class="btn sm' + (n === e.n ? ' gold' : ' ghost') + '" data-sr-real="' + e.n + '">Estilo ' + e.n + ' · ' + esc(e.nombre) + '</button>'; }).join('') +
+        '<button type="button" class="btn sm" data-sr-fijar="' + n + '" style="margin-left:auto">📌 Fijar el estilo ' + n + '</button></div>' +
+      '<div class="sr-phone"><iframe id="srRealFrame" title="Vista previa de la app del alumno" loading="lazy"></iframe></div>' +
+      '<div class="hint" id="srRealInfo" style="margin-top:8px"></div></div>';
+  }
+  var REAL = { abierta: false, estilo: 0, origen: '' };
+  function renderReal(){
+    var box = document.getElementById('srReal'); if(!box) return;
+    if(!REAL.abierta){
+      box.innerHTML = '<div class="card sr-real-card"><h3>📱 Vista previa REAL en la app del alumno</h3>' +
+        '<div class="hint" style="margin:-6px 0 10px">Compila la app del alumno de verdad (con tu alumno activo, o un plan de ejemplo del Banco si todavía no cargaste bloques) y te deja cambiar de estilo en vivo.</div>' +
+        '<button type="button" class="btn gold" data-sr-abrir="1">▶ Abrir la vista previa real</button></div>';
+      return;
+    }
+    box.innerHTML = realCuerpo();
+    var fr = document.getElementById('srRealFrame'), info = document.getElementById('srRealInfo');
+    var r = null;
+    try{ r = htmlAlumnoDemo(); }catch(e){ console.warn('showroom: vista real', e); }
+    if(!r){ if(info) info.textContent = 'No hay un plan con bloques ni plantillas del Banco para armar la vista previa.'; return; }
+    REAL.origen = r.origen;
+    if(info) info.textContent = 'Mostrando: ' + (r.origen === 'alumno' ? 'el plan de ' + r.nombre : r.nombre) + '.';
+    fr.addEventListener('load', function(){ aplicarEnReal(REAL.estilo || fijado()); });
+    fr.srcdoc = r.html;
+  }
+  function aplicarEnReal(n){
+    var fr = document.getElementById('srRealFrame'); if(!fr) return;
+    REAL.estilo = n;
+    try{ if(fr.contentWindow && typeof fr.contentWindow.jpEstiloTarjeta === 'function') fr.contentWindow.jpEstiloTarjeta(n); }catch(e){}
+    var btns = document.querySelectorAll('#srReal [data-sr-real]');
+    for(var i = 0; i < btns.length; i++){ var on = parseInt(btns[i].getAttribute('data-sr-real'), 10) === n; btns[i].classList.toggle('gold', on); btns[i].classList.toggle('ghost', !on); }
+    var fj = document.querySelector('#srReal [data-sr-fijar]'); if(fj){ fj.setAttribute('data-sr-fijar', String(n)); fj.textContent = '📌 Fijar el estilo ' + n; }
+  }
   function render(){
     var host = document.getElementById('v-showroom'); if(!host) return;
+    var top = document.getElementById('srTop'), real = document.getElementById('srReal');
+    if(!top || !real){ host.innerHTML = '<div id="srTop"></div><div id="srReal"></div>'; top = document.getElementById('srTop'); real = document.getElementById('srReal'); renderReal(); }
     var cuerpo = VISTA.modo === 'comparar'
       ? '<div class="sr-grid">' + ESTILOS.map(function(e){ return columna(e, false); }).join('') + '</div>'
       : '<div class="sr-uno">' + columna(ESTILOS[VISTA.sel - 1], true) + '</div>';
-    host.innerHTML = cabeza() + cuerpo;
+    top.innerHTML = cabeza() + cuerpo;
   }
   function fijar(n){
     var u = ui(); u.estiloTarjeta = n;
     VISTA.prueba = 0; aplicar(n);
     try{ save(); }catch(e){}
     render();
+    if(REAL.abierta) aplicarEnReal(n);
     try{ toast('📌 Estilo ' + nombreDe(n) + ' fijado. El Builder ya lo usa; los alumnos lo reciben al exportar o recompilar su app.'); }catch(e){}
   }
   function probar(n){
@@ -89321,7 +89383,9 @@ html body:not(#_):not(#__)[data-jp-estilo="4"] .block-body, html body:not(#_):no
     try{ toast(VISTA.prueba ? '👁️ Probando el estilo ' + nombreDe(n) + ' en el Builder (sin fijar)' : 'Volviste al estilo vigente: ' + nombreDe(fijado())); }catch(e){}
   }
   function clic(e){
-    var t = e.target.closest ? e.target.closest('[data-sr-modo],[data-sr-sel],[data-sr-fijar],[data-sr-prueba]') : null; if(!t) return;
+    var t = e.target.closest ? e.target.closest('[data-sr-modo],[data-sr-sel],[data-sr-fijar],[data-sr-prueba],[data-sr-real],[data-sr-abrir]') : null; if(!t) return;
+    if(t.dataset.srAbrir){ REAL.abierta = true; renderReal(); return; }
+    if(t.dataset.srReal){ aplicarEnReal(parseInt(t.dataset.srReal, 10) || 2); return; }
     if(t.dataset.srModo){ VISTA.modo = t.dataset.srModo; render(); return; }
     if(t.dataset.srSel){ VISTA.sel = parseInt(t.dataset.srSel, 10) || 2; render(); return; }
     if(t.dataset.srFijar){ fijar(parseInt(t.dataset.srFijar, 10)); return; }
@@ -89353,18 +89417,20 @@ html body:not(#_):not(#__)[data-jp-estilo="4"] .block-body, html body:not(#_):no
       if(view !== 'showroom' && VISTA.prueba){ VISTA.prueba = 0; aplicar(fijado()); }
       var r = go0.apply(this, arguments);
       aplicar(VISTA.prueba || fijado());
-      if(view === 'showroom') render();
+      if(view === 'showroom'){ render(); if(REAL.abierta) renderReal(); }
       return r;
     };
     go1.__showroom = true; window.go = go1;
   }
   function arrancar(){
     try{ montar(); enganchar(); }catch(e){ console.warn('showroom', e); }
+    /* enlace directo: ...index.html#showroom abre el Showroom nuevo */
+    try{ if(/^#showroom/.test(location.hash || '')) window.go('showroom'); }catch(e){}
     /* los botones del menú se atan por delegación o por elemento: el nuevo se ata acá */
     var nb = document.querySelector('.navbtn[data-view="showroom"]');
     if(nb && !nb.getAttribute('data-sr-nav')){ nb.setAttribute('data-sr-nav', '1'); nb.addEventListener('click', function(){ try{ window.go('showroom'); }catch(e){} }); }
   }
-  window.CoachShowroom = { estilos: ESTILOS, fijado: fijado, fijar: fijar, probar: probar, render: render, aplicar: aplicar };
+  window.CoachShowroom = { version: VERSION, htmlAlumnoDemo: htmlAlumnoDemo, aplicarEnReal: aplicarEnReal, estilos: ESTILOS, fijado: fijado, fijar: fijar, probar: probar, render: render, aplicar: aplicar };
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(arrancar, 300); }); else setTimeout(arrancar, 300);
 })();
 </script>
