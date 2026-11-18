@@ -50,11 +50,11 @@ let nJs = 0, nCss = 0;
   recorrer(DIR);
 })();
 
-/* 2c · estilos de tarjeta: el CSS compartido produce los 4 estilos y en index.html no queda ninguna directiva ni selector "@est" sin expandir */
+/* 2c · estilos de tarjeta: el CSS compartido produce los 3 estilos (1, 2 y 4) y en index.html no queda ninguna directiva ni selector "@est" sin expandir */
 (function revisarEstilos(){
   const css = fs.readFileSync(path.join(RAIZ, 'src', 'shared', 'tarjeta-ejercicio.css'), 'utf8');
   const sal = expandirEstilos(css);
-  [1, 2, 3, 4].forEach(n => { if(sal.indexOf('[data-jp-estilo="' + n + '"]') < 0) falla('shared/tarjeta-ejercicio.css: no genera reglas para el estilo ' + n); });
+  [1, 2, 4].forEach(n => { if(sal.indexOf('[data-jp-estilo="' + n + '"]') < 0) falla('shared/tarjeta-ejercicio.css: no genera reglas para el estilo ' + n); });
   if(/@est/.test(sal)) falla('shared/tarjeta-ejercicio.css: quedó un selector @est sin expandir');
   const html = fs.readFileSync(path.join(RAIZ, 'index.html'), 'utf8');
   if(/@est[(\s]/.test(html) || /@@estilo/.test(html)) falla('index.html: quedó una directiva o un selector @est sin expandir (¿falta correr node tools/build.js?)');

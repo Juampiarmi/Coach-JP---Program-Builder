@@ -337,25 +337,38 @@
     if(c.caso === 'estilos') return { cantidad: SR.estilos.length, numeros: SR.estilos.map(function(e){ return e.n; }).join(',') };
     if(c.caso === 'pantalla'){
       var host = win.document.getElementById('v-showroom'); if(!host) throw new Error('no existe #v-showroom');
-      SR.render();
-      var stages = [].slice.call(host.querySelectorAll('.sr-stage'));
-      var ordenOk = stages.every(function(st){
-        var h = st.querySelector('.jp-dose-bar').innerHTML, a = h.indexOf('jp-db-r1'), b = h.indexOf('jp-db-r2'), d = h.indexOf('jp-db-r3');
-        return a >= 0 && b > a && d > b;
-      });
-      var uno = stages[0];
-      return { stages: stages.length, estilos: stages.map(function(s){ return s.getAttribute('data-jp-estilo'); }).join(','), ordenOk: ordenOk,
-        tieneVolumen: !!uno.querySelector('.jp-db-vol .jp-vn') && !!uno.querySelector('.jp-db-vol .jp-vr'), tieneTempoYRir: !!uno.querySelector('.jp-db-tempo') && !!uno.querySelector('.jp-db-rir'),
-        tipsDesplegables: !!uno.querySelector('details.jp-ex-tips'), botonesFijar: host.querySelectorAll('[data-sr-fijar]').length };
+      var act0 = S.activeId, res = { estilos: [], ordenOk: true, tieneVolumen: true, tieneTempoYRir: true, tipsDesplegables: true, fijarDebajo: true, unaSola: true, tabs: 0 };
+      S.activeId = null;   /* independiente: sin alumno activo */
+      try{
+        SR.estilos.forEach(function(e){
+          SR.seleccionar(e.n);
+          var stages = host.querySelectorAll('.sr-stage'), st = stages[0];
+          res.unaSola = res.unaSola && stages.length === 1;
+          res.estilos.push(st.getAttribute('data-jp-estilo'));
+          var h = st.querySelector('.jp-dose-bar').innerHTML, i1 = h.indexOf('jp-db-r1'), i2 = h.indexOf('jp-db-r2'), i3 = h.indexOf('jp-db-r3');
+          res.ordenOk = res.ordenOk && i1 >= 0 && i2 > i1 && i3 > i2;
+          res.tieneVolumen = res.tieneVolumen && !!st.querySelector('.jp-db-vol .jp-vn') && !!st.querySelector('.jp-db-vol .jp-vr');
+          res.tieneTempoYRir = res.tieneTempoYRir && !!st.querySelector('.jp-db-tempo') && !!st.querySelector('.jp-db-rir');
+          res.tipsDesplegables = res.tipsDesplegables && !!st.querySelector('details.jp-ex-tips');
+          var fj = host.querySelector('.sr-fijar[data-sr-fijar="' + e.n + '"]');
+          res.fijarDebajo = res.fijarDebajo && !!fj && !!(st.compareDocumentPosition(fj) & 4);   /* 4 = el botón viene DESPUÉS de la tarjeta */
+        });
+        res.tabs = host.querySelectorAll('.sr-tab').length;
+      } finally { S.activeId = act0; SR.seleccionar(SR.fijado()); }
+      res.estilos = res.estilos.join(',');
+      return res;
     }
     if(c.caso === 'fijar'){
       var guardar = win.save, aviso = win.toast, previo = S.ui ? S.ui.estiloTarjeta : undefined;
       win.save = function(){}; win.toast = function(){};
       try{
-        SR.fijar(3);
-        var enVistas = [].slice.call(win.document.querySelectorAll('.view')).filter(function(v){ return v.id !== 'v-showroom'; }).every(function(v){ return v.getAttribute('data-jp-estilo') === '3'; });
+        var antes3 = S.ui.estiloTarjeta;
+        SR.fijar(3);   /* el 3 se descartó: no se acepta y no cambia lo fijado */
+        var rechazaTres = S.ui.estiloTarjeta === antes3;
+        SR.fijar(4);
+        var enVistas = [].slice.call(win.document.querySelectorAll('.view')).filter(function(v){ return v.id !== 'v-showroom'; }).every(function(v){ return v.getAttribute('data-jp-estilo') === '4'; });
         var showroomLimpio = !win.document.getElementById('v-showroom').getAttribute('data-jp-estilo');
-        return { fijado: S.ui.estiloTarjeta, enVistas: enVistas, showroomLimpio: showroomLimpio, bodySinAtributo: !win.document.body.getAttribute('data-jp-estilo') };
+        return { fijado: S.ui.estiloTarjeta, rechazaTres: rechazaTres, enVistas: enVistas, showroomLimpio: showroomLimpio, bodySinAtributo: !win.document.body.getAttribute('data-jp-estilo') };
       } finally {
         if(previo === undefined) delete S.ui.estiloTarjeta; else S.ui.estiloTarjeta = previo;
         SR.aplicar(SR.fijado()); SR.render(); win.save = guardar; win.toast = aviso;
@@ -378,12 +391,16 @@
       var cerrar = tm && tm.querySelector('[data-srt="cerrar"]'); if(cerrar) cerrar.click();
       return { botonClicable: pe !== 'none', abre: abre, tiempo: /^0[23]:[0-9][0-9]$/.test(txt), cierra: !!tm && !tm.classList.contains('on') };
     }
-    if(c.caso === 'real'){
-      var nA = S.athletes.length, r = SR.htmlAlumnoDemo(), sinResiduo = S.athletes.length === nA && !S.plans.showroom_demo;
-      var host2 = win.document.getElementById('v-showroom'); SR.render();
-      var cab = host2.querySelector('#srTop') ? host2.querySelector('#srTop').textContent : '';
-      return { hayHtml: !!(r && r.html && r.html.length > 100000), origen: r ? r.origen : null, azulNoche: !!(r && /0B132B/i.test(r.html)), conEstilo: !!(r && r.html.indexOf('jpEstiloTarjeta') >= 0),
-        sinResiduo: sinResiduo, sello: cab.indexOf(SR.version) >= 0 && /Azul Noche/.test(SR.version), contenedorReal: !!host2.querySelector('#srReal') };
+    if(c.caso === 'independiente'){
+      /* el Showroom se dibuja sin alumno ni plan: sin alumno activo, sin alumnos y sin planes */
+      var guardado = { act: S.activeId, ath: S.athletes, pl: S.plans };
+      S.activeId = null; S.athletes = []; S.plans = {};
+      try{
+        var host2 = win.document.getElementById('v-showroom'); SR.seleccionar(SR.estilos[0].n); SR.render();
+        var cab = host2.textContent;
+        return { dibuja: host2.querySelectorAll('.sr-stage').length === 1, sinIframe: !host2.querySelector('iframe'), sello: cab.indexOf(SR.version) >= 0 && /Azul Noche/.test(SR.version),
+          pestanas: host2.querySelectorAll('.sr-tab').length, sinTres: !/Estilo 3/.test(cab), numeros: SR.estilos.map(function(e){ return e.n; }).join(',') };
+      } finally { S.activeId = guardado.act; S.athletes = guardado.ath; S.plans = guardado.pl; SR.seleccionar(SR.fijado()); }
     }
     throw new Error('caso desconocido: ' + c.caso);
   }

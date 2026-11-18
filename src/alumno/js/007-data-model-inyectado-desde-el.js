@@ -332,8 +332,8 @@ window.COACH_DISCIPLINA = PROGRAM_CONFIG.modoSemanal ? 'crossfit' : 'sports';
    vez, apenas se conoce la disciplina) en vez de depender de body.cf-modo,
    que sólo se activa en días 100% CrossFit y nunca en días híbridos. */
 if(window.COACH_DISCIPLINA !== 'sports') document.body.classList.add('cf-disc');
-/* estilo de tarjeta de ejercicio que el coach fijó en el Showroom (1 Clean Tech · 2 High-Performance · 3 Pulse · 4 Compacto de élite): lo aplica el atributo data-jp-estilo del body */
-window.jpEstiloTarjeta = function(n){ n = parseInt(n, 10); if(!(n >= 1 && n <= 4)) n = 2; document.body.setAttribute('data-jp-estilo', String(n)); return n; };
+/* estilo de tarjeta de ejercicio que el coach fijó en el Showroom (1 Clean Tech · 2 High-Performance · 4 Compacto de élite; el 3 se descartó y cae en el 2): lo aplica el atributo data-jp-estilo del body */
+window.jpEstiloTarjeta = function(n){ n = parseInt(n, 10); if(!(n === 1 || n === 2 || n === 4)) n = 2; document.body.setAttribute('data-jp-estilo', String(n)); return n; };
 try{ window.jpEstiloTarjeta(PROGRAM_CONFIG.estiloTarjeta); }catch(eEst){ document.body.setAttribute('data-jp-estilo', '2'); }
 /* historialCargas (directiva "Memoria de Cargas Históricas"): índice por
    nombre de ejercicio (normalizado) -> {kg, reps, ts}, independiente de

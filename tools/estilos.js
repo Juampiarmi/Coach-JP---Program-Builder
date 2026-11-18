@@ -1,7 +1,7 @@
 /* ============================================================
    tools/estilos.js · expande los selectores "@est" de los CSS de estilos de tarjeta
    ------------------------------------------------------------
-   Los estilos de tarjeta de ejercicio (1 Clean Tech · 2 High-Performance · 3 Pulse · 4 Compacto de élite) se eligen con el atributo data-jp-estilo="N".
+   Los estilos de tarjeta de ejercicio (1 Clean Tech · 2 High-Performance · 4 Compacto de élite; el 3 se descartó y cae en el 2) se eligen con el atributo data-jp-estilo="N".
    Ese atributo vive en <body> (app del alumno y Builder) o en un contenedor de la vista previa (Showroom). Como la app del alumno trae capas de CSS viejas con
    !important y mucha especificidad, cada regla tiene que escribirse con la especificidad suficiente para ganarles. Para no repetirlo a mano en cientos de reglas,
    el CSS fuente usa un prefijo corto y este módulo lo expande:
